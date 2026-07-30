@@ -17,6 +17,12 @@
 
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
+const {
+  LedgerError,
+  consumeLedgerFile,
+  loadLedgerEntry,
+  resolveCanonicalAuthority,
+} = require('./merge-authority-ledger.cjs');
 
 /** Gecici ag/servis hatasi mi? Yalniz bunlar yeniden denenir. */
 const TRANSIENT = /(dial tcp|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|502 Bad Gateway|503|504|rate limit|secondary rate|timeout awaiting)/i;
@@ -81,6 +87,20 @@ function ghJson(args, cwd) {
   return out ? JSON.parse(out) : null;
 }
 
+function parseNameStatus(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const fields = line.split('\t');
+      const status = fields[0];
+      if (/^[RC]\d{1,3}$/.test(status)) {
+        return { status, previousPath: fields[1], path: fields[2] };
+      }
+      return { status, path: fields[1] };
+    });
+}
+
 /**
  * @param {object} o
  * @param {string} o.repoCwd canonical repository root
@@ -96,34 +116,52 @@ function createGhCloseoutAdapter(o) {
       return j ? j.nameWithOwner : null;
     },
 
+    async resolveAuthority(ref, atRef) {
+      return resolveCanonicalAuthority(ref, atRef, cwd);
+    },
+
     /**
-     * Authority ledger opsiyoneldir. Repo'da bir kayit varsa baglayicidir;
-     * yoksa null doner ve core reuse kontrolunu atlar (fail-open DEGIL:
-     * authorityRef ve type zaten zorunlu ve dogrulanmistir).
+     * Dry-run ledger olmadan yapisal gate'leri gosterebilir. Live kosuda core
+     * null'u MERGE_AUTHORITY_LEDGER_REQUIRED olarak reddeder. Schema-v2 JSON,
+     * entry/ledger digest ve conflict kontrolleri bu read sirasinda uygulanir.
      */
     async authorityLedgerEntry(ref) {
       const p = o.ledgerPath;
-      if (!p || !fs.existsSync(p)) return null;
+      if (!p) return null;
       try {
-        const ledger = JSON.parse(fs.readFileSync(p, 'utf8'));
-        return (ledger.entries || []).find((e) => e.authorityRef === ref) || null;
+        return loadLedgerEntry(p, ref);
       } catch (e) {
-        return null;
+        if (e instanceof LedgerError) {
+          return { __ledgerError: { code: e.code, detail: e.detail } };
+        }
+        return { __ledgerError: { code: 'MERGE_AUTHORITY_LEDGER_MALFORMED', detail: e && e.message } };
+      }
+    },
+
+    async validateCanonicalAuthorities(entry) {
+      try {
+        const semantic = resolveCanonicalAuthority(entry.semanticAuthorityRef, entry.authorizedBaseSha, cwd);
+        const execution = resolveCanonicalAuthority(entry.executionGrantRef, entry.authorizedBaseSha, cwd);
+        return { ok: true, semantic, execution };
+      } catch (e) {
+        return { ok: false, code: e.code || 'AUTHORITY_RESOLUTION_FAILED', detail: e.detail || e.message };
       }
     },
 
     async getPr(pr) {
       const j = ghJson(
-        ['pr', 'view', String(pr), '--json', 'state,mergeable,mergeStateStatus,headRefOid,headRefName,baseRefName,mergeCommit'],
+        ['pr', 'view', String(pr), '--json', 'number,state,mergeable,mergeStateStatus,headRefOid,headRefName,baseRefName,baseRefOid,mergeCommit'],
         cwd,
       );
       return {
+        number: j.number,
         state: j.state,
         mergeable: j.mergeable,
         mergeStateStatus: j.mergeStateStatus,
         headRefOid: j.headRefOid,
         headRefName: j.headRefName,
         baseRefName: j.baseRefName,
+        baseRefOid: j.baseRefOid,
         mergeCommitOid: j.mergeCommit ? j.mergeCommit.oid : null,
       };
     },
@@ -131,6 +169,10 @@ function createGhCloseoutAdapter(o) {
     async changedPaths(pr) {
       const j = ghJson(['pr', 'view', String(pr), '--json', 'files'], cwd);
       return (j.files || []).map((f) => f.path);
+    },
+
+    async changedScope(baseSha, headSha) {
+      return parseNameStatus(run('git', ['diff', '--name-status', baseSha + '...' + headSha], cwd));
     },
 
     async getChecks(pr) {
@@ -155,6 +197,20 @@ function createGhCloseoutAdapter(o) {
         cwd,
       );
       return out ? out.split('\n').filter(Boolean) : [];
+    },
+
+    async discoverPlatformRequiredChecks(branch) {
+      const out = run(
+        'gh',
+        ['api', 'repos/{owner}/{repo}/branches/' + branch + '/protection', '--jq', '.required_status_checks.contexts[]?'],
+        cwd,
+      );
+      return out ? out.split('\n').filter(Boolean) : [];
+    },
+
+    async currentBaseHead(branch) {
+      run('git', ['fetch', 'origin', branch], cwd);
+      return run('git', ['rev-parse', 'origin/' + branch], cwd);
     },
 
     async remoteBranchHead(branch) {
@@ -239,33 +295,26 @@ function createGhCloseoutAdapter(o) {
       return 'REMOVED';
     },
 
-    /**
-     * Owner 3.2: authority reference tuketildi olarak isaretlenir; ayni ref
-     * baska bir PR'da kullanilamaz. Ledger yoksa NO_LEDGER doner — kapanis
-     * gecerlidir, yalniz reuse korumasi kayit tutmaz.
-     */
+    /** Owner 3.2: v2 ledger atomik ve tek-kullanimli tuketilir. */
     async consumeAuthority(ref, meta) {
       const p = o.ledgerPath;
       if (!p) return 'NO_LEDGER';
-      let ledger = { entries: [] };
-      if (fs.existsSync(p)) {
-        try {
-          ledger = JSON.parse(fs.readFileSync(p, 'utf8'));
-        } catch (e) {
-          return 'LEDGER_UNREADABLE';
-        }
-      }
-      if (!Array.isArray(ledger.entries)) ledger.entries = [];
-      const existing = ledger.entries.find((e) => e.authorityRef === ref);
-      const stamp = {
+      const loaded = loadLedgerEntry(p, ref);
+      if (loaded && loaded.ledgerSchemaVersion === 2) return consumeLedgerFile(p, ref, meta);
+
+      // Schema-v1 compatibility for unrelated historical recovery. New live
+      // materialization never writes this shape.
+      let legacy = { schemaVersion: 1, entries: [] };
+      if (fs.existsSync(p)) legacy = JSON.parse(fs.readFileSync(p, 'utf8'));
+      const existing = (legacy.entries || []).find((entry) => entry.authorityRef === ref);
+      if (!existing) throw new LedgerError('MERGE_SUCCEEDED_LEDGER_CONSUMPTION_FAILED', 'legacy entry is missing');
+      Object.assign(existing, {
         consumed: true,
         consumedPr: meta ? meta.pr : null,
         consumedTaskId: meta ? meta.taskId : null,
         consumedMergeSha: meta ? meta.mergeSha : null,
-      };
-      if (existing) Object.assign(existing, stamp);
-      else ledger.entries.push(Object.assign({ authorityRef: ref }, stamp));
-      fs.writeFileSync(p, JSON.stringify(ledger, null, 2) + String.fromCharCode(10), 'utf8');
+      });
+      fs.writeFileSync(p, JSON.stringify(legacy, null, 2) + String.fromCharCode(10), 'utf8');
       return 'CONSUMED';
     },
 
@@ -282,4 +331,4 @@ function createGhCloseoutAdapter(o) {
   };
 }
 
-module.exports = { createGhCloseoutAdapter };
+module.exports = { createGhCloseoutAdapter, parseNameStatus };

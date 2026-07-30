@@ -20,6 +20,7 @@
 import { describe, expect, it } from 'vitest';
 
 const closeout = require('../../../../scripts/orchestration-v2/closeout/closeout.cjs');
+const liveLedger = require('../../../../scripts/orchestration-v2/closeout/merge-authority-ledger.cjs');
 
 const HEAD = 'a'.repeat(40);
 const MERGE_SHA = 'c'.repeat(40);
@@ -108,6 +109,30 @@ describe('closeout runner — required-path invariants', () => {
     expect(a.calls.squashMerge).toBe(0);
   });
 
+  it('keeps the rich live-ledger schema task-specific and single-use', () => {
+    expect(liveLedger.SCHEMA_VERSION).toBe(2);
+    expect(liveLedger.ALL_STATUSES.has('VALIDATED')).toBe(true);
+    expect(liveLedger.ALL_STATUSES.has('CONSUMED')).toBe(true);
+    expect(liveLedger.ALL_STATUSES.has('ACTIVE')).toBe(false);
+  });
+
+  it('refuses a consumed rich ledger even for the same task and PR', () => {
+    const result = closeout.checkAuthorityBinding(input({ programId: 'P' }), {
+      ledgerSchemaVersion: 2,
+      status: 'CONSUMED',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe(liveLedger.CODE.CONSUMED);
+  });
+
+  it('refuses a malformed ledger surfaced by the real adapter', () => {
+    const result = closeout.checkAuthorityBinding(input(), {
+      __ledgerError: { code: liveLedger.CODE.MALFORMED, detail: 'invalid JSON' },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe(liveLedger.CODE.MALFORMED);
+  });
+
   it('refuses to carry a consumed authority reference to another PR', async () => {
     const a = makeAdapter({
       authorityLedgerEntry: async () => ({
@@ -147,6 +172,22 @@ describe('closeout runner — required-path invariants', () => {
     expect(failed.calls.squashMerge).toBe(0);
   });
 
+  it('rechecks required CI immediately before the merge mutation', async () => {
+    let reads = 0;
+    const adapter = makeAdapter({
+      getChecks: async () => {
+        reads += 1;
+        return [{
+          name: 'A', status: 'COMPLETED',
+          conclusion: reads === 1 ? 'SUCCESS' : 'FAILURE',
+        }];
+      },
+    });
+    const result = await closeout.closeoutPr(input(), adapter);
+    expect(result.blockerCode).toBe(closeout.BLOCKER.CI_FAILED);
+    expect(adapter.calls.squashMerge).toBe(0);
+  });
+
   it('refuses to merge on head drift or a competing writer', async () => {
     const drift = makeAdapter();
     drift.state.pr.headRefOid = 'b'.repeat(40);
@@ -180,6 +221,7 @@ describe('closeout runner — required-path invariants', () => {
     expect(closeout.STAGES[0]).toBe('PREFLIGHT');
     expect(closeout.STAGES[closeout.STAGES.length - 1]).toBe('CLOSED');
     expect(closeout.STAGES.indexOf('MERGED')).toBeLessThan(closeout.STAGES.indexOf('MAIN_SYNCED'));
+    expect(closeout.STAGES.indexOf('LEDGER_CONSUMED')).toBeLessThan(closeout.STAGES.indexOf('WORKTREE_CLEANED'));
     expect(closeout.STAGES.indexOf('WORKTREE_CLEANED')).toBeLessThan(closeout.STAGES.indexOf('BRANCH_CLEANED'));
   });
 
@@ -188,7 +230,7 @@ describe('closeout runner — required-path invariants', () => {
     // icindeki syntax hatasi butun CI yesilken main'e gidebiliyordu.
         const mod = require('../../../../scripts/orchestration-v2/closeout/gh-adapter.cjs');
     const adapter = mod.createGhCloseoutAdapter({ repoCwd: process.cwd() });
-    for (const fn of ['getPr', 'squashMerge', 'syncMain', 'cleanupWorktree', 'cleanupBranch', 'consumeAuthority', 'verifyCanonical']) {
+    for (const fn of ['resolveAuthority', 'getPr', 'squashMerge', 'syncMain', 'cleanupWorktree', 'cleanupBranch', 'consumeAuthority', 'verifyCanonical']) {
       expect(typeof adapter[fn]).toBe('function');
     }
   });

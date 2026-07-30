@@ -31,6 +31,7 @@
  */
 
 const { evaluateCi } = require('../orchestrator/mergeready.cjs');
+const mergeAuthorityLedger = require('./merge-authority-ledger.cjs');
 
 /** Owner 3.2: yalniz task-bound authority tipleri. */
 const AUTHORITY_TYPES = Object.freeze([
@@ -49,6 +50,7 @@ const STAGES = Object.freeze([
   'MERGE_GATE_VALIDATED',
   'MERGED',
   'MAIN_SYNCED',
+  'LEDGER_CONSUMED',
   // Worktree ONCE: bir worktree branch'i checkout tutarken `git branch -D`
   // calismaz. Gercek akis R01 pilotunda duzeltilmisti ama bu sabit eski sirada
   // kalmisti; required invariant testi tutarsizligi yakaladi.
@@ -87,6 +89,21 @@ const BLOCKER = Object.freeze({
   UNEXPECTED_GITHUB_RESPONSE: 'UNEXPECTED_GITHUB_RESPONSE',
   TARGET_BRANCH_UNEXPECTED: 'TARGET_BRANCH_UNEXPECTED',
   REPOSITORY_IDENTITY_MISMATCH: 'REPOSITORY_IDENTITY_MISMATCH',
+  AUTHORITY_RESOLUTION_FAILED: 'AUTHORITY_RESOLUTION_FAILED',
+  AUTHORITY_REFS_NOT_DISTINCT: 'AUTHORITY_REFS_NOT_DISTINCT',
+  AUTHORIZED_HEAD_MISMATCH: 'AUTHORIZED_HEAD_MISMATCH',
+  AUTHORIZED_BASE_MISMATCH: 'AUTHORIZED_BASE_MISMATCH',
+  AUTHORIZED_SCOPE_MISMATCH: 'AUTHORIZED_SCOPE_MISMATCH',
+  REQUIRED_CHECKS_BINDING_MISMATCH: 'REQUIRED_CHECKS_BINDING_MISMATCH',
+  CHECKED_SHA_MISMATCH: 'CHECKED_SHA_MISMATCH',
+  CONFLICTING_MERGE_AUTHORITY_LEDGERS: 'CONFLICTING_MERGE_AUTHORITY_LEDGERS',
+  MERGE_AUTHORITY_LEDGER_MALFORMED: 'MERGE_AUTHORITY_LEDGER_MALFORMED',
+  MERGE_AUTHORITY_LEDGER_DIGEST_MISMATCH: 'MERGE_AUTHORITY_LEDGER_DIGEST_MISMATCH',
+  MERGE_AUTHORITY_LEDGER_REVOKED: 'MERGE_AUTHORITY_LEDGER_REVOKED',
+  MERGE_AUTHORITY_LEDGER_EXPIRED: 'MERGE_AUTHORITY_LEDGER_EXPIRED',
+  MERGE_AUTHORITY_LEDGER_INVALIDATED: 'MERGE_AUTHORITY_LEDGER_INVALIDATED',
+  MERGE_AUTHORITY_LEDGER_CONSUMED: 'MERGE_AUTHORITY_LEDGER_CONSUMED',
+  MERGE_SUCCEEDED_LEDGER_CONSUMPTION_FAILED: 'MERGE_SUCCEEDED_LEDGER_CONSUMPTION_FAILED',
 });
 
 const SHA40 = /^[0-9a-f]{40}$/;
@@ -168,12 +185,22 @@ function checkAuthorityBinding(input, ledgerEntry) {
   // reuse korumasi da yoktur. Dry-run ledger'siz calisabilir — hicbir mutation
   // yapmadigi icin tuketilecek bir sey de yoktur.
   if (!ledgerEntry) {
-    if (input && input.dryRun === true) return { ok: true };
+    if (input && input.dryRun === true) return { ok: true, liveReady: false };
     return {
       ok: false,
       code: BLOCKER.MERGE_AUTHORITY_LEDGER_REQUIRED,
       detail: 'live closeout requires an authority ledger entry for ' + (input && input.authorityRef),
     };
+  }
+  if (ledgerEntry.__ledgerError) {
+    return {
+      ok: false,
+      code: ledgerEntry.__ledgerError.code || BLOCKER.MERGE_AUTHORITY_LEDGER_MALFORMED,
+      detail: ledgerEntry.__ledgerError.detail || 'ledger could not be validated',
+    };
+  }
+  if (ledgerEntry.ledgerSchemaVersion === mergeAuthorityLedger.SCHEMA_VERSION) {
+    return mergeAuthorityLedger.validateLiveLedgerBinding(input, ledgerEntry);
   }
   // Ledger kaydinin baglayici alanlari eksikse binding dogrulanamaz.
   for (const field of ['taskId', 'pr']) {
@@ -203,7 +230,7 @@ function checkAuthorityBinding(input, ledgerEntry) {
       };
     }
     // Ayni task + ayni PR: recovery kosusu mesrudur (owner 3.8).
-    return { ok: true };
+    return { ok: true, liveReady: true, legacy: true };
   }
   if (ledgerEntry.taskId && ledgerEntry.taskId !== input.taskId) {
     return { ok: false, code: BLOCKER.MERGE_AUTHORITY_TASK_MISMATCH, detail: 'ref bound to task ' + ledgerEntry.taskId };
@@ -227,7 +254,7 @@ function checkAuthorityBinding(input, ledgerEntry) {
       detail: 'ledger expectedHead ' + ledgerEntry.expectedHead + ' does not match',
     };
   }
-  return { ok: true };
+  return { ok: true, liveReady: true, legacy: true };
 }
 
 /** Owner 3.4/7: changed path'ler yetkili exact scope icinde mi. */
@@ -297,6 +324,12 @@ function baseResult(input) {
     blockerCode: null,
     authorityConsumed: null,
     dryRun: input.dryRun === true,
+    structuralEligibility: null,
+    liveAuthorityReadiness: null,
+    ledgerSchemaVersion: null,
+    ledgerFinalStatus: null,
+    mergePerformedBy: 'NONE',
+    manualFallback: 'NOT_USED',
   };
 }
 
@@ -319,8 +352,31 @@ async function closeoutPr(input, adapter) {
   }
 
   // --- authority (owner 3.2)
-  const bind = checkAuthorityBinding(input, await adapter.authorityLedgerEntry(input.authorityRef));
+  const ledgerEntry = await adapter.authorityLedgerEntry(input.authorityRef);
+  const bind = checkAuthorityBinding(input, ledgerEntry);
   if (!bind.ok) return Object.assign(out, blocked('PREFLIGHT', bind.code, bind.detail));
+  out.liveAuthorityReadiness = bind.liveReady === false ? 'MISSING' : 'READY';
+  out.ledgerSchemaVersion = ledgerEntry && ledgerEntry.ledgerSchemaVersion || null;
+  if (out.ledgerSchemaVersion === mergeAuthorityLedger.SCHEMA_VERSION) {
+    if (typeof adapter.validateCanonicalAuthorities !== 'function') {
+      return Object.assign(out, blocked('PREFLIGHT', BLOCKER.AUTHORITY_RESOLUTION_FAILED, 'adapter cannot re-resolve canonical authority'));
+    }
+    const resolved = await adapter.validateCanonicalAuthorities(ledgerEntry);
+    if (!resolved || !resolved.ok) {
+      return Object.assign(out, blocked('PREFLIGHT', (resolved && resolved.code) || BLOCKER.AUTHORITY_RESOLUTION_FAILED, resolved && resolved.detail));
+    }
+    try {
+      mergeAuthorityLedger.validateAuthorityRecords({
+        programId: input.programId,
+        taskId: input.taskId,
+        semanticAuthorityRef: ledgerEntry.semanticAuthorityRef,
+        executionGrantRef: ledgerEntry.executionGrantRef,
+        issuedBy: ledgerEntry.issuedBy,
+      }, resolved.semantic, resolved.execution);
+    } catch (error) {
+      return Object.assign(out, blocked('PREFLIGHT', error.code || BLOCKER.AUTHORITY_RESOLUTION_FAILED, error.detail || error.message));
+    }
+  }
   out.stage = 'AUTHORITY_VALIDATED';
 
   const pr = await adapter.getPr(input.pr);
@@ -344,6 +400,21 @@ async function closeoutPr(input, adapter) {
   if (input.targetBranch && pr.baseRefName !== input.targetBranch) {
     return Object.assign(out, blocked('PR_IDENTITY_VALIDATED', BLOCKER.TARGET_BRANCH_UNEXPECTED, pr.baseRefName));
   }
+  if (out.ledgerSchemaVersion === mergeAuthorityLedger.SCHEMA_VERSION) {
+    if (pr.number !== input.pr) {
+      return Object.assign(out, blocked('PR_IDENTITY_VALIDATED', BLOCKER.MERGE_AUTHORITY_PR_MISMATCH, String(pr.number)));
+    }
+    if (pr.baseRefOid !== ledgerEntry.authorizedBaseSha) {
+      return Object.assign(out, blocked('PR_IDENTITY_VALIDATED', BLOCKER.AUTHORIZED_BASE_MISMATCH, String(pr.baseRefOid)));
+    }
+    const currentBase = await adapter.currentBaseHead(input.targetBranch || pr.baseRefName);
+    if (currentBase !== ledgerEntry.authorizedBaseSha) {
+      return Object.assign(out, blocked('PR_IDENTITY_VALIDATED', BLOCKER.AUTHORIZED_BASE_MISMATCH, String(currentBase)));
+    }
+    if (pr.headRefName !== ledgerEntry.taskBranch) {
+      return Object.assign(out, blocked('PR_IDENTITY_VALIDATED', BLOCKER.MERGE_AUTHORITY_PR_MISMATCH, String(pr.headRefName)));
+    }
+  }
   if (pr.headRefOid !== input.expectedHead) {
     return Object.assign(out, blocked('PR_IDENTITY_VALIDATED', BLOCKER.PR_HEAD_MISMATCH, pr.headRefOid));
   }
@@ -360,7 +431,15 @@ async function closeoutPr(input, adapter) {
   out.stage = 'PR_IDENTITY_VALIDATED';
 
   // --- scope (owner 3.4/7)
-  out.changedPaths = await adapter.changedPaths(input.pr);
+  if (out.ledgerSchemaVersion === mergeAuthorityLedger.SCHEMA_VERSION) {
+    const observedScope = await adapter.changedScope(ledgerEntry.authorizedBaseSha, ledgerEntry.authorizedHeadSha);
+    if (!mergeAuthorityLedger.sameScope(observedScope, ledgerEntry.allowlist)) {
+      return Object.assign(out, blocked('SCOPE_VALIDATED', BLOCKER.AUTHORIZED_SCOPE_MISMATCH, 'git name-status differs from ledger'));
+    }
+    out.changedPaths = observedScope.map((entry) => entry.path);
+  } else {
+    out.changedPaths = await adapter.changedPaths(input.pr);
+  }
   const sc = checkScope(out.changedPaths, input.allowedPaths);
   if (!sc.ok) {
     return Object.assign(out, blocked('SCOPE_VALIDATED', BLOCKER.CHANGED_PATH_SCOPE_FORBIDDEN, sc.outside.join(', ')));
@@ -379,9 +458,30 @@ async function closeoutPr(input, adapter) {
   // --- CI (owner 3.4/11-13, 3.5)
   const checks = await adapter.getChecks(input.pr);
   out.ci = checks.map((c) => ({ name: c.name, status: c.status, conclusion: c.conclusion }));
+  let platformRequired;
+  try {
+    platformRequired = out.ledgerSchemaVersion === mergeAuthorityLedger.SCHEMA_VERSION
+      && typeof adapter.discoverPlatformRequiredChecks === 'function'
+      ? await adapter.discoverPlatformRequiredChecks(input.targetBranch || 'main')
+      : await adapter.platformRequiredChecks();
+  } catch (error) {
+    return Object.assign(out, blocked('CI_TERMINAL', BLOCKER.REQUIRED_CHECKS_BINDING_MISMATCH, error && error.message));
+  }
+  if (out.ledgerSchemaVersion === mergeAuthorityLedger.SCHEMA_VERSION) {
+    const ledgerRequired = ledgerEntry.requiredChecks.map((entry) => entry.name);
+    const currentRequired = [...new Set([
+      ...(platformRequired || []),
+      ...(input.governanceRequiredChecks || []),
+      ...(input.requiredChecks || []),
+    ])];
+    if (!sameStringSetForCloseout(ledgerRequired, currentRequired)
+      || ledgerEntry.requiredChecks.some((entry) => entry.checkedSha !== input.expectedHead || entry.conclusion !== 'SUCCESS')) {
+      return Object.assign(out, blocked('CI_TERMINAL', BLOCKER.REQUIRED_CHECKS_BINDING_MISMATCH, 'required-check set or checked SHA differs'));
+    }
+  }
   const ci = classifyCi(checks, {
     taskSpecRequired: input.requiredChecks || [],
-    platformRequired: await adapter.platformRequiredChecks(),
+    platformRequired,
     governanceRequired: input.governanceRequiredChecks || [],
   });
   if (!ci.pass) return Object.assign(out, blocked('CI_TERMINAL', ci.code, ci.detail));
@@ -392,7 +492,12 @@ async function closeoutPr(input, adapter) {
   out.stage = 'MERGE_GATE_VALIDATED';
 
   if (out.dryRun) {
-    return Object.assign(out, { status: 'DRY_RUN_ELIGIBLE', blockerCode: null });
+    return Object.assign(out, {
+      status: 'DRY_RUN_ELIGIBLE',
+      structuralEligibility: 'DRY_RUN_STRUCTURALLY_ELIGIBLE',
+      liveAuthorityReadiness: out.liveAuthorityReadiness === 'READY' ? 'LIVE_AUTHORITY_READY' : 'LIVE_AUTHORITY_MISSING',
+      blockerCode: null,
+    });
   }
 
   // --- merge (owner 3.6): TOCTOU icin identity ve head son anda tekrar dogrulanir
@@ -405,9 +510,24 @@ async function closeoutPr(input, adapter) {
   if (fresh.headRefOid !== input.expectedHead) {
     return Object.assign(out, blocked('MERGE_GATE_VALIDATED', BLOCKER.PR_HEAD_MISMATCH, fresh.headRefOid));
   }
+  const finalChecks = await adapter.getChecks(input.pr);
+  const finalCi = classifyCi(finalChecks, {
+    taskSpecRequired: input.requiredChecks || [],
+    platformRequired,
+    governanceRequired: input.governanceRequiredChecks || [],
+  });
+  if (!finalCi.pass) {
+    return Object.assign(out, blocked('MERGE_GATE_VALIDATED', finalCi.code, finalCi.detail));
+  }
+  out.ci = finalChecks.map((check) => ({
+    name: check.name,
+    status: check.status,
+    conclusion: check.conclusion,
+  }));
   let merged;
   try {
     merged = await adapter.squashMerge(input.pr);
+    out.mergePerformedBy = 'LIVE_RUNNER';
   } catch (e) {
     return Object.assign(out, blocked('MERGE_GATE_VALIDATED', BLOCKER.MERGE_FAILED, e && e.message));
   }
@@ -441,6 +561,35 @@ async function recoverAfterMerge(out, input, adapter) {
     }
     out.stage = 'MAIN_SYNCED';
 
+    // Consumption immediately follows verified merge/main ancestry and happens
+    // before cleanup. A v2 ledger must become CONSUMED exactly once; a failed
+    // atomic write is a terminal post-merge residual, never a silent CLOSE.
+    if (typeof adapter.consumeAuthority === 'function') {
+      try {
+        out.authorityConsumed = await adapter.consumeAuthority(input.authorityRef, {
+          taskId: input.taskId,
+          pr: input.pr,
+          expectedHead: input.expectedHead,
+          mergeSha: out.mergeSha,
+        });
+      } catch (error) {
+        return Object.assign(out, {
+          status: 'MERGED_CLEANUP_BLOCKED',
+          blockerCode: BLOCKER.MERGE_SUCCEEDED_LEDGER_CONSUMPTION_FAILED,
+          detail: redact((error && (error.code || error.message)) || 'ledger consumption failed'),
+        });
+      }
+      if (out.authorityConsumed === 'CONSUMED') out.ledgerFinalStatus = 'CONSUMED';
+      if (out.ledgerSchemaVersion === mergeAuthorityLedger.SCHEMA_VERSION && out.authorityConsumed !== 'CONSUMED') {
+        return Object.assign(out, {
+          status: 'MERGED_CLEANUP_BLOCKED',
+          blockerCode: BLOCKER.MERGE_SUCCEEDED_LEDGER_CONSUMPTION_FAILED,
+          detail: String(out.authorityConsumed),
+        });
+      }
+      if (out.authorityConsumed === 'CONSUMED') out.stage = 'LEDGER_CONSUMED';
+    }
+
     // Worktree ONCE kaldirilir: worktree bir branch'i checkout tutarken
     // `git branch -D` calismaz. Pilot bunu ortaya cikardi — branch cleanup once
     // kosuyor, sessizce basarisiz oluyor ve yine de DELETED raporluyordu.
@@ -460,16 +609,6 @@ async function recoverAfterMerge(out, input, adapter) {
     if (out.canonicalVerification !== 'OK') {
       return Object.assign(out, { status: 'MERGED_CLEANUP_BLOCKED', stage: 'CANONICAL_VERIFIED', blockerCode: BLOCKER.CANONICAL_VERIFICATION_FAILED });
     }
-    // Owner 3.2: ayni authority reference ikinci bir PR'da kullanilamaz. Kapanis
-    // basarili oldugunda reference tuketilmis olarak kaydedilir; ledger yoksa
-    // adapter no-op doner ve kapanis yine de gecerlidir.
-    if (typeof adapter.consumeAuthority === 'function') {
-      out.authorityConsumed = await adapter.consumeAuthority(input.authorityRef, {
-        taskId: input.taskId,
-        pr: input.pr,
-        mergeSha: out.mergeSha,
-      });
-    }
     out.stage = 'CLOSED';
     return Object.assign(out, { status: 'CLOSED', blockerCode: null });
   } catch (e) {
@@ -481,12 +620,21 @@ async function recoverAfterMerge(out, input, adapter) {
   }
 }
 
+function sameStringSetForCloseout(left, right) {
+  const a = [...new Set((left || []).map(String))].sort();
+  const b = [...new Set((right || []).map(String))].sort();
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /** Owner 3.9: kisa insan-okunur ozet. */
 function formatReport(r) {
   const lines = [
     'TASK        ' + r.taskId,
     'PR          #' + r.pr,
     'AUTHORITY   ' + r.authorityType + ' (' + r.authorityRef + ')',
+    'STRUCTURAL  ' + (r.structuralEligibility || '-'),
+    'LIVE AUTH   ' + (r.liveAuthorityReadiness || '-'),
+    'LEDGER      schema ' + (r.ledgerSchemaVersion || '-'),
     'STATUS      ' + r.status,
     'STAGE       ' + r.stage,
     'HEAD        expected ' + r.expectedHead + ' / observed ' + (r.observedHead || '-'),
