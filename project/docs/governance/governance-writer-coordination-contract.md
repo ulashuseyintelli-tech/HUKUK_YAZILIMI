@@ -1276,3 +1276,68 @@ application code, Prisma/schema/migration, UYAP, OFFICE, AWS/IAM/KMS, runtime
 activation, signing veya signed release yetkisi üretmez. Stage 1 approved merge
 ile `CONSUMED / NON-REUSABLE` olur; Stage 2 ve target ratification ayrı gate'te
 kalır.
+
+## OFFICE SPRING-CLEANING RECONCILIATION — exact authority-bootstrap binding
+
+Bu bölüm yalnız owner tarafından önceden ratifiye edilen aşağıdaki tek OFFICE
+authority materialization tuple'ını sınıflandırır. Genel bootstrap, standing
+authority veya ordinary control-plane write yetkisi üretmez.
+
+```text
+bootstrapId : OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01
+programId : OFFICE-SPRING-CLEANING-R01
+targetTaskId : OFFICE-SPRING-CLEANING-RECONCILIATION-R01
+workspaceModule : CROSS_MODULE
+workspaceScope : OFFICE / SHARED_CONTROL_PLANE
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+ownerAuthorityRef : OWNER-RATIFICATION-AND-EXECUTION-GRANT-PR1954-POST-MERGE-RECONCILIATION-2026-07-30
+issuedAt : 2026-07-30
+```
+
+### Control-plane binding PR
+
+```text
+Task ID  : OFFICE-SPRING-CLEANING-RECONCILIATION-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : 057f1c84cbdc3f7845c5722aa348e34876dbfb0e
+Head ref : codex/office-spring-cleaning-authority-bootstrap-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT
+```
+
+### Fresh R02 authority materialization
+
+```text
+Historical pull request : 1967
+Historical disposition : CLOSED_NOT_MERGED_NOT_REOPENED
+Historical canonical authority source : NO
+Task ID  : OFFICE-SPRING-CLEANING-RECONCILIATION-R01-AUTHORITY-MATERIALIZATION-R02
+Mode     : OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_MATERIALIZATION_R02
+materializationBasePolicy : CURRENT_CANONICAL_BINDING_DESCENDANT
+Head ref : codex/office-spring-cleaning-reconciliation-r01-authority-r02
+Scope    : M project/docs/governance/decision-log.md
+           A project/docs/governance/coordination-execution-grants/OFFICE-SPRING-CLEANING-RECONCILIATION-R01-EG01.md
+Semantic kind   : SEMANTIC_AUTHORITY
+Semantic path   : project/docs/governance/decision-log.md
+Semantic record : OFFICE-SPRING-CLEANING-RECONCILIATION-R01-SA01
+Execution kind   : EXECUTION_GRANT
+Execution path   : project/docs/governance/coordination-execution-grants/OFFICE-SPRING-CLEANING-RECONCILIATION-R01-EG01.md
+Execution record : OFFICE-SPRING-CLEANING-RECONCILIATION-R01-EG01
+exactPathStatusBinding : REQUIRED
+secondMaterialization : PROHIBITED
+ordinaryControlPlaneDiff : PROHIBITED
+requiredCiBypass : PROHIBITED
+```
+
+Validator yalnız exact program/task, distinct SA/EG locator, owner identity,
+`GO-COMPLETE`, exact `M/A` iki-dosya seti, tekil marker/structured record,
+canonical binding ancestry ve EG içindeki actual materialization base SHA
+birlikte doğrulandığında bu tuple'ı kabul eder. PR #1967 historical kayıttır;
+yeniden açılmaz ve canonical authority source değildir.
+Eksik veya fazla path, status/branch/record drift'i, başka authority kaydı,
+cross-task reuse ve ikinci materialization fail-closed reddedilir. Bu kabul
+yalnız scope classification'dır; required CI, merge ve live closeout gate'lerini
+bypass etmez.
