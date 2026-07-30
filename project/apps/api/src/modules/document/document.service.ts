@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { PrismaService } from "../../prisma/prisma.service";
 import { TemplateService, DocumentData } from "./template.service";
 import { TDocumentDefinitions } from "pdfmake/interfaces";
+import { resolveClientAddress } from "../client/client-address-resolver";
 
 @Injectable()
 export class DocumentService {
@@ -41,7 +42,16 @@ export class DocumentService {
     const caseData = await this.prisma.case.findFirst({
       where,
       include: {
-        client: true,
+        client: {
+          include: {
+            // I07: resmi çıktı yapısal ClientAddress'i (varsa) OKUR; yazım yolu DEĞİŞMEDİ.
+            // I01/I03 ile AYNI sözleşme: yalnız isCurrent=true, isPrimary desc sıralı.
+            addresses: {
+              where: { isCurrent: true },
+              orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            },
+          },
+        },
         debtors: {
           where: { lifecycleStatus: 'ACTIVE' },
           include: { debtor: true },
@@ -99,16 +109,20 @@ export class DocumentService {
       creditor: {
         name: caseData.client?.name || "Alacaklı",
         identityNo: caseData.client?.identityNo || undefined,
-        // CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01: `Client.address` şemada `String?`dir
-        // (schema.prisma, Client modeli). Eski ifade `(caseData.client?.address as any)?.text`
-        // idi — düz string üzerinde `.text` HER ZAMAN undefined döner, yani alacaklı adresi
-        // UYAP XML'ine ve icra belgelerine SESSİZCE BOŞ gidiyordu; `as any` cast'i de tip
-        // sisteminin bunu yakalamasını engelliyordu. Kontrat `address?: string`
-        // (template.service.ts DocumentData) ve tüketiciler `|| "-"` uygular → yok/boş
-        // durumda `undefined` sözleşmeye uygun davranıştır.
-        // KAPSAM SINIRI: yalnız legacy flat kolon okunur. `ClientAddress` (çok-adres)
-        // çözümü ARC-07'nin ayrı, henüz owner-kararı verilmemiş dilimidir; BURADA YAPILMAZ.
-        address: caseData.client?.address?.trim() || undefined,
+        // CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 (kök neden düzeltmesi) →
+        // CLIENT-ARC-07-OFFICIAL-CONSUMER-ADAPTER-I07 (kaynak-otorite retarget'ı, owner GO):
+        // artık ORTAK `resolveClientAddress()` kullanılır — yapısal ClientAddress satırı
+        // varsa (isCurrent=true, isPrimary önce) O KAZANIR; yoksa legacy flat kolona
+        // (`Client.address/city/district/region/postalCode`) AÇIKÇA düşer. Legacy yazım
+        // yolu DURDURULMADI (§49.6 D05 Stage 1); bu yalnız OKUMA kaynağını değiştirir.
+        address: resolveClientAddress({
+          address: caseData.client?.address,
+          city: caseData.client?.city,
+          district: caseData.client?.district,
+          region: caseData.client?.region,
+          postalCode: caseData.client?.postalCode,
+          addresses: (caseData.client as any)?.addresses,
+        }).line || undefined,
       },
       debtor: {
         name: debtor?.name || "Borçlu",
