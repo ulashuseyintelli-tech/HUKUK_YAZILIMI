@@ -1,6 +1,10 @@
-import { Body, Controller, Delete, Param, Post, Put, Request, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ClientAddressService } from './client-address.service';
+import {
+  CLIENT_ADDRESS_LIST_STATUSES,
+  ClientAddressService,
+  type ClientAddressListStatus,
+} from './client-address.service';
 import {
   ArchiveClientAddressDto,
   CreateClientAddressDto,
@@ -20,6 +24,34 @@ interface AuthRequest {
 @UseGuards(JwtAuthGuard)
 export class ClientAddressController {
   constructor(private readonly clientAddressService: ClientAddressService) {}
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - ClientAddressController.list() -> GET /clients/:clientId/addresses?status=active|archived|all
+  ///
+  /// I03 (charter §49.7 / ARC-07-D06): STAFF-ONLY aktif ve arşiv adres okuma sözleşmesi.
+  /// Tek endpoint + sınırlı query parametresi seçildi (repo konvansiyonu: ayrı /history
+  /// endpoint'i yerine mevcut nested collection path'i genişletilir). PORTAL ROUTE AÇILMADI —
+  /// portal expozürü ayrı bir CLIENT visibility policy kararı gerektirir.
+  ///
+  /// Bilinmeyen `status` SESSİZCE 'active'e düşmez: fail-closed 400 döner, aksi halde hatalı
+  /// bir istemci arşiv kayıtlarını görmediği hâlde "hepsi bu" sanabilirdi.
+  /// </remarks>
+  @Get('clients/:clientId/addresses')
+  list(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Query('status') status?: string,
+  ) {
+    const normalized = (status ?? 'active') as ClientAddressListStatus;
+    if (!CLIENT_ADDRESS_LIST_STATUSES.includes(normalized)) {
+      throw new BadRequestException({
+        code: 'CLIENT_ADDRESS_INVALID_STATUS_FILTER',
+        message: 'Geçersiz adres durumu filtresi.',
+      });
+    }
+    return this.clientAddressService.findForClient(req.user.tenantId, clientId, normalized);
+  }
 
   /// <remarks>
   /// Cagrildigi yerler:

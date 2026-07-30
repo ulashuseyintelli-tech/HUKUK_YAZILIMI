@@ -28,6 +28,26 @@ export interface ClientContact {
 /** Kanonik adres türü (Prisma ClientAddressType). */
 export type ClientAddressType = 'MERNIS' | 'TICARI' | 'TEBLIGAT' | 'FATURA' | 'BEYAN';
 
+/**
+ * ARC-07 I03 — staff adres okuma filtresi (GET /clients/:clientId/addresses?status=...).
+ * `active` = yalnız `isCurrent:true` · `archived` = yalnız `isCurrent:false` · `all` = ikisi.
+ */
+export type ClientAddressListStatus = 'active' | 'archived' | 'all';
+
+/**
+ * ARC-07 I02 arşivleme payload'ı. `replacementPrimaryAddressId` YALNIZ birincil adres
+ * arşivlenirken ve geride başka güncel adres kaldığında zorunludur; UI aday listesini
+ * aynı müvekkilin GÜNCEL ve hedef-olmayan adreslerinden kurar.
+ */
+export interface ClientAddressArchivePayload {
+  replacementPrimaryAddressId?: string;
+}
+
+/** ARC-07 I02 geri alma payload'ı. `makePrimary` yalnız AÇIK istekle birinciliği devreder. */
+export interface ClientAddressRestorePayload {
+  makePrimary?: boolean;
+}
+
 /** Çok-adres kaydı (Prisma ClientAddress). findOne() yalnız isCurrent:true satırları döner. */
 export interface ClientAddress {
   id: string;

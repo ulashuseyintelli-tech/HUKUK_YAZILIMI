@@ -496,11 +496,18 @@ describe('ARC-07 I02 — kapsam sınırları', () => {
     expect(DTO_SOURCE).not.toMatch(/isCurrent\?:/);
   });
 
-  it('[31] açık POST route\'ları var; GET/history endpoint YOK (I03 sınırı)', () => {
+  it('[31] açık POST aksiyon route\'ları KORUNUR; I03 okuma route\'u eklendi, aksiyonlar çoğaltılmadı', () => {
     expect(CONTROLLER_SOURCE).toMatch(/@Post\('clients\/:clientId\/addresses\/:addressId\/archive'\)/);
     expect(CONTROLLER_SOURCE).toMatch(/@Post\('clients\/:clientId\/addresses\/:addressId\/restore'\)/);
-    expect(CONTROLLER_SOURCE).not.toMatch(/@Get\(/);
-    expect(CONTROLLER_SOURCE).not.toMatch(/history/i);
+    // I03 KASITLI GÜNCELLEME: bu test I02'de "GET route YOK" sınırını pinliyordu.
+    // `CLIENT-ARC-07-STAFF-HISTORY-I03` staff-only okuma sözleşmesini ekledi (charter §49.7).
+    // Sınır GEVŞETİLMEDİ, İLERLETİLDİ — tek GET vardır ve nested/scope'lu koleksiyondur.
+    expect(CONTROLLER_SOURCE.match(/@Get\(/g) ?? []).toHaveLength(1);
+    expect(CONTROLLER_SOURCE).toMatch(/@Get\('clients\/:clientId\/addresses'\)/);
+    // Adres-kimliğine göre KAPSAMSIZ tekil GET AÇILMADI (IDOR yüzeyi yok).
+    expect(CONTROLLER_SOURCE).not.toMatch(/@Get\('addresses/);
+    // I02 mutation aksiyonları YENİDEN TANIMLANMADI — tam 3 POST (create + archive + restore).
+    expect(CONTROLLER_SOURCE.match(/@Post\(/g) ?? []).toHaveLength(3);
   });
 
   it('[32] PORTAL expozürü YOK — tek guard JwtAuthGuard, portal guard/import/route yok', () => {

@@ -15,6 +15,10 @@ vi.mock('@/lib/api', async (importOriginal) => {
       createClientAddress: vi.fn(),
       updateClientAddress: vi.fn(),
       deleteClientAddress: vi.fn(),
+      // ARC-07 I03: staff arsiv okumasi + I02 aksiyonlari
+      getClientAddresses: vi.fn(),
+      archiveClientAddress: vi.fn(),
+      restoreClientAddress: vi.fn(),
     },
   };
 });
@@ -27,6 +31,9 @@ const apiMock = api as unknown as {
   createClientAddress: ReturnType<typeof vi.fn>;
   updateClientAddress: ReturnType<typeof vi.fn>;
   deleteClientAddress: ReturnType<typeof vi.fn>;
+  getClientAddresses: ReturnType<typeof vi.fn>;
+  archiveClientAddress: ReturnType<typeof vi.fn>;
+  restoreClientAddress: ReturnType<typeof vi.fn>;
 };
 
 const rightPanelSnapshot = {
@@ -74,6 +81,7 @@ describe('ClientAddressSection — flat fallback (addresses boş)', () => {
       data: { ...baseClient, address: 'Atatürk Cad. No:5', city: 'İstanbul', district: 'Kadıköy', addresses: [] },
     });
     apiMock.getCases.mockResolvedValue({ data: [] });
+    apiMock.getClientAddresses.mockResolvedValue([]);
   });
 
   it('addresses=[] iken flat clientPrimaryAddress() fallback gösterilir', async () => {
@@ -118,6 +126,7 @@ describe('ClientAddressSection — çok-adres listesi', () => {
     vi.clearAllMocks();
     apiMock.getClient.mockResolvedValue({ data: { ...baseClient, addresses } });
     apiMock.getCases.mockResolvedValue({ data: [] });
+    apiMock.getClientAddresses.mockResolvedValue([]);
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
@@ -153,21 +162,96 @@ describe('ClientAddressSection — çok-adres listesi', () => {
     await waitFor(() => expect(apiMock.getClient).toHaveBeenCalledTimes(2));
   });
 
-  it('primary adres silme reddinde backend mesajı aynen gösterilir', async () => {
-    apiMock.deleteClientAddress.mockRejectedValue(
-      new Error('Bu adres birincil (primary) — silmeden önce başka bir adresi birincil yapın.'),
-    );
+  it('ARC-07 I03: fiziksel silme aksiyonu personel arayüzünde SUNULMAZ; yerine Arşivle vardır', async () => {
+    // I03 §7 KASITLI DEĞİŞİKLİK: bu test eskiden "Sil" butonuna tıklayıp backend'in primary-silme
+    // reddini gösteriyordu. I02 fiziksel silmeyi KOŞULSUZ fail-closed yaptığı için silme artık
+    // ulaşılabilir bir personel aksiyonu DEĞİLDİR. Test GEVŞETİLMEDİ — DELETE'in hiç sunulmadığı
+    // ve arşivlemenin DELETE olarak yeniden etiketlenmediği ayrıca kanıtlanır.
     await openIdentityTab();
 
-    // VER-02: "Cadde 1" header + sekme olmak üzere 2 yerde (bkz. yukarıdaki davranış notu).
     await waitFor(() => expect(screen.getAllByText(/Cadde 1/).length).toBeGreaterThanOrEqual(2));
-    const silButtons = screen.getAllByText('Sil');
-    fireEvent.click(silButtons[0]); // addr-1 = primary satır
+    expect(screen.queryByText('Sil')).toBeNull();
+    expect(screen.getAllByText('Arşivle').length).toBeGreaterThanOrEqual(1);
+    expect(apiMock.deleteClientAddress).not.toHaveBeenCalled();
+  });
+
+  it('ARC-07 I03: birincil adres arşivlenirken yerine geçecek birincil AÇIKÇA seçtirilir', async () => {
+    apiMock.archiveClientAddress.mockResolvedValue({ id: 'addr-1', isCurrent: false });
+    await openIdentityTab();
+
+    await waitFor(() => expect(screen.getAllByText(/Cadde 1/).length).toBeGreaterThanOrEqual(2));
+    fireEvent.click(screen.getAllByText('Arşivle')[0]); // addr-1 = birincil
+
+    // Onay modali replacement seçimi ister; seçim yapılmadan onay butonu DEVRE DIŞIDIR.
+    const select = (await screen.findByLabelText('Yeni birincil adres')) as HTMLSelectElement;
+    const confirmBtn = screen.getAllByRole('button', { name: 'Arşivle' }).slice(-1)[0] as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(true);
+    // Aday listesi hedefi İÇERMEZ (yalnız addr-2 + "Seçiniz").
+    expect(select.querySelectorAll('option')).toHaveLength(2);
+    expect(select.querySelector('option[value="addr-1"]')).toBeNull();
+    expect(select.querySelector('option[value="addr-2"]')).toBeTruthy();
+
+    fireEvent.change(select, { target: { value: 'addr-2' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Arşivle' }).slice(-1)[0]);
 
     await waitFor(() =>
-      expect(
-        screen.getByText('Bu adres birincil (primary) — silmeden önce başka bir adresi birincil yapın.'),
-      ).toBeTruthy(),
+      expect(apiMock.archiveClientAddress).toHaveBeenCalledWith('client-1', 'addr-1', {
+        replacementPrimaryAddressId: 'addr-2',
+      }),
     );
+  });
+
+  it('ARC-07 I03: arşivlenmiş adresler AYRI listede gösterilir ve aktif listeye karışmaz', async () => {
+    apiMock.getClientAddresses.mockResolvedValue([
+      {
+        id: 'addr-9',
+        clientId: 'client-1',
+        type: 'FATURA',
+        street: 'Eski Cadde 9',
+        city: 'İzmir',
+        district: 'Konak',
+        region: null,
+        postalCode: null,
+        isPrimary: false,
+        isCurrent: false,
+      },
+    ]);
+    await openIdentityTab();
+
+    await waitFor(() => expect(screen.getByText('Arşivlenmiş Adresler')).toBeTruthy());
+    expect(screen.getByText(/Eski Cadde 9/)).toBeTruthy();
+    expect(screen.getByText('Arşivlendi')).toBeTruthy();
+    // Arşiv satırı için "Birincil Yap" SUNULMAZ; yalnız "Geri Al" vardır.
+    expect(screen.getAllByText('Birincil Yap')).toHaveLength(1); // yalnız aktif addr-2
+    expect(screen.getByText('Geri Al')).toBeTruthy();
+    expect(apiMock.getClientAddresses).toHaveBeenCalledWith('client-1', 'archived');
+  });
+
+  it('ARC-07 I03: geri alma VARSAYILAN olarak birincil YAPMAZ', async () => {
+    apiMock.getClientAddresses.mockResolvedValue([
+      {
+        id: 'addr-9',
+        clientId: 'client-1',
+        type: 'FATURA',
+        street: 'Eski Cadde 9',
+        city: 'İzmir',
+        district: 'Konak',
+        region: null,
+        postalCode: null,
+        isPrimary: false,
+        isCurrent: false,
+      },
+    ]);
+    apiMock.restoreClientAddress.mockResolvedValue({ id: 'addr-9', isCurrent: true });
+    await openIdentityTab();
+
+    await waitFor(() => expect(screen.getByText('Geri Al')).toBeTruthy());
+    fireEvent.click(screen.getByText('Geri Al'));
+
+    // Modaldaki onay butonuna basılır (checkbox işaretlenmez → makePrimary gönderilmez).
+    await waitFor(() => expect(screen.getByText('Adresi Geri Al')).toBeTruthy());
+    fireEvent.click(screen.getAllByRole('button', { name: 'Geri Al' }).slice(-1)[0]);
+
+    await waitFor(() => expect(apiMock.restoreClientAddress).toHaveBeenCalledWith('client-1', 'addr-9', {}));
   });
 });

@@ -848,6 +848,37 @@ class ApiClient {
     });
   }
 
+  // ARC-07 I03: staff-only aktif/arşiv adres okuma. `status` sunucuda da doğrulanır —
+  // bilinmeyen değer sessizce 'active'e DÜŞMEZ, 400 döner.
+  async getClientAddresses(clientId: string, status: "active" | "archived" | "all" = "active") {
+    return this.request<any[]>(
+      `/clients/${clientId}/addresses?status=${encodeURIComponent(status)}`
+    );
+  }
+
+  // ARC-07 I02 aksiyonları (I03 UI'ı bunları YENİDEN TANIMLAMAZ, aynen tüketir).
+  async archiveClientAddress(
+    clientId: string,
+    addressId: string,
+    data: { replacementPrimaryAddressId?: string } = {}
+  ) {
+    return this.request<any>(`/clients/${clientId}/addresses/${addressId}/archive`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async restoreClientAddress(
+    clientId: string,
+    addressId: string,
+    data: { makePrimary?: boolean } = {}
+  ) {
+    return this.request<any>(`/clients/${clientId}/addresses/${addressId}/restore`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Lawyers
   async getLawyers(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
