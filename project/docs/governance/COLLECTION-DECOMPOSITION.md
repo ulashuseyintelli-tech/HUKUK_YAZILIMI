@@ -564,10 +564,11 @@ W2.2D-0          : CLOSED / CANONICAL — PR #1407 @ 1156e4de + reconciliation P
 W2.2D-1          : SCHEMA FOUNDATION CLOSED / CANONICAL EVIDENCE — PR #1415 @ 80a11c2a
 W2.2D-1A         : CLOSED / CANONICAL EVIDENCE — test-only characterization PR #1660 @ 168daec7; runtime/schema etkisi yoktur
 W2.2D-2          : CLOSED / CANONICAL EVIDENCE — PR #1944 @ 6732ebcd; first-confirmation timestamp server-authoritative, immutable ve replay-stable; future CONFIRMED writer guard'ı + audit alignment + static inventory canonical; historical guessed backfill ve migration yok
-W2.2E            : NOT AUTHORIZED — W2.2D ATOMIC PROJECTION BOUNDARY PENDING
-W2.2             : ACTIVE — candidate/evidence/admission guard, D-1/D-1A foundation/evidence ve confirmedAt writer closed; atomic projection, idempotency ve legal-application runtime zinciri açık
+W2.2D-3          : CLOSED / CANONICAL EVIDENCE — PR #1969 @ 392e831c; bank eligibility, canonical Collection admission, financial/event/outbox effects, CAS match projection ve audit tek Prisma/PostgreSQL transaction'ında; rollback, replay ve concurrency evidence canonical; schema/migration yok
+W2.2E            : NOT AUTHORIZED — W2.2 IDEMPOTENCY / LEGAL-APPLICATION BOUNDARY PENDING
+W2.2             : ACTIVE — candidate/evidence/admission/confirmedAt/atomic projection zinciri closed; full semantic command hash ve legal-application runtime zinciri açık
 W2.3             : BLOCKED — W2.2 BOUNDARY PENDING
-FULL REMEDIATION : TASK 01 TPA-04C CLOSURE CLOSED; TASK 02 CURRENCY BOUNDARY CLOSED PR #1822 @ 43e3c1f9; TASK 03 AUTOMATION CONSUMER CLOSED PR #1828 @ 518d08a2; TASK 04 GOVERNANCE RECONCILIATION CLOSED; TASK 05 RC-COL-W2.2B-R01 CLOSED / CANONICAL EVIDENCE PR #1888 @ 35e215cd; TASK 06 RC-COL-W2.2C-6 CLOSED / CANONICAL EVIDENCE PR #1910 @ f986b8d7; TASK 07 RC-COL-W2.2D-2 CLOSED / CANONICAL EVIDENCE PR #1944 @ 6732ebcd; NEXT TASK 08 RC-COL-W2.2D-3 — OWNER GO-NEXT GRANTED / DESIGN-IMPLEMENTATION NOT STARTED
+FULL REMEDIATION : TASK 01 TPA-04C CLOSURE CLOSED; TASK 02 CURRENCY BOUNDARY CLOSED PR #1822 @ 43e3c1f9; TASK 03 AUTOMATION CONSUMER CLOSED PR #1828 @ 518d08a2; TASK 04 GOVERNANCE RECONCILIATION CLOSED; TASK 05 RC-COL-W2.2B-R01 CLOSED / CANONICAL EVIDENCE PR #1888 @ 35e215cd; TASK 06 RC-COL-W2.2C-6 CLOSED / CANONICAL EVIDENCE PR #1910 @ f986b8d7; TASK 07 RC-COL-W2.2D-2 CLOSED / CANONICAL EVIDENCE PR #1944 @ 6732ebcd; TASK 08 RC-COL-W2.2D-3 CLOSED / CANONICAL EVIDENCE PR #1969 @ 392e831c; NEXT TASK 09 RCV-COL-IDEM-01 — OWNER GO-NEXT GRANTED / IMPLEMENTATION NOT STARTED
 PHASE 2          : ACTIVE — TPA-04C CLOSED; TPA-04D AUTHORIZED / DEPENDENCY-GATED / NOT ACTIVE; runtime writer, representative evidence, cutover, legacy retirement ve ACT-28 / REC-AUTH-011/012 closure açık
 PHASE 3    <── COL/OD-02, -14, -15, -17, -19, -20
 PHASE 4    <── PHASE 1 tamamı + COL/OD-11, -12, -13, -16 + CAN-CUT-01/02
