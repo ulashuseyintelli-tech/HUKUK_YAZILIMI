@@ -912,6 +912,15 @@ record kimliğini işaret eder:
 <!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01 -->
 ```
 
+Validator, marker'daki exact `recordId` alanını taşıyan tek fenced `text` SA
+kayıt bloğunu deterministik olarak seçer. Zorunlu alanların tekillik ve değer
+kontrolü yalnız bu hedef blok içinde yapılır; başka geçerli SA kayıtlarındaki
+ortak alanlar çakışma sayılmaz. Hedef blokta eksik olan alan başka bir SA
+kaydından karşılanamaz. Missing/duplicate marker, missing/duplicate hedef kayıt
+bloğu ile hedef blok içindeki missing/duplicate/wrong alanlar fail-closed
+reddedilir. EG marker, alan ve bootstrap kontrolleri bu record-scoping
+kuralından etkilenmez.
+
 ```text
 recordType : EXECUTION_GRANT
 recordId : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01

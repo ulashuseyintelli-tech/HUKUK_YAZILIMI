@@ -4855,6 +4855,35 @@ function assertExactRootMarker(content, authorityRef, code) {
   return marker;
 }
 
+function extractExactRootSemanticAuthorityRecord(content, authorityRef, code) {
+  const marker = assertExactRootMarker(content, authorityRef, code);
+  const semanticRows = content
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(line, marker, authorityRef.recordId),
+    );
+  if (semanticRows.length !== 1) {
+    reject(code, 'semantic marker must identify exactly one decision-log row');
+  }
+
+  const recordIdPattern = new RegExp(
+    `^recordId[\\t ]*:[\\t ]*${escapeRegExp(authorityRef.recordId)}[\\t ]*$`,
+    'm',
+  );
+  const recordBlocks = [
+    ...content.matchAll(/```text[^\S\r\n]*\r?\n([\s\S]*?)\r?\n```/g),
+  ]
+    .map((match) => match[1])
+    .filter((record) => recordIdPattern.test(record));
+  if (recordBlocks.length !== 1) {
+    reject(
+      code,
+      `${authorityRef.recordId} must identify exactly one fenced semantic authority record`,
+    );
+  }
+  return recordBlocks[0];
+}
+
 function validateRootAuthorityReferencePair(
   semantic,
   execution,
@@ -4899,22 +4928,11 @@ function validateRootAuthorityMaterializationContent(
 
   validateRootAuthorityReferencePair(semantic, execution, target);
 
-  const semanticMarker = assertExactRootMarker(
+  const semanticRecord = extractExactRootSemanticAuthorityRecord(
     decisionLog,
     semantic,
     'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
   );
-  const semanticRows = decisionLog
-    .split(/\r?\n/)
-    .filter((line) =>
-      authorityMarkerLocatesSemanticRow(line, semanticMarker, semantic.recordId),
-    );
-  if (semanticRows.length !== 1) {
-    reject(
-      'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
-      'semantic marker must identify exactly one decision-log row',
-    );
-  }
   for (const [field, value] of [
     ['recordType', 'SEMANTIC_AUTHORITY'],
     ['recordId', semantic.recordId],
@@ -4937,7 +4955,7 @@ function validateRootAuthorityMaterializationContent(
     ['standingAuthority', 'PROHIBITED'],
   ]) {
     assertExactRootRecordField(
-      decisionLog,
+      semanticRecord,
       field,
       value,
       field === 'ownerName' || field === 'ownerRole'
@@ -4969,7 +4987,7 @@ function validateRootAuthorityMaterializationContent(
       ['resolver', 'NOT_STARTED'],
     ]) {
       assertExactRootRecordField(
-        decisionLog,
+        semanticRecord,
         field,
         value,
         field.startsWith('ldo') || field.startsWith('finalRatifier')
@@ -4979,7 +4997,7 @@ function validateRootAuthorityMaterializationContent(
     }
     for (const subtype of binding.model.subtypes) {
       assertExactRootRecordField(
-        decisionLog,
+        semanticRecord,
         'ratifiedSubtype',
         subtype,
         'ROOT_BOOTSTRAP_SA_RECORD_INVALID',

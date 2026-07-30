@@ -579,54 +579,108 @@ function createRootAuthorityStage2GitFixture(t, options = {}) {
   const programId = options.programId || binding.programId;
   const targetTaskId = options.targetTaskId || binding.targetTaskId;
   const semanticMarker = `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${semanticRecordId} -->`;
+  let semanticRecordLines = [
+    'recordType : SEMANTIC_AUTHORITY',
+    `recordId : ${semanticRecordId}`,
+    `programId : ${programId}`,
+    `taskId : ${targetTaskId}`,
+    `ownerName : ${ownerName}`,
+    `ownerRole : ${ownerRole}`,
+    'decision : RATIFIED',
+    `issuedAt : ${binding.issuedAt}`,
+    'status : ACTIVE_AFTER_APPROVED_MERGE',
+    'exactTaskBinding : REQUIRED',
+    'exactPrBinding : REQUIRED',
+    'exactHeadBinding : REQUIRED',
+    'exactScopeBinding : REQUIRED',
+    'requiredChecksBinding : REQUIRED',
+    'singleUseConsumption : REQUIRED',
+    'staleReuse : PROHIBITED',
+    'manualFallback : EMERGENCY_ONLY',
+    'productionActivation : NOT_AUTHORIZED',
+    'standingAuthority : PROHIBITED',
+    ...(binding.decisionPack
+      ? [
+          `decisionPackId : ${binding.decisionPack.id}`,
+          `decisionPackVersion : ${binding.decisionPack.version}`,
+          `decisionPackSha256 : ${binding.decisionPack.sha256}`,
+          `ldoName : ${binding.legalDomainOfficer.name}`,
+          `ldoRole : ${binding.legalDomainOfficer.role}`,
+          `ldoRatifierCode : ${binding.legalDomainOfficer.ratifierCode}`,
+          `ldoDisposition : ${binding.legalDomainOfficer.disposition}`,
+          `finalRatifierName : ${binding.finalRatifier.name}`,
+          `finalRatifierRole : ${binding.finalRatifier.role}`,
+          `finalRatifierCode : ${binding.finalRatifier.ratifierCode}`,
+          `finalRatifierDisposition : ${binding.finalRatifier.disposition}`,
+          `ratificationEffectiveAtUtc : ${binding.ratificationEffectiveAtUtc}`,
+          `ratifiedModel : ${binding.model.id}`,
+          `ratifiedSubtypeCount : ${binding.model.subtypes.length}`,
+          ...binding.model.subtypes.map(
+            (subtype) => `ratifiedSubtype : ${subtype}`,
+          ),
+          'runtime : DORMANT',
+          'registryRelease : NOT_MATERIALIZED',
+          'resolver : NOT_STARTED',
+        ]
+      : []),
+  ];
+  const targetFieldPrefix = options.missingSemanticField
+    ? `${options.missingSemanticField} :`
+    : null;
+  if (targetFieldPrefix) {
+    semanticRecordLines = semanticRecordLines.filter(
+      (line) => !line.startsWith(targetFieldPrefix),
+    );
+  }
+  if (options.wrongSemanticField) {
+    const { field, value } = options.wrongSemanticField;
+    semanticRecordLines = semanticRecordLines.map((line) =>
+      line.startsWith(`${field} :`) ? `${field} : ${value}` : line,
+    );
+  }
+  if (options.duplicateSemanticField) {
+    const duplicate = semanticRecordLines.find((line) =>
+      line.startsWith(`${options.duplicateSemanticField} :`),
+    );
+    if (duplicate) semanticRecordLines.push(duplicate);
+  }
+  const existingSemanticRecord = options.existingSemanticRecord
+    ? [
+        '```text',
+        'recordType : SEMANTIC_AUTHORITY',
+        'recordId : EXISTING-ROOT-SA01',
+        'programId : EXISTING-ROOT-PROGRAM',
+        'taskId : EXISTING-ROOT-TASK',
+        `ownerName : ${binding.ownerName}`,
+        `ownerRole : ${binding.ownerRole}`,
+        'decision : RATIFIED',
+        `issuedAt : ${binding.issuedAt}`,
+        'status : ACTIVE_AFTER_APPROVED_MERGE',
+        'exactTaskBinding : REQUIRED',
+        'exactPrBinding : REQUIRED',
+        'exactHeadBinding : REQUIRED',
+        'exactScopeBinding : REQUIRED',
+        'requiredChecksBinding : REQUIRED',
+        'singleUseConsumption : REQUIRED',
+        'staleReuse : PROHIBITED',
+        'manualFallback : EMERGENCY_ONLY',
+        'productionActivation : NOT_AUTHORIZED',
+        'standingAuthority : PROHIBITED',
+        '```',
+        '| 2026-07-28 | <!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=EXISTING-ROOT-SA01 --> **EXISTING-ROOT-SA01 — existing root authority** |',
+      ]
+    : [];
   fs.appendFileSync(
     decisionPath,
     [
-      `| 2026-07-29 | ${semanticMarker} **${semanticRecordId} — root authority** |`,
+      ...existingSemanticRecord,
+      options.missingSemanticMarker
+        ? ''
+        : `| 2026-07-29 | ${semanticMarker} **${semanticRecordId} — root authority** |`,
       options.duplicateSemanticMarker ? semanticMarker : '',
-      'recordType : SEMANTIC_AUTHORITY',
-      `recordId : ${semanticRecordId}`,
-      `programId : ${programId}`,
-      `taskId : ${targetTaskId}`,
-      `ownerName : ${ownerName}`,
-      `ownerRole : ${ownerRole}`,
-      'decision : RATIFIED',
-      `issuedAt : ${binding.issuedAt}`,
-      'status : ACTIVE_AFTER_APPROVED_MERGE',
-      'exactTaskBinding : REQUIRED',
-      'exactPrBinding : REQUIRED',
-      'exactHeadBinding : REQUIRED',
-      'exactScopeBinding : REQUIRED',
-      'requiredChecksBinding : REQUIRED',
-      'singleUseConsumption : REQUIRED',
-      'staleReuse : PROHIBITED',
-      'manualFallback : EMERGENCY_ONLY',
-      'productionActivation : NOT_AUTHORIZED',
-      'standingAuthority : PROHIBITED',
-      ...(binding.decisionPack
-        ? [
-            `decisionPackId : ${binding.decisionPack.id}`,
-            `decisionPackVersion : ${binding.decisionPack.version}`,
-            `decisionPackSha256 : ${binding.decisionPack.sha256}`,
-            `ldoName : ${binding.legalDomainOfficer.name}`,
-            `ldoRole : ${binding.legalDomainOfficer.role}`,
-            `ldoRatifierCode : ${binding.legalDomainOfficer.ratifierCode}`,
-            `ldoDisposition : ${binding.legalDomainOfficer.disposition}`,
-            `finalRatifierName : ${binding.finalRatifier.name}`,
-            `finalRatifierRole : ${binding.finalRatifier.role}`,
-            `finalRatifierCode : ${binding.finalRatifier.ratifierCode}`,
-            `finalRatifierDisposition : ${binding.finalRatifier.disposition}`,
-            `ratificationEffectiveAtUtc : ${binding.ratificationEffectiveAtUtc}`,
-            `ratifiedModel : ${binding.model.id}`,
-            `ratifiedSubtypeCount : ${binding.model.subtypes.length}`,
-            ...binding.model.subtypes.map(
-              (subtype) => `ratifiedSubtype : ${subtype}`,
-            ),
-            'runtime : DORMANT',
-            'registryRelease : NOT_MATERIALIZED',
-            'resolver : NOT_STARTED',
-          ]
-        : []),
+      '```text',
+      ...semanticRecordLines,
+      '```',
       '',
     ].join('\n'),
     'utf8',
@@ -5552,6 +5606,93 @@ test('root-authority Stage 2 prospective validator resolves canonical predecesso
       mode: binding.targetPr.mode,
       taskId: binding.targetPr.taskId,
     });
+  }
+});
+
+test('root-authority Stage 2 accepts two valid SA records with shared common fields', (t) => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const fixture = createRootAuthorityStage2GitFixture(t, {
+    existingSemanticRecord: true,
+  });
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    }),
+    { mode: binding.targetPr.mode, taskId: binding.targetPr.taskId },
+  );
+});
+
+test('root-authority Stage 2 exact marker selects only its target SA record block', (t) => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const fixture = createRootAuthorityStage2GitFixture(t, {
+    existingSemanticRecord: true,
+  });
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: binding.targetPr.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.taskId, binding.targetPr.taskId);
+});
+
+test('root-authority Stage 2 rejects duplicate or missing fields inside the target SA block', (t) => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  for (const [fixtureOptions, code] of [
+    [
+      { duplicateSemanticField: 'ownerName' },
+      'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH',
+    ],
+    [
+      { missingSemanticField: 'ownerName' },
+      'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH',
+    ],
+    [
+      { existingSemanticRecord: true, missingSemanticField: 'ownerName' },
+      'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH',
+    ],
+  ]) {
+    const fixture = createRootAuthorityStage2GitFixture(t, fixtureOptions);
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      code,
+    );
+  }
+});
+
+test('root-authority Stage 2 rejects missing duplicate or wrong target SA markers and values', (t) => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  for (const fixtureOptions of [
+    { missingSemanticMarker: true },
+    { duplicateSemanticMarker: true },
+    { wrongSemanticField: { field: 'decision', value: 'REJECTED' } },
+  ]) {
+    const fixture = createRootAuthorityStage2GitFixture(t, fixtureOptions);
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
+    );
   }
 });
 
