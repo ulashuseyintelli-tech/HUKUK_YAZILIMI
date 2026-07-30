@@ -58,3 +58,17 @@ src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-s2-
 # (production call-site yok / enabled varsayilani false / fail-closed) statik olarak
 # dogrular. CI'a bagli degildi; bir bilesen sessizce etkinlestirilse uyari cikmazdi.
 src/modules/summary-engine/__tests__/allocation-evidence-inventory.static-guard.spec.ts
+
+# RUNTIME-OPERABILITY-CERTIFICATION-R01 / W3 — ASYNC RUNTIME CERTIFICATION.
+# W3, async binding zincirini controlled-local runtime'da olcmustur (SchedulerRegistry:
+# 33 kayitli cron job, 16 kayitli outbox handler). Asagidaki iki guard bu sertifikali
+# durumu STATIK olarak sabitler:
+#   - binding guard : bir modul AppModule import kapanisindan duserse cron sessizce
+#                     durur; derleme/tip hatasi OLUSMAZ. Negatif testle dogrulandi
+#                     (GreetingModule ve OutboxCronService cikarildiginda 33 -> 32).
+#   - prisma guard  : `(prisma as any).<model>` cast'i derleme kontrolunu kaldirir;
+#                     semada olmayan modele yazan handler yalniz dispatch aninda
+#                     patlar. Tek bilinen bosluk (icrabotWebhookLog) kayitlidir ve
+#                     KNOWN_GAPS listesi BUYUYEMEZ.
+src/common/__tests__/w3-async-runtime-binding.static-guard.spec.ts
+src/common/__tests__/w3-prisma-model-reference.static-guard.spec.ts

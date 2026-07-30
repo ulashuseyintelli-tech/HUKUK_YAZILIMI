@@ -1,0 +1,160 @@
+{
+ "task": "RUNTIME-OPERABILITY-CERTIFICATION-R01-W3-ASYNC-EVENT-QUEUE-SCHEDULER-CERTIFICATION",
+ "auditBase": "c537cb3a61f988347fafabb419d4eccaa6e1461e",
+ "environment": {
+  "kind": "CONTROLLED_LOCAL / DISPOSABLE / NON-PRODUCTION",
+  "database": "docker postgres:16-alpine, port 55432, db w3_async_db (disposable container)",
+  "tenants": [
+   "w3-tenant-alpha (sentetik)",
+   "w3-tenant-beta (sentetik)"
+  ],
+  "productionDatabaseTouched": false,
+  "realEmailSmsWebhookSent": false,
+  "build": "nest build @ audit base"
+ },
+ "startupTrace": {
+  "bootstrapMs": 201,
+  "cronJobsRegistered": 33,
+  "duplicateCronNames": [],
+  "nestIntervals": 0,
+  "nestTimeouts": 0,
+  "registeredActionTypes": [
+   "EVENT_PUBLISHED:PAYMENT_RECEIVED",
+   "EVENT_PUBLISHED:PAYMENT_REVERSED",
+   "EVENT_PUBLISHED:SERVICE_OCCURRENCE_RECORDED",
+   "batch_set_facts",
+   "create_task",
+   "enqueue",
+   "open_lock",
+   "release_lock",
+   "send_email",
+   "send_notification",
+   "send_sms",
+   "set_fact",
+   "set_flag",
+   "update_case_status",
+   "uyap_submit",
+   "webhook"
+  ],
+  "scheduleModuleForRootCallSites": 6,
+  "duplicateRegistrationObserved": false
+ },
+ "timezoneDifferential": {
+  "method": "ayni build, TEK degisken process TZ",
+  "conditionUTC": {
+   "UTC": 32,
+   "Europe/Istanbul": 1
+  },
+  "interpretation": "Kodda timeZone bildiren TEK job (errorLogRetention) Europe/Istanbul kalir; diger 32 job process TZ’sine kayar.",
+  "codeDeclaredTimezoneCount": 1,
+  "environmentDerivedTimezoneCount": 32
+ },
+ "matrix": [
+  {
+   "id": "A",
+   "name": "Happy path: producer->claim->consumer->domain effect->timeline",
+   "expected": "status=done, attempt=1, notification=1, timeline OUTCOME>=1",
+   "actual": "success=true status=done attempt=1 notification=1 timeline=1",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "L",
+   "name": "'webhook' handler'i semada OLMAYAN icrabotWebhookLog modeline yaziyor",
+   "expected": "handler her zaman TypeError atar -> failed; action asla done olamaz",
+   "actual": "prismaModelVar=false success=false status=failed attempt=1 err=Cannot read properties of undefined (reading 'create')",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "M",
+   "name": "Consumer, outbox.tenantId ile caseId sahipligini YENIDEN dogruluyor mu?",
+   "expected": "BEKLENEN (guvenli): reddedilir. GOZLEM asagida — etki tablosunda tenant kolonu da yok.",
+   "actual": "dispatchSuccess=true etkiYazildi=1 etkiTablosundaTenantKolonu=true",
+   "pass": false,
+   "note": "BULGU: case->tenant sahiplik dogrulamasi consumer katmaninda YOK; IcrabotNotification tenantId kolonu tasimiyor. Uretici tenantId+caseId ciftini tutarli yazdigi surece istismar edilebilir bir yol GOZLENMEDI — bu bir defense-in-depth eksigidir, kanitlanmis exploit DEGILDIR."
+  },
+  {
+   "id": "B",
+   "name": "Consumer not registered -> claim YOK, satir pending kalir",
+   "expected": "success=false, status=pending, attempt=0",
+   "actual": "success=false err=No handler for action type: W3_NO_SUCH_HANDLER status=pending attempt=0",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "C",
+   "name": "Invalid payload -> retryable failure",
+   "expected": "success=false, status=failed, attempt=1, nextRetryAt set",
+   "actual": "success=false status=failed attempt=1 nextRetry=SET",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "D",
+   "name": "Duplicate delivery: ayni idempotencyKey + ayni action ikinci dispatch",
+   "expected": "ikinci createAction=null, ikinci dispatch skipped, yan etki 1 kez",
+   "actual": "id2=null r1=true r2=false/skipped effect 0->1->1 status=done",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "E",
+   "name": "Retryable failure: attempt artar, backoff buyur, retry listesine girer",
+   "expected": "attempt 1->2, retryable listede, exponential nextRetryAt",
+   "actual": "attempt 1->2 inRetryList=true backoffGrew=true",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "F",
+   "name": "Non-retryable failure -> ILK denemede terminal dead-letter",
+   "expected": "status=dead, attempt=1, nextRetryAt=null",
+   "actual": "success=false status=dead attempt=1 nextRetry=null",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "G",
+   "name": "Tenant mismatch: cross-tenant dispatch + okuma reddi",
+   "expected": "dispatch \"not found\", state mutation YOK, B kapsaminda gorunmez",
+   "actual": "err=Action not found: cms7kfllo0017b9rjy5f4tqgm status=pending attempt=0 effectDelta=0 visibleToB=false getByB=null",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "H",
+   "name": "Restart/recovery: stale \"sent\" claim -> failed + retry planlanir",
+   "expected": "status sent->failed, attempt artar, lastError=STALE_OUTBOX_CLAIM_RECOVERED",
+   "actual": "before=sent after=failed attempt=1->2 recovered=1 err=STALE_OUTBOX_CLAIM_RECOVERED tenantKorundu=true",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "I",
+   "name": "Dead-letter kuyrugu gorunur + manuel replay tenant-scoped",
+   "expected": "DLQ(A)>=1, DLQ(B)=0, replay dead->pending, cross-tenant replay reddedilir",
+   "actual": "dlqA=1 dlqB=0 replay: status=pending attempt=0 crossTenantRejected=true",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "J",
+   "name": "Scheduler-driven: @Cron(EVERY_MINUTE) outbox tuketimi (MANUEL cagri YOK)",
+   "expected": "cron kendisi tetikler -> status=done",
+   "actual": "gate=ON cronJobRegistered=false waitedMs=4000 status=done",
+   "pass": true,
+   "note": null
+  },
+  {
+   "id": "K",
+   "name": "Graceful shutdown: app.close() sonrasi cron job durur",
+   "expected": "app.close() hatasiz, aktif handle azalir",
+   "actual": "handles 2->2 cronJobsAfter=0",
+   "pass": true,
+   "note": null
+  }
+ ],
+ "matrixPass": 12,
+ "matrixTotal": 13
+}
