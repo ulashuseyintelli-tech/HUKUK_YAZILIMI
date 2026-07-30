@@ -51,6 +51,14 @@ src/modules/collection/__tests__/collection-ledger-forward.spec.ts
 src/modules/collection/__tests__/collection-confirmed-at-writer.spec.ts
 src/modules/collection/__tests__/collection-idempotency.spec.ts
 src/modules/collection/__tests__/collection-update-safety.spec.ts
+
+# DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW):
+# ThirdPartyService.addExternalCaseCollection() delegation contract — references
+# CaseDebtorLifecycleGuardService only as an incidental dependency mock, primary
+# subject is Collection creation delegation. No new test behavior; file unchanged
+# and green (verified fresh against origin/main before wiring).
+src/modules/debtor/__tests__/third-party-collection-delegation.spec.ts
+
 src/modules/bank/__tests__/bank-match-delegation.spec.ts
 src/modules/bank/__tests__/bank-lifecycle.controller.spec.ts
 src/modules/bank/__tests__/bank-settlement-evidence-writer.service.spec.ts
