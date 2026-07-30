@@ -5,6 +5,7 @@ import { ClientIntakePromotionService } from './client-intake-promotion.service'
 import { findOrCreateDebtorAddress } from '@/common/address-hash.util';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
 jest.mock('@/common/address-hash.util', () => ({ findOrCreateDebtorAddress: jest.fn() }));
 const mockFindOrCreate = findOrCreateDebtorAddress as jest.Mock;
@@ -27,6 +28,8 @@ const mockPrisma: any = {
 // I1A: promote/promoteAddress/promoteSoft capability-gate — mevcut testler eligible aktör varsayar.
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
 const mockOfficeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+// I09: mevcut testler ACTIVE CaseDebtor varsayar; guard default resolve eder.
+const mockCaseDebtorLifecycleGuard = { assertActiveByCaseDebtorId: jest.fn() };
 
 describe('ClientIntakePromotionService', () => {
   let service: ClientIntakePromotionService;
@@ -39,12 +42,14 @@ describe('ClientIntakePromotionService', () => {
     mockPrisma.clientIntelStatement.create.mockResolvedValue({ id: 'cis-1' });
     mockPrisma.clientIntakeSubmission.update.mockResolvedValue({});
     mockOfficeApproval.isApproverEligible.mockResolvedValue(true);
+    mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId.mockResolvedValue({ id: 'cd-1', lifecycleStatus: 'ACTIVE' });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClientIntakePromotionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditService, useValue: mockAudit },
         { provide: OfficeApprovalService, useValue: mockOfficeApproval },
+        { provide: CaseDebtorLifecycleGuardService, useValue: mockCaseDebtorLifecycleGuard },
       ],
     }).compile();
     service = module.get(ClientIntakePromotionService);
@@ -358,6 +363,68 @@ describe('ClientIntakePromotionService', () => {
         tenantId: TENANT, action: 'CLIENT_INTAKE_PROMOTE_SOFT', entityType: 'CLIENT_INTAKE_FIELD',
         entityId: 'sf-1', userId: USER, newValues: { promotedRefId: 'cis-1' },
       });
+    });
+  });
+
+  // ==================== I09 — CaseDebtor lifecycle guard (passive rejection) ====================
+  describe('I09: passive CaseDebtor artık yeni promote hedefi olamaz', () => {
+    const passiveRejection = new BadRequestException('Pasif dosya borçlusu yeni operasyon hedefi olamaz.');
+
+    it('promote(): PASSIVE CaseDebtor → reddedilir; ClientIntelStatement.create ÇAĞRILMAZ; guard doğru argümanlarla çağrılır', async () => {
+      mockPrisma.clientIntakeField.findMany.mockResolvedValue([{ id: 'f-1', category: 'INCOME_SOURCE', label: 'L', value: 'X' }]);
+      mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId.mockRejectedValueOnce(passiveRejection);
+
+      await expect(service.promote(TENANT, SUB, USER, DEBTOR)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+      expect(mockPrisma.clientIntakeField.update).not.toHaveBeenCalled();
+      expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it('promote(): ACTIVE CaseDebtor → mevcut davranış korunur (guard çağrılır, promote devam eder)', async () => {
+      mockPrisma.clientIntakeField.findMany.mockResolvedValue([{ id: 'f-1', category: 'INCOME_SOURCE', label: 'L', value: 'X' }]);
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+
+      const res = await service.promote(TENANT, SUB, USER, DEBTOR);
+
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(res.promoted).toHaveLength(1);
+    });
+
+    it('promoteAddress(): PASSIVE CaseDebtor → reddedilir; findOrCreateDebtorAddress ÇAĞRILMAZ', async () => {
+      mockPrisma.clientIntakeField.findFirst.mockResolvedValue({
+        id: 'af-1', category: 'ADDRESS', value: 'X Sok 1 Kadıköy', reviewStatus: 'APPROVED', promotedRefId: null,
+        submission: { id: SUB, status: 'IN_REVIEW', caseId: CASE },
+      });
+      mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId.mockRejectedValueOnce(passiveRejection);
+
+      await expect(
+        service.promoteAddress(TENANT, 'af-1', USER, { debtorId: DEBTOR, street: 'X Sok 1', city: 'İstanbul' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(mockFindOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('promoteSoftField(): PASSIVE CaseDebtor → reddedilir; ClientIntelStatement.create ÇAĞRILMAZ', async () => {
+      mockPrisma.clientIntakeField.findFirst.mockResolvedValue({
+        id: 'sf-1', category: 'INCOME_SOURCE', label: 'L', value: 'Müteahhit', reviewStatus: 'APPROVED', promotedRefId: null,
+        submission: { id: SUB, status: 'IN_REVIEW', caseId: CASE },
+      });
+      mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId.mockRejectedValueOnce(passiveRejection);
+
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, 'cd-1', { expectedCaseId: CASE });
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('promote(): CaseDebtor yoksa (cross-tenant/yanlış case) guard hiç ÇAĞRILMAZ — mevcut existence-check önce durur', async () => {
+      mockPrisma.caseDebtor.findFirst.mockResolvedValue(null);
+      await expect(service.promote(TENANT, SUB, USER, DEBTOR)).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
     });
   });
 });
