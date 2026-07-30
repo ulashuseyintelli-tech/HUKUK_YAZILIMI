@@ -1045,9 +1045,12 @@ W2.2D-1 PR #1415 / `80a11c2a4dff047e86879d8628cdb090fae66743` nullable/defaultsu
 backfillsiz `Collection.confirmedAt` schema foundation'ını, W2.2D-1A PR #1660 /
 `168daec75fe877f65b241b489eec92820167dc7e` ise lifecycle timestamp'in
 `effectiveDate` authority'si olmadığını ve invalid provenance'ın fail-closed kaldığını
-kanıtlar. `confirmedAt` runtime writer'ı ve atomic match projection Task 07
-`RC-COL-W2.2D-2` kapsamındadır; henüz uygulanmamıştır. Full-remediation Task 02 currency
-contract ve Task 03 automation alignment kapanmıştır. Task 04 yalnız governance pointer
-reconciliation'ıdır; Task 05 bu kapanıştan önce başlamaz. Runtime writer `NOT IMPLEMENTED / NOT
-ACTIVATED`; ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cutover için
-`BLOCKING` kalır.
+kanıtlar. W2.2D-2 Task07 exact twelve-file implementation PR #1944 /
+`6732ebcdd346558fb35e9ed264c7e27a3ba9d935` ile `CLOSED / CANONICAL EVIDENCE`dır. Future
+canonical `Collection.status=CONFIRMED` create yüzeyleri server-authoritative, non-null ve
+immutable `confirmedAt` üretir; idempotent replay mevcut timestamp'i korur ve explicit caller
+timestamp kabul edilmez. Pre-side-effect persisted-readback guard ile audit timestamp eşleşmesi
+fail-closed uygulanır. Schema, migration, backfill ve live DB değişikliği yoktur; historical NULL
+kayıtlar tahmin edilmemiştir. Atomic match projection Task08 `RC-COL-W2.2D-3` kapsamındadır ve
+`NEXT / DESIGN-IMPLEMENTATION NOT STARTED` kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic
+corpus writer/evidence/cutover için `BLOCKING` kalır.
