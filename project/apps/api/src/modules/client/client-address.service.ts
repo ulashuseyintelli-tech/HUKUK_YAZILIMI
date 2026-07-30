@@ -1,10 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateClientAddressDto, UpdateClientAddressDto } from './dto/client-address.dto';
+import { AuditService } from '../audit/audit.service';
+import {
+  ArchiveClientAddressDto,
+  CreateClientAddressDto,
+  RestoreClientAddressDto,
+  UpdateClientAddressDto,
+} from './dto/client-address.dto';
 import {
   evaluateClientAddressLifecycle,
   type ClientAddressLifecycleRow,
 } from './client-address-lifecycle';
+// Tip-only import (runtime'da silinir → döngü YOK): audit actor tipi CLIENT modülünde zaten
+// kanoniktir, paralel bir tip ÜRETİLMEZ.
+import type { AuditActor } from './client.service';
 
 type ClientAddressRow = {
   id: string;
@@ -33,7 +42,10 @@ const LIFECYCLE_SIBLING_SELECT = {
 
 @Injectable()
 export class ClientAddressService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * Öngörülen (yazma SONRASI) adres kümesini §49'a karşı doğrular; ihlalde SABİT domain hatası
@@ -157,21 +169,31 @@ export class ClientAddressService {
     });
   }
 
-  /// <remarks>
-  /// Cagrildigi yerler:
-  /// - ClientAddressController.remove() -> DELETE /clients/:clientId/addresses/:addressId (JWT-only, tenant+client-scoped)
-  /// </remarks>
-  async remove(tenantId: string, clientId: string, addressId: string): Promise<void> {
-    // Tenant+client sınırı ve 404 sözleşmesi DEĞİŞMEDİ (fail-closed authorization okuması).
+  /**
+   * I02 — ARŞİVLEME (charter §49.4 `archive : EXPLICIT lifecycle action`).
+   *
+   * Arşiv = satır KORUNUR, `isCurrent=false` + `isPrimary=false` olur, adres İÇERİĞİ YOK EDİLMEZ,
+   * satır tenant/müvekkil sahipliğinde kalır ve primary seçimine artık KATILMAZ (INV-07).
+   * Fiziksel silme DEĞİLDİR ve fiziksel silmenin yerine geçmez.
+   *
+   * TEK transaction: kardeş okuması + invariant doğrulaması + yeniden-atama + arşivleme + audit.
+   * Herhangi biri hata verirse HİÇBİRİ commit edilmez — audit'siz mutasyon KALMAZ (§49.4 "audit:
+   * archive + restore icin ZORUNLU").
+   *
+   * Cagrildigi yerler:
+   * - ClientAddressController.archive() -> POST /clients/:clientId/addresses/:addressId/archive
+   */
+  async archive(
+    tenantId: string,
+    clientId: string,
+    addressId: string,
+    dto: ArchiveClientAddressDto = {},
+    actor?: AuditActor,
+  ): Promise<ClientAddressRow> {
+    // Tenant+client sınırı ve 404 sözleşmesi create/update/remove ile AYNI (fail-closed).
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
-    // I01 §4C: SİLME YENİDEN TASARLANMADI. Mevcut "primary silinemez" reddi ve kod/mesajı
-    // AYNEN korunur; yalnız kontrol + silme AYNI transaction'a alınır (§5, TOCTOU yarışı yok)
-    // ve silme SONRASI kümenin §49'u ihlal edemeyeceği doğrulanır.
-    // Deterministik primary yeniden-atama UYGULANMADI ve GEREKMEDİ: primary silinemediği için
-    // silme, "current var ama primary yok" veya "çok primary" durumunu ÜRETEMEZ. Yeniden-atama
-    // gerektiren senaryolar (arşivleme) I02'ye aittir.
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const siblings = await tx.clientAddress.findMany({
         where: { clientId: address.clientId },
         select: LIFECYCLE_SIBLING_SELECT,
@@ -179,19 +201,255 @@ export class ClientAddressService {
       const target = siblings.find((s) => s.id === addressId);
       if (!target) throw new NotFoundException('Adres bulunamadı');
 
-      if (target.isPrimary) {
+      // Zaten arşivli → SABİT HATA (idempotent başarı DEĞİL). Gerekçe: arşiv/restore hukuki
+      // kayıt yaşam döngüsü aksiyonlarıdır; sessiz başarı ya yanıltıcı bir audit satırı yazar
+      // ya da hiç yazmaz — ikisi de kaydın geçmişini bozar.
+      if (!target.isCurrent) {
         throw new BadRequestException({
-          code: 'CLIENT_ADDRESS_PRIMARY_DELETE_FORBIDDEN',
-          message: 'Bu adres birincil (primary) — silmeden önce başka bir adresi birincil yapın.',
+          code: 'CLIENT_ADDRESS_ALREADY_ARCHIVED',
+          message: 'Bu adres zaten arşivlenmiş.',
         });
       }
 
-      this.assertLifecycle(
-        address.clientId,
-        siblings.filter((s) => s.id !== addressId),
-      );
+      // Arşivleme SONRASI geride kalacak güncel adresler (hedef hariç).
+      const remainingCurrent = siblings.filter((s) => s.isCurrent && s.id !== addressId);
 
-      await tx.clientAddress.delete({ where: { id: addressId } });
+      let replacement: (typeof siblings)[number] | undefined;
+      if (target.isPrimary && remainingCurrent.length > 0) {
+        // §49.4: "primary arsiv: deterministik yeniden-atama OLMADAN YAPILAMAZ".
+        // Determinizm ÇAĞIRANIN AÇIK seçiminden gelir — servis "ilk satır kazanır" gibi bir
+        // sıralama İCAT ETMEZ (owner §3: explicit replacement).
+        const requestedId = dto.replacementPrimaryAddressId?.trim();
+        if (!requestedId) {
+          throw new BadRequestException({
+            code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_REQUIRED',
+            message:
+              'Birincil adres arşivlenmeden önce yerine geçecek birincil adres açıkça seçilmelidir.',
+          });
+        }
+        if (requestedId === addressId) {
+          throw new BadRequestException({
+            code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_INVALID',
+            message: 'Arşivlenen adres kendi yerine birincil seçilemez.',
+          });
+        }
+        // Aday YALNIZ bu müvekkilin kardeş kümesinde aranır. Kapsam-dışı kimlik "bulunamadı"
+        // olarak döner: ayrı bir SCOPE_MISMATCH kodu ÜRETİLMEDİ, çünkü onu üretmek kapsamsız
+        // bir sorgu gerektirir ve bu, owner §9'un yasakladığı cross-tenant varlık sızıntısıdır.
+        replacement = siblings.find((s) => s.id === requestedId);
+        if (!replacement) {
+          throw new BadRequestException({
+            code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_NOT_FOUND',
+            message: 'Yerine geçecek birincil adres bu müvekkilde bulunamadı.',
+          });
+        }
+        if (!replacement.isCurrent) {
+          throw new BadRequestException({
+            code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_NOT_CURRENT',
+            message: 'Yerine geçecek birincil adres arşivlenmiş — önce geri alınmalıdır.',
+          });
+        }
+      }
+
+      // Yazma SONRASI beklenen küme. Son güncel adres arşivleniyorsa replacement YOKTUR ve
+      // sonuç sıfır current / sıfır primary olur — INV-04 gereği bu GEÇERLİDİR.
+      const prospective: ClientAddressLifecycleRow[] = siblings.map((s) => {
+        if (s.id === addressId) return { ...s, isPrimary: false, isCurrent: false };
+        if (replacement && s.id === replacement.id) return { ...s, isPrimary: true };
+        return s;
+      });
+      this.assertLifecycle(address.clientId, prospective);
+
+      if (replacement) {
+        await tx.clientAddress.update({
+          where: { id: replacement.id },
+          data: { isPrimary: true },
+        });
+      }
+
+      const archived = await tx.clientAddress.update({
+        where: { id: addressId },
+        data: { isCurrent: false, isPrimary: false },
+      });
+
+      if (replacement) {
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN',
+          entityType: 'CLIENT_ADDRESS',
+          // entityId = BİRİNCİL OLAN satır (yeniden-atamanın hedefi); kaybeden metadata'da.
+          entityId: replacement.id,
+          userId: actor?.userId,
+          oldValues: { isPrimary: replacement.isPrimary, isCurrent: replacement.isCurrent },
+          newValues: { isPrimary: true, isCurrent: replacement.isCurrent },
+          metadata: {
+            clientId: address.clientId,
+            previousPrimaryAddressId: addressId,
+            reason: 'PRIMARY_ARCHIVED',
+          },
+        });
+      }
+
+      // Audit gövdesi YALNIZ kimlik + durum bayrağı taşır — ham adres içeriği (street/city/...)
+      // KASITLI olarak yazılmaz (owner §8: "Prefer IDs and state flags").
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_ADDRESS_ARCHIVE',
+        entityType: 'CLIENT_ADDRESS',
+        entityId: addressId,
+        userId: actor?.userId,
+        oldValues: { isPrimary: target.isPrimary, isCurrent: true },
+        newValues: { isPrimary: false, isCurrent: false },
+        metadata: {
+          clientId: address.clientId,
+          replacementPrimaryAddressId: replacement?.id ?? null,
+          remainingCurrentCount: remainingCurrent.length,
+        },
+      });
+
+      return archived;
+    });
+  }
+
+  /**
+   * I02 — ARŞİVDEN GERİ ALMA (charter §49.4 `restore : EXPLICIT lifecycle action`).
+   *
+   * Geri alınan satır VARSAYILAN olarak `isCurrent=true, isPrimary=false` olur. `makePrimary=true`
+   * yalnız AÇIK istekle birincil yapar ve eski birinciyi AYNI transaction'da düşürür.
+   *
+   * TEK istisna — OTOMATİK BİRİNCİLİK: geri alınan satır tek güncel satır olacaksa (başka current
+   * kardeş YOK) birincil OLMAK ZORUNDADIR. Bu bir politika SEÇİMİ değil, INV-03/INV-04'ün
+   * ZORLADIĞI tek geçerli durumdur (sıfır alternatif) — "ilk satır kazanır" türü bir sıralama
+   * icadı DEĞİLDİR.
+   *
+   * Cagrildigi yerler:
+   * - ClientAddressController.restore() -> POST /clients/:clientId/addresses/:addressId/restore
+   */
+  async restore(
+    tenantId: string,
+    clientId: string,
+    addressId: string,
+    dto: RestoreClientAddressDto = {},
+    actor?: AuditActor,
+  ): Promise<ClientAddressRow> {
+    const address = await this.findAddressInClient(tenantId, clientId, addressId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const siblings = await tx.clientAddress.findMany({
+        where: { clientId: address.clientId },
+        select: LIFECYCLE_SIBLING_SELECT,
+      });
+      const target = siblings.find((s) => s.id === addressId);
+      if (!target) throw new NotFoundException('Adres bulunamadı');
+
+      // Zaten güncel → SABİT HATA (archive ile simetrik gerekçe).
+      if (target.isCurrent) {
+        throw new BadRequestException({
+          code: 'CLIENT_ADDRESS_ALREADY_CURRENT',
+          message: 'Bu adres zaten güncel — arşivde değil.',
+        });
+      }
+
+      const otherCurrent = siblings.filter((s) => s.isCurrent && s.id !== addressId);
+      const willBePrimary = dto.makePrimary === true || otherCurrent.length === 0;
+      const displaced = willBePrimary
+        ? siblings.find((s) => s.isCurrent && s.isPrimary && s.id !== addressId)
+        : undefined;
+
+      // Yazma SONRASI beklenen küme. Birinciliği YALNIZ güncel satırlardan düşürürüz: arşivli bir
+      // satır (geçersiz legacy veri nedeniyle) birincil görünüyorsa SESSİZCE DÜZELTİLMEZ —
+      // öngörülen küme invariant'ı ihlal eder ve işlem fail-closed reddedilir.
+      const prospective: ClientAddressLifecycleRow[] = siblings.map((s) => {
+        if (s.id === addressId) return { ...s, isCurrent: true, isPrimary: willBePrimary };
+        return willBePrimary && s.isCurrent ? { ...s, isPrimary: false } : s;
+      });
+      this.assertLifecycle(address.clientId, prospective);
+
+      if (willBePrimary) {
+        await tx.clientAddress.updateMany({
+          where: { clientId: address.clientId, isPrimary: true },
+          data: { isPrimary: false },
+        });
+      }
+
+      const restored = await tx.clientAddress.update({
+        where: { id: addressId },
+        data: { isCurrent: true, isPrimary: willBePrimary },
+      });
+
+      if (displaced) {
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN',
+          entityType: 'CLIENT_ADDRESS',
+          entityId: addressId,
+          userId: actor?.userId,
+          oldValues: { isPrimary: false, isCurrent: false },
+          newValues: { isPrimary: true, isCurrent: true },
+          metadata: {
+            clientId: address.clientId,
+            previousPrimaryAddressId: displaced.id,
+            reason: 'RESTORED_AS_PRIMARY',
+          },
+        });
+      }
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_ADDRESS_RESTORE',
+        entityType: 'CLIENT_ADDRESS',
+        entityId: addressId,
+        userId: actor?.userId,
+        oldValues: { isPrimary: target.isPrimary, isCurrent: false },
+        newValues: { isPrimary: willBePrimary, isCurrent: true },
+        metadata: {
+          clientId: address.clientId,
+          becamePrimary: willBePrimary,
+          primaryForcedBySoleCurrent: otherCurrent.length === 0,
+          previousPrimaryAddressId: displaced?.id ?? null,
+        },
+      });
+
+      return restored;
+    });
+  }
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - ClientAddressController.remove() -> DELETE /clients/:clientId/addresses/:addressId (JWT-only, tenant+client-scoped)
+  /// </remarks>
+  ///
+  /// I02 DAVRANIŞ DEĞİŞİKLİĞİ — FİZİKSEL SİLME FAIL-CLOSED (charter §49.4 + §49.9 POL-E):
+  ///
+  ///   fiziksel silme : FAIL-CLOSED
+  ///   fiziksel silme, arsivin YERINE KULLANILAMAZ
+  ///   hard delete    : POL-E on kosullari acikca karsilanana kadar YETKISIZ
+  ///
+  /// POL-E'nin sekiz ön koşulu (record-family owner · terminal event · retention basis · evidence
+  /// dependency · cross-domain dependency · hold status · reference integrity · authorized deletion
+  /// method) runtime'da HİÇ TEMSİL EDİLMEMİŞTİR. Temsil edilmeyen bir koşul "karşılanmış"
+  /// SAYILAMAZ — dolayısıyla arşivli satır dahil HİÇBİR adres fiziksel olarak silinemez.
+  ///
+  /// DELETE, arşivlemeye SESSİZCE ÇEVRİLMEZ (owner §7): arşivleme açık bir aksiyondur ve kendi
+  /// audit kaydını yazar; bir silme isteğini arşive dönüştürmek çağıranın niyetini varsaymak olur.
+  ///
+  /// Bu, I01'de "aynen korunan" `CLIENT_ADDRESS_PRIMARY_DELETE_FORBIDDEN` reddinin YERİNİ ALIR:
+  /// artık yalnız birincil değil, HER adres için silme reddedilir. Birincil adresin silinememesi
+  /// KORUNUR (daha geniş bir reddin içinde), fakat dönen kod artık fiziksel-silme kodudur.
+  async remove(tenantId: string, clientId: string, addressId: string): Promise<never> {
+    // Yetkilendirme okuması ÖNCE: var olmayan/başka müvekkilin adresi için 404 sözleşmesi
+    // DEĞİŞMEDİ — kapsam-dışı kimliğe "silinemez" demek varlık sızdırırdı.
+    await this.findAddressInClient(tenantId, clientId, addressId);
+
+    // Mutasyon YOK → transaction YOK. Audit da YOK: reddedilen bir istek adres yaşam döngüsünü
+    // DEĞİŞTİRMEZ, dolayısıyla lifecycle audit kaydı üretmez (audit yalnız archive/restore için
+    // ZORUNLUdur, §49.4).
+    throw new BadRequestException({
+      code: 'CLIENT_ADDRESS_PHYSICAL_DELETE_NOT_AUTHORIZED',
+      message:
+        'Adresler fiziksel olarak silinemez. Adresi kullanımdan çıkarmak için arşivleme aksiyonunu kullanın.',
+      unsatisfiedPolicy: 'POL-E',
+      archiveAction: 'POST /clients/:clientId/addresses/:addressId/archive',
     });
   }
 

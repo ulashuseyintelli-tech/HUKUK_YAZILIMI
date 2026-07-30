@@ -169,8 +169,11 @@ function buildService(opts: { siblings: Sib[]; clientFound?: boolean }) {
       }
     }),
   };
-  const svc = new ClientAddressService(prisma);
-  return { svc, prisma, tx, wasRolledBack: () => rolledBack };
+  // I02: servise AuditService enjekte edildi. Bu spec I01 invariant davranışını ölçer; audit
+  // içeriği I02 spec'inde doğrulanır. Mock hata YUTMAZ (gerçek logInTransaction gibi).
+  const audit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
+  const svc = new ClientAddressService(prisma, audit);
+  return { svc, prisma, tx, audit, wasRolledBack: () => rolledBack };
 }
 
 describe('ARC-07 I01 — servis: create()', () => {
@@ -282,8 +285,14 @@ describe('ARC-07 I01 — servis: update()', () => {
   });
 });
 
-describe('ARC-07 I01 — servis: remove() (§4C silme YENİDEN TASARLANMADI)', () => {
-  it('[18] hard-delete, current satırları primary\'siz BIRAKAMAZ — primary silme reddi korunur', async () => {
+/**
+ * I02 KASITLI GÜNCELLEME — bu describe bloğu I01'de "silme YENİDEN TASARLANMADI" sınırını
+ * pinliyordu. `CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02` owner §7 ve charter §49.4/§49.9 gereği
+ * fiziksel silmeyi KOŞULSUZ fail-closed yaptı. Aşağıdaki testler GEVŞETİLMEDİ — beklentiler
+ * yeni kanonik davranışa TERS ÇEVRİLDİ ve silmenin gerçekten hiç çağrılmadığı korunuyor.
+ */
+describe('ARC-07 I02 — servis: remove() (fiziksel silme FAIL-CLOSED)', () => {
+  it('[18] birincil adres silinemez — artık fiziksel-silme kodu döner (I01 primary-delete reddini KAPSAR)', async () => {
     const { svc, tx } = buildService({
       siblings: [
         { id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true },
@@ -291,32 +300,47 @@ describe('ARC-07 I01 — servis: remove() (§4C silme YENİDEN TASARLANMADI)', (
       ],
     });
     await expect(svc.remove('t1', 'c1', 'a1')).rejects.toMatchObject({
-      response: { code: 'CLIENT_ADDRESS_PRIMARY_DELETE_FORBIDDEN' },
+      response: { code: 'CLIENT_ADDRESS_PHYSICAL_DELETE_NOT_AUTHORIZED' },
     });
     expect(tx.clientAddress.delete).not.toHaveBeenCalled();
   });
 
-  it('[18b] non-primary silme İZİNLİ ve sonuç kümesi GEÇERLİ kalır', async () => {
+  it('[18b] non-primary silme de REDDEDİLİR (I01\'de izinliydi — I02 fail-closed)', async () => {
     const { svc, tx } = buildService({
       siblings: [
         { id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true },
         { id: 'a2', clientId: 'c1', isPrimary: false, isCurrent: true },
       ],
     });
-    await svc.remove('t1', 'c1', 'a2');
-    expect(tx.clientAddress.delete).toHaveBeenCalledWith({ where: { id: 'a2' } });
+    await expect(svc.remove('t1', 'c1', 'a2')).rejects.toMatchObject({
+      response: { code: 'CLIENT_ADDRESS_PHYSICAL_DELETE_NOT_AUTHORIZED' },
+    });
+    expect(tx.clientAddress.delete).not.toHaveBeenCalled();
   });
 
-  it('[19] archive/restore DAVRANIŞI EKLENMEDİ — servis yalnız 3 yazma metodu sunar', () => {
+  it('[18c] DELETE sessizce arşivlemeye ÇEVRİLMEZ — hiçbir isCurrent mutasyonu yapılmaz', async () => {
+    const { svc, tx } = buildService({
+      siblings: [{ id: 'a2', clientId: 'c1', isPrimary: false, isCurrent: true }],
+    });
+    await expect(svc.remove('t1', 'c1', 'a2')).rejects.toBeDefined();
+    expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
+    expect(tx.clientAddress.delete).not.toHaveBeenCalled();
+  });
+
+  it('[19] I02 sınırı: archive/restore VAR, GET/history YOK (I03 sınırı korunur)', () => {
     const proto = Object.getOwnPropertyNames(ClientAddressService.prototype);
     expect(proto).toContain('create');
     expect(proto).toContain('update');
     expect(proto).toContain('remove');
-    expect(proto).not.toContain('archive');
-    expect(proto).not.toContain('restore');
+    // I02 EKLEDİ:
+    expect(proto).toContain('archive');
+    expect(proto).toContain('restore');
+    // I03'e AİT ve HÂLÂ YOK:
     expect(proto).not.toContain('findHistory');
-    // isCurrent'ı mutasyona uğratan bir yol EKLENMEDİ (I02'ye ertelendi).
-    expect(SERVICE_SOURCE).not.toMatch(/isCurrent:\s*false/);
+    expect(proto).not.toContain('findAll');
+    // isCurrent mutasyonu ARTIK VAR ve YALNIZ açık arşiv/restore yolundadır.
+    expect(SERVICE_SOURCE).toMatch(/isCurrent:\s*false/);
   });
 
   it('[20] invariant kararı KİŞİSEL ADRES İÇERİĞİ gerektirmez — yalnız 4 alan seçilir', async () => {
@@ -346,8 +370,14 @@ describe('ARC-07 I01 — regresyon sınırları', () => {
 
   it('[22] VER-02 yolu ETKİLENMEDİ — bu servis client.service.ts persist yolunu ÇAĞIRMAZ', () => {
     // VER-02 persist'i client.service.ts create()/update() içindedir; bu servis ona dokunmaz.
-    expect(SERVICE_SOURCE).not.toMatch(/client\.service/);
     expect(SERVICE_SOURCE).not.toMatch(/_addressesSkipped/);
+    // I02 GÜNCELLEMESİ: `client.service`'e TEK referans `import type { AuditActor }`'dır —
+    // TİP-ONLY, runtime'da silinir, çalışma zamanı bağımlılığı ÜRETMEZ. Runtime import
+    // (from '...client.service' — `import type` OLMAYAN) BULUNMAMALIDIR.
+    expect(SERVICE_SOURCE).toMatch(/import type \{ AuditActor \} from '\.\/client\.service'/);
+    expect(SERVICE_SOURCE).not.toMatch(/^import \{[^}]*\} from '\.\/client\.service'/m);
+    // VER-02'nin persist ettiği düz kolon yolu ya da ClientService metodu ÇAĞRILMAZ.
+    expect(SERVICE_SOURCE).not.toMatch(/clientService|ClientService/);
   });
 
   it('[23] flat Client adres kolonları bu serviste OKUNMAZ/YAZILMAZ (profil görünümü değişmez)', () => {
