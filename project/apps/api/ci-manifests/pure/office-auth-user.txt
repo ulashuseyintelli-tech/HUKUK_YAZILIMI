@@ -113,3 +113,12 @@ src/scripts/__tests__/office-cap02-telemetry-perf.core.spec.ts
 # serializer/@Exclude yok. Cozum: merkezi public projection (anahtar TAMAMEN silinir,
 # null'a cekilmez; donus tipi Omit<> oldugu icin derleyici de reddeder).
 src/modules/lawyer/__tests__/lawyer-credential-response-containment.spec.ts
+
+# ── OFFICE-P2-CAP02-NEUTRAL-TELEMETRY-PERFORMANCE-HARNESS-R02 ─────────────────
+# R01 FAIL hukmu KORUNUR. R02 tek soruyu sinar: asim cold-path/order bias mi, warmed
+# steady-state maliyeti mi? Counterbalanced iki blok (OFF->OBSERVE / OBSERVE->OFF),
+# yurutme sirasina gore segmentasyon (FIRST_10 / 11_20 / MIDDLE_10 / LAST_10) ve ilk 20
+# haric STEADY_STATE. Ana fitness hukmu steady-state'ten uretilir; esikler R01 ile AYNI
+# ve sonuca uydurmak icin revize EDILEMEZ. Cold-path yalniz uc kosul birlikte saglanirsa
+# dogrulanir; R01 kaydi hicbir dispositionda silinmez.
+src/scripts/__tests__/office-cap02-telemetry-perf-r02.core.spec.ts
