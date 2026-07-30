@@ -405,6 +405,20 @@ function writeFixtureEvent(dir: string, event: unknown): string {
   return eventPath;
 }
 
+/**
+ * Bu spec dosyasi BIZZAT bir CI job'i icinde calisirken gercek
+ * GITHUB_EVENT_NAME/GITHUB_EVENT_PATH ortam degiskenleri her zaman mevcuttur
+ * (ornegin bu PR'in kendi pull_request event'i). "Yerel calisma / event yok"
+ * senaryolarini simule eden testler bu ambient degerleri ACIKCA gecersiz
+ * kilmalidir — aksi halde yerel makinede (ambient event YOK) PASS olup gercek
+ * CI'da (ambient pull_request event VAR) ambient event'e yanlislikla
+ * yakalanip FAIL olurlar. `eventPath` var olmayan bir dosyaya isaret eder ki
+ * `fs.existsSync` false donsun ve ambient event hic okunmasin.
+ */
+function noAmbientCiEvent(dir: string): { eventPath: string } {
+  return { eventPath: path.join(dir, '__no_ambient_ci_event_marker__.json') };
+}
+
 describe('R01 W2 event-aware changed-file evidence resolver', () => {
   describe('pull_request event', () => {
     it('resolves via GIT_RANGE when base/head commits are locally available (parent available)', () => {
@@ -519,12 +533,18 @@ describe('R01 W2 event-aware changed-file evidence resolver', () => {
         const after = commitFixtureFile(workDir, 'c.txt', 'c', 'c3 (after, simulated squash-merge)');
         runFixtureGit(workDir, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
 
-        runFixtureGit(dir, ['clone', '--quiet', '--depth', '1', originUrl, 'shallow']);
+        // `--no-local`: bazi git surumleri/platformlari `file://` kaynaklarda bile
+        // hardlink-tabanli "local clone" optimizasyonuna dusup `--depth`'i sessizce
+        // yok sayabiliyor (CI Linux runner'inda gozlemlendi: `.git/shallow` hic
+        // olusmadi). `--no-local` gercek pack-negotiation yolunu zorlar; boylece
+        // depth-limiting git surumunden/platformdan bagimsiz calisir.
+        runFixtureGit(dir, ['clone', '--quiet', '--no-local', '--depth', '1', originUrl, 'shallow']);
         const shallowDir = path.join(dir, 'shallow');
 
-        // On-kosul: gercekten shallow ve 'before' lokalde YOK (aksi halde bu test
-        // hicbir sey kanitlamaz).
-        expect(fs.existsSync(path.join(shallowDir, '.git', 'shallow'))).toBe(true);
+        // On-kosul (tek basina anlamli olan gercek degisken): 'before' shallow
+        // clone'da lokalde YOK. `.git/shallow` dosyasinin varligi implementasyon
+        // detayidir (git surumune/platforma gore degisebilir) — kontrol edilen asil
+        // sey budur, cunku test bunun uzerine kuruludur.
         expect(commitExistsLocally(before, shallowDir)).toBe(false);
 
         const eventPath = writeFixtureEvent(shallowDir, { before, after });
@@ -601,7 +621,7 @@ describe('R01 W2 event-aware changed-file evidence resolver', () => {
         initFixtureRepo(dir);
         commitFixtureFile(dir, 'a.txt', 'a', 'c1');
         commitFixtureFile(dir, 'b.txt', 'b', 'c2');
-        const evidence = resolveChangedFileEvidence({ cwd: dir });
+        const evidence = resolveChangedFileEvidence({ cwd: dir, eventName: '', ...noAmbientCiEvent(dir) });
         expect(evidence).toEqual({ source: 'LOCAL_PARENT', files: ['b.txt'], fileCount: 1, complete: true });
       });
     });
@@ -610,7 +630,7 @@ describe('R01 W2 event-aware changed-file evidence resolver', () => {
       withTempGitFixture('roc-w2-unsupported-', (dir) => {
         initFixtureRepo(dir);
         commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
-        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: 'workflow_dispatch' }))
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: 'workflow_dispatch', ...noAmbientCiEvent(dir) }))
           .toThrow('W2_PUSH_CHANGESET_INVALID:UNSUPPORTED_EVENT');
       });
     });
@@ -619,7 +639,7 @@ describe('R01 W2 event-aware changed-file evidence resolver', () => {
       withTempGitFixture('roc-w2-no-evidence-', (dir) => {
         initFixtureRepo(dir);
         commitFixtureFile(dir, 'only.txt', 'x', 'only commit');
-        expect(() => resolveChangedFileEvidence({ cwd: dir }))
+        expect(() => resolveChangedFileEvidence({ cwd: dir, eventName: '', ...noAmbientCiEvent(dir) }))
           .toThrow('W2_GITHUB_EVENT_PATH_REQUIRED');
       });
     });
