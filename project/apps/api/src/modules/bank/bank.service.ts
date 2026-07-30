@@ -4,12 +4,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { maskIban } from '../../common/pii-mask.util';
 import { CollectionService } from '../collection/collection.service';
+import { AuditService } from '../audit/audit.service';
 import {
   CollectionChannel,
   CollectionSource,
@@ -90,6 +92,7 @@ const BANK_CANDIDATE_PENDING = 'PENDING' as const;
 const BANK_CANDIDATE_SETTLED = 'SETTLED' as const;
 const BANK_SETTLEMENT_EVIDENCE_SOURCE = 'SETTLEMENT_VERIFIER' as const;
 const BANK_SETTLEMENT_EVIDENCE_OUTCOME = 'SETTLED' as const;
+export const BANK_COLLECTION_ADMISSION_AUDIT_ACTION = 'BANK_COLLECTION_ADMITTED';
 
 type NormalizedBankTransactionData = Omit<BankTransactionData, 'bankReferenceId'> & {
   bankReferenceId: string | null;
@@ -109,6 +112,7 @@ export class BankService {
     private prisma: PrismaService,
     // G3d: banka eşleşmesi tahsilatı kanonik yoldan üretir.
     private collectionService: CollectionService,
+    @Optional() private auditService: AuditService = new AuditService(prisma),
   ) {}
 
   // ==================== HESAP YÖNETİMİ ====================
@@ -515,165 +519,235 @@ export class BankService {
       throw new BadRequestException({ code: 'BANK_RECEIPT_ACTOR_REQUIRED' });
     }
 
-    const transaction = await this.db.bankTransaction.findFirst({
-      where: { id: transactionId, tenantId },
-    });
-
-    if (!transaction) {
-      throw new NotFoundException('İşlem bulunamadı');
-    }
-
-    if (transaction.transactionType !== 'INCOMING') {
-      throw new BadRequestException({
-        code: 'BANK_RECEIPT_INCOMING_REQUIRED',
-        message: 'Yalnız gelen banka hareketi tahsilat adayı olabilir.',
-      });
-    }
-
-    const amount = Number(transaction.amount);
-    if (!Number.isFinite(amount) || amount <= 0 || !String(transaction.currency || '').trim()) {
-      throw new BadRequestException({
-        code: 'BANK_RECEIPT_CANDIDATE_INVALID',
-        message: 'Banka tahsilat adayı pozitif tutar ve para birimi taşımalıdır.',
-      });
-    }
-
-    if (transaction.isMatched) {
-      if (transaction.matchedCaseId === caseId && transaction.matchedCollectionId) {
-        const collection = await this.collectionService.findById(tenantId, transaction.matchedCollectionId);
-        return { transaction, collection };
-      }
-      throw new ConflictException({
-        code: transaction.matchedCollectionId
-          ? 'BANK_TRANSACTION_ALREADY_MATCHED'
-          : 'BANK_TRANSACTION_MATCH_INCOMPLETE',
-        message: 'Banka hareketinin mevcut eşleşmesi canonical Collection ile uzlaştırılamadı.',
-      });
-    }
-
-    if (transaction.candidateStatus !== BANK_CANDIDATE_SETTLED) {
-      const code = transaction.candidateStatus === BANK_CANDIDATE_PENDING
-        ? 'BANK_RECEIPT_SETTLEMENT_REQUIRED'
-        : transaction.candidateStatus === 'REJECTED'
-          ? 'BANK_RECEIPT_CANDIDATE_REJECTED'
-          : 'BANK_RECEIPT_CANDIDATE_STATUS_UNKNOWN';
-      throw new ConflictException({
-        code,
-        message: 'Banka tahsilat adayı doğrulanmış settlement olmadan canonical Collection oluşturamaz.',
-      });
-    }
-
-    if (!transaction.settlementEvidenceId) {
-      throw new ConflictException({
-        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_REQUIRED',
-        message: 'Canonical Collection admission için settlement evidence zorunludur.',
-      });
-    }
-
-    const settlementEvidence = await this.db.bankSettlementEvidence.findUnique({
-      where: {
-        tenantId_id: {
-          tenantId,
-          id: transaction.settlementEvidenceId,
-        },
-      },
-    });
-
-    if (
-      !settlementEvidence
-      || settlementEvidence.id !== transaction.settlementEvidenceId
-      || settlementEvidence.tenantId !== tenantId
-    ) {
-      throw new ConflictException({
-        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_INVALID',
-        message: 'Settlement evidence banka adayıyla aynı tenant içinde doğrulanamadı.',
-      });
-    }
-
-    if (settlementEvidence.source !== BANK_SETTLEMENT_EVIDENCE_SOURCE) {
-      throw new ConflictException({
-        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_SOURCE_UNSUPPORTED',
-        message: 'Yalnız yetkili settlement verifier evidence kaydı Collection admission sağlayabilir.',
-      });
-    }
-
-    if (settlementEvidence.outcome !== BANK_SETTLEMENT_EVIDENCE_OUTCOME) {
-      throw new ConflictException({
-        code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_OUTCOME_INVALID',
-        message: 'Settlement sonucu SETTLED olmayan evidence Collection admission sağlayamaz.',
-      });
-    }
-
-    if (!transaction.externalSettledAt) {
-      throw new ConflictException({
-        code: 'BANK_RECEIPT_EXTERNAL_SETTLED_AT_REQUIRED',
-        message: 'Canonical settlement zamanı olmadan Collection admission yapılamaz.',
-      });
-    }
-
-    const externalSettledAt = new Date(transaction.externalSettledAt).getTime();
-    const evidenceObservedAt = new Date(settlementEvidence.observedAt).getTime();
-    if (
-      !Number.isFinite(externalSettledAt)
-      || !Number.isFinite(evidenceObservedAt)
-      || externalSettledAt !== evidenceObservedAt
-    ) {
-      throw new ConflictException({
-        code: 'BANK_RECEIPT_SETTLEMENT_TIME_MISMATCH',
-        message: 'Banka adayı settlement zamanı canonical evidence zamanı ile eşleşmelidir.',
-      });
-    }
-
-    // G3d: kanonik yola delege (closed/duplicate guard + PAYMENT_RECEIVED + G3a ledger).
-    // BANK_INTEGRATION: şema-gate KAPANDI → sourceType=BANK_INTEGRATION (otomatik eşleşen banka hareketi;
-    // BANK_SEIZURE ≠ bu). Idempotency = mevcut isMatched/matchedCollectionId (yalnız create BAŞARILIYSA).
-    let collection: any;
     try {
-      const collectionArgs = [
-        tenantId,
-        {
-          caseId,
-          idempotencyKey: `bank-transaction:${transaction.id}`,
-          amount,
-          currency: String(transaction.currency).trim().toUpperCase(),
-          type: CollectionType.BANK_TRANSFER,
-          channel: CollectionChannel.BANKA,
-          date: new Date(transaction.transactionDate).toISOString(),
-          valueDate: transaction.valueDate ? new Date(transaction.valueDate).toISOString() : undefined,
-          sourceType: CollectionSource.BANK_INTEGRATION,
-          sourceId: transaction.id,
-          description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
-          receiptNo: transaction.referenceNo || undefined,
-        } as any,
-        userId,
-      ] as const;
-      collection = await this.collectionService.create(...collectionArgs, {
-        correlationId,
-        causationId: `bank-transaction:${transaction.id}`,
-        producer: 'BANK_TRANSACTION_MATCH',
-        actor: { type: 'HUMAN', userId },
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${
+          `bank:collection-admission:${tenantId}:${transactionId}`
+        }))`;
+
+        const transaction = await tx.bankTransaction.findFirst({
+          where: { id: transactionId, tenantId },
+        });
+
+        if (!transaction) {
+          throw new NotFoundException('İşlem bulunamadı');
+        }
+
+        if (transaction.transactionType !== 'INCOMING') {
+          throw new BadRequestException({
+            code: 'BANK_RECEIPT_INCOMING_REQUIRED',
+            message: 'Yalnız gelen banka hareketi tahsilat adayı olabilir.',
+          });
+        }
+
+        const amount = Number(transaction.amount);
+        if (!Number.isFinite(amount) || amount <= 0 || !String(transaction.currency || '').trim()) {
+          throw new BadRequestException({
+            code: 'BANK_RECEIPT_CANDIDATE_INVALID',
+            message: 'Banka tahsilat adayı pozitif tutar ve para birimi taşımalıdır.',
+          });
+        }
+
+        if (transaction.isMatched) {
+          if (transaction.matchedCaseId === caseId && transaction.matchedCollectionId) {
+            const collection = await this.collectionService.findById(
+              tenantId,
+              transaction.matchedCollectionId,
+              tx,
+            );
+            if (
+              collection.caseId !== caseId
+              || collection.sourceType !== CollectionSource.BANK_INTEGRATION
+              || collection.sourceId !== transaction.id
+            ) {
+              throw new ConflictException({
+                code: 'BANK_TRANSACTION_MATCH_INCOMPLETE',
+                message: 'Banka hareketinin mevcut eşleşmesi canonical Collection ile uzlaştırılamadı.',
+              });
+            }
+            return { transaction, collection };
+          }
+          throw new ConflictException({
+            code: transaction.matchedCollectionId
+              ? 'BANK_TRANSACTION_ALREADY_MATCHED'
+              : 'BANK_TRANSACTION_MATCH_INCOMPLETE',
+            message: 'Banka hareketinin mevcut eşleşmesi canonical Collection ile uzlaştırılamadı.',
+          });
+        }
+
+        if (transaction.candidateStatus !== BANK_CANDIDATE_SETTLED) {
+          const code = transaction.candidateStatus === BANK_CANDIDATE_PENDING
+            ? 'BANK_RECEIPT_SETTLEMENT_REQUIRED'
+            : transaction.candidateStatus === 'REJECTED'
+              ? 'BANK_RECEIPT_CANDIDATE_REJECTED'
+              : 'BANK_RECEIPT_CANDIDATE_STATUS_UNKNOWN';
+          throw new ConflictException({
+            code,
+            message: 'Banka tahsilat adayı doğrulanmış settlement olmadan canonical Collection oluşturamaz.',
+          });
+        }
+
+        if (!transaction.settlementEvidenceId) {
+          throw new ConflictException({
+            code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_REQUIRED',
+            message: 'Canonical Collection admission için settlement evidence zorunludur.',
+          });
+        }
+
+        const settlementEvidence = await tx.bankSettlementEvidence.findUnique({
+          where: {
+            tenantId_id: {
+              tenantId,
+              id: transaction.settlementEvidenceId,
+            },
+          },
+        });
+
+        if (
+          !settlementEvidence
+          || settlementEvidence.id !== transaction.settlementEvidenceId
+          || settlementEvidence.tenantId !== tenantId
+        ) {
+          throw new ConflictException({
+            code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_INVALID',
+            message: 'Settlement evidence banka adayıyla aynı tenant içinde doğrulanamadı.',
+          });
+        }
+
+        if (settlementEvidence.source !== BANK_SETTLEMENT_EVIDENCE_SOURCE) {
+          throw new ConflictException({
+            code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_SOURCE_UNSUPPORTED',
+            message: 'Yalnız yetkili settlement verifier evidence kaydı Collection admission sağlayabilir.',
+          });
+        }
+
+        if (settlementEvidence.outcome !== BANK_SETTLEMENT_EVIDENCE_OUTCOME) {
+          throw new ConflictException({
+            code: 'BANK_RECEIPT_SETTLEMENT_EVIDENCE_OUTCOME_INVALID',
+            message: 'Settlement sonucu SETTLED olmayan evidence Collection admission sağlayamaz.',
+          });
+        }
+
+        if (!transaction.externalSettledAt) {
+          throw new ConflictException({
+            code: 'BANK_RECEIPT_EXTERNAL_SETTLED_AT_REQUIRED',
+            message: 'Canonical settlement zamanı olmadan Collection admission yapılamaz.',
+          });
+        }
+
+        const externalSettledAt = new Date(transaction.externalSettledAt).getTime();
+        const evidenceObservedAt = new Date(settlementEvidence.observedAt).getTime();
+        if (
+          !Number.isFinite(externalSettledAt)
+          || !Number.isFinite(evidenceObservedAt)
+          || externalSettledAt !== evidenceObservedAt
+        ) {
+          throw new ConflictException({
+            code: 'BANK_RECEIPT_SETTLEMENT_TIME_MISMATCH',
+            message: 'Banka adayı settlement zamanı canonical evidence zamanı ile eşleşmelidir.',
+          });
+        }
+
+        // Bank match projection ve canonical Collection finansal zinciri ayni DB
+        // transaction'inda commit/rollback olur. Nested transaction acilmaz.
+        const collectionArgs = [
+          tenantId,
+          {
+            caseId,
+            idempotencyKey: `bank-transaction:${transaction.id}`,
+            amount,
+            currency: String(transaction.currency).trim().toUpperCase(),
+            type: CollectionType.BANK_TRANSFER,
+            channel: CollectionChannel.BANKA,
+            date: new Date(transaction.transactionDate).toISOString(),
+            valueDate: transaction.valueDate ? new Date(transaction.valueDate).toISOString() : undefined,
+            sourceType: CollectionSource.BANK_INTEGRATION,
+            sourceId: transaction.id,
+            description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
+            receiptNo: transaction.referenceNo || undefined,
+          } as any,
+          userId,
+        ] as const;
+        const collection = await this.collectionService.create(...collectionArgs, {
+          correlationId,
+          causationId: `bank-transaction:${transaction.id}`,
+          producer: 'BANK_TRANSACTION_MATCH',
+          actor: { type: 'HUMAN', userId },
+        }, tx);
+
+        const matchedAt = new Date();
+        const projection = await tx.bankTransaction.updateMany({
+          where: {
+            id: transactionId,
+            tenantId,
+            bankAccountId: transaction.bankAccountId,
+            transactionType: 'INCOMING',
+            candidateStatus: BANK_CANDIDATE_SETTLED,
+            settlementEvidenceId: transaction.settlementEvidenceId,
+            externalSettledAt: transaction.externalSettledAt,
+            isMatched: false,
+            matchedCaseId: null,
+            matchedCollectionId: null,
+          },
+          data: {
+            isMatched: true,
+            matchedCaseId: caseId,
+            matchedCollectionId: collection.id,
+            matchedAt,
+            matchedById: userId,
+          },
+        });
+        if (projection.count !== 1) {
+          throw new ConflictException({
+            code: 'BANK_TRANSACTION_MATCH_CONCURRENT_CONFLICT',
+            message: 'Banka hareketi eşleştirme durumu eşzamanlı olarak değişti.',
+          });
+        }
+
+        await this.auditService.logInTransaction(tx, {
+          tenantId,
+          action: BANK_COLLECTION_ADMISSION_AUDIT_ACTION,
+          entityType: 'BANK_TRANSACTION',
+          entityId: transaction.id,
+          userId,
+          correlationId,
+          reasonCode: 'SETTLED_CANDIDATE_ADMITTED',
+          description: 'Settled bank candidate admitted to canonical Collection.',
+          metadata: {
+            bankTransactionId: transaction.id,
+            bankAccountId: transaction.bankAccountId,
+            settlementEvidenceId: transaction.settlementEvidenceId,
+            collectionId: collection.id,
+            caseId,
+            fromBankStatus: transaction.candidateStatus,
+            toBankStatus: transaction.candidateStatus,
+            fromMatchState: 'UNMATCHED',
+            toMatchState: 'MATCHED',
+            amount: transaction.amount.toString(),
+            currency: String(transaction.currency).trim().toUpperCase(),
+            operationId: correlationId,
+            matchedAt: matchedAt.toISOString(),
+          },
+        });
+
+        return {
+          transaction: {
+            ...transaction,
+            isMatched: true,
+            matchedCaseId: caseId,
+            matchedCollectionId: collection.id,
+            matchedAt,
+            matchedById: userId,
+          },
+          collection,
+        };
       });
     } catch (err: any) {
-      // Closed-case (BadRequestException) vb. → eşleşme YAPILMAZ, raporlanır.
       this.logger.warn(
         `Bank match rejected (tx=${transactionId}, case=${caseId}): ${err?.message ?? err}`,
       );
       throw err;
     }
-
-    // SADECE create başarılıysa işlemi eşleşmiş işaretle
-    await this.db.bankTransaction.update({
-      where: { id: transactionId },
-      data: {
-        isMatched: true,
-        matchedCaseId: caseId,
-        matchedCollectionId: collection.id,
-        matchedAt: new Date(),
-        matchedById: userId,
-      },
-    });
-
-    return { transaction, collection };
   }
 
   // ==================== OTOMATİK EŞLEŞTİRME ====================

@@ -141,6 +141,7 @@ src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.int
 src/modules/bank/__tests__/bank-reference-idempotency.db-gated.integration.spec.ts
 src/modules/bank/__tests__/bank-settlement-evidence-writer.db-gated.integration.spec.ts
 src/modules/bank/__tests__/bank-candidate-settlement-transition.db-gated.integration.spec.ts
+src/modules/bank/__tests__/bank-match-collection-atomicity.db-gated.integration.spec.ts
 #
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure writer service (gercek PostgreSQL)
 #     Tenant/case-client/source-scope fail-closed enforcement, atomik aggregate+version+line

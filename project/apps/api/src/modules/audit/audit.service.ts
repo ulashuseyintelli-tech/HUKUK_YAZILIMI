@@ -71,6 +71,7 @@ export class AuditService {
    *
    * Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
    *  - ClientService.create/update/remove() â†’ client mutasyonu + audit aynÄ± tx iÃ§inde
+   *  - BankService.matchTransaction() -> bank match + canonical Collection admission ayni tx icinde
    */
   async logInTransaction(tx: Prisma.TransactionClient, input: AuditLogInput): Promise<void> {
     await tx.auditLog.create({
