@@ -38,6 +38,7 @@ export interface CollectionAuditEvidence {
   amount?: string;
   currency?: string;
   occurredAt?: string;
+  confirmedAt?: string;
   changedFields?: string[];
   journalEntryIds?: string[];
   ledgerEntryIds?: string[];
@@ -98,6 +99,7 @@ export async function logCollectionMutationInTransaction(
     amount: evidence.amount,
     currency: evidence.currency,
     occurredAt: evidence.occurredAt,
+    confirmedAt: evidence.confirmedAt,
     changedFields: evidence.changedFields ? [...evidence.changedFields].sort() : undefined,
     journalEntryIds: evidence.journalEntryIds,
     ledgerEntryIds: evidence.ledgerEntryIds,

@@ -39,6 +39,9 @@ function setup(
     case: {
       findFirst: jest.fn(async () => ({ id: 'c1', caseStatus: 'DERDEST', currency: 'TRY' })),
     },
+    claimItem: {
+      findMany: jest.fn(async () => []),
+    },
     collection: {
       // lock altında race re-check
       findUnique: jest.fn(async () => opts.lockedDup ?? null),
@@ -47,7 +50,7 @@ function setup(
         ? jest.fn(async () => {
             throw opts.createThrows;
           })
-        : jest.fn(async () => created),
+        : jest.fn(async ({ data }: any) => ({ ...created, confirmedAt: data.confirmedAt })),
     },
     collectionAllocation: { create: jest.fn() },
     collectionOverpayment: { create: jest.fn() },
@@ -143,7 +146,11 @@ describe('CollectionService.create — P0-1 idempotency', () => {
     expect(tx.$executeRaw).toHaveBeenCalled();
     expect(tx.collection.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ idempotencyKey: 'key-1' }),
+        data: expect.objectContaining({
+          idempotencyKey: 'key-1',
+          status: 'CONFIRMED',
+          confirmedAt: expect.any(Date),
+        }),
       }),
     );
     expect(res.id).toBe('col-new');

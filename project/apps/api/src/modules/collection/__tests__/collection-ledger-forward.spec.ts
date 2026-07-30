@@ -31,6 +31,7 @@ function setup(opts: { summaryEngine?: any; caseRecord?: any; lockedDup?: any; p
         date: data.date,
         valueDate: data.valueDate ?? null,
         status: 'CONFIRMED',
+        confirmedAt: data.confirmedAt,
         createdAt: new Date('2026-01-01T00:00:01.000Z'),
       })),
       findFirst: jest.fn(),

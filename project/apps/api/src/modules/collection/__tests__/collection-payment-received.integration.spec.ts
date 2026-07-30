@@ -403,13 +403,21 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
 
   describe('Test 1: Normal payment → same-tx atomic creation', () => {
     it('creates collection row, PAYMENT_RECEIVED event, and outbox row', async () => {
-      const dto = buildDto({ sourceType: CollectionSource.MANUAL });
+      const dto = buildDto({
+        sourceType: CollectionSource.MANUAL,
+        date: '2026-07-01T00:00:00.000Z',
+        valueDate: '2026-07-02T00:00:00.000Z',
+      });
       const result = await service.create(testTenantId, dto, 'test-user-1');
 
       // Collection exists
       expect(result).toBeDefined();
       expect(result.id).toBeDefined();
       expect(Number(result.amount)).toBe(5000);
+      expect(result.status).toBe('CONFIRMED');
+      expect(result.confirmedAt).toBeInstanceOf(Date);
+      expect(result.confirmedAt?.toISOString()).not.toBe(new Date(dto.date).toISOString());
+      expect(result.confirmedAt?.toISOString()).not.toBe(new Date(dto.valueDate!).toISOString());
 
       // Event exists (timeline entry with PAYMENT_RECEIVED)
       const event = await (prisma as any).icrabotTimelineEntry.findFirst({
@@ -426,6 +434,28 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
         },
       });
       expect(outbox).not.toBeNull();
+    });
+
+    it('legacy CONFIRMED + null row read path remains deterministic and does not guess a timestamp', async () => {
+      const legacy = await prisma.collection.create({
+        data: {
+          tenantId: testTenantId,
+          caseId: testCaseId,
+          idempotencyKey: `legacy-confirmed-null-${randomUUID()}`,
+          amount: 100,
+          currency: 'TRY',
+          type: CollectionType.CASH,
+          channel: 'BANKA',
+          date: new Date('2026-06-01T00:00:00.000Z'),
+          status: 'CONFIRMED',
+          confirmedAt: null,
+        },
+      });
+
+      const read = await service.findById(testTenantId, legacy.id);
+      expect(read).toMatchObject({ id: legacy.id, status: 'CONFIRMED', confirmedAt: null });
+      await expect(prisma.collection.findUniqueOrThrow({ where: { id: legacy.id } }))
+        .resolves.toMatchObject({ confirmedAt: null });
     });
   });
 
@@ -505,6 +535,8 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       const second = await service.create(testTenantId, dto, 'test-user-1'); // aynı key → replay
 
       expect(second.id).toBe(first.id); // aynı tahsilat döner
+      expect(first.confirmedAt).toBeInstanceOf(Date);
+      expect(second.confirmedAt).toEqual(first.confirmedAt);
 
       const events = await (prisma as any).icrabotTimelineEntry.findMany({
         where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
@@ -558,6 +590,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
 
       const collections = await prisma.collection.findMany({ where: { tenantId: testTenantId } });
       expect(collections).toHaveLength(1);
+      expect(collections[0].confirmedAt).toBeInstanceOf(Date);
       const events = await (prisma as any).icrabotTimelineEntry.findMany({
         where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
       });

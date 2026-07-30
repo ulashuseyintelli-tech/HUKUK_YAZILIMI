@@ -56,6 +56,29 @@ describe('CollectionService.update TM3-S1 safety', () => {
     expect(prisma.collection.update).not.toHaveBeenCalled();
   });
 
+  it('rejects attempted confirmedAt overwrite on a confirmed Collection', async () => {
+    const originalConfirmedAt = new Date('2026-07-01T10:00:00.000Z');
+    const prisma = buildPrisma({
+      id: 'col1',
+      tenantId: 't1',
+      status: CollectionStatus.CONFIRMED,
+      confirmedAt: originalConfirmedAt,
+      allocations: [],
+    });
+    const service = buildService(prisma);
+
+    try {
+      await service.update('t1', 'col1', {
+        confirmedAt: new Date('2026-07-02T10:00:00.000Z'),
+      } as any);
+      throw new Error('update should have failed');
+    } catch (error: any) {
+      expectCollectionRequiresReversal(error, ['confirmedAt']);
+    }
+
+    expect(prisma.collection.update).not.toHaveBeenCalled();
+  });
+
   it('rejects posted/confirmed bankName updates as payment metadata', async () => {
     const prisma = buildPrisma({ id: 'col1', tenantId: 't1', status: CollectionStatus.CONFIRMED, allocations: [] });
     const service = buildService(prisma);
@@ -71,10 +94,17 @@ describe('CollectionService.update TM3-S1 safety', () => {
   });
 
   it('allows posted/confirmed metadata updates without ledger-impacting fields', async () => {
-    const prisma = buildPrisma({ id: 'col1', tenantId: 't1', status: CollectionStatus.CONFIRMED, allocations: [] });
+    const originalConfirmedAt = new Date('2026-07-01T10:00:00.000Z');
+    const prisma = buildPrisma({
+      id: 'col1',
+      tenantId: 't1',
+      status: CollectionStatus.CONFIRMED,
+      confirmedAt: originalConfirmedAt,
+      allocations: [],
+    });
     const service = buildService(prisma);
 
-    await service.update('t1', 'col1', { description: 'dekont notu', receiptNo: 'R-1' } as any);
+    const result = await service.update('t1', 'col1', { description: 'dekont notu', receiptNo: 'R-1' } as any);
 
     expect(prisma.collection.update).toHaveBeenCalledWith({
       where: { id: 'col1' },
@@ -84,6 +114,30 @@ describe('CollectionService.update TM3-S1 safety', () => {
       },
       include: { allocations: true },
     });
+    expect(result.confirmedAt).toEqual(originalConfirmedAt);
+  });
+
+  it('ignores a forged confirmedAt on a pending metadata update', async () => {
+    const prisma = buildPrisma({
+      id: 'col1',
+      tenantId: 't1',
+      status: CollectionStatus.PENDING,
+      confirmedAt: null,
+      allocations: [],
+    });
+    const service = buildService(prisma);
+
+    const result = await service.update('t1', 'col1', {
+      description: 'pending note',
+      confirmedAt: new Date('2026-07-01T10:00:00.000Z'),
+    } as any);
+
+    expect(prisma.collection.update).toHaveBeenCalledWith({
+      where: { id: 'col1' },
+      data: { description: 'pending note' },
+      include: { allocations: true },
+    });
+    expect(result.confirmedAt).toBeNull();
   });
 
   it('allows draft/unposted amount/date updates', async () => {
