@@ -912,6 +912,32 @@ record kimliğini işaret eder:
 <!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-SA01 -->
 ```
 
+Validator, marker'daki exact `recordId` alanını taşıyan tek fenced `text` SA
+kayıt bloğunu deterministik olarak seçer. Zorunlu alanların tekillik ve değer
+kontrolü yalnız bu hedef blok içinde yapılır; başka geçerli SA kayıtlarındaki
+ortak alanlar çakışma sayılmaz. Hedef blokta eksik olan alan başka bir SA
+kaydından karşılanamaz. Missing/duplicate marker, missing/duplicate hedef kayıt
+bloğu ile hedef blok içindeki missing/duplicate/wrong alanlar fail-closed
+reddedilir. EG marker, alan ve bootstrap kontrolleri bu record-scoping
+kuralından etkilenmez.
+
+Record-scoping repair publication'ı yalnız aşağıdaki self-binding ile kabul
+edilir:
+
+```text
+Task ID  : GOVERNANCE-COORDINATION-ROOT-SA-RECORD-SCOPING-REPAIR-R01
+Mode     : GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01
+Base SHA : 3f3d672197722f8f7d9ebdebdf979d715cfb601d
+Head ref : codex/governance-coordination-root-sa-record-scoping-repair-r02
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Base, branch veya exact `M/M/M` path-status tuple drift ederse publication
+fail-closed reddedilir. Bu self-binding authority materialization, başka bir
+control-plane repair veya genişletilmiş path yetkisi üretmez.
+
 ```text
 recordType : EXECUTION_GRANT
 recordId : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01
