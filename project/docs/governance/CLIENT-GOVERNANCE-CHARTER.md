@@ -3624,29 +3624,30 @@ I08  CLIENT-ARC-07-LEGACY-FLAT-REDUCTION-I08
 
 ```text
 NEXT ELIGIBLE IMPLEMENTATION TASK:
-CLIENT-ARC-07-LEGACY-FLAT-REDUCTION-I08
+NONE — ARC-07 MUHENDISLIK ZINCIRI TAMAMLANDI
 
-STATUS: OWNER GO REQUIRED / NOT STARTED
+STATUS: ENGINEERING COMPLETE / WAITING FOR PRODUCTION DEPLOYMENT PROGRAM
 
-TAMAMLANAN DILIMLER:
+TAMAMLANAN DILIMLER (muhendislik zinciri):
 I01  CLIENT-ARC-07-LIFECYCLE-INVARIANT-I01        CLOSED / VERIFIED   PR #1943
 I02  CLIENT-ARC-07-ARCHIVE-RESTORE-AUDIT-I02      CLOSED / VERIFIED   PR #1958
 I03  CLIENT-ARC-07-STAFF-HISTORY-I03              CLOSED / VERIFIED   PR #1961
 I04A CLIENT-ARC-07-CREATE-UPDATE-AUDIT-I04A       CLOSED / VERIFIED   PR #1970
 I07  CLIENT-ARC-07-OFFICIAL-CONSUMER-ADAPTER-I07  CLOSED / VERIFIED   PR #1979
 
-ERTELENEN / BLOKLU DILIMLER (owner karari, 2026-07-30):
-I04  CLIENT-ARC-07-PRODUCTION-EVIDENCE-I04     DEFERRED — production ortami yok
-I05  CLIENT-ARC-07-BACKFILL-DRY-RUN-I05         BLOCKED — I04 gercek production kanitini bekler
-I06  CLIENT-ARC-07-BACKFILL-APPLY-I06            BLOCKED — I04/I05'i bekler
+DEPLOYMENT-BAGIMLI DILIMLER (owner karari, 2026-07-30 — TEKNIK BLOK DEGIL, PROGRAMATIK BEKLEME):
+I04  CLIENT-ARC-07-PRODUCTION-EVIDENCE-I04     DEFERRED — authoritative production ortami MEVCUT DEGIL
+I05  CLIENT-ARC-07-BACKFILL-DRY-RUN-I05         BLOCKED — WAITING FOR PRODUCTION DEPLOYMENT PROGRAM
+I06  CLIENT-ARC-07-BACKFILL-APPLY-I06            BLOCKED — WAITING FOR PRODUCTION DEPLOYMENT PROGRAM
+I08  CLIENT-ARC-07-LEGACY-FLAT-REDUCTION-I08     BLOCKED — WAITING FOR PRODUCTION DEPLOYMENT PROGRAM
 ```
 
-Bu bölüm `I08`'i **başlatmaz**; yalnız owner sıralamasında (2026-07-30) sıradaki uygun dilim olarak tanımlar. §49.6 D05 Stage 3 hükmü: legacy flat azaltımı YALNIZ tüketici hazırlığı KANITLANDIKTAN SONRA başlar — I07 bu kanıtın BİR PARÇASIDIR (resmî tüketiciler artık flat-bağımlı DEĞİL), TAMAMI DEĞİLDİR (flat YAZIM hâlâ devam ediyor, VER-02 create/update). `I05`/`I06`/`I08` otomatik olarak YETKİLENDİRİLMEZ.
+Bu bölüm hiçbir dilimi **başlatmaz**. `I04`→`I05`→`I06`→`I08` zinciri mühendislik eksikliği DEĞİL, authoritative production ortamının (deployment) HENÜZ VAR OLMAMASI nedeniyle bekliyor — bu fark owner'ın 2026-07-30 kararıyla açıkça kayıtlıdır (bkz. §49.17). §49.6 D05 Stage 3 hükmü hâlâ geçerlidir: legacy flat azaltımı yalnız tüketici hazırlığı kanıtlandıktan SONRA başlar — I07 bu kanıtın **bir parçasıdır** (resmî tüketiciler artık flat-bağımlı DEĞİL), TAMAMI DEĞİLDİR (flat YAZIM hâlâ devam ediyor, VER-02 create/update). Program gerçek bir production deployment owner tarafından yetkilendirilip oluşturulduğunda YENİDEN AÇILIR; `I04`/`I05`/`I06`/`I08` **otomatik olarak YETKİLENDİRİLMEZ**.
 
 ### 49.15 Statü Kesinliği
 
 ```text
-ARC-07                     : IN PROGRESS / I01-I03+I04A+I07 CLOSED / I04 DEFERRED (NO PRODUCTION)
+ARC-07                     : ENGINEERING COMPLETE / WAITING FOR PRODUCTION DEPLOYMENT PROGRAM
 VER-02                     : CLOSED / VERIFIED (degismedi)
 CLIENT-DOCUMENT-ADDRESS-OUTPUT-DEFECT-R01 : CLOSED / VERIFIED (degismedi)
 ACT-23                     : UNAFFECTED
@@ -3657,13 +3658,14 @@ STAFF HISTORY API / UI     : IMPLEMENTED (I03); PORTAL EXPOZURU YOK
 ADRES AUDIT GORUNURLUGU    : DEFERRED (yeniden kullanilabilir audit-history UI konvansiyonu yok)
 CREATE/UPDATE AUDIT        : CLOSED / VERIFIED (I04A, PR #1970)
 PRODUCTION EVIDENCE (I04)  : DEFERRED — owner beyani: production ortami yok/deploy edilmemis
-BACKFILL (I05/I06)         : BLOCKED — gercek production ortami var olana kadar
+BACKFILL (I05/I06)         : BLOCKED — WAITING FOR PRODUCTION DEPLOYMENT PROGRAM (programatik, teknik DEGIL)
 OFFICIAL CONSUMER ADAPTER (I07): CLOSED / VERIFIED (PR #1979) — UYAP/document/template-engine artik
                              ortak ClientAddress resolver kullanir; flat YAZIM DURMADI (D05 Stage 1)
-LEGACY FLAT REDUCTION (I08): NOT AUTHORIZED / OWNER GO REQUIRED
+LEGACY FLAT REDUCTION (I08): BLOCKED — WAITING FOR PRODUCTION DEPLOYMENT PROGRAM (programatik, teknik DEGIL)
 FIZIKSEL SILME             : FAIL-CLOSED (I02); POL-E on kosullari TEMSIL EDILMIYOR
-BACKFILL                   : NOT STARTED (I05/I06)
-IMPLEMENTATION AUTHORITY   : NONE (I03+ icin owner GO gerekir)
+BACKFILL                   : BLOCKED (I05/I06) — WAITING FOR PRODUCTION DEPLOYMENT PROGRAM
+IMPLEMENTATION AUTHORITY   : NONE (I04/I05/I06/I08 icin gercek production ortami + owner GO gerekir)
+CLIENT PROGRAM SONRASI ADIM: genel feature backlog'a doner — ARC-07'ye BAGLI DEGIL (bkz. §49.17)
 ```
 
 ### 49.16 Bölüm Self-Check
@@ -3671,3 +3673,32 @@ IMPLEMENTATION AUTHORITY   : NONE (I03+ icin owner GO gerekir)
 Bu bölüm: arşiv/restore İMPLEMENTE ETMEZ · `isCurrent` runtime davranışını DEĞİŞTİRMEZ · audit kodu EKLEMEZ · GET/history endpoint AÇMAZ · Prisma şemasını DEĞİŞTİRMEZ · migration ÜRETMEZ · backfill ÇALIŞTIRMAZ · production verisine ERİŞMEZ · `ClientAddress` satırlarını DEĞİŞTİRMEZ · legacy flat yazımları DEĞİŞTİRMEZ · UYAP/doküman tüketicilerini RETARGET ETMEZ · `DebtorAddress`'e DOKUNMAZ · ACT-23'ü DEĞİŞTİRMEZ · VER-02'yi YENİDEN AÇMAZ · Financial Disclosure'ı DEĞİŞTİRMEZ · §1–§48 metinlerini DEĞİŞTİRMEZ · POL-E implementasyonunun tamamlandığını İDDİA ETMEZ.
 
 **OWNER DECISION RATIFIED ≠ IMPLEMENTED · CONTRACT CANONICAL ≠ BEHAVIOR CHANGED · AS-IS ≠ TARGET · DEV DATASET ≠ PRODUCTION EVIDENCE.**
+
+### 49.17 Mühendislik Zinciri Kapanışı ve İki Hat Ayrımı (OWNER RATIFIED, 2026-07-30)
+
+I01 → I02 → I03 → I04A → I07 dilimlerinin tamamlanmasıyla owner, ARC-07'nin **mühendislik geliştirme zincirinin** tamamlandığını ve kalan dilimlerin doğasının **değiştiğini** tespit etti: `I04`/`I05`/`I06`/`I08` artık "sıradaki uygun görev" değildir — bunlar **authoritative bir production ortamının var olmasına programatik olarak bağımlıdır**. Bu bir teknik eksiklik veya eksik implementasyon DEĞİLDİR; `CLIENT-ARC-07-PRODUCTION-EVIDENCE-I04`'ün owner tarafından `DEFERRED` ilan edilmesinin (§49.14) doğal sonucudur.
+
+```text
+ARC-07 STATU: ENGINEERING COMPLETE / WAITING FOR PRODUCTION DEPLOYMENT PROGRAM
+```
+
+**İKİ AYRI HAT:**
+
+```text
+HAT 1 — GELECEKTEKI DEPLOYMENT ZINCIRI (production programina bagli, bu program DEGIL):
+  Production deployment yetkilendirilir/olusturulur
+    -> I04  Production Evidence (D07 kanit sartlari)
+    -> I05  Backfill Dry-Run
+    -> I06  Backfill Apply (ayrica owner-authorized)
+    -> I08  Legacy Flat Reduction
+
+HAT 2 — CLIENT URUN GELISTIRME (ARC-07'ye BAGLI DEGIL, simdi acik):
+  VER-02 (CLOSED) + ARC-07 muhendislik zinciri (CLOSED)
+    -> CLIENT genel feature backlog'u (Client Workspace, cok-adres UX
+       iyilestirmeleri, veya backlog'daki baska maddeler) — ARC-07
+       kapanmasini veya production deployment'i BEKLEMEZ.
+```
+
+**KAPSAM AÇIKLIĞI:** bu bölüm ARC-07'yi **kapatmaz** ve `I04`–`I08`'i **iptal etmez** — Hat 1, gerçek bir production ortamı owner tarafından yetkilendirilip oluşturulduğunda **aynı kanonik sırayla** devam eder. Bu bölüm yalnız şunu netleştirir: (a) ARC-07'nin mühendislik geliştirme yükümlülüğü şu an için tamamlanmıştır, (b) kalan dilimlerin bekleme nedeni programatik (production yokluğu) olup teknik değildir, (c) CLIENT programındaki **sonraki implementasyon işi** artık ARC-07'nin kapanmasını şart koşmaz ve genel backlog'dan owner GO ile bağımsızca seçilebilir.
+
+**Bu bölüm self-check:** production deployment OLUŞTURMAZ · I04–I08'i BAŞLATMAZ · backfill ÇALIŞTIRMAZ · production verisine ERİŞMEZ · §1–§49.16 metinlerini DEĞİŞTİRMEZ · yalnız §49.14/§49.15'in STATÜ bloklarını (kural metni değil) günceller.
