@@ -10,7 +10,6 @@ import {
   AddressTaskResultType,
   AddressTaskFailureReason,
   AddressTaskCancellationReason,
-  CaseDebtorLifecycleStatus,
   ManualTaskResolution,
   Prisma,
 } from '@prisma/client';
@@ -601,7 +600,16 @@ export class AddressTaskService {
     const skippedDebtorNames: string[] = [];
 
     for (const cd of caseDebtors) {
-      if (cd.lifecycleStatus === CaseDebtorLifecycleStatus.PASSIVE) {
+      // P1-I12: inline lifecycleStatus kontrolü (batch pre-load anındaki durağan görüntü)
+      // yerine canonical guard'ın ACT-08 boolean varyantı — aynı "atla, döngüyü durdurma"
+      // sözleşmesi (throw yok), ama karar anında CANLI okuma yaparak batch-fetch ile bu
+      // debtor'un işlenme anı arasındaki passivation drift penceresini kapatır.
+      const isPassive = await this.caseDebtorLifecycleGuard.isPassiveByCaseAndDebtor(
+        tenantId,
+        caseId,
+        cd.debtorId,
+      );
+      if (isPassive) {
         this.logger.log(`Skipping address request for passive case debtor ${cd.debtor.name}`);
         passiveSkipped++;
         continue;

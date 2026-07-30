@@ -54,6 +54,7 @@ const mockClientNotificationService = {
 
 const mockCaseDebtorLifecycleGuard = {
   assertActiveByCaseAndDebtor: jest.fn(),
+  isPassiveByCaseAndDebtor: jest.fn(),
 };
 
 describe('AddressTaskService', () => {
@@ -77,6 +78,7 @@ describe('AddressTaskService', () => {
       debtorId: 'debtor-1',
       lifecycleStatus: 'ACTIVE',
     });
+    mockCaseDebtorLifecycleGuard.isPassiveByCaseAndDebtor.mockResolvedValue(false);
   });
 
   // ============================================================================
@@ -625,11 +627,27 @@ describe('AddressTaskService', () => {
         status: 'PENDING',
       });
       mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+      // P1-I12: pasiflik artık batch'ten (cd.lifecycleStatus) değil, canonical guard'dan
+      // (canlı okuma) geliyor — debtorId'ye göre ayrı cevap ver.
+      mockCaseDebtorLifecycleGuard.isPassiveByCaseAndDebtor.mockImplementation(
+        (_tenantId: string, _caseId: string, debtorId: string) =>
+          Promise.resolve(debtorId === 'debtor-passive'),
+      );
 
       const result = await service.triggerAddressWorkflowForCase('tenant-1', 'case-1');
 
       expect(result.tasksCreated).toBe(1);
       expect(result.debtorsProcessed).toBe(2);
+      expect(mockCaseDebtorLifecycleGuard.isPassiveByCaseAndDebtor).toHaveBeenCalledWith(
+        'tenant-1',
+        'case-1',
+        'debtor-active',
+      );
+      expect(mockCaseDebtorLifecycleGuard.isPassiveByCaseAndDebtor).toHaveBeenCalledWith(
+        'tenant-1',
+        'case-1',
+        'debtor-passive',
+      );
       expect(mockPrismaService.addressTask.create).toHaveBeenCalledTimes(1);
       expect(mockPrismaService.addressTask.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -641,6 +659,29 @@ describe('AddressTaskService', () => {
           data: expect.objectContaining({ debtorId: 'debtor-passive' }),
         }),
       );
+    });
+
+    it('P1-I12: guard bulunamayan CaseDebtor için de pasif-eşdeğeri davranır (defense-in-depth)', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1', fileNumber: 'F1', caseClients: [] });
+      mockPrismaService.addressAuditLog.findFirst.mockResolvedValue(null);
+      mockPrismaService.caseDebtor.findMany.mockResolvedValue([
+        {
+          id: 'cd-vanished',
+          caseId: 'case-1',
+          debtorId: 'debtor-vanished',
+          lifecycleStatus: 'ACTIVE',
+          debtor: { id: 'debtor-vanished', name: 'Vanished Debtor', type: 'INDIVIDUAL' },
+        },
+      ]);
+      // Guard canlı okuduğu için batch-snapshot'tan SONRA silinmiş/pasifleşmiş bir satırı
+      // "bulunamadı" (defensif pasif) sayar — inline enum kontrolü bu durumu KAÇIRIRDI
+      // (stale 'ACTIVE' değeriyle devam ederdi).
+      mockCaseDebtorLifecycleGuard.isPassiveByCaseAndDebtor.mockResolvedValue(true);
+
+      const result = await service.triggerAddressWorkflowForCase('tenant-1', 'case-1');
+
+      expect(result.tasksCreated).toBe(0);
+      expect(mockPrismaService.addressTask.create).not.toHaveBeenCalled();
     });
   });
 
