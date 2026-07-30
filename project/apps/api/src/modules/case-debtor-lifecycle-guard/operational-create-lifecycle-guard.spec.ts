@@ -174,6 +174,10 @@ function makeThirdPartyService(guard = activeGuard()) {
         notes: null,
         caseDebtor: { case: { id: "case-1" } },
       }),
+      // I15 Phase A: createExternalCase() artik yaratmadan once mantiksal
+      // kimlik ile findUnique on-kontrolu yapiyor; bu suite'in create
+      // senaryolari yeni/tekil kayitlar oldugu icin varsayilan null.
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation(({ data }: any) =>
         Promise.resolve({ id: "external-case-1", ...data })
       ),
