@@ -950,6 +950,62 @@ authority, wildcard/prefix authority, standing scheduler/auto-merge, ledger/CI
 bypass, production activation, closeout implementasyonu veya başka task için
 yetki üretmez.
 
+### Stage 2 validator/base-binding reconciliation — exact task-bound extension
+
+Owner-ratified 2026-07-30. Byte-equality primary path olarak korunur. Yalnız bu
+exact root-bootstrap zincirinde protected Stage 1 blob drift'i varsa, aşağıdaki
+canonical task-bound reconciliation record'ı bütün security ve staleness
+kontrollerini geçirdiğinde semantic reconciliation path kullanılabilir.
+
+```text
+Task ID  : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-VALIDATOR-BASE-BINDING-RECONCILIATION-R01
+Mode     : GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_BASE_BINDING_RECONCILIATION_R01
+Base SHA : 989dac5b18ee895a1e621586c84adb3cabeb4c02
+Head ref : codex/governance-closeout-stage2-validator-base-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+           A project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/stage2-base-reconciliation-authority.json
+```
+
+Canonical reconciliation locator ve provenance:
+
+```text
+recordType : ROOT_BOOTSTRAP_STAGE2_BASE_RECONCILIATION
+recordId   : GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-BASE-RECONCILIATION-R01
+source PR  : #1915
+source SHA : 0f78a5ea49b0c3be91172de4939ae8bd95a25f17
+source path: project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/reconciliation-result.json
+```
+
+Validator yalnız iki base path kabul eder:
+
+```text
+1. Stage 1 protected blob'ları canonical predecessor ile byte-for-byte eşit.
+2. Blob'lar farklı ve exact canonical reconciliation record'ı:
+   - program, target task, bootstrap mode ve Stage 1 merge SHA'ya exact bağlı;
+   - source reconciliation merge SHA'sı current base'in ancestor'ı;
+   - drift classification closed allowlist içinde;
+   - security invariants PRESERVED;
+   - target program/task binding, Stage 2 binding ve contract/code/test consistency PASS;
+   - authority conflict ve resolver ambiguity NONE;
+   - current protected blob SHA setiyle exact eşit.
+```
+
+İzinli drift classification seti yalnız `PRESERVED_EXACTLY`,
+`PRESERVED_SEMANTICALLY_EQUIVALENT`, `EXTENDED_BACKWARD_COMPATIBLY` ve
+`SUPERSEDED_BY_CANONICAL_SUCCESSOR` değerleridir. Record'ın kendisi current
+writer durumunu kalıcılaştırmaz; `writerGateRequirement` exact olarak
+`PASS_AT_CURRENT_EXECUTION_PREFLIGHT` kalır. `validate-root-stage2-base` çağrısı
+current execution'da explicit `--writer-gate PASS` olmadan readiness üretmez.
+
+Missing, malformed, duplicate/conflicting, cross-task, wrong-mode, wrong-Stage-1,
+non-ancestor, weakened-security veya post-reconciliation protected-blob drift'i
+fail-closed reddedilir. Markdown, chat, PR/commit açıklaması ve audit-only belge
+authority kaynağı değildir. Bu extension exact task/branch/path/record kontrollerini,
+single-use davranışını, CI/ledger zorunluluğunu veya production yasağını gevşetmez;
+Stage 2 SA/EG materyalize etmez ve target live-ledger implementasyonunu başlatmaz.
+
 ## TR01 TRUST-ROOT AUTHORITY BOOTSTRAP — exact control-plane authority binding
 
 Owner-ratified 2026-07-29. Bu kayıt yalnız PR #1903 için tek kullanımlık,

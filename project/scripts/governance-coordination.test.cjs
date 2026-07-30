@@ -190,12 +190,13 @@ function materializeFixtureRegister(fixture) {
   return { instances, content };
 }
 
-function runFixtureGit(args, cwd) {
+function runFixtureGit(args, cwd, options = {}) {
   const result = spawnSync('git', args, {
     cwd,
     encoding: 'utf8',
     stdio: 'pipe',
     windowsHide: true,
+    input: options.input,
   });
   assert.equal(
     result.status,
@@ -438,6 +439,12 @@ function rootAuthorityStage2Changes() {
   );
 }
 
+function rootStage2ValidatorReconciliationChanges() {
+  return coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function rootAuthorityContractContent() {
   const binding =
     coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
@@ -612,6 +619,199 @@ function createRootAuthorityStage2GitFixture(t, options = {}) {
   runFixtureGit(['commit', '--quiet', '-m', 'prospective Stage 2 materialization'], root);
   const head = runFixtureGit(['rev-parse', 'HEAD'], root);
   return { root, predecessor, base, head };
+}
+
+const ROOT_STAGE2_RECONCILIATION_BASE_SHA =
+  '989dac5b18ee895a1e621586c84adb3cabeb4c02';
+const ROOT_STAGE2_RECONCILIATION_SOURCE_SHA =
+  '0f78a5ea49b0c3be91172de4939ae8bd95a25f17';
+const ROOT_STAGE2_RECONCILIATION_SOURCE_PATH =
+  'project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/reconciliation-result.json';
+const ROOT_STAGE2_RECONCILIATION_RECORD_PATH =
+  'project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/stage2-base-reconciliation-authority.json';
+let rootStage2ReconciliationSeed;
+
+function getRootStage2ReconciliationSeed() {
+  if (rootStage2ReconciliationSeed) return rootStage2ReconciliationSeed;
+  rootStage2ReconciliationSeed = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'gov-coord-root-reconcile-seed-'),
+  );
+  runFixtureGit(['init', '--quiet', '--bare'], rootStage2ReconciliationSeed);
+  runFixtureGit(
+    [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      REPO_ROOT,
+      `${ROOT_STAGE2_RECONCILIATION_BASE_SHA}:refs/heads/main`,
+    ],
+    rootStage2ReconciliationSeed,
+  );
+  process.once('exit', () =>
+    fs.rmSync(rootStage2ReconciliationSeed, { recursive: true, force: true }),
+  );
+  return rootStage2ReconciliationSeed;
+}
+
+function createRootStage2ReconciliationFixture(t, options = {}) {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-root-reconcile-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  runFixtureGit(
+    ['clone', '--quiet', '--shared', '--no-checkout', getRootStage2ReconciliationSeed(), root],
+    parent,
+  );
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+  runFixtureGit(['read-tree', ROOT_STAGE2_RECONCILIATION_BASE_SHA], root);
+
+  const protectedBlobShas = Object.fromEntries(
+    binding.bindingPr.changedPaths.map(({ path: repoPath }) => [
+      repoPath,
+      runFixtureGit(
+        ['rev-parse', `${ROOT_STAGE2_RECONCILIATION_BASE_SHA}:${repoPath}`],
+        root,
+      ),
+    ]),
+  );
+  const sourceBlobSha = runFixtureGit(
+    ['rev-parse', `${ROOT_STAGE2_RECONCILIATION_SOURCE_SHA}:${ROOT_STAGE2_RECONCILIATION_SOURCE_PATH}`],
+    root,
+  );
+  const record = {
+    schemaVersion: 1,
+    recordType: 'ROOT_BOOTSTRAP_STAGE2_BASE_RECONCILIATION',
+    recordId: 'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-BASE-RECONCILIATION-R01',
+    documentRole: 'CANONICAL_TASK_BOUND_RECONCILIATION_AUTHORITY',
+    materializationTaskId:
+      'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-VALIDATOR-BASE-BINDING-RECONCILIATION-R01',
+    programId: binding.programId,
+    targetTaskId: binding.targetTaskId,
+    bootstrapModeId: binding.protocolModeId,
+    stage1MergeSha: '790d2a956dad05e39c8fde71cc3e19e1f2425cf3',
+    driftClassification: 'EXTENDED_BACKWARD_COMPATIBLY',
+    securityInvariants: 'PRESERVED',
+    targetProgramTaskBinding: 'PASS',
+    stage2Binding: {
+      status: 'PASS',
+      taskId: binding.targetPr.taskId,
+      headRef: binding.targetPr.headRef,
+      changedPaths: binding.targetPr.changedPaths.map(({ status, path: repoPath }) => ({
+        status,
+        path: repoPath,
+      })),
+    },
+    contractCodeTestConsistency: 'PASS',
+    authorityRecordConflict: 'NONE',
+    resolverAmbiguity: 'NONE',
+    writerGateRequirement: 'PASS_AT_CURRENT_EXECUTION_PREFLIGHT',
+    readiness: 'ELIGIBLE_IF_CURRENT_EXECUTION_PREFLIGHT_PASSES',
+    sourceReconciliation: {
+      pullRequest: 1915,
+      mergeSha: ROOT_STAGE2_RECONCILIATION_SOURCE_SHA,
+      path: ROOT_STAGE2_RECONCILIATION_SOURCE_PATH,
+      blobSha: sourceBlobSha,
+    },
+    protectedBlobShas,
+    allowedDriftClassifications: [
+      'PRESERVED_EXACTLY',
+      'PRESERVED_SEMANTICALLY_EQUIVALENT',
+      'EXTENDED_BACKWARD_COMPATIBLY',
+      'SUPERSEDED_BY_CANONICAL_SUCCESSOR',
+    ],
+  };
+  Object.assign(record, options.recordOverrides || {});
+  const writeIndexJson = (repoPath, value) => {
+    const content = typeof value === 'string' ? value : `${JSON.stringify(value, null, 2)}\n`;
+    const blob = runFixtureGit(['hash-object', '-w', '--stdin'], root, { input: content });
+    runFixtureGit(['update-index', '--add', '--cacheinfo', `100644,${blob},${repoPath}`], root);
+  };
+  if (!options.omitRecord) {
+    writeIndexJson(
+      ROOT_STAGE2_RECONCILIATION_RECORD_PATH,
+      options.rawRecord || record,
+    );
+  }
+  if (options.duplicateRecord) {
+    writeIndexJson(
+      'project/docs/governance/duplicate-stage2-base-reconciliation.json',
+      record,
+    );
+  }
+  if (options.conflictingRecord) {
+    writeIndexJson(
+      'project/docs/governance/conflicting-stage2-base-reconciliation.json',
+      { ...record, recordId: `${record.recordId}-CONFLICT` },
+    );
+  }
+  const tree = runFixtureGit(['write-tree'], root);
+  let base = options.omitRecord
+    ? ROOT_STAGE2_RECONCILIATION_BASE_SHA
+    : runFixtureGit(
+        [
+          'commit-tree',
+          tree,
+          '-p',
+          ROOT_STAGE2_RECONCILIATION_BASE_SHA,
+          '-m',
+          'materialize Stage 2 reconciliation',
+        ],
+        root,
+      );
+
+  if (options.stalePath) {
+    runFixtureGit(['read-tree', base], root);
+    const staleContent = `${runFixtureGit(['show', `${base}:${options.stalePath}`], root)}\npost-reconciliation drift\n`;
+    const staleBlob = runFixtureGit(['hash-object', '-w', '--stdin'], root, {
+      input: staleContent,
+    });
+    runFixtureGit(
+      ['update-index', '--cacheinfo', `100644,${staleBlob},${options.stalePath}`],
+      root,
+    );
+    const staleTree = runFixtureGit(['write-tree'], root);
+    base = runFixtureGit(
+      ['commit-tree', staleTree, '-p', base, '-m', 'drift after reconciliation'],
+      root,
+    );
+  }
+  if (options.nonAncestor) {
+    const orphanTree = runFixtureGit(['rev-parse', `${base}^{tree}`], root);
+    base = runFixtureGit(
+      ['commit-tree', orphanTree, '-m', 'non-ancestor reconciliation snapshot'],
+      root,
+    );
+  }
+  return { root, base, record };
+}
+
+function expectRootStage2ReconciliationCode(
+  t,
+  fixtureOptions,
+  code,
+  validationOptions = {},
+) {
+  const fixture = createRootStage2ReconciliationFixture(t, fixtureOptions);
+  expectCode(
+    () =>
+      validationOptions.recordOnly
+        ? coordination.validateRootStage2ReconciliationRecord({
+            base: fixture.base,
+            cwd: fixture.root,
+          })
+        : coordination.validateRootStage2BaseReadiness({
+            base: fixture.base,
+            cwd: fixture.root,
+            writerGate: validationOptions.writerGate ?? 'PASS',
+          }),
+    code,
+  );
 }
 
 function pb01ClosureBindingChanges() {
@@ -5032,6 +5232,256 @@ test('root-authority Stage 2 prospective tuple is exact and authority references
         binding.targetPr.executionGrant,
       ),
     'ROOT_BOOTSTRAP_AUTHORITY_PATH_INVALID',
+  );
+});
+
+test('root-authority Stage 2 accepts valid canonical task-bound reconciliation', (t) => {
+  const fixture = createRootStage2ReconciliationFixture(t);
+  const result = coordination.validateRootStage2BaseReadiness({
+    base: fixture.base,
+    cwd: fixture.root,
+    writerGate: 'PASS',
+  });
+  assert.equal(result.status, 'ROOT_BOOTSTRAP_STAGE2_BASE_RECONCILED');
+  assert.equal(
+    result.recordId,
+    'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-BASE-RECONCILIATION-R01',
+  );
+});
+
+test('root-authority Stage 2 validator reconciliation PR is exact-base branch and scope bound', () => {
+  const reconciliation =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(rootStage2ValidatorReconciliationChanges(), {
+      base: reconciliation.baseSha,
+      headRef: reconciliation.headRef,
+    }),
+    { mode: reconciliation.mode, taskId: reconciliation.taskId },
+  );
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(rootStage2ValidatorReconciliationChanges(), {
+        base: reconciliation.baseSha,
+        headRef: `${reconciliation.headRef}-copy`,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('root-authority Stage 2 exact blob equality remains the primary pass path', (t) => {
+  const fixture = createRootAuthorityStage2GitFixture(t);
+  const result = coordination.validateRootStage2BaseReadiness({
+    base: fixture.base,
+    cwd: fixture.root,
+    writerGate: 'PASS',
+  });
+  assert.equal(result.status, 'ROOT_BOOTSTRAP_STAGE2_BASE_EXACT');
+});
+
+test('root-authority Stage 2 rejects blob drift without reconciliation', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { omitRecord: true },
+    'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED',
+  );
+});
+
+test('root-authority Stage 2 rejects wrong target task reconciliation', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { targetTaskId: 'ANOTHER-TASK' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority Stage 2 rejects wrong bootstrap mode reconciliation', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { bootstrapModeId: 'ANOTHER-MODE' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority Stage 2 rejects wrong Stage 1 merge SHA reconciliation', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { stage1MergeSha: 'a'.repeat(40) } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority Stage 2 rejects non-ancestor reconciliation provenance', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { nonAncestor: true },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_PROVENANCE_INVALID',
+    { recordOnly: true },
+  );
+});
+
+test('root-authority Stage 2 rejects weakened security reconciliation', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { securityInvariants: 'WEAKENED' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_SECURITY_REJECTED',
+  );
+});
+
+test('root-authority Stage 2 rejects contract code test inconsistency', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { contractCodeTestConsistency: 'FAIL' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority Stage 2 rejects failed Stage 2 binding reconciliation', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { stage2Binding: { status: 'FAIL' } } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_SECURITY_REJECTED',
+  );
+});
+
+test('root-authority Stage 2 rejects failed current writer gate', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    {},
+    'ROOT_BOOTSTRAP_STAGE2_COMPETING_WRITER',
+    { writerGate: 'FAIL' },
+  );
+});
+
+test('root-authority Stage 2 rejects authority-record conflict', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { authorityRecordConflict: 'FOUND' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority Stage 2 rejects resolver ambiguity', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { resolverAmbiguity: 'FOUND' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority Stage 2 rejects stale post-reconciliation protected blobs', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { stalePath: 'project/scripts/governance-coordination.cjs' },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_STALE',
+  );
+});
+
+test('root-authority Stage 2 rejects duplicate reconciliation records', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { duplicateRecord: true },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_CONFLICT',
+  );
+});
+
+test('root-authority Stage 2 rejects conflicting reconciliation records', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { conflictingRecord: true },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_CONFLICT',
+  );
+});
+
+test('root-authority Stage 2 rejects cross-task reconciliation reuse', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { materializationTaskId: 'ANOTHER-RECONCILIATION-TASK' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority existing bootstrap mode classification remains unchanged', () => {
+  const binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(rootAuthorityStage1Changes(), {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.bindingPr.taskId },
+  );
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(rootAuthorityStage2Changes(), {
+      headRef: binding.targetPr.headRef,
+    }),
+    { mode: binding.targetPr.mode, taskId: binding.targetPr.taskId },
+  );
+});
+
+test('root-authority existing exact-byte validator result is deterministic', (t) => {
+  const fixture = createRootAuthorityStage2GitFixture(t);
+  const options = { base: fixture.base, cwd: fixture.root, writerGate: 'PASS' };
+  assert.deepEqual(
+    coordination.validateRootStage2BaseReadiness(options),
+    coordination.validateRootStage2BaseReadiness(options),
+  );
+});
+
+test('root-authority reconciled validator result is deterministic', (t) => {
+  const fixture = createRootStage2ReconciliationFixture(t);
+  const options = { base: fixture.base, cwd: fixture.root, writerGate: 'PASS' };
+  assert.deepEqual(
+    coordination.validateRootStage2BaseReadiness(options),
+    coordination.validateRootStage2BaseReadiness(options),
+  );
+});
+
+test('root-authority Stage 2 rejects corrupt reconciliation JSON', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { rawRecord: '{' },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_INVALID',
+  );
+});
+
+test('root-authority Stage 2 rejects wrong program reconciliation', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { programId: 'ANOTHER-PROGRAM' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+  );
+});
+
+test('root-authority Stage 2 rejects disallowed drift classification', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { driftClassification: 'CONTRACT_DRIFT_REQUIRES_REBINDING' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_SECURITY_REJECTED',
+  );
+});
+
+test('root-authority Stage 2 rejects Markdown-only reconciliation authority', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { rawRecord: '# reconciliation\nstatus: PASS\n' },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_INVALID',
+  );
+});
+
+test('root-authority Stage 2 rejects chat text as reconciliation authority', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { rawRecord: 'owner said this is reconciled' },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_INVALID',
+  );
+});
+
+test('root-authority Stage 2 rejects audit-only reconciliation record', (t) => {
+  expectRootStage2ReconciliationCode(
+    t,
+    { recordOverrides: { documentRole: 'RECONCILIATION_EVIDENCE_NON_AUTHORITY' } },
+    'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
   );
 });
 

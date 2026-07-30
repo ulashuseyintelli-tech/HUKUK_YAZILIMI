@@ -718,6 +718,55 @@ const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01 =
       }),
     }),
   });
+const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01 =
+  Object.freeze({
+    taskId:
+      'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-VALIDATOR-BASE-BINDING-RECONCILIATION-R01',
+    mode:
+      'GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_BASE_BINDING_RECONCILIATION_R01',
+    baseSha: '989dac5b18ee895a1e621586c84adb3cabeb4c02',
+    headRef: 'codex/governance-closeout-stage2-validator-base-binding-r01',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    reconciliationPath:
+      'project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/stage2-base-reconciliation-authority.json',
+    recordType: 'ROOT_BOOTSTRAP_STAGE2_BASE_RECONCILIATION',
+    recordId:
+      'GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-STAGE2-BASE-RECONCILIATION-R01',
+    documentRole: 'CANONICAL_TASK_BOUND_RECONCILIATION_AUTHORITY',
+    sourceReconciliation: Object.freeze({
+      pullRequest: 1915,
+      mergeSha: '0f78a5ea49b0c3be91172de4939ae8bd95a25f17',
+      path:
+        'project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/reconciliation-result.json',
+      blobSha: '3dd425493777b47f939a83eb9a8776004aa1b35c',
+    }),
+    allowedDriftClassifications: Object.freeze([
+      'PRESERVED_EXACTLY',
+      'PRESERVED_SEMANTICALLY_EQUIVALENT',
+      'EXTENDED_BACKWARD_COMPATIBLY',
+      'SUPERSEDED_BY_CANONICAL_SUCCESSOR',
+    ]),
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.test.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path: 'project/docs/governance/governance-writer-coordination-contract.md',
+      }),
+      Object.freeze({
+        status: 'A',
+        path:
+          'project/docs/governance/governance-closeout-live-ledger-gap-r01-stage1-drift-reconciliation/stage2-base-reconciliation-authority.json',
+      }),
+    ]),
+  });
 const RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01 =
   Object.freeze({
     taskId:
@@ -2306,8 +2355,27 @@ function classifyPrChangeSet(changes, context = {}) {
     RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
   const rootAuthorityBootstrap =
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const rootStage2ValidatorReconciliation =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   const rootStage1 = rootAuthorityBootstrap.bindingPr;
   const rootStage2 = rootAuthorityBootstrap.targetPr;
+
+  if (
+    context.base === rootStage2ValidatorReconciliation.baseSha &&
+    context.headRef === rootStage2ValidatorReconciliation.headRef &&
+    hasExactChangeSet(changes, rootStage2ValidatorReconciliation.changedPaths)
+  ) {
+    return {
+      mode: rootStage2ValidatorReconciliation.mode,
+      taskId: rootStage2ValidatorReconciliation.taskId,
+    };
+  }
+  if (context.headRef === rootStage2ValidatorReconciliation.headRef) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'Stage 2 validator reconciliation requires its owner-pinned base and exact M/M/M/A scope',
+    );
+  }
 
   if (
     context.headRef === rootStage1.headRef ||
@@ -3755,6 +3823,45 @@ function validateRootAuthorityBootstrapBindingScope(options) {
   return { mode: stage1.mode, taskId: stage1.taskId };
 }
 
+function validateRootStage2ValidatorReconciliationScope(options) {
+  const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
+  const reconciliation =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  if (
+    taskId !== reconciliation.taskId ||
+    (mode && mode !== reconciliation.mode) ||
+    base !== reconciliation.baseSha ||
+    headRef !== reconciliation.headRef ||
+    !hasExactChangeSet(changes, reconciliation.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'Stage 2 validator reconciliation base, branch, task, mode, or M/M/M/A scope mismatch',
+    );
+  }
+  const contract = gitShow(head, reconciliation.contractPath, cwd);
+  for (const expectedLiteral of [
+    reconciliation.taskId,
+    reconciliation.mode,
+    reconciliation.baseSha,
+    reconciliation.headRef,
+    reconciliation.reconciliationPath,
+    reconciliation.recordType,
+    reconciliation.recordId,
+    reconciliation.sourceReconciliation.mergeSha,
+    ...reconciliation.changedPaths.map(({ path: repoPath }) => repoPath),
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing Stage 2 validator reconciliation binding ${expectedLiteral}`,
+      );
+    }
+  }
+  validateRootStage2BaseReadiness({ base: head, cwd, writerGate: 'PASS' });
+  return { mode: reconciliation.mode, taskId: reconciliation.taskId };
+}
+
 function validatePb01FormalClosureBindingScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -4289,6 +4396,231 @@ function rootStage1PublicationBaseIsValid(base, cwd) {
   });
 }
 
+function parseRootStage2ReconciliationJson(content) {
+  try {
+    const value = JSON.parse(content);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('record must be a JSON object');
+    }
+    return value;
+  } catch (error) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_INVALID',
+      `canonical Stage 2 reconciliation JSON is invalid: ${error.message}`,
+    );
+  }
+}
+
+function listRootStage2ReconciliationRecords(base, cwd = REPO_ROOT) {
+  const reconciliation =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  const tree = runGit(
+    ['ls-tree', '-r', '--name-only', base, '--', 'project/docs/governance'],
+    cwd,
+    { allowFailure: true },
+  );
+  if (tree.status !== 0) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_INVALID',
+      'canonical governance tree cannot be enumerated',
+    );
+  }
+  const records = [];
+  for (const repoPath of tree.stdout.trim().split(/\r?\n/).filter(Boolean)) {
+    if (!repoPath.endsWith('.json')) continue;
+    const content = gitShow(base, repoPath, cwd);
+    let candidate;
+    try {
+      candidate = JSON.parse(content);
+    } catch {
+      continue;
+    }
+    if (
+      candidate?.recordType === reconciliation.recordType ||
+      candidate?.recordId === reconciliation.recordId
+    ) {
+      records.push({ path: repoPath, record: candidate });
+    }
+  }
+  return records;
+}
+
+function validateRootStage2ReconciliationRecord(options) {
+  const { base, cwd = REPO_ROOT } = options;
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const reconciliation =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  const recordBlob = rootBootstrapGitBlobSha(base, reconciliation.reconciliationPath, cwd);
+  if (!recordBlob) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED',
+      'Stage 1 protected blobs drifted and the exact canonical reconciliation record is absent',
+    );
+  }
+  const record = parseRootStage2ReconciliationJson(
+    gitShow(base, reconciliation.reconciliationPath, cwd),
+  );
+  const candidates = listRootStage2ReconciliationRecords(base, cwd);
+  if (
+    candidates.length !== 1 ||
+    candidates[0].path !== reconciliation.reconciliationPath
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_CONFLICT',
+      'exactly one canonical task-bound Stage 2 reconciliation record is required',
+    );
+  }
+
+  for (const [field, value] of [
+    ['schemaVersion', 1],
+    ['recordType', reconciliation.recordType],
+    ['recordId', reconciliation.recordId],
+    ['documentRole', reconciliation.documentRole],
+    ['materializationTaskId', reconciliation.taskId],
+    ['programId', binding.programId],
+    ['targetTaskId', binding.targetTaskId],
+    ['bootstrapModeId', binding.protocolModeId],
+    ['stage1MergeSha', '790d2a956dad05e39c8fde71cc3e19e1f2425cf3'],
+    ['targetProgramTaskBinding', 'PASS'],
+    ['contractCodeTestConsistency', 'PASS'],
+    ['authorityRecordConflict', 'NONE'],
+    ['resolverAmbiguity', 'NONE'],
+    ['writerGateRequirement', 'PASS_AT_CURRENT_EXECUTION_PREFLIGHT'],
+    ['readiness', 'ELIGIBLE_IF_CURRENT_EXECUTION_PREFLIGHT_PASSES'],
+  ]) {
+    if (record[field] !== value) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_BINDING_MISMATCH',
+        `${field} must bind exactly to ${value}`,
+      );
+    }
+  }
+  if (
+    !reconciliation.allowedDriftClassifications.includes(record.driftClassification) ||
+    record.securityInvariants !== 'PRESERVED' ||
+    record.stage2Binding?.status !== 'PASS' ||
+    record.stage2Binding?.taskId !== binding.targetPr.taskId ||
+    record.stage2Binding?.headRef !== binding.targetPr.headRef ||
+    !hasExactChangeSet(record.stage2Binding?.changedPaths || [], binding.targetPr.changedPaths)
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_SECURITY_REJECTED',
+      'drift classification or protected Stage 2 security binding is not accepted',
+    );
+  }
+  if (
+    !Array.isArray(record.allowedDriftClassifications) ||
+    record.allowedDriftClassifications.length !==
+      reconciliation.allowedDriftClassifications.length ||
+    !record.allowedDriftClassifications.every(
+      (value, index) => value === reconciliation.allowedDriftClassifications[index],
+    )
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_SECURITY_REJECTED',
+      'allowed drift classifications do not match the owner-ratified closed set',
+    );
+  }
+
+  const source = record.sourceReconciliation;
+  if (
+    source?.pullRequest !== reconciliation.sourceReconciliation.pullRequest ||
+    source?.mergeSha !== reconciliation.sourceReconciliation.mergeSha ||
+    source?.path !== reconciliation.sourceReconciliation.path ||
+    source?.blobSha !== reconciliation.sourceReconciliation.blobSha ||
+    !gitIsAncestor(source.mergeSha, base, cwd) ||
+    rootBootstrapGitBlobSha(source.mergeSha, source.path, cwd) !== source.blobSha
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_PROVENANCE_INVALID',
+      'canonical PR #1915 reconciliation provenance is missing, mismatched, or non-ancestor',
+    );
+  }
+  const sourceRecord = parseRootStage2ReconciliationJson(
+    gitShow(source.mergeSha, source.path, cwd),
+  );
+  if (
+    sourceRecord.documentRole !== 'RECONCILIATION_EVIDENCE_NON_AUTHORITY' ||
+    sourceRecord.programId !== binding.programId ||
+    sourceRecord.stage1PredecessorSha !== record.stage1MergeSha ||
+    sourceRecord.stage1DriftClassification !== record.driftClassification ||
+    sourceRecord.securityInvariants !== record.securityInvariants ||
+    sourceRecord.targetProgramTaskBinding !== record.targetProgramTaskBinding ||
+    sourceRecord.stage2Binding !== record.stage2Binding.status ||
+    sourceRecord.contractCodeTestConsistency !== record.contractCodeTestConsistency ||
+    sourceRecord.authorityRecordConflict !== record.authorityRecordConflict ||
+    sourceRecord.resolverAmbiguity !== record.resolverAmbiguity
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_PROVENANCE_INVALID',
+      'successor record changes or contradicts the canonical PR #1915 reconciliation result',
+    );
+  }
+
+  const protectedPaths = binding.bindingPr.changedPaths.map(({ path: repoPath }) => repoPath);
+  const recordedProtectedPaths = Object.keys(record.protectedBlobShas || {}).sort();
+  if (
+    recordedProtectedPaths.length !== protectedPaths.length ||
+    !protectedPaths
+      .slice()
+      .sort()
+      .every((repoPath, index) => repoPath === recordedProtectedPaths[index])
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_STALE',
+      'reconciliation protected-blob set is incomplete or expanded',
+    );
+  }
+  for (const repoPath of protectedPaths) {
+    const currentBlob = rootBootstrapGitBlobSha(base, repoPath, cwd);
+    if (!currentBlob || record.protectedBlobShas[repoPath] !== currentBlob) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE2_RECONCILIATION_STALE',
+        `protected binding changed after reconciliation: ${repoPath}`,
+      );
+    }
+  }
+  return {
+    status: 'ROOT_BOOTSTRAP_STAGE2_BASE_RECONCILED',
+    recordId: record.recordId,
+    recordPath: reconciliation.reconciliationPath,
+  };
+}
+
+function validateRootStage2BaseBinding(options) {
+  const { base, cwd = REPO_ROOT } = options;
+  const binding =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const predecessor = findCanonicalRootAuthorityBootstrapBindingCommit(base, cwd);
+  const exact = binding.bindingPr.changedPaths.every(({ path: repoPath }) => {
+    const predecessorBlob = rootBootstrapGitBlobSha(predecessor, repoPath, cwd);
+    const baseBlob = rootBootstrapGitBlobSha(base, repoPath, cwd);
+    return Boolean(predecessorBlob) && predecessorBlob === baseBlob;
+  });
+  if (exact) {
+    return {
+      status: 'ROOT_BOOTSTRAP_STAGE2_BASE_EXACT',
+      predecessor,
+    };
+  }
+  return {
+    ...validateRootStage2ReconciliationRecord({ base, cwd }),
+    predecessor,
+  };
+}
+
+function validateRootStage2BaseReadiness(options) {
+  const result = validateRootStage2BaseBinding(options);
+  if (options.writerGate !== 'PASS') {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_COMPETING_WRITER',
+      'current execution writer gate must be explicitly PASS',
+    );
+  }
+  return result;
+}
+
 function assertExactRootRecordField(content, field, value, code) {
   const pattern = new RegExp(
     `^${escapeRegExp(field)}[\\t ]*:[\\t ]*${escapeRegExp(value)}[\\t ]*$`,
@@ -4482,7 +4814,8 @@ function validateRootAuthorityBootstrapMaterializationScope(options) {
     );
   }
 
-  const predecessor = findCanonicalRootAuthorityBootstrapBindingCommit(base, cwd);
+  const baseBinding = validateRootStage2BaseBinding({ base, cwd });
+  const predecessor = baseBinding.predecessor;
   const baseContract = gitShow(base, binding.contractPath, cwd);
   for (const expectedLiteral of rootAuthorityBootstrapContractLiterals(binding)) {
     if (!baseContract.includes(expectedLiteral)) {
@@ -4492,17 +4825,6 @@ function validateRootAuthorityBootstrapMaterializationScope(options) {
       );
     }
   }
-  for (const { path: repoPath } of binding.bindingPr.changedPaths) {
-    const predecessorBlob = rootBootstrapGitBlobSha(predecessor, repoPath, cwd);
-    const baseBlob = rootBootstrapGitBlobSha(base, repoPath, cwd);
-    if (!predecessorBlob || predecessorBlob !== baseBlob) {
-      reject(
-        'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED',
-        `Stage 1 binding blob drifted before Stage 2: ${repoPath}`,
-      );
-    }
-  }
-
   const baseDecisionLog = gitShow(base, target.semanticAuthority.path, cwd);
   if (
     baseDecisionLog.includes(target.semanticAuthority.recordId) ||
@@ -5514,6 +5836,21 @@ function validatePrScope(options) {
     });
   }
 
+  if (
+    classification.mode ===
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01.mode
+  ) {
+    return validateRootStage2ValidatorReconciliationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
+  }
+
   if (classification.mode === RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01.mode) {
     return validateRcvColLargeAuthorityReadRepairScope({
       base,
@@ -6046,6 +6383,14 @@ function main(argv = process.argv.slice(2)) {
         );
       }
       break;
+    case 'validate-root-stage2-base': {
+      const result = validateRootStage2BaseReadiness({
+        base: args.base,
+        writerGate: args['writer-gate'],
+      });
+      console.log(result.status);
+      break;
+    }
     case 'validate-bootstrap-worktree':
       validateBootstrapWorktree();
       console.log('GOV_COORD_BOOTSTRAP_WORKTREE_VALID');
@@ -6053,7 +6398,7 @@ function main(argv = process.argv.slice(2)) {
     default:
       reject(
         'CLI_INVALID',
-        'command must be self-test, validate-template, validate-request, validate-result, generate-register, verify-register, validate-repository, validate-pr-scope or validate-bootstrap-worktree',
+        'command must be self-test, validate-template, validate-request, validate-result, generate-register, verify-register, validate-repository, validate-pr-scope, validate-root-stage2-base or validate-bootstrap-worktree',
       );
   }
 }
@@ -6077,6 +6422,7 @@ module.exports = {
   GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES,
   GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS,
   GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
+  GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01,
   RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
@@ -6146,6 +6492,10 @@ module.exports = {
   validateRootAuthorityBootstrapBindingScope,
   validateRootAuthorityBootstrapMaterializationScope,
   validateRootAuthorityReferencePair,
+  validateRootStage2BaseBinding,
+  validateRootStage2BaseReadiness,
+  validateRootStage2ReconciliationRecord,
+  validateRootStage2ValidatorReconciliationScope,
   validateRcvColFullRemediationBindingScope,
   validateRcvColFullRemediationBootstrapScope,
   validateRcvColLargeAuthorityReadRepairScope,
