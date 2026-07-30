@@ -234,6 +234,10 @@ src/modules/debtor/debtor-identity-format.spec.ts
 src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts
 src/modules/debtor/quick-note-passive-writer.spec.ts
 src/modules/debtor/third-party-passive-writer.spec.ts
+# I15 Phase A: createExternalCase() P2002 catch-block regression guard (mocked,
+# deterministic — gercek Postgres meta.target formatiyla, CI'in gercek
+# eszamanlilik yarisinda yakaladigi bir hatanin tekrarini onler).
+src/modules/debtor/__tests__/third-party-external-case-p2002-recovery.spec.ts
 src/modules/debtor/__tests__/rfa008-thirdparty-guard.spec.ts
 src/modules/document/__tests__/document-creditor-address.spec.ts
 src/modules/document/__tests__/document-fail-closed-tenant.spec.ts

@@ -143,6 +143,13 @@ src/modules/bank/__tests__/bank-settlement-evidence-writer.db-gated.integration.
 src/modules/bank/__tests__/bank-candidate-settlement-transition.db-gated.integration.spec.ts
 src/modules/bank/__tests__/bank-match-collection-atomicity.db-gated.integration.spec.ts
 #
+#   DEBTOR-ENFORCEMENT-SEIZURE-GATE-RECONCILIATION-P1-I15 PHASE A (legacy TASK 09)
+#     ThirdPartyService.createExternalCase() logical-identity idempotency: composite
+#     DB unique constraint + app-level findUnique on-kontrol + P2002 idempotent replay
+#     gercek Postgres uzerinde (retry/concurrent/tenant/caseDebtor/farkli-dosya/pasif-
+#     guard/DB-invariant-bypass senaryolari).
+src/modules/debtor/__tests__/third-party-external-case-idempotency.db-gated.integration.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure writer service (gercek PostgreSQL)
 #     Tenant/case-client/source-scope fail-closed enforcement, atomik aggregate+version+line
 #     yazimi, idempotency replay/conflict, hash re-verification MATCH/MISMATCH, immutability

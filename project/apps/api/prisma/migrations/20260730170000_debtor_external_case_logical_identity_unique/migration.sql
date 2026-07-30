@@ -1,0 +1,34 @@
+-- =============================================================================
+-- DEBTOR-ENFORCEMENT-SEIZURE-GATE-RECONCILIATION-P1-I15 — PHASE A
+-- (owner-ratified GO-COMPLETE, legacy roadmap TASK 09 — HACIZ GATE)
+--
+-- INVARIANT: Bir (tenantId, caseDebtorId) icin ayni (externalOffice,
+-- externalCaseNo) ikilisine sahip birden fazla ExternalCase satiri OLAMAZ.
+-- Bu, ayni borclunun ayni icra dairesindeki ayni dis dosyasinin birden fazla
+-- kez "Alacak Haczi" olarak kaydedilmesini onler (ThirdPartyService.
+-- createExternalCase() daha once bu invariant'i hic korumuyordu — app-level
+-- veya DB-level herhangi bir dedup yoktu, findFirst->create deseni bile
+-- yoktu; her POST /case-debtors/:caseDebtorId/external-cases cagrisi kosulsuz
+-- create() yapiyordu).
+--
+-- AMPIRIK KANIT (read-only invariant analizi, bu fazin ANALYZE adiminda,
+-- repo'ya commit edilmeyen gecici script ile, sonra silindi): mevcut dev
+-- veritabaninda ExternalCase tablosu bu migration aninda 0 (sifir) satir
+-- icermektedir — bu constraint icin veri temizligi/semantik-kazanan karari
+-- gerekmemektedir.
+--
+-- TASARIM (owner Phase A talimati — Option A+B+D birlikte, Collection.create()
+-- PR #1969 "make bank admission atomic" ile ayni felsefe):
+--   B. Composite DB unique constraint (bu migration) — nihai, atomik garanti.
+--   A/E. Uygulama katmaninda findFirst on-kontrolu + P2002 yakalayip mevcut
+--        satiri idempotent replay olarak donme (ThirdPartyService tarafinda,
+--        ayni PR'da).
+--   Not: Collection'in aksine burada partial/filtered index GEREKMEZ —
+--   ExternalCaseStatus enum'inda "IPTAL/CANCELLED" karsiligi bir durum yok,
+--   dolayisiyla tam (unconditional) unique constraint yeterlidir; raw SQL
+--   partial index karmasikligina gerek yoktur.
+-- =============================================================================
+
+-- AlterTable
+ALTER TABLE "ExternalCase" ADD CONSTRAINT "external_case_logical_identity_key"
+  UNIQUE ("tenantId", "caseDebtorId", "externalOffice", "externalCaseNo");

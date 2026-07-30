@@ -29,6 +29,10 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
       },
       externalCase: {
         findFirst: jest.fn(),
+        // I15 Phase A: createExternalCase() artik yaratmadan once mantiksal
+        // kimlik ile findUnique on-kontrolu yapiyor; varsayilan null = "mevcut
+        // satir yok" (bu spec'in kendi senaryolari zaten yeni/tekil kayitlar).
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: "ec1" }),
         update: jest.fn().mockResolvedValue({ id: "ec1" }),
         delete: jest.fn().mockResolvedValue({ id: "ec1" }),

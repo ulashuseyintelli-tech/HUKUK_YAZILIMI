@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util"; // RFA-008 isim-fallback dedup
@@ -581,23 +582,67 @@ export class ThirdPartyService {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
     }
 
-    return (this.prisma as any).externalCase.create({
-      data: {
-        tenantId,
-        caseDebtorId,
-        externalOffice: dto.externalOffice,
-        externalOfficeId: dto.externalOfficeId,
-        externalCaseNo: dto.externalCaseNo,
-        counterpartyName: dto.counterpartyName,
-        counterpartyId: dto.counterpartyId,
-        claimAmount: dto.claimAmount,
-        claimCurrency: dto.claimCurrency || "TRY",
-        attachmentStatus: dto.attachmentStatus || "HACIZ_TALEP",
-        attachedAt: dto.attachedAt ? new Date(dto.attachedAt) : null,
-        notes: dto.notes,
-        priorityNote: dto.priorityNote,
-      },
+    const externalOffice = dto.externalOffice;
+    const externalCaseNo = dto.externalCaseNo;
+    const logicalIdentityKey = {
+      tenantId,
+      caseDebtorId,
+      externalOffice,
+      externalCaseNo,
+    };
+
+    // I15-PHASE-A (owner GO-COMPLETE, legacy TASK 09): ayni borclunun ayni icra
+    // dairesindeki ayni dis dosyasi iki kez "Alacak Haczi" olarak kaydedilmesin.
+    // Onceden bu metodda hicbir dedup yoktu (ne app-level ne DB-level). Ozgun
+    // desen: findFirst on-kontrolu (hizli, cogunlukla yeterli yol) + DB composite
+    // unique constraint + P2002 yakalayip idempotent replay (Collection.create()
+    // PR #1969 "make bank admission atomic" ile ayni felsefe — bkz. migration
+    // 20260730170000_debtor_external_case_logical_identity_unique).
+    const existing = await (this.prisma as any).externalCase.findUnique({
+      where: { external_case_logical_identity: logicalIdentityKey },
     });
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await (this.prisma as any).externalCase.create({
+        data: {
+          tenantId,
+          caseDebtorId,
+          externalOffice,
+          externalOfficeId: dto.externalOfficeId,
+          externalCaseNo,
+          counterpartyName: dto.counterpartyName,
+          counterpartyId: dto.counterpartyId,
+          claimAmount: dto.claimAmount,
+          claimCurrency: dto.claimCurrency || "TRY",
+          attachmentStatus: dto.attachmentStatus || "HACIZ_TALEP",
+          attachedAt: dto.attachedAt ? new Date(dto.attachedAt) : null,
+          notes: dto.notes,
+          priorityNote: dto.priorityNote,
+        },
+      });
+    } catch (e: unknown) {
+      // On-kontrole ragmen kalan yaris penceresi (iki eszamanli istek) icin DB
+      // constraint son savunma hattidir; P2002 -> idempotent replay (ham 500 YOK).
+      //
+      // NOT: meta.target'in icerigi veritabanina gore degisir (Postgres icin
+      // Prisma bunu KOLON ADLARI dizisi olarak raporlar, constraint/index ADI
+      // DEGIL) — bu yuzden bu create() cagrisinin TEK unique constraint'i
+      // oldugu bilgisine dayanarak meta.target icerigini ayristirmiyoruz;
+      // bu spesifik create() uzerindeki HERHANGI bir P2002 mantiksal-kimlik
+      // celismesidir (ilk denemede meta.target'in constraint adini icerdigi
+      // yanlis varsayimiyla yazilan surum CI'in gercek eszamanlilik yarisinda
+      // yakalanmadan gecti — bkz. Phase A final rapor).
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        const row = await (this.prisma as any).externalCase.findUnique({
+          where: { external_case_logical_identity: logicalIdentityKey },
+        });
+        if (row) return row;
+      }
+      throw e;
+    }
   }
 
   /**

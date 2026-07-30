@@ -1762,6 +1762,7 @@ model ExternalCase {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([tenantId, caseDebtorId, externalOffice, externalCaseNo], name: "external_case_logical_identity", map: "external_case_logical_identity_key")
   @@index([caseDebtorId])
   @@index([tenantId])
   @@index([externalCaseNo])
