@@ -626,14 +626,20 @@ export class ThirdPartyService {
     } catch (e: unknown) {
       // On-kontrole ragmen kalan yaris penceresi (iki eszamanli istek) icin DB
       // constraint son savunma hattidir; P2002 -> idempotent replay (ham 500 YOK).
+      //
+      // NOT: meta.target'in icerigi veritabanina gore degisir (Postgres icin
+      // Prisma bunu KOLON ADLARI dizisi olarak raporlar, constraint/index ADI
+      // DEGIL) — bu yuzden bu create() cagrisinin TEK unique constraint'i
+      // oldugu bilgisine dayanarak meta.target icerigini ayristirmiyoruz;
+      // bu spesifik create() uzerindeki HERHANGI bir P2002 mantiksal-kimlik
+      // celismesidir (ilk denemede meta.target'in constraint adini icerdigi
+      // yanlis varsayimiyla yazilan surum CI'in gercek eszamanlilik yarisinda
+      // yakalanmadan gecti — bkz. Phase A final rapor).
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        const target = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
-        if (target.includes("external_case_logical_identity")) {
-          const row = await (this.prisma as any).externalCase.findUnique({
-            where: { external_case_logical_identity: logicalIdentityKey },
-          });
-          if (row) return row;
-        }
+        const row = await (this.prisma as any).externalCase.findUnique({
+          where: { external_case_logical_identity: logicalIdentityKey },
+        });
+        if (row) return row;
       }
       throw e;
     }
