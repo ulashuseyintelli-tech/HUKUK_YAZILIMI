@@ -71,6 +71,13 @@ function buildHarness(initialRow: { status: string; attemptCount: number }) {
     icrabotOutboxAction: {
       findUnique: jest.fn(async () => ({ ...actionRow, status: row.status, attemptCount: row.attemptCount })),
     },
+    // W3-F02: dispatch artik handler'dan once Case sahipligini dogrular; bu harness'in
+    // sabit caseId='c1'/tenantId='t1' cifti icin eslesen bir Case dondurulur ki mevcut
+    // testler kendi ASIL amaclarini (NonRetryableOutboxError davranisi) test etmeye
+    // devam etsin.
+    case: {
+      findUnique: jest.fn(async () => ({ id: 'c1', tenantId: 't1' })),
+    },
   };
   const outbox = buildStatefulFakeOutbox(row);
   const timeline = { addEntry: jest.fn().mockResolvedValue('tid') };

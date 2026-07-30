@@ -59,6 +59,8 @@ describe('outbox-tenancy Phase 1 (decision C)', () => {
             payload: {}, runId: 'r1', attemptCount: 0,
           }),
         },
+        // W3-F02: dispatch handler'dan once Case sahipligini dogrular (c1 -> t1 eslesir).
+        case: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', tenantId: 't1' }) },
       };
       const outbox = { markSent: jest.fn(), markDone: jest.fn(), markFailed: jest.fn() };
       const timeline = { addEntry: jest.fn().mockResolvedValue('tid') };

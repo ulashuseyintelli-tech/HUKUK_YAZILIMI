@@ -93,6 +93,13 @@ function buildHarness() {
         return { ...collection };
       }),
     },
+    // W3-F02: dispatch handler'dan once Case sahipligini dogrular; bu senaryonun
+    // tek case1/t1 cifti eslesen bir Case olarak yansitilir.
+    case: {
+      findUnique: jest.fn(async (args: any) =>
+        args?.where?.id === collection.caseId ? { id: collection.caseId, tenantId: collection.tenantId } : null,
+      ),
+    },
     ledgerEntry: {
       findFirst: jest.fn(async () => null),
       create: jest.fn(),

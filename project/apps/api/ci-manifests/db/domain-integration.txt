@@ -172,6 +172,10 @@ src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 #     test behavior; unchanged and green (7 suites/tests, verified fresh on disposable
 #     Postgres 16 against origin/main before wiring).
 src/modules/collection/__tests__/collection-cancel-reversal.db-gated.integration.spec.ts
+#   W3-F02-OUTBOX-CONSUMER-TENANT-OWNERSHIP-R01: outbox consumer'in caseId->tenant
+#   sahipligini merkezi dispatch() gate'inde dogruladigini GERCEK Postgres + iki
+#   GERCEK tenant/Case ile kanitlayan runtime representative matrix (A-G).
+src/modules/icrabot/v28-engine/__tests__/outbox-consumer-tenant-ownership.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.integration.spec.ts

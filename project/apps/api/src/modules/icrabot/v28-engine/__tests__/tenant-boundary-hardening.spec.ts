@@ -3,9 +3,18 @@
  *
  * Doğrular (Adım C: action-handler outbox-fallback KALDIRILDI; boundary resolve KORUNUR):
  *  - resolveTenantIdOrThrow: valid case → tenant; case yok / tenant null → throw (boundary'lerde kullanılır).
- *  - action-handler.dispatch: action.tenantId'yi DOĞRUDAN kullanır (outbox.tenantId DB-NOT NULL); resolve YOK.
+ *  - action-handler.dispatch: action.tenantId'yi DOĞRUDAN kullanır (outbox.tenantId DB-NOT NULL); FALLBACK-resolve YOK.
  *  - action-feedback.processCallback: invalid case_id → throw, timeline yazmaz.
  *  - uyap-event-ingest.ingestEvent: invalid caseId → throw, timeline yazmaz.
+ *
+ * W3-F02-OUTBOX-CONSUMER-TENANT-OWNERSHIP-R01 notu: "Adım C"nin kaldırdığı şey EKSİK
+ * bir tenantId'yi caseId'den TÜRETEN fallback-resolution'dı (bkz. tenant-resolver.ts
+ * `resolveTenantIdOrThrow`, YALNIZ tenantId eksikken çağrılır). W3-F02 bunun YERİNE
+ * GEÇMEZ — HALİHAZIRDA VAR olan `action.tenantId`'nin GERÇEK Case sahipliğiyle
+ * eşleştiğini dogrular (outbox-action-ownership.ts `resolveOutboxActionOwnership`).
+ * Bu yüzden `prisma.case.findUnique` ARTIK dispatch içinde çağrılır — ama bir DEĞER
+ * ÇÖZMEK için değil, VAR OLAN değerin doğruluğunu KANITLAMAK için. Aşağıdaki
+ * "resolve YOK" testi bu ayrımı yansıtacak şekilde güncellenmiştir.
  */
 import { resolveTenantIdOrThrow, TenantResolutionError } from '../tenant-resolver';
 import { ActionHandlerService } from '../action-handler.service';
@@ -46,20 +55,25 @@ describe('Phase 2 PR1 — tenant boundary hardening', () => {
       return { svc, prisma, outbox, timeline };
     };
 
-    it('action.tenantId varsa onu kullanır (resolve YOK)', async () => {
+    it('action.tenantId varsa onu DOĞRUDAN kullanır (fallback-resolve YOK); Case ownership AYRICA doğrulanır', async () => {
       const { svc, prisma, timeline } = build(
         { id: 'a1', caseId: 'c1', tenantId: 'row-tenant', actionType: 'e2e', payload: {}, runId: null, attemptCount: 0 },
-        null,
+        { tenantId: 'row-tenant' }, // W3-F02: Case sahipliği action.tenantId ile EŞLEŞİR
       );
       await svc.dispatch('a1', { kind: 'platform' } as const);
-      expect(prisma.case.findUnique).not.toHaveBeenCalled(); // satırda tenant var → resolve çağrılmaz
+      // W3-F02: case lookup ARTIK gerçekleşir — ama action.tenantId'yi DEĞİŞTİRMEK için
+      // değil (timeline hâlâ satırın KENDİ tenantId'sini taşır, aşağıda doğrulanır),
+      // GERÇEK Case sahipliğiyle eşleştiğini KANITLAMAK için (ownership invariant).
+      expect(prisma.case.findUnique).toHaveBeenCalledTimes(1);
       for (const call of timeline.addEntry.mock.calls) expect(call[0].tenantId).toBe('row-tenant');
     });
 
     // (Adım C) "action.tenantId null → caseId resolve" ve "null + invalid caseId → throw"
     // testleri KALDIRILDI: outbox.tenantId DB-NOT NULL (Adım B) → null tenant satırı DB'de imkânsız;
-    // action-handler caseId→tenant fallback'i de kaldırıldı (bridge full removal). Yukarıdaki test,
-    // dispatch'in case.findUnique'i HİÇ çağırmadığını (resolve yok) doğrulayan regresyon guard'ıdır.
+    // action-handler caseId→tenant FALLBACK'i de kaldırıldı (bridge full removal). Yukarıdaki test
+    // artık dispatch'in case.findUnique'i tam olarak BİR KEZ, ownership doğrulaması için
+    // çağırdığını doğrular (bkz. outbox-consumer-tenant-ownership.spec.ts — mismatch/not-found
+    // senaryoları orada).
   });
 
   describe('ActionFeedbackService.processCallback', () => {

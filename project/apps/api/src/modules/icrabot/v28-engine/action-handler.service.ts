@@ -32,6 +32,7 @@ import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
 import { maskPhone } from '../../../common/pii-mask.util';
 import { NonRetryableOutboxError } from './non-retryable-outbox.error';
+import { resolveOutboxActionOwnership } from './outbox-action-ownership';
 import {
   getIcrabotOutboxMaxAttempts,
   getIcrabotOutboxRetryBaseMs,
@@ -228,6 +229,58 @@ export class ActionHandlerService {
         skipped: true,
       };
     }
+
+    // W3-F02-OUTBOX-CONSUMER-TENANT-OWNERSHIP-R01: handler cagirilmadan ONCE
+    // action.tenantId'nin GERCEK Case sahipligiyle eslestigi dogrulanir. Bu,
+    // "Adim C"da kaldirilan caseId->tenant FALLBACK-cozumlemesiyle KARISTIRILMAMALI
+    // (bkz. tenant-boundary-hardening.spec.ts): o, EKSIK bir tenantId'yi caseId'den
+    // turetiyordu; bu ise HALIHAZIRDA VAR olan (DB NOT NULL) tenantId'nin doğruluğunu
+    // dogrular. Uyumsuzlukta handler HICBIR sekilde cagrilmaz (sifir side effect) ve
+    // case-timeline'a YAZILMAZ — MISSING_TENANT_ID ile AYNI desen: markDeadLetter +
+    // logger.error + return, generic catch/timeline yoluna hic girilmez.
+    let ownership: Awaited<ReturnType<typeof resolveOutboxActionOwnership>>;
+    try {
+      ownership = await resolveOutboxActionOwnership(this.prisma as any, action.caseId, effectiveTenantId);
+    } catch (lookupError: any) {
+      // Sahiplik sorgusunun KENDISI basarisiz oldu (orn. transient DB hatasi) — bu,
+      // TENANT_MISMATCH'ten AYRI bir kategori (brief: "Transient DB failure: retryable";
+      // security mismatch ile ayni kategoriye KONMAZ). Sahiplik henuz KANITLANAMADigi
+      // icin handler yine de cagrilmaz, ama mevcut markFailed/retry-backoff yoluna gider;
+      // case-timeline'a yazilmaz (sahiplik dogrulanamadi — ayni "timeline:0" gerekcesi).
+      const failure = await this.outbox.markFailed(actionId, lookupError.message, this.retryBaseMs);
+      return {
+        success: false,
+        actionId,
+        actionType: action.actionType,
+        error: lookupError.message,
+        retryScheduled: failure.status === 'failed',
+        deadLettered: failure.status === 'dead',
+      };
+    }
+    if (!ownership.ok) {
+      await this.outbox.markDeadLetter(actionId, {
+        error: ownership.reason,
+        reasonCode: ownership.reason,
+        securityRelevant: ownership.reason === 'TENANT_MISMATCH',
+        actionType: action.actionType,
+        declaredTenantId: effectiveTenantId,
+        resourceType: ownership.resourceType,
+        resourceId: ownership.resourceId,
+        attempt: action.attemptCount,
+        correlationId: action.runId ?? actionId,
+      });
+      this.logger.error(
+        `Outbox action dead-lettered: ${ownership.reason} (actionId=${actionId}, actionType=${action.actionType})`,
+      );
+      return {
+        success: false,
+        actionId,
+        actionType: action.actionType,
+        error: ownership.reason,
+        deadLettered: true,
+      };
+    }
+
     try {
       // Handler may return a result object.
       // TM3 M1: outbox satır bağlamı (tenantId/actionId) handler'a thread edilir → consumer
