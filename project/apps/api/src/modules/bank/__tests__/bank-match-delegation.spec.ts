@@ -13,7 +13,7 @@ import {
  */
 
 function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col1' }), overrides: any = {}) {
-  const update = jest.fn(async () => ({}));
+  const update = jest.fn(async () => ({ count: 1 }));
   const financialWrites = {
     collection: jest.fn(),
     accountingJournalEntry: jest.fn(),
@@ -26,6 +26,7 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
     claimItem: jest.fn(),
   };
   const prisma: any = {
+    $executeRaw: jest.fn(async () => 1),
     bankAccount: {
       findFirst: jest.fn(async () => ({
         id: 'acc1',
@@ -41,6 +42,7 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
       findFirst: jest.fn(async () => ({
         id: 'tx1',
         tenantId: 't1',
+        bankAccountId: 'acc1',
         amount: 500,
         currency: 'TRY',
         transactionDate: new Date('2026-01-01'),
@@ -55,7 +57,7 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
       })),
       findMany: jest.fn(async () => []),
       create: jest.fn(async ({ data }: any) => ({ id: 'tx-new', ...data })),
-      update,
+      updateMany: update,
       ...(overrides.bankTransaction || {}),
     },
     bankSettlementEvidence: {
@@ -83,13 +85,22 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
     collectionOverpayment: { create: financialWrites.collectionOverpayment },
     claimItem: { update: financialWrites.claimItem },
   };
+  prisma.$transaction = jest.fn(async (callback: (tx: any) => unknown) => callback(prisma));
   const coll = {
     create: jest.fn(createImpl),
-    findById: jest.fn(async (_tenantId: string, id: string) => ({ id })),
+    findById: jest.fn(async (_tenantId: string, id: string) => ({
+      id,
+      caseId: 'c1',
+      sourceType: 'BANK_INTEGRATION',
+      sourceId: 'tx1',
+    })),
   };
-  const svc = new BankService({} as any, prisma, coll as any);
+  const audit = {
+    logInTransaction: jest.fn(async () => undefined),
+  };
+  const svc = new BankService({} as any, prisma, coll as any, audit as any);
   jest.spyOn((svc as any).logger, 'warn').mockImplementation(() => undefined);
-  return { svc, prisma, coll, update, financialWrites };
+  return { svc, prisma, coll, audit, update, financialWrites };
 }
 
 describe('BankService.matchTransaction delegation (G3d)', () => {
@@ -123,6 +134,7 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
         producer: 'BANK_TRANSACTION_MATCH',
         actor: { type: 'HUMAN', userId: 'u1' },
       },
+      prisma,
     );
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -151,63 +163,23 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1')).resolves.toMatchObject({
       collection: { id: 'col1' },
     });
-    expect(coll.findById).toHaveBeenCalledWith('t1', 'col1');
+    expect(coll.findById).toHaveBeenCalledWith('t1', 'col1', prisma);
     expect(coll.create).not.toHaveBeenCalled();
     expect(prisma.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('post-commit projection hatasında retry aynı Collection fact\'ini replay eder ve eşleşmeyi tamamlar', async () => {
-    let canonicalReceiptWrites = 0;
-    let matched = false;
-    let updateAttempts = 0;
-    const receipts = new Map<string, { id: string; caseId: string; amount: number }>();
-    const create = jest.fn(async (_tenantId: string, dto: any) => {
-      const existing = receipts.get(dto.idempotencyKey);
-      if (existing) return existing;
+  it('CAS projection kazanamazsa outer transaction fail-closed olur', async () => {
+    const { svc, coll, update, audit } = buildService();
+    update.mockResolvedValueOnce({ count: 0 });
 
-      canonicalReceiptWrites += 1;
-      const collection = { id: 'col1', caseId: dto.caseId, amount: dto.amount };
-      receipts.set(dto.idempotencyKey, collection);
-      return collection;
+    await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1')).rejects.toMatchObject({
+      response: { code: 'BANK_TRANSACTION_MATCH_CONCURRENT_CONFLICT' },
     });
-    const bankTransaction = {
-      findFirst: jest.fn(async () => ({
-        id: 'tx1',
-        tenantId: 't1',
-        amount: 500,
-        currency: 'TRY',
-        transactionDate: new Date('2026-01-01'),
-        transactionType: 'INCOMING',
-        candidateStatus: 'SETTLED',
-        settlementEvidenceId: 'evidence-1',
-        externalSettledAt: new Date('2026-01-03T10:00:00.000Z'),
-        isMatched: matched,
-        matchedCaseId: matched ? 'c1' : null,
-        matchedCollectionId: matched ? 'col1' : null,
-      })),
-      update: jest.fn(async () => {
-        updateAttempts += 1;
-        if (updateAttempts === 1) throw new Error('bank projection failed');
-        matched = true;
-        return {};
-      }),
-    };
-    const { svc, coll } = buildService(create, { bankTransaction });
 
-    await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1'))
-      .rejects.toThrow('bank projection failed');
-    await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1'))
-      .resolves.toMatchObject({ collection: { id: 'col1' } });
-
-    expect(canonicalReceiptWrites).toBe(1);
-    expect(coll.create).toHaveBeenCalledTimes(2);
-    expect(coll.create.mock.calls[1][1]).toMatchObject({
-      idempotencyKey: coll.create.mock.calls[0][1].idempotencyKey,
-      sourceId: coll.create.mock.calls[0][1].sourceId,
-    });
-    expect(bankTransaction.update).toHaveBeenCalledTimes(2);
-    expect(matched).toBe(true);
+    expect(coll.create).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
   it('fail-closed: outgoing hareket Collection üretmez', async () => {

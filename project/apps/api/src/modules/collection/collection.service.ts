@@ -495,6 +495,7 @@ export class CollectionService {
     dto: CreateCollectionDto,
     userId?: string,
     requestContext: CollectionRequestContext = {},
+    transactionClient?: Prisma.TransactionClient,
   ) {
     const traceSeed = createCollectionMutationTrace(
       requestContext.correlationId,
@@ -533,14 +534,16 @@ export class CollectionService {
     // ── P0-1: idempotent fast-path (tx öncesi hızlı yol) ────────────────────
     //  Aynı (tenant, idempotencyKey) → aynı payload ise mevcut tahsilat döner (replay);
     //  farklı payload ise IDEMPOTENCY_KEY_CONFLICT. Double-click/retry en yaygın vaka.
-    const preExisting = await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
+    const preExisting = transactionClient
+      ? await this.findByIdempotencyKeyTx(transactionClient, tenantId, dto.idempotencyKey)
+      : await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
     if (preExisting) {
       this.assertSameCollectionPayload(preExisting, dto);
-      return this.findById(tenantId, preExisting.id);
+      return this.findById(tenantId, preExisting.id, transactionClient);
     }
 
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      const createInTransaction = async (tx: Prisma.TransactionClient) => {
       // ── P0-1: advisory xact lock (tenant+key) → aynı-key eşzamanlı create'ler ──
       //  SERIALIZE olur; farklı-key (meşru ikinci ödeme) contend ETMEZ. Lock altında
       //  re-check + payload-conflict guard: race'te ikinci istek P2002 yerine replay döner.
@@ -935,9 +938,16 @@ export class CollectionService {
       });
 
       return collection;
-      });
-      return this.findById(tenantId, result.id);
+      };
+      const result = transactionClient
+        ? await createInTransaction(transactionClient)
+        : await this.prisma.$transaction(createInTransaction);
+      return this.findById(tenantId, result.id, transactionClient);
     } catch (e: unknown) {
+      // Harici transaction sahibi rollback/retry authority'sidir. Failed interactive
+      // transaction client ile tx-disina kacarak replay aramasi yapilmaz.
+      if (transactionClient) throw e;
+
       // ── P0-1: idempotencyKey race → P2002 → idempotent replay ──────────────
       //  Lock'a rağmen kalan yarış (veya external dedup index) P2002 üretirse:
       //  key ile mevcut satır bulunursa replay; yoksa external dup → conflict.
@@ -1040,8 +1050,13 @@ export class CollectionService {
   /**
    * Tahsilat getir
    */
-  async findById(tenantId: string, id: string) {
-    const collection = await (this.prisma.collection as any).findFirst({
+  async findById(
+    tenantId: string,
+    id: string,
+    transactionClient?: Prisma.TransactionClient,
+  ) {
+    const client = transactionClient ?? this.prisma;
+    const collection = await (client.collection as any).findFirst({
       where: { id, tenantId },
       include: {
         case: {
