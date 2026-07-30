@@ -1050,7 +1050,11 @@ kanıtlar. W2.2D-2 Task07 exact twelve-file implementation PR #1944 /
 canonical `Collection.status=CONFIRMED` create yüzeyleri server-authoritative, non-null ve
 immutable `confirmedAt` üretir; idempotent replay mevcut timestamp'i korur ve explicit caller
 timestamp kabul edilmez. Pre-side-effect persisted-readback guard ile audit timestamp eşleşmesi
-fail-closed uygulanır. Schema, migration, backfill ve live DB değişikliği yoktur; historical NULL
-kayıtlar tahmin edilmemiştir. Atomic match projection Task08 `RC-COL-W2.2D-3` kapsamındadır ve
-`NEXT / DESIGN-IMPLEMENTATION NOT STARTED` kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic
-corpus writer/evidence/cutover için `BLOCKING` kalır.
+fail-closed uygulanır. W2.2D-3 Task08 exact six-file implementation PR #1969 /
+`392e831c56d7b648dd90b35acb7468a0b2c1cc0c` ile `CLOSED / CANONICAL EVIDENCE`dır. Bank
+eligibility doğrulaması, canonical Collection admission ve finansal/event/outbox etkileri,
+`matchedCollectionId` CAS projection'ı ve audit aynı Prisma/PostgreSQL transaction'ında atomik
+çalışır; rollback, deterministic replay/target-conflict ve concurrent single-winner kanıtları
+mevcuttur. Task08 schema, migration, backfill veya live DB değişikliği yapmamıştır. Task09
+`RCV-COL-IDEM-01` yalnız `NEXT / IMPLEMENTATION NOT STARTED`dır. ACT-28 ve
+REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cutover için `BLOCKING` kalır.
