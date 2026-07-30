@@ -39,6 +39,12 @@ import {
   summarize,
   type ObservedEvent,
 } from './office-cap02-telemetry-perf.core';
+import {
+  buildR02ProbeTag,
+  segmentSamples,
+  R02_SEGMENT_KEYS,
+  STEADY_STATE_EXCLUDE_FIRST,
+} from './office-cap02-telemetry-perf-r02.core';
 
 const BASE = 'http://localhost:8080/api';
 const TELEMETRY_ACTION = 'OFFICE_CAP02_AUTHORITY_HIERARCHY_TELEMETRY';
@@ -152,6 +158,14 @@ async function main(): Promise<void> {
   const runId = required('runId');
   const mode = required('mode') as 'OFF' | 'OBSERVE';
   if (mode !== 'OFF' && mode !== 'OBSERVE') throw new Error('PERF_BAD_MODE (OFF|OBSERVE)');
+  // R02: blok farkindalikli etiketleme + segment raporu. Verilmezse R01 davranisi AYNEN korunur.
+  const blockRaw = arg('block');
+  const block = blockRaw === undefined ? undefined : (Number(blockRaw) as 1 | 2);
+  if (block !== undefined && block !== 1 && block !== 2) throw new Error('PERF_BAD_BLOCK (1|2)');
+  const tagFor = (phase: 'warmup' | 'measured', actorKey: string, index: number): string =>
+    block === undefined
+      ? buildProbeTag(phase, mode, actorKey, index)
+      : buildR02ProbeTag(block, phase, mode, actorKey, index);
   const actors = parseActors(required('actors'), runId);
   const warmup = num('warmup', 5);
   const serial = num('serial', 25);
@@ -162,7 +176,7 @@ async function main(): Promise<void> {
 
   const measuredTotal = actors.length * serial + batches * concurrency;
   console.log('PLAN', JSON.stringify({
-    mode, runId, actors: actors.map((a) => a.key), warmup, serial, batches, concurrency,
+    mode, block: block ?? null, runId, actors: actors.map((a) => a.key), warmup, serial, batches, concurrency,
     measuredTotal,
     // Owner §5 ust siniri: 400 olculen request (mod basina).
     withinOwnerCap: measuredTotal <= 400,
@@ -239,7 +253,7 @@ async function main(): Promise<void> {
     // --- WARM-UP (olculen sete GIRMEZ) --------------------------------------
     for (const a of actors) {
       for (let i = 1; i <= warmup; i++) {
-        await changeStatus(tokens.get(a.key)!, a, nextFor(a.key), buildProbeTag('warmup', mode, a.key, i));
+        await changeStatus(tokens.get(a.key)!, a, nextFor(a.key), tagFor('warmup', a.key, i));
       }
     }
 
@@ -248,7 +262,7 @@ async function main(): Promise<void> {
     for (const a of actors) {
       for (let i = 1; i <= serial; i++) {
         outcomes.push(
-          await changeStatus(tokens.get(a.key)!, a, nextFor(a.key), buildProbeTag('measured', mode, a.key, i)),
+          await changeStatus(tokens.get(a.key)!, a, nextFor(a.key), tagFor('measured', a.key, i)),
         );
       }
     }
@@ -262,7 +276,7 @@ async function main(): Promise<void> {
       const slice = actors.slice(0, concurrency);
       const results = await Promise.all(
         slice.map((a) =>
-          changeStatus(tokens.get(a.key)!, a, nextFor(a.key), buildProbeTag('measured', mode, a.key, 1000 + b)),
+          changeStatus(tokens.get(a.key)!, a, nextFor(a.key), tagFor('measured', a.key, 1000 + b)),
         ),
       );
       concurrentOutcomes.push(...results);
@@ -315,6 +329,22 @@ async function main(): Promise<void> {
     console.log('LATENCY_MEASURED_ALL', JSON.stringify(allSummary));
     console.log('LATENCY_MEASURED_SERIAL', JSON.stringify(serialSummary));
     console.log('LATENCY_MEASURED_CONCURRENT', JSON.stringify(concurrentSummary));
+
+    // R02: YURUTME SIRASINA gore segment raporu (cold vs warmed steady-state).
+    // `all` dizisi serial-sonra-concurrent sirasindadir; segment pencereleri o sirayi izler.
+    if (block !== undefined) {
+      const orderedSuccess = all.filter((o) => o.ok).map((o) => o.ms);
+      const seg = segmentSamples(orderedSuccess);
+      console.log('R02_BLOCK', block);
+      console.log('R02_STEADY_EXCLUDE_FIRST', STEADY_STATE_EXCLUDE_FIRST);
+      for (const k of R02_SEGMENT_KEYS) {
+        console.log(`R02_SEGMENT ${k} ` + JSON.stringify(seg[k]));
+      }
+      console.log(
+        'R02_ORDERED_SUCCESS_MS',
+        JSON.stringify(orderedSuccess.map((m) => Math.round(m * 100) / 100)),
+      );
+    }
     console.log('DB_DELTA', JSON.stringify({
       telemetryEvents: telemetryDelta,
       caseStatusHistory: histAfter - histBefore,
