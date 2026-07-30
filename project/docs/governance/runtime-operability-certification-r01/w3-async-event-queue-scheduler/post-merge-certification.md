@@ -89,3 +89,37 @@ kesintisi DEGILDIR; eksik canonical authority kaydidir. Acil yetki VERILMEMISTIR
 POST-MERGE CERTIFICATION: N/A — MERGE GERCEKLESMEDI
 CLOSEOUT: DOGFOOD_FAILED
 ```
+
+---
+
+## RETROSPEKTIF DUZELTME (CLOSEOUT-AUTHORITY-CONTRACT-IMPLEMENTATION-R01)
+
+Owner `OPTION A — REFINED` ratifikasyonu (2026-07-30) sonrasi eklenmistir. Yukaridaki
+bolumler yazildiklari andaki durumu kaydeder ve **degistirilmemistir**; bu ek yalnizca
+dogru davranisin ne olmasi gerektigini kayit altina alir.
+
+```text
+W3 executor PR #1949'u deterministic fallback ile MERGE ETMELIYDI.
+Ek owner merge turu GEREKSIZDI.
+Ledger dogfood basarisizligi GECERLIDIR ve degismez.
+Delivery durdurulmamaliydi.
+```
+
+**Canonical dayanak** (bu task'ta yaziya dokulmustur): `AGENTS.md` §5 ve
+`project/docs/runbooks/pr-closeout.md` "Varsayilan yol ve fallback". Runner'in exact
+blocker uretmesi ve owner beyaninin ledger'a baglanamamasi, runbook'ta ADI GECEN iki
+fallback sebebidir. Bu nedenle `MERGE_AUTHORITY_LEDGER_REQUIRED` bagimsiz bir delivery
+blocker'i degildi.
+
+**Tarihsel GitHub gercegi degistirilmez.** Merge actor GitHub'da owner'dir ve oyle kalir:
+
+```text
+HISTORICAL W3 RESULT
+  merge actor    : OWNER_MERGED
+  ledger dogfood : LEDGER_DOGFOOD_FAILED
+  delivery       : DELIVERY_PASS
+  merge SHA      : e0a85dc5b2607844830e436f281c1f21f9b7c8d3
+```
+
+Ayni yanlis okumanin tekrari `closeout-authority-contract.spec.ts` ile fail-closed hale
+getirilmistir.

@@ -25,6 +25,17 @@ const ACTIVE_STATUSES = new Set(['ISSUED', 'VALIDATED']);
 const TERMINAL_STATUSES = new Set(['CONSUMED', 'REVOKED', 'EXPIRED', 'INVALIDATED']);
 const ALL_STATUSES = new Set([...ACTIVE_STATUSES, ...TERMINAL_STATUSES]);
 
+/**
+ * Canonical workspace module enum — tek kaynak:
+ * `project/docs/governance/CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md`.
+ * `REPOSITORY_WIDE_RUNTIME_CONTROL_PLANE` bu listede DEGILDIR ve gecersizdir;
+ * repository-wide control-plane gorevleri `SHARED_CONTROL_PLANE` kullanir.
+ */
+const CANONICAL_WORKSPACE_MODULES = Object.freeze(new Set([
+  'OFFICE', 'CLIENT', 'DEBTOR', 'RECEIVABLE', 'COLLECTION',
+  'CROSS_MODULE', 'SHARED_CONTROL_PLANE', 'UNKNOWN',
+]));
+
 const CODE = Object.freeze({
   INPUT_INVALID: 'LEDGER_INPUT_INVALID',
   AUTHORITY_REFS_NOT_DISTINCT: 'AUTHORITY_REFS_NOT_DISTINCT',
@@ -34,6 +45,7 @@ const CODE = Object.freeze({
   AUTHORITY_TASK_MISMATCH: 'AUTHORITY_TASK_MISMATCH',
   AUTHORITY_OWNER_MISMATCH: 'AUTHORITY_OWNER_MISMATCH',
   AUTHORITY_MODE_INVALID: 'AUTHORITY_MODE_INVALID',
+  AUTHORITY_WORKSPACE_MODULE_INVALID: 'AUTHORITY_WORKSPACE_MODULE_INVALID',
   PR_NOT_OPEN: 'LEDGER_PR_NOT_OPEN',
   PR_IDENTITY_MISMATCH: 'LEDGER_PR_IDENTITY_MISMATCH',
   AUTHORIZED_HEAD_MISMATCH: 'AUTHORIZED_HEAD_MISMATCH',
@@ -227,7 +239,7 @@ function validateAuthorityRecords(input, sa, eg) {
   const requiredEg = {
     recordType: 'EXECUTION_GRANT', recordId: input.executionGrantRef.recordId,
     programId: input.programId, taskId: input.taskId,
-    executionMode: 'GO-COMPLETE', workspaceModule: 'SHARED_CONTROL_PLANE',
+    executionMode: 'GO-COMPLETE',
     status: 'ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK',
     productionActivation: 'NOT_AUTHORIZED', ciBypass: 'PROHIBITED',
     ledgerBypass: 'PROHIBITED', standingAuthority: 'PROHIBITED',
@@ -253,6 +265,20 @@ function validateAuthorityRecords(input, sa, eg) {
             : CODE.AUTHORITY_RECORD_INVALID;
       reject(code, 'EG.' + field + ' expected ' + expected + ', observed ' + eg[field]);
     }
+  }
+  // CLOSEOUT-AUTHORITY-CONTRACT-IMPLEMENTATION-R01: workspaceModule artik sabit
+  // 'SHARED_CONTROL_PLANE' degildir. Deger EG kaydindan gelir ve canonical enum'a karsi
+  // dogrulanir (CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md). Onceki hard-code, modul-kapsamli
+  // her gorevin ledger materialize etmesini yapisal olarak imkansiz kiliyordu; ayrica
+  // `REPOSITORY_WIDE_RUNTIME_CONTROL_PLANE` gibi non-canonical degerler icin uretilen
+  // hata mesaji yanlis tarafi isaret ediyordu. Fail-closed korunur: eksik veya
+  // enum-disi deger reddedilir.
+  if (!CANONICAL_WORKSPACE_MODULES.has(eg.workspaceModule)) {
+    reject(
+      CODE.AUTHORITY_WORKSPACE_MODULE_INVALID,
+      'EG.workspaceModule ' + JSON.stringify(eg.workspaceModule)
+        + ' canonical degil; izinli: ' + [...CANONICAL_WORKSPACE_MODULES].join(', '),
+    );
   }
   if (!sa.ownerName || sa.ownerName !== eg.ownerName || sa.ownerRole !== eg.ownerRole) {
     reject(CODE.AUTHORITY_OWNER_MISMATCH, 'SA/EG owner identity differs');
@@ -538,6 +564,7 @@ function consumeLedgerFile(ledgerPath, authorityRef, meta) {
 
 module.exports = {
   ACTIVE_STATUSES,
+  CANONICAL_WORKSPACE_MODULES,
   ALL_STATUSES,
   CODE,
   LedgerError,

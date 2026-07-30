@@ -303,6 +303,35 @@ function validatePrShape(pr) {
   return null;
 }
 
+/**
+ * CLOSEOUT-AUTHORITY-CONTRACT-IMPLEMENTATION-R01 (owner OPTION A — REFINED).
+ *
+ * Merge'i kimin gerceklestirdigi ayri ve durust kaydedilir: owner-performed merge ile
+ * ajanin deterministic fallback merge'i AYNI state olarak yazilmaz. Onceki modelde
+ * yalniz `LIVE_RUNNER` / `NONE` vardi; runner disinda tamamlanan her kapanis `NONE`
+ * gorunuyor ve owner merge ile fallback merge ayirt edilemiyordu.
+ *
+ * Bu modul kendisi yalniz `LIVE_RUNNER` uretir. `EXECUTOR_FALLBACK` ve `OWNER`,
+ * runner disinda gerceklesen kapanislarin raporlanmasi icindir; esleme burada tek
+ * yerde tutulur ki rapor ureten yuzeyler kendi tablolarini kopyalamasin.
+ */
+const MERGE_ACTORS = Object.freeze(['LIVE_RUNNER', 'EXECUTOR_FALLBACK', 'OWNER', 'NONE']);
+
+const TERMINAL_DELIVERY_BY_ACTOR = Object.freeze({
+  LIVE_RUNNER: 'RUNNER_MERGED',
+  EXECUTOR_FALLBACK: 'EXECUTOR_FALLBACK_MERGED',
+  OWNER: 'OWNER_MERGED',
+  NONE: 'NOT_MERGED',
+});
+
+/** Merge actor -> terminal delivery state. Bilinmeyen actor fail-closed reddedilir. */
+function deliveryFor(actor) {
+  if (!Object.prototype.hasOwnProperty.call(TERMINAL_DELIVERY_BY_ACTOR, actor)) {
+    throw new Error('UNKNOWN_MERGE_ACTOR: ' + String(actor));
+  }
+  return TERMINAL_DELIVERY_BY_ACTOR[actor];
+}
+
 function baseResult(input) {
   return {
     taskId: input.taskId,
@@ -528,6 +557,7 @@ async function closeoutPr(input, adapter) {
   try {
     merged = await adapter.squashMerge(input.pr);
     out.mergePerformedBy = 'LIVE_RUNNER';
+    out.terminalDelivery = deliveryFor(out.mergePerformedBy);
   } catch (e) {
     return Object.assign(out, blocked('MERGE_GATE_VALIDATED', BLOCKER.MERGE_FAILED, e && e.message));
   }
@@ -649,6 +679,9 @@ function formatReport(r) {
 }
 
 module.exports = {
+  MERGE_ACTORS,
+  TERMINAL_DELIVERY_BY_ACTOR,
+  deliveryFor,
   AUTHORITY_TYPES,
   BLOCKER,
   CloseoutError,

@@ -40,6 +40,66 @@ runner'dır**. Manuel kapanış fallback'tir ve yalnız şu durumlarda kullanıl
 Fallback kullanıldığında **gerekçesi kapanış raporunda yazılır**. Fallback gate atlamak
 için kullanılamaz: manuel kapanışta da aynı gate'ler elle doğrulanır.
 
+### Zorunlu fallback kuralı
+
+`CLOSEOUT-AUTHORITY-CONTRACT-IMPLEMENTATION-R01` (owner OPTION A — REFINED, 2026-07-30)
+ile bağlayıcı:
+
+> Owner authority geçerli ve uygulanabilir gate'lerin tümü PASS ise; closeout-runner exact
+> blocker'ı, desteklenmeyen senaryo veya ledger materialization başarısızlığı **ikinci bir
+> owner merge mesajı gerektirmez.** Ajan deterministic manuel fallback uygular, exact
+> gerekçeyi kaydeder, delivery gate'lerini tamamlar ve ledger dogfood'u ayrı işaretler.
+
+Bu, `AGENTS.md` §5'in ayrıntısıdır. Fallback **gate atlamaz**.
+
+### Precedence
+
+```text
+1. Explicit owner task instruction
+2. Task-specific IF GO-COMPLETE
+3. Program lock and exact task scope
+4. Risk-specific safety and delivery gates
+5. Ledger materialization / deterministic closeout runner
+6. Runner defaults
+7. Executor inference  ← hiçbir seviyede authority DEĞİL
+```
+
+Ledger 1–4'ün üstüne çıkamaz. Ledger türetilmiş kanıttır, authority kaynağı değildir.
+
+### Gerçek delivery blocker'ları
+
+Aşağıdakiler merge'i durdurur:
+
+```text
+owner authority absent · owner authority ambiguous · exact scope mismatch
+program lock · competing writer · semantic conflict · merge conflict
+required CI failure · PR not CLEAN/MERGEABLE · unauthorized schema or migration
+missing production activation authority · failed backup or rollback gate
+tenant isolation failure · credential leak · destructive real-data risk
+runtime verification failure
+```
+
+### Tek başına blocker OLMAYANLAR
+
+```text
+ledger absent · ledger materialization failure · runner unsupported scenario
+runner exact technical blocker · workspaceModule runner mismatch · dogfood failure
+```
+
+Bu grup deterministic fallback + governance residual üretir; delivery'yi durdurmaz.
+
+### Self-authority yasağı
+
+> Ajan kendi current task'ı için `SEMANTIC_AUTHORITY` veya `EXECUTION_GRANT` kaydı
+> **oluşturamaz, ratify edemez veya onaylayamaz.** Ajan-yazımı authority merge authority
+> kaynağı olarak kullanılamaz.
+
+Owner'ın **önceden verdiği** authority'nin mekanik kanıt kaydına dönüştürülmesi bu yasağın
+kapsamında değildir — ancak yalnız şu beşi birlikte çözülebiliyorsa: owner identity,
+immutable owner reference, task ID, exact PR, authorized base SHA. Bugünkü materializer
+sohbetten authority türetmez (`authority-to-ledger-flow.md`); bu nedenle chat-only
+authority ile live koşu yapılamaz ve fallback yolu kullanılır.
+
 ## Authority
 
 Yalnız üç task-bound tip kabul edilir:
@@ -201,6 +261,71 @@ tespit edildi ve düzeltildi.
 
 `MERGED_CLEANUP_BLOCKED` durumunda **merge geri alınmaya çalışılmaz.** Kalan iş elle
 tamamlanır; worktree/branch temizliği için `worktree-cleanup.md` izlenir.
+
+### Merge actor ve terminal delivery temsili
+
+Merge'i kimin gerçekleştirdiği ayrı ve dürüst kaydedilir; owner merge ile ajan fallback
+merge **aynı state olarak yazılmaz**.
+
+| `mergePerformedBy` | Anlamı | Terminal delivery |
+|---|---|---|
+| `LIVE_RUNNER` | deterministic runner merge etti | `RUNNER_MERGED` |
+| `EXECUTOR_FALLBACK` | runner blokladı; ajan owner authority ile elle kapattı | `EXECUTOR_FALLBACK_MERGED` |
+| `OWNER` | owner GitHub üzerinden merge etti | `OWNER_MERGED` |
+| `NONE` | merge yok | `NOT_MERGED` |
+
+### MERGED ≠ CLOSED — görev sınıfı bazlı acceptance
+
+`MERGED` yalnız governance-only görevde terminaldir. Görev sınıfına göre zorunlu zincir:
+
+```text
+governance-only    MERGED → MAIN_SYNCED → FINAL_VERIFIED → CLOSED
+tooling / runner   MERGED → CANONICAL SELF-TEST → DOGFOOD RESULT → CLOSED
+runtime code       MERGED → DEPLOYED → APPLICATION_PATH_EXECUTED → RUNTIME_VERIFIED → CLOSED
+migration          MERGED → BACKUP_VERIFIED → MIGRATION_APPLIED → DATA_RECONCILED
+                          → RUNTIME_VERIFIED → CLOSED
+security patch     MERGED → DEPLOYED → EXPOSURE/REGRESSION VERIFIED → CLOSED
+feature flag       MERGED → DEPLOYED → DEFAULT-OFF VERIFIED → CONTROLLED ACTIVATION
+                          → EVIDENCE → FINAL FLAG DISPOSITION → CLOSED
+scheduler / queue  MERGED → DEPLOYED → STARTUP REGISTRATION → PRODUCER-CONSUMER EXECUTION
+                          → RETRY/IDEMPOTENCY/TENANT EVIDENCE → CLOSED
+```
+
+Her görev tüm state'leri kullanmak zorunda değildir; sınıfının zincirini tamamlamadan
+`CLOSED` denmez.
+
+### Delivery ve dogfood ayrımı
+
+Kapanış raporu şu beşi **ayrı** bildirir:
+
+```text
+DELIVERY            : PASS / FAIL
+RUNTIME ACCEPTANCE  : PASS / FAIL / NOT_APPLICABLE
+LEDGER DOGFOOD      : PASS / FAIL / NOT_USED
+CLOSEOUT MECHANISM  : LIVE_RUNNER / EXECUTOR_FALLBACK / OWNER
+FINAL TASK STATUS   : CLOSED / BLOCKED / PARTIAL
+```
+
+Geçerli ve dürüst bir kombinasyon örneği:
+
+```text
+DELIVERY: PASS · LEDGER DOGFOOD: FAIL · CLOSEOUT MECHANISM: EXECUTOR_FALLBACK
+FINAL TASK STATUS: CLOSED WITH GOVERNANCE RESIDUAL
+```
+
+### workspaceModule
+
+Ledger/authority kayıtlarında yalnız canonical enum kabul edilir
+(`CANONICAL-FIVE-MODULE-WORKSPACE-MAP.md`):
+
+```text
+OFFICE · CLIENT · DEBTOR · RECEIVABLE · COLLECTION · CROSS_MODULE
+SHARED_CONTROL_PLANE · UNKNOWN
+```
+
+`REPOSITORY_WIDE_RUNTIME_CONTROL_PLANE` **workspaceModule olarak GEÇERSİZDİR.**
+Repository-wide control-plane görevleri `SHARED_CONTROL_PLANE` kullanır. Değer sabit
+hard-code edilmez; task/authority kaydından alınır ve canonical enum'a doğrulanır.
 
 ## Idempotency ve recovery
 
