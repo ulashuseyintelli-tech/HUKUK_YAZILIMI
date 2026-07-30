@@ -1147,3 +1147,106 @@ Office runtime, Legal Basis content ratification, code, test, schema, migration,
 production activation, signing, signed release, D02-LB01 authority veya owner WIP
 yetkisi üretmez. PR #1925 merge veya close olduğunda binding yeniden kullanılamaz;
 global/reusable authority `NONE` kalır.
+
+## RECEIVABLE LEGAL BASIS CONTENT RATIFICATION — root-authority bootstrap binding
+
+Owner-ratified 2026-07-30. Bu kayıt yalnız
+`RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01` için tek
+kullanımlık iki aşamalı authority-bootstrap modelinin Stage 1 control-plane
+binding'ini oluşturur. Existing root-bootstrap security invariant'larını
+gevşetmez ve Stage 2'yi yürütmez.
+
+```text
+protocolModeId : RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_ROOT_AUTHORITY_BOOTSTRAP_R01
+programId : RECEIVABLE-LEGAL-BASIS-MODEL-COMPLETION
+targetTaskId : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01
+workspaceModule : RECEIVABLE
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+issuedAt : 2026-07-30
+expiresAt : 2026-07-30T19:30:00Z
+designId : ROOT-AUTHORITY-BOOTSTRAP-DESIGN-R01
+designMergeSha : 8738bfcde7d962dda7729fc92ff1dfb929881f33
+```
+
+### Stage 1 exact binding
+
+```text
+Task ID  : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Mode     : RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01
+Base SHA : b5bf8977e3e4458c2da294f75aa48558df5e581c
+Head ref : codex/receivable-legal-basis-registry-content-ratification-r01-authority-bootstrap-binding-r01
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+publicationBasePolicy : OWNER_PINNED_EXACT_ONLY
+```
+
+Base, branch, task/mode ve complete `M/M/M` path-status setinden herhangi
+biri farklıysa Stage 1 fail-closed reddedilir. Grant expiry anında veya
+sonrasında Stage 1 yürütülemez; descendant base otomatik kabul edilmez.
+
+### Stage 2 prospective binding
+
+```text
+Task ID  : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-AUTHORITY-MATERIALIZATION-R01
+Mode     : RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_AUTHORITY_MATERIALIZATION_R01
+Head ref : codex/receivable-legal-basis-registry-content-ratification-r01-authority-bootstrap
+Scope    : M project/docs/governance/decision-log.md
+           A project/docs/governance/coordination-execution-grants/RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01.md
+Semantic kind   : SEMANTIC_AUTHORITY
+Semantic path   : project/docs/governance/decision-log.md
+Semantic record : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-SA01
+Execution kind   : EXECUTION_GRANT
+Execution path   : project/docs/governance/coordination-execution-grants/RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01.md
+Execution record : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01
+stage2Predecessor : OWNER_GRANT_2_REQUIRED
+stage2Base : OWNER_GRANT_2_REQUIRED
+```
+
+Stage 2 yalnız unique canonical Stage 1 squash SHA ve fresh Stage 2 base SHA
+ayrı owner grant'inde exact pinlendikten sonra çalışabilir. Stage 1'in üç
+protected blob'u Stage 2 base'inde byte-exact korunmalıdır. Semantic authority
+ile execution grant farklı kind, path ve record ID taşır.
+
+### Hash-bound target content invariants
+
+```text
+decisionPackId : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01
+decisionPackVersion : 1
+decisionPackSha256 : 94a98d53ea6f1d785f811ffe24a199e9fecd5cb8b46f138c3c3932079666b357
+ldoName : Av. Fatma Uluca Telli
+ldoRole : LEGAL DOMAIN OFFICER / LEGAL REVIEWER
+ldoRatifierCode : TELLI-LEGAL-REVIEWER-01
+ldoDisposition : APPROVED
+finalRatifierName : Av. Ulaş Hüseyin Telli
+finalRatifierRole : OWNER / FINAL LEGAL RATIFIER
+finalRatifierCode : TELLI-FINAL-LEGAL-RATIFIER-01
+finalRatifierDisposition : RATIFIED
+ratificationEffectiveAtUtc : 2026-07-30T12:03:52Z
+ratifiedModel : MODEL_B_SIX_CLAIM_LEVEL_SUBTYPES
+ratifiedSubtype : INTERIM_MAINTENANCE
+ratifiedSubtype : MINOR_CHILD_MAINTENANCE
+ratifiedSubtype : ADULT_CHILD_EDUCATION_MAINTENANCE
+ratifiedSubtype : POVERTY_MAINTENANCE
+ratifiedSubtype : SEPARATE_LIVING_SPOUSAL_MAINTENANCE
+ratifiedSubtype : FAMILY_SUPPORT_MAINTENANCE
+```
+
+Stage 2 authority records yalnız bu exact content tuple'ını taşıyabilir. Wrong
+hash, ratifier identity/code, shared timestamp, model veya subtype seti
+fail-closed reddedilir. `TELLI-PROD-LEGAL-01` hukuki ratifier değildir.
+
+```text
+globalAuthority : PROHIBITED
+reusableAuthority : PROHIBITED
+auditAsAuthority : PROHIBITED
+STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED
+```
+
+Bu binding decision-log mutation, SA/EG materialization, target governance
+write, registry JSON/schema/validator/release/checksum mutation, resolver,
+application code, Prisma/schema/migration, UYAP, OFFICE, AWS/IAM/KMS, runtime
+activation, signing veya signed release yetkisi üretmez. Stage 1 approved merge
+ile `CONSUMED / NON-REUSABLE` olur; Stage 2 ve target ratification ayrı gate'te
+kalır.

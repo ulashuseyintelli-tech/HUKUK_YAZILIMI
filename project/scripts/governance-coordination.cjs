@@ -718,6 +718,112 @@ const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01 =
       }),
     }),
   });
+const RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01 =
+  Object.freeze({
+    protocolModeId:
+      'RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_ROOT_AUTHORITY_BOOTSTRAP_R01',
+    programId: 'RECEIVABLE-LEGAL-BASIS-MODEL-COMPLETION',
+    targetTaskId:
+      'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01',
+    workspaceModule: 'RECEIVABLE',
+    ownerName: 'Av. Ulaş Hüseyin Telli',
+    ownerRole: 'Repository Owner / Semantic Authority',
+    issuedAt: '2026-07-30',
+    expiresAt: '2026-07-30T19:30:00Z',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    design: Object.freeze({
+      id: 'ROOT-AUTHORITY-BOOTSTRAP-DESIGN-R01',
+      mergeSha: '8738bfcde7d962dda7729fc92ff1dfb929881f33',
+    }),
+    bindingPr: Object.freeze({
+      taskId:
+        'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01',
+      mode:
+        'RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01',
+      baseSha: 'b5bf8977e3e4458c2da294f75aa48558df5e581c',
+      exactBaseOnly: true,
+      headRef:
+        'codex/receivable-legal-basis-registry-content-ratification-r01-authority-bootstrap-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId:
+        'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-AUTHORITY-MATERIALIZATION-R01',
+      mode:
+        'RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_AUTHORITY_MATERIALIZATION_R01',
+      headRef:
+        'codex/receivable-legal-basis-registry-content-ratification-r01-authority-bootstrap',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId:
+          'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01.md',
+        recordId:
+          'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01',
+      }),
+    }),
+    decisionPack: Object.freeze({
+      id: 'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01',
+      version: '1',
+      sha256:
+        '94a98d53ea6f1d785f811ffe24a199e9fecd5cb8b46f138c3c3932079666b357',
+    }),
+    legalDomainOfficer: Object.freeze({
+      name: 'Av. Fatma Uluca Telli',
+      role: 'LEGAL DOMAIN OFFICER / LEGAL REVIEWER',
+      ratifierCode: 'TELLI-LEGAL-REVIEWER-01',
+      disposition: 'APPROVED',
+    }),
+    finalRatifier: Object.freeze({
+      name: 'Av. Ulaş Hüseyin Telli',
+      role: 'OWNER / FINAL LEGAL RATIFIER',
+      ratifierCode: 'TELLI-FINAL-LEGAL-RATIFIER-01',
+      disposition: 'RATIFIED',
+    }),
+    ratificationEffectiveAtUtc: '2026-07-30T12:03:52Z',
+    model: Object.freeze({
+      id: 'MODEL_B_SIX_CLAIM_LEVEL_SUBTYPES',
+      subtypes: Object.freeze([
+        'INTERIM_MAINTENANCE',
+        'MINOR_CHILD_MAINTENANCE',
+        'ADULT_CHILD_EDUCATION_MAINTENANCE',
+        'POVERTY_MAINTENANCE',
+        'SEPARATE_LIVING_SPOUSAL_MAINTENANCE',
+        'FAMILY_SUPPORT_MAINTENANCE',
+      ]),
+    }),
+  });
 const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01 =
   Object.freeze({
     taskId:
@@ -2355,10 +2461,14 @@ function classifyPrChangeSet(changes, context = {}) {
     RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
   const rootAuthorityBootstrap =
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const legalBasisContentBootstrap =
+    RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const rootStage2ValidatorReconciliation =
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   const rootStage1 = rootAuthorityBootstrap.bindingPr;
   const rootStage2 = rootAuthorityBootstrap.targetPr;
+  const legalBasisContentStage1 = legalBasisContentBootstrap.bindingPr;
+  const legalBasisContentStage2 = legalBasisContentBootstrap.targetPr;
 
   if (
     context.base === rootStage2ValidatorReconciliation.baseSha &&
@@ -2375,6 +2485,57 @@ function classifyPrChangeSet(changes, context = {}) {
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
       'Stage 2 validator reconciliation requires its owner-pinned base and exact M/M/M/A scope',
     );
+  }
+
+  if (
+    context.headRef === legalBasisContentStage1.headRef ||
+    (context.base === legalBasisContentStage1.baseSha &&
+      hasExactChangeSet(changes, legalBasisContentStage1.changedPaths))
+  ) {
+    if (context.headRef !== legalBasisContentStage1.headRef) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
+        'Legal Basis content-ratification Stage 1 requires its exact branch',
+      );
+    }
+    if (context.base !== legalBasisContentStage1.baseSha) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH',
+        'Legal Basis content-ratification Stage 1 requires its owner-pinned exact base',
+      );
+    }
+    if (!hasExactChangeSet(changes, legalBasisContentStage1.changedPaths)) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+        'Legal Basis content-ratification Stage 1 requires the exact M/M/M scope',
+      );
+    }
+    return {
+      mode: legalBasisContentStage1.mode,
+      taskId: legalBasisContentStage1.taskId,
+    };
+  }
+
+  if (
+    context.headRef === legalBasisContentStage2.headRef ||
+    hasExactChangeSet(changes, legalBasisContentStage2.changedPaths)
+  ) {
+    if (context.headRef !== legalBasisContentStage2.headRef) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE2_BRANCH_MISMATCH',
+        'Legal Basis content-ratification Stage 2 requires its exact branch',
+      );
+    }
+    if (!hasExactChangeSet(changes, legalBasisContentStage2.changedPaths)) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE2_SCOPE_MISMATCH',
+        'Legal Basis content-ratification Stage 2 requires the exact M/A scope',
+      );
+    }
+    return {
+      mode: legalBasisContentStage2.mode,
+      taskId: legalBasisContentStage2.taskId,
+    };
   }
 
   if (
@@ -3694,7 +3855,7 @@ function validateKc01Tr01OwnershipReconciliationBindingScope(options) {
 }
 
 function rootAuthorityBootstrapContractLiterals(binding) {
-  return [
+  const literals = [
     binding.protocolModeId,
     binding.programId,
     binding.targetTaskId,
@@ -3723,22 +3884,57 @@ function rootAuthorityBootstrapContractLiterals(binding) {
     binding.targetPr.executionGrant.recordId,
     'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
     'stage2Base : OWNER_GRANT_2_REQUIRED',
-    'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
+    binding.bindingPr.exactBaseOnly
+      ? 'publicationBasePolicy : OWNER_PINNED_EXACT_ONLY'
+      : 'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
     'globalAuthority : PROHIBITED',
     'reusableAuthority : PROHIBITED',
     'auditAsAuthority : PROHIBITED',
     'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
   ];
+  if (binding.expiresAt) literals.push(binding.expiresAt);
+  if (binding.design) literals.push(binding.design.id, binding.design.mergeSha);
+  if (binding.decisionPack) {
+    literals.push(
+      binding.decisionPack.id,
+      binding.decisionPack.version,
+      binding.decisionPack.sha256,
+      binding.legalDomainOfficer.name,
+      binding.legalDomainOfficer.role,
+      binding.legalDomainOfficer.ratifierCode,
+      binding.legalDomainOfficer.disposition,
+      binding.finalRatifier.name,
+      binding.finalRatifier.role,
+      binding.finalRatifier.ratifierCode,
+      binding.finalRatifier.disposition,
+      binding.ratificationEffectiveAtUtc,
+      binding.model.id,
+      ...binding.model.subtypes,
+    );
+  }
+  return literals;
 }
 
 function validateRootBootstrapControlState(options) {
   const binding =
+    options.binding ||
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const protocolModeId = options.protocolModeId || binding.protocolModeId;
   const programId = options.programId || binding.programId;
   const targetTaskId = options.targetTaskId || binding.targetTaskId;
   const bootstrapState = options.bootstrapState || 'ISSUED';
   const activeModeCount = options.activeModeCount ?? 1;
+
+  if (binding.expiresAt && bootstrapState === 'ISSUED') {
+    const now = Date.parse(options.nowUtc || new Date().toISOString());
+    const expiry = Date.parse(binding.expiresAt);
+    if (!Number.isFinite(now) || !Number.isFinite(expiry) || now >= expiry) {
+      reject(
+        'ROOT_BOOTSTRAP_GRANT_INACTIVE',
+        'the root-authority bootstrap grant is expired',
+      );
+    }
+  }
 
   if (protocolModeId !== binding.protocolModeId) {
     reject(
@@ -3781,17 +3977,18 @@ function validateRootBootstrapControlState(options) {
 function validateRootAuthorityBootstrapBindingScope(options) {
   const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
   const binding =
+    options.binding ||
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const stage1 = binding.bindingPr;
 
-  validateRootBootstrapControlState(options);
+  validateRootBootstrapControlState({ ...options, binding });
   if (headRef !== stage1.headRef) {
     reject(
       'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
       'root-authority bootstrap Stage 1 branch mismatch',
     );
   }
-  if (!rootStage1PublicationBaseIsValid(base, cwd)) {
+  if (!rootStage1PublicationBaseIsValid(base, cwd, binding)) {
     reject(
       'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH',
       'root-authority bootstrap Stage 1 base mismatch',
@@ -4324,9 +4521,11 @@ function findCanonicalKc01FormalClosureBindingCommit(base, cwd = REPO_ROOT) {
   return candidate;
 }
 
-function findCanonicalRootAuthorityBootstrapBindingCommit(base, cwd = REPO_ROOT) {
-  const binding =
-    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+function findCanonicalRootAuthorityBootstrapBindingCommit(
+  base,
+  cwd = REPO_ROOT,
+  binding = GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
+) {
   const result = runGit(
     [
       'log',
@@ -4377,11 +4576,14 @@ function rootBootstrapGitBlobSha(ref, repoPath, cwd = REPO_ROOT) {
   return result.status === 0 ? result.stdout.trim() : '';
 }
 
-function rootStage1PublicationBaseIsValid(base, cwd) {
-  const binding =
-    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+function rootStage1PublicationBaseIsValid(
+  base,
+  cwd,
+  binding = GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
+) {
   const stage1 = binding.bindingPr;
   if (base === stage1.baseSha) return true;
+  if (stage1.exactBaseOnly) return false;
   if (!cwd || !/^[0-9a-f]{40}$/.test(String(base || ''))) return false;
   const ancestry = runGit(
     ['merge-base', '--is-ancestor', stage1.baseSha, base],
@@ -4591,8 +4793,13 @@ function validateRootStage2ReconciliationRecord(options) {
 function validateRootStage2BaseBinding(options) {
   const { base, cwd = REPO_ROOT } = options;
   const binding =
+    options.binding ||
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
-  const predecessor = findCanonicalRootAuthorityBootstrapBindingCommit(base, cwd);
+  const predecessor = findCanonicalRootAuthorityBootstrapBindingCommit(
+    base,
+    cwd,
+    binding,
+  );
   const exact = binding.bindingPr.changedPaths.every(({ path: repoPath }) => {
     const predecessorBlob = rootBootstrapGitBlobSha(predecessor, repoPath, cwd);
     const baseBlob = rootBootstrapGitBlobSha(base, repoPath, cwd);
@@ -4603,6 +4810,15 @@ function validateRootStage2BaseBinding(options) {
       status: 'ROOT_BOOTSTRAP_STAGE2_BASE_EXACT',
       predecessor,
     };
+  }
+  if (
+    binding !==
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED',
+      'task-specific Stage 1 binding blobs changed before Stage 2',
+    );
   }
   return {
     ...validateRootStage2ReconciliationRecord({ base, cwd }),
@@ -4639,7 +4855,12 @@ function assertExactRootMarker(content, authorityRef, code) {
   return marker;
 }
 
-function validateRootAuthorityReferencePair(semantic, execution) {
+function validateRootAuthorityReferencePair(
+  semantic,
+  execution,
+  target =
+    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.targetPr,
+) {
   if (
     semantic.kind === execution.kind ||
     semantic.path === execution.path ||
@@ -4653,9 +4874,10 @@ function validateRootAuthorityReferencePair(semantic, execution) {
   if (
     semantic.kind !== 'SEMANTIC_AUTHORITY' ||
     execution.kind !== 'EXECUTION_GRANT' ||
-    semantic.path !== 'project/docs/governance/decision-log.md' ||
-    execution.path !==
-      'project/docs/governance/coordination-execution-grants/GOVERNANCE-CLOSEOUT-LIVE-LEDGER-GAP-R01-EG01.md'
+    semantic.path !== target.semanticAuthority.path ||
+    execution.path !== target.executionGrant.path ||
+    semantic.recordId !== target.semanticAuthority.recordId ||
+    execution.recordId !== target.executionGrant.recordId
   ) {
     reject(
       'ROOT_BOOTSTRAP_AUTHORITY_PATH_INVALID',
@@ -4669,14 +4891,13 @@ function validateRootAuthorityMaterializationContent(
   grant,
   base,
   predecessor,
+  binding = GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
 ) {
-  const binding =
-    GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const target = binding.targetPr;
   const semantic = target.semanticAuthority;
   const execution = target.executionGrant;
 
-  validateRootAuthorityReferencePair(semantic, execution);
+  validateRootAuthorityReferencePair(semantic, execution, target);
 
   const semanticMarker = assertExactRootMarker(
     decisionLog,
@@ -4725,6 +4946,45 @@ function validateRootAuthorityMaterializationContent(
           ? 'ROOT_BOOTSTRAP_TARGET_MISMATCH'
           : 'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
     );
+  }
+
+  if (binding.decisionPack) {
+    for (const [field, value] of [
+      ['decisionPackId', binding.decisionPack.id],
+      ['decisionPackVersion', binding.decisionPack.version],
+      ['decisionPackSha256', binding.decisionPack.sha256],
+      ['ldoName', binding.legalDomainOfficer.name],
+      ['ldoRole', binding.legalDomainOfficer.role],
+      ['ldoRatifierCode', binding.legalDomainOfficer.ratifierCode],
+      ['ldoDisposition', binding.legalDomainOfficer.disposition],
+      ['finalRatifierName', binding.finalRatifier.name],
+      ['finalRatifierRole', binding.finalRatifier.role],
+      ['finalRatifierCode', binding.finalRatifier.ratifierCode],
+      ['finalRatifierDisposition', binding.finalRatifier.disposition],
+      ['ratificationEffectiveAtUtc', binding.ratificationEffectiveAtUtc],
+      ['ratifiedModel', binding.model.id],
+      ['ratifiedSubtypeCount', String(binding.model.subtypes.length)],
+      ['runtime', 'DORMANT'],
+      ['registryRelease', 'NOT_MATERIALIZED'],
+      ['resolver', 'NOT_STARTED'],
+    ]) {
+      assertExactRootRecordField(
+        decisionLog,
+        field,
+        value,
+        field.startsWith('ldo') || field.startsWith('finalRatifier')
+          ? 'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH'
+          : 'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
+      );
+    }
+    for (const subtype of binding.model.subtypes) {
+      assertExactRootRecordField(
+        decisionLog,
+        'ratifiedSubtype',
+        subtype,
+        'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
+      );
+    }
   }
 
   assertExactRootMarker(grant, execution, 'ROOT_BOOTSTRAP_EG_RECORD_INVALID');
@@ -4788,11 +5048,13 @@ function validateRootAuthorityMaterializationContent(
 function validateRootAuthorityBootstrapMaterializationScope(options) {
   const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
   const binding =
+    options.binding ||
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const target = binding.targetPr;
 
   validateRootBootstrapControlState({
     ...options,
+    binding,
     bootstrapState: options.bootstrapState || 'STAGE1_MERGED',
   });
   if (headRef !== target.headRef) {
@@ -4814,7 +5076,7 @@ function validateRootAuthorityBootstrapMaterializationScope(options) {
     );
   }
 
-  const baseBinding = validateRootStage2BaseBinding({ base, cwd });
+  const baseBinding = validateRootStage2BaseBinding({ base, cwd, binding });
   const predecessor = baseBinding.predecessor;
   const baseContract = gitShow(base, binding.contractPath, cwd);
   for (const expectedLiteral of rootAuthorityBootstrapContractLiterals(binding)) {
@@ -4843,6 +5105,7 @@ function validateRootAuthorityBootstrapMaterializationScope(options) {
     grant,
     base,
     predecessor,
+    binding,
   );
 
   return { mode: target.mode, taskId: target.taskId };
@@ -5822,6 +6085,24 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
+      .bindingPr.mode
+  ) {
+    return validateRootAuthorityBootstrapBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      binding:
+        RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01.bindingPr
       .mode
   ) {
@@ -6005,6 +6286,24 @@ function validatePrScope(options) {
       headRef,
       changes,
       taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
+      .targetPr.mode
+  ) {
+    return validateRootAuthorityBootstrapMaterializationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      binding:
+        RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01,
       cwd,
     });
   }
@@ -6431,6 +6730,7 @@ module.exports = {
   RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
+  RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01,
   RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01,
   GRANT_REPO_PATH,

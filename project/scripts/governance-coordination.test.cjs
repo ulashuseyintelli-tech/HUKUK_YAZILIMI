@@ -445,10 +445,11 @@ function rootStage2ValidatorReconciliationChanges() {
   );
 }
 
-function rootAuthorityContractContent() {
-  const binding =
-    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
-  return [
+function rootAuthorityContractContent(
+  binding =
+    coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
+) {
+  const content = [
     '# Root authority binding fixture',
     binding.protocolModeId,
     binding.programId,
@@ -478,17 +479,41 @@ function rootAuthorityContractContent() {
     binding.targetPr.executionGrant.recordId,
     'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
     'stage2Base : OWNER_GRANT_2_REQUIRED',
-    'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
+    binding.bindingPr.exactBaseOnly
+      ? 'publicationBasePolicy : OWNER_PINNED_EXACT_ONLY'
+      : 'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
     'globalAuthority : PROHIBITED',
     'reusableAuthority : PROHIBITED',
     'auditAsAuthority : PROHIBITED',
     'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
-    '',
-  ].join('\n');
+  ];
+  if (binding.expiresAt) content.push(binding.expiresAt);
+  if (binding.design) content.push(binding.design.id, binding.design.mergeSha);
+  if (binding.decisionPack) {
+    content.push(
+      binding.decisionPack.id,
+      binding.decisionPack.version,
+      binding.decisionPack.sha256,
+      binding.legalDomainOfficer.name,
+      binding.legalDomainOfficer.role,
+      binding.legalDomainOfficer.ratifierCode,
+      binding.legalDomainOfficer.disposition,
+      binding.finalRatifier.name,
+      binding.finalRatifier.role,
+      binding.finalRatifier.ratifierCode,
+      binding.finalRatifier.disposition,
+      binding.ratificationEffectiveAtUtc,
+      binding.model.id,
+      ...binding.model.subtypes,
+    );
+  }
+  content.push('');
+  return content.join('\n');
 }
 
 function createRootAuthorityStage2GitFixture(t, options = {}) {
   const binding =
+    options.binding ||
     coordination.GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const target = binding.targetPr;
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-root-auth-'));
@@ -510,8 +535,11 @@ function createRootAuthorityStage2GitFixture(t, options = {}) {
       filePath,
       repoPath === binding.contractPath
         ? options.missingPredecessor
-          ? rootAuthorityContractContent().replace(binding.bindingPr.taskId, 'MISSING-STAGE1')
-          : rootAuthorityContractContent()
+          ? rootAuthorityContractContent(binding).replace(
+              binding.bindingPr.taskId,
+              'MISSING-STAGE1',
+            )
+          : rootAuthorityContractContent(binding)
         : `${repoPath}\n`,
       'utf8',
     );
@@ -575,6 +603,30 @@ function createRootAuthorityStage2GitFixture(t, options = {}) {
       'manualFallback : EMERGENCY_ONLY',
       'productionActivation : NOT_AUTHORIZED',
       'standingAuthority : PROHIBITED',
+      ...(binding.decisionPack
+        ? [
+            `decisionPackId : ${binding.decisionPack.id}`,
+            `decisionPackVersion : ${binding.decisionPack.version}`,
+            `decisionPackSha256 : ${binding.decisionPack.sha256}`,
+            `ldoName : ${binding.legalDomainOfficer.name}`,
+            `ldoRole : ${binding.legalDomainOfficer.role}`,
+            `ldoRatifierCode : ${binding.legalDomainOfficer.ratifierCode}`,
+            `ldoDisposition : ${binding.legalDomainOfficer.disposition}`,
+            `finalRatifierName : ${binding.finalRatifier.name}`,
+            `finalRatifierRole : ${binding.finalRatifier.role}`,
+            `finalRatifierCode : ${binding.finalRatifier.ratifierCode}`,
+            `finalRatifierDisposition : ${binding.finalRatifier.disposition}`,
+            `ratificationEffectiveAtUtc : ${binding.ratificationEffectiveAtUtc}`,
+            `ratifiedModel : ${binding.model.id}`,
+            `ratifiedSubtypeCount : ${binding.model.subtypes.length}`,
+            ...binding.model.subtypes.map(
+              (subtype) => `ratifiedSubtype : ${subtype}`,
+            ),
+            'runtime : DORMANT',
+            'registryRelease : NOT_MATERIALIZED',
+            'resolver : NOT_STARTED',
+          ]
+        : []),
       '',
     ].join('\n'),
     'utf8',
@@ -5640,4 +5692,297 @@ test('root-authority classifier is deterministic and existing bootstrap modes re
       { mode: binding.bindingPr.mode, taskId: binding.taskId },
     );
   }
+});
+
+function legalBasisContentBootstrapBinding() {
+  return coordination.RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01;
+}
+
+function legalBasisContentStage1Changes() {
+  return legalBasisContentBootstrapBinding().bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function legalBasisContentStage2Changes() {
+  return legalBasisContentBootstrapBinding().targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+test('Legal Basis content-ratification Stage 1 accepts only its exact active tuple', () => {
+  const binding = legalBasisContentBootstrapBinding();
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rootAuthorityContractContent(binding),
+  );
+  const options = {
+    binding,
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: legalBasisContentStage1Changes(),
+    taskId: binding.bindingPr.taskId,
+    mode: binding.bindingPr.mode,
+    protocolModeId: binding.protocolModeId,
+    programId: binding.programId,
+    targetTaskId: binding.targetTaskId,
+    nowUtc: '2026-07-30T17:59:59Z',
+    cwd: fixture.root,
+  };
+  const expected = {
+    mode: binding.bindingPr.mode,
+    taskId: binding.bindingPr.taskId,
+  };
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(legalBasisContentStage1Changes(), {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    }),
+    expected,
+  );
+  assert.deepEqual(
+    coordination.validateRootAuthorityBootstrapBindingScope(options),
+    expected,
+  );
+});
+
+test('Legal Basis content-ratification Stage 1 fails closed on tuple scope and state drift', () => {
+  const binding = legalBasisContentBootstrapBinding();
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rootAuthorityContractContent(binding),
+  );
+  const valid = {
+    binding,
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: legalBasisContentStage1Changes(),
+    taskId: binding.bindingPr.taskId,
+    mode: binding.bindingPr.mode,
+    nowUtc: '2026-07-30T17:59:59Z',
+    cwd: fixture.root,
+  };
+  for (const [override, code] of [
+    [{ base: 'a'.repeat(40) }, 'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH'],
+    [
+      { headRef: `${binding.bindingPr.headRef}-copy` },
+      'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
+    ],
+    [{ taskId: 'WRONG-TASK' }, 'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH'],
+    [{ mode: 'WRONG-MODE' }, 'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH'],
+    [{ programId: 'WRONG-PROGRAM' }, 'ROOT_BOOTSTRAP_TARGET_MISMATCH'],
+    [{ targetTaskId: 'WRONG-TARGET' }, 'ROOT_BOOTSTRAP_TARGET_MISMATCH'],
+    [{ activeModeCount: 2 }, 'ROOT_BOOTSTRAP_DUPLICATE_ACTIVE_MODE'],
+    [{ bootstrapState: 'CONSUMED' }, 'ROOT_BOOTSTRAP_MODE_CONSUMED'],
+    [{ nowUtc: binding.expiresAt }, 'ROOT_BOOTSTRAP_GRANT_INACTIVE'],
+  ]) {
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validateRootAuthorityBootstrapBindingScope({
+          ...valid,
+          ...override,
+        }),
+      code,
+    );
+  }
+
+  const validChanges = legalBasisContentStage1Changes();
+  for (let index = 0; index < validChanges.length; index += 1) {
+    const omitted = validChanges.filter((_, candidate) => candidate !== index);
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(omitted, {
+          base: binding.bindingPr.baseSha,
+          headRef: binding.bindingPr.headRef,
+        }),
+      'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+    );
+    const wrongStatus = legalBasisContentStage1Changes();
+    wrongStatus[index] = { ...wrongStatus[index], status: 'A' };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(wrongStatus, {
+          base: binding.bindingPr.baseSha,
+          headRef: binding.bindingPr.headRef,
+        }),
+      'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+    );
+  }
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [
+          ...validChanges,
+          { status: 'M', path: 'project/docs/governance/decision-log.md' },
+        ],
+        {
+          base: binding.bindingPr.baseSha,
+          headRef: binding.bindingPr.headRef,
+        },
+      ),
+    'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+  );
+});
+
+test('Legal Basis content-ratification binding rejects any authority literal drift', () => {
+  const binding = legalBasisContentBootstrapBinding();
+  for (const literal of [
+    binding.expiresAt,
+    binding.design.mergeSha,
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+    binding.decisionPack.sha256,
+    binding.legalDomainOfficer.ratifierCode,
+    binding.finalRatifier.ratifierCode,
+    binding.ratificationEffectiveAtUtc,
+    binding.model.id,
+    ...binding.model.subtypes,
+    'publicationBasePolicy : OWNER_PINNED_EXACT_ONLY',
+    'globalAuthority : PROHIBITED',
+    'reusableAuthority : PROHIBITED',
+    'auditAsAuthority : PROHIBITED',
+  ]) {
+    const fixture = createAuthorityGitFixture(
+      binding.contractPath,
+      rootAuthorityContractContent(binding).replace(literal, 'DRIFTED'),
+    );
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validateRootAuthorityBootstrapBindingScope({
+          binding,
+          base: binding.bindingPr.baseSha,
+          head: fixture.head,
+          headRef: binding.bindingPr.headRef,
+          changes: legalBasisContentStage1Changes(),
+          taskId: binding.bindingPr.taskId,
+          mode: binding.bindingPr.mode,
+          nowUtc: '2026-07-30T17:59:59Z',
+          cwd: fixture.root,
+        }),
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    );
+  }
+});
+
+test('Legal Basis content-ratification Stage 2 tuple is pinned but remains predecessor-gated', (t) => {
+  const binding = legalBasisContentBootstrapBinding();
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(legalBasisContentStage2Changes(), {
+      headRef: binding.targetPr.headRef,
+    }),
+    { mode: binding.targetPr.mode, taskId: binding.targetPr.taskId },
+  );
+  coordination.validateRootAuthorityReferencePair(
+    binding.targetPr.semanticAuthority,
+    binding.targetPr.executionGrant,
+    binding.targetPr,
+  );
+  assert.notEqual(
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+  );
+
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(legalBasisContentStage2Changes(), {
+        headRef: `${binding.targetPr.headRef}-copy`,
+      }),
+    'ROOT_BOOTSTRAP_STAGE2_BRANCH_MISMATCH',
+  );
+  const validChanges = legalBasisContentStage2Changes();
+  for (let index = 0; index < validChanges.length; index += 1) {
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(
+          validChanges.filter((_, candidate) => candidate !== index),
+          { headRef: binding.targetPr.headRef },
+        ),
+      'ROOT_BOOTSTRAP_STAGE2_SCOPE_MISMATCH',
+    );
+    const wrongStatus = legalBasisContentStage2Changes();
+    wrongStatus[index] = {
+      ...wrongStatus[index],
+      status: wrongStatus[index].status === 'M' ? 'A' : 'M',
+    };
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(wrongStatus, {
+          headRef: binding.targetPr.headRef,
+        }),
+      'ROOT_BOOTSTRAP_STAGE2_SCOPE_MISMATCH',
+    );
+  }
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [
+          ...validChanges,
+          {
+            status: 'M',
+            path: 'project/docs/governance/canonicalization-register.md',
+          },
+        ],
+        { headRef: binding.targetPr.headRef },
+      ),
+    'ROOT_BOOTSTRAP_STAGE2_SCOPE_MISMATCH',
+  );
+  expectCode(
+    () =>
+      coordination.validateRootAuthorityReferencePair(
+        binding.targetPr.semanticAuthority,
+        {
+          ...binding.targetPr.executionGrant,
+          path: binding.targetPr.semanticAuthority.path,
+          recordId: binding.targetPr.semanticAuthority.recordId,
+        },
+        binding.targetPr,
+      ),
+    'AUTHORITY_REFERENCE_COLLISION',
+  );
+  expectCode(
+    () =>
+      coordination.validateRootAuthorityReferencePair(
+        {
+          ...binding.targetPr.semanticAuthority,
+          recordId: 'WRONG-SA',
+        },
+        binding.targetPr.executionGrant,
+        binding.targetPr,
+      ),
+    'ROOT_BOOTSTRAP_AUTHORITY_PATH_INVALID',
+  );
+  expectCode(
+    () =>
+      coordination.validateRootAuthorityReferencePair(
+        binding.targetPr.semanticAuthority,
+        {
+          ...binding.targetPr.executionGrant,
+          recordId: 'WRONG-EG',
+        },
+        binding.targetPr,
+      ),
+    'ROOT_BOOTSTRAP_AUTHORITY_PATH_INVALID',
+  );
+
+  const fixture = createRootAuthorityStage2GitFixture(t, {
+    binding,
+    missingPredecessor: true,
+  });
+  expectFixtureCodeUnchanged(
+    fixture,
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'ROOT_BOOTSTRAP_PREDECESSOR_MISSING',
+  );
 });
