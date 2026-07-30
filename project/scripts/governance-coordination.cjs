@@ -739,6 +739,82 @@ const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01 =
       }),
     }),
   });
+const OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01 =
+  Object.freeze({
+    bootstrapId:
+      'OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01',
+    programId: 'OFFICE-SPRING-CLEANING-R01',
+    targetTaskId: 'OFFICE-SPRING-CLEANING-RECONCILIATION-R01',
+    workspaceModule: 'CROSS_MODULE',
+    workspaceScope: 'OFFICE / SHARED_CONTROL_PLANE',
+    ownerName: 'Av. Ulaş Hüseyin Telli',
+    ownerRole: 'Repository Owner / Semantic Authority',
+    ownerAuthorityRef:
+      'OWNER-RATIFICATION-AND-EXECUTION-GRANT-PR1954-POST-MERGE-RECONCILIATION-2026-07-30',
+    issuedAt: '2026-07-30',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    bindingPr: Object.freeze({
+      taskId:
+        'OFFICE-SPRING-CLEANING-RECONCILIATION-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01',
+      mode:
+        'OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01',
+      baseSha: '057f1c84cbdc3f7845c5722aa348e34876dbfb0e',
+      headRef:
+        'codex/office-spring-cleaning-authority-bootstrap-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    historicalAuthorityPr: Object.freeze({
+      pullRequestNumber: 1967,
+      disposition: 'CLOSED_NOT_MERGED_NOT_REOPENED',
+      canonicalAuthoritySource: 'NO',
+    }),
+    targetPr: Object.freeze({
+      taskId:
+        'OFFICE-SPRING-CLEANING-RECONCILIATION-R01-AUTHORITY-MATERIALIZATION-R02',
+      mode:
+        'OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_MATERIALIZATION_R02',
+      materializationBasePolicy: 'CURRENT_CANONICAL_BINDING_DESCENDANT',
+      headRef:
+        'codex/office-spring-cleaning-reconciliation-r01-authority-r02',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/OFFICE-SPRING-CLEANING-RECONCILIATION-R01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'OFFICE-SPRING-CLEANING-RECONCILIATION-R01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/OFFICE-SPRING-CLEANING-RECONCILIATION-R01-EG01.md',
+        recordId: 'OFFICE-SPRING-CLEANING-RECONCILIATION-R01-EG01',
+      }),
+    }),
+  });
 const RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01 =
   Object.freeze({
     protocolModeId:
@@ -2505,12 +2581,16 @@ function classifyPrChangeSet(changes, context = {}) {
     RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01;
   const rootAuthorityBootstrap =
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const officeAuthorityBootstrap =
+    OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01;
   const legalBasisContentBootstrap =
     RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const rootStage2ValidatorReconciliation =
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   const rootStage1 = rootAuthorityBootstrap.bindingPr;
   const rootStage2 = rootAuthorityBootstrap.targetPr;
+  const officeStage1 = officeAuthorityBootstrap.bindingPr;
+  const officeStage2 = officeAuthorityBootstrap.targetPr;
   const legalBasisContentStage1 = legalBasisContentBootstrap.bindingPr;
   const legalBasisContentStage2 = legalBasisContentBootstrap.targetPr;
 
@@ -2528,6 +2608,40 @@ function classifyPrChangeSet(changes, context = {}) {
     reject(
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
       'Stage 2 validator reconciliation requires its owner-pinned base and exact M/M/M/A scope',
+    );
+  }
+
+  if (
+    rootStage1PublicationBaseIsValid(
+      context.base,
+      context.cwd,
+      officeAuthorityBootstrap,
+    ) &&
+    context.headRef === officeStage1.headRef &&
+    hasExactChangeSet(changes, officeStage1.changedPaths)
+  ) {
+    return { mode: officeStage1.mode, taskId: officeStage1.taskId };
+  }
+  if (context.headRef === officeStage1.headRef) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE authority-bootstrap binding requires its exact base and M/M/M scope',
+    );
+  }
+
+  if (
+    context.headRef === officeStage2.headRef &&
+    hasExactChangeSet(changes, officeStage2.changedPaths)
+  ) {
+    return { mode: officeStage2.mode, taskId: officeStage2.taskId };
+  }
+  if (
+    context.headRef === officeStage2.headRef ||
+    hasExactChangeSet(changes, officeStage2.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE authority materialization R02 requires its exact branch and M/A scope',
     );
   }
 
@@ -4079,6 +4193,315 @@ function validateRootAuthorityBootstrapBindingScope(options) {
   }
 
   return { mode: stage1.mode, taskId: stage1.taskId };
+}
+
+function officeAuthorityBootstrapContractLiterals(binding) {
+  const target = binding.targetPr;
+  return [
+    binding.bootstrapId,
+    binding.programId,
+    binding.targetTaskId,
+    binding.workspaceModule,
+    binding.workspaceScope,
+    binding.ownerName,
+    binding.ownerRole,
+    binding.ownerAuthorityRef,
+    binding.issuedAt,
+    binding.bindingPr.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    ...binding.bindingPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    String(binding.historicalAuthorityPr.pullRequestNumber),
+    binding.historicalAuthorityPr.disposition,
+    binding.historicalAuthorityPr.canonicalAuthoritySource,
+    target.taskId,
+    target.mode,
+    target.materializationBasePolicy,
+    target.headRef,
+    ...target.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    target.semanticAuthority.kind,
+    target.semanticAuthority.path,
+    target.semanticAuthority.recordId,
+    target.executionGrant.kind,
+    target.executionGrant.path,
+    target.executionGrant.recordId,
+    'exactPathStatusBinding : REQUIRED',
+    'secondMaterialization : PROHIBITED',
+    'ordinaryControlPlaneDiff : PROHIBITED',
+    'requiredCiBypass : PROHIBITED',
+    'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
+  ];
+}
+
+function validateOfficeAuthorityBootstrapBindingScope(options) {
+  const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01;
+  const stage1 = binding.bindingPr;
+  if (
+    taskId !== stage1.taskId ||
+    (mode && mode !== stage1.mode) ||
+    !rootStage1PublicationBaseIsValid(base, cwd, binding) ||
+    headRef !== stage1.headRef ||
+    !hasExactChangeSet(changes, stage1.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE authority-bootstrap binding base, branch, task, mode, or M/M/M scope mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of officeAuthorityBootstrapContractLiterals(binding)) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact OFFICE authority-bootstrap binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: stage1.mode, taskId: stage1.taskId };
+}
+
+function parseAuthorityTextRecords(content, code) {
+  const records = [];
+  for (const match of content.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)) {
+    const fields = new Map();
+    let invalid = false;
+    for (const line of match[1].split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const fieldMatch = /^([A-Za-z0-9_.]+)[\t ]*:[\t ]*(.*?)[\t ]*$/.exec(line);
+      if (!fieldMatch || fields.has(fieldMatch[1])) {
+        invalid = true;
+        break;
+      }
+      fields.set(fieldMatch[1], fieldMatch[2]);
+    }
+    if (fields.has('recordType') || fields.has('recordId')) {
+      if (invalid || !fields.has('recordType') || !fields.has('recordId')) {
+        reject(code, 'authority text record is partial, malformed, or duplicates a field');
+      }
+      records.push({ block: match[1], fields });
+    }
+  }
+  return records;
+}
+
+function requireExactAuthorityTextRecord(content, authorityRef, expectedFields, code) {
+  const records = parseAuthorityTextRecords(content, code);
+  const matches = records.filter(
+    ({ fields }) => fields.get('recordId') === authorityRef.recordId,
+  );
+  if (matches.length !== 1) {
+    reject(code, `${authorityRef.recordId} structured record must occur exactly once`);
+  }
+  const record = matches[0];
+  if (record.fields.size !== expectedFields.length) {
+    reject(code, `${authorityRef.recordId} contains missing or unexpected fields`);
+  }
+  for (const [field, value] of expectedFields) {
+    if (record.fields.get(field) !== value) {
+      reject(code, `${authorityRef.recordId} field ${field} must equal ${value}`);
+    }
+  }
+  return { record, records };
+}
+
+function countAuthorityMarkers(content) {
+  const counts = new Map();
+  const pattern = /<!-- GOV-COORD-AUTHORITY kind=[A-Z_]+ recordId=[A-Za-z0-9-]+ -->/g;
+  for (const marker of content.match(pattern) || []) {
+    counts.set(marker, (counts.get(marker) || 0) + 1);
+  }
+  return counts;
+}
+
+function assertOnlyExactAuthorityMarkerAdded(baseContent, headContent, authorityRef) {
+  const expectedMarker = buildAuthorityMarker(authorityRef);
+  const baseCounts = countAuthorityMarkers(baseContent);
+  const headCounts = countAuthorityMarkers(headContent);
+  const markers = new Set([...baseCounts.keys(), ...headCounts.keys()]);
+  for (const marker of markers) {
+    const expectedCount =
+      (baseCounts.get(marker) || 0) + (marker === expectedMarker ? 1 : 0);
+    if ((headCounts.get(marker) || 0) !== expectedCount) {
+      reject(
+        'OFFICE_BOOTSTRAP_AUTHORITY_CONFLICT',
+        'decision-log authority marker delta must contain only the exact OFFICE SA record',
+      );
+    }
+  }
+}
+
+function validateOfficeAuthorityMaterializationContent(
+  baseDecisionLog,
+  decisionLog,
+  grant,
+  materializationBaseSha,
+  binding = OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
+) {
+  const target = binding.targetPr;
+  const semantic = target.semanticAuthority;
+  const execution = target.executionGrant;
+
+  validateRootAuthorityReferencePair(semantic, execution, target);
+  assertOnlyExactAuthorityMarkerAdded(baseDecisionLog, decisionLog, semantic);
+  const semanticMarker = assertExactRootMarker(
+    decisionLog,
+    semantic,
+    'OFFICE_BOOTSTRAP_SA_RECORD_INVALID',
+  );
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(line, semanticMarker, semantic.recordId),
+    );
+  if (semanticRows.length !== 1) {
+    reject(
+      'OFFICE_BOOTSTRAP_SA_RECORD_INVALID',
+      'OFFICE semantic marker must identify exactly one decision-log row',
+    );
+  }
+
+  const semanticResult = requireExactAuthorityTextRecord(
+    decisionLog,
+    semantic,
+    [
+      ['recordType', semantic.kind],
+      ['recordId', semantic.recordId],
+      ['programId', binding.programId],
+      ['taskId', binding.targetTaskId],
+      ['ownerName', binding.ownerName],
+      ['ownerRole', binding.ownerRole],
+      ['decision', 'RATIFIED'],
+      ['issuedAt', binding.issuedAt],
+      ['status', 'ACTIVE_AFTER_APPROVED_MERGE'],
+      ['exactTaskBinding', 'REQUIRED'],
+      ['exactPrBinding', 'REQUIRED'],
+      ['exactHeadBinding', 'REQUIRED'],
+      ['exactScopeBinding', 'REQUIRED'],
+      ['requiredChecksBinding', 'REQUIRED'],
+      ['singleUseConsumption', 'REQUIRED'],
+      ['staleReuse', 'PROHIBITED'],
+      ['wrongTaskReuse', 'PROHIBITED'],
+      ['manualFallback', 'EMERGENCY_ONLY'],
+      ['productionActivation', 'NOT_AUTHORIZED'],
+      ['standingAuthority', 'PROHIBITED'],
+      ['reusableAuthority', 'PROHIBITED'],
+      ['globalAuthority', 'PROHIBITED'],
+    ],
+    'OFFICE_BOOTSTRAP_SA_RECORD_INVALID',
+  );
+  for (const { fields } of semanticResult.records) {
+    if (
+      fields.get('recordType') === semantic.kind &&
+      fields.get('recordId') !== semantic.recordId &&
+      (fields.get('programId') === binding.programId ||
+        fields.get('taskId') === binding.targetTaskId)
+    ) {
+      reject(
+        'OFFICE_BOOTSTRAP_AUTHORITY_CONFLICT',
+        'conflicting OFFICE semantic authority record exists',
+      );
+    }
+  }
+
+  assertExactRootMarker(
+    grant,
+    execution,
+    'OFFICE_BOOTSTRAP_EG_RECORD_INVALID',
+  );
+  const executionResult = requireExactAuthorityTextRecord(
+    grant,
+    execution,
+    [
+      ['recordType', execution.kind],
+      ['recordId', execution.recordId],
+      ['programId', binding.programId],
+      ['taskId', binding.targetTaskId],
+      ['ownerName', binding.ownerName],
+      ['ownerRole', binding.ownerRole],
+      ['ownerAuthorityRef', binding.ownerAuthorityRef],
+      ['executionMode', 'GO-COMPLETE'],
+      ['workspaceModule', binding.workspaceModule],
+      ['workspaceScope', binding.workspaceScope],
+      ['issuedAt', binding.issuedAt],
+      ['status', 'ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK'],
+      ['materializationBaseSha', materializationBaseSha],
+      ['productionActivation', 'NOT_AUTHORIZED'],
+      ['ciBypass', 'PROHIBITED'],
+      ['ledgerBypass', 'PROHIBITED'],
+      ['standingAuthority', 'PROHIBITED'],
+      ['reusableAuthority', 'PROHIBITED'],
+      ['semanticAuthorityRef.kind', semantic.kind],
+      ['semanticAuthorityRef.path', semantic.path],
+      ['semanticAuthorityRef.recordId', semantic.recordId],
+    ],
+    'OFFICE_BOOTSTRAP_EG_RECORD_INVALID',
+  );
+  if (executionResult.records.length !== 1) {
+    reject(
+      'OFFICE_BOOTSTRAP_AUTHORITY_CONFLICT',
+      'execution-grant file must contain only the exact OFFICE EG record',
+    );
+  }
+}
+
+function validateOfficeAuthorityMaterializationScope(options) {
+  const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01;
+  const target = binding.targetPr;
+  if (
+    taskId !== target.taskId ||
+    (mode && mode !== target.mode) ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE authority materialization branch, task, mode, or exact M/A scope mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of officeAuthorityBootstrapContractLiterals(binding)) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current R02 base is missing canonical OFFICE binding ${expectedLiteral}`,
+      );
+    }
+  }
+  findCanonicalRootAuthorityBootstrapBindingCommit(base, cwd, binding);
+
+  const baseDecisionLog = gitShow(base, target.semanticAuthority.path, cwd);
+  if (
+    baseDecisionLog.includes(target.semanticAuthority.recordId) ||
+    rootBootstrapGitBlobSha(base, target.executionGrant.path, cwd)
+  ) {
+    reject(
+      'ROOT_BOOTSTRAP_MODE_CONSUMED',
+      'OFFICE authority records already exist at the materialization base',
+    );
+  }
+
+  const decisionLog = gitShow(head, target.semanticAuthority.path, cwd);
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  validateOfficeAuthorityMaterializationContent(
+    baseDecisionLog,
+    decisionLog,
+    grant,
+    base,
+    binding,
+  );
+  return { mode: target.mode, taskId: target.taskId };
 }
 
 function validateRootStage2ValidatorReconciliationScope(options) {
@@ -6164,6 +6587,22 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01.bindingPr
+      .mode
+  ) {
+    return validateOfficeAuthorityBootstrapBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
       .bindingPr.mode
   ) {
@@ -6201,6 +6640,22 @@ function validatePrScope(options) {
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01.mode
   ) {
     return validateRootStage2ValidatorReconciliationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01.targetPr
+      .mode
+  ) {
+    return validateOfficeAuthorityMaterializationScope({
       base,
       head,
       headRef,
@@ -6829,6 +7284,7 @@ module.exports = {
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
+  OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
   OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
   REGISTER_REPO_PATH,
   REGISTER_TEST_FIXTURE_REPAIR_I01,
@@ -6893,6 +7349,9 @@ module.exports = {
   validateRcvColFullRemediationBootstrapScope,
   validateRcvColLargeAuthorityReadRepairScope,
   validateOwnerWipMultiSourcePathOwnershipScope,
+  validateOfficeAuthorityBootstrapBindingScope,
+  validateOfficeAuthorityMaterializationContent,
+  validateOfficeAuthorityMaterializationScope,
   validatePrScope,
   validateRequestAgainstGit,
   assertRequestBaseAncestor,
