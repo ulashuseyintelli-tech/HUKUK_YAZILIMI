@@ -126,23 +126,23 @@ Aksi halde yalniz exact blocker icin durulur.
 authorized exact scope; PR CLEAN/MERGEABLE; semantic/merge conflict ve active writer
 collision NONE.
 
-Merge authority (canonical home; baska bolumde tekrar edilmez) explicit ve task-bounded
-owner closeout authority'sidir. Gecerli authority yalniz sunlardan biridir:
+Merge authority (canonical home) explicit ve task-bounded owner closeout
+authority'sidir. Gecerli authority yalniz sunlardan biridir:
 
 - Belirli task veya PR'a bagli `GO-COMPLETE` / `IF GO-COMPLETE`.
-- CI ve merge gate'leri gecince merge + main sync + cleanup zincirinin ikinci owner onayi
-  beklenmeden tamamlanacagini acikca soyleyen esdeger owner beyani.
+- Gate'ler gecince zincirin ikinci owner onayi beklenmeden tamamlanacagini acikca
+  soyleyen esdeger owner beyani.
 
 Authority task brief'inde ex-ante veya ayni task icinde sonradan verilebilir; verildikten
 sonra CI sonrasinda ikinci owner mesaji istenmez. Authority yalniz adi gecen task/PR
-icindir ve baska task'a tasinmaz.
+icindir ve baska task'a tasinmaz. Ledger authority DEGILDIR (kanit/reuse korumasi);
+ajan kendi task'i icin `SEMANTIC_AUTHORITY`/`EXECUTION_GRANT` uretemez/ratify edemez ve
+ajan-yazimi authority merge kaynagi sayilmaz.
 
 Tek basina merge authority DEGILDIR: "devam", "uygula", "basla", kapsam secimi, tasarim
 onayi, implementasyon izni, commit/push/PR izni, CI takip talimati. Ajan ortulu owner
 niyetinden merge authority turetemez; authority yoksa merge yapilmaz, durulur ve exact
 blocker raporlanir (§14).
-
-Owner karari gerektiren durumlar §14'te tanimlidir.
 
 Scope expansion DEGILDIR: ayni root cause ve bounded context icindeki supporting dosya,
 focused test/fixture/mock, mevcut mimari icindeki minimum tercih, kendi patch'inin
@@ -157,23 +157,23 @@ Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan u
 
 `IF GO-COMPLETE` yetkisi varsa CI terminal duruma ulasana kadar takip edilir.
 
-- `IN_PROGRESS` kontroller yaklasik 60 saniyelik araliklarla izlenir.
-- CI gercek ilerleme gosteriyorsa yalniz toplam 20 dakika gectigi icin takip birakilmaz.
-  20 dakika toplam takip limiti degil, gozlemlenebilir ilerleme bulunmayan
-  stall/no-progress degerlendirme esigidir.
+- `IN_PROGRESS` kontroller ~60 sn araliklarla izlenir. 20 dakika toplam takip limiti
+  degil, gozlemlenebilir ilerleme bulunmayan stall esigidir; ilerleme varken birakilmaz.
 - CI tamamlanmadan gorulen `mergeStateStatus: BLOCKED` tek basina blocker degildir; CI
   bitince merge state yeniden kontrol edilir.
 - CI terminal `SUCCESS` olursa §4 merge gate'leri yeniden degerlendirilir; PASS degilse
   merge yapilmaz.
 - `FAILURE`, `CANCELLED`, gercek platform timeout'u veya unresolved stall halinde exact
   blocker raporlanir.
-- Merge authority PASS ise kapanis VARSAYILAN olarak deterministic closeout runner ile
-  yurutulur (`pnpm orch:closeout`). Manuel kapanis fallback'tir: runner kullanilamiyor,
-  senaryoyu desteklemiyor veya exact blocker uretiyorsa uygulanir ve gerekcesi raporlanir.
-  Prosedur: `project/docs/runbooks/pr-closeout.md`.
+- Merge authority PASS ise kapanis VARSAYILAN olarak closeout runner ile yurutulur
+  (`pnpm orch:closeout`). Runner kullanilamiyor, senaryoyu desteklemiyor, exact blocker
+  uretiyor veya ledger materialize edilemiyorsa ajan fallback ile kapatir: ikinci owner
+  mesaji ISTENMEZ, gate'ler elle dogrulanir, gerekce ve dogfood ayri raporlanir.
+  `MERGED` yalniz governance-only gorevde terminaldir; runtime-affecting gorev post-merge
+  acceptance gate'leri olmadan CLOSED sayilmaz. Ayrinti:
+  `project/docs/runbooks/pr-closeout.md`.
 - Standing veya unattended GitHub auto-merge, scheduler ya da reusable merge grant
-  uretilmez. Merge authority'nin nasil verildigi ve neyin authority sayilmadigi §4'te
-  tanimlidir; burada tekrar edilmez.
+  uretilmez (authority semantigi §4).
 
 ## 6. Worktree Izolasyonu (developer workstation policy)
 

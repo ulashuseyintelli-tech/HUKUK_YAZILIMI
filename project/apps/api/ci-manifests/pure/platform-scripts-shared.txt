@@ -387,3 +387,4 @@ src/scripts/__tests__/adr014-session-observation-producer.security.spec.ts
 src/scripts/__tests__/adr014-session-observation-producer.spec.ts
 src/scripts/__tests__/adr014-v2-pre-run-package-instance.security.spec.ts
 src/scripts/__tests__/adr014-v2-pre-run-package-instance.spec.ts
+src/common/__tests__/closeout-authority-contract.spec.ts
