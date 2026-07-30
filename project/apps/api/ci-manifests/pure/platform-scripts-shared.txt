@@ -146,12 +146,25 @@
 #     gate locks authority roles, the four comparison classes, same-input parity,
 #     legacy activation diagnostics and the runtime allocator no-write inventory.
 #
+#   DEBTOR-LIFECYCLE-GUARD-CI-COVERAGE-P1-I10 (LEGACY TASK 08 R02-D)
+#     I09 reconciliation found six dedicated CaseDebtorLifecycleGuardService passive/
+#     active-guard spec files that were never referenced by any CI manifest — they
+#     existed, passed locally, but never ran in required CI. This step adds no new
+#     test behavior; it only wires the six existing files in. Fresh inventory
+#     (re-derived, not assumed): 6 suites / 38 tests, 0 fail, no DB gate, no OS
+#     dependency. A broader sweep during I10 also found 11 additional specs that
+#     reference the guard incidentally (as one dependency among several, across
+#     collection/tebligat/address-discovery/scheduler domains) and are ALSO unwired
+#     — those are a separate, out-of-scope finding (not "lifecycle-guard" specs in
+#     the narrow sense) and are intentionally NOT added here; see PR body for R02-E.
+#
 src/common/__tests__/task-disposition-guard.spec.ts
 src/common/__tests__/pr-closeout.spec.ts
 src/common/__tests__/instruction-policy.spec.ts
 src/config/uyap-interest-crosswalk.spec.ts
 src/modules/address-discovery/confidence-score.tenant-boundary.spec.ts
 src/modules/address-discovery/confidence-score.ownership-contract.spec.ts
+src/modules/address-discovery/address-discovery-lifecycle-guard.spec.ts
 src/modules/address-discovery/uyap-query.service.spec.ts
 src/modules/address-task/address-task.controller.spec.ts
 src/modules/address-task/address-task.service.spec.ts
@@ -170,14 +183,20 @@ src/modules/automation/__tests__/workflow-engine-legal-time-cutover.spec.ts
 src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.spec.ts
 src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.static-guard.spec.ts
 src/modules/case-balance/__tests__/case-balance-tenant-isolation.spec.ts
+src/modules/case-debtor-lifecycle-guard/case-debtor-lifecycle-guard-required-ci-coverage.static.spec.ts
+src/modules/case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service.spec.ts
+src/modules/case-debtor-lifecycle-guard/manual-case-debtor-mutation-lifecycle-guard.spec.ts
+src/modules/case-debtor-lifecycle-guard/operational-create-lifecycle-guard.spec.ts
 src/modules/client-intake-promotion/client-intake-promotion.service.spec.ts
 src/modules/client-notification/__tests__/client-notification-template-tenant-scope.spec.ts
 src/modules/debtor/__tests__/debtor-finalization-cutover.spec.ts
 src/modules/debtor/__tests__/debtor-service-attempt-address-ownership.spec.ts
+src/modules/debtor/case-debtor-ownership.spec.ts
 src/modules/debtor/debtor-identity-format.spec.ts
 src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts
 src/modules/debtor/quick-note-passive-writer.spec.ts
 src/modules/debtor/third-party-passive-writer.spec.ts
+src/modules/debtor/__tests__/rfa008-thirdparty-guard.spec.ts
 src/modules/document/__tests__/document-creditor-address.spec.ts
 src/modules/document/__tests__/document-fail-closed-tenant.spec.ts
 src/modules/error-log/__tests__/all-exceptions.filter.spec.ts
