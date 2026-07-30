@@ -271,16 +271,26 @@ describe('ARC-07 I03 — kapsam sınırları', () => {
     expect(SERVICE_SOURCE).not.toMatch(/createMany|deleteMany/);
   });
 
-  it('[B3] create/update audit EKLENMEDİ — I03 yalnız archive/restore audit\'ini TÜKETİR', () => {
-    // §14 residual: `CLIENT_ADDRESS_CREATE_UPDATE_AUDIT` AÇIK kalır; bu dilimde uygulanmaz.
-    const auditActions = SERVICE_SOURCE.match(/action: 'CLIENT_ADDRESS_[A-Z_]+'/g) ?? [];
-    expect(auditActions.sort()).toEqual([
+  it('[B3] I04A KASITLI GÜNCELLEME: create/update audit residual KAPANDI — TAM action kümesi', () => {
+    // I03 yazıldığında `CLIENT_ADDRESS_CREATE_UPDATE_AUDIT` AÇIK residual'dı ve bu test onun
+    // YOKLUĞUNU pinliyordu. `CLIENT-ARC-07-CREATE-UPDATE-AUDIT-I04A` residual'ı KAPATTI.
+    // Test GEVŞETİLMEDİ — beklenti TAM liste olarak yeniden yazıldı, böylece sessizce yeni bir
+    // audit action eklenmesi hâlâ testi kırar.
+    const auditActions = (SERVICE_SOURCE.match(/action: 'CLIENT_ADDRESS_[A-Z_]+'/g) ?? []).sort();
+    expect(auditActions).toEqual([
       "action: 'CLIENT_ADDRESS_ARCHIVE'",
+      "action: 'CLIENT_ADDRESS_CREATE'",
+      "action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN'",
+      "action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN'",
       "action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN'",
       "action: 'CLIENT_ADDRESS_PRIMARY_REASSIGN'",
       "action: 'CLIENT_ADDRESS_RESTORE'",
+      "action: 'CLIENT_ADDRESS_UPDATE'",
     ]);
-    expect(SERVICE_SOURCE).not.toMatch(/CLIENT_ADDRESS_CREATE'|CLIENT_ADDRESS_UPDATE'/);
+    // MÜKERRER action adı ÜRETİLMEDİ: yeniden-atama I02'nin kanonik action'ını YENİDEN KULLANIR.
+    expect(SERVICE_SOURCE).not.toMatch(/CLIENT_ADDRESS_REASSIGN'|CLIENT_ADDRESS_PRIMARY_CHANGE'/);
+    // Okuma yüzeyi audit YAZMAZ (okuma mutasyon değildir).
+    expect(SERVICE_SOURCE).not.toMatch(/CLIENT_ADDRESS_READ'|CLIENT_ADDRESS_LIST'/);
   });
 
   it('[B4] DebtorAddress ve flat Client adres kolonları bu serviste hiç geçmez', () => {
