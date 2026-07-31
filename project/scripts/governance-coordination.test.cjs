@@ -711,6 +711,18 @@ function uyapM01TargetChanges() {
   );
 }
 
+function uyapM01CloseoutBindingChanges() {
+  return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.closeoutBindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function uyapM01CloseoutChanges() {
+  return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.closeoutPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function pb01BindingChanges() {
   return coordination.RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -1441,6 +1453,30 @@ function rcvColBindingContractContent(
           (value) => typeof value === 'string' || typeof value === 'number',
         )
       : []),
+    ...(binding.closeoutBindingPr
+      ? [
+          binding.closeoutBindingPr.taskId,
+          binding.closeoutBindingPr.mode,
+          binding.closeoutBindingPr.baseSha,
+          binding.closeoutBindingPr.headRef,
+          ...binding.closeoutBindingPr.changedPaths.map(
+            ({ path: repoPath }) => repoPath,
+          ),
+        ]
+      : []),
+    ...(binding.closeoutPr
+      ? [
+          binding.closeoutPr.taskId,
+          binding.closeoutPr.mode,
+          binding.closeoutPr.originalBaseSha,
+          binding.closeoutPr.headRef,
+          ...binding.closeoutPr.changedPaths.map(({ path: repoPath }) => repoPath),
+          binding.closeoutPr.semanticAuthority.recordId,
+          binding.closeoutPr.executionGrant.recordId,
+          String(binding.closeoutPr.implementation.pullRequestNumber),
+          binding.closeoutPr.implementation.squashSha,
+        ]
+      : []),
     '',
   ].join('\n');
 }
@@ -1541,6 +1577,78 @@ function createRcvColTargetGitFixture(t, options = {}) {
   return { root, base, head };
 }
 
+function createUyapM01CloseoutGitFixture(t, options = {}) {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-uyap-m01-closeout-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  const contractPath = path.join(root, ...binding.contractPath.split('/'));
+  const decisionPath = path.join(root, ...target.semanticAuthority.path.split('/'));
+  const grantPath = path.join(root, ...target.executionGrant.path.split('/'));
+  fs.mkdirSync(path.dirname(contractPath), { recursive: true });
+  fs.mkdirSync(path.dirname(decisionPath), { recursive: true });
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  fs.writeFileSync(contractPath, rcvColBindingContractContent(binding), 'utf8');
+  fs.writeFileSync(
+    decisionPath,
+    `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${target.semanticAuthority.recordId} -->\n`,
+    'utf8',
+  );
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# UYAP-M01 grant fixture',
+      `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${target.executionGrant.recordId} -->`,
+      '```text',
+      `semanticAuthorityRef.kind     : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path     : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
+      '```',
+      'SECOND USE: FAIL-CLOSED',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical UYAP-M01 grant'], root);
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const terminalReceipt = [
+    'TASK STATUS           : CLOSED',
+    'CHANGE STATUS         : MERGED',
+    'DELIVERY STATUS       : PASS',
+    'EXECUTION GRANT       : CONSUMED / CLOSED',
+    `IMPLEMENTATION PR     : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA    : ${target.implementation.squashSha}`,
+    'RESOLVER BINDING      : CANONICAL / CONSUMER-ONLY',
+    'DEFAULT-OFF           : PASS',
+    'PRODUCTION CALL-SITE  : NONE',
+    'PRODUCTION REACHABILITY: 0',
+    'REQUIRED CI           : 4/4 PASS',
+    'SECOND USE        : FAIL-CLOSED',
+    'WAITING FOR OWNER : NO FOR M01 — TASK COMPLETE',
+  ];
+  if (options.omitLiteral) {
+    terminalReceipt.splice(terminalReceipt.indexOf(options.omitLiteral), 1);
+  }
+  fs.appendFileSync(grantPath, `${terminalReceipt.join('\n')}\n`, 'utf8');
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'close UYAP-M01 grant'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
 function officeAuthorityBindingChanges() {
   const binding =
     coordination.OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01;
@@ -1554,6 +1662,24 @@ function officeAuthorityTargetChanges() {
   const binding =
     coordination.OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01;
   return binding.targetPr.changedPaths.map(({ status, path: repoPath }) => ({
+    status,
+    path: repoPath,
+  }));
+}
+
+function officeF01Stage1BindingChanges() {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  return binding.changedPaths.map(({ status, path: repoPath }) => ({
+    status,
+    path: repoPath,
+  }));
+}
+
+function officeF01Stage2Changes() {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  return binding.stage2.changedPaths.map(({ status, path: repoPath }) => ({
     status,
     path: repoPath,
   }));
@@ -4123,6 +4249,90 @@ test('UYAP-M01 target rejects a grant bound to another semantic authority', (t) 
         base: fixture.base,
         head: fixture.head,
         headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('UYAP-M01 closeout binding requires exact base branch and M/M/M scope', () => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const closeoutBinding = binding.closeoutBindingPr;
+  const classification = coordination.classifyPrChangeSet(
+    uyapM01CloseoutBindingChanges(),
+    {
+      base: closeoutBinding.baseSha,
+      headRef: closeoutBinding.headRef,
+    },
+  );
+  assert.equal(classification.mode, closeoutBinding.mode);
+  assert.equal(classification.taskId, closeoutBinding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result = coordination.validateUyapM01TerminalCloseoutBindingScope({
+    base: closeoutBinding.baseSha,
+    head: fixture.head,
+    headRef: closeoutBinding.headRef,
+    changes: uyapM01CloseoutBindingChanges(),
+    taskId: closeoutBinding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, closeoutBinding.mode);
+
+  const expanded = uyapM01CloseoutBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: closeoutBinding.baseSha,
+        headRef: closeoutBinding.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP-M01 closeout accepts only the exact terminal receipt', (t) => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  const fixture = createUyapM01CloseoutGitFixture(t);
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: target.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, target.mode);
+  assert.equal(result.taskId, target.taskId);
+
+  const expanded = uyapM01CloseoutChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: fixture.base,
+        headRef: target.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP-M01 closeout rejects an incomplete terminal receipt', (t) => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const fixture = createUyapM01CloseoutGitFixture(t, {
+    omitLiteral: 'PRODUCTION REACHABILITY: 0',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.closeoutPr.headRef,
         cwd: fixture.root,
       }),
     'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
@@ -7503,5 +7713,319 @@ test('ordinary execution-grant control-plane diff remains fail-closed', () => {
       { headRef: 'codex/ordinary-governance-change' },
     ),
     'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE F01 Stage 1 classifier accepts the exact fresh-base M/M/M tuple', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(officeF01Stage1BindingChanges(), {
+      base: binding.baseSha,
+      headRef: binding.headRef,
+    }),
+    { mode: binding.mode, taskId: binding.taskId },
+  );
+});
+
+test('OFFICE F01 Stage 1 validator requires the exact contract binding', (t) => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  const result = coordination.validateOfficeF01Stage1BindingScope({
+    base: binding.baseSha,
+    head: fixture.head,
+    headRef: binding.headRef,
+    changes: officeF01Stage1BindingChanges(),
+    taskId: binding.taskId,
+    mode: binding.mode,
+    cwd: fixture.root,
+  });
+  assert.deepEqual(result, { mode: binding.mode, taskId: binding.taskId });
+});
+
+test('OFFICE F01 Stage 2 exact tuple is eligible but never dispatchable', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const result = coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+  });
+  assert.deepEqual(result, {
+    mode: binding.stage2.mode,
+    taskId: binding.stage2.taskId,
+    eligibility: 'ELIGIBLE / EXECUTION AUTHORITY MISSING',
+    dispatchable: 'NO',
+    mutation: 'FORBIDDEN',
+  });
+});
+
+test('OFFICE F01 Stage 2 exact M/A/A/A status tuple passes', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  assert.equal(binding.stage2.statusTuple, 'M / A / A / A');
+  assert.equal(binding.stage2.pathCount, 4);
+  coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+  });
+});
+
+test('OFFICE F01 Stage 2 exact semantic authority ID passes', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+    semanticAuthorityId: binding.stage2.semanticAuthorityId,
+  });
+});
+
+test('OFFICE F01 Stage 2 exact execution grant ID passes', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+    executionGrantId: binding.stage2.executionGrantId,
+  });
+});
+
+test('OFFICE F01 Stage 2 semantic and execution locators remain distinct', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  assert.notEqual(binding.stage2.semanticAuthorityPath, binding.stage2.executionGrantPath);
+  coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+    semanticAuthorityPath: binding.stage2.semanticAuthorityPath,
+    executionGrantPath: binding.stage2.executionGrantPath,
+  });
+});
+
+test('OFFICE F01 Stage 2 exact target task and successor task pass', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const result = coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+    taskId: binding.targetSuccessorTaskId,
+  });
+  assert.equal(result.taskId, binding.targetSuccessorTaskId);
+});
+
+test('OFFICE F01 Stage 2 retains GO-COMPLETE Stage 1-only mode as a non-reusable predecessor fact', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  assert.equal(binding.executionMode, 'GO-COMPLETE — STAGE 1 ONLY');
+  coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+    executionMode: binding.executionMode,
+  });
+});
+
+test('OFFICE F01 Stage 2 retains the ratified 8/8 owner decision count', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  assert.equal(binding.ownerDecisions, '8/8 RATIFIED');
+  coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+    ownerDecisions: binding.ownerDecisions,
+  });
+});
+
+test('OFFICE F01 Stage 2 classification is deterministic on repeated replay', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const first = coordination.classifyPrChangeSet(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+  });
+  const second = coordination.classifyPrChangeSet(officeF01Stage2Changes(), {
+    headRef: binding.stage2.headRef,
+  });
+  assert.deepEqual(first, second);
+  assert.deepEqual(first, { mode: binding.stage2.mode, taskId: binding.stage2.taskId });
+});
+
+test('OFFICE F01 Stage 1 rejects wrong base, branch, omission, status and expansion', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const exact = officeF01Stage1BindingChanges();
+  for (const entry of [
+    { base: '0'.repeat(40), headRef: binding.headRef, changes: exact },
+    { base: binding.baseSha, headRef: `${binding.headRef}-copy`, changes: exact },
+    { base: binding.baseSha, headRef: binding.headRef, changes: exact.slice(1) },
+    {
+      base: binding.baseSha,
+      headRef: binding.headRef,
+      changes: exact.map((change, index) => (index === 0 ? { ...change, status: 'A' } : change)),
+    },
+    {
+      base: binding.baseSha,
+      headRef: binding.headRef,
+      changes: [...exact, { status: 'M', path: 'AGENTS.md' }],
+    },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(entry.changes, entry),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('OFFICE F01 Stage 2 rejects missing files, wrong statuses and a fifth file', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const exact = officeF01Stage2Changes();
+  for (let index = 0; index < exact.length; index += 1) {
+    expectCode(
+      () => coordination.validateOfficeF01Stage2Tuple(exact.filter((_, candidate) => candidate !== index), {
+        headRef: binding.stage2.headRef,
+      }),
+      'OFFICE_F01_STAGE2_SCOPE_MISMATCH',
+    );
+    const wrongStatus = exact.map((change) => ({ ...change }));
+    wrongStatus[index].status = wrongStatus[index].status === 'M' ? 'A' : 'M';
+    expectCode(
+      () => coordination.validateOfficeF01Stage2Tuple(wrongStatus, { headRef: binding.stage2.headRef }),
+      'OFFICE_F01_STAGE2_SCOPE_MISMATCH',
+    );
+  }
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(
+      [...exact, { status: 'M', path: 'project/docs/governance/AGENTS.md' }],
+      { headRef: binding.stage2.headRef },
+    ),
+    'OFFICE_F01_STAGE2_SCOPE_MISMATCH',
+  );
+});
+
+test('OFFICE F01 Stage 2 rejects wrong IDs, program, task, owner, mode and decision count', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const cases = [
+    [{ semanticAuthorityId: 'WRONG-SA' }, 'OFFICE_F01_STAGE2_SA_ID_MISMATCH'],
+    [{ executionGrantId: 'WRONG-EG' }, 'OFFICE_F01_STAGE2_EG_ID_MISMATCH'],
+    [{ programId: 'OTHER-PROGRAM' }, 'OFFICE_F01_STAGE2_PROGRAM_MISMATCH'],
+    [{ taskId: 'OTHER-TASK' }, 'OFFICE_F01_STAGE2_TASK_MISMATCH'],
+    [{ ownerName: 'Another Owner' }, 'OFFICE_F01_STAGE2_OWNER_MISMATCH'],
+    [{ executionMode: 'GO-IMPLEMENT' }, 'OFFICE_F01_STAGE2_EXECUTION_MODE_MISMATCH'],
+    [{ ownerDecisions: '7/8 RATIFIED' }, 'OFFICE_F01_STAGE2_DECISION_COUNT_MISMATCH'],
+    [{ bootstrapId: 'ANOTHER-BOOTSTRAP' }, 'OFFICE_F01_BOOTSTRAP_ID_MISMATCH'],
+  ];
+  for (const [context, code] of cases) {
+    expectCode(
+      () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+        headRef: binding.stage2.headRef,
+        ...context,
+      }),
+      code,
+    );
+  }
+});
+
+test('OFFICE F01 Stage 2 rejects duplicate and conflicting authority state', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  for (const [context, code] of [
+    [{ duplicateSemanticAuthority: true }, 'OFFICE_F01_DUPLICATE_SA_FORBIDDEN'],
+    [{ duplicateExecutionGrant: true }, 'OFFICE_F01_DUPLICATE_EG_FORBIDDEN'],
+    [{ existingAuthority: true }, 'OFFICE_F01_EXISTING_AUTHORITY_CONFLICT'],
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+        headRef: binding.stage2.headRef,
+        ...context,
+      }),
+      code,
+    );
+  }
+});
+
+test('OFFICE F01 Stage 2 rejects cross-task and Stage 1 grant reuse', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+      headRef: binding.stage2.headRef,
+      stage1GrantTaskId: 'OTHER-TASK',
+    }),
+    'OFFICE_F01_STAGE2_EXECUTION_AUTHORITY_MISMATCH',
+  );
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+      headRef: binding.stage2.headRef,
+      stage1GrantTaskId: binding.taskId,
+    }),
+    'OFFICE_F01_STAGE2_GRANT_REUSE_FORBIDDEN',
+  );
+});
+
+test('OFFICE F01 Stage 2 rejects wrong branch, locator paths and locator collision', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+      headRef: `${binding.stage2.headRef}-copy`,
+    }),
+    'OFFICE_F01_STAGE2_BRANCH_MISMATCH',
+  );
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+      headRef: binding.stage2.headRef,
+      semanticAuthorityPath: 'project/docs/governance/other.md',
+    }),
+    'OFFICE_F01_STAGE2_SA_PATH_INVALID',
+  );
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+      headRef: binding.stage2.headRef,
+      executionGrantPath: 'project/docs/governance/other-grant.md',
+    }),
+    'OFFICE_F01_STAGE2_EG_PATH_INVALID',
+  );
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+      headRef: binding.stage2.headRef,
+      semanticAuthorityPath: binding.stage2.semanticAuthorityPath,
+      executionGrantPath: binding.stage2.semanticAuthorityPath,
+    }),
+    'OFFICE_F01_STAGE2_AUTHORITY_LOCATOR_COLLISION',
+  );
+});
+
+test('OFFICE F01 Stage 2 rejects product, schema, migration and implementation expansion', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  for (const repoPath of [
+    'project/apps/api/src/modules/office/office.service.ts',
+    'project/apps/api/prisma/schema.prisma',
+    'project/apps/api/prisma/migrations/20260731_wrong/migration.sql',
+    'project/apps/web/src/app/office/page.tsx',
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF01Stage2Tuple(
+        [...officeF01Stage2Changes(), { status: 'M', path: repoPath }],
+        { headRef: binding.stage2.headRef },
+      ),
+      'OFFICE_F01_STAGE2_SCOPE_MISMATCH',
+    );
+  }
+});
+
+test('ordinary governance diff and another task bootstrap remain fail-closed', () => {
+  const binding =
+    coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(
+      [{ status: 'M', path: 'project/docs/governance/decision-log.md' }],
+      { headRef: 'codex/ordinary-governance-change' },
+    ),
+    { mode: 'NON_COORDINATION_PR' },
+  );
+  expectCode(
+    () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
+      headRef: binding.stage2.headRef,
+      bootstrapId: 'OTHER-BOOTSTRAP-R01',
+    }),
+    'OFFICE_F01_BOOTSTRAP_ID_MISMATCH',
   );
 });

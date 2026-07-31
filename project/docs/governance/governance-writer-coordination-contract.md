@@ -1441,6 +1441,74 @@ cross-task reuse ve ikinci materialization fail-closed reddedilir. Bu kabul
 yalnız scope classification'dır; required CI, merge ve live closeout gate'lerini
 bypass etmez.
 
+## OFFICE F01 AUTHORIZATION AND SENSITIVE PROJECTION — Stage 1 binding
+
+Bu bölüm yalnız owner tarafından verilen tek kullanımlık OFFICE F01 Stage 1
+control-plane binding grant'ini sınıflandırır. Stage 1 yeni owner kararı,
+semantic authority kaydı veya execution-grant dosyası üretmez; Stage 2 ve
+OFFICE implementation bu binding'in kapsamı dışındadır.
+
+```text
+bootstrapId : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_R01
+programId : REPOSITORY-WIDE-CAPABILITY-BINDING-ACTIVATION-AND-OPERABILITY-RECONCILIATION-R01
+wave : WAVE 1 — CRITICAL PATH
+taskId : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-BOOTSTRAP-STAGE1-BINDING-R01
+mode : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01
+baseSha : b3d8075969d4ec7b8902004e2216c5110e4c05a3
+headRef : codex/office-sc-f01-authority-bootstrap-stage1-binding-r01
+executionMode : GO-COMPLETE — STAGE 1 ONLY
+workspace : SHARED CONTROL PLANE / OFFICE
+priority : P0
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+ownerDecisions : 8/8 RATIFIED
+reRatification : NOT REQUIRED
+targetSuccessorTaskId : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01
+finalImplementationTaskId : OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01
+M project/scripts/governance-coordination.cjs
+M project/scripts/governance-coordination.test.cjs
+M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Stage 1 validator'ın tanıdığı deterministik Stage 2 successor tuple'ı aşağıdaki
+gibidir. Bu tuple yalnız eligibility kanıtıdır; dispatchable değildir ve
+mutation authority taşımaz:
+
+```text
+stage2TaskId : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01
+stage2Mode : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01
+stage2HeadRef : codex/office-sc-f01-authority-materialization-r01
+stage2StatusTuple : M / A / A / A
+stage2PathCount : 4
+stage2Eligibility : ELIGIBLE / EXECUTION AUTHORITY MISSING
+stage2Dispatchable : NO
+stage2Mutation : FORBIDDEN
+futureSemanticAuthorityId : OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-SA01
+futureSemanticAuthorityPath : project/docs/governance/decision-log.md
+futureExecutionGrantId : OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01
+futureExecutionGrantPath : project/docs/governance/coordination-execution-grants/OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01.md
+stage2Scope : M project/docs/governance/decision-log.md
+stage2Scope : A project/docs/governance/office-sc-f01-authorization/office-authorization-decision-matrix.md
+stage2Scope : A project/docs/governance/office-sc-f01-authorization/office-sensitive-field-classification-matrix.md
+stage2Scope : A project/docs/governance/coordination-execution-grants/OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01.md
+stage2AuthorityMaterialization : NOT AUTHORIZED
+ownerDecisionMaterialization : NOT AUTHORIZED
+officeImplementation : NOT AUTHORIZED
+schemaMigration : NOT AUTHORIZED
+productionActivation : NOT AUTHORIZED
+stage1GrantReuseForStage2 : PROHIBITED
+distinctSemanticAndExecutionLocators : REQUIRED
+exactAllowlist : REQUIRED
+```
+
+Validator yalnız exact owner-pinned base veya protected Stage 1 blob'ları
+değişmemiş descendant base, exact branch, task/mode ve üç dosyalık `M/M/M`
+allowlist birlikte sağlandığında Stage 1 binding'i kabul eder. Stage 2 tuple'ı
+yanlış task, yanlış program, path/status drift'i, ekstra dosya, Stage 1 grant
+reuse veya distinct semantic/execution locator koşulunun ihlali halinde
+fail-closed reddedilir. Stage 2 için ayrı task-bound execution authority
+verilmeden `DISPATCHABLE: NO` ve `MUTATION: FORBIDDEN` kalır.
+
 ## UYAP-M01 Legal-Basis resolver binding — exact authority publication binding
 
 Bu kayıt yalnız `UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01` görevinin
@@ -1488,6 +1556,46 @@ Validator exact branch/base/path tuple'ını, distinct SA/EG record kimliklerini
 exact excerpt/hash eşliğini ve EG'nin exact SA referansını doğrular. Fazla path,
 başka branch/base, missing evidence, generic validator relaxation, reusable grant
 ve ikinci kullanım fail-closed reddedilir.
+
+### UYAP-M01 terminal closeout — exact publication binding
+
+Bu ek yalnız merge edilmiş UYAP-M01 implementation sonucunun existing task-local
+execution-grant dosyasına append-only terminal receipt olarak yazılmasını tanır.
+Yeni semantic authority, ikinci grant kullanımı, production activation veya
+successor execution authority üretmez.
+
+```text
+Closeout binding task : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01
+Closeout binding mode : UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01
+Closeout binding base : 5338a6214e21a52bd7e0fa4e82f85384952bd19d
+Closeout binding ref  : codex/uyap-m01-terminal-closeout-binding-r01
+Closeout binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Closeout task : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01
+Closeout mode : UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_R01
+Original closeout base : 5338a6214e21a52bd7e0fa4e82f85384952bd19d
+Closeout ref : codex/uyap-m01-terminal-closeout
+Closeout scope:
+  M project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md
+
+Semantic authority record : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-SA01
+Execution grant record     : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01
+Implementation PR          : 2033
+Implementation squash      : 5338a6214e21a52bd7e0fa4e82f85384952bd19d
+Grant terminal state       : CONSUMED / CLOSED
+Second use                : FAIL-CLOSED
+Production activation     : PROHIBITED
+```
+
+Validator closeout binding PR'ında exact `M/M/M` control-plane tuple'ını;
+target closeout PR'ında yalnız existing EG dosyasının `M` durumunu, canonical
+SA/EG referanslarını, implementation PR/SHA kanıtını, `DEFAULT-OFF`, sıfır
+production call-site/reachability, required CI ve `SECOND USE: FAIL-CLOSED`
+terminal receipt alanlarını doğrular. `decision-log.md` closeout PR'ında
+değiştirilemez; böylece mevcut semantic authority duplicate edilmez.
 
 ## ORCHESTRA EXECUTION MODEL REVISION R01 — reconciled checkpoint contract
 

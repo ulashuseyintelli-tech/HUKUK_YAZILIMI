@@ -40,7 +40,7 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B dormancy and boundary guard', () => {
     expect(service).not.toContain('HumanClaimItemFormationAdmissionService');
   });
 
-  it('does not register a production provider, resolver adapter or call-site', () => {
+  it('allows only the controlled default-off UYAP M01 consumer outside the dormant package', () => {
     const moduleSource = read('src/modules/claim-item/claim-item.module.ts');
     expect(moduleSource).not.toContain('formation-intent');
     expect(moduleSource).not.toContain('HumanClaimItemFormationAdmissionService');
@@ -49,8 +49,17 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B dormancy and boundary guard', () => {
       .filter((file) => !file.startsWith(PACKAGE_ROOT))
       .filter((file) => path.resolve(file) !== path.resolve(DORMANT_FINALIZER))
       .filter((file) => fs.readFileSync(file, 'utf8').includes('formation-intent'))
-      .map((file) => path.relative(API_ROOT, file));
-    expect(importers).toEqual([]);
+      .map((file) => path.relative(API_ROOT, file))
+      .sort();
+    expect(importers).toEqual([
+      path.normalize(
+        'src/modules/uyap/legal-basis/uyap-m01-legal-basis-consumer.activation.ts',
+      ),
+      path.normalize(
+        'src/modules/uyap/legal-basis/uyap-m01-legal-basis-consumer.service.ts',
+      ),
+      path.normalize('src/modules/uyap/uyap.module.ts'),
+    ]);
   });
 
   it('writes only intent, OfficeApproval and transaction-bound request audit', () => {

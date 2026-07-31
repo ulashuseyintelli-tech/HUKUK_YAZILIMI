@@ -266,6 +266,88 @@ const ORCHESTRA_EXECUTION_MODEL_REVISION_R01 = Object.freeze({
     Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.test.cjs' }),
   ]),
 });
+const OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01 =
+  Object.freeze({
+    bootstrapId:
+      'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_R01',
+    programId:
+      'REPOSITORY-WIDE-CAPABILITY-BINDING-ACTIVATION-AND-OPERABILITY-RECONCILIATION-R01',
+    wave: 'WAVE 1 — CRITICAL PATH',
+    taskId:
+      'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-BOOTSTRAP-STAGE1-BINDING-R01',
+    mode:
+      'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01',
+    baseSha: 'b3d8075969d4ec7b8902004e2216c5110e4c05a3',
+    headRef: 'codex/office-sc-f01-authority-bootstrap-stage1-binding-r01',
+    executionMode: 'GO-COMPLETE — STAGE 1 ONLY',
+    workspace: 'SHARED CONTROL PLANE / OFFICE',
+    priority: 'P0',
+    ownerName: 'Av. Ulaş Hüseyin Telli',
+    ownerRole: 'Repository Owner / Semantic Authority',
+    ownerDecisions: '8/8 RATIFIED',
+    reRatification: 'NOT REQUIRED',
+    targetSuccessorTaskId:
+      'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
+    finalImplementationTaskId:
+      'OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.test.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path:
+          'project/docs/governance/governance-writer-coordination-contract.md',
+      }),
+    ]),
+    stage2: Object.freeze({
+      taskId:
+        'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
+      mode:
+        'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01',
+      headRef: 'codex/office-sc-f01-authority-materialization-r01',
+      statusTuple: 'M / A / A / A',
+      pathCount: 4,
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/office-sc-f01-authorization/office-authorization-decision-matrix.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/office-sc-f01-authorization/office-sensitive-field-classification-matrix.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01.md',
+        }),
+      ]),
+      semanticAuthorityId:
+        'OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-SA01',
+      semanticAuthorityPath: 'project/docs/governance/decision-log.md',
+      executionGrantId:
+        'OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01',
+      executionGrantPath:
+        'project/docs/governance/coordination-execution-grants/OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01.md',
+      eligibility: 'ELIGIBLE / EXECUTION AUTHORITY MISSING',
+      dispatchable: 'NO',
+      mutation: 'FORBIDDEN',
+    }),
+  });
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01',
   bindingPr: Object.freeze({
@@ -463,6 +545,57 @@ const UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01 
         path:
           'project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md',
         recordId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01',
+      }),
+    }),
+    closeoutBindingPr: Object.freeze({
+      taskId:
+        'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01',
+      mode:
+        'UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01',
+      baseSha: '5338a6214e21a52bd7e0fa4e82f85384952bd19d',
+      headRef: 'codex/uyap-m01-terminal-closeout-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    closeoutPr: Object.freeze({
+      taskId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01',
+      mode: 'UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_R01',
+      originalBaseSha: '5338a6214e21a52bd7e0fa4e82f85384952bd19d',
+      headRef: 'codex/uyap-m01-terminal-closeout',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md',
+        recordId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01',
+      }),
+      implementation: Object.freeze({
+        pullRequestNumber: 2033,
+        squashSha: '5338a6214e21a52bd7e0fa4e82f85384952bd19d',
       }),
     }),
   });
@@ -2825,6 +2958,50 @@ function classifyPrChangeSet(changes, context = {}) {
     );
   }
 
+  const officeF01Stage1 =
+    OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  if (
+    context.headRef === officeF01Stage1.stage2.headRef ||
+    (context.headRef === officeF01Stage1.stage2.headRef &&
+      hasExactChangeSet(changes, officeF01Stage1.stage2.changedPaths))
+  ) {
+    const stage2 = validateOfficeF01Stage2Tuple(changes, {
+      headRef: context.headRef,
+    });
+    return { mode: stage2.mode, taskId: stage2.taskId };
+  }
+  if (
+    context.headRef === officeF01Stage1.headRef ||
+    (context.headRef === officeF01Stage1.headRef &&
+      context.base === officeF01Stage1.baseSha &&
+      hasExactChangeSet(changes, officeF01Stage1.changedPaths))
+  ) {
+    if (
+      context.base !== officeF01Stage1.baseSha &&
+      !rootStage1PublicationBaseIsValid(context.base, context.cwd, {
+        bindingPr: officeF01Stage1,
+      })
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE F01 Stage 1 binding requires the fresh canonical base or an unchanged protected-path descendant',
+      );
+    }
+    if (context.headRef !== officeF01Stage1.headRef) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE F01 Stage 1 binding requires its exact branch',
+      );
+    }
+    if (!hasExactChangeSet(changes, officeF01Stage1.changedPaths)) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE F01 Stage 1 binding requires the exact M/M/M scope',
+      );
+    }
+    return { mode: officeF01Stage1.mode, taskId: officeF01Stage1.taskId };
+  }
+
   if (
     context.base === GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.baseSha &&
     context.headRef === GITHUB_PLATFORM_GH02_CONTROL_PLANE_RECOVERY_R02.headRef &&
@@ -3149,6 +3326,17 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.base === uyapM01Binding.closeoutBindingPr.baseSha &&
+    context.headRef === uyapM01Binding.closeoutBindingPr.headRef &&
+    hasExactChangeSet(changes, uyapM01Binding.closeoutBindingPr.changedPaths)
+  ) {
+    return {
+      mode: uyapM01Binding.closeoutBindingPr.mode,
+      taskId: uyapM01Binding.closeoutBindingPr.taskId,
+    };
+  }
+
+  if (
     context.base === uyapM01Binding.bindingPr.baseSha &&
     context.headRef === uyapM01Binding.bindingPr.headRef &&
     hasExactChangeSet(changes, uyapM01Binding.bindingPr.changedPaths)
@@ -3170,8 +3358,20 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.headRef === uyapM01Binding.closeoutPr.headRef &&
+    hasExactChangeSet(changes, uyapM01Binding.closeoutPr.changedPaths)
+  ) {
+    return {
+      mode: uyapM01Binding.closeoutPr.mode,
+      taskId: uyapM01Binding.closeoutPr.taskId,
+    };
+  }
+
+  if (
     context.headRef === uyapM01Binding.bindingPr.headRef ||
-    context.headRef === uyapM01Binding.targetPr.headRef
+    context.headRef === uyapM01Binding.targetPr.headRef ||
+    context.headRef === uyapM01Binding.closeoutBindingPr.headRef ||
+    context.headRef === uyapM01Binding.closeoutPr.headRef
   ) {
     reject(
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
@@ -4254,6 +4454,53 @@ function validateUyapM01AuthorityBindingScope(options) {
   return { mode: binding.bindingPr.mode, taskId: binding.taskId };
 }
 
+function validateUyapM01TerminalCloseoutBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const closeoutBinding = binding.closeoutBindingPr;
+  if (
+    taskId !== closeoutBinding.taskId ||
+    base !== closeoutBinding.baseSha ||
+    headRef !== closeoutBinding.headRef ||
+    !hasExactChangeSet(changes, closeoutBinding.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP-M01 terminal closeout control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    closeoutBinding.taskId,
+    closeoutBinding.mode,
+    closeoutBinding.baseSha,
+    closeoutBinding.headRef,
+    binding.closeoutPr.taskId,
+    binding.closeoutPr.mode,
+    binding.closeoutPr.originalBaseSha,
+    binding.closeoutPr.headRef,
+    ...binding.closeoutPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.closeoutPr.semanticAuthority.recordId,
+    binding.closeoutPr.executionGrant.recordId,
+    String(binding.closeoutPr.implementation.pullRequestNumber),
+    binding.closeoutPr.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact UYAP-M01 closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: closeoutBinding.mode, taskId: closeoutBinding.taskId };
+}
+
 function validatePb01AuthorityBootstrapBindingScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -4660,6 +4907,236 @@ function validateRootAuthorityBootstrapBindingScope(options) {
   }
 
   return { mode: stage1.mode, taskId: stage1.taskId };
+}
+
+function officeF01Stage1ContractLiterals(binding) {
+  const stage2 = binding.stage2;
+  return [
+    `bootstrapId : ${binding.bootstrapId}`,
+    `programId : ${binding.programId}`,
+    `wave : ${binding.wave}`,
+    `taskId : ${binding.taskId}`,
+    `mode : ${binding.mode}`,
+    `baseSha : ${binding.baseSha}`,
+    `headRef : ${binding.headRef}`,
+    `executionMode : ${binding.executionMode}`,
+    `workspace : ${binding.workspace}`,
+    `priority : ${binding.priority}`,
+    `ownerName : ${binding.ownerName}`,
+    `ownerRole : ${binding.ownerRole}`,
+    `ownerDecisions : ${binding.ownerDecisions}`,
+    `reRatification : ${binding.reRatification}`,
+    `targetSuccessorTaskId : ${binding.targetSuccessorTaskId}`,
+    `finalImplementationTaskId : ${binding.finalImplementationTaskId}`,
+    ...binding.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    `stage2TaskId : ${stage2.taskId}`,
+    `stage2Mode : ${stage2.mode}`,
+    `stage2HeadRef : ${stage2.headRef}`,
+    `stage2StatusTuple : ${stage2.statusTuple}`,
+    `stage2PathCount : ${stage2.pathCount}`,
+    `stage2Eligibility : ${stage2.eligibility}`,
+    `stage2Dispatchable : ${stage2.dispatchable}`,
+    `stage2Mutation : ${stage2.mutation}`,
+    `futureSemanticAuthorityId : ${stage2.semanticAuthorityId}`,
+    `futureSemanticAuthorityPath : ${stage2.semanticAuthorityPath}`,
+    `futureExecutionGrantId : ${stage2.executionGrantId}`,
+    `futureExecutionGrantPath : ${stage2.executionGrantPath}`,
+    ...stage2.changedPaths.map(
+      ({ status, path: repoPath }) => `stage2Scope : ${status} ${repoPath}`,
+    ),
+    'stage2AuthorityMaterialization : NOT AUTHORIZED',
+    'ownerDecisionMaterialization : NOT AUTHORIZED',
+    'officeImplementation : NOT AUTHORIZED',
+    'schemaMigration : NOT AUTHORIZED',
+    'productionActivation : NOT AUTHORIZED',
+    'stage1GrantReuseForStage2 : PROHIBITED',
+    'distinctSemanticAndExecutionLocators : REQUIRED',
+    'exactAllowlist : REQUIRED',
+  ];
+}
+
+function validateOfficeF01Stage2Tuple(changes, context = {}) {
+  const binding =
+    OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const stage2 = binding.stage2;
+  if (context.headRef !== undefined && context.headRef !== stage2.headRef) {
+    reject(
+      'OFFICE_F01_STAGE2_BRANCH_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires its deterministic successor branch',
+    );
+  }
+  if (context.programId !== undefined && context.programId !== binding.programId) {
+    reject(
+      'OFFICE_F01_STAGE2_PROGRAM_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires the owner-pinned program',
+    );
+  }
+  if (context.taskId !== undefined && context.taskId !== stage2.taskId) {
+    reject(
+      'OFFICE_F01_STAGE2_TASK_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires the owner-pinned successor task',
+    );
+  }
+  if (context.bootstrapId !== undefined && context.bootstrapId !== binding.bootstrapId) {
+    reject(
+      'OFFICE_F01_BOOTSTRAP_ID_MISMATCH',
+      'OFFICE F01 Stage 2 tuple cannot reuse another bootstrap identity',
+    );
+  }
+  if (
+    context.executionMode !== undefined &&
+    context.executionMode !== binding.executionMode
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_EXECUTION_MODE_MISMATCH',
+      'OFFICE F01 Stage 2 tuple cannot reuse a different execution mode',
+    );
+  }
+  if (context.ownerName !== undefined && context.ownerName !== binding.ownerName) {
+    reject(
+      'OFFICE_F01_STAGE2_OWNER_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires the owner identity bound by Stage 1',
+    );
+  }
+  if (
+    context.ownerDecisions !== undefined &&
+    context.ownerDecisions !== binding.ownerDecisions
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_DECISION_COUNT_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires the ratified 8/8 decision count',
+    );
+  }
+  if (context.existingAuthority) {
+    reject(
+      'OFFICE_F01_EXISTING_AUTHORITY_CONFLICT',
+      'an existing OFFICE F01 authority record blocks Stage 2 eligibility reuse',
+    );
+  }
+  if (context.duplicateSemanticAuthority) {
+    reject(
+      'OFFICE_F01_DUPLICATE_SA_FORBIDDEN',
+      'duplicate future semantic authority is forbidden',
+    );
+  }
+  if (context.duplicateExecutionGrant) {
+    reject(
+      'OFFICE_F01_DUPLICATE_EG_FORBIDDEN',
+      'duplicate future execution grant is forbidden',
+    );
+  }
+  if (
+    context.semanticAuthorityId !== undefined &&
+    context.semanticAuthorityId !== stage2.semanticAuthorityId
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_SA_ID_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires the owner-pinned semantic authority ID',
+    );
+  }
+  if (
+    context.executionGrantId !== undefined &&
+    context.executionGrantId !== stage2.executionGrantId
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_EG_ID_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires the owner-pinned execution grant ID',
+    );
+  }
+  if (
+    context.stage1GrantTaskId !== undefined &&
+    context.stage1GrantTaskId === binding.taskId
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_GRANT_REUSE_FORBIDDEN',
+      'Stage 1 execution authority cannot be reused for Stage 2',
+    );
+  }
+  if (
+    context.stage1GrantTaskId !== undefined &&
+    context.stage1GrantTaskId !== binding.taskId &&
+    context.stage1GrantTaskId !== stage2.taskId
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_EXECUTION_AUTHORITY_MISMATCH',
+      'Stage 2 requires its own task-bound execution authority',
+    );
+  }
+  if (
+    context.semanticAuthorityPath !== undefined &&
+    context.executionGrantPath !== undefined &&
+    context.semanticAuthorityPath === context.executionGrantPath
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_AUTHORITY_LOCATOR_COLLISION',
+      'future semantic and execution authority locators must remain distinct',
+    );
+  }
+  if (
+    context.semanticAuthorityPath !== undefined &&
+    context.semanticAuthorityPath !== stage2.semanticAuthorityPath
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_SA_PATH_INVALID',
+      'OFFICE F01 Stage 2 semantic authority path is fixed to decision-log.md',
+    );
+  }
+  if (
+    context.executionGrantPath !== undefined &&
+    context.executionGrantPath !== stage2.executionGrantPath
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_EG_PATH_INVALID',
+      'OFFICE F01 Stage 2 execution grant path is fixed to the future EG file',
+    );
+  }
+  if (!hasExactChangeSet(changes, stage2.changedPaths)) {
+    reject(
+      'OFFICE_F01_STAGE2_SCOPE_MISMATCH',
+      'OFFICE F01 Stage 2 tuple requires the exact M/A/A/A four-file scope',
+    );
+  }
+  return {
+    mode: stage2.mode,
+    taskId: stage2.taskId,
+    eligibility: stage2.eligibility,
+    dispatchable: stage2.dispatchable,
+    mutation: stage2.mutation,
+  };
+}
+
+function validateOfficeF01Stage1BindingScope(options) {
+  const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const exactBase = rootStage1PublicationBaseIsValid(base, cwd, {
+    bindingPr: binding,
+  });
+  if (
+    taskId !== binding.taskId ||
+    (mode && mode !== binding.mode) ||
+    !exactBase ||
+    headRef !== binding.headRef ||
+    !hasExactChangeSet(changes, binding.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE F01 Stage 1 binding base, branch, task, mode, or exact M/M/M scope mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of officeF01Stage1ContractLiterals(binding)) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact OFFICE F01 Stage 1 binding ${expectedLiteral}`,
+      );
+    }
+  }
+  return { mode: binding.mode, taskId: binding.taskId };
 }
 
 function officeAuthorityBootstrapContractLiterals(binding) {
@@ -6332,6 +6809,76 @@ function validateUyapM01AuthorityMaterializationScope(options) {
   return { mode: target.mode, taskId: target.taskId };
 }
 
+function validateUyapM01TerminalCloseoutScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP-M01 terminal closeout target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.closeoutBindingPr.taskId,
+    binding.closeoutBindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    target.headRef,
+    String(target.implementation.pullRequestNumber),
+    target.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical UYAP-M01 closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const semanticAuthority = gitShow(head, target.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(semanticAuthority, target.semanticAuthority);
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const grantLiteral of [
+    'TASK STATUS           : CLOSED',
+    'CHANGE STATUS         : MERGED',
+    'DELIVERY STATUS       : PASS',
+    'EXECUTION GRANT       : CONSUMED / CLOSED',
+    `IMPLEMENTATION PR     : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA    : ${target.implementation.squashSha}`,
+    'RESOLVER BINDING      : CANONICAL / CONSUMER-ONLY',
+    'DEFAULT-OFF           : PASS',
+    'PRODUCTION CALL-SITE  : NONE',
+    'PRODUCTION REACHABILITY: 0',
+    'REQUIRED CI           : 4/4 PASS',
+    'SECOND USE        : FAIL-CLOSED',
+    'WAITING FOR OWNER : NO FOR M01 — TASK COMPLETE',
+  ]) {
+    if (!grant.includes(grantLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `UYAP-M01 terminal receipt is missing ${grantLiteral}`,
+      );
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function validatePb01AuthorityBootstrapScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -7055,9 +7602,65 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01
+      .closeoutBindingPr.mode
+  ) {
+    return validateUyapM01TerminalCloseoutBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01.mode
+  ) {
+    return validateOfficeF01Stage1BindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01.stage2
+      .mode
+  ) {
+    reject(
+      'OFFICE_F01_STAGE2_EXECUTION_AUTHORITY_MISSING',
+      'OFFICE F01 Stage 2 is eligible but not dispatchable or mutable without its separate task-bound grant',
+    );
+  }
+
+  if (
+    classification.mode ===
     RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.mode
   ) {
     return validateRcvColFullRemediationBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01
+      .closeoutPr.mode
+  ) {
+    return validateUyapM01TerminalCloseoutScope({
       base,
       head,
       headRef,
@@ -7935,6 +8538,7 @@ module.exports = {
   GRANT_REPO_PATH,
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
+  OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01,
   OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
   OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
   REGISTER_REPO_PATH,
@@ -7978,6 +8582,8 @@ module.exports = {
   validateHcr08AuthorityBootstrapScope,
   validateUyapM01AuthorityBindingScope,
   validateUyapM01AuthorityMaterializationScope,
+  validateUyapM01TerminalCloseoutBindingScope,
+  validateUyapM01TerminalCloseoutScope,
   validateKc01AuthorityBootstrapBindingScope,
   validateKc01AuthorityBootstrapScope,
   validateKc01FormalClosureBindingScope,
@@ -8003,6 +8609,8 @@ module.exports = {
   validateRcvColFullRemediationBootstrapScope,
   validateRcvColLargeAuthorityReadRepairScope,
   validateOwnerWipMultiSourcePathOwnershipScope,
+  validateOfficeF01Stage1BindingScope,
+  validateOfficeF01Stage2Tuple,
   validateOfficeAuthorityBootstrapBindingScope,
   validateOfficeAuthorityMaterializationContent,
   validateOfficeAuthorityMaterializationScope,
