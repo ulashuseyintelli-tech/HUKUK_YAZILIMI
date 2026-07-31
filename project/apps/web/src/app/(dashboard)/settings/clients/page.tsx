@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet } from "lucide-react";
 import { api } from "@/lib/api";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields } from "@/lib/poa-ux";
+import { hasStructuredAddresses } from "@/lib/client-write";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { BulkEmailModal } from "@/components/bulk-email-modal";
 
@@ -716,6 +717,13 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
     { street: "", city: "", district: "", region: "", isPrimary: true }
   ]);
 
+  // I01: yapisal ClientAddress varsa bu form adres alanlarini YONETEMEZ (VER-02 guard'inin
+  // client-form.tsx'ten bu ikinci yuzeye tasinmasi). `client.addresses` alani hic gelmemisse
+  // (liste projeksiyonu veya basarisiz detay fetch'in fallback'i) durum BILINMIYOR sayilir ve
+  // guvenli tarafa (yonetiliyor varsayimina) gecilir — "yok" ile "bilinmiyor" KARISTIRILMAZ.
+  const structuredAddressManaged =
+    !!client && (client.addresses === undefined ? true : hasStructuredAddresses(client));
+
   useEffect(() => {
     if (scannedData) {
       // Taranmış veri varsa onu kullan
@@ -817,14 +825,24 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
       ...form,
       phones: validPhones,
       emails: validEmails,
-      addresses: validAddresses,
-      // Geriye uyumluluk için birincil değerleri de gönder
+      // I01: yapısal adres bu formdan yönetilemez — `addresses` VE ondan türetilen flat
+      // address/city/district/region TAMAMEN omit edilir (undefined → Prisma dokunmaz).
+      // client.service.ts update()'in flat kolonları `data.addresses[]`'ten HER ZAMAN
+      // türettiğini (existingAddressCount guard'ı yalnız ClientAddress tablosu içindir, flat
+      // kolonlar için YOK) bu turun preflight incelemesi doğruladı — yalnız `addresses`'i
+      // omit etmek yetmez, aksi halde flat kolonlar yine sessizce bayatlaştırılır.
+      ...(structuredAddressManaged
+        ? {}
+        : {
+            addresses: validAddresses,
+            // Geriye uyumluluk için birincil değerleri de gönder
+            address: validAddresses.find(a => a.isPrimary)?.street || validAddresses[0]?.street,
+            city: validAddresses.find(a => a.isPrimary)?.city || validAddresses[0]?.city,
+            district: validAddresses.find(a => a.isPrimary)?.district || validAddresses[0]?.district,
+            region: validAddresses.find(a => a.isPrimary)?.region || validAddresses[0]?.region,
+          }),
       phone: validPhones.find(p => p.isPrimary)?.value || validPhones[0]?.value,
       email: validEmails.find(e => e.isPrimary)?.value || validEmails[0]?.value,
-      address: validAddresses.find(a => a.isPrimary)?.street || validAddresses[0]?.street,
-      city: validAddresses.find(a => a.isPrimary)?.city || validAddresses[0]?.city,
-      district: validAddresses.find(a => a.isPrimary)?.district || validAddresses[0]?.district,
-      region: validAddresses.find(a => a.isPrimary)?.region || validAddresses[0]?.region,
       // NOT: Vekaletname alanları (poaNumber/poaDate/notaryName/notaryCity) form'dan
       // (...form) gelir ama /clients gövdesine GİTMEZ; handleSave bunları stripPoaFields
       // ile ayıklar ve yalnız yeni müvekkilde kanonik POST /poa ile kaydeder.
@@ -1023,33 +1041,54 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
 
           {/* Adresler */}
           <div className="border rounded-lg p-3">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium">Adresler</label>
-              <button type="button" onClick={addAddress} className="text-xs text-primary hover:underline flex items-center gap-0.5">
-                <Plus className="h-3 w-3" /> Ekle
-              </button>
-            </div>
-            <div className="space-y-3">
-              {addresses.map((addr, idx) => (
-                <div key={idx} className={`p-2 rounded border ${addr.isPrimary ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-1 cursor-pointer text-xs">
-                        <input type="radio" name="primaryAddress" checked={addr.isPrimary} onChange={() => updateAddress(idx, 'isPrimary', true)} className="w-3 h-3" />
-                        Birincil
-                      </label>
-                    </div>
-                    {addresses.length > 1 && <button type="button" onClick={() => removeAddress(idx)} className="text-red-500 hover:text-red-700 p-1"><X className="h-3 w-3" /></button>}
-                  </div>
-                  <textarea value={addr.street} onChange={e => updateAddress(idx, 'street', e.target.value)} placeholder="Adres" rows={2} className="w-full border rounded px-2 py-1 text-sm mb-2" />
-                  <div className="grid grid-cols-3 gap-2">
-                    <input value={addr.city} onChange={e => updateAddress(idx, 'city', e.target.value)} placeholder="İl" className="border rounded px-2 py-1 text-xs" />
-                    <input value={addr.district} onChange={e => updateAddress(idx, 'district', e.target.value)} placeholder="İlçe" className="border rounded px-2 py-1 text-xs" />
-                    <input value={addr.region} onChange={e => updateAddress(idx, 'region', e.target.value)} placeholder="İcra Bölgesi" className="border rounded px-2 py-1 text-xs" />
-                  </div>
+            {structuredAddressManaged ? (
+              // I01: yapısal ClientAddress varken (veya durum bilinmiyorken) bu form adres
+              // alanlarını göstermez/düzenlemez — kanonik yönetim yüzeyi Müvekkil Detayı/Adres
+              // sekmesidir (client-profile.tsx → ClientAddressSection).
+              <div
+                data-testid="settings-client-address-managed"
+                className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 space-y-1"
+              >
+                <p className="text-xs font-medium">Adresler</p>
+                <p>Bu müvekkilin adresleri Müvekkil Detayı &gt; Adres bölümünden yönetilir.</p>
+                <a
+                  href={`/clients/${client.id}`}
+                  className="inline-block text-xs font-medium underline hover:no-underline"
+                >
+                  Müvekkil detayına git
+                </a>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-medium">Adresler</label>
+                  <button type="button" onClick={addAddress} className="text-xs text-primary hover:underline flex items-center gap-0.5">
+                    <Plus className="h-3 w-3" /> Ekle
+                  </button>
                 </div>
-              ))}
-            </div>
+                <div className="space-y-3">
+                  {addresses.map((addr, idx) => (
+                    <div key={idx} className={`p-2 rounded border ${addr.isPrimary ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1 cursor-pointer text-xs">
+                            <input type="radio" name="primaryAddress" checked={addr.isPrimary} onChange={() => updateAddress(idx, 'isPrimary', true)} className="w-3 h-3" />
+                            Birincil
+                          </label>
+                        </div>
+                        {addresses.length > 1 && <button type="button" onClick={() => removeAddress(idx)} className="text-red-500 hover:text-red-700 p-1"><X className="h-3 w-3" /></button>}
+                      </div>
+                      <textarea value={addr.street} onChange={e => updateAddress(idx, 'street', e.target.value)} placeholder="Adres" rows={2} className="w-full border rounded px-2 py-1 text-sm mb-2" />
+                      <div className="grid grid-cols-3 gap-2">
+                        <input value={addr.city} onChange={e => updateAddress(idx, 'city', e.target.value)} placeholder="İl" className="border rounded px-2 py-1 text-xs" />
+                        <input value={addr.district} onChange={e => updateAddress(idx, 'district', e.target.value)} placeholder="İlçe" className="border rounded px-2 py-1 text-xs" />
+                        <input value={addr.region} onChange={e => updateAddress(idx, 'region', e.target.value)} placeholder="İcra Bölgesi" className="border rounded px-2 py-1 text-xs" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Vekaletname Bilgileri — YALNIZ yeni müvekkilde gösterilir.
