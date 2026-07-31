@@ -1,0 +1,1362 @@
+{
+  "entries": [
+    {
+      "admissionRequirements": [
+        "Exact enforceable judgment or agreement source identity version and fingerprint",
+        "Exact adult-child education continuation evidence",
+        "Exact installment amount currency and due date",
+        "Exact liability type and opaque liable-debtor references",
+        "Positive principal amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "EXACT_ENFORCEABLE_SOURCE_AMOUNT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "NO_EDUCATION_STATUS_OR_AMOUNT_INFERENCE",
+        "sourceAmountDerivation": "EXACT_JUDGMENT_OR_ENFORCEABLE_AGREEMENT_SCHEDULE"
+      },
+      "canonicalComponentCategory": "PRINCIPAL",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_ENFORCEABLE_SOURCE",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Ergin Çocuğun Eğitim Nafakası Asıl Alacağı",
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis release version entry checksum and effective interval",
+        "Revalidate exact source version fingerprint education evidence enforceability and due installment",
+        "Revalidate tenant case object scope and liability-context hash",
+        "Persist ClaimItem immutable formation snapshot audit and outbox atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "CASE_SUBCATEGORY_NAFAKA_AUTHORITY",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "DUETYPE_NAFAKA_AUTHORITY",
+        "EDUCATION_STATUS_INFERENCE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "GENERIC_PRINCIPAL_FALLBACK",
+        "HISTORICAL_RECLASSIFICATION",
+        "INTEREST_OR_COST_INFERENCE",
+        "LEGACY_CODE_AUTHORITY"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TMK_328_2"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TMK_328_2"
+        ]
+      },
+      "legalCharacter": "ADULT_CHILD_EDUCATION_MAINTENANCE_PRINCIPAL",
+      "legalMeaning": "A fixed and due principal installment for education continuing after majority under an exact enforceable source compatible with TMK 328/2; it does not include interest or costs.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Claim-level nafaka principal only; implicit all-debtor liability, interest, costs, fallbacks and historical reclassification are prohibited.",
+      "requiredEvidenceTypes": [
+        "ADULT_CHILD_IDENTITY_EVIDENCE",
+        "CONTINUING_EDUCATION_EVIDENCE",
+        "DEBTOR_IDENTITY_EVIDENCE",
+        "EXACT_DUE_DATE_EVIDENCE",
+        "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "SOURCE_ENFORCEABILITY_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "COURT_JUDGMENT",
+        "ENFORCEABLE_AGREEMENT_OR_PROTOCOL",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Decision-pack identity version and checksum",
+        "Exact Legal Basis release identity version entry checksum and source references",
+        "Exact document source identity version fingerprint education evidence and effective interval",
+        "Exact amount currency due date claimant debtor case and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "ADULT_CHILD_EDUCATION_MAINTENANCE",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact TTK_1530 version and checksum",
+        "Exact commercial goods or services supply evidence",
+        "Exact invoice or equivalent payment-request evidence",
+        "Exact delivery or performance date and due-date evidence",
+        "Exact debtor and liability-context binding",
+        "Positive amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "STATUTORY_COMMERCIAL_COLLECTION_COST"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "PROHIBITED",
+        "rule": "FORM_EXACT_LEGALLY_SUPPORTED_COLLECTION_COST_ONLY",
+        "sourceAmountDerivation": "EXACT_SOURCE_EVIDENCE_REQUIRED"
+      },
+      "canonicalComponentCategory": "COST",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_SOURCE_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Commercial Collection Cost",
+      "effectiveFrom": "2026-07-26T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis version and checksum",
+        "Revalidate exact source version and fingerprint",
+        "Revalidate commercial-supply and liability compatibility",
+        "Persist ClaimItem and immutable formation snapshot atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "HISTORICAL_RECLASSIFICATION"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "NOT_AN_INTEREST_COMPONENT",
+        "requiresExactInterestPolicy": false,
+        "requiresExactRateAuthority": false
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TTK_1530"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TTK_1530"
+        ]
+      },
+      "legalCharacter": "STATUTORY_COST",
+      "legalMeaning": "A fixed commercial collection-cost receivable authorized only for a qualifying TTK_1530 commercial goods or services supply.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Not available for consumer, employment or unrelated commercial debts; it never supplies principal or interest authority.",
+      "requiredEvidenceTypes": [
+        "COMMERCIAL_PARTY_STATUS_EVIDENCE",
+        "DELIVERY_OR_PERFORMANCE_DATE_EVIDENCE",
+        "DUE_DATE_OR_PAYMENT_TERM_EVIDENCE",
+        "INVOICE_OR_EQUIVALENT_PAYMENT_REQUEST",
+        "LIABILITY_CONTEXT_HASH",
+        "QUALIFYING_COMMERCIAL_SUPPLY_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_DOCUMENT_SOURCE_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Registry identity version checksum and subtype version",
+        "Exact Legal Basis identity version checksum and release identity",
+        "Exact source identity version fingerprint and evidence references",
+        "Exact amount currency minor unit and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "COMMERCIAL_COLLECTION_COST",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exactly one exact KANUN_3095_2 or TTK_1530 version and checksum",
+        "Exact commercial character evidence",
+        "Exact default-start evidence",
+        "Exact rate or policy version",
+        "Exact debtor and liability-context binding",
+        "Positive accrued amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "ACCRUED_COMMERCIAL_DEFAULT_INTEREST"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "FORM_ONLY_ACCRUED_AMOUNT_THROUGH_EFFECTIVE_DATE",
+        "sourceAmountDerivation": "EXACT_RATE_POLICY_AND_DATE_INPUTS_REQUIRED"
+      },
+      "canonicalComponentCategory": "ACCRUED_INTEREST",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_UNDERLYING_MONETARY_DEBT_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Commercial Default Interest",
+      "effectiveFrom": "2026-07-26T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis version and checksum",
+        "Revalidate exact source version and fingerprint",
+        "Revalidate commercial character default start rate and liability compatibility",
+        "Persist ClaimItem and immutable formation snapshot atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "FUTURE_INTEREST_AS_FIXED_CLAIM_ITEM",
+        "HISTORICAL_RECLASSIFICATION"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "COMMERCIAL_DEFAULT_CONDITIONS_AND_EXACT_RATE_AUTHORITY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "KANUN_3095_2",
+          "TTK_1530"
+        ],
+        "bindingMode": "EXACTLY_ONE_OF",
+        "requiredLegalBasisCodes": []
+      },
+      "legalCharacter": "COMMERCIAL_DEFAULT_INTEREST",
+      "legalMeaning": "Interest accrued after commercial default where exact statutory or qualifying TTK_1530 authority, commercial character, default start and rate inputs are proven.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "TTK_1530 use is confined to qualifying commercial goods or services supply; KANUN_3095_2 and TTK_1530 are alternatives, not an implicit fallback chain.",
+      "requiredEvidenceTypes": [
+        "COMMERCIAL_CHARACTER_EVIDENCE",
+        "DEFAULT_START_EVIDENCE",
+        "EXACT_INTEREST_POLICY_OR_RATE_RECORD",
+        "LIABILITY_CONTEXT_HASH",
+        "MONETARY_DEBT_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_DOCUMENT_SOURCE_VERSION",
+        "EXACT_INTEREST_POLICY_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Registry identity version checksum and subtype version",
+        "Exact Legal Basis identity version checksum and release identity",
+        "Exact source identity version fingerprint and commercial evidence references",
+        "Exact accrued amount currency minor unit effective date rate policy and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "COMMERCIAL_DEFAULT_INTEREST",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact TBK_120 version and checksum",
+        "Exact contractual interest clause",
+        "Exact default-start evidence",
+        "Exact contractual rate and legal-limit inputs",
+        "Exact debtor and liability-context binding",
+        "Positive accrued amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "ACCRUED_CONTRACTUAL_DEFAULT_INTEREST"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "FORM_ONLY_ACCRUED_AMOUNT_WITH_CONTRACTUAL_RATE_AND_LEGAL_LIMITS",
+        "sourceAmountDerivation": "EXACT_CONTRACT_RATE_POLICY_AND_DATE_INPUTS_REQUIRED"
+      },
+      "canonicalComponentCategory": "ACCRUED_INTEREST",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_UNDERLYING_MONETARY_DEBT_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Contractual Default Interest",
+      "effectiveFrom": "2026-07-26T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis version and checksum",
+        "Revalidate exact contract source version and fingerprint",
+        "Revalidate contractual clause default start rate limits and liability compatibility",
+        "Persist ClaimItem and immutable formation snapshot atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "FUTURE_INTEREST_AS_FIXED_CLAIM_ITEM",
+        "HISTORICAL_RECLASSIFICATION"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "EXACT_CONTRACTUAL_CLAUSE_DEFAULT_CONDITIONS_AND_RATE_LIMITS_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TBK_120"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TBK_120"
+        ]
+      },
+      "legalCharacter": "CONTRACTUAL_DEFAULT_INTEREST",
+      "legalMeaning": "Interest accrued after default under an exact contractual interest clause, subject to TBK_120 authority and limits.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "The exact contract clause and legal rate-limit evaluation are mandatory; contract presence is never inferred.",
+      "requiredEvidenceTypes": [
+        "CONTRACTUAL_INTEREST_CLAUSE_EVIDENCE",
+        "DEFAULT_START_EVIDENCE",
+        "EXACT_INTEREST_POLICY_OR_RATE_RECORD",
+        "LEGAL_RATE_LIMIT_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "MONETARY_DEBT_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_CONTRACT_DOCUMENT_VERSION",
+        "EXACT_INTEREST_POLICY_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Registry identity version checksum and subtype version",
+        "Exact Legal Basis identity version checksum and release identity",
+        "Exact contract source identity version fingerprint and clause evidence",
+        "Exact accrued amount currency minor unit effective date rate policy limits and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "CONTRACTUAL_DEFAULT_INTEREST",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact TBK_117 version and checksum",
+        "Exact maturity and default-start evidence",
+        "Exact separate rate authority or policy version",
+        "Exact debtor and liability-context binding",
+        "Positive accrued amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "ACCRUED_DEFAULT_INTEREST_WITH_SEPARATE_RATE_AUTHORITY"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "FORM_ONLY_ACCRUED_AMOUNT_AFTER_PROVEN_DEFAULT_START",
+        "sourceAmountDerivation": "EXACT_SEPARATE_RATE_POLICY_AND_DATE_INPUTS_REQUIRED"
+      },
+      "canonicalComponentCategory": "ACCRUED_INTEREST",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_UNDERLYING_MONETARY_DEBT_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Default Interest Formation Condition",
+      "effectiveFrom": "2026-07-26T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis version and checksum",
+        "Revalidate exact source version and fingerprint",
+        "Revalidate maturity default start separate rate authority and liability compatibility",
+        "Persist ClaimItem and immutable formation snapshot atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DEFAULT_INTEREST_AS_CATCH_ALL",
+        "FUTURE_INTEREST_AS_FIXED_CLAIM_ITEM",
+        "HISTORICAL_RECLASSIFICATION"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "DEFAULT_START_AND_SEPARATE_EXACT_RATE_AUTHORITY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TBK_117"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TBK_117"
+        ]
+      },
+      "legalCharacter": "DEFAULT_FORMATION_CONDITION",
+      "legalMeaning": "A narrow accrued-interest subtype that proves default formation under TBK_117 but never supplies rate authority and never acts as a generic interest fallback.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "TBK_117 supplies formation conditions only; exact rate authority must be independently pinned and validated.",
+      "requiredEvidenceTypes": [
+        "DEFAULT_START_EVIDENCE",
+        "EXACT_INTEREST_POLICY_OR_RATE_RECORD",
+        "LIABILITY_CONTEXT_HASH",
+        "MATURITY_EVIDENCE",
+        "NOTICE_OR_NO_NOTICE_BASIS_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_DOCUMENT_SOURCE_VERSION",
+        "EXACT_INTEREST_POLICY_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Registry identity version checksum and subtype version",
+        "Exact Legal Basis identity version checksum and release identity",
+        "Exact source identity version fingerprint maturity and default-start evidence",
+        "Exact accrued amount currency minor unit effective date separate rate policy and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "DEFAULT_INTEREST",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact TBK_118 version and checksum",
+        "Exact default fact and damage evidence",
+        "Exact causation and liability evidence",
+        "Exact debtor and liability-context binding",
+        "Positive amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "PROVEN_DELAY_DAMAGE"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "PROHIBITED",
+        "rule": "FORM_ONLY_PROVEN_DAMAGE_AMOUNT_WITH_CAUSATION",
+        "sourceAmountDerivation": "EXACT_DAMAGE_EVIDENCE_REQUIRED"
+      },
+      "canonicalComponentCategory": "ANCILLARY",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_DAMAGE_EVIDENCE_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Delay Damage",
+      "effectiveFrom": "2026-07-26T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis version and checksum",
+        "Revalidate exact source version and fingerprint",
+        "Revalidate default damage causation and liability compatibility",
+        "Persist ClaimItem and immutable formation snapshot atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "AUTOMATIC_INTEREST_OR_PENALTY_CLASSIFICATION",
+        "HISTORICAL_RECLASSIFICATION"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "NOT_AN_INTEREST_COMPONENT",
+        "requiresExactInterestPolicy": false,
+        "requiresExactRateAuthority": false
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TBK_118"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TBK_118"
+        ]
+      },
+      "legalCharacter": "DEFAULT_CONSEQUENCE_DAMAGE",
+      "legalMeaning": "A separately proven damage or extended-liability receivable caused by default under TBK_118; it is neither automatic interest nor a penalty.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Damage, causation and liability must be proven independently; no interest or penalty meaning is inferred.",
+      "requiredEvidenceTypes": [
+        "CAUSATION_EVIDENCE",
+        "DAMAGE_AMOUNT_EVIDENCE",
+        "DEFAULT_FACT_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "LIABILITY_SOURCE_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_DOCUMENT_SOURCE_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Registry identity version checksum and subtype version",
+        "Exact Legal Basis identity version checksum and release identity",
+        "Exact source identity version fingerprint and damage causation evidence",
+        "Exact amount currency minor unit effective date and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "DELAY_DAMAGE",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact enforceable judgment source identity version and fingerprint",
+        "Exact kinship claimant debtor and poverty-condition scope",
+        "Exact installment amount currency and due date",
+        "Exact liability type and opaque liable-debtor references",
+        "Positive principal amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "EXACT_ENFORCEABLE_SOURCE_AMOUNT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "NO_KINSHIP_POVERTY_OR_AMOUNT_INFERENCE",
+        "sourceAmountDerivation": "EXACT_JUDGMENT_SCHEDULE"
+      },
+      "canonicalComponentCategory": "PRINCIPAL",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_ENFORCEABLE_SOURCE",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Yardım Nafakası Asıl Alacağı",
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis release version entry checksum and effective interval",
+        "Revalidate exact source version fingerprint kinship poverty-condition and due installment",
+        "Revalidate tenant case object scope and liability-context hash",
+        "Persist ClaimItem immutable formation snapshot audit and outbox atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "CASE_SUBCATEGORY_NAFAKA_AUTHORITY",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "DUETYPE_NAFAKA_AUTHORITY",
+        "GENERIC_COMPONENT_FALLBACK",
+        "GENERIC_PRINCIPAL_FALLBACK",
+        "HISTORICAL_RECLASSIFICATION",
+        "INTEREST_OR_COST_INFERENCE",
+        "KINSHIP_OR_POVERTY_STATUS_INFERENCE",
+        "LEGACY_CODE_AUTHORITY"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TMK_364_366"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TMK_364_366"
+        ]
+      },
+      "legalCharacter": "FAMILY_SUPPORT_MAINTENANCE_PRINCIPAL",
+      "legalMeaning": "A fixed and due family-support principal installment under an exact enforceable judgment compatible with TMK 364-366; it does not include interest or costs.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Claim-level nafaka principal only; implicit all-debtor liability, interest, costs, fallbacks and historical reclassification are prohibited.",
+      "requiredEvidenceTypes": [
+        "CLAIMANT_IDENTITY_EVIDENCE",
+        "DEBTOR_IDENTITY_EVIDENCE",
+        "EXACT_DUE_DATE_EVIDENCE",
+        "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+        "KINSHIP_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "SOURCE_ENFORCEABILITY_EVIDENCE",
+        "SOURCE_POVERTY_CONDITION_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "COURT_JUDGMENT",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Decision-pack identity version and checksum",
+        "Exact Legal Basis release identity version entry checksum and source references",
+        "Exact document source identity version fingerprint kinship poverty-condition and effective interval",
+        "Exact amount currency due date claimant debtor case and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "FAMILY_SUPPORT_MAINTENANCE",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact enforceable interim court order source identity version and fingerprint",
+        "Exact order-effective interval and installment due date",
+        "Exact claimant debtor and case scope",
+        "Exact liability type and opaque liable-debtor references",
+        "Positive principal amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "EXACT_ENFORCEABLE_SOURCE_AMOUNT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "NO_AMOUNT_INFERENCE_OR_RECALCULATION",
+        "sourceAmountDerivation": "EXACT_INTERIM_ORDER_AND_INSTALLMENT_SCHEDULE"
+      },
+      "canonicalComponentCategory": "PRINCIPAL",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_ENFORCEABLE_SOURCE",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Tedbir Nafakası Asıl Alacağı",
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis release version entry checksum and effective interval",
+        "Revalidate exact interim-order source version fingerprint enforceability and due installment",
+        "Revalidate tenant case claimant debtor and liability-context hash",
+        "Persist ClaimItem immutable formation snapshot audit and outbox atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "CASE_SUBCATEGORY_NAFAKA_AUTHORITY",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "DUETYPE_NAFAKA_AUTHORITY",
+        "GENERIC_COMPONENT_FALLBACK",
+        "GENERIC_PRINCIPAL_FALLBACK",
+        "HISTORICAL_RECLASSIFICATION",
+        "INTEREST_OR_COST_INFERENCE",
+        "LEGACY_CODE_AUTHORITY"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TMK_169"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TMK_169"
+        ]
+      },
+      "legalCharacter": "INTERIM_MAINTENANCE_PRINCIPAL",
+      "legalMeaning": "A fixed and due principal installment created only by an exact enforceable interim measure under TMK 169; it does not include interest or costs.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Claim-level nafaka principal only; implicit all-debtor liability, interest, costs, fallbacks and historical reclassification are prohibited.",
+      "requiredEvidenceTypes": [
+        "CLAIMANT_IDENTITY_EVIDENCE",
+        "DEBTOR_IDENTITY_EVIDENCE",
+        "EXACT_DUE_DATE_EVIDENCE",
+        "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+        "INTERIM_ORDER_ENFORCEABILITY_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "SOURCE_EFFECTIVE_INTERVAL_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT",
+        "INTERIM_COURT_ORDER"
+      ],
+      "snapshotRequirements": [
+        "Decision-pack identity version and checksum",
+        "Exact Legal Basis release identity version entry checksum and source references",
+        "Exact document source identity version fingerprint enforceability and effective interval",
+        "Exact amount currency due date claimant debtor case and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "INTERIM_MAINTENANCE",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact enforceable judgment or agreement source identity version and fingerprint",
+        "Exact child-beneficiary and liable-parent identities",
+        "Exact installment amount currency and due date",
+        "Exact liability type and opaque liable-debtor references",
+        "Positive principal amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "EXACT_ENFORCEABLE_SOURCE_AMOUNT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "NO_AMOUNT_INFERENCE_OR_RECALCULATION",
+        "sourceAmountDerivation": "EXACT_JUDGMENT_OR_ENFORCEABLE_AGREEMENT_SCHEDULE"
+      },
+      "canonicalComponentCategory": "PRINCIPAL",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_ENFORCEABLE_SOURCE",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "İştirak Nafakası Asıl Alacağı",
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis release version entry checksum and effective interval",
+        "Revalidate exact source version fingerprint beneficiary debtor enforceability and due installment",
+        "Revalidate tenant case object scope and liability-context hash",
+        "Persist ClaimItem immutable formation snapshot audit and outbox atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "CASE_SUBCATEGORY_NAFAKA_AUTHORITY",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "DUETYPE_NAFAKA_AUTHORITY",
+        "GENERIC_COMPONENT_FALLBACK",
+        "GENERIC_PRINCIPAL_FALLBACK",
+        "HISTORICAL_RECLASSIFICATION",
+        "INTEREST_OR_COST_INFERENCE",
+        "LEGACY_CODE_AUTHORITY"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TMK_182_2",
+          "TMK_327_330"
+        ],
+        "bindingMode": "EXACTLY_ONE_OF",
+        "requiredLegalBasisCodes": []
+      },
+      "legalCharacter": "MINOR_CHILD_MAINTENANCE_PRINCIPAL",
+      "legalMeaning": "A fixed and due child-maintenance principal installment under an exact enforceable source compatible with TMK 182/2 or TMK 327-330; it does not include interest or costs.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Claim-level nafaka principal only; implicit all-debtor liability, interest, costs, fallbacks and historical reclassification are prohibited.",
+      "requiredEvidenceTypes": [
+        "CHILD_BENEFICIARY_IDENTITY_EVIDENCE",
+        "CLAIMANT_CAPACITY_EVIDENCE",
+        "DEBTOR_IDENTITY_EVIDENCE",
+        "EXACT_DUE_DATE_EVIDENCE",
+        "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "SOURCE_ENFORCEABILITY_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "COURT_JUDGMENT",
+        "ENFORCEABLE_AGREEMENT_OR_PROTOCOL",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Decision-pack identity version and checksum",
+        "Exact Legal Basis release identity version entry checksum and source references",
+        "Exact document source identity version fingerprint beneficiary enforceability and effective interval",
+        "Exact amount currency due date claimant debtor case and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "MINOR_CHILD_MAINTENANCE",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact enforceable judgment or agreement source identity version and fingerprint",
+        "Exact former-spouse beneficiary debtor and case scope",
+        "Exact installment amount currency and due date",
+        "Exact liability type and opaque liable-debtor references",
+        "Positive principal amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "EXACT_ENFORCEABLE_SOURCE_AMOUNT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "NO_POVERTY_OR_AMOUNT_INFERENCE",
+        "sourceAmountDerivation": "EXACT_JUDGMENT_OR_ENFORCEABLE_AGREEMENT_SCHEDULE"
+      },
+      "canonicalComponentCategory": "PRINCIPAL",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_ENFORCEABLE_SOURCE",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Yoksulluk Nafakası Asıl Alacağı",
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis release version entry checksum and effective interval",
+        "Revalidate exact source version fingerprint enforceability beneficiary and due installment",
+        "Revalidate tenant case object scope and liability-context hash",
+        "Persist ClaimItem immutable formation snapshot audit and outbox atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "CASE_SUBCATEGORY_NAFAKA_AUTHORITY",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "DUETYPE_NAFAKA_AUTHORITY",
+        "GENERIC_COMPONENT_FALLBACK",
+        "GENERIC_PRINCIPAL_FALLBACK",
+        "HISTORICAL_RECLASSIFICATION",
+        "INTEREST_OR_COST_INFERENCE",
+        "LEGACY_CODE_AUTHORITY",
+        "POVERTY_STATUS_INFERENCE"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TMK_175_176"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TMK_175_176"
+        ]
+      },
+      "legalCharacter": "POVERTY_MAINTENANCE_PRINCIPAL",
+      "legalMeaning": "A fixed and due poverty-maintenance principal installment under an exact enforceable source compatible with TMK 175-176; it does not include interest or costs.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Claim-level nafaka principal only; implicit all-debtor liability, interest, costs, fallbacks and historical reclassification are prohibited.",
+      "requiredEvidenceTypes": [
+        "BENEFICIARY_IDENTITY_EVIDENCE",
+        "DEBTOR_IDENTITY_EVIDENCE",
+        "EXACT_DUE_DATE_EVIDENCE",
+        "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "SOURCE_ENFORCEABILITY_EVIDENCE",
+        "SOURCE_POVERTY_MAINTENANCE_DISPOSITION_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "COURT_JUDGMENT",
+        "ENFORCEABLE_AGREEMENT_OR_PROTOCOL",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Decision-pack identity version and checksum",
+        "Exact Legal Basis release identity version entry checksum and source references",
+        "Exact document source identity version fingerprint beneficiary enforceability and effective interval",
+        "Exact amount currency due date claimant debtor case and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "POVERTY_MAINTENANCE",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact enforceable judgment or interim order source identity version and fingerprint",
+        "Exact spouse beneficiary debtor and separate-living scope",
+        "Exact installment amount currency and due date",
+        "Exact liability type and opaque liable-debtor references",
+        "Positive principal amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "EXACT_ENFORCEABLE_SOURCE_AMOUNT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "NO_SEPARATE_LIVING_OR_AMOUNT_INFERENCE",
+        "sourceAmountDerivation": "EXACT_JUDGMENT_OR_INTERIM_ORDER_SCHEDULE"
+      },
+      "canonicalComponentCategory": "PRINCIPAL",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_ENFORCEABLE_SOURCE",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Ayrı Yaşama Nafakası Asıl Alacağı",
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis release version entry checksum and effective interval",
+        "Revalidate exact source version fingerprint separate-living disposition and due installment",
+        "Revalidate tenant case object scope and liability-context hash",
+        "Persist ClaimItem immutable formation snapshot audit and outbox atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "CASE_SUBCATEGORY_NAFAKA_AUTHORITY",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "DUETYPE_NAFAKA_AUTHORITY",
+        "GENERIC_COMPONENT_FALLBACK",
+        "GENERIC_PRINCIPAL_FALLBACK",
+        "HISTORICAL_RECLASSIFICATION",
+        "INTEREST_OR_COST_INFERENCE",
+        "LEGACY_CODE_AUTHORITY",
+        "SEPARATE_LIVING_STATUS_INFERENCE"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TMK_197"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TMK_197"
+        ]
+      },
+      "legalCharacter": "SEPARATE_LIVING_SPOUSAL_MAINTENANCE_PRINCIPAL",
+      "legalMeaning": "A fixed and due spouse-maintenance principal installment under an exact enforceable source compatible with TMK 197; it does not include interest or costs.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Claim-level nafaka principal only; implicit all-debtor liability, interest, costs, fallbacks and historical reclassification are prohibited.",
+      "requiredEvidenceTypes": [
+        "BENEFICIARY_IDENTITY_EVIDENCE",
+        "DEBTOR_IDENTITY_EVIDENCE",
+        "EXACT_DUE_DATE_EVIDENCE",
+        "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH",
+        "SOURCE_ENFORCEABILITY_EVIDENCE",
+        "SOURCE_SEPARATE_LIVING_DISPOSITION_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "COURT_JUDGMENT",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT",
+        "INTERIM_COURT_ORDER"
+      ],
+      "snapshotRequirements": [
+        "Decision-pack identity version and checksum",
+        "Exact Legal Basis release identity version entry checksum and source references",
+        "Exact document source identity version fingerprint separate-living disposition and effective interval",
+        "Exact amount currency due date claimant debtor case and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "SEPARATE_LIVING_SPOUSAL_MAINTENANCE",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact KANUN_3095_2 version and checksum",
+        "Exact monetary-debt and default-start evidence",
+        "Exact statutory default rate record",
+        "Exact debtor and liability-context binding",
+        "Positive accrued amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "ACCRUED_STATUTORY_DEFAULT_INTEREST"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "FORM_ONLY_ACCRUED_AMOUNT_AFTER_PROVEN_DEFAULT_START",
+        "sourceAmountDerivation": "EXACT_STATUTORY_RATE_AND_DATE_INPUTS_REQUIRED"
+      },
+      "canonicalComponentCategory": "ACCRUED_INTEREST",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_UNDERLYING_MONETARY_DEBT_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Statutory Default Interest",
+      "effectiveFrom": "2026-07-26T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis version and checksum",
+        "Revalidate exact source version and fingerprint",
+        "Revalidate monetary debt default start statutory rate and liability compatibility",
+        "Persist ClaimItem and immutable formation snapshot atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "PRE_DEFAULT_INTEREST_CLASSIFICATION",
+        "FUTURE_INTEREST_AS_FIXED_CLAIM_ITEM",
+        "HISTORICAL_RECLASSIFICATION"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "DEFAULT_CONDITIONS_AND_EXACT_STATUTORY_RATE_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "KANUN_3095_2"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "KANUN_3095_2"
+        ]
+      },
+      "legalCharacter": "STATUTORY_DEFAULT_INTEREST",
+      "legalMeaning": "Interest accrued after proven default under the exact statutory rate authority of KANUN_3095_2.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "Cannot be formed before default and cannot silently switch to a commercial or contractual subtype.",
+      "requiredEvidenceTypes": [
+        "DEFAULT_START_EVIDENCE",
+        "EXACT_STATUTORY_RATE_RECORD",
+        "LIABILITY_CONTEXT_HASH",
+        "MONETARY_DEBT_EVIDENCE"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_DOCUMENT_SOURCE_VERSION",
+        "EXACT_INTEREST_POLICY_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Registry identity version checksum and subtype version",
+        "Exact Legal Basis identity version checksum and release identity",
+        "Exact source identity version fingerprint and default evidence",
+        "Exact accrued amount currency minor unit effective date statutory rate and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "STATUTORY_DEFAULT_INTEREST",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    },
+    {
+      "admissionRequirements": [
+        "Exact KANUN_3095_1 version and checksum",
+        "Exact interest-claim source and start-date evidence",
+        "Exact statutory rate record",
+        "Exact debtor and liability-context binding",
+        "Positive accrued amount in integer minor units"
+      ],
+      "allowedFormationPaths": [
+        "CLAIM_ITEM_FORMATION_INTENT_V1_APPROVED_FINALIZATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "ACCRUED_STATUTORY_INTEREST"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "FORM_ONLY_ACCRUED_AMOUNT_THROUGH_EFFECTIVE_DATE",
+        "sourceAmountDerivation": "EXACT_STATUTORY_RATE_AND_DATE_INPUTS_REQUIRED"
+      },
+      "canonicalComponentCategory": "ACCRUED_INTEREST",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "EXACT_UNDERLYING_MONETARY_DEBT_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "displayName": "Statutory Interest",
+      "effectiveFrom": "2026-07-26T00:00:00Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "Revalidate exact Legal Basis version and checksum",
+        "Revalidate exact source version and fingerprint",
+        "Revalidate interest source start date statutory rate and liability compatibility",
+        "Persist ClaimItem and immutable formation snapshot atomically"
+      ],
+      "forbiddenFormationPaths": [
+        "DIRECT_CLAIM_ITEM_WRITE",
+        "GENERIC_COMPONENT_FALLBACK",
+        "CURRENT_LATEST_OR_DEFAULT_RESOLUTION",
+        "DEFAULT_CONDITION_INFERENCE",
+        "FUTURE_INTEREST_AS_FIXED_CLAIM_ITEM",
+        "HISTORICAL_RECLASSIFICATION"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "EXACT_STATUTORY_RATE_AND_INTEREST_START_REQUIRED",
+        "requiresExactInterestPolicy": true,
+        "requiresExactRateAuthority": true
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "KANUN_3095_1"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "KANUN_3095_1"
+        ]
+      },
+      "legalCharacter": "STATUTORY_INTEREST",
+      "legalMeaning": "Interest accrued under the exact statutory rate authority of KANUN_3095_1 without inferring default conditions.",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "lifecycle": {
+        "activation": "RATIFIED_BUT_RUNTIME_DORMANT",
+        "revocationBehavior": "FAIL_CLOSED_FOR_NEW_FORMATION",
+        "versionUpgrade": "EXPLICIT_NEW_VERSION_ONLY"
+      },
+      "notes": "KANUN_3095_1 supplies rate authority only; default is never inferred and no subtype fallback is permitted.",
+      "requiredEvidenceTypes": [
+        "EXACT_STATUTORY_RATE_RECORD",
+        "INTEREST_CLAIM_SOURCE_EVIDENCE",
+        "INTEREST_START_DATE_EVIDENCE",
+        "LIABILITY_CONTEXT_HASH"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_DOCUMENT_SOURCE_VERSION",
+        "EXACT_INTEREST_POLICY_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "Registry identity version checksum and subtype version",
+        "Exact Legal Basis identity version checksum and release identity",
+        "Exact source identity version fingerprint and interest-start evidence",
+        "Exact accrued amount currency minor unit effective date statutory rate and liability-context hash"
+      ],
+      "status": "RATIFIED",
+      "subtypeCode": "STATUTORY_INTEREST",
+      "subtypeVersion": 1,
+      "supersededBy": null,
+      "supersedes": []
+    }
+  ],
+  "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+  "registryStatus": "RATIFIED",
+  "registryVersion": 2,
+  "runtimeStatus": "DORMANT",
+  "serializationAlgorithm": "RCV-LEGAL-SUBTYPE-REGISTRY-CANONICAL-JSON-V1"
+}
