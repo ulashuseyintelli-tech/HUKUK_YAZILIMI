@@ -1,4 +1,7 @@
-import type { OfficialCodeResolution } from './official-codelist-registry';
+import type {
+  OfficialCodeResolution,
+  OfficialWrapperResolution,
+} from './official-codelist-registry';
 import type { OfficialRoleResolution } from './official-role-translation.types';
 
 /**
@@ -88,6 +91,14 @@ export interface OfficialAlacakKalemi {
   alacakKalemTutar?: string;
   tutarTur?: string;
   faiz?: OfficialFaiz;
+  /**
+   * UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01: kalem, owner-ratified
+   * sarmalayıcı çözümü (W-01…W-05, `resolveOfficialAlacakKalemiWrapper`) taşıyorsa
+   * RESOLVED sarmalayıcı ELEMENTİ altında emit edilir. Alan yoksa veya çözüm
+   * RESOLVED değilse P02B-R2 fail-closed reddi AYNEN uygulanır — sarmalayıcı
+   * TAHMİN EDİLMEZ, `digerAlacak`'a fallback YOKTUR.
+   */
+  wrapperResolution?: OfficialWrapperResolution;
 }
 
 /**

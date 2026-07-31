@@ -447,14 +447,23 @@ describe('P02B-R2 — static containment (kaynak-grep; runtime wiring / schema /
     expect(src).not.toContain('addOfficialAlacakKalemi');
   });
 
-  it('doğrudan dosya/alacakKalemi emisyonu (.ele(\'alacakKalemi\')) kaynakta yok', () => {
+  it('doğrudan dosya-çocuğu alacakKalemi emisyonu kaynakta yok (yalnız sarmalayıcı altında)', () => {
+    // UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01: emisyon artık VAR ama
+    // yalnız `wrapper.ele('alacakKalemi'…)` biçiminde — `dosya.ele('alacakKalemi'…)`
+    // (resmî DTD'nin yasakladığı doğrudan-çocuk) hâlâ YOKTUR. Guard'ın KONUSU aynı.
     const src = readOfficial('official-exchange-builder.ts');
-    expect(src).not.toMatch(/\.ele\(\s*['"`]alacakKalemi['"`]/);
+    expect(src).not.toMatch(/dosya\.ele\(\s*['"`]alacakKalemi['"`]/);
+    expect(src).toMatch(/wrapper\.ele\(\s*['"`]alacakKalemi['"`]/);
   });
 
-  it('otomatik digerAlacak/ilam/cek/senet/police/kontrat sarmalayıcı emisyonu kaynakta yok', () => {
+  it('otomatik sarmalayıcı SEÇİMİ kaynakta yok — ad yalnız owner-ratified RESOLVED çözümden gelir', () => {
     const src = readOfficial('official-exchange-builder.ts');
+    // Literal sarmalayıcı adıyla emisyon YOK (otomatik seçim yok)…
     expect(src).not.toMatch(/\.ele\(\s*['"`](digerAlacak|ilam|cek|senet|police|kontrat|kontratKefil)['"`]/);
+    // …ad değişken üzerinden gelir ve RESOLVED kontrolü + resmî ebeveyn kümesi
+    // doğrulamasıyla korunur.
+    expect(src).toContain("wrapperResolution?.kind !== 'RESOLVED'");
+    expect(src).toContain('OFFICIAL_ALACAK_KALEMI_PARENTS.includes(wrapperName)');
   });
 
   it('runtime wiring / schema / migration bu değişiklikte de YOK (P02B izolasyon sınırı korunur)', () => {

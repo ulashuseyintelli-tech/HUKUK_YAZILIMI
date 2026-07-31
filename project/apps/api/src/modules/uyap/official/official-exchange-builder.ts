@@ -86,7 +86,15 @@ export function serializeOfficialExchange(
   //    cocugu olamaz (yalniz cek/senet/police/kontrat/digerAlacak/ilam sarmalayicilari altinda
   //    gecerlidir). Sarmalayici secimi/otomatik siniflandirma icin owner/LDO yetkisi yok; bu guard
   //    FAIL-CLOSED reddeder, hicbir wrapper/instrument otomatik secilmez veya varsayilmaz.
-  if (input.alacakKalemleri && input.alacakKalemleri.length > 0) {
+  // UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01: bir kalem ancak owner-ratified
+  // sarmalayici cozumu (W-01..W-05) RESOLVED ise emit edilebilir. Cozumsuz/RESOLVED-disi
+  // kalem VEYA `faiz` tasiyan kalem (faiz cocuk-elementi bu iterasyonda BILINCLI kapsam
+  // disi — attribute adlari olculmeden emit edilmez) P02B-R2 fail-closed reddine duser.
+  // Sarmalayici TAHMIN EDILMEZ; digerAlacak'a fallback YOKTUR.
+  const unemittableKalemCount = (input.alacakKalemleri ?? []).filter(
+    (kalem) => kalem.wrapperResolution?.kind !== 'RESOLVED' || kalem.faiz !== undefined,
+  ).length;
+  if (unemittableKalemCount > 0) {
     return {
       status: 'REJECTED',
       reason:
@@ -97,11 +105,10 @@ export function serializeOfficialExchange(
         {
           code: 'UNAUTHORIZED_ALACAK_KALEMI_PARENT',
           path: 'dosya/alacakKalemi',
-          count: input.alacakKalemleri.length,
-          // P02B-R2 (bu tur): ebeveyn listesi artik dusuncede degil, resmi DTD'den
-          // olculmus sabit olarak tasinir. Hangi sarmalayicinin dogru oldugu HUKUKI
-          // bir siniflandirmadir (bu cek alacagi mi, senet mi, diger alacak mi) ve
-          // owner/LDO karari bekler; guard hicbirini otomatik SECMEZ.
+          count: unemittableKalemCount,
+          // P02B-R2: ebeveyn listesi resmi DTD'den olculmus sabit olarak tasinir.
+          // Hangi sarmalayicinin dogru oldugu HUKUKI bir siniflandirmadir ve
+          // owner-ratified cozum (W-01..W-05) olmadan guard hicbirini SECMEZ.
           authorizedParents: OFFICIAL_ALACAK_KALEMI_PARENTS,
         },
       ],
@@ -137,8 +144,36 @@ export function serializeOfficialExchange(
     addOfficialTaraf(dosya, taraf);
   }
 
-  // NOT: alacakKalemi emisyonu YOK (P02B-R2). Yukarıdaki CLAIM-WRAPPER AUTHORITY GUARD garanti eder
-  // ki buraya yalnız boş/tanımsız `alacakKalemleri` ile ulaşılır.
+  // UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01 — buraya yalnız TÜM kalemleri
+  // RESOLVED sarmalayıcılı (ve faiz'siz) girdiler ulaşır (yukarıdaki guard).
+  // Her kalem, resmî DTD içerik modeline uygun olarak KENDİ sarmalayıcı elementi
+  // altında emit edilir: <cek|senet|police|ilam><alacakKalemi …/></…>. Resmî
+  // ATTLIST'lerin tamamı #IMPLIED ölçüldüğü için çıplak sarmalayıcı şekil-geçerlidir;
+  // sarmalayıcı attribute'ları bu iterasyonda BİLİNÇLİ olarak emit edilmez (enstrüman
+  // verisi girdide yok — uydurulmaz). Deterministik: girdi sırası korunur.
+  for (const kalem of input.alacakKalemleri ?? []) {
+    // Guard garantisi; tip daraltma için yerel kontrol.
+    if (kalem.wrapperResolution?.kind !== 'RESOLVED') continue;
+    const wrapperName = kalem.wrapperResolution.wrapper;
+    if (!OFFICIAL_ALACAK_KALEMI_PARENTS.includes(wrapperName)) {
+      return {
+        status: 'REJECTED',
+        reason: `Sarmalayici resmi yetkili ebeveyn kumesinde degil: ${wrapperName}`,
+        unresolved: [],
+      };
+    }
+    const wrapper = dosya.ele(wrapperName);
+    wrapper.ele(
+      'alacakKalemi',
+      pruneUndefined({
+        id: kalem.id,
+        alacakKalemAdi: kalem.alacakKalemAdi,
+        alacakKalemTutar: kalem.alacakKalemTutar,
+        tutarTur: kalem.tutarTur,
+      }),
+    );
+    wrapper.up();
+  }
 
   const xml = doc.end({ prettyPrint: true });
 
