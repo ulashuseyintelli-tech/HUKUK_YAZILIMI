@@ -228,14 +228,22 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
       path.normalize(
         'src/modules/claim-item/formation-intent/claim-item-formation-office-approval.adapter.ts',
       ),
+      path.normalize(
+        'src/modules/uyap/legal-basis/uyap-m01-legal-basis-consumer.service.ts',
+      ),
     ]);
 
     const finalizer = fs.readFileSync(path.join(API_ROOT, offenders[0]), 'utf8');
     const adapter = fs.readFileSync(path.join(API_ROOT, offenders[1]), 'utf8');
+    const uyapConsumer = fs.readFileSync(path.join(API_ROOT, offenders[2]), 'utf8');
     expect(adapter).toContain('claimItemFormationIntent.create');
     expect(adapter).not.toContain('claimFormationSnapshot.create');
     expect(finalizer).toContain('claimFormationSnapshot.create');
     expect(finalizer).toContain('claimItem.create');
+    expect(uyapConsumer).toContain('claimFormationSnapshot.findUnique');
+    expect(uyapConsumer).not.toMatch(
+      /claimFormationSnapshot\.(?:create|update|delete|upsert)/,
+    );
 
     const moduleSource = fs.readFileSync(
       path.join(API_ROOT, 'src/modules/claim-item/claim-item.module.ts'),
