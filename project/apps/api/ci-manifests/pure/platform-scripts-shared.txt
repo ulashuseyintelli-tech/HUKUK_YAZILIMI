@@ -334,6 +334,7 @@ src/modules/client-notification/client-notification-bulk-email-security.spec.ts
 src/modules/escalation/__tests__/tenant-notifier.service.spec.ts
 src/modules/interest-engine/__tests__/payment-boundary.characterization.spec.ts
 src/modules/interest-engine/legal-application-plan/__tests__/i05-unit-property-security.spec.ts
+src/modules/interest-engine/legal-application-plan/__tests__/representative-corpus.spec.ts
 src/modules/permission-diagnostics/__tests__/canonical-json.spec.ts
 src/modules/permission-diagnostics/__tests__/confirmation-token.service.spec.ts
 src/modules/permission-diagnostics/__tests__/guarded-edge-outcome.envelope.spec.ts
