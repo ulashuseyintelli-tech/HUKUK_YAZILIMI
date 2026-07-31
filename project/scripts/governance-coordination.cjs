@@ -921,6 +921,59 @@ const RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01 =
       ]),
     }),
   });
+const RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02 =
+  Object.freeze({
+    ...RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01,
+    protocolModeId:
+      'RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_STAGE1_FRESH_REBINDING_R02',
+    issuedAt: '2026-07-31',
+    expiresAt: null,
+    bindingPr: Object.freeze({
+      taskId:
+        'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-STAGE1-FRESH-REBINDING-R02',
+      mode:
+        'RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_STAGE1_FRESH_REBINDING_R02',
+      baseSha: '6c34395d4ade84603b340b197f2c4e5d13c1ec4f',
+      exactBaseOnly: true,
+      headRef: 'codex/receivable-legal-basis-stage1-fresh-rebinding-r02',
+      changedPaths:
+        RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
+          .bindingPr.changedPaths,
+    }),
+    historicalPredecessor: Object.freeze({
+      taskId:
+        'RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01',
+      mergeSha: '1bcda6874c1119073fe90a566a5174ab35062173',
+      disposition: 'HISTORICAL_CANONICAL_IMMUTABLE',
+    }),
+    targetPr:
+      RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
+        .targetPr,
+    decisionPack: null,
+    authorityPolicy: Object.freeze({
+      masterTaskId: 'RECEIVABLE-NAFAKA-LEGAL-BASIS-TERMINAL-CLOSURE-R01',
+      policy: 'CONDITIONAL_DECISION_PACK_V2_RECONSTRUCTION',
+      legacyDecisionPackV1Status: 'UNVERIFIABLE_NOT_USABLE',
+      decisionPackV2Status: 'PENDING_RECONSTRUCTION',
+      contentRatificationStatus: 'NOT_YET_CLAIMED',
+    }),
+    legalDomainOfficer:
+      RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
+        .legalDomainOfficer,
+    finalRatifier:
+      RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
+        .finalRatifier,
+    productionSigner: Object.freeze({
+      identity: 'TELLI-PROD-LEGAL-01',
+      role: 'PRODUCTION_RELEASE_SIGNER',
+      signatureStatus: 'PENDING_NOT_EXECUTED',
+    }),
+    stage2PredecessorLiteral:
+      'stage2Predecessor : FRESH_R02_CANONICAL_MERGE_REQUIRED',
+    stage2BaseLiteral: 'stage2Base : FENCE_FIRST_CAPTURED_CURRENT_MAIN',
+    stage2StatusLiteral:
+      'STAGE 2 STATUS: OWNER_AUTHORIZED_AFTER_R02_MERGE',
+  });
 const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01 =
   Object.freeze({
     taskId:
@@ -2585,6 +2638,8 @@ function classifyPrChangeSet(changes, context = {}) {
     OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01;
   const legalBasisContentBootstrap =
     RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01;
+  const legalBasisContentFreshRebinding =
+    RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02;
   const rootStage2ValidatorReconciliation =
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   const rootStage1 = rootAuthorityBootstrap.bindingPr;
@@ -2592,7 +2647,8 @@ function classifyPrChangeSet(changes, context = {}) {
   const officeStage1 = officeAuthorityBootstrap.bindingPr;
   const officeStage2 = officeAuthorityBootstrap.targetPr;
   const legalBasisContentStage1 = legalBasisContentBootstrap.bindingPr;
-  const legalBasisContentStage2 = legalBasisContentBootstrap.targetPr;
+  const legalBasisContentStage1R02 = legalBasisContentFreshRebinding.bindingPr;
+  const legalBasisContentStage2 = legalBasisContentFreshRebinding.targetPr;
 
   if (
     context.base === rootStage2ValidatorReconciliation.baseSha &&
@@ -2643,6 +2699,35 @@ function classifyPrChangeSet(changes, context = {}) {
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
       'OFFICE authority materialization R02 requires its exact branch and M/A scope',
     );
+  }
+
+  if (
+    context.headRef === legalBasisContentStage1R02.headRef ||
+    (context.base === legalBasisContentStage1R02.baseSha &&
+      hasExactChangeSet(changes, legalBasisContentStage1R02.changedPaths))
+  ) {
+    if (context.headRef !== legalBasisContentStage1R02.headRef) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
+        'Legal Basis content-ratification fresh Stage 1 R02 requires its exact branch',
+      );
+    }
+    if (context.base !== legalBasisContentStage1R02.baseSha) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH',
+        'Legal Basis content-ratification fresh Stage 1 R02 requires its captured exact base',
+      );
+    }
+    if (!hasExactChangeSet(changes, legalBasisContentStage1R02.changedPaths)) {
+      reject(
+        'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+        'Legal Basis content-ratification fresh Stage 1 R02 requires the exact M/M/M scope',
+      );
+    }
+    return {
+      mode: legalBasisContentStage1R02.mode,
+      taskId: legalBasisContentStage1R02.taskId,
+    };
   }
 
   if (
@@ -4057,18 +4142,45 @@ function rootAuthorityBootstrapContractLiterals(binding) {
     binding.targetPr.executionGrant.kind,
     binding.targetPr.executionGrant.path,
     binding.targetPr.executionGrant.recordId,
-    'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
-    'stage2Base : OWNER_GRANT_2_REQUIRED',
+    binding.stage2PredecessorLiteral ||
+      'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
+    binding.stage2BaseLiteral || 'stage2Base : OWNER_GRANT_2_REQUIRED',
     binding.bindingPr.exactBaseOnly
       ? 'publicationBasePolicy : OWNER_PINNED_EXACT_ONLY'
       : 'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
     'globalAuthority : PROHIBITED',
     'reusableAuthority : PROHIBITED',
     'auditAsAuthority : PROHIBITED',
-    'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
+    binding.stage2StatusLiteral ||
+      'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
   ];
   if (binding.expiresAt) literals.push(binding.expiresAt);
   if (binding.design) literals.push(binding.design.id, binding.design.mergeSha);
+  if (binding.historicalPredecessor) {
+    literals.push(
+      binding.historicalPredecessor.taskId,
+      binding.historicalPredecessor.mergeSha,
+      binding.historicalPredecessor.disposition,
+    );
+  }
+  if (binding.authorityPolicy) {
+    literals.push(
+      binding.authorityPolicy.masterTaskId,
+      binding.authorityPolicy.policy,
+      binding.authorityPolicy.legacyDecisionPackV1Status,
+      binding.authorityPolicy.decisionPackV2Status,
+      binding.authorityPolicy.contentRatificationStatus,
+      binding.legalDomainOfficer.name,
+      binding.legalDomainOfficer.role,
+      binding.legalDomainOfficer.ratifierCode,
+      binding.finalRatifier.name,
+      binding.finalRatifier.role,
+      binding.finalRatifier.ratifierCode,
+      binding.productionSigner.identity,
+      binding.productionSigner.role,
+      binding.productionSigner.signatureStatus,
+    );
+  }
   if (binding.decisionPack) {
     literals.push(
       binding.decisionPack.id,
@@ -5488,6 +5600,43 @@ function validateRootAuthorityMaterializationContent(
       );
     }
   }
+  if (binding.authorityPolicy) {
+    for (const [field, value] of [
+      ['masterTaskId', binding.authorityPolicy.masterTaskId],
+      ['authorityPolicy', binding.authorityPolicy.policy],
+      [
+        'legacyDecisionPackV1Status',
+        binding.authorityPolicy.legacyDecisionPackV1Status,
+      ],
+      ['decisionPackV2Status', binding.authorityPolicy.decisionPackV2Status],
+      [
+        'contentRatificationStatus',
+        binding.authorityPolicy.contentRatificationStatus,
+      ],
+      ['ldoName', binding.legalDomainOfficer.name],
+      ['ldoRole', binding.legalDomainOfficer.role],
+      ['ldoRatifierCode', binding.legalDomainOfficer.ratifierCode],
+      ['finalRatifierName', binding.finalRatifier.name],
+      ['finalRatifierRole', binding.finalRatifier.role],
+      ['finalRatifierCode', binding.finalRatifier.ratifierCode],
+      ['productionSignerIdentity', binding.productionSigner.identity],
+      ['productionSignerRole', binding.productionSigner.role],
+      ['productionSignatureStatus', binding.productionSigner.signatureStatus],
+      ['runtime', 'DORMANT'],
+      ['registryRelease', 'NOT_MATERIALIZED'],
+    ]) {
+      assertExactRootRecordField(
+        semanticRecord,
+        field,
+        value,
+        field.startsWith('ldo') ||
+          field.startsWith('finalRatifier') ||
+          field.startsWith('production')
+          ? 'ROOT_BOOTSTRAP_OWNER_IDENTITY_MISMATCH'
+          : 'ROOT_BOOTSTRAP_SA_RECORD_INVALID',
+      );
+    }
+  }
 
   assertExactRootMarker(grant, execution, 'ROOT_BOOTSTRAP_EG_RECORD_INVALID');
   for (const [field, value] of [
@@ -6603,6 +6752,23 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02.bindingPr.mode
+  ) {
+    return validateRootAuthorityBootstrapBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      binding:
+        RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
       .bindingPr.mode
   ) {
@@ -6826,7 +6992,7 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
-    RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01
+    RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02
       .targetPr.mode
   ) {
     return validateRootAuthorityBootstrapMaterializationScope({
@@ -6837,7 +7003,7 @@ function validatePrScope(options) {
       taskId: classification.taskId,
       mode: classification.mode,
       binding:
-        RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01,
+        RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02,
       cwd,
     });
   }
@@ -7278,6 +7444,7 @@ module.exports = {
   RCV_CLAIM_FORM_D02_TR01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
+  RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02,
   RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01,
   RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01,

@@ -1277,6 +1277,105 @@ activation, signing veya signed release yetkisi üretmez. Stage 1 approved merge
 ile `CONSUMED / NON-REUSABLE` olur; Stage 2 ve target ratification ayrı gate'te
 kalır.
 
+## RECEIVABLE LEGAL BASIS CONTENT RATIFICATION — fresh Stage 1 re-binding R02
+
+Owner-ratified 2026-07-31. Bu kayıt, historical PR #1945 Stage 1 binding'ini
+değiştirmeden current canonical control-plane blob'larını aynı Receivable target
+task için yeniden exact pinler. Generic validator relaxation veya başka bootstrap
+binding'leri için descendant acceptance üretmez.
+
+```text
+protocolModeId : RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_STAGE1_FRESH_REBINDING_R02
+programId : RECEIVABLE-LEGAL-BASIS-MODEL-COMPLETION
+targetTaskId : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01
+workspaceModule : RECEIVABLE
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+issuedAt : 2026-07-31
+designId : ROOT-AUTHORITY-BOOTSTRAP-DESIGN-R01
+designMergeSha : 8738bfcde7d962dda7729fc92ff1dfb929881f33
+```
+
+### Historical predecessor
+
+```text
+Task ID    : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-AUTHORITY-BOOTSTRAP-CONTROL-PLANE-BINDING-R01
+Merge SHA  : 1bcda6874c1119073fe90a566a5174ab35062173
+Disposition: HISTORICAL_CANONICAL_IMMUTABLE
+```
+
+### Fresh Stage 1 R02 exact binding
+
+```text
+Task ID  : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-STAGE1-FRESH-REBINDING-R02
+Mode     : RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_STAGE1_FRESH_REBINDING_R02
+Base SHA : 6c34395d4ade84603b340b197f2c4e5d13c1ec4f
+Head ref : codex/receivable-legal-basis-stage1-fresh-rebinding-r02
+Scope    : M project/scripts/governance-coordination.cjs
+           M project/scripts/governance-coordination.test.cjs
+           M project/docs/governance/governance-writer-coordination-contract.md
+publicationBasePolicy : OWNER_PINNED_EXACT_ONLY
+```
+
+Base, branch, task/mode ve exact `M/M/M` path-status setinden herhangi biri
+farklıysa R02 fail-closed reddedilir. R02 yalnız captured exact base üzerinde
+yayınlanabilir; historical R01 fallback veya current authority olarak yeniden
+kullanılamaz.
+
+### Stage 2 binding after R02
+
+```text
+Task ID  : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-AUTHORITY-MATERIALIZATION-R01
+Mode     : RECEIVABLE_LEGAL_BASIS_REGISTRY_CONTENT_RATIFICATION_R01_AUTHORITY_MATERIALIZATION_R01
+Head ref : codex/receivable-legal-basis-registry-content-ratification-r01-authority-bootstrap
+Scope    : M project/docs/governance/decision-log.md
+           A project/docs/governance/coordination-execution-grants/RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01.md
+Semantic kind   : SEMANTIC_AUTHORITY
+Semantic path   : project/docs/governance/decision-log.md
+Semantic record : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-SA01
+Execution kind   : EXECUTION_GRANT
+Execution path   : project/docs/governance/coordination-execution-grants/RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01.md
+Execution record : RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01-EG01
+stage2Predecessor : FRESH_R02_CANONICAL_MERGE_REQUIRED
+stage2Base : FENCE_FIRST_CAPTURED_CURRENT_MAIN
+```
+
+### Master authority and role-separation policy
+
+```text
+masterTaskId : RECEIVABLE-NAFAKA-LEGAL-BASIS-TERMINAL-CLOSURE-R01
+authorityPolicy : CONDITIONAL_DECISION_PACK_V2_RECONSTRUCTION
+legacyDecisionPackV1Status : UNVERIFIABLE_NOT_USABLE
+decisionPackV2Status : PENDING_RECONSTRUCTION
+contentRatificationStatus : NOT_YET_CLAIMED
+ldoName : Av. Fatma Uluca Telli
+ldoRole : LEGAL DOMAIN OFFICER / LEGAL REVIEWER
+ldoRatifierCode : TELLI-LEGAL-REVIEWER-01
+finalRatifierName : Av. Ulaş Hüseyin Telli
+finalRatifierRole : OWNER / FINAL LEGAL RATIFIER
+finalRatifierCode : TELLI-FINAL-LEGAL-RATIFIER-01
+productionSignerIdentity : TELLI-PROD-LEGAL-01
+productionSignerRole : PRODUCTION_RELEASE_SIGNER
+productionSignatureStatus : PENDING_NOT_EXECUTED
+```
+
+Stage 2, yalnız R02 canonical merge SHA'sı ve fence-first captured current-main
+base'i üzerinde exact iki-file materialization olarak çalışır. SA01 ve EG01
+birbirinden ayrı kalır; second materialization, stale base, wrong task, wrong
+marker ve wrong reference fail-closed reddedilir.
+
+```text
+globalAuthority : PROHIBITED
+reusableAuthority : PROHIBITED
+auditAsAuthority : PROHIBITED
+STAGE 2 STATUS: OWNER_AUTHORIZED_AFTER_R02_MERGE
+```
+
+R02 veya Stage 2 eski Decision Pack v1'i content authority olarak kullanmaz.
+Stage 2 merge'i content ratification değildir. Decision Pack v2 reconstruction,
+row-level legal content, immutable release, resolver success path, runtime ve
+production activation ayrı program fazlarında kalır.
+
 ## OFFICE SPRING-CLEANING RECONCILIATION — exact authority-bootstrap binding
 
 Bu bölüm yalnız owner tarafından önceden ratifiye edilen aşağıdaki tek OFFICE
