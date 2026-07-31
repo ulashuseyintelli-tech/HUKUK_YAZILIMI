@@ -3564,3 +3564,41 @@ Spring-cleaning successor kayıtları ve exact sırası
 `office-spring-cleaning-reconciliation-r01/successor-execution-order.md` altındadır.
 Tüm successor'lar `OWNER GO REQUIRED / NOT STARTED`; backlog correction execution
 authority üretmez.
+
+---
+
+## RECEIVABLE Nafaka Legal-Basis Terminal Closeout — 2026-07-31
+
+```text
+MASTER PROGRAM          RECEIVABLE-NAFAKA-LEGAL-BASIS-TERMINAL-CLOSURE-R01
+CLOSEOUT TASK           RECEIVABLE-LEGAL-BASIS-UYAP-DEPENDENCY-CLOSEOUT-R01
+PROGRAM STATUS          CLOSED / CANONICAL / UYAP-CONSUMABLE
+CONTENT AUTHORITY       OWNER + LDO RATIFIED / HASH-BOUND
+DECISION PACK           v2 / SHA-256 1e1fa725107a63cb736e927d810f07c5e70b6120f3b34248e2e87f5a61088a77
+REGISTRY RELEASE        RCV-LB-R1 / RELEASE VERSION 1 / 13 ENTRIES
+REGISTRY CHECKSUM       f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c
+RELEASE CHECKSUM        57894751d415bfc02dbdacf0a5b4291c3bc8c0c8dc198b8d0913944ea1825104
+PRODUCTION SIGNATURE    PENDING / NOT EXECUTED
+EXACT-VERSION RESOLVER  SUCCESS PATH CLOSED / DEFAULT OFF
+PRODUCTION PROVIDER     NONE
+PRODUCTION CALL-SITE    NONE
+PRODUCTION REACHABILITY 0
+FORMATION RUNTIME       DORMANT
+SCHEMA / MIGRATION      NONE
+HISTORICAL DATA         UNTOUCHED
+```
+
+Canonical phase evidence:
+
+- Stage 1 authority bootstrap: PR #2003, squash `21a15f91636e61e48768a704abb4f94c30b92743`.
+- Stage 2 SA/EG materialization: PR #2004, squash `9df8f93cf9fc8c210f8babb495a2aa7c5d07a125`.
+- Decision Pack v2 content ratification: PR #2006, squash `de9a62bcfcdace20fa03d76e527186c20728c7c4`.
+- Immutable successor registry/release: PR #2009, squash `5904f0276a092990f30ec1ee0584f3fae71dd4ec`.
+- Exact-version resolver success path: PR #2012, squash `c029aa535d1df128e197be589a9837c520e3bf59`.
+
+Ratified scope is limited to six claim-level `PRINCIPAL` nafaka subtypes (`INTERIM_MAINTENANCE`, `MINOR_CHILD_MAINTENANCE`, `ADULT_CHILD_EDUCATION_MAINTENANCE`, `POVERTY_MAINTENANCE`, `SEPARATE_LIVING_SPOUSAL_MAINTENANCE`, `FAMILY_SUPPORT_MAINTENANCE`) and seven exact Legal Basis codes (`TMK_169`, `TMK_182_2`, `TMK_327_330`, `TMK_328_2`, `TMK_175_176`, `TMK_197`, `TMK_364_366`). Automatic interest, generic principal fallback, current/latest/default resolution, production activation and UYAP implementation are not authorized by this closeout.
+
+Validation evidence: Stage 1/2 task-specific governance matrix `7/7 PASS`; Legal Basis release/resolver required pure manifest `49 suites / 666 tests PASS`; production TypeScript `PASS`; PR #2003, #2004, #2006, #2009 and #2012 required/observed GitHub checks `PASS`. Local Nest build was not usable because the root dependency link resolved to a stale foreign worktree; PR #2012 canonical GitHub build/test checks passed.
+
+UYAP dependency return condition is satisfied at the canonical contract/release/resolver boundary. `UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01` is therefore `ELIGIBLE / SEPARATE UYAP OWNER AUTHORITY REQUIRED / NOT STARTED BY THIS CLOSEOUT`. UYAP remains consumer-only; runtime binding, serializer work, production activation and cutover remain outside this RECEIVABLE closeout.
+
