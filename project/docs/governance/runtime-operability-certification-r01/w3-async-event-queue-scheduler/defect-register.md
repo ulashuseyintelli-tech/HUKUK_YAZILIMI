@@ -13,7 +13,7 @@ Makine-okunur tam kayit: `defect-register.json`.
 | **W3-D02** | W3-B07 TENANT_BOUNDARY_UNSAFE | **P1** | outbox consumer handler'lari | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D01** | W3-B11 PAYLOAD_CONTRACT_MISMATCH | P2 | `webhook` handler | **RESOLVED** (bkz. Cozum Kaydi) | HANDLER REMOVED (migration GEREKMEDI) |
 | **W3-D09** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | handler'siz action -> sonsuz pending | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
-| **W3-D04** | W3-B06 SCHEDULER_TIMEZONE_UNKNOWN | P2 | 32/33 cron job | DEFERRED | NOT_ELIGIBLE (scheduler policy) |
+| **W3-D04** | W3-B06 SCHEDULER_TIMEZONE_UNKNOWN | P2 | 32/33 cron job | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D05** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | 14/35 cron metodunda try/catch yok | DEFERRED | NOT_ELIGIBLE (scope too broad) |
 | **W3-D03** | W3-B04/B05 NOT_STARTED | P3 | icrabot + manifest-retry + playbook | DEFERRED + **GUARD** | NOT_ELIGIBLE (**activation**) |
 | **W3-D06** | overlap / multi-instance | P3 | 33/35 cron metodunda overlap guard yok | DEFERRED | NOT_ELIGIBLE (owner policy) |
@@ -153,3 +153,50 @@ Makine-okunur tam kayit: `defect-register.json`.
   geregi yalnizca GERCEKTEN dogrulanmis satir varsa yeni task uretilir —
   burada dogrulama yapilmadigi icin uretilmedi.
 - **Successor:** W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01 (sirada).
+
+### W3-D04 — RESOLVED (W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01)
+
+- **Task:** RUNTIME-OPERABILITY-CERTIFICATION-R01 / W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01
+- **PR:** [#2032](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2032) — squash-merged
+- **MERGE SHA:** `9e55f0bf2b65fa3914087e6f5f21ad2c72eedd3e`
+- **Kok neden:** Runtime'da kayitli 33 cron job'un 32'sinin timezone'u KODDA
+  bildirilmemisti ve `process.env.TZ` deploy pininden turuyordu; yalniz
+  `errorLogRetention` job'u (`error-log-retention.service.ts`) explicit
+  `Europe/Istanbul` bildiriyordu.
+- **Karar:** Owner/brief tercihi olan Option A + per-job-class istisna noktasi
+  — tek merkezi canonical sabit (`SCHEDULER_TIMEZONE = 'Europe/Istanbul'`) +
+  `resolveSchedulerTimezone(jobClass?)` imzasi (su an hepsi ayni degeri
+  doner, ileride per-class farklilasmaya izin verir).
+- **Cozum:** Yeni `apps/api/src/common/scheduler-timezone.ts` merkezi
+  modulu (`SCHEDULER_TIMEZONE`, `resolveSchedulerTimezone`,
+  fail-closed `assertValidSchedulerTimezone`); 14 servis dosyasindaki
+  runtime-bound 33 `@Cron` cagrisinin TUMUNE (2 dormant icrabot cron'u
+  HARIC — W3-F06 kapsami, DOKUNULMADI) explicit
+  `{ timeZone: SCHEDULER_TIMEZONE }` eklendi. `process.env.TZ=UTC` deploy
+  pinine (ayri, halihazirda ratifiye edilmis interest-engine/legal-deadline
+  karari) **DOKUNULMADI** — `@nestjs/schedule`'in per-job `timeZone`
+  secenegi process TZ'den bagimsiz calisir.
+- **Sema/migration karari:** **GEREKMEDI.**
+- **Kanit:** 9 DB-free unit test (canonical sabit/resolver/fail-closed
+  validator + ay-sonu/yil-sonu/artik-yil takvim siniri determinizmi +
+  `process.env.TZ`'den bagimsizlik) + genisletilmis static guard (4 yeni
+  test [7]-[10], toplam 10/10 PASS) + 1 DB-gated GERCEK NestFactory
+  bootstrap runtime testi (2x host TZ — UTC ve Europe/Istanbul — ile 33
+  job kaydi, 0 duplicate, 4 config-gated job kosulsuz kayitli, 0 job
+  drift, temiz kapanis; paylasilan sabit referans anla implicit "su an"
+  bagimliligindan arindirilmis deterministik hesap) + 3/4 negatif-kanit
+  mutasyonu kirmizi/geri-alindi (timezone kaldirma, gecersiz timezone,
+  host-default fallback) + gercek CI (Architectural Guardrails, Test
+  Suite, Orchestration Tests, Web Tests, Analyze x3, CodeQL, Client
+  Workspace Live Smoke — hepsi PASS).
+- **Post-merge acceptance:** MERGED → merge SHA'ya pin'li fresh worktree +
+  fresh disposable Postgres + migrasyonlar yeniden uygulanip 3 test
+  dosyasi (static guard + DB-free unit + DB-gated runtime) tekrarlandi,
+  20/20 PASS. **PRODUCTION: NOT ACTIVATED** — production DB/runtime'a bu
+  task kapsaminda dokunulmadi.
+- **Known residual:** 4uncu negatif-kanit mutasyonu (dormant→bound,
+  `IcrabotModule`'u gecici acma) permission classifier tarafindan
+  BLOKLANDI; talimat geregi tekrar denenmedi/atlatilmadi. Static guard'in
+  mevcut [4] testi (dormant class'larin BAGLI OLMADIGINI dogrulayan)
+  dolayli kanit olarak kaldi — dogrudan canli mutasyon kaniti EKSIK.
+- **Successor:** W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01 (sirada).
