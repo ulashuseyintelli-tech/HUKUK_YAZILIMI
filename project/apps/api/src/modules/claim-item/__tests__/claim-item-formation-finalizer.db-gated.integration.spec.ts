@@ -21,6 +21,7 @@ import {
   type ResolveExactLegalBasisFailureCode,
 } from '../formation-intent/claim-item-formation-resolver.ports';
 import { HumanClaimItemFormationAdmissionService } from '../formation-intent/human-claim-item-formation-admission.service';
+import { LegalBasisRegistryResolverService } from '../formation-intent/legal-basis-registry-resolver.service';
 import {
   buildClaimItemFormationIntentChecksum,
   domainSeparatedFormationHash,
@@ -240,6 +241,71 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
     return { intent: result.intent, source: sourceBinding };
   }
 
+  async function approvedNafakaIntent(label: string) {
+    const sourceBinding: ExactCaseDocumentSourceV1 = {
+      ...(await createSource(label)),
+      documentType: 'INTERIM_COURT_ORDER',
+      claimItemDocumentSourceType: 'ILAM',
+      evidenceClasses: [
+        'CLAIMANT_IDENTITY_EVIDENCE',
+        'DEBTOR_IDENTITY_EVIDENCE',
+        'EXACT_DUE_DATE_EVIDENCE',
+        'EXACT_INSTALLMENT_AMOUNT_EVIDENCE',
+        'INTERIM_ORDER_ENFORCEABILITY_EVIDENCE',
+        'LIABILITY_CONTEXT_HASH',
+        'SOURCE_EFFECTIVE_INTERVAL_EVIDENCE',
+      ],
+    };
+    const resolver = new LegalBasisRegistryResolverService();
+    const admission = new HumanClaimItemFormationAdmissionService(
+      { assertAuthorized: jest.fn(async () => undefined) } as unknown as HumanClaimItemFormationAuthorizationPort,
+      { resolveExactVersion: jest.fn(async () => sourceBinding) } as unknown as CaseDocumentExactVersionResolverPort,
+      resolver,
+      atomicWriter,
+      { enabled: true, clock: () => new Date(CREATED_AT) },
+    );
+    const result = await admission.admit(
+      {
+        tenantId,
+        actorUserId: requesterUserId,
+        correlationId: `nafaka-correlation-${label}`,
+        causationId: `nafaka-causation-${label}`,
+      },
+      {
+        caseId,
+        idempotencyKey: `nafaka-intent-${label}-${randomUUID()}`,
+        source: {
+          documentId: sourceBinding.documentId,
+          requestedVersionId: sourceBinding.versionId,
+        },
+        component: { category: 'PRINCIPAL', subtypeCode: 'INTERIM_MAINTENANCE' },
+        legalBasis: { code: 'TMK_169', requestedVersion: '1' },
+        money: {
+          originalAmountMinor: '10000',
+          demandedAmountMinor: '10000',
+          currency: 'TRY',
+          minorUnit: 2,
+        },
+        effectiveAt: '2026-08-01T00:00:00.000Z',
+        liabilityContext: {
+          payload: {
+            liabilityType: 'TAM',
+            liableDebtorRefs: ['debtor:opaque-1'],
+          },
+        },
+      },
+    );
+    await prisma.officeApprovalRequest.update({
+      where: { id: result.approval.id },
+      data: {
+        status: OfficeApprovalStatus.APPROVED,
+        approverUserId,
+        decidedAt: DECIDED_AT,
+      },
+    });
+    return { intent: result.intent, resolver, source: sourceBinding };
+  }
+
   function finalizer(
     document: ExactCaseDocumentSourceV1,
     basis = basisBinding,
@@ -338,6 +404,49 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I03 transactional finalizer', (
     expect(auditCount).toBe(2);
     expect(timelineCount).toBeGreaterThanOrEqual(1);
     expect(outboxCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('carries the canonical NAFAKA exact-version binding from intent into the immutable snapshot', async () => {
+    const { intent, resolver, source } = await approvedNafakaIntent('canonical-release');
+    const service = new TransactionalClaimItemFormationFinalizerService(
+      prisma as any,
+      audit,
+      new DomainEventIngestService(),
+      { resolveExactVersion: jest.fn(async () => source) } as unknown as CaseDocumentExactVersionResolverPort,
+      resolver,
+      { enabled: true, clock: () => new Date(EXECUTION_AT) },
+    );
+
+    const result = await service.finalize({ tenantId, formationIntentId: intent.id });
+    const [claimItem, snapshot] = await Promise.all([
+      prisma.claimItem.findUniqueOrThrow({ where: { id: result.claimItemId } }),
+      prisma.claimFormationSnapshot.findUniqueOrThrow({ where: { id: result.snapshotId } }),
+    ]);
+    const payload = JSON.parse(snapshot.snapshotCanonicalPayload) as Record<string, any>;
+
+    expect(claimItem).toMatchObject({
+      itemType: 'PRINCIPAL',
+      interestAccrualStatus: 'UNKNOWN',
+      isAllDebtorsLiable: false,
+      liableDebtorIds: ['debtor:opaque-1'],
+    });
+    expect(snapshot).toMatchObject({
+      formationIntentId: intent.id,
+      legalBasisProjectionBindingContractVersion: '1',
+      legalBasisProjectionBindingChecksum: intent.legalBasisProjectionBindingChecksum,
+    });
+    expect(payload).toMatchObject({
+      componentCategory: 'PRINCIPAL',
+      componentSubtypeCode: 'INTERIM_MAINTENANCE',
+      legalBasisCode: 'TMK_169',
+      legalBasisVersion: '1',
+      claimItemProjection: {
+        itemType: 'PRINCIPAL',
+        interestAccrualStatus: 'UNKNOWN',
+        isAllDebtorsLiable: false,
+        liableDebtorIds: ['debtor:opaque-1'],
+      },
+    });
   });
 
   it('persists an exact bound snapshot and rejects every intent/snapshot binding mismatch', async () => {
