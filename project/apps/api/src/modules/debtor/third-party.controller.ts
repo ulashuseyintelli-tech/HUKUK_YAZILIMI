@@ -16,6 +16,7 @@ import {
   UpdateThirdPartyDto,
   RecordIhbarnameDto,
   RecordResponseDto,
+  UpdateExternalCaseDto,
 } from "./dto/third-party.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -169,7 +170,7 @@ export class ThirdPartyController {
   updateExternalCase(
     @CurrentUser("tenantId") tenantId: string,
     @Param("id") id: string,
-    @Body() dto: any
+    @Body() dto: UpdateExternalCaseDto
   ) {
     return this.thirdPartyService.updateExternalCase(tenantId, id, dto);
   }

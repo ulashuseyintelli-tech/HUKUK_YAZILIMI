@@ -3,7 +3,9 @@ import {
   IsOptional,
   IsEnum,
   IsDateString,
+  IsNumber,
 } from "class-validator";
+import { ExternalCaseStatus } from "@prisma/client";
 
 // ==================== ENUMS ====================
 
@@ -115,6 +117,51 @@ export class RecordResponseDto {
 
   @IsString()
   responseContent: string;
+}
+
+// I15 Phase C: updateExternalCase() daha once `dto: any` idi (hicbir DTO/
+// class-validator yoktu). main.ts'deki global ValidationPipe (whitelist +
+// forbidNonWhitelisted + transform) zaten aktif oldugundan bu DTO'yu eklemek
+// gercek runtime korumasi saglar: gecersiz attachmentStatus veya bilinmeyen
+// alan artik ham Prisma hatasi yerine temiz 400 doner. Full transition-
+// legality (hangi durumdan hangisine gecilebilir) hicbir governance/DBP
+// belgesinde tanimli degil — icad EDILMEDI, yalniz enum uyeligi dogrulanir.
+export class UpdateExternalCaseDto {
+  @IsString()
+  @IsOptional()
+  externalOffice?: string;
+
+  @IsString()
+  @IsOptional()
+  externalCaseNo?: string;
+
+  @IsString()
+  @IsOptional()
+  counterpartyName?: string;
+
+  @IsNumber()
+  @IsOptional()
+  claimAmount?: number;
+
+  @IsString()
+  @IsOptional()
+  claimCurrency?: string;
+
+  @IsEnum(ExternalCaseStatus)
+  @IsOptional()
+  attachmentStatus?: ExternalCaseStatus;
+
+  @IsDateString()
+  @IsOptional()
+  attachedAt?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsString()
+  @IsOptional()
+  priorityNote?: string;
 }
 
 // Labels for UI

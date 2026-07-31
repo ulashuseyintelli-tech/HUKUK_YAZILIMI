@@ -158,6 +158,16 @@ src/modules/debtor/__tests__/third-party-external-case-idempotency.db-gated.inte
 #     DB-invariant-bypass senaryolari — 15 test).
 src/modules/asset-query/__tests__/asset-query-idempotency.db-gated.integration.spec.ts
 #
+#   DEBTOR-ENFORCEMENT-SEIZURE-GATE-RECONCILIATION-P1-I15 PHASE C (legacy TASK 09)
+#     ThirdPartyService.updateExternalCase() externalOffice/externalCaseNo
+#     mantiksal-kimlik cakismasi gercek Postgres P2002 uretir; try/catch YOKTU
+#     (ham 500 riski). Update semantiginde Phase A/B'nin idempotent-replay
+#     deseni YANLIS olurdu (baska bir satiri sessizce donmek veri-butunlugu
+#     ihlali olurdu) — bu yuzden temiz ConflictException ile reddedilir; hedef
+#     satirin degismeden kaldigi + cakismayan gecerli update'in kalici oldugu
+#     gercek Postgres uzerinde dogrulanir.
+src/modules/debtor/__tests__/third-party-external-case-update.db-gated.integration.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure writer service (gercek PostgreSQL)
 #     Tenant/case-client/source-scope fail-closed enforcement, atomik aggregate+version+line
 #     yazimi, idempotency replay/conflict, hash re-verification MATCH/MISMATCH, immutability

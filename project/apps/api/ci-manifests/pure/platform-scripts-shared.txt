@@ -243,6 +243,13 @@ src/modules/debtor/__tests__/third-party-external-case-p2002-recovery.spec.ts
 # adi-dizisi formati, findUnique-null-ise-orijinal-hata-firlatma, P2003 gibi
 # ilgisiz hatalarin yutulmamasi, anahtarsiz cagrida findUnique cagrilmamasi).
 src/modules/asset-query/__tests__/asset-query-p2002-recovery.spec.ts
+# I15 Phase C: updateExternalCase() daha once dto:any idi (hicbir DTO/
+# class-validator yoktu). UpdateExternalCaseDto class-validator seviyesinde
+# (global ValidationPipe ile AYNI whitelist/forbidNonWhitelisted ayarlariyla)
+# + ThirdPartyService.updateExternalCase()'in externalOffice/externalCaseNo
+# cakismasinda P2002'yi Phase A'nin idempotent-replay deseni DEGIL, temiz bir
+# ConflictException ile reddettigini (mocked, deterministic) dogrular.
+src/modules/debtor/__tests__/third-party-external-case-update.spec.ts
 src/modules/debtor/__tests__/rfa008-thirdparty-guard.spec.ts
 src/modules/document/__tests__/document-creditor-address.spec.ts
 src/modules/document/__tests__/document-fail-closed-tenant.spec.ts
