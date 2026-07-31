@@ -1441,6 +1441,54 @@ cross-task reuse ve ikinci materialization fail-closed reddedilir. Bu kabul
 yalnız scope classification'dır; required CI, merge ve live closeout gate'lerini
 bypass etmez.
 
+## UYAP-M01 Legal-Basis resolver binding — exact authority publication binding
+
+Bu kayıt yalnız `UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01` görevinin
+consumer-only Legal-Basis resolver binding'i için distinct Semantic Authority ve
+Execution Grant yayımlanmasını tanır. RECEIVABLE Legal-Basis semantiğini UYAP'a
+taşımaz, yeniden yorumlamaz ve production activation yetkisi üretmez.
+
+```text
+Program   : UYAP-MODULE-FULL-GAP-CLOSURE-R02
+Binding task : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-AUTHORITY-CONTROL-PLANE-BINDING-R01
+Binding mode : UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01
+Base SHA     : ca749dd61376fc9e393489ca5f5e13d3efab8f18
+Head ref     : codex/uyap-m01-authority-control-plane-binding-r01
+Binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Materialization task : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-AUTHORITY-MATERIALIZATION-R01
+Materialization mode : UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_AUTHORITY_MATERIALIZATION_R01
+Original captured base : ca749dd61376fc9e393489ca5f5e13d3efab8f18
+Head ref : codex/uyap-m01-authority-materialization-r01
+Materialization scope:
+  M project/docs/governance/decision-log.md
+  A project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md
+
+Semantic authority record : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-SA01
+Execution grant record     : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01
+Second use                 : FAIL-CLOSED
+Production activation      : PROHIBITED
+Cross-task reuse           : PROHIBITED
+```
+
+Owner ratification evidence is byte-exact and SHA-256 bound:
+
+```text
+Av. Ulaş Hüseyin Telli olarak, UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01 görevinin canonical RECEIVABLE Legal-Basis release’ini UYAP içinde consumer-only, exact-version, checksum-bound, fail-closed ve production activation oluşturmayan biçimde bağlamasını; gerekli task-specific Semantic Authority ve Execution Grant kayıtlarının oluşturulmasını; analiz, implementasyon, test, PR, required CI, squash-merge, main sync, post-merge doğrulama ve güvenli cleanup işlemlerinin aynı görev içinde GO-COMPLETE yetkisiyle tamamlanmasını onaylıyorum.
+```
+
+```text
+ownerRatificationEvidence.excerptSha256 : b6e5202f14c49eba84c66a4173bf11d0ff1674b1e60cfdce2da6ab1c3e7374ae
+```
+
+Validator exact branch/base/path tuple'ını, distinct SA/EG record kimliklerini,
+exact excerpt/hash eşliğini ve EG'nin exact SA referansını doğrular. Fazla path,
+başka branch/base, missing evidence, generic validator relaxation, reusable grant
+ve ikinci kullanım fail-closed reddedilir.
+
 ## ORCHESTRA EXECUTION MODEL REVISION R01 — reconciled checkpoint contract
 
 Owner intent (ratified) is reconciled here without creating a global grant. Orkestra
