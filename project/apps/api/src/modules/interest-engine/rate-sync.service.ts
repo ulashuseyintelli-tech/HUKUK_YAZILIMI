@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RateScheduleService } from './rate-schedule.service';
 import { InterestTypeCode, RateSourceType } from './types';
 import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
+import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 
 /**
  * TCMB Faiz Oranı Senkronizasyon Servisi
@@ -38,7 +39,7 @@ export class RateSyncService {
    * Günlük TCMB faiz oranı senkronizasyonu
    * Her gün 09:30'da çalışır (TCMB duyurularından sonra)
    */
-  @Cron('30 9 * * *')
+  @Cron('30 9 * * *', { timeZone: SCHEDULER_TIMEZONE })
   async syncTcmbRates(): Promise<void> {
     this.logger.log('TCMB faiz oranı senkronizasyonu başlıyor...');
 
@@ -62,7 +63,7 @@ export class RateSyncService {
    * Aylık mevduat faizi senkronizasyonu
    * Her ayın 2. günü 10:00'da çalışır
    */
-  @Cron('0 10 2 * *')
+  @Cron('0 10 2 * *', { timeZone: SCHEDULER_TIMEZONE })
   async syncMonthlyMevduatRates(): Promise<void> {
     this.logger.log('Aylık mevduat faizi senkronizasyonu başlıyor...');
 

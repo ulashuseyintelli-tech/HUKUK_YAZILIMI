@@ -8,6 +8,7 @@ import {
   EscalationConfig,
 } from "./escalation-logic";
 import { TenantNotifier, DispatchResult } from "./tenant-notifier.service";
+import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 
 interface Recipients {
   emails: { name: string; email: string }[]; // ad-soyad ile hitap için isim taşınır
@@ -48,7 +49,7 @@ export class OperationalEscalationService {
     private tenantNotifier: TenantNotifier
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async scheduledRun(): Promise<void> {
     await this.processEscalations();
   }

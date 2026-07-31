@@ -6,6 +6,7 @@ import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
 import { DebtorCrossCaseNotificationService } from "../debtor/debtor-cross-case-notification.service";
 import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStatus } from "@prisma/client";
 import { filterConfirmedCollections, sumConfirmedCollections } from "../../common/collection-confirmed.util";
+import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 
 // Otomasyon açık olan statüler (C.19)
 const AUTOMATION_ENABLED_STATUSES: LegalCaseStatus[] = [
@@ -32,7 +33,7 @@ export class AutomationService {
   ) {}
 
   // Her 5 dakikada bir çalışan ana kontrol döngüsü (C.20)
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES, { timeZone: SCHEDULER_TIMEZONE })
   async processPendingCases(): Promise<void> {
     if (this.isProcessing) {
       this.logger.warn("Previous job still running, skipping...");
@@ -103,7 +104,7 @@ export class AutomationService {
   }
 
   // Her gece gün sayacını güncelle (C.23)
-  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  @Cron(CronExpression.EVERY_DAY_AT_1AM, { timeZone: SCHEDULER_TIMEZONE })
   async updateDaysLeft(): Promise<void> {
     this.logger.log("Updating days left for active cases...");
 
@@ -132,7 +133,7 @@ export class AutomationService {
   }
 
   // Her saat başı tebligat sürelerini kontrol et
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async checkNotificationExpiries(): Promise<void> {
     this.logger.log("Checking notification expiries...");
 
@@ -166,7 +167,7 @@ export class AutomationService {
   // çapraz-dosya bildirimlerini EXPIRED'a çevir. İş mantığı DebtorCrossCaseNotificationService'te
   // kalır (bu metod yalnız orkestrasyon) — PoaExpiryDeliveryService ile aynı idiom, migration/yeni
   // model YOK.
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async expireCrossCaseNotifications(): Promise<void> {
     const count = await this.debtorCrossCaseNotificationService.expireStaleNotifications();
     if (count > 0) {
@@ -177,7 +178,7 @@ export class AutomationService {
   // DBND-D6-INACTIVE-RECIPIENT-SWEEP: Her saat başı, alıcısı artık deaktive olmuş (User.isActive=
   // false) PENDING çapraz-dosya bildirimlerini erken EXPIRED'a çevirir. İş mantığı
   // DebtorCrossCaseNotificationService'te kalır; migration/yeni model YOK.
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async expireInactiveRecipientCrossCaseNotifications(): Promise<void> {
     const count = await this.debtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients();
     if (count > 0) {
@@ -186,7 +187,7 @@ export class AutomationService {
   }
 
   // Her gün saat 2'de süresi dolan vekaletleri EXPIRED olarak işaretle
-  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  @Cron(CronExpression.EVERY_DAY_AT_2AM, { timeZone: SCHEDULER_TIMEZONE })
   async updateExpiredPoas(): Promise<void> {
     this.logger.log("Checking for expired powers of attorney...");
 
@@ -214,7 +215,7 @@ export class AutomationService {
   /// Çağrıldığı yerler:
   /// - Nest Schedule.Cron() → EVERY_DAY_AT_9AM (POA expiry gerçek teslimat tick)
   /// </remarks>
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: SCHEDULER_TIMEZONE })
   async sendExpiringPoaNotifications(): Promise<void> {
     if (!isPoaExpiryNotificationEnabled()) return;
 
@@ -228,7 +229,7 @@ export class AutomationService {
     );
   }
   // Her gün gece yarısı risk skorlarını güncelle
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: SCHEDULER_TIMEZONE })
   async updateRiskScores(): Promise<void> {
     this.logger.log("Updating risk scores...");
 

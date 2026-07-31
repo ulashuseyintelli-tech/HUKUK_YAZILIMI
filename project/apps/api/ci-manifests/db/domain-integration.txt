@@ -222,3 +222,12 @@ src/modules/user/__tests__/change-password.integration.spec.ts
 src/modules/uyap/__tests__/uyap-stats-tenant-scope.db-gated.integration.spec.ts
 src/modules/uyap/authority/uyap-authority-freshness.db-gated.integration.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.spec.ts
+#
+#   W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01: GERCEK AppModule bootstrap + GERCEK
+#   SchedulerRegistry ile, iki ayri host process.env.TZ altinda (UTC, Europe/Istanbul)
+#   TUM 33 cron job'un (4 config-gated job dahil, flag'leri kapaliyken de) kosulsuz
+#   kayitli oldugunu, 0 duplicate key ve 0 job TZ-drift'i (nextDates(3) instant-esitligi)
+#   oldugunu, ve app.close()'un temiz/asilmadan tamamlandigini kanitlayan runtime matrix.
+#   Bu manifest'te common/-rooted veya scheduler-related baska bir girdi yoktu → yeni
+#   bloktur (bkz pure/uyap-icrabot-tebligat.txt icin DB-free unit eslesi).
+src/common/__tests__/w3-f03-scheduler-timezone-runtime.db-gated.integration.spec.ts

@@ -6,6 +6,7 @@ import {
   INTERNAL_SOURCES,
   type ErrorLogRetentionConfig,
 } from './error-log-retention.config';
+import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 
 // PR-6: Hata logu retention temizliği (config-tabanlı, hard delete, batch).
 // MODEL A (K1): çözüm-durumu birincil, kaynak ikincil. unresolved kayıtlar yalnız
@@ -22,7 +23,7 @@ export class ErrorLogRetentionService {
   constructor(private readonly prisma: PrismaService) {}
 
   // Günlük 03:30 Europe/Istanbul. Yalnız config.enabled ise siler.
-  @Cron('30 3 * * *', { name: 'errorLogRetention', timeZone: 'Europe/Istanbul' })
+  @Cron('30 3 * * *', { name: 'errorLogRetention', timeZone: SCHEDULER_TIMEZONE })
   async handleCron(): Promise<void> {
     await this.runRetentionCleanup();
   }

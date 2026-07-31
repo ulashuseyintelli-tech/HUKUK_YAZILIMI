@@ -7,6 +7,7 @@ import { TebligatService } from '../tebligat/tebligat.service'; // PR-S2: teblig
 import { DueType } from '@prisma/client';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter'; // PR-3
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service'; // P1-I13 (R02-B): NO-NEW-WORK-FOR-PASSIVE
+import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 
 /**
  * Zamanlayıcı Servisi
@@ -58,7 +59,7 @@ export class SchedulerService {
    * Her gün saat 09:00'da çalışır
    * Ödeme emri süresi dolan dosyaları kontrol eder
    */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: SCHEDULER_TIMEZONE })
   async checkPaymentOrderDeadlines() {
     if (this.isRunning_checkPaymentOrderDeadlines) {
       this.logger.warn('[scheduler] checkPaymentOrderDeadlines already running, skipping');
@@ -148,7 +149,7 @@ export class SchedulerService {
   /// - SchedulerController.checkNafaka() → POST /scheduler/check/nafaka (manuel nafaka dönem kontrolü)
   /// - SchedulerService.processNafakaPeriods() → @Cron('0 8 1 * *') (aylık otomatik nafaka dönem kontrolü)
   /// </remarks>
-  @Cron('0 8 1 * *') // Her ayın 1'i saat 08:00
+  @Cron('0 8 1 * *', { timeZone: SCHEDULER_TIMEZONE }) // Her ayın 1'i saat 08:00
   async processNafakaPeriods() {
     if (this.isRunning_processNafakaPeriods) {
       this.logger.warn('[scheduler] processNafakaPeriods already running, skipping');
@@ -245,7 +246,7 @@ export class SchedulerService {
    * Her gün saat 10:00'da çalışır
    * MTS dosyalarında 7 gün kontrolü
    */
-  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  @Cron(CronExpression.EVERY_DAY_AT_10AM, { timeZone: SCHEDULER_TIMEZONE })
   async checkMtsReturns() {
     if (this.isRunning_checkMtsReturns) {
       this.logger.warn('[scheduler] checkMtsReturns already running, skipping');
@@ -379,7 +380,7 @@ export class SchedulerService {
    * Her gün gece yarısı çalışır
    * Günlük istatistikleri hesaplar
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: SCHEDULER_TIMEZONE })
   async calculateDailyStats() {
     this.logger.log('⏰ Günlük istatistik hesaplama başladı...');
 
@@ -412,7 +413,7 @@ export class SchedulerService {
    * Her saat başı çalışır
    * Yaklaşan görevleri kontrol eder
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async checkUpcomingTasks() {
     this.logger.log('⏰ Yaklaşan görev kontrolü...');
 
@@ -453,7 +454,7 @@ export class SchedulerService {
    * Her gün saat 10:00'da çalışır
    * 89 İhbarname sürelerini kontrol eder
    */
-  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  @Cron(CronExpression.EVERY_DAY_AT_10AM, { timeZone: SCHEDULER_TIMEZONE })
   async checkIhbarnameDeadlines() {
     if (this.isRunning_checkIhbarnameDeadlines) {
       this.logger.warn('[scheduler] checkIhbarnameDeadlines already running, skipping');
@@ -582,7 +583,7 @@ export class SchedulerService {
   /**
    * Alacak haczi (dış dosya) takibi
    */
-  @Cron(CronExpression.EVERY_DAY_AT_11AM)
+  @Cron(CronExpression.EVERY_DAY_AT_11AM, { timeZone: SCHEDULER_TIMEZONE })
   async checkExternalCaseFollowups() {
     if (this.isRunning_checkExternalCaseFollowups) {
       this.logger.warn('[scheduler] checkExternalCaseFollowups already running, skipping');
@@ -749,7 +750,7 @@ export class SchedulerService {
    * PR-S2: cron artık db.tebligat.update'i DOĞRUDAN çağırmaz; tüm sonuçlar TebligatService'in
    * ortak senkron kapısından geçer (CaseDebtor.serviceStatus + istihbarat tetiği cron'da da çalışır).
    */
-  @Cron('0 */4 * * *') // Her 4 saatte bir
+  @Cron('0 */4 * * *', { timeZone: SCHEDULER_TIMEZONE }) // Her 4 saatte bir
   async checkTebligatStatus() {
     if (this.isRunning_checkTebligatStatus) {
       this.logger.warn('[scheduler] checkTebligatStatus already running, skipping');

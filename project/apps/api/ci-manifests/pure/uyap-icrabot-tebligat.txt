@@ -279,3 +279,11 @@ src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.service.spec.ts
 src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.spec.ts
 src/modules/uyap/operation-writer/uyap-operation-idempotency-key.factory.spec.ts
 src/modules/uyap/operation-writer/uyap-operation-writer.service.spec.ts
+#
+# W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01: SCHEDULER_TIMEZONE canonical sabiti +
+# resolveSchedulerTimezone/assertValidSchedulerTimezone (fail-closed allowlist: gercek
+# ama allowlist-disi 'UTC' de dahil reddedilir) + gercek `cron` paketiyle (cron@4.3.5)
+# ay-sonu/yil-sonu/artik-yil takvim sinirlarini ve process.env.TZ'den bagimsizligi
+# kanitlayan DB-free birim testi. Bu manifest'te common/-rooted veya scheduler-related
+# baska bir girdi yoktu → yeni bloktur (bkz db/domain-integration.txt icin DB-gated eslesi).
+src/common/scheduler-timezone.spec.ts

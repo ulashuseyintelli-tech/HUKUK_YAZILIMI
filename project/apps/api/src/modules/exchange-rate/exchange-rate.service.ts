@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 
 export interface ExchangeRate {
   currency: string;
@@ -37,7 +38,7 @@ export class ExchangeRateService {
   }
 
   // Her gun saat 15:30'da TCMB kurlarini guncelle (TCMB 15:30'da gunceller)
-  @Cron('30 15 * * 1-5') // Pazartesi-Cuma 15:30
+  @Cron('30 15 * * 1-5', { timeZone: SCHEDULER_TIMEZONE }) // Pazartesi-Cuma 15:30
   async scheduledRateUpdate() {
     this.logger.log('Zamanlanmis kur guncellemesi basliyor...');
     await this.fetchRatesFromTCMB();

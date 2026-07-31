@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 
 export interface GazetteNotification {
   id: string;
@@ -36,7 +37,7 @@ export class GazetteWatcherService {
   }
 
   // Her gun saat 09:00'da kontrol et
-  @Cron('0 9 * * *')
+  @Cron('0 9 * * *', { timeZone: SCHEDULER_TIMEZONE })
   async checkGazette(): Promise<void> {
     this.logger.log('Resmi Gazete kontrolu basliyor...');
     
