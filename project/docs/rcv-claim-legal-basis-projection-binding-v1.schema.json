@@ -69,11 +69,17 @@
         "registryChecksum": { "$ref": "#/$defs/sha256" },
         "subtypeCode": {
           "enum": [
+            "ADULT_CHILD_EDUCATION_MAINTENANCE",
             "COMMERCIAL_COLLECTION_COST",
             "COMMERCIAL_DEFAULT_INTEREST",
             "CONTRACTUAL_DEFAULT_INTEREST",
             "DEFAULT_INTEREST",
             "DELAY_DAMAGE",
+            "FAMILY_SUPPORT_MAINTENANCE",
+            "INTERIM_MAINTENANCE",
+            "MINOR_CHILD_MAINTENANCE",
+            "POVERTY_MAINTENANCE",
+            "SEPARATE_LIVING_SPOUSAL_MAINTENANCE",
             "STATUTORY_DEFAULT_INTEREST",
             "STATUTORY_INTEREST"
           ]
