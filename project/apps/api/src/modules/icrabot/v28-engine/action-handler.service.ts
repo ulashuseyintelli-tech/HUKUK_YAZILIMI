@@ -211,11 +211,44 @@ export class ActionHandlerService {
 
     const handler = this.handlers.get(action.actionType);
     if (!handler) {
+      // W3-F05-OUTBOX-NO-HANDLER-POISON-DISPOSITION-R01: kayitli handler'i olmayan
+      // bir action tipi, MISSING_TENANT_ID ile AYNI desen izlenerek terminal kapatilir.
+      // ONCE claim (mevcut atomik CAS — claimForProcessing) alinir: aksi halde satir
+      // hic claim edilmeden "pending" kalir ve dispatch() sonraki HER cron turunda
+      // AYNI action'i tekrar tekrar bulur (attemptCount hic artmaz, terminal
+      // disposition hic olusmaz, retry/backoff yoluna da hic girilmez) — W3-D09'un
+      // tarif ettigi "sonsuz pending" deseninin ta kendisi. Claim, iki concurrent
+      // worker'in ayni satiri ayni anda dead-letter'a cekmesini de engeller (yalniz
+      // biri claim'i kazanir; kaybeden asagidaki "not claimable" yoluna gider).
+      const claimedForPoison = await claimForProcessing();
+      if (!claimedForPoison) {
+        return {
+          success: false,
+          actionId,
+          actionType: action.actionType,
+          error: `Action not claimable: ${actionId}`,
+          skipped: true,
+        };
+      }
+
+      await this.outbox.markDeadLetter(actionId, {
+        error: 'NO_REGISTERED_HANDLER',
+        reasonCode: 'NO_REGISTERED_HANDLER',
+        failureClass: 'NON_RETRYABLE',
+        actionType: action.actionType,
+        tenantId: effectiveTenantId,
+        attempt: action.attemptCount,
+        correlationId: action.runId ?? actionId,
+      });
+      this.logger.error(
+        `Outbox action dead-lettered: NO_REGISTERED_HANDLER (actionId=${actionId}, actionType=${action.actionType})`,
+      );
       return {
         success: false,
         actionId,
         actionType: action.actionType,
-        error: `No handler for action type: ${action.actionType}`,
+        error: 'NO_REGISTERED_HANDLER',
+        deadLettered: true,
       };
     }
 
