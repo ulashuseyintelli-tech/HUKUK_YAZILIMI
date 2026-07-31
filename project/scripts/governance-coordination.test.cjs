@@ -493,18 +493,45 @@ function rootAuthorityContractContent(
     binding.targetPr.executionGrant.kind,
     binding.targetPr.executionGrant.path,
     binding.targetPr.executionGrant.recordId,
-    'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
-    'stage2Base : OWNER_GRANT_2_REQUIRED',
+    binding.stage2PredecessorLiteral ||
+      'stage2Predecessor : OWNER_GRANT_2_REQUIRED',
+    binding.stage2BaseLiteral || 'stage2Base : OWNER_GRANT_2_REQUIRED',
     binding.bindingPr.exactBaseOnly
       ? 'publicationBasePolicy : OWNER_PINNED_EXACT_ONLY'
       : 'publicationBasePolicy : OWNER_PINNED_START_OR_UNCHANGED_DESCENDANT',
     'globalAuthority : PROHIBITED',
     'reusableAuthority : PROHIBITED',
     'auditAsAuthority : PROHIBITED',
-    'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
+    binding.stage2StatusLiteral ||
+      'STAGE 2 STATUS: NOT AUTHORIZED / OWNER RATIFICATION REQUIRED',
   ];
   if (binding.expiresAt) content.push(binding.expiresAt);
   if (binding.design) content.push(binding.design.id, binding.design.mergeSha);
+  if (binding.historicalPredecessor) {
+    content.push(
+      binding.historicalPredecessor.taskId,
+      binding.historicalPredecessor.mergeSha,
+      binding.historicalPredecessor.disposition,
+    );
+  }
+  if (binding.authorityPolicy) {
+    content.push(
+      binding.authorityPolicy.masterTaskId,
+      binding.authorityPolicy.policy,
+      binding.authorityPolicy.legacyDecisionPackV1Status,
+      binding.authorityPolicy.decisionPackV2Status,
+      binding.authorityPolicy.contentRatificationStatus,
+      binding.legalDomainOfficer.name,
+      binding.legalDomainOfficer.role,
+      binding.legalDomainOfficer.ratifierCode,
+      binding.finalRatifier.name,
+      binding.finalRatifier.role,
+      binding.finalRatifier.ratifierCode,
+      binding.productionSigner.identity,
+      binding.productionSigner.role,
+      binding.productionSigner.signatureStatus,
+    );
+  }
   if (binding.decisionPack) {
     content.push(
       binding.decisionPack.id,
@@ -637,6 +664,26 @@ function createRootAuthorityStage2GitFixture(t, options = {}) {
           'runtime : DORMANT',
           'registryRelease : NOT_MATERIALIZED',
           'resolver : NOT_STARTED',
+        ]
+      : []),
+    ...(binding.authorityPolicy
+      ? [
+          `masterTaskId : ${binding.authorityPolicy.masterTaskId}`,
+          `authorityPolicy : ${binding.authorityPolicy.policy}`,
+          `legacyDecisionPackV1Status : ${binding.authorityPolicy.legacyDecisionPackV1Status}`,
+          `decisionPackV2Status : ${binding.authorityPolicy.decisionPackV2Status}`,
+          `contentRatificationStatus : ${binding.authorityPolicy.contentRatificationStatus}`,
+          `ldoName : ${binding.legalDomainOfficer.name}`,
+          `ldoRole : ${binding.legalDomainOfficer.role}`,
+          `ldoRatifierCode : ${binding.legalDomainOfficer.ratifierCode}`,
+          `finalRatifierName : ${binding.finalRatifier.name}`,
+          `finalRatifierRole : ${binding.finalRatifier.role}`,
+          `finalRatifierCode : ${binding.finalRatifier.ratifierCode}`,
+          `productionSignerIdentity : ${binding.productionSigner.identity}`,
+          `productionSignerRole : ${binding.productionSigner.role}`,
+          `productionSignatureStatus : ${binding.productionSigner.signatureStatus}`,
+          'runtime : DORMANT',
+          'registryRelease : NOT_MATERIALIZED',
         ]
       : []),
   ];
@@ -6372,6 +6419,153 @@ test('Legal Basis content-ratification Stage 2 tuple is pinned but remains prede
       }),
     'ROOT_BOOTSTRAP_PREDECESSOR_MISSING',
   );
+});
+
+function legalBasisContentFreshRebinding() {
+  return coordination.RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02;
+}
+
+function legalBasisContentFreshRebindingChanges() {
+  return legalBasisContentFreshRebinding().bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+test('Legal Basis content-ratification fresh Stage 1 R02 binds the captured exact base and preserves the historical predecessor', () => {
+  const binding = legalBasisContentFreshRebinding();
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rootAuthorityContractContent(binding),
+  );
+  const expected = {
+    mode: binding.bindingPr.mode,
+    taskId: binding.bindingPr.taskId,
+  };
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(legalBasisContentFreshRebindingChanges(), {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    }),
+    expected,
+  );
+  assert.deepEqual(
+    coordination.validateRootAuthorityBootstrapBindingScope({
+      binding,
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      changes: legalBasisContentFreshRebindingChanges(),
+      taskId: binding.bindingPr.taskId,
+      mode: binding.bindingPr.mode,
+      cwd: fixture.root,
+    }),
+    expected,
+  );
+  assert.equal(
+    runFixtureGit(
+      [
+        'merge-base',
+        '--is-ancestor',
+        binding.historicalPredecessor.mergeSha,
+        binding.bindingPr.baseSha,
+      ],
+      REPO_ROOT,
+    ),
+    '',
+  );
+});
+
+test('Legal Basis content-ratification fresh Stage 1 R02 rejects stale base wrong branch wrong task and scope drift', () => {
+  const binding = legalBasisContentFreshRebinding();
+  const changes = legalBasisContentFreshRebindingChanges();
+  for (const [options, code] of [
+    [
+      { base: '0'.repeat(40), headRef: binding.bindingPr.headRef, changes },
+      'ROOT_BOOTSTRAP_STAGE1_BASE_MISMATCH',
+    ],
+    [
+      {
+        base: binding.bindingPr.baseSha,
+        headRef: `${binding.bindingPr.headRef}-copy`,
+        changes,
+      },
+      'ROOT_BOOTSTRAP_STAGE1_BRANCH_MISMATCH',
+    ],
+    [
+      {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+        changes: changes.slice(1),
+      },
+      'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+    ],
+    [
+      {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+        changes: [...changes, { status: 'M', path: 'project/docs/governance/decision-log.md' }],
+      },
+      'ROOT_BOOTSTRAP_STAGE1_SCOPE_MISMATCH',
+    ],
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(options.changes, options),
+      code,
+    );
+  }
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rootAuthorityContractContent(binding),
+  );
+  expectFixtureCodeUnchanged(
+    fixture,
+    () =>
+      coordination.validateRootAuthorityBootstrapBindingScope({
+        binding,
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        changes,
+        taskId: 'WRONG-TASK',
+        mode: binding.bindingPr.mode,
+        cwd: fixture.root,
+      }),
+    'ROOT_BOOTSTRAP_STAGE1_TASK_MISMATCH',
+  );
+});
+
+test('Legal Basis content-ratification Stage 2 validates against fresh R02 and rejects malformed or repeated materialization', (t) => {
+  const binding = legalBasisContentFreshRebinding();
+  const valid = createRootAuthorityStage2GitFixture(t, { binding });
+  const result = coordination.validatePrScope({
+    base: valid.base,
+    head: valid.head,
+    headRef: binding.targetPr.headRef,
+    cwd: valid.root,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  for (const [fixtureOptions, code] of [
+    [{ binding, semanticRecordId: 'WRONG-SA' }, 'ROOT_BOOTSTRAP_SA_RECORD_INVALID'],
+    [{ binding, executionRecordId: 'WRONG-EG' }, 'ROOT_BOOTSTRAP_EG_RECORD_INVALID'],
+    [{ binding, stage2BaseSha: '0'.repeat(40) }, 'ROOT_BOOTSTRAP_STAGE2_BASE_INVALIDATED'],
+    [{ binding, consumedAtBase: true }, 'ROOT_BOOTSTRAP_MODE_CONSUMED'],
+  ]) {
+    const fixture = createRootAuthorityStage2GitFixture(t, fixtureOptions);
+    expectFixtureCodeUnchanged(
+      fixture,
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.targetPr.headRef,
+          cwd: fixture.root,
+        }),
+      code,
+    );
+  }
 });
 
 test('OFFICE authority binding classifier accepts only the exact Stage 1 tuple', () => {
