@@ -48,6 +48,24 @@
  * hatasi degil) ve mevcut cron ifadelerinin hicbiri saniye/dakika hassasiyetinde degildir
  * (en sik: EVERY_MINUTE) — pratikte gozlemlenmesi beklenmez.
  */
+/**
+ * `pdf-poppler`'in kendi index.js'i, sistemde poppler-utils ikili dosyalari
+ * (pdftoppm/pdftocairo) bulunamazsa modul YUKLEME anindA (bare require, hicbir
+ * fonksiyon cagrilmadan) dogrudan `process.exit(1)` cagirir — bu, ayni jest
+ * worker'indaki TUM diger testleri de dusuren, yakalanamayan bir surec sonlanmasidir
+ * (GitHub Actions ubuntu-latest runner'inda gozlemlendi; Windows'ta poppler-utils
+ * kurulu oldugundan sessizce calisir, bu yuzden yerel kosumda hic gorulmez).
+ * Bu dosya, SchedulerRegistry'yi incelemek icin GERCEK AppModule'u bootstrap eder;
+ * AppModule -> CaseModule -> CaseController -> OcrService zinciri module-load
+ * aninda `require("pdf-poppler")` calistirir. OCR islevselligi bu testte hic
+ * kullanilmadigindan (yalniz scheduler registrasyonu inceleniyor), gercek paketi
+ * zararsiz bir stub ile degistirmek yeterli ve dogrudur — jest.mock hoisting
+ * sayesinde bu, asagidaki import'lardan ONCE etkili olur.
+ */
+jest.mock("pdf-poppler", () => ({
+  convert: jest.fn(async () => undefined),
+}));
+
 import { NestFactory } from "@nestjs/core";
 import { SchedulerRegistry } from "@nestjs/schedule";
 import { resolveTestDatabaseUrl } from "../../../test/test-db-env";
