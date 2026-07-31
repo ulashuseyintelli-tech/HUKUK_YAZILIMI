@@ -251,6 +251,21 @@ const ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02 = Object.freeze({
     recordId: 'DX-006-ANALYZE-FIRST-CONDITIONAL-EXECUTION-R02-GRANT',
   }),
 });
+const ORCHESTRA_EXECUTION_MODEL_REVISION_R01 = Object.freeze({
+  taskId: 'ORCHESTRA-EXECUTION-MODEL-REVISION-R01-GOVERNANCE-RECONCILIATION',
+  mode: 'ORCHESTRA_EXECUTION_MODEL_REVISION_R01_GOVERNANCE_RECONCILIATION',
+  baseSha: '3c6be710d3e9ebe9a7b0441ed8712445e1258e93',
+  headRef: 'codex/orchestra-execution-model-revision-r01-governance-reconciliation',
+  changedPaths: Object.freeze([
+    Object.freeze({ status: 'M', path: 'AGENTS.md' }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/docs/governance/governance-writer-coordination-contract.md',
+    }),
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.cjs' }),
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.test.cjs' }),
+  ]),
+});
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01',
   bindingPr: Object.freeze({
@@ -2723,6 +2738,26 @@ function classifyPrChangeSet(changes, context = {}) {
     hasExactChangeSet(changes, ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.changedPaths)
   ) {
     return { mode: ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02.mode };
+  }
+
+  if (
+    context.base === ORCHESTRA_EXECUTION_MODEL_REVISION_R01.baseSha &&
+    context.headRef === ORCHESTRA_EXECUTION_MODEL_REVISION_R01.headRef &&
+    hasExactChangeSet(changes, ORCHESTRA_EXECUTION_MODEL_REVISION_R01.changedPaths)
+  ) {
+    return {
+      mode: ORCHESTRA_EXECUTION_MODEL_REVISION_R01.mode,
+      taskId: ORCHESTRA_EXECUTION_MODEL_REVISION_R01.taskId,
+    };
+  }
+  if (
+    context.headRef === ORCHESTRA_EXECUTION_MODEL_REVISION_R01.headRef ||
+    hasExactChangeSet(changes, ORCHESTRA_EXECUTION_MODEL_REVISION_R01.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'Orkestra execution-model reconciliation requires its exact base, branch and four-file scope',
+    );
   }
 
   if (
@@ -6779,6 +6814,10 @@ function validatePrScope(options) {
     return classification;
   }
 
+  if (classification.mode === ORCHESTRA_EXECUTION_MODEL_REVISION_R01.mode) {
+    return classification;
+  }
+
   if (
     classification.mode ===
     RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.mode
@@ -7595,6 +7634,7 @@ function main(argv = process.argv.slice(2)) {
 
 module.exports = {
   ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02,
+  ORCHESTRA_EXECUTION_MODEL_REVISION_R01,
   AUTHORITY_LOCATOR_REPAIR_I01,
   BOOTSTRAP_ADD,
   BOOTSTRAP_ALL,

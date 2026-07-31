@@ -3340,6 +3340,37 @@ test('active execution policy docs align on analyze-first continuation', () => {
   assert.match(policyText, /STANDING \/ UNATTENDED AUTO-MERGE/);
 });
 
+test('Orkestra execution-model reconciliation accepts its exact four-file scope', () => {
+  const binding = coordination.ORCHESTRA_EXECUTION_MODEL_REVISION_R01;
+  const result = coordination.classifyPrChangeSet(binding.changedPaths, {
+    base: binding.baseSha,
+    headRef: binding.headRef,
+  });
+  assert.equal(result.mode, binding.mode);
+  assert.equal(result.taskId, binding.taskId);
+});
+
+test('Orkestra execution-model reconciliation rejects base, branch and scope drift', () => {
+  const binding = coordination.ORCHESTRA_EXECUTION_MODEL_REVISION_R01;
+  for (const context of [
+    { base: '0000000000000000000000000000000000000000', headRef: binding.headRef },
+    { base: binding.baseSha, headRef: 'codex/ordinary-governance-change' },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(binding.changedPaths, context),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        binding.changedPaths.slice(0, -1),
+        { base: binding.baseSha, headRef: binding.headRef },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
 test('explicit GO-ANALYZE remains read-only after policy alignment', () => {
   const agents = fs.readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf8');
   const processRules = fs.readFileSync(
