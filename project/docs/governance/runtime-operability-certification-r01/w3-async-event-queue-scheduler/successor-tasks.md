@@ -17,6 +17,14 @@ Her residual icin **tekil** successor. "Async eksikleri duzelt" gibi toplu task 
 - **prerequisite:** owner karari — (a) modeli ekle, (b) handler'i kaldir, (c) `NonRetryableOutboxError` yap
 - **bagimlilik:** (a) secilirse **MIGRATION**
 
+**SONUC (R01, [PR #1998](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/1998), merge `f32e9423`):**
+CLOSED. Secim (b) — handler kaldirildi. `IcrabotWebhookLog` migration
+gecmisinde HICBIR ZAMAN olusturulmamis (saf olu referans); aktif/test hicbir
+rule-pack `webhook` uretmiyordu; handler zaten gercek HTTP cagrisi yapmiyordu.
+Producer (`EngineRunnerService`) action'i outbox'a hic yazmadan reddeder — ILK
+denemede terminal, 8 deneme yakilmaz, kardes action'lar etkilenmez. Detay:
+`defect-register.md` → Cozum Kaydi → W3-D01.
+
 ---
 ## W3-F02-OUTBOX-CONSUMER-TENANT-OWNERSHIP-R01
 - **capability:** outbox consumer handler katmani
