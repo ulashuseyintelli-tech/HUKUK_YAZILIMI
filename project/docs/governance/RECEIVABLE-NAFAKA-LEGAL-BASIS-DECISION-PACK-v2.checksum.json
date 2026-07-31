@@ -1,0 +1,10 @@
+{
+  "algorithm": "SHA-256",
+  "decisionPackId": "RECEIVABLE-NAFAKA-LEGAL-BASIS-DECISION-PACK",
+  "decisionPackVersion": 2,
+  "entryCount": 6,
+  "preimageFile": "RECEIVABLE-NAFAKA-LEGAL-BASIS-DECISION-PACK-v2.md",
+  "preimageSha256": "1e1fa725107a63cb736e927d810f07c5e70b6120f3b34248e2e87f5a61088a77",
+  "runtimeStatus": "DORMANT_DEFAULT_OFF",
+  "signatureStatus": "PENDING_NOT_EXECUTED"
+}
