@@ -110,6 +110,11 @@ describeWithDisposableDb(
     async function bootApp(hostTimeZone: string) {
       process.env.TZ = hostTimeZone;
       process.env.DATABASE_URL = TEST_DB_URL;
+      // JWT_SECRET: PortalModule (registerAsync factory) + AuthModule ayni fail-closed
+      // ilkeyi (H4) uygular — secret yoksa boot anında throw eder. AppModule bu ikisini
+      // de (transitif olarak) tasidigindan, disposable/test-only bir deger sart.
+      // Gercek bir secret DEGIL, yalniz bu test surecinin kendi bootstrap'i icin.
+      process.env.JWT_SECRET = process.env.JWT_SECRET || 'w3-f03-test-only-not-a-real-secret';
       // abortOnError:false — Nest'in varsayilan process.exit(1) davranisini KAPATIR;
       // boylece bootstrap hatasi gercek Error olarak firlar (test/CI surecini oldurmez).
       const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
