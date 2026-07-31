@@ -161,7 +161,7 @@ timeout/stall exact blocker'dır.
 
 Merge authority PASS ise `pnpm orch:closeout`; Runner kullanilamiyor, senaryoyu desteklemiyor,
 exact blocker veya ledger materialize edilemiyorsa ajan fallback ile kapatir; gate'ler elle
-dogrulanir, ikinci owner mesaji ISTENMEZ, dogfood raporlanir. Runtime-affecting gorev
+dogrulanir, ikinci owner mesaji ISTENMEZ, dogfood raporlanir. runtime-affecting gorev
 post-merge acceptance gate'leri olmadan CLOSED sayilmaz (bkz. `project/docs/runbooks/pr-closeout.md`).
 Orkestra execution coordinator'dır; `ELIGIBLE`/dispatch authority değildir. Mutation task-bound
 ayrı `SEMANTIC_AUTHORITY` + `EXECUTION_GRANT`, merge task/PR/head/scope/check pinleri ister;
