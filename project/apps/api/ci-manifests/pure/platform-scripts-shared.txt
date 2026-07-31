@@ -286,6 +286,16 @@ src/modules/summary-engine/__tests__/allocate-payment-ledger-in-tx.spec.ts
 src/modules/summary-engine/__tests__/allocation-authority.static-guard.spec.ts
 src/modules/summary-engine/__tests__/allocation-drift-baseline.spec.ts
 src/modules/template-engine/__tests__/template-artifact-tenant-scope.spec.ts
+# CLIENT-ARC-07-OFFICIAL-CONSUMER-ADAPTER-I07 discovery: four sibling template-engine
+# specs existed and passed locally but were never referenced by any CI manifest or
+# ci.yml (narrow-allowlist stale-test gap). This adds no new test behavior; all four
+# verified fresh (individually, --testPathPattern, against origin/main) before wiring.
+# endorsers-compat was not in the original finding — found via an exhaustive
+# recursive grep of ci-manifests/ for this module's directory, same root cause.
+src/modules/template-engine/__tests__/template-engine-claim-item-guard.spec.ts
+src/modules/template-engine/__tests__/template-engine-endorsers-compat.spec.ts
+src/modules/template-engine/__tests__/template-engine-multi-instrument.spec.ts
+src/modules/template-engine/__tests__/template-engine-passive-policy.spec.ts
 src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-classifier.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-profiler.report-hardening.spec.ts
