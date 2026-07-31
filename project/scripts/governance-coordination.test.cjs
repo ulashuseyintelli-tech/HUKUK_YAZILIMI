@@ -699,6 +699,18 @@ function hcr08TargetChanges() {
   );
 }
 
+function uyapM01BindingChanges() {
+  return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function uyapM01TargetChanges() {
+  return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function pb01BindingChanges() {
   return coordination.RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -1409,12 +1421,21 @@ function rcvColBindingContractContent(
     ...binding.bindingPr.changedPaths.map(({ path: repoPath }) => repoPath),
     binding.targetPr.taskId,
     binding.targetPr.mode,
-    String(binding.targetPr.pullRequestNumber),
+    ...(binding.targetPr.pullRequestNumber === undefined
+      ? []
+      : [String(binding.targetPr.pullRequestNumber)]),
     binding.targetPr.originalBaseSha,
     binding.targetPr.headRef,
     ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
     binding.targetPr.semanticAuthority.recordId,
     binding.targetPr.executionGrant.recordId,
+    ...(binding.programId ? [binding.programId] : []),
+    ...(binding.ownerRatificationEvidence
+      ? [
+          binding.ownerRatificationEvidence.exactExcerpt,
+          binding.ownerRatificationEvidence.excerptSha256,
+        ]
+      : []),
     ...(binding.targetPr.implementation
       ? Object.values(binding.targetPr.implementation).filter(
           (value) => typeof value === 'string' || typeof value === 'number',
@@ -1476,6 +1497,10 @@ function createRcvColTargetGitFixture(t, options = {}) {
     decisionPath,
     `| 2026-07-28 | ${semanticMarker} **${semanticRecordId} — fixture** |\n${
       options.duplicateSemanticMarker ? `${semanticMarker}\n` : ''
+    }${
+      binding.ownerRatificationEvidence
+        ? `${binding.ownerRatificationEvidence.exactExcerpt}\n${binding.ownerRatificationEvidence.excerptSha256}\n${binding.programId}\n${target.originalBaseSha}\n`
+        : ''
     }`,
     'utf8',
   );
@@ -1494,6 +1519,18 @@ function createRcvColTargetGitFixture(t, options = {}) {
       `semanticAuthorityRef.path     : ${target.semanticAuthority.path}`,
       `semanticAuthorityRef.recordId : ${semanticBindingRecordId}`,
       '```',
+      ...(binding.ownerRatificationEvidence
+        ? [
+            binding.ownerRatificationEvidence.exactExcerpt,
+            binding.ownerRatificationEvidence.excerptSha256,
+            binding.programId,
+            target.taskId.replace('-AUTHORITY-MATERIALIZATION-R01', ''),
+            target.originalBaseSha,
+            'GO-COMPLETE',
+            'UYAP-M01 ONLY',
+            'SECOND USE: FAIL-CLOSED',
+          ]
+        : []),
       '',
     ].join('\n'),
     'utf8',
@@ -3976,6 +4013,119 @@ test('HCR-08 target rejects wrong markers semantic binding and reusable companio
         headRef: binding.targetPr.headRef,
       }),
     'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP-M01 binding requires exact base branch scope and owner evidence', () => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(
+    uyapM01BindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result = coordination.validateUyapM01AuthorityBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: uyapM01BindingChanges(),
+    taskId: binding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('UYAP-M01 binding rejects wrong base branch and expanded scope', () => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  for (const context of [
+    { base: '0'.repeat(40), headRef: binding.bindingPr.headRef },
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: `${binding.bindingPr.headRef}-copy`,
+    },
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(uyapM01BindingChanges(), context),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  const expanded = uyapM01BindingChanges();
+  expanded.push({
+    status: 'M',
+    path: 'project/docs/governance/decision-log.md',
+  });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP-M01 target accepts only exact branch and distinct M/A authority tuple', () => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(uyapM01TargetChanges(), {
+    base: binding.targetPr.originalBaseSha,
+    headRef: binding.targetPr.headRef,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  const expanded = uyapM01TargetChanges();
+  expanded.push({ status: 'M', path: coordination.REGISTER_REPO_PATH });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP-M01 target validates exact owner evidence and semantic binding', (t) => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, { binding, freshMain: true });
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: binding.targetPr.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+});
+
+test('UYAP-M01 target rejects a grant bound to another semantic authority', (t) => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    binding,
+    semanticBindingRecordId: 'UYAP-M01-WRONG-SA01',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
   );
 });
 
