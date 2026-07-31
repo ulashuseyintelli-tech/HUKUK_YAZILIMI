@@ -11,7 +11,7 @@ Makine-okunur tam kayit: `defect-register.json`.
 | ID | Sinif | Oncelik | Capability | Disposition | Implementation |
 |---|---|---|---|---|---|
 | **W3-D02** | W3-B07 TENANT_BOUNDARY_UNSAFE | **P1** | outbox consumer handler'lari | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
-| **W3-D01** | W3-B11 PAYLOAD_CONTRACT_MISMATCH | P2 | `webhook` handler | DEFERRED + **GUARD** | NOT_ELIGIBLE (schema/migration) |
+| **W3-D01** | W3-B11 PAYLOAD_CONTRACT_MISMATCH | P2 | `webhook` handler | **RESOLVED** (bkz. Cozum Kaydi) | HANDLER REMOVED (migration GEREKMEDI) |
 | **W3-D09** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | handler'siz action -> sonsuz pending | DEFERRED | NOT_ELIGIBLE (owner policy) |
 | **W3-D04** | W3-B06 SCHEDULER_TIMEZONE_UNKNOWN | P2 | 32/33 cron job | DEFERRED | NOT_ELIGIBLE (scheduler policy) |
 | **W3-D05** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | 14/35 cron metodunda try/catch yok | DEFERRED | NOT_ELIGIBLE (scope too broad) |
@@ -66,3 +66,36 @@ Makine-okunur tam kayit: `defect-register.json`.
   **PRODUCTION: NOT ACTIVATED** — paylasilan RUNTIME worktree/production DB'ye
   bu task kapsaminda dokunulmadi; ayri bir production-activation yetkisi verilmedi.
 - **Successor:** W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01 (sirada).
+
+### W3-D01 — RESOLVED (W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01)
+
+- **Task:** RUNTIME-OPERABILITY-CERTIFICATION-R01 / W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01
+- **PR:** [#1998](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/1998) — squash-merged
+- **MERGE SHA:** `f32e94239ad4c27d476a372dcb43877f31ea4c98`
+- **Kok neden:** `'webhook'` action handler'i semada hic var olmamis
+  `IcrabotWebhookLog` modeline `(prisma as any)` ile yaziyordu VE gercek bir HTTP
+  cagrisi hic yapmadan kosulsuz `status:'sent'` iddia ediyordu (product-backlog.md
+  `CAN-P0-001`'deki `send_email`/`send_sms` "fake-sent" deseninin ayni ornegi,
+  `CAN-P0-008` olarak ayrica kayitliydi).
+- **Fresh dogrulama:** migration gecmisinin tamami tarandi — `IcrabotWebhookLog`'a
+  karsilik gelen bir tablo HICBIR ZAMAN olusturulmamis (ghost model degil, saf
+  olu referans). Aktif/test hicbir rule-pack `action: webhook` uretmiyor (repo
+  genelinde 0 isabet).
+- **Karar:** Option C — webhook canonical bir yetenek olarak KABUL EDILMEDI.
+- **Cozum:** `action-handler.service.ts`'ten handler kaydi tamamen kaldirildi;
+  `engine-runner.service.ts` (producer) `action: 'webhook'`'u outbox'a hic
+  yazmadan reddeder (kardes action'lar etkilenmeden) — sadece handler'i
+  kaldirmanin `dispatch()`'i "No handler for action type" ile sonsuza kadar
+  pending birakacagi (W3-D09 deseni) riski boylece onlendi.
+  `w3-prisma-model-reference.static-guard.spec.ts`'in `KNOWN_GAPS`'i artik BOS.
+- **Sema/migration karari:** **GEREKMEDI.**
+- **Kanit:** 3 DB-free unit test + guncellenmis static guard (yeni negatif [6])
+  + 1 DB-gated runtime dogrulama (GERCEK Postgres + GERCEK `EngineRunnerService`,
+  PR-oncesi VE post-merge fresh checkout'ta ayri ayri PASS) + 2/2 negatif-kanit
+  mutasyonu kirmizi/geri-alindi + gercek CI (Architectural Guardrails, Test
+  Suite, Orchestration Tests, Web Tests, CodeQL, Client Workspace Live Smoke —
+  hepsi PASS) + `icrabot/v28-engine`+`common/__tests__` tam regresyon (26
+  suite/379 test PASS).
+- **Post-merge acceptance:** MERGED → disposable checkout + fresh disposable DB
+  ile runtime dogrulama tekrarlandi, PASS. **PRODUCTION: NOT ACTIVATED.**
+- **Successor:** W3-F05-OUTBOX-NO-HANDLER-POISON-DISPOSITION-R01 (sirada).
