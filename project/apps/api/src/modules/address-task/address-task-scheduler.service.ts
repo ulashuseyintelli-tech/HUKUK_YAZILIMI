@@ -4,6 +4,7 @@ import { AddressTaskService } from './address-task.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AddressTaskFailureReason } from '@prisma/client';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
+import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 
 /**
  * Address Task Scheduler Service
@@ -34,7 +35,7 @@ export class AddressTaskSchedulerService {
    * SLA Checker - Her saat çalışır
    * Süresi geçmiş görevleri bulur ve hatırlatma gönderir
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async checkOverdueTasks(): Promise<void> {
     this.logger.log('SLA Checker başlatıldı...');
 
@@ -102,7 +103,7 @@ export class AddressTaskSchedulerService {
    * Annual Refresh Checker - Her gün gece yarısı çalışır
    * Yıllık adres taleplerini işler
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: SCHEDULER_TIMEZONE })
   async checkAnnualRefreshTasks(): Promise<void> {
     this.logger.log('Annual Refresh Checker başlatıldı...');
 
@@ -165,7 +166,7 @@ export class AddressTaskSchedulerService {
    * Outbox Publisher - Her 5 dakikada çalışır
    * Pending event'leri yayınlar (event-driven mimari için)
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES, { timeZone: SCHEDULER_TIMEZONE })
   async publishOutboxEvents(): Promise<void> {
     this.logger.debug('Outbox Publisher başlatıldı...');
 

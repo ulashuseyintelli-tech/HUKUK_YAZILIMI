@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OfficeApprovalExecutorService } from './office-approval-executor.service';
 import { readOfficeApprovalExecutorConfig } from './office-approval-executor.config';
 import { isRetryBackoffElapsed } from './office-approval-executor-backoff';
+import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 
 // P4-5B/P4-5C-2 — OfficeApproval executor AUTOMATION (config-gated cron). Onaylanmış (APPROVED/APPROVED_WITH_CHANGES) NOT_RUN
 // backlog'unu deferred yürütür + stuck RUNNING'i reconcile eder + FAILED satırları BOUNDED retry eder. Yetki+karar P4-4'te; burası zamanlayıcı.
@@ -49,7 +50,7 @@ export class OfficeApprovalExecutorCronService {
     private readonly executor: OfficeApprovalExecutorService,
   ) {}
 
-  @Cron(CronExpression.EVERY_30_MINUTES, { name: 'officeApprovalExecutor' })
+  @Cron(CronExpression.EVERY_30_MINUTES, { name: 'officeApprovalExecutor', timeZone: SCHEDULER_TIMEZONE })
   async handleCron(): Promise<void> {
     await this.runSweep();
   }

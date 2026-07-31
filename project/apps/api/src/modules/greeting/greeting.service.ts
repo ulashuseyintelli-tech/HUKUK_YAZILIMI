@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ClientNotificationService } from "../client-notification/client-notification.service";
 import { Cron, CronExpression } from "@nestjs/schedule";
+import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 
 /**
  * Office.autoGreetingTime ("HH:mm") değerini saat/dakikaya ayrıştırır.
@@ -349,7 +350,7 @@ export class GreetingService {
    *   service.sendGreeting() / findTodayGreetings().
    * </remarks>
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { timeZone: SCHEDULER_TIMEZONE })
   async greetingSchedulerTick() {
     const now = new Date();
 

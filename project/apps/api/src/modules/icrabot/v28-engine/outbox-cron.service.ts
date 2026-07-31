@@ -7,6 +7,7 @@ import {
   getIcrabotOutboxBatchSize,
   isIcrabotOutboxCronEnabled,
 } from './outbox.constants';
+import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 
 /**
  * Icrabot v28 outbox platform cron'u.
@@ -33,7 +34,7 @@ export class OutboxCronService {
    * /// - Nest ScheduleModule → @Cron(EVERY_MINUTE) platform outbox tüketimi
    * /// </remarks>
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { timeZone: SCHEDULER_TIMEZONE })
   async processOutboxActions(): Promise<void> {
     if (!isIcrabotOutboxCronEnabled()) return;
 

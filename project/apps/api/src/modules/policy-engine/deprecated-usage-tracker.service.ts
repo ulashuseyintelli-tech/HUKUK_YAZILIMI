@@ -10,6 +10,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 
 interface UsageRecord {
   serviceName: string;
@@ -201,7 +202,7 @@ export class DeprecatedUsageTrackerService implements OnModuleInit {
    * Günlük rapor oluştur ve logla.
    * Her gün 00:05'te çalışır.
    */
-  @Cron('5 0 * * *')
+  @Cron('5 0 * * *', { timeZone: SCHEDULER_TIMEZONE })
   async generateDailyReport(): Promise<void> {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -246,7 +247,7 @@ export class DeprecatedUsageTrackerService implements OnModuleInit {
   /**
    * Buffer'ı DB'ye yaz (her saat).
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async flushBuffer(): Promise<void> {
     if (this.usageBuffer.length === 0) return;
 
@@ -267,7 +268,7 @@ export class DeprecatedUsageTrackerService implements OnModuleInit {
   /**
    * Eski kayıtları temizle (30 günden eski).
    */
-  @Cron('0 3 * * *') // Her gün 03:00
+  @Cron('0 3 * * *', { timeZone: SCHEDULER_TIMEZONE }) // Her gün 03:00
   async cleanupOldRecords(): Promise<void> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - 30);

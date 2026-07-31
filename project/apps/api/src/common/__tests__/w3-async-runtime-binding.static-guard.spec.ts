@@ -236,6 +236,30 @@ for (const [file, src] of CLEAN) {
   while ((m = re.exec(src)) !== null) CRON_CARRIERS.push({ file, cls: m[1], count });
 }
 
+/**
+ * W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01: her @Cron cagrisinin TAM arguman
+ * metnini (dosya bazinda) cikarir — timeZone kapsamini per-call dogrulamak icin.
+ * Yorum icindeki "@Cron" mentionlari CLEAN'de zaten bosluga cevrilmis oldugundan
+ * buraya girmez.
+ */
+const CRON_CALL_ARGS = new Map<string, string[]>();
+for (const [file, src] of CLEAN) {
+  const calls: string[] = [];
+  let idx = 0;
+  for (;;) {
+    const at = src.indexOf('@Cron', idx);
+    if (at === -1) break;
+    let p = at + 5;
+    while (p < src.length && /\s/.test(src[p])) p++;
+    if (src[p] !== '(') { idx = at + 5; continue; }
+    const argsText = sliceBalanced(src, p, '(', ')');
+    if (argsText) calls.push(argsText);
+    idx = p + Math.max(argsText.length, 1);
+  }
+  if (calls.length) CRON_CALL_ARGS.set(file, calls);
+}
+const isBoundCarrier = (c: { file: string; cls: string }) => boundOwners(`${c.file}#${c.cls}`).length > 0;
+
 describe('W3 — async runtime binding guard (AppModule kapanisi)', () => {
   it('[1] AppModule kapanisi cozulebilir ve bos degildir', () => {
     expect(CLOSURE.size).toBeGreaterThan(50);
@@ -286,5 +310,53 @@ describe('W3 — async runtime binding guard (AppModule kapanisi)', () => {
       .filter((c) => boundOwners(`${c.file}#${c.cls}`).length > 0 && !known.has(c.cls))
       .map((c) => `${c.file}#${c.cls}`);
     expect(unexpected).toEqual([]);
+  });
+
+  // ── W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01 ────────────────────────────
+  it('[7] BAGLI her @Cron cagrisi canonical SCHEDULER_TIMEZONE tasir (environment-default YOK)', () => {
+    const violations: string[] = [];
+    for (const c of CRON_CARRIERS) {
+      if (!isBoundCarrier(c)) continue; // dormant (icrabot) bu kontrolun disinda — W3-F06 kapsami
+      const calls = CRON_CALL_ARGS.get(c.file) ?? [];
+      for (const args of calls) {
+        if (!/timeZone\s*:\s*SCHEDULER_TIMEZONE\b/.test(args)) {
+          violations.push(`${c.file}#${c.cls}: ${args.replace(/\s+/g, ' ').slice(0, 100)}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('[8] BAGLI hicbir @Cron cagrisi ham/farkli bir timezone string literali tasimaz (tek merkezi kaynak)', () => {
+    const violations: string[] = [];
+    for (const c of CRON_CARRIERS) {
+      if (!isBoundCarrier(c)) continue;
+      const calls = CRON_CALL_ARGS.get(c.file) ?? [];
+      for (const args of calls) {
+        const m = /timeZone\s*:\s*(['"])(.*?)\1/.exec(args);
+        if (m) violations.push(`${c.file}#${c.cls}: literal timeZone='${m[2]}' (SCHEDULER_TIMEZONE yerine)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('[9] SCHEDULER_TIMEZONE kullanan her dosya onu canonical common modulunden import eder', () => {
+    const missing: string[] = [];
+    for (const [file, calls] of CRON_CALL_ARGS) {
+      const usesConstant = calls.some((a) => /timeZone\s*:\s*SCHEDULER_TIMEZONE\b/.test(a));
+      if (!usesConstant) continue;
+      const src = CLEAN.get(file)!;
+      if (!/from\s*['"][^'"]*common\/scheduler-timezone['"]/.test(src)) missing.push(file);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('[10] DORMANT icrabot cron cagrilari timeZone kontrolunden istisna tutulur (W3-F06 kapsam disi)', () => {
+    for (const file of CERTIFIED_DORMANT_CRON_FILES) {
+      const calls = CRON_CALL_ARGS.get(file) ?? [];
+      expect(calls.length).toBeGreaterThan(0);
+      // Bu test hicbir sey ASSERT ETMEZ, yalniz istisnayi kayit altina alir — [7]/[8]
+      // zaten isBoundCarrier ile bunlari atlar; bu, o atlamanin BILINCLI oldugunu belgeler.
+    }
   });
 });

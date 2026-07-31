@@ -29,6 +29,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 
 /**
  * Retention configuration
@@ -66,7 +67,7 @@ export class DecisionLogRetentionService {
    * UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: ARTIK HİÇBİR KAYIT SİLMEZ. Yalnızca retention
    * penceresine düşen aday sayısını ölçer ve raporlar (gözlemlenebilirlik korunur).
    */
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, { timeZone: SCHEDULER_TIMEZONE })
   async archiveOldRecords(): Promise<void> {
     this.logger.log('Starting decision log retention sweep (READ-ONLY)...');
 

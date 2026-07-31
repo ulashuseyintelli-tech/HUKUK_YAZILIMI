@@ -9,6 +9,7 @@ import {
   CaseTaskEscalationConfig,
 } from "./case-task-escalation-logic";
 import { caseTaskEscalationSubject, buildCaseTaskEmailHtml, buildCaseTaskSmsText } from "./case-task-escalation-content";
+import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 
 /**
  * D-G3b — Dosya görevi (case-linked LEGAL_WORKFLOW) owner-first eskalasyon motoru.
@@ -41,7 +42,7 @@ export class CaseTaskEscalationService {
     return process.env.CASE_TASK_ESCALATION_ENABLED === "true";
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async scheduledRun(): Promise<void> {
     if (!this.isEnabled()) return; // FLAG OFF → çalışmaz (D-G6'da açılır)
     await this.processCaseTaskEscalations();
