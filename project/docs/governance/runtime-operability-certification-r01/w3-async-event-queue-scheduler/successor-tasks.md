@@ -51,6 +51,16 @@ Dogrulama katmani: dispatch (handler-basina degil). Detay: `defect-register.md`
 - **prerequisite:** owner karari — hedef timezone ve kapsam (hepsi mi, yalniz sure hesaplayanlar mi)
 - **bagimlilik:** config yok, migration yok; **scheduler politikasi** karari
 
+**SONUC (R01, [PR #2032](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2032), merge `9e55f0bf`):**
+CLOSED. Hedef: tum runtime-bound cron yuzeyi (32 job'un tamami — sadece sure
+hesaplayanlar degil). Merkezi `SCHEDULER_TIMEZONE = 'Europe/Istanbul'` sabiti
++ `resolveSchedulerTimezone(jobClass?)` ile 14 servisteki 33 `@Cron`
+cagrisinin tumune explicit `timeZone` eklendi (2 dormant icrabot cron'u
+HARIC — W3-F06 kapsami). `process.env.TZ=UTC` deploy pinine DOKUNULMADI
+(ayri, halihazirda ratifiye edilmis karar). GERCEK NestFactory bootstrap +
+2x host TZ (UTC/Europe/Istanbul) runtime testi 0 job drift dogruladi.
+Migration gerekmedi. Detay: `defect-register.md` → Cozum Kaydi → W3-D04.
+
 ---
 ## W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01
 - **capability:** cron failure gorunurlugu
