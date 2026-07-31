@@ -63,6 +63,13 @@ import {
 } from "./collection-cancel-executor";
 import { resolveCanonicalCollectionReceiptCommand } from "./collection-receipt-command";
 import {
+  assertCollectionSemanticReplay,
+  buildCollectionSemanticCommandEvidence,
+  CollectionIdempotencyConflictError,
+  digestCollectionActorAuthority,
+  digestIdempotencyKey,
+} from "./collection-semantic-command";
+import {
   buildAllocationComparisonContext,
   diagnoseCollectionAllocationProjection,
   type AllocationComparisonResult,
@@ -83,19 +90,12 @@ const EXTERNAL_SOURCES = new Set<string>([
   CollectionSource.BANK_INTEGRATION,
 ]);
 
-// P0-1: idempotent replay/conflict için mevcut tahsilatın payload alanları.
+// RCV-COL-IDEM-01: replay authority yalnız persisted full semantic evidence'dır.
 const IDEMPOTENCY_PAYLOAD_SELECT = {
   id: true,
-  caseId: true,
-  amount: true,
-  currency: true,
-  date: true,
-  valueDate: true,
-  type: true,
-  channel: true,
-  sourceType: true,
-  sourceId: true,
-  caseDebtorId: true,
+  commandFingerprintVersion: true,
+  commandFingerprint: true,
+  commandCanonicalPayload: true,
 } as const;
 
 function coerceDate(value: unknown, fallback: unknown): Date {
@@ -513,6 +513,13 @@ export class CollectionService {
     tenantId = command.tenantId;
     dto = command.dto;
     const actor = command.actor;
+    const semanticEvidence = buildCollectionSemanticCommandEvidence({
+      tenantId,
+      dto,
+      actor,
+      producer: command.producer,
+      requestContext,
+    });
 
     // Late-entry warning (audit flag, no reject)
     const daysDiff = Math.floor(
@@ -532,13 +539,29 @@ export class CollectionService {
     }
 
     // ── P0-1: idempotent fast-path (tx öncesi hızlı yol) ────────────────────
-    //  Aynı (tenant, idempotencyKey) → aynı payload ise mevcut tahsilat döner (replay);
-    //  farklı payload ise IDEMPOTENCY_KEY_CONFLICT. Double-click/retry en yaygın vaka.
+    //  Aynı (tenant, idempotencyKey) → aynı full semantic command ise mevcut tahsilat
+    //  döner; farklı komut IDEMPOTENCY_SEMANTIC_CONFLICT ile fail-closed kalır.
     const preExisting = transactionClient
       ? await this.findByIdempotencyKeyTx(transactionClient, tenantId, dto.idempotencyKey)
       : await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
     if (preExisting) {
-      this.assertSameCollectionPayload(preExisting, dto);
+      try {
+        assertCollectionSemanticReplay(preExisting, semanticEvidence);
+      } catch (error) {
+        if (
+          !transactionClient &&
+          error instanceof CollectionIdempotencyConflictError
+        ) {
+          await this.auditCollectionIdempotencyConflict({
+            tenantId,
+            idempotencyKey: dto.idempotencyKey,
+            collectionId: preExisting.id,
+            actor,
+            error,
+          });
+        }
+        throw error;
+      }
       return this.findById(tenantId, preExisting.id, transactionClient);
     }
 
@@ -552,7 +575,7 @@ export class CollectionService {
       }))`;
       const lockedDup = await this.findByIdempotencyKeyTx(tx, tenantId, dto.idempotencyKey);
       if (lockedDup) {
-        this.assertSameCollectionPayload(lockedDup, dto);
+        assertCollectionSemanticReplay(lockedDup, semanticEvidence);
         return lockedDup;
       }
 
@@ -658,6 +681,9 @@ export class CollectionService {
           status: CollectionStatus.CONFIRMED,
           confirmedAt,
           idempotencyKey: dto.idempotencyKey,
+          commandFingerprintVersion: semanticEvidence.fingerprintVersion,
+          commandFingerprint: semanticEvidence.commandFingerprint,
+          commandCanonicalPayload: semanticEvidence.commandCanonicalPayload,
           createdById: userId,
         },
       });
@@ -948,13 +974,41 @@ export class CollectionService {
       // transaction client ile tx-disina kacarak replay aramasi yapilmaz.
       if (transactionClient) throw e;
 
+      if (e instanceof CollectionIdempotencyConflictError) {
+        const row = await this.findByIdempotencyKey(
+          tenantId,
+          dto.idempotencyKey,
+        );
+        await this.auditCollectionIdempotencyConflict({
+          tenantId,
+          idempotencyKey: dto.idempotencyKey,
+          collectionId: row?.id,
+          actor,
+          error: e,
+        });
+        throw e;
+      }
+
       // ── P0-1: idempotencyKey race → P2002 → idempotent replay ──────────────
       //  Lock'a rağmen kalan yarış (veya external dedup index) P2002 üretirse:
       //  key ile mevcut satır bulunursa replay; yoksa external dup → conflict.
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
         const row = await this.findByIdempotencyKey(tenantId, dto.idempotencyKey);
         if (row) {
-          this.assertSameCollectionPayload(row, dto);
+          try {
+            assertCollectionSemanticReplay(row, semanticEvidence);
+          } catch (error) {
+            if (error instanceof CollectionIdempotencyConflictError) {
+              await this.auditCollectionIdempotencyConflict({
+                tenantId,
+                idempotencyKey: dto.idempotencyKey,
+                collectionId: row.id,
+                actor,
+                error,
+              });
+            }
+            throw error;
+          }
           return this.findById(tenantId, row.id);
         }
         // meta.target ile ayrıştır: yalnız external-dedup index'i (source_dedupe)
@@ -999,52 +1053,37 @@ export class CollectionService {
     });
   }
 
-  /**
-   * P0-1: idempotent replay guard (ClientPayout.replayOrConflict deseni). Aynı
-   * idempotencyKey FARKLI payload ile gelirse IDEMPOTENCY_KEY_CONFLICT fırlatır;
-   * sessiz eski-kayıt dönme YOK — replay yalnız payload birebir eşleşince.
-   */
-  private assertSameCollectionPayload(
-    existing: {
-      caseId: string;
-      amount: Prisma.Decimal | number | string;
-      currency: string;
-      date: Date;
-      valueDate: Date | null;
-      type: string;
-      channel: string;
-      sourceType: string | null;
-      sourceId: string | null;
-      caseDebtorId: string | null;
-    },
-    dto: CreateCollectionDto,
-  ): void {
-    const sameAmount =
-      Number(existing.amount).toFixed(2) === Number(dto.amount).toFixed(2);
-    const sameDate =
-      new Date(existing.date).getTime() === new Date(dto.date).getTime();
-    const sameValueDate = existing.valueDate === null
-      ? !dto.valueDate
-      : Boolean(dto.valueDate) &&
-        new Date(existing.valueDate).getTime() === new Date(dto.valueDate as string).getTime();
-    const same =
-      existing.caseId === dto.caseId &&
-      sameAmount &&
-      sameDate &&
-      sameValueDate &&
-      String(existing.currency) === String(dto.currency || "TRY") &&
-      String(existing.type) === String(dto.type) &&
-      String(existing.channel) === String(dto.channel || "BANKA") &&
-      (existing.sourceType ?? null) === (dto.sourceType ?? null) &&
-      (existing.sourceId ?? null) === (dto.sourceId ?? null) &&
-      (existing.caseDebtorId ?? null) === (dto.caseDebtorId ?? null);
-    if (!same) {
-      throw new ConflictException({
-        code: "IDEMPOTENCY_KEY_CONFLICT",
-        message:
-          "Aynı idempotencyKey farklı payload ile kullanıldı (amount/caseId/date/valueDate/type/channel/source/caseDebtorId/currency)",
-      });
-    }
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → standalone replay/conflict yolları
+  /// </remarks>
+  private async auditCollectionIdempotencyConflict(input: {
+    tenantId: string;
+    idempotencyKey: string;
+    collectionId?: string;
+    actor: ReturnType<typeof resolveCanonicalCollectionReceiptCommand>['actor'];
+    error: CollectionIdempotencyConflictError;
+  }): Promise<void> {
+    await this.auditService.log({
+      tenantId: input.tenantId,
+      action: 'COLLECTION_IDEMPOTENCY_SEMANTIC_CONFLICT',
+      entityType: 'COLLECTION',
+      entityId: input.collectionId,
+      userId:
+        input.actor.type === 'HUMAN' ? input.actor.userId : undefined,
+      actorType:
+        input.actor.type === 'HUMAN' ? 'USER' : input.actor.type,
+      reasonCode: input.error.reason,
+      description: 'Collection semantic idempotency conflict rejected.',
+      metadata: {
+        idempotencyKeyDigest: digestIdempotencyKey(input.idempotencyKey),
+        existingFingerprint: input.error.existingFingerprint,
+        incomingFingerprint: input.error.incomingFingerprint,
+        fingerprintVersion: input.error.fingerprintVersion,
+        actorAuthorityDigest: digestCollectionActorAuthority(input.actor),
+        operation: 'CREATE_COLLECTION_RECEIPT',
+      },
+    });
   }
 
   /**

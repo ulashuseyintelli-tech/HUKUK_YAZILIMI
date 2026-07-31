@@ -2434,7 +2434,12 @@ model Collection {
   //   client-üretimli key sağlar; legacy satırlar migration'da 'legacy:'||id backfill'i aldı.
   //   External dedup + ledger-posting tekliği migration'daki partial-unique index'lerle
   //   kurulur (Prisma partial/filtered unique'i deklaratif desteklemez → raw SQL).
-  idempotencyKey String
+  idempotencyKey            String
+  // RCV-COL-IDEM-01: yeni Collection create/admission komutları full semantic
+  // fingerprint taşır. Legacy satırlar NULL kalır; historical hash tahmini/backfill yoktur.
+  commandFingerprintVersion String?
+  commandFingerprint        String?
+  commandCanonicalPayload   String? @db.Text
 
   // Mahsup Bilgileri
   allocations                 CollectionAllocation[]

@@ -88,8 +88,9 @@ export class CreateCollectionDto {
 
   // İdempotency (P0-1 / S9) — ZORUNLU. Client, form/işlem başına STABİL bir key üretir
   //   (ör. crypto.randomUUID); double-click/retry aynı key'i taşır → tek tahsilat.
-  //   Aynı key + aynı payload → replay (mevcut tahsilat döner); aynı key + farklı payload
-  //   → IDEMPOTENCY_KEY_CONFLICT. Nullable/eksik key ile create YAPILMAZ.
+  //   Aynı key + aynı canonical semantic command → replay (mevcut tahsilat döner);
+  //   aynı key + farklı semantic command → IDEMPOTENCY_SEMANTIC_CONFLICT.
+  //   Nullable/eksik key ile create YAPILMAZ.
   @IsString()
   idempotencyKey: string;
 
