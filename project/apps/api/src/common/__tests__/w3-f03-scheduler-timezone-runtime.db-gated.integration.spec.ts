@@ -40,13 +40,16 @@
  * ayni index her iki boot'ta da ayni sinif/metoda karsilik gelir. Bu varsayim, her iki boot'un
  * ayni index'te ayni cron ifadesini (`cronTime.source`) tasidigi ayrica dogrulanarak desteklenir.
  *
- * KUCUK, BILINCLI kabul edilen flake riski: Boot A ve Boot B'nin `nextDates(3)` hesaplamasi
- * GERCEK "su an"i kullanir (cron paketi icinde `DateTime.utc()` — bkz ../scheduler-timezone.spec.ts
- * basligindaki arastirma notu); iki boot arasinda gecen birkac saniyelik gercek zaman farki,
- * TEORIDE bir job'un tam tetiklenme sinirina rastlarsa yanlis-pozitif "drift" gorunumu verebilir.
- * Bu, saniyenin altinda cok dusuk olasilikli bir test-zamanlama artefakti olur (gercek bir TZ
- * hatasi degil) ve mevcut cron ifadelerinin hicbiri saniye/dakika hassasiyetinde degildir
- * (en sik: EVERY_MINUTE) — pratikte gozlemlenmesi beklenmez.
+ * DUZELTILMIS ZAMANLAMA ARTEFAKTI (CI'da GERCEKTEN GOZLEMLENDI): ilk versiyon Boot A/B icin
+ * next-fire hesabini `job.nextDates(3)` ile yapiyordu — bu, GERCEK "su an"i kullanir. Boot A'nin
+ * snapshot'i ile Boot B'nin snapshot'i arasinda (iki ayri tam AppModule bootstrap + assertion)
+ * gecen gercek saniyeler, kisa periyotlu iki job'da (dakikada-bir ve 5-dakikada-bir calisan
+ * cron'lar) pencereyi tam bir periyot kaydirip yanlis-pozitif "drift" uretti (CI'da idx 27/32,
+ * yerelde hic gozlenmedi — daha hizli runner). Bu gercek bir TZ hatasi DEGILDI: BootA[i+1] ===
+ * BootB[i] birebir esitti, yani ikisi de dogru hesapliyordu, sadece FARKLI referans anlarindan.
+ * Duzeltme: artik HER IKI boot da TEK, paylasilan `sharedReference` sabitinden
+ * (cronTime.getNextDateFrom) hesapliyor — gercek "su an" olcumden tamamen cikarildi, zamanlama
+ * artik sonucu ETKILEYEMEZ.
  */
 /**
  * `pdf-poppler`'in kendi index.js'i, sistemde poppler-utils ikili dosyalari
@@ -144,27 +147,52 @@ describeWithDisposableDb(
       registry.clear();
     }
 
-    /** Discovery-sira pozisyonel anlik goruntu: key'e DEGIL, index'e gore karsilastirilir. */
-    function snapshotJobs(registry: SchedulerRegistry): JobSnapshot[] {
+    /**
+     * Discovery-sira pozisyonel anlik goruntu: key'e DEGIL, index'e gore karsilastirilir.
+     *
+     * `fromRef` MUTLAKA Boot A ve Boot B arasinda AYNI (paylasilan, sabit) Date olmalidir.
+     * `job.nextDates(N)` GERCEK "su an"i kullanir — Boot A'nin snapshot'i ile Boot B'nin
+     * snapshot'i arasinda (iki ayri tam AppModule bootstrap + assertion) gecen gercek
+     * saniyeler, dakika/5-dakika gibi KISA periyotlu job'larda (orn. EVERY_MINUTE) pencereyi
+     * bir periyot kaydirip YANLIS-POZITIF "drift" uretebilir — CI'da (yerelden daha yavas
+     * runner) bu tam olarak gozlemlendi (idx 27: dakikada-bir job, idx 32: 5-dakikada-bir job).
+     * Bu, gercek bir TZ hatasi DEGIL, olcum yontemi artefaktidir; duzeltme paylasilan sabit
+     * referans + `cronTime.getNextDateFrom(ref, tz)` ile GERCEK "su an"i tamamen devre disi
+     * birakmaktir (job.nextDates(N)'in implicit now'ina guvenmek yerine).
+     */
+    function snapshotJobs(registry: SchedulerRegistry, fromRef: Date): JobSnapshot[] {
       const jobs = [...registry.getCronJobs().values()] as any[];
-      return jobs.map((job) => ({
-        source: String(job.cronTime.source),
-        timeZone: job.cronTime.timeZone,
-        nextFires: (job.nextDates(3) as any[]).map((d) => d.toMillis()),
-      }));
+      return jobs.map((job) => {
+        const timeZone = job.cronTime.timeZone;
+        const fires: number[] = [];
+        let ref = fromRef;
+        for (let i = 0; i < 3; i++) {
+          const next = job.cronTime.getNextDateFrom(ref, timeZone);
+          fires.push(next.toMillis());
+          // Bir sonraki cagriyi AYNI ana kilitlenmekten kurtarmak icin 1 saniye ileri al
+          // (en kisa granularite dakika oldugundan bu asla bir sonraki fire'i atlamaz).
+          ref = new Date(next.toMillis() + 1000);
+        }
+        return { source: String(job.cronTime.source), timeZone, nextFires: fires };
+      });
     }
 
     it(
       "A+B+C+E+F: iki host-TZ altinda (UTC, Europe/Istanbul) 33 cron kaydi, 0 duplicate, " +
         "config-gated 4 job da kosulsuz kayitli, 0 job drift, temiz kapanis",
       async () => {
+        // Boot A ve Boot B'nin next-fire hesaplarinin ikisi de AYNI bu sabit ana gore
+        // yapilir — iki bootstrap arasinda gecen gercek saniyelerin (kisa periyotlu
+        // job'larda pencereyi kaydirip yanlis-pozitif "drift" uretmesinin) onune gecer.
+        const sharedReference = new Date();
+
         // ── Boot A: host TZ=UTC (deploy stack'in gercek pinlenmis degeri) — senaryo A ──
         const bootA = await bootApp("UTC");
         expect(bootA.registry.getCronJobs().size).toBe(EXPECTED_CRON_JOB_COUNT);
         for (const name of NAMED_JOBS) {
           expect(() => bootA.registry.getCronJob(name)).not.toThrow();
         }
-        const snapshotA = snapshotJobs(bootA.registry);
+        const snapshotA = snapshotJobs(bootA.registry, sharedReference);
         clearSharedPromRegistry(bootA.app); // bkz clearSharedPromRegistry basligi — Boot B icin sart
         await expect(bootA.app.close()).resolves.toBeUndefined(); // F (Boot A)
 
@@ -174,7 +202,7 @@ describeWithDisposableDb(
         for (const name of NAMED_JOBS) {
           expect(() => bootB.registry.getCronJob(name)).not.toThrow();
         }
-        const snapshotB = snapshotJobs(bootB.registry);
+        const snapshotB = snapshotJobs(bootB.registry, sharedReference);
         await expect(bootB.app.close()).resolves.toBeUndefined(); // F (Boot B)
 
         // ── Sayim + 0-duplicate (E) ──
