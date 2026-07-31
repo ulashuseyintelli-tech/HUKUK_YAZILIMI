@@ -1,0 +1,567 @@
+{
+  "contentAuthority": {
+    "decisionPackId": "RECEIVABLE-NAFAKA-LEGAL-BASIS-DECISION-PACK",
+    "decisionPackSha256": "1e1fa725107a63cb736e927d810f07c5e70b6120f3b34248e2e87f5a61088a77",
+    "decisionPackVersion": "2"
+  },
+  "effectiveAt": "2026-08-01T00:00:00Z",
+  "legalBases": [
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED"
+      },
+      "legalAuthorityReferences": [
+        {
+          "authority": "Türkiye Büyük Millet Meclisi",
+          "provisionScope": [
+            "TMK 169"
+          ],
+          "url": "https://cdn.tbmm.gov.tr/KKBSPublicFile/D21/Y2/T1/KanunMetni/1cbadba3-a22d-43fd-a5e4-dfb3b69b962b.html"
+        },
+        {
+          "authority": "Anayasa Mahkemesi",
+          "provisionScope": [
+            "TMK 169"
+          ],
+          "url": "https://kararlarbilgibankasi.anayasa.gov.tr/BB/2018/6904"
+        }
+      ],
+      "legalBasisCode": "TMK_169",
+      "legalBasisVersion": "1",
+      "legalContent": {
+        "exclusions": [
+          "ENFORCEMENT_EXPENSE",
+          "INTEREST",
+          "LITIGATION_COST",
+          "STATUTORY_OR_CONTRACTUAL_FEE"
+        ],
+        "legalRole": "CLAIM_FORMATION_AUTHORITY",
+        "permittedUse": [
+          "A fixed and due principal installment created only by an exact enforceable interim measure under TMK 169; it does not include interest or costs."
+        ],
+        "title": "Boşanma Davası Süresince Geçici Nafaka Tedbiri"
+      },
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SOURCE_BOUND_DEBTOR_RELATIONSHIP"
+        ]
+      },
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "INTERIM_COURT_ORDER"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "CLAIMANT_IDENTITY_EVIDENCE",
+          "DEBTOR_IDENTITY_EVIDENCE",
+          "EXACT_DUE_DATE_EVIDENCE",
+          "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+          "INTERIM_ORDER_ENFORCEABILITY_EVIDENCE",
+          "LIABILITY_CONTEXT_HASH",
+          "SOURCE_EFFECTIVE_INTERVAL_EVIDENCE"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "INTERIM_MAINTENANCE"
+        ],
+        "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "2"
+      },
+      "supersedes": []
+    },
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED"
+      },
+      "legalAuthorityReferences": [
+        {
+          "authority": "Türkiye Büyük Millet Meclisi",
+          "provisionScope": [
+            "TMK 175",
+            "TMK 176"
+          ],
+          "url": "https://cdn.tbmm.gov.tr/KKBSPublicFile/D21/Y2/T1/KanunMetni/1cbadba3-a22d-43fd-a5e4-dfb3b69b962b.html"
+        },
+        {
+          "authority": "Anayasa Mahkemesi",
+          "provisionScope": [
+            "TMK 175",
+            "TMK 176"
+          ],
+          "url": "https://normkararlarbilgibankasi.anayasa.gov.tr/ND/2009/94"
+        },
+        {
+          "authority": "Anayasa Mahkemesi",
+          "provisionScope": [
+            "TMK 176"
+          ],
+          "url": "https://kararlarbilgibankasi.anayasa.gov.tr/BB/2016/3140"
+        }
+      ],
+      "legalBasisCode": "TMK_175_176",
+      "legalBasisVersion": "1",
+      "legalContent": {
+        "exclusions": [
+          "ENFORCEMENT_EXPENSE",
+          "INTEREST",
+          "LITIGATION_COST",
+          "STATUTORY_OR_CONTRACTUAL_FEE"
+        ],
+        "legalRole": "CLAIM_FORMATION_AUTHORITY",
+        "permittedUse": [
+          "A fixed and due poverty-maintenance principal installment under an exact enforceable source compatible with TMK 175-176; it does not include interest or costs."
+        ],
+        "title": "Yoksulluk Nafakası ve Ödeme Biçimi"
+      },
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SOURCE_BOUND_FORMER_SPOUSE_LIABILITY"
+        ]
+      },
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "COURT_JUDGMENT",
+          "ENFORCEABLE_AGREEMENT_OR_PROTOCOL"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "BENEFICIARY_IDENTITY_EVIDENCE",
+          "DEBTOR_IDENTITY_EVIDENCE",
+          "EXACT_DUE_DATE_EVIDENCE",
+          "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+          "LIABILITY_CONTEXT_HASH",
+          "SOURCE_ENFORCEABILITY_EVIDENCE",
+          "SOURCE_POVERTY_MAINTENANCE_DISPOSITION_EVIDENCE"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "POVERTY_MAINTENANCE"
+        ],
+        "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "2"
+      },
+      "supersedes": []
+    },
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED"
+      },
+      "legalAuthorityReferences": [
+        {
+          "authority": "Türkiye Büyük Millet Meclisi",
+          "provisionScope": [
+            "TMK 182/2"
+          ],
+          "url": "https://cdn.tbmm.gov.tr/KKBSPublicFile/D21/Y2/T1/KanunMetni/1cbadba3-a22d-43fd-a5e4-dfb3b69b962b.html"
+        },
+        {
+          "authority": "Anayasa Mahkemesi",
+          "provisionScope": [
+            "TMK 182"
+          ],
+          "url": "https://kararlarbilgibankasi.anayasa.gov.tr/BB/2016/3140"
+        }
+      ],
+      "legalBasisCode": "TMK_182_2",
+      "legalBasisVersion": "1",
+      "legalContent": {
+        "exclusions": [
+          "ENFORCEMENT_EXPENSE",
+          "INTEREST",
+          "LITIGATION_COST",
+          "STATUTORY_OR_CONTRACTUAL_FEE"
+        ],
+        "legalRole": "CLAIM_FORMATION_AUTHORITY",
+        "permittedUse": [
+          "A fixed and due child-maintenance principal installment under an exact enforceable source compatible with TMK 182/2 or TMK 327-330; it does not include interest or costs."
+        ],
+        "title": "Boşanma Sonrası Çocuk Giderlerine Katılım"
+      },
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SOURCE_BOUND_PARENTAL_LIABILITY"
+        ]
+      },
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "COURT_JUDGMENT",
+          "ENFORCEABLE_AGREEMENT_OR_PROTOCOL"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "CHILD_BENEFICIARY_IDENTITY_EVIDENCE",
+          "CLAIMANT_CAPACITY_EVIDENCE",
+          "DEBTOR_IDENTITY_EVIDENCE",
+          "EXACT_DUE_DATE_EVIDENCE",
+          "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+          "LIABILITY_CONTEXT_HASH",
+          "SOURCE_ENFORCEABILITY_EVIDENCE"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "MINOR_CHILD_MAINTENANCE"
+        ],
+        "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "2"
+      },
+      "supersedes": []
+    },
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED"
+      },
+      "legalAuthorityReferences": [
+        {
+          "authority": "Türkiye Büyük Millet Meclisi",
+          "provisionScope": [
+            "TMK 197"
+          ],
+          "url": "https://cdn.tbmm.gov.tr/KKBSPublicFile/D21/Y2/T1/KanunMetni/1cbadba3-a22d-43fd-a5e4-dfb3b69b962b.html"
+        },
+        {
+          "authority": "Anayasa Mahkemesi",
+          "provisionScope": [
+            "TMK 197"
+          ],
+          "url": "https://kararlarbilgibankasi.anayasa.gov.tr/BB/2013/6616"
+        }
+      ],
+      "legalBasisCode": "TMK_197",
+      "legalBasisVersion": "1",
+      "legalContent": {
+        "exclusions": [
+          "ENFORCEMENT_EXPENSE",
+          "INTEREST",
+          "LITIGATION_COST",
+          "STATUTORY_OR_CONTRACTUAL_FEE"
+        ],
+        "legalRole": "CLAIM_FORMATION_AUTHORITY",
+        "permittedUse": [
+          "A fixed and due spouse-maintenance principal installment under an exact enforceable source compatible with TMK 197; it does not include interest or costs."
+        ],
+        "title": "Haklı Ayrı Yaşamada Parasal Katkı"
+      },
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SOURCE_BOUND_SPOUSE_LIABILITY"
+        ]
+      },
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "COURT_JUDGMENT",
+          "INTERIM_COURT_ORDER"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "BENEFICIARY_IDENTITY_EVIDENCE",
+          "DEBTOR_IDENTITY_EVIDENCE",
+          "EXACT_DUE_DATE_EVIDENCE",
+          "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+          "LIABILITY_CONTEXT_HASH",
+          "SOURCE_ENFORCEABILITY_EVIDENCE",
+          "SOURCE_SEPARATE_LIVING_DISPOSITION_EVIDENCE"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "SEPARATE_LIVING_SPOUSAL_MAINTENANCE"
+        ],
+        "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "2"
+      },
+      "supersedes": []
+    },
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED"
+      },
+      "legalAuthorityReferences": [
+        {
+          "authority": "Türkiye Büyük Millet Meclisi",
+          "provisionScope": [
+            "TMK 327",
+            "TMK 330"
+          ],
+          "url": "https://cdn.tbmm.gov.tr/KKBSPublicFile/D21/Y2/T1/KanunMetni/1cbadba3-a22d-43fd-a5e4-dfb3b69b962b.html"
+        },
+        {
+          "authority": "Anayasa Mahkemesi",
+          "provisionScope": [
+            "TMK 330"
+          ],
+          "url": "https://kararlarbilgibankasi.anayasa.gov.tr/BB/2016/3140"
+        }
+      ],
+      "legalBasisCode": "TMK_327_330",
+      "legalBasisVersion": "1",
+      "legalContent": {
+        "exclusions": [
+          "ENFORCEMENT_EXPENSE",
+          "INTEREST",
+          "LITIGATION_COST",
+          "STATUTORY_OR_CONTRACTUAL_FEE"
+        ],
+        "legalRole": "CLAIM_FORMATION_AUTHORITY",
+        "permittedUse": [
+          "A fixed and due child-maintenance principal installment under an exact enforceable source compatible with TMK 182/2 or TMK 327-330; it does not include interest or costs."
+        ],
+        "title": "Çocuğun Bakım ve Eğitim Giderlerine Katılım"
+      },
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SOURCE_BOUND_PARENTAL_LIABILITY"
+        ]
+      },
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "COURT_JUDGMENT",
+          "ENFORCEABLE_AGREEMENT_OR_PROTOCOL"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "CHILD_BENEFICIARY_IDENTITY_EVIDENCE",
+          "CLAIMANT_CAPACITY_EVIDENCE",
+          "DEBTOR_IDENTITY_EVIDENCE",
+          "EXACT_DUE_DATE_EVIDENCE",
+          "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+          "LIABILITY_CONTEXT_HASH",
+          "SOURCE_ENFORCEABILITY_EVIDENCE"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "MINOR_CHILD_MAINTENANCE"
+        ],
+        "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "2"
+      },
+      "supersedes": []
+    },
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED"
+      },
+      "legalAuthorityReferences": [
+        {
+          "authority": "Türkiye Büyük Millet Meclisi",
+          "provisionScope": [
+            "TMK 328/2"
+          ],
+          "url": "https://cdn.tbmm.gov.tr/KKBSPublicFile/D21/Y2/T1/KanunMetni/1cbadba3-a22d-43fd-a5e4-dfb3b69b962b.html"
+        }
+      ],
+      "legalBasisCode": "TMK_328_2",
+      "legalBasisVersion": "1",
+      "legalContent": {
+        "exclusions": [
+          "ENFORCEMENT_EXPENSE",
+          "INTEREST",
+          "LITIGATION_COST",
+          "STATUTORY_OR_CONTRACTUAL_FEE"
+        ],
+        "legalRole": "CLAIM_FORMATION_AUTHORITY",
+        "permittedUse": [
+          "A fixed and due principal installment for education continuing after majority under an exact enforceable source compatible with TMK 328/2; it does not include interest or costs."
+        ],
+        "title": "Erginlik Sonrası Devam Eden Eğitim Nafakası"
+      },
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SOURCE_BOUND_PARENTAL_LIABILITY"
+        ]
+      },
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "COURT_JUDGMENT",
+          "ENFORCEABLE_AGREEMENT_OR_PROTOCOL"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "ADULT_CHILD_IDENTITY_EVIDENCE",
+          "CONTINUING_EDUCATION_EVIDENCE",
+          "DEBTOR_IDENTITY_EVIDENCE",
+          "EXACT_DUE_DATE_EVIDENCE",
+          "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+          "LIABILITY_CONTEXT_HASH",
+          "SOURCE_ENFORCEABILITY_EVIDENCE"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "ADULT_CHILD_EDUCATION_MAINTENANCE"
+        ],
+        "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "2"
+      },
+      "supersedes": []
+    },
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2026-08-01T00:00:00Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "SEPARATE_EXACT_LEGAL_BASIS_AND_INTEREST_POLICY_REQUIRED"
+      },
+      "legalAuthorityReferences": [
+        {
+          "authority": "Türkiye Büyük Millet Meclisi",
+          "provisionScope": [
+            "TMK 364",
+            "TMK 365",
+            "TMK 366"
+          ],
+          "url": "https://cdn.tbmm.gov.tr/KKBSPublicFile/D21/Y2/T1/KanunMetni/1cbadba3-a22d-43fd-a5e4-dfb3b69b962b.html"
+        },
+        {
+          "authority": "Anayasa Mahkemesi",
+          "provisionScope": [
+            "TMK 364",
+            "TMK 365",
+            "TMK 366"
+          ],
+          "url": "https://kararlarbilgibankasi.anayasa.gov.tr/BB/2014/10261"
+        }
+      ],
+      "legalBasisCode": "TMK_364_366",
+      "legalBasisVersion": "1",
+      "legalContent": {
+        "exclusions": [
+          "ENFORCEMENT_EXPENSE",
+          "INTEREST",
+          "LITIGATION_COST",
+          "STATUTORY_OR_CONTRACTUAL_FEE"
+        ],
+        "legalRole": "CLAIM_FORMATION_AUTHORITY",
+        "permittedUse": [
+          "A fixed and due family-support principal installment under an exact enforceable judgment compatible with TMK 364-366; it does not include interest or costs."
+        ],
+        "title": "Aile İçinde Yardım Nafakası"
+      },
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "KISMI",
+          "SINIRLI",
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SOURCE_BOUND_KINSHIP_LIABILITY"
+        ]
+      },
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "COURT_JUDGMENT"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "CLAIMANT_IDENTITY_EVIDENCE",
+          "DEBTOR_IDENTITY_EVIDENCE",
+          "EXACT_DUE_DATE_EVIDENCE",
+          "EXACT_INSTALLMENT_AMOUNT_EVIDENCE",
+          "KINSHIP_EVIDENCE",
+          "LIABILITY_CONTEXT_HASH",
+          "SOURCE_ENFORCEABILITY_EVIDENCE",
+          "SOURCE_POVERTY_CONDITION_EVIDENCE"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "FAMILY_SUPPORT_MAINTENANCE"
+        ],
+        "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "2"
+      },
+      "supersedes": []
+    }
+  ],
+  "previousRelease": null,
+  "releaseId": "RCV-LB-R1",
+  "releaseVersion": "1",
+  "schemaVersion": "RECEIVABLE_LEGAL_BASIS_RELEASE_V1",
+  "supersedesReleaseIds": []
+}

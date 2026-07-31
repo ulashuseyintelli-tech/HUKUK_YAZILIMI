@@ -1,0 +1,67 @@
+{
+  "contentRatification": {
+    "decisionPackSha256": "1e1fa725107a63cb736e927d810f07c5e70b6120f3b34248e2e87f5a61088a77",
+    "finalRatifier": {
+      "identity": "Av. Ulaş Hüseyin Telli",
+      "ratifierCode": "TELLI-FINAL-LEGAL-RATIFIER-01",
+      "signatureStatus": "PENDING_NOT_EXECUTED"
+    },
+    "legalReviewer": {
+      "identity": "Av. Fatma Uluca Telli",
+      "ratifierCode": "TELLI-LEGAL-REVIEWER-01",
+      "signatureStatus": "PENDING_NOT_EXECUTED"
+    },
+    "status": "OWNER_LEGAL_AUTHORITY_RATIFIED"
+  },
+  "entryChecksums": [
+    {
+      "checksum": "e21e34e4b27fe51d76a2cdf1c73a2921f7a0905ff59df1a147ca06e734f5da49",
+      "legalBasisCode": "TMK_169",
+      "legalBasisVersion": "1"
+    },
+    {
+      "checksum": "009f2b47b7ac5e432e9dcdba97f5e9dd72280f0b808f3216f6f4470cc483a1f9",
+      "legalBasisCode": "TMK_175_176",
+      "legalBasisVersion": "1"
+    },
+    {
+      "checksum": "927466976afc39778291a293fe6e61f12d8ee6fc951eaf903190405c159e5fca",
+      "legalBasisCode": "TMK_182_2",
+      "legalBasisVersion": "1"
+    },
+    {
+      "checksum": "4260181f6b5750841c311ea76da0be26a58431fbdf540efd928578819311f366",
+      "legalBasisCode": "TMK_197",
+      "legalBasisVersion": "1"
+    },
+    {
+      "checksum": "72ed72fe6840ac24154a65bf33de3160f916b40de876250d821a5818bda90f7a",
+      "legalBasisCode": "TMK_327_330",
+      "legalBasisVersion": "1"
+    },
+    {
+      "checksum": "6fb264135ce28ae4448d6b63ffa4eb198a923474e7850660a2c606142e966a8b",
+      "legalBasisCode": "TMK_328_2",
+      "legalBasisVersion": "1"
+    },
+    {
+      "checksum": "4f7dcb9de6404b135fbfde837ec7c8e5ad93035254b4d221a7335c291823fde5",
+      "legalBasisCode": "TMK_364_366",
+      "legalBasisVersion": "1"
+    }
+  ],
+  "lifecycleEvidenceRefs": [],
+  "manifestSchemaVersion": "RECEIVABLE_LEGAL_BASIS_RELEASE_MANIFEST_V1",
+  "payloadChecksum": "57894751d415bfc02dbdacf0a5b4291c3bc8c0c8dc198b8d0913944ea1825104",
+  "previousRelease": null,
+  "productionSigner": {
+    "signatureStatus": "PENDING_NOT_EXECUTED",
+    "signerId": "TELLI-PROD-LEGAL-01"
+  },
+  "releaseId": "RCV-LB-R1",
+  "releaseVersion": "1",
+  "runtimeStatus": "DORMANT_DEFAULT_OFF",
+  "signatureStatus": "PENDING_NOT_EXECUTED",
+  "signatures": [],
+  "supersedesReleaseIds": []
+}

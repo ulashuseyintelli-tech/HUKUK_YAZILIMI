@@ -1,0 +1,15 @@
+{
+  "checksumAlgorithm": "SHA-256",
+  "entryCount": 13,
+  "generatedFromCanonicalPayload": "receivable-legal-subtype-registry-v2.json",
+  "predecessor": {
+    "registryChecksum": "320f671ed2262314a560703bc8f15f9cd8b5e0743d8dfa4e5ce49b1e62c26e64",
+    "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+    "registryVersion": 1
+  },
+  "registryChecksum": "f62c738afc201c4733be654c5d1ce273ccad695b66b25814209cafeda4c68e0c",
+  "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+  "registryVersion": 2,
+  "runtimeStatus": "DORMANT",
+  "serializationAlgorithm": "RCV-LEGAL-SUBTYPE-REGISTRY-CANONICAL-JSON-V1"
+}
