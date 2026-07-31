@@ -1056,5 +1056,13 @@ eligibility doğrulaması, canonical Collection admission ve finansal/event/outb
 `matchedCollectionId` CAS projection'ı ve audit aynı Prisma/PostgreSQL transaction'ında atomik
 çalışır; rollback, deterministic replay/target-conflict ve concurrent single-winner kanıtları
 mevcuttur. Task08 schema, migration, backfill veya live DB değişikliği yapmamıştır. Task09
-`RCV-COL-IDEM-01` yalnız `NEXT / IMPLEMENTATION NOT STARTED`dır. ACT-28 ve
-REC-AUTH-011/012 `OPEN`; synthetic corpus writer/evidence/cutover için `BLOCKING` kalır.
+`RCV-COL-IDEM-01` exact fourteen-file implementation PR #2001 /
+`6c34395d4ade84603b340b197f2c4e5d13c1ec4f` ile `CLOSED / CANONICAL EVIDENCE`dır.
+Versioned `RCV-COL-CMD/v1` canonical payload ve domain-separated SHA-256 fingerprint; same
+identity + same semantic command için side-effect-free replay, divergent command için
+`IDEMPOTENCY_SEMANTIC_CONFLICT`, legacy evidence-unknown için fail-closed rejection ve bank
+admission'ın Task08 shared transaction içindeki semantic replay gate'ine yeniden girmesini
+sağlar. Nullable/default-free evidence migration'ı repository-ready; live/production DB apply
+yapılmamıştır ve historical fingerprint tahmin edilmemiştir. Task10 `TPA-04F-ENTRY` yalnız
+`NEXT / NOT STARTED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus
+writer/evidence/cutover için `BLOCKING` kalır.
