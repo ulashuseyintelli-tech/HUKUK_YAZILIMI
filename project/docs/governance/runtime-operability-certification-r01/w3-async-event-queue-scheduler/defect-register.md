@@ -12,7 +12,7 @@ Makine-okunur tam kayit: `defect-register.json`.
 |---|---|---|---|---|---|
 | **W3-D02** | W3-B07 TENANT_BOUNDARY_UNSAFE | **P1** | outbox consumer handler'lari | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D01** | W3-B11 PAYLOAD_CONTRACT_MISMATCH | P2 | `webhook` handler | **RESOLVED** (bkz. Cozum Kaydi) | HANDLER REMOVED (migration GEREKMEDI) |
-| **W3-D09** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | handler'siz action -> sonsuz pending | DEFERRED | NOT_ELIGIBLE (owner policy) |
+| **W3-D09** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | handler'siz action -> sonsuz pending | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D04** | W3-B06 SCHEDULER_TIMEZONE_UNKNOWN | P2 | 32/33 cron job | DEFERRED | NOT_ELIGIBLE (scheduler policy) |
 | **W3-D05** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | 14/35 cron metodunda try/catch yok | DEFERRED | NOT_ELIGIBLE (scope too broad) |
 | **W3-D03** | W3-B04/B05 NOT_STARTED | P3 | icrabot + manifest-retry + playbook | DEFERRED + **GUARD** | NOT_ELIGIBLE (**activation**) |
@@ -99,3 +99,57 @@ Makine-okunur tam kayit: `defect-register.json`.
 - **Post-merge acceptance:** MERGED → disposable checkout + fresh disposable DB
   ile runtime dogrulama tekrarlandi, PASS. **PRODUCTION: NOT ACTIVATED.**
 - **Successor:** W3-F05-OUTBOX-NO-HANDLER-POISON-DISPOSITION-R01 (sirada).
+
+### W3-D09 — RESOLVED (W3-F05-OUTBOX-NO-HANDLER-POISON-DISPOSITION-R01)
+
+- **Task:** RUNTIME-OPERABILITY-CERTIFICATION-R01 / W3-F05-OUTBOX-NO-HANDLER-POISON-DISPOSITION-R01
+- **PR:** [#2005](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2005) — squash-merged
+- **MERGE SHA:** `0c700a444c94846f4cc1c7538d659b54ef7ad947`
+- **Kok neden:** `ActionHandlerService.dispatch()`, action tipi icin kayitli
+  handler bulunamadiginda claim ALMADAN erken donuyordu; satir 'pending'
+  kalip her cron turunde tekrar bulunuyordu, `attemptCount` hic artmiyordu,
+  hicbir terminal disposition veya sinirli gozlemlenebilirlik kaydi
+  olusmuyordu.
+- **Fresh envanter:** 12 hardcoded + 3 dinamik-kayitli (toplam 15) handler'a
+  karsi, gercek (test-disi) cagri yerlerinin exhaustive taramasi 9 kayitsiz
+  `EVENT_PUBLISHED:*` action tipi ortaya cikardi (`OVERPAYMENT_RECORDED`,
+  `OVERPAYMENT_BLOCKED`, `CASE_OPENED`, `INTEREST_POLICY_ASSIGNED`,
+  `CLAIM_ITEM_CREATED/ROLLED_BACK/CANCELLED/WAIVED/COLLECTED/UPDATED`) —
+  `DomainEventIngestService.appendInTransaction()` HER event icin kosulsuz
+  outbox satiri uretiyor, tuketici olup olmadigina bakmiyor. Bu, W3-D09
+  desenini teorik degil SOMUT/CANLI bir risk yapiyor.
+- **Karar:** mevcut sema (`status`/`attemptCount`/`lastError`/`nextRetryAt`,
+  `@@index([status])`) VE mevcut dead-letter/terminal makinesi
+  (`markDeadLetter`) yeterli bulundu — **migration GEREKMEDI**.
+- **Cozum:** `dispatch()` icine, handler-lookup asamasinda, MISSING_TENANT_ID
+  ile AYNI desende (once `claimForProcessing`, sonra `markDeadLetter`) yeni
+  bir dal eklendi: handler kayitli degilse claim alinir ve satir tek seferde
+  `NO_REGISTERED_HANDLER` / `NON_RETRYABLE` ile terminal 'dead' kapatilir.
+  Idempotent (ikinci claim daima basarisiz olur), stale-claim recovery'yi
+  etkilemez (`recoverStaleProcessingActions` sadece 'sent' satirlari
+  hedefler), replay (`retryDeadAction` → pending) handler registry'yi bir
+  sonraki `dispatch()` cagrisinda otomatik olarak YENIDEN kontrol eder (ayri
+  bir "dogrulandi" bypass bayragi yoktur) — brief'in ayri "replay registry'yi
+  yeniden dogrulamali" sartini ek kod olmadan saglar.
+- **Kanit:** 5 DB-free unit test (bilinmeyen action / idempotent ikinci
+  dispatch / stale-recovery hedef disi / replay yeniden-kontrol / desteklenen
+  action regresyonu) + 2 DB-gated runtime testi (GERCEK Postgres + GERCEK
+  `ActionHandlerService`+`OutboxService`, PR-oncesi VE post-merge fresh
+  checkout'ta ayri ayri PASS) + gercek CI (Architectural Guardrails, Test
+  Suite, Orchestration Tests, Web Tests, CodeQL, Client Workspace Live
+  Smoke — hepsi PASS).
+- **Post-merge acceptance:** MERGED → SHA'ya pin'li fresh worktree + fresh
+  disposable Postgres + migrasyonlar yeniden uygulanip DB-gated runtime
+  testi tekrarlandi, 2/2 PASS. **PRODUCTION: NOT ACTIVATED** — production
+  DB/runtime'a bu task kapsaminda dokunulmadi.
+- **Mevcut poison satir hacmi:** production `hukuk_db`'de su an kac satirin
+  bu desene dustugu bu task kapsaminda DOGRULANMADI (Phase 0 no-secrets
+  kurali geregi production baglantisi kurulmadi) — **UNVERIFIED**, sifir
+  VARSAYILMADI.
+- **Ek gozlem (owner karari bekliyor, YENI task OTOMATIK URETILMEDI):** 9
+  kayitsiz `EVENT_PUBLISHED:*` event tipi bulgusu, ayri bir (a) production
+  `hukuk_db` uzerinde READ-ONLY poison-row tespiti ve/veya (b) bu 9 event
+  tipi icin tuketici/registrar karari successor'unu hak edebilir; brief §11
+  geregi yalnizca GERCEKTEN dogrulanmis satir varsa yeni task uretilir —
+  burada dogrulama yapilmadigi icin uretilmedi.
+- **Successor:** W3-F03-SCHEDULER-TIMEZONE-DECLARATION-R01 (sirada).

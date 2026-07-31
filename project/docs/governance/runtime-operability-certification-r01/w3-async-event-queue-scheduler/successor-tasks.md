@@ -69,6 +69,16 @@ Dogrulama katmani: dispatch (handler-basina degil). Detay: `defect-register.md`
 - **prerequisite:** owner karari — mevcut davranis bilincli mi
 - **bagimlilik:** yok
 
+**SONUC (R01, [PR #2005](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2005), merge `0c700a44`):**
+CLOSED. `dispatch()`'e MISSING_TENANT_ID ile ayni desende (claim→markDeadLetter)
+yeni bir handler-yok dali eklendi; handler kayitli degilse satir TEK seferde
+`NO_REGISTERED_HANDLER`/`NON_RETRYABLE` ile terminal 'dead' kapanir — sonsuz
+pending deseni kirildi, migration gerekmedi (mevcut sema+dead-letter yeterli).
+Fresh envanter 9 kayitsiz `EVENT_PUBLISHED:*` event tipi buldu; production'daki
+gercek satir hacmi bu task kapsaminda DOGRULANMADI (no-secrets kurali),
+UNVERIFIED olarak kayitli, sifir varsayilmadi. Detay: `defect-register.md` →
+Cozum Kaydi → W3-D09.
+
 ---
 ## W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01
 - **capability:** icrabot, manifest-retry, playbook, evidence-bundle, trace-retention, simulation-scheduler
