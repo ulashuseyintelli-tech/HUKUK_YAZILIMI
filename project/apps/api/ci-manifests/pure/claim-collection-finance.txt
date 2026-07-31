@@ -50,6 +50,8 @@ src/modules/claim-item/__tests__/legal-basis-projection-binding.contract.spec.ts
 src/modules/collection/__tests__/collection-ledger-forward.spec.ts
 src/modules/collection/__tests__/collection-confirmed-at-writer.spec.ts
 src/modules/collection/__tests__/collection-idempotency.spec.ts
+src/modules/collection/__tests__/collection-semantic-command.spec.ts
+src/modules/collection/__tests__/collection-semantic-idempotency.static.spec.ts
 src/modules/collection/__tests__/collection-update-safety.spec.ts
 
 # DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW):

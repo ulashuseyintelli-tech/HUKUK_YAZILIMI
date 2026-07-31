@@ -554,13 +554,17 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       expect(events).toHaveLength(2); // kaba (case,amount,date) unique OLSAYDI bu bloklanırdı
     });
 
-    it('AYNI idempotencyKey + FARKLI payload → IDEMPOTENCY_KEY_CONFLICT (sessiz eski-kayıt dönmez)', async () => {
+    it('AYNI idempotencyKey + FARKLI komut → IDEMPOTENCY_SEMANTIC_CONFLICT (sessiz eski-kayıt dönmez)', async () => {
       const key = randomUUID();
       await service.create(testTenantId, buildDto({ idempotencyKey: key, amount: 5000 }), 'test-user-1');
 
       await expect(
         service.create(testTenantId, buildDto({ idempotencyKey: key, amount: 9999 }), 'test-user-1'),
-      ).rejects.toThrow(/IDEMPOTENCY_KEY_CONFLICT|farklı payload/);
+      ).rejects.toMatchObject({
+        response: {
+          code: 'IDEMPOTENCY_SEMANTIC_CONFLICT',
+        },
+      });
     });
 
     it('eksik idempotencyKey → BadRequestException (nullable key ile create edilemez)', async () => {

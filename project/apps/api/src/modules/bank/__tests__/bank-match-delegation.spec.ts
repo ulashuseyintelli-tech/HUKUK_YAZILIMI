@@ -12,7 +12,15 @@ import {
  * - Tenant guard, id bazlı erişimlerde başka tenant kaydına yan etki üretmeden 404 verir.
  */
 
-function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col1' }), overrides: any = {}) {
+function buildService(
+  createImpl: (...a: any[]) => any = async () => ({
+    id: 'col1',
+    caseId: 'c1',
+    sourceType: 'BANK_INTEGRATION',
+    sourceId: 'tx1',
+  }),
+  overrides: any = {},
+) {
   const update = jest.fn(async () => ({ count: 1 }));
   const financialWrites = {
     collection: jest.fn(),
@@ -96,6 +104,7 @@ function buildService(createImpl: (...a: any[]) => any = async () => ({ id: 'col
     })),
   };
   const audit = {
+    log: jest.fn(async () => undefined),
     logInTransaction: jest.fn(async () => undefined),
   };
   const svc = new BankService({} as any, prisma, coll as any, audit as any);
@@ -163,8 +172,21 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     await expect(svc.matchTransaction('tx1', 'c1', 'u1', 't1')).resolves.toMatchObject({
       collection: { id: 'col1' },
     });
-    expect(coll.findById).toHaveBeenCalledWith('t1', 'col1', prisma);
-    expect(coll.create).not.toHaveBeenCalled();
+    expect(coll.create).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({
+        idempotencyKey: 'bank-transaction:tx1',
+        sourceType: 'BANK_INTEGRATION',
+        sourceId: 'tx1',
+      }),
+      'u1',
+      expect.objectContaining({
+        producer: 'BANK_TRANSACTION_MATCH',
+        actor: { type: 'HUMAN', userId: 'u1' },
+      }),
+      prisma,
+    );
+    expect(coll.findById).not.toHaveBeenCalled();
     expect(prisma.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });

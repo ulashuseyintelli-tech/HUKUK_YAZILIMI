@@ -11,6 +11,11 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { maskIban } from '../../common/pii-mask.util';
 import { CollectionService } from '../collection/collection.service';
+import {
+  CollectionIdempotencyConflictError,
+  digestCollectionActorAuthority,
+  digestIdempotencyKey,
+} from '../collection/collection-semantic-command';
 import { AuditService } from '../audit/audit.service';
 import {
   CollectionChannel,
@@ -548,14 +553,44 @@ export class BankService {
           });
         }
 
+        const collectionArgs = [
+          tenantId,
+          {
+            caseId,
+            idempotencyKey: `bank-transaction:${transaction.id}`,
+            amount,
+            currency: String(transaction.currency).trim().toUpperCase(),
+            type: CollectionType.BANK_TRANSFER,
+            channel: CollectionChannel.BANKA,
+            date: new Date(transaction.transactionDate).toISOString(),
+            valueDate: transaction.valueDate ? new Date(transaction.valueDate).toISOString() : undefined,
+            sourceType: CollectionSource.BANK_INTEGRATION,
+            sourceId: transaction.id,
+            description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
+            receiptNo: transaction.referenceNo || undefined,
+          } as any,
+          userId,
+        ] as const;
+        const collectionRequestContext = {
+          correlationId,
+          causationId: `bank-transaction:${transaction.id}`,
+          producer: 'BANK_TRANSACTION_MATCH' as const,
+          actor: { type: 'HUMAN' as const, userId },
+        };
+
         if (transaction.isMatched) {
           if (transaction.matchedCaseId === caseId && transaction.matchedCollectionId) {
-            const collection = await this.collectionService.findById(
-              tenantId,
-              transaction.matchedCollectionId,
+            // Replay-before-settlement-guard davranışı korunur; ancak Task 09 ile
+            // replay artık key-only/pointer-only değildir. Canonical command evidence
+            // aynı transaction client üzerinden doğrulanır ve hiçbir yeni write üretmez.
+            const collection = await this.collectionService.create(
+              ...collectionArgs,
+              collectionRequestContext,
               tx,
             );
             if (
+              collection.id !== transaction.matchedCollectionId
+              ||
               collection.caseId !== caseId
               || collection.sourceType !== CollectionSource.BANK_INTEGRATION
               || collection.sourceId !== transaction.id
@@ -650,30 +685,11 @@ export class BankService {
 
         // Bank match projection ve canonical Collection finansal zinciri ayni DB
         // transaction'inda commit/rollback olur. Nested transaction acilmaz.
-        const collectionArgs = [
-          tenantId,
-          {
-            caseId,
-            idempotencyKey: `bank-transaction:${transaction.id}`,
-            amount,
-            currency: String(transaction.currency).trim().toUpperCase(),
-            type: CollectionType.BANK_TRANSFER,
-            channel: CollectionChannel.BANKA,
-            date: new Date(transaction.transactionDate).toISOString(),
-            valueDate: transaction.valueDate ? new Date(transaction.valueDate).toISOString() : undefined,
-            sourceType: CollectionSource.BANK_INTEGRATION,
-            sourceId: transaction.id,
-            description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
-            receiptNo: transaction.referenceNo || undefined,
-          } as any,
-          userId,
-        ] as const;
-        const collection = await this.collectionService.create(...collectionArgs, {
-          correlationId,
-          causationId: `bank-transaction:${transaction.id}`,
-          producer: 'BANK_TRANSACTION_MATCH',
-          actor: { type: 'HUMAN', userId },
-        }, tx);
+        const collection = await this.collectionService.create(
+          ...collectionArgs,
+          collectionRequestContext,
+          tx,
+        );
 
         const matchedAt = new Date();
         const projection = await tx.bankTransaction.updateMany({
@@ -743,6 +759,33 @@ export class BankService {
         };
       });
     } catch (err: any) {
+      if (err instanceof CollectionIdempotencyConflictError) {
+        await this.auditService.log({
+          tenantId,
+          action: 'COLLECTION_IDEMPOTENCY_SEMANTIC_CONFLICT',
+          entityType: 'BANK_TRANSACTION',
+          entityId: transactionId,
+          userId,
+          actorType: 'USER',
+          correlationId,
+          reasonCode: err.reason,
+          description: 'Bank Collection admission semantic idempotency conflict rejected.',
+          metadata: {
+            idempotencyKeyDigest: digestIdempotencyKey(
+              `bank-transaction:${transactionId}`,
+            ),
+            existingFingerprint: err.existingFingerprint,
+            incomingFingerprint: err.incomingFingerprint,
+            fingerprintVersion: err.fingerprintVersion,
+            actorAuthorityDigest: digestCollectionActorAuthority({
+              type: 'HUMAN',
+              userId,
+            }),
+            operation: 'BANK_COLLECTION_ADMISSION',
+            caseId,
+          },
+        });
+      }
       this.logger.warn(
         `Bank match rejected (tx=${transactionId}, case=${caseId}): ${err?.message ?? err}`,
       );

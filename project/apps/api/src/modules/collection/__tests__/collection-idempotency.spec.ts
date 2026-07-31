@@ -3,8 +3,8 @@
  *
  * Kapsam:
  *  - idempotencyKey ZORUNLU (eksikse BadRequestException, tx açılmaz)
- *  - fast-path replay (aynı key + aynı payload → mevcut tahsilat, create yok)
- *  - fast-path conflict (aynı key + farklı payload → IDEMPOTENCY_KEY_CONFLICT)
+ *  - fast-path replay (aynı key + aynı canonical command → mevcut tahsilat, create yok)
+ *  - fast-path conflict (aynı key + farklı command → IDEMPOTENCY_SEMANTIC_CONFLICT)
  *  - advisory-lock altında race re-check (lock dup → replay)
  *  - normal create (advisory lock + idempotencyKey ile yazım)
  *  - P2002 race → key ile mevcut bulunur → replay
@@ -14,6 +14,7 @@ import { CollectionService } from '../collection.service';
 import { CollectionType } from '../dto/collection.dto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { buildCollectionSemanticCommandEvidence } from '../collection-semantic-command';
 
 function setup(
   opts: { preExisting?: any; lockedDup?: any; createThrows?: unknown } = {},
@@ -71,10 +72,22 @@ function setup(
   // AccountingJournalWriterService/DB'ye düşmeyi engeller (P0-1 testleri journal
   // davranışını değil idempotency'i hedefler).
   const journalWriter: any = { write: jest.fn(async () => ({ ok: true, output: { status: 'CREATED', journalEntryId: 'journal-mock' } })) };
-  const svc = new CollectionService(prisma, domainEvent, guard, undefined, journalWriter);
+  const auditService: any = {
+    log: jest.fn(async () => undefined),
+    logInTransaction: jest.fn(async () => undefined),
+  };
+  const svc = new CollectionService(
+    prisma,
+    domainEvent,
+    guard,
+    undefined,
+    journalWriter,
+    undefined,
+    auditService,
+  );
   jest.spyOn(svc as any, 'autoAllocateInTx').mockResolvedValue(undefined);
   jest.spyOn((svc as any).logger, 'warn').mockImplementation(() => undefined);
-  return { svc, prisma, tx, domainEvent };
+  return { svc, prisma, tx, domainEvent, auditService };
 }
 
 const baseDto = {
@@ -86,18 +99,31 @@ const baseDto = {
   type: CollectionType.CASH,
 } as any;
 
+function evidenceFor(
+  dto: any = baseDto,
+  userId = 'u1',
+  producer = 'COLLECTION_SERVICE_COMPATIBILITY' as const,
+) {
+  const evidence = buildCollectionSemanticCommandEvidence({
+    tenantId: 't1',
+    dto: {
+      channel: 'BANKA',
+      ...dto,
+      date: new Date(dto.date).toISOString(),
+    },
+    actor: { type: 'HUMAN', userId },
+    producer,
+  });
+  return {
+    commandFingerprintVersion: evidence.fingerprintVersion,
+    commandFingerprint: evidence.commandFingerprint,
+    commandCanonicalPayload: evidence.commandCanonicalPayload,
+  };
+}
+
 const existingRow = {
   id: 'col-existing',
-  caseId: 'c1',
-  amount: 5000,
-  currency: 'TRY',
-  date: new Date('2026-07-03'),
-  valueDate: null,
-  type: CollectionType.CASH,
-  channel: 'BANKA',
-  sourceType: null,
-  sourceId: null,
-  caseDebtorId: null,
+  ...evidenceFor(),
 };
 
 function p2002(target?: string): Prisma.PrismaClientKnownRequestError {
@@ -117,7 +143,7 @@ describe('CollectionService.create — P0-1 idempotency', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('fast-path replay: aynı key + aynı payload → mevcut tahsilat döner, create edilmez', async () => {
+  it('fast-path replay: aynı key + aynı canonical command → mevcut tahsilat döner, create edilmez', async () => {
     const { svc, prisma, tx } = setup({ preExisting: existingRow });
     const res: any = await svc.create('t1', baseDto, 'u1');
     expect(res.id).toBe('col-existing');
@@ -125,11 +151,29 @@ describe('CollectionService.create — P0-1 idempotency', () => {
     expect(tx.collection.create).not.toHaveBeenCalled();
   });
 
-  it('fast-path conflict: aynı key + farklı amount → IDEMPOTENCY_KEY_CONFLICT', async () => {
-    const { svc } = setup({ preExisting: existingRow });
+  it('fast-path conflict: aynı key + farklı amount → IDEMPOTENCY_SEMANTIC_CONFLICT + güvenli audit', async () => {
+    const { svc, auditService } = setup({ preExisting: existingRow });
     await expect(
       svc.create('t1', { ...baseDto, amount: 9999 }, 'u1'),
-    ).rejects.toBeInstanceOf(ConflictException);
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'IDEMPOTENCY_SEMANTIC_CONFLICT',
+      }),
+    });
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'COLLECTION_IDEMPOTENCY_SEMANTIC_CONFLICT',
+        metadata: expect.objectContaining({
+          idempotencyKeyDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+          existingFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+          incomingFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+          actorAuthorityDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
+      }),
+    );
+    expect(JSON.stringify(auditService.log.mock.calls[0][0])).not.toContain(
+      baseDto.idempotencyKey,
+    );
   });
 
   it('lock re-check: pre-existing yok ama lock altında race dup → replay, ikinci create yok', async () => {
@@ -148,6 +192,11 @@ describe('CollectionService.create — P0-1 idempotency', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           idempotencyKey: 'key-1',
+          commandFingerprintVersion: 'RCV-COL-CMD/v1',
+          commandFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+          commandCanonicalPayload: expect.stringContaining(
+            '"schemaVersion":"RCV-COL-CMD/v1"',
+          ),
           status: 'CONFIRMED',
           confirmedAt: expect.any(Date),
         }),
@@ -158,7 +207,7 @@ describe('CollectionService.create — P0-1 idempotency', () => {
 
   it('P2002 race: create unique-violation → key ile mevcut bulunur → replay', async () => {
     const { svc, prisma } = setup({ createThrows: p2002() });
-    // fast-path: yok (tx'e gir) → create P2002 → catch: key ile bulundu (aynı payload) → replay
+    // fast-path: yok (tx'e gir) → create P2002 → catch: key ile bulundu (aynı canonical command) → replay
     prisma.collection.findUnique = jest
       .fn()
       .mockResolvedValueOnce(null)
@@ -177,5 +226,44 @@ describe('CollectionService.create — P0-1 idempotency', () => {
     const raw = p2002('SomeOther_unique_key');
     const { svc } = setup({ createThrows: raw });
     await expect(svc.create('t1', baseDto, 'u1')).rejects.toBe(raw);
+  });
+
+  it('legacy fingerprint taşımayan satırı replay saymaz; fail-closed reddeder', async () => {
+    const { svc } = setup({
+      preExisting: {
+        id: 'col-legacy',
+        commandFingerprintVersion: null,
+        commandFingerprint: null,
+        commandCanonicalPayload: null,
+      },
+    });
+    await expect(svc.create('t1', baseDto, 'u1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'IDEMPOTENCY_LEGACY_UNVERIFIABLE',
+      }),
+    });
+  });
+
+  it('aynı key + aynı finansal alan fakat farklı actor authority conflict üretir', async () => {
+    const { svc } = setup({ preExisting: existingRow });
+    await expect(svc.create('t1', baseDto, 'u2')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'IDEMPOTENCY_SEMANTIC_CONFLICT',
+      }),
+    });
+  });
+
+  it('fingerprint version mismatch fail-closed sonuç üretir', async () => {
+    const { svc } = setup({
+      preExisting: {
+        ...existingRow,
+        commandFingerprintVersion: 'RCV-COL-CMD/v2',
+      },
+    });
+    await expect(svc.create('t1', baseDto, 'u1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'IDEMPOTENCY_FINGERPRINT_VERSION_UNSUPPORTED',
+      }),
+    });
   });
 });
