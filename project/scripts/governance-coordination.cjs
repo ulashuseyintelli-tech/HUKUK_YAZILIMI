@@ -68,6 +68,39 @@ const RESULT_KEYS = [
 ];
 const EVIDENCE_KEYS = ['name', 'status', 'evidenceSha'];
 const RESULT_STATUSES = new Set(['SUCCEEDED', 'FAILED', 'BLOCKED', 'REJECTED']);
+const EXECUTION_MODEL_KEYS = [
+  'taskId',
+  'executionMode',
+  'status',
+  'semanticDecision',
+  'eligibility',
+  'executionGrant',
+  'mergeAuthority',
+  'checkpoint',
+  'stage',
+  'writer',
+  'scope',
+  'priority',
+];
+const EXECUTION_MODEL_SEMANTIC_KEYS = ['status', 'tupleSha256'];
+const EXECUTION_MODEL_ELIGIBILITY_KEYS = ['eligible', 'dispatchCandidate'];
+const EXECUTION_MODEL_AUTHORITY_KEYS = ['present', 'taskId', 'reusable'];
+const EXECUTION_MODEL_CHECKPOINT_KEYS = ['type', 'ownerRequired'];
+const EXECUTION_MODEL_STAGE_KEYS = [
+  'name',
+  'successorTaskId',
+  'successorDeterministic',
+  'separateGrantRequired',
+  'separateGrantPresent',
+];
+const EXECUTION_MODEL_WRITER_KEYS = ['competing', 'uniqueWip', 'unknown'];
+const EXECUTION_MODEL_SCOPE_KEYS = [
+  'changed',
+  'productionActivation',
+  'migration',
+  'irreversible',
+];
+const EXECUTION_MODEL_PRIORITY_KEYS = ['class', 'programLocked'];
 const LEVEL_2_OPERATIONS = new Set([
   'EXACT_APPEND_AT_DECLARED_ANCHOR',
   'EXACT_LITERAL_REPLACEMENT',
@@ -1756,6 +1789,151 @@ function validateRequestObject(request, options = {}) {
     }
   }
   return request;
+}
+
+/**
+ * Reconciled Orkestra execution model. This is a pure readiness classifier:
+ * eligibility and dispatch candidacy never become mutation authority.
+ */
+function validateExecutionModelState(state) {
+  assertExactKeys(state, EXECUTION_MODEL_KEYS, 'executionModel');
+  assertNonEmptyString(state.taskId, 'executionModel.taskId');
+  if (!['GO-ANALYZE', 'GO-COMPLETE'].includes(state.executionMode)) {
+    reject('EXECUTION_MODE_INVALID', 'executionModel.executionMode is invalid');
+  }
+  if (!['OPEN', 'CLOSED', 'BLOCKED', 'ELIGIBLE', 'DISPATCHED'].includes(state.status)) {
+    reject('TASK_STATUS_INVALID', 'executionModel.status is invalid');
+  }
+  assertExactKeys(state.semanticDecision, EXECUTION_MODEL_SEMANTIC_KEYS, 'semanticDecision');
+  if (!['RATIFIED', 'CHANGED', 'MISSING'].includes(state.semanticDecision.status)) {
+    reject('SEMANTIC_DECISION_STATUS_INVALID', 'semanticDecision.status is invalid');
+  }
+  assertSha256(state.semanticDecision.tupleSha256, 'semanticDecision.tupleSha256');
+  assertExactKeys(state.eligibility, EXECUTION_MODEL_ELIGIBILITY_KEYS, 'eligibility');
+  for (const key of EXECUTION_MODEL_ELIGIBILITY_KEYS) {
+    if (typeof state.eligibility[key] !== 'boolean') {
+      reject('EXECUTION_MODEL_SCHEMA_INVALID', `eligibility.${key} must be boolean`);
+    }
+  }
+  for (const [label, authority] of [
+    ['executionGrant', state.executionGrant],
+    ['mergeAuthority', state.mergeAuthority],
+  ]) {
+    assertExactKeys(authority, EXECUTION_MODEL_AUTHORITY_KEYS, label);
+    if (typeof authority.present !== 'boolean' || typeof authority.reusable !== 'boolean') {
+      reject('EXECUTION_MODEL_SCHEMA_INVALID', `${label}.present/reusable must be boolean`);
+    }
+    if (authority.taskId !== null && typeof authority.taskId !== 'string') {
+      reject('EXECUTION_MODEL_SCHEMA_INVALID', `${label}.taskId must be string or null`);
+    }
+  }
+  assertExactKeys(state.checkpoint, EXECUTION_MODEL_CHECKPOINT_KEYS, 'checkpoint');
+  if (!['SEMANTIC', 'MECHANICAL'].includes(state.checkpoint.type)) {
+    reject('CHECKPOINT_TYPE_INVALID', 'checkpoint.type is invalid');
+  }
+  if (typeof state.checkpoint.ownerRequired !== 'boolean') {
+    reject('EXECUTION_MODEL_SCHEMA_INVALID', 'checkpoint.ownerRequired must be boolean');
+  }
+  assertExactKeys(state.stage, EXECUTION_MODEL_STAGE_KEYS, 'stage');
+  if (!['STAGE_1', 'STAGE_2', 'IMPLEMENTATION', 'CERTIFICATION'].includes(state.stage.name)) {
+    reject('STAGE_INVALID', 'stage.name is invalid');
+  }
+  if (state.stage.successorTaskId !== null && typeof state.stage.successorTaskId !== 'string') {
+    reject('EXECUTION_MODEL_SCHEMA_INVALID', 'stage.successorTaskId must be string or null');
+  }
+  for (const key of EXECUTION_MODEL_STAGE_KEYS.slice(2)) {
+    if (typeof state.stage[key] !== 'boolean') {
+      reject('EXECUTION_MODEL_SCHEMA_INVALID', `stage.${key} must be boolean`);
+    }
+  }
+  assertExactKeys(state.writer, EXECUTION_MODEL_WRITER_KEYS, 'writer');
+  assertExactKeys(state.scope, EXECUTION_MODEL_SCOPE_KEYS, 'scope');
+  assertExactKeys(state.priority, EXECUTION_MODEL_PRIORITY_KEYS, 'priority');
+  for (const group of [state.writer, state.scope, state.priority]) {
+    for (const [key, value] of Object.entries(group)) {
+      if (typeof value !== 'boolean' && !(group === state.priority && key === 'class' && typeof value === 'string')) {
+        reject('EXECUTION_MODEL_SCHEMA_INVALID', `${key} has invalid type`);
+      }
+    }
+  }
+  if (!['P0', 'P1', 'PRODUCT', 'RUNTIME', 'PRODUCTION', 'GOVERNANCE'].includes(state.priority.class)) {
+    reject('PRIORITY_INVALID', 'priority.class is invalid');
+  }
+
+  const codes = [];
+  const ownerReasons = [];
+  const semanticRatified = state.semanticDecision.status === 'RATIFIED';
+  codes.push(semanticRatified ? 'SEMANTIC_DECISION_ALREADY_RATIFIED' : 'SEMANTIC_DECISION_CHANGED');
+  if (!semanticRatified) ownerReasons.push('SEMANTIC_DECISION_REQUIRED');
+
+  const grant = state.executionGrant;
+  const grantValid = grant.present && grant.taskId === state.taskId && !grant.reusable;
+  if (!grant.present) codes.push('EXECUTION_GRANT_MISSING');
+  else if (grant.reusable) codes.push('EXECUTION_GRANT_REUSED');
+  else if (grant.taskId !== state.taskId) codes.push('EXECUTION_GRANT_WRONG_TASK');
+  else codes.push('EXECUTION_GRANT_PRESENT');
+
+  const merge = state.mergeAuthority;
+  const mergeValid = merge.present && merge.taskId === state.taskId && !merge.reusable;
+  if (mergeValid) codes.push('MERGE_AUTHORITY_PRESENT');
+  else codes.push('MERGE_AUTHORITY_MISSING');
+
+  const writerBlocked = state.writer.competing || state.writer.uniqueWip || state.writer.unknown;
+  const scopeBlocked =
+    state.scope.changed ||
+    state.scope.productionActivation ||
+    state.scope.migration ||
+    state.scope.irreversible;
+  if (writerBlocked) ownerReasons.push('WRITER_OR_WIP_CONFLICT');
+  if (scopeBlocked) ownerReasons.push('SCOPE_OR_IRREVERSIBLE_CHANGE');
+  const stage2GrantMissing =
+    state.stage.name === 'STAGE_2' &&
+    state.stage.separateGrantRequired &&
+    !state.stage.separateGrantPresent;
+  if (stage2GrantMissing) {
+    codes.push('STAGE2_SEPARATE_GRANT_REQUIRED');
+    ownerReasons.push('STAGE2_SEPARATE_GRANT_REQUIRED');
+  }
+  if (state.checkpoint.type === 'SEMANTIC' || state.checkpoint.ownerRequired) {
+    ownerReasons.push('SEMANTIC_CHECKPOINT_REQUIRED');
+  }
+
+  const successorEligible =
+    state.eligibility.eligible &&
+    state.stage.successorTaskId !== null &&
+    state.stage.successorDeterministic &&
+    (state.status === 'CLOSED' || state.stage.name === 'STAGE_1');
+  if (successorEligible) codes.push('MECHANICAL_SUCCESSOR_ELIGIBLE');
+
+  const continuationAllowed =
+    state.executionMode === 'GO-COMPLETE' &&
+    semanticRatified &&
+    grantValid &&
+    !writerBlocked &&
+    !scopeBlocked &&
+    !stage2GrantMissing;
+  if (state.executionMode === 'GO-ANALYZE') codes.push('GO_ANALYZE_MUTATION_FORBIDDEN');
+  else if (continuationAllowed) codes.push('GO_COMPLETE_CONTINUATION_ALLOWED');
+
+  const dispatchable =
+    state.eligibility.dispatchCandidate &&
+    successorEligible &&
+    grantValid &&
+    !writerBlocked &&
+    !scopeBlocked &&
+    !stage2GrantMissing;
+  return {
+    semanticCheckpoint: semanticRatified && !ownerReasons.includes('SEMANTIC_CHECKPOINT_REQUIRED')
+      ? 'CLEAR'
+      : 'OWNER_REQUIRED',
+    eligibility: state.eligibility.eligible ? 'ELIGIBLE' : 'INELIGIBLE',
+    dispatch: dispatchable ? 'DISPATCHABLE' : 'CANDIDATE_ONLY',
+    mutation: state.executionMode === 'GO-COMPLETE' && continuationAllowed ? 'ALLOWED' : 'FORBIDDEN',
+    merge: continuationAllowed && mergeValid ? 'AUTHORIZED' : 'AUTHORITY_REQUIRED',
+    ordering: state.priority.programLocked ? 'PROGRAM_LOCK_PRESERVED' : 'NORMAL',
+    ownerRequired: [...new Set(ownerReasons)],
+    codes,
+  };
 }
 
 function validateResultObject(result, options = {}) {
@@ -7485,6 +7663,7 @@ module.exports = {
   validateBootstrapWorktree,
   validateAuthorityRecordAtRef,
   validateCanonicalRequestAtExecutionBase,
+  validateExecutionModelState,
   validateGithubPlatformGh02WorkflowScope,
   validateGithubPlatformGh03BindingScope,
   validateGithubPlatformGh0506CutoverScope,

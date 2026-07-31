@@ -61,6 +61,40 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function validExecutionModelState(overrides = {}) {
+  const base = {
+    taskId: 'TASK-01',
+    executionMode: 'GO-COMPLETE',
+    status: 'CLOSED',
+    semanticDecision: { status: 'RATIFIED', tupleSha256: 'a'.repeat(64) },
+    eligibility: { eligible: true, dispatchCandidate: true },
+    executionGrant: { present: true, taskId: 'TASK-01', reusable: false },
+    mergeAuthority: { present: true, taskId: 'TASK-01', reusable: false },
+    checkpoint: { type: 'MECHANICAL', ownerRequired: false },
+    stage: {
+      name: 'STAGE_1',
+      successorTaskId: 'TASK-02',
+      successorDeterministic: true,
+      separateGrantRequired: false,
+      separateGrantPresent: false,
+    },
+    writer: { competing: false, uniqueWip: false, unknown: false },
+    scope: { changed: false, productionActivation: false, migration: false, irreversible: false },
+    priority: { class: 'P0', programLocked: true },
+  };
+  return Object.assign(base, overrides, {
+    semanticDecision: Object.assign(base.semanticDecision, overrides.semanticDecision),
+    eligibility: Object.assign(base.eligibility, overrides.eligibility),
+    executionGrant: Object.assign(base.executionGrant, overrides.executionGrant),
+    mergeAuthority: Object.assign(base.mergeAuthority, overrides.mergeAuthority),
+    checkpoint: Object.assign(base.checkpoint, overrides.checkpoint),
+    stage: Object.assign(base.stage, overrides.stage),
+    writer: Object.assign(base.writer, overrides.writer),
+    scope: Object.assign(base.scope, overrides.scope),
+    priority: Object.assign(base.priority, overrides.priority),
+  });
+}
+
 function attributedOwnerWipSource(sourceId, exactPaths, options = {}) {
   const entries = [...exactPaths]
     .sort((left, right) => left.path.localeCompare(right.path))
@@ -88,6 +122,288 @@ function attributedOwnerWipSource(sourceId, exactPaths, options = {}) {
     exactPaths: entries,
   };
 }
+
+test('execution model: unchanged semantic tuple is not re-ratified', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState());
+  assert.equal(result.semanticCheckpoint, 'CLEAR');
+  assert.ok(result.codes.includes('SEMANTIC_DECISION_ALREADY_RATIFIED'));
+});
+
+test('execution model: exact grant dispatches an eligible deterministic successor', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState());
+  assert.equal(result.eligibility, 'ELIGIBLE');
+  assert.equal(result.dispatch, 'DISPATCHABLE');
+  assert.ok(result.codes.includes('MECHANICAL_SUCCESSOR_ELIGIBLE'));
+  assert.ok(result.codes.includes('EXECUTION_GRANT_PRESENT'));
+});
+
+test('execution model: exact merge authority authorizes merge only with continuation', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState());
+  assert.equal(result.mutation, 'ALLOWED');
+  assert.equal(result.merge, 'AUTHORIZED');
+  assert.ok(result.codes.includes('MERGE_AUTHORITY_PRESENT'));
+});
+
+test('execution model: Stage 1 completion makes a deterministic Stage 2 candidate eligible', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    stage: {
+      name: 'STAGE_1',
+      successorTaskId: 'STAGE-2-TASK',
+      successorDeterministic: true,
+      separateGrantRequired: false,
+      separateGrantPresent: false,
+    },
+  }));
+  assert.ok(result.codes.includes('MECHANICAL_SUCCESSOR_ELIGIBLE'));
+  assert.equal(result.dispatch, 'DISPATCHABLE');
+});
+
+test('execution model: Stage 2 with its own grant remains dispatchable', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    taskId: 'STAGE-2-TASK',
+    executionGrant: { present: true, taskId: 'STAGE-2-TASK', reusable: false },
+    mergeAuthority: { present: true, taskId: 'STAGE-2-TASK', reusable: false },
+    stage: {
+      name: 'STAGE_2',
+      successorTaskId: 'IMPLEMENTATION-TASK',
+      successorDeterministic: true,
+      separateGrantRequired: true,
+      separateGrantPresent: true,
+    },
+  }));
+  assert.equal(result.dispatch, 'DISPATCHABLE');
+  assert.ok(!result.codes.includes('STAGE2_SEPARATE_GRANT_REQUIRED'));
+});
+
+test('execution model: GO-COMPLETE continues within exact scope', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    checkpoint: { type: 'MECHANICAL', ownerRequired: false },
+  }));
+  assert.ok(result.codes.includes('GO_COMPLETE_CONTINUATION_ALLOWED'));
+  assert.equal(result.mutation, 'ALLOWED');
+});
+
+test('execution model: mechanical checkpoint does not add an owner checkpoint', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState());
+  assert.deepEqual(result.ownerRequired, []);
+});
+
+test('execution model: P0 ordering preserves an active program lock', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    priority: { class: 'P0', programLocked: true },
+  }));
+  assert.equal(result.ordering, 'PROGRAM_LOCK_PRESERVED');
+});
+
+test('execution model: same-file writer gate is clear when no competing writer exists', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    writer: { competing: false, uniqueWip: false, unknown: false },
+  }));
+  assert.equal(result.mutation, 'ALLOWED');
+});
+
+test('execution model: product and runtime stages remain mechanical when scope is exact', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    priority: { class: 'RUNTIME', programLocked: false },
+  }));
+  assert.equal(result.ownerRequired.length, 0);
+  assert.equal(result.mutation, 'ALLOWED');
+});
+
+test('execution model: eligible state is distinct from mutation authority', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    executionGrant: { present: false, taskId: null, reusable: false },
+  }));
+  assert.equal(result.eligibility, 'ELIGIBLE');
+  assert.equal(result.dispatch, 'CANDIDATE_ONLY');
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: deterministic successor carries no new semantic checkpoint', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    stage: {
+      name: 'CERTIFICATION',
+      successorTaskId: 'NEXT-TASK',
+      successorDeterministic: true,
+      separateGrantRequired: false,
+      separateGrantPresent: false,
+    },
+  }));
+  assert.equal(result.semanticCheckpoint, 'CLEAR');
+  assert.ok(result.codes.includes('MECHANICAL_SUCCESSOR_ELIGIBLE'));
+});
+
+test('execution model: exact semantic, execution and merge references stay separate in the state', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState());
+  assert.ok(result.codes.includes('SEMANTIC_DECISION_ALREADY_RATIFIED'));
+  assert.ok(result.codes.includes('EXECUTION_GRANT_PRESENT'));
+  assert.ok(result.codes.includes('MERGE_AUTHORITY_PRESENT'));
+});
+
+test('execution model: exact scope can complete without production activation', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    priority: { class: 'PRODUCT', programLocked: false },
+  }));
+  assert.equal(result.mutation, 'ALLOWED');
+  assert.equal(result.ownerRequired.length, 0);
+});
+
+test('execution model: clean successor is a dispatch candidate only when requested', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    eligibility: { eligible: true, dispatchCandidate: false },
+  }));
+  assert.equal(result.eligibility, 'ELIGIBLE');
+  assert.equal(result.dispatch, 'CANDIDATE_ONLY');
+});
+
+test('execution model: missing execution grant blocks global auto-dispatch', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    executionGrant: { present: false, taskId: null, reusable: false },
+  }));
+  assert.ok(result.codes.includes('EXECUTION_GRANT_MISSING'));
+  assert.equal(result.dispatch, 'CANDIDATE_ONLY');
+});
+
+test('execution model: wrong-task execution grant is rejected', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    executionGrant: { present: true, taskId: 'OTHER-TASK', reusable: false },
+  }));
+  assert.ok(result.codes.includes('EXECUTION_GRANT_WRONG_TASK'));
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: reusable execution grant is rejected', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    executionGrant: { present: true, taskId: 'TASK-01', reusable: true },
+  }));
+  assert.ok(result.codes.includes('EXECUTION_GRANT_REUSED'));
+  assert.equal(result.dispatch, 'CANDIDATE_ONLY');
+});
+
+test('execution model: Stage 2 cannot use Stage 1 authority', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    stage: {
+      name: 'STAGE_2',
+      successorTaskId: 'IMPLEMENTATION-TASK',
+      successorDeterministic: true,
+      separateGrantRequired: true,
+      separateGrantPresent: false,
+    },
+  }));
+  assert.ok(result.codes.includes('STAGE2_SEPARATE_GRANT_REQUIRED'));
+  assert.equal(result.dispatch, 'CANDIDATE_ONLY');
+});
+
+test('execution model: GO-ANALYZE never mutates', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    executionMode: 'GO-ANALYZE',
+  }));
+  assert.ok(result.codes.includes('GO_ANALYZE_MUTATION_FORBIDDEN'));
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: changed semantic tuple reopens owner checkpoint', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    semanticDecision: { status: 'CHANGED', tupleSha256: 'b'.repeat(64) },
+  }));
+  assert.equal(result.semanticCheckpoint, 'OWNER_REQUIRED');
+  assert.ok(result.ownerRequired.includes('SEMANTIC_DECISION_REQUIRED'));
+});
+
+test('execution model: missing semantic decision is fail-closed', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    semanticDecision: { status: 'MISSING', tupleSha256: 'c'.repeat(64) },
+  }));
+  assert.equal(result.semanticCheckpoint, 'OWNER_REQUIRED');
+  assert.ok(result.ownerRequired.includes('SEMANTIC_DECISION_REQUIRED'));
+});
+
+test('execution model: missing merge authority blocks merge', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    mergeAuthority: { present: false, taskId: null, reusable: false },
+  }));
+  assert.ok(result.codes.includes('MERGE_AUTHORITY_MISSING'));
+  assert.equal(result.merge, 'AUTHORITY_REQUIRED');
+});
+
+test('execution model: path scope change reopens owner checkpoint', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    scope: { changed: true, productionActivation: false, migration: false, irreversible: false },
+  }));
+  assert.ok(result.ownerRequired.includes('SCOPE_OR_IRREVERSIBLE_CHANGE'));
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: production activation is not a mechanical grant', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    scope: { changed: false, productionActivation: true, migration: false, irreversible: false },
+  }));
+  assert.ok(result.ownerRequired.includes('SCOPE_OR_IRREVERSIBLE_CHANGE'));
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: migration is not a mechanical grant', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    scope: { changed: false, productionActivation: false, migration: true, irreversible: false },
+  }));
+  assert.ok(result.ownerRequired.includes('SCOPE_OR_IRREVERSIBLE_CHANGE'));
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: same-file competing writer blocks mutation', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    writer: { competing: true, uniqueWip: false, unknown: false },
+  }));
+  assert.ok(result.ownerRequired.includes('WRITER_OR_WIP_CONFLICT'));
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: unique WIP blocks cleanup or continuation', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    writer: { competing: false, uniqueWip: true, unknown: false },
+  }));
+  assert.ok(result.ownerRequired.includes('WRITER_OR_WIP_CONFLICT'));
+  assert.equal(result.dispatch, 'CANDIDATE_ONLY');
+});
+
+test('execution model: unknown writer ownership fails closed', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    writer: { competing: false, uniqueWip: false, unknown: true },
+  }));
+  assert.ok(result.ownerRequired.includes('WRITER_OR_WIP_CONFLICT'));
+  assert.equal(result.mutation, 'FORBIDDEN');
+});
+
+test('execution model: nondeterministic successor is not dispatchable', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    stage: {
+      name: 'STAGE_1',
+      successorTaskId: 'UNKNOWN-NEXT',
+      successorDeterministic: false,
+      separateGrantRequired: false,
+      separateGrantPresent: false,
+    },
+  }));
+  assert.equal(result.dispatch, 'CANDIDATE_ONLY');
+  assert.ok(!result.codes.includes('MECHANICAL_SUCCESSOR_ELIGIBLE'));
+});
+
+test('execution model: reusable merge authority is rejected', () => {
+  const result = coordination.validateExecutionModelState(validExecutionModelState({
+    mergeAuthority: { present: true, taskId: 'TASK-01', reusable: true },
+  }));
+  assert.ok(result.codes.includes('MERGE_AUTHORITY_MISSING'));
+  assert.equal(result.merge, 'AUTHORITY_REQUIRED');
+});
+
+test('execution model: malformed state is rejected before classification', () => {
+  assert.throws(
+    () => coordination.validateExecutionModelState(
+      Object.assign(validExecutionModelState(), { unexpected: true }),
+    ),
+    (error) => error && error.code === 'UNKNOWN_OR_MISSING_FIELD',
+  );
+});
 
 function attributedOwnerWipPolicy(sources) {
   const activePaths = [
