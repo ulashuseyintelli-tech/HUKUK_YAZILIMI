@@ -46,4 +46,3 @@ outer program-scoped execution authority olarak yürür; V1 mekanik executor gra
 <!-- GOV_COORD_REQUEST_JSON_END -->
 
 Bu request semantic veya execution authority üretmez.
-
