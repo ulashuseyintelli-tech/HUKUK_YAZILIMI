@@ -547,6 +547,57 @@ const UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01 
         recordId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01',
       }),
     }),
+    closeoutBindingPr: Object.freeze({
+      taskId:
+        'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01',
+      mode:
+        'UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01',
+      baseSha: '5338a6214e21a52bd7e0fa4e82f85384952bd19d',
+      headRef: 'codex/uyap-m01-terminal-closeout-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    closeoutPr: Object.freeze({
+      taskId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01',
+      mode: 'UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_R01',
+      originalBaseSha: '5338a6214e21a52bd7e0fa4e82f85384952bd19d',
+      headRef: 'codex/uyap-m01-terminal-closeout',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md',
+        recordId: 'UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01',
+      }),
+      implementation: Object.freeze({
+        pullRequestNumber: 2033,
+        squashSha: '5338a6214e21a52bd7e0fa4e82f85384952bd19d',
+      }),
+    }),
   });
 const RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 =
   Object.freeze({
@@ -3275,6 +3326,17 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.base === uyapM01Binding.closeoutBindingPr.baseSha &&
+    context.headRef === uyapM01Binding.closeoutBindingPr.headRef &&
+    hasExactChangeSet(changes, uyapM01Binding.closeoutBindingPr.changedPaths)
+  ) {
+    return {
+      mode: uyapM01Binding.closeoutBindingPr.mode,
+      taskId: uyapM01Binding.closeoutBindingPr.taskId,
+    };
+  }
+
+  if (
     context.base === uyapM01Binding.bindingPr.baseSha &&
     context.headRef === uyapM01Binding.bindingPr.headRef &&
     hasExactChangeSet(changes, uyapM01Binding.bindingPr.changedPaths)
@@ -3296,8 +3358,20 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.headRef === uyapM01Binding.closeoutPr.headRef &&
+    hasExactChangeSet(changes, uyapM01Binding.closeoutPr.changedPaths)
+  ) {
+    return {
+      mode: uyapM01Binding.closeoutPr.mode,
+      taskId: uyapM01Binding.closeoutPr.taskId,
+    };
+  }
+
+  if (
     context.headRef === uyapM01Binding.bindingPr.headRef ||
-    context.headRef === uyapM01Binding.targetPr.headRef
+    context.headRef === uyapM01Binding.targetPr.headRef ||
+    context.headRef === uyapM01Binding.closeoutBindingPr.headRef ||
+    context.headRef === uyapM01Binding.closeoutPr.headRef
   ) {
     reject(
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
@@ -4378,6 +4452,53 @@ function validateUyapM01AuthorityBindingScope(options) {
   }
 
   return { mode: binding.bindingPr.mode, taskId: binding.taskId };
+}
+
+function validateUyapM01TerminalCloseoutBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const closeoutBinding = binding.closeoutBindingPr;
+  if (
+    taskId !== closeoutBinding.taskId ||
+    base !== closeoutBinding.baseSha ||
+    headRef !== closeoutBinding.headRef ||
+    !hasExactChangeSet(changes, closeoutBinding.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP-M01 terminal closeout control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    closeoutBinding.taskId,
+    closeoutBinding.mode,
+    closeoutBinding.baseSha,
+    closeoutBinding.headRef,
+    binding.closeoutPr.taskId,
+    binding.closeoutPr.mode,
+    binding.closeoutPr.originalBaseSha,
+    binding.closeoutPr.headRef,
+    ...binding.closeoutPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.closeoutPr.semanticAuthority.recordId,
+    binding.closeoutPr.executionGrant.recordId,
+    String(binding.closeoutPr.implementation.pullRequestNumber),
+    binding.closeoutPr.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact UYAP-M01 closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: closeoutBinding.mode, taskId: closeoutBinding.taskId };
 }
 
 function validatePb01AuthorityBootstrapBindingScope(options) {
@@ -6688,6 +6809,76 @@ function validateUyapM01AuthorityMaterializationScope(options) {
   return { mode: target.mode, taskId: target.taskId };
 }
 
+function validateUyapM01TerminalCloseoutScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP-M01 terminal closeout target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.closeoutBindingPr.taskId,
+    binding.closeoutBindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    target.headRef,
+    String(target.implementation.pullRequestNumber),
+    target.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical UYAP-M01 closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const semanticAuthority = gitShow(head, target.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(semanticAuthority, target.semanticAuthority);
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const grantLiteral of [
+    'TASK STATUS           : CLOSED',
+    'CHANGE STATUS         : MERGED',
+    'DELIVERY STATUS       : PASS',
+    'EXECUTION GRANT       : CONSUMED / CLOSED',
+    `IMPLEMENTATION PR     : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA    : ${target.implementation.squashSha}`,
+    'RESOLVER BINDING      : CANONICAL / CONSUMER-ONLY',
+    'DEFAULT-OFF           : PASS',
+    'PRODUCTION CALL-SITE  : NONE',
+    'PRODUCTION REACHABILITY: 0',
+    'REQUIRED CI           : 4/4 PASS',
+    'SECOND USE        : FAIL-CLOSED',
+    'WAITING FOR OWNER : NO FOR M01 — TASK COMPLETE',
+  ]) {
+    if (!grant.includes(grantLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `UYAP-M01 terminal receipt is missing ${grantLiteral}`,
+      );
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function validatePb01AuthorityBootstrapScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -7411,6 +7602,21 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01
+      .closeoutBindingPr.mode
+  ) {
+    return validateUyapM01TerminalCloseoutBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01.mode
   ) {
     return validateOfficeF01Stage1BindingScope({
@@ -7440,6 +7646,21 @@ function validatePrScope(options) {
     RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.mode
   ) {
     return validateRcvColFullRemediationBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01
+      .closeoutPr.mode
+  ) {
+    return validateUyapM01TerminalCloseoutScope({
       base,
       head,
       headRef,
@@ -8361,6 +8582,8 @@ module.exports = {
   validateHcr08AuthorityBootstrapScope,
   validateUyapM01AuthorityBindingScope,
   validateUyapM01AuthorityMaterializationScope,
+  validateUyapM01TerminalCloseoutBindingScope,
+  validateUyapM01TerminalCloseoutScope,
   validateKc01AuthorityBootstrapBindingScope,
   validateKc01AuthorityBootstrapScope,
   validateKc01FormalClosureBindingScope,
