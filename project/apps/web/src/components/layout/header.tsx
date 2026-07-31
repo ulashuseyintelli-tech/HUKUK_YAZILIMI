@@ -103,7 +103,11 @@ export function Header() {
     setShowResults(false);
     setSearchQuery('');
     if (result.type === 'case') router.push(`/cases/${result.id}`);
-    else if (result.type === 'client') router.push(`/settings/clients`);
+    // OWN-11 (D01): arama sonucu ARTIK kanonik Client Workspace'e gider. Eskiden
+    // `/settings/clients` liste sayfasına gidiyordu — kullanıcı aradığı müvekkili bulup
+    // tıkladığı hâlde compatibility listesine düşüyor, aradığı kaydı YENİDEN aramak
+    // zorunda kalıyordu (sonuçtaki `result.id` hiç kullanılmıyordu).
+    else if (result.type === 'client') router.push(`/clients/${result.id}`);
     else if (result.type === 'debtor') router.push(`/debtors`);
   };
 

@@ -322,9 +322,12 @@ export default function TasksPage() {
                   )}
                   {task.clientId && (
                     <Link
-                      href={`/settings/clients?edit=${task.clientId}`}
+                      // OWN-11 (D01): "Müvekkile git" ARTIK kanonik Client Workspace'e gider;
+                      // eskiden compatibility düzenleme modalını açıyordu (link metniyle varış
+                      // noktası uyuşmuyordu).
+                      href={`/clients/${task.clientId}`}
                       className="flex items-center gap-1 text-primary hover:underline font-medium"
-                      title="Müvekkil bilgilerini düzenle"
+                      title="Müvekkil detayına git"
                     >
                       <User className="h-4 w-4" />
                       {clientLabel(task.client) || "Müvekkil"} — Müvekkile git

@@ -1,15 +1,17 @@
 'use client';
 
 /**
- * /clients/:clientId — Müvekkil detay shell (Task 4A).
+ * /clients/:clientId — KANONİK Client Workspace kabuğu (OWN-11 D01).
  *
  * Sadece okuma + sekme kabuğu. Gerçek veri ClientProfile içinde (api.getClient + api.getCases).
- * "Düzenle" → /clients/:id/edit (settings edit modaline redirect; v1'de native form YOK).
- * Muhasebe sekmesi bu mimaride YOK (ayrı backlog; /clients/:id/accounting ayrı route).
+ * "Düzenle" → /clients/:id/edit (D06: ayrı route KALIR).
+ * Muhasebe Workspace SEKMESİ DEĞİLDİR (D09) — `/clients/:id/accounting` ayrı route olarak
+ * kalır; bu kabuk yalnız ona GÖRÜNÜR bir giriş verir (eskiden erişim tek yoldu:
+ * `/settings/clients` satırındaki cüzdan ikonu, yani Workspace'ten ulaşılamıyordu).
  */
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Pencil } from 'lucide-react';
+import { ArrowLeft, Pencil, Wallet } from 'lucide-react';
 import { ClientProfile } from '@/components/client/client-profile';
 
 export default function ClientDetailPage() {
@@ -25,12 +27,20 @@ export default function ClientDetailPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Müvekkiller
         </Link>
-        <Link
-          href={`/clients/${clientId}/edit`}
-          className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
-        >
-          <Pencil className="h-4 w-4" /> Düzenle
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/clients/${clientId}/accounting`}
+            className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+          >
+            <Wallet className="h-4 w-4" /> Muhasebe
+          </Link>
+          <Link
+            href={`/clients/${clientId}/edit`}
+            className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+          >
+            <Pencil className="h-4 w-4" /> Düzenle
+          </Link>
+        </div>
       </div>
       <ClientProfile clientId={clientId} />
     </div>

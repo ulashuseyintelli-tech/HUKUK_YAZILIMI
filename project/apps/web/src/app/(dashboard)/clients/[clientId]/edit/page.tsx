@@ -106,7 +106,10 @@ export default function EditClientPage() {
             address: currentAddressSummary(client),
           }}
           addressManagedExternally={addressManagedExternally}
-          addressManagerHref={`/clients/${clientId}`}
+          // OWN-11 (D03): adres bağlantısı ARTIK doğrudan "Kimlik & İletişim" sekmesini
+          // açar; eskiden Workspace varsayılan sekmesine (Genel) düşüyordu ve kullanıcı
+          // adres bölümüne elle geçmek zorundaydı.
+          addressManagerHref={`/clients/${clientId}?tab=identity`}
           saving={saving}
           submitError={submitError}
           onSubmit={handleSubmit}
