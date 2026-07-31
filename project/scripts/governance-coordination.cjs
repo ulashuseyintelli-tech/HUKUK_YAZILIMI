@@ -254,7 +254,7 @@ const ANALYZE_FIRST_CONDITIONAL_EXECUTION_R02 = Object.freeze({
 const ORCHESTRA_EXECUTION_MODEL_REVISION_R01 = Object.freeze({
   taskId: 'ORCHESTRA-EXECUTION-MODEL-REVISION-R01-GOVERNANCE-RECONCILIATION',
   mode: 'ORCHESTRA_EXECUTION_MODEL_REVISION_R01_GOVERNANCE_RECONCILIATION',
-  baseSha: '3c6be710d3e9ebe9a7b0441ed8712445e1258e93',
+  baseSha: 'ca133055d4c162976820bd319854f9de96910187',
   headRef: 'codex/orchestra-execution-model-revision-r01-governance-reconciliation',
   changedPaths: Object.freeze([
     Object.freeze({ status: 'M', path: 'AGENTS.md' }),
