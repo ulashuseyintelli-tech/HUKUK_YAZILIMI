@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "programId": "OFFICE-SPRING-CLEANING-R01",
+  "taskId": "OFFICE-SPRING-CLEANING-RECONCILIATION-R01",
+  "snapshotBaseSha": "5228d633f02337cc32b245a5af35919f6241573d",
+  "predecessorBoundary": {
+    "observedMainSha": "b5bf8977e3e4458c2da294f75aa48558df5e581c",
+    "ratifiedRecordCount": 199,
+    "recordLevelRowsAvailableInRepository": false,
+    "treatment": "SEALED_AGGREGATE_NO_INVENTED_EXPANSION"
+  },
+  "counts": {
+    "ratifiedPredecessor": 199,
+    "postBoundary": 3,
+    "currentPreReconciliation": 202,
+    "unknown": 0
+  },
+  "postBoundaryRecords": [
+    {
+      "taskId": "RUNTIME-OPERABILITY-CERTIFICATION-R01-W2-PUSH-EVENT-EVIDENCE-PARSER-RECONCILIATION-R01",
+      "programId": "RUNTIME-OPERABILITY-CERTIFICATION-R01",
+      "capabilityId": null,
+      "prs": [1975],
+      "mergeShas": ["2952860a2f5bbd3b5a5986f21e9c1f02604ea8eb"],
+      "claimedStatus": "CLOSED",
+      "implementationPaths": ["project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts"],
+      "runtimeConsumerPaths": [],
+      "migrationPaths": [],
+      "testPaths": ["project/apps/api/src/modules/auth/__tests__/core-user-journeys-runtime-certification.db-gated.integration.spec.ts"],
+      "governanceRecords": [],
+      "implementationDelivered": true,
+      "runtimeBound": false,
+      "runtimeVerified": false,
+      "governanceClosed": true,
+      "finalDisposition": "CLOSED"
+    },
+    {
+      "taskId": "OFFICE-SPRING-CLEANING-RECONCILIATION-R01-AUTHORITY-BOOTSTRAP-BINDING",
+      "programId": "OFFICE-SPRING-CLEANING-R01",
+      "capabilityId": null,
+      "prs": [1992],
+      "mergeShas": ["d46bca4a9530b6fcbafdc344bb2859305ea2ce11"],
+      "claimedStatus": "CLOSED",
+      "implementationPaths": ["project/scripts/governance-coordination.cjs"],
+      "runtimeConsumerPaths": [],
+      "migrationPaths": [],
+      "testPaths": ["project/scripts/governance-coordination.test.cjs"],
+      "governanceRecords": ["project/docs/governance/governance-writer-coordination-contract.md"],
+      "implementationDelivered": true,
+      "runtimeBound": false,
+      "runtimeVerified": false,
+      "governanceClosed": true,
+      "finalDisposition": "CLOSED"
+    },
+    {
+      "taskId": "OFFICE-SPRING-CLEANING-RECONCILIATION-R01-AUTHORITY-MATERIALIZATION",
+      "programId": "OFFICE-SPRING-CLEANING-R01",
+      "capabilityId": null,
+      "prs": [1993],
+      "mergeShas": ["5228d633f02337cc32b245a5af35919f6241573d"],
+      "claimedStatus": "CLOSED",
+      "implementationPaths": [],
+      "runtimeConsumerPaths": [],
+      "migrationPaths": [],
+      "testPaths": [],
+      "governanceRecords": [
+        "project/docs/governance/decision-log.md#OFFICE-SPRING-CLEANING-RECONCILIATION-R01-SA01",
+        "project/docs/governance/coordination-execution-grants/OFFICE-SPRING-CLEANING-RECONCILIATION-R01-EG01.md"
+      ],
+      "implementationDelivered": false,
+      "runtimeBound": false,
+      "runtimeVerified": false,
+      "governanceClosed": true,
+      "finalDisposition": "CLOSED"
+    }
+  ]
+}

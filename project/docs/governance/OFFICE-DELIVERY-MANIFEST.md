@@ -1816,3 +1816,38 @@ POPULATE PRODUCTION REPORTINGLINE                          NOT AUTHORIZED
 ENABLE SHADOW                                              NOT AUTHORIZED
 ACTIVATE ENFORCEMENT                                       NOT AUTHORIZED
 ```
+
+## 12. OFFICE Spring-Cleaning Reconciliation — 2026-07-31
+
+Bu bölüm current-state okuma yüzeyidir ve §10/§11'deki CAP02 planning pointer'larını
+current bakımından supersede eder; tarihsel kayıtları silmez.
+
+```text
+RECONCILIATION TASK                 OFFICE-SPRING-CLEANING-RECONCILIATION-R01
+CAP02 TECHNICAL CHAIN               CLOSED / CONTROLLED-LOCAL EVIDENCE RETAINED
+CAP02 PRODUCTION ACTIVATION         NOT CERTIFIED / NOT AUTHORIZED
+CAP09A FOUNDATION                   PRESENT / MIGRATION RECORDED APPLIED
+CAP09A DESIGNATED CONSUMER          NOT DELIVERED / OPERABILITY UNBOUND
+PASSWORD RECOVERY                   LOCAL_CERTIFIED / PRODUCTION_UNCERTIFIED
+OPEN OD                             9
+DEDICATED OFFICE E2E                NOT PRESENT
+EXECUTION-OFFICE SUITE              NOT PRESENT
+SPRING-CLEANING VERDICT             PARTIAL
+```
+
+Current successor order:
+
+```text
+1  OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01
+2  OFFICE-SC-F06-OPEN-OD-DECISION-PACK-R01
+3  OFFICE-CAP-09A-CONSUMER-01-R01
+4  OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01
+5  OFFICE-SC-F04-EXECUTION-OFFICE-TEST-SUITE-R01
+6  OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01
+7  OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01
+```
+
+Hepsi `OWNER GO REQUIRED / NOT STARTED` durumundadır. Bu manifest bölümü yeni semantic
+karar, implementation grant, migration, deployment veya production activation authority
+üretmez. Evidence seti:
+`project/docs/governance/office-spring-cleaning-reconciliation-r01/`.
