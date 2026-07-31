@@ -41,6 +41,12 @@ type PoaOutcome = { isValid: boolean; message: string; daysRemaining?: number };
 function buildService(opts: {
   poaResolver?: (clientId: string, lawyerId: string, tenantId: string) => PoaOutcome;
   cpe?: { canPerformAction: jest.Mock } | null;
+  // I15-D1: bu dosya POA/tenant/CPE davranışını test eder — actor-specific
+  // TRIGGER_HACIZ authority (ActingLawyer+assignment+own-POA-scope+PermissionGrant)
+  // AYRI, dedike bir spec dosyasında (trigger-haciz-authorization.service.spec.ts)
+  // test edilir. Varsayılan: her zaman başarıyla çözümlenir (bu dosyanın senaryolarını
+  // etkilememesi için); `null` verilirse UNAVAILABLE (fail-closed) simüle eder.
+  triggerHacizAuthorization?: { assertAuthorized: jest.Mock } | null;
 } = {}) {
   const sideEffects: string[] = [];
 
@@ -102,8 +108,25 @@ function buildService(opts: {
           }),
         } as any);
 
-  const service = new UyapService(prisma, poaService, validationGate, errorReporter, cpe);
-  return { service, prisma, poaService, cpe, sideEffects };
+  const triggerHacizAuthorization =
+    opts.triggerHacizAuthorization === null
+      ? undefined
+      : opts.triggerHacizAuthorization ??
+        ({
+          assertAuthorized: jest.fn(async () => undefined),
+        } as any);
+
+  const service = new UyapService(
+    prisma,
+    poaService,
+    validationGate,
+    errorReporter,
+    cpe,
+    undefined, // evidenceOrchestrator — bu dosyanın kapsamı dışında
+    undefined, // authoritySnapshots — bu dosyanın kapsamı dışında
+    triggerHacizAuthorization,
+  );
+  return { service, prisma, poaService, cpe, triggerHacizAuthorization, sideEffects };
 }
 
 /** Yetkisiz istekte HICBIR yan etki olusmamis olmali. */
@@ -387,6 +410,23 @@ describe('DEBTOR-UYAP-HACIZ-TENANT-GUARD-P1-I02 — pushHacizRequest CPE gate', 
       (ctx.service as any).pushHacizRequest(hacizReq({ caseId: 'case-b1' }), T1),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('SEN-19c (I15-D1): triggerHacizAuthorization TRUSTED actorUserId parametresiyle cagrilir — body`deki request.userId/lawyerId ile DEGIL (spoof-proof)', async () => {
+    const trustedActor = 'trusted-actor-from-controller';
+    const spoofedBodyUserId = 'spoofed-user-in-body';
+    const ctx = buildService({});
+    await (ctx.service as any).pushHacizRequest(
+      hacizReq({ userId: spoofedBodyUserId, lawyerId: 'spoofed-lawyer-in-body' }),
+      T1,
+      trustedActor,
+    );
+    expect(ctx.triggerHacizAuthorization.assertAuthorized).toHaveBeenCalledWith(
+      expect.objectContaining({ authenticatedUserId: trustedActor }),
+    );
+    expect(ctx.triggerHacizAuthorization.assertAuthorized).not.toHaveBeenCalledWith(
+      expect.objectContaining({ authenticatedUserId: spoofedBodyUserId }),
+    );
   });
 });
 

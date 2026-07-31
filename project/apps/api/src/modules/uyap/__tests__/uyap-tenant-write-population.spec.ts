@@ -54,7 +54,19 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
     const casePolicyEngine: any = {
       canPerformAction: jest.fn().mockResolvedValue({ allowed: true, traceId: 'trace-allow' }),
     };
-    const service = new UyapService(prisma, poaService, validationGate, errorReporter, casePolicyEngine);
+    // I15-D1: bu dosyanın odağı tenant-ownership yazımıdır, TRIGGER_HACIZ actor-specific
+    // authority DEĞİL; varsayılan başarı mock'u ile mevcut davranış korunur.
+    const triggerHacizAuthorization: any = { assertAuthorized: jest.fn(async () => undefined) };
+    const service = new UyapService(
+      prisma,
+      poaService,
+      validationGate,
+      errorReporter,
+      casePolicyEngine,
+      undefined,
+      undefined,
+      triggerHacizAuthorization,
+    );
     return { service, prisma };
   };
 

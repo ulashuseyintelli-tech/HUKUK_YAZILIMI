@@ -44,7 +44,18 @@ const build = (riskImpl?: any) => {
   const validationGate: any = {
     checkPreHacizIntelligence: riskImpl || jest.fn().mockResolvedValue(buildRisk()),
   };
-  const svc = new UyapService(prisma, buildAuthorizedPoaService() as any, validationGate); // casePolicyEngine yok → CPE atlanır
+  // I15-D1: triggerHacizAuthorization — bu dosyanın odağı CPE-yok senaryosudur; casePolicyEngine
+  // hâlâ kasıtlı undefined (CPE atlanır), yalnız yeni zorunlu authority mock'u eklenir.
+  const svc = new UyapService(
+    prisma,
+    buildAuthorizedPoaService() as any,
+    validationGate,
+    { report: jest.fn() } as any,
+    undefined,
+    undefined,
+    undefined,
+    { assertAuthorized: jest.fn(async () => undefined) } as any,
+  ); // casePolicyEngine yok → CPE atlanır
   return { svc, prisma, validationGate };
 };
 

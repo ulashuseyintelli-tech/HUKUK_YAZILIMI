@@ -5,8 +5,30 @@ import {
   UyapAuthorityDecision,
   UyapAuthorityFailureCode,
   UyapSendAuthorityContext,
+  UyapSendAuthorityOperation,
+  UyapSendAuthorityOperationType,
   UYAP_SEND_AUTHORITY_VERSION,
 } from "./uyap-send-authority.types";
+
+/**
+ * I15-D1 (OWNER LEGAL DECISION, RATIFIED — HMK m.73/m.74, İİK m.78): hangi POA
+ * `scopeType` değerinin hangi operasyonu kapsadığının kanonik haritası. Bu harita
+ * operasyon-BAĞIMSIZ tek bir kural DEĞİLDİR — her operasyon kendi ayrı, owner-onaylı
+ * satırına sahiptir. Yeni bir operasyon eklerken bu haritaya SESSİZCE bir satır
+ * eklenmez; owner'ın ayrı bir hukuki kapsam kararı vermesi gerekir.
+ *
+ * UYAP_SEND: mevcut, önceden ratifiye edilmiş davranış — DEĞİŞTİRİLMEDİ.
+ * TRIGGER_HACIZ: İİK m.78 haciz isteme hakkı için ayrıca özel vekalet şartı
+ *   getirmez; HMK m.74 yalnız "haczin kaldırılması" gibi tasarrufi işlemler için
+ *   özel yetki arar — haciz TALEBİ bunların dışındadır. BU_DOSYA/OZEL için
+ *   structured operation-coverage metadata'sı yoktur; isimden yetki türetilmez.
+ */
+const OPERATION_ALLOWED_POA_SCOPES: Readonly<
+  Record<UyapSendAuthorityOperationType, ReadonlySet<string>>
+> = {
+  [UyapSendAuthorityOperation.UYAP_SEND]: new Set(["GENEL", "ICRA_TAKIP"]),
+  [UyapSendAuthorityOperation.TRIGGER_HACIZ]: new Set(["GENEL", "ICRA_TAKIP"]),
+};
 
 /** Lifecycle/scope değerlendirmesinden geçen tek bir POA adayı. */
 interface PoaCandidate {
@@ -96,12 +118,17 @@ export class UyapSendAuthorityResolverService {
     });
 
     // 0) Bağlam bütünlüğü — eksik server-side alan authority üretemez.
+    // I15-D1: `operationType` ARTIK serbest string değil — yalnız OPERATION_ALLOWED_POA_SCOPES
+    // içinde owner-ratifiye kanonik bir satırı olan değerler kabul edilir. Tanınmayan/bilinmeyen
+    // bir operationType (teorik olarak yalnız runtime cast/bug ile ulaşılabilir; tip sistemi
+    // derleme-zamanında zaten kısıtlar) GENEL/ICRA_TAKIP kuralından SESSİZCE geçemez.
     if (
       !context?.tenantId ||
       !context?.authenticatedUserId ||
       !context?.actingLawyerId ||
       !context?.caseId ||
       !context?.operationType ||
+      !Object.prototype.hasOwnProperty.call(OPERATION_ALLOWED_POA_SCOPES, context.operationType) ||
       !(context?.evaluatedAt instanceof Date) ||
       Number.isNaN(context.evaluatedAt.getTime())
     ) {
@@ -198,7 +225,7 @@ export class UyapSendAuthorityResolverService {
       const valid: PoaCandidate[] = [];
       const failures: UyapAuthorityFailureCode[] = [];
       for (const candidate of forClient) {
-        const failure = this.evaluate(candidate, context.evaluatedAt);
+        const failure = this.evaluate(candidate, context.evaluatedAt, context.operationType);
         if (failure) failures.push(failure);
         else valid.push(candidate);
       }
@@ -250,7 +277,11 @@ export class UyapSendAuthorityResolverService {
   }
 
   /** Tek bir POA'nın lifecycle + scope değerlendirmesi. `undefined` = geçerli. */
-  private evaluate(c: PoaCandidate, at: Date): UyapAuthorityFailureCode | undefined {
+  private evaluate(
+    c: PoaCandidate,
+    at: Date,
+    operationType: UyapSendAuthorityOperationType,
+  ): UyapAuthorityFailureCode | undefined {
     if (c.status === "REVOKED") return "POWER_OF_ATTORNEY_REVOKED";
     if (c.status === "EXPIRED") return "POWER_OF_ATTORNEY_EXPIRED";
     if (c.status !== "ACTIVE") return "POWER_OF_ATTORNEY_NOT_EFFECTIVE"; // PENDING vb.
@@ -269,10 +300,10 @@ export class UyapSendAuthorityResolverService {
       return "POWER_OF_ATTORNEY_EXPIRED";
     }
 
-    // Kapsam: yalnız GENEL ve ICRA_TAKIP UYAP_SEND'i kapsar.
+    // Kapsam: I15-D1 — operasyona özel, owner-ratifiye harita (OPERATION_ALLOWED_POA_SCOPES).
     // BU_DOSYA → canonical POA↔Case bağı şemada YOK (owner DECISION-2 ile eklenmedi) → RED.
     // OZEL     → makine-doğrulanabilir kapsam yok → RED.
-    if (c.scopeType !== "GENEL" && c.scopeType !== "ICRA_TAKIP") {
+    if (!OPERATION_ALLOWED_POA_SCOPES[operationType].has(c.scopeType)) {
       return "POWER_OF_ATTORNEY_SCOPE_MISMATCH";
     }
 

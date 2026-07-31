@@ -63,6 +63,9 @@ function makeService(opts: {
   const errorReporter = { report: jest.fn() };
   const cpe = makeCpeAllowed();
   const snapshots = opts.snapshots ?? makeSnapshotService();
+  // I15-D1: bu dosyanın odağı operation-evidence orchestration'dır, TRIGGER_HACIZ
+  // actor-specific authority DEĞİL; varsayılan başarı mock'u ile mevcut davranış korunur.
+  const triggerHacizAuthorization: any = { assertAuthorized: jest.fn(async () => undefined) };
   const svc = new UyapService(
     prisma as any,
     poa as any,
@@ -71,6 +74,7 @@ function makeService(opts: {
     cpe as any,
     opts.orchestrator,
     snapshots as any,
+    triggerHacizAuthorization,
   );
   // logRequest/logResponse/auditHacizDecision özel metotlarını no-op'la (transport stub).
   jest.spyOn(svc as any, 'logRequest').mockResolvedValue('req-1');

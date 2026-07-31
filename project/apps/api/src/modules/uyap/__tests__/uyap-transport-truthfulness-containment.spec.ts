@@ -82,12 +82,18 @@ function buildService(opts: { casePolicyEngine?: any } = {}) {
   const errorReporter = buildErrorReporter();
   const validationGate = buildValidationGate();
   const poaService: any = buildAuthorizedPoaService();
+  // I15-D1: bu dosyanın odağı transport-truthfulness'tir, TRIGGER_HACIZ actor-specific
+  // authority DEĞİL; varsayılan başarı mock'u ile mevcut davranış korunur.
+  const triggerHacizAuthorization: any = { assertAuthorized: jest.fn(async () => undefined) };
   const svc = new UyapService(
     prisma as any,
     poaService,
     validationGate as any,
     errorReporter as any,
     opts.casePolicyEngine,
+    undefined,
+    undefined,
+    triggerHacizAuthorization,
   );
   return { svc, prisma, errorReporter, validationGate };
 }

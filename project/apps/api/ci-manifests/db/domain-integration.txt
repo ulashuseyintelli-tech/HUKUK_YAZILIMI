@@ -220,6 +220,7 @@ src/modules/tebligat/service-occurrence/__tests__/service-occurrence-recorded-ev
 src/modules/tebligat/service-occurrence/__tests__/service-occurrence-write.db-gated.integration.spec.ts
 src/modules/user/__tests__/change-password.integration.spec.ts
 src/modules/uyap/__tests__/uyap-stats-tenant-scope.db-gated.integration.spec.ts
+src/modules/uyap/authority/__tests__/trigger-haciz-authorization.db-gated.integration.spec.ts
 src/modules/uyap/authority/uyap-authority-freshness.db-gated.integration.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.spec.ts
 #

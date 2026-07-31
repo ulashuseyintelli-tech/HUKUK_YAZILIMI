@@ -112,7 +112,19 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
       const casePolicyEngine: any = {
         canPerformAction: jest.fn().mockResolvedValue({ allowed: true, traceId: 'trace-allow' }),
       };
-      const service = new UyapService(prisma, {} as any, validationGate, { report: jest.fn() } as any, casePolicyEngine);
+      // I15-D1: triggerHacizAuthorization — bu dosyanın odağı retry/ownership'tir, TRIGGER_HACIZ
+      // actor-specific authority DEĞİL; varsayılan başarı mock'u ile davranış korunur.
+      const triggerHacizAuthorization: any = { assertAuthorized: jest.fn(async () => undefined) };
+      const service = new UyapService(
+        prisma,
+        {} as any,
+        validationGate,
+        { report: jest.fn() } as any,
+        casePolicyEngine,
+        undefined,
+        undefined,
+        triggerHacizAuthorization,
+      );
       return { service, prisma };
     };
 

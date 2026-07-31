@@ -159,7 +159,7 @@ const CONTEXT = {
   caseId: CASE,
   actionCode: 'UYAP_SEND',
   evaluatedAt: T0,
-};
+} as const;
 
 const buildSnapshot = async (world: World, availability?: MockUyapAvailabilityService) => {
   const { service } = buildSnapshotService(world, availability);
@@ -209,7 +209,7 @@ describe('UYAP-AUTHORITY-FRESHNESS-TX-I01 — authority snapshot', () => {
       { ...CONTEXT, tenantId: '' },
       { ...CONTEXT, authenticatedUserId: '' },
       { ...CONTEXT, caseId: '' },
-      { ...CONTEXT, actionCode: '' },
+      { ...CONTEXT, actionCode: '' as any },
       { ...CONTEXT, evaluatedAt: undefined as any },
     ]) {
       const result = await service.build(bad as any);
@@ -244,15 +244,14 @@ describe('UYAP-AUTHORITY-FRESHNESS-TX-I01 — digest', () => {
     expect(service.digest(reordered)).toBe(service.digest(snapshot));
   });
 
-  it.each([
-    ['tenant', (s: UyapAuthoritySnapshot) => ({ ...s, tenantId: OTHER_TENANT })],
-    ['action', (s: UyapAuthoritySnapshot) => ({ ...s, actionCode: 'TRIGGER_HACIZ' })],
-    ['actor', (s: UyapAuthoritySnapshot) => ({ ...s, authenticatedUserId: 'user-2' })],
-    [
-      'case',
-      (s: UyapAuthoritySnapshot) => ({ ...s, caseState: { ...s.caseState, caseId: 'case-2' } }),
-    ],
-  ])('%s değişince digest DEĞİŞİR (bound)', async (_label, mutate) => {
+  const digestMutations: Array<[string, (s: UyapAuthoritySnapshot) => UyapAuthoritySnapshot]> = [
+    ['tenant', (s) => ({ ...s, tenantId: OTHER_TENANT })],
+    ['action', (s) => ({ ...s, actionCode: 'TRIGGER_HACIZ' })],
+    ['actor', (s) => ({ ...s, authenticatedUserId: 'user-2' })],
+    ['case', (s) => ({ ...s, caseState: { ...s.caseState, caseId: 'case-2' } })],
+  ];
+
+  it.each(digestMutations)('%s değişince digest DEĞİŞİR (bound)', async (_label, mutate) => {
     const { service, snapshot } = await buildSnapshot(freshWorld());
     expect(service.digest(mutate(snapshot))).not.toBe(service.digest(snapshot));
   });

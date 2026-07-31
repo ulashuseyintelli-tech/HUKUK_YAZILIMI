@@ -215,6 +215,8 @@ src/modules/uyap/__tests__/uyap-transport-truthfulness-containment.spec.ts
 src/modules/uyap/__tests__/uyap-write-ownership-completion.spec.ts
 src/modules/uyap/__tests__/uyap-xml.debtor-role-mapping.spec.ts
 src/modules/uyap/__tests__/uyap-xml.numeric-interest-projection.spec.ts
+src/modules/uyap/authority/__tests__/trigger-haciz-authorization.service.spec.ts
+src/modules/uyap/authority/__tests__/trigger-haciz-capability-authorization.service.spec.ts
 src/modules/uyap/official/__tests__/official-contract-provenance.spec.ts
 src/modules/uyap/official/__tests__/official-dtd-codelist-conformance.spec.ts
 src/modules/uyap/official/__tests__/official-canonical-serializer.spec.ts
