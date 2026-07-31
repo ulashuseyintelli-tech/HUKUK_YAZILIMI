@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "programId": "OFFICE-SPRING-CLEANING-R01",
+  "verdict": "PARTIAL",
+  "residuals": [
+    {
+      "id": "OFFICE-SC-R01-AUTH-01",
+      "class": "SECURITY_AUTHORIZATION_BREADTH",
+      "priority": "P0",
+      "evidence": ["GET /lawyers/:id has JWT+tenant but no field/capability policy","GET /office has JWT+tenant+masking but no broad projection policy"],
+      "successorTaskId": "OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01",
+      "status": "OWNER_GO_REQUIRED"
+    },
+    {
+      "id": "OFFICE-SC-R01-OD-01",
+      "class": "OWNER_DECISION",
+      "priority": "P1",
+      "evidence": ["OFF/OD-02","OFF/OD-03","OFF/OD-04","OFF/OD-06","OFF/OD-07","OFF/OD-12","OFF/OD-13","OFF/OD-16","OFF/OD-19"],
+      "successorTaskId": "OFFICE-SC-F06-OPEN-OD-DECISION-PACK-R01",
+      "status": "OWNER_DECISION_REQUIRED"
+    },
+    {
+      "id": "OFFICE-SC-R01-CAP09A-01",
+      "class": "IMPLEMENTATION_CONSUMER",
+      "priority": "P1",
+      "evidence": ["foundation present","designated OFFICE consumer not delivered"],
+      "successorTaskId": "OFFICE-CAP-09A-CONSUMER-01-R01",
+      "status": "OWNER_GO_REQUIRED"
+    },
+    {
+      "id": "OFFICE-SC-R01-E2E-01",
+      "class": "TEST_E2E",
+      "priority": "P1",
+      "evidence": ["dedicated OFFICE E2E suite not present"],
+      "successorTaskId": "OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01",
+      "status": "OWNER_GO_REQUIRED"
+    },
+    {
+      "id": "OFFICE-SC-R01-EXECOFFICE-01",
+      "class": "TEST_OPERABILITY",
+      "priority": "P1",
+      "evidence": ["execution-office module/scripts present","dedicated suite absent"],
+      "successorTaskId": "OFFICE-SC-F04-EXECUTION-OFFICE-TEST-SUITE-R01",
+      "status": "OWNER_GO_REQUIRED"
+    },
+    {
+      "id": "OFFICE-SC-R01-PROD-01",
+      "class": "DEPLOYED_ENVIRONMENT_EVIDENCE",
+      "priority": "P1",
+      "evidence": ["production not accessed","production activation not authorized"],
+      "successorTaskId": "OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01",
+      "status": "PRODUCTION_ACCESS_AND_OWNER_GO_REQUIRED"
+    },
+    {
+      "id": "OFFICE-SC-R01-ORPHAN-01",
+      "class": "WORKSTATION_HYGIENE",
+      "priority": "P2",
+      "evidence": ["C:\\Development\\HUKUK_YAZILIMI\\HY_office_cap02_runtime_health unregistered",".git absent","recursive physical deletion prohibited"],
+      "successorTaskId": "OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01",
+      "status": "PRESERVED"
+    }
+  ]
+}

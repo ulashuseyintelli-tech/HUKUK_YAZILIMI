@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "programId": "OFFICE-SPRING-CLEANING-R01",
+  "snapshotBaseSha": "5228d633f02337cc32b245a5af35919f6241573d",
+  "counts": {
+    "total": 24,
+    "CLOSED": 9,
+    "CLOSED_WITH_NON_BLOCKING_RESIDUAL": 1,
+    "OPEN_IMPLEMENTATION": 10,
+    "OPEN_GOVERNANCE": 3,
+    "PRODUCTION_EVIDENCE_REQUIRED": 1,
+    "unknown": 0
+  },
+  "capabilities": [
+    {"id":"OFF-CAP-01","name":"Domain Law and Phase 0 baseline","status":"CLOSED","dependsOn":[]},
+    {"id":"OFF-CAP-02","name":"Person/User identity baseline","status":"CLOSED","dependsOn":[]},
+    {"id":"OFF-CAP-03","name":"Tenant-scoped authentication/session baseline","status":"CLOSED","dependsOn":[]},
+    {"id":"OFF-CAP-04","name":"Lawyer credential response containment","status":"CLOSED","dependsOn":[]},
+    {"id":"OFF-CAP-05","name":"Office secret masking/encryption boundary","status":"CLOSED","dependsOn":[]},
+    {"id":"OFF-CAP-06","name":"Password recovery baseline","status":"CLOSED","dependsOn":[]},
+    {"id":"OFF-CAP-07","name":"Password recovery hardening","status":"CLOSED","dependsOn":["OFF-CAP-06"]},
+    {"id":"OFF-CAP-08","name":"ReportingLine foundation/population/shadow chain","status":"CLOSED","dependsOn":[]},
+    {"id":"OFF-CAP-09","name":"CAP02 controlled-local runtime hygiene","status":"CLOSED","dependsOn":["OFF-CAP-08"]},
+    {"id":"OFF-CAP-10","name":"CAP02 physical worktree hygiene","status":"CLOSED_WITH_NON_BLOCKING_RESIDUAL","dependsOn":["OFF-CAP-09"],"residualId":"OFFICE-SC-R01-ORPHAN-01"},
+    {"id":"OFF-CAP-11","name":"Authorization breadth and sensitive projection","status":"OPEN_IMPLEMENTATION","dependsOn":[],"successorTaskId":"OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01"},
+    {"id":"OFF-CAP-12","name":"CAP09A designated OFFICE consumer","status":"OPEN_IMPLEMENTATION","dependsOn":[],"successorTaskId":"OFFICE-CAP-09A-CONSUMER-01-R01"},
+    {"id":"OFF-CAP-13","name":"Dedicated OFFICE E2E suite","status":"OPEN_IMPLEMENTATION","dependsOn":["OFF-CAP-11","OFF-CAP-12"],"successorTaskId":"OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01"},
+    {"id":"OFF-CAP-14","name":"Dedicated execution-office suite","status":"OPEN_IMPLEMENTATION","dependsOn":[],"successorTaskId":"OFFICE-SC-F04-EXECUTION-OFFICE-TEST-SUITE-R01"},
+    {"id":"OFF-CAP-15","name":"Multi-tenant membership realization","status":"OPEN_IMPLEMENTATION","dependsOn":["OFF/OD-02","OFF/OD-07"]},
+    {"id":"OFF-CAP-16","name":"Employment/external-counsel lifecycle","status":"OPEN_IMPLEMENTATION","dependsOn":["OFF/OD-03","OFF/OD-04"]},
+    {"id":"OFF-CAP-17","name":"Historical founder attribute enforcement","status":"OPEN_IMPLEMENTATION","dependsOn":["OFF/OD-06"]},
+    {"id":"OFF-CAP-18","name":"Multi-level approval separation","status":"OPEN_IMPLEMENTATION","dependsOn":["OFF/OD-12"]},
+    {"id":"OFF-CAP-19","name":"Delegation authority boundary","status":"OPEN_IMPLEMENTATION","dependsOn":["OFF/OD-13"]},
+    {"id":"OFF-CAP-20","name":"Offboarding revoke/reassignment orchestration","status":"OPEN_IMPLEMENTATION","dependsOn":["OFF/OD-16"]},
+    {"id":"OFF-CAP-21","name":"Identity/org cardinality decision group","status":"OPEN_GOVERNANCE","dependsOn":["OFF/OD-02","OFF/OD-03","OFF/OD-04","OFF/OD-07"]},
+    {"id":"OFF-CAP-22","name":"Authority/delegation/offboarding decision group","status":"OPEN_GOVERNANCE","dependsOn":["OFF/OD-06","OFF/OD-12","OFF/OD-13","OFF/OD-16"]},
+    {"id":"OFF-CAP-23","name":"Workload-purpose decision group","status":"OPEN_GOVERNANCE","dependsOn":["OFF/OD-19"]},
+    {"id":"OFF-CAP-24","name":"Production config/deployment evidence","status":"PRODUCTION_EVIDENCE_REQUIRED","dependsOn":["OFF-CAP-11","OFF-CAP-12","OFF-CAP-13","OFF-CAP-14"],"successorTaskId":"OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01"}
+  ]
+}

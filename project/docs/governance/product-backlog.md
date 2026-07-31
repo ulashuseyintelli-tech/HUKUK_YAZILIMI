@@ -3537,3 +3537,30 @@ PR #1907'nin canonical sequence'i korunur. UYAP bu authority'nin consumer'ıdır
 Basis registry content/release ile required resolver execution kapanana kadar blocked kalır. Bu
 kayıt code, AWS, schema, migration, runtime, actual signature, signed release veya production
 activation authority üretmez.
+
+---
+
+## OFFICE Spring-Cleaning Current-State Correction — 2026-07-31
+
+`OFFICE-AUTH-P02-HARDENING-R01` için yukarıdaki 2026-07-21
+`REGISTERED / NOT IMPLEMENTED` ve `OPEN / NOT IMPLEMENTED` ifadeleri tarihsel giriş
+durumudur; current state değildir.
+
+```text
+CURRENT IMPLEMENTATION     IMPLEMENTED / CANONICAL
+IMPLEMENTATION PR          #1494
+MERGE SHA                  b9916f5bfe9a27e483d779e5c98d31828552f92e
+MIGRATION                  20260721010000_office_auth_p02_hardening_r01_composite_fk
+MIGRATION STATE            RECORDED APPLIED (LOCAL-DEVELOPMENT REGISTER)
+PRODUCTION CERTIFICATION   NONE
+```
+
+Beş ratifiye hardening maddesi kodda teslim edilmiştir: composite tenant/user FK +
+partial unique index, backend capability flag/endpoint, SERIALIZABLE + retry,
+ayrıştırılmış audit taxonomy/compensation alarmı ve fragment tabanlı reset link.
+`IMPLEMENTED` production config veya gerçek mail/deployment doğrulaması anlamına gelmez.
+
+Spring-cleaning successor kayıtları ve exact sırası
+`office-spring-cleaning-reconciliation-r01/successor-execution-order.md` altındadır.
+Tüm successor'lar `OWNER GO REQUIRED / NOT STARTED`; backlog correction execution
+authority üretmez.
