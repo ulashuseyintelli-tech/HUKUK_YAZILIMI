@@ -1441,6 +1441,74 @@ cross-task reuse ve ikinci materialization fail-closed reddedilir. Bu kabul
 yalnız scope classification'dır; required CI, merge ve live closeout gate'lerini
 bypass etmez.
 
+## OFFICE F01 AUTHORIZATION AND SENSITIVE PROJECTION — Stage 1 binding
+
+Bu bölüm yalnız owner tarafından verilen tek kullanımlık OFFICE F01 Stage 1
+control-plane binding grant'ini sınıflandırır. Stage 1 yeni owner kararı,
+semantic authority kaydı veya execution-grant dosyası üretmez; Stage 2 ve
+OFFICE implementation bu binding'in kapsamı dışındadır.
+
+```text
+bootstrapId : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_R01
+programId : REPOSITORY-WIDE-CAPABILITY-BINDING-ACTIVATION-AND-OPERABILITY-RECONCILIATION-R01
+wave : WAVE 1 — CRITICAL PATH
+taskId : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-BOOTSTRAP-STAGE1-BINDING-R01
+mode : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01
+baseSha : ca749dd61376fc9e393489ca5f5e13d3efab8f18
+headRef : codex/office-sc-f01-authority-bootstrap-stage1-binding-r01
+executionMode : GO-COMPLETE — STAGE 1 ONLY
+workspace : SHARED CONTROL PLANE / OFFICE
+priority : P0
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+ownerDecisions : 8/8 RATIFIED
+reRatification : NOT REQUIRED
+targetSuccessorTaskId : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01
+finalImplementationTaskId : OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01
+M project/scripts/governance-coordination.cjs
+M project/scripts/governance-coordination.test.cjs
+M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Stage 1 validator'ın tanıdığı deterministik Stage 2 successor tuple'ı aşağıdaki
+gibidir. Bu tuple yalnız eligibility kanıtıdır; dispatchable değildir ve
+mutation authority taşımaz:
+
+```text
+stage2TaskId : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01
+stage2Mode : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01
+stage2HeadRef : codex/office-sc-f01-authority-materialization-r01
+stage2StatusTuple : M / A / A / A
+stage2PathCount : 4
+stage2Eligibility : ELIGIBLE / EXECUTION AUTHORITY MISSING
+stage2Dispatchable : NO
+stage2Mutation : FORBIDDEN
+futureSemanticAuthorityId : OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-SA01
+futureSemanticAuthorityPath : project/docs/governance/decision-log.md
+futureExecutionGrantId : OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01
+futureExecutionGrantPath : project/docs/governance/coordination-execution-grants/OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01.md
+stage2Scope : M project/docs/governance/decision-log.md
+stage2Scope : A project/docs/governance/office-sc-f01-authorization/office-authorization-decision-matrix.md
+stage2Scope : A project/docs/governance/office-sc-f01-authorization/office-sensitive-field-classification-matrix.md
+stage2Scope : A project/docs/governance/coordination-execution-grants/OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01-EG01.md
+stage2AuthorityMaterialization : NOT AUTHORIZED
+ownerDecisionMaterialization : NOT AUTHORIZED
+officeImplementation : NOT AUTHORIZED
+schemaMigration : NOT AUTHORIZED
+productionActivation : NOT AUTHORIZED
+stage1GrantReuseForStage2 : PROHIBITED
+distinctSemanticAndExecutionLocators : REQUIRED
+exactAllowlist : REQUIRED
+```
+
+Validator yalnız exact owner-pinned base veya protected Stage 1 blob'ları
+değişmemiş descendant base, exact branch, task/mode ve üç dosyalık `M/M/M`
+allowlist birlikte sağlandığında Stage 1 binding'i kabul eder. Stage 2 tuple'ı
+yanlış task, yanlış program, path/status drift'i, ekstra dosya, Stage 1 grant
+reuse veya distinct semantic/execution locator koşulunun ihlali halinde
+fail-closed reddedilir. Stage 2 için ayrı task-bound execution authority
+verilmeden `DISPATCHABLE: NO` ve `MUTATION: FORBIDDEN` kalır.
+
 ## ORCHESTRA EXECUTION MODEL REVISION R01 — reconciled checkpoint contract
 
 Owner intent (ratified) is reconciled here without creating a global grant. Orkestra
