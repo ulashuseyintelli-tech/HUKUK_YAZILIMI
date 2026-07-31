@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "OWNER-DECISION-COORD-V2-MECHANICAL-SUCCESSOR-DEFAULT-POLICY-R01",
+  "owner": "Ulas Huseyin Telli",
+  "decisionClass": "MECHANICAL_SUCCESSOR_DEFAULT_POLICY",
+  "envelopePath": "project/docs/governance/coordination-v2/activation/MECHANICAL-SUCCESSOR-DEFAULT-POLICY-PARENT-AUTHORIZATION-ENVELOPE-R01.md",
+  "programs": [
+    "CLIENT",
+    "COLLECTION",
+    "DEBTOR",
+    "RECEIVABLE",
+    "UYAP_CONNECTOR",
+    "OFFICE",
+    "DELIVERY_TRUTH",
+    "ORCHESTRA_OPERATIONAL_CANARY"
+  ],
+  "excludedScopes": [
+    "W3"
+  ],
+  "policy": {
+    "mechanicalSuccessorDefaultStates": [
+      "ELIGIBLE",
+      "DISPATCH_CANDIDATE"
+    ],
+    "defaultStateRequiresPredecessorAndTerminalConditions": true,
+    "eligibilityProducesSemanticAuthority": false,
+    "eligibilityProducesMutationAuthority": false,
+    "eligibilityProducesExecutionGrant": false,
+    "eligibilityProducesMergeAuthority": false,
+    "successorMutationRequiresSemanticAuthority": true,
+    "successorMutationRequiresExecutionGrant": true,
+    "successorAuthorityTaskBound": true,
+    "successorAuthorityExact": true,
+    "successorAuthorityReusable": false,
+    "stageIsolation": {
+      "separateTask": true,
+      "separateBranch": true,
+      "separatePullRequest": true,
+      "separateMerge": true,
+      "separateExecutionGrant": true,
+      "stage2MayUseStage1Grant": false
+    },
+    "semanticReRatificationRequiredWhenTupleUnchanged": false,
+    "ownerCheckpointReopenTriggers": [
+      "SEMANTIC_TUPLE_CHANGE",
+      "PROGRAM_CHANGE",
+      "TASK_IDENTITY_CHANGE",
+      "STAGE_CHANGE",
+      "PATH_OR_SCOPE_CHANGE",
+      "WRITER_OWNERSHIP_CHANGE",
+      "PRODUCTION_ACTIVATION",
+      "SCHEMA_OR_MIGRATION_CHANGE",
+      "IRREVERSIBLE_OPERATION"
+    ],
+    "reusableAuthority": false,
+    "crossTaskAuthority": false,
+    "crossProgramAuthority": false,
+    "repositoryWideAuthority": false,
+    "unattendedMutationAuthority": false,
+    "unattendedMergeAuthority": false,
+    "deliveryTruthModel": "TASK_BOUNDED_UNCHANGED",
+    "orchestraOperationalCanaryGrantModel": "ONE_SHOT_TASK_SCOPED",
+    "orchestraOperationalCanaryConvertedToStandingGrant": false
+  },
+  "producesProgramSpecificSemanticAuthority": false,
+  "producesProgramSpecificExecutionGrant": false,
+  "producesProgramSpecificMutationAuthority": false,
+  "producesCrossProgramMutationGrant": false,
+  "producesStandingGrant": false,
+  "producesProgramEligibilityMutation": false,
+  "validity": "until explicit owner revocation, semantic tuple change, or scope violation",
+  "nonTransferable": "not to another program, repository or owner workstream"
+}
