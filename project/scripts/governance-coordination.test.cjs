@@ -711,6 +711,18 @@ function uyapM01TargetChanges() {
   );
 }
 
+function uyapStructuredEmissionBindingChanges() {
+  return coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function uyapStructuredEmissionTargetChanges() {
+  return coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function uyapM01CloseoutBindingChanges() {
   return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.closeoutBindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -1442,6 +1454,8 @@ function rcvColBindingContractContent(
     binding.targetPr.semanticAuthority.recordId,
     binding.targetPr.executionGrant.recordId,
     ...(binding.programId ? [binding.programId] : []),
+    ...(binding.grantScopeLiteral ? [binding.grantScopeLiteral] : []),
+    ...(binding.secondUseLiteral ? [binding.secondUseLiteral] : []),
     ...(binding.ownerRatificationEvidence
       ? [
           binding.ownerRatificationEvidence.exactExcerpt,
@@ -1563,8 +1577,8 @@ function createRcvColTargetGitFixture(t, options = {}) {
             target.taskId.replace('-AUTHORITY-MATERIALIZATION-R01', ''),
             target.originalBaseSha,
             'GO-COMPLETE',
-            'UYAP-M01 ONLY',
-            'SECOND USE: FAIL-CLOSED',
+            binding.grantScopeLiteral || 'UYAP-M01 ONLY',
+            binding.secondUseLiteral || 'SECOND USE: FAIL-CLOSED',
           ]
         : []),
       '',
@@ -4242,6 +4256,131 @@ test('UYAP-M01 target rejects a grant bound to another semantic authority', (t) 
   const fixture = createRcvColTargetGitFixture(t, {
     binding,
     semanticBindingRecordId: 'UYAP-M01-WRONG-SA01',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('UYAP structured-emission binding requires exact base branch scope and owner evidence', () => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(
+    uyapStructuredEmissionBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result =
+    coordination.validateUyapStructuredEmissionAuthorityBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      changes: uyapStructuredEmissionBindingChanges(),
+      taskId: binding.taskId,
+      cwd: fixture.root,
+    });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('UYAP structured-emission binding rejects wrong base branch and expanded scope', () => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  for (const context of [
+    { base: '0'.repeat(40), headRef: binding.bindingPr.headRef },
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: `${binding.bindingPr.headRef}-copy`,
+    },
+  ]) {
+    expectCode(
+      () =>
+        coordination.classifyPrChangeSet(
+          uyapStructuredEmissionBindingChanges(),
+          context,
+        ),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  const expanded = uyapStructuredEmissionBindingChanges();
+  expanded.push({
+    status: 'M',
+    path: 'project/docs/governance/decision-log.md',
+  });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP structured-emission target accepts only exact branch and distinct M/A authority tuple', () => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(
+    uyapStructuredEmissionTargetChanges(),
+    {
+      base: binding.targetPr.originalBaseSha,
+      headRef: binding.targetPr.headRef,
+    },
+  );
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  const expanded = uyapStructuredEmissionTargetChanges();
+  expanded.push({ status: 'M', path: coordination.REGISTER_REPO_PATH });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP structured-emission target validates exact owner evidence and semantic binding', (t) => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    binding,
+    freshMain: true,
+  });
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: binding.targetPr.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+});
+
+test('UYAP structured-emission target rejects a grant bound to another semantic authority', (t) => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    binding,
+    semanticBindingRecordId:
+      'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-WRONG-SA01',
   });
   expectCode(
     () =>

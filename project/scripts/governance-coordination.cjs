@@ -599,6 +599,77 @@ const UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01 
       }),
     }),
   });
+const UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01 =
+  Object.freeze({
+    taskId:
+      'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-AUTHORITY-CONTROL-PLANE-BINDING-R01',
+    programId: 'UYAP-MODULE-FULL-GAP-CLOSURE-R02',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    grantScopeLiteral: 'UYAP STRUCTURED-EMISSION-I01 ONLY',
+    secondUseLiteral: 'SECOND USE: FAIL-CLOSED',
+    ownerRatificationEvidence: Object.freeze({
+      exactExcerpt:
+        'Av. Ulaş Hüseyin Telli olarak, UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01 görevinin canonical M01 Legal-Basis sonucunu değiştirmeden tüketmesini; yalnız W-01…W-05 ile doğrulanmış resmî çek, senet, poliçe ve ilam sarmalayıcıları altında deterministik ve fail-closed structured emission üretmesini; gerekli SA01 ve EG01 kayıtlarının oluşturulmasını; bounded reconstruction, test, required CI, PR, squash-merge, main sync, post-merge doğrulama, terminal closeout ve güvenli cleanup işlemlerinin aynı görev içinde GO-COMPLETE yetkisiyle tamamlanmasını onaylıyorum.',
+      excerptSha256:
+        '5975da98c0e8f2cdf5db86743bf6caa2ed21fde941515791ea27de422b6d1b10',
+    }),
+    bindingPr: Object.freeze({
+      mode:
+        'UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_AUTHORITY_CONTROL_PLANE_BINDING_R01',
+      baseSha: '9e55f0bf2b65fa3914087e6f5f21ad2c72eedd3e',
+      headRef:
+        'codex/uyap-official-alacakkalemi-structured-emission-i01-control-plane-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId:
+        'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-AUTHORITY-MATERIALIZATION-R01',
+      mode:
+        'UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_AUTHORITY_MATERIALIZATION_R01',
+      originalBaseSha: '9e55f0bf2b65fa3914087e6f5f21ad2c72eedd3e',
+      headRef:
+        'codex/uyap-official-alacakkalemi-structured-emission-i01-authority-materialization-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId:
+          'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01.md',
+        recordId:
+          'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01',
+      }),
+    }),
+  });
 const RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 =
   Object.freeze({
     taskId:
@@ -3075,6 +3146,8 @@ function classifyPrChangeSet(changes, context = {}) {
     RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
   const uyapM01Binding =
     UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const uyapStructuredEmissionBinding =
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
   const pb01Binding =
     RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01;
   const pb01ClosureBinding =
@@ -3376,6 +3449,43 @@ function classifyPrChangeSet(changes, context = {}) {
     reject(
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
       'UYAP-M01 authority binding requires its exact branch, base and bounded change set',
+    );
+  }
+
+  if (
+    context.base === uyapStructuredEmissionBinding.bindingPr.baseSha &&
+    context.headRef === uyapStructuredEmissionBinding.bindingPr.headRef &&
+    hasExactChangeSet(
+      changes,
+      uyapStructuredEmissionBinding.bindingPr.changedPaths,
+    )
+  ) {
+    return {
+      mode: uyapStructuredEmissionBinding.bindingPr.mode,
+      taskId: uyapStructuredEmissionBinding.taskId,
+    };
+  }
+
+  if (
+    context.headRef === uyapStructuredEmissionBinding.targetPr.headRef &&
+    hasExactChangeSet(
+      changes,
+      uyapStructuredEmissionBinding.targetPr.changedPaths,
+    )
+  ) {
+    return {
+      mode: uyapStructuredEmissionBinding.targetPr.mode,
+      taskId: uyapStructuredEmissionBinding.targetPr.taskId,
+    };
+  }
+
+  if (
+    context.headRef === uyapStructuredEmissionBinding.bindingPr.headRef ||
+    context.headRef === uyapStructuredEmissionBinding.targetPr.headRef
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP structured-emission authority binding requires its exact branch, base and bounded change set',
     );
   }
 
@@ -4447,6 +4557,52 @@ function validateUyapM01AuthorityBindingScope(options) {
       reject(
         'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
         `contract is missing exact UYAP-M01 binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: binding.bindingPr.mode, taskId: binding.taskId };
+}
+
+function validateUyapStructuredEmissionAuthorityBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  if (
+    taskId !== binding.taskId ||
+    base !== binding.bindingPr.baseSha ||
+    headRef !== binding.bindingPr.headRef ||
+    !hasExactChangeSet(changes, binding.bindingPr.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP structured-emission authority control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.targetPr.taskId,
+    binding.targetPr.mode,
+    binding.targetPr.originalBaseSha,
+    binding.targetPr.headRef,
+    ...binding.targetPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.targetPr.semanticAuthority.recordId,
+    binding.targetPr.executionGrant.recordId,
+    binding.grantScopeLiteral,
+    binding.secondUseLiteral,
+    binding.ownerRatificationEvidence.exactExcerpt,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact UYAP structured-emission binding ${expectedLiteral}`,
       );
     }
   }
@@ -6809,6 +6965,101 @@ function validateUyapM01AuthorityMaterializationScope(options) {
   return { mode: target.mode, taskId: target.taskId };
 }
 
+function validateUyapStructuredEmissionAuthorityMaterializationScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP structured-emission authority materialization target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.bindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    binding.grantScopeLiteral,
+    binding.secondUseLiteral,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical UYAP structured-emission binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const decisionLog = gitShow(head, target.semanticAuthority.path, cwd);
+  const semanticMarker = assertExactAuthorityMarker(
+    decisionLog,
+    target.semanticAuthority,
+  );
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(
+        line,
+        semanticMarker,
+        target.semanticAuthority.recordId,
+      ),
+    );
+  if (semanticRows.length !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'UYAP structured-emission semantic authority marker must identify its exact decision-log row',
+    );
+  }
+
+  for (const evidenceLiteral of [
+    binding.ownerRatificationEvidence.exactExcerpt,
+    binding.ownerRatificationEvidence.excerptSha256,
+    binding.programId,
+    target.originalBaseSha,
+  ]) {
+    if (!decisionLog.includes(evidenceLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `UYAP structured-emission semantic authority is missing evidence ${evidenceLiteral}`,
+      );
+    }
+  }
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const grantLiteral of [
+    binding.ownerRatificationEvidence.exactExcerpt,
+    binding.ownerRatificationEvidence.excerptSha256,
+    binding.programId,
+    target.taskId.replace('-AUTHORITY-MATERIALIZATION-R01', ''),
+    target.originalBaseSha,
+    'GO-COMPLETE',
+    binding.grantScopeLiteral,
+    binding.secondUseLiteral,
+  ]) {
+    if (!grant.includes(grantLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `UYAP structured-emission execution grant is missing bound content ${grantLiteral}`,
+      );
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function validateUyapM01TerminalCloseoutScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -7702,6 +7953,21 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01
+      .bindingPr.mode
+  ) {
+    return validateUyapStructuredEmissionAuthorityBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr
       .mode
   ) {
@@ -7960,6 +8226,21 @@ function validatePrScope(options) {
       .targetPr.mode
   ) {
     return validateUyapM01AuthorityMaterializationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01
+      .targetPr.mode
+  ) {
+    return validateUyapStructuredEmissionAuthorityMaterializationScope({
       base,
       head,
       headRef,
@@ -8524,6 +8805,7 @@ module.exports = {
   GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01,
   RCV_CLAIM_FORM_HCR_08_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01,
+  UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_AWS_KMS_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
   RCV_CLAIM_FORM_D02_KC01_TR01_OWNERSHIP_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
@@ -8582,6 +8864,8 @@ module.exports = {
   validateHcr08AuthorityBootstrapScope,
   validateUyapM01AuthorityBindingScope,
   validateUyapM01AuthorityMaterializationScope,
+  validateUyapStructuredEmissionAuthorityBindingScope,
+  validateUyapStructuredEmissionAuthorityMaterializationScope,
   validateUyapM01TerminalCloseoutBindingScope,
   validateUyapM01TerminalCloseoutScope,
   validateKc01AuthorityBootstrapBindingScope,

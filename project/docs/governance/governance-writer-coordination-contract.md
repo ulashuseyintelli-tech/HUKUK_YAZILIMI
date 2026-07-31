@@ -1557,6 +1557,60 @@ exact excerpt/hash eşliğini ve EG'nin exact SA referansını doğrular. Fazla 
 başka branch/base, missing evidence, generic validator relaxation, reusable grant
 ve ikinci kullanım fail-closed reddedilir.
 
+## UYAP official AlacakKalemi structured emission — exact authority publication binding
+
+Bu kayıt yalnız `UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01`
+görevinin bounded reconstruction'ı için distinct Semantic Authority ve Execution
+Grant yayımlanmasını tanır. Canonical M01 Legal-Basis sonucunu consumer olarak
+kullanır; RECEIVABLE semantiğini yeniden yorumlama, UYAP alanlarından yeni Legal
+Basis üretme veya production activation yetkisi vermez.
+
+```text
+Program   : UYAP-MODULE-FULL-GAP-CLOSURE-R02
+Binding task : UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-AUTHORITY-CONTROL-PLANE-BINDING-R01
+Binding mode : UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_AUTHORITY_CONTROL_PLANE_BINDING_R01
+Base SHA     : 9e55f0bf2b65fa3914087e6f5f21ad2c72eedd3e
+Head ref     : codex/uyap-official-alacakkalemi-structured-emission-i01-control-plane-binding-r01
+Binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Materialization task : UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-AUTHORITY-MATERIALIZATION-R01
+Materialization mode : UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_AUTHORITY_MATERIALIZATION_R01
+Original captured base : 9e55f0bf2b65fa3914087e6f5f21ad2c72eedd3e
+Head ref : codex/uyap-official-alacakkalemi-structured-emission-i01-authority-materialization-r01
+Materialization scope:
+  M project/docs/governance/decision-log.md
+  A project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01.md
+
+Semantic authority record : UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-SA01
+Execution grant record     : UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01
+Grant scope                : UYAP STRUCTURED-EMISSION-I01 ONLY
+Second use                 : SECOND USE: FAIL-CLOSED
+Production activation      : PROHIBITED
+Cross-task reuse           : PROHIBITED
+```
+
+Owner ratification evidence is byte-exact and SHA-256 bound:
+
+```text
+Av. Ulaş Hüseyin Telli olarak, UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01 görevinin canonical M01 Legal-Basis sonucunu değiştirmeden tüketmesini; yalnız W-01…W-05 ile doğrulanmış resmî çek, senet, poliçe ve ilam sarmalayıcıları altında deterministik ve fail-closed structured emission üretmesini; gerekli SA01 ve EG01 kayıtlarının oluşturulmasını; bounded reconstruction, test, required CI, PR, squash-merge, main sync, post-merge doğrulama, terminal closeout ve güvenli cleanup işlemlerinin aynı görev içinde GO-COMPLETE yetkisiyle tamamlanmasını onaylıyorum.
+```
+
+```text
+ownerRatificationEvidence.excerptSha256 : 5975da98c0e8f2cdf5db86743bf6caa2ed21fde941515791ea27de422b6d1b10
+```
+
+Uygulama semantiği yalnız W-01…W-05 ile doğrulanmış resmî çek, senet,
+poliçe ve ilam sarmalayıcılarında deterministic emission'a izin verir.
+Tenant/case/claim ilişkisi server-side doğrulanır; M01 exact-version ve checksum
+sonucu aynen tüketilir. Caller-supplied wrapper veya Legal Basis authority,
+fallback/default wrapper ve faiz alacağı emission'ı fail-closed reddedilir.
+Runtime default-OFF ve production-unreachable kalır. Validator exact
+branch/base/path tuple'ını, distinct SA/EG kimliklerini, exact owner evidence'ını
+ve tek kullanımlı grant sınırını doğrular; generic control-plane gevşetmesi yapmaz.
+
 ### UYAP-M01 terminal closeout — exact publication binding
 
 Bu ek yalnız merge edilmiş UYAP-M01 implementation sonucunun existing task-local
