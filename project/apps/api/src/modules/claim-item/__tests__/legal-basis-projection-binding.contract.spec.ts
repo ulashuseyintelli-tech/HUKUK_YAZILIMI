@@ -6,6 +6,7 @@ import {
   assertLegalBasisProjectionBindingMatches,
   createLegalBasisProjectionBindingV1,
   LEGAL_BASIS_PROJECTION_BINDING_CONTRACT_ID,
+  LEGAL_SUBTYPE_CODES_V1,
   LegalBasisProjectionBindingContractError,
   parseLegalBasisProjectionBindingV1,
 } from '../formation-intent/legal-basis-projection-binding.contract';
@@ -205,6 +206,9 @@ describe('RCV-CLAIM-FORM-P02-S08-D02-PB01 projection binding contract', () => {
     ]) {
       expect(schema.$defs[definition].additionalProperties).toBe(false);
     }
+    expect(schema.$defs.authorityIdentity.properties.subtypeCode.enum).toEqual(
+      LEGAL_SUBTYPE_CODES_V1,
+    );
   });
 
   it('creates one immutable canonical V1 envelope with all decision sections', () => {

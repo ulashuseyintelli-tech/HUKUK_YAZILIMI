@@ -52,11 +52,9 @@ export interface LegalBasisEligibilityRequestedComponent {
  * `claimItemProjection` fields (itemType, interestAccrualStatus,
  * interestType, interestRate, interestStartDate,
  * interestStartDateProvenance, isAllDebtorsLiable, liableDebtorIds)
- * directly. Drift in those 8 fields between admission-time and
- * finalization-time re-resolution is therefore NOT detected by this
- * validator — a reported gap. Closing it fully would need either a schema
- * change (deferred, out of scope here per D5) or canonical evidence of
- * what a real resolver adapter's `resolutionHash` actually covers.
+   * directly. The canonical NAFAKA exact-version adapter therefore binds all
+   * 8 fields into `resolutionHash`; this generic validator still compares the
+   * hash only and must not infer that coverage for another adapter.
  */
 export interface LegalBasisEligibilityExpectedBinding {
   readonly legalBasisChecksum: string;
