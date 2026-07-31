@@ -3702,3 +3702,105 @@ HAT 2 — CLIENT URUN GELISTIRME (ARC-07'ye BAGLI DEGIL, simdi acik):
 **KAPSAM AÇIKLIĞI:** bu bölüm ARC-07'yi **kapatmaz** ve `I04`–`I08`'i **iptal etmez** — Hat 1, gerçek bir production ortamı owner tarafından yetkilendirilip oluşturulduğunda **aynı kanonik sırayla** devam eder. Bu bölüm yalnız şunu netleştirir: (a) ARC-07'nin mühendislik geliştirme yükümlülüğü şu an için tamamlanmıştır, (b) kalan dilimlerin bekleme nedeni programatik (production yokluğu) olup teknik değildir, (c) CLIENT programındaki **sonraki implementasyon işi** artık ARC-07'nin kapanmasını şart koşmaz ve genel backlog'dan owner GO ile bağımsızca seçilebilir.
 
 **Bu bölüm self-check:** production deployment OLUŞTURMAZ · I04–I08'i BAŞLATMAZ · backfill ÇALIŞTIRMAZ · production verisine ERİŞMEZ · §1–§49.16 metinlerini DEĞİŞTİRMEZ · yalnız §49.14/§49.15'in STATÜ bloklarını (kural metni değil) günceller.
+
+## 50. Pasif (Soft-Deactivated) Müvekkil Okuma Politikası — OWN-14 (OWNER RATIFIED, 2026-08-01)
+
+Bu bölüm `OWN-14` (Owner Decision Register, `master-triage-register.md`) kalemini kapatan
+owner kararlarının kanonik kaydıdır. **ADDITIVE RESIDUAL CANONICALIZATION**: mevcut
+owner-locked **Task 4A / karar #2** çekirdeği (`ClientService.findOne` VARSAYILAN olarak
+`isActive:false` kaydı DÖNDÜRMEZ; `includeInactive` açık opt-in'dir) **AYNEN GEÇERLİDİR** —
+silinmedi, yeniden ifade edilerek anlamı değiştirilmedi ve geriye dönük genişletilmiş gibi
+gösterilmedi. Bu bölüm yalnız o çekirdeğin **yazılı olmayan residual politikasını**
+(yüzey kapsamı, alt kayıt davranışı, cross-module sınırı) kanonikleştirir.
+
+**KOD DAVRANIŞI DEĞİŞMEDİ.** Kanonikleştirmeyi hazırlayan READ-ONLY analiz
+(`CLIENT-OWN-14-FINDONE-ACTIVE-POLICY-CANONICALIZATION-R01`) 14 CLIENT okuma noktasını
+inceledi ve **kararın kendi kapsamı içinde SIFIR sapma** buldu; bu bölüm bir davranış
+değişikliği yetkilendirmez.
+
+### 50.1 D01 — Staff Discovery/Read Politikası (RATIFIED)
+
+Pasif müvekkiller, CLIENT modülünün kullanıcıya dönük staff discovery/read yüzeylerinde
+**varsayılan olarak gösterilmez.**
+
+Bu kapsama **en az** şunlar girer:
+
+```text
+findAll
+findOne
+search
+timeline
+Client Workspace alt-okumalari
+```
+
+`includeInactive` **dış API/query yüzeyi olarak AÇILMAZ.**
+
+Yalnız mutasyon sonrasında teknik response üretmek için kullanılan ve kodda açıkça
+gerekçelendirilmiş **internal re-fetch** çağrıları `includeInactive:true` kullanabilir.
+
+### 50.2 D01 — Cross-Module Sınırı (RATIFIED)
+
+CLIENT dışındaki modüllerin şu amaçlı client okumaları **bu kararın KAPSAMI DIŞINDADIR:**
+
+```text
+FK/tenant dogrulamasi
+tarihsel isim cozumleme
+muhasebe ve delil butunlugu
+gecmis kayitlarin okunmasi
+```
+
+**OWN-14 bu modüllere tek taraflı filtre politikası DAYATMAZ.** CLIENT staff discovery/read
+politikası, tarihsel/referans amaçlı başka-domain okumalarına **otomatik uygulanmaz**.
+
+### 50.3 D02 — Soft-Deactivation Etkisi (RATIFIED)
+
+Client soft-deactivation **yalnız `Client.isActive=false` etkisi doğurur.**
+
+Soft-deactivation:
+
+```text
+alt kayitlari SILMEZ
+PASIFLESTIRMEZ
+cascade mutation BASLATMAZ
+tarihsel ve hukuki kayit butunlugunu BOZMAZ
+```
+
+`Case`, vekalet, adres, portal bağlantısı, muhasebe, belge, activity ve audit kayıtları
+**korunur.**
+
+Bu koruma, alt kayıtların **her kullanıcıya otomatik görünür olduğu anlamına GELMEZ.** Her
+alt kaydın görünürlüğü, yetkilendirmesi ve lifecycle davranışı **kendi canonical domain
+politikasına tabidir.**
+
+**KAVRAM AYRIMI:** soft-deactivation; **arşivleme, KVKK fiziksel silme veya
+anonimleştirme DEĞİLDİR.** (`ClientAddress.isCurrent=false` arşivleme ARC-07/§49'un ayrı
+kavramıdır; fiziksel silme POL-E/§24'ün sekiz koşullu fail-closed kapısına tabidir ve
+`ClientService.remove()` bunu YAPMAZ.)
+
+### 50.4 D03 — Pasif Müvekkile Yeni Dosya: DEFERRED / CROSS-DOMAIN
+
+Pasif müvekkile yeni dosya açılabilmesi **OWN-14 kapsamında kanonikleştirilmeyecek veya
+değiştirilmeyecektir.**
+
+Mevcut runtime davranışı bu turda **KORUNUR**, fakat owner tarafından arzu edilen nihai
+politika olarak **RATIFİYE EDİLMİŞ SAYILMAZ.**
+
+```text
+D03 STATUS: DEFERRED / CROSS-DOMAIN / CURRENT RUNTIME UNCHANGED
+```
+
+Bu konu **CLIENT + CASE ortak sınırında, ayrı bir cross-domain karar maddesi** olarak
+kaydedilmiştir. Bu turda CASE koduna veya governance alanına DOKUNULMAMIŞTIR; D03 için
+implementation task AÇILMAMIŞ ve successor OTOMATİK BAŞLATILMAMIŞTIR.
+
+### 50.5 Bölüm Self-Check
+
+Bu bölüm: Task 4A / owner-locked karar #2 çekirdeğini DEĞİŞTİRMEZ · kod veya test davranışı
+DEĞİŞTİRMEZ · `includeInactive`'i dış API yüzeyi AÇMAZ · CLIENT dışı modüllere politika
+DAYATMAZ · CASE davranışını DEĞİŞTİRMEZ · alt kayıtların görünürlüğünü tek başına
+BELİRLEMEZ · schema/migration ÜRETMEZ · production verisine ERİŞMEZ · ARC-07 kilidini
+DEĞİŞTİRMEZ · CLIENT Phase 2 genel yetkisi DOĞURMAZ · Portal Phase 2'yi BAŞLATMAZ ·
+§1–§49.17 metinlerini DEĞİŞTİRMEZ.
+
+**RESIDUAL CANONICALIZED ≠ BEHAVIOR CHANGED · POLICY WRITTEN ≠ NEW AUTHORITY ·
+SOFT-DEACTIVATION ≠ ARCHIVE ≠ ERASURE · D03 DEFERRED ≠ D03 RATIFIED.**
