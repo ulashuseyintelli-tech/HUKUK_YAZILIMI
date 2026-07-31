@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AssetQueryType, AssetQueryJobStatus, AssetQueryStatus } from '@prisma/client';
+import { AssetQueryType, AssetQueryJobStatus, AssetQueryStatus, Prisma } from '@prisma/client';
 import { AssetQueryDTO, AssetSummaryDTO, RunAssetQueriesDTO, UpdateAssetQueryResultDTO } from './dto/asset-query.dto';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
@@ -39,55 +39,87 @@ export class AssetQueryService {
       throw new NotFoundException('Borçlu bulunamadı');
     }
 
-    // Check idempotency
+    // I15 Phase B: PERSISTE EDILEN anahtarla AYNI formati ara (onceki surum ham
+    // dto.idempotencyKey'i ariyordu, hicbir satir asla bu ham degerle kaydedilmedigi
+    // icin on-kontrol hicbir zaman eslesmiyordu — bkz. Phase B final rapor).
+    // Anahtar tenantId + caseDebtorId + queryType'i de icerir: sutun tabloda global
+    // @unique oldugundan (tenant/debtor-scoped composite DEGIL), string'in kendisini
+    // bu boyutlarla prefix'lemek hem cross-tenant hem cross-caseDebtor collision'ini
+    // migration olmadan kapatir (her ikisi de test tasarimi sirasinda bulundu — bkz.
+    // final rapor: TEST-5 cross-tenant, TEST-6 cross-caseDebtor).
+    const keyFor = (queryType: string) =>
+      dto.idempotencyKey ? `${tenantId}:${caseDebtorId}:${dto.idempotencyKey}_${queryType}` : undefined;
+
+    const existingByType = new Map<AssetQueryType, any>();
     if (dto.idempotencyKey) {
-      const existing = await this.prisma.assetQuery.findUnique({
-        where: { idempotencyKey: dto.idempotencyKey },
+      const candidateKeys = dto.types.map((t) => keyFor(t)!);
+      const existingRows = await this.prisma.assetQuery.findMany({
+        where: { idempotencyKey: { in: candidateKeys } },
+        include: { requestedByUser: { select: { name: true, surname: true } } },
       });
-      if (existing) {
-        throw new ConflictException({
-          code: 'IDEMPOTENCY_CONFLICT',
-          message: 'Bu sorgu zaten başlatılmış',
-          existingQueryId: existing.id,
+      for (const row of existingRows) {
+        existingByType.set(row.queryType as AssetQueryType, row);
+      }
+    }
+
+    const newTypes = dto.types.filter((t) => !existingByType.has(t));
+
+    // Check rate limit (max 5 queries per debtor per hour) — yalnizca GERCEKTEN
+    // yeni is varsa tuketilir; salt replay bir istek rate-limit'e dokunmaz.
+    if (newTypes.length > 0) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const recentQueries = await this.prisma.assetQuery.count({
+        where: {
+          caseDebtorId,
+          requestedAt: { gte: oneHourAgo },
+        },
+      });
+
+      if (recentQueries >= 5) {
+        throw new BadRequestException({
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Bu borçlu için saatte en fazla 5 sorgu yapılabilir',
         });
       }
     }
 
-    // Check rate limit (max 5 queries per debtor per hour)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const recentQueries = await this.prisma.assetQuery.count({
-      where: {
-        caseDebtorId,
-        requestedAt: { gte: oneHourAgo },
-      },
-    });
-
-    if (recentQueries >= 5) {
-      throw new BadRequestException({
-        code: 'RATE_LIMIT_EXCEEDED',
-        message: 'Bu borçlu için saatte en fazla 5 sorgu yapılabilir',
-      });
-    }
-
-    // Create query records
+    // Create query records (yeni tipler icin) veya mevcut satiri replay et
+    // (on-kontrolde bulunan tipler icin). Kalan yaris penceresi icin P2002
+    // yakalanip ayni anahtarla idempotent replay yapilir (Phase A'nin duzeltilmis
+    // deseniyle ayni felsefe — meta.target'in constraint adini icerdigi varsayilmiyor,
+    // bu tablonun TEK unique alani idempotencyKey oldugundan herhangi bir P2002 bu
+    // celismedir; bulunamazsa ilgisiz bir hata olarak yeniden firlatilir).
     const queries = await Promise.all(
-      dto.types.map(async (queryType, index) => {
-        return this.prisma.assetQuery.create({
-          data: {
-            tenantId,
-            caseDebtorId,
-            queryType,
-            status: 'QUEUED',
-            reason: dto.reason,
-            requestedBy: userId,
-            idempotencyKey: dto.idempotencyKey 
-              ? `${dto.idempotencyKey}_${queryType}` 
-              : undefined,
-          },
-          include: {
-            requestedByUser: { select: { name: true, surname: true } },
-          },
-        });
+      dto.types.map(async (queryType) => {
+        const existing = existingByType.get(queryType);
+        if (existing) return existing;
+
+        const idempotencyKey = keyFor(queryType);
+        try {
+          return await this.prisma.assetQuery.create({
+            data: {
+              tenantId,
+              caseDebtorId,
+              queryType,
+              status: 'QUEUED',
+              reason: dto.reason,
+              requestedBy: userId,
+              idempotencyKey,
+            },
+            include: {
+              requestedByUser: { select: { name: true, surname: true } },
+            },
+          });
+        } catch (e: unknown) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && idempotencyKey) {
+            const row = await this.prisma.assetQuery.findUnique({
+              where: { idempotencyKey },
+              include: { requestedByUser: { select: { name: true, surname: true } } },
+            });
+            if (row) return row;
+          }
+          throw e;
+        }
       })
     );
 

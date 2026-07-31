@@ -150,6 +150,14 @@ src/modules/bank/__tests__/bank-match-collection-atomicity.db-gated.integration.
 #     guard/DB-invariant-bypass senaryolari).
 src/modules/debtor/__tests__/third-party-external-case-idempotency.db-gated.integration.spec.ts
 #
+#   DEBTOR-ENFORCEMENT-SEIZURE-GATE-RECONCILIATION-P1-I15 PHASE B (legacy TASK 09)
+#     AssetQueryService.runQueries() idempotency: persiste edilen (tenantId:caseDebtorId:
+#     key_queryType) formatiyla AYNI anahtarla arama + app-level findMany on-kontrol +
+#     P2002 idempotent replay gercek Postgres uzerinde (retry/concurrent/multi-type/
+#     cross-tenant/cross-caseDebtor/rate-limit-replay/partial-replay/pasif-guard/
+#     DB-invariant-bypass senaryolari — 15 test).
+src/modules/asset-query/__tests__/asset-query-idempotency.db-gated.integration.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure writer service (gercek PostgreSQL)
 #     Tenant/case-client/source-scope fail-closed enforcement, atomik aggregate+version+line
 #     yazimi, idempotency replay/conflict, hash re-verification MATCH/MISMATCH, immutability

@@ -238,6 +238,11 @@ src/modules/debtor/third-party-passive-writer.spec.ts
 # deterministic — gercek Postgres meta.target formatiyla, CI'in gercek
 # eszamanlilik yarisinda yakaladigi bir hatanin tekrarini onler).
 src/modules/debtor/__tests__/third-party-external-case-p2002-recovery.spec.ts
+# I15 Phase B: AssetQueryService.runQueries() P2002 catch-block regression guard
+# (mocked, deterministic — ayni Phase A meta.target dersi: gercek Postgres kolon-
+# adi-dizisi formati, findUnique-null-ise-orijinal-hata-firlatma, P2003 gibi
+# ilgisiz hatalarin yutulmamasi, anahtarsiz cagrida findUnique cagrilmamasi).
+src/modules/asset-query/__tests__/asset-query-p2002-recovery.spec.ts
 src/modules/debtor/__tests__/rfa008-thirdparty-guard.spec.ts
 src/modules/document/__tests__/document-creditor-address.spec.ts
 src/modules/document/__tests__/document-fail-closed-tenant.spec.ts
