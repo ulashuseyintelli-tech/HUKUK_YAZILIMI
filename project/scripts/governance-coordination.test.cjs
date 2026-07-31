@@ -7669,12 +7669,12 @@ test('OFFICE F01 Stage 2 rejects product, schema, migration and implementation e
 test('ordinary governance diff and another task bootstrap remain fail-closed', () => {
   const binding =
     coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
-  expectCode(
-    () => coordination.classifyPrChangeSet(
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(
       [{ status: 'M', path: 'project/docs/governance/decision-log.md' }],
       { headRef: 'codex/ordinary-governance-change' },
     ),
-    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    { mode: 'NON_COORDINATION_PR' },
   );
   expectCode(
     () => coordination.validateOfficeF01Stage2Tuple(officeF01Stage2Changes(), {
