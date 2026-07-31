@@ -155,22 +155,22 @@ Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan u
 
 ## 5. CI ve Merge Disiplini
 
-`IF GO-COMPLETE` varsa CI terminal olana dek ~60 sn'de bir izlenir; 20 dk ilerlemesiz
-stall eşiğidir. `BLOCKED` CI sonunda yeniden okunur; `SUCCESS` §4 gate'lerinden sonra
-merge edilir; `FAILURE`/`CANCELLED`/timeout/stall exact blocker'dır.
+`IF GO-COMPLETE` varsa CI ~60 sn'de izlenir; 20 dk ilerlemesiz stall eşiğidir. `BLOCKED`
+terminalde yeniden okunur; `SUCCESS` gate sonrası merge edilir; `FAILURE`/`CANCELLED`/
+timeout/stall exact blocker'dır.
 
-Merge authority PASS ise `pnpm orch:closeout`; runner/ledger yoksa gate/fallback/dogfood
-raporlanır, ikinci owner yok. Runtime task post-merge acceptance olmadan `CLOSED` değildir
-(bkz. `project/docs/runbooks/pr-closeout.md`).
-Orkestra execution coordinator'dır; `ELIGIBLE`/dispatch adayı authority değildir. Mutation
-task-bound ayrı `SEMANTIC_AUTHORITY` + `EXECUTION_GRANT`, merge authority task/PR/head/scope/
-check pinleri ister; reusable authority yoktur. Semantic checkpoint yeni hukuk/business/
-security, migration, production, scope veya unique-WIP kararıdır; mechanical checkpoint
-exact grant altındaki base/branch/PR/CI/merge/cleanup/eligibility adımıdır. Değişmeyen tuple
-yeniden ratifiye edilmez. `GO-ANALYZE` read-only durabilir; `GO-COMPLETE` scope-içi zinciri
-sürdürür. Successor exact grant ile dispatch edilir; Stage 1/2 ayrı grantlidir. Same-file
-writer mutation'ı durdurur. Öncelik P0/P1 → product activation → runtime/prod certification
-→ governance cleanup'tır; lock/fence korunur.
+Merge authority PASS ise `pnpm orch:closeout`; Runner kullanilamiyor, senaryoyu desteklemiyor,
+exact blocker veya ledger materialize edilemiyorsa ajan fallback ile kapatir; gate'ler elle
+dogrulanir, ikinci owner mesaji ISTENMEZ, dogfood raporlanir. Runtime-affecting gorev
+post-merge acceptance gate'leri olmadan CLOSED sayilmaz (bkz. `project/docs/runbooks/pr-closeout.md`).
+Orkestra execution coordinator'dır; `ELIGIBLE`/dispatch authority değildir. Mutation task-bound
+ayrı `SEMANTIC_AUTHORITY` + `EXECUTION_GRANT`, merge task/PR/head/scope/check pinleri ister;
+reusable authority yoktur. Semantic checkpoint yeni hukuk/business/security, migration,
+production, scope/unique-WIP; mechanical checkpoint exact grant'taki base/branch/PR/CI/merge/
+cleanup/eligibility'dir. Tuple değişmezse re-ratify yok. `GO-ANALYZE` read-only; `GO-COMPLETE`
+scope-içi sürer. Successor exact grantli; Stage 1/2 ayrı grantli. Same-file writer mutation'ı
+durdurur. Öncelik P0/P1 → product activation → runtime/prod certification → governance
+cleanup; lock/fence korunur.
 
 ## 6. Worktree Izolasyonu (developer workstation policy)
 
