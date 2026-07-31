@@ -1557,6 +1557,46 @@ exact excerpt/hash eşliğini ve EG'nin exact SA referansını doğrular. Fazla 
 başka branch/base, missing evidence, generic validator relaxation, reusable grant
 ve ikinci kullanım fail-closed reddedilir.
 
+### UYAP-M01 terminal closeout — exact publication binding
+
+Bu ek yalnız merge edilmiş UYAP-M01 implementation sonucunun existing task-local
+execution-grant dosyasına append-only terminal receipt olarak yazılmasını tanır.
+Yeni semantic authority, ikinci grant kullanımı, production activation veya
+successor execution authority üretmez.
+
+```text
+Closeout binding task : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01
+Closeout binding mode : UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01
+Closeout binding base : 5338a6214e21a52bd7e0fa4e82f85384952bd19d
+Closeout binding ref  : codex/uyap-m01-terminal-closeout-binding-r01
+Closeout binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Closeout task : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01
+Closeout mode : UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_I01_TERMINAL_CLOSEOUT_R01
+Original closeout base : 5338a6214e21a52bd7e0fa4e82f85384952bd19d
+Closeout ref : codex/uyap-m01-terminal-closeout
+Closeout scope:
+  M project/docs/governance/coordination-execution-grants/UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01.md
+
+Semantic authority record : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-SA01
+Execution grant record     : UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01-EG01
+Implementation PR          : 2033
+Implementation squash      : 5338a6214e21a52bd7e0fa4e82f85384952bd19d
+Grant terminal state       : CONSUMED / CLOSED
+Second use                : FAIL-CLOSED
+Production activation     : PROHIBITED
+```
+
+Validator closeout binding PR'ında exact `M/M/M` control-plane tuple'ını;
+target closeout PR'ında yalnız existing EG dosyasının `M` durumunu, canonical
+SA/EG referanslarını, implementation PR/SHA kanıtını, `DEFAULT-OFF`, sıfır
+production call-site/reachability, required CI ve `SECOND USE: FAIL-CLOSED`
+terminal receipt alanlarını doğrular. `decision-log.md` closeout PR'ında
+değiştirilemez; böylece mevcut semantic authority duplicate edilmez.
+
 ## ORCHESTRA EXECUTION MODEL REVISION R01 — reconciled checkpoint contract
 
 Owner intent (ratified) is reconciled here without creating a global grant. Orkestra

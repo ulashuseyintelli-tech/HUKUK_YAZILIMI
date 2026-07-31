@@ -711,6 +711,18 @@ function uyapM01TargetChanges() {
   );
 }
 
+function uyapM01CloseoutBindingChanges() {
+  return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.closeoutBindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function uyapM01CloseoutChanges() {
+  return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.closeoutPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function pb01BindingChanges() {
   return coordination.RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -1441,6 +1453,30 @@ function rcvColBindingContractContent(
           (value) => typeof value === 'string' || typeof value === 'number',
         )
       : []),
+    ...(binding.closeoutBindingPr
+      ? [
+          binding.closeoutBindingPr.taskId,
+          binding.closeoutBindingPr.mode,
+          binding.closeoutBindingPr.baseSha,
+          binding.closeoutBindingPr.headRef,
+          ...binding.closeoutBindingPr.changedPaths.map(
+            ({ path: repoPath }) => repoPath,
+          ),
+        ]
+      : []),
+    ...(binding.closeoutPr
+      ? [
+          binding.closeoutPr.taskId,
+          binding.closeoutPr.mode,
+          binding.closeoutPr.originalBaseSha,
+          binding.closeoutPr.headRef,
+          ...binding.closeoutPr.changedPaths.map(({ path: repoPath }) => repoPath),
+          binding.closeoutPr.semanticAuthority.recordId,
+          binding.closeoutPr.executionGrant.recordId,
+          String(binding.closeoutPr.implementation.pullRequestNumber),
+          binding.closeoutPr.implementation.squashSha,
+        ]
+      : []),
     '',
   ].join('\n');
 }
@@ -1537,6 +1573,78 @@ function createRcvColTargetGitFixture(t, options = {}) {
   );
   runFixtureGit(['add', '--all'], root);
   runFixtureGit(['commit', '--quiet', '-m', 'target RCV-COL bootstrap'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
+function createUyapM01CloseoutGitFixture(t, options = {}) {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-uyap-m01-closeout-'));
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  const contractPath = path.join(root, ...binding.contractPath.split('/'));
+  const decisionPath = path.join(root, ...target.semanticAuthority.path.split('/'));
+  const grantPath = path.join(root, ...target.executionGrant.path.split('/'));
+  fs.mkdirSync(path.dirname(contractPath), { recursive: true });
+  fs.mkdirSync(path.dirname(decisionPath), { recursive: true });
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  fs.writeFileSync(contractPath, rcvColBindingContractContent(binding), 'utf8');
+  fs.writeFileSync(
+    decisionPath,
+    `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${target.semanticAuthority.recordId} -->\n`,
+    'utf8',
+  );
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# UYAP-M01 grant fixture',
+      `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${target.executionGrant.recordId} -->`,
+      '```text',
+      `semanticAuthorityRef.kind     : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path     : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
+      '```',
+      'SECOND USE: FAIL-CLOSED',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical UYAP-M01 grant'], root);
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const terminalReceipt = [
+    'TASK STATUS           : CLOSED',
+    'CHANGE STATUS         : MERGED',
+    'DELIVERY STATUS       : PASS',
+    'EXECUTION GRANT       : CONSUMED / CLOSED',
+    `IMPLEMENTATION PR     : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA    : ${target.implementation.squashSha}`,
+    'RESOLVER BINDING      : CANONICAL / CONSUMER-ONLY',
+    'DEFAULT-OFF           : PASS',
+    'PRODUCTION CALL-SITE  : NONE',
+    'PRODUCTION REACHABILITY: 0',
+    'REQUIRED CI           : 4/4 PASS',
+    'SECOND USE        : FAIL-CLOSED',
+    'WAITING FOR OWNER : NO FOR M01 — TASK COMPLETE',
+  ];
+  if (options.omitLiteral) {
+    terminalReceipt.splice(terminalReceipt.indexOf(options.omitLiteral), 1);
+  }
+  fs.appendFileSync(grantPath, `${terminalReceipt.join('\n')}\n`, 'utf8');
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'close UYAP-M01 grant'], root);
   const head = runFixtureGit(['rev-parse', 'HEAD'], root);
   return { root, base, head };
 }
@@ -4141,6 +4249,90 @@ test('UYAP-M01 target rejects a grant bound to another semantic authority', (t) 
         base: fixture.base,
         head: fixture.head,
         headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('UYAP-M01 closeout binding requires exact base branch and M/M/M scope', () => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const closeoutBinding = binding.closeoutBindingPr;
+  const classification = coordination.classifyPrChangeSet(
+    uyapM01CloseoutBindingChanges(),
+    {
+      base: closeoutBinding.baseSha,
+      headRef: closeoutBinding.headRef,
+    },
+  );
+  assert.equal(classification.mode, closeoutBinding.mode);
+  assert.equal(classification.taskId, closeoutBinding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result = coordination.validateUyapM01TerminalCloseoutBindingScope({
+    base: closeoutBinding.baseSha,
+    head: fixture.head,
+    headRef: closeoutBinding.headRef,
+    changes: uyapM01CloseoutBindingChanges(),
+    taskId: closeoutBinding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, closeoutBinding.mode);
+
+  const expanded = uyapM01CloseoutBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: closeoutBinding.baseSha,
+        headRef: closeoutBinding.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP-M01 closeout accepts only the exact terminal receipt', (t) => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  const fixture = createUyapM01CloseoutGitFixture(t);
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: target.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, target.mode);
+  assert.equal(result.taskId, target.taskId);
+
+  const expanded = uyapM01CloseoutChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: fixture.base,
+        headRef: target.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP-M01 closeout rejects an incomplete terminal receipt', (t) => {
+  const binding =
+    coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01;
+  const fixture = createUyapM01CloseoutGitFixture(t, {
+    omitLiteral: 'PRODUCTION REACHABILITY: 0',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.closeoutPr.headRef,
         cwd: fixture.root,
       }),
     'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
