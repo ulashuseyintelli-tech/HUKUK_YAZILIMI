@@ -155,25 +155,22 @@ Implementation`. `BACKLOG → READY` ve roadmap tasimalari owner onayi olmadan u
 
 ## 5. CI ve Merge Disiplini
 
-`IF GO-COMPLETE` yetkisi varsa CI terminal duruma ulasana kadar takip edilir.
+`IF GO-COMPLETE` varsa CI ~60 sn'de izlenir; 20 dk ilerlemesiz stall eşiğidir. `BLOCKED`
+terminalde yeniden okunur; `SUCCESS` gate sonrası merge edilir; `FAILURE`/`CANCELLED`/
+timeout/stall exact blocker'dır.
 
-- `IN_PROGRESS` kontroller ~60 sn araliklarla izlenir. 20 dakika toplam takip limiti
-  degil, gozlemlenebilir ilerleme bulunmayan stall esigidir; ilerleme varken birakilmaz.
-- CI tamamlanmadan gorulen `mergeStateStatus: BLOCKED` tek basina blocker degildir; CI
-  bitince merge state yeniden kontrol edilir.
-- CI terminal `SUCCESS` olursa §4 merge gate'leri yeniden degerlendirilir; PASS degilse
-  merge yapilmaz.
-- `FAILURE`, `CANCELLED`, gercek platform timeout'u veya unresolved stall halinde exact
-  blocker raporlanir.
-- Merge authority PASS ise kapanis VARSAYILAN olarak closeout runner ile yurutulur
-  (`pnpm orch:closeout`). Runner kullanilamiyor, senaryoyu desteklemiyor, exact blocker
-  uretiyor veya ledger materialize edilemiyorsa ajan fallback ile kapatir: ikinci owner
-  mesaji ISTENMEZ, gate'ler elle dogrulanir, gerekce ve dogfood ayri raporlanir.
-  `MERGED` yalniz governance-only gorevde terminaldir; runtime-affecting gorev post-merge
-  acceptance gate'leri olmadan CLOSED sayilmaz. Ayrinti:
-  `project/docs/runbooks/pr-closeout.md`.
-- Standing veya unattended GitHub auto-merge, scheduler ya da reusable merge grant
-  uretilmez (authority semantigi §4).
+Merge authority PASS ise `pnpm orch:closeout`; Runner kullanilamiyor, senaryoyu desteklemiyor,
+exact blocker veya ledger materialize edilemiyorsa ajan fallback ile kapatir; gate'ler elle
+dogrulanir, ikinci owner mesaji ISTENMEZ, dogfood raporlanir. `MERGED` yalniz governance-only
+gorevde terminaldir; runtime-affecting gorev
+post-merge acceptance gate'leri olmadan CLOSED sayilmaz (bkz. `project/docs/runbooks/pr-closeout.md`).
+Orkestra execution coordinator'dır; `ELIGIBLE`/dispatch authority değildir. Mutation task-bound
+ayrı `SEMANTIC_AUTHORITY` + `EXECUTION_GRANT`, merge task/PR/head/scope/check pinli;
+reusable authority yoktur. Semantic checkpoint hukuk/business/security, migration,
+production/scope/unique-WIP; mechanical checkpoint grant'taki base/branch/PR/CI/merge/cleanup/
+eligibility'dir. Tuple değişmezse re-ratify yok. `GO-ANALYZE` read-only; `GO-COMPLETE`
+scope-içi. Successor exact grantli; Stage 1/2 ayrı grant. Same-file writer durdurur. Öncelik
+P0/P1 → product activation → runtime/prod certification → governance cleanup; lock/fence korunur.
 
 ## 6. Worktree Izolasyonu (developer workstation policy)
 

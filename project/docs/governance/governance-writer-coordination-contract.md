@@ -1440,3 +1440,56 @@ Eksik veya fazla path, status/branch/record drift'i, başka authority kaydı,
 cross-task reuse ve ikinci materialization fail-closed reddedilir. Bu kabul
 yalnız scope classification'dır; required CI, merge ve live closeout gate'lerini
 bypass etmez.
+
+## ORCHESTRA EXECUTION MODEL REVISION R01 — reconciled checkpoint contract
+
+Owner intent (ratified) is reconciled here without creating a global grant. Orkestra
+is the execution coordinator under `AGENTS.md`; it is not an independent semantic or
+merge authority. A semantic decision is the owner-ratified business/legal/security
+tuple. If its tuple is unchanged, semantic re-ratification is not requested. A changed
+tuple, new role or rule, schema/migration, production activation, irreversible action,
+scope expansion or unique WIP reopens the semantic checkpoint.
+
+### Eligibility, dispatch and authority
+
+`ELIGIBLE` is a dependency/terminal-state result, not mutation authority. A
+`DISPATCH_CANDIDATE` may be queued or evaluated read-only. Mutation requires two
+distinct, task-specific, non-reusable canonical references:
+
+```text
+SEMANTIC_AUTHORITY + EXECUTION_GRANT
+```
+
+The execution grant must name this task; a grant for another task, a reusable grant,
+or an absent grant is fail-closed. Merge additionally requires task/PR/head/scope and
+required-check evidence bound to the exact merge authority. No standing, unattended or
+repository-wide merge authority is inferred from eligibility.
+
+### Semantic and mechanical checkpoints
+
+Owner-gated semantic checkpoints cover new business/legal/security policy, migration,
+production activation, irreversible operation, scope expansion and unique-WIP or
+semantic ambiguity. Mechanical checkpoints (fresh base, branch/worktree, PR, CI
+polling, mergeability, exact-scope verification, cleanup and deterministic successor
+eligibility) may continue only under the exact existing task grant. `GO-ANALYZE` remains
+read-only and may stop after analysis. `GO-COMPLETE` may continue through its exact
+scope after analysis when no owner-gated condition is present.
+
+### Stages and successors
+
+Stage 1 (control-plane binding) and Stage 2 (authority materialization) remain separate
+tasks, branches, PRs, merges and execution grants. Stage 2 cannot use Stage 1's grant.
+An explicit canonical deterministic grant-activation contract could authorize a
+mechanical transition; absent that contract, a separate Stage 2 grant is required.
+Path, record, semantic tuple, writer or scope drift reopens the owner checkpoint.
+A closed task may make a deterministic successor `ELIGIBLE`, but dispatch and mutation
+still require that successor's own exact grant. Same-file competing writers stop
+mutation; snapshot, comparison and proven terminal disposition remain read-only.
+
+### Priority and terminal truth
+
+Ordering is P0 security/tenant/data-integrity, P1 runtime/product blocker, product
+activation, runtime certification, production certification, then non-blocking
+governance cleanup. This order never overrides a program lock, legal dependency,
+migration prohibition or single-writer fence. `MERGED` is not runtime completion:
+post-merge acceptance, delivery evidence and the existing closeout gates remain binding.
