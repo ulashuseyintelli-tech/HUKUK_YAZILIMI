@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
@@ -12,6 +13,7 @@ import {
   UpdateThirdPartyDto,
   RecordIhbarnameDto,
   RecordResponseDto,
+  UpdateExternalCaseDto,
 } from "./dto/third-party.dto";
 import { CollectionService } from "../collection/collection.service";
 import {
@@ -648,7 +650,7 @@ export class ThirdPartyService {
   /**
    * Dış dosya güncelle
    */
-  async updateExternalCase(tenantId: string, externalCaseId: string, dto: any) {
+  async updateExternalCase(tenantId: string, externalCaseId: string, dto: UpdateExternalCaseDto) {
     const externalCase = await (this.prisma as any).externalCase.findFirst({
       where: { id: externalCaseId, tenantId },
     });
@@ -660,20 +662,36 @@ export class ThirdPartyService {
     // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (tarihsel read serbest).
     await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, externalCase.caseDebtorId);
 
-    return (this.prisma as any).externalCase.update({
-      where: { id: externalCaseId },
-      data: {
-        externalOffice: dto.externalOffice,
-        externalCaseNo: dto.externalCaseNo,
-        counterpartyName: dto.counterpartyName,
-        claimAmount: dto.claimAmount,
-        claimCurrency: dto.claimCurrency,
-        attachmentStatus: dto.attachmentStatus,
-        attachedAt: dto.attachedAt ? new Date(dto.attachedAt) : undefined,
-        notes: dto.notes,
-        priorityNote: dto.priorityNote,
-      },
-    });
+    try {
+      return await (this.prisma as any).externalCase.update({
+        where: { id: externalCaseId },
+        data: {
+          externalOffice: dto.externalOffice,
+          externalCaseNo: dto.externalCaseNo,
+          counterpartyName: dto.counterpartyName,
+          claimAmount: dto.claimAmount,
+          claimCurrency: dto.claimCurrency,
+          attachmentStatus: dto.attachmentStatus,
+          attachedAt: dto.attachedAt ? new Date(dto.attachedAt) : undefined,
+          notes: dto.notes,
+          priorityNote: dto.priorityNote,
+        },
+      });
+    } catch (e: unknown) {
+      // I15 Phase C: externalOffice/externalCaseNo bu update ile baska bir
+      // satirin mantiksal kimligiyle (tenantId+caseDebtorId+externalOffice+
+      // externalCaseNo) cakisirsa DB constraint reddeder. Bu bir CREATE
+      // DEGIL — Phase A'nin idempotent-replay deseni burada YANLIS olur
+      // (baska bir satiri sessizce donmek veri-butunlugu ihlali olurdu).
+      // Temiz 409 ile reddedilir; ham Prisma hatasi/500 disari sizmaz.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        throw new ConflictException({
+          code: "EXTERNAL_CASE_LOGICAL_IDENTITY_CONFLICT",
+          message: "Bu icra dairesi ve dosya numarası kombinasyonu bu borçlu için zaten kayıtlı.",
+        });
+      }
+      throw e;
+    }
   }
 
   /**
