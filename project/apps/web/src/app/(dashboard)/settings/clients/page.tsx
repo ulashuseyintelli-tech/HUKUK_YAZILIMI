@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet } from "lucide-react";
+import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields } from "@/lib/poa-ux";
 import { hasStructuredAddresses } from "@/lib/client-write";
@@ -520,6 +520,17 @@ export default function ClientsSettingsPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
+                        {/* OWN-11 (D07): compatibility yüzeyinden kanonik Client Workspace'e
+                            görünür giriş. Bu sayfa yerini KORUR (POA/export/import/toplu
+                            e-posta burada kalır), yalnız kanonik detaya çıkış kazanır. */}
+                        <Link
+                          href={`/clients/${client.id}`}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                          title="Müvekkil Detayı (Client Workspace)"
+                          aria-label={`${client.name} müvekkil detayına git`}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Link>
                         <Link href={`/clients/${client.id}/accounting`} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title="Müvekkil Muhasebesi">
                           <Wallet className="h-4 w-4" />
                         </Link>
@@ -1052,7 +1063,9 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
                 <p className="text-xs font-medium">Adresler</p>
                 <p>Bu müvekkilin adresleri Müvekkil Detayı &gt; Adres bölümünden yönetilir.</p>
                 <a
-                  href={`/clients/${client.id}`}
+                  // OWN-11 (D03): doğrudan "Kimlik & İletişim" sekmesini açar — kullanıcı
+                  // adres bölümüne elle geçmek zorunda kalmaz.
+                  href={`/clients/${client.id}?tab=identity`}
                   className="inline-block text-xs font-medium underline hover:no-underline"
                 >
                   Müvekkil detayına git

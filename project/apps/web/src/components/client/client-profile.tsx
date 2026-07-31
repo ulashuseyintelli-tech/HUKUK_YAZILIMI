@@ -15,8 +15,18 @@
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
-import { useCallback, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   User,
   Building,
@@ -75,17 +85,42 @@ interface ClientPoaRow {
   mimeType?: string | null;
 }
 
-type TabId =
-  | 'overview'
-  | 'identity'
-  | 'cases'
-  | 'poa'
-  | 'portal'
-  | 'info-requests'
-  | 'intelligence'
-  | 'intake'
-  | 'actions'
-  | 'activity';
+/**
+ * OWN-11 (CLIENT-OWN-11-WORKSPACE-URL-CONTRACT-I01) — KANONİK SEKME ALLOWLIST'İ.
+ *
+ * TEK kaynak: sekme kimlikleri, sıra ve doğrulama YALNIZ burada tanımlanır; başka hiçbir kod
+ * yolunda geçerli-sekme listesi ÇOĞALTILMAZ (owner §5). Sıra kanoniktir (D12) — dizinin sırası
+ * hem sekme çubuğunun render sırası hem de klavye ileri/geri gezinme sırasıdır.
+ */
+export const CLIENT_WORKSPACE_TAB_IDS = [
+  'overview',
+  'identity',
+  'cases',
+  'poa',
+  'portal',
+  'info-requests',
+  'intelligence',
+  'intake',
+  'actions',
+  'activity',
+] as const;
+
+type TabId = (typeof CLIENT_WORKSPACE_TAB_IDS)[number];
+
+/** D11: varsayılan sekme. Geçerli bir `?tab=` değeri bunu EZER. */
+export const CLIENT_WORKSPACE_DEFAULT_TAB: TabId = 'overview';
+
+export function isClientWorkspaceTabId(value: string | null | undefined): value is TabId {
+  return !!value && (CLIENT_WORKSPACE_TAB_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * D14: bilinmeyen/boş/geçersiz `?tab=` değeri GÜVENLE varsayılana düşer — 404/403 ÜRETMEZ.
+ * Sekme bir kaynak değil görünüm durumudur; bozuk bir link kullanıcıyı çıkmaza sokmamalıdır.
+ */
+export function resolveClientWorkspaceTab(raw: string | null | undefined): TabId {
+  return isClientWorkspaceTabId(raw) ? raw : CLIENT_WORKSPACE_DEFAULT_TAB;
+}
 
 interface ClientProfileProps {
   clientId: string;
@@ -129,7 +164,92 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
   const [cases, setCases] = useState<ClientCaseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>('overview');
+
+  // OWN-11 / D02+D03: aktif sekme kanonik olarak URL'den gelir (`/clients/:id?tab=<tabId>`).
+  //
+  // URL TEK OTORİTEDİR: `urlTab` her render'da query'den yeniden çözülür ve aşağıdaki effect
+  // görsel durumu ona EŞİTLER — yani URL ile görsel durum AYRIŞAMAZ (owner §13). Yanında
+  // tutulan local state yalnız ANLIK görsel tepki içindir: kullanıcı sekmeye bastığında
+  // panel router turunu beklemeden değişir. `selectTab` ikisini TEK adımda günceller.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const rawTabParam = searchParams.get('tab');
+  const urlTab = resolveClientWorkspaceTab(rawTabParam);
+  const [tab, setTabState] = useState<TabId>(urlTab);
+
+  // D04 (refresh) + D05 (geri/ileri): URL hangi sekmeyi işaret ediyorsa görünen sekme odur.
+  useEffect(() => {
+    setTabState(urlTab);
+  }, [urlTab]);
+
+  /** Mevcut (sekme dışı) query parametrelerini KORUYARAK hedef sekmenin href'ini üretir. */
+  const buildTabHref = useCallback(
+    (nextTab: TabId) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', nextTab);
+      return `${pathname}?${params.toString()}`;
+    },
+    [pathname, searchParams],
+  );
+
+  /**
+   * D05: KULLANICI kaynaklı sekme değişimi `push` kullanır — geri/ileri sekme geçmişinde
+   * gezinsin. (Aşağıdaki normalizasyon `replace` kullanır; ikisi bilinçli olarak farklıdır.)
+   */
+  const selectTab = useCallback(
+    (nextTab: TabId) => {
+      if (nextTab === tab) return;
+      setTabState(nextTab);
+      router.push(buildTabHref(nextTab), { scroll: false });
+    },
+    [buildTabHref, router, tab],
+  );
+
+  /**
+   * D14 normalizasyonu: `?tab=` VARSA ama geçersizse URL sessizce varsayılana çekilir.
+   * `replace` kullanılır — geçmişe kayıt EKLEMEZ (aksi halde geri tuşu bozuk değere döner,
+   * owner §8'in yasakladığı geçmiş döngüsü oluşurdu). Parametre HİÇ YOKSA dokunulmaz:
+   * temiz `/clients/:id` URL'i gereksiz yere `?tab=overview`'e ÇEVRİLMEZ.
+   */
+  useEffect(() => {
+    if (rawTabParam === null || isClientWorkspaceTabId(rawTabParam)) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', CLIENT_WORKSPACE_DEFAULT_TAB);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [pathname, rawTabParam, router, searchParams]);
+
+  // D12/§12: klavye gezinme sırası KANONİK allowlist sırasıdır — sekme çubuğunun kendi
+  // dizisinden bağımsız tek kaynak (liste iki yerde ÇOĞALTILMAZ).
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const activeTabIndex = useMemo(
+    () => CLIENT_WORKSPACE_TAB_IDS.indexOf(tab),
+    [tab],
+  );
+
+  /**
+   * §12 — WAI-ARIA tabs pattern'inin eksik kalan klavye yarısı. Mevcut roving `tabIndex`
+   * zaten vardı ama onu kullanacak işleyici YOKTU. ArrowLeft/ArrowRight SARAR (wrap);
+   * Home/End uçlara gider. Seçim değişince odak yeni sekmeye taşınır VE URL güncellenir
+   * (D05: `selectTab` → `push`, yani klavyeyle yapılan geçiş de geçmişe yazılır).
+   */
+  const handleTabKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      const total = CLIENT_WORKSPACE_TAB_IDS.length;
+      let nextIndex: number | null = null;
+      if (event.key === 'ArrowRight') nextIndex = (activeTabIndex + 1) % total;
+      else if (event.key === 'ArrowLeft') nextIndex = (activeTabIndex - 1 + total) % total;
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = total - 1;
+      if (nextIndex === null) return;
+
+      event.preventDefault();
+      const nextTab = CLIENT_WORKSPACE_TAB_IDS[nextIndex];
+      tabRefs.current[nextTab]?.focus();
+      selectTab(nextTab);
+    },
+    [activeTabIndex, selectTab],
+  );
 
   const loadClient = useCallback(async () => {
     const res = await api.getClient(clientId);
@@ -282,7 +402,11 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
               aria-selected={tab === t.id}
               aria-controls={`client-profile-${clientId}-${t.id}-panel`}
               tabIndex={tab === t.id ? 0 : -1}
-              onClick={() => setTab(t.id)}
+              ref={(node) => {
+                tabRefs.current[t.id] = node;
+              }}
+              onClick={() => selectTab(t.id)}
+              onKeyDown={handleTabKeyDown}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${
                 tab === t.id
                   ? 'border-blue-600 text-blue-600'
@@ -422,7 +546,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
           {tab === 'intake' && <ClientIntakeTab cases={cases} />}
 
           {/* İşlemler */}
-          {tab === 'actions' && <ClientActionsTab clientId={clientId} onNavigateActivity={() => setTab('activity')} />}
+          {tab === 'actions' && <ClientActionsTab clientId={clientId} onNavigateActivity={() => selectTab('activity')} />}
 
           {/* Aktivite */}
           {tab === 'activity' && <ClientActivityTab clientId={clientId} />}
@@ -431,8 +555,8 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
 
         <ClientRightPanel
           clientId={clientId}
-          onNavigateActions={() => setTab('actions')}
-          onNavigateActivity={() => setTab('activity')}
+          onNavigateActions={() => selectTab('actions')}
+          onNavigateActivity={() => selectTab('activity')}
         />
       </div>
     </div>

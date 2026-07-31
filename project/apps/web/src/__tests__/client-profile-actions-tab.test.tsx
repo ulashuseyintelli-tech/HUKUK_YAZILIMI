@@ -1,5 +1,15 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// OWN-11 (CLIENT-OWN-11-WORKSPACE-URL-CONTRACT-I01): ClientProfile aktif sekmeyi ARTIK
+// URL'den (`?tab=`) turetir. Bu suite sekme URL kontratini test ETMEZ, ancak ClientProfile'i
+// render ettigi icin router hook'lari mock'lanmalidir. Kanonik kontrat testleri:
+// `client-workspace-url-contract-own11.test.tsx`.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/clients/client-1',
+  useSearchParams: () => new URLSearchParams(),
+}));
 import { ClientProfile } from '@/components/client/client-profile';
 import { api } from '@/lib/api';
 

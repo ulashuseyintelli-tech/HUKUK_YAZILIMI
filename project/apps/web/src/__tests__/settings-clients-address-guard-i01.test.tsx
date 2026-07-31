@@ -211,7 +211,11 @@ describe('[5-11] settings/clients ClientModal — edit mode, structured adres VA
     const notice = screen.getByTestId('settings-client-address-managed');
     expect(notice.textContent).toContain('Müvekkil Detayı');
     const link = screen.getByText('Müvekkil detayına git') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/clients/client-2');
+    // OWN-11 (D03) KASITLI SINIR İLERLETMESİ (gevşetme DEĞİL): bağlantı artık yalnız doğru
+    // müvekkile değil, doğrudan adresin yönetildiği "Kimlik & İletişim" sekmesine gider.
+    // Eski hâli kullanıcıyı Workspace'in varsayılan sekmesine bırakıyor, adres bölümüne
+    // elle geçmesini gerektiriyordu.
+    expect(link.getAttribute('href')).toBe('/clients/client-2?tab=identity');
   });
 
   it('[7] editable adres alanı (textarea) YOK', async () => {
