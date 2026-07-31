@@ -110,3 +110,12 @@ src/modules/case/__tests__/case-update-fk-tenant.spec.ts
 src/modules/claim-item/__tests__/claim-item-source-integrity.guard.spec.ts
 src/modules/collection/__tests__/receipt-object-scope-authorization.service.spec.ts
 src/modules/collection/__tests__/receipt-public-entrypoints-authorization.contract.spec.ts
+
+# GH-04: PAYMENT_REVERSED disposition coverage — daha once hicbir CI step'ine
+# bagli degildi (ci-manifests/*/*.txt icinde 0 eslesme, grep ile dogrulandi).
+# PAYMENT_RECEIVED -> disposition acilisi -> cancel/PAYMENT_REVERSED akisini
+# mock Prisma ile test eder (CONFIRMED->REVERSED ve POSTED->manual-marker
+# senaryolari, financial mutation yok dogrulamasi dahil). Admission oncesi 3
+# ardisik lokal kosu ile deterministik dogrulandi (2/2 PASS x3), tracked dosya
+# yazmadigi ve askida kalmadigi teyit edildi.
+src/modules/collection/__tests__/collection-payment-reversed.integration.spec.ts
