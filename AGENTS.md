@@ -161,16 +161,16 @@ timeout/stall exact blocker'dır.
 
 Merge authority PASS ise `pnpm orch:closeout`; Runner kullanilamiyor, senaryoyu desteklemiyor,
 exact blocker veya ledger materialize edilemiyorsa ajan fallback ile kapatir; gate'ler elle
-dogrulanir, ikinci owner mesaji ISTENMEZ, dogfood raporlanir. runtime-affecting gorev
+dogrulanir, ikinci owner mesaji ISTENMEZ, dogfood raporlanir. `MERGED` yalniz governance-only
+gorevde terminaldir; runtime-affecting gorev
 post-merge acceptance gate'leri olmadan CLOSED sayilmaz (bkz. `project/docs/runbooks/pr-closeout.md`).
 Orkestra execution coordinator'dır; `ELIGIBLE`/dispatch authority değildir. Mutation task-bound
-ayrı `SEMANTIC_AUTHORITY` + `EXECUTION_GRANT`, merge task/PR/head/scope/check pinleri ister;
-reusable authority yoktur. Semantic checkpoint yeni hukuk/business/security, migration,
-production, scope/unique-WIP; mechanical checkpoint exact grant'taki base/branch/PR/CI/merge/
-cleanup/eligibility'dir. Tuple değişmezse re-ratify yok. `GO-ANALYZE` read-only; `GO-COMPLETE`
-scope-içi sürer. Successor exact grantli; Stage 1/2 ayrı grantli. Same-file writer mutation'ı
-durdurur. Öncelik P0/P1 → product activation → runtime/prod certification → governance
-cleanup; lock/fence korunur.
+ayrı `SEMANTIC_AUTHORITY` + `EXECUTION_GRANT`, merge task/PR/head/scope/check pinli;
+reusable authority yoktur. Semantic checkpoint hukuk/business/security, migration,
+production/scope/unique-WIP; mechanical checkpoint grant'taki base/branch/PR/CI/merge/cleanup/
+eligibility'dir. Tuple değişmezse re-ratify yok. `GO-ANALYZE` read-only; `GO-COMPLETE`
+scope-içi. Successor exact grantli; Stage 1/2 ayrı grant. Same-file writer durdurur. Öncelik
+P0/P1 → product activation → runtime/prod certification → governance cleanup; lock/fence korunur.
 
 ## 6. Worktree Izolasyonu (developer workstation policy)
 
