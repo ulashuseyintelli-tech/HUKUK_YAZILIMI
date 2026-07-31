@@ -75,3 +75,54 @@ CROSS_TASK_REUSE
 ```text
 SECOND USE: FAIL-CLOSED
 ```
+
+## Terminal consumption receipt
+
+Bu bölüm yeni semantic authority veya ikinci grant kullanımı üretmez. Yukarıdaki
+tek kullanımlık grant ile tamamlanan exact task'in terminal delivery kanıtını
+append-only kaydeder.
+
+```text
+TASK STATUS           : CLOSED
+CHANGE STATUS         : MERGED
+DELIVERY STATUS       : PASS
+SEMANTIC AUTHORITY    : CANONICAL
+EXECUTION GRANT       : CONSUMED / CLOSED
+IMPLEMENTATION PR     : #2033
+IMPLEMENTATION SHA    : 5338a6214e21a52bd7e0fa4e82f85384952bd19d
+RECEIVABLE PREDECESSOR: CLOSED / UYAP-CONSUMABLE
+RESOLVER BINDING      : CANONICAL / CONSUMER-ONLY
+DEFAULT-OFF           : PASS
+PRODUCTION CALL-SITE  : NONE
+PRODUCTION REACHABILITY: 0
+REQUIRED CI           : 4/4 PASS
+SUCCESSOR             : UYAP STRUCTURED EMISSION / SEPARATE TASK AUTHORITY REQUIRED
+```
+
+Delivery evidence:
+
+- UYAP, RECEIVABLE-owned `LegalBasisExactVersionResolverPort` sonucunu exact
+  release/version/checksum ile tüketir; ikinci registry/resolver veya semantic
+  reinterpretation eklenmedi.
+- Tenant/case/ClaimItem/snapshot, effective time, component, source/evidence ve
+  liability uyumsuzlukları fail-closed sonuç üretir.
+- Caller veya transport kaynaklı Legal Basis override'ları ve
+  current/latest/default fallback kabul edilmez.
+- M01 senaryo matrisi `19/19 PASS`; post-merge production TypeScript ve Nest
+  build `PASS`.
+- Required GitHub checks `Architectural Guardrails`, `Test Suite`, `Web Tests
+  (vitest)` ve `Client Workspace Live Smoke`: `4/4 PASS`; gözlenen
+  orchestration ve CodeQL kontrolleri de `PASS`.
+- Schema, migration, live DB, historical mutation, serializer/structured
+  emission ve production activation değişikliği yoktur.
+
+PR #2010 (`claude/uyap-alacakkalemi-structured-emission-i01`) bu task içinde
+merge edilmedi veya değiştirilmedi; branch/worktree/içerik korunmuştur. M01
+terminal kapanışından sonra yalnız ayrı task-specific SA + EG ile yürütülebilen
+next-sequence candidate olarak kalır.
+
+```text
+SECOND USE        : FAIL-CLOSED
+OWNER WIP         : UNTOUCHED
+WAITING FOR OWNER : NO FOR M01 — TASK COMPLETE
+```
