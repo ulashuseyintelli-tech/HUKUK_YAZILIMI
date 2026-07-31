@@ -272,6 +272,7 @@ src/modules/uyap/official/__tests__/official-nafaka-legal-basis-discriminator.sp
 #   UYAP-P05C-P04 evidence activation unit
 #       (ci.yml icinde ayri gerekce yorumu yoktu)
 #
+src/modules/uyap/__tests__/uyap-m01-legal-basis-consumer.spec.ts
 src/modules/uyap/__tests__/uyap-operation-attempt-schema.static.spec.ts
 src/modules/uyap/__tests__/uyap-operation-evidence-activation.spec.ts
 src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.service.spec.ts

@@ -29,6 +29,12 @@ import { ExpenseBlockReasonModule } from '../expense-block-reason/expense-block-
 // NOT: `UYAP_AUTHORITY_COORDINATION_HOOK` token'i BILEREK KAYDEDILMEZ — test barrier'i
 // production DI grafiginde cozulmez ve butun cagrilar no-op olur.
 import { UyapAuthoritySnapshotService } from './authority/uyap-authority-snapshot.service';
+// UYAP-M01: RECEIVABLE-owned Legal Basis authority is consumed through its
+// existing exact-version port. The module-local adapter has no production
+// call-site and remains fail-closed unless both explicit flags are enabled.
+import { LegalBasisExactVersionResolverPort } from '../claim-item/formation-intent/claim-item-formation-resolver.ports';
+import { LegalBasisRegistryResolverService } from '../claim-item/formation-intent/legal-basis-registry-resolver.service';
+import { UyapM01LegalBasisConsumerService } from './legal-basis/uyap-m01-legal-basis-consumer.service';
 
 // Re-export UYAP codes for external use
 export * from './uyap-codes';
@@ -57,6 +63,11 @@ export * from './uyap-codes';
     UyapAuthorityFactProvider,
     UyapExpenseBlockingFactProvider,
     UyapAuthoritySnapshotService,
+    {
+      provide: LegalBasisExactVersionResolverPort,
+      useFactory: () => new LegalBasisRegistryResolverService(),
+    },
+    UyapM01LegalBasisConsumerService,
   ],
   exports: [
     UyapService,
