@@ -31,7 +31,7 @@
  * doldurulmaz ve HTTP yüzeyine çıkmaz.
  */
 
-import { AuthorityEvidenceRef } from './uyap-send-authority.types';
+import { AuthorityEvidenceRef, UyapSendAuthorityOperationType } from './uyap-send-authority.types';
 
 /** Snapshot sözleşmesinin sürümü. Digest'in ilk bileşenidir (domain separation). */
 export const UYAP_AUTHORITY_SNAPSHOT_VERSION = 'UYAP-AUTHORITY-SNAPSHOT/v1';
@@ -120,7 +120,7 @@ export interface UyapAuthoritySnapshot {
 
   readonly tenantId: string;
   readonly authenticatedUserId: string;
-  readonly actionCode: string;
+  readonly actionCode: UyapSendAuthorityOperationType;
 
   readonly actingLawyer: ActingLawyerEvidence;
   readonly caseState: CaseStateEvidence;
@@ -158,7 +158,7 @@ export interface UyapAuthoritySnapshotContext {
   readonly tenantId: string;
   readonly authenticatedUserId: string;
   readonly caseId: string;
-  readonly actionCode: string;
+  readonly actionCode: UyapSendAuthorityOperationType;
   /** Phase 1'de CPE ile AYNI an; TX-1'de commit anı (yeni blok görülebilsin diye). */
   readonly evaluatedAt: Date;
 }

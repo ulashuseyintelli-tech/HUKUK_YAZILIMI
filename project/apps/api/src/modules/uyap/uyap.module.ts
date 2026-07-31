@@ -35,6 +35,10 @@ import { UyapAuthoritySnapshotService } from './authority/uyap-authority-snapsho
 import { LegalBasisExactVersionResolverPort } from '../claim-item/formation-intent/claim-item-formation-resolver.ports';
 import { LegalBasisRegistryResolverService } from '../claim-item/formation-intent/legal-basis-registry-resolver.service';
 import { UyapM01LegalBasisConsumerService } from './legal-basis/uyap-m01-legal-basis-consumer.service';
+// I15-D1: TRIGGER_HACIZ icin actor-specific authority orchestration (owner-ratified
+// PermissionGrant capability substrate + mevcut UyapSendAuthorityResolverService reuse).
+import { TriggerHacizCapabilityAuthorizationService } from './authority/trigger-haciz-capability-authorization.service';
+import { TriggerHacizAuthorizationService } from './authority/trigger-haciz-authorization.service';
 
 // Re-export UYAP codes for external use
 export * from './uyap-codes';
@@ -68,6 +72,8 @@ export * from './uyap-codes';
       useFactory: () => new LegalBasisRegistryResolverService(),
     },
     UyapM01LegalBasisConsumerService,
+    TriggerHacizCapabilityAuthorizationService,
+    TriggerHacizAuthorizationService,
   ],
   exports: [
     UyapService,

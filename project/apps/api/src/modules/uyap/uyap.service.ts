@@ -14,6 +14,10 @@ import {
 // UYAP-AUTHORITY-FRESHNESS-TX-I01: Phase 1 authority snapshot + TX-1 tazelik ihlali tipi.
 import { UyapAuthoritySnapshotService } from './authority/uyap-authority-snapshot.service';
 import { UyapAuthorityStaleError } from './authority/uyap-authority-stale.error';
+// I15-D1: TRIGGER_HACIZ icin actor-specific authority (acting-lawyer + case-assignment +
+// own-POA-scope-coverage + explicit PermissionGrant). assertUyapLegalAuthority (asagida)
+// yalniz case-seviyesi bir on-kosuldur, actor-specific authority SAYILMAZ.
+import { TriggerHacizAuthorizationService } from './authority/trigger-haciz-authorization.service';
 
 /**
  * UYAP Entegrasyon Servisi
@@ -125,6 +129,12 @@ export class UyapService {
     // UYAP-AUTHORITY-FRESHNESS-TX-I01: Phase 1 snapshot üreticisi. Evidence flag ON iken
     // ZORUNLUDUR; yokluğunda fail-closed (aşağıda kontrol edilir).
     @Optional() private readonly authoritySnapshots?: UyapAuthoritySnapshotService,
+    // I15-D1: pushHacizRequest() için ZORUNLU actor-specific authority orchestration.
+    // @Optional() yalnız bu servisin mevcut 11 dosyalık doğrudan-constructor-çağrı
+    // yüzeyini (new UyapService(...)) kırmamak içindir — production Nest DI'da her zaman
+    // gerçek bir örnek enjekte edilir (UyapModule.providers). Eksikse pushHacizRequest
+    // fail-closed reddeder (aşağıda kontrol edilir); sessizce atlanmaz.
+    @Optional() private readonly triggerHacizAuthorization?: TriggerHacizAuthorizationService,
   ) {}
 
   /**
@@ -599,6 +609,24 @@ export class UyapService {
       caseId: request.caseId,
       operation: 'Haciz talebi',
       payloadTenantId: request.tenantId,
+    });
+
+    // I15-D1: actor-specific authority — acting-lawyer resolution + case-assignment +
+    // own-POA'nın TRIGGER_HACIZ'ı kapsaması + explicit PermissionGrant. Yukarıdaki
+    // assertUyapLegalAuthority yalnız case-seviyesi bir ön-koşuldur (KİM sorduğuna
+    // bakmaz); bu KOŞULSUZDUR ve `actorUserId` request body/DTO'dan DEĞİL, authenticated
+    // principal'dan (controller @CurrentUser → req.user.id) gelir.
+    if (!this.triggerHacizAuthorization) {
+      this.logger.error('Haciz talebi: TriggerHacizAuthorizationService enjekte edilmemiş (fail-closed)');
+      throw new ForbiddenException({
+        code: 'TRIGGER_HACIZ_AUTHORIZATION_UNAVAILABLE',
+        message: 'Haciz talebi yapılamaz: yetki doğrulanamadı',
+      });
+    }
+    await this.triggerHacizAuthorization.assertAuthorized({
+      tenantId,
+      authenticatedUserId: actorUserId ?? '',
+      caseId: request.caseId,
     });
 
     // CPE Gate kontrolü (HIGH risk aksiyon)

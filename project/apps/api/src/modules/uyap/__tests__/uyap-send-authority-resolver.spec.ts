@@ -284,13 +284,56 @@ describe("UyapSendAuthorityResolverService", () => {
       ["userId yok", { authenticatedUserId: "" }],
       ["actingLawyerId yok", { actingLawyerId: "" }],
       ["caseId yok", { caseId: "" }],
-      ["operationType yok", { operationType: "" }],
+      ["operationType yok", { operationType: "" as any }],
       ["evaluatedAt geçersiz", { evaluatedAt: new Date("invalid") }],
     ];
 
     it.each(invalid)("%s → AUTHORITY_CONTEXT_INVALID (DB'ye gidilmez)", async (_n, over) => {
       const { svc, caseFindFirst, poaFindMany } = build({});
       const d = await svc.resolve({ ...ctx, ...over } as UyapSendAuthorityContext);
+      expect(d).toMatchObject({ allowed: false, failureCode: "AUTHORITY_CONTEXT_INVALID" });
+      expect(caseFindFirst).not.toHaveBeenCalled();
+      expect(poaFindMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("I15-D1 — operation-specific scope mapping (owner-ratified HMK m.73/m.74, İİK m.78)", () => {
+    const hacizCtx: UyapSendAuthorityContext = { ...ctx, operationType: "TRIGGER_HACIZ" };
+
+    it("GENEL kapsamı TRIGGER_HACIZ'ı da kapsar", async () => {
+      const { svc } = build({ poas: [poa({ scopeType: "GENEL" })] });
+      await expect(svc.resolve(hacizCtx)).resolves.toMatchObject({ allowed: true });
+    });
+
+    it("ICRA_TAKIP kapsamı TRIGGER_HACIZ'ı da kapsar", async () => {
+      const { svc } = build({ poas: [poa({ scopeType: "ICRA_TAKIP" })] });
+      await expect(svc.resolve(hacizCtx)).resolves.toMatchObject({ allowed: true });
+    });
+
+    it.each([
+      ["BU_DOSYA", "BU_DOSYA"],
+      ["OZEL", "OZEL"],
+    ])("kapsam %s TRIGGER_HACIZ'ı KAPSAMAZ (owner: structured coverage metadata yok)", async (_label, scopeType) => {
+      const { svc } = build({ poas: [poa({ scopeType })] });
+      await expect(svc.resolve(hacizCtx)).resolves.toMatchObject({
+        allowed: false,
+        failureCode: "POWER_OF_ATTORNEY_SCOPE_MISMATCH",
+      });
+    });
+
+    it("UYAP_SEND ve TRIGGER_HACIZ mapping'leri BİRBİRİNDEN BAĞIMSIZDIR (aynı sonucu üretmeleri ortak kural yerine geçmez)", async () => {
+      // Her ikisi de bugün GENEL/ICRA_TAKIP kabul ediyor — ama bu OPERATION_ALLOWED_POA_SCOPES'ta
+      // İKİ AYRI, owner-ratifiye satır olduğu için, tesadüfen aynı olduğu için DEĞİL.
+      const { svc: sendSvc } = build({ poas: [poa({ scopeType: "GENEL" })] });
+      const { svc: hacizSvc } = build({ poas: [poa({ scopeType: "GENEL" })] });
+      await expect(sendSvc.resolve(ctx)).resolves.toMatchObject({ allowed: true });
+      await expect(hacizSvc.resolve(hacizCtx)).resolves.toMatchObject({ allowed: true });
+    });
+
+    it("tanınmayan/bilinmeyen operationType → AUTHORITY_CONTEXT_INVALID, DB'ye gidilmez (sessiz GENEL/ICRA_TAKIP fallback YOK)", async () => {
+      const { svc, caseFindFirst, poaFindMany } = build({});
+      const unknownCtx = { ...ctx, operationType: "SOME_FUTURE_ACTION" } as unknown as UyapSendAuthorityContext;
+      const d = await svc.resolve(unknownCtx);
       expect(d).toMatchObject({ allowed: false, failureCode: "AUTHORITY_CONTEXT_INVALID" });
       expect(caseFindFirst).not.toHaveBeenCalled();
       expect(poaFindMany).not.toHaveBeenCalled();

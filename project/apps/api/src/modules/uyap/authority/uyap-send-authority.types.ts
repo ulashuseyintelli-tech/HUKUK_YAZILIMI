@@ -31,6 +31,21 @@ export type UyapAuthorityFailureCode =
   | "AUTHORITY_CONTEXT_INVALID";
 
 /**
+ * I15-D1 (OWNER LEGAL DECISION, RATIFIED): resolver'ın tanıdığı iki kanonik operasyon.
+ * Serbest string ARTIK kabul edilmez — `operationType` bu iki değerden biri olmalıdır.
+ * Yeni bir operasyon eklemek, o operasyon için POA scope-coverage haritasının owner
+ * tarafından AYRICA ratifiye edilmesini gerektirir (bkz. `uyap-send-authority-resolver.service.ts`
+ * içindeki `OPERATION_ALLOWED_POA_SCOPES`) — isimden otomatik yetki türetilmez.
+ */
+export const UyapSendAuthorityOperation = {
+  UYAP_SEND: "UYAP_SEND",
+  TRIGGER_HACIZ: "TRIGGER_HACIZ",
+} as const;
+
+export type UyapSendAuthorityOperationType =
+  (typeof UyapSendAuthorityOperation)[keyof typeof UyapSendAuthorityOperation];
+
+/**
  * Resolver girdisi — TAMAMI server-authoritative olmalıdır.
  * `clientId` KASITLI olarak yoktur: temsil ilişkisi case üzerinden çözülür, request body'den ALINMAZ.
  */
@@ -40,7 +55,7 @@ export interface UyapSendAuthorityContext {
   /** I01 `ActingLawyerResolverService` tarafından server-side çözülmüş olmalıdır. */
   readonly actingLawyerId: string;
   readonly caseId: string;
-  readonly operationType: string;
+  readonly operationType: UyapSendAuthorityOperationType;
   readonly evaluatedAt: Date;
 }
 
