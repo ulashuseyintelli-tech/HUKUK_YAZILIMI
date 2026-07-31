@@ -219,6 +219,29 @@ export class EngineRunnerService {
           const action = d.then![actionIdx];
           const actionType = action.action;
 
+          // W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01: 'webhook' desteklenen
+          // bir action tipi DEGIL (bkz. ActionHandlerService — handler kasitli olarak
+          // kayitli degil). Producer'da engellenir ki outbox'a hic satir girmesin;
+          // aksi halde dispatch() "No handler for action type" ile action'i sonsuza
+          // kadar pending birakirdi (claim hic alinmadigi icin markFailed/dead-letter
+          // yoluna da girmez). Bu tek action atlanir, ruleun/run'in digerleri devam eder.
+          if (actionType === 'webhook') {
+            this.logger.error(
+              `Rule ${rule.rule_id} (case ${caseId}) declares unsupported action type 'webhook' — action skipped, no outbox row created.`,
+            );
+            await this.timeline.addEntry({
+              caseId,
+              tenantId,
+              type: 'ACTION',
+              title: `Action rejected (unsupported type): ${actionType}`,
+              severity: 'critical',
+              body: { ruleId: rule.rule_id, decisionIndex: idx, actionIndex: actionIdx },
+              runId: run.id,
+              source: 'engine',
+            });
+            continue;
+          }
+
           // Generate idempotency key
           const idemKey = action.idempotency_key ||
             `${actionType}:${caseId}:${rule.rule_id}:${idx}:${actionIdx}`;

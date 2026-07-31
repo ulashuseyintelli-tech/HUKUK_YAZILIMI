@@ -796,26 +796,17 @@ export class ActionHandlerService {
       this.logger.debug(`Batch facts/flags set for case ${caseId}`);
     });
 
-    // HTTP Webhook Handler
-    this.register('webhook', async (payload, caseId) => {
-      const { url, method = 'POST', headers, body } = payload;
-      if (!url) throw new Error('webhook requires payload.url');
-
-      // Log webhook attempt (actual HTTP call would be here in production)
-      this.logger.log(`[WEBHOOK] ${method} ${url} for case ${caseId}`);
-
-      await (this.prisma as any).icrabotWebhookLog.create({
-        data: {
-          caseId,
-          url,
-          method,
-          headers,
-          body,
-          status: 'sent',
-        },
-      });
-    });
-
+    // W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01: 'webhook' action type
+    // KASITLI OLARAK KAYITLI DEGIL. Onceki handler semada hic var olmamis
+    // `IcrabotWebhookLog`'a `(prisma as any)` ile yaziyordu VE gercek bir HTTP
+    // cagrisi hic yapmadan kosulsuz status:'sent' iddia ediyordu (CAN-P0-001'deki
+    // send_email/send_sms "fake-sent" deseninin ayni ornegi). Aktif/test rule-pack
+    // `action: webhook` uretmiyor (repo genelinde dogrulandi); gercek HTTP teslimati
+    // hic implemente edilmemisti. Bu nedenle "webhook" canonical bir yetenek olarak
+    // KABUL EDILMEDI: sema eklemek yalniz sahte-basari desenini tipli/kalici hale
+    // getirirdi. Producer tarafi da engellenir — bkz. EngineRunnerService, actionType
+    // === 'webhook' icin outbox satiri hic OLUSTURULMAZ (dispatch()'in "No handler
+    // for action type" sonsuz-pending yoluna hic girilmez).
     this.logger.log(`Registered ${this.handlers.size} default action handlers`);
   }
 

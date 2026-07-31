@@ -160,6 +160,10 @@ src/modules/icrabot/v28-engine/__tests__/outbox-platform-cron.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-residual-tenant-isolation.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-tenancy.spec.ts
 src/modules/icrabot/v28-engine/__tests__/outbox-tenant-scope-security.spec.ts
+# W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01: 'webhook' handler'inin
+# kaldirildigini + EngineRunnerService'in producer-side'da bu action tipini
+# outbox'a hic yazmadan reddettigini (kardes action'lar etkilenmeden) kanitlar.
+src/modules/icrabot/v28-engine/__tests__/outbox-webhook-handler-removed.spec.ts
 src/modules/icrabot/v28-engine/__tests__/tenant-boundary-hardening.spec.ts
 src/modules/icrabot/v28-engine/__tests__/timeline-aggregate-version.spec.ts
 src/modules/icrabot/v28-engine/__tests__/timeline-enginerun-tenant-isolation.spec.ts

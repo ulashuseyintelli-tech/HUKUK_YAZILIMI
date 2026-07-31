@@ -176,6 +176,10 @@ src/modules/collection/__tests__/collection-cancel-reversal.db-gated.integration
 #   sahipligini merkezi dispatch() gate'inde dogruladigini GERCEK Postgres + iki
 #   GERCEK tenant/Case ile kanitlayan runtime representative matrix (A-G).
 src/modules/icrabot/v28-engine/__tests__/outbox-consumer-tenant-ownership.db-gated.integration.spec.ts
+#   W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01: 'webhook' action'in outbox'a
+#   SIFIR satir yazdirmadan reddedildigini, kardes action'in TAM 1 satir yazdigini
+#   GERCEK Postgres + GERCEK EngineRunnerService ile kanitlayan runtime dogrulama.
+src/modules/icrabot/v28-engine/__tests__/outbox-webhook-rejection.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.integration.spec.ts

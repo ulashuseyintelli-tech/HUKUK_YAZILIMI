@@ -8,12 +8,17 @@
  * atar. Outbox platformunda bu, action'in 8 denemeyi tuketip dead-letter'a
  * dusmesi demektir — yani sessiz degil ama GEC ve tekrar-tekrar basarisiz.
  *
- * W3 runtime probe'u bu sinifi tam olarak BIR kez uretti (asagidaki KNOWN_GAP).
- * Guard, ayni sinifin YENI ornekleri icin fail-closed'dir.
+ * W3 runtime probe'u bu sinifin TEK ornegini uretti: `icrabotWebhookLog`
+ * (webhook action handler). W3-F01-OUTBOX-WEBHOOK-HANDLER-MODEL-CONTRACT-R01
+ * bunu KAPATTI — sema eklemek yerine handler KALDIRILDI ve producer
+ * (`EngineRunnerService`) `action: 'webhook'`'u outbox'a hic yazmadan reddeder
+ * (bkz. engine-runner.service.ts, action-handler.service.ts). Gerekce: handler
+ * zaten gercek bir HTTP cagrisi yapmadan kosulsuz status:'sent' yaziyordu
+ * (CAN-P0-001'deki send_email/send_sms "fake-sent" deseninin ayni ornegi) ve
+ * aktif/test hicbir rule-pack bu action tipini uretmiyordu.
  *
- * KAPSAM SINIRI: Bu guard mevcut kusuru DUZELTMEZ. Duzeltme sema/migration
- * gerektirir (§27 BLOCKED_SCHEMA_OR_MIGRATION_REQUIRED) ve ayri bir owner
- * yetkisiyle W3-F01 successor task'inda ele alinir.
+ * KNOWN_GAPS artik BOS. Guard, ayni sinifin YENI ornekleri icin fail-closed
+ * olarak kalir.
  */
 import { readFileSync, readdirSync } from 'fs';
 import { join, relative, sep } from 'path';
@@ -22,16 +27,11 @@ const SRC = join(__dirname, '..', '..');
 const SCHEMA = join(__dirname, '..', '..', '..', 'prisma', 'schema.prisma');
 
 /**
- * Bilinen ve KAYIT ALTINA ALINMIS bosluk. Bu liste BUYUYEMEZ:
+ * Bilinen ve KAYIT ALTINA ALINMIS bosluklar. Bu liste rastgele BUYUYEMEZ:
  * yeni bir giris eklemek, ayni kusur sinifinin tekrar uretildigi anlamina gelir.
- *
- * icrabotWebhookLog — `ActionHandlerService` icindeki 'webhook' action handler'i
- * semada bulunmayan `IcrabotWebhookLog` modeline yazar. Uretici tarafi veri
- * kaynaklidir (`EngineRunnerService` actionType'i rule-pack satirindan alir),
- * bu nedenle repoda sabit bir uretici YOKTUR; bir rule-pack `action: webhook`
- * tanimlarsa action asla `done` olamaz. Disposition: W3-F01 successor task.
+ * Su an BOS — tek kayitli bosluk (icrabotWebhookLog) W3-F01 ile kapatildi.
  */
-const KNOWN_GAPS: ReadonlySet<string> = new Set(['icrabotWebhookLog']);
+const KNOWN_GAPS: ReadonlySet<string> = new Set();
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -95,7 +95,11 @@ describe('W3 — Prisma model referans guard (as-any kacaklari)', () => {
     }
   });
 
-  it('[5] KNOWN_GAPS listesi BUYUMEZ (tek kayitli bosluk)', () => {
-    expect([...KNOWN_GAPS].sort()).toEqual(['icrabotWebhookLog']);
+  it('[5] KNOWN_GAPS listesi BOS (W3-F01 sonrasi kayitli bosluk kalmadi)', () => {
+    expect([...KNOWN_GAPS].sort()).toEqual([]);
+  });
+
+  it('[6] icrabotWebhookLog referansi kaynaktan tamamen kaldirildi (W3-F01)', () => {
+    expect(CAST_REFS.some((r) => r.model === 'icrabotWebhookLog')).toBe(false);
   });
 });
