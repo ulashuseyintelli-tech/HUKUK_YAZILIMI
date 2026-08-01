@@ -366,6 +366,32 @@ export type OfficialCodeResolution =
    */
   | { readonly kind: 'MODEL_RESIDUAL'; readonly domainType: string; readonly reason: string };
 
+const resolverIssuedOfficialCodeResolutions = new WeakSet<object>();
+
+/**
+ * Canonical resolver'larin urettigi `RESOLVED` sonucunu runtime capability olarak kaydeder.
+ * WeakSet module-private'tir: caller ayni yapida nesne kurarak veya sonucu spread ile
+ * kopyalayarak serializer authority uretemez.
+ */
+function issueOfficialCodeResolution(code: string): OfficialCodeResolution {
+  const resolution = Object.freeze({ kind: 'RESOLVED' as const, code });
+  resolverIssuedOfficialCodeResolutions.add(resolution);
+  return resolution;
+}
+
+/**
+ * `RESOLVED` sonucunun canonical resolver tarafindan uretilmis ozgun nesne oldugunu
+ * dogrular. Bu fonksiyon capability URETMEZ; yalniz module-private kaydi okur.
+ */
+export function isResolverIssuedOfficialCodeResolution(
+  resolution: OfficialCodeResolution,
+): boolean {
+  return (
+    resolution.kind === 'RESOLVED' &&
+    resolverIssuedOfficialCodeResolutions.has(resolution)
+  );
+}
+
 // ============================================================================
 // OWNER RATIFICATION — UYAP-OFFICIAL-LEGAL-SEMANTIC-MAPPING-OWNER-RATIFICATION-R01
 // ============================================================================
@@ -430,11 +456,11 @@ export function resolveOfficialTakipTuru(
     case 'GENERAL_EXECUTION':
     case 'CAMBIO':
     case 'RENT':
-      return { kind: 'RESOLVED', code: '1' };
+      return issueOfficialCodeResolution('1');
 
     // T-04 — owner APPROVE, koşulsuz (koşul proceedingType'ın kendisiyle sağlanır).
     case 'JUDGMENT_ENFORCEMENT':
-      return { kind: 'RESOLVED', code: '0' };
+      return issueOfficialCodeResolution('0');
 
     // T-05..T-10 — owner onay tablosuna hiç girmedi.
     case 'PLEDGE':
@@ -531,7 +557,7 @@ export function resolveOfficialMahiyetKodu(
   if (takip.kind === 'RESOLVED' && takip.code === '0') {
     // İlamlı kol — M-02 adayı.
     if (input.caseJudgmentNafakaType !== null) {
-      return { kind: 'RESOLVED', code: '1045' };
+      return issueOfficialCodeResolution('1045');
     }
     return {
       kind: 'AUTHORITY_REQUIRED',

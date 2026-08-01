@@ -48,6 +48,7 @@ import {
   OfficialCodeResolution,
   OfficialCodelistFailureCode,
   checkOfficialRolePair,
+  isResolverIssuedOfficialCodeResolution,
   validateOfficialMahiyetKodu,
   validateOfficialTakipTuru,
 } from './official-codelist-registry';
@@ -108,14 +109,9 @@ export type UyapCanonicalSerializationResult =
          * onayından geçtiğini taşır. `REGISTRY_VALIDATED` hâlâ yalnız sözdizimini
          * kapsar.
          *
-         * ⚠ **Bilinen sınır (NEW FINDING, bu görevde çözülmedi):** serializer,
-         * kendisine verilen `RESOLVED` girdisinin gerçekten `resolveOfficialTakipTuru`/
-         * `resolveOfficialMahiyetKodu` üzerinden mi geldiğini yoksa çağıran tarafından
-         * elle mi kurulduğunu AYIRT EDEMEZ (P02B-R2'den miras kalan sözleşme: girdi
-         * "önceden-resolved"tir). Sözdizim doğrulaması (`validateOfficial*`) geçersiz
-         * kodu engeller ama semantik-bypass'i engellemez. Bu sınır resolver-çağrısı
-         * ZORUNLU kılan ayrı bir sertleştirme görevi gerektirir; bu görevin kapsamı
-         * DIŞINDADIR.
+         * I01 hardening: `RESOLVED` girdisi yalnız canonical resolver'ın module-private
+         * runtime capability kaydında bulunuyorsa kabul edilir. Caller-created veya
+         * structural-copy sonuç XML/byte üretiminden önce fail-closed reddedilir.
          */
         readonly officialCodeSemanticMapping: 'AUTHORITY_REQUIRED' | 'PARTIALLY_RATIFIED';
       };
@@ -259,6 +255,15 @@ function checkCodeResolution(
     return {
       failureCode: 'OFFICIAL_MAHIYET_MODEL_RESIDUAL',
       detail: `${resolution.domainType}: ${resolution.reason}`,
+    };
+  }
+
+  if (!isResolverIssuedOfficialCodeResolution(resolution)) {
+    return {
+      failureCode: authorityFailureCode,
+      detail:
+        'RESOLVED official code canonical resolver provenance/capability tasimiyor; ' +
+        'caller-created veya structural-copy sonuc kabul edilmez.',
     };
   }
 

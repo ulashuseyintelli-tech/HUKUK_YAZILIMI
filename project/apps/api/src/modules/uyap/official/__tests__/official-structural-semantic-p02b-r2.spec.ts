@@ -79,7 +79,11 @@ const taraf = (over: Partial<OfficialTaraf> = {}): OfficialTaraf => ({
 });
 
 const input = (dosya: Partial<OfficialExchangeInput['dosya']> = {}): OfficialExchangeInput => ({
-  dosya: { dosyaTipi: '1', takipTuruResolution: resolved('1'), ...dosya },
+  dosya: {
+    dosyaTipi: '1',
+    takipTuruResolution: resolveOfficialTakipTuru({ proceedingType: 'GENERAL_EXECUTION' }),
+    ...dosya,
+  },
   taraflar: [taraf()],
 });
 
@@ -194,22 +198,22 @@ describe('MS — mahiyetKodu anlam eşlemesi', () => {
     expect(OFFICIAL_MAHIYET_KODU_SET.has('1045')).toBe(true);
   });
 
-  it('MS-03: bilinmeyen mahiyetKodu fail-closed', () => {
+  it('MS-03: caller-created bilinmeyen mahiyetKodu authority kapısında fail-closed', () => {
     const r = serializeUyapExchangeCanonical(input({ mahiyetResolution: resolved('9999') }));
     expect(r.status).toBe('CODELIST_REJECTED');
     if (r.status === 'CODELIST_REJECTED') {
-      expect(r.failureCode).toBe('INVALID_OFFICIAL_MAHIYET_KODU');
+      expect(r.failureCode).toBe('OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED');
     }
   });
 
-  it('MS-03b: codelist te olup DTD de OLMAYAN kod (5045) ayrı reason ile reddedilir', () => {
+  it('MS-03b: caller-created 5045 provenance/capability kapısında reddedilir', () => {
     expect(OFFICIAL_CODELIST_MAHIYET_KODU_SET.has('5045')).toBe(true);
     expect(OFFICIAL_DTD_MAHIYET_KODU_SET.has('5045')).toBe(false);
 
     const r = serializeUyapExchangeCanonical(input({ mahiyetResolution: resolved('5045') }));
     expect(r.status).toBe('CODELIST_REJECTED');
     if (r.status === 'CODELIST_REJECTED') {
-      expect(r.failureCode).toBe('OFFICIAL_MAHIYET_DTD_UNREPRESENTABLE');
+      expect(r.failureCode).toBe('OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED');
     }
   });
 
@@ -238,19 +242,22 @@ describe('MS — mahiyetKodu anlam eşlemesi', () => {
 describe('TS — takipTuru anlam eşlemesi', () => {
   it('TS-01/TS-02: resmî kod uzayı 0=İlamlı, 1=İlamsız', () => {
     expect([...OFFICIAL_TAKIP_TURU_SET].sort()).toEqual(['0', '1']);
-    for (const c of ['0', '1']) {
-      expect(serializeUyapExchangeCanonical(input({ takipTuruResolution: resolved(c) })).status)
-        .toBe('CANONICAL_BYTES');
+    for (const proceedingType of ['JUDGMENT_ENFORCEMENT', 'GENERAL_EXECUTION'] as const) {
+      expect(
+        serializeUyapExchangeCanonical(
+          input({ takipTuruResolution: resolveOfficialTakipTuru({ proceedingType }) }),
+        ).status,
+      ).toBe('CANONICAL_BYTES');
     }
   });
 
-  it('TS-03: sayısal eşitlik anlam eşitliği DEĞİL — legacy 2 (İlamlı) reddedilir', () => {
+  it('TS-03: caller-created legacy 2 provenance/capability kapısında reddedilir', () => {
     // Legacy: 2 = İlamlı. Resmî: İlamlı = 0, ve 2 hiç yok. Numeric passthrough olsaydı
     // "İlamlı" niyeti sessizce geçersiz koda dönerdi.
     const r = serializeUyapExchangeCanonical(input({ takipTuruResolution: resolved('2') }));
     expect(r.status).toBe('CODELIST_REJECTED');
     if (r.status === 'CODELIST_REJECTED') {
-      expect(r.failureCode).toBe('INVALID_OFFICIAL_TAKIP_TURU');
+      expect(r.failureCode).toBe('OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED');
     }
   });
 
@@ -286,7 +293,13 @@ describe('TS — takipTuru anlam eşlemesi', () => {
       expect(r.evidence.takipTuruDtdDefaultApplies).toBe(true);
     }
 
-    const explicit = serializeUyapExchangeCanonical(input({ takipTuruResolution: resolved('0') }));
+    const explicit = serializeUyapExchangeCanonical(
+      input({
+        takipTuruResolution: resolveOfficialTakipTuru({
+          proceedingType: 'JUDGMENT_ENFORCEMENT',
+        }),
+      }),
+    );
     if (explicit.status === 'CANONICAL_BYTES') {
       expect(explicit.evidence.takipTuruDtdDefaultApplies).toBe(false);
     }

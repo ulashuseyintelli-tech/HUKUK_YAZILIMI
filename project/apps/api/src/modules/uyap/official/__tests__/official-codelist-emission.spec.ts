@@ -29,6 +29,8 @@ import {
   checkOfficialRolePair,
   emittableLabel,
   isOfficialRoleId,
+  resolveOfficialMahiyetKodu,
+  resolveOfficialTakipTuru,
   validateOfficialMahiyetKodu,
   validateOfficialTakipTuru,
 } from '../official-codelist-registry';
@@ -78,7 +80,11 @@ const input = (
   taraflar: OfficialTaraf[] = [taraf()],
   dosya: Partial<OfficialExchangeInput['dosya']> = {},
 ): OfficialExchangeInput => ({
-  dosya: { dosyaTipi: '1', takipTuruResolution: resolved('1'), ...dosya },
+  dosya: {
+    dosyaTipi: '1',
+    takipTuruResolution: resolveOfficialTakipTuru({ proceedingType: 'GENERAL_EXECUTION' }),
+    ...dosya,
+  },
   taraflar,
 });
 
@@ -236,34 +242,46 @@ describe('CL-05/06/07/08 — unresolved roller fail-closed', () => {
 // ============================================================================
 
 describe('CL-12/13/14/15/16 — kodlu alan doğrulaması', () => {
-  it('CL-12: geçerli mahiyetKodu kabul edilir', () => {
-    expect(validateOfficialMahiyetKodu('4045').ok).toBe(true);
+  it('CL-12: canonical resolver-issued geçerli mahiyetKodu kabul edilir', () => {
+    expect(validateOfficialMahiyetKodu('1045').ok).toBe(true);
     const r = serializeUyapExchangeCanonical(
-      input([taraf()], { mahiyetResolution: resolved('4045') }),
+      input([taraf()], {
+        takipTuruResolution: resolveOfficialTakipTuru({
+          proceedingType: 'JUDGMENT_ENFORCEMENT',
+        }),
+        mahiyetResolution: resolveOfficialMahiyetKodu({
+          caseSubCategory: 'NAFAKA',
+          takipTuru: { proceedingType: 'JUDGMENT_ENFORCEMENT' },
+          caseJudgmentNafakaType: 'TEDBIR',
+        }),
+      }),
     );
     expect(r.status).toBe('CANONICAL_BYTES');
   });
 
-  it('CL-13: geçersiz mahiyetKodu REDDEDİLİR', () => {
+  it('CL-13: caller-created mahiyetKodu authority kapısında REDDEDİLİR', () => {
     const r = serializeUyapExchangeCanonical(
       input([taraf()], { mahiyetResolution: resolved('9999') }),
     );
     expect(r.status).toBe('CODELIST_REJECTED');
     if (r.status === 'CODELIST_REJECTED') {
-      expect(r.failureCode).toBe('INVALID_OFFICIAL_MAHIYET_KODU');
+      expect(r.failureCode).toBe('OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED');
     }
   });
 
   it('CL-14: geçerli takipTuru kabul edilir (0=İlamlı, 1=İlamsız)', () => {
-    for (const v of ['0', '1']) {
+    for (const proceedingType of ['JUDGMENT_ENFORCEMENT', 'GENERAL_EXECUTION'] as const) {
       expect(
-        serializeUyapExchangeCanonical(input([taraf()], { takipTuruResolution: resolved(v) }))
-          .status,
+        serializeUyapExchangeCanonical(
+          input([taraf()], {
+            takipTuruResolution: resolveOfficialTakipTuru({ proceedingType }),
+          }),
+        ).status,
       ).toBe('CANONICAL_BYTES');
     }
   });
 
-  it('CL-15: resmî sözlükte OLMAYAN takipTuru REDDEDİLİR (legacy 2 dahil)', () => {
+  it('CL-15: caller-created takipTuru authority kapısında REDDEDİLİR (legacy 2 dahil)', () => {
     // Legacy tip '1'..'6' idi ve 2=İlamlı diyordu; resmî sözlükte 2 YOKTUR.
     for (const v of ['2', '3', '6']) {
       const r = serializeUyapExchangeCanonical(
@@ -271,7 +289,7 @@ describe('CL-12/13/14/15/16 — kodlu alan doğrulaması', () => {
       );
       expect(r.status).toBe('CODELIST_REJECTED');
       if (r.status === 'CODELIST_REJECTED') {
-        expect(r.failureCode).toBe('INVALID_OFFICIAL_TAKIP_TURU');
+        expect(r.failureCode).toBe('OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED');
       }
     }
   });
