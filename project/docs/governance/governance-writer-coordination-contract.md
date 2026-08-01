@@ -1807,6 +1807,48 @@ dosyasının exact `M/A` tuple'ını doğrular. Task teknik qualification ile
 sınırlıdır; predecessor semantiğini yeniden açmaz ve activation/canary yetkisi
 üretmez.
 
+### UYAP final-CI eligibility terminal closeout — exact publication binding
+
+Bu ek yalnız merge edilmiş final-CI qualification sonucunun existing task-local
+execution-grant dosyasına append-only terminal receipt olarak yazılmasını tanır.
+Yeni semantic authority, ikinci grant kullanımı, production activation veya
+successor execution authority üretmez.
+
+```text
+Closeout binding task : UYAP-FINAL-CI-ELIGIBILITY-I01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01
+Closeout binding mode : UYAP_FINAL_CI_ELIGIBILITY_I01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01
+Closeout binding base : e95d0c36a127a2ee022a3bcc8e7cb5fa74f04272
+Closeout binding ref  : codex/uyap-final-ci-eligibility-i01-terminal-closeout-binding-r01
+Closeout binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Closeout task : UYAP-FINAL-CI-ELIGIBILITY-I01
+Closeout mode : UYAP_FINAL_CI_ELIGIBILITY_I01_TERMINAL_CLOSEOUT_R01
+Original closeout base : e95d0c36a127a2ee022a3bcc8e7cb5fa74f04272
+Closeout ref : codex/uyap-final-ci-eligibility-i01-terminal-closeout-r01
+Closeout scope:
+  M project/docs/governance/coordination-execution-grants/UYAP-FINAL-CI-ELIGIBILITY-I01-EG01.md
+
+Semantic authority record : UYAP-FINAL-CI-ELIGIBILITY-I01-SA01
+Execution grant record     : UYAP-FINAL-CI-ELIGIBILITY-I01-EG01
+Implementation PR          : 2081
+Implementation squash      : e95d0c36a127a2ee022a3bcc8e7cb5fa74f04272
+Grant terminal state       : CONSUMED / CLOSED
+Second use                 : FAIL-CLOSED
+Production activation      : PROHIBITED
+```
+
+Validator closeout binding PR'ında exact `M/M/M` control-plane tuple'ını;
+target closeout PR'ında yalnız existing EG dosyasının `M` durumunu, canonical
+SA/EG referanslarını, implementation PR/SHA kanıtını, 82 suite / 1397 test
+manifest sonucunu, `DEFAULT-OFF`, sıfır production reachability, resolver
+capability ve serializer-bypass fail-closed sonuçlarını, strict-DTD non-claim,
+required CI ve `SECOND USE: FAIL-CLOSED` terminal receipt alanlarını doğrular.
+`decision-log.md` closeout PR'ında değiştirilemez; mevcut semantic authority
+duplicate edilmez.
+
 ### UYAP serializer-bypass hardening terminal closeout — exact publication binding
 
 Bu ek yalnız merge edilmiş serializer-bypass hardening implementation sonucunun
