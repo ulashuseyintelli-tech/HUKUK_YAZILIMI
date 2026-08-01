@@ -447,14 +447,17 @@ describe('P02B-R2 — static containment (kaynak-grep; runtime wiring / schema /
     expect(src).not.toContain('addOfficialAlacakKalemi');
   });
 
-  it('doğrudan dosya/alacakKalemi emisyonu (.ele(\'alacakKalemi\')) kaynakta yok', () => {
+  it('doğrudan dosya/alacakKalemi emisyonu yok; yalnız opaque-qualified wrapper child yolu var', () => {
     const src = readOfficial('official-exchange-builder.ts');
-    expect(src).not.toMatch(/\.ele\(\s*['"`]alacakKalemi['"`]/);
+    expect(src).not.toMatch(/\bdosya\.ele\(\s*['"`]alacakKalemi['"`]/);
+    expect(src).toContain('issuedM01Claims.has(qualified)');
+    expect(src).toMatch(/wrapper\s*\.ele\(\s*['"`]alacakKalemi['"`]/);
   });
 
-  it('otomatik digerAlacak/ilam/cek/senet/police/kontrat sarmalayıcı emisyonu kaynakta yok', () => {
+  it('kontrat/digerAlacak fallback yok; izinli wrapper kümesi yalnız W-01…W-05', () => {
     const src = readOfficial('official-exchange-builder.ts');
-    expect(src).not.toMatch(/\.ele\(\s*['"`](digerAlacak|ilam|cek|senet|police|kontrat|kontratKefil)['"`]/);
+    expect(src).not.toMatch(/\.ele\(\s*['"`](digerAlacak|kontrat|kontratKefil)['"`]/);
+    expect(src).toContain("['cek', 'senet', 'police', 'ilam']");
   });
 
   it('runtime wiring / schema / migration bu değişiklikte de YOK (P02B izolasyon sınırı korunur)', () => {
