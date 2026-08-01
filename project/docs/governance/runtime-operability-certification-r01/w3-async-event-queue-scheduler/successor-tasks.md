@@ -70,6 +70,23 @@ Migration gerekmedi. Detay: `defect-register.md` → Cozum Kaydi → W3-D04.
 - **prerequisite:** yok (mevcut ratified mekanizma)
 - **bagimlilik:** kapsam bolunmeli — servis basina ayri PR
 
+**SONUC (R01, [PR #2070](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2070), merge `fdaf21e6`):**
+CLOSED. Yukaridaki "kapsam bolunmeli — servis basina ayri PR" varsayimi,
+uygulama incelemesinde GEREKSIZ oldugu kanitlandi — tum 12 servis TEK PR'da,
+merkezi `reportCronJobFailure()` (mevcut ratifiye `IntegrationErrorReporter`
+uzerine ince bir sarmalayici) ile kapatildi; 35 job'un fresh sinifi 9
+zaten-sertifikali + 2 dormant + 24 runtime-bound (12 dosya) verdi, tumu tek
+desende duzeltildi. `ERROR_LOG_METADATA_WHITELIST`'e `outcome`/`reasonCode`
+eklenmeden siniflandirma sessizce ErrorLog'a ULASMIYORDU — yalniz gercek
+Postgres'e karsi DB-gated runtime testiyle bulunan gercek bir prod-kodu
+eksigiydi. 3 serviste (`case-task-escalation`, `operational-escalation`,
+`office-approval-executor-cron`) cron-entrypoint sarmalandi ama alttaki is
+metodu (testler/manuel tetikleyiciler icin dogrudan cagrilabilir olmasi
+GEREKTIGI icin) bilerek DOKUNULMADI — bu, ayni metodun cron-disi cagri
+yollarinda hala rapor kapsami DISINDA oldugu, owner karari bekleyen bir
+kalinti olarak Cozum Kaydi'nda ayrica isaretlendi (yeni task URETILMEDI).
+Migration gerekmedi. Detay: `defect-register.md` → Cozum Kaydi → W3-D05.
+
 ---
 ## W3-F05-OUTBOX-NO-HANDLER-POISON-DISPOSITION-R01
 - **capability:** outbox dispatch
