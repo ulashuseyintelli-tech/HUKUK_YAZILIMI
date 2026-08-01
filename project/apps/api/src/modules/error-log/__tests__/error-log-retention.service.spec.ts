@@ -47,7 +47,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
 
   it('disabled (env yok) → prisma\'ya HİÇ dokunulmaz, no-op', async () => {
     const prisma = makePrismaMock();
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     const res = await svc.runRetentionCleanup();
     expect(res).toEqual({ enabled: false, deleted: 0, byCategory: {} });
     expect(prisma.errorLog.findMany).not.toHaveBeenCalled();
@@ -57,7 +57,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
   it('enabled → 4 kategori KARŞILIKLI DIŞLAYAN where ile çağrılır', async () => {
     process.env.ERROR_LOG_RETENTION_ENABLED = 'true';
     const prisma = makePrismaMock();
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     await svc.runRetentionCleanup();
 
     expect(prisma.errorLog.findMany).toHaveBeenCalledTimes(4);
@@ -85,7 +85,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
     process.env.ERROR_LOG_RETENTION_UNRESOLVED_DAYS = '1';
     process.env.ERROR_LOG_RETENTION_FRONTEND_DAYS = '1'; // kısa frontend süresi unresolved'a SIZMAMALI
     const prisma = makePrismaMock();
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     await svc.runRetentionCleanup();
 
     const unresWhere = prisma.errorLog.findMany.mock.calls[0][0].where;
@@ -101,7 +101,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
     process.env.ERROR_LOG_RETENTION_API_INTERNAL_DAYS = '20';
     process.env.ERROR_LOG_RETENTION_RESOLVED_DAYS = '10';
     const prisma = makePrismaMock();
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     await svc.runRetentionCleanup();
 
     const [, feND, apiIntl, fallback] = prisma.errorLog.findMany.mock.calls.map((c: any[]) => c[0].where);
@@ -113,7 +113,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
   it('K2: resolved → resolvedAt; yoksa createdAt fallback OR koşulu var', async () => {
     process.env.ERROR_LOG_RETENTION_ENABLED = 'true';
     const prisma = makePrismaMock();
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     await svc.runRetentionCleanup();
 
     const feND = prisma.errorLog.findMany.mock.calls[1][0].where;
@@ -131,7 +131,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
   it('aktif/yeni kayıt silinmez: cutoff geçmişte ve karşılaştırma strict "lt"', async () => {
     process.env.ERROR_LOG_RETENTION_ENABLED = 'true';
     const prisma = makePrismaMock();
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     await svc.runRetentionCleanup();
 
     const unres = prisma.errorLog.findMany.mock.calls[0][0].where;
@@ -148,7 +148,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
     prisma.errorLog.findMany
       .mockResolvedValueOnce([{ id: 'a' }, { id: 'b' }])
       .mockResolvedValue([]);
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     const res = await svc.runRetentionCleanup();
 
     expect(prisma.errorLog.findMany.mock.calls[0][0].take).toBe(2);
@@ -161,7 +161,7 @@ describe('ErrorLogRetentionService (PR-6)', () => {
     process.env.ERROR_LOG_RETENTION_ENABLED = 'true';
     const prisma = makePrismaMock();
     prisma.errorLog.findMany.mockRejectedValue(new Error('db kaboom'));
-    const svc = new ErrorLogRetentionService(prisma as any);
+    const svc = new ErrorLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
     await expect(svc.runRetentionCleanup()).resolves.toMatchObject({ enabled: true });
   });
 });

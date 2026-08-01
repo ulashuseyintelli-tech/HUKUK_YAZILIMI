@@ -95,7 +95,7 @@ describe('AutomationService.toggleAutoMode tenant isolation (AUTOMATION-TOGGLE-T
     const prisma: any = {
       case: { updateMany: jest.fn(), update: jest.fn() },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     await expect(svc.toggleAutoMode('case1', true, undefined as any)).rejects.toThrow(ForbiddenException);
 
@@ -107,7 +107,7 @@ describe('AutomationService.toggleAutoMode tenant isolation (AUTOMATION-TOGGLE-T
     const prisma: any = {
       case: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn() },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     await svc.toggleAutoMode('case1', true, 'tenantA');
 
@@ -122,7 +122,7 @@ describe('AutomationService.toggleAutoMode tenant isolation (AUTOMATION-TOGGLE-T
     const prisma: any = {
       case: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     await svc.toggleAutoMode('case1', false, 'tenantA');
 
@@ -136,7 +136,7 @@ describe('AutomationService.toggleAutoMode tenant isolation (AUTOMATION-TOGGLE-T
     const prisma: any = {
       case: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     await expect(svc.toggleAutoMode('foreign-or-missing-case', true, 'tenantA')).rejects.toThrow(NotFoundException);
   });
@@ -145,7 +145,7 @@ describe('AutomationService.toggleAutoMode tenant isolation (AUTOMATION-TOGGLE-T
     const prisma: any = {
       case: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     await expect(svc.toggleAutoMode('case1', true, 'tenantA')).resolves.toBeUndefined();
   });
@@ -154,7 +154,7 @@ describe('AutomationService.toggleAutoMode tenant isolation (AUTOMATION-TOGGLE-T
     const prisma: any = {
       case: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     await expect(svc.toggleAutoMode('case1', true, 'tenantA')).rejects.toThrow(InternalServerErrorException);
   });
@@ -169,7 +169,7 @@ describe('AutomationService.getAutomationStats tenant scope (SEC-XTEN-AUTOMATION
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     const result = await svc.getAutomationStats('tenantA');
 
@@ -190,7 +190,7 @@ describe('AutomationService.getAutomationStats tenant scope (SEC-XTEN-AUTOMATION
       case: { count: jest.fn() },
       decisionLog: { count: jest.fn(), findMany: jest.fn() },
     };
-    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any);
+    const svc = new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     const result = await svc.getAutomationStats(undefined as any);
 
@@ -204,7 +204,7 @@ describe('AutomationService.getAutomationStats tenant scope (SEC-XTEN-AUTOMATION
 describe('AutomationService tenant guard propagation (OD-3)', () => {
   it('processCaseManually, tenantId parametresini processCase\'e aynen aktarır', async () => {
     const workflowEngine: any = { processCase: jest.fn().mockResolvedValue(undefined) };
-    const svc = new AutomationService({} as any, workflowEngine, {} as any, {} as any);
+    const svc = new AutomationService({} as any, workflowEngine, {} as any, {} as any, {} as any);
 
     await svc.processCaseManually('case1', 'tenant1');
 
@@ -238,7 +238,7 @@ describe('AutomationService tenant guard propagation (OD-3)', () => {
       processCase: jest.fn().mockResolvedValue(undefined),
       calculateNextActionTime: jest.fn().mockResolvedValue(null),
     };
-    const svc = new AutomationService(prisma, workflowEngine, {} as any, {} as any);
+    const svc = new AutomationService(prisma, workflowEngine, {} as any, {} as any, {} as any);
 
     await svc.processPendingCases();
 
@@ -262,7 +262,7 @@ describe('AutomationService tenant guard propagation (OD-3)', () => {
       },
     };
     const workflowEngine: any = { processCase: jest.fn().mockResolvedValue(undefined) };
-    const svc = new AutomationService(prisma, workflowEngine, {} as any, {} as any);
+    const svc = new AutomationService(prisma, workflowEngine, {} as any, {} as any, {} as any);
 
     await svc.checkNotificationExpiries();
 
@@ -283,7 +283,7 @@ describe('AutomationService tenant guard propagation (OD-3)', () => {
       },
     };
     const workflowEngine: any = { processCase: jest.fn().mockResolvedValue(undefined) };
-    const svc = new AutomationService(prisma, workflowEngine, {} as any, {} as any);
+    const svc = new AutomationService(prisma, workflowEngine, {} as any, {} as any, {} as any);
 
     await svc.checkNotificationExpiries();
 

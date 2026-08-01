@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
+import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 export interface GazetteNotification {
   id: string;
@@ -32,7 +34,7 @@ export class GazetteWatcherService {
     'harcirah',
   ];
 
-  constructor() {
+  constructor(private readonly errorReporter: IntegrationErrorReporter) {
     this.logger.log('Resmi Gazete izleyici baslatildi');
   }
 
@@ -53,6 +55,7 @@ export class GazetteWatcherService {
       this.lastCheckDate = new Date();
     } catch (error) {
       this.logger.error('Resmi Gazete kontrol hatasi:', error);
+      reportCronJobFailure(this.errorReporter, 'gazetteWatcher.checkGazette', error);
     }
   }
 

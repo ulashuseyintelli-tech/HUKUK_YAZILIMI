@@ -33,7 +33,7 @@ describeWithDisposableDb(
     beforeAll(async () => {
       prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
       await prisma.$connect();
-      service = new AutomationService(prisma as any, {} as any, {} as any, {} as any);
+      service = new AutomationService(prisma as any, {} as any, {} as any, {} as any, {} as any);
     });
 
     afterAll(async () => {

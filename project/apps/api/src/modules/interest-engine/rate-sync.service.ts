@@ -5,6 +5,8 @@ import { RateScheduleService } from './rate-schedule.service';
 import { InterestTypeCode, RateSourceType } from './types';
 import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
+import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 /**
  * TCMB Faiz Oranı Senkronizasyon Servisi
@@ -33,6 +35,7 @@ export class RateSyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rateSchedule: RateScheduleService,
+    private readonly errorReporter: IntegrationErrorReporter,
   ) {}
 
   /**
@@ -56,6 +59,7 @@ export class RateSyncService {
       this.logger.log('TCMB faiz oranı senkronizasyonu tamamlandı');
     } catch (error) {
       this.logger.error(`TCMB sync hatası: ${error instanceof Error ? error.message : error}`);
+      reportCronJobFailure(this.errorReporter, 'rateSync.syncTcmbRates', error);
     }
   }
 
@@ -77,6 +81,7 @@ export class RateSyncService {
       }
     } catch (error) {
       this.logger.error(`Mevduat sync hatası: ${error instanceof Error ? error.message : error}`);
+      reportCronJobFailure(this.errorReporter, 'rateSync.syncMonthlyMevduatRates', error);
     }
   }
 

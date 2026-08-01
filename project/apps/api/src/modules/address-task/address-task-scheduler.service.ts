@@ -5,6 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AddressTaskFailureReason } from '@prisma/client';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
+import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 /**
  * Address Task Scheduler Service
@@ -29,6 +31,7 @@ export class AddressTaskSchedulerService {
     private readonly addressTaskService: AddressTaskService,
     private readonly prisma: PrismaService,
     private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
+    private readonly errorReporter: IntegrationErrorReporter,
   ) {}
 
   /**
@@ -96,6 +99,7 @@ export class AddressTaskSchedulerService {
       this.logger.log('SLA Checker tamamlandı');
     } catch (error) {
       this.logger.error('SLA Checker hatası:', error);
+      reportCronJobFailure(this.errorReporter, 'addressTask.checkOverdueTasks', error);
     }
   }
 
@@ -159,6 +163,7 @@ export class AddressTaskSchedulerService {
       this.logger.log('Annual Refresh Checker tamamlandı');
     } catch (error) {
       this.logger.error('Annual Refresh Checker hatası:', error);
+      reportCronJobFailure(this.errorReporter, 'addressTask.checkAnnualRefreshTasks', error);
     }
   }
 
@@ -216,6 +221,7 @@ export class AddressTaskSchedulerService {
       this.logger.debug('Outbox Publisher tamamlandı');
     } catch (error) {
       this.logger.error('Outbox Publisher hatası:', error);
+      reportCronJobFailure(this.errorReporter, 'addressTask.publishOutboxEvents', error);
     }
   }
 

@@ -232,3 +232,12 @@ src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.
 #   Bu manifest'te common/-rooted veya scheduler-related baska bir girdi yoktu → yeni
 #   bloktur (bkz pure/uyap-icrabot-tebligat.txt icin DB-free unit eslesi).
 src/common/__tests__/w3-f03-scheduler-timezone-runtime.db-gated.integration.spec.ts
+#
+#   W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01: GERCEK AppModule bootstrap + GERCEK
+#   ErrorLog tablosu ile temsilci cron failure-injection matrisi (A-F): success/no-work/
+#   failure-injected/config-gated-off/config-gated-on+failure/graceful-shutdown. Her
+#   basarisiz cagrinin tam-olarak reportCronJobFailure -> IntegrationErrorReporter ->
+#   ErrorLogService.log() zinciriyle GERCEK bir ErrorLog satirina (source=CRON,
+#   metadata.outcome=FAILED_TERMINAL) dustugunu, config-gated-OFF'ta ise DB'ye HIC
+#   dokunulmadigini kanitlar (bkz pure/uyap-icrabot-tebligat.txt icin DB-free unit eslesi).
+src/common/__tests__/w3-f04-cron-failure-visibility-runtime.db-gated.integration.spec.ts

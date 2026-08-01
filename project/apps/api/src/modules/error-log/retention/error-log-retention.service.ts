@@ -7,6 +7,8 @@ import {
   type ErrorLogRetentionConfig,
 } from './error-log-retention.config';
 import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
+import { reportCronJobFailure } from '../../../common/cron-failure-reporting';
+import { IntegrationErrorReporter } from '../integration-error-reporter';
 
 // PR-6: Hata logu retention temizliği (config-tabanlı, hard delete, batch).
 // MODEL A (K1): çözüm-durumu birincil, kaynak ikincil. unresolved kayıtlar yalnız
@@ -20,7 +22,10 @@ export class ErrorLogRetentionService {
   // Sonsuz-döngü koruması (batch loop üst sınırı).
   private static readonly MAX_BATCH_ITERATIONS = 10_000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly errorReporter: IntegrationErrorReporter,
+  ) {}
 
   // Günlük 03:30 Europe/Istanbul. Yalnız config.enabled ise siler.
   @Cron('30 3 * * *', { name: 'errorLogRetention', timeZone: SCHEDULER_TIMEZONE })
@@ -77,6 +82,7 @@ export class ErrorLogRetentionService {
     } catch (e) {
       // Retention ASLA app'i düşürmez: logla + yut.
       this.logger.error('Hata logu retention temizliği başarısız', e as any);
+      reportCronJobFailure(this.errorReporter, 'errorLogRetention.handleCron', e);
       const deleted = Object.values(byCategory).reduce((a, b) => a + b, 0);
       return { enabled: true, deleted, byCategory };
     }

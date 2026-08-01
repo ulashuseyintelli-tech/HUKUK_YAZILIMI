@@ -62,6 +62,10 @@ describe("sanitizeMetadata — whitelist", () => {
   it("hiç güvenli alan yoksa → undefined", () => {
     expect(sanitizeMetadata({ evil: 1, body: "x" })).toBeUndefined();
   });
+  it("W3-F04: outcome/reasonCode whitelist'te — cron terminal-failure siniflandirmasi ErrorLog'a ULAŞIR", () => {
+    const m = sanitizeMetadata({ outcome: "FAILED_TERMINAL", reasonCode: "UNHANDLED_EXCEPTION" });
+    expect(m).toEqual({ outcome: "FAILED_TERMINAL", reasonCode: "UNHANDLED_EXCEPTION" });
+  });
 });
 
 describe("normalizeClientLevel", () => {

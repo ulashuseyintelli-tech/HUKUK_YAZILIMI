@@ -10,6 +10,8 @@ import {
 } from "./case-task-escalation-logic";
 import { caseTaskEscalationSubject, buildCaseTaskEmailHtml, buildCaseTaskSmsText } from "./case-task-escalation-content";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
+import { reportCronJobFailure } from "../../common/cron-failure-reporting";
+import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 
 /**
  * D-G3b — Dosya görevi (case-linked LEGAL_WORKFLOW) owner-first eskalasyon motoru.
@@ -34,7 +36,8 @@ export class CaseTaskEscalationService {
 
   constructor(
     private prisma: PrismaService,
-    private tenantNotifier: TenantNotifier
+    private tenantNotifier: TenantNotifier,
+    private errorReporter: IntegrationErrorReporter
   ) {}
 
   /** Flag açık mı? (env runtime'da okunur — test/açma için kolay override). */
@@ -45,7 +48,12 @@ export class CaseTaskEscalationService {
   @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async scheduledRun(): Promise<void> {
     if (!this.isEnabled()) return; // FLAG OFF → çalışmaz (D-G6'da açılır)
-    await this.processCaseTaskEscalations();
+    try {
+      await this.processCaseTaskEscalations();
+    } catch (error) {
+      this.logger.error("Dosya görevi eskalasyon turu hatası:", error);
+      reportCronJobFailure(this.errorReporter, "caseTaskEscalation.scheduledRun", error);
+    }
   }
 
   /**

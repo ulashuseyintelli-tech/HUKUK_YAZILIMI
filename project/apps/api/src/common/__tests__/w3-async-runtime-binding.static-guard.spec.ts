@@ -360,3 +360,133 @@ describe('W3 — async runtime binding guard (AppModule kapanisi)', () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * `from` konumundan itibaren metot govdesinin ACILIS `{` pozisyonunu bulur.
+ * Donus tipindeki ic ice `<...>` (orn. `Promise<{ a: number }>`) GUVENLE
+ * atlanir — saf `[^{]+` regex'inin aksine, `<`/`>` derinligini sayarak tarar,
+ * boylece donus tipi icindeki bir nesne-literal `{` govde acilisi SANILMAZ.
+ * Govdesiz imza (abstract/overload, `;` ile biter) icin null doner.
+ */
+function scanToBodyBrace(src: string, from: number): number | null {
+  let i = from;
+  let angleDepth = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === '<') angleDepth++;
+    else if (ch === '>') { if (angleDepth > 0) angleDepth--; }
+    else if (ch === '{' && angleDepth === 0) return i;
+    else if (ch === ';' && angleDepth === 0) return null;
+    i++;
+  }
+  return null;
+}
+/**
+ * Her @Cron cagrisini hemen izleyen metodun DENGELI govdesini cikarir. Basit,
+ * tek-metod-govdesi seviyesinde calisir (nested arrow/callback govdeleri DAHIL —
+ * balanced-brace slice ic ice olani da kapsar, sadece disaridan disariya kadar).
+ */
+type CronMethod = { file: string; cls: string; method: string; body: string };
+const CRON_METHODS: CronMethod[] = [];
+for (const [file, src] of CLEAN) {
+  const classPositions: Array<{ name: string; start: number }> = [];
+  {
+    const re = /export\s+class\s+([A-Za-z0-9_]+)/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = re.exec(src)) !== null) classPositions.push({ name: cm[1], start: cm.index });
+  }
+  const clsAt = (pos: number): string => {
+    let name = 'UNKNOWN';
+    for (const cp of classPositions) { if (cp.start <= pos) name = cp.name; else break; }
+    return name;
+  };
+  let idx = 0;
+  for (;;) {
+    const at = src.indexOf('@Cron', idx);
+    if (at === -1) break;
+    let p = at + 5;
+    while (p < src.length && /\s/.test(src[p])) p++;
+    if (src[p] !== '(') { idx = at + 5; continue; }
+    const argsText = sliceBalanced(src, p, '(', ')');
+    const afterArgs = p + Math.max(argsText.length, 1);
+    const window = src.slice(afterArgs, afterArgs + 400);
+    const sig = /\basync\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/.exec(window);
+    if (sig) {
+      const paramsOpen = afterArgs + sig.index + sig[0].length - 1;
+      const params = sliceBalanced(src, paramsOpen, '(', ')');
+      const braceStart = params ? scanToBodyBrace(src, paramsOpen + params.length) : null;
+      const body = braceStart !== null ? sliceBalanced(src, braceStart, '{', '}') : '';
+      if (body) CRON_METHODS.push({ file, cls: clsAt(at), method: sig[1], body });
+    }
+    idx = afterArgs;
+  }
+}
+/** Ayni dosyada, isimle bir private/public metodun DENGELI govdesini bulur (tek-seviye delege takibi icin). */
+function methodBodyByName(file: string, name: string): string | null {
+  const src = CLEAN.get(file);
+  if (!src) return null;
+  const re = new RegExp(`\\basync\\s+${name}\\s*\\(`);
+  const m = re.exec(src);
+  if (!m) return null;
+  const paramsOpen = m.index + m[0].length - 1;
+  const params = sliceBalanced(src, paramsOpen, '(', ')');
+  if (!params) return null;
+  const braceStart = scanToBodyBrace(src, paramsOpen + params.length);
+  if (braceStart === null) return null;
+  return sliceBalanced(src, braceStart, '{', '}') || null;
+}
+/**
+ * Bir @Cron metodunun govdesi TEK bir `this.X(...)` cagrisindan ibaretse (orn.
+ * errorLogRetention.handleCron -> runRetentionCleanup), gercek mantik/hata-raporlama
+ * o delege metodun icindedir — onun govdesini de dahil eder (tek seviye, ayni dosya).
+ */
+function effectiveBody(cm: CronMethod): string {
+  const inner = cm.body.slice(1, -1).trim();
+  const delegate = /^(?:await\s+)?(?:return\s+)?this\.([A-Za-z_$][A-Za-z0-9_$]*)\([^)]*\)\s*;?$/.exec(inner);
+  if (!delegate) return cm.body;
+  const delegateBody = methodBodyByName(cm.file, delegate[1]);
+  return delegateBody ? cm.body + '\n' + delegateBody : cm.body;
+}
+const CERTIFIED_REPORT_CALL = /reportCronJobFailure\s*\(|\breportCronError\s*\(|errorReporter\.report\s*\(/;
+
+describe('W3-F04 — cron terminal-failure-visibility guard (govde seviyesi)', () => {
+  it('[11] @Cron metod-govdesi cikarimi sertifikali envanterle tutarlidir (sessiz cikarim kaybi olmaz)', () => {
+    const boundMethodCount = CRON_METHODS.filter((cm) => isBoundCarrier(cm)).length;
+    expect(boundMethodCount).toBe(CERTIFIED_BOUND_CRON_JOB_COUNT);
+    const dormantMethodCount = CRON_METHODS.filter((cm) => !isBoundCarrier(cm)).length;
+    expect(dormantMethodCount).toBe(2);
+  });
+
+  it('[12] BAGLI her @Cron metodu (govdesinde veya tek-seviye delege ettigi metodda) sertifikali bir failure-reporting cagrisi tasir', () => {
+    const violations: string[] = [];
+    for (const cm of CRON_METHODS) {
+      if (!isBoundCarrier(cm)) continue; // dormant (icrabot) — W3-F06 kapsami
+      const eff = effectiveBody(cm);
+      if (!CERTIFIED_REPORT_CALL.test(eff)) {
+        violations.push(`${cm.file}#${cm.cls}.${cm.method}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('[13] reportCronJobFailure kullanan her TUKETICI dosya onu canonical common modulunden import eder', () => {
+    const CANONICAL_FILE = 'common/cron-failure-reporting.ts';
+    const missing: string[] = [];
+    for (const [file, src] of CLEAN) {
+      if (file === CANONICAL_FILE) continue; // tanim dosyasinin kendisi (import gerekmez)
+      if (!/reportCronJobFailure\s*\(/.test(src)) continue;
+      if (!/from\s*['"][^'"]*common\/cron-failure-reporting['"]/.test(src)) missing.push(file);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('[14] DORMANT icrabot @Cron metodlari failure-reporting kontrolunden istisna tutulur (W3-F06 kapsam disi)', () => {
+    const dormant = CRON_METHODS.filter((cm) => !isBoundCarrier(cm));
+    expect(dormant.length).toBe(2);
+    // Bu test hicbir sey ASSERT ETMEZ (mevcut davranislarini degistirmeyiz) — yalniz
+    // [12]'nin bunlari BILINCLI atladigini kayit altina alir.
+  });
+});
