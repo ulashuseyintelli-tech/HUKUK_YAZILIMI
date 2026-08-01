@@ -38,7 +38,7 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
 
   it("TCKN değişti + başka aktif müvekkilde var → 409 DUPLICATE_IDENTITY (mutation yok)", async () => {
     const { svc, prisma } = build({ id: "o1", displayName: "Başka Müvekkil" });
-    await expect(svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "22222222222" })).rejects.toThrow(ConflictException);
+    await expect(svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "22222222222" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' })).rejects.toThrow(ConflictException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -46,7 +46,7 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
     const { svc } = build({ id: "o1", displayName: "Başka Müvekkil" });
     expect.assertions(2);
     try {
-      await svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "22222222222" });
+      await svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "22222222222" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     } catch (e: any) {
       const body = e.getResponse();
       expect(body.code).toBe("DUPLICATE_IDENTITY");
@@ -56,13 +56,13 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
 
   it("VKN değişti + başka aktif müvekkilde var → 409 DUPLICATE_IDENTITY (mutation yok)", async () => {
     const { svc, prisma } = build({ id: "o2", displayName: "Şirket A.Ş." });
-    await expect(svc.update("self", "t1", { type: "COMPANY", vkn: "3333333333" })).rejects.toThrow(ConflictException);
+    await expect(svc.update("self", "t1", { type: "COMPANY", vkn: "3333333333" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' })).rejects.toThrow(ConflictException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("kimlik değişti ama başka eşleşme yok (self hariç) → güncellenir (tx + audit)", async () => {
     const { svc, tx, audit } = build(null);
-    await svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "22222222222" });
+    await svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "22222222222" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalled();
     expect(audit.logInTransaction).toHaveBeenCalledWith(
       tx,
@@ -72,13 +72,13 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
 
   it("kimlik değişmedi (yalnız telefon) → guard tetiklenmez, güncellenir", async () => {
     const { svc, tx } = build({ id: "o1" });
-    await svc.update("self", "t1", { type: "INDIVIDUAL", phone: "05551112233" });
+    await svc.update("self", "t1", { type: "INDIVIDUAL", phone: "05551112233" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalled();
   });
 
   it("isim değişti ama kimlik aynı → MÜVEKKİLDE isim-review YOK → güncellenir", async () => {
     const { svc, tx } = build({ id: "o1" });
-    await svc.update("self", "t1", { type: "INDIVIDUAL", firstName: "Yeni", lastName: "Isim", tckn: "11111111111" });
+    await svc.update("self", "t1", { type: "INDIVIDUAL", firstName: "Yeni", lastName: "Isim", tckn: "11111111111" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalled();
   });
 });

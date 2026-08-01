@@ -10,6 +10,8 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+// OWN-13 I02-R1: CLIENT mutasyon aktör bağlamı tek fabrikadan üretilir (fail-closed).
+import { buildClientMutationActor } from "../client/client.service";
 import { Response } from "express";
 import { ExportImportService } from "./export-import.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -164,9 +166,12 @@ export class ExportImportController {
   // Excel'den müvekkil içe aktar
   @Post("clients/import")
   @UseInterceptors(FileInterceptor("file"))
+  // OWN-13 I02-R1: `role` de taşınır — Excel içe aktarımı CLIENT oluşturur, dolayısıyla
+  // D01 yetkisine tabidir. Değer YALNIZ auth context'inden gelir.
   async importClients(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") actorUserId: string,
+    @CurrentUser("role") actorRole: string,
     @UploadedFile() file: Express.Multer.File
   ) {
     if (!file) {
@@ -177,7 +182,11 @@ export class ExportImportController {
       throw new BadRequestException("Sadece Excel dosyaları (.xlsx, .xls) desteklenir");
     }
 
-    const result = await this.exportImportService.importClientsFromExcel(tenantId, file.buffer, actorUserId);
+    const result = await this.exportImportService.importClientsFromExcel(
+      tenantId,
+      file.buffer,
+      buildClientMutationActor({ userId: actorUserId, tenantId, role: actorRole }),
+    );
 
     return {
       message: `${result.success} müvekkil başarıyla içe aktarıldı`,

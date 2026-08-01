@@ -36,7 +36,10 @@ describe("ClientController - Task 2 lenient validation", () => {
     const [tenantArg, dtoArg, actorArg] = service.create.mock.calls[0];
     expect(tenantArg).toBe("t1");
     expect(dtoArg.firstName).toBe("Ali");
-    expect(actorArg).toEqual({ userId: "u1" });
+    // OWN-13 I02-R1: actor baglami artik tenantId + role de tasir (servis sinirindaki yetki
+    // kapisi bunlari kullanir). Degerler YALNIZ auth context'ten gelir; bu fixture'in req
+    // nesnesinde role YOK → bos string (fail-closed), body'den ASLA turetilmez.
+    expect(actorArg).toEqual({ userId: "u1", tenantId: "t1", role: "" });
   });
 
   it("fazla alan 400 DEGIL -> whitelist dusurur; body.userId asla gecmez", async () => {

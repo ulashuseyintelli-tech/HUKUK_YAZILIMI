@@ -32,7 +32,7 @@ describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
     const audit = buildAudit();
     const svc = new ClientService(prisma, audit as any, {} as any);
 
-    const res = await svc.create("t1", { tckn: "40294995552", firstName: "Ş", lastName: "A", type: "PERSON" });
+    const res = await svc.create("t1", { tckn: "40294995552", firstName: "Ş", lastName: "A", type: "PERSON" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
 
     expect(tx.client.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { isActive: true } });
     expect(audit.logInTransaction).toHaveBeenCalledWith(
@@ -50,7 +50,7 @@ describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
     const prisma = buildPrisma({ id: "c2", isActive: true, displayName: "X" }, tx) as any;
     const svc = new ClientService(prisma, buildAudit() as any, {} as any);
 
-    const res = await svc.create("t1", { tckn: "123", type: "PERSON" });
+    const res = await svc.create("t1", { tckn: "123", type: "PERSON" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.client.create).not.toHaveBeenCalled();

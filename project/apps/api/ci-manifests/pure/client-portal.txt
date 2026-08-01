@@ -86,6 +86,15 @@ src/modules/client/__tests__/client-operating-snapshot.spec.ts
 #     yeni bir alan siniflandirilmadan eklenirse bu manifest testi DUSER.
 src/modules/client/__tests__/client-mutation-authorization-own13.spec.ts
 #
+#   CLIENT-OWN-13-I02-R1 service-boundary actor threading (SAF, DB-siz)
+#     Kapi ARTIK servis sinirinda authority: `case.service` (POST /cases inline muvekkil) ve
+#     `export-import` (POST /export-import/clients/import) yollari da D01'den gecer. Actor
+#     baglami ZORUNLU (compile-time fail-closed) + actor.tenantId == hedef tenant exact
+#     esitligi. Import yolu ayri dosyadadir: birlikte import edilince dairesel bagimlilik
+#     olusup ExportImportService yarim yukleniyor.
+src/modules/client/__tests__/client-service-boundary-actor-threading-r1.spec.ts
+src/modules/export-import/__tests__/client-import-actor-threading-r1.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure canonical serialization + hash (SAF, DB-siz)
 #     Deterministik key/array sirasi, Decimal(15,2) locale-bagimsizligi, domain-separated
 #     sha256, §35.16 sifir-toleransli reconciliation ve tiplenmis hata govdesinde finansal

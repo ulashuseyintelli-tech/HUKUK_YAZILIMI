@@ -27,6 +27,45 @@ export interface AuditActor {
   role?: string | null;
 }
 
+/**
+ * OWN-13 I02-R1 (owner) — CLIENT mutasyonlarının ZORUNLU yetki bağlamı.
+ *
+ * `AuditActor`'dan FARKI: üç alan da **zorunludur** ve `tenantId` bağlamın İÇİNDEDİR. Böylece
+ * "actor yok → izin ver" yolu tip düzeyinde ortadan kalkar: `create()`/`update()` bu parametreyi
+ * opsiyonel almadığı için actor geçirmeyen bir üretim çağrısı **derlenmez** (compile-time
+ * fail-closed). Değerlerin tamamı YALNIZ auth context'ten (`req.user`) gelir; body/DTO'dan
+ * ASLA türetilmez.
+ *
+ * `tenantId` burada ayrıca taşınır ki hedef tenant ile actor tenant'ı arasında **exact eşitlik**
+ * doğrulanabilsin (owner req. 7) — tek bir tenant parametresi bu kontrolü imkânsız kılardı.
+ */
+export interface ClientMutationActorContext {
+  userId: string;
+  tenantId: string;
+  role: string;
+}
+
+/**
+ * OWN-13 I02-R1 — auth context'inin ham (ve tip düzeyinde opsiyonel olabilen) alanlarından
+ * `ClientMutationActorContext` üretir. TEK yerdedir ki her çağıran aynı fail-closed davranışı
+ * alsın.
+ *
+ * Eksik `userId`/`role` burada `''`e indirgenir; `client-mutation-policy` boş/tanınmayan
+ * değeri `NO_ACTOR` / `UNKNOWN_ROLE` ile REDDEDER. Yani eksik alan sessizce "izin" DEĞİL,
+ * garanti bir 403 üretir — `as` cast'i ile tipin susturulması KASITLI OLARAK yapılmaz.
+ */
+export function buildClientMutationActor(raw: {
+  userId?: string | null;
+  tenantId?: string | null;
+  role?: string | null;
+}): ClientMutationActorContext {
+  return {
+    userId: raw?.userId ?? '',
+    tenantId: raw?.tenantId ?? '',
+    role: raw?.role ?? '',
+  };
+}
+
 // ── Operasyonel iletişim eksiği takibi (PR-1, saf yardımcılar) ──
 
 export const CONTACT_TASK_DEDUPE_PREFIX = 'OPCOMP:CONTACT:';
@@ -347,6 +386,8 @@ export class ClientService {
         'veya yetkilendirilmiş avukat olmanız gerekir.',
       [CLIENT_MUTATION_REASON.LIFECYCLE_DENIED]:
         'Müvekkil arşivleme/silme için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir).',
+      [CLIENT_MUTATION_REASON.TENANT_MISMATCH]:
+        'İşlem bağlamı ile hedef büro eşleşmiyor.',
     };
     throw new ForbiddenException({
       code: decision.reasonCode,
@@ -356,14 +397,29 @@ export class ClientService {
   }
 
   /**
+   * OWN-13 I02-R1 (owner req. 7) — hedef tenant ile actor'un tenant'ı EXACT eşit olmalıdır.
+   *
+   * Tenant isolation `where` yan-tümceleriyle zaten uygulanır; bu kontrol ondan ÖNCE gelen
+   * ayrı bir katmandır: yanlış tenant'a ait bir aktörle yapılan çağrı hiç sorgu üretmeden
+   * reddedilir. Ayrıca `tenantId` parametresi ile `actor.tenantId`'nin sessizce ayrışmasını
+   * (çağıranın yanlış tenant'ı iletmesi) imkânsız kılar.
+   */
+  private assertActorTenantMatches(tenantId: string, actor: ClientMutationActorContext): void {
+    if (!tenantId || !actor?.tenantId || actor.tenantId !== tenantId) {
+      this.denyMutation({
+        allowed: false,
+        reasonCode: CLIENT_MUTATION_REASON.TENANT_MISMATCH,
+      });
+    }
+  }
+
+  /**
    * OWN-13 I01 / owner D01 — create yetki kapısı. VIEWER DENY, USER/ADMIN ALLOW; lawyer
    * profili ŞART DEĞİL. Herhangi bir yazma yapılmadan ÖNCE çağrılır (fail-closed).
    *
-   * ÇAĞRI YERİ: `ClientController.create()` → POST /clients (owner I01 scope, madde 1).
-   * `create()`'in İÇİNDEN çağrılmaz: aynı servis metodunu servis-içi güvenilen çağıranlar da
-   * kullanır (`case.service.ts` müvekkil çözümlemesi, `export-import.service.ts` toplu içe
-   * aktarım) ve onların actor threading'i owner tarafından I01 DIŞINDA bırakılmıştır
-   * (I02 residual). Kapı GEVŞETİLMİŞ DEĞİLDİR; I01 kapsamındaki route fail-closed'dır.
+   * OWN-13 I02-R1: bu kapı artık **servis sınırında** (`create()` içinde) authority olarak
+   * çalışır. `ClientController.create()` de çağırmaya devam eder — defense-in-depth; iş
+   * mantığı TEKRARLANMAZ, iki yol da AYNI merkezi policy'yi kullanır.
    */
   assertCanCreateClient(actor?: AuditActor): void {
     const decision = decideClientCreate({ userId: actor?.userId, role: actor?.role });
@@ -1320,13 +1376,19 @@ export class ClientService {
       },
     };
   }
-  // Create client
-  async create(tenantId: string, data: any, actor?: AuditActor) {
-    // OWN-13 I01 (owner D01): yetki kapısı POST /clients route'unda uygulanır
-    // (`ClientController.create()` → `assertCanCreateClient`, yetkisiz aktör hiçbir sorgu/yazma
-    // tetiklemez). Buraya KONMAZ: aynı metot servis-içi güvenilen çağıranlara da hizmet eder
-    // (case.service müvekkil çözümlemesi, export-import toplu içe aktarım) ve onların actor
-    // threading'i owner tarafından I01 DIŞINDA bırakılmıştır — bkz. assertCanCreateClient JSDoc.
+  /**
+   * Create client.
+   *
+   * OWN-13 I02-R1: `actor` artık **ZORUNLU** ve `ClientMutationActorContext` tipinde. "Actor
+   * yok → izin ver" yolu kalmadı; bu parametreyi geçirmeyen bir çağrı DERLENMEZ. Yetki kapısı
+   * SERVİS SINIRINDA authority'dir — `ClientController.create()` de çağırır (defense-in-depth),
+   * ama artık tek geçit orası değildir: `case.service` (POST /cases inline müvekkil) ve
+   * `export-import` (POST /export-import/clients/import) yolları da bu kapıdan geçer.
+   */
+  async create(tenantId: string, data: any, actor: ClientMutationActorContext) {
+    // OWN-13 I02-R1: hiçbir sorgu/yazma yapılmadan ÖNCE — tenant eşitliği, sonra D01 kapısı.
+    this.assertActorTenantMatches(tenantId, actor);
+    this.assertCanCreateClient(actor);
     // Mevcut checksum, duplicate ve audit kapıları DEĞİŞMEDİ.
     // TCKN veya VKN ile duplicate kontrolü
     const identityNo = data.tckn || data.vkn;
@@ -1513,12 +1575,19 @@ export class ClientService {
     return this.findOne(client.id, tenantId, { includeInactive: true });
   }
 
-  // Müvekkil güncelle
-  async update(id: string, tenantId: string, data: any, actor?: AuditActor) {
-    // OWN-13 I01 (owner D02): coarse + hassas-alan yetki kapısı PUT /clients/:id route'unda
-    // uygulanır (`ClientController.update()` → `assertCanUpdateClient`), create ile AYNI
-    // gerekçeyle. Lifecycle kapısı (assertCanManageLifecycle) AŞAĞIDA, kendi yerinde AYNEN
-    // korunur; OWN-13 onu ne gevşetir ne değiştirir.
+  /**
+   * Müvekkil güncelle.
+   *
+   * OWN-13 I02-R1: `actor` ZORUNLU (`ClientMutationActorContext`). Kapı SERVİS SINIRINDA
+   * authority'dir; `ClientController.update()` de çağırır (defense-in-depth, aynı merkezi
+   * policy — iş mantığı tekrarlanmaz). Şu an `update()`'in tek üretim çağıranı bu route'tur.
+   */
+  async update(id: string, tenantId: string, data: any, actor: ClientMutationActorContext) {
+    // OWN-13 I02-R1: hiçbir okuma/yazma yapılmadan ÖNCE — tenant eşitliği, sonra D02 kapısı.
+    this.assertActorTenantMatches(tenantId, actor);
+    await this.assertCanUpdateClient(tenantId, data, actor);
+    // Lifecycle kapısı (assertCanManageLifecycle) AŞAĞIDA, kendi yerinde AYNEN korunur;
+    // OWN-13 onu ne gevşetir ne değiştirir.
     // C0-a (acceptance #2): contacts diff için old snapshot CONTACTS ile alınır.
     const existing = await this.prisma.client.findFirst({
       where: { id, tenantId },

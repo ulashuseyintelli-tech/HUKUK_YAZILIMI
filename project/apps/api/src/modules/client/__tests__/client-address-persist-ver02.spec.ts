@@ -63,8 +63,7 @@ describe("ClientService.create — VER-02 ClientAddress persist", () => {
           { street: "Cad 1", city: "İstanbul", isPrimary: true },
           { street: "Cad 2", city: "Ankara", isPrimary: false },
         ],
-      },
-      { userId: "u1" },
+      }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     expect(tx.clientAddress.createMany).toHaveBeenCalledTimes(1);
     const data = tx.clientAddress.createMany.mock.calls[0][0].data;
@@ -83,8 +82,7 @@ describe("ClientService.create — VER-02 ClientAddress persist", () => {
         lastName: "B",
         tckn: "11111111110",
         addresses: [{ street: "Tek Cad", city: "İzmir", isPrimary: true }],
-      },
-      { userId: "u1" },
+      }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const data = tx.clientAddress.createMany.mock.calls[0][0].data;
     expect(data).toHaveLength(1);
@@ -93,7 +91,7 @@ describe("ClientService.create — VER-02 ClientAddress persist", () => {
 
   it("[3] adres yok (undefined) → tx.clientAddress.createMany HİÇ çağrılmaz", async () => {
     const { svc, tx } = buildCreateHarness();
-    await svc.create("t1", { type: "PERSON", firstName: "A", lastName: "B", tckn: "11111111110" }, { userId: "u1" });
+    await svc.create("t1", { type: "PERSON", firstName: "A", lastName: "B", tckn: "11111111110" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(tx.clientAddress.createMany).not.toHaveBeenCalled();
   });
 
@@ -107,8 +105,7 @@ describe("ClientService.create — VER-02 ClientAddress persist", () => {
         lastName: "B",
         tckn: "11111111110",
         addresses: [{ street: "   ", city: "  ", isPrimary: true }],
-      },
-      { userId: "u1" },
+      }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     expect(tx.clientAddress.createMany).not.toHaveBeenCalled();
   });
@@ -123,8 +120,7 @@ describe("ClientService.create — VER-02 ClientAddress persist", () => {
         lastName: "B",
         tckn: "11111111110",
         addresses: [{ street: "Cad 1", city: "İstanbul", isPrimary: true }],
-      },
-      { userId: "u1" },
+      }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const clientData = tx.client.create.mock.calls[0][0].data;
     expect(clientData.address).toBe("Cad 1, İstanbul");
@@ -138,8 +134,7 @@ describe("ClientService.update — VER-02 ClientAddress persist (Workspace korum
     await svc.update(
       "c1",
       "t1",
-      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Yeni Cad", city: "Bursa", isPrimary: true }] },
-      { userId: "u1" },
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Yeni Cad", city: "Bursa", isPrimary: true }] }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     expect(tx.clientAddress.count).toHaveBeenCalledWith({ where: { clientId: "c1" } });
     expect(tx.clientAddress.createMany).toHaveBeenCalledTimes(1);
@@ -152,8 +147,7 @@ describe("ClientService.update — VER-02 ClientAddress persist (Workspace korum
     await svc.update(
       "c1",
       "t1",
-      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Legacy Form Cad", city: "X", isPrimary: true }] },
-      { userId: "u1" },
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Legacy Form Cad", city: "X", isPrimary: true }] }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     expect(tx.clientAddress.count).toHaveBeenCalledWith({ where: { clientId: "c1" } });
     expect(tx.clientAddress.createMany).not.toHaveBeenCalled();
@@ -161,7 +155,7 @@ describe("ClientService.update — VER-02 ClientAddress persist (Workspace korum
 
   it("[8] data.addresses hiç gönderilmemiş → tx.clientAddress.count bile çağrılmaz (gereksiz DB hit yok)", async () => {
     const { svc, tx } = buildHarness({ addressCount: 0 });
-    await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1" });
+    await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(tx.clientAddress.count).not.toHaveBeenCalled();
     expect(tx.clientAddress.createMany).not.toHaveBeenCalled();
   });
@@ -171,8 +165,7 @@ describe("ClientService.update — VER-02 ClientAddress persist (Workspace korum
     await svc.update(
       "c1",
       "t1",
-      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Cad X", city: "Adana", isPrimary: true }] },
-      { userId: "u1" },
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Cad X", city: "Adana", isPrimary: true }] }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const clientData = tx.client.updateMany.mock.calls[0][0].data;
     expect(clientData.address).toBe("Cad X, Adana");
@@ -192,8 +185,7 @@ describe("ClientService.update — VER-02 _addressesSkipped sinyali", () => {
     const res: any = await svc.update(
       "c1",
       "t1",
-      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Legacy Cad", city: "X", isPrimary: true }] },
-      { userId: "u1" },
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Legacy Cad", city: "X", isPrimary: true }] }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     expect(res._addressesSkipped).toBe(true);
   });
@@ -203,15 +195,14 @@ describe("ClientService.update — VER-02 _addressesSkipped sinyali", () => {
     const res: any = await svc.update(
       "c1",
       "t1",
-      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Yeni Cad", city: "Bursa", isPrimary: true }] },
-      { userId: "u1" },
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Yeni Cad", city: "Bursa", isPrimary: true }] }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     expect(res._addressesSkipped).toBeUndefined();
   });
 
   it("[12] adres HİÇ gönderilmedi (yapısal satır olsa bile) → _addressesSkipped YOK (yanlış alarm yok)", async () => {
     const { svc } = buildHarness({ addressCount: 3 });
-    const res: any = await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1" });
+    const res: any = await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(res._addressesSkipped).toBeUndefined();
   });
 
@@ -220,8 +211,7 @@ describe("ClientService.update — VER-02 _addressesSkipped sinyali", () => {
     const res: any = await svc.update(
       "c1",
       "t1",
-      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "  ", city: "  ", isPrimary: true }] },
-      { userId: "u1" },
+      { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "  ", city: "  ", isPrimary: true }] }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     expect(res._addressesSkipped).toBeUndefined();
   });

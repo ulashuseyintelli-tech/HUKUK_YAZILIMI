@@ -38,7 +38,7 @@ describe('RFA-017 importClientsFromExcel — guard delegasyonu', () => {
       ['PERSON', 'Ahmet', 'Yılmaz', '11111111111', 'E', undefined, 'EVET', 'Alman', undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, '34000'],
     ]);
 
-    const result = await svc.importClientsFromExcel('tenant-1', buf);
+    const result = await svc.importClientsFromExcel('tenant-1', buf, { userId: 'fixture-actor', tenantId: 'tenant-1', role: 'ADMIN' });
 
     expect(result.success).toBe(1);
     expect(prisma.client.create).not.toHaveBeenCalled(); // bypass kapandı
@@ -61,7 +61,7 @@ describe('RFA-017 importClientsFromExcel — guard delegasyonu', () => {
       ['COMPANY', undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'ACME A.Ş.', '1234567890', 'Büyük VD', 'Anonim', 'MERSIS-1', 'TS-1', undefined, undefined, undefined, undefined, undefined, undefined, undefined],
     ]);
 
-    const result = await svc.importClientsFromExcel('tenant-1', buf);
+    const result = await svc.importClientsFromExcel('tenant-1', buf, { userId: 'fixture-actor', tenantId: 'tenant-1', role: 'ADMIN' });
 
     expect(result.success).toBe(1);
     const dataArg = clientService.create.mock.calls[0][1];
@@ -78,7 +78,7 @@ describe('RFA-017 importClientsFromExcel — guard delegasyonu', () => {
 
     const buf = await buildExcelBuffer([['PERSON', undefined, undefined, '22222222222']]);
 
-    const result = await svc.importClientsFromExcel('tenant-1', buf);
+    const result = await svc.importClientsFromExcel('tenant-1', buf, { userId: 'fixture-actor', tenantId: 'tenant-1', role: 'ADMIN' });
 
     expect(result.success).toBe(0);
     expect(result.errors.length).toBe(1);
@@ -86,19 +86,30 @@ describe('RFA-017 importClientsFromExcel — guard delegasyonu', () => {
   });
 
   // P0.6 — import actor attribution: AuditLog.userId null kalmasın diye actor create'e threadlenir.
-  it('P0.6: actorUserId verilince clientService.create 3. argümanda {userId} ile çağrılır', async () => {
+  // OWN-13 I02-R1: aktarılan bağlam ARTIK yalnız `{userId}` değil, TAM yetki bağlamıdır
+  // (userId + tenantId + role) — yetki kapısı servis sınırında bu bağlamı kullanır.
+  it('P0.6: actor verilince clientService.create 3. argümanda TAM bağlamla çağrılır', async () => {
     const clientService = { create: jest.fn(async () => ({ id: 'c1' })) } as any;
     const svc = new ExportImportService({} as any, clientService);
     const buf = await buildExcelBuffer([['PERSON', 'Ahmet', 'Yılmaz', '11111111111']]);
-    await svc.importClientsFromExcel('tenant-1', buf, 'user-42');
-    expect(clientService.create.mock.calls[0][2]).toEqual({ userId: 'user-42' });
+    await svc.importClientsFromExcel('tenant-1', buf, { userId: 'user-42', tenantId: 'tenant-1', role: 'ADMIN' });
+    expect(clientService.create.mock.calls[0][2]).toEqual({
+      userId: 'user-42',
+      tenantId: 'tenant-1',
+      role: 'ADMIN',
+    });
   });
 
-  it('P0.6: actorUserId yoksa create 3. argüman undefined (regresyon yok)', async () => {
+  // OWN-13 I02-R1: ESKİ davranış ("actorUserId yoksa 3. argüman undefined") KASITLI OLARAK
+  // KALDIRILDI — tam olarak o yol, yetki kapısını atlayan bypass'tı. Yeni sözleşme: verilen
+  // bağlam VERBATIM iletilir; `undefined`e düşürülmez, sessizce zenginleştirilmez.
+  it('R1: eksik bağlam undefined-e DÜŞÜRÜLMEZ, verbatim iletilir (bypass yolu kapalı)', async () => {
     const clientService = { create: jest.fn(async () => ({ id: 'c1' })) } as any;
     const svc = new ExportImportService({} as any, clientService);
     const buf = await buildExcelBuffer([['PERSON', 'Ahmet', 'Yılmaz', '11111111111']]);
-    await svc.importClientsFromExcel('tenant-1', buf);
-    expect(clientService.create.mock.calls[0][2]).toBeUndefined();
+    await svc.importClientsFromExcel('tenant-1', buf, { userId: '', tenantId: 'tenant-1', role: '' });
+    const forwarded = clientService.create.mock.calls[0][2];
+    expect(forwarded).not.toBeUndefined();
+    expect(forwarded).toEqual({ userId: '', tenantId: 'tenant-1', role: '' });
   });
 });
