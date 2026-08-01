@@ -119,3 +119,59 @@ reopen/rebase/force-push/merge edilmez. Head
 `1b46b54c579228f79530a18ab15e7cef34527f3c` yalnız read-only bounded
 reconstruction kanıtıdır; stale caller-supplied `wrapperResolution` trust
 boundary'si taşınmaz.
+
+## Terminal delivery receipt — canonical closeout
+
+Bu bölüm yeni semantic authority veya ikinci grant kullanımı üretmez. Yukarıdaki
+tek kullanımlık grant ile tamamlanan exact task'in terminal delivery kanıtını
+append-only kaydeder; önceki `OPEN / PENDING` pre-implementation receipt kendi
+tarihsel bağlamında korunur.
+
+```text
+TASK STATUS            : CLOSED
+CHANGE STATUS          : MERGED
+DELIVERY STATUS        : PASS
+SEMANTIC AUTHORITY     : CANONICAL
+EXECUTION GRANT        : CONSUMED / CLOSED
+IMPLEMENTATION PR      : #2048
+IMPLEMENTATION SHA     : 7082d49a5f78deebc4983726683506abeb0a2ab2
+M01 QUALIFICATION      : REQUIRED / VERIFIED
+LEGAL-BASIS OWNER      : RECEIVABLE ONLY
+STRUCTURED EMISSION    : CANONICAL TECHNICAL IMPLEMENTATION
+FALLBACK               : NONE
+FAIZ                   : REJECTED IN THIS SLICE
+DEFAULT-OFF            : PROVEN
+PRODUCTION CALL-SITE   : NONE
+PRODUCTION REACHABILITY: 0
+STRICT DTD             : NOT CLAIMED
+REQUIRED CI            : PASS
+```
+
+Delivery evidence:
+
+- Canonical M01 consumer sonucu yeniden yorumlanmadan exact tenant/case/claim/
+  snapshot ve release/version/checksum bağıyla tüketilir; Legal Basis semantic
+  authority RECEIVABLE'da kalır.
+- Wrapper presentation mapping'i yalnız server-side W-01…W-05 kanıtlarından
+  `cek`, `senet`, `police` veya `ilam` üretir. Caller-supplied Legal Basis,
+  wrapper authority, UYAP alanı inference'ı ve fallback kabul edilmez.
+- Unresolved/ambiguous tek kalem bütün emission'ı fail-closed durdurur; faiz bu
+  dilimde reddedilir ve partial XML/byte çıktısı oluşmaz.
+- Targeted structured-emission validation `3 suite / 80 test PASS`; post-merge
+  full UYAP manifest `79/79 suite / 1357/1357 test PASS`; production TypeScript
+  ve Nest build `PASS`.
+- Implementation PR #2048'de required CI ve gözlenen orchestration/CodeQL
+  kontrollerinin tamamı `PASS`; exact implementation scope yedi dosyadır.
+- Runtime default-OFF'tur; production call-site yoktur, production reachability
+  sıfırdır ve strict DTD uyumu iddia edilmez.
+- Schema, migration, live DB, historical mutation, production activation ve
+  M01 implementation değişikliği yoktur.
+
+PR #2010 (`claude/uyap-alacakkalemi-structured-emission-i01`) closed-unmerged
+ve preserved kalır; branch/worktree/içeriğine dokunulmamıştır.
+
+```text
+SECOND USE: FAIL-CLOSED
+OWNER WIP         : UNTOUCHED
+WAITING FOR OWNER : NO FOR THIS TASK — TASK COMPLETE
+```
