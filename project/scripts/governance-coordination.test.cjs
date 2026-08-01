@@ -8079,6 +8079,38 @@ test('OFFICE F01 Stage 2 exact tuple is eligible but never dispatchable', () => 
   });
 });
 
+test('OFFICE F01 Stage 2 validator reconciliation has an exact task-bound repair tuple', () => {
+  const repair = coordination.OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  const classified = coordination.classifyPrChangeSet(repair.changedPaths, {
+    base: repair.baseSha,
+    headRef: repair.headRef,
+  });
+  assert.deepEqual(classified, { mode: repair.mode, taskId: repair.taskId });
+  assert.equal(
+    coordination.sha256(repair.ownerRatificationEvidence.exactExcerpt),
+    repair.ownerRatificationEvidence.excerptSha256,
+  );
+});
+
+test('OFFICE F01 Stage 2 validator reconciliation rejects wrong base, branch and fifth path', () => {
+  const repair = coordination.OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  const exact = repair.changedPaths;
+  for (const candidate of [
+    { base: '0'.repeat(40), headRef: repair.headRef, changes: exact },
+    { base: repair.baseSha, headRef: `${repair.headRef}-copy`, changes: exact },
+    {
+      base: repair.baseSha,
+      headRef: repair.headRef,
+      changes: [...exact, { status: 'M', path: 'project/docs/governance/decision-log.md' }],
+    },
+  ]) {
+    assert.throws(
+      () => coordination.classifyPrChangeSet(candidate.changes, candidate),
+      (error) => error.code === 'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
 test('OFFICE F01 Stage 2 exact M/A/A/A status tuple passes', () => {
   const binding =
     coordination.OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;

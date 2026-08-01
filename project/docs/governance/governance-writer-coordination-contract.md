@@ -1745,3 +1745,56 @@ activation, runtime certification, production certification, then non-blocking
 governance cleanup. This order never overrides a program lock, legal dependency,
 migration prohibition or single-writer fence. `MERGED` is not runtime completion:
 post-merge acceptance, delivery evidence and the existing closeout gates remain binding.
+
+## OFFICE F01 Stage 2 validator reconciliation — exact task-bound repair
+
+This bounded control-plane repair removes the unconditional Stage 2 validator
+rejection. It does not create a new business, legal, authorization, schema,
+migration or production policy. The Stage 2 materialization tuple remains
+separate from Stage 1 and is accepted only with the exact task-bound evidence
+and four-path scope below.
+
+```text
+Repair task ID : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-STAGE2-VALIDATOR-RECONCILIATION-R01
+Repair mode    : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_STAGE2_VALIDATOR_RECONCILIATION_R01
+Repair base    : 8f2426d6df5cd9e92d1511ad2588a8d0ffb7edd1
+Repair head    : codex/office-f01-stage2-validator-reconciliation-r01
+Repair scope   : M project/scripts/governance-coordination.cjs
+                 M project/scripts/governance-coordination.test.cjs
+                 M project/docs/governance/governance-writer-coordination-contract.md
+Stage 1 merge  : de310fb16aa9681c15770e74e681ed24e64e553e
+Owner          : Av. Ulaş Hüseyin Telli
+Owner role     : Repository Owner / Semantic Authority
+Owner decisions: 8/8 RATIFIED
+Target task    : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01
+Target mode    : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01
+Owner evidence SHA-256 : 7b2ffeb93ae6b91a88eee84991852bf19b3682ebc587f9152442e04388de4302
+```
+
+Owner evidence excerpt (byte-exact UTF-8/LF, including the final LF):
+
+```text
+Av. Ulaş Hüseyin Telli olarak,
+OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-
+AUTHORITY-MATERIALIZATION-R01 görevinin;
+
+yalnız exact M/A/A/A dört-path Stage 2 tuple’ı üzerinde,
+ayrı task-bound ve non-reusable GO-COMPLETE — STAGE 2 ONLY
+execution authority ile yürütülmesini;
+
+Stage 1 grant’inin yeniden kullanılmamasını;
+OFFICE implementation, schema/migration ve production activation
+yapılmamasını;
+
+required CI PASS ve mergeability hâlinde squash-merge, canonical
+doğrulama ve güvenli cleanup’a kadar tamamlanmasını onaylıyorum.
+```
+
+The repair requires the exact program, task and branch; the owner-pinned repair
+base or a verified descendant of that base on fresh canonical main; Stage 1 merge
+ancestry; unchanged protected Stage 1 binding literals; exact M/A/A/A target
+tuple; exact SA01/EG01 identifiers and distinct locators; owner identity and
+8/8 evidence; first materialization on a base without prior F01 SA/EG records;
+single-use Stage 2 authority; and no product, schema or migration expansion.
+Generic governance diffs, wrong status/path/task/owner/evidence, duplicate
+records and second materialization remain fail-closed.
