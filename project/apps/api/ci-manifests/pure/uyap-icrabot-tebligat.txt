@@ -233,6 +233,10 @@ src/modules/uyap/official/__tests__/official-structural-semantic-p02b-r2.spec.ts
 src/modules/uyap/official/__tests__/official-legal-semantic-mapping-authority.spec.ts
 src/modules/uyap/official/__tests__/official-legal-semantic-mapping-implementation.spec.ts
 src/modules/uyap/official/__tests__/official-nafaka-legal-basis-discriminator.spec.ts
+# UYAP-FINAL-CI-ELIGIBILITY-I01: resmî hattın bütün predecessor spec'lerini aynı
+# blocking manifest'te exact-once tutar; default-OFF, production-unreachable,
+# resolver-capability ve strict-DTD-NOT-CLAIMED sınırlarını terminal guard ile kilitler.
+src/modules/uyap/official/__tests__/official-pipeline-final-ci-qualification.spec.ts
 # NOT: uyap-event-ingest.boundary.integration.spec.ts BURADA DEGIL.
 # DATABASE_URL yoksa describe.skip ile kendini atliyor, yani pure manifest'te
 # her zaman skip olurdu. Yeri db/core-lifecycle.txt (TEST_DATABASE_URL orada set).
