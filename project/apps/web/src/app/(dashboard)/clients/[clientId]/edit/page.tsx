@@ -24,6 +24,7 @@ import {
   type ClientFormValues,
 } from '@/lib/client-write';
 import { clientPrimaryEmail, clientPrimaryPhone } from '@/lib/client-display';
+import { useClientMutationCapabilities } from '@/lib/client-mutation-capabilities';
 
 export default function EditClientPage() {
   const router = useRouter();
@@ -35,6 +36,8 @@ export default function EditClientPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // OWN-13 I01: backend-derived yetki sinyali; API enforcement authority olarak KALIR.
+  const capabilities = useClientMutationCapabilities();
 
   useEffect(() => {
     let active = true;
@@ -110,6 +113,7 @@ export default function EditClientPage() {
           // açar; eskiden Workspace varsayılan sekmesine (Genel) düşüyordu ve kullanıcı
           // adres bölümüne elle geçmek zorundaydı.
           addressManagerHref={`/clients/${clientId}?tab=identity`}
+          capabilities={capabilities}
           saving={saving}
           submitError={submitError}
           onSubmit={handleSubmit}

@@ -12,6 +12,12 @@ function build() {
     create: jest.fn(async (_t: string, d: any) => ({ id: "c1", ...d })),
     update: jest.fn(async (_id: string, _t: string, d: any) => ({ id: "c1", ...d })),
     findOne: jest.fn(async () => ({ id: "c1" })),
+    // OWN-13 I01: controller artik POST /clients + PUT /clients/:id icin merkezi mutation
+    // policy kapisini cagirir. Bu suite YETKI degil GOVDE DOGRULAMASI test eder; kapi burada
+    // izin-veren sahte olarak baglanir. Yetki davranisinin kaniti:
+    // client-mutation-authorization-own13.spec.ts (17 senaryo + 8 mutation teeth).
+    assertCanCreateClient: jest.fn(),
+    assertCanUpdateClient: jest.fn(async () => undefined),
   } as any;
   const intakeLinkService = {
     createForClientWorkspace: jest.fn(async () => ({ link: { id: "lnk-1" }, rawToken: "raw-token", intakeUrl: "https://form.example.com/intake/raw-token" })),

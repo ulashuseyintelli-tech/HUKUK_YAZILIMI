@@ -15,11 +15,14 @@ import { ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ClientForm } from '@/components/client/client-form';
 import { buildCreateClientPayload, type ClientFormValues } from '@/lib/client-write';
+import { useClientMutationCapabilities } from '@/lib/client-mutation-capabilities';
 
 export default function NewClientPage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // OWN-13 I01: backend-derived yetki sinyali; API enforcement authority olarak KALIR.
+  const capabilities = useClientMutationCapabilities();
 
   const handleSubmit = async (values: ClientFormValues) => {
     setSaving(true);
@@ -49,6 +52,7 @@ export default function NewClientPage() {
       <h1 className="text-xl font-bold">Yeni Müvekkil</h1>
       <ClientForm
         mode="create"
+        capabilities={capabilities}
         saving={saving}
         submitError={error}
         onSubmit={handleSubmit}
