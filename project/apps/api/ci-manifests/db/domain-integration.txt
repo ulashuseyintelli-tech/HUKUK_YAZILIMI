@@ -168,6 +168,16 @@ src/modules/asset-query/__tests__/asset-query-idempotency.db-gated.integration.s
 #     gercek Postgres uzerinde dogrulanir.
 src/modules/debtor/__tests__/third-party-external-case-update.db-gated.integration.spec.ts
 #
+#   DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I01 (OWNER D2 POLICY DECISION —
+#   RATIFIED, CONTRACT+SCHEMA): additive statusSource/statusChangedAt/statusChangedBy/
+#   statusOccurredAt/externalReference/closureReason alanlari + ExternalCaseStatusSource/
+#   ExternalCaseClosureReason enum'larinin gercek Postgres uzerinde nullable/additive/
+#   backward-compatible oldugunun, mevcut attachmentStatus default'inin ve logical-
+#   identity composite unique constraint'inin (Phase A) migration sonrasi hala aktif
+#   oldugunun dogrulanmasi. Yalniz SCHEMA kapsamindadir — transition policy/CAS/audit/
+#   authority D2-I02'nin konusudur.
+src/modules/debtor/__tests__/third-party-external-case-status-integrity-schema.db-gated.integration.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure writer service (gercek PostgreSQL)
 #     Tenant/case-client/source-scope fail-closed enforcement, atomik aggregate+version+line
 #     yazimi, idempotency replay/conflict, hash re-verification MATCH/MISMATCH, immutability
