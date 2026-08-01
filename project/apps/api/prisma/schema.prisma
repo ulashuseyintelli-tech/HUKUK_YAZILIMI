@@ -1755,6 +1755,21 @@ model ExternalCase {
   receivedAmount Decimal   @default(0) @db.Decimal(15, 2)
   lastReceivedAt DateTime?
 
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2 (OWNER D2 POLICY DECISION —
+  // RATIFIED): attachmentStatus geçişlerinin provenance/evidence/audit izi. Tümü
+  // additive + nullable — mevcut (bugün itibarıyla 0 adet, ama production'da
+  // 0 olduğu VARSAYILAMAZ) satırlar için sahte backfill değeri ÜRETİLMEZ; null
+  // üçlü (statusSource/statusChangedBy/statusChangedAt) LEGACY_UNCLASSIFIED
+  // anlamına gelir. confirmedBy YOK — HACIZ_KONDU için iki aşamalı lawyer-
+  // confirmation modeli owner tarafından reddedildi (staff kanıtla doğrudan
+  // kaydeder).
+  statusSource      ExternalCaseStatusSource? // MANUAL / SYSTEM_DERIVED / UYAP_RESULT — null: LEGACY_UNCLASSIFIED
+  statusChangedAt   DateTime? // bu durum değişikliğinin SİSTEME kaydedildiği an
+  statusChangedBy   String? // authenticated actor id (asla client-supplied statusChangedBy'dan değil)
+  statusOccurredAt  DateTime? // dış dünyada GERÇEKTEN gerçekleştiği an (occurredAt) — statusChangedAt'ten ayrık
+  externalReference String? // kanıt/belge/tutanak referansı (HACIZ_KONDU/CEVAP_BEKLENIYOR/manuel-KAPANDI için gerekli)
+  closureReason     ExternalCaseClosureReason? // yalnız KAPANDI için anlamlı; FULLY_COLLECTED yalnız SYSTEM_DERIVED writer, diğerleri yalnız manuel lawyer close
+
   // Notlar
   notes        String?
   priorityNote String? // Sıra, rüçhan notları
@@ -1774,6 +1789,29 @@ enum ExternalCaseStatus {
   CEVAP_BEKLENIYOR // Cevap bekleniyor
   TAHSIL_BASLADI // Tahsilat başladı
   KAPANDI // Kapandı
+}
+
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2: bir attachmentStatus geçişinin
+// kaynağı. UYAP_RESULT bugün gerçek bir adapter'a bağlı DEĞİLDİR (enum/contract
+// içinde future-ready tutulur) — yalnız internal trusted writer'a açıktır, public
+// client tarafından asla seçilemez.
+enum ExternalCaseStatusSource {
+  MANUAL // staff/lawyer tarafından elle, kanıtla kaydedilmiş
+  SYSTEM_DERIVED // canonical Collection kayıtlarından türetilmiş (TAHSIL_BASLADI, tam-tahsilat KAPANDI)
+  UYAP_RESULT // gelecekte gerçek UYAP adapter sonucu — bugün aktif değil
+}
+
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2: yalnız KAPANDI durumu için
+// anlamlıdır. FULLY_COLLECTED yalnız SYSTEM_DERIVED writer tarafından üretilir;
+// diğer dördü yalnız manuel lawyer close command'ı ile. WITHDRAWN/HACIZ_KALDIRILDI/
+// FERAGAT/IBRA gibi ayrı hukuki işlemler kasıtlı olarak buraya eklenmedi (D2 kapsamı
+// dışı — owner kararı).
+enum ExternalCaseClosureReason {
+  FULLY_COLLECTED // yalnız SYSTEM_DERIVED writer
+  NEGATIVE_RESPONSE // yalnız manuel lawyer close
+  DUPLICATE_RECORD // yalnız manuel lawyer close
+  SUPERSEDED // yalnız manuel lawyer close
+  OTHER // yalnız manuel lawyer close; açıklayıcı reason zorunlu
 }
 
 // ==================== BORÇLU İLETİŞİM ====================
@@ -8701,7 +8739,7 @@ model CpeDecisionLog {
 
 // CPE Execution Record - Aksiyon yürütme kaydı (idempotency için)
 model CpeExecutionRecord {
-  id String @id @default(cuid())
+  id          String @id @default(cuid())
   /// Idempotency key — ISTEMCI GOVDESINDEN gelir (`ActionExecutedDto.executionId`).
   ///
   /// UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: bu alan onceden GLOBAL `@unique` idi. Istemci
