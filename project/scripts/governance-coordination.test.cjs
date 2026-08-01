@@ -723,6 +723,18 @@ function uyapStructuredEmissionTargetChanges() {
   );
 }
 
+function uyapSerializerBypassHardeningBindingChanges() {
+  return coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function uyapSerializerBypassHardeningTargetChanges() {
+  return coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function uyapStructuredEmissionCloseoutBindingChanges() {
   return coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01.closeoutBindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -4473,6 +4485,129 @@ test('UYAP structured-emission target rejects a grant bound to another semantic 
     binding,
     semanticBindingRecordId:
       'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-WRONG-SA01',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('UYAP serializer-bypass hardening binding requires exact base branch scope and owner evidence', () => {
+  const binding =
+    coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01;
+  assert.equal(
+    coordination.sha256(binding.ownerRatificationEvidence.exactExcerpt),
+    binding.ownerRatificationEvidence.excerptSha256,
+  );
+
+  const classification = coordination.classifyPrChangeSet(
+    uyapSerializerBypassHardeningBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result =
+    coordination.validateUyapSerializerBypassHardeningAuthorityBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      changes: uyapSerializerBypassHardeningBindingChanges(),
+      taskId: binding.taskId,
+      cwd: fixture.root,
+    });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('UYAP serializer-bypass hardening binding rejects wrong base and expanded scope', () => {
+  const binding =
+    coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01;
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        uyapSerializerBypassHardeningBindingChanges(),
+        {
+          base: '0'.repeat(40),
+          headRef: binding.bindingPr.headRef,
+        },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+
+  const expanded = uyapSerializerBypassHardeningBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP serializer-bypass hardening target accepts only exact branch and M/A authority tuple', () => {
+  const binding =
+    coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(
+    uyapSerializerBypassHardeningTargetChanges(),
+    {
+      base: binding.targetPr.originalBaseSha,
+      headRef: binding.targetPr.headRef,
+    },
+  );
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  const expanded = uyapSerializerBypassHardeningTargetChanges();
+  expanded.push({ status: 'M', path: coordination.REGISTER_REPO_PATH });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP serializer-bypass hardening target validates exact owner evidence and semantic binding', (t) => {
+  const binding =
+    coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    binding,
+    freshMain: true,
+  });
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: binding.targetPr.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+});
+
+test('UYAP serializer-bypass hardening target rejects another semantic authority', (t) => {
+  const binding =
+    coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    binding,
+    semanticBindingRecordId:
+      'UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-WRONG-SA01',
   });
   expectCode(
     () =>

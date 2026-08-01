@@ -1611,6 +1611,102 @@ Runtime default-OFF ve production-unreachable kalır. Validator exact
 branch/base/path tuple'ını, distinct SA/EG kimliklerini, exact owner evidence'ını
 ve tek kullanımlı grant sınırını doğrular; generic control-plane gevşetmesi yapmaz.
 
+## UYAP official serializer bypass hardening — exact authority publication binding
+
+Bu kayıt yalnız `UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01` görevinin
+canonical `OfficialCodeResolution` provenance/capability enforcement'ı için
+distinct Semantic Authority ve Execution Grant yayımlanmasını tanır. `takipTuru`
+ve `mahiyetKodu` için yalnız canonical resolver tarafından üretilmiş, runtime'da
+doğrulanabilir resolution capability'si serializer kapısından geçebilir;
+caller-constructed veya kopyalanmış yapısal `RESOLVED` nesneleri XML ve byte
+üretiminden önce fail-closed reddedilir.
+
+Bu binding yeni UYAP kod eşlemesi, Legal Basis semantiği, schema/migration,
+production call-site, runtime activation, transport veya strict-DTD uygunluk
+iddiası üretmez. Structured-emission ve dormant serializer davranışı default-OFF
+ve production-unreachable kalır.
+
+```text
+Program   : UYAP-MODULE-FULL-GAP-CLOSURE-R02
+Known good floor : 2694d1e4bbc4173ee8dc328d97edb853d0d32b78
+Binding task : UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-AUTHORITY-CONTROL-PLANE-BINDING-R01
+Binding mode : UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_AUTHORITY_CONTROL_PLANE_BINDING_R01
+Base SHA     : ee0ebe1fbd825b007de71c5f4a9deed6cc4d9a6e
+Head ref     : codex/uyap-official-serializer-bypass-hardening-i01-control-plane-binding-r01
+Binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Materialization task : UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-AUTHORITY-MATERIALIZATION-R01
+Materialization mode : UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_AUTHORITY_MATERIALIZATION_R01
+Original captured base : ee0ebe1fbd825b007de71c5f4a9deed6cc4d9a6e
+Head ref : codex/uyap-official-serializer-bypass-hardening-i01-authority-materialization-r01
+Materialization scope:
+  M project/docs/governance/decision-log.md
+  A project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01.md
+
+Semantic authority record : UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01
+Execution grant record     : UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01
+Grant scope                : UYAP SERIALIZER-BYPASS-HARDENING-I01 ONLY
+Second use                 : SECOND USE: FAIL-CLOSED
+Production activation      : PROHIBITED
+Cross-task reuse           : PROHIBITED
+```
+
+Owner ratification evidence is byte-exact and SHA-256 bound:
+
+```text
+OWNER TASK-BOUND AUTHORITY
+SEMANTIC AUTHORITY + EXECUTION GRANT
+GO-COMPLETE
+
+OWNER:
+Av. Ulaş Hüseyin Telli
+
+PROGRAM:
+UYAP-MODULE-FULL-GAP-CLOSURE-R02
+
+CURRENT PHASE:
+POST-STRUCTURED-EMISSION AUTHORITY HARDENING
+
+EXACT TASK:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01
+
+TITLE:
+Canonical Resolution Provenance / Capability Enforcement
+
+SEMANTIC AUTHORITY:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01
+
+EXECUTION GRANT:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01
+
+KNOWN GOOD FLOOR:
+2694d1e4bbc4173ee8dc328d97edb853d0d32b78
+
+OWNER DECISION:
+RATIFIED
+
+EXECUTION:
+GO-COMPLETE
+
+GRANT:
+ONE-SHOT / TASK-BOUND
+
+GRANT EXPIRY:
+TERMINAL CLOSEOUT
+```
+
+```text
+ownerRatificationEvidence.excerptSha256 : 7f935ec61b02222e556a237f6cdadd700aa7f457dcdc0935778e89bfb0eae5b6
+```
+
+Validator Stage 1'de exact `M/M/M` control-plane tuple'ını; Stage 2'de yalnız
+`decision-log.md` semantic authority satırı ile yeni task-local EG dosyasının
+exact `M/A` tuple'ını doğrular. Owner evidence byte-exact/hash-bound, SA ve EG
+distinct, grant one-shot/task-bound ve ikinci kullanım fail-closed'dır.
+
 ### UYAP-M01 terminal closeout — exact publication binding
 
 Bu ek yalnız merge edilmiş UYAP-M01 implementation sonucunun existing task-local
