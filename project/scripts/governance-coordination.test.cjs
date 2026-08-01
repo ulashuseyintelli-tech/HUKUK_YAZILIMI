@@ -735,6 +735,18 @@ function uyapSerializerBypassHardeningTargetChanges() {
   );
 }
 
+function uyapFinalCiEligibilityBindingChanges() {
+  return coordination.UYAP_FINAL_CI_ELIGIBILITY_I01_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function uyapFinalCiEligibilityTargetChanges() {
+  return coordination.UYAP_FINAL_CI_ELIGIBILITY_I01_CONTROL_PLANE_BINDING_R01.targetPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function uyapSerializerBypassHardeningCloseoutBindingChanges() {
   return coordination.UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01.closeoutBindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -4692,6 +4704,107 @@ test('UYAP serializer-bypass hardening target validates exact owner evidence and
   });
   assert.equal(result.mode, binding.targetPr.mode);
   assert.equal(result.taskId, binding.targetPr.taskId);
+});
+
+test('UYAP final-CI eligibility binding requires exact base branch scope and owner evidence', () => {
+  const binding =
+    coordination.UYAP_FINAL_CI_ELIGIBILITY_I01_CONTROL_PLANE_BINDING_R01;
+  assert.equal(
+    coordination.sha256(binding.ownerRatificationEvidence.exactExcerpt),
+    binding.ownerRatificationEvidence.excerptSha256,
+  );
+
+  const classification = coordination.classifyPrChangeSet(
+    uyapFinalCiEligibilityBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result = coordination.validateUyapFinalCiEligibilityAuthorityBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    changes: uyapFinalCiEligibilityBindingChanges(),
+    taskId: binding.taskId,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.bindingPr.mode);
+});
+
+test('UYAP final-CI eligibility binding rejects wrong base and expanded scope', () => {
+  const binding =
+    coordination.UYAP_FINAL_CI_ELIGIBILITY_I01_CONTROL_PLANE_BINDING_R01;
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(uyapFinalCiEligibilityBindingChanges(), {
+        base: '0'.repeat(40),
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+
+  const expanded = uyapFinalCiEligibilityBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP final-CI eligibility target accepts only exact branch and M/A authority tuple', () => {
+  const binding =
+    coordination.UYAP_FINAL_CI_ELIGIBILITY_I01_CONTROL_PLANE_BINDING_R01;
+  const result = coordination.classifyPrChangeSet(
+    uyapFinalCiEligibilityTargetChanges(),
+    {
+      base: binding.targetPr.originalBaseSha,
+      headRef: binding.targetPr.headRef,
+    },
+  );
+  assert.equal(result.mode, binding.targetPr.mode);
+  assert.equal(result.taskId, binding.targetPr.taskId);
+
+  const expanded = uyapFinalCiEligibilityTargetChanges();
+  expanded.push({ status: 'M', path: coordination.REGISTER_REPO_PATH });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.targetPr.originalBaseSha,
+        headRef: binding.targetPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP final-CI eligibility target validates exact owner evidence and semantic binding', (t) => {
+  const binding =
+    coordination.UYAP_FINAL_CI_ELIGIBILITY_I01_CONTROL_PLANE_BINDING_R01;
+  const fixture = createRcvColTargetGitFixture(t, {
+    binding,
+    freshMain: true,
+  });
+  const result =
+    coordination.validateUyapFinalCiEligibilityAuthorityMaterializationScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      changes: uyapFinalCiEligibilityTargetChanges(),
+      taskId: binding.targetPr.taskId,
+      cwd: fixture.root,
+    });
+  assert.equal(result.mode, binding.targetPr.mode);
 });
 
 test('UYAP serializer-bypass hardening target rejects another semantic authority', (t) => {

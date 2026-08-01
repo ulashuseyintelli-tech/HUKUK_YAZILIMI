@@ -1707,6 +1707,106 @@ Validator Stage 1'de exact `M/M/M` control-plane tuple'ını; Stage 2'de yalnız
 exact `M/A` tuple'ını doğrular. Owner evidence byte-exact/hash-bound, SA ve EG
 distinct, grant one-shot/task-bound ve ikinci kullanım fail-closed'dır.
 
+## UYAP official pipeline final-CI eligibility — exact authority publication binding
+
+Bu kayıt yalnız `UYAP-FINAL-CI-ELIGIBILITY-I01` görevinin canonical UYAP
+official pipeline predecessor'larını birlikte ve fiilen çalıştırarak teknik CI
+qualification üretmesini tanır. Görev authority-integrity, default-OFF,
+production-unreachable, no-bypass ve regression kanıtını bağlar; yeni hukuki
+mapping, Strict DTD uygunluk iddiası, production wiring, runtime activation,
+Canary, gerçek transport veya cutover üretmez.
+
+```text
+Program   : UYAP-MODULE-FULL-GAP-CLOSURE-R02
+Known good floor : f68c86d28be8eab8e980db758864c334245dabd0
+Binding task : UYAP-FINAL-CI-ELIGIBILITY-I01-AUTHORITY-CONTROL-PLANE-BINDING-R01
+Binding mode : UYAP_FINAL_CI_ELIGIBILITY_I01_AUTHORITY_CONTROL_PLANE_BINDING_R01
+Base SHA     : 7e6c39591d96757aec1c2f799a04ec60e97e2c71
+Head ref     : codex/uyap-final-ci-eligibility-i01-control-plane-binding-r01
+Binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Materialization task : UYAP-FINAL-CI-ELIGIBILITY-I01-AUTHORITY-MATERIALIZATION-R01
+Materialization mode : UYAP_FINAL_CI_ELIGIBILITY_I01_AUTHORITY_MATERIALIZATION_R01
+Original captured base : 7e6c39591d96757aec1c2f799a04ec60e97e2c71
+Head ref : codex/uyap-final-ci-eligibility-i01-authority-materialization-r01
+Materialization scope:
+  M project/docs/governance/decision-log.md
+  A project/docs/governance/coordination-execution-grants/UYAP-FINAL-CI-ELIGIBILITY-I01-EG01.md
+
+Semantic authority record : UYAP-FINAL-CI-ELIGIBILITY-I01-SA01
+Execution grant record     : UYAP-FINAL-CI-ELIGIBILITY-I01-EG01
+Grant scope                : UYAP FINAL-CI-ELIGIBILITY-I01 ONLY
+Second use                 : SECOND USE: FAIL-CLOSED
+Production activation      : PROHIBITED
+Cross-task reuse           : PROHIBITED
+```
+
+Owner ratification evidence is byte-exact and SHA-256 bound:
+
+```text
+FULL OWNER EXECUTION AUTHORITY — GO-COMPLETE
+
+OWNER:
+Av. Ulaş Hüseyin Telli
+
+CURRENT PROGRAM:
+UYAP-MODULE-FULL-GAP-CLOSURE-R02
+
+PROGRAM LOCK:
+ACTIVE
+
+PREDECESSOR:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01
+CLOSED / CANONICAL / PASS
+
+KNOWN-GOOD FLOOR:
+f68c86d28be8eab8e980db758864c334245dabd0
+
+NEXT TASK:
+UYAP-FINAL-CI-ELIGIBILITY-I01
+
+TITLE:
+UYAP Official Pipeline Final CI Qualification and Technical Readiness Closure
+
+AUTHORITY MODE:
+FULL OWNER AUTHORITY
+TASK-BOUND
+SINGLE-EXECUTOR
+FENCE-FIRST
+GO-COMPLETE
+
+OWNER DECISION:
+
+Av. Ulaş Hüseyin Telli olarak,
+UYAP-FINAL-CI-ELIGIBILITY-I01 görevinin fresh canonical main
+üzerinden başlatılmasını; gerekli control-plane binding, SA01 ve EG01
+kayıtlarının materialize edilmesini; UYAP official pipeline’ın tüm
+canonical predecessor’larıyla birlikte kapsamlı CI, regresyon,
+authority-integrity, default-OFF ve production-unreachable
+doğrulamalarından geçirilmesini; görev kapsamındaki teknik test/CI
+kusurlarının semantik sınırlar değiştirilmeden düzeltilmesini; required
+CI tamamen PASS olduğunda PR, squash-merge, post-merge verification,
+terminal closeout ve güvenli cleanup işlemlerinin kesintisiz biçimde
+tamamlanmasını GO-COMPLETE yetkisiyle onaylıyorum.
+
+Bu yetki yeni hukuki mapping, Strict DTD uygunluk iddiası, production
+wiring, runtime activation, Canary, gerçek transport veya cutover
+yetkisi vermez.
+```
+
+```text
+ownerRatificationEvidence.excerptSha256 : d44e460f2673f4e806f5a1c2e5ef45246cea38e9ae7033c588ef659e8f70f5d1
+```
+
+Validator Stage 1'de exact `M/M/M` control-plane tuple'ını; Stage 2'de
+yalnız `decision-log.md` semantic authority satırı ile yeni task-local EG
+dosyasının exact `M/A` tuple'ını doğrular. Task teknik qualification ile
+sınırlıdır; predecessor semantiğini yeniden açmaz ve activation/canary yetkisi
+üretmez.
+
 ### UYAP serializer-bypass hardening terminal closeout — exact publication binding
 
 Bu ek yalnız merge edilmiş serializer-bypass hardening implementation sonucunun
