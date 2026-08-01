@@ -13,6 +13,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { DomainEventIngestModule } from '../icrabot/domain-event-ingest';
 import { AccountingJournalWriterService } from '../accounting-journal';
 import { AuditModule } from '../audit/audit.module';
+import { OfficeF01AuthorizationGuard } from './office-f01-authorization.guard';
 
 @Module({
   // P4-2: OfficeApprovalShadowService (CHANGE_STATUS shadow; ConfigService global, PrismaModule import, AuditService @Global).
@@ -26,9 +27,10 @@ import { AuditModule } from '../audit/audit.module';
     // CLIENT-P2-U03-TRACK-B-I03 — CLIENT_FINANCIAL_DISCLOSURE_APPROVE izole yeterlilik politikası.
     ClientFinancialDisclosureApprovalPolicy,
     AccountingJournalWriterService,
+    OfficeF01AuthorizationGuard,
   ],
   // PAYOUT-APPROVAL-2: PayoutApprovalPolicy export → ClientSettlementModule (zaten bu modülü import ediyor)
   // ClientPayoutService.finalize()'da izole re-check için kullanır.
-  exports: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService, PayoutApprovalPolicy, ClientFinancialDisclosureApprovalPolicy],
+  exports: [OfficeApprovalService, OfficeApprovalShadowService, OfficeApprovalDomainSyncService, PayoutApprovalPolicy, ClientFinancialDisclosureApprovalPolicy, OfficeF01AuthorizationGuard],
 })
 export class OfficeApprovalModule {}

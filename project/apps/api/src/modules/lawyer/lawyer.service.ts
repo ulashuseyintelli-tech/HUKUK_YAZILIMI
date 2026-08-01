@@ -7,6 +7,7 @@ import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import type { AuditActor } from "@/modules/client/client.service";
 import { toPublicLawyer, toPublicLawyers } from "./lawyer-public-projection";
+import { projectF01Lawyer, F01ProjectionAccess } from "../office/office-f01-projection";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 // H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
@@ -78,6 +79,27 @@ export class LawyerService {
     private officeApproval: OfficeApprovalService,
   ) {}
 
+  /** F01 response boundary for Lawyer mutation and secondary consumers. */
+  private async projectLawyerResponse(
+    tenantId: string,
+    row: Record<string, unknown>,
+    actor?: LawyerUpdateActor,
+  ): Promise<Record<string, unknown>> {
+    const publicLawyer = toPublicLawyer(row);
+    if (!actor?.userId || typeof this.officeApproval?.isF01ActorAuthorized !== "function") {
+      return publicLawyer as Record<string, unknown>;
+    }
+
+    const targetOfficeId = typeof publicLawyer.officeId === "string" ? publicLawyer.officeId : undefined;
+    const authorized = await this.officeApproval.isF01ActorAuthorized(
+      actor.userId,
+      tenantId,
+      targetOfficeId,
+    );
+    const access: F01ProjectionAccess = authorized ? "AUTHORIZED_S0_S1" : "PUBLIC_S0_ONLY";
+    return projectF01Lawyer(publicLawyer as Record<string, unknown>, access) as Record<string, unknown>;
+  }
+
   /**
    * CANDIDATE-F1 (WAVE 3, RATIFIED — Personnel List Masked Default): avukat LİSTE yüzeyinde
    * hassas alanları (tckn, iban, deprecated identityNo) varsayılan maskele. Null/undefined/boş
@@ -98,7 +120,12 @@ export class LawyerService {
   }
 
   // Tüm avukatları getir (displayName ile birlikte)
-  async findAll(tenantId: string, search?: string, includeInactive = false) {
+  async findAll(
+    tenantId: string,
+    search?: string,
+    includeInactive = false,
+    actor?: { userId?: string; role?: string },
+  ): Promise<any[]> {
     const where: any = { tenantId };
 
     if (!includeInactive) {
@@ -121,11 +148,19 @@ export class LawyerService {
 
     // Her avukata displayName ekle (Av. Ad Soyad)
     // P01: credential alanlari (uyapToken/eSignatureSerial) public yanittan CIKARILIR.
-    return toPublicLawyers(withDisplayNames(lawyers.map((l) => this.maskListRow(l))));
+    const projected = toPublicLawyers(withDisplayNames(lawyers.map((l) => this.maskListRow(l))));
+    if (!actor?.userId) return projected;
+
+    const authorized = await this.officeApproval.isF01ActorAuthorized(actor.userId, tenantId);
+    const access: F01ProjectionAccess = authorized ? 'AUTHORIZED_S0_S1' : 'PUBLIC_S0_ONLY';
+    return projected.map((row) => projectF01Lawyer(row as Record<string, unknown>, access));
   }
 
   // Varsayılan avukatları getir (yeni takiplerde otomatik seçilecekler)
-  async findDefaults(tenantId: string) {
+  async findDefaults(
+    tenantId: string,
+    actor?: { userId?: string; role?: string },
+  ): Promise<any[]> {
     const lawyers = await this.prisma.lawyer.findMany({
       where: {
         tenantId,
@@ -136,11 +171,20 @@ export class LawyerService {
     });
 
     // P01: credential alanlari (uyapToken/eSignatureSerial) public yanittan CIKARILIR.
-    return toPublicLawyers(withDisplayNames(lawyers.map((l) => this.maskListRow(l))));
+    const projected = toPublicLawyers(withDisplayNames(lawyers.map((l) => this.maskListRow(l))));
+    if (!actor?.userId) return projected;
+
+    const authorized = await this.officeApproval.isF01ActorAuthorized(actor.userId, tenantId);
+    const access: F01ProjectionAccess = authorized ? 'AUTHORIZED_S0_S1' : 'PUBLIC_S0_ONLY';
+    return projected.map((row) => projectF01Lawyer(row as Record<string, unknown>, access));
   }
 
   // Tek avukat getir
-  async findOne(tenantId: string, id: string) {
+  async findOne(
+    tenantId: string,
+    id: string,
+    actor?: { userId?: string; role?: string },
+  ): Promise<any> {
     const lawyer = await this.prisma.lawyer.findFirst({
       where: { id, tenantId },
     });
@@ -149,8 +193,19 @@ export class LawyerService {
       throw new NotFoundException("Avukat bulunamadı");
     }
 
-    // P01: credential alanlari public yanittan CIKARILIR.
-    return toPublicLawyer(withDisplayName(lawyer));
+    // F01: HTTP detail okumaları actor-bound projection'dan geçer. Actor
+    // verilmemiş legacy/internal çağrılar credential containment ile sınırlı
+    // kalır; yeni alanlar sessizce genişletilmez.
+    const publicLawyer = toPublicLawyer(withDisplayName(lawyer));
+    if (!actor?.userId) return publicLawyer;
+
+    const authorized = await this.officeApproval.isF01ActorAuthorized(
+      actor.userId,
+      tenantId,
+      lawyer.officeId ?? undefined,
+    );
+    const access: F01ProjectionAccess = authorized ? 'AUTHORIZED_S0_S1' : 'PUBLIC_S0_ONLY';
+    return projectF01Lawyer(publicLawyer as Record<string, unknown>, access);
   }
 
   // Avukat oluştur
@@ -190,7 +245,8 @@ export class LawyerService {
       defaultPermissions?: any;
       permissionsLocked?: boolean;
       canModifyOtherPermissions?: boolean;
-    }
+    },
+    actor?: LawyerUpdateActor,
   ) {
     // PR-AUDIT: duplicate guard — aynı baro no/TCKN VEYA aynı ad-soyad → yeni AÇMA, mevcut döndür.
     // (Eskiden guard yoktu → "Ulaş Hüseyin Telli" gibi mükerrer avukat açılıyordu → yetki/atama karışıklığı.)
@@ -208,7 +264,11 @@ export class LawyerService {
         await this.prisma.lawyer.update({ where: { id: dup.id }, data: { isActive: true } });
       }
       // P01: duplicate/reactivate dali da ayni response boundary'den gecer.
-      return toPublicLawyer({ ...(dup as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated });
+      return this.projectLawyerResponse(
+        tenantId,
+        { ...(dup as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated },
+        actor,
+      );
     }
 
     // Office'i al veya oluştur
@@ -244,7 +304,7 @@ export class LawyerService {
     });
 
     // P01: credential alanlari public yanittan CIKARILIR.
-    return toPublicLawyer(withDisplayName(lawyer));
+    return this.projectLawyerResponse(tenantId, withDisplayName(lawyer) as Record<string, unknown>, actor);
   }
 
   // Avukat güncelle
@@ -421,7 +481,7 @@ export class LawyerService {
     }
 
     // P01: credential alanlari public yanittan CIKARILIR.
-    return toPublicLawyer(withDisplayName(lawyer));
+    return this.projectLawyerResponse(tenantId, withDisplayName(lawyer) as Record<string, unknown>, actor);
   }
 
   /**
@@ -591,7 +651,7 @@ export class LawyerService {
     // L1A: soft-deactivate (+ H1: sorumluluk devri) + audit AYNI transaction (old snapshot deactivate
     // ÖNCESİ alındı; dosya hiçbir anda sorumlusuz kalmaz — clear-before-set sırası, partial unique
     // index case_lawyer_one_responsible_per_case ile aynı tx içinde tutarlı).
-    return this.prisma.$transaction(async (tx) => {
+    const deactivated = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.lawyer.updateMany({
         where: { id, tenantId },
         data: { isActive: false },
@@ -669,13 +729,20 @@ export class LawyerService {
         },
       });
 
-      // P01: lifecycle yaniti da tum persistence satirini DEGIL, public projeksiyonu dondurur.
-      return toPublicLawyer({ ...existing, isActive: false });
+      // F01: lifecycle yaniti de actor-bound projection'dan geçer.
+      const deactivatedRow = { ...existing, isActive: false };
+      return deactivatedRow;
     });
+
+    return this.projectLawyerResponse(
+      tenantId,
+      deactivated as Record<string, unknown>,
+      actor as LawyerUpdateActor,
+    );
   }
 
   // Avukat sıralamasını güncelle
-  async updateOrder(tenantId: string, lawyerIds: string[]) {
+  async updateOrder(tenantId: string, lawyerIds: string[], actor?: LawyerUpdateActor) {
     const updates = lawyerIds.map((id, index) =>
       this.prisma.lawyer.updateMany({
         where: { id, tenantId },
@@ -685,11 +752,11 @@ export class LawyerService {
 
     await this.prisma.$transaction(updates);
 
-    return this.findAll(tenantId);
+    return this.findAll(tenantId, undefined, false, actor);
   }
 
   // Varsayılan avukatları ayarla
-  async setDefaults(tenantId: string, lawyerIds: string[]) {
+  async setDefaults(tenantId: string, lawyerIds: string[], actor?: LawyerUpdateActor) {
     // Önce tüm varsayılanları kaldır
     await this.prisma.lawyer.updateMany({
       where: { tenantId },
@@ -704,6 +771,6 @@ export class LawyerService {
       });
     }
 
-    return this.findAll(tenantId);
+    return this.findAll(tenantId, undefined, false, actor);
   }
 }

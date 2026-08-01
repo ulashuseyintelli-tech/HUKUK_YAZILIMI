@@ -15,6 +15,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { StaffType } from "@prisma/client";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
+import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
@@ -38,14 +39,22 @@ export class OfficeController {
 
   // Büro bilgilerini getir
   @Get()
-  getOffice(@CurrentUser("tenantId") tenantId: string) {
+  @UseGuards(OfficeF01AuthorizationGuard)
+  getOffice(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
+  ) {
     // Güvenlik: GENEL büro yanıtında SMTP/SMS secret'ları maskeli döner
     // (düz-metin sızıntısı kapatıldı). Internal gönderim yolları ham değeri okur.
-    return this.officeService.getPublicOffice(tenantId);
+    return actorUserId
+      ? this.officeService.getPublicOffice(tenantId, { userId: actorUserId, role: actorRole })
+      : this.officeService.getPublicOffice(tenantId);
   }
 
   // Büro bilgilerini güncelle
   @Put()
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateOffice(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -66,13 +75,17 @@ export class OfficeController {
       mersisNo?: string;
       kepAddress?: string;
       defaultExecutionOfficeId?: string;
-    }
+    },
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.update(tenantId, data, userId);
+    return actorRole
+      ? this.officeService.update(tenantId, data, userId, { userId, role: actorRole })
+      : this.officeService.update(tenantId, data, userId);
   }
 
   // Banka hesabı ekle
   @Post("bank-accounts")
+  @UseGuards(OfficeF01AuthorizationGuard)
   addBankAccount(
     @CurrentUser("tenantId") tenantId: string,
     @Body()
@@ -82,13 +95,18 @@ export class OfficeController {
       iban: string;
       accountName?: string;
       isDefault?: boolean;
-    }
+    },
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.addBankAccount(tenantId, data);
+    return actorUserId
+      ? this.officeService.addBankAccount(tenantId, data, { userId: actorUserId, role: actorRole })
+      : this.officeService.addBankAccount(tenantId, data);
   }
 
   // Banka hesabı güncelle
   @Put("bank-accounts/:id")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateBankAccount(
     @CurrentUser("tenantId") tenantId: string,
     @Param("id") accountId: string,
@@ -99,18 +117,27 @@ export class OfficeController {
       iban?: string;
       accountName?: string;
       isDefault?: boolean;
-    }
+    },
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.updateBankAccount(tenantId, accountId, data);
+    return actorUserId
+      ? this.officeService.updateBankAccount(tenantId, accountId, data, { userId: actorUserId, role: actorRole })
+      : this.officeService.updateBankAccount(tenantId, accountId, data);
   }
 
   // Banka hesabı sil
   @Delete("bank-accounts/:id")
+  @UseGuards(OfficeF01AuthorizationGuard)
   deleteBankAccount(
     @CurrentUser("tenantId") tenantId: string,
-    @Param("id") accountId: string
+    @Param("id") accountId: string,
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.deleteBankAccount(tenantId, accountId);
+    return actorUserId
+      ? this.officeService.deleteBankAccount(tenantId, accountId, { userId: actorUserId, role: actorRole })
+      : this.officeService.deleteBankAccount(tenantId, accountId);
   }
 
   // SMTP ayarlarını getir
@@ -121,6 +148,7 @@ export class OfficeController {
 
   // SMTP ayarlarını güncelle
   @Put("smtp-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   async updateSmtpSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("role") role: string,
@@ -143,7 +171,7 @@ export class OfficeController {
       tenantId,
       actionCode: ActionCode.MANAGE_OFFICE_CREDENTIALS,
     });
-    return this.officeService.updateSmtpSettings(tenantId, data, userId);
+    return this.officeService.updateSmtpSettings(tenantId, data, userId, { userId, role });
   }
 
   // SMS ayarlarını getir
@@ -154,6 +182,7 @@ export class OfficeController {
 
   // SMS ayarlarını güncelle
   @Put("sms-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateSmsSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("role") role: string,
@@ -167,7 +196,7 @@ export class OfficeController {
     }
   ) {
     this.assertCredentialAdmin(role);
-    return this.officeService.updateSmsSettings(tenantId, data, userId);
+    return this.officeService.updateSmsSettings(tenantId, data, userId, { userId, role });
   }
 
   // Otomatik tebrik ayarlarını getir
@@ -178,6 +207,7 @@ export class OfficeController {
 
   // Otomatik tebrik ayarlarını güncelle
   @Put("greeting-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateGreetingSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -185,9 +215,12 @@ export class OfficeController {
     data: {
       autoGreetingEnabled?: boolean;
       autoGreetingTime?: string;
-    }
+    },
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.updateGreetingSettings(tenantId, data, userId);
+    return actorRole
+      ? this.officeService.updateGreetingSettings(tenantId, data, userId, { userId, role: actorRole })
+      : this.officeService.updateGreetingSettings(tenantId, data, userId);
   }
 
   // İİK 78 ayarlarını getir (pasifleşme süresi)
@@ -198,6 +231,7 @@ export class OfficeController {
 
   // İİK 78 ayarlarını güncelle
   @Put("iik78-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateIik78Settings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -205,9 +239,12 @@ export class OfficeController {
     data: {
       inactivityThresholdDays?: number;
       inactivityWarningDays?: number;
-    }
+    },
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.updateIik78Settings(tenantId, data, userId);
+    return actorRole
+      ? this.officeService.updateIik78Settings(tenantId, data, userId, { userId, role: actorRole })
+      : this.officeService.updateIik78Settings(tenantId, data, userId);
   }
 
   // ACT-07: Vekalet Süresi Uyarısı ayarlarını getir
@@ -218,6 +255,7 @@ export class OfficeController {
 
   // ACT-07: Vekalet Süresi Uyarısı ayarlarını güncelle
   @Put("poa-expiry-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updatePoaExpirySettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -226,9 +264,12 @@ export class OfficeController {
       poaExpiryNotificationEnabled?: boolean;
       poaExpiryThresholdDays?: number;
       poaExpiryRecipientLawyerIds?: string[];
-    }
+    },
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.updatePoaExpirySettings(tenantId, data, userId);
+    return actorRole
+      ? this.officeService.updatePoaExpirySettings(tenantId, data, userId, { userId, role: actorRole })
+      : this.officeService.updatePoaExpirySettings(tenantId, data, userId);
   }
 
   // Görev & Eskalasyon ayarlarını getir
@@ -239,6 +280,7 @@ export class OfficeController {
 
   // Görev & Eskalasyon ayarlarını güncelle
   @Put("escalation-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateEscalationSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -257,8 +299,11 @@ export class OfficeController {
       caseTaskOwnerDays?: number;
       caseTaskTeamLeadDays?: number;
       caseTaskManagerDays?: number;
-    }
+    },
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.officeService.updateEscalationSettings(tenantId, data, userId);
+    return actorRole
+      ? this.officeService.updateEscalationSettings(tenantId, data, userId, { userId, role: actorRole })
+      : this.officeService.updateEscalationSettings(tenantId, data, userId);
   }
 }

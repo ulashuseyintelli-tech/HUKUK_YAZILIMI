@@ -3,6 +3,8 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { StaffType } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { withPublicLawyers } from "../lawyer/lawyer-public-projection";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { projectF01Office } from "./office-f01-projection";
 import {
   encryptCredential,
   decryptCredential,
@@ -20,7 +22,8 @@ export class OfficeService {
 
   constructor(
     private prisma: PrismaService,
-    private audit: AuditService
+    private audit: AuditService,
+    private readonly officeApproval?: OfficeApprovalService,
   ) {}
 
   // ACT-02: yazma anında fail-closed — anahtar yoksa "şifreli" iddiası yalan olur, sessizce
@@ -43,11 +46,39 @@ export class OfficeService {
     return masked as T;
   }
 
+  private async projectForActor<T extends Record<string, any>>(
+    tenantId: string,
+    office: T,
+    actor?: { userId?: string; role?: string },
+  ): Promise<Record<string, unknown>> {
+    if (!actor?.userId || !this.officeApproval) {
+      return this.redactOfficeSecrets(office);
+    }
+    const targetOfficeId = typeof office.id === 'string' ? office.id : undefined;
+    const authorized = await this.officeApproval.isF01ActorAuthorized(
+      actor.userId,
+      tenantId,
+      targetOfficeId,
+    );
+    return projectF01Office(
+      office as Record<string, unknown> & {
+        lawyers?: Record<string, unknown>[];
+        bankAccounts?: Record<string, unknown>[];
+      },
+      authorized ? 'AUTHORIZED_S0_S1' : 'PUBLIC_S0_ONLY',
+    ) as Record<string, unknown>;
+  }
+
   // Büro bilgilerini GENEL uç için getir (secret'lar maskeli). getOrCreate
   // internal kullanım için saf (ham) kalır.
-  async getPublicOffice(tenantId: string) {
+  async getPublicOffice(
+    tenantId: string,
+    actor?: { userId?: string; role?: string },
+  ) {
     const office = await this.getOrCreate(tenantId);
-    return this.redactOfficeSecrets(office);
+    // Existing internal callers without an actor context retain the previous
+    // credential-masked contract; HTTP always supplies actor context below.
+    return this.projectForActor(tenantId, office, actor);
   }
 
   // Ayar değişikliğini AuditLog'a yaz: yalnız gönderilen alanların eski/yeni
@@ -141,7 +172,8 @@ export class OfficeService {
       kepAddress?: string;
       defaultExecutionOfficeId?: string;
     },
-    userId?: string
+    userId?: string,
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -160,7 +192,7 @@ export class OfficeService {
     });
     await this.logSettingsChange(tenantId, userId, "OFFICE", office, data);
     // P01: nested `lawyers` credential alanlari public yanittan CIKARILIR.
-    return withPublicLawyers(updated);
+    return this.projectForActor(tenantId, withPublicLawyers(updated), actor);
   }
 
   // Banka hesabı ekle
@@ -172,7 +204,8 @@ export class OfficeService {
       iban: string;
       accountName?: string;
       isDefault?: boolean;
-    }
+    },
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -184,12 +217,15 @@ export class OfficeService {
       });
     }
 
-    return this.prisma.officeBankAccount.create({
+    const created = await this.prisma.officeBankAccount.create({
       data: {
         officeId: office.id,
         ...data,
       },
     });
+    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [created] }, actor);
+    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
+    return bankAccounts?.[0] ?? projected;
   }
 
   // Banka hesabı güncelle
@@ -202,7 +238,8 @@ export class OfficeService {
       iban?: string;
       accountName?: string;
       isDefault?: boolean;
-    }
+    },
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -223,14 +260,21 @@ export class OfficeService {
       });
     }
 
-    return this.prisma.officeBankAccount.update({
+    const updated = await this.prisma.officeBankAccount.update({
       where: { id: accountId },
       data,
     });
+    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [updated] }, actor);
+    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
+    return bankAccounts?.[0] ?? projected;
   }
 
   // Banka hesabı sil
-  async deleteBankAccount(tenantId: string, accountId: string) {
+  async deleteBankAccount(
+    tenantId: string,
+    accountId: string,
+    actor?: { userId?: string; role?: string },
+  ) {
     const office = await this.getOrCreate(tenantId);
 
     const account = await this.prisma.officeBankAccount.findFirst({
@@ -241,9 +285,12 @@ export class OfficeService {
       throw new NotFoundException("Banka hesabı bulunamadı");
     }
 
-    return this.prisma.officeBankAccount.delete({
+    const deleted = await this.prisma.officeBankAccount.delete({
       where: { id: accountId },
     });
+    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [deleted] }, actor);
+    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
+    return bankAccounts?.[0] ?? projected;
   }
 
   // SMTP ayarlarını güncelle
@@ -258,7 +305,8 @@ export class OfficeService {
       smtpFromName?: string;
       smtpFromEmail?: string;
     },
-    userId?: string
+    userId?: string,
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -274,7 +322,7 @@ export class OfficeService {
       data: toPersist,
     });
     await this.logSettingsChange(tenantId, userId, "SMTP", office, data);
-    return updated;
+    return this.projectForActor(tenantId, updated, actor);
   }
 
   // SMTP ayarlarını getir
@@ -300,7 +348,8 @@ export class OfficeService {
       smsApiSecret?: string;
       smsSender?: string;
     },
-    userId?: string
+    userId?: string,
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -317,7 +366,7 @@ export class OfficeService {
       data: toPersist,
     });
     await this.logSettingsChange(tenantId, userId, "SMS", office, data);
-    return updated;
+    return this.projectForActor(tenantId, updated, actor);
   }
 
   // Tam SMTP ayarlarını getir (e-posta gönderimi için - internal)
@@ -372,7 +421,8 @@ export class OfficeService {
       autoGreetingEnabled?: boolean;
       autoGreetingTime?: string;
     },
-    userId?: string
+    userId?: string,
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -381,7 +431,7 @@ export class OfficeService {
       data,
     });
     await this.logSettingsChange(tenantId, userId, "GREETING", office, data);
-    return updated;
+    return this.projectForActor(tenantId, updated, actor);
   }
 
   // İİK 78 ayarlarını getir (pasifleşme süresi)
@@ -400,7 +450,8 @@ export class OfficeService {
       inactivityThresholdDays?: number;
       inactivityWarningDays?: number;
     },
-    userId?: string
+    userId?: string,
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -409,7 +460,7 @@ export class OfficeService {
       data,
     });
     await this.logSettingsChange(tenantId, userId, "IIK78", office, data);
-    return updated;
+    return this.projectForActor(tenantId, updated, actor);
   }
 
   // ACT-07: Vekalet Süresi Uyarısı büro-geneli ayarlarını getir (E-POSTA-ONLY kapsam; SMS/kanal
@@ -431,7 +482,8 @@ export class OfficeService {
       poaExpiryThresholdDays?: number;
       poaExpiryRecipientLawyerIds?: string[];
     },
-    userId?: string
+    userId?: string,
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -440,7 +492,7 @@ export class OfficeService {
       data,
     });
     await this.logSettingsChange(tenantId, userId, "POA_EXPIRY", office, data);
-    return updated;
+    return this.projectForActor(tenantId, updated, actor);
   }
 
   // Görev & Eskalasyon ayarlarını getir (büro-geneli politika; motor PR-3b okur)
@@ -480,7 +532,8 @@ export class OfficeService {
       caseTaskTeamLeadDays?: number;
       caseTaskManagerDays?: number;
     },
-    userId?: string
+    userId?: string,
+    actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
 
@@ -489,6 +542,6 @@ export class OfficeService {
       data,
     });
     await this.logSettingsChange(tenantId, userId, "ESCALATION", office, data);
-    return updated;
+    return this.projectForActor(tenantId, updated, actor);
   }
 }

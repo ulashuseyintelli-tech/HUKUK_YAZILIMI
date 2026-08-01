@@ -14,6 +14,7 @@ import { LawyerService } from "./lawyer.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { LawyerRole, LawyerRank } from "@prisma/client";
+import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
 
 @Controller("lawyers")
 @UseGuards(JwtAuthGuard)
@@ -22,35 +23,52 @@ export class LawyerController {
 
   // Tüm avukatları getir
   @Get()
+  @UseGuards(OfficeF01AuthorizationGuard)
   findAll(
     @CurrentUser("tenantId") tenantId: string,
     @Query("search") search?: string,
-    @Query("includeInactive") includeInactive?: string
+    @Query("includeInactive") includeInactive?: string,
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.lawyerService.findAll(
-      tenantId,
-      search,
-      includeInactive === "true"
-    );
+    return actorUserId
+      ? this.lawyerService.findAll(tenantId, search, includeInactive === "true", {
+          userId: actorUserId,
+          role: actorRole,
+        })
+      : this.lawyerService.findAll(tenantId, search, includeInactive === "true");
   }
 
   // Varsayılan avukatları getir
   @Get("defaults")
-  findDefaults(@CurrentUser("tenantId") tenantId: string) {
-    return this.lawyerService.findDefaults(tenantId);
+  @UseGuards(OfficeF01AuthorizationGuard)
+  findDefaults(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
+  ) {
+    return actorUserId
+      ? this.lawyerService.findDefaults(tenantId, { userId: actorUserId, role: actorRole })
+      : this.lawyerService.findDefaults(tenantId);
   }
 
   // Tek avukat getir
   @Get(":id")
+  @UseGuards(OfficeF01AuthorizationGuard)
   findOne(
     @CurrentUser("tenantId") tenantId: string,
-    @Param("id") id: string
+    @Param("id") id: string,
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.lawyerService.findOne(tenantId, id);
+    return actorUserId
+      ? this.lawyerService.findOne(tenantId, id, { userId: actorUserId, role: actorRole })
+      : this.lawyerService.findOne(tenantId, id);
   }
 
   // Avukat oluştur
   @Post()
+  @UseGuards(OfficeF01AuthorizationGuard)
   create(
     @CurrentUser("tenantId") tenantId: string,
     @Body()
@@ -88,13 +106,18 @@ export class LawyerController {
       defaultPermissions?: any;
       permissionsLocked?: boolean;
       canModifyOtherPermissions?: boolean;
-    }
+    },
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.lawyerService.create(tenantId, data);
+    return actorUserId
+      ? this.lawyerService.create(tenantId, data, { userId: actorUserId, role: actorRole })
+      : this.lawyerService.create(tenantId, data);
   }
 
   // Avukat güncelle
   @Put(":id")
+  @UseGuards(OfficeF01AuthorizationGuard)
   update(
     @CurrentUser("tenantId") tenantId: string,
     // K1-4b: actor kimliği (canApproveOfficeActions guard + audit için). body.userId DEĞİL, truthful @CurrentUser.
@@ -147,6 +170,7 @@ export class LawyerController {
 
   // Avukat kısmi güncelle (PATCH)
   @Patch(":id")
+  @UseGuards(OfficeF01AuthorizationGuard)
   patch(
     @CurrentUser("tenantId") tenantId: string,
     // K1-4b: actor — PATCH yolundan da canApproveOfficeActions gelirse aynı guard/audit uygulansın.
@@ -171,6 +195,7 @@ export class LawyerController {
   // Avukat pasifleştir (L1A: fiziksel silme değil, isActive=false)
   // H1: sorumlu olduğu dosya varsa body.replacementLawyerId ZORUNLU (service'te doğrulanır).
   @Delete(":id")
+  @UseGuards(OfficeF01AuthorizationGuard)
   delete(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
@@ -182,19 +207,29 @@ export class LawyerController {
 
   // Sıralama güncelle
   @Put("order/update")
+  @UseGuards(OfficeF01AuthorizationGuard)
   updateOrder(
     @CurrentUser("tenantId") tenantId: string,
-    @Body() data: { lawyerIds: string[] }
+    @Body() data: { lawyerIds: string[] },
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.lawyerService.updateOrder(tenantId, data.lawyerIds);
+    return actorUserId
+      ? this.lawyerService.updateOrder(tenantId, data.lawyerIds, { userId: actorUserId, role: actorRole })
+      : this.lawyerService.updateOrder(tenantId, data.lawyerIds);
   }
 
   // Varsayılanları ayarla
   @Put("defaults/set")
+  @UseGuards(OfficeF01AuthorizationGuard)
   setDefaults(
     @CurrentUser("tenantId") tenantId: string,
-    @Body() data: { lawyerIds: string[] }
+    @Body() data: { lawyerIds: string[] },
+    @CurrentUser("id") actorUserId?: string,
+    @CurrentUser("role") actorRole?: string,
   ) {
-    return this.lawyerService.setDefaults(tenantId, data.lawyerIds);
+    return actorUserId
+      ? this.lawyerService.setDefaults(tenantId, data.lawyerIds, { userId: actorUserId, role: actorRole })
+      : this.lawyerService.setDefaults(tenantId, data.lawyerIds);
   }
 }
