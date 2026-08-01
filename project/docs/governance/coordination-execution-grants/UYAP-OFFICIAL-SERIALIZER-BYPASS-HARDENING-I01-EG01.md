@@ -129,19 +129,37 @@ Bu bölüm implementation merge sonrasında aynı task-bound grant altında
 append-only doldurulur. Yeni semantic authority veya ikinci grant üretmez.
 
 ```text
-TASK STATUS            : OPEN
-CHANGE STATUS          : NOT YET MERGED
-DELIVERY STATUS        : PENDING
-SEMANTIC AUTHORITY     : CANONICAL UPON APPROVED MERGE
-EXECUTION GRANT        : ACTIVE / SINGLE-USE
-IMPLEMENTATION PR      : PENDING
-IMPLEMENTATION SHA     : PENDING
-CANONICAL PROVENANCE   : REQUIRED
-FORGED/COPIED RESOLVED : MUST FAIL CLOSED
-MAPPING CHANGE         : NONE
-DEFAULT-OFF            : REQUIRED
-PRODUCTION CALL-SITE   : NONE
-PRODUCTION REACHABILITY: 0
-STRICT DTD             : NOT CLAIMED
-REQUIRED CI            : PENDING
+TASK STATUS               : CLOSED
+CHANGE STATUS             : MERGED
+DELIVERY STATUS           : PASS
+SEMANTIC AUTHORITY        : CANONICAL
+EXECUTION GRANT           : CONSUMED / CLOSED
+IMPLEMENTATION PR         : #2067
+IMPLEMENTATION SHA        : 11ffb62994e95d7e6a051dbf609d5db74101a6b7
+RESOLUTION PROVENANCE     : CANONICAL RESOLVER CAPABILITY ENFORCED
+CALLER-CREATED RESOLVED   : FAIL-CLOSED
+STRUCTURAL COPY           : FAIL-CLOSED
+REJECTED XML / BYTE       : 0 / 0
+OFFICIAL MAPPINGS         : UNCHANGED
+M01 / RECEIVABLE AUTHORITY: UNCHANGED
+DEFAULT-OFF               : PROVEN
+PRODUCTION ACTIVATION     : NONE
+SCHEMA / MIGRATION        : NONE
+STRICT DTD                : NOT CLAIMED
+REQUIRED CI               : PASS
+SECOND USE: FAIL-CLOSED
+WAITING FOR OWNER : NO FOR THIS TASK — TASK COMPLETE
 ```
+
+Terminal kanıt zinciri:
+
+- Implementation PR `#2067`, exact squash
+  `11ffb62994e95d7e6a051dbf609d5db74101a6b7` ile canonical main'e alındı.
+- Targeted official-code test paketi `15/15` suite ve `333/333` test ile geçti;
+  post-merge tekrarında aynı sonuç doğrulandı.
+- Nest API build, diff/scope/secret/generated-artifact kontrolleri ve current-head
+  required/observed CI kontrolleri geçti.
+- Caller-created ve structural-copy `RESOLVED` girdileri XML veya byte üretilmeden
+  mevcut deterministic authority error contract'ı ile reddedilir.
+- Runtime default-OFF kalır; production activation, schema/migration, official-code
+  mapping, M01 veya RECEIVABLE authority değişikliği yapılmamıştır.
