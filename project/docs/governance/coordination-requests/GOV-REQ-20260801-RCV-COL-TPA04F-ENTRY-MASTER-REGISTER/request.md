@@ -11,7 +11,7 @@ outer program-scoped execution authority olarak yürür; V1 mekanik executor gra
 {
   "schemaVersion": 1,
   "requestId": "GOV-REQ-20260801-RCV-COL-TPA04F-ENTRY-MASTER-REGISTER",
-  "requestFingerprint": "809c5cf812667ff2ac11f680d03997640b2a7916e877fe99b2e7fb6e6e751b0d",
+  "requestFingerprint": "b7b878d9cd3d55b29746a8242e29b0b80f76e35341bf49022c22acde5bda1a98",
   "requestedBy": "OWNER",
   "createdAt": "2026-08-01T02:46:25Z",
   "baseMainSha": "3803f0346b3efda39cb90ea2cac19b3b96939340",
@@ -31,7 +31,7 @@ outer program-scoped execution authority olarak yürür; V1 mekanik executor gra
     "type": "EXACT_LITERAL_REPLACEMENT",
     "changeClass": "LEVEL_2_MECHANICAL",
     "targetFile": "project/docs/governance/master-triage-register.md",
-    "recordIdentity": "ACT-28",
+    "recordIdentity": "| **ACT-28** | RCV-COL Cross-Domain |",
     "anchor": "| **ACT-28** |",
     "expectedOldValue": "`LegalApplicationWriter` ve runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; Balance Engine `SHADOW_ONLY`. Legacy surfaces frozen/transitional; synthetic corpus writer/evidence/cutover için blocking; PR #407 CLOSED/UNMERGED/NO FURTHER ACTION. REC-AUTH-011/012 OPEN.",
     "newValue": "TPA-04F-ENTRY / Task10 PR #2036 / `624f27ee09297ccc895155e6d65c00ce08dc6db7` ile `RCV-REP-CORPUS/v1` deterministic corpus foundation, 19 scenario ve SHA-256 `0e0d5f1db96d7f0b8f204307cb2b9e73d57b89a04194b93dc6c4ffc80a10f05e` canonical evidence oldu; bu yalnız test/evidence foundation olup Task15 gerçek writer/persistence replay evidence’ını karşılamaz. `LegalApplicationWriter` ve runtime writer `NOT IMPLEMENTED / NOT ACTIVATED`; Balance Engine `SHADOW_ONLY`. Official snapshot producer, atomic persistence/transaction, real replay, full reversal, consumer cutover ve legacy retirement açık kalır. Legacy surfaces frozen/transitional; ClaimItem-keyed synthetic corpus `PRESERVED / SUPERSEDED_FOR_TARGET_AUTHORITY / HISTORICAL_BASELINE / NON_AUTHORITATIVE / NO_MUTATION`; PR #407 CLOSED/UNMERGED/NO FURTHER ACTION. REC-AUTH-011/012 OPEN. Canonical successor Task11 `TPA-04D-I01` NEXT / ELIGIBLE / NOT STARTED ve Task10 governance exit gate’leri tamamlanmadan başlatılamaz.",
