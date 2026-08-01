@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Qu
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StaffService } from './staff.service';
 import { StaffType } from '@prisma/client';
+import { OfficeF01AuthorizationGuard } from '../office-approval/office-f01-authorization.guard';
 
 @Controller('staff')
 @UseGuards(JwtAuthGuard)
@@ -31,6 +32,7 @@ export class StaffController {
 
   // Yeni personel ekle
   @Post()
+  @UseGuards(OfficeF01AuthorizationGuard)
   async create(@Request() req: any, @Body() body: any) {
     const tenantId = req.user.tenantId;
     try {
@@ -46,6 +48,7 @@ export class StaffController {
 
   // Personel güncelle
   @Put(':id')
+  @UseGuards(OfficeF01AuthorizationGuard)
   async update(@Request() req: any, @Param('id') id: string, @Body() body: any) {
     const tenantId = req.user.tenantId;
     try {
@@ -61,6 +64,7 @@ export class StaffController {
 
   // Personel sil
   @Delete(':id')
+  @UseGuards(OfficeF01AuthorizationGuard)
   async remove(@Request() req: any, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
     try {
@@ -73,6 +77,7 @@ export class StaffController {
 
   // Sıralama güncelle
   @Put('order/update')
+  @UseGuards(OfficeF01AuthorizationGuard)
   async updateOrder(@Request() req: any, @Body() body: { staffIds: string[] }) {
     const tenantId = req.user.tenantId;
     try {

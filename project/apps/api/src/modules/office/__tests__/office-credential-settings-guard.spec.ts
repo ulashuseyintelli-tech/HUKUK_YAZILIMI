@@ -58,20 +58,20 @@ describe("OfficeController credential guard + secret maskeleme + audit userId", 
   it("(3) ADMIN PUT smtp-settings → servis çağrılır (tenantId + data + userId geçer)", async () => {
     const { service, controller } = makeController();
     await controller.updateSmtpSettings("t1", "ADMIN", UID, SMTP);
-    expect(service.updateSmtpSettings).toHaveBeenCalledWith("t1", SMTP, UID);
+    expect(service.updateSmtpSettings).toHaveBeenCalledWith("t1", SMTP, UID, { userId: UID, role: "ADMIN" });
   });
 
   it("(4) ADMIN PUT sms-settings → servis çağrılır (tenantId + data + userId geçer)", async () => {
     const { service, controller } = makeController();
     await controller.updateSmsSettings("t2", "ADMIN", UID, SMS);
-    expect(service.updateSmsSettings).toHaveBeenCalledWith("t2", SMS, UID);
+    expect(service.updateSmsSettings).toHaveBeenCalledWith("t2", SMS, UID, { userId: UID, role: "ADMIN" });
   });
 
   it("(5) tenant izolasyonu: guard tenantId'yi değiştirmez; ADMIN yalnız geçilen tenantId ile gider", async () => {
     const { service, controller } = makeController();
     await controller.updateSmtpSettings("tenant-X", "ADMIN", UID, SMTP);
-    expect(service.updateSmtpSettings).toHaveBeenCalledWith("tenant-X", SMTP, UID);
-    expect(service.updateSmtpSettings).not.toHaveBeenCalledWith("tenant-Y", SMTP, UID);
+    expect(service.updateSmtpSettings).toHaveBeenCalledWith("tenant-X", SMTP, UID, { userId: UID, role: "ADMIN" });
+    expect(service.updateSmtpSettings).not.toHaveBeenCalledWith("tenant-Y", SMTP, UID, { userId: UID, role: "ADMIN" });
   });
 
   it("(6) GET smtp/sms read davranışı korunur (zaten maskeli)", () => {

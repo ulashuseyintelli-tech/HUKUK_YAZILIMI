@@ -37,6 +37,8 @@ import { GuidedOpenObserveService } from '../../permission-diagnostics/guided-op
 import { PoaService } from '../../poa/poa.service';
 import { OfficeController } from '../../office/office.controller';
 import { OfficeService } from '../../office/office.service';
+import { OfficeApprovalService } from '../../office-approval/office-approval.service';
+import { OfficeF01AuthorizationGuard } from '../../office-approval/office-f01-authorization.guard';
 import { SummaryEngineService } from '../../summary-engine/summary-engine.service';
 import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-allocator.service';
 import { AuthService } from '../auth.service';
@@ -744,6 +746,7 @@ describeWithDisposableDb('R01 W2 core user journeys - controlled Nest runtime an
   let claimItemService: ClaimItemService;
   let collectionService: CollectionService;
   let officeService: OfficeService;
+  let officeApprovalService: OfficeApprovalService;
   let domainEvents: DomainEventIngestService;
   let summaryEngine: SummaryEngineService;
   let journalWriter: AccountingJournalWriterService;
@@ -805,7 +808,8 @@ describeWithDisposableDb('R01 W2 core user journeys - controlled Nest runtime an
       undefined,
       auditService,
     );
-    officeService = new OfficeService(prisma as never, auditService);
+    officeApprovalService = new OfficeApprovalService(prisma as never, auditService);
+    officeService = new OfficeService(prisma as never, auditService, officeApprovalService);
 
     const receiptAuthorization = new ReceiptObjectScopeAuthorizationService(
       prisma as never,
@@ -839,6 +843,8 @@ describeWithDisposableDb('R01 W2 core user journeys - controlled Nest runtime an
         { provide: CollectionService, useValue: collectionService },
         { provide: ReceiptObjectScopeAuthorizationService, useValue: receiptAuthorization },
         { provide: OfficeService, useValue: officeService },
+        { provide: OfficeApprovalService, useValue: officeApprovalService },
+        OfficeF01AuthorizationGuard,
         { provide: GuidedOpenObserveService, useValue: {} },
         {
           provide: ConfigService,
@@ -892,10 +898,22 @@ describeWithDisposableDb('R01 W2 core user journeys - controlled Nest runtime an
       ],
     });
     const userA = await prisma.user.create({
-      data: { tenantId: tenantA, email: `w2-a-${suffix}@example.test`, name: 'W2', surname: 'Actor A' },
+      data: {
+        tenantId: tenantA,
+        email: `w2-a-${suffix}@example.test`,
+        name: 'W2',
+        surname: 'Actor A',
+        role: 'ADMIN',
+      },
     });
     const userB = await prisma.user.create({
-      data: { tenantId: tenantB, email: `w2-b-${suffix}@example.test`, name: 'W2', surname: 'Actor B' },
+      data: {
+        tenantId: tenantB,
+        email: `w2-b-${suffix}@example.test`,
+        name: 'W2',
+        surname: 'Actor B',
+        role: 'ADMIN',
+      },
     });
     const officeA = await prisma.office.create({ data: { tenantId: tenantA, name: 'W2 Office A' } });
     const officeB = await prisma.office.create({ data: { tenantId: tenantB, name: 'W2 Office B' } });

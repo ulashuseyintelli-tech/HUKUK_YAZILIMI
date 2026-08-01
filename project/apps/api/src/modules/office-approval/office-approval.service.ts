@@ -447,11 +447,63 @@ export class OfficeApprovalService {
   async isApproverEligible(userId: string, tenantId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } } },
+      include: {
+        lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } },
+        staffMember: { select: { id: true } },
+      },
     });
     if (!user || !user.isActive || user.tenantId !== tenantId) return false;
+    // Staff/personnel hiçbir koşulda final approver değildir. User hesabının
+    // Lawyer bağlantısı bulunsa bile personel bağlantısı varsa fail-closed kalır.
+    if (user.staffMember) return false;
     const lw = user.lawyer;
     return !!lw && (lw.lawyerRank === 'PARTNER' || lw.canApproveOfficeActions === true);
+  }
+
+  /**
+   * F01 actor kapısı: Office yönetim mutasyonları ve hassas Office okuması için
+   * canonical genel allowlist. Bu, action-specific approval politikalarını
+   * genişletmez; approval kararları hâlâ resolveApproverEligible() üzerinden
+   * kendi dar politikalarını uygular.
+   */
+  async isF01ActorAuthorized(userId: string, tenantId: string, targetOfficeId?: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        isActive: true,
+        tenantId: true,
+        staffMember: { select: { id: true, officeId: true } },
+        lawyer: {
+          select: {
+            officeId: true,
+            lawyerRank: true,
+            canApproveOfficeActions: true,
+          },
+        },
+      },
+    });
+
+    if (!user || !user.isActive || user.tenantId !== tenantId) return false;
+
+    // A staff/personnel identity cannot become an Office actor through a
+    // mistakenly-true capability flag.
+    if (user.staffMember) return false;
+
+    const linkedOfficeId = user.lawyer?.officeId ?? undefined;
+    if (targetOfficeId && linkedOfficeId && targetOfficeId !== linkedOfficeId) return false;
+
+    // UserRole.ADMIN is the canonical super-admin mapping. No SUPER_ADMIN role
+    // or enum is introduced here.
+    if (user.role === 'ADMIN') return true;
+
+    const lawyer = user.lawyer;
+    if (!lawyer || !linkedOfficeId) return false;
+    return (
+      lawyer.lawyerRank === 'PARTNER' ||
+      lawyer.lawyerRank === 'MANAGER' ||
+      lawyer.canApproveOfficeActions === true
+    );
   }
 
   /**
