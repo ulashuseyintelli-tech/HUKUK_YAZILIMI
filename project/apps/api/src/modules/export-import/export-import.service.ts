@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 // RFA-017: Excel client import guard'lı ClientService.create'e devredilir (duplicate bypass kapatma).
-import { ClientService } from "../client/client.service";
+import { ClientService, type ClientMutationActorContext } from "../client/client.service";
 import * as ExcelJS from "exceljs";
 import * as PDFDocument from "pdfkit";
 import { computeDebtorMissingFields } from "../debtor/debtor.service"; // PR-D5-e: eksik bilgi sayısı
@@ -322,7 +322,16 @@ export class ExportImportService {
     return Buffer.from(buffer);
   }
 
-  async importClientsFromExcel(tenantId: string, fileBuffer: Buffer, actorUserId?: string): Promise<{ success: number; errors: { row: number; message: string }[] }> {
+  /**
+   * OWN-13 I02-R1: `actor` ZORUNLU. Excel içe aktarımı kullanıcı tetiklemeli bir CLIENT
+   * mutasyonudur; D01 yetkisi (VIEWER DENY) satır bazında `ClientService.create` içinde
+   * uygulanır. Yetkisiz aktörde her satır hata olarak raporlanır, hiçbir kayıt yazılmaz.
+   */
+  async importClientsFromExcel(
+    tenantId: string,
+    fileBuffer: Buffer,
+    actor: ClientMutationActorContext,
+  ): Promise<{ success: number; errors: { row: number; message: string }[] }> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(fileBuffer as unknown as ArrayBuffer);
     const sheet = workbook.worksheets[0];
@@ -414,7 +423,11 @@ export class ExportImportService {
         // tckn/vkn eşleşmesi → mevcut kullan (soft-deleted ise reactivate) → re-import duplicate üretmez.
         // displayName/name/identityNo'yu ClientService kendi hesaplar; tenant izolasyonu korunur.
         // P0.6: import actor — audit attribution (AuditLog.userId null kalmasın).
-        await this.clientService.create(tenantId, data, actorUserId ? { userId: actorUserId } : undefined);
+        // OWN-13 I02-R1: toplu içe aktarım da bir CLIENT mutasyonudur ve kullanıcı tarafından
+        // tetiklenir → D01 yetkisi zorunlu. Eskiden `actorUserId` yoksa `undefined` geçilip
+        // kapı atlanıyordu; artık actor bağlamı ZORUNLU ve eksik/rolsüz aktör fail-closed
+        // reddedilir (satır bazında hata olarak raporlanır, sessizce yazılmaz).
+        await this.clientService.create(tenantId, data, actor);
         success++;
       } catch (e: any) {
         errors.push({ row: i, message: e.message || "Hata" });

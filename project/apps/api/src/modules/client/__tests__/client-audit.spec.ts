@@ -47,7 +47,7 @@ describe("ClientService.create — audit", () => {
       created: { id: "c1", type: "PERSON", tckn: RAW_TCKN, displayName: "AYŞE YILMAZ", phone: RAW_PHONE, email: RAW_EMAIL, isActive: true, canCollect: true },
     });
 
-    await svc.create("t1", { type: "PERSON", tckn: RAW_TCKN, firstName: "Ayşe", lastName: "Yılmaz", phones: [{ value: RAW_PHONE }] }, { userId: "u-real" });
+    await svc.create("t1", { type: "PERSON", tckn: RAW_TCKN, firstName: "Ayşe", lastName: "Yılmaz", phones: [{ value: RAW_PHONE }] }, { userId: "u-real", tenantId: "t1", role: 'ADMIN' });
 
     const input = auditInput(audit);
     expect(input.action).toBe("CLIENT_CREATE");
@@ -67,7 +67,7 @@ describe("ClientService.create — audit", () => {
     // 10000000146 = geçerli checksum (Task A/Faz 1: create artık checksum doğruluyor; eski dummy "123" kırardı).
     const { svc, audit } = buildHarness({ created: { id: "c1", type: "PERSON", tckn: "10000000146" } });
 
-    await svc.create("t1", { type: "PERSON", tckn: "10000000146", userId: "HACKER", createdById: "HACKER" } as any, { userId: "u-real" });
+    await svc.create("t1", { type: "PERSON", tckn: "10000000146", userId: "HACKER", createdById: "HACKER" } as any, { userId: "u-real", tenantId: "t1", role: 'ADMIN' });
 
     expect(auditInput(audit).userId).toBe("u-real");
     expect(auditJson(audit)).not.toContain("HACKER");
@@ -79,7 +79,7 @@ describe("ClientService.create — audit", () => {
     (audit.logInTransaction as jest.Mock).mockRejectedValueOnce(new Error("audit db down"));
     // logInTransaction $transaction callback'i içinde → reddi callback'i reddeder → Prisma rollback.
     await expect(
-      svc.create("t1", { type: "PERSON", tckn: "10000000146" }, { userId: "u-real" }),
+      svc.create("t1", { type: "PERSON", tckn: "10000000146" }, { userId: "u-real", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toThrow("audit db down");
   });
 });
@@ -90,7 +90,7 @@ describe("ClientService.update — audit", () => {
     const updated = { id: "c1", type: "PERSON", tckn: RAW_TCKN, displayName: "YENI AD", phone: RAW_PHONE, isActive: true };
     const { svc, audit } = buildHarness({ existing, updated });
 
-    await svc.update("c1", "t1", { type: "PERSON", tckn: RAW_TCKN, firstName: "Yeni", lastName: "Ad", phones: [{ value: RAW_PHONE }] }, { userId: "u-real" });
+    await svc.update("c1", "t1", { type: "PERSON", tckn: RAW_TCKN, firstName: "Yeni", lastName: "Ad", phones: [{ value: RAW_PHONE }] }, { userId: "u-real", tenantId: "t1", role: 'ADMIN' });
 
     const input = auditInput(audit);
     expect(input.action).toBe("CLIENT_UPDATE");

@@ -3934,3 +3934,89 @@ GOSTERMEZ.
 **OWN-13 = PARTIAL (I01 CLOSED). "Butun CLIENT mutation authorization tamamlandi" IFADESI
 GECERSIZDIR · AUTHENTICATION ≠ AUTHORIZATION · TENANT ISOLATION ≠ MUTATION AUTHORIZATION ·
 ROUTE-LEVEL GATE ≠ SERVICE-WIDE GATE (bkz. R1).**
+
+
+---
+
+## §52 — CLIENT Mutation Authority: Service Boundary (OWN-13 / I02-R1)
+
+Kaynak: owner `CLIENT-OWN-13-I02-R1-SERVICE-BOUNDARY-ACTOR-THREADING-R01` — GO-ANALYZE +
+kosullu GO-IMPLEMENT. Bu bolum ADDITIVE'dir; §1–§51.8 metinleri DEGISMEDI.
+
+### 52.1 Kapatilan bosluk
+
+I01 kapiyi **route sinirina** koymustu (`POST /clients` + `PUT /clients/:id`) cunku
+`ClientService.create()` servis-ici cagiranlara da hizmet ediyordu ve onlarin actor
+threading'i I01 kapsami DISINDA birakilmisti (§51.7 R1).
+
+Phase A envanteri bu bosluğun **gercek** oldugunu gosterdi: `ClientService` yalnizca uc yerde
+enjekte edilir ve **ucu de kullanici-tetiklemeli** HTTP zincirindedir. "Servis-ici cagri"
+GUVENILIR cagri DEMEK DEGILDIR.
+
+| # | Cagiran | Endpoint | I01'de durum |
+|---|---|---|---|
+| 1 | `ClientController.create/update` | `POST /clients`, `PUT /clients/:id` | kapili |
+| 2 | `case.service.ts` → `resolveInlinePartiesBeforeTx` | `POST /cases` (inline-yeni muvekkil) | **kapi ATLANIYORDU** |
+| 3 | `export-import.service.ts` → `importClientsFromExcel` | `POST /export-import/clients/import` | **kapi ATLANIYORDU** |
+
+Gercek system/background cagiran **YOKTUR**: dinamik cozumleme (`ModuleRef`) yok, zamanlanmis
+islerin hicbiri `ClientService` enjekte etmiyor. Bu nedenle explicit system-authority karari
+GEREKMEDI ve Phase A **disposition A** ile Phase B'ye gecildi.
+
+### 52.2 Uygulanan kontrat
+
+- **`ClientMutationActorContext`** (`userId` + `tenantId` + `role`, ucu de zorunlu):
+  `ClientService.create/update` bu parametreyi **opsiyonel almaz** → actor gecirmeyen bir
+  uretim cagrisi **derlenmez** (compile-time fail-closed, `tsc --noEmit` ile kanitli).
+  NOT: jest `ts-jest` + `diagnostics:false` calisir; tip kapisini test degil **tsc** uygular.
+- **`buildClientMutationActor()`**: ham auth degerlerinden baglam ureten TEK fabrika. Eksik
+  alan `''`e indirgenir ve policy tarafindan `NO_ACTOR` / `UNKNOWN_ROLE` ile REDDEDILIR —
+  `as` cast'i ile tipin susturulmasi KASITLI OLARAK yapilmaz.
+- **Kapi artik SERVIS SINIRINDA authority**: `create()`/`update()` once tenant esitligini,
+  sonra D01/D02 kapisini calistirir. Controller cagrilari **defense-in-depth** olarak KALIR;
+  is mantigi TEKRARLANMAZ — her iki yol da AYNI `client-mutation-policy`yi kullanir.
+- **Tenant exact esitligi** (yeni `CLIENT_MUTATION_DENIED_TENANT_MISMATCH`): `actor.tenantId`
+  ile hedef `tenantId` esit degilse hicbir sorgu uretilmeden reddedilir. Bu, `where`
+  yan-tumceleriyle uygulanan tenant izolasyonunun YERINE GECMEZ; ondan ONCE gelen ek katmandir.
+- **CASE ve import cagiranlarinda YALNIZ actor threading** degisti: `@CurrentUser("role")`
+  eklendi ve baglam `ClientService`e tasindi. Baska hicbir is davranisi DEGISMEDI.
+
+### 52.3 Degismeyenler
+
+Lifecycle esigi (`assertCanManageLifecycle`) · tenant izolasyonu `where` yan-tumceleri ·
+audit · D01/D02/D03 politikasinin kendisi · mevcut response alanlari. **schema/migration YOK.**
+Reddedilen istek: 403 + stabil `reasonCode` + kismi yazma YOK + ham PII YOK.
+
+### 52.4 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| R1 odakli testler (2 dosya) | 20/20 PASS |
+| CLIENT modulu regresyon | 368/368 PASS |
+| export-import regresyon | 36/36 PASS |
+| CASE modulu regresyon | 563 PASS / 17 skipped / 0 FAIL |
+| `tsc --noEmit` baseline delta | 577 → 577 (**0 yeni**) |
+| Degisen dosya lint | 0 error |
+| Mutation teeth | **7/7** hedef testi dusurdu, hepsi byte-ayni restore |
+
+Teeth: service create gate kaldir · actor optional yap · tenant esitligi kaldir · CASE actor
+threading kaldir · import actor threading kaldir · VIEWER deny kaldir · service update gate
+kaldir (controller gate birak).
+
+### 52.5 Kasitli olarak DOKUNULMAYAN
+
+`ClientService.create()`'in **reactivate-via-create** yan etkisi (kimlik eslesen soft-deleted
+kaydi `isActive:true` yapmasi) Task 8A'da owner tarafindan KAPSAM DISI birakilmistir
+(`client.service.ts` JSDoc: "Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DISI —
+kasitli olarak dokunulmadi"). R1 bunu DEGISTIRMEZ ve KAPATILMIS GOSTERMEZ; owner karari
+gerektiren ayri bir yuzeydir.
+
+### 52.6 Bolum Self-Check
+
+Bu bolum: yeni bir authorization framework KURMAZ · D01/D02/D03 politikasini DEGISTIRMEZ ·
+lifecycle esigini GEVSETMEZ · CASE/import is davranisini DEGISTIRMEZ · schema/migration
+URETMEZ · production verisine ERISMEZ · §1–§51.8 metinlerini DEGISTIRMEZ · R2–R6
+residual'larini KAPALI GOSTERMEZ.
+
+**R1 CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. "Butun CLIENT mutation authorization
+tamamlandi" IFADESI GECERSIZDIR. INTERNAL CALL ≠ TRUSTED CALL.**

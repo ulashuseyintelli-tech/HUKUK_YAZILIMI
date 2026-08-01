@@ -47,7 +47,7 @@ import {
 } from "../collection/collection-audit";
 // RFA-016: case.create içindeki inline taraf oluşturma artık bu guard'lı servislere devredilir
 // (tx.client/lawyer/debtor.create duplicate guard'ı atlıyordu → Şükrü-deseninin dış-kapı hali).
-import { ClientService } from "../client/client.service";
+import { buildClientMutationActor, ClientService, type ClientMutationActorContext } from "../client/client.service";
 import { LawyerService } from "../lawyer/lawyer.service";
 import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
@@ -522,7 +522,14 @@ export class CaseService {
    * - CaseService.create() → POST /cases (Yeni Takip sihirbazı: inline-yeni müvekkil/avukat/borçlu)
    * </remarks>
    */
-  private async resolveInlinePartiesBeforeTx(tenantId: string, dto: CreateCaseDto): Promise<void> {
+  private async resolveInlinePartiesBeforeTx(
+    tenantId: string,
+    dto: CreateCaseDto,
+    // OWN-13 I02-R1: POST /cases içinden yapılan inline müvekkil oluşturma bir CLIENT
+    // mutasyonudur ve D01 yetkisine tabidir. "Servis-içi çağrı" GÜVENİLİR çağrı DEMEK
+    // DEĞİLDİR — bu yol kullanıcı tarafından dolaylı tetiklenir. Actor bağlamı zorunlu.
+    clientMutationActor: ClientMutationActorContext,
+  ): Promise<void> {
     // 1) Müvekkil (creditor) — ClientService.create: identity (tckn/vkn) eşleşmesi → mevcut döndür
     //    (reactivate dahil). Kimliksizde fuzzy YOK (Müvekkil=TCKN kontratı). Throw etmez.
     if (dto.creditors?.length) {
@@ -542,7 +549,7 @@ export class CaseService {
           phone: c.phone,
           email: c.email,
           address: c.address,
-        });
+        }, clientMutationActor);
         c.id = resolved.id;
       }
     }
@@ -1624,7 +1631,7 @@ export class CaseService {
   /// Çağrıldığı yerler:
   /// - CaseController.create() → POST /cases (Yeni takip oluşturma)
   /// </remarks>
-  async create(tenantId: string, dto: CreateCaseDto, userId?: string) {
+  async create(tenantId: string, dto: CreateCaseDto, userId?: string, userRole?: string) {
     // INTEREST_POLICY_ASSIGNED (HR-26: HUMAN actor zorunlu) için userId şart.
     // "Bu faiz politikasını kim atadı?" sorusunun cevabı olmadan event hukuken zayıf.
     // Fail-fast: tx başlamadan reddet ('unknown' actor kabul edilmez).
@@ -1633,6 +1640,12 @@ export class CaseService {
         "Case oluşturmak için kullanıcı kimliği (userId) zorunludur (faiz politikası ataması audit'i)."
       );
     }
+
+    // OWN-13 I02-R1: inline-yeni müvekkil oluşturma bir CLIENT mutasyonudur → D01 yetkisi
+    // gerekir ve rol auth context'inden gelmelidir. Rol yoksa fail-closed: bilinmeyen rol
+    // `client-mutation-policy` tarafından zaten reddedilir, burada sessizce varsayılan
+    // ATANMAZ. Bu değer YALNIZ ClientService'e geçer; CASE davranışını değiştirmez.
+    const clientMutationActor = buildClientMutationActor({ userId, tenantId, role: userRole });
 
     // Claim Formation: bütün Due batch'ini herhangi bir query, inline taraf oluşturma veya
     // transaction başlamadan önce doğrula. Legacy DueType.OTHER kayıtlarının read/update/
@@ -1719,7 +1732,7 @@ export class CaseService {
 
       // RFA-016: inline-yeni taraflar (id YOK) tx ÖNCESİ guard'lı servislerle resolve edilir
       // (Tasarım A). Böylece tx içinde duplicate guard bypass'lı tx.client/lawyer/debtor.create kalmaz.
-      await this.resolveInlinePartiesBeforeTx(tenantId, dto);
+      await this.resolveInlinePartiesBeforeTx(tenantId, dto, clientMutationActor);
       await this.validateDebtorOwnershipBeforeCreate(tenantId, dto);
 
       const result = await this.prisma.$transaction(async (tx) => {

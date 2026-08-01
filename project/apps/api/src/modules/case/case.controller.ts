@@ -226,9 +226,17 @@ export class CaseController {
     return this.caseService.findOne(tenantId, id);
   }
 
+  // OWN-13 I02-R1: `role` de taşınır — POST /cases inline-yeni müvekkil OLUŞTURABİLDİĞİ için
+  // CLIENT D01 yetkisi bu route'tan da geçer. Değer YALNIZ auth context'inden gelir; body'den
+  // ASLA okunmaz. CASE davranışı DEĞİŞMEZ, yalnız aktör bağlamı taşınır.
   @Post()
-  create(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") userId: string, @Body() dto: CreateCaseDto) {
-    return this.caseService.create(tenantId, dto, userId);
+  create(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentUser("role") userRole: string,
+    @Body() dto: CreateCaseDto,
+  ) {
+    return this.caseService.create(tenantId, dto, userId, userRole);
   }
 
   @Put(":id")

@@ -42,7 +42,7 @@ function buildHarness(
 describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
   it("P0.5: updateMany where {id, tenantId} ile yazar (tenant-scoped write)", async () => {
     const { svc, tx } = buildHarness();
-    await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1" });
+    await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: "c1", tenantId: "t1" });
   });
@@ -63,8 +63,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
         ticaretSicilNo: "TS1",
         gender: "E",
         detsisNo: "D1",
-      },
-      { userId: "u1" },
+      }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const data = tx.client.updateMany.mock.calls[0][0].data;
     expect(data.postalCode).toBe("34000");
@@ -80,7 +79,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
   it("P0.4/P0.5: updateMany count=0 (cross-tenant/yarış) → NotFoundException", async () => {
     const { svc } = buildHarness({ updateCount: 0 });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1" }),
+      svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -88,7 +87,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
     const { svc, prisma } = buildHarness();
     (prisma.client.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(
-      svc.update("cX", "t1", { type: "PERSON" }, { userId: "u1" }),
+      svc.update("cX", "t1", { type: "PERSON" }, { userId: "u1", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
@@ -100,7 +99,7 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
       officeApprovalEligible: false,
     });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u2" }),
+      svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u2", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u2", "t1");
     expect(tx.client.updateMany).not.toHaveBeenCalled();
@@ -112,7 +111,7 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
       officeApprovalEligible: false,
     });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2" }),
+      svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2", tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u2", "t1");
     expect(tx.client.updateMany).not.toHaveBeenCalled();
@@ -124,7 +123,7 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
       updated: { id: "c1", isActive: true },
       officeApprovalEligible: true,
     });
-    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u1" });
+    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     expect(result).toBeTruthy();
     expect(tx.client.updateMany.mock.calls[0][0].data.isActive).toBe(true);
   });
@@ -134,7 +133,7 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
       existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
       officeApprovalEligible: false, // ineligible olsa BİLE no-op olduğu için gate tetiklenmemeli
     });
-    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2" });
+    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2", tenantId: "t1", role: 'ADMIN' });
     expect(result).toBeTruthy();
     expect(officeApproval.isApproverEligible).not.toHaveBeenCalled();
     expect(tx.client.updateMany).toHaveBeenCalled();
@@ -142,16 +141,19 @@ describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic 
 
   it("isActive gönderilmemiş (undefined) → gate hiç çalışmaz (mevcut davranış korunur)", async () => {
     const { svc, officeApproval } = buildHarness({ officeApprovalEligible: false });
-    await svc.update("c1", "t1", { type: "PERSON", firstName: "A" }, { userId: "u2" });
+    await svc.update("c1", "t1", { type: "PERSON", firstName: "A" }, { userId: "u2", tenantId: "t1", role: 'ADMIN' });
     expect(officeApproval.isApproverEligible).not.toHaveBeenCalled();
   });
 
+  // OWN-13 I02-R1: "actor eksik" ARTIK tip düzeyinde ifade edilemez (parametre zorunlu);
+  // eksiklik BOŞ bağlam olarak gelir ve merkezi policy tarafından fail-closed reddedilir.
+  // Testin ASIL İDDİASI korunur: aktörsüz istek hiçbir yazma yapamaz.
   it("userId yoksa (actor eksik) ve isActive değişiyorsa → ForbiddenException (fail-closed, remove() ile tutarlı)", async () => {
     const { svc, tx } = buildHarness({
       existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
     });
     await expect(
-      svc.update("c1", "t1", { type: "PERSON", isActive: false }, {}),
+      svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "", tenantId: "t1", role: "" }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(tx.client.updateMany).not.toHaveBeenCalled();
   });
@@ -265,7 +267,7 @@ describe("ClientService.findOne — Task 4A soft-delete default-exclude (owner k
 
   it("update() arşivleme (isActive:false) sonrası kaydı yine döndürür (includeInactive ile)", async () => {
     const { svc, prisma } = buildHarness({ updated: { id: "c1", isActive: false } });
-    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u1" });
+    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u1", tenantId: "t1", role: 'ADMIN' });
     // update sonu findOne(includeInactive:true) → soft-deleted kaydı döndürür (null değil).
     expect(result).toBeTruthy();
     const lastWhere = (prisma.client.findFirst as jest.Mock).mock.calls.at(-1)[0].where;

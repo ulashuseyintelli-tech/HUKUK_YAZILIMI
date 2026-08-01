@@ -47,6 +47,12 @@ export const CLIENT_MUTATION_REASON = {
   UNKNOWN_ROLE: 'CLIENT_MUTATION_DENIED_UNKNOWN_ROLE',
   SENSITIVE_DENIED: 'CLIENT_MUTATION_DENIED_SENSITIVE_FIELDS',
   LIFECYCLE_DENIED: 'CLIENT_MUTATION_DENIED_LIFECYCLE',
+  /**
+   * OWN-13 I02-R1 (owner req. 7): actor'un tenant'ı ile hedef tenant EXACT eşit değil.
+   * Tenant isolation `where` yan-tümceleriyle zaten uygulanır; bu ondan ÖNCE gelen ayrı
+   * bir katmandır ve hiç sorgu üretmeden reddeder.
+   */
+  TENANT_MISMATCH: 'CLIENT_MUTATION_DENIED_TENANT_MISMATCH',
 } as const;
 
 export type ClientMutationReason =

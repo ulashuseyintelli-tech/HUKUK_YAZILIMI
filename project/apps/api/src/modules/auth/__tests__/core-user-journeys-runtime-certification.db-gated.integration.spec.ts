@@ -1051,7 +1051,9 @@ describeWithDisposableDb('R01 W2 core user journeys - controlled Nest runtime an
     await expect(failingService.create(
       fixture.tenantA,
       { firstName: 'Rollback', lastName: 'Client', email: 'rollback@example.test', phone: '+900000000002' },
-      { userId: fixture.userA },
+      // OWN-13 I02-R1: actor bağlamı ZORUNLU. Bu test audit-hatası rollback'ini ölçer, yetkiyi
+      // DEĞİL; bu yüzden AÇIK ve yetkili bir aktör verilir (sahte bypass DEĞİL).
+      { userId: fixture.userA, tenantId: fixture.tenantA, role: 'ADMIN' },
     )).rejects.toThrow('FORCED_W2_CLIENT_AUDIT_FAILURE');
     await expect(prisma.client.count({ where: { tenantId: fixture.tenantA } })).resolves.toBe(clientCountBefore);
     await expect(prisma.auditLog.count({ where: { tenantId: fixture.tenantA } })).resolves.toBe(auditCountBefore);

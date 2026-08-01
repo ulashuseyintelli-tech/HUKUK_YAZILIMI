@@ -41,34 +41,34 @@ describe("ClientService.create — TCKN/VKN checksum (Task A/Faz 1)", () => {
   it("YENİ kayıt: geçersiz-checksum TCKN (11 hane) → BadRequestException; insert YOK", async () => {
     const { svc, tx } = svcFor(null);
     await expect(
-      svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111111" }),
+      svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111111" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.client.create).not.toHaveBeenCalled();
   });
 
   it("YENİ kayıt: geçerli-checksum TCKN → insert (tx.client.create)", async () => {
     const { svc, tx } = svcFor(null);
-    await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111110" });
+    await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111110" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.create).toHaveBeenCalledTimes(1);
   });
 
   it("YENİ kayıt: geçersiz-checksum VKN (10 hane) → BadRequestException; insert YOK", async () => {
     const { svc, tx } = svcFor(null);
     await expect(
-      svc.create("t1", { type: "COMPANY", companyName: "X", vkn: "3333333333" }),
+      svc.create("t1", { type: "COMPANY", companyName: "X", vkn: "3333333333" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.client.create).not.toHaveBeenCalled();
   });
 
   it("YENİ kayıt: geçerli-checksum VKN → insert", async () => {
     const { svc, tx } = svcFor(null);
-    await svc.create("t1", { type: "COMPANY", companyName: "X", vkn: "1234567890" });
+    await svc.create("t1", { type: "COMPANY", companyName: "X", vkn: "1234567890" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.create).toHaveBeenCalledTimes(1);
   });
 
   it("boş tckn '' → checksum atlanır (no-tckn); insert yapılır", async () => {
     const { svc, tx } = svcFor(null);
-    await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "" });
+    await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect(tx.client.create).toHaveBeenCalledTimes(1);
   });
 
@@ -76,7 +76,7 @@ describe("ClientService.create — TCKN/VKN checksum (Task A/Faz 1)", () => {
     // Soft-deleted legacy müvekkilin tckn'i geçersiz-checksum; yeniden ekleme reactivate eder.
     // Checksum dedup'TAN SONRA olduğundan bu yola HİÇ gelinmez → BadRequest YOK.
     const { svc, tx } = svcFor({ id: "legacy1", isActive: false, displayName: "LEGACY", tckn: "11111111111" });
-    const res = await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111111" });
+    const res = await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111111" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect((res as any)._existingReturned).toBe(true);
     expect((res as any)._reactivated).toBe(true);
     expect(tx.client.create).not.toHaveBeenCalled();
