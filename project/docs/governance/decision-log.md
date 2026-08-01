@@ -8,6 +8,52 @@ Kurallar:
 - Backlog veya roadmap kararları ilgili governance dosyalarına da yansıtılır.
 - Bu dosya tek başına implementasyon yetkisi vermez.
 
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01 --> **UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01 — TASK-BOUND SEMANTIC AUTHORITY:** `UYAP-MODULE-FULL-GAP-CLOSURE-R02` programında yalnız `UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01` yürütmesi yetkilidir. `takipTuru` ve `mahiyetKodu` için yalnız canonical resolver tarafından üretilmiş, runtime'da doğrulanabilen `OfficialCodeResolution` sonucu serializer authority'sidir. Caller tarafından kurulmuş veya canonical sonucu yapısal olarak kopyalamış `RESOLVED` nesnesi authority değildir ve XML/byte üretiminden önce fail-closed reddedilir. Mevcut official-code mapping'leri, RECEIVABLE Legal Basis ownership'i, M01 consumer sınırı, structured-emission semantiği ve default-OFF/production-unreachable durumu değişmez. Yeni mapping, schema/migration, strict-DTD iddiası, production activation veya UYAP kaynaklı hukuki semantik bu authority kapsamında değildir. Known-good floor `2694d1e4bbc4173ee8dc328d97edb853d0d32b78`; binding original captured base `ee0ebe1fbd825b007de71c5f4a9deed6cc4d9a6e`; control-plane binding PR #2056 / squash `dc7d48b41c2e2d444236c2546bac5e54176bb4a3`; materialization base `3803f0346b3efda39cb90ea2cac19b3b96939340`. Exact owner evidence SHA-256: `7f935ec61b02222e556a237f6cdadd700aa7f457dcdc0935778e89bfb0eae5b6`. **SEMANTIC AUTHORITY: RATIFIED / SINGLE-USE. PROGRAM LOCK: UYAP SERIALIZER-BYPASS-HARDENING-I01 ONLY. SECOND USE: FAIL-CLOSED.**
+
+Exact owner evidence:
+
+```text
+OWNER TASK-BOUND AUTHORITY
+SEMANTIC AUTHORITY + EXECUTION GRANT
+GO-COMPLETE
+
+OWNER:
+Av. Ulaş Hüseyin Telli
+
+PROGRAM:
+UYAP-MODULE-FULL-GAP-CLOSURE-R02
+
+CURRENT PHASE:
+POST-STRUCTURED-EMISSION AUTHORITY HARDENING
+
+EXACT TASK:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01
+
+TITLE:
+Canonical Resolution Provenance / Capability Enforcement
+
+SEMANTIC AUTHORITY:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01
+
+EXECUTION GRANT:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01
+
+KNOWN GOOD FLOOR:
+2694d1e4bbc4173ee8dc328d97edb853d0d32b78
+
+OWNER DECISION:
+RATIFIED
+
+EXECUTION:
+GO-COMPLETE
+
+GRANT:
+ONE-SHOT / TASK-BOUND
+
+GRANT EXPIRY:
+TERMINAL CLOSEOUT
+```
+
 ### OFFICE-SC-F01 authorization breadth and sensitive projection semantic authority record
 
 ```text
