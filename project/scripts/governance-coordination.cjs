@@ -312,7 +312,7 @@ const OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_S
         'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
       mode:
         'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01',
-      headRef: 'codex/office-f01-stage2-authority-materialization-r01',
+      headRef: 'codex/office-sc-f01-authority-materialization-r01',
       contractHeadRef: 'codex/office-sc-f01-authority-materialization-r01',
       statusTuple: 'M / A / A / A',
       pathCount: 4,
@@ -374,6 +374,7 @@ const OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01 = Object.freeze({
     'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_STAGE2_VALIDATOR_RECONCILIATION_R01',
   baseSha: '8f2426d6df5cd9e92d1511ad2588a8d0ffb7edd1',
   headRef: 'codex/office-f01-stage2-validator-reconciliation-r01',
+  followupHeadRef: 'codex/office-f01-validator-mapping-followup-r01',
   ownerName: 'Av. Ulaş Hüseyin Telli',
   ownerRole: 'Repository Owner / Semantic Authority',
   ownerDecisions: '8/8 RATIFIED',
@@ -392,6 +393,7 @@ const OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01 = Object.freeze({
     'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
   targetMode:
     'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01',
+  targetHeadRef: 'codex/office-sc-f01-authority-materialization-r01',
   ownerRatificationEvidence: Object.freeze({
     exactExcerpt: OFFICE_F01_STAGE2_VALIDATOR_OWNER_EVIDENCE,
     excerptSha256: '7b2ffeb93ae6b91a88eee84991852bf19b3682ebc587f9152442e04388de4302',
@@ -3257,7 +3259,9 @@ function classifyPrChangeSet(changes, context = {}) {
   const officeF01ValidatorRepair =
     OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   if (
-    context.headRef === officeF01ValidatorRepair.headRef &&
+    [officeF01ValidatorRepair.headRef, officeF01ValidatorRepair.followupHeadRef].includes(
+      context.headRef,
+    ) &&
     officeF01ValidatorRepairBaseIsValid(context.base, context.cwd) &&
     hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths)
   ) {
@@ -3267,7 +3271,9 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
   if (
-    context.headRef === officeF01ValidatorRepair.headRef ||
+    [officeF01ValidatorRepair.headRef, officeF01ValidatorRepair.followupHeadRef].includes(
+      context.headRef,
+    ) ||
     (context.base === officeF01ValidatorRepair.baseSha &&
       hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths))
   ) {
@@ -5720,7 +5726,7 @@ function validateOfficeF01Stage2ValidatorReconciliationBindingScope(options) {
     taskId !== repair.taskId ||
     (mode && mode !== repair.mode) ||
     !officeF01ValidatorRepairBaseIsValid(base, cwd) ||
-    headRef !== repair.headRef ||
+    ![repair.headRef, repair.followupHeadRef].includes(headRef) ||
     !hasExactChangeSet(changes, repair.changedPaths)
   ) {
     reject(
@@ -5742,12 +5748,14 @@ function validateOfficeF01Stage2ValidatorReconciliationBindingScope(options) {
     repair.mode,
     repair.baseSha,
     repair.headRef,
+    repair.followupHeadRef,
     repair.stage1MergeSha,
     repair.ownerName,
     repair.ownerRole,
     repair.ownerDecisions,
     repair.targetTaskId,
     repair.targetMode,
+    repair.targetHeadRef,
     repair.ownerRatificationEvidence.excerptSha256,
     ...repair.changedPaths.map(({ status, path: repoPath }) => `${status} ${repoPath}`),
   ];

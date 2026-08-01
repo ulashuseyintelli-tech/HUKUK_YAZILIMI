@@ -1855,6 +1855,7 @@ Repair task ID : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-STAGE2-VAL
 Repair mode    : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_STAGE2_VALIDATOR_RECONCILIATION_R01
 Repair base    : 8f2426d6df5cd9e92d1511ad2588a8d0ffb7edd1
 Repair head    : codex/office-f01-stage2-validator-reconciliation-r01
+Repair follow-up head : codex/office-f01-validator-mapping-followup-r01
 Repair scope   : M project/scripts/governance-coordination.cjs
                  M project/scripts/governance-coordination.test.cjs
                  M project/docs/governance/governance-writer-coordination-contract.md
@@ -1864,6 +1865,7 @@ Owner role     : Repository Owner / Semantic Authority
 Owner decisions: 8/8 RATIFIED
 Target task    : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01
 Target mode    : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01
+Target head ref: codex/office-sc-f01-authority-materialization-r01
 Owner evidence SHA-256 : 7b2ffeb93ae6b91a88eee84991852bf19b3682ebc587f9152442e04388de4302
 ```
 
