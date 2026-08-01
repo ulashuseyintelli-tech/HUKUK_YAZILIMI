@@ -669,6 +669,62 @@ const UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R
           'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01',
       }),
     }),
+    closeoutBindingPr: Object.freeze({
+      taskId:
+        'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01',
+      mode:
+        'UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01',
+      baseSha: '7082d49a5f78deebc4983726683506abeb0a2ab2',
+      headRef:
+        'codex/uyap-official-alacakkalemi-structured-emission-i01-terminal-closeout-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    closeoutPr: Object.freeze({
+      taskId: 'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01',
+      mode:
+        'UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_TERMINAL_CLOSEOUT_R01',
+      originalBaseSha: '7082d49a5f78deebc4983726683506abeb0a2ab2',
+      headRef:
+        'codex/uyap-official-alacakkalemi-structured-emission-i01-terminal-closeout',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId:
+          'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01.md',
+        recordId:
+          'UYAP-OFFICIAL-ALACAKKALEMI-STRUCTURED-EMISSION-I01-EG01',
+      }),
+      implementation: Object.freeze({
+        pullRequestNumber: 2048,
+        squashSha: '7082d49a5f78deebc4983726683506abeb0a2ab2',
+      }),
+    }),
   });
 const RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 =
   Object.freeze({
@@ -3480,8 +3536,40 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.base ===
+      uyapStructuredEmissionBinding.closeoutBindingPr.baseSha &&
+    context.headRef ===
+      uyapStructuredEmissionBinding.closeoutBindingPr.headRef &&
+    hasExactChangeSet(
+      changes,
+      uyapStructuredEmissionBinding.closeoutBindingPr.changedPaths,
+    )
+  ) {
+    return {
+      mode: uyapStructuredEmissionBinding.closeoutBindingPr.mode,
+      taskId: uyapStructuredEmissionBinding.closeoutBindingPr.taskId,
+    };
+  }
+
+  if (
+    context.headRef === uyapStructuredEmissionBinding.closeoutPr.headRef &&
+    hasExactChangeSet(
+      changes,
+      uyapStructuredEmissionBinding.closeoutPr.changedPaths,
+    )
+  ) {
+    return {
+      mode: uyapStructuredEmissionBinding.closeoutPr.mode,
+      taskId: uyapStructuredEmissionBinding.closeoutPr.taskId,
+    };
+  }
+
+  if (
     context.headRef === uyapStructuredEmissionBinding.bindingPr.headRef ||
-    context.headRef === uyapStructuredEmissionBinding.targetPr.headRef
+    context.headRef === uyapStructuredEmissionBinding.targetPr.headRef ||
+    context.headRef ===
+      uyapStructuredEmissionBinding.closeoutBindingPr.headRef ||
+    context.headRef === uyapStructuredEmissionBinding.closeoutPr.headRef
   ) {
     reject(
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
@@ -4650,6 +4738,53 @@ function validateUyapM01TerminalCloseoutBindingScope(options) {
       reject(
         'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
         `contract is missing exact UYAP-M01 closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: closeoutBinding.mode, taskId: closeoutBinding.taskId };
+}
+
+function validateUyapStructuredEmissionTerminalCloseoutBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const closeoutBinding = binding.closeoutBindingPr;
+  if (
+    taskId !== closeoutBinding.taskId ||
+    base !== closeoutBinding.baseSha ||
+    headRef !== closeoutBinding.headRef ||
+    !hasExactChangeSet(changes, closeoutBinding.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP structured-emission terminal closeout control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    closeoutBinding.taskId,
+    closeoutBinding.mode,
+    closeoutBinding.baseSha,
+    closeoutBinding.headRef,
+    binding.closeoutPr.taskId,
+    binding.closeoutPr.mode,
+    binding.closeoutPr.originalBaseSha,
+    binding.closeoutPr.headRef,
+    ...binding.closeoutPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.closeoutPr.semanticAuthority.recordId,
+    binding.closeoutPr.executionGrant.recordId,
+    String(binding.closeoutPr.implementation.pullRequestNumber),
+    binding.closeoutPr.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact UYAP structured-emission closeout binding ${expectedLiteral}`,
       );
     }
   }
@@ -7130,6 +7265,82 @@ function validateUyapM01TerminalCloseoutScope(options) {
   return { mode: target.mode, taskId: target.taskId };
 }
 
+function validateUyapStructuredEmissionTerminalCloseoutScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP structured-emission terminal closeout target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.closeoutBindingPr.taskId,
+    binding.closeoutBindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    target.headRef,
+    String(target.implementation.pullRequestNumber),
+    target.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical UYAP structured-emission closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const semanticAuthority = gitShow(head, target.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(semanticAuthority, target.semanticAuthority);
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const grantLiteral of [
+    'TASK STATUS            : CLOSED',
+    'CHANGE STATUS          : MERGED',
+    'DELIVERY STATUS        : PASS',
+    'SEMANTIC AUTHORITY     : CANONICAL',
+    'EXECUTION GRANT        : CONSUMED / CLOSED',
+    `IMPLEMENTATION PR      : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA     : ${target.implementation.squashSha}`,
+    'M01 QUALIFICATION      : REQUIRED / VERIFIED',
+    'LEGAL-BASIS OWNER      : RECEIVABLE ONLY',
+    'STRUCTURED EMISSION    : CANONICAL TECHNICAL IMPLEMENTATION',
+    'FALLBACK               : NONE',
+    'FAIZ                   : REJECTED IN THIS SLICE',
+    'DEFAULT-OFF            : PROVEN',
+    'PRODUCTION CALL-SITE   : NONE',
+    'PRODUCTION REACHABILITY: 0',
+    'STRICT DTD             : NOT CLAIMED',
+    'REQUIRED CI            : PASS',
+    'SECOND USE: FAIL-CLOSED',
+    'WAITING FOR OWNER : NO FOR THIS TASK — TASK COMPLETE',
+  ]) {
+    if (!grant.includes(grantLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `UYAP structured-emission terminal receipt is missing ${grantLiteral}`,
+      );
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function validatePb01AuthorityBootstrapScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -7868,6 +8079,21 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01
+      .closeoutBindingPr.mode
+  ) {
+    return validateUyapStructuredEmissionTerminalCloseoutBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01.mode
   ) {
     return validateOfficeF01Stage1BindingScope({
@@ -7912,6 +8138,21 @@ function validatePrScope(options) {
       .closeoutPr.mode
   ) {
     return validateUyapM01TerminalCloseoutScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01
+      .closeoutPr.mode
+  ) {
+    return validateUyapStructuredEmissionTerminalCloseoutScope({
       base,
       head,
       headRef,
@@ -8866,6 +9107,8 @@ module.exports = {
   validateUyapM01AuthorityMaterializationScope,
   validateUyapStructuredEmissionAuthorityBindingScope,
   validateUyapStructuredEmissionAuthorityMaterializationScope,
+  validateUyapStructuredEmissionTerminalCloseoutBindingScope,
+  validateUyapStructuredEmissionTerminalCloseoutScope,
   validateUyapM01TerminalCloseoutBindingScope,
   validateUyapM01TerminalCloseoutScope,
   validateKc01AuthorityBootstrapBindingScope,
