@@ -27,6 +27,10 @@ import {
   prepareUyapDormantDispatch,
 } from '../official-dormant-dispatch';
 import { serializeOfficialExchange } from '../official-exchange-builder';
+import {
+  resolveOfficialMahiyetKodu,
+  resolveOfficialTakipTuru,
+} from '../official-codelist-registry';
 import { resolveOfficialRole } from '../official-role-translator';
 import type {
   OfficialExchangeInput,
@@ -49,7 +53,7 @@ const taraf = (over: Partial<OfficialTaraf> = {}): OfficialTaraf => ({
 const input = (taraflar: OfficialTaraf[] = [taraf()]): OfficialExchangeInput => ({
   dosya: {
     dosyaTipi: '1',
-    takipTuruResolution: { kind: 'RESOLVED', code: '1' },
+    takipTuruResolution: resolveOfficialTakipTuru({ proceedingType: 'GENERAL_EXECUTION' }),
     takipYolu: '1',
     takipSekli: '1',
   },
@@ -333,5 +337,79 @@ describe('I01A — hüküm sınırı', () => {
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
+  });
+});
+
+describe('I01 hardening — resolver provenance capability', () => {
+  it('caller-created takipTuru RESOLVED sonucunu XML/byte öncesinde reddeder', () => {
+    const r = serializeUyapExchangeCanonical({
+      ...input(),
+      dosya: {
+        ...input().dosya,
+        takipTuruResolution: { kind: 'RESOLVED', code: '1' },
+      },
+    });
+
+    expect(r.status).toBe('CODELIST_REJECTED');
+    if (r.status === 'CODELIST_REJECTED') {
+      expect(r.failureCode).toBe('OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED');
+      expect(r.detail).toContain('provenance/capability');
+    }
+    expect(r).not.toHaveProperty('xml');
+    expect(r).not.toHaveProperty('bytes');
+  });
+
+  it('canonical takipTuru sonucunun structural copy sini reddeder', () => {
+    const canonicalResolution = resolveOfficialTakipTuru({
+      proceedingType: 'GENERAL_EXECUTION',
+    });
+    const copiedResolution = { ...canonicalResolution };
+    const r = serializeUyapExchangeCanonical({
+      ...input(),
+      dosya: { ...input().dosya, takipTuruResolution: copiedResolution },
+    });
+
+    expect(r.status).toBe('CODELIST_REJECTED');
+    if (r.status === 'CODELIST_REJECTED') {
+      expect(r.failureCode).toBe('OFFICIAL_TAKIP_MAPPING_AUTHORITY_REQUIRED');
+    }
+    expect(r).not.toHaveProperty('xml');
+    expect(r).not.toHaveProperty('bytes');
+  });
+
+  it('canonical mahiyet sonucunun structural copy sini reddeder; özgün nesneyi kabul eder', () => {
+    const canonicalMahiyet = resolveOfficialMahiyetKodu({
+      caseSubCategory: 'NAFAKA',
+      takipTuru: { proceedingType: 'JUDGMENT_ENFORCEMENT' },
+      caseJudgmentNafakaType: 'TEDBIR',
+    });
+    const canonicalTakip = resolveOfficialTakipTuru({
+      proceedingType: 'JUDGMENT_ENFORCEMENT',
+    });
+
+    const copied = serializeUyapExchangeCanonical({
+      ...input(),
+      dosya: {
+        ...input().dosya,
+        takipTuruResolution: canonicalTakip,
+        mahiyetResolution: { ...canonicalMahiyet },
+      },
+    });
+    expect(copied.status).toBe('CODELIST_REJECTED');
+    if (copied.status === 'CODELIST_REJECTED') {
+      expect(copied.failureCode).toBe('OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED');
+    }
+    expect(copied).not.toHaveProperty('xml');
+    expect(copied).not.toHaveProperty('bytes');
+
+    const original = serializeUyapExchangeCanonical({
+      ...input(),
+      dosya: {
+        ...input().dosya,
+        takipTuruResolution: canonicalTakip,
+        mahiyetResolution: canonicalMahiyet,
+      },
+    });
+    expect(original.status).toBe('CANONICAL_BYTES');
   });
 });

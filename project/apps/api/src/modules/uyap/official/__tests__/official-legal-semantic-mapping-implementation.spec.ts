@@ -292,7 +292,7 @@ describe('IG-M — mahiyetKodu owner-ratified satırlar', () => {
 
     const r = serializeUyapExchangeCanonical(
       input({
-        takipTuruResolution: { kind: 'RESOLVED', code: '1' },
+        takipTuruResolution: resolveOfficialTakipTuru({ proceedingType: 'CAMBIO' }),
         mahiyetResolution: residual,
       }),
     );
@@ -307,7 +307,9 @@ describe('IG-M — mahiyetKodu owner-ratified satırlar', () => {
   it('IG-M-EMIT: M-02 canonical serializer üzerinden gerçekten emit edilir', () => {
     const r = serializeUyapExchangeCanonical(
       input({
-        takipTuruResolution: { kind: 'RESOLVED', code: '0' },
+        takipTuruResolution: resolveOfficialTakipTuru({
+          proceedingType: 'JUDGMENT_ENFORCEMENT',
+        }),
         mahiyetResolution: resolveOfficialMahiyetKodu({
           caseSubCategory: 'NAFAKA',
           takipTuru: { proceedingType: 'JUDGMENT_ENFORCEMENT' },

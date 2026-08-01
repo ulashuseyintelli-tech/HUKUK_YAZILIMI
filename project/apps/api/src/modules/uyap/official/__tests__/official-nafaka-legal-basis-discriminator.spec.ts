@@ -191,7 +191,7 @@ describe('NB — nafaka legal-basis model-evidence guard ları', () => {
     );
     expect(r.status).toBe('CODELIST_REJECTED');
     if (r.status === 'CODELIST_REJECTED') {
-      expect(r.failureCode).toBe('OFFICIAL_MAHIYET_DTD_UNREPRESENTABLE');
+      expect(r.failureCode).toBe('OFFICIAL_MAHIYET_MAPPING_AUTHORITY_REQUIRED');
     }
   });
 

@@ -9,6 +9,7 @@ import {
   type UyapStructuredEmissionClaimEvidenceReaderPort,
   type UyapStructuredEmissionM01ConsumerPort,
 } from '../official-alacakkalemi-structured-emission.service';
+import { resolveOfficialTakipTuru } from '../official-codelist-registry';
 import { resolveOfficialRole } from '../official-role-translator';
 
 const ENABLE_FLAG = 'UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_ENABLED';
@@ -41,7 +42,7 @@ const projection = (
 const request = (relations: readonly unknown[] = [{ relation: 'opaque' }]) => ({
   dosya: {
     dosyaTipi: '1',
-    takipTuruResolution: { kind: 'RESOLVED' as const, code: '1' },
+    takipTuruResolution: resolveOfficialTakipTuru({ proceedingType: 'GENERAL_EXECUTION' }),
   },
   taraflar: [
     {
