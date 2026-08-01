@@ -79,6 +79,13 @@ src/modules/client/__tests__/client-create-checksum.spec.ts
 src/modules/client/__tests__/client-document-request-command.spec.ts
 src/modules/client/__tests__/client-operating-snapshot.spec.ts
 #
+#   CLIENT-OWN-13-MUTATION-AUTHORIZATION-I01 same-tenant mutation authorization (SAF, DB-siz)
+#     Owner D01/D02/D03: create VIEWER-DENY, update coarse gate + hassas-alan esigi
+#     (ADMIN OR officeApproval.isApproverEligible), karma istekte partial write YASAK,
+#     bilinmeyen DTO alani fail-closed HASSAS. DTO envanteri kaynak-parse ile dogrulanir:
+#     yeni bir alan siniflandirilmadan eklenirse bu manifest testi DUSER.
+src/modules/client/__tests__/client-mutation-authorization-own13.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure canonical serialization + hash (SAF, DB-siz)
 #     Deterministik key/array sirasi, Decimal(15,2) locale-bagimsizligi, domain-separated
 #     sha256, §35.16 sifir-toleransli reconciliation ve tiplenmis hata govdesinde finansal

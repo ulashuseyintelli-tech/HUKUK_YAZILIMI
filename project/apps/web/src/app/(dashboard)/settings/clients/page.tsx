@@ -7,6 +7,13 @@ import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mai
 import { api } from "@/lib/api";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields } from "@/lib/poa-ux";
 import { hasStructuredAddresses } from "@/lib/client-write";
+import {
+  CLIENT_CAPABILITIES_DENIED,
+  normalizeClientCapabilities,
+  SENSITIVE_FIELD_LOCK_REASON,
+  VIEWER_MUTATION_LOCK_REASON,
+  type ClientMutationCapabilities,
+} from "@/lib/client-mutation-capabilities";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { BulkEmailModal } from "@/components/bulk-email-modal";
 
@@ -55,10 +62,21 @@ export default function ClientsSettingsPage() {
   // yetkisiz kullanıcı butonu görmeyip "confirm→403" akışına girmez. Varsayılan false
   // (fetch tamamlanana kadar güvenli taraf: buton gizli).
   const [canManageLifecycle, setCanManageLifecycle] = useState(false);
+  // OWN-13 I01: AYNI endpoint additive olarak `capabilities` de döndürür (mevcut `eligible`
+  // alanı DEĞİŞMEDİ). FE politikayı yeniden hesaplamaz; backend'in verdiği sonucu tüketir.
+  // API enforcement authority olarak KALIR — buradaki disabled yalnız erken bildirimdir.
+  // `undefined` = BİLİNMİYOR (eski API / ağ hatası): UI kilitlemez, yetki yine API'de uygulanır.
+  const [capabilities, setCapabilities] = useState<ClientMutationCapabilities | undefined>(undefined);
   useEffect(() => {
     api.get("/clients/lifecycle-eligibility")
-      .then((res) => setCanManageLifecycle(!!(res.data?.data?.eligible)))
-      .catch(() => setCanManageLifecycle(false));
+      .then((res) => {
+        setCanManageLifecycle(!!(res.data?.data?.eligible));
+        setCapabilities(normalizeClientCapabilities(res.data?.data?.capabilities));
+      })
+      .catch(() => {
+        setCanManageLifecycle(false);
+        setCapabilities(undefined);
+      });
   }, []);
 
   useEffect(() => { loadClients(); }, []);
@@ -311,7 +329,14 @@ export default function ClientsSettingsPage() {
               <Download className="h-4 w-4" />
             </button>
           </div>
-          <button onClick={() => { setEditingClient(null); setScannedData(null); setShowModal(true); }} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary/90">
+          {/* OWN-13 I01: kontrol GİZLENMEZ; yetkisizse disabled + gerekçe (title) gösterilir. */}
+          <button
+            onClick={() => { setEditingClient(null); setScannedData(null); setShowModal(true); }}
+            disabled={capabilities ? !capabilities.canCreate : false}
+            title={capabilities && !capabilities.canCreate ? VIEWER_MUTATION_LOCK_REASON : undefined}
+            data-testid="client-manual-create"
+            className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <Plus className="h-4 w-4" /> Manuel Ekle
           </button>
         </div>
@@ -584,6 +609,7 @@ export default function ClientsSettingsPage() {
         <ClientModal
           client={editingClient}
           scannedData={scannedData}
+          capabilities={capabilities}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditingClient(null); setScannedData(null); }}
           saving={saving}
@@ -684,7 +710,15 @@ function computeNextGreeting(form: any, isPerson: boolean): { label: string; dat
   return { label: next.label, dateLabel: `${next.date.getDate()} ${TR_MONTHS[next.date.getMonth()]}`, daysUntil };
 }
 
-function ClientModal({ client, scannedData, onSave, onClose, saving }: { client: any; scannedData?: any; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
+function ClientModal({ client, scannedData, capabilities, onSave, onClose, saving }: { client: any; scannedData?: any; capabilities?: ClientMutationCapabilities; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
+  // OWN-13 I01: BACKEND-DERIVED yetki sinyali. Modal politikayı yeniden hesaplamaz; API
+  // enforcement authority olarak KALIR. `capabilities` verilmezse davranış DEĞİŞMEZ.
+  const isCreateMode = !client;
+  const mutationBlocked = capabilities ? !(isCreateMode ? capabilities.canCreate : capabilities.canUpdateStandard) : false;
+  const sensitiveLocked = capabilities ? !isCreateMode && !capabilities.canUpdateSensitive : false;
+  const lockReason = mutationBlocked ? VIEWER_MUTATION_LOCK_REASON : SENSITIVE_FIELD_LOCK_REASON;
+  const identityDisabled = mutationBlocked || sensitiveLocked;
+
   const [form, setForm] = useState({
     type: scannedData?.clientType || client?.type || "PERSON",
     firstName: scannedData?.firstName || client?.firstName || "",
@@ -940,13 +974,26 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
         </div>
         
         <div className="p-4 space-y-4">
+          {/* OWN-13 I01: yetki gerekçesi — kontroller GİZLENMEZ, disabled + gerekçeli gösterilir. */}
+          {mutationBlocked && (
+            <div data-testid="client-modal-mutation-blocked" className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {VIEWER_MUTATION_LOCK_REASON}
+            </div>
+          )}
+          {!mutationBlocked && sensitiveLocked && (
+            <div data-testid="client-modal-sensitive-locked" className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {SENSITIVE_FIELD_LOCK_REASON} Diğer alanları düzenleyip kaydedebilirsiniz.
+            </div>
+          )}
+
           {/* Tür Seçimi */}
           <div>
             <label className="block text-sm font-medium mb-2">Müvekkil Türü</label>
             <div className="flex gap-2">
               {CLIENT_TYPES.map(t => (
                 <button key={t.value} type="button" onClick={() => setForm({...form, type: t.value})}
-                  className={`flex items-center gap-2 px-3 py-2 rounded border ${form.type === t.value ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
+                  disabled={identityDisabled} title={identityDisabled ? lockReason : undefined}
+                  className={`flex items-center gap-2 px-3 py-2 rounded border disabled:opacity-50 disabled:cursor-not-allowed ${form.type === t.value ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
                   <t.icon className="h-4 w-4" />
                   <span className="text-sm">{t.label}</span>
                 </button>
@@ -959,19 +1006,19 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium mb-1">Ad <span className="text-red-500">*</span></label>
-                <input value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                <input value={form.firstName} onChange={e => setForm({...form, firstName: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1">Soyad <span className="text-red-500">*</span></label>
-                <input value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                <input value={form.lastName} onChange={e => setForm({...form, lastName: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1">TCKN <span className="text-red-500">*</span></label>
-                <input value={form.tckn} onChange={e => setForm({...form, tckn: e.target.value.replace(/\D/g, "")})} maxLength={11} className="w-full border rounded px-2 py-1.5 text-sm font-mono" />
+                <input value={form.tckn} onChange={e => setForm({...form, tckn: e.target.value.replace(/\D/g, "")})} maxLength={11} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm font-mono disabled:bg-gray-100 disabled:text-gray-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1">Cinsiyet</label>
-                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm">
+                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500">
                   <option value="">Seçiniz</option>
                   <option value="E">Erkek</option>
                   <option value="K">Kadın</option>
@@ -985,15 +1032,15 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-xs font-medium mb-1">Kurum Adı <span className="text-red-500">*</span></label>
-                <input value={form.companyName} onChange={e => setForm({...form, companyName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                <input value={form.companyName} onChange={e => setForm({...form, companyName: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1">VKN <span className="text-red-500">*</span></label>
-                <input value={form.vkn} onChange={e => setForm({...form, vkn: e.target.value.replace(/\D/g, "")})} maxLength={10} className="w-full border rounded px-2 py-1.5 text-sm font-mono" />
+                <input value={form.vkn} onChange={e => setForm({...form, vkn: e.target.value.replace(/\D/g, "")})} maxLength={10} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm font-mono disabled:bg-gray-100 disabled:text-gray-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1">Vergi Dairesi</label>
-                <input value={form.taxOffice} onChange={e => setForm({...form, taxOffice: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                <input value={form.taxOffice} onChange={e => setForm({...form, taxOffice: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
               </div>
             </div>
           )}
@@ -1152,24 +1199,27 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
           </div>
           )}
 
-          {/* Yetkiler */}
+          {/* Yetkiler — temsil yetkisi niteliğinde: hassas sınıf (owner D02). */}
           <div className="p-3 bg-amber-50 rounded border border-amber-200">
             <p className="text-xs font-medium text-amber-800 mb-2">Vekaletname Yetkileri</p>
+            {identityDisabled && (
+              <p data-testid="client-modal-poa-lock-reason" className="text-xs text-amber-800 mb-2">{lockReason}</p>
+            )}
             <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" checked={form.canCollect} onChange={e => setForm({...form, canCollect: e.target.checked})} className="w-4 h-4 rounded" />
+              <label className={`flex items-center gap-1.5 ${identityDisabled ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer'}`}>
+                <input type="checkbox" checked={form.canCollect} onChange={e => setForm({...form, canCollect: e.target.checked})} disabled={identityDisabled} className="w-4 h-4 rounded" />
                 <span className="text-sm">Ahzu Kabza</span>
               </label>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" checked={form.canWaive} onChange={e => setForm({...form, canWaive: e.target.checked})} className="w-4 h-4 rounded" />
+              <label className={`flex items-center gap-1.5 ${identityDisabled ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer'}`}>
+                <input type="checkbox" checked={form.canWaive} onChange={e => setForm({...form, canWaive: e.target.checked})} disabled={identityDisabled} className="w-4 h-4 rounded" />
                 <span className="text-sm">Feragat</span>
               </label>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" checked={form.canSettle} onChange={e => setForm({...form, canSettle: e.target.checked})} className="w-4 h-4 rounded" />
+              <label className={`flex items-center gap-1.5 ${identityDisabled ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer'}`}>
+                <input type="checkbox" checked={form.canSettle} onChange={e => setForm({...form, canSettle: e.target.checked})} disabled={identityDisabled} className="w-4 h-4 rounded" />
                 <span className="text-sm">Sulh</span>
               </label>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" checked={form.canRelease} onChange={e => setForm({...form, canRelease: e.target.checked})} className="w-4 h-4 rounded" />
+              <label className={`flex items-center gap-1.5 ${identityDisabled ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer'}`}>
+                <input type="checkbox" checked={form.canRelease} onChange={e => setForm({...form, canRelease: e.target.checked})} disabled={identityDisabled} className="w-4 h-4 rounded" />
                 <span className="text-sm">İbra</span>
               </label>
             </div>
@@ -1182,17 +1232,17 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
               {isPerson ? (
                 <div>
                   <label className="block text-xs font-medium mb-1">Doğum Tarihi</label>
-                  <input type="date" value={form.birthDate} onChange={e => setForm({...form, birthDate: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  <input type="date" value={form.birthDate} onChange={e => setForm({...form, birthDate: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
                 </div>
               ) : (
                 <div>
                   <label className="block text-xs font-medium mb-1">Kuruluş Tarihi</label>
-                  <input type="date" value={form.foundingDate} onChange={e => setForm({...form, foundingDate: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                  <input type="date" value={form.foundingDate} onChange={e => setForm({...form, foundingDate: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
                 </div>
               )}
               <div>
                 <label className="block text-xs font-medium mb-1">Vekalet Başlangıcı</label>
-                <input type="date" value={form.poaStartDate} onChange={e => setForm({...form, poaStartDate: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                <input type="date" value={form.poaStartDate} onChange={e => setForm({...form, poaStartDate: e.target.value})} disabled={identityDisabled} title={identityDisabled ? lockReason : undefined} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1">Tebrik Kanalı</label>
@@ -1253,13 +1303,13 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
           {/* Notlar */}
           <div>
             <label className="block text-xs font-medium mb-1">Notlar</label>
-            <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={2} className="w-full border rounded px-2 py-1.5 text-sm" />
+            <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} disabled={mutationBlocked} title={mutationBlocked ? VIEWER_MUTATION_LOCK_REASON : undefined} rows={2} className="w-full border rounded px-2 py-1.5 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
           </div>
         </div>
 
         <div className="flex justify-end gap-2 p-4 border-t sticky bottom-0 bg-white">
           <button onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">İptal</button>
-          <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50">
+          <button onClick={handleSubmit} disabled={saving || mutationBlocked} title={mutationBlocked ? VIEWER_MUTATION_LOCK_REASON : undefined} data-testid="client-modal-save" className="px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
             {saving ? "Kaydediliyor..." : "Kaydet"}
           </button>
         </div>

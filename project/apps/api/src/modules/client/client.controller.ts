@@ -227,7 +227,15 @@ export class ClientController {
   @Get('lifecycle-eligibility')
   async lifecycleEligibility(@Request() req: AuthRequest) {
     const eligible = await this.clientService.canManageLifecycle(req.user.id, req.user.tenantId);
-    return { data: { eligible } };
+    // OWN-13 I01: ADDITIVE genişletme — mevcut `eligible` alanı AYNEN korunur (geriye
+    // uyumluluk; ACT-11 tüketicisi bozulmaz). `capabilities` FE'nin create/edit kontrollerini
+    // disabled+gerekçeli göstermesi içindir; API enforcement authority olarak KALIR.
+    const capabilities = await this.clientService.getMutationCapabilities(
+      req.user.id,
+      req.user.tenantId,
+      (req.user as { role?: string | null }).role,
+    );
+    return { data: { eligible, capabilities } };
   }
 
   // Fetch one client
@@ -248,7 +256,15 @@ export class ClientController {
     const dto = await this.clientBodyPipe.transform(body, { type: 'body', metatype: CreateClientDto });
     // C0-a: actor YALNIZ req.user.id (auth); body'den userId ASLA okunmaz.
     // P0.4: hata yutma YOK â€” service exception'larÄ± (NotFound/Conflict/500) gerÃ§ek HTTP status ile FE'ye gider.
-    const client = await this.clientService.create(tenantId, dto, { userId: req.user.id });
+    // OWN-13 I01: actor'a `role` de geçilir — C0-a ile AYNI kural, YALNIZ auth context'ten.
+    const actor = { userId: req.user.id, role: req.user.role };
+    // OWN-13 I01 (owner D01): yetki kapısı — HER ŞEYDEN ÖNCE, hiçbir yazma/okuma yapılmadan.
+    // Kapı MERKEZİ policy'yi çağırır (rol mantığı burada TEKRARLANMAZ, owner req. 2).
+    // Neden route sınırında: owner I01 scope'u tam olarak POST /clients + PUT /clients/:id'dir.
+    // `ClientService.create/update` ayrıca servis-içi güvenilen çağıranlara (case.service,
+    // export-import) hizmet eder; onların actor threading'i I01 DIŞIDIR (I02 residual R1).
+    this.clientService.assertCanCreateClient(actor);
+    const client = await this.clientService.create(tenantId, dto, actor);
     return { data: client };
   }
 
@@ -270,7 +286,13 @@ export class ClientController {
     const dto = await this.clientBodyPipe.transform(body, { type: 'body', metatype: UpdateClientDto });
     // P0.4: hata yutma YOK. PR-U4 409 DUPLICATE_IDENTITY (ConflictException) ve 404 NotFound
     // doÄŸrudan gerÃ§ek HTTP status ile FE'ye gider (eski catch HTTP 200 {error} Ã¼retiyordu).
-    const client = await this.clientService.update(id, tenantId, dto, { userId: req.user.id });
+    // OWN-13 I01: actor'a `role` de geçilir — C0-a ile AYNI kural, YALNIZ auth context'ten.
+    const actor = { userId: req.user.id, role: req.user.role };
+    // OWN-13 I01 (owner D02): coarse + hassas-alan kapısı — HER ŞEYDEN ÖNCE. Karma istekte
+    // TAMAMI hassas sayılır (partial update YOK). Lifecycle kapısı (assertCanManageLifecycle)
+    // servis içinde, kendi yerinde AYNEN korunur; bu kapı onu ne gevşetir ne değiştirir.
+    await this.clientService.assertCanUpdateClient(tenantId, dto, actor);
+    const client = await this.clientService.update(id, tenantId, dto, actor);
     return { data: client };
   }
 

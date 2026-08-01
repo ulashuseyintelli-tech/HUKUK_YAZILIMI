@@ -6,10 +6,25 @@ import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../au
 import { NotificationDispatcherService, type DispatchResult } from '../client-notification/notification-dispatcher.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
 import { assertCreateIdentityChecksum } from './client-identity-checksum.util';
+import {
+  CLIENT_MUTATION_REASON,
+  classifyClientPayload,
+  decideClientCreate,
+  decideClientUpdate,
+  deriveClientMutationCapabilities,
+  type ClientMutationCapabilities,
+  type ClientMutationDecision,
+} from './client-mutation-policy';
 
 /** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
 export interface AuditActor {
   userId?: string;
+  /**
+   * OWN-13 I01 (owner D01/D02): actor'un `UserRole` değeri (ADMIN/USER/VIEWER). C0-a ile
+   * AYNI kural — YALNIZ auth context'ten (`req.user.role`) gelir, body/data'dan ASLA
+   * okunmaz. Eksik veya tanınmayan rol fail-closed reddedilir (client-mutation-policy.ts).
+   */
+  role?: string | null;
 }
 
 // ── Operasyonel iletişim eksiği takibi (PR-1, saf yardımcılar) ──
@@ -316,6 +331,77 @@ export class ClientService {
   }
 
   /**
+   * OWN-13 I01 — reddedilen mutasyonu stabil `reasonCode` ile 403'e çevirir.
+   *
+   * PII YASAĞI: gövde YALNIZ alan ADLARINI taşır (`offendingFields`); ham TCKN/VKN veya
+   * başka bir alan DEĞERİ hata mesajına, log'a veya audit'e ASLA yazılmaz.
+   */
+  private denyMutation(decision: ClientMutationDecision): never {
+    const messages: Record<string, string> = {
+      [CLIENT_MUTATION_REASON.NO_ACTOR]: 'Yetkilendirme bağlamı yok.',
+      [CLIENT_MUTATION_REASON.UNKNOWN_ROLE]: 'Kullanıcı rolü tanınmadı.',
+      [CLIENT_MUTATION_REASON.VIEWER_DENIED]:
+        'Görüntüleyici (VIEWER) rolü müvekkil kaydı oluşturamaz veya değiştiremez.',
+      [CLIENT_MUTATION_REASON.SENSITIVE_DENIED]:
+        'Bu alanlar hukuki kimlik veya temsil yetkisi niteliğindedir; değiştirmek için ADMIN ' +
+        'veya yetkilendirilmiş avukat olmanız gerekir.',
+      [CLIENT_MUTATION_REASON.LIFECYCLE_DENIED]:
+        'Müvekkil arşivleme/silme için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir).',
+    };
+    throw new ForbiddenException({
+      code: decision.reasonCode,
+      message: messages[decision.reasonCode] ?? 'Bu işlem için yetkiniz yok.',
+      ...(decision.offendingFields?.length ? { fields: decision.offendingFields } : {}),
+    });
+  }
+
+  /**
+   * OWN-13 I01 / owner D01 — create yetki kapısı. VIEWER DENY, USER/ADMIN ALLOW; lawyer
+   * profili ŞART DEĞİL. Herhangi bir yazma yapılmadan ÖNCE çağrılır (fail-closed).
+   *
+   * ÇAĞRI YERİ: `ClientController.create()` → POST /clients (owner I01 scope, madde 1).
+   * `create()`'in İÇİNDEN çağrılmaz: aynı servis metodunu servis-içi güvenilen çağıranlar da
+   * kullanır (`case.service.ts` müvekkil çözümlemesi, `export-import.service.ts` toplu içe
+   * aktarım) ve onların actor threading'i owner tarafından I01 DIŞINDA bırakılmıştır
+   * (I02 residual). Kapı GEVŞETİLMİŞ DEĞİLDİR; I01 kapsamındaki route fail-closed'dır.
+   */
+  assertCanCreateClient(actor?: AuditActor): void {
+    const decision = decideClientCreate({ userId: actor?.userId, role: actor?.role });
+    if (!decision.allowed) this.denyMutation(decision);
+  }
+
+  /**
+   * OWN-13 I01 / owner D02 — update yetki kapısı.
+   *
+   * Hassas alan varsa eşik ADMIN **veya** `officeApproval.isApproverEligible` (D03: OFFICE
+   * hesabı KOPYALANMAZ, çağrılır). Tek request hem standart hem hassas alan içeriyorsa
+   * TAMAMI hassas sayılır — partial update UYGULANMAZ. Lifecycle alanları bu kapının
+   * DIŞINDADIR; onların yetkisi `assertCanManageLifecycle()`'da AYNEN korunur.
+   *
+   * `isApproverEligible` YALNIZ gerçekten gerektiğinde sorgulanır (ADMIN ise veya payload
+   * hassas alan içermiyorsa DB'ye gidilmez).
+   *
+   * ÇAĞRI YERİ: `ClientController.update()` → PUT /clients/:id (owner I01 scope, madde 2).
+   * `assertCanCreateClient` ile AYNI gerekçeyle `update()`'in içinden değil route'tan çağrılır.
+   */
+  async assertCanUpdateClient(
+    tenantId: string,
+    data: any,
+    actor?: AuditActor,
+  ): Promise<void> {
+    const classification = classifyClientPayload(data);
+    let elevatedAuthority = false;
+    if (classification.hasSensitive && actor?.role !== 'ADMIN' && actor?.userId) {
+      elevatedAuthority = await this.officeApproval.isApproverEligible(actor.userId, tenantId);
+    }
+    const decision = decideClientUpdate(
+      { userId: actor?.userId, role: actor?.role, elevatedAuthority },
+      data,
+    );
+    if (!decision.allowed) this.denyMutation(decision);
+  }
+
+  /**
    * ACT-11 (2026-07-05) — assertCanManageLifecycle ile AYNI alttaki kontrolü
    * (officeApproval.isApproverEligible) kullanan, throw ETMEYEN boolean varyant.
    * YALNIZ FE'nin "Pasifleştir" butonunu gizlemesi için; gerçek yetki uygulaması
@@ -325,6 +411,27 @@ export class ClientService {
    * @remarks Çağrıldığı yerler:
    * - ClientController.lifecycleEligibility() → GET /clients/lifecycle-eligibility
    */
+  /**
+   * OWN-13 I01 — FE görünürlük sinyali (BACKEND-DERIVED). Frontend politikayı KENDİ BAŞINA
+   * HESAPLAMAZ; bu nesneyi tüketir. API enforcement authority olarak KALIR — bu yalnız
+   * "hangi kontrol disabled gösterilsin" sorusunu cevaplar (ACT-11 deseniyle birebir).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - ClientController.lifecycleEligibility() → GET /clients/lifecycle-eligibility (additive alan)
+   */
+  async getMutationCapabilities(
+    userId: string | undefined,
+    tenantId: string,
+    role: string | null | undefined,
+  ): Promise<ClientMutationCapabilities> {
+    const lifecycleEligible = await this.canManageLifecycle(userId, tenantId);
+    // Elevated eşiği lifecycle ile AYNI kaynaktır (isApproverEligible) — ikinci bir hesap YOK.
+    return deriveClientMutationCapabilities(
+      { userId, role, elevatedAuthority: lifecycleEligible },
+      lifecycleEligible,
+    );
+  }
+
   async canManageLifecycle(userId: string | undefined, tenantId: string): Promise<boolean> {
     if (!userId) return false;
     return this.officeApproval.isApproverEligible(userId, tenantId);
@@ -1215,6 +1322,12 @@ export class ClientService {
   }
   // Create client
   async create(tenantId: string, data: any, actor?: AuditActor) {
+    // OWN-13 I01 (owner D01): yetki kapısı POST /clients route'unda uygulanır
+    // (`ClientController.create()` → `assertCanCreateClient`, yetkisiz aktör hiçbir sorgu/yazma
+    // tetiklemez). Buraya KONMAZ: aynı metot servis-içi güvenilen çağıranlara da hizmet eder
+    // (case.service müvekkil çözümlemesi, export-import toplu içe aktarım) ve onların actor
+    // threading'i owner tarafından I01 DIŞINDA bırakılmıştır — bkz. assertCanCreateClient JSDoc.
+    // Mevcut checksum, duplicate ve audit kapıları DEĞİŞMEDİ.
     // TCKN veya VKN ile duplicate kontrolü
     const identityNo = data.tckn || data.vkn;
     if (identityNo) {
@@ -1402,6 +1515,10 @@ export class ClientService {
 
   // Müvekkil güncelle
   async update(id: string, tenantId: string, data: any, actor?: AuditActor) {
+    // OWN-13 I01 (owner D02): coarse + hassas-alan yetki kapısı PUT /clients/:id route'unda
+    // uygulanır (`ClientController.update()` → `assertCanUpdateClient`), create ile AYNI
+    // gerekçeyle. Lifecycle kapısı (assertCanManageLifecycle) AŞAĞIDA, kendi yerinde AYNEN
+    // korunur; OWN-13 onu ne gevşetir ne değiştirir.
     // C0-a (acceptance #2): contacts diff için old snapshot CONTACTS ile alınır.
     const existing = await this.prisma.client.findFirst({
       where: { id, tenantId },

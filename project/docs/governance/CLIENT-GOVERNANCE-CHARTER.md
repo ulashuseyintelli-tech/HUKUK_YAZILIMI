@@ -3804,3 +3804,133 @@ DEĞİŞTİRMEZ · CLIENT Phase 2 genel yetkisi DOĞURMAZ · Portal Phase 2'yi B
 
 **RESIDUAL CANONICALIZED ≠ BEHAVIOR CHANGED · POLICY WRITTEN ≠ NEW AUTHORITY ·
 SOFT-DEACTIVATION ≠ ARCHIVE ≠ ERASURE · D03 DEFERRED ≠ D03 RATIFIED.**
+
+
+---
+
+## §51 — CLIENT Same-Tenant Mutation Authorization (OWN-13 / I01)
+
+Kaynak: owner kararlari **D01 / D02 / D03 (RATIFIED)** ve **EXECUTION GRANT: GO-IMPLEMENT /
+BOUNDED I01**. Bu bolum ADDITIVE'dir; §1–§50.5 metinleri DEGISMEDI.
+
+### 51.1 Neden bu bolum var (kanonik bosluk)
+
+OWN-13 once "OFFICE/DEBTOR mimarisi kapsiyor" gerekcesiyle kapatilmak istenmis, owner bunu
+REDDETMISTIR. Kanonik ayrim:
+
+- `JwtAuthGuard` + `tenantId` = **authentication + tenant isolation**.
+- `JwtAuthGuard` + `tenantId` **≠ same-tenant mutation authorization**.
+- PR #762 yalnizca **deactivate/reactivate lifecycle gecislerini** korur.
+- OFFICE/DEBTOR capability mimarisi CLIENT mutasyonlarini **otomatik kapsamaz**; yalniz
+  yeniden kullanilabilir kanonik pattern / authority kaynagi olabilir.
+
+Bu nedenle OWN-13 SUPERSEDED veya COVERED **sayilmaz**.
+
+### 51.2 D01 — CREATE AUTHORITY (RATIFIED)
+
+Muvekkil olusturma operasyonel bir buro islemidir.
+
+| Rol | Karar |
+|---|---|
+| `UserRole.VIEWER` | DENY |
+| `UserRole.USER` | ALLOW |
+| `UserRole.ADMIN` | ALLOW |
+
+Create icin **lawyer profili sart degildir**: sekreter, hukuk personeli ve yetkili operasyon
+personeli USER rolüyle muvekkil olusturabilir. Create isleminde mevcut tenant isolation,
+kimlik/checksum dogrulamalari, duplicate kontrolleri ve audit **korunur**.
+
+### 51.3 D02 — UPDATE AUTHORITY (RATIFIED)
+
+Once **coarse gate** uygulanir:
+
+- VIEWER: hicbir CLIENT mutation yapamaz.
+- USER: yalniz standart operasyonel alanlari guncelleyebilir.
+- ADMIN: standart ve hassas alanlari guncelleyebilir.
+
+**Standart operasyonel alanlar:** iletisim bilgileri · operasyonel notlar · tebrik/iletisim
+tercihleri · hukuki kimligi veya temsil yetkisini degistirmeyen diger alanlar.
+
+**Hassas alanlar:** kisi/sirket turu · TCKN/VKN ve diger resmi kimlik numaralari · ad/soyad
+veya ticari unvanin hukuki kimligi degistiren bolumu · vergi dairesi/vergi kimligi ·
+vekalet/temsil yetkisi niteligindeki alanlar · mevcut lifecycle alanlari · DTO'da bulunan ve
+acikca standart allowlist'e alinmamis yeni alanlar.
+
+**Hassas update icin:** (1) actor VIEWER olmamali; VE (2) actor `UserRole.ADMIN` **VEYA**
+`officeApproval.isApproverEligible(actor)` olmalidir.
+
+Bilinmeyen/yeni update alanlari **fail-closed** bicimde hassas kabul edilir. DTO alanlarinin
+tamami siniflandirilmadan implementation yapilmaz.
+
+**Ilk create islemi bu hassas-update ayriminin ISTISNASIDIR:** USER create yapabilir; mevcut
+checksum, duplicate ve audit kapilari zorunludur.
+
+**Partial update UYGULANMAZ:** tek request hem standart hem hassas alan iceriyorsa butun
+request hassas yetki gerektirir.
+
+### 51.4 D03 — AUTHORITY SOURCE (RATIFIED)
+
+CLIENT icin **ikinci ve paralel bir rol/capability altyapisi kurulmayacaktir**. Iki mevcut
+kaynak birlikte kullanilir:
+
+- coarse mutation boundary: `UserRole.ADMIN / USER / VIEWER`
+- elevated authority: `UserRole.ADMIN` **VEYA** mevcut `officeApproval.isApproverEligible(actor)`
+
+CLIENT kendi action mapping politikasini tanimlar; ancak OFFICE eligibility **hesabini
+kopyalamaz veya yeniden uretmez**. OFFICE/DEBTOR politikalari CLIENT'i otomatik kapsamaz;
+yalniz mevcut authority primitive'leri yeniden kullanilir.
+
+### 51.5 I01 kapsami (uygulanan)
+
+1. `POST /clients` · 2. `PUT /clients/:id` · 3. mevcut deactivate/reactivate davranisinin
+korunmasi · 4. gerekli API enforcement · 5. create/edit UI capability gorunurlugu ·
+6. governance kayitlari · 7. odakli testler + mutation-teeth kanit.
+
+Kanonik yuzeyler:
+
+- `apps/api/src/modules/client/client-mutation-policy.ts` — saf, DB'siz merkezi politika.
+  `classifyClientField` fail-closed'dir: lifecycle degilse ve standart allowlist'te yoksa
+  **SENSITIVE**. `decideClientCreate` / `decideClientUpdate` / `deriveClientMutationCapabilities`
+  stabil `reasonCode` uretir.
+- `ClientController.create/update` — I01 route sinirinda kapi (`assertCanCreateClient` /
+  `assertCanUpdateClient`). Kapi **route** seviyesindedir cunku `ClientService.create/update`
+  ayrica servis-ici guvenilen cagiranlara da hizmet eder (bkz. §51.7 R1).
+- `GET /clients/lifecycle-eligibility` — mevcut `eligible` alani DEGISMEDI; `capabilities`
+  nesnesi **additive** eklendi. Frontend politikayi yeniden hesaplamaz.
+
+### 51.6 Degismeyen davranislar (backward compatibility)
+
+- Lifecycle gecisleri (`isActive` degisimi) **hala** `assertCanManageLifecycle` semantigine
+  tabidir; OWN-13 bu esigi ne gevsetir ne degistirir. ADMIN olmak tek basina yeterli degildir.
+- Mevcut response alanlari silinmedi/degistirilmedi · schema/migration YOK · mevcut ADMIN ve
+  eligible-lawyer akislari korunmustur.
+- Reddedilen mutasyon: 403 + stabil `reasonCode` + **yalniz alan ADLARI**. Ham TCKN/VKN veya
+  baska bir alan DEGERI hata gövdesine, log'a veya audit'e yazilmaz.
+
+### 51.7 I02 residual matrisi (ACILMADI, otomatik baslatilmaz)
+
+Bunlar **kapali gosterilmez**; OWN-13 kapsaminda acik kalan yuzeylerdir:
+
+| Id | Residual | Not |
+|---|---|---|
+| R1 | Servis-ici cagiranlarin actor threading'i | `case.service.ts` muvekkil cozumlemesi ve `export-import.service.ts` toplu ice aktarim `ClientService.create`'i actor'suz cagirir; yetki route sinirinda uygulanir, bu cagiranlar I01 DISIDIR |
+| R2 | Address mutation endpoint'leri | ayri yetki yuzeyi |
+| R3 | Bulk backfill | |
+| R4 | Reminder/notification/document-request gonderimleri | |
+| R5 | Intake-link mutation'lari | |
+| R6 | POA upload | |
+| R7 | OWN-10 / OWN-12 / OWN-15 | ayri task'lar |
+| R8 | CASE/DEBTOR/OFFICE implementation | D03: otomatik kapsanmaz |
+| R9 | schema/migration/production | |
+
+### 51.8 Bolum Self-Check
+
+Bu bolum: owner D01/D02/D03 metnini **lossless** tasir · yeni bir authorization modeli ICAT
+ETMEZ · OFFICE eligibility hesabini KOPYALAMAZ · lifecycle esigini GEVSETMEZ · tenant
+isolation'i DEGISTIRMEZ · schema/migration URETMEZ · production verisine ERISMEZ ·
+§1–§50.5 metinlerini DEGISTIRMEZ · adres/bulk/notification/intake/POA yuzeylerini KAPALI
+GOSTERMEZ.
+
+**OWN-13 = PARTIAL (I01 CLOSED). "Butun CLIENT mutation authorization tamamlandi" IFADESI
+GECERSIZDIR · AUTHENTICATION ≠ AUTHORIZATION · TENANT ISOLATION ≠ MUTATION AUTHORIZATION ·
+ROUTE-LEVEL GATE ≠ SERVICE-WIDE GATE (bkz. R1).**
