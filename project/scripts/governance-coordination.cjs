@@ -3148,8 +3148,8 @@ function classifyPrChangeSet(changes, context = {}) {
   const officeF01ValidatorRepair =
     OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   if (
-    officeF01ValidatorRepairBaseIsValid(context.base, context.cwd) &&
     context.headRef === officeF01ValidatorRepair.headRef &&
+    officeF01ValidatorRepairBaseIsValid(context.base, context.cwd) &&
     hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths)
   ) {
     return {
