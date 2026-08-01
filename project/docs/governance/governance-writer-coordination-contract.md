@@ -1790,7 +1790,8 @@ required CI PASS ve mergeability hâlinde squash-merge, canonical
 doğrulama ve güvenli cleanup’a kadar tamamlanmasını onaylıyorum.
 ```
 
-The repair requires the exact program, task, branch and base; Stage 1 merge
+The repair requires the exact program, task and branch; the owner-pinned repair
+base or a verified descendant of that base on fresh canonical main; Stage 1 merge
 ancestry; unchanged protected Stage 1 binding literals; exact M/A/A/A target
 tuple; exact SA01/EG01 identifiers and distinct locators; owner identity and
 8/8 evidence; first materialization on a base without prior F01 SA/EG records;

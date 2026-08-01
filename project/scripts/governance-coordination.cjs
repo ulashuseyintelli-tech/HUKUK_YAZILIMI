@@ -397,6 +397,15 @@ const OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01 = Object.freeze({
     excerptSha256: '7b2ffeb93ae6b91a88eee84991852bf19b3682ebc587f9152442e04388de4302',
   }),
 });
+
+function officeF01ValidatorRepairBaseIsValid(base, cwd = REPO_ROOT) {
+  const repair = OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  if (base === repair.baseSha) return true;
+  const commitAvailable = runGit(['cat-file', '-e', `${base}^{commit}`], cwd, {
+    allowFailure: true,
+  }).status === 0;
+  return commitAvailable && gitIsAncestor(repair.baseSha, base, cwd);
+}
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01',
   bindingPr: Object.freeze({
@@ -3139,7 +3148,7 @@ function classifyPrChangeSet(changes, context = {}) {
   const officeF01ValidatorRepair =
     OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   if (
-    context.base === officeF01ValidatorRepair.baseSha &&
+    officeF01ValidatorRepairBaseIsValid(context.base, context.cwd) &&
     context.headRef === officeF01ValidatorRepair.headRef &&
     hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths)
   ) {
@@ -5515,7 +5524,7 @@ function validateOfficeF01Stage2ValidatorReconciliationBindingScope(options) {
   if (
     taskId !== repair.taskId ||
     (mode && mode !== repair.mode) ||
-    base !== repair.baseSha ||
+    !officeF01ValidatorRepairBaseIsValid(base, cwd) ||
     headRef !== repair.headRef ||
     !hasExactChangeSet(changes, repair.changedPaths)
   ) {
