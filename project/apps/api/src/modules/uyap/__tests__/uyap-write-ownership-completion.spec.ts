@@ -45,7 +45,11 @@ describe('CLIENT-SEC-H2C-P02-R1 — UYAP write-ownership completion', () => {
 
     it('POST /uyap/haciz → pushHacizRequest(dto, trustedTenant, req.user.id, ...)', async () => {
       const { controller, uyapService } = buildController();
-      await controller.pushHacizRequest({ caseId: 'c1' }, 'tenant-A', { user: { id: 'u1' } });
+      await controller.pushHacizRequest(
+        { caseId: 'c1', caseDebtorId: 'cd1', targetType: 'BANK' as any, targetDetails: {}, amount: 100 },
+        'tenant-A',
+        { user: { id: 'u1' } },
+      );
       const call = uyapService.pushHacizRequest.mock.calls[0];
       expect(call[0]).toEqual(expect.objectContaining({ tenantId: 'tenant-A' }));
       expect(call[1]).toBe('tenant-A'); // trusted tenant (güvenlik değişmezi)

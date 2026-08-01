@@ -80,12 +80,20 @@ export interface TebligatStatus {
 
 export interface HacizRequest {
   caseId: string;
+  // I15-D1-R1: owner-ratified TRIGGER_HACIZ_CASE_DEBTOR_TARGET_UNBOUND düzeltmesi —
+  // hangi TAM CaseDebtor hedeflendiği artık zorunlu ve açık. Controller bunu
+  // PushHacizRequestDto'dan (client-supplied, class-validator ile doğrulanmış) alır;
+  // TriggerHacizAuthorizationService bunu tenant+case+lifecycle ile CANONICAL olarak
+  // doğrular (bkz. authority/trigger-haciz-authorization.service.ts).
+  caseDebtorId: string;
   targetType: 'BANK' | 'VEHICLE' | 'PROPERTY' | 'SALARY';
   targetDetails: Record<string, any>;
   amount: number;
-  clientId?: string; // Vekalet kontrolü için
-  lawyerId?: string; // Vekalet kontrolü için
-  tenantId?: string; // Vekalet kontrolü için
+  // tenantId/userId: client-supplied DEĞİLDİR — controller bunları yalnız trusted
+  // execution context'ten (tenantId param + req.user.id) doldurur. clientId/lawyerId
+  // I15-D1-R1 ile kaldırıldı: bu path'te hiçbir zaman authority girdisi değildi ve
+  // fiilen kullanılmıyordu (owner: "mümkünse request contract'tan kaldır").
+  tenantId?: string; // yalnız payloadTenantId tutarlılık kontrolü için (authority DEĞİL)
   userId?: string; // PR-D4e-6: karar-anı audit aktörü (yoksa sistem/otomasyon)
   // UYAP-LEGACY-POA-FLAG-DEPRECATION-I01: `skipPoaCheck` KALDIRILDI. DEBTOR-IDOR-04'ten
   // beri hiçbir etkisi yoktu (yetki kapısı koşulsuz); alan yalnız yanıltıcı bir bypass
@@ -623,10 +631,16 @@ export class UyapService {
         message: 'Haciz talebi yapılamaz: yetki doğrulanamadı',
       });
     }
-    await this.triggerHacizAuthorization.assertAuthorized({
+    // I15-D1-R1: zincir artık CaseDebtor target-binding ile başlar (tenant+case+lifecycle
+    // canonical doğrulama), ardından acting-lawyer/case-assignment/POA/PermissionGrant.
+    // Dönen `debtorId` — CLIENT-SUPPLIED DEĞİL, canonical CaseDebtor kaydından — CPE'ye
+    // aşağıda geçirilir (body.debtorId'ye ASLA güvenilmez, caseDebtorId ile debtorId
+    // aynı kimlik SAYILMAZ).
+    const { debtorId: canonicalDebtorId } = await this.triggerHacizAuthorization.assertAuthorized({
       tenantId,
       authenticatedUserId: actorUserId ?? '',
       caseId: request.caseId,
+      caseDebtorId: request.caseDebtorId,
     });
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
@@ -638,7 +652,12 @@ export class UyapService {
           ActionCode.TRIGGER_HACIZ,
           {
             assetId: request.targetDetails?.assetId,
-            userId: request.lawyerId,
+            // I15-D1-R1: canonical CaseDebtor kaydından türetilmiş debtorId — asla
+            // client-supplied body.debtorId veya caseDebtorId ile karıştırılmaz.
+            debtorId: canonicalDebtorId,
+            // Önceden client-controlled `request.lawyerId` idi (authority DEĞİL, yalnız
+            // audit context) — I15-D1-R1 ile authenticated actor'a düzeltildi.
+            userId: actorUserId,
           },
         );
 
@@ -696,6 +715,16 @@ export class UyapService {
 
     // PR-D4e-6: KARAR-ANI risk snapshot audit (best-effort, BLOK YOK — audit hatası haczi kesmez).
     await this.auditHacizDecision(request, requestId, cpeTraceId, cpeWarnings);
+
+    // I15-D1-R1: immediately-pre-effect freshness-safe revalidation. Authorization anı ile
+    // buradaki (yerel stub'a ulaşma) an arasında CaseDebtor pasifleştirilmiş olabilir (TOCTOU) —
+    // aynı kanonik guard BAĞIMSIZ ikinci bir okuma ile burada TEKRAR çağrılır (yeni transaction
+    // mimarisi icat edilmez; mevcut senkron guard çağrısı tekrar kullanılır).
+    await this.triggerHacizAuthorization.revalidateCaseDebtorFreshness(
+      tenantId,
+      request.caseId,
+      request.caseDebtorId,
+    );
 
     try {
       // TODO: Gerçek UYAP SOAP çağrısı

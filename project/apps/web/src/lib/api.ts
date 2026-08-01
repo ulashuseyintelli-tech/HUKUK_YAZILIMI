@@ -1894,11 +1894,13 @@ class ApiClient {
 
   async sendUyapHacizRequest(data: {
     caseId: string;
+    // I15-D1-R1: owner-ratified TRIGGER_HACIZ_CASE_DEBTOR_TARGET_UNBOUND düzeltmesi —
+    // hangi TAM borçlunun hedeflendiği artık zorunlu ve açık. clientId/lawyerId
+    // kaldırıldı (hiçbir zaman authority girdisi değildi, backend artık kabul etmiyor).
+    caseDebtorId: string;
     targetType: HacizTargetType;
     targetDetails: Record<string, any>;
     amount: number;
-    clientId?: string;
-    lawyerId?: string;
   }) {
     return this.request<UyapResponse>("/uyap/haciz", {
       method: "POST",

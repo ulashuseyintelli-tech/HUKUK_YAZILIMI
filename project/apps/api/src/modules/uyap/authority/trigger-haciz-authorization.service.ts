@@ -4,37 +4,50 @@ import { ActingLawyerResolverService } from "../../lawyer/acting-lawyer-resolver
 import { UyapSendAuthorityResolverService } from "./uyap-send-authority-resolver.service";
 import { UyapSendAuthorityOperation } from "./uyap-send-authority.types";
 import { TriggerHacizCapabilityAuthorizationService } from "./trigger-haciz-capability-authorization.service";
+import { CaseDebtorLifecycleGuardService } from "../../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 
 export interface TriggerHacizAuthorizationInput {
   readonly tenantId: string;
   /** Authenticated principal — controller'dan (req.user.id), body/DTO'dan DEĞİL. */
   readonly authenticatedUserId: string;
   readonly caseId: string;
+  /**
+   * I15-D1-R1: hangi TAM CaseDebtor'un hedeflendiği — client-supplied ama burada
+   * tenant+case+lifecycle ile CANONICAL olarak doğrulanır (owner-ratified
+   * TRIGGER_HACIZ_CASE_DEBTOR_TARGET_UNBOUND düzeltmesi).
+   */
+  readonly caseDebtorId: string;
+}
+
+export interface TriggerHacizAuthorizationResult {
+  /** Canonical CaseDebtor kaydından türetilmiş — client-supplied body.debtorId DEĞİL. */
+  readonly debtorId: string;
 }
 
 /**
- * I15-D1: `UyapService.pushHacizRequest()`'e özel, dar orchestration.
+ * I15-D1 / I15-D1-R1: `UyapService.pushHacizRequest()`'e özel, dar orchestration.
  *
  * Owner'ın bağlayıcı authority predicate'ini compose eder — hiçbir bileşen
- * diğerinin yerine geçmez, ikinci bir POA/capability motoru KURULMAZ:
+ * diğerinin yerine geçmez, ikinci bir POA/capability/lifecycle motoru KURULMAZ:
  *
- *   principal → tenant match → acting lawyer resolution (I01) →
- *   actor-specific case assignment → actor'ın kendi POA'sının bu operasyonu
- *   (TRIGGER_HACIZ) kapsaması (owner-ratified HMK m.73/m.74, İİK m.78 mapping) →
- *   explicit actor×TRIGGER_HACIZ PermissionGrant.
+ *   authenticated principal → tenant → required caseDebtorId → exact CaseDebtor
+ *   tenant+case relation → lifecycle active (CaseDebtorLifecycleGuardService,
+ *   8 diğer modülde zaten reuse edilen kanonik guard) → acting lawyer resolution
+ *   (I01) → actor-specific case assignment → actor'ın kendi POA'sının bu
+ *   operasyonu (TRIGGER_HACIZ) kapsaması (owner-ratified HMK m.73/m.74, İİK m.78
+ *   mapping) → explicit actor×TRIGGER_HACIZ PermissionGrant.
  *
  * `UyapSendAuthorityResolverService.resolve()` yalnız "acting lawyer bu case'in
  * client'larından biri için geçerli POA'ya sahip mi" sorusuna cevap verir —
  * `CaseLawyer` roster üyeliğini KONTROL ETMEZ. Bu yüzden case-assignment burada
  * AYRI, bağımsız bir predicate olarak doğrulanır (POA ilişkisinden varsayılmaz).
  *
- * NOT (disclosed scope): `HacizRequest`'in bugünkü şekli belirli bir
- * `caseDebtorId` taşımıyor (yalnız `caseId` + serbest `targetDetails`). Bu
- * yüzden "CaseDebtor lifecycle eligibility" bu servis içinde KONTROL EDİLMEZ —
- * hangi debtor'un hedeflendiği bilinmeden bu kontrol ya yanlış debtor'u
- * kontrol eder ya da icat edilmiş bir "tümü/herhangi biri aktif" kuralına
- * dayanır. Bu, `HacizRequest`'in kendi şeklini genişletmeyi gerektiren, D1'in
- * dar sınırının DIŞINDA ayrı bir kapsam kararıdır.
+ * `CaseDebtorLifecycleGuardService.assertActiveByCaseDebtorId` nonexistent/
+ * cross-tenant/wrong-case hedefleri AYNI safe-deny (NotFoundException) ile,
+ * PASSIVE hedefleri BadRequestException ile reddeder — bu servis KENDİ
+ * lifecycle mantığını icat ETMEZ, yalnız 8 başka modülün (Collection/Tebligat/
+ * AddressDiscovery/AssetQuery/UyapQuery/InstitutionLetter/ThirdParty/Debtor/
+ * Address) kullandığı AYNI kanonik guard'ı reuse eder.
  */
 @Injectable()
 export class TriggerHacizAuthorizationService {
@@ -43,26 +56,40 @@ export class TriggerHacizAuthorizationService {
     private readonly actingLawyerResolver: ActingLawyerResolverService,
     private readonly sendAuthorityResolver: UyapSendAuthorityResolverService,
     private readonly capabilityAuthorization: TriggerHacizCapabilityAuthorizationService,
+    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
   ) {}
 
-  async assertAuthorized(input: TriggerHacizAuthorizationInput): Promise<void> {
+  async assertAuthorized(
+    input: TriggerHacizAuthorizationInput,
+  ): Promise<TriggerHacizAuthorizationResult> {
     const tenantId = input.tenantId?.trim();
     const authenticatedUserId = input.authenticatedUserId?.trim();
     const caseId = input.caseId?.trim();
-    if (!tenantId || !authenticatedUserId || !caseId) {
+    const caseDebtorId = input.caseDebtorId?.trim();
+    if (!tenantId || !authenticatedUserId || !caseId || !caseDebtorId) {
       throw new ForbiddenException({ code: "TRIGGER_HACIZ_AUTHORIZATION_CONTEXT_REQUIRED" });
     }
 
-    // 1-2) Authenticated principal + tenant match → canonical acting lawyer (I01, fail-closed).
+    // 1) Exact CaseDebtor target-binding — tenant+case+lifecycle canonical doğrulama.
+    // Nonexistent/cross-tenant/wrong-case → NotFoundException (safe deny, aynı biçim).
+    // PASSIVE → BadRequestException. Client-supplied `caseDebtorId` HİÇBİR ZAMAN
+    // doğrudan `debtorId` yerine kullanılmaz — dönen kayıttan türetilir (aşağıda).
+    const caseDebtor = await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(
+      tenantId,
+      caseDebtorId,
+      { expectedCaseId: caseId },
+    );
+
+    // 2-3) Authenticated principal + tenant match → canonical acting lawyer (I01, fail-closed).
     const actingLawyer = await this.actingLawyerResolver.resolveOrThrow({
       userId: authenticatedUserId,
       tenantId,
     });
 
-    // 3) Actor-specific case assignment — POA ilişkisinden VARSAYILMAZ, ayrı doğrulanır.
+    // 4) Actor-specific case assignment — POA ilişkisinden VARSAYILMAZ, ayrı doğrulanır.
     await this.assertActingLawyerAssignedToCase(tenantId, caseId, actingLawyer.lawyerId);
 
-    // 4) Actor'ın kendi POA'sının TRIGGER_HACIZ'ı kapsaması (owner-ratified scope mapping).
+    // 5) Actor'ın kendi POA'sının TRIGGER_HACIZ'ı kapsaması (owner-ratified scope mapping).
     const authorityDecision = await this.sendAuthorityResolver.resolve({
       tenantId,
       authenticatedUserId,
@@ -79,10 +106,28 @@ export class TriggerHacizAuthorizationService {
       });
     }
 
-    // 5) Açık, aktöre-özel, organizasyon-içi capability (PermissionGrant — DENY öncelikli).
+    // 6) Açık, aktöre-özel, organizasyon-içi capability (PermissionGrant — DENY öncelikli).
     await this.capabilityAuthorization.assertAuthorized({
       tenantId,
       actorUserId: authenticatedUserId,
+    });
+
+    return { debtorId: caseDebtor.debtorId };
+  }
+
+  /**
+   * I15-D1-R1: immediately-pre-effect freshness-safe revalidation. `assertAuthorized`'ın
+   * yaptığı CaseDebtor kontrolü ile burada (yerel stub dispatch'ten hemen önce) çağrıldığı
+   * an arasında borçlu pasifleştirilmiş olabilir (TOCTOU). Aynı kanonik guard BAĞIMSIZ bir
+   * ikinci okuma ile tekrar çağrılır — yeni transaction mimarisi icat edilmez.
+   */
+  async revalidateCaseDebtorFreshness(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string,
+  ): Promise<void> {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId, {
+      expectedCaseId: caseId,
     });
   }
 

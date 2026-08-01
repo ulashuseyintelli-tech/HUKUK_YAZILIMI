@@ -113,7 +113,8 @@ function buildService(opts: {
       ? undefined
       : opts.triggerHacizAuthorization ??
         ({
-          assertAuthorized: jest.fn(async () => undefined),
+          assertAuthorized: jest.fn(async () => ({ debtorId: 'debtor-default' })),
+          revalidateCaseDebtorFreshness: jest.fn(async () => undefined),
         } as any);
 
   const service = new UyapService(

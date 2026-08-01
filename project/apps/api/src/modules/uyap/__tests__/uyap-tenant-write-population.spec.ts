@@ -33,7 +33,7 @@ const buildAuthorizedCaseFindFirst = () =>
  * - logResponse (tüm başarı/hata yanıt güncellemeleri): tenantId alanına dokunmaz.
  */
 describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => {
-  const buildService = (overrides: any = {}) => {
+  const buildService = (overrides: any = {}, serviceOverrides: any = {}) => {
     const prisma: any = {
       uyapRequestLog: {
         create: jest.fn().mockResolvedValue({ id: 'log-1' }),
@@ -51,12 +51,15 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
     // davranışını değil tenant-ownership yazımını test etmek olduğundan CPE-allow sağlanır;
     // haciz-decision-audit.spec.ts'in kendi CPE-yok senaryosu ayrı ve DEĞİŞMEDİ (pushHacizRequest
     // CasePolicyEngine yokluğunda hâlâ gate'i tamamen atlar — bu birim onu değiştirmedi).
-    const casePolicyEngine: any = {
+    const casePolicyEngine: any = serviceOverrides.casePolicyEngine ?? {
       canPerformAction: jest.fn().mockResolvedValue({ allowed: true, traceId: 'trace-allow' }),
     };
     // I15-D1: bu dosyanın odağı tenant-ownership yazımıdır, TRIGGER_HACIZ actor-specific
     // authority DEĞİL; varsayılan başarı mock'u ile mevcut davranış korunur.
-    const triggerHacizAuthorization: any = { assertAuthorized: jest.fn(async () => undefined) };
+    const triggerHacizAuthorization: any = serviceOverrides.triggerHacizAuthorization ?? {
+      assertAuthorized: jest.fn(async () => ({ debtorId: 'debtor-default' })),
+      revalidateCaseDebtorFreshness: jest.fn(async () => undefined),
+    };
     const service = new UyapService(
       prisma,
       poaService,
@@ -67,7 +70,7 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
       undefined,
       triggerHacizAuthorization,
     );
-    return { service, prisma };
+    return { service, prisma, casePolicyEngine, triggerHacizAuthorization };
   };
 
   describe('Brand-new tenant-bound metotlar — fail-closed + doğru yazım', () => {
@@ -182,6 +185,52 @@ describe('CLIENT-SEC-H2C-P02 — UyapRequestLog tenant write population', () => 
       } as any, 'tenant-authenticated');
       expect(prisma.uyapRequestLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tenantId: 'tenant-authenticated' }) }),
+      );
+    });
+
+    // ZORUNLU BACKEND TEST #14 (OWNER DECISION — RATIFIED): "CPE exact canonical target ile
+    // çalışır." canPerformAction'a geçirilen context.debtorId, TriggerHacizAuthorizationService'in
+    // dönen CANONICAL debtorId'sidir — targetDetails içine enjekte edilmiş herhangi bir
+    // client-supplied debtorId'ye ASLA güvenilmez (ZORUNLU BACKEND TEST #11 ile aynı invariant'ın
+    // CPE-cephesindeki kanıtı).
+    it('pushHacizRequest: CPE context.debtorId canonical (authority guard\'dan dönen) değerdir — targetDetails.debtorId ENJEKSİYONU yok sayılır', async () => {
+      const { service, casePolicyEngine } = buildService({}, {
+        triggerHacizAuthorization: {
+          assertAuthorized: jest.fn(async () => ({ debtorId: 'canonical-debtor-XYZ' })),
+          revalidateCaseDebtorFreshness: jest.fn(async () => undefined),
+        },
+      });
+      await service.pushHacizRequest({
+        caseId: 'case-1',
+        caseDebtorId: 'cd-1',
+        targetType: 'BANK',
+        targetDetails: { assetId: 'a1', debtorId: 'attacker-supplied-debtor' },
+        amount: 1000,
+        skipPoaCheck: true,
+      } as any, 'tenant-A');
+
+      const context = casePolicyEngine.canPerformAction.mock.calls[0][3];
+      expect(context.debtorId).toBe('canonical-debtor-XYZ');
+      expect(context.debtorId).not.toBe('attacker-supplied-debtor');
+    });
+
+    // ZORUNLU BACKEND TEST #15 (OWNER DECISION — RATIFIED): "Pre-effect lifecycle revalidation
+    // kaldırılırsa test kırmızı." Bu, revalidateCaseDebtorFreshness metodunun KENDİ davranışını
+    // değil, pushHacizRequest'in bu metodu gerçekten ÇAĞIRDIĞINI (wiring) kanıtlar — metot
+    // izolasyonda doğru olsa bile call-site'tan kaldırılırsa bu test kırmızıya döner.
+    it('pushHacizRequest: revalidateCaseDebtorFreshness immediately-pre-effect olarak (tenantId, caseId, caseDebtorId) ile çağrılır', async () => {
+      const { service, triggerHacizAuthorization } = buildService();
+      await service.pushHacizRequest({
+        caseId: 'case-1',
+        caseDebtorId: 'cd-1',
+        targetType: 'BANK',
+        targetDetails: {},
+        amount: 1000,
+        skipPoaCheck: true,
+      } as any, 'tenant-A');
+
+      expect(triggerHacizAuthorization.revalidateCaseDebtorFreshness).toHaveBeenCalledWith(
+        'tenant-A', 'case-1', 'cd-1',
       );
     });
 

@@ -9,6 +9,7 @@ import {
   UyapDocumentType,
   HacizTargetType,
   PreHacizRiskLevel,
+  DebtorListItemDTO,
 } from "@/lib/api";
 
 // PR-D4e-4: risk seviyesi → etiket + renk (yalnız seviye gösterilir, ham skor değil).
@@ -51,10 +52,32 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   const [hacizDetails, setHacizDetails] = useState("");
   // PR-D4e-3c/D4e-4: haciz öncesi saha istihbaratı risk read-model (lazy fetch, blok yok).
   const [preHacizRisk, setPreHacizRisk] = useState<{ debtors: PreHacizDebtorRisk[]; overallLevel: PreHacizRiskLevel } | null>(null);
+  // I15-D1-R1: CaseDebtor target-binding — dosyanın AKTİF borçlu listesi (kanonik
+  // GET /debtors/case/:caseId, varsayılan includePassive=false — mevcut veri kaynağı,
+  // yeni bir endpoint EKLENMEDİ). PASSIVE borçlu bu listede hiç görünmez, dolayısıyla
+  // seçilemez.
+  const [caseDebtors, setCaseDebtors] = useState<DebtorListItemDTO[]>([]);
+  const [selectedCaseDebtorId, setSelectedCaseDebtorId] = useState<string | undefined>(undefined);
+  const [hacizError, setHacizError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
+    // caseId değişince önceki seçim KESİNLİKLE taşınmaz (yanlış dosyada yanlış borçlu riski).
+    setSelectedCaseDebtorId(undefined);
+    setHacizError(null);
+    api
+      .getCaseDebtors(caseId)
+      .then((res) => setCaseDebtors(res.items || []))
+      .catch(() => setCaseDebtors([]));
   }, [caseId]);
+
+  // Dosyada tam 1 aktif borçlu varsa otomatik seç; ancak request yine de bu seçimi
+  // AÇIKÇA taşır (backend implicit fallback yapmaz — UI burada yalnız kolaylık sağlar).
+  useEffect(() => {
+    if (caseDebtors.length === 1) {
+      setSelectedCaseDebtorId(caseDebtors[0].caseDebtorId);
+    }
+  }, [caseDebtors]);
 
   // Haciz sekmesi açılınca riski bir kez çek (lazy). Hata sessiz (read-only, kritik değil).
   useEffect(() => {
@@ -112,12 +135,16 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   };
 
   const handleHacizSubmit = async () => {
-    if (!hacizAmount) return;
-    
+    // I15-D1-R1: caseDebtorId olmadan gönderim YAPILMAZ — backend authoritative
+    // validation her koşulda çalışır, bu yalnız UX'tir (owner kural #6).
+    if (!hacizAmount || !selectedCaseDebtorId) return;
+
     setSubmitting(true);
+    setHacizError(null);
     try {
       await api.sendUyapHacizRequest({
         caseId,
+        caseDebtorId: selectedCaseDebtorId,
         targetType: hacizType,
         targetDetails: { notes: hacizDetails },
         amount: parseFloat(hacizAmount),
@@ -127,6 +154,8 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
       loadData();
     } catch (error) {
       console.error("Haciz talebi hatası:", error);
+      // Owner kural #8: backend hatası güvenli biçimde gösterilir (ham hata/stack DEĞİL).
+      setHacizError("Haciz talebi gönderilemedi. Lütfen tekrar deneyin.");
     } finally {
       setSubmitting(false);
     }
@@ -395,11 +424,55 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
               </div>
             )}
 
+            {/* I15-D1-R1: CaseDebtor target-binding — haciz talebi HER ZAMAN tek ve açık bir
+                borçluyu hedefler. Backend caseDebtorId'yi zorunlu ister; burada yalnız UX
+                kolaylığı sağlanır (implicit fallback backend'de YOKTUR). */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Hedef Borçlu
+              </label>
+              {caseDebtors.length === 0 ? (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  Bu dosyada aktif borçlu bulunamadı; haciz talebi gönderilemez.
+                </p>
+              ) : caseDebtors.length === 1 ? (
+                <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  {caseDebtors[0].displayName}
+                  <span className="ml-2 text-xs text-gray-500">
+                    ({caseDebtors[0].role} · Aktif)
+                  </span>
+                </p>
+              ) : (
+                <select
+                  aria-label="Hedef Borçlu"
+                  value={selectedCaseDebtorId ?? ""}
+                  onChange={(e) => setSelectedCaseDebtorId(e.target.value || undefined)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="" disabled>
+                    Borçlu seçin…
+                  </option>
+                  {caseDebtors.map((cd) => (
+                    <option key={cd.caseDebtorId} value={cd.caseDebtorId}>
+                      {cd.displayName} ({cd.role} · Aktif)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {hacizError && (
+              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {hacizError}
+              </p>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Haciz Türü
               </label>
               <select
+                aria-label="Haciz Türü"
                 value={hacizType}
                 onChange={(e) => setHacizType(e.target.value as HacizTargetType)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -438,7 +511,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
 
             <button
               onClick={handleHacizSubmit}
-              disabled={submitting || !hacizAmount}
+              disabled={submitting || !hacizAmount || !selectedCaseDebtorId}
               className="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               {submitting ? "Gönderiliyor..." : "Haciz Talebi Gönder"}

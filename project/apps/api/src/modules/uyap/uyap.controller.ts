@@ -8,6 +8,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CpeRequired, ScopeResolvers } from '@/modules/policy-engine';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
+import { PushHacizRequestDto } from './dto/haciz-request.dto';
 
 // CLIENT-SEC-H2A: UyapRequestLog modelinde tenantId kolonu yok — /history tenant-scope
 // UYGULANAMAZ (şema-seviyesi eksiklik, kod-only fix yok). Kalıcı şema/migration çözümü ayrı
@@ -205,7 +206,9 @@ export class UyapController {
   @Post('haciz')
   @CpeRequired(ActionCode.TRIGGER_HACIZ, ScopeResolvers.fromBody)
   async pushHacizRequest(
-    @Body() body: any,
+    // I15-D1-R1: `body: any` KALDIRILDI — dar, typed, class-validator DTO (global
+    // ValidationPipe: whitelist+forbidNonWhitelisted+transform). `caseDebtorId` zorunlu.
+    @Body() dto: PushHacizRequestDto,
     @CurrentUser('tenantId') tenantId: string,
     @Req() req: any,
     // P05C-P04: opaque retry-token; yalnız evidence flag ON iken kullanılır (default-OFF → yok sayılır).
@@ -213,12 +216,13 @@ export class UyapController {
   ) {
     return this.uyapService.pushHacizRequest(
       {
-        caseId: body.caseId,
-        targetType: body.targetType,
-        targetDetails: body.targetDetails,
-        amount: body.amount,
-        clientId: body.clientId,
-        lawyerId: body.lawyerId,
+        caseId: dto.caseId,
+        caseDebtorId: dto.caseDebtorId,
+        targetType: dto.targetType,
+        targetDetails: dto.targetDetails,
+        amount: dto.amount,
+        // tenantId/userId: client-supplied DEĞİLDİR — yalnız trusted execution
+        // context'ten (I15-D1-R1: clientId/lawyerId contract'tan kaldırıldı).
         tenantId,
         userId: req.user?.id, // PR-D4e-6: karar-anı audit aktörü
       },

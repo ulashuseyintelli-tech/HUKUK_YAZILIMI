@@ -54,7 +54,10 @@ const build = (riskImpl?: any) => {
     undefined,
     undefined,
     undefined,
-    { assertAuthorized: jest.fn(async () => undefined) } as any,
+    {
+      assertAuthorized: jest.fn(async () => ({ debtorId: 'debtor-default' })),
+      revalidateCaseDebtorFreshness: jest.fn(async () => undefined),
+    } as any,
   ); // casePolicyEngine yok → CPE atlanır
   return { svc, prisma, validationGate };
 };
