@@ -10,7 +10,12 @@ import { ClientService } from "../client.service";
 
 describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
   const buildTx = () => ({
-    client: { update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({ id: "new" }) },
+    client: {
+      update: jest.fn().mockResolvedValue({}),
+      // R1A: reaktivasyon yazimi kosullu updateMany ile yapilir (TOCTOU koruması).
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      create: jest.fn().mockResolvedValue({ id: "new" }),
+    },
     clientContact: { createMany: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({}) },
   });
   const buildPrisma = (existing: any, tx: any) => ({
@@ -25,16 +30,25 @@ describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   });
   const buildAudit = () => ({ logInTransaction: jest.fn().mockResolvedValue(undefined) });
+  // OWN-13 I02-R1A: reactivate-via-create artik LIFECYCLE yetkisine tabidir. Bu suite
+  // reaktivasyon DAVRANISINI olcer, yetkiyi degil → ACIK ve yetkili approver stub'i verilir
+  // (sahte bypass DEGIL). Yetki davranisinin kaniti:
+  // client-reactivate-via-create-lifecycle-gate-r1a.spec.ts
+  const buildEligibleApproval = () => ({ isApproverEligible: jest.fn().mockResolvedValue(true) });
 
   it("duplicate soft-deleted → reactivate (tx) + audit CLIENT_REACTIVATE, create YOK", async () => {
     const tx = buildTx();
     const prisma = buildPrisma({ id: "c1", isActive: false, displayName: "ŞÜKRÜ AKDOĞAN" }, tx) as any;
     const audit = buildAudit();
-    const svc = new ClientService(prisma, audit as any, {} as any);
+    const svc = new ClientService(prisma, audit as any, buildEligibleApproval() as any);
 
     const res = await svc.create("t1", { tckn: "40294995552", firstName: "Ş", lastName: "A", type: "PERSON" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
 
-    expect(tx.client.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { isActive: true } });
+    // R1A: yazma artik yetkilendirilen DURUMA kosullu (`isActive:false`) + tenant predicate.
+    expect(tx.client.updateMany).toHaveBeenCalledWith({
+      where: { id: "c1", tenantId: "t1", isActive: false },
+      data: { isActive: true },
+    });
     expect(audit.logInTransaction).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({ action: "CLIENT_REACTIVATE", entityType: "CLIENT", entityId: "c1" }),

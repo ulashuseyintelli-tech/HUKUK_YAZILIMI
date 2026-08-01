@@ -11,7 +11,12 @@ import { BadRequestException } from "@nestjs/common";
 import { ClientService } from "../client.service";
 
 const buildTx = () => ({
-  client: { update: jest.fn().mockResolvedValue({}), create: jest.fn().mockResolvedValue({ id: "new" }) },
+  client: {
+    update: jest.fn().mockResolvedValue({}),
+    // OWN-13 I02-R1A: reaktivasyon yazimi kosullu updateMany ile yapilir (TOCTOU koruması).
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    create: jest.fn().mockResolvedValue({ id: "new" }),
+  },
   clientContact: { createMany: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({}) },
 });
 
@@ -33,7 +38,10 @@ const buildAudit = () => ({ logInTransaction: jest.fn().mockResolvedValue(undefi
 function svcFor(existing: any) {
   const tx = buildTx();
   const prisma = buildPrisma(existing, tx) as any;
-  const svc = new ClientService(prisma, buildAudit() as any, {} as any);
+  // OWN-13 I02-R1A: dedup/reactivate yolu artik LIFECYCLE yetkisine tabidir. Bu suite CHECKSUM
+  // davranisini olcer, yetkiyi degil → ACIK ve yetkili approver stub'i (sahte bypass DEGIL).
+  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+  const svc = new ClientService(prisma, buildAudit() as any, officeApproval as any);
   return { svc, tx, prisma };
 }
 

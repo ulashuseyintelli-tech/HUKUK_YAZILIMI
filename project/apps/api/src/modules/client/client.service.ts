@@ -354,7 +354,12 @@ export class ClientService {
    * Task 8A (owner-locked 2026-07-02) — müvekkil lifecycle (archive/delete) mutasyon yetkisi.
    * case-fee-agreement.service.ts:assertCanManage ile BİREBİR desen (reuse, yeni altyapı YOK):
    * PARTNER veya canApproveOfficeActions=true delege avukat. Staff/normal kullanıcı 403.
-   * Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DIŞI — kasıtlı olarak dokunulmadı.
+   *
+   * ~~Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DIŞI~~ →
+   * **SUPERSEDED_BY_OWNER_CLARIFICATION (OWN-13 I02-R1A):** owner, `isActive:false → true`
+   * geçişinin **hangi entrypoint üzerinden oluşursa oluşsun** lifecycle mutation olduğunu
+   * tasdik etti. Create yetkisi lifecycle yetkisini İÇERMEZ; dedup/reactivate yolu artık
+   * `assertCanReactivateViaCreate()` ile AYNI predicate'e (isApproverEligible) bağlıdır.
    *
    * @remarks Çağrıldığı yerler:
    * - ClientService.remove() → DELETE /clients/:id (soft-delete, isActive:false)
@@ -366,6 +371,32 @@ export class ClientService {
       throw new ForbiddenException(
         'Müvekkil arşivleme/silme için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir)',
       );
+    }
+  }
+
+  /**
+   * OWN-13 I02-R1A (owner clarification, RATIFIED) — create/dedup yolundaki
+   * `isActive:false → true` geçişi için lifecycle yetki kapısı.
+   *
+   * **Create yetkisi lifecycle yetkisini İÇERMEZ.** USER yeni müvekkil oluşturabilir ama
+   * pasif mevcut kaydı create üzerinden reaktive EDEMEZ. `UserRole.ADMIN` tek başına da
+   * yetmez — eşik `assertCanManageLifecycle()` ile AYNI predicate'tir
+   * (`officeApproval.isApproverEligible`, yani PARTNER veya `canApproveOfficeActions`).
+   * Buradaki tek fark stabil `reasonCode`dur; lifecycle SEMANTİĞİ DEĞİŞMEZ ve OFFICE
+   * eligibility hesabı KOPYALANMAZ — mevcut boolean varyant (`canManageLifecycle`) çağrılır.
+   *
+   * SERVİS SINIRINDADIR: direct CLIENT route, CASE inline creditor ve Excel import
+   * yollarının ÜÇÜ de aynı kapıdan geçer (controller'a özel kontrol YOK).
+   */
+  private async assertCanReactivateViaCreate(
+    actor: ClientMutationActorContext,
+    tenantId: string,
+  ): Promise<void> {
+    if (!(await this.canManageLifecycle(actor?.userId, tenantId))) {
+      this.denyMutation({
+        allowed: false,
+        reasonCode: CLIENT_MUTATION_REASON.LIFECYCLE_DENIED,
+      });
     }
   }
 
@@ -1410,9 +1441,20 @@ export class ClientService {
         // eskiden kaydı isActive=false bırakıyordu → findAll (isActive=true) gizliyordu (vekaletleri olsa da).
         const wasReactivated = existing.isActive === false;
         if (wasReactivated) {
+          // OWN-13 I02-R1A (owner clarification): `isActive:false → true` LIFECYCLE mutasyonudur.
+          // Kapı HERHANGİ BİR DB mutation'dan ÖNCE çalışır — yetkisiz aktör hiçbir yazma yapmaz.
+          await this.assertCanReactivateViaCreate(actor, tenantId);
           // C0-a: reaktivasyon mutation + audit AYNI transaction; CLIENT_CREATE'ten ayrı action.
           await this.prisma.$transaction(async (tx) => {
-            await tx.client.update({ where: { id: existing.id }, data: { isActive: true } });
+            // TOCTOU: `existing` transaction DIŞINDA okundu. Yazma, yetkilendirdiğimiz DURUMA
+            // (`isActive:false`) KOŞULLU yapılır + tenant predicate taşır. Kayıt bu arada
+            // değiştiyse `count===0` olur ve HİÇBİR bayrak çevrilmez; yetkisiz bir aktörün
+            // ürettiği stale gözlem yetkili bir yazmaya dönüşemez.
+            const { count } = await tx.client.updateMany({
+              where: { id: existing.id, tenantId, isActive: false },
+              data: { isActive: true },
+            });
+            if (count === 0) return; // eşzamanlı değişim — audit de yazılmaz (olay gerçekleşmedi)
             await this.audit.logInTransaction(tx, {
               tenantId,
               action: 'CLIENT_REACTIVATE',
