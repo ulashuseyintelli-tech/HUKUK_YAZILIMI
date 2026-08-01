@@ -77,6 +77,9 @@ const TOKENS = Object.freeze({
   WAITING_DEPENDENCY: Object.freeze({
     terminal: false,
     requiresGithubState: 'OPEN',
+    // A dependency reference is a PR number, a task ID, or a declared
+    // incident ID. Incident IDs matter because one external fault routinely
+    // stalls many PRs at once.
     requiresEvidence: ['dependencyRef'],
   }),
   CI_FIX_REQUIRED: Object.freeze({
@@ -164,10 +167,31 @@ function classify(observed) {
   if (String(o.mergeable || '').toUpperCase() === 'CONFLICTING') {
     return { token: 'BLOCKED_EXACT', reason: 'UNRESOLVABLE_MERGE_CONFLICT until rebased' };
   }
+  // INCIDENT DEDUPLICATION.
+  //
+  // One external fault routinely stalls every open PR at once — a locked base
+  // branch stalled six simultaneously. Reporting BLOCKED_EXACT on each of them
+  // reproduces exactly the blocker noise this taxonomy exists to remove: six
+  // lines, one cause, and no way to see that it is one cause.
+  //
+  // So the incident carries the BLOCKED_EXACT, once. Every PR it stalls
+  // reports WAITING_DEPENDENCY against the incident ID. Clearing the incident
+  // clears all of them; there is exactly one thing to fix and one line saying so.
+  if (o.incident && o.incident.active === true) {
+    return {
+      token: 'WAITING_DEPENDENCY',
+      reason: `stalled by incident ${o.incident.id}`,
+      incidentId: o.incident.id,
+    };
+  }
   if (o.lockedBranch === true) {
+    // Reached only when no incident has been declared for the lock. The lock is
+    // still real, so it must not silently pass — but the correct remedy is to
+    // declare the incident so sibling PRs deduplicate against it.
     return {
       token: 'BLOCKED_EXACT',
-      reason: 'AUTHORITY_NOT_EXTERNALLY_OBTAINABLE: base branch is locked',
+      reason: 'AUTHORITY_NOT_EXTERNALLY_OBTAINABLE: base branch is locked '
+        + '(declare a CONTROL_PLANE_RELOCK_INCIDENT so sibling PRs deduplicate)',
     };
   }
   if (o.dependencyOpen === true) {
@@ -202,7 +226,49 @@ function verifyClaim(claimedToken, observed) {
   if (claimedToken === 'BLOCKED_EXACT' && running.length > 0 && failing.length === 0) {
     return `DISPOSITION_MISMATCH: BLOCKED_EXACT claimed while checks are still running`;
   }
+  // A PR stalled by a declared, active incident must defer to it rather than
+  // restate the incident's cause as its own blocker.
+  if (claimedToken === 'BLOCKED_EXACT' && o.incident && o.incident.active === true) {
+    return `DISPOSITION_MISMATCH: BLOCKED_EXACT claimed while incident ${o.incident.id} `
+      + `is active — report WAITING_DEPENDENCY against the incident`;
+  }
+  if (claimedToken === 'WAITING_DEPENDENCY') {
+    const ref = o.dependencyRef || (o.incident && o.incident.id);
+    if (!ref) {
+      return `DISPOSITION_MISMATCH: WAITING_DEPENDENCY claimed without a PR, task or incident ID`;
+    }
+    // Read-only proof: an incident may only be cited while it is active.
+    if (o.incident && o.incident.id === ref && o.incident.active !== true) {
+      return `DISPOSITION_MISMATCH: incident ${ref} is not active`;
+    }
+  }
   return null;
+}
+
+/**
+ * Declare a control-plane incident. The incident — not each stalled PR —
+ * carries the BLOCKED_EXACT disposition.
+ *
+ * @param {string} id      e.g. 'CONTROL_PLANE_RELOCK_INCIDENT'
+ * @param {object} opts
+ * @param {string} opts.cause     one of BLOCKED_EXACT_ADMISSIBLE_CAUSES
+ * @param {string} opts.evidence  read-only observation proving it is active
+ * @param {boolean} opts.active
+ */
+function declareIncident(id, opts) {
+  const o = opts || {};
+  if (!id || typeof id !== 'string') throw new TypeError('incident id is required');
+  if (!BLOCKED_EXACT_ADMISSIBLE_CAUSES.includes(o.cause)) {
+    throw new TypeError(`incident cause must be one of ${BLOCKED_EXACT_ADMISSIBLE_CAUSES.join(', ')}`);
+  }
+  if (!o.evidence) throw new TypeError('incident requires read-only evidence');
+  return Object.freeze({
+    id,
+    cause: o.cause,
+    evidence: String(o.evidence),
+    active: o.active !== false,
+    token: 'BLOCKED_EXACT',
+  });
 }
 
 module.exports = {
@@ -216,4 +282,5 @@ module.exports = {
   failingChecks,
   classify,
   verifyClaim,
+  declareIncident,
 };

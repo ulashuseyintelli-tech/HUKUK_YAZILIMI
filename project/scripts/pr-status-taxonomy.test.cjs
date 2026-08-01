@@ -126,6 +126,72 @@ test('unknown tokens are rejected', () => {
 
 // ------------------------------------------------------------ check helpers --
 
+// ----------------------------------------------- incident deduplication --
+
+const relock = () => taxonomy.declareIncident('CONTROL_PLANE_RELOCK_INCIDENT', {
+  cause: 'AUTHORITY_NOT_EXTERNALLY_OBTAINABLE',
+  evidence: 'GET .../branches/main/protection -> lock_branch=true',
+});
+
+test('one incident carries the blocker; stalled PRs defer to it', () => {
+  const inc = relock();
+  assert.equal(inc.token, 'BLOCKED_EXACT');
+  // Six green PRs stalled by ONE lock must not produce six BLOCKED_EXACT lines.
+  for (const n of [2072, 2075, 2077]) {
+    const r = taxonomy.classify({
+      state: 'OPEN', statusCheckRollup: green(), lockedBranch: true, incident: inc,
+    });
+    assert.equal(r.token, 'WAITING_DEPENDENCY', `#${n} should defer to the incident`);
+    assert.equal(r.incidentId, 'CONTROL_PLANE_RELOCK_INCIDENT');
+  }
+});
+
+test('BLOCKED_EXACT is rejected on a PR while its incident is active', () => {
+  assert.match(
+    String(taxonomy.verifyClaim('BLOCKED_EXACT', {
+      state: 'OPEN', statusCheckRollup: green(), incident: relock(),
+    })),
+    /report WAITING_DEPENDENCY against the incident/);
+});
+
+test('an undeclared lock still blocks, and asks for an incident', () => {
+  const r = taxonomy.classify({ state: 'OPEN', statusCheckRollup: green(), lockedBranch: true });
+  assert.equal(r.token, 'BLOCKED_EXACT');
+  assert.match(r.reason, /declare a CONTROL_PLANE_RELOCK_INCIDENT/);
+});
+
+test('WAITING_DEPENDENCY accepts an incident ID and requires it to be active', () => {
+  const inc = relock();
+  assert.equal(taxonomy.verifyClaim('WAITING_DEPENDENCY', { state: 'OPEN', incident: inc }), null);
+  const cleared = taxonomy.declareIncident('CONTROL_PLANE_RELOCK_INCIDENT', {
+    cause: 'AUTHORITY_NOT_EXTERNALLY_OBTAINABLE', evidence: 'lock_branch=false', active: false,
+  });
+  assert.match(
+    String(taxonomy.verifyClaim('WAITING_DEPENDENCY', {
+      state: 'OPEN', dependencyRef: 'CONTROL_PLANE_RELOCK_INCIDENT', incident: cleared,
+    })),
+    /is not active/);
+});
+
+test('WAITING_DEPENDENCY without any reference is rejected', () => {
+  assert.match(String(taxonomy.verifyClaim('WAITING_DEPENDENCY', { state: 'OPEN' })),
+    /without a PR, task or incident ID/);
+});
+
+test('incidents require an admissible cause and read-only evidence', () => {
+  assert.throws(() => taxonomy.declareIncident('X', { cause: 'BECAUSE', evidence: 'e' }),
+    /cause must be one of/);
+  assert.throws(() => taxonomy.declareIncident('X', { cause: 'UNRESOLVABLE_MERGE_CONFLICT' }),
+    /requires read-only evidence/);
+});
+
+test('a running pipeline still outranks an active incident', () => {
+  // The PR is progressing; the incident may clear before CI finishes.
+  assert.equal(
+    taxonomy.classify({ state: 'OPEN', statusCheckRollup: running(), incident: relock() }).token,
+    'WAITING_FOR_CI');
+});
+
 test('unknown check shapes are not treated as terminal', () => {
   // Fail-closed direction: counting an unrecognised shape as finished would let
   // a green-looking PR be parked as WAITING_FOR_CI.
