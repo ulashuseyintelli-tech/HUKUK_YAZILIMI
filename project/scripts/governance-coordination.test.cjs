@@ -723,6 +723,18 @@ function uyapStructuredEmissionTargetChanges() {
   );
 }
 
+function uyapStructuredEmissionCloseoutBindingChanges() {
+  return coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01.closeoutBindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function uyapStructuredEmissionCloseoutChanges() {
+  return coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01.closeoutPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function uyapM01CloseoutBindingChanges() {
   return coordination.UYAP_M01_LEGAL_BASIS_RESOLVER_BINDING_AUTHORITY_CONTROL_PLANE_BINDING_R01.closeoutBindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -1659,6 +1671,86 @@ function createUyapM01CloseoutGitFixture(t, options = {}) {
   fs.appendFileSync(grantPath, `${terminalReceipt.join('\n')}\n`, 'utf8');
   runFixtureGit(['add', '--all'], root);
   runFixtureGit(['commit', '--quiet', '-m', 'close UYAP-M01 grant'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+  return { root, base, head };
+}
+
+function createUyapStructuredEmissionCloseoutGitFixture(t, options = {}) {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  const parent = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'gov-coord-uyap-structured-closeout-'),
+  );
+  const root = path.join(parent, 'repo');
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  fs.mkdirSync(root);
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  const contractPath = path.join(root, ...binding.contractPath.split('/'));
+  const decisionPath = path.join(root, ...target.semanticAuthority.path.split('/'));
+  const grantPath = path.join(root, ...target.executionGrant.path.split('/'));
+  fs.mkdirSync(path.dirname(contractPath), { recursive: true });
+  fs.mkdirSync(path.dirname(decisionPath), { recursive: true });
+  fs.mkdirSync(path.dirname(grantPath), { recursive: true });
+  fs.writeFileSync(contractPath, rcvColBindingContractContent(binding), 'utf8');
+  fs.writeFileSync(
+    decisionPath,
+    `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${target.semanticAuthority.recordId} -->\n`,
+    'utf8',
+  );
+  fs.writeFileSync(
+    grantPath,
+    [
+      '# UYAP structured-emission grant fixture',
+      `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${target.executionGrant.recordId} -->`,
+      '```text',
+      `semanticAuthorityRef.kind     : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path     : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
+      '```',
+      'SECOND USE: FAIL-CLOSED',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'canonical UYAP structured grant'], root);
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const terminalReceipt = [
+    'TASK STATUS            : CLOSED',
+    'CHANGE STATUS          : MERGED',
+    'DELIVERY STATUS        : PASS',
+    'SEMANTIC AUTHORITY     : CANONICAL',
+    'EXECUTION GRANT        : CONSUMED / CLOSED',
+    `IMPLEMENTATION PR      : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA     : ${target.implementation.squashSha}`,
+    'M01 QUALIFICATION      : REQUIRED / VERIFIED',
+    'LEGAL-BASIS OWNER      : RECEIVABLE ONLY',
+    'STRUCTURED EMISSION    : CANONICAL TECHNICAL IMPLEMENTATION',
+    'FALLBACK               : NONE',
+    'FAIZ                   : REJECTED IN THIS SLICE',
+    'DEFAULT-OFF            : PROVEN',
+    'PRODUCTION CALL-SITE   : NONE',
+    'PRODUCTION REACHABILITY: 0',
+    'STRICT DTD             : NOT CLAIMED',
+    'REQUIRED CI            : PASS',
+    'SECOND USE: FAIL-CLOSED',
+    'WAITING FOR OWNER : NO FOR THIS TASK — TASK COMPLETE',
+  ];
+  if (options.omitLiteral) {
+    terminalReceipt.splice(terminalReceipt.indexOf(options.omitLiteral), 1);
+  }
+  fs.appendFileSync(grantPath, `${terminalReceipt.join('\n')}\n`, 'utf8');
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'close UYAP structured grant'], root);
   const head = runFixtureGit(['rev-parse', 'HEAD'], root);
   return { root, base, head };
 }
@@ -4388,6 +4480,91 @@ test('UYAP structured-emission target rejects a grant bound to another semantic 
         base: fixture.base,
         head: fixture.head,
         headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('UYAP structured-emission closeout binding requires exact base branch and M/M/M scope', () => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const closeoutBinding = binding.closeoutBindingPr;
+  const classification = coordination.classifyPrChangeSet(
+    uyapStructuredEmissionCloseoutBindingChanges(),
+    {
+      base: closeoutBinding.baseSha,
+      headRef: closeoutBinding.headRef,
+    },
+  );
+  assert.equal(classification.mode, closeoutBinding.mode);
+  assert.equal(classification.taskId, closeoutBinding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    rcvColBindingContractContent(binding),
+  );
+  const result =
+    coordination.validateUyapStructuredEmissionTerminalCloseoutBindingScope({
+      base: closeoutBinding.baseSha,
+      head: fixture.head,
+      headRef: closeoutBinding.headRef,
+      changes: uyapStructuredEmissionCloseoutBindingChanges(),
+      taskId: closeoutBinding.taskId,
+      cwd: fixture.root,
+    });
+  assert.equal(result.mode, closeoutBinding.mode);
+
+  const expanded = uyapStructuredEmissionCloseoutBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: closeoutBinding.baseSha,
+        headRef: closeoutBinding.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP structured-emission closeout accepts only the exact terminal receipt', (t) => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  const fixture = createUyapStructuredEmissionCloseoutGitFixture(t);
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: target.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, target.mode);
+  assert.equal(result.taskId, target.taskId);
+
+  const expanded = uyapStructuredEmissionCloseoutChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: fixture.base,
+        headRef: target.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('UYAP structured-emission closeout rejects an incomplete terminal receipt', (t) => {
+  const binding =
+    coordination.UYAP_OFFICIAL_ALACAKKALEMI_STRUCTURED_EMISSION_I01_CONTROL_PLANE_BINDING_R01;
+  const fixture = createUyapStructuredEmissionCloseoutGitFixture(t, {
+    omitLiteral: 'M01 QUALIFICATION      : REQUIRED / VERIFIED',
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.closeoutPr.headRef,
         cwd: fixture.root,
       }),
     'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
