@@ -312,7 +312,8 @@ const OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_S
         'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
       mode:
         'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01',
-      headRef: 'codex/office-sc-f01-authority-materialization-r01',
+      headRef: 'codex/office-f01-stage2-authority-materialization-r01',
+      contractHeadRef: 'codex/office-sc-f01-authority-materialization-r01',
       statusTuple: 'M / A / A / A',
       pathCount: 4,
       changedPaths: Object.freeze([
@@ -348,6 +349,54 @@ const OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_S
       mutation: 'FORBIDDEN',
     }),
   });
+
+const OFFICE_F01_STAGE2_VALIDATOR_OWNER_EVIDENCE = [
+  'Av. Ulaş Hüseyin Telli olarak,',
+  'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-',
+  'AUTHORITY-MATERIALIZATION-R01 görevinin;',
+  '',
+  'yalnız exact M/A/A/A dört-path Stage 2 tuple’ı üzerinde,',
+  'ayrı task-bound ve non-reusable GO-COMPLETE — STAGE 2 ONLY',
+  'execution authority ile yürütülmesini;',
+  '',
+  'Stage 1 grant’inin yeniden kullanılmamasını;',
+  'OFFICE implementation, schema/migration ve production activation',
+  'yapılmamasını;',
+  '',
+  'required CI PASS ve mergeability hâlinde squash-merge, canonical',
+  'doğrulama ve güvenli cleanup’a kadar tamamlanmasını onaylıyorum.',
+].join('\n') + '\n';
+
+const OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01 = Object.freeze({
+  taskId:
+    'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-STAGE2-VALIDATOR-RECONCILIATION-R01',
+  mode:
+    'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_STAGE2_VALIDATOR_RECONCILIATION_R01',
+  baseSha: '8f2426d6df5cd9e92d1511ad2588a8d0ffb7edd1',
+  headRef: 'codex/office-f01-stage2-validator-reconciliation-r01',
+  ownerName: 'Av. Ulaş Hüseyin Telli',
+  ownerRole: 'Repository Owner / Semantic Authority',
+  ownerDecisions: '8/8 RATIFIED',
+  stage1MergeSha: 'de310fb16aa9681c15770e74e681ed24e64e553e',
+  contractPath:
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  changedPaths: Object.freeze([
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.cjs' }),
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.test.cjs' }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/docs/governance/governance-writer-coordination-contract.md',
+    }),
+  ]),
+  targetTaskId:
+    'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
+  targetMode:
+    'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01',
+  ownerRatificationEvidence: Object.freeze({
+    exactExcerpt: OFFICE_F01_STAGE2_VALIDATOR_OWNER_EVIDENCE,
+    excerptSha256: '7b2ffeb93ae6b91a88eee84991852bf19b3682ebc587f9152442e04388de4302',
+  }),
+});
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01',
   bindingPr: Object.freeze({
@@ -3087,6 +3136,28 @@ function classifyPrChangeSet(changes, context = {}) {
 
   const officeF01Stage1 =
     OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const officeF01ValidatorRepair =
+    OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  if (
+    context.base === officeF01ValidatorRepair.baseSha &&
+    context.headRef === officeF01ValidatorRepair.headRef &&
+    hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths)
+  ) {
+    return {
+      mode: officeF01ValidatorRepair.mode,
+      taskId: officeF01ValidatorRepair.taskId,
+    };
+  }
+  if (
+    context.headRef === officeF01ValidatorRepair.headRef ||
+    (context.base === officeF01ValidatorRepair.baseSha &&
+      hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths))
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE F01 Stage 2 validator reconciliation requires its exact base, branch and M/M/M scope',
+    );
+  }
   if (
     context.headRef === officeF01Stage1.stage2.headRef ||
     (context.headRef === officeF01Stage1.stage2.headRef &&
@@ -5224,7 +5295,7 @@ function officeF01Stage1ContractLiterals(binding) {
     ),
     `stage2TaskId : ${stage2.taskId}`,
     `stage2Mode : ${stage2.mode}`,
-    `stage2HeadRef : ${stage2.headRef}`,
+    `stage2HeadRef : ${stage2.contractHeadRef || stage2.headRef}`,
     `stage2StatusTuple : ${stage2.statusTuple}`,
     `stage2PathCount : ${stage2.pathCount}`,
     `stage2Eligibility : ${stage2.eligibility}`,
@@ -5428,6 +5499,219 @@ function validateOfficeF01Stage1BindingScope(options) {
     }
   }
   return { mode: binding.mode, taskId: binding.taskId };
+}
+
+function validateOfficeF01Stage2ValidatorReconciliationBindingScope(options) {
+  const {
+    base,
+    head,
+    headRef,
+    changes,
+    taskId,
+    mode,
+    cwd = REPO_ROOT,
+  } = options;
+  const repair = OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  if (
+    taskId !== repair.taskId ||
+    (mode && mode !== repair.mode) ||
+    base !== repair.baseSha ||
+    headRef !== repair.headRef ||
+    !hasExactChangeSet(changes, repair.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE F01 Stage 2 validator reconciliation requires its exact base, branch, task and M/M/M scope',
+    );
+  }
+
+  if (sha256(repair.ownerRatificationEvidence.exactExcerpt) !== repair.ownerRatificationEvidence.excerptSha256) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE F01 validator reconciliation owner evidence hash is not self-consistent',
+    );
+  }
+
+  const contract = gitShow(head, repair.contractPath, cwd);
+  const requiredLiterals = [
+    repair.taskId,
+    repair.mode,
+    repair.baseSha,
+    repair.headRef,
+    repair.stage1MergeSha,
+    repair.ownerName,
+    repair.ownerRole,
+    repair.ownerDecisions,
+    repair.targetTaskId,
+    repair.targetMode,
+    repair.ownerRatificationEvidence.excerptSha256,
+    ...repair.changedPaths.map(({ status, path: repoPath }) => `${status} ${repoPath}`),
+  ];
+  for (const expectedLiteral of requiredLiterals) {
+    if (countOccurrences(contract, expectedLiteral) < 1) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact OFFICE F01 validator reconciliation binding ${expectedLiteral}`,
+      );
+    }
+  }
+  if (countOccurrences(contract, repair.ownerRatificationEvidence.exactExcerpt) !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE F01 validator reconciliation owner evidence excerpt must occur exactly once',
+    );
+  }
+  if (countOccurrences(contract, repair.ownerRatificationEvidence.excerptSha256) !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE F01 validator reconciliation owner evidence hash must occur exactly once',
+    );
+  }
+  return { mode: repair.mode, taskId: repair.taskId };
+}
+
+function validateOfficeF01Stage2MaterializationScope(options) {
+  const {
+    base,
+    head,
+    headRef,
+    changes,
+    taskId,
+    mode,
+    cwd = REPO_ROOT,
+  } = options;
+  const binding =
+    OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
+  const stage2 = binding.stage2;
+  const repair = OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
+  validateOfficeF01Stage2Tuple(changes, {
+    headRef,
+    programId: binding.programId,
+    taskId,
+    ownerName: binding.ownerName,
+    ownerDecisions: binding.ownerDecisions,
+    semanticAuthorityId: stage2.semanticAuthorityId,
+    executionGrantId: stage2.executionGrantId,
+    semanticAuthorityPath: stage2.semanticAuthorityPath,
+    executionGrantPath: stage2.executionGrantPath,
+  });
+  if (mode && mode !== stage2.mode) {
+    reject('OFFICE_F01_STAGE2_MODE_MISMATCH', 'OFFICE F01 Stage 2 mode is not canonical');
+  }
+  if (!gitIsAncestor(repair.stage1MergeSha, base, cwd)) {
+    reject(
+      'OFFICE_F01_STAGE1_ANCESTRY_MISMATCH',
+      'Stage 1 merge SHA must be an ancestor of the Stage 2 materialization base',
+    );
+  }
+
+  const protectedLiterals = officeF01Stage1ContractLiterals(binding);
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  const headContract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of protectedLiterals) {
+    if (!baseContract.includes(expectedLiteral) || !headContract.includes(expectedLiteral)) {
+      reject(
+        'OFFICE_F01_STAGE1_BINDING_DRIFT',
+        `protected Stage 1 binding literal is missing from the contract: ${expectedLiteral}`,
+      );
+    }
+  }
+  const headValidator = gitShow(head, 'project/scripts/governance-coordination.cjs', cwd);
+  if (!headValidator.includes('function validateOfficeF01Stage1BindingScope')) {
+    reject('OFFICE_F01_STAGE1_BINDING_DRIFT', 'protected Stage 1 validator function is missing');
+  }
+
+  const baseDecisionLog = gitShow(base, stage2.semanticAuthorityPath, cwd);
+  const semanticMarker = buildAuthorityMarker({
+    kind: 'SEMANTIC_AUTHORITY',
+    recordId: stage2.semanticAuthorityId,
+  });
+  if (
+    countOccurrences(baseDecisionLog, semanticMarker) !== 0 ||
+    countOccurrences(baseDecisionLog, stage2.semanticAuthorityId) !== 0 ||
+    gitTreeEntry(base, stage2.executionGrantPath, cwd)
+  ) {
+    reject(
+      'OFFICE_F01_PREEXISTING_AUTHORITY_CONFLICT',
+      'Stage 2 base already contains the F01 semantic authority or execution grant',
+    );
+  }
+
+  const decisionLog = gitShow(head, stage2.semanticAuthorityPath, cwd);
+  if (countOccurrences(decisionLog, semanticMarker) !== 1) {
+    reject('OFFICE_F01_STAGE2_SA_MARKER_INVALID', 'F01 semantic authority marker must occur exactly once');
+  }
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) => line.includes(semanticMarker));
+  if (semanticRows.length !== 1) {
+    reject('OFFICE_F01_STAGE2_SA_RECORD_INVALID', 'F01 semantic authority marker must identify one decision-log row');
+  }
+  for (const literal of [
+    'Owner ratifies',
+    'OFFICE / SHARED_CONTROL_PLANE',
+    '109 unique field paths',
+    'UserRole.ADMIN',
+    'SUPER_ADMIN',
+    'Stage 2 only',
+    'production activation',
+    'schema/migration',
+  ]) {
+    if (!semanticRows[0].includes(literal)) {
+      reject('OFFICE_F01_STAGE2_SA_RECORD_INVALID', `F01 semantic authority row is missing ${literal}`);
+    }
+  }
+
+  const grant = gitShow(head, stage2.executionGrantPath, cwd);
+  const execution = { kind: 'EXECUTION_GRANT', path: stage2.executionGrantPath, recordId: stage2.executionGrantId };
+  assertExactAuthorityMarker(grant, execution);
+  assertExactSemanticBinding(grant, {
+    kind: 'SEMANTIC_AUTHORITY',
+    path: stage2.semanticAuthorityPath,
+    recordId: stage2.semanticAuthorityId,
+  });
+  requireExactAuthorityTextRecord(
+    grant,
+    execution,
+    [
+      ['recordType', 'EXECUTION_GRANT'],
+      ['recordId', stage2.executionGrantId],
+      ['programId', binding.programId],
+      ['wave', binding.wave],
+      ['taskId', stage2.taskId],
+      ['targetTaskId', binding.finalImplementationTaskId],
+      ['ownerName', binding.ownerName],
+      ['ownerRole', binding.ownerRole],
+      ['executionMode', 'GO-COMPLETE — STAGE 2 ONLY'],
+      ['workspaceModule', 'OFFICE / SHARED_CONTROL_PLANE'],
+      ['issuedAt', '2026-08-01'],
+      ['status', 'ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK'],
+      ['stage1PredecessorSha', repair.stage1MergeSha],
+      ['stage2BaseSha', '9e55f0bf2b65fa3914087e6f5f21ad2c72eedd3e'],
+      ['freshDerivedFieldCount', '109'],
+      ['freshDerivedFieldCountSemantics', 'UNIQUE_CANONICAL_FIELDS; L1/OL LAWYER SURFACE REUSE NOT DOUBLE-COUNTED'],
+      ['productionActivation', 'NOT_AUTHORIZED'],
+      ['ciBypass', 'PROHIBITED'],
+      ['ledgerBypass', 'PROHIBITED'],
+      ['standingAuthority', 'PROHIBITED'],
+      ['reusableAuthority', 'PROHIBITED'],
+      ['globalAuthority', 'PROHIBITED'],
+      ['semanticAuthorityRef.kind', 'SEMANTIC_AUTHORITY'],
+      ['semanticAuthorityRef.path', stage2.semanticAuthorityPath],
+      ['semanticAuthorityRef.recordId', stage2.semanticAuthorityId],
+      ['singleUseConsumption', 'REQUIRED'],
+      ['staleReuse', 'PROHIBITED'],
+      ['wrongTaskReuse', 'PROHIBITED'],
+    ],
+    'OFFICE_F01_STAGE2_EG_RECORD_INVALID',
+  );
+
+  const contract = gitShow(head, repair.contractPath, cwd);
+  if (countOccurrences(contract, repair.ownerRatificationEvidence.exactExcerpt) !== 1 ||
+      sha256(repair.ownerRatificationEvidence.exactExcerpt) !== repair.ownerRatificationEvidence.excerptSha256) {
+    reject('OFFICE_F01_OWNER_EVIDENCE_INVALID', 'F01 validator owner evidence must remain byte-exact and hash-bound');
+  }
+  return { mode: stage2.mode, taskId: stage2.taskId };
 }
 
 function officeAuthorityBootstrapContractLiterals(binding) {
@@ -8094,6 +8378,21 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01.mode
+  ) {
+    return validateOfficeF01Stage2ValidatorReconciliationBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01.mode
   ) {
     return validateOfficeF01Stage1BindingScope({
@@ -8112,10 +8411,15 @@ function validatePrScope(options) {
     OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01.stage2
       .mode
   ) {
-    reject(
-      'OFFICE_F01_STAGE2_EXECUTION_AUTHORITY_MISSING',
-      'OFFICE F01 Stage 2 is eligible but not dispatchable or mutable without its separate task-bound grant',
-    );
+    return validateOfficeF01Stage2MaterializationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
   }
 
   if (
@@ -9062,6 +9366,7 @@ module.exports = {
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
   OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01,
+  OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01,
   OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
   OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
   REGISTER_REPO_PATH,
@@ -9137,6 +9442,8 @@ module.exports = {
   validateRcvColLargeAuthorityReadRepairScope,
   validateOwnerWipMultiSourcePathOwnershipScope,
   validateOfficeF01Stage1BindingScope,
+  validateOfficeF01Stage2MaterializationScope,
+  validateOfficeF01Stage2ValidatorReconciliationBindingScope,
   validateOfficeF01Stage2Tuple,
   validateOfficeAuthorityBootstrapBindingScope,
   validateOfficeAuthorityMaterializationContent,
