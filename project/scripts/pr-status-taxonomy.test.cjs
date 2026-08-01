@@ -16,9 +16,10 @@ const red = () => [
   { name: 'Architectural Guardrails', status: 'COMPLETED', conclusion: 'FAILURE' },
 ];
 
-test('taxonomy exposes exactly the seven canonical tokens', () => {
+test('taxonomy exposes exactly the eight canonical tokens', () => {
   assert.deepEqual([...taxonomy.TOKEN_NAMES].sort(), [
     'BLOCKED_EXACT',
+    'CHANGES_REQUIRED',
     'CI_FIX_REQUIRED',
     'CLOSED_SUPERSEDED',
     'MERGED',
@@ -26,6 +27,50 @@ test('taxonomy exposes exactly the seven canonical tokens', () => {
     'WAITING_DEPENDENCY',
     'WAITING_FOR_CI',
   ]);
+});
+
+test('green PR with author-applicable changes is CHANGES_REQUIRED, not blocked', () => {
+  const r = taxonomy.classify({
+    state: 'OPEN', statusCheckRollup: green(), changesRequested: true,
+  });
+  assert.equal(r.token, 'CHANGES_REQUIRED');
+});
+
+test('the same PR IS blocked while an owner decision is genuinely pending', () => {
+  const r = taxonomy.classify({
+    state: 'OPEN', statusCheckRollup: green(),
+    changesRequested: true, ownerDecisionPending: true,
+  });
+  assert.equal(r.token, 'BLOCKED_EXACT');
+  assert.match(r.reason, /MATERIAL_ALTERNATIVE_REQUIRES_OWNER/);
+});
+
+test('BLOCKED_EXACT is rejected once the owner decision is made', () => {
+  // The exact error this taxonomy exists to stop, applied to its own PR.
+  assert.match(
+    String(taxonomy.verifyClaim('BLOCKED_EXACT', {
+      state: 'OPEN', statusCheckRollup: green(), changesRequested: true,
+    })),
+    /report CHANGES_REQUIRED/);
+});
+
+test('CHANGES_REQUIRED is rejected while an owner decision is pending', () => {
+  assert.match(
+    String(taxonomy.verifyClaim('CHANGES_REQUIRED', {
+      state: 'OPEN', statusCheckRollup: green(),
+      changesRequested: true, ownerDecisionPending: true,
+    })),
+    /owner decision is pending/);
+});
+
+test('external gates still outrank author-applicable changes', () => {
+  // A running pipeline and an active incident are not the author's to clear.
+  assert.equal(taxonomy.classify({
+    state: 'OPEN', statusCheckRollup: running(), changesRequested: true,
+  }).token, 'WAITING_FOR_CI');
+  assert.equal(taxonomy.classify({
+    state: 'OPEN', statusCheckRollup: green(), changesRequested: true, incident: relock(),
+  }).token, 'WAITING_DEPENDENCY');
 });
 
 test('BLOCKED_EXACT admissible causes stay narrow', () => {

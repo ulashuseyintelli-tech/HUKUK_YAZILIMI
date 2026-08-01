@@ -82,6 +82,21 @@ const TOKENS = Object.freeze({
     // stalls many PRs at once.
     requiresEvidence: ['dependencyRef'],
   }),
+  // Green CI, no external gate, but concrete review- or owner-identified
+  // changes are outstanding and the author can apply them. Without this token
+  // such a PR gets mislabelled BLOCKED_EXACT — which is blocker inflation of
+  // exactly the kind this taxonomy exists to remove. The distinguishing test
+  // is not "is there an owner instruction?" but "is an owner DECISION still
+  // pending?". If the decision is made and the work is the author's, this is
+  // the token.
+  CHANGES_REQUIRED: Object.freeze({
+    terminal: false,
+    requiresGithubState: 'OPEN',
+    requiresEvidence: ['requestedChanges', 'owner'],
+    // Never admissible while an owner decision is genuinely outstanding —
+    // that case is BLOCKED_EXACT / MATERIAL_ALTERNATIVE_REQUIRES_OWNER.
+    forbiddenWhenOwnerDecisionPending: true,
+  }),
   CI_FIX_REQUIRED: Object.freeze({
     terminal: false,
     requiresGithubState: 'OPEN',
@@ -197,6 +212,20 @@ function classify(observed) {
   if (o.dependencyOpen === true) {
     return { token: 'WAITING_DEPENDENCY', reason: 'a declared prerequisite is still open' };
   }
+  // Outstanding review/owner-identified work the author can apply. Checked
+  // after all external gates: an external gate is not the author's to clear,
+  // whereas this is.
+  if (o.changesRequested === true) {
+    return o.ownerDecisionPending === true
+      ? {
+        token: 'BLOCKED_EXACT',
+        reason: 'MATERIAL_ALTERNATIVE_REQUIRES_OWNER: requested change needs an owner decision',
+      }
+      : {
+        token: 'CHANGES_REQUIRED',
+        reason: 'owner/review identified concrete changes the author can apply',
+      };
+  }
   return { token: 'MERGED', reason: 'all gates satisfied — the disposition is to merge, not to report' };
 }
 
@@ -231,6 +260,20 @@ function verifyClaim(claimedToken, observed) {
   if (claimedToken === 'BLOCKED_EXACT' && o.incident && o.incident.active === true) {
     return `DISPOSITION_MISMATCH: BLOCKED_EXACT claimed while incident ${o.incident.id} `
       + `is active — report WAITING_DEPENDENCY against the incident`;
+  }
+  // CHANGES_REQUIRED asserts the author can finish the work. If an owner
+  // decision is genuinely outstanding it is not the author's to finish.
+  if (claimedToken === 'CHANGES_REQUIRED' && o.ownerDecisionPending === true) {
+    return `DISPOSITION_MISMATCH: CHANGES_REQUIRED claimed while an owner decision is pending`;
+  }
+  // The mirror check, and the error this taxonomy was written to stop: a PR
+  // whose owner decision is already made is not blocked — the work is simply
+  // the author's to do.
+  if (claimedToken === 'BLOCKED_EXACT'
+    && o.changesRequested === true
+    && o.ownerDecisionPending !== true) {
+    return `DISPOSITION_MISMATCH: BLOCKED_EXACT claimed but the owner decision is made and the `
+      + `changes are the author's to apply — report CHANGES_REQUIRED`;
   }
   if (claimedToken === 'WAITING_DEPENDENCY') {
     const ref = o.dependencyRef || (o.incident && o.incident.id);
