@@ -8,6 +8,61 @@ Kurallar:
 - Backlog veya roadmap kararları ilgili governance dosyalarına da yansıtılır.
 - Bu dosya tek başına implementasyon yetkisi vermez.
 
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=UYAP-FINAL-CI-ELIGIBILITY-I01-SA01 --> **UYAP-FINAL-CI-ELIGIBILITY-I01-SA01 — TASK-BOUND SEMANTIC AUTHORITY:** `UYAP-MODULE-FULL-GAP-CLOSURE-R02` programında yalnız `UYAP-FINAL-CI-ELIGIBILITY-I01` yürütmesi yetkilidir. UYAP official pipeline'ın canonical predecessor'ları birlikte kapsamlı CI, regresyon, authority-integrity, default-OFF ve production-unreachable doğrulamasından geçirilir; görev kapsamındaki teknik test/CI kusurları mevcut semantik sınırlar değiştirilmeden giderilebilir. Bu authority yeni hukuki mapping, Strict DTD uygunluk iddiası, production wiring, runtime activation, Canary, gerçek transport veya cutover üretmez. Known-good floor `f68c86d28be8eab8e980db758864c334245dabd0`; binding original captured base `7e6c39591d96757aec1c2f799a04ec60e97e2c71`; control-plane binding PR #2074 / squash `0d63a744141b283aff7dbcdfced872b71693b861`; materialization base `0d63a744141b283aff7dbcdfced872b71693b861`. Exact owner evidence SHA-256: `d44e460f2673f4e806f5a1c2e5ef45246cea38e9ae7033c588ef659e8f70f5d1`. **SEMANTIC AUTHORITY: RATIFIED / SINGLE-USE. PROGRAM LOCK: UYAP FINAL-CI-ELIGIBILITY-I01 ONLY. SECOND USE: FAIL-CLOSED.**
+
+Exact owner evidence:
+
+```text
+FULL OWNER EXECUTION AUTHORITY — GO-COMPLETE
+
+OWNER:
+Av. Ulaş Hüseyin Telli
+
+CURRENT PROGRAM:
+UYAP-MODULE-FULL-GAP-CLOSURE-R02
+
+PROGRAM LOCK:
+ACTIVE
+
+PREDECESSOR:
+UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01
+CLOSED / CANONICAL / PASS
+
+KNOWN-GOOD FLOOR:
+f68c86d28be8eab8e980db758864c334245dabd0
+
+NEXT TASK:
+UYAP-FINAL-CI-ELIGIBILITY-I01
+
+TITLE:
+UYAP Official Pipeline Final CI Qualification and Technical Readiness Closure
+
+AUTHORITY MODE:
+FULL OWNER AUTHORITY
+TASK-BOUND
+SINGLE-EXECUTOR
+FENCE-FIRST
+GO-COMPLETE
+
+OWNER DECISION:
+
+Av. Ulaş Hüseyin Telli olarak,
+UYAP-FINAL-CI-ELIGIBILITY-I01 görevinin fresh canonical main
+üzerinden başlatılmasını; gerekli control-plane binding, SA01 ve EG01
+kayıtlarının materialize edilmesini; UYAP official pipeline’ın tüm
+canonical predecessor’larıyla birlikte kapsamlı CI, regresyon,
+authority-integrity, default-OFF ve production-unreachable
+doğrulamalarından geçirilmesini; görev kapsamındaki teknik test/CI
+kusurlarının semantik sınırlar değiştirilmeden düzeltilmesini; required
+CI tamamen PASS olduğunda PR, squash-merge, post-merge verification,
+terminal closeout ve güvenli cleanup işlemlerinin kesintisiz biçimde
+tamamlanmasını GO-COMPLETE yetkisiyle onaylıyorum.
+
+Bu yetki yeni hukuki mapping, Strict DTD uygunluk iddiası, production
+wiring, runtime activation, Canary, gerçek transport veya cutover
+yetkisi vermez.
+```
+
 <!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01 --> **UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01 — TASK-BOUND SEMANTIC AUTHORITY:** `UYAP-MODULE-FULL-GAP-CLOSURE-R02` programında yalnız `UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01` yürütmesi yetkilidir. `takipTuru` ve `mahiyetKodu` için yalnız canonical resolver tarafından üretilmiş, runtime'da doğrulanabilen `OfficialCodeResolution` sonucu serializer authority'sidir. Caller tarafından kurulmuş veya canonical sonucu yapısal olarak kopyalamış `RESOLVED` nesnesi authority değildir ve XML/byte üretiminden önce fail-closed reddedilir. Mevcut official-code mapping'leri, RECEIVABLE Legal Basis ownership'i, M01 consumer sınırı, structured-emission semantiği ve default-OFF/production-unreachable durumu değişmez. Yeni mapping, schema/migration, strict-DTD iddiası, production activation veya UYAP kaynaklı hukuki semantik bu authority kapsamında değildir. Known-good floor `2694d1e4bbc4173ee8dc328d97edb853d0d32b78`; binding original captured base `ee0ebe1fbd825b007de71c5f4a9deed6cc4d9a6e`; control-plane binding PR #2056 / squash `dc7d48b41c2e2d444236c2546bac5e54176bb4a3`; materialization base `3803f0346b3efda39cb90ea2cac19b3b96939340`. Exact owner evidence SHA-256: `7f935ec61b02222e556a237f6cdadd700aa7f457dcdc0935778e89bfb0eae5b6`. **SEMANTIC AUTHORITY: RATIFIED / SINGLE-USE. PROGRAM LOCK: UYAP SERIALIZER-BYPASS-HARDENING-I01 ONLY. SECOND USE: FAIL-CLOSED.**
 
 Exact owner evidence:
