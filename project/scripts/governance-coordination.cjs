@@ -4354,7 +4354,7 @@ function validateRootSaRecordScopingRepairScope(options) {
   const repair = GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01;
   if (
     base !== repair.baseSha ||
-    ![repair.headRef, repair.followupHeadRef].includes(headRef) ||
+    headRef !== repair.headRef ||
     !hasExactChangeSet(changes, repair.changedPaths)
   ) {
     reject(
@@ -5531,7 +5531,7 @@ function validateOfficeF01Stage2ValidatorReconciliationBindingScope(options) {
     taskId !== repair.taskId ||
     (mode && mode !== repair.mode) ||
     !officeF01ValidatorRepairBaseIsValid(base, cwd) ||
-    headRef !== repair.headRef ||
+    ![repair.headRef, repair.followupHeadRef].includes(headRef) ||
     !hasExactChangeSet(changes, repair.changedPaths)
   ) {
     reject(
