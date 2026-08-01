@@ -14,7 +14,7 @@ Makine-okunur tam kayit: `defect-register.json`.
 | **W3-D01** | W3-B11 PAYLOAD_CONTRACT_MISMATCH | P2 | `webhook` handler | **RESOLVED** (bkz. Cozum Kaydi) | HANDLER REMOVED (migration GEREKMEDI) |
 | **W3-D09** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | handler'siz action -> sonsuz pending | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D04** | W3-B06 SCHEDULER_TIMEZONE_UNKNOWN | P2 | 32/33 cron job | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
-| **W3-D05** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | 14/35 cron metodunda try/catch yok | DEFERRED | NOT_ELIGIBLE (scope too broad) |
+| **W3-D05** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | 24/35 runtime-bound cron metodu | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D03** | W3-B04/B05 NOT_STARTED | P3 | icrabot + manifest-retry + playbook | DEFERRED + **GUARD** | NOT_ELIGIBLE (**activation**) |
 | **W3-D06** | overlap / multi-instance | P3 | 33/35 cron metodunda overlap guard yok | DEFERRED | NOT_ELIGIBLE (owner policy) |
 | **W3-D07** | W3-B15 job kimligi | P4 | 31/33 job UUID adli | DEFERRED | W3-F07 ile birlesik |
@@ -200,3 +200,71 @@ Makine-okunur tam kayit: `defect-register.json`.
   mevcut [4] testi (dormant class'larin BAGLI OLMADIGINI dogrulayan)
   dolayli kanit olarak kaldi — dogrudan canli mutasyon kaniti EKSIK.
 - **Successor:** W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01 (sirada).
+
+### W3-D05 — RESOLVED (W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01)
+
+- **Task:** RUNTIME-OPERABILITY-CERTIFICATION-R01 / W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01
+- **PR:** [#2070](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2070) — squash-merged
+- **MERGE SHA:** `fdaf21e6a3db215697d73bcf0653c5b326e5ea95`
+- **Kok neden:** Fresh siniflandirma, 35 `@Cron` metodunu 4 aileye ayirdi: 9
+  zaten-sertifikali (`OutboxCronService.processOutboxActions` + 8
+  `scheduler.service.ts` metodu, DOKUNULMADI), 2 dormant icrabot sinifi
+  (DOKUNULMADI, W3-F06 kapsami), 24 runtime-bound metot (12 dosya) ise
+  sessiz/kismi hata yonetimine sahipti (bare logger, eksik catch, veya iz
+  birakmayan yutma) — isletmeci hangi job'un hangi sonuc sinifiyla
+  sonlandigini goremiyordu.
+- **Karar:** `CronExecutionResult` benzeri literal bir donus tipi
+  DEGERLENDIRILDI ama uygulanmadi — NestJS `@Cron` metodunun donus degerini
+  yoksaydigi icin siniflandirma ErrorLog metadata'sinda yasar. Merkezi
+  wrapper, mevcut sertifikali `IntegrationErrorReporter`/`ErrorLogService`/
+  `ErrorLog` zincirinden YENIDEN KULLANILDI (yeniden icat edilmedi).
+- **Cozum:** Yeni `apps/api/src/common/cron-failure-reporting.ts` ->
+  `reportCronJobFailure(reporter, jobId, error, {tenantId?, reasonCode?,
+  metadata?})` — fire-and-forget (`void ...report().catch(()=>{})`, cron
+  akisini ASLA bloklamaz/firlatmaz), her cagriyi
+  `source:'CRON'/operation:jobId/metadata.outcome:'FAILED_TERMINAL'/
+  metadata.reasonCode` ile isaretler. 12 servis dosyasinda 24 metoda
+  (`automation.service.ts` 8, digerleri 1-3'er) bu wrapper eklendi — 3
+  serviste (`case-task-escalation`, `operational-escalation`,
+  `office-approval-executor-cron`) yalniz cron-entrypoint sarmalandi, alttaki
+  is metodu testler/manuel tetikleyiciler icin dogrudan cagrilabilir kalmasi
+  GEREKTIGI icin BILEREK dokunulmadi (bkz. Bilinen kalinti).
+- **Sema/migration karari:** **GEREKMEDI.** Ancak `ERROR_LOG_METADATA_WHITELIST`
+  (`error-log.sanitize.ts`) icinde `outcome`/`reasonCode` YOKTU — bu olmadan
+  siniflandirma `sanitizeMetadata()` tarafindan sessizce ErrorLog satirindan
+  DUSURULUYORDU. Bu, yalniz GERCEK Postgres'e karsi DB-gated runtime testi
+  kosturularak bulunan gercek bir prod-kodu eksigiydi (mock'larla asla
+  yakalanamazdi); whitelist'e iki alan eklendi.
+- **Kanit:** W3-F03 static guard genisletildi (govde-seviyesi kapsama: 33
+  bound + 2 dormant metodun TAMAMI cikarilip her birinin efektif govdesinde
+  — bir seviye delegate-follow dahil — sertifikali rapor cagrisi arandigi 4
+  yeni test) + 8 DB-free unit test (`cron-failure-reporting.spec.ts`,
+  tenantId/metadata/rawPayload-yok/hata-yutmama) + 1 DB-free whitelist testi
+  + temsilci DB-gated runtime matrisi (A-F: success/no-work/injected-failure/
+  config-gated-off/config-gated-on+failure/graceful-shutdown, GERCEK Postgres
+  + GERCEK `IntegrationErrorReporter`, PR-oncesi VE post-merge fresh
+  checkout'ta ayri ayri PASS) + 4/4 negatif-kanit mutasyonu (wrapper kaldirma,
+  bos catch, import-yolu bozma, rawPayload sizintisi eklemesi) kirmizi/
+  geri-alindi + gercek CI (Architectural Guardrails, Test Suite, Orchestration
+  Tests, Web Tests, Analyze x3, CodeQL, Client Workspace Live Smoke — hepsi
+  PASS).
+- **Post-merge acceptance:** MERGED → merge SHA'ya pin'li fresh worktree +
+  fresh disposable Postgres + migrasyonlar yeniden uygulanip 5 test dosyasi
+  (static guard + DB-free unit x2 + DB-gated runtime x2, W3-F03'unki dahil)
+  tekrarlandi, 51/51 PASS. **PRODUCTION: NOT ACTIVATED** — production
+  DB/runtime'a bu task kapsaminda dokunulmadi.
+- **Bilinen kalinti (owner karari bekliyor, YENI task OTOMATIK URETILMEDI):**
+  3 serviste (`case-task-escalation.service.ts`,
+  `operational-escalation.service.ts`, `office-approval-executor-cron.service.ts`)
+  cron-entrypoint metodu sarmalandi ama cagrilan is metodu
+  (`processCaseTaskEscalations`, `processEscalations`, `runSweep`) kendi
+  doc-comment'ine gore testler/manuel tetikleyiciler tarafindan da dogrudan
+  cagrilabilir — bu cagri yollarinda olusan hatalar YENI wrapper kapsaminda
+  DEGILDIR (retry-ownership'in birden fazla cagri yolu arasinda
+  PAYLASILDIGI/muglak oldugu somut ornekler). Ayrica `runBatched()`
+  yardimcisinin per-item hata izolasyonu olmadigi sistemik bulgusu
+  GOZLEMLENDI ama brief'in scope-exclusion'i geregi DOKUNULMADI. Her iki
+  bulgu da mekanik degil, owner-politika karari gerektirir; brief §11 geregi
+  yeni task otomatik uretilmedi.
+- **Successor:** W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01 (sirada,
+  veya W3-F07-CRON-OVERLAP-AND-JOB-IDENTITY-R01 — brief'te belirtilen sira).
