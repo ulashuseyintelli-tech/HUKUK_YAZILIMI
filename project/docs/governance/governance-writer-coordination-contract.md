@@ -1768,6 +1768,7 @@ Owner role     : Repository Owner / Semantic Authority
 Owner decisions: 8/8 RATIFIED
 Target task    : OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01
 Target mode    : OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01
+Target head ref: codex/office-sc-f01-authority-materialization-r01
 Owner evidence SHA-256 : 7b2ffeb93ae6b91a88eee84991852bf19b3682ebc587f9152442e04388de4302
 ```
 

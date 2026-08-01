@@ -312,7 +312,7 @@ const OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_S
         'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
       mode:
         'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01',
-      headRef: 'codex/office-f01-stage2-authority-materialization-r01',
+      headRef: 'codex/office-sc-f01-authority-materialization-r01',
       contractHeadRef: 'codex/office-sc-f01-authority-materialization-r01',
       statusTuple: 'M / A / A / A',
       pathCount: 4,
@@ -392,6 +392,7 @@ const OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01 = Object.freeze({
     'OFFICE-SC-F01-AUTHORIZATION-AND-SENSITIVE-PROJECTION-AUTHORITY-MATERIALIZATION-R01',
   targetMode:
     'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_MATERIALIZATION_R01',
+  targetHeadRef: 'codex/office-sc-f01-authority-materialization-r01',
   ownerRatificationEvidence: Object.freeze({
     exactExcerpt: OFFICE_F01_STAGE2_VALIDATOR_OWNER_EVIDENCE,
     excerptSha256: '7b2ffeb93ae6b91a88eee84991852bf19b3682ebc587f9152442e04388de4302',
@@ -5553,6 +5554,7 @@ function validateOfficeF01Stage2ValidatorReconciliationBindingScope(options) {
     repair.ownerDecisions,
     repair.targetTaskId,
     repair.targetMode,
+    repair.targetHeadRef,
     repair.ownerRatificationEvidence.excerptSha256,
     ...repair.changedPaths.map(({ status, path: repoPath }) => `${status} ${repoPath}`),
   ];
