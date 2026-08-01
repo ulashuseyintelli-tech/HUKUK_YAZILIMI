@@ -39,6 +39,9 @@ import { UyapM01LegalBasisConsumerService } from './legal-basis/uyap-m01-legal-b
 // PermissionGrant capability substrate + mevcut UyapSendAuthorityResolverService reuse).
 import { TriggerHacizCapabilityAuthorizationService } from './authority/trigger-haciz-capability-authorization.service';
 import { TriggerHacizAuthorizationService } from './authority/trigger-haciz-authorization.service';
+// I15-D1-R1: CaseDebtor target-binding — kanonik lifecycle guard (8 modülde zaten reuse
+// edilen tek mekanizma). Yalnız PrismaModule'e bağlıdır, cycle yok.
+import { CaseDebtorLifecycleGuardModule } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module';
 
 // Re-export UYAP codes for external use
 export * from './uyap-codes';
@@ -55,6 +58,7 @@ export * from './uyap-codes';
     forwardRef(() => LawyerModule),
     // I04B: masraf blok siniflandirmasi salt-okuma tuketilir (cycle YOK).
     ExpenseBlockReasonModule,
+    CaseDebtorLifecycleGuardModule,
   ],
   controllers: [UyapController],
   providers: [

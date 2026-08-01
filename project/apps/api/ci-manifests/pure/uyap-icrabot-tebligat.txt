@@ -195,6 +195,7 @@ src/modules/uyap-export/projection/__tests__/batch-faizt-readiness.contract.spec
 src/modules/uyap-export/projection/__tests__/due-claimitem-relation.classifier.spec.ts
 src/modules/uyap-export/projection/__tests__/faizt-interest-projection.adapter.spec.ts
 src/modules/uyap/__tests__/haciz-decision-audit.spec.ts
+src/modules/uyap/__tests__/haciz-request-dto-contract.spec.ts
 src/modules/uyap/__tests__/uyap-authority-fact-bridge.spec.ts
 src/modules/uyap/__tests__/uyap-expense-blocking-fact-bridge.spec.ts
 src/modules/uyap/__tests__/numeric-interest-projection.adapter.spec.ts
