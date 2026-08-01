@@ -374,6 +374,7 @@ const OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01 = Object.freeze({
     'OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_STAGE2_VALIDATOR_RECONCILIATION_R01',
   baseSha: '8f2426d6df5cd9e92d1511ad2588a8d0ffb7edd1',
   headRef: 'codex/office-f01-stage2-validator-reconciliation-r01',
+  followupHeadRef: 'codex/office-f01-validator-mapping-followup-r01',
   ownerName: 'Av. Ulaş Hüseyin Telli',
   ownerRole: 'Repository Owner / Semantic Authority',
   ownerDecisions: '8/8 RATIFIED',
@@ -3149,7 +3150,9 @@ function classifyPrChangeSet(changes, context = {}) {
   const officeF01ValidatorRepair =
     OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   if (
-    context.headRef === officeF01ValidatorRepair.headRef &&
+    [officeF01ValidatorRepair.headRef, officeF01ValidatorRepair.followupHeadRef].includes(
+      context.headRef,
+    ) &&
     officeF01ValidatorRepairBaseIsValid(context.base, context.cwd) &&
     hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths)
   ) {
@@ -3159,7 +3162,9 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
   if (
-    context.headRef === officeF01ValidatorRepair.headRef ||
+    [officeF01ValidatorRepair.headRef, officeF01ValidatorRepair.followupHeadRef].includes(
+      context.headRef,
+    ) ||
     (context.base === officeF01ValidatorRepair.baseSha &&
       hasExactChangeSet(changes, officeF01ValidatorRepair.changedPaths))
   ) {
@@ -4349,7 +4354,7 @@ function validateRootSaRecordScopingRepairScope(options) {
   const repair = GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01;
   if (
     base !== repair.baseSha ||
-    headRef !== repair.headRef ||
+    ![repair.headRef, repair.followupHeadRef].includes(headRef) ||
     !hasExactChangeSet(changes, repair.changedPaths)
   ) {
     reject(
@@ -5548,6 +5553,7 @@ function validateOfficeF01Stage2ValidatorReconciliationBindingScope(options) {
     repair.mode,
     repair.baseSha,
     repair.headRef,
+    repair.followupHeadRef,
     repair.stage1MergeSha,
     repair.ownerName,
     repair.ownerRole,

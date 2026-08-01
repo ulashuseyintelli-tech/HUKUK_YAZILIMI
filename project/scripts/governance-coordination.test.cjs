@@ -8087,6 +8087,14 @@ test('OFFICE F01 Stage 2 validator reconciliation has an exact task-bound repair
   });
   assert.deepEqual(classified, { mode: repair.mode, taskId: repair.taskId });
   assert.equal(repair.targetHeadRef, 'codex/office-sc-f01-authority-materialization-r01');
+  assert.equal(repair.followupHeadRef, 'codex/office-f01-validator-mapping-followup-r01');
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(repair.changedPaths, {
+      base: repair.baseSha,
+      headRef: repair.followupHeadRef,
+    }),
+    { mode: repair.mode, taskId: repair.taskId },
+  );
   assert.equal(
     coordination.sha256(repair.ownerRatificationEvidence.exactExcerpt),
     repair.ownerRatificationEvidence.excerptSha256,
