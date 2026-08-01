@@ -3,10 +3,63 @@ import { create } from 'xmlbuilder2';
 import { OFFICIAL_ALACAK_KALEMI_PARENTS } from './official-codelist-registry';
 import type { OfficialCodeResolution } from './official-codelist-registry';
 import type {
+  OfficialAlacakKalemi,
   OfficialExchangeInput,
   OfficialSerializationResult,
   OfficialTaraf,
 } from './official-exchange.types';
+
+export const M01_QUALIFIED_OFFICIAL_WRAPPERS = ['cek', 'senet', 'police', 'ilam'] as const;
+export type M01QualifiedOfficialWrapper = (typeof M01_QUALIFIED_OFFICIAL_WRAPPERS)[number];
+
+const issuedM01Claims = new WeakSet<object>();
+const issuedM01Inputs = new WeakMap<OfficialExchangeInput, readonly M01QualifiedOfficialAlacakKalemi[]>();
+
+/**
+ * Opaque runtime capability produced only after the structured-emission service has consumed
+ * the canonical M01 projection and resolved W-01...W-05 from server-owned records.
+ */
+export interface M01QualifiedOfficialAlacakKalemi {
+  readonly claim: Readonly<OfficialAlacakKalemi>;
+  readonly wrapper: M01QualifiedOfficialWrapper;
+}
+
+export function createM01QualifiedOfficialAlacakKalemi(input: {
+  readonly claim: Readonly<OfficialAlacakKalemi>;
+  readonly wrapper: string;
+}): M01QualifiedOfficialAlacakKalemi | null {
+  if (!isM01QualifiedOfficialWrapper(input.wrapper) || input.claim.faiz !== undefined) return null;
+  const qualified = Object.freeze({
+    claim: Object.freeze({ ...input.claim }),
+    wrapper: input.wrapper,
+  });
+  issuedM01Claims.add(qualified);
+  return qualified;
+}
+
+export function createM01QualifiedOfficialExchangeInput(
+  input: Omit<OfficialExchangeInput, 'alacakKalemleri'>,
+  qualifiedClaims: readonly M01QualifiedOfficialAlacakKalemi[],
+): OfficialExchangeInput | null {
+  if (
+    qualifiedClaims.length === 0 ||
+    qualifiedClaims.some(
+      (qualified) =>
+        !issuedM01Claims.has(qualified) ||
+        !isM01QualifiedOfficialWrapper(qualified.wrapper) ||
+        qualified.claim.faiz !== undefined,
+    )
+  ) {
+    return null;
+  }
+  const officialInput: OfficialExchangeInput = Object.freeze({
+    dosya: input.dosya,
+    taraflar: Object.freeze([...input.taraflar]) as unknown as OfficialTaraf[],
+    alacakKalemleri: Object.freeze(qualifiedClaims.map((qualified) => qualified.claim)) as unknown as OfficialAlacakKalemi[],
+  });
+  issuedM01Inputs.set(officialInput, Object.freeze([...qualifiedClaims]));
+  return officialInput;
+}
 
 /**
  * DBP-P2-UYAP-CONTRACT-A-P02B — Official Contract A serializer (SKELETON)
@@ -18,12 +71,14 @@ import type {
  *   genelinde BENZERSİZ + BOŞ-OLMAYAN olmalı (official `id ID`). Boş/çift `id` → `REJECTED` (`idViolations`).
  * - UNRESOLVED-ROLE REJECTION: herhangi bir `taraf.roleResolution` `RESOLVED` değilse → `REJECTED`
  *   (XML ÜRETİLMEZ). Boş taraf listesi de `REJECTED`.
- * - CLAIM-WRAPPER AUTHORITY GUARD (P02B-R2): `alacakKalemleri` bir veya daha fazla kalem içeriyorsa
+ * - CLAIM-WRAPPER AUTHORITY GUARD (P02B-R2): normal caller girdisinde `alacakKalemleri` varsa
  *   → `REJECTED` (`claimShapeViolations`, code=`UNAUTHORIZED_ALACAK_KALEMI_PARENT`). Resmî DTD'de
  *   `alacakKalemi` yalnız cek/senet/police/kontrat/digerAlacak/ilam sarmalayıcıları altında geçerlidir;
- *   `dosya`'nın DOĞRUDAN çocuğu OLAMAZ. Sarmalayıcı seçimi/otomatik sınıflandırma YAPILMAZ — bu guard
- *   yalnız FAIL-CLOSED red üretir; hiçbir digerAlacak/ilam/cek/senet/police/kontrat emisyonu YOKTUR.
- * - Aksi hâlde (taraf-only) official-shaped XML üretilir ve `SERIALIZED_DRAFT` döner (owner düzeltmesi:
+ *   `dosya`'nın DOĞRUDAN çocuğu OLAMAZ. Yalnız canonical M01 + W-01...W-05 doğrulamasından sonra
+ *   factory-issued opaque capability ile `cek|senet|police|ilam` altında emisyon yapılabilir;
+ *   `digerAlacak`/`kontrat` fallback yoktur.
+ * - Geçerli taraf-only veya opaque-qualified girdi official-shaped XML üretir ve `SERIALIZED_DRAFT`
+ *   döner (owner düzeltmesi:
  *   `EMITTED` YOK — bu XML resmî DTD ile DOĞRULANMAMIŞTIR).
  * - ENCODING: yalnız XML deklarasyon etiketi `ISO-8859-9`; gerçek byte dönüşümü + Türkçe round-trip
  *   YAPILMAZ (`byteEncodingPerformed=false`, P04 kapsamı).
@@ -32,14 +87,15 @@ import type {
  * Sınırlar:
  * - domain `DebtorRole` → `rolID` eşlemesi YAPILMAZ (P03 authority); `rolID`/`Rol` yalnız girdideki
  *   `RESOLVED` resolution'dan alınır. Bu dosyada hiçbir kanonik `rolID` (21-71) değeri yoktur.
- * - Runtime wiring YOK; `PrismaService`/NestJS bağımlılığı YOK; yalnız test-reachable saf fonksiyondur.
- * - Instrument (cek/senet/police) elementleri bu iskelette KAPSAM DIŞIdır (P04-adjacent artım).
+ * - Runtime wiring YOK; `PrismaService`/NestJS bağımlılığı YOK; saf fonksiyondur.
+ * - Structured wrapper yolu production-unreachable ve default-OFF service sınırının arkasındadır.
  * - `ref`/IDREF CROSS-REFERENCE bu alt-kümede DESTEKLENMEZ: girdi tipi `ref` taşımaz, serializer `<ref>`
  *   ÜRETMEZ. `id` yalnız ID anchor'ıdır (benzersiz/boş-olmayan garanti edilir); IDREF çözümlemesi yoktur.
  *
  * /// <remarks>
  * /// Çağrıldığı yerler:
- * /// - (P02B) YALNIZ test-reachable; hiçbir controller/servis/route/module bu fonksiyonu çağırmaz.
+ * /// - `official-canonical-serializer.ts` canonical byte sınırı.
+ * /// - Structured yol dışında hiçbir controller/route/module wrapper capability oluşturamaz.
  * /// </remarks>
  */
 export function serializeOfficialExchange(
@@ -84,9 +140,10 @@ export function serializeOfficialExchange(
 
   // 4) CLAIM-WRAPPER AUTHORITY GUARD (P02B-R2) — resmi DTD'de alacakKalemi, dosya'nin dogrudan
   //    cocugu olamaz (yalniz cek/senet/police/kontrat/digerAlacak/ilam sarmalayicilari altinda
-  //    gecerlidir). Sarmalayici secimi/otomatik siniflandirma icin owner/LDO yetkisi yok; bu guard
-  //    FAIL-CLOSED reddeder, hicbir wrapper/instrument otomatik secilmez veya varsayilmaz.
-  if (input.alacakKalemleri && input.alacakKalemleri.length > 0) {
+  //    gecerlidir). Normal caller girdisi FAIL-CLOSED reddedilir. Yalnız structured service'in M01 ve
+  //    W-01...W-05 doğrulamasından sonra ürettiği opaque capability wrapper emisyonuna izin verir.
+  const qualifiedClaims = issuedM01Inputs.get(input);
+  if (input.alacakKalemleri && input.alacakKalemleri.length > 0 && !qualifiedClaims) {
     return {
       status: 'REJECTED',
       reason:
@@ -108,7 +165,14 @@ export function serializeOfficialExchange(
     };
   }
 
-  // 5) DETERMİNİSTİK official-shaped XML (resmî exchange.dtd v1.2) — yalnız taraf-only dosya.
+  // 5) DETERMİNİSTİK official-shaped XML (resmî exchange.dtd v1.2).
+  return buildOfficialExchange(input, qualifiedClaims ?? []);
+}
+
+function buildOfficialExchange(
+  input: OfficialExchangeInput,
+  qualifiedClaims: readonly M01QualifiedOfficialAlacakKalemi[],
+): OfficialSerializationResult {
   const doc = create({ version: '1.0', encoding: 'ISO-8859-9' })
     .dtd({ name: 'exchangeData', sysID: 'exchange.dtd' })
     .ele('exchangeData');
@@ -137,8 +201,21 @@ export function serializeOfficialExchange(
     addOfficialTaraf(dosya, taraf);
   }
 
-  // NOT: alacakKalemi emisyonu YOK (P02B-R2). Yukarıdaki CLAIM-WRAPPER AUTHORITY GUARD garanti eder
-  // ki buraya yalnız boş/tanımsız `alacakKalemleri` ile ulaşılır.
+  for (const qualified of qualifiedClaims) {
+    const wrapper = dosya.ele(qualified.wrapper);
+    wrapper
+      .ele(
+        'alacakKalemi',
+        pruneUndefined({
+          id: qualified.claim.id,
+          alacakKalemAdi: qualified.claim.alacakKalemAdi,
+          alacakKalemTutar: qualified.claim.alacakKalemTutar,
+          tutarTur: qualified.claim.tutarTur,
+        }),
+      )
+      .up();
+    wrapper.up();
+  }
 
   const xml = doc.end({ prettyPrint: true });
 
@@ -149,6 +226,10 @@ export function serializeOfficialExchange(
     byteEncodingPerformed: false,
     officialDtdValidated: false,
   };
+}
+
+function isM01QualifiedOfficialWrapper(value: string): value is M01QualifiedOfficialWrapper {
+  return (M01_QUALIFIED_OFFICIAL_WRAPPERS as readonly string[]).includes(value);
 }
 
 /**

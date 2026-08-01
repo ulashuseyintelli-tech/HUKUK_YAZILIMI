@@ -222,6 +222,8 @@ src/modules/uyap/official/__tests__/official-dtd-codelist-conformance.spec.ts
 src/modules/uyap/official/__tests__/official-canonical-serializer.spec.ts
 src/modules/uyap/official/__tests__/official-dtd-record-correction.spec.ts
 src/modules/uyap/official/__tests__/official-serializer-architecture-guard.spec.ts
+src/modules/uyap/official/__tests__/official-alacakkalemi-structured-emission.spec.ts
+src/modules/uyap/official/__tests__/official-alacakkalemi-structured-emission-boundary.spec.ts
 src/modules/uyap/official/__tests__/official-exchange-builder.spec.ts
 src/modules/uyap/official/__tests__/official-iso8859-9-encoder.spec.ts
 src/modules/uyap/official/__tests__/official-role-translator.spec.ts
