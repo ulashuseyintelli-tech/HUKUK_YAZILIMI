@@ -53,6 +53,7 @@ import { VersionedCacheService } from './cache';
 import { LegacyDeprecationService, LegacyDeprecationInterceptor } from './deprecation';
 import { TraceContext, TraceStorageService, TraceCollectorService, TraceInterceptor } from './trace';
 import { TraceAccessService } from './trace/trace-access.service';
+import { TraceRetentionService } from './trace/trace-retention.service';
 import { ExplanationService, ReasonCodeRegistry } from './explanation';
 import { DiagnosticsModule } from './diagnostics';
 import { InterestEngineModule } from '../interest-engine/interest-engine.module';
@@ -82,6 +83,8 @@ import { ManifestAdminRateLimiter, ManifestAdminRateLimitGuard } from './diagnos
     TraceCollectorService,
     TraceInterceptor,
     TraceAccessService,
+    // W3-F06: TRACE_RETENTION_ENABLED (varsayilan kapali) ile flag-gated
+    TraceRetentionService,
     // PR-1: Ops guards for trace/metrics endpoints
     ManifestAdminAuthGuard,
     ManifestAdminRateLimiter,

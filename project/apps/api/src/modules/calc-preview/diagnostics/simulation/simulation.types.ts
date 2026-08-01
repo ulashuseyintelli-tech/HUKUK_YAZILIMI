@@ -108,29 +108,6 @@ export interface ISimulationClock {
 }
 
 // ============================================================================
-// Simulation Scheduler Interface
-// ============================================================================
-
-export interface ISimulationScheduler {
-  schedule(callback: () => void | Promise<void>, intervalMs: number): void;
-  tick(): Promise<void>;
-  stop(): void;
-  isRunning(): boolean;
-}
-
-// ============================================================================
-// Simulation Context (for engine internals)
-// ============================================================================
-
-export interface SimulationContext {
-  rng: () => number;
-  clock: ISimulationClock;
-  scheduler: ISimulationScheduler;
-  seed: number;
-  version: string;
-}
-
-// ============================================================================
 // Constants
 // ============================================================================
 

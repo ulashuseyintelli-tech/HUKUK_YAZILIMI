@@ -20,9 +20,6 @@ export * from './calc-result-projection';
 // Clock
 export * from './simulation-clock.service';
 
-// Scheduler
-export * from './simulation-scheduler.service';
-
 // Engine
 export * from './simulation-engine.service';
 
