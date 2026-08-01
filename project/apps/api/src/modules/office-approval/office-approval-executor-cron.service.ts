@@ -6,6 +6,8 @@ import { OfficeApprovalExecutorService } from './office-approval-executor.servic
 import { readOfficeApprovalExecutorConfig } from './office-approval-executor.config';
 import { isRetryBackoffElapsed } from './office-approval-executor-backoff';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
+import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 // P4-5B/P4-5C-2 — OfficeApproval executor AUTOMATION (config-gated cron). Onaylanmış (APPROVED/APPROVED_WITH_CHANGES) NOT_RUN
 // backlog'unu deferred yürütür + stuck RUNNING'i reconcile eder + FAILED satırları BOUNDED retry eder. Yetki+karar P4-4'te; burası zamanlayıcı.
@@ -48,11 +50,17 @@ export class OfficeApprovalExecutorCronService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly executor: OfficeApprovalExecutorService,
+    private readonly errorReporter: IntegrationErrorReporter,
   ) {}
 
   @Cron(CronExpression.EVERY_30_MINUTES, { name: 'officeApprovalExecutor', timeZone: SCHEDULER_TIMEZONE })
   async handleCron(): Promise<void> {
-    await this.runSweep();
+    try {
+      await this.runSweep();
+    } catch (error) {
+      this.logger.error('OfficeApproval executor tick hatası:', error);
+      reportCronJobFailure(this.errorReporter, 'officeApprovalExecutorCron.handleCron', error);
+    }
   }
 
   /**

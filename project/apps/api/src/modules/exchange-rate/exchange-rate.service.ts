@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
+import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 export interface ExchangeRate {
   currency: string;
@@ -32,7 +34,7 @@ export class ExchangeRateService {
     CHF: { buying: 38.90, selling: 39.00 },
   };
 
-  constructor() {
+  constructor(private readonly errorReporter: IntegrationErrorReporter) {
     // Baslangicta kurlari yukle
     this.fetchRatesFromTCMB();
   }
@@ -41,7 +43,16 @@ export class ExchangeRateService {
   @Cron('30 15 * * 1-5', { timeZone: SCHEDULER_TIMEZONE }) // Pazartesi-Cuma 15:30
   async scheduledRateUpdate() {
     this.logger.log('Zamanlanmis kur guncellemesi basliyor...');
-    await this.fetchRatesFromTCMB();
+    const success = await this.fetchRatesFromTCMB();
+    if (!success) {
+      // fetchRatesFromTCMB kendi hatasini yutar (fallback'e duser) — burada YALNIZ
+      // gorunurluk icin ErrorLog'a bildiriyoruz, davranis (fallback) DEGISMEZ.
+      reportCronJobFailure(
+        this.errorReporter,
+        'exchangeRate.scheduledRateUpdate',
+        new Error('TCMB kur guncellemesi basarisiz, fallback kurlar kullanildi'),
+      );
+    }
   }
 
   // TCMB'den kurlari cek

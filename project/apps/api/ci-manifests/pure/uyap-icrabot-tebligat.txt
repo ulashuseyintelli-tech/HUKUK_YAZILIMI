@@ -291,3 +291,10 @@ src/modules/uyap/operation-writer/uyap-operation-writer.service.spec.ts
 # kanitlayan DB-free birim testi. Bu manifest'te common/-rooted veya scheduler-related
 # baska bir girdi yoktu → yeni bloktur (bkz db/domain-integration.txt icin DB-gated eslesi).
 src/common/scheduler-timezone.spec.ts
+#
+# W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01: reportCronJobFailure — argumanlarin
+# sekli (source=CRON, operation=jobId, error, tenantId, metadata.outcome/reasonCode),
+# ham hata/payload'in metadata'ya SIZMADIGI ve reporter.report() reddetse dahi
+# ASLA throw/reject etmedigini kanitlayan DB-free birim testi (bkz db/domain-integration.txt
+# icin DB-gated GERCEK ErrorLog yazimi eslesi).
+src/common/cron-failure-reporting.spec.ts

@@ -30,6 +30,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
+import { reportCronJobFailure } from '../../../common/cron-failure-reporting';
+import { IntegrationErrorReporter } from '../../error-log/integration-error-reporter';
 
 /**
  * Retention configuration
@@ -59,7 +61,10 @@ export interface RetentionSweepResult {
 export class DecisionLogRetentionService {
   private readonly logger = new Logger(DecisionLogRetentionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly errorReporter: IntegrationErrorReporter,
+  ) {}
 
   /**
    * Her gün gece 03:00'te çalışır.
@@ -79,6 +84,7 @@ export class DecisionLogRetentionService {
       );
     } catch (error) {
       this.logger.error('Retention sweep failed', error);
+      reportCronJobFailure(this.errorReporter, 'decisionLogRetention.archiveOldRecords', error);
     }
   }
 

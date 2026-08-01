@@ -31,7 +31,8 @@ const mk = (over: any = {}) => {
     officeApprovalRequest: { findMany: jest.fn().mockResolvedValue([]) },
     ...(over.prisma || {}),
   };
-  const svc = new OfficeApprovalExecutorCronService(prisma, executor);
+  const errorReporter: any = { report: jest.fn().mockResolvedValue(undefined) };
+  const svc = new OfficeApprovalExecutorCronService(prisma, executor, errorReporter);
   return { svc, executor, prisma };
 };
 // findMany'i 3 pass için ayrı döndüren yardımcı (1=RUNNING reconcile, 2=NOT_RUN scan, 3=FAILED retry).

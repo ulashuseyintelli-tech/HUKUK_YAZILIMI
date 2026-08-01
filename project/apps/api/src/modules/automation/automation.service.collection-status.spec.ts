@@ -20,7 +20,7 @@ describe("AutomationService — collection status filtresi (nightly riskScore)",
   }
 
   function makeService(prisma: any) {
-    return new AutomationService(prisma, {} as any, {} as any, {} as any);
+    return new AutomationService(prisma, {} as any, {} as any, {} as any, {} as any);
   }
 
   function makeCaseData(collections: Array<{ amount: number; status: string }>) {

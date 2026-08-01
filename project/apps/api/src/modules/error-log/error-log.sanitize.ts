@@ -25,6 +25,9 @@ export const ERROR_LOG_METADATA_WHITELIST = [
   "durationMs",
   "retryCount",
   "externalStatusCode",
+  /** W3-F04: cron terminal-failure siniflandirmasi — sabit/enum-benzeri, PII tasimaz. */
+  "outcome",
+  "reasonCode",
 ] as const;
 
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);

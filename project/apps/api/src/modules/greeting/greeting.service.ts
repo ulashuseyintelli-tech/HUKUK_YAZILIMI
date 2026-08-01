@@ -3,6 +3,8 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { ClientNotificationService } from "../client-notification/client-notification.service";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
+import { reportCronJobFailure } from "../../common/cron-failure-reporting";
+import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 
 /**
  * Office.autoGreetingTime ("HH:mm") değerini saat/dakikaya ayrıştırır.
@@ -59,7 +61,8 @@ export class GreetingService {
 
   constructor(
     private prisma: PrismaService,
-    private notificationService: ClientNotificationService
+    private notificationService: ClientNotificationService,
+    private errorReporter: IntegrationErrorReporter
   ) {}
 
   // Varsayılan özel günleri oluştur
@@ -355,18 +358,8 @@ export class GreetingService {
     const now = new Date();
 
     // Tüm tenant'ları al (otomatik tebrik için gerekli office alanlarıyla)
-    const tenants = await this.prisma.tenant.findMany({
-      include: {
-        office: {
-          select: {
-            id: true,
-            autoGreetingEnabled: true,
-            autoGreetingTime: true,
-            lastGreetingRunAt: true,
-          },
-        },
-      },
-    });
+    const tenants = await this.findTenantsForGreetingTick();
+    if (tenants === null) return;
 
     for (const tenant of tenants) {
       const office = tenant.office;
@@ -436,7 +429,30 @@ export class GreetingService {
       } catch (e: any) {
         // Hata → damgalama YOK → sonraki dakika tekrar denenir (o gün tebrik atlanmaz)
         this.logger.error(`Tenant ${tenant.id} tebrik hatası (damgalanmadı, retry edilecek): ${e.message}`);
+        reportCronJobFailure(this.errorReporter, "greeting.greetingSchedulerTick", e, { tenantId: tenant.id });
       }
+    }
+  }
+
+  /** greetingSchedulerTick'in dış (tüm-tenant) sorgusu — hata halinde bu tick'i güvenli şekilde atlar. */
+  private async findTenantsForGreetingTick() {
+    try {
+      return await this.prisma.tenant.findMany({
+        include: {
+          office: {
+            select: {
+              id: true,
+              autoGreetingEnabled: true,
+              autoGreetingTime: true,
+              lastGreetingRunAt: true,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.error("Tebrik scheduler tenant listesi alınamadı:", error);
+      reportCronJobFailure(this.errorReporter, "greeting.greetingSchedulerTick", error);
+      return null;
     }
   }
 }

@@ -342,7 +342,7 @@ describe("AutomationService POA queue bypass", () => {
     const poaDelivery: any = {
       sendExpiringPoaNotifications: jest.fn().mockResolvedValue({ scanned: 1, recipients: 1, sent: 1, failed: 0, skipped: 0 }),
     };
-    const service = new AutomationService(prisma, {} as any, poaDelivery, {} as any);
+    const service = new AutomationService(prisma, {} as any, poaDelivery, {} as any, {} as any);
 
     await service.sendExpiringPoaNotifications();
 

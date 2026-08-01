@@ -7,6 +7,8 @@ import { DebtorCrossCaseNotificationService } from "../debtor/debtor-cross-case-
 import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStatus } from "@prisma/client";
 import { filterConfirmedCollections, sumConfirmedCollections } from "../../common/collection-confirmed.util";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
+import { reportCronJobFailure } from "../../common/cron-failure-reporting";
+import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 
 // Otomasyon açık olan statüler (C.19)
 const AUTOMATION_ENABLED_STATUSES: LegalCaseStatus[] = [
@@ -29,7 +31,8 @@ export class AutomationService {
     private prisma: PrismaService,
     private workflowEngine: WorkflowEngine,
     private poaExpiryDeliveryService: PoaExpiryDeliveryService,
-    private debtorCrossCaseNotificationService: DebtorCrossCaseNotificationService
+    private debtorCrossCaseNotificationService: DebtorCrossCaseNotificationService,
+    private errorReporter: IntegrationErrorReporter
   ) {}
 
   // Her 5 dakikada bir çalışan ana kontrol döngüsü (C.20)
@@ -97,6 +100,9 @@ export class AutomationService {
           this.logger.error(`Error processing case ${caseData.id}:`, error);
         }
       }
+    } catch (error) {
+      this.logger.error("Automation cycle hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.processPendingCases", error);
     } finally {
       this.isProcessing = false;
       this.logger.log("Automation cycle completed");
@@ -108,28 +114,33 @@ export class AutomationService {
   async updateDaysLeft(): Promise<void> {
     this.logger.log("Updating days left for active cases...");
 
-    const activeCases = await this.prisma.case.findMany({
-      where: {
-        status: CaseStatus.ACTIVE,
-        caseStatus: { in: AUTOMATION_ENABLED_STATUSES },
-        nextActionAt: { not: null },
-      },
-      select: { id: true, nextActionAt: true },
-    });
+    try {
+      const activeCases = await this.prisma.case.findMany({
+        where: {
+          status: CaseStatus.ACTIVE,
+          caseStatus: { in: AUTOMATION_ENABLED_STATUSES },
+          nextActionAt: { not: null },
+        },
+        select: { id: true, nextActionAt: true },
+      });
 
-    for (const caseData of activeCases) {
-      if (caseData.nextActionAt) {
-        const daysLeft = Math.ceil(
-          (caseData.nextActionAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-        );
-        await this.prisma.case.update({
-          where: { id: caseData.id },
-          data: { daysLeft: Math.max(0, daysLeft) },
-        });
+      for (const caseData of activeCases) {
+        if (caseData.nextActionAt) {
+          const daysLeft = Math.ceil(
+            (caseData.nextActionAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+          );
+          await this.prisma.case.update({
+            where: { id: caseData.id },
+            data: { daysLeft: Math.max(0, daysLeft) },
+          });
+        }
       }
-    }
 
-    this.logger.log(`Updated days left for ${activeCases.length} cases`);
+      this.logger.log(`Updated days left for ${activeCases.length} cases`);
+    } catch (error) {
+      this.logger.error("Gün sayacı güncelleme hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.updateDaysLeft", error);
+    }
   }
 
   // Her saat başı tebligat sürelerini kontrol et
@@ -137,30 +148,35 @@ export class AutomationService {
   async checkNotificationExpiries(): Promise<void> {
     this.logger.log("Checking notification expiries...");
 
-    const expiredNotifications = await this.prisma.notificationQueue.findMany({
-      where: {
-        status: NotificationStatus.DELIVERED,
-        expiresAt: { lte: new Date() },
-      },
-      include: { case: true },
-    });
-
-    for (const notification of expiredNotifications) {
-      // Bildirimi süresi dolmuş olarak işaretle
-      await this.prisma.notificationQueue.update({
-        where: { id: notification.id },
-        data: { status: NotificationStatus.EXPIRED },
+    try {
+      const expiredNotifications = await this.prisma.notificationQueue.findMany({
+        where: {
+          status: NotificationStatus.DELIVERED,
+          expiresAt: { lte: new Date() },
+        },
+        include: { case: true },
       });
 
-      // Dosya otomatik moddaysa işle
-      if (notification.case?.isAutoMode && notification.caseId) {
-        await this.workflowEngine.processCase(notification.caseId, notification.case.tenantId);
-      }
-    }
+      for (const notification of expiredNotifications) {
+        // Bildirimi süresi dolmuş olarak işaretle
+        await this.prisma.notificationQueue.update({
+          where: { id: notification.id },
+          data: { status: NotificationStatus.EXPIRED },
+        });
 
-    this.logger.log(
-      `Processed ${expiredNotifications.length} expired notifications`
-    );
+        // Dosya otomatik moddaysa işle
+        if (notification.case?.isAutoMode && notification.caseId) {
+          await this.workflowEngine.processCase(notification.caseId, notification.case.tenantId);
+        }
+      }
+
+      this.logger.log(
+        `Processed ${expiredNotifications.length} expired notifications`
+      );
+    } catch (error) {
+      this.logger.error("Bildirim süre kontrolü hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.checkNotificationExpiries", error);
+    }
   }
 
   // DBND-D6A-2-SURFACE: Her saat başı süresi dolan (PENDING, expiresAt geçmiş) paylaşılan-borçlu
@@ -169,9 +185,14 @@ export class AutomationService {
   // model YOK.
   @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async expireCrossCaseNotifications(): Promise<void> {
-    const count = await this.debtorCrossCaseNotificationService.expireStaleNotifications();
-    if (count > 0) {
-      this.logger.log(`Expired ${count} debtor cross-case notification(s)`);
+    try {
+      const count = await this.debtorCrossCaseNotificationService.expireStaleNotifications();
+      if (count > 0) {
+        this.logger.log(`Expired ${count} debtor cross-case notification(s)`);
+      }
+    } catch (error) {
+      this.logger.error("Çapraz-dosya bildirim süresi kontrolü hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.expireCrossCaseNotifications", error);
     }
   }
 
@@ -180,9 +201,14 @@ export class AutomationService {
   // DebtorCrossCaseNotificationService'te kalır; migration/yeni model YOK.
   @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async expireInactiveRecipientCrossCaseNotifications(): Promise<void> {
-    const count = await this.debtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients();
-    if (count > 0) {
-      this.logger.log(`Expired ${count} debtor cross-case notification(s) for inactive recipients`);
+    try {
+      const count = await this.debtorCrossCaseNotificationService.expireStaleNotificationsForInactiveRecipients();
+      if (count > 0) {
+        this.logger.log(`Expired ${count} debtor cross-case notification(s) for inactive recipients`);
+      }
+    } catch (error) {
+      this.logger.error("Deaktif alıcı çapraz-dosya bildirim süpürme hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.expireInactiveRecipientCrossCaseNotifications", error);
     }
   }
 
@@ -191,23 +217,28 @@ export class AutomationService {
   async updateExpiredPoas(): Promise<void> {
     this.logger.log("Checking for expired powers of attorney...");
 
-    const now = new Date();
+    try {
+      const now = new Date();
 
-    const result = await this.prisma.clientPowerOfAttorney.updateMany({
-      where: {
-        isLimited: true,
-        status: PoaStatus.ACTIVE,
-        validUntil: { lt: now },
-      },
-      data: {
-        status: PoaStatus.EXPIRED,
-      },
-    });
+      const result = await this.prisma.clientPowerOfAttorney.updateMany({
+        where: {
+          isLimited: true,
+          status: PoaStatus.ACTIVE,
+          validUntil: { lt: now },
+        },
+        data: {
+          status: PoaStatus.EXPIRED,
+        },
+      });
 
-    if (result.count > 0) {
-      this.logger.log(`Marked ${result.count} powers of attorney as EXPIRED`);
-    } else {
-      this.logger.log("No expired powers of attorney found");
+      if (result.count > 0) {
+        this.logger.log(`Marked ${result.count} powers of attorney as EXPIRED`);
+      } else {
+        this.logger.log("No expired powers of attorney found");
+      }
+    } catch (error) {
+      this.logger.error("Vekalet süresi kontrolü hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.updateExpiredPoas", error);
     }
   }
 
@@ -221,51 +252,61 @@ export class AutomationService {
 
     this.logger.log("Checking for expiring powers of attorney to notify...");
 
-    const result = await this.poaExpiryDeliveryService.sendExpiringPoaNotifications();
+    try {
+      const result = await this.poaExpiryDeliveryService.sendExpiringPoaNotifications();
 
-    this.logger.log(
-      `POA expiry delivery completed: scanned=${result.scanned}, recipients=${result.recipients}, ` +
-        `sent=${result.sent}, failed=${result.failed}, skipped=${result.skipped}`,
-    );
+      this.logger.log(
+        `POA expiry delivery completed: scanned=${result.scanned}, recipients=${result.recipients}, ` +
+          `sent=${result.sent}, failed=${result.failed}, skipped=${result.skipped}`,
+      );
+    } catch (error) {
+      this.logger.error("Vekalet süre bitimi bildirim hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.sendExpiringPoaNotifications", error);
+    }
   }
   // Her gün gece yarısı risk skorlarını güncelle
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: SCHEDULER_TIMEZONE })
   async updateRiskScores(): Promise<void> {
     this.logger.log("Updating risk scores...");
 
-    const activeCases = await this.prisma.case.findMany({
-      where: { status: CaseStatus.ACTIVE },
-      include: {
-        collections: true,
-        debtors: {
-          include: {
-            debtor: { include: { assets: true } },
+    try {
+      const activeCases = await this.prisma.case.findMany({
+        where: { status: CaseStatus.ACTIVE },
+        include: {
+          collections: true,
+          debtors: {
+            include: {
+              debtor: { include: { assets: true } },
+            },
           },
         },
-      },
-    });
-
-    for (const caseData of activeCases) {
-      const riskScore = this.calculateRiskScore(caseData);
-
-      await this.prisma.case.update({
-        where: { id: caseData.id },
-        data: { riskScore },
       });
 
-      // Risk raporu oluştur
-      await this.prisma.riskReport.create({
-        data: {
-          caseId: caseData.id,
-          overallScore: riskScore,
-          collectionProb: this.calculateCollectionProbability(caseData),
-          recommendedAction: this.getRecommendedAction(riskScore),
-          factors: this.getRiskFactors(caseData),
-        },
-      });
+      for (const caseData of activeCases) {
+        const riskScore = this.calculateRiskScore(caseData);
+
+        await this.prisma.case.update({
+          where: { id: caseData.id },
+          data: { riskScore },
+        });
+
+        // Risk raporu oluştur
+        await this.prisma.riskReport.create({
+          data: {
+            caseId: caseData.id,
+            overallScore: riskScore,
+            collectionProb: this.calculateCollectionProbability(caseData),
+            recommendedAction: this.getRecommendedAction(riskScore),
+            factors: this.getRiskFactors(caseData),
+          },
+        });
+      }
+
+      this.logger.log(`Updated risk scores for ${activeCases.length} cases`);
+    } catch (error) {
+      this.logger.error("Risk skoru güncelleme hatası:", error);
+      reportCronJobFailure(this.errorReporter, "automation.updateRiskScores", error);
     }
-
-    this.logger.log(`Updated risk scores for ${activeCases.length} cases`);
   }
 
   // Risk skoru hesaplama (0-100)

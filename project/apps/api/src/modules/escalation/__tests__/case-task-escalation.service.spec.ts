@@ -77,7 +77,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
   it("(1+4) real lawyer owner → RESPONSIBLE maili lawyer.email'e gider, assignee'ye DEĞİL", async () => {
     const prisma = buildPrisma() as any; // varsayılan = responsibleLawyer
     const notifier = buildNotifier("SENT") as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     const res = await svc.processCaseTaskEscalations(D0);
 
@@ -94,7 +94,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
   it("(2) real staff owner (lawyer yok) → RESPONSIBLE maili staff.email'e", async () => {
     const prisma = buildPrisma({}, { case: caseWith({ responsibleStaff: { firstName: "Büşra", lastName: "Atmaca", email: "staff@buro.com" } }) }) as any;
     const notifier = buildNotifier("SENT") as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     await svc.processCaseTaskEscalations(D0);
 
@@ -104,7 +104,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
   it("(3) gerçek owner yok ama legacy sorumluPersonel VAR → mail legacy User.email'e (fallback)", async () => {
     const prisma = buildPrisma({}, { case: caseWith({ sorumluPersonel: { name: "Admin", surname: "Kullanıcı", email: "legacy@buro.com" } }) }) as any;
     const notifier = buildNotifier("SENT") as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     await svc.processCaseTaskEscalations(D0);
 
@@ -120,7 +120,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
       }),
     }) as any;
     const notifier = buildNotifier("SENT") as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
     await svc.processCaseTaskEscalations(D0);
     expect(notifier.sendEmail.mock.calls[0][1]).toBe("lawyer@buro.com");
   });
@@ -128,7 +128,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
   it("(6) owner YOK (lawyer/staff/legacy hiçbiri) → SKIPPED, guard ilerlemez (fail-safe)", async () => {
     const prisma = buildPrisma({}, { case: caseWith() }) as any; // hiç owner yok
     const notifier = buildNotifier() as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     const res = await svc.processCaseTaskEscalations(D0);
 
@@ -143,7 +143,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
   it("(5) assigneeId=null görev SORGUYA GİRER + owner'a eskale olur (assignee filtresi yok)", async () => {
     const prisma = buildPrisma({}, { assigneeId: null, assignee: null }) as any; // G4a sonrası atanmamış
     const notifier = buildNotifier("SENT") as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     const res = await svc.processCaseTaskEscalations(D0);
 
@@ -156,7 +156,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
   it("gönderim FAILED → guard baseline (null) KALIR + failed=1, tier kalıcı", async () => {
     const prisma = buildPrisma() as any;
     const notifier = buildNotifier("FAILED") as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     const res = await svc.processCaseTaskEscalations(D0);
 
@@ -174,7 +174,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
       { caseEscalationLevel: "RESPONSIBLE", caseLastNotifiedLevel: "RESPONSIBLE", caseNextFollowUpAt: now }
     ) as any;
     const notifier = buildNotifier("SENT") as any;
-    const svc = new CaseTaskEscalationService(prisma, notifier);
+    const svc = new CaseTaskEscalationService(prisma, notifier, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     await svc.processCaseTaskEscalations(now);
 
@@ -187,7 +187,7 @@ describe("CaseTaskEscalationService — RESPONSIBLE owner-rebind (G4b)", () => {
 
   it("hedef sorgu DİSJOİNT: LEGAL_WORKFLOW + caseId≠null + PENDING/IN_PROGRESS (assigneeId filtresi YOK)", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new CaseTaskEscalationService(prisma, buildNotifier() as any);
+    const svc = new CaseTaskEscalationService(prisma, buildNotifier() as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     await svc.processCaseTaskEscalations(D0);
 
@@ -206,7 +206,7 @@ describe("CaseTaskEscalationService.scheduledRun (flag)", () => {
 
   it("flag KAPALI (varsayılan) → hiçbir şey yapmaz (tenant sorgusu yok)", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new CaseTaskEscalationService(prisma, buildNotifier() as any);
+    const svc = new CaseTaskEscalationService(prisma, buildNotifier() as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     await svc.scheduledRun();
 
@@ -216,7 +216,7 @@ describe("CaseTaskEscalationService.scheduledRun (flag)", () => {
   it("flag AÇIK → işler (tenant sorgusu yapılır)", async () => {
     process.env.CASE_TASK_ESCALATION_ENABLED = "true";
     const prisma = buildPrisma() as any;
-    const svc = new CaseTaskEscalationService(prisma, buildNotifier() as any);
+    const svc = new CaseTaskEscalationService(prisma, buildNotifier() as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     await svc.scheduledRun();
 

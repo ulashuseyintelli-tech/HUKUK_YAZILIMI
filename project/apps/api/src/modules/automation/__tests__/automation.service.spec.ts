@@ -16,7 +16,8 @@ describe('AutomationService.sendExpiringPoaNotifications — POA_EXPIRY_NOTIFICA
       {} as any,
       {} as any,
       poaExpiryDeliveryService as any,
-      debtorCrossCaseNotificationService as any
+      debtorCrossCaseNotificationService as any,
+      {} as any
     );
   }
 
@@ -77,7 +78,8 @@ describe('AutomationService.expireCrossCaseNotifications — DBND-D6A-2-SURFACE 
       {} as any,
       {} as any,
       { sendExpiringPoaNotifications: jest.fn() } as any,
-      debtorCrossCaseNotificationService as any
+      debtorCrossCaseNotificationService as any,
+      {} as any
     );
   }
 
@@ -105,7 +107,8 @@ describe('AutomationService.expireInactiveRecipientCrossCaseNotifications — DB
       {} as any,
       {} as any,
       { sendExpiringPoaNotifications: jest.fn() } as any,
-      debtorCrossCaseNotificationService as any
+      debtorCrossCaseNotificationService as any,
+      {} as any
     );
   }
 

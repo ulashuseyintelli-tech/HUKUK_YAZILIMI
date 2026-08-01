@@ -197,7 +197,7 @@ describe('UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 — legal-hold: yıkıcı retentio
 
   beforeEach(() => {
     prisma = buildRetentionPrisma();
-    service = new DecisionLogRetentionService(prisma as any);
+    service = new DecisionLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
   });
 
   it('cron HİÇBİR silme çağrısı yapmaz', async () => {

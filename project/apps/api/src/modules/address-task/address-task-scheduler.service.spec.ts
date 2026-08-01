@@ -37,7 +37,8 @@ function build(overrides: any = {}) {
   const caseDebtorLifecycleGuard: any = {
     isPassiveByCaseAndDebtor: jest.fn().mockResolvedValue(overrides.isPassive ?? false),
   };
-  const service = new AddressTaskSchedulerService(addressTaskService, prisma, caseDebtorLifecycleGuard);
+  const errorReporter: any = { report: jest.fn().mockResolvedValue(undefined) };
+  const service = new AddressTaskSchedulerService(addressTaskService, prisma, caseDebtorLifecycleGuard, errorReporter);
   return { service, addressTaskService, prisma, caseDebtorLifecycleGuard };
 }
 

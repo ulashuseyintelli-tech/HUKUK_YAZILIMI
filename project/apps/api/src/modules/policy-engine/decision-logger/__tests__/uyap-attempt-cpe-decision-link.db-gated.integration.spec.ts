@@ -150,7 +150,7 @@ maybe('P05C-P02 — link + legal hold (DB)', () => {
   });
 
   describe('referential legal hold — retention', () => {
-    const service = () => new DecisionLogRetentionService(prisma as any);
+    const service = () => new DecisionLogRetentionService(prisma as any, { report: jest.fn().mockResolvedValue(undefined) } as any);
 
     // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: retention cron'u ARTIK HICBIR KAYDI SILMEZ.
     // Onceki hal "arsivler" diyip `deleteMany` cagiriyordu; `CpeDecisionLogArchive`

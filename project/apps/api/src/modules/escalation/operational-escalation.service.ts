@@ -9,6 +9,8 @@ import {
 } from "./escalation-logic";
 import { TenantNotifier, DispatchResult } from "./tenant-notifier.service";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
+import { reportCronJobFailure } from "../../common/cron-failure-reporting";
+import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 
 interface Recipients {
   emails: { name: string; email: string }[]; // ad-soyad ile hitap için isim taşınır
@@ -46,12 +48,18 @@ export class OperationalEscalationService {
 
   constructor(
     private prisma: PrismaService,
-    private tenantNotifier: TenantNotifier
+    private tenantNotifier: TenantNotifier,
+    private errorReporter: IntegrationErrorReporter
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
   async scheduledRun(): Promise<void> {
-    await this.processEscalations();
+    try {
+      await this.processEscalations();
+    } catch (error) {
+      this.logger.error("Operasyonel eskalasyon turu hatası:", error);
+      reportCronJobFailure(this.errorReporter, "operationalEscalation.scheduledRun", error);
+    }
   }
 
   /** Tüm tenant'ların açık operasyonel görevlerini işler. Manuel tetikten de çağrılır. */
