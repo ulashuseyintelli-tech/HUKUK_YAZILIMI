@@ -1066,3 +1066,29 @@ sağlar. Nullable/default-free evidence migration'ı repository-ready; live/prod
 yapılmamıştır ve historical fingerprint tahmin edilmemiştir. Task10 `TPA-04F-ENTRY` yalnız
 `NEXT / NOT STARTED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus
 writer/evidence/cutover için `BLOCKING` kalır.
+
+## 9.15. TPA-04F-ENTRY representative corpus foundation closure — 2026-08-01
+
+TPA-04F-ENTRY / Task10 exact seven-file implementation PR #2036 / squash
+`624f27ee09297ccc895155e6d65c00ce08dc6db7` ile `CLOSED / CANONICAL EVIDENCE`dır.
+`CanonicalReceivableApplicationSnapshotV1 → LegalApplicationPlan` sınırına ait
+`RCV-REP-CORPUS/v1` deterministic corpus foundation'ı 19 scenario, golden expectation,
+acceptance matrix, Task11 input contract ve pinned SHA-256
+`0e0d5f1db96d7f0b8f204307cb2b9e73d57b89a04194b93dc6c4ffc80a10f05e` üretir.
+Representative corpus suite `11/11`, LegalApplicationPlan regression `8 suite / 205 test`
+ve required CI `9/9 PASS`tır.
+
+Corpus yalnız test/evidence foundation'dır: runtime export, official snapshot producer,
+`LegalApplicationWriter`, legal-effect persistence, schema/migration, live DB, production
+activation veya consumer cutover üretmez. ClaimItem-keyed legacy synthetic corpus
+`PRESERVED / SUPERSEDED_FOR_TARGET_AUTHORITY / HISTORICAL_BASELINE /
+NON_AUTHORITATIVE / NO_MUTATION`dır; fiziksel archive, move, rename, overwrite veya cleanup
+yapılmamıştır.
+
+Task15 gerçek writer/persistence replay ve reconciliation evidence'ı `NOT YET SATISFIED`dır.
+Official snapshot producer, `LegalApplicationWriter`, atomic persistence/transaction, full
+reversal, consumer cutover ve legacy retirement sonraki owner-ratified program birimlerinde
+kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; COL-RISK-G07 `OPEN`; runtime writer `NOT
+IMPLEMENTED / NOT ACTIVATED`dır. Canonical successor `TPA-04D-I01 / Task11 — NEXT /
+ELIGIBLE / NOT STARTED`dır ve Task10'un bütün governance exit gate'leri tamamlanmadan
+başlatılamaz.
