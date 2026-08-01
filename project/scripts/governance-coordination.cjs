@@ -894,6 +894,60 @@ const UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01 =
         recordId: 'UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01',
       }),
     }),
+    closeoutBindingPr: Object.freeze({
+      taskId:
+        'UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01',
+      mode:
+        'UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01',
+      baseSha: '11ffb62994e95d7e6a051dbf609d5db74101a6b7',
+      headRef:
+        'codex/uyap-official-serializer-bypass-hardening-i01-terminal-closeout-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    closeoutPr: Object.freeze({
+      taskId: 'UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01',
+      mode:
+        'UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_TERMINAL_CLOSEOUT_R01',
+      originalBaseSha: '11ffb62994e95d7e6a051dbf609d5db74101a6b7',
+      headRef:
+        'codex/uyap-official-serializer-bypass-hardening-i01-terminal-closeout',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01.md',
+        recordId: 'UYAP-OFFICIAL-SERIALIZER-BYPASS-HARDENING-I01-EG01',
+      }),
+      implementation: Object.freeze({
+        pullRequestNumber: 2067,
+        squashSha: '11ffb62994e95d7e6a051dbf609d5db74101a6b7',
+      }),
+    }),
   });
 const RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01 =
   Object.freeze({
@@ -3802,8 +3856,40 @@ function classifyPrChangeSet(changes, context = {}) {
   }
 
   if (
+    context.base ===
+      uyapSerializerBypassHardeningBinding.closeoutBindingPr.baseSha &&
+    context.headRef ===
+      uyapSerializerBypassHardeningBinding.closeoutBindingPr.headRef &&
+    hasExactChangeSet(
+      changes,
+      uyapSerializerBypassHardeningBinding.closeoutBindingPr.changedPaths,
+    )
+  ) {
+    return {
+      mode: uyapSerializerBypassHardeningBinding.closeoutBindingPr.mode,
+      taskId: uyapSerializerBypassHardeningBinding.closeoutBindingPr.taskId,
+    };
+  }
+
+  if (
+    context.headRef === uyapSerializerBypassHardeningBinding.closeoutPr.headRef &&
+    hasExactChangeSet(
+      changes,
+      uyapSerializerBypassHardeningBinding.closeoutPr.changedPaths,
+    )
+  ) {
+    return {
+      mode: uyapSerializerBypassHardeningBinding.closeoutPr.mode,
+      taskId: uyapSerializerBypassHardeningBinding.closeoutPr.taskId,
+    };
+  }
+
+  if (
     context.headRef === uyapSerializerBypassHardeningBinding.bindingPr.headRef ||
-    context.headRef === uyapSerializerBypassHardeningBinding.targetPr.headRef
+    context.headRef === uyapSerializerBypassHardeningBinding.targetPr.headRef ||
+    context.headRef ===
+      uyapSerializerBypassHardeningBinding.closeoutBindingPr.headRef ||
+    context.headRef === uyapSerializerBypassHardeningBinding.closeoutPr.headRef
   ) {
     reject(
       'CONTROL_PLANE_SCOPE_FORBIDDEN',
@@ -5066,6 +5152,56 @@ function validateUyapStructuredEmissionTerminalCloseoutBindingScope(options) {
       reject(
         'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
         `contract is missing exact UYAP structured-emission closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: closeoutBinding.mode, taskId: closeoutBinding.taskId };
+}
+
+function validateUyapSerializerBypassHardeningTerminalCloseoutBindingScope(
+  options,
+) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01;
+  const closeoutBinding = binding.closeoutBindingPr;
+  if (
+    taskId !== closeoutBinding.taskId ||
+    base !== closeoutBinding.baseSha ||
+    headRef !== closeoutBinding.headRef ||
+    !hasExactChangeSet(changes, closeoutBinding.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP serializer-bypass hardening terminal closeout control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.knownGoodFloor,
+    closeoutBinding.taskId,
+    closeoutBinding.mode,
+    closeoutBinding.baseSha,
+    closeoutBinding.headRef,
+    binding.closeoutPr.taskId,
+    binding.closeoutPr.mode,
+    binding.closeoutPr.originalBaseSha,
+    binding.closeoutPr.headRef,
+    ...binding.closeoutPr.changedPaths.map(({ path: repoPath }) => repoPath),
+    binding.closeoutPr.semanticAuthority.recordId,
+    binding.closeoutPr.executionGrant.recordId,
+    String(binding.closeoutPr.implementation.pullRequestNumber),
+    binding.closeoutPr.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `contract is missing exact UYAP serializer-bypass hardening closeout binding ${expectedLiteral}`,
       );
     }
   }
@@ -7937,6 +8073,84 @@ function validateUyapStructuredEmissionTerminalCloseoutScope(options) {
   return { mode: target.mode, taskId: target.taskId };
 }
 
+function validateUyapSerializerBypassHardeningTerminalCloseoutScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'UYAP serializer-bypass hardening terminal closeout target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.knownGoodFloor,
+    binding.closeoutBindingPr.taskId,
+    binding.closeoutBindingPr.mode,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    target.headRef,
+    String(target.implementation.pullRequestNumber),
+    target.implementation.squashSha,
+    binding.ownerRatificationEvidence.excerptSha256,
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical UYAP serializer-bypass hardening closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const semanticAuthority = gitShow(head, target.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(semanticAuthority, target.semanticAuthority);
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const grantLiteral of [
+    'TASK STATUS               : CLOSED',
+    'CHANGE STATUS             : MERGED',
+    'DELIVERY STATUS           : PASS',
+    'SEMANTIC AUTHORITY        : CANONICAL',
+    'EXECUTION GRANT           : CONSUMED / CLOSED',
+    `IMPLEMENTATION PR         : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA        : ${target.implementation.squashSha}`,
+    'RESOLUTION PROVENANCE     : CANONICAL RESOLVER CAPABILITY ENFORCED',
+    'CALLER-CREATED RESOLVED   : FAIL-CLOSED',
+    'STRUCTURAL COPY           : FAIL-CLOSED',
+    'REJECTED XML / BYTE       : 0 / 0',
+    'OFFICIAL MAPPINGS         : UNCHANGED',
+    'M01 / RECEIVABLE AUTHORITY: UNCHANGED',
+    'DEFAULT-OFF               : PROVEN',
+    'PRODUCTION ACTIVATION     : NONE',
+    'SCHEMA / MIGRATION        : NONE',
+    'STRICT DTD                : NOT CLAIMED',
+    'REQUIRED CI               : PASS',
+    'SECOND USE: FAIL-CLOSED',
+    'WAITING FOR OWNER : NO FOR THIS TASK — TASK COMPLETE',
+  ]) {
+    if (!grant.includes(grantLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `UYAP serializer-bypass hardening terminal receipt is missing ${grantLiteral}`,
+      );
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
 function validatePb01AuthorityBootstrapScope(options) {
   const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
   const binding =
@@ -8690,6 +8904,21 @@ function validatePrScope(options) {
 
   if (
     classification.mode ===
+    UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01
+      .closeoutBindingPr.mode
+  ) {
+    return validateUyapSerializerBypassHardeningTerminalCloseoutBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
     OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01.mode
   ) {
     return validateOfficeF01Stage2ValidatorReconciliationBindingScope({
@@ -8769,6 +8998,21 @@ function validatePrScope(options) {
       .closeoutPr.mode
   ) {
     return validateUyapStructuredEmissionTerminalCloseoutScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
+  if (
+    classification.mode ===
+    UYAP_OFFICIAL_SERIALIZER_BYPASS_HARDENING_I01_CONTROL_PLANE_BINDING_R01
+      .closeoutPr.mode
+  ) {
+    return validateUyapSerializerBypassHardeningTerminalCloseoutScope({
       base,
       head,
       headRef,
@@ -9759,6 +10003,8 @@ module.exports = {
   validateUyapSerializerBypassHardeningAuthorityMaterializationScope,
   validateUyapStructuredEmissionTerminalCloseoutBindingScope,
   validateUyapStructuredEmissionTerminalCloseoutScope,
+  validateUyapSerializerBypassHardeningTerminalCloseoutBindingScope,
+  validateUyapSerializerBypassHardeningTerminalCloseoutScope,
   validateUyapM01TerminalCloseoutBindingScope,
   validateUyapM01TerminalCloseoutScope,
   validateKc01AuthorityBootstrapBindingScope,
