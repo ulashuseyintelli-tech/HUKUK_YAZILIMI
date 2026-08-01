@@ -11,7 +11,7 @@ outer program-scoped execution authority olarak yürür; V1 mekanik executor gra
 {
   "schemaVersion": 1,
   "requestId": "GOV-REQ-20260801-RCV-COL-TPA04F-ENTRY-COL-GOV",
-  "requestFingerprint": "c60a660b94c8a275ba5ef54a402e40883d78b4234386becb94a645a33c266edd",
+  "requestFingerprint": "806e5999bd38ccec11da761f66af4687b5a7f81dfe596d41e110aa3d8515464b",
   "requestedBy": "OWNER",
   "createdAt": "2026-08-01T01:17:38Z",
   "baseMainSha": "8f2426d6df5cd9e92d1511ad2588a8d0ffb7edd1",
@@ -31,7 +31,7 @@ outer program-scoped execution authority olarak yürür; V1 mekanik executor gra
     "type": "EXACT_APPEND_AT_DECLARED_ANCHOR",
     "changeClass": "LEVEL_2_MECHANICAL",
     "targetFile": "project/docs/governance/COLLECTION-GOVERNANCE.md",
-    "recordIdentity": "## 9.15. TPA-04F-ENTRY representative corpus foundation closure",
+    "recordIdentity": "Task10 `TPA-04F-ENTRY` yalnız",
     "anchor": "Task10 `TPA-04F-ENTRY` yalnız\n`NEXT / NOT STARTED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus\nwriter/evidence/cutover için `BLOCKING` kalır.",
     "expectedOldValue": "Task10 `TPA-04F-ENTRY` yalnız\n`NEXT / NOT STARTED`dır. ACT-28 ve REC-AUTH-011/012 `OPEN`; synthetic corpus\nwriter/evidence/cutover için `BLOCKING` kalır.",
     "newValue": "\n\n## 9.15. TPA-04F-ENTRY representative corpus foundation closure — 2026-08-01\n\nTPA-04F-ENTRY / Task10 exact seven-file implementation PR #2036 / squash\n`624f27ee09297ccc895155e6d65c00ce08dc6db7` ile `CLOSED / CANONICAL EVIDENCE`dır.\n`CanonicalReceivableApplicationSnapshotV1 → LegalApplicationPlan` sınırına ait\n`RCV-REP-CORPUS/v1` deterministic corpus foundation'ı 19 scenario, golden expectation,\nacceptance matrix, Task11 input contract ve pinned SHA-256\n`0e0d5f1db96d7f0b8f204307cb2b9e73d57b89a04194b93dc6c4ffc80a10f05e` üretir.\nRepresentative corpus suite `11/11`, LegalApplicationPlan regression `8 suite / 205 test`\nve required CI `9/9 PASS`tır.\n\nCorpus yalnız test/evidence foundation'dır: runtime export, official snapshot producer,\n`LegalApplicationWriter`, legal-effect persistence, schema/migration, live DB, production\nactivation veya consumer cutover üretmez. ClaimItem-keyed legacy synthetic corpus\n`PRESERVED / SUPERSEDED_FOR_TARGET_AUTHORITY / HISTORICAL_BASELINE /\nNON_AUTHORITATIVE / NO_MUTATION`dır; fiziksel archive, move, rename, overwrite veya cleanup\nyapılmamıştır.\n\nTask15 gerçek writer/persistence replay ve reconciliation evidence'ı `NOT YET SATISFIED`dır.\nOfficial snapshot producer, `LegalApplicationWriter`, atomic persistence/transaction, full\nreversal, consumer cutover ve legacy retirement sonraki owner-ratified program birimlerinde\nkalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; COL-RISK-G07 `OPEN`; runtime writer `NOT\nIMPLEMENTED / NOT ACTIVATED`dır. Canonical successor `TPA-04D-I01 / Task11 — NEXT /\nELIGIBLE / NOT STARTED`dır ve Task10'un bütün governance exit gate'leri tamamlanmadan\nbaşlatılamaz.\n",
