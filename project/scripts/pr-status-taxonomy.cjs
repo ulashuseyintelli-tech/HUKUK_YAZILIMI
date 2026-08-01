@@ -1,0 +1,219 @@
+'use strict';
+
+/**
+ * REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01 — PR-A
+ *
+ * Canonical PR disposition taxonomy for this repository.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The predecessor model had four tokens: MERGED, CLOSED_SUPERSEDED,
+ * OTHER_SESSION, BLOCKED_EXACT. It had no way to say "CI is still running",
+ * so every ordinary wait had to be reported as BLOCKED_EXACT. Measured over a
+ * 15-PR evidence set (#2039..#2071, #2066 not observed), **zero** were real
+ * blockers: seven were control-plane defects and seven were ordinary CI waits.
+ * One (#2059) was a genuine CI failure requiring a fix.
+ * When one word means both "nine more minutes of Jest" and "a human must
+ * decide", real blockers stop being visible.
+ *
+ * SECURITY POSTURE
+ * ----------------
+ * The WAITING_* tokens are NOT an escape hatch. Every token here declares how
+ * it must be cross-verified against observed GitHub state. A green PR may not
+ * be parked as WAITING_FOR_CI, and a running PR may not be parked as
+ * CI_FIX_REQUIRED or BLOCKED_EXACT. The "no silent deferral" property of the
+ * predecessor guard is preserved — only its vocabulary is corrected.
+ *
+ * This module is deliberately pure and dependency-free: it is consumed by the
+ * session stop-hook (which runs outside this repo and must not import repo
+ * runtime), by CI, and by diagnostic tooling. It performs no I/O and never
+ * calls `gh` itself; callers supply observed state.
+ */
+
+/** Terminal check states, per GitHub CheckRun.status / StatusContext.state. */
+const TERMINAL_CHECK_STATUS = Object.freeze(['COMPLETED']);
+const FAILING_CONCLUSIONS = Object.freeze([
+  'FAILURE',
+  'ERROR',
+  'TIMED_OUT',
+  'CANCELLED',
+  'STARTUP_FAILURE',
+]);
+
+/**
+ * BLOCKED_EXACT is deliberately narrow. These are the ONLY admissible causes.
+ * Anything outside this list has its own token and must use it.
+ */
+const BLOCKED_EXACT_ADMISSIBLE_CAUSES = Object.freeze([
+  'AUTHORITY_NOT_EXTERNALLY_OBTAINABLE',
+  'REAL_SAME_FILE_COMPETING_WRITER',
+  'UNRESOLVABLE_MERGE_CONFLICT',
+  'MATERIAL_ALTERNATIVE_REQUIRES_OWNER',
+]);
+
+const TOKENS = Object.freeze({
+  MERGED: Object.freeze({
+    terminal: true,
+    requiresGithubState: 'MERGED',
+    requiresEvidence: ['mergeSha'],
+  }),
+  CLOSED_SUPERSEDED: Object.freeze({
+    terminal: true,
+    requiresGithubState: 'CLOSED',
+    requiresEvidence: ['supersedingRef'],
+  }),
+  OTHER_SESSION: Object.freeze({
+    terminal: true,
+    requiresGithubState: null, // ownership is not provable from GitHub alone
+    requiresEvidence: ['owningSessionOrTask'],
+  }),
+  WAITING_FOR_CI: Object.freeze({
+    terminal: false,
+    requiresGithubState: 'OPEN',
+    requiresEvidence: ['runningChecks'],
+    // Admissible ONLY while at least one check is non-terminal.
+    requiresNonTerminalChecks: true,
+  }),
+  WAITING_DEPENDENCY: Object.freeze({
+    terminal: false,
+    requiresGithubState: 'OPEN',
+    requiresEvidence: ['dependencyRef'],
+  }),
+  CI_FIX_REQUIRED: Object.freeze({
+    terminal: false,
+    requiresGithubState: 'OPEN',
+    requiresEvidence: ['failingCheck', 'remediation'],
+    requiresFailingCheck: true,
+  }),
+  BLOCKED_EXACT: Object.freeze({
+    terminal: false,
+    requiresGithubState: null,
+    requiresEvidence: ['exactBlocker', 'nextAction', 'ownerDecision'],
+    admissibleCauses: BLOCKED_EXACT_ADMISSIBLE_CAUSES,
+  }),
+});
+
+const TOKEN_NAMES = Object.freeze(Object.keys(TOKENS));
+
+/** A check is non-terminal when GitHub has not finished reporting it. */
+function isNonTerminalCheck(check) {
+  if (!check || typeof check !== 'object') return false;
+  if (typeof check.status === 'string') {
+    return !TERMINAL_CHECK_STATUS.includes(check.status.toUpperCase());
+  }
+  if (typeof check.state === 'string') return check.state.toUpperCase() === 'PENDING';
+  return false;
+}
+
+function isFailingCheck(check) {
+  if (!check || typeof check !== 'object') return false;
+  const verdict = String(check.conclusion || check.state || '').toUpperCase();
+  return FAILING_CONCLUSIONS.includes(verdict);
+}
+
+function nonTerminalChecks(rollup) {
+  return Array.isArray(rollup) ? rollup.filter(isNonTerminalCheck) : [];
+}
+
+function failingChecks(rollup) {
+  return Array.isArray(rollup) ? rollup.filter(isFailingCheck) : [];
+}
+
+/**
+ * Classify observed PR state into the token the reporter is REQUIRED to use.
+ * This is the single source of truth: reporters do not get to choose a token
+ * that contradicts observed state.
+ *
+ * @param {object} observed
+ * @param {string} observed.state              GitHub PR state
+ * @param {boolean} [observed.merged]
+ * @param {Array}  [observed.statusCheckRollup]
+ * @param {string} [observed.mergeable]        MERGEABLE | CONFLICTING | UNKNOWN
+ * @param {boolean} [observed.lockedBranch]    base branch is read-only
+ * @param {boolean} [observed.dependencyOpen]  a declared prerequisite is unmerged
+ * @returns {{token: string, reason: string}}
+ */
+function classify(observed) {
+  const o = observed || {};
+  const state = String(o.state || '').toUpperCase();
+
+  if (state === 'MERGED' || o.merged === true) {
+    return { token: 'MERGED', reason: 'GitHub reports the pull request as merged' };
+  }
+  if (state === 'CLOSED') {
+    return { token: 'CLOSED_SUPERSEDED', reason: 'pull request is closed without merge' };
+  }
+
+  const running = nonTerminalChecks(o.statusCheckRollup);
+  const failing = failingChecks(o.statusCheckRollup);
+
+  // Ordering matters. A running pipeline is a wait, never a blocker — even if
+  // the base branch is locked, because the lock may lift before CI finishes.
+  if (running.length > 0) {
+    return {
+      token: 'WAITING_FOR_CI',
+      reason: `${running.length} check(s) have not reached a terminal state`,
+    };
+  }
+  if (failing.length > 0) {
+    return {
+      token: 'CI_FIX_REQUIRED',
+      reason: `${failing.length} check(s) reported a failing conclusion`,
+    };
+  }
+  if (String(o.mergeable || '').toUpperCase() === 'CONFLICTING') {
+    return { token: 'BLOCKED_EXACT', reason: 'UNRESOLVABLE_MERGE_CONFLICT until rebased' };
+  }
+  if (o.lockedBranch === true) {
+    return {
+      token: 'BLOCKED_EXACT',
+      reason: 'AUTHORITY_NOT_EXTERNALLY_OBTAINABLE: base branch is locked',
+    };
+  }
+  if (o.dependencyOpen === true) {
+    return { token: 'WAITING_DEPENDENCY', reason: 'a declared prerequisite is still open' };
+  }
+  return { token: 'MERGED', reason: 'all gates satisfied — the disposition is to merge, not to report' };
+}
+
+/**
+ * Verify a claimed token against observed state.
+ * @returns {null|string} null when admissible, otherwise the mismatch reason.
+ */
+function verifyClaim(claimedToken, observed) {
+  if (!TOKEN_NAMES.includes(claimedToken)) return `unknown disposition token: ${claimedToken}`;
+  const o = observed || {};
+  const spec = TOKENS[claimedToken];
+  const state = String(o.state || '').toUpperCase();
+
+  if (spec.requiresGithubState && state && state !== spec.requiresGithubState) {
+    return `DISPOSITION_MISMATCH: ${claimedToken} claimed, GitHub reports ${state}`;
+  }
+
+  const running = nonTerminalChecks(o.statusCheckRollup);
+  const failing = failingChecks(o.statusCheckRollup);
+
+  if (spec.requiresNonTerminalChecks && running.length === 0) {
+    return `DISPOSITION_MISMATCH: WAITING_FOR_CI claimed but no check is running`;
+  }
+  if (spec.requiresFailingCheck && failing.length === 0 && running.length > 0) {
+    return `DISPOSITION_MISMATCH: CI_FIX_REQUIRED claimed while checks are still running`;
+  }
+  if (claimedToken === 'BLOCKED_EXACT' && running.length > 0 && failing.length === 0) {
+    return `DISPOSITION_MISMATCH: BLOCKED_EXACT claimed while checks are still running`;
+  }
+  return null;
+}
+
+module.exports = {
+  TOKENS,
+  TOKEN_NAMES,
+  BLOCKED_EXACT_ADMISSIBLE_CAUSES,
+  FAILING_CONCLUSIONS,
+  isNonTerminalCheck,
+  isFailingCheck,
+  nonTerminalChecks,
+  failingChecks,
+  classify,
+  verifyClaim,
+};
