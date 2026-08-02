@@ -114,7 +114,8 @@ DO NOT CLOSE YET`.
 The target logical contract separates stable `bucketContextKey` from snapshot-specific
 `bucketInstanceId`. The stable key binds category/subcategory, currency, legal basis,
 effective date/period, interest rule and priority. The instance binds that context to
-tenant/case, canonical Receivable snapshot, as-of date and calculation-rule version.
+tenant/case, source-version set, history boundary, as-of/effective dates and
+calculation-rule version.
 `sourceLineageSetRef` is mandatory; ClaimItem identity is not the application target.
 
 Gross, legally applied and remaining exposure are reconciled per currency and category in
@@ -245,8 +246,8 @@ fails closed. Full reversal is a linked append-only REVERSAL batch. Self-reversa
 reversal are prohibited; partial reversal is not authorized.
 
 `bucketContextKey` and `bucketInstanceId` are required, opaque and nonblank. Their generation
-algorithm is a writer-stage decision. `ApplicationAttribution` remains non-authoritative; its
-ClaimItem link and attributed amount are optional lineage/provenance only.
+algorithm follows the ratified identity contract. `ApplicationAttribution` remains
+non-authoritative; its ClaimItem link and attributed amount are optional lineage/provenance only.
 
 The `codex/rcv-ws04-p03-syn-01` worktree is non-blocking for TPA-03A schema foundation but
 blocking for writer/evidence/cutover. PR #407 remains `HOLD / CONFLICTING / DO NOT MERGE /
@@ -415,10 +416,15 @@ interest rule/version, priority policy/version/rank and liability context. Claim
 tenantId, caseId, snapshotRef, targetCollectionId, amount, sequence, actor, display label and
 database insertion order are forbidden.
 
-`bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>`. Its canonical inputs are
-identityContractVersion, tenantId, caseId, snapshotRef/hash, asOfDate,
-calculationRuleVersion and `bucketContextKey`. Stable context identity may persist across
-snapshots; instance identity changes with snapshot context. Both identities use versioned,
+TPA-04D-I01 ratifies the non-circular identity amendment:
+`bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>`. Its domain separator is exactly
+`RCV-BINST/v1\0`; its preimage is a UTF-8 canonical JSON array whose ordered fields are
+`identityContractVersion`, `tenantId`, `caseId`, `sourceVersionSetHash`,
+`historyBoundaryRef`, `snapshotAsOfDate`, `applicationEffectiveDate`,
+`calculationRuleVersion` and `bucketContextKey`. `snapshotRef` and `snapshotHash` are excluded
+from the preimage, eliminating identity/snapshot-hash circularity. The snapshot hash contract
+remains unchanged. Stable context identity may persist across snapshots; instance identity
+changes when any included snapshot context changes. Both identities use versioned,
 domain-separated SHA-256.
 
 The Receivable-owned `LegalApplicationPlan` is a pure typed output using `bigint` minor units.
