@@ -140,6 +140,14 @@ src/modules/seed/__tests__/seed-runtime-gate.spec.ts
 src/modules/seed/__tests__/seed-controller-guards.spec.ts
 src/modules/seed/__tests__/seed-client-authority.spec.ts
 src/modules/client/__tests__/client-bulk-mutation-authorization-r3.spec.ts
+#
+#   CLAUDE-CLIENT-C1-B02 partial-update displayName/name korumasi (SAF, DB-siz)
+#     FIND-C1: update() displayName'i kosulsuz yeniden hesapliyordu — standart-only
+#     (or. {phone}) veya lifecycle-only ({isActive}) payload data.type'i undefined
+#     birakinca SENSITIVE displayName '' ile eziliyordu. Fix: yalniz kimlik-tureten
+#     alan (type/companyName/firstName/lastName) gonderildiginde hesapla; kismi
+#     kimlikte eksik bilesenler mevcut kayittan tamamlanir; tam form davranisi ayni.
+src/modules/client/__tests__/client-partial-update-displayname-preservation.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts

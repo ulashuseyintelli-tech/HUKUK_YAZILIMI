@@ -1692,9 +1692,23 @@ export class ClientService {
       }
     }
 
-    const displayName = data.type === 'COMPANY' || data.type === 'PUBLIC'
-      ? data.companyName
-      : `${data.firstName || ''} ${data.lastName || ''}`.trim();
+    // C1-B02 (FIND-C1): displayName SENSITIVE'dir ve yalnız kimlik-türeten alanlardan biri
+    // GERÇEKTEN gönderildiğinde (undefined değil — classifyClientPayload semantiğiyle aynı)
+    // yeniden hesaplanır. Standart-only (ör. {phone}) veya lifecycle-only ({isActive})
+    // update'in `data.type`'ı undefined bırakması displayName'i '' ile EZEMEZ. Kısmi kimlik
+    // payload'unda eksik bileşenler MEVCUT kayıttan tamamlanır (boş bileşenle silme de
+    // aynı veri kaybıdır).
+    const identityTouched =
+      data.type !== undefined ||
+      data.companyName !== undefined ||
+      data.firstName !== undefined ||
+      data.lastName !== undefined;
+    const effectiveType = data.type ?? existing.type;
+    const displayName = !identityTouched
+      ? undefined
+      : effectiveType === 'COMPANY' || effectiveType === 'PUBLIC'
+        ? (data.companyName ?? existing.companyName)
+        : `${data.firstName ?? existing.firstName ?? ''} ${data.lastName ?? existing.lastName ?? ''}`.trim();
 
     // Birincil telefon ve email
     const primaryPhone = data.phones?.find((p: any) => p.isPrimary)?.value || data.phones?.[0]?.value || data.phone;
@@ -1718,7 +1732,11 @@ export class ClientService {
       data: {
         type: data.type,
         displayName: displayName,
-        name: displayName || data.name || existing.name,
+        // C1-B02: kimlik alanı gönderilmediyse ve data.name da yoksa name'e DOKUNULMAZ
+        // (undefined → Prisma "dokunma"); kimlik gönderildiğinde eski fallback zinciri AYNEN.
+        name: identityTouched || data.name !== undefined
+          ? (displayName || data.name || existing.name)
+          : undefined,
         firstName: data.firstName,
         lastName: data.lastName,
         tckn: data.tckn,

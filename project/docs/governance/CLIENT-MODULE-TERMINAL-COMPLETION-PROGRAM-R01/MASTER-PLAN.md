@@ -605,9 +605,9 @@ DOCUMENT SET:             7/7 CANONICAL (MASTER-PLAN + C1-C3 + X1-X3)
 RATIFICATION ENVELOPE:    OWNER-DECISION-R01.md (bu dizin)
 MATERIALIZATION BASELINE: origin/main e8e4d467
 PRODUCT IMPLEMENTATION:   IN PROGRESS — CLAUDE-CLIENT-C1 (WAVE 1)
-C1 STATUS:                IN PROGRESS — C1-B01 RUNTIME_VERIFIED (2026-08-02)
+C1 STATUS:                IN PROGRESS — C1-B02 RUNTIME_VERIFIED (2026-08-02)
                           (owner'ın açtığı ayrı C1 sayfası yürütüyor)
-C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 1 (B01)
+C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 2 (B01, B02)
                           (#2107 = inherited evidence, tamamlanmış C1 bloğu DEĞİL.
                            C1-B01 = bu evidence'ın fresh main a92a5a44 üzerinde residual
                            doğrulaması: 5/5 kalem koddan kanıtlandı, ürün diff'i SIFIR,
