@@ -54,6 +54,37 @@ const OPERATION_KEYS = [
   'evidenceSha',
   'expectedResultSha256',
 ];
+const GENERIC_REGISTERED_OPERATION = 'EXACT_REGISTERED_CHANGESET';
+const GENERIC_EXECUTION_GRANT_KEYS = [
+  'schemaVersion',
+  'taskId',
+  'semanticAuthorityId',
+  'executionGrantId',
+  'grantNonce',
+  'baseSha',
+  'publicationBindingSha',
+  'executionMode',
+  'effectiveFrom',
+  'expiresAt',
+  'modifiedPaths',
+  'createdPaths',
+  'expectedResultSha256',
+];
+const GENERIC_MODIFIED_PATH_KEYS = [
+  'path',
+  'expectedBaseMode',
+  'expectedBaseSha256',
+  'expectedResultMode',
+  'expectedResultSha256',
+];
+const GENERIC_CREATED_PATH_KEYS = [
+  'path',
+  'expectedResultMode',
+  'expectedResultSha256',
+];
+const GENERIC_EXECUTION_GRANTS_PREFIX =
+  'project/docs/governance/coordination-execution-grants/';
+const GENERIC_EXECUTION_GRANT_SENTINEL_KIND = 'generic_execution_grant';
 const RESULT_KEYS = [
   'schemaVersion',
   'resultId',
@@ -118,6 +149,10 @@ const LEVEL_2_OPERATIONS = new Set([
   // A, and the content hash must be pinned in the base-side request. It
   // authorises one file, byte-for-byte, and nothing more.
   'EXACT_FILE_CREATION',
+  // A base-side, immutable task grant carries the exact M/A tuple, modes and
+  // hashes. The production entry point resolves that registration instead of
+  // growing another task-specific branch constant.
+  GENERIC_REGISTERED_OPERATION,
 ]);
 
 // Creation is the one operation whose target does not exist yet, so it cannot
@@ -2625,6 +2660,232 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+function genericExecutionGrantPath(recordId) {
+  assertAuthorityRecordId(recordId, 'executionGrantRef.recordId');
+  return `${GENERIC_EXECUTION_GRANTS_PREFIX}${recordId}.md`;
+}
+
+function validateRegisteredTargetPolicy(repoPath, policy = loadPolicy()) {
+  const normalized = normalizeRepoPath(repoPath, 'registered target path');
+  if (normalized.normalize('NFC') !== normalized) {
+    reject('PATH_NORMALIZATION_FORBIDDEN', `${normalized} must use NFC normalization`);
+  }
+  const activeOwnerWipExactPaths = deriveActiveOwnerWipExactPaths(policy);
+  if (policy.deniedTargetPrefixes.some((prefix) => normalized.startsWith(prefix))) {
+    reject('PRODUCTION_TARGET_FORBIDDEN', `${normalized} is outside governance scope`);
+  }
+  if (
+    activeOwnerWipExactPaths.includes(normalized) ||
+    policy.grandfatheredOwnerWipPrefixes.some((prefix) => normalized.startsWith(prefix))
+  ) {
+    reject('OWNER_WIP_TARGET_FORBIDDEN', `${normalized} overlaps grandfathered owner WIP`);
+  }
+  if (
+    isRequestInstancePath(normalized) ||
+    isResultInstancePath(normalized) ||
+    normalized === REGISTER_REPO_PATH ||
+    normalized.startsWith(GENERIC_EXECUTION_GRANTS_PREFIX)
+  ) {
+    reject('QUEUE_TARGET_FORBIDDEN', `${normalized} is not a registered execution target`);
+  }
+  if (
+    !matchesAny(normalized, policy.canonicalSemanticGovernance) &&
+    !isCoordinationControlPlane(normalized, policy)
+  ) {
+    reject('PROTECTED_PATH_ESCAPE', `${normalized} is not protected governance`);
+  }
+  return normalized;
+}
+
+function registeredExpectedChanges(registration) {
+  return [
+    ...registration.modifiedPaths.map((entry) => ({
+      status: 'M',
+      path: entry.path,
+      mode: entry.expectedResultMode,
+      sha256: entry.expectedResultSha256,
+    })),
+    ...registration.createdPaths.map((entry) => ({
+      status: 'A',
+      path: entry.path,
+      mode: entry.expectedResultMode,
+      sha256: entry.expectedResultSha256,
+    })),
+  ].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+}
+
+function computeRegisteredChangesetSha256(registration) {
+  return sha256(
+    canonicalize({
+      executionMode: GENERIC_REGISTERED_OPERATION,
+      changes: registeredExpectedChanges(registration),
+    }),
+  );
+}
+
+function validateGenericExecutionGrantRegistration(registration, options = {}) {
+  const { policy = loadPolicy(), now = new Date(), enforceWindow = true } = options;
+  assertExactKeys(registration, GENERIC_EXECUTION_GRANT_KEYS, 'genericExecutionGrant');
+  if (registration.schemaVersion !== SCHEMA_VERSION) {
+    reject('GENERIC_EXECUTION_GRANT_SCHEMA_INVALID', 'schemaVersion must be 1');
+  }
+  assertAuthorityRecordId(registration.taskId, 'genericExecutionGrant.taskId');
+  assertAuthorityRecordId(
+    registration.semanticAuthorityId,
+    'genericExecutionGrant.semanticAuthorityId',
+  );
+  assertAuthorityRecordId(
+    registration.executionGrantId,
+    'genericExecutionGrant.executionGrantId',
+  );
+  assertSha256(registration.grantNonce, 'genericExecutionGrant.grantNonce');
+  assertSha(registration.baseSha, 'genericExecutionGrant.baseSha');
+  assertSha(
+    registration.publicationBindingSha,
+    'genericExecutionGrant.publicationBindingSha',
+  );
+  if (registration.executionMode !== GENERIC_REGISTERED_OPERATION) {
+    reject(
+      'GENERIC_EXECUTION_MODE_INVALID',
+      `executionMode must be ${GENERIC_REGISTERED_OPERATION}`,
+    );
+  }
+  assertTimestamp(registration.effectiveFrom, 'genericExecutionGrant.effectiveFrom');
+  assertTimestamp(registration.expiresAt, 'genericExecutionGrant.expiresAt');
+  const effectiveAt = Date.parse(registration.effectiveFrom);
+  const expiresAt = Date.parse(registration.expiresAt);
+  if (effectiveAt >= expiresAt) {
+    reject('GENERIC_EXECUTION_WINDOW_INVALID', 'effectiveFrom must precede expiresAt');
+  }
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
+  if (enforceWindow && (Number.isNaN(nowMs) || nowMs < effectiveAt || nowMs > expiresAt)) {
+    reject('GENERIC_EXECUTION_GRANT_INACTIVE', 'execution grant is not currently effective');
+  }
+
+  if (!Array.isArray(registration.modifiedPaths) || !Array.isArray(registration.createdPaths)) {
+    reject('GENERIC_EXECUTION_PATHS_INVALID', 'modifiedPaths and createdPaths must be arrays');
+  }
+  if (registration.modifiedPaths.length + registration.createdPaths.length === 0) {
+    reject('GENERIC_EXECUTION_PATHS_INVALID', 'at least one exact target is required');
+  }
+
+  const allPaths = [];
+  let previousModified = '';
+  for (const [index, entry] of registration.modifiedPaths.entries()) {
+    assertExactKeys(entry, GENERIC_MODIFIED_PATH_KEYS, `modifiedPaths[${index}]`);
+    entry.path = validateRegisteredTargetPolicy(entry.path, policy);
+    if (previousModified && previousModified >= entry.path) {
+      reject('GENERIC_EXECUTION_PATHS_INVALID', 'modifiedPaths must be unique and sorted');
+    }
+    previousModified = entry.path;
+    if (!GIT_REGULAR_FILE_MODES.includes(entry.expectedBaseMode)) {
+      reject('GENERIC_EXECUTION_MODE_FORBIDDEN', `${entry.path} base mode is forbidden`);
+    }
+    if (!GIT_REGULAR_FILE_MODES.includes(entry.expectedResultMode)) {
+      reject('GENERIC_EXECUTION_MODE_FORBIDDEN', `${entry.path} result mode is forbidden`);
+    }
+    assertSha256(entry.expectedBaseSha256, `modifiedPaths[${index}].expectedBaseSha256`);
+    assertSha256(entry.expectedResultSha256, `modifiedPaths[${index}].expectedResultSha256`);
+    allPaths.push(entry.path);
+  }
+
+  let previousCreated = '';
+  for (const [index, entry] of registration.createdPaths.entries()) {
+    assertExactKeys(entry, GENERIC_CREATED_PATH_KEYS, `createdPaths[${index}]`);
+    entry.path = validateRegisteredTargetPolicy(entry.path, policy);
+    if (previousCreated && previousCreated >= entry.path) {
+      reject('GENERIC_EXECUTION_PATHS_INVALID', 'createdPaths must be unique and sorted');
+    }
+    previousCreated = entry.path;
+    if (!GIT_REGULAR_FILE_MODES.includes(entry.expectedResultMode)) {
+      reject('GENERIC_EXECUTION_MODE_FORBIDDEN', `${entry.path} result mode is forbidden`);
+    }
+    assertSha256(entry.expectedResultSha256, `createdPaths[${index}].expectedResultSha256`);
+    allPaths.push(entry.path);
+  }
+
+  const exactPaths = new Set(allPaths);
+  const caseFoldedPaths = new Set(allPaths.map((repoPath) => repoPath.toLowerCase()));
+  if (exactPaths.size !== allPaths.length || caseFoldedPaths.size !== allPaths.length) {
+    reject(
+      'GENERIC_EXECUTION_PATH_COLLISION',
+      'modified/created paths must be exact, disjoint and case-unique',
+    );
+  }
+  assertSha256(
+    registration.expectedResultSha256,
+    'genericExecutionGrant.expectedResultSha256',
+  );
+  const computed = computeRegisteredChangesetSha256(registration);
+  if (computed !== registration.expectedResultSha256) {
+    reject(
+      'GENERIC_EXECUTION_RESULT_DIGEST_MISMATCH',
+      `registered digest ${registration.expectedResultSha256} does not match ${computed}`,
+    );
+  }
+  return registration;
+}
+
+function parseGenericExecutionGrantMarkdown(markdown, options = {}) {
+  return validateGenericExecutionGrantRegistration(
+    extractStructuredJson(markdown, GENERIC_EXECUTION_GRANT_SENTINEL_KIND),
+    options,
+  );
+}
+
+function validateGrantCreationRequest(request, options = {}) {
+  const { policy = loadPolicy() } = options;
+  const operation = request.operation;
+  const registration = parseGenericExecutionGrantMarkdown(operation.newValue, {
+    policy,
+    enforceWindow: false,
+  });
+  const expectedPath = genericExecutionGrantPath(
+    registration.executionGrantId,
+  );
+  if (operation.targetFile !== expectedPath) {
+    reject(
+      'GENERIC_EXECUTION_GRANT_PATH_MISMATCH',
+      `${operation.targetFile} does not match ${expectedPath}`,
+    );
+  }
+  const marker = buildAuthorityMarker({
+    kind: 'EXECUTION_GRANT',
+    recordId: registration.executionGrantId,
+  });
+  if (countOccurrences(operation.newValue, marker) !== 1) {
+    reject(
+      'GENERIC_EXECUTION_GRANT_MARKER_INVALID',
+      'created grant must contain one exact execution-grant authority marker',
+    );
+  }
+  if (
+    registration.taskId !== operation.recordIdentity ||
+    registration.semanticAuthorityId !== request.semanticAuthorityRef.recordId ||
+    registration.grantNonce !== operation.anchor ||
+    operation.expectedOldValue !== 'ABSENT' ||
+    registration.baseSha !== request.baseMainSha ||
+    registration.publicationBindingSha !== request.baseMainSha
+  ) {
+    reject('GENERIC_EXECUTION_GRANT_BINDING_MISMATCH', 'grant creation tuple is not exact');
+  }
+  const createdAt = Date.parse(request.createdAt);
+  if (
+    createdAt < Date.parse(registration.effectiveFrom) ||
+    createdAt > Date.parse(registration.expiresAt)
+  ) {
+    reject('GENERIC_EXECUTION_REQUEST_OUTSIDE_WINDOW', request.createdAt);
+  }
+  const contentDigest = sha256(operation.newValue);
+  if (contentDigest !== operation.expectedResultSha256) {
+    reject(
+      'EXPECTED_RESULT_DIGEST_MISMATCH',
+      `created grant digest ${contentDigest} does not match ${operation.expectedResultSha256}`,
+    );
+  }
+  return registration;
+}
+
 function computeRequestFingerprint(request) {
   const copy = JSON.parse(JSON.stringify(request));
   delete copy.requestFingerprint;
@@ -2691,13 +2952,6 @@ function validateRequestObject(request, options = {}) {
       'semanticAuthorityRef must resolve inside canonical semantic governance',
     );
   }
-  if (
-    request.executionGrantRef.path !== GRANT_REPO_PATH ||
-    request.executionGrantRef.recordId !== 'GOV-COORD-V1-CODEX-LOCAL'
-  ) {
-    reject('EXECUTION_GRANT_INVALID', 'executionGrantRef must point to the V1 CODEX_LOCAL grant');
-  }
-
   assertExactKeys(request.operation, OPERATION_KEYS, 'operation');
   if (!LEVEL_2_OPERATIONS.has(request.operation.type)) {
     reject('OPERATION_NOT_ALLOWED', `${request.operation.type} is not a Level 2 operation`);
@@ -2705,11 +2959,52 @@ function validateRequestObject(request, options = {}) {
   if (request.operation.changeClass !== 'LEVEL_2_MECHANICAL') {
     reject('FREE_FORM_EDIT_FORBIDDEN', 'operation.changeClass must be LEVEL_2_MECHANICAL');
   }
-  request.operation.targetFile = validateTargetPolicy(
-    request.operation.targetFile,
-    request.operation.type,
-    policy,
-  );
+  const registeredExecution = request.operation.type === GENERIC_REGISTERED_OPERATION;
+  const grantCreation = request.operation.type === 'EXACT_FILE_CREATION';
+  if (registeredExecution) {
+    const expectedGrantPath = genericExecutionGrantPath(request.executionGrantRef.recordId);
+    if (
+      request.executionGrantRef.recordId === 'GOV-COORD-V1-CODEX-LOCAL' ||
+      request.executionGrantRef.path !== expectedGrantPath
+    ) {
+      reject(
+        'EXECUTION_GRANT_INVALID',
+        'registered execution must cite its exact task-bound grant path and record',
+      );
+    }
+    request.operation.targetFile = validateRegisteredTargetPolicy(
+      request.operation.targetFile,
+      policy,
+    );
+  } else {
+    if (
+      request.executionGrantRef.path !== GRANT_REPO_PATH ||
+      request.executionGrantRef.recordId !== 'GOV-COORD-V1-CODEX-LOCAL'
+    ) {
+      reject(
+        'EXECUTION_GRANT_INVALID',
+        'executionGrantRef must point to the V1 CODEX_LOCAL grant',
+      );
+    }
+    if (grantCreation) {
+      request.operation.targetFile = normalizeRepoPath(
+        request.operation.targetFile,
+        'operation.targetFile',
+      );
+      if (!request.operation.targetFile.startsWith(GENERIC_EXECUTION_GRANTS_PREFIX)) {
+        reject(
+          'FILE_CREATION_TARGET_FORBIDDEN',
+          'EXACT_FILE_CREATION may only materialize a task-bound execution grant',
+        );
+      }
+    } else {
+      request.operation.targetFile = validateTargetPolicy(
+        request.operation.targetFile,
+        request.operation.type,
+        policy,
+      );
+    }
+  }
   assertNonEmptyString(request.operation.recordIdentity, 'operation.recordIdentity', template);
   assertNonEmptyString(request.operation.anchor, 'operation.anchor', template);
   assertNonEmptyString(request.operation.expectedOldValue, 'operation.expectedOldValue', template);
@@ -2724,14 +3019,37 @@ function validateRequestObject(request, options = {}) {
   if (!Array.isArray(request.declaredTargetAllowlist)) {
     reject('SCHEMA_INVALID', 'declaredTargetAllowlist must be an array');
   }
-  if (request.declaredTargetAllowlist.length !== 1) {
-    reject('TARGET_ALLOWLIST_INVALID', 'V1 request must declare exactly one target');
+  if (registeredExecution) {
+    if (request.declaredTargetAllowlist.length === 0) {
+      reject('TARGET_ALLOWLIST_INVALID', 'registered execution requires exact targets');
+    }
+    request.declaredTargetAllowlist = request.declaredTargetAllowlist.map((target) =>
+      validateRegisteredTargetPolicy(target, policy),
+    );
+    const sortedTargets = [...new Set(request.declaredTargetAllowlist)].sort();
+    if (
+      sortedTargets.length !== request.declaredTargetAllowlist.length ||
+      sortedTargets.some((target, index) => target !== request.declaredTargetAllowlist[index])
+    ) {
+      reject('TARGET_ALLOWLIST_INVALID', 'registered target allowlist must be unique and sorted');
+    }
+    if (!request.declaredTargetAllowlist.includes(request.operation.targetFile)) {
+      reject('TARGET_ALLOWLIST_INVALID', 'operation.targetFile must be in the exact allowlist');
+    }
+  } else {
+    if (request.declaredTargetAllowlist.length !== 1) {
+      reject('TARGET_ALLOWLIST_INVALID', 'V1 request must declare exactly one target');
+    }
+    request.declaredTargetAllowlist = request.declaredTargetAllowlist.map((target, index) =>
+      normalizeRepoPath(target, `declaredTargetAllowlist[${index}]`),
+    );
+    if (request.declaredTargetAllowlist[0] !== request.operation.targetFile) {
+      reject('TARGET_ALLOWLIST_INVALID', 'declared target must equal operation.targetFile');
+    }
   }
-  request.declaredTargetAllowlist = request.declaredTargetAllowlist.map((target, index) =>
-    normalizeRepoPath(target, `declaredTargetAllowlist[${index}]`),
-  );
-  if (request.declaredTargetAllowlist[0] !== request.operation.targetFile) {
-    reject('TARGET_ALLOWLIST_INVALID', 'declared target must equal operation.targetFile');
+
+  if (grantCreation && !template) {
+    validateGrantCreationRequest(request, { policy });
   }
 
   if (!template) {
@@ -3001,6 +3319,9 @@ function assertCreatablePath(repoPath) {
   if (segments.some((segment) => segment === '..' || segment === '.' || segment === '')) {
     reject('FILE_CREATION_PATH_TRAVERSAL', `path traversal is forbidden: ${value}`);
   }
+  if (value.normalize('NFC') !== value) {
+    reject('FILE_CREATION_PATH_INVALID', `path must use NFC normalization: ${value}`);
+  }
   return value;
 }
 
@@ -3022,13 +3343,20 @@ function assertCreatablePath(repoPath) {
  * @param {string} [options.cwd]
  */
 function validateExactFileCreation(options) {
-  const { base, head, operation, changes, cwd = REPO_ROOT } = options;
+  const {
+    base,
+    head,
+    operation,
+    changes,
+    cwd = REPO_ROOT,
+    allowAdditionalChanges = false,
+  } = options;
   const targetFile = assertCreatablePath(operation && operation.targetFile);
 
   if (!operation || operation.type !== 'EXACT_FILE_CREATION') {
     reject('FILE_CREATION_OPERATION_INVALID', 'operation type must be EXACT_FILE_CREATION');
   }
-  const pinnedHash = operation.expectedSha256;
+  const pinnedHash = operation.expectedResultSha256;
   if (typeof pinnedHash !== 'string' || !/^[0-9a-f]{64}$/.test(pinnedHash)) {
     reject(
       'FILE_CREATION_HASH_UNPINNED',
@@ -3042,6 +3370,23 @@ function validateExactFileCreation(options) {
   if (baseEntry.status === 0) {
     reject('FILE_CREATION_TARGET_EXISTS', `${targetFile} already exists in the base commit`);
   }
+  const targetParent = path.posix.dirname(targetFile);
+  const baseCaseCollision = runGit(
+    ['ls-tree', '-r', '--name-only', base, '--', targetParent],
+    cwd,
+  )
+    .stdout.split(/\r?\n/)
+    .filter(Boolean)
+    .find(
+      (candidate) =>
+        candidate !== targetFile && candidate.toLowerCase() === targetFile.toLowerCase(),
+    );
+  if (baseCaseCollision) {
+    reject(
+      'FILE_CREATION_CASE_COLLISION',
+      `${targetFile} collides with base path ${baseCaseCollision}`,
+    );
+  }
 
   // Exactly one change, and it must be a plain addition of this path. Renames,
   // copies and deletions are excluded: git reports them with their own status
@@ -3049,6 +3394,9 @@ function validateExactFileCreation(options) {
   const additions = changes.filter((change) => change.path === targetFile);
   if (additions.length !== 1) {
     reject('FILE_CREATION_SCOPE_MISMATCH', `expected exactly one change for ${targetFile}`);
+  }
+  if (!allowAdditionalChanges && changes.length !== 1) {
+    reject('FILE_CREATION_SCOPE_MISMATCH', 'direct creation must contain exactly one change');
   }
   const entry = additions[0];
   if (entry.status !== FILE_CREATION_INVARIANTS.requiredHeadStatus) {
@@ -3348,7 +3696,246 @@ function assertRequestBaseAncestor(requestBaseRef, executionBaseRef, cwd = REPO_
   return true;
 }
 
-function validateRequestAgainstGit(request, baseRef, headRef = null, cwd = REPO_ROOT) {
+function loadGenericExecutionGrantRegistrationsAtRef(ref, cwd = REPO_ROOT) {
+  return gitListFiles(ref, GENERIC_EXECUTION_GRANTS_PREFIX, cwd)
+    .filter((repoPath) => repoPath.endsWith('.md'))
+    .map((repoPath) => {
+      const markdown = gitShow(ref, repoPath, cwd);
+      const sentinel = `<!-- GOV_COORD_${GENERIC_EXECUTION_GRANT_SENTINEL_KIND.toUpperCase()}_JSON_BEGIN -->`;
+      if (!markdown.includes(sentinel)) return null;
+      return {
+        path: repoPath,
+        value: parseGenericExecutionGrantMarkdown(markdown, {
+          enforceWindow: false,
+        }),
+      };
+    })
+    .filter(Boolean);
+}
+
+function assertGenericGrantUniqueAtRef(registration, grantPath, ref, cwd = REPO_ROOT) {
+  const registrations = loadGenericExecutionGrantRegistrationsAtRef(ref, cwd);
+  const tupleMatches = registrations.filter(
+    ({ path: candidatePath, value }) =>
+      candidatePath !== grantPath &&
+      (value.taskId === registration.taskId ||
+        value.executionGrantId === registration.executionGrantId ||
+        value.grantNonce === registration.grantNonce),
+  );
+  if (tupleMatches.length > 0) {
+    reject(
+      'GENERIC_EXECUTION_REGISTRATION_DUPLICATE',
+      `${registration.taskId} conflicts with ${tupleMatches.map(({ path: candidate }) => candidate).join(', ')}`,
+    );
+  }
+}
+
+function validateGenericGrantRequestBinding(request, baseRef, cwd = REPO_ROOT) {
+  const grantPath = genericExecutionGrantPath(request.executionGrantRef.recordId);
+  if (request.executionGrantRef.path !== grantPath) {
+    reject('GENERIC_EXECUTION_GRANT_PATH_MISMATCH', request.executionGrantRef.path);
+  }
+  const evidenceContent = gitShow(request.executionGrantRef.evidenceSha, grantPath, cwd);
+  const baseContent = gitShow(baseRef, grantPath, cwd);
+  if (evidenceContent !== baseContent) {
+    reject('GENERIC_EXECUTION_GRANT_MUTATED', `${grantPath} changed after authority evidence`);
+  }
+  const registration = parseGenericExecutionGrantMarkdown(baseContent);
+  assertGenericGrantUniqueAtRef(registration, grantPath, baseRef, cwd);
+  const exactAllowlist = [
+    ...registration.modifiedPaths.map(({ path: repoPath }) => repoPath),
+    ...registration.createdPaths.map(({ path: repoPath }) => repoPath),
+  ].sort();
+  const createdAt = Date.parse(request.createdAt);
+  if (
+    createdAt < Date.parse(registration.effectiveFrom) ||
+    createdAt > Date.parse(registration.expiresAt)
+  ) {
+    reject('GENERIC_EXECUTION_REQUEST_OUTSIDE_WINDOW', request.createdAt);
+  }
+  if (
+    registration.taskId !== request.operation.recordIdentity ||
+    registration.semanticAuthorityId !== request.semanticAuthorityRef.recordId ||
+    registration.executionGrantId !== request.executionGrantRef.recordId ||
+    registration.grantNonce !== request.operation.anchor ||
+    registration.baseSha !== request.operation.expectedOldValue ||
+    registration.publicationBindingSha !== request.operation.newValue ||
+    registration.expectedResultSha256 !== request.operation.expectedResultSha256 ||
+    request.operation.evidenceSha !== request.executionGrantRef.evidenceSha ||
+    request.operation.targetFile !== exactAllowlist[0] ||
+    canonicalize(request.declaredTargetAllowlist) !== canonicalize(exactAllowlist)
+  ) {
+    reject('GENERIC_EXECUTION_GRANT_BINDING_MISMATCH', 'request and registration tuple differ');
+  }
+  if (
+    !gitIsAncestor(registration.baseSha, request.baseMainSha, cwd) ||
+    !gitIsAncestor(registration.publicationBindingSha, request.baseMainSha, cwd)
+  ) {
+    reject(
+      'GENERIC_EXECUTION_PUBLICATION_BINDING_INVALID',
+      'base/publication binding must be ancestors of the request base',
+    );
+  }
+  return registration;
+}
+
+function registeredChangesetMatchesCommit(registration, commit, parent, cwd = REPO_ROOT) {
+  const expectedChanges = [
+    ...registration.modifiedPaths.map(({ path: repoPath }) => ({ status: 'M', path: repoPath })),
+    ...registration.createdPaths.map(({ path: repoPath }) => ({ status: 'A', path: repoPath })),
+  ];
+  const changes = parseGitChanges(parent, commit, cwd);
+  if (!hasExactChangeSet(changes, expectedChanges)) return false;
+  for (const entry of registration.modifiedPaths) {
+    const baseMetadata = gitRegularFileMetadata(parent, entry.path, cwd);
+    const headMetadata = gitRegularFileMetadata(commit, entry.path, cwd);
+    if (
+      baseMetadata.mode !== entry.expectedBaseMode ||
+      baseMetadata.sha256 !== entry.expectedBaseSha256 ||
+      headMetadata.mode !== entry.expectedResultMode ||
+      headMetadata.sha256 !== entry.expectedResultSha256
+    ) {
+      return false;
+    }
+  }
+  for (const entry of registration.createdPaths) {
+    if (gitTreeEntry(parent, entry.path, cwd)) return false;
+    const headMetadata = gitRegularFileMetadata(commit, entry.path, cwd);
+    if (
+      headMetadata.mode !== entry.expectedResultMode ||
+      headMetadata.sha256 !== entry.expectedResultSha256
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function assertGenericGrantSingleUse(request, registration, baseRef, cwd = REPO_ROOT) {
+  const instances = loadRepositoryInstancesAtGitRef(baseRef, cwd);
+  const conflictingRequests = instances.requests.filter(({ value }) => {
+    if (value.requestId === request.requestId) return false;
+    return (
+      value.executionGrantRef.recordId === request.executionGrantRef.recordId ||
+      (value.operation.type === GENERIC_REGISTERED_OPERATION &&
+        value.operation.anchor === request.operation.anchor)
+    );
+  });
+  if (conflictingRequests.length > 0) {
+    reject(
+      'GENERIC_EXECUTION_GRANT_REUSED',
+      `${request.executionGrantRef.recordId} was already consumed by ${conflictingRequests
+        .map(({ value }) => value.requestId)
+        .join(', ')}`,
+    );
+  }
+  const targetPaths = registeredExpectedChanges(registration).map(({ path: repoPath }) => repoPath);
+  const candidateCommits = runGit(
+    [
+      'rev-list',
+      '--ancestry-path',
+      `${request.baseMainSha}..${baseRef}`,
+      '--',
+      ...targetPaths,
+    ],
+    cwd,
+  ).stdout.trim();
+  for (const commit of candidateCommits ? candidateCommits.split(/\r?\n/) : []) {
+    const parentResult = runGit(['rev-parse', `${commit}^`], cwd, { allowFailure: true });
+    if (parentResult.status !== 0) continue;
+    const parent = parentResult.stdout.trim();
+    if (registeredChangesetMatchesCommit(registration, commit, parent, cwd)) {
+      reject(
+        'GENERIC_EXECUTION_GRANT_REUSED',
+        `${request.executionGrantRef.recordId} was already consumed at ${commit}`,
+      );
+    }
+  }
+}
+
+function gitRegularFileMetadata(ref, repoPath, cwd = REPO_ROOT) {
+  const entry = gitTreeEntry(ref, repoPath, cwd);
+  if (!entry) reject('TARGET_NOT_FOUND', `${repoPath} does not exist at ${ref}`);
+  const mode = entry.split(/\s+/)[0];
+  if (!GIT_REGULAR_FILE_MODES.includes(mode)) {
+    reject('GENERIC_EXECUTION_MODE_FORBIDDEN', `${repoPath} mode is ${mode}`);
+  }
+  const content = gitShow(ref, repoPath, cwd);
+  return { mode, sha256: sha256(content), content };
+}
+
+function validateRegisteredChangesetExecution(options) {
+  const { registration, base, head, changes, cwd = REPO_ROOT } = options;
+  const expectedChanges = [
+    ...registration.modifiedPaths.map(({ path: repoPath }) => ({ status: 'M', path: repoPath })),
+    ...registration.createdPaths.map(({ path: repoPath }) => ({ status: 'A', path: repoPath })),
+  ].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const actualChanges = [...changes].sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  if (!hasExactChangeSet(actualChanges, expectedChanges)) {
+    reject('GENERIC_EXECUTION_SCOPE_MISMATCH', 'actual M/A changes do not equal registration');
+  }
+
+  for (const entry of registration.modifiedPaths) {
+    const baseMetadata = gitRegularFileMetadata(base, entry.path, cwd);
+    const headMetadata = gitRegularFileMetadata(head, entry.path, cwd);
+    if (
+      baseMetadata.mode !== entry.expectedBaseMode ||
+      baseMetadata.sha256 !== entry.expectedBaseSha256 ||
+      headMetadata.mode !== entry.expectedResultMode ||
+      headMetadata.sha256 !== entry.expectedResultSha256
+    ) {
+      reject('GENERIC_EXECUTION_FILE_MISMATCH', `${entry.path} mode/hash mismatch`);
+    }
+  }
+
+  for (const entry of registration.createdPaths) {
+    validateExactFileCreation({
+      base,
+      head,
+      operation: {
+        type: 'EXACT_FILE_CREATION',
+        targetFile: entry.path,
+        expectedResultSha256: entry.expectedResultSha256,
+      },
+      changes,
+      cwd,
+      allowAdditionalChanges: true,
+    });
+    const headMetadata = gitRegularFileMetadata(head, entry.path, cwd);
+    if (headMetadata.mode !== entry.expectedResultMode) {
+      reject('GENERIC_EXECUTION_FILE_MISMATCH', `${entry.path} result mode mismatch`);
+    }
+  }
+
+  const actualDigest = sha256(
+    canonicalize({
+      executionMode: GENERIC_REGISTERED_OPERATION,
+      changes: actualChanges.map((change) => {
+        const metadata = gitRegularFileMetadata(head, change.path, cwd);
+        return {
+          status: change.status,
+          path: change.path,
+          mode: metadata.mode,
+          sha256: metadata.sha256,
+        };
+      }),
+    }),
+  );
+  if (actualDigest !== registration.expectedResultSha256) {
+    reject('GENERIC_EXECUTION_RESULT_DIGEST_MISMATCH', 'head changeset digest is not pinned');
+  }
+  return registration;
+}
+
+function validateRequestAgainstGit(
+  request,
+  baseRef,
+  headRef = null,
+  cwd = REPO_ROOT,
+  options = {},
+) {
   assertRequestBaseAncestor(request.baseMainSha, baseRef, cwd);
   if (!gitIsAncestor(EFFECTIVE_FROM_MAIN_SHA, request.baseMainSha, cwd)) {
     reject(
@@ -3364,6 +3951,63 @@ function validateRequestAgainstGit(request, baseRef, headRef = null, cwd = REPO_
   }
   validateAuthorityRecordAtRef(baseRef, request.semanticAuthorityRef, cwd);
   validateAuthorityRecordAtRef(baseRef, request.executionGrantRef, cwd);
+
+  if (request.operation.type === 'EXACT_FILE_CREATION') {
+    validateAuthorityRecordAtRef(
+      request.semanticAuthorityRef.evidenceSha,
+      request.semanticAuthorityRef,
+      cwd,
+    );
+    validateAuthorityRecordAtRef(
+      request.executionGrantRef.evidenceSha,
+      request.executionGrantRef,
+      cwd,
+    );
+    const registration = validateGrantCreationRequest(request);
+    assertGenericGrantUniqueAtRef(
+      registration,
+      request.operation.targetFile,
+      baseRef,
+      cwd,
+    );
+    if (gitTreeEntry(baseRef, request.operation.targetFile, cwd)) {
+      reject('FILE_CREATION_TARGET_EXISTS', request.operation.targetFile);
+    }
+    if (headRef) {
+      validateExactFileCreation({
+        base: baseRef,
+        head: headRef,
+        operation: request.operation,
+        changes: options.changes || parseGitChanges(baseRef, headRef, cwd),
+        cwd,
+      });
+      if (gitShow(headRef, request.operation.targetFile, cwd) !== request.operation.newValue) {
+        reject('EXACT_RESULTING_DIFF_MISMATCH', 'created grant content is not exact');
+      }
+    }
+    return registration;
+  }
+
+  if (request.operation.type === GENERIC_REGISTERED_OPERATION) {
+    validateAuthorityRecordAtRef(
+      request.semanticAuthorityRef.evidenceSha,
+      request.semanticAuthorityRef,
+      cwd,
+    );
+    const registration = validateGenericGrantRequestBinding(request, baseRef, cwd);
+    assertGenericGrantSingleUse(request, registration, baseRef, cwd);
+    if (headRef) {
+      validateRegisteredChangesetExecution({
+        registration,
+        base: baseRef,
+        head: headRef,
+        changes: options.changes || parseGitChanges(baseRef, headRef, cwd),
+        cwd,
+      });
+    }
+    return registration;
+  }
+
   assertGitFileNotSymlink(baseRef, request.operation.targetFile, cwd);
 
   const baseContent = gitShow(baseRef, request.operation.targetFile, cwd);
@@ -4826,6 +5470,30 @@ function classifyPrChangeSet(changes, context = {}) {
       instancePath: newResults[0].path,
       requestId: resultBranchMatch[1],
     };
+  }
+
+  // Execution intent is resolved before the generic control-plane rejection.
+  // The base-side immutable request and task grant decide whether an A/M tuple
+  // is authorised; the branch name alone never does.
+  if (executionBranchMatch && context.head) {
+    const request = validateCanonicalRequestAtExecutionBase(
+      executionBranchMatch[1],
+      context.base,
+      context.head,
+      context.cwd,
+    );
+    if (request.operation.type === 'EXACT_FILE_CREATION') {
+      if (changes.some((change) => change.status !== 'A' || change.oldPath)) {
+        reject('EXECUTION_SCOPE_INVALID', 'exact creation execution requires A-only scope');
+      }
+      return { mode: 'EXECUTION', requestId: executionBranchMatch[1], request };
+    }
+    if (request.operation.type === GENERIC_REGISTERED_OPERATION) {
+      if (changes.some((change) => !['M', 'A'].includes(change.status) || change.oldPath)) {
+        reject('EXECUTION_SCOPE_INVALID', 'registered execution permits exact M/A only');
+      }
+      return { mode: 'EXECUTION', requestId: executionBranchMatch[1], request };
+    }
   }
 
   if (
@@ -10051,7 +10719,7 @@ function validatePrScope(options) {
   assertSha(base, 'base');
   assertSha(head, 'head');
   const changes = parseGitChanges(base, head, cwd);
-  const classification = classifyPrChangeSet(changes, { base, headRef, cwd });
+  const classification = classifyPrChangeSet(changes, { base, head, headRef, cwd });
 
   if (classification.mode === 'NON_COORDINATION_PR') {
     return classification;
@@ -10991,12 +11659,9 @@ function validatePrScope(options) {
   }
 
   const requestId = classification.requestId;
-  const request = validateCanonicalRequestAtExecutionBase(
-    requestId,
-    base,
-    head,
-    cwd,
-  );
+  const request =
+    classification.request ||
+    validateCanonicalRequestAtExecutionBase(requestId, base, head, cwd);
   const changedPaths = changes.map((change) => change.path).sort();
   const allowedPaths = [...request.declaredTargetAllowlist].sort();
   if (
@@ -11008,7 +11673,7 @@ function validatePrScope(options) {
       `changed=[${changedPaths}] allowed=[${allowedPaths}]`,
     );
   }
-  validateRequestAgainstGit(request, base, head, cwd);
+  validateRequestAgainstGit(request, base, head, cwd, { changes });
   return classification;
 }
 
@@ -11214,6 +11879,7 @@ module.exports = {
   GIT_CANONICAL_TEXT_BLOB_LIMIT_BYTES,
   GIT_CANONICAL_TEXT_BLOB_PROCESS_MAX_BUFFER_BYTES,
   GIT_DIAGNOSTIC_EXCERPT_MAX_CHARS,
+  GENERIC_REGISTERED_OPERATION,
   GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_ROOT_AUTHORITY_BOOTSTRAP_R01,
   GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01,
   GOVERNANCE_COORDINATION_ROOT_SA_RECORD_SCOPING_REPAIR_R01,
@@ -11256,6 +11922,7 @@ module.exports = {
   buildAuthorityMarker,
   canonicalize,
   classifyPrChangeSet,
+  computeRegisteredChangesetSha256,
   computeRequestFingerprint,
   countOccurrences,
   deriveActiveOwnerWipExactPaths,
@@ -11276,7 +11943,10 @@ module.exports = {
   gitShow,
   runSelfTest,
   sha256,
+  parseGenericExecutionGrantMarkdown,
+  validateGenericExecutionGrantRegistration,
   validateRequestObject,
+  validateRequestAgainstGit,
   validateBootstrapWorktree,
   validateAuthorityRecordAtRef,
   validateCanonicalRequestAtExecutionBase,
