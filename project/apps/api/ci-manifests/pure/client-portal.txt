@@ -127,6 +127,19 @@ src/modules/client/__tests__/client-template-notification-command.spec.ts
 src/modules/client/__tests__/client-timeline.spec.ts
 src/modules/client/__tests__/client-update-duplicate-guard.spec.ts
 src/modules/client/__tests__/contact-followup.spec.ts
+#
+#   CLIENT-OWN-13-I02-R3 bulk/backfill mutation authorization (SAF, DB-siz)
+#     Owner D01-D09 (RATIFIED): SeedModule production'da koşulsuz kapalı (flag production'ı
+#     ezemez), test'te otomatik açık, diğer ortamlarda explicit flag ile (varsayılan kapalı).
+#     seedClients/seedAll/fixExistingClients ve contact-followup backfill YALNIZ elevated
+#     aktör (D04/D06 — ADMIN tek başına YETMEZ); seedClients artık ClientService.create
+#     üzerinden yazar (doğrudan prisma.client.create YOK); satır-bazlı devam + açık
+#     failed sayacı (D07); yalnız başarılı satır audit üretir, PII metadata'ya girmez (D08);
+#     fixExistingClients tenant-scoped updateMany+count (D09) + checksum guard.
+src/modules/seed/__tests__/seed-runtime-gate.spec.ts
+src/modules/seed/__tests__/seed-controller-guards.spec.ts
+src/modules/seed/__tests__/seed-client-authority.spec.ts
+src/modules/client/__tests__/client-bulk-mutation-authorization-r3.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
