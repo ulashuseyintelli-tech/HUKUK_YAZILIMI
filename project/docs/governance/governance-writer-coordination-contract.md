@@ -2094,7 +2094,7 @@ governance allowlist, wildcard task matching or reusable execution authority.
 Task ID : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-CONTROL-PLANE-BINDING-R01
 Mode : RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01
 Program : RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01
-Base : 0a6ea7fe99607b8a0e820802401cfa2c5f073037
+Base : 8981c6bb23d91e152a04cdd9cb2fb9a8b805c585
 Head ref : codex/receivable-nafaka-terminal-state-reconciliation-r01-control-plane-binding-r01
 Scope : M project/scripts/governance-coordination.cjs
         M project/scripts/governance-coordination.test.cjs

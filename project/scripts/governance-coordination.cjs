@@ -1785,7 +1785,7 @@ const RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_
     bindingPr: Object.freeze({
       mode:
         'RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01',
-      baseSha: '0a6ea7fe99607b8a0e820802401cfa2c5f073037',
+      baseSha: '8981c6bb23d91e152a04cdd9cb2fb9a8b805c585',
       headRef:
         'codex/receivable-nafaka-terminal-state-reconciliation-r01-control-plane-binding-r01',
       changedPaths: Object.freeze([
