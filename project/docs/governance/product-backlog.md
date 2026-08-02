@@ -3628,3 +3628,24 @@ Ratified scope is limited to six claim-level `PRINCIPAL` nafaka subtypes (`INTER
 Validation evidence: Stage 1/2 task-specific governance matrix `7/7 PASS`; Legal Basis release/resolver required pure manifest `49 suites / 666 tests PASS`; production TypeScript `PASS`; PR #2003, #2004, #2006, #2009 and #2012 required/observed GitHub checks `PASS`. Local Nest build was not usable because the root dependency link resolved to a stale foreign worktree; PR #2012 canonical GitHub build/test checks passed.
 
 UYAP dependency return condition is satisfied at the canonical contract/release/resolver boundary. `UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01` is therefore `ELIGIBLE / SEPARATE UYAP OWNER AUTHORITY REQUIRED / NOT STARTED BY THIS CLOSEOUT`. UYAP remains consumer-only; runtime binding, serializer work, production activation and cutover remain outside this RECEIVABLE closeout.
+
+## RECEIVABLE Nafaka Terminal Current-State Reconciliation — 2026-08-02
+
+```text
+CURRENT TASK             RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+NAFAKA                    CLOSED / CANONICAL / UYAP-CONSUMABLE
+CONTENT AUTHORITY         OWNER + LDO RATIFIED / HASH-BOUND / CANONICAL
+LEGAL BASIS RELEASE       RCV-LB-R1 / RELEASE VERSION 1 / 13 ENTRIES
+SUBTYPE REGISTRY          VERSION 2 / 13 RECORDS / CHECKSUM PASS
+OPEN RESIDUAL             OPEN — PRODUCTION SIGNATURE RESIDUAL
+PRODUCTION SIGNATURES     0/3 / PENDING_NOT_EXECUTED
+SIGNING AUTHORITY         NOT ACTIVE
+RUNTIME                   DORMANT / DEFAULT OFF
+UYAP                      HOLD
+NEXT ELIGIBLE             NAFAKA PRODUCTION-SIGNATURE AUTHORITY PREFLIGHT
+NEXT AUTHORITY            READ-ONLY ONLY
+PROGRAM LOCK              NAFAKA FIRST
+```
+
+Bu current-state kaydı yeni backlog seçimi veya runtime authority üretmez. Nafaka-first lock
+korunur; production-signature authority preflight yalnız salt-okunur ayrı successor adayıdır.

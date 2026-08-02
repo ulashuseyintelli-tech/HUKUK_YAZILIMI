@@ -1181,3 +1181,24 @@ ile yürütülebilir.
 - **RCV-CLAIM-FORM-P02-S08-D02-KC01 — AWS KMS legal signer key ceremony formal closure (2026-07-29; canonical upon approved governance merge):** Implementation PR #1856 / squash `74d1950deb632380a7ca6574a009e85c206c7f14` ve CI `4/4 PASS` ile üç role-separated `AWS_KMS` Ed25519 `SIGN_VERIFY` key, public-key manifest/checksum, custody/access crosswalk, possession evidence, rotation/revocation/compromise contract'ları ve redacted CloudTrail evidence pack'i `IMPLEMENTED / MERGED / CANONICAL`dır. Private custody `NON-EXPORTABLE`; public manifest checksum `1e80168ebc52e6601f9231834ddde81a339e69a2337a0630bd9daa993f0519ec`; KMS sign/verify ve offline verification `3/3`, cross-role negatives `6/6`, temporary signing authority removal sonrası denial `3/3`, static signer manifest `5/5` ve Claim Formation critical manifest `34 suite / 477 test` PASS'tır. Authority bootstrap PR #1859 / `a43918b6d58417a951337328d4fc4b0b72675746` canonical main'dedir. Trust root `PENDING_ONBOARDING`, signing `NOT_ACTIVE`, production signature `NONE`, runtime `DORMANT`, database `UNCHANGED`; schema/migration/live apply/historical mutation `NONE`. **NEXT ELIGIBLE TASK:** `RCV-CLAIM-FORM-P02-S08-D02-TR01 — OWNER GO REQUIRED / NOT STARTED`. D02-F01, resolver/provider wiring, release signing, production activation, I04/I05 ve containment retirement `NOT ELIGIBLE`dır.
 
 - **RCV-CLAIM-FORM-P02-S08-D02-KC01-TR01-OWNERSHIP-RECONCILIATION-R01 — ownership amendment + TR01 technical closure (2026-07-30; canonical upon approved governance merge):** KC01 technical execution PR #1856 / squash `74d1950deb632380a7ca6574a009e85c206c7f14` ve TR01 technical foundation PR #1901 / squash `3472052b2efb08d5e3fbcda7ce0654b012225689` / CI `9/9 PASS` geçerli ve canonical kanıt olarak korunur; historical RECEIVABLE task route'ları provenance'dır ve re-execution gerekmez. TR01 trust root `RCV-CLAIM-LEGAL-PUBLIC-KEY-TRUST-ROOT@1`, checksum `062056266b90107780f2f749eba3b55a994738503f354c273ac83e25fdddd247`, AWS parity checksum `cc10ada801c174442158d0b746b018347d615609b823141ac928b9c44badef13`; verification `ACTIVE`, runtime `DORMANT`, signing `NOT ACTIVE`, production signature/signed release `NONE`dır. Effective ownership üçlüdür: KMS/trust-root lifecycle `CROSS_MODULE / SHARED_CONTROL_PLANE`; signer human identity/role eligibility `OFFICE`; Legal Basis content/signature policy/formation consequence `RECEIVABLE`. Bu amendment yeni workspace module yaratmaz, Office dependency'yi implement/activate etmez ve cryptographic evidence'ı geçersiz kılmaz. PR #1907 sırası gereği **NEXT ELIGIBLE TASK:** `RECEIVABLE-LEGAL-BASIS-REGISTRY-CONTENT-RATIFICATION-R01 — OWNER GO REQUIRED / NOT STARTED`; `RCV-CLAIM-FORM-P02-S08-D02-LB01` `NOT CURRENT NEXT / NOT ELIGIBLE`dır. UYAP `CONSUMER ONLY / BLOCKED_BY_RECEIVABLE_LEGAL_BASIS_AUTHORITY` kalır. Code/AWS/schema/migration/runtime mutation `NONE`dır.
+
+## Receivable Nafaka Terminal Current-State Reconciliation — 2026-08-02
+
+```text
+CURRENT TASK             RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+NAFAKA                    CLOSED / CANONICAL / UYAP-CONSUMABLE
+CONTENT AUTHORITY         OWNER + LDO RATIFIED / HASH-BOUND / CANONICAL
+LEGAL BASIS RELEASE       RCV-LB-R1 / RELEASE VERSION 1 / 13 ENTRIES
+SUBTYPE REGISTRY          VERSION 2 / 13 RECORDS / CHECKSUM PASS
+OPEN RESIDUAL             OPEN — PRODUCTION SIGNATURE RESIDUAL
+PRODUCTION SIGNATURES     0/3 / PENDING_NOT_EXECUTED
+SIGNING AUTHORITY         NOT ACTIVE
+RUNTIME                   DORMANT / DEFAULT OFF
+UYAP                      HOLD
+NEXT ELIGIBLE             NAFAKA PRODUCTION-SIGNATURE AUTHORITY PREFLIGHT
+NEXT AUTHORITY            READ-ONLY ONLY
+PROGRAM LOCK              NAFAKA FIRST
+```
+
+Canonical state reconciliation yalnız living register anlatısını repository truth ile hizalar;
+production signature, activation, UYAP successor veya başka bir mutation authority üretmez.
