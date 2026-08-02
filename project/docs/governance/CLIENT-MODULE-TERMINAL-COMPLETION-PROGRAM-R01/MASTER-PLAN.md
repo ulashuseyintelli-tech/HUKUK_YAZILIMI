@@ -760,6 +760,13 @@ C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 4 (B
                            C1-B01 = bu evidence'ın fresh main a92a5a44 üzerinde residual
                            doğrulaması: 5/5 kalem koddan kanıtlandı, ürün diff'i SIFIR,
                            47/47 ilgili test PASS — duplicate implementation AÇILMADI)
+C2 STATUS:                IN PROGRESS — C2-B01 RUNTIME_VERIFIED (2026-08-02)
+C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 1 (B01)
+                          (C2-B01 = R3 reconcile-only, fresh main 573ea61a: policy-modül
+                           yeri + reactivate-eşdeğer elevated eşiği koddan kanıtlandı,
+                           r3 spec 12/12 PASS, ürün diff'i SIFIR, C1-B01 kanıtı devralındı
+                           — duplicate R3 AÇILMADI. Pre-flight: C1 aktif blok=B05,
+                           çakışma=YOK)
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
 PRODUCTION_COMPLETE:      NOT REACHED
