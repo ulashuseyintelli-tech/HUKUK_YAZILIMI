@@ -174,6 +174,14 @@ src/modules/client/__tests__/client-create-dedup-independent-probe.spec.ts
 #     FIND-C4 (version/CAS): atomik birlikte deploy kanitlanamadi -> ayni migration
 #     owner altinda SERI paketlenecek (C2-owned policy allowlist + XL-3 imza kisiti).
 src/modules/client/__tests__/client-identity-conflict-mapping-c1b05.spec.ts
+#
+#   CLAUDE-CLIENT-C2-B02 workspace komut yetki karakterizasyonu (SAF, DB-siz)
+#     FIND-C2: bes workspace komut endpoint'i rol KONTROLSUZ (VIEWER ve tanimsiz rol
+#     dahil dispatch servise ulasir); controller aktor ROLUNU servise iletmiyor;
+#     send komutlari isApproverEligible'a danismiyor ve AuditLog uretmiyor (yalniz
+#     artefakt satiri/createdById). CHARACTERIZATION-ONLY — owner §13/11 rol politikasi
+#     karari ratifiye edilmeden gate YAZILMAZ; implementation karar sonrasi B02'de.
+src/modules/client/__tests__/client-workspace-command-authorization-characterization.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts

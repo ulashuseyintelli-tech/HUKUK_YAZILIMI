@@ -549,6 +549,18 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
       @ 573ea61a, diff BOŞ, PR YOK) · çakışma=YOK · karar=YÜRÜDÜ)*
 - [ ] **B02** workspace komutları rol-gated + audited; owner politikası uygulanmış;
       gate yeri kanıtla seçilmiş (dayatma yok)
+      *(2026-08-02 — CHARACTERIZATION TAMAM, IMPLEMENTATION `WAITING_FOR_OWNER_DECISION`:
+      decision-log'da §13/11 "iletişim/workspace gönderim rol politikası" kaydı YOK
+      (CN-1/FIND-C2 anahtarlarıyla sıfır eşleşme, repository-truth). Mevcut davranış
+      `client-workspace-command-authorization-characterization.spec.ts` ile sabitlendi,
+      15/15 PASS: 5 komut endpoint'i rol kontrolsüz (VIEWER + tanımsız rol dispatch
+      edebiliyor); controller aktör rolünü servise İLETMİYOR (sendPoaReminder/uploadPoaFile
+      aktörü hiç almıyor); send komutları `isApproverEligible`'a danışmıyor ve AuditLog
+      üretmiyor. Gate yeri seçimi (controller / ortak helper / policy sınıflandırması)
+      owner kararı SONRASINA bırakıldı — çözüm dayatması yok.
+      PRE-FLIGHT: C1 aktif blok=B05/PR #2124 (client.service.ts + migration + kendi spec +
+      manifest + §17) · exact yazım çakışması=YOK (yalnız manifest/§17 ortak-anchor —
+      sonra gelen rebase eder) · karar=CHARACTERIZATION YÜRÜDÜ)*
 - [ ] **B03** intake authority primitive canonical + **dondurulmuş**; X3 tüketebilir
 - [ ] **B04** POA upload yetkilendirilmiş + audited; mandate semantiği C3'e bırakılmış
 - [ ] **B05** OWN-10/12/15 kalemleri ratifiye/deferred olarak **exact** sınıflandırılmış
