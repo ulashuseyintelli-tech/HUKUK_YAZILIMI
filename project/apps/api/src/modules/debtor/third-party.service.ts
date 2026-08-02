@@ -808,17 +808,19 @@ export class ThirdPartyService {
 
     // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER-RATIFIED,
     // concurrency fix): receivedAmount/attachmentStatus artık applySystemDerived
-    // Projection() üzerinden ATOMIK türetilir. Eskiden burada read-aggregate-write
-    // üç ayrı round-trip'ti (aggregate + externalCase.update ayrı çağrılardı) —
-    // iki eşzamanlı tahsilat birbirinin projection yazımını sessizce ezebiliyordu
-    // (klasik lost-update). Aggregate her CAS denemesinde TAZE okunur; kayıp veri
-    // YOK (canonical kaynak her zaman Collection tablosudur, yalnız projection
-    // alanları -receivedAmount/attachmentStatus- yeniden hesaplanır).
+    // Projection() üzerinden ATOMIK türetilir (SELECT ... FOR UPDATE ile
+    // kilitlenmiş satır üzerinde). Eskiden burada read-aggregate-write üç ayrı
+    // round-trip'ti (aggregate + externalCase.update ayrı çağrılardı) — iki
+    // eşzamanlı tahsilat birbirinin projection yazımını sessizce ezebiliyordu
+    // (klasik lost-update). Aggregate sorgusu `tx` (kilidi tutan AYNI bağlantı)
+    // üzerinden çalışır — ayrı `this.prisma` bağlantısı KULLANILMAZ; aksi halde
+    // eşzamanlı çağrı sayısı kadar bağlantı ihtiyacı ikiye katlanır (bkz. servis
+    // dosyasının REVIZYON 2 yorumu — gerçek CI'da connection-pool tükenmesine yol açtı).
     return this.externalCaseStatusTransition.applySystemDerivedProjection(
       tenantId,
       externalCaseId,
-      async (current: ExternalCaseDerivedProjectionCurrent) => {
-        const receiptTotal = await (this.prisma as any).collection.aggregate({
+      async (current: ExternalCaseDerivedProjectionCurrent, tx) => {
+        const receiptTotal = await (tx as any).collection.aggregate({
           where: {
             tenantId,
             caseId,

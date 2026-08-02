@@ -39,7 +39,10 @@ function buildService(coll: any, overrides: any = {}) {
   const transitionService = {
     applySystemDerivedProjection: jest.fn(async (_tenantId: string, _externalCaseId: string, computeNext: any) => {
       const current = await prisma.externalCase.findFirst();
-      const next = await computeNext(current);
+      // Gerçek servis computeNext'i (current, tx) ile çağırır — bu fake'te ayrı bir
+      // transaction client yok, aynı mock prisma'yı tx yerine geçiyoruz (aggregate
+      // sorgusu prisma.collection.aggregate üzerinden zaten mock'lanmış durumda).
+      const next = await computeNext(current, prisma);
       return prisma.externalCase.update({
         where: { id: 'ec1' },
         data: {

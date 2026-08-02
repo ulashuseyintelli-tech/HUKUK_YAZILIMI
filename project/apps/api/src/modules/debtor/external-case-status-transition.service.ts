@@ -222,77 +222,91 @@ export class ExternalCaseStatusTransitionService {
    * çağırır (canonical Collection writer). `computeNext` sorumludur: aggregate
    * sorgusu (canonical Collection toplamı) TAM OLARAK kilit alındıktan sonra, bu
    * metodun içinden çağrılır — böylece hiçbir eşzamanlı yazar arada sıkışıp eski
-   * bir toplamı kullanamaz.
+   * bir toplamı kullanamaz. `computeNext`'e verilen `tx` İLE sorgulanmalıdır (ayrı
+   * bir `this.prisma` bağlantısı DEĞİL) — aksi halde her çağrı iki bağlantı birden
+   * tutar (kilit-tutan dış transaction + iç aggregate) ve eşzamanlılık altında
+   * connection pool'u gereksiz yere ikiye katlar.
    *
-   * DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 REVIZYON: ilk sürüm burada
+   * DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 REVIZYON 1: ilk sürüm burada
    * `updatedAt` tabanlı optimistic-CAS + bounded (5) retry kullanıyordu. Gerçek CI'da
    * 10 eşzamanlı addExternalCaseCollection() çağrısıyla bazı denemeler 5 tur içinde
-   * kazanamayıp ConflictException fırlattı (thundering-herd: N eşzamanlı yazar
-   * birbirinin retry'ları ile de çakışabilir, yalnız "diğer N-1" ile değil). Optimistic
-   * retry'nin doğası gereği SABİT bir üst sınır hiçbir zaman "asla başarısız olmaz"
-   * garantisi VEREMEZ. Bunun yerine pessimistic `SELECT ... FOR UPDATE` kilidi
-   * kullanılır: eşzamanlı çağrılar retry/çakışma YAŞAMAZ, yalnız aynı satırda
-   * SERİLEŞİR (Postgres'in kendi lock-queue'su) — sınırsız yazar sayısında bile
-   * kayıpsız yakınsama garantilidir, ConflictException hiç fırlatılmaz.
+   * kazanamayıp ConflictException fırlattı (thundering-herd). Pessimistic
+   * `SELECT ... FOR UPDATE` kilidine geçildi.
+   *
+   * REVIZYON 2: kilit tek başına yetmedi — `computeNext` HALA `this.prisma` (ayrı
+   * bağlantı) ile aggregate okuyordu; 10 eşzamanlı çağrı = 10 kilit-tutan transaction
+   * + 10 ayrı aggregate bağlantısı, CI'nin (düşük CPU sayılı runner → küçük varsayılan
+   * Prisma connection pool) bağlantı havuzunu doldurdu → "Unable to start a
+   * transaction in the given time." `computeNext` artık `tx` alır ve TÜM sorgularını
+   * AYNI bağlantı üzerinden yapar (bağlantı ihtiyacı çağrı başına 1'e iner); ayrıca
+   * eşzamanlı yazarların kilit kuyruğunda meşru şekilde beklemesine yer açmak için
+   * `maxWait`/`timeout` cömert değerlere çekildi.
    */
   async applySystemDerivedProjection(
     tenantId: string,
     externalCaseId: string,
     computeNext: (
       current: ExternalCaseDerivedProjectionCurrent,
+      tx: Prisma.TransactionClient,
     ) => Promise<ExternalCaseDerivedProjectionNext>,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<ExternalCaseDerivedProjectionCurrent[]>(
-        Prisma.sql`SELECT "attachmentStatus", "claimAmount", "receivedAmount", "notes"
-          FROM "ExternalCase"
-          WHERE "id" = ${externalCaseId} AND "tenantId" = ${tenantId}
-          FOR UPDATE`,
-      );
-      const current = rows[0];
-      if (!current) {
-        throw new NotFoundException({ code: "EXTERNAL_CASE_NOT_FOUND" });
-      }
+    return this.prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<ExternalCaseDerivedProjectionCurrent[]>(
+          Prisma.sql`SELECT "attachmentStatus", "claimAmount", "receivedAmount", "notes"
+            FROM "ExternalCase"
+            WHERE "id" = ${externalCaseId} AND "tenantId" = ${tenantId}
+            FOR UPDATE`,
+        );
+        const current = rows[0];
+        if (!current) {
+          throw new NotFoundException({ code: "EXTERNAL_CASE_NOT_FOUND" });
+        }
 
-      const next = await computeNext(current);
-      const statusChanged = next.attachmentStatus !== current.attachmentStatus;
+        const next = await computeNext(current, tx);
+        const statusChanged = next.attachmentStatus !== current.attachmentStatus;
 
-      await tx.externalCase.update({
-        where: { id: externalCaseId },
-        data: {
-          receivedAmount: next.receivedAmount,
-          attachmentStatus: next.attachmentStatus,
-          lastReceivedAt: next.lastReceivedAt,
-          notes: next.notes,
-          ...(statusChanged
-            ? {
-                statusSource: "SYSTEM_DERIVED" as const,
-                statusChangedAt: new Date(),
-                statusChangedBy: null,
-                closureReason: next.closureReason ?? undefined,
-              }
-            : {}),
-        },
-      });
-
-      if (statusChanged) {
-        await this.auditService.logInTransaction(tx, {
-          tenantId,
-          action: EXTERNAL_CASE_STATUS_TRANSITION_AUDIT_ACTION,
-          entityType: "EXTERNAL_CASE",
-          entityId: externalCaseId,
-          description: "ExternalCase durumu sistem tarafından (canonical Collection kaydından) türetildi.",
-          metadata: {
-            fromStatus: current.attachmentStatus,
-            toStatus: next.attachmentStatus,
-            statusSource: "SYSTEM_DERIVED",
-            closureReason: next.closureReason ?? null,
+        await tx.externalCase.update({
+          where: { id: externalCaseId },
+          data: {
+            receivedAmount: next.receivedAmount,
+            attachmentStatus: next.attachmentStatus,
+            lastReceivedAt: next.lastReceivedAt,
+            notes: next.notes,
+            ...(statusChanged
+              ? {
+                  statusSource: "SYSTEM_DERIVED" as const,
+                  statusChangedAt: new Date(),
+                  statusChangedBy: null,
+                  closureReason: next.closureReason ?? undefined,
+                }
+              : {}),
           },
         });
-      }
 
-      return tx.externalCase.findFirst({ where: { id: externalCaseId, tenantId } });
-    });
+        if (statusChanged) {
+          await this.auditService.logInTransaction(tx, {
+            tenantId,
+            action: EXTERNAL_CASE_STATUS_TRANSITION_AUDIT_ACTION,
+            entityType: "EXTERNAL_CASE",
+            entityId: externalCaseId,
+            description: "ExternalCase durumu sistem tarafından (canonical Collection kaydından) türetildi.",
+            metadata: {
+              fromStatus: current.attachmentStatus,
+              toStatus: next.attachmentStatus,
+              statusSource: "SYSTEM_DERIVED",
+              closureReason: next.closureReason ?? null,
+            },
+          });
+        }
+
+        return tx.externalCase.findFirst({ where: { id: externalCaseId, tenantId } });
+      },
+      // Eşzamanlı yazarların FOR UPDATE kilit-kuyruğunda meşru şekilde beklemesine
+      // yer açmak için varsayılandan (maxWait 2s, timeout 5s) daha cömert değerler —
+      // bkz. REVIZYON 2 yorumu. Bu yalnız bu tek transaction'ı etkiler.
+      { maxWait: 15_000, timeout: 20_000 },
+    );
   }
 
   private async loadForTenant(tenantId: string, externalCaseId: string): Promise<LoadedExternalCase> {
