@@ -90,4 +90,3 @@ unauthenticated, missing-tenant, cross-tenant and denied-actor requests.
 * Confirmed live defect: `0`.
 * Production status: `NOT DETERMINED`.
 * No row is an endpoint registration or production-activation authorization.
-

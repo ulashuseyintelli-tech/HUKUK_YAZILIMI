@@ -46,4 +46,3 @@ new business, legal or security policy
 
 `RBR-R01-T07` is a declared successor, not part of this grant. This grant
 cannot be reused to implement the Playbook hardening itself.
-

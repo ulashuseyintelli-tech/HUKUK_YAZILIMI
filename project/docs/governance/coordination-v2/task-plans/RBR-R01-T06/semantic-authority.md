@@ -59,4 +59,3 @@ ACTIVE
 The disposition above is semantic authority only. It does not bind a module,
 register an endpoint, change configuration, change schema, or activate a
 production graph.
-

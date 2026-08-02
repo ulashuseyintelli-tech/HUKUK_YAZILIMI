@@ -6,4 +6,3 @@ schema/migration, secret/config, W3 veya evidence fazı mutation'ı yapma.
 Bu prompt execution grant değildir; grant `grant.json` ve marker taşıyan
 `execution-grant.md` ile birlikte doğrulanır. Task tamamlandığında successor
 `RBR-R01-T07` için yeni authority gerekir.
-

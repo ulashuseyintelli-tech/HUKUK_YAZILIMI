@@ -20,4 +20,3 @@ Boundary, exact disposition matrix ve acceptance records ile sınırlıdır. Bu
 belge veya grant, `AppModule`/`PlaybookModule` binding'i, endpoint registration,
 production activation, schema/migration, secret/config erişimi, W3 veya
 production-evidence fazının yeniden açılmasını yetkilendirmez.
-
