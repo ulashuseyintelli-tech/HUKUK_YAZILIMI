@@ -1736,6 +1736,138 @@ const RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02 =
     stage2StatusLiteral:
       'STAGE 2 STATUS: OWNER_AUTHORIZED_AFTER_R02_MERGE',
   });
+const RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01 =
+  Object.freeze({
+    taskId:
+      'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-CONTROL-PLANE-BINDING-R01',
+    programId: 'RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01',
+    targetTaskId: 'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01',
+    knownGoodFloor: '0c799a7d90a5782d921a546a1cd4ed09d6a609b0',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    grantScopeLiteral: 'NAFAKA TERMINAL STATE RECONCILIATION ONLY',
+    secondUseLiteral: 'SECOND USE: FAIL-CLOSED',
+    ownerRatificationEvidence: Object.freeze({
+      exactExcerpt: [
+        'FULL OWNER AUTHORITY — CONTROL-PLANE BINDING + RESUME GO-COMPLETE',
+        '',
+        'OWNER:',
+        'Av. Ulaş Hüseyin Telli',
+        '',
+        'CURRENT PROGRAM:',
+        'RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01',
+        '',
+        'PROGRAM LOCK:',
+        'NAFAKA FIRST',
+        '',
+        'BLOCKED TASK:',
+        'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01',
+        '',
+        'KNOWN-GOOD FLOOR:',
+        '0c799a7d90a5782d921a546a1cd4ed09d6a609b0',
+        '',
+        'PHASE A TASK:',
+        'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-',
+        'CONTROL-PLANE-BINDING-R01',
+        '',
+        'PHASE B TASK:',
+        'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01',
+        '',
+        'AUTHORITY:',
+        'SINGLE-EXECUTOR',
+        'FENCE-FIRST',
+        'TWO-PHASE SEQUENTIAL',
+        'GO-COMPLETE',
+      ].join('\n'),
+      excerptSha256:
+        '1566f6e81ef697952b1eaee672136b87ddf82007e6efe7cf9c9b6725f5ab151c',
+    }),
+    bindingPr: Object.freeze({
+      mode:
+        'RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01',
+      baseSha: '0a6ea7fe99607b8a0e820802401cfa2c5f073037',
+      headRef:
+        'codex/receivable-nafaka-terminal-state-reconciliation-r01-control-plane-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId: 'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01',
+      mode: 'RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01',
+      headRef:
+        'codex/receivable-nafaka-terminal-state-reconciliation-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/canonicalization-register.md',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/product-backlog.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01.md',
+        recordId: 'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01',
+      }),
+      requiredStateLiterals: Object.freeze([
+        'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01',
+        'CLOSED / CANONICAL / UYAP-CONSUMABLE',
+        'OPEN — PRODUCTION SIGNATURE RESIDUAL',
+        '0/3 / PENDING_NOT_EXECUTED',
+        'DORMANT / DEFAULT OFF',
+        'NAFAKA PRODUCTION-SIGNATURE AUTHORITY PREFLIGHT',
+        'READ-ONLY ONLY',
+        'NAFAKA FIRST',
+      ]),
+    }),
+    closeoutPr: Object.freeze({
+      taskId: 'RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01',
+      mode: 'RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CLOSEOUT_R01',
+      headRef:
+        'codex/receivable-nafaka-terminal-state-reconciliation-r01-closeout',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/coordination-execution-grants/RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01.md',
+        }),
+      ]),
+    }),
+  });
 const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01 =
   Object.freeze({
     taskId:
@@ -3645,6 +3777,8 @@ function classifyPrChangeSet(changes, context = {}) {
     RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01;
   const legalBasisContentFreshRebinding =
     RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02;
+  const nafakaTerminalBinding =
+    RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
   const rootStage2ValidatorReconciliation =
     GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01;
   const rootStage1 = rootAuthorityBootstrap.bindingPr;
@@ -3654,6 +3788,56 @@ function classifyPrChangeSet(changes, context = {}) {
   const legalBasisContentStage1 = legalBasisContentBootstrap.bindingPr;
   const legalBasisContentStage1R02 = legalBasisContentFreshRebinding.bindingPr;
   const legalBasisContentStage2 = legalBasisContentFreshRebinding.targetPr;
+  const nafakaTerminalBindingPr = nafakaTerminalBinding.bindingPr;
+  const nafakaTerminalTargetPr = nafakaTerminalBinding.targetPr;
+  const nafakaTerminalCloseoutPr = nafakaTerminalBinding.closeoutPr;
+
+  if (
+    context.headRef === nafakaTerminalBindingPr.headRef ||
+    (context.base === nafakaTerminalBindingPr.baseSha &&
+      hasExactChangeSet(changes, nafakaTerminalBindingPr.changedPaths))
+  ) {
+    if (
+      context.base !== nafakaTerminalBindingPr.baseSha ||
+      context.headRef !== nafakaTerminalBindingPr.headRef ||
+      !hasExactChangeSet(changes, nafakaTerminalBindingPr.changedPaths)
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'Nafaka terminal reconciliation binding requires its exact base, branch and M/M/M scope',
+      );
+    }
+    return {
+      mode: nafakaTerminalBindingPr.mode,
+      taskId: nafakaTerminalBinding.taskId,
+    };
+  }
+
+  if (context.headRef === nafakaTerminalTargetPr.headRef) {
+    if (!hasExactChangeSet(changes, nafakaTerminalTargetPr.changedPaths)) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'Nafaka terminal reconciliation requires its exact docs-only M/M/M/M/A scope',
+      );
+    }
+    return {
+      mode: nafakaTerminalTargetPr.mode,
+      taskId: nafakaTerminalTargetPr.taskId,
+    };
+  }
+
+  if (context.headRef === nafakaTerminalCloseoutPr.headRef) {
+    if (!hasExactChangeSet(changes, nafakaTerminalCloseoutPr.changedPaths)) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'Nafaka terminal reconciliation closeout requires its exact single-file EG scope',
+      );
+    }
+    return {
+      mode: nafakaTerminalCloseoutPr.mode,
+      taskId: nafakaTerminalCloseoutPr.taskId,
+    };
+  }
 
   if (
     context.base === rootStage2ValidatorReconciliation.baseSha &&
@@ -5945,6 +6129,255 @@ function validateRootAuthorityBootstrapBindingScope(options) {
   }
 
   return { mode: stage1.mode, taskId: stage1.taskId };
+}
+
+function nafakaTerminalBindingContractLiterals(binding) {
+  const bindingPr = binding.bindingPr;
+  const target = binding.targetPr;
+  const closeout = binding.closeoutPr;
+  return [
+    binding.taskId,
+    binding.programId,
+    binding.targetTaskId,
+    binding.knownGoodFloor,
+    bindingPr.mode,
+    bindingPr.baseSha,
+    bindingPr.headRef,
+    ...bindingPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    target.taskId,
+    target.mode,
+    target.headRef,
+    ...target.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    target.semanticAuthority.recordId,
+    target.executionGrant.recordId,
+    closeout.mode,
+    closeout.headRef,
+    ...closeout.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    binding.grantScopeLiteral,
+    binding.secondUseLiteral,
+    binding.ownerRatificationEvidence.exactExcerpt,
+    binding.ownerRatificationEvidence.excerptSha256,
+    'GENERIC ALLOWLIST: PROHIBITED',
+    'WILDCARD OR PREFIX MATCH: PROHIBITED',
+    'PHASE B CONTROL-PLANE MUTATION: PROHIBITED',
+    'PRODUCTION SIGNATURE / KMS / RUNTIME / UYAP: PROHIBITED',
+  ];
+}
+
+function validateNafakaTerminalStateControlPlaneBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  const stage1 = binding.bindingPr;
+
+  if (
+    base !== stage1.baseSha ||
+    headRef !== stage1.headRef ||
+    taskId !== binding.taskId ||
+    !hasExactChangeSet(changes, stage1.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'Nafaka terminal reconciliation binding requires its exact base, task, branch and M/M/M scope',
+    );
+  }
+  if (
+    sha256(binding.ownerRatificationEvidence.exactExcerpt) !==
+    binding.ownerRatificationEvidence.excerptSha256
+  ) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'Nafaka terminal reconciliation owner evidence checksum mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of nafakaTerminalBindingContractLiterals(binding)) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `Nafaka terminal reconciliation contract is missing ${expectedLiteral}`,
+      );
+    }
+  }
+  return { mode: stage1.mode, taskId: binding.taskId };
+}
+
+function validateNafakaTerminalStateReconciliationScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+
+  if (
+    headRef !== target.headRef ||
+    taskId !== target.taskId ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'Nafaka terminal reconciliation requires its exact task, branch and docs-only scope',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of nafakaTerminalBindingContractLiterals(binding)) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical Nafaka binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  const semanticMarker = buildAuthorityMarker(target.semanticAuthority);
+  const baseDecisionLog = gitShow(base, target.semanticAuthority.path, cwd);
+  if (
+    baseDecisionLog.includes(semanticMarker) ||
+    gitTreeEntry(base, target.executionGrant.path, cwd)
+  ) {
+    reject(
+      'NAFAKA_TERMINAL_EXECUTION_GRANT_REUSED',
+      'Nafaka terminal reconciliation SA/EG tuple has already been materialized',
+    );
+  }
+
+  const decisionLog = gitShow(head, target.semanticAuthority.path, cwd);
+  const exactSemanticMarker = assertExactAuthorityMarker(
+    decisionLog,
+    target.semanticAuthority,
+  );
+  const semanticRows = decisionLog
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(
+        line,
+        exactSemanticMarker,
+        target.semanticAuthority.recordId,
+      ),
+    );
+  if (semanticRows.length !== 1) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'Nafaka terminal reconciliation SA marker must identify one exact decision-log row',
+    );
+  }
+  for (const evidenceLiteral of [
+    binding.ownerRatificationEvidence.exactExcerpt,
+    binding.ownerRatificationEvidence.excerptSha256,
+    binding.programId,
+    binding.knownGoodFloor,
+    `capturedBaseSha : ${base}`,
+  ]) {
+    if (!decisionLog.includes(evidenceLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `Nafaka terminal reconciliation SA is missing ${evidenceLiteral}`,
+      );
+    }
+  }
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const grantLiteral of [
+    binding.ownerRatificationEvidence.exactExcerpt,
+    binding.ownerRatificationEvidence.excerptSha256,
+    binding.programId,
+    binding.targetTaskId,
+    binding.knownGoodFloor,
+    `capturedBaseSha : ${base}`,
+    'GO-COMPLETE',
+    binding.grantScopeLiteral,
+    binding.secondUseLiteral,
+  ]) {
+    if (!grant.includes(grantLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `Nafaka terminal reconciliation EG is missing ${grantLiteral}`,
+      );
+    }
+  }
+
+  for (const { path: repoPath } of target.changedPaths.filter(
+    ({ path: repoPath }) => repoPath !== target.executionGrant.path,
+  )) {
+    const content = gitShow(head, repoPath, cwd);
+    for (const stateLiteral of target.requiredStateLiterals) {
+      if (!content.includes(stateLiteral)) {
+        reject(
+          'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+          `${repoPath} is missing canonical Nafaka state ${stateLiteral}`,
+        );
+      }
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
+function validateNafakaTerminalStateCloseoutScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  const closeout = binding.closeoutPr;
+
+  if (
+    headRef !== closeout.headRef ||
+    taskId !== closeout.taskId ||
+    !hasExactChangeSet(changes, closeout.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'Nafaka terminal reconciliation closeout requires its exact task, branch and EG-only scope',
+    );
+  }
+
+  const decisionLog = gitShow(base, target.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(decisionLog, target.semanticAuthority);
+  const baseGrant = gitShow(base, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(baseGrant, target.executionGrant);
+  assertExactSemanticBinding(baseGrant, target.semanticAuthority);
+  if (
+    baseGrant.includes('STATUS: CONSUMED / CLOSED') ||
+    baseGrant.includes('TERMINAL RECEIPT')
+  ) {
+    reject(
+      'NAFAKA_TERMINAL_EXECUTION_GRANT_REUSED',
+      'Nafaka terminal reconciliation EG is already consumed',
+    );
+  }
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const receiptLiteral of [
+    'STATUS: CONSUMED / CLOSED',
+    'SECOND USE: FAIL-CLOSED',
+    'TERMINAL RECEIPT',
+    'TASK RESULT: CLOSED / CANONICAL / PASS',
+    'NAFAKA: CLOSED / CANONICAL / UYAP-CONSUMABLE',
+    'PRODUCTION SIGNATURES: 0/3 / PENDING_NOT_EXECUTED',
+    'RUNTIME: DORMANT / DEFAULT OFF',
+    'UYAP: HOLD',
+    `reconciliationMergeSha : ${base}`,
+    `effectiveMainSha : ${base}`,
+  ]) {
+    if (!grant.includes(receiptLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `Nafaka terminal receipt is missing ${receiptLiteral}`,
+      );
+    }
+  }
+  return { mode: closeout.mode, taskId: closeout.taskId };
 }
 
 function officeF01Stage1ContractLiterals(binding) {
@@ -9371,6 +9804,39 @@ function validatePrScope(options) {
     return classification;
   }
 
+  const nafakaTerminalBinding =
+    RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  if (classification.mode === nafakaTerminalBinding.bindingPr.mode) {
+    return validateNafakaTerminalStateControlPlaneBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+  if (classification.mode === nafakaTerminalBinding.targetPr.mode) {
+    return validateNafakaTerminalStateReconciliationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+  if (classification.mode === nafakaTerminalBinding.closeoutPr.mode) {
+    return validateNafakaTerminalStateCloseoutScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
   if (classification.mode === ORCHESTRA_EXECUTION_MODEL_REVISION_R01.mode) {
     return classification;
   }
@@ -10508,6 +10974,7 @@ module.exports = {
   RCV_CLAIM_FORM_PB01_FORMAL_CLOSURE_CONTROL_PLANE_BINDING_R01,
   RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_FRESH_REBINDING_R02,
   RECEIVABLE_LEGAL_BASIS_CONTENT_RATIFICATION_ROOT_AUTHORITY_BOOTSTRAP_R01,
+  RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01,
   RCV_COL_FULL_REMEDIATION_BOOTSTRAP_CONTROL_PLANE_BINDING_R01,
   RCV_COL_LARGE_AUTHORITY_READ_REPAIR_R01,
   GRANT_REPO_PATH,
@@ -10580,6 +11047,9 @@ module.exports = {
   validateKc01Tr01OwnershipAuthorityBootstrapScope,
   validateKc01Tr01OwnershipReconciliationBindingScope,
   validateKc01Tr01OwnershipReconciliationScope,
+  validateNafakaTerminalStateCloseoutScope,
+  validateNafakaTerminalStateControlPlaneBindingScope,
+  validateNafakaTerminalStateReconciliationScope,
   validateTr01AuthorityBootstrapBindingScope,
   validateTr01AuthorityBootstrapScope,
   validatePb01AuthorityBootstrapBindingScope,

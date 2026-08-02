@@ -8989,3 +8989,228 @@ test('ordinary governance diff and another task bootstrap remain fail-closed', (
     'OFFICE_F01_BOOTSTRAP_ID_MISMATCH',
   );
 });
+
+function createNafakaTerminalBindingFixture(t) {
+  const binding =
+    coordination.RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  return { ...fixture, binding };
+}
+
+function nafakaTerminalAuthorityMarker(authority) {
+  return `<!-- GOV-COORD-AUTHORITY kind=${authority.kind} recordId=${authority.recordId} -->`;
+}
+
+function createNafakaTerminalReconciliationFixture(t, options = {}) {
+  const binding =
+    coordination.RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  const target = binding.targetPr;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nafaka-terminal-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+
+  writeFixtureRepoFile(
+    root,
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  for (const { path: repoPath } of target.changedPaths.filter(
+    ({ path: repoPath }) => repoPath !== target.executionGrant.path,
+  )) {
+    writeFixtureRepoFile(root, repoPath, `# ${repoPath}\n`);
+  }
+
+  if (options.preConsumed) {
+    writeFixtureRepoFile(
+      root,
+      target.semanticAuthority.path,
+      `# Decision log\n${nafakaTerminalAuthorityMarker(target.semanticAuthority)} **${target.semanticAuthority.recordId} — fixture**\n`,
+    );
+    writeFixtureRepoFile(
+      root,
+      target.executionGrant.path,
+      `${nafakaTerminalAuthorityMarker(target.executionGrant)}\nsemanticAuthorityRef : ${target.semanticAuthority.recordId}\n`,
+    );
+  }
+  const base = commitFixture(root, 'Nafaka terminal base');
+
+  const stateBlock = [
+    ...target.requiredStateLiterals,
+    binding.ownerRatificationEvidence.exactExcerpt,
+    binding.ownerRatificationEvidence.excerptSha256,
+    binding.programId,
+    binding.knownGoodFloor,
+    `capturedBaseSha : ${base}`,
+  ].join('\n');
+  const semanticAuthority = options.semanticAuthority || target.semanticAuthority;
+  const executionGrant = options.executionGrant || target.executionGrant;
+  const semanticMarker = nafakaTerminalAuthorityMarker(semanticAuthority);
+  const semanticRow = `${semanticMarker} **${semanticAuthority.recordId} — fixture**`;
+
+  for (const { path: repoPath } of target.changedPaths.filter(
+    ({ path: repoPath }) => repoPath !== target.executionGrant.path,
+  )) {
+    const prefix =
+      repoPath === target.semanticAuthority.path && !options.missingSemantic
+        ? `${semanticRow}\n`
+        : '';
+    writeFixtureRepoFile(root, repoPath, `# ${repoPath}\n${prefix}${stateBlock}\n`);
+  }
+
+  if (!options.missingGrant) {
+    writeFixtureRepoFile(
+      root,
+      target.executionGrant.path,
+      [
+        nafakaTerminalAuthorityMarker(executionGrant),
+        `semanticAuthorityRef.kind : ${semanticAuthority.kind}`,
+        `semanticAuthorityRef.path : ${semanticAuthority.path}`,
+        `semanticAuthorityRef.recordId : ${semanticAuthority.recordId}`,
+        stateBlock,
+        binding.targetTaskId,
+        'GO-COMPLETE',
+        binding.grantScopeLiteral,
+        binding.secondUseLiteral,
+        '',
+      ].join('\n'),
+    );
+  }
+  const head = commitFixture(root, 'Nafaka terminal reconciliation');
+  return { root, base, head, binding };
+}
+
+test('Nafaka terminal control-plane binding accepts only exact tuple and scope', (t) => {
+  const fixture = createNafakaTerminalBindingFixture(t);
+  const { binding } = fixture;
+  assert.deepEqual(
+    coordination.validateNafakaTerminalStateControlPlaneBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      taskId: binding.taskId,
+      changes: binding.bindingPr.changedPaths,
+      cwd: fixture.root,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.taskId },
+  );
+  for (const override of [
+    { taskId: `${binding.taskId}-COPY` },
+    { headRef: `${binding.bindingPr.headRef}-copy` },
+    { base: '0'.repeat(40) },
+    {
+      changes: [
+        ...binding.bindingPr.changedPaths,
+        { status: 'M', path: 'project/apps/api/src/runtime.ts' },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => coordination.validateNafakaTerminalStateControlPlaneBindingScope({
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        taskId: binding.taskId,
+        changes: binding.bindingPr.changedPaths,
+        cwd: fixture.root,
+        ...override,
+      }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('Nafaka terminal reconciliation exact SA/EG tuple and docs scope pass', (t) => {
+  const fixture = createNafakaTerminalReconciliationFixture(t);
+  const { binding } = fixture;
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      cwd: fixture.root,
+    }),
+    { mode: binding.targetPr.mode, taskId: binding.targetTaskId },
+  );
+});
+
+test('Nafaka terminal reconciliation rejects wrong or missing SA/EG', (t) => {
+  const binding =
+    coordination.RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  const fixtures = [
+    createNafakaTerminalReconciliationFixture(t, {
+      semanticAuthority: { ...binding.targetPr.semanticAuthority, recordId: 'WRONG-SA' },
+    }),
+    createNafakaTerminalReconciliationFixture(t, {
+      executionGrant: { ...binding.targetPr.executionGrant, recordId: 'WRONG-EG' },
+    }),
+    createNafakaTerminalReconciliationFixture(t, { missingSemantic: true }),
+    createNafakaTerminalReconciliationFixture(t, { missingGrant: true }),
+  ];
+  for (const fixture of fixtures) {
+    assert.throws(() =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.targetPr.headRef,
+        cwd: fixture.root,
+      }),
+    );
+  }
+});
+
+test('Nafaka terminal reconciliation denies reused EG and all non-docs expansion', (t) => {
+  const fixture = createNafakaTerminalReconciliationFixture(t, { preConsumed: true });
+  const { binding } = fixture;
+  expectCode(
+    () => coordination.validateNafakaTerminalStateReconciliationScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: binding.targetPr.headRef,
+      taskId: binding.targetTaskId,
+      changes: binding.targetPr.changedPaths,
+      cwd: fixture.root,
+    }),
+    'NAFAKA_TERMINAL_EXECUTION_GRANT_REUSED',
+  );
+
+  for (const repoPath of [
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+    'project/apps/api/src/runtime.ts',
+    'project/docs/governance/kms-production-signature.md',
+    'project/apps/api/src/modules/uyap/uyap.service.ts',
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(
+        [...binding.targetPr.changedPaths, { status: 'M', path: repoPath }],
+        { headRef: binding.targetPr.headRef },
+      ),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('Nafaka terminal reconciliation rejects wildcard and prefix-like branches', () => {
+  const binding =
+    coordination.RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
+  for (const headRef of [
+    `${binding.targetPr.headRef}-copy`,
+    `${binding.targetPr.headRef}/*`,
+    binding.targetPr.headRef.slice(0, -1),
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(binding.targetPr.changedPaths, { headRef }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});

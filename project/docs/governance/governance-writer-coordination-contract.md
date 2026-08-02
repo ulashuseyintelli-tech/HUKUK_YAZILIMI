@@ -2080,3 +2080,107 @@ tuple; exact SA01/EG01 identifiers and distinct locators; owner identity and
 single-use Stage 2 authority; and no product, schema or migration expansion.
 Generic governance diffs, wrong status/path/task/owner/evidence, duplicate
 records and second materialization remain fail-closed.
+
+## RECEIVABLE NAFAKA terminal-state reconciliation — exact two-phase binding
+
+Owner-ratified 2026-08-02. This binding recognizes one exact control-plane
+publication followed by one exact Receivable docs-only terminal-state
+reconciliation and its EG-only terminal closeout. It does not create a generic
+governance allowlist, wildcard task matching or reusable execution authority.
+
+### Phase A — control-plane binding
+
+```text
+Task ID : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-CONTROL-PLANE-BINDING-R01
+Mode : RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01
+Program : RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01
+Base : 0a6ea7fe99607b8a0e820802401cfa2c5f073037
+Head ref : codex/receivable-nafaka-terminal-state-reconciliation-r01-control-plane-binding-r01
+Scope : M project/scripts/governance-coordination.cjs
+        M project/scripts/governance-coordination.test.cjs
+        M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Base, branch, task/mode or exact M/M/M path-status drift is rejected. This
+binding cannot be reused for another task or another revision.
+
+### Phase B — terminal-state reconciliation
+
+```text
+Task ID : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+Mode : RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01
+Head ref : codex/receivable-nafaka-terminal-state-reconciliation-r01
+Scope : M project/docs/governance/RCV-PHASE-1-AUTHORIZATION.md
+        M project/docs/governance/decision-log.md
+        M project/docs/governance/canonicalization-register.md
+        M project/docs/governance/product-backlog.md
+        A project/docs/governance/coordination-execution-grants/RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01.md
+Semantic authority : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-SA01
+Execution grant : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01
+NAFAKA TERMINAL STATE RECONCILIATION ONLY
+SECOND USE: FAIL-CLOSED
+```
+
+Phase B requires a fresh captured main SHA in both SA01 and EG01, an exact
+semantic-authority marker, an exact execution-grant marker and an exact
+SA-to-EG reference. A base that already contains either the SA marker or the
+EG path is consumed and rejected. The four living state surfaces must each
+preserve the following truth: `CLOSED / CANONICAL / UYAP-CONSUMABLE`,
+`OPEN — PRODUCTION SIGNATURE RESIDUAL`, `0/3 / PENDING_NOT_EXECUTED`,
+`DORMANT / DEFAULT OFF`, and next task `NAFAKA PRODUCTION-SIGNATURE AUTHORITY
+PREFLIGHT / READ-ONLY ONLY` under program lock `NAFAKA FIRST`.
+
+### Phase B closeout
+
+```text
+Task ID : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+Mode : RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CLOSEOUT_R01
+Head ref : codex/receivable-nafaka-terminal-state-reconciliation-r01-closeout
+Scope : M project/docs/governance/coordination-execution-grants/RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01.md
+```
+
+Closeout is valid only on the exact reconciliation merge SHA and appends the
+terminal receipt to the existing EG01. It records `CONSUMED / CLOSED`, preserves
+`SECOND USE: FAIL-CLOSED`, and cannot modify decision-log or any other path.
+
+### Owner evidence
+
+```text
+FULL OWNER AUTHORITY — CONTROL-PLANE BINDING + RESUME GO-COMPLETE
+
+OWNER:
+Av. Ulaş Hüseyin Telli
+
+CURRENT PROGRAM:
+RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01
+
+PROGRAM LOCK:
+NAFAKA FIRST
+
+BLOCKED TASK:
+RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+
+KNOWN-GOOD FLOOR:
+0c799a7d90a5782d921a546a1cd4ed09d6a609b0
+
+PHASE A TASK:
+RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-
+CONTROL-PLANE-BINDING-R01
+
+PHASE B TASK:
+RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+
+AUTHORITY:
+SINGLE-EXECUTOR
+FENCE-FIRST
+TWO-PHASE SEQUENTIAL
+GO-COMPLETE
+```
+
+```text
+Owner evidence SHA-256 : 1566f6e81ef697952b1eaee672136b87ddf82007e6efe7cf9c9b6725f5ab151c
+GENERIC ALLOWLIST: PROHIBITED
+WILDCARD OR PREFIX MATCH: PROHIBITED
+PHASE B CONTROL-PLANE MUTATION: PROHIBITED
+PRODUCTION SIGNATURE / KMS / RUNTIME / UYAP: PROHIBITED
+```
