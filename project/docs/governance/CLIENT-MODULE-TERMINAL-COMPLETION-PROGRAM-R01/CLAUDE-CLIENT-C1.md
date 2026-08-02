@@ -402,8 +402,11 @@ Codex X1 paralel yürür; ortak yüzey yalnız client-portal.txt (§4 ile serial
       seed-runtime-gate + seed-controller-guards + seed-client-authority +
       client-bulk-mutation-authorization-r3 = 47/47 PASS; ürün kodu diff'i SIFIR →
       RUNTIME_VERIFIED, reuse #2107 merge SHA `789cf8f6`)*
-- [ ] **B02** characterization önce KIRMIZI, fix sonrası YEŞİL; standart-only ve
+- [x] **B02** characterization önce KIRMIZI, fix sonrası YEŞİL; standart-only ve
       lifecycle-only update `displayName`'i **korur**
+      *(2026-08-02: `client-partial-update-displayname-preservation.spec.ts` önce 5 FAIL /
+      2 PASS (KIRMIZI kanıt), fix sonrası 7/7 PASS; update-yolu regresyonu 140/140 PASS;
+      kısmi kimlik payload'unda eksik bileşenler mevcut kayıttan tamamlanır)*
 - [ ] **B03** atomiklik modeli **kanıtla seçildi** (kör tek-transaction YOK); sınırsız
       yazım kalmadı; failure davranışı test edildi
 - [ ] **B04** `tckn` ve `vkn` bağımsız probe; dedup davranışı ve yarış profili çıkarıldı
