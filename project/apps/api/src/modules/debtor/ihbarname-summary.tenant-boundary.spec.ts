@@ -21,8 +21,9 @@ describe('ThirdPartyService.getIhbarnameSummary — tenant boundary (Gate-1)', (
   }
 
   function makeService(prisma: any) {
-    // getIhbarnameSummary yalnız prisma kullanır; collectionService ve lifecycle guard burada gereksiz.
-    return new ThirdPartyService(prisma, {} as any, {} as any);
+    // getIhbarnameSummary yalnız prisma kullanır; collectionService/lifecycle guard/status
+    // transition servisi burada gereksiz.
+    return new ThirdPartyService(prisma, {} as any, {} as any, {} as any);
   }
 
   it('NEGATIF: başka tenant caseId → NotFoundException + case.findFirst tenant-scoped + caseDebtor sorgusu YOK', async () => {

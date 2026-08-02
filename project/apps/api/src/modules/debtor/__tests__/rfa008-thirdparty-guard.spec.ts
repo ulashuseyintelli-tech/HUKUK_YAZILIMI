@@ -24,7 +24,7 @@ function build(siblings: any[]) {
       lifecycleStatus: 'ACTIVE',
     }),
   };
-  const svc = new ThirdPartyService(prisma as any, {} as any, caseDebtorLifecycleGuard as any);
+  const svc = new ThirdPartyService(prisma as any, {} as any, caseDebtorLifecycleGuard as any, {} as any);
   return { svc, prisma, caseDebtorLifecycleGuard };
 }
 
