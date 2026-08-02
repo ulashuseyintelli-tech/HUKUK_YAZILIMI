@@ -95,6 +95,14 @@ src/modules/client/__tests__/client-mutation-authorization-own13.spec.ts
 src/modules/client/__tests__/client-service-boundary-actor-threading-r1.spec.ts
 src/modules/export-import/__tests__/client-import-actor-threading-r1.spec.ts
 #
+#   CLIENT-OWN-13-I02-R1A reactivate-via-create lifecycle gate (SAF, DB-siz)
+#     Owner clarification (RATIFIED): her `isActive:false -> true` gecisi, hangi entrypoint
+#     uzerinden olursa olsun LIFECYCLE mutasyonudur. Create yetkisi lifecycle yetkisini
+#     ICERMEZ; UserRole.ADMIN tek basina YETMEZ (esik: officeApproval.isApproverEligible).
+#     Dedup/reactivate yolu artik kapidan gecer; yazma yetkilendirilen DURUMA kosulludur
+#     (isActive:false + tenant predicate) -> stale gozlem yetkisiz yazmaya donusemez.
+src/modules/client/__tests__/client-reactivate-via-create-lifecycle-gate-r1a.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure canonical serialization + hash (SAF, DB-siz)
 #     Deterministik key/array sirasi, Decimal(15,2) locale-bagimsizligi, domain-separated
 #     sha256, §35.16 sifir-toleransli reconciliation ve tiplenmis hata govdesinde finansal

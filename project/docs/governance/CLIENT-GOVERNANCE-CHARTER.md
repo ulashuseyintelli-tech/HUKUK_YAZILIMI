@@ -4020,3 +4020,100 @@ residual'larini KAPALI GOSTERMEZ.
 
 **R1 CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. "Butun CLIENT mutation authorization
 tamamlandi" IFADESI GECERSIZDIR. INTERNAL CALL ≠ TRUSTED CALL.**
+
+
+---
+
+## §53 — Reactivate-via-Create Lifecycle Gate (OWN-13 / I02-R1A)
+
+Kaynak: **OWNER CLARIFICATION — RATIFIED** ve
+`CLIENT-OWN-13-I02-R1A-REACTIVATE-VIA-CREATE-LIFECYCLE-GATE-I01` (GO-IMPLEMENT / GO-COMPLETE).
+Bu bolum ADDITIVE'dir; §1–§52.6 metinleri DEGISMEDI.
+
+### 53.1 Owner karari (lossless)
+
+Her `Client.isActive:false → true` gecisi, **hangi entrypoint uzerinden olusursa olsun**
+lifecycle mutation'dir. Buna sunlar dahildir:
+
+- acik reactivate endpoint/akisi
+- `update()` icindeki `isActive` gecisi
+- **create dedup/reactivate yolu**
+- **CASE inline creditor uzerinden create**
+- **Excel/import uzerinden create**
+
+**Create yetkisi, lifecycle yetkisini ICERMEZ.** USER yeni muvekkil olusturabilir; fakat pasif
+mevcut kaydi create uzerinden reaktive EDEMEZ. Reactivate-via-create icin mevcut canonical
+lifecycle authority (`assertCanManageLifecycle()` / `officeApproval.isApproverEligible()`)
+ZORUNLUDUR. **`UserRole.ADMIN` tek basina lifecycle yetkisi SAGLAMAZ**; mevcut lifecycle
+semantigi DEGISTIRILMEZ.
+
+### 53.2 Tarihsel ifadenin uzlastirilmasi
+
+`client.service.ts` icindeki Task 8A notu — *"Reactivate-via-create (dedup yan-etkisi) BU
+KAPSAM DISI — kasitli olarak dokunulmadi"* — bu owner karariyla
+**SUPERSEDED_BY_OWNER_CLARIFICATION** olarak isaretlendi. §52.5'te "kasitli dokunulmayan" diye
+raporlanan yuzey ARTIK KAPALIDIR. Not silinmedi; supersede kaydiyla birlikte korunuyor
+(tarihsel izlenebilirlik).
+
+### 53.3 `create()` sonuc dallari (exact envanter)
+
+| # | Kosul | Sonuc | Lifecycle kapisi |
+|---|---|---|---|
+| 1 | `identityNo` yok | gercekten yeni kayit | HAYIR |
+| 2 | `identityNo` var, dedup eslesmesi yok | gercekten yeni kayit | HAYIR |
+| 3 | dedup eslesmesi **aktif** | mutasyon YOK, mevcut kayit doner (`_reactivated:false`) | HAYIR (davranis AYNEN korundu) |
+| 4 | dedup eslesmesi **pasif** | REACTIVATE (`isActive:true` + `CLIENT_REACTIVATE` audit) | **EVET** |
+
+Ayri bir "merge/update side-effect" dali YOKTUR: reaktivasyon dalinda **yalnizca** `isActive`
+yazilir, baska hicbir alan guncellenmez.
+
+### 53.4 Uygulama
+
+- `assertCanReactivateViaCreate()` — kapi **SERVIS SINIRINDA**, `create()` icinde, herhangi
+  bir DB mutation'dan ONCE. Direct CLIENT route, CASE inline creditor ve Excel import
+  yollarinin **ucu de** ayni kapidan gecer; controller'a ozel kontrol YOKTUR.
+- Esik `assertCanManageLifecycle()` ile **AYNI predicate**tir: mevcut boolean varyant
+  `canManageLifecycle()` cagrilir → `officeApproval.isApproverEligible`. OFFICE eligibility
+  hesabi KOPYALANMAZ, YENIDEN URETILMEZ. Tek fark stabil `reasonCode`dur
+  (`CLIENT_MUTATION_DENIED_LIFECYCLE`).
+- **TOCTOU/race:** `existing` transaction DISINDA okunur. Reaktivasyon yazimi bu yuzden
+  **yetkilendirilen DURUMA kosulludur**: `updateMany({ where: { id, tenantId, isActive: false } })`
+  + `count` kontrolu. Kayit bu arada degistiyse `count===0` olur, hicbir bayrak cevrilmez ve
+  **audit de yazilmaz** (gerceklesmeyen olay icin hayalet kayit uretilmez). Tenant predicate
+  yazmanin kendisinde tasinir → cross-tenant reaktivasyon imkansiz.
+- Reddedilen istek: 403 + stabil `reasonCode` + **hicbir yazma** + ham TCKN/VKN veya alan
+  DEGERI TASIMAYAN govde.
+
+### 53.5 Degismeyenler
+
+Gercekten yeni kayit politikasi (VIEWER deny / USER allow / ADMIN allow) · aktif duplicate
+disposition'i · checksum kapisi ve dedup'tan SONRA gelme sirasi · `update()`/`remove()`
+lifecycle esigi · tenant izolasyonu · audit action ve metadata · response kontrati
+(`_existingReturned` / `_reactivated`). **schema/migration YOK.**
+
+### 53.6 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| R1A odakli test (19 senaryo) | 19/19 PASS |
+| CLIENT modulu regresyon | 387/387 PASS |
+| export-import regresyon | 36/36 PASS |
+| CASE modulu regresyon | 563 PASS / 17 skipped / 0 FAIL |
+| `tsc --noEmit` baseline delta | 577 → 577 (**0 gercek yeni**) |
+| Degisen dosya lint | 0 error |
+| Mutation teeth | **7/7** hedef testi dusurdu, hepsi byte-ayni restore |
+
+Teeth: lifecycle assert kaldir · yalniz direct route birak (CASE/import bypass) · ADMIN'i
+otomatik eligible yap · authorization'i DB update sonrasina tasi · denied path'te partial
+update uret · tenant predicate kaldir · fail-open (eligibility sonucunu yok say).
+
+### 53.7 Bolum Self-Check
+
+Bu bolum: yeni bir authorization altyapisi KURMAZ · OFFICE eligibility hesabini KOPYALAMAZ ·
+lifecycle semantigini GEVSETMEZ · normal create davranisini DEGISTIRMEZ · aktif duplicate
+disposition'ini DEGISTIRMEZ · schema/migration URETMEZ · production verisine ERISMEZ ·
+§1–§52.6 metinlerini DEGISTIRMEZ · PR #2073/R1 kapanisini GERI ACMAZ · R2–R6'yi KAPALI
+GOSTERMEZ.
+
+**R1A CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. CREATE YETKISI ≠ LIFECYCLE YETKISI.
+ADMIN ≠ LIFECYCLE-ELIGIBLE.**
