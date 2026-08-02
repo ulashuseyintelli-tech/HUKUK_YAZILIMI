@@ -34,19 +34,43 @@ export class SeedService {
   async seedAll(tenantId: string, actor: ClientMutationActorContext) {
     await this.clientService.assertCanRunElevatedClientBulkOperation(tenantId, actor);
     this.logger.log('Tüm seed verileri oluşturuluyor...');
-    const results = {
-      office: await this.seedOffice(tenantId),
-      bankAccounts: await this.seedBankAccounts(tenantId),
-      lookups: await this.seedLookups(tenantId),
-      lawyers: await this.seedLawyers(tenantId),
-      staff: await this.seedStaff(tenantId),
-      clients: await this.seedClients(tenantId, actor),
-      debtors: await this.seedDebtors(tenantId),
-      executionOffices: await this.seedExecutionOffices(tenantId),
-      cases: await this.seedCases(tenantId),
-      publicInstitutions: await this.seedPublicInstitutions(),
-      publicInstitutionDebtors: await this.seedPublicInstitutionDebtors(tenantId),
-    };
+    // C1-B03 (F-SEED-05/06) — atomiklik modeli KANITLA seçildi: RESUMABLE/IDEMPOTENT STAGES.
+    // Kanıt: (1) her adım kendi içinde idempotent (exists→skip / upsert / servis dedup);
+    // (2) owner D07 satır-bazlı devamı RATIFIYE eder → all-or-nothing tek büyük transaction
+    // bu sözleşmeyle çelişir; (3) adımlar arası veri bağımlılığı var (cases→clients/debtors,
+    // publicInstitutionDebtors→publicInstitutions) → adım hatasında zincir DURUR, tamamlanan
+    // adımların sonuçları ve çalışmayan adımlar AÇIKÇA raporlanır. Yeniden çalıştırma
+    // idempotency sayesinde kaldığı yerden tamamlar. Yetki hatası ESKİSİ GİBİ throw eder
+    // (403 yutulmaz); yalnız adım-yürütme hatası yapılandırılmış sonuç döner.
+    const steps: Array<[string, () => Promise<any>]> = [
+      ['office', () => this.seedOffice(tenantId)],
+      ['bankAccounts', () => this.seedBankAccounts(tenantId)],
+      ['lookups', () => this.seedLookups(tenantId)],
+      ['lawyers', () => this.seedLawyers(tenantId)],
+      ['staff', () => this.seedStaff(tenantId)],
+      ['clients', () => this.seedClients(tenantId, actor)],
+      ['debtors', () => this.seedDebtors(tenantId)],
+      ['executionOffices', () => this.seedExecutionOffices(tenantId)],
+      ['cases', () => this.seedCases(tenantId)],
+      ['publicInstitutions', () => this.seedPublicInstitutions()],
+      ['publicInstitutionDebtors', () => this.seedPublicInstitutionDebtors(tenantId)],
+    ];
+    const results: Record<string, any> = {};
+    for (let i = 0; i < steps.length; i++) {
+      const [name, run] = steps[i];
+      try {
+        results[name] = await run();
+      } catch (e: any) {
+        this.logger.error(`Seed adımı başarısız: ${name} - ${e?.message}`);
+        return {
+          success: false,
+          message: `Seed '${name}' adımında durdu: ${e?.message}`,
+          results,
+          failedStep: name,
+          notRun: steps.slice(i + 1).map(([n]) => n),
+        };
+      }
+    }
     return { success: true, message: 'Tüm veriler oluşturuldu', results };
   }
 
@@ -332,6 +356,7 @@ export class SeedService {
     const caseTypes = ['GENERAL_EXECUTION', 'CHECK', 'BOND', 'RENTAL', 'MORTGAGE'];
     const amounts = [15000, 25000, 50000, 75000, 100000, 150000, 250000, 500000, 750000, 1000000];
     let created = 0;
+    let failed = 0;
 
     for (let i = 0; i < 10; i++) {
       const fileNumber = `2025/${(1000 + i).toString()}`;
@@ -345,37 +370,46 @@ export class SeedService {
       const takipTuru = takipTurleri[i % takipTurleri.length];
       const risk = riskler[i % riskler.length];
 
-      const newCase = await this.prisma.case.create({
-        data: {
-          tenantId,
-          fileNumber,
-          executionFileNumber: `2025/${(5000 + i).toString()} E.`,
-          type: caseTypes[i % caseTypes.length] as any,
-          clientId: client.id,
-          principalAmount: amounts[i],
-          caseDate: new Date(2025, 0, 1 + i * 10),
-          executionOfficeId: office?.id,
-          takipTuruId: takipTuru?.id,
-          riskId: risk?.id,
-          notes: `Örnek dosya ${i + 1}`,
-        },
-      });
+      // C1-B03 (F-SEED-05/06): satır başına 3 yazım (case + caseDebtor + caseLawyer)
+      // önceden TRANSACTIONSIZDI — araya düşen hata borçlusuz/avukatsız yarım dosya
+      // bırakıyordu. Satır-seviyesi DAR transaction: satır ya bütün ilişkileriyle yazılır
+      // ya hiç yazılmaz. Satır-bazlı devam (D07 deseni) KORUNUR: bir satırın hatası
+      // önceki başarıları geri almaz, sonraki satırlar denenir, `failed` açıkça sayılır.
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const newCase = await tx.case.create({
+            data: {
+              tenantId,
+              fileNumber,
+              executionFileNumber: `2025/${(5000 + i).toString()} E.`,
+              type: caseTypes[i % caseTypes.length] as any,
+              clientId: client.id,
+              principalAmount: amounts[i],
+              caseDate: new Date(2025, 0, 1 + i * 10),
+              executionOfficeId: office?.id,
+              takipTuruId: takipTuru?.id,
+              riskId: risk?.id,
+              notes: `Örnek dosya ${i + 1}`,
+            },
+          });
 
-      // Borçlu ekle
-      await this.prisma.caseDebtor.create({
-        data: { caseId: newCase.id, debtorId: debtor.id },
-      });
+          await tx.caseDebtor.create({
+            data: { caseId: newCase.id, debtorId: debtor.id },
+          });
 
-      // Avukat ekle
-      if (lawyer) {
-        await this.prisma.caseLawyer.create({
-          data: { caseId: newCase.id, lawyerId: lawyer.id },
+          if (lawyer) {
+            await tx.caseLawyer.create({
+              data: { caseId: newCase.id, lawyerId: lawyer.id },
+            });
+          }
         });
+        created++;
+      } catch (e: any) {
+        failed++;
+        this.logger.warn(`Örnek dosya seed edilemedi: ${fileNumber} - ${e?.message}`);
       }
-
-      created++;
     }
-    return { created, message: `${created} dosya oluşturuldu` };
+    return { created, failed, message: `${created} dosya oluşturuldu` };
   }
 
   /**
@@ -478,50 +512,45 @@ export class SeedService {
       await this.seedPublicInstitutions();
     }
     
-    // PublicInstitution tablosundan tüm kurumları al (limit yok)
+    // C1-B03 (F-SEED-05/06): önceden "limit yok" — ~850+ kurum için kurum başına
+    // findFirst+create (sınırsız, ~1700 sorgu). Model: BOUNDED BATCH. Mevcut kayıtlar
+    // TEK okuma ile (tenant-scoped detsisNo kümesi) çıkarılır, eksikler deterministik
+    // chunk'larla `createMany` yazılır. Bir chunk düşerse satır-bazlı devam (D07 deseni):
+    // o chunk tek tek denenir, hatalı satır `failed` sayılır, kalan chunk'lar devam eder.
     const institutions = await this.prisma.publicInstitution.findMany({
       where: { isActive: true },
     });
 
     this.logger.log(`${institutions.length} kurum bulundu, borçlu olarak ekleniyor...`);
 
-    let created = 0;
-    let skipped = 0;
+    // Kurum türünü belirle (schema'daki enum değerlerine göre)
+    // PublicInstitutionType: BAKANLIK, BELEDIYE, IL_OZEL_IDARESI, UNIVERSITE, KIT, DIGER_KAMU
+    const institutionTypeMap: Record<string, string> = {
+      BAKANLIK: 'BAKANLIK',
+      GENEL_MUDURLUK: 'DIGER_KAMU',
+      BASKANLIK: 'DIGER_KAMU',
+      KURUL: 'DIGER_KAMU',
+      KURUM: 'KIT',
+      UNIVERSITE: 'UNIVERSITE',
+      BELEDIYE: 'BELEDIYE',
+      IL_OZEL_IDARESI: 'IL_OZEL_IDARESI',
+      VALILIK: 'DIGER_KAMU',
+      KAYMAKAMLIK: 'DIGER_KAMU',
+      MAHKEME: 'DIGER_KAMU',
+      SAVCILIK: 'DIGER_KAMU',
+      HASTANE: 'DIGER_KAMU',
+      ICRA_DAIRESI: 'DIGER_KAMU',
+    };
 
-    for (const inst of institutions) {
-      try {
-        // DETSİS no ile kontrol et
-        const existing = await this.prisma.debtor.findFirst({
-          where: { 
-            tenantId, 
-            detsisNo: inst.detsisNo,
-          },
-        });
+    const existingRows = await this.prisma.debtor.findMany({
+      where: { tenantId, detsisNo: { in: institutions.map((i) => i.detsisNo) } },
+      select: { detsisNo: true },
+    });
+    const existingSet = new Set(existingRows.map((r) => r.detsisNo));
 
-        if (existing) {
-          skipped++;
-          continue;
-        }
-
-        // Kurum türünü belirle (schema'daki enum değerlerine göre)
-        // PublicInstitutionType: BAKANLIK, BELEDIYE, IL_OZEL_IDARESI, UNIVERSITE, KIT, DIGER_KAMU
-        const institutionTypeMap: Record<string, string> = {
-          BAKANLIK: 'BAKANLIK',
-          GENEL_MUDURLUK: 'DIGER_KAMU',
-          BASKANLIK: 'DIGER_KAMU',
-          KURUL: 'DIGER_KAMU',
-          KURUM: 'KIT',
-          UNIVERSITE: 'UNIVERSITE',
-          BELEDIYE: 'BELEDIYE',
-          IL_OZEL_IDARESI: 'IL_OZEL_IDARESI',
-          VALILIK: 'DIGER_KAMU',
-          KAYMAKAMLIK: 'DIGER_KAMU',
-          MAHKEME: 'DIGER_KAMU',
-          SAVCILIK: 'DIGER_KAMU',
-          HASTANE: 'DIGER_KAMU',
-          ICRA_DAIRESI: 'DIGER_KAMU',
-        };
-
+    const toCreate = institutions
+      .filter((inst) => !existingSet.has(inst.detsisNo))
+      .map((inst) => {
         const debtorData: any = {
           tenantId,
           type: 'PUBLIC_INSTITUTION',
@@ -531,22 +560,40 @@ export class SeedService {
           institutionType: institutionTypeMap[inst.category] || 'DIGER_KAMU',
           identityNo: inst.detsisNo,
         };
-
-        // KEP adresi varsa ekle
         if (inst.kepAddress) {
           debtorData.kepAddress = inst.kepAddress;
         }
+        return debtorData;
+      });
 
-        await this.prisma.debtor.create({ data: debtorData });
-        created++;
-      } catch (err: any) {
-        this.logger.warn(`Kurum eklenemedi: ${inst.name} - ${err.message}`);
-        skipped++;
+    let created = 0;
+    let failed = 0;
+    const BATCH_SIZE = 100; // deterministik sınır — tek sınırsız döngü kalmadı
+    for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
+      const chunk = toCreate.slice(i, i + BATCH_SIZE);
+      try {
+        const res = await this.prisma.debtor.createMany({ data: chunk });
+        created += res.count;
+      } catch (chunkErr: any) {
+        this.logger.warn(
+          `Kurum-borçlu chunk yazımı düştü (${chunk.length} satır), satır-bazlı deneniyor: ${chunkErr?.message}`,
+        );
+        for (const row of chunk) {
+          try {
+            await this.prisma.debtor.create({ data: row });
+            created++;
+          } catch (err: any) {
+            this.logger.warn(`Kurum eklenemedi: ${row.name} - ${err?.message}`);
+            failed++;
+          }
+        }
       }
     }
 
+    // Eski sözleşme korunur: `skipped` = zaten var olan KURUM sayısı + yazılamayan satırlar.
+    const skipped = institutions.length - toCreate.length + failed;
     this.logger.log(`Kamu kurumu borçluları: ${created} oluşturuldu, ${skipped} atlandı`);
-    return { created, skipped, message: `${created} kamu kurumu borçlu olarak eklendi` };
+    return { created, skipped, failed, message: `${created} kamu kurumu borçlu olarak eklendi` };
   }
 
   // Kamu kurumları seed (DETSİS verileri + UYAP İcra Daireleri)

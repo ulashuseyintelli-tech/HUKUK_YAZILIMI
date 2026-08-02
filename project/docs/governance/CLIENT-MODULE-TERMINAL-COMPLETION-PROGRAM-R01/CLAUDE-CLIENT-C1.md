@@ -407,8 +407,13 @@ Codex X1 paralel yürür; ortak yüzey yalnız client-portal.txt (§4 ile serial
       *(2026-08-02: `client-partial-update-displayname-preservation.spec.ts` önce 5 FAIL /
       2 PASS (KIRMIZI kanıt), fix sonrası 7/7 PASS; update-yolu regresyonu 140/140 PASS;
       kısmi kimlik payload'unda eksik bileşenler mevcut kayıttan tamamlanır)*
-- [ ] **B03** atomiklik modeli **kanıtla seçildi** (kör tek-transaction YOK); sınırsız
+- [x] **B03** atomiklik modeli **kanıtla seçildi** (kör tek-transaction YOK); sınırsız
       yazım kalmadı; failure davranışı test edildi
+      *(2026-08-02: model = seedAll resumable/idempotent stages (kanıt: adım-idempotency +
+      D07 satır-bazlı devam ratifikasyonu all-or-nothing'i dışlar + adımlar arası veri
+      bağımlılığı) · seedCases satır-seviyesi dar tx (3 yazım/satır önceden transactionsızdı) ·
+      seedPublicInstitutionDebtors bounded batch (tek existing okuması + 100'lük chunk).
+      `seed-bulk-atomicity.spec.ts` 10 test + seed regresyonu = 56/56 PASS)*
 - [ ] **B04** `tckn` ve `vkn` bağımsız probe; dedup davranışı ve yarış profili çıkarıldı
 - [ ] **B05** design gate'in 7 maddesi kanıtlandı; çözüm **seçildi ve gerekçelendirildi**;
       migration yazıldı + CI'da doğrulandı (**apply WAVE 4**)
