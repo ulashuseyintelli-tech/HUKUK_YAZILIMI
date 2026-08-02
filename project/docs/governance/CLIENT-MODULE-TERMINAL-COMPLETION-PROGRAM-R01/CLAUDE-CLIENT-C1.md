@@ -397,7 +397,11 @@ Codex X1 paralel yürür; ortak yüzey yalnız client-portal.txt (§4 ile serial
 
 ## 11. ACCEPTANCE KRİTERLERİ (blok bazlı)
 
-- [ ] **B01** #2107 residualleri fresh main'de doğrulandı; kapanmayan kalem yok/tamamlandı
+- [x] **B01** #2107 residualleri fresh main'de doğrulandı; kapanmayan kalem yok/tamamlandı
+      *(2026-08-02, main `a92a5a44`: F-SEED-01..04 + FIND-C2 backfill 5/5 koddan kanıtlandı;
+      seed-runtime-gate + seed-controller-guards + seed-client-authority +
+      client-bulk-mutation-authorization-r3 = 47/47 PASS; ürün kodu diff'i SIFIR →
+      RUNTIME_VERIFIED, reuse #2107 merge SHA `789cf8f6`)*
 - [ ] **B02** characterization önce KIRMIZI, fix sonrası YEŞİL; standart-only ve
       lifecycle-only update `displayName`'i **korur**
 - [ ] **B03** atomiklik modeli **kanıtla seçildi** (kör tek-transaction YOK); sınırsız
