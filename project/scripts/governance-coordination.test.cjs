@@ -9214,3 +9214,53 @@ test('Nafaka terminal reconciliation rejects wildcard and prefix-like branches',
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01 — terminal bootstrap
+//
+// Owner-approved single-use exception. These tests pin the properties that make
+// it safe: it authorises the transition PR and not itself, it cannot widen, and
+// it cannot be reused.
+
+test('terminal bootstrap is single-use and terminal on merge', () => {
+  const b = coordination.MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01;
+  assert.equal(b.reusable, false);
+  assert.equal(b.terminalOnMerge, true);
+  assert.equal(b.programId, 'REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01');
+  assert.equal(b.headRef, 'claude/merge-flow-transition-generic-create-r01');
+});
+
+test('terminal bootstrap authorises only the exact M/M/M transition tuple', () => {
+  const b = coordination.MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01;
+  assert.equal(b.changedPaths.length, 3);
+  assert.ok(b.changedPaths.every((e) => e.status === 'M'), 'transition PR creates no files');
+  assert.deepEqual(b.changedPaths.map((e) => e.path).sort(), [
+    'project/docs/governance/governance-writer-coordination-contract.md',
+    'project/scripts/governance-coordination.cjs',
+    'project/scripts/governance-coordination.test.cjs',
+  ]);
+});
+
+test('terminal bootstrap subject excludes the taxonomy remediation', () => {
+  // Scope discipline: the transition PR carries generic reachability and
+  // EXACT_FILE_CREATION only. Mixing PR-A into it would smuggle unauthorised
+  // paths through an owner exception granted for something else.
+  const b = coordination.MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01;
+  assert.equal(b.authorisedSubject,
+    'GENERIC_CONTROL_PLANE_REACHABILITY_AND_EXACT_FILE_CREATION');
+  assert.ok(!/taxonomy|installer|adapter/i.test(b.authorisedSubject));
+});
+
+test('bootstrap declaration extraction detects absence and modification', () => {
+  const extract = coordination.extractTransitionBootstrapDeclaration;
+  const marker = 'const MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01 = Object.freeze({';
+  assert.equal(extract('nothing here'), null, 'absent declaration must be null');
+
+  const pristine = `prefix\n${marker}\n  reusable: false,\n});\nsuffix`;
+  const tampered = `prefix\n${marker}\n  reusable: true,\n});\nsuffix`;
+  const a = extract(pristine);
+  const b = extract(tampered);
+  assert.ok(a && b);
+  assert.notEqual(a, b, 'a modified declaration must not compare equal to the base copy');
+  assert.equal(extract(pristine), a, 'extraction is deterministic');
+});

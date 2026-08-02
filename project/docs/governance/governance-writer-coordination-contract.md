@@ -2184,3 +2184,38 @@ WILDCARD OR PREFIX MATCH: PROHIBITED
 PHASE B CONTROL-PLANE MUTATION: PROHIBITED
 PRODUCTION SIGNATURE / KMS / RUNTIME / UYAP: PROHIBITED
 ```
+
+### Terminal bootstrap — MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01
+
+Programme `REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01`, task
+`MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01`, mode
+`MERGE_FLOW_TRANSITION_GENERIC_CREATE_R01`, branch
+`claude/merge-flow-transition-generic-create-r01`, owner decision
+`APPROVED — single-use terminal bootstrap`.
+
+`classifyPrChangeSet` rejects any control-plane diff before it evaluates the
+execution branch, so the generic request/execution chain cannot reach the control
+plane at all. Every control-plane change therefore needs a hard-coded branch
+binding — including the change that would remove that requirement. The sixty
+accumulated branch constants are the arithmetic of that paradox rather than
+carelessness, and it cannot be broken from inside. The owner authorised exactly
+one terminal exception to break it from outside.
+
+This binding authorises the transition pull request only: one exact branch and
+one exact `M / M / M` tuple over `governance-coordination.cjs`, its test file and
+this contract. It does not authorise the bootstrap pull request that introduces
+it; that pull request is expected to fail Architectural Guardrails with
+`CONTROL_PLANE_SCOPE_FORBIDDEN` and is admitted by an owner web-UI bypass of that
+single check, every other check being required to pass. Direct pushes to `main`
+remain forbidden.
+
+`validateTransitionBootstrapScope` re-reads this declaration from the pull
+request's base commit and requires it to be byte-identical to the head copy, so a
+transition pull request that edits its own authorisation is rejected and the
+authority always predates the change it authorises. `reusable` is `false`: the
+tuple pins one branch and one exact change set, and the binding is spent when
+that branch merges. The transition pull request is confined to generic
+control-plane reachability and the `EXACT_FILE_CREATION` operation class; the
+taxonomy, installer and adapter remediation is explicitly excluded and must
+follow through the generic chain afterwards. No further hard-coded binding may be
+added once the transition has landed.

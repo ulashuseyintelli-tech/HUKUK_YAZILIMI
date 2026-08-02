@@ -408,6 +408,67 @@ function officeF01ValidatorRepairBaseIsValid(base, cwd = REPO_ROOT) {
   }).status === 0;
   return commitAvailable && gitIsAncestor(repair.baseSha, base, cwd);
 }
+/**
+ * REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01 — TERMINAL BOOTSTRAP
+ *
+ * Owner-approved, single-use. This is the last hard-coded branch binding this
+ * repository should ever need, and its only purpose is to make further ones
+ * unnecessary.
+ *
+ * WHY IT HAS TO EXIST
+ * The generic request/execution chain is unreachable for the control plane:
+ * classifyPrChangeSet rejects any control-plane diff (CONTROL_PLANE_SCOPE_FORBIDDEN)
+ * *before* it ever evaluates the execution branch. So every control-plane change
+ * requires a hard-coded binding — including the change that would remove that
+ * requirement. Sixty accumulated branch constants are the arithmetic of that
+ * paradox, not carelessness. It cannot be broken from inside; the owner
+ * authorised exactly one terminal exception to break it from outside.
+ *
+ * WHAT IT AUTHORISES — AND WHAT IT DOES NOT
+ * It authorises the TRANSITION pull request only: one exact branch, one exact
+ * M/M/M path tuple. It does NOT authorise the bootstrap pull request that
+ * introduces it; that PR is expected to fail Architectural Guardrails with
+ * CONTROL_PLANE_SCOPE_FORBIDDEN and is admitted by an owner web-UI bypass of
+ * that single check, with every other check required to pass.
+ *
+ * ANTI-SELF-AUTHORISATION
+ * validateTransitionBootstrapScope re-reads this declaration from the pull
+ * request's BASE commit and requires it to be byte-identical to the head copy.
+ * A transition PR that edits its own authorisation is rejected. The authority
+ * therefore always predates the change it authorises.
+ *
+ * TERMINALITY
+ * reusable=false. The tuple pins one branch name and one exact change set; once
+ * that branch merges the binding is spent. Re-use with a different base or a
+ * different diff fails the exact-tuple check.
+ */
+const MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01 = Object.freeze({
+  programId: 'REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01',
+  taskId: 'MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01',
+  mode: 'MERGE_FLOW_TRANSITION_GENERIC_CREATE_R01',
+  headRef: 'claude/merge-flow-transition-generic-create-r01',
+  ownerDecision: 'APPROVED — single-use terminal bootstrap',
+  reusable: false,
+  terminalOnMerge: true,
+  // The transition PR is limited to generic control-plane reachability and the
+  // EXACT_FILE_CREATION operation class. Taxonomy, installer and adapter
+  // remediation are explicitly NOT authorised here and must go through the
+  // generic chain afterwards.
+  authorisedSubject: 'GENERIC_CONTROL_PLANE_REACHABILITY_AND_EXACT_FILE_CREATION',
+  contractPath:
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  changedPaths: Object.freeze([
+    Object.freeze({ status: 'M', path: 'project/scripts/governance-coordination.cjs' }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/scripts/governance-coordination.test.cjs',
+    }),
+    Object.freeze({
+      status: 'M',
+      path: 'project/docs/governance/governance-writer-coordination-contract.md',
+    }),
+  ]),
+});
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01',
   bindingPr: Object.freeze({
@@ -3606,6 +3667,17 @@ function classifyPrChangeSet(changes, context = {}) {
     );
   }
 
+  const transitionBootstrap = MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01;
+  if (context.headRef === transitionBootstrap.headRef) {
+    if (!hasExactChangeSet(changes, transitionBootstrap.changedPaths)) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'transition bootstrap branch requires its exact M/M/M scope',
+      );
+    }
+    return { mode: transitionBootstrap.mode, taskId: transitionBootstrap.taskId };
+  }
+
   const officeF01Stage1 =
     OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01;
   const officeF01ValidatorRepair =
@@ -6378,6 +6450,61 @@ function validateNafakaTerminalStateCloseoutScope(options) {
     }
   }
   return { mode: closeout.mode, taskId: closeout.taskId };
+}
+
+/**
+ * Extract the terminal-bootstrap declaration block from a copy of this guard.
+ * Used to compare the base and head copies byte-for-byte.
+ */
+function extractTransitionBootstrapDeclaration(source) {
+  const marker = 'const MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01 = Object.freeze({';
+  const start = source.indexOf(marker);
+  if (start === -1) return null;
+  const end = source.indexOf('\n});', start);
+  if (end === -1) return null;
+  return source.slice(start, end + 4);
+}
+
+/**
+ * Authorise the transition pull request.
+ *
+ * The authority is read from the BASE commit and must be byte-identical to the
+ * head copy: a pull request that edits its own authorisation is rejected, so
+ * the authority always predates the change it authorises. Beyond that the
+ * branch and the exact M/M/M tuple must match the owner-pinned declaration —
+ * no widening, no extra path, no status substitution.
+ */
+function validateTransitionBootstrapScope(options) {
+  const { base, head, headRef, changes, cwd = REPO_ROOT } = options;
+  const binding = MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01;
+  const guardPath = 'project/scripts/governance-coordination.cjs';
+
+  if (headRef !== binding.headRef || !hasExactChangeSet(changes, binding.changedPaths)) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'transition bootstrap requires its exact branch and M/M/M scope',
+    );
+  }
+
+  const baseDeclaration = extractTransitionBootstrapDeclaration(gitShow(base, guardPath, cwd));
+  if (baseDeclaration === null) {
+    reject(
+      'TRANSITION_BOOTSTRAP_AUTHORITY_MISSING',
+      'the terminal bootstrap declaration is absent from the base commit; '
+        + 'authority must predate the change it authorises',
+    );
+  }
+  const headDeclaration = extractTransitionBootstrapDeclaration(gitShow(head, guardPath, cwd));
+  if (headDeclaration !== baseDeclaration) {
+    reject(
+      'TRANSITION_BOOTSTRAP_SELF_AUTHORIZATION',
+      'the transition pull request modifies its own authorisation',
+    );
+  }
+  if (binding.reusable !== false) {
+    reject('TRANSITION_BOOTSTRAP_REUSE_FORBIDDEN', 'the terminal bootstrap is single-use');
+  }
+  return { mode: binding.mode, taskId: binding.taskId };
 }
 
 function officeF01Stage1ContractLiterals(binding) {
@@ -9837,6 +9964,10 @@ function validatePrScope(options) {
     });
   }
 
+  if (classification.mode === MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01.mode) {
+    return validateTransitionBootstrapScope({ base, head, headRef, changes, cwd });
+  }
+
   if (classification.mode === ORCHESTRA_EXECUTION_MODEL_REVISION_R01.mode) {
     return classification;
   }
@@ -10981,6 +11112,9 @@ module.exports = {
   LEVEL_2_OPERATIONS,
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
   OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01,
+  MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01,
+  extractTransitionBootstrapDeclaration,
+  validateTransitionBootstrapScope,
   OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01,
   OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
   OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
