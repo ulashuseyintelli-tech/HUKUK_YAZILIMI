@@ -13,6 +13,50 @@ interface PoaRecentDeliveryOverviewRow {
   lastError: string | null;
 }
 
+const NOTIFICATION_HTML_ALLOWED_TAGS = new Set([
+  "b",
+  "br",
+  "em",
+  "i",
+  "li",
+  "ol",
+  "p",
+  "strong",
+  "u",
+  "ul",
+]);
+
+/**
+ * E-posta gövdesinde yalnız attributesiz temel biçimlendirme etiketlerini korur.
+ * Diğer etiketler atılır; metin ve entity başlangıçları HTML-escape edilir.
+ */
+export function sanitizeNotificationHtml(value: string): string {
+  return String(value ?? "")
+    .split(/(<[^>]*>)/g)
+    .map((part) => {
+      if (!part.startsWith("<")) return escapeNotificationHtmlText(part);
+
+      const tagMatch = /^<\s*(\/?)\s*([a-z0-9]+)\b[^>]*>$/i.exec(part);
+      if (!tagMatch) return "";
+
+      const closing = tagMatch[1] === "/";
+      const tag = tagMatch[2].toLowerCase();
+      if (!NOTIFICATION_HTML_ALLOWED_TAGS.has(tag)) return "";
+      if (tag === "br") return closing ? "" : "<br>";
+      return closing ? `</${tag}>` : `<${tag}>`;
+    })
+    .join("");
+}
+
+function escapeNotificationHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export interface SendEmailDto {
   clientId: string;
   caseId?: string;
@@ -513,6 +557,9 @@ export class ClientNotificationService {
       );
     }
 
+    const safeHtmlBody = sanitizeNotificationHtml(dto.body);
+    const safePersistedBody = sanitizeNotificationHtml(dto.persistedBody ?? dto.body);
+
     // Nodemailer transporter oluştur
     const transporter = nodemailer.createTransport({
       host: smtpSettings.smtpHost,
@@ -533,7 +580,7 @@ export class ClientNotificationService {
         channel: "EMAIL",
         type: dto.type,
         subject: dto.persistedSubject ?? dto.subject,
-        body: dto.persistedBody ?? dto.body,
+        body: safePersistedBody,
         status: "PENDING",
         sentById: userId,
         metadata: dto.templateId ? { templateId: dto.templateId } : undefined,
@@ -550,7 +597,7 @@ export class ClientNotificationService {
         from: `"${fromName}" <${fromEmail}>`,
         to: recipientEmail,
         subject: dto.subject,
-        html: dto.body,
+        html: safeHtmlBody,
       });
 
       // Başarılı - durumu güncelle

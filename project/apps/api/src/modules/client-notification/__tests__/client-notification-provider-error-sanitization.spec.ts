@@ -1,5 +1,8 @@
 import * as nodemailer from "nodemailer";
-import { ClientNotificationService } from "../client-notification.service";
+import {
+  ClientNotificationService,
+  sanitizeNotificationHtml,
+} from "../client-notification.service";
 
 jest.mock("nodemailer", () => ({
   createTransport: jest.fn(),
@@ -59,6 +62,35 @@ describe("ClientNotificationService provider error sanitization", () => {
     expect(persisted).toContain("apiKey=***");
     expect(`${persisted} ${responseMessage} ${logged}`).not.toContain(rawSecret);
     expect(`${persisted} ${responseMessage} ${logged}`).not.toContain("another-secret");
+  });
+
+  it("e-posta HTML'inde yalnız güvenli temel biçimlendirmeyi gönderir ve persist eder", async () => {
+    const rawBody =
+      '<p onclick="steal()">Merhaba <strong>müvekkil</strong></p>' +
+      '<img src=x onerror="steal()"><script>alert(1)</script>&#x3c;svg onload=steal()>';
+    const safeBody =
+      "<p>Merhaba <strong>müvekkil</strong></p>alert(1)&amp;#x3c;svg onload=steal()&gt;";
+    const sendMail = jest.fn().mockResolvedValue({ messageId: "message-1" });
+    (nodemailer.createTransport as jest.Mock).mockReturnValue({ sendMail });
+    office.getFullSmtpSettings.mockResolvedValue({
+      smtpHost: "smtp.example.com",
+      smtpUser: "smtp-user",
+      smtpPass: "smtp-pass",
+    });
+    const service = new ClientNotificationService(prisma, office);
+
+    await service.sendEmail("tenant-1", "user-1", {
+      clientId: "client-1",
+      type: "GENEL_BILGILENDIRME",
+      subject: "Konu",
+      body: rawBody,
+    });
+
+    expect(sanitizeNotificationHtml(rawBody)).toBe(safeBody);
+    expect(prisma.clientNotification.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ body: safeBody }) })
+    );
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ html: safeBody }));
   });
 
   it("SMS provider URL query'sini DB, response ve logdan tamamen redakte eder", async () => {
