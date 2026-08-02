@@ -450,8 +450,18 @@ Codex X1 paralel yürür; ortak yüzey yalnız client-portal.txt (§4 ile serial
       7/7 PASS; create-yolu regresyonu 84/84 PASS. Yarış profili KANITLANDI: DB tekilliği
       olmadan eşzamanlı iki create ikisi de yazar — servis katmanı pencereyi kapatamaz;
       kapanış B05 design gate'in DB-seviyesi çıktısına aittir)*
-- [ ] **B05** design gate'in 7 maddesi kanıtlandı; çözüm **seçildi ve gerekçelendirildi**;
+- [x] **B05** design gate'in 7 maddesi kanıtlandı; çözüm **seçildi ve gerekçelendirildi**;
       migration yazıldı + CI'da doğrulandı (**apply WAVE 4**)
+      *(2026-08-02: (1) duplicate profili — canlı değer UNKNOWN_AT_ENGINEERING_TIME, envanter
+      SQL'i migration'a gömülü, WAVE-4 gate şartı; (2) null/empty — `''` değerdir → index
+      `IS NOT NULL AND <> ''`; (3) PG16 NULLS DISTINCT + repo'da partial-unique emsali
+      (office_auth_p02 :20); (4) FK — Client ~15 ilişkinin hedefi → migration satır
+      SİLMEZ/birleştirmez, fail-closed; (5) API — P2002 → mevcut DUPLICATE_IDENTITY
+      sözleşmesi, imza değişmedi (XL-3); (6-7) lost-update/CAS — `version` payload alanı
+      C2-owned policy allowlist değişikliği ister → atomik birlikte deploy KANITLANAMADI,
+      C4 aynı migration owner altında SERİ paketlenir. ÇÖZÜM: aktif satırda
+      (tenantId,tckn)+(tenantId,vkn) partial unique — `20260802190000_client_identity_
+      active_partial_unique`; conflict-mapping spec + regresyon 124/124 + XL-3 41/41 PASS)*
 - [ ] **B06** seed modülü testli; B01–B05 regresyonla kilitli
 - [ ] Her blok: CI required checks yeşil · mergeability CLEAN · squash-merge · main sync ·
       kendi branch/worktree cleanup · zorunlu blok çıktısı yayımlandı
