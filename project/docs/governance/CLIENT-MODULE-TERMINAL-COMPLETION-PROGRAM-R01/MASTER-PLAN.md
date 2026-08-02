@@ -399,26 +399,42 @@ doğrulandı. → Sayfa **SUSPENDED_FOR_ACTIVATION** (TERMINAL CLOSED DEĞİL); 
 **Amaç:** OWN-13 residuallerini kapatmak ve adres yaşam döngüsünü aynı yetki sözleşmesi
 altında tamamlamak. **`client-mutation-policy.ts`'in tek writer'ı.**
 
-Sıralı alt görevler:
-1. **OWN-13 R3** — #2107 ile EARLY-CANONICAL; burada yalnız **reconcile + residual
-   doğrulama** yapılır, yeniden implement EDİLMEZ.
-2. **R4** workspace-command authorization (FIND-C2: poa-reminder / template-notification /
-   document-request / intake-link / poa-file — VIEWER dahil rol kontrolsüz).
-3. **R5** intake-link mutation authority — **çıktısı Codex X3'ün predecessor'ıdır**
-   (primitive burada canonical olur).
-4. **R6** POA upload authority.
-5. **R7** OWN-10/12/15 bağlantıları.
-6. **Notification/workspace rol politikası ve primitive'i** — canonical hale gelir;
-   **Codex X1 bunu yalnız WIRE eder** (CN-1 wiring X1'in ardıl alt görevi).
-7. **Address lifecycle (ARC-07 mühendislik):** I04 evidence hazırlığı, resolver,
-   primary/current invariant, multi-address davranışı, rollback.
-   **I05 dry-run / I06 apply / I08 = WAVE 4 (production-gated).**
-8. Core + adres mutasyonlarının **fail-closed sertifikasyonu**.
+**Yapı: TEK SAYFA, 8 SIRALI ENGINEERING BLOK + 1 ERTELENMİŞ ACTIVATION BLOĞU.**
+Bloklar, ratifiye edilmiş sıralı alt görevlerin (v1.0, madde 1–8) **birebir karşılığıdır**;
+yeni iş eklenmemiş, sıra değiştirilmemiştir. Blok başına owner onayı İSTENMEZ.
 
-**Entry:** C1 canonical kapalı · eligibility sözleşmesi dondurulmuş.
-**Exit:** Her `client/` mutasyonu (core + adres) fail-closed yetkili + audited; OWN-13
-residualleri kapalı veya açıkça owner-deferred; **R5 + notification primitive'i canonical
-ve donmuş** (X1/X3 tüketebilir).
+```text
+C2-B01  R3 reconcile-only (#2107 EARLY-CANONICAL — duplicate açma)
+C2-B02  R4 workspace-command authorization (FIND-C2)     [owner rol politikası ön koşulu]
+C2-B03  R5 intake-link mutation authority                → CROSS-LANE: X3 UNBLOCKED
+C2-B04  R6 POA upload authority
+C2-B05  R7 OWN-10/12/15 (ratifiye/deferred exact sınıflandırma)
+C2-B06  Notification/workspace authority primitive       → CROSS-LANE: X1 CN-1 UNBLOCKED
+        [B02 ile AYNI owner rol politikası ön koşulu]
+C2-B07  Address lifecycle — ARC-07 mühendislik (isCurrent inert defekti kapanır)
+C2-B08  Fail-closed sertifikasyonu (core + adres)        → ENGINEERING_COMPLETE
+C2-PROD-ACTIVATION (WAVE 4, AYNI SAYFA)                  → PRODUCTION_ACTIVE
+        ARC-07 I05 dry-run → I06 apply → I08 legacy-flat reduction
+```
+
+**ÇÖZÜM DAYATMASI YASAK.** B02'de gate'in yeri (servis sınırı / ortak command-authority
+helper / mevcut policy sınıflandırmasının genişletilmesi) ve B07'de `isCurrent`'ın nasıl
+etkinleştirileceği **peşinen belirlenmemiştir**; her ikisi de sayfadaki outcome gate ile
+kanıta dayanarak seçilir. Detay: `CLAUDE-CLIENT-C2.md` §7.
+
+**ÖN KOŞUL (bilinen owner kararı):** B02 ve B06 **aynı** ratifiye edilmemiş karara bağlıdır
+— §13/11 "iletişim/workspace gönderim rol politikası". Karar alınmadan B02 implementation'a
+başlamaz; blok `WAITING_FOR_OWNER_DECISION` ile bekler ve **sıra atlanmaz**.
+
+**Entry:** C1 **ENGINEERING_COMPLETE** (C1'in activation borcu açık kalabilir) ·
+eligibility sözleşmesi dondurulmuş · §13/11 kararı alınmış.
+**Engineering exit (B08):** Her `client/` mutasyonu (core + adres) fail-closed yetkili +
+audited; OWN-13 residualleri kapalı veya açıkça owner-deferred; **B03 + B06 primitive'leri
+canonical ve DONDURULMUŞ** (X3 ve X1 serbest); ARC-07 mühendisliği tamam.
+→ Sayfa **SUSPENDED_FOR_ACTIVATION** (TERMINAL CLOSED DEĞİL); **C3 başlar**.
+**Terminal exit:** WAVE 4'te **aynı sayfa** C2-PROD-ACTIVATION'ı yürütür — ancak koşullu
+production yetkisi C2 için **HENÜZ VERİLMEDİ** (owner ratifikasyonu C1-PROD-ACTIVATION
+içindi) → **OWNER DECISION REQUIRED**.
 
 ---
 
@@ -539,6 +555,17 @@ tek auth/tenant contract writer · tek governance writer · tek integration owne
 
 **Production gate'leri (WAVE 4):**
 15. identity-unique migration apply · 16. FD flag-on + canary · 17. ARC-07 backfill apply
+
+**Koşullu production yetkisi — sayfa bazlı durum (self-authorization YASAK):**
+
+| Activation bloğu | Koşullu yetki | Durum |
+|---|---|---|
+| `C1-PROD-ACTIVATION` (identity/CAS migration) | §9-D kapılarıyla | **GRANTED** (owner ratifikasyonu) |
+| `C2-PROD-ACTIVATION` (ARC-07 I05→I06→I08 backfill) | §9-D + ARC-07 D04/D07 | **NOT YET GRANTED — OWNER DECISION REQUIRED** |
+| `C3-PROD-ACTIVATION` (varsa, hukuki şema) | §9-D | NOT YET GRANTED |
+| `X2` FD flag-on + canary | §9-D | NOT YET GRANTED |
+
+Hiçbir sayfa kendine production yetkisi ÜRETEMEZ (`noSelfAuthorizationChange`).
 
 ---
 
