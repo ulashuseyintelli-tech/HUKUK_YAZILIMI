@@ -32,16 +32,21 @@ describe("UpdateExternalCaseDto (I15 Phase C)", () => {
     expect(errors).toHaveLength(0);
   });
 
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER-RATIFIED): attachmentStatus
+  // UpdateExternalCaseDto'dan KALDIRILDI — durum artık yalnız Transition/CloseExternalCaseDto
+  // üzerinden, actor-authority + CAS ile değişir. Bu 2 test o kaldırmanın regresyon-koruma
+  // kanıtıdır (eskiden burada "geçerli enum → hata YOK" / "geçersiz enum → hata" testleri vardı;
+  // artık alanın KENDİSİ whitelist-dışı sayılmalı).
   it.each(["HACIZ_TALEP", "HACIZ_KONDU", "CEVAP_BEKLENIYOR", "TAHSIL_BASLADI", "KAPANDI"])(
-    "TEST-3.%s: geçerli attachmentStatus enum değeri → hata YOK",
+    "TEST-3.%s: attachmentStatus=%s artık whitelist-dışı — forbidNonWhitelisted hatası üretir",
     async (status) => {
       const { errors } = await validateDto({ attachmentStatus: status });
-      expect(errors).toHaveLength(0);
+      expect(errors.length).toBeGreaterThan(0);
     },
   );
 
-  it("TEST-4: geçersiz attachmentStatus (enum dışı string) → hata", async () => {
-    const { errors } = await validateDto({ attachmentStatus: "TAMAMEN_UYDURMA_DURUM" });
+  it("TEST-4: attachmentStatus geçerli diğer alanlarla birlikte gönderilse bile tüm payload reddedilir", async () => {
+    const { errors } = await validateDto({ notes: "geçerli metadata", attachmentStatus: "HACIZ_KONDU" });
     expect(errors.length).toBeGreaterThan(0);
   });
 
@@ -97,7 +102,7 @@ describe("ThirdPartyService.updateExternalCase() (I15 Phase C)", () => {
   }
 
   function makeService(prisma: any, guard: any) {
-    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard);
+    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard, {} as any);
   }
 
   function makeP2002() {

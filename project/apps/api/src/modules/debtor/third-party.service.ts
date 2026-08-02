@@ -4,7 +4,7 @@ import {
   BadRequestException,
   ConflictException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, ExternalCaseClosureReason } from "@prisma/client";
 import { createHash } from "crypto";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util"; // RFA-008 isim-fallback dedup
@@ -14,6 +14,7 @@ import {
   RecordIhbarnameDto,
   RecordResponseDto,
   UpdateExternalCaseDto,
+  CreateExternalCaseDto,
 } from "./dto/third-party.dto";
 import { CollectionService } from "../collection/collection.service";
 import {
@@ -23,6 +24,10 @@ import {
   CollectionType,
 } from "../collection/dto/collection.dto";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
+import {
+  ExternalCaseDerivedProjectionCurrent,
+  ExternalCaseStatusTransitionService,
+} from "./external-case-status-transition.service";
 
 export interface ExternalCaseReceiptInput {
   amount: number;
@@ -51,6 +56,10 @@ export class ThirdPartyService {
     // G3d: alacak haczi tahsilatını ana dosyaya kanonik yoldan yansıtır.
     private collectionService: CollectionService,
     private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
+    // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: attachmentStatus'un TEK
+    // yazma yüzeyi — addExternalCaseCollection() yalnız applySystemDerivedProjection()
+    // üzerinden yazar (kendi CAS mantığını icat ETMEZ).
+    private externalCaseStatusTransition: ExternalCaseStatusTransitionService,
   ) {}
 
   // 89 İhbarname için 7 günlük cevap süresi
@@ -572,7 +581,15 @@ export class ThirdPartyService {
   /// Çağrıldığı yerler:
   /// - ThirdPartyController.createExternalCase() → POST /case-debtors/:caseDebtorId/external-cases (alacak haczi dış dosya oluşturma)
   /// </remarks>
-  async createExternalCase(tenantId: string, caseDebtorId: string, dto: any) {
+  async createExternalCase(
+    tenantId: string,
+    caseDebtorId: string,
+    dto: CreateExternalCaseDto,
+    actorUserId: string,
+  ) {
+    if (!actorUserId?.trim()) {
+      throw new BadRequestException({ code: "EXTERNAL_CASE_CREATE_ACTOR_REQUIRED" });
+    }
     await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
 
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
@@ -619,8 +636,14 @@ export class ThirdPartyService {
           counterpartyId: dto.counterpartyId,
           claimAmount: dto.claimAmount,
           claimCurrency: dto.claimCurrency || "TRY",
-          attachmentStatus: dto.attachmentStatus || "HACIZ_TALEP",
-          attachedAt: dto.attachedAt ? new Date(dto.attachedAt) : null,
+          // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER-RATIFIED):
+          // attachmentStatus artık her zaman HACIZ_TALEP ile başlar — client
+          // seçemez (CreateExternalCaseDto'da hiç alan yok). statusSource/
+          // statusChangedBy/statusChangedAt server-side, authenticated actor'dan.
+          attachmentStatus: "HACIZ_TALEP",
+          statusSource: "MANUAL",
+          statusChangedBy: actorUserId,
+          statusChangedAt: new Date(),
           notes: dto.notes,
           priorityNote: dto.priorityNote,
         },
@@ -671,7 +694,6 @@ export class ThirdPartyService {
           counterpartyName: dto.counterpartyName,
           claimAmount: dto.claimAmount,
           claimCurrency: dto.claimCurrency,
-          attachmentStatus: dto.attachmentStatus,
           attachedAt: dto.attachedAt ? new Date(dto.attachedAt) : undefined,
           notes: dto.notes,
           priorityNote: dto.priorityNote,
@@ -784,47 +806,59 @@ export class ThirdPartyService {
       },
     );
 
-    // ExternalCase.receivedAmount yalnız canonical Collection fact'lerinden yeniden
-    // türetilir; retry/replay kümülatif projection'ı ikinci kez artırmaz.
-    const receiptTotal = await (this.prisma as any).collection.aggregate({
-      where: {
-        tenantId,
-        caseId,
-        sourceType: CollectionSource.EXTERNAL_CASE,
-        status: CollectionStatus.CONFIRMED,
-        OR: [
-          { sourceId: externalCaseId },
-          { sourceId: { startsWith: `${externalCaseId}:` } },
-        ],
-      },
-      _sum: { amount: true },
-    });
-    const newReceived = Number(receiptTotal?._sum?.amount) || 0;
-    const claimAmount = Number(externalCase.claimAmount);
-    let newStatus = externalCase.attachmentStatus;
-    if (newReceived > 0 && newStatus !== "KAPANDI") {
-      newStatus = "TAHSIL_BASLADI";
-    }
-    if (newReceived >= claimAmount) {
-      newStatus = "KAPANDI";
-    }
-    const noteMarker = `[Collection:${receiptIdentity}]`;
-    const collectionNote = `${noteMarker} [${collectionDate.toLocaleDateString("tr-TR")}] Alacak Haczi Tahsilatı: ${amount.toLocaleString("tr-TR")} ${currency} - Dış Dosya: ${externalCase.externalCaseNo}${dto.notes ? ` - ${dto.notes}` : ""}`;
-    const notes = externalCase.notes?.includes(noteMarker)
-      ? externalCase.notes
-      : externalCase.notes
-        ? `${externalCase.notes}\n${collectionNote}`
-        : collectionNote;
+    // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER-RATIFIED,
+    // concurrency fix): receivedAmount/attachmentStatus artık applySystemDerived
+    // Projection() üzerinden ATOMIK türetilir (SELECT ... FOR UPDATE ile
+    // kilitlenmiş satır üzerinde). Eskiden burada read-aggregate-write üç ayrı
+    // round-trip'ti (aggregate + externalCase.update ayrı çağrılardı) — iki
+    // eşzamanlı tahsilat birbirinin projection yazımını sessizce ezebiliyordu
+    // (klasik lost-update). Aggregate sorgusu `tx` (kilidi tutan AYNI bağlantı)
+    // üzerinden çalışır — ayrı `this.prisma` bağlantısı KULLANILMAZ; aksi halde
+    // eşzamanlı çağrı sayısı kadar bağlantı ihtiyacı ikiye katlanır (bkz. servis
+    // dosyasının REVIZYON 2 yorumu — gerçek CI'da connection-pool tükenmesine yol açtı).
+    return this.externalCaseStatusTransition.applySystemDerivedProjection(
+      tenantId,
+      externalCaseId,
+      async (current: ExternalCaseDerivedProjectionCurrent, tx) => {
+        const receiptTotal = await (tx as any).collection.aggregate({
+          where: {
+            tenantId,
+            caseId,
+            sourceType: CollectionSource.EXTERNAL_CASE,
+            status: CollectionStatus.CONFIRMED,
+            OR: [
+              { sourceId: externalCaseId },
+              { sourceId: { startsWith: `${externalCaseId}:` } },
+            ],
+          },
+          _sum: { amount: true },
+        });
+        const newReceived = Number(receiptTotal?._sum?.amount) || 0;
+        const claimAmount = Number(current.claimAmount);
+        let newStatus = current.attachmentStatus;
+        if (newReceived > 0 && newStatus !== "KAPANDI") {
+          newStatus = "TAHSIL_BASLADI";
+        }
+        if (newReceived >= claimAmount) {
+          newStatus = "KAPANDI";
+        }
+        const noteMarker = `[Collection:${receiptIdentity}]`;
+        const collectionNote = `${noteMarker} [${collectionDate.toLocaleDateString("tr-TR")}] Alacak Haczi Tahsilatı: ${amount.toLocaleString("tr-TR")} ${currency} - Dış Dosya: ${externalCase.externalCaseNo}${dto.notes ? ` - ${dto.notes}` : ""}`;
+        const notes = current.notes?.includes(noteMarker)
+          ? current.notes
+          : current.notes
+            ? `${current.notes}\n${collectionNote}`
+            : collectionNote;
 
-    return (this.prisma as any).externalCase.update({
-      where: { id: externalCaseId },
-      data: {
-        receivedAmount: newReceived,
-        attachmentStatus: newStatus,
-        lastReceivedAt: collectionDate,
-        notes,
+        return {
+          receivedAmount: newReceived,
+          attachmentStatus: newStatus,
+          closureReason: newStatus === "KAPANDI" ? ExternalCaseClosureReason.FULLY_COLLECTED : null,
+          lastReceivedAt: collectionDate,
+          notes,
+        };
       },
-    });
+    );
   }
 
   /**

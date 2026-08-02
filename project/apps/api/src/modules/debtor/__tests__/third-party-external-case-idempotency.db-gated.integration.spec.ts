@@ -9,6 +9,12 @@ import { CaseDebtorLifecycleGuardService } from '../../case-debtor-lifecycle-gua
 // ne DB-level). Bu spec, migration 20260730170000_debtor_external_case_logical_identity_unique
 // + createExternalCase()'in findFirst on-kontrol + P2002 idempotent-replay deseninin
 // GERCEKTEN calistigini disposable Postgres uzerinde kanitlar.
+//
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: createExternalCase() artik 4.
+// parametre olarak actorUserId alir (statusChangedBy server-side buradan set edilir) —
+// bu dosyanin actorUserId'yi hic kullanmayan ExternalCaseStatusTransitionService baglantisi
+// yalniz addExternalCaseCollection() tarafindan kullanilir; bu spec o metodu HIC cagirmaz,
+// bu yuzden stub yeterlidir.
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -25,7 +31,7 @@ describeWithDisposableDb('I15 Phase A — ExternalCase logical-identity idempote
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
     await prisma.$connect();
     const lifecycleGuard = new CaseDebtorLifecycleGuardService(prisma as any);
-    service = new ThirdPartyService(prisma as any, {} as any, lifecycleGuard);
+    service = new ThirdPartyService(prisma as any, {} as any, lifecycleGuard, {} as any);
   });
 
   afterAll(async () => {
@@ -73,11 +79,13 @@ describeWithDisposableDb('I15 Phase A — ExternalCase logical-identity idempote
     };
   }
 
+  const ACTOR = 'user-1';
+
   // TEST 1: same logical request retry -> one logical result
   it('TEST-1: aynı mantıksal istek retry edilirse tek satır döner (idempotent replay)', async () => {
     const fx = await createFixture('t1');
-    const first = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto());
-    const second = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto());
+    const first = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), ACTOR);
+    const second = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), ACTOR);
     expect(second.id).toBe(first.id);
     const count = await prisma.externalCase.count({ where: { caseDebtorId: fx.caseDebtorId } });
     expect(count).toBe(1);
@@ -90,7 +98,7 @@ describeWithDisposableDb('I15 Phase A — ExternalCase logical-identity idempote
   it('TEST-2: eşzamanlı çift istekte tek satır kalıcı olur (P2002 race yakalanır)', async () => {
     const fx = await createFixture('t2');
     const results = await Promise.all(
-      Array.from({ length: 25 }, () => service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto())),
+      Array.from({ length: 25 }, () => service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), ACTOR)),
     );
     const ids = new Set(results.map((r) => r.id));
     expect(ids.size).toBe(1);
@@ -102,8 +110,8 @@ describeWithDisposableDb('I15 Phase A — ExternalCase logical-identity idempote
   it('TEST-3: farklı tenant aynı office+caseNo ile bağımsız satır oluşturabilir', async () => {
     const fx1 = await createFixture('t3a');
     const fx2 = await createFixture('t3b');
-    const r1 = await service.createExternalCase(fx1.tenantId, fx1.caseDebtorId, dto());
-    const r2 = await service.createExternalCase(fx2.tenantId, fx2.caseDebtorId, dto());
+    const r1 = await service.createExternalCase(fx1.tenantId, fx1.caseDebtorId, dto(), ACTOR);
+    const r2 = await service.createExternalCase(fx2.tenantId, fx2.caseDebtorId, dto(), ACTOR);
     expect(r1.id).not.toBe(r2.id);
   });
 
@@ -123,24 +131,26 @@ describeWithDisposableDb('I15 Phase A — ExternalCase logical-identity idempote
     const caseDebtor2 = await prisma.caseDebtor.create({
       data: { caseId: fx.caseId, debtorId: debtor2.id, lifecycleStatus: 'ACTIVE' },
     });
-    const r1 = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto());
-    const r2 = await service.createExternalCase(fx.tenantId, caseDebtor2.id, dto());
+    const r1 = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), ACTOR);
+    const r2 = await service.createExternalCase(fx.tenantId, caseDebtor2.id, dto(), ACTOR);
     expect(r1.id).not.toBe(r2.id);
   });
 
   // TEST 5: materially different external file -> allowed
   it('TEST-5: farklı externalCaseNo/externalOffice bağımsız satır oluşturabilir', async () => {
     const fx = await createFixture('t5');
-    const r1 = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto());
+    const r1 = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), ACTOR);
     const r2 = await service.createExternalCase(
       fx.tenantId,
       fx.caseDebtorId,
       dto({ externalCaseNo: '2026/99999' }),
+      ACTOR,
     );
     const r3 = await service.createExternalCase(
       fx.tenantId,
       fx.caseDebtorId,
       dto({ externalOffice: 'İstanbul 3. İcra Dairesi' }),
+      ACTOR,
     );
     expect(new Set([r1.id, r2.id, r3.id]).size).toBe(3);
   });
@@ -148,7 +158,7 @@ describeWithDisposableDb('I15 Phase A — ExternalCase logical-identity idempote
   // TEST 6: unauthorized (passive CaseDebtor) attempt -> zero rows
   it('TEST-6: pasif CaseDebtor üzerinde create reddedilir, hiçbir satır yazılmaz', async () => {
     const fx = await createFixture('t6', { passive: true });
-    await expect(service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto())).rejects.toThrow(
+    await expect(service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), ACTOR)).rejects.toThrow(
       'Pasif dosya borçlusu yeni operasyon hedefi olamaz.',
     );
     const count = await prisma.externalCase.count({ where: { caseDebtorId: fx.caseDebtorId } });
@@ -204,9 +214,29 @@ describeWithDisposableDb('I15 Phase A — ExternalCase logical-identity idempote
   // TEST 9 (ek): claimAmount farklı olsa bile aynı mantıksal kimlik replay döner
   it('TEST-9: aynı mantıksal kimlikte farklı claimAmount ile ikinci çağrı ilk satırı döner (create ezmez)', async () => {
     const fx = await createFixture('t9');
-    const first = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto({ claimAmount: 1000 }));
-    const second = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto({ claimAmount: 999999 }));
+    const first = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto({ claimAmount: 1000 }), ACTOR);
+    const second = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto({ claimAmount: 999999 }), ACTOR);
     expect(second.id).toBe(first.id);
     expect(Number(second.claimAmount)).toBe(1000);
+  });
+
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: yeni provenance alanları
+  // create() üzerinden server-side set edilir (client-supplied DEĞİL).
+  it('TEST-10: create() sonrası statusSource=MANUAL, statusChangedBy=actor, statusChangedAt set edilir', async () => {
+    const fx = await createFixture('t10');
+    const before = new Date();
+    const row = await service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), ACTOR);
+    expect(row.attachmentStatus).toBe('HACIZ_TALEP');
+    expect(row.statusSource).toBe('MANUAL');
+    expect(row.statusChangedBy).toBe(ACTOR);
+    expect(row.statusChangedAt).toBeInstanceOf(Date);
+    expect((row.statusChangedAt as Date).getTime()).toBeGreaterThanOrEqual(before.getTime() - 1000);
+  });
+
+  it('TEST-11: actorUserId boşsa create fail-closed reddedilir', async () => {
+    const fx = await createFixture('t11');
+    await expect(service.createExternalCase(fx.tenantId, fx.caseDebtorId, dto(), '')).rejects.toThrow();
+    const count = await prisma.externalCase.count({ where: { caseDebtorId: fx.caseDebtorId } });
+    expect(count).toBe(0);
   });
 });

@@ -187,7 +187,7 @@ function makeThirdPartyService(guard = activeGuard()) {
     },
   };
   return {
-    service: new ThirdPartyService(prisma as any, collectionService as any, guard as any),
+    service: new ThirdPartyService(prisma as any, collectionService as any, guard as any, {} as any),
     prisma,
     guard,
     collectionService,
@@ -229,12 +229,17 @@ describe("PR-L6d operational create passive guards", () => {
     expect(thirdParty.guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(tenantId, caseDebtorId);
     expect(thirdParty.prisma.thirdParty.create).toHaveBeenCalledTimes(1);
 
-    await thirdParty.service.createExternalCase(tenantId, caseDebtorId, {
-      externalOffice: "Istanbul Icra",
-      externalCaseNo: "2026/9",
-      counterpartyName: "Karsi Taraf",
-      claimAmount: 1000,
-    });
+    await thirdParty.service.createExternalCase(
+      tenantId,
+      caseDebtorId,
+      {
+        externalOffice: "Istanbul Icra",
+        externalCaseNo: "2026/9",
+        counterpartyName: "Karsi Taraf",
+        claimAmount: 1000,
+      } as any,
+      "user-1",
+    );
     expect(thirdParty.prisma.externalCase.create).toHaveBeenCalledTimes(1);
   });
 
@@ -279,12 +284,17 @@ describe("PR-L6d operational create passive guards", () => {
     expect(thirdParty.prisma.thirdParty.create).not.toHaveBeenCalled();
 
     await expect(
-      thirdParty.service.createExternalCase(tenantId, caseDebtorId, {
-        externalOffice: "Istanbul Icra",
-        externalCaseNo: "2026/9",
-        counterpartyName: "Karsi Taraf",
-        claimAmount: 1000,
-      })
+      thirdParty.service.createExternalCase(
+        tenantId,
+        caseDebtorId,
+        {
+          externalOffice: "Istanbul Icra",
+          externalCaseNo: "2026/9",
+          counterpartyName: "Karsi Taraf",
+          claimAmount: 1000,
+        } as any,
+        "user-1",
+      )
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(thirdParty.prisma.externalCase.create).not.toHaveBeenCalled();
   });
@@ -328,12 +338,17 @@ describe("PR-L6d operational create passive guards", () => {
     expect(thirdParty.prisma.thirdParty.create).not.toHaveBeenCalled();
 
     await expect(
-      thirdParty.service.createExternalCase(tenantId, "foreign-cd", {
-        externalOffice: "Istanbul Icra",
-        externalCaseNo: "2026/9",
-        counterpartyName: "Karsi Taraf",
-        claimAmount: 1000,
-      })
+      thirdParty.service.createExternalCase(
+        tenantId,
+        "foreign-cd",
+        {
+          externalOffice: "Istanbul Icra",
+          externalCaseNo: "2026/9",
+          counterpartyName: "Karsi Taraf",
+          claimAmount: 1000,
+        } as any,
+        "user-1",
+      )
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(thirdParty.prisma.externalCase.create).not.toHaveBeenCalled();
   });

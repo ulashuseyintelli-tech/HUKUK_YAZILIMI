@@ -32,19 +32,24 @@ describe('I15 Phase A — createExternalCase() P2002 recovery (mocked, determini
         create: jest.fn().mockRejectedValue(makePostgresP2002(['tenantId', 'caseDebtorId', 'externalOffice', 'externalCaseNo'])),
       },
     };
-    return { service: new ThirdPartyService(prisma, {} as any, guard as any), prisma };
+    return { service: new ThirdPartyService(prisma, {} as any, guard as any, {} as any), prisma };
   }
 
   it('gercek Postgres P2002 (meta.target=kolon adlari dizisi) yakalanip idempotent replay doner', async () => {
     const existingRow = { id: 'ec-existing', tenantId: 't1', caseDebtorId: 'cd1' };
     const { service, prisma } = build(existingRow);
 
-    const result = await service.createExternalCase('t1', 'cd1', {
-      externalOffice: 'Ankara 5. İcra Dairesi',
-      externalCaseNo: '2026/12345',
-      counterpartyName: 'Karşı Taraf',
-      claimAmount: 1000,
-    });
+    const result = await service.createExternalCase(
+      't1',
+      'cd1',
+      {
+        externalOffice: 'Ankara 5. İcra Dairesi',
+        externalCaseNo: '2026/12345',
+        counterpartyName: 'Karşı Taraf',
+        claimAmount: 1000,
+      } as any,
+      'user-1',
+    );
 
     expect(result).toEqual(existingRow);
     expect(prisma.externalCase.findUnique).toHaveBeenCalledTimes(2);
@@ -55,12 +60,17 @@ describe('I15 Phase A — createExternalCase() P2002 recovery (mocked, determini
     const { service } = build(null);
 
     await expect(
-      service.createExternalCase('t1', 'cd1', {
-        externalOffice: 'Ankara 5. İcra Dairesi',
-        externalCaseNo: '2026/12345',
-        counterpartyName: 'Karşı Taraf',
-        claimAmount: 1000,
-      }),
+      service.createExternalCase(
+        't1',
+        'cd1',
+        {
+          externalOffice: 'Ankara 5. İcra Dairesi',
+          externalCaseNo: '2026/12345',
+          counterpartyName: 'Karşı Taraf',
+          claimAmount: 1000,
+        } as any,
+        'user-1',
+      ),
     ).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
   });
 });

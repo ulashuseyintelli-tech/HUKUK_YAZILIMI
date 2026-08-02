@@ -27,7 +27,7 @@ describeWithDisposableDb("I15 Phase C — ThirdPartyService.updateExternalCase()
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
     await prisma.$connect();
     const lifecycleGuard = new CaseDebtorLifecycleGuardService(prisma as any);
-    service = new ThirdPartyService(prisma as any, { create: jest.fn() } as any, lifecycleGuard);
+    service = new ThirdPartyService(prisma as any, { create: jest.fn() } as any, lifecycleGuard, {} as any);
   });
 
   afterAll(async () => {
@@ -110,12 +110,38 @@ describeWithDisposableDb("I15 Phase C — ThirdPartyService.updateExternalCase()
 
     const updated = await service.updateExternalCase(fx.tenantId, ec.id, {
       notes: "gerçek DB update",
-      attachmentStatus: "HACIZ_KONDU",
     } as any);
 
     expect((updated as any).notes).toBe("gerçek DB update");
-    expect((updated as any).attachmentStatus).toBe("HACIZ_KONDU");
     const reloaded = await (prisma as any).externalCase.findUnique({ where: { id: ec.id } });
     expect(reloaded.notes).toBe("gerçek DB update");
+  });
+
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER-RATIFIED): generic
+  // update artık attachmentStatus'u DEĞİŞTİREMEZ — DTO'da alan hiç yok, ValidationPipe
+  // whitelist-dışı olarak reddeder. Bu, D2-I02'nin en temel regresyon-koruma testidir.
+  it("TEST-3: attachmentStatus generic update ile artık değiştirilemez (alan sessizce yok sayılır, durum bozulmaz)", async () => {
+    const fx = await createFixture("t3");
+    const ec = await (prisma as any).externalCase.create({
+      data: {
+        tenantId: fx.tenantId,
+        caseDebtorId: fx.caseDebtorId,
+        externalOffice: "Bursa 2. İcra",
+        externalCaseNo: "2026/400",
+        counterpartyName: "W",
+        claimAmount: 750,
+      },
+    });
+    expect(ec.attachmentStatus).toBe("HACIZ_TALEP");
+
+    const updated = await service.updateExternalCase(fx.tenantId, ec.id, {
+      notes: "yalnız metadata",
+      attachmentStatus: "HACIZ_KONDU",
+    } as any);
+
+    // Servis katmanı dto.attachmentStatus'a hiç bakmaz — Prisma data payload'ında yer almaz.
+    expect((updated as any).attachmentStatus).toBe("HACIZ_TALEP");
+    const reloaded = await (prisma as any).externalCase.findUnique({ where: { id: ec.id } });
+    expect(reloaded.attachmentStatus).toBe("HACIZ_TALEP");
   });
 });

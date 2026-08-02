@@ -17,6 +17,9 @@ import {
   RecordIhbarnameDto,
   RecordResponseDto,
   UpdateExternalCaseDto,
+  CreateExternalCaseDto,
+  TransitionExternalCaseStatusDto,
+  CloseExternalCaseDto,
 } from "./dto/third-party.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -25,6 +28,7 @@ import {
   RECEIPT_AUTHORIZATION_SURFACES,
   ReceiptObjectScopeAuthorizationService,
 } from "../collection/receipt-object-scope-authorization.service";
+import { ExternalCaseStatusTransitionService } from "./external-case-status-transition.service";
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -32,6 +36,7 @@ export class ThirdPartyController {
   constructor(
     private thirdPartyService: ThirdPartyService,
     private receiptAuthorization: ReceiptObjectScopeAuthorizationService,
+    private externalCaseStatusTransition: ExternalCaseStatusTransitionService,
   ) {}
 
   // ==================== THIRD PARTY CRUD ====================
@@ -156,14 +161,15 @@ export class ThirdPartyController {
   @Post("case-debtors/:caseDebtorId/external-cases")
   createExternalCase(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("caseDebtorId") caseDebtorId: string,
-    @Body() dto: any
+    @Body() dto: CreateExternalCaseDto
   ) {
-    return this.thirdPartyService.createExternalCase(tenantId, caseDebtorId, dto);
+    return this.thirdPartyService.createExternalCase(tenantId, caseDebtorId, dto, actorUserId);
   }
 
   /**
-   * Dış dosya güncelle
+   * Dış dosya güncelle (yalnız metadata — attachmentStatus BURADAN değişmez)
    * PUT /external-cases/:id
    */
   @Put("external-cases/:id")
@@ -173,6 +179,37 @@ export class ThirdPartyController {
     @Body() dto: UpdateExternalCaseDto
   ) {
     return this.thirdPartyService.updateExternalCase(tenantId, id, dto);
+  }
+
+  /**
+   * Dış dosya durumunu manuel geçir (HACIZ_TALEP->CEVAP_BEKLENIYOR /
+   * HACIZ_TALEP->HACIZ_KONDU / CEVAP_BEKLENIYOR->HACIZ_KONDU).
+   * DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER-RATIFIED).
+   * POST /external-cases/:id/transition-status
+   */
+  @Post("external-cases/:id/transition-status")
+  transitionExternalCaseStatus(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
+    @Param("id") id: string,
+    @Body() dto: TransitionExternalCaseStatusDto
+  ) {
+    return this.externalCaseStatusTransition.transitionManual(tenantId, id, dto, actorUserId);
+  }
+
+  /**
+   * Dış dosyayı manuel kapat (yalnız atanmış avukat).
+   * DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER-RATIFIED).
+   * POST /external-cases/:id/close
+   */
+  @Post("external-cases/:id/close")
+  closeExternalCase(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
+    @Param("id") id: string,
+    @Body() dto: CloseExternalCaseDto
+  ) {
+    return this.externalCaseStatusTransition.closeManual(tenantId, id, dto, actorUserId);
   }
 
   /**
