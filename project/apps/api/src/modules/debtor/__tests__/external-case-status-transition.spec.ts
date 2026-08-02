@@ -5,10 +5,13 @@ import { ExternalCaseStatusTransitionService } from '../external-case-status-tra
 // RATIFIED). Bu suite ExternalCaseStatusTransitionService'in 3 giriş noktasını
 // kanıtlar: transitionManual (insan CAS, bank-candidate-settlement-transition
 // emsali), closeManual (lawyer-only + closureReason kuralları), ve
-// applySystemDerivedProjection (canonical-Collection-writer-only, updatedAt
-// optimistic-concurrency retry). Mock prisma, updateMany'nin WHERE guard alanlarını
-// GERÇEKTEN kontrol eden minimal bir in-memory satır simüle eder — böylece
-// count===0 raced-read dalı da (yalnız stub dönmekle değil) gerçekten tetiklenir.
+// applySystemDerivedProjection (canonical-Collection-writer-only, SELECT ... FOR
+// UPDATE pessimistic lock — REVIZYON: gerçek CI'da 10 eşzamanlı çağrı ile eski
+// updatedAt-CAS + bounded-retry tasarımı ConflictException'a düştü; bkz. servis
+// dosyası başı yorumu). Mock prisma, updateMany'nin WHERE guard alanlarını
+// GERÇEKTEN kontrol eden minimal bir in-memory satır simüle eder (transitionManual/
+// closeManual için) — böylece count===0 raced-read dalı da gerçekten tetiklenir.
+// applySystemDerivedProjection artık $queryRaw (kilit) + koşulsuz update kullanır.
 
 const TENANT = 't1';
 const EXTERNAL_CASE_ID = 'ec1';
@@ -36,9 +39,16 @@ function makeMockPrisma(initialRow: Record<string, any>) {
       row = { ...row, ...definedData, updatedAt: new Date(2026, 0, 1, 0, 0, tick) };
       return { count: 1 };
     }),
+    update: jest.fn(async ({ data }: any) => {
+      if (!row) throw new Error('row not found');
+      const definedData = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+      row = { ...row, ...definedData };
+      return { ...row };
+    }),
   };
   const prisma: any = {
     externalCase,
+    $queryRaw: jest.fn(async () => (row ? [{ ...row }] : [])),
     $transaction: jest.fn(async (fn: any) => fn(prisma)),
   };
   return { prisma, getRow: () => row };
@@ -356,58 +366,55 @@ describe('ExternalCaseStatusTransitionService.applySystemDerivedProjection', () 
     expect(getRow()?.statusChangedBy).toBeNull();
   });
 
-  it('TEST-19: raced updatedAt (eşzamanlı yazar) → retry TAZE current ile computeNext\'i tekrar çağırır', async () => {
-    const { prisma, getRow } = makeMockPrisma(baseRow({ attachmentStatus: 'HACIZ_KONDU', receivedAmount: 0 }));
-    const auditService = { logInTransaction: jest.fn().mockResolvedValue(undefined) };
-    const authority = {} as any;
-    const guard = {} as any;
-    const svc = new ExternalCaseStatusTransitionService(prisma, auditService as any, authority, guard);
-
-    let calls = 0;
-    const originalUpdateMany = prisma.externalCase.updateMany;
-    // İlk updateMany çağrısını "raced" olacak şekilde bir kez count:0 döndürecek biçimde sarmalıyoruz —
-    // gerçek dünyada bu, computeNext() ile updateMany() arasında BAŞKA bir yazarın updatedAt'i
-    // değiştirmesine karşılık gelir.
-    prisma.externalCase.updateMany = jest.fn(async (args: any) => {
-      calls += 1;
-      if (calls === 1) return { count: 0 };
-      return originalUpdateMany(args);
-    });
-
+  it('TEST-19: satır SELECT ... FOR UPDATE ile kilitlenir — sorgu metninde FOR UPDATE geçer, computeNext TEK SEFER çağrılır', async () => {
+    const { prisma } = buildService(baseRow({ attachmentStatus: 'HACIZ_KONDU', receivedAmount: 0 }));
     const computeNext = jest.fn(async (current: any) => ({
       receivedAmount: (current.receivedAmount || 0) + 100,
       attachmentStatus: 'TAHSIL_BASLADI' as any,
       closureReason: null,
       lastReceivedAt: new Date(2026, 0, 8),
-      notes: 'retry sonrası',
+      notes: 'tek deneme',
     }));
 
-    const result = await svc.applySystemDerivedProjection(TENANT, EXTERNAL_CASE_ID, computeNext);
-    expect(computeNext).toHaveBeenCalledTimes(2);
-    expect(result?.receivedAmount).toBe(100);
-    expect(getRow()?.receivedAmount).toBe(100);
+    await new ExternalCaseStatusTransitionService(
+      prisma,
+      { logInTransaction: jest.fn() } as any,
+      {} as any,
+      {} as any,
+    ).applySystemDerivedProjection(TENANT, EXTERNAL_CASE_ID, computeNext);
+
+    expect(computeNext).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
+    expect(String(sqlArg?.sql ?? sqlArg)).toMatch(/FOR UPDATE/);
+    expect(prisma.externalCase.update).toHaveBeenCalledTimes(1);
   });
 
-  it('TEST-20: sürekli çakışma (MAX_ATTEMPTS tükenir) → ConflictException', async () => {
-    const { prisma } = makeMockPrisma(baseRow());
-    const auditService = { logInTransaction: jest.fn() };
-    const svc = new ExternalCaseStatusTransitionService(prisma, auditService as any, {} as any, {} as any);
-    prisma.externalCase.updateMany = jest.fn().mockResolvedValue({ count: 0 });
+  it('TEST-20: iki ARDIŞIK çağrı aynı satırda — ikinci çağrı ilkinin GÜNCEL halini görür, hiçbir tahsilat kaybolmaz', async () => {
+    const { svc, getRow } = buildService(baseRow({ attachmentStatus: 'HACIZ_KONDU', receivedAmount: 0, claimAmount: 1000 }));
 
-    await expect(
-      svc.applySystemDerivedProjection(TENANT, EXTERNAL_CASE_ID, async (current) => ({
-        receivedAmount: 100,
-        attachmentStatus: current.attachmentStatus,
-        closureReason: null,
-        lastReceivedAt: new Date(),
-        notes: 'x',
-      })),
-    ).rejects.toMatchObject({ constructor: ConflictException });
+    await svc.applySystemDerivedProjection(TENANT, EXTERNAL_CASE_ID, async (current) => ({
+      receivedAmount: Number(current.receivedAmount) + 300,
+      attachmentStatus: 'TAHSIL_BASLADI' as any,
+      closureReason: null,
+      lastReceivedAt: new Date(2026, 0, 1),
+      notes: 'ilk tahsilat',
+    }));
+    await svc.applySystemDerivedProjection(TENANT, EXTERNAL_CASE_ID, async (current) => ({
+      receivedAmount: Number(current.receivedAmount) + 300,
+      attachmentStatus: 'TAHSIL_BASLADI' as any,
+      closureReason: null,
+      lastReceivedAt: new Date(2026, 0, 2),
+      notes: 'ikinci tahsilat',
+    }));
+
+    // 300 + 300 = 600 — ikinci çağrı ilkinin (300) üzerine yazmadı, KAYBETMEDİ.
+    expect(getRow()?.receivedAmount).toBe(600);
   });
 
-  it('TEST-21: yabancı/olmayan externalCaseId → NotFoundException', async () => {
+  it('TEST-21: yabancı/olmayan externalCaseId → NotFoundException ($queryRaw boş dizi döner)', async () => {
     const { prisma } = makeMockPrisma(baseRow());
-    prisma.externalCase.findFirst.mockResolvedValueOnce(null);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValueOnce([]);
     const auditService = { logInTransaction: jest.fn() };
     const svc = new ExternalCaseStatusTransitionService(prisma, auditService as any, {} as any, {} as any);
 
