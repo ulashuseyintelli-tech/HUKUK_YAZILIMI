@@ -148,6 +148,14 @@ src/modules/client/__tests__/client-bulk-mutation-authorization-r3.spec.ts
 #     alan (type/companyName/firstName/lastName) gonderildiginde hesapla; kismi
 #     kimlikte eksik bilesenler mevcut kayittan tamamlanir; tam form davranisi ayni.
 src/modules/client/__tests__/client-partial-update-displayname-preservation.spec.ts
+#
+#   CLAUDE-CLIENT-C1-B03 bulk atomiklik ve failure davranisi (SAF, DB-siz)
+#     F-SEED-05/06: model KANITLA secildi — seedAll resumable/idempotent stages (adim
+#     hatasinda zincir durur, failedStep+notRun raporlanir, yetki hatasi throw kalir);
+#     seedCases satir-seviyesi dar transaction (case+caseDebtor+caseLawyer ayni tx,
+#     D07 satir-bazli devam); seedPublicInstitutionDebtors bounded batch (tek existing
+#     okumasi + 100'luk createMany chunk + chunk dusunce satir-bazli fallback).
+src/modules/seed/__tests__/seed-bulk-atomicity.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
