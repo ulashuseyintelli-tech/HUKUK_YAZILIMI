@@ -444,7 +444,12 @@ Codex X1 paralel yürür; ortak yüzey yalnız client-portal.txt (§4 ile serial
       bağımlılığı) · seedCases satır-seviyesi dar tx (3 yazım/satır önceden transactionsızdı) ·
       seedPublicInstitutionDebtors bounded batch (tek existing okuması + 100'lük chunk).
       `seed-bulk-atomicity.spec.ts` 10 test + seed regresyonu = 56/56 PASS)*
-- [ ] **B04** `tckn` ve `vkn` bağımsız probe; dedup davranışı ve yarış profili çıkarıldı
+- [x] **B04** `tckn` ve `vkn` bağımsız probe; dedup davranışı ve yarış profili çıkarıldı
+      *(2026-08-02: `client-create-dedup-independent-probe.spec.ts` önce 4 FAIL / 3 PASS
+      (KIRMIZI: iki alan birlikteyken vkn atlanıyor + çapraz kolon araması), fix sonrası
+      7/7 PASS; create-yolu regresyonu 84/84 PASS. Yarış profili KANITLANDI: DB tekilliği
+      olmadan eşzamanlı iki create ikisi de yazar — servis katmanı pencereyi kapatamaz;
+      kapanış B05 design gate'in DB-seviyesi çıktısına aittir)*
 - [ ] **B05** design gate'in 7 maddesi kanıtlandı; çözüm **seçildi ve gerekçelendirildi**;
       migration yazıldı + CI'da doğrulandı (**apply WAVE 4**)
 - [ ] **B06** seed modülü testli; B01–B05 regresyonla kilitli

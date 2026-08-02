@@ -1445,17 +1445,20 @@ export class ClientService {
     this.assertActorTenantMatches(tenantId, actor);
     this.assertCanCreateClient(actor);
     // Mevcut checksum, duplicate ve audit kapıları DEĞİŞMEDİ.
-    // TCKN veya VKN ile duplicate kontrolü
-    const identityNo = data.tckn || data.vkn;
-    if (identityNo) {
+    // C1-B04 (FIND-C5): dedup probe artık `tckn || vkn` TEK değere çökmez. Her gönderilen
+    // kimlik alanı KENDİ kolonu + identityNo (mixed-legacy kolon) üzerinden BAĞIMSIZ
+    // problanır (PR-U4 update-guard deseniyle simetrik). İki alan birlikte geldiğinde vkn
+    // duplicate'i artık atlanmaz; bir alanın değeri diğer alanın kolonunda aranmaz.
+    // Dedup yalnız GENİŞLER; reactivate yolu DEĞİŞMEZ. Yarış penceresi (eşzamanlı iki
+    // create) servis katmanında KAPANMAZ — DB-seviyesi tekillik B05 design gate çıktısıdır.
+    const dedupConds: any[] = [];
+    if (data.tckn) dedupConds.push({ tckn: data.tckn }, { identityNo: data.tckn });
+    if (data.vkn) dedupConds.push({ vkn: data.vkn }, { identityNo: data.vkn });
+    if (dedupConds.length > 0) {
       const existing = await this.prisma.client.findFirst({
         where: {
           tenantId,
-          OR: [
-            { tckn: identityNo },
-            { vkn: identityNo },
-            { identityNo: identityNo },
-          ],
+          OR: dedupConds,
         },
       });
       
