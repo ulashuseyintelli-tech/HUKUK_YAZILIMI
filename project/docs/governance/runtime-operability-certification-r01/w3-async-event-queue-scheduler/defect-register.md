@@ -15,7 +15,7 @@ Makine-okunur tam kayit: `defect-register.json`.
 | **W3-D09** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | handler'siz action -> sonsuz pending | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D04** | W3-B06 SCHEDULER_TIMEZONE_UNKNOWN | P2 | 32/33 cron job | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
 | **W3-D05** | W3-B10 TERMINAL_FAILURE_INVISIBLE | P2 | 24/35 runtime-bound cron metodu | **RESOLVED** (bkz. Cozum Kaydi) | APP-LAYER (migration GEREKMEDI) |
-| **W3-D03** | W3-B04/B05 NOT_STARTED | P3 | icrabot + manifest-retry + playbook | DEFERRED + **GUARD** | NOT_ELIGIBLE (**activation**) |
+| **W3-D03** | W3-B04/B05 NOT_STARTED | P3 | tarihsel 6 isim → fresh 11 alt agac (icrabot/object-store/chaos/break-glass/playbook/trace-retention/simulation-scheduler) | **RESOLVED** (bkz. Cozum Kaydi) | REGISTRY + 3 BOUNDED FIX (8/11 BLOCKED, owner karari bekliyor) |
 | **W3-D06** | overlap / multi-instance | P3 | 33/35 cron metodunda overlap guard yok | DEFERRED | NOT_ELIGIBLE (owner policy) |
 | **W3-D07** | W3-B15 job kimligi | P4 | 31/33 job UUID adli | DEFERRED | W3-F07 ile birlesik |
 | **W3-D08** | dokumantasyon | P4 | stale recovery platform kapsamli | DOKUMANTE | N/A |
@@ -268,3 +268,120 @@ Makine-okunur tam kayit: `defect-register.json`.
   yeni task otomatik uretilmedi.
 - **Successor:** W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01 (sirada,
   veya W3-F07-CRON-OVERLAP-AND-JOB-IDENTITY-R01 — brief'te belirtilen sira).
+
+### W3-D03 — RESOLVED (W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01)
+
+- **Task:** RUNTIME-OPERABILITY-CERTIFICATION-R01 / W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01
+- **PR:** [#2087](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2087) — squash-merged
+- **MERGE SHA:** `0a6ea7fe99607b8a0e820802401cfa2c5f073037`
+- **Fresh envanter (tarihsel bulgu GROUND-TRUTH kabul edilmedi):** tarihsel
+  W3-D03 "icrabot, manifest-retry, playbook, evidence-bundle,
+  trace-retention, simulation-scheduler" olarak 6 isim listeliyordu. Fresh,
+  bagimsiz repo-genelinde tarama bunun yerine **11** ayri dormant/config-gated
+  alt agac ortaya cikardi — 5 isim `calc-preview/diagnostics/` altinda ic ice
+  bulunmustur (ust-duzey modul DEGIL), "icrabot" etiketi kismen yanlistir
+  (v28-engine ve domain-event-ingest ZATEN AKTIF + sertifikali — bu envanterin
+  kapsami DISINDA tutuldu, cunku zaten dormant degiller).
+- **Karar:** Her 11 alt agaca `DormantSubtreeDisposition` taksonomisinden
+  (KEEP_DORMANT_CONFIG_GATED / BLOCKED_BY_MISSING_POLICY /
+  BLOCKED_BY_MISSING_RUNTIME_DEPENDENCY / ACTIVATE_FLAG_GATED /
+  REMOVE_DEAD_CODE) tam olarak BIR terminal disposition atandi —
+  UNKNOWN/DORMANT_UNCLASSIFIED kalmadi. Section 8 executor-yasagi (yeni is
+  yetenegi/otomatik hukuki-bildirim aksiyonu/yeni harici entegrasyon/production
+  aktivasyonu/yeni geri-alinamaz yan etki ICAT ETME yasagi) geregi hicbir alt
+  agac production-aktive EDILMEDI; GO-CANONICALIZE otomatik production
+  aktivasyonu ANLAMINA GELMEDI.
+- **Per-subtree disposition matrisi (11/11, sifir UNKNOWN):**
+
+  | subtreeId | Kok neden (primary/secondary) | Disposition | Runtime | Flag | Sema | Prod aktivasyon |
+  |---|---|---|---|---|---|---|
+  | ICRABOT-LEGACY-CORE | MODULE_UNBOUND / OWNER_POLICY_PENDING | KEEP_DORMANT_CONFIG_GATED | UNBOUND | — | GEREKMEDI | HAYIR |
+  | OBJECT-STORE-EVIDENCE-BUNDLE-S3 | MODULE_UNBOUND / CONFIG_GATED_OFF | BLOCKED_BY_MISSING_POLICY | UNBOUND | EVIDENCE_BUNDLE_S3_ENABLED | GEREKMEDI | HAYIR |
+  | OBJECT-STORE-BUNDLE-MANIFEST | MODULE_UNBOUND | BLOCKED_BY_MISSING_POLICY | UNBOUND | — | GEREKMEDI | HAYIR |
+  | OBJECT-STORE-BUNDLE-SEAL | MODULE_UNBOUND | BLOCKED_BY_MISSING_POLICY | UNBOUND | — | GEREKMEDI | HAYIR |
+  | OBJECT-STORE-MANIFEST-RETRY | MODULE_UNBOUND / SCHEMA_ABSENT | BLOCKED_BY_MISSING_RUNTIME_DEPENDENCY | UNBOUND | — | `manifest_retry_queue` sema bosluğu VAR | HAYIR |
+  | OBJECT-STORE-MANIFEST-RETRY-IDEMPOTENCY | MODULE_UNBOUND | BLOCKED_BY_MISSING_RUNTIME_DEPENDENCY | UNBOUND | — | (yukaridakiyle ayni) | HAYIR |
+  | CALC-PREVIEW-CHAOS | CONFIG_GATED_OFF / TEST_ONLY | KEEP_DORMANT_CONFIG_GATED | UNBOUND | ENABLE_CHAOS_ENDPOINTS | GEREKMEDI | HAYIR |
+  | CALC-PREVIEW-BREAK-GLASS-TENANT-CONTEXT | MODULE_UNBOUND / SCHEMA_ABSENT | BLOCKED_BY_MISSING_POLICY | UNBOUND | — | tum repository'ler in-memory, Prisma yok | HAYIR |
+  | CALC-PREVIEW-PLAYBOOK-ACTION-SIDE | MODULE_UNBOUND | BLOCKED_BY_MISSING_POLICY | UNBOUND | — | GEREKMEDI | HAYIR |
+  | CALC-PREVIEW-TRACE-RETENTION | CONSUMER_ABSENT / MODULE_UNBOUND | ACTIVATE_FLAG_GATED | BOUND_FLAG_GATED (YENI) | TRACE_RETENTION_ENABLED (varsayilan false) | GEREKMEDI | HAYIR (flag kapali kaldi) |
+  | CALC-PREVIEW-DIAGNOSTICS-SIMULATION-SCHEDULER | LEGACY_DEAD_CODE / MODULE_UNBOUND | REMOVE_DEAD_CODE | REMOVED (dosya silindi) | — | GEREKMEDI | N/A (kod kaldirildi) |
+
+  (Tum 11 satir: ayni PR #2087, ayni MERGE SHA `0a6ea7fe`, ayni post-merge
+  kaniti — asagida.)
+
+- **Cozum (yalniz kod-seviyesinde bounded olan 3 aile; kalan 8 KOD
+  SEVIYESINDE DEGISTIRILMEDI):**
+  - **FAMILY 1 (REMOVE_DEAD_CODE):** CALC-PREVIEW-DIAGNOSTICS-SIMULATION-SCHEDULER
+    — `RealSimulationScheduler`/`ManualSimulationScheduler`/`ISimulationScheduler`/
+    `SimulationContext` zinciri repo genelinde (testler DAHIL) sifir referans
+    tasidigi bagimsiz dogrulanip dosya + `simulation.types.ts`'teki 2 olu
+    interface + `simulation/index.ts` barrel-export satiri fiziksel olarak
+    kaldirildi.
+  - **FAMILY 2 (KEEP_DORMANT_CONFIG_GATED, yeni test):** CALC-PREVIEW-CHAOS —
+    kod DEGISTIRILMEDI; `NODE_ENV=production` hard-disable + `ENABLE_CHAOS_ENDPOINTS`
+    default-off + mevcut ESLint mimari kuralinin GERCEKTEN sifir saldiri
+    yuzeyi urettigini kanitlayan (onceden hic var olmayan) bir off-state test
+    dosyasi eklendi.
+  - **FAMILY 4 (ACTIVATE_FLAG_GATED, kazara-eksik-provider bug duzeltmesi):**
+    CALC-PREVIEW-TRACE-RETENTION — `TraceRetentionService`, `CalcPreviewModule`
+    providers listesinde hic yoktu (constructor'daki `setInterval` cleanup-timer
+    hicbir zaman baslamiyordu — kasitli dormancy DEGIL, kazara eksik DI kaydi).
+    Provider olarak eklendi; gercek cleanup-timer baslatma davranisi yeni
+    `TRACE_RETENTION_ENABLED` (varsayilan false) flag'i ile gate'lendi —
+    production davranisi bu PR ile DEGISMEDI.
+  - **Kalan 8** (ICRABOT-LEGACY-CORE, OBJECT-STORE-EVIDENCE-BUNDLE-S3,
+    OBJECT-STORE-BUNDLE-MANIFEST, OBJECT-STORE-BUNDLE-SEAL,
+    OBJECT-STORE-MANIFEST-RETRY, OBJECT-STORE-MANIFEST-RETRY-IDEMPOTENCY,
+    CALC-PREVIEW-BREAK-GLASS-TENANT-CONTEXT, CALC-PREVIEW-PLAYBOOK-ACTION-SIDE):
+    section 8 executor-yasagi ve/veya eksik runtime bagimliligi (sema
+    bosluğu) nedeniyle BLOCKED olarak siniflandirildi, kod seviyesinde
+    HICBIRINE dokunulmadi.
+- **Sema/migration karari:** **GEREKMEDI.** Yalniz 273 satirlik yeni bir TS
+  registry dosyasi (`dormant-subtree-registry.ts`, migration ICERMEZ) + 3
+  bounded ailedeki kod degisiklikleri.
+- **Registry + guard:** `apps/api/src/common/dormant-subtree-registry.ts`
+  (11 `DormantSubtreeRecord`, makine-okunur — her satirda subtreeId/rootPath/
+  disposition/bindingExpectation/activationFlag/canonicalReplacement/
+  ownerDecisionRef/primaryCause/secondaryCause/notes) +
+  `w3-async-runtime-binding.static-guard.spec.ts` genisletildi (yeni "W3-F06"
+  describe blogu, testler [15]-[20], 6 yeni test — registry-driven: her
+  UNBOUND girdi icin hicbir dosyanin AppModule kapanisina bagli olmadigini,
+  BOUND_FLAG_GATED girdinin gercekten DI'a bagli oldugunu, REMOVED girdinin
+  hem dosya yoklugunu hem sembol-adi sizintisi olmadigini dogrular).
+- **Kanit:** static guard 20/20 (14 onceki + 6 yeni) + 6 yeni chaos off-state
+  testi + 6 yeni trace-retention flag-gate testi = 32 DB-free test,
+  PR-oncesi VE post-merge fresh checkout'ta (merge SHA'ya pin'li, junction
+  node_modules) ayri ayri PASS + 4 negatif-kanit mutasyonu kirmizi/geri-alindi
+  (biri setInterval flag-default ters cevirme mutasyonunun gercek bir
+  zamanlayici baslatip Jest'i hang ettirmesi dahil — `TaskStop` ile kill
+  edilip kirli-ama-gecerli RED kaniti olarak kabul edildi) + gercek CI
+  (Analyze x3, Architectural Guardrails, Client Workspace Live Smoke, CodeQL,
+  Orchestration Tests, Test Suite, Web Tests — 9/9 PASS).
+- **Post-merge acceptance:** MERGED → merge SHA'ya (`0a6ea7fe`) pin'li fresh
+  worktree + fresh node_modules junction (ln -s hang/kismi-kopya riski
+  gozlemlenip temizlenerek native `New-Item -ItemType Junction` ile
+  yeniden kuruldu) + 3 test dosyasi (static guard + chaos off-state +
+  trace-retention flag-gate) tekrarlandi, 32/32 PASS + differential tsc
+  (merge SHA'daki tsc hatalarinin TAMAMEN ilgisiz/onceden-var-olan
+  dosyalarda [interest-engine/lawyer/legal-time-shadow/scheduler/staff/uyap
+  testleri] oldugu grep ile dogrulandi — W3-F06 tarafindan degistirilen
+  HICBIR dosyada sifir hata). **PRODUCTION: NOT ACTIVATED** — trace-retention
+  flag'i varsayilan kapali kaldi, hicbir dormant alt agac production
+  davranisinda aktiflesmedi; production DB/runtime'a bu task kapsaminda
+  dokunulmadi.
+- **Bilinen kalinti (owner karari bekliyor, YENI task OTOMATIK
+  URETILMEDI — brief §18 geregi):** 8 BLOCKED alt agacin her biri kendi
+  owner kararini bekliyor (bkz. registry `notes` alanlari — OBJECT-STORE
+  ailesi icin S3 mimarisinin hala istenip istenmedigi, ICRABOT-LEGACY-CORE
+  icin otomatik hukuki-islem aktivasyonu, CALC-PREVIEW-BREAK-GLASS icin
+  cross-tenant erisim politikasi, CALC-PREVIEW-PLAYBOOK-ACTION-SIDE icin
+  otomatik aksiyon yurutme yetkisi); ayrica `TraceRetentionService.runCleanup()`/
+  `cleanupTenant()` suresi gecen trace'leri yalniz SAYAR ama storage'dan
+  gercekten SILMEZ (kod ici mevcut yorum: "would need storage.delete
+  method") — bu, servisin KENDI onceden var olan bir eksikligidir, bu task
+  kapsaminda yeni bir yetenek icat etmek section 18 geregi YAPILMADI,
+  testler bu gercek davranisi OLDUGU GIBI dogruladi.
+- **Successor:** W3-F07-CRON-OVERLAP-AND-JOB-IDENTITY-R01 (sirada; brief'in
+  binding program-lock talimati geregi bu task TAM kapanmadan
+  BASLATILMAYACAK).

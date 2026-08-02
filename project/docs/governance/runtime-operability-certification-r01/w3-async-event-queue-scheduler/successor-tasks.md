@@ -115,6 +115,22 @@ Cozum Kaydi → W3-D09.
 - **prerequisite:** owner karari — **AKTIVASYON YETKISI GEREKIR**
 - **bagimlilik:** aktivasyon secilirse tenant/idempotency/retry sertifikasyonu ONCE yapilmalidir
 
+**SONUC (R01, [PR #2087](https://github.com/ulashuseyintelli-tech/HUKUK_YAZILIMI/pull/2087), merge `0a6ea7fe`):**
+CLOSED. Yukaridaki "6 alt agac" listesi GROUND-TRUTH kabul edilmeden fresh
+tarandi — gercek sayi **11** ayri dormant/config-gated alt agac (5 isim
+calc-preview/diagnostics/ altinda ic ice imis, "icrabot" etiketi kismen
+yanlisti — v28-engine/domain-event-ingest zaten aktif/sertifikali, kapsam
+disi tutuldu). Her 11'ine tam olarak bir terminal disposition atandi (2
+KEEP_DORMANT_CONFIG_GATED, 5 BLOCKED_BY_MISSING_POLICY, 2
+BLOCKED_BY_MISSING_RUNTIME_DEPENDENCY, 1 ACTIVATE_FLAG_GATED, 1
+REMOVE_DEAD_CODE) — UNKNOWN/DORMANT_UNCLASSIFIED kalmadi. "AKTIVASYON
+YETKISI GEREKIR" varsayimi kismen dogruydu: section 8 executor-yasagi
+geregi HICBIR alt agac production-aktive EDILMEDI; yalniz 3 bounded aile
+kod-seviyesinde duzeltildi (1 dead-code kaldirma, 1 off-state test-ekleme,
+1 kazara-eksik-DI-provider flag-gated duzeltmesi) — kalan 8'i owner karari
+bekliyor (BLOCKED, kod seviyesinde dokunulmadi). Migration gerekmedi.
+Detay: `defect-register.md` → Cozum Kaydi → W3-D03.
+
 ---
 ## W3-F07-CRON-OVERLAP-AND-JOB-IDENTITY-R01
 - **capability:** cron overlap + job kimligi
