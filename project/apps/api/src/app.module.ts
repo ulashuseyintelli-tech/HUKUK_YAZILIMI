@@ -45,6 +45,7 @@ import { ClientFinancialDisclosureModule } from "./modules/client-financial-disc
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { SeedModule } from "./modules/seed/seed.module";
+import { isSeedModuleEnabled } from "./modules/seed/seed-runtime-gate";
 import { ErrorLogModule } from "./modules/error-log/error-log.module";
 import { PublicInstitutionModule } from "./modules/public-institution/public-institution.module";
 import { TebligatModule } from "./modules/tebligat/tebligat.module";
@@ -144,6 +145,13 @@ function getConditionalImports(): Type<unknown>[] {
     logger.log("Simulation API disabled (deployment level) - no routes exposed");
   }
 
+  if (isSeedModuleEnabled()) {
+    conditionalImports.push(SeedModule);
+    logger.log("Seed module enabled (deployment level)");
+  } else {
+    logger.log("Seed module disabled (deployment level) - no routes exposed");
+  }
+
   return conditionalImports;
 }
 
@@ -193,7 +201,8 @@ function getConditionalImports(): Type<unknown>[] {
     ClientFinancialDisclosureModule,
     CalendarModule,
     AuditModule,
-    SeedModule,
+    // CLIENT-OWN-13-I02-R3: SeedModule artık getConditionalImports() üzerinden koşullu
+    // yüklenir (production'da koşulsuz kapalı) — aşağıya bkz.
     ErrorLogModule,
     PublicInstitutionModule,
     TebligatModule,

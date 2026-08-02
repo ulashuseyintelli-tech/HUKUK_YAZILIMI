@@ -4219,3 +4219,107 @@ KOPYALAMAZ · DELETE'i ETKINLESTIRMEZ · schema/migration URETMEZ · production 
 
 **R2 CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. ADMIN ≠ ELEVATED.
 STANDARD ADRES GIRISI ≠ HUKUKI DURUM DEGISIKLIGI.**
+
+## §55 — CLIENT Bulk/Backfill Mutasyon Yetkisi (OWN-13 / I02-R3)
+
+Kaynak: owner `CLIENT-OWN-13-I02-R3-BULK-BACKFILL-MUTATION-AUTHORIZATION-I01` (GO-IMPLEMENT /
+GO-COMPLETE) ve R01 salt-okuma analizi. Bu bolum ADDITIVE'dir; §1–§54.7 metinleri DEGISMEDI.
+
+### 55.1 Kapatilan bosluk (R01 kaniti)
+
+`SeedController` (`app.module.ts`'te KOSULSUZ kayitli) `POST /seed/clients`, `/seed/all` ve
+`/seed/fix-clients` rotalarinda yalniz `JwtAuthGuard` tasiyordu — rol kontrolu YOKTU.
+`seedClients` dogrudan `prisma.client.create` kullaniyordu: R1 D01 (VIEWER DENY), R1A
+reactivate kapisi, checksum, dedup ve audit'in HEPSI atlaniyordu. `fixExistingClients`
+`name`/`displayName`/**`identityNo`** (D02 anlaminda HASSAS) alanlarini yetkisiz ve
+tenant-predicate'siz yaziyordu. `backfillContactFollowUp` merkezi policy DISINDA elle
+yazilmis `role==='ADMIN'` kontrolune bagliydi, aktor thread etmiyordu ve audit URETMIYORDU.
+`POST /seed/public-institutions` tamamen kimliksizdi. **Sonuc: VIEWER toplu musteri
+olusturabiliyor, ADMIN (elevated olmadan) hassas alani toplu degistirebiliyordu.**
+
+R01'in ALREADY_SATISFIED bulgulari korunmustur: Excel import (`export-import.service.ts`) ve
+CASE inline creditor (`case.service.ts`) yollari zaten R1'den beri `ClientService.create`
+uzerinden geciyordu; `scenario-materializer.ts` yalniz test-support, HTTP'den erisilemez;
+Client uzerinde raw SQL YOK.
+
+### 55.2 Owner kararlari (lossless)
+
+| Karar | Icerik |
+|---|---|
+| **D01** | Production'da BUTUN `/seed/*` yuzeyi KOSULSUZ kapali (flag'in degeri onemsiz). |
+| **D02** | Non-production: test'te otomatik acik; diger ortamlarda yalniz explicit flag; varsayilan kapali. |
+| **D03** | Acik oldugu ortamlarda butun `/seed/*` en az `JwtAuthGuard` ister; kimliksiz `seedPublicInstitutions` BIRAKILMAZ. |
+| **D04** | `/seed/clients`, `/seed/all`, `/seed/fix-clients` YALNIZ elevated aktor; **`ADMIN` tek basina YETMEZ.** |
+| **D05** | `seedClients` → `ClientService.create`; `fixExistingClients` merkezi update teknik olarak UYGUN DEGILSE ayni policy/checksum/tenant/audit garantileriyle dogrudan Prisma. |
+| **D06** | Contact-followup backfill de elevated ister; controller'daki `role==='ADMIN'` KALDIRILDI, karar servis sinirinda. |
+| **D07** | Satir-bazli devam KORUNUR; dev batch transaction YOK; basari/basarisizlik ACIKCA sayilir. |
+| **D08** | Yalniz basarili mutasyon audit uretir; PII metadata'ya GIRMEZ. |
+| **D09** | Final write tenant-scoped (veya merkezi `ClientService` uzerinden tenant-guvenli). |
+
+### 55.3 Uygulama
+
+- `client-mutation-policy.ts` AYNI modulde genisletildi: `decideClientBulkMutation()`, AYNI
+  `CLIENT_MUTATION_REASON` sozlugu. Ikinci bir RolesGuard veya capability sistemi
+  KURULMADI. Esik R2'nin adres ARCHIVE/RESTORE'uyla AYNI desendir: rol yalniz VIEWER coarse
+  gate'ini belirler, yukseltme YALNIZ `actor.elevatedAuthority`den gelir (D04/D07).
+- `ClientService.assertCanRunElevatedClientBulkOperation(tenantId, actor)` — TEK ortak kapi;
+  `assertActorTenantMatches` (owner req. 7 ile AYNI desen) ONCE, `canManageLifecycle`
+  (`isApproverEligible`, ikinci hesap YOK) SONRA. `SeedService.seedClients/seedAll/
+  fixExistingClients` ve `ClientService.backfillContactFollowUp` DORDU de bu TEK kapidan
+  gecer; `seedAll` kapiyi ILK yan etkiden ONCE cagirir (office/lawyers/staff dahil TUM
+  adimlar CLIENT uretimini icerdigi icin).
+- `app.module.ts`: `SeedModule` statik `imports`'tan cikarildi, `getConditionalImports()`
+  icinde `isSeedModuleEnabled()` ile kosullu yuklenir (`SimulationApiModule` ile AYNI
+  desen). Modul yuklenmezse route'lar HIC kayit olmaz → guard/403 DEGIL, gercek 404;
+  ortam/flag ayrintisi response'a SIZMAZ.
+- `seedClients` artik HER satiri `ClientService.create(tenantId, c, actor)` ile yazar:
+  R1 (actor tenant esitligi, D01), R1A (reactivate kapisi), checksum (Faz 1) ve audit tek
+  merkezden otomatik gelir; `_existingReturned` ile mevcut kayit donuldugunde `created`
+  ARTMAZ (dedup/retry idempotent).
+- `fixExistingClients`: merkezi `ClientService.update()` bu dar onarim icin teknik olarak
+  UYGUN DEGIL (generic update `type`/`companyName`/`firstName`/`lastName` gonderilmezse
+  dogru `displayName`'i BOS string'e dondurur) → owner'in fallback karari uygulandi:
+  `assertCreateIdentityChecksum` + tenant-scoped `updateMany({id, tenantId})` + `count`
+  + yalniz basarili satirda `audit.logInTransaction`. Gecersiz checksum'li legacy kayit bu
+  ENDPOINT'TEN duzeltilmez (o satir `failed` sayilir, verisi DOKUNULMADAN kalir) — Faz 2/3
+  remediation kapsami DEGISMEZ.
+- `backfillContactFollowUp(tenantId, actor)`: `actor` ZORUNLU; `syncContactFollowUpTaskSafe`
+  artik `boolean` doner (gercek basari/hata ayrimi icin); yalniz basarili satirda
+  `audit.log({action:'CLIENT_CONTACT_FOLLOWUP_BACKFILL', metadata:{missingFields}})` — alan
+  ADI tasir, telefon/e-posta DEGERI ASLA yazilmaz.
+
+### 55.4 Degismeyenler
+
+Diger (CLIENT-disi) seed adimlari (office/lawyers/staff/debtors/cases/lookups/execution-
+offices/public-institutions) icin yeni bir capability modeli ICAT EDILMEDI — yalniz
+authentication + runtime closure (D01-D03) uygulanir. `syncContactFollowUpTask`'in Task
+yazimlari DEGISMEDI (R4 kapsami). R1/R1A/R2 davranislari, response kontratlari ve audit
+action adlari (yeni `CLIENT_BULK_FIX` / `CLIENT_CONTACT_FOLLOWUP_BACKFILL` HARIC)
+DEGISMEDI. **schema/migration YOK.**
+
+### 55.5 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| R3 odakli suite (seed-runtime-gate + seed-controller-guards + seed-client-authority + client-bulk-mutation-authorization-r3 + contact-followup) | 65+/65+ PASS |
+| pure/client-portal.txt tam manifest (46 dosya) | 676/676 PASS |
+| export-import modulu regresyon | 36/36 PASS |
+| `tsc --noEmit` baseline delta | 525 → 525 (**0 yeni**; tek fark alakasiz dosyada bilinen union-siralama gurultusu) |
+| Degisen dosya lint | 0 yeni (3 onceden var olan, dokunulmamis satirlarda) |
+| schema/migration diff | **0** |
+| Mutation teeth | **9/9** hedef testi dusurdu, hepsi byte-ayni restore (sha256 dogrulandi) |
+
+Teeth: production runtime kapisi kaldir · flag default'unu ac · `JwtAuthGuard` kaldir ·
+elevated authority kapisini no-op yap · ADMIN-alone reddini boz · `ClientService.create`
+yerine dogrudan Prisma'ya don · tenant-scoped write predicate'i kaldir · `failed` sayacini
+kaldir · audit'i kosulsuz (basarisizlikta da) uret.
+
+### 55.6 Bolum Self-Check
+
+Bu bolum: yeni RolesGuard veya paralel capability sistemi KURMAZ · OFFICE eligibility
+hesabini KOPYALAMAZ · schema/migration URETMEZ · production/DB'ye ERISMEZ · gercek
+seed/import CALISTIRMAZ · R4–R6'yi BASLATMAZ veya KAPALI GOSTERMEZ · §1–§54.7 metinlerini
+DEGISTIRMEZ.
+
+**R3-I01 CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. R4–R6 OPEN / NOT STARTED.
+ADMIN ≠ ELEVATED (ucuncu tekrar: create/update/address/bulk — D07/D04 hep AYNI esik).**

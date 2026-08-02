@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { ClientService, type ClientMutationActorContext } from '../client/client.service';
+import { assertCreateIdentityChecksum } from '../client/client-identity-checksum.util';
 import { PUBLIC_INSTITUTIONS_DATA } from '../public-institution/public-institution-seed';
 import { EXTENDED_INSTITUTIONS_DATA } from '../public-institution/public-institution-seed-extended';
 import { SAVCILIK_DATA } from '../public-institution/public-institution-seed-savcilik';
@@ -16,9 +19,20 @@ import { seedLookupCatalog } from '../lookup/lookup-seed';
 export class SeedService {
   private readonly logger = new Logger(SeedService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private clientService: ClientService,
+  ) {}
 
-  async seedAll(tenantId: string) {
+  /**
+   * OWN-13 I02-R3 (owner D04): seedAll CLIENT üretimini de içerir (aşağıda `clients` adımı) →
+   * yetki `office`/`bankAccounts` gibi HİÇBİR yan etkiden ÖNCE, en başta kontrol edilir. Diğer
+   * (CLIENT-dışı) seed adımları bu kapıdan ETKİLENMEZ — yalnız authentication + runtime
+   * closure (A/B) onlara uygulanır, yeni bir capability modeli İCAT EDİLMEZ.
+   */
+  async seedAll(tenantId: string, actor: ClientMutationActorContext) {
+    await this.clientService.assertCanRunElevatedClientBulkOperation(tenantId, actor);
     this.logger.log('Tüm seed verileri oluşturuluyor...');
     const results = {
       office: await this.seedOffice(tenantId),
@@ -26,7 +40,7 @@ export class SeedService {
       lookups: await this.seedLookups(tenantId),
       lawyers: await this.seedLawyers(tenantId),
       staff: await this.seedStaff(tenantId),
-      clients: await this.seedClients(tenantId),
+      clients: await this.seedClients(tenantId, actor),
       debtors: await this.seedDebtors(tenantId),
       executionOffices: await this.seedExecutionOffices(tenantId),
       cases: await this.seedCases(tenantId),
@@ -171,10 +185,20 @@ export class SeedService {
   }
 
 
-  async seedClients(tenantId: string) {
+  /**
+   * OWN-13 I02-R3 (owner D04/D05/D07, RATIFIED): `actor` ZORUNLU ve elevated olmalıdır —
+   * `assertCanRunElevatedClientBulkOperation` HİÇBİR satır yazılmadan ÖNCE çağrılır. Kayıtlar
+   * artık `prisma.client.create` DEĞİL, kanonik `ClientService.create` üzerinden yazılır: R1
+   * (D01/actor tenant eşitliği), R1A (reactivate lifecycle kapısı), checksum (Faz 1) ve audit
+   * tek merkezden otomatik uygulanır — ikinci bir dedup/otorite mantığı İCAT EDİLMEZ.
+   * Satır-bazlı devam KORUNUR (D07): bir satırın hatası önceki başarıları geri almaz, sonraki
+   * satırlar denenmeye devam eder; `failed` açıkça sayılır (hata sessizce başarı sayılmaz).
+   */
+  async seedClients(tenantId: string, actor: ClientMutationActorContext) {
+    await this.clientService.assertCanRunElevatedClientBulkOperation(tenantId, actor);
+
     // Task A/Faz 1 (seed kalite referansı): TCKN/VKN değerleri GEÇERLİ mod-10/11 checksum + benzersiz.
-    // (ClientService.create create-checksum kuralıyla tutarlı; seed düz prisma.client.create kullansa da
-    //  "kalite referansı" geçersiz kimlik üretmemeli.) Eski seri 12345678901-04 / 1234567891-95 geçersizdi.
+    // Eski seri 12345678901-04 / 1234567891-95 geçersizdi.
     const clients = [
       { name: 'ABC Holding A.Ş.', displayName: 'ABC Holding A.Ş.', type: 'COMPANY', companyName: 'ABC Holding A.Ş.', vkn: '1234567890', identityNo: '1234567890', email: 'info@abcholding.com', phone: '02121234567', city: 'İstanbul' },
       { name: 'XYZ Tekstil Ltd. Şti.', displayName: 'XYZ Tekstil Ltd. Şti.', type: 'COMPANY', companyName: 'XYZ Tekstil Ltd. Şti.', vkn: '1234567904', identityNo: '1234567904', email: 'info@xyztekstil.com', phone: '02121234568', city: 'Bursa' },
@@ -188,16 +212,20 @@ export class SeedService {
       { name: 'Beta Enerji A.Ş.', displayName: 'Beta Enerji A.Ş.', type: 'COMPANY', companyName: 'Beta Enerji A.Ş.', vkn: '1234567945', identityNo: '1234567945', email: 'info@betaenerji.com', phone: '02121234572', city: 'Ankara' },
     ];
     let created = 0;
+    let failed = 0;
     for (const c of clients) {
-      const exists = await this.prisma.client.findFirst({ 
-        where: { tenantId, OR: [{ vkn: c.vkn || undefined }, { tckn: c.tckn || undefined }].filter(x => Object.values(x)[0]) } 
-      });
-      if (!exists) {
-        await this.prisma.client.create({ data: { tenantId, ...c, isActive: true } as any });
-        created++;
+      try {
+        const result = await this.clientService.create(tenantId, c, actor);
+        // ClientService.create() KENDİ dedup'ını yapar (tckn/vkn/identityNo) — eşleşme varsa
+        // `_existingReturned` ile mevcut kaydı döner (yeni satır YAZMAZ); yalnız GERÇEKTEN
+        // yeni oluşan satır `created` sayılır (eski `if (!exists) created++` ile AYNI anlam).
+        if (!(result as any)?._existingReturned) created++;
+      } catch (e: any) {
+        failed++;
+        this.logger.warn(`Müvekkil seed edilemedi: ${c.name} - ${e?.message}`);
       }
     }
-    return { created, message: `${created} müvekkil oluşturuldu` };
+    return { created, failed, message: `${created} müvekkil oluşturuldu` };
   }
 
   async seedDebtors(tenantId: string) {
@@ -350,31 +378,70 @@ export class SeedService {
     return { created, message: `${created} dosya oluşturuldu` };
   }
 
-  // Mevcut müvekkillerin name alanını düzelt
-  async fixExistingClients(tenantId: string) {
+  /**
+   * Mevcut müvekkillerin name alanını düzelt.
+   *
+   * OWN-13 I02-R3 (owner D04/D05/D07/D08/D09, RATIFIED): `actor` ZORUNLU ve elevated
+   * olmalıdır (D04 — `/seed/fix-clients` de CLIENT seed authority kapsamındadır). `name`/
+   * `displayName`/`identityNo` hepsi D02 anlamında HASSAS alandır; merkezi `ClientService.
+   * update()` bu dar onarım için teknik olarak UYGUN DEĞİL (generic update kendi `type`/
+   * `companyName`/`firstName`/`lastName`'den `displayName`'i YENİDEN HESAPLAR — bunlar
+   * gönderilmezse mevcut doğru displayName'i BOŞ string'e döndürür). Owner'ın fallback
+   * kararı gereği: aynı `assertCreateIdentityChecksum` + tenant-scoped `updateMany`+`count`
+   * + yalnız başarılı satırda audit garantileri elde uygulanır. Satır-bazlı devam KORUNUR;
+   * geçersiz checksum'lı legacy kayıt bu ENDPOINT'TEN düzeltilmez (o satır `failed` sayılır,
+   * VERİSİ DOKUNULMADAN kalır) — Faz 2/3 remediation'ın kapsamı DEĞİŞMEZ.
+   */
+  async fixExistingClients(tenantId: string, actor: ClientMutationActorContext) {
+    await this.clientService.assertCanRunElevatedClientBulkOperation(tenantId, actor);
+
     const clients = await this.prisma.client.findMany({
       where: { tenantId },
     });
 
     let fixed = 0;
+    let failed = 0;
     for (const client of clients) {
       if (!client.name || client.name.trim() === '') {
-        const name = client.displayName || client.companyName || 
-          `${client.firstName || ''} ${client.lastName || ''}`.trim() || 
-          'İsimsiz Müvekkil';
-        
-        await this.prisma.client.update({
-          where: { id: client.id },
-          data: { 
-            name,
-            displayName: client.displayName || name,
-            identityNo: client.identityNo || client.tckn || client.vkn,
-          },
-        });
-        fixed++;
+        try {
+          const name = client.displayName || client.companyName ||
+            `${client.firstName || ''} ${client.lastName || ''}`.trim() ||
+            'İsimsiz Müvekkil';
+          const identityNo = client.identityNo || client.tckn || client.vkn;
+          assertCreateIdentityChecksum({ tckn: client.tckn, vkn: client.vkn });
+
+          const wasFixed = await this.prisma.$transaction(async (tx) => {
+            // D09: final write tenant-scoped — orijinal `where: { id }` tenant predicate TAŞIMIYORDU.
+            const { count } = await tx.client.updateMany({
+              where: { id: client.id, tenantId },
+              data: {
+                name,
+                displayName: client.displayName || name,
+                identityNo,
+              },
+            });
+            if (count === 0) return false; // eşzamanlı değişim — audit de yazılmaz
+            await this.audit.logInTransaction(tx, {
+              tenantId,
+              action: 'CLIENT_BULK_FIX',
+              entityType: 'CLIENT',
+              entityId: client.id,
+              userId: actor.userId,
+              // D08: yalnız alan ADLARI — hiçbir değer (isim/kimlik no) audit'e YAZILMAZ.
+              metadata: { fieldsFixed: ['name', 'displayName', 'identityNo'] },
+            });
+            return true;
+          });
+
+          if (wasFixed) fixed++;
+          else failed++;
+        } catch (e: any) {
+          failed++;
+          this.logger.warn(`Müvekkil düzeltilemedi: ${client.id} - ${e?.message}`);
+        }
       }
     }
-    return { fixed, message: `${fixed} müvekkil düzeltildi` };
+    return { fixed, failed, message: `${fixed} müvekkil düzeltildi` };
   }
 
   // Mevcut avukatları düzelt (officeId, barCity vb.)

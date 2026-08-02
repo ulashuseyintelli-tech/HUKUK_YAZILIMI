@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { SeedService } from './seed.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { buildClientMutationActor } from '../client/client.service';
 
 @Controller('seed')
 export class SeedController {
@@ -9,7 +10,9 @@ export class SeedController {
   @UseGuards(JwtAuthGuard)
   @Post('all')
   async seedAll(@Request() req: any) {
-    return this.seedService.seedAll(req.user.tenantId);
+    // OWN-13 I02-R3 (owner D04): seedAll CLIENT üretimini de içerir → AYNI elevated aktör.
+    const actor = buildClientMutationActor({ userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role });
+    return this.seedService.seedAll(req.user.tenantId, actor);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -27,7 +30,9 @@ export class SeedController {
   @UseGuards(JwtAuthGuard)
   @Post('clients')
   async seedClients(@Request() req: any) {
-    return this.seedService.seedClients(req.user.tenantId);
+    // OWN-13 I02-R3 (owner D04): CLIENT seed authority — yalnız elevated aktör (ADMIN tek başına yetmez).
+    const actor = buildClientMutationActor({ userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role });
+    return this.seedService.seedClients(req.user.tenantId, actor);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -63,7 +68,9 @@ export class SeedController {
   @UseGuards(JwtAuthGuard)
   @Post('fix-clients')
   async fixClients(@Request() req: any) {
-    return this.seedService.fixExistingClients(req.user.tenantId);
+    // OWN-13 I02-R3 (owner D04): identityNo dahil hassas alan yazar — yalnız elevated aktör.
+    const actor = buildClientMutationActor({ userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role });
+    return this.seedService.fixExistingClients(req.user.tenantId, actor);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -84,7 +91,9 @@ export class SeedController {
     return this.seedService.seedBankAccounts(req.user.tenantId);
   }
 
-  // Public endpoint - kamu kurumları + icra daireleri seed (auth gerektirmez)
+  // OWN-13 I02-R3 (owner D03): önceden kimliksizdi (auth gerektirmiyordu) — bütün /seed/*
+  // yüzeyi en az JwtAuthGuard ister kararı gereği ARTIK KİMLİKSİZ DEĞİL.
+  @UseGuards(JwtAuthGuard)
   @Post('public-institutions')
   async seedPublicInstitutions() {
     return this.seedService.seedPublicInstitutions();

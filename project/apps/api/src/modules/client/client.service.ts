@@ -11,6 +11,7 @@ import {
   classifyClientPayload,
   decideClientCreate,
   decideClientUpdate,
+  decideClientBulkMutation,
   deriveClientMutationCapabilities,
   type ClientMutationCapabilities,
   type ClientMutationDecision,
@@ -398,6 +399,29 @@ export class ClientService {
         reasonCode: CLIENT_MUTATION_REASON.LIFECYCLE_DENIED,
       });
     }
+  }
+
+  /**
+   * OWN-13 I02-R3 (owner D04/D06/D09, RATIFIED) — toplu/backfill CLIENT mutasyon yetki kapısı.
+   *
+   * Seed (`/seed/clients`, `/seed/all`, `/seed/fix-clients`) ve contact-followup backfill
+   * TEK bir gerçek okuma/yazmadan önce ÇAĞIRDIĞI ortak kapı. Tenant eşitliği (owner req. 7
+   * ile AYNI desen) ÖNCE, sonra elevated eşiği kontrol edilir. `UserRole.ADMIN` TEK BAŞINA
+   * yetmez — eşik `assertCanReactivateViaCreate` ile AYNI predicate'tir (`isApproverEligible`,
+   * ikinci bir hesap YOK, D03). Rol yalnız VIEWER coarse gate'ini belirler (owner D07 deseni).
+   */
+  async assertCanRunElevatedClientBulkOperation(
+    tenantId: string,
+    actor: ClientMutationActorContext,
+  ): Promise<void> {
+    this.assertActorTenantMatches(tenantId, actor);
+    const elevatedAuthority = await this.canManageLifecycle(actor?.userId, actor?.tenantId);
+    const decision = decideClientBulkMutation({
+      userId: actor?.userId,
+      role: actor?.role,
+      elevatedAuthority,
+    });
+    if (!decision.allowed) this.denyMutation(decision);
   }
 
   /**
@@ -1840,14 +1864,21 @@ export class ClientService {
    * NOT: Excel import (prisma.client.create, service bypass) çağırmaz (bilinçli).
    * </remarks>
    */
+  /**
+   * OWN-13 I02-R3 (owner D07/D08): dönüş değeri artık `boolean` — çağıran (özellikle
+   * `backfillContactFollowUp`) gerçek başarı/hata ayrımını sayabilsin diye. `create()`/
+   * `update()` çağıranları dönüş değerini KULLANMAZ (yan etki, mevcut davranış DEĞİŞMEDİ).
+   */
   private async syncContactFollowUpTaskSafe(
     tenantId: string,
     client: { id: string; phone?: string | null; email?: string | null; contactFollowUpStatus?: string | null }
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       await this.syncContactFollowUpTask(tenantId, client);
+      return true;
     } catch (e: any) {
       console.error(`[ClientService] contact follow-up sync hatası (client ${client.id}): ${e?.message}`);
+      return false;
     }
   }
 
@@ -1941,12 +1972,21 @@ export class ClientService {
    *
    * <remarks>
    * Çağrıldığı yerler:
-   * - ClientController.backfillContactFollowUp() → POST /clients/backfill-contact-followup (admin)
-   * </remarks>
+   * - ClientController.backfillContactFollowUp() → POST /clients/backfill-contact-followup
+   *
+   * OWN-13 I02-R3 (owner D06/D07/D08, RATIFIED): `actor` ZORUNLU
+   * (`ClientMutationActorContext`); yetki kararı artık controller'daki elle yazılmış
+   * `role==='ADMIN'` kontrolü DEĞİL, `assertCanRunElevatedClientBulkOperation` (D04 ile AYNI
+   * elevated eşiği) üzerinden servis sınırında verilir. Satır-bazlı devam KORUNUR (D07) —
+   * tek bir görev senkronu başarısız olursa yalnız o satır `failed` sayılır, önceki
+   * başarılar geri alınmaz. Başarılı satır audit üretir; no-op/hata üretmez (D08).
    */
   async backfillContactFollowUp(
-    tenantId: string
-  ): Promise<{ scanned: number; createdOrUpdated: number; skippedWaived: number; alreadyActive: number }> {
+    tenantId: string,
+    actor: ClientMutationActorContext,
+  ): Promise<{ scanned: number; createdOrUpdated: number; skippedWaived: number; alreadyActive: number; failed: number }> {
+    await this.assertCanRunElevatedClientBulkOperation(tenantId, actor);
+
     const clients = await this.prisma.client.findMany({
       where: { tenantId, isActive: true },
       select: { id: true, phone: true, email: true, contactFollowUpStatus: true },
@@ -1956,6 +1996,7 @@ export class ClientService {
     let createdOrUpdated = 0;
     let skippedWaived = 0;
     let alreadyActive = 0;
+    let failed = 0;
 
     for (const c of clients) {
       scanned++;
@@ -1965,16 +2006,26 @@ export class ClientService {
       if (c.contactFollowUpStatus === 'ACTIVE') { alreadyActive++; continue; }
       if (c.contactFollowUpStatus === 'COMPLETED') continue; // şimdilik dokunma
       // status === null & eksik → görev üret + ACTIVE (dedupe'lu)
-      await this.syncContactFollowUpTaskSafe(tenantId, {
+      const ok = await this.syncContactFollowUpTaskSafe(tenantId, {
         id: c.id,
         phone: c.phone,
         email: c.email,
         contactFollowUpStatus: null,
       });
+      if (!ok) { failed++; continue; }
       createdOrUpdated++;
+      // D08: yalnız GERÇEKTEN başarılı satır audit üretir — PII YOK, yalnız alan ADLARI.
+      await this.audit.log({
+        tenantId,
+        action: 'CLIENT_CONTACT_FOLLOWUP_BACKFILL',
+        entityType: 'CLIENT',
+        entityId: c.id,
+        userId: actor.userId,
+        metadata: { missingFields: missing },
+      });
     }
 
-    return { scanned, createdOrUpdated, skippedWaived, alreadyActive };
+    return { scanned, createdOrUpdated, skippedWaived, alreadyActive, failed };
   }
 
   // Müvekkil sil (soft delete)
