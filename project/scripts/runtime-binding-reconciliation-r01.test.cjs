@@ -9,9 +9,12 @@ const { spawnSync } = require('node:child_process');
 const {
   classifyClosureCapabilityMapping,
   closureCertificationStatus,
+  applyDispositionRegistry,
+  dispositionFingerprint,
   isReliableClosureClaim,
   legacyHistoricalStatusForTitle,
   parseHistoricalClosureClaim,
+  validateDispositionRegistryShape,
 } = require('./runtime-binding-reconciliation-r01.cjs');
 
 const projectRoot = path.resolve(__dirname, '..');
@@ -286,4 +289,130 @@ test('PR #1795 sealed artifact tree is unchanged from the frozen audit base', ()
   assert.equal(baseTree, successor.metadata.sealedPr1795ArtifactTreeSha);
   assert.equal(headTree, baseTree);
   assert.equal(git('status', '--porcelain=v1', '--', sealedPath), '');
+});
+
+test('canonical dormant disposition is data-driven and removes records from unbound inventory', () => {
+  const record = {
+    capabilityId: 'HTTP-FIXTURE',
+    name: 'FixtureController.read — GET /api/fixture',
+    entryPointType: 'HTTP',
+    expectedEntryPoints: ['/api/fixture'],
+    implementationFiles: ['project/apps/api/src/modules/fixture/fixture.controller.ts'],
+    runtimeBound: false,
+    active: false,
+    reachable: false,
+    consumerCount: 0,
+    consumers: [],
+    actualEntryPoints: [],
+    evidenceRefs: [],
+    blockers: [],
+    finalStatus: 'CODE_PRESENT_UNBOUND',
+  };
+  const registry = {
+    schemaVersion: 1,
+    kind: 'RUNTIME_CAPABILITY_DISPOSITION_REGISTRY',
+    sourceCommitSha: 'a'.repeat(40),
+    requiredCapabilityIds: [record.capabilityId],
+    entries: [{
+      capabilityId: record.capabilityId,
+      recordFingerprint: dispositionFingerprint(record),
+      implementationFiles: [...record.implementationFiles],
+      disposition: 'INTENTIONALLY_DORMANT',
+      runtimeBound: false,
+      productionReachable: false,
+      productionActive: false,
+      operationalConsumer: 0,
+      activationAuthority: 'ABSENT',
+      defect: false,
+      remediationRequired: false,
+      reopenCondition: 'OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT',
+      evidenceRefs: ['fixture:controller:1'],
+    }],
+  };
+
+  applyDispositionRegistry([record], { data: registry });
+
+  assert.equal(record.finalStatus, 'INTENTIONALLY_DORMANT');
+  assert.equal(record.runtimeBound, false);
+  assert.equal(record.active, false);
+  assert.equal(record.reachable, false);
+  assert.equal(record.consumerCount, 0);
+  assert.equal(record.disposition, 'INTENTIONALLY_DORMANT');
+  assert.equal(record.activationAuthority, 'ABSENT');
+  assert.equal(record.defect, false);
+  assert.equal(record.remediationRequired, false);
+});
+
+test('dormant disposition registry rejects duplicate, missing and unknown records fail-closed', () => {
+  const entry = {
+    capabilityId: 'HTTP-FIXTURE',
+    recordFingerprint: 'b'.repeat(64),
+    implementationFiles: ['project/apps/api/src/modules/fixture/fixture.controller.ts'],
+    disposition: 'INTENTIONALLY_DORMANT',
+    runtimeBound: false,
+    productionReachable: false,
+    productionActive: false,
+    operationalConsumer: 0,
+    activationAuthority: 'ABSENT',
+    defect: false,
+    remediationRequired: false,
+    reopenCondition: 'OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT',
+    evidenceRefs: ['fixture:controller:1'],
+  };
+  const base = {
+    schemaVersion: 1,
+    kind: 'RUNTIME_CAPABILITY_DISPOSITION_REGISTRY',
+    sourceCommitSha: 'a'.repeat(40),
+  };
+
+  assert.throws(
+    () => validateDispositionRegistryShape({
+      ...base,
+      requiredCapabilityIds: ['HTTP-FIXTURE', 'HTTP-FIXTURE'],
+      entries: [entry, entry],
+    }),
+    /DISPOSITION_REGISTRY_DUPLICATE_REQUIRED_ID/,
+  );
+  assert.throws(
+    () => validateDispositionRegistryShape({
+      ...base,
+      requiredCapabilityIds: ['HTTP-FIXTURE'],
+      entries: [],
+    }),
+    /DISPOSITION_REGISTRY_ENTRY_COUNT_MISMATCH/,
+  );
+  assert.throws(
+    () => applyDispositionRegistry([], {
+      data: {
+        ...base,
+        requiredCapabilityIds: ['HTTP-UNKNOWN'],
+        entries: [{ ...entry, capabilityId: 'HTTP-UNKNOWN' }],
+      },
+    }),
+    /DISPOSITION_REGISTRY_UNKNOWN_CAPABILITY: HTTP-UNKNOWN/,
+  );
+});
+
+test('T09 artifact covers the twelve Playbook and six composition routes exactly once', () => {
+  const artifact = JSON.parse(fs.readFileSync(
+    path.join(repoRoot, 'project', 'docs', 'audit', 'runtime-binding-reconciliation-r01-t09', 'capability-disposition-registry.json'),
+    'utf8',
+  ));
+  assert.equal(artifact.requiredCapabilityIds.length, 18);
+  assert.equal(artifact.entries.length, 18);
+  assert.equal(new Set(artifact.requiredCapabilityIds).size, 18);
+  assert.equal(new Set(artifact.entries.map((entry) => entry.capabilityId)).size, 18);
+  assert.ok(artifact.entries.every((entry) => entry.disposition === 'INTENTIONALLY_DORMANT'));
+  assert.ok(artifact.entries.every((entry) => entry.implementationFiles.length === 1));
+  assert.equal(
+    artifact.entries.filter((entry) => entry.evidenceRefs.some((ref) => ref.includes('playbook.controller.ts'))).length,
+    18,
+  );
+  assert.equal(artifact.composition.module.name, 'PlaybookModule');
+  assert.equal(artifact.composition.controllers.length, 3);
+  assert.equal(artifact.composition.controllers.reduce((sum, item) => sum + item.routeCount, 0), 18);
+  assert.equal(artifact.composition.providers.length, 14);
+  assert.equal(artifact.composition.startupSideEffects.length, 4);
+  assert.ok(artifact.composition.controllers.every((item) => item.runtimeBound === false));
+  assert.ok(artifact.composition.startupSideEffects.every((item) => item.runtimeBound === false));
 });
