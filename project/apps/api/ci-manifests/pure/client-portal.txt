@@ -175,6 +175,14 @@ src/modules/client/__tests__/client-create-dedup-independent-probe.spec.ts
 #     owner altinda SERI paketlenecek (C2-owned policy allowlist + XL-3 imza kisiti).
 src/modules/client/__tests__/client-identity-conflict-mapping-c1b05.spec.ts
 #
+#   CLAUDE-CLIENT-C1-B06 seed yuzey idempotency sertifikasyonu (SAF, DB-siz)
+#     #2107 ile baslayan seed test kapsamini TAMAMLAR: kalan yuzeylerin (office,
+#     bankAccounts, lawyers, staff, debtors, executionOffices, cases-onkosul,
+#     getDataStatus) idempotency ('varsa dokunma') ve on-kosul ('eksikse yazmadan
+#     don') sozlesmeleri karakterize edilir; B01-B05 regresyon kilidi seed yuzeyinin
+#     tamamini kapsar.
+src/modules/seed/__tests__/seed-surface-idempotency-certification.spec.ts
+#
 #   CLAUDE-CLIENT-C2-B02 workspace komut yetki karakterizasyonu (SAF, DB-siz)
 #     FIND-C2: bes workspace komut endpoint'i rol KONTROLSUZ (VIEWER ve tanimsiz rol
 #     dahil dispatch servise ulasir); controller aktor ROLUNU servise iletmiyor;
