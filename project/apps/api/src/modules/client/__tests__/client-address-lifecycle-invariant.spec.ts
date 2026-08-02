@@ -141,10 +141,22 @@ function buildService(opts: { siblings: Sib[]; clientFound?: boolean }) {
   const tx = {
     clientAddress: {
       findMany: jest.fn().mockResolvedValue(opts.siblings),
-      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      // OWN-13 I02-R2 (D04): `updateMany` artık FINAL WRITE'tır ve `count` KONTROL EDİLİR
+      // (0 → NotFound, sonraki yazma/audit yok). Bu suite invariant ihlallerini ölçer, yazma
+      // yarışını değil → başarılı yazma (count=1) kurulur; sonuç `findFirstOrThrow` ile okunur.
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findFirstOrThrow: jest
+        .fn()
+        .mockImplementation(({ where }: any) => Promise.resolve({ id: where.id, clientId: 'c1' })),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'new', ...data })),
       update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'a1', ...data })),
       delete: jest.fn().mockResolvedValue({ id: 'a2' }),
+    },
+    // D04: create() parent Client'ı AYNI transaction içinde tenant-scoped YENİDEN doğrular.
+    client: {
+      findFirst: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(opts.clientFound === false ? null : { id: 'c1' })),
     },
   };
   let rolledBack = false;
@@ -153,6 +165,11 @@ function buildService(opts: { siblings: Sib[]; clientFound?: boolean }) {
       findFirst: jest.fn().mockResolvedValue(opts.clientFound === false ? null : { id: 'c1' }),
     },
     clientAddress: {
+      // OWN-13 I02-R2 (D02/D03): AÇIK birincillik talebinde "mevcut aktif birincil var mı"
+      // sorulur — sınıflandırma STANDARD/ELEVATED ayrımı için buna bakar.
+      count: jest
+        .fn()
+        .mockImplementation(async () => opts.siblings.filter((s) => s.isPrimary && s.isCurrent).length),
       findFirst: jest.fn().mockImplementation(({ where }: any) => {
         const found = opts.siblings.find((s) => s.id === where.id);
         return Promise.resolve(found ? { ...found, type: 'BEYAN', street: null, city: null, district: null, region: null, postalCode: null } : null);
@@ -172,14 +189,14 @@ function buildService(opts: { siblings: Sib[]; clientFound?: boolean }) {
   // I02: servise AuditService enjekte edildi. Bu spec I01 invariant davranışını ölçer; audit
   // içeriği I02 spec'inde doğrulanır. Mock hata YUTMAZ (gerçek logInTransaction gibi).
   const audit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
-  const svc = new ClientAddressService(prisma, audit);
+  const svc = new ClientAddressService(prisma, audit, { isApproverEligible: jest.fn().mockResolvedValue(true) } as any);
   return { svc, prisma, tx, audit, wasRolledBack: () => rolledBack };
 }
 
 describe('ARC-07 I01 — servis: create()', () => {
   it('[11] ilk adres GEÇERLİ durum üretir (otomatik primary)', async () => {
     const { svc, tx } = buildService({ siblings: [] });
-    await svc.create('t1', 'c1', { type: 'BEYAN', street: 'X' } as any);
+    await svc.create('t1', 'c1', { type: 'BEYAN', street: 'X' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(tx.clientAddress.create).toHaveBeenCalledTimes(1);
     expect(tx.clientAddress.create.mock.calls[0][0].data.isPrimary).toBe(true);
   });
@@ -188,7 +205,7 @@ describe('ARC-07 I01 — servis: create()', () => {
     const { svc, tx } = buildService({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
-    await svc.create('t1', 'c1', { type: 'TEBLIGAT', street: 'Y' } as any);
+    await svc.create('t1', 'c1', { type: 'TEBLIGAT', street: 'Y' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(tx.clientAddress.create).toHaveBeenCalledTimes(1);
     expect(tx.clientAddress.create.mock.calls[0][0].data.isPrimary).toBe(false);
     // Mevcut primary DÜŞÜRÜLMEZ.
@@ -199,9 +216,10 @@ describe('ARC-07 I01 — servis: create()', () => {
     const { svc, tx } = buildService({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
-    await svc.create('t1', 'c1', { type: 'TICARI', street: 'Z', isPrimary: true } as any);
+    await svc.create('t1', 'c1', { type: 'TICARI', street: 'Z', isPrimary: true } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(tx.clientAddress.updateMany).toHaveBeenCalledWith({
-      where: { clientId: 'c1', isPrimary: true },
+      // D04: kardeş birincillik-düşürme yazması da tenant-scoped parent ilişkisi taşır.
+      where: { clientId: 'c1', isPrimary: true, client: { tenantId: 't1' } },
       data: { isPrimary: false },
     });
     expect(tx.clientAddress.create.mock.calls[0][0].data.isPrimary).toBe(true);
@@ -212,7 +230,7 @@ describe('ARC-07 I01 — servis: create()', () => {
     const { svc, tx, wasRolledBack } = buildService({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: false, isCurrent: true }],
     });
-    await expect(svc.create('t1', 'c1', { type: 'BEYAN', street: 'Q' } as any)).rejects.toBeInstanceOf(
+    await expect(svc.create('t1', 'c1', { type: 'BEYAN', street: 'Q' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(tx.clientAddress.create).not.toHaveBeenCalled();
@@ -223,7 +241,7 @@ describe('ARC-07 I01 — servis: create()', () => {
     const { svc, tx } = buildService({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: false, isCurrent: false }],
     });
-    await svc.create('t1', 'c1', { type: 'BEYAN', street: 'W' } as any);
+    await svc.create('t1', 'c1', { type: 'BEYAN', street: 'W' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(tx.clientAddress.create.mock.calls[0][0].data.isPrimary).toBe(true);
   });
 });
@@ -234,8 +252,10 @@ describe('ARC-07 I01 — servis: update()', () => {
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
     // isPrimary:false gönderilse bile bayrak DEĞİŞMEZ (undefined geçilir) → küme geçerli kalır.
-    await svc.update('t1', 'c1', 'a1', { street: 'yeni', isPrimary: false } as any);
-    expect(tx.clientAddress.update.mock.calls[0][0].data.isPrimary).toBeUndefined();
+    await svc.update('t1', 'c1', 'a1', { street: 'yeni', isPrimary: false } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    // D04: final write `updateMany`. Hedef satırın yazımı, unset olmayan çağrıdır.
+    const targetWrite = tx.clientAddress.updateMany.mock.calls.find(([a]: any[]) => a?.where?.id);
+    expect(targetWrite[0].data.isPrimary).toBeUndefined();
   });
 
   it('[15] arşiv (non-current) satırı primary yapma girişimi REDDEDİLİR', async () => {
@@ -246,9 +266,11 @@ describe('ARC-07 I01 — servis: update()', () => {
       ],
     });
     await expect(
-      svc.update('t1', 'c1', 'a2', { isPrimary: true } as any),
+      svc.update('t1', 'c1', 'a2', { isPrimary: true } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(wasRolledBack()).toBe(true);
   });
 
@@ -259,14 +281,16 @@ describe('ARC-07 I01 — servis: update()', () => {
         { id: 'a2', clientId: 'c1', isPrimary: false, isCurrent: true },
       ],
     });
-    await svc.update('t1', 'c1', 'a2', { isPrimary: true } as any);
+    await svc.update('t1', 'c1', 'a2', { isPrimary: true } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(tx.clientAddress.updateMany).toHaveBeenCalled();
-    expect(tx.clientAddress.update.mock.calls[0][0].data.isPrimary).toBe(true);
+    // D04: final write `updateMany`. Hedef satırın yazımı, unset olmayan çağrıdır.
+    const promoted = tx.clientAddress.updateMany.mock.calls.find(([a]: any[]) => a?.where?.id);
+    expect(promoted[0].data.isPrimary).toBe(true);
   });
 
   it('[16] tenant/client kapsamı FAIL-CLOSED — bulunamayan adres 404', async () => {
     const { svc } = buildService({ siblings: [] });
-    await expect(svc.update('t1', 'c1', 'yok', { street: 'x' } as any)).rejects.toBeInstanceOf(
+    await expect(svc.update('t1', 'c1', 'yok', { street: 'x' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
@@ -278,9 +302,11 @@ describe('ARC-07 I01 — servis: update()', () => {
         { id: 'a2', clientId: 'c1', isPrimary: false, isCurrent: false },
       ],
     });
-    await expect(svc.update('t1', 'c1', 'a2', { isPrimary: true } as any)).rejects.toThrow();
+    await expect(svc.update('t1', 'c1', 'a2', { isPrimary: true } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toThrow();
     expect(wasRolledBack()).toBe(true);
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -324,6 +350,8 @@ describe('ARC-07 I02 — servis: remove() (fiziksel silme FAIL-CLOSED)', () => {
     });
     await expect(svc.remove('t1', 'c1', 'a2')).rejects.toBeDefined();
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(tx.clientAddress.delete).not.toHaveBeenCalled();
   });
@@ -354,7 +382,7 @@ describe('ARC-07 I02 — servis: remove() (fiziksel silme FAIL-CLOSED)', () => {
     const { svc, tx } = buildService({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
-    await svc.create('t1', 'c1', { type: 'BEYAN', street: 'X' } as any);
+    await svc.create('t1', 'c1', { type: 'BEYAN', street: 'X' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     const select = tx.clientAddress.findMany.mock.calls[0][0].select;
     expect(Object.keys(select).sort()).toEqual(['clientId', 'id', 'isCurrent', 'isPrimary']);
     expect(select).not.toHaveProperty('street');
@@ -365,13 +393,13 @@ describe('ARC-07 I02 — servis: remove() (fiziksel silme FAIL-CLOSED)', () => {
 describe('ARC-07 I01 — regresyon sınırları', () => {
   it('[21] mevcut isPrimary davranışı UYUMLU: ilk adres otomatik primary, ikinci değil', async () => {
     const first = buildService({ siblings: [] });
-    await first.svc.create('t1', 'c1', { type: 'BEYAN' } as any);
+    await first.svc.create('t1', 'c1', { type: 'BEYAN' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(first.tx.clientAddress.create.mock.calls[0][0].data.isPrimary).toBe(true);
 
     const second = buildService({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
-    await second.svc.create('t1', 'c1', { type: 'BEYAN' } as any);
+    await second.svc.create('t1', 'c1', { type: 'BEYAN' } as any, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(second.tx.clientAddress.create.mock.calls[0][0].data.isPrimary).toBe(false);
   });
 
@@ -381,7 +409,12 @@ describe('ARC-07 I01 — regresyon sınırları', () => {
     // I02 GÜNCELLEMESİ: `client.service`'e TEK referans `import type { AuditActor }`'dır —
     // TİP-ONLY, runtime'da silinir, çalışma zamanı bağımlılığı ÜRETMEZ. Runtime import
     // (from '...client.service' — `import type` OLMAYAN) BULUNMAMALIDIR.
-    expect(SERVICE_SOURCE).toMatch(/import type \{ AuditActor \} from '\.\/client\.service'/);
+    // OWN-13 I02-R2: tip-only import'a `ClientMutationActorContext` EKLENDİ (zorunlu actor
+    // bağlamı). ASIL invariant KORUNUR: `client.service`'e runtime bağımlılığı YOKTUR —
+    // referans hâlâ TEK ve `import type` (derlemede silinir).
+    expect(SERVICE_SOURCE).toMatch(
+      /import type \{ ClientMutationActorContext \} from '\.\/client\.service'/,
+    );
     expect(SERVICE_SOURCE).not.toMatch(/^import \{[^}]*\} from '\.\/client\.service'/m);
     // VER-02'nin persist ettiği düz kolon yolu ya da ClientService metodu ÇAĞRILMAZ.
     expect(SERVICE_SOURCE).not.toMatch(/clientService|ClientService/);

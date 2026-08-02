@@ -4117,3 +4117,105 @@ GOSTERMEZ.
 
 **R1A CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. CREATE YETKISI ≠ LIFECYCLE YETKISI.
 ADMIN ≠ LIFECYCLE-ELIGIBLE.**
+
+
+---
+
+## §54 — CLIENT Adres Mutasyon Yetkisi (OWN-13 / I02-R2)
+
+Kaynak: owner `CLIENT-OWN-13-I02-R2-ADDRESS-MUTATION-AUTHORIZATION-I01` (GO-IMPLEMENT /
+GO-COMPLETE) ve R01 salt-okuma analizi. Bu bolum ADDITIVE'dir; §1–§53.7 metinleri DEGISMEDI.
+
+### 54.1 Kapatilan bosluk (R01 kaniti)
+
+Adres mutasyon yuzeyinde `JwtAuthGuard` DISINDA hicbir yetki katmani YOKTU: repoda
+`APP_GUARD`, `RolesGuard` ve `@Roles()` bulunmuyor, controller `role` hic thread etmiyor ve
+`ClientAddressService` `OfficeApprovalService` enjekte bile etmiyordu. Sonuc: **VIEWER
+adres olusturabiliyor, degistirebiliyor, arsivleyebiliyor ve geri alabiliyordu.**
+
+R01'in ALREADY_SATISFIED bulgulari korunmustur: fiziksel silme fail-closed, okuma tarafinda
+tenant kapsami, transaction-ici invariant, audit'te ham adres icerigi YOK.
+
+### 54.2 Owner kararlari (lossless)
+
+| Karar | Icerik |
+|---|---|
+| **D01** | "B+" RATIFIED — standart adres girisi USER'da kalir, hukuki durum degistiren aksiyonlar elevated. |
+| **D02** | current/primary mutation = **ELEVATED**. |
+| **D03** | hic aktif birincil yokken ILK adresin otomatik birincil olmasi = **STANDARD** (devir degildir). |
+| **D04** | tenant write hardening DAHIL. |
+| **D05** | fiziksel silme DEGISMEDI / fail-closed. |
+| **D06** | mevcut merkezi policy YENIDEN KULLANILIR (paralel capability sistemi YOK). |
+| **D07** | **`UserRole.ADMIN` tek basina elevated DEGILDIR.** |
+
+### 54.3 Siniflandirma tablosu
+
+| Islem | Kosul | Sinif |
+|---|---|---|
+| CREATE | birincil-olmayan yeni adres | STANDARD |
+| CREATE | hic aktif birincil YOKken ilk adres (otomatik birincil) | STANDARD (D03) |
+| CREATE | ACIK primary talebi + MEVCUT aktif birincil var | ELEVATED |
+| UPDATE | hedef birincil DEGIL, olagan alanlar | STANDARD |
+| UPDATE | hedef ŞU AN birincil (herhangi bir alani) | ELEVATED |
+| UPDATE | birincillik devri talebi | ELEVATED |
+| ARCHIVE | her zaman | ELEVATED |
+| RESTORE | her zaman (`makePrimary`den BAGIMSIZ) | ELEVATED |
+| DELETE | — | fail-closed, DEGISMEDI (D05) |
+
+VIEWER hepsinde DENY. Elevated esigi mevcut `officeApproval.isApproverEligible`
+predicate'idir; **rol tek basina yukseltme SAGLAMAZ** (D07).
+
+### 54.4 Uygulama
+
+- `client-mutation-policy.ts` AYNI modulde genisletildi: `requiresElevatedAddressAuthority()`
+  + `decideClientAddressMutation()`, AYNI `CLIENT_MUTATION_REASON` sozlugu. Ikinci bir
+  RolesGuard veya capability sistemi KURULMADI (D06).
+- Kapi **SERVIS SINIRINDA** authority: `ClientAddressService.create/update/archive/restore`
+  `actor`i ZORUNLU alir (`actor?: AuditActor` fail-open imzasi KALDIRILDI) → actor gecirmeyen
+  cagri DERLENMEZ. Controller-only yetkilendirme YETERLI SAYILMADI.
+- `isApproverEligible` YALNIZ sonucu degistirebilecegi durumda sorgulanir: actor/rol/VIEWER
+  retleri once, sorgusuz verilir.
+- **D04:** aktor tenant esitligi zorunlu (sorgusuz 403, varlik sizdirmaz) · create'te parent
+  Client AYNI transaction icinde tenant-scoped YENIDEN dogrulanir ve create yalnizca
+  dogrulanan clientId'ye baglanir · guncelleme/arsiv/restore yazimlari
+  `updateMany({ where: { id, clientId, client: { tenantId } } })` + `count` ile yapilir;
+  `count===0` → sonraki yazma ve audit URETILMEZ.
+- **F:** yalniz basarili mutasyon audit uretir; 403 govdesi ve audit metadata'si
+  `street/city/district/postalCode/identityNo` TASIMAZ; mevcut audit action adlari DEGISMEDI.
+
+### 54.5 Degismeyenler
+
+Fiziksel silme fail-closed sozlesmesi (`Promise<never>`, actor EKLENMEDI) · lifecycle
+invariant'lari ve transaction siniri · audit action adlari · okuma projeksiyonlari ve STAFF
+history sozlesmesi · response kontrati (`ClientAddressRow` alanlari; `createdAt/updatedAt`
+EKLENMEDI) · R1/R1A davranislari. **schema/migration YOK.**
+
+ARC-07-D06 / §49.7'nin "yetkilendirme ReportingLine'dan TURETILMEZ ve OFFICE **scope**
+politikasi OKUNMAZ" invariant'i KORUNUR; office-approval'dan YALNIZ `isApproverEligible`
+kullanilir (test bunu acikca olcer).
+
+### 54.6 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| R2 odakli suite (26 test) | 26/26 PASS |
+| CLIENT modulu regresyon | 413/413 PASS |
+| export-import regresyon | 36/36 PASS |
+| CASE modulu regresyon | 563 PASS / 17 skipped / 0 FAIL |
+| `tsc --noEmit` baseline delta | 573 → 573 (**0 yeni**) |
+| Degisen dosya lint | 0 error |
+| schema/migration diff | **0** |
+| Mutation teeth | **8/8** hedef testi dusurdu, hepsi byte-ayni restore |
+
+Teeth: STANDARD gate kaldir · VIEWER deny kaldir · primary-record update siniflandirmasini boz ·
+primary switch siniflandirmasini boz · archive elevated gate kaldir · restore elevated gate
+kaldir · tenant-scoped write predicate kaldir · kosullu yazma count kontrolunu kaldir.
+
+### 54.7 Bolum Self-Check
+
+Bu bolum: yeni RolesGuard veya paralel capability sistemi KURMAZ · OFFICE eligibility hesabini
+KOPYALAMAZ · DELETE'i ETKINLESTIRMEZ · schema/migration URETMEZ · production verisine ERISMEZ ·
+§1–§53.7 metinlerini DEGISTIRMEZ · R3–R6'yi KAPALI GOSTERMEZ.
+
+**R2 CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. ADMIN ≠ ELEVATED.
+STANDARD ADRES GIRISI ≠ HUKUKI DURUM DEGISIKLIGI.**
