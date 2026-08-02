@@ -11,6 +11,8 @@ const {
   closureCertificationStatus,
   applyDispositionRegistry,
   dispositionFingerprint,
+  extractRuntimeClassDeclarations,
+  extractRuntimeDecorators,
   isReliableClosureClaim,
   legacyHistoricalStatusForTitle,
   parseHistoricalClosureClaim,
@@ -153,6 +155,43 @@ test('contextual closure parser excludes the four known fail-closed false positi
     assert.equal(claim.confidence, 'LOW');
     assert.equal(isReliableClosureClaim(claim), false);
   }
+});
+
+test('runtime decorator extraction ignores comments and string literals', () => {
+  const source = `
+    /** @Cron(EVERY_HOUR) */
+    // @Cron(EVERY_DAY_AT_3AM)
+    const example = '@Cron(FAKE_LITERAL)';
+    /* @Cron(EVERY_MINUTE) */
+    @Cron(EVERY_HOUR)
+    class Scheduler {
+      @Interval(ONE_MINUTE)
+      run() {}
+    }
+  `;
+
+  assert.deepEqual(
+    extractRuntimeDecorators(source).map((item) => [item.name, item.args.trim()]),
+    [
+      ['Cron', 'EVERY_HOUR'],
+      ['Interval', 'ONE_MINUTE'],
+    ],
+  );
+});
+
+test('runtime class extraction excludes abstract, ambient, and class-expression declarations', () => {
+  const source = `
+    abstract class AbstractGuard {}
+    declare class AmbientGuard {}
+    interface TypeOnlyGuard {}
+    const ExpressionGuard = class ExpressionGuard {};
+    class ConcreteGuard extends AbstractGuard {}
+  `;
+
+  assert.deepEqual(
+    extractRuntimeClassDeclarations(source).map((item) => item.name),
+    ['ConcreteGuard'],
+  );
 });
 
 test('explicit terminal status is accepted while feature-name closeout is excluded', () => {
