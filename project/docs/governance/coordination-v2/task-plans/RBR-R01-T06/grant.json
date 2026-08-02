@@ -15,7 +15,7 @@
   },
   "ownerRatificationEvidence": {
     "sourcePath": "project/docs/governance/coordination-v2/task-plans/RBR-R01-T06/semantic-authority.md",
-    "sourceCommitSha": "d89f8f8009758c8568d2dc8938b82bc96b104d4a",
+    "sourceCommitSha": "bd71d711e87c24be5d08a893462fffe269cebd9f",
     "exactExcerpt": "PROGRAM:\nREPOSITORY-WIDE-CAPABILITY-BINDING-ACTIVATION-AND-OPERABILITY-RECONCILIATION-R01\n\nTASK:\nRBR-R01-T06 — P1 SENSITIVE-SURFACE OWNER DISPOSITION\nAND PRE-ACTIVATION AUTHORIZATION RECONCILIATION\n\nOWNER DISPOSITION:\nRATIFIED",
     "excerptSha256": "6309c1b5d0c2bed6a346b29399ca36fe9069a98a4c011d4f75045a125939daf0"
   },
