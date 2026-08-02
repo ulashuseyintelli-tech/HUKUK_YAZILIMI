@@ -534,7 +534,19 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
 
 ## 11. ACCEPTANCE KRİTERLERİ (blok bazlı)
 
-- [ ] **B01** R3 reconcile edildi; duplicate implementation açılmadı; C1 kanıtı devralındı
+- [x] **B01** R3 reconcile edildi; duplicate implementation açılmadı; C1 kanıtı devralındı
+      *(2026-08-02, main `573ea61a`: R3'e özgü iki residual koddan kanıtlandı —
+      (1) bulk mutation authority policy modülünde: `decideClientBulkMutation`
+      `client-mutation-policy.ts:370`, aynı `CLIENT_MUTATION_REASON` sözlüğü; servis kapısı
+      `assertCanRunElevatedClientBulkOperation` (`client.service.ts:413`) kararı policy'ye
+      devrediyor; (2) elevated eşiği `assertCanReactivateViaCreate` ile AYNI tek predicate:
+      `canManageLifecycle → officeApproval.isApproverEligible`, ikinci hesap YOK, tenant
+      eşitliği ÖNCE, ADMIN tek başına YETMEZ (D04/D07).
+      `client-bulk-mutation-authorization-r3.spec.ts` 12/12 PASS; C1-B01 ile örtüşen
+      kalemler YENİDEN doğrulanmadı — C1 kanıtı devralındı (5/5 kalem, 47/47 test,
+      #2107 reuse `789cf8f6`). Ürün diff'i SIFIR → RUNTIME_VERIFIED.
+      PRE-FLIGHT: C1 aktif blok=B05 (branch `claude/client-c1-b05-identity-design-gate`
+      @ 573ea61a, diff BOŞ, PR YOK) · çakışma=YOK · karar=YÜRÜDÜ)*
 - [ ] **B02** workspace komutları rol-gated + audited; owner politikası uygulanmış;
       gate yeri kanıtla seçilmiş (dayatma yok)
 - [ ] **B03** intake authority primitive canonical + **dondurulmuş**; X3 tüketebilir
