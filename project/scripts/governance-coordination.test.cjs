@@ -9266,11 +9266,280 @@ test('bootstrap declaration extraction detects absence and modification', () => 
 });
 
 // ---------------------------------------------------------------------------
-// MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01 — EXACT_FILE_CREATION
-//
-// Creation cannot be validated by comparing against base content, so these
-// tests pin the invariants that replace that check. Every one of them is a
-// rejection test: the operation is only safe if the unsafe shapes fail closed.
+// MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01 — exact, registered M/A execution
+
+function genericGrantMarkdown(registration) {
+  return [
+    '# Fixture generic execution grant',
+    '',
+    `<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=${registration.executionGrantId} --> **${registration.executionGrantId} — Fixture grant**`,
+    '',
+    '<!-- GOV_COORD_GENERIC_EXECUTION_GRANT_JSON_BEGIN -->',
+    '```json',
+    JSON.stringify(registration, null, 2),
+    '```',
+    '<!-- GOV_COORD_GENERIC_EXECUTION_GRANT_JSON_END -->',
+    '',
+  ].join('\n');
+}
+
+function validGenericRegistration(overrides = {}) {
+  const registration = {
+    schemaVersion: 1,
+    taskId: 'DOGFOOD-GENERIC-TASK-7319',
+    semanticAuthorityId: 'DOGFOOD-GENERIC-TASK-7319-SA01',
+    executionGrantId: 'DOGFOOD-GENERIC-TASK-7319-EG01',
+    grantNonce: coordination.sha256('dogfood-generic-grant-7319'),
+    baseSha: 'a'.repeat(40),
+    publicationBindingSha: 'a'.repeat(40),
+    executionMode: coordination.GENERIC_REGISTERED_OPERATION,
+    effectiveFrom: '2026-01-01T00:00:00Z',
+    expiresAt: '2099-01-01T00:00:00Z',
+    modifiedPaths: [{
+      path: 'project/scripts/governance-coordination.cjs',
+      expectedBaseMode: '100644',
+      expectedBaseSha256: coordination.sha256('before\n'),
+      expectedResultMode: '100644',
+      expectedResultSha256: coordination.sha256('after\n'),
+    }],
+    createdPaths: [{
+      path: 'project/docs/governance/governance-writer-coordination-dogfood.md',
+      expectedResultMode: '100644',
+      expectedResultSha256: coordination.sha256('created\n'),
+    }],
+    expectedResultSha256: '',
+    ...overrides,
+  };
+  registration.expectedResultSha256 =
+    overrides.expectedResultSha256 || coordination.computeRegisteredChangesetSha256(registration);
+  return registration;
+}
+
+function createGenericExecutionFixture(t, shape) {
+  const root = createDetachedGitFixture(t, coordination.EFFECTIVE_FROM_MAIN_SHA);
+  runFixtureGit(['rm', '-r', '--quiet', '--ignore-unmatch', '.'], root);
+  const taskId = `DOGFOOD-GENERIC-TASK-7319-${shape}`;
+  const semanticAuthorityId = `${taskId}-SA01`;
+  const executionGrantId = `${taskId}-EG01`;
+  const semanticPath = 'project/docs/governance/decision-log.md';
+  const grantPath = `project/docs/governance/coordination-execution-grants/${executionGrantId}.md`;
+  const modifiedPath = 'project/scripts/governance-coordination.cjs';
+  const createdPath = 'project/docs/governance/governance-writer-coordination-dogfood.md';
+  const modifiedBefore = 'before\n';
+  const modifiedAfter = 'after\n';
+  const createdContent = 'created\n';
+  writeFixtureRepoFile(
+    root,
+    semanticPath,
+    `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${semanticAuthorityId} --> **${semanticAuthorityId} — Fixture authority**\n`,
+  );
+  if (shape !== 'A') writeFixtureRepoFile(root, modifiedPath, modifiedBefore);
+  const authorityBase = commitFixture(root, 'generic authority base');
+  const modifiedPaths = shape === 'A' ? [] : [{
+    path: modifiedPath,
+    expectedBaseMode: '100644',
+    expectedBaseSha256: coordination.sha256(modifiedBefore),
+    expectedResultMode: '100644',
+    expectedResultSha256: coordination.sha256(modifiedAfter),
+  }];
+  const createdPaths = shape === 'M' ? [] : [{
+    path: createdPath,
+    expectedResultMode: '100644',
+    expectedResultSha256: coordination.sha256(createdContent),
+  }];
+  const registration = validGenericRegistration({
+    taskId,
+    semanticAuthorityId,
+    executionGrantId,
+    grantNonce: coordination.sha256(`nonce-${shape}`),
+    baseSha: authorityBase,
+    publicationBindingSha: authorityBase,
+    modifiedPaths,
+    createdPaths,
+  });
+  writeFixtureRepoFile(root, grantPath, genericGrantMarkdown(registration));
+  const grantEvidence = commitFixture(root, 'generic grant evidence');
+  const requestId = `GOV-REQ-20260802-DOGFOOD-7319-${shape}`;
+  const allowlist = [...modifiedPaths, ...createdPaths]
+    .map(({ path: repoPath }) => repoPath)
+    .sort();
+  const request = {
+    schemaVersion: 1,
+    requestId,
+    requestFingerprint: '',
+    requestedBy: 'OWNER',
+    createdAt: '2026-08-02T00:00:00Z',
+    baseMainSha: grantEvidence,
+    semanticAuthorityRef: {
+      kind: 'SEMANTIC_AUTHORITY',
+      path: semanticPath,
+      recordId: semanticAuthorityId,
+      evidenceSha: authorityBase,
+    },
+    executionGrantRef: {
+      kind: 'EXECUTION_GRANT',
+      path: grantPath,
+      recordId: executionGrantId,
+      evidenceSha: grantEvidence,
+    },
+    operation: {
+      type: coordination.GENERIC_REGISTERED_OPERATION,
+      changeClass: 'LEVEL_2_MECHANICAL',
+      targetFile: allowlist[0],
+      recordIdentity: taskId,
+      anchor: registration.grantNonce,
+      expectedOldValue: authorityBase,
+      newValue: authorityBase,
+      evidenceSha: grantEvidence,
+      expectedResultSha256: registration.expectedResultSha256,
+    },
+    declaredTargetAllowlist: allowlist,
+  };
+  refingerprint(request);
+  const requestPath = `project/docs/governance/coordination-requests/${requestId}/request.md`;
+  writeFixtureRepoFile(root, requestPath, requestMarkdown(request));
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/coordination-requests/_template/request.md',
+    '# Request template fixture\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/coordination-results/_template/result.md',
+    '# Result template fixture\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    coordination.REGISTER_REPO_PATH,
+    coordination.generateRegisterContent({
+      requests: [{ file: requestPath, value: request }],
+      results: [],
+    }),
+  );
+  const executionBase = commitFixture(root, 'generic execution request');
+
+  function createHead(mutator = null) {
+    runFixtureGit(['checkout', '--quiet', '--detach', executionBase], root);
+    if (shape !== 'A') writeFixtureRepoFile(root, modifiedPath, modifiedAfter);
+    if (shape !== 'M') writeFixtureRepoFile(root, createdPath, createdContent);
+    if (mutator) mutator({ root, modifiedPath, createdPath, modifiedAfter, createdContent });
+    return commitFixture(root, 'generic execution head');
+  }
+
+  return {
+    root,
+    taskId,
+    requestId,
+    request,
+    registration,
+    executionBase,
+    createHead,
+    branch: `codex/gov-exec/${requestId}`,
+  };
+}
+
+function createGenericGrantCreationFixture(t) {
+  const root = createDetachedGitFixture(t, coordination.EFFECTIVE_FROM_MAIN_SHA);
+  runFixtureGit(['rm', '-r', '--quiet', '--ignore-unmatch', '.'], root);
+  const taskId = 'DOGFOOD-GENERIC-GRANT-CREATION-7319';
+  const semanticAuthorityId = `${taskId}-SA01`;
+  const executionGrantId = `${taskId}-EG01`;
+  const semanticPath = 'project/docs/governance/decision-log.md';
+  const standingGrantPath =
+    'project/docs/governance/coordination-execution-grants/GOV-COORD-V1-CODEX-LOCAL.md';
+  const targetGrantPath =
+    `project/docs/governance/coordination-execution-grants/${executionGrantId}.md`;
+  writeFixtureRepoFile(
+    root,
+    semanticPath,
+    `<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=${semanticAuthorityId} --> **${semanticAuthorityId} — Fixture authority**\n`,
+  );
+  writeFixtureRepoFile(
+    root,
+    standingGrantPath,
+    '<!-- GOV-COORD-AUTHORITY kind=EXECUTION_GRANT recordId=GOV-COORD-V1-CODEX-LOCAL --> **GOV-COORD-V1-CODEX-LOCAL — Fixture grant**\n',
+  );
+  const requestBase = commitFixture(root, 'grant creation authority base');
+  const registration = validGenericRegistration({
+    taskId,
+    semanticAuthorityId,
+    executionGrantId,
+    grantNonce: coordination.sha256('grant-creation-nonce-7319'),
+    baseSha: requestBase,
+    publicationBindingSha: requestBase,
+    modifiedPaths: [],
+    createdPaths: [{
+      path: 'project/docs/governance/governance-writer-coordination-created-target.md',
+      expectedResultMode: '100644',
+      expectedResultSha256: coordination.sha256('future target\n'),
+    }],
+  });
+  const grantContent = genericGrantMarkdown(registration);
+  const requestId = 'GOV-REQ-20260802-DOGFOOD-GRANT-CREATE-7319';
+  const request = {
+    schemaVersion: 1,
+    requestId,
+    requestFingerprint: '',
+    requestedBy: 'OWNER',
+    createdAt: '2026-08-02T00:00:00Z',
+    baseMainSha: requestBase,
+    semanticAuthorityRef: {
+      kind: 'SEMANTIC_AUTHORITY',
+      path: semanticPath,
+      recordId: semanticAuthorityId,
+      evidenceSha: requestBase,
+    },
+    executionGrantRef: {
+      kind: 'EXECUTION_GRANT',
+      path: standingGrantPath,
+      recordId: 'GOV-COORD-V1-CODEX-LOCAL',
+      evidenceSha: requestBase,
+    },
+    operation: {
+      type: 'EXACT_FILE_CREATION',
+      changeClass: 'LEVEL_2_MECHANICAL',
+      targetFile: targetGrantPath,
+      recordIdentity: taskId,
+      anchor: registration.grantNonce,
+      expectedOldValue: 'ABSENT',
+      newValue: grantContent,
+      evidenceSha: requestBase,
+      expectedResultSha256: coordination.sha256(grantContent),
+    },
+    declaredTargetAllowlist: [targetGrantPath],
+  };
+  refingerprint(request);
+  const requestPath = `project/docs/governance/coordination-requests/${requestId}/request.md`;
+  writeFixtureRepoFile(root, requestPath, requestMarkdown(request));
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/coordination-requests/_template/request.md',
+    '# Request template fixture\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/coordination-results/_template/result.md',
+    '# Result template fixture\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    coordination.REGISTER_REPO_PATH,
+    coordination.generateRegisterContent({
+      requests: [{ file: requestPath, value: request }],
+      results: [],
+    }),
+  );
+  const executionBase = commitFixture(root, 'grant creation request');
+  writeFixtureRepoFile(root, targetGrantPath, grantContent);
+  const head = commitFixture(root, 'create generic execution grant');
+  return {
+    root,
+    requestId,
+    executionBase,
+    head,
+    branch: `codex/gov-exec/${requestId}`,
+  };
+}
 
 test('EXACT_FILE_CREATION joins the level-2 operation vocabulary', () => {
   assert.ok(coordination.LEVEL_2_OPERATIONS
@@ -9317,7 +9586,7 @@ test('an unpinned or malformed content hash is rejected', () => {
   assert.throws(() => call({ type: 'EXACT_FILE_CREATION', targetFile: 'project/scripts/x.cjs' }),
     /FILE_CREATION_HASH_UNPINNED/);
   assert.throws(() => call({
-    type: 'EXACT_FILE_CREATION', targetFile: 'project/scripts/x.cjs', expectedSha256: 'deadbeef',
+    type: 'EXACT_FILE_CREATION', targetFile: 'project/scripts/x.cjs', expectedResultSha256: 'deadbeef',
   }), /FILE_CREATION_HASH_UNPINNED/);
 });
 
@@ -9330,9 +9599,525 @@ test('creating over a file that already exists in base fails closed', () => {
     operation: {
       type: 'EXACT_FILE_CREATION',
       targetFile: 'project/scripts/governance-coordination.cjs',
-      expectedSha256: 'a'.repeat(64),
+      expectedResultSha256: 'a'.repeat(64),
     },
     changes: [{ status: 'A', path: 'project/scripts/governance-coordination.cjs' }],
     cwd: process.cwd(),
   }), /FILE_CREATION_TARGET_EXISTS/);
+});
+
+test('generic registration accepts an exact immutable M/A tuple', () => {
+  const registration = validGenericRegistration();
+  assert.equal(
+    coordination.validateGenericExecutionGrantRegistration(registration),
+    registration,
+  );
+});
+
+test('legacy expectedSha256 is not an accepted registration field', () => {
+  const registration = validGenericRegistration();
+  registration.expectedSha256 = registration.expectedResultSha256;
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'UNKNOWN_OR_MISSING_FIELD',
+  );
+});
+
+test('missing expectedResultSha256 fails closed', () => {
+  const registration = validGenericRegistration();
+  delete registration.expectedResultSha256;
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'UNKNOWN_OR_MISSING_FIELD',
+  );
+});
+
+test('wrong registered changeset digest fails closed', () => {
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(
+      validGenericRegistration({ expectedResultSha256: 'f'.repeat(64) }),
+    ),
+    'GENERIC_EXECUTION_RESULT_DIGEST_MISMATCH',
+  );
+});
+
+test('modified and created path overlap fails closed', () => {
+  const registration = validGenericRegistration();
+  registration.createdPaths[0].path = registration.modifiedPaths[0].path;
+  registration.expectedResultSha256 = coordination.computeRegisteredChangesetSha256(registration);
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_PATH_COLLISION',
+  );
+});
+
+test('case-folded target collision fails closed', () => {
+  const registration = validGenericRegistration();
+  registration.createdPaths.push({
+    ...registration.createdPaths[0],
+    path: registration.createdPaths[0].path.replace('dogfood.md', 'DOGFOOD.md'),
+  });
+  registration.createdPaths.sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  registration.expectedResultSha256 = coordination.computeRegisteredChangesetSha256(registration);
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_PATH_COLLISION',
+  );
+});
+
+test('unsorted modified targets fail closed', () => {
+  const registration = validGenericRegistration();
+  registration.modifiedPaths = [
+    { ...registration.modifiedPaths[0], path: 'project/docs/governance/z.md' },
+    { ...registration.modifiedPaths[0], path: 'project/docs/governance/a.md' },
+  ];
+  registration.expectedResultSha256 = coordination.computeRegisteredChangesetSha256(registration);
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_PATHS_INVALID',
+  );
+});
+
+test('symlink mode in registered targets fails closed', () => {
+  const registration = validGenericRegistration();
+  registration.createdPaths[0].expectedResultMode = '120000';
+  registration.expectedResultSha256 = coordination.computeRegisteredChangesetSha256(registration);
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_MODE_FORBIDDEN',
+  );
+});
+
+test('gitlink mode in registered targets fails closed', () => {
+  const registration = validGenericRegistration();
+  registration.modifiedPaths[0].expectedBaseMode = '160000';
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_MODE_FORBIDDEN',
+  );
+});
+
+test('empty registered target tuple fails closed', () => {
+  const registration = validGenericRegistration({ modifiedPaths: [], createdPaths: [] });
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_PATHS_INVALID',
+  );
+});
+
+test('expired registered grant fails closed', () => {
+  const registration = validGenericRegistration({ expiresAt: '2026-01-02T00:00:00Z' });
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_GRANT_INACTIVE',
+  );
+});
+
+test('inverted registered grant window fails closed', () => {
+  const registration = validGenericRegistration({
+    effectiveFrom: '2099-01-02T00:00:00Z',
+    expiresAt: '2099-01-01T00:00:00Z',
+  });
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'GENERIC_EXECUTION_WINDOW_INVALID',
+  );
+});
+
+test('registered target cannot access another task authority or closeout grant', () => {
+  const registration = validGenericRegistration();
+  registration.createdPaths[0].path =
+    'project/docs/governance/coordination-execution-grants/FOREIGN-EG01.md';
+  registration.expectedResultSha256 = coordination.computeRegisteredChangesetSha256(registration);
+  expectCode(
+    () => coordination.validateGenericExecutionGrantRegistration(registration),
+    'QUEUE_TARGET_FORBIDDEN',
+  );
+});
+
+for (const shape of ['M', 'A', 'MA']) {
+  test(`production entry accepts exact registered ${shape} scope`, (t) => {
+    const fixture = createGenericExecutionFixture(t, shape);
+    const head = fixture.createHead();
+    const result = coordination.validatePrScope({
+      base: fixture.executionBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    });
+    assert.equal(result.mode, 'EXECUTION');
+    assert.equal(result.requestId, fixture.requestId);
+  });
+}
+
+test('production entry rejects an extra registered path', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'MA');
+  const head = fixture.createHead(({ root }) => {
+    writeFixtureRepoFile(root, 'project/docs/governance/unregistered-extra.md', 'extra\n');
+  });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.executionBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'EXECUTION_TARGET_SCOPE_INVALID',
+  );
+});
+
+test('production entry rejects a missing registered addition', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'MA');
+  const head = fixture.createHead(({ root, createdPath }) => {
+    fs.rmSync(fixturePath(root, createdPath));
+  });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.executionBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'EXECUTION_TARGET_SCOPE_INVALID',
+  );
+});
+
+test('production entry rejects modified content hash drift', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  const head = fixture.createHead(({ root, modifiedPath }) => {
+    writeFixtureRepoFile(root, modifiedPath, 'unexpected\n');
+  });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.executionBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'GENERIC_EXECUTION_FILE_MISMATCH',
+  );
+});
+
+test('production entry rejects a rename in registered execution', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  const head = fixture.createHead(({ root, modifiedPath }) => {
+    const renamed = 'project/scripts/governance-coordination-renamed.cjs';
+    runFixtureGit(['mv', modifiedPath, renamed], root);
+  });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.executionBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'EXECUTION_SCOPE_INVALID',
+  );
+});
+
+test('production entry rejects a deletion in registered execution', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  const head = fixture.createHead(({ root, modifiedPath }) => {
+    runFixtureGit(['rm', '--force', '--quiet', '--', modifiedPath], root);
+  });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.executionBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'EXECUTION_SCOPE_INVALID',
+  );
+});
+
+test('fixture task identity is data, not a production branch hardcode', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'governance-coordination.cjs'), 'utf8');
+  assert.equal((source.match(/DOGFOOD-GENERIC-TASK-7319/g) || []).length, 0);
+});
+
+test('EXACT_FILE_CREATION is reached through the production entry point', (t) => {
+  const fixture = createGenericGrantCreationFixture(t);
+  const result = coordination.validatePrScope({
+    base: fixture.executionBase,
+    head: fixture.head,
+    headRef: fixture.branch,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, 'EXECUTION');
+  assert.equal(result.requestId, fixture.requestId);
+});
+
+test('unknown execution task fails before generic routing', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'MA');
+  const head = fixture.createHead();
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.executionBase,
+      head,
+      headRef: 'codex/gov-exec/GOV-REQ-20260802-UNKNOWN-GENERIC-TASK',
+      cwd: fixture.root,
+    }),
+    'CANONICAL_REQUEST_MISSING_AT_PR_BASE',
+  );
+});
+
+test('generic request with missing semantic authority fails closed', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  const request = clone(fixture.request);
+  delete request.semanticAuthorityRef;
+  expectCode(() => coordination.validateRequestObject(request), 'UNKNOWN_OR_MISSING_FIELD');
+});
+
+test('generic request with missing execution grant fails closed', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  const request = clone(fixture.request);
+  delete request.executionGrantRef;
+  expectCode(() => coordination.validateRequestObject(request), 'UNKNOWN_OR_MISSING_FIELD');
+});
+
+test('wrong task, SA or EG tuple fails closed', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  for (const mutate of [
+    (request) => { request.operation.recordIdentity = 'NEAR-MATCH-TASK'; },
+    (request) => { request.semanticAuthorityRef.recordId = 'NEAR-MATCH-SA01'; },
+    (request) => { request.executionGrantRef.recordId = 'NEAR-MATCH-EG01'; },
+  ]) {
+    const request = clone(fixture.request);
+    mutate(request);
+    refingerprint(request);
+    assert.throws(
+      () => coordination.validateRequestAgainstGit(
+        request,
+        fixture.executionBase,
+        null,
+        fixture.root,
+      ),
+      (error) => error instanceof coordination.CoordinationError,
+    );
+  }
+});
+
+test('legacy expectedSha256 in canonical request operation fails closed', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  const request = clone(fixture.request);
+  request.operation.expectedSha256 = request.operation.expectedResultSha256;
+  delete request.operation.expectedResultSha256;
+  expectCode(() => coordination.validateRequestObject(request), 'UNKNOWN_OR_MISSING_FIELD');
+});
+
+test('production entry rejects an extra modified path', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'MA');
+  runFixtureGit(['checkout', '--quiet', '--detach', fixture.executionBase], fixture.root);
+  const extraPath = 'project/docs/governance/extra-base.md';
+  writeFixtureRepoFile(fixture.root, extraPath, 'before\n');
+  const expandedBase = commitFixture(fixture.root, 'add unregistered base file');
+  writeFixtureRepoFile(
+    fixture.root,
+    fixture.registration.modifiedPaths[0].path,
+    'after\n',
+  );
+  writeFixtureRepoFile(
+    fixture.root,
+    fixture.registration.createdPaths[0].path,
+    'created\n',
+  );
+  writeFixtureRepoFile(fixture.root, extraPath, 'after\n');
+  const head = commitFixture(fixture.root, 'execution with extra modification');
+  expectCode(
+    () => coordination.validatePrScope({
+      base: expandedBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'EXECUTION_TARGET_SCOPE_INVALID',
+  );
+});
+
+test('registered A target that already exists fails closed', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'A');
+  runFixtureGit(['checkout', '--quiet', '--detach', fixture.executionBase], fixture.root);
+  const createdPath = fixture.registration.createdPaths[0].path;
+  writeFixtureRepoFile(fixture.root, createdPath, 'pre-existing\n');
+  const existingBase = commitFixture(fixture.root, 'pre-existing registered creation target');
+  writeFixtureRepoFile(fixture.root, createdPath, 'created\n');
+  const head = commitFixture(fixture.root, 'overwrite existing target');
+  expectCode(
+    () => coordination.validatePrScope({
+      base: existingBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'GENERIC_EXECUTION_SCOPE_MISMATCH',
+  );
+});
+
+test('registered M target missing from execution base fails closed', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  runFixtureGit(['checkout', '--quiet', '--detach', fixture.executionBase], fixture.root);
+  const modifiedPath = fixture.registration.modifiedPaths[0].path;
+  runFixtureGit(['rm', '--quiet', '--', modifiedPath], fixture.root);
+  const missingBase = commitFixture(fixture.root, 'remove registered modification target');
+  writeFixtureRepoFile(fixture.root, modifiedPath, 'after\n');
+  const head = commitFixture(fixture.root, 're-add missing target');
+  expectCode(
+    () => coordination.validatePrScope({
+      base: missingBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'GENERIC_EXECUTION_SCOPE_MISMATCH',
+  );
+});
+
+test('absolute and traversal targets fail registration', () => {
+  for (const badPath of [
+    'C:/outside.md',
+    '../outside.md',
+    'project/../outside.md',
+    'project\\docs\\governance\\slash-variant.md',
+  ]) {
+    const registration = validGenericRegistration();
+    registration.createdPaths[0].path = badPath;
+    registration.expectedResultSha256 = coordination.computeRegisteredChangesetSha256(registration);
+    assert.throws(
+      () => coordination.validateGenericExecutionGrantRegistration(registration),
+      (error) => error instanceof coordination.CoordinationError,
+    );
+  }
+});
+
+test('wildcard, prefix and near-match execution modes fail closed', () => {
+  for (const badMode of [
+    'EXACT_REGISTERED_*',
+    'EXACT_REGISTERED',
+    'EXACT_REGISTERED_CHANGESET_V2',
+  ]) {
+    const registration = validGenericRegistration({ executionMode: badMode });
+    expectCode(
+      () => coordination.validateGenericExecutionGrantRegistration(registration),
+      'GENERIC_EXECUTION_MODE_INVALID',
+    );
+  }
+});
+
+test('duplicate data-driven registration fails closed', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  runFixtureGit(['checkout', '--quiet', '--detach', fixture.executionBase], fixture.root);
+  const duplicate = clone(fixture.registration);
+  duplicate.executionGrantId = `${fixture.taskId}-DUPLICATE-EG01`;
+  const duplicatePath =
+    `project/docs/governance/coordination-execution-grants/${duplicate.executionGrantId}.md`;
+  writeFixtureRepoFile(fixture.root, duplicatePath, genericGrantMarkdown(duplicate));
+  const duplicateBase = commitFixture(fixture.root, 'duplicate registration');
+  writeFixtureRepoFile(
+    fixture.root,
+    fixture.registration.modifiedPaths[0].path,
+    'after\n',
+  );
+  const head = commitFixture(fixture.root, 'execution against duplicate registration');
+  expectCode(
+    () => coordination.validatePrScope({
+      base: duplicateBase,
+      head,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'GENERIC_EXECUTION_REGISTRATION_DUPLICATE',
+  );
+});
+
+test('second canonical execution request cannot reuse an EG', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'M');
+  const firstHead = fixture.createHead();
+  runFixtureGit(['checkout', '--quiet', '--detach', firstHead], fixture.root);
+  const modifiedPath = fixture.registration.modifiedPaths[0].path;
+  writeFixtureRepoFile(fixture.root, modifiedPath, 'before\n');
+  const secondRequest = clone(fixture.request);
+  secondRequest.requestId = `${fixture.requestId}-SECOND`;
+  refingerprint(secondRequest);
+  const secondRequestPath =
+    `project/docs/governance/coordination-requests/${secondRequest.requestId}/request.md`;
+  writeFixtureRepoFile(fixture.root, secondRequestPath, requestMarkdown(secondRequest));
+  const firstRequestPath =
+    `project/docs/governance/coordination-requests/${fixture.requestId}/request.md`;
+  writeFixtureRepoFile(
+    fixture.root,
+    coordination.REGISTER_REPO_PATH,
+    coordination.generateRegisterContent({
+      requests: [
+        { file: firstRequestPath, value: fixture.request },
+        { file: secondRequestPath, value: secondRequest },
+      ],
+      results: [],
+    }),
+  );
+  const secondBase = commitFixture(fixture.root, 'second request reusing execution grant');
+  writeFixtureRepoFile(fixture.root, modifiedPath, 'after\n');
+  const secondHead = commitFixture(fixture.root, 'second execution attempt');
+  expectCode(
+    () => coordination.validatePrScope({
+      base: secondBase,
+      head: secondHead,
+      headRef: `codex/gov-exec/${secondRequest.requestId}`,
+      cwd: fixture.root,
+    }),
+    'GENERIC_EXECUTION_GRANT_REUSED',
+  );
+});
+
+test('production dogfood permits first exact MA execution and rejects the same canonical identity on second use', (t) => {
+  const fixture = createGenericExecutionFixture(t, 'MA');
+  const firstHead = fixture.createHead();
+  const firstResult = coordination.validatePrScope({
+    base: fixture.executionBase,
+    head: firstHead,
+    headRef: fixture.branch,
+    cwd: fixture.root,
+  });
+  assert.equal(firstResult.mode, 'EXECUTION');
+  assert.equal(firstResult.requestId, fixture.requestId);
+
+  runFixtureGit(['checkout', '--quiet', '--detach', firstHead], fixture.root);
+  const modifiedPath = fixture.registration.modifiedPaths[0].path;
+  const createdPath = fixture.registration.createdPaths[0].path;
+  writeFixtureRepoFile(fixture.root, modifiedPath, 'before\n');
+  runFixtureGit(['rm', '--quiet', '--', createdPath], fixture.root);
+  const secondBase = commitFixture(fixture.root, 'restore registered base after first execution');
+  writeFixtureRepoFile(fixture.root, modifiedPath, 'after\n');
+  writeFixtureRepoFile(fixture.root, createdPath, 'created\n');
+  const secondHead = commitFixture(fixture.root, 'attempt second exact MA execution');
+
+  expectCode(
+    () => coordination.validatePrScope({
+      base: secondBase,
+      head: secondHead,
+      headRef: fixture.branch,
+      cwd: fixture.root,
+    }),
+    'GENERIC_EXECUTION_GRANT_REUSED',
+  );
+});
+
+test('unregistered control-plane diff retains the generic hard stop', () => {
+  const head = runFixtureGit(['rev-parse', 'HEAD'], REPO_ROOT);
+  expectCode(
+    () => coordination.classifyPrChangeSet(
+      [{ status: 'M', path: 'project/scripts/governance-coordination.cjs' }],
+      { base: head, head, headRef: 'codex/unregistered-control-plane', cwd: REPO_ROOT },
+    ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('production static guards keep the generic route data-driven', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'governance-coordination.cjs'), 'utf8');
+  assert.ok((source.match(/validateExactFileCreation\(\{/g) || []).length >= 1);
+  assert.equal((source.match(/expectedSha256/g) || []).length, 0);
+  assert.equal((source.match(/DOGFOOD-GENERIC-TASK-7319/g) || []).length, 0);
 });

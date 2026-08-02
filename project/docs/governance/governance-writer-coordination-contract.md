@@ -118,6 +118,8 @@ EXACT_APPEND_AT_DECLARED_ANCHOR
 EXACT_LITERAL_REPLACEMENT
 EXACT_REFERENCE_REWRITE
 DETERMINISTIC_REGISTER_REGENERATION
+EXACT_FILE_CREATION
+EXACT_REGISTERED_CHANGESET
 ```
 
 Her operation şu precondition'ları taşır:
@@ -161,9 +163,13 @@ Existing request modification, rename veya deletion yasaktır.
 
 - Yalnız validated request'in `declaredTargetAllowlist` yolları.
 
-Request/result/template/register/control-plane dosyaları execution PR'da
-değiştirilemez. Branch kimliği request ID ile deterministik bağlanır. Result
-execution PR merge edilmeden authoritative sonuç sayılmaz.
+Request/result/template/register dosyaları execution PR'da değiştirilemez.
+Control-plane hedefleri yalnız base-side immutable, task-bound
+`EXACT_REGISTERED_CHANGESET` kaydının exact M/A tuple'ı içinde veya bu kaydı
+oluşturan tek-dosyalık `EXACT_FILE_CREATION` işlemiyle değiştirilebilir; diğer
+bütün control-plane diff'leri fail-closed kalır. Branch kimliği request ID ile
+deterministik bağlanır. Result execution PR merge edilmeden authoritative sonuç
+sayılmaz.
 
 ### RESULT_ONLY
 
@@ -2245,3 +2251,101 @@ unreviewed overwrite must not pass wearing a creation label.
 confined to generic control-plane reachability and this operation class; the
 taxonomy, installer and adapter remediation is excluded and follows separately
 through the generic chain. No further hard-coded branch binding may be added.
+
+### Post-merge integration repair — data-driven exact M/A execution
+
+Owner-ratified task
+`MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01-POST-MERGE-INTEGRATION-REPAIR-R01`
+supersedes the incomplete generic-completion claim without reverting either
+historical merge:
+
+```text
+PR #2098: RETAINED_TRANSITIONAL_BOOTSTRAP / NOT PRECEDENT
+PR #2101: RETAINED_PARTIAL_IMPLEMENTATION / GOVERNANCE-UNRATIFIED
+```
+
+Bu repair PR'sinin normal gate'lerle canonical main'e merge edilmesiyle her iki
+tarihsel kayıt `SUPERSEDED_BY_CANONICAL_REPAIR` disposition'ını alır ve generic
+transition `CLOSED / CANONICAL / DOGFOOD PASS` olur. Bu hüküm repair merge
+edilmeden önce active completion iddiası üretmez.
+
+The repair changes classification order, not the default prohibition. An exact
+`codex/gov-exec/<requestId>` intent is resolved from the immutable canonical
+request at the execution base before a control-plane diff is rejected. Only
+`EXACT_FILE_CREATION` and `EXACT_REGISTERED_CHANGESET` enter the special
+fail-closed handler. An unknown request, missing authority, ordinary operation
+or unregistered control-plane diff still returns a hard failure; a branch name
+is never authority.
+
+#### Canonical generic execution registration
+
+A task-bound execution grant has exactly one authority marker and one
+`GOV_COORD_GENERIC_EXECUTION_GRANT_JSON` block under
+`coordination-execution-grants/<executionGrantId>.md`. Its schema binds:
+
+```text
+schemaVersion
+taskId
+semanticAuthorityId
+executionGrantId
+grantNonce
+baseSha
+publicationBindingSha
+executionMode = EXACT_REGISTERED_CHANGESET
+effectiveFrom / expiresAt
+modifiedPaths[]:
+  path
+  expectedBaseMode / expectedBaseSha256
+  expectedResultMode / expectedResultSha256
+createdPaths[]:
+  path
+  expectedResultMode / expectedResultSha256
+expectedResultSha256
+```
+
+The top-level `expectedResultSha256` is SHA-256 over the canonical JSON value
+containing `executionMode` and the lexicographically path-sorted exact result
+tuple `{status,path,mode,sha256}`. `expectedSha256` is not an alias and is
+rejected as an unknown field. Modes are limited to regular files (`100644` or
+`100755`). Modified and created paths are individually sorted, mutually
+disjoint and case-unique; absolute paths, backslashes, traversal segments,
+symlinks, gitlinks, rename/copy/delete, request/result/register targets and
+execution-grant mutation are forbidden.
+
+The canonical request repeats and binds the registration without reinterpretation:
+
+```text
+operation.type                 = EXACT_REGISTERED_CHANGESET
+operation.recordIdentity       = taskId
+operation.anchor               = grantNonce
+operation.expectedOldValue     = baseSha
+operation.newValue             = publicationBindingSha
+operation.evidenceSha          = executionGrantRef.evidenceSha
+operation.expectedResultSha256 = registration.expectedResultSha256
+declaredTargetAllowlist        = exact sorted M+A path list
+```
+
+`semanticAuthorityRef.recordId`, `executionGrantRef.recordId`, exact grant path,
+authority evidence blob, ancestry, effective window and the complete M/A result
+are all checked. The grant document must be byte-identical between its evidence
+commit and execution base. Another registration with the same task, grant ID or
+nonce fails closed.
+
+#### Single-use and production routing
+
+The grant is single-use by canonical execution identity, not by PR title or
+branch text. A different request that cites the same execution-grant record or
+nonce is rejected. First use may be exact M-only, A-only or M+A. A second use,
+altered task/SA/EG tuple, path, mode or hash is rejected.
+
+For every registered A entry the production validation path calls
+`validateExactFileCreation`; this is not a test-only helper. Direct
+`EXACT_FILE_CREATION` is restricted to materialising one task-bound generic
+execution-grant file, with a standing authority request, absent base path,
+regular-file mode, exact content and `expectedResultSha256`. Generic registered
+execution cannot edit execution-grant files.
+
+This mechanism is data-driven. A future task registers its immutable tuple as
+data and does not add a task ID, branch regex or hard-coded allowlist to the
+validator, tests or this contract. Existing task-specific bindings remain
+historical compatibility records; they are not precedent for new bindings.
