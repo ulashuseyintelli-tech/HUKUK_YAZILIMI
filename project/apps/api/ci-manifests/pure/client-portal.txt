@@ -156,6 +156,14 @@ src/modules/client/__tests__/client-partial-update-displayname-preservation.spec
 #     D07 satir-bazli devam); seedPublicInstitutionDebtors bounded batch (tek existing
 #     okumasi + 100'luk createMany chunk + chunk dusunce satir-bazli fallback).
 src/modules/seed/__tests__/seed-bulk-atomicity.spec.ts
+#
+#   CLAUDE-CLIENT-C1-B04 create dedup bagimsiz kimlik probe (SAF, DB-siz)
+#     FIND-C5: dedup `tckn || vkn` tek degere cokuyordu — iki alan birlikte geldiginde
+#     vkn duplicate'i atlaniyordu. Fix: her gonderilen kimlik alani KENDI kolonu +
+#     identityNo uzerinden BAGIMSIZ problanir (PR-U4 update-guard deseniyle simetrik);
+#     dedup yalniz GENISLER, reactivate yolu degismez. Yaris penceresi profili
+#     characterization ile kanitlanir (kapanisi B05 design gate / DB tekilligi).
+src/modules/client/__tests__/client-create-dedup-independent-probe.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
