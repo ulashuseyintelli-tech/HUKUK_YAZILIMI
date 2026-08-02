@@ -19,6 +19,11 @@ ALLOWED PATHS:
   project/apps/api/ci-manifests/pure/client-portal.txt   (§CI MANIFEST RULE ile)
 
 FORBIDDEN PATHS:
+  project/apps/api/src/modules/client/client-mutation-policy.ts
+                                                        (C2 LANE-OWNED — owner kararı
+                                                         2026-08-02; C1 KOŞULSUZ YAZMAZ)
+  <C2'NİN AKTİF ADDRESS/AUTHORITY DOSYALARI>            (C2 aktif bloğunun manifest'i;
+                                                         client-address*.ts dahil)
   project/apps/api/src/modules/portal/                  (CODEX X1)
   project/apps/api/src/modules/client-notification/     (CODEX X1)
   project/apps/api/src/modules/client-financial-disclosure/  (CODEX X2)
@@ -26,6 +31,13 @@ FORBIDDEN PATHS:
   .github/  ·  ci.yml                                   (control-plane)
   project/docs/governance/coordination-v2/activation/   (grant self-authorization)
   project/docs/governance/coordination-v2/schemas/ · project/scripts/orchestration-v2/
+
+INTRA-LANE CONCURRENCY (owner kararı 2026-08-02):
+  C2 artık C1 DEVAM EDERKEN paralel yürür (global predecessor KALDIRILDI).
+  C1 kendi bloğuna başlamadan önce, C2'nin aktif blok manifest'i ile çakışma kontrolü
+  yapar; çakışma varsa YALNIZ o C1 bloğu WAITING_FOR_OTHER_SESSION olur, sıra atlanmaz.
+  C1 lane-owned: client.service.ts · seed/ · prisma/ · app.module.ts
+  C2 lane-owned: client-mutation-policy.ts · aktif address/authority dosyaları
 
 SHARED CONTRACTS:
   client-mutation-policy.ts        → C2 tek-writer; C1 TÜKETİR, semantiğini DEĞİŞTİRMEZ
