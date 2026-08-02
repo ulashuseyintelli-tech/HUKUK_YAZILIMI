@@ -43,7 +43,25 @@ SHARED CONTRACTS:
   client-mutation-policy.ts        → C2 tek-writer; C1 TÜKETİR, semantiğini DEĞİŞTİRMEZ
   office-approval.isApproverEligible → READ-ONLY (3 farklı eligibility var; birleştirme YASAK)
   ClientService.create / bulk predicate → C1 yazabilir (kendi kapsamında), C2 devralır
-  ci-manifests/pure/client-portal.txt → PAYLAŞIMLI (X1 ile) — §CI MANIFEST RULE
+  ci-manifests/pure/client-portal.txt → PAYLAŞIMLI; PROGRAM BOYU TEK MANIFEST WRITER = C1
+
+  ⚠ XL-1 · C1 → X1 DERLEME/DI BAĞIMLILIĞI (master plan §12-A-2, VERIFIED 2026-08-02):
+  client.service.ts:6 · :320 · :2562 · :2574 · :2611 ve client.module.ts:12 · :16
+  X1'in sahip olduğu notification-dispatcher.service.ts'e bağımlıdır
+  (NotificationDispatcherService provider + DispatchResult/DispatchStatus tipleri).
+  X1 o shape'i dondurmakla yükümlüdür; C1 de bu import'u KALDIRMAZ/yeniden yönlendirmez.
+  Kırılma jest'te GÖRÜNMEZ (diagnostics:false) — yalnız Type check yakalar.
+
+  ⚠ XL-2 · C1'İN EXPORT ETTİĞİ VE X1'İN TÜKETTİĞİ TİPLER — DARALTILAMAZ:
+  client.service.ts:21 `AuditActor` ← portal.service.ts:11 tüketiyor
+  client-audit.util.ts export'ları  ← portal.service.ts:10 tüketiyor
+  Genişletme serbest; daraltma/yeniden adlandırma X1'i Type check'te KIRAR →
+  owner kararı + X1 ile koordineli TEK değişiklik gerekir.
+
+  ⚠ XL-3 · C1 İMZASINA BAĞLI C2-LANE SPEC'İ:
+  client/__tests__/client-address-mutation-authorization-r2.spec.ts:402-403
+  C1'in create/update imzasını regex ile assert eder ve AYNI jest process'inde koşar.
+  C1 imzayı değiştirecekse bu shared-contract çakışmasıdır (pre-flight'ta bildirilir).
 
 MIGRATION WRITER:         EVET — bu sayfa migration yazabilir.
                           Program kuralı: MIGRATION OWNER = CLAUDE LANE; aynı anda TEK

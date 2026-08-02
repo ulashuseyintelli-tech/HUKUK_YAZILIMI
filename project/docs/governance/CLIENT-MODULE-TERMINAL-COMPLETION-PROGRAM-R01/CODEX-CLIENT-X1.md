@@ -30,6 +30,23 @@ SHARED CONTRACTS:
   office-approval.isApproverEligible    → READ-ONLY
   notification/workspace authority primitive → CLAUDE C2 ÜRETİR; X1 yalnız TÜKETİR/WIRE eder
 
+  ⚠ XL-1 · SHAPE-FROZEN (master plan §12-A-2, VERIFIED 2026-08-02):
+  notification-dispatcher.service.ts public shape'i DEĞİŞTİRİLEMEZ:
+      DispatchResult alan seti · DispatchStatus değerleri ·
+      NotificationDispatcherService constructor/provider kimliği
+  Gerekçe: C1'in client.service.ts:6/320/2562/2574/2611 ve client.module.ts:12/16
+  bu shape'e DERLEME ve DI seviyesinde bağımlıdır. Daraltma/yeniden adlandırma/kaldırma
+  C1'i tsc --noEmit'te ve ClientModule'ü boot'ta KIRAR — ve bunu jest YAKALAMAZ
+  (diagnostics:false); yalnız required OLMAYAN "Test Suite" içindeki Type check yakalar,
+  yani kırık kod main'e inebilir.
+  GENİŞLETME (yeni opsiyonel alan) serbest. Daraltma → owner kararı + C1 ile koordineli
+  TEK değişiklik; aksi hâlde blok WAITING_FOR_OTHER_SESSION.
+
+  ⚠ XL-2 · TÜKETİLEN C1 TİPLERİ (READ-ONLY):
+  portal.service.ts:11 `import type { AuditActor }` ← client.service.ts:21 (C1-owned)
+  portal.service.ts:10 client-audit.util export'ları    ← C1/C2 tarafı
+  X1 bu tipleri YAZMAZ; C1 de daraltmayacağına dair karşılıklı kısıt altındadır.
+
 MIGRATION WRITER:         HAYIR — Codex migration YAZAMAZ.
                           Şema ihtiyacı doğarsa master plana BİLDİRİR; migration Claude
                           lane içinde seri olarak üretilir.
