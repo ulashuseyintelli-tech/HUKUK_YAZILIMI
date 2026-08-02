@@ -13,6 +13,13 @@ import {
 import { ClientNotificationService } from "./client-notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import {
+  CreateClientNotificationTemplateDto,
+  SendClientNotificationBulkEmailDto,
+  SendClientNotificationEmailDto,
+  SendClientNotificationSmsDto,
+  UpdateClientNotificationTemplateDto,
+} from "./dto/client-notification.dto";
 
 @Controller("client-notifications")
 @UseGuards(JwtAuthGuard)
@@ -40,15 +47,7 @@ export class ClientNotificationController {
   sendEmail(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    body: {
-      clientId: string;
-      caseId?: string;
-      type: string;
-      subject: string;
-      body: string;
-      templateId?: string;
-    }
+    @Body() body: SendClientNotificationEmailDto
   ) {
     return this.service.sendEmail(tenantId, userId, body);
   }
@@ -58,13 +57,7 @@ export class ClientNotificationController {
   sendSms(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    body: {
-      clientId: string;
-      caseId?: string;
-      type: string;
-      body: string;
-    }
+    @Body() body: SendClientNotificationSmsDto
   ) {
     return this.service.sendSms(tenantId, userId, body);
   }
@@ -100,15 +93,7 @@ export class ClientNotificationController {
   @Post("templates")
   createEmailTemplate(
     @CurrentUser("tenantId") tenantId: string,
-    @Body()
-    body: {
-      name: string;
-      code: string;
-      category: string;
-      subject: string;
-      body: string;
-      isDefault?: boolean;
-    }
+    @Body() body: CreateClientNotificationTemplateDto
   ) {
     return this.service.createEmailTemplate(tenantId, body);
   }
@@ -118,14 +103,7 @@ export class ClientNotificationController {
   updateEmailTemplate(
     @CurrentUser("tenantId") tenantId: string,
     @Param("id") templateId: string,
-    @Body()
-    body: {
-      name?: string;
-      subject?: string;
-      body?: string;
-      isActive?: boolean;
-      isDefault?: boolean;
-    }
+    @Body() body: UpdateClientNotificationTemplateDto
   ) {
     return this.service.updateEmailTemplate(tenantId, templateId, body);
   }
@@ -186,13 +164,7 @@ export class ClientNotificationController {
   sendBulkEmail(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    body: {
-      recipients: string[]; // client IDs
-      subject: string;
-      message: string;
-      type: "clients" | "debtors";
-    }
+    @Body() body: SendClientNotificationBulkEmailDto
   ) {
     return this.service.sendBulkEmail(tenantId, userId, body);
   }

@@ -13,6 +13,97 @@ interface PoaRecentDeliveryOverviewRow {
   lastError: string | null;
 }
 
+const NOTIFICATION_HTML_ALLOWED_TAGS = new Set([
+  "b",
+  "br",
+  "em",
+  "i",
+  "li",
+  "ol",
+  "p",
+  "strong",
+  "u",
+  "ul",
+]);
+
+/**
+ * E-posta gövdesinde yalnız attributesiz temel biçimlendirme etiketlerini korur.
+ * Diğer etiketler atılır; metin ve entity başlangıçları HTML-escape edilir.
+ */
+export function sanitizeNotificationHtml(value: string): string {
+  const source = String(value ?? "");
+  let output = "";
+  let cursor = 0;
+
+  while (cursor < source.length) {
+    const tagStart = source.indexOf("<", cursor);
+    if (tagStart === -1) {
+      output += escapeNotificationHtmlText(source.slice(cursor));
+      break;
+    }
+
+    output += escapeNotificationHtmlText(source.slice(cursor, tagStart));
+    const tagEnd = source.indexOf(">", tagStart + 1);
+    if (tagEnd === -1) {
+      output += escapeNotificationHtmlText(source.slice(tagStart));
+      break;
+    }
+
+    const rawTag = source.slice(tagStart + 1, tagEnd);
+    const normalizedTag = normalizeNotificationHtmlTag(rawTag);
+    if (normalizedTag === undefined) {
+      output += escapeNotificationHtmlText(source.slice(tagStart, tagEnd + 1));
+    } else if (normalizedTag !== null) {
+      output += normalizedTag;
+    }
+    cursor = tagEnd + 1;
+  }
+
+  return output;
+}
+
+function normalizeNotificationHtmlTag(rawTag: string): string | null | undefined {
+  let cursor = 0;
+  while (cursor < rawTag.length && isNotificationHtmlWhitespace(rawTag[cursor])) cursor += 1;
+
+  const closing = rawTag[cursor] === "/";
+  if (closing) {
+    cursor += 1;
+    while (cursor < rawTag.length && isNotificationHtmlWhitespace(rawTag[cursor])) cursor += 1;
+  }
+
+  const nameStart = cursor;
+  while (cursor < rawTag.length && isNotificationHtmlTagNameChar(rawTag[cursor])) cursor += 1;
+  if (cursor === nameStart) return undefined;
+
+  const tag = rawTag.slice(nameStart, cursor).toLowerCase();
+  if (!NOTIFICATION_HTML_ALLOWED_TAGS.has(tag)) return null;
+  if (tag === "br") return closing ? null : "<br>";
+  return closing ? `</${tag}>` : `<${tag}>`;
+}
+
+function isNotificationHtmlWhitespace(value: string): boolean {
+  return value === " " || value === "\t" || value === "\n" || value === "\r";
+}
+
+function isNotificationHtmlTagNameChar(value: string): boolean {
+  const code = value.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
+function escapeNotificationHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export interface SendEmailDto {
   clientId: string;
   caseId?: string;
@@ -463,16 +554,21 @@ export class ClientNotificationService {
         success: false,
         channel,
         status: "FAILED",
-        errorMessage: this.sanitizeTestError(error?.message),
+        errorMessage: this.sanitizeProviderError(error?.message),
       };
     }
   }
 
-  /** Test gönderim hata mesajını UI'a vermeden önce sır/uzunluk açısından temizler. */
-  private sanitizeTestError(message?: string): string {
+  /** Provider hatasını response, persistence veya log yüzeyine vermeden önce temizler. */
+  private sanitizeProviderError(message?: string): string {
     const raw = (message || "Gönderim başarısız").toString();
     return raw
-      .replace(/\b(pass(?:word)?|secret|api[_-]?key|api[_-]?secret|token)\b\s*[:=]?\s*\S+/gi, "$1=***")
+      .replace(/https?:\/\/[^\s?]+\?[^\s]*/gi, (url) => `${url.split("?")[0]}?[REDACTED_QUERY]`)
+      .replace(/\/\/([^:/\s]+):([^@\s]+)@/g, "//$1:***@")
+      .replace(
+        /\b(pass(?:word)?|secret|api[_-]?key|api[_-]?secret|token|usercode|username)\b\s*[:=]?\s*[^\s&,;]+/gi,
+        "$1=***"
+      )
       .slice(0, 300);
   }
 
@@ -508,6 +604,9 @@ export class ClientNotificationService {
       );
     }
 
+    const safeHtmlBody = sanitizeNotificationHtml(dto.body);
+    const safePersistedBody = sanitizeNotificationHtml(dto.persistedBody ?? dto.body);
+
     // Nodemailer transporter oluştur
     const transporter = nodemailer.createTransport({
       host: smtpSettings.smtpHost,
@@ -528,7 +627,7 @@ export class ClientNotificationService {
         channel: "EMAIL",
         type: dto.type,
         subject: dto.persistedSubject ?? dto.subject,
-        body: dto.persistedBody ?? dto.body,
+        body: safePersistedBody,
         status: "PENDING",
         sentById: userId,
         metadata: dto.templateId ? { templateId: dto.templateId } : undefined,
@@ -545,7 +644,7 @@ export class ClientNotificationService {
         from: `"${fromName}" <${fromEmail}>`,
         to: recipientEmail,
         subject: dto.subject,
-        html: dto.body,
+        html: safeHtmlBody,
       });
 
       // Başarılı - durumu güncelle
@@ -565,17 +664,18 @@ export class ClientNotificationService {
         recipient: recipientEmail,
       };
     } catch (error: any) {
+      const safeError = this.sanitizeProviderError(error?.message);
       // Hata - durumu güncelle
       await this.prisma.clientNotification.update({
         where: { id: notification.id },
         data: {
           status: "FAILED",
-          errorMessage: error.message,
+          errorMessage: safeError,
         },
       });
 
-      this.logger.error(`E-posta gönderilemedi: ${error.message}`);
-      throw new BadRequestException(`E-posta gönderilemedi: ${error.message}`);
+      this.logger.error(`E-posta gönderilemedi: ${safeError}`);
+      throw new BadRequestException(`E-posta gönderilemedi: ${safeError}`);
     }
   }
 
@@ -662,17 +762,18 @@ export class ClientNotificationService {
         recipient: recipientPhone,
       };
     } catch (error: any) {
+      const safeError = this.sanitizeProviderError(error?.message);
       // Hata - durumu güncelle
       await this.prisma.clientNotification.update({
         where: { id: notification.id },
         data: {
           status: "FAILED",
-          errorMessage: error.message,
+          errorMessage: safeError,
         },
       });
 
-      this.logger.error(`SMS gönderilemedi: ${error.message}`);
-      throw new BadRequestException(`SMS gönderilemedi: ${error.message}`);
+      this.logger.error(`SMS gönderilemedi: ${safeError}`);
+      throw new BadRequestException(`SMS gönderilemedi: ${safeError}`);
     }
   }
 
