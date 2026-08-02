@@ -2219,3 +2219,29 @@ control-plane reachability and the `EXACT_FILE_CREATION` operation class; the
 taxonomy, installer and adapter remediation is explicitly excluded and must
 follow through the generic chain afterwards. No further hard-coded binding may be
 added once the transition has landed.
+
+### Generic file creation — MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01
+
+Authorised by the terminal bootstrap `MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01`,
+which was already present in this pull request's base commit and is byte-identical
+in its head copy. This transition therefore does not authorise itself.
+
+Every level-2 operation rewrites a file that already exists, so the generic
+request/execution chain could authorise modification but never creation. Any task
+that had to add a file needed a hard-coded branch binding instead — which is how
+sixty branch constants accumulated. `EXACT_FILE_CREATION` closes that gap.
+
+It widens nothing else. The target path must be absent from the base commit, the
+head entry must be a plain addition of a regular file, and the content hash must
+be pinned in the base-side request and match the head blob exactly. Renames,
+copies and deletions are excluded because none of them is a creation. Symlinks
+and gitlinks are excluded because the authorised hash would describe a pointer
+while the resolved content is something else. Absolute paths, backslash
+separators and any `.` or `..` segment are rejected before anything else runs.
+Creating over an existing file fails closed as `FILE_CREATION_TARGET_EXISTS`: an
+unreviewed overwrite must not pass wearing a creation label.
+
+`reusable` is `false` and the authority is terminal on consumption. Scope is
+confined to generic control-plane reachability and this operation class; the
+taxonomy, installer and adapter remediation is excluded and follows separately
+through the generic chain. No further hard-coded branch binding may be added.
