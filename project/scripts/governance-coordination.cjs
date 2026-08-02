@@ -106,7 +106,37 @@ const LEVEL_2_OPERATIONS = new Set([
   'EXACT_LITERAL_REPLACEMENT',
   'EXACT_REFERENCE_REWRITE',
   'DETERMINISTIC_REGISTER_REGENERATION',
+  // MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01.
+  //
+  // Every operation above rewrites a file that already exists, so the generic
+  // request/execution chain could authorise modification but never creation.
+  // Any task that had to add a file therefore needed a hard-coded branch
+  // binding, which is how sixty branch constants accumulated.
+  //
+  // EXACT_FILE_CREATION closes that gap without widening anything else: the
+  // path must be absent from the base commit, the head status must be exactly
+  // A, and the content hash must be pinned in the base-side request. It
+  // authorises one file, byte-for-byte, and nothing more.
+  'EXACT_FILE_CREATION',
 ]);
+
+// Creation is the one operation whose target does not exist yet, so it cannot
+// be validated by comparing against base content. These invariants replace
+// that check.
+const FILE_CREATION_INVARIANTS = Object.freeze({
+  requiresAbsentInBase: true,
+  requiredHeadStatus: 'A',
+  requiresPinnedContentHash: true,
+  requiresRegularFileMode: true,
+  forbidsSymlink: true,
+  forbidsSubmodule: true,
+  forbidsPathTraversal: true,
+  forbidsRenameCopyDelete: true,
+  reusable: false,
+  terminalOnConsumption: true,
+});
+
+const GIT_REGULAR_FILE_MODES = Object.freeze(['100644', '100755']);
 
 const BOOTSTRAP_MODIFY = new Set([
   '.github/workflows/ci.yml',
@@ -2952,6 +2982,102 @@ function countOccurrences(content, needle) {
     offset += needle.length;
   }
   return count;
+}
+
+/**
+ * Normalise and reject any path that could escape the repository or address
+ * something other than a plain in-tree file.
+ */
+function assertCreatablePath(repoPath) {
+  const value = String(repoPath || '');
+  if (!value) reject('FILE_CREATION_PATH_INVALID', 'empty target path');
+  if (value.startsWith('/') || /^[A-Za-z]:/.test(value)) {
+    reject('FILE_CREATION_PATH_INVALID', `absolute path is not creatable: ${value}`);
+  }
+  if (value.indexOf(String.fromCharCode(92)) !== -1) {
+    reject('FILE_CREATION_PATH_INVALID', `backslash separator is not accepted: ${value}`);
+  }
+  const segments = value.split('/');
+  if (segments.some((segment) => segment === '..' || segment === '.' || segment === '')) {
+    reject('FILE_CREATION_PATH_TRAVERSAL', `path traversal is forbidden: ${value}`);
+  }
+  return value;
+}
+
+/**
+ * Authorise the creation of exactly one file.
+ *
+ * Creation cannot be checked the way modification is: there is no base content
+ * to compare against. So the authority pins the content hash in the base-side
+ * request, and every other property is asserted directly — the path must be
+ * absent from base, the head entry must be an addition of a regular file, and
+ * the head blob must hash to the pinned value. Anything unexpected fails
+ * closed; there is no permissive branch.
+ *
+ * @param {object} options
+ * @param {string} options.base           base commit
+ * @param {string} options.head           head commit
+ * @param {object} options.operation      base-side pinned operation
+ * @param {object[]} options.changes      parsed git changes
+ * @param {string} [options.cwd]
+ */
+function validateExactFileCreation(options) {
+  const { base, head, operation, changes, cwd = REPO_ROOT } = options;
+  const targetFile = assertCreatablePath(operation && operation.targetFile);
+
+  if (!operation || operation.type !== 'EXACT_FILE_CREATION') {
+    reject('FILE_CREATION_OPERATION_INVALID', 'operation type must be EXACT_FILE_CREATION');
+  }
+  const pinnedHash = operation.expectedSha256;
+  if (typeof pinnedHash !== 'string' || !/^[0-9a-f]{64}$/.test(pinnedHash)) {
+    reject(
+      'FILE_CREATION_HASH_UNPINNED',
+      'the base-side request must pin a sha256 for the created file',
+    );
+  }
+
+  // The file must not already exist in base. Creating over an existing file
+  // would be an unreviewed overwrite wearing a creation label.
+  const baseEntry = runGit(['cat-file', '-e', `${base}:${targetFile}`], cwd, { allowFailure: true });
+  if (baseEntry.status === 0) {
+    reject('FILE_CREATION_TARGET_EXISTS', `${targetFile} already exists in the base commit`);
+  }
+
+  // Exactly one change, and it must be a plain addition of this path. Renames,
+  // copies and deletions are excluded: git reports them with their own status
+  // letters, and none of them is a creation.
+  const additions = changes.filter((change) => change.path === targetFile);
+  if (additions.length !== 1) {
+    reject('FILE_CREATION_SCOPE_MISMATCH', `expected exactly one change for ${targetFile}`);
+  }
+  const entry = additions[0];
+  if (entry.status !== FILE_CREATION_INVARIANTS.requiredHeadStatus) {
+    reject('FILE_CREATION_STATUS_INVALID', `${targetFile} head status is ${entry.status}, not A`);
+  }
+  if (entry.oldPath) {
+    reject('FILE_CREATION_RENAME_FORBIDDEN', `${targetFile} is a rename or copy, not a creation`);
+  }
+
+  // Regular file only. A symlink or a gitlink would let the authorised hash
+  // describe a pointer while the resolved content is something else entirely.
+  const lsTree = runGit(['ls-tree', head, '--', targetFile], cwd, { allowFailure: true });
+  const mode = String((lsTree.stdout || '').trim().split(/\s+/)[0] || '');
+  if (!GIT_REGULAR_FILE_MODES.includes(mode)) {
+    reject(
+      'FILE_CREATION_MODE_FORBIDDEN',
+      `${targetFile} must be a regular file; git mode is ${mode || 'absent'}`,
+    );
+  }
+
+  const headContent = gitShow(head, targetFile, cwd);
+  const actualHash = crypto.createHash('sha256').update(headContent, 'utf8').digest('hex');
+  if (actualHash !== pinnedHash) {
+    reject(
+      'FILE_CREATION_HASH_MISMATCH',
+      `${targetFile} content does not match the hash pinned in the base-side request`,
+    );
+  }
+  return { targetFile, sha256: actualHash };
 }
 
 function applyMechanicalOperation(content, operation) {
@@ -11113,6 +11239,10 @@ module.exports = {
   NONCOORD_PR_CLASSIFIER_REPAIR_R01,
   OFFICE_SC_F01_AUTHORIZATION_AND_SENSITIVE_PROJECTION_AUTHORITY_BOOTSTRAP_STAGE1_BINDING_R01,
   MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01,
+  FILE_CREATION_INVARIANTS,
+  GIT_REGULAR_FILE_MODES,
+  assertCreatablePath,
+  validateExactFileCreation,
   extractTransitionBootstrapDeclaration,
   validateTransitionBootstrapScope,
   OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01,

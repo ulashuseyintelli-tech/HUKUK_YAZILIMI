@@ -9264,3 +9264,75 @@ test('bootstrap declaration extraction detects absence and modification', () => 
   assert.notEqual(a, b, 'a modified declaration must not compare equal to the base copy');
   assert.equal(extract(pristine), a, 'extraction is deterministic');
 });
+
+// ---------------------------------------------------------------------------
+// MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01 — EXACT_FILE_CREATION
+//
+// Creation cannot be validated by comparing against base content, so these
+// tests pin the invariants that replace that check. Every one of them is a
+// rejection test: the operation is only safe if the unsafe shapes fail closed.
+
+test('EXACT_FILE_CREATION joins the level-2 operation vocabulary', () => {
+  assert.ok(coordination.LEVEL_2_OPERATIONS
+    ? coordination.LEVEL_2_OPERATIONS.has('EXACT_FILE_CREATION')
+    : true);
+  const inv = coordination.FILE_CREATION_INVARIANTS;
+  assert.equal(inv.requiresAbsentInBase, true);
+  assert.equal(inv.requiredHeadStatus, 'A');
+  assert.equal(inv.requiresPinnedContentHash, true);
+  assert.equal(inv.forbidsSymlink, true);
+  assert.equal(inv.forbidsSubmodule, true);
+  assert.equal(inv.forbidsRenameCopyDelete, true);
+  assert.equal(inv.reusable, false);
+  assert.equal(inv.terminalOnConsumption, true);
+});
+
+test('only regular git file modes are creatable', () => {
+  assert.deepEqual(coordination.GIT_REGULAR_FILE_MODES, ['100644', '100755']);
+  // 120000 is a symlink and 160000 a gitlink; neither may pass as a created file.
+  assert.ok(!coordination.GIT_REGULAR_FILE_MODES.includes('120000'));
+  assert.ok(!coordination.GIT_REGULAR_FILE_MODES.includes('160000'));
+});
+
+test('path traversal and out-of-repository targets are rejected', () => {
+  const ok = coordination.assertCreatablePath;
+  assert.equal(ok('project/scripts/new-file.cjs'), 'project/scripts/new-file.cjs');
+  for (const bad of [
+    '../outside.cjs',
+    'project/../../etc/passwd',
+    'project/./scripts/x.cjs',
+    'project//scripts/x.cjs',
+    '/absolute/path.cjs',
+    'C:/windows/system32/x.cjs',
+  ]) {
+    assert.throws(() => ok(bad), /FILE_CREATION_PATH_(INVALID|TRAVERSAL)/, `must reject ${bad}`);
+  }
+  assert.throws(() => ok(''), /FILE_CREATION_PATH_INVALID/);
+});
+
+test('an unpinned or malformed content hash is rejected', () => {
+  const call = (operation) => coordination.validateExactFileCreation({
+    base: 'HEAD', head: 'HEAD', operation, changes: [], cwd: process.cwd(),
+  });
+  assert.throws(() => call({ type: 'EXACT_FILE_CREATION', targetFile: 'project/scripts/x.cjs' }),
+    /FILE_CREATION_HASH_UNPINNED/);
+  assert.throws(() => call({
+    type: 'EXACT_FILE_CREATION', targetFile: 'project/scripts/x.cjs', expectedSha256: 'deadbeef',
+  }), /FILE_CREATION_HASH_UNPINNED/);
+});
+
+test('creating over a file that already exists in base fails closed', () => {
+  // The guard itself certainly exists in HEAD, so it stands in for any
+  // pre-existing target: creation must never become a silent overwrite.
+  assert.throws(() => coordination.validateExactFileCreation({
+    base: 'HEAD',
+    head: 'HEAD',
+    operation: {
+      type: 'EXACT_FILE_CREATION',
+      targetFile: 'project/scripts/governance-coordination.cjs',
+      expectedSha256: 'a'.repeat(64),
+    },
+    changes: [{ status: 'A', path: 'project/scripts/governance-coordination.cjs' }],
+    cwd: process.cwd(),
+  }), /FILE_CREATION_TARGET_EXISTS/);
+});
