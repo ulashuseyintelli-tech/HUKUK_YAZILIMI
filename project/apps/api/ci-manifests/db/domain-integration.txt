@@ -222,6 +222,7 @@ src/modules/icrabot/v28-engine/__tests__/outbox-no-handler-poison-disposition.db
 #   GERCEK Postgres + GERCEK EngineRunnerService ile kanitlayan runtime dogrulama.
 src/modules/icrabot/v28-engine/__tests__/outbox-webhook-rejection.db-gated.integration.spec.ts
 src/modules/interest-engine/__tests__/scenario-materializer.db-gated.integration.spec.ts
+src/modules/interest-engine/legal-application-plan/__tests__/legal-application-writer.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/proceeding-classification.db-gated.integration.spec.ts

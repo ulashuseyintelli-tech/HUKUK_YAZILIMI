@@ -9,3 +9,4 @@ export * from './allocation-order';
 export * from './apply-allocation-core';
 export * from './plan-fingerprint';
 export * from './legal-application-plan-builder';
+export * from './legal-application-writer';
