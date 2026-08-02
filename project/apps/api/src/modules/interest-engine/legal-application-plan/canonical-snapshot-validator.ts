@@ -56,6 +56,10 @@ import {
   BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION,
   validateBucketInstanceId,
 } from './bucket-instance-identity';
+import {
+  computeSourceVersionSetHash,
+  sortSourceVersionSet,
+} from './canonical-snapshot-identity';
 import { parseStrictJson, type StrictJsonValue } from './strict-json-parser';
 import {
   MAX_BUCKET_COUNT,
@@ -1206,6 +1210,29 @@ export function validateCanonicalSnapshot(input: unknown): CanonicalSnapshotVali
   const validatedBuckets = parseValidatedBuckets(rawSnapshot);
   if (validatedBuckets === undefined) {
     return failure('FORMATION_CONTEXT_INCOMPLETE');
+  }
+
+  // Official snapshots bind the declared source set to a deterministic digest and order.
+  if (versionEvidence.bucketIdentityVersion === 'RCV-BINST/v1') {
+    let canonicalSources: readonly CanonicalSourceVersionV1[];
+    let computedSourceVersionSetHash: string;
+    try {
+      canonicalSources = sortSourceVersionSet(sourceVersionSet);
+      computedSourceVersionSetHash = computeSourceVersionSetHash(canonicalSources);
+    } catch {
+      return failure('SOURCE_VERSION_INCOMPLETE');
+    }
+    if (
+      computedSourceVersionSetHash !== snapshotPrimitives.sourceVersionSetHash ||
+      canonicalSources.some(
+        (source, index) =>
+          source.sourceReference !== sourceVersionSet[index]?.sourceReference ||
+          source.sourceVersion !== sourceVersionSet[index]?.sourceVersion,
+      )
+    ) {
+      return failure('SOURCE_VERSION_INCOMPLETE');
+    }
+
   }
 
   // 29/30 — domain serializer and exact canonical byte equality
