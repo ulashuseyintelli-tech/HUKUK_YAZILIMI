@@ -558,10 +558,13 @@ bucketContextKey =
   + priority
 
 bucketInstanceId =
-  tenantId
+  identityContractVersion
+  + tenantId
   + caseId
-  + canonicalSnapshotRef
-  + asOfDate
+  + sourceVersionSetHash
+  + historyBoundaryRef
+  + snapshotAsOfDate
+  + applicationEffectiveDate
   + calculationRuleVersion
   + bucketContextKey hash
 ```
@@ -678,7 +681,7 @@ append-only REVERSAL batch'idir; self-reversal ve double reversal yasaktır. Par
 yetkili değildir.
 
 `bucketContextKey` ve `bucketInstanceId` required/opaque/nonblank'tir; generation algoritması
-writer-stage kontratına bırakılır. `ApplicationAttribution` non-authoritative'tir; ClaimItem
+ratified identity contract'a uyar. `ApplicationAttribution` non-authoritative'tir; ClaimItem
 ilişkisi yalnız optional lineage ve attributed amount optional olabilir.
 
 **REC-ALLOC-014 — TPA-03A schema foundation evidence'ı canonicaldır.**
@@ -807,22 +810,26 @@ liability context
 ClaimItem ID, tenantId/caseId, snapshotRef, target Collection ID, amount, sequence, actor,
 display label ve database insertion order context key için yasaktır.
 
-`bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>` ve yalnız şu canonical girdileri
-kullanır:
+TPA-04D-I01 owner amendment'i non-circular identity sözleşmesini ratifiye eder.
+`bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>` ve yalnız şu canonical girdileri kullanır:
 
 ```text
 identityContractVersion
 tenantId
 caseId
-snapshotRef / snapshotHash
-asOfDate
+sourceVersionSetHash
+historyBoundaryRef
+snapshotAsOfDate
+applicationEffectiveDate
 calculationRuleVersion
 bucketContextKey
 ```
 
-Context key aynı hukuki bucket için snapshot'lar arasında stable kalabilir; instance ID snapshot
-değişince değişir. Collision, unsafe ordering, Unicode/date/minor-unit normalization veya unknown
-version fail-closed'dur.
+Domain separator tam olarak `RCV-BINST/v1\0`, preimage ise yukarıdaki sırayı koruyan UTF-8
+canonical JSON array'dir. `snapshotRef` ve `snapshotHash` preimage'a dahil edilemez; snapshot hash
+contract'ı değişmez. Context key aynı hukuki bucket için snapshot'lar arasında stable kalabilir;
+instance ID dahil edilen snapshot context alanlarından biri değişince değişir. Collision, unsafe
+ordering, Unicode/date/minor-unit normalization veya unknown version fail-closed'dur.
 
 Typed fail-closed sonuç kümesi:
 

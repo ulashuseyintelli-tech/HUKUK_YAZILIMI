@@ -413,8 +413,8 @@ açık hukuki dayanakla uygulanabilir.
 ### `SYS-FIN-012 — Legal Balance Exposure Context-Bound ve Fail-Closed'dur`
 `LegalCalculationBucket` kimliği iki düzeylidir: stable `bucketContextKey` hukuki
 category/subcategory, currency, legal basis, effective date/period, interest rule ve
-priority bağlamını; snapshot-specific `bucketInstanceId` ise tenant/case, canonical
-Receivable snapshot, as-of date ve calculation-rule version bağlamını sabitler. ClaimItem
+priority bağlamını; snapshot-specific `bucketInstanceId` ise tenant/case, source-version set,
+history boundary, as-of/effective date ve calculation-rule version bağlamını sabitler. ClaimItem
 kimliği bu iki anahtarın yerine legal-application target'ı olamaz.
 
 Her currency ve canonical category için gross, legally applied ve remaining exposure
@@ -544,7 +544,7 @@ append-only `REVERSAL` batch'idir; self-reversal ve double reversal yasaktır. P
 yetkili değildir.
 
 `bucketContextKey` ve `bucketInstanceId` required, opaque ve nonblank'tir; generation algoritması
-writer-stage owner kararına bırakılır. `ApplicationAttribution` authority değildir; ClaimItem
+ratified identity contract'a uyar. `ApplicationAttribution` authority değildir; ClaimItem
 ilişkisi yalnız optional lineage olabilir ve attributed amount optional'dır.
 
 `codex/rcv-ws04-p03-syn-01` TPA-03A schema foundation için non-blocking, writer/evidence/cutover
@@ -653,9 +653,13 @@ correlation, display/free text ve raw bank/provider payload hash input'u değild
 currency, minorUnit, versioned legal basis, effective context, versioned interest rule,
 priority policy/version/rank ve liability context'ten üretilir. ClaimItem ID, tenant/case,
 snapshotRef, target Collection, amount, sequence, actor, display label ve insertion order
-yasaktır. `bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>`; identityContractVersion,
-tenantId, caseId, snapshotRef/hash, asOfDate, calculationRuleVersion ve bucketContextKey
-girdilerinden üretilir.
+yasaktır. TPA-04D-I01 owner amendment'i non-circular `bucketInstanceId` kontratını ratifiye eder:
+`bucketInstanceId = binst:v1:sha256:<64-lowercase-hex>`; domain separator tam olarak
+`RCV-BINST/v1\0` ve preimage UTF-8 canonical JSON array'dir. Array alanları sırasıyla
+`identityContractVersion`, `tenantId`, `caseId`, `sourceVersionSetHash`, `historyBoundaryRef`,
+`snapshotAsOfDate`, `applicationEffectiveDate`, `calculationRuleVersion` ve
+`bucketContextKey`dir. `snapshotRef` ile `snapshotHash` preimage'a dahil edilemez. Snapshot hash
+contract'ı değişmez.
 
 Source/version, formation context, policy version, fee authority, bucket mapping,
 currency/minor-unit, history boundary, duplicate context, staleness, hash ve source concurrency

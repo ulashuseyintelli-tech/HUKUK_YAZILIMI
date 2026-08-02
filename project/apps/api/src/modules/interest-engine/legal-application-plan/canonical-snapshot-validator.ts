@@ -52,6 +52,10 @@ import {
   computeCanonicalSnapshotHash,
   serializeCanonicalJson,
 } from './canonical-snapshot-serializer';
+import {
+  BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION,
+  validateBucketInstanceId,
+} from './bucket-instance-identity';
 import { parseStrictJson, type StrictJsonValue } from './strict-json-parser';
 import {
   MAX_BUCKET_COUNT,
@@ -1102,16 +1106,44 @@ export function validateCanonicalSnapshot(input: unknown): CanonicalSnapshotVali
     }
   }
 
-  // 24 — bucket identity formats and currency/minor-unit coherence
+  // 24 — bucket identity formats, RCV-BINST/v1 integrity, and currency/minor-unit coherence
+  const enforcesNonCircularBucketIdentity =
+    rawSnapshot.bucketIdentityVersion === BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION;
+  const identityCalculationRuleVersion = enforcesNonCircularBucketIdentity
+    ? parsedValue(parseRuleVersion(rawSnapshot.calculationRuleVersion))
+    : undefined;
+  if (enforcesNonCircularBucketIdentity && identityCalculationRuleVersion === undefined) {
+    return failure('BUCKET_IDENTITY_INVALID');
+  }
+
   for (const bucket of rawBuckets) {
     if (!isRecord(bucket)) {
       return failure('BUCKET_IDENTITY_INVALID');
     }
-    if (
-      parsedValue(parseBucketContextKey(bucket.bucketContextKey)) === undefined ||
-      parsedValue(parseBucketInstanceId(bucket.bucketInstanceId)) === undefined
-    ) {
+    const bucketContextKey = parsedValue(parseBucketContextKey(bucket.bucketContextKey));
+    const bucketInstanceId = parsedValue(parseBucketInstanceId(bucket.bucketInstanceId));
+    if (bucketContextKey === undefined || bucketInstanceId === undefined) {
       return failure('BUCKET_IDENTITY_INVALID');
+    }
+    if (
+      enforcesNonCircularBucketIdentity &&
+      identityCalculationRuleVersion !== undefined &&
+      !validateBucketInstanceId(
+        {
+          identityContractVersion: BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION,
+          tenantId: snapshotPrimitives.tenantId,
+          caseId: snapshotPrimitives.caseId,
+          sourceVersionSetHash: snapshotPrimitives.sourceVersionSetHash,
+          historyBoundaryRef: snapshotPrimitives.historyBoundaryRef,
+          snapshotAsOfDate: snapshotPrimitives.snapshotAsOfDate,
+          applicationEffectiveDate: snapshotPrimitives.applicationEffectiveDate,
+          calculationRuleVersion: identityCalculationRuleVersion,
+          bucketContextKey,
+        },
+        bucketInstanceId,
+      ).ok
+    ) {
+      return failure('BUCKET_IDENTITY_INVALID', { bucketInstanceId, bucketContextKey });
     }
     const currencyFailure = validateBucketCurrencyAndMinorUnit(bucket, snapshotPrimitives);
     if (currencyFailure !== undefined) {

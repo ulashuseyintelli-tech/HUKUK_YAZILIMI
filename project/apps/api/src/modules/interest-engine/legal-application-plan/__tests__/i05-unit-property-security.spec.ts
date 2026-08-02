@@ -3,6 +3,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import fc from 'fast-check';
 import {
+  BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION,
+  BUCKET_INSTANCE_IDENTITY_PREIMAGE_FIELDS,
   LEGAL_APPLICATION_COMPONENT_RANKS,
   LEGAL_APPLICATION_PLAN_HELD_NONE,
   MAX_CANONICAL_JSON_DEPTH,
@@ -34,8 +36,11 @@ import {
   parseSourceLineageSetRef,
   parseSourceVersionSetHash,
   parseTenantId,
+  produceBucketInstanceId,
   serializeCanonicalLegalApplicationPlanIdentity,
+  validateBucketInstanceId,
   validateCanonicalSnapshot,
+  type BucketInstanceIdentityPreimageInput,
   type BuildLegalApplicationPlanCommand,
   type CanonicalSnapshotValidationResult,
   type LegalApplicationComponentType,
@@ -89,6 +94,36 @@ function instanceId(index: number): string {
   return `binst:v1:sha256:${(index + 10_000)
     .toString(16)
     .padStart(64, '0')}`;
+}
+
+function identityPreimage(
+  overrides: Partial<BucketInstanceIdentityPreimageInput> = {},
+): BucketInstanceIdentityPreimageInput {
+  return {
+    identityContractVersion: BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION,
+    tenantId: 'tenant-identity',
+    caseId: 'case-identity',
+    sourceVersionSetHash: SOURCE_VERSION_SET_HASH,
+    historyBoundaryRef: 'history:identity',
+    snapshotAsOfDate: '2026-07-23',
+    applicationEffectiveDate: '2026-07-24',
+    calculationRuleVersion: 'rule-v1',
+    bucketContextKey: contextKey(1),
+    ...overrides,
+  };
+}
+
+function producedIdentity(input: BucketInstanceIdentityPreimageInput): {
+  readonly value: string;
+  readonly canonicalPreimage: string;
+} {
+  const result = produceBucketInstanceId(input);
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error(result.error.code);
+  }
+
+  return result;
 }
 
 function bucket(
@@ -1131,6 +1166,188 @@ describe('TPA-04C-I05 unit, property and security evidence expansion', () => {
     });
   });
 
+  describe('TPA-04D-I01 non-circular bucket instance identity', () => {
+    it('serializes the ratified nine-field preimage in exact order and hashes it deterministically', () => {
+      const input = identityPreimage();
+      const first = producedIdentity(input);
+      const second = producedIdentity({ ...input });
+      const expectedPreimage = JSON.stringify([
+        BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION,
+        input.tenantId,
+        input.caseId,
+        input.sourceVersionSetHash,
+        input.historyBoundaryRef,
+        input.snapshotAsOfDate,
+        input.applicationEffectiveDate,
+        input.calculationRuleVersion,
+        input.bucketContextKey,
+      ]);
+      const expectedDigest = createHash('sha256')
+        .update(Buffer.from('RCV-BINST/v1\0', 'utf8'))
+        .update(Buffer.from(expectedPreimage, 'utf8'))
+        .digest('hex');
+
+      expect(BUCKET_INSTANCE_IDENTITY_PREIMAGE_FIELDS).toEqual([
+        'identityContractVersion',
+        'tenantId',
+        'caseId',
+        'sourceVersionSetHash',
+        'historyBoundaryRef',
+        'snapshotAsOfDate',
+        'applicationEffectiveDate',
+        'calculationRuleVersion',
+        'bucketContextKey',
+      ]);
+      expect(first).toEqual(second);
+      expect(first.canonicalPreimage).toBe(expectedPreimage);
+      expect(first.value).toBe(`binst:v1:sha256:${expectedDigest}`);
+    });
+
+    it('uses the exact RCV-BINST/v1 NUL domain separator', () => {
+      const produced = producedIdentity(identityPreimage());
+      const withoutNul = createHash('sha256')
+        .update(Buffer.from('RCV-BINST/v1', 'utf8'))
+        .update(Buffer.from(produced.canonicalPreimage, 'utf8'))
+        .digest('hex');
+      const wrongDomain = createHash('sha256')
+        .update(Buffer.from('RCV-BINST/v2\0', 'utf8'))
+        .update(Buffer.from(produced.canonicalPreimage, 'utf8'))
+        .digest('hex');
+
+      expect(produced.value).not.toBe(`binst:v1:sha256:${withoutNul}`);
+      expect(produced.value).not.toBe(`binst:v1:sha256:${wrongDomain}`);
+    });
+
+    it('excludes snapshotRef and snapshotHash from the preimage and rejects circular extras', () => {
+      expect(BUCKET_INSTANCE_IDENTITY_PREIMAGE_FIELDS).not.toEqual(
+        expect.arrayContaining(['snapshotRef', 'snapshotHash']),
+      );
+      const firstSnapshot = snapshot([bucket(1, 'COST', 100n)], 100n, 'identity');
+      const secondSnapshot = { ...firstSnapshot, receiptAmountMinor: '99' };
+      const firstSnapshotHash = computeCanonicalSnapshotHash(
+        Buffer.from(serializeCanonicalJson(firstSnapshot), 'utf8'),
+      );
+      const secondSnapshotHash = computeCanonicalSnapshotHash(
+        Buffer.from(serializeCanonicalJson(secondSnapshot), 'utf8'),
+      );
+      const baseline = producedIdentity(identityPreimage());
+      const changedEnvelopeEvidence = producedIdentity(identityPreimage());
+
+      expect(firstSnapshotHash).not.toBe(secondSnapshotHash);
+      expect(changedEnvelopeEvidence).toEqual(baseline);
+      expect(
+        produceBucketInstanceId({
+          ...identityPreimage(),
+          snapshotRef: `rcv-app-snapshot:v1:sha256:${'a'.repeat(64)}`,
+        } as BucketInstanceIdentityPreimageInput),
+      ).toEqual({
+        ok: false,
+        error: { code: 'PREIMAGE_SHAPE_INVALID' },
+      });
+      expect(
+        produceBucketInstanceId({
+          ...identityPreimage(),
+          snapshotHash: 'b'.repeat(64),
+        } as BucketInstanceIdentityPreimageInput),
+      ).toEqual({
+        ok: false,
+        error: { code: 'PREIMAGE_SHAPE_INVALID' },
+      });
+    });
+
+    it('changes identity when any included semantic field changes', () => {
+      const baseline = producedIdentity(identityPreimage()).value;
+      const mutations: ReadonlyArray<Partial<BucketInstanceIdentityPreimageInput>> = [
+        { tenantId: 'tenant-other' },
+        { caseId: 'case-other' },
+        { sourceVersionSetHash: 'd'.repeat(64) },
+        { historyBoundaryRef: 'history:other' },
+        { snapshotAsOfDate: '2026-07-22' },
+        { applicationEffectiveDate: '2026-07-25' },
+        { calculationRuleVersion: 'rule-v2' },
+        { bucketContextKey: contextKey(2) },
+      ];
+
+      for (const mutation of mutations) {
+        expect(producedIdentity(identityPreimage(mutation)).value).not.toBe(baseline);
+      }
+    });
+
+    it('shares one producer contract with the validator and detects tampering', () => {
+      const input = identityPreimage();
+      const produced = producedIdentity(input);
+
+      expect(validateBucketInstanceId(input, produced.value)).toEqual({
+        ok: true,
+        value: produced.value,
+        canonicalPreimage: produced.canonicalPreimage,
+      });
+      expect(validateBucketInstanceId(input, instanceId(99))).toEqual({
+        ok: false,
+        error: {
+          code: 'BUCKET_INSTANCE_ID_MISMATCH',
+          field: 'bucketInstanceId',
+        },
+      });
+      expect(validateBucketInstanceId(input, 'not-an-id')).toEqual({
+        ok: false,
+        error: {
+          code: 'BUCKET_INSTANCE_ID_FORMAT_INVALID',
+          field: 'bucketInstanceId',
+        },
+      });
+    });
+
+    it('fails closed for unsupported, malformed and non-canonical preimage inputs', () => {
+      const cases: ReadonlyArray<
+        readonly [Partial<BucketInstanceIdentityPreimageInput>, string, string]
+      > = [
+        [{ identityContractVersion: 'RCV-BINST/v2' }, 'IDENTITY_CONTRACT_UNSUPPORTED', 'identityContractVersion'],
+        [{ tenantId: ' tenant-identity' }, 'PREIMAGE_FIELD_INVALID', 'tenantId'],
+        [{ sourceVersionSetHash: 'ABC' }, 'PREIMAGE_FIELD_INVALID', 'sourceVersionSetHash'],
+        [{ snapshotAsOfDate: '2026-02-30' }, 'PREIMAGE_FIELD_INVALID', 'snapshotAsOfDate'],
+        [{ applicationEffectiveDate: '24-07-2026' }, 'PREIMAGE_FIELD_INVALID', 'applicationEffectiveDate'],
+        [{ bucketContextKey: 'bctx:invalid' }, 'PREIMAGE_FIELD_INVALID', 'bucketContextKey'],
+        [{ calculationRuleVersion: 'rule-e\u0301' }, 'PREIMAGE_FIELD_INVALID', 'calculationRuleVersion'],
+      ];
+
+      for (const [mutation, code, field] of cases) {
+        expect(produceBucketInstanceId(identityPreimage(mutation))).toEqual({
+          ok: false,
+          error: { code, field },
+        });
+      }
+    });
+
+    it('enforces the same identity derivation at the canonical snapshot boundary', () => {
+      const canonicalBucket = bucket(1, 'COST', 100n);
+      const snapshotValue = snapshot([canonicalBucket], 100n, 'identity');
+      snapshotValue.bucketIdentityVersion = BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION;
+      const identity = producedIdentity(
+        identityPreimage({
+          tenantId: snapshotValue.tenantId,
+          caseId: snapshotValue.caseId,
+          sourceVersionSetHash: snapshotValue.sourceVersionSetHash,
+          historyBoundaryRef: snapshotValue.historyBoundaryRef,
+          snapshotAsOfDate: snapshotValue.snapshotAsOfDate,
+          applicationEffectiveDate: snapshotValue.applicationEffectiveDate,
+          calculationRuleVersion: snapshotValue.calculationRuleVersion,
+          bucketContextKey: canonicalBucket.bucketContextKey,
+        }),
+      );
+      canonicalBucket.bucketInstanceId = identity.value;
+
+      expect(validateCanonicalSnapshot(validationRequest(snapshotValue)).ok).toBe(true);
+
+      canonicalBucket.bucketInstanceId = instanceId(999);
+      const tampered = validateCanonicalSnapshot(validationRequest(snapshotValue));
+      expect(tampered.ok).toBe(false);
+      if (!tampered.ok) {
+        expect(tampered.error.code).toBe('BUCKET_IDENTITY_INVALID');
+      }
+    });
+  });
+
   describe('trust-boundary and dormant architecture isolation', () => {
     it('rejects raw snapshot objects and preserves the compile-time non-forgeable boundary', () => {
       const raw = snapshot([bucket(1, 'COST', 100n)], 100n);
@@ -1172,6 +1389,7 @@ describe('TPA-04C-I05 unit, property and security evidence expansion', () => {
       expect(productionFiles).toEqual([
         'allocation-order.ts',
         'apply-allocation-core.ts',
+        'bucket-instance-identity.ts',
         'canonical-snapshot-serializer.ts',
         'canonical-snapshot-validator.ts',
         'contracts.ts',
