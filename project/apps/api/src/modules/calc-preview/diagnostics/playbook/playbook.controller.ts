@@ -22,7 +22,20 @@ import {
   HttpStatus,
   BadRequestException,
   NotFoundException,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import {
+  TenantContextGuard,
+  TenantCtx,
+} from '../../tenant-context/tenant-context.guard';
+import { TenantContext } from '../../tenant-context/tenant-context.types';
+import {
+  PlaybookAction,
+  PlaybookAuthorizationGuard,
+} from './playbook-authorization.guard';
+import { PlaybookAuditInterceptor } from './playbook-audit.interceptor';
 import { PlaybookService } from './playbook.service';
 import {
   PlaybookMode,
@@ -86,6 +99,8 @@ interface ExtendLeaseDto {
 // ============================================================================
 
 @Controller('calc/diagnostics/playbooks')
+@UseGuards(JwtAuthGuard, TenantContextGuard, PlaybookAuthorizationGuard)
+@UseInterceptors(PlaybookAuditInterceptor)
 export class PlaybookController {
   constructor(
     private readonly playbookService: PlaybookService,
@@ -100,19 +115,29 @@ export class PlaybookController {
    * List all playbooks with optional filters
    */
   @Get()
+  @PlaybookAction('playbook.list')
   async listPlaybooks(
+    @TenantCtx() ctx: TenantContext,
     @Query('enabled') enabled?: string,
     @Query('tag') tag?: string,
-    @Query('tenantId') tenantId?: string,
-    @Headers('x-tenant-id') headerTenantId?: string,
   ): Promise<PlaybookListResponse> {
-    const effectiveTenantId = headerTenantId || tenantId;
-    
     return this.playbookService.listPlaybooks({
       enabled: enabled === 'true' ? true : enabled === 'false' ? false : undefined,
       tag,
-      tenantId: effectiveTenantId,
+      tenantId: ctx.tenantId,
     });
+  }
+
+  /**
+   * GET /playbooks/_health
+   *
+   * Keep this static route ahead of /:id so the health surface cannot be
+   * interpreted as a playbook identifier.
+   */
+  @Get('_health')
+  @PlaybookAction('playbook.health')
+  async getHealth(@TenantCtx() _ctx: TenantContext): Promise<HealthResponse> {
+    return this.playbookService.getHealth();
   }
 
   /**
@@ -120,11 +145,12 @@ export class PlaybookController {
    * Get playbook details
    */
   @Get(':id')
+  @PlaybookAction('playbook.read')
   async getPlaybook(
     @Param('id') id: string,
-    @Headers('x-tenant-id') tenantId?: string,
+    @TenantCtx() ctx: TenantContext,
   ): Promise<PlaybookDetailResponse> {
-    const result = await this.playbookService.getPlaybook(id, tenantId);
+    const result = await this.playbookService.getPlaybook(id, ctx.tenantId);
     
     if (!result) {
       throw new NotFoundException(`Playbook ${id} not found`);
@@ -142,15 +168,15 @@ export class PlaybookController {
    */
   @Post(':id/enable')
   @HttpCode(HttpStatus.OK)
+  @PlaybookAction('playbook.enable')
   async enablePlaybook(
     @Param('id') id: string,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
+    @TenantCtx() ctx: TenantContext,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<PlaybookStateResponse> {
     return this.playbookService.enablePlaybook(id, {
-      tenantId,
-      userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.actor.id,
       idempotencyKey,
     });
   }
@@ -160,15 +186,15 @@ export class PlaybookController {
    */
   @Post(':id/disable')
   @HttpCode(HttpStatus.OK)
+  @PlaybookAction('playbook.disable')
   async disablePlaybook(
     @Param('id') id: string,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
+    @TenantCtx() ctx: TenantContext,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<PlaybookStateResponse> {
     return this.playbookService.disablePlaybook(id, {
-      tenantId,
-      userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.actor.id,
       idempotencyKey,
     });
   }
@@ -179,11 +205,11 @@ export class PlaybookController {
    */
   @Post(':id/mode')
   @HttpCode(HttpStatus.OK)
+  @PlaybookAction('playbook.changeMode')
   async changeMode(
     @Param('id') id: string,
     @Body() dto: ModeChangeDto,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
+    @TenantCtx() ctx: TenantContext,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<PlaybookStateResponse> {
     if (!dto.mode || !['DRY_RUN', 'LIVE'].includes(dto.mode)) {
@@ -191,8 +217,8 @@ export class PlaybookController {
     }
     
     return this.playbookService.changeMode(id, dto.mode, {
-      tenantId,
-      userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.actor.id,
       idempotencyKey,
     });
   }
@@ -206,28 +232,28 @@ export class PlaybookController {
    */
   @Post(':id/pause')
   @HttpCode(HttpStatus.OK)
+  @PlaybookAction('playbook.pause')
   async pausePlaybook(
     @Param('id') id: string,
     @Body() dto: PauseDto,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
+    @TenantCtx() ctx: TenantContext,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<PlaybookStateResponse> {
-    const scope = dto.scope || 'GLOBAL';
+    const scope = dto.scope || 'TENANT';
     
     if (scope === 'INCIDENT' && !dto.incidentId) {
       throw new BadRequestException('incidentId required for INCIDENT scope');
     }
     
-    if (scope === 'TENANT' && !dto.tenantId && !tenantId) {
-      throw new BadRequestException('tenantId required for TENANT scope');
+    if (scope === 'GLOBAL') {
+      throw new BadRequestException('GLOBAL scope is not permitted for tenant-bound playbooks');
     }
-    
+
     return this.playbookService.pausePlaybook(id, {
       scope,
       incidentId: dto.incidentId,
-      tenantId: dto.tenantId || tenantId,
-      userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.actor.id,
       idempotencyKey,
     });
   }
@@ -237,20 +263,24 @@ export class PlaybookController {
    */
   @Post(':id/resume')
   @HttpCode(HttpStatus.OK)
+  @PlaybookAction('playbook.resume')
   async resumePlaybook(
     @Param('id') id: string,
     @Body() dto: ResumeDto,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
+    @TenantCtx() ctx: TenantContext,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<PlaybookStateResponse> {
-    const scope = dto.scope || 'GLOBAL';
+    const scope = dto.scope || 'TENANT';
+
+    if (scope === 'GLOBAL') {
+      throw new BadRequestException('GLOBAL scope is not permitted for tenant-bound playbooks');
+    }
     
     return this.playbookService.resumePlaybook(id, {
       scope,
       incidentId: dto.incidentId,
-      tenantId: dto.tenantId || tenantId,
-      userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.actor.id,
       idempotencyKey,
     });
   }
@@ -265,16 +295,17 @@ export class PlaybookController {
    */
   @Post(':id/evaluate')
   @HttpCode(HttpStatus.OK)
+  @PlaybookAction('playbook.evaluate')
   async evaluatePlaybook(
     @Param('id') id: string,
     @Body() dto: EvaluateDto,
-    @Headers('x-tenant-id') tenantId?: string,
+    @TenantCtx() ctx: TenantContext,
   ): Promise<EvaluateResponse> {
     if (!dto.incidentId) {
       throw new BadRequestException('incidentId is required');
     }
     
-    return this.playbookService.evaluatePlaybook(id, dto.incidentId, tenantId);
+    return this.playbookService.evaluatePlaybook(id, dto.incidentId, ctx.tenantId);
   }
 
   /**
@@ -283,11 +314,11 @@ export class PlaybookController {
    */
   @Post(':id/run')
   @HttpCode(HttpStatus.ACCEPTED)
+  @PlaybookAction('playbook.run')
   async runPlaybook(
     @Param('id') id: string,
     @Body() dto: RunDto,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
+    @TenantCtx() ctx: TenantContext,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<RunResponse> {
     if (!dto.incidentId) {
@@ -298,8 +329,8 @@ export class PlaybookController {
     
     return this.playbookService.runPlaybook(id, dto.incidentId, {
       mode,
-      tenantId,
-      userId,
+      tenantId: ctx.tenantId,
+      userId: ctx.actor.id,
       idempotencyKey,
     });
   }
@@ -312,11 +343,12 @@ export class PlaybookController {
    * GET /playbooks/:id/audit
    */
   @Get(':id/audit')
+  @PlaybookAction('playbook.audit.read')
   async getAudit(
     @Param('id') id: string,
+    @TenantCtx() ctx: TenantContext,
     @Query('limit') limit?: string,
     @Query('since') since?: string,
-    @Headers('x-tenant-id') tenantId?: string,
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 100;
     const sinceDate = since ? new Date(since) : undefined;
@@ -324,7 +356,7 @@ export class PlaybookController {
     return this.playbookService.getPlaybookAudit(id, {
       limit: limitNum,
       since: sinceDate,
-      tenantId,
+      tenantId: ctx.tenantId,
     });
   }
 
@@ -332,30 +364,20 @@ export class PlaybookController {
    * GET /playbooks/:id/audit/export
    */
   @Get(':id/audit/export')
+  @PlaybookAction('playbook.audit.export')
   async exportAudit(
     @Param('id') id: string,
+    @TenantCtx() ctx: TenantContext,
     @Query('since') since?: string,
-    @Headers('x-tenant-id') tenantId?: string,
   ) {
     const sinceDate = since ? new Date(since) : undefined;
     
     return this.playbookService.exportPlaybookAudit(id, {
       since: sinceDate,
-      tenantId,
+      tenantId: ctx.tenantId,
     });
   }
 
-  // ============================================================================
-  // HEALTH
-  // ============================================================================
-
-  /**
-   * GET /playbooks/_health
-   */
-  @Get('_health')
-  async getHealth(): Promise<HealthResponse> {
-    return this.playbookService.getHealth();
-  }
 }
 
 // ============================================================================

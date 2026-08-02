@@ -11,7 +11,7 @@
  * @see .kiro/specs/ops-playbook/design.md
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PlaybookRegistry } from './playbook-registry.service';
 import { PlaybookMatcher } from './playbook-matcher.service';
 import { ActionExecutor } from './action-executor.service';
@@ -129,6 +129,12 @@ export class PlaybookService {
     const allPlaybooks = this.registry.getAllPlaybooks();
     
     let filtered = allPlaybooks;
+
+    if (filters.tenantId) {
+      filtered = filtered.filter((playbook) =>
+        this.isTenantAllowed(playbook, filters.tenantId as string),
+      );
+    }
     
     // Apply filters
     if (filters.enabled !== undefined) {
@@ -163,9 +169,10 @@ export class PlaybookService {
     };
   }
 
-  async getPlaybook(id: string, _tenantId?: string): Promise<PlaybookDetailResponse | null> {
+  async getPlaybook(id: string, tenantId?: string): Promise<PlaybookDetailResponse | null> {
     const playbook = this.registry.getPlaybook(id);
     if (!playbook) return null;
+    if (tenantId && !this.isTenantAllowed(playbook, tenantId)) return null;
     
     const state = this.getOrCreateRuntimeState(id);
     const activeLeases = this.leaseManager.getActiveLeases()
@@ -239,7 +246,7 @@ export class PlaybookService {
   async enablePlaybook(id: string, ctx: RequestContext): Promise<PlaybookStateResponse> {
     // Idempotency check
     if (ctx.idempotencyKey) {
-      const cached = this.checkIdempotency(ctx.idempotencyKey);
+      const cached = this.checkIdempotency(this.scopedIdempotencyKey(ctx));
       if (cached) return cached as PlaybookStateResponse;
     }
     
@@ -247,6 +254,7 @@ export class PlaybookService {
     if (!playbook) {
       throw new Error(`Playbook ${id} not found`);
     }
+    this.assertTenantAccess(playbook, ctx.tenantId);
     
     const state = this.getOrCreateRuntimeState(id);
     const previousState = { ...state };
@@ -290,7 +298,7 @@ export class PlaybookService {
     
     // Cache for idempotency
     if (ctx.idempotencyKey) {
-      this.cacheIdempotency(ctx.idempotencyKey, response);
+      this.cacheIdempotency(this.scopedIdempotencyKey(ctx), response);
     }
     
     this.logger.log('[PlaybookService] Playbook enabled', { id, userId: ctx.userId });
@@ -300,7 +308,7 @@ export class PlaybookService {
 
   async disablePlaybook(id: string, ctx: RequestContext): Promise<PlaybookStateResponse> {
     if (ctx.idempotencyKey) {
-      const cached = this.checkIdempotency(ctx.idempotencyKey);
+      const cached = this.checkIdempotency(this.scopedIdempotencyKey(ctx));
       if (cached) return cached as PlaybookStateResponse;
     }
     
@@ -308,6 +316,7 @@ export class PlaybookService {
     if (!playbook) {
       throw new Error(`Playbook ${id} not found`);
     }
+    this.assertTenantAccess(playbook, ctx.tenantId);
     
     const state = this.getOrCreateRuntimeState(id);
     const previousState = { ...state };
@@ -347,7 +356,7 @@ export class PlaybookService {
     };
     
     if (ctx.idempotencyKey) {
-      this.cacheIdempotency(ctx.idempotencyKey, response);
+      this.cacheIdempotency(this.scopedIdempotencyKey(ctx), response);
     }
     
     this.logger.log('[PlaybookService] Playbook disabled', { id, userId: ctx.userId });
@@ -361,7 +370,7 @@ export class PlaybookService {
 
   async changeMode(id: string, mode: PlaybookMode, ctx: RequestContext): Promise<PlaybookStateResponse> {
     if (ctx.idempotencyKey) {
-      const cached = this.checkIdempotency(ctx.idempotencyKey);
+      const cached = this.checkIdempotency(this.scopedIdempotencyKey(ctx));
       if (cached) return cached as PlaybookStateResponse;
     }
     
@@ -369,6 +378,7 @@ export class PlaybookService {
     if (!playbook) {
       throw new Error(`Playbook ${id} not found`);
     }
+    this.assertTenantAccess(playbook, ctx.tenantId);
     
     const state = this.getOrCreateRuntimeState(id);
     const previousState = { ...state };
@@ -415,7 +425,7 @@ export class PlaybookService {
     };
     
     if (ctx.idempotencyKey) {
-      this.cacheIdempotency(ctx.idempotencyKey, response);
+      this.cacheIdempotency(this.scopedIdempotencyKey(ctx), response);
     }
     
     this.logger.log('[PlaybookService] Mode changed', { id, mode, userId: ctx.userId });
@@ -462,13 +472,17 @@ export class PlaybookService {
 
   async pausePlaybook(id: string, ctx: PauseContext): Promise<PlaybookStateResponse> {
     if (ctx.idempotencyKey) {
-      const cached = this.checkIdempotency(ctx.idempotencyKey);
+      const cached = this.checkIdempotency(this.scopedIdempotencyKey(ctx));
       if (cached) return cached as PlaybookStateResponse;
     }
     
     const playbook = this.registry.getPlaybook(id);
     if (!playbook) {
       throw new Error(`Playbook ${id} not found`);
+    }
+    this.assertTenantAccess(playbook, ctx.tenantId);
+    if (ctx.scope === 'INCIDENT') {
+      this.assertIncidentTenant(ctx.incidentId, ctx.tenantId);
     }
     
     const state = this.getOrCreateRuntimeState(id);
@@ -477,8 +491,9 @@ export class PlaybookService {
     // Build scope key
     const scopeKey = this.buildScopeKey(ctx.scope, ctx.incidentId, ctx.tenantId);
     state.pausedScopes.set(scopeKey, ctx.scope);
-    
-    // Update state if globally paused
+
+    // GLOBAL is retained for non-HTTP internal state-machine callers. The
+    // PlaybookController rejects it and defaults requests to TENANT scope.
     if (ctx.scope === 'GLOBAL') {
       state.state = 'PAUSED';
     }
@@ -516,7 +531,7 @@ export class PlaybookService {
     };
     
     if (ctx.idempotencyKey) {
-      this.cacheIdempotency(ctx.idempotencyKey, response);
+      this.cacheIdempotency(this.scopedIdempotencyKey(ctx), response);
     }
     
     this.logger.log('[PlaybookService] Playbook paused', { 
@@ -531,13 +546,17 @@ export class PlaybookService {
 
   async resumePlaybook(id: string, ctx: PauseContext): Promise<PlaybookStateResponse> {
     if (ctx.idempotencyKey) {
-      const cached = this.checkIdempotency(ctx.idempotencyKey);
+      const cached = this.checkIdempotency(this.scopedIdempotencyKey(ctx));
       if (cached) return cached as PlaybookStateResponse;
     }
     
     const playbook = this.registry.getPlaybook(id);
     if (!playbook) {
       throw new Error(`Playbook ${id} not found`);
+    }
+    this.assertTenantAccess(playbook, ctx.tenantId);
+    if (ctx.scope === 'INCIDENT') {
+      this.assertIncidentTenant(ctx.incidentId, ctx.tenantId);
     }
     
     const state = this.getOrCreateRuntimeState(id);
@@ -585,7 +604,7 @@ export class PlaybookService {
     };
     
     if (ctx.idempotencyKey) {
-      this.cacheIdempotency(ctx.idempotencyKey, response);
+      this.cacheIdempotency(this.scopedIdempotencyKey(ctx), response);
     }
     
     this.logger.log('[PlaybookService] Playbook resumed', { 
@@ -610,17 +629,19 @@ export class PlaybookService {
   // EVALUATE (DRY SIMULATION)
   // ============================================================================
 
-  async evaluatePlaybook(id: string, incidentId: string, _tenantId?: string): Promise<EvaluateResponse> {
+  async evaluatePlaybook(id: string, incidentId: string, tenantId?: string): Promise<EvaluateResponse> {
     const playbook = this.registry.getPlaybook(id);
     if (!playbook) {
       throw new Error(`Playbook ${id} not found`);
     }
+    this.assertTenantAccess(playbook, tenantId);
     
     // Get incident
     const incident = this.incidentService.getIncident(incidentId);
     if (!incident) {
       throw new Error(`Incident ${incidentId} not found`);
     }
+    this.assertIncidentTenant(incidentId, tenantId);
     
     // Check match
     const matchResult = this.matcher.findMatch(incident);
@@ -718,7 +739,7 @@ export class PlaybookService {
 
   async runPlaybook(id: string, incidentId: string, ctx: RunContext): Promise<RunResponse> {
     if (ctx.idempotencyKey) {
-      const cached = this.checkIdempotency(ctx.idempotencyKey);
+      const cached = this.checkIdempotency(this.scopedIdempotencyKey(ctx));
       if (cached) return cached as RunResponse;
     }
     
@@ -726,6 +747,7 @@ export class PlaybookService {
     if (!playbook) {
       throw new Error(`Playbook ${id} not found`);
     }
+    this.assertTenantAccess(playbook, ctx.tenantId);
     
     const state = this.getOrCreateRuntimeState(id);
     
@@ -750,6 +772,7 @@ export class PlaybookService {
     if (!incident) {
       throw new Error(`Incident ${incidentId} not found`);
     }
+    this.assertIncidentTenant(incidentId, ctx.tenantId);
     
     // Execute
     const result = await this.executor.execute(
@@ -798,7 +821,7 @@ export class PlaybookService {
     };
     
     if (ctx.idempotencyKey) {
-      this.cacheIdempotency(ctx.idempotencyKey, response);
+      this.cacheIdempotency(this.scopedIdempotencyKey(ctx), response);
     }
     
     this.logger.log('[PlaybookService] Playbook executed', {
@@ -817,6 +840,10 @@ export class PlaybookService {
   // ============================================================================
 
   async getPlaybookAudit(id: string, ctx: AuditQueryContext) {
+    const playbook = this.registry.getPlaybook(id);
+    if (!playbook) throw new Error(`Playbook ${id} not found`);
+    this.assertTenantAccess(playbook, ctx.tenantId);
+
     const entries = this.audit.getExecutionHistory(
       ctx.tenantId,
       id,
@@ -832,8 +859,38 @@ export class PlaybookService {
     };
   }
 
-  async exportPlaybookAudit(_id: string, ctx: AuditQueryContext) {
+  async exportPlaybookAudit(id: string, ctx: AuditQueryContext) {
+    const playbook = this.registry.getPlaybook(id);
+    if (!playbook) throw new Error(`Playbook ${id} not found`);
+    this.assertTenantAccess(playbook, ctx.tenantId);
     return this.audit.exportExecutionLogs(ctx.since);
+  }
+
+  private isTenantAllowed(playbook: Playbook, tenantId: string): boolean {
+    const scope = playbook.match.tenantScope;
+    if (scope === '*') return true;
+    if (Array.isArray(scope)) return scope.includes('*') || scope.includes(tenantId);
+    return scope === tenantId;
+  }
+
+  private assertTenantAccess(playbook: Playbook, tenantId?: string): void {
+    // Direct service callers without a request context retain their existing
+    // internal behavior; every controller request supplies this context.
+    if (tenantId && !this.isTenantAllowed(playbook, tenantId)) {
+      throw new ForbiddenException('Playbook is outside the authenticated tenant');
+    }
+    if (tenantId === '') {
+      throw new ForbiddenException('Authenticated tenant context is required');
+    }
+  }
+
+  private assertIncidentTenant(incidentId: string | undefined, tenantId?: string): void {
+    if (!tenantId) return;
+    if (!incidentId) throw new ForbiddenException('Incident context is required');
+    const incident = this.incidentService.getIncident(incidentId);
+    if (!incident || incident.tenantId !== tenantId) {
+      throw new ForbiddenException('Incident is outside the authenticated tenant');
+    }
   }
 
   // ============================================================================
@@ -1179,6 +1236,12 @@ export class PlaybookService {
     }
     
     return record.result;
+  }
+
+  private scopedIdempotencyKey(ctx: RequestContext): string {
+    return ctx.tenantId
+      ? `${ctx.tenantId}:${ctx.idempotencyKey ?? ''}`
+      : (ctx.idempotencyKey ?? '');
   }
 
   private cacheIdempotency(key: string, result: unknown): void {

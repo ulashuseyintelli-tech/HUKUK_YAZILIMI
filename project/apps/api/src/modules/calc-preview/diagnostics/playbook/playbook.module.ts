@@ -22,10 +22,17 @@ import { EscalationService } from './escalation.service';
 import { PlaybookService } from './playbook.service';
 import { PlaybookController, LeaseController, IncidentController } from './playbook.controller';
 import { CalcPreviewModule } from '../../calc-preview.module';
+import { TenantContextModule } from '../../tenant-context/tenant-context.module';
+import { PermissionDiagnosticsModule } from '../../../permission-diagnostics/permission-diagnostics.module';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { PlaybookAuthorizationGuard } from './playbook-authorization.guard';
+import { PlaybookAuditInterceptor } from './playbook-audit.interceptor';
 
 @Module({
   imports: [
     forwardRef(() => CalcPreviewModule),
+    TenantContextModule,
+    PermissionDiagnosticsModule,
   ],
   controllers: [
     PlaybookController,
@@ -47,6 +54,9 @@ import { CalcPreviewModule } from '../../calc-preview.module';
     NotificationService,
     EscalationService,
     PlaybookService,
+    JwtAuthGuard,
+    PlaybookAuthorizationGuard,
+    PlaybookAuditInterceptor,
   ],
   exports: [
     // Sprint 1
