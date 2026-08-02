@@ -5,7 +5,7 @@ import {
   IsDateString,
   IsNumber,
 } from "class-validator";
-import { ExternalCaseStatus } from "@prisma/client";
+import { ExternalCaseStatus, ExternalCaseClosureReason } from "@prisma/client";
 
 // ==================== ENUMS ====================
 
@@ -122,10 +122,15 @@ export class RecordResponseDto {
 // I15 Phase C: updateExternalCase() daha once `dto: any` idi (hicbir DTO/
 // class-validator yoktu). main.ts'deki global ValidationPipe (whitelist +
 // forbidNonWhitelisted + transform) zaten aktif oldugundan bu DTO'yu eklemek
-// gercek runtime korumasi saglar: gecersiz attachmentStatus veya bilinmeyen
-// alan artik ham Prisma hatasi yerine temiz 400 doner. Full transition-
-// legality (hangi durumdan hangisine gecilebilir) hicbir governance/DBP
-// belgesinde tanimli degil — icad EDILMEDI, yalniz enum uyeligi dogrulanir.
+// gercek runtime korumasi saglar: gecersiz alan artik ham Prisma hatasi
+// yerine temiz 400 doner.
+//
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER D2 POLICY
+// DECISION — RATIFIED): `attachmentStatus` bu DTO'dan KALDIRILDI. Durum
+// artik yalniz ExternalCaseStatusTransitionService uzerinden, ratifiye
+// edilmis transition matrix + actor-authority + CAS ile degisir — generic
+// metadata update'in bir yan-etkisi olarak DEGIL. Bkz. TransitionExternal
+// CaseStatusDto / CloseExternalCaseDto.
 export class UpdateExternalCaseDto {
   @IsString()
   @IsOptional()
@@ -147,10 +152,6 @@ export class UpdateExternalCaseDto {
   @IsOptional()
   claimCurrency?: string;
 
-  @IsEnum(ExternalCaseStatus)
-  @IsOptional()
-  attachmentStatus?: ExternalCaseStatus;
-
   @IsDateString()
   @IsOptional()
   attachedAt?: string;
@@ -162,6 +163,87 @@ export class UpdateExternalCaseDto {
   @IsString()
   @IsOptional()
   priorityNote?: string;
+}
+
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: createExternalCase()
+// daha once `dto: any` idi. `attachmentStatus` burada YOK — create() daima
+// HACIZ_TALEP ile baslar (owner-ratified baslangic durumu); statusSource/
+// statusChangedBy/statusChangedAt servis tarafindan authenticated actor'dan
+// server-side set edilir (client-supplied DEGIL).
+export class CreateExternalCaseDto {
+  @IsString()
+  externalOffice: string;
+
+  @IsString()
+  @IsOptional()
+  externalOfficeId?: string;
+
+  @IsString()
+  externalCaseNo: string;
+
+  @IsString()
+  counterpartyName: string;
+
+  @IsString()
+  @IsOptional()
+  counterpartyId?: string;
+
+  @IsNumber()
+  claimAmount: number;
+
+  @IsString()
+  @IsOptional()
+  claimCurrency?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsString()
+  @IsOptional()
+  priorityNote?: string;
+}
+
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: manuel FACT/PROCESS
+// gecisi (HACIZ_TALEP->CEVAP_BEKLENIYOR / HACIZ_TALEP->HACIZ_KONDU /
+// CEVAP_BEKLENIYOR->HACIZ_KONDU). `expectedStatus` client'in gordugu son
+// durumdur — CAS guard (bank-candidate-settlement-transition.service.ts
+// emsali): sunucudaki gercek durum bununla uyusmazsa 409 doner, sessiz
+// overwrite YOK.
+export class TransitionExternalCaseStatusDto {
+  @IsEnum(ExternalCaseStatus)
+  expectedStatus: ExternalCaseStatus;
+
+  @IsEnum(ExternalCaseStatus)
+  targetStatus: ExternalCaseStatus;
+
+  @IsString()
+  @IsOptional()
+  externalReference?: string;
+
+  @IsDateString()
+  @IsOptional()
+  statusOccurredAt?: string;
+}
+
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: manuel KAPANDI —
+// yalniz CaseLawyer (staff, canEdit=true olsa bile, YETKİLİ DEGİL). closure
+// Reason=FULLY_COLLECTED bu yoldan KABUL EDİLMEZ (yalniz SYSTEM_DERIVED
+// writer uretebilir) — servis katmaninda ayrica dogrulanir.
+export class CloseExternalCaseDto {
+  @IsEnum(ExternalCaseStatus)
+  expectedStatus: ExternalCaseStatus;
+
+  @IsEnum(ExternalCaseClosureReason)
+  closureReason: ExternalCaseClosureReason;
+
+  @IsString()
+  @IsOptional()
+  externalReference?: string;
+
+  @IsDateString()
+  @IsOptional()
+  statusOccurredAt?: string;
 }
 
 // Labels for UI

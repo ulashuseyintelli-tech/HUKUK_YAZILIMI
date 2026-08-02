@@ -17,6 +17,9 @@ import { PermissionDiagnosticsModule } from "../permission-diagnostics/permissio
 import { AuditModule } from "../audit/audit.module";
 import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
+import { LawyerModule } from "../lawyer/lawyer.module";
+import { ExternalCaseStatusAuthorityService } from "./external-case-status-authority.service";
+import { ExternalCaseStatusTransitionService } from "./external-case-status-transition.service";
 
 @Module({
   // G3d: ThirdPartyService alacak haczi tahsilatını kanonik CollectionService'ten yansıtır.
@@ -24,6 +27,9 @@ import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
   // Task D1A: AuditModule (create/update/delete audit) + OfficeApprovalModule (delete capability gate).
   // MPB-028(a) PR-4: LegalDeadlineModule — DebtorService'in LEGAL_TIME_CUTOVER flag'i altında
   // kanonik finalizationDate hesabı için LegalPeriodCalculationService'e ihtiyacı var.
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: LawyerModule — ExternalCaseStatus
+  // AuthorityService'in CaseLawyer-atama çözümlemesi için ActingLawyerResolverService'i
+  // (I01, canonical) reuse etmesi gerekiyor — ikinci bir resolver icat EDİLMEDİ.
   imports: [
     CollectionModule,
     CaseDebtorLifecycleGuardModule,
@@ -31,6 +37,7 @@ import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
     AuditModule,
     OfficeApprovalModule,
     LegalDeadlineModule,
+    LawyerModule,
   ],
   controllers: [
     DebtorController,
@@ -47,6 +54,8 @@ import { LegalDeadlineModule } from "../legal-deadline/legal-deadline.module";
     AddressService,
     DebtorCrossCaseNotificationService,
     DebtorCrossCaseNotificationTaskLinkService,
+    ExternalCaseStatusAuthorityService,
+    ExternalCaseStatusTransitionService,
   ],
   exports: [
     DebtorService,

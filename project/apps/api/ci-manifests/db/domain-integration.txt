@@ -178,6 +178,14 @@ src/modules/debtor/__tests__/third-party-external-case-update.db-gated.integrati
 #   authority D2-I02'nin konusudur.
 src/modules/debtor/__tests__/third-party-external-case-status-integrity-schema.db-gated.integration.spec.ts
 #
+#   DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER D2 POLICY DECISION —
+#   RATIFIED, BACKEND): ActingLawyerResolverService (I01) + ExternalCaseStatusAuthority
+#   Service + ExternalCaseStatusTransitionService + ThirdPartyService ucdan uca, GERCEK
+#   CaseLawyer/CaseStaff atamalariyla. En kritik test: N eszamanli addExternalCase
+#   Collection() cagrisi sonrasi receivedAmount TAM OLARAK canonical Collection
+#   toplamina esit (eski read-aggregate-write deseninin lost-update acigi kapatildi).
+src/modules/debtor/__tests__/external-case-status-integration.db-gated.integration.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure writer service (gercek PostgreSQL)
 #     Tenant/case-client/source-scope fail-closed enforcement, atomik aggregate+version+line
 #     yazimi, idempotency replay/conflict, hash re-verification MATCH/MISMATCH, immutability

@@ -250,6 +250,19 @@ src/modules/asset-query/__tests__/asset-query-p2002-recovery.spec.ts
 # cakismasinda P2002'yi Phase A'nin idempotent-replay deseni DEGIL, temiz bir
 # ConflictException ile reddettigini (mocked, deterministic) dogrular.
 src/modules/debtor/__tests__/third-party-external-case-update.spec.ts
+# DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02 (OWNER D2 POLICY DECISION —
+# RATIFIED): ExternalCaseStatusAuthorityService — manuel FACT/PROCESS gecisi icin
+# CaseLawyer-atamasi VEYA CaseStaff+canEdit=true atamasi; manuel KAPANDI icin
+# yalniz CaseLawyer atamasi (staff canEdit=true olsa bile YETKİLİ DEGİL). Mocked,
+# deterministic (case.findFirst/staffMember.findMany).
+src/modules/debtor/__tests__/external-case-status-authority.spec.ts
+# DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I02: ExternalCaseStatusTransition
+# Service — transitionManual/closeManual (bank-candidate-settlement-transition.
+# service.ts:121-154 CAS emsali: expectedStatus guard + count===0 raced-read +
+# idempotent-replay-veya-409) ve applySystemDerivedProjection (updatedAt optimistic-
+# concurrency retry, canonical-Collection-writer-only). Mocked in-memory prisma ile
+# updateMany WHERE guard'inin GERCEKTEN kontrol edildigi deterministic senaryolar.
+src/modules/debtor/__tests__/external-case-status-transition.spec.ts
 src/modules/debtor/__tests__/rfa008-thirdparty-guard.spec.ts
 src/modules/document/__tests__/document-creditor-address.spec.ts
 src/modules/document/__tests__/document-fail-closed-tenant.spec.ts

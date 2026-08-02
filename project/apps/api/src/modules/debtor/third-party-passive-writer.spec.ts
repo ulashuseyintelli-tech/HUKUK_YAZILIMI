@@ -53,8 +53,10 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
   }
 
   function makeService(prisma: any, guard: any) {
-    // collectionService yalnız addExternalCaseCollection'da kullanılır.
-    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard);
+    // collectionService yalnız addExternalCaseCollection'da kullanılır. Bu suite'in
+    // addExternalCaseCollection senaryosu syncToMainCase=false ile erken fail-closed
+    // olur (transition service'e hiç ulaşmaz) — {} as any stub yeterlidir.
+    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard, {} as any);
   }
 
   const tp = { id: "tp1", tenantId: TENANT, caseDebtorId: CD };
@@ -220,7 +222,12 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
       const svc = makeService(prisma, guard);
 
       await expect(
-        svc.createExternalCase(TENANT, CD, { externalCaseNo: "2024/1", counterpartyName: "Y", claimAmount: 100 }),
+        svc.createExternalCase(
+          TENANT,
+          CD,
+          { externalCaseNo: "2024/1", counterpartyName: "Y", claimAmount: 100 } as any,
+          "user-1",
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, CD);
       expect(prisma.externalCase.create).not.toHaveBeenCalled();
@@ -232,7 +239,12 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
       const guard = makeGuard(false);
       const svc = makeService(prisma, guard);
 
-      await svc.createExternalCase(TENANT, CD, { externalCaseNo: "2024/1", counterpartyName: "Y", claimAmount: 100 });
+      await svc.createExternalCase(
+        TENANT,
+        CD,
+        { externalCaseNo: "2024/1", counterpartyName: "Y", claimAmount: 100 } as any,
+        "user-1",
+      );
       expect(guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, CD);
       expect(prisma.externalCase.create).toHaveBeenCalled();
     });
