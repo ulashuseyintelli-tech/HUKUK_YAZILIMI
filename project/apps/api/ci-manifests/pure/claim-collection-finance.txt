@@ -55,6 +55,7 @@ src/modules/collection/__tests__/collection-idempotency.spec.ts
 src/modules/collection/__tests__/collection-semantic-command.spec.ts
 src/modules/collection/__tests__/collection-semantic-idempotency.static.spec.ts
 src/modules/collection/__tests__/collection-update-safety.spec.ts
+src/modules/interest-engine/legal-application-plan/__tests__/legal-application-writer.spec.ts
 
 # DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW):
 # ThirdPartyService.addExternalCaseCollection() delegation contract — references

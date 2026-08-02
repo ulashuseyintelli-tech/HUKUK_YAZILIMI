@@ -615,10 +615,10 @@ describe('TPA-04C-I06 writer compatibility contract', () => {
       });
     });
 
-    it('keeps the production package dormant and free from persistence or legacy imports', () => {
+    it('keeps the closed I01-I06 plan-builder surface pure and free from persistence or legacy imports', () => {
       const packageDirectory = join(__dirname, '..');
       const productionSources = readdirSync(packageDirectory)
-        .filter((name) => name.endsWith('.ts'))
+        .filter((name) => name.endsWith('.ts') && name !== 'legal-application-writer.ts')
         .map((name) => readFileSync(join(packageDirectory, name), 'utf8'))
         .join('\n');
 
