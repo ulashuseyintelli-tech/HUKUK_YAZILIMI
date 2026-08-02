@@ -104,6 +104,9 @@ export interface CanonicalLegalBucketV1 {
   readonly bucketContextKey: BucketContextKey;
   readonly bucketInstanceId: BucketInstanceId;
   readonly sourceLineageSetRef: SourceLineageSetRef;
+  readonly legalBasisRef: string;
+  readonly effectivePeriodRef: string;
+  readonly interestRuleRef?: string;
   readonly currency: CurrencyCode;
   readonly minorUnit: MinorUnit;
   readonly priorityRank: number;
