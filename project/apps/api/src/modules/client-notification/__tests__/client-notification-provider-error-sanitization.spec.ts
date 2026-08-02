@@ -93,6 +93,11 @@ describe("ClientNotificationService provider error sanitization", () => {
     expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ html: safeBody }));
   });
 
+  it("tekrarlı açı parantezi girdisini regex kullanmadan güvenli metne çevirir", () => {
+    const repeatedAngles = "<".repeat(50_000);
+    expect(sanitizeNotificationHtml(repeatedAngles)).toBe("&lt;".repeat(50_000));
+  });
+
   it("SMS provider URL query'sini DB, response ve logdan tamamen redakte eder", async () => {
     const rawSecret = "sms-secret-value";
     const rawPhone = "905551112233";

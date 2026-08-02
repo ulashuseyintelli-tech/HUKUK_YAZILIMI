@@ -31,21 +31,68 @@ const NOTIFICATION_HTML_ALLOWED_TAGS = new Set([
  * Diğer etiketler atılır; metin ve entity başlangıçları HTML-escape edilir.
  */
 export function sanitizeNotificationHtml(value: string): string {
-  return String(value ?? "")
-    .split(/(<[^>]*>)/g)
-    .map((part) => {
-      if (!part.startsWith("<")) return escapeNotificationHtmlText(part);
+  const source = String(value ?? "");
+  let output = "";
+  let cursor = 0;
 
-      const tagMatch = /^<\s*(\/?)\s*([a-z0-9]+)\b[^>]*>$/i.exec(part);
-      if (!tagMatch) return "";
+  while (cursor < source.length) {
+    const tagStart = source.indexOf("<", cursor);
+    if (tagStart === -1) {
+      output += escapeNotificationHtmlText(source.slice(cursor));
+      break;
+    }
 
-      const closing = tagMatch[1] === "/";
-      const tag = tagMatch[2].toLowerCase();
-      if (!NOTIFICATION_HTML_ALLOWED_TAGS.has(tag)) return "";
-      if (tag === "br") return closing ? "" : "<br>";
-      return closing ? `</${tag}>` : `<${tag}>`;
-    })
-    .join("");
+    output += escapeNotificationHtmlText(source.slice(cursor, tagStart));
+    const tagEnd = source.indexOf(">", tagStart + 1);
+    if (tagEnd === -1) {
+      output += escapeNotificationHtmlText(source.slice(tagStart));
+      break;
+    }
+
+    const rawTag = source.slice(tagStart + 1, tagEnd);
+    const normalizedTag = normalizeNotificationHtmlTag(rawTag);
+    if (normalizedTag === undefined) {
+      output += escapeNotificationHtmlText(source.slice(tagStart, tagEnd + 1));
+    } else if (normalizedTag !== null) {
+      output += normalizedTag;
+    }
+    cursor = tagEnd + 1;
+  }
+
+  return output;
+}
+
+function normalizeNotificationHtmlTag(rawTag: string): string | null | undefined {
+  let cursor = 0;
+  while (cursor < rawTag.length && isNotificationHtmlWhitespace(rawTag[cursor])) cursor += 1;
+
+  const closing = rawTag[cursor] === "/";
+  if (closing) {
+    cursor += 1;
+    while (cursor < rawTag.length && isNotificationHtmlWhitespace(rawTag[cursor])) cursor += 1;
+  }
+
+  const nameStart = cursor;
+  while (cursor < rawTag.length && isNotificationHtmlTagNameChar(rawTag[cursor])) cursor += 1;
+  if (cursor === nameStart) return undefined;
+
+  const tag = rawTag.slice(nameStart, cursor).toLowerCase();
+  if (!NOTIFICATION_HTML_ALLOWED_TAGS.has(tag)) return null;
+  if (tag === "br") return closing ? null : "<br>";
+  return closing ? `</${tag}>` : `<${tag}>`;
+}
+
+function isNotificationHtmlWhitespace(value: string): boolean {
+  return value === " " || value === "\t" || value === "\n" || value === "\r";
+}
+
+function isNotificationHtmlTagNameChar(value: string): boolean {
+  const code = value.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
 }
 
 function escapeNotificationHtmlText(value: string): string {
