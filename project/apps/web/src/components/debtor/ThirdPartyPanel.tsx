@@ -68,6 +68,27 @@ interface ThirdParty {
   ihbarnameStatus?: IhbarnameStatus;
 }
 
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2: 5 kanonik statü (bkz.
+// project/docs/governance/DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-D2-CONTRACT.md).
+type ExternalCaseAttachmentStatus = "HACIZ_TALEP" | "HACIZ_KONDU" | "CEVAP_BEKLENIYOR" | "TAHSIL_BASLADI" | "KAPANDI";
+
+const EXTERNAL_CASE_STATUS_LABELS: Record<ExternalCaseAttachmentStatus, string> = {
+  HACIZ_TALEP: "Haciz Talep Edildi",
+  HACIZ_KONDU: "Haciz Kondu",
+  CEVAP_BEKLENIYOR: "Cevap Bekleniyor",
+  TAHSIL_BASLADI: "Tahsil Başladı",
+  KAPANDI: "Kapandı",
+};
+
+type ExternalCaseClosureReasonOption = "NEGATIVE_RESPONSE" | "DUPLICATE_RECORD" | "SUPERSEDED" | "OTHER";
+
+const EXTERNAL_CASE_CLOSURE_REASON_LABELS: Record<ExternalCaseClosureReasonOption, string> = {
+  NEGATIVE_RESPONSE: "Olumsuz Cevap",
+  DUPLICATE_RECORD: "Mükerrer Kayıt",
+  SUPERSEDED: "Yerini Başka İşlem Aldı",
+  OTHER: "Diğer",
+};
+
 // Dış dosya (borçlunun alacaklı olduğu dosya)
 interface ExternalCase {
   id: string;
@@ -76,10 +97,16 @@ interface ExternalCase {
   counterpartyName: string;
   claimAmount: number;
   claimCurrency: string;
-  attachmentStatus: "HACIZ_TALEP" | "HACIZ_KONDU" | "CEVAP_BEKLENIYOR" | "TAHSIL_BASLADI" | "KAPANDI";
+  attachmentStatus: ExternalCaseAttachmentStatus;
   attachedAt?: string;
   receivedAmount?: number;
   notes?: string;
+  externalReference?: string | null;
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: backend'in salt-okuma
+  // capability projeksiyonu — bu aktör için hangi manuel geçişler/kapatma
+  // mevcut. Frontend bunu KENDİ BAŞINA tahmin/hardcode ETMEZ.
+  allowedManualTransitions?: ExternalCaseAttachmentStatus[];
+  canManualClose?: boolean;
 }
 
 interface ThirdPartyPanelProps {
@@ -101,6 +128,11 @@ export function ThirdPartyPanel({ caseDebtorId, debtorName, caseId }: ThirdParty
   const [editingExternalCase, setEditingExternalCase] = useState<ExternalCase | null>(null);
   const [showCollectionModal, setShowCollectionModal] = useState(false);
   const [collectionExternalCase, setCollectionExternalCase] = useState<ExternalCase | null>(null);
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: manuel durum geçişi/kapatma.
+  const [showTransitionModal, setShowTransitionModal] = useState(false);
+  const [transitionExternalCase, setTransitionExternalCase] = useState<ExternalCase | null>(null);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closeExternalCase, setCloseExternalCase] = useState<ExternalCase | null>(null);
   // ACT-09: üçüncü şahıs düzenle/sil UI cilası — backend PUT/DELETE third-parties/:id zaten
   // vardı, "Dış Dosya" sekmesinin aksine bu sekmede hiç wire edilmemişti.
   const [showEditThirdPartyModal, setShowEditThirdPartyModal] = useState(false);
@@ -703,6 +735,32 @@ interface OcrExternalCaseResult {
                     >
                       <Edit2 className="h-3 w-3 inline mr-1" /> Düzenle
                     </button>
+                    {/* DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: yalnız
+                        backend'in bu aktör için izin verdiği manuel geçişler varsa gösterilir. */}
+                    {(ec.allowedManualTransitions?.length ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransitionExternalCase(ec);
+                          setShowTransitionModal(true);
+                        }}
+                        className="px-2 py-1 text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded"
+                      >
+                        <Send className="h-3 w-3 inline mr-1" /> Durum Geçir
+                      </button>
+                    )}
+                    {ec.canManualClose === true && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCloseExternalCase(ec);
+                          setShowCloseModal(true);
+                        }}
+                        className="px-2 py-1 text-xs text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded"
+                      >
+                        <X className="h-3 w-3 inline mr-1" /> Manuel Kapat
+                      </button>
+                    )}
                     {(ec.attachmentStatus === "TAHSIL_BASLADI" || ec.attachmentStatus === "HACIZ_KONDU") && (
                       <button
                         type="button"
@@ -805,6 +863,38 @@ interface OcrExternalCaseResult {
           onSaved={() => {
             setShowCollectionModal(false);
             setCollectionExternalCase(null);
+            loadExternalCases();
+          }}
+        />
+      )}
+
+      {/* DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: Manuel Durum Geçişi Modal */}
+      {showTransitionModal && transitionExternalCase && (
+        <TransitionExternalCaseModal
+          externalCase={transitionExternalCase}
+          onClose={() => {
+            setShowTransitionModal(false);
+            setTransitionExternalCase(null);
+          }}
+          onSaved={() => {
+            setShowTransitionModal(false);
+            setTransitionExternalCase(null);
+            loadExternalCases();
+          }}
+        />
+      )}
+
+      {/* DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: Manuel Kapatma Modal */}
+      {showCloseModal && closeExternalCase && (
+        <CloseExternalCaseModal
+          externalCase={closeExternalCase}
+          onClose={() => {
+            setShowCloseModal(false);
+            setCloseExternalCase(null);
+          }}
+          onSaved={() => {
+            setShowCloseModal(false);
+            setCloseExternalCase(null);
             loadExternalCases();
           }}
         />
@@ -1324,7 +1414,6 @@ function AddExternalCaseModal({ caseDebtorId, initialData, onClose, onSaved }: A
     counterpartyName: initialData?.counterpartyName || "",
     claimAmount: initialData?.claimAmount?.toString() || "",
     claimCurrency: initialData?.claimCurrency || "TRY",
-    attachmentStatus: "HACIZ_TALEP" as "HACIZ_TALEP" | "HACIZ_KONDU" | "CEVAP_BEKLENIYOR" | "TAHSIL_BASLADI" | "KAPANDI",
     attachedAt: initialData?.attachmentDate || "",
     notes: "",
   });
@@ -1461,22 +1550,6 @@ function AddExternalCaseModal({ caseDebtorId, initialData, onClose, onSaved }: A
             </div>
           </div>
 
-          {/* Haciz Durumu */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Haciz Durumu</label>
-            <select
-              value={formData.attachmentStatus}
-              onChange={(e) => setFormData({ ...formData, attachmentStatus: e.target.value as any })}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
-            >
-              <option value="HACIZ_TALEP">Haciz Talep Edildi</option>
-              <option value="HACIZ_KONDU">Haciz Kondu</option>
-              <option value="CEVAP_BEKLENIYOR">Cevap Bekleniyor</option>
-              <option value="TAHSIL_BASLADI">Tahsil Başladı</option>
-              <option value="KAPANDI">Kapandı</option>
-            </select>
-          </div>
-
           {/* Haciz Tarihi */}
           <div>
             <label className="block text-sm font-medium mb-1">Haciz Tarihi</label>
@@ -1549,7 +1622,6 @@ function EditExternalCaseModal({ externalCase, onClose, onSaved }: EditExternalC
     counterpartyName: externalCase.counterpartyName,
     claimAmount: externalCase.claimAmount.toString(),
     claimCurrency: externalCase.claimCurrency,
-    attachmentStatus: externalCase.attachmentStatus,
     attachedAt: externalCase.attachedAt || "",
     notes: externalCase.notes || "",
   });
@@ -1645,22 +1717,6 @@ function EditExternalCaseModal({ externalCase, onClose, onSaved }: EditExternalC
                 <option value="EUR">EUR (€)</option>
               </select>
             </div>
-          </div>
-
-          {/* Haciz Durumu */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Haciz Durumu</label>
-            <select
-              value={formData.attachmentStatus}
-              onChange={(e) => setFormData({ ...formData, attachmentStatus: e.target.value as any })}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
-            >
-              <option value="HACIZ_TALEP">Haciz Talep Edildi</option>
-              <option value="HACIZ_KONDU">Haciz Kondu</option>
-              <option value="CEVAP_BEKLENIYOR">Cevap Bekleniyor</option>
-              <option value="TAHSIL_BASLADI">Tahsil Başladı</option>
-              <option value="KAPANDI">Kapandı</option>
-            </select>
           </div>
 
           {/* Haciz Tarihi */}
@@ -1869,6 +1925,287 @@ function AddCollectionModal({ externalCase, onClose, onSaved }: AddCollectionMod
                   <Banknote className="h-4 w-4" />
                   Tahsilat Ekle
                 </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              İptal
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: Manuel Durum Geçişi Modal.
+// Yalnız backend'in allowedManualTransitions ile döndürdüğü hedefler sunulur —
+// canonical transition matrix burada bağımsız olarak kopyalanmaz/icat edilmez.
+interface TransitionExternalCaseModalProps {
+  externalCase: ExternalCase;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function TransitionExternalCaseModal({ externalCase, onClose, onSaved }: TransitionExternalCaseModalProps) {
+  const allowedTargets = externalCase.allowedManualTransitions ?? [];
+  const [saving, setSaving] = useState(false);
+  const [targetStatus, setTargetStatus] = useState<ExternalCaseAttachmentStatus | "">(
+    allowedTargets.length === 1 ? allowedTargets[0] : ""
+  );
+  const [externalReference, setExternalReference] = useState("");
+  const [statusOccurredAt, setStatusOccurredAt] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving) return; // double-submit engeli
+
+    if (!targetStatus) {
+      alert("Lütfen hedef durumu seçin");
+      return;
+    }
+    if (!externalReference.trim()) {
+      alert("Kanıt/belge referansı zorunludur");
+      return;
+    }
+    if (!statusOccurredAt) {
+      alert("Gerçekleşme tarihi zorunludur");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await api.post(`/external-cases/${externalCase.id}/transition-status`, {
+        // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: CAS guard — sunucu
+        // gerçek durum bununla uyuşmazsa 409 döner, sessiz overwrite YOK.
+        expectedStatus: externalCase.attachmentStatus,
+        targetStatus,
+        externalReference: externalReference.trim(),
+        statusOccurredAt,
+      });
+      onSaved();
+    } catch (err: any) {
+      if (err.response?.status === 409) {
+        alert("Dosya durumu başka bir işlem tarafından değiştirildi. Liste yenileniyor.");
+        onSaved();
+        return;
+      }
+      alert(err.response?.data?.message || err.message || "Durum geçişi yapılamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h3 className="font-semibold text-lg">Dış Dosya Durumunu Geçir</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {externalCase.externalCaseNo} — {EXTERNAL_CASE_STATUS_LABELS[externalCase.attachmentStatus]}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label htmlFor="transition-target-status" className="block text-sm font-medium mb-1">Yeni Durum *</label>
+            <select
+              id="transition-target-status"
+              value={targetStatus}
+              onChange={(e) => setTargetStatus(e.target.value as ExternalCaseAttachmentStatus)}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            >
+              <option value="">Seçiniz</option>
+              {allowedTargets.map((status) => (
+                <option key={status} value={status}>
+                  {EXTERNAL_CASE_STATUS_LABELS[status]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="transition-occurred-at" className="block text-sm font-medium mb-1">Gerçekleşme Tarihi *</label>
+            <input
+              id="transition-occurred-at"
+              type="date"
+              value={statusOccurredAt}
+              onChange={(e) => setStatusOccurredAt(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="transition-external-reference" className="block text-sm font-medium mb-1">Kanıt / Belge Referansı *</label>
+            <input
+              id="transition-external-reference"
+              type="text"
+              value={externalReference}
+              onChange={(e) => setExternalReference(e.target.value)}
+              placeholder="Örn: tutanak no, tebligat referansı"
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-2.5 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Kaydediliyor...
+                </>
+              ) : (
+                "Durumu Geçir"
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              İptal
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: Manuel Kapatma Modal —
+// yalnız backend'in canManualClose=true dediği durumlarda açılır (lawyer-only,
+// staff canEdit=true olsa bile YETKİLİ DEĞİL — bu ayrım backend'de uygulanır).
+interface CloseExternalCaseModalProps {
+  externalCase: ExternalCase;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function CloseExternalCaseModal({ externalCase, onClose, onSaved }: CloseExternalCaseModalProps) {
+  const [saving, setSaving] = useState(false);
+  const [closureReason, setClosureReason] = useState<ExternalCaseClosureReasonOption | "">("");
+  const [externalReference, setExternalReference] = useState("");
+  const [statusOccurredAt, setStatusOccurredAt] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving) return; // double-submit engeli
+
+    if (!closureReason) {
+      alert("Lütfen kapatma sebebini seçin");
+      return;
+    }
+    // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: OTHER seçilirse
+    // açıklama/audit note zorunlu (externalReference bu notu taşır).
+    if (closureReason === "OTHER" && !externalReference.trim()) {
+      alert('"Diğer" seçildiğinde açıklama zorunludur');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await api.post(`/external-cases/${externalCase.id}/close`, {
+        expectedStatus: externalCase.attachmentStatus,
+        closureReason,
+        externalReference: externalReference.trim() || undefined,
+        statusOccurredAt: statusOccurredAt || undefined,
+      });
+      onSaved();
+    } catch (err: any) {
+      if (err.response?.status === 409) {
+        alert("Dosya durumu başka bir işlem tarafından değiştirildi. Liste yenileniyor.");
+        onSaved();
+        return;
+      }
+      alert(err.response?.data?.message || err.message || "Dosya kapatılamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h3 className="font-semibold text-lg">Dış Dosyayı Manuel Kapat</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{externalCase.externalCaseNo}</p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label htmlFor="close-reason" className="block text-sm font-medium mb-1">Kapatma Sebebi *</label>
+            <select
+              id="close-reason"
+              value={closureReason}
+              onChange={(e) => setClosureReason(e.target.value as ExternalCaseClosureReasonOption)}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            >
+              <option value="">Seçiniz</option>
+              {(Object.keys(EXTERNAL_CASE_CLOSURE_REASON_LABELS) as ExternalCaseClosureReasonOption[]).map((reason) => (
+                <option key={reason} value={reason}>
+                  {EXTERNAL_CASE_CLOSURE_REASON_LABELS[reason]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="close-external-reference" className="block text-sm font-medium mb-1">
+              Açıklama / Kanıt Referansı {closureReason === "OTHER" ? "*" : ""}
+            </label>
+            <input
+              id="close-external-reference"
+              type="text"
+              value={externalReference}
+              onChange={(e) => setExternalReference(e.target.value)}
+              placeholder="Örn: gerekçe, tutanak no"
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="close-occurred-at" className="block text-sm font-medium mb-1">Gerçekleşme Tarihi</label>
+            <input
+              id="close-occurred-at"
+              type="date"
+              value={statusOccurredAt}
+              onChange={(e) => setStatusOccurredAt(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Kaydediliyor...
+                </>
+              ) : (
+                "Dosyayı Kapat"
               )}
             </button>
             <button

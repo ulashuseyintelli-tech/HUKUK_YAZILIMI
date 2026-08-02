@@ -32,7 +32,7 @@ describe('I15 Phase A — createExternalCase() P2002 recovery (mocked, determini
         create: jest.fn().mockRejectedValue(makePostgresP2002(['tenantId', 'caseDebtorId', 'externalOffice', 'externalCaseNo'])),
       },
     };
-    return { service: new ThirdPartyService(prisma, {} as any, guard as any, {} as any), prisma };
+    return { service: new ThirdPartyService(prisma, {} as any, guard as any, {} as any, {} as any), prisma };
   }
 
   it('gercek Postgres P2002 (meta.target=kolon adlari dizisi) yakalanip idempotent replay doner', async () => {

@@ -149,9 +149,10 @@ export class ThirdPartyController {
   @Get("case-debtors/:caseDebtorId/external-cases")
   getExternalCases(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("caseDebtorId") caseDebtorId: string
   ) {
-    return this.thirdPartyService.getExternalCases(tenantId, caseDebtorId);
+    return this.thirdPartyService.getExternalCases(tenantId, caseDebtorId, actorUserId);
   }
 
   /**

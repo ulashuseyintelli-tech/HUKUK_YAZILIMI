@@ -55,7 +55,7 @@ function buildService(coll: any, overrides: any = {}) {
       });
     }),
   };
-  const svc = new ThirdPartyService(prisma, coll, guard as any, transitionService as any);
+  const svc = new ThirdPartyService(prisma, coll, guard as any, transitionService as any, {} as any);
   return { svc, prisma, guard, transitionService };
 }
 

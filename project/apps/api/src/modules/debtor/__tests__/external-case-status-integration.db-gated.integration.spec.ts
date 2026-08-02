@@ -31,6 +31,7 @@ describeWithDisposableDb('D2-I02 — ExternalCase status transition/close/collec
   let prisma: PrismaClient;
   let thirdPartyService: ThirdPartyService;
   let transitionService: ExternalCaseStatusTransitionService;
+  let authority: ExternalCaseStatusAuthorityService;
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
@@ -46,7 +47,7 @@ describeWithDisposableDb('D2-I02 — ExternalCase status transition/close/collec
       undefined,
       new AuditService(prisma as any),
     );
-    const authority = new ExternalCaseStatusAuthorityService(
+    authority = new ExternalCaseStatusAuthorityService(
       prisma as any,
       new ActingLawyerResolverService(prisma as any),
     );
@@ -56,7 +57,7 @@ describeWithDisposableDb('D2-I02 — ExternalCase status transition/close/collec
       authority,
       lifecycleGuard,
     );
-    thirdPartyService = new ThirdPartyService(prisma as any, collectionService, lifecycleGuard, transitionService);
+    thirdPartyService = new ThirdPartyService(prisma as any, collectionService, lifecycleGuard, transitionService, authority);
   });
 
   afterAll(async () => {
@@ -358,5 +359,87 @@ describeWithDisposableDb('D2-I02 — ExternalCase status transition/close/collec
     expect(reloaded?.attachmentStatus).toBe('KAPANDI');
     expect(reloaded?.closureReason).toBe('FULLY_COLLECTED');
     expect(reloaded?.notes).toBe('yalnız not güncellemesi');
+  });
+
+  // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: getExternalCases() salt-okuma
+  // capability projeksiyonu (allowedManualTransitions/canManualClose) — gerçek CaseLawyer/
+  // CaseStaff atamalarıyla uçtan uca kanıt.
+  it('TEST-12: yetkisiz (stranger) aktör için tüm kayıtlarda allowedManualTransitions=[] ve canManualClose=false', async () => {
+    const fx = await createFixture('t12');
+    await createExternalCaseFixture(fx, { attachmentStatus: 'HACIZ_TALEP' });
+
+    const rows = await thirdPartyService.getExternalCases(fx.tenantId, fx.caseDebtorId, fx.strangerUserId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].allowedManualTransitions).toEqual([]);
+    expect(rows[0].canManualClose).toBe(false);
+  });
+
+  it('TEST-13: atanmış avukat için HACIZ_TALEP kaydında CEVAP_BEKLENIYOR+HACIZ_KONDU izinli VE canManualClose=true', async () => {
+    const fx = await createFixture('t13');
+    await createExternalCaseFixture(fx, { attachmentStatus: 'HACIZ_TALEP' });
+
+    const rows = await thirdPartyService.getExternalCases(fx.tenantId, fx.caseDebtorId, fx.lawyerUserId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].allowedManualTransitions.sort()).toEqual(['CEVAP_BEKLENIYOR', 'HACIZ_KONDU'].sort());
+    expect(rows[0].canManualClose).toBe(true);
+  });
+
+  it('TEST-14: canEdit=true personel manuel geçiş yapabilir AMA canManualClose HER ZAMAN false (lawyer-only kapatma)', async () => {
+    const fx = await createFixture('t14');
+    await createExternalCaseFixture(fx, { attachmentStatus: 'HACIZ_TALEP' });
+
+    const rows = await thirdPartyService.getExternalCases(fx.tenantId, fx.caseDebtorId, fx.editableStaffUserId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].allowedManualTransitions.sort()).toEqual(['CEVAP_BEKLENIYOR', 'HACIZ_KONDU'].sort());
+    expect(rows[0].canManualClose).toBe(false);
+  });
+
+  it('TEST-15: canEdit=false (read-only) personel stranger ile aynı — hiçbir manuel yetkisi yok', async () => {
+    const fx = await createFixture('t15');
+    await createExternalCaseFixture(fx, { attachmentStatus: 'HACIZ_TALEP' });
+
+    const rows = await thirdPartyService.getExternalCases(fx.tenantId, fx.caseDebtorId, fx.readonlyStaffUserId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].allowedManualTransitions).toEqual([]);
+    expect(rows[0].canManualClose).toBe(false);
+  });
+
+  it('TEST-16: terminal KAPANDI kaydında yetkili avukat için bile allowedManualTransitions=[] ve canManualClose=false (no-reopen)', async () => {
+    const fx = await createFixture('t16');
+    const ec = await createExternalCaseFixture(fx, { attachmentStatus: 'HACIZ_KONDU', claimAmount: 100 });
+    await thirdPartyService.addExternalCaseCollection(fx.tenantId, ec.id, { amount: 100, date: '2026-07-01' }, fx.lawyerUserId);
+
+    const rows = await thirdPartyService.getExternalCases(fx.tenantId, fx.caseDebtorId, fx.lawyerUserId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].attachmentStatus).toBe('KAPANDI');
+    expect(rows[0].allowedManualTransitions).toEqual([]);
+    expect(rows[0].canManualClose).toBe(false);
+  });
+
+  it('TEST-17: tenant isolation — yanlış tenantId ile getExternalCases() NotFoundException fırlatır', async () => {
+    const fx = await createFixture('t17');
+    await createExternalCaseFixture(fx);
+
+    await expect(
+      thirdPartyService.getExternalCases('baska-tenant-id', fx.caseDebtorId, fx.lawyerUserId),
+    ).rejects.toThrow();
+  });
+
+  it('TEST-18: N kayıtlı listede authority çözümlemesi liste başına TEK kez yapılır (N+1 YOK)', async () => {
+    const fx = await createFixture('t18');
+    await createExternalCaseFixture(fx, { externalCaseNo: `2026/${randomUUID().slice(0, 8)}` });
+    await createExternalCaseFixture(fx, { externalCaseNo: `2026/${randomUUID().slice(0, 8)}` });
+    await createExternalCaseFixture(fx, { externalCaseNo: `2026/${randomUUID().slice(0, 8)}` });
+
+    const transitionSpy = jest.spyOn(authority, 'canAttemptFactOrProcessTransition');
+    const closeSpy = jest.spyOn(authority, 'canAttemptManualClosure');
+
+    const rows = await thirdPartyService.getExternalCases(fx.tenantId, fx.caseDebtorId, fx.lawyerUserId);
+    expect(rows).toHaveLength(3);
+    expect(transitionSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+
+    transitionSpy.mockRestore();
+    closeSpy.mockRestore();
   });
 });

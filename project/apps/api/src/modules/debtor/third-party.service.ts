@@ -27,7 +27,9 @@ import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/
 import {
   ExternalCaseDerivedProjectionCurrent,
   ExternalCaseStatusTransitionService,
+  MANUAL_FACT_OR_PROCESS_TRANSITIONS,
 } from "./external-case-status-transition.service";
+import { ExternalCaseStatusAuthorityService } from "./external-case-status-authority.service";
 
 export interface ExternalCaseReceiptInput {
   amount: number;
@@ -60,6 +62,10 @@ export class ThirdPartyService {
     // yazma yüzeyi — addExternalCaseCollection() yalnız applySystemDerivedProjection()
     // üzerinden yazar (kendi CAS mantığını icat ETMEZ).
     private externalCaseStatusTransition: ExternalCaseStatusTransitionService,
+    // DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: getExternalCases()'in
+    // salt-okuma capability projeksiyonu (allowedManualTransitions/canManualClose)
+    // için — tek yetki kaynağı, paralel bir yetki motoru DEĞİL.
+    private externalCaseStatusAuthority: ExternalCaseStatusAuthorityService,
   ) {}
 
   // 89 İhbarname için 7 günlük cevap süresi
@@ -558,7 +564,15 @@ export class ThirdPartyService {
   /**
    * Borçlunun alacaklı olduğu dış dosyaları getir
    */
-  async getExternalCases(tenantId: string, caseDebtorId: string) {
+  /**
+   * DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: her satıra, mevcut
+   * authenticated aktör için salt-okuma bir capability projeksiyonu ekler
+   * (`allowedManualTransitions`, `canManualClose`) — frontend'in bunu kendi
+   * başına tahmin/hardcode etmesi gerekmesin diye. Bu case-debtor'a ait TÜM
+   * ExternalCase kayıtları AYNI Case'e bağlı olduğundan authority çözümlemesi
+   * liste başına TEK KEZ yapılır (N+1 YOK).
+   */
+  async getExternalCases(tenantId: string, caseDebtorId: string, actorUserId: string) {
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId },
       include: { case: true },
@@ -568,10 +582,26 @@ export class ThirdPartyService {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
     }
 
-    return (this.prisma as any).externalCase.findMany({
+    const rows = await (this.prisma as any).externalCase.findMany({
       where: { caseDebtorId, tenantId },
       orderBy: { createdAt: "desc" },
     });
+
+    const caseId = caseDebtor.case.id;
+    const [canTransition, canClose] = await Promise.all([
+      this.externalCaseStatusAuthority.canAttemptFactOrProcessTransition(tenantId, caseId, actorUserId),
+      this.externalCaseStatusAuthority.canAttemptManualClosure(tenantId, caseId, actorUserId),
+    ]);
+
+    return rows.map((row: any) => ({
+      ...row,
+      allowedManualTransitions: canTransition
+        ? MANUAL_FACT_OR_PROCESS_TRANSITIONS.filter((rule) => rule.from === row.attachmentStatus).map(
+            (rule) => rule.to,
+          )
+        : [],
+      canManualClose: canClose && row.attachmentStatus !== "KAPANDI",
+    }));
   }
 
   /**

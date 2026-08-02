@@ -27,7 +27,7 @@ describeWithDisposableDb("I15 Phase C — ThirdPartyService.updateExternalCase()
     prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
     await prisma.$connect();
     const lifecycleGuard = new CaseDebtorLifecycleGuardService(prisma as any);
-    service = new ThirdPartyService(prisma as any, { create: jest.fn() } as any, lifecycleGuard, {} as any);
+    service = new ThirdPartyService(prisma as any, { create: jest.fn() } as any, lifecycleGuard, {} as any, {} as any);
   });
 
   afterAll(async () => {
