@@ -187,7 +187,7 @@ function makeThirdPartyService(guard = activeGuard()) {
     },
   };
   return {
-    service: new ThirdPartyService(prisma as any, collectionService as any, guard as any, {} as any),
+    service: new ThirdPartyService(prisma as any, collectionService as any, guard as any, {} as any, {} as any),
     prisma,
     guard,
     collectionService,

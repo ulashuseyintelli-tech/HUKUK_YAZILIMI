@@ -17,7 +17,12 @@ interface ManualTransitionRule {
 // kenar bu yoldan geçer; KAPANDI ayrı closeManual()'ün, TAHSIL_BASLADI/KAPANDI
 // (tam tahsilat) ayrı applySystemDerivedProjection()'ın konusudur — icad edilmiş
 // başka hiçbir (from,to) çifti kabul edilmez.
-const MANUAL_FACT_OR_PROCESS_TRANSITIONS: readonly ManualTransitionRule[] = [
+//
+// DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: export edildi —
+// ThirdPartyService.getExternalCases()'in salt-okuma capability projeksiyonu
+// (allowedManualTransitions) AYNI matrisi reuse eder; frontend'in veya başka bir
+// backend katmanının bu matrisi bağımsız olarak kopyalaması/icat etmesi gerekmez.
+export const MANUAL_FACT_OR_PROCESS_TRANSITIONS: readonly ManualTransitionRule[] = [
   { from: "HACIZ_TALEP", to: "CEVAP_BEKLENIYOR" },
   { from: "HACIZ_TALEP", to: "HACIZ_KONDU" },
   { from: "CEVAP_BEKLENIYOR", to: "HACIZ_KONDU" },

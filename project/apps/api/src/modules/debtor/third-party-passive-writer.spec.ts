@@ -56,7 +56,7 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
     // collectionService yalnız addExternalCaseCollection'da kullanılır. Bu suite'in
     // addExternalCaseCollection senaryosu syncToMainCase=false ile erken fail-closed
     // olur (transition service'e hiç ulaşmaz) — {} as any stub yeterlidir.
-    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard, {} as any);
+    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard, {} as any, {} as any);
   }
 
   const tp = { id: "tp1", tenantId: TENANT, caseDebtorId: CD };

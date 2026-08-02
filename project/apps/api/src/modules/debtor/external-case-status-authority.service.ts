@@ -78,6 +78,35 @@ export class ExternalCaseStatusAuthorityService {
     });
   }
 
+  /**
+   * DEBTOR-EXTERNAL-CASE-STATUS-INTEGRITY-P1-I15-D2-I03: salt-okuma capability
+   * projeksiyonu için — `assertFactOrProcessTransitionAuthority`'nin THROW ETMEYEN
+   * eşdeğeri. Frontend'in "bu aktör için hangi manuel geçişler mevcut" sorusunu
+   * kendi başına tahmin etmesi yerine `ThirdPartyService.getExternalCases()`
+   * bu metodu (liste başına TEK kez) çağırır. AYNI private çözümleme mantığını
+   * reuse eder — ikinci bir yetki motoru YOKTUR.
+   */
+  async canAttemptFactOrProcessTransition(
+    tenantId: string,
+    caseId: string,
+    authenticatedUserId: string,
+  ): Promise<boolean> {
+    const lawyerActor = await this.tryResolveAssignedLawyer(tenantId, caseId, authenticatedUserId);
+    if (lawyerActor) return true;
+    const staffActor = await this.tryResolveEditableAssignedStaff(tenantId, caseId, authenticatedUserId);
+    return staffActor !== null;
+  }
+
+  /** `assertManualClosureAuthority`'nin THROW ETMEYEN eşdeğeri — bkz. yukarıdaki yorum. */
+  async canAttemptManualClosure(
+    tenantId: string,
+    caseId: string,
+    authenticatedUserId: string,
+  ): Promise<boolean> {
+    const lawyerActor = await this.tryResolveAssignedLawyer(tenantId, caseId, authenticatedUserId);
+    return lawyerActor !== null;
+  }
+
   private async tryResolveAssignedLawyer(
     tenantId: string,
     caseId: string,

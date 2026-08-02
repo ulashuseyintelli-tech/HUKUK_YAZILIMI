@@ -102,7 +102,7 @@ describe("ThirdPartyService.updateExternalCase() (I15 Phase C)", () => {
   }
 
   function makeService(prisma: any, guard: any) {
-    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard, {} as any);
+    return new ThirdPartyService(prisma, { create: jest.fn() } as any, guard, {} as any, {} as any);
   }
 
   function makeP2002() {
