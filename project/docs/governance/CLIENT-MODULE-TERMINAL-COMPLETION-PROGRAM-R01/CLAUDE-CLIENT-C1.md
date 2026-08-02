@@ -462,7 +462,13 @@ Codex X1 paralel yürür; ortak yüzey yalnız client-portal.txt (§4 ile serial
       C4 aynı migration owner altında SERİ paketlenir. ÇÖZÜM: aktif satırda
       (tenantId,tckn)+(tenantId,vkn) partial unique — `20260802190000_client_identity_
       active_partial_unique`; conflict-mapping spec + regresyon 124/124 + XL-3 41/41 PASS)*
-- [ ] **B06** seed modülü testli; B01–B05 regresyonla kilitli
+- [x] **B06** seed modülü testli; B01–B05 regresyonla kilitli
+      *(2026-08-02: `seed-surface-idempotency-certification.spec.ts` 9/9 PASS — kalan seed
+      yüzeylerinin idempotency/ön-koşul sözleşmeleri karakterize edildi; tam manifest
+      sertifikasyonu `run-ci-manifest.sh pure/client-portal` = 705/705 PASS (B05 tepesinde)
+      + bu PR'ın CI'ında yenilendi. ENGINEERING EXIT sağlandı → C1 PAGE:
+      SUSPENDED_FOR_ACTIVATION; WAVE-4 borcu: identity migration APPLY + FIND-C4 CAS
+      serial follow-up)*
 - [ ] Her blok: CI required checks yeşil · mergeability CLEAN · squash-merge · main sync ·
       kendi branch/worktree cleanup · zorunlu blok çıktısı yayımlandı
 

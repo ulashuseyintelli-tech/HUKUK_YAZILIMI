@@ -753,10 +753,10 @@ DOCUMENT SET:             7/7 CANONICAL (MASTER-PLAN + C1-C3 + X1-X3)
 RATIFICATION ENVELOPE:    OWNER-DECISION-R01.md (bu dizin)
 MATERIALIZATION BASELINE: origin/main e8e4d467
 PRODUCT IMPLEMENTATION:   IN PROGRESS — CLAUDE-CLIENT-C1 (WAVE 1)
-C1 STATUS:                IN PROGRESS — C1-B05 ACTIVATION_PENDING (2026-08-02)
-                          (owner'ın açtığı ayrı C1 sayfası yürütüyor; migration paketi
-                           HAZIR + CI-doğrulandı, APPLY WAVE 4'te aynı sayfada)
-C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 5 (B01–B05)
+C1 STATUS:                ENGINEERING_COMPLETE — C1-B06 sertifikasyonu tamam (2026-08-02)
+                          C1 PAGE: SUSPENDED_FOR_ACTIVATION — TERMINAL CLOSED DEĞİL;
+                          migration APPLY borcu WAVE 4'te AYNI C1 sayfasında kapanır.
+C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 6 (B01–B06)
 C1 ACTIVATION DEBT:       C1-PROD-ACTIVATION — 20260802190000_client_identity_active_
                           partial_unique (aktif satırda tenantId+tckn / tenantId+vkn
                           partial unique; §9-D koşullu yetkiyle WAVE 4'te apply edilecek).
