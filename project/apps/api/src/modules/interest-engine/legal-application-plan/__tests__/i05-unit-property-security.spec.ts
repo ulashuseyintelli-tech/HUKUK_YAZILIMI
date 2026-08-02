@@ -14,6 +14,7 @@ import {
   allocateValidatedSnapshotForApply,
   assembleLegalApplicationPlan,
   compareBucketContextKeysUtf8,
+  computeSourceVersionSetHash,
   fingerprintLegalApplicationPlan,
   formatMinorAmount,
   parseAppliedAmountMinor,
@@ -1323,6 +1324,9 @@ describe('TPA-04C-I05 unit, property and security evidence expansion', () => {
       const canonicalBucket = bucket(1, 'COST', 100n);
       const snapshotValue = snapshot([canonicalBucket], 100n, 'identity');
       snapshotValue.bucketIdentityVersion = BUCKET_INSTANCE_IDENTITY_CONTRACT_VERSION;
+      snapshotValue.sourceVersionSetHash = computeSourceVersionSetHash([
+        { sourceReference: 'source:identity', sourceVersion: '1' },
+      ]);
       const identity = producedIdentity(
         identityPreimage({
           tenantId: snapshotValue.tenantId,
@@ -1390,11 +1394,13 @@ describe('TPA-04C-I05 unit, property and security evidence expansion', () => {
         'allocation-order.ts',
         'apply-allocation-core.ts',
         'bucket-instance-identity.ts',
+        'canonical-snapshot-identity.ts',
         'canonical-snapshot-serializer.ts',
         'canonical-snapshot-validator.ts',
         'contracts.ts',
         'index.ts',
         'legal-application-plan-builder.ts',
+        'official-receivable-snapshot-producer.ts',
         'plan-fingerprint.ts',
         'primitives.ts',
         'strict-json-parser.ts',

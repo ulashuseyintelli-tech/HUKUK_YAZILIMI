@@ -39,6 +39,7 @@
 #   Integration Tests (legal-kernel, real Postgres)
 #
 src/modules/case/__tests__/case-calculation-summary-shadow.spec.ts
+src/modules/interest-engine/legal-application-plan/__tests__/official-receivable-snapshot-producer.spec.ts
 src/modules/case/__tests__/case-calculation-summary.compatibility.spec.ts
 src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.core.spec.ts
 src/modules/claim-item/__tests__/claim-formation-persistence-foundation.static.spec.ts

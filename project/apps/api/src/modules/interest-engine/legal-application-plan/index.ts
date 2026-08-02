@@ -2,6 +2,8 @@ export * from './contracts';
 export * from './primitives';
 export * from './canonical-snapshot-validator';
 export * from './bucket-instance-identity';
+export * from './canonical-snapshot-identity';
+export * from './official-receivable-snapshot-producer';
 export * from './validation-constants';
 export * from './allocation-order';
 export * from './apply-allocation-core';
