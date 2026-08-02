@@ -6,8 +6,11 @@ MASTER PROGRAM:           CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01
 MASTER PLAN VERSION:      v1.0 (OWNER RATIFIED)
 THIS PAGE:                CLAUDE-CLIENT-C2
 LANE OWNER:               CLAUDE
-PREDECESSOR:              CLAUDE-CLIENT-C1 — ENGINEERING_COMPLETE olmalı
-                          (C1'in ACTIVATION borcu açık kalabilir; bu C2'yi engellemez)
+PREDECESSOR:              GLOBAL C1→C2 PREDECESSOR: **REMOVED** (owner kararı, 2026-08-02)
+                          BLOCK-LEVEL PREDECESSOR: **MANDATORY** — her C2 bloğu
+                          başlamadan önce §2-A pre-flight protokolü çalıştırılır.
+                          C2, C1 DEVAM EDERKEN açılabilir; C1'in tamamının bitmesi
+                          BEKLENMEZ. C2 sırası DEĞİŞTİRİLMEZ.
 SUCCESSOR:                CLAUDE-CLIENT-C3
                           Cross-lane teslimat borçları:
                             C2-B03 çıktısı → CODEX-CLIENT-X3'ün predecessor'ı
@@ -20,7 +23,10 @@ ALLOWED PATHS:
   project/apps/api/ci-manifests/pure/client-portal.txt   (§4 CI MANIFEST RULE ile)
 
 FORBIDDEN PATHS:
-  project/apps/api/src/modules/seed/                    (C1 kapsamı, kapandı)
+  project/apps/api/src/modules/client/client.service.ts (C1 LANE-OWNED — owner kararı
+                                                         2026-08-02; C2 KOŞULSUZ YAZMAZ)
+  <AKTİF C1 BLOĞUNUN EXACT DOSYALARI>                   (§2-A pre-flight ile tespit edilir)
+  project/apps/api/src/modules/seed/                    (C1 lane-owned)
   project/apps/api/prisma/                              (C2 migration YAZMAZ — §MIGRATION)
   project/apps/api/src/app.module.ts                    (C1 serialize etti)
   project/apps/api/src/modules/portal/                  (CODEX X1)
@@ -162,6 +168,54 @@ NEXT ELIGIBLE:                <yalnız sıradaki exact blok>
 OWNER AUTHORIZATION REQUIRED: NO / yalnız gerçek istisna
 PROGRAM LOCK:                 CLIENT ONLY
 ```
+
+---
+
+## 2-A. BLOCK-LEVEL PREDECESSOR PROTOKOLÜ (her C2 bloğundan ÖNCE — ZORUNLU)
+
+Owner kararı (2026-08-02): **GLOBAL C1→C2 PREDECESSOR: REMOVED · BLOCK-LEVEL
+PREDECESSOR: MANDATORY.** C2, C1 devam ederken açılır; C1'in tamamının bitmesi
+**beklenmez**. C2 sırası **değiştirilmez**.
+
+**Her C2 bloğu başlamadan önce, istisnasız:**
+
+```text
+1. Aktif C1 bloğunun EXACT WRITE MANIFEST'i alınır.
+   Kaynak (repository-truth): C1 sayfasının son blok çıktısı + C1'in AÇIK PR'ının
+   `gh pr view <n> --json files` çıktısı + C1 branch'inin `git diff --name-only`si.
+   Konuşma iddiası kanıt DEĞİLDİR.
+2. Bu C2 bloğunun EXACT WRITE MANIFEST'i (gerçek dosya adları) yazılır.
+3. SHARED-CONTRACT MANIFEST karşılaştırılır (yalnız dosya adı değil: aynı sözleşmeyi
+   —policy semantiği, eligibility, ClientService mutation API— yazan iki iş de çakışmadır).
+4. KARAR:
+   - EXACT ÇAKIŞMA YOK  → C2 bloğu YÜRÜR.
+   - ÇAKIŞMA VAR        → YALNIZ O C2 BLOĞU `WAITING_FOR_OTHER_SESSION` olur.
+                          Sıra ATLANMAZ, sonraki C2 bloğuna GEÇİLMEZ, C1'e DOKUNULMAZ.
+                          C1'in ilgili bloğu merge olunca fresh main alınıp yeniden denenir.
+5. Her blok çıktısına şu satır eklenir:
+   PRE-FLIGHT: C1 aktif blok=<ID/PR> · çakışma=<YOK|VAR:dosya listesi> · karar=<YÜRÜDÜ|BEKLEDİ>
+```
+
+**LANE DOSYA SAHİPLİĞİ (owner kararı):**
+
+| Sahip | Dosya/dizin | Diğer lane |
+|---|---|---|
+| **C1 (CLAUDE lane)** | `client.service.ts` · `seed/` · `prisma/` · `app.module.ts` | C2 **YAZAMAZ** |
+| **C2 (CLAUDE lane)** | `client-mutation-policy.ts` · aktif address/authority dosyaları | C1 **YAZAMAZ** |
+| Dinamik | Aktif C1 bloğunun exact dosyaları | C2 o blok süresince yazamaz |
+
+**BİLİNEN KISIT — C2-B02 (R4).** Workspace komutlarının servis gövdeleri
+(`sendPoaReminder` · `sendTemplateNotification` · `sendDocumentRequest`)
+`client.service.ts` içindedir ve bu dosya **C2'ye koşulsuz kapalıdır**. Bu, B02'yi
+otomatik olarak bloklamaz: sayfanın **outcome gate**'i gate'in yerini serbest bırakır
+(controller katmanı · ortak command-authority helper · `client-mutation-policy`
+sınıflandırmasının genişletilmesi). `client.service.ts` gerektiren bir çözüm **seçilemez**;
+başka çözüm de kanıtla mümkün değilse blok `WAITING_FOR_OTHER_SESSION` olur ve
+master plana disposition için bildirilir (NEW FINDING RULE).
+
+**C2-B01 İSTİSNASI:** B01 **read-only residual reconciliation**'dır (ürün diff'i SIFIR).
+Hiçbir yazma yüzeyi olmadığı için C1 ile çakışması yapısal olarak imkânsızdır →
+**HEMEN BAŞLAYABİLİR** (pre-flight yine de çalıştırılır ve `çakışma=YOK` olarak kaydedilir).
 
 ---
 
@@ -437,10 +491,12 @@ OKUNUR (yazılmaz):    office-approval.isApproverEligible (3'lü eligibility sap
 ## 10. MERGE ORDER
 
 ```text
-1. C1 ENGINEERING_COMPLETE + merge edilmiş
+1. C1 ENGINEERING_COMPLETE ŞARTI KALDIRILDI (owner kararı 2026-08-02).
+   Yerine: HER BLOK ÖNCESİ §2-A pre-flight (aktif C1 manifest'i vs bu blok manifest'i).
 2. §2 owner rol politikası alınmış (B02 ve B06 için)
 3. fresh main
-4. C2-B01 → ... → C2-B08 (sıra değişmez; her blok kendi PR'ı, kendi cleanup'ı)
+4. C2-B01 → ... → C2-B08 (sıra değişmez; her blok kendi PR'ı, kendi cleanup'ı;
+   çakışan blok WAITING_FOR_OTHER_SESSION olur, SIRA ATLANMAZ)
 5. B03 kapanışında → X3 UNBLOCKED ilan edilir
    B06 kapanışında → X1 CN-1 WIRING UNBLOCKED ilan edilir
 6. C2 ENGINEERING_COMPLETE → C3 başlar (C2 activation borcu açık kalır)

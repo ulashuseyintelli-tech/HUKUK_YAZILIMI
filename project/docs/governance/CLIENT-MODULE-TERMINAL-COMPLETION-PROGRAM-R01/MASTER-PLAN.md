@@ -426,8 +426,10 @@ kanıta dayanarak seçilir. Detay: `CLAUDE-CLIENT-C2.md` §7.
 — §13/11 "iletişim/workspace gönderim rol politikası". Karar alınmadan B02 implementation'a
 başlamaz; blok `WAITING_FOR_OWNER_DECISION` ile bekler ve **sıra atlanmaz**.
 
-**Entry:** C1 **ENGINEERING_COMPLETE** (C1'in activation borcu açık kalabilir) ·
-eligibility sözleşmesi dondurulmuş · §13/11 kararı alınmış.
+**Entry (AMENDED 2026-08-02):** Global C1 ENGINEERING_COMPLETE şartı **KALDIRILDI** —
+C2, C1 devam ederken açılır. Yerine **§12-A blok-seviyesi pre-flight ZORUNLUDUR**.
+C2-B01 (read-only residual reconciliation) **hemen başlayabilir**.
+Ayrıca: eligibility sözleşmesi dondurulmuş · §13/11 kararı B02/B06 için alınmış olmalı.
 **Engineering exit (B08):** Her `client/` mutasyonu (core + adres) fail-closed yetkili +
 audited; OWN-13 residualleri kapalı veya açıkça owner-deferred; **B03 + B06 primitive'leri
 canonical ve DONDURULMUŞ** (X3 ve X1 serbest); ARC-07 mühendisliği tamam.
@@ -513,6 +515,52 @@ Sıralı alt görevler:
 ---
 
 ## 12. CONCURRENCY MATRİSİ VE WAVE HARİTASI
+
+### 12-A. INTRA-LANE CONCURRENCY — C1 ∥ C2 (OWNER AMENDMENT, 2026-08-02)
+
+```text
+GLOBAL C1→C2 PREDECESSOR:   REMOVED
+BLOCK-LEVEL PREDECESSOR:    MANDATORY
+C2 PAGE START:              C1 devam ederken açılabilir
+C2-B01:                     Hemen başlayabilir (read-only residual reconciliation)
+C1'İN TAMAMININ BİTMESİ:    BEKLENMEZ
+C2 SIRASI:                  DEĞİŞTİRİLMEZ
+```
+
+**Her C2 bloğundan önce (istisnasız):**
+
+```text
+1. Aktif C1 bloğunun EXACT WRITE MANIFEST'i alınır (repository-truth: C1 blok çıktısı +
+   açık PR `--json files` + branch `git diff --name-only`; konuşma iddiası kanıt DEĞİL).
+2. C2 bloğunun EXACT WRITE MANIFEST'i yazılır.
+3. SHARED-CONTRACT MANIFEST karşılaştırılır (dosya adı yetmez: aynı sözleşmeyi yazan
+   iki iş de çakışmadır).
+4. Çakışma YOK → C2 bloğu yürür.
+   Çakışma VAR → YALNIZ o C2 bloğu WAITING_FOR_OTHER_SESSION; sıra ATLANMAZ,
+   sonraki bloğa GEÇİLMEZ, C1'e DOKUNULMAZ.
+5. Blok çıktısına eklenir:
+   PRE-FLIGHT: C1 aktif blok=<ID/PR> · çakışma=<YOK|VAR:liste> · karar=<YÜRÜDÜ|BEKLEDİ>
+```
+
+**Aynı protokol simetriktir:** C1 de kendi bloğuna başlamadan C2'nin aktif manifest'ini
+kontrol eder; çakışma varsa yalnız o C1 bloğu bekler.
+
+**LANE DOSYA SAHİPLİĞİ (bağlayıcı):**
+
+| Sahip | Dosya/dizin | Diğer lane |
+|---|---|---|
+| **C1** | `client.service.ts` · `seed/` · `prisma/` · `app.module.ts` | C2 YAZAMAZ |
+| **C2** | `client-mutation-policy.ts` · aktif address/authority dosyaları | C1 YAZAMAZ |
+| Dinamik | Karşı lane'in aktif blok dosyaları | o blok süresince yazılamaz |
+
+**Bilinen kısıt (kayıt):** C2-B02'nin (R4) hedef servis gövdeleri `client.service.ts`
+içindedir ve bu dosya C2'ye kapalıdır. Sayfanın outcome gate'i gate'in yerini serbest
+bıraktığı için (controller · ortak command-authority helper · policy sınıflandırması)
+bu otomatik blocker DEĞİLDİR; `client.service.ts` gerektiren çözüm seçilemez, başka
+çözüm de kanıtla mümkün değilse blok `WAITING_FOR_OTHER_SESSION` olur ve bu plana
+disposition için bildirilir.
+
+### 12-B. WAVE HARİTASI
 
 | Wave | CLAUDE | CODEX | Paralellik gerekçesi (exact) |
 |---|---|---|---|
