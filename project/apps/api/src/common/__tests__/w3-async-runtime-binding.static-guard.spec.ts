@@ -490,3 +490,113 @@ describe('W3-F04 — cron terminal-failure-visibility guard (govde seviyesi)', (
     // [12]'nin bunlari BILINCLI atladigini kayit altina alir.
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01
+// ═══════════════════════════════════════════════════════════════════════════
+import { DORMANT_SUBTREE_REGISTRY } from '../dormant-subtree-registry';
+
+/** rootPath'e ait, CLOSURE'daki HERHANGI bir modulun providers/controllers
+ * listesinde gorunen (yani BOUND olan) dosyalari bulur — istisna listesi
+ * (tam dosya YA DA dizin oneki olarak) haric. */
+function boundFilesUnderRoot(rootPath: string, exceptions: readonly string[]): string[] {
+  const isExcepted = (file: string) => exceptions.some((e) => file === e || file.startsWith(e));
+  const hits = new Set<string>();
+  for (const [id, m] of MODULES) {
+    if (!CLOSURE.has(id)) continue;
+    for (const providerId of m.providers) {
+      const file = providerId.split('#')[0];
+      if (file.startsWith(rootPath) && !isExcepted(file)) hits.add(file);
+    }
+  }
+  return [...hits];
+}
+
+describe('W3-F06 — dormant async subtree disposition guard (registry-driven)', () => {
+  it('[15] registry BOS degildir ve her girdi taninan bir disposition/bindingExpectation tasir', () => {
+    expect(DORMANT_SUBTREE_REGISTRY.length).toBeGreaterThan(0);
+    const validDispositions = new Set([
+      'KEEP_DORMANT_CONFIG_GATED',
+      'BLOCKED_BY_MISSING_POLICY',
+      'BLOCKED_BY_MISSING_RUNTIME_DEPENDENCY',
+      'ACTIVATE_FLAG_GATED',
+      'REMOVE_DEAD_CODE',
+    ]);
+    const validBindings = new Set(['UNBOUND', 'BOUND_FLAG_GATED', 'REMOVED']);
+    for (const r of DORMANT_SUBTREE_REGISTRY) {
+      expect(validDispositions.has(r.disposition)).toBe(true);
+      expect(validBindings.has(r.bindingExpectation)).toBe(true);
+    }
+  });
+
+  it('[16] UNBOUND disposition tasiyan her alt agac hala AppModule kapanisindan ERISILEMEZ', () => {
+    const violations: string[] = [];
+    for (const r of DORMANT_SUBTREE_REGISTRY) {
+      if (r.bindingExpectation !== 'UNBOUND') continue;
+      const bound = boundFilesUnderRoot(r.rootPath, r.knownActiveFilesWithinRootPath ?? []);
+      if (bound.length > 0) {
+        violations.push(`${r.subtreeId}: BEKLENMEDIK bound dosya(lar) — ${bound.join(', ')}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('[17] ICRABOT-LEGACY-CORE registry girdisi ile IcrabotModule hala AppModule disinda kalir (cift kayit tutarliligi)', () => {
+    const icrabot = DORMANT_SUBTREE_REGISTRY.find((r) => r.subtreeId === 'ICRABOT-LEGACY-CORE');
+    expect(icrabot).toBeDefined();
+    const icrabotBound = [...CLOSURE].some((id) => id.endsWith('#IcrabotModule'));
+    expect(icrabotBound).toBe(false);
+  });
+
+  it('[18] BOUND_FLAG_GATED disposition (CALC-PREVIEW-TRACE-RETENTION): kok servis ARTIK bound, flag varsayilani KAPALI', () => {
+    const rec = DORMANT_SUBTREE_REGISTRY.find((r) => r.bindingExpectation === 'BOUND_FLAG_GATED');
+    expect(rec).toBeDefined();
+    expect(rec!.subtreeId).toBe('CALC-PREVIEW-TRACE-RETENTION');
+    expect(rec!.activationFlag).toBe('TRACE_RETENTION_ENABLED');
+
+    // Artik bound OLMALI (aktivasyonun kendisi guard'lanmiyor, yalniz yan etkisi).
+    const bound = boundFilesUnderRoot(rec!.rootPath, []);
+    expect(bound.length).toBeGreaterThan(0);
+
+    // Flag varsayilani KAPALI: kaynak metinde `=== 'true'` karsilastirmasi olmali
+    // (yani env okunmadiginda/false oldugunda cleanup timer BASLAMAZ).
+    const src = CLEAN.get(rec!.rootPath)!;
+    expect(src).toBeDefined();
+    expect(new RegExp(`process\\.env\\.${rec!.activationFlag}\\s*===\\s*['"]true['"]`).test(src)).toBe(true);
+  });
+
+  it('[19] REMOVE_DEAD_CODE disposition (CALC-PREVIEW-DIAGNOSTICS-SIMULATION-SCHEDULER): dosya YOK, semboller HICBIR YERDE yeniden belirmez', () => {
+    const rec = DORMANT_SUBTREE_REGISTRY.find((r) => r.bindingExpectation === 'REMOVED');
+    expect(rec).toBeDefined();
+    expect(rec!.subtreeId).toBe('CALC-PREVIEW-DIAGNOSTICS-SIMULATION-SCHEDULER');
+
+    // Dosya fiziksel olarak yok (CLEAN, tum .ts dosyalarini walk() ile topladi).
+    expect(CLEAN.has(rec!.rootPath)).toBe(false);
+
+    // Kaldirilan semboller REPO GENELINDE (bu registry dosyasinin aciklama
+    // metni haric) hicbir yerde YENIDEN belirmemis olmali.
+    const REMOVED_SYMBOLS = ['RealSimulationScheduler', 'ManualSimulationScheduler', 'ISimulationScheduler', 'SimulationContext'];
+    const REGISTRY_FILE = 'common/dormant-subtree-registry.ts';
+    const reintroductions: string[] = [];
+    for (const [file, src] of CLEAN) {
+      if (file === REGISTRY_FILE) continue; // bu dosyanin kendi aciklama metni
+      for (const sym of REMOVED_SYMBOLS) {
+        if (new RegExp(`\\b${sym}\\b`).test(src)) reintroductions.push(`${file}: ${sym}`);
+      }
+    }
+    expect(reintroductions).toEqual([]);
+  });
+
+  it('[20] registry rootPath alanlari repo icinde gercekten var olan (veya REMOVED icin: kasitli olarak yok olan) yollara isaret eder', () => {
+    for (const r of DORMANT_SUBTREE_REGISTRY) {
+      if (r.bindingExpectation === 'REMOVED') {
+        expect(CLEAN.has(r.rootPath)).toBe(false);
+        continue;
+      }
+      const exists = r.rootPath.endsWith('.ts')
+        ? CLEAN.has(r.rootPath)
+        : [...CLEAN.keys()].some((f) => f.startsWith(r.rootPath));
+      expect(exists).toBe(true);
+    }
+  });
+});

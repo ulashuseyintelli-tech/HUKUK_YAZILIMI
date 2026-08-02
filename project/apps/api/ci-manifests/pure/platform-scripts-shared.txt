@@ -430,3 +430,9 @@ src/scripts/__tests__/adr014-session-observation-producer.spec.ts
 src/scripts/__tests__/adr014-v2-pre-run-package-instance.security.spec.ts
 src/scripts/__tests__/adr014-v2-pre-run-package-instance.spec.ts
 src/common/__tests__/closeout-authority-contract.spec.ts
+
+# ── W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01 ──
+# DB-free, iki dormant/config-gated calc-preview alt agacinin disposition
+# kanitini tasir. Es: db-gated karsiligi YOK (ikisi de DB'ye dokunmaz).
+src/modules/calc-preview/chaos/__tests__/chaos.module.off-state.spec.ts
+src/modules/calc-preview/trace/__tests__/trace-retention.service.flag-gate.spec.ts

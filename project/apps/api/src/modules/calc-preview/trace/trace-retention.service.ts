@@ -87,8 +87,14 @@ export class TraceRetentionService {
   private exportQueue: TraceBundle[] = [];
 
   constructor(private readonly storage: TraceStorageService) {
-    // Start cleanup timer
-    this.startCleanupTimer();
+    // W3-F06-DORMANT-ASYNC-SUBTREE-DISPOSITION-R01: bu servis daha once hicbir
+    // modulun providers listesinde degildi (DI hic instantiate etmiyordu, bu
+    // timer hic baslamiyordu). Artik DI'a baglidir; gercek periyodik calisma
+    // TRACE_RETENTION_ENABLED (varsayilan kapali) ile gate'lidir — mevcut
+    // (dormant) davranis bu degisiklikle DEGISMEZ, yalniz artik acilabilir.
+    if (process.env.TRACE_RETENTION_ENABLED === 'true') {
+      this.startCleanupTimer();
+    }
   }
 
   // ============================================================================
