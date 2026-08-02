@@ -463,16 +463,21 @@ export class ClientNotificationService {
         success: false,
         channel,
         status: "FAILED",
-        errorMessage: this.sanitizeTestError(error?.message),
+        errorMessage: this.sanitizeProviderError(error?.message),
       };
     }
   }
 
-  /** Test gönderim hata mesajını UI'a vermeden önce sır/uzunluk açısından temizler. */
-  private sanitizeTestError(message?: string): string {
+  /** Provider hatasını response, persistence veya log yüzeyine vermeden önce temizler. */
+  private sanitizeProviderError(message?: string): string {
     const raw = (message || "Gönderim başarısız").toString();
     return raw
-      .replace(/\b(pass(?:word)?|secret|api[_-]?key|api[_-]?secret|token)\b\s*[:=]?\s*\S+/gi, "$1=***")
+      .replace(/https?:\/\/[^\s?]+\?[^\s]*/gi, (url) => `${url.split("?")[0]}?[REDACTED_QUERY]`)
+      .replace(/\/\/([^:/\s]+):([^@\s]+)@/g, "//$1:***@")
+      .replace(
+        /\b(pass(?:word)?|secret|api[_-]?key|api[_-]?secret|token|usercode|username)\b\s*[:=]?\s*[^\s&,;]+/gi,
+        "$1=***"
+      )
       .slice(0, 300);
   }
 
@@ -565,17 +570,18 @@ export class ClientNotificationService {
         recipient: recipientEmail,
       };
     } catch (error: any) {
+      const safeError = this.sanitizeProviderError(error?.message);
       // Hata - durumu güncelle
       await this.prisma.clientNotification.update({
         where: { id: notification.id },
         data: {
           status: "FAILED",
-          errorMessage: error.message,
+          errorMessage: safeError,
         },
       });
 
-      this.logger.error(`E-posta gönderilemedi: ${error.message}`);
-      throw new BadRequestException(`E-posta gönderilemedi: ${error.message}`);
+      this.logger.error(`E-posta gönderilemedi: ${safeError}`);
+      throw new BadRequestException(`E-posta gönderilemedi: ${safeError}`);
     }
   }
 
@@ -662,17 +668,18 @@ export class ClientNotificationService {
         recipient: recipientPhone,
       };
     } catch (error: any) {
+      const safeError = this.sanitizeProviderError(error?.message);
       // Hata - durumu güncelle
       await this.prisma.clientNotification.update({
         where: { id: notification.id },
         data: {
           status: "FAILED",
-          errorMessage: error.message,
+          errorMessage: safeError,
         },
       });
 
-      this.logger.error(`SMS gönderilemedi: ${error.message}`);
-      throw new BadRequestException(`SMS gönderilemedi: ${error.message}`);
+      this.logger.error(`SMS gönderilemedi: ${safeError}`);
+      throw new BadRequestException(`SMS gönderilemedi: ${safeError}`);
     }
   }
 

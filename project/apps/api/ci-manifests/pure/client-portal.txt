@@ -184,3 +184,10 @@ src/modules/portal/__tests__/portal-message-projection.spec.ts
 src/modules/portal/__tests__/portal-notification-projection.spec.ts
 src/modules/portal/__tests__/portal-poa-projection.spec.ts
 src/modules/portal/__tests__/portal-token-version-revocation.spec.ts
+#
+#   CODEX-CLIENT-X1 notification surface validation and characterization (SAF, DB-siz)
+#     CN-2 decorated DTO validation; CN-3/CN-4 provider error and URL-query secret
+#     redaction; CN-1 current JWT-only versus ADMIN-gated behavior characterization.
+src/modules/client-notification/__tests__/client-notification-dto-validation.spec.ts
+src/modules/client-notification/__tests__/client-notification-provider-error-sanitization.spec.ts
+src/modules/client-notification/__tests__/client-notification-authorization-characterization.spec.ts
