@@ -1,13 +1,16 @@
 /**
  * CLIENT-OWN-13-I02-R3 (owner D01/D02, RATIFIED) — SeedModule deployment-seviyesi runtime
  * closure testleri. `isSeedModuleEnabled()` SAF fonksiyon: gerçek NestJS bootstrap YOK,
- * DB YOK — yalnız process.env okur.
+ * DB YOK — yalnız process.env okur. AYRI dosyadan (`seed-runtime-gate.ts`) import edilir:
+ * `app.module.ts`'i import etmek CaseModule → ocr.service.ts → `pdf-poppler` zincirini de
+ * tetikler; `pdf-poppler` Linux CI'da require-time'da `process.exit(1)` çağırıp jest
+ * worker'ını öldürür (Windows'ta görünmez) — bu dosya o riski TAŞIMAZ.
  *
  *  D01 — production'da KOŞULSUZ kapalı (flag'in değeri ÖNEMSİZ).
  *  D02 — test ortamında otomatik açık; diğer ortamlarda yalnız explicit flag ile açık,
  *        varsayılan kapalı.
  */
-import { isSeedModuleEnabled } from './app.module';
+import { isSeedModuleEnabled } from '../seed-runtime-gate';
 
 describe('isSeedModuleEnabled (CLIENT-OWN-13-I02-R3 D01/D02)', () => {
   const ORIGINAL_ENV = { ...process.env };

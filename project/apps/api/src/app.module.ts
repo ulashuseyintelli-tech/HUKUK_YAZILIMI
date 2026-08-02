@@ -45,6 +45,7 @@ import { ClientFinancialDisclosureModule } from "./modules/client-financial-disc
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { SeedModule } from "./modules/seed/seed.module";
+import { isSeedModuleEnabled } from "./modules/seed/seed-runtime-gate";
 import { ErrorLogModule } from "./modules/error-log/error-log.module";
 import { PublicInstitutionModule } from "./modules/public-institution/public-institution.module";
 import { TebligatModule } from "./modules/tebligat/tebligat.module";
@@ -129,23 +130,6 @@ const logger = new Logger("AppModule");
  */
 function isSimulationApiEnabled(): boolean {
   return process.env.SIMULATION_API_ENABLED !== "false";
-}
-
-/**
- * CLIENT-OWN-13-I02-R3 (owner D01/D02, RATIFIED) — SeedModule (bütün `/seed/*` yüzeyi,
- * demo/test veri üretici) deployment-seviyesinde koşullu import edilir:
- * - production: KOŞULSUZ kapalı — flag'in değeri ÖNEMSİZ (flag=true olsa da açılmaz).
- * - test: otomatik açık.
- * - diğer ortamlar (development/staging/tanımsız): yalnız CLIENT_SEED_ENDPOINTS_ENABLED=true
- *   ile açılır; varsayılan kapalı.
- * Modül import edilmezse route'lar hiç kayıt olmaz → guard/403 değil, gerçek 404; ortam/flag
- * ayrıntısı response'a sızmaz.
- */
-export function isSeedModuleEnabled(): boolean {
-  const nodeEnv = process.env.NODE_ENV;
-  if (nodeEnv === "production") return false;
-  if (nodeEnv === "test") return true;
-  return process.env.CLIENT_SEED_ENDPOINTS_ENABLED?.toLowerCase() === "true";
 }
 
 /**

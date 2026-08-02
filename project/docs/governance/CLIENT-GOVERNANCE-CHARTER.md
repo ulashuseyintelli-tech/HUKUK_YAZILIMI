@@ -4301,7 +4301,7 @@ DEGISMEDI. **schema/migration YOK.**
 
 | Kapsam | Sonuc |
 |---|---|
-| R3 odakli suite (app-module-seed-gate + seed-controller-guards + seed-client-authority + client-bulk-mutation-authorization-r3 + contact-followup) | 65+/65+ PASS |
+| R3 odakli suite (seed-runtime-gate + seed-controller-guards + seed-client-authority + client-bulk-mutation-authorization-r3 + contact-followup) | 65+/65+ PASS |
 | pure/client-portal.txt tam manifest (46 dosya) | 676/676 PASS |
 | export-import modulu regresyon | 36/36 PASS |
 | `tsc --noEmit` baseline delta | 525 → 525 (**0 yeni**; tek fark alakasiz dosyada bilinen union-siralama gurultusu) |

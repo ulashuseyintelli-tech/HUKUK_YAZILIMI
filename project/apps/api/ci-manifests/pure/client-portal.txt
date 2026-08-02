@@ -136,7 +136,7 @@ src/modules/client/__tests__/contact-followup.spec.ts
 #     üzerinden yazar (doğrudan prisma.client.create YOK); satır-bazlı devam + açık
 #     failed sayacı (D07); yalnız başarılı satır audit üretir, PII metadata'ya girmez (D08);
 #     fixExistingClients tenant-scoped updateMany+count (D09) + checksum guard.
-src/app-module-seed-gate.spec.ts
+src/modules/seed/__tests__/seed-runtime-gate.spec.ts
 src/modules/seed/__tests__/seed-controller-guards.spec.ts
 src/modules/seed/__tests__/seed-client-authority.spec.ts
 src/modules/client/__tests__/client-bulk-mutation-authorization-r3.spec.ts
