@@ -132,6 +132,23 @@ function isSimulationApiEnabled(): boolean {
 }
 
 /**
+ * CLIENT-OWN-13-I02-R3 (owner D01/D02, RATIFIED) — SeedModule (bütün `/seed/*` yüzeyi,
+ * demo/test veri üretici) deployment-seviyesinde koşullu import edilir:
+ * - production: KOŞULSUZ kapalı — flag'in değeri ÖNEMSİZ (flag=true olsa da açılmaz).
+ * - test: otomatik açık.
+ * - diğer ortamlar (development/staging/tanımsız): yalnız CLIENT_SEED_ENDPOINTS_ENABLED=true
+ *   ile açılır; varsayılan kapalı.
+ * Modül import edilmezse route'lar hiç kayıt olmaz → guard/403 değil, gerçek 404; ortam/flag
+ * ayrıntısı response'a sızmaz.
+ */
+export function isSeedModuleEnabled(): boolean {
+  const nodeEnv = process.env.NODE_ENV;
+  if (nodeEnv === "production") return false;
+  if (nodeEnv === "test") return true;
+  return process.env.CLIENT_SEED_ENDPOINTS_ENABLED?.toLowerCase() === "true";
+}
+
+/**
  * Build conditional imports based on environment
  */
 function getConditionalImports(): Type<unknown>[] {
@@ -142,6 +159,13 @@ function getConditionalImports(): Type<unknown>[] {
     logger.log("Simulation API enabled (deployment level)");
   } else {
     logger.log("Simulation API disabled (deployment level) - no routes exposed");
+  }
+
+  if (isSeedModuleEnabled()) {
+    conditionalImports.push(SeedModule);
+    logger.log("Seed module enabled (deployment level)");
+  } else {
+    logger.log("Seed module disabled (deployment level) - no routes exposed");
   }
 
   return conditionalImports;
@@ -193,7 +217,8 @@ function getConditionalImports(): Type<unknown>[] {
     ClientFinancialDisclosureModule,
     CalendarModule,
     AuditModule,
-    SeedModule,
+    // CLIENT-OWN-13-I02-R3: SeedModule artık getConditionalImports() üzerinden koşullu
+    // yüklenir (production'da koşulsuz kapalı) — aşağıya bkz.
     ErrorLogModule,
     PublicInstitutionModule,
     TebligatModule,

@@ -352,3 +352,34 @@ export function decideClientAddressMutation(
   }
   return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
 }
+
+// =========================================================================================
+// OWN-13 I02-R3 — BULK / BACKFILL CLIENT MUTATION AUTHORITY (owner D04/D06 RATIFIED)
+//
+// Seed (`/seed/clients`, `/seed/all`, `/seed/fix-clients`) ve contact-followup backfill
+// toplu/idempotent CLIENT mutasyonları üretir. Owner D04/D06: bu operasyonlar YALNIZ
+// `elevatedAuthority` aktörü tarafından çalıştırılabilir — `UserRole.ADMIN` TEK BAŞINA
+// YETMEZ (adres ARCHIVE/RESTORE ile AYNI eşik, D07'nin bu programdaki üçüncü tekrarı).
+// Paralel bir capability sistemi veya ikinci bir RolesGuard KURULMAZ.
+// =========================================================================================
+
+/**
+ * Toplu/backfill CLIENT mutasyon kararı. Sıra: actor → rol → VIEWER → elevated eşiği.
+ * Yalnız `actor.elevatedAuthority` yetki verir; rol (ADMIN dahil) tek başına YETMEZ.
+ */
+export function decideClientBulkMutation(actor: ClientMutationActor): ClientMutationDecision {
+  if (!actor?.userId) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.NO_ACTOR };
+  }
+  const role = normalizeRole(actor.role);
+  if (role === null) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.UNKNOWN_ROLE };
+  }
+  if (role === 'VIEWER') {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.VIEWER_DENIED };
+  }
+  if (actor.elevatedAuthority !== true) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.LIFECYCLE_DENIED };
+  }
+  return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
+}

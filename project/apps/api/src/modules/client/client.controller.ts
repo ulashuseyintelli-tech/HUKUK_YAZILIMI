@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe, Headers, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, NotFoundException, ValidationPipe, Headers, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -271,10 +271,12 @@ export class ClientController {
   // Idempotent; dedupeKey ile mÃ¼kerrer gÃ¶rev oluÅŸmaz.
   @Post('backfill-contact-followup')
   async backfillContactFollowUp(@Request() req: any) {
-    if (req.user?.role !== 'ADMIN') {
-      throw new ForbiddenException('Bu iÅŸlem yalnÄ±zca admin tarafÄ±ndan yapÄ±labilir');
-    }
-    return this.clientService.backfillContactFollowUp(req.user.tenantId);
+    // OWN-13 I02-R3 (owner D06): elle yazılmış `role==='ADMIN'` kontrolü KALDIRILDI — karar
+    // artık ClientService.assertCanRunElevatedClientBulkOperation ile SERVİS SINIRINDA
+    // verilir (D04 ile AYNI elevated eşiği; ADMIN tek başına yetmez).
+    const tenantId = req.user.tenantId;
+    const actor = buildClientMutationActor({ userId: req.user.id, tenantId, role: req.user.role });
+    return this.clientService.backfillContactFollowUp(tenantId, actor);
   }
 
   // MÃ¼vekkil gÃ¼ncelle

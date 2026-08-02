@@ -128,6 +128,27 @@ describe('ClientService.syncContactFollowUpTask', () => {
 });
 
 describe('ClientService.backfillContactFollowUp', () => {
+  // OWN-13 I02-R3: `actor` artık ZORUNLU + elevated (D06). officeApproval.isApproverEligible
+  // mock'u `true` döner ki bu SAYAÇ testi gate'e takılmadan orijinal amacını (sayım mantığı)
+  // doğrulayabilsin. Gate'in KENDİSİ (VIEWER/USER/non-eligible-ADMIN reddi) ayrı testlerde.
+  const buildElevatedActor = () => ({ userId: 'u1', tenantId: 't1', role: 'USER' });
+
+  it.each([
+    ['VIEWER', false],
+    ['USER', false],
+    ['ADMIN', false], // non-eligible ADMIN: D06 — rol tek başına yetmez
+  ] as const)('%s (elevatedAuthority=%s ile) reddedilir: hiçbir okuma yapılmaz', async (role, eligible) => {
+    const prisma = { client: { findMany: jest.fn() } } as any;
+    const audit = { logInTransaction: jest.fn(), log: jest.fn() };
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(eligible) };
+    const svc = new ClientService(prisma, audit as any, officeApproval as any);
+
+    await expect(
+      svc.backfillContactFollowUp('t1', { userId: 'u1', tenantId: 't1', role }),
+    ).rejects.toBeTruthy();
+    expect(prisma.client.findMany).not.toHaveBeenCalled();
+  });
+
   it('yalnız null+eksik üretir; WAIVED/ACTIVE/COMPLETED dokunmaz; tam atlanır; sayaçlar doğru', async () => {
     const clients = [
       { id: 'c1', phone: null, email: null, contactFollowUpStatus: null }, // null+eksik → üret
@@ -137,13 +158,50 @@ describe('ClientService.backfillContactFollowUp', () => {
       { id: 'c5', phone: '05321234567', email: 'a@b.com', contactFollowUpStatus: null }, // tam → atla
     ];
     const prisma = { client: { findMany: jest.fn().mockResolvedValue(clients) } } as any;
-    const svc = new ClientService(prisma, { logInTransaction: jest.fn() } as any, {} as any);
-    const syncSpy = jest.spyOn(svc as any, 'syncContactFollowUpTaskSafe').mockResolvedValue(undefined);
+    const audit = { logInTransaction: jest.fn(), log: jest.fn().mockResolvedValue(undefined) };
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const svc = new ClientService(prisma, audit as any, officeApproval as any);
+    const syncSpy = jest.spyOn(svc as any, 'syncContactFollowUpTaskSafe').mockResolvedValue(true);
 
-    const res = await svc.backfillContactFollowUp('t1');
+    const res = await svc.backfillContactFollowUp('t1', buildElevatedActor());
 
-    expect(res).toEqual({ scanned: 5, createdOrUpdated: 1, skippedWaived: 1, alreadyActive: 1 });
+    expect(res).toEqual({ scanned: 5, createdOrUpdated: 1, skippedWaived: 1, alreadyActive: 1, failed: 0 });
     expect(syncSpy).toHaveBeenCalledTimes(1);
     expect(syncSpy).toHaveBeenCalledWith('t1', expect.objectContaining({ id: 'c1', contactFollowUpStatus: null }));
+    // D08: yalnız GERÇEKTEN başarılı satır audit üretir.
+    expect(audit.log).toHaveBeenCalledTimes(1);
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'CLIENT_CONTACT_FOLLOWUP_BACKFILL', entityId: 'c1', tenantId: 't1' }),
+    );
+  });
+
+  it('D08 PII yasağı: audit metadata yalnız alan ADI taşır, gerçek telefon DEĞERİ asla yazılmaz', async () => {
+    const REAL_PHONE = '05559998877';
+    const clients = [{ id: 'c1', phone: REAL_PHONE, email: null, contactFollowUpStatus: null }];
+    const prisma = { client: { findMany: jest.fn().mockResolvedValue(clients) } } as any;
+    const audit = { logInTransaction: jest.fn(), log: jest.fn().mockResolvedValue(undefined) };
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const svc = new ClientService(prisma, audit as any, officeApproval as any);
+    jest.spyOn(svc as any, 'syncContactFollowUpTaskSafe').mockResolvedValue(true);
+
+    await svc.backfillContactFollowUp('t1', buildElevatedActor());
+
+    const call = audit.log.mock.calls[0][0];
+    expect(call.metadata).toEqual({ missingFields: ['email'] });
+    expect(JSON.stringify(call)).not.toContain(REAL_PHONE);
+  });
+
+  it('sync başarısız olursa (D07/D08): failed sayılır, createdOrUpdated artmaz, audit üretilmez', async () => {
+    const clients = [{ id: 'c1', phone: null, email: null, contactFollowUpStatus: null }];
+    const prisma = { client: { findMany: jest.fn().mockResolvedValue(clients) } } as any;
+    const audit = { logInTransaction: jest.fn(), log: jest.fn().mockResolvedValue(undefined) };
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const svc = new ClientService(prisma, audit as any, officeApproval as any);
+    jest.spyOn(svc as any, 'syncContactFollowUpTaskSafe').mockResolvedValue(false);
+
+    const res = await svc.backfillContactFollowUp('t1', buildElevatedActor());
+
+    expect(res).toEqual({ scanned: 1, createdOrUpdated: 0, skippedWaived: 0, alreadyActive: 0, failed: 1 });
+    expect(audit.log).not.toHaveBeenCalled();
   });
 });
