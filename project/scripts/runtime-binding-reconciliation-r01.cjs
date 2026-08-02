@@ -253,6 +253,111 @@ function findBalanced(text, start, open, close) {
   return null;
 }
 
+/**
+ * Replace comments and string/template literals with whitespace while keeping
+ * source offsets and line numbers stable. Static capability extraction must
+ * inspect syntax, not documentation or literal examples.
+ */
+function maskNonCode(source) {
+  const chars = source.split('');
+  let state = 'CODE';
+  let quote = null;
+  let escaped = false;
+
+  const mask = (index) => {
+    if (chars[index] !== '\n' && chars[index] !== '\r') chars[index] = ' ';
+  };
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (state === 'LINE_COMMENT') {
+      if (char === '\n') state = 'CODE';
+      else mask(index);
+      continue;
+    }
+    if (state === 'BLOCK_COMMENT') {
+      if (char === '*' && next === '/') {
+        mask(index);
+        mask(index + 1);
+        index += 1;
+        state = 'CODE';
+      } else {
+        mask(index);
+      }
+      continue;
+    }
+    if (state === 'STRING') {
+      mask(index);
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) {
+        quote = null;
+        state = 'CODE';
+      }
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      mask(index);
+      mask(index + 1);
+      index += 1;
+      state = 'LINE_COMMENT';
+    } else if (char === '/' && next === '*') {
+      mask(index);
+      mask(index + 1);
+      index += 1;
+      state = 'BLOCK_COMMENT';
+    } else if (char === '"' || char === "'" || char === '`') {
+      mask(index);
+      quote = char;
+      escaped = false;
+      state = 'STRING';
+    }
+  }
+
+  return chars.join('');
+}
+
+function extractRuntimeDecorators(source) {
+  const code = maskNonCode(source);
+  const decorators = [];
+  for (const match of code.matchAll(/@(Cron|Interval|Timeout)\s*\(/g)) {
+    const openingOffset = match.index + match[0].lastIndexOf('(');
+    const balanced = findBalanced(source, openingOffset, '(', ')');
+    if (!balanced) continue;
+    decorators.push({
+      name: match[1],
+      start: match.index,
+      end: balanced.end + 1,
+      args: balanced.text,
+    });
+  }
+  return decorators;
+}
+
+function extractRuntimeClassDeclarations(source) {
+  const code = maskNonCode(source);
+  const classes = [];
+  for (const match of code.matchAll(
+    /\b(?:(?:export|declare)\s+)*(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g,
+  )) {
+    const classKeyword = match[0].indexOf('class');
+    const declarationPrefix = match[0].slice(0, classKeyword);
+    const before = code.slice(0, match.index);
+    if (/(?:=|:|,|\(|=>|\bnew|\breturn)\s*$/.test(before)) continue;
+    if (/\bdeclare\b/.test(declarationPrefix)) continue;
+    if (/\babstract\b/.test(declarationPrefix)) continue;
+    classes.push({
+      name: match[1],
+      offset: match.index,
+      line: lineAt(source, match.index),
+    });
+  }
+  return classes;
+}
+
 function stringLiteral(value) {
   if (!value) return '';
   const match = /^\s*(['"`])([\s\S]*?)\1/.exec(value);
@@ -1664,11 +1769,11 @@ function main() {
   const fileClasses = new Map();
   for (const file of apiProductionFiles) {
     const text = sourceByRelative.get(file);
-    const classes = [];
-    for (const match of text.matchAll(/\b(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g)) {
-      classes.push({ name: match[1], offset: match.index, line: lineAt(text, match.index) });
-      if (!classIndex.has(match[1])) classIndex.set(match[1], []);
-      classIndex.get(match[1]).push(file);
+    const classes = extractRuntimeClassDeclarations(text);
+    for (const classInfo of classes) {
+      const { name } = classInfo;
+      if (!classIndex.has(name)) classIndex.set(name, []);
+      classIndex.get(name).push(file);
     }
     fileClasses.set(file, classes);
   }
@@ -1999,11 +2104,12 @@ function main() {
 
   for (const file of apiProductionFiles) {
     const text = sourceByRelative.get(file);
-    for (const match of text.matchAll(/@(Cron|Interval|Timeout)\s*\(([^)]*)\)/g)) {
-      const prefix = text.slice(0, match.index);
+    const code = maskNonCode(text);
+    for (const decorator of extractRuntimeDecorators(text)) {
+      const prefix = code.slice(0, decorator.start);
       const classMatches = [...prefix.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)];
       const ownerClass = classMatches.at(-1)?.[1] || path.basename(file);
-      const after = text.slice(match.index + match[0].length);
+      const after = code.slice(decorator.end);
       const methodMatch = /^[ \t]*(?:public\s+|protected\s+|private\s+)?(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/m.exec(after);
       const methodName = methodMatch?.[1] || 'scheduledHandler';
       const registrations = providerRegistrations.get(ownerClass) || [];
@@ -2016,16 +2122,16 @@ function main() {
       const active = activationConditions.length === 0 ? true : defaultOff ? false : null;
       addCapability(
         'SCH',
-        `${file}:${ownerClass}.${methodName}:${match[1]}:${match[2]}`,
+        `${file}:${ownerClass}.${methodName}:${decorator.name}:${decorator.args}`,
         {
           module: classifyWorkstream(file, `${ownerClass}.${methodName}`),
-          name: `${ownerClass}.${methodName} — ${match[1]}(${match[2].trim()})`,
+          name: `${ownerClass}.${methodName} — ${decorator.name}(${decorator.args.trim()})`,
           historicalWorkRefs: historyRefFor(file),
           implementationFiles: [file],
           testFiles: testFilesFor(file, testFiles),
           entryPointType: 'SCHEDULER',
-          expectedEntryPoints: [`${match[1]}(${match[2].trim()})`],
-          actualEntryPoints: bound ? [`${match[1]}(${match[2].trim()})`] : [],
+          expectedEntryPoints: [`${decorator.name}(${decorator.args.trim()})`],
+          actualEntryPoints: bound ? [`${decorator.name}(${decorator.args.trim()})`] : [],
           providers: [ownerClass],
           consumers: bound ? ['Nest ScheduleModule'] : [],
           producers: ['Nest ScheduleModule'],
@@ -2041,7 +2147,7 @@ function main() {
           intentionallyDormant: /DORMANT|default-disabled/i.test(text),
           defaultOff,
           breakpoint: bound ? '' : `${ownerClass} production ScheduleModule graph'ında provider değil.`,
-          evidenceRefs: [`${file}:${lineAt(text, match.index)}`],
+          evidenceRefs: [`${file}:${lineAt(text, decorator.start)}`],
           blockers: ['SCHEDULER_TRIGGER_NOT_DYNAMICALLY_OBSERVED'],
         },
       );
@@ -2633,6 +2739,9 @@ module.exports = {
   closureCertificationStatus,
   dispositionFingerprint,
   applyDispositionRegistry,
+  extractRuntimeClassDeclarations,
+  extractRuntimeDecorators,
+  maskNonCode,
   validateDispositionRegistryShape,
   isReliableClosureClaim,
   legacyHistoricalStatusForTitle,
