@@ -3396,6 +3396,29 @@ activation yasağı owner gate'i olmadan değişmez.
 
 **TPA-04F-ENTRY Representative Corpus Foundation Closure (2026-08-01; CANONICAL UPON APPROVED GOVERNANCE MERGE):** Task10 `CLOSED / CANONICAL EVIDENCE`dır. Exact seven-file implementation PR #2036 / `624f27ee09297ccc895155e6d65c00ce08dc6db7` ile canonical oldu. `CanonicalReceivableApplicationSnapshotV1 → LegalApplicationPlan` sınırı için `RCV-REP-CORPUS/v1` deterministic representative corpus foundation'ı 19 scenario, golden expectation, acceptance matrix, Task11 input contract ve pinned SHA-256 `0e0d5f1db96d7f0b8f204307cb2b9e73d57b89a04194b93dc6c4ffc80a10f05e` üretir. Representative suite `11/11`, LegalApplicationPlan regression `8 suite / 205 test` ve CI `9/9 PASS`tır. Runtime writer, plan writer, schema, migration, backfill ve live DB etkisi `NONE`; Task15 gerçek writer/persistence replay evidence'ı `NOT YET SATISFIED`dır. ClaimItem-keyed legacy synthetic corpus `PRESERVED / SUPERSEDED_FOR_TARGET_AUTHORITY / HISTORICAL_BASELINE / NON_AUTHORITATIVE / NO_MUTATION`dır. Official snapshot producer, `LegalApplicationWriter`, atomic persistence/transaction, full reversal, consumer cutover ve legacy retirement açık kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; COL-RISK-G03 `PARTIALLY MITIGATED`, COL-RISK-G07 `OPEN` kalır. **NEXT ELIGIBLE TASK: `TPA-04D-I01` — PROGRAM SEQUENCE TASK11 / ELIGIBLE / NOT STARTED.**
 
+**TPA-04D-I01 Non-Circular Bucket Identity Preimage Amendment Closure (2026-08-02; CANONICAL
+UPON APPROVED GOVERNANCE MERGE):** Task11 `CLOSED / CANONICAL / PASS`tır. Exact seven-file
+identity amendment PR #2089 / squash `61c928295d2d5992a52b68903981b54e8328ba54` ve exact
+eight-file official Receivable application snapshot producer PR #2091 / squash
+`8981c6bb23d91e152a04cdd9cb2fb9a8b805c585` ile canonical oldu. `bucketInstanceId`;
+`RCV-BINST/v1\0` domain separator ve sırasıyla
+`identityContractVersion`, `tenantId`, `caseId`, `sourceVersionSetHash`,
+`historyBoundaryRef`, `snapshotAsOfDate`, `applicationEffectiveDate`,
+`calculationRuleVersion`, `bucketContextKey` alanlarını taşıyan UTF-8 canonical JSON array
+preimage üzerinden üretilir ve aynı contract ile doğrulanır. `snapshotRef` ile `snapshotHash`
+preimage dışında, snapshot hash contract'ı unchanged'dir. Identity amendment regression'ı
+`8 suite / 212 test`; official producer focused suite'i `19/19`, legal-application-plan
+aggregate'i `231/231` ve claim/collection finance manifest'i `50 suite / 685 test` PASS;
+scoped strict TypeScript, targeted ESLint, API build ve instruction policy PASS; her iki
+implementation PR'ının CI'ı `9/9 PASS`tır. Task11 PR'ları Task10'ın yedi corpus dosyasını
+değiştirmemiş;
+canonical commit #2036 / `624f27ee09297ccc895155e6d65c00ce08dc6db7` içindeki 19 scenario
+artefaktı ve pinned checksum değişmeden kalmıştır. Shared CI manifest'ine daha sonraki ilgisiz
+PR #2087 ekleme yapmıştır. Schema, migration, backfill, live DB ve production activation
+`NONE`; runtime writer/persistence wiring, `LegalApplicationWriter`, atomic
+persistence/transaction, full reversal, consumer cutover ve legacy retirement açık kalır.
+**PROGRAM TASK12: `TPA-04D-I02` — NOT STARTED; BU KAYIT TASK12 EXECUTION BAŞLATMAZ.**
+
 ---
 
 ## ADR-014-PR4-DEBT-B — Direct Zero-Payment Guard Verification (PR-4 post-merge architecture conformity review, 2026-07-11)
@@ -3605,4 +3628,3 @@ Ratified scope is limited to six claim-level `PRINCIPAL` nafaka subtypes (`INTER
 Validation evidence: Stage 1/2 task-specific governance matrix `7/7 PASS`; Legal Basis release/resolver required pure manifest `49 suites / 666 tests PASS`; production TypeScript `PASS`; PR #2003, #2004, #2006, #2009 and #2012 required/observed GitHub checks `PASS`. Local Nest build was not usable because the root dependency link resolved to a stale foreign worktree; PR #2012 canonical GitHub build/test checks passed.
 
 UYAP dependency return condition is satisfied at the canonical contract/release/resolver boundary. `UYAP-M01-LEGAL-BASIS-RESOLVER-BINDING-I01` is therefore `ELIGIBLE / SEPARATE UYAP OWNER AUTHORITY REQUIRED / NOT STARTED BY THIS CLOSEOUT`. UYAP remains consumer-only; runtime binding, serializer work, production activation and cutover remain outside this RECEIVABLE closeout.
-
