@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "grantId": "RBR-R01-T06-PREACTIVATION-AUTHORITY-GRANT-R01",
+  "grantKind": "TASK_SCOPED_ONE_SHOT",
+  "workstream": "RBR-R01-T06",
+  "semanticAuthorityRef": {
+    "kind": "SEMANTIC_AUTHORITY",
+    "recordId": "RBR-R01-T06-OWNER-DISPOSITION-SA01",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/RBR-R01-T06/semantic-authority.md"
+  },
+  "executionGrantRef": {
+    "kind": "EXECUTION_GRANT",
+    "recordId": "RBR-R01-T06-PREACTIVATION-AUTHORITY-EG01",
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/RBR-R01-T06/execution-grant.md"
+  },
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/coordination-v2/task-plans/RBR-R01-T06/semantic-authority.md",
+    "sourceCommitSha": "bd71d711e87c24be5d08a893462fffe269cebd9f",
+    "exactExcerpt": "PROGRAM:\nREPOSITORY-WIDE-CAPABILITY-BINDING-ACTIVATION-AND-OPERABILITY-RECONCILIATION-R01\n\nTASK:\nRBR-R01-T06 — P1 SENSITIVE-SURFACE OWNER DISPOSITION\nAND PRE-ACTIVATION AUTHORIZATION RECONCILIATION\n\nOWNER DISPOSITION:\nRATIFIED",
+    "excerptSha256": "6309c1b5d0c2bed6a346b29399ca36fe9069a98a4c011d4f75045a125939daf0"
+  },
+  "authorizedTasks": [
+    {
+      "taskId": "RBR-R01-T06",
+      "taskSpecVersion": 1,
+      "taskSpecSha256": "4fcb28c3a14bd74915cff2b6157e1f6bdde4779ce0ab0440ec87fe17ece3bf70",
+      "declaredIntentSha256": "48336b9cb4fd49b3c01575bf9b74c8daf68bc081895c4bc720ab95a17f2bd752",
+      "boundaryPolicySha256": "48c11a46dfa1e175e2a37254056b16b2850a275791d10bb470aaf6d953d4cbf4",
+      "requiredTestsSha256": "70c1c0dfb65dda7a59d22ebb7cf28558964978045423f490322881f378287782",
+      "predecessorTaskIds": ["RBR-R01-T05"]
+    }
+  ],
+  "allowedModuleRoots": [
+    "project/docs/governance/coordination-v2/task-plans/RBR-R01-T06/"
+  ],
+  "expiresAt": "2026-09-01T00:00:00Z",
+  "revocationPath": "project/docs/governance/coordination-v2/task-plans/RBR-R01-T06/REVOKED",
+  "manualMergeRequired": true
+}

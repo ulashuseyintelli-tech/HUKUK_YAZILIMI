@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "taskId": "RBR-R01-T06",
+  "taskSpecVersion": 1,
+  "profile": "BOUNDED_CODE_TASK",
+  "declaredIntent": "Materialize the ratified P1 disposition matrix and pre-activation authority without binding, activating, or mutating product/runtime surfaces.",
+  "declaredIntentSha256": "48336b9cb4fd49b3c01575bf9b74c8daf68bc081895c4bc720ab95a17f2bd752",
+  "boundaryPolicy": {
+    "allowedRoots": [
+      "project/docs/governance/coordination-v2/task-plans/RBR-R01-T06/"
+    ],
+    "maxChangedFiles": 7
+  },
+  "boundaryPolicySha256": "48c11a46dfa1e175e2a37254056b16b2850a275791d10bb470aaf6d953d4cbf4",
+  "requiredTests": [
+    {
+      "argv": ["node", "scripts/governance-coordination.cjs", "self-test"],
+      "cwd": "project",
+      "timeoutMs": 120000
+    },
+    {
+      "argv": ["node", "--test", "scripts/governance-coordination.test.cjs"],
+      "cwd": "project",
+      "timeoutMs": 600000
+    },
+    {
+      "argv": [
+        "node",
+        "-e",
+        "const fs=require('node:fs');const p=fs.readFileSync('docs/governance/coordination-v2/task-plans/RBR-R01-T06/p1-disposition-and-acceptance.md','utf8');if((p.match(/^\\| \\d+ \\| /gm)||[]).length!==33)throw new Error('backend disposition count');if((p.match(/^\\| `PB-HARDEN-/gm)||[]).length!==12)throw new Error('playbook acceptance count');"
+      ],
+      "cwd": "project",
+      "timeoutMs": 120000
+    }
+  ],
+  "requiredTestsSha256": "70c1c0dfb65dda7a59d22ebb7cf28558964978045423f490322881f378287782",
+  "predecessorTaskIds": ["RBR-R01-T05"],
+  "baseDriftPolicy": "REFRESH_BEFORE_EXECUTION",
+  "baseSha": "7c7c48761f8f0a37663c07db37c9e3a8a2839a02",
+  "successorDisposition": "DECLARED_SUCCESSOR"
+}
