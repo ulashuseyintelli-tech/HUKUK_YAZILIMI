@@ -8,6 +8,74 @@ Kurallar:
 - Backlog veya roadmap kararları ilgili governance dosyalarına da yansıtılır.
 - Bu dosya tek başına implementasyon yetkisi vermez.
 
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-SA01 --> **RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-SA01 — TASK-BOUND SEMANTIC AUTHORITY:** `RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01` programında yalnız Nafaka living current-state/register reconciliation yürütmesi yetkilidir. Repository truth; hash-bound owner/LDO legal content, immutable `RCV-LB-R1` release, Version 2 / 13-record subtype registry ve canonical UYAP consumer slice'ını korur. Üç production signature üretilmemiştir; signing authority aktif değildir ve runtime dormant/default-off kalır. `CLOSED / CANONICAL / UYAP-CONSUMABLE`, production activation veya imzalı production release anlamına gelmez.**
+
+```text
+recordType : SEMANTIC_AUTHORITY
+recordId : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-SA01
+programId : RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01
+taskId : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+decision : RATIFIED
+issuedAt : 2026-08-02
+mode : TASK-BOUND / SINGLE-EXECUTOR / FENCE-FIRST / DOCS-ONLY / GO-COMPLETE
+knownGoodFloor : 0c799a7d90a5782d921a546a1cd4ed09d6a609b0
+capturedBaseSha : a56ca61e2d589df1f2433c9094144baff46a0629
+executionGrantRef : RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-EG01
+singleUseConsumption : REQUIRED
+secondUse : FAIL_CLOSED
+standingAuthority : PROHIBITED
+```
+
+Exact owner evidence:
+
+```text
+FULL OWNER AUTHORITY — CONTROL-PLANE BINDING + RESUME GO-COMPLETE
+
+OWNER:
+Av. Ulaş Hüseyin Telli
+
+CURRENT PROGRAM:
+RECEIVABLE-NAFAKA-TERMINAL-COMPLETION-R01
+
+PROGRAM LOCK:
+NAFAKA FIRST
+
+BLOCKED TASK:
+RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+
+KNOWN-GOOD FLOOR:
+0c799a7d90a5782d921a546a1cd4ed09d6a609b0
+
+PHASE A TASK:
+RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01-
+CONTROL-PLANE-BINDING-R01
+
+PHASE B TASK:
+RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+
+AUTHORITY:
+SINGLE-EXECUTOR
+FENCE-FIRST
+TWO-PHASE SEQUENTIAL
+GO-COMPLETE
+```
+
+Owner evidence SHA-256: `1566f6e81ef697952b1eaee672136b87ddf82007e6efe7cf9c9b6725f5ab151c`.
+
+```text
+CURRENT TASK             RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+NAFAKA                    CLOSED / CANONICAL / UYAP-CONSUMABLE
+OPEN RESIDUAL             OPEN — PRODUCTION SIGNATURE RESIDUAL
+PRODUCTION SIGNATURES     0/3 / PENDING_NOT_EXECUTED
+RUNTIME                   DORMANT / DEFAULT OFF
+NEXT ELIGIBLE             NAFAKA PRODUCTION-SIGNATURE AUTHORITY PREFLIGHT
+NEXT AUTHORITY            READ-ONLY ONLY
+PROGRAM LOCK              NAFAKA FIRST
+UYAP                      HOLD
+```
+
 <!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=UYAP-FINAL-CI-ELIGIBILITY-I01-SA01 --> **UYAP-FINAL-CI-ELIGIBILITY-I01-SA01 — TASK-BOUND SEMANTIC AUTHORITY:** `UYAP-MODULE-FULL-GAP-CLOSURE-R02` programında yalnız `UYAP-FINAL-CI-ELIGIBILITY-I01` yürütmesi yetkilidir. UYAP official pipeline'ın canonical predecessor'ları birlikte kapsamlı CI, regresyon, authority-integrity, default-OFF ve production-unreachable doğrulamasından geçirilir; görev kapsamındaki teknik test/CI kusurları mevcut semantik sınırlar değiştirilmeden giderilebilir. Bu authority yeni hukuki mapping, Strict DTD uygunluk iddiası, production wiring, runtime activation, Canary, gerçek transport veya cutover üretmez. Known-good floor `f68c86d28be8eab8e980db758864c334245dabd0`; binding original captured base `7e6c39591d96757aec1c2f799a04ec60e97e2c71`; control-plane binding PR #2074 / squash `0d63a744141b283aff7dbcdfced872b71693b861`; materialization base `0d63a744141b283aff7dbcdfced872b71693b861`. Exact owner evidence SHA-256: `d44e460f2673f4e806f5a1c2e5ef45246cea38e9ae7033c588ef659e8f70f5d1`. **SEMANTIC AUTHORITY: RATIFIED / SINGLE-USE. PROGRAM LOCK: UYAP FINAL-CI-ELIGIBILITY-I01 ONLY. SECOND USE: FAIL-CLOSED.**
 
 Exact owner evidence:

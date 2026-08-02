@@ -4027,3 +4027,25 @@ content ratification ve canonical sequence tamamlanmadan eligible olamaz. UYAP c
 ve `BLOCKED_BY_RECEIVABLE_LEGAL_BASIS_AUTHORITY` kalır. Bu reconciliation actual signature,
 approval, ratification, signed release, production activation, code, AWS, schema, migration veya
 runtime mutation üretmez.
+
+## 17. Nafaka Terminal Current-State Reconciliation — 2026-08-02
+
+```text
+CURRENT TASK             RECEIVABLE-NAFAKA-TERMINAL-STATE-RECONCILIATION-R01
+NAFAKA                    CLOSED / CANONICAL / UYAP-CONSUMABLE
+CONTENT AUTHORITY         OWNER + LDO RATIFIED / HASH-BOUND / CANONICAL
+LEGAL BASIS RELEASE       RCV-LB-R1 / RELEASE VERSION 1 / 13 ENTRIES
+SUBTYPE REGISTRY          VERSION 2 / 13 RECORDS / CHECKSUM PASS
+OPEN RESIDUAL             OPEN — PRODUCTION SIGNATURE RESIDUAL
+PRODUCTION SIGNATURES     0/3 / PENDING_NOT_EXECUTED
+SIGNING AUTHORITY         NOT ACTIVE
+RUNTIME                   DORMANT / DEFAULT OFF
+UYAP                      HOLD
+NEXT ELIGIBLE             NAFAKA PRODUCTION-SIGNATURE AUTHORITY PREFLIGHT
+NEXT AUTHORITY            READ-ONLY ONLY
+PROGRAM LOCK              NAFAKA FIRST
+```
+
+Bu kayıt mevcut immutable hukuki içerik/release/checksum gerçeğini değiştirmez. Production
+signature, signing activation, resolver/runtime değişikliği, UYAP successor, schema, migration,
+database veya production işlemi yetkilendirmez.
