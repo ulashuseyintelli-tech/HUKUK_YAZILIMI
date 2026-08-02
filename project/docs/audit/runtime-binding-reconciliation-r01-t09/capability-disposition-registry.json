@@ -1,0 +1,441 @@
+{
+  "schemaVersion": 1,
+  "kind": "RUNTIME_CAPABILITY_DISPOSITION_REGISTRY",
+  "program": "REPOSITORY-WIDE-CAPABILITY-BINDING-ACTIVATION-AND-OPERABILITY-RECONCILIATION-R01",
+  "taskId": "RBR-R01-T09",
+  "sourceCommitSha": "daa0d523883eee7f303e71e9a43d75d037af3a5c",
+  "ownerDisposition": "KEEP_DORMANT / DO_NOT_BIND",
+  "productionActivation": "NOT AUTHORIZED",
+  "composition": {
+    "module": {
+      "name": "PlaybookModule",
+      "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "activationAuthority": "ABSENT",
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT"
+    },
+    "controllers": [
+      {
+        "name": "PlaybookController",
+        "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts",
+        "routeCount": 12,
+        "runtimeBound": false,
+        "productionReachable": false,
+        "productionActive": false,
+        "activationAuthority": "ABSENT"
+      },
+      {
+        "name": "LeaseController",
+        "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts",
+        "routeCount": 3,
+        "runtimeBound": false,
+        "productionReachable": false,
+        "productionActive": false,
+        "activationAuthority": "ABSENT"
+      },
+      {
+        "name": "IncidentController",
+        "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts",
+        "routeCount": 3,
+        "runtimeBound": false,
+        "productionReachable": false,
+        "productionActive": false,
+        "activationAuthority": "ABSENT"
+      }
+    ],
+    "providers": [
+      { "name": "PlaybookYAMLValidator", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-yaml-validator.service.ts" },
+      { "name": "PlaybookRegistry", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-registry.service.ts" },
+      { "name": "PlaybookMatcher", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-matcher.service.ts" },
+      { "name": "ActionPolicyGuard", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-policy-guard.service.ts" },
+      { "name": "ActionLeaseManager", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-lease-manager.service.ts" },
+      { "name": "ActionExecutor", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-executor.service.ts" },
+      { "name": "PlaybookAuditService", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-audit.service.ts" },
+      { "name": "PlaybookMetricsService", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-metrics.service.ts" },
+      { "name": "NotificationService", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/notification.service.ts" },
+      { "name": "EscalationService", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/escalation.service.ts" },
+      { "name": "PlaybookService", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.service.ts" },
+      { "name": "JwtAuthGuard", "implementationFile": "project/apps/api/src/modules/auth/guards/jwt-auth.guard.ts" },
+      { "name": "PlaybookAuthorizationGuard", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-authorization.guard.ts" },
+      { "name": "PlaybookAuditInterceptor", "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-audit.interceptor.ts" }
+    ],
+    "startupSideEffects": [
+      {
+        "name": "escalation interval",
+        "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/escalation.service.ts",
+        "evidenceRef": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/escalation.service.ts:465",
+        "runtimeBound": false,
+        "activationAuthority": "ABSENT"
+      },
+      {
+        "name": "lease expiry interval",
+        "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-lease-manager.service.ts",
+        "evidenceRef": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-lease-manager.service.ts:535",
+        "runtimeBound": false,
+        "activationAuthority": "ABSENT"
+      },
+      {
+        "name": "notification retry interval",
+        "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/notification.service.ts",
+        "evidenceRef": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/notification.service.ts:708",
+        "runtimeBound": false,
+        "activationAuthority": "ABSENT"
+      },
+      {
+        "name": "YAML playbook loading",
+        "implementationFile": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-registry.service.ts",
+        "evidenceRef": "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-registry.service.ts:23",
+        "runtimeBound": false,
+        "activationAuthority": "ABSENT"
+      }
+    ]
+  },
+  "requiredCapabilityIds": [
+    "HTTP-07CE1AEB5D16",
+    "HTTP-0A09A41C13F4",
+    "HTTP-0AFC7C5E803D",
+    "HTTP-1476C5EBE31C",
+    "HTTP-374140E88658",
+    "HTTP-4A4C7387AD7F",
+    "HTTP-7D5397E6B29D",
+    "HTTP-7F725AE79F00",
+    "HTTP-8B0F2D8ED677",
+    "HTTP-8DA35CFA3F25",
+    "HTTP-8DF1B58D01DA",
+    "HTTP-96E81AA7803A",
+    "HTTP-A91DFB0F1A75",
+    "HTTP-AA8995F0FE23",
+    "HTTP-B4EC7B1A7044",
+    "HTTP-C75F57264C32",
+    "HTTP-D257A5E39593",
+    "HTTP-DC99913A6A4C"
+  ],
+  "entries": [
+    {
+      "capabilityId": "HTTP-07CE1AEB5D16",
+      "recordFingerprint": "18108cee75f9c1246910e58cda43659e1de600bee5b83536c3c1a713248a4a7e",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:477",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-0A09A41C13F4",
+      "recordFingerprint": "e7af7e03a16173bf4aa359767d88ef5738811f95f7dea5d3c24554f334bee78e",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:345",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-0AFC7C5E803D",
+      "recordFingerprint": "6892b2ce79a04348630ff80d94cf8cf5755a62a80ca4060d657e7be4571ac9d1",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:117",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-1476C5EBE31C",
+      "recordFingerprint": "381d68992f302bec1017583960e74b659ea0c06b68f153f0383a439f01a7614d",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:187",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-374140E88658",
+      "recordFingerprint": "86c860aa05db8960fc901a9117f715030731f82c069efdd14e89276c3769675f",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:233",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-4A4C7387AD7F",
+      "recordFingerprint": "62ad2bbe235eda74247b73d9e545f82f78ebb77da8a626a1cfa935077bcda47e",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:456",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-7D5397E6B29D",
+      "recordFingerprint": "5c76020a283d6bf8477051a952930655ae361a5158b76a054e511d79f291faec",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:206",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-7F725AE79F00",
+      "recordFingerprint": "d3a337dd6220a86af29b9ef09de4dff19a1d3f0f22c61e1b9daafa51a56aaac3",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:147",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-8B0F2D8ED677",
+      "recordFingerprint": "2c1e9db02821fe93a69dd96bd5fef9bfd0a0203cc5afc34317b2855397d5ca03",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:169",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-8DA35CFA3F25",
+      "recordFingerprint": "becab61a7cf1f17c7bf6f276e8c80663d2f6c9bee529c821774c6b40a2274980",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:396",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-8DF1B58D01DA",
+      "recordFingerprint": "31b7baa46317aebb62cd7eef11e6f7e8778dda10e5bb7638a3e95b7f7d58a852",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:315",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-96E81AA7803A",
+      "recordFingerprint": "59b67ecd4605aebd4534946d616482ea86b0bf0472bdf4b73f84db71d8cf234c",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:499",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-A91DFB0F1A75",
+      "recordFingerprint": "7305bb33cdd193866dfd03ef0be967791a552136ba9714dbcdd6da2d6bf0ba0f",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:366",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-AA8995F0FE23",
+      "recordFingerprint": "b505bb506a1c226d94440e0fa375346a26d73e009010043ad659159620c5d461",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:137",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-B4EC7B1A7044",
+      "recordFingerprint": "1b54b65849d5c72503dc9efcd7fd306851a50de2fa593ac49149e34a7ac30ba3",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:264",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-C75F57264C32",
+      "recordFingerprint": "967b526874a6f431a10d4108da9e08762ab3d2fc1f4e95708c4e1c27cfdf53f1",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:408",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-D257A5E39593",
+      "recordFingerprint": "3e5388dd61d2778ef3da9328a82eddaaf5a8d140fd83fe77c306249dea6059a7",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:424",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-DC99913A6A4C",
+      "recordFingerprint": "9c82d067a2e94a4969fb3c505912cf3849c0c3a94459d9b90624e595b46a99d9",
+      "implementationFiles": ["project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts"],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:296",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.module.ts:controllers"
+      ]
+    }
+  ]
+}

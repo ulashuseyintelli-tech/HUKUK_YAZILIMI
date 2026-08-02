@@ -80,6 +80,8 @@ const SUFFICIENT_CLOSURE_MAPPING = new Set([
   'DIRECT_IMPLEMENTATION_FILE',
 ]);
 const SEALED_R01_AUDIT_DIRECTORY = 'project/docs/audit/runtime-binding-reconciliation-r01';
+const DEFAULT_DISPOSITION_FILE =
+  'project/docs/audit/runtime-binding-reconciliation-r01-t09/capability-disposition-registry.json';
 const SUCCESSOR_PROGRAM = 'RUNTIME-OPERABILITY-CERTIFICATION-R01';
 const SUCCESSOR_TASK = 'W0-METHODOLOGY';
 const SNAPSHOT_BOUNDARY = [
@@ -96,6 +98,7 @@ function parseArgs(argv) {
     auditStartedAt: null,
     dynamicEvidence: null,
     auditBaseSha: null,
+    dispositionFile: DEFAULT_DISPOSITION_FILE,
     successorOnly: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -104,6 +107,7 @@ function parseArgs(argv) {
     else if (arg === '--audit-started-at') out.auditStartedAt = argv[++index];
     else if (arg === '--dynamic-evidence') out.dynamicEvidence = argv[++index];
     else if (arg === '--audit-base-sha') out.auditBaseSha = argv[++index];
+    else if (arg === '--disposition-file') out.dispositionFile = argv[++index];
     else if (arg === '--successor-only') out.successorOnly = true;
     else if (arg === '--help') {
       process.stdout.write(
@@ -114,6 +118,7 @@ function parseArgs(argv) {
           '    --audit-started-at <ISO-8601>',
           '    [--audit-base-sha <commit>]',
           '    [--dynamic-evidence <repo-relative-json>]',
+          `    [--disposition-file <repo-relative-json>] (default: ${DEFAULT_DISPOSITION_FILE})`,
           '    [--successor-only]',
           '',
         ].join('\n'),
@@ -629,6 +634,13 @@ function makeRecord(input) {
       : input.active === null || input.active === undefined ? null : Boolean(input.active),
     reachable: Boolean(input.reachable),
     consumerCount: input.consumerCount || 0,
+    productionReachable: Boolean(input.reachable),
+    productionActive: !input.runtimeBound
+      ? false
+      : input.active === null || input.active === undefined ? null : Boolean(input.active),
+    operationalConsumer: input.operationalConsumer === undefined
+      ? (input.consumerCount || 0)
+      : input.operationalConsumer,
     operable: input.operable === null || input.operable === undefined ? null : Boolean(input.operable),
     independentlyVerified: Boolean(input.independentlyVerified),
     verificationLevel: input.verificationLevel || (input.runtimeBound ? 'L2' : 'L0'),
@@ -640,6 +652,13 @@ function makeRecord(input) {
     evidenceRefs: unique(input.evidenceRefs || []),
     blockers: unique(input.blockers || []),
     recommendedAction: input.recommendedAction || '',
+    disposition: input.disposition || null,
+    activationAuthority: input.activationAuthority || null,
+    defect: input.defect === undefined ? null : Boolean(input.defect),
+    remediationRequired: input.remediationRequired === undefined
+      ? null
+      : Boolean(input.remediationRequired),
+    reopenCondition: input.reopenCondition || null,
   };
   if (!FINAL_STATUSES.has(record.finalStatus)) {
     throw new Error(`INVALID_FINAL_STATUS: ${record.capabilityId} ${record.finalStatus}`);
@@ -655,6 +674,129 @@ function csvCell(value) {
 function markdownCell(value) {
   const text = Array.isArray(value) ? value.join('<br>') : value === null ? '' : String(value);
   return text.replaceAll('|', '\\|').replace(/\r?\n/g, '<br>');
+}
+
+function dispositionFingerprint(record) {
+  return sha256(JSON.stringify({
+    capabilityId: record.capabilityId,
+    name: record.name,
+    entryPointType: record.entryPointType,
+    expectedEntryPoints: record.expectedEntryPoints,
+    implementationFiles: record.implementationFiles,
+  }));
+}
+
+function validateDispositionRegistryShape(registry) {
+  if (!registry || registry.schemaVersion !== 1 ||
+    registry.kind !== 'RUNTIME_CAPABILITY_DISPOSITION_REGISTRY') {
+    throw new Error('DISPOSITION_REGISTRY_SCHEMA_INVALID');
+  }
+  if (!registry.sourceCommitSha || !/^[0-9a-f]{40}$/i.test(registry.sourceCommitSha)) {
+    throw new Error('DISPOSITION_REGISTRY_SOURCE_SHA_INVALID');
+  }
+  if (!Array.isArray(registry.requiredCapabilityIds) || registry.requiredCapabilityIds.length === 0) {
+    throw new Error('DISPOSITION_REGISTRY_REQUIRED_IDS_MISSING');
+  }
+  if (!Array.isArray(registry.entries) || registry.entries.length !== registry.requiredCapabilityIds.length) {
+    throw new Error('DISPOSITION_REGISTRY_ENTRY_COUNT_MISMATCH');
+  }
+  const requiredIds = new Set(registry.requiredCapabilityIds);
+  if (requiredIds.size !== registry.requiredCapabilityIds.length) {
+    throw new Error('DISPOSITION_REGISTRY_DUPLICATE_REQUIRED_ID');
+  }
+  const seen = new Set();
+  for (const entry of registry.entries) {
+    if (!entry || typeof entry !== 'object' || typeof entry.capabilityId !== 'string') {
+      throw new Error('DISPOSITION_REGISTRY_ENTRY_INVALID');
+    }
+    if (seen.has(entry.capabilityId)) throw new Error(`DISPOSITION_REGISTRY_DUPLICATE_ENTRY: ${entry.capabilityId}`);
+    seen.add(entry.capabilityId);
+    if (!requiredIds.has(entry.capabilityId)) {
+      throw new Error(`DISPOSITION_REGISTRY_ENTRY_NOT_REQUIRED: ${entry.capabilityId}`);
+    }
+    if (entry.disposition !== 'INTENTIONALLY_DORMANT' ||
+      entry.runtimeBound !== false ||
+      entry.productionReachable !== false ||
+      entry.productionActive !== false ||
+      entry.operationalConsumer !== 0 ||
+      entry.activationAuthority !== 'ABSENT' ||
+      entry.defect !== false ||
+      entry.remediationRequired !== false ||
+      entry.reopenCondition !== 'OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT') {
+      throw new Error(`DISPOSITION_REGISTRY_ENTRY_SEMANTICS_INVALID: ${entry.capabilityId}`);
+    }
+    if (!Array.isArray(entry.implementationFiles) || entry.implementationFiles.length === 0 ||
+      !Array.isArray(entry.evidenceRefs) || entry.evidenceRefs.length === 0 ||
+      typeof entry.recordFingerprint !== 'string' || !/^[0-9a-f]{64}$/i.test(entry.recordFingerprint)) {
+      throw new Error(`DISPOSITION_REGISTRY_ENTRY_EVIDENCE_INVALID: ${entry.capabilityId}`);
+    }
+  }
+  if (seen.size !== requiredIds.size) throw new Error('DISPOSITION_REGISTRY_REQUIRED_ENTRY_MISSING');
+  return registry;
+}
+
+function loadDispositionRegistry(repoRoot, dispositionFile, headSha) {
+  const normalized = normalize(String(dispositionFile || ''));
+  if (!normalized || normalized.startsWith('../') || normalized.includes('/../') || path.isAbsolute(dispositionFile)) {
+    throw new Error('DISPOSITION_FILE_OUTSIDE_REPOSITORY');
+  }
+  const absolute = path.resolve(repoRoot, normalized);
+  if (!absolute.startsWith(`${repoRoot}${path.sep}`)) {
+    throw new Error('DISPOSITION_FILE_OUTSIDE_REPOSITORY');
+  }
+  if (!fs.existsSync(absolute)) throw new Error('DISPOSITION_REGISTRY_MISSING');
+
+  let registry;
+  try {
+    registry = JSON.parse(fs.readFileSync(absolute, 'utf8'));
+  } catch (error) {
+    throw new Error(`DISPOSITION_REGISTRY_INVALID_JSON: ${error.message}`);
+  }
+  validateDispositionRegistryShape(registry);
+  run('git', ['merge-base', '--is-ancestor', registry.sourceCommitSha, headSha], {
+    cwd: repoRoot,
+    maxBuffer: 1024 * 1024,
+  });
+  return {
+    path: normalized,
+    sha256: sha256(fs.readFileSync(absolute)),
+    data: registry,
+  };
+}
+
+function applyDispositionRegistry(capabilities, registry) {
+  validateDispositionRegistryShape(registry.data);
+  const byId = new Map(capabilities.map((record) => [record.capabilityId, record]));
+  const requiredIds = new Set(registry.data.requiredCapabilityIds);
+  for (const capabilityId of requiredIds) {
+    if (!byId.has(capabilityId)) throw new Error(`DISPOSITION_REGISTRY_UNKNOWN_CAPABILITY: ${capabilityId}`);
+  }
+  for (const entry of registry.data.entries) {
+    const record = byId.get(entry.capabilityId);
+    if (dispositionFingerprint(record) !== entry.recordFingerprint) {
+      throw new Error(`DISPOSITION_REGISTRY_RECORD_DRIFT: ${entry.capabilityId}`);
+    }
+    record.finalStatus = 'INTENTIONALLY_DORMANT';
+    record.severity = 'NONE';
+    record.runtimeBound = false;
+    record.active = false;
+    record.reachable = false;
+    record.consumerCount = 0;
+    record.productionReachable = false;
+    record.productionActive = false;
+    record.operationalConsumer = 0;
+    record.consumers = [];
+    record.actualEntryPoints = [];
+    record.disposition = entry.disposition;
+    record.activationAuthority = entry.activationAuthority;
+    record.defect = entry.defect;
+    record.remediationRequired = entry.remediationRequired;
+    record.reopenCondition = entry.reopenCondition;
+    record.evidenceRefs = unique([...record.evidenceRefs, ...entry.evidenceRefs]);
+    record.blockers = unique([...record.blockers, 'INTENTIONALLY_DORMANT_BY_CANONICAL_DISPOSITION']);
+    record.recommendedAction = 'PRESERVE_DORMANT_CONTRACT';
+    record.breakpoint = 'Canonical disposition: KEEP_DORMANT / DO_NOT_BIND; operational consumer yok.';
+  }
 }
 
 function closureReconciliationStatus(finalStatus) {
@@ -1462,6 +1604,7 @@ function main() {
     const allowedCommittedPaths = [
       'project/scripts/runtime-binding-reconciliation-r01.cjs',
       'project/scripts/runtime-binding-reconciliation-r01.test.cjs',
+      normalize(args.dispositionFile),
     ];
     const outputPrefix = `${normalize(args.outDir).replace(/\/+$/, '')}/`;
     const unexpectedCommittedPaths = committedAuditPaths.filter((file) =>
@@ -1483,6 +1626,7 @@ function main() {
       path.join(__dirname, 'runtime-binding-reconciliation-r01.test.cjs'),
     );
     const allowedOutputPrefix = `${normalize(args.outDir).replace(/\/+$/, '')}/`;
+    const dispositionPath = normalize(args.dispositionFile).replace(/\/+$/, '');
     const unexpected = treeStatus
       .split(/\r?\n/)
       .filter(Boolean)
@@ -1490,7 +1634,10 @@ function main() {
       .filter((file) =>
         file !== scannerPath &&
         file !== scannerTestPath &&
-        !file.startsWith(allowedOutputPrefix));
+        !file.startsWith(allowedOutputPrefix) &&
+        file !== dispositionPath &&
+        !file.startsWith(`${dispositionPath}/`) &&
+        !dispositionPath.startsWith(`${file.replace(/\/+$/, '')}/`));
     if (unexpected.length > 0) {
       throw new Error(`AUDIT_UNEXPECTED_DIRTY_PATHS: ${unexpected.join(', ')}`);
     }
@@ -1624,28 +1771,38 @@ function main() {
     }
   }
 
+  const dispositionRegistry = loadDispositionRegistry(repoRoot, args.dispositionFile, headSha);
+  const dispositionFiles = new Set(
+    dispositionRegistry.data.entries.flatMap((entry) => entry.implementationFiles),
+  );
   const controllerFiles = apiProductionFiles.filter((file) => file.endsWith('.controller.ts'));
   for (const file of controllerFiles) {
     const text = sourceByRelative.get(file);
-    const classMatch = /(?:export\s+)?class\s+([A-Za-z_$][\w$]*Controller)\b/.exec(text);
-    if (!classMatch) continue;
-    const controllerName = classMatch[1];
-    const classOffset = classMatch.index;
-    const controllerPrefix = text.slice(Math.max(0, classOffset - 3000), classOffset);
-    const controllerDecorators = [...controllerPrefix.matchAll(/@Controller(?:\s*\(([^)]*)\))?/g)];
-    const controllerDecorator = controllerDecorators.at(-1);
-    const baseRoute = controllerDecorator ? stringLiteral(controllerDecorator[1]) : '';
-    const classBrace = text.indexOf('{', classOffset + classMatch[0].length);
-    const classBody = classBrace === -1 ? null : findBalanced(text, classBrace, '{', '}');
-    if (!classBody) continue;
-    const registrations = controllerRegistrations.get(controllerName) || [];
-    const registrationSites = registrations.map((module) => `${module.file}:${module.name}.controllers`);
-    const moduleActivation = unique(registrations.flatMap((module) => module.activationConditions));
-    const classConditions = extractEnvConditions(classBody.text);
-    const activationConditions = unique([...moduleActivation, ...classConditions]);
-    const defaultOff = defaultOffConditions(`${controllerPrefix}\n${classBody.text}`, activationConditions).length > 0;
-    const intentionallyDormant = /(?:INTENTIONALLY_DORMANT|default-disabled|default disabled|DORMANT|test-only|test only|local\/dev only|dev only|sadece test|test ortamında|production['’]?da[^\n]*devre dışı)/i
-      .test(`${controllerPrefix}\n${classBody.text}`);
+    const declaredClasses = (fileClasses.get(file) || [])
+      .filter((classInfo) => classInfo.name.endsWith('Controller'));
+    const firstController = declaredClasses[0];
+    const controllerClasses = dispositionFiles.has(file)
+      ? declaredClasses
+      : firstController ? [firstController] : [];
+    for (const classInfo of controllerClasses) {
+      const controllerName = classInfo.name;
+      const classOffset = classInfo.offset;
+      const classDeclaration = `class ${controllerName}`;
+      const controllerPrefix = text.slice(Math.max(0, classOffset - 3000), classOffset);
+      const controllerDecorators = [...controllerPrefix.matchAll(/@Controller(?:\s*\(([^)]*)\))?/g)];
+      const controllerDecorator = controllerDecorators.at(-1);
+      const baseRoute = controllerDecorator ? stringLiteral(controllerDecorator[1]) : '';
+      const classBrace = text.indexOf('{', classOffset + classDeclaration.length);
+      const classBody = classBrace === -1 ? null : findBalanced(text, classBrace, '{', '}');
+      if (!classBody) continue;
+      const registrations = controllerRegistrations.get(controllerName) || [];
+      const registrationSites = registrations.map((module) => `${module.file}:${module.name}.controllers`);
+      const moduleActivation = unique(registrations.flatMap((module) => module.activationConditions));
+      const classConditions = extractEnvConditions(classBody.text);
+      const activationConditions = unique([...moduleActivation, ...classConditions]);
+      const defaultOff = defaultOffConditions(`${controllerPrefix}\n${classBody.text}`, activationConditions).length > 0;
+      const intentionallyDormant = /(?:INTENTIONALLY_DORMANT|default-disabled|default disabled|DORMANT|test-only|test only|local\/dev only|dev only|sadece test|test ortamında|production['’]?da[^\n]*devre dışı)/i
+        .test(`${controllerPrefix}\n${classBody.text}`);
 
     for (const match of classBody.text.matchAll(/@(Get|Post|Put|Patch|Delete|Options|Head|All)\s*\(([^)]*)\)/g)) {
       if (!HTTP_DECORATORS.has(match[1])) continue;
@@ -1697,6 +1854,7 @@ function main() {
         },
       );
     }
+  }
   }
 
   const rootControllerTexts = controllerFiles
@@ -2093,6 +2251,8 @@ function main() {
     }
   }
 
+  applyDispositionRegistry(capabilities, dispositionRegistry);
+
   capabilities.sort((a, b) => a.capabilityId.localeCompare(b.capabilityId));
   for (const item of historicalItems.values()) {
     item.claimedCapabilities = unique(item.claimedCapabilities);
@@ -2123,8 +2283,11 @@ function main() {
     totalCapabilities: capabilities.length,
     codePresent: capabilities.filter((item) => item.codePresent).length,
     runtimeBound: capabilities.filter((item) => item.runtimeBound).length,
+    runtimeBoundGap: capabilities.length - capabilities.filter((item) => item.runtimeBound).length,
     active: capabilities.filter((item) => item.runtimeBound && item.active === true).length,
     reachable: capabilities.filter((item) => item.runtimeBound && item.active === true && item.reachable).length,
+    activeReachabilityGap: capabilities.filter((item) => item.runtimeBound && item.active === true).length -
+      capabilities.filter((item) => item.runtimeBound && item.active === true && item.reachable).length,
     consumed: capabilities.filter((item) =>
       item.runtimeBound && item.active === true && item.reachable && item.consumerCount > 0
     ).length,
@@ -2133,6 +2296,7 @@ function main() {
     ).length,
     verifiedOperational: capabilities.filter((item) => item.finalStatus === 'VERIFIED_OPERATIONAL').length,
     codePresentUnbound: capabilities.filter((item) => item.finalStatus === 'CODE_PRESENT_UNBOUND').length,
+    intentionallyDormant: capabilities.filter((item) => item.finalStatus === 'INTENTIONALLY_DORMANT').length,
     boundDormant: capabilities.filter((item) => item.finalStatus === 'BOUND_DORMANT').length,
     activeUnreachable: capabilities.filter((item) => item.finalStatus === 'ACTIVE_UNREACHABLE').length,
     reachableNonOperable: capabilities.filter((item) => item.finalStatus === 'REACHABLE_NON_OPERABLE').length,
@@ -2198,6 +2362,8 @@ function main() {
       gitCommonDirectory: normalize(commonDirectory),
       scanner: relative(repoRoot, __filename),
       scannerSha256: sha256(fs.readFileSync(__filename)),
+      dispositionFile: dispositionRegistry.path,
+      dispositionRegistrySha256: dispositionRegistry.sha256,
       sourceFileCount: sourceFiles.length,
       productionModuleCount: modules.size,
       productionReachableModuleCount: reachableModules.size,
@@ -2465,6 +2631,9 @@ module.exports = {
   buildClosureCertifications,
   classifyClosureCapabilityMapping,
   closureCertificationStatus,
+  dispositionFingerprint,
+  applyDispositionRegistry,
+  validateDispositionRegistryShape,
   isReliableClosureClaim,
   legacyHistoricalStatusForTitle,
   parseHistoricalClosureClaim,
