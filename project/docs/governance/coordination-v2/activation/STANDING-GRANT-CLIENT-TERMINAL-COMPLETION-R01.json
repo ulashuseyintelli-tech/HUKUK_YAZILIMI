@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "standingGrantId": "STANDING-GRANT-CLIENT-TERMINAL-COMPLETION-R01",
+  "parentAuthorizationRef": {
+    "authorizationId": "OWNER-GRANT-ORCHESTRA-E2E-ALL-PROGRAMS-R02",
+    "sourcePath": "project/docs/governance/coordination-v2/activation/R02-PARENT-AUTHORIZATION-ENVELOPE.md",
+    "payloadSha256": "06da65660dad523c18ee3bafce130996e849462cf3275a953d84b6866ae4e240"
+  },
+  "program": {
+    "programId": "CLIENT",
+    "eligibilityAuthorityRef": "project/docs/governance/coordination-v2/activation/PROGRAM-ELIGIBILITY-AUTHORITY.md"
+  },
+  "allowedTaskClasses": [
+    "TEST_ONLY_CHARACTERIZATION",
+    "BOUNDED_CODE_FIX"
+  ],
+  "allowedPathRoots": [
+    "project/apps/api/src/modules/client/",
+    "project/apps/api/src/modules/seed/",
+    "project/apps/api/prisma/",
+    "project/apps/api/src/modules/portal/",
+    "project/apps/api/src/modules/client-notification/",
+    "project/apps/api/src/modules/client-intake-public/",
+    "project/apps/api/src/modules/client-intake-link/",
+    "project/apps/api/src/modules/client-intake-review/",
+    "project/apps/api/src/modules/client-intake-promotion/"
+  ],
+  "prohibitedPathRoots": [
+    "project/docs/governance/coordination-v2/schemas/",
+    "project/docs/governance/coordination-v2/activation/",
+    "project/scripts/orchestration-v2/",
+    ".github/"
+  ],
+  "allowedExecutorLanes": [
+    "CLAUDE_LOCAL",
+    "CODEX_LOCAL"
+  ],
+  "requiredIndependentReview": true,
+  "ciPolicy": {
+    "requireTerminalSuccess": true,
+    "allowSkipped": false,
+    "allowNeutral": true
+  },
+  "mergePolicy": {
+    "method": "SQUASH",
+    "autoMergeAuthorized": true,
+    "repositoryWideAutoMerge": false
+  },
+  "maxConcurrency": 1,
+  "revocationPath": "project/docs/governance/coordination-v2/activation/REVOKED-CLIENT-TERMINAL-COMPLETION",
+  "killSwitchPath": "project/docs/governance/coordination-v2/activation/KILL-SWITCH",
+  "ownerRatificationEvidence": {
+    "sourcePath": "project/docs/governance/CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/OWNER-DECISION-R01.md",
+    "sourceCommitSha": "6b6225c88809b6f932caa6d91c4f7468576874c9",
+    "exactExcerpt": "RATIFIED / CONTROL-PAGE GO-COMPLETE",
+    "excerptSha256": "be1108e6151f675256a5d348c1efa4396e09c76f1ebdb562e00a22783ff47248"
+  },
+  "auditLogPath": "project/docs/governance/coordination-v2/activation/audit/client.jsonl",
+  "childPlanDerivation": {
+    "requirePlanHash": true,
+    "requireParentRef": true,
+    "requireBoundarySubset": true,
+    "requireTaskClassMatch": true
+  },
+  "prohibitions": {
+    "noPrivilegeDelegation": true,
+    "noSecretAccessExpansion": true,
+    "noProductionDataMutation": true,
+    "noCrossProgramMutation": true,
+    "noSelfAuthorizationChange": true
+  },
+  "notes": "PAGE-BOUND grant: CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01 v1.0 master planindaki EXACT sayfalar ve SIRALI gorevler icin gecerlidir; STANDING-GRANT-CLIENT-LIVE-R01'i supersede ETMEZ, yaninda durur. Sayfa-yol eslesmesi (master plan §7): C1 -> modules/client/ + modules/seed/ + prisma/ (+ app.module.ts tek dosya, asagiya bakiniz); C3 -> prisma/ YALNIZ sema degisikligi kanitlanirsa; X1 -> portal/ + client-notification/; X3 -> client-intake-public/ + -link/ + -review/ + -promotion/. TEK DOSYA ISTISNASI: 'project/apps/api/src/app.module.ts' owner tarafindan C1'e acilmistir fakat schema allowedPathRoots yalniz DIZIN kokunu (sonu '/') kabul eder; bu tek dosya izni burada kayda gecirilir ve C1 sayfa handoff'unda ALLOWED PATHS icinde exact olarak listelenir. MIGRATION OWNER = CLAUDE LANE; ayni anda TEK aktif migration writer; CODEX_LOCAL migration YAZAMAZ (prisma/ yalniz Claude sayfalari icin gecerlidir). CROSS-LANE YAZIM YASAK: Claude sayfalari portal/ ve client-intake-*/ yazmaz; Codex sayfalari client/, seed/, prisma/ yazmaz. Bu grant urun implementation'ini KENDILIGINDEN baslatmaz: yalniz owner ilgili AYRI sayfayi actiginda kullanilabilir hale gelir, erken successor yurutmeyi yetkilendirmez ve control-plane/governance onarimi yetkisi VERMEZ. Destructive production mutation yalnizca master plan §9-D kosullu production kapilarinin TAMAMI saglanirsa mumkundur.",
+  "expiresAt": "2027-08-02T00:00:00Z"
+}
