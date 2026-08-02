@@ -560,6 +560,79 @@ bu otomatik blocker DEĞİLDİR; `client.service.ts` gerektiren çözüm seçile
 çözüm de kanıtla mümkün değilse blok `WAITING_FOR_OTHER_SESSION` olur ve bu plana
 disposition için bildirilir.
 
+### 12-A-2. DOĞRULANMIŞ ÇAPRAZ-LANE BAĞLARI (adversarial verification, 2026-08-02)
+
+"Dosyalar ayrık" **yetmez** — aşağıdaki üç bağ dosya-manifest karşılaştırmasının
+GÖREMEYECEĞİ türdendir ve pre-flight'ın **shared-contract** adımında aranır.
+
+**XL-1 · C1 → X1 · DERLEME + DI BAĞIMLILIĞI — EN KRİTİK (VERIFIED)**
+
+```text
+client.service.ts:6     import { NotificationDispatcherService, type DispatchResult }
+                          from '../client-notification/notification-dispatcher.service'
+client.service.ts:320   constructor-injected provider
+client.service.ts:2562 · :2574 · :2611   DispatchResult['status'] yapısal bağımlılık
+client.module.ts:12 · :16                ClientNotificationModule module-level DI
+```
+
+Yani **C1'in ana dosyası, X1'in sahip olduğu dosyaya derleme ve DI seviyesinde bağımlıdır.**
+X1 `DispatchResult`'ın alan setini değiştirir, `DispatchStatus`'ı daraltır veya
+dispatcher'ın provider kimliğini değiştirirse: C1'in `client.service.ts`'i
+`tsc --noEmit`'te kırılır ve ClientModule boot'ta DI hatası verir.
+
+**TEHLİKE KATSAYISI:** Bu kırılmayı jest **yakalayamaz** (`diagnostics: false`); yalnız
+`ci.yml` Type check adımı yakalar ve o adım **required OLMAYAN** "Test Suite" job'ının
+içindedir → kırık kod main'e **inebilir**.
+
+**KURAL:** X1, `notification-dispatcher.service.ts`'in **public shape'ini**
+(`DispatchResult` alanları · `DispatchStatus` değerleri · `NotificationDispatcherService`
+constructor/provider kimliği) **DEĞİŞTİREMEZ**. Genişletme (yeni opsiyonel alan) serbest;
+daraltma/yeniden adlandırma/kaldırma **owner kararı + C1 ile koordineli tek değişiklik**
+gerektirir. X1 bu shape'e dokunacaksa blok `WAITING_FOR_OTHER_SESSION` olur.
+
+**XL-2 · X1 → C1 · TİP BAĞIMLILIĞI (VERIFIED, zayıf)**
+
+```text
+portal.service.ts:11   import type { AuditActor } from '../client/client.service'   (:21)
+portal.service.ts:10   import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS }
+                         from '../client/client-audit.util'
+```
+
+`AuditActor` C1-owned ve **aktif olarak değişiyor** (#2058 `role?` ekledi, #2073 dokundu).
+C1 bu arayüzü daraltırsa X1'in `portal.service.ts`'i Type check'te kırılır.
+**KURAL:** C1 `AuditActor`'ı ve `client-audit.util` export'larını **daraltamaz**;
+genişletme serbest.
+
+**XL-3 · C2 → C1 · TEST-SEVİYESİ İMZA BAĞI (VERIFIED)**
+
+`client/__tests__/client-address-mutation-authorization-r2.spec.ts:402-403` C1'in
+`create`/`update` imzasını regex ile assert eder, **aynı jest process'inde** koşar.
+C1 imzayı değiştirirse C2-lane spec'i kırılır.
+
+**DECOUPLED olduğu doğrulananlar (rahatlık için kayıt):** `client-notification/` → C1/C2
+yönünde **sıfır** import · portal/ ve client-notification/ modülleri `ClientModule` import
+**etmiyor** · her iki tree'nin **testleri** C1/C2 dosyalarını mock/import **etmiyor** ·
+`app.module.ts`'te PortalModule (:200) ve ClientNotificationModule (:195) **zaten kayıtlı**
+(X1'in dokunması beklenmez) · `prisma/` yalnız C1 · barrel/index dosyası **yok**.
+
+### 12-A-3. PAYLAŞILAN YAZIM YÜZEYLERİ — ÖLÇÜLMÜŞ ÇAKIŞMA OLASILIĞI
+
+| Yüzey | Kimler | Olasılık | Not |
+|---|---|---|---|
+| `ci-manifests/pure/client-portal.txt` | **C1 ↔ C2** | **HIGH** | İkisi de **aynı insertion anchor**'a ekliyor (client bölgesinin sonu ~satır 148-157). Son 6 append monoton ilerledi: 89→98→106→130→143→148 |
+| `ci-manifests/pure/client-portal.txt` | C1/C2 ↔ **X1** | LOW | X1 EOF'taki portal bloğuna (151-160) ekler; arada ≥10 değişmeyen satır var |
+| `MASTER-PLAN.md` §17 STATUS bloğu | **C1 ↔ C2 ↔ X1** | **HIGH** | Üç lane de aynı fence'e statü satırı yazıyor (satır ~628-646) |
+| `client-mutation-policy.ts` | C2 yazar, C1 tüketir (`client.service.ts:18`) | MED-HIGH | Metinsel değil, **derleme/semantik** |
+| `AuditActor` + `client-audit.util.ts` | C1/C2 yazar, X1 tüketir | MED | Derleme/semantik (XL-2) |
+| `app.module.ts` · `prisma/` · `client.module.ts` | C1 | LOW/NONE | Tek yazar |
+
+**KURAL (manifest):** `client-portal.txt` için **program boyu tek manifest writer** = **C1**.
+C2 ve X1 kendi spec satırlarını **kendi PR'larında append-only** ekler; C1 ile aynı anchor'a
+düşen bir append çıkarsa **sonra gelen rebase eder** (bu bir blocker DEĞİLDİR).
+
+**KURAL (status fence):** Her lane `MASTER-PLAN.md` §17'ye **yalnız kendi satırlarını**
+yazar; başka lane'in satırını düzenlemez. Çakışma çıkarsa sonra gelen rebase eder.
+
 ### 12-B. WAVE HARİTASI
 
 | Wave | CLAUDE | CODEX | Paralellik gerekçesi (exact) |

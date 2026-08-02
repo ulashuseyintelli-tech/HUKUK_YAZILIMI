@@ -461,17 +461,45 @@ Bu blok bitmeden C2 **TERMINAL CLOSED değildir**.
 gerçek dosya adları listelenir** (`__tests__/*` wildcard exact manifest sayılmaz).
 
 ```text
-project/apps/api/src/modules/client/client.controller.ts
-project/apps/api/src/modules/client/client.service.ts
 project/apps/api/src/modules/client/client-mutation-policy.ts        (TEK WRITER)
 project/apps/api/src/modules/client/client-address.service.ts
 project/apps/api/src/modules/client/client-address-lifecycle.ts
 project/apps/api/src/modules/client/client-address.controller.ts
 project/apps/api/src/modules/client/client-address-resolver.ts
+project/apps/api/src/modules/client/client.controller.ts             (§8-A koşuluyla)
 project/apps/api/src/modules/client/__tests__/<blok başına exact spec adları>
 project/apps/web/src/components/client/<gerekirse exact dosyalar>
 project/apps/api/ci-manifests/pure/client-portal.txt                 (§4 kuralıyla)
 ```
+
+### 8-A. KALDIRILAN VE KOŞULLU KALEMLER (tutarlılık düzeltmesi)
+
+```text
+KALDIRILDI: project/apps/api/src/modules/client/client.service.ts
+```
+
+Bu dosya sayfanın **FORBIDDEN PATHS** listesinde (C1 LANE-OWNED, owner kararı 2026-08-02)
+olmasına rağmen write manifest'te de duruyordu — **belge içi çelişki**. C1 lane sahipliği
+esastır: **C2 `client.service.ts` YAZMAZ.** (Bu, C2-B02'nin §2-A'da kayıtlı bilinen
+kısıtının aynısıdır: gate `client.service.ts` DIŞINDA bir yere konur veya blok
+`WAITING_FOR_OTHER_SESSION` olur.)
+
+```text
+KOŞULLU: project/apps/api/src/modules/client/client.controller.ts
+```
+
+Owner'ın lane bölüşümünde **açıkça atanmamıştır** ve C1 geçmişte dokunmuştur (#2107).
+Bu yüzden her blok başında §2-A pre-flight'ında **ayrıca kontrol edilir**: aktif C1
+bloğunun manifest'inde `client.controller.ts` varsa C2 o bloğu `WAITING_FOR_OTHER_SESSION`
+yapar. Yoksa C2 yazabilir.
+
+### 8-B. TEST-SEVİYESİ ÇAPRAZ BAĞ (kayıt)
+
+`client/__tests__/client-address-mutation-authorization-r2.spec.ts:402-403` C1'in
+`create`/`update` imza şeklini **regex ile assert eder** ve C1 ile **aynı jest process'inde**
+koşar. C1 o imzayı değiştirirse bu C2-lane spec'i kırılır (dosyalar ayrı olsa bile).
+Pre-flight'ta C1'in aktif bloğu `client.service.ts` imzasına dokunuyorsa bu **shared-contract
+çakışması** sayılır.
 
 ## 9. SHARED CONTRACT MANIFEST
 
