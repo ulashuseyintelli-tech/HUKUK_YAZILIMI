@@ -11,13 +11,18 @@ import {
   RestoreClientAddressDto,
   UpdateClientAddressDto,
 } from './dto/client-address.dto';
+// OWN-13 I02-R2 (owner A): tam actor context MEVCUT kanonik fabrikadan üretilir; eksik alan
+// bos stringe indirgenir ve merkezi policy tarafindan fail-closed reddedilir.
+import { buildClientMutationActor } from './client.service';
 
 /**
  * I02: audit actor compile-time şekli — `client.controller.ts` C0-a deseniyle BİREBİR.
  * `id` audit actor'ü, `tenantId` scope'u besler; ikisi de YALNIZ JWT'den gelir.
  */
 interface AuthRequest {
-  user: { id: string; tenantId: string };
+  // OWN-13 I02-R2: `role` de taşınır — adres mutasyonları artık yetki kapısından geçer.
+  // Değer YALNIZ auth context'inden gelir; body'den ASLA okunmaz.
+  user: { id: string; tenantId: string; role?: string };
 }
 
 @Controller()
@@ -60,7 +65,13 @@ export class ClientAddressController {
   @Post('clients/:clientId/addresses')
   create(@Request() req: AuthRequest, @Param('clientId') clientId: string, @Body() dto: CreateClientAddressDto) {
     // I04A / C0-a: audit actor YALNIZ req.user.id (auth context); body'den userId ASLA okunmaz.
-    return this.clientAddressService.create(req.user.tenantId, clientId, dto, { userId: req.user.id });
+    // OWN-13 I02-R2: tam actor context (userId + tenantId + role) — karar SERVİS SINIRINDA.
+    return this.clientAddressService.create(
+      req.user.tenantId,
+      clientId,
+      dto,
+      buildClientMutationActor({ userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role }),
+    );
   }
 
   /// <remarks>
@@ -80,9 +91,13 @@ export class ClientAddressController {
     @Body() dto: UpdateClientAddressDto,
   ) {
     // I04A / C0-a: audit actor YALNIZ req.user.id (auth context); body'den userId ASLA okunmaz.
-    return this.clientAddressService.update(req.user.tenantId, clientId, addressId, dto, {
-      userId: req.user.id,
-    });
+    return this.clientAddressService.update(
+      req.user.tenantId,
+      clientId,
+      addressId,
+      dto,
+      buildClientMutationActor({ userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role }),
+    );
   }
 
   /// <remarks>
@@ -113,9 +128,13 @@ export class ClientAddressController {
     @Body() dto: ArchiveClientAddressDto,
   ) {
     // C0-a: actor YALNIZ req.user.id (auth); body'den userId ASLA okunmaz.
-    return this.clientAddressService.archive(req.user.tenantId, clientId, addressId, dto, {
-      userId: req.user.id,
-    });
+    return this.clientAddressService.archive(
+      req.user.tenantId,
+      clientId,
+      addressId,
+      dto,
+      buildClientMutationActor({ userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role }),
+    );
   }
 
   /// <remarks>
@@ -132,8 +151,12 @@ export class ClientAddressController {
     @Param('addressId') addressId: string,
     @Body() dto: RestoreClientAddressDto,
   ) {
-    return this.clientAddressService.restore(req.user.tenantId, clientId, addressId, dto, {
-      userId: req.user.id,
-    });
+    return this.clientAddressService.restore(
+      req.user.tenantId,
+      clientId,
+      addressId,
+      dto,
+      buildClientMutationActor({ userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role }),
+    );
   }
 }

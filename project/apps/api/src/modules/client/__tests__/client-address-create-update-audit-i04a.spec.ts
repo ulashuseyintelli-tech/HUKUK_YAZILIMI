@@ -36,10 +36,19 @@ const FULL = (over: Partial<any> & { id: string }) => ({
 });
 
 function buildSvc(opts: { siblings: Sib[]; target?: any; auditFails?: boolean }) {
+  const applied = new Map<string, any>();
   const tx = {
     clientAddress: {
       findMany: jest.fn().mockResolvedValue(opts.siblings),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      // OWN-13 I02-R2 (D04): final write tenant-scoped `updateMany` + `count`; sonuç
+      // `findFirstOrThrow` ile geri okunur. Mock ikisini SADIK simüle eder.
+      updateMany: jest.fn().mockImplementation(async ({ where, data }: any) => {
+        if (where?.id) applied.set(where.id, { ...(applied.get(where.id) ?? {}), ...data });
+        return { count: 1 };
+      }),
+      findFirstOrThrow: jest
+        .fn()
+        .mockImplementation(async ({ where }: any) => ({ ...FULL({ id: where.id }), ...(applied.get(where.id) ?? {}) })),
       create: jest
         .fn()
         .mockImplementation(async ({ data }: any) => ({ id: 'addr-new', isCurrent: true, ...data })),
@@ -48,11 +57,17 @@ function buildSvc(opts: { siblings: Sib[]; target?: any; auditFails?: boolean })
         .mockImplementation(async ({ where, data }: any) => ({ ...FULL({ id: where.id }), ...data })),
       delete: jest.fn(),
     },
+    // D04: create() parent Client'ı AYNI transaction içinde tenant-scoped YENİDEN doğrular.
+    client: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
   };
   let rolledBack = false;
   const prisma: any = {
     client: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
     clientAddress: {
+      // OWN-13 I02-R2 (D02/D03): açık birincillik talebinde "mevcut aktif birincil var mı".
+      count: jest
+        .fn()
+        .mockImplementation(async () => opts.siblings.filter((s: any) => s.isPrimary && s.isCurrent).length),
       findFirst: jest.fn().mockImplementation(({ where }: any) => {
         if (opts.target && opts.target.id === where.id && opts.target.clientId === where.clientId) {
           return Promise.resolve(opts.target);
@@ -78,7 +93,7 @@ function buildSvc(opts: { siblings: Sib[]; target?: any; auditFails?: boolean })
     }),
     log: jest.fn(),
   };
-  return { svc: new ClientAddressService(prisma, audit), prisma, tx, audit, wasRolledBack: () => rolledBack };
+  return { svc: new ClientAddressService(prisma, audit, { isApproverEligible: jest.fn().mockResolvedValue(true) } as any), prisma, tx, audit, wasRolledBack: () => rolledBack };
 }
 
 const calls = (audit: any) => audit.logInTransaction.mock.calls.map((c: any[]) => c[1]);
@@ -92,13 +107,13 @@ const CREATE_INPUT = { type: 'BEYAN', street: 'Yeni Sokak', city: 'İstanbul' } 
 describe('ARC-07 I04A — create() audit', () => {
   it('[1] başarılı create audit kaydı YAZAR', async () => {
     const { svc, audit } = buildSvc({ siblings: [] });
-    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1' });
+    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_CREATE')).toBeDefined();
   });
 
   it('[2] create audit MUTASYONLA AYNI transaction client\'ına yazılır', async () => {
     const { svc, tx, audit, prisma } = buildSvc({ siblings: [] });
-    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1' });
+    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(audit.logInTransaction.mock.calls[0][0]).toBe(tx);
     expect(audit.log).not.toHaveBeenCalled();
@@ -106,7 +121,7 @@ describe('ARC-07 I04A — create() audit', () => {
 
   it('[3/4] audit tenant/client/adres kimliklerini ve yaşam döngüsü bayraklarını taşır', async () => {
     const { svc, audit } = buildSvc({ siblings: [] });
-    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1' });
+    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_CREATE')).toMatchObject({
       tenantId: 't1',
       entityType: 'CLIENT_ADDRESS',
@@ -119,7 +134,7 @@ describe('ARC-07 I04A — create() audit', () => {
 
   it('[5] audit gövdesi HAM ADRES İÇERİĞİ taşımaz', async () => {
     const { svc, audit } = buildSvc({ siblings: [] });
-    await svc.create('t1', 'c1', { ...CREATE_INPUT, district: 'Beşiktaş', postalCode: '34000' }, { userId: 'u1' });
+    await svc.create('t1', 'c1', { ...CREATE_INPUT, district: 'Beşiktaş', postalCode: '34000' }, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     const serialized = JSON.stringify(calls(audit));
     for (const leak of ['Yeni Sokak', 'İstanbul', 'Beşiktaş', '34000', 'street', 'city', 'district', 'postalCode']) {
       expect(serialized).not.toContain(leak);
@@ -128,7 +143,7 @@ describe('ARC-07 I04A — create() audit', () => {
 
   it('[6] audit yazımı BAŞARISIZ olursa create ROLLBACK olur', async () => {
     const { svc, wasRolledBack } = buildSvc({ siblings: [], auditFails: true });
-    await expect(svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1' })).rejects.toThrow('audit sink down');
+    await expect(svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1', tenantId: 't1', role: 'ADMIN' })).rejects.toThrow('audit sink down');
     expect(wasRolledBack()).toBe(true);
   });
 
@@ -136,7 +151,7 @@ describe('ARC-07 I04A — create() audit', () => {
     const { svc, audit } = buildSvc({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
-    await svc.create('t1', 'c1', { ...CREATE_INPUT, isPrimary: true }, { userId: 'u1' });
+    await svc.create('t1', 'c1', { ...CREATE_INPUT, isPrimary: true }, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_PRIMARY_REASSIGN')).toMatchObject({
       entityId: 'addr-new',
       newValues: { isPrimary: true },
@@ -151,14 +166,14 @@ describe('ARC-07 I04A — create() audit', () => {
     const { svc, audit } = buildSvc({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
-    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1' });
+    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_PRIMARY_REASSIGN')).toBeUndefined();
     expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
   });
 
   it('[8b] İLK adres otomatik birincil olur ama devrilen kardeş YOK — yeniden-atama YAZILMAZ', async () => {
     const { svc, audit } = buildSvc({ siblings: [] });
-    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1' });
+    await svc.create('t1', 'c1', CREATE_INPUT, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_PRIMARY_REASSIGN')).toBeUndefined();
     expect(byAction(audit, 'CLIENT_ADDRESS_CREATE')).toMatchObject({
       newValues: { isPrimary: true },
@@ -180,13 +195,13 @@ const SIBS: Sib[] = [
 describe('ARC-07 I04A — update() audit', () => {
   it('[9] başarılı update audit kaydı YAZAR', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
-    await svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_UPDATE')).toBeDefined();
   });
 
   it('[10] önceki VE sonuçtaki yaşam döngüsü durumu kaydedilir', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
-    await svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_UPDATE')).toMatchObject({
       tenantId: 't1',
       entityType: 'CLIENT_ADDRESS',
@@ -199,7 +214,7 @@ describe('ARC-07 I04A — update() audit', () => {
 
   it('[11] değişiklik metadata\'sı YALNIZ ALAN ADLARINI taşır', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
-    await svc.update('t1', 'c1', 'a2', { city: 'Ankara', street: 'Yeni Cadde' } as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', { city: 'Ankara', street: 'Yeni Cadde' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     const rec = byAction(audit, 'CLIENT_ADDRESS_UPDATE');
     expect(rec.metadata.changedFields.sort()).toEqual(['city', 'street']);
     expect(rec.metadata).toMatchObject({ clientId: 'c1', primaryPromoted: false });
@@ -208,13 +223,13 @@ describe('ARC-07 I04A — update() audit', () => {
   it('[11b] AYNI değerin yeniden gönderilmesi değişiklik SAYILMAZ', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
     // `city` fixture ile aynı, `district` farklı.
-    await svc.update('t1', 'c1', 'a2', { city: 'İstanbul', district: 'Üsküdar' } as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', { city: 'İstanbul', district: 'Üsküdar' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_UPDATE').metadata.changedFields).toEqual(['district']);
   });
 
   it('[12] update audit gövdesi HAM ADRES İÇERİĞİ taşımaz', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
-    await svc.update('t1', 'c1', 'a2', { street: 'Gizli Cadde 42', postalCode: '06000' } as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', { street: 'Gizli Cadde 42', postalCode: '06000' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     const serialized = JSON.stringify(calls(audit));
     expect(serialized).not.toContain('Gizli Cadde 42');
     expect(serialized).not.toContain('06000');
@@ -224,14 +239,14 @@ describe('ARC-07 I04A — update() audit', () => {
   it('[13] audit yazımı BAŞARISIZ olursa update ROLLBACK olur', async () => {
     const { svc, wasRolledBack } = buildSvc({ siblings: SIBS, target: TARGET, auditFails: true });
     await expect(
-      svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1' }),
+      svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' }),
     ).rejects.toThrow('audit sink down');
     expect(wasRolledBack()).toBe(true);
   });
 
   it('[14] birincilik devri yeniden-atama kanıtı YAZAR', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
-    await svc.update('t1', 'c1', 'a2', { isPrimary: true } as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', { isPrimary: true } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_PRIMARY_REASSIGN')).toMatchObject({
       entityId: 'a2',
       newValues: { isPrimary: true },
@@ -244,14 +259,14 @@ describe('ARC-07 I04A — update() audit', () => {
 
   it('[15] sıradan alan güncellemesi yaşam döngüsü olayı UYDURMAZ', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
-    await svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(byAction(audit, 'CLIENT_ADDRESS_PRIMARY_REASSIGN')).toBeUndefined();
     expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
   });
 
   it('[16] NO-OP update başarı audit\'i YAZMAZ', async () => {
     const { svc, audit } = buildSvc({ siblings: SIBS, target: TARGET });
-    await svc.update('t1', 'c1', 'a2', {} as any, { userId: 'u1' });
+    await svc.update('t1', 'c1', 'a2', {} as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
@@ -265,11 +280,13 @@ describe('ARC-07 I04A — update() audit', () => {
       ],
       target: TARGET,
     });
-    await expect(svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1' })).rejects.toMatchObject({
+    await expect(svc.update('t1', 'c1', 'a2', { city: 'Ankara' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' })).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_LIFECYCLE_VIOLATION' },
     });
     expect(audit.logInTransaction).not.toHaveBeenCalled();
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(wasRolledBack()).toBe(true);
   });
 });
@@ -283,7 +300,7 @@ describe('ARC-07 I04A — kapsam ve actor', () => {
     const other = buildSvc({
       siblings: [{ id: 'a2', clientId: 'c-other', isPrimary: false, isCurrent: true }],
     });
-    await expect(other.svc.update('t1', 'c1', 'a2', { city: 'X' } as any, { userId: 'u1' })).rejects.toBeDefined();
+    await expect(other.svc.update('t1', 'c1', 'a2', { city: 'X' } as any, { userId: 'u1', tenantId: 't1', role: 'ADMIN' })).rejects.toBeDefined();
     expect(other.audit.logInTransaction).not.toHaveBeenCalled();
     expect(other.prisma.$transaction).not.toHaveBeenCalled();
   });
@@ -292,9 +309,21 @@ describe('ARC-07 I04A — kapsam ve actor', () => {
     const service: any = { create: jest.fn().mockResolvedValue({}), update: jest.fn().mockResolvedValue({}) };
     const ctrl = new ClientAddressController(service);
     await ctrl.create({ user: { id: 'u-auth', tenantId: 't1' } } as any, 'c1', CREATE_INPUT);
-    expect(service.create).toHaveBeenCalledWith('t1', 'c1', CREATE_INPUT, { userId: 'u-auth' });
+    expect(service.create).toHaveBeenCalledWith('t1', 'c1', CREATE_INPUT, {
+      // OWN-13 I02-R2: controller artık TAM actor context geçirir (userId + tenantId + role).
+      // `role` bu fixture'ın req nesnesinde YOK → fail-closed boş string; body'den ASLA gelmez.
+      userId: 'u-auth',
+      tenantId: 't1',
+      role: '',
+    });
     await ctrl.update({ user: { id: 'u-auth', tenantId: 't1' } } as any, 'c1', 'a2', { city: 'X' } as any);
-    expect(service.update).toHaveBeenCalledWith('t1', 'c1', 'a2', { city: 'X' }, { userId: 'u-auth' });
+    expect(service.update).toHaveBeenCalledWith('t1', 'c1', 'a2', { city: 'X' }, {
+      // OWN-13 I02-R2: controller artık TAM actor context geçirir (userId + tenantId + role).
+      // `role` bu fixture'ın req nesnesinde YOK → fail-closed boş string; body'den ASLA gelmez.
+      userId: 'u-auth',
+      tenantId: 't1',
+      role: '',
+    });
   });
 
   it('[20] istek gövdesi audit actor\'ünü SPOOF EDEMEZ', async () => {
@@ -306,7 +335,8 @@ describe('ARC-07 I04A — kapsam ve actor', () => {
       'c1',
       { ...CREATE_INPUT, userId: 'u-spoofed', actor: { userId: 'u-spoofed' } } as any,
     );
-    expect(service.create.mock.calls[0][3]).toEqual({ userId: 'u-auth' });
+    // Spoof YASAĞI KORUNUR: gövdeden gelen userId asla kullanılmaz, YALNIZ auth context.
+    expect(service.create.mock.calls[0][3]).toEqual({ userId: 'u-auth', tenantId: 't1', role: '' });
     // Kaynak seviyesinde de body'den actor türetimi YOK.
     expect(CONTROLLER_SOURCE).not.toMatch(/dto\.userId|body\.userId|dto\.actor/);
     expect(CONTROLLER_SOURCE.match(/userId: req\.user\.id/g) ?? []).toHaveLength(4);

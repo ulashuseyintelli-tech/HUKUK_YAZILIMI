@@ -29,16 +29,40 @@ const SCHEMA_SOURCE = readFileSync(
 type Sib = { id: string; clientId: string; isPrimary: boolean; isCurrent: boolean };
 
 function buildSvc(opts: { siblings: Sib[]; auditFails?: boolean }) {
+  // OWN-13 I02-R2 (owner D04): satır güncellemeleri artık tenant-scoped `updateMany` + `count`
+  // ile yapılıp sonuç `findFirstOrThrow` ile geri okunur (unique `update` parent ilişki
+  // predicate'ini TAŞIYAMAZ). Mock bu iki adımı Prisma semantiğine SADIK simüle eder:
+  // `updateMany` yazılan veriyi kaydeder, `findFirstOrThrow` onu satıra uygular.
+  const applied = new Map<string, any>();
   const tx = {
     clientAddress: {
       findMany: jest.fn().mockResolvedValue(opts.siblings),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      updateMany: jest.fn().mockImplementation(async ({ where, data }: any) => {
+        if (where?.id) applied.set(where.id, { ...(applied.get(where.id) ?? {}), ...data });
+        return { count: 1 };
+      }),
+      findFirstOrThrow: jest.fn().mockImplementation(async ({ where }: any) => {
+        const base = opts.siblings.find((s) => s.id === where.id);
+        if (!base) throw new Error('NOT_FOUND');
+        return {
+          ...base,
+          type: 'BEYAN',
+          street: null,
+          city: null,
+          district: null,
+          region: null,
+          postalCode: null,
+          ...(applied.get(where.id) ?? {}),
+        };
+      }),
       update: jest
         .fn()
         .mockImplementation(async ({ where, data }: any) => ({ id: where.id, clientId: 'c1', ...data })),
       create: jest.fn(),
       delete: jest.fn(),
     },
+    // D04: create() parent Client'ı AYNI transaction içinde tenant-scoped YENİDEN doğrular.
+    client: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
   };
   let rolledBack = false;
   const prisma: any = {
@@ -80,7 +104,7 @@ function buildSvc(opts: { siblings: Sib[]; auditFails?: boolean }) {
     log: jest.fn(),
   };
   return {
-    svc: new ClientAddressService(prisma, audit),
+    svc: new ClientAddressService(prisma, audit, { isApproverEligible: jest.fn().mockResolvedValue(true) } as any),
     prisma,
     tx,
     audit,
@@ -104,66 +128,81 @@ const auditByAction = (audit: any, action: string) =>
 describe('ARC-07 I02 — archive()', () => {
   it('[1] güncel non-primary adres arşivlenir', async () => {
     const { svc, prisma } = buildSvc({ siblings: TWO_CURRENT });
-    const res = await svc.archive('t1', 'c1', 'a2');
+    const res = await svc.archive('t1', 'c1', 'a2', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(res).toMatchObject({ isCurrent: false, isPrimary: false });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('[2] arşivlenen satır isCurrent=false + isPrimary=false olur ve SİLİNMEZ', async () => {
     const { svc, tx } = buildSvc({ siblings: TWO_CURRENT });
-    await svc.archive('t1', 'c1', 'a2');
-    expect(tx.clientAddress.update).toHaveBeenCalledWith({
-      where: { id: 'a2' },
-      data: { isCurrent: false, isPrimary: false },
-    });
+    await svc.archive('t1', 'c1', 'a2', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    expect(tx.clientAddress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // D04: tenant predicate YAZMANIN KENDISINDE bulunur.
+          where: expect.objectContaining({ id: 'a2', client: { tenantId: 't1' } }),
+          data: { isCurrent: false, isPrimary: false },
+        }),
+      );
     expect(tx.clientAddress.delete).not.toHaveBeenCalled();
   });
 
   it('[3] birincil adres GEÇERLİ replacement ile arşivlenir — ikisi AYNI transaction\'da', async () => {
     const { svc, tx, prisma } = buildSvc({ siblings: TWO_CURRENT });
-    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' });
+    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     // Yeniden-atama, hedefin arşivlenmesinden ÖNCE uygulanır (ara durumda primary\'siz kalınmaz).
-    const reassign = tx.clientAddress.update.mock.invocationCallOrder[0];
-    const archiveWrite = tx.clientAddress.update.mock.invocationCallOrder[1];
+    // D04: her iki yazma da tenant-scoped `updateMany` ile yapılır; sıra iddiası KORUNUR.
+    const reassign = tx.clientAddress.updateMany.mock.invocationCallOrder[0];
+    const archiveWrite = tx.clientAddress.updateMany.mock.invocationCallOrder[1];
     expect(reassign).toBeLessThan(archiveWrite);
   });
 
   it('[4] replacement adres birincil OLUR', async () => {
     const { svc, tx } = buildSvc({ siblings: TWO_CURRENT });
-    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' });
-    expect(tx.clientAddress.update).toHaveBeenCalledWith({
-      where: { id: 'a2' },
-      data: { isPrimary: true },
-    });
+    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    expect(tx.clientAddress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // D04: tenant predicate YAZMANIN KENDISINDE bulunur.
+          where: expect.objectContaining({ id: 'a2', client: { tenantId: 't1' } }),
+          data: { isPrimary: true },
+        }),
+      );
   });
 
   it('[5] hedef arşivli + non-primary olur', async () => {
     const { svc, tx } = buildSvc({ siblings: TWO_CURRENT });
-    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' });
-    expect(tx.clientAddress.update).toHaveBeenCalledWith({
-      where: { id: 'a1' },
-      data: { isCurrent: false, isPrimary: false },
-    });
+    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    expect(tx.clientAddress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // D04: tenant predicate YAZMANIN KENDISINDE bulunur.
+          where: expect.objectContaining({ id: 'a1', client: { tenantId: 't1' } }),
+          data: { isCurrent: false, isPrimary: false },
+        }),
+      );
   });
 
   it('[6] geride güncel adres KALIRKEN replacement\'sız birincil arşivi REDDEDİLİR', async () => {
     const { svc, tx } = buildSvc({ siblings: TWO_CURRENT });
-    await expect(svc.archive('t1', 'c1', 'a1')).rejects.toMatchObject({
+    await expect(svc.archive('t1', 'c1', 'a1', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_REQUIRED' },
     });
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
   });
 
   it('[7] SON güncel adres (birincil) replacement OLMADAN arşivlenir — sıfır current/sıfır primary GEÇERLİ', async () => {
     const { svc, tx } = buildSvc({
       siblings: [{ id: 'a1', clientId: 'c1', isPrimary: true, isCurrent: true }],
     });
-    await svc.archive('t1', 'c1', 'a1');
-    expect(tx.clientAddress.update).toHaveBeenCalledWith({
-      where: { id: 'a1' },
-      data: { isCurrent: false, isPrimary: false },
-    });
+    await svc.archive('t1', 'c1', 'a1', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    expect(tx.clientAddress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // D04: tenant predicate YAZMANIN KENDISINDE bulunur.
+          where: expect.objectContaining({ id: 'a1', client: { tenantId: 't1' } }),
+          data: { isCurrent: false, isPrimary: false },
+        }),
+      );
   });
 
   it('[8] BAŞKA müvekkile ait replacement REDDEDİLİR (kapsam dışı → bulunamadı)', async () => {
@@ -174,11 +213,13 @@ describe('ARC-07 I02 — archive()', () => {
       ],
     });
     await expect(
-      svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'other-client-addr' }),
+      svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'other-client-addr' }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' }),
     ).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_NOT_FOUND' },
     });
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
   });
 
   it('[9] ARŞİVLİ bir adres replacement olarak REDDEDİLİR', async () => {
@@ -190,11 +231,13 @@ describe('ARC-07 I02 — archive()', () => {
       ],
     });
     await expect(
-      svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a3' }),
+      svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a3' }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' }),
     ).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_NOT_CURRENT' },
     });
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
   });
 
   it('[10] ZATEN ARŞİVLİ adres için sabit hata döner (idempotent başarı DEĞİL)', async () => {
@@ -204,10 +247,12 @@ describe('ARC-07 I02 — archive()', () => {
         { id: 'a3', clientId: 'c1', isPrimary: false, isCurrent: false },
       ],
     });
-    await expect(svc.archive('t1', 'c1', 'a3')).rejects.toMatchObject({
+    await expect(svc.archive('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_ALREADY_ARCHIVED' },
     });
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
   });
 
   it('[11] öngörülen-durum invariant doğrulaması COMMIT\'TEN ÖNCE çalışır (bozuk legacy veri fail-closed)', async () => {
@@ -220,23 +265,25 @@ describe('ARC-07 I02 — archive()', () => {
         { id: 'a3', clientId: 'c1', isPrimary: false, isCurrent: true },
       ],
     });
-    await expect(svc.archive('t1', 'c1', 'a3')).rejects.toMatchObject({
+    await expect(svc.archive('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_LIFECYCLE_VIOLATION', violation: 'MULTIPLE_PRIMARY' },
     });
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(wasRolledBack()).toBe(true);
   });
 
   it('[12] audit yazımı BAŞARISIZ olursa arşivleme ROLLBACK olur', async () => {
     const { svc, wasRolledBack } = buildSvc({ siblings: TWO_CURRENT, auditFails: true });
-    await expect(svc.archive('t1', 'c1', 'a2')).rejects.toThrow('audit sink down');
+    await expect(svc.archive('t1', 'c1', 'a2', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toThrow('audit sink down');
     expect(wasRolledBack()).toBe(true);
   });
 
   it('[12b] adres KENDİ yerine replacement seçilemez', async () => {
     const { svc } = buildSvc({ siblings: TWO_CURRENT });
     await expect(
-      svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a1' }),
+      svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a1' }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' }),
     ).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_REPLACEMENT_PRIMARY_INVALID' },
     });
@@ -246,7 +293,7 @@ describe('ARC-07 I02 — archive()', () => {
     const { svc, prisma } = buildSvc({
       siblings: [{ id: 'a1', clientId: 'c-other', isPrimary: true, isCurrent: true }],
     });
-    await expect(svc.archive('t1', 'c1', 'a1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.archive('t1', 'c1', 'a1', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
@@ -263,62 +310,81 @@ const ARCHIVED_PLUS_CURRENT: Sib[] = [
 describe('ARC-07 I02 — restore()', () => {
   it('[13] arşivli adres geri alınır', async () => {
     const { svc, prisma } = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    const res = await svc.restore('t1', 'c1', 'a3');
+    const res = await svc.restore('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(res).toMatchObject({ isCurrent: true });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('[14] VARSAYILAN: geri alınan adres güncel + NON-PRIMARY olur', async () => {
     const { svc, tx } = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    await svc.restore('t1', 'c1', 'a3');
-    expect(tx.clientAddress.update).toHaveBeenCalledWith({
-      where: { id: 'a3' },
-      data: { isCurrent: true, isPrimary: false },
-    });
-    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
+    await svc.restore('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    expect(tx.clientAddress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // D04: tenant predicate YAZMANIN KENDISINDE bulunur.
+          where: expect.objectContaining({ id: 'a3', client: { tenantId: 't1' } }),
+          data: { isCurrent: true, isPrimary: false },
+        }),
+      );
+    // Bu iddianın ASIL anlamı: KARDEŞ birincilik-düşürme yazması OLMADI. D04'ten sonra
+    // `updateMany` hem kardeş-unset hem FINAL WRITE için kullanılıyor; bu yüzden "hiç
+    // çağrılmadı" yerine "unset şeklinde çağrılmadı" ölçülür (unset: where.isPrimary===true).
+    const unsetCalls = tx.clientAddress.updateMany.mock.calls.filter(
+      ([arg]: any[]) => arg?.where?.isPrimary === true,
+    );
+    expect(unsetCalls).toHaveLength(0);
   });
 
   it('[15] makePrimary=true eski birinciyi AYNI transaction\'da düşürür', async () => {
     const { svc, tx, prisma } = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    await svc.restore('t1', 'c1', 'a3', { makePrimary: true });
+    await svc.restore('t1', 'c1', 'a3', { makePrimary: true }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // D04: kardeş-unset yazması da tenant-scoped parent ilişkisi taşır.
     expect(tx.clientAddress.updateMany).toHaveBeenCalledWith({
-      where: { clientId: 'c1', isPrimary: true },
+      where: { clientId: 'c1', isPrimary: true, client: { tenantId: 't1' } },
       data: { isPrimary: false },
     });
-    expect(tx.clientAddress.update).toHaveBeenCalledWith({
-      where: { id: 'a3' },
-      data: { isCurrent: true, isPrimary: true },
-    });
+    expect(tx.clientAddress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // D04: tenant predicate YAZMANIN KENDISINDE bulunur.
+          where: expect.objectContaining({ id: 'a3', client: { tenantId: 't1' } }),
+          data: { isCurrent: true, isPrimary: true },
+        }),
+      );
   });
 
   it('[16] restore ÇOK-PRIMARY üretemez — unset, hedef yazımından ÖNCE gelir', async () => {
     const { svc, tx } = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    await svc.restore('t1', 'c1', 'a3', { makePrimary: true });
+    await svc.restore('t1', 'c1', 'a3', { makePrimary: true }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    // D04 sonrası ikisi de `updateMany`: [0] kardeş-unset, [1] hedef yazımı. Sıra KORUNUR.
+    const calls = tx.clientAddress.updateMany.mock.calls;
+    expect(calls[0][0].where.isPrimary).toBe(true); // önce unset
+    expect(calls[1][0].where.id).toBe('a3'); // sonra hedef
     expect(tx.clientAddress.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
-      tx.clientAddress.update.mock.invocationCallOrder[0],
+      tx.clientAddress.updateMany.mock.invocationCallOrder[1],
     );
   });
 
   it('[17] ZATEN GÜNCEL adres için sabit hata döner', async () => {
     const { svc, tx } = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    await expect(svc.restore('t1', 'c1', 'a1')).rejects.toMatchObject({
+    await expect(svc.restore('t1', 'c1', 'a1', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toMatchObject({
       response: { code: 'CLIENT_ADDRESS_ALREADY_CURRENT' },
     });
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
   });
 
   it('[18] BAŞKA müvekkilin adresini geri alma 404 (fail-closed)', async () => {
     const { svc, prisma } = buildSvc({
       siblings: [{ id: 'a3', clientId: 'c-other', isPrimary: false, isCurrent: false }],
     });
-    await expect(svc.restore('t1', 'c1', 'a3')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.restore('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('[19] audit yazımı BAŞARISIZ olursa geri alma ROLLBACK olur', async () => {
     const { svc, wasRolledBack } = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT, auditFails: true });
-    await expect(svc.restore('t1', 'c1', 'a3')).rejects.toThrow('audit sink down');
+    await expect(svc.restore('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' })).rejects.toThrow('audit sink down');
     expect(wasRolledBack()).toBe(true);
   });
 
@@ -331,11 +397,14 @@ describe('ARC-07 I02 — restore()', () => {
         { id: 'a4', clientId: 'c1', isPrimary: false, isCurrent: false },
       ],
     });
-    await svc.restore('t1', 'c1', 'a3');
-    expect(tx.clientAddress.update).toHaveBeenCalledWith({
-      where: { id: 'a3' },
-      data: { isCurrent: true, isPrimary: true },
-    });
+    await svc.restore('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
+    expect(tx.clientAddress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // D04: tenant predicate YAZMANIN KENDISINDE bulunur.
+          where: expect.objectContaining({ id: 'a3', client: { tenantId: 't1' } }),
+          data: { isCurrent: true, isPrimary: true },
+        }),
+      );
   });
 });
 
@@ -368,6 +437,8 @@ describe('ARC-07 I02 — fiziksel silme fail-closed', () => {
     await expect(svc.remove('t1', 'c1', 'a2')).rejects.toBeDefined();
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(tx.clientAddress.update).not.toHaveBeenCalled();
+    // D04: satir guncellemesi artik `updateMany` ile yapilir — o da cagrilmamali.
+    expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
     expect(tx.clientAddress.updateMany).not.toHaveBeenCalled();
   });
 
@@ -398,7 +469,7 @@ describe('ARC-07 I02 — fiziksel silme fail-closed', () => {
 describe('ARC-07 I02 — lifecycle audit', () => {
   it('[25] arşivleme audit kaydı yazılır (önceki + sonraki yaşam döngüsü durumu ile)', async () => {
     const { svc, audit } = buildSvc({ siblings: TWO_CURRENT });
-    await svc.archive('t1', 'c1', 'a2', {}, { userId: 'u1' });
+    await svc.archive('t1', 'c1', 'a2', {}, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     const rec = auditByAction(audit, 'CLIENT_ADDRESS_ARCHIVE');
     expect(rec).toMatchObject({
       tenantId: 't1',
@@ -413,7 +484,7 @@ describe('ARC-07 I02 — lifecycle audit', () => {
 
   it('[26] geri alma audit kaydı yazılır', async () => {
     const { svc, audit } = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    await svc.restore('t1', 'c1', 'a3', {}, { userId: 'u1' });
+    await svc.restore('t1', 'c1', 'a3', {}, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     const rec = auditByAction(audit, 'CLIENT_ADDRESS_RESTORE');
     expect(rec).toMatchObject({
       tenantId: 't1',
@@ -428,7 +499,7 @@ describe('ARC-07 I02 — lifecycle audit', () => {
 
   it('[27] birincil yeniden-atama audit kanıtı yazılır (her iki yönde)', async () => {
     const arch = buildSvc({ siblings: TWO_CURRENT });
-    await arch.svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'u1' });
+    await arch.svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(auditByAction(arch.audit, 'CLIENT_ADDRESS_PRIMARY_REASSIGN')).toMatchObject({
       entityId: 'a2',
       newValues: { isPrimary: true },
@@ -436,7 +507,7 @@ describe('ARC-07 I02 — lifecycle audit', () => {
     });
 
     const rest = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    await rest.svc.restore('t1', 'c1', 'a3', { makePrimary: true }, { userId: 'u1' });
+    await rest.svc.restore('t1', 'c1', 'a3', { makePrimary: true }, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     expect(auditByAction(rest.audit, 'CLIENT_ADDRESS_PRIMARY_REASSIGN')).toMatchObject({
       entityId: 'a3',
       newValues: { isPrimary: true },
@@ -446,7 +517,7 @@ describe('ARC-07 I02 — lifecycle audit', () => {
 
   it('[28] audit gövdesi YALNIZ kimlik/durum taşır — HAM ADRES İÇERİĞİ yazılmaz', async () => {
     const { svc, audit } = buildSvc({ siblings: TWO_CURRENT });
-    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'u1' });
+    await svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'u1', tenantId: 't1', role: 'ADMIN' });
     const serialized = JSON.stringify(auditCalls(audit));
     for (const field of ['street', 'city', 'district', 'region', 'postalCode']) {
       expect(serialized).not.toContain(field);
@@ -457,7 +528,7 @@ describe('ARC-07 I02 — lifecycle audit', () => {
 
   it('[29] audit TRANSACTION-BAĞLI: mutation tx\'i ile aynı client\'a yazılır, fire-and-forget log() KULLANILMAZ', async () => {
     const { svc, tx, audit } = buildSvc({ siblings: TWO_CURRENT });
-    await svc.archive('t1', 'c1', 'a2');
+    await svc.archive('t1', 'c1', 'a2', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(audit.logInTransaction).toHaveBeenCalled();
     // İlk argüman mutation'ın kullandığı AYNI transaction client'ı olmalı.
     expect(audit.logInTransaction.mock.calls[0][0]).toBe(tx);
@@ -468,15 +539,15 @@ describe('ARC-07 I02 — lifecycle audit', () => {
 
   it('[29b] her arşiv/restore en az BİR audit kaydı yazar (audit\'siz mutasyon YOK)', async () => {
     const arch = buildSvc({ siblings: TWO_CURRENT });
-    await arch.svc.archive('t1', 'c1', 'a2');
+    await arch.svc.archive('t1', 'c1', 'a2', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(arch.audit.logInTransaction).toHaveBeenCalledTimes(1);
 
     const rest = buildSvc({ siblings: ARCHIVED_PLUS_CURRENT });
-    await rest.svc.restore('t1', 'c1', 'a3');
+    await rest.svc.restore('t1', 'c1', 'a3', {}, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     expect(rest.audit.logInTransaction).toHaveBeenCalledTimes(1);
 
     const both = buildSvc({ siblings: TWO_CURRENT });
-    await both.svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' });
+    await both.svc.archive('t1', 'c1', 'a1', { replacementPrimaryAddressId: 'a2' }, { userId: 'fixture-actor', tenantId: 't1', role: 'ADMIN' });
     // yeniden-atama + arşiv = 2 kayıt
     expect(both.audit.logInTransaction).toHaveBeenCalledTimes(2);
   });

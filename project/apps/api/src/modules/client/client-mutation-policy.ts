@@ -278,3 +278,77 @@ export function deriveClientMutationCapabilities(
     canManageLifecycle: lifecycleEligible === true,
   };
 }
+
+// =========================================================================================
+// OWN-13 I02-R2 — CLIENT ADRES MUTASYON POLİTİKASI (owner D01 "B+" RATIFIED)
+//
+// Bu bölüm AYNI modülde ve AYNI `CLIENT_MUTATION_REASON` sözlüğüyle çalışır: paralel bir
+// capability sistemi veya ikinci bir RolesGuard KURULMAZ (owner D06).
+//
+// D07 — **`UserRole.ADMIN` TEK BAŞINA elevated DEĞİLDİR.** `decideClientUpdate`'ten ayrılan
+// tek nokta budur: adres tarafında yükseltilmiş yetki YALNIZ `actor.elevatedAuthority`
+// (yani mevcut `officeApproval.isApproverEligible` / `canManageLifecycle` predicate'i)
+// üzerinden gelir. Rol burada sadece coarse gate'i (VIEWER) belirler.
+// =========================================================================================
+
+/** Adres mutasyon sınıfı — controller route'larıyla birebir. */
+export type ClientAddressOperation = 'CREATE' | 'UPDATE' | 'ARCHIVE' | 'RESTORE';
+
+export interface ClientAddressMutationInput {
+  operation: ClientAddressOperation;
+  /** UPDATE/ARCHIVE/RESTORE: hedef adres ŞU AN birincil mi. */
+  targetIsPrimary?: boolean;
+  /** İstek AÇIKÇA birincillik talep ediyor mu (`dto.isPrimary === true` / `makePrimary`). */
+  requestsPrimary?: boolean;
+  /** Müvekkilin hâlihazırda AKTİF (current) bir birincil adresi var mı. */
+  hasActivePrimary?: boolean;
+}
+
+/**
+ * Owner D02/D03 — hangi adres mutasyonu lifecycle-level yetki ister?
+ *
+ * - `ARCHIVE` / `RESTORE`: **her zaman** elevated (restore, `makePrimary`den BAĞIMSIZ).
+ * - `UPDATE`: hedef ŞU AN birincilse (mevcut birincil kaydın herhangi bir alanı) **veya**
+ *   istek birincillik devri talep ediyorsa elevated.
+ * - `CREATE`: yalnız AÇIK birincillik talebi MEVCUT aktif birincili düşürecekse elevated.
+ *   **D03:** hiç aktif birincil yokken ilk adresin sistem invariant'ı gereği otomatik
+ *   birincil olması STANDARD'dır — bu bir devir değildir.
+ */
+export function requiresElevatedAddressAuthority(input: ClientAddressMutationInput): boolean {
+  switch (input?.operation) {
+    case 'ARCHIVE':
+    case 'RESTORE':
+      return true;
+    case 'UPDATE':
+      return input.targetIsPrimary === true || input.requestsPrimary === true;
+    case 'CREATE':
+      return input.requestsPrimary === true && input.hasActivePrimary === true;
+    default:
+      // Bilinmeyen işlem sınıfı → fail-closed.
+      return true;
+  }
+}
+
+/**
+ * Adres mutasyon kararı. Sıra: actor → rol → VIEWER → elevated eşiği.
+ * `elevatedAuthority` DIŞINDA hiçbir rol yükseltme sağlamaz (owner D07).
+ */
+export function decideClientAddressMutation(
+  actor: ClientMutationActor,
+  input: ClientAddressMutationInput,
+): ClientMutationDecision {
+  if (!actor?.userId) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.NO_ACTOR };
+  }
+  const role = normalizeRole(actor.role);
+  if (role === null) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.UNKNOWN_ROLE };
+  }
+  if (role === 'VIEWER') {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.VIEWER_DENIED };
+  }
+  if (requiresElevatedAddressAuthority(input) && actor.elevatedAuthority !== true) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.LIFECYCLE_DENIED };
+  }
+  return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
+}

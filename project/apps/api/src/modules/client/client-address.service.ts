@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -13,7 +13,14 @@ import {
 } from './client-address-lifecycle';
 // Tip-only import (runtime'da silinir → döngü YOK): audit actor tipi CLIENT modülünde zaten
 // kanoniktir, paralel bir tip ÜRETİLMEZ.
-import type { AuditActor } from './client.service';
+import type { ClientMutationActorContext } from './client.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import {
+  CLIENT_MUTATION_REASON,
+  decideClientAddressMutation,
+  type ClientAddressMutationInput,
+  type ClientMutationDecision,
+} from './client-mutation-policy';
 
 type ClientAddressRow = {
   id: string;
@@ -62,6 +69,23 @@ const STAFF_READ_SELECT = {
   updatedAt: true,
 } as const;
 
+/**
+ * OWN-13 I02-R2 — `ClientAddressRow` ile BİREBİR projeksiyon. Koşullu (`updateMany`) yazımdan
+ * sonra satırı geri okumak için kullanılır; response kontratına yeni alan EKLEMEZ.
+ */
+const ADDRESS_ROW_SELECT = {
+  id: true,
+  clientId: true,
+  type: true,
+  street: true,
+  city: true,
+  district: true,
+  region: true,
+  postalCode: true,
+  isPrimary: true,
+  isCurrent: true,
+} as const;
+
 /** I03 okuma filtresi. Bilinmeyen değer SESSİZCE 'active'e düşmez — fail-closed reddedilir. */
 export const CLIENT_ADDRESS_LIST_STATUSES = ['active', 'archived', 'all'] as const;
 export type ClientAddressListStatus = (typeof CLIENT_ADDRESS_LIST_STATUSES)[number];
@@ -93,7 +117,81 @@ export class ClientAddressService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    // OWN-13 I02-R2 (owner D06): elevated eşiği MEVCUT kanonik kaynaktan gelir; CLIENT
+    // kendi eligibility hesabını KURMAZ, ikinci bir capability sistemi de EKLEMEZ.
+    private readonly officeApproval: OfficeApprovalService,
   ) {}
+
+  /**
+   * OWN-13 I02-R2 — reddedilen adres mutasyonunu stabil `reasonCode` ile 403'e çevirir.
+   *
+   * PII YASAĞI (owner F): gövde YALNIZ makine-okur kod + sabit mesaj taşır. `street`, `city`,
+   * `district`, `postalCode`, `identityNo` veya başka kişisel veri ASLA yazılmaz.
+   */
+  private denyAddressMutation(decision: ClientMutationDecision): never {
+    const messages: Record<string, string> = {
+      [CLIENT_MUTATION_REASON.NO_ACTOR]: 'Yetkilendirme bağlamı yok.',
+      [CLIENT_MUTATION_REASON.UNKNOWN_ROLE]: 'Kullanıcı rolü tanınmadı.',
+      [CLIENT_MUTATION_REASON.VIEWER_DENIED]:
+        'Görüntüleyici (VIEWER) rolü müvekkil adresi oluşturamaz veya değiştiremez.',
+      [CLIENT_MUTATION_REASON.LIFECYCLE_DENIED]:
+        'Bu adres işlemi birincil/güncel adres durumunu değiştirir; yetkilendirilmiş avukat ' +
+        '(PARTNER veya onay yetkisi verilmiş) olmanız gerekir.',
+      [CLIENT_MUTATION_REASON.TENANT_MISMATCH]: 'İşlem bağlamı ile hedef büro eşleşmiyor.',
+    };
+    throw new ForbiddenException({
+      code: decision.reasonCode,
+      message: messages[decision.reasonCode] ?? 'Bu işlem için yetkiniz yok.',
+    });
+  }
+
+  /**
+   * OWN-13 I02-R2 (owner D04) — aktör tenant'ı ile hedef tenant EXACT eşit olmalıdır.
+   * Hiçbir sorgu üretilmeden reddeder; varlık sızdırmaz.
+   */
+  private assertActorTenantMatches(tenantId: string, actor: ClientMutationActorContext): void {
+    if (!tenantId || !actor?.tenantId || actor.tenantId !== tenantId) {
+      this.denyAddressMutation({
+        allowed: false,
+        reasonCode: CLIENT_MUTATION_REASON.TENANT_MISMATCH,
+      });
+    }
+  }
+
+  /**
+   * OWN-13 I02-R2 — adres mutasyon yetki kapısı. SERVİS SINIRINDA authority'dir; controller
+   * de çağırabilir ama tek geçit orası DEĞİLDİR (owner A: controller-only yetmez).
+   *
+   * `isApproverEligible` YALNIZ gerçekten elevated gerektiren işlemlerde sorgulanır — aksi
+   * hâlde gereksiz DB turu yapılmaz. **Owner D07: ADMIN rolü tek başına elevated SAYILMAZ**,
+   * bu yüzden `elevatedAuthority` yalnız bu predicate'ten türer.
+   */
+  private async assertAddressMutationAllowed(
+    tenantId: string,
+    actor: ClientMutationActorContext,
+    input: ClientAddressMutationInput,
+  ): Promise<void> {
+    // Önce yükseltme YOKmuş gibi karar ver: actor/rol/VIEWER retleri eligibility'den BAĞIMSIZ
+    // olduğu için bu durumlarda gereksiz DB turu atılmaz (fail-closed erken).
+    const base = decideClientAddressMutation(
+      { userId: actor?.userId, role: actor?.role, elevatedAuthority: false },
+      input,
+    );
+    if (base.allowed) return;
+    if (base.reasonCode !== CLIENT_MUTATION_REASON.LIFECYCLE_DENIED) {
+      this.denyAddressMutation(base);
+    }
+
+    // Yalnız sonucu DEĞİŞTİREBİLECEĞİ durumda eligibility sorgulanır.
+    const elevatedAuthority = actor?.userId
+      ? await this.officeApproval.isApproverEligible(actor.userId, tenantId)
+      : false;
+    const decision = decideClientAddressMutation(
+      { userId: actor?.userId, role: actor?.role, elevatedAuthority },
+      input,
+    );
+    if (!decision.allowed) this.denyAddressMutation(decision);
+  }
 
   /**
    * Öngörülen (yazma SONRASI) adres kümesini §49'a karşı doğrular; ihlalde SABİT domain hatası
@@ -177,20 +275,48 @@ export class ClientAddressService {
     tenantId: string,
     clientId: string,
     dto: CreateClientAddressDto,
-    actor?: AuditActor,
+    actor: ClientMutationActorContext,
   ): Promise<ClientAddressRow> {
+    // OWN-13 I02-R2: tenant eşitliği — hiçbir sorgu yapılmadan ÖNCE.
+    this.assertActorTenantMatches(tenantId, actor);
+
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, tenantId },
       select: { id: true },
     });
     if (!client) throw new NotFoundException('Müvekkil bulunamadı');
 
+    // Owner D02/D03: AÇIK birincillik talebi ancak MEVCUT aktif birincili düşürecekse
+    // elevated'dır. Hiç aktif birincil yokken ilk adresin otomatik birincil olması STANDARD.
+    // Bu okuma yalnız açık talep varken yapılır; aksi hâlde sınıflandırma zaten STANDARD.
+    const hasActivePrimary =
+      dto.isPrimary === true
+        ? (await this.prisma.clientAddress.count({
+            where: { clientId, isPrimary: true, isCurrent: true, client: { tenantId } },
+          })) > 0
+        : false;
+
+    await this.assertAddressMutationAllowed(tenantId, actor, {
+      operation: 'CREATE',
+      requestsPrimary: dto.isPrimary === true,
+      hasActivePrimary,
+    });
+
     return this.prisma.$transaction(async (tx) => {
+      // OWN-13 I02-R2 (owner D04): parent Client AYNI transaction içinde tenant-scoped olarak
+      // YENİDEN doğrulanır; create yalnız doğrulanan clientId'ye bağlanır.
+      const verifiedClient = await tx.client.findFirst({
+        where: { id: clientId, tenantId },
+        select: { id: true },
+      });
+      if (!verifiedClient) throw new NotFoundException('Müvekkil bulunamadı');
+      const verifiedClientId = verifiedClient.id;
+
       // I01 §5: invariant için gereken okuma YAZMA İLE AYNI transaction'da. Eski `count()`
       // yerine minimum projeksiyonlu kardeş kümesi okunur — hem öngörülen durum kurulabilsin
       // hem INV-07 (arşiv satır primary seçimine katılmaz) uygulanabilsin.
       const siblings = await tx.clientAddress.findMany({
-        where: { clientId },
+        where: { clientId: verifiedClientId },
         select: LIFECYCLE_SIBLING_SELECT,
       });
       // INV-07: "ilk adres primary olur" kararı YALNIZ current satırlara bakar. Bugün tüm
@@ -203,20 +329,21 @@ export class ClientAddressService {
       // Yeni satır her zaman current'tır (isCurrent DTO'dan alınmaz, şema default'u true).
       const prospective: ClientAddressLifecycleRow[] = [
         ...siblings.map((s) => ({ ...s, isPrimary: isPrimary ? false : s.isPrimary })),
-        { id: null, clientId, isPrimary, isCurrent: true },
+        { id: null, clientId: verifiedClientId, isPrimary, isCurrent: true },
       ];
-      this.assertLifecycle(clientId, prospective);
+      this.assertLifecycle(verifiedClientId, prospective);
 
       if (isPrimary) {
+        // D04: yazma tenant-scoped parent ilişkisine bağlı.
         await tx.clientAddress.updateMany({
-          where: { clientId, isPrimary: true },
+          where: { clientId: verifiedClientId, isPrimary: true, client: { tenantId } },
           data: { isPrimary: false },
         });
       }
 
       const created = await tx.clientAddress.create({
         data: {
-          clientId,
+          clientId: verifiedClientId,
           type: dto.type,
           street: dto.street,
           city: dto.city,
@@ -244,7 +371,7 @@ export class ClientAddressService {
           oldValues: { isPrimary: false, isCurrent: true },
           newValues: { isPrimary: true, isCurrent: true },
           metadata: {
-            clientId,
+            clientId: verifiedClientId,
             previousPrimaryAddressId: displacedPrimary.id,
             reason: 'PRIMARY_CREATED',
           },
@@ -261,7 +388,7 @@ export class ClientAddressService {
         userId: actor?.userId,
         newValues: { isPrimary: created.isPrimary, isCurrent: created.isCurrent },
         metadata: {
-          clientId,
+          clientId: verifiedClientId,
           type: created.type,
           siblingPrimaryUnset: Boolean(displacedPrimary),
         },
@@ -284,9 +411,18 @@ export class ClientAddressService {
     clientId: string,
     addressId: string,
     dto: UpdateClientAddressDto,
-    actor?: AuditActor,
+    actor: ClientMutationActorContext,
   ): Promise<ClientAddressRow> {
+    this.assertActorTenantMatches(tenantId, actor);
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
+
+    // Owner D02: MEVCUT birincil kaydın herhangi bir alanını değiştirmek VE birincillik
+    // devri elevated'dır; birincil OLMAYAN adresin olağan alanları STANDARD (owner B.2).
+    await this.assertAddressMutationAllowed(tenantId, actor, {
+      operation: 'UPDATE',
+      targetIsPrimary: address.isPrimary === true,
+      requestsPrimary: dto.isPrimary === true,
+    });
 
     return this.prisma.$transaction(async (tx) => {
       // I01 §5: kardeş durumu YAZMA İLE AYNI transaction'da okunur (count-then-write yarışı yok).
@@ -307,14 +443,18 @@ export class ClientAddressService {
       this.assertLifecycle(address.clientId, prospective);
 
       if (dto.isPrimary === true && !address.isPrimary) {
+        // D04: yazma tenant-scoped parent ilişkisine bağlı.
         await tx.clientAddress.updateMany({
-          where: { clientId: address.clientId, isPrimary: true },
+          where: { clientId: address.clientId, isPrimary: true, client: { tenantId } },
           data: { isPrimary: false },
         });
       }
 
-      const updated = await tx.clientAddress.update({
-        where: { id: addressId },
+      // OWN-13 I02-R2 (owner D04): final write `updateMany` + `count` ile tenant-scoped parent
+      // ilişkisine bağlanır. Unique `update({where:{id}})` bu predicate'i taşıyamaz. `count===0`
+      // (kayıt eşzamanlı taşındı/silindi) → SONRAKİ HİÇBİR YAZMA VE AUDİT ÜRETİLMEZ.
+      const { count } = await tx.clientAddress.updateMany({
+        where: { id: addressId, clientId: address.clientId, client: { tenantId } },
         data: {
           type: dto.type,
           street: dto.street,
@@ -324,6 +464,15 @@ export class ClientAddressService {
           postalCode: dto.postalCode,
           isPrimary: dto.isPrimary === true ? true : undefined,
         },
+      });
+      if (count === 0) {
+        throw new NotFoundException('Adres bulunamadı');
+      }
+      // Dönüş şekli DEĞİŞMEDİ: `ClientAddressRow` alanları birebir (createdAt/updatedAt gibi
+      // ek alan EKLENMEZ — response kontratı korunur).
+      const updated = await tx.clientAddress.findFirstOrThrow({
+        where: { id: addressId, client: { tenantId } },
+        select: ADDRESS_ROW_SELECT,
       });
 
       const changedFields = changedAddressFields(address, dto);
@@ -392,8 +541,11 @@ export class ClientAddressService {
     clientId: string,
     addressId: string,
     dto: ArchiveClientAddressDto = {},
-    actor?: AuditActor,
+    actor: ClientMutationActorContext,
   ): Promise<ClientAddressRow> {
+    this.assertActorTenantMatches(tenantId, actor);
+    // Owner D02: arşivleme HER ZAMAN elevated (açık lifecycle aksiyonu).
+    await this.assertAddressMutationAllowed(tenantId, actor, { operation: 'ARCHIVE' });
     // Tenant+client sınırı ve 404 sözleşmesi create/update/remove ile AYNI (fail-closed).
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
@@ -465,15 +617,23 @@ export class ClientAddressService {
       this.assertLifecycle(address.clientId, prospective);
 
       if (replacement) {
-        await tx.clientAddress.update({
-          where: { id: replacement.id },
+        // D04: tenant-scoped parent ilişkisine bağlı koşullu yazma.
+        const reassigned = await tx.clientAddress.updateMany({
+          where: { id: replacement.id, clientId: address.clientId, client: { tenantId } },
           data: { isPrimary: true },
         });
+        if (reassigned.count === 0) throw new NotFoundException('Adres bulunamadı');
       }
 
-      const archived = await tx.clientAddress.update({
-        where: { id: addressId },
+      // D04: arşiv yazımı da tenant-scoped; `count===0` → sonraki yazma/audit ÜRETİLMEZ.
+      const { count } = await tx.clientAddress.updateMany({
+        where: { id: addressId, clientId: address.clientId, client: { tenantId }, isCurrent: true },
         data: { isCurrent: false, isPrimary: false },
+      });
+      if (count === 0) throw new NotFoundException('Adres bulunamadı');
+      const archived = await tx.clientAddress.findFirstOrThrow({
+        where: { id: addressId, client: { tenantId } },
+        select: ADDRESS_ROW_SELECT,
       });
 
       if (replacement) {
@@ -534,8 +694,11 @@ export class ClientAddressService {
     clientId: string,
     addressId: string,
     dto: RestoreClientAddressDto = {},
-    actor?: AuditActor,
+    actor: ClientMutationActorContext,
   ): Promise<ClientAddressRow> {
+    this.assertActorTenantMatches(tenantId, actor);
+    // Owner D02: restore HER ZAMAN elevated — `makePrimary` değerinden BAĞIMSIZ.
+    await this.assertAddressMutationAllowed(tenantId, actor, { operation: 'RESTORE' });
     const address = await this.findAddressInClient(tenantId, clientId, addressId);
 
     return this.prisma.$transaction(async (tx) => {
@@ -570,15 +733,23 @@ export class ClientAddressService {
       this.assertLifecycle(address.clientId, prospective);
 
       if (willBePrimary) {
+        // D04: tenant-scoped parent ilişkisine bağlı.
         await tx.clientAddress.updateMany({
-          where: { clientId: address.clientId, isPrimary: true },
+          where: { clientId: address.clientId, isPrimary: true, client: { tenantId } },
           data: { isPrimary: false },
         });
       }
 
-      const restored = await tx.clientAddress.update({
-        where: { id: addressId },
+      // D04: geri alma yazımı tenant-scoped + arşivli DURUMA koşullu; `count===0` → sonraki
+      // hiçbir yazma ve audit üretilmez.
+      const { count } = await tx.clientAddress.updateMany({
+        where: { id: addressId, clientId: address.clientId, client: { tenantId }, isCurrent: false },
         data: { isCurrent: true, isPrimary: willBePrimary },
+      });
+      if (count === 0) throw new NotFoundException('Adres bulunamadı');
+      const restored = await tx.clientAddress.findFirstOrThrow({
+        where: { id: addressId, client: { tenantId } },
+        select: ADDRESS_ROW_SELECT,
       });
 
       if (displaced) {

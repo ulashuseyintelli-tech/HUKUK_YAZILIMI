@@ -103,6 +103,14 @@ src/modules/export-import/__tests__/client-import-actor-threading-r1.spec.ts
 #     (isActive:false + tenant predicate) -> stale gozlem yetkisiz yazmaya donusemez.
 src/modules/client/__tests__/client-reactivate-via-create-lifecycle-gate-r1a.spec.ts
 #
+#   CLIENT-OWN-13-I02-R2 address mutation authorization (SAF, DB-siz)
+#     Owner D01 "B+": VIEWER hicbir adres mutasyonu yapamaz; USER birincil-olmayan
+#     create/update yapabilir; current/primary degisimi, archive ve restore ELEVATED
+#     (mevcut isApproverEligible predicate). D07: ADMIN tek basina elevated DEGILDIR.
+#     D03: hic aktif birincil yokken ilk adresin otomatik birincil olmasi STANDARD.
+#     D04: yazmalar tenant-scoped parent iliskisine bagli (updateMany + count; 0 -> audit yok).
+src/modules/client/__tests__/client-address-mutation-authorization-r2.spec.ts
+#
 #   CLIENT-P2-U03-TRACK-B-I02 disclosure canonical serialization + hash (SAF, DB-siz)
 #     Deterministik key/array sirasi, Decimal(15,2) locale-bagimsizligi, domain-separated
 #     sha256, §35.16 sifir-toleransli reconciliation ve tiplenmis hata govdesinde finansal

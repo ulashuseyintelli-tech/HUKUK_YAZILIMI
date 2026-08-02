@@ -53,7 +53,10 @@ function buildSvc(opts: { rows?: Row[]; clientFound?: boolean } = {}) {
     },
   };
   const audit: any = { logInTransaction: jest.fn(), log: jest.fn() };
-  return { svc: new ClientAddressService(prisma, audit), prisma };
+  // OWN-13 I02-R2: servis artik OfficeApprovalService de alir. Bu suite OKUMA projeksiyonunu
+  // olcer (mutasyon YOK) → stub cagrilmaz; yine de ACIK verilir, bos nesne birakilmaz.
+  const officeApproval: any = { isApproverEligible: jest.fn().mockResolvedValue(false) };
+  return { svc: new ClientAddressService(prisma, audit, officeApproval), prisma };
 }
 
 const MIXED: Row[] = [
@@ -242,7 +245,16 @@ describe('ARC-07 I03 — controller ve yetkilendirme', () => {
   it('[32d] yetkilendirme ReportingLine\'dan TÜRETİLMEZ ve OFFICE scope politikası okunmaz', () => {
     expect(CONTROLLER_SOURCE).not.toMatch(/reportingLine|ReportingLine/i);
     expect(SERVICE_SOURCE).not.toMatch(/reportingLine|ReportingLine/i);
-    expect(SERVICE_SOURCE).not.toMatch(/officeScope|OfficeScope|office-approval/i);
+    // ARC-07-D06 / §49.7'nin ASIL invariant'ı: yetkilendirme ReportingLine'dan TÜRETİLMEZ ve
+    // OFFICE **scope/görünürlük** politikası OKUNMAZ. Bu KORUNUR.
+    expect(SERVICE_SOURCE).not.toMatch(/officeScope|OfficeScope/i);
+
+    // OWN-13 I02-R2 (owner D06 RATIFIED): adres MUTASYON yetkisinin elevated eşiği artık
+    // mevcut kanonik `officeApproval.isApproverEligible` predicate'idir — CLIENT ikinci bir
+    // capability sistemi kurmasın diye. Bu, yukarıdaki scope/görünürlük yasağını GEVŞETMEZ:
+    // office-approval'dan YALNIZ `isApproverEligible` kullanılır, başka hiçbir üyesi değil.
+    const officeApprovalUsages = [...SERVICE_SOURCE.matchAll(/officeApproval\.(\w+)/g)].map((m) => m[1]);
+    expect([...new Set(officeApprovalUsages)]).toEqual(['isApproverEligible']);
   });
 });
 
