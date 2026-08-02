@@ -452,6 +452,23 @@ export class ClientService {
   }
 
   /**
+   * C1-B05 (FIND-C3): DB-seviyesi kimlik tekilliği (partial unique index — aktif satırda
+   * tenantId+tckn / tenantId+vkn) ihlalini mevcut DUPLICATE_IDENTITY sözleşmesine çevirir.
+   * Çağrıldığı üç tx call-site'ında (create ana tx, reactivate tx, update tx) dokunulan
+   * TEK unique yüzey bu kimlik index'leridir; bu yüzden P2002 meta-parsing yapılmadan
+   * doğrudan eşlenir (meta.target raw-SQL index'lerde güvenilir gelmez). Prisma dışı ve
+   * P2002 dışı hatalar OLDUĞU GİBİ yayılır (çağıran rethrow eder).
+   */
+  private throwDuplicateIdentityOnUniqueViolation(e: any): void {
+    if (e?.code === 'P2002') {
+      throw new ConflictException({
+        code: 'DUPLICATE_IDENTITY',
+        message: 'Bu kimlik numarasına sahip başka bir müvekkil mevcut',
+      });
+    }
+  }
+
+  /**
    * OWN-13 I02-R1 (owner req. 7) — hedef tenant ile actor'un tenant'ı EXACT eşit olmalıdır.
    *
    * Tenant isolation `where` yan-tümceleriyle zaten uygulanır; bu kontrol ondan ÖNCE gelen
@@ -1472,6 +1489,7 @@ export class ClientService {
           // Kapı HERHANGİ BİR DB mutation'dan ÖNCE çalışır — yetkisiz aktör hiçbir yazma yapmaz.
           await this.assertCanReactivateViaCreate(actor, tenantId);
           // C0-a: reaktivasyon mutation + audit AYNI transaction; CLIENT_CREATE'ten ayrı action.
+          try {
           await this.prisma.$transaction(async (tx) => {
             // TOCTOU: `existing` transaction DIŞINDA okundu. Yazma, yetkilendirdiğimiz DURUMA
             // (`isActive:false`) KOŞULLU yapılır + tenant predicate taşır. Kayıt bu arada
@@ -1491,6 +1509,12 @@ export class ClientService {
               metadata: { reactivatedFromDedupe: true },
             });
           });
+          } catch (e) {
+            // C1-B05: reaktivasyon partial unique index'e takılırsa (başka AKTİF satır aynı
+            // kimliği taşıyor) aynı DUPLICATE_IDENTITY sözleşmesiyle reddedilir.
+            this.throwDuplicateIdentityOnUniqueViolation(e);
+            throw e;
+          }
           console.log(`[ClientService] Soft-deleted müvekkil reaktive edildi: ${existing.id} (${existing.displayName})`);
         } else {
           console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
@@ -1525,7 +1549,11 @@ export class ClientService {
       : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
 
     // C0-a: client + contact yazımı + audit AYNI transaction (audit yazılamazsa create rollback).
-    const client = await this.prisma.$transaction(async (tx) => {
+    // C1-B05: DB-seviyesi partial unique index (aktif kimlik tekilliği) B04'te profillenen
+    // yarış penceresini kapatır; ihlal, probe'un bulduğu duplicate ile AYNI sözleşmeye çevrilir.
+    let client: any;
+    try {
+      client = await this.prisma.$transaction(async (tx) => {
       const createdClient = await tx.client.create({
       data: {
         tenantId,
@@ -1631,7 +1659,11 @@ export class ClientService {
       });
 
       return createdClient;
-    });
+      });
+    } catch (e) {
+      this.throwDuplicateIdentityOnUniqueViolation(e);
+      throw e;
+    }
 
     // PR-1: operasyonel iletişim eksiği görevini senkronla (YAN ETKİ → transaction DIŞINDA)
     await this.syncContactFollowUpTaskSafe(tenantId, {
@@ -1728,6 +1760,9 @@ export class ClientService {
     let addressesSkipped = false;
 
     // C0-a: client + contact yazımı + audit AYNI transaction.
+    // C1-B05: kimlik yazımı partial unique index'e takılırsa (PR-U4 probe'unu geçen yarış)
+    // aynı DUPLICATE_IDENTITY sözleşmesine çevrilir.
+    try {
     await this.prisma.$transaction(async (tx) => {
       // P0.5: tenant-scoped write — update() whereUnique tenantId taşıyamaz; updateMany {id,tenantId} guard.
       const { count } = await tx.client.updateMany({
@@ -1858,6 +1893,10 @@ export class ClientService {
         },
       });
     });
+    } catch (e) {
+      this.throwDuplicateIdentityOnUniqueViolation(e);
+      throw e;
+    }
 
     // PR-1: operasyonel iletişim eksiği görevini senkronla (WAIVED kararı 'existing'ten gelir)
     await this.syncContactFollowUpTaskSafe(tenantId, {

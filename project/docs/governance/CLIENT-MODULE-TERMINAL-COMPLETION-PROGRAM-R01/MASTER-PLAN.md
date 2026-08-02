@@ -753,9 +753,16 @@ DOCUMENT SET:             7/7 CANONICAL (MASTER-PLAN + C1-C3 + X1-X3)
 RATIFICATION ENVELOPE:    OWNER-DECISION-R01.md (bu dizin)
 MATERIALIZATION BASELINE: origin/main e8e4d467
 PRODUCT IMPLEMENTATION:   IN PROGRESS — CLAUDE-CLIENT-C1 (WAVE 1)
-C1 STATUS:                IN PROGRESS — C1-B04 RUNTIME_VERIFIED (2026-08-02)
-                          (owner'ın açtığı ayrı C1 sayfası yürütüyor)
-C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 4 (B01–B04)
+C1 STATUS:                IN PROGRESS — C1-B05 ACTIVATION_PENDING (2026-08-02)
+                          (owner'ın açtığı ayrı C1 sayfası yürütüyor; migration paketi
+                           HAZIR + CI-doğrulandı, APPLY WAVE 4'te aynı sayfada)
+C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 5 (B01–B05)
+C1 ACTIVATION DEBT:       C1-PROD-ACTIVATION — 20260802190000_client_identity_active_
+                          partial_unique (aktif satırda tenantId+tckn / tenantId+vkn
+                          partial unique; §9-D koşullu yetkiyle WAVE 4'te apply edilecek).
+                          FIND-C4 (version/CAS): atomik birlikte deploy KANITLANAMADI —
+                          C2-owned policy allowlist + XL-3 imza kısıtı nedeniyle aynı
+                          migration owner altında SERİ paketlenecek (C2 koordinasyonlu).
                           (#2107 = inherited evidence, tamamlanmış C1 bloğu DEĞİL.
                            C1-B01 = bu evidence'ın fresh main a92a5a44 üzerinde residual
                            doğrulaması: 5/5 kalem koddan kanıtlandı, ürün diff'i SIFIR,

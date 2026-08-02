@@ -164,6 +164,16 @@ src/modules/seed/__tests__/seed-bulk-atomicity.spec.ts
 #     dedup yalniz GENISLER, reactivate yolu degismez. Yaris penceresi profili
 #     characterization ile kanitlanir (kapanisi B05 design gate / DB tekilligi).
 src/modules/client/__tests__/client-create-dedup-independent-probe.spec.ts
+#
+#   CLAUDE-CLIENT-C1-B05 kimlik tekilligi migration paketi + conflict sozlesme (SAF, DB-siz)
+#     FIND-C3: 20260802190000_client_identity_active_partial_unique migration'i aktif
+#     satirda (tenantId,tckn)/(tenantId,vkn) partial unique index tanimlar (B04'te
+#     profillenen yaris penceresinin DB-seviyesi kapanisi; APPLY WAVE 4). Bu spec P2002
+#     ihlalinin uc tx call-site'inda da mevcut DUPLICATE_IDENTITY ConflictException
+#     sozlesmesine cevrildigini ve P2002-disi hatalarin aynen yayildigini kilitler.
+#     FIND-C4 (version/CAS): atomik birlikte deploy kanitlanamadi -> ayni migration
+#     owner altinda SERI paketlenecek (C2-owned policy allowlist + XL-3 imza kisiti).
+src/modules/client/__tests__/client-identity-conflict-mapping-c1b05.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
