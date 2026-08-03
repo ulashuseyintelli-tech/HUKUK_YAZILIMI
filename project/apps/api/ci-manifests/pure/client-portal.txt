@@ -183,13 +183,16 @@ src/modules/client/__tests__/client-identity-conflict-mapping-c1b05.spec.ts
 #     tamamini kapsar.
 src/modules/seed/__tests__/seed-surface-idempotency-certification.spec.ts
 #
-#   CLAUDE-CLIENT-C2-B02 workspace komut yetki karakterizasyonu (SAF, DB-siz)
-#     FIND-C2: bes workspace komut endpoint'i rol KONTROLSUZ (VIEWER ve tanimsiz rol
-#     dahil dispatch servise ulasir); controller aktor ROLUNU servise iletmiyor;
-#     send komutlari isApproverEligible'a danismiyor ve AuditLog uretmiyor (yalniz
-#     artefakt satiri/createdById). CHARACTERIZATION-ONLY — owner §13/11 rol politikasi
-#     karari ratifiye edilmeden gate YAZILMAZ; implementation karar sonrasi B02'de.
-src/modules/client/__tests__/client-workspace-command-authorization-characterization.spec.ts
+#   CLAUDE-CLIENT-C2-B02 workspace komut yetki R4 (SAF, DB-siz)
+#     FIND-C2 KAPANDI (owner §13/11 RATIFIED 2026-08-03): 6 workspace komutu
+#     (poa-reminder/template-notification/document-request dispatch, intake-link
+#     create(/deliver), POA upload) controller sinirinda tek kapidan gecer
+#     (client-workspace-command-authority.ts): esik ADMIN VEYA elevated
+#     (isApproverEligible); VIEWER/tanimsiz rol fail-closed; yetkisiz aktorde servis
+#     HIC cagrilmaz (mail/SMS/queue/dosya/state yazimi olusmaz); basarili komut
+#     CLIENT_WORKSPACE_COMMAND AuditLog uretir (commandType/result, ham PII yok).
+#     Bu spec characterization halefidir (ayni dosyanin devami, git mv).
+src/modules/client/__tests__/client-workspace-command-authorization-r4.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts

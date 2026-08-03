@@ -547,9 +547,23 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
       #2107 reuse `789cf8f6`). Ürün diff'i SIFIR → RUNTIME_VERIFIED.
       PRE-FLIGHT: C1 aktif blok=B05 (branch `claude/client-c1-b05-identity-design-gate`
       @ 573ea61a, diff BOŞ, PR YOK) · çakışma=YOK · karar=YÜRÜDÜ)*
-- [ ] **B02** workspace komutları rol-gated + audited; owner politikası uygulanmış;
+- [x] **B02** workspace komutları rol-gated + audited; owner politikası uygulanmış;
       gate yeri kanıtla seçilmiş (dayatma yok)
-      *(2026-08-02 — CHARACTERIZATION TAMAM, IMPLEMENTATION `WAITING_FOR_OWNER_DECISION`:
+      *(2026-08-03 — IMPLEMENTATION TAMAM, owner §13/11 RATIFIED: eşik ADMIN VEYA
+      canonical elevated (`isApproverEligible`); VIEWER/tanımsız rol fail-closed.
+      GATE YERİ (kanıtla): controller sınırı + ortak command-authority helper
+      (`client-workspace-command-authority.ts`) — servis gövdeleri `client.service.ts`
+      C1 lane-owned olduğu için servis sınırı SEÇİLEMEZDİ; karar
+      `client-mutation-policy.decideClientWorkspaceCommand` ile policy modülünde.
+      6 endpoint tek kapıdan: poa-reminder/template-notification/document-request
+      dispatch + intake-link create(/deliver) + POA upload. Yetkisiz aktörde servis
+      HİÇ çağrılmaz (yan etki/queue/dosya/state yazımı YOK); cross-tenant
+      TENANT_MISMATCH ile sorgusuz ret; başarılı komut `CLIENT_WORKSPACE_COMMAND`
+      AuditLog üretir (actor/tenant/client/commandType/result; ham PII yok);
+      `isApproverEligible` yalnız gerektiğinde sorgulanır; office/disclosure/payout
+      eligibility'leri DEĞİŞTİRİLMEDİ. Kanıt: r4 spec 45/45 PASS + client modülü
+      31 suite 495/495 PASS.
+      2026-08-02 characterization kaydı (tarihçe):
       decision-log'da §13/11 "iletişim/workspace gönderim rol politikası" kaydı YOK
       (CN-1/FIND-C2 anahtarlarıyla sıfır eşleşme, repository-truth). Mevcut davranış
       `client-workspace-command-authorization-characterization.spec.ts` ile sabitlendi,

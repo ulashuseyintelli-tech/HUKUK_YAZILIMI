@@ -53,6 +53,11 @@ export const CLIENT_MUTATION_REASON = {
    * bir katmandır ve hiç sorgu üretmeden reddeder.
    */
   TENANT_MISMATCH: 'CLIENT_MUTATION_DENIED_TENANT_MISMATCH',
+  /**
+   * C2-B02 (R4, owner §13/11 RATIFIED 2026-08-03): workspace komutu (client-facing
+   * dispatch/upload) için eşik sağlanmadı — rol ADMIN değil VE elevated değil.
+   */
+  WORKSPACE_COMMAND_DENIED: 'CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND',
 } as const;
 
 export type ClientMutationReason =
@@ -380,6 +385,41 @@ export function decideClientBulkMutation(actor: ClientMutationActor): ClientMuta
   }
   if (actor.elevatedAuthority !== true) {
     return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.LIFECYCLE_DENIED };
+  }
+  return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
+}
+
+// =========================================================================================
+// C2-B02 R4 — WORKSPACE COMMAND AUTHORITY (owner §13/11 RATIFIED 2026-08-03)
+//
+// Client-facing workspace komutları (POA reminder / template notification / document
+// request dispatch · intake-link create(/deliver) · POA upload) ve gerçek mail/SMS
+// gönderim girişimleri için TEK eşik: `ADMIN` VEYA canonical elevated predicate
+// (`officeApproval.isApproverEligible` — çağıran hesaplar, politika KOPYALAMAZ).
+// VIEWER ve tanınmayan rol fail-closed reddedilir. Bu eşik BİLİNÇLİ olarak core
+// hassas-alan eşiğiyle (decideClientUpdate SENSITIVE: ADMIN VEYA elevated) aynıdır;
+// bulk/adres-lifecycle eşiği (YALNIZ elevated, ADMIN yetmez) DEĞİŞTİRİLMEZ.
+// Office/disclosure/payout eligibility politikaları BİRLEŞTİRİLMEZ (owner kuralı).
+// =========================================================================================
+
+/**
+ * Workspace komut kararı. Sıra: actor → rol → VIEWER → (ADMIN VEYA elevated).
+ * Yetki kontrolü dış yan etkiden ÖNCE çağrılır (owner §13/11 zorunlu kuralı);
+ * uygulama noktası `client-workspace-command-authority.ts`.
+ */
+export function decideClientWorkspaceCommand(actor: ClientMutationActor): ClientMutationDecision {
+  if (!actor?.userId) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.NO_ACTOR };
+  }
+  const role = normalizeRole(actor.role);
+  if (role === null) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.UNKNOWN_ROLE };
+  }
+  if (role === 'VIEWER') {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.VIEWER_DENIED };
+  }
+  if (role !== 'ADMIN' && actor.elevatedAuthority !== true) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.WORKSPACE_COMMAND_DENIED };
   }
   return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
 }

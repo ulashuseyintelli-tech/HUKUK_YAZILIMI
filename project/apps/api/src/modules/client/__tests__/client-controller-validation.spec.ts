@@ -23,9 +23,16 @@ function build() {
     createForClientWorkspace: jest.fn(async () => ({ link: { id: "lnk-1" }, rawToken: "raw-token", intakeUrl: "https://form.example.com/intake/raw-token" })),
     createAndDeliverForClientWorkspace: jest.fn(async () => ({ link: { id: "lnk-deliver" }, delivery: { id: "delivery-1", status: "sent" } })),
   } as any;
-  const ctrl = new ClientController(service, intakeLinkService);
+  // C2-B02 R4: intake-link workspace komutlari artik rol-gated. Bu suite YETKI degil
+  // GOVDE DOGRULAMASI test eder; kapi izin-veren aktorle (ADMIN) ve sahte audit ile
+  // baglanir. Yetki davranisinin kaniti: client-workspace-command-authorization-r4.spec.ts.
+  const officeApproval = { isApproverEligible: jest.fn(async () => true) } as any;
+  const audit = { log: jest.fn(async () => undefined) } as any;
+  const ctrl = new ClientController(service, intakeLinkService, undefined, officeApproval, audit);
   const req = { user: { id: "u1", tenantId: "t1" } } as any;
-  return { ctrl, service, intakeLinkService, req };
+  // Workspace komutlari (intake-link) icin R4 kapisini gecen yetkili aktor.
+  const reqCmd = { user: { id: "u1", tenantId: "t1", role: "ADMIN" } } as any;
+  return { ctrl, service, intakeLinkService, req, reqCmd };
 }
 
 describe("ClientController - Task 2 lenient validation", () => {
@@ -84,9 +91,9 @@ describe("ClientController - Task 2 lenient validation", () => {
   });
 
   it("createIntakeLink: path client/case kullanir ve body clientId tasimaz", async () => {
-    const { ctrl, intakeLinkService, req } = build();
+    const { ctrl, intakeLinkService, reqCmd } = build();
 
-    const res = await ctrl.createIntakeLink(req, "client-1", "case-1", { scope: ["ADDRESS"] } as any);
+    const res = await ctrl.createIntakeLink(reqCmd, "client-1", "case-1", { scope: ["ADDRESS"] } as any);
 
     expect(intakeLinkService.createForClientWorkspace).toHaveBeenCalledWith(
       "t1",
@@ -106,9 +113,9 @@ describe("ClientController - Task 2 lenient validation", () => {
   });
 
   it("createAndDeliverIntakeLink: path client/case ve Idempotency-Key header service'e tasinir", async () => {
-    const { ctrl, intakeLinkService, req } = build();
+    const { ctrl, intakeLinkService, reqCmd } = build();
 
-    const res = await ctrl.createAndDeliverIntakeLink(req, "client-1", "case-1", "idem-1", { scope: ["ADDRESS"] } as any);
+    const res = await ctrl.createAndDeliverIntakeLink(reqCmd, "client-1", "case-1", "idem-1", { scope: ["ADDRESS"] } as any);
 
     expect(intakeLinkService.createAndDeliverForClientWorkspace).toHaveBeenCalledWith(
       "t1",

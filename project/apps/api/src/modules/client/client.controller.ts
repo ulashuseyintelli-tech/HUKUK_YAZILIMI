@@ -2,8 +2,15 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Qu
 import { ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
 import { PoaService, validatePoaUploadFile } from '../poa/poa.service';
+import {
+  CLIENT_WORKSPACE_COMMAND,
+  ClientWorkspaceCommandType,
+  runAuthorizedClientWorkspaceCommand,
+} from './client-workspace-command-authority';
 import { CreateClientWorkspaceIntakeLinkDto } from '../client-intake-link/dto/client-intake-link.dto';
 import { buildClientMutationActor, CLIENT_DOCUMENT_REQUEST_CODES, CLIENT_TEMPLATE_NOTIFICATION_CODES, ClientService, type ClientDocumentRequestCode, type ClientTemplateNotificationCode } from './client.service';
 import { CreateClientDto, UpdateClientDto } from './dto/create-client.dto';
@@ -40,7 +47,39 @@ export class ClientController {
     private clientService: ClientService,
     private clientIntakeLinkService: ClientIntakeLinkService,
     private poaService?: PoaService,
+    private officeApproval?: OfficeApprovalService,
+    private audit?: AuditService,
   ) {}
+
+  /**
+   * C2-B02 R4 (owner §13/11 RATIFIED 2026-08-03) — workspace komut yetki sarmalayıcısı.
+   * Eşik: ADMIN VEYA elevated (`isApproverEligible`); VIEWER/tanımsız rol fail-closed.
+   * Yetkisiz aktörde servis HİÇ çağrılmaz; başarılı komut AuditLog üretir.
+   * DI eksikse fail-closed (dispatcher-yok deseniyle aynı: yapılandırma hatası).
+   */
+  private runWorkspaceCommand<T>(
+    req: AuthRequest,
+    clientId: string,
+    commandType: ClientWorkspaceCommandType,
+    execute: () => Promise<T>,
+    resultMeta?: (result: T) => Record<string, unknown>,
+  ): Promise<T> {
+    if (!this.officeApproval || !this.audit) {
+      throw new Error('Workspace command authority is not configured');
+    }
+    const officeApproval = this.officeApproval;
+    const audit = this.audit;
+    return runAuthorizedClientWorkspaceCommand(
+      {
+        isApproverEligible: (userId, tenantId) => officeApproval.isApproverEligible(userId, tenantId),
+        auditLog: (input) => audit.log(input),
+      },
+      { userId: req.user.id, tenantId: req.user.tenantId, role: req.user.role },
+      { tenantId: req.user.tenantId, clientId, commandType },
+      execute,
+      resultMeta,
+    );
+  }
 
   // Task 2 (owner-locked 2026-06-30): client gÃ¶vde doÄŸrulamasÄ± GÃœVENLÄ°/KADEMELÄ°.
   // app.main.ts global ValidationPipe forbidNonWhitelisted:true â†’ route-level pipe onu OVERRIDE EDEMEZ
@@ -118,7 +157,13 @@ export class ClientController {
     @Request() req: AuthRequest,
     @Param('clientId') clientId: string,
   ) {
-    const result = await this.clientService.sendPoaReminder(clientId, req.user.tenantId);
+    const result = await this.runWorkspaceCommand(
+      req,
+      clientId,
+      CLIENT_WORKSPACE_COMMAND.POA_REMINDER_SEND,
+      () => this.clientService.sendPoaReminder(clientId, req.user.tenantId),
+      (r) => ({ status: r.status, sent: r.sent, failed: r.failed, skipped: r.skipped }),
+    );
     return { data: result };
   }
 
@@ -131,12 +176,19 @@ export class ClientController {
     @Body() body: any,
   ) {
     const dto = await this.templateNotificationBodyPipe.transform(body, { type: 'body', metatype: SendClientWorkspaceTemplateNotificationDto });
-    const result = await this.clientService.sendTemplateNotification(
+    const result = await this.runWorkspaceCommand(
+      req,
       clientId,
-      req.user.tenantId,
-      req.user.id,
-      idempotencyKey,
-      dto as SendClientWorkspaceTemplateNotificationDto,
+      CLIENT_WORKSPACE_COMMAND.TEMPLATE_NOTIFICATION_SEND,
+      () =>
+        this.clientService.sendTemplateNotification(
+          clientId,
+          req.user.tenantId,
+          req.user.id,
+          idempotencyKey,
+          dto as SendClientWorkspaceTemplateNotificationDto,
+        ),
+      (r) => ({ status: (r as { status?: string })?.status ?? null }),
     );
     return { data: result };
   }
@@ -150,12 +202,19 @@ export class ClientController {
     @Body() body: any,
   ) {
     const dto = await this.documentRequestBodyPipe.transform(body, { type: 'body', metatype: SendClientWorkspaceDocumentRequestDto });
-    const result = await this.clientService.sendDocumentRequest(
+    const result = await this.runWorkspaceCommand(
+      req,
       clientId,
-      req.user.tenantId,
-      req.user.id,
-      idempotencyKey,
-      dto as SendClientWorkspaceDocumentRequestDto,
+      CLIENT_WORKSPACE_COMMAND.DOCUMENT_REQUEST_SEND,
+      () =>
+        this.clientService.sendDocumentRequest(
+          clientId,
+          req.user.tenantId,
+          req.user.id,
+          idempotencyKey,
+          dto as SendClientWorkspaceDocumentRequestDto,
+        ),
+      (r) => ({ status: (r as { status?: string })?.status ?? null }),
     );
     return { data: result };
   }
@@ -168,12 +227,19 @@ export class ClientController {
     @Body() body: any,
   ) {
     const dto = await this.intakeLinkBodyPipe.transform(body, { type: 'body', metatype: CreateClientWorkspaceIntakeLinkDto });
-    const result = await this.clientIntakeLinkService.createForClientWorkspace(
-      req.user.tenantId,
+    const result = await this.runWorkspaceCommand(
+      req,
       clientId,
-      caseId,
-      req.user.id,
-      dto as CreateClientWorkspaceIntakeLinkDto,
+      CLIENT_WORKSPACE_COMMAND.INTAKE_LINK_CREATE,
+      () =>
+        this.clientIntakeLinkService.createForClientWorkspace(
+          req.user.tenantId,
+          clientId,
+          caseId,
+          req.user.id,
+          dto as CreateClientWorkspaceIntakeLinkDto,
+        ),
+      (r) => ({ status: (r as { status?: string })?.status ?? null }),
     );
     return { data: result };
   }
@@ -188,13 +254,20 @@ export class ClientController {
     @Body() body: any,
   ) {
     const dto = await this.intakeLinkBodyPipe.transform(body, { type: 'body', metatype: CreateClientWorkspaceIntakeLinkDto });
-    const result = await this.clientIntakeLinkService.createAndDeliverForClientWorkspace(
-      req.user.tenantId,
+    const result = await this.runWorkspaceCommand(
+      req,
       clientId,
-      caseId,
-      req.user.id,
-      idempotencyKey,
-      dto as CreateClientWorkspaceIntakeLinkDto,
+      CLIENT_WORKSPACE_COMMAND.INTAKE_LINK_CREATE_AND_DELIVER,
+      () =>
+        this.clientIntakeLinkService.createAndDeliverForClientWorkspace(
+          req.user.tenantId,
+          clientId,
+          caseId,
+          req.user.id,
+          idempotencyKey,
+          dto as CreateClientWorkspaceIntakeLinkDto,
+        ),
+      (r) => ({ status: (r as { status?: string })?.status ?? null }),
     );
     return { data: result };
   }
@@ -210,7 +283,13 @@ export class ClientController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     validatePoaUploadFile(file);
-    const result = await this.poaService!.uploadFileForClientWorkspace(clientId, poaId, file, req.user.tenantId);
+    const result = await this.runWorkspaceCommand(
+      req,
+      clientId,
+      CLIENT_WORKSPACE_COMMAND.POA_FILE_UPLOAD,
+      () => this.poaService!.uploadFileForClientWorkspace(clientId, poaId, file, req.user.tenantId),
+      (r) => ({ status: (r as { status?: string })?.status ?? null, poaId }),
+    );
     return { data: result };
   }
 

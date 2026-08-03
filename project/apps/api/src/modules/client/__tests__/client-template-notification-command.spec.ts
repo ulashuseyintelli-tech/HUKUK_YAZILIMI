@@ -160,7 +160,10 @@ describe('ClientService.sendTemplateNotification', () => {
 describe('ClientController.sendTemplateNotification', () => {
   it('wraps the typed command response and forwards auth context plus Idempotency-Key', async () => {
     const service = { sendTemplateNotification: jest.fn().mockResolvedValue({ clientId: 'client-1', status: 'skipped' }) };
-    const controller = new ClientController(service as any, {} as any);
+    // C2-B02 R4: workspace komutları artık rol-gated — elevated USER aktörle çağrılır.
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const controller = new ClientController(service as any, {} as any, {} as any, officeApproval as any, audit as any);
 
     const result = await controller.sendTemplateNotification(
       { user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any,
@@ -175,7 +178,9 @@ describe('ClientController.sendTemplateNotification', () => {
 
   it('rejects raw body/tokens/recipient fields before reaching the service', async () => {
     const service = { sendTemplateNotification: jest.fn() };
-    const controller = new ClientController(service as any, {} as any);
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const controller = new ClientController(service as any, {} as any, {} as any, officeApproval as any, audit as any);
 
     await expect(controller.sendTemplateNotification(
       { user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any,
