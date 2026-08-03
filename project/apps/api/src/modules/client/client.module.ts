@@ -13,6 +13,9 @@ import { ClientKvkkRightsController } from './client-kvkk-rights.controller';
 // C3-B03 (§13/8): legal hold + on-demand 8-koşullu silme değerlendirme kapısı.
 import { ClientLegalHoldController } from './client-legal-hold.controller';
 import { ClientLegalHoldService } from './client-legal-hold.service';
+// C3-B04 (§13/7): özel nitelikli veri — sınıflandırma + erişim kapısı + şifreli saklama.
+import { ClientSpecialCategoryController } from './client-special-category.controller';
+import { ClientSpecialCategoryService } from './client-special-category.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
@@ -24,8 +27,8 @@ import { PoaModule } from '../poa/poa.module';
 
 @Module({
   imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule, ClientNotificationModule, PoaModule],
-  controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController, ClientLegalHoldController],
-  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService],
-  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService],
+  controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController, ClientLegalHoldController, ClientSpecialCategoryController],
+  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService],
+  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService],
 })
 export class ClientModule {}
