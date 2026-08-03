@@ -58,6 +58,11 @@ export const CLIENT_MUTATION_REASON = {
    * dispatch/upload) için eşik sağlanmadı — rol ADMIN değil VE elevated değil.
    */
   WORKSPACE_COMMAND_DENIED: 'CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND',
+  /**
+   * CR-1 (owner RATIFIED 2026-08-03): intake review komutu için review yetki sinyali yok.
+   * Promotion eşiğinden (isApproverEligible) ve rol adından BAĞIMSIZ ayrı kapıdır.
+   */
+  INTAKE_REVIEW_DENIED: 'CLIENT_MUTATION_DENIED_INTAKE_REVIEW',
 } as const;
 
 export type ClientMutationReason =
@@ -420,6 +425,38 @@ export function decideClientWorkspaceCommand(actor: ClientMutationActor): Client
   }
   if (role !== 'ADMIN' && actor.elevatedAuthority !== true) {
     return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.WORKSPACE_COMMAND_DENIED };
+  }
+  return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
+}
+
+// =========================================================================================
+// C2 REVIEW AUTHORITY EXTENSION — CR-1 (owner RATIFIED 2026-08-03; bounded GO-COMPLETE)
+//
+// Intake REVIEW yetki kararı. CR-1 maddeleri birebir: (1) review ≠ promotion — AYRI
+// kapı; (3) hiçbir authenticated tenant kullanıcısı otomatik APPROVE/REJECT yapamaz;
+// (6) aynı aktör iki işlemi ancak İKİ yetkiyi AYRI AYRI taşıyorsa yapar. Bu yüzden
+// buradaki yükseltme sinyali `reviewAuthority`dir ve `isApproverEligible`dan
+// (promotion eşiği) BAĞIMSIZDIR; ROL (ADMIN DAHİL) TEK BAŞINA YETKİ VERMEZ —
+// role-name hardcode yetki kaynağı DEĞİLDİR (owner talimatı md.6). VIEWER ve
+// tanınmayan rol coarse fail-closed kalır.
+// =========================================================================================
+
+/** Intake review komut kararı. Sıra: actor → rol → VIEWER → reviewAuthority sinyali. */
+export function decideClientIntakeReviewCommand(
+  actor: ClientMutationActor & { reviewAuthority?: boolean },
+): ClientMutationDecision {
+  if (!actor?.userId) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.NO_ACTOR };
+  }
+  const role = normalizeRole(actor.role);
+  if (role === null) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.UNKNOWN_ROLE };
+  }
+  if (role === 'VIEWER') {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.VIEWER_DENIED };
+  }
+  if (actor.reviewAuthority !== true) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.INTAKE_REVIEW_DENIED };
   }
   return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
 }

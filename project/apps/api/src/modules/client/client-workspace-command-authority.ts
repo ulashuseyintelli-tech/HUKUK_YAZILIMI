@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import {
   CLIENT_MUTATION_REASON,
   ClientMutationDecision,
+  decideClientIntakeReviewCommand,
   decideClientWorkspaceCommand,
 } from './client-mutation-policy';
 
@@ -33,7 +34,47 @@ export const CLIENT_WORKSPACE_COMMAND = {
   NOTIFICATION_SEND_SMS: 'NOTIFICATION_SEND_SMS',
   NOTIFICATION_BULK_EMAIL: 'NOTIFICATION_BULK_EMAIL',
   NOTIFICATION_RESEND: 'NOTIFICATION_RESEND',
+  INTAKE_REVIEW_CLAIM: 'INTAKE_REVIEW_CLAIM',
+  INTAKE_REVIEW_FIELD_DECIDE: 'INTAKE_REVIEW_FIELD_DECIDE',
+  INTAKE_REVIEW_SUBMISSION_REJECT: 'INTAKE_REVIEW_SUBMISSION_REJECT',
 } as const;
+
+// =========================================================================================
+// C2 REVIEW AUTHORITY EXTENSION — CR-1 (owner RATIFIED 2026-08-03; bounded GO-COMPLETE)
+//
+// X3-B04'ün TÜKETECEĞİ intake-review komut seti ve permission mapping:
+//   INTAKE_REVIEW_CLAIM             → claim(submission)            (üstlenme yazımı)
+//   INTAKE_REVIEW_FIELD_DECIDE      → reviewField / bulkReviewFields (APPROVE|REJECT)
+//   INTAKE_REVIEW_SUBMISSION_REJECT → rejectSubmission
+// Bu ÜÇ komut `INTAKE_REVIEW` sınıfındadır ve yetki sinyali `deps.isIntakeReviewAuthorized`
+// ile doğrulanır — `isApproverEligible` (promotion) BU SINIFA YETKİ VERMEZ ve rol adı
+// (ADMIN dahil) tek başına YETMEZ (CR-1 md.1/3/6; owner talimatı md.5/6). Promotion
+// authority ve approver-eligibility davranışı DEĞİŞTİRİLMEMİŞTİR; review ve promotion
+// AYRI kapılardır — aynı aktör ikisini ancak iki yetkiyi ayrı ayrı taşıyorsa yapar.
+// Review sınıfı komutlar AYRI audit action üretir: `CLIENT_INTAKE_REVIEW_COMMAND`
+// (CR-1 md.7 — aktör/zaman AuditLog satırında korunur). Sinyalin hangi kanonik
+// permission'dan besleneceği X3-B04 wiring'inin işidir; C2 kapı ŞEKLİNİ dondurur.
+// Public shape freeze sözleşmesi (B03) bu genişletmeyi de kapsar.
+// Sözleşme kanıtı: __tests__/client-intake-review-authority-extension.spec.ts
+// =========================================================================================
+
+/** Komut sınıfı: yetki sinyalinin kaynağını belirler (WORKSPACE ≠ INTAKE_REVIEW). */
+export const CLIENT_WORKSPACE_COMMAND_CLASS = {
+  POA_REMINDER_SEND: 'WORKSPACE',
+  TEMPLATE_NOTIFICATION_SEND: 'WORKSPACE',
+  DOCUMENT_REQUEST_SEND: 'WORKSPACE',
+  INTAKE_LINK_CREATE: 'WORKSPACE',
+  INTAKE_LINK_CREATE_AND_DELIVER: 'WORKSPACE',
+  INTAKE_LINK_REVOKE: 'WORKSPACE',
+  POA_FILE_UPLOAD: 'WORKSPACE',
+  NOTIFICATION_SEND_EMAIL: 'WORKSPACE',
+  NOTIFICATION_SEND_SMS: 'WORKSPACE',
+  NOTIFICATION_BULK_EMAIL: 'WORKSPACE',
+  NOTIFICATION_RESEND: 'WORKSPACE',
+  INTAKE_REVIEW_CLAIM: 'INTAKE_REVIEW',
+  INTAKE_REVIEW_FIELD_DECIDE: 'INTAKE_REVIEW',
+  INTAKE_REVIEW_SUBMISSION_REJECT: 'INTAKE_REVIEW',
+} as const satisfies Record<keyof typeof CLIENT_WORKSPACE_COMMAND, 'WORKSPACE' | 'INTAKE_REVIEW'>;
 
 // =========================================================================================
 // C2-B06 — NOTIFICATION/WORKSPACE AUTHORITY PRIMITIVE (CANONICAL + FROZEN, 2026-08-03)
@@ -84,8 +125,14 @@ export interface ClientWorkspaceCommandContext {
 }
 
 export interface ClientWorkspaceCommandDeps {
-  /** `officeApproval.isApproverEligible` — yalnız rol ADMIN DEĞİLKEN çağrılır. */
+  /** `officeApproval.isApproverEligible` — yalnız rol ADMIN DEĞİLKEN çağrılır (WORKSPACE sınıfı). */
   isApproverEligible: (userId: string, tenantId: string) => Promise<boolean>;
+  /**
+   * CR-1: INTAKE_REVIEW sınıfı komutların yetki sinyali — promotion eşiğinden
+   * (`isApproverEligible`) BAĞIMSIZ ayrı kapı; rol adı (ADMIN dahil) yetki VERMEZ.
+   * Review komutu çalıştırılacaksa ZORUNLUDUR (yoksa fail-closed yapılandırma hatası).
+   */
+  isIntakeReviewAuthorized?: (userId: string, tenantId: string) => Promise<boolean>;
   /** Başarılı komutta zorunlu audit yazıcısı (`AuditService.log`). */
   auditLog: (input: {
     tenantId: string;
@@ -105,6 +152,8 @@ const DENY_MESSAGES: Partial<Record<string, string>> = {
   [CLIENT_MUTATION_REASON.TENANT_MISMATCH]: 'Aktör hedef tenant ile eşleşmiyor.',
   [CLIENT_MUTATION_REASON.WORKSPACE_COMMAND_DENIED]:
     'Müvekkil-yüzlü komut için yetki yok (ADMIN veya yetkilendirilmiş onaylayıcı gerekir).',
+  [CLIENT_MUTATION_REASON.INTAKE_REVIEW_DENIED]:
+    'Intake review kararı için yetki yok (intake-review yetkisi gerekir; rol tek başına yetmez).',
 };
 
 /** Reddi stabil `reasonCode` ile 403'e çevirir — gövde alan DEĞERİ taşımaz (PII yasağı). */
@@ -143,16 +192,34 @@ export async function runAuthorizedClientWorkspaceCommand<T>(
     denyWorkspaceCommand({ allowed: false, reasonCode: CLIENT_MUTATION_REASON.TENANT_MISMATCH });
   }
 
-  // `isApproverEligible` YALNIZ gerçekten gerektiğinde sorgulanır (`assertCanUpdate`
-  // deseniyle aynı): ADMIN ve coarse retler (NO_ACTOR/UNKNOWN_ROLE/VIEWER) DB'ye gitmez.
-  const coarse = decideClientWorkspaceCommand({ userId, role: actor.role, elevatedAuthority: false });
-  if (!coarse.allowed) {
-    if (coarse.reasonCode !== CLIENT_MUTATION_REASON.WORKSPACE_COMMAND_DENIED) {
+  const commandClass =
+    CLIENT_WORKSPACE_COMMAND_CLASS[ctx.commandType as keyof typeof CLIENT_WORKSPACE_COMMAND_CLASS];
+
+  if (commandClass === 'INTAKE_REVIEW') {
+    // CR-1: review AYRI kapıdır — sinyal `isIntakeReviewAuthorized`; promotion eşiği
+    // (`isApproverEligible`) BU SINIFTA HİÇ sorgulanmaz, rol adı yetki vermez.
+    const coarse = decideClientIntakeReviewCommand({ userId, role: actor.role, reviewAuthority: false });
+    if (!coarse.allowed && coarse.reasonCode !== CLIENT_MUTATION_REASON.INTAKE_REVIEW_DENIED) {
       denyWorkspaceCommand(coarse);
     }
-    const elevatedAuthority = await deps.isApproverEligible(userId, actorTenantId);
-    const decision = decideClientWorkspaceCommand({ userId, role: actor.role, elevatedAuthority });
+    if (!deps.isIntakeReviewAuthorized) {
+      throw new Error('Intake review authority is not configured');
+    }
+    const reviewAuthority = await deps.isIntakeReviewAuthorized(userId, actorTenantId);
+    const decision = decideClientIntakeReviewCommand({ userId, role: actor.role, reviewAuthority });
     if (!decision.allowed) denyWorkspaceCommand(decision);
+  } else {
+    // `isApproverEligible` YALNIZ gerçekten gerektiğinde sorgulanır (`assertCanUpdate`
+    // deseniyle aynı): ADMIN ve coarse retler (NO_ACTOR/UNKNOWN_ROLE/VIEWER) DB'ye gitmez.
+    const coarse = decideClientWorkspaceCommand({ userId, role: actor.role, elevatedAuthority: false });
+    if (!coarse.allowed) {
+      if (coarse.reasonCode !== CLIENT_MUTATION_REASON.WORKSPACE_COMMAND_DENIED) {
+        denyWorkspaceCommand(coarse);
+      }
+      const elevatedAuthority = await deps.isApproverEligible(userId, actorTenantId);
+      const decision = decideClientWorkspaceCommand({ userId, role: actor.role, elevatedAuthority });
+      if (!decision.allowed) denyWorkspaceCommand(decision);
+    }
   }
 
   const result = await execute();
@@ -160,7 +227,8 @@ export async function runAuthorizedClientWorkspaceCommand<T>(
   await deps.auditLog({
     tenantId: ctx.tenantId,
     userId,
-    action: 'CLIENT_WORKSPACE_COMMAND',
+    // CR-1 md.7: review ve promotion AYRI audit kayıtları — review sınıfı ayrı action alır.
+    action: commandClass === 'INTAKE_REVIEW' ? 'CLIENT_INTAKE_REVIEW_COMMAND' : 'CLIENT_WORKSPACE_COMMAND',
     entityType: 'Client',
     entityId: ctx.clientId,
     metadata: {
