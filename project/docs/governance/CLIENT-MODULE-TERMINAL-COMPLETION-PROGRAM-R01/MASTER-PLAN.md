@@ -937,15 +937,22 @@ C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B)
                           sıfır-diff kanıtı + paketin §13/5-10 kapsama doğrulaması).
 C3 ACTIVATION DEBT:       KOŞULLU — yalnız B01..B07'den biri migration üretirse doğar.
                           C3-PROD-ACTIVATION koşullu yetkisi: NOT YET GRANTED.
-X3 STATUS:                IN PROGRESS — X3-B01 RUNTIME_VERIFIED (2026-08-03): sağlam
-                          intake güvenlik kontrolleri fresh main'de koddan doğrulandı ve
-                          required manifest'e bağlandı. 256-bit raw token + sha256-only
-                          persistence · generic-invalid existence-oracle direnci · link-
-                          derived tenant/case/client bağlamı + mass-assignment reddi ·
-                          atomic use-count · scope/honeypot/ipHash · public yüzeyde yalnız
-                          submission/field yazımı · üç promotion yolunda canonical write
-                          öncesi approver-eligibility kapısı. Odaklı suite 70/70; full
-                          client-portal manifest 62 suite / 942 test PASS.
+X3 STATUS:                IN PROGRESS — X3-B01..B02 RUNTIME_VERIFIED (2026-08-03).
+                          B01: sağlam intake güvenlik kontrolleri fresh main'de koddan
+                          doğrulandı ve required manifest'e bağlandı. 256-bit raw token +
+                          sha256-only persistence · generic-invalid existence-oracle
+                          direnci · link-derived tenant/case/client bağlamı + mass-
+                          assignment reddi · atomic use-count · scope/honeypot/ipHash ·
+                          public yüzeyde yalnız submission/field yazımı · üç promotion
+                          yolunda canonical write öncesi approver-eligibility kapısı.
+                          B02: legacy intake-link create/revoke endpoint'leri frozen C2-R5
+                          `runAuthorizedClientWorkspaceCommand` primitive'ine bağlandı;
+                          eski revoke-only özel authority modeli kaldırıldı. Unauthorized
+                          aktör link/dispatch/revoke yazımı üretemez; başarılı komut ayrı
+                          `CLIENT_WORKSPACE_COMMAND` audit'i üretir. Workspace create ve
+                          create-and-deliver yollarının mevcut C2-R5 tüketimi korundu.
+                          B02 focused 4 suite / 90 test; full client-portal manifest
+                          65 suite / 974 test PASS (C3-B01 #2149 sonrası fresh main).
                           Kapı 1 (C2-R5 primitive CANONICAL+FROZEN): KARŞILANDI (C2-B03)
                           Kapı 2 (X1 notification-dispatcher SHAPE-FROZEN / XL-4):
                                  YÜRÜRLÜKTE — X1'in KAPANMASI şart DEĞİL
@@ -954,9 +961,10 @@ X3 STATUS:                IN PROGRESS — X3-B01 RUNTIME_VERIFIED (2026-08-03): 
                           GRANT: İÇİNDE — dört intake modülü de TERMINAL-COMPLETION-R01
                           allowedPathRoots'ta (#2113). Sayfadaki eski "GRANT EXPANSION
                           REQUIRED" ifadesi BAYATTI ve düzeltildi.
-X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 1 (B01)
+X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 2 (B01, B02)
                           (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
-X3 NEXT ELIGIBLE:         X3-B02 — C2-R5 frozen intake-link authority primitive tüketimi
+X3 NEXT ELIGIBLE:         X3-B03 — CIP-1 per-token throttle · multi-instance limiter ·
+                          XFF güven sınırı sertleştirmesi
 X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIED 2026-08-03**.
                           Kanonik kayıt: decision-log.md
                           (CLIENT-X3-CR1-REVIEW-PROMOTE-SEPARATION-RATIFIED).
@@ -967,14 +975,10 @@ X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIE
                           kullanıcı field APPROVE/REJECT yapamaz · MEVCUT altyapı
                           kullanılır, YENİ authority modeli KURULMAZ · ayrı audit ·
                           zorunlu four-eyes YOK.
-                          ⚠ MADDE 8 ÖNCEDEN TETİKLENDİ (VERIFIED cab19831):
-                          client-intake-review.service.ts'te HİÇ yetki çağrısı YOK
-                          (madde 3 bugün İHLAL); kanonik altyapıda review-şekilli yetki
-                          YOK — C2 primitive'i yalnız INTAKE_LINK_CREATE /
-                          CREATE_AND_DELIVER / REVOKE tanır. İki aday da tek başına
-                          yetmiyor (isApproverEligible → madde 1+6'yı anlamsızlaştırır;
-                          C2 primitive'ine komut eklemek X3'ün yetkisi DIŞINDA).
-                          → X3-B04 politika UYDURMAZ.
+                          MADDE 8 tarihsel boşluğu #2146 / c7082313 ile giderildi:
+                          review-şekilli komutlar ve bağımsız review-authority sinyali C2
+                          primitive'inde frozen'dır. X3-B04 bu modeli yalnız tüketir;
+                          politika veya yeni authority modeli üretmez.
 X3-B04 COMPLETION:        ⚠ COMPLETION CORRECTION (owner 2026-08-03) — boşluğu YALNIZ
                           RAPORLAMAK bloğu KAPATMAZ; ANALYSIS_DELIVERED YETERSİZDİR.
                           C2 review-authority extension MERGE EDİLMEMİŞSE X3-B04

@@ -245,3 +245,8 @@ src/modules/client-notification/__tests__/client-notification-authority-wiring.s
 src/modules/client-intake-link/client-intake-link.service.spec.ts
 src/modules/client-intake-public/client-intake-public.service.spec.ts
 src/modules/client-intake-promotion/client-intake-promotion.service.spec.ts
+#
+#   CODEX-CLIENT-X3-B02 frozen C2-R5 intake-link mutation authority wiring (SAF, DB-siz)
+#     Legacy create/revoke endpoints consume the canonical workspace command primitive;
+#     unauthorized actors produce no mutation/dispatch and successful commands are audited.
+src/modules/client-intake-link/client-intake-link.controller.spec.ts

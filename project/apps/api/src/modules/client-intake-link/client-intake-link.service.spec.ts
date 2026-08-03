@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
@@ -7,7 +7,6 @@ import { OfficeService } from '@/modules/office/office.service';
 import { ClientIntakeLinkService } from './client-intake-link.service';
 import { CreateClientIntakeLinkDto } from './dto/client-intake-link.dto';
 import { AuditService } from '../audit/audit.service';
-import { OfficeApprovalService } from '../office-approval/office-approval.service';
 
 const TENANT = 'tenant-1';
 const CASE = 'case-1';
@@ -24,9 +23,7 @@ const mockPrisma: any = {
 };
 const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
 const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Buro' }) };
-// I1A: revoke capability-gate — mevcut testler eligible aktör varsayar.
 const mockAudit = { log: jest.fn(), logInTransaction: jest.fn().mockResolvedValue(undefined) };
-const mockOfficeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
 
 const createdAt = new Date('2026-07-01T10:00:00.000Z');
 
@@ -92,7 +89,6 @@ describe('ClientIntakeLinkService', () => {
       });
     });
     mockPrisma.$transaction.mockImplementation(async (callback: any) => callback(mockPrisma));
-    mockOfficeApproval.isApproverEligible.mockResolvedValue(true);
     process.env.PUBLIC_INTAKE_BASE_URL = 'https://form.example.com';
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -101,7 +97,6 @@ describe('ClientIntakeLinkService', () => {
         { provide: NotificationDispatcherService, useValue: mockDispatcher },
         { provide: OfficeService, useValue: mockOffice },
         { provide: AuditService, useValue: mockAudit },
-        { provide: OfficeApprovalService, useValue: mockOfficeApproval },
       ],
     }).compile();
     service = module.get(ClientIntakeLinkService);
@@ -321,20 +316,6 @@ describe('ClientIntakeLinkService', () => {
       await expect(service.revoke(TENANT, 'lnk-1', USER)).rejects.toThrow(BadRequestException);
     });
 
-    it('I1A: yetkisiz kullanıcı (isApproverEligible=false) → 403, update ÇAĞRILMAZ, audit YOK', async () => {
-      mockPrisma.clientIntakeLink.findFirst.mockResolvedValue({ id: 'lnk-1', status: 'ACTIVE' });
-      mockOfficeApproval.isApproverEligible.mockResolvedValueOnce(false);
-      await expect(service.revoke(TENANT, 'lnk-1', USER)).rejects.toThrow(ForbiddenException);
-      expect(mockPrisma.clientIntakeLink.update).not.toHaveBeenCalled();
-      expect(mockAudit.logInTransaction).not.toHaveBeenCalled();
-    });
-
-    it('I1A: actor YOK (undefined) → 403', async () => {
-      mockPrisma.clientIntakeLink.findFirst.mockResolvedValue({ id: 'lnk-1', status: 'ACTIVE' });
-      await expect(service.revoke(TENANT, 'lnk-1', undefined as any)).rejects.toThrow(ForbiddenException);
-      expect(mockPrisma.clientIntakeLink.update).not.toHaveBeenCalled();
-    });
-
     it('I1A: audit AYNI transaction içinde actor + oldValues/newValues ile yazılır (CLIENT_INTAKE_LINK_REVOKE)', async () => {
       mockPrisma.clientIntakeLink.findFirst.mockResolvedValue({ id: 'lnk-1', status: 'ACTIVE' });
       mockPrisma.clientIntakeLink.update.mockResolvedValue({ id: 'lnk-1', status: 'REVOKED' });
@@ -351,11 +332,6 @@ describe('ClientIntakeLinkService', () => {
       });
     });
 
-    it('I1A: create() capability-gate\'e TABİ DEĞİL — isApproverEligible çağrılmaz', async () => {
-      mockPrisma.clientIntakeLink.create.mockResolvedValue(makeLink());
-      await service.create(TENANT, CASE, USER, dto);
-      expect(mockOfficeApproval.isApproverEligible).not.toHaveBeenCalled();
-    });
   });
 
   describe('read - tokenHash DONDURMEZ', () => {
