@@ -81,7 +81,7 @@ const SUFFICIENT_CLOSURE_MAPPING = new Set([
 ]);
 const SEALED_R01_AUDIT_DIRECTORY = 'project/docs/audit/runtime-binding-reconciliation-r01';
 const DEFAULT_DISPOSITION_FILE =
-  'project/docs/audit/runtime-binding-reconciliation-r01-t09/capability-disposition-registry.json';
+  'project/docs/audit/runtime-binding-reconciliation-r01-t13/capability-disposition-registry.json';
 const SUCCESSOR_PROGRAM = 'RUNTIME-OPERABILITY-CERTIFICATION-R01';
 const SUCCESSOR_TASK = 'W0-METHODOLOGY';
 const SNAPSHOT_BOUNDARY = [
@@ -758,6 +758,8 @@ function makeRecord(input) {
     blockers: unique(input.blockers || []),
     recommendedAction: input.recommendedAction || '',
     disposition: input.disposition || null,
+    ownerDecisionRef: input.ownerDecisionRef || null,
+    ownerDisposition: input.ownerDisposition || null,
     activationAuthority: input.activationAuthority || null,
     defect: input.defect === undefined ? null : Boolean(input.defect),
     remediationRequired: input.remediationRequired === undefined
@@ -840,7 +842,7 @@ function validateDispositionRegistryShape(registry) {
   return registry;
 }
 
-function loadDispositionRegistry(repoRoot, dispositionFile, headSha) {
+function loadDispositionRegistry(repoRoot, dispositionFile, headSha, seenPaths = new Set()) {
   const normalized = normalize(String(dispositionFile || ''));
   if (!normalized || normalized.startsWith('../') || normalized.includes('/../') || path.isAbsolute(dispositionFile)) {
     throw new Error('DISPOSITION_FILE_OUTSIDE_REPOSITORY');
@@ -849,6 +851,11 @@ function loadDispositionRegistry(repoRoot, dispositionFile, headSha) {
   if (!absolute.startsWith(`${repoRoot}${path.sep}`)) {
     throw new Error('DISPOSITION_FILE_OUTSIDE_REPOSITORY');
   }
+  if (seenPaths.has(normalized)) {
+    throw new Error(`DISPOSITION_REGISTRY_CYCLE: ${normalized}`);
+  }
+  const nextSeenPaths = new Set(seenPaths);
+  nextSeenPaths.add(normalized);
   if (!fs.existsSync(absolute)) throw new Error('DISPOSITION_REGISTRY_MISSING');
 
   let registry;
@@ -862,6 +869,35 @@ function loadDispositionRegistry(repoRoot, dispositionFile, headSha) {
     cwd: repoRoot,
     maxBuffer: 1024 * 1024,
   });
+  if (registry.baseRegistry !== undefined) {
+    if (typeof registry.baseRegistry !== 'string' || !registry.baseRegistry.trim()) {
+      throw new Error('DISPOSITION_REGISTRY_BASE_INVALID');
+    }
+    const base = loadDispositionRegistry(
+      repoRoot,
+      registry.baseRegistry,
+      headSha,
+      nextSeenPaths,
+    );
+    if (base.data.program !== registry.program) {
+      throw new Error('DISPOSITION_REGISTRY_PROGRAM_MISMATCH');
+    }
+    const baseIds = new Set(base.data.requiredCapabilityIds);
+    const overlayIds = new Set(registry.requiredCapabilityIds);
+    const overlap = [...overlayIds].filter((id) => baseIds.has(id));
+    if (overlap.length > 0) {
+      throw new Error(`DISPOSITION_REGISTRY_OVERLAY_DUPLICATE: ${overlap.join(', ')}`);
+    }
+    registry = {
+      ...registry,
+      requiredCapabilityIds: [
+        ...base.data.requiredCapabilityIds,
+        ...registry.requiredCapabilityIds,
+      ],
+      entries: [...base.data.entries, ...registry.entries],
+    };
+    validateDispositionRegistryShape(registry);
+  }
   return {
     path: normalized,
     sha256: sha256(fs.readFileSync(absolute)),
@@ -893,6 +929,8 @@ function applyDispositionRegistry(capabilities, registry) {
     record.consumers = [];
     record.actualEntryPoints = [];
     record.disposition = entry.disposition;
+    record.ownerDecisionRef = entry.ownerDecisionRef || null;
+    record.ownerDisposition = entry.ownerDisposition || null;
     record.activationAuthority = entry.activationAuthority;
     record.defect = entry.defect;
     record.remediationRequired = entry.remediationRequired;
@@ -2741,6 +2779,7 @@ module.exports = {
   applyDispositionRegistry,
   extractRuntimeClassDeclarations,
   extractRuntimeDecorators,
+  loadDispositionRegistry,
   maskNonCode,
   validateDispositionRegistryShape,
   isReliableClosureClaim,

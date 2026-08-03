@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "kind": "RUNTIME_CAPABILITY_DISPOSITION_REGISTRY",
+  "program": "REPOSITORY-WIDE-CAPABILITY-BINDING-ACTIVATION-AND-OPERABILITY-RECONCILIATION-R01",
+  "taskId": "RBR-R01-T13",
+  "sourceCommitSha": "5ff6c0762d922c7e3fb3208a744dbb05471fc29d",
+  "baseRegistry": "project/docs/audit/runtime-binding-reconciliation-r01-t09/capability-disposition-registry.json",
+  "ownerDecision": "RATIFIED / APPROVED",
+  "executionGrant": "GO-COMPLETE — T13 ONLY",
+  "productionActivation": "NOT AUTHORIZED",
+  "requiredCapabilityIds": [
+    "INT-05763F53F1D3",
+    "INT-1EBE1D6EC7BC",
+    "INT-4C1CC43AA751",
+    "INT-9CC5892AA884",
+    "INT-E9AE1D631FFB",
+    "INT-EC4A8FFB6463"
+  ],
+  "entries": [
+    {
+      "capabilityId": "INT-05763F53F1D3",
+      "ownerDecisionRef": "OD-T12-01",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "e0aac9eb698b327177598312abcc9d6e40697680f149cc689e2a299b771c354c",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/cleanup/distributed-lock.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/cleanup/distributed-lock.service.ts:45",
+        "project/apps/api/src/modules/calc-preview/diagnostics/cleanup/index.ts:consumer-reference",
+        "project/apps/api/src/modules/policy-engine/case-policy-engine.service.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-1EBE1D6EC7BC",
+      "ownerDecisionRef": "OD-T12-03",
+      "ownerDisposition": "RETAIN / OWNER_GATED_DORMANT",
+      "recordFingerprint": "894f9d508bdbe65d6b1691ce8a85c5b1fb8b77dc8af90fd9d79826ace0a7227e",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/evidence/evidence-aggregator.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/evidence/evidence-aggregator.service.ts:39"
+      ]
+    },
+    {
+      "capabilityId": "INT-4C1CC43AA751",
+      "ownerDecisionRef": "OD-T12-04",
+      "ownerDisposition": "KEEP_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "ea4616c91b06df326d8097370ef80994b297faad4c920feb7cb6ff0e4b69edfc",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/guards/guard-interceptor.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "reopenConditions": [
+        "REAL_OPERATIONAL_CONSUMER",
+        "AUTHENTICATED_TENANT_ACTOR_CONTEXT",
+        "HEADER_AUTHORITY_REMOVED",
+        "FAIL_CLOSED_RESOLVER_BEHAVIOR",
+        "EXPLICIT_DI_TOKENS",
+        "NEGATIVE_BOUNDARY_SECURITY_TESTS",
+        "TASK_BOUND_BINDING_ACTIVATION_GRANT"
+      ],
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/guards/guard-interceptor.ts:103",
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/simulation-api.module.ts:providers"
+      ]
+    },
+    {
+      "capabilityId": "INT-9CC5892AA884",
+      "ownerDecisionRef": "OD-T12-02",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND / DO_NOT_TRIGGER",
+      "recordFingerprint": "8546648ed9d0a5cfe5697510da35dce1385801d3e080c2144c4b4f2064a6a270",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/cleanup/snapshot-cleanup-orchestrator.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/cleanup/snapshot-cleanup-orchestrator.service.ts:40",
+        "project/.kiro/specs/phase-11-cleanup-orchestration/PHASE-11-LOCK.md:273-283"
+      ]
+    },
+    {
+      "capabilityId": "INT-E9AE1D631FFB",
+      "ownerDecisionRef": "OD-T12-05",
+      "ownerDisposition": "KEEP_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "84b7b97c4cbb72ff3c208cc9838cb8f327a229adc060501aa0963123b7cdda45",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/guards/guard-interceptor.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "reopenConditions": [
+        "REAL_OPERATIONAL_CONSUMER",
+        "AUTHENTICATED_TENANT_ACTOR_CONTEXT",
+        "HEADER_AUTHORITY_REMOVED",
+        "FAIL_CLOSED_RESOLVER_BEHAVIOR",
+        "EXPLICIT_DI_TOKENS",
+        "NEGATIVE_BOUNDARY_SECURITY_TESTS",
+        "TASK_BOUND_BINDING_ACTIVATION_GRANT"
+      ],
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/guards/guard-interceptor.ts:140",
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/simulation-api.module.ts:providers"
+      ]
+    },
+    {
+      "capabilityId": "INT-EC4A8FFB6463",
+      "ownerDecisionRef": "OD-T12-06",
+      "ownerDisposition": "KEEP_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "b5b0b543dc39b24ac08244710ec8cae1573aad4313422c4e4fc47a2cf52147ef",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/guards/guard-interceptor.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "reopenConditions": [
+        "REAL_OPERATIONAL_CONSUMER",
+        "AUTHENTICATED_TENANT_ACTOR_CONTEXT",
+        "HEADER_AUTHORITY_REMOVED",
+        "FAIL_CLOSED_RESOLVER_BEHAVIOR",
+        "EXPLICIT_DI_TOKENS",
+        "NEGATIVE_BOUNDARY_SECURITY_TESTS",
+        "TASK_BOUND_BINDING_ACTIVATION_GRANT"
+      ],
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/guards/guard-interceptor.ts:225",
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/simulation-api.module.ts:providers"
+      ]
+    }
+  ]
+}
