@@ -156,6 +156,93 @@ FORBIDDEN
 | C3-B06 | UYAP aktarım gate'i (md.8), fail-closed | §13/10 |
 | C3-B07 | Audit bütünlüğü tekleştirme | — (teknik) |
 
+### 1-B. C3-B00 AKIŞI — İKİ AŞAMALI, KESİNLEŞTİRİLMİŞ
+
+`C3-B00` **tek bir PR değildir**; iki ayrı docs-only aşamadan oluşur ve ikisi arasında
+**owner kararı** durur. Bu aşamaların hiçbiri yeni engineering bloğu **doğurmaz** ve
+blok sayacını **değiştirmez**.
+
+**EXACT CANONICAL PATH — owner decision pack:**
+
+```text
+project/docs/governance/CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/
+  C3-B00-OWNER-DECISION-PACK-R01.md
+```
+
+Bu dosya paketin **tek kanonik yeridir**. Başka bir yere yazılmaz, kopyalanmaz.
+
+---
+
+**AŞAMA 1 — DECISION PACK (C3 sayfası yürütür)**
+
+```text
+İŞ        : §13/5-10'un ALTISINI DA karar verilebilir hale getiren paketi üret.
+YAZILAN   : C3-B00-OWNER-DECISION-PACK-R01.md  (YENİ dosya)
+            + MASTER-PLAN §17 C3 satırının güncellenmesi
+ÜRÜN DIFF : SIFIR (§1-C)
+PR TİPİ   : DOCS-ONLY
+MERGE     : required checks PASS + MERGEABLE → normal squash-merge → main sync →
+            KENDİ branch/worktree cleanup
+SONUÇ     : BLOCK RESULT: ANALYSIS_DELIVERED
+            C3 STATUS   : WAITING_FOR_OWNER_DECISION
+```
+
+Bu aşama merge edildiğinde C3 **durur ve bekler**. Sonraki bloğa GEÇMEZ.
+
+---
+
+**AŞAMA 2 — RATİFİKASYON KAYDI (owner kararı geldikten SONRA)**
+
+```text
+TETİK     : Owner §13/5-10 kalemlerinden bir veya birkaçına karar verir.
+İŞ        : Owner'ın EXACT kararları kanonik owner-karar defterine işlenir:
+            project/docs/governance/decision-log.md
+ÜRÜN DIFF : SIFIR
+PR TİPİ   : DOCS-ONLY
+BU AŞAMA  : YENİ ENGINEERING BLOĞU DEĞİLDİR — C3-B00'ın ikinci yarısıdır.
+            Blok sayacı DEĞİŞMEZ (C3 BLOCKS TOTAL sabit kalır).
+SONUÇ     : İlgili §13 kalemi RATIFIED olur → o kaleme dayanan blok MOD B'ye geçer.
+```
+
+**decision-log.md yazım kısıtı (bilinen tuzak):** Bu dosyadaki tablo satırlarında
+her satır **tam olarak 6 pipe** taşır; hücre içinde `\|` kaçışı **çalışmaz**. Pipe
+gerektiren içerik **düz cümleyle** yazılır. Bu kuralı doğrulayan otomatik guard
+**yoktur** — satır elle kontrol edilir.
+
+**Kısmi ratifikasyon serbesttir:** Owner altı kalemin yalnız bir kısmına karar verirse,
+yalnız o kalemlere dayanan bloklar MOD B'ye geçer; diğerleri
+`WAITING_FOR_OWNER_DECISION` kalır ve **sıra atlanmaz**.
+
+---
+
+**AŞAMA 3 KAPISI — C3-B01 VE SONRASI**
+
+```text
+C3-B01 ve HİÇBİR ürün implementasyonu, ilgili owner kararı REPOSITORY'YE MERGE
+EDİLMEDEN BAŞLAMAZ.
+```
+
+Kanıt eşiği: kararın **decision-log.md'de merge edilmiş** olması. Sohbet mesajı,
+bu sayfadaki not veya başka bir oturumun beyanı **kanıt DEĞİLDİR**
+(CONTEXT RULE: current main ve ratifiye kararlar kanonik kaynaktır).
+
+### 1-C. C3-B00 ÜRÜN DIFF'İ VE KONTROL ÖLÇÜTÜ
+
+```text
+ÜRÜN DIFF: SIFIR — B00 hiçbir ürün kodu, şema, migration veya runtime davranışı
+           DEĞİŞTİRMEZ. Diff yalnız governance dokümanlarıdır.
+TEST     : B00 ürün davranışı değiştirmediği için yeni test GEREKMEYEBİLİR.
+           Bu durumda acceptance ölçütü APPLICABLE KONTROLLERDİR:
+             - required checks PASS
+             - mergeability CLEAN
+             - ürün diff'inin SIFIR olduğunun diff ile KANITLANMASI
+             - paketin §13/5-10'un altısını da kapsadığının doğrulanması
+           "Test yok" bir eksiklik DEĞİL, blok tipinin sonucudur — fakat
+           ürün diff'i sıfır DEĞİLSE bu istisna DÜŞER ve normal test şartı döner.
+```
+
+---
+
 **C3-B00 ÖZEL KONUMU:** Bu sayfa, kendisini bloklayan kararları **hazırlayan** bloğu
 içerir. B00 beklemek değil, **kapıyı açmaktır** — ve bugün **hemen başlayabilir**.
 

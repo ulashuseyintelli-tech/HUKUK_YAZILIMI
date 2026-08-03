@@ -849,6 +849,21 @@ C3 BLOCKS:                1 ANALYSIS (C3-B00) + 7 ENGINEERING (C3-B01..B07)
 C3 NEXT ELIGIBLE:         C3-B00 — owner decision pack (ANALYSIS_ONLY, HEMEN başlayabilir;
                           bu blok C3'ü bloklayan §13/5-10 kararlarını KARAR VERİLEBİLİR
                           hale getirir — beklemek değil, kapıyı açmaktır)
+C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B):
+                          A1) Decision pack →
+                              .../CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/
+                              C3-B00-OWNER-DECISION-PACK-R01.md  (EXACT canonical path)
+                              merge → ANALYSIS_DELIVERED / WAITING_FOR_OWNER_DECISION
+                          A2) Owner kararı gelince EXACT kararlar decision-log.md'ye
+                              docs-only kayıt olarak işlenir + merge edilir.
+                              BU YENİ ENGINEERING BLOĞU DEĞİLDİR; blok sayacı DEĞİŞMEZ.
+                          KAPI) C3-B01 ve hiçbir ürün implementasyonu, ilgili owner
+                              kararı REPOSITORY'YE MERGE EDİLMEDEN BAŞLAMAZ.
+                              Kısmi ratifikasyon serbest; yalnız o kalemin bloğu MOD B'ye
+                              geçer, sıra ATLANMAZ.
+                          B00 ürün diff'i SIFIR; test gerekmiyorsa acceptance ölçütü
+                          APPLICABLE KONTROLLERDİR (required checks + mergeability +
+                          sıfır-diff kanıtı + paketin §13/5-10 kapsama doğrulaması).
 C3 ACTIVATION DEBT:       KOŞULLU — yalnız B01..B07'den biri migration üretirse doğar.
                           C3-PROD-ACTIVATION koşullu yetkisi: NOT YET GRANTED.
 PROGRAM LOCK:             CLIENT ONLY
