@@ -14,7 +14,59 @@
     "INT-4C1CC43AA751",
     "INT-9CC5892AA884",
     "INT-E9AE1D631FFB",
-    "INT-EC4A8FFB6463"
+    "INT-EC4A8FFB6463",
+    "HTTP-054B0508E07D",
+    "HTTP-061BBAAB776C",
+    "HTTP-0750799664CC",
+    "HTTP-0B28437D962E",
+    "HTTP-122183895FD0",
+    "HTTP-1287CD839964",
+    "HTTP-2F45FFAB19CE",
+    "HTTP-3F3BCA2293F5",
+    "HTTP-3F5457860C4F",
+    "HTTP-512B39B42D1E",
+    "HTTP-694C905C4131",
+    "HTTP-8A5F22B0F914",
+    "HTTP-A8EA32B0039F",
+    "HTTP-B0B542D6B1E4",
+    "HTTP-BCE31FB68E56",
+    "HTTP-C0593CE2185B",
+    "HTTP-CB8DA0AB111B",
+    "HTTP-D17C40F4DDEF",
+    "HTTP-E8DDE1EC0E7B",
+    "HTTP-F4A23B0C8754",
+    "HTTP-FEB481815B69",
+    "INT-00FE7655123B",
+    "INT-0701AF188E63",
+    "INT-13396789FCC2",
+    "INT-198D4A73BE9A",
+    "INT-1F8DF64CBF69",
+    "INT-241DB773E0E1",
+    "INT-2458E64ED157",
+    "INT-26E0EEE47F55",
+    "INT-29C9D40F349D",
+    "INT-2C570E829954",
+    "INT-2D535BFBE8A9",
+    "INT-2FFF74672109",
+    "INT-31D483E4AB9F",
+    "INT-35978A278AC0",
+    "INT-585689494982",
+    "INT-61CC7D2EC736",
+    "INT-6303E5E243D1",
+    "INT-862A2D8B25FA",
+    "INT-8BD0574E3CBD",
+    "INT-97426B28EAEA",
+    "INT-9F9789B5BA7D",
+    "INT-A5EA2CEAD034",
+    "INT-A8D86B977664",
+    "INT-AF017422CC46",
+    "INT-AF1A55030C4B",
+    "INT-AFA258B36AD4",
+    "INT-B95A6AE15E4D",
+    "INT-B9D28C2E2AE9",
+    "INT-C04D8D880754",
+    "INT-D0D17D782264",
+    "INT-D98EA9E329D6"
   ],
   "entries": [
     {
@@ -175,6 +227,1244 @@
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/guards/guard-interceptor.ts:225",
         "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/simulation-api.module.ts:providers"
       ]
+    },
+    {
+      "capabilityId": "HTTP-054B0508E07D",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "80424b4fc2d845c35db05b225c510e3ad9ee9e1b82a828d4bf3d694ffb4a8674",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:306"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-061BBAAB776C",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "a705597d01be689aa72d21b56f043a6f5bafdc4c87cad751367c9439a9fd71a8",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:222"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-0750799664CC",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "bdc09d688c226b068228f95002443a5b9751289743e999938c9d2c0525c5d666",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:193"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-0B28437D962E",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "d7d6e00ff660b34474baf8b73d747f83e4ae624c197779f69d57a06e4912ec24",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:234"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-122183895FD0",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "fd03ba42e0aa12029d50b78c550fb0126a8cf9ad9986089d85ea1036ef56fdf1",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:277"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-1287CD839964",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "f5a3e3ad2701049b37a65cc9fc167e29a66908375300753feba47edb8bd8bfea",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:194"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-2F45FFAB19CE",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "cd2b9a1c89c38ec9e16b2fddc59467615a2e538a0b376712ff11b3c29edf8339",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:166"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-3F3BCA2293F5",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "f11c2086f0c1ba1d7cbed461d3d827613a4d101806ea7129fb011fbc19d5b456",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:236"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-3F5457860C4F",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "d6a51dc49c75a5bf233538bcc2f50584268bbbcf7f9215467257dfe0f3d09ae5",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:107"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-512B39B42D1E",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "df47739d320da7bcfd185699976a69333a619238a1ac27d9d8c4b36d8d65ac35",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:614"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-694C905C4131",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "7870697281931f0ded2d2d8ef449de0d4dc71a7e6772438205dd08f8061ba81e",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:174"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-8A5F22B0F914",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "58017ab58619bdff02489f285d7e137d40273bf90ac19b0972068c2095f6fe72",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:194"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-A8EA32B0039F",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "f06332b13c67f484dee0f1d45a742103f70f9ca5fff21b9124410cdd2ca2c999",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:291"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-B0B542D6B1E4",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "f47f7388cc3c4e96fcc40fd27df87db1bdc9f101e353672039f68fa8a216ee1a",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:307"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-BCE31FB68E56",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "6dc5b0abef92b59616eb0031b3574050f99689140e69d30fd6e69d756047f6dd",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:172"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-C0593CE2185B",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "56ba8b732d4498a4ca76ea015e00382e822099e5bb1f9ee848ad5f82c0b0e56c",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:158"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-CB8DA0AB111B",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "c7b54ed72ea30cc3f65b3cc8bc5e9c42b0ec631a1dd408852e5497c8e62268b6",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:182"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-D17C40F4DDEF",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "e0b86b7d8abc95428d0811d49771e3396fbed9b6ddc9d0cfa88cfb37cc7325cb",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:256"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-E8DDE1EC0E7B",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "8dfd17266ec5aed82b77a2bfa86f9771d15720ac71f5007923e07304a92bc120",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:158"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-F4A23B0C8754",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "237a52d0c83a7c9433a06f356d57498144fc6409854654b198d3b235181c5e78",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:264"
+      ]
+    },
+    {
+      "capabilityId": "HTTP-FEB481815B69",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "ac95d63cb54729d840ba2531ef8bc7ac5504c6b7a8bd4198f2123d8e3438bfaf",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/main.ts:22",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:115"
+      ]
+    },
+    {
+      "capabilityId": "INT-00FE7655123B",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "3caea1604a944560bcc92c5adfad0b94fc2962311bbe15e32ec2296bace9f737",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/hysteresis-escalation.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/common/dormant-subtree-registry.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/hysteresis-escalation.service.ts:61"
+      ]
+    },
+    {
+      "capabilityId": "INT-0701AF188E63",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "51d1e1cbcc883af1ee467948c7dd0bab5615c21b44a80410eae07c04c6658cd6",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-audit.interceptor.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-audit.interceptor.ts:16",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-13396789FCC2",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "71290588b130153b9470eba8cdbc7cbbac0eccccb88ec0e1413ebaf4475433c3",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/tenant-context/tenant-context.guard.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/break-glass-grant.guard.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/tenant-context/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/tenant-context/tenant-context.guard.ts:48"
+      ]
+    },
+    {
+      "capabilityId": "INT-198D4A73BE9A",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "b30a3974711ab4b340c384eed34128243d5710be70e5acebe6bab5260bcb74fd",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/approval/approval.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/approval/approval.service.ts:53",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/approval/index.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-1F8DF64CBF69",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "c84265076dc54524b591ecae3328b7d29837e0c555a6184cf5f3daae3ffdaa13",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-retry-worker.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-retry-worker.service.ts:165"
+      ]
+    },
+    {
+      "capabilityId": "INT-241DB773E0E1",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "81dcbda75be9171b685e892be28a4fd95aa2e6b236d0f5cd5f69edafb1b7040b",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-gate.interceptor.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-gate.interceptor.ts:108",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency.decorators.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-2458E64ED157",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / CONFIG_GATED_DEFAULT_OFF",
+      "recordFingerprint": "a546ce789535781231332d510af1c46474e8ce9ede8ebbb144a07d7fe37c1cce",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/redis/failover-handler.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/redis/failover-handler.ts:60",
+        "project/apps/api/src/modules/calc-preview/diagnostics/simulation-api/redis/index.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-26E0EEE47F55",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "30a6311bd628c56fec3cf3f8da3697dae51c2673858051f6f6f6159b561daf7a",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-audit.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/common/dormant-subtree-registry.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-audit.service.ts:33",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.service.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-29C9D40F349D",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "3ab9914c0d2f519977096479ced7716e3d19e9899c1f57ef6b828d387e12edc5",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/kill-switch.guard.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/kill-switch.guard.ts:20",
+        "project/apps/api/src/modules/calc-preview/break-glass/index.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-2C570E829954",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "3bd9db6f6f4a87d2a74877e176b7d70dbf80fa7814d1cdcf7258bacbf0f28316",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-takeover-limiter.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-gate.interceptor.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-takeover-limiter.service.ts:62"
+      ]
+    },
+    {
+      "capabilityId": "INT-2D535BFBE8A9",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "875be3c3a64eb16a9c32ddbb8d40622b0fb3ecef2f4a54f24e76eff566280aca",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-retry-metrics.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-retry-metrics.service.ts:114"
+      ]
+    },
+    {
+      "capabilityId": "INT-2FFF74672109",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "161d2d1b4e7b16432b56a4d3f418e7b939a92537deb2b9d915d8debc3f3f6e9c",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-gate.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-gate.interceptor.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-gate.service.ts:49"
+      ]
+    },
+    {
+      "capabilityId": "INT-31D483E4AB9F",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "7779cd8dbe01d4242a377763582ae4db8a2f321ca26ef6d920da175899abe049",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/internal-ops.guard.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/internal-ops.guard.ts:85",
+        "project/apps/api/src/modules/calc-preview/break-glass/index.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-35978A278AC0",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "837d671333a4b9b82a200a087643eadd154784cb108cfde49e663ed7d54b02ca",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-metrics.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/escalation.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/notification.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook-metrics.service.ts:80",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.service.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-585689494982",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "26a7e20e6ae9fc0b28ae509af5ebbcd12823c1afab6a513f1289b21687083ad7",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/escalation.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/common/dormant-subtree-registry.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-executor.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/escalation.service.ts:61",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.service.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-61CC7D2EC736",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "0487a567c86884bfc2032dc34cc0d003e57e16e4906e6f5747b80658d42cef67",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/request/request.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/approval/approval.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/request/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/request/request.service.ts:143"
+      ]
+    },
+    {
+      "capabilityId": "INT-6303E5E243D1",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "cfca10485d78a5e636a399c8a6bca586ca74230bdea96842049a791c881212d0",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/tenant-context/tenant-context.resolver.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "activationConditions": [
+        "INTERNAL_HMAC_SECRET",
+        "NODE_ENV"
+      ],
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/tenant-context/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/tenant-context/tenant-context.guard.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/tenant-context/tenant-context.resolver.ts:45",
+        "project/apps/api/src/modules/calc-preview/tenant-context/tenant-context.types.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-862A2D8B25FA",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "6380f7cc40ed22f0e74706a8062fd5cea70237805f3df13857b7325994937023",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/network-allowlist.guard.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/network-allowlist.guard.ts:78",
+        "project/apps/api/src/modules/calc-preview/break-glass/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-8BD0574E3CBD",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "02e0cf8f0c3a59630b611f7c55288b92109e778488dff0d549c2e34991e504e4",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/audit/manifest-admin-audit.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/audit/manifest-admin-audit.service.ts:53",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/idempotency-gate.interceptor.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/manifest-retry/manifest-admin.controller.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-97426B28EAEA",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / MISSING_POLICY_GATE",
+      "recordFingerprint": "914d9d65c3c99bf61c7ebe24e5dd72402943671aa1017662c08c19511c63dc95",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/bundle-seal/bundle-seal.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/bundle-seal/bundle-seal.service.ts:45",
+        "project/apps/api/src/modules/calc-preview/diagnostics/object-store/bundle-seal/index.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-9F9789B5BA7D",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "287bd2f7f15c5f7eeb82db5d156c9dfc0e7f1d047bb885fdb6550d91acff88dc",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/internal-ops.guard.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/internal-ops.guard.ts:28",
+        "project/apps/api/src/modules/calc-preview/break-glass/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-A5EA2CEAD034",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "56437b8370c2bd0a5c6077a845d188ea169621c63930e82cf7587d04345ab649",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/grant/grant.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/break-glass-grant.guard.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/approval/approval.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/grant/grant.service.ts:183",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/grant/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/request/request.service.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-A8D86B977664",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "c956fcdf3ee5c410a02c96c178cd536fd75b1a541c7e43e35c605a4397661b89",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/circuit-breaker/circuit-breaker.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "activationConditions": [
+        "BREAK_GLASS_SECURITY_OVERRIDE_TOKEN"
+      ],
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/approval/approval.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/circuit-breaker/circuit-breaker.service.ts:151",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/circuit-breaker/index.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-AF017422CC46",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "ed35e66e91432a0c3618fc4c240889d9f538bd5b2f46379871ff9742a64816f2",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-policy-guard.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/common/dormant-subtree-registry.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-executor.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/action-policy-guard.service.ts:52",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.service.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-AF1A55030C4B",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "9f6ce3218dc3f8a0af5f9e66aab4791bc07bdbc1eaa6f0f8b967ba6664635d9a",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts:43",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/index.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-AFA258B36AD4",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / TEST_OR_FUTURE_ADMIN_UTILITY",
+      "recordFingerprint": "59c6008fb35495606ee3715ca5aa811c0803749caaeff50e56ddb828f19c44f2",
+      "implementationFiles": [
+        "project/apps/api/src/modules/client-settlement/accounting-ledger-dry-run.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/client-settlement/accounting-ledger-dry-run.service.ts:305"
+      ]
+    },
+    {
+      "capabilityId": "INT-B95A6AE15E4D",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "INTENTIONALLY_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "3fd4a2fe1e177dfdc110fc69759d85ad5eb5205fbc73298696518ac68c27c130",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/common/dormant-subtree-registry.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/diagnostics/playbook/playbook.service.ts:91"
+      ]
+    },
+    {
+      "capabilityId": "INT-B9D28C2E2AE9",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "50c3f2bd59498e5fd1c345757eb54a5da937422004d559d4260e2bbf82cf1d3f",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/anomaly/jti-anomaly-detector.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/anomaly/jti-anomaly-detector.service.ts:76"
+      ]
+    },
+    {
+      "capabilityId": "INT-C04D8D880754",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "69742ec06dfbc8ec5f3e2f5c19c2764cd6b54b50384c06ca9cee3f1ea7606e26",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/break-glass-grant.guard.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/cross-tenant-access.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/break-glass-grant.guard.ts:46",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-D0D17D782264",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / DO_NOT_BIND",
+      "recordFingerprint": "2ead7b30f8fb3ff3deb22ff099124ed11b43665bfb70e92ede27835cb63c9ee0",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/services/audit/cross-tenant-audit.service.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/controllers/break-glass.controller.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/break-glass-grant.guard.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/interceptors/cross-tenant-access.interceptor.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/approval/approval.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/audit/cross-tenant-audit.service.ts:138",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/audit/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/request/request.service.ts:consumer-reference"
+      ]
+    },
+    {
+      "capabilityId": "INT-D98EA9E329D6",
+      "ownerDecisionRef": "RBR-R01-T14",
+      "ownerDisposition": "OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND",
+      "recordFingerprint": "77a1f9e99010564d1eca4ba39840055f107998df5c8c8c55a544fa76130d7754",
+      "implementationFiles": [
+        "project/apps/api/src/modules/calc-preview/break-glass/break-glass.config.ts"
+      ],
+      "disposition": "INTENTIONALLY_DORMANT",
+      "runtimeBound": false,
+      "productionReachable": false,
+      "productionActive": false,
+      "operationalConsumer": 0,
+      "activationAuthority": "ABSENT",
+      "defect": false,
+      "remediationRequired": false,
+      "reopenCondition": "OWNER_APPROVED_CONSUMER_AND_TASK_BOUND_ACTIVATION_GRANT",
+      "activationConditions": [
+        "BREAK_GLASS_ALLOWED_CIDRS",
+        "BREAK_GLASS_AUDIT_LOG_LEVEL",
+        "BREAK_GLASS_AUDIT_RETENTION_DAYS",
+        "BREAK_GLASS_CB_MAX_GRANTS",
+        "BREAK_GLASS_CB_WINDOW_MINUTES",
+        "BREAK_GLASS_ENABLED",
+        "BREAK_GLASS_GRANT_TTL_MINUTES",
+        "BREAK_GLASS_MAX_RENEWALS",
+        "BREAK_GLASS_POSTMORTEM_DEADLINE_HOURS",
+        "BREAK_GLASS_REQUEST_TTL_MINUTES",
+        "BREAK_GLASS_REQUIRE_MTLS",
+        "BREAK_GLASS_TOKEN_AUDIENCE",
+        "BREAK_GLASS_TOKEN_ISSUER",
+        "BREAK_GLASS_TOKEN_SECRET",
+        "NODE_ENV"
+      ],
+      "evidenceRefs": [
+        "project/apps/api/src/modules/calc-preview/break-glass/break-glass.config.ts:191",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/break-glass-grant.guard.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/kill-switch.guard.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/guards/network-allowlist.guard.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/index.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/circuit-breaker/circuit-breaker.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/grant/grant.service.ts:consumer-reference",
+        "project/apps/api/src/modules/calc-preview/break-glass/services/request/request.service.ts:consumer-reference"
+      ]
     }
-  ]
+  ],
+  "materializedByTaskId": "RBR-R01-T14",
+  "materializationSourceCommitSha": "0c482b965c49305c447811c2f63061eefdd45425",
+  "materializationScope": {
+    "exactRecordCount": 52,
+    "dispositionCounts": {
+      "CROSS_TENANT": 12,
+      "MANIFEST_DLQ": 13,
+      "BREAK_GLASS": 17,
+      "PLAYBOOK": 7,
+      "FAILOVER": 1,
+      "BUNDLE_SEAL": 1,
+      "ACCOUNTING": 1
+    },
+    "productionBindingPerformed": false
+  }
 }
