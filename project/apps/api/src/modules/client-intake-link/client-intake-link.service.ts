@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { randomBytes, createHash } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntakeLinkDeliveryStatus, ClientIntakeLinkStatus, Prisma } from '@prisma/client';
@@ -6,7 +6,6 @@ import { DispatchResult, NotificationDispatcherService } from '@/modules/client-
 import { OfficeService } from '@/modules/office/office.service';
 import { CreateClientIntakeLinkDto, CreateClientWorkspaceIntakeLinkDto } from './dto/client-intake-link.dto';
 import { AuditService } from '../audit/audit.service';
-import { OfficeApprovalService } from '../office-approval/office-approval.service';
 
 // Liste/detayda DÖNDÜRÜLECEK alanlar — tokenHash ASLA dışa verilmez.
 const PUBLIC_SELECT = {
@@ -66,25 +65,12 @@ type IntakeLinkWriteDb = Pick<PrismaService, 'clientIntakeLink'> | Prisma.Transa
 export class ClientIntakeLinkService {
   private readonly logger = new Logger(ClientIntakeLinkService.name);
 
-  // I1A: OfficeApprovalService revoke capability-gate için (ClientIntelStatementService ile
-  // birebir desen). AuditService @Global.
   constructor(
     private prisma: PrismaService,
     private dispatcher: NotificationDispatcherService,
     private office: OfficeService,
     private audit: AuditService,
-    private officeApproval: OfficeApprovalService,
   ) {}
-
-  /**
-   * I1A (owner-locked 2026-07-02) — link iptali (revoke) otorite-eylemidir (bu domainin "silme"
-   * karşılığı). create() BU KAPSAM DIŞI (owner kararı — link üretimi rutin işlem).
-   */
-  private async assertCanManageIntakeLinkLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
-    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
-      throw new ForbiddenException('İntake linkini iptal etme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)');
-    }
-  }
 
   /**
    * Link üret (ACTIVE) + best-effort INTAKE_LINK maili. rawToken + intakeUrl TEK sefer döner.
@@ -227,9 +213,6 @@ export class ClientIntakeLinkService {
     if (existing.status !== ClientIntakeLinkStatus.ACTIVE) {
       throw new BadRequestException(`Yalnız ACTIVE link iptal edilebilir (durum: ${existing.status})`);
     }
-
-    // I1A: iptal yetkisi — transaction'dan ÖNCE.
-    await this.assertCanManageIntakeLinkLifecycle(userId, tenantId);
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.clientIntakeLink.update({
