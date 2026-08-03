@@ -846,6 +846,18 @@ C1 ENGINEERING FOLLOW-UP: FIND-C4 (version/CAS) — activation/WAVE-4 borcu DEĞ
                           mevcut owner/coupling kaydı aynen korunur).
 C2 STATUS:                ENGINEERING_COMPLETE — C2-B08 sertifikasyonu tamam (2026-08-03;
                           client modülü 33 suite / 545 test PASS, fresh main 99959714)
+C2 REVIEW EXTENSION:      DELIVERED (2026-08-03, owner bounded GO-COMPLETE) — CR-1
+                          boşluğu kapandı: INTAKE_REVIEW_CLAIM/FIELD_DECIDE/
+                          SUBMISSION_REJECT komutları INTAKE_REVIEW sınıfında;
+                          yetki sinyali isIntakeReviewAuthorized (promotion
+                          isApproverEligible eşiğinden BAĞIMSIZ; rol adı — ADMIN
+                          dahil — yetki VERMEZ); ayrı audit action
+                          CLIENT_INTAKE_REVIEW_COMMAND. Mapping: claim→CLAIM ·
+                          reviewField/bulkReviewFields→FIELD_DECIDE ·
+                          rejectSubmission→SUBMISSION_REJECT. Sinyalin kanonik
+                          permission kaynağına bağlanması X3-B04 wiring'idir;
+                          kapı şekli FROZEN. Kanıt: extension spec 24/24 +
+                          b03/b06 50/50 + r4 45/45. Şema/migration: YOK.
                           C2 PAGE: SUSPENDED_FOR_ACTIVATION — TERMINAL CLOSED DEĞİL;
                           ARC-07 backfill borcu WAVE 4'te AYNI C2 sayfasında, owner
                           koşullu yetkisi verildikten sonra kapanır. C3 BAŞLAYABİLİR.

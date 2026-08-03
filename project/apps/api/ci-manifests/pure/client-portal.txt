@@ -209,6 +209,13 @@ src/modules/client/__tests__/client-intake-link-authority-primitive-b03.spec.ts
 #     basarili/failed gonderim girisiminin audit'i ve X1 wiring deseni kilitlenir.
 #     X1 kendi rol politikasini URETMEZ; client-notification/ C2'ye kapali.
 src/modules/client/__tests__/client-notification-authority-primitive-b06.spec.ts
+#
+#   C2 REVIEW AUTHORITY EXTENSION — CR-1 sozlesme kaniti (SAF, DB-siz)
+#     Owner RATIFIED 2026-08-03: INTAKE_REVIEW_CLAIM/FIELD_DECIDE/SUBMISSION_REJECT
+#     komutlari INTAKE_REVIEW sinifinda — yetki sinyali isIntakeReviewAuthorized,
+#     promotion esiginden (isApproverEligible) BAGIMSIZ; rol adi (ADMIN dahil)
+#     yetki VERMEZ; ayri audit action (CLIENT_INTAKE_REVIEW_COMMAND). X3-B04 tuketir.
+src/modules/client/__tests__/client-intake-review-authority-extension.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
