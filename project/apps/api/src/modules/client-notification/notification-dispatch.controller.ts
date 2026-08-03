@@ -3,9 +3,11 @@ import { AuthGuard } from '@nestjs/passport';
 import { IsBoolean, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
 import { Request } from 'express';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
+import { CLIENT_WORKSPACE_COMMAND } from '../client/client-workspace-command-authority';
+import { ClientNotificationAuthorityAdapter } from './client-notification-authority.adapter';
 
 interface AuthRequest extends Request {
-  user: { id: string; tenantId: string };
+  user: { id: string; tenantId: string; role?: string };
 }
 
 /** Manuel resend gövdesi. tokens çağıran tarafından doldurulur (m3a-4). */
@@ -27,7 +29,10 @@ class ResendNotificationDto {
 @Controller('client-notifications')
 @UseGuards(AuthGuard('jwt'))
 export class NotificationDispatchController {
-  constructor(private readonly dispatcher: NotificationDispatcherService) {}
+  constructor(
+    private readonly dispatcher: NotificationDispatcherService,
+    private readonly authority: ClientNotificationAuthorityAdapter,
+  ) {}
 
   /**
    * Manuel resend — POST /client-notifications/resend
@@ -35,15 +40,26 @@ export class NotificationDispatchController {
    */
   @Post('resend')
   async resend(@Req() req: AuthRequest, @Body() dto: ResendNotificationDto) {
-    return this.dispatcher.resend(req.user.tenantId, req.user.id, {
-      clientId: dto.clientId,
-      caseId: dto.caseId,
-      templateCode: dto.templateCode,
-      type: dto.type,
-      tokens: dto.tokens ?? {},
-      refType: dto.refType,
-      refId: dto.refId,
-      force: dto.force,
-    });
+    return this.authority.run(
+      {
+        userId: req.user.id,
+        tenantId: req.user.tenantId,
+        role: req.user.role,
+      },
+      dto.clientId,
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_RESEND,
+      () =>
+        this.dispatcher.resend(req.user.tenantId, req.user.id, {
+          clientId: dto.clientId,
+          caseId: dto.caseId,
+          templateCode: dto.templateCode,
+          type: dto.type,
+          tokens: dto.tokens ?? {},
+          refType: dto.refType,
+          refId: dto.refId,
+          force: dto.force,
+        }),
+      (result) => ({ status: result.status }),
+    );
   }
 }

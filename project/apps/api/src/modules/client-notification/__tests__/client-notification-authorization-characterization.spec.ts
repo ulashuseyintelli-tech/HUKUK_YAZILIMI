@@ -7,6 +7,7 @@ import {
   BulkEmailRecipientType,
   ManualClientNotificationType,
 } from "../dto/client-notification.dto";
+import { CLIENT_WORKSPACE_COMMAND } from "../../client/client-workspace-command-authority";
 
 describe("CN-1 notification authorization characterization", () => {
   const notificationService: any = {
@@ -17,6 +18,13 @@ describe("CN-1 notification authorization characterization", () => {
     testSend: jest.fn(),
   };
   const dispatcher: any = { resend: jest.fn() };
+  const authority: any = {
+    createBulkTargetScopeId: jest.fn().mockReturnValue("client-notification-bulk:scope"),
+    run: jest.fn(
+      async (_actor: unknown, _scope: string, _command: string, execute: () => Promise<unknown>) =>
+        execute()
+    ),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -28,48 +36,53 @@ describe("CN-1 notification authorization characterization", () => {
     dispatcher.resend.mockResolvedValue({ status: "sent" });
   });
 
-  it("send-email/send-sms/bulk-email class-level JWT guard taşır fakat role tüketmez", async () => {
-    const controller = new ClientNotificationController(notificationService);
+  it("send-email/send-sms/bulk-email JWT guard taşır ve canonical command wiring'ini tüketir", async () => {
+    const controller = new ClientNotificationController(notificationService, authority);
     const guards = Reflect.getMetadata(GUARDS_METADATA, ClientNotificationController);
     expect(guards).toContain(JwtAuthGuard);
 
-    await controller.sendEmail("tenant-1", "viewer-1", {
+    await controller.sendEmail("tenant-1", "actor-1", {
       clientId: "client-1",
       type: ManualClientNotificationType.GENEL_BILGILENDIRME,
       subject: "Konu",
       body: "İçerik",
-    });
-    await controller.sendSms("tenant-1", "viewer-1", {
+    }, "ADMIN");
+    await controller.sendSms("tenant-1", "actor-1", {
       clientId: "client-1",
       type: ManualClientNotificationType.HATIRLATMA,
       body: "Mesaj",
-    });
-    await controller.sendBulkEmail("tenant-1", "viewer-1", {
+    }, "ADMIN");
+    await controller.sendBulkEmail("tenant-1", "actor-1", {
       recipients: ["client-1"],
       subject: "Konu",
       message: "Mesaj",
       type: BulkEmailRecipientType.CLIENTS,
-    });
+    }, "ADMIN");
 
     expect(notificationService.sendEmail).toHaveBeenCalledWith(
       "tenant-1",
-      "viewer-1",
+      "actor-1",
       expect.any(Object)
     );
     expect(notificationService.sendSms).toHaveBeenCalledWith(
       "tenant-1",
-      "viewer-1",
+      "actor-1",
       expect.any(Object)
     );
     expect(notificationService.sendBulkEmail).toHaveBeenCalledWith(
       "tenant-1",
-      "viewer-1",
+      "actor-1",
       expect.any(Object)
     );
+    expect(authority.run.mock.calls.map((call: any[]) => call[2])).toEqual([
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_EMAIL,
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_SMS,
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_BULK_EMAIL,
+    ]);
   });
 
-  it("resend class-level JWT guard taşır fakat role tüketmeden dispatcher'a iletir", async () => {
-    const controller = new NotificationDispatchController(dispatcher);
+  it("resend JWT guard taşır ve canonical NOTIFICATION_RESEND wiring'ini tüketir", async () => {
+    const controller = new NotificationDispatchController(dispatcher, authority);
     const guards = Reflect.getMetadata(GUARDS_METADATA, NotificationDispatchController);
     expect(guards).toHaveLength(1);
 
@@ -89,10 +102,17 @@ describe("CN-1 notification authorization characterization", () => {
       "viewer-1",
       expect.objectContaining({ clientId: "client-1", force: undefined })
     );
+    expect(authority.run).toHaveBeenCalledWith(
+      { userId: "viewer-1", tenantId: "tenant-1", role: "VIEWER" },
+      "client-1",
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_RESEND,
+      expect.any(Function),
+      expect.any(Function)
+    );
   });
 
   it("overview ve test-send ADMIN olmayan rolü controller sınırında reddeder", async () => {
-    const controller = new ClientNotificationController(notificationService);
+    const controller = new ClientNotificationController(notificationService, authority);
 
     await expect(controller.getOverview("tenant-1", "USER")).rejects.toBeInstanceOf(
       ForbiddenException

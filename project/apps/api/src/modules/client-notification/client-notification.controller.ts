@@ -20,11 +20,18 @@ import {
   SendClientNotificationSmsDto,
   UpdateClientNotificationTemplateDto,
 } from "./dto/client-notification.dto";
+import {
+  CLIENT_WORKSPACE_COMMAND,
+} from "../client/client-workspace-command-authority";
+import { ClientNotificationAuthorityAdapter } from "./client-notification-authority.adapter";
 
 @Controller("client-notifications")
 @UseGuards(JwtAuthGuard)
 export class ClientNotificationController {
-  constructor(private service: ClientNotificationService) {}
+  constructor(
+    private service: ClientNotificationService,
+    private readonly authority: ClientNotificationAuthorityAdapter
+  ) {}
 
   // Bildirim Kontrol Merkezi — sağlık/özet/teşhis. ADMIN gate: teslimat istatistiği ve hata
   // mesajları operasyonel/hassas veridir, salt-JWT yetmez (office.controller / reports ile aynı çizgi).
@@ -47,9 +54,16 @@ export class ClientNotificationController {
   sendEmail(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body() body: SendClientNotificationEmailDto
+    @Body() body: SendClientNotificationEmailDto,
+    @CurrentUser("role") role: string
   ) {
-    return this.service.sendEmail(tenantId, userId, body);
+    return this.authority.run(
+      { userId, tenantId, role },
+      body.clientId,
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_EMAIL,
+      () => this.service.sendEmail(tenantId, userId, body),
+      (result) => ({ status: result.success ? "sent" : "failed" })
+    );
   }
 
   // SMS gönder
@@ -57,9 +71,16 @@ export class ClientNotificationController {
   sendSms(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body() body: SendClientNotificationSmsDto
+    @Body() body: SendClientNotificationSmsDto,
+    @CurrentUser("role") role: string
   ) {
-    return this.service.sendSms(tenantId, userId, body);
+    return this.authority.run(
+      { userId, tenantId, role },
+      body.clientId,
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_SEND_SMS,
+      () => this.service.sendSms(tenantId, userId, body),
+      (result) => ({ status: result.success ? "sent" : "failed" })
+    );
   }
 
   // Müvekkilin bildirim geçmişi
@@ -164,8 +185,21 @@ export class ClientNotificationController {
   sendBulkEmail(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body() body: SendClientNotificationBulkEmailDto
+    @Body() body: SendClientNotificationBulkEmailDto,
+    @CurrentUser("role") role: string
   ) {
-    return this.service.sendBulkEmail(tenantId, userId, body);
+    const targetScopeId = this.authority.createBulkTargetScopeId(body.type, body.recipients);
+    return this.authority.run(
+      { userId, tenantId, role },
+      targetScopeId,
+      CLIENT_WORKSPACE_COMMAND.NOTIFICATION_BULK_EMAIL,
+      () => this.service.sendBulkEmail(tenantId, userId, body),
+      (result) => ({
+        status: result.success && result.details.failed === 0 ? "sent" : "failed",
+        recipientCount: body.recipients.length,
+        sentCount: result.details.sent,
+        failedCount: result.details.failed,
+      })
+    );
   }
 }
