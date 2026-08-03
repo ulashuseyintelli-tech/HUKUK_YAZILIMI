@@ -757,16 +757,19 @@ C1 STATUS:                ENGINEERING_COMPLETE — C1-B06 sertifikasyonu tamam (
                           C1 PAGE: SUSPENDED_FOR_ACTIVATION — TERMINAL CLOSED DEĞİL;
                           migration APPLY borcu WAVE 4'te AYNI C1 sayfasında kapanır.
 C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 6 (B01–B06)
-C1 ACTIVATION DEBT:       C1-PROD-ACTIVATION — 20260802190000_client_identity_active_
-                          partial_unique (aktif satırda tenantId+tckn / tenantId+vkn
-                          partial unique; §9-D koşullu yetkiyle WAVE 4'te apply edilecek).
-                          FIND-C4 (version/CAS): atomik birlikte deploy KANITLANAMADI —
-                          C2-owned policy allowlist + XL-3 imza kısıtı nedeniyle aynı
-                          migration owner altında SERİ paketlenecek (C2 koordinasyonlu).
                           (#2107 = inherited evidence, tamamlanmış C1 bloğu DEĞİL.
                            C1-B01 = bu evidence'ın fresh main a92a5a44 üzerinde residual
                            doğrulaması: 5/5 kalem koddan kanıtlandı, ürün diff'i SIFIR,
                            47/47 ilgili test PASS — duplicate implementation AÇILMADI)
+C1 ACTIVATION DEBT:       C1-PROD-ACTIVATION — 20260802190000_client_identity_active_
+                          partial_unique production APPLY (aktif satırda tenantId+tckn /
+                          tenantId+vkn partial unique; §9-D koşullu yetkiyle WAVE 4'te,
+                          AYNI C1 sayfası tarafından). BAŞKA activation borcu YOK.
+C1 ENGINEERING FOLLOW-UP: FIND-C4 (version/CAS) — activation/WAVE-4 borcu DEĞİLDİR.
+                          Atomik birlikte deploy KANITLANAMADI — C2-owned policy allowlist
+                          + XL-3 imza kısıtı nedeniyle aynı migration owner altında SERİ
+                          paketlenecek (C2 koordinasyonlu engineering follow-up; buradaki
+                          mevcut owner/coupling kaydı aynen korunur).
 C2 STATUS:                IN PROGRESS — C2-B05 RUNTIME_VERIFIED (2026-08-03; disposition-only,
                           ürün diff SIFIR — OWN-10/12/15 repository kanıtıyla sınıflandı:
                           uygulanan ratifiye kalem 0; ÜÇÜ DE OWNER-DEFERRED

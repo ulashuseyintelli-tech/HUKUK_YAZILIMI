@@ -467,8 +467,9 @@ Codex X1 paralel yürür; ortak yüzey yalnız client-portal.txt (§4 ile serial
       yüzeylerinin idempotency/ön-koşul sözleşmeleri karakterize edildi; tam manifest
       sertifikasyonu `run-ci-manifest.sh pure/client-portal` = 705/705 PASS (B05 tepesinde)
       + bu PR'ın CI'ında yenilendi. ENGINEERING EXIT sağlandı → C1 PAGE:
-      SUSPENDED_FOR_ACTIVATION; WAVE-4 borcu: identity migration APPLY + FIND-C4 CAS
-      serial follow-up)*
+      SUSPENDED_FOR_ACTIVATION. WAVE-4 ACTIVATION BORCU: yalnız identity migration
+      APPLY. FIND-C4 CAS = AYRI engineering follow-up (C2 koordinasyonlu, SERİ) —
+      activation/WAVE-4 borcu DEĞİL)*
 - [ ] Her blok: CI required checks yeşil · mergeability CLEAN · squash-merge · main sync ·
       kendi branch/worktree cleanup · zorunlu blok çıktısı yayımlandı
 
