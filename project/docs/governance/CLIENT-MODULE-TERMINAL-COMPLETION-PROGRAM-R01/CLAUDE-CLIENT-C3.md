@@ -6,8 +6,15 @@ MASTER PROGRAM:           CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01
 MASTER PLAN VERSION:      v1.0 (OWNER RATIFIED)
 THIS PAGE:                CLAUDE-CLIENT-C3
 LANE OWNER:               CLAUDE
-PREDECESSOR:              CLAUDE-CLIENT-C2 (canonical kapalı olmalı)
-                          + OWNER LEGAL RATIFICATIONS (master plan §13 / 5-10)
+PREDECESSOR:              İKİ AYRI KAPI — durumları FARKLI:
+                          (1) CLAUDE-CLIENT-C2 ENGINEERING_COMPLETE  → ✅ KARŞILANDI
+                              (C2 8/8, B01–B08; authority primitive'leri CANONICAL+FROZEN)
+                          (2) OWNER LEGAL RATIFICATIONS (§13 / 5-10) → ❌ KARŞILANMADI
+                              decision-log'da CLIENT KVKK/retention/POA ratifikasyon kaydı
+                              YOK; POL-E-R1 "RECOMMENDED / NOT STARTED ·
+                              IMPLEMENTATION AUTHORITY: NONE" (VERIFIED 2026-08-03)
+                          → SAYFA AÇILABİLİR, IMPLEMENTATION BAŞLAYAMAZ (§0-A)
+                          Blok-seviyesi pre-flight (§2-A) diğer lane'ler için ZORUNLU.
 SUCCESSOR:                WAVE 4 (production gates) → WAVE 5 Terminal Integration
 
 ALLOWED PATHS:
@@ -74,6 +81,187 @@ GO-COMPLETE:
 
 PROGRAM LOCK:             CLIENT ONLY
 ```
+
+---
+
+## 0-A. OWNER AUTHORIZATION VE İKİ MODLU AÇILIŞ
+
+```text
+OWNER AUTHORIZATION:
+GO-COMPLETE — CLAUDE-CLIENT-C3 TAM SAYFA
+(owner bu sayfayı AYRI bir sayfada açtığında yürürlüğe girer)
+
+AÇILIŞ MODU — RATİFİKASYON DURUMUNA GÖRE:
+
+MOD A · ANALYSIS_ONLY  (BUGÜN GEÇERLİ OLAN)
+  Koşul : §13/5-10 ratifikasyonlarının HİÇBİRİ alınmamış (VERIFIED 2026-08-03)
+  İzin   : C3-B00 owner decision pack üretimi · repository ve resmî kaynak analizi ·
+           mevcut davranışın characterization testleri
+  YASAK  : hukuki kural/eşik/süre içeren ÜRÜN KODU · şema · migration
+  Gerekçe: Implementation-layer policy invention YASAKTIR. Madde/kaynağı doğrulanmamış
+           veya owner'ca ratifiye edilmemiş hiçbir hukuk kuralı koda gömülmez.
+
+MOD B · IMPLEMENTATION
+  Koşul : ilgili bloğun dayandığı §13 kalemi RATİFİYE edilmiş ve decision-log'da kayıtlı
+  İzin   : o bloğun implementation'ı
+
+AUTHORIZED WITHOUT FURTHER OWNER APPROVAL (her iki modda):
+- Sıralı blok yürütme · izole worktree/branch · commit/push/PR · CI polling ·
+  required checks PASS + MERGEABLE ise squash-merge · main sync ·
+  KENDİ branch/worktree cleanup · fresh main ile sıradaki bloğa OTOMATİK geçiş ·
+  MASTER-PLAN §17 register'da KENDİ satırının güncellenmesi
+
+NO PER-BLOCK OWNER APPROVAL:
+Listelenen C3 görevleri için tekrar owner GO İSTENMEZ.
+İSTİSNA: MOD A → MOD B geçişi owner ratifikasyonuna bağlıdır (bu bir GO talebi değil,
+ratifiye kaydının repository'de görülmesidir).
+
+OWNER RETURN ONLY IF:
+- Ratifiye edilmemiş hukuki kararın implementation'ı zorunluysa (→ MOD A'da kal, bloğu
+  WAITING_FOR_OWNER_DECISION yap, SIRA ATLAMA)
+- Allowed-path dışına çıkmak teknik olarak kaçınılmazsa
+- Destructive production data operation koşullu yetkinin dışındaysa
+- Acceptance kriterleri arasında GERÇEK çelişki varsa
+```
+
+---
+
+## 1-A. BLOK YAPISI VE DEĞİŞTİRİLEMEZ SIRA
+
+Bloklar ratifiye alt görevlerin (v1.0, madde 1–7) **birebir karşılığıdır**; madde 8
+(koşullu migration) bağımsız blok değil, **blok-içi koşul + activation borcu** olarak
+taşınır. Yeni iş eklenmemiş, sıra değiştirilmemiştir.
+
+```text
+C3 BLOCK COUNT:
+1 ANALYSIS BLOCK (C3-B00) + 7 ENGINEERING BLOCKS
++ 1 KOŞULLU PRODUCTION ACTIVATION BLOCK
+
+EXECUTION ORDER:
+C3-B00 → C3-B01 → C3-B02 → C3-B03 → C3-B04 → C3-B05 → C3-B06 → C3-B07
+→ C3-PROD-ACTIVATION (WAVE 4, YALNIZ migration üretilirse)
+
+ORDER MUTATION:
+FORBIDDEN
+```
+
+| Blok | İş | Dayandığı ratifikasyon |
+|---|---|---|
+| **C3-B00** | **Owner decision pack** (ANALYSIS_ONLY) — §13/5-10'un altısını da karar verilebilir hale getiren paket | — (bu blok kapıyı AÇAN blok) |
+| C3-B01 | KVKK işleme dayanağı modeli (md.5) | §13/5 |
+| C3-B02 | Aydınlatma + ilgili kişi başvuru akışı (md.10/11/13) | §13/6 |
+| C3-B03 | Saklama/arşivleme/silme + legal hold (POL-E 8 koşulu) | §13/8 |
+| C3-B04 | Özel nitelikli veri (md.6/3, md.6/4 Kurul önlemleri) | §13/7 |
+| C3-B05 | Vekâletname ↔ capability zinciri | §13/9 |
+| C3-B06 | UYAP aktarım gate'i (md.8), fail-closed | §13/10 |
+| C3-B07 | Audit bütünlüğü tekleştirme | — (teknik) |
+
+**C3-B00 ÖZEL KONUMU:** Bu sayfa, kendisini bloklayan kararları **hazırlayan** bloğu
+içerir. B00 beklemek değil, **kapıyı açmaktır** — ve bugün **hemen başlayabilir**.
+
+### Her blok sonunda ZORUNLU çıktı
+
+```text
+CURRENT PAGE:                 CLAUDE-CLIENT-C3
+COMPLETED BLOCK:              <exact ID>
+BLOCK MODE:                   ANALYSIS_ONLY / IMPLEMENTATION
+BLOCK RESULT:                 ENGINEERING_COMPLETE / RUNTIME_VERIFIED /
+                              ANALYSIS_DELIVERED / ACTIVATION_PENDING / FAILED_EXACT
+MERGED PR / SHA:              <PR ve merge SHA>
+C3 BLOCKS TOTAL:              1 ANALYSIS + 7 ENGINEERING
+C3 BLOCKS COMPLETED:          <n>
+C3 BLOCKS REMAINING:          <n>
+REMAINING BLOCKS:             <exact sıralı liste>
+RATIFICATION STATUS:          <§13/5-10 hangisi ratifiye, hangisi bekliyor>
+PRE-FLIGHT:                   diğer lane aktif blok=<...> · çakışma=<YOK|VAR> · karar=<...>
+ACTIVATION DEBT:              <liste veya NONE>
+NEXT ELIGIBLE:                <yalnız sıradaki exact blok>
+OWNER AUTHORIZATION REQUIRED: NO / yalnız ratifikasyon bekleyen blok
+PROGRAM LOCK:                 CLIENT ONLY
+```
+
+---
+
+## 2-A. BLOCK-LEVEL PRE-FLIGHT (her blok öncesi — ZORUNLU)
+
+Master plan §12-A kuralı C3 için de geçerlidir. C2 kapandığı için C1↔C2 gerilimi bitti,
+fakat **Codex lane'i (X1/X2/X3) paralel yürüyor**.
+
+```text
+1. Aktif diğer-lane bloklarının EXACT WRITE MANIFEST'i alınır (repository-truth:
+   açık PR `gh pr view <n> --json files` + branch diff). Konuşma iddiası kanıt DEĞİL.
+2. Bu C3 bloğunun exact write manifest'i yazılır (gerçek dosya adları;
+   `__tests__/*` wildcard YETERSİZ).
+3. SHARED-CONTRACT karşılaştırması — dosya adı YETMEZ.
+4. Çakışma YOK → blok yürür. VAR → YALNIZ o blok WAITING_FOR_OTHER_SESSION;
+   sıra ATLANMAZ, diğer lane'e DOKUNULMAZ.
+5. Çıktıya PRE-FLIGHT satırı eklenir.
+```
+
+**C3 İÇİN ÖZEL ÇAPRAZ-LANE UYARILARI (master plan §12-A-2):**
+
+- **XL-2 · C3 → X1:** `client.service.ts:21` `AuditActor` ve `client-audit.util` export'ları
+  X1'in `portal.service.ts:10-11`'i tarafından tüketilir. C3 audit bütünlüğü işinde
+  (B07) bu export'ları **DARALTAMAZ** — genişletme serbest.
+- **C2 primitive freeze:** `client-mutation-policy.ts` ve C2'nin dondurduğu authority
+  primitive'leri C3 tarafından **TÜKETİLİR, DEĞİŞTİRİLMEZ**. Hukuki gate'ler bu
+  primitive'lerin **ÜZERİNE** eklenir.
+- **`client.service.ts`:** C1 lane-owned'dı; C1 ENGINEERING_COMPLETE olduğu için artık
+  aktif yazar yok. C3 dokunacaksa yine de pre-flight'ta C1'in WAVE 4 activation bloğunun
+  açık olup olmadığı kontrol edilir.
+
+---
+
+## 3-A. ÜÇ DURUM AYRIMI
+
+```text
+CODE_PRESENT != ENGINEERING_COMPLETE != PRODUCTION_ACTIVE
+MERGED != ENGINEERING_COMPLETE
+```
+
+B07 bittiğinde: migration ÜRETİLMEDİYSE sayfa `ENGINEERING_COMPLETE` olur.
+Migration ÜRETİLDİYSE `SUSPENDED_FOR_ACTIVATION` olur (TERMINAL CLOSED DEĞİL) ve borç
+WAVE 4'te **AYNI C3 sayfası** tarafından kapatılır.
+
+**C3-PROD-ACTIVATION KOŞULLU YETKİSİ: NOT YET GRANTED — OWNER DECISION REQUIRED.**
+Owner ratifikasyonu `C1-PROD-ACTIVATION` içindi. Bu sayfa kendine production yetkisi
+ÜRETEMEZ (`noSelfAuthorizationChange`).
+
+---
+
+## 4-A. BLOCKER DISCIPLINE
+
+```text
+Claude bu sayfada:
+- Governance/orchestra/control-plane onarımı BAŞLATMAZ · yeni SA/EG/grant/binding ÜRETMEZ ·
+  gh-guard -Repair ÇALIŞTIRMAZ · branch protection/ruleset DEĞİŞTİRMEZ · admin/bypass
+  KULLANMAZ · başka PR'ın CI/merge sorununu SAHİPLENMEZ · register biçim eksikliğini
+  product blocker SAYMAZ · normal CI beklemesini BLOCKED SAYMAZ · exact path kanıtı
+  olmadan competing writer İLAN ETMEZ.
+
+STATUS SINIFLARI:
+WAITING_FOR_CI · WAITING_FOR_PREDECESSOR · WAITING_FOR_OTHER_SESSION ·
+WAITING_FOR_CONTROL_PLANE · WAITING_FOR_OWNER_DECISION · ACTIVATION_PENDING_WAVE_4 ·
+BLOCKED_EXACT
+
+BLOCKED_EXACT yalnız DÖRDÜ BİRDEN sağlanırsa:
+(1) bloğun acceptance'ı teknik olarak ilerleyemiyor, (2) engel granted scope içinde
+çözülemiyor, (3) engel repository/current-main kanıtıyla doğrulanmış, (4) devam etmek
+veri kaybı veya yetki ihlali yaratacak.
+DİKKAT: ratifikasyon beklemek BLOCKED_EXACT DEĞİLDİR → WAITING_FOR_OWNER_DECISION.
+```
+
+**CI MANIFEST RULE:** `ci-manifests/pure/client-portal.txt` — program boyu **tek manifest
+writer = C1**. C3 kendi satırlarını append-only ekler; çakışırsa sonra gelen rebase eder
+(blocker DEĞİL). `__tests__/*` wildcard exact manifest sayılmaz.
+
+**NO SIDE QUEST:** Yeni bulgu mevcut göreve gizlice eklenmez ve **blok sayacını
+değiştirmez**; master plana disposition için gönderilir.
+
+**ÇÖZÜM DAYATMASI YASAK:** Hiçbir bloğun teknik çözümü peşinen belirlenmemiştir
+(kayıt alanı mı ayrı tablo mu · retention'ın cron mu talep-anı mı işleyeceği ·
+POA binding'in servis mi şema seviyesinde mi olacağı). Her biri **kanıta dayanarak**
+ve **ratifiye owner kararına uygun** seçilir.
 
 ---
 
