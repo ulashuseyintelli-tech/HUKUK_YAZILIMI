@@ -996,6 +996,13 @@ X3 STATUS:                ENGINEERING_COMPLETE — X3 7/7 tamam (2026-08-03).
                           promotion `isApproverEligible` kapısını geçmez ve promote yetkisi
                           doğurmaz. B04 focused 4 suite / 91 test; full client-portal
                           manifest 73 suite / 1106 test PASS (C3-B07 #2159 sonrası fresh main).
+                          B04 SUPPORTING CHAIN (fresh canonical base `fc436595`):
+                          GOVERNANCE CRITERION → AUTHORITY PROVIDER → RUNTIME CONSUMER
+                          #2145 / `b325fdc8295653c1f64cb32ce0040dcbdb2002b4` →
+                          #2146 / `c7082313e8471f40eb069168130bc90ed5c894ec` →
+                          #2158 / `80bd7e14344923004dd23aed4a1553e4d9733a8d`.
+                          Üç PR da MERGED ve canonical main ancestry'sindedir; predecessor
+                          karşılanmış, X3-B04 RUNTIME_VERIFIED disposition'ı korunmuştur.
                           B05: CIP-2 kabul-edilen tasarım olarak kapatıldı. Intake token'ı
                           bilinçli bir bearer capability'dir; link'i elinde bulunduran aktör
                           `maxUses` sınırına kadar submit edebilir. Fresh main'de 32-byte
