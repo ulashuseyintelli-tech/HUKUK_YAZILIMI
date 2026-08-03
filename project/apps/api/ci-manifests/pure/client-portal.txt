@@ -227,6 +227,8 @@ src/modules/client/__tests__/client-legal-hold-b03.spec.ts
 src/modules/client/__tests__/client-special-category-b04.spec.ts
 #     C3-B05 (§13/9): POA gecerlilik matrisi + efektif capability tek kapisi (POA siz dort yetki etkisiz).
 src/modules/client/__tests__/client-poa-capability-binding-b05.spec.ts
+#     C3-B06 (§13/10): UYAP aktarim gate CLIENT tarafi — POA+dayanak, break-glass yok, deny audit.
+src/modules/client/__tests__/client-uyap-transfer-gate-b06.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts

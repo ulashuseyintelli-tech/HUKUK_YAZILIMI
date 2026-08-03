@@ -19,6 +19,8 @@ import { ClientSpecialCategoryService } from './client-special-category.service'
 // C3-B05 (§13/9): vekâletname↔capability binding — tek fail-closed efektif yetki kapısı.
 import { ClientPoaCapabilityController } from './client-poa-capability.controller';
 import { ClientPoaCapabilityService } from './client-poa-capability.service';
+// C3-B06 (§13/10): UYAP aktarım gate'i — CLIENT tarafı (UYAP domain-law'ına dokunulmaz).
+import { ClientUyapTransferGateService } from './client-uyap-transfer-gate.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
@@ -31,7 +33,7 @@ import { PoaModule } from '../poa/poa.module';
 @Module({
   imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule, ClientNotificationModule, PoaModule],
   controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController, ClientLegalHoldController, ClientSpecialCategoryController, ClientPoaCapabilityController],
-  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService],
-  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService],
+  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService, ClientUyapTransferGateService],
+  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService, ClientUyapTransferGateService],
 })
 export class ClientModule {}
