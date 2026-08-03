@@ -272,3 +272,8 @@ src/modules/client-intake-public/public-intake-rate-limit.guard.spec.ts
 #     Frozen C2 review commands consume exact tenant/actor PermissionGrant authority;
 #     role-only access, cross-tenant targets and promotion-authority collapse fail closed.
 src/modules/client-intake-review/client-intake-review-authority-wiring.spec.ts
+#
+#   CODEX-CLIENT-X3-B07 terminal intake review state-machine coverage (SAF, DB-siz)
+#     Claim/field/bulk/reject/queue transitions and the hard module boundary that keeps
+#     review separate from promotion/canonical writes are required Client CI evidence.
+src/modules/client-intake-review/client-intake-review.service.spec.ts

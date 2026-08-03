@@ -954,8 +954,9 @@ C3 ACTIVATION DEBT:       DOĞDU — C3-PROD-ACTIVATION (WAVE 4, AYNI C3 sayfas�
                           NOT: K5.5 "derhal kapalı" ve K9.4 default'ları production'da
                           ancak APPLY ile etkinleşir (ENGINEERING_COMPLETE ≠
                           PRODUCTION_ACTIVE).
-X3 STATUS:                IN PROGRESS — X3-B01..B04 ve X3-B06 RUNTIME_VERIFIED;
-                          X3-B05 ANALYSIS_DELIVERED (2026-08-03).
+X3 STATUS:                ENGINEERING_COMPLETE — X3 7/7 tamam (2026-08-03).
+                          X3 PAGE: TERMINAL CLOSED; X3-B01..B04, X3-B06 ve X3-B07
+                          RUNTIME_VERIFIED; X3-B05 ANALYSIS_DELIVERED.
                           B01: sağlam intake güvenlik kontrolleri fresh main'de koddan
                           doğrulandı ve required manifest'e bağlandı. 256-bit raw token +
                           sha256-only persistence · generic-invalid existence-oracle
@@ -1012,6 +1013,12 @@ X3 STATUS:                IN PROGRESS — X3-B01..B04 ve X3-B06 RUNTIME_VERIFIED
                           canonical write öncesi reddedilir (#1933). Mevcut regression suite
                           kabulün tamamını kilitlediği için ürün diff'i/lifecycle redesign
                           YOK. Focused 1 suite / 38 test PASS.
+                          B07: terminal public/review/promotion kapsamı required Client CI
+                          manifest'inde bağlandı. Mevcut review state-machine suite'i claim,
+                          field/bulk karar, reject, queue ve review-promotion/canonical-write
+                          mimari sınırını kilitler; yeni ürün davranışı eklenmedi. Focused
+                          intake seti 5 suite / 84 test; full client-portal manifest 74 suite /
+                          1119 test PASS.
                           Kapı 1 (C2-R5 primitive CANONICAL+FROZEN): KARŞILANDI (C2-B03)
                           Kapı 2 (X1 notification-dispatcher SHAPE-FROZEN / XL-4):
                                  YÜRÜRLÜKTE — X1'in KAPANMASI şart DEĞİL
@@ -1020,9 +1027,11 @@ X3 STATUS:                IN PROGRESS — X3-B01..B04 ve X3-B06 RUNTIME_VERIFIED
                           GRANT: İÇİNDE — dört intake modülü de TERMINAL-COMPLETION-R01
                           allowedPathRoots'ta (#2113). Sayfadaki eski "GRANT EXPANSION
                           REQUIRED" ifadesi BAYATTI ve düzeltildi.
-X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 6 (B01, B02, B03, B04, B05, B06)
+X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 7 (B01-B07)
                           (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
-X3 NEXT ELIGIBLE:         X3-B07 — terminal public/review/promotion test kapsamı
+X3 ACTIVATION DEBT:       NONE
+X3 NEXT ELIGIBLE:         YOK — X3 TERMINAL CLOSED; successor WAVE 4 → WAVE 5 Terminal
+                          Integration, master program sırasına tabidir.
 X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIED 2026-08-03**.
                           Kanonik kayıt: decision-log.md
                           (CLIENT-X3-CR1-REVIEW-PROMOTE-SEPARATION-RATIFIED).
