@@ -896,31 +896,30 @@ C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 8 (B
                            elevated; yetkisiz aktörde yan etki SIFIR; başarılı komut
                            CLIENT_WORKSPACE_COMMAND audit üretir. r4 spec 45/45 +
                            client modülü 495/495 PASS)
-C3 STATUS:                IN PROGRESS — MOD A · ANALYSIS_ONLY · WAITING_FOR_OWNER_DECISION
-                          C3-B00 AŞAMA 1 (A1) ANALYSIS_DELIVERED (2026-08-03): owner
-                          decision pack teslim — C3-B00-OWNER-DECISION-PACK-R01.md
-                          (bu dizin, EXACT canonical path; §13/5-10 altı kalemin altısı
-                          da kanıt + karar formu + taslak decision-log satırıyla karar
-                          verilebilir durumda).
+C3 STATUS:                IN PROGRESS — C3-B00 CLOSED (A1 + A2 birlikte)
+                          A1: ANALYSIS_DELIVERED #2142 / 464ab00c (2026-08-03) —
+                          C3-B00-OWNER-DECISION-PACK-R01.md (bu dizin, EXACT canonical
+                          path).
+                          A2: OWNER RATIFICATION RECORDED (2026-08-03) — §13/5-10
+                          ALTI KALEMİN ALTISI DA owner tarafından ratifiye edildi ve
+                          EXACT kararlar decision-log.md'ye altı satır olarak işlendi
+                          (K5 dayanak modeli C-hibrit · K6 başvuru akışı model B ·
+                          K7 özel nitelik model B · K8 retention model A, süreler NOT
+                          SELECTED · K9 POA binding model C, canCollect default FALSE
+                          kararı · K10 UYAP gate POA+dayanak, break-glass YOK).
                           Kapı 1 (C2 ENGINEERING_COMPLETE): KARŞILANDI
-                          Kapı 2 (§13/5-10 owner legal ratifications): KARŞILANMADI —
-                          decision-log'da CLIENT KVKK/retention/POA ratifikasyon kaydı
-                          YOK; POL-E-R1 "RECOMMENDED / NOT STARTED · IMPLEMENTATION
-                          AUTHORITY: NONE" (yeniden VERIFIED 2026-08-03, fresh main
-                          cbe49683: charter §24.20 + decision-log:709 POL-E OPTION A
-                          baseline — süre/tetikleyici/legal-hold modeli SEÇİLMEDİ).
-                          Hukuki kural/eşik/süre içeren ürün kodu · şema · migration
-                          YASAK; blok ancak dayandığı §13 kalemi ratifiye edilip
-                          decision-log'a düştüğünde MOD B'ye geçer.
+                          Kapı 2 (§13/5-10 owner legal ratifications): KARŞILANDI —
+                          bu PR'daki decision-log kayıtlarıyla. Ratifiye kararların
+                          dışında hukuki kural/eşik/süre İCAT ETMEK YASAK kalır;
+                          K8 sabit süreleri NOT SELECTED / AS-IS.
+                          Migration yalnız engineering olarak üretilir; production
+                          APPLY ve C3-PROD-ACTIVATION ayrı owner yetkisi bekler.
 C3 BLOCKS:                1 ANALYSIS (C3-B00) + 7 ENGINEERING (C3-B01..B07)
-                          + 1 KOŞULLU WAVE-4 ACTIVATION · COMPLETED: 0
-                          (C3-B00 A1 teslim edildi; A2 owner kararına bağlı — blok
-                          sayacı değişmez, B00 iki aşamasıyla birlikte kapanır)
-C3 NEXT ELIGIBLE:         C3-B00 AŞAMA 2 (A2) — owner §13/5-10 kalemlerine karar
-                          verdiğinde EXACT kararların decision-log.md'ye docs-only
-                          işlenmesi. C3-B01 ve hiçbir ürün implementasyonu, ilgili karar
-                          REPOSITORY'YE MERGE EDİLMEDEN BAŞLAMAZ; kısmi ratifikasyonda
-                          yalnız o kalemin bloğu MOD B'ye geçer, sıra ATLANMAZ.
+                          + 1 KOŞULLU WAVE-4 ACTIVATION · COMPLETED: 1 (B00)
+C3 NEXT ELIGIBLE:         C3-B01 — KVKK işleme dayanağı modeli (MOD B ·
+                          IMPLEMENTATION; §13/5 ratifiye). Sıra: B01 → B02 → B03 →
+                          B04 → B05 → B06 → B07; GO-COMPLETE blok başına, sıra
+                          ATLANMAZ.
 C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B):
                           A1) Decision pack →
                               .../CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/
