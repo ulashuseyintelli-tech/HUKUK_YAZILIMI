@@ -278,6 +278,7 @@ model Tenant {
   clientDisclosureTexts      ClientDisclosureText[]     @relation("ClientDisclosureTextTenant")
   clientDisclosureDeliveries ClientDisclosureDelivery[] @relation("ClientDisclosureDeliveryTenant")
   clientDataSubjectRequests  ClientDataSubjectRequest[] @relation("ClientDsarTenant")
+  clientLegalHolds           ClientLegalHold[]          @relation("ClientLegalHoldTenant")
   poaLawyers             PoaLawyer[]             @relation("PoaLawyerTenant")
 
   // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): CPE execution kayitlarinin
@@ -542,6 +543,7 @@ model Client {
   consents                   ClientConsent[] // KVKK md.5/1 açık rıza kayıtları (C3-B01)
   disclosureDeliveries       ClientDisclosureDelivery[] // Aydınlatma teslim kayıtları (C3-B02)
   dataSubjectRequests        ClientDataSubjectRequest[] // İlgili kişi başvuruları (C3-B02)
+  legalHolds                 ClientLegalHold[] // Legal hold kayıtları (C3-B03)
   poaExpiryDeliveries        PoaExpiryNotificationDelivery[]
   caseClients                CaseClient[]
   notifications              ClientNotification[]
@@ -842,6 +844,65 @@ model ClientDisclosureDelivery {
 
   @@unique([id, tenantId])
   @@index([tenantId, clientId])
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+// C3-B03 (§13/8 K8.4, decision-log 2026-08-03): LEGAL HOLD kaydı. Koyma yükseltilmiş
+// yetkiyle; kaldırma GEREKÇELİ ve maker-checker'lıdır (talep eden + FARKLI bir onaylayan).
+// K8.1/K8.5: saklama süreleri ve silme yöntemi SEÇİLMEDİ — bu model hiçbir silme
+// yürütmez; varsayılan davranış NO DELETE'tir. Scheduler/otomatik silme YOKTUR (K8.3).
+
+enum ClientLegalHoldStatus {
+  ACTIVE
+  RELEASE_REQUESTED
+  RELEASED
+}
+
+/// K8.4 kapsam birimleri: müvekkil, dava, record-family
+enum ClientLegalHoldScopeType {
+  CLIENT
+  CASE
+  RECORD_FAMILY
+}
+
+model ClientLegalHold {
+  id String @id @default(cuid())
+
+  tenantId String
+  tenant   Tenant @relation("ClientLegalHoldTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  scopeType ClientLegalHoldScopeType
+  /// CASE kapsamında dava referansı (cross-domain FK KURULMADI — CLIENT başka domain
+  /// kayıtlarının retention owner'ı değildir; POL-E cross-domain sınırı korunur)
+  caseId String?
+  /// RECORD_FAMILY kapsamında POL-E aile adı (18-aile listesi POL-E kaydındadır;
+  /// kapalı enum İCAT EDİLMEDİ — değerlendirme owner/POL-E listesine göre yapılır)
+  recordFamily String?
+
+  status ClientLegalHoldStatus @default(ACTIVE)
+
+  /// Koyma gerekçesi (zorunlu) + aktör + zaman — immutable audit ayrıca yazılır (K8.4)
+  reason         String
+  placedByUserId String
+  placedAt       DateTime
+
+  /// Kaldırma maker-checker: talep (gerekçeli) → FARKLI yetkilinin onayı
+  releaseReason           String?
+  releaseRequestedByUserId String?
+  releaseRequestedAt      DateTime?
+  releasedByUserId        String?
+  releasedAt              DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+  @@index([tenantId, clientId, status])
+  @@index([tenantId, status])
   @@index([tenantId])
   @@index([clientId])
 }

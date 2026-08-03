@@ -10,6 +10,9 @@ import { ClientConsentService } from './client-consent.service';
 import { ClientDisclosureService } from './client-disclosure.service';
 import { ClientDataSubjectRequestService } from './client-data-subject-request.service';
 import { ClientKvkkRightsController } from './client-kvkk-rights.controller';
+// C3-B03 (§13/8): legal hold + on-demand 8-koşullu silme değerlendirme kapısı.
+import { ClientLegalHoldController } from './client-legal-hold.controller';
+import { ClientLegalHoldService } from './client-legal-hold.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
@@ -21,8 +24,8 @@ import { PoaModule } from '../poa/poa.module';
 
 @Module({
   imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule, ClientNotificationModule, PoaModule],
-  controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController],
-  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService],
-  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService],
+  controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController, ClientLegalHoldController],
+  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService],
+  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService],
 })
 export class ClientModule {}

@@ -221,6 +221,8 @@ src/modules/client/__tests__/client-processing-basis-registry.spec.ts
 src/modules/client/__tests__/client-consent-fail-closed-b01.spec.ts
 #     C3-B02 (§13/6): aydinlatma versiyon+teslim ve DSAR statu makinesi (30 gun, staff/elevated).
 src/modules/client/__tests__/client-dsar-disclosure-b02.spec.ts
+#     C3-B03 (§13/8): legal hold maker-checker + 8-kosul fail-closed silme kapisi (yurutucu yok).
+src/modules/client/__tests__/client-legal-hold-b03.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
