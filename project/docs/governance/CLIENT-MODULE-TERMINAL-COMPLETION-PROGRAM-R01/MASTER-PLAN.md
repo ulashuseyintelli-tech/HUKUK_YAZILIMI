@@ -896,30 +896,32 @@ C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 8 (B
                            elevated; yetkisiz aktörde yan etki SIFIR; başarılı komut
                            CLIENT_WORKSPACE_COMMAND audit üretir. r4 spec 45/45 +
                            client modülü 495/495 PASS)
-C3 STATUS:                IN PROGRESS — C3-B00 CLOSED (A1 + A2 birlikte)
-                          A1: ANALYSIS_DELIVERED #2142 / 464ab00c (2026-08-03) —
-                          C3-B00-OWNER-DECISION-PACK-R01.md (bu dizin, EXACT canonical
-                          path).
-                          A2: OWNER RATIFICATION RECORDED (2026-08-03) — §13/5-10
-                          ALTI KALEMİN ALTISI DA owner tarafından ratifiye edildi ve
-                          EXACT kararlar decision-log.md'ye altı satır olarak işlendi
-                          (K5 dayanak modeli C-hibrit · K6 başvuru akışı model B ·
-                          K7 özel nitelik model B · K8 retention model A, süreler NOT
-                          SELECTED · K9 POA binding model C, canCollect default FALSE
-                          kararı · K10 UYAP gate POA+dayanak, break-glass YOK).
-                          Kapı 1 (C2 ENGINEERING_COMPLETE): KARŞILANDI
-                          Kapı 2 (§13/5-10 owner legal ratifications): KARŞILANDI —
-                          bu PR'daki decision-log kayıtlarıyla. Ratifiye kararların
-                          dışında hukuki kural/eşik/süre İCAT ETMEK YASAK kalır;
-                          K8 sabit süreleri NOT SELECTED / AS-IS.
-                          Migration yalnız engineering olarak üretilir; production
-                          APPLY ve C3-PROD-ACTIVATION ayrı owner yetkisi bekler.
+C3 STATUS:                ENGINEERING_COMPLETE — C3 8/8 (B00-B07) tamam (2026-08-03/04)
+                          C3 PAGE: SUSPENDED_FOR_ACTIVATION — TERMINAL CLOSED DEĞİL;
+                          4 migration üretildi, production APPLY borcu WAVE 4'te AYNI
+                          C3 sayfasında, C3-PROD-ACTIVATION koşullu yetkisi verildikten
+                          sonra kapanır (NOT YET GRANTED — owner talimatı 2026-08-03:
+                          "production APPLY yapma; WAVE 4 için ayrıca owner yetkisi").
+                          Blok kanıt zinciri (hepsi squash-merge + main sync + cleanup):
+                          B00 A1 #2142/464ab00c + A2 #2147/1898847e (§13/5-10 altı
+                          kalem RATIFIED, decision-log'da) · B01 #2149/59c567b6 (K5
+                          registry + ClientConsent + fail-closed rıza kapısı) ·
+                          B02 #2151/f732004f (K6 aydınlatma versiyon/teslim + DSAR
+                          statü makinesi, 30 gün) · B03 #2152/9560f60f (K8 legal hold
+                          maker-checker + 8-koşul kapısı, yürütücüsüz) · B04 #2155/
+                          6560cbe9 (K7 md.6 kapalı liste + şifreli korumalı kayıt) ·
+                          B05 #2156/67bffe6b (K9 POA↔capability tek fail-closed kapı;
+                          POA'sız dört yetki ETKİSİZ) · B06 #2157/a47539b1 (K10 UYAP
+                          gate: POA+dayanak, break-glass YOK) · B07 #2159/8d7d64ed
+                          (hukuki audit uniform contract + drift-guard; XL-2 korundu).
+                          Sertifikasyon: client modülü 42 suite / 706 test PASS
+                          (fresh main 8d7d64ed); ratifiye kararlar dışında hukuki
+                          kural/eşik/süre İCAT EDİLMEDİ; K8 süreleri NOT SELECTED.
 C3 BLOCKS:                1 ANALYSIS (C3-B00) + 7 ENGINEERING (C3-B01..B07)
-                          + 1 KOŞULLU WAVE-4 ACTIVATION · COMPLETED: 1 (B00)
-C3 NEXT ELIGIBLE:         C3-B01 — KVKK işleme dayanağı modeli (MOD B ·
-                          IMPLEMENTATION; §13/5 ratifiye). Sıra: B01 → B02 → B03 →
-                          B04 → B05 → B06 → B07; GO-COMPLETE blok başına, sıra
-                          ATLANMAZ.
+                          + 1 KOŞULLU WAVE-4 ACTIVATION · COMPLETED: 8 (B00-B07)
+C3 NEXT ELIGIBLE:         ENGINEERING tarafında YOK — sayfa WAVE 4'ü bekliyor.
+                          C3-PROD-ACTIVATION ancak owner koşullu yetkisi + §9-D
+                          kapılarıyla, AYNI C3 sayfası tarafından yürütülür.
 C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B):
                           A1) Decision pack →
                               .../CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/
@@ -935,8 +937,23 @@ C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B)
                           B00 ürün diff'i SIFIR; test gerekmiyorsa acceptance ölçütü
                           APPLICABLE KONTROLLERDİR (required checks + mergeability +
                           sıfır-diff kanıtı + paketin §13/5-10 kapsama doğrulaması).
-C3 ACTIVATION DEBT:       KOŞULLU — yalnız B01..B07'den biri migration üretirse doğar.
-                          C3-PROD-ACTIVATION koşullu yetkisi: NOT YET GRANTED.
+C3 ACTIVATION DEBT:       DOĞDU — C3-PROD-ACTIVATION (WAVE 4, AYNI C3 sayfası; koşullu
+                          yetki NOT YET GRANTED). Kalemler:
+                          (1) 4 migration production APPLY (sırayla):
+                              20260803170000_client_consent_and_greeting_defaults
+                              (K5.5 mevcut tebrik bayraklarını kapatan UPDATE dahil) ·
+                              20260803190000_client_disclosure_and_dsar ·
+                              20260803210000_client_legal_hold ·
+                              20260804010000_client_cancollect_default_false
+                          (2) K9.5 POA envanteri + readiness raporu (APPLY öncesi;
+                              otomatik grandfathering YOK)
+                          (3) K7.4 mevcut veri read-only envanter taraması (ayrı
+                              production yetkisi)
+                          (4) CLIENT_SPECIAL_CATEGORY_DATA_KEY env anahtarının hedef
+                              ortamda ayrı yönetimle tanımlanması (K7.3)
+                          NOT: K5.5 "derhal kapalı" ve K9.4 default'ları production'da
+                          ancak APPLY ile etkinleşir (ENGINEERING_COMPLETE ≠
+                          PRODUCTION_ACTIVE).
 X3 STATUS:                IN PROGRESS — X3-B01..B03 RUNTIME_VERIFIED (2026-08-03).
                           B01: sağlam intake güvenlik kontrolleri fresh main'de koddan
                           doğrulandı ve required manifest'e bağlandı. 256-bit raw token +
