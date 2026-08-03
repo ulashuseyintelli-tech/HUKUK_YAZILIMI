@@ -954,7 +954,8 @@ C3 ACTIVATION DEBT:       DOĞDU — C3-PROD-ACTIVATION (WAVE 4, AYNI C3 sayfas�
                           NOT: K5.5 "derhal kapalı" ve K9.4 default'ları production'da
                           ancak APPLY ile etkinleşir (ENGINEERING_COMPLETE ≠
                           PRODUCTION_ACTIVE).
-X3 STATUS:                IN PROGRESS — X3-B01..B04 RUNTIME_VERIFIED (2026-08-03).
+X3 STATUS:                IN PROGRESS — X3-B01..B04 RUNTIME_VERIFIED + X3-B05
+                          ANALYSIS_DELIVERED (2026-08-03).
                           B01: sağlam intake güvenlik kontrolleri fresh main'de koddan
                           doğrulandı ve required manifest'e bağlandı. 256-bit raw token +
                           sha256-only persistence · generic-invalid existence-oracle
@@ -994,6 +995,14 @@ X3 STATUS:                IN PROGRESS — X3-B01..B04 RUNTIME_VERIFIED (2026-08-
                           promotion `isApproverEligible` kapısını geçmez ve promote yetkisi
                           doğurmaz. B04 focused 4 suite / 91 test; full client-portal
                           manifest 73 suite / 1106 test PASS (C3-B07 #2159 sonrası fresh main).
+                          B05: CIP-2 kabul-edilen tasarım olarak kapatıldı. Intake token'ı
+                          bilinçli bir bearer capability'dir; link'i elinde bulunduran aktör
+                          `maxUses` sınırına kadar submit edebilir. Fresh main'de 32-byte
+                          random token + SHA-256-only persistence, `maxUses ?? 1`, verilmişse
+                          future `expiresAt` kapısı, atomik use-count ve ayrı staff review
+                          korunuyor. B04 sonrası staff review ayrıca explicit review yetkisi
+                          ister. Owner identity-binding veya bearer davranış değişikliği
+                          istemedi; ürün diff'i YOK. Focused 2 suite / 29 test PASS.
                           Kapı 1 (C2-R5 primitive CANONICAL+FROZEN): KARŞILANDI (C2-B03)
                           Kapı 2 (X1 notification-dispatcher SHAPE-FROZEN / XL-4):
                                  YÜRÜRLÜKTE — X1'in KAPANMASI şart DEĞİL
@@ -1002,9 +1011,9 @@ X3 STATUS:                IN PROGRESS — X3-B01..B04 RUNTIME_VERIFIED (2026-08-
                           GRANT: İÇİNDE — dört intake modülü de TERMINAL-COMPLETION-R01
                           allowedPathRoots'ta (#2113). Sayfadaki eski "GRANT EXPANSION
                           REQUIRED" ifadesi BAYATTI ve düzeltildi.
-X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 4 (B01, B02, B03, B04)
+X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 5 (B01, B02, B03, B04, B05)
                           (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
-X3 NEXT ELIGIBLE:         X3-B05 — CIP-2 kabul-edilen-tasarım notu
+X3 NEXT ELIGIBLE:         X3-B06 — promote hattı bütünlüğü
 X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIED 2026-08-03**.
                           Kanonik kayıt: decision-log.md
                           (CLIENT-X3-CR1-REVIEW-PROMOTE-SEPARATION-RATIFIED).
