@@ -102,7 +102,10 @@ describe('ClientController.uploadPoaFile', () => {
         mimeType: 'application/pdf',
       }),
     };
-    const controller = new ClientController({} as any, {} as any, poaService as any);
+    // C2-B02 R4: workspace komutları artık rol-gated — elevated USER aktörle çağrılır.
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const controller = new ClientController({} as any, {} as any, poaService as any, officeApproval as any, audit as any);
     const req = { user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any;
     const file = buildFile();
 
@@ -122,7 +125,9 @@ describe('ClientController.uploadPoaFile', () => {
 
   it('rejects invalid uploads before the service writes', async () => {
     const poaService = { uploadFileForClientWorkspace: jest.fn() };
-    const controller = new ClientController({} as any, {} as any, poaService as any);
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const controller = new ClientController({} as any, {} as any, poaService as any, officeApproval as any, audit as any);
     const req = { user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any;
 
     await expect(controller.uploadPoaFile(req, 'client-1', 'poa-1', buildFile({ mimetype: 'text/plain' }))).rejects.toBeInstanceOf(BadRequestException);

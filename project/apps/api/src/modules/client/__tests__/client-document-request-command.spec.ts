@@ -292,7 +292,10 @@ describe('ClientService.sendDocumentRequest', () => {
 describe('ClientController.sendDocumentRequest', () => {
   it('wraps the typed command response and forwards auth context plus Idempotency-Key', async () => {
     const service = { sendDocumentRequest: jest.fn().mockResolvedValue({ clientId: 'client-1', caseId: 'case-1', status: 'sent' }) };
-    const controller = new ClientController(service as any, {} as any);
+    // C2-B02 R4: workspace komutları artık rol-gated — elevated USER aktörle çağrılır.
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const controller = new ClientController(service as any, {} as any, {} as any, officeApproval as any, audit as any);
 
     const result = await controller.sendDocumentRequest(
       { user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any,
@@ -307,7 +310,9 @@ describe('ClientController.sendDocumentRequest', () => {
 
   it('rejects raw body/tokens/recipient fields before reaching the service', async () => {
     const service = { sendDocumentRequest: jest.fn() };
-    const controller = new ClientController(service as any, {} as any);
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const controller = new ClientController(service as any, {} as any, {} as any, officeApproval as any, audit as any);
 
     await expect(controller.sendDocumentRequest(
       { user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any,

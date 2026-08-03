@@ -102,7 +102,10 @@ describe('ClientService.sendPoaReminder', () => {
 describe('ClientController.sendPoaReminder', () => {
   it('wraps the typed command response in data', async () => {
     const service = { sendPoaReminder: jest.fn().mockResolvedValue({ clientId: 'client-1', status: 'skipped' }) };
-    const controller = new ClientController(service as any, {} as any);
+    // C2-B02 R4: workspace komutları artık rol-gated — elevated USER aktörle çağrılır.
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const controller = new ClientController(service as any, {} as any, {} as any, officeApproval as any, audit as any);
 
     const result = await controller.sendPoaReminder({ user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' } } as any, 'client-1');
 

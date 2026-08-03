@@ -767,19 +767,21 @@ C1 ACTIVATION DEBT:       C1-PROD-ACTIVATION — 20260802190000_client_identity_
                            C1-B01 = bu evidence'ın fresh main a92a5a44 üzerinde residual
                            doğrulaması: 5/5 kalem koddan kanıtlandı, ürün diff'i SIFIR,
                            47/47 ilgili test PASS — duplicate implementation AÇILMADI)
-C2 STATUS:                IN PROGRESS — C2-B02 WAITING_FOR_OWNER_DECISION (2026-08-02;
-                          characterization MERGED, implementation §13/11 kararını bekliyor)
-C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 1 (B01)
+C2 STATUS:                IN PROGRESS — C2-B02 RUNTIME_VERIFIED (2026-08-03;
+                          owner §13/11 RATIFIED — ADMIN VEYA elevated eşiği uygulandı)
+C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 2 (B01–B02)
                           (C2-B01 = R3 reconcile-only, fresh main 573ea61a: policy-modül
                            yeri + reactivate-eşdeğer elevated eşiği koddan kanıtlandı,
                            r3 spec 12/12 PASS, ürün diff'i SIFIR, C1-B01 kanıtı devralındı
                            — duplicate R3 AÇILMADI. Pre-flight: C1 aktif blok=B05,
                            çakışma=YOK.
-                           C2-B02 = characterization-only teslim edildi: 5 workspace
-                           komutu rol kontrolsüz + audit'siz davranış 15/15 testle
-                           sabitlendi; §13/11 rol politikası decision-log'da YOK →
-                           implementation başlatılMADI, sıra atlanmıyor — B03+
-                           BAŞLAMAZ)
+                           C2-B02 = önce characterization (15/15), sonra owner §13/11
+                           ratifikasyonuyla implementation: 6 workspace komutu controller
+                           sınırında tek kapıdan (client-workspace-command-authority.ts +
+                           decideClientWorkspaceCommand policy'de); eşik ADMIN VEYA
+                           elevated; yetkisiz aktörde yan etki SIFIR; başarılı komut
+                           CLIENT_WORKSPACE_COMMAND audit üretir. r4 spec 45/45 +
+                           client modülü 495/495 PASS)
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
 PRODUCTION_COMPLETE:      NOT REACHED
