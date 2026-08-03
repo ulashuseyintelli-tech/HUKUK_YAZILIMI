@@ -201,6 +201,14 @@ src/modules/client/__tests__/client-workspace-command-authorization-r4.spec.ts
 #     CR-1 (review != promote) kapsam DISI — owner karari bekler. Public shape
 #     degisikligi yalniz C2 sayfasi uzerinden yapilabilir.
 src/modules/client/__tests__/client-intake-link-authority-primitive-b03.spec.ts
+#
+#   CLAUDE-CLIENT-C2-B06 notification authority primitive sozlesme kaniti (SAF, DB-siz)
+#     CN-1 kaynagi: X1'in WIRE edecegi primitive CANONICAL + FROZEN —
+#     NOTIFICATION_SEND_EMAIL/SEND_SMS/BULK_EMAIL/RESEND komut tipleri, §13/11
+#     madde 6 esigi (ADMIN VEYA elevated; yetki queue-write/dispatch'ten ONCE),
+#     basarili/failed gonderim girisiminin audit'i ve X1 wiring deseni kilitlenir.
+#     X1 kendi rol politikasini URETMEZ; client-notification/ C2'ye kapali.
+src/modules/client/__tests__/client-notification-authority-primitive-b06.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
