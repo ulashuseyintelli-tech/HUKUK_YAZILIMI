@@ -938,9 +938,25 @@ X3 STATUS:                NOT STARTED — SAYFA AÇILABİLİR (owner kararı 202
 X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 0
                           (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
 X3 NEXT ELIGIBLE:         X3-B01 — fresh doğrulama / regresyon kilidi (HEMEN başlayabilir)
-X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — RATİFİYE DEĞİL.
-                          X3-B04 bu karar olmadan implementation'a BAŞLAMAZ;
-                          yalnız characterization, blok WAITING_FOR_OWNER_DECISION.
+X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIED 2026-08-03**.
+                          Kanonik kayıt: decision-log.md
+                          (CLIENT-X3-CR1-REVIEW-PROMOTE-SEPARATION-RATIFIED).
+                          X3-B04 artık WAITING_FOR_OWNER_DECISION DEĞİL — implementation
+                          yetkisi VAR, yeniden owner GO İSTENMEZ.
+                          Politika: review ve promotion AYRI yetki kapıları · review
+                          promotion yetkisi doğurmaz · herhangi bir authenticated
+                          kullanıcı field APPROVE/REJECT yapamaz · MEVCUT altyapı
+                          kullanılır, YENİ authority modeli KURULMAZ · ayrı audit ·
+                          zorunlu four-eyes YOK.
+                          ⚠ MADDE 8 ÖNCEDEN TETİKLENDİ (VERIFIED cab19831):
+                          client-intake-review.service.ts'te HİÇ yetki çağrısı YOK
+                          (madde 3 bugün İHLAL); kanonik altyapıda review-şekilli yetki
+                          YOK — C2 primitive'i yalnız INTAKE_LINK_CREATE /
+                          CREATE_AND_DELIVER / REVOKE tanır. İki aday da tek başına
+                          yetmiyor (isApproverEligible → madde 1+6'yı anlamsızlaştırır;
+                          C2 primitive'ine komut eklemek X3'ün yetkisi DIŞINDA).
+                          → X3-B04 politika UYDURMAZ; boşluğu raporlar, disposition
+                          master plana gelir. Kapatma yolu SEÇİLMEMİŞTİR.
 X2 STATUS:                NOT STARTED — KAPI KAPALI (teknik).
                           X2 ← X1 KORUNUR: portal/client-financial-disclosure-portal.
                           service.ts:8 + portal.controller.ts:22 + portal.module.ts:5
