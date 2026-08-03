@@ -1072,10 +1072,38 @@ X3-B04 PREDECESSOR:       KARŞILANDI — C2 review-authority extension #2146 / 
 X2 STATUS:                NOT STARTED — KAPI KAPALI (teknik).
                           X2 ← X1 KORUNUR: portal/client-financial-disclosure-portal.
                           service.ts:8 + portal.controller.ts:22 + portal.module.ts:5
+                          + portal/__tests__/client-financial-disclosure-portal.db-gated.
+                          integration.spec.ts:3 (CLIENT_DISCLOSURE_ALLOWED_FIELDS)
                           X2-owned FD projection service/kontratını import ediyor →
-                          X2 shape değiştirirse X1 Type check'te kırılır.
-                          X1 canonical kapanmadan (veya blok-seviyesi çakışma kontrolü
-                          kurulmadan) X2 AÇILMAZ.
+                          X2 shape değiştirirse X1 Type check'te kırılır; kırılma jest'te
+                          GÖRÜNMEZ (diagnostics:false) ve required OLMAYAN "Test Suite"
+                          içinde göründüğü için main'e İNEBİLİR.
+                          X1'İN KALAN İŞİ TAM BU YÜZEYDE (VERIFIED 2026-08-03):
+                          program başlangıcı 6b6225c8'den beri portal/ dizinine HİÇ
+                          program işi İNMEMİŞTİR; X1 yalnız notification yarısını teslim
+                          etti (#2126 CN-2/CN-3, #2140 CN-1 wiring). Ratifiye kalan
+                          kalemler 5-8 (P2 U01/U02 · U03 field-visibility · object-scope/
+                          BOLA · token/session + workspace URL) PORTAL tarafındadır.
+                          AÇILMA KOŞULU (İKİSİNDEN BİRİ): (a) X1 ENGINEERING_COMPLETE,
+                          VEYA (b) owner kapıyı BLOK SEVİYESİNE indirir + X2 FD projection
+                          service/contract public shape'ini SHAPE-FROZEN tutar
+                          (genişletme serbest, daraltma YASAK) + her blok öncesi X1
+                          manifest'ine karşı pre-flight. X2 kapıyı KENDİ AÇAMAZ.
+X2 BLOCKS:                7 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 0
+                          (ratifiye madde 1-6 ve 8 → B01-B07; madde 7 canary/runtime
+                           ratifiye metinde zaten "bu sayfada tamamlanmaz" → activation)
+X2 NEXT ELIGIBLE:         X2-B01 — fresh doğrulama (P-FD kod + migration durumu)
+                          ANCAK §0-C kapısı AÇILDIKTAN SONRA.
+X2 OWNER DECISIONS:       (1) X2-B05 approval/publication ROUTE ERİŞİLEBİLİRLİĞİ — ürün/
+                          güvenlik kararı; X2 kendiliğinden karar VEREMEZ,
+                          WAITING_FOR_OWNER_DECISION ile bekler, sıra ATLANMAZ.
+                          (2) X2-PROD-ACTIVATION koşullu yetkisi: NOT YET GRANTED
+                          (owner ratifikasyonu C1-PROD-ACTIVATION içindi; FD flag+canary
+                          AYRI production mutation sınıfıdır).
+X2 KNOWN CONSTRAINT:      #1629 migration LIVE-APPLY durumu UNKNOWN. X2 kanıtlar fakat
+                          .env/secret OKUMAZ, production verisine DOKUNMAZ; Docker
+                          hukuk_db production kanıtı olarak ATIF EDİLEMEZ. Kanıt
+                          üretilemezse sonuç UNKNOWN olarak DÜRÜSTÇE raporlanır.
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
 PRODUCTION_COMPLETE:      NOT REACHED
