@@ -27,8 +27,25 @@ export const CLIENT_WORKSPACE_COMMAND = {
   DOCUMENT_REQUEST_SEND: 'DOCUMENT_REQUEST_SEND',
   INTAKE_LINK_CREATE: 'INTAKE_LINK_CREATE',
   INTAKE_LINK_CREATE_AND_DELIVER: 'INTAKE_LINK_CREATE_AND_DELIVER',
+  INTAKE_LINK_REVOKE: 'INTAKE_LINK_REVOKE',
   POA_FILE_UPLOAD: 'POA_FILE_UPLOAD',
 } as const;
+
+// =========================================================================================
+// C2-B03 R5 — INTAKE-LINK MUTATION AUTHORITY PRIMITIVE (CANONICAL + FROZEN, 2026-08-03)
+//
+// CODEX-CLIENT-X3 için sözleşme: intake-link mutasyonlarının (create · create-and-deliver ·
+// revoke) yetki primitive'i BU dosyadaki `runAuthorizedClientWorkspaceCommand` +
+// `decideClientWorkspaceCommand` (client-mutation-policy.ts) çiftidir ve `INTAKE_LINK_*`
+// komut tipleriyle kullanılır. Eşik owner §13/11 ile ratifiyedir (ADMIN VEYA canonical
+// elevated); X3 KENDİ authority modelini KURMAZ, yalnız TÜKETİR. `INTAKE_LINK_REVOKE`
+// aynı ratifiye eşiğe bağlanmıştır (yeni eşik İCAT EDİLMEMİŞTİR — tek fark komut adıdır).
+// CR-1 (review ≠ promote ayrımı) BU primitive'in kapsamı DIŞINDADIR ve owner kararı
+// bekler (master plan §13/12) — promotion yetkisi buradan TÜRETİLEMEZ.
+// Bu public shape DONDURULMUŞTUR: export adları, komut tipi string değerleri ve eşik
+// semantiği C2 sayfası dışında DEĞİŞTİRİLEMEZ; yeni komut tipi ihtiyacı C2'ye bildirilir.
+// Sözleşme kanıtı: __tests__/client-intake-link-authority-primitive-b03.spec.ts
+// =========================================================================================
 
 export type ClientWorkspaceCommandType =
   (typeof CLIENT_WORKSPACE_COMMAND)[keyof typeof CLIENT_WORKSPACE_COMMAND];
