@@ -223,6 +223,8 @@ src/modules/client/__tests__/client-consent-fail-closed-b01.spec.ts
 src/modules/client/__tests__/client-dsar-disclosure-b02.spec.ts
 #     C3-B03 (§13/8): legal hold maker-checker + 8-kosul fail-closed silme kapisi (yurutucu yok).
 src/modules/client/__tests__/client-legal-hold-b03.spec.ts
+#     C3-B04 (§13/7): md.6 kapali liste + sifreli korumali kayit + erisim-audit (fail-closed anahtar).
+src/modules/client/__tests__/client-special-category-b04.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts

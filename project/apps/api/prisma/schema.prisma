@@ -279,6 +279,7 @@ model Tenant {
   clientDisclosureDeliveries ClientDisclosureDelivery[] @relation("ClientDisclosureDeliveryTenant")
   clientDataSubjectRequests  ClientDataSubjectRequest[] @relation("ClientDsarTenant")
   clientLegalHolds           ClientLegalHold[]          @relation("ClientLegalHoldTenant")
+  clientSpecialCategoryRecords ClientSpecialCategoryRecord[] @relation("ClientSpecialCategoryTenant")
   poaLawyers             PoaLawyer[]             @relation("PoaLawyerTenant")
 
   // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): CPE execution kayitlarinin
@@ -544,6 +545,7 @@ model Client {
   disclosureDeliveries       ClientDisclosureDelivery[] // Aydınlatma teslim kayıtları (C3-B02)
   dataSubjectRequests        ClientDataSubjectRequest[] // İlgili kişi başvuruları (C3-B02)
   legalHolds                 ClientLegalHold[] // Legal hold kayıtları (C3-B03)
+  specialCategoryRecords     ClientSpecialCategoryRecord[] // Özel nitelikli veri kayıtları (C3-B04)
   poaExpiryDeliveries        PoaExpiryNotificationDelivery[]
   caseClients                CaseClient[]
   notifications              ClientNotification[]
@@ -844,6 +846,51 @@ model ClientDisclosureDelivery {
 
   @@unique([id, tenantId])
   @@index([tenantId, clientId])
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+// C3-B04 (§13/7 K7.1-K7.5, decision-log 2026-08-03): ÖZEL NİTELİKLİ VERİ korumalı kaydı.
+// K7.1: kapsam KVKK md.6 kapalı kategori listesi (nationality/gender tek başına özel DEĞİL).
+// K7.2: genel notes'a özel nitelikli veri YASAK — bu veri yalnız bu sınıflandırılmış,
+// erişim-kapılı akışta tutulur. K7.3: içerik uygulama seviyesinde şifreli saklanır
+// (ayrı anahtar: env, DB dışı); her erişim ayrı audit üretir. Düz metin kolonu YOKTUR.
+
+/// KVKK md.6/1 kapalı kategori listesi (K7.1 — ratifiye referans; genişletme owner ister)
+enum ClientSpecialDataCategory {
+  RACE_ETHNIC_ORIGIN
+  POLITICAL_OPINION
+  PHILOSOPHICAL_BELIEF
+  RELIGION_SECT
+  APPEARANCE_DRESS
+  ASSOCIATION_FOUNDATION_UNION_MEMBERSHIP
+  HEALTH
+  SEXUAL_LIFE
+  CRIMINAL_CONVICTION_SECURITY_MEASURES
+  BIOMETRIC
+  GENETIC
+}
+
+model ClientSpecialCategoryRecord {
+  id String @id @default(cuid())
+
+  tenantId String
+  tenant   Tenant @relation("ClientSpecialCategoryTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  category ClientSpecialDataCategory
+
+  /// AES-256-GCM paketli şifreli içerik (v1:iv:tag:ciphertext, base64) — düz metin YOK
+  contentEncrypted String
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([id, tenantId])
+  @@index([tenantId, clientId, category])
   @@index([tenantId])
   @@index([clientId])
 }
