@@ -16,6 +16,9 @@ import { ClientLegalHoldService } from './client-legal-hold.service';
 // C3-B04 (§13/7): özel nitelikli veri — sınıflandırma + erişim kapısı + şifreli saklama.
 import { ClientSpecialCategoryController } from './client-special-category.controller';
 import { ClientSpecialCategoryService } from './client-special-category.service';
+// C3-B05 (§13/9): vekâletname↔capability binding — tek fail-closed efektif yetki kapısı.
+import { ClientPoaCapabilityController } from './client-poa-capability.controller';
+import { ClientPoaCapabilityService } from './client-poa-capability.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
@@ -27,8 +30,8 @@ import { PoaModule } from '../poa/poa.module';
 
 @Module({
   imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule, ClientNotificationModule, PoaModule],
-  controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController, ClientLegalHoldController, ClientSpecialCategoryController],
-  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService],
-  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService],
+  controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController, ClientLegalHoldController, ClientSpecialCategoryController, ClientPoaCapabilityController],
+  providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService],
+  exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService],
 })
 export class ClientModule {}

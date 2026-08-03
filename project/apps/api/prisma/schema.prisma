@@ -507,7 +507,12 @@ model Client {
   useUyapAddress   Boolean @default(false)
 
   // === YETKİLER (Vekaletname Kapsamı) ===
-  canCollect Boolean @default(true) // Ahzu Kabza
+  // C3-B05 (§13/9 K9.4): flat bayraklar LEGACY göstergedir ve yalnız EK KISITLAMA
+  // getirir; efektif yetki client-poa-capability üzerinden geçerli POA'ya bağlıdır.
+  // canCollect default'u ratifiye kararla FALSE'a çekildi ("müvekkil kaydı var" ≠
+  // "vekaletname/işlem yetkisi var"). Mevcut satır DEĞERLERİNE dokunulmadı (K9.5:
+  // envanter + readiness WAVE 4 öncesi; otomatik grandfathering YOK).
+  canCollect Boolean @default(false) // Ahzu Kabza
   canWaive   Boolean @default(false) // Feragat
   canSettle  Boolean @default(false) // Sulh
   canRelease Boolean @default(false) // İbra

@@ -225,6 +225,8 @@ src/modules/client/__tests__/client-dsar-disclosure-b02.spec.ts
 src/modules/client/__tests__/client-legal-hold-b03.spec.ts
 #     C3-B04 (§13/7): md.6 kapali liste + sifreli korumali kayit + erisim-audit (fail-closed anahtar).
 src/modules/client/__tests__/client-special-category-b04.spec.ts
+#     C3-B05 (§13/9): POA gecerlilik matrisi + efektif capability tek kapisi (POA siz dort yetki etkisiz).
+src/modules/client/__tests__/client-poa-capability-binding-b05.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
