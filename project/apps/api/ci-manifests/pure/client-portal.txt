@@ -193,6 +193,14 @@ src/modules/seed/__tests__/seed-surface-idempotency-certification.spec.ts
 #     CLIENT_WORKSPACE_COMMAND AuditLog uretir (commandType/result, ham PII yok).
 #     Bu spec characterization halefidir (ayni dosyanin devami, git mv).
 src/modules/client/__tests__/client-workspace-command-authorization-r4.spec.ts
+#
+#   CLAUDE-CLIENT-C2-B03 intake-link authority primitive sozlesme kaniti (SAF, DB-siz)
+#     R5: X3'un tuketecegi primitive CANONICAL + FROZEN — INTAKE_LINK_CREATE/
+#     CREATE_AND_DELIVER/REVOKE komut tipleri, ratifiye §13/11 esigi (ADMIN VEYA
+#     elevated), stabil reasonCode sozlesmesi ve X3 tuketim deseni kilitlenir.
+#     CR-1 (review != promote) kapsam DISI — owner karari bekler. Public shape
+#     degisikligi yalniz C2 sayfasi uzerinden yapilabilir.
+src/modules/client/__tests__/client-intake-link-authority-primitive-b03.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts

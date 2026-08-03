@@ -575,7 +575,18 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
       PRE-FLIGHT: C1 aktif blok=B05/PR #2124 (client.service.ts + migration + kendi spec +
       manifest + §17) · exact yazım çakışması=YOK (yalnız manifest/§17 ortak-anchor —
       sonra gelen rebase eder) · karar=CHARACTERIZATION YÜRÜDÜ)*
-- [ ] **B03** intake authority primitive canonical + **dondurulmuş**; X3 tüketebilir
+- [x] **B03** intake authority primitive canonical + **dondurulmuş**; X3 tüketebilir
+      *(2026-08-03 — primitive = `runAuthorizedClientWorkspaceCommand` +
+      `decideClientWorkspaceCommand` çifti, `INTAKE_LINK_CREATE /
+      INTAKE_LINK_CREATE_AND_DELIVER / INTAKE_LINK_REVOKE` komut tipleriyle;
+      eşik owner §13/11 (ADMIN VEYA elevated) — REVOKE aynı ratifiye eşiğe bağlandı,
+      YENİ EŞİK İCAT EDİLMEDİ. Public shape DONDURULDU (export adları + komut tipi
+      string'leri + reasonCode sözlüğü); sözleşme kanıtı
+      `client-intake-link-authority-primitive-b03.spec.ts` 19/19 PASS + r4 45/45.
+      CR-1 (review ≠ promote) kapsam DIŞI — owner-deferred (master plan §13/12);
+      promotion yetkisi bu primitive'den türetilemez. Intake modülüne bağlama X3'ün işi.
+      CROSS-LANE: X3 UNBLOCKED.
+      PRE-FLIGHT: C1 aktif blok=YOK (ENGINEERING_COMPLETE) · çakışma=YOK · karar=YÜRÜDÜ)*
 - [ ] **B04** POA upload yetkilendirilmiş + audited; mandate semantiği C3'e bırakılmış
 - [ ] **B05** OWN-10/12/15 kalemleri ratifiye/deferred olarak **exact** sınıflandırılmış
 - [ ] **B06** notification/workspace primitive canonical + **dondurulmuş**; X1 tüketebilir
