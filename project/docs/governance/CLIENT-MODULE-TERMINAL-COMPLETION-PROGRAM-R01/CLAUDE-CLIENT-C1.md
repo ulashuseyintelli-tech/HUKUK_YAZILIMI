@@ -43,7 +43,11 @@ SHARED CONTRACTS:
   client-mutation-policy.ts        → C2 tek-writer; C1 TÜKETİR, semantiğini DEĞİŞTİRMEZ
   office-approval.isApproverEligible → READ-ONLY (3 farklı eligibility var; birleştirme YASAK)
   ClientService.create / bulk predicate → C1 yazabilir (kendi kapsamında), C2 devralır
-  ci-manifests/pure/client-portal.txt → PAYLAŞIMLI; PROGRAM BOYU TEK MANIFEST WRITER = C1
+  ci-manifests/pure/client-portal.txt → ORTAK APPEND-ONLY yüzey (owner düzeltmesi
+                                        2026-08-03; "tek manifest writer = C1" ifadesi
+                                        SUPERSEDE EDİLDİ). Her lane YALNIZ kendi
+                                        satırlarını ekler, mevcut satırları DEĞİŞTİRMEZ;
+                                        çakışmada SONRA GELEN REBASE EDER.
 
   ⚠ XL-1 · C1 → X1 DERLEME/DI BAĞIMLILIĞI (master plan §12-A-2, VERIFIED 2026-08-02):
   client.service.ts:6 · :320 · :2562 · :2574 · :2611 ve client.module.ts:12 · :16

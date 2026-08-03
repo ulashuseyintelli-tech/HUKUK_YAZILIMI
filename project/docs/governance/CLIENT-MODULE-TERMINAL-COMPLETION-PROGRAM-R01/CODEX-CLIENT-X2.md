@@ -6,15 +6,15 @@ MASTER PROGRAM:           CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01
 MASTER PLAN VERSION:      v1.0 (OWNER RATIFIED)
 THIS PAGE:                CODEX-CLIENT-X2
 LANE OWNER:               CODEX
-PREDECESSOR:              CODEX-CLIENT-X1 — ENGINEERING_COMPLETE olmalı.
-                          ⚠ BU KAPI TEKNİKTİR, PLAN ARTEFAKTI DEĞİL (VERIFIED, §0-C):
-                          X1'in sahip olduğu portal/ kodu X2-owned FD projection
-                          service'ini ve CLIENT_DISCLOSURE_ALLOWED_FIELDS kontratını
-                          ALTI NOKTADAN import eder. X2 bu shape'i değiştirirse X1
-                          Type check'te KIRILIR ve kırılma required OLMAYAN "Test Suite"
-                          içinde göründüğü için fark edilmeden main'e İNEBİLİR.
-                          DURUM (2026-08-03): KAPI KAPALI — X1 portal yarısını (ratifiye
-                          madde 5-8) HENÜZ BAŞLATMAMIŞTIR.
+PREDECESSOR:              CODEX-CLIENT-X1 — ENGINEERING_COMPLETE / MERGED / CANONICAL
+                          ✅ KARŞILANDI (owner amendment 2026-08-03; CHARTER §48 CONTROLS
+                          + CLIENT-X1-GOV-RECON-R02-SA01). X1 REMAINING PRODUCT WORK: NONE.
+                          Kanıt: #2126/5f4202a8 + #2140/cbe49683 (engineering),
+                          #2165/cdd24aaa (terminal kanonik yayın). #2154 yalnız
+                          control-plane bootstrap'tır, engineering kanıtı DEĞİLDİR.
+                          ⚠ FD projection shape bağı (§0-C) KALICI bir
+                          BACKWARD-COMPATIBILITY kuralıdır — X1 kapandıktan SONRA DA
+                          geçerlidir; kapı gerekçesi DEĞİL, güvenlik kuralıdır.
 SUCCESSOR:                CODEX-CLIENT-X3
                           (X3 ← X2 kapısı KALDIRILDI — sıfır import; X3 bağımsız yürür)
 
@@ -170,14 +170,16 @@ OWNER AUTHORIZATION REQUIRED: NO / yalnız §0-D veya §0-E
 PROGRAM LOCK:                 CLIENT ONLY
 ```
 
-## 0-C. GİRİŞ KAPISI — X2 ← X1 (TEKNİK, KAPALI)
+## 0-C. GİRİŞ KAPISI — X2 ← X1 · **AÇIK** (predecessor satisfied)
 
 ```text
-DURUM (VERIFIED 2026-08-03): KAPI KAPALI.
+DURUM (owner amendment 2026-08-03): KAPI AÇIK — (a) dalı KARŞILANDI.
+X1 = ENGINEERING_COMPLETE / MERGED / CANONICAL · REMAINING PRODUCT WORK: NONE
 ```
 
-**Neden teknik:** X1'in sahip olduğu `portal/` kodu X2-owned yüzeye **altı noktadan**
-bağlıdır:
+**Kalıcı teknik bağ (kapı gerekçesi DEĞİL, backward-compatibility kuralı):** X1'in
+sahip olduğu `portal/` kodu X2-owned yüzeye **altı noktadan** bağlıdır ve bu bağ X1
+kapandıktan **sonra da** yaşar:
 
 ```text
 portal/client-financial-disclosure-portal.service.ts:8
@@ -199,14 +201,74 @@ içindeki Type check yakalar → kırık kod main'e **inebilir**.
 workspace URL) **portal tarafındadır**.
 
 ```text
-AÇILMA KOŞULU (İKİSİNDEN BİRİ):
- (a) X1 ENGINEERING_COMPLETE olur (repository kanıtıyla doğrulanır), VEYA
- (b) Owner kapıyı BLOK SEVİYESİNE indirir — bu durumda X2:
-     · client-financial-disclosure-projection.service.ts ve
-       client-financial-disclosure-projection.contract.ts public shape'ini
-       SHAPE-FROZEN tutar (genişletme serbest, DARALTMA/yeniden adlandırma YASAK), VE
-     · her blok öncesi X1'in aktif manifest'ine karşı §0-G pre-flight yapar.
-Bu sayfa kapıyı KENDİSİ AÇAMAZ.
+AÇILMA KOŞULU (a) — KARŞILANDI:
+ X1 ENGINEERING_COMPLETE / MERGED / CANONICAL (owner amendment 2026-08-03,
+ CHARTER §48 CONTROLS + CLIENT-X1-GOV-RECON-R02-SA01). Kapı AÇIKTIR.
+ Sayfa açılışında ancak REPOSITORY KANITIYLA yeniden teyit edilir
+ (SA01 belgesi main'de ve authorizedSemantics.x1Engineering okunur).
+```
+
+### ✅ §0-C GATE OPEN — (a) DALI KARŞILANDI (owner amendment 2026-08-03)
+
+**Kapı (a) dalı üzerinden AÇIKTIR: X1 `ENGINEERING_COMPLETE / MERGED / CANONICAL`.**
+Predecessor **KARŞILANMIŞTIR**.
+
+```text
+KANONİK OTORİTE:
+  CLIENT-GOVERNANCE-CHARTER.md §48 CONTROLS
+  CLIENT-X1-GOV-RECON-R02-SA01 (task-bound semantic authority, main'de)
+    x1Engineering            : ENGINEERING_COMPLETE / MERGED / CANONICAL
+    x1RemainingProductWork   : NONE
+    u03TrackB                : CLOSED / CANONICAL / PASS
+    productionVerification   : CLOSED / CANONICAL / VERIFIED ONCE
+    currentFlags             : DEFAULT OFF
+    persistentFlagActivation : OWNER-GATED / NOT PERFORMED
+
+X1 KANIT ZİNCİRİ (üç ayrı katman — karıştırılmaz):
+  #2126 / 5f4202a8  ENGINEERING — notification remediation (DTO validation, provider
+                    error sanitization) + portal / U01 / U02 / U03 / object-scope /
+                    token / workspace-URL DOĞRULAMASI ve ÖLÇÜLMÜŞ DELTA
+                    (CN-1 characterization spec'i dahil)
+  #2140 / cbe49683  ENGINEERING — CN-1 kanonik authority wiring
+  #2165 / cdd24aaa  TERMİNAL KANONİK YAYIN — owner-ratified semantic authority
+
+  #2154            YALNIZ control-plane BOOTSTRAP'tır. Engineering kanıtı DEĞİLDİR
+                   ve engineering kanıtı olarak ATIF EDİLEMEZ. X1'in engineering
+                   kanıtı #2126 + #2140, terminal kanonik yayını #2165'tir.
+
+SUPERSEDED YORUM (PR #2166'da yer almıştı — REJECTED):
+  "X1 portal yarısını başlatmadı; kalan işi portal madde 5-8'dir; X1
+   ENGINEERING_COMPLETE değildir."
+  Madde 5-8'in X1 kapsamındaki görevi DOĞRULAMA ve DELTA ÖLÇÜMÜ idi; portal
+  remediation veya zorunlu portal production-code diff'i DEĞİLDİ. Bu nedenle
+  "portal/ dizinine commit inmemiş" gözleminden "iş yapılmamış" SONUCU ÇIKARILAMAZ.
+  Ölçülen BOLA / POL-J delta'sı YENİ ve GİZLİ X1 işi olarak TÜRETİLEMEZ.
+```
+
+**SHAPE-FROZEN ve block-level pre-flight KORUNUR — fakat gerekçesi değişmiştir:**
+
+```text
+Bunlar X1 EKSİKLİĞİ nedeniyle DEĞİL, BACKWARD-COMPATIBILITY GÜVENLİK KURALI olarak
+yürürlüktedir:
+
+FD projection service/contract public shape
+(client-financial-disclosure-projection.service.ts ve
+ client-financial-disclosure-projection.contract.ts):
+  - SHAPE-FROZEN
+  - DARALTMA, SİLME ve YENİDEN ADLANDIRMA YASAK
+  - GENİŞLETME yalnız BACKWARD-COMPATIBLE ise SERBEST
+  - Herhangi bir lane'in exact write manifest'iyle KESİŞEN blok
+    WAITING_FOR_OTHER_SESSION olur; SIRA ATLANMAZ
+
+GEREKÇE: X1'in portal kodu bu shape'i altı noktadan tüketir (§0-C). Kırılma jest'te
+GÖRÜNMEZ (diagnostics:false) ve required OLMAYAN "Test Suite" içindeki Type check'te
+göründüğü için main'e inebilir. Bu risk X1 kapandıktan SONRA DA geçerlidir —
+kural kalıcıdır.
+```
+
+```text
+X2-B01: NEXT ELIGIBLE / NOT STARTED
+Bu docs PR'ı X2'yi BAŞLATMAZ.
 ```
 
 ## 0-D. BİLİNEN OWNER KARARI — X2-B05 ROUTE ERİŞİLEBİLİRLİĞİ
@@ -249,6 +311,16 @@ X2 bunu KANITLAMAKLA yükümlüdür, fakat:
    ATIF EDİLEMEZ (ARC-07 D07 ile aynı ilke),
  - kanıt üretilemiyorsa sonuç UNKNOWN olarak DÜRÜSTÇE raporlanır; "uygulandı"
    VARSAYILMAZ.
+
+⚠ OWNER DÜZELTMESİ 2026-08-03 — UNKNOWN GEÇERLİ TERMİNAL SONUÇTUR:
+X2-B02'de production LIVE-APPLY kanıtı ÜRETİLEMEZSE, `UNKNOWN` bloğun GEÇERLİ ve
+TERMİNAL sonucudur. Bu durum:
+  - bloğu TAMAMLANMAMIŞ SAYMAZ,
+  - X2-B03'e geçişi ENGELLEMEZ,
+  - BLOCKED_EXACT DEĞİLDİR.
+Blok çıktısında `BLOCK RESULT: ANALYSIS_DELIVERED` + `LIVE-APPLY: UNKNOWN (kanıt
+üretilemedi — gerekçe: <exact>)` olarak raporlanır ve sıra normal akışında devam eder.
+"Uygulandı" veya "uygulanmadı" VARSAYIMI YAPILMAZ.
 ```
 
 ## 0-G. BLOCK-LEVEL PRE-FLIGHT (her blok öncesi — ZORUNLU)
@@ -291,10 +363,11 @@ BLOCKED_EXACT yalnız DÖRDÜ BİRDEN sağlanırsa.
 ⚠ Flag/canary'yi beklemek BLOCKED_EXACT DEĞİL → ACTIVATION_PENDING_WAVE_4.
 ```
 
-**CI MANIFEST RULE:** `ci-manifests/pure/` — program boyu **tek manifest writer = C1**.
-X2 kendi spec satırlarını **append-only** ekler, başka lane'in satırlarına DOKUNMAZ;
-çakışırsa **sonra gelen rebase eder** (blocker DEĞİL). `__tests__/*` wildcard **exact
-write manifest sayılmaz**.
+**CI MANIFEST RULE (owner düzeltmesi 2026-08-03):** `ci-manifests/pure/` **ORTAK,
+APPEND-ONLY** bir yüzeydir ve **tek bir lane'e ATANMAZ**. X2 **yalnız kendi** spec
+satırlarını ekler; **mevcut satırları DEĞİŞTİRMEZ/SİLMEZ**, başka lane'in satırlarına
+**DOKUNMAZ**. Çakışırsa **sonra gelen lane REBASE EDER** — blocker DEĞİL, serialize
+edilmesi GEREKMEZ. `__tests__/*` wildcard **exact write manifest sayılmaz**.
 
 **NO SIDE QUEST:** Yeni bulgu gizlice eklenmez ve **blok sayacını değiştirmez**;
 master plana disposition için gönderilir.
