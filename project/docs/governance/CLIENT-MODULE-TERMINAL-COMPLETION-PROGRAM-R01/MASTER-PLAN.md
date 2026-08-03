@@ -884,20 +884,31 @@ C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 8 (B
                            elevated; yetkisiz aktörde yan etki SIFIR; başarılı komut
                            CLIENT_WORKSPACE_COMMAND audit üretir. r4 spec 45/45 +
                            client modülü 495/495 PASS)
-C3 STATUS:                NOT STARTED — SAYFA AÇILABİLİR, MOD A · ANALYSIS_ONLY
+C3 STATUS:                IN PROGRESS — MOD A · ANALYSIS_ONLY · WAITING_FOR_OWNER_DECISION
+                          C3-B00 AŞAMA 1 (A1) ANALYSIS_DELIVERED (2026-08-03): owner
+                          decision pack teslim — C3-B00-OWNER-DECISION-PACK-R01.md
+                          (bu dizin, EXACT canonical path; §13/5-10 altı kalemin altısı
+                          da kanıt + karar formu + taslak decision-log satırıyla karar
+                          verilebilir durumda).
                           Kapı 1 (C2 ENGINEERING_COMPLETE): KARŞILANDI
                           Kapı 2 (§13/5-10 owner legal ratifications): KARŞILANMADI —
                           decision-log'da CLIENT KVKK/retention/POA ratifikasyon kaydı
                           YOK; POL-E-R1 "RECOMMENDED / NOT STARTED · IMPLEMENTATION
-                          AUTHORITY: NONE" (VERIFIED 2026-08-03, fresh main 0c482b96).
+                          AUTHORITY: NONE" (yeniden VERIFIED 2026-08-03, fresh main
+                          cbe49683: charter §24.20 + decision-log:709 POL-E OPTION A
+                          baseline — süre/tetikleyici/legal-hold modeli SEÇİLMEDİ).
                           Hukuki kural/eşik/süre içeren ürün kodu · şema · migration
                           YASAK; blok ancak dayandığı §13 kalemi ratifiye edilip
                           decision-log'a düştüğünde MOD B'ye geçer.
 C3 BLOCKS:                1 ANALYSIS (C3-B00) + 7 ENGINEERING (C3-B01..B07)
                           + 1 KOŞULLU WAVE-4 ACTIVATION · COMPLETED: 0
-C3 NEXT ELIGIBLE:         C3-B00 — owner decision pack (ANALYSIS_ONLY, HEMEN başlayabilir;
-                          bu blok C3'ü bloklayan §13/5-10 kararlarını KARAR VERİLEBİLİR
-                          hale getirir — beklemek değil, kapıyı açmaktır)
+                          (C3-B00 A1 teslim edildi; A2 owner kararına bağlı — blok
+                          sayacı değişmez, B00 iki aşamasıyla birlikte kapanır)
+C3 NEXT ELIGIBLE:         C3-B00 AŞAMA 2 (A2) — owner §13/5-10 kalemlerine karar
+                          verdiğinde EXACT kararların decision-log.md'ye docs-only
+                          işlenmesi. C3-B01 ve hiçbir ürün implementasyonu, ilgili karar
+                          REPOSITORY'YE MERGE EDİLMEDEN BAŞLAMAZ; kısmi ratifikasyonda
+                          yalnız o kalemin bloğu MOD B'ye geçer, sıra ATLANMAZ.
 C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B):
                           A1) Decision pack →
                               .../CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/
