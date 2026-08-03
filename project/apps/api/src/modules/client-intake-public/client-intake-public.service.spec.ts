@@ -7,6 +7,7 @@ import { SubmitIntakeDto } from './dto/submit-intake.dto';
 
 const TOKEN = 'raw-token-xyz';
 const HASH = createHash('sha256').update(TOKEN).digest('hex');
+const GENERIC_INVALID = 'Bağlantı geçersiz veya süresi dolmuş.';
 
 const mockPrisma: any = {
   clientIntakeLink: { findFirst: jest.fn(), updateMany: jest.fn() },
@@ -53,13 +54,20 @@ describe('ClientIntakePublicService', () => {
       await expect(service.getForm(TOKEN)).rejects.toThrow(NotFoundException);
     });
 
-    it('ACTIVE olmayan / expired / limit-dolu → generic NotFound', async () => {
-      mockPrisma.clientIntakeLink.findFirst.mockResolvedValue({ ...activeLink, status: 'REVOKED' });
-      await expect(service.getForm(TOKEN)).rejects.toThrow(NotFoundException);
-      mockPrisma.clientIntakeLink.findFirst.mockResolvedValue({ ...activeLink, expiresAt: new Date(Date.now() - 1000) });
-      await expect(service.getForm(TOKEN)).rejects.toThrow(NotFoundException);
-      mockPrisma.clientIntakeLink.findFirst.mockResolvedValue({ ...activeLink, useCount: 1, maxUses: 1 });
-      await expect(service.getForm(TOKEN)).rejects.toThrow(NotFoundException);
+    it('yok / ACTIVE değil / expired / limit-dolu → aynı generic mesaj (existence oracle YOK)', async () => {
+      const candidates = [
+        null,
+        { ...activeLink, status: 'REVOKED' },
+        { ...activeLink, expiresAt: new Date(Date.now() - 1000) },
+        { ...activeLink, useCount: 1, maxUses: 1 },
+      ];
+
+      for (const candidate of candidates) {
+        mockPrisma.clientIntakeLink.findFirst.mockResolvedValueOnce(candidate);
+        await expect(service.getForm(TOKEN)).rejects.toMatchObject({
+          response: { statusCode: 404, message: GENERIC_INVALID },
+        });
+      }
     });
   });
 
@@ -87,6 +95,49 @@ describe('ClientIntakePublicService', () => {
       expect(JSON.stringify(subArg.data.sourceMeta)).not.toContain('9.9.9.9');
       // field yazıldı
       expect(mockPrisma.clientIntakeField.createMany).toHaveBeenCalled();
+    });
+
+    it('tenant/case/client yalnız link kaydından türetilir; forged bağlam ve field state taşınmaz', async () => {
+      mockPrisma.clientIntakeLink.findFirst.mockResolvedValue(activeLink);
+      const forgedDto = {
+        tenantId: 'tenant-attacker',
+        caseId: 'case-attacker',
+        clientId: 'client-attacker',
+        intakeLinkId: 'link-attacker',
+        status: 'COMPLETED',
+        fields: [
+          {
+            category: 'INCOME_SOURCE',
+            label: 'Meslek',
+            value: 'Müteahhit',
+            note: 'Beyan',
+            submissionId: 'submission-attacker',
+            reviewStatus: 'APPROVED',
+            promotedRefId: 'canonical-attacker',
+          },
+        ],
+      } as any;
+
+      await service.submit(TOKEN, forgedDto, '9.9.9.9', 'ua');
+
+      const submissionData = mockPrisma.clientIntakeSubmission.create.mock.calls[0][0].data;
+      expect(submissionData).toMatchObject({
+        tenantId: activeLink.tenantId,
+        intakeLinkId: activeLink.id,
+        caseId: activeLink.caseId,
+        clientId: activeLink.clientId,
+        status: 'CLIENT_SUBMITTED',
+      });
+      expect(submissionData).not.toMatchObject({ tenantId: forgedDto.tenantId });
+
+      const [fieldData] = mockPrisma.clientIntakeField.createMany.mock.calls[0][0].data;
+      expect(fieldData).toEqual({
+        submissionId: 'sub-1',
+        category: 'INCOME_SOURCE',
+        label: 'Meslek',
+        value: 'Müteahhit',
+        note: 'Beyan',
+      });
     });
 
     it('scope DIŞI kategori → generic BadRequest, YAZMA yok', async () => {

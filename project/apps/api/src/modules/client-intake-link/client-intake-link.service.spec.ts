@@ -124,6 +124,7 @@ describe('ClientIntakeLinkService', () => {
 
       // rawToken yalniz yanitta; DB data'sinda ham token yok
       expect(res.rawToken).toBeDefined();
+      expect(Buffer.from(res.rawToken, 'base64url')).toHaveLength(32); // 256-bit entropy
       expect(JSON.stringify(createArg.data)).not.toContain(res.rawToken);
       // tokenHash = sha256(rawToken), 64 hex
       expect(storedHash).toMatch(/^[a-f0-9]{64}$/);
