@@ -457,10 +457,10 @@ test('T09 artifact covers the twelve Playbook and six composition routes exactly
   assert.ok(artifact.composition.startupSideEffects.every((item) => item.runtimeBound === false));
 });
 
-test('T13 overlay composes the prior registry and reclassifies exactly six P2 records', () => {
+test('T13/T14 overlay composes canonical dispositions and reclassifies exact records', () => {
   const overlayPath = 'project/docs/audit/runtime-binding-reconciliation-r01-t13/capability-disposition-registry.json';
   const overlay = JSON.parse(fs.readFileSync(path.join(repoRoot, overlayPath), 'utf8'));
-  const expectedIds = [
+  const expectedT13Ids = [
     'INT-05763F53F1D3',
     'INT-1EBE1D6EC7BC',
     'INT-4C1CC43AA751',
@@ -468,15 +468,35 @@ test('T13 overlay composes the prior registry and reclassifies exactly six P2 re
     'INT-E9AE1D631FFB',
     'INT-EC4A8FFB6463',
   ];
+  const expectedT14Ids = [
+    'HTTP-054B0508E07D', 'HTTP-061BBAAB776C', 'HTTP-0750799664CC',
+    'HTTP-0B28437D962E', 'HTTP-122183895FD0', 'HTTP-1287CD839964',
+    'HTTP-2F45FFAB19CE', 'HTTP-3F3BCA2293F5', 'HTTP-3F5457860C4F',
+    'HTTP-512B39B42D1E', 'HTTP-694C905C4131', 'HTTP-8A5F22B0F914',
+    'HTTP-A8EA32B0039F', 'HTTP-B0B542D6B1E4', 'HTTP-BCE31FB68E56',
+    'HTTP-C0593CE2185B', 'HTTP-CB8DA0AB111B', 'HTTP-D17C40F4DDEF',
+    'HTTP-E8DDE1EC0E7B', 'HTTP-F4A23B0C8754', 'HTTP-FEB481815B69',
+    'INT-00FE7655123B', 'INT-0701AF188E63', 'INT-13396789FCC2',
+    'INT-198D4A73BE9A', 'INT-1F8DF64CBF69', 'INT-241DB773E0E1',
+    'INT-2458E64ED157', 'INT-26E0EEE47F55', 'INT-29C9D40F349D',
+    'INT-2C570E829954', 'INT-2D535BFBE8A9', 'INT-2FFF74672109',
+    'INT-31D483E4AB9F', 'INT-35978A278AC0', 'INT-585689494982',
+    'INT-61CC7D2EC736', 'INT-6303E5E243D1', 'INT-862A2D8B25FA',
+    'INT-8BD0574E3CBD', 'INT-97426B28EAEA', 'INT-9F9789B5BA7D',
+    'INT-A5EA2CEAD034', 'INT-A8D86B977664', 'INT-AF017422CC46',
+    'INT-AF1A55030C4B', 'INT-AFA258B36AD4', 'INT-B95A6AE15E4D',
+    'INT-B9D28C2E2AE9', 'INT-C04D8D880754', 'INT-D0D17D782264',
+    'INT-D98EA9E329D6',
+  ];
 
   assert.equal(overlay.taskId, 'RBR-R01-T13');
+  assert.equal(overlay.materializedByTaskId, 'RBR-R01-T14');
   assert.equal(overlay.baseRegistry, 'project/docs/audit/runtime-binding-reconciliation-r01-t09/capability-disposition-registry.json');
-  assert.deepEqual(overlay.requiredCapabilityIds, expectedIds);
-  assert.equal(overlay.entries.length, expectedIds.length);
-  assert.deepEqual(
-    overlay.entries.map((entry) => entry.capabilityId),
-    expectedIds,
-  );
+  assert.deepEqual(overlay.requiredCapabilityIds.slice(0, expectedT13Ids.length), expectedT13Ids);
+  assert.deepEqual(overlay.requiredCapabilityIds.slice(expectedT13Ids.length), expectedT14Ids);
+  assert.equal(overlay.requiredCapabilityIds.length, 58);
+  assert.equal(overlay.entries.length, 58);
+  assert.equal(new Set(overlay.requiredCapabilityIds).size, 58);
   assert.ok(overlay.entries.every((entry) =>
     entry.disposition === 'INTENTIONALLY_DORMANT' &&
     entry.runtimeBound === false &&
@@ -486,27 +506,33 @@ test('T13 overlay composes the prior registry and reclassifies exactly six P2 re
     entry.activationAuthority === 'ABSENT' &&
     entry.defect === false &&
     entry.remediationRequired === false &&
-    entry.ownerDecisionRef.startsWith('OD-T12-') &&
-    entry.ownerDisposition &&
     entry.recordFingerprint.length === 64));
+  assert.ok(overlay.entries.slice(0, expectedT13Ids.length).every((entry) => entry.ownerDecisionRef.startsWith('OD-T12-')));
+  assert.ok(overlay.entries.slice(expectedT13Ids.length).every((entry) => entry.ownerDecisionRef === 'RBR-R01-T14'));
 
   const resolved = loadDispositionRegistry(repoRoot, overlayPath, git('rev-parse', 'HEAD'));
-  assert.equal(resolved.data.requiredCapabilityIds.length, 24);
-  assert.equal(resolved.data.entries.length, 24);
+  assert.equal(resolved.data.requiredCapabilityIds.length, 76);
+  assert.equal(resolved.data.entries.length, 76);
 
   const inventory = readInventory();
   const before = new Map(
     inventory.capabilities
-      .filter((record) => expectedIds.includes(record.capabilityId))
+      .filter((record) => expectedT13Ids.includes(record.capabilityId))
       .map((record) => [record.capabilityId, record.finalStatus]),
   );
-  assert.equal(before.size, expectedIds.length);
+  assert.equal(before.size, expectedT13Ids.length);
   assert.ok([...before.values()].every((status) => status === 'CODE_PRESENT_UNBOUND'));
 
-  applyDispositionRegistry(inventory.capabilities, { data: overlay });
+  const t13Only = {
+    ...overlay,
+    baseRegistry: undefined,
+    requiredCapabilityIds: expectedT13Ids,
+    entries: overlay.entries.slice(0, expectedT13Ids.length),
+  };
+  applyDispositionRegistry(inventory.capabilities, { data: t13Only });
 
-  const after = inventory.capabilities.filter((record) => expectedIds.includes(record.capabilityId));
-  assert.equal(after.length, expectedIds.length);
+  const after = inventory.capabilities.filter((record) => expectedT13Ids.includes(record.capabilityId));
+  assert.equal(after.length, expectedT13Ids.length);
   assert.ok(after.every((record) =>
     record.finalStatus === 'INTENTIONALLY_DORMANT' &&
     record.runtimeBound === false &&
@@ -514,4 +540,58 @@ test('T13 overlay composes the prior registry and reclassifies exactly six P2 re
     record.reachable === false &&
     record.consumerCount === 0 &&
     record.ownerDecisionRef.startsWith('OD-T12-')));
+});
+
+test('T14 materializes exactly 52 fresh CODE_PRESENT_UNBOUND records without activation', () => {
+  const overlayPath = 'project/docs/audit/runtime-binding-reconciliation-r01-t13/capability-disposition-registry.json';
+  const overlay = JSON.parse(fs.readFileSync(path.join(repoRoot, overlayPath), 'utf8'));
+  const entries = overlay.entries.filter((entry) => entry.ownerDecisionRef === 'RBR-R01-T14');
+  const expectedIds = overlay.requiredCapabilityIds.slice(-52);
+  assert.equal(entries.length, 52);
+  assert.deepEqual(entries.map((entry) => entry.capabilityId), expectedIds);
+  assert.equal(new Set(expectedIds).size, 52);
+  assert.equal(entries.filter((entry) => entry.ownerDisposition === 'OWNER_GATED_DORMANT / DO_NOT_BIND').length, 12);
+  assert.equal(entries.filter((entry) => entry.ownerDisposition === 'OWNER_GATED_DORMANT / HARDEN_BEFORE_BIND').length, 30);
+  assert.equal(entries.filter((entry) => entry.ownerDisposition === 'INTENTIONALLY_DORMANT / DO_NOT_BIND').length, 7);
+  assert.equal(entries.filter((entry) => entry.ownerDisposition === 'INTENTIONALLY_DORMANT / MISSING_POLICY_GATE').length, 1);
+  assert.equal(entries.filter((entry) => entry.ownerDisposition === 'INTENTIONALLY_DORMANT / TEST_OR_FUTURE_ADMIN_UTILITY').length, 1);
+  assert.equal(entries.filter((entry) => entry.ownerDisposition === 'INTENTIONALLY_DORMANT / CONFIG_GATED_DEFAULT_OFF').length, 1);
+
+  const outputDir = 'project/.tmp-t14-baseline';
+  fs.mkdirSync(path.join(repoRoot, outputDir), { recursive: true });
+  const dispositionFixture = path.join(repoRoot, outputDir, 't09-fixture.json');
+  fs.copyFileSync(
+    path.join(repoRoot, 'project', 'docs', 'audit', 'runtime-binding-reconciliation-r01-t09', 'capability-disposition-registry.json'),
+    dispositionFixture,
+  );
+  const result = spawnSync(process.execPath, [
+    path.join(projectRoot, 'scripts', 'runtime-binding-reconciliation-r01.cjs'),
+    '--out-dir', outputDir,
+    '--audit-started-at', '2026-08-03T00:00:00+03:00',
+    '--disposition-file', `${outputDir}/t09-fixture.json`,
+  ], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const inventory = JSON.parse(fs.readFileSync(path.join(repoRoot, outputDir, 'runtime-capability-inventory.json'), 'utf8'));
+  const records = inventory.capabilities.filter((record) => expectedIds.includes(record.capabilityId));
+  assert.equal(records.length, 52);
+  assert.ok(records.every((record) => record.finalStatus === 'CODE_PRESENT_UNBOUND'));
+  const byId = new Map(records.map((record) => [record.capabilityId, record]));
+  assert.ok(entries.every((entry) => dispositionFingerprint(byId.get(entry.capabilityId)) === entry.recordFingerprint));
+
+  const t14Only = {
+    ...overlay,
+    baseRegistry: undefined,
+    requiredCapabilityIds: expectedIds,
+    entries,
+  };
+  applyDispositionRegistry(inventory.capabilities, { data: t14Only });
+  const after = inventory.capabilities.filter((record) => expectedIds.includes(record.capabilityId));
+  assert.ok(after.every((record) =>
+    record.finalStatus === 'INTENTIONALLY_DORMANT' &&
+    record.runtimeBound === false &&
+    record.active === false &&
+    record.reachable === false &&
+    record.consumerCount === 0 &&
+    record.ownerDecisionRef === 'RBR-R01-T14'));
+  fs.rmSync(path.join(repoRoot, outputDir), { recursive: true, force: true });
 });
