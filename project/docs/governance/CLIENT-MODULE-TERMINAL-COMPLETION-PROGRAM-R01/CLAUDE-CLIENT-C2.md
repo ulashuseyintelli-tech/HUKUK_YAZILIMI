@@ -587,7 +587,17 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
       promotion yetkisi bu primitive'den türetilemez. Intake modülüne bağlama X3'ün işi.
       CROSS-LANE: X3 UNBLOCKED.
       PRE-FLIGHT: C1 aktif blok=YOK (ENGINEERING_COMPLETE) · çakışma=YOK · karar=YÜRÜDÜ)*
-- [ ] **B04** POA upload yetkilendirilmiş + audited; mandate semantiği C3'e bırakılmış
+- [x] **B04** POA upload yetkilendirilmiş + audited; mandate semantiği C3'e bırakılmış
+      *(2026-08-03 — RECONCILE-ONLY, ürün diff'i SIFIR: (1) yetki+audit B02'de
+      teslim edildi — `POA_FILE_UPLOAD` komut tipi, §13/11 eşiği, başarılı upload
+      `CLIENT_WORKSPACE_COMMAND` audit'i (metadata: commandType+poaId+status);
+      (2) servis defense-in-depth koddan doğrulandı: `poa.service.ts:691`
+      `clientPowerOfAttorney.findFirst({id, clientId, client:{id, tenantId,
+      isActive:true}})` — cross-tenant/yanlış-client/pasif-client NotFound, response'ta
+      filePath YOK; (3) `MANDATE SCOPE ≠ EXECUTION AUTHORITY` korunuyor — upload hiçbir
+      capability türetmez; POA içerik/kapsam semantiği ve capability binding C3'e
+      bırakıldı. Kanıt: client-poa-upload-command 8/8 + r4 45/45 PASS (fresh main
+      ae6ffd2b). PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
 - [ ] **B05** OWN-10/12/15 kalemleri ratifiye/deferred olarak **exact** sınıflandırılmış
 - [ ] **B06** notification/workspace primitive canonical + **dondurulmuş**; X1 tüketebilir
 - [ ] **B07** `isCurrent` artık inert değil; primary/current invariantları test edilmiş;
