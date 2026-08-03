@@ -197,10 +197,52 @@ BOŞLUK:
 X3-B04'ÜN YAPACAĞI:
   - Yukarıdaki tespiti KODDAN teyit et (characterization).
   - Mevcut altyapıda madde (1)+(3)+(6)'yı BİRLİKTE sağlayan bir yetki VARSA onu kullan.
-  - YOKSA politika UYDURMA: exact boşluğu, iki adayı ve neden yetmediklerini
-    RAPORLA; bloğu ANALYSIS_DELIVERED ile kapat ve master plana disposition gönder.
-  - Kapatma yolu owner kararı veya C2 koordinasyonu gerektirir ve bu kayıtla
-    SEÇİLMEMİŞTİR. `Implementation-layer policy invention YASAKTIR.`
+  - YOKSA politika UYDURMA. `Implementation-layer policy invention YASAKTIR.`
+  - ⚠ FAKAT boşluğu RAPORLAMAK BLOĞU KAPATMAZ — bkz. §0-B-2.
+```
+
+### 0-B-2. X3-B04 COMPLETION CORRECTION (owner kararı 2026-08-03)
+
+**Bu bölüm, §0-B-1'in "bloğu ANALYSIS_DELIVERED ile kapat" ifadesini SUPERSEDE EDER.**
+
+```text
+KURAL:
+Bilinen review-authority boşluğu YALNIZ RAPORLANARAK ANALYSIS_DELIVERED ile
+KAPATILAMAZ.
+
+C2 review-authority extension MERGE EDİLMEMİŞSE:
+  X3-B04 DURUMU      : WAITING_FOR_PREDECESSOR
+  BLOK TAMAMLANMIŞ   : SAYILMAZ
+  X3-B05'E GEÇİLMEZ  : sıra ATLANMAZ, blok sayacı ARTMAZ
+
+C2 EXTENSION MERGE EDİLDİKTEN SONRA X3-B04:
+  - frozen primitive'i YALNIZ TÜKETİR (kendi authority modelini KURMAZ),
+  - TÜM review mutation'larını bu primitive'e BAĞLAR,
+  - AYRI review audit kayıtlarını DOĞRULAR (madde 7),
+  - şu regresyonları KİLİTLER:
+      · unauthorized tenant user  → reddedilir (madde 3)
+      · authorized reviewer       → geçer
+      · tenant isolation          → korunur
+      · review-does-not-grant-promotion (madde 2)
+
+B04 ANCAK bunlar tamamlanıp CI PASS ve PR MERGE edildikten sonra
+RUNTIME_VERIFIED sayılır.
+```
+
+**AÇIK KOORDİNASYON KALEMİ (kontrol sayfası tespiti, VERIFIED 2026-08-03 / main d70d81af):**
+
+```text
+"C2 review-authority extension" HENÜZ MEVCUT DEĞİLDİR ve HİÇBİR SAYFANIN RATİFİYE
+BLOK LİSTESİNDE YER ALMAZ:
+  - C2 STATUS = ENGINEERING_COMPLETE (8/8, B01–B08)
+  - C2'nin sekiz bloğunda review-authority işi YOK (grep → 0 eşleşme)
+  - client-workspace-command-authority.ts'te REVIEW/APPROVE komutu YOK (grep → 0)
+
+Bu extension'ı üretecek sayfa/blok OWNER TARAFINDAN BELİRLENMEMİŞTİR.
+X3 bunu KENDİSİ üretemez (C2 tek writer, madde 4 + cross-lane rule).
+X3-B04 bu extension merge edilene kadar WAITING_FOR_PREDECESSOR'da kalır;
+bu bir X3 kusuru DEĞİL, bekleyen bir cross-lane teslimattır.
+→ DISPOSITION MASTER PLANA GÖNDERİLİR; owner kararı bekler.
 ```
 
 ## 1-A. BLOK YAPISI VE DEĞİŞTİRİLEMEZ SIRA
@@ -225,7 +267,7 @@ FORBIDDEN
 | **X3-B01** | Fresh doğrulama — sağlam kontrollerin current main'de geçerliliği (regresyon kilidi) |
 | **X3-B02** | C2-R5 primitive **TÜKETİMİ** — X3 kendi authority modelini KURMAZ |
 | **X3-B03** | CIP-1 sertleştirme — per-token throttle · multi-instance limiter · XFF güven sınırı |
-| **X3-B04** | CR-1 — **OWNER RATIFIED 2026-08-03** (§0-B); implementation yetkisi VAR. Madde 8 önceden tetiklendi: review-şekilli kanonik yetki YOK (§0-B-1) → boşluk kanıtlanırsa politika UYDURULMAZ, raporlanır |
+| **X3-B04** | CR-1 — **OWNER RATIFIED 2026-08-03** (§0-B); implementation yetkisi VAR. Madde 8 önceden tetiklendi: review-şekilli kanonik yetki YOK (§0-B-1). ⚠ **COMPLETION CORRECTION (§0-B-2):** boşluğu raporlamak bloğu KAPATMAZ — C2 review-authority extension merge edilene kadar `WAITING_FOR_PREDECESSOR`, **B05'e GEÇİLMEZ**. Extension geldikten sonra primitive tüketilir, tüm review mutation'ları bağlanır, ayrı audit doğrulanır, dört regresyon kilitlenir; **ancak CI PASS + PR merge sonrası** `RUNTIME_VERIFIED` |
 | **X3-B05** | CIP-2 — kabul-edilen-tasarım notu; değişiklik yalnız owner isterse |
 | **X3-B06** | Promote hattı bütünlüğü — `promotedRef` idempotency · atomic per-field tx · audit · #1933 kuralı regresyonu |
 | **X3-B07** | Intake testleri — public/review/promotion kapsamı |
