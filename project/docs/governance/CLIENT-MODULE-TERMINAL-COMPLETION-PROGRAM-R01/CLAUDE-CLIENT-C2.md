@@ -626,8 +626,34 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
       b03 19/19 + r4 45/45 PASS.
       CROSS-LANE: X1 CN-1 WIRING UNBLOCKED.
       PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
-- [ ] **B07** `isCurrent` artık inert değil; primary/current invariantları test edilmiş;
+- [x] **B07** `isCurrent` artık inert değil; primary/current invariantları test edilmiş;
       rollback sınırları belgelenmiş; I05/I06/I08 **yapılmamış** (WAVE 4)
+      *(2026-08-03 — ARC-07 mühendislik durumu fresh main `5ff6c076` üzerinde kanıtla
+      kapatıldı, ürün diff'i SIFIR:
+      (1) `isCurrent` İNERT DEĞİL — çözüm outcome-gate kanıtıyla "archive yolu":
+      `client-address.service.ts` archive `isCurrent=false + isPrimary=false` yazar
+      (satır ~528, I02 #2096), restore `true` yazar, create HER ZAMAN `true` (DTO'dan
+      alınmaz), liste `status` filtresi isCurrent'tan türer; charter §49 "inert" kaydı
+      bu tepede BAYAT — I02 ile kapanmış.
+      (2) Invariantlar: çok-current İZİNLİ, `isPrimary && !isCurrent` YASAK (INV-01/02
+      tek koşulun iki ifadesi) — lifecycle modülü + adres suite 9 suite/187 PASS.
+      (3) Resolver: çağıran `isCurrent=true` ön-filtreli + `isPrimary desc` kararlı
+      seçim — `OBJECT SELECTION (isPrimary) ≠ LIFECYCLE STATE (isCurrent)` korunur.
+      (4) Flat alan yazımı DURDURULMADI (D05 Stage 1 aynen); Stage 3 azaltımı = I08 → WAVE 4.
+      (5) I04 PRODUCTION-EVIDENCE HAZIRLIĞI (WAVE 4 dry-run girdisi; D07: production
+      kanıtı zorunlu, Docker `hukuk_db` production sayımı olarak ATIF EDİLEMEZ):
+      dry-run öncesi sayımlar — (a) aktif client sayısı ve flat adres alanı dolu satır
+      sayısı, (b) ClientAddress satır sayısı / client başına dağılım, (c) flat↔relational
+      içerik drift kovası (eşit / farklı / yalnız-flat / yalnız-relational),
+      (d) çok-primary ihlali sayısı (beklenen 0), (e) `isPrimary && !isCurrent` ihlali
+      (beklenen 0). Bu sayımlar apply ÖNCESİ alınır ve run provenance ile kaydedilir (D04).
+      (6) ROLLBACK SINIRLARI: I06 backfill satır-bazlı ve idempotent-eligibility ile
+      ilerler; geri alma sınırı = tek satırın relational yazımı (flat alanlar Stage 1'de
+      KAYNAK otorite kaldığı için forward-repair tercih edilir; toplu revert YOK);
+      duplicate/conflict kovaları apply DIŞI bırakılır ve owner'a raporlanır (D04).
+      I05/I06/I08 YAPILMADI → ACTIVATION DEBT resmen ÜRETİLDİ: C2-PROD-ACTIVATION
+      (owner koşullu yetkisi HENÜZ YOK — §5).
+      PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
 - [ ] **B08** yetkisiz mutasyon (core + adres) fail-closed: yazım YOK, audit YOK,
       403 + stabil reasonCode; ham PII sızmıyor; audit-fail → rollback
 - [ ] Her blok: CI required checks yeşil · mergeability CLEAN · squash-merge · main sync ·

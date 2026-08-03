@@ -770,8 +770,16 @@ C1 ENGINEERING FOLLOW-UP: FIND-C4 (version/CAS) — activation/WAVE-4 borcu DEĞ
                           + XL-3 imza kısıtı nedeniyle aynı migration owner altında SERİ
                           paketlenecek (C2 koordinasyonlu engineering follow-up; buradaki
                           mevcut owner/coupling kaydı aynen korunur).
-C2 STATUS:                IN PROGRESS — C2-B06 RUNTIME_VERIFIED (2026-08-03; notification
-                          authority primitive CANONICAL+FROZEN, §13/11 madde 6 eşiği;
+C2 STATUS:                IN PROGRESS — C2-B07 RUNTIME_VERIFIED (2026-08-03; ARC-07
+                          mühendislik: isCurrent inert DEĞİL — archive/restore yazıyor
+                          (I02 #2096, charter §49 kaydı bayat); invariantlar + resolver
+                          adres suite 187/187; I04 kanıt hazırlığı + rollback sınırları
+                          C2 sayfası B07 kaydında; I05/I06/I08 YAPILMADI → ACTIVATION
+                          DEBT üretildi: C2-PROD-ACTIVATION, koşullu yetki YOK)
+C2 ACTIVATION DEBT:       C2-PROD-ACTIVATION — ARC-07 I05 dry-run → I06 apply → I08
+                          legacy-flat reduction (WAVE 4, AYNI C2 sayfası; owner koşullu
+                          yetkisi HENÜZ VERİLMEDİ — master plan §13 tablosu)
+                          (B06: notification primitive CANONICAL+FROZEN, §13/11 madde 6;
                           b06 spec 31/31 + b03 19/19 + r4 45/45 PASS)
                           (B05: disposition-only,
                           ürün diff SIFIR — OWN-10/12/15 repository kanıtıyla sınıflandı:
@@ -786,7 +794,7 @@ C2 CROSS-LANE:            X3 UNBLOCKED — intake-link authority primitive CANON
                           X1 CN-1 WIRING UNBLOCKED — notification primitive CANONICAL +
                           FROZEN (NOTIFICATION_SEND_EMAIL/SEND_SMS/BULK_EMAIL/RESEND,
                           §13/11 madde 6 eşiği; X1 kendi rol politikasını üretmez).
-C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 6 (B01–B06)
+C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 7 (B01–B07)
                           (C2-B01 = R3 reconcile-only, fresh main 573ea61a: policy-modül
                            yeri + reactivate-eşdeğer elevated eşiği koddan kanıtlandı,
                            r3 spec 12/12 PASS, ürün diff'i SIFIR, C1-B01 kanıtı devralındı
