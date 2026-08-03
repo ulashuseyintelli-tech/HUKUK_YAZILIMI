@@ -10115,6 +10115,354 @@ test('unregistered control-plane diff retains the generic hard stop', () => {
   );
 });
 
+function clientX1BootstrapChanges(stage) {
+  return stage.changedPaths.map((change) => ({ ...change }));
+}
+
+function createClientX1SemanticAuthorityFixture(t, options = {}) {
+  const binding = coordination.CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const target = binding.materializationPr;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'client-x1-sa-bootstrap-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  runFixtureGit(['config', 'core.autocrlf', 'false'], root);
+  runFixtureGit(['config', 'core.ignorecase', 'false'], root);
+
+  writeFixtureRepoFile(
+    root,
+    'project/scripts/governance-coordination.cjs',
+    `// ${binding.taskId}\n`,
+  );
+  writeFixtureRepoFile(
+    root,
+    'project/scripts/governance-coordination.test.cjs',
+    '// exact bootstrap tests\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/README.md',
+    '# Governance fixture\n',
+  );
+  const predecessor = commitFixture(root, 'canonical CLIENT X1 bootstrap binding');
+
+  if (options.staleBinding) {
+    writeFixtureRepoFile(
+      root,
+      'project/scripts/governance-coordination.test.cjs',
+      '// exact bootstrap tests\n// later control-plane drift\n',
+    );
+    commitFixture(root, 'drift the bootstrap guard');
+  }
+
+  if (options.caseCollision) {
+    const collisionPath = target.semanticAuthority.path.replace(
+      'CLIENT-X1-GOV-RECON-R02-SA01.md',
+      'client-x1-gov-recon-r02-sa01.md',
+    );
+    const collisionBlob = runFixtureGit(['hash-object', '-w', '--stdin'], root, {
+      input: 'case collision\n',
+    });
+    runFixtureGit(
+      ['update-index', '--add', '--cacheinfo', `100644,${collisionBlob},${collisionPath}`],
+      root,
+    );
+    runFixtureGit(['commit', '--quiet', '-m', 'add case-colliding base path'], root);
+  }
+
+  if (options.existingTarget) {
+    writeFixtureRepoFile(root, target.semanticAuthority.path, 'existing authority\n');
+    commitFixture(root, 'pre-existing semantic authority target');
+  }
+
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+  const expectedContent = coordination.buildClientX1SemanticAuthorityBootstrapContent(
+    base,
+    predecessor,
+  );
+  const headContent = options.contentTransform
+    ? options.contentTransform(expectedContent)
+    : expectedContent;
+
+  let head;
+  if (options.existingTarget) {
+    writeFixtureRepoFile(root, target.semanticAuthority.path, headContent);
+    head = commitFixture(root, 'attempt semantic authority overwrite');
+  } else if (options.mode || options.caseCollision) {
+    const mode = options.mode || '100644';
+    const objectId =
+      mode === '160000'
+        ? predecessor
+        : runFixtureGit(['hash-object', '-w', '--stdin'], root, {
+            input: headContent,
+          });
+    runFixtureGit(
+      ['update-index', '--add', '--cacheinfo', `${mode},${objectId},${target.semanticAuthority.path}`],
+      root,
+    );
+    const tree = runFixtureGit(['write-tree'], root);
+    head = runFixtureGit(
+      ['commit-tree', tree, '-p', base, '-m', 'materialize semantic authority'],
+      root,
+    );
+  } else {
+    writeFixtureRepoFile(root, target.semanticAuthority.path, headContent);
+    if (options.extraPath) {
+      writeFixtureRepoFile(root, options.extraPath, 'scope expansion\n');
+    }
+    head = commitFixture(root, 'materialize semantic authority');
+  }
+
+  return { root, base, head, predecessor, binding, target, expectedContent };
+}
+
+test('CLIENT X1 bootstrap control-plane stage accepts only the owner-pinned M/M tuple', () => {
+  const binding = coordination.CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const changes = clientX1BootstrapChanges(binding.bindingPr);
+  assert.deepEqual(
+    coordination.classifyPrChangeSet(changes, {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.taskId },
+  );
+  assert.deepEqual(
+    coordination.validateClientX1SemanticAuthorityBootstrapControlPlaneScope({
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+      changes,
+      taskId: binding.taskId,
+      mode: binding.bindingPr.mode,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.taskId },
+  );
+  assert.equal(binding.reusable, false);
+  assert.equal(binding.singleUse, true);
+  assert.equal(binding.productionActivation, 'NOT_AUTHORIZED');
+  assert.equal(binding.standingAuthority, 'PROHIBITED');
+});
+
+test('CLIENT X1 bootstrap control-plane stage rejects wrong base, branch and extra path', () => {
+  const binding = coordination.CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const changes = clientX1BootstrapChanges(binding.bindingPr);
+  for (const overrides of [
+    { base: 'f'.repeat(40) },
+    { headRef: `${binding.bindingPr.headRef}-other` },
+    { changes: [...changes, { status: 'M', path: 'project/docs/governance/decision-log.md' }] },
+  ]) {
+    expectCode(
+      () => coordination.validateClientX1SemanticAuthorityBootstrapControlPlaneScope({
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+        changes,
+        taskId: binding.taskId,
+        mode: binding.bindingPr.mode,
+        ...overrides,
+      }),
+      'CLIENT_X1_SA_BOOTSTRAP_CONTROL_PLANE_SCOPE_MISMATCH',
+    );
+  }
+});
+
+test('CLIENT X1 semantic-authority bootstrap accepts the exact pinned file once', (t) => {
+  const fixture = createClientX1SemanticAuthorityFixture(t);
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: fixture.target.headRef,
+    cwd: fixture.root,
+  });
+  assert.deepEqual(result, {
+    mode: fixture.target.mode,
+    taskId: fixture.binding.targetTaskId,
+  });
+  const payload = coordination.clientX1SemanticAuthorityPayload(
+    fixture.base,
+    fixture.predecessor,
+  );
+  assert.equal(payload.recordId, 'CLIENT-X1-GOV-RECON-R02-SA01');
+  assert.equal(payload.executionGrantId, 'CLIENT-X1-GOV-RECON-R02-EG01');
+  assert.equal(payload.requestId, 'GOV-REQ-20260803-CLIENT-X1-GOV-RECON-R02');
+  assert.equal(payload.ownerDecision, 'RATIFIED — CHARTER §48 CONTROLS');
+  assert.equal(payload.productionActivation, 'NOT_AUTHORIZED');
+  assert.equal(payload.standingAuthority, 'PROHIBITED');
+  assert.equal(payload.reusableAuthority, 'PROHIBITED');
+});
+
+for (const [label, oldValue, newValue] of [
+  ['program', 'CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01', 'OTHER-PROGRAM'],
+  ['task', 'CODEX-CLIENT-X1-GOVERNANCE-RECONCILIATION-R02', 'OTHER-TASK'],
+  ['SA id', 'CLIENT-X1-GOV-RECON-R02-SA01', 'CLIENT-X1-GOV-RECON-R02-SA99'],
+  ['EG id', 'CLIENT-X1-GOV-RECON-R02-EG01', 'CLIENT-X1-GOV-RECON-R02-EG99'],
+  ['request id', 'GOV-REQ-20260803-CLIENT-X1-GOV-RECON-R02', 'GOV-REQ-20260803-OTHER'],
+  ['owner decision', 'RATIFIED — CHARTER §48 CONTROLS', 'OWNER DECISION CHANGED'],
+  ['semantic payload', 'CLOSED / CANONICAL / VERIFIED ONCE', 'NOT PERFORMED'],
+  ['evidence SHA', 'f732004f7383426dc1a8afc71e5f85666c754c33', 'f'.repeat(40)],
+  ['production activation', 'NOT_AUTHORIZED', 'AUTHORIZED'],
+  ['standing authority', 'PROHIBITED', 'ALLOWED'],
+]) {
+  test(`CLIENT X1 semantic-authority bootstrap rejects wrong ${label}`, (t) => {
+    const fixture = createClientX1SemanticAuthorityFixture(t, {
+      contentTransform: (content) => content.replace(oldValue, newValue),
+    });
+    expectCode(
+      () => coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: fixture.target.headRef,
+        cwd: fixture.root,
+      }),
+      'FILE_CREATION_HASH_MISMATCH',
+    );
+  });
+}
+
+test('CLIENT X1 semantic-authority bootstrap rejects a mismatched payload hash', (t) => {
+  const fixture = createClientX1SemanticAuthorityFixture(t, {
+    contentTransform: (content) =>
+      content.replace(/payloadSha256 : [0-9a-f]{64}/, `payloadSha256 : ${'0'.repeat(64)}`),
+  });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    'FILE_CREATION_HASH_MISMATCH',
+  );
+});
+
+test('CLIENT X1 semantic-authority bootstrap rejects extra files and other-task consumption', (t) => {
+  const fixture = createClientX1SemanticAuthorityFixture(t, {
+    extraPath: 'project/docs/governance/decision-log.md',
+  });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  expectCode(
+    () => coordination.validateClientX1SemanticAuthorityMaterializationScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      changes: clientX1BootstrapChanges(fixture.target),
+      taskId: 'OTHER-TASK',
+      mode: fixture.target.mode,
+      cwd: fixture.root,
+    }),
+    'CLIENT_X1_SA_BOOTSTRAP_SCOPE_MISMATCH',
+  );
+});
+
+test('CLIENT X1 semantic-authority bootstrap rejects wrong path, rename, copy and delete', () => {
+  const binding = coordination.CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const target = binding.materializationPr;
+  const path = target.semanticAuthority.path;
+  for (const changes of [
+    [{ status: 'A', path: path.toLowerCase() }],
+    [{ status: 'A', path: `${path}/../${path.split('/').at(-1)}` }],
+    [{ status: 'R', oldPath: `${path}.old`, path }],
+    [{ status: 'C', oldPath: `${path}.source`, path }],
+    [{ status: 'D', path }],
+  ]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(changes, { headRef: target.headRef }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('CLIENT X1 semantic-authority bootstrap rejects existing target and second use', (t) => {
+  const existing = createClientX1SemanticAuthorityFixture(t, { existingTarget: true });
+  expectCode(
+    () => coordination.validateClientX1SemanticAuthorityMaterializationScope({
+      base: existing.base,
+      head: existing.head,
+      headRef: existing.target.headRef,
+      changes: clientX1BootstrapChanges(existing.target),
+      taskId: existing.binding.targetTaskId,
+      mode: existing.target.mode,
+      cwd: existing.root,
+    }),
+    'FILE_CREATION_TARGET_EXISTS',
+  );
+
+  const consumed = createClientX1SemanticAuthorityFixture(t);
+  expectCode(
+    () => coordination.validateClientX1SemanticAuthorityMaterializationScope({
+      base: consumed.head,
+      head: consumed.head,
+      headRef: consumed.target.headRef,
+      changes: clientX1BootstrapChanges(consumed.target),
+      taskId: consumed.binding.targetTaskId,
+      mode: consumed.target.mode,
+      cwd: consumed.root,
+    }),
+    'FILE_CREATION_TARGET_EXISTS',
+  );
+});
+
+test('CLIENT X1 semantic-authority bootstrap rejects stale control-plane consumption', (t) => {
+  const fixture = createClientX1SemanticAuthorityFixture(t, { staleBinding: true });
+  expectCode(
+    () => coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    'CLIENT_X1_SA_BOOTSTRAP_STALE',
+  );
+});
+
+for (const [label, options, code] of [
+  ['symlink', { mode: '120000' }, 'FILE_CREATION_MODE_FORBIDDEN'],
+  ['submodule', { mode: '160000' }, 'FILE_CREATION_MODE_FORBIDDEN'],
+  ['case collision', { caseCollision: true }, 'FILE_CREATION_CASE_COLLISION'],
+]) {
+  test(`CLIENT X1 semantic-authority bootstrap rejects ${label}`, (t) => {
+    const fixture = createClientX1SemanticAuthorityFixture(t, options);
+    expectCode(
+      () => coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: fixture.target.headRef,
+        cwd: fixture.root,
+      }),
+      code,
+    );
+  });
+}
+
+test('generic EXACT_FILE_CREATION remains execution-grant-only', () => {
+  const binding = coordination.CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const request = clone(coordination.makeSelfTestRequest().request);
+  request.requestId = 'GOV-REQ-20260803-CLIENT-X1-SA-BOOTSTRAP-TEST';
+  request.operation.type = 'EXACT_FILE_CREATION';
+  request.operation.targetFile = binding.materializationPr.semanticAuthority.path;
+  request.operation.recordIdentity = binding.targetTaskId;
+  request.operation.anchor = binding.materializationPr.semanticAuthority.recordId;
+  request.operation.expectedOldValue = 'ABSENT';
+  request.operation.newValue = 'semantic authority candidate';
+  request.operation.expectedResultSha256 = coordination.sha256(request.operation.newValue);
+  request.declaredTargetAllowlist = [request.operation.targetFile];
+  refingerprint(request);
+  expectCode(
+    () => coordination.validateRequestObject(request),
+    'FILE_CREATION_TARGET_FORBIDDEN',
+  );
+});
+
 test('production static guards keep the generic route data-driven', () => {
   const source = fs.readFileSync(path.join(__dirname, 'governance-coordination.cjs'), 'utf8');
   assert.ok((source.match(/validateExactFileCreation\(\{/g) || []).length >= 1);
