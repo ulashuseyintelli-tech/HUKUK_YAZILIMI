@@ -937,7 +937,15 @@ C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B)
                           sıfır-diff kanıtı + paketin §13/5-10 kapsama doğrulaması).
 C3 ACTIVATION DEBT:       KOŞULLU — yalnız B01..B07'den biri migration üretirse doğar.
                           C3-PROD-ACTIVATION koşullu yetkisi: NOT YET GRANTED.
-X3 STATUS:                NOT STARTED — SAYFA AÇILABİLİR (owner kararı 2026-08-03)
+X3 STATUS:                IN PROGRESS — X3-B01 RUNTIME_VERIFIED (2026-08-03): sağlam
+                          intake güvenlik kontrolleri fresh main'de koddan doğrulandı ve
+                          required manifest'e bağlandı. 256-bit raw token + sha256-only
+                          persistence · generic-invalid existence-oracle direnci · link-
+                          derived tenant/case/client bağlamı + mass-assignment reddi ·
+                          atomic use-count · scope/honeypot/ipHash · public yüzeyde yalnız
+                          submission/field yazımı · üç promotion yolunda canonical write
+                          öncesi approver-eligibility kapısı. Odaklı suite 70/70; full
+                          client-portal manifest 62 suite / 942 test PASS.
                           Kapı 1 (C2-R5 primitive CANONICAL+FROZEN): KARŞILANDI (C2-B03)
                           Kapı 2 (X1 notification-dispatcher SHAPE-FROZEN / XL-4):
                                  YÜRÜRLÜKTE — X1'in KAPANMASI şart DEĞİL
@@ -946,9 +954,9 @@ X3 STATUS:                NOT STARTED — SAYFA AÇILABİLİR (owner kararı 202
                           GRANT: İÇİNDE — dört intake modülü de TERMINAL-COMPLETION-R01
                           allowedPathRoots'ta (#2113). Sayfadaki eski "GRANT EXPANSION
                           REQUIRED" ifadesi BAYATTI ve düzeltildi.
-X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 0
+X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 1 (B01)
                           (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
-X3 NEXT ELIGIBLE:         X3-B01 — fresh doğrulama / regresyon kilidi (HEMEN başlayabilir)
+X3 NEXT ELIGIBLE:         X3-B02 — C2-R5 frozen intake-link authority primitive tüketimi
 X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIED 2026-08-03**.
                           Kanonik kayıt: decision-log.md
                           (CLIENT-X3-CR1-REVIEW-PROMOTE-SEPARATION-RATIFIED).
@@ -978,13 +986,11 @@ X3-B04 COMPLETION:        ⚠ COMPLETION CORRECTION (owner 2026-08-03) — boşl
                           (unauthorized tenant user · authorized reviewer · tenant
                           isolation · review-does-not-grant-promotion).
                           ANCAK CI PASS + PR MERGE sonrası RUNTIME_VERIFIED sayılır.
-OPEN COORDINATION ITEM:   "C2 review-authority extension" HENÜZ YOK ve HİÇBİR SAYFANIN
-                          RATİFİYE BLOK LİSTESİNDE DEĞİL (VERIFIED d70d81af):
-                          C2 = ENGINEERING_COMPLETE 8/8; sekiz bloğunda review-authority
-                          işi YOK; client-workspace-command-authority.ts'te REVIEW/APPROVE
-                          komutu YOK. Bu extension'ı ÜRETECEK SAYFA/BLOK OWNER TARAFINDAN
-                          BELİRLENMEMİŞTİR. X3 kendisi üretemez (C2 tek writer + CR-1
-                          madde 4). → OWNER DISPOSITION BEKLİYOR.
+X3-B04 PREDECESSOR:       KARŞILANDI — C2 review-authority extension #2146 / c7082313 ile
+                          merge edildi ve shape FROZEN: INTAKE_REVIEW_CLAIM/
+                          FIELD_DECIDE/SUBMISSION_REJECT · bağımsız
+                          isIntakeReviewAuthorized sinyali · ayrı
+                          CLIENT_INTAKE_REVIEW_COMMAND audit action. X3-B04 yalnız tüketir.
 X2 STATUS:                NOT STARTED — KAPI KAPALI (teknik).
                           X2 ← X1 KORUNUR: portal/client-financial-disclosure-portal.
                           service.ts:8 + portal.controller.ts:22 + portal.module.ts:5
