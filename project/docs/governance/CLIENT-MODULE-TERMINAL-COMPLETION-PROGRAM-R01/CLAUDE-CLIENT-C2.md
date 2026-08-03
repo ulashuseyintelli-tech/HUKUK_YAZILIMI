@@ -598,7 +598,21 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
       capability türetmez; POA içerik/kapsam semantiği ve capability binding C3'e
       bırakıldı. Kanıt: client-poa-upload-command 8/8 + r4 45/45 PASS (fresh main
       ae6ffd2b). PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
-- [ ] **B05** OWN-10/12/15 kalemleri ratifiye/deferred olarak **exact** sınıflandırılmış
+- [x] **B05** OWN-10/12/15 kalemleri ratifiye/deferred olarak **exact** sınıflandırılmış
+      *(2026-08-03 — REPOSITORY KANITIYLA SINIFLANDIRMA (master-triage-register.md
+      §OWN satırları + decision-log.md:319/321 "OWN-10/12/13/14/15: AÇIK/DOKUNULMADI"):
+      UYGULANAN RATİFİYE KALEM: 0 (hiçbiri ratifiye değil — gerekçesiz "tamamlandı"
+      YAZILMADI).
+      OWNER-DEFERRED (exact liste):
+      · OWN-10 — DB remediation (geçersiz-checksum pasif kayıtlar): DB-write
+        owner-gated; ayrıca C2 migration/DB yazamaz — çifte kapı.
+      · OWN-12 — RISKY Fork A-D (ApiClient birleştirme · envelope normalize ·
+        modal konsolidasyon · backend envelope): fork sırası owner kararı bekliyor
+        (yüksek blast-radius).
+      · OWN-15 — ClientInfoRequest→ClientIntake adapter ("Yol1") + Intel/Intake
+        capability+audit gate: owner resmi onayı bekliyor; intake tarafı ayrıca
+        X3 lane'iyle koordinasyon gerektirir.
+      Ürün diff'i SIFIR. PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
 - [ ] **B06** notification/workspace primitive canonical + **dondurulmuş**; X1 tüketebilir
 - [ ] **B07** `isCurrent` artık inert değil; primary/current invariantları test edilmiş;
       rollback sınırları belgelenmiş; I05/I06/I08 **yapılmamış** (WAVE 4)
