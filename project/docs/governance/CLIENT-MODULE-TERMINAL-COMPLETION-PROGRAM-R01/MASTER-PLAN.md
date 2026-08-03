@@ -954,7 +954,7 @@ C3 ACTIVATION DEBT:       DOĞDU — C3-PROD-ACTIVATION (WAVE 4, AYNI C3 sayfas�
                           NOT: K5.5 "derhal kapalı" ve K9.4 default'ları production'da
                           ancak APPLY ile etkinleşir (ENGINEERING_COMPLETE ≠
                           PRODUCTION_ACTIVE).
-X3 STATUS:                IN PROGRESS — X3-B01..B03 RUNTIME_VERIFIED (2026-08-03).
+X3 STATUS:                IN PROGRESS — X3-B01..B04 RUNTIME_VERIFIED (2026-08-03).
                           B01: sağlam intake güvenlik kontrolleri fresh main'de koddan
                           doğrulandı ve required manifest'e bağlandı. 256-bit raw token +
                           sha256-only persistence · generic-invalid existence-oracle
@@ -982,6 +982,18 @@ X3 STATUS:                IN PROGRESS — X3-B01..B03 RUNTIME_VERIFIED (2026-08-
                           allowlist'i ile kabul edilir. Aynı güvenli IP sourceMeta ipHash'e
                           taşınır. B03 focused 2 suite / 17 test; full client-portal manifest
                           69 suite / 1029 test PASS (C3-B04 #2155 sonrası fresh main).
+                          B04: CR-1 runtime wiring kapatıldı. Frozen C2 review komutları
+                          claim/reject/bulk/field mutation'larının tamamında controller
+                          sınırında tüketilir. Bağımsız review sinyali mevcut canonical
+                          PermissionGrant substrate'indeki exact `client.intake.review`
+                          GLOBAL capability'sinden beslenir: active tenant actor zorunlu,
+                          explicit DENY öncelikli, rol adı (ADMIN dahil) tek başına yetki
+                          vermez. Hedef clientId yalnız tenant-bound submission/field
+                          projection'ından alınır; başarılı komut ayrı
+                          `CLIENT_INTAKE_REVIEW_COMMAND` audit üretir. Review grant'i
+                          promotion `isApproverEligible` kapısını geçmez ve promote yetkisi
+                          doğurmaz. B04 focused 4 suite / 91 test; full client-portal
+                          manifest 73 suite / 1106 test PASS (C3-B07 #2159 sonrası fresh main).
                           Kapı 1 (C2-R5 primitive CANONICAL+FROZEN): KARŞILANDI (C2-B03)
                           Kapı 2 (X1 notification-dispatcher SHAPE-FROZEN / XL-4):
                                  YÜRÜRLÜKTE — X1'in KAPANMASI şart DEĞİL
@@ -990,9 +1002,9 @@ X3 STATUS:                IN PROGRESS — X3-B01..B03 RUNTIME_VERIFIED (2026-08-
                           GRANT: İÇİNDE — dört intake modülü de TERMINAL-COMPLETION-R01
                           allowedPathRoots'ta (#2113). Sayfadaki eski "GRANT EXPANSION
                           REQUIRED" ifadesi BAYATTI ve düzeltildi.
-X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 3 (B01, B02, B03)
+X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 4 (B01, B02, B03, B04)
                           (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
-X3 NEXT ELIGIBLE:         X3-B04 — frozen C2 review-authority extension tüketimi
+X3 NEXT ELIGIBLE:         X3-B05 — CIP-2 kabul-edilen-tasarım notu
 X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIED 2026-08-03**.
                           Kanonik kayıt: decision-log.md
                           (CLIENT-X3-CR1-REVIEW-PROMOTE-SEPARATION-RATIFIED).
