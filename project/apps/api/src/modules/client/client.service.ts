@@ -1589,7 +1589,9 @@ export class ClientService {
         // P0.7: gender (Excel import row 5 gönderiyor) + detsisNo create'te map'lenmiyordu → sessiz veri kaybı.
         gender: data.gender,
         detsisNo: data.detsisNo,
-        canCollect: data.canCollect ?? true,
+        // C3-B05 (§13/9 K9.4): POA'sız kayıtta ahzu kabza varsayılanı FALSE — efektif
+        // yetki her durumda geçerli POA'ya bağlıdır (client-poa-capability).
+        canCollect: data.canCollect ?? false,
         canWaive: data.canWaive ?? false,
         canSettle: data.canSettle ?? false,
         canRelease: data.canRelease ?? false,
