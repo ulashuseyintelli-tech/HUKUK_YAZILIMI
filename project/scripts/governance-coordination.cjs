@@ -534,6 +534,73 @@ const MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01 = Object.freeze({
     }),
   ]),
 });
+const CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01 = Object.freeze({
+  taskId: 'CLIENT-X1-SEMANTIC-AUTHORITY-BOOTSTRAP-R01',
+  programId: 'CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01',
+  targetTaskId: 'CODEX-CLIENT-X1-GOVERNANCE-RECONCILIATION-R02',
+  workspaceModule: 'CLIENT / SHARED_CONTROL_PLANE',
+  ownerDecision: 'RATIFIED — CHARTER §48 CONTROLS',
+  reusable: false,
+  singleUse: true,
+  productionActivation: 'NOT_AUTHORIZED',
+  standingAuthority: 'PROHIBITED',
+  bindingPr: Object.freeze({
+    mode: 'CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01',
+    baseSha: 'f732004f7383426dc1a8afc71e5f85666c754c33',
+    headRef: 'codex/client-x1-semantic-authority-bootstrap-r01',
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.test.cjs',
+      }),
+    ]),
+  }),
+  materializationPr: Object.freeze({
+    mode: 'CLIENT_X1_GOV_RECON_R02_SEMANTIC_AUTHORITY_MATERIALIZATION_R01',
+    headRef: 'codex/client-x1-gov-recon-r02-semantic-authority',
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'A',
+        path:
+          'project/docs/governance/CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/CLIENT-X1-GOV-RECON-R02-SA01.md',
+      }),
+    ]),
+    semanticAuthority: Object.freeze({
+      kind: 'SEMANTIC_AUTHORITY',
+      path:
+        'project/docs/governance/CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/CLIENT-X1-GOV-RECON-R02-SA01.md',
+      recordId: 'CLIENT-X1-GOV-RECON-R02-SA01',
+    }),
+    executionGrant: Object.freeze({
+      kind: 'EXECUTION_GRANT',
+      path:
+        'project/docs/governance/coordination-execution-grants/CLIENT-X1-GOV-RECON-R02-EG01.md',
+      recordId: 'CLIENT-X1-GOV-RECON-R02-EG01',
+    }),
+    requestId: 'GOV-REQ-20260803-CLIENT-X1-GOV-RECON-R02',
+    executionTargets: Object.freeze([
+      'project/docs/governance/CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/CODEX-CLIENT-X1.md',
+      'project/docs/governance/CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/MASTER-PLAN.md',
+    ]),
+  }),
+  canonicalAuthority: Object.freeze({
+    path: 'project/docs/governance/CLIENT-GOVERNANCE-CHARTER.md',
+    section: '§48',
+    status: 'CONTROLS',
+  }),
+  authorizedSemantics: Object.freeze({
+    x1Engineering: 'ENGINEERING_COMPLETE / MERGED / CANONICAL',
+    x1RemainingProductWork: 'NONE',
+    u03TrackB: 'CLOSED / CANONICAL / PASS',
+    productionVerification: 'CLOSED / CANONICAL / VERIFIED ONCE',
+    currentFlags: 'DEFAULT OFF',
+    persistentFlagActivation: 'OWNER-GATED / NOT PERFORMED',
+  }),
+});
 const GITHUB_PLATFORM_GH02_CONTROL_PLANE_BINDING_R01 = Object.freeze({
   taskId: 'GITHUB-PLATFORM-BASELINE-GH02-CONTROL-PLANE-BINDING-R01',
   bindingPr: Object.freeze({
@@ -4334,6 +4401,292 @@ function hasExactChangeSet(changes, expectedChanges) {
   );
 }
 
+function clientX1SemanticAuthorityPayload(
+  base,
+  bindingCommitSha,
+  binding = CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01,
+) {
+  assertSha(base, 'clientX1.materializationBaseSha');
+  assertSha(bindingCommitSha, 'clientX1.controlPlaneBindingSha');
+  const target = binding.materializationPr;
+  return {
+    schemaVersion: 1,
+    recordType: 'SEMANTIC_AUTHORITY',
+    recordId: target.semanticAuthority.recordId,
+    programId: binding.programId,
+    taskId: binding.targetTaskId,
+    executionGrantId: target.executionGrant.recordId,
+    requestId: target.requestId,
+    ownerDecision: binding.ownerDecision,
+    canonicalAuthority: { ...binding.canonicalAuthority },
+    authorizedSemantics: { ...binding.authorizedSemantics },
+    executionTargets: [...target.executionTargets],
+    materialization: {
+      controlPlaneBaseSha: binding.bindingPr.baseSha,
+      controlPlaneBindingSha: bindingCommitSha,
+      baseSha: base,
+      evidenceSha: binding.bindingPr.baseSha,
+      headRef: target.headRef,
+      targetPath: target.semanticAuthority.path,
+      expectedHeadStatus: 'A',
+      contentHashAlgorithm: 'SHA-256',
+    },
+    singleUse: binding.singleUse,
+    staleReuse: 'PROHIBITED',
+    productionActivation: binding.productionActivation,
+    persistentFlagActivation: 'OWNER-GATED / NOT PERFORMED',
+    standingAuthority: binding.standingAuthority,
+    reusableAuthority: 'PROHIBITED',
+  };
+}
+
+function buildClientX1SemanticAuthorityBootstrapContent(
+  base,
+  bindingCommitSha,
+  binding = CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01,
+) {
+  const target = binding.materializationPr;
+  const payload = clientX1SemanticAuthorityPayload(base, bindingCommitSha, binding);
+  const payloadSha256 = sha256(canonicalize(payload));
+  const marker = buildAuthorityMarker(target.semanticAuthority);
+  return [
+    '# CLIENT X1 R02 Task-Bound Semantic Authority',
+    '',
+    `${marker} **${target.semanticAuthority.recordId} — task-bound semantic authority**`,
+    '',
+    `payloadSha256 : ${payloadSha256}`,
+    '',
+    '<!-- GOV_COORD_CLIENT_X1_R02_SEMANTIC_AUTHORITY_JSON_BEGIN -->',
+    '```json',
+    JSON.stringify(payload, null, 2),
+    '```',
+    '<!-- GOV_COORD_CLIENT_X1_R02_SEMANTIC_AUTHORITY_JSON_END -->',
+    '',
+  ].join('\n');
+}
+
+function validateClientX1SemanticAuthorityBootstrapContent(
+  content,
+  base,
+  bindingCommitSha,
+  binding = CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01,
+) {
+  const target = binding.materializationPr;
+  const expectedPayload = clientX1SemanticAuthorityPayload(
+    base,
+    bindingCommitSha,
+    binding,
+  );
+  const payload = extractStructuredJson(
+    content,
+    'client_x1_r02_semantic_authority',
+  );
+  if (canonicalize(payload) !== canonicalize(expectedPayload)) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_BINDING_MISMATCH',
+      'semantic-authority payload does not match the exact owner-ratified tuple',
+    );
+  }
+  const expectedDigest = sha256(canonicalize(expectedPayload));
+  if (countOccurrences(content, `payloadSha256 : ${expectedDigest}`) !== 1) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_CONTENT_HASH_MISMATCH',
+      'semantic-authority payload hash is absent, duplicated, or mismatched',
+    );
+  }
+  const marker = buildAuthorityMarker(target.semanticAuthority);
+  const semanticRows = content
+    .split(/\r?\n/)
+    .filter((line) =>
+      authorityMarkerLocatesSemanticRow(
+        line,
+        marker,
+        target.semanticAuthority.recordId,
+      ),
+    );
+  if (semanticRows.length !== 1 || countOccurrences(content, marker) !== 1) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_MARKER_INVALID',
+      'semantic-authority marker must identify exactly one canonical record',
+    );
+  }
+  const expectedContent = buildClientX1SemanticAuthorityBootstrapContent(
+    base,
+    bindingCommitSha,
+    binding,
+  );
+  if (content !== expectedContent) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_CONTENT_MISMATCH',
+      'semantic-authority file is not byte-exact',
+    );
+  }
+  return payload;
+}
+
+function findCanonicalClientX1SemanticAuthorityBootstrapCommit(
+  base,
+  cwd = REPO_ROOT,
+  binding = CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01,
+) {
+  const guardPath = 'project/scripts/governance-coordination.cjs';
+  const result = runGit(
+    ['log', '--reverse', '--format=%H', '-S', binding.taskId, base, '--', guardPath],
+    cwd,
+    { allowFailure: true },
+  );
+  const candidates =
+    result.status === 0
+      ? result.stdout.trim().split(/\r?\n/).filter(Boolean)
+      : [];
+  if (candidates.length !== 1) {
+    reject(
+      candidates.length === 0
+        ? 'CLIENT_X1_SA_BOOTSTRAP_PREDECESSOR_MISSING'
+        : 'CLIENT_X1_SA_BOOTSTRAP_PREDECESSOR_AMBIGUOUS',
+      'exactly one canonical control-plane binding introduction is required',
+    );
+  }
+  const predecessor = candidates[0];
+  if (!gitIsAncestor(predecessor, base, cwd)) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_PREDECESSOR_MISMATCH',
+      'control-plane binding must be an ancestor of the materialization base',
+    );
+  }
+  for (const { path: repoPath } of binding.bindingPr.changedPaths) {
+    if (
+      rootBootstrapGitBlobSha(predecessor, repoPath, cwd) !==
+      rootBootstrapGitBlobSha(base, repoPath, cwd)
+    ) {
+      reject(
+        'CLIENT_X1_SA_BOOTSTRAP_STALE',
+        `control-plane binding changed before consumption: ${repoPath}`,
+      );
+    }
+  }
+  return predecessor;
+}
+
+function assertClientX1BootstrapIdentitiesAbsentAtRef(
+  base,
+  cwd = REPO_ROOT,
+  binding = CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01,
+) {
+  const target = binding.materializationPr;
+  for (const identity of [
+    target.semanticAuthority.recordId,
+    target.executionGrant.recordId,
+    target.requestId,
+  ]) {
+    const result = runGit(
+      ['grep', '-F', '-n', '-e', identity, base, '--', 'project/docs/governance'],
+      cwd,
+      { allowFailure: true },
+    );
+    if (result.status === 0) {
+      reject(
+        'CLIENT_X1_SA_BOOTSTRAP_IDENTITY_EXISTS',
+        `${identity} already exists at the materialization base`,
+      );
+    }
+    if (result.status !== 1) {
+      reject(
+        'CLIENT_X1_SA_BOOTSTRAP_IDENTITY_SCAN_FAILED',
+        `canonical identity scan failed for ${identity}`,
+      );
+    }
+  }
+}
+
+function validateClientX1SemanticAuthorityBootstrapControlPlaneScope(options) {
+  const { base, headRef, changes, taskId, mode } = options;
+  const binding =
+    options.binding || CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const stage = binding.bindingPr;
+  if (
+    base !== stage.baseSha ||
+    headRef !== stage.headRef ||
+    taskId !== binding.taskId ||
+    (mode && mode !== stage.mode) ||
+    !hasExactChangeSet(changes, stage.changedPaths)
+  ) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_CONTROL_PLANE_SCOPE_MISMATCH',
+      'control-plane bootstrap requires the owner-pinned base, branch, task and M/M scope',
+    );
+  }
+  if (
+    binding.reusable !== false ||
+    binding.singleUse !== true ||
+    binding.productionActivation !== 'NOT_AUTHORIZED' ||
+    binding.standingAuthority !== 'PROHIBITED'
+  ) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_POLICY_INVALID',
+      'bootstrap must remain single-use, non-production, and non-standing',
+    );
+  }
+  return { mode: stage.mode, taskId: binding.taskId };
+}
+
+function validateClientX1SemanticAuthorityMaterializationScope(options) {
+  const { base, head, headRef, changes, taskId, mode, cwd = REPO_ROOT } = options;
+  const binding =
+    options.binding || CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const target = binding.materializationPr;
+  if (
+    headRef !== target.headRef ||
+    taskId !== binding.targetTaskId ||
+    (mode && mode !== target.mode) ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CLIENT_X1_SA_BOOTSTRAP_SCOPE_MISMATCH',
+      'semantic-authority materialization requires its exact task, branch and A-only scope',
+    );
+  }
+  if (
+    target.semanticAuthority.path === target.executionGrant.path ||
+    target.semanticAuthority.recordId === target.executionGrant.recordId
+  ) {
+    reject(
+      'AUTHORITY_REFERENCE_COLLISION',
+      'semantic authority and execution grant must remain distinct',
+    );
+  }
+  const predecessor = findCanonicalClientX1SemanticAuthorityBootstrapCommit(
+    base,
+    cwd,
+    binding,
+  );
+  const expectedContent = buildClientX1SemanticAuthorityBootstrapContent(
+    base,
+    predecessor,
+    binding,
+  );
+  validateExactFileCreation({
+    base,
+    head,
+    changes,
+    cwd,
+    operation: {
+      type: 'EXACT_FILE_CREATION',
+      targetFile: target.semanticAuthority.path,
+      expectedResultSha256: sha256(expectedContent),
+    },
+  });
+  assertClientX1BootstrapIdentitiesAbsentAtRef(base, cwd, binding);
+  const content = gitShow(head, target.semanticAuthority.path, cwd);
+  validateClientX1SemanticAuthorityBootstrapContent(
+    content,
+    base,
+    predecessor,
+    binding,
+  );
+  return { mode: target.mode, taskId: binding.targetTaskId };
+}
+
 function classifyPrChangeSet(changes, context = {}) {
   if (changes.length === 0) reject('EMPTY_PR_SCOPE', 'PR has no changes');
 
@@ -4406,6 +4759,58 @@ function classifyPrChangeSet(changes, context = {}) {
     return {
       mode: rootSaRecordScopingRepair.mode,
       taskId: rootSaRecordScopingRepair.taskId,
+    };
+  }
+
+  const clientX1SemanticBootstrap =
+    CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  const clientX1BindingStage = clientX1SemanticBootstrap.bindingPr;
+  const clientX1MaterializationStage =
+    clientX1SemanticBootstrap.materializationPr;
+  if (
+    context.headRef === clientX1BindingStage.headRef ||
+    (context.base === clientX1BindingStage.baseSha &&
+      hasExactChangeSet(changes, clientX1BindingStage.changedPaths))
+  ) {
+    if (
+      context.base !== clientX1BindingStage.baseSha ||
+      context.headRef !== clientX1BindingStage.headRef ||
+      !hasExactChangeSet(changes, clientX1BindingStage.changedPaths)
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'CLIENT X1 semantic-authority bootstrap requires its exact base, branch and M/M scope',
+      );
+    }
+    return {
+      mode: clientX1BindingStage.mode,
+      taskId: clientX1SemanticBootstrap.taskId,
+    };
+  }
+
+  const clientX1SemanticPath =
+    clientX1MaterializationStage.semanticAuthority.path;
+  const touchesClientX1SemanticPath = changes.some(
+    (change) =>
+      change.path.toLowerCase() === clientX1SemanticPath.toLowerCase() ||
+      (change.oldPath || '').toLowerCase() === clientX1SemanticPath.toLowerCase(),
+  );
+  if (
+    context.headRef === clientX1MaterializationStage.headRef ||
+    touchesClientX1SemanticPath
+  ) {
+    if (
+      context.headRef !== clientX1MaterializationStage.headRef ||
+      !hasExactChangeSet(changes, clientX1MaterializationStage.changedPaths)
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'CLIENT X1 semantic-authority materialization requires its exact branch and A-only path',
+      );
+    }
+    return {
+      mode: clientX1MaterializationStage.mode,
+      taskId: clientX1SemanticBootstrap.targetTaskId,
     };
   }
 
@@ -10725,6 +11130,31 @@ function validatePrScope(options) {
     return classification;
   }
 
+  const clientX1SemanticBootstrap =
+    CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01;
+  if (classification.mode === clientX1SemanticBootstrap.bindingPr.mode) {
+    return validateClientX1SemanticAuthorityBootstrapControlPlaneScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
+  }
+  if (classification.mode === clientX1SemanticBootstrap.materializationPr.mode) {
+    return validateClientX1SemanticAuthorityMaterializationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      mode: classification.mode,
+      cwd,
+    });
+  }
+
   const nafakaTerminalBinding =
     RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_R01;
   if (classification.mode === nafakaTerminalBinding.bindingPr.mode) {
@@ -11867,6 +12297,7 @@ module.exports = {
   BOOTSTRAP_ADD,
   BOOTSTRAP_ALL,
   BOOTSTRAP_MODIFY,
+  CLIENT_X1_SEMANTIC_AUTHORITY_BOOTSTRAP_R01,
   CoordinationError,
   EFFECTIVE_FROM_MAIN_SHA,
   EXECUTION_BASE_ANCESTRY_REPAIR_I01,
@@ -11920,7 +12351,9 @@ module.exports = {
   assertNotSymlink,
   authorityMarkerLocatesSemanticRow,
   buildAuthorityMarker,
+  buildClientX1SemanticAuthorityBootstrapContent,
   canonicalize,
+  clientX1SemanticAuthorityPayload,
   classifyPrChangeSet,
   computeRegisteredChangesetSha256,
   computeRequestFingerprint,
@@ -11948,6 +12381,9 @@ module.exports = {
   validateRequestObject,
   validateRequestAgainstGit,
   validateBootstrapWorktree,
+  validateClientX1SemanticAuthorityBootstrapContent,
+  validateClientX1SemanticAuthorityBootstrapControlPlaneScope,
+  validateClientX1SemanticAuthorityMaterializationScope,
   validateAuthorityRecordAtRef,
   validateCanonicalRequestAtExecutionBase,
   validateExecutionModelState,
