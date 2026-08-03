@@ -2,6 +2,11 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntakeSubmissionStatus, ClientIntakeFieldReviewStatus } from '@prisma/client';
 
+export interface ClientIntakeReviewCommandTarget {
+  submissionId: string;
+  clientId: string;
+}
+
 /**
  * Client Intake Review Queue servisi (Faz 4.5) — personel/JWT.
  *
@@ -56,6 +61,40 @@ export class ClientIntakeReviewService {
     });
     if (!sub) throw new NotFoundException('Gönderim bulunamadı');
     return sub;
+  }
+
+  /**
+   * Review mutation gate'i için tenant-bound, PII içermeyen güvenilir hedef bağlamı.
+   *
+   * @remarks Çağrıldığı yerler: ClientIntakeReviewController.claim/bulkReview/reject.
+   */
+  async getCommandTargetBySubmission(
+    tenantId: string,
+    submissionId: string,
+  ): Promise<ClientIntakeReviewCommandTarget> {
+    const submission = await this.prisma.clientIntakeSubmission.findFirst({
+      where: { id: submissionId, tenantId },
+      select: { id: true, clientId: true },
+    });
+    if (!submission) throw new NotFoundException('Gönderim bulunamadı');
+    return { submissionId: submission.id, clientId: submission.clientId };
+  }
+
+  /**
+   * Field review gate'i için field → submission → tenant zincirinden güvenilir hedef bağlamı.
+   *
+   * @remarks Çağrıldığı yer: ClientIntakeReviewController.reviewField().
+   */
+  async getCommandTargetByField(
+    tenantId: string,
+    fieldId: string,
+  ): Promise<ClientIntakeReviewCommandTarget> {
+    const field = await this.prisma.clientIntakeField.findFirst({
+      where: { id: fieldId, submission: { tenantId } },
+      select: { submission: { select: { id: true, clientId: true } } },
+    });
+    if (!field) throw new NotFoundException('Alan bulunamadı');
+    return { submissionId: field.submission.id, clientId: field.submission.clientId };
   }
 
   /**
@@ -132,7 +171,7 @@ export class ClientIntakeReviewService {
    * - ClientIntakeReviewController.reject() → POST /client-intake-submissions/:id/reject
    * </remarks>
    */
-  async rejectSubmission(tenantId: string, id: string, userId: string, note?: string) {
+  async rejectSubmission(tenantId: string, id: string, userId: string, _note?: string) {
     const sub = await this.findOwned(tenantId, id);
     if (sub.status !== ClientIntakeSubmissionStatus.CLIENT_SUBMITTED && sub.status !== ClientIntakeSubmissionStatus.IN_REVIEW) {
       throw new BadRequestException(`Bu gönderim reddedilemez (durum: ${sub.status})`);

@@ -267,3 +267,8 @@ src/modules/client-intake-link/client-intake-link.controller.spec.ts
 #     Atomic shared IP+tokenHash windows; multi-instance behavior; fail-closed store;
 #     direct-peer XFF boundary and forensic source IP alignment; no raw IP/token keys.
 src/modules/client-intake-public/public-intake-rate-limit.guard.spec.ts
+#
+#   CODEX-CLIENT-X3-B04 CR-1 review-authority wiring (SAF, DB-siz)
+#     Frozen C2 review commands consume exact tenant/actor PermissionGrant authority;
+#     role-only access, cross-tenant targets and promotion-authority collapse fail closed.
+src/modules/client-intake-review/client-intake-review-authority-wiring.spec.ts
