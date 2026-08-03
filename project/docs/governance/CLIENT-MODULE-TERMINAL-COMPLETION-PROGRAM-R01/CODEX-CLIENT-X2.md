@@ -6,8 +6,17 @@ MASTER PROGRAM:           CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01
 MASTER PLAN VERSION:      v1.0 (OWNER RATIFIED)
 THIS PAGE:                CODEX-CLIENT-X2
 LANE OWNER:               CODEX
-PREDECESSOR:              CODEX-CLIENT-X1 (canonical kapalı olmalı)
+PREDECESSOR:              CODEX-CLIENT-X1 — ENGINEERING_COMPLETE olmalı.
+                          ⚠ BU KAPI TEKNİKTİR, PLAN ARTEFAKTI DEĞİL (VERIFIED, §0-C):
+                          X1'in sahip olduğu portal/ kodu X2-owned FD projection
+                          service'ini ve CLIENT_DISCLOSURE_ALLOWED_FIELDS kontratını
+                          ALTI NOKTADAN import eder. X2 bu shape'i değiştirirse X1
+                          Type check'te KIRILIR ve kırılma required OLMAYAN "Test Suite"
+                          içinde göründüğü için fark edilmeden main'e İNEBİLİR.
+                          DURUM (2026-08-03): KAPI KAPALI — X1 portal yarısını (ratifiye
+                          madde 5-8) HENÜZ BAŞLATMAMIŞTIR.
 SUCCESSOR:                CODEX-CLIENT-X3
+                          (X3 ← X2 kapısı KALDIRILDI — sıfır import; X3 bağımsız yürür)
 
 ALLOWED PATHS:
   project/apps/api/src/modules/client-financial-disclosure/
@@ -79,6 +88,221 @@ GO-COMPLETE:
 
 PROGRAM LOCK:             CLIENT ONLY
 ```
+
+---
+
+## 0-A. OWNER AUTHORIZATION (tek seferlik — blok başına onay YOK)
+
+```text
+OWNER AUTHORIZATION:
+GO-COMPLETE — CODEX-CLIENT-X2 TAM SAYFA
+(owner bu sayfayı AYRI bir sayfada açtığında VE §0-C kapısı açıldığında yürürlüğe girer)
+
+AUTHORIZED WITHOUT FURTHER OWNER APPROVAL:
+- X2-B01..X2-B07 sıralı engineering execution
+- İzole worktree ve branch
+- Test ve bounded production-code değişikliği
+- Commit, push, PR · CI polling
+- Required checks PASS + MERGEABLE ise normal squash-merge · main sync
+- Kendi branch/worktree cleanup
+- Fresh main ile sıradaki X2 bloğuna OTOMATİK geçiş
+- MASTER-PLAN §17 register'da KENDİ satırının güncellenmesi
+
+NO PER-BLOCK OWNER APPROVAL:
+Listelenen X2 görevleri için tekrar owner GO İSTENMEYECEK.
+
+OWNER RETURN ONLY IF:
+- X2-B05'te approval/publication route ERİŞİLEBİLİRLİK kararı gerekiyorsa (§0-D)
+- Allowed-path dışına çıkmak teknik olarak kaçınılmazsa (şema/migration bu sınıfa girer;
+  Codex migration YAZAMAZ)
+- Production/flag/canary mutasyonu gerekiyorsa (→ X2-PROD-ACTIVATION, §0-E)
+- Acceptance kriterleri arasında GERÇEK çelişki varsa
+```
+
+## 0-B. BLOK YAPISI VE DEĞİŞTİRİLEMEZ SIRA
+
+Bloklar, ratifiye edilmiş sıralı alt görevlerin (v1.0, madde 1–8) **birebir karşılığıdır**;
+madde 7 (canary + runtime/production doğrulama) ratifiye metinde zaten *"bu sayfada
+tamamlanmaz"* dediği için **activation bloğu** olarak taşınır. Yeni iş eklenmemiş, sıra
+değiştirilmemiştir.
+
+```text
+X2 BLOCK COUNT:
+7 ENGINEERING BLOCKS
++ 1 DEFERRED PRODUCTION ACTIVATION BLOCK
+
+EXECUTION ORDER:
+X2-B01 → X2-B02 → X2-B03 → X2-B04 → X2-B05 → X2-B06 → X2-B07
+→ X2-PROD-ACTIVATION (WAVE 4)
+
+ORDER MUTATION:
+FORBIDDEN
+```
+
+| Blok | İş | Not |
+|---|---|---|
+| **X2-B01** | Fresh doğrulama — P-FD kod ve migration durumu current main'de | rapor iddiası KANIT DEĞİL |
+| **X2-B02** | `#1629` migration **LIVE-APPLY kanıtı** | durum bugün **UNKNOWN**; §0-F kısıtı |
+| **X2-B03** | Write flag zinciri — `isDisclosureWriteEnabled()`, fail-closed reddi | varlık sızdırmadan |
+| **X2-B04** | Publication flag + provider allowlist `['smtp','sendgrid','ses']` | mock provider ASLA yetkilendiremez |
+| **X2-B05** | Approval/publication yolları — bugün **route-erişilemez** | erişilebilirlik kararı → §0-D |
+| **X2-B06** | Fail-closed davranış doğrulaması | HELD_PENDING_DISTRIBUTION · POSTED-only · UNSUPPORTED_SCOPE |
+| **X2-B07** | Financial Disclosure sertifikasyonu — db-gated specler | bugün `TEST_DATABASE_URL` yoksa SKIP |
+| **X2-PROD-ACTIVATION** | Canary + runtime/production doğrulama | **WAVE 4**, §0-E koşullu yetki |
+
+### Her blok sonunda ZORUNLU çıktı
+
+```text
+CURRENT PAGE:                 CODEX-CLIENT-X2
+COMPLETED BLOCK:              <exact ID>
+BLOCK RESULT:                 ENGINEERING_COMPLETE / RUNTIME_VERIFIED /
+                              ANALYSIS_DELIVERED / ACTIVATION_PENDING / FAILED_EXACT
+MERGED PR / SHA:              <PR ve merge SHA>
+X2 BLOCKS TOTAL:              7
+X2 BLOCKS COMPLETED:          <n>
+X2 BLOCKS REMAINING:          <n>
+REMAINING BLOCKS:             <exact sıralı liste>
+FD RUNTIME STATE:             <flag durumları — DEFAULT-OFF mu, değişti mi>
+PRE-FLIGHT:                   X1 aktif blok=<...> · çakışma=<YOK|VAR> · karar=<...>
+ACTIVATION DEBT:              <liste veya NONE>
+NEXT ELIGIBLE:                <yalnız sıradaki exact blok>
+OWNER AUTHORIZATION REQUIRED: NO / yalnız §0-D veya §0-E
+PROGRAM LOCK:                 CLIENT ONLY
+```
+
+## 0-C. GİRİŞ KAPISI — X2 ← X1 (TEKNİK, KAPALI)
+
+```text
+DURUM (VERIFIED 2026-08-03): KAPI KAPALI.
+```
+
+**Neden teknik:** X1'in sahip olduğu `portal/` kodu X2-owned yüzeye **altı noktadan**
+bağlıdır:
+
+```text
+portal/client-financial-disclosure-portal.service.ts:8
+  → ClientFinancialDisclosureProjectionService              (X2-owned)
+portal/portal.controller.ts:22                              (DI wire)
+portal/portal.module.ts:5                                   (DI wire)
+portal/__tests__/client-financial-disclosure-portal.db-gated.integration.spec.ts:3
+  → CLIENT_DISCLOSURE_ALLOWED_FIELDS                        (X2-owned contract)
+```
+
+X2 bu shape'i değiştirirse **X1'in portal kodu `tsc --noEmit`'te kırılır**; kırılma
+jest'te GÖRÜNMEZ (`diagnostics:false`) ve yalnız **required OLMAYAN** "Test Suite"
+içindeki Type check yakalar → kırık kod main'e **inebilir**.
+
+**X1'in kalan işi tam bu yüzeydedir:** program başlangıcından (`6b6225c8`) beri
+`portal/` dizinine **hiç program işi inmemiştir**; X1 yalnız notification yarısını
+(#2126 CN-2/CN-3, #2140 CN-1 wiring) teslim etmiştir. Ratifiye kalan kalemler 5–8
+(P2 U01/U02 doğrulaması · U03 field-visibility · object-scope/BOLA · token/session +
+workspace URL) **portal tarafındadır**.
+
+```text
+AÇILMA KOŞULU (İKİSİNDEN BİRİ):
+ (a) X1 ENGINEERING_COMPLETE olur (repository kanıtıyla doğrulanır), VEYA
+ (b) Owner kapıyı BLOK SEVİYESİNE indirir — bu durumda X2:
+     · client-financial-disclosure-projection.service.ts ve
+       client-financial-disclosure-projection.contract.ts public shape'ini
+       SHAPE-FROZEN tutar (genişletme serbest, DARALTMA/yeniden adlandırma YASAK), VE
+     · her blok öncesi X1'in aktif manifest'ine karşı §0-G pre-flight yapar.
+Bu sayfa kapıyı KENDİSİ AÇAMAZ.
+```
+
+## 0-D. BİLİNEN OWNER KARARI — X2-B05 ROUTE ERİŞİLEBİLİRLİĞİ
+
+```text
+Approval ve publication runtime'ları BUGÜN ROUTE-ERİŞİLEMEZ (hiçbir controller
+çağırmıyor). Bunları HTTP'ye açmak bir ÜRÜN/GÜVENLİK kararıdır — X2 kendiliğinden
+KARAR VEREMEZ.
+KURAL: B05'te önce mevcut durum characterization ile kanıtlanır. Wiring gerekiyorsa
+karar master plana taşınır; blok WAITING_FOR_OWNER_DECISION ile bekler, SIRA ATLANMAZ.
+İçsel gate'ler zaten güçlüdür ve KORUNUR: four-eyes (requester ≠ office-approver ≠
+content-approver) · stale-snapshot re-verify · conditional updateMany count===1.
+```
+
+## 0-E. X2-PROD-ACTIVATION — KOŞULLU YETKİ DURUMU
+
+```text
+CONDITIONAL PRODUCTION AUTHORIZATION FOR X2-PROD-ACTIVATION:
+NOT YET GRANTED — OWNER DECISION REQUIRED
+```
+
+Owner koşullu production yetkisini açıkça **`C1-PROD-ACTIVATION` için** vermiştir.
+FD flag activation + canary + runtime doğrulama **ayrı bir production mutation
+sınıfıdır** ve kendi owner kararını bekler. Bu sayfa kendine production yetkisi
+ÜRETEMEZ (`noSelfAuthorizationChange`).
+
+**Değişmeyen kanonik gerçek:** `CODE MERGED ≠ PRODUCTION ACTIVATED` ·
+`ACTIVATION READY ≠ PRODUCTION VERIFIED` · `CODE BOUND ≠ FLAG ON`. İki bayrak
+(`CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED` ve `..._PUBLICATION_ENABLED`) **varsayılan
+KAPALI**dır ve bu sayfa onları **açmaz**.
+
+## 0-F. X2-B02 KISITI — LIVE-APPLY KANITI
+
+```text
+#1629 migration'ın LIVE-APPLY durumu bugün UNKNOWN'dır.
+X2 bunu KANITLAMAKLA yükümlüdür, fakat:
+ - .env veya secret OKUNMAZ; credential talep EDİLMEZ,
+ - production verisine DOKUNULMAZ,
+ - Docker `hukuk_db` DEVELOPMENT/INTEGRATION sınıfıdır ve production kanıtı olarak
+   ATIF EDİLEMEZ (ARC-07 D07 ile aynı ilke),
+ - kanıt üretilemiyorsa sonuç UNKNOWN olarak DÜRÜSTÇE raporlanır; "uygulandı"
+   VARSAYILMAZ.
+```
+
+## 0-G. BLOCK-LEVEL PRE-FLIGHT (her blok öncesi — ZORUNLU)
+
+```text
+1. Aktif diğer-lane bloklarının EXACT WRITE MANIFEST'i alınır — repository-truth:
+   `gh pr view <n> --json files` + `git diff --name-only`. KONUŞMA İDDİASI KANIT DEĞİL.
+   ÖZELLİKLE: X1'in aktif bloğu portal/ içinde mi ve FD projection tüketen dosyalara
+   (client-financial-disclosure-portal.service.ts · portal.controller.ts ·
+   portal.module.ts · ilgili db-gated spec) dokunuyor mu?
+2. Bu X2 bloğunun exact write manifest'i yazılır (`__tests__/*` wildcard YETERSİZ).
+3. SHARED-CONTRACT karşılaştırması — dosya adı YETMEZ:
+   FD projection service/contract public shape'i değişiyor mu? (değişmemeli)
+4. Çakışma YOK → blok yürür. VAR → YALNIZ o blok WAITING_FOR_OTHER_SESSION;
+   sıra ATLANMAZ, diğer lane'e DOKUNULMAZ.
+5. Çıktıya PRE-FLIGHT satırı eklenir.
+```
+
+## 0-H. ÜÇ DURUM AYRIMI + BLOCKER DISCIPLINE
+
+```text
+CODE_PRESENT != ENGINEERING_COMPLETE != PRODUCTION_ACTIVE
+MERGED != ENGINEERING_COMPLETE
+B07 bittiğinde sayfa SUSPENDED_FOR_ACTIVATION olur (TERMINAL CLOSED DEĞİL);
+activation borcu WAVE 4'te AYNI SAYFA tarafından kapatılır.
+
+Codex bu sayfada:
+- Governance/orchestra/control-plane onarımı BAŞLATMAZ · yeni SA/EG/grant/binding ÜRETMEZ ·
+  gh-guard -Repair ÇALIŞTIRMAZ · branch protection/ruleset DEĞİŞTİRMEZ · admin/bypass
+  KULLANMAZ · başka PR'ın CI/merge sorununu SAHİPLENMEZ · normal CI beklemesini BLOCKED
+  SAYMAZ · exact path kanıtı olmadan competing writer İLAN ETMEZ · CLAUDE lane
+  dosyalarına DOKUNMAZ · COLLECTION/ACCOUNTING'e ÖZELLİK EKLEMEZ.
+
+STATUS SINIFLARI:
+WAITING_FOR_CI · WAITING_FOR_PREDECESSOR · WAITING_FOR_OTHER_SESSION ·
+WAITING_FOR_CONTROL_PLANE · WAITING_FOR_OWNER_DECISION · ACTIVATION_PENDING_WAVE_4 ·
+BLOCKED_EXACT
+BLOCKED_EXACT yalnız DÖRDÜ BİRDEN sağlanırsa.
+⚠ X1'i beklemek BLOCKED_EXACT DEĞİL → WAITING_FOR_PREDECESSOR.
+⚠ Flag/canary'yi beklemek BLOCKED_EXACT DEĞİL → ACTIVATION_PENDING_WAVE_4.
+```
+
+**CI MANIFEST RULE:** `ci-manifests/pure/` — program boyu **tek manifest writer = C1**.
+X2 kendi spec satırlarını **append-only** ekler, başka lane'in satırlarına DOKUNMAZ;
+çakışırsa **sonra gelen rebase eder** (blocker DEĞİL). `__tests__/*` wildcard **exact
+write manifest sayılmaz**.
+
+**NO SIDE QUEST:** Yeni bulgu gizlice eklenmez ve **blok sayacını değiştirmez**;
+master plana disposition için gönderilir.
+
+**ÇÖZÜM DAYATMASI YASAK:** B05'te approval/publication'ın nasıl erişilebilir kılınacağı
+(ayrı controller / mevcut disposition controller'ına ek route / komut servisi) ve B07'de
+db-gated specleri çalıştırılabilir kılma yolu **peşinen belirlenmemiştir**; mevcut
+altyapı **kanıtlanarak** seçilir.
 
 ---
 
