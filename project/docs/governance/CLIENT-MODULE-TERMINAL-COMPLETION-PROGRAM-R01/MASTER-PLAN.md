@@ -266,13 +266,24 @@ speclerini taşır → C1 (CLAUDE) ile X1 (CODEX) arasında **gerçek ortak writ
 (OBSERVED).
 
 ```text
-- Her sayfa yalnız KENDİ testlerini bağlayan exact satırları yazar.
-- Kimse diğer lane'in manifest satırlarına DOKUNMAZ.
-- Aynı manifest gerekiyorsa TEK MANIFEST WRITER atanır ve işler SERIALIZE edilir.
-  WAVE 1 MANIFEST WRITER = CLAUDE C1. X1'in manifest ihtiyacı, C1'in açık blok PR'ı
-  merge olduktan SONRA append-only olarak eklenir (X1 rebase eder).
+**KANONİK KURAL (owner düzeltmesi 2026-08-03 — önceki "tek manifest writer" ifadesini
+SUPERSEDE EDER):**
+
+```text
+ci-manifests/pure/ ORTAK, APPEND-ONLY bir yüzeydir. TEK BİR LANE'E ATANMAZ.
+
+- Her lane YALNIZ KENDİ satırlarını ekler.
+- Hiçbir lane MEVCUT satırları DEĞİŞTİRMEZ veya SİLMEZ (kendi eskileri dahil, gerekçesiz).
+- Başka lane'in satırlarına DOKUNULMAZ.
+- Çakışma olursa SONRA GELEN LANE REBASE EDER. Bu bir BLOCKER DEĞİLDİR ve
+  serialize edilmesi GEREKMEZ.
 - `__tests__/*` wildcard EXACT WRITE MANIFEST DEĞİLDİR; her blok başlamadan gerçek
   dosya adları listelenir.
+
+GEREKÇE: "program boyu tek manifest writer = C1" ifadesi ile "her lane kendi
+satırlarını ekler" ifadesi ÇELİŞİYORDU. Çelişki bu kuralla giderilmiştir; append-only
++ rebase modeli lane'ler arası gereksiz seri darboğaz YARATMAZ.
+```
 ```
 
 ## 9-D. CONDITIONAL PRODUCTION AUTHORIZATION (WAVE 4)
@@ -1069,31 +1080,52 @@ X3-B04 PREDECESSOR:       KARŞILANDI — C2 review-authority extension #2146 / 
                           FIELD_DECIDE/SUBMISSION_REJECT · bağımsız
                           isIntakeReviewAuthorized sinyali · ayrı
                           CLIENT_INTAKE_REVIEW_COMMAND audit action. X3-B04 yalnız tüketir.
-X2 STATUS:                NOT STARTED — KAPI KAPALI (teknik).
-                          X2 ← X1 KORUNUR: portal/client-financial-disclosure-portal.
-                          service.ts:8 + portal.controller.ts:22 + portal.module.ts:5
-                          + portal/__tests__/client-financial-disclosure-portal.db-gated.
-                          integration.spec.ts:3 (CLIENT_DISCLOSURE_ALLOWED_FIELDS)
-                          X2-owned FD projection service/kontratını import ediyor →
-                          X2 shape değiştirirse X1 Type check'te kırılır; kırılma jest'te
-                          GÖRÜNMEZ (diagnostics:false) ve required OLMAYAN "Test Suite"
-                          içinde göründüğü için main'e İNEBİLİR.
-                          X1'İN KALAN İŞİ TAM BU YÜZEYDE (VERIFIED 2026-08-03):
-                          program başlangıcı 6b6225c8'den beri portal/ dizinine HİÇ
-                          program işi İNMEMİŞTİR; X1 yalnız notification yarısını teslim
-                          etti (#2126 CN-2/CN-3, #2140 CN-1 wiring). Ratifiye kalan
-                          kalemler 5-8 (P2 U01/U02 · U03 field-visibility · object-scope/
-                          BOLA · token/session + workspace URL) PORTAL tarafındadır.
-                          AÇILMA KOŞULU (İKİSİNDEN BİRİ): (a) X1 ENGINEERING_COMPLETE,
-                          VEYA (b) owner kapıyı BLOK SEVİYESİNE indirir + X2 FD projection
-                          service/contract public shape'ini SHAPE-FROZEN tutar
-                          (genişletme serbest, daraltma YASAK) + her blok öncesi X1
-                          manifest'ine karşı pre-flight. X2 kapıyı KENDİ AÇAMAZ.
+X1 STATUS:                ENGINEERING_COMPLETE / MERGED / CANONICAL
+                          (owner amendment 2026-08-03; CHARTER §48 CONTROLS +
+                          CLIENT-X1-GOV-RECON-R02-SA01 task-bound semantic authority)
+                          Kanıt zinciri — üç KATMAN, karıştırılmaz:
+                            #2126 / 5f4202a8  ENGINEERING: notification remediation
+                              (DTO validation + provider error sanitization) VE
+                              portal / U01 / U02 / U03 / object-scope / token /
+                              workspace-URL DOĞRULAMASI + ÖLÇÜLMÜŞ DELTA
+                            #2140 / cbe49683  ENGINEERING: CN-1 kanonik authority wiring
+                            #2165 / cdd24aaa  TERMİNAL KANONİK YAYIN
+                          #2154 YALNIZ control-plane bootstrap'tır; engineering kanıtı
+                          DEĞİLDİR ve öyle ATIF EDİLEMEZ.
+X1 REMAINING PRODUCT WORK: NONE
+X1 U03 TRACK B:           CLOSED / CANONICAL / PASS
+X1 PRODUCTION VERIFICATION: CLOSED / CANONICAL / VERIFIED ONCE
+                          (currentFlags DEFAULT OFF · persistentFlagActivation
+                           OWNER-GATED / NOT PERFORMED)
+SUPERSEDED (PR #2166):    "X1 portal yarısını başlatmadı; kalan işi portal madde 5-8'dir;
+                          X1 ENGINEERING_COMPLETE değildir" yorumu REJECTED /
+                          SUPERSEDED'dır. Madde 5-8'in X1 kapsamındaki görevi DOĞRULAMA
+                          ve DELTA ÖLÇÜMÜ idi; portal remediation veya zorunlu portal
+                          production-code diff'i DEĞİLDİ. "portal/ dizinine commit
+                          inmemiş" gözleminden "iş yapılmamış" SONUCU ÇIKARILAMAZ.
+                          Ölçülen BOLA / POL-J delta'sı YENİ ve GİZLİ X1 işi olarak
+                          TÜRETİLEMEZ.
+X2 GATE:                  ✅ OPEN — PREDECESSOR SATISFIED ((a) dalı).
+                          FD projection service/contract SHAPE-FROZEN kuralı KORUNUR
+                          fakat gerekçesi X1 EKSİKLİĞİ DEĞİL, kalıcı
+                          BACKWARD-COMPATIBILITY güvenlik kuralıdır: portal/ o shape'i
+                          altı noktadan tüketir, kırılma jest'te GÖRÜNMEZ
+                          (diagnostics:false) ve required OLMAYAN "Test Suite" Type
+                          check'te göründüğü için main'e inebilir. Daraltma/silme/
+                          yeniden adlandırma YASAK; genişletme yalnız
+                          BACKWARD-COMPATIBLE ise serbest. Kesişen blok
+                          WAITING_FOR_OTHER_SESSION olur; SIRA ATLANMAZ.
 X2 BLOCKS:                7 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 0
                           (ratifiye madde 1-6 ve 8 → B01-B07; madde 7 canary/runtime
                            ratifiye metinde zaten "bu sayfada tamamlanmaz" → activation)
-X2 NEXT ELIGIBLE:         X2-B01 — fresh doğrulama (P-FD kod + migration durumu)
-                          ANCAK §0-C kapısı AÇILDIKTAN SONRA.
+X2 NEXT ELIGIBLE:         X2-B01 / NOT STARTED — fresh doğrulama (P-FD kod + migration
+                          durumu). Kapı AÇIK; sayfa açılışında SA01 kanıtı repository'den
+                          yeniden teyit edilir. Bu docs kaydı X2'yi BAŞLATMAZ.
+X2-B02 UNKNOWN KURALI:    LIVE-APPLY kanıtı ÜRETİLEMEZSE `UNKNOWN` bloğun GEÇERLİ ve
+                          TERMİNAL sonucudur; bloğu tamamlanmamış SAYMAZ, B03'e geçişi
+                          ENGELLEMEZ, BLOCKED_EXACT DEĞİLDİR. Çıktı:
+                          BLOCK RESULT: ANALYSIS_DELIVERED + LIVE-APPLY: UNKNOWN
+                          (gerekçe exact). "Uygulandı/uygulanmadı" VARSAYILMAZ.
 X2 OWNER DECISIONS:       (1) X2-B05 approval/publication ROUTE ERİŞİLEBİLİRLİĞİ — ürün/
                           güvenlik kararı; X2 kendiliğinden karar VEREMEZ,
                           WAITING_FOR_OWNER_DECISION ile bekler, sıra ATLANMAZ.
