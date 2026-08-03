@@ -654,10 +654,26 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
       I05/I06/I08 YAPILMADI → ACTIVATION DEBT resmen ÜRETİLDİ: C2-PROD-ACTIVATION
       (owner koşullu yetkisi HENÜZ YOK — §5).
       PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
-- [ ] **B08** yetkisiz mutasyon (core + adres) fail-closed: yazım YOK, audit YOK,
+- [x] **B08** yetkisiz mutasyon (core + adres) fail-closed: yazım YOK, audit YOK,
       403 + stabil reasonCode; ham PII sızmıyor; audit-fail → rollback
-- [ ] Her blok: CI required checks yeşil · mergeability CLEAN · squash-merge · main sync ·
+      *(2026-08-03 — SERTİFİKASYON KOŞUSU, fresh main `99959714`: client modülü
+      TAMAMI **33 suite / 545 test PASS** (canonical root, read-only). Kapsanan
+      fail-closed aileler: core create/update (own13 D01-D03: VIEWER deny, hassas eşik,
+      karma istek tümü-hassas, bilinmeyen alan SENSITIVE) · adres (r2: D07 ADMIN tek
+      başına YETMEZ, elevated archive/restore; tenant-scoped updateMany+count) ·
+      workspace komutları (r4 45/45: 403+stabil reasonCode, yetkisizde yan etki SIFIR)
+      · intake/notification primitive'leri (b03 19/19 + b06 31/31) · checksum + audit
+      rollback spec'leri (audit-yazım hatası mutasyonu geri alır; başarısız mutasyon
+      audit üretmez; loglar yalnız alan ADI taşır). Ürün diff'i SIFIR.
+      → C2 ENGINEERING: COMPLETE · sayfa: SUSPENDED_FOR_ACTIVATION (TERMINAL DEĞİL).
+      PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
+- [x] Her blok: CI required checks yeşil · mergeability CLEAN · squash-merge · main sync ·
       kendi branch/worktree cleanup · zorunlu blok çıktısı yayımlandı
+      *(B01 #2123 f485ec3b · B02 #2125 db78211b + #2128 3b8c511c · B03 #2129 ae6ffd2b ·
+      B04 #2130 e0b6260f · B05 #2131 7588548d · B06 #2133 5ff6c076 · B07 #2134 99959714 ·
+      B08 bu PR. Not: HY_C2_B02/B02_IMPL/B03/B06 dizinleri Windows uzun-path nedeniyle
+      ORPHANED_WORKTREE_DIR — git kayıtları ve branch'ler temiz, fiziksel silme runbook
+      gereği yapılmadı)*
 
 ## 12. EXIT CRITERIA
 
