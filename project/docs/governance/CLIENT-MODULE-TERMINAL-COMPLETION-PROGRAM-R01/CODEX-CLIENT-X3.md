@@ -6,9 +6,20 @@ MASTER PROGRAM:           CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01
 MASTER PLAN VERSION:      v1.0 (OWNER RATIFIED)
 THIS PAGE:                CODEX-CLIENT-X3
 LANE OWNER:               CODEX
-PREDECESSOR:              CODEX-CLIENT-X2 (canonical kapalı olmalı)
-                          + CLAUDE-CLIENT-C2 R5 primitive'i CANONICAL ve DONMUŞ olmalı
+PREDECESSOR:              ÜÇ AYRI KAPI — durumları FARKLI (owner kararı 2026-08-03):
+                          (1) CLAUDE-CLIENT-C2 R5 primitive CANONICAL + DONMUŞ
+                              → KARŞILANDI (C2-B03; INTAKE_LINK_CREATE /
+                                CREATE_AND_DELIVER / REVOKE, §13/11 eşiği)
+                          (2) CODEX-CLIENT-X1 notification-dispatcher SHAPE-FROZEN
+                              → GERÇEK TEKNİK BAĞ (XL-4, aşağıda) — X1'in kapanması
+                                ŞART DEĞİL, shape'in donmuş olması ŞART
+                          (3) CODEX-CLIENT-X2 canonical kapanışı
+                              → GLOBAL PREDECESSOR KALDIRILDI. X3 ile X2 arasında
+                                SIFIR import bulundu (VERIFIED 2026-08-03) → kapı
+                                BLOK-SEVİYESİNE indirildi (§2-A pre-flight).
+                          BLOCK-LEVEL PREDECESSOR: MANDATORY
 SUCCESSOR:                WAVE 4 (production gates) → WAVE 5 Terminal Integration
+                          (X3'ün KENDİ activation borcu YOKTUR — PRODUCTION GATE: HAYIR)
 
 ALLOWED PATHS:
   project/apps/api/src/modules/client-intake-public/
@@ -37,15 +48,37 @@ SHARED CONTRACTS:
   DebtorAddress (promote hedefi)     → DEBTOR-owned; yalnız mevcut promote yolu korunur,
                                        yeni DEBTOR özelliği EKLENMEZ
 
+  ⚠ XL-4 · X3 → X1 DERLEME + DI BAĞIMLILIĞI (VERIFIED 2026-08-03, master plan §12-A-2):
+  client-intake-link/client-intake-link.service.ts:5
+    import { DispatchResult, NotificationDispatcherService }
+      from '@/modules/client-notification/notification-dispatcher.service'
+  client-intake-link/client-intake-link.module.ts:3  → ClientNotificationModule (DI)
+  client-intake-link/client-intake-link.service.spec.ts:5 → aynı sembolleri import eder
+  Bu yüzey X1 LANE-OWNED'dır ve XL-1 ile ZATEN SHAPE-FROZEN'dır (C1'in client.service.ts'i
+  de aynı shape'e bağlı). X3 bu shape'i DEĞİŞTİRMEZ, yalnız TÜKETİR; ihtiyaç doğarsa
+  master plana bildirir. `notification-dispatcher` ÜÇ tarafın hub'ıdır (C1 · X1 · X3) —
+  tek bir shape değişikliği üçünü birden kırar ve kırılma jest'te GÖRÜNMEZ
+  (diagnostics:false), yalnız required OLMAYAN "Test Suite" içindeki Type check yakalar.
+
+  X2 İLE İLİŞKİ: X3 ile client-financial-disclosure/ arasında SIFIR import bulundu
+  (VERIFIED). X3'ün X2'ye teknik bağımlılığı YOKTUR.
+
 MIGRATION WRITER:         HAYIR — Codex migration YAZAMAZ.
                           Şema ihtiyacı doğarsa master plana bildirir.
 
 SHARED CONTRACT FREEZE:   C2'nin dondurduğu R5 primitive'i DEĞİŞTİRİLMEZ; X3 tüketir.
 
-GRANT STATUS:             OWNER GRANT EXPANSION REQUIRED
-                          Gerekçe: client-intake-public/ ve client-intake-link/ mevcut
-                          STANDING-GRANT-CLIENT-LIVE-R01'de AÇIKÇA prohibitedPathRoots
-                          listesindedir. Bu kaldırılmadan CANLI implementation BAŞLAMAZ.
+GRANT STATUS:             GRANT İÇİ — EK GRANT GEREKMEZ (düzeltme 2026-08-03).
+                          Dört intake modülünün TAMAMI
+                          STANDING-GRANT-CLIENT-TERMINAL-COMPLETION-R01
+                          allowedPathRoots kapsamındadır (PR #2113, merge a92a5a44):
+                            client-intake-public/ · client-intake-link/
+                            client-intake-review/ · client-intake-promotion/
+                          ÖNCEKİ "OWNER GRANT EXPANSION REQUIRED" ifadesi #2113 ile
+                          SUPERSEDE EDİLMİŞTİR — BAYATTI, artık geçerli DEĞİLDİR.
+                          Not: web intake sayfası (apps/web/.../client-intake/) grant
+                          allowedPathRoots'ta DEĞİLDİR; ona dokunulacaksa ayrıca teyit
+                          edilir.
 
 PRODUCTION GATE:          HAYIR (bu sayfada) — intake değişiklikleri normal deployment
                           akışındadır. CR-1 (review≠promote) OWNER POLICY kararı ister.
@@ -76,6 +109,165 @@ GO-COMPLETE:
 
 PROGRAM LOCK:             CLIENT ONLY
 ```
+
+---
+
+## 0-A. OWNER AUTHORIZATION (tek seferlik — blok başına onay YOK)
+
+```text
+OWNER AUTHORIZATION:
+GO-COMPLETE — CODEX-CLIENT-X3 TAM SAYFA
+(owner bu sayfayı AYRI bir sayfada açtığında yürürlüğe girer)
+
+AUTHORIZED WITHOUT FURTHER OWNER APPROVAL:
+- X3-B01..X3-B07 sıralı engineering execution
+- İzole worktree ve branch
+- Test ve bounded production-code değişikliği
+- Commit, push, PR
+- CI polling
+- Required checks PASS + MERGEABLE ise normal squash-merge
+- main sync
+- Kendi branch/worktree cleanup
+- Fresh main ile sıradaki X3 bloğuna OTOMATİK geçiş
+- MASTER-PLAN §17 register'da KENDİ satırının güncellenmesi
+
+NO PER-BLOCK OWNER APPROVAL:
+Listelenen X3 görevleri için tekrar owner GO İSTENMEYECEK.
+
+OWNER RETURN ONLY IF:
+- Ratifiye edilmemiş ürün/politika kararı zorunluysa
+  (→ BU SAYFADA BİLİNEN BİR TANE VAR: CR-1, §0-B)
+- Allowed-path dışına çıkmak teknik olarak kaçınılmazsa
+  (→ şema/migration bu sınıfa girer; Codex migration YAZAMAZ)
+- Destructive production data operation gerekiyorsa
+- Acceptance kriterleri arasında GERÇEK çelişki varsa
+```
+
+## 0-B. BİLİNEN OWNER KARARI — CR-1
+
+```text
+CR-1 (review ≠ promote ayrımı): OWNER POLICY KARARI GEREKTİRİR — RATİFİYE DEĞİL.
+Mevcut durum: field-APPROVE herhangi bir authenticated tenant kullanıcısına açık;
+yalnız downstream promote approver-eligibility ister. Reviewer ≠ promoter ayrımı
+review→promote dikişinde ZORLANMIYOR (dokümante sınır; kod defekti DEĞİL).
+
+KURAL: Karar alınmadan X3-B04 implementation'a BAŞLAMAZ; yalnız CHARACTERIZATION
+yapılır ve blok WAITING_FOR_OWNER_DECISION ile bekler. SIRA ATLANMAZ.
+`Implementation-layer policy invention YASAKTIR.`
+```
+
+## 1-A. BLOK YAPISI VE DEĞİŞTİRİLEMEZ SIRA
+
+Bloklar, ratifiye edilmiş sıralı alt görevlerin (v1.0, madde 1–7) **birebir
+karşılığıdır**; yeni iş eklenmemiş, sıra değiştirilmemiştir.
+
+```text
+X3 BLOCK COUNT:
+7 ENGINEERING BLOCKS
++ 0 ACTIVATION BLOCK  (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
+
+EXECUTION ORDER:
+X3-B01 → X3-B02 → X3-B03 → X3-B04 → X3-B05 → X3-B06 → X3-B07
+
+ORDER MUTATION:
+FORBIDDEN
+```
+
+| Blok | İş |
+|---|---|
+| **X3-B01** | Fresh doğrulama — sağlam kontrollerin current main'de geçerliliği (regresyon kilidi) |
+| **X3-B02** | C2-R5 primitive **TÜKETİMİ** — X3 kendi authority modelini KURMAZ |
+| **X3-B03** | CIP-1 sertleştirme — per-token throttle · multi-instance limiter · XFF güven sınırı |
+| **X3-B04** | CR-1 — **owner policy kararı gerektirir** (§0-B); karar öncesi yalnız characterization |
+| **X3-B05** | CIP-2 — kabul-edilen-tasarım notu; değişiklik yalnız owner isterse |
+| **X3-B06** | Promote hattı bütünlüğü — `promotedRef` idempotency · atomic per-field tx · audit · #1933 kuralı regresyonu |
+| **X3-B07** | Intake testleri — public/review/promotion kapsamı |
+
+### Her blok sonunda ZORUNLU çıktı
+
+```text
+CURRENT PAGE:                 CODEX-CLIENT-X3
+COMPLETED BLOCK:              <exact ID>
+BLOCK RESULT:                 ENGINEERING_COMPLETE / RUNTIME_VERIFIED /
+                              ANALYSIS_DELIVERED / FAILED_EXACT
+MERGED PR / SHA:              <PR ve merge SHA>
+X3 BLOCKS TOTAL:              7
+X3 BLOCKS COMPLETED:          <n>
+X3 BLOCKS REMAINING:          <n>
+REMAINING BLOCKS:             <exact sıralı liste>
+CONSUMED CONTRACTS:           <C2-R5 primitive · X1 notification-dispatcher shape — teyit>
+PRE-FLIGHT:                   diğer lane aktif blok=<...> · çakışma=<YOK|VAR> · karar=<...>
+NEXT ELIGIBLE:                <yalnız sıradaki exact blok>
+OWNER AUTHORIZATION REQUIRED: NO / yalnız CR-1 (B04)
+PROGRAM LOCK:                 CLIENT ONLY
+```
+
+## 2-A. BLOCK-LEVEL PRE-FLIGHT (her blok öncesi — ZORUNLU)
+
+X3 ile X2 arasında global predecessor **kaldırıldığı** için çakışma kontrolü artık
+**blok seviyesindedir**.
+
+```text
+1. Aktif diğer-lane bloklarının EXACT WRITE MANIFEST'i alınır — repository-truth:
+   açık PR `gh pr view <n> --json files` + branch `git diff --name-only`.
+   KONUŞMA İDDİASI KANIT DEĞİLDİR.
+   ÖZELLİKLE: X1'in aktif bloğu client-notification/ içinde mi?
+   (X1'in CN-1 wiring'i notification-dispatcher yüzeyine dokunabilir — XL-4)
+2. Bu X3 bloğunun exact write manifest'i yazılır (gerçek dosya adları;
+   `__tests__/*` wildcard YETERSİZ).
+3. SHARED-CONTRACT karşılaştırması — dosya adı YETMEZ:
+   - notification-dispatcher shape (XL-4) değişiyor mu?
+   - C2-R5 primitive'i değişiyor mu? (değişmemeli — DONMUŞ)
+4. Çakışma YOK → blok yürür.
+   Çakışma VAR → YALNIZ o blok WAITING_FOR_OTHER_SESSION; sıra ATLANMAZ,
+   diğer lane'e DOKUNULMAZ.
+5. Çıktıya PRE-FLIGHT satırı eklenir.
+```
+
+## 3-A. ÜÇ DURUM AYRIMI
+
+```text
+CODE_PRESENT != ENGINEERING_COMPLETE != PRODUCTION_ACTIVE
+MERGED != ENGINEERING_COMPLETE
+```
+
+X3'ün **activation borcu YOKTUR** (PRODUCTION GATE: HAYIR). B07 bittiğinde sayfa
+doğrudan `ENGINEERING_COMPLETE` olur ve `TERMINAL CLOSED` ilan edilebilir —
+CR-1 owner-deferred kalırsa bu **açıkça** kaydedilir.
+
+## 4-A. BLOCKER DISCIPLINE + CI MANIFEST RULE
+
+```text
+Codex bu sayfada:
+- Governance/orchestra/control-plane onarımı BAŞLATMAZ · yeni SA/EG/grant/binding ÜRETMEZ ·
+  gh-guard -Repair ÇALIŞTIRMAZ · branch protection/ruleset DEĞİŞTİRMEZ · admin/bypass
+  KULLANMAZ · başka PR'ın CI/merge sorununu SAHİPLENMEZ · register biçim eksikliğini
+  product blocker SAYMAZ · normal CI beklemesini BLOCKED SAYMAZ · exact path kanıtı
+  olmadan competing writer İLAN ETMEZ · CLAUDE lane dosyalarına DOKUNMAZ.
+
+STATUS SINIFLARI:
+WAITING_FOR_CI · WAITING_FOR_PREDECESSOR · WAITING_FOR_OTHER_SESSION ·
+WAITING_FOR_CONTROL_PLANE · WAITING_FOR_OWNER_DECISION · BLOCKED_EXACT
+
+BLOCKED_EXACT yalnız DÖRDÜ BİRDEN sağlanırsa:
+(1) bloğun acceptance'ı teknik olarak ilerleyemiyor, (2) engel granted scope içinde
+çözülemiyor, (3) engel repository/current-main kanıtıyla doğrulanmış, (4) devam etmek
+veri kaybı veya yetki ihlali yaratacak.
+DİKKAT: CR-1 kararını beklemek BLOCKED_EXACT DEĞİLDİR → WAITING_FOR_OWNER_DECISION.
+```
+
+**CI MANIFEST RULE:** `ci-manifests/pure/client-portal.txt` program boyu **tek manifest
+writer = C1**'dir. X3 kendi spec satırlarını **append-only** ekler, başka lane'in
+satırlarına DOKUNMAZ; çakışırsa **sonra gelen rebase eder** (blocker DEĞİL).
+`__tests__/*` wildcard **exact write manifest sayılmaz**.
+
+**NO SIDE QUEST:** Yeni bulgu mevcut göreve gizlice eklenmez ve **blok sayacını
+değiştirmez**; master plana disposition için gönderilir.
+
+**ÇÖZÜM DAYATMASI YASAK:** B03'te limiter'ın nasıl paylaşımlı hale geleceği
+(Redis / DB-backed / proxy-level) ve per-token throttle'ın nerede duracağı
+**peşinen belirlenmemiştir**; mevcut altyapı ve gerçek proxy topolojisi **kanıtlanarak**
+seçilir. XFF güven sınırı **varsayımla** değil, doğrulanmış topolojiyle belirlenir.
 
 ---
 

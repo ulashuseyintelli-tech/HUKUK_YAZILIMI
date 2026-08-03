@@ -640,6 +640,55 @@ yönünde **sıfır** import · portal/ ve client-notification/ modülleri `Clie
 `app.module.ts`'te PortalModule (:200) ve ClientNotificationModule (:195) **zaten kayıtlı**
 (X1'in dokunması beklenmez) · `prisma/` yalnız C1 · barrel/index dosyası **yok**.
 
+**XL-4 · X3 → X1 · DERLEME + DI BAĞIMLILIĞI (VERIFIED 2026-08-03)**
+
+```text
+client-intake-link/client-intake-link.service.ts:5
+  import { DispatchResult, NotificationDispatcherService }
+    from '@/modules/client-notification/notification-dispatcher.service'
+client-intake-link/client-intake-link.module.ts:3   → ClientNotificationModule (DI)
+client-intake-link/client-intake-link.service.spec.ts:5 → aynı sembolleri import eder
+```
+
+`notification-dispatcher` artık **ÜÇ tarafın hub'ıdır**: C1 (`client.service.ts`, XL-1) ·
+X1 (sahibi) · X3 (`client-intake-link`). Tek bir shape değişikliği **üçünü birden** kırar
+ve kırılma jest'te **görünmez** (`diagnostics:false`) — yalnız **required olmayan**
+"Test Suite" içindeki Type check yakalar.
+**KURAL:** XL-1'in SHAPE-FROZEN hükmü X3'ü de kapsar; X3 bu shape'i **tüketir,
+değiştirmez**.
+
+**X2 ↔ X3 · BAĞ YOK (VERIFIED 2026-08-03)**
+
+`client-intake-*` ile `client-financial-disclosure/` arasında **sıfır import** bulundu →
+`X3 ← X2` kapısı **teknik temelden yoksundur**; owner kararıyla **blok seviyesine
+indirilmiştir** (aşağıda §12-A-4).
+
+**X1 ↔ X2 · GERÇEK BAĞ — X2'nin kapısı TEKNİKTİR (VERIFIED 2026-08-03)**
+
+```text
+portal/client-financial-disclosure-portal.service.ts:8
+  → ClientFinancialDisclosureProjectionService  (X2-owned)
+portal/portal.controller.ts:22 · portal/portal.module.ts:5   (DI ile wire'lı)
+portal/__tests__/client-financial-disclosure-portal.db-gated.integration.spec.ts:3
+  → CLIENT_DISCLOSURE_ALLOWED_FIELDS  (X2-owned contract)
+```
+
+X2, FD projection service'inin veya bu kontratın şeklini değiştirirse **X1'in portal
+kodu Type check'te kırılır**. Bu nedenle **`X2 ← X1` kapısı KORUNUR** — X2, X1 canonical
+kapanmadan açılmaz (veya X1'in FD-tüketen yüzeyi ile blok-seviyesi çakışma kontrolü
+zorunlu olur).
+
+### 12-A-4. CODEX LANE PREDECESSOR DÜZELTMESİ (owner kararı 2026-08-03)
+
+| Kapı | Durum | Gerekçe |
+|---|---|---|
+| `X2 ← X1` | **KORUNUR (teknik)** | portal → FD projection/contract import'u (yukarıda) |
+| `X3 ← X2` | **KALDIRILDI → blok seviyesi** | X3 ↔ X2 arasında sıfır import |
+| `X3 ← C2-R5 primitive` | **KARŞILANDI** | C2-B03'te CANONICAL + FROZEN |
+| `X3 ← X1 shape-freeze` | **YÜRÜRLÜKTE (XL-4)** | X1'in kapanması şart DEĞİL; shape'in donmuş olması ŞART |
+
+X3 için **BLOCK-LEVEL PREDECESSOR: MANDATORY** — her blok öncesi §2-A pre-flight.
+
 ### 12-A-3. PAYLAŞILAN YAZIM YÜZEYLERİ — ÖLÇÜLMÜŞ ÇAKIŞMA OLASILIĞI
 
 | Yüzey | Kimler | Olasılık | Not |
@@ -866,6 +915,28 @@ C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B)
                           sıfır-diff kanıtı + paketin §13/5-10 kapsama doğrulaması).
 C3 ACTIVATION DEBT:       KOŞULLU — yalnız B01..B07'den biri migration üretirse doğar.
                           C3-PROD-ACTIVATION koşullu yetkisi: NOT YET GRANTED.
+X3 STATUS:                NOT STARTED — SAYFA AÇILABİLİR (owner kararı 2026-08-03)
+                          Kapı 1 (C2-R5 primitive CANONICAL+FROZEN): KARŞILANDI (C2-B03)
+                          Kapı 2 (X1 notification-dispatcher SHAPE-FROZEN / XL-4):
+                                 YÜRÜRLÜKTE — X1'in KAPANMASI şart DEĞİL
+                          Kapı 3 (X2 canonical kapanışı): KALDIRILDI — X3 ile X2 arasında
+                                 SIFIR import (VERIFIED); blok seviyesine indirildi
+                          GRANT: İÇİNDE — dört intake modülü de TERMINAL-COMPLETION-R01
+                          allowedPathRoots'ta (#2113). Sayfadaki eski "GRANT EXPANSION
+                          REQUIRED" ifadesi BAYATTI ve düzeltildi.
+X3 BLOCKS:                7 ENGINEERING + 0 ACTIVATION · COMPLETED: 0
+                          (PRODUCTION GATE: HAYIR — X3'ün activation borcu YOKTUR)
+X3 NEXT ELIGIBLE:         X3-B01 — fresh doğrulama / regresyon kilidi (HEMEN başlayabilir)
+X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — RATİFİYE DEĞİL.
+                          X3-B04 bu karar olmadan implementation'a BAŞLAMAZ;
+                          yalnız characterization, blok WAITING_FOR_OWNER_DECISION.
+X2 STATUS:                NOT STARTED — KAPI KAPALI (teknik).
+                          X2 ← X1 KORUNUR: portal/client-financial-disclosure-portal.
+                          service.ts:8 + portal.controller.ts:22 + portal.module.ts:5
+                          X2-owned FD projection service/kontratını import ediyor →
+                          X2 shape değiştirirse X1 Type check'te kırılır.
+                          X1 canonical kapanmadan (veya blok-seviyesi çakışma kontrolü
+                          kurulmadan) X2 AÇILMAZ.
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
 PRODUCTION_COMPLETE:      NOT REACHED
