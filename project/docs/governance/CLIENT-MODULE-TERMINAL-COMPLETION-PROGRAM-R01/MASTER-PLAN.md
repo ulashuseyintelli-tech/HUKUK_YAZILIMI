@@ -455,9 +455,34 @@ Sıralı alt görevler:
 7. **Audit bütünlüğü** tekleştirme.
 8. Gerekiyorsa **Claude-owned serial migration** (§6 kuralıyla; C1 kapandıktan sonra).
 
-**Entry:** C2 canonical kapalı · **owner legal ratifikasyonları alınmış** (§13).
-**Exit:** Hukuki kontroller audited fail-closed teknik gate olarak çalışıyor;
-ratifiye edilmemiş hiçbir hukuk kuralı koda gömülmemiş.
+**Yapı:** 1 ANALYSIS blok (`C3-B00`) + 7 ENGINEERING blok (`C3-B01..B07`) + 1 KOŞULLU
+activation. Bloklar ratifiye alt görevlerin (madde 1–7) birebir karşılığıdır; madde 8
+(koşullu migration) blok-içi koşul + activation borcu olarak taşınır. Sıra mutasyonu
+FORBIDDEN. Detay: `CLAUDE-CLIENT-C3.md` §1-A.
+
+**Entry — İKİ AYRI KAPI, DURUMLARI FARKLI (VERIFIED 2026-08-03):**
+
+```text
+(1) C2 ENGINEERING_COMPLETE            → KARŞILANDI (C2 8/8, primitive'ler FROZEN)
+(2) OWNER LEGAL RATIFICATIONS §13/5-10 → KARŞILANMADI
+    decision-log'da CLIENT KVKK/retention/POA ratifikasyon kaydı YOK;
+    POL-E-R1 "RECOMMENDED / NOT STARTED · IMPLEMENTATION AUTHORITY: NONE"
+```
+
+**İKİ MODLU AÇILIŞ:** C3 sayfası **bugün açılabilir** fakat yalnız **MOD A ·
+ANALYSIS_ONLY** ile: `C3-B00` owner decision pack üretimi + characterization.
+Hukuki kural/eşik/süre içeren **ürün kodu, şema ve migration YASAKTIR**
+(implementation-layer policy invention yasağı). Bir blok ancak dayandığı §13 kalemi
+**ratifiye edilip decision-log'a düştüğünde** MOD B · IMPLEMENTATION'a geçer.
+Ratifikasyon beklemek `WAITING_FOR_OWNER_DECISION`'dır — `BLOCKED_EXACT` DEĞİL.
+
+**C3-B00'ın özel konumu:** Bu sayfa, kendisini bloklayan kararları **hazırlayan** bloğu
+içerir; B00 beklemek değil, **kapıyı açmaktır**.
+
+**Exit:** Hukuki kontroller audited fail-closed teknik gate olarak çalışıyor; ratifiye
+edilmemiş hiçbir hukuk kuralı koda gömülmemiş; NOT_PROVEN kalan iddialar açıkça
+NOT_PROVEN kayıtlı. Migration üretilmediyse `ENGINEERING_COMPLETE`; üretildiyse
+`SUSPENDED_FOR_ACTIVATION` (C3-PROD-ACTIVATION koşullu yetkisi **NOT YET GRANTED**).
 
 ---
 
@@ -810,6 +835,22 @@ C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 8 (B
                            elevated; yetkisiz aktörde yan etki SIFIR; başarılı komut
                            CLIENT_WORKSPACE_COMMAND audit üretir. r4 spec 45/45 +
                            client modülü 495/495 PASS)
+C3 STATUS:                NOT STARTED — SAYFA AÇILABİLİR, MOD A · ANALYSIS_ONLY
+                          Kapı 1 (C2 ENGINEERING_COMPLETE): KARŞILANDI
+                          Kapı 2 (§13/5-10 owner legal ratifications): KARŞILANMADI —
+                          decision-log'da CLIENT KVKK/retention/POA ratifikasyon kaydı
+                          YOK; POL-E-R1 "RECOMMENDED / NOT STARTED · IMPLEMENTATION
+                          AUTHORITY: NONE" (VERIFIED 2026-08-03, fresh main 0c482b96).
+                          Hukuki kural/eşik/süre içeren ürün kodu · şema · migration
+                          YASAK; blok ancak dayandığı §13 kalemi ratifiye edilip
+                          decision-log'a düştüğünde MOD B'ye geçer.
+C3 BLOCKS:                1 ANALYSIS (C3-B00) + 7 ENGINEERING (C3-B01..B07)
+                          + 1 KOŞULLU WAVE-4 ACTIVATION · COMPLETED: 0
+C3 NEXT ELIGIBLE:         C3-B00 — owner decision pack (ANALYSIS_ONLY, HEMEN başlayabilir;
+                          bu blok C3'ü bloklayan §13/5-10 kararlarını KARAR VERİLEBİLİR
+                          hale getirir — beklemek değil, kapıyı açmaktır)
+C3 ACTIVATION DEBT:       KOŞULLU — yalnız B01..B07'den biri migration üretirse doğar.
+                          C3-PROD-ACTIVATION koşullu yetkisi: NOT YET GRANTED.
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
 PRODUCTION_COMPLETE:      NOT REACHED
