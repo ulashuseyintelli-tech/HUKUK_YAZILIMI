@@ -1,39 +1,59 @@
-import { CanActivate, ExecutionContext, Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { createHash } from 'crypto';
+import { resolvePublicIntakeClientIp } from './public-intake-client-ip';
+import { PublicIntakeRateLimitStore } from './public-intake-rate-limit.store';
 
 /**
- * Minimal in-memory rate-limit (Faz 4.4) — public intake uçları için.
- * IP bazlı sabit pencere. @nestjs/throttler kurulu olmadığından custom.
- *
- * OPS NOTU: in-memory + tek-instance. Çok-instance/prod için Redis tabanlı
- * limiter'a taşınmalı. Brute-force/enumerasyon savunmasının İLK katmanı;
- * asıl güvenlik tokenHash entropisi + atomik limit'tir.
+ * X3-B03 — Redis-backed multi-instance public intake limiter.
+ * IP + tokenHash sabit pencereleri aynı Lua komutunda atomik tüketilir. Ham IP/token
+ * store'a yazılmaz; Redis arızası fail-open değildir.
  */
 @Injectable()
 export class PublicIntakeRateLimitGuard implements CanActivate {
-  private readonly hits = new Map<string, { count: number; resetAt: number }>();
-  private readonly windowMs = 60_000;
-  private readonly max = 20; // 60sn'de IP başına 20 istek
+  constructor(private readonly store: PublicIntakeRateLimitStore) {}
 
-  canActivate(ctx: ExecutionContext): boolean {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest();
-    const ip: string = req.ip || req.socket?.remoteAddress || 'unknown';
-    const now = Date.now();
+    const res = ctx.switchToHttp().getResponse();
+    const ip = resolvePublicIntakeClientIp(req);
+    const token = String(req.params?.token ?? '');
 
-    const entry = this.hits.get(ip);
-    if (!entry || now >= entry.resetAt) {
-      this.hits.set(ip, { count: 1, resetAt: now + this.windowMs });
-      this.prune(now);
-      return true;
+    let result;
+    try {
+      result = await this.store.consume({
+        ipHash: createHash('sha256').update(ip).digest('hex'),
+        tokenHash: createHash('sha256').update(token).digest('hex'),
+        windowMs: this.positiveEnv('PUBLIC_INTAKE_RATE_LIMIT_WINDOW_MS', 60_000),
+        ipMax: this.positiveEnv('PUBLIC_INTAKE_IP_RATE_LIMIT_MAX', 20),
+        tokenMax: this.positiveEnv('PUBLIC_INTAKE_TOKEN_RATE_LIMIT_MAX', 20),
+      });
+    } catch {
+      throw new ServiceUnavailableException('Form geçici olarak kullanılamıyor.');
     }
-    entry.count += 1;
-    if (entry.count > this.max) {
+
+    if (!result.allowed) {
+      if (res?.setHeader) {
+        res.setHeader('Retry-After', String(Math.max(1, Math.ceil(result.retryAfterMs / 1_000))));
+      }
       throw new HttpException('Çok fazla istek. Lütfen sonra tekrar deneyin.', HttpStatus.TOO_MANY_REQUESTS);
     }
     return true;
   }
 
-  private prune(now: number): void {
-    if (this.hits.size < 5000) return;
-    for (const [k, v] of this.hits) if (now >= v.resetAt) this.hits.delete(k);
+  private positiveEnv(name: string, fallback: number): number {
+    const raw = process.env[name];
+    if (raw == null || raw.trim() === '') return fallback;
+    const parsed = Number(raw);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+      throw new Error(`Invalid ${name}`);
+    }
+    return parsed;
   }
 }

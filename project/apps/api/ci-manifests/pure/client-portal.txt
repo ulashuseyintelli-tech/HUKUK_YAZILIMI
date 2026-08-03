@@ -256,3 +256,8 @@ src/modules/client-intake-promotion/client-intake-promotion.service.spec.ts
 #     Legacy create/revoke endpoints consume the canonical workspace command primitive;
 #     unauthorized actors produce no mutation/dispatch and successful commands are audited.
 src/modules/client-intake-link/client-intake-link.controller.spec.ts
+#
+#   CODEX-CLIENT-X3-B03 CIP-1 public intake rate-limit hardening (SAF, Redis-mock)
+#     Atomic shared IP+tokenHash windows; multi-instance behavior; fail-closed store;
+#     direct-peer XFF boundary and forensic source IP alignment; no raw IP/token keys.
+src/modules/client-intake-public/public-intake-rate-limit.guard.spec.ts
