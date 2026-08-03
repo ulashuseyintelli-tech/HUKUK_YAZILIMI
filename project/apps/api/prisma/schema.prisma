@@ -275,6 +275,9 @@ model Tenant {
   // UYAP-POA-TENANT-SAFETY-I01 (D-1/D-2): POA zincirinin canonical tenant karşı ilişkileri
   clientPowerOfAttorneys ClientPowerOfAttorney[] @relation("ClientPoaTenant")
   clientConsents         ClientConsent[]         @relation("ClientConsentTenant")
+  clientDisclosureTexts      ClientDisclosureText[]     @relation("ClientDisclosureTextTenant")
+  clientDisclosureDeliveries ClientDisclosureDelivery[] @relation("ClientDisclosureDeliveryTenant")
+  clientDataSubjectRequests  ClientDataSubjectRequest[] @relation("ClientDsarTenant")
   poaLawyers             PoaLawyer[]             @relation("PoaLawyerTenant")
 
   // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): CPE execution kayitlarinin
@@ -537,6 +540,8 @@ model Client {
   bankAccounts               ClientBankAccount[]
   powerOfAttorneys           ClientPowerOfAttorney[]
   consents                   ClientConsent[] // KVKK md.5/1 açık rıza kayıtları (C3-B01)
+  disclosureDeliveries       ClientDisclosureDelivery[] // Aydınlatma teslim kayıtları (C3-B02)
+  dataSubjectRequests        ClientDataSubjectRequest[] // İlgili kişi başvuruları (C3-B02)
   poaExpiryDeliveries        PoaExpiryNotificationDelivery[]
   caseClients                CaseClient[]
   notifications              ClientNotification[]
@@ -782,6 +787,118 @@ model ClientConsent {
 
   @@unique([id, tenantId])
   @@index([tenantId, clientId, activity, status])
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+// C3-B02 (§13/6 K6.1-K6.5, decision-log 2026-08-03): aydınlatma versiyon+teslim kaydı
+// ve ilgili kişi başvuru (DSAR) statü makinesi. Kanal OFİS (K6.2); md.13 süresi 30 gün
+// (K6.4). Portal başvurusu bu blokta zorunlu değildir (X1 dependency olabilir).
+
+model ClientDisclosureText {
+  id String @id @default(cuid())
+
+  tenantId String
+  tenant   Tenant @relation("ClientDisclosureTextTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Tenant içi ardışık versiyon — hangi müvekkile hangi versiyonun verildiği kanıtlanır (K6.1)
+  version Int
+  title   String?
+  content String
+
+  effectiveFrom   DateTime?
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  deliveries ClientDisclosureDelivery[]
+
+  @@unique([tenantId, version])
+  @@unique([id, tenantId])
+  @@index([tenantId])
+}
+
+model ClientDisclosureDelivery {
+  id String @id @default(cuid())
+
+  tenantId String
+  tenant   Tenant @relation("ClientDisclosureDeliveryTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  disclosureTextId String
+  disclosureText   ClientDisclosureText @relation(fields: [disclosureTextId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  /// K6.1: teslim zamanı + yöntem kaydı (yöntem K6.2 OFİS alt kanalları: WRITTEN/KEP/
+  /// REGISTERED_EMAIL/OTHER_ELECTRONIC/IN_PERSON — DTO katmanında doğrulanır)
+  deliveredAt       DateTime
+  method            String
+  deliveredByUserId String?
+  note              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+  @@index([tenantId, clientId])
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+/// K6.3 — md.11 hak tipleri (ratifiye kapalı liste, dokuz tip)
+enum ClientDataSubjectRequestType {
+  ACCESS_CONFIRMATION // işlenip işlenmediğini öğrenme
+  INFORMATION // bilgi talebi
+  PURPOSE_REVIEW // amaç ve amaca uygun kullanım
+  THIRD_PARTY_DISCLOSURE // aktarılan üçüncü kişiler
+  RECTIFICATION // düzeltme
+  ERASURE // silme veya yok etme (fiilî yerine getirme POL-E 8-koşul kapısına tabidir)
+  THIRD_PARTY_NOTIFICATION // üçüncü kişilere bildirim
+  AUTOMATED_DECISION_OBJECTION // otomatik değerlendirmeye itiraz
+  DAMAGES // zararın giderilmesi
+}
+
+/// K6.5 model B — statü makinesi: RECEIVED → IN_REVIEW → RESPONDED
+enum ClientDataSubjectRequestStatus {
+  RECEIVED
+  IN_REVIEW
+  RESPONDED
+}
+
+model ClientDataSubjectRequest {
+  id String @id @default(cuid())
+
+  tenantId String
+  tenant   Tenant @relation("ClientDsarTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  type   ClientDataSubjectRequestType
+  status ClientDataSubjectRequestStatus @default(RECEIVED)
+
+  /// K6.2 OFİS kanalı alt türü (WRITTEN/KEP/REGISTERED_EMAIL/OTHER_ELECTRONIC)
+  channel String
+
+  receivedAt DateTime
+  /// K6.4 (md.13): başvuru alınma tarihinden itibaren en geç 30 gün — create anında hesaplanır
+  dueAt      DateTime
+
+  assignedToUserId String?
+  summary          String?
+
+  respondedAt       DateTime?
+  respondedByUserId String?
+  responseNote      String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status, dueAt])
+  @@index([tenantId, clientId])
   @@index([tenantId])
   @@index([clientId])
 }
