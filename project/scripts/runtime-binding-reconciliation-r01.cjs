@@ -203,47 +203,92 @@ function lineAt(text, offset) {
   return line;
 }
 
-function findBalanced(text, start, open, close) {
-  if (text[start] !== open) return null;
-  let depth = 0;
-  let quote = null;
+const REGEX_PREFIX_KEYWORDS = new Set([
+  'await',
+  'case',
+  'delete',
+  'do',
+  'else',
+  'extends',
+  'in',
+  'instanceof',
+  'new',
+  'of',
+  'return',
+  'throw',
+  'typeof',
+  'void',
+  'yield',
+]);
+const REGEX_PREFIX_PUNCTUATION = new Set([
+  '(',
+  '[',
+  '{',
+  ',',
+  ';',
+  ':',
+  '?',
+  '=',
+  '!',
+  '&',
+  '|',
+  '+',
+  '-',
+  '*',
+  '%',
+  '^',
+  '~',
+  '<',
+  '>',
+]);
+
+function isIdentifierStart(char) {
+  return Boolean(char) && /[A-Za-z_$]/.test(char);
+}
+
+function isIdentifierPart(char) {
+  return Boolean(char) && /[A-Za-z0-9_$]/.test(char);
+}
+
+function findRegexLiteralEnd(source, start) {
   let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
+  let inCharacterClass = false;
+
+  for (let index = start + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '\n' || char === '\r') return null;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '[') {
+      inCharacterClass = true;
+      continue;
+    }
+    if (char === ']' && inCharacterClass) {
+      inCharacterClass = false;
+      continue;
+    }
+    if (char === '/' && !inCharacterClass) {
+      let end = index + 1;
+      while (isIdentifierPart(source[end])) end += 1;
+      return end;
+    }
+  }
+
+  return null;
+}
+
+function findBalanced(text, start, open, close) {
+  const code = maskNonCode(text);
+  if (code[start] !== open) return null;
+  let depth = 0;
   for (let index = start; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-    if (lineComment) {
-      if (char === '\n') lineComment = false;
-      continue;
-    }
-    if (blockComment) {
-      if (char === '*' && next === '/') {
-        blockComment = false;
-        index += 1;
-      }
-      continue;
-    }
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === quote) quote = null;
-      continue;
-    }
-    if (char === '/' && next === '/') {
-      lineComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === '/' && next === '*') {
-      blockComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === '"' || char === "'" || char === '`') {
-      quote = char;
-      continue;
-    }
+    const char = code[index];
     if (char === open) depth += 1;
     else if (char === close) {
       depth -= 1;
@@ -254,7 +299,7 @@ function findBalanced(text, start, open, close) {
 }
 
 /**
- * Replace comments and string/template literals with whitespace while keeping
+ * Replace comments, string/template literals and regex literals with whitespace while keeping
  * source offsets and line numbers stable. Static capability extraction must
  * inspect syntax, not documentation or literal examples.
  */
@@ -263,9 +308,13 @@ function maskNonCode(source) {
   let state = 'CODE';
   let quote = null;
   let escaped = false;
+  let regexAllowed = true;
 
   const mask = (index) => {
     if (chars[index] !== '\n' && chars[index] !== '\r') chars[index] = ' ';
+  };
+  const maskRange = (start, end) => {
+    for (let index = start; index < end; index += 1) mask(index);
   };
 
   for (let index = 0; index < source.length; index += 1) {
@@ -314,6 +363,34 @@ function maskNonCode(source) {
       quote = char;
       escaped = false;
       state = 'STRING';
+      regexAllowed = false;
+    } else if (char === '/' && regexAllowed) {
+      const regexEnd = findRegexLiteralEnd(source, index);
+      if (regexEnd !== null) {
+        maskRange(index, regexEnd);
+        index = regexEnd - 1;
+        regexAllowed = false;
+        continue;
+      }
+      regexAllowed = true;
+    } else if (isIdentifierStart(char)) {
+      let end = index + 1;
+      while (isIdentifierPart(source[end])) end += 1;
+      regexAllowed = REGEX_PREFIX_KEYWORDS.has(source.slice(index, end));
+      index = end - 1;
+    } else if (/[0-9]/.test(char)) {
+      let end = index + 1;
+      while (/[A-Za-z0-9_$]/.test(source[end] || '')) end += 1;
+      regexAllowed = false;
+      index = end - 1;
+    } else if (char === '/' && !regexAllowed) {
+      regexAllowed = true;
+    } else if (REGEX_PREFIX_PUNCTUATION.has(char)) {
+      regexAllowed = !((char === '+' || char === '-') && next === char);
+    } else if (char === ')' || char === ']' || char === '}' || char === '.') {
+      regexAllowed = false;
+    } else {
+      regexAllowed = false;
     }
   }
 
