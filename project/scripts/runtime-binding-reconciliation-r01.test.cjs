@@ -16,6 +16,7 @@ const {
   isReliableClosureClaim,
   loadDispositionRegistry,
   legacyHistoricalStatusForTitle,
+  maskNonCode,
   parseHistoricalClosureClaim,
   validateDispositionRegistryShape,
 } = require('./runtime-binding-reconciliation-r01.cjs');
@@ -177,6 +178,65 @@ test('runtime decorator extraction ignores comments and string literals', () => 
       ['Cron', 'EVERY_HOUR'],
       ['Interval', 'ONE_MINUTE'],
     ],
+  );
+});
+
+test('comment masking distinguishes regex literals from comments and literals', () => {
+  const source = [
+    String.raw`const urlPattern = /https?:\/\/[^\s?]+\?[^\s]*/gi;`,
+    'const slashPattern = /[//]/;',
+    "const singleQuoted = 'single // \\' escaped';",
+    'const doubleQuoted = "double // \\" escaped";',
+    'const templateQuoted = `template // \\` escaped`;',
+    '// @Cron(FAKE_LINE_COMMENT)',
+    '/** @Cron(FAKE_DOC_COMMENT) */',
+    '/* @Cron(FAKE_BLOCK_COMMENT) */',
+    '@Cron(EVERY_HOUR)',
+    'class Scheduler {}',
+  ].join('\n');
+
+  const masked = maskNonCode(source);
+  assert.match(masked, /@Cron\(EVERY_HOUR\)/);
+  assert.doesNotMatch(masked, /FAKE_(?:LINE|DOC|BLOCK)_COMMENT/);
+  assert.deepEqual(
+    extractRuntimeDecorators(source).map((item) => [item.name, item.args.trim()]),
+    [['Cron', 'EVERY_HOUR']],
+  );
+  assert.deepEqual(
+    extractRuntimeClassDeclarations(source).map((item) => item.name),
+    ['Scheduler'],
+  );
+});
+
+test('regex literals do not corrupt balanced decorator arguments', () => {
+  const source = [
+    '@Cron(/[//]/)',
+    'class RegexScheduler {}',
+  ].join('\n');
+
+  assert.deepEqual(
+    extractRuntimeDecorators(source).map((item) => [item.name, item.args.trim()]),
+    [['Cron', '/[//]/']],
+  );
+});
+
+test('ClientNotificationService remains discoverable after regex masking', () => {
+  const source = fs.readFileSync(
+    path.join(
+      projectRoot,
+      'apps',
+      'api',
+      'src',
+      'modules',
+      'client-notification',
+      'client-notification.service.ts',
+    ),
+    'utf8',
+  );
+
+  assert.ok(
+    extractRuntimeClassDeclarations(source).some((item) =>
+      item.name === 'ClientNotificationService'),
   );
 });
 
