@@ -14,6 +14,7 @@ const {
   extractRuntimeClassDeclarations,
   extractRuntimeDecorators,
   isReliableClosureClaim,
+  loadDispositionRegistry,
   legacyHistoricalStatusForTitle,
   parseHistoricalClosureClaim,
   validateDispositionRegistryShape,
@@ -454,4 +455,63 @@ test('T09 artifact covers the twelve Playbook and six composition routes exactly
   assert.equal(artifact.composition.startupSideEffects.length, 4);
   assert.ok(artifact.composition.controllers.every((item) => item.runtimeBound === false));
   assert.ok(artifact.composition.startupSideEffects.every((item) => item.runtimeBound === false));
+});
+
+test('T13 overlay composes the prior registry and reclassifies exactly six P2 records', () => {
+  const overlayPath = 'project/docs/audit/runtime-binding-reconciliation-r01-t13/capability-disposition-registry.json';
+  const overlay = JSON.parse(fs.readFileSync(path.join(repoRoot, overlayPath), 'utf8'));
+  const expectedIds = [
+    'INT-05763F53F1D3',
+    'INT-1EBE1D6EC7BC',
+    'INT-4C1CC43AA751',
+    'INT-9CC5892AA884',
+    'INT-E9AE1D631FFB',
+    'INT-EC4A8FFB6463',
+  ];
+
+  assert.equal(overlay.taskId, 'RBR-R01-T13');
+  assert.equal(overlay.baseRegistry, 'project/docs/audit/runtime-binding-reconciliation-r01-t09/capability-disposition-registry.json');
+  assert.deepEqual(overlay.requiredCapabilityIds, expectedIds);
+  assert.equal(overlay.entries.length, expectedIds.length);
+  assert.deepEqual(
+    overlay.entries.map((entry) => entry.capabilityId),
+    expectedIds,
+  );
+  assert.ok(overlay.entries.every((entry) =>
+    entry.disposition === 'INTENTIONALLY_DORMANT' &&
+    entry.runtimeBound === false &&
+    entry.productionReachable === false &&
+    entry.productionActive === false &&
+    entry.operationalConsumer === 0 &&
+    entry.activationAuthority === 'ABSENT' &&
+    entry.defect === false &&
+    entry.remediationRequired === false &&
+    entry.ownerDecisionRef.startsWith('OD-T12-') &&
+    entry.ownerDisposition &&
+    entry.recordFingerprint.length === 64));
+
+  const resolved = loadDispositionRegistry(repoRoot, overlayPath, git('rev-parse', 'HEAD'));
+  assert.equal(resolved.data.requiredCapabilityIds.length, 24);
+  assert.equal(resolved.data.entries.length, 24);
+
+  const inventory = readInventory();
+  const before = new Map(
+    inventory.capabilities
+      .filter((record) => expectedIds.includes(record.capabilityId))
+      .map((record) => [record.capabilityId, record.finalStatus]),
+  );
+  assert.equal(before.size, expectedIds.length);
+  assert.ok([...before.values()].every((status) => status === 'CODE_PRESENT_UNBOUND'));
+
+  applyDispositionRegistry(inventory.capabilities, { data: overlay });
+
+  const after = inventory.capabilities.filter((record) => expectedIds.includes(record.capabilityId));
+  assert.equal(after.length, expectedIds.length);
+  assert.ok(after.every((record) =>
+    record.finalStatus === 'INTENTIONALLY_DORMANT' &&
+    record.runtimeBound === false &&
+    record.active === false &&
+    record.reachable === false &&
+    record.consumerCount === 0 &&
+    record.ownerDecisionRef.startsWith('OD-T12-')));
 });
