@@ -219,6 +219,8 @@ src/modules/client/__tests__/client-intake-review-authority-extension.spec.ts
 #     C3-B01 (§13/5): KVKK islem dayanagi registry + acik riza fail-closed kapisi.
 src/modules/client/__tests__/client-processing-basis-registry.spec.ts
 src/modules/client/__tests__/client-consent-fail-closed-b01.spec.ts
+#     C3-B02 (§13/6): aydinlatma versiyon+teslim ve DSAR statu makinesi (30 gun, staff/elevated).
+src/modules/client/__tests__/client-dsar-disclosure-b02.spec.ts
 src/modules/portal/__tests__/asset-query-projection.spec.ts
 src/modules/portal/__tests__/case-detail-projection.spec.ts
 src/modules/portal/__tests__/case-list-projection.spec.ts
