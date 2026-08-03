@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, NotFoundException, ValidationPipe, Headers, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, NotFoundException, Optional, ValidationPipe, Headers, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -46,9 +46,13 @@ export class ClientController {
   constructor(
     private clientService: ClientService,
     private clientIntakeLinkService: ClientIntakeLinkService,
-    private poaService?: PoaService,
-    private officeApproval?: OfficeApprovalService,
-    private audit?: AuditService,
+    @Optional() private poaService?: PoaService,
+    // `@Optional()` Nest DI içindir (TS `?` Nest'e yetmez): AuditService/OfficeApproval
+    // sağlamayan test module bağlamları (ör. runtime-certification RootTestModule) boot
+    // olabilmeli. Prod ClientModule ikisini de import eder; workspace komutlarında eksik
+    // bağımlılık runWorkspaceCommand'daki fail-closed guard'a takılır (sessiz izin YOK).
+    @Optional() private officeApproval?: OfficeApprovalService,
+    @Optional() private audit?: AuditService,
   ) {}
 
   /**
