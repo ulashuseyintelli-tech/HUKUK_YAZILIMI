@@ -955,8 +955,25 @@ X3 OWNER DECISION:        CR-1 (review ≠ promote ayrımı) — **OWNER RATIFIE
                           CREATE_AND_DELIVER / REVOKE tanır. İki aday da tek başına
                           yetmiyor (isApproverEligible → madde 1+6'yı anlamsızlaştırır;
                           C2 primitive'ine komut eklemek X3'ün yetkisi DIŞINDA).
-                          → X3-B04 politika UYDURMAZ; boşluğu raporlar, disposition
-                          master plana gelir. Kapatma yolu SEÇİLMEMİŞTİR.
+                          → X3-B04 politika UYDURMAZ.
+X3-B04 COMPLETION:        ⚠ COMPLETION CORRECTION (owner 2026-08-03) — boşluğu YALNIZ
+                          RAPORLAMAK bloğu KAPATMAZ; ANALYSIS_DELIVERED YETERSİZDİR.
+                          C2 review-authority extension MERGE EDİLMEMİŞSE X3-B04
+                          WAITING_FOR_PREDECESSOR'dır, blok TAMAMLANMIŞ SAYILMAZ ve
+                          X3-B05'e GEÇİLMEZ (sıra atlanmaz, sayaç artmaz).
+                          Extension merge edildikten sonra B04: frozen primitive'i
+                          YALNIZ tüketir · TÜM review mutation'larını ona bağlar ·
+                          AYRI review audit'ini doğrular · dört regresyonu kilitler
+                          (unauthorized tenant user · authorized reviewer · tenant
+                          isolation · review-does-not-grant-promotion).
+                          ANCAK CI PASS + PR MERGE sonrası RUNTIME_VERIFIED sayılır.
+OPEN COORDINATION ITEM:   "C2 review-authority extension" HENÜZ YOK ve HİÇBİR SAYFANIN
+                          RATİFİYE BLOK LİSTESİNDE DEĞİL (VERIFIED d70d81af):
+                          C2 = ENGINEERING_COMPLETE 8/8; sekiz bloğunda review-authority
+                          işi YOK; client-workspace-command-authority.ts'te REVIEW/APPROVE
+                          komutu YOK. Bu extension'ı ÜRETECEK SAYFA/BLOK OWNER TARAFINDAN
+                          BELİRLENMEMİŞTİR. X3 kendisi üretemez (C2 tek writer + CR-1
+                          madde 4). → OWNER DISPOSITION BEKLİYOR.
 X2 STATUS:                NOT STARTED — KAPI KAPALI (teknik).
                           X2 ← X1 KORUNUR: portal/client-financial-disclosure-portal.
                           service.ts:8 + portal.controller.ts:22 + portal.module.ts:5
