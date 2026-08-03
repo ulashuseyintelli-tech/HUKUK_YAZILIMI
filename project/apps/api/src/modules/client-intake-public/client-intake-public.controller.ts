@@ -3,6 +3,7 @@ import { Request } from 'express';
 import { ClientIntakePublicService } from './client-intake-public.service';
 import { SubmitIntakeDto } from './dto/submit-intake.dto';
 import { PublicIntakeRateLimitGuard } from './public-intake-rate-limit.guard';
+import { resolvePublicIntakeClientIp } from './public-intake-client-ip';
 
 /**
  * PUBLIC İntake controller (Faz 4.4) — JWT YOK (global guard yok; guard koymuyoruz = public).
@@ -26,7 +27,7 @@ export class ClientIntakePublicController {
   /** Submit (CLIENT_SUBMITTED yazar) — POST /public/intake/:token */
   @Post(':token')
   async submit(@Param('token') token: string, @Body() dto: SubmitIntakeDto, @Req() req: Request) {
-    const ip = (req.ip || (req.socket && req.socket.remoteAddress) || 'unknown') as string;
+    const ip = resolvePublicIntakeClientIp(req);
     const ua = req.headers['user-agent'];
     return this.service.submit(token, dto, ip, ua);
   }
