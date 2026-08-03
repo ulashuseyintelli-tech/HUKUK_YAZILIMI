@@ -274,6 +274,7 @@ model Tenant {
 
   // UYAP-POA-TENANT-SAFETY-I01 (D-1/D-2): POA zincirinin canonical tenant karşı ilişkileri
   clientPowerOfAttorneys ClientPowerOfAttorney[] @relation("ClientPoaTenant")
+  clientConsents         ClientConsent[]         @relation("ClientConsentTenant")
   poaLawyers             PoaLawyer[]             @relation("PoaLawyerTenant")
 
   // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): CPE execution kayitlarinin
@@ -484,9 +485,11 @@ model Client {
   poaStartDate DateTime? // Vekalet Başlangıç Tarihi (işbirliği yıldönümü için)
 
   // === TEBRİK AYARLARI ===
-  sendBirthdayGreeting    Boolean @default(true) // Doğum günü tebriği gönder
-  sendAnniversaryGreeting Boolean @default(true) // Yıldönümü tebriği gönder
-  sendHolidayGreeting     Boolean @default(true) // Bayram tebriği gönder
+  // C3-B01 (§13/5 K5.3): isteğe bağlı iletişim md.5/1 açık rızaya tabidir — bütün
+  // varsayılanlar FALSE; bayrak yalnız geçerli ClientConsent opt-in'i ile açılabilir.
+  sendBirthdayGreeting    Boolean @default(false) // Doğum günü tebriği gönder
+  sendAnniversaryGreeting Boolean @default(false) // Yıldönümü tebriği gönder
+  sendHolidayGreeting     Boolean @default(false) // Bayram tebriği gönder
   greetingChannel         String? // EMAIL, SMS, BOTH - varsayılan: EMAIL
 
   // === ADRES ===
@@ -533,6 +536,7 @@ model Client {
   addresses                  ClientAddress[]
   bankAccounts               ClientBankAccount[]
   powerOfAttorneys           ClientPowerOfAttorney[]
+  consents                   ClientConsent[] // KVKK md.5/1 açık rıza kayıtları (C3-B01)
   poaExpiryDeliveries        PoaExpiryNotificationDelivery[]
   caseClients                CaseClient[]
   notifications              ClientNotification[]
@@ -740,6 +744,46 @@ model ClientPowerOfAttorney {
   @@index([isActive])
   @@index([status])
   @@index([validUntil])
+}
+
+// C3-B01 (§13/5 K5.3-K5.4, decision-log 2026-08-03): KVKK md.5/1 açık rıza kaydı.
+// Müvekkil bazlı, tarihli, geri alınabilir, audit'li; tarihçe korunur (revoke satırı
+// kapatır, yeni grant yeni satır açar). Geçerli opt-in = status GRANTED ve revokedAt null.
+enum ClientConsentStatus {
+  GRANTED
+  REVOKED
+}
+
+model ClientConsent {
+  id String @id @default(cuid())
+
+  /// Tenant kanıtı DB seviyesinde (ClientPoaTenant deseniyle birebir): composite FK ile
+  /// cross-tenant ClientConsent↔Client bağı imkânsızdır.
+  tenantId String
+  tenant   Tenant @relation("ClientConsentTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// client-processing-basis.registry.ts faaliyet kodu (yalnız requiresExplicitConsent olanlar)
+  activity String
+
+  status    ClientConsentStatus @default(GRANTED)
+  grantedAt DateTime
+  revokedAt DateTime?
+
+  grantedByUserId String?
+  revokedByUserId String?
+  source          String? // başvuru kanalı notu (OFFICE vb.)
+  note            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+  @@index([tenantId, clientId, activity, status])
+  @@index([tenantId])
+  @@index([clientId])
 }
 
 enum PoaExpiryDeliveryStatus {

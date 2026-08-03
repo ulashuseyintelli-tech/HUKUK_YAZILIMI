@@ -16,6 +16,8 @@ import {
   type ClientMutationCapabilities,
   type ClientMutationDecision,
 } from './client-mutation-policy';
+// C3-B01 (§13/5 K5.5): rıza-kapılı tercih bayrakları için fail-closed kapı (DI'sız tüketim).
+import { assertClientConsentGateForWrite } from './client-consent.service';
 
 /** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
 export interface AuditActor {
@@ -1461,6 +1463,9 @@ export class ClientService {
     // OWN-13 I02-R1: hiçbir sorgu/yazma yapılmadan ÖNCE — tenant eşitliği, sonra D01 kapısı.
     this.assertActorTenantMatches(tenantId, actor);
     this.assertCanCreateClient(actor);
+    // C3-B01 (§13/5 K5.5): create anında rıza kaydı henüz VAR OLAMAZ → isteğe bağlı
+    // iletişim bayrağını açık isteyen create RED (önce oluştur, sonra rıza kaydet).
+    await assertClientConsentGateForWrite(this.prisma, tenantId, null, data, null);
     // Mevcut checksum, duplicate ve audit kapıları DEĞİŞMEDİ.
     // C1-B04 (FIND-C5): dedup probe artık `tckn || vkn` TEK değere çökmez. Her gönderilen
     // kimlik alanı KENDİ kolonu + identityNo (mixed-legacy kolon) üzerinden BAĞIMSIZ
@@ -1593,9 +1598,11 @@ export class ClientService {
         birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
         foundingDate: data.foundingDate ? new Date(data.foundingDate) : undefined,
         poaStartDate: data.poaStartDate ? new Date(data.poaStartDate) : undefined,
-        sendBirthdayGreeting: data.sendBirthdayGreeting ?? true,
-        sendAnniversaryGreeting: data.sendAnniversaryGreeting ?? true,
-        sendHolidayGreeting: data.sendHolidayGreeting ?? true,
+        // C3-B01 (§13/5 K5.3): açık rıza faaliyeti — varsayılan FALSE; true talebi yukarıdaki
+        // rıza kapısından geçemediyse buraya zaten ulaşamaz.
+        sendBirthdayGreeting: data.sendBirthdayGreeting ?? false,
+        sendAnniversaryGreeting: data.sendAnniversaryGreeting ?? false,
+        sendHolidayGreeting: data.sendHolidayGreeting ?? false,
         greetingChannel: data.greetingChannel || 'EMAIL',
       },
     });
@@ -1695,6 +1702,11 @@ export class ClientService {
       include: { contacts: true },
     });
     if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
+
+    // C3-B01 (§13/5 K5.5): rıza-kapılı tercih bayrağını AÇAN update, geçerli opt-in kaydı
+    // yoksa RED — transaction'dan ÖNCE (yetkisiz/dayanaksız istek hiçbir şey yazmaz).
+    // Kapatma (true→false) her zaman serbesttir (ek kısıtlama yönü).
+    await assertClientConsentGateForWrite(this.prisma, tenantId, id, data, existing);
 
     // CBND-6 (H5): isActive değişimi generic update ile yan-kapıdan geçemez. remove() ile AYNI
     // lifecycle capability gate (assertCanManageLifecycle) — hem deaktivasyon (true→false) hem
