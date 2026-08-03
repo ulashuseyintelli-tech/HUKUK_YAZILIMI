@@ -770,7 +770,10 @@ C1 ENGINEERING FOLLOW-UP: FIND-C4 (version/CAS) — activation/WAVE-4 borcu DEĞ
                           + XL-3 imza kısıtı nedeniyle aynı migration owner altında SERİ
                           paketlenecek (C2 koordinasyonlu engineering follow-up; buradaki
                           mevcut owner/coupling kaydı aynen korunur).
-C2 STATUS:                IN PROGRESS — C2-B05 RUNTIME_VERIFIED (2026-08-03; disposition-only,
+C2 STATUS:                IN PROGRESS — C2-B06 RUNTIME_VERIFIED (2026-08-03; notification
+                          authority primitive CANONICAL+FROZEN, §13/11 madde 6 eşiği;
+                          b06 spec 31/31 + b03 19/19 + r4 45/45 PASS)
+                          (B05: disposition-only,
                           ürün diff SIFIR — OWN-10/12/15 repository kanıtıyla sınıflandı:
                           uygulanan ratifiye kalem 0; ÜÇÜ DE OWNER-DEFERRED
                           (OWN-10 DB-write owner-gated · OWN-12 fork sırası kararı ·
@@ -779,9 +782,11 @@ C2 STATUS:                IN PROGRESS — C2-B05 RUNTIME_VERIFIED (2026-08-03; d
                           poa.service.ts:691 koddan doğrulandı, mandate binding C3'te)
 C2 CROSS-LANE:            X3 UNBLOCKED — intake-link authority primitive CANONICAL +
                           FROZEN (INTAKE_LINK_CREATE/CREATE_AND_DELIVER/REVOKE, §13/11
-                          eşiği; CR-1 kapsam dışı, owner-deferred). X1 CN-1: hâlâ bloklu
-                          (B06 bekleniyor).
-C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 5 (B01–B05)
+                          eşiği; CR-1 kapsam dışı, owner-deferred).
+                          X1 CN-1 WIRING UNBLOCKED — notification primitive CANONICAL +
+                          FROZEN (NOTIFICATION_SEND_EMAIL/SEND_SMS/BULK_EMAIL/RESEND,
+                          §13/11 madde 6 eşiği; X1 kendi rol politikasını üretmez).
+C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 6 (B01–B06)
                           (C2-B01 = R3 reconcile-only, fresh main 573ea61a: policy-modül
                            yeri + reactivate-eşdeğer elevated eşiği koddan kanıtlandı,
                            r3 spec 12/12 PASS, ürün diff'i SIFIR, C1-B01 kanıtı devralındı

@@ -613,7 +613,19 @@ Codex X2 paralel yürür (write manifest ayrık: client-financial-disclosure/)
         capability+audit gate: owner resmi onayı bekliyor; intake tarafı ayrıca
         X3 lane'iyle koordinasyon gerektirir.
       Ürün diff'i SIFIR. PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
-- [ ] **B06** notification/workspace primitive canonical + **dondurulmuş**; X1 tüketebilir
+- [x] **B06** notification/workspace primitive canonical + **dondurulmuş**; X1 tüketebilir
+      *(2026-08-03 — owner §13/11 madde 6 (RATIFIED) uygulandı: primitive =
+      `runAuthorizedClientWorkspaceCommand` + `decideClientWorkspaceCommand`,
+      `NOTIFICATION_SEND_EMAIL / NOTIFICATION_SEND_SMS / NOTIFICATION_BULK_EMAIL /
+      NOTIFICATION_RESEND` komut tipleriyle; eşik ADMIN VEYA elevated, yetki kontrolü
+      queue-write/dispatch'ten ÖNCE; başarılı VE failed-status gönderim girişimi
+      audit edilir, throw eden dispatch audit ÜRETMEZ. X1 kendi rol politikasını
+      ÜRETMEZ, yalnız WIRE eder; `client-notification/` dosyalarına DOKUNULMADI —
+      endpoint bağlama X1'in işi. Public shape B03 freeze sözleşmesine tabi.
+      Kanıt: `client-notification-authority-primitive-b06.spec.ts` 31/31 +
+      b03 19/19 + r4 45/45 PASS.
+      CROSS-LANE: X1 CN-1 WIRING UNBLOCKED.
+      PRE-FLIGHT: C1 aktif blok=YOK · çakışma=YOK · karar=YÜRÜDÜ)*
 - [ ] **B07** `isCurrent` artık inert değil; primary/current invariantları test edilmiş;
       rollback sınırları belgelenmiş; I05/I06/I08 **yapılmamış** (WAVE 4)
 - [ ] **B08** yetkisiz mutasyon (core + adres) fail-closed: yazım YOK, audit YOK,

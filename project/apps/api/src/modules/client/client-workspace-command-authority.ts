@@ -29,7 +29,27 @@ export const CLIENT_WORKSPACE_COMMAND = {
   INTAKE_LINK_CREATE_AND_DELIVER: 'INTAKE_LINK_CREATE_AND_DELIVER',
   INTAKE_LINK_REVOKE: 'INTAKE_LINK_REVOKE',
   POA_FILE_UPLOAD: 'POA_FILE_UPLOAD',
+  NOTIFICATION_SEND_EMAIL: 'NOTIFICATION_SEND_EMAIL',
+  NOTIFICATION_SEND_SMS: 'NOTIFICATION_SEND_SMS',
+  NOTIFICATION_BULK_EMAIL: 'NOTIFICATION_BULK_EMAIL',
+  NOTIFICATION_RESEND: 'NOTIFICATION_RESEND',
 } as const;
+
+// =========================================================================================
+// C2-B06 — NOTIFICATION/WORKSPACE AUTHORITY PRIMITIVE (CANONICAL + FROZEN, 2026-08-03)
+//
+// CODEX-CLIENT-X1 (CN-1 WIRING) için sözleşme: client-notification yüzeyinin dört
+// rol-kontrolsüz komutu (`send-email` · `send-sms` · `bulk-email` · `resend`) BU
+// dosyadaki primitive çiftiyle ve `NOTIFICATION_*` komut tipleriyle yetkilendirilir.
+// Eşik owner §13/11 madde 6 ("gerçek mail/SMS gönderimi veya gönderim kuyruğuna yazma")
+// ile ratifiyedir: ADMIN VEYA canonical elevated; VIEWER/tanımsız rol fail-closed;
+// yetki kontrolü queue-write/dispatch'ten ÖNCE. X1 KENDİ rol politikasını ÜRETMEZ,
+// yalnız WIRE eder; endpoint'lere bağlama X1'in işidir (client-notification/ C2'ye
+// kapalıdır). Bulk komutta `ctx.clientId` hedef kapsam kimliğini taşıyabilir —
+// primitive clientId semantiğini doğrulamaz, audit'e olduğu gibi yazar.
+// Bu genişletme de B03'teki freeze sözleşmesine tabidir (yalnız C2 değiştirebilir).
+// Sözleşme kanıtı: __tests__/client-notification-authority-primitive-b06.spec.ts
+// =========================================================================================
 
 // =========================================================================================
 // C2-B03 R5 — INTAKE-LINK MUTATION AUTHORITY PRIMITIVE (CANONICAL + FROZEN, 2026-08-03)
