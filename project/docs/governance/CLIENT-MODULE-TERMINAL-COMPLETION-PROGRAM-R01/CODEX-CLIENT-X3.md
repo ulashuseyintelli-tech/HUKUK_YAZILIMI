@@ -143,17 +143,64 @@ OWNER RETURN ONLY IF:
 - Acceptance kriterleri arasında GERÇEK çelişki varsa
 ```
 
-## 0-B. BİLİNEN OWNER KARARI — CR-1
+## 0-B. CR-1 — OWNER RATIFIED (2026-08-03)
+
+**DURUM: RATİFİYE EDİLDİ.** X3-B04 artık `WAITING_FOR_OWNER_DECISION` DEĞİLDİR;
+bu karar **X3-B04'ün implementation yetkisidir** ve **yeniden owner GO istenmez**.
+Kanonik kayıt: `project/docs/governance/decision-log.md`
+(`CLIENT-X3-CR1-REVIEW-PROMOTE-SEPARATION-RATIFIED`).
 
 ```text
-CR-1 (review ≠ promote ayrımı): OWNER POLICY KARARI GEREKTİRİR — RATİFİYE DEĞİL.
-Mevcut durum: field-APPROVE herhangi bir authenticated tenant kullanıcısına açık;
-yalnız downstream promote approver-eligibility ister. Reviewer ≠ promoter ayrımı
-review→promote dikişinde ZORLANMIYOR (dokümante sınır; kod defekti DEĞİL).
+RATİFİYE EDİLEN POLİTİKA (on madde, owner 2026-08-03):
+ 1. Intake review ve promotion birbirinden AYRI işlem ve AYRI yetki kapılarıdır.
+ 2. Review sonucu promotion yetkisi DOĞURMAZ.
+ 3. Herhangi bir authenticated tenant kullanıcısı field APPROVE/REJECT YAPAMAZ.
+ 4. Review işlemi MEVCUT kanonik yetki altyapısındaki uygun intake-review/manage
+    yetkisiyle korunacaktır; YENİ ve BAĞIMSIZ authority modeli KURULMAYACAKTIR.
+ 5. Promotion yalnız mevcut approver-eligibility ve promotion authorization
+    kontrollerini geçen aktör tarafından yapılabilir.
+ 6. Aynı kişi her iki işlemi de ancak İKİ YETKİYİ AYRI AYRI TAŞIYORSA yapabilir.
+    Zorunlu four-eyes / farklı-kişi kuralı GETİRİLMEMİŞTİR.
+ 7. Review ve promotion AYRI audit kayıtları üretmeli; aktör ve zaman korunmalıdır.
+ 8. Mevcut yetki altyapısı bu politikayı gerçekleştirmeye YETMİYORSA X3 politika
+    UYDURMAYACAK; exact teknik boşluğu RAPORLAYACAKTIR.
+ 9. Bu karar X3-B04 implementation yetkisidir; yeniden owner GO istenmeyecektir.
+10. PROGRAM LOCK: CLIENT ONLY.
+```
 
-KURAL: Karar alınmadan X3-B04 implementation'a BAŞLAMAZ; yalnız CHARACTERIZATION
-yapılır ve blok WAITING_FOR_OWNER_DECISION ile bekler. SIRA ATLANMAZ.
-`Implementation-layer policy invention YASAKTIR.`
+### 0-B-1. MADDE 8 ÖNCEDEN TETİKLENDİ — TESPİT EDİLMİŞ TEKNİK BOŞLUK
+
+Bu boşluk **kontrol sayfası tarafından fresh main `cab19831` üzerinde ölçülmüştür**;
+X3-B04 bunu yeniden keşfetmek zorunda değildir, fakat **koddan teyit etmelidir**.
+
+```text
+BUGÜNKÜ DURUM (VERIFIED):
+  client-intake-review.service.ts        → HİÇBİR yetki çağrısı YOK
+    (grep isApproverEligible|assertCan|Permission|capability|role → SIFIR eşleşme)
+    ⇒ madde (3) BUGÜN İHLAL EDİLİYOR.
+  client-intake-promotion.service.ts:87-88 → assertCanManagePromotion
+    → officeApproval.isApproverEligible ; çağrı noktaları :114 :242 :336
+    ⇒ madde (5) BUGÜN KARŞILANIYOR.
+
+BOŞLUK:
+  Kanonik yetki altyapısında REVIEW-ŞEKİLLİ bir yetki YOKTUR.
+  C2'nin dondurduğu primitive (client-workspace-command-authority.ts) yalnızca
+  INTAKE_LINK_CREATE · INTAKE_LINK_CREATE_AND_DELIVER · INTAKE_LINK_REVOKE tanır;
+  review veya field-approve şekilli komut YOKTUR.
+
+İKİ ADAY VE NEDEN İKİSİ DE TEK BAŞINA YETMEZ:
+  (a) officeApproval.isApproverEligible'ı review'a da bağlamak → promotion ZATEN onu
+      kullanıyor; bu, madde (1) ve (6)'yı fiilen ANLAMSIZLAŞTIRIR (tek kapı olur).
+  (b) C2 primitive'ine review komutu eklemek → X3'ün YETKİSİ DIŞINDADIR
+      (C2 tek writer; X3 kendi authority modelini KURMAZ — madde 4).
+
+X3-B04'ÜN YAPACAĞI:
+  - Yukarıdaki tespiti KODDAN teyit et (characterization).
+  - Mevcut altyapıda madde (1)+(3)+(6)'yı BİRLİKTE sağlayan bir yetki VARSA onu kullan.
+  - YOKSA politika UYDURMA: exact boşluğu, iki adayı ve neden yetmediklerini
+    RAPORLA; bloğu ANALYSIS_DELIVERED ile kapat ve master plana disposition gönder.
+  - Kapatma yolu owner kararı veya C2 koordinasyonu gerektirir ve bu kayıtla
+    SEÇİLMEMİŞTİR. `Implementation-layer policy invention YASAKTIR.`
 ```
 
 ## 1-A. BLOK YAPISI VE DEĞİŞTİRİLEMEZ SIRA
@@ -178,7 +225,7 @@ FORBIDDEN
 | **X3-B01** | Fresh doğrulama — sağlam kontrollerin current main'de geçerliliği (regresyon kilidi) |
 | **X3-B02** | C2-R5 primitive **TÜKETİMİ** — X3 kendi authority modelini KURMAZ |
 | **X3-B03** | CIP-1 sertleştirme — per-token throttle · multi-instance limiter · XFF güven sınırı |
-| **X3-B04** | CR-1 — **owner policy kararı gerektirir** (§0-B); karar öncesi yalnız characterization |
+| **X3-B04** | CR-1 — **OWNER RATIFIED 2026-08-03** (§0-B); implementation yetkisi VAR. Madde 8 önceden tetiklendi: review-şekilli kanonik yetki YOK (§0-B-1) → boşluk kanıtlanırsa politika UYDURULMAZ, raporlanır |
 | **X3-B05** | CIP-2 — kabul-edilen-tasarım notu; değişiklik yalnız owner isterse |
 | **X3-B06** | Promote hattı bütünlüğü — `promotedRef` idempotency · atomic per-field tx · audit · #1933 kuralı regresyonu |
 | **X3-B07** | Intake testleri — public/review/promotion kapsamı |
