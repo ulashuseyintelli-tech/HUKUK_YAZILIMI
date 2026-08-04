@@ -123,7 +123,7 @@ BLOCKER REMEDIATION:                ALLOWED TO CONTINUE TO TERMINAL CLOSURE
 | P0 | Kanonik Analiz | CANONICAL-PRESENT | CLOSED | n/a |
 | P1 | Blueprint Canonicalization | CANONICAL-PRESENT | CLOSED | n/a |
 | P-CORE | Çekirdek ürün (identity/intake/approval/statement/intel/notification) | CANONICAL-PRESENT | CLOSED (feature) | NOT_PROVEN |
-| P2 | Portal & müvekkil-yüzü güvenliği (U01/U02/U03) | CANONICAL-PRESENT | PARTIAL (Track B NOT AUTHORIZED) | UNKNOWN |
+| P2 | Portal & müvekkil-yüzü güvenliği (U01/U02/U03) | CANONICAL-PRESENT | CLOSED / CANONICAL / PASS | VERIFIED ONCE · FLAGS DEFAULT OFF |
 | P-FD | Financial Disclosure | CANONICAL-PRESENT | CLOSED (kod) | **DORMANT** (iki flag OFF) |
 | P-ARC07 | ClientAddress lifecycle | CANONICAL-PRESENT | ENGINEERING COMPLETE | **PRODUCTION-WAIT** |
 
@@ -498,21 +498,16 @@ NOT_PROVEN kayıtlı. Migration üretilmediyse `ENGINEERING_COMPLETE`; üretildi
 ---
 
 ### CODEX-CLIENT-X1 — Portal, Notification & Client-Facing Security
-Sıralı alt görevler:
-1. **CN-2** DTO validation (send/template gövdeleri inline type → decorated class;
-   `@MaxLength`/`@ArrayMaxSize`/`@IsEnum`) + **CN-3** error sanitization. *(Wave 1'de
-   yapılabilir — bağımsız, mekanik.)*
-2. **CN-1 CHARACTERIZATION ONLY** — mevcut davranışın tespiti ve testi.
-   **AUTHORIZATION IMPLEMENTATION WAVE 1'DE YASAK.**
-3. P2 U01/U02 durum doğrulaması · U03 field-visibility · object-scope/BOLA · portal
-   projection · token/session güvenliği · workspace URL erişilebilirlik.
-4. U03 Track B (**owner authorization gerekir**).
-5. **CN-1 WIRING** — yalnız Claude C2'nin notification/workspace authority primitive'i
-   **canonical ve donmuş** olduktan sonra; Codex kendi rol politikasını **ÜRETMEZ**.
+**Status:** ENGINEERING_COMPLETE / MERGED / CANONICAL.
 
-**Entry:** R0 kapalı · grant expansion (`portal/`).
-**Exit:** portal/notification yüzeyi validated + sanitized + (primitive geldikten sonra)
-authorized; `client/`, `seed/`, `prisma/`'ya **hiç dokunulmadı**.
+**Evidence:** #2126 / `5f4202a8` — notification remediation ile portal/U01/U02/U03/
+object-scope/token/workspace-URL doğrulaması; #2140 / `cbe49683` — CN-1 canonical
+authority wiring; #2165 / `cdd24aaa` — terminal canonical semantic authority publication.
+
+**Terminal disposition:** Remaining product work NONE. U03 Track B CLOSED / CANONICAL /
+PASS. Production verification VERIFIED ONCE; current flags DEFAULT OFF; persistent
+activation OWNER-GATED / NOT PERFORMED. X2 NEXT ELIGIBLE; mevcut X2 ilerleme kayıtları
+korunur.
 
 ---
 
@@ -756,7 +751,7 @@ tek auth/tenant contract writer · tek governance writer · tek integration owne
 **Ürün/politika kararları:**
 11. İletişim/workspace gönderim rol politikası (CN-1 / FIND-C2 primitive'i — C2'de)
 12. Review ≠ promote ayrımı (CR-1)
-13. U03 Track B authorization
+13. U03 Track B authorization — SATISFIED / CLOSED / CANONICAL / PASS
 14. OWN-14 D03 (pasif müvekkile yeni dosya)
 
 **Production gate'leri (WAVE 4):**
