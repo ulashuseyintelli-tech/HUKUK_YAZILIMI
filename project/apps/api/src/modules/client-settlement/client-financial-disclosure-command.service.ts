@@ -5,6 +5,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  CollectionDispositionBeneficiaryScope,
+  CollectionDispositionStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure/client-financial-disclosure-writer.service';
 import { DispositionPostingService } from './disposition-posting.service';
@@ -102,15 +106,34 @@ export class ClientFinancialDisclosureCommandService {
     // Kaynak dispozisyon TENANT-SCOPED okunur; `caseId`/`caseClientId` BURADAN türetilir.
     const disposition = await this.prisma.collectionDisposition.findFirst({
       where: { id: dispositionId, tenantId },
-      select: { id: true, caseId: true, caseClientId: true, status: true },
+      select: {
+        id: true,
+        caseId: true,
+        caseClientId: true,
+        status: true,
+        beneficiaryScope: true,
+      },
     });
     if (!disposition) {
       throw new NotFoundException('Dağıtım kararı bulunamadı');
     }
-    if (disposition.status !== 'POSTED') {
-      throw new BadRequestException(
-        `Yalnız POSTED dağıtım kararından bildirim üretilebilir (durum: ${disposition.status})`,
-      );
+    if (
+      disposition.beneficiaryScope !== CollectionDispositionBeneficiaryScope.SINGLE_CASE_CLIENT
+    ) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Client Financial Disclosure Unsupported Scope',
+        code: 'UNSUPPORTED_SCOPE',
+        message: 'This disposition scope is not supported for client financial disclosure.',
+      });
+    }
+    if (disposition.status !== CollectionDispositionStatus.POSTED) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Client Financial Disclosure Source State Invalid',
+        code: 'DISCLOSURE_SOURCE_STATE_INVALID',
+        message: 'Only a posted disposition may produce a client financial disclosure.',
+      });
     }
     if (!disposition.caseClientId) {
       throw new BadRequestException(
