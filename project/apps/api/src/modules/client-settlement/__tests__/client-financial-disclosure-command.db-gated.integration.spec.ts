@@ -165,7 +165,9 @@ describeDb('CLIENT-FD-ACT-R01-I03 — disclosure command entrypoint (gerçek Pos
     const draft = await seedDisposition({
       key: `n7-${S}`, tenantId: tA, caseId: caseA, caseClientId: ccA, status: 'DISTRIBUTION_APPROVED',
     });
-    expect(await code(svc.createFromDisposition(tA, draft, { userId: uOk }))).toBe('BadRequestException');
+    expect(await code(svc.createFromDisposition(tA, draft, { userId: uOk }))).toBe(
+      'DISCLOSURE_SOURCE_STATE_INVALID',
+    );
   });
 
   it('[8] müvekkile bağlı olmayan dispozisyon REDDEDİLİR', async () => {
