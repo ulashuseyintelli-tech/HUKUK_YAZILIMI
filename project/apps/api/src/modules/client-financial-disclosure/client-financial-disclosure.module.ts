@@ -11,6 +11,7 @@ import { EmailProviderService } from '../notification/email-provider.service';
 import { ClientFinancialDisclosureEmailDispatcher } from './client-financial-disclosure-email-dispatcher';
 import { isClientFinancialDisclosureApprovedProvider } from './client-financial-disclosure-publication.contract';
 import { isDisclosurePublicationEnabled } from './client-financial-disclosure-activation';
+import { ClientFinancialDisclosureController } from './client-financial-disclosure.controller';
 
 /**
  * CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 / I02 — PRODUCTION COMPOSITION BINDING
@@ -25,7 +26,8 @@ import { isDisclosurePublicationEnabled } from './client-financial-disclosure-ac
  *   Böylece charter §38.4/§42.2/§43.9'daki clean-architecture sınırı korunur.
  *
  * BU MODÜL TEK BAŞINA HİÇBİR ŞEYİ AKTİFLEŞTİRMEZ:
- *   - Hiçbir controller, route, resolver, cron, worker veya event listener TANIMLAMAZ.
+ *   - B05 controller'ı yalnız iki strict activation flag'i açıkken mevcut servisleri çağırır.
+ *   - Resolver, cron, worker veya event listener TANIMLAMAZ.
  *   - Hiçbir eager side-effect üretmez (provider'lar yalnız enjekte edildiklerinde kurulur).
  *   - Gönderim dispatcher'ı FAIL-CLOSED varsayılana bağlıdır: gerçek adaptör (I04) gelene
  *     kadar `assertProductionProvider()` §35.10 gereği yayınlamayı reddeder.
@@ -34,6 +36,7 @@ import { isDisclosurePublicationEnabled } from './client-financial-disclosure-ac
  */
 @Module({
   imports: [PrismaModule],
+  controllers: [ClientFinancialDisclosureController],
   providers: [
     // CLIENT-FD-ACT-R01-I04: NotificationModule'un TAMAMI import EDILMEZ — o graf
     // NotificationService uzerinden agir bir bagimlilik zinciri (audit, permission
