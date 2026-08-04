@@ -13,12 +13,12 @@ authority üretmez.
   "status": "SUCCEEDED",
   "executionPrNumber": 2172,
   "executionMergeSha": "085da35e001a14a49cd4aa9497d49029dc52c0ad",
-  "effectiveMainSha": "cb18bc450360305f1ec4ddb8518cefe0e48e927d",
+  "effectiveMainSha": "d69847cf0061f248c39ab7da2757f3f33f0fe4f1",
   "completedAt": "2026-08-04T06:31:20Z",
   "validationEvidence": [
     {"name": "request-path:project/docs/governance/coordination-requests/GOV-REQ-20260804-CLIENT-X2-B01-SA/request.md", "status": "PASS", "evidenceSha": "085da35e001a14a49cd4aa9497d49029dc52c0ad"},
     {"name": "execution-pr:2172:merged", "status": "PASS", "evidenceSha": "085da35e001a14a49cd4aa9497d49029dc52c0ad"},
-    {"name": "execution-merge-in-main", "status": "PASS", "evidenceSha": "cb18bc450360305f1ec4ddb8518cefe0e48e927d"},
+    {"name": "execution-merge-in-main", "status": "PASS", "evidenceSha": "d69847cf0061f248c39ab7da2757f3f33f0fe4f1"},
     {"name": "operation-type:EXACT_APPEND_AT_DECLARED_ANCHOR", "status": "PASS", "evidenceSha": "085da35e001a14a49cd4aa9497d49029dc52c0ad"},
     {"name": "changed-path:project/docs/governance/decision-log.md", "status": "PASS", "evidenceSha": "085da35e001a14a49cd4aa9497d49029dc52c0ad"},
     {"name": "ci:9-of-9-success", "status": "PASS", "evidenceSha": "3209e7a4fef508044d7636d1af87bba29a7d27d1"}
