@@ -1115,12 +1115,12 @@ X2 GATE:                  ✅ OPEN — PREDECESSOR SATISFIED ((a) dalı).
                           yeniden adlandırma YASAK; genişletme yalnız
                           BACKWARD-COMPATIBLE ise serbest. Kesişen blok
                           WAITING_FOR_OTHER_SESSION olur; SIRA ATLANMAZ.
-X2 BLOCKS:                7 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 0
+X2 BLOCKS:                7 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 1
                           (ratifiye madde 1-6 ve 8 → B01-B07; madde 7 canary/runtime
                            ratifiye metinde zaten "bu sayfada tamamlanmaz" → activation)
-X2 NEXT ELIGIBLE:         X2-B01 / NOT STARTED — fresh doğrulama (P-FD kod + migration
-                          durumu). Kapı AÇIK; sayfa açılışında SA01 kanıtı repository'den
-                          yeniden teyit edilir. Bu docs kaydı X2'yi BAŞLATMAZ.
+X2-B01:                   RUNTIME_VERIFIED / MERGED / CANONICAL
+                          3 suite / 30 test PASS; owner-ratified result, NOT RERUN.
+X2 NEXT ELIGIBLE:         X2-B02 / NEXT / ELIGIBLE — `#1629` migration LIVE-APPLY kanıtı.
 X2-B02 UNKNOWN KURALI:    LIVE-APPLY kanıtı ÜRETİLEMEZSE `UNKNOWN` bloğun GEÇERLİ ve
                           TERMİNAL sonucudur; bloğu tamamlanmamış SAYMAZ, B03'e geçişi
                           ENGELLEMEZ, BLOCKED_EXACT DEĞİLDİR. Çıktı:
