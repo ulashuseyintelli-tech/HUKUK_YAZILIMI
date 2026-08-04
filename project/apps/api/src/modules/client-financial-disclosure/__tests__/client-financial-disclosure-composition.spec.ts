@@ -7,6 +7,7 @@ import { ClientFinancialDisclosureApprovalService } from '../client-financial-di
 import { ClientFinancialDisclosurePublicationService } from '../client-financial-disclosure-publication.service';
 import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure-writer.service';
 import { ClientFinancialDisclosureModule } from '../client-financial-disclosure.module';
+import { ClientFinancialDisclosureController } from '../client-financial-disclosure.controller';
 import {
   DISCLOSURE_DISPATCHER_UNCONFIGURED_PROVIDER,
   DISCLOSURE_NOTIFICATION_DISPATCHER,
@@ -103,12 +104,17 @@ describe('CLIENT-FD-ACT-R01-I02 — production composition binding', () => {
   });
 
   // ── AKTIVASYON SINIRI ─────────────────────────────────────────────────────────
-  it('[6] modül HİÇBİR controller, route, cron veya worker TANIMLAMAZ', () => {
+  it('[6] modül yalnız dedicated Financial Disclosure controller tanımlar; cron/worker yoktur', async () => {
     const source = readFileSync(join(MODULE_DIR, 'client-financial-disclosure.module.ts'), 'utf8');
-    expect(source).not.toContain('controllers:');
+    expect(source).toContain('controllers: [ClientFinancialDisclosureController]');
     for (const forbidden of ['@Cron', 'ScheduleModule', 'EventEmitter', 'OnModuleInit', 'onApplicationBootstrap']) {
       expect(source).not.toContain(forbidden);
     }
+    const moduleRef = await compile();
+    expect(moduleRef.get(ClientFinancialDisclosureController)).toBeInstanceOf(
+      ClientFinancialDisclosureController,
+    );
+    await moduleRef.close();
   });
 
   it('[7] domain servisleri Nest’e bağımlı DEĞİLDİR (clean-architecture sınırı)', () => {

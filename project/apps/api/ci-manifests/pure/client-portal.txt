@@ -282,3 +282,8 @@ src/modules/client-intake-review/client-intake-review.service.spec.ts
 #     Only exact 'true' reaches authorization; missing/misleading values return the same
 #     DISCLOSURE_WRITE_NOT_ENABLED response before authorization, entity lookup, or write.
 src/modules/client-settlement/__tests__/client-financial-disclosure-command.spec.ts
+
+#   CODEX-CLIENT-X2-B05 dedicated Financial Disclosure approval/publication route adapter
+#     JWT tenant/actor scope, strict WRITE+PUBLICATION fail-closed gates, canonical approval
+#     and publication service sequencing, and no direct dispatch bypass (SAF, DB-siz).
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure.controller.spec.ts
