@@ -20,6 +20,34 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
  */
 export const CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS = ['smtp', 'sendgrid', 'ses'] as const;
 
+export type ClientFinancialDisclosureApprovedProvider =
+  (typeof CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS)[number];
+
+/**
+ * Provider kimligi EXACT eslesir. Case-folding veya whitespace normalizasyonu yapilmaz:
+ * `EmailProviderService` de yalniz bu exact degerleri gercek adapter'a yonlendirir; yaklasik
+ * eslesmenin composition'da kabul edilip altta mock fallback'e dusmesi engellenir.
+ */
+export function isClientFinancialDisclosureApprovedProvider(
+  value: unknown,
+): value is ClientFinancialDisclosureApprovedProvider {
+  return (
+    typeof value === 'string' &&
+    (CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS as readonly string[]).includes(value)
+  );
+}
+
+/** Gercek provider kabul kaniti, yapilandirilan exact provider ile ayni kimligi tasimalidir. */
+export function isClientFinancialDisclosureApprovedDispatchReceipt(
+  configuredProvider: unknown,
+  reportedProvider: unknown,
+): boolean {
+  return (
+    isClientFinancialDisclosureApprovedProvider(configuredProvider) &&
+    reportedProvider === configuredProvider
+  );
+}
+
 /** §35.11 (6): provider kabulü ve yayınlama olayları ayrı ayrı kaydedilir. */
 export const CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ENTITY = 'ClientFinancialDisclosureVersion';
 export const CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS = {
