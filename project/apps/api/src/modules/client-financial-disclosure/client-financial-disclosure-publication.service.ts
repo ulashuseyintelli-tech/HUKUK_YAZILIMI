@@ -11,7 +11,6 @@ import {
 import { CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION } from './client-financial-disclosure-approval.contract';
 import {
   type BeginDisclosureSendInput,
-  CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS,
   CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS,
   CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ENTITY,
   ClientFinancialDisclosurePublicationAuthorizationError,
@@ -22,6 +21,8 @@ import {
   type ReverseDisclosureInput,
   type RetryDisclosureSendInput,
   type SupersedeDisclosureInput,
+  isClientFinancialDisclosureApprovedDispatchReceipt,
+  isClientFinancialDisclosureApprovedProvider,
 } from './client-financial-disclosure-publication.contract';
 import { verifyPersistedDisclosureSnapshot } from './client-financial-disclosure-writer.service';
 
@@ -211,21 +212,29 @@ export class ClientFinancialDisclosurePublicationService {
 
     // ── (3) GERÇEK KABUL + KALICI MESSAGE ID ZORUNLU ───────────────────────────
     const messageId = typeof dispatch.messageId === 'string' ? dispatch.messageId.trim() : '';
-    if (!dispatch.success || messageId.length === 0) {
-      // Eksik message ID -> SEND_FAILED (§35.10). Provider hata DETAYI yalnız internal.
+    const providerReceiptApproved = isClientFinancialDisclosureApprovedDispatchReceipt(
+      this.dispatcher.providerName,
+      dispatch.provider,
+    );
+    const failureCode = !providerReceiptApproved
+      ? 'DISCLOSURE_PROVIDER_IDENTITY_MISMATCH'
+      : dispatch.errorCode ?? 'PROVIDER_MESSAGE_ID_MISSING';
+    if (!dispatch.success || messageId.length === 0 || !providerReceiptApproved) {
+      // Eksik message ID veya provider-kimligi uyusmazligi -> SEND_FAILED (§35.10).
+      // Provider hata DETAYI yalnız internal.
       try {
         await this.prisma.$transaction(async (tx) => {
           await tx.clientFinancialDisclosureVersion.updateMany({
             where: { id: claimed.id, tenantId: claimed.tenantId, publishedAt: null },
             data: {
               status: ClientFinancialDisclosureStatus.SEND_FAILED,
-              sendFailureCode: dispatch.errorCode ?? 'PROVIDER_MESSAGE_ID_MISSING',
+              sendFailureCode: failureCode,
               sendFailureDetail: dispatch.errorMessage ?? null,
             },
           });
           await this.writeAudit(tx, claimed, CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS.SEND_FAILED, {
             provider: this.dispatcher.providerName,
-            failureCode: dispatch.errorCode ?? 'PROVIDER_MESSAGE_ID_MISSING',
+            failureCode,
           });
         });
       } catch (error) {
@@ -236,7 +245,7 @@ export class ClientFinancialDisclosurePublicationService {
         previousStatus: ClientFinancialDisclosureStatus.SEND_PENDING,
         status: ClientFinancialDisclosureStatus.SEND_FAILED,
         replayed: false,
-        sendFailureCode: dispatch.errorCode ?? 'PROVIDER_MESSAGE_ID_MISSING',
+        sendFailureCode: failureCode,
       };
     }
 
@@ -496,8 +505,7 @@ export class ClientFinancialDisclosurePublicationService {
 
   /** §35.10 production invariant'ı — mock veya onaysız provider fail-closed reddedilir. */
   private assertProductionProvider(): void {
-    const name = (this.dispatcher.providerName ?? '').trim().toLowerCase();
-    if (!(CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS as readonly string[]).includes(name)) {
+    if (!isClientFinancialDisclosureApprovedProvider(this.dispatcher.providerName)) {
       throw new ClientFinancialDisclosurePublicationAuthorizationError(
         'DISCLOSURE_PUBLICATION_PROVIDER_NOT_PRODUCTION',
       );

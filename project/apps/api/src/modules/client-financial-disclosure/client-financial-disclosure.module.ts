@@ -9,7 +9,7 @@ import { DISCLOSURE_NOTIFICATION_DISPATCHER } from './client-financial-disclosur
 import { UnconfiguredDisclosureNotificationDispatcher } from './unconfigured-disclosure-dispatcher';
 import { EmailProviderService } from '../notification/email-provider.service';
 import { ClientFinancialDisclosureEmailDispatcher } from './client-financial-disclosure-email-dispatcher';
-import { CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS } from './client-financial-disclosure-publication.contract';
+import { isClientFinancialDisclosureApprovedProvider } from './client-financial-disclosure-publication.contract';
 import { isDisclosurePublicationEnabled } from './client-financial-disclosure-activation';
 
 /**
@@ -63,12 +63,8 @@ import { isDisclosurePublicationEnabled } from './client-financial-disclosure-ac
         // seviyesinde uygulanır. Controller veya application katmanı BYPASS EDİLSE BİLE
         // dispatcher'ın kendisi fail-closed olduğu için dış gönderim GERÇEKLEŞEMEZ.
         if (!isDisclosurePublicationEnabled()) return fallback;
-        const configured = (real.providerName ?? '').trim().toLowerCase();
-        const approved = (CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS as readonly string[]).includes(
-          configured,
-        );
         // Yayınlama AÇIK fakat onaylı adapter YOKSA no-op "başarı" ÜRETİLMEZ — fail-closed.
-        return approved ? real : fallback;
+        return isClientFinancialDisclosureApprovedProvider(real.providerName) ? real : fallback;
       },
     },
     {

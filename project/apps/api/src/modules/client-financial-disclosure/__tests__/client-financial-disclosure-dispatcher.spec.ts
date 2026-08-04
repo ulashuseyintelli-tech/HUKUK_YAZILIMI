@@ -10,8 +10,13 @@ import {
   isDispatchableRecipient,
 } from '../client-financial-disclosure-email-dispatcher';
 import { ClientFinancialDisclosureModule } from '../client-financial-disclosure.module';
+import { ClientFinancialDisclosurePublicationService } from '../client-financial-disclosure-publication.service';
 import { DISCLOSURE_NOTIFICATION_DISPATCHER } from '../client-financial-disclosure.tokens';
-import { CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS } from '../client-financial-disclosure-publication.contract';
+import {
+  CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS,
+  isClientFinancialDisclosureApprovedDispatchReceipt,
+  isClientFinancialDisclosureApprovedProvider,
+} from '../client-financial-disclosure-publication.contract';
 import type { DisclosureNotificationDispatcher } from '../client-financial-disclosure-publication.contract';
 import { UnconfiguredDisclosureNotificationDispatcher } from '../unconfigured-disclosure-dispatcher';
 
@@ -65,7 +70,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
 
   it('[3] onaysız/mock provider’da FAIL-CLOSED varsayılan KORUNUR', async () => {
     process.env.CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED = 'true';
-    for (const name of ['mock', '', 'console', 'fake-smtp']) {
+    for (const name of ['mock', '', 'console', 'fake-smtp', 'SMTP', ' smtp ', 'SendGrid', 'SES']) {
       const moduleRef = await compileWith(name);
       const d = moduleRef.get<DisclosureNotificationDispatcher>(DISCLOSURE_NOTIFICATION_DISPATCHER);
       expect(d).toBeInstanceOf(UnconfiguredDisclosureNotificationDispatcher);
@@ -75,7 +80,38 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     delete process.env.CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED;
   });
 
-  it('[4] provider yapılandırılmamış olsa bile BOOT ÇÖKMEZ', async () => {
+  it('[4] allowlist EXACT smtp/sendgrid/ses; yaklaşık adlar ve mock kabul kanıtı reddedilir', () => {
+    expect([...CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS]).toEqual(['smtp', 'sendgrid', 'ses']);
+    for (const name of CLIENT_FINANCIAL_DISCLOSURE_APPROVED_PROVIDERS) {
+      expect(isClientFinancialDisclosureApprovedProvider(name)).toBe(true);
+      expect(isClientFinancialDisclosureApprovedDispatchReceipt(name, name)).toBe(true);
+      expect(isClientFinancialDisclosureApprovedDispatchReceipt(name, 'mock')).toBe(false);
+    }
+    for (const name of ['mock', '', 'SMTP', ' smtp ', 'SendGrid', 'SES', undefined]) {
+      expect(isClientFinancialDisclosureApprovedProvider(name)).toBe(false);
+    }
+  });
+
+  it('[4b] domain guard onaysız/normalize edilebilir provider’ı DB ve dispatcher’dan önce reddeder', async () => {
+    for (const providerName of ['mock', 'SMTP', ' smtp ', 'SendGrid', 'SES']) {
+      const transaction = jest.fn();
+      const send = jest.fn();
+      const service = new ClientFinancialDisclosurePublicationService(
+        { $transaction: transaction } as unknown as PrismaService,
+        { providerName, send },
+      );
+      await expect(service.dispatchAndPublish({
+        tenantId: 'tenant-opaque',
+        disclosureVersionId: 'version-opaque',
+        actorUserId: 'actor-opaque',
+        subject: 'subject',
+      })).rejects.toMatchObject({ code: 'DISCLOSURE_PUBLICATION_PROVIDER_NOT_PRODUCTION' });
+      expect(transaction).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    }
+  });
+
+  it('[5] provider yapılandırılmamış olsa bile BOOT ÇÖKMEZ', async () => {
     await expect(compileWith('mock')).resolves.toBeDefined();
   });
 
@@ -89,7 +125,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     return { dispatcher: new ClientFinancialDisclosureEmailDispatcher(provider), spy };
   };
 
-  it('[5] başarılı gönderim provider message ID’sini taşır ve provider TAM BİR KEZ çağrılır', async () => {
+  it('[6] başarılı gönderim provider message ID’sini taşır ve provider TAM BİR KEZ çağrılır', async () => {
     const { dispatcher, spy } = dispatcherWith({ success: true, messageId: '<abc@smtp>', provider: 'smtp' });
     const r = await dispatcher.send({ to: 'client@example.test', subject: 'Bildirim', text: 'icerik' });
     expect(r.success).toBe(true);
@@ -98,7 +134,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     expect(spy.mock.calls[0][0]).toEqual({ to: 'client@example.test', subject: 'Bildirim', text: 'icerik' });
   });
 
-  it('[6] message ID’siz "başarı" REDDEDİLİR — adapter başarı TAKLİT ETMEZ', async () => {
+  it('[7] message ID’siz "başarı" REDDEDİLİR — adapter başarı TAKLİT ETMEZ', async () => {
     for (const reply of [
       { success: true, provider: 'smtp' },
       { success: true, messageId: '', provider: 'smtp' },
@@ -112,7 +148,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     }
   });
 
-  it('[7] geçici hata RETRYABLE, kalıcı hata TERMINAL olarak sınıflanır', async () => {
+  it('[8] geçici hata RETRYABLE, kalıcı hata TERMINAL olarak sınıflanır', async () => {
     const cases: Array<[string, boolean]> = [
       ['NETWORK_ERROR', true], ['ETIMEDOUT', true], ['ECONNRESET', true], ['429', true], ['500', true], ['503', true],
       // Sayisal kodlar pratikte SendGrid'in HTTP status'undan gelir (`response.status.toString()`);
@@ -132,7 +168,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     }
   });
 
-  it('[8] geçersiz alıcı provider ÇAĞRILMADAN reddedilir', async () => {
+  it('[9] geçersiz alıcı provider ÇAĞRILMADAN reddedilir', async () => {
     for (const bad of ['', '   ', 'not-an-email', 'a@b', '@example.test', 'a b@example.test', 'x@@y.test']) {
       const { dispatcher, spy } = dispatcherWith({ success: true, messageId: 'X', provider: 'smtp' });
       const r = await dispatcher.send({ to: bad, subject: 's', text: 't' });
@@ -145,7 +181,23 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     expect(isDispatchableRecipient('client@example.test')).toBe(true);
   });
 
-  it('[9] dönüş değeri alıcı, konu, gövde veya provider hata METNİ SIZDIRMAZ', async () => {
+  it('[10] mock provider sonucu message ID taşısa bile production kabulü ÜRETEMEZ', async () => {
+    const { dispatcher } = dispatcherWith({
+      success: true,
+      messageId: 'MOCK-123',
+      provider: 'mock',
+    });
+    const result = await dispatcher.send({ to: 'client@example.test', subject: 's', text: 't' });
+    expect(result).toEqual({
+      success: false,
+      errorCode: 'DISCLOSURE_PROVIDER_IDENTITY_MISMATCH',
+      provider: 'smtp',
+      retryable: false,
+    });
+    expect(result.messageId).toBeUndefined();
+  });
+
+  it('[11] dönüş değeri alıcı, konu, gövde veya provider hata METNİ SIZDIRMAZ', async () => {
     const { dispatcher } = dispatcherWith({
       success: false, errorCode: 'SMTP_550',
       errorMessage: 'mailbox unavailable for gizli-alici@example.test',
@@ -161,7 +213,7 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
     expect(Object.keys(r).sort()).toEqual(['errorCode', 'provider', 'retryable', 'success']);
   });
 
-  it('[10] adapter publication state machine sorumluluklarını TEKRARLAMAZ', () => {
+  it('[12] adapter publication state machine sorumluluklarını TEKRARLAMAZ', () => {
     const source = readFileSync(
       join(__dirname, '..', 'client-financial-disclosure-email-dispatcher.ts'),
       'utf8',

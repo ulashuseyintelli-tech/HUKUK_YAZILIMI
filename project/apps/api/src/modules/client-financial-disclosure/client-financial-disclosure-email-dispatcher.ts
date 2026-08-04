@@ -4,6 +4,7 @@ import type {
   DisclosureDispatchResult,
   DisclosureNotificationDispatcher,
 } from './client-financial-disclosure-publication.contract';
+import { isClientFinancialDisclosureApprovedDispatchReceipt } from './client-financial-disclosure-publication.contract';
 
 /**
  * CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 / I04 — PRODUCTION DISPATCHER ADAPTER
@@ -95,6 +96,17 @@ export class ClientFinancialDisclosureEmailDispatcher implements DisclosureNotif
       subject: input.subject,
       text: input.text,
     });
+
+    // Configured provider ile donen kabul kaniti EXACT ayni kimligi tasimalidir. Ornegin
+    // `smtp` olarak baglanan adapter'dan `mock` sonucu gelmesi production yetkisi URETEMEZ.
+    if (!isClientFinancialDisclosureApprovedDispatchReceipt(this.providerName, result.provider)) {
+      return {
+        success: false,
+        errorCode: 'DISCLOSURE_PROVIDER_IDENTITY_MISMATCH',
+        provider: this.providerName,
+        retryable: false,
+      };
+    }
 
     const messageId = typeof result.messageId === 'string' ? result.messageId.trim() : '';
 
