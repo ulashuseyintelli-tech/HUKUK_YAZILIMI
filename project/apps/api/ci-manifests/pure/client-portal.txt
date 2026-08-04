@@ -287,3 +287,8 @@ src/modules/client-settlement/__tests__/client-financial-disclosure-command.spec
 #     JWT tenant/actor scope, strict WRITE+PUBLICATION fail-closed gates, canonical approval
 #     and publication service sequencing, and no direct dispatch bypass (SAF, DB-siz).
 src/modules/client-financial-disclosure/__tests__/client-financial-disclosure.controller.spec.ts
+
+#   CODEX-CLIENT-X2-B06 Financial Disclosure fail-closed source and visibility boundary
+#     Only POSTED/SINGLE_CASE_CLIENT reaches the writer; non-POSTED state is not exposed,
+#     cluster scope returns exact UNSUPPORTED_SCOPE, and portal visibility stays published-only.
+src/modules/client-settlement/__tests__/client-financial-disclosure-command.fail-closed.spec.ts
