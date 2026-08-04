@@ -277,3 +277,8 @@ src/modules/client-intake-review/client-intake-review-authority-wiring.spec.ts
 #     Claim/field/bulk/reject/queue transitions and the hard module boundary that keeps
 #     review separate from promotion/canonical writes are required Client CI evidence.
 src/modules/client-intake-review/client-intake-review.service.spec.ts
+#
+#   CODEX-CLIENT-X2-B03 disclosure write flag boundary (SAF, DB-siz)
+#     Only exact 'true' reaches authorization; missing/misleading values return the same
+#     DISCLOSURE_WRITE_NOT_ENABLED response before authorization, entity lookup, or write.
+src/modules/client-settlement/__tests__/client-financial-disclosure-command.spec.ts
