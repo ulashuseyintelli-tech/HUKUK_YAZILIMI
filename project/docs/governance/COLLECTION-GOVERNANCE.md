@@ -1095,54 +1095,54 @@ başlatılamaz.
 
 ## 9.16. WAVE 4 predecessor queue — RCV-COL production migration apply — 2026-08-05
 
-Owner'ın `WAVE 4 PREDECESSOR QUEUE CLEARANCE R01` sırasındaki ikinci migration
-`20260731120000_rcv_col_full_semantic_command_idempotency`, exact frontier commit
-`6c34395d4ade84603b340b197f2c4e5d13c1ec4f` üzerinden production'da uygulanmış ve
-post-validate edilmiştir. Migration dosyası frontier ile current main'de aynı SHA-256'a
-sahiptir: `d61925505faf6405a489b5ccdc8742d24264ea47a6ef8ba59532382f0556f400`.
-Current main üzerinden `migrate deploy`, manual SQL, `migrate resolve`, fake-applied veya
-başka program migration'ı çalıştırılmamıştır.
+Owner'ın `POST-APPLY COLLISION RECONCILIATION` kararı, formal write-freeze sırasında
+başka bir process/executor'ın migration'ı uyguladığını ve bu kaydın temiz bir
+single-executor APPLY olarak yorumlanamayacağını ratifiye eder. Bu thread `migrate deploy`
+çalıştırmamıştır; gerçek executor identity `NOT_PROVEN`dır. RCV-COL pre-apply backup da
+`NOT_PROVEN`dır. Apply'dan 31 saniye sonra alınan backup yalnız `POST-APPLY RECOVERY
+EVIDENCE / RESTORE PASS` kanıtıdır; pre-apply backup olarak sınıflandırılamaz.
 
-Apply öncesinde API/Web listener ve project Node process sayısı `0`, external DB session
-sayısı `0` olarak doğrulanmış; write-freeze `2026-08-05T10:52:06.0274900Z` anında ilan
-edilmiş ve WAL LSN `0/2F0DF658` backup'tan apply gate'e kadar sabit kalmıştır. Repo dışı
-fresh `pg_dump -Fc` backup:
-`C:\Development\HUKUK_YAZILIMI\backups\hukuk_db_pre_rcv_col_20260805T105206Z.dump`,
-`1,122,091` byte, SHA-256
-`900a03236bea4e76a5c48a71763a860e6a7cfcb20d8f6a3998931658af9fd9e3`; WAVE 4 terminal
-kapanışına kadar korunacaktır. PostgreSQL 16 disposable restore parity
-`Tenant=3 / Client=15 / Case=26 / Collection=5 / applied=112` PASS; exact frontier
-rehearsal apply ve second-run PASS; immutable evidence mutation denemesi
-`COLLECTION_COMMAND_EVIDENCE_IMMUTABLE` ile reddedilmiş ve disposable container
-doğrulama sonrası kaldırılmıştır.
+Owner teknik DB sonucunu kabul etmiştir. Migration yeniden uygulanmayacak; rollback,
+repair, reapply veya `migrate resolve` yapılmayacaktır. Canonical repository migration
+dosyası SHA-256 değeri production ledger checksum'u ile aynıdır:
+`d61925505faf6405a489b5ccdc8742d24264ea47a6ef8ba59532382f0556f400`.
 
 Production ledger kanıtı:
 
 ```text
-finished_at         : 2026-08-05 11:03:21.711968+00
-checksum            : d61925505faf6405a489b5ccdc8742d24264ea47a6ef8ba59532382f0556f400
-applied_steps_count : 1
-rolled_back_at      : NULL
-applied count       : 112 -> 113
-newly applied       : exact target only
-failed/rolled-back  : 0
-frontier status     : up to date
-Collection state   : 5 total / 5 legacy all-null / 0 backfill-or-inference
+finished_at                 : 2026-08-05 11:03:21.711968+00
+checksum                    : d61925505faf6405a489b5ccdc8742d24264ea47a6ef8ba59532382f0556f400
+applied_steps_count         : 1
+rolled_back_at              : NULL
+applied count               : 113
+failed                      : 0
+RCV-COL post-apply pending  : 8
+Collection state           : 5 total / 5 legacy all-null / 0 backfill-or-inference
 ```
 
 Production'da üç evidence kolonu `TEXT`, nullable ve defaultsuz;
 `ck_collection_command_evidence_complete` validated; mutation function ve immutable
-trigger mevcut olarak doğrulanmıştır. Runtime writer/activation ve production code
-değişikliği `NONE`dır. Current-main pending kuyruğu `9 -> 8` olmuştur; sıradaki exact
-migration `20260801183656_debtor_external_case_status_integrity_d2i01_provenance`
-(DEBTOR-2) olup yalnız DEBTOR owner program sayfasında fresh preflight ile yürütülebilir.
-Bu kayıt DEBTOR-2 predecessor-success handoff kanıtıdır; DEBTOR-2, RC-COL veya CLIENT
-APPLY yetkisi üretmez.
+trigger mevcut; legacy satırlarda backfill/inference olmadığı doğrulanmıştır. Runtime
+writer/activation ve production code değişikliği `NONE`dır. RCV-COL post-apply snapshot'ında
+sıradaki exact migration
+`20260801183656_debtor_external_case_status_integrity_d2i01_provenance` (DEBTOR-2) idi.
+DEBTOR-2 daha sonra kendi program sayfasında bağımsız DB doğrulamasıyla uygulanmış ve
+PR #2221 / `7c2665700b0214e264ae629cf5d6cd5bb80959b1` ile kaydedilmiştir; bu sonraki işlem
+RCV-COL process-collision sınıflandırmasını değiştirmez ve bu kayıt başka programa APPLY
+yetkisi üretmez.
 
 ```text
-RCV-COL MIGRATION: APPLIED / POST-VALIDATED / CANONICAL EVIDENCE
+PROCESS COLLISION: RECONCILED
+APPLY CLASSIFICATION: NOT A CLEAN SINGLE-EXECUTOR APPLY
+RCV-COL MIGRATION: PRODUCTION_APPLIED / DATA_INTEGRITY_VERIFIED
+CHECKSUM CANONICAL PARITY: PASS
+LEDGER: 113 APPLIED / 0 FAILED
+RCV-COL POST-APPLY PENDING: 8
+EXECUTOR IDENTITY: NOT_PROVEN
+RCV-COL PRE-APPLY BACKUP: NOT_PROVEN
+31-SECOND-LATER BACKUP: POST-APPLY RECOVERY EVIDENCE / RESTORE PASS
+ROLLBACK / REPAIR / REAPPLY / RESOLVE: NONE
 DATA / BACKFILL: NONE
 RUNTIME WRITER / ACTIVATION: UNCHANGED / NONE
 CROSS-PROGRAM APPLY: NONE
 ```
-
