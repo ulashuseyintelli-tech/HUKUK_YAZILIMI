@@ -1092,3 +1092,57 @@ kalır. ACT-28 ve REC-AUTH-011/012 `OPEN`; COL-RISK-G07 `OPEN`; runtime writer `
 IMPLEMENTED / NOT ACTIVATED`dır. Canonical successor `TPA-04D-I01 / Task11 — NEXT /
 ELIGIBLE / NOT STARTED`dır ve Task10'un bütün governance exit gate'leri tamamlanmadan
 başlatılamaz.
+
+## 9.16. WAVE 4 predecessor queue — RCV-COL production migration apply — 2026-08-05
+
+Owner'ın `WAVE 4 PREDECESSOR QUEUE CLEARANCE R01` sırasındaki ikinci migration
+`20260731120000_rcv_col_full_semantic_command_idempotency`, exact frontier commit
+`6c34395d4ade84603b340b197f2c4e5d13c1ec4f` üzerinden production'da uygulanmış ve
+post-validate edilmiştir. Migration dosyası frontier ile current main'de aynı SHA-256'a
+sahiptir: `d61925505faf6405a489b5ccdc8742d24264ea47a6ef8ba59532382f0556f400`.
+Current main üzerinden `migrate deploy`, manual SQL, `migrate resolve`, fake-applied veya
+başka program migration'ı çalıştırılmamıştır.
+
+Apply öncesinde API/Web listener ve project Node process sayısı `0`, external DB session
+sayısı `0` olarak doğrulanmış; write-freeze `2026-08-05T10:52:06.0274900Z` anında ilan
+edilmiş ve WAL LSN `0/2F0DF658` backup'tan apply gate'e kadar sabit kalmıştır. Repo dışı
+fresh `pg_dump -Fc` backup:
+`C:\Development\HUKUK_YAZILIMI\backups\hukuk_db_pre_rcv_col_20260805T105206Z.dump`,
+`1,122,091` byte, SHA-256
+`900a03236bea4e76a5c48a71763a860e6a7cfcb20d8f6a3998931658af9fd9e3`; WAVE 4 terminal
+kapanışına kadar korunacaktır. PostgreSQL 16 disposable restore parity
+`Tenant=3 / Client=15 / Case=26 / Collection=5 / applied=112` PASS; exact frontier
+rehearsal apply ve second-run PASS; immutable evidence mutation denemesi
+`COLLECTION_COMMAND_EVIDENCE_IMMUTABLE` ile reddedilmiş ve disposable container
+doğrulama sonrası kaldırılmıştır.
+
+Production ledger kanıtı:
+
+```text
+finished_at         : 2026-08-05 11:03:21.711968+00
+checksum            : d61925505faf6405a489b5ccdc8742d24264ea47a6ef8ba59532382f0556f400
+applied_steps_count : 1
+rolled_back_at      : NULL
+applied count       : 112 -> 113
+newly applied       : exact target only
+failed/rolled-back  : 0
+frontier status     : up to date
+Collection state   : 5 total / 5 legacy all-null / 0 backfill-or-inference
+```
+
+Production'da üç evidence kolonu `TEXT`, nullable ve defaultsuz;
+`ck_collection_command_evidence_complete` validated; mutation function ve immutable
+trigger mevcut olarak doğrulanmıştır. Runtime writer/activation ve production code
+değişikliği `NONE`dır. Current-main pending kuyruğu `9 -> 8` olmuştur; sıradaki exact
+migration `20260801183656_debtor_external_case_status_integrity_d2i01_provenance`
+(DEBTOR-2) olup yalnız DEBTOR owner program sayfasında fresh preflight ile yürütülebilir.
+Bu kayıt DEBTOR-2 predecessor-success handoff kanıtıdır; DEBTOR-2, RC-COL veya CLIENT
+APPLY yetkisi üretmez.
+
+```text
+RCV-COL MIGRATION: APPLIED / POST-VALIDATED / CANONICAL EVIDENCE
+DATA / BACKFILL: NONE
+RUNTIME WRITER / ACTIVATION: UNCHANGED / NONE
+CROSS-PROGRAM APPLY: NONE
+```
+
