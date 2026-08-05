@@ -120,19 +120,118 @@ Global pending (current main,  : 121 migration, 9 kaldı (10→9 doğrulandı):
 
 **DEBTOR-1: APPLIED. Program Lock: DEBTOR. Cross-program mutation: YOK.**
 
-## 3. DEBTOR-2 — QUEUED_WAITING_DEPENDENCY
+## 3. DEBTOR-2 — APPLIED (2026-08-05)
+
+### 3.1 RCV-COL predecessor-success kanıtının bağımsız doğrulanması
+
+RCV-COL'ün kendi `GOV-REQ-20260805-RCV-COL-WAVE4-EVIDENCE-R01` coordination-request
+dosyası (kendi başlığında "immutable ve untrusted request data kaydıdır" diyen bir
+CLAIM) tek başına yeterli görülmedi; DEBTOR-2 başlamadan önce gerçek production
+DB'ye karşı bağımsızca doğrulandı:
 
 ```text
-Migration   : 20260801183656_debtor_external_case_status_integrity_d2i01_provenance
-Durum       : BAŞLAMADI — RCV-COL (20260731120000_rcv_col_full_semantic_command_
-              idempotency) başka bir program sayfası tarafından applied olduğuna
-              dair repo-kanıtı doğrulanmadan başlanmayacak.
-Owner kuralı: "DEBTOR-2, RCV-COL başarı kanıtı oluşmadan başlayamaz." — verbatim.
-Sonraki adım: RCV-COL'ün kendi canonical activation kaydı (veya eşdeğer repo/DB
-              kanıtı) görüldüğünde bu belge güncellenip DEBTOR-2 preflight'ı
-              başlayacaktır. Bu belge o ana kadar bu bölümle KAPANIR (Phase E
-              benzeri bir sonraki adıma geçilmez).
+prisma migrate status (current main şemasına karşı) : RCV-COL migration'ı pending
+  listesinden KAYBOLMUŞ (9 -> 8), listenin başında artık DEBTOR-2 var.
+_prisma_migrations doğrudan sorgu (RCV-COL satırı) :
+  finished_at=2026-08-05 11:03:21.711968, rolled_back_at=NULL
+  (RCV-COL'ün kendi claim dosyasındaki finished_at değeriyle birebir örtüşüyor)
+Sonuç: RCV-COL başarı kanıtı BAĞIMSIZ DOĞRULANDI. DEBTOR-2 preflight'ı owner
+  onayıyla (AskUserQuestion — "Evet, devam et") başlatıldı.
 ```
+
+### 3.2 Frontier / checksum
+
+```text
+Migration adı   : 20260801183656_debtor_external_case_status_integrity_d2i01_provenance
+Frontier commit : 341ce95b (feat(debtor): D2-I01 — ExternalCase status-integrity
+                  contract+schema (OWNER D2 POLICY RATIFIED), #2084)
+SHA-256 (frontier == origin/main, doğrulandı, ikisi de aynı) :
+                  88580d8ea272c03137c1a366f0294ea2113574d1e095dab7e4557b2e6c360266
+İzole artifact  : git worktree --detach 341ce95b (HY_wave4_debtor2_frontier,
+                  APPLY sonrası kaldırıldı)
+İçerik          : 2 yeni enum (ExternalCaseStatusSource, ExternalCaseClosureReason)
+                  + ExternalCase'e 6 nullable additive kolon. Veri dönüşümü/backfill
+                  YOK. Migration dosyasının kendi yorumu, kapsam dışı 2
+                  "RenameForeignKey" ifadesinin (Bank modellerinde önceden var olan,
+                  bu PR'dan bağımsız bir drift) kasıtlı olarak buradan çıkarıldığını
+                  kaydediyor.
+```
+
+### 3.3 Program Lock + Background Check
+
+- Fresh `gh pr list --state open`: yalnız #2220 (docs(governance) Stage-E gh-guard
+  diagnostic — tamamen ilgisiz, OTHER_SESSION, dokunulmadı).
+- `git worktree list` RCV-COL'ün kendi sayfasının çalıştığını gösterdi
+  (`HY_rcv_col_wave4_idem_migration_r01`, `HY_WT/WAVE4_RCV_COL_02_FRONTIER`) —
+  yalnız görünürlük, dokunulmadı.
+
+### 3.4 Pending gate (izole frontier artifact, gerçek hukuk_db'ye karşı)
+
+```text
+Frontier'de     : 114 migration bulundu
+Pending (o an)  : YALNIZ 1 — 20260801183656_debtor_external_case_status_integrity_
+                  d2i01_provenance (başka pending YOK → APPLY'a devam edildi)
+```
+
+### 3.5 Pre-migration veri uyumluluğu
+
+```text
+Kontrol : ExternalCase satır sayısı (nullable additive kolonlar için risk analizi)
+Sonuç   : external_case_rows=0 (DEBTOR-1'den beri değişmedi — write-freeze tutarlı)
+Sonuç   : nullable kolon eklemesi veri açısından risksiz
+```
+
+### 3.6 Write-freeze + runtime process güvenliği
+
+```text
+netstat 8080/3002 : LISTENING yok (APPLY öncesi VE APPLY hemen öncesi iki kez
+                     doğrulandı — DEBTOR-1'den beri kesintisiz)
+```
+
+### 3.7 Backup / restore-test (bu APPLY'a özel, ayrı ve bağımsız)
+
+```text
+DB altyapısı  : docker `hukuk-postgres` (postgres:16-alpine)
+Dump          : pg_dump -Fc (docker exec, env var'lar sembolik referansla)
+Dosya         : scratchpad/wave4_debtor2_pre_migration_backup.dump (repo DIŞI)
+Boyut         : 1.124.064 B
+SHA-256       : d2e413092a71bee07185e7d2e1ff139c0e911848f54eedf40af1581164ad66e1
+Restore-test  : disposable container hukuk-wave4-restore-test2 (postgres:16-alpine)
+                pg_restore --no-owner --no-privileges exit=0
+                200 tablo restore edildi; ExternalCase satır sayısı 0=0 (kaynakla
+                birebir)
+Restore-test container APPLY sonrası düşürüldü (docker stop/rm, doğrulandı).
+```
+
+### 3.8 APPLY
+
+```text
+Komut   : npx prisma migrate deploy --schema=<frontier>/schema.prisma
+Sonuç   : "Applying migration `20260801183656_debtor_external_case_status_
+          integrity_d2i01_provenance`" → "All migrations have been successfully
+          applied."
+```
+
+### 3.9 Post-migration doğrulama
+
+```text
+migrate status (frontier)     : "Database schema is up to date!"
+Kolon varlığı kontrolü         : closureReason/externalReference/statusChangedAt/
+                                  statusChangedBy/statusOccurredAt/statusSource
+                                  MEVCUT (6/6)
+ExternalCase satır sayısı      : 0 (APPLY öncesiyle aynı — veri bütünlüğü korunmuş)
+_prisma_migrations ledger      : finished_at=2026-08-05 13:22:36.189511,
+                                  rolled_back_at=NULL
+Tüm ledger genelinde            : failed/unfinished migration sayısı = 0
+Global pending (current main,  : 121 migration, 7 kaldı (8→7 doğrulandı):
+  121 migration'a karşı)         RC-COL, + CLIENT C1 (1) + CLIENT C3 beşlisi (5)
+```
+
+**DEBTOR-2: APPLIED. Program Lock: DEBTOR. Cross-program mutation: YOK.**
+
+**DEBTOR sayfasının WAVE-4 payı (DEBTOR-1 + DEBTOR-2) TAMAMLANDI.** Sıradaki
+migration RC-COL'ün kendi sorumluluğundadır; bu belge veya DEBTOR sayfası
+RC-COL'e dokunmaz, yeni bir workstream'e geçmez.
 
 ## 4. RCV-COL / RC-COL
 
