@@ -1146,3 +1146,68 @@ DATA / BACKFILL: NONE
 RUNTIME WRITER / ACTIVATION: UNCHANGED / NONE
 CROSS-PROGRAM APPLY: NONE
 ```
+
+## 9.17. WAVE 4 predecessor queue — RC-COL production migration apply — 2026-08-05
+
+Owner'ın `WAVE 4 PREDECESSOR QUEUE CLEARANCE R01` sırasındaki dördüncü migration
+`20260802120000_bank_tenant_fk_name_reconciliation_r01`, exact frontier commit
+`0c799a7d90a5782d921a546a1cd4ed09d6a609b0` üzerinden production'da tek hedef olarak
+uygulanmış ve post-validate edilmiştir. Frontier artifact 115 migration içerir; hedef
+artifact'ın son ve apply öncesi tek pending migration'ıdır. Migration dosyası frontier ile
+current main'de aynı SHA-256'a sahiptir:
+`b9f0111114be9625a0c59974b2ad5a5b5a5c593ae4605024b947bbed0386a1fe`. Current main
+üzerinden `migrate deploy`, manual SQL, `migrate resolve`, fake-applied veya başka program
+migration'ı çalıştırılmamıştır.
+
+Apply öncesinde HUKUK API/Web container ve project process sayısı `0`, external DB client /
+active transaction sayısı `0` ve waiting lock sayısı `0` olarak doğrulanmış; formal
+write-freeze `2026-08-05T22:37:10.028+03:00` anında ilan edilmiştir. Repo dışı fresh
+`pg_dump -Fc` backup:
+`C:\Development\HUKUK_YAZILIMI\backups\hukuk_db_pre_rc_col_wave4_20260805T193710Z.dump`,
+`1,125,242` byte, SHA-256
+`b5159be87ba55c2e5cee41c1c4d051bb78c8c29b781b191e08632dc5d889f0ee`; WAVE 4 terminal
+kapanışına kadar korunacaktır. PostgreSQL 16.14 disposable restore parity `114 applied /
+0 failed`, target absent, iki eski FK validated ve `BankSettlementEvidence=0 /
+BankTransaction=0` PASS; disposable container doğrulama sonrası kaldırılmıştır.
+
+Production apply bu task'ın Prisma süreci tarafından `2026-08-05T22:38:10.990+03:00` ile
+`2026-08-05T22:38:11.493+03:00` arasında çalıştırılmış; CLI yalnız hedef migration'ı
+uyguladığını ve tüm migration'ların başarıyla tamamlandığını raporlamıştır. Ledger kanıtı:
+
+```text
+started_at          : 2026-08-05 19:38:11.439872+00
+finished_at         : 2026-08-05 19:38:11.451027+00
+checksum            : b9f0111114be9625a0c59974b2ad5a5b5a5c593ae4605024b947bbed0386a1fe
+applied_steps_count : 1
+rolled_back_at      : NULL
+logs                 : NULL
+applied count       : 114 -> 115
+newly applied       : exact target only
+failed/rolled-back  : 0
+frontier status     : up to date
+current-main pending: 7 -> 6
+```
+
+Eski FK adları production'da `0`; canonical yeni adlar `2/2`, validated ve önceki FK
+tanımlarıyla semantik olarak eşittir. `BankSettlementEvidence` ve `BankTransaction` satır
+sayıları apply öncesi/sonrası `0 -> 0`dır; data mutation/backfill yoktur. Rollback, repair,
+reapply, `migrate resolve` veya manual SQL yapılmamıştır. Current-main kuyruğunda yalnız
+altı CLIENT migration'ı kalır; ilk pending
+`20260802190000_client_identity_active_partial_unique`dır. Bu kayıt CLIENT C3 / ADIM 0 için
+`115 applied / 6 CLIENT pending` predecessor-success kanıtıdır; CLIENT APPLY veya başka
+program mutation yetkisi üretmez.
+
+```text
+RC-COL MIGRATION: PRODUCTION_APPLIED / POST-VALIDATED / CANONICAL EVIDENCE
+APPLY CLASSIFICATION: CLEAN SINGLE-TARGET FRONTIER APPLY
+CHECKSUM CANONICAL PARITY: PASS
+LEDGER: 115 APPLIED / 0 FAILED
+CURRENT-MAIN PENDING: 6 CLIENT MIGRATIONS
+PRE-APPLY BACKUP / DISPOSABLE RESTORE: PASS / RETAINED
+CONSTRAINT RENAME: 2/2 VALIDATED
+DATA / BACKFILL: NONE
+ROLLBACK / REPAIR / REAPPLY / RESOLVE / MANUAL SQL: NONE
+CROSS-PROGRAM APPLY: NONE
+NEXT: CLIENT C3 / ADIM 0 FRESH RE-RUN — SEPARATE PROGRAM PAGE
+```
+
