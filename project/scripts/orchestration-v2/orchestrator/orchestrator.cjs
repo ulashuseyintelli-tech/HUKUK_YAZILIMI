@@ -60,6 +60,8 @@ const IMMUTABLE_FORBIDDEN = [
   '.github/workflows/ci.yml',
   'project/scripts/governance-coordination.cjs',
   'project/scripts/governance-coordination.test.cjs',
+  'project/scripts/gh-guard-readonly.ps1',
+  'project/scripts/gh-guard-readonly.test.cjs',
   '.agents/skills/**',
   // grandfatheredOwnerWip (prefixes + every exact path falls under these)
   '.claude/',
