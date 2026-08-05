@@ -904,7 +904,9 @@ C2 BLOCKS:                8 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 8 (B
                            client modülü 495/495 PASS)
 C3 STATUS:                ENGINEERING_COMPLETE — C3 8/8 (B00-B07) tamam (2026-08-03/04)
                           C3 PAGE: SUSPENDED_FOR_ACTIVATION — TERMINAL CLOSED DEĞİL;
-                          4 migration üretildi, production APPLY borcu WAVE 4'te AYNI
+                          5 migration üretildi (owner disposition 2026-08-05 ile
+                          uzlaştırıldı — önceki "4" kaydı eksikti), production APPLY
+                          borcu WAVE 4'te AYNI
                           C3 sayfasında, C3-PROD-ACTIVATION koşullu yetkisi verildikten
                           sonra kapanır (NOT YET GRANTED — owner talimatı 2026-08-03:
                           "production APPLY yapma; WAVE 4 için ayrıca owner yetkisi").
@@ -945,12 +947,21 @@ C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B)
                           sıfır-diff kanıtı + paketin §13/5-10 kapsama doğrulaması).
 C3 ACTIVATION DEBT:       DOĞDU — C3-PROD-ACTIVATION (WAVE 4, AYNI C3 sayfası; koşullu
                           yetki NOT YET GRANTED). Kalemler:
-                          (1) 4 migration production APPLY (sırayla):
+                          (1) 5 migration production APPLY (timestamp sırasıyla;
+                              owner disposition 2026-08-05 uzlaştırması — repository-
+                              truth: her biri kendi blok PR'ının diff'inde):
                               20260803170000_client_consent_and_greeting_defaults
-                              (K5.5 mevcut tebrik bayraklarını kapatan UPDATE dahil) ·
-                              20260803190000_client_disclosure_and_dsar ·
-                              20260803210000_client_legal_hold ·
+                              (B01 #2149/59c567b6, §13/5 K5; K5.5 geri dönüşsüz
+                              tebrik-kapatma UPDATE dahil) ·
+                              20260803190000_client_disclosure_and_dsar
+                              (B02 #2151/f732004f, §13/6 K6) ·
+                              20260803210000_client_legal_hold
+                              (B03 #2152/9560f60f, §13/8 K8) ·
+                              20260803230000_client_special_category_record
+                              (B04 #2155/6560cbe9, §13/7 K7 — ÖNCEKİ KAYITTA EKSİKTİ;
+                              bu satırla borç defterine alındı) ·
                               20260804010000_client_cancollect_default_false
+                              (B05 #2156/67bffe6b, §13/9 K9.4/K9.6)
                           (2) K9.5 POA envanteri + readiness raporu (APPLY öncesi;
                               otomatik grandfathering YOK)
                           (3) K7.4 mevcut veri read-only envanter taraması (ayrı
