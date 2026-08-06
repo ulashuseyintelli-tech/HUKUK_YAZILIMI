@@ -108,5 +108,12 @@ E3  Production parity koşusu (A4 script; freeze altında)       → P3/P4
 E4  I08 executor + §9-D prova zinciri                          → P5 / AŞAMA B
 ```
 
-STATUS: AŞAMA A COMPLETE — AŞAMA B NOT ELIGIBLE (P1/P2 FAIL). Charter §49.6/§49.14
+STATUS GÜNCELLEME (2026-08-06, owner disposition E1→E2→cert→E3→gate→E4):
+E1 DELIVERED — create/update flat yazımı KAPATILDI (kaynak-parse guard'lı);
+legacy flat-only payload ClientAddress'e sentezlenir (veri kaybı yok); public API
+imzaları ve relational yazım korunudu; seed/import/OCR/case yolları aynı kapıdan
+(kanıt: e1 spec 3/3 + client modülü 43 suite/710 + export-import 36/36 + seed 53/53).
+NEXT: E2 (6 consumer resolver'a — bounded cross-lane grant).
+STATUS: AŞAMA A COMPLETE — AŞAMA B NOT ELIGIBLE (P1 repo-seviyesinde kapandı,
+production sertifikasyonu deployment gate'inde; P2 E2'de). Charter §49.6/§49.14
 AYNEN yürürlükte; flat veri SİLİNMEDİ, I08 UYGULANMADI.

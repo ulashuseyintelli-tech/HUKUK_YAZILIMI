@@ -47,7 +47,8 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
     expect(tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: "c1", tenantId: "t1" });
   });
 
-  it("P0.7: create'te map'lenen 8 alan update payload'unda taşınır (sessiz veri kaybı yok)", async () => {
+  // C2-I08 E1: postalCode flat adres ailesindendir ve artık YAZILMAZ — parite listesi 7 alan.
+  it("P0.7: create'te map'lenen 7 alan update payload'unda taşınır (sessiz veri kaybı yok); postalCode E1 ile bilinçli DIŞARIDA", async () => {
     const { svc, tx } = buildHarness();
     await svc.update(
       "c1",
@@ -66,7 +67,7 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
       }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const data = tx.client.updateMany.mock.calls[0][0].data;
-    expect(data.postalCode).toBe("34000");
+    expect(data.postalCode).toBeUndefined();
     expect(data.isForeigner).toBe(true);
     expect(data.nationality).toBe("Alman");
     expect(data.companyType).toBe("Anonim");
