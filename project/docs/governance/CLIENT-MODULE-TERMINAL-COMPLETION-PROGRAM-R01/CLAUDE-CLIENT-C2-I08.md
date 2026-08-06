@@ -85,7 +85,13 @@ Her kapı FAIL'inde sonraki adıma geçilmez; BLOCKED_EXACT kanıtıyla dönül�
 ## 4. STATUS
 
 ```text
-C2-I08-PRE-WAVE5-LEGACY-FLAT-REDUCTION-R01: NOT STARTED — AŞAMA A NEXT ELIGIBLE
+C2-I08-PRE-WAVE5-LEGACY-FLAT-REDUCTION-R01: AŞAMA A COMPLETE (2026-08-06) —
+AŞAMA B NOT ELIGIBLE: P1 FAIL (2 aktif flat writer: client.service create/update) ·
+P2 FAIL (6 resolver-dışı consumer: uyap-case-mapper:228 · uyap-xml:911 ·
+document-template:234 · document:119 · export-import:64 · template-engine:495) ·
+P3/P4 dry-run SCRIPT HAZIR (production koşusu D07 gereği apply-öncesi) · P5 PARTIAL.
+Ürün/şema/production mutation: SIFIR. Rapor + A4 script + önerilen engineering
+dilimleri (E1-E4, owner disposition bekler): C2-I08-ASAMA-A-READINESS-R01.md
 WAVE 5 ELIGIBILITY bağı: bu sayfanın production-verified kapanışı + FD provider
 ops gate'i (WAVE4-EVIDENCE §14) birlikte.
 ```
