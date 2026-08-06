@@ -874,11 +874,14 @@ C2 REVIEW EXTENSION:      DELIVERED (2026-08-03, owner bounded GO-COMPLETE) — 
                           C2 sayfası B07 kaydında)
 C2 ACTIVATION DEBT:       PARTIAL — ARC-07 I05 dry-run EXECUTED/PASS + I06 apply
                           EXECUTED/PASS (2026-08-06: 3 satır arc07i06-* backfill,
-                          ihlaller 0/0, flat alanlara dokunulmadı). I08 legacy-flat
-                          reduction STOP: charter §49.6/§49.14 D05 Stage-3 ön-koşulu
-                          (tüketici hazırlığı kanıtının TAMAMI) karşılanmıyor + repo'da
-                          I08 yürütücüsü yok → OWNER DECISION REQUIRED. Kanıt:
-                          WAVE4-EVIDENCE-R01.md §11.
+                          ihlaller 0/0, flat alanlara dokunulmadı). I08:
+                          DEFERRED_TO_AUTHORIZED_PRE_WAVE5_SLICE (owner disposition
+                          2026-08-06, opsiyon a — NOT EXECUTED / NOT WAIVED /
+                          MANDATORY PRE-WAVE5 RESIDUAL; charter §49.6/§49.14
+                          DEĞİŞMEDİ). Yürütme yeri: CLAUDE-CLIENT-C2-I08.md /
+                          C2-I08-PRE-WAVE5-LEGACY-FLAT-REDUCTION-R01 (AŞAMA A
+                          readiness → PASS ise AŞAMA B otomatik). Kanıt:
+                          WAVE4-EVIDENCE-R01.md §11 + §14.
                           (B06: notification primitive CANONICAL+FROZEN, §13/11 madde 6;
                           b06 spec 31/31 + b03 19/19 + r4 45/45 PASS)
                           (B05: disposition-only,
@@ -1151,9 +1154,19 @@ X2 ACTIVATION DEBT:       EXECUTED (2026-08-06, WAVE 4 GO-COMPLETE; owner yetkis
                           EMAIL_PROVIDER yapılandırılana dek kanonik allowlist guard ile
                           yapısal fail-closed — OPS FOLLOW-UP. Kanıt:
                           WAVE4-EVIDENCE-R01.md §10.
-X2 FD RUNTIME:            WRITE ON / PUBLICATION ON (runtime 8080, artifact 7428d688) /
-                          DIŞA YAYIN: PROVIDER OPS-PENDING (fail-closed)
+X2 FD RUNTIME:            WRITE ON / PUBLICATION **OFF** (owner disposition 2026-08-06:
+                          EMAIL_PROVIDER yapılandırılana kadar; derlenmiş guard
+                          doğrulaması isDisclosurePublicationEnabled=false).
+                          PRE-WAVE5 OPS GATE: provider konfig → publication ON →
+                          allowlist canary → runtime verification (EVIDENCE §14).
 X2-B02 LIVE-APPLY:        UNKNOWN / VALID TERMINAL RESULT / NOT A BLOCKER
+WAVE 4 STATUS:            PRODUCTION_ACTIVE / CONTROLLED_RESIDUALS OPEN
+                          (owner disposition 2026-08-06; TERMINAL_CLOSED: NO;
+                          kanıt: WAVE4-EVIDENCE-R01.md R02 + §14)
+WAVE 5 ELIGIBILITY:       NOT ELIGIBLE — yalnız iki residual birden kapanınca:
+                          (1) C2-I08 production verified (CLAUDE-CLIENT-C2-I08.md)
+                          (2) EMAIL_PROVIDER configured + external publication
+                              canary PASS (PRE-WAVE5 OPS GATE)
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
 PRODUCTION_COMPLETE:      NOT REACHED
