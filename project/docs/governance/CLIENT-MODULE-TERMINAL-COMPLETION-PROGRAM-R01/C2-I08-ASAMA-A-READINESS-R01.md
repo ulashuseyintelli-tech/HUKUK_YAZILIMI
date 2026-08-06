@@ -134,3 +134,41 @@ salt-okunur) → P1–P5 FINAL GATE → E4.
 STATUS: AŞAMA A COMPLETE — AŞAMA B NOT ELIGIBLE (P1 repo-seviyesinde kapandı,
 production sertifikasyonu deployment gate'inde; P2 E2'de). Charter §49.6/§49.14
 AYNEN yürürlükte; flat veri SİLİNMEDİ, I08 UYGULANMADI.
+
+## DEPLOYMENT GATE + E3 KANIT PAKETİ (2026-08-06, owner-ops GO — TÜM EŞİKLER PASS)
+
+```text
+1. PREFLIGHT   : PASS — deploy ref bdae1f47 (E1 b3acf02c + E2 5db434a0 + CERT bdae1f47
+                 üçü ANCESTOR_OK) · açık PR 0 · API/Web kapalıydı (aktif deployment yok)
+                 · rollback ref 7428d688 + releases/client-wave4-7428d688.tar.gz
+2. DEPLOY      : PASS — canonical W4 prosedürü: pinli build worktree (HY_WT/I08_DEPLOY
+                 @ bdae1f47) → nest build + next build (BUILD_ID 5S0329kVwR7FZ-gdNm2B)
+                 → immutable artifact releases/client-i08-bdae1f47.tar.gz
+                 (6.043.050 B · sha256 1eed873bd542fd692ce187e05b7acd074d1cf8a9d0983b7c95ec41155dfd19a5)
+                 → RUNTIME_W4 pinli checkout bdae1f47 + overlay.
+                 HASH MUTABAKATI BİREBİR: API dist c441bcf8a57e19ffd26aaed62699a70eb354cf5aba91171b6e0f5daceaf8f57c ·
+                 WEB .next(cache'siz) ad09ab1066654b8836450351424801161271477ec6f0c50f1505adf2e7842387.
+                 Şema/migration/backfill YOK · EMAIL_PROVIDER/FD flag DOKUNULMADI.
+3. VERIFY      : PASS — API 8080 + Web 3002 AYAKTA · smoke: login boş gövde 400
+                 (validation fail-closed) · web / 200 · tokensiz /api/clients 401 ·
+                 tokensiz workspace komutu 401 · API log error/fatal=0 · yeni 5xx=0.
+                 Writer=0 + 6/6 consumer resolver'da: bdae1f47 repo-cert + birebir
+                 hash'le AYNI sürüm deploy edildi (runtime'a bağlandı).
+4. FREEZE      : DECLARED (W4 yöntemi) — 5× ölçüm: hukuk_db aktif yazar=0,
+                 idle-in-transaction=0; read trafiği AÇIK; freeze KORUNUYOR.
+5. BACKUP      : PASS — backups/hukuk_db_20260806T133438Z_pre_i08_e3.dump
+                 (1.153.985 B · sha256 890c43054e8829ef9858b3fb392637e84d38a7f1fbccb7affe559958fc32f8a3)
+                 · restore provası İZOLE DB'de: 206 tablo, Client 15==15 birebir,
+                 probe düşürüldü · dış servise YÜKLENMEDİ.
+6. E3 PARITY   : PASS (READ-ONLY, hukuk_db) —
+                 BOS=12 · ESIT=2 · FARKLI=0 ✓ · YALNIZ_FLAT=0 ✓ · YALNIZ_RELATIONAL=1
+                 (açıklama: flat taraf TAMAMEN NULL — kaynakta veri hiç yoktu;
+                 relational satırda yalnız postalCode dolu → flat→relational kayıp
+                 İMKÂNSIZ; blocker DEĞİL) · arc07i06-% = 0 satır (production'da yok).
+                 Production flat writer=0 (freeze penceresi ölçümü + repo guard) ·
+                 resolver-dışı consumer=0 (repo-cert, aynı sürüm).
+7. DISPOSITION : PASS YOLU — production mutation YAPILMADI · freeze KORUNUYOR ·
+                 bu kanıt paketi C2 sayfasına teslim edildi.
+                 NEXT: C2 → P1–P5 FINAL GATE doğrulaması → E4 executor + dry-run
+                 (aynı grant; apply yalnız dry-run PASS + tüm gate'ler PASS ise).
+```
