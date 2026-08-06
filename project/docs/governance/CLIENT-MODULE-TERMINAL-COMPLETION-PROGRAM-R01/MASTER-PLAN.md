@@ -1167,6 +1167,11 @@ WAVE 5 ELIGIBILITY:       NOT ELIGIBLE — yalnız iki residual birden kapanınc
                           (1) C2-I08 production verified (CLAUDE-CLIENT-C2-I08.md)
                           (2) EMAIL_PROVIDER configured + external publication
                               canary PASS (PRE-WAVE5 OPS GATE)
+C2-I08 FINAL:             CLOSED / PRODUCTION_VERIFIED (2026-08-06) — E1..E4 + deploy
+                          gate + E3 parity + I08 apply (cleared=2, audited=2) + freeze OFF
+                          post-check'leri PASS. postalCode residual INTENTIONALLY_RETAINED.
+                          WAVE 5: ELIGIBLE — yalnız FD provider ops gate'ine bağlı.
+                          Kanıt: C2-I08-ASAMA-A-READINESS-R01.md (FINAL RELEASE bölümü).
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
 PRODUCTION_COMPLETE:      NOT REACHED
