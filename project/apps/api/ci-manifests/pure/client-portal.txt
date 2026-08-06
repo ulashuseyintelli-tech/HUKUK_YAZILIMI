@@ -227,6 +227,11 @@ src/modules/client/__tests__/client-intake-review-authority-extension.spec.ts
 #     (veri kaybi yok, cift satir yok). Seed/import/OCR/case yollari create
 #     uzerinden ayni kapidan gecer.
 src/modules/client/__tests__/client-flat-writer-closure-e1.spec.ts
+#
+#   C2-I08 E4 — I08 executor cekirdegi (SAF, DB-siz)
+#     A4-parity siniflandirma · fail-closed plan · uc kapi + DB hedef guard'i ·
+#     idempotent kosullu yazim · audit alan-adi-only · hata->rollback.
+src/modules/client/__tests__/arc07-i08-legacy-flat-reduction-e4.spec.ts
 #     C3-B01 (§13/5): KVKK islem dayanagi registry + acik riza fail-closed kapisi.
 src/modules/client/__tests__/client-processing-basis-registry.spec.ts
 src/modules/client/__tests__/client-consent-fail-closed-b01.spec.ts
