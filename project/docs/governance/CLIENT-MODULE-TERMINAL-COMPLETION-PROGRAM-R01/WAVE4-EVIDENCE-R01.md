@@ -227,3 +227,31 @@ WAVE 4             : **PRODUCTION_ACTIVE İLAN EDİLMEDİ** — "IF ALL PASS" ko
                      ops. Runtime: API 8080 (flags ON) + Web 3002 artifact'tan AYAKTA.
 WAVE 5             : I08 disposition sonrası NEXT ELIGIBLE.
 ```
+
+## 14. OWNER DISPOSITION (2026-08-06) — WAVE 4 CLOSEOUT + I08 + FD OPS GATE
+
+```text
+SEÇİLEN OPSİYON : (a) I08, WAVE 5 ÖNCESİ ayrı yetkilendirilmiş engineering+activation
+                  dilimi — yeni sayfa CLAUDE-CLIENT-C2-I08.md, blok
+                  C2-I08-PRE-WAVE5-LEGACY-FLAT-REDUCTION-R01.
+CHARTER         : §49.6/§49.14 DEĞİŞTİRİLMEDİ — consumer-readiness tamamlanmadan
+                  legacy-flat reduction YASAK.
+WAVE 4          : PRODUCTION_ACTIVE / CONTROLLED_RESIDUALS OPEN (TERMINAL_CLOSED: NO)
+C2              : I05 PASS · I06 PASS · I08 DEFERRED_TO_AUTHORIZED_PRE_WAVE5_SLICE
+                  (NOT EXECUTED / NOT WAIVED / MANDATORY PRE-WAVE5 RESIDUAL)
+
+FD FLAG OPS (uygulandı, 2026-08-06):
+  write flag    : ON kaldı (isDisclosureWriteEnabled=true — derlenmiş guard ile)
+  publication   : CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED=false (kanonik ad
+                  repository'den — activation.ts:32-33); iki env'de OFF; API restart
+                  (PID 53532 durduruldu → yeni süreç "successfully started");
+                  DOĞRULAMA: artifact'ın derlenmiş guard'ı gerçek env değerleriyle
+                  isDisclosurePublicationEnabled=false → dışa publication KAPALI.
+                  Provider secret'ı hiçbir kayda geçmedi (henüz mevcut da değil).
+  PRE-WAVE5 OPS GATE: EMAIL_PROVIDER (smtp|sendgrid|ses, exact) yapılandır →
+                  publication flag ON → allowlist canary → runtime verification.
+
+WAVE 5 ELIGIBILITY (yalnız ikisi birden kapanınca):
+  (1) C2-I08 production verified · (2) EMAIL_PROVIDER configured + external
+  publication canary PASS
+```
