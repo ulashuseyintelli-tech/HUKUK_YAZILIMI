@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 // RFA-017: Excel client import guard'lı ClientService.create'e devredilir (duplicate bypass kapatma).
 import { ClientService, type ClientMutationActorContext } from "../client/client.service";
+import { resolveClientAddress, type ClientAddressResolverRow } from "../client/client-address-resolver";
 import * as ExcelJS from "exceljs";
 import * as PDFDocument from "pdfkit";
 import { computeDebtorMissingFields } from "../debtor/debtor.service"; // PR-D5-e: eksik bilgi sayısı
@@ -58,10 +59,23 @@ export function formatDateTR(value?: Date | string | null): string {
 }
 
 export function buildShortAddress(
-  client: { address?: string | null; district?: string | null; city?: string | null },
+  client: {
+    address?: string | null;
+    district?: string | null;
+    city?: string | null;
+    // C2-I08 E2: yapısal satırlar verilirse KANONİK resolver seçer (isCurrent=true
+    // filtreli + sıralı gelmelidir — I01/I03 sözleşmesi); yoksa legacy flat fallback.
+    addresses?: ClientAddressResolverRow[] | null;
+  },
   maxLen = 70
 ): string {
-  const parts = [client.address, client.district, client.city]
+  const resolved = resolveClientAddress({
+    address: client.address,
+    city: client.city,
+    district: client.district,
+    addresses: client.addresses,
+  });
+  const parts = [resolved.street, resolved.district, resolved.city]
     .map((p) => (p || "").trim())
     .filter(Boolean);
   let s = parts.join(" / ");
@@ -560,7 +574,15 @@ export class ExportImportService {
         { email: { contains: search, mode: "insensitive" } },
       ];
     }
-    return this.prisma.client.findMany({ where, include: { _count: { select: { cases: true } } }, orderBy: { createdAt: "desc" } });
+    // C2-I08 E2: adres artık kanonik resolver'dan — I01/I03 sözleşmesiyle yüklenir.
+    return this.prisma.client.findMany({
+      where,
+      include: {
+        _count: { select: { cases: true } },
+        addresses: { where: { isCurrent: true }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
   }
 
   private async getCases(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }) {

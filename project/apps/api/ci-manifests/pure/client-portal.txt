@@ -95,6 +95,9 @@ src/modules/client/__tests__/client-mutation-authorization-own13.spec.ts
 src/modules/client/__tests__/client-service-boundary-actor-threading-r1.spec.ts
 src/modules/export-import/__tests__/client-import-actor-threading-r1.spec.ts
 #
+#   C2-I08 E2 — buildShortAddress kanonik resolver'a baglandi (parity kaniti)
+src/modules/export-import/__tests__/export-import-resolver-parity-e2.spec.ts
+#
 #   CLIENT-OWN-13-I02-R1A reactivate-via-create lifecycle gate (SAF, DB-siz)
 #     Owner clarification (RATIFIED): her `isActive:false -> true` gecisi, hangi entrypoint
 #     uzerinden olursa olsun LIFECYCLE mutasyonudur. Create yetkisi lifecycle yetkisini

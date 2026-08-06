@@ -215,6 +215,9 @@ src/modules/uyap/__tests__/uyap-tenant-write-population.spec.ts
 src/modules/uyap/__tests__/uyap-transport-truthfulness-containment.spec.ts
 src/modules/uyap/__tests__/uyap-write-ownership-completion.spec.ts
 src/modules/uyap/__tests__/uyap-xml.debtor-role-mapping.spec.ts
+#
+#   C2-I08 E2 — uyap-xml alacakli adresi kanonik resolver'dan (parity kaniti)
+src/modules/uyap/__tests__/uyap-xml.client-address-resolver-e2.spec.ts
 src/modules/uyap/__tests__/uyap-xml.numeric-interest-projection.spec.ts
 src/modules/uyap/authority/__tests__/trigger-haciz-authorization.service.spec.ts
 src/modules/uyap/authority/__tests__/trigger-haciz-capability-authorization.service.spec.ts
