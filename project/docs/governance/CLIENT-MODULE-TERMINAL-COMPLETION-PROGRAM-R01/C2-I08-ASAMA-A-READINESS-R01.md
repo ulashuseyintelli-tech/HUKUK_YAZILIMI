@@ -122,7 +122,15 @@ Parity: uyap-xml-e2 3/3 · doc-template-e2 3/3 · export-import-e2 4/4; regresyo
 client 43/710 · uyap pure 53/1022 · export-import 40 · document 24.
 NOT (kapsam dışı kayıt): export-import.service.spec.ts HİÇBİR CI manifest'inde yok
 (narrow-allowlist boşluğu) — disposition owner'a.
-NEXT: E1/E2 sürümünün production deployment gate'i → E3 (freeze+backup sonrası parity).
+P1/P2 CERTIFICATION (2026-08-06, fresh main 5db434a0, canonical root read-only):
+P1 REPO-CERTIFIED — flat writer 0 (e1 guard 3/3) · P2 REPO-CERTIFIED — 6/6 consumer
+resolver'da (uyap-xml-e2 3/3 · doc-template-e2 3/3 · export-import-e2 4/4 ·
+resolver 13/13). PRODUCTION sertifikasyonu deployment gate'inde: E1/E2 sürümü
+production'a alınıp sağlık + resolver çıktıları + writer-sustu + consumer-resolver
+doğrulamaları yapılmadan E3 koşulamaz (deploy/freeze/backup OWNER-OPS aksiyonu —
+bu oturumun production erişimi yok).
+NEXT: PRODUCTION DEPLOYMENT GATE (ops) → E3 (freeze+backup sonrası A4 parity,
+salt-okunur) → P1–P5 FINAL GATE → E4.
 STATUS: AŞAMA A COMPLETE — AŞAMA B NOT ELIGIBLE (P1 repo-seviyesinde kapandı,
 production sertifikasyonu deployment gate'inde; P2 E2'de). Charter §49.6/§49.14
 AYNEN yürürlükte; flat veri SİLİNMEDİ, I08 UYGULANMADI.
