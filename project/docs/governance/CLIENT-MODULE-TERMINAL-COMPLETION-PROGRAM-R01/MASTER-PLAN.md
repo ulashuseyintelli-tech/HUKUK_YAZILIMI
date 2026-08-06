@@ -841,10 +841,11 @@ C1 BLOCKS:                6 ENGINEERING + 1 WAVE-4 ACTIVATION · COMPLETED: 6 (B
                            C1-B01 = bu evidence'ın fresh main a92a5a44 üzerinde residual
                            doğrulaması: 5/5 kalem koddan kanıtlandı, ürün diff'i SIFIR,
                            47/47 ilgili test PASS — duplicate implementation AÇILMADI)
-C1 ACTIVATION DEBT:       C1-PROD-ACTIVATION — 20260802190000_client_identity_active_
-                          partial_unique production APPLY (aktif satırda tenantId+tckn /
-                          tenantId+vkn partial unique; §9-D koşullu yetkiyle WAVE 4'te,
-                          AYNI C1 sayfası tarafından). BAŞKA activation borcu YOK.
+C1 ACTIVATION DEBT:       KAPANDI — C1-PROD-ACTIVATION EXECUTED (2026-08-05, WAVE 4
+                          GO-COMPLETE): 20260802190000 gerçek hukuk_db'ye APPLIED;
+                          2/2 partial-unique index mevcut + davranış tx-içi duplicate
+                          probe ile kanıtlı; duplicate envanteri 0/0. Kanıt:
+                          WAVE4-EVIDENCE-R01.md §8. BAŞKA C1 borcu YOK.
 C1 ENGINEERING FOLLOW-UP: FIND-C4 (version/CAS) — activation/WAVE-4 borcu DEĞİLDİR.
                           Atomik birlikte deploy KANITLANAMADI — C2-owned policy allowlist
                           + XL-3 imza kısıtı nedeniyle aynı migration owner altında SERİ
@@ -871,9 +872,13 @@ C2 REVIEW EXTENSION:      DELIVERED (2026-08-03, owner bounded GO-COMPLETE) — 
                           #2096, charter §49 kaydı bayat); invariantlar + resolver
                           adres suite 187/187; I04 kanıt hazırlığı + rollback sınırları
                           C2 sayfası B07 kaydında)
-C2 ACTIVATION DEBT:       C2-PROD-ACTIVATION — ARC-07 I05 dry-run → I06 apply → I08
-                          legacy-flat reduction (WAVE 4, AYNI C2 sayfası; owner koşullu
-                          yetkisi HENÜZ VERİLMEDİ — master plan §13 tablosu)
+C2 ACTIVATION DEBT:       PARTIAL — ARC-07 I05 dry-run EXECUTED/PASS + I06 apply
+                          EXECUTED/PASS (2026-08-06: 3 satır arc07i06-* backfill,
+                          ihlaller 0/0, flat alanlara dokunulmadı). I08 legacy-flat
+                          reduction STOP: charter §49.6/§49.14 D05 Stage-3 ön-koşulu
+                          (tüketici hazırlığı kanıtının TAMAMI) karşılanmıyor + repo'da
+                          I08 yürütücüsü yok → OWNER DECISION REQUIRED. Kanıt:
+                          WAVE4-EVIDENCE-R01.md §11.
                           (B06: notification primitive CANONICAL+FROZEN, §13/11 madde 6;
                           b06 spec 31/31 + b03 19/19 + r4 45/45 PASS)
                           (B05: disposition-only,
@@ -945,8 +950,15 @@ C3-B00 AKIŞI:             İKİ AŞAMALI, docs-only (CLAUDE-CLIENT-C3.md §1-B)
                           B00 ürün diff'i SIFIR; test gerekmiyorsa acceptance ölçütü
                           APPLICABLE KONTROLLERDİR (required checks + mergeability +
                           sıfır-diff kanıtı + paketin §13/5-10 kapsama doğrulaması).
-C3 ACTIVATION DEBT:       DOĞDU — C3-PROD-ACTIVATION (WAVE 4, AYNI C3 sayfası; koşullu
-                          yetki NOT YET GRANTED). Kalemler:
+C3 ACTIVATION DEBT:       KAPANDI — C3-PROD-ACTIVATION EXECUTED (2026-08-05/06, WAVE 4
+                          GO-COMPLETE; owner yetkisi 2026-08-05): 5 migration gerçek
+                          hukuk_db'ye APPLIED (121/0/0; tablolar 6/6, default'lar 4/4,
+                          K5.5 pre=15→post=0 birebir); K9.5 readiness raporu üretildi
+                          (13/15 POA'sız → fail-closed, grandfathering YOK);
+                          CLIENT_SPECIAL_CATEGORY_DATA_KEY hedef ortamda tanımlı (değer
+                          hiçbir kayda geçmedi); K7.4 read-only agregat tarama yapıldı
+                          (Client.notes dolu=0). Kanıt: WAVE4-EVIDENCE-R01.md §7-§8,
+                          §12. Aşağıdaki tarihsel kalem listesi arşiv amaçlı korunur:
                           (1) 5 migration production APPLY (timestamp sırasıyla;
                               owner disposition 2026-08-05 uzlaştırması — repository-
                               truth: her biri kendi blok PR'ının diff'inde):
@@ -1133,9 +1145,14 @@ X2 BLOCK EVIDENCE:        B01 RUNTIME_VERIFIED / MERGED / CANONICAL
                           B07 current-head CI run 30945552375 / dokuz DB spec
                           SKIP olmadan PASS / RUNTIME_VERIFIED
 X2 NEXT ELIGIBLE:         NONE — engineering
-X2 ACTIVATION DEBT:       X2-PROD-ACTIVATION / WAVE 4 / OWNER-GATED / NOT AUTHORIZED
-X2 FD RUNTIME:            WRITE DEFAULT-OFF / PUBLICATION DEFAULT-OFF /
-                          PRODUCTION ACTIVATION NOT PERFORMED
+X2 ACTIVATION DEBT:       EXECUTED (2026-08-06, WAVE 4 GO-COMPLETE; owner yetkisi
+                          2026-08-05): iki flag ON + canary PASS (tokensiz FD aksiyonları
+                          401; FD e2e gerçek Postgres 6/6). Dışa e-posta yayını
+                          EMAIL_PROVIDER yapılandırılana dek kanonik allowlist guard ile
+                          yapısal fail-closed — OPS FOLLOW-UP. Kanıt:
+                          WAVE4-EVIDENCE-R01.md §10.
+X2 FD RUNTIME:            WRITE ON / PUBLICATION ON (runtime 8080, artifact 7428d688) /
+                          DIŞA YAYIN: PROVIDER OPS-PENDING (fail-closed)
 X2-B02 LIVE-APPLY:        UNKNOWN / VALID TERMINAL RESULT / NOT A BLOCKER
 PROGRAM LOCK:             CLIENT ONLY
 ENGINEERING_COMPLETE:     NOT REACHED
