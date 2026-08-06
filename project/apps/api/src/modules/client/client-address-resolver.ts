@@ -53,6 +53,12 @@ export interface ResolvedClientAddress {
   district: string | null;
   /** Yapısal satır var mı — I01 boşluğu (üzerine referans) için bilgi amaçlı. */
   hasStructured: boolean;
+  /**
+   * C2-I08 E2 (additive): sokak/cadde bileşeni tek başına — kendi kısa-format
+   * birleştirmesini yapan tüketiciler (export-import buildShortAddress) için.
+   * structured → picked.street · legacy → input.address · none → null.
+   */
+  street: string | null;
 }
 
 /** Trim edilmiş, boş olmayan değeri döner; aksi halde null. */
@@ -100,6 +106,7 @@ export function resolveClientAddress(input: ClientAddressResolverInput): Resolve
       city: picked.city ?? null,
       district: picked.district ?? null,
       hasStructured,
+      street: picked.street ?? null,
     };
   }
 
@@ -117,8 +124,9 @@ export function resolveClientAddress(input: ClientAddressResolverInput): Resolve
       city: input.city ?? null,
       district: input.district ?? null,
       hasStructured,
+      street: input.address ?? null,
     };
   }
 
-  return { line: null, source: 'none', city: null, district: null, hasStructured };
+  return { line: null, source: 'none', city: null, district: null, hasStructured, street: null };
 }

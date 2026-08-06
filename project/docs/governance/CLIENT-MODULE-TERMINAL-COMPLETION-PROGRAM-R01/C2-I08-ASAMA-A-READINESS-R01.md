@@ -113,7 +113,16 @@ E1 DELIVERED — create/update flat yazımı KAPATILDI (kaynak-parse guard'lı);
 legacy flat-only payload ClientAddress'e sentezlenir (veri kaybı yok); public API
 imzaları ve relational yazım korunudu; seed/import/OCR/case yolları aynı kapıdan
 (kanıt: e1 spec 3/3 + client modülü 43 suite/710 + export-import 36/36 + seed 53/53).
-NEXT: E2 (6 consumer resolver'a — bounded cross-lane grant).
+E2 DELIVERED — A1'in 6 sahasından 3'ü ZATEN I07 adapter'ında çıktı
+(uyap-case-mapper · document.service · template-engine: A1 grep eşleşmeleri resolver
+GİRDİSİYDİ); kalan 3 gerçek doğrudan okuyucu resolver'a taşındı: uyap-xml (include +
+tamAdres) · document-template (include + creditor.address) · export-import
+buildShortAddress (resolver.street additive alanıyla format AYNEN korunudu).
+Parity: uyap-xml-e2 3/3 · doc-template-e2 3/3 · export-import-e2 4/4; regresyon:
+client 43/710 · uyap pure 53/1022 · export-import 40 · document 24.
+NOT (kapsam dışı kayıt): export-import.service.spec.ts HİÇBİR CI manifest'inde yok
+(narrow-allowlist boşluğu) — disposition owner'a.
+NEXT: E1/E2 sürümünün production deployment gate'i → E3 (freeze+backup sonrası parity).
 STATUS: AŞAMA A COMPLETE — AŞAMA B NOT ELIGIBLE (P1 repo-seviyesinde kapandı,
 production sertifikasyonu deployment gate'inde; P2 E2'de). Charter §49.6/§49.14
 AYNEN yürürlükte; flat veri SİLİNMEDİ, I08 UYGULANMADI.

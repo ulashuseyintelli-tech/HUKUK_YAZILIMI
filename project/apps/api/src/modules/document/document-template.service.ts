@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { resolveClientAddress } from '../client/client-address-resolver';
 
 export interface TemplateVariables {
   // Dosya Bilgileri
@@ -180,7 +181,15 @@ export class DocumentTemplateService {
     const caseData = await this.prisma.case.findFirst({
       where,
       include: {
-        client: true,
+        // C2-I08 E2: adres kanonik resolver'dan — I01/I03 sözleşmesi (isCurrent + sıralama).
+        client: {
+          include: {
+            addresses: {
+              where: { isCurrent: true },
+              orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            },
+          },
+        },
         executionOffice: true,
         debtors: {
           where: { lifecycleStatus: 'ACTIVE' },
@@ -231,7 +240,15 @@ export class DocumentTemplateService {
       creditor: caseData.client ? {
         name: caseData.client.name || undefined,
         identityNo: caseData.client.identityNo || undefined,
-        address: caseData.client.address || undefined,
+        // C2-I08 E2: doğrudan flat okuma kaldırıldı — kanonik resolveClientAddress.
+        address: resolveClientAddress({
+          address: caseData.client.address,
+          city: caseData.client.city,
+          district: caseData.client.district,
+          region: caseData.client.region,
+          postalCode: caseData.client.postalCode,
+          addresses: (caseData.client as any).addresses,
+        }).line || undefined,
       } : undefined,
 
       debtor: debtor ? {

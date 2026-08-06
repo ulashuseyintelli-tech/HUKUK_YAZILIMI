@@ -69,7 +69,8 @@ describe('ARC-07 I07 — resolveClientAddress()', () => {
 
   it('[4] hiçbir kaynak yoksa source=none, line=null döner', () => {
     const result = resolveClientAddress({});
-    expect(result).toEqual({ line: null, source: 'none', city: null, district: null, hasStructured: false });
+    // C2-I08 E2: `street` additive alanı (buildShortAddress tüketicisi için) — none'da null.
+    expect(result).toEqual({ line: null, source: 'none', city: null, district: null, hasStructured: false, street: null });
   });
 
   it('[5] TÜM parçalar TRIM EDİLİR — baş/son boşluk sızmaz, iç boşluk KORUNUR', () => {

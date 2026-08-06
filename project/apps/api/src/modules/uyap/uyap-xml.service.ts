@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { resolveClientAddress } from '../client/client-address-resolver';
 import { create } from 'xmlbuilder2';
 import { DebtorRole } from '@prisma/client';
 import {
@@ -730,7 +731,20 @@ export class UyapXmlService {
       where: { id: caseId, tenantId },
       include: {
         executionOffice: true,
-        caseClients: { include: { client: true } },
+        // C2-I08 E2: adres tek kanonik kaynaktan (resolveClientAddress) — I01/I03 sözleşmesi:
+        // yalnız isCurrent=true, isPrimary desc + createdAt asc sıralı.
+        caseClients: {
+          include: {
+            client: {
+              include: {
+                addresses: {
+                  where: { isCurrent: true },
+                  orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                },
+              },
+            },
+          },
+        },
         lawyers: { include: { lawyer: true } },
         debtors: { 
           where: { lifecycleStatus: 'ACTIVE' },
@@ -908,11 +922,23 @@ export class UyapXmlService {
         mersisNo: client?.mersisNo,
         unvan: client?.displayName || '',
       } : undefined,
-      adres: client?.address ? {
-        adresTuru: UYAP_ADRES_TURLERI.IS.kod,
-        ilKodu: this.getIlKodu(client?.city || 'İSTANBUL'),
-        tamAdres: client?.address,
-      } : undefined,
+      // C2-I08 E2: doğrudan flat okuma kaldırıldı — kanonik resolveClientAddress
+      // (yapısal ClientAddress varsa o kazanır; yoksa legacy flat'a açıkça düşer).
+      adres: (() => {
+        const resolved = resolveClientAddress({
+          address: client?.address,
+          city: client?.city,
+          district: client?.district,
+          region: client?.region,
+          postalCode: client?.postalCode,
+          addresses: client?.addresses,
+        });
+        return resolved.line ? {
+          adresTuru: UYAP_ADRES_TURLERI.IS.kod,
+          ilKodu: this.getIlKodu(resolved.city || 'İSTANBUL'),
+          tamAdres: resolved.line,
+        } : undefined;
+      })(),
       iban: client?.iban,
       telefon: client?.phone,
       eposta: client?.email,
