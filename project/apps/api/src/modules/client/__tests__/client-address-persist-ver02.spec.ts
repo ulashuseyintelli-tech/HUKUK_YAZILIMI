@@ -110,7 +110,7 @@ describe("ClientService.create — VER-02 ClientAddress persist", () => {
     expect(tx.clientAddress.createMany).not.toHaveBeenCalled();
   });
 
-  it("[5] flat kolonlar DEĞİŞMEDEN korunur — addresses[] verilse de tx.client.create'in address/city alanları aynı hesaplanır", async () => {
+  it("[5] C2-I08 E1 — flat kolonlar ARTIK YAZILMAZ: tx.client.create data'sında address/city/district/region/postalCode YOK", async () => {
     const { svc, tx } = buildCreateHarness();
     await svc.create(
       "t1",
@@ -123,8 +123,34 @@ describe("ClientService.create — VER-02 ClientAddress persist", () => {
       }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const clientData = tx.client.create.mock.calls[0][0].data;
-    expect(clientData.address).toBe("Cad 1, İstanbul");
-    expect(clientData.city).toBe("İstanbul");
+    for (const flat of ["address", "city", "district", "region", "postalCode"]) {
+      expect(clientData[flat]).toBeUndefined();
+    }
+    // Relational yazım korunur (adresin tek hedefi ClientAddress).
+    expect(tx.clientAddress.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("[5b] C2-I08 E1 — legacy flat-only payload relational girdiye SENTEZLENİR (veri kaybı yok)", async () => {
+    const { svc, tx } = buildCreateHarness();
+    await svc.create(
+      "t1",
+      {
+        type: "PERSON",
+        firstName: "A",
+        lastName: "B",
+        tckn: "11111111110",
+        address: "Eski Mah. 5",
+        city: "Ankara",
+        district: "Çankaya",
+        postalCode: "06000",
+      }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
+    );
+    const clientData = tx.client.create.mock.calls[0][0].data;
+    expect(clientData.address).toBeUndefined();
+    expect(clientData.city).toBeUndefined();
+    expect(tx.clientAddress.createMany).toHaveBeenCalledTimes(1);
+    const rows = tx.clientAddress.createMany.mock.calls[0][0].data;
+    expect(rows[0]).toMatchObject({ street: "Eski Mah. 5", city: "Ankara", district: "Çankaya", postalCode: "06000", isPrimary: true });
   });
 });
 
@@ -160,7 +186,7 @@ describe("ClientService.update — VER-02 ClientAddress persist (Workspace korum
     expect(tx.clientAddress.createMany).not.toHaveBeenCalled();
   });
 
-  it("[9] flat kolonlar DEĞİŞMEDEN korunur — update'te de addresses[] verilse flat address/city aynı hesaplanır", async () => {
+  it("[9] C2-I08 E1 — update flat kolon YAZMAZ: updateMany data'sında address/city/district/region/postalCode YOK (mevcut satır değeri DOKUNULMADAN kalır)", async () => {
     const { svc, tx } = buildHarness({ addressCount: 0 });
     await svc.update(
       "c1",
@@ -168,8 +194,9 @@ describe("ClientService.update — VER-02 ClientAddress persist (Workspace korum
       { type: "PERSON", firstName: "A", lastName: "B", addresses: [{ street: "Cad X", city: "Adana", isPrimary: true }] }, { userId: "u1", tenantId: "t1", role: 'ADMIN' },
     );
     const clientData = tx.client.updateMany.mock.calls[0][0].data;
-    expect(clientData.address).toBe("Cad X, Adana");
-    expect(clientData.city).toBe("Adana");
+    for (const flat of ["address", "city", "district", "region", "postalCode"]) {
+      expect(flat in clientData ? clientData[flat] : undefined).toBeUndefined();
+    }
   });
 });
 

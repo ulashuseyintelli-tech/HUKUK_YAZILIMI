@@ -216,6 +216,14 @@ src/modules/client/__tests__/client-notification-authority-primitive-b06.spec.ts
 #     promotion esiginden (isApproverEligible) BAGIMSIZ; rol adi (ADMIN dahil)
 #     yetki VERMEZ; ayri audit action (CLIENT_INTAKE_REVIEW_COMMAND). X3-B04 tuketir.
 src/modules/client/__tests__/client-intake-review-authority-extension.spec.ts
+#
+#   C2-I08 E1 flat writer kapatma kaniti (SAF, DB-siz)
+#     Owner disposition 2026-08-06: create/update flat adres kolonlarini YAZMAZ
+#     (kaynak-parse guard: tx.client.create/updateMany bloklarinda flat anahtar
+#     kalirsa test DUSER); legacy flat-only payload ClientAddress'e SENTEZLENIR
+#     (veri kaybi yok, cift satir yok). Seed/import/OCR/case yollari create
+#     uzerinden ayni kapidan gecer.
+src/modules/client/__tests__/client-flat-writer-closure-e1.spec.ts
 #     C3-B01 (§13/5): KVKK islem dayanagi registry + acik riza fail-closed kapisi.
 src/modules/client/__tests__/client-processing-basis-registry.spec.ts
 src/modules/client/__tests__/client-consent-fail-closed-b01.spec.ts

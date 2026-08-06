@@ -1547,11 +1547,9 @@ export class ClientService {
     const primaryPhone = data.phones?.find((p: any) => p.isPrimary)?.value || data.phones?.[0]?.value || data.phone;
     const primaryEmail = data.emails?.find((e: any) => e.isPrimary)?.value || data.emails?.[0]?.value || data.email;
     
-    // Birincil adres
-    const primaryAddress = data.addresses?.find((a: any) => a.isPrimary) || data.addresses?.[0];
-    const addressStr = primaryAddress 
-      ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
-      : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
+    // C2-I08 E1 (owner disposition 2026-08-06): flat adres kolonları ARTIK YAZILMAZ.
+    // Legacy flat-only payload (addresses[] yok, data.address/city/... var) veri kaybına
+    // uğramasın diye VER-02 bloğunda relational ClientAddress girdisine SENTEZLENİR.
 
     // C0-a: client + contact yazımı + audit AYNI transaction (audit yazılamazsa create rollback).
     // C1-B05: DB-seviyesi partial unique index (aktif kimlik tekilliği) B04'te profillenen
@@ -1574,13 +1572,8 @@ export class ClientService {
         taxOffice: data.taxOffice,
         email: primaryEmail,
         phone: primaryPhone,
-        address: addressStr,
-        city: primaryAddress?.city || data.city,
-        district: primaryAddress?.district || data.district,
-        region: primaryAddress?.region || data.region,
-        // RFA-017: mevcut Client kolonları (additive). Önceden map'lenmiyordu → Excel import
-        // (ve normal create) bu alanları sessizce DÜŞÜRÜYORDU. Yeni kolon/migration YOK.
-        postalCode: data.postalCode,
+        // C2-I08 E1: address/city/district/region/postalCode flat kolonları bilinçli
+        // olarak YAZILMIYOR (P1 writer kapatma); adres tek kaynağı ClientAddress.
         isForeigner: data.isForeigner ?? undefined,
         nationality: data.nationality,
         companyType: data.companyType,
@@ -1635,11 +1628,24 @@ export class ClientService {
       });
     }
 
-    // VER-02: data.addresses[] artık ClientAddress'e de yazılır (contacts ile aynı desen) —
-    // önceden yalnız yukarıdaki flat address/city/district/region'a sıkışıp diğer girdiler
-    // sessizce düşüyordu. Flat kolonlar DEĞİŞMEDEN korunur (geriye uyumluluk, UYAP/döküman
-    // üretimi vb. hâlâ onları okur).
-    const validAddressEntries = (data.addresses || []).filter((a: any) => a.street?.trim() || a.city?.trim());
+    // VER-02 + C2-I08 E1: adresin TEK yazım hedefi ClientAddress. Flat kolonlar artık
+    // YAZILMAZ (E1); legacy flat-only payload relational girdiye sentezlenir ki
+    // geriye uyumluluk korunur (mevcut satırlardaki flat veri DOKUNULMADAN kalır —
+    // azaltım I08 apply'ın işi).
+    const legacyFlatEntry =
+      (!data.addresses || data.addresses.length === 0) &&
+      (data.address?.trim() || data.city?.trim())
+        ? [{
+            street: data.address,
+            city: data.city,
+            district: data.district,
+            region: data.region,
+            postalCode: data.postalCode,
+            isPrimary: true,
+          }]
+        : [];
+    const validAddressEntries = [...(data.addresses || []), ...legacyFlatEntry]
+      .filter((a: any) => a.street?.trim() || a.city?.trim());
     if (validAddressEntries.length > 0) {
       await tx.clientAddress.createMany({
         data: validAddressEntries.map((a: any, idx: number) => ({
@@ -1763,11 +1769,8 @@ export class ClientService {
     const primaryPhone = data.phones?.find((p: any) => p.isPrimary)?.value || data.phones?.[0]?.value || data.phone;
     const primaryEmail = data.emails?.find((e: any) => e.isPrimary)?.value || data.emails?.[0]?.value || data.email;
     
-    // Birincil adres
-    const primaryAddress = data.addresses?.find((a: any) => a.isPrimary) || data.addresses?.[0];
-    const addressStr = primaryAddress 
-      ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
-      : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
+    // C2-I08 E1 (owner disposition 2026-08-06): update() flat adres kolonlarını ARTIK
+    // YAZMAZ; adres mutasyonunun kanonik yolu ClientAddress (client-address.service).
 
     // VER-02: yapısal ClientAddress satırı olduğu için gönderilen adreslerin UYGULANMADIĞINI
     // çağırana bildiren transient sinyal (create()'teki _existingReturned/_reactivated deseni).
@@ -1798,10 +1801,8 @@ export class ClientService {
         taxOffice: data.taxOffice,
         email: primaryEmail,
         phone: primaryPhone,
-        address: addressStr,
-        city: primaryAddress?.city || data.city,
-        district: primaryAddress?.district || data.district,
-        region: primaryAddress?.region || data.region,
+        // C2-I08 E1: address/city/district/region/postalCode flat kolonları bilinçli
+        // olarak YAZILMIYOR (P1 writer kapatma); mevcut satır değeri DOKUNULMADAN kalır.
         canCollect: data.canCollect,
         canWaive: data.canWaive,
         canSettle: data.canSettle,
@@ -1809,7 +1810,6 @@ export class ClientService {
         notes: data.notes,
         isActive: data.isActive,
         // P0.7: create paritesi — create'te map'lenip update'te DÜŞEN alanlar (sessiz veri kaybı önlenir).
-        postalCode: data.postalCode,
         isForeigner: data.isForeigner ?? undefined,
         nationality: data.nationality,
         companyType: data.companyType,
