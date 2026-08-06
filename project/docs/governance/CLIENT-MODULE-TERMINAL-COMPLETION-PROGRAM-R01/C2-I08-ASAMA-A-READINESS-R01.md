@@ -172,3 +172,28 @@ AYNEN yürürlükte; flat veri SİLİNMEDİ, I08 UYGULANMADI.
                  NEXT: C2 → P1–P5 FINAL GATE doğrulaması → E4 executor + dry-run
                  (aynı grant; apply yalnız dry-run PASS + tüm gate'ler PASS ise).
 ```
+
+## E4 — I08 EXECUTOR: DRY-RUN + APPLY + POST-APPLY (2026-08-06, TÜM GATE'LER PASS)
+
+```text
+P1–P5 FINAL GATE : TAMAMI PASS (P5 = executor + backup/restore provası + dry-run ile kapandı)
+EXECUTOR         : arc07-i08-legacy-flat-reduction.core.ts + scripts/arc07-i08-legacy-flat-
+                   reduction.ts (K1 üç-kapı; dry-run/apply ayrı; tenant-bounded tx;
+                   koşullu yazım; audit alan-adı-only; hata→rollback; çekirdek spec 8/8)
+DRY-RUN (prod)   : PASS — sayaçlar E3 SQL ile BİREBİR (BOS=12 ESIT=2 YALNIZ_REL=1
+                   FARKLI=0 YALNIZ_FLAT=0) · eligible=2 · conflict=0 · yazım YOK
+APPLY (prod)     : PASS — runId i08-2026-08-06T13-54-29-727Z · üç kapı + loopback guard ·
+                   tek tenant · cleared=2 · audited=2 · skipped=0 · AFTER-VERIFY PASS
+POST-APPLY       : bağımsız SQL: yalnız BOS=12 + YALNIZ_RELATIONAL=3 (ESIT/FARKLI/
+                   YALNIZ_FLAT=0) · AuditLog CLIENT_FLAT_ADDRESS_REDUCED_I08 = 2 ·
+                   API smoke 400/200/401 · repo consumer parity testleri E2'de canonical
+VERİ KAYBI       : YOK — indirgenen 2 satırın relational kaynağı DURUYOR; backup
+                   hukuk_db_20260806T133438Z_pre_i08_e3.dump (sha256 890c4305…) mevcut
+KALINTI (exact)  : 1 satırda YALNIZ flat postalCode dolu (address/city/district/region
+                   NULL; isCurrent relational satırı MEVCUT). A4/owner eşiği address-
+                   tabanlı olduğundan kapsam DIŞI kaldı; eşik BURADA GENİŞLETİLMEDİ
+                   (policy invention yasak) → OWNER DISPOSITION bekler.
+FREEZE           : KORUNUYOR (owner PASS-yolu talimatı E3'teki gibi; kaldırma kararı owner'da)
+STATUS           : C2-I08-PRE-WAVE5-LEGACY-FLAT-REDUCTION-R01 = APPLIED + VERIFIED —
+                   kapanış kaydı bu PR ile canonical olur.
+```
