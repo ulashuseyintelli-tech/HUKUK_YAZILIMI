@@ -1163,10 +1163,15 @@ X2-B02 LIVE-APPLY:        UNKNOWN / VALID TERMINAL RESULT / NOT A BLOCKER
 WAVE 4 STATUS:            PRODUCTION_ACTIVE / CONTROLLED_RESIDUALS OPEN
                           (owner disposition 2026-08-06; TERMINAL_CLOSED: NO;
                           kanıt: WAVE4-EVIDENCE-R01.md R02 + §14)
-WAVE 5 ELIGIBILITY:       NOT ELIGIBLE — yalnız iki residual birden kapanınca:
-                          (1) C2-I08 production verified (CLAUDE-CLIENT-C2-I08.md)
-                          (2) EMAIL_PROVIDER configured + external publication
-                              canary PASS (PRE-WAVE5 OPS GATE)
+WAVE 5 ELIGIBILITY:       NOT ELIGIBLE — iki residual'dan biri kapandı:
+                          (1) C2-I08: CLOSED / PRODUCTION_VERIFIED — #2243/f34c371a
+                              (2026-08-06; freeze OFF) ✓
+                          (2) FD PROVIDER OPS GATE: STARTED (owner GO 2026-08-06,
+                              CLIENT-WAVE5-FD-PROVIDER-OPS.md) — P1 credential
+                              varlığı FAIL (11 değişkenin tamamı iki env'de ABSENT)
+                              → WAITING_FOR_OPS_INPUT; publication flag OFF kaldı,
+                              gönderim yapılmadı. Girdi gelince P1→P5 aynı
+                              GO-COMPLETE kapsamında yürür.
 C2-I08 FINAL:             CLOSED / PRODUCTION_VERIFIED (2026-08-06) — E1..E4 + deploy
                           gate + E3 parity + I08 apply (cleared=2, audited=2) + freeze OFF
                           post-check'leri PASS. postalCode residual INTENTIONALLY_RETAINED.
