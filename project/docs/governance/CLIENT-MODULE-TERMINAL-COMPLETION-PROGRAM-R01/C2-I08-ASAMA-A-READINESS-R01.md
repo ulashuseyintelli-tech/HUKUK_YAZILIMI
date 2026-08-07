@@ -197,3 +197,26 @@ FREEZE           : KORUNUYOR (owner PASS-yolu talimatı E3'teki gibi; kaldırma 
 STATUS           : C2-I08-PRE-WAVE5-LEGACY-FLAT-REDUCTION-R01 = APPLIED + VERIFIED —
                    kapanış kaydı bu PR ile canonical olur.
 ```
+
+## FINAL RELEASE (2026-08-06, owner GO-COMPLETE) — C2-I08 CLOSED / PRODUCTION_VERIFIED
+
+```text
+FRESH DOĞRULAMA  : PASS — health 400/200 · I08 sayaçları değişmedi (flat=0, audit=2)
+FREEZE           : OFF (canonical ters prosedür: declare + post-check zinciri)
+POST-CHECK       : TAMAMI PASS —
+  API/Web health         : 400/200 ✓
+  Yetkili canary         : login(demo-firma) → create 201 (relational ClientAddress
+                           isCurrent+isPrimary=1; FLAT KOLONLARIN TAMAMI NULL) →
+                           update 200 ✓  ⇒ flat writer=0 + relational yazım CANLIDA
+  Tenant isolation       : demo-firma token → diğer tenant client'ı 404 ✓
+  Lifecycle fail-closed  : canary DELETE → 403 (ADMIN tek başına yetmez — D07 canlıda) ✓
+  Yeni 5xx/fatal         : 0 ✓
+CANARY KALINTISI : 2 işaretli canary satırı (notes=i08-canary; PII yok) isActive=true
+                   kaldı — arşivleme elevated aktör ister (fail-closed davranışın
+                   kendisi); owner/PARTNER hesabıyla arşivlenebilir.
+POSTALCODE RESIDUAL: INTENTIONALLY_RETAINED / OUT_OF_SCOPE / NO_DATA_LOSS (owner
+                   Decision 2) — bu görevde silinmedi/NULL'lanmadı/taşınmadı;
+                   ileride ayrı bounded disposition.
+FINAL            : C2-I08 = CLOSED / PRODUCTION_VERIFIED · FREEZE = OFF ·
+                   WAVE 5 = ELIGIBLE (yalnız FD provider ops gate'ine bağlı)
+```
