@@ -1181,7 +1181,19 @@ C2-I08 FINAL:             CLOSED / PRODUCTION_VERIFIED (2026-08-06) — E1..E4 +
                           post-check'leri PASS. postalCode residual INTENTIONALLY_RETAINED.
                           WAVE 5: ELIGIBLE — yalnız FD provider ops gate'ine bağlı.
                           Kanıt: C2-I08-ASAMA-A-READINESS-R01.md (FINAL RELEASE bölümü).
+WAVE 5 TERMINAL INTEG.:   EXECUTED / PASS (2026-08-07, owner GO-COMPLETE) —
+                          T0 preflight · T1 invite lifecycle fix (#2261/62199535,
+                          spec 41/41 + runtime 5/5) · T1-deploy yeni immutable
+                          artifact 62199535 (blob parity OK, hot patch YOK) ·
+                          T2 runtime durability (OS-native scheduled task +
+                          1dk watchdog; self-heal kanıtlandı) · T3 production
+                          certification 17/17 PASS.
+                          Kanıt: WAVE5-TERMINAL-INTEGRATION-EVIDENCE-R01.md
+CLIENT OPEN DEBT:         0 — activation/migration/residual borcu YOK
+                          (C1 ✓ · C2 I05→I06 ✓ + I08 ✓ · C3 ✓ · X1 ✓ · X2 ✓ · X3 ✓)
 PROGRAM LOCK:             CLIENT ONLY
-ENGINEERING_COMPLETE:     NOT REACHED
-PRODUCTION_COMPLETE:      NOT REACHED
+ENGINEERING_COMPLETE:     REACHED — altı hattın altısı da (C1/C2/C3/X1/X2/X3)
+PRODUCTION_COMPLETE:      REACHED — WAVE 4 activation'ları APPLIED + WAVE 5 terminal
+                          integration PASS
+CLIENT PROGRAM STATUS:    TERMINAL_CLOSED / PRODUCTION_VERIFIED / CANONICAL (2026-08-07)
 ```
