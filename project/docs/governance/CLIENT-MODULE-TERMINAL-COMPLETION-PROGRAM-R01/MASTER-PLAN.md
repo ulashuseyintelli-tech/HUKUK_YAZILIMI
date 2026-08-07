@@ -1163,15 +1163,19 @@ X2-B02 LIVE-APPLY:        UNKNOWN / VALID TERMINAL RESULT / NOT A BLOCKER
 WAVE 4 STATUS:            PRODUCTION_ACTIVE / CONTROLLED_RESIDUALS OPEN
                           (owner disposition 2026-08-06; TERMINAL_CLOSED: NO;
                           kanıt: WAVE4-EVIDENCE-R01.md R02 + §14)
-WAVE 5 ELIGIBILITY:       NOT ELIGIBLE — iki residual'dan biri kapandı:
+WAVE 5 ELIGIBILITY:       ELIGIBLE — iki residual da KAPANDI (2026-08-07):
                           (1) C2-I08: CLOSED / PRODUCTION_VERIFIED — #2243/f34c371a
                               (2026-08-06; freeze OFF) ✓
-                          (2) FD PROVIDER OPS GATE: STARTED (owner GO 2026-08-06,
-                              CLIENT-WAVE5-FD-PROVIDER-OPS.md) — P1 credential
-                              varlığı FAIL (11 değişkenin tamamı iki env'de ABSENT)
-                              → WAITING_FOR_OPS_INPUT; publication flag OFF kaldı,
-                              gönderim yapılmadı. Girdi gelince P1→P5 aynı
-                              GO-COMPLETE kapsamında yürür.
+                          (2) FD PROVIDER OPS GATE: CLOSED / PRODUCTION_VERIFIED —
+                              P1..P5 PASS (CLIENT-WAVE5-FD-PROVIDER-OPS.md §4):
+                              SMTP provider (Turhost 465/TLS) yapılandırıldı; TEK
+                              canary gönderimi teslim teyitli (message-id kayıtlı,
+                              14:02:33Z, SEND_COUNT=1, duplicate YOK); rollback
+                              fail-closed doğrulandı; iki sentetik approver
+                              pasifleştirildi (ELIGIBLE=false); publication KALICI ON
+                              (runtime: write=true/publication=true, LEVEL_2, smtp
+                              dispatcher).
+X2 FD RUNTIME (GÜNCEL):   WRITE ON / PUBLICATION ON / PROVIDER smtp / CANARY VERIFIED
 C2-I08 FINAL:             CLOSED / PRODUCTION_VERIFIED (2026-08-06) — E1..E4 + deploy
                           gate + E3 parity + I08 apply (cleared=2, audited=2) + freeze OFF
                           post-check'leri PASS. postalCode residual INTENTIONALLY_RETAINED.
