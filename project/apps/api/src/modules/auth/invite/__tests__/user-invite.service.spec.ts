@@ -12,6 +12,8 @@ function make(opts?: { enabled?: boolean }) {
     findFirst: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockResolvedValue({ id: "u9", email: "a@x.com", tenantId: "t1" }),
     update: jest.fn().mockResolvedValue({}),
+    // W5-INVITE-LIFECYCLE-I01: orphan pending User devralma yolu (koşullu updateMany).
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   };
   const userInvite = {
     create: jest.fn().mockResolvedValue({ id: "inv1" }),
@@ -337,5 +339,112 @@ describe("AdminGuard (K1-7) — [19][20]", () => {
   it("[19][20] ADMIN geçer", () => {
     const g = new AdminGuard();
     expect(g.canActivate(ctx({ id: "u1", role: "ADMIN" }))).toBe(true);
+  });
+});
+
+// ==========================================================================================
+// W5-INVITE-LIFECYCLE-I01 — revoke/resend yaşam döngüsü sözleşmesi
+//
+// Kanıtlanan defekt (2026-08-07 canary'sinde gözlendi): revoke() OWN-01 gereği profil bağını
+// çözer; resend() ise daveti (revokedAt=null ile) DİRİLTİR fakat bağı geri kuramaz →
+// kullanıcı daveti kabul eder, hesap aktifleşir, profil-türevi yetki SESSİZCE kaybolur.
+// Sözleşme: revoke güvenli+audit'li kalır · resend sonrası bağ HER ZAMAN geçerli ·
+// silent eligibility loss YOK · tenant/user değişmez · duplicate/replay/cross-tenant RED.
+// ==========================================================================================
+describe("W5-INVITE-LIFECYCLE-I01 — revoke/resend/issue yaşam döngüsü", () => {
+  const pendingUser = (over: any = {}) => ({
+    id: "u9", email: "a@x.com", tenantId: "t1", isActive: false, passwordHash: null, ...over,
+  });
+  /** Adoption değerlendirmesinin okuduğu davet listesi (userInvite.findMany). */
+  const invitesOf = (rows: any[]) => rows;
+
+  it("[W5-1] revoke edilmiş davet RESEND EDİLEMEZ (fail-closed; sessiz yetki kaybı önlenir)", async () => {
+    const { svc, userInvite, email } = make();
+    userInvite.findFirst.mockResolvedValue({
+      id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com",
+      consumedAt: null, revokedAt: new Date(), user: { isActive: false },
+    });
+    await expect(svc.resend(ACTOR, "inv1")).rejects.toBeInstanceOf(ConflictException);
+    expect(userInvite.update).not.toHaveBeenCalled(); // token diriltilmedi
+    expect(email.send).not.toHaveBeenCalled();        // e-posta gönderilmedi
+  });
+
+  it("[W5-2] revoke EDİLMEMİŞ davet hâlâ resend edilebilir (regresyon yok)", async () => {
+    const { svc, userInvite, email } = make();
+    userInvite.findFirst.mockResolvedValue({
+      id: "inv1", tenantId: "t1", userId: "u9", email: "a@x.com",
+      consumedAt: null, revokedAt: null, user: { isActive: false },
+    });
+    await svc.resend(ACTOR, "inv1");
+    expect(userInvite.update).toHaveBeenCalled();
+    expect(email.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("[W5-3] issue(): orphan pending User DEVRALINIR — yeni User açılmaz, profil YENİDEN bağlanır", async () => {
+    const { svc, user, lawyer, userInvite, audit } = make();
+    user.findFirst.mockResolvedValue(pendingUser());
+    userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: new Date() }]));
+    user.updateMany.mockResolvedValue({ count: 1 });
+    lawyer.findFirst.mockResolvedValue({ id: "lw1", userId: null });
+    lawyer.updateMany.mockResolvedValue({ count: 1 });
+
+    const res = await svc.issue(ACTOR, { email: "a@x.com", name: "Ad", lawyerId: "lw1" } as any);
+
+    expect(user.create).not.toHaveBeenCalled();                       // duplicate User YOK
+    expect(user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "u9", tenantId: "t1", isActive: false, passwordHash: null }) }),
+    );
+    expect(lawyer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "lw1", tenantId: "t1", userId: null }), data: { userId: "u9" } }),
+    );
+    expect(userInvite.create).toHaveBeenCalled();                     // taze token
+    expect(res.userId).toBe("u9");                                    // AYNI user
+    expect(audit.log.mock.calls.at(-1)[0].metadata.adoptedPendingUser).toBe(true);
+  });
+
+  it("[W5-4] AKTİF hesap devralınamaz (Conflict) — hesap ele geçirme yolu kapalı", async () => {
+    const { svc, user, userInvite } = make();
+    user.findFirst.mockResolvedValue(pendingUser({ isActive: true }));
+    userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: new Date() }]));
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(user.create).not.toHaveBeenCalled();
+  });
+
+  it("[W5-5] parolası olan (accept edilmiş) hesap devralınamaz", async () => {
+    const { svc, user, userInvite } = make();
+    user.findFirst.mockResolvedValue(pendingUser({ passwordHash: "x" }));
+    userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: new Date() }]));
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("[W5-6] consume edilmiş daveti olan pending kayıt devralınamaz (replay koruması)", async () => {
+    const { svc, user, userInvite } = make();
+    user.findFirst.mockResolvedValue(pendingUser());
+    userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: new Date(), revokedAt: null }]));
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("[W5-7] revoked daveti OLMAYAN pending kayıt devralınamaz (yalnız orphan senaryosu)", async () => {
+    const { svc, user, userInvite } = make();
+    user.findFirst.mockResolvedValue(pendingUser());
+    userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: null }]));
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("[W5-8] adoption yarışı: hesap arada aktifleşirse fail-closed (count=0 → Conflict)", async () => {
+    const { svc, user, userInvite } = make();
+    user.findFirst.mockResolvedValue(pendingUser());
+    userInvite.findMany.mockResolvedValue(invitesOf([{ id: "inv1", consumedAt: null, revokedAt: new Date() }]));
+    user.updateMany.mockResolvedValue({ count: 0 });
+    await expect(svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("[W5-9] cross-tenant: sorgu tenant-scoped; devralma başka tenant kaydını GÖREMEZ", async () => {
+    const { svc, user, prisma } = make();
+    user.findFirst.mockResolvedValue(null);   // farklı tenant → bulunamaz
+    await svc.issue(ACTOR, { email: "a@x.com", name: "Ad" } as any);
+    expect(user.findFirst.mock.calls[0][0].where).toEqual(expect.objectContaining({ tenantId: "t1" }));
+    expect(user.create).toHaveBeenCalled();   // normal yol: yeni pending User
+    expect(prisma.$transaction).toHaveBeenCalled();
   });
 });
