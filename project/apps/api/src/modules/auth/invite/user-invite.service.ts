@@ -70,7 +70,27 @@ export class UserInviteService {
     const existing = await this.prisma.user.findFirst({
       where: { email, tenantId: actor.tenantId },
     });
-    if (existing) throw new ConflictException("Bu e-posta adresi zaten kullanılıyor");
+    // Adoption değerlendirmesi yalnız çakışma yolunda ek sorgu yapar; yukarıdaki tenant-scoped
+    // uniqueness sorgusunun şekli (AUTH-01 sözleşmesi) DEĞİŞMEZ.
+    const existingInvites = existing
+      ? await this.prisma.userInvite.findMany({
+          where: { userId: existing.id, tenantId: actor.tenantId },
+          select: { id: true, consumedAt: true, revokedAt: true },
+        })
+      : [];
+    // W5-INVITE-LIFECYCLE-I01: iptal edilmiş davetin ORPHAN pending User'ı, aynı e-postayla
+    // yeni davet açılmasını kalıcı biçimde bloklardı (tenant-scoped e-posta tekilliği) ve
+    // profil bağı yeniden kurulamadığı için hesap ölü kalırdı. ADOPTION koşulu DAR:
+    // aynı tenant · hiç aktifleşmemiş (isActive=false, passwordHash=null) · TÜM davetleri
+    // consume edilmemiş ve en az biri revoked. Aktif/parolası olan hesap ASLA devralınmaz.
+    const adoptable =
+      !!existing &&
+      existing.isActive === false &&
+      existing.passwordHash === null &&
+      existingInvites.length > 0 &&
+      existingInvites.every((i) => i.consumedAt === null) &&
+      existingInvites.some((i) => i.revokedAt !== null);
+    if (existing && !adoptable) throw new ConflictException("Bu e-posta adresi zaten kullanılıyor");
 
     const raw = generateRawInviteToken();
     const tokenHash = hashInviteToken(raw);
@@ -96,17 +116,33 @@ export class UserInviteService {
         if (staff.userId) throw new ConflictException("Bu personel zaten bir kullanıcıya bağlı");
       }
 
-      const user = await tx.user.create({
-        data: {
-          tenantId: actor.tenantId,
-          email,
-          passwordHash: null, // pending: parola kullanıcı tarafından accept'te belirlenir
-          name: dto.name,
-          surname: dto.surname ?? "",
-          role,
-          isActive: false, // pending: login() + validate() bunu reddeder
-        },
-      });
+      // W5-INVITE-LIFECYCLE-I01: adoptable orphan pending User varsa YENİ user AÇILMAZ —
+      // aynı kayıt devralınır (tenant/e-posta DEĞİŞMEZ; pending durum korunur). Aksi hâlde
+      // yeni pending User oluşturulur. Race-guard: adoption yalnız hâlâ pending olan satırı
+      // günceller; başka bir akış hesabı aktive ettiyse count=0 → fail-closed.
+      let user: { id: string };
+      if (adoptable && existing) {
+        const claimed = await tx.user.updateMany({
+          where: { id: existing.id, tenantId: actor.tenantId, isActive: false, passwordHash: null },
+          data: { name: dto.name, surname: dto.surname ?? "", role },
+        });
+        if (claimed.count === 0) {
+          throw new ConflictException("Bu e-posta adresi zaten kullanılıyor");
+        }
+        user = { id: existing.id };
+      } else {
+        user = await tx.user.create({
+          data: {
+            tenantId: actor.tenantId,
+            email,
+            passwordHash: null, // pending: parola kullanıcı tarafından accept'te belirlenir
+            name: dto.name,
+            surname: dto.surname ?? "",
+            role,
+            isActive: false, // pending: login() + validate() bunu reddeder
+          },
+        });
+      }
 
       // Race-safe bağlama: WHERE userId:null koşulu, eşzamanlı iki davetin aynı profile
       // yarışmasını engeller (disposition-posting.service.ts'teki updateMany deseniyle aynı).
@@ -135,6 +171,8 @@ export class UserInviteService {
     await this.writeAudit("USER_INVITE_ISSUED", actor.tenantId, actor.id, {
       inviteId: created.invite.id, userId: created.user.id,
       emailRedacted: redactEmail(email), expiresAt: expiresAt.toISOString(), result: "ISSUED",
+      // W5-INVITE-LIFECYCLE-I01: orphan pending User devralındıysa iz bırak (yeni User AÇILMADI).
+      ...(adoptable ? { adoptedPendingUser: true } : {}),
       ...(dto.lawyerId ? { linkedLawyerId: dto.lawyerId } : {}),
       ...(dto.staffMemberId ? { linkedStaffMemberId: dto.staffMemberId } : {}),
     });
@@ -151,6 +189,19 @@ export class UserInviteService {
     if (!invite) throw new NotFoundException("Davet bulunamadı");
     if (invite.consumedAt) throw new ConflictException("Davet zaten kabul edilmiş");
     if (invite.user?.isActive) throw new ConflictException("Kullanıcı zaten aktif");
+    // W5-INVITE-LIFECYCLE-I01: revoke() OWN-01 gereği hedef User'a bağlı Lawyer/StaffMember
+    // profilini AYNI transaction'da çözer. resend() ise yalnız token/expiry yeniler — profil
+    // bağını GERİ KURAMAZ (davet kaydı hangi profile bağlıydı bilgisini taşımaz). Bu yüzden
+    // iptal edilmiş bir daveti resend ile "diriltmek" bağı kopuk bir pending User üretirdi:
+    // kullanıcı daveti kabul eder, hesap aktifleşir, fakat profil bağı — dolayısıyla
+    // profil-türevi yetki (ör. approver eligibility) — SESSİZCE kaybolurdu.
+    // Fail-closed: iptal edilmiş davet resend EDİLEMEZ; yeniden davet issue() ile açılır
+    // (issue orphan pending User'ı devralır ve profili yeniden bağlar).
+    if (invite.revokedAt) {
+      throw new ConflictException(
+        "İptal edilmiş davet yeniden gönderilemez; yeni davet oluşturun (profil bağı yeniden kurulmalıdır).",
+      );
+    }
 
     const raw = generateRawInviteToken();
     const tokenHash = hashInviteToken(raw);
