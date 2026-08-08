@@ -193,7 +193,7 @@ describe('ClientService.getActionCatalog', () => {
       visibility: 'visible',
       requiredState: 'RELATED_CASE_EMPTY',
       target: { clientId: 'client-1' },
-      disabledReason: 'No related cases are linked to this client yet.',
+      disabledReason: 'Bu müvekkile bağlı dosya henüz yok.',
     });
     expect(createAction?.target?.caseId).toBeUndefined();
   });
@@ -211,7 +211,7 @@ describe('ClientService.getActionCatalog', () => {
       visibility: 'visible',
       requiredState: 'INTAKE_CASE_SELECTION_REQUIRED',
       target: { clientId: 'client-1' },
-      disabledReason: 'Select a related case before creating an intake link.',
+      disabledReason: 'Intake bağlantısı oluşturmadan önce bağlı bir dosya seçin.',
     });
     expect(JSON.stringify(createAction)).not.toContain('case-1');
     expect(JSON.stringify(createAction)).not.toContain('case-2');
@@ -227,7 +227,7 @@ describe('ClientService.getActionCatalog', () => {
       enabled: false,
       visibility: 'visible',
       requiredState: 'RELATED_CASE_EMPTY',
-      disabledReason: 'No related cases are linked to this client yet.',
+      disabledReason: 'Bu müvekkile bağlı dosya henüz yok.',
     });
     expect(caseAction?.href).toBeUndefined();
   });
@@ -284,7 +284,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(action).toMatchObject({
       enabled: false,
       requiredState: 'TEMPLATE_NOTIFICATION_DELIVERY_PENDING',
-      disabledReason: 'A template notification delivery is already pending for this client.',
+      disabledReason: 'Bu müvekkil için bekleyen bir şablon bildirimi teslimi zaten var.',
     });
     expect(prisma.clientNotification.findFirst).toHaveBeenCalledWith({
       where: expect.objectContaining({
@@ -309,7 +309,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(noRecipientResult.data.find((item) => item.key === 'notification.template.send')).toMatchObject({
       enabled: false,
       requiredState: 'CLIENT_EMAIL_MISSING',
-      disabledReason: 'Template notification requires a client email recipient.',
+      disabledReason: 'Şablon bildirimi bir müvekkil e-posta alıcısı gerektirir.',
     });
     expect(noRecipient.prisma.messageTemplate.count).not.toHaveBeenCalled();
 
@@ -318,7 +318,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(missingTemplateResult.data.find((item) => item.key === 'notification.template.send')).toMatchObject({
       enabled: false,
       requiredState: 'TEMPLATE_NOTIFICATION_TEMPLATE_MISSING',
-      disabledReason: 'Template notification requires active V1 email templates.',
+      disabledReason: 'Şablon bildirimi aktif V1 e-posta şablonlarını gerektirir.',
     });
   });
 
@@ -358,7 +358,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(action).toMatchObject({
       enabled: false,
       requiredState: 'DOCUMENT_REQUEST_DELIVERY_PENDING',
-      disabledReason: 'A document request delivery is already pending for this client and case.',
+      disabledReason: 'Bu müvekkil ve dosya için bekleyen bir belge talebi teslimi zaten var.',
       target: { clientId: 'client-1', caseId: 'case-1' },
     });
     expect(prisma.clientDocumentRequest.findFirst).toHaveBeenCalledWith({
@@ -383,7 +383,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(noRecipientResult.data.find((item) => item.key === 'document.request.send')).toMatchObject({
       enabled: false,
       requiredState: 'CLIENT_EMAIL_MISSING',
-      disabledReason: 'Document request requires a client email recipient.',
+      disabledReason: 'Belge talebi bir müvekkil e-posta alıcısı gerektirir.',
       target: { clientId: 'client-1', caseId: 'case-1' },
     });
 
@@ -392,7 +392,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(missingTemplateResult.data.find((item) => item.key === 'document.request.send')).toMatchObject({
       enabled: false,
       requiredState: 'DOCUMENT_REQUEST_TEMPLATE_MISSING',
-      disabledReason: 'Document request requires the active V1 email template.',
+      disabledReason: 'Belge talebi aktif V1 e-posta şablonunu gerektirir.',
       target: { clientId: 'client-1', caseId: 'case-1' },
     });
   });
@@ -403,7 +403,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(noCaseResult.data.find((item) => item.key === 'document.request.send')).toMatchObject({
       enabled: false,
       requiredState: 'RELATED_CASE_EMPTY',
-      disabledReason: 'No related cases are linked to this client yet.',
+      disabledReason: 'Bu müvekkile bağlı dosya henüz yok.',
       target: { clientId: 'client-1' },
     });
 
@@ -418,7 +418,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(action).toMatchObject({
       enabled: false,
       requiredState: 'DOCUMENT_REQUEST_CASE_SELECTION_REQUIRED',
-      disabledReason: 'Select a related case before sending a document request.',
+      disabledReason: 'Belge talebi göndermeden önce bağlı bir dosya seçin.',
       target: { clientId: 'client-1' },
     });
     expect(serialized).not.toContain('case-1');
@@ -470,7 +470,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(poaAction).toMatchObject({
       enabled: false,
       requiredState: 'POA_REMINDER_SENT_CURRENT_WINDOW',
-      disabledReason: 'POA reminder was already sent for the current expiry window; renewal is still needed.',
+      disabledReason: 'Mevcut bitiş penceresi için vekâlet hatırlatması zaten gönderildi; yenileme hâlâ gerekli.',
       target: { clientId: 'client-1' },
     });
     expect(serialized).not.toContain('poa-expiring');
@@ -493,7 +493,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(poaAction).toMatchObject({
       enabled: false,
       requiredState: 'POA_REMINDER_DELIVERY_PENDING',
-      disabledReason: 'POA reminder delivery is already pending for the current expiry window.',
+      disabledReason: 'Mevcut bitiş penceresi için bekleyen bir vekâlet hatırlatma teslimi zaten var.',
     });
   });
 
@@ -558,7 +558,7 @@ describe('ClientService.getActionCatalog', () => {
       enabled: false,
       visibility: 'visible',
       requiredState: 'POA_REMINDER_NOT_ELIGIBLE',
-      disabledReason: 'POA reminder is available only for active limited powers of attorney expiring within 30 days.',
+      disabledReason: 'Vekâlet hatırlatması yalnız 30 gün içinde süresi dolacak aktif sınırlı vekâletler için kullanılabilir.',
       target: { clientId: 'client-1' },
     });
   });
@@ -572,9 +572,9 @@ describe('ClientService.getActionCatalog', () => {
     expect(keys).toEqual(['case.open_related', 'activity.view_timeline']);
     expect(result.data.every((item) => item.visibility === 'visible')).toBe(true);
     expect(serialized).not.toContain('forbidden');
-    expect(serialized).not.toContain('Create intake link');
-    expect(serialized).not.toContain('Template notification requires');
-    expect(serialized).not.toContain('Document request requires');
+    expect(serialized).not.toContain('Intake bağlantısı oluştur');
+    expect(serialized).not.toContain('Şablon bildirimi');
+    expect(serialized).not.toContain('Belge talebi');
   });
 
   it('does not perform mutation, audit, timeline, notification creation, or dispatch side effects', async () => {

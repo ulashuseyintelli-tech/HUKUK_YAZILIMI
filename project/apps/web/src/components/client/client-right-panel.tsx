@@ -21,15 +21,15 @@ const COMMAND_ACTIONS = new Set<ClientActionCatalogItem['key']>([
 ]);
 
 const HEALTH_LABELS: Record<ClientOperatingSnapshot['health'], string> = {
-  healthy: 'Saglikli',
+  healthy: 'Sağlıklı',
   attention: 'Dikkat',
   blocked: 'Bloklu',
 };
 
 const RISK_LABELS: Record<ClientOperatingSnapshot['riskLevel'], string> = {
-  low: 'Dusuk risk',
+  low: 'Düşük risk',
   medium: 'Orta risk',
-  high: 'Yuksek risk',
+  high: 'Yüksek risk',
 };
 
 function healthClass(health: ClientOperatingSnapshot['health']) {
@@ -45,7 +45,7 @@ function severityClass(severity: ClientOperatingSnapshot['signals'][number]['sev
 }
 
 function disabledText(item: ClientActionCatalogItem) {
-  return item.disabledReason || item.requiredState || 'Bu islem su anda kapali.';
+  return item.disabledReason || item.requiredState || 'Bu işlem şu anda kapalı.';
 }
 
 function sortVisibleActions(items: ClientActionCatalogItem[]) {
@@ -98,10 +98,10 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
 
   if (state === 'loading') {
     return (
-      <aside className="w-full min-w-0 rounded-xl border bg-white p-4 text-sm text-gray-500 xl:sticky xl:top-4 xl:self-start" role="status" aria-label="Operasyon paneli yukleniyor">
+      <aside className="w-full min-w-0 rounded-xl border bg-white p-4 text-sm text-gray-500 xl:sticky xl:top-4 xl:self-start" role="status" aria-label="Operasyon paneli yükleniyor">
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Operasyon paneli yukleniyor...
+          Operasyon paneli yükleniyor...
         </div>
       </aside>
     );
@@ -109,10 +109,10 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
 
   if (state === 'error' || !snapshot) {
     return (
-      <aside className="w-full min-w-0 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 xl:sticky xl:top-4 xl:self-start" role="alert" aria-label="Operasyon paneli hatasi">
+      <aside className="w-full min-w-0 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 xl:sticky xl:top-4 xl:self-start" role="alert" aria-label="Operasyon paneli hatası">
         <div className="flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          Operasyon paneli yuklenemedi.
+          Operasyon paneli yüklenemedi.
         </div>
       </aside>
     );
@@ -122,7 +122,7 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
     <aside className="order-2 w-full min-w-0 space-y-4 overflow-hidden rounded-xl border bg-white p-4 xl:sticky xl:top-4 xl:self-start" aria-label="Operasyon paneli">
       <div>
         <p className="text-sm font-semibold text-gray-900">Operasyon paneli</p>
-        <p className="mt-1 text-xs text-gray-500">Read-only durum ve aksiyon ozeti</p>
+        <p className="mt-1 text-xs text-gray-500">Read-only durum ve aksiyon özeti</p>
       </div>
 
       <div className={`min-w-0 rounded-lg border px-3 py-2 text-sm ${healthClass(snapshot.health)}`}>
@@ -214,29 +214,29 @@ function ActionSummary({
           <button
             type="button"
             onClick={onNavigateActivity ?? onNavigateActions}
-            aria-label={`${item.label} aktivite tabinda ac`}
+            aria-label={`${item.label} aktivite tabında aç`}
             className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
           >
-            Aktiviteyi ac
+            Aktiviteyi aç
             <ArrowRight className="h-3 w-3" />
           </button>
         ) : item.href && !isCommand ? (
           <Link
             href={item.href}
-            aria-label={`${item.label} baglantisini ac`}
+            aria-label={`${item.label} bağlantısını aç`}
             className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
           >
-            Ac
+            Aç
             <ArrowRight className="h-3 w-3" />
           </Link>
         ) : (
           <button
             type="button"
             onClick={onNavigateActions}
-            aria-label={`${item.label} islemler tabinda ac`}
+            aria-label={`${item.label} işlemler tabında aç`}
             className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
           >
-            Islemler'de ac
+            İşlemler'de aç
             <ArrowRight className="h-3 w-3" />
           </button>
         )}
