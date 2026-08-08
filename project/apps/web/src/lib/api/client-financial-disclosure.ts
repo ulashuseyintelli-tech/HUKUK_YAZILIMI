@@ -88,6 +88,26 @@ export interface OfficeDisclosureHistorySurface {
   readonly items: readonly OfficeDisclosureSummary[];
 }
 
+export interface OfficeDisclosurePreparationSource {
+  /** Ham disposition kimliği değildir; PRE01 tarafından üretilen tek yönlü referanstır. */
+  readonly preparationReference: string;
+  /** Etiket: "Büro dosya no"; canonical kaynak yalnız Case.fileNumber. */
+  readonly officeFileNumber: string;
+  readonly postedAt: string;
+  readonly currency: string;
+  readonly totalAmount: string;
+  readonly existingDisclosure: {
+    readonly disclosureId: string;
+    readonly currentVersionId: string | null;
+    readonly status: OfficeDisclosureStatus | null;
+  } | null;
+}
+
+export interface OfficeDisclosurePreparationSurface {
+  readonly surface: 'OFFICE_PREPARATION_SOURCES';
+  readonly items: readonly OfficeDisclosurePreparationSource[];
+}
+
 export const clientFinancialDisclosureApi = {
   /** Office workspace -> GET curated list for the JWT tenant and client scope. */
   async list(clientId: string): Promise<OfficeDisclosureListSurface> {
@@ -109,6 +129,14 @@ export const clientFinancialDisclosureApi = {
   async getHistory(clientId: string, disclosureId: string): Promise<OfficeDisclosureHistorySurface> {
     const response = await apiClient.get<OfficeDisclosureHistorySurface>(
       `/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/disclosures/${encodeURIComponent(disclosureId)}/history`,
+    );
+    return response.data;
+  },
+
+  /** Office workspace -> GET yalnız server-side POSTED ve single-client kaynaklar. */
+  async listPreparationSources(clientId: string): Promise<OfficeDisclosurePreparationSurface> {
+    const response = await apiClient.get<OfficeDisclosurePreparationSurface>(
+      `/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/preparation-sources`,
     );
     return response.data;
   },

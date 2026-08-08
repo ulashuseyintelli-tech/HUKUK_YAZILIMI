@@ -9,6 +9,7 @@ import {
   type OfficeDisclosureSummary,
 } from '@/lib/api/client-financial-disclosure';
 import { DisclosureStatusBadge } from './DisclosureStatusBadge';
+import { DisclosurePreparationPanel } from './DisclosurePreparationPanel';
 
 const displayDate = (value?: string | null) =>
   value ? new Date(value).toLocaleString('tr-TR') : '—';
@@ -126,6 +127,7 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
 
   return (
     <div className="space-y-4">
+      <DisclosurePreparationPanel clientId={clientId} />
       <DisclosureList
         items={list.data.items}
         selectedVersionId={selection?.versionId ?? null}
