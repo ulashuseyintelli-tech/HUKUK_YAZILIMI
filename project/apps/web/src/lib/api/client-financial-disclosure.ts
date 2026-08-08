@@ -108,6 +108,18 @@ export interface OfficeDisclosurePreparationSurface {
   readonly items: readonly OfficeDisclosurePreparationSource[];
 }
 
+export const CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION =
+  'ClientFinancialDisclosureRenderV1' as const;
+
+export interface OfficeDisclosurePreviewSurface {
+  readonly surface: 'OFFICE_PREVIEW';
+  readonly rendered: {
+    readonly contractVersion: typeof CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION;
+    readonly subject: string;
+    readonly text: string;
+  };
+}
+
 export const clientFinancialDisclosureApi = {
   /** Office workspace -> GET curated list for the JWT tenant and client scope. */
   async list(clientId: string): Promise<OfficeDisclosureListSurface> {
@@ -138,6 +150,21 @@ export const clientFinancialDisclosureApi = {
     const response = await apiClient.get<OfficeDisclosurePreparationSurface>(
       `/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/preparation-sources`,
     );
+    return response.data;
+  },
+
+  /** Office workspace -> GET the frozen X2 renderer output for one scoped version. */
+  async getPreview(clientId: string, versionId: string): Promise<OfficeDisclosurePreviewSurface> {
+    const response = await apiClient.get<OfficeDisclosurePreviewSurface>(
+      `/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/versions/${encodeURIComponent(versionId)}/preview`,
+    );
+    if (
+      response.data.surface !== 'OFFICE_PREVIEW' ||
+      response.data.rendered.contractVersion !==
+        CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION
+    ) {
+      throw new Error('Unsupported financial disclosure renderer contract');
+    }
     return response.data;
   },
 };
