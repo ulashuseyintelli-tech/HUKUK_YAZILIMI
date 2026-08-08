@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ClientFinancialDisclosureStatus } from '@prisma/client';
+import type { ClientFinancialDisclosureRenderOutputV1 } from './client-financial-disclosure-renderer.contract';
 
 /**
  * CODEX-X1-FD-OFFICE-CONTRACT-PRE01-R01 — curated office read contract.
@@ -143,6 +144,12 @@ export interface OfficeDisclosurePreparationSource {
 export interface OfficeDisclosurePreparationSurface {
   readonly surface: 'OFFICE_PREPARATION_SOURCES';
   readonly items: readonly OfficeDisclosurePreparationSource[];
+}
+
+/** X1-B03, X2'nin dondurulmus renderer output'unu degistirmeden tuketir. */
+export interface OfficeDisclosurePreviewSurface {
+  readonly surface: 'OFFICE_PREVIEW';
+  readonly rendered: ClientFinancialDisclosureRenderOutputV1;
 }
 
 export interface OfficeDisclosureReadScope {

@@ -12,6 +12,7 @@ import {
   assertOfficeDisclosureProjectionSafe,
 } from '../client-financial-disclosure-office-contract';
 import { ClientFinancialDisclosureOfficeService } from '../client-financial-disclosure-office-service';
+import * as renderer from '../client-financial-disclosure-renderer';
 
 const T = 'tenant-a';
 const U = 'user-a';
@@ -224,6 +225,26 @@ describe('CODEX-X1 PRE01 — office financial disclosure contract', () => {
     expect(JSON.stringify(result)).not.toContain('PROVIDER-SECRET-ID');
     expect(JSON.stringify(result)).not.toContain('case-client-a');
     expect(() => assertOfficeDisclosureProjectionSafe(result)).not.toThrow();
+  });
+
+  it('preview X2 renderer outputunu aynen taşır ve kendi metnini üretmez', async () => {
+    const prisma = buildPrisma();
+    const renderSpy = jest.spyOn(renderer, 'renderClientFinancialDisclosure');
+    const result = await new ClientFinancialDisclosureOfficeService(prisma as any).getPreview(
+      { tenantId: T, actorUserId: U, clientId: C },
+      V,
+    );
+
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      surface: 'OFFICE_PREVIEW',
+      rendered: renderSpy.mock.results[0]?.value,
+    });
+    expect(result.rendered.contractVersion).toBe('ClientFinancialDisclosureRenderV1');
+    expect(result.rendered.text).toContain('Büro dosya no: OFFICE-42');
+    expect(JSON.stringify(result)).not.toContain(CC);
+    expect(() => assertOfficeDisclosureProjectionSafe(result)).not.toThrow();
+    renderSpy.mockRestore();
   });
 
   it('var olmayan, cross-tenant/client/case/version durumlarını aynı object-scope 404 ile kapatır', async () => {

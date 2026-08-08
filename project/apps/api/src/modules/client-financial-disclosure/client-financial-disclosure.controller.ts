@@ -93,6 +93,23 @@ export class ClientFinancialDisclosureController {
 
   /**
    * Cagrildigi yerler:
+   * - Office FD workspace preview -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId/preview
+   */
+  @Get('office/clients/:clientId/versions/:disclosureVersionId/preview')
+  getOfficePreview(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Param('disclosureVersionId') disclosureVersionId: string,
+  ) {
+    return this.office.getPreview(
+      { tenantId, actorUserId, clientId },
+      disclosureVersionId,
+    );
+  }
+
+  /**
+   * Cagrildigi yerler:
    * - Office FD workspace history -> GET /client-financial-disclosures/office/clients/:clientId/disclosures/:disclosureId/history
    */
   @Get('office/clients/:clientId/disclosures/:disclosureId/history')
