@@ -11,6 +11,7 @@ import { buildClientStatementRender } from './client-statement-render.mapper';
 import {
   assertStatementDeliverable,
   buildStatementDeliveryMessage,
+  buildStatementDeliveryTokens,
   type ClientStatementDeliveryPort,
 } from './client-statement-delivery.contract';
 import {
@@ -347,7 +348,16 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       const pdf = await this.pdf.render(render, statement.status as ClientStatementStatus);
       const message = buildStatementDeliveryMessage({ render, recipientEmail, pdf });
 
-      const sent = await this.deliveryPort.send(message);
+      const sent = await this.deliveryPort.send(message, {
+        tenantId: client.tenantId,
+        clientId: client.id,
+        caseId: statement.caseId ?? null,
+        statementId: statement.id,
+        dedupeKey,
+        periodKey: period.periodKey,
+        actorId: CLIENT_STATEMENT_MONTHLY_ACTOR,
+        tokens: buildStatementDeliveryTokens(render),
+      });
       if (!sent?.success) {
         await this.recordDeliveryFailure(client.tenantId, dedupeKey, reservation, sent?.errorCode, now);
         return { ...base, outcome: 'FAILED', statementSource, reason: sent?.errorCode || 'delivery-failed' };

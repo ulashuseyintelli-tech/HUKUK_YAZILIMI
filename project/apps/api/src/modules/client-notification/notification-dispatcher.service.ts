@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { ClientNotificationService } from './client-notification.service';
+import { ClientNotificationService, type ClientNotificationAttachment } from './client-notification.service';
 import { MessageTemplateService, TemplateTokens } from '@/modules/message-template/message-template.service';
 
 export interface DispatchInput {
@@ -14,6 +14,12 @@ export interface DispatchInput {
   refType: string; // 'ClientApprovalRequest' | 'ClientStatement' | 'ExpenseRequest' ...
   refId: string;
   force?: boolean; // true → SENT idempotency kontrolünü atla (açık tekrar gönderim — m3a-2)
+  /**
+   * CAD C3: opsiyonel mail ekleri — TAŞIMA-ONLY. Verilmezse dispatch davranışı
+   * birebir aynıdır (backward-compatible). Ek içeriği ne render motoruna, ne
+   * ClientNotification kaydına, ne de loga girer; yalnız sendEmail'e devredilir.
+   */
+  attachments?: readonly ClientNotificationAttachment[];
 }
 
 export type DispatchStatus = 'sent' | 'failed' | 'skipped';
@@ -96,6 +102,7 @@ export class NotificationDispatcherService {
         persistedBody: persisted?.body,
         templateId: template.id,
         dedupeKey,
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       });
 
       return { status: 'sent', notificationId: res.notificationId, dedupeKey };

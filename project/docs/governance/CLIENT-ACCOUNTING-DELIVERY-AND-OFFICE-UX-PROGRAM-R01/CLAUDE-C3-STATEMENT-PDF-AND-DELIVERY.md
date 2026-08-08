@@ -169,6 +169,29 @@ attempts · reservedAt · lastAttemptAt · nextRetryAt · sentAt · lastError
 Sınırlar (emsalden devralındı, yeniden türetilmedi): MAX_ATTEMPTS=3,
 RETRY_MINUTES=60, LOCK_TIMEOUT_MINUTES=15.
 
+## ATTACHMENT CHAIN — OWNER DISPOSITION: OPTION A (RATIFIED) · BLOCKER CLOSED
+
+`C3-ATTACHMENT-CHAIN-OUTSIDE-WRITE-ROOT` **CLOSED**. Owner, `client-notification/**`
+için sınırlı yazma yetkisi verdi ve doğrudan provider çağrısını (Option B) reddetti.
+
+```text
+- SendEmailDto + DispatchInput → opsiyonel `attachments` (TAŞIMA-ONLY, backward-compatible)
+- Zincir: dispatcher → ClientNotificationService → taşıma. Doğrudan provider çağrısı YOK.
+- PDF Buffer kalıcı kayda YAZILMAZ; ClientNotification.metadata'ya yalnız ek KİMLİĞİ
+  (filename + contentType) düşer.
+- dedupeKey / status / persistence / audit otoritesi zincirde KALIR.
+- Aynı teslim için provider çağrısı TAM 1 kez: dedupeKey SENT ise ek TAŞINMAZ.
+- Provider hatasında kayıt FAILED damgalanır; SENT üretilmez.
+- CLIENT_STATEMENT_DELIVERY_PORT artık bildirim zinciri adaptörüne bağlıdır.
+```
+
+**REPOSITORY-TRUTH DÜZELTMESİ:** owner metnindeki zincir
+`dispatcher → ClientNotificationService → EmailProviderService` biçiminde tarif
+edilmişti; gerçekte `ClientNotificationService.sendEmail` `EmailProviderService`'i
+DEĞİL, doğrudan `nodemailer` transport'unu kullanır. Ek, bu kanonik zincirin son
+halkasına (`transporter.sendMail`) geçirilmiştir. `EmailProviderService` çağrılmamış,
+yeni bir gönderim yolu açılmamıştır — semantic outcome owner kararıyla aynıdır.
+
 ## ACTIVATION DEBT (owner teyidi olmadan AÇILMAZ)
 
 1. **Aylık schedule activation** — `CLIENT_STATEMENT_MONTHLY_DELIVERY=true`.
@@ -177,7 +200,16 @@ RETRY_MINUTES=60, LOCK_TIMEOUT_MINUTES=15.
    güncellemek zorundadır.
 2. **Kalıcı teslim defteri** — yukarıdaki X3 şeması + adaptörün
    `CLIENT_STATEMENT_DELIVERY_LEDGER_PORT` olarak kaydı.
-3. **Taşıma portu** — `CLIENT_STATEMENT_DELIVERY_PORT` bilerek kayıtlı değildir;
-   kayıtsızken koşu `PLAN_ONLY` çalışır ve hiçbir mail üretmez/göndermez.
 
-Bu üç kalem açılmadıkça production'da hiçbir müvekkile ekstre maili gitmez.
+Taşıma portu bağlandığı için koşu artık `PORT` modundadır; ancak **aylık bayrak
+kapalı** olduğundan koşu hiç çalışmaz ve production'da hiçbir müvekkile ekstre
+maili GİTMEZ. Yukarıdaki iki kalem owner teyidine tabidir.
+
+## SAYFA DURUMU VE HANDOFF
+
+```text
+STATUS: ENGINEERING_COMPLETE / ACTIVATION_PENDING
+NOT:    PRODUCTION_COMPLETE DEĞİLDİR.
+HANDOFF: C3 writer terminal handoff → X3 (kalıcı teslim defteri şeması/migration).
+SONRAKİ HAT: X3-B02 → X3-B03 (migration-owner yetkisiyle).
+```

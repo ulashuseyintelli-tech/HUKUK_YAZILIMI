@@ -23,6 +23,7 @@ import {
   assertStatementDeliverable,
   buildStatementAttachmentFilename,
   buildStatementDeliveryMessage,
+  buildStatementDeliveryTokens,
   type ClientStatementDeliveryPort,
 } from '../client-statement-delivery.contract';
 import { createClientStatementRender, toClientSafeFileReference } from '../client-statement-render.contract';
@@ -152,7 +153,18 @@ describe('CAD C3-B03 — içerikli ekstre maili + PDF eki', () => {
 
     assertStatementDeliverable(ClientStatementStatus.ACTIVE, RECIPIENT);
     const msg = buildStatementDeliveryMessage({ render: r, recipientEmail: RECIPIENT, pdf });
-    const res = await port.send(msg);
+    // Taşıma bağlamı (CAD C3 attachment threading): kimlik/idempotency alanları
+    // mesajın DIŞINDA taşınır — mesaj gövdesi yalnız render sözleşmesinden türer.
+    const res = await port.send(msg, {
+      tenantId: 'tenant-b03',
+      clientId: 'client-b03',
+      caseId: null,
+      statementId: 'stmt-b03',
+      dedupeKey: 'STATEMENT_MONTHLY:ClientStatement:stmt-b03:2026-02',
+      periodKey: '2026-02',
+      actorId: 'SYSTEM_MONTHLY_STATEMENT',
+      tokens: buildStatementDeliveryTokens(r),
+    });
 
     expect(res.success).toBe(true);
     expect(port.send).toHaveBeenCalledTimes(1);      // TEK gönderim
