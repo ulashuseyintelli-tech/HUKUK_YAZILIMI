@@ -2,6 +2,7 @@
  * API Client - Base HTTP client with authentication
  */
 import { reportClientError, shouldReportNetworkError } from "../error-reporter"; // PR-4: yalnız network-failure
+import { api } from "../api"; // CAD-C1-B03-AUTH-CONTINUITY-REMEDIATION-R01: OFFICE-AUTH-P01 kanonik token kaynağı (tek-kaynak)
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -11,28 +12,20 @@ if (typeof window !== "undefined") {
 }
 
 export class ApiClient {
-  private token: string | null = null;
-
+  // CAD-C1-B03-AUTH-CONTINUITY-REMEDIATION-R01: token durumu TEK-KAYNAK olarak lib/api.ts'in `api`
+  // singleton'ında tutulur (OFFICE-AUTH-P01: getToken = this.token ?? sessionStorage ?? localStorage).
+  // Bu client kendi localStorage-only deposunu KULLANMAZ; aksi halde "Beni hatırla" KAPALIYKEN token
+  // yalnız sessionStorage'da olur, bu client bulamaz ve tüm çağrılar 401 döner (compliance yüzeyleri dahil).
   setToken(token: string) {
-    this.token = token;
-    if (typeof window !== "undefined") {
-      localStorage.setItem("token", token);
-    }
+    api.setToken(token);
   }
 
   getToken(): string | null {
-    if (this.token) return this.token;
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("token");
-    }
-    return null;
+    return api.getToken();
   }
 
   clearToken() {
-    this.token = null;
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("token");
-    }
+    api.clearToken();
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

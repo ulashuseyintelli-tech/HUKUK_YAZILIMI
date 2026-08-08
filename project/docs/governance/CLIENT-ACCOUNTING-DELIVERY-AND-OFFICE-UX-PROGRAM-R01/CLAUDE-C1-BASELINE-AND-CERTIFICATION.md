@@ -23,8 +23,8 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
-BLOCKS TOTAL: 5   COMPLETED: 3 (B01, B02, B03)   ACTIVATION DEBT: NONE
-LANE STATUS:  B03 RUNTIME_VERIFIED (owner GO-COMPLETE, RC 1488063d) — B04..B05 WAITING_FOR_PREDECESSORS
+BLOCKS TOTAL: 5   COMPLETED: 2 (B01, B02)   B03: OPEN / AUTH-CONTINUITY RESIDUAL   ACTIVATION DEBT: NONE
+LANE STATUS:  B03 REOPENED — natural browser E2E NOT VERIFIED (auth-continuity remediation R01); B04..B05 WAITING
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -125,6 +125,17 @@ için bildirilir.
 > rol sınırı · **tenant izolasyonu D-2/D-3 İNTAKT** · portal/web render (authenticated network tüm 200).
 > UAT tenant/aktör/veri temizlendi (eski token replay 401). Kanıt: `C1-B03-RUNTIME-VERIFICATION-CLOSEOUT-R01.md`.
 > Kapsam = owner GO-COMPLETE kabul matrisi (compliance yüzeyleri + izolasyon + rol); #2303 şemaları RC-dışı.
+
+> **DÜZELTME (2026-08-09, owner ratified) — B03 REOPENED / AUTH-CONTINUITY RESIDUAL:** Yukarıdaki
+> `RUNTIME_VERIFIED` ilanı ERKENDİ. Portal UAT'de token elle localStorage'a enjekte edilmişti; bu yalnız
+> backend + render kabiliyetini kanıtlar, **doğal oturum sürekliliğini KANITLAMAZ**. Doğal soft-navigation
+> akışında (login→link→compliance, enjeksiyon YOK) compliance'ın TÜM API çağrıları **401** döndü — aynı
+> oturumda `/clients/:id/action-catalog` 200 (`lib/api.ts`) ↔ 401 (`lib/api/client.ts` apiClient). Kök neden:
+> apiClient YALNIZ localStorage okuyordu; "Beni hatırla" KAPALIYKEN token yalnız sessionStorage'a yazılır
+> (OFFICE-AUTH-P01). Fix: apiClient token çözümlemesi kanonik `api` singleton'ına delege (tek-kaynak) +
+> regresyon testi → **CAD-C1-B03-AUTH-CONTINUITY-REMEDIATION-R01**. Yeni immutable RC + kontrollü deploy +
+> doğal browser UAT PASS sonrası B03 telafi kaydıyla yeniden RUNTIME_VERIFIED yapılır. #2307 tarihsel kayıt
+> olarak KORUNUR (geriye dönük silinmez).
 
 ---
 
