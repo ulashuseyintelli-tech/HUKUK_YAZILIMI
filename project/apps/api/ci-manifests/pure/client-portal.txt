@@ -312,3 +312,10 @@ src/modules/client-settlement/__tests__/client-financial-disclosure-command.fail
 #     CAD C3 attachment threading (owner-ratified bounded write): ek opsiyonel ve backward-compatible,
 #     PDF icerigi kalici kayda yazilmaz, dedupe ikinci gonderimi engeller, provider hatasinda SENT yok.
 src/modules/client-notification/__tests__/client-notification-attachment-threading.spec.ts
+
+#   CAD-BACKEND-ROUTE-SHADOW-REMEDIATION-R01 route precedence regresyon guard'ı (SAF, DB-siz)
+#     ClientController @Get(':id') catch-all'unun üç tek-segment collection GET'ini
+#     (/clients/disclosure-texts · /clients/data-subject-requests · /clients/legal-holds)
+#     gölgelemediğini gerçek Nest HTTP seviyesinde doğrular; :id davranışı (found→200,
+#     unknown→404) korunur; ClientModule controller sırasında yapısal guard.
+src/modules/client/__tests__/client-route-precedence.http-smoke.spec.ts
