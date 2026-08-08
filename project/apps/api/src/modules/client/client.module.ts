@@ -32,7 +32,13 @@ import { PoaModule } from '../poa/poa.module';
 
 @Module({
   imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule, EscalationModule, ClientNotificationModule, PoaModule],
-  controllers: [ClientController, ClientAddressController, ClientConsentController, ClientKvkkRightsController, ClientLegalHoldController, ClientSpecialCategoryController, ClientPoaCapabilityController],
+  // ROUTE PRECEDENCE (CAD-BACKEND-ROUTE-SHADOW-REMEDIATION-R01): ClientKvkkRightsController ve
+  // ClientLegalHoldController, ClientController'DAN ÖNCE kayıtlı olmalıdır. NestJS controller'ları
+  // dizi sırasıyla kaydeder; ClientController'ın `@Get(':id')` catch-all'u, sonra kaydedilen
+  // tek-segment statik collection route'larını gölgeler (`/clients/disclosure-texts`,
+  // `/clients/data-subject-requests`, `/clients/legal-holds` → 404 "Müvekkil bulunamadı").
+  // Bu iki controller'ı öne almak statikleri `:id`'den önce kaydeder; sıra DEĞİŞTİRİLMEMELİDİR.
+  controllers: [ClientKvkkRightsController, ClientLegalHoldController, ClientController, ClientAddressController, ClientConsentController, ClientSpecialCategoryController, ClientPoaCapabilityController],
   providers: [ClientService, ClientAddressService, PoaExpiryDeliveryService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService, ClientUyapTransferGateService],
   exports: [ClientService, ClientConsentService, ClientDisclosureService, ClientDataSubjectRequestService, ClientLegalHoldService, ClientSpecialCategoryService, ClientPoaCapabilityService, ClientUyapTransferGateService],
 })
