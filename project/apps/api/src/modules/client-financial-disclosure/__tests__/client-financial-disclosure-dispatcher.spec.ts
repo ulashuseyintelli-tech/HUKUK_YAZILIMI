@@ -104,7 +104,6 @@ describe('CLIENT-FD-ACT-R01-I04 — dispatcher adapter', () => {
         tenantId: 'tenant-opaque',
         disclosureVersionId: 'version-opaque',
         actorUserId: 'actor-opaque',
-        subject: 'subject',
       })).rejects.toMatchObject({ code: 'DISCLOSURE_PUBLICATION_PROVIDER_NOT_PRODUCTION' });
       expect(transaction).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();

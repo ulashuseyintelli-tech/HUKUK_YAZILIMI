@@ -5,6 +5,7 @@ import {
   ClientFinancialDisclosureApprovalAuthorizationError,
   ClientFinancialDisclosureApprovalError,
 } from '../client-financial-disclosure-approval.contract';
+import { parseClientFinancialDisclosureRenderOutput } from '../client-financial-disclosure-renderer.contract';
 import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure-writer.service';
 
 /**
@@ -95,7 +96,6 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
       tenantId: tA,
       disclosureVersionId: versionId,
       requesterUserId: uRequester,
-      notificationContent: `Tahsilat bildirimi ${key}`,
       approvedRecipientEmail: `client-${key}@example.test`,
     });
     return { versionId, approvalRequestId };
@@ -274,7 +274,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
     });
     await svc.requestContentApproval({
       tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester,
-      notificationContent: 'x', approvedRecipientEmail: 'c@example.test',
+      approvedRecipientEmail: 'c@example.test',
     });
     expect(await code(svc.completeContentApproval({
       tenantId: tA, disclosureVersionId: versionId, contentApproverUserId: uManager,
@@ -301,7 +301,11 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
     expect(v.contentApprovedById).toBe(uPartner2);
     expect(v.contentApprovedAt).toBeInstanceOf(Date);
     expect(v.officeApprovedById).toBe(uPartner);
-    expect(v.notificationContent).toContain('p11');
+    const approvedContent = parseClientFinancialDisclosureRenderOutput(
+      v.notificationContent as string,
+    );
+    expect(approvedContent.subject).toContain('Büro dosya no');
+    expect(approvedContent.text).toContain(`2026/I03A-${S}`);
     expect(v.notificationContentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(v.approvedRecipientEmail).toContain('@example.test');
   });
@@ -483,7 +487,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
     // DRAFT → CONTENT_APPROVAL_PENDING
     expect(await code(svc.requestContentApproval({
       tenantId: tA, disclosureVersionId: draft, requesterUserId: uRequester,
-      notificationContent: 'x', approvedRecipientEmail: 'c@example.test',
+      approvedRecipientEmail: 'c@example.test',
     }))).toBe('DISCLOSURE_APPROVAL_STATUS_INVALID');
     // DRAFT → CONTENT_APPROVED
     expect(await code(svc.completeContentApproval({
@@ -498,7 +502,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
     const { versionId: pend } = await pending(`n19c-${S}`);
     expect(await code(svc.requestContentApproval({
       tenantId: tA, disclosureVersionId: pend, requesterUserId: uRequester,
-      notificationContent: 'x', approvedRecipientEmail: 'c@example.test',
+      approvedRecipientEmail: 'c@example.test',
     }))).toBe('DISCLOSURE_APPROVAL_STATUS_INVALID');
   });
 
@@ -562,7 +566,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
     });
     await svc.requestContentApproval({
       tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester,
-      notificationContent: 'Tahsilat bildirimi', approvedRecipientEmail: 'p22@example.test',
+      approvedRecipientEmail: 'p22@example.test',
     });
     await svc.completeContentApproval({
       tenantId: tA, disclosureVersionId: versionId, contentApproverUserId: uPartner,
@@ -580,11 +584,11 @@ describeDb('CLIENT-P2-U03-TRACK-B-I03 — disclosure approval (gerçek PostgreSQ
     expect(new Set([uRequester, after.officeApprovedById, after.contentApprovedById]).size).toBe(3);
   });
 
-  it('[22b] içerik/alıcı zorunludur — boş içerik fail-closed reddedilir', async () => {
+  it('[22b] renderer içeriğinin alıcı bağı zorunludur — boş alıcı fail-closed reddedilir', async () => {
     const { versionId } = await officeApproved(`n22b-${S}`, uPartner);
     expect(await code(svc.requestContentApproval({
       tenantId: tA, disclosureVersionId: versionId, requesterUserId: uRequester,
-      notificationContent: '   ', approvedRecipientEmail: 'c@example.test',
+      approvedRecipientEmail: '   ',
     }))).toBe('DISCLOSURE_APPROVAL_CONTENT_REQUIRED');
     expect((await readVersion(versionId)).status).toBe('OFFICE_APPROVED');
   });

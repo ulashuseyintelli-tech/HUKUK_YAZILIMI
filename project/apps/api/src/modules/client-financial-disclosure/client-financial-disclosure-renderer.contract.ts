@@ -104,3 +104,60 @@ export function freezeClientFinancialDisclosureRenderOutput(input: {
     text: input.text,
   });
 }
+
+/**
+ * X2-B04 approval seal representation. Fixed key order makes the persisted value canonical;
+ * publication parses this exact payload instead of re-running the renderer after approval.
+ */
+export function serializeClientFinancialDisclosureRenderOutput(
+  output: ClientFinancialDisclosureRenderOutputV1,
+): string {
+  if (
+    output.contractVersion !== CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION ||
+    output.subject.length === 0 ||
+    output.text.length === 0
+  ) {
+    throw new TypeError('Rendered disclosure output is invalid');
+  }
+
+  return JSON.stringify({
+    contractVersion: CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION,
+    subject: output.subject,
+    text: output.text,
+  });
+}
+
+/** Fail-closed decoder for the renderer output sealed by content approval. */
+export function parseClientFinancialDisclosureRenderOutput(
+  serialized: string,
+): ClientFinancialDisclosureRenderOutputV1 {
+  let value: unknown;
+  try {
+    value = JSON.parse(serialized);
+  } catch {
+    throw new TypeError('Sealed disclosure output is invalid');
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Sealed disclosure output is invalid');
+  }
+  const candidate = value as Record<string, unknown>;
+  const keys = Object.keys(candidate).sort();
+  const expected = ['contractVersion', 'subject', 'text'];
+  if (
+    keys.length !== expected.length ||
+    keys.some((key, index) => key !== expected[index]) ||
+    candidate.contractVersion !== CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION ||
+    typeof candidate.subject !== 'string' ||
+    candidate.subject.length === 0 ||
+    typeof candidate.text !== 'string' ||
+    candidate.text.length === 0
+  ) {
+    throw new TypeError('Sealed disclosure output is invalid');
+  }
+
+  return freezeClientFinancialDisclosureRenderOutput({
+    subject: candidate.subject,
+    text: candidate.text,
+  });
+}

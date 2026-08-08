@@ -1,4 +1,8 @@
-import { createClientFinancialDisclosureRenderInput } from '../client-financial-disclosure-renderer.contract';
+import {
+  createClientFinancialDisclosureRenderInput,
+  parseClientFinancialDisclosureRenderOutput,
+  serializeClientFinancialDisclosureRenderOutput,
+} from '../client-financial-disclosure-renderer.contract';
 import {
   CLIENT_FINANCIAL_DISCLOSURE_FILE_NUMBER_LABEL,
   renderClientFinancialDisclosure,
@@ -110,6 +114,47 @@ describe('CLIENT-ACCOUNTING-DELIVERY R01 / X2-B02 — deterministic Turkish rend
     expect(() =>
       renderClientFinancialDisclosure(
         createClientFinancialDisclosureRenderInput({ ...BASE_INPUT, currency: 'TRY\r' }),
+      ),
+    ).toThrow(TypeError);
+  });
+
+  it('approval için subject+text çıktısını canonical serialize eder ve exact frozen payload olarak okur', () => {
+    const output = renderClientFinancialDisclosure(
+      createClientFinancialDisclosureRenderInput(BASE_INPUT),
+    );
+    const serialized = serializeClientFinancialDisclosureRenderOutput(output);
+
+    expect(serialized).toBe(
+      JSON.stringify({
+        contractVersion: 'ClientFinancialDisclosureRenderV1',
+        subject: output.subject,
+        text: output.text,
+      }),
+    );
+    const parsed = parseClientFinancialDisclosureRenderOutput(serialized);
+    expect(parsed).toEqual(output);
+    expect(Object.isFrozen(parsed)).toBe(true);
+  });
+
+  it('serbest metni, eski/ek alanlı veya boş sealed payloadı fail-closed reddeder', () => {
+    expect(() => parseClientFinancialDisclosureRenderOutput('serbest metin')).toThrow(TypeError);
+    expect(() =>
+      parseClientFinancialDisclosureRenderOutput(
+        JSON.stringify({
+          contractVersion: 'ClientFinancialDisclosureRenderV0',
+          subject: 'x',
+          text: 'y',
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      parseClientFinancialDisclosureRenderOutput(
+        JSON.stringify({
+          contractVersion: 'ClientFinancialDisclosureRenderV1',
+          subject: 'x',
+          text: 'y',
+          internalId: 'forbidden',
+        }),
       ),
     ).toThrow(TypeError);
   });

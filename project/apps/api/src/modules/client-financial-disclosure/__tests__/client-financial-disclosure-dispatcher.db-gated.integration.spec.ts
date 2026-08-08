@@ -77,7 +77,6 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
     });
     await approval.requestContentApproval({
       tenantId: tA, disclosureVersionId: versionId, requesterUserId: uReq,
-      notificationContent: `Tahsilat bildirimi ${key}`,
       approvedRecipientEmail: `client-${key}@example.test`,
     });
     await approval.completeContentApproval({
@@ -130,7 +129,7 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
     const versionId = await sendPending(`ok-${S}`);
     const spy = jest.fn();
     const r = await pubWith(provider('smtp', () => ({ success: true, messageId: 'smtp-real-1', provider: 'smtp' }), spy))
-      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'Bildirim' });
+      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
     expect(r.status).toBe('PUBLISHED');
     const v = await read(versionId);
     expect(v.status).toBe('PUBLISHED');
@@ -146,7 +145,7 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
     ] as Array<[string, () => unknown, string]>) {
       const versionId = await sendPending(`${key}-${S}`);
       const r = await pubWith(provider('smtp', reply)).dispatchAndPublish({
-        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's',
+        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
       });
       expect(r.status).toBe('SEND_FAILED');
       const v = await read(versionId);
@@ -180,7 +179,7 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
 
     const spy = jest.fn();
     const r = await pubWith(provider('smtp', () => ({ success: true, messageId: 'X', provider: 'smtp' }), spy))
-      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's' });
+      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
     expect(r.status).toBe('SEND_FAILED');
     expect(r.sendFailureCode).toBe('DISCLOSURE_RECIPIENT_INVALID');
     expect(spy).not.toHaveBeenCalled();
@@ -196,9 +195,9 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
     try {
       const settled = await Promise.allSettled([
         pubWith(provider('smtp', () => ({ success: true, messageId: 'm1', provider: 'smtp' }), s1), c1)
-          .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's' }),
+          .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 }),
         pubWith(provider('smtp', () => ({ success: true, messageId: 'm2', provider: 'smtp' }), s2), c2)
-          .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2, subject: 's' }),
+          .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2 }),
       ]);
       const published = settled.filter(
         (x) => x.status === 'fulfilled' && x.value.status === 'PUBLISHED' && x.value.replayed === false,
@@ -219,7 +218,7 @@ describeDb('CLIENT-FD-ACT-R01-I04 — dispatcher + publication (gerçek PostgreS
       new UnconfiguredDisclosureNotificationDispatcher(),
     );
     await expect(
-      svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's' }),
+      svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 }),
     ).rejects.toThrow();
     const v = await read(versionId);
     expect(v.status).toBe('SEND_PENDING');

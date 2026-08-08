@@ -2,10 +2,11 @@ import {
   ClientFinancialDisclosureStatus,
   OfficeApprovalStatus,
   Prisma,
+  type CollectionDispositionLineType,
   type PrismaClient,
 } from '@prisma/client';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
-import { domainSeparatedHash } from './client-financial-disclosure-canonical';
+import { canonicalMoney, domainSeparatedHash } from './client-financial-disclosure-canonical';
 import {
   DISCLOSURE_APPROVER_CANDIDATE_SELECT,
   isDisclosureApproverEligible,
@@ -24,6 +25,12 @@ import {
   type RequestContentApprovalInput,
   type RequestOfficeApprovalInput,
 } from './client-financial-disclosure-approval.contract';
+import {
+  createClientFinancialDisclosureRenderInput,
+  parseClientFinancialDisclosureRenderOutput,
+  serializeClientFinancialDisclosureRenderOutput,
+} from './client-financial-disclosure-renderer.contract';
+import { renderClientFinancialDisclosure } from './client-financial-disclosure-renderer';
 import { verifyPersistedDisclosureSnapshot } from './client-financial-disclosure-writer.service';
 
 /** Onaya kapalı terminal yaşam döngüsü durumları (§41.4). */
@@ -40,6 +47,9 @@ const VERSION_SELECT = {
   version: true,
   status: true,
   snapshotHash: true,
+  currency: true,
+  totalCollected: true,
+  clientNetAmount: true,
   officeApprovalRequestId: true,
   officeApprovedById: true,
   officeApprovedAt: true,
@@ -49,9 +59,15 @@ const VERSION_SELECT = {
   notificationContentHash: true,
   approvedRecipientEmail: true,
   approvedRecipientPortalUserId: true,
+  publishedAt: true,
+  supersedesVersionId: true,
   supersededAt: true,
   cancelledAt: true,
   reversedAt: true,
+  correctionReason: true,
+  supersededByVersion: { select: { id: true } },
+  lines: { select: { type: true, amount: true, sortOrder: true } },
+  disclosure: { select: { currentVersionId: true, case: { select: { fileNumber: true } } } },
 } as const;
 
 type LoadedVersion = {
@@ -61,6 +77,9 @@ type LoadedVersion = {
   version: number;
   status: ClientFinancialDisclosureStatus;
   snapshotHash: string;
+  currency: string;
+  totalCollected: unknown;
+  clientNetAmount: unknown;
   officeApprovalRequestId: string | null;
   officeApprovedById: string | null;
   officeApprovedAt: Date | null;
@@ -70,9 +89,19 @@ type LoadedVersion = {
   notificationContentHash: string | null;
   approvedRecipientEmail: string | null;
   approvedRecipientPortalUserId: string | null;
+  publishedAt: Date | null;
+  supersedesVersionId: string | null;
   supersededAt: Date | null;
   cancelledAt: Date | null;
   reversedAt: Date | null;
+  correctionReason: string | null;
+  supersededByVersion: { id: string } | null;
+  lines: ReadonlyArray<{
+    type: CollectionDispositionLineType;
+    amount: unknown;
+    sortOrder: number;
+  }>;
+  disclosure: { currentVersionId: string | null; case: { fileNumber: string } };
 };
 
 /**
@@ -334,8 +363,9 @@ export class ClientFinancialDisclosureApprovalService {
   /**
    * `OFFICE_APPROVED → CONTENT_APPROVAL_PENDING` (§5.3). İçerik onayı İKİNCİ bir
    * `OfficeApprovalRequest` DEĞİLDİR (§41.2 KARAR 5): versiyon üzerinde ayrı, denetlenebilir
-   * bir lifecycle transition'dır. Bildirim içeriği ve alıcı bağlaması burada hazırlanır ve
-   * canonical `notificationContentHash` ile mühürlenir; tamamlamada yeniden doğrulanır.
+   * bir lifecycle transition'dır. Bildirim içeriği serbest metinden ALINMAZ; tenant-scoped
+   * versiyon projection'ı deterministik renderer'dan geçirilir. Renderer output'u ve alıcı
+   * bağlaması canonical `notificationContentHash` ile mühürlenir; tamamlamada doğrulanır.
    */
   async requestContentApproval(
     input: RequestContentApprovalInput,
@@ -347,12 +377,17 @@ export class ClientFinancialDisclosureApprovalService {
         this.assertNotTerminal(version);
         await this.assertActorInTenant(tx, input.requesterUserId, input.tenantId);
 
-        const content = input.notificationContent?.trim() ?? '';
         const recipientEmail = input.approvedRecipientEmail?.trim() ?? '';
-        if (content.length === 0 || recipientEmail.length === 0) {
+        if (recipientEmail.length === 0) {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_CONTENT_REQUIRED');
         }
         const recipientPortalUserId = input.approvedRecipientPortalUserId ?? null;
+
+        if (version.status !== ClientFinancialDisclosureStatus.CONTENT_APPROVAL_PENDING) {
+          this.assertExactStatus(version, ClientFinancialDisclosureStatus.OFFICE_APPROVED);
+        }
+        await this.assertSnapshotFresh(tx, version);
+        const content = this.renderNotificationContent(version);
         const contentHash = this.notificationContentHash({
           tenantId: version.tenantId,
           disclosureVersionId: version.id,
@@ -374,9 +409,6 @@ export class ClientFinancialDisclosureApprovalService {
           }
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_STATUS_INVALID');
         }
-
-        this.assertExactStatus(version, ClientFinancialDisclosureStatus.OFFICE_APPROVED);
-        await this.assertSnapshotFresh(tx, version);
 
         const moved = await tx.clientFinancialDisclosureVersion.updateMany({
           where: {
@@ -459,6 +491,7 @@ export class ClientFinancialDisclosureApprovalService {
             'DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH',
           );
         }
+        this.assertSealedRenderedContent(version.notificationContent);
 
         if (!version.officeApprovalRequestId || !version.officeApprovedById) {
           throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_REQUEST_NOT_FOUND');
@@ -646,6 +679,59 @@ export class ClientFinancialDisclosureApprovalService {
       approvedRecipientEmail: input.approvedRecipientEmail,
       approvedRecipientPortalUserId: input.approvedRecipientPortalUserId,
     });
+  }
+
+  /**
+   * Builds the approval candidate only from this tenant-scoped persisted version. Publication
+   * stores and later consumes the serialized result; it never invokes the renderer again.
+   */
+  private renderNotificationContent(version: LoadedVersion): string {
+    const output = renderClientFinancialDisclosure(
+      createClientFinancialDisclosureRenderInput({
+        disclosureId: version.id,
+        version: version.version,
+        fileNumber: version.disclosure.case.fileNumber,
+        currency: version.currency,
+        totalCollected: canonicalMoney(version.totalCollected as never),
+        clientNetAmount: canonicalMoney(version.clientNetAmount as never),
+        lines: [...version.lines]
+          .sort((left, right) => left.sortOrder - right.sortOrder)
+          .map((line) => ({
+            type: line.type,
+            amount: canonicalMoney(line.amount as never),
+          })),
+        approvedAt: (version.contentApprovedAt ?? version.officeApprovedAt)?.toISOString() ?? null,
+        notifiedAt: version.publishedAt?.toISOString() ?? null,
+        publishedAt: version.publishedAt?.toISOString() ?? null,
+        isCurrentEffective:
+          version.status === ClientFinancialDisclosureStatus.PUBLISHED &&
+          version.disclosure.currentVersionId === version.id,
+        supersedesDisclosureId: version.supersedesVersionId,
+        supersededByDisclosureId: version.supersededByVersion?.id ?? null,
+        isReversed:
+          version.reversedAt !== null ||
+          version.status === ClientFinancialDisclosureStatus.REVERSED,
+        correctionReason: version.correctionReason,
+        remittanceStatus:
+          version.reversedAt !== null ||
+          version.status === ClientFinancialDisclosureStatus.REVERSED
+            ? 'REVERSED'
+            : version.status === ClientFinancialDisclosureStatus.SUPERSEDED
+              ? 'CORRECTED'
+              : 'PUBLISHED',
+      }),
+    );
+    return serializeClientFinancialDisclosureRenderOutput(output);
+  }
+
+  private assertSealedRenderedContent(content: string): void {
+    try {
+      parseClientFinancialDisclosureRenderOutput(content);
+    } catch {
+      throw new ClientFinancialDisclosureApprovalError(
+        'DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH',
+      );
+    }
   }
 
   /** `savedIntent` JSON'ını güvenli okur — biçim beklenmedikse `null` (fail-closed). */

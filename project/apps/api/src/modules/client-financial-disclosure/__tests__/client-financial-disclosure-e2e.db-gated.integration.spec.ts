@@ -106,7 +106,6 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
     });
     await approval.requestContentApproval({
       tenantId: tA, disclosureVersionId: v, requesterUserId: uReq,
-      notificationContent: `Tahsilat bildirimi ${key}`,
       approvedRecipientEmail: `client-${key}@example.test`,
     });
     await approval.completeContentApproval({ tenantId: tA, disclosureVersionId: v, contentApproverUserId: uP2 });
@@ -194,7 +193,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
 
       await approval.requestContentApproval({
         tenantId: tA, disclosureVersionId: v, requesterUserId: uReq,
-        notificationContent: 'Tahsilat bildirimi', approvedRecipientEmail: `hp-${S}@example.test`,
+        approvedRecipientEmail: `hp-${S}@example.test`,
       });
       expect((await read(v)).status).toBe('CONTENT_APPROVAL_PENDING');
 
@@ -208,7 +207,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       expect((await read(v)).status).toBe('SEND_PENDING');
 
       const pub = await publication.dispatchAndPublish({
-        tenantId: tA, disclosureVersionId: v, actorUserId: uP1, subject: 'Bildirim',
+        tenantId: tA, disclosureVersionId: v, actorUserId: uP1,
       });
       expect(pub.status).toBe('PUBLISHED');
       const final = await read(v);
@@ -254,7 +253,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
     try {
       const publication = b.app.get(ClientFinancialDisclosurePublicationService);
       const recovered = await publication.dispatchAndPublish({
-        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'Bildirim',
+        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
       });
       expect(recovered.status).toBe('PUBLISHED');
       const final = await read(versionId);
@@ -278,7 +277,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       versionId = await upToSendPending(a.app, `rst2-${S}`);
       const publication = a.app.get(ClientFinancialDisclosurePublicationService);
       await expect(
-        publication.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's' }),
+        publication.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 }),
       ).rejects.toThrow();
     } finally {
       await a.close();
@@ -293,7 +292,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       const publication = b.app.get(ClientFinancialDisclosurePublicationService);
       // B'nin kor dispatch denemesi REDDEDILIR (sahiplenme serbest degil).
       await expect(
-        publication.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's' }),
+        publication.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 }),
       ).rejects.toThrow();
       expect(providerCalls.filter((c) => c.instance === 'B')).toHaveLength(0);
 
@@ -306,7 +305,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       expect((await read(versionId)).sendRequestedAt).toBeNull();
 
       const done = await publication.dispatchAndPublish({
-        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's',
+        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
       });
       expect(done.status).toBe('PUBLISHED');
       const final = await read(versionId);
@@ -327,10 +326,10 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       const versionId = await upToSendPending(a.app, `conc-${S}`);
       const settled = await Promise.allSettled([
         a.app.get(ClientFinancialDisclosurePublicationService).dispatchAndPublish({
-          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's',
+          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
         }),
         b.app.get(ClientFinancialDisclosurePublicationService).dispatchAndPublish({
-          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2, subject: 's',
+          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2,
         }),
       ]);
       const winners = settled.filter(
@@ -364,7 +363,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       const versionId = await upToSendPending(inst.app, `flagoff-${S}`);
       await expect(
         inst.app.get(ClientFinancialDisclosurePublicationService).dispatchAndPublish({
-          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's',
+          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
         }),
       ).rejects.toThrow();
       expect(providerCalls).toHaveLength(0);
@@ -395,7 +394,7 @@ describeDb('CLIENT-FD-ACT-R01-I06 — uçtan uca kabul (gerçek Nest composition
       try {
         const versionId = await upToSendPending(inst.app, `f-${key}-${S}`);
         const r = await inst.app.get(ClientFinancialDisclosurePublicationService).dispatchAndPublish({
-          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 's',
+          tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
         });
         expect(r.status).toBe('SEND_FAILED');
         const v = await read(versionId);

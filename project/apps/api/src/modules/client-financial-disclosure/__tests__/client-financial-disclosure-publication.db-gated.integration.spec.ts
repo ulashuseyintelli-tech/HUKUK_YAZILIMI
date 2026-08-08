@@ -8,6 +8,10 @@ import {
   type DisclosureNotificationDispatcher,
 } from '../client-financial-disclosure-publication.contract';
 import { ClientFinancialDisclosurePublicationService } from '../client-financial-disclosure-publication.service';
+import {
+  parseClientFinancialDisclosureRenderOutput,
+  serializeClientFinancialDisclosureRenderOutput,
+} from '../client-financial-disclosure-renderer.contract';
 import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure-writer.service';
 
 /**
@@ -89,7 +93,6 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     });
     await approval.requestContentApproval({
       tenantId: tA, disclosureVersionId: versionId, requesterUserId: uReq,
-      notificationContent: `Tahsilat bildirimi ${key}`,
       approvedRecipientEmail: `client-${key}@example.test`,
     });
     await approval.completeContentApproval({
@@ -115,7 +118,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
         sendRequestedAt: true, providerMessageId: true, providerAcceptedAt: true,
         sendFailureCode: true, sendFailureDetail: true, publishedAt: true,
         supersedesVersionId: true, supersededAt: true, reversedAt: true, correctionReason: true,
-        approvedRecipientEmail: true, notificationContentHash: true,
+        approvedRecipientEmail: true, notificationContent: true, notificationContentHash: true,
       },
     });
 
@@ -177,7 +180,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     const versionId = await sendPending(`n1-${S}`);
     const mock = new FakeDispatcher('mock', ok);
     expect(await code(svcWith(mock).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     }))).toBe('DISCLOSURE_PUBLICATION_PROVIDER_NOT_PRODUCTION');
     expect(mock.calls).toHaveLength(0);
     const v = await readVersion(versionId);
@@ -190,7 +193,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     for (const name of ['', '  ', 'console', 'fake-smtp']) {
       const d = new FakeDispatcher(name, ok);
       expect(await code(svcWith(d).dispatchAndPublish({
-        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+        tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
       }))).toBe('DISCLOSURE_PUBLICATION_PROVIDER_NOT_PRODUCTION');
       expect(d.calls).toHaveLength(0);
     }
@@ -224,10 +227,15 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     const versionId = await sendPending(`p4-${S}`);
     const d = new FakeDispatcher('smtp', ok);
     const r = await svcWith(d).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'Bildirim',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     });
     expect(r.status).toBe('PUBLISHED');
     expect(r.providerMessageId).toMatch(/^smtp-msg-/);
+    expect(d.calls).toHaveLength(1);
+    expect(d.calls[0].subject).toBe(
+      `Müvekkil finansal bilgilendirmesi — Büro dosya no: 2026/I04A-${S}`,
+    );
+    expect(d.calls[0].text).toContain(`Büro dosya no: 2026/I04A-${S}`);
     expect(d.calls).toHaveLength(1);
     expect(d.calls[0].to).toContain('@example.test');
 
@@ -255,12 +263,46 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     }
   });
 
+  it('[4b] onaydan sonra canlı dosya referansı değişse bile mühürlü renderer çıktısını aynen gönderir', async () => {
+    const versionId = await sendPending(`p4b-${S}`);
+    const before = await readVersion(versionId);
+    const sealed = parseClientFinancialDisclosureRenderOutput(before.notificationContent as string);
+    const changedFileNumber = `CHANGED-I04-${S}`;
+    await sql(
+      `UPDATE "Case" SET "fileNumber" = '${changedFileNumber}' WHERE "id" = '${caseA}'`,
+    );
+
+    try {
+      const dispatcher = new FakeDispatcher('smtp', ok);
+      const result = await svcWith(dispatcher).dispatchAndPublish({
+        tenantId: tA,
+        disclosureVersionId: versionId,
+        actorUserId: uP1,
+      });
+
+      expect(result.status).toBe('PUBLISHED');
+      expect(dispatcher.calls).toEqual([
+        {
+          to: before.approvedRecipientEmail,
+          subject: sealed.subject,
+          text: sealed.text,
+        },
+      ]);
+      expect(dispatcher.calls[0].subject).not.toContain(changedFileNumber);
+      expect((await readVersion(versionId)).notificationContent).toBe(before.notificationContent);
+    } finally {
+      await sql(
+        `UPDATE "Case" SET "fileNumber" = '2026/I04A-${S}' WHERE "id" = '${caseA}'`,
+      );
+    }
+  });
+
   // ── §35.10 kanit kapisi ───────────────────────────────────────────────────────
   it('[5] message ID yoksa SEND_FAILED — PUBLISHED OLMAZ', async () => {
     const versionId = await sendPending(`n5-${S}`);
     const d = new FakeDispatcher('smtp', () => ({ success: true, provider: 'smtp' }));
     const r = await svcWith(d).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     });
     expect(r.status).toBe('SEND_FAILED');
     const v = await readVersion(versionId);
@@ -276,7 +318,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
       success: false, errorCode: 'SMTP_550', errorMessage: 'mailbox unavailable', provider: 'smtp',
     }));
     const r = await svcWith(d).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     });
     expect(r.status).toBe('SEND_FAILED');
     expect(r.sendFailureCode).toBe('SMTP_550');
@@ -296,12 +338,12 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     const slow = new FakeDispatcher('smtp', () => ({ success: false, errorCode: 'X', provider: 'smtp' }));
     // İlk dispatch send'i sahiplenir ve SEND_FAILED'e düşer (sendRequestedAt DOLU kalır).
     await svcWith(slow).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     });
     const second = new FakeDispatcher('smtp', ok);
     // SEND_FAILED'ten dispatch reddedilir; explicit retrySend gerekir.
     expect(await code(svcWith(second).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     }))).toBe('DISCLOSURE_PUBLICATION_STATUS_INVALID');
     expect(second.calls).toHaveLength(0);
   });
@@ -309,11 +351,11 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   it('[8] çift yayınlama ENGELLENİR', async () => {
     const versionId = await sendPending(`n8-${S}`);
     await svcWith(new FakeDispatcher('smtp', ok)).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     });
     const again = new FakeDispatcher('smtp', ok);
     expect(await code(svcWith(again).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     }))).toBe('DISCLOSURE_PUBLICATION_ALREADY_PUBLISHED');
     expect(again.calls).toHaveLength(0);
     expect(await prisma.auditLog.count({
@@ -328,7 +370,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
       WHERE "disclosureVersionId" = '${versionId}' AND "type" = 'CLIENT_PAYABLE'::"CollectionDispositionLineType"`);
     const d = new FakeDispatcher('smtp', ok);
     expect(await code(svcWith(d).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     }))).toBe('DISCLOSURE_PUBLICATION_STALE_SNAPSHOT');
     expect(d.calls).toHaveLength(0);
     expect((await readVersion(versionId)).publishedAt).toBeNull();
@@ -339,7 +381,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     await sql(`UPDATE "ClientFinancialDisclosureVersion" SET "notificationContent" = 'KURCALANMIS' WHERE "id" = '${versionId}'`);
     const d = new FakeDispatcher('smtp', ok);
     expect(await code(svcWith(d).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     }))).toBe('DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH');
     expect(d.calls).toHaveLength(0);
   });
@@ -349,7 +391,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     await sql(`UPDATE "ClientFinancialDisclosureVersion" SET "approvedRecipientEmail" = NULL WHERE "id" = '${versionId}'`);
     const d = new FakeDispatcher('smtp', ok);
     expect(await code(svcWith(d).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     }))).toBe('DISCLOSURE_PUBLICATION_RECIPIENT_MISSING');
     expect(d.calls).toHaveLength(0);
   });
@@ -376,9 +418,62 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
         SET "approvedRecipientEmail" = '${email}', "notificationContentHash" = '${h}' WHERE "id" = '${versionId}'`);
     });
     expect(await code(svcWith(d).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     }))).toBe('DISCLOSURE_PUBLICATION_RECIPIENT_CHANGED');
     expect(d.calls).toHaveLength(1);
+    expect((await readVersion(versionId)).publishedAt).toBeNull();
+  });
+
+  it('[12b] sealed renderer payload+hash gönderim sırasında birlikte değişse bile yayınlanmaz', async () => {
+    const versionId = await sendPending(`n12b-${S}`);
+    const dispatcher = new FakeDispatcher('smtp', ok, async () => {
+      const version = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({
+        where: { id: versionId },
+        select: {
+          notificationContent: true,
+          snapshotHash: true,
+          approvedRecipientEmail: true,
+          approvedRecipientPortalUserId: true,
+        },
+      });
+      const sealed = parseClientFinancialDisclosureRenderOutput(
+        version.notificationContent as string,
+      );
+      const changed = serializeClientFinancialDisclosureRenderOutput({
+        ...sealed,
+        subject: `${sealed.subject} — değiştirildi`,
+      });
+      const { domainSeparatedHash } = await import('../client-financial-disclosure-canonical');
+      const { CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION } =
+        await import('../client-financial-disclosure-approval.contract');
+      const changedHash = domainSeparatedHash(
+        CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION,
+        {
+          contractVersion: CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION,
+          tenantId: tA,
+          disclosureVersionId: versionId,
+          snapshotHash: version.snapshotHash,
+          notificationContent: changed,
+          approvedRecipientEmail: version.approvedRecipientEmail,
+          approvedRecipientPortalUserId: version.approvedRecipientPortalUserId,
+        },
+      );
+      await prisma.clientFinancialDisclosureVersion.update({
+        where: { id: versionId },
+        data: { notificationContent: changed, notificationContentHash: changedHash },
+      });
+    });
+
+    expect(
+      await code(
+        svcWith(dispatcher).dispatchAndPublish({
+          tenantId: tA,
+          disclosureVersionId: versionId,
+          actorUserId: uP1,
+        }),
+      ),
+    ).toBe('DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH');
+    expect(dispatcher.calls).toHaveLength(1);
     expect((await readVersion(versionId)).publishedAt).toBeNull();
   });
 
@@ -401,7 +496,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   it('[15] retrySend SEND_FAILED → SEND_PENDING; sahiplenme serbest bırakılır ve yayınlanır', async () => {
     const versionId = await sendPending(`p15-${S}`);
     await svcWith(new FakeDispatcher('smtp', () => ({ success: false, errorCode: 'SMTP_421', provider: 'smtp' })))
-      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x' });
+      .dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
     expect((await readVersion(versionId)).sendRequestedAt).toBeInstanceOf(Date);
 
     const svc = svcWith(new FakeDispatcher('smtp', ok));
@@ -410,7 +505,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     expect((await readVersion(versionId)).sendRequestedAt).toBeNull();
 
     const done = await svc.dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     });
     expect(done.status).toBe('PUBLISHED');
     expect((await readVersion(versionId)).sendFailureCode).toBeNull();
@@ -419,7 +514,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   it('[16] yayınlanmış versiyon retry EDİLEMEZ', async () => {
     const versionId = await sendPending(`n16-${S}`);
     await svcWith(new FakeDispatcher('smtp', ok)).dispatchAndPublish({
-      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x',
+      tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
     });
     expect(await code(svcWith(new FakeDispatcher('smtp', ok)).retrySend({
       tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1,
@@ -430,7 +525,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   it('[17] PUBLISHED → REVERSED; geçmiş korunur ve idempotenttir', async () => {
     const versionId = await sendPending(`p17-${S}`);
     const svc = svcWith(new FakeDispatcher('smtp', ok));
-    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x' });
+    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
     const before = await readVersion(versionId);
 
     const r = await svc.reversePublishedVersion({
@@ -461,7 +556,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     // Aynı disclosure kökü için ikinci bir versiyon: kaynak dispozisyonu aynı olmalı.
     const versionA = await sendPending(`p19-${S}`);
     const svc = svcWith(new FakeDispatcher('smtp', ok));
-    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionA, actorUserId: uP1, subject: 'x' });
+    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionA, actorUserId: uP1 });
     const rootId = (await readVersion(versionA)).disclosureId;
 
     // v2'yi doğrudan aynı kök altında, onaylanmış biçimde kur (I02/I03 zinciri v1'i tüketti).
@@ -501,7 +596,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   it('[20] farklı disclosure’a ait veya onaylanmamış versiyonla supersession reddedilir', async () => {
     const a = await sendPending(`n20a-${S}`);
     const svc = svcWith(new FakeDispatcher('smtp', ok));
-    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: a, actorUserId: uP1, subject: 'x' });
+    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: a, actorUserId: uP1 });
     const b = await contentApproved(`n20b-${S}`); // BASKA disclosure koku
     expect(await code(svc.supersedePublishedVersion({
       tenantId: tA, supersededVersionId: a, supersedingVersionId: b,
@@ -513,7 +608,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
   it('[21] terminal (reversed) versiyon yeniden yayınlanamaz', async () => {
     const versionId = await sendPending(`n21-${S}`);
     const svc = svcWith(new FakeDispatcher('smtp', ok));
-    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x' });
+    await svc.dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 });
     await svc.reversePublishedVersion({
       tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2, correctionReason: 'x',
     });
@@ -531,8 +626,8 @@ describeDb('CLIENT-P2-U03-TRACK-B-I04 — disclosure publication (gerçek Postgr
     const d2 = new FakeDispatcher('smtp', ok);
     try {
       const settled = await Promise.allSettled([
-        svcWith(d1, c1).dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1, subject: 'x' }),
-        svcWith(d2, c2).dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2, subject: 'x' }),
+        svcWith(d1, c1).dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP1 }),
+        svcWith(d2, c2).dispatchAndPublish({ tenantId: tA, disclosureVersionId: versionId, actorUserId: uP2 }),
       ]);
       const published = settled.filter(
         (s) => s.status === 'fulfilled' && s.value.status === 'PUBLISHED' && s.value.replayed === false,

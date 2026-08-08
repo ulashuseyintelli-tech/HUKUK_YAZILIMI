@@ -9,10 +9,7 @@ import {
   CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG,
 } from '../client-financial-disclosure-activation';
 import { ClientFinancialDisclosureController } from '../client-financial-disclosure.controller';
-import {
-  PublishClientFinancialDisclosureDto,
-  RequestDisclosureContentApprovalDto,
-} from '../dto/client-financial-disclosure.dto';
+import { RequestDisclosureContentApprovalDto } from '../dto/client-financial-disclosure.dto';
 
 const TENANT_ID = 'tenant-1';
 const ACTOR_ID = 'user-1';
@@ -116,7 +113,6 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
       approvalRequestId: 'approval-1',
     });
     await controller.requestContentApproval(TENANT_ID, ACTOR_ID, VERSION_ID, {
-      notificationContent: 'approved body',
       approvedRecipientEmail: 'client@example.test',
       approvedRecipientPortalUserId: 'portal-1',
     });
@@ -137,7 +133,6 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
       tenantId: TENANT_ID,
       disclosureVersionId: VERSION_ID,
       requesterUserId: ACTOR_ID,
-      notificationContent: 'approved body',
       approvedRecipientEmail: 'client@example.test',
       approvedRecipientPortalUserId: 'portal-1',
     });
@@ -153,16 +148,14 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
     publication.beginSend.mockRejectedValueOnce(new Error('stale snapshot'));
 
     await expect(
-      controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID, { subject: 'Disclosure' }),
+      controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID),
     ).rejects.toThrow('stale snapshot');
     expect(publication.dispatchAndPublish).not.toHaveBeenCalled();
   });
 
   it('publish mevcut beginSend -> dispatchAndPublish sırasını ve aynı scope bağını korur', async () => {
     const { controller, publication } = buildController();
-    const result = await controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID, {
-      subject: 'Disclosure',
-    });
+    const result = await controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID);
 
     const scope = {
       tenantId: TENANT_ID,
@@ -170,10 +163,7 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
       actorUserId: ACTOR_ID,
     };
     expect(publication.beginSend).toHaveBeenCalledWith(scope);
-    expect(publication.dispatchAndPublish).toHaveBeenCalledWith({
-      ...scope,
-      subject: 'Disclosure',
-    });
+    expect(publication.dispatchAndPublish).toHaveBeenCalledWith(scope);
     expect(publication.beginSend.mock.invocationCallOrder[0]).toBeLessThan(
       publication.dispatchAndPublish.mock.invocationCallOrder[0],
     );
@@ -182,9 +172,7 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
 
   it('retry-publication yalnız retrySend sonrası aynı guarded dispatch yoluna gider', async () => {
     const { controller, publication } = buildController();
-    await controller.retryPublication(TENANT_ID, ACTOR_ID, VERSION_ID, {
-      subject: 'Disclosure retry',
-    });
+    await controller.retryPublication(TENANT_ID, ACTOR_ID, VERSION_ID);
 
     const scope = {
       tenantId: TENANT_ID,
@@ -192,10 +180,7 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
       actorUserId: ACTOR_ID,
     };
     expect(publication.retrySend).toHaveBeenCalledWith(scope);
-    expect(publication.dispatchAndPublish).toHaveBeenCalledWith({
-      ...scope,
-      subject: 'Disclosure retry',
-    });
+    expect(publication.dispatchAndPublish).toHaveBeenCalledWith(scope);
     expect(publication.retrySend.mock.invocationCallOrder[0]).toBeLessThan(
       publication.dispatchAndPublish.mock.invocationCallOrder[0],
     );
@@ -250,12 +235,12 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
     delete process.env[CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_FLAG];
 
     const publicationDisabled = { response: { code: 'DISCLOSURE_PUBLICATION_NOT_ENABLED' } };
-    await expect(controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID, {
-      subject: 'Disclosure',
-    })).rejects.toMatchObject(publicationDisabled);
-    await expect(controller.retryPublication(TENANT_ID, ACTOR_ID, VERSION_ID, {
-      subject: 'Disclosure retry',
-    })).rejects.toMatchObject(publicationDisabled);
+    await expect(controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID)).rejects.toMatchObject(
+      publicationDisabled,
+    );
+    await expect(
+      controller.retryPublication(TENANT_ID, ACTOR_ID, VERSION_ID),
+    ).rejects.toMatchObject(publicationDisabled);
     expect(() => controller.reverse(TENANT_ID, ACTOR_ID, VERSION_ID, {
       correctionReason: 'Correction',
     })).toThrow(ForbiddenException);
@@ -275,23 +260,18 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
     delete process.env[CLIENT_FINANCIAL_DISCLOSURE_WRITE_FLAG];
 
     await expect(
-      controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID, { subject: 'Disclosure' }),
+      controller.publish(TENANT_ID, ACTOR_ID, VERSION_ID),
     ).rejects.toMatchObject({ response: { code: 'DISCLOSURE_WRITE_NOT_ENABLED' } });
     expect(publication.beginSend).not.toHaveBeenCalled();
     expect(publication.dispatchAndPublish).not.toHaveBeenCalled();
   });
 
-  it('DTO validation boş içerik/konu ve geçersiz e-postayı fail-closed reddeder', async () => {
+  it('DTO validation serbest içerik/konu yüzeyi olmadan geçersiz e-postayı reddeder', async () => {
     const content = new RequestDisclosureContentApprovalDto();
-    content.notificationContent = '';
     content.approvedRecipientEmail = 'not-an-email';
-    const publish = new PublishClientFinancialDisclosureDto();
-    publish.subject = '';
 
-    expect((await validate(content)).map((error) => error.property).sort()).toEqual([
+    expect((await validate(content)).map((error) => error.property)).toEqual([
       'approvedRecipientEmail',
-      'notificationContent',
     ]);
-    expect((await validate(publish)).map((error) => error.property)).toEqual(['subject']);
   });
 });
