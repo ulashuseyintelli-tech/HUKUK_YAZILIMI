@@ -16,6 +16,8 @@ import { ConsentRecordsSection } from '@/components/client-compliance/ConsentRec
 import { DisclosureDeliveriesSection } from '@/components/client-compliance/DisclosureDeliveriesSection';
 import { DsarRequestsSection } from '@/components/client-compliance/DsarRequestsSection';
 import { LegalHoldSection } from '@/components/client-compliance/LegalHoldSection';
+import { SpecialCategorySection } from '@/components/client-compliance/SpecialCategorySection';
+import { EffectiveCapabilitySection } from '@/components/client-compliance/EffectiveCapabilitySection';
 
 export default function ClientCompliancePage() {
   const params = useParams<{ clientId: string }>();
@@ -40,6 +42,9 @@ export default function ClientCompliancePage() {
       {/* CAD C2-B03 */}
       <DsarRequestsSection clientId={clientId} />
       <LegalHoldSection clientId={clientId} />
+      {/* CAD C2-B04 */}
+      <SpecialCategorySection clientId={clientId} />
+      <EffectiveCapabilitySection clientId={clientId} />
     </div>
   );
 }
