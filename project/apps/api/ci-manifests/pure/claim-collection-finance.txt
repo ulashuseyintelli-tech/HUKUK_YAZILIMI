@@ -124,3 +124,6 @@ src/modules/collection/__tests__/receipt-public-entrypoints-authorization.contra
 # ardisik lokal kosu ile deterministik dogrulandi (2/2 PASS x3), tracked dosya
 # yazmadigi ve askida kalmadigi teyit edildi.
 src/modules/collection/__tests__/collection-payment-reversed.integration.spec.ts
+#     CAD C3-B01 (ekstre veri sozlesmesi): client-level vs case-level ayrimi, client-level
+#     satirlarda caseId zorunlulugu, tenant/musteri izolasyonu, render-forbidden ic ID listesi.
+src/modules/client-statement/__tests__/client-statement-data-contract-c3b01.spec.ts
