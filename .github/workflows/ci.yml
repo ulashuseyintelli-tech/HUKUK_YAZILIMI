@@ -38,6 +38,9 @@ jobs:
           node scripts/governance-coordination.cjs self-test
           node --test scripts/governance-coordination.test.cjs
           node --test scripts/gh-guard-readonly.test.cjs
+          node --test scripts/pr-status-hook-adapter.test.cjs
+          node --test scripts/pr-status-hook-launcher.test.cjs
+          node --test scripts/install-pr-status-hook.test.cjs
           node scripts/governance-coordination.cjs validate-template request docs/governance/coordination-requests/_template/request.md
           node scripts/governance-coordination.cjs validate-template result docs/governance/coordination-results/_template/result.md
           node scripts/governance-coordination.cjs verify-register
