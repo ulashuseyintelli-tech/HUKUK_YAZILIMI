@@ -3,9 +3,10 @@ import { apiClient } from './client';
 /**
  * X1 office workspace'in PRE01 curated read contract'i.
  *
- * Bu katman Prisma entity'lerini veya command-path kimliklerini modellemez. Yalnız
- * `/client-financial-disclosures/office/**` projeksiyonlarını tüketir; tenant ve actor
- * scope'u JWT üzerinden backend tarafında uygulanır.
+ * Bu katman Prisma entity'lerini response modeli yapmaz. Office read projeksiyonlarını
+ * ve mevcut bounded lifecycle komutlarını tüketir; tenant ve actor scope'u JWT üzerinden
+ * backend tarafında uygulanır. Approval request kimliği yalnız command binding girdisidir,
+ * office response/UI projeksiyonuna eklenmez.
  */
 export const OFFICE_DISCLOSURE_STATUSES = [
   'DRAFT',
@@ -120,6 +121,13 @@ export interface OfficeDisclosurePreviewSurface {
   };
 }
 
+export interface DisclosureApprovalTransitionResult {
+  readonly disclosureVersionId: string;
+  readonly previousStatus: OfficeDisclosureStatus;
+  readonly status: OfficeDisclosureStatus;
+  readonly replayed: boolean;
+}
+
 export const clientFinancialDisclosureApi = {
   /** Office workspace -> GET curated list for the JWT tenant and client scope. */
   async list(clientId: string): Promise<OfficeDisclosureListSurface> {
@@ -165,6 +173,57 @@ export const clientFinancialDisclosureApi = {
     ) {
       throw new Error('Unsupported financial disclosure renderer contract');
     }
+    return response.data;
+  },
+
+  /** DRAFT -> OFFICE_APPROVAL_PENDING; eligibility ve lifecycle backend otoritesindedir. */
+  async requestOfficeApproval(versionId: string): Promise<DisclosureApprovalTransitionResult> {
+    const response = await apiClient.post<DisclosureApprovalTransitionResult>(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/request-office-approval`,
+      {},
+    );
+    return response.data;
+  },
+
+  /** Pending OfficeApprovalRequest bağını tüketerek OFFICE_APPROVED geçişini ister. */
+  async completeOfficeApproval(
+    versionId: string,
+    approvalRequestId: string,
+  ): Promise<DisclosureApprovalTransitionResult> {
+    const response = await apiClient.post<DisclosureApprovalTransitionResult>(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/complete-office-approval`,
+      { approvalRequestId },
+    );
+    return response.data;
+  },
+
+  /** Renderer içeriği ile alıcıyı mevcut canonical hash zincirine mühürler. */
+  async requestContentApproval(
+    versionId: string,
+    approvedRecipientEmail: string,
+  ): Promise<DisclosureApprovalTransitionResult> {
+    const response = await apiClient.post<DisclosureApprovalTransitionResult>(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/request-content-approval`,
+      { approvedRecipientEmail },
+    );
+    return response.data;
+  },
+
+  /** CONTENT_APPROVAL_PENDING -> CONTENT_APPROVED; four-eyes backend'de yeniden doğrulanır. */
+  async completeContentApproval(versionId: string): Promise<DisclosureApprovalTransitionResult> {
+    const response = await apiClient.post<DisclosureApprovalTransitionResult>(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/complete-content-approval`,
+      {},
+    );
+    return response.data;
+  },
+
+  /** Mühürlü içeriği mevcut publication pipeline'ına teslim eder. */
+  async publish(versionId: string): Promise<unknown> {
+    const response = await apiClient.post<unknown>(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/publish`,
+      {},
+    );
     return response.data;
   },
 };
