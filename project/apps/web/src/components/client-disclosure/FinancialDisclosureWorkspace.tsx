@@ -12,6 +12,7 @@ import { DisclosureStatusBadge } from './DisclosureStatusBadge';
 import { DisclosurePreparationPanel } from './DisclosurePreparationPanel';
 import { DisclosurePreviewPanel } from './DisclosurePreviewPanel';
 import { DisclosureApprovalPanel } from './DisclosureApprovalPanel';
+import { DisclosureAuditPanel } from './DisclosureAuditPanel';
 
 const displayDate = (value?: string | null) =>
   value ? new Date(value).toLocaleString('tr-TR') : '—';
@@ -145,6 +146,16 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
           key={detail.data.versionId}
           clientId={clientId}
           versionId={detail.data.versionId}
+          actions={detail.data.actions}
+        />
+      ) : null}
+
+      {detail.isSuccess ? (
+        <DisclosureAuditPanel
+          key={`audit-${detail.data.versionId}`}
+          clientId={clientId}
+          versionId={detail.data.versionId}
+          delivery={detail.data.delivery}
           actions={detail.data.actions}
         />
       ) : null}
