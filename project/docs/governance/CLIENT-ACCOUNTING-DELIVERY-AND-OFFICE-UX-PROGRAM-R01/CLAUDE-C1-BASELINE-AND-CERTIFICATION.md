@@ -23,8 +23,8 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
-BLOCKS TOTAL: 5   COMPLETED: 2 (B01, B02)   ACTIVATION DEBT: NONE
-LANE STATUS:  PAUSED_AFTER_B02 — B03..B05 WAITING_FOR_PREDECESSORS (C2/C3/X1/X2/X3)
+BLOCKS TOTAL: 5   COMPLETED: 3 (B01, B02, B03)   ACTIVATION DEBT: NONE
+LANE STATUS:  B03 RUNTIME_VERIFIED (owner GO-COMPLETE, RC 1488063d) — B04..B05 WAITING_FOR_PREDECESSORS
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -116,6 +116,15 @@ için bildirilir.
 
 **ÖNCÜL:** C2 · C3 · X1 · X2 tamamlanmış olmalı.
 **BLOCK RESULT:** `RUNTIME_VERIFIED`
+
+> **B03 SONUCU (2026-08-09, owner RATIFIED/GO-COMPLETE):** `RUNTIME_VERIFIED` — kontrollü cutover ile
+> RC `1488063d` canlıya alındı (PRESERVED w5-artifact `62199535`+hotfix rollback noktası korundu; immutable
+> release worktree `.worktrees/rc-1488063d`; task-target cutover; custom-format DB backup SHA-256
+> `ed341c4f…` + `pg_restore --list` PASS; 0 pending migration). UAT PASS: DSAR durum makinesi ·
+> legal-hold maker-checker (403 same / 201 RELEASED farklı-eligible) · deletion-gate fail-closed ·
+> rol sınırı · **tenant izolasyonu D-2/D-3 İNTAKT** · portal/web render (authenticated network tüm 200).
+> UAT tenant/aktör/veri temizlendi (eski token replay 401). Kanıt: `C1-B03-RUNTIME-VERIFICATION-CLOSEOUT-R01.md`.
+> Kapsam = owner GO-COMPLETE kabul matrisi (compliance yüzeyleri + izolasyon + rol); #2303 şemaları RC-dışı.
 
 ---
 
