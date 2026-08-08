@@ -275,6 +275,7 @@ describe('CLIENT-ACCOUNTING-DELIVERY R01 / X2-B01 — renderer contract', () => 
   const INPUT = {
     disclosureId: 'opaque-disclosure-version',
     version: 1,
+    fileNumber: '2026/42',
     currency: 'TRY',
     totalCollected: '2500.75',
     clientNetAmount: '1750.50',

@@ -1,4 +1,8 @@
-import { ClientFinancialDisclosureStatus, type PrismaClient } from '@prisma/client';
+import {
+  ClientFinancialDisclosureStatus,
+  type CollectionDispositionLineType,
+  type PrismaClient,
+} from '@prisma/client';
 import { canonicalMoney } from './client-financial-disclosure-canonical';
 import {
   CLIENT_DISCLOSURE_ALLOWED_FIELDS,
@@ -41,7 +45,7 @@ const VERSION_SELECT = {
   correctionReason: true,
   supersededByVersion: { select: { id: true } },
   lines: { select: { type: true, amount: true, sortOrder: true } },
-  disclosure: { select: { currentVersionId: true } },
+  disclosure: { select: { currentVersionId: true, case: { select: { fileNumber: true } } } },
 } as const;
 
 /**
@@ -173,8 +177,12 @@ export class ClientFinancialDisclosureProjectionService {
     reversedAt: Date | null;
     correctionReason: string | null;
     supersededByVersion: { id: string } | null;
-    lines: ReadonlyArray<{ type: string; amount: unknown; sortOrder: number }>;
-    disclosure: { currentVersionId: string | null };
+    lines: ReadonlyArray<{
+      type: CollectionDispositionLineType;
+      amount: unknown;
+      sortOrder: number;
+    }>;
+    disclosure: { currentVersionId: string | null; case: { fileNumber: string } };
   }): ClientDisclosureProjection {
     const lines: ClientDisclosureLineProjection[] = [...v.lines]
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -186,6 +194,7 @@ export class ClientFinancialDisclosureProjectionService {
     const projection: ClientDisclosureProjection = {
       disclosureId: v.id,
       version: v.version,
+      fileNumber: v.disclosure.case.fileNumber,
       currency: v.currency,
       totalCollected: canonicalMoney(v.totalCollected as never),
       clientNetAmount: canonicalMoney(v.clientNetAmount as never),

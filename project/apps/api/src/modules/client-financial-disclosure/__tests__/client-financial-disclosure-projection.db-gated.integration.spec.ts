@@ -108,9 +108,9 @@ describeDb('CLIENT-P2-U03-TRACK-B-I05 — client disclosure projection (gerçek 
       ('${clA}','${tA}','PERSON'::"ClientType",now()),
       ('${clA2}','${tA}','PERSON'::"ClientType",now()),
       ('${clB}','${tB}','PERSON'::"ClientType",now())`);
-    await sql(`INSERT INTO "Case"("id","tenantId","fileNumber","type","updatedAt") VALUES
-      ('${caseA}','${tA}','2026/I05A-${S}','GENERAL_EXECUTION'::"CaseType",now()),
-      ('${caseA2}','${tA}','2026/I05A2-${S}','GENERAL_EXECUTION'::"CaseType",now())`);
+    await sql(`INSERT INTO "Case"("id","tenantId","fileNumber","executionFileNumber","type","updatedAt") VALUES
+      ('${caseA}','${tA}','2026/I05A-${S}','ICRA-SECRET-A-${S}','GENERAL_EXECUTION'::"CaseType",now()),
+      ('${caseA2}','${tA}','2026/I05A2-${S}','ICRA-SECRET-A2-${S}','GENERAL_EXECUTION'::"CaseType",now())`);
     await sql(`INSERT INTO "CaseClient"("id","caseId","clientId","updatedAt") VALUES
       ('${ccA}','${caseA}','${clA}',now()), ('${ccA2}','${caseA2}','${clA2}',now())`);
     await sql(`INSERT INTO "ClientPortalUser"("id","clientId","email","passwordHash","isActive","updatedAt") VALUES
@@ -256,6 +256,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I05 — client disclosure projection (gerçek 
       'i05-approver-SECRET', 'i05-content-approver-SECRET', 'gizli-alici@example.test',
       'PROVIDER-MSG-SECRET', 'GIZLI BILDIRIM METNI', 'b'.repeat(64), 'c'.repeat(64), 'd'.repeat(64),
       `i05-sik-fld-${S}`, `i05-src-fld-${S}`,
+      `ICRA-SECRET-A-${S}`, `ICRA-SECRET-A2-${S}`, `2026/I05A2-${S}`,
     ]) {
       expect(serialized).not.toContain(secret);
     }
@@ -272,6 +273,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I05 — client disclosure projection (gerçek 
     const item = await svc.getById(scopeA, v.versionId);
     expect(item.totalCollected).toBe('2500.75');
     expect(item.clientNetAmount).toBe('1750.50');
+    expect(item.fileNumber).toBe(`2026/I05A-${S}`);
     expect(item.currency).toBe('TRY');
     expect(item.lines.map((l) => l.type)).toEqual(['CLIENT_PAYABLE', 'CONTRACTUAL_FEE_WITHHELD']);
     expect(item.lines.map((l) => l.amount)).toEqual(['1750.50', '750.25']);
@@ -302,7 +304,7 @@ describeDb('CLIENT-P2-U03-TRACK-B-I05 — client disclosure projection (gerçek 
 
   it('[11] şekil guard’ı fazladan alanda fail-closed patlar', () => {
     const base = {
-      disclosureId: 'x', version: 1, currency: 'TRY', totalCollected: '1.00',
+      disclosureId: 'x', version: 1, fileNumber: '2026/1', currency: 'TRY', totalCollected: '1.00',
       clientNetAmount: '1.00', lines: [], approvedAt: null, notifiedAt: null, publishedAt: null,
       isCurrentEffective: true, supersedesDisclosureId: null, supersededByDisclosureId: null,
       isReversed: false, correctionReason: null, remittanceStatus: 'PUBLISHED' as const,
