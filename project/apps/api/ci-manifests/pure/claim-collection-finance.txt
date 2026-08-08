@@ -136,3 +136,6 @@ src/modules/client-statement/__tests__/client-statement-pdf-c3b02.spec.ts
 #     CAD C3-B03: icerikli ekstre maili + PDF eki sozlesmesi (guvenli ozet, ek dosya adi ic ID siz,
 #     SUPERSEDED/VOID ve dogrulanmamis alici fail-closed, tasima portu test double).
 src/modules/client-statement/__tests__/client-statement-delivery-c3b03.spec.ts
+#     CAD C3-B04: aylik ekstre uretimi/teslimi (TR timezone donem, varsayilan KAPALI bayrak,
+#     duplicate uretim/gonderim engeli, PLAN_ONLY mod, tasima portu test double).
+src/modules/client-statement/__tests__/client-statement-monthly-c3b04.spec.ts
