@@ -19,6 +19,10 @@ import {
   CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ENTITY,
 } from './client-financial-disclosure-publication.contract';
 import {
+  createClientFinancialDisclosureRenderInput,
+} from './client-financial-disclosure-renderer.contract';
+import { renderClientFinancialDisclosure } from './client-financial-disclosure-renderer';
+import {
   OFFICE_DISCLOSURE_STATUSES,
   OfficeDisclosureProjectionForbiddenError,
   OfficeDisclosureProjectionNotFoundError,
@@ -29,6 +33,7 @@ import {
   type OfficeDisclosureHistorySurface,
   type OfficeDisclosureListSurface,
   type OfficeDisclosurePreparationSurface,
+  type OfficeDisclosurePreviewSurface,
   type OfficeDisclosureReadScope,
   type OfficeDisclosureStatus,
   type OfficeDisclosureSummary,
@@ -239,6 +244,52 @@ export class ClientFinancialDisclosureOfficeService {
       cancelledAt: this.iso(version.cancelledAt),
     };
     return this.safe(detail);
+  }
+
+  /**
+   * Cagrildigi yerler:
+   * - ClientFinancialDisclosureController.getOfficePreview() -> X2 renderer kaynakli onizleme
+   */
+  async getPreview(
+    scope: OfficeDisclosureReadScope,
+    disclosureVersionId: string,
+  ): Promise<OfficeDisclosurePreviewSurface> {
+    const resolved = await this.resolveScope(scope);
+    const version = await this.loadVersion(scope, resolved.caseClientIds, disclosureVersionId);
+    const rendered = renderClientFinancialDisclosure(
+      createClientFinancialDisclosureRenderInput({
+        disclosureId: version.id,
+        version: version.version,
+        fileNumber: version.disclosure.case.fileNumber,
+        currency: version.currency,
+        totalCollected: canonicalMoney(version.totalCollected),
+        clientNetAmount: canonicalMoney(version.clientNetAmount),
+        lines: [...version.lines]
+          .sort((left, right) => left.sortOrder - right.sortOrder)
+          .map((line) => ({
+            type: line.type,
+            amount: canonicalMoney(line.amount),
+          })),
+        approvedAt: this.iso(version.contentApprovedAt ?? version.officeApprovedAt),
+        notifiedAt: this.iso(version.publishedAt),
+        publishedAt: this.iso(version.publishedAt),
+        isCurrentEffective: this.isCurrentEffective(version),
+        supersedesDisclosureId: version.supersedesVersionId,
+        supersededByDisclosureId: version.supersededByVersion?.id ?? null,
+        isReversed:
+          version.reversedAt !== null ||
+          version.status === ClientFinancialDisclosureStatus.REVERSED,
+        correctionReason: version.correctionReason,
+        remittanceStatus:
+          version.reversedAt !== null ||
+          version.status === ClientFinancialDisclosureStatus.REVERSED
+            ? 'REVERSED'
+            : version.status === ClientFinancialDisclosureStatus.SUPERSEDED
+              ? 'CORRECTED'
+              : 'PUBLISHED',
+      }),
+    );
+    return this.safe({ surface: 'OFFICE_PREVIEW', rendered });
   }
 
   /**

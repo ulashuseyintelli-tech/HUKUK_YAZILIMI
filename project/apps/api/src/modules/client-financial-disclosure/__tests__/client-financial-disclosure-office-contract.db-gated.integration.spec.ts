@@ -161,6 +161,15 @@ describeDb('CODEX-X1 PRE01 — office contract (disposable PostgreSQL)', () => {
     expect(item.officeFileNumber).toBe(`PRE01-A-${suffix}`);
     expect(item.actions.canRetryPublication).toBe(true);
     expect(() => assertOfficeDisclosureProjectionSafe(item)).not.toThrow();
+
+    const preview = await service.getPreview(
+      { tenantId: tenantA, actorUserId: partner, clientId: clientA, caseId: caseA },
+      versionA,
+    );
+    expect(preview.rendered.contractVersion).toBe('ClientFinancialDisclosureRenderV1');
+    expect(preview.rendered.text).toContain(`Büro dosya no: PRE01-A-${suffix}`);
+    expect(preview.rendered.text).not.toContain('2026/101');
+    expect(() => assertOfficeDisclosureProjectionSafe(preview)).not.toThrow();
   });
 
   it('cross-client, cross-case, cross-version ve cross-tenant aynı 404 gövdesini üretir', async () => {

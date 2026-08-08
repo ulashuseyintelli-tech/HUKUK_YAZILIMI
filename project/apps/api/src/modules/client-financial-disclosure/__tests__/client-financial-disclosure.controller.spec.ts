@@ -35,6 +35,10 @@ function buildController() {
       .fn()
       .mockResolvedValue({ surface: 'OFFICE_PREPARATION_SOURCES', items: [] }),
     getDetail: jest.fn().mockResolvedValue({ versionId: VERSION_ID }),
+    getPreview: jest.fn().mockResolvedValue({
+      surface: 'OFFICE_PREVIEW',
+      rendered: { contractVersion: 'ClientFinancialDisclosureRenderV1' },
+    }),
     getHistory: jest.fn().mockResolvedValue({ surface: 'OFFICE_HISTORY', items: [] }),
     getTimeline: jest.fn().mockResolvedValue({ surface: 'OFFICE_TIMELINE', events: [] }),
   };
@@ -85,6 +89,7 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
       caseId: 'case-1',
     });
     await controller.getOfficeDetail(TENANT_ID, ACTOR_ID, 'client-1', VERSION_ID);
+    await controller.getOfficePreview(TENANT_ID, ACTOR_ID, 'client-1', VERSION_ID);
     await controller.getOfficeHistory(TENANT_ID, ACTOR_ID, 'client-1', 'disclosure-1', {
       caseId: 'case-1',
     });
@@ -98,6 +103,7 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
     expect(office.getList).toHaveBeenCalledWith({ ...scope, caseId: 'case-1' });
     expect(office.getPreparationSources).toHaveBeenCalledWith({ ...scope, caseId: 'case-1' });
     expect(office.getDetail).toHaveBeenCalledWith(scope, VERSION_ID);
+    expect(office.getPreview).toHaveBeenCalledWith(scope, VERSION_ID);
     expect(office.getHistory).toHaveBeenCalledWith(
       { ...scope, caseId: 'case-1' },
       'disclosure-1',
