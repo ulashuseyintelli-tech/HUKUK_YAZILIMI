@@ -33,6 +33,8 @@ export const CLIENT_STATEMENT_LINE_LABELS_TR: Readonly<Record<ClientStatementLin
   CLIENT_OFFSET_EXPENSE_APPLIED: 'Mahsup: masraf borcu azaldı',
   CLIENT_OFFSET_PAYABLE_REVERSED: 'Mahsup iptali: müvekkile borç geri yüklendi',
   CLIENT_OFFSET_EXPENSE_REVERSED: 'Mahsup iptali: masraf borcu geri yüklendi',
+  INFORMATIONAL_ACCRUED_INTEREST: 'Tahakkuk etmiş faiz (bilgi — bakiyeye dahil değildir)',
+  COLLECTED_CLIENT_INTEREST: 'Tahsil edilmiş faiz',
 };
 
 export const CLIENT_STATEMENT_PDF_INFO_NOTE =
