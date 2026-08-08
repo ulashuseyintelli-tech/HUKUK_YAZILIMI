@@ -169,3 +169,72 @@ export const clientComplianceLegalHoldApi = {
     return res.data ?? {};
   },
 };
+
+// ---- CAD C2-B04 — Özel nitelikli veri + efektif capability/POA (mevcut sözleşme) ----
+
+export interface ClientSpecialCategoryMeta {
+  id: string;
+  category: string;
+  createdByUserId?: string | null;
+  createdAt: string;
+}
+
+/** readRecord — elevated + anahtar (K7.3) gerektirir; içerik ÇÖZÜLMÜŞ döner. */
+export interface ClientSpecialCategoryContent {
+  id: string;
+  category: string;
+  content: string;
+}
+
+export type EffectiveCapabilityReason =
+  | 'ALLOWED' | 'NO_VALID_POA' | 'POA_SCOPE_NOT_COVERED'
+  | 'POA_EXPLICIT_COLLECT_RESTRICTION' | 'FLAT_FLAG_RESTRICTION';
+
+export interface EffectiveCapabilityDecision {
+  capability: string;
+  allowed: boolean;
+  reasonCode: EffectiveCapabilityReason;
+  basisPoaIds: string[];
+}
+
+export interface EffectiveClientCapabilities {
+  canCollect: EffectiveCapabilityDecision;
+  canWaive: EffectiveCapabilityDecision;
+  canSettle: EffectiveCapabilityDecision;
+  canRelease: EffectiveCapabilityDecision;
+}
+
+export interface ClientActionCatalogItem {
+  key: string;
+  label: string;
+  description?: string;
+  category: string;
+  enabled: boolean;
+  disabledReason?: string;
+  visibility: 'visible' | 'hidden' | 'forbidden';
+  dangerLevel: 'low' | 'medium' | 'high';
+}
+
+export const clientComplianceSpecialCategoryApi = {
+  async listRecords(clientId: string): Promise<ClientSpecialCategoryMeta[]> {
+    const res = await apiClient.get(`/clients/${clientId}/special-category-records`);
+    return res.data ?? [];
+  },
+  async readRecord(recordId: string): Promise<ClientSpecialCategoryContent> {
+    const res = await apiClient.get(`/clients/special-category-records/${encodeURIComponent(recordId)}`);
+    return res.data;
+  },
+};
+
+export const clientComplianceCapabilityApi = {
+  async effectiveCapabilities(clientId: string): Promise<EffectiveClientCapabilities> {
+    const res = await apiClient.get(`/clients/${clientId}/effective-capabilities`);
+    return res.data;
+  },
+  async actionCatalog(clientId: string): Promise<ClientActionCatalogItem[]> {
+    const res = await apiClient.get(`/clients/${clientId}/action-catalog`);
+    // controller `{ data: [...] }` döner; apiClient tekrar sarar → res.data.data
+    const payload = res.data as { data?: ClientActionCatalogItem[] } | ClientActionCatalogItem[];
+    return Array.isArray(payload) ? payload : (payload.data ?? []);
+  },
+};
