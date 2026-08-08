@@ -21,7 +21,7 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
-BLOCKS TOTAL: 5   COMPLETED: 0   ACTIVATION DEBT: NONE
+BLOCKS TOTAL: 5   COMPLETED: 1 (B01)   ACTIVATION DEBT: NONE
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -45,6 +45,13 @@ ve bloğa bağlanır. Yeni hat AÇILMAZ. Bu blok implementation BAŞLATMAZ.
 
 **BLOCK RESULT:** `ANALYSIS_DELIVERED`
 **MERGE SONRASI AÇILAN:** C3 · X2 · X3-B01
+
+> **B01 SONUCU (2026-08-08, baseline afd84aee):** `ANALYSIS_DELIVERED` — kanıt dosyası
+> `C1-B01-BASELINE-COVERAGE-MATRIX.md` (bu dizin): 13 hareket × 9 sütun exact-referanslı
+> matris; #2262/#2265 ancestry VERIFIED; kapalı program satırı :1198 salt-okuma OBSERVED;
+> bayat kayıt reddi kaydedildi; dilim ataması §3 (C2/C3/X1/X2/X3 + 3 hat-dışı disposition
+> F-5/F-6/F-7); bulgular F-1..F-8. Runtime: Web 3002 UP, API 3001 DOWN → runtime-visible
+> doğrulaması C1-B03/UAT'a ertelendi. Ürün/şema/production mutation YOK (docs-only).
 
 ---
 
