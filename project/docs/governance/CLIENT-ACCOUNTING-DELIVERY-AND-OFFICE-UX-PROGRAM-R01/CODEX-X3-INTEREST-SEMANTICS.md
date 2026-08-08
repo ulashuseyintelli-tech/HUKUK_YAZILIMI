@@ -20,8 +20,9 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   X3-B01 → X3-B02 → X3-B03
-BLOCKS TOTAL: 3   COMPLETED: 0
+BLOCKS TOTAL: 3   COMPLETED: 1   REMAINING: X3-B02, X3-B03
 ACTIVATION DEBT: HENÜZ DOĞMADI — X3-B02 üretecek (migration production APPLY)
+CURRENT DISPOSITION: X3-B01 ANALYSIS_DELIVERED · X3-B02 WAITING_FOR_PREDECESSOR (C3 terminal)
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -79,7 +80,27 @@ BalanceLedger'dan, çift-sayım yok"*. X3 aynı deseni faize uygular.
 exact teknik boşluk raporlanır ve blok `WAITING_FOR_OWNER_DECISION` olur —
 diğer hatlar durmaz (master plan §8-A).
 
-**BLOCK RESULT:** `ANALYSIS_DELIVERED` veya `WAITING_FOR_OWNER_DECISION`
+**BLOCK RESULT:** `ANALYSIS_DELIVERED`
+
+Fresh code-evidence sonucu:
+
+- Canonical hesap authority'si RECEIVABLE `interest-engine` zinciridir; CLIENT yalnız
+  sonucunu projekte eder.
+- Canonical faiz başlangıcı tek bir varsayılan olay değil, explicit
+  `ClaimItem.interestAccrualStatus + interestTypeCode +
+  interestStartDateProvenance + interestStartDate` sözleşmesidir.
+- Tahsil edilmiş faizin hukuki taşıyıcısı interest-type `ClaimItem`a bağlı confirmed
+  `LedgerAllocation`; müvekkil entitlement kapısı `POSTED CollectionDisposition` ve
+  `CLIENT_PAYABLE(caseClientId)` satırıdır.
+- Fresh main'de `ClientStatementLineType` **16**, `CollectionDispositionLineType`
+  **7** üyedir; ikisinde de faiz üyesi ve iki zinciri allocation düzeyinde bağlayan
+  explicit model yoktur.
+
+Exact kanıt ve B02 tasarım sınırı:
+[`X3-B01-INTEREST-AUTHORITY-AND-POSTED-CARRIER-ANALYSIS-R01.md`](./X3-B01-INTEREST-AUTHORITY-AND-POSTED-CARRIER-ANALYSIS-R01.md).
+
+**NEXT:** `X3-B02 WAITING_FOR_PREDECESSOR` — C3'ün yalnız açık/kısmi bloğu yeterli
+değildir; canonical terminal koşulu henüz sağlanmamıştır. Owner onayı beklenmez.
 
 ---
 
