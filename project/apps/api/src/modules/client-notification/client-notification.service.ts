@@ -104,6 +104,17 @@ function escapeNotificationHtmlText(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * CAD C3 attachment threading (owner-ratified bounded write): mail EKİ yalnız
+ * TAŞIMA sırasında geçirilir. İçerik (Buffer) ClientNotification kaydına veya
+ * audit metnine ASLA yazılmaz; kalıcı yüzeye yalnız dosya adı/tipi düşer.
+ */
+export interface ClientNotificationAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+}
+
 export interface SendEmailDto {
   clientId: string;
   caseId?: string;
@@ -114,6 +125,8 @@ export interface SendEmailDto {
   persistedBody?: string; // Gonderilen body farkli olabilir; DBde saklanacak safe body.
   templateId?: string;
   dedupeKey?: string; // Faz 3 idempotency anahtarı (opsiyonel; ClientNotification.dedupeKey'e yazılır)
+  /** Opsiyonel mail ekleri — TAŞIMA-ONLY (içerik DB'ye yazılmaz). Verilmezse davranış birebir aynıdır. */
+  attachments?: readonly ClientNotificationAttachment[];
 }
 
 export interface SendSmsDto {
@@ -618,6 +631,23 @@ export class ClientNotificationService {
       },
     } as nodemailer.TransportOptions);
 
+    // Ek TAŞIMA-ONLY: içerik burada tutulmaz, yalnız nodemailer'a devredilir.
+    const attachments = dto.attachments?.length
+      ? dto.attachments.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          ...(a.contentType ? { contentType: a.contentType } : {}),
+        }))
+      : undefined;
+
+    // Kalıcı yüzeye yalnız ek KİMLİĞİ düşer (dosya adı/tipi) — Buffer ASLA yazılmaz.
+    const metadata = {
+      ...(dto.templateId ? { templateId: dto.templateId } : {}),
+      ...(attachments
+        ? { attachments: attachments.map((a) => ({ filename: a.filename, contentType: a.contentType ?? null })) }
+        : {}),
+    };
+
     // Bildirim kaydı oluştur
     const notification = await this.prisma.clientNotification.create({
       data: {
@@ -630,7 +660,7 @@ export class ClientNotificationService {
         body: safePersistedBody,
         status: "PENDING",
         sentById: userId,
-        metadata: dto.templateId ? { templateId: dto.templateId } : undefined,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         dedupeKey: dto.dedupeKey,
       },
     });
@@ -644,6 +674,7 @@ export class ClientNotificationService {
         from: `"${fromName}" <${fromEmail}>`,
         to: recipientEmail,
         subject: dto.subject,
+        ...(attachments ? { attachments } : {}),
         html: safeHtmlBody,
       });
 

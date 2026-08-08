@@ -40,9 +40,55 @@ export interface ClientStatementDeliveryMessage {
   readonly attachments: readonly [ClientStatementDeliveryAttachment];
 }
 
-/** Taşıma portu — üretimde EmailProviderService, testte double. */
+/**
+ * Taşıma bağlamı — mesajın KENDİSİ değil, kalıcı bildirim zincirinin ihtiyaç
+ * duyduğu kimlik/idempotency alanları. Bu alanlar müvekkile giden metne GİRMEZ;
+ * mesaj gövdesi yalnız render sözleşmesinden türer (POL-4).
+ */
+export interface ClientStatementDeliveryContext {
+  readonly tenantId: string;
+  readonly clientId: string;
+  readonly caseId?: string | null;
+  readonly statementId: string;
+  readonly dedupeKey: string;
+  readonly periodKey: string;
+  /** Bildirim kaydının `sentById` alanı (sistem koşusu için sabit aktör). */
+  readonly actorId: string;
+  /** Şablon render token'ları — iç ID İÇERMEZ (bkz. buildStatementDeliveryTokens). */
+  readonly tokens: Readonly<Record<string, string>>;
+}
+
+export interface ClientStatementDeliveryResult {
+  success: boolean;
+  messageId?: string;
+  errorCode?: string;
+}
+
+/** Taşıma portu — üretimde bildirim zinciri adaptörü, testte double. */
 export interface ClientStatementDeliveryPort {
-  send(message: ClientStatementDeliveryMessage): Promise<{ success: boolean; messageId?: string; errorCode?: string }>;
+  send(
+    message: ClientStatementDeliveryMessage,
+    context: ClientStatementDeliveryContext,
+  ): Promise<ClientStatementDeliveryResult>;
+}
+
+/**
+ * Şablon token'ları — mevcut STATEMENT_READY token sözleşmesiyle uyumlu, YALNIZ
+ * render sözleşmesinden türer. İç ID (statementId/caseId/refId/...) TAŞIMAZ.
+ */
+export function buildStatementDeliveryTokens(render: ClientStatementRenderV1): Record<string, string> {
+  return {
+    clientName: render.clientName,
+    officeName: render.officeName,
+    periodStart: render.periodStart.toISOString().slice(0, 10),
+    periodEnd: render.periodEnd.toISOString().slice(0, 10),
+    openingBalance: render.openingBalance,
+    closingBalance: render.closingBalance,
+    currency: render.currency,
+    lineCount: String(render.lines.length),
+    // Dosya referansı yalnız X2 primitifinden gelir; yoksa BOŞ kalır (fallback YOK).
+    caseFileNumber: render.fileReference?.value ?? '',
+  };
 }
 
 const yyyymmdd = (d: Date): string =>

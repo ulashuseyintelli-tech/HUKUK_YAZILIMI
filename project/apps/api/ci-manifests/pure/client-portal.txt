@@ -308,3 +308,7 @@ src/modules/client-financial-disclosure/__tests__/client-financial-disclosure.co
 #     Only POSTED/SINGLE_CASE_CLIENT reaches the writer; non-POSTED state is not exposed,
 #     cluster scope returns exact UNSUPPORTED_SCOPE, and portal visibility stays published-only.
 src/modules/client-settlement/__tests__/client-financial-disclosure-command.fail-closed.spec.ts
+
+#     CAD C3 attachment threading (owner-ratified bounded write): ek opsiyonel ve backward-compatible,
+#     PDF icerigi kalici kayda yazilmaz, dedupe ikinci gonderimi engeller, provider hatasinda SENT yok.
+src/modules/client-notification/__tests__/client-notification-attachment-threading.spec.ts

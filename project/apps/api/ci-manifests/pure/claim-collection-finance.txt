@@ -142,3 +142,6 @@ src/modules/client-statement/__tests__/client-statement-monthly-c3b04.spec.ts
 #     CAD C3-B05: kalici teslim defteri (outbox) sozlesmesi + retry/idempotency karar cekirdegi
 #     + terminal ariza gorunurlugu (W3-F04); tasima ve defter portlari test double.
 src/modules/client-statement/__tests__/client-statement-delivery-ledger-c3b05.spec.ts
+#     CAD C3: teslim portunun mevcut bildirim zincirine baglanmasi (dispatcher adaptoru; dogrudan
+#     provider cagrisi YOK), token sozlesmesi ve idempotency devri.
+src/modules/client-statement/__tests__/client-statement-notification-delivery-adapter.spec.ts
