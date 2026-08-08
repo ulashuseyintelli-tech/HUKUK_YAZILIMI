@@ -14,6 +14,14 @@ import {
   CLIENT_FINANCIAL_DISCLOSURE_SNAPSHOT_CONTRACT_VERSION,
   ClientFinancialDisclosureError,
 } from '../client-financial-disclosure.contract';
+import { CLIENT_DISCLOSURE_FORBIDDEN_FIELDS } from '../client-financial-disclosure-projection.contract';
+import {
+  CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION,
+  createClientFinancialDisclosureRenderInput,
+  freezeClientFinancialDisclosureRenderOutput,
+  type ClientFinancialDisclosureRenderInputV1,
+  type ClientFinancialDisclosureRenderLineV1,
+} from '../client-financial-disclosure-renderer.contract';
 
 /**
  * CLIENT-P2-U03-TRACK-B-I02 — canonical serialization + hash unit suite (SAF, DB'siz).
@@ -248,5 +256,80 @@ describe('CLIENT-P2-U03-TRACK-B-I02 — canonical serialization ve hash', () => 
     ]) {
       expect(keys).not.toContain(forbidden);
     }
+  });
+});
+
+type RendererForbiddenField = (typeof CLIENT_DISCLOSURE_FORBIDDEN_FIELDS)[number];
+type NoForbiddenInputKeys = [
+  Extract<keyof ClientFinancialDisclosureRenderInputV1, RendererForbiddenField>,
+] extends [never]
+  ? true
+  : false;
+type NoForbiddenLineKeys = [
+  Extract<keyof ClientFinancialDisclosureRenderLineV1, RendererForbiddenField>,
+] extends [never]
+  ? true
+  : false;
+
+describe('CLIENT-ACCOUNTING-DELIVERY R01 / X2-B01 — renderer contract', () => {
+  const INPUT = {
+    disclosureId: 'opaque-disclosure-version',
+    version: 1,
+    currency: 'TRY',
+    totalCollected: '2500.75',
+    clientNetAmount: '1750.50',
+    lines: [
+      { type: 'CLIENT_PAYABLE', amount: '1750.50' },
+      { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '750.25' },
+    ],
+    approvedAt: '2026-08-08T12:00:00.000Z',
+    notifiedAt: null,
+    publishedAt: null,
+    isCurrentEffective: true,
+    supersedesDisclosureId: null,
+    supersededByDisclosureId: null,
+    isReversed: false,
+    correctionReason: null,
+    remittanceStatus: 'PUBLISHED' as const,
+  } as const;
+
+  it('renderer inputunda forbidden top-level veya line anahtarı derlenemez', () => {
+    const topLevelGuard: NoForbiddenInputKeys = true;
+    const lineGuard: NoForbiddenLineKeys = true;
+    expect(topLevelGuard).toBe(true);
+    expect(lineGuard).toBe(true);
+
+    const forbiddenTopLevel = { ...INPUT, caseClientId: 'internal-case-client-id' };
+    // @ts-expect-error X2-B01: forbidden top-level key cannot cross the renderer boundary.
+    createClientFinancialDisclosureRenderInput(forbiddenTopLevel);
+
+    const forbiddenLine = {
+      ...INPUT,
+      lines: [{ type: 'CLIENT_PAYABLE', amount: '1750.50', sourceDispositionLineId: 'raw-id' }],
+    } as const;
+    // @ts-expect-error X2-B01: forbidden line key cannot cross the renderer boundary.
+    createClientFinancialDisclosureRenderInput(forbiddenLine);
+  });
+
+  it('allowlist-derived input ve XL-A output contracti runtime seviyesinde frozen kalır', () => {
+    const input = createClientFinancialDisclosureRenderInput(INPUT);
+    expect(Object.isFrozen(input)).toBe(true);
+    expect(Object.isFrozen(input.lines)).toBe(true);
+    expect(input.lines.every((line) => Object.isFrozen(line))).toBe(true);
+    for (const forbiddenField of CLIENT_DISCLOSURE_FORBIDDEN_FIELDS) {
+      expect(Object.keys(input)).not.toContain(forbiddenField);
+      expect(input.lines.every((line) => !Object.keys(line).includes(forbiddenField))).toBe(true);
+    }
+
+    const output = freezeClientFinancialDisclosureRenderOutput({
+      subject: 'Müvekkil finansal bilgilendirmesi',
+      text: 'Onaylanacak deterministik içerik',
+    });
+    expect(output).toEqual({
+      contractVersion: CLIENT_FINANCIAL_DISCLOSURE_RENDER_CONTRACT_VERSION,
+      subject: 'Müvekkil finansal bilgilendirmesi',
+      text: 'Onaylanacak deterministik içerik',
+    });
+    expect(Object.isFrozen(output)).toBe(true);
   });
 });
