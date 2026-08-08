@@ -7,25 +7,14 @@ export class CompleteDisclosureOfficeApprovalDto {
   approvalRequestId: string;
 }
 
-/** OFFICE_APPROVED -> CONTENT_APPROVAL_PENDING için mühürlenecek içerik ve alıcı bağı. */
+/** OFFICE_APPROVED -> CONTENT_APPROVAL_PENDING için renderer içeriğine bağlanacak alıcı. */
 export class RequestDisclosureContentApprovalDto {
-  @IsString()
-  @MinLength(1)
-  notificationContent: string;
-
   @IsEmail()
   approvedRecipientEmail: string;
 
   @IsString()
   @IsOptional()
   approvedRecipientPortalUserId?: string;
-}
-
-/** Onaylı versiyonun mevcut publication servisi üzerinden gönderim konusu. */
-export class PublishClientFinancialDisclosureDto {
-  @IsString()
-  @MinLength(1)
-  subject: string;
 }
 
 /** PUBLISHED -> REVERSED için client-safe düzeltme gerekçesi. */

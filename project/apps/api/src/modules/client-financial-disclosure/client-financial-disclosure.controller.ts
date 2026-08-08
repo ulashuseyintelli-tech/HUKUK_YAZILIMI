@@ -20,7 +20,6 @@ import { ClientFinancialDisclosurePublicationService } from './client-financial-
 import { ClientFinancialDisclosureOfficeQueryDto } from './dto/client-financial-disclosure-office.dto';
 import {
   CompleteDisclosureOfficeApprovalDto,
-  PublishClientFinancialDisclosureDto,
   RequestDisclosureContentApprovalDto,
   ReverseClientFinancialDisclosureDto,
   SupersedeClientFinancialDisclosureDto,
@@ -181,7 +180,6 @@ export class ClientFinancialDisclosureController {
       tenantId,
       disclosureVersionId,
       requesterUserId: actorUserId,
-      notificationContent: body.notificationContent,
       approvedRecipientEmail: body.approvedRecipientEmail,
       approvedRecipientPortalUserId: body.approvedRecipientPortalUserId,
     });
@@ -217,12 +215,11 @@ export class ClientFinancialDisclosureController {
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('disclosureVersionId') disclosureVersionId: string,
-    @Body() body: PublishClientFinancialDisclosureDto,
   ) {
     this.assertPublicationEnabled();
     const scope = { tenantId, disclosureVersionId, actorUserId };
     await this.publication.beginSend(scope);
-    return this.publication.dispatchAndPublish({ ...scope, subject: body.subject });
+    return this.publication.dispatchAndPublish(scope);
   }
 
   /**
@@ -236,12 +233,11 @@ export class ClientFinancialDisclosureController {
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') actorUserId: string,
     @Param('disclosureVersionId') disclosureVersionId: string,
-    @Body() body: PublishClientFinancialDisclosureDto,
   ) {
     this.assertPublicationEnabled();
     const scope = { tenantId, disclosureVersionId, actorUserId };
     await this.publication.retrySend(scope);
-    return this.publication.dispatchAndPublish({ ...scope, subject: body.subject });
+    return this.publication.dispatchAndPublish(scope);
   }
 
   /**

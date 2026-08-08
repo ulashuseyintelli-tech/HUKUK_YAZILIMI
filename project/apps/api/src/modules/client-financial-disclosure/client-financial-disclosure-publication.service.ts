@@ -9,6 +9,7 @@ import {
   isDisclosureApproverEligible,
 } from './client-financial-disclosure-approval-eligibility';
 import { CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION } from './client-financial-disclosure-approval.contract';
+import { parseClientFinancialDisclosureRenderOutput } from './client-financial-disclosure-renderer.contract';
 import {
   type BeginDisclosureSendInput,
   CLIENT_FINANCIAL_DISCLOSURE_AUDIT_ACTIONS,
@@ -204,10 +205,15 @@ export class ClientFinancialDisclosurePublicationService {
     }
 
     // ── (2) PROVIDER ÇAĞRISI — TRANSACTION DIŞINDA ─────────────────────────────
+    // The exact renderer output was sealed during content approval. Publication deliberately
+    // does not re-render or accept caller-provided subject/body after approval.
+    const approvedContent = parseClientFinancialDisclosureRenderOutput(
+      claimed.notificationContent as string,
+    );
     const dispatch = await this.dispatcher.send({
       to: claimed.approvedRecipientEmail as string,
-      subject: input.subject,
-      text: claimed.notificationContent as string,
+      subject: approvedContent.subject,
+      text: approvedContent.text,
     });
 
     // ── (3) GERÇEK KABUL + KALICI MESSAGE ID ZORUNLU ───────────────────────────
@@ -271,6 +277,21 @@ export class ClientFinancialDisclosurePublicationService {
         if (version.snapshotHash !== claimed.snapshotHash) {
           throw new ClientFinancialDisclosurePublicationError(
             'DISCLOSURE_PUBLICATION_STALE_SNAPSHOT',
+          );
+        }
+        if (
+          version.notificationContent !== claimed.notificationContent ||
+          version.notificationContentHash !== claimed.notificationContentHash
+        ) {
+          throw new ClientFinancialDisclosurePublicationError(
+            'DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH',
+          );
+        }
+        if (
+          version.approvedRecipientPortalUserId !== claimed.approvedRecipientPortalUserId
+        ) {
+          throw new ClientFinancialDisclosurePublicationError(
+            'DISCLOSURE_PUBLICATION_RECIPIENT_CHANGED',
           );
         }
 
@@ -598,6 +619,13 @@ export class ClientFinancialDisclosurePublicationService {
       },
     );
     if (recomputed !== version.notificationContentHash) {
+      throw new ClientFinancialDisclosurePublicationError(
+        'DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH',
+      );
+    }
+    try {
+      parseClientFinancialDisclosureRenderOutput(version.notificationContent);
+    } catch {
       throw new ClientFinancialDisclosurePublicationError(
         'DISCLOSURE_PUBLICATION_CONTENT_HASH_MISMATCH',
       );

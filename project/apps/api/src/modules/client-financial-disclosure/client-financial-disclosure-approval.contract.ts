@@ -147,7 +147,6 @@ export interface RequestContentApprovalInput {
   readonly tenantId: string;
   readonly disclosureVersionId: string;
   readonly requesterUserId: string;
-  readonly notificationContent: string;
   readonly approvedRecipientEmail: string;
   readonly approvedRecipientPortalUserId?: string | null;
 }

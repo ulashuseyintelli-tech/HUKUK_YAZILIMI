@@ -161,7 +161,6 @@ export interface DispatchDisclosureInput {
   readonly tenantId: string;
   readonly disclosureVersionId: string;
   readonly actorUserId: string;
-  readonly subject: string;
 }
 
 export interface RetryDisclosureSendInput {
