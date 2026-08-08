@@ -23,8 +23,8 @@ SHARED CONTRACTS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C3-B01 → C3-B02 → C3-B03 → C3-B04 → C3-B05
-BLOCKS TOTAL: 5   COMPLETED: 0
-ACTIVATION DEBT: HENÜZ DOĞMADI — C3-B04 üretebilir (schedule activation)
+BLOCKS TOTAL: 5   COMPLETED: 5   (B05 kalıcı adaptörü X3 şemasına bağlı)
+ACTIVATION DEBT: DOĞDU — (1) aylık schedule activation, (2) kalıcı teslim defteri şeması
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -130,3 +130,54 @@ altyapıya bakılarak kanıta dayanarak seçilir. Tek katı kısıt: **pdf-poppl
 
 **D-5** duplicate gerçek gönderim riski · **D-7** production migration için
 backup/restore kapısının sağlanamaması · **D-2** başka müvekkil verisi sızıntısı.
+
+---
+
+## BLOK SONUÇLARI VE KANIT (C3 · repository-truth)
+
+| Blok | Sonuç | PR | main SHA |
+|---|---|---|---|
+| C3-B01 | ENGINEERING_COMPLETE | #2275 · #2282 | `6551a168` · `f0816034` |
+| C3-B02 | ENGINEERING_COMPLETE | #2285 | `1d886df7` |
+| C3-B03 | ENGINEERING_COMPLETE | #2288 | `92886f4f` |
+| C3-B04 | ENGINEERING_COMPLETE + ACTIVATION_PENDING | #2291 | `56cada24` |
+| C3-B05 | ENGINEERING_COMPLETE (sözleşme/politika/bağlama) + ACTIVATION_PENDING (kalıcı adaptör = X3 şeması) | bu PR | — |
+
+Ürün yazımı yalnız `apps/api/src/modules/client-statement/**` altında yapılmıştır.
+`client-financial-disclosure/**` (X2), `prisma/**` (X3), `apps/web/**` ve eski
+terminal programın dosyaları DEĞİŞTİRİLMEMİŞTİR.
+
+## X3'E BAĞIMLILIK — KALICI TESLİM DEFTERİ ŞEMASI (C3-B05)
+
+C3-B05 kalıcı defterin **davranışını** sözleşme + saf karar çekirdeği olarak
+sabitledi (`client-statement-delivery-ledger.contract.ts`) ve aylık koşuyu bu
+porta bağladı. Kalıcı **tablo** şema yazımı gerektirdiği için (MIGRATION OWNER =
+X3) adaptör bu hatta yazılmamıştır. In-memory bir defter "kalıcı" sayılmamış,
+koşu sonucu `persistentDeliveryLedger: false` ile bunu açıkça raporlamaktadır.
+
+X3'ten istenen asgari şekil (emsal: `PoaExpiryNotificationDelivery` — aynı desen,
+yeni politika icat edilmedi):
+
+```text
+tenantId · clientId · statementId · periodKey · recipientEmail
+dedupeKey  @unique            ← çift gönderimi YAPISAL olarak imkânsız kılan kısıt
+status     PENDING|SENT|FAILED
+attempts · reservedAt · lastAttemptAt · nextRetryAt · sentAt · lastError
+@@index([tenantId, status, createdAt]) · @@index([tenantId, clientId])
+```
+
+Sınırlar (emsalden devralındı, yeniden türetilmedi): MAX_ATTEMPTS=3,
+RETRY_MINUTES=60, LOCK_TIMEOUT_MINUTES=15.
+
+## ACTIVATION DEBT (owner teyidi olmadan AÇILMAZ)
+
+1. **Aylık schedule activation** — `CLIENT_STATEMENT_MONTHLY_DELIVERY=true`.
+   Bayrak kapalıyken cron **kaydı bile** yapılmaz; bu yüzden W3-F03 kanonik cron
+   envanteri (33) bugün DEĞİŞMEMİŞTİR. Aktivasyon PR'ı envanter beklentisini de
+   güncellemek zorundadır.
+2. **Kalıcı teslim defteri** — yukarıdaki X3 şeması + adaptörün
+   `CLIENT_STATEMENT_DELIVERY_LEDGER_PORT` olarak kaydı.
+3. **Taşıma portu** — `CLIENT_STATEMENT_DELIVERY_PORT` bilerek kayıtlı değildir;
+   kayıtsızken koşu `PLAN_ONLY` çalışır ve hiçbir mail üretmez/göndermez.
+
+Bu üç kalem açılmadıkça production'da hiçbir müvekkile ekstre maili gitmez.
