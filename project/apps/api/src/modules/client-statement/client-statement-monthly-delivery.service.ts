@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { CronJob } from 'cron';
 import { ClientStatementStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { OfficeService } from '@/modules/office/office.service';
@@ -131,6 +130,10 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
   onModuleInit(): void {
     if (!this.isEnabled() || !this.scheduler) return;
 
+    // `cron` paketi @nestjs/schedule'in transitive bagimliligidir ve api paketinden
+    // TIP olarak cozulmez; runtime cozumu icin require kullanilir (pdfmake ile ayni desen).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { CronJob } = require('cron');
     const job = new CronJob(
       CLIENT_STATEMENT_MONTHLY_CRON,
       () => {
