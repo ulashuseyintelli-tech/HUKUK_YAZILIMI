@@ -121,6 +121,35 @@ export interface OfficeDisclosurePreviewSurface {
   };
 }
 
+export const OFFICE_DISCLOSURE_TIMELINE_EVENT_TYPES = [
+  'VERSION_CREATED',
+  'OFFICE_APPROVAL_REQUESTED',
+  'OFFICE_APPROVED',
+  'CONTENT_APPROVED',
+  'SEND_REQUESTED',
+  'PROVIDER_ACCEPTED',
+  'SEND_FAILED',
+  'PUBLISHED',
+  'REVERSED',
+  'SUPERSEDED',
+  'CANCELLED',
+] as const;
+
+export type OfficeDisclosureTimelineEventType =
+  (typeof OFFICE_DISCLOSURE_TIMELINE_EVENT_TYPES)[number];
+
+export interface OfficeDisclosureTimelineEvent {
+  readonly type: OfficeDisclosureTimelineEventType;
+  readonly occurredAt: string;
+  readonly actor: 'OFFICE_USER' | 'SYSTEM';
+}
+
+export interface OfficeDisclosureTimelineSurface {
+  readonly surface: 'OFFICE_TIMELINE';
+  readonly versionId: string;
+  readonly events: readonly OfficeDisclosureTimelineEvent[];
+}
+
 export interface DisclosureApprovalTransitionResult {
   readonly disclosureVersionId: string;
   readonly previousStatus: OfficeDisclosureStatus;
@@ -176,6 +205,20 @@ export const clientFinancialDisclosureApi = {
     return response.data;
   },
 
+  /** Office workspace -> GET curated audit events; internal actor/event IDs are not projected. */
+  async getTimeline(
+    clientId: string,
+    versionId: string,
+  ): Promise<OfficeDisclosureTimelineSurface> {
+    const response = await apiClient.get<OfficeDisclosureTimelineSurface>(
+      `/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/versions/${encodeURIComponent(versionId)}/timeline`,
+    );
+    if (response.data.surface !== 'OFFICE_TIMELINE') {
+      throw new Error('Unsupported financial disclosure timeline contract');
+    }
+    return response.data;
+  },
+
   /** DRAFT -> OFFICE_APPROVAL_PENDING; eligibility ve lifecycle backend otoritesindedir. */
   async requestOfficeApproval(versionId: string): Promise<DisclosureApprovalTransitionResult> {
     const response = await apiClient.post<DisclosureApprovalTransitionResult>(
@@ -222,6 +265,15 @@ export const clientFinancialDisclosureApi = {
   async publish(versionId: string): Promise<unknown> {
     const response = await apiClient.post<unknown>(
       `/client-financial-disclosures/${encodeURIComponent(versionId)}/publish`,
+      {},
+    );
+    return response.data;
+  },
+
+  /** SEND_FAILED -> canonical idempotency-bound retry; eligibility remains backend-authoritative. */
+  async retryPublication(versionId: string): Promise<unknown> {
+    const response = await apiClient.post<unknown>(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/retry-publication`,
       {},
     );
     return response.data;
