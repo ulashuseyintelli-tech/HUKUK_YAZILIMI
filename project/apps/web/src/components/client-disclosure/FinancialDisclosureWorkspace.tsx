@@ -11,6 +11,7 @@ import {
 import { DisclosureStatusBadge } from './DisclosureStatusBadge';
 import { DisclosurePreparationPanel } from './DisclosurePreparationPanel';
 import { DisclosurePreviewPanel } from './DisclosurePreviewPanel';
+import { DisclosureApprovalPanel } from './DisclosureApprovalPanel';
 
 const displayDate = (value?: string | null) =>
   value ? new Date(value).toLocaleString('tr-TR') : '—';
@@ -137,6 +138,15 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
 
       {selection ? (
         <DisclosurePreviewPanel clientId={clientId} versionId={selection.versionId} />
+      ) : null}
+
+      {detail.isSuccess ? (
+        <DisclosureApprovalPanel
+          key={detail.data.versionId}
+          clientId={clientId}
+          versionId={detail.data.versionId}
+          actions={detail.data.actions}
+        />
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
