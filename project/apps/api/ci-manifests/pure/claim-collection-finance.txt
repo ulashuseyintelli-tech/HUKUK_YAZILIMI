@@ -133,3 +133,6 @@ src/modules/client-statement/__tests__/client-statement-file-reference-c3b01.spe
 #     CAD C3-B02: ekstre PDF belge sozlesmesi (TR etiket tam kapsama, bilgi satiri
 #     gorunurlugu, SUPERSEDED/VOID fail-closed, determinizm, ic ID sizintisi yok, gercek Buffer).
 src/modules/client-statement/__tests__/client-statement-pdf-c3b02.spec.ts
+#     CAD C3-B03: icerikli ekstre maili + PDF eki sozlesmesi (guvenli ozet, ek dosya adi ic ID siz,
+#     SUPERSEDED/VOID ve dogrulanmamis alici fail-closed, tasima portu test double).
+src/modules/client-statement/__tests__/client-statement-delivery-c3b03.spec.ts
