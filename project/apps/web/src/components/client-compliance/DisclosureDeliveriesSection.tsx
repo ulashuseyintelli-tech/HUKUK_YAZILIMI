@@ -64,6 +64,9 @@ export function DisclosureDeliveriesSection({ clientId }: { clientId: string }) 
       {texts.isError ? (
         <ComplianceFailClosed title="Aydınlatma metin sürümleri alınamadı" error={toComplianceError(texts.error)} />
       ) : null}
+      {!deliveries.isLoading && !deliveries.isError && !deliveries.isSuccess ? (
+        <ComplianceFailClosed title="Teslim kayıtları yüklenemedi" error={{ message: 'Kayıt durumu belirlenemedi — fail-closed (sessiz boş ekran yasak).' }} />
+      ) : null}
 
       {deliveries.isSuccess ? (
         deliveries.data.length === 0 ? (

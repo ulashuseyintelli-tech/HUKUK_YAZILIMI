@@ -50,6 +50,9 @@ export function ConsentRecordsSection({ clientId }: { clientId: string }) {
       {consents.isError ? (
         <ComplianceFailClosed title="Rıza kayıtları alınamadı" error={toComplianceError(consents.error)} />
       ) : null}
+      {!consents.isLoading && !consents.isError && !consents.isSuccess ? (
+        <ComplianceFailClosed title="Rıza kayıtları yüklenemedi" error={{ message: 'Kayıt durumu belirlenemedi — fail-closed (sessiz boş ekran yasak).' }} />
+      ) : null}
 
       {consents.isSuccess ? (
         consents.data.length === 0 ? (

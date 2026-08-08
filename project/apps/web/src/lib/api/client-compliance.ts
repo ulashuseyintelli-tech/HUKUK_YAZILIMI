@@ -89,3 +89,83 @@ export const clientComplianceApi = {
     return res.data;
   },
 };
+
+// ---- CAD C2-B03 — DSAR + Legal Hold (mevcut backend sözleşmesi; B01 envanteri) ----
+
+export interface ClientDsarRecord {
+  id: string;
+  clientId: string;
+  type: string;
+  channel: string;
+  status: string; // backend durum makinesi: RECEIVED → IN_REVIEW → RESPONDED
+  receivedAt: string;
+  assignedToUserId?: string | null;
+  respondedAt?: string | null;
+  summary?: string | null;
+}
+
+export interface ClientLegalHoldRecord {
+  id: string;
+  clientId: string;
+  scopeType: string;
+  reason: string;
+  status: string; // ACTIVE | RELEASE_REQUESTED | RELEASED
+  caseId?: string | null;
+  recordFamily?: string | null;
+  createdAt?: string;
+}
+
+export interface DeletionEvaluationResult {
+  allowed?: boolean;
+  unmetConditions?: string[];
+  [k: string]: unknown;
+}
+
+export const clientComplianceDsarApi = {
+  async listRequests(clientId: string): Promise<ClientDsarRecord[]> {
+    const res = await apiClient.get(`/clients/data-subject-requests?clientId=${encodeURIComponent(clientId)}`);
+    return res.data ?? [];
+  },
+  async createRequest(
+    clientId: string,
+    body: { type: string; channel: string; receivedAt: string; summary?: string },
+  ): Promise<unknown> {
+    const res = await apiClient.post(`/clients/${clientId}/data-subject-requests`, body);
+    return res.data;
+  },
+  async startReview(requestId: string): Promise<unknown> {
+    const res = await apiClient.post(`/clients/data-subject-requests/${requestId}/start-review`, {});
+    return res.data;
+  },
+  async assign(requestId: string, assignedToUserId: string): Promise<unknown> {
+    const res = await apiClient.post(`/clients/data-subject-requests/${requestId}/assign`, { assignedToUserId });
+    return res.data;
+  },
+  async respond(requestId: string, responseNote: string): Promise<unknown> {
+    const res = await apiClient.post(`/clients/data-subject-requests/${requestId}/respond`, { responseNote });
+    return res.data;
+  },
+};
+
+export const clientComplianceLegalHoldApi = {
+  async listHolds(clientId: string): Promise<ClientLegalHoldRecord[]> {
+    const res = await apiClient.get(`/clients/legal-holds?clientId=${encodeURIComponent(clientId)}`);
+    return res.data ?? [];
+  },
+  async placeHold(clientId: string, body: { scopeType: string; reason: string }): Promise<unknown> {
+    const res = await apiClient.post(`/clients/${clientId}/legal-holds`, body);
+    return res.data;
+  },
+  async requestRelease(holdId: string, releaseReason: string): Promise<unknown> {
+    const res = await apiClient.post(`/clients/legal-holds/${holdId}/request-release`, { releaseReason });
+    return res.data;
+  },
+  async approveRelease(holdId: string): Promise<unknown> {
+    const res = await apiClient.post(`/clients/legal-holds/${holdId}/approve-release`, {});
+    return res.data;
+  },
+  async evaluateDeletion(clientId: string): Promise<DeletionEvaluationResult> {
+    const res = await apiClient.post(`/clients/${clientId}/deletion-evaluation`, {});
+    return res.data ?? {};
+  },
+};
