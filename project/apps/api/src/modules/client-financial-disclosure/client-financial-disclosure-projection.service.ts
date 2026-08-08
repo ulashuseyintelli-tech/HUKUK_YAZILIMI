@@ -16,6 +16,7 @@ import {
   type ClientDisclosureReadScope,
   type ClientDisclosureRemittanceStatus,
 } from './client-financial-disclosure-projection.contract';
+import { createClientSafeFileReferenceFromCaseFileNumber } from './client-safe-file-reference.contract';
 
 /**
  * §35.7 — YALNIZ bu üç durum client-görünürdür. `PUBLISHED` yayındaki hâli, `SUPERSEDED`
@@ -194,7 +195,8 @@ export class ClientFinancialDisclosureProjectionService {
     const projection: ClientDisclosureProjection = {
       disclosureId: v.id,
       version: v.version,
-      fileNumber: v.disclosure.case.fileNumber,
+      fileNumber: createClientSafeFileReferenceFromCaseFileNumber(v.disclosure.case.fileNumber)
+        .value,
       currency: v.currency,
       totalCollected: canonicalMoney(v.totalCollected as never),
       clientNetAmount: canonicalMoney(v.clientNetAmount as never),

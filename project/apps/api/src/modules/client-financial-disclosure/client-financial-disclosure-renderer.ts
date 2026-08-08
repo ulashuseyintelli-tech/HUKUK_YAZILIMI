@@ -5,9 +5,13 @@ import {
   type ClientFinancialDisclosureRenderInputV1,
   type ClientFinancialDisclosureRenderOutputV1,
 } from './client-financial-disclosure-renderer.contract';
+import {
+  CLIENT_SAFE_FILE_REFERENCE_LABEL,
+  createClientSafeFileReferenceFromCaseFileNumber,
+} from './client-safe-file-reference.contract';
 
-/** Owner-ratified label for the sole client-visible file reference source: Case.fileNumber. */
-export const CLIENT_FINANCIAL_DISCLOSURE_FILE_NUMBER_LABEL = 'Büro dosya no' as const;
+/** Backward-compatible X2-B02 export; canonical definition lives in the X2-B03 primitive. */
+export const CLIENT_FINANCIAL_DISCLOSURE_FILE_NUMBER_LABEL = CLIENT_SAFE_FILE_REFERENCE_LABEL;
 
 const LINE_ORDER: Readonly<Record<CollectionDispositionLineType, number>> = Object.freeze({
   CLIENT_PAYABLE: 0,
@@ -38,7 +42,7 @@ const LINE_LABEL: Readonly<Record<CollectionDispositionLineType, string>> = Obje
 export function renderClientFinancialDisclosure(
   input: ClientFinancialDisclosureRenderInputV1,
 ): ClientFinancialDisclosureRenderOutputV1 {
-  assertSafeText(input.fileNumber);
+  const fileReference = createClientSafeFileReferenceFromCaseFileNumber(input.fileNumber);
   assertSafeText(input.currency);
 
   const lines = [...input.lines].sort((a, b) => {
@@ -52,7 +56,7 @@ export function renderClientFinancialDisclosure(
   const text = [
     'Müvekkil finansal bilgilendirmesi',
     '',
-    `${CLIENT_FINANCIAL_DISCLOSURE_FILE_NUMBER_LABEL}: ${input.fileNumber}`,
+    `${fileReference.label}: ${fileReference.value}`,
     `Yayın tarihi: ${formatPublishedAt(input.publishedAt)}`,
     `Para birimi: ${input.currency}`,
     `Tahsil edilen toplam: ${formatMoney(input.totalCollected, input.currency)}`,
@@ -65,7 +69,7 @@ export function renderClientFinancialDisclosure(
   ].join('\n');
 
   return freezeClientFinancialDisclosureRenderOutput({
-    subject: `Müvekkil finansal bilgilendirmesi — ${CLIENT_FINANCIAL_DISCLOSURE_FILE_NUMBER_LABEL}: ${input.fileNumber}`,
+    subject: `Müvekkil finansal bilgilendirmesi — ${fileReference.label}: ${fileReference.value}`,
     text,
   });
 }
