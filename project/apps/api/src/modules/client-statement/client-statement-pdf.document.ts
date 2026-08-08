@@ -81,13 +81,24 @@ export function buildClientStatementPdfDocument(render: ClientStatementRenderV1)
   }
 
   const showFileColumn = render.lines.some((l) => l.fileReference !== null);
-  const columns = ['Tarih', 'İşlem', ...(showFileColumn ? ['Dosya'] : []), 'Açıklama', 'Borç', 'Alacak', 'Bakiye'];
+  const showInformationalAmount = render.lines.some((l) => l.informationalAmount !== null);
+  const columns = [
+    'Tarih',
+    'İşlem',
+    ...(showFileColumn ? ['Dosya'] : []),
+    'Açıklama',
+    ...(showInformationalAmount ? ['Bilgi tutarı'] : []),
+    'Borç',
+    'Alacak',
+    'Bakiye',
+  ];
 
   const body = render.lines.map((l) => [
     dateTr(l.lineDate),
     l.label,
     ...(showFileColumn ? [l.fileReference ? l.fileReference.value : '—'] : []),
     l.note ?? '',
+    ...(showInformationalAmount ? [l.informationalAmount ?? '—'] : []),
     l.isInformational ? '—' : l.debit,
     l.isInformational ? '—' : l.credit,
     l.isInformational ? `${l.runningBalance} (değişmedi)` : l.runningBalance,

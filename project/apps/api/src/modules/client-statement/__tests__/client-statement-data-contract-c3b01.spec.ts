@@ -26,6 +26,12 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { CaseBalanceService } from '@/modules/interest-engine/orchestration/case-balance.service';
+import {
+  ClientStatementInterestProjectionInvariantError,
+  projectAccruedInterest,
+  projectCollectedInterestShares,
+} from '../client-statement-interest-projection';
 import { ClientStatementService } from '../client-statement.service';
 
 const D = (n: number) => new Prisma.Decimal(n);
@@ -37,7 +43,16 @@ const CLIENT = 'client-1';
 const USER = 'user-1';
 
 /** Render sözleşmesinin DIŞLAMASI gereken iç alanlar (POL-4 sınırı, C3-B02 tüketir). */
-export const C3_RENDER_FORBIDDEN_LINE_FIELDS = ['statementId', 'refId', 'refType', 'caseClientId', 'id'] as const;
+export const C3_RENDER_FORBIDDEN_LINE_FIELDS = [
+  'statementId',
+  'refId',
+  'refType',
+  'caseClientId',
+  'id',
+  'interestAmount',
+  'sourceLedgerAllocationId',
+  'sourceDispositionLineId',
+] as const;
 
 const buildPrisma = () => ({
   case: { findFirst: jest.fn().mockResolvedValue({ id: CASE_A }) },
@@ -52,6 +67,7 @@ const buildPrisma = () => ({
   expensePayment: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
   collectionDisposition: { findMany: jest.fn().mockResolvedValue([]) },
   collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
+  ledgerAllocation: { findMany: jest.fn().mockResolvedValue([]) },
   clientPayout: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
   clientOffset: { findMany: jest.fn().mockResolvedValue([]) },
   clientStatement: {
@@ -64,6 +80,67 @@ const buildPrisma = () => ({
   clientStatementLine: { createMany: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(1),
   $transaction: jest.fn(),
+});
+
+describe('X3-B03 — faiz projeksiyonu invariantları', () => {
+  it('allocation tutarını gerçek CLIENT_PAYABLE oranında cent-exact böler', () => {
+    const shares = projectCollectedInterestShares({
+      dispositionTotal: D(100),
+      allocations: [{ id: 'alloc-1', amount: D(10) }],
+      payableLines: [
+        { id: 'payable-a', amount: D(60) },
+        { id: 'payable-b', amount: D(20) },
+      ],
+    });
+
+    expect(shares.map((share) => ({
+      allocation: share.sourceLedgerAllocationId,
+      payable: share.sourceDispositionLineId,
+      amount: share.amount.toString(),
+    }))).toEqual([
+      { allocation: 'alloc-1', payable: 'payable-a', amount: '6' },
+      { allocation: 'alloc-1', payable: 'payable-b', amount: '2' },
+    ]);
+    expect(shares.reduce((sum, share) => sum.plus(share.amount), D(0)).toString()).toBe('8');
+  });
+
+  it('aynı allocation veya payable kaynağını ikinci kez projekte etmeyi reddeder', () => {
+    expect(() => projectCollectedInterestShares({
+      dispositionTotal: D(100),
+      allocations: [
+        { id: 'alloc-1', amount: D(10) },
+        { id: 'alloc-1', amount: D(10) },
+      ],
+      payableLines: [{ id: 'payable-1', amount: D(100) }],
+    })).toThrow(ClientStatementInterestProjectionInvariantError);
+
+    expect(() => projectCollectedInterestShares({
+      dispositionTotal: D(100),
+      allocations: [{ id: 'alloc-1', amount: D(10) }],
+      payableLines: [
+        { id: 'payable-1', amount: D(50) },
+        { id: 'payable-1', amount: D(50) },
+      ],
+    })).toThrow(ClientStatementInterestProjectionInvariantError);
+  });
+
+  it('CLIENT yeni faiz hesaplamaz; yalnız provider finalDebtStates.accruedInterest toplamını projekte eder', () => {
+    const amount = projectAccruedInterest({
+      currencyResults: [{
+        currency: 'TRY',
+        grossPrincipal: 100,
+        result: {
+          totalInterest: 999,
+          finalDebtStates: [
+            { currency: 'TRY', accruedInterest: 12.345 },
+            { currency: 'TRY', accruedInterest: 7.655 },
+          ],
+        } as any,
+      }],
+    }, 'TRY');
+
+    expect(amount?.toString()).toBe('20');
+  });
 });
 
 describe('CAD C3-B01 — ekstre veri sözleşmesi (characterization)', () => {
@@ -80,6 +157,7 @@ describe('CAD C3-B01 — ekstre veri sözleşmesi (characterization)', () => {
         { provide: NotificationDispatcherService, useValue: { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) } },
         { provide: OfficeService, useValue: { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }) } },
         { provide: AuditService, useValue: { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() } },
+        { provide: CaseBalanceService, useValue: { computeCaseBalance: jest.fn().mockResolvedValue({ currencyResults: [] }) } },
       ],
     }).compile();
     service = module.get(ClientStatementService);
@@ -93,9 +171,15 @@ describe('CAD C3-B01 — ekstre veri sözleşmesi (characterization)', () => {
       { id: 'cc-a', caseId: CASE_A },
       { id: 'cc-b', caseId: CASE_B },
     ]);
-    prisma.collectionDispositionLine.findMany.mockResolvedValue([
-      { id: 'dl-a', amount: D(100), caseClientId: 'cc-a', disposition: { caseId: CASE_A, postedAt: new Date('2026-06-05') } },
-      { id: 'dl-b', amount: D(50), caseClientId: 'cc-b', disposition: { caseId: CASE_B, postedAt: new Date('2026-06-10') } },
+    prisma.collectionDisposition.findMany.mockResolvedValue([
+      {
+        collectionId: 'col-a', totalAmount: D(100), currency: 'TRY', caseId: CASE_A, postedAt: new Date('2026-06-05'),
+        lines: [{ id: 'dl-a', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-a' }],
+      },
+      {
+        collectionId: 'col-b', totalAmount: D(50), currency: 'TRY', caseId: CASE_B, postedAt: new Date('2026-06-10'),
+        lines: [{ id: 'dl-b', type: 'CLIENT_PAYABLE', amount: D(50), caseClientId: 'cc-b' }],
+      },
     ]);
   };
 
@@ -159,13 +243,11 @@ describe('CAD C3-B01 — ekstre veri sözleşmesi (characterization)', () => {
     expect(ccWhere.clientId).toBe(CLIENT);           // yalnız bu müvekkil
     expect(ccWhere.client).toEqual({ tenantId: TENANT }); // tenant sınırı
     // proceeds sorgusu yalnız bu müvekkilin caseClient id'leriyle sınırlı
-    const dlWhere = prisma.collectionDispositionLine.findMany.mock.calls.at(-1)![0].where;
-    expect(dlWhere.caseClientId.in.sort()).toEqual(['cc-a', 'cc-b']);
-    // Tenant sınırı NESTED ilişkide taşınır (line'ın tenantId kolonu yoktur; parent
-    // disposition zorunlu ilişkidir → scoped parent burada geçerli kanıttır).
-    expect(dlWhere.disposition.tenantId).toBe(TENANT);
-    expect(dlWhere.disposition.status).toBe('POSTED');
-    expect(dlWhere.disposition.manualReversalRequiredAt).toBeNull();
+    const dispositionWhere = prisma.collectionDisposition.findMany.mock.calls.at(-1)![0].where;
+    expect(dispositionWhere.lines.some.caseClientId.in.sort()).toEqual(['cc-a', 'cc-b']);
+    expect(dispositionWhere.tenantId).toBe(TENANT);
+    expect(dispositionWhere.status).toBe('POSTED');
+    expect(dispositionWhere.manualReversalRequiredAt).toBeNull();
   });
 
   it('[B01-6] findOne tenant-scoped okur (cross-tenant erişim yok)', async () => {
@@ -195,13 +277,25 @@ describe('CAD C3-B01 — ekstre veri sözleşmesi (characterization)', () => {
     expect(lines[0].statementId).toBeTruthy();
     expect('caseClientId' in lines[0]).toBe(true);
     // Render sözleşmesinin dışlayacağı EXACT alan listesi (C3-B02 tüketir).
-    expect([...C3_RENDER_FORBIDDEN_LINE_FIELDS]).toEqual(['statementId', 'refId', 'refType', 'caseClientId', 'id']);
+    expect([...C3_RENDER_FORBIDDEN_LINE_FIELDS]).toEqual([
+      'statementId',
+      'refId',
+      'refType',
+      'caseClientId',
+      'id',
+      'interestAmount',
+      'sourceLedgerAllocationId',
+      'sourceDispositionLineId',
+    ]);
   });
 
   it('[B01-9] client-level satır seti YALNIZ bu müvekkilin dosyalarından gelir (çapraz müvekkil sızıntısı yok)', async () => {
     prisma.caseClient.findMany.mockResolvedValue([{ id: 'cc-a', caseId: CASE_A }]);
-    prisma.collectionDispositionLine.findMany.mockResolvedValue([
-      { id: 'dl-a', amount: D(100), caseClientId: 'cc-a', disposition: { caseId: CASE_A, postedAt: new Date('2026-06-05') } },
+    prisma.collectionDisposition.findMany.mockResolvedValue([
+      {
+        collectionId: 'col-a', totalAmount: D(100), currency: 'TRY', caseId: CASE_A, postedAt: new Date('2026-06-05'),
+        lines: [{ id: 'dl-a', type: 'CLIENT_PAYABLE', amount: D(100), caseClientId: 'cc-a' }],
+      },
     ]);
     await service.createClientLevel(TENANT, CLIENT, USER, period as any);
 

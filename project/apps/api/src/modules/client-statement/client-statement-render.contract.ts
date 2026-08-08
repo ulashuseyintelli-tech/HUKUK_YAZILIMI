@@ -28,6 +28,9 @@ export const CLIENT_STATEMENT_RENDER_FORBIDDEN_FIELDS = [
   'clientId',
   'tenantId',
   'generatedById',
+  'interestAmount',
+  'sourceLedgerAllocationId',
+  'sourceDispositionLineId',
 ] as const;
 
 export const CLIENT_STATEMENT_RENDER_CONTRACT_VERSION = 'ClientStatementRenderV1' as const;
@@ -44,6 +47,8 @@ export interface ClientStatementRenderLineV1 {
   readonly runningBalance: string;
   /** Bakiyeyi oynatmayan bilgi satırı mı? (POL-2'nin görsel karşılığı) */
   readonly isInformational: boolean;
+  /** Yalnız bilgi faizi için kullanıcı-güvenli tutar; raw source kimlikleri render'a girmez. */
+  readonly informationalAmount: string | null;
   /** X2 primitifinden gelen client-safe dosya referansı; yoksa null (fallback YOK). */
   readonly fileReference: ClientSafeFileReferenceV1 | null;
 }
@@ -115,6 +120,7 @@ export function createClientStatementRender(input: {
           credit: l.credit,
           runningBalance: l.runningBalance,
           isInformational: l.isInformational,
+          informationalAmount: l.informationalAmount,
           fileReference: l.fileReference,
         }),
       ),

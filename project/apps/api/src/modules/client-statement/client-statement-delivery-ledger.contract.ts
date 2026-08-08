@@ -1,12 +1,12 @@
 /**
  * CAD C3-B05 — KALICI TESLİM DEFTERİ (OUTBOX) SÖZLEŞMESİ.
  *
- * NEDEN PORT: kalıcı defter yeni bir tablo ister (dedupeKey üzerinde UNIQUE +
- * attempts/reservedAt/nextRetryAt/sentAt/lastError). Şema yazma yetkisi bu hatta
- * DEĞİLDİR (MIGRATION OWNER = X3), bu yüzden B05 defterin DAVRANIŞINI sözleşme +
- * saf karar fonksiyonları olarak sabitler; kalıcı adaptör şema açıldığında bağlanır.
- * Sözleşme in-memory bir defteri "kalıcı" saymaz: port bağlı değilse koşu bunu
- * `persistentDeliveryLedger: false` ile açıkça raporlar.
+ * NEDEN PORT: kalıcı defter dedupeKey üzerinde UNIQUE +
+ * attempts/reservedAt/lastAttemptAt/nextRetryAt/sentAt/lastError taşır. C3-B05 bu
+ * davranışı sözleşme + saf karar fonksiyonları olarak sabitledi; X3-B02 şemayı,
+ * X3-B03 Prisma adaptörünü ekleyip bu porta bağladı. Sözleşme in-memory bir defteri
+ * "kalıcı" saymaz: port bağlı değilse koşu bunu `persistentDeliveryLedger: false`
+ * ile açıkça raporlar.
  *
  * SEÇİM KANITI: repoda hazır ve sertifikalı emsal `PoaExpiryNotificationDelivery`
  * + `PoaExpiryDeliveryService` (dedupeKey @unique üzerinden rezervasyon, stale-lock
@@ -31,6 +31,7 @@ export interface ClientStatementDeliveryLedgerRecord {
   status: ClientStatementDeliveryLedgerStatus;
   attempts: number;
   reservedAt: Date | null;
+  lastAttemptAt: Date | null;
   nextRetryAt: Date | null;
   sentAt: Date | null;
   lastError: string | null;

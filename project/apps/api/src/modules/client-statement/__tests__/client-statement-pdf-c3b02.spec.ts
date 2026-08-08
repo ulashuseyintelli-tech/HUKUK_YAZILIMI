@@ -21,6 +21,7 @@ import {
 } from '../client-statement-pdf.document';
 import { ClientStatementPdfService } from '../client-statement-pdf.service';
 import { createClientStatementRender, toClientSafeFileReference } from '../client-statement-render.contract';
+import { buildClientStatementRender } from '../client-statement-render.mapper';
 
 const ref = toClientSafeFileReference('2026/9501')!;
 
@@ -44,6 +45,7 @@ const baseRender = (over: Partial<Parameters<typeof createClientStatementRender>
         credit: '20.00',
         runningBalance: '120.00',
         isInformational: false,
+        informationalAmount: null,
         fileReference: ref,
       },
       {
@@ -54,6 +56,7 @@ const baseRender = (over: Partial<Parameters<typeof createClientStatementRender>
         credit: '0.00',
         runningBalance: '120.00',
         isInformational: true,
+        informationalAmount: null,
         fileReference: ref,
       },
     ],
@@ -162,5 +165,46 @@ describe('CAD C3-B02 — ekstre PDF belge sözleşmesi', () => {
     const serialized = JSON.stringify(buildClientStatementPdfDocument(baseRender()));
     expect(serialized).toContain('Açılış bakiyesi: 100.00 TRY');
     expect(serialized).toContain('Kapanış bakiyesi: 120.00 TRY');
+  });
+
+  it('[X3-B03] tahakkuk faizi bilgi tutarı olarak görünür; kaynak iç-ID ve bakiye etkisi render dışı kalır', () => {
+    const rawStatement = {
+      caseId: null,
+      currency: 'TRY',
+      periodStart: new Date('2026-06-01T00:00:00Z'),
+      periodEnd: new Date('2026-06-30T23:59:59Z'),
+      openingBalance: { toString: () => '120.00' },
+      closingBalance: { toString: () => '120.00' },
+      lines: [{
+        caseId: 'case-internal-123',
+        lineDate: new Date('2026-06-30T23:59:59Z'),
+        lineType: ClientStatementLineType.INFORMATIONAL_ACCRUED_INTEREST,
+        debit: { toString: () => '0.00' },
+        credit: { toString: () => '0.00' },
+        runningBalance: { toString: () => '120.00' },
+        interestAmount: { toString: () => '45.67' },
+        sourceLedgerAllocationId: 'allocation-internal-456',
+        sourceDispositionLineId: 'disposition-line-internal-789',
+        refId: 'interest-engine-internal-id',
+        note: 'Bilgi amaçlı; müvekkil bakiyesine dahil değildir.',
+      }],
+    };
+    const render = buildClientStatementRender({
+      statement: rawStatement as any,
+      officeName: 'Telli Hukuk',
+      clientName: 'Müvekkil',
+      fileReferences: new Map([['case-internal-123', ref]]),
+    });
+    const serializedRender = JSON.stringify(render);
+    expect(serializedRender).toContain('45.67');
+    expect(serializedRender).not.toContain('allocation-internal-456');
+    expect(serializedRender).not.toContain('disposition-line-internal-789');
+    expect(serializedRender).not.toContain('interest-engine-internal-id');
+
+    const doc = buildClientStatementPdfDocument(render);
+    const serializedDoc = JSON.stringify(doc);
+    expect(serializedDoc).toContain('Bilgi tutarı');
+    expect(serializedDoc).toContain('45.67');
+    expect(serializedDoc).toContain('120.00 (değişmedi)');
   });
 });

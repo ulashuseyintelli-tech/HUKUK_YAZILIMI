@@ -20,9 +20,10 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   X3-B01 → X3-B02 → X3-B03
-BLOCKS TOTAL: 3   COMPLETED: 2   REMAINING: X3-B03
-ACTIVATION DEBT: X3 migration production APPLY (adapter binding X3-B03 kapsamı)
-CURRENT DISPOSITION: X3-B02 ENGINEERING_COMPLETE / ACTIVATION_PENDING
+BLOCKS TOTAL: 3   COMPLETED: 3   REMAINING: NONE
+ACTIVATION DEBT: X3 migration production APPLY · CLIENT_STATEMENT_MONTHLY_DELIVERY activation · real DB/runtime UAT
+CURRENT DISPOSITION: ENGINEERING_COMPLETE / ACTIVATION_PENDING
+NEXT ELIGIBLE: NONE WITHIN X3 — C1-B03 fresh main'de RUNTIME_VERIFIED; program devamı ayrı lane sırasından türetilir
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -202,7 +203,66 @@ KİLİTLENECEK REGRESYONLAR:
   (4) tenant izolasyonu korunur
 ```
 
-**BLOCK RESULT:** `ENGINEERING_COMPLETE`
+Uygulanan runtime bağı:
+
+- Tahakkuk faizi yalnız RECEIVABLE `CaseBalanceService` sonucundaki
+  `finalDebtStates[].accruedInterest` alanından projekte edilir; CLIENT formül veya
+  fallback hesap üretmez. Satır debit/credit sıfır ve sabit running balance taşır.
+- Tahsil edilmiş faiz yalnız aynı tenant/case/currency/collection kapsamındaki confirmed
+  PAYMENT `LedgerAllocation` + interest-type `ClaimItem` ile POSTED
+  `CollectionDisposition/CLIENT_PAYABLE(caseClientId)` kesişiminden üretilir. Allocation
+  tutarı gerçek CLIENT_PAYABLE/disposition oranında cent-exact bölünür; faiz payı generic
+  payable satırından düşülerek toplam iki kez sayılmaz.
+- C3 render allowlist'i korunur: raw faiz ve source kimlikleri belgeye girmez; yalnız
+  `informationalAmount` kullanıcı-güvenli alanı PDF'te `Bilgi tutarı` olarak görünür.
+- `ClientStatementPrismaDeliveryLedgerAdapter`, C3 portuna bağlandı. Unique yarışı
+  kaybeden claim `null` alır; SENT tekrar gönderilmez; retry 3 deneme / 60 dakika ve
+  stale-lock 15 dakika sınırlarıyla koşullu `updateMany` üzerinden yürür. PDF/Buffer/body
+  teslim defterine yazılmaz.
+
+```text
+EXACT WRITE MANIFEST — X3-B03
+project/apps/api/src/modules/client-statement/client-statement-interest-projection.ts
+project/apps/api/src/modules/client-statement/client-statement-prisma-delivery-ledger.adapter.ts
+project/apps/api/src/modules/client-statement/client-statement.service.ts
+project/apps/api/src/modules/client-statement/client-statement.module.ts
+project/apps/api/src/modules/client-statement/client-statement-delivery-ledger.contract.ts
+project/apps/api/src/modules/client-statement/client-statement-monthly-delivery.service.ts
+project/apps/api/src/modules/client-statement/client-statement-render.contract.ts
+project/apps/api/src/modules/client-statement/client-statement-render.mapper.ts
+project/apps/api/src/modules/client-statement/client-statement-pdf.document.ts
+project/apps/api/src/modules/client-statement/client-statement.service.spec.ts
+project/apps/api/src/modules/client-statement/__tests__/client-statement-data-contract-c3b01.spec.ts
+project/apps/api/src/modules/client-statement/__tests__/client-statement-pdf-c3b02.spec.ts
+project/apps/api/src/modules/client-statement/__tests__/client-statement-delivery-ledger-c3b05.spec.ts
+project/docs/governance/CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01/CODEX-X3-INTEREST-SEMANTICS.md
+project/docs/governance/CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01/MASTER-PLAN.md
+```
+
+Yerel doğrulama production/local-development DB ve gerçek SMTP kullanmadan tamamlandı:
+
+```text
+Prisma validate / generate                              PASS
+API production build                                    PASS
+changed-path ESLint                                     PASS
+client-statement tam regresyon                          154/154 PASS
+odaklı interest/render/ledger sözleşmesi                101/101 PASS
+```
+
+Repository tam `type-check` komutu, X3 dışındaki mevcut test/contract borçları nedeniyle
+PASS değildir; production build ve X3 changed-path lint temizdir. X3 kapsamındaki
+diagnostic için scope genişletilmedi.
+
+**BLOCK RESULT:** `ENGINEERING_COMPLETE` + `ACTIVATION_PENDING`
+
+```text
+X3 STATUS:                    ENGINEERING_COMPLETE / ACTIVATION_PENDING
+BLOCKS:                       3/3 COMPLETED
+REMAINING ENGINEERING BLOCK:  NONE
+PRODUCTION DEBT:              migration APPLY · monthly-delivery flag · real DB/runtime UAT
+NEXT ELIGIBLE:                NONE WITHIN X3 — C1-B03 fresh main'de RUNTIME_VERIFIED
+OWNER AUTHORIZATION REQUIRED: NO — engineering kapanışı için
+```
 
 ---
 
