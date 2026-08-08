@@ -8,6 +8,7 @@ import { ClientFinancialDisclosurePublicationService } from '../client-financial
 import { ClientFinancialDisclosureWriterService } from '../client-financial-disclosure-writer.service';
 import { ClientFinancialDisclosureModule } from '../client-financial-disclosure.module';
 import { ClientFinancialDisclosureController } from '../client-financial-disclosure.controller';
+import { ClientFinancialDisclosureOfficeService } from '../client-financial-disclosure-office-service';
 import {
   DISCLOSURE_DISPATCHER_UNCONFIGURED_PROVIDER,
   DISCLOSURE_NOTIFICATION_DISPATCHER,
@@ -47,6 +48,7 @@ describe('CLIENT-FD-ACT-R01-I02 — production composition binding', () => {
       ClientFinancialDisclosureWriterService,
       ClientFinancialDisclosureApprovalService,
       ClientFinancialDisclosurePublicationService,
+      ClientFinancialDisclosureOfficeService,
     ]) {
       const resolved = moduleRef.get(token);
       expect(resolved).toBeDefined();
@@ -63,6 +65,8 @@ describe('CLIENT-FD-ACT-R01-I02 — production composition binding', () => {
     expect((writer as unknown as { prisma: unknown }).prisma).toBe(prismaStub);
     const approval = moduleRef.get(ClientFinancialDisclosureApprovalService);
     expect((approval as unknown as { prisma: unknown }).prisma).toBe(prismaStub);
+    const office = moduleRef.get(ClientFinancialDisclosureOfficeService);
+    expect((office as unknown as { prisma: unknown }).prisma).toBe(prismaStub);
     await moduleRef.close();
   });
 

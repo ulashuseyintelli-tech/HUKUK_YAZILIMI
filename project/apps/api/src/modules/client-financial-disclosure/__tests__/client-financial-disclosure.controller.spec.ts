@@ -32,10 +32,24 @@ function buildController() {
     reversePublishedVersion: jest.fn().mockResolvedValue({ status: 'REVERSED' }),
     supersedePublishedVersion: jest.fn().mockResolvedValue({ status: 'SUPERSEDED' }),
   };
+  const office = {
+    getList: jest.fn().mockResolvedValue({ surface: 'OFFICE_LIST', items: [] }),
+    getPreparationSources: jest
+      .fn()
+      .mockResolvedValue({ surface: 'OFFICE_PREPARATION_SOURCES', items: [] }),
+    getDetail: jest.fn().mockResolvedValue({ versionId: VERSION_ID }),
+    getHistory: jest.fn().mockResolvedValue({ surface: 'OFFICE_HISTORY', items: [] }),
+    getTimeline: jest.fn().mockResolvedValue({ surface: 'OFFICE_TIMELINE', events: [] }),
+  };
   return {
-    controller: new ClientFinancialDisclosureController(approval as any, publication as any),
+    controller: new ClientFinancialDisclosureController(
+      approval as any,
+      publication as any,
+      office as any,
+    ),
     approval,
     publication,
+    office,
   };
 }
 
@@ -64,6 +78,34 @@ describe('CODEX-CLIENT-X2-B05 — Financial Disclosure HTTP adapter', () => {
     );
     const guards = Reflect.getMetadata('__guards__', ClientFinancialDisclosureController) || [];
     expect(guards).toContain(JwtAuthGuard);
+  });
+
+  it('office GET adapterleri JWT tenant/actor ve object selector bağlamını curated servise taşır', async () => {
+    const { controller, office } = buildController();
+
+    await controller.getOfficeList(TENANT_ID, ACTOR_ID, 'client-1', { caseId: 'case-1' });
+    await controller.getOfficePreparationSources(TENANT_ID, ACTOR_ID, 'client-1', {
+      caseId: 'case-1',
+    });
+    await controller.getOfficeDetail(TENANT_ID, ACTOR_ID, 'client-1', VERSION_ID);
+    await controller.getOfficeHistory(TENANT_ID, ACTOR_ID, 'client-1', 'disclosure-1', {
+      caseId: 'case-1',
+    });
+    await controller.getOfficeTimeline(TENANT_ID, ACTOR_ID, 'client-1', VERSION_ID);
+
+    const scope = {
+      tenantId: TENANT_ID,
+      actorUserId: ACTOR_ID,
+      clientId: 'client-1',
+    };
+    expect(office.getList).toHaveBeenCalledWith({ ...scope, caseId: 'case-1' });
+    expect(office.getPreparationSources).toHaveBeenCalledWith({ ...scope, caseId: 'case-1' });
+    expect(office.getDetail).toHaveBeenCalledWith(scope, VERSION_ID);
+    expect(office.getHistory).toHaveBeenCalledWith(
+      { ...scope, caseId: 'case-1' },
+      'disclosure-1',
+    );
+    expect(office.getTimeline).toHaveBeenCalledWith(scope, VERSION_ID);
   });
 
   it('approval actionları JWT tenant/actor bağlamını mevcut servise aynen taşır', async () => {

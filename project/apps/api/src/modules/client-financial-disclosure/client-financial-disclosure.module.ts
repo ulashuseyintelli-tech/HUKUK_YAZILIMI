@@ -12,6 +12,7 @@ import { ClientFinancialDisclosureEmailDispatcher } from './client-financial-dis
 import { isClientFinancialDisclosureApprovedProvider } from './client-financial-disclosure-publication.contract';
 import { isDisclosurePublicationEnabled } from './client-financial-disclosure-activation';
 import { ClientFinancialDisclosureController } from './client-financial-disclosure.controller';
+import { ClientFinancialDisclosureOfficeService } from './client-financial-disclosure-office-service';
 
 /**
  * CLIENT-FINANCIAL-DISCLOSURE-PRODUCTION-ACTIVATION-R01 / I02 — PRODUCTION COMPOSITION BINDING
@@ -77,6 +78,12 @@ import { ClientFinancialDisclosureController } from './client-financial-disclosu
         new ClientFinancialDisclosureWriterService(prisma),
     },
     {
+      provide: ClientFinancialDisclosureOfficeService,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) =>
+        new ClientFinancialDisclosureOfficeService(prisma),
+    },
+    {
       provide: ClientFinancialDisclosureApprovalService,
       inject: [PrismaService],
       useFactory: (prisma: PrismaService) =>
@@ -91,6 +98,7 @@ import { ClientFinancialDisclosureController } from './client-financial-disclosu
   ],
   exports: [
     ClientFinancialDisclosureWriterService,
+    ClientFinancialDisclosureOfficeService,
     ClientFinancialDisclosureApprovalService,
     ClientFinancialDisclosurePublicationService,
     DISCLOSURE_NOTIFICATION_DISPATCHER,

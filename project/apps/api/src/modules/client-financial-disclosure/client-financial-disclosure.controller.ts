@@ -2,8 +2,10 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -13,7 +15,9 @@ import {
   isDisclosureWriteEnabled,
 } from './client-financial-disclosure-activation';
 import { ClientFinancialDisclosureApprovalService } from './client-financial-disclosure-approval.service';
+import { ClientFinancialDisclosureOfficeService } from './client-financial-disclosure-office-service';
 import { ClientFinancialDisclosurePublicationService } from './client-financial-disclosure-publication.service';
+import { ClientFinancialDisclosureOfficeQueryDto } from './dto/client-financial-disclosure-office.dto';
 import {
   CompleteDisclosureOfficeApprovalDto,
   PublishClientFinancialDisclosureDto,
@@ -35,7 +39,93 @@ export class ClientFinancialDisclosureController {
   constructor(
     private readonly approval: ClientFinancialDisclosureApprovalService,
     private readonly publication: ClientFinancialDisclosurePublicationService,
+    private readonly office: ClientFinancialDisclosureOfficeService,
   ) {}
+
+  /**
+   * Cagrildigi yerler:
+   * - Office FD workspace -> GET /client-financial-disclosures/office/clients/:clientId
+   */
+  @Get('office/clients/:clientId')
+  getOfficeList(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Query() query: ClientFinancialDisclosureOfficeQueryDto,
+  ) {
+    return this.office.getList({ tenantId, actorUserId, clientId, caseId: query.caseId });
+  }
+
+  /**
+   * Cagrildigi yerler:
+   * - Office FD workspace preparation -> GET /client-financial-disclosures/office/clients/:clientId/preparation-sources
+   */
+  @Get('office/clients/:clientId/preparation-sources')
+  getOfficePreparationSources(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Query() query: ClientFinancialDisclosureOfficeQueryDto,
+  ) {
+    return this.office.getPreparationSources({
+      tenantId,
+      actorUserId,
+      clientId,
+      caseId: query.caseId,
+    });
+  }
+
+  /**
+   * Cagrildigi yerler:
+   * - Office FD workspace detail -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId
+   */
+  @Get('office/clients/:clientId/versions/:disclosureVersionId')
+  getOfficeDetail(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Param('disclosureVersionId') disclosureVersionId: string,
+  ) {
+    return this.office.getDetail(
+      { tenantId, actorUserId, clientId },
+      disclosureVersionId,
+    );
+  }
+
+  /**
+   * Cagrildigi yerler:
+   * - Office FD workspace history -> GET /client-financial-disclosures/office/clients/:clientId/disclosures/:disclosureId/history
+   */
+  @Get('office/clients/:clientId/disclosures/:disclosureId/history')
+  getOfficeHistory(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Param('disclosureId') disclosureId: string,
+    @Query() query: ClientFinancialDisclosureOfficeQueryDto,
+  ) {
+    return this.office.getHistory(
+      { tenantId, actorUserId, clientId, caseId: query.caseId },
+      disclosureId,
+    );
+  }
+
+  /**
+   * Cagrildigi yerler:
+   * - Office FD workspace timeline -> GET /client-financial-disclosures/office/clients/:clientId/versions/:disclosureVersionId/timeline
+   */
+  @Get('office/clients/:clientId/versions/:disclosureVersionId/timeline')
+  getOfficeTimeline(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('clientId') clientId: string,
+    @Param('disclosureVersionId') disclosureVersionId: string,
+  ) {
+    return this.office.getTimeline(
+      { tenantId, actorUserId, clientId },
+      disclosureVersionId,
+    );
+  }
 
   /**
    * Cagrildigi yerler:
