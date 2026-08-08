@@ -11,8 +11,9 @@ import { ClientStatementMonthlyDeliveryService } from './client-statement-monthl
  * Müvekkil Ekstresi modülü (PR-3 + Faz 3.4 "ekstre hazır" maili).
  * Bağımsız modül (K-M1). Mail için ClientNotificationModule (dispatcher) + OfficeModule reuse.
  *
- * CAD C3-B04: aylık koşu (ClientStatementMonthlyDeliveryService) VARSAYILAN KAPALI'dır
- * (`CLIENT_STATEMENT_MONTHLY_DELIVERY` env'i açıkça 'true' değilse iş yapmaz). Teslim
+ * CAD C3-B04: aylık koşu (ClientStatementMonthlyDeliveryService) VARSAYILAN KAPALI'dır —
+ * `CLIENT_STATEMENT_MONTHLY_DELIVERY` env'i açıkça 'true' değilse CRON KAYDI BİLE
+ * yapılmaz (kanonik cron envanteri W3-F03 doğrulaması değişmez). Teslim
  * portu (CLIENT_STATEMENT_DELIVERY_PORT) burada BİLEREK kayıtlı değildir → koşu
  * PLAN_ONLY çalışır; gerçek gönderim kalıcı outbox ile C3-B05'te bağlanır.
  */

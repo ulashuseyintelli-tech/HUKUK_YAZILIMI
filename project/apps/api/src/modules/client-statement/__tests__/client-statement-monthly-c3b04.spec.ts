@@ -68,6 +68,7 @@ interface Harness {
   tx: any;
   statements: any;
   office: any;
+  scheduler: { addCronJob: jest.Mock };
   port: { send: jest.Mock };
 }
 
@@ -103,16 +104,18 @@ function makeHarness(options: { withPort?: boolean; clients?: any[] } = {}): Har
   };
   const office: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Deneme Hukuk Bürosu' }) };
   const port = { send: jest.fn().mockResolvedValue({ success: true, messageId: 'msg-1' }) };
+  const scheduler = { addCronJob: jest.fn() };
 
   const service = new ClientStatementMonthlyDeliveryService(
     prisma,
     statements,
     new ClientStatementPdfService(),
     office,
+    scheduler as any,
     options.withPort ? (port as any) : undefined,
   );
 
-  return { service, prisma, tx, statements, office, port };
+  return { service, prisma, tx, statements, office, scheduler, port };
 }
 
 describe('CAD C3-B04 — aylık ekstre dönemi (Türkiye saat dilimi)', () => {
@@ -178,6 +181,29 @@ describe('CAD C3-B04 — varsayılan KAPALI', () => {
     expect(h.prisma.client.findMany).not.toHaveBeenCalled();
     expect(h.statements.createClientLevel).not.toHaveBeenCalled();
     expect(h.port.send).not.toHaveBeenCalled();
+  });
+
+  it('[B04-7a] bayrak yokken CRON KAYDI DA yapılmaz — kanonik cron envanteri değişmez', () => {
+    delete process.env.CLIENT_STATEMENT_MONTHLY_DELIVERY;
+    const h = makeHarness();
+
+    h.service.onModuleInit();
+
+    expect(h.scheduler.addCronJob).not.toHaveBeenCalled();
+  });
+
+  it('[B04-7b] bayrak açıkken cron kaydı Türkiye saatiyle ayın ilk günü 03:00 olarak kurulur', () => {
+    process.env.CLIENT_STATEMENT_MONTHLY_DELIVERY = 'true';
+    const h = makeHarness();
+
+    h.service.onModuleInit();
+
+    expect(h.scheduler.addCronJob).toHaveBeenCalledTimes(1);
+    const [name, job] = h.scheduler.addCronJob.mock.calls[0];
+    expect(name).toBe('client-statement-monthly-delivery');
+    expect(String(job.cronTime.source)).toBe(CLIENT_STATEMENT_MONTHLY_CRON);
+    expect(String(job.cronTime.timeZone)).toBe(SCHEDULER_TIMEZONE);
+    job.stop();
   });
 
   it('[B04-7] bayrak "true" DIŞINDA bir değerle de kapalıdır (fail-closed)', async () => {

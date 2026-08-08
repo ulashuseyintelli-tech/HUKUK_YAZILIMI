@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { ClientStatementStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { OfficeService } from '@/modules/office/office.service';
@@ -103,7 +104,7 @@ interface ClientRow {
 }
 
 @Injectable()
-export class ClientStatementMonthlyDeliveryService {
+export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
   private readonly logger = new Logger(ClientStatementMonthlyDeliveryService.name);
 
   constructor(
@@ -111,6 +112,7 @@ export class ClientStatementMonthlyDeliveryService {
     private readonly statements: ClientStatementService,
     private readonly pdf: ClientStatementPdfService,
     private readonly office: OfficeService,
+    @Optional() private readonly scheduler?: SchedulerRegistry,
     @Optional() @Inject(CLIENT_STATEMENT_DELIVERY_PORT)
     private readonly deliveryPort?: ClientStatementDeliveryPort,
   ) {}
@@ -120,14 +122,32 @@ export class ClientStatementMonthlyDeliveryService {
     return process.env.CLIENT_STATEMENT_MONTHLY_DELIVERY === 'true';
   }
 
+  /**
+   * Cron KAYDI bayrağa bağlıdır: kapalıyken `@Cron` dekoratörünün aksine hiçbir job
+   * kaydedilmez → kanonik cron envanteri (W3-F03 runtime doğrulaması) DEĞİŞMEZ.
+   * Aktivasyon owner teyidine tabidir; teyit geldiğinde envanter beklentisi de o
+   * aktivasyon değişikliğinin parçası olarak güncellenir (ACTIVATION DEBT).
+   */
+  onModuleInit(): void {
+    if (!this.isEnabled() || !this.scheduler) return;
+
+    const job = new CronJob(
+      CLIENT_STATEMENT_MONTHLY_CRON,
+      () => {
+        void this.handleMonthlyCron();
+      },
+      null,
+      false,
+      resolveSchedulerTimezone(CLIENT_STATEMENT_MONTHLY_JOB_CLASS),
+    );
+    this.scheduler.addCronJob(CLIENT_STATEMENT_MONTHLY_JOB_CLASS, job as any);
+    job.start();
+  }
+
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - @Cron (her ayın 1'i 03:00, Europe/Istanbul) → aylık ekstre üretimi/teslimi
+  /// - onModuleInit'te bayrak açıkken kaydedilen cron (her ayın 1'i 03:00, Europe/Istanbul)
   /// </remarks>
-  @Cron(CLIENT_STATEMENT_MONTHLY_CRON, {
-    name: CLIENT_STATEMENT_MONTHLY_JOB_CLASS,
-    timeZone: resolveSchedulerTimezone(CLIENT_STATEMENT_MONTHLY_JOB_CLASS),
-  })
   async handleMonthlyCron(): Promise<void> {
     if (!this.isEnabled()) return;
     const result = await this.runMonthlyDelivery(new Date());
