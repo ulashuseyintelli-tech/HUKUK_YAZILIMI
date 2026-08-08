@@ -324,8 +324,8 @@ X1 STATUS:                NOT STARTED — WAITING_FOR_PREDECESSOR (C1-B01, C1-B0
 X1 BLOCKS:                P3 · TOTAL 5 · COMPLETED 0
 X2 STATUS:                NOT STARTED — WAITING_FOR_PREDECESSOR (C1-B01)
 X2 BLOCKS:                P4 · TOTAL 4 · COMPLETED 0
-X3 STATUS:                NOT STARTED — B01 analiz: C1-B01 sonrası · B02+: C3 sonrası
-X3 BLOCKS:                P7 · TOTAL 3 · COMPLETED 0
+X3 STATUS:                IN PROGRESS — X3-B01 ANALYSIS_DELIVERED; X3-B02 WAITING_FOR_PREDECESSOR (C3 canonical terminal)
+X3 BLOCKS:                P7 · TOTAL 3 · COMPLETED 1 · REMAINING X3-B02, X3-B03
 
 MIGRATION OWNER:          X3 (tek aktif migration görevi)
 ACTIVATION DEBT:          NONE — henüz doğmadı (X3 ve C3/P6 üretebilir)
