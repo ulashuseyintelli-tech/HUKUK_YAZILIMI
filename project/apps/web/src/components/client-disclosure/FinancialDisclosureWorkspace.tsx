@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/client-financial-disclosure';
 import { DisclosureStatusBadge } from './DisclosureStatusBadge';
 import { DisclosurePreparationPanel } from './DisclosurePreparationPanel';
+import { DisclosurePreviewPanel } from './DisclosurePreviewPanel';
 
 const displayDate = (value?: string | null) =>
   value ? new Date(value).toLocaleString('tr-TR') : '—';
@@ -133,6 +134,10 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
         selectedVersionId={selection?.versionId ?? null}
         onSelect={(item) => setSelectedVersionId(item.versionId)}
       />
+
+      {selection ? (
+        <DisclosurePreviewPanel clientId={clientId} versionId={selection.versionId} />
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">

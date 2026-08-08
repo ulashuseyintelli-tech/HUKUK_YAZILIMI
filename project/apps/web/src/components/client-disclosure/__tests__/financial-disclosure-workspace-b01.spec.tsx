@@ -13,6 +13,7 @@ const list = vi.fn();
 const getDetail = vi.fn();
 const getHistory = vi.fn();
 const listPreparationSources = vi.fn();
+const getPreview = vi.fn();
 
 vi.mock('@/lib/api/client-financial-disclosure', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/api/client-financial-disclosure')>();
@@ -23,6 +24,7 @@ vi.mock('@/lib/api/client-financial-disclosure', async (importOriginal) => {
       getDetail: (...args: unknown[]) => getDetail(...args),
       getHistory: (...args: unknown[]) => getHistory(...args),
       listPreparationSources: (...args: unknown[]) => listPreparationSources(...args),
+      getPreview: (...args: unknown[]) => getPreview(...args),
     },
   };
 });
@@ -93,7 +95,16 @@ beforeEach(() => {
   getDetail.mockReset();
   getHistory.mockReset();
   listPreparationSources.mockReset();
+  getPreview.mockReset();
   listPreparationSources.mockResolvedValue({ surface: 'OFFICE_PREPARATION_SOURCES', items: [] });
+  getPreview.mockResolvedValue({
+    surface: 'OFFICE_PREVIEW',
+    rendered: {
+      contractVersion: 'ClientFinancialDisclosureRenderV1',
+      subject: 'Renderer subject',
+      text: 'Renderer text',
+    },
+  });
   list.mockResolvedValue({ surface: 'OFFICE_LIST', items: [current] });
   getDetail.mockResolvedValue(detail);
   getHistory.mockResolvedValue({
