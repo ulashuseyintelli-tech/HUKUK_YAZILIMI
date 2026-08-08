@@ -327,7 +327,7 @@ export class ClientController {
     const tenantId = req.user.tenantId;
     const client = await this.clientService.findOne(id, tenantId);
     // P0.4: bulunamayan kayÄ±t 404 (eski: HTTP 200 + {error} â†’ FE !response.ok kontrolÃ¼ "baÅŸarÄ±" sanÄ±yordu).
-    if (!client) throw new NotFoundException('MÃ¼vekkil bulunamadÄ±');
+    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
     return { data: client };
   }
 
@@ -362,7 +362,7 @@ export class ClientController {
     return this.clientService.backfillContactFollowUp(tenantId, actor);
   }
 
-  // MÃ¼vekkil gÃ¼ncelle
+  // Müvekkil güncelle
   @Put(':id')
   async update(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: any) {
     const tenantId = req.user.tenantId;
@@ -381,7 +381,7 @@ export class ClientController {
     return { data: client };
   }
 
-  // MÃ¼vekkil sil
+  // Müvekkil sil
   @Delete(':id')
   async remove(@Request() req: AuthRequest, @Param('id') id: string) {
     const tenantId = req.user.tenantId;

@@ -54,7 +54,9 @@ describe('ClientInfoRequestsTab', () => {
   it('no cases empty state and does not fetch', () => {
     render(<ClientInfoRequestsTab cases={[]} />);
 
-    expect(screen.getByText('Bu müvekkile bağlı dosya yok.')).toBeTruthy();
+    expect(
+      screen.getByText('Bilgi talepleri dosya üzerinden gönderilir; bu müvekkile bağlı dosya yok.'),
+    ).toBeTruthy();
     expect(apiMock.getClientInfoRequestsForCase).not.toHaveBeenCalled();
   });
 

@@ -100,7 +100,7 @@ export function ClientInfoRequestsTab({ cases }: ClientInfoRequestsTabProps) {
   }, [selectedCaseId]);
 
   if (cases.length === 0) {
-    return <p className="text-center py-6 text-gray-500">Bu müvekkile bağlı dosya yok.</p>;
+    return <p className="text-center py-6 text-gray-500">Bilgi talepleri dosya üzerinden gönderilir; bu müvekkile bağlı dosya yok.</p>;
   }
 
   const selectedCase = cases.find((c) => c.id === selectedCaseId) ?? cases[0];

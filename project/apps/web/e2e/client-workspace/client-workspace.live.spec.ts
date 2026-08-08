@@ -38,7 +38,7 @@ test.describe('Client Workspace live smoke', () => {
     await expect(page.getByRole('tab', { name: poaTabName })).toBeVisible();
 
     await page.getByRole('tab', { name: actionsTabName }).click();
-    await expect(page.getByText(/Action Center|Islemler/i).first()).toBeVisible();
+    await expect(page.getByText(/Action Center|İşlemler|Islemler/i).first()).toBeVisible();
     await expect(page.getByText(/intake\.link\.send/i)).toHaveCount(0);
 
     await page.getByRole('tab', { name: activityTabName }).click();

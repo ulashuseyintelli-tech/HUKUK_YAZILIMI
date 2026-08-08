@@ -21,7 +21,8 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
-BLOCKS TOTAL: 5   COMPLETED: 1 (B01)   ACTIVATION DEBT: NONE
+BLOCKS TOTAL: 5   COMPLETED: 2 (B01, B02)   ACTIVATION DEBT: NONE
+LANE STATUS:  PAUSED_AFTER_B02 — B03..B05 WAITING_FOR_PREDECESSORS (C2/C3/X1/X2/X3)
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -76,6 +77,20 @@ dışına çıkılmaz — çıkmak gerekirse manifest revize edilip yeniden yay�
 
 **BLOCK RESULT:** `ENGINEERING_COMPLETE`
 **MERGE SONRASI AÇILAN:** C2 · X1  → **DALGA 1 beş paralel hat başlar**
+
+> **B02 SONUCU (2026-08-08):** `ENGINEERING_COMPLETE` — exact manifest ile en küçük patch:
+> (1) `client.controller.ts:330` kullanıcı-görünür mojibake ('MÃ¼vekkil bulunamadÄ±' →
+> 'Müvekkil bulunamadı') + :365/:384 aynı-dosya yorumları; (2) Bilgi Talepleri boş-durumu
+> sekmeye bağlamlı metne çevrildi; (3) `client-right-panel.tsx` 12 diakritik metin;
+> (4) action-catalog copy 34 string Türkçe (label+description+disabledReason; repo deseni
+> = inline TR copy, i18n altyapısı yok). Characterization: API 27/27 + Web 33/33 PASS;
+> tsc (prod config) her iki app TEMİZ. UI smoke B02 merge sonrası canonical dev
+> server'da yapıldı (aşağı bkz.).
+> **B02 bulguları (disposition — blok sayacı değişmedi):** F-9 `client.controller.ts`
+> dosya-geneli YORUM mojibake'si (31 satırda düzgün TR + ~15 satırda mojibake KARIŞIK —
+> güvenli toplu transform mümkün değil, satır-satır onarım ayrı iş); F-10 operating-
+> snapshot SIGNAL label/description'ları (:2722-3005) ve timeline title'ları
+> (:1400-1442) İngilizce — owner listesi dışında bırakıldı.
 
 ---
 
