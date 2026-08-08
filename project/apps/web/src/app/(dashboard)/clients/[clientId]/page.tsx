@@ -11,7 +11,7 @@
  */
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Pencil, Wallet } from 'lucide-react';
+import { ArrowLeft, Pencil, ShieldCheck, Wallet } from 'lucide-react';
 import { ClientProfile } from '@/components/client/client-profile';
 
 export default function ClientDetailPage() {
@@ -33,6 +33,13 @@ export default function ClientDetailPage() {
             className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
           >
             <Wallet className="h-4 w-4" /> Muhasebe
+          </Link>
+          {/* CAD C2 (append-only §3-B): KVKK/Uyum — accounting D09 deseniyle ayrı route */}
+          <Link
+            href={`/clients/${clientId}/compliance`}
+            className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+          >
+            <ShieldCheck className="h-4 w-4" /> KVKK / Uyum
           </Link>
           <Link
             href={`/clients/${clientId}/edit`}
