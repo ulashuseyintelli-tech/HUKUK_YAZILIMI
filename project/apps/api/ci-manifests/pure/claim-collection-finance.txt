@@ -130,3 +130,6 @@ src/modules/client-statement/__tests__/client-statement-data-contract-c3b01.spec
 #     CAD C3-B01b: X2-B03 client-safe dosya referansi TUKETIMI (tenant+musteri kapsami,
 #     fallback yok, render allowlist ic ID sizintisi yok).
 src/modules/client-statement/__tests__/client-statement-file-reference-c3b01.spec.ts
+#     CAD C3-B02: ekstre PDF belge sozlesmesi (TR etiket tam kapsama, bilgi satiri
+#     gorunurlugu, SUPERSEDED/VOID fail-closed, determinizm, ic ID sizintisi yok, gercek Buffer).
+src/modules/client-statement/__tests__/client-statement-pdf-c3b02.spec.ts
