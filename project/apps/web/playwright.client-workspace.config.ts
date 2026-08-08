@@ -37,5 +37,13 @@ export default defineConfig({
       testIgnore: /.*\.contract\.spec\.ts/,
       use: { ...devices['Pixel 5'] },
     },
+    {
+      // C1-B02-CLOSEOUT-CORRECTION-R01: tablet acceptance — B02'nin değiştirdiği dar
+      // yüzeyler tablet kırılımında da doğrulanır (chromium-tabanlı; CI yalnız chromium
+      // kurar, WebKit iPad profili bilinçli KULLANILMADI).
+      name: 'tablet-chromium',
+      testIgnore: /.*\.contract\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 820, height: 1180 }, hasTouch: true },
+    },
   ],
 });
