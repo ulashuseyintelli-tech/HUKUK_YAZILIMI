@@ -35,7 +35,9 @@ writer doğar.
 
 ```text
 X3-B01  docs-only  → C3 ile PARALEL yürür (kesişim yok)
-X3-B02  şema       → C3'ten bağımsız (prisma/), fakat B03'ün öncülü
+X3-B02  şema       → OWNER DÜZELTMESİ (C1-B02-CLOSEOUT-CORRECTION-R01): B03 ile BİRLİKTE
+                     C3'ün canonical merge/terminal predecessor koşuluna bağlıdır;
+                     koşul sağlanmadan migration HAZIRLANMAZ
 X3-B03  entegrasyon→ C3 MERGE EDİLMEDEN BAŞLAMAZ → WAITING_FOR_PREDECESSOR
 ```
 

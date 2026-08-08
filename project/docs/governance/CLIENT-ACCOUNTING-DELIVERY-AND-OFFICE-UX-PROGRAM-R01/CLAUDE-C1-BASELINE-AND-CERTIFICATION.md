@@ -4,7 +4,9 @@
 PROGRAM:      CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01
 THIS PAGE:    CLAUDE-C1        LANE OWNER: CLAUDE
 PREDECESSOR:  YOK — programın ilk hattı
-SUCCESSOR:    C1-B01 → C3, X2, X3-B01   ·   C1-B02 → C2, X1
+SUCCESSOR:    C1-B02 (#2270 merge) → C2 · C3 · X1 · X2 · X3-B01
+              (OWNER DÜZELTMESİ C1-B02-CLOSEOUT-CORRECTION-R01: DALGA 1'in açılma anı
+               YALNIZ C1-B02'nin merge'idir; C1-B01 tek başına hat AÇMAZ)
               C1-B03+ (UAT) → tüm hatların ARDILI
 
 ALLOWED PATHS:
@@ -45,7 +47,7 @@ hücre sonucudur. `.env`/secret OKUNMAZ; runtime kanıtı üretilemiyorsa `UNKNO
 ve bloğa bağlanır. Yeni hat AÇILMAZ. Bu blok implementation BAŞLATMAZ.
 
 **BLOCK RESULT:** `ANALYSIS_DELIVERED`
-**MERGE SONRASI AÇILAN:** C3 · X2 · X3-B01
+**MERGE SONRASI AÇILAN:** — (OWNER DÜZELTMESİ: hat açılışı YALNIZ C1-B02 merge'ine bağlıdır)
 
 > **B01 SONUCU (2026-08-08, baseline afd84aee):** `ANALYSIS_DELIVERED` — kanıt dosyası
 > `C1-B01-BASELINE-COVERAGE-MATRIX.md` (bu dizin): 13 hareket × 9 sütun exact-referanslı
@@ -76,7 +78,11 @@ dışına çıkılmaz — çıkmak gerekirse manifest revize edilip yeniden yay�
 > açılmaz (master plan §3-A).
 
 **BLOCK RESULT:** `ENGINEERING_COMPLETE`
-**MERGE SONRASI AÇILAN:** C2 · X1  → **DALGA 1 beş paralel hat başlar**
+**MERGE SONRASI AÇILAN:** C2 · C3 · X1 · X2 · X3-B01 → **DALGA 1 beş paralel hat**
+(OWNER DÜZELTMESİ C1-B02-CLOSEOUT-CORRECTION-R01: açılma anı = #2270 merge; X3 yalnız
+B01 docs-only; X3-B02 ve X3-B03 C3'ün canonical merge/terminal predecessor koşulu
+sağlanmadan BAŞLAMAZ, migration HAZIRLANMAZ; C3, X2 client-safe referans primitifi
+merge edilmeden bağımlı bloğa GEÇMEZ)
 
 > **B02 SONUCU (2026-08-08):** `ENGINEERING_COMPLETE` — exact manifest ile en küçük patch:
 > (1) `client.controller.ts:330` kullanıcı-görünür mojibake ('MÃ¼vekkil bulunamadÄ±' →
@@ -91,6 +97,13 @@ dışına çıkılmaz — çıkmak gerekirse manifest revize edilip yeniden yay�
 > güvenli toplu transform mümkün değil, satır-satır onarım ayrı iş); F-10 operating-
 > snapshot SIGNAL label/description'ları (:2722-3005) ve timeline title'ları
 > (:1400-1442) İngilizce — owner listesi dışında bırakıldı.
+> **TABLET ACCEPTANCE (C1-B02-CLOSEOUT-CORRECTION-R01):** Live Smoke'a `tablet-chromium`
+> projection'ı eklendi (820×1180, chromium; playwright.client-workspace.config.ts) —
+> B02 yüzeyleri desktop+mobile'A EK tablet kırılımında da gerçek API+DB ile doğrulanır;
+> metin/layout görünürlük assert'leri + console-error toplayıcı (`runtimeErrors===[]`,
+> başarısız network istekleri console error olarak yakalanır) bu düzeltme PR'ının yeşil
+> Live Smoke check'iyle kanıtlanır. Tablet doğrulanmadan B02 ENGINEERING_COMPLETE
+> SAYILMAZ — bu kayıt merge ile atomik doğrudur.
 
 ---
 
