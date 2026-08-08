@@ -139,3 +139,6 @@ src/modules/client-statement/__tests__/client-statement-delivery-c3b03.spec.ts
 #     CAD C3-B04: aylik ekstre uretimi/teslimi (TR timezone donem, varsayilan KAPALI bayrak,
 #     duplicate uretim/gonderim engeli, PLAN_ONLY mod, tasima portu test double).
 src/modules/client-statement/__tests__/client-statement-monthly-c3b04.spec.ts
+#     CAD C3-B05: kalici teslim defteri (outbox) sozlesmesi + retry/idempotency karar cekirdegi
+#     + terminal ariza gorunurlugu (W3-F04); tasima ve defter portlari test double.
+src/modules/client-statement/__tests__/client-statement-delivery-ledger-c3b05.spec.ts

@@ -14,6 +14,15 @@ import {
   type ClientStatementDeliveryPort,
 } from './client-statement-delivery.contract';
 import {
+  CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS,
+  isTerminalAttempt,
+  truncateLedgerError,
+  type ClientStatementDeliveryLedgerPort,
+  type ClientStatementDeliveryLedgerRecord,
+} from './client-statement-delivery-ledger.contract';
+import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import type { IntegrationErrorReporter } from '@/modules/error-log/integration-error-reporter';
+import {
   CLIENT_STATEMENT_MONTHLY_CRON,
   CLIENT_STATEMENT_MONTHLY_JOB_CLASS,
   buildMonthlyStatementDedupeKey,
@@ -39,14 +48,23 @@ import {
  * duplicate'in ENGELLENDİĞİ anlamına gelir ve hata olarak değil `SKIPPED` olarak
  * raporlanır.
  *
- * DUPLICATE GÖNDERİM: gönderim öncesi, mevcut ClientNotification idempotency
- * kaydı (`dedupeKey` + `status='SENT'`) READ-ONLY sorgulanır; koşu içi ikinci
- * kez teslim ayrıca in-run ledger ile engellenir. KALICI teslim defteri bu blokta
- * KURULMAZ (şema sahibi X3; kalıcı outbox C3-B05) — bu sınır `persistentDeliveryLedger:
- * false` alanıyla açıkça raporlanır, "engellendi" diye örtülmez.
+ * DUPLICATE GÖNDERİM (C3-B05): kalıcı teslim defteri portu bağlıysa idempotency
+ * ONUN rezervasyonuna dayanır — yarışı kaybeden koşu `claim()`ten null alır ve
+ * GÖNDERMEZ; başarı/başarısızlık kalıcı olarak damgalanır, deneme sınırına ulaşan
+ * başarısızlık kanonik cron arıza raporlamasıyla (W3-F04) operatöre GÖRÜNÜR olur.
+ * Port bağlı DEĞİLSE koşu, mevcut ClientNotification kaydını READ-ONLY okuyarak
+ * yalnız zayıf bir koruma sağlar ve bunu `persistentDeliveryLedger: false` ile
+ * açıkça raporlar — "engellendi" diye örtülmez. Kalıcı defterin tablosu şema
+ * gerektirdiği için (MIGRATION OWNER = X3) adaptör bu hatta YAZILMAZ.
  */
 
 export const CLIENT_STATEMENT_DELIVERY_PORT = 'CLIENT_STATEMENT_DELIVERY_PORT';
+
+/** C3-B05: kalici teslim defteri (outbox) portu — sema acildiginda adaptor baglanir. */
+export const CLIENT_STATEMENT_DELIVERY_LEDGER_PORT = 'CLIENT_STATEMENT_DELIVERY_LEDGER_PORT';
+
+/** Ariza gorunurlugu icin kanonik cron job kimligi (W3-F04 konvansiyonu). */
+export const CLIENT_STATEMENT_MONTHLY_JOB_ID = 'client-statement.monthlyDelivery';
 
 /** Sistem koşusunun ürettiği ekstrelerde `generatedById` (FK yok — plain string). */
 export const CLIENT_STATEMENT_MONTHLY_ACTOR = 'SYSTEM_MONTHLY_STATEMENT';
@@ -57,6 +75,7 @@ export type MonthlyDeliveryOutcome =
   | 'SKIPPED_NO_RECIPIENT'
   | 'SKIPPED_EMPTY_PERIOD'
   | 'SKIPPED_ALREADY_DELIVERED'
+  | 'SKIPPED_LEDGER_CLAIM_LOST'
   | 'SKIPPED_DUPLICATE_RUN'
   | 'FAILED';
 
@@ -114,6 +133,9 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     @Optional() private readonly scheduler?: SchedulerRegistry,
     @Optional() @Inject(CLIENT_STATEMENT_DELIVERY_PORT)
     private readonly deliveryPort?: ClientStatementDeliveryPort,
+    @Optional() @Inject(CLIENT_STATEMENT_DELIVERY_LEDGER_PORT)
+    private readonly ledger?: ClientStatementDeliveryLedgerPort,
+    @Optional() private readonly errorReporter?: IntegrationErrorReporter,
   ) {}
 
   /** Env bayrağı — açık teyit olmadan KAPALI. */
@@ -198,7 +220,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     result.scanned = clients.length;
 
     for (const client of clients) {
-      const target = await this.processClient(client, period, deliveredInRun);
+      const target = await this.processClient(client, period, deliveredInRun, now);
       targets.push(target);
 
       if (target.statementSource === 'GENERATED') result.generated += 1;
@@ -216,6 +238,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     client: ClientRow,
     period: { periodKey: string; periodStart: Date; periodEnd: Date },
     deliveredInRun: Set<string>,
+    now: Date,
   ): Promise<MonthlyDeliveryTargetResult> {
     const base = { tenantId: client.tenantId, clientId: client.id };
 
@@ -261,17 +284,44 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       return { ...base, outcome: 'SKIPPED_ALREADY_DELIVERED', statementSource, reason: 'in-run-ledger' };
     }
 
-    const alreadySent = await this.prisma.clientNotification.findFirst({
-      where: { tenantId: client.tenantId, dedupeKey, status: 'SENT' },
-      select: { id: true },
-    });
-    if (alreadySent) {
-      return { ...base, outcome: 'SKIPPED_ALREADY_DELIVERED', statementSource, reason: 'notification-ledger' };
+    if (!this.ledger) {
+      // Kalici defter bagli DEGILKEN idempotency yalniz mevcut ClientNotification
+      // kaydindan okunabilir (READ-ONLY); bu, kalici defterin yerine GECMEZ.
+      const alreadySent = await this.prisma.clientNotification.findFirst({
+        where: { tenantId: client.tenantId, dedupeKey, status: 'SENT' },
+        select: { id: true },
+      });
+      if (alreadySent) {
+        return { ...base, outcome: 'SKIPPED_ALREADY_DELIVERED', statementSource, reason: 'notification-ledger' };
+      }
     }
 
     if (!this.deliveryPort) {
-      // PLAN_ONLY: PDF üretilmez, mail kurulmaz, gönderim yapılmaz.
+      // PLAN_ONLY: PDF uretilmez, mail kurulmaz, gonderim yapilmaz.
       return { ...base, outcome: 'PLANNED', statementSource };
+    }
+
+    // Kalici defter bagliysa rezervasyon ONUN unique kisitina dayanir: yarisi
+    // kaybeden kosu null alir ve GONDERMEZ (cift gonderim yapisal olarak imkansiz).
+    let reservation: ClientStatementDeliveryLedgerRecord | null = null;
+    if (this.ledger) {
+      try {
+        reservation = await this.ledger.claim({
+          tenantId: client.tenantId,
+          clientId: client.id,
+          statementId: statement.id,
+          dedupeKey,
+          periodKey: period.periodKey,
+          recipientEmail,
+          now,
+        });
+      } catch (error: any) {
+        this.logger.warn(`Teslim defteri rezervasyonu alinamadi (${dedupeKey}): ${error?.message || error}`);
+        return { ...base, outcome: 'FAILED', statementSource, reason: 'ledger-claim-error' };
+      }
+      if (!reservation) {
+        return { ...base, outcome: 'SKIPPED_LEDGER_CLAIM_LOST', statementSource, reason: 'ledger-claim-lost' };
+      }
     }
 
     try {
@@ -299,14 +349,73 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
 
       const sent = await this.deliveryPort.send(message);
       if (!sent?.success) {
+        await this.recordDeliveryFailure(client.tenantId, dedupeKey, reservation, sent?.errorCode, now);
         return { ...base, outcome: 'FAILED', statementSource, reason: sent?.errorCode || 'delivery-failed' };
       }
 
+      // Mail GİTTİ. Damga yazılamazsa sonuç FAILED'a çevrilmez (aksi hâlde retry
+      // ikinci bir mail gönderirdi); bunun yerine olay operatöre GÖRÜNÜR kılınır —
+      // damgasız kalan gönderim sessizce yutulmaz.
       deliveredInRun.add(dedupeKey);
+      if (this.ledger) {
+        try {
+          await this.ledger.markSent(dedupeKey, now);
+        } catch (ledgerError: any) {
+          const detail = truncateLedgerError(ledgerError?.message);
+          this.logger.error(`Teslim defteri SENT damgası yazılamadı (${dedupeKey}): ${detail}`);
+          if (this.errorReporter) {
+            reportCronJobFailure(this.errorReporter, CLIENT_STATEMENT_MONTHLY_JOB_ID, new Error(detail), {
+              tenantId: client.tenantId,
+              reasonCode: 'STATEMENT_DELIVERY_SENT_MARK_FAILED',
+              metadata: { dedupeKey },
+            });
+          }
+        }
+      }
       return { ...base, outcome: 'DELIVERED', statementSource };
     } catch (error: any) {
       this.logger.warn(`Aylık ekstre teslim edilemedi (${client.tenantId}/${client.id}): ${error?.message || error}`);
+      await this.recordDeliveryFailure(client.tenantId, dedupeKey, reservation, error?.message, now);
       return { ...base, outcome: 'FAILED', statementSource, reason: 'delivery-error' };
+    }
+  }
+
+  /**
+   * Basarisizligi KALICI olarak damgalar ve terminal ise operatore GORUNUR kilar.
+   * "Sadece logger.warn ile kaybolan" gonderim kabul edilmez: defter bagliysa kayit
+   * damgalanir, deneme sinirina ulasildiginda kanonik cron ariza raporlamasi (W3-F04)
+   * tetiklenir. Defter bagli degilse bu sinir `persistentDeliveryLedger: false` ile
+   * raporlanir — sessizce "kaydedildi" DENMEZ.
+   */
+  private async recordDeliveryFailure(
+    tenantId: string,
+    dedupeKey: string,
+    reservation: ClientStatementDeliveryLedgerRecord | null,
+    message: string | null | undefined,
+    now: Date,
+  ): Promise<void> {
+    const attempts = reservation?.attempts ?? 1;
+    const error = truncateLedgerError(message);
+    this.logger.warn(
+      `Aylik ekstre teslimi basarisiz (${dedupeKey}, deneme ${attempts}/${CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS}): ${error}`,
+    );
+
+    if (this.ledger) {
+      try {
+        await this.ledger.markFailed(dedupeKey, attempts, error, now);
+      } catch (ledgerError: any) {
+        this.logger.error(
+          `Teslim defteri basarisizlik damgasi yazilamadi (${dedupeKey}): ${ledgerError?.message || ledgerError}`,
+        );
+      }
+    }
+
+    if (isTerminalAttempt(attempts) && this.errorReporter) {
+      reportCronJobFailure(this.errorReporter, CLIENT_STATEMENT_MONTHLY_JOB_ID, new Error(error), {
+        tenantId,
+        reasonCode: 'STATEMENT_DELIVERY_TERMINAL_FAILURE',
+        metadata: { dedupeKey, attempts },
+      });
     }
   }
 
@@ -364,7 +473,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     return {
       enabled,
       deliveryMode,
-      persistentDeliveryLedger: false,
+      persistentDeliveryLedger: !!this.ledger,
       periodKey,
       scanned: 0,
       generated: 0,
