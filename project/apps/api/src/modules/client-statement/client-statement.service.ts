@@ -6,6 +6,7 @@ import {
   ClientStatementStatus,
   ClientStatementLineType,
   CollectionDispositionLineType,
+  ClaimItemType,
 } from '@prisma/client';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
@@ -15,8 +16,20 @@ import {
   CreateClientLevelStatementDto,
   SupersedeClientStatementDto,
 } from './dto/client-statement.dto';
+import { CaseBalanceService } from '../interest-engine/orchestration/case-balance.service';
+import {
+  projectAccruedInterest,
+  projectCollectedInterestShares,
+  type CollectedInterestShare,
+} from './client-statement-interest-projection';
 
 const ZERO = new Prisma.Decimal(0);
+const STATEMENT_CURRENCY = 'TRY';
+const INTEREST_CLAIM_ITEM_TYPES = [
+  ClaimItemType.INTEREST,
+  ClaimItemType.PRE_INTEREST,
+  ClaimItemType.POST_INTEREST,
+] as const;
 /** Faz B: client-level ekstre kapsamı (müvekkilin alacaklı olduğu dosyalar). */
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
 
@@ -33,6 +46,9 @@ interface LineDraft {
   debit: Prisma.Decimal;
   credit: Prisma.Decimal;
   runningBalance: Prisma.Decimal;
+  interestAmount?: Prisma.Decimal | null;
+  sourceLedgerAllocationId?: string | null;
+  sourceDispositionLineId?: string | null;
   note: string | null;
 }
 
@@ -59,6 +75,7 @@ export class ClientStatementService {
     private dispatcher: NotificationDispatcherService,
     private office: OfficeService,
     private audit: AuditService,
+    private caseBalance: CaseBalanceService,
   ) {}
 
   /**
@@ -539,31 +556,76 @@ export class ClientStatementService {
     const items: { date: Date; effect: Prisma.Decimal; draft: Omit<LineDraft, 'runningBalance'> }[] = [];
 
     if (ccIds.length) {
-      const payableLines = await this.prisma.collectionDispositionLine.findMany({
+      const postedDispositions = await this.prisma.collectionDisposition.findMany({
         where: {
-          type: CollectionDispositionLineType.CLIENT_PAYABLE,
-          caseClientId: { in: ccIds },
-          disposition: { tenantId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { gte: periodStart, lte: periodEnd } },
-        },
-        select: { id: true, amount: true, caseClientId: true, disposition: { select: { caseId: true, postedAt: true } } },
-      });
-      for (const l of payableLines) {
-        if (!l.disposition.postedAt) continue;
-        items.push({
-          date: l.disposition.postedAt,
-          effect: l.amount, // müvekkile borç artar → +
-          draft: {
-            lineDate: l.disposition.postedAt,
-            lineType: ClientStatementLineType.CASE_COLLECTION_PAYABLE,
-            refType: 'CollectionDispositionLine',
-            refId: l.id,
-            caseId: l.disposition.caseId, // ZORUNLU (client-level)
-            caseClientId: l.caseClientId,
-            debit: ZERO,
-            credit: l.amount,
-            note: 'Tahsilattan müvekkile ayrılan',
+          tenantId,
+          status: 'POSTED',
+          manualReversalRequiredAt: null,
+          postedAt: { gte: periodStart, lte: periodEnd },
+          lines: {
+            some: {
+              type: CollectionDispositionLineType.CLIENT_PAYABLE,
+              caseClientId: { in: ccIds },
+            },
           },
-        });
+        },
+        select: {
+          collectionId: true,
+          totalAmount: true,
+          currency: true,
+          caseId: true,
+          postedAt: true,
+          lines: { select: { id: true, type: true, amount: true, caseClientId: true } },
+        },
+      });
+      const interestShares = await this.loadCollectedInterestShares(tenantId, postedDispositions);
+      for (const disposition of postedDispositions) {
+        if (!disposition.postedAt) continue;
+        for (const line of disposition.lines) {
+          if (line.type !== CollectionDispositionLineType.CLIENT_PAYABLE || !line.caseClientId || !ccIds.includes(line.caseClientId)) {
+            continue;
+          }
+          const shares = interestShares.get(line.id) ?? [];
+          const collectedInterest = shares.reduce((sum, share) => sum.plus(share.amount), ZERO);
+          const residualPayable = line.amount.minus(collectedInterest);
+          if (residualPayable.gt(0)) {
+            items.push({
+              date: disposition.postedAt,
+              effect: residualPayable,
+              draft: {
+                lineDate: disposition.postedAt,
+                lineType: ClientStatementLineType.CASE_COLLECTION_PAYABLE,
+                refType: 'CollectionDispositionLine',
+                refId: line.id,
+                caseId: disposition.caseId,
+                caseClientId: line.caseClientId,
+                debit: ZERO,
+                credit: residualPayable,
+                note: 'Tahsilattan müvekkile ayrılan (faiz dışı pay)',
+              },
+            });
+          }
+          for (const share of shares) {
+            items.push({
+              date: disposition.postedAt,
+              effect: share.amount,
+              draft: {
+                lineDate: disposition.postedAt,
+                lineType: ClientStatementLineType.COLLECTED_CLIENT_INTEREST,
+                refType: 'CollectionDispositionLine',
+                refId: line.id,
+                caseId: disposition.caseId,
+                caseClientId: line.caseClientId,
+                debit: ZERO,
+                credit: share.amount,
+                interestAmount: share.amount,
+                sourceLedgerAllocationId: share.sourceLedgerAllocationId,
+                sourceDispositionLineId: share.sourceDispositionLineId,
+                note: 'Tahsil edilmiş faiz — gerçek POSTED allocation oranı',
+              },
+            });
+          }
+        }
       }
 
       const payouts = await this.prisma.clientPayout.findMany({
@@ -687,6 +749,28 @@ export class ClientStatementService {
       running = running.plus(it.effect);
       lines.push({ ...it.draft, runningBalance: running });
     }
+    const accruedInterest = await this.loadAccruedInterest(
+      tenantId,
+      [...new Set(ccRows.map((row) => row.caseId))],
+      periodEnd,
+    );
+    for (const accrued of accruedInterest) {
+      lines.push({
+        lineDate: periodEnd,
+        lineType: ClientStatementLineType.INFORMATIONAL_ACCRUED_INTEREST,
+        refType: 'InterestEngineCaseBalance',
+        refId: accrued.caseId,
+        caseId: accrued.caseId,
+        caseClientId: null,
+        debit: ZERO,
+        credit: ZERO,
+        runningBalance: running,
+        interestAmount: accrued.amount,
+        sourceLedgerAllocationId: null,
+        sourceDispositionLineId: null,
+        note: 'Dosya toplamı tahakkuk etmiş ancak tahsil edilmemiş faiz; bilgi amaçlıdır ve müvekkil bakiyesine dahil değildir.',
+      });
+    }
     return { opening, closing: running, lines };
   }
 
@@ -742,19 +826,39 @@ export class ClientStatementService {
     // M2 (model A): POSTED CollectionDisposition proceeds satırları — YALNIZ bu ekstrenin
     // alacaklısına (caseClientId) ait satırlar. Office-share (fee/firm) BİLGİ(0);
     // OFFSET_CLIENT_ADVANCE BİLGİ(0) → bakiye etkisi korelasyonlu BalanceLedger'dan (çift-sayım yok).
-    let dispositionRows: {
-      id: string; type: CollectionDispositionLineType; amount: Prisma.Decimal; caseClientId: string | null; postedAt: Date;
+    const dispositionRows: {
+      id: string;
+      type: CollectionDispositionLineType;
+      amount: Prisma.Decimal;
+      caseClientId: string | null;
+      postedAt: Date;
+      interestShares: CollectedInterestShare[];
     }[] = [];
     if (statementCaseClientId) {
       const posted = await this.prisma.collectionDisposition.findMany({
         where: { tenantId, caseId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { gte: periodStart, lte: periodEnd } },
-        select: { postedAt: true, lines: { select: { id: true, type: true, amount: true, caseClientId: true } } },
+        select: {
+          collectionId: true,
+          totalAmount: true,
+          currency: true,
+          caseId: true,
+          postedAt: true,
+          lines: { select: { id: true, type: true, amount: true, caseClientId: true } },
+        },
       });
+      const interestShares = await this.loadCollectedInterestShares(tenantId, posted);
       for (const d of posted) {
         if (!d.postedAt) continue;
         for (const ln of d.lines) {
           if (ln.caseClientId === statementCaseClientId) {
-            dispositionRows.push({ id: ln.id, type: ln.type, amount: ln.amount, caseClientId: ln.caseClientId, postedAt: d.postedAt });
+            dispositionRows.push({
+              id: ln.id,
+              type: ln.type,
+              amount: ln.amount,
+              caseClientId: ln.caseClientId,
+              postedAt: d.postedAt,
+              interestShares: interestShares.get(ln.id) ?? [],
+            });
           }
         }
       }
@@ -832,7 +936,45 @@ export class ClientStatementService {
           note: `Talep: ${it.r.totalAmount} ${it.r.currency} (${it.r.status})`,
         });
       } else if (it.kind === 'proceeds') {
-        // proceeds — POSTED CollectionDispositionLine (model A). Sign convention mapDispositionLine'da.
+        if (it.d.type === CollectionDispositionLineType.CLIENT_PAYABLE) {
+          const collectedInterest = it.d.interestShares.reduce((sum, share) => sum.plus(share.amount), ZERO);
+          const residualPayable = it.d.amount.minus(collectedInterest);
+          if (residualPayable.gt(0)) {
+            running = running.plus(residualPayable);
+            lines.push({
+              lineDate: it.d.postedAt,
+              lineType: ClientStatementLineType.CASE_COLLECTION_PAYABLE,
+              refType: 'CollectionDispositionLine',
+              refId: it.d.id,
+              caseId: null,
+              caseClientId: it.d.caseClientId,
+              debit: ZERO,
+              credit: residualPayable,
+              runningBalance: running,
+              note: 'Tahsilattan müvekkile ayrılan (faiz dışı pay)',
+            });
+          }
+          for (const share of it.d.interestShares) {
+            running = running.plus(share.amount);
+            lines.push({
+              lineDate: it.d.postedAt,
+              lineType: ClientStatementLineType.COLLECTED_CLIENT_INTEREST,
+              refType: 'CollectionDispositionLine',
+              refId: it.d.id,
+              caseId: null,
+              caseClientId: it.d.caseClientId,
+              debit: ZERO,
+              credit: share.amount,
+              runningBalance: running,
+              interestAmount: share.amount,
+              sourceLedgerAllocationId: share.sourceLedgerAllocationId,
+              sourceDispositionLineId: share.sourceDispositionLineId,
+              note: 'Tahsil edilmiş faiz — gerçek POSTED allocation oranı',
+            });
+          }
+          continue;
+        }
+        // Diğer POSTED CollectionDispositionLine tipleri mevcut işaret sözleşmesini korur.
         const m = this.mapDispositionLine(it.d.type, it.d.amount);
         running = running.plus(m.credit); // payable/clientReimb → +amount; ofis-payı/OFFSET → 0
         lines.push({
@@ -900,7 +1042,116 @@ export class ClientStatementService {
       }
     }
 
+    const accruedInterest = await this.loadAccruedInterest(tenantId, [caseId], periodEnd);
+    if (accruedInterest[0]) {
+      lines.push({
+        lineDate: periodEnd,
+        lineType: ClientStatementLineType.INFORMATIONAL_ACCRUED_INTEREST,
+        refType: 'InterestEngineCaseBalance',
+        refId: caseId,
+        caseId: null,
+        caseClientId: null,
+        debit: ZERO,
+        credit: ZERO,
+        runningBalance: running,
+        interestAmount: accruedInterest[0].amount,
+        sourceLedgerAllocationId: null,
+        sourceDispositionLineId: null,
+        note: 'Dosya toplamı tahakkuk etmiş ancak tahsil edilmemiş faiz; bilgi amaçlıdır ve müvekkil bakiyesine dahil değildir.',
+      });
+    }
+
     return { opening, closing: running, lines };
+  }
+
+  /**
+   * POSTED entitlement ile canonical confirmed faiz allocation zincirinin kesişimi.
+   * CollectionAllocation compatibility tablosu bilinçli olarak okunmaz.
+   */
+  private async loadCollectedInterestShares(
+    tenantId: string,
+    dispositions: readonly {
+      collectionId: string;
+      totalAmount: Prisma.Decimal;
+      currency: string;
+      caseId: string;
+      lines: readonly {
+        id: string;
+        type: CollectionDispositionLineType;
+        amount: Prisma.Decimal;
+        caseClientId: string | null;
+      }[];
+    }[],
+  ): Promise<Map<string, CollectedInterestShare[]>> {
+    const eligibleDispositions = dispositions.filter((disposition) => disposition.currency === STATEMENT_CURRENCY);
+    const collectionIds = [...new Set(eligibleDispositions.map((disposition) => disposition.collectionId))];
+    if (collectionIds.length === 0) return new Map();
+
+    const allocations = await this.prisma.ledgerAllocation.findMany({
+      where: {
+        ledgerEntry: {
+          tenantId,
+          collectionId: { in: collectionIds },
+          entryType: 'PAYMENT',
+          status: 'CONFIRMED',
+          currency: STATEMENT_CURRENCY,
+        },
+        claimItem: {
+          tenantId,
+          itemType: { in: [...INTEREST_CLAIM_ITEM_TYPES] },
+          currency: STATEMENT_CURRENCY,
+        },
+      },
+      select: {
+        id: true,
+        amount: true,
+        ledgerEntry: { select: { collectionId: true, caseId: true, currency: true } },
+        claimItem: { select: { caseId: true, tenantId: true, currency: true, itemType: true } },
+      },
+    });
+
+    const result = new Map<string, CollectedInterestShare[]>();
+    for (const disposition of eligibleDispositions) {
+      const exactAllocations = allocations
+        .filter((allocation) =>
+          allocation.ledgerEntry.collectionId === disposition.collectionId
+          && allocation.ledgerEntry.caseId === disposition.caseId
+          && allocation.ledgerEntry.currency === disposition.currency
+          && allocation.claimItem.tenantId === tenantId
+          && allocation.claimItem.caseId === disposition.caseId
+          && allocation.claimItem.currency === disposition.currency,
+        )
+        .map((allocation) => ({ id: allocation.id, amount: allocation.amount }));
+      const shares = projectCollectedInterestShares({
+        dispositionTotal: disposition.totalAmount,
+        allocations: exactAllocations,
+        payableLines: disposition.lines
+          .filter((line) => line.type === CollectionDispositionLineType.CLIENT_PAYABLE)
+          .map((line) => ({ id: line.id, amount: line.amount })),
+      });
+      for (const share of shares) {
+        const current = result.get(share.sourceDispositionLineId) ?? [];
+        current.push(share);
+        result.set(share.sourceDispositionLineId, current);
+      }
+    }
+    return result;
+  }
+
+  /** CLIENT hesaplamaz; RECEIVABLE CaseBalanceService sonucundaki outstanding faizi projekte eder. */
+  private async loadAccruedInterest(
+    tenantId: string,
+    caseIds: readonly string[],
+    periodEnd: Date,
+  ): Promise<{ caseId: string; amount: Prisma.Decimal }[]> {
+    const asOfDate = periodEnd.toISOString().slice(0, 10);
+    const result: { caseId: string; amount: Prisma.Decimal }[] = [];
+    for (const caseId of [...new Set(caseIds)].sort()) {
+      const balance = await this.caseBalance.computeCaseBalance(tenantId, caseId, asOfDate);
+      const amount = projectAccruedInterest(balance, STATEMENT_CURRENCY);
+      if (amount) result.push({ caseId, amount });
+    }
+    return result;
   }
 
   private mapLedgerType(t: BalanceLedgerType): ClientStatementLineType {
@@ -985,7 +1236,13 @@ export class ClientStatementService {
 
     if (lines.length) {
       await tx.clientStatementLine.createMany({
-        data: lines.map((l) => ({ statementId: statement.id, ...l })),
+        data: lines.map((line) => ({
+          statementId: statement.id,
+          ...line,
+          interestAmount: line.interestAmount ?? null,
+          sourceLedgerAllocationId: line.sourceLedgerAllocationId ?? null,
+          sourceDispositionLineId: line.sourceDispositionLineId ?? null,
+        })),
       });
     }
 

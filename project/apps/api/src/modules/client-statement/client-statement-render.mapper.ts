@@ -1,3 +1,4 @@
+import { ClientStatementLineType } from '@prisma/client';
 import type { ClientSafeFileReferenceV1 } from '../client-financial-disclosure/client-safe-file-reference.contract';
 import { lineLabelTr } from './client-statement-pdf.document';
 import {
@@ -33,6 +34,7 @@ export interface StatementLineForRender {
   debit: { toString(): string };
   credit: { toString(): string };
   runningBalance: { toString(): string };
+  interestAmount?: { toString(): string } | null;
   note: string | null;
 }
 
@@ -59,6 +61,10 @@ export function buildClientStatementRender(input: {
       credit,
       runningBalance: line.runningBalance.toString(),
       isInformational: isZeroAmount(debit) && isZeroAmount(credit),
+      informationalAmount:
+        line.lineType === ClientStatementLineType.INFORMATIONAL_ACCRUED_INTEREST
+          ? line.interestAmount?.toString() ?? null
+          : null,
       fileReference: (line.caseId ? fileReferences.get(line.caseId) : undefined) ?? null,
     };
   });

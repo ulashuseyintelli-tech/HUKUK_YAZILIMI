@@ -5,6 +5,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { CaseBalanceService } from '@/modules/interest-engine/orchestration/case-balance.service';
 import { ClientStatementService } from './client-statement.service';
 import { CreateClientStatementDto } from './dto/client-statement.dto';
 
@@ -24,8 +25,9 @@ const mockPrisma: any = {
   // Faz B aggregate'leri (opening devir) default boş-sum
   expenseRequest: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: null } }) },
   expensePayment: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
-  collectionDisposition: { findMany: jest.fn() }, // M2 case-level: POSTED proceeds (disposition+lines)
+  collectionDisposition: { findMany: jest.fn().mockResolvedValue([]) }, // M2 case-level: POSTED proceeds (disposition+lines)
   collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // Faz B client-level
+  ledgerAllocation: { findMany: jest.fn().mockResolvedValue([]) },
   clientPayout: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // M3 RECORDED payouts
   clientOffset: { findMany: jest.fn().mockResolvedValue([]) }, // TM3 Faz C C-1 — offset satırları (default: yok)
   clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
@@ -38,6 +40,9 @@ const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test
 // Faz 7-E: audit mock — logInTransaction (mutation ile aynı tx). clearAllMocks implementasyonu silmez
 // ama count default'unu da korur; logInTransaction no-op (hata yutmaz davranışı testte ayrıca kontrol edilmez).
 const mockAudit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
+const mockCaseBalance: any = {
+  computeCaseBalance: jest.fn().mockResolvedValue({ currencyResults: [] }),
+};
 
 describe('ClientStatementService', () => {
   let service: ClientStatementService;
@@ -46,6 +51,9 @@ describe('ClientStatementService', () => {
     jest.clearAllMocks();
     // clearAllMocks implementasyonu silmez → offset testleri findMany'yi override eder; her test [] ile başlasın (leak-guard).
     mockPrisma.clientOffset.findMany.mockResolvedValue([]);
+    mockPrisma.collectionDisposition.findMany.mockResolvedValue([]);
+    mockPrisma.ledgerAllocation.findMany.mockResolvedValue([]);
+    mockCaseBalance.computeCaseBalance.mockResolvedValue({ currencyResults: [] });
     mockDispatcher.dispatch.mockResolvedValue({ status: 'sent' });
     mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Büro' });
     const module: TestingModule = await Test.createTestingModule({
@@ -55,6 +63,7 @@ describe('ClientStatementService', () => {
         { provide: NotificationDispatcherService, useValue: mockDispatcher },
         { provide: OfficeService, useValue: mockOffice },
         { provide: AuditService, useValue: mockAudit },
+        { provide: CaseBalanceService, useValue: mockCaseBalance },
       ],
     }).compile();
     service = module.get(ClientStatementService);
@@ -128,6 +137,69 @@ describe('ClientStatementService', () => {
       const stArgs = mockPrisma.clientStatement.create.mock.calls[0][0].data;
       expect(stArgs.openingBalance.toString()).toBe('0');
       expect(mockPrisma.balanceLedger.findMany).not.toHaveBeenCalled();
+    });
+
+    it('tahakkuk etmiş faiz RECEIVABLE sonucundan bilgi satırı olur ve bakiyeyi değiştirmez', async () => {
+      mockCaseBalance.computeCaseBalance.mockResolvedValue({
+        currencyResults: [{
+          currency: 'TRY',
+          result: {
+            totalInterest: 999999,
+            finalDebtStates: [
+              { claimId: 'claim-1', currency: 'TRY', accruedInterest: 12.34 },
+              { claimId: 'claim-2', currency: 'TRY', accruedInterest: 7.66 },
+            ],
+          },
+        }],
+      });
+
+      await service.create(TENANT, CASE, USER, dto);
+
+      const header = mockPrisma.clientStatement.create.mock.calls[0][0].data;
+      expect(header.closingBalance.toString()).toBe('120');
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      const interest = lines.find((line: any) => line.lineType === 'INFORMATIONAL_ACCRUED_INTEREST');
+      expect(interest.interestAmount.toString()).toBe('20');
+      expect(interest.debit.toString()).toBe('0');
+      expect(interest.credit.toString()).toBe('0');
+      expect(interest.runningBalance.toString()).toBe('120');
+      expect(interest.note).toMatch(/bilgi amaçlıdır.*bakiyesine dahil değildir/i);
+      expect(mockCaseBalance.computeCaseBalance).toHaveBeenCalledWith(TENANT, CASE, '2026-06-30');
+    });
+
+    it('case-level faiz projeksiyonu yalnız statement müvekkilinin entitlement payını taşır', async () => {
+      mockPrisma.caseClient.findFirst.mockResolvedValue({ id: 'cc-A' });
+      mockPrisma.caseBalance.findFirst.mockResolvedValue(null);
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.clientPayout.findMany.mockResolvedValue([]);
+      mockPrisma.clientOffset.findMany.mockResolvedValue([]);
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([{
+        collectionId: 'col-shared',
+        totalAmount: D(100),
+        currency: 'TRY',
+        caseId: CASE,
+        postedAt: new Date('2026-06-12T00:00:00Z'),
+        lines: [
+          { id: 'dl-A', type: 'CLIENT_PAYABLE', amount: D(70), caseClientId: 'cc-A' },
+          { id: 'dl-B', type: 'CLIENT_PAYABLE', amount: D(30), caseClientId: 'cc-B' },
+        ],
+      }]);
+      mockPrisma.ledgerAllocation.findMany.mockResolvedValue([{
+        id: 'alloc-shared-interest',
+        amount: D(20),
+        ledgerEntry: { collectionId: 'col-shared', caseId: CASE, currency: 'TRY' },
+        claimItem: { tenantId: TENANT, caseId: CASE, currency: 'TRY', itemType: 'INTEREST' },
+      }]);
+
+      await service.create(TENANT, CASE, USER, dto);
+
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      expect(lines).toHaveLength(2);
+      expect(lines.every((line: any) => line.caseClientId === 'cc-A')).toBe(true);
+      expect(lines.every((line: any) => line.refId === 'dl-A')).toBe(true);
+      expect(lines.find((line: any) => line.lineType === 'COLLECTED_CLIENT_INTEREST').credit.toString()).toBe('14');
+      expect(lines.find((line: any) => line.lineType === 'CASE_COLLECTION_PAYABLE').credit.toString()).toBe('56');
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('70');
     });
   });
 
@@ -540,8 +612,11 @@ describe('ClientStatementService', () => {
 
     /** 4 CLIENT_SPECIFIC kaynağı tek senaryoda doldurur (math + satır kontrolü için). */
     function seedFourSources() {
-      mockPrisma.collectionDispositionLine.findMany.mockResolvedValue([
-        { id: 'dl1', amount: D(1000), caseClientId: 'cc-A', disposition: { caseId: 'caseX', postedAt: new Date(3000) } },
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([
+        {
+          collectionId: 'col-1', totalAmount: D(1000), currency: 'TRY', caseId: 'caseX', postedAt: new Date(3000),
+          lines: [{ id: 'dl1', type: 'CLIENT_PAYABLE', amount: D(1000), caseClientId: 'cc-A' }],
+        },
       ]);
       mockPrisma.clientPayout.findMany.mockResolvedValue([
         { id: 'po1', amount: D(400), paidAt: new Date(4000), caseId: 'caseX', caseClientId: 'cc-A' },
@@ -568,7 +643,7 @@ describe('ClientStatementService', () => {
       expect(lines.every((l: any) => typeof l.caseId === 'string' && l.caseId.length > 0)).toBe(true);
     });
 
-    it('4. yalnız CLIENT_SPECIFIC kaynaklar; CASE_CONTEXT (BalanceLedger/Collection) SORGULANMAZ', async () => {
+    it('4. yalnız CLIENT_SPECIFIC kaynaklar; BalanceLedger sorgulanmaz, payable POSTED parent üzerinden okunur', async () => {
       seedFourSources();
       await service.createClientLevel(TENANT, CLIENT, USER, CL_DTO);
       // CASE_CONTEXT kaynakları client-level toplamada hiç çağrılmaz
@@ -576,7 +651,7 @@ describe('ClientStatementService', () => {
       expect(mockPrisma.balanceLedger.aggregate).not.toHaveBeenCalled();
       expect(mockPrisma.caseBalance.findFirst).not.toHaveBeenCalled();
       // yalnız 4 CLIENT_SPECIFIC kaynağı kullanıldı
-      expect(mockPrisma.collectionDispositionLine.findMany).toHaveBeenCalled();
+      expect(mockPrisma.collectionDisposition.findMany).toHaveBeenCalled();
       expect(mockPrisma.clientPayout.findMany).toHaveBeenCalled();
       expect(mockPrisma.expenseRequest.findMany).toHaveBeenCalled();
       expect(mockPrisma.expensePayment.findMany).toHaveBeenCalled();
@@ -608,9 +683,81 @@ describe('ClientStatementService', () => {
       expect(lines.find((l: any) => l.refId === 'ep1').credit.toString()).toBe('100');
     });
 
+    it('tahsil edilmiş faiz yalnız CONFIRMED PAYMENT allocation + POSTED payable zincirinden ayrıştırılır; toplam iki kez sayılmaz', async () => {
+      mockPrisma.clientPayout.findMany.mockResolvedValue([]);
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.expensePayment.findMany.mockResolvedValue([]);
+      mockPrisma.clientOffset.findMany.mockResolvedValue([]);
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([{
+        collectionId: 'col-interest',
+        totalAmount: D(100),
+        currency: 'TRY',
+        caseId: 'caseX',
+        postedAt: new Date('2026-06-12T00:00:00Z'),
+        lines: [{ id: 'dl-interest', type: 'CLIENT_PAYABLE', amount: D(80), caseClientId: 'cc-A' }],
+      }]);
+      mockPrisma.ledgerAllocation.findMany.mockResolvedValue([{
+        id: 'alloc-interest',
+        amount: D(25),
+        ledgerEntry: { collectionId: 'col-interest', caseId: 'caseX', currency: 'TRY' },
+        claimItem: { tenantId: TENANT, caseId: 'caseX', currency: 'TRY', itemType: 'INTEREST' },
+      }]);
+
+      await service.createClientLevel(TENANT, CLIENT, USER, CL_DTO);
+
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      const generic = lines.find((line: any) => line.lineType === 'CASE_COLLECTION_PAYABLE');
+      const interest = lines.find((line: any) => line.lineType === 'COLLECTED_CLIENT_INTEREST');
+      expect(generic.credit.toString()).toBe('60'); // 25 × 80/100 = 20 faiz; 80 - 20 = 60 residual
+      expect(interest.credit.toString()).toBe('20');
+      expect(interest.interestAmount.toString()).toBe('20');
+      expect(interest.sourceLedgerAllocationId).toBe('alloc-interest');
+      expect(interest.sourceDispositionLineId).toBe('dl-interest');
+      expect(lines.reduce((sum: Prisma.Decimal, line: any) => sum.plus(line.credit), D(0)).toString()).toBe('80');
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('80');
+
+      const dispositionWhere = mockPrisma.collectionDisposition.findMany.mock.calls.at(-1)[0].where;
+      expect(dispositionWhere).toEqual(expect.objectContaining({
+        tenantId: TENANT,
+        status: 'POSTED',
+        manualReversalRequiredAt: null,
+      }));
+      const allocationWhere = mockPrisma.ledgerAllocation.findMany.mock.calls.at(-1)[0].where;
+      expect(allocationWhere.ledgerEntry).toEqual(expect.objectContaining({
+        tenantId: TENANT,
+        collectionId: { in: ['col-interest'] },
+        entryType: 'PAYMENT',
+        status: 'CONFIRMED',
+        currency: 'TRY',
+      }));
+      expect(allocationWhere.claimItem).toEqual(expect.objectContaining({ tenantId: TENANT, currency: 'TRY' }));
+    });
+
+    it('canonical allocation yoksa POSTED payable faiz satırı üretmez', async () => {
+      mockPrisma.clientPayout.findMany.mockResolvedValue([]);
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.expensePayment.findMany.mockResolvedValue([]);
+      mockPrisma.clientOffset.findMany.mockResolvedValue([]);
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([{
+        collectionId: 'col-no-allocation',
+        totalAmount: D(100),
+        currency: 'TRY',
+        caseId: 'caseX',
+        postedAt: new Date('2026-06-12T00:00:00Z'),
+        lines: [{ id: 'dl-no-allocation', type: 'CLIENT_PAYABLE', amount: D(80), caseClientId: 'cc-A' }],
+      }]);
+      mockPrisma.ledgerAllocation.findMany.mockResolvedValue([]);
+
+      await service.createClientLevel(TENANT, CLIENT, USER, CL_DTO);
+
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      expect(lines.some((line: any) => line.lineType === 'COLLECTED_CLIENT_INTEREST')).toBe(false);
+      expect(lines.find((line: any) => line.lineType === 'CASE_COLLECTION_PAYABLE').credit.toString()).toBe('80');
+    });
+
     /** C-1 offset için tüm CLIENT_SPECIFIC kaynakları boşalt (order-independent), yalnız offset kalsın. */
     function seedOnlyOffset(rows: any[]) {
-      mockPrisma.collectionDispositionLine.findMany.mockResolvedValue([]);
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([]);
       mockPrisma.clientPayout.findMany.mockResolvedValue([]);
       mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
       mockPrisma.expensePayment.findMany.mockResolvedValue([]);

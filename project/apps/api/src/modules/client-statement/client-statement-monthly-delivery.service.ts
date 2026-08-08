@@ -92,7 +92,7 @@ export interface MonthlyDeliveryTargetResult {
 export interface MonthlyDeliveryRunResult {
   enabled: boolean;
   deliveryMode: 'PLAN_ONLY' | 'PORT';
-  /** Kalıcı teslim defteri kuruldu mu — B04'te HAYIR (B05'e devredildi). */
+  /** Kalıcı teslim defteri runtime'a bağlı mı (X3-B03 Prisma adaptörü varsayılan kayıttır). */
   persistentDeliveryLedger: boolean;
   periodKey: string | null;
   scanned: number;

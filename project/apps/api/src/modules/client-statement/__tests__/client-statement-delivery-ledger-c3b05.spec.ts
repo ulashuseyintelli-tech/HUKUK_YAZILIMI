@@ -1,4 +1,4 @@
-import { ClientStatementLineType, ClientStatementStatus } from '@prisma/client';
+import { ClientStatementDeliveryStatus, ClientStatementLineType, ClientStatementStatus } from '@prisma/client';
 import {
   CLIENT_STATEMENT_DELIVERY_LOCK_TIMEOUT_MINUTES,
   CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS,
@@ -10,7 +10,15 @@ import {
   type ClientStatementDeliveryLedgerRecord,
 } from '../client-statement-delivery-ledger.contract';
 import { ClientStatementPdfService } from '../client-statement-pdf.service';
-import { ClientStatementMonthlyDeliveryService } from '../client-statement-monthly-delivery.service';
+import {
+  CLIENT_STATEMENT_DELIVERY_LEDGER_PORT,
+  ClientStatementMonthlyDeliveryService,
+} from '../client-statement-monthly-delivery.service';
+import {
+  ClientStatementDeliveryLedgerInvariantError,
+  ClientStatementPrismaDeliveryLedgerAdapter,
+} from '../client-statement-prisma-delivery-ledger.adapter';
+import { ClientStatementModule } from '../client-statement.module';
 
 /**
  * CAD C3-B05 — KALICI OUTBOX / RETRY / IDEMPOTENCY / AUDIT.
@@ -30,11 +38,56 @@ function ledgerRecord(overrides: Partial<ClientStatementDeliveryLedgerRecord> = 
     status: 'PENDING',
     attempts: 1,
     reservedAt: null,
+    lastAttemptAt: NOW,
     nextRetryAt: null,
     sentAt: null,
     lastError: null,
     ...overrides,
   };
+}
+
+const reservation = {
+  tenantId: TENANT,
+  clientId: CLIENT,
+  statementId: 'stmt-1',
+  periodKey: '2026-02',
+  recipientEmail: 'muvekkil@ornek.com',
+  dedupeKey: DEDUPE,
+  now: NOW,
+};
+
+function persistentRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'delivery-1',
+    tenantId: TENANT,
+    clientId: CLIENT,
+    statementId: 'stmt-1',
+    periodKey: '2026-02',
+    recipientEmail: 'muvekkil@ornek.com',
+    dedupeKey: DEDUPE,
+    status: ClientStatementDeliveryStatus.PENDING,
+    attempts: 1,
+    reservedAt: NOW,
+    lastAttemptAt: NOW,
+    nextRetryAt: null,
+    sentAt: null,
+    lastError: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+function makePrismaAdapterHarness() {
+  const ledger = {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    updateMany: jest.fn(),
+  };
+  const adapter = new ClientStatementPrismaDeliveryLedgerAdapter({
+    clientStatementDeliveryLedger: ledger,
+  } as any);
+  return { adapter, ledger };
 }
 
 function makeDecimal(value: string) {
@@ -182,6 +235,180 @@ describe('CAD C3-B05 — teslim defteri karar çekirdeği (saf)', () => {
   it('[B05-8] defter hata metni sınırlıdır ve boş bırakılmaz', () => {
     expect(truncateLedgerError(null)).toBe('Bilinmeyen hata');
     expect(truncateLedgerError('x'.repeat(900))).toHaveLength(500);
+  });
+});
+
+describe('X3-B03 — Prisma teslim defteri adaptörü', () => {
+  it('yeni claim yalnız teslim metadata alanlarını persist eder; içerik/PDF/log payload yazmaz', async () => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    ledger.create.mockResolvedValue(persistentRow());
+
+    const claimed = await adapter.claim(reservation);
+
+    expect(claimed).toEqual(ledgerRecord({ reservedAt: NOW }));
+    const data = ledger.create.mock.calls[0][0].data;
+    expect(data).toEqual({
+      tenantId: TENANT,
+      clientId: CLIENT,
+      statementId: 'stmt-1',
+      periodKey: '2026-02',
+      recipientEmail: 'muvekkil@ornek.com',
+      dedupeKey: DEDUPE,
+      status: ClientStatementDeliveryStatus.PENDING,
+      attempts: 1,
+      reservedAt: NOW,
+      lastAttemptAt: NOW,
+      nextRetryAt: null,
+      sentAt: null,
+      lastError: null,
+    });
+    for (const forbidden of ['buffer', 'pdf', 'content', 'body', 'attachment', 'metadata', 'log']) {
+      expect(data).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it('unique yarışı kaybeden taze PENDING claim null alır; gönderim hakkı kazanmaz', async () => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    ledger.create.mockRejectedValue({ code: 'P2002' });
+    ledger.findUnique.mockResolvedValue(persistentRow());
+
+    await expect(adapter.claim(reservation)).resolves.toBeNull();
+    expect(ledger.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('stale PENDING yalnız 15 dakikalık sınır geçince koşullu ve tek-atımlı devralınır', async () => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    const stale = new Date(NOW.getTime() - 16 * 60 * 1000);
+    ledger.create.mockRejectedValue({ code: 'P2002' });
+    ledger.findUnique
+      .mockResolvedValueOnce(persistentRow({ reservedAt: stale }))
+      .mockResolvedValueOnce(persistentRow({ attempts: 2, reservedAt: NOW, lastAttemptAt: NOW }));
+    ledger.updateMany.mockResolvedValue({ count: 1 });
+
+    const claimed = await adapter.claim(reservation);
+
+    expect(claimed?.attempts).toBe(2);
+    const update = ledger.updateMany.mock.calls[0][0];
+    expect(update.where.status).toBe(ClientStatementDeliveryStatus.PENDING);
+    expect(update.where.attempts).toEqual({ lt: CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS });
+    expect(update.where.OR[1].reservedAt.lt.toISOString()).toBe(
+      new Date(NOW.getTime() - CLIENT_STATEMENT_DELIVERY_LOCK_TIMEOUT_MINUTES * 60 * 1000).toISOString(),
+    );
+    expect(update.data).toEqual(expect.objectContaining({
+      attempts: { increment: 1 },
+      reservedAt: NOW,
+      lastAttemptAt: NOW,
+    }));
+  });
+
+  it('FAILED retry yalnız due olduğunda ve attempts<3 iken PENDING claim olur', async () => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    ledger.create.mockRejectedValue({ code: 'P2002' });
+    ledger.findUnique
+      .mockResolvedValueOnce(persistentRow({
+        status: ClientStatementDeliveryStatus.FAILED,
+        reservedAt: null,
+        nextRetryAt: new Date(NOW.getTime() - 1),
+      }))
+      .mockResolvedValueOnce(persistentRow({ attempts: 2 }));
+    ledger.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(adapter.claim(reservation)).resolves.toEqual(ledgerRecord({ attempts: 2, reservedAt: NOW }));
+    expect(ledger.updateMany.mock.calls[0][0]).toEqual(expect.objectContaining({
+      where: expect.objectContaining({
+        status: ClientStatementDeliveryStatus.FAILED,
+        attempts: { lt: CLIENT_STATEMENT_DELIVERY_MAX_ATTEMPTS },
+      }),
+      data: expect.objectContaining({
+        status: ClientStatementDeliveryStatus.PENDING,
+        attempts: { increment: 1 },
+      }),
+    }));
+  });
+
+  it.each([
+    ['SENT', persistentRow({ status: ClientStatementDeliveryStatus.SENT, sentAt: NOW })],
+    ['max-attempts', persistentRow({ status: ClientStatementDeliveryStatus.FAILED, attempts: 3 })],
+    ['retry-not-due', persistentRow({
+      status: ClientStatementDeliveryStatus.FAILED,
+      nextRetryAt: new Date(NOW.getTime() + 60 * 1000),
+    })],
+  ])('%s kayıt yeniden claim edilemez', async (_label, existing) => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    ledger.create.mockRejectedValue({ code: 'P2002' });
+    ledger.findUnique.mockResolvedValue(existing);
+
+    await expect(adapter.claim(reservation)).resolves.toBeNull();
+    expect(ledger.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('koşullu update yarışını kaybeden süreç null alır', async () => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    ledger.create.mockRejectedValue({ code: 'P2002' });
+    ledger.findUnique.mockResolvedValue(persistentRow({
+      status: ClientStatementDeliveryStatus.FAILED,
+      reservedAt: null,
+      nextRetryAt: null,
+    }));
+    ledger.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(adapter.claim(reservation)).resolves.toBeNull();
+    expect(ledger.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('aynı dedupeKey başka tenant/client/statement kapsamına bağlanamaz', async () => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    ledger.create.mockRejectedValue({ code: 'P2002' });
+    ledger.findUnique.mockResolvedValue(persistentRow({ tenantId: 'tenant-other' }));
+
+    await expect(adapter.claim(reservation)).rejects.toBeInstanceOf(ClientStatementDeliveryLedgerInvariantError);
+    expect(ledger.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('markSent yalnız PENDING claim’i SENT yapar; ikinci çağrı idempotenttir', async () => {
+    const { adapter, ledger } = makePrismaAdapterHarness();
+    ledger.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    ledger.findUnique.mockResolvedValue(persistentRow({ status: ClientStatementDeliveryStatus.SENT, sentAt: NOW }));
+
+    await adapter.markSent(DEDUPE, NOW);
+    await adapter.markSent(DEDUPE, NOW);
+
+    expect(ledger.updateMany.mock.calls[0][0]).toEqual({
+      where: { dedupeKey: DEDUPE, status: ClientStatementDeliveryStatus.PENDING },
+      data: {
+        status: ClientStatementDeliveryStatus.SENT,
+        reservedAt: null,
+        nextRetryAt: null,
+        sentAt: NOW,
+        lastError: null,
+      },
+    });
+  });
+
+  it('markFailed attempt ile eşleşir; retry 60 dakika sonra, terminal attemptte null planlanır', async () => {
+    const first = makePrismaAdapterHarness();
+    first.ledger.updateMany.mockResolvedValue({ count: 1 });
+    await first.adapter.markFailed(DEDUPE, 1, 'SMTP_TIMEOUT', NOW);
+    expect(first.ledger.updateMany.mock.calls[0][0].data.nextRetryAt.toISOString()).toBe(
+      new Date(NOW.getTime() + CLIENT_STATEMENT_DELIVERY_RETRY_MINUTES * 60 * 1000).toISOString(),
+    );
+    expect(first.ledger.updateMany.mock.calls[0][0].where.attempts).toBe(1);
+
+    const terminal = makePrismaAdapterHarness();
+    terminal.ledger.updateMany.mockResolvedValue({ count: 1 });
+    await terminal.adapter.markFailed(DEDUPE, 3, 'SMTP_REFUSED', NOW);
+    expect(terminal.ledger.updateMany.mock.calls[0][0].data.nextRetryAt).toBeNull();
+  });
+
+  it('modül Prisma adaptörünü CLIENT_STATEMENT_DELIVERY_LEDGER_PORT olarak kaydeder', () => {
+    const providers = Reflect.getMetadata('providers', ClientStatementModule) as unknown[];
+    expect(providers).toContain(ClientStatementPrismaDeliveryLedgerAdapter);
+    expect(providers).toContainEqual({
+      provide: CLIENT_STATEMENT_DELIVERY_LEDGER_PORT,
+      useExisting: ClientStatementPrismaDeliveryLedgerAdapter,
+    });
   });
 });
 
