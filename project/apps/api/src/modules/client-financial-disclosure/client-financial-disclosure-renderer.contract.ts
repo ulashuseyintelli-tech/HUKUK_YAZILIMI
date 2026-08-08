@@ -66,6 +66,7 @@ export function createClientFinancialDisclosureRenderInput<
   return Object.freeze({
     disclosureId: input.disclosureId,
     version: input.version,
+    fileNumber: input.fileNumber,
     currency: input.currency,
     totalCollected: input.totalCollected,
     clientNetAmount: input.clientNetAmount,

@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { CollectionDispositionLineType } from '@prisma/client';
 
 /**
  * CLIENT-P2-U03-TRACK-B-I05 — CLIENT AUTHORIZATION PROJECTION AND READ API
@@ -19,6 +20,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 export const CLIENT_DISCLOSURE_ALLOWED_FIELDS = [
   'disclosureId',
   'version',
+  'fileNumber',
   'currency',
   'totalCollected',
   'clientNetAmount',
@@ -65,6 +67,7 @@ export const CLIENT_DISCLOSURE_FORBIDDEN_FIELDS = [
   'clientId',
   'status',
   'sortOrder',
+  'executionFileNumber',
 ] as const;
 
 /**
@@ -114,7 +117,7 @@ export class ClientDisclosureProjectionNotFoundError extends NotFoundException {
 
 /** §35.14 curated satır — yalnız `type` + canonical string `amount`. */
 export interface ClientDisclosureLineProjection {
-  readonly type: string;
+  readonly type: CollectionDispositionLineType;
   /** Locale-bağımsız canonical Decimal string; `toFixed()` KULLANILMAZ (repo lint kuralı). */
   readonly amount: string;
 }
@@ -123,6 +126,8 @@ export interface ClientDisclosureProjection {
   /** §35.14: opaque disclosure ID — ham ledger/kaynak kimliği DEĞİL. */
   readonly disclosureId: string;
   readonly version: number;
+  /** Owner-ratified client-visible human-readable reference: Case.fileNumber. */
+  readonly fileNumber: string;
   readonly currency: string;
   readonly totalCollected: string;
   readonly clientNetAmount: string;
