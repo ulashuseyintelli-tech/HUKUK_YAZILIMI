@@ -20,9 +20,9 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   X3-B01 → X3-B02 → X3-B03
-BLOCKS TOTAL: 3   COMPLETED: 1   REMAINING: X3-B02, X3-B03
-ACTIVATION DEBT: HENÜZ DOĞMADI — X3-B02 üretecek (migration production APPLY)
-CURRENT DISPOSITION: X3-B01 ANALYSIS_DELIVERED · X3-B02 WAITING_FOR_PREDECESSOR (C3 terminal)
+BLOCKS TOTAL: 3   COMPLETED: 2   REMAINING: X3-B03
+ACTIVATION DEBT: X3 migration production APPLY (adapter binding X3-B03 kapsamı)
+CURRENT DISPOSITION: X3-B02 ENGINEERING_COMPLETE / ACTIVATION_PENDING
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -36,10 +36,9 @@ writer doğar.
 
 ```text
 X3-B01  docs-only  → C3 ile PARALEL yürür (kesişim yok)
-X3-B02  şema       → OWNER DÜZELTMESİ (C1-B02-CLOSEOUT-CORRECTION-R01): B03 ile BİRLİKTE
-                     C3'ün canonical merge/terminal predecessor koşuluna bağlıdır;
-                     koşul sağlanmadan migration HAZIRLANMAZ
-X3-B03  entegrasyon→ C3 MERGE EDİLMEDEN BAŞLAMAZ → WAITING_FOR_PREDECESSOR
+X3-B02  şema       → C3 canonical ENGINEERING_COMPLETE / ACTIVATION_PENDING;
+                     terminal handoff doğrulandı, migration paketi tamamlandı
+X3-B03  entegrasyon→ C3 writer handoff sonrası sıradaki eligible blok
 ```
 
 ---
@@ -99,8 +98,8 @@ Fresh code-evidence sonucu:
 Exact kanıt ve B02 tasarım sınırı:
 [`X3-B01-INTEREST-AUTHORITY-AND-POSTED-CARRIER-ANALYSIS-R01.md`](./X3-B01-INTEREST-AUTHORITY-AND-POSTED-CARRIER-ANALYSIS-R01.md).
 
-**NEXT:** `X3-B02 WAITING_FOR_PREDECESSOR` — C3'ün yalnız açık/kısmi bloğu yeterli
-değildir; canonical terminal koşulu henüz sağlanmamıştır. Owner onayı beklenmez.
+**NEXT:** C3 canonical engineering terminal koşulu `#2297/a9e2c6dd` ile karşılandı;
+writer handoff X3'e geçti. X3-B01 yeniden çalışılmaz.
 
 ---
 
@@ -118,7 +117,70 @@ değildir; canonical terminal koşulu henüz sağlanmamıştır. Owner onayı be
   disipliniyle yapılır (D-7).
 ```
 
+Uygulanan en küçük explicit bağ:
+
+```text
+ClientStatementLineType += INFORMATIONAL_ACCRUED_INTEREST
+                         + COLLECTED_CLIENT_INTEREST
+ClientStatementLine     += interestAmount
+                         + sourceLedgerAllocationId
+                         + sourceDispositionLineId
+
+INFORMATIONAL: debit=0, credit=0, kaynak-allocation alanları NULL
+COLLECTED:     interestAmount=credit>0 ve iki exact kaynak kimliği zorunlu
+UNIQUE:        statementId + sourceLedgerAllocationId + sourceDispositionLineId
+```
+
+Bu yapı yeni faiz hesabı üretmez. Bilgi tutarı RECEIVABLE interest-engine sonucunu,
+nakit etkili satır ise confirmed `LedgerAllocation` ile POSTED
+`CollectionDispositionLine(CLIENT_PAYABLE)` kesişimini immutable statement snapshot'ında
+taşır. Migration CHECK'i non-cash ve kaynak şekillerini; composite unique aynı exact
+faizin aynı statement içinde ikinci kez yazılmamasını kilitler.
+
+C3 kalıcı teslim defteri faiz migration zincirinden mantıksal ve timestamp olarak ayrıdır.
+PostgreSQL'in yeni enum değerini CHECK içinde kullanmadan önce commit etme zorunluluğu
+nedeniyle faiz paketi de ardışık `enum` + `projection shape` migration'larıdır.
+Teslim modeli `ClientStatementDeliveryLedger`; tenant/client/statement composite FK
+kapsamı, `dedupeKey @unique`, `PENDING|SENT|FAILED`, attempts ve
+reservation/retry/sent/error damgalarını taşır. PDF/Buffer/body alanı yoktur. Runtime
+sabitleri C3 sözleşmesindeki
+`MAX_ATTEMPTS=3`, `RETRY_MINUTES=60`, `LOCK_TIMEOUT_MINUTES=15` olarak korunur; adapter
+X3-B03'te bağlanır.
+
+```text
+EXACT WRITE MANIFEST — X3-B02
+project/apps/api/prisma/schema.prisma
+project/apps/api/prisma/migrations/20260809090000_client_statement_interest_projection/migration.sql
+project/apps/api/prisma/migrations/20260809090100_client_statement_interest_projection_shape/migration.sql
+project/apps/api/prisma/migrations/20260809090500_client_statement_delivery_ledger/migration.sql
+project/apps/api/src/modules/client-statement/client-statement-pdf.document.ts
+project/docs/governance/CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01/CODEX-X3-INTEREST-SEMANTICS.md
+project/docs/governance/CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01/MASTER-PLAN.md
+```
+
+Yerel doğrulama (production/local-development DB kullanılmadı):
+
+```text
+Prisma validate / generate                              PASS
+postgres:16-alpine clean DB, canonical 124 migration    PASS
+existing-data rehearsal, baseline 121 + X3 3 migration PASS
+schema ↔ applied migration diff                         EMPTY
+existing statement/line preservation                    PASS
+interest CHECK + exact-source duplicate guard           PASS
+delivery dedupe + tenant/client/statement FK scope      PASS
+API production build                                    PASS
+focused client-statement PDF regression                 13/13 PASS
+```
+
+Repository tam `type-check` komutu fresh main'de de kırmızı olan X3 dışı test
+diagnostic'leri nedeniyle PASS değildir; bu blok bu mevcut baseline borcunu düzeltmez.
+X3 enum'undan doğan production-build diagnostic'i exhaustive Türkçe label girdileriyle
+kapatılmış, production build temizlenmiştir.
+
 **BLOCK RESULT:** `ENGINEERING_COMPLETE` + `ACTIVATION_PENDING`
+
+**NEXT ELIGIBLE:** `X3-B03` — fresh main writer kontrolünden sonra otomatik devam;
+owner onayı gerekmez.
 
 ---
 

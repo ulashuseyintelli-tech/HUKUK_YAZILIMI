@@ -199,26 +199,27 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                        User[]
-  cases                        Case[]
-  debtors                      Debtor[]
-  clients                      Client[]
-  tasks                        Task[]
-  escalationEvents             EscalationEvent[]
-  caseTaskEscalationEvents     CaseTaskEscalationEvent[]
-  poaExpiryDeliveries          PoaExpiryNotificationDelivery[]
-  debtorIntelligence           DebtorIntelligence[]
-  debtorCrossCaseNotifications DebtorCrossCaseNotification[]
-  courts                       Court[]
-  collections                  Collection[]
-  legalApplicationBatches      LegalApplicationBatch[]
-  claimItemFormationIntents    ClaimItemFormationIntent[]
-  claimFormationSnapshots      ClaimFormationSnapshot[]
-  collectionOverpayments       CollectionOverpayment[]
-  lawyers                      Lawyer[]
-  workflowTemplates            WorkflowTemplate[]
-  executionOffices             ExecutionOffice[]
-  office                       Office? // Her tenant'ın tek bir ofisi var
+  users                          User[]
+  cases                          Case[]
+  debtors                        Debtor[]
+  clients                        Client[]
+  tasks                          Task[]
+  escalationEvents               EscalationEvent[]
+  caseTaskEscalationEvents       CaseTaskEscalationEvent[]
+  poaExpiryDeliveries            PoaExpiryNotificationDelivery[]
+  clientStatementDeliveryLedgers ClientStatementDeliveryLedger[]
+  debtorIntelligence             DebtorIntelligence[]
+  debtorCrossCaseNotifications   DebtorCrossCaseNotification[]
+  courts                         Court[]
+  collections                    Collection[]
+  legalApplicationBatches        LegalApplicationBatch[]
+  claimItemFormationIntents      ClaimItemFormationIntent[]
+  claimFormationSnapshots        ClaimFormationSnapshot[]
+  collectionOverpayments         CollectionOverpayment[]
+  lawyers                        Lawyer[]
+  workflowTemplates              WorkflowTemplate[]
+  executionOffices               ExecutionOffice[]
+  office                         Office? // Her tenant'ın tek bir ofisi var
 
   // Address Discovery
   clientInfoRequests     ClientInfoRequest[]
@@ -273,14 +274,14 @@ model Tenant {
   clientFinancialDisclosureLines    ClientFinancialDisclosureLine[]
 
   // UYAP-POA-TENANT-SAFETY-I01 (D-1/D-2): POA zincirinin canonical tenant karşı ilişkileri
-  clientPowerOfAttorneys ClientPowerOfAttorney[] @relation("ClientPoaTenant")
-  clientConsents         ClientConsent[]         @relation("ClientConsentTenant")
-  clientDisclosureTexts      ClientDisclosureText[]     @relation("ClientDisclosureTextTenant")
-  clientDisclosureDeliveries ClientDisclosureDelivery[] @relation("ClientDisclosureDeliveryTenant")
-  clientDataSubjectRequests  ClientDataSubjectRequest[] @relation("ClientDsarTenant")
-  clientLegalHolds           ClientLegalHold[]          @relation("ClientLegalHoldTenant")
+  clientPowerOfAttorneys       ClientPowerOfAttorney[]       @relation("ClientPoaTenant")
+  clientConsents               ClientConsent[]               @relation("ClientConsentTenant")
+  clientDisclosureTexts        ClientDisclosureText[]        @relation("ClientDisclosureTextTenant")
+  clientDisclosureDeliveries   ClientDisclosureDelivery[]    @relation("ClientDisclosureDeliveryTenant")
+  clientDataSubjectRequests    ClientDataSubjectRequest[]    @relation("ClientDsarTenant")
+  clientLegalHolds             ClientLegalHold[]             @relation("ClientLegalHoldTenant")
   clientSpecialCategoryRecords ClientSpecialCategoryRecord[] @relation("ClientSpecialCategoryTenant")
-  poaLawyers             PoaLawyer[]             @relation("PoaLawyerTenant")
+  poaLawyers                   PoaLawyer[]                   @relation("PoaLawyerTenant")
 
   // DEBTOR-CPE-TENANT-HARDENING-P1-I01 (DEBTOR-IDOR-02): CPE execution kayitlarinin
   // canonical tenant karsi iliskisi.
@@ -540,28 +541,29 @@ model Client {
   updatedAt DateTime @updatedAt
 
   // İLİŞKİLER
-  cases                      Case[]
-  tasks                      Task[]
-  contacts                   ClientContact[]
-  addresses                  ClientAddress[]
-  bankAccounts               ClientBankAccount[]
-  powerOfAttorneys           ClientPowerOfAttorney[]
-  consents                   ClientConsent[] // KVKK md.5/1 açık rıza kayıtları (C3-B01)
-  disclosureDeliveries       ClientDisclosureDelivery[] // Aydınlatma teslim kayıtları (C3-B02)
-  dataSubjectRequests        ClientDataSubjectRequest[] // İlgili kişi başvuruları (C3-B02)
-  legalHolds                 ClientLegalHold[] // Legal hold kayıtları (C3-B03)
-  specialCategoryRecords     ClientSpecialCategoryRecord[] // Özel nitelikli veri kayıtları (C3-B04)
-  poaExpiryDeliveries        PoaExpiryNotificationDelivery[]
-  caseClients                CaseClient[]
-  notifications              ClientNotification[]
-  expenseRequests            ExpenseRequest[]
-  clientApprovalRequests     ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
-  clientStatements           ClientStatement[] // Müvekkil ekstresi (PR-3)
-  clientIntakeLinks          ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
-  clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
-  clientDocumentRequests     ClientDocumentRequest[] // Workspace document request artifact kayitlari
-  clientIntakeSubmissions    ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
-  portalUser                 ClientPortalUser?
+  cases                          Case[]
+  tasks                          Task[]
+  contacts                       ClientContact[]
+  addresses                      ClientAddress[]
+  bankAccounts                   ClientBankAccount[]
+  powerOfAttorneys               ClientPowerOfAttorney[]
+  consents                       ClientConsent[] // KVKK md.5/1 açık rıza kayıtları (C3-B01)
+  disclosureDeliveries           ClientDisclosureDelivery[] // Aydınlatma teslim kayıtları (C3-B02)
+  dataSubjectRequests            ClientDataSubjectRequest[] // İlgili kişi başvuruları (C3-B02)
+  legalHolds                     ClientLegalHold[] // Legal hold kayıtları (C3-B03)
+  specialCategoryRecords         ClientSpecialCategoryRecord[] // Özel nitelikli veri kayıtları (C3-B04)
+  poaExpiryDeliveries            PoaExpiryNotificationDelivery[]
+  caseClients                    CaseClient[]
+  notifications                  ClientNotification[]
+  expenseRequests                ExpenseRequest[]
+  clientApprovalRequests         ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
+  clientStatements               ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientStatementDeliveryLedgers ClientStatementDeliveryLedger[]
+  clientIntakeLinks              ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeLinkDeliveries     ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
+  clientDocumentRequests         ClientDocumentRequest[] // Workspace document request artifact kayitlari
+  clientIntakeSubmissions        ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
+  portalUser                     ClientPortalUser?
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -5036,8 +5038,10 @@ model ClientStatement {
   // updatedAt YOK — başlık içeriği immutable. Yalnız lifecycle damgaları
   // (status/supersededById/supersededAt/voidedAt/voidedById/voidNote) tek-seferlik değişir.
 
-  lines ClientStatementLine[]
+  lines           ClientStatementLine[]
+  deliveryLedgers ClientStatementDeliveryLedger[]
 
+  @@unique([id, tenantId, clientId])
   @@index([tenantId])
   @@index([caseId])
   @@index([clientId])
@@ -5067,13 +5071,21 @@ model ClientStatementLine {
   // Scalar (FK YOK — refType/refId/caseClientId gibi gevşek tarihsel ref; index YOK).
   caseId String?
 
-  debit          Decimal @default(0) @db.Decimal(15, 2)
-  credit         Decimal @default(0) @db.Decimal(15, 2)
-  runningBalance Decimal @db.Decimal(15, 2)
-  note           String?
+  debit                    Decimal  @default(0) @db.Decimal(15, 2)
+  credit                   Decimal  @default(0) @db.Decimal(15, 2)
+  runningBalance           Decimal  @db.Decimal(15, 2)
+  // X3-B02: bilgi faizi ve tahsil edilmiş müvekkil faizi aynı parasal kolonlara
+  // sıkıştırılmaz. INFORMATIONAL satırda amount dolar, debit/credit sıfır kalır.
+  interestAmount           Decimal? @db.Decimal(15, 2)
+  // Immutable scalar provenance: kaynak kayıt sonradan değişse bile snapshot sabit kalır.
+  // COLLECTED_CLIENT_INTEREST ikisini de taşır; migration CHECK + composite unique kilitler.
+  sourceLedgerAllocationId String?
+  sourceDispositionLineId  String?
+  note                     String?
 
   createdAt DateTime @default(now())
 
+  @@unique([statementId, sourceLedgerAllocationId, sourceDispositionLineId], map: "ClientStatementLine_interest_source_key")
   @@index([statementId])
   @@index([lineType])
   @@index([lineDate])
@@ -5108,6 +5120,46 @@ enum ClientStatementLineType {
   CLIENT_OFFSET_EXPENSE_APPLIED // mahsup: müvekkilin masraf borcu azaldı (credit +)
   CLIENT_OFFSET_PAYABLE_REVERSED // mahsup iptali: müvekkile borç geri yüklendi (credit +)
   CLIENT_OFFSET_EXPENSE_REVERSED // mahsup iptali: masraf borcu geri yüklendi (debit −)
+
+  // X3-B02 — faiz hesap authority'si RECEIVABLE interest-engine'dir; CLIENT yalnız projekte eder.
+  INFORMATIONAL_ACCRUED_INTEREST // tahakkuk etmiş/tahsil edilmemiş; debit=credit=0, bakiye değişmez
+  COLLECTED_CLIENT_INTEREST // confirmed LedgerAllocation + POSTED CLIENT_PAYABLE; credit içindeki faiz kırılımı
+}
+
+enum ClientStatementDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// X3-B02 / C3 kalıcı teslim defteri. PDF/Buffer veya içerik bu tabloda tutulmaz;
+// yalnız teslim claim'i ve retry metadata'sı persist edilir.
+model ClientStatementDeliveryLedger {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  clientId String
+  client   Client @relation(fields: [clientId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  statementId String
+  statement   ClientStatement @relation(fields: [statementId, tenantId, clientId], references: [id, tenantId, clientId], onDelete: Restrict, map: "ClientStmtDelivery_statement_scope_fkey")
+
+  periodKey      String
+  recipientEmail String
+  dedupeKey      String                        @unique
+  status         ClientStatementDeliveryStatus @default(PENDING)
+  attempts       Int                           @default(0)
+  reservedAt     DateTime?
+  lastAttemptAt  DateTime?
+  nextRetryAt    DateTime?
+  sentAt         DateTime?
+  lastError      String?
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, clientId])
 }
 
 // ============================================================
