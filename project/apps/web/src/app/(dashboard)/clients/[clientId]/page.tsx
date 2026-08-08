@@ -11,7 +11,7 @@
  */
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Pencil, ShieldCheck, Wallet } from 'lucide-react';
+import { ArrowLeft, FileText, Pencil, ShieldCheck, Wallet } from 'lucide-react';
 import { ClientProfile } from '@/components/client/client-profile';
 
 export default function ClientDetailPage() {
@@ -40,6 +40,13 @@ export default function ClientDetailPage() {
             className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
           >
             <ShieldCheck className="h-4 w-4" /> KVKK / Uyum
+          </Link>
+          {/* CAD X1 (append-only §3-B): office financial disclosure workspace */}
+          <Link
+            href={`/clients/${clientId}/disclosures`}
+            className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+          >
+            <FileText className="h-4 w-4" /> Finansal Bildirimler
           </Link>
           <Link
             href={`/clients/${clientId}/edit`}
