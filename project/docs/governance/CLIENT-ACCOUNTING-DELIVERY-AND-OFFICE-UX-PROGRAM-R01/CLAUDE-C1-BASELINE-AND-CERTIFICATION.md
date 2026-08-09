@@ -179,6 +179,20 @@ yasak alan sızmış mı. "Mail gitti" tek başına PASS DEĞİLDİR.
 > (audit korundu). **B04 PASS/ENGINEERING_COMPLETE İLAN EDİLMEDİ.** Sonraki gerçek
 > teslim denemesi ANCAK kalıcı+şifreli credential yönetimi (`CREDENTIAL_ENCRYPTION_KEY`
 > + AES-256-GCM at-rest) hazır olduğunda; owner her seferinde parola girmeyecek.
+>
+> **SECRET EXPOSURE SINIFLANDIRMASI (owner-ratified):**
+> ```text
+> REPOSITORY/LOG/PR EXPOSURE: 0
+> CHAT TRANSCRIPT EXPOSURE:    YES / CREDENTIAL COMPROMISED
+> ROTATION REQUIRED:          YES
+> ```
+> Repo/log/PR temizdir; ancak canlı denemede parola sohbet transkriptine düştüğü için
+> credential COMPROMISED sayılır ve rotate edilmelidir. (Parola/parçaları/transkript
+> bağlantısı bu kayda BİLİNÇLİ olarak yazılmamıştır.)
+>
+> **KESİN STATUS:** C1-B04 = PAUSED / PROVIDER_CONFIGURATION_REQUIRED ·
+> C1-B05 = NOT ELIGIBLE / WAITING_FOR_PREDECESSOR ·
+> NEXT ELIGIBLE = C1-B04 provider remediation/resumption.
 > Detay: `C1-B04-CANARY-PROVIDER-CONFIG-REQUIRED-R01.md`.
 
 ---
