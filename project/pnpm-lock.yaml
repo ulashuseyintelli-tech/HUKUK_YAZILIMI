@@ -68,6 +68,9 @@ importers:
       class-validator:
         specifier: ^0.14.1
         version: 0.14.3
+      cron:
+        specifier: 4.3.5
+        version: 4.3.5
       docx:
         specifier: ^9.5.1
         version: 9.5.1
