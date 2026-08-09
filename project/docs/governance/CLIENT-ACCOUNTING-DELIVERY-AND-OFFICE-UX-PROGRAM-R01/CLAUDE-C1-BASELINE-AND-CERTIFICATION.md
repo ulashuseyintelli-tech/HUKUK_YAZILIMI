@@ -23,8 +23,8 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
-BLOCKS TOTAL: 5   COMPLETED: 2 (B01, B02)   B03: OPEN / AUTH-CONTINUITY RESIDUAL   ACTIVATION DEBT: NONE
-LANE STATUS:  B03 REOPENED — natural browser E2E NOT VERIFIED (auth-continuity remediation R01); B04..B05 WAITING
+BLOCKS TOTAL: 5   COMPLETED: 3 (B01, B02, B03)   ACTIVATION DEBT: NONE
+LANE STATUS:  B03 RUNTIME_VERIFIED — natural browser E2E PASS (auth-continuity remediation R01, Web RC 1488063d+authfix); B04..B05 WAITING
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -136,6 +136,14 @@ için bildirilir.
 > regresyon testi → **CAD-C1-B03-AUTH-CONTINUITY-REMEDIATION-R01**. Yeni immutable RC + kontrollü deploy +
 > doğal browser UAT PASS sonrası B03 telafi kaydıyla yeniden RUNTIME_VERIFIED yapılır. #2307 tarihsel kayıt
 > olarak KORUNUR (geriye dönük silinmez).
+
+> **YENİDEN RUNTIME_VERIFIED (2026-08-09) — auth-fix RC + doğal UAT PASS:** Fix `#2315` (`bb0471b1`) merge; yeni
+> minimal immutable RC = `1488063d` + web auth-fix (#2303 şemaları DIŞI, 0 migration) → Web task cutover
+> (`rc-authfix`, BUILD_ID `1Oj9kJFN`), API `rc-1488063d`'de değişmedi. **Doğal browser UAT (enjeksiyon YOK,
+> "Beni hatırla" KAPALI → token sessionStorage):** login→soft-nav(link)→compliance = 8 API çağrısı **200** +
+> console 0 hata; **refresh** (hard-reload) → **200**; **new tab** → tutarlı **login-redirect** (authenticated
+> sayfada toplu 401 YOK). Kabul karşılandı → B03 yeniden `RUNTIME_VERIFIED`. Kanıt:
+> `C1-B03-AUTH-CONTINUITY-REVERIFY-CLOSEOUT-R01.md`. Rollback: Web→`rc-1488063d/apps/web`; deep→`w5-artifact`.
 
 ---
 
