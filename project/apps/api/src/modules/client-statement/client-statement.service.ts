@@ -17,6 +17,7 @@ import {
   SupersedeClientStatementDto,
 } from './dto/client-statement.dto';
 import { CaseBalanceService } from '../interest-engine/orchestration/case-balance.service';
+import { findExpenseCatalogEntry } from '../expense-request/expense-item-catalog';
 import {
   projectAccruedInterest,
   projectCollectedInterestShares,
@@ -654,7 +655,7 @@ export class ClientStatementService {
       where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: { gte: periodStart, lte: periodEnd } },
       select: {
         id: true, caseId: true, totalAmount: true, currency: true, status: true, createdAt: true,
-        requestItems: { select: { label: true }, orderBy: { sortOrder: 'asc' } },
+        requestItems: { select: { label: true, itemCode: true }, orderBy: { sortOrder: 'asc' } },
       },
     });
     for (const e of ers) {
@@ -823,7 +824,7 @@ export class ClientStatementService {
         where: { tenantId, caseId, createdAt: { gte: periodStart, lte: periodEnd } },
         select: {
           id: true, totalAmount: true, currency: true, status: true, createdAt: true,
-          requestItems: { select: { label: true }, orderBy: { sortOrder: 'asc' } },
+          requestItems: { select: { label: true, itemCode: true }, orderBy: { sortOrder: 'asc' } },
         },
         orderBy: { createdAt: 'asc' },
       });
@@ -1169,11 +1170,16 @@ export class ClientStatementService {
   private expenseRequestNote(
     status: string,
     totalAmount?: Prisma.Decimal,
-    requestItems?: ReadonlyArray<{ label: string }>,
+    requestItems?: ReadonlyArray<{ label: string; itemCode?: string }>,
   ): string {
     // W4 MODEL-1 (owner D2): tutar Borç sütunundan kalktı → NOTE içinde tr-TR biçimiyle gösterilir.
-    // Tek kalemli taleplerde kategori/purpose özeti başa gelir ("Tebligat Gideri talebi: …").
-    const purpose = requestItems && requestItems.length === 1 ? `${requestItems[0].label} talebi` : 'Masraf talebi';
+    // Tek kalemli taleplerde kategori/purpose özeti başa gelir. R02: müvekkil yüzeyinde
+    // SENTENCE-CASE müvekkil etiketi (katalog clientLabel; katalog dışıysa kayıtlı label).
+    const single = requestItems && requestItems.length === 1 ? requestItems[0] : null;
+    const singleLabel = single
+      ? (findExpenseCatalogEntry(single.itemCode ?? '')?.clientLabel ?? single.label)
+      : null;
+    const purpose = singleLabel ? `${singleLabel} talebi` : 'Masraf talebi';
     const label = this.expenseRequestStatusLabel(status);
     if (totalAmount === undefined) return `${purpose} (${label})`;
     const amountTr = Number(totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

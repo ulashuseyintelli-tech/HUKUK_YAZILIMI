@@ -107,20 +107,21 @@ describe('W4 içerik sözleşmesi — IBAN fail-closed + accountHolder/paymentRe
     const tokens = dispatcher.dispatch.mock.calls[0][2].tokens;
     expect(tokens.officeIban).toBe('TR11');
     expect(tokens.accountHolder).toBe('Telli Hukuk'); // accountName yok → Office unvanı
-    expect(tokens.paymentReference).toBe('2026/1234 - Masraf'); // raw iç-ID YOK
+    expect(tokens.paymentReference).toBe('2026/1234 - Masraf avansı'); // R02 client-safe biçim; raw iç-ID YOK
   });
 
   it('items token kalem AÇIKLAMASINI taşır; açıklama etikete eşitse tekrarlanmaz', async () => {
     const { svc, prisma, dispatcher } = makeService({ status: 'sent', notificationId: 'n-1' });
     prisma.expenseRequest.findFirst.mockResolvedValue(makeRequest({
       requestItems: [
-        { label: 'Tebligat Gideri', finalAmount: { toNumber: () => 500 }, description: 'İki adet tebligat gönderimi' },
-        { label: 'Harç', finalAmount: { toNumber: () => 750.5 }, description: 'Harç' }, // etiketle aynı → tekrar yok
+        { itemCode: 'TEBLIGAT_GIDERI', label: 'Tebligat Gideri', finalAmount: { toNumber: () => 500 }, description: 'İki adet tebligat gönderimi' },
+        { itemCode: 'HARC', label: 'Harç', finalAmount: { toNumber: () => 750.5 }, description: 'Harç' }, // etiketle aynı → tekrar yok
       ],
     }));
     await svc.sendExpenseRequest(TENANT, REQ, USER);
     const items = dispatcher.dispatch.mock.calls[0][2].tokens.items as string;
-    expect(items).toContain('- Tebligat Gideri: 500,00 TL — İki adet tebligat gönderimi');
+    // R02: müvekkil yüzeyi SENTENCE-CASE clientLabel kullanır.
+    expect(items).toContain('- Tebligat gideri: 500,00 TL — İki adet tebligat gönderimi');
     expect(items).toContain('- Harç: 750,50 TL');
     expect(items).not.toContain('Harç: 750,50 TL — Harç');
   });
