@@ -185,6 +185,8 @@ export class MessageTemplateService {
     
     switch (category) {
       case 'EXPENSE_REQUEST':
+        // W4-ACT02A/B içerik sözleşmesi: hesap sahibi/unvan + ödeme açıklaması referansı da taşınır.
+        return [...commonTokens, 'totalAmount', 'dueDate', 'items', 'officeIban', 'accountHolder', 'paymentReference'];
       case 'EXPENSE_REMINDER':
         return [...commonTokens, 'totalAmount', 'dueDate', 'items', 'officeIban'];
       case 'COLLECTION_INFO':
@@ -237,18 +239,26 @@ Saygılarımızla,
         name: 'Masraf Talebi',
         category: 'EXPENSE_REQUEST' as MessageTemplateCategory,
         channel: 'EMAIL' as MessageTemplateChannel,
+        // W4-ACT02A/B içerik sözleşmesi (owner): açık amaç cümlesi + kalem türü/açıklaması/tutarı
+        // (request kayıtlarından render edilir; hardcoded kategori listesi YOK) + hesap sahibi +
+        // ödeme açıklaması referansı + gerçekleşen-masraf bilgilendirme cümlesi. Raw iç-ID YOK.
         subject: '{{caseFileNumber}} - Masraf Talebi',
         body: `Sayın {{clientName}},
 
-{{executionFileNumber}} sayılı icra dosyası için aşağıdaki masrafların karşılanması gerekmektedir:
+{{caseFileNumber}} sayılı dosyanız kapsamındaki işlemlerin yürütülebilmesi için aşağıda dökümü verilen {{totalAmount}} TL masraf avansının {{dueDate}} tarihine kadar belirtilen hesaba ödenmesini rica ederiz.
 
+Masraf Kalemleri:
 {{items}}
 
-Toplam Tutar: {{totalAmount}} TL
+Genel Toplam: {{totalAmount}} TL
 Son Ödeme Tarihi: {{dueDate}}
 
 Ödeme Bilgileri:
-{{officeIban}}
+Hesap Sahibi: {{accountHolder}}
+IBAN: {{officeIban}}
+Ödeme Açıklaması: {{paymentReference}}
+
+Ödemeniz alındıktan sonra bu avanstan yapılan her gerçekleşen masraf size ayrıca bildirilecektir.
 
 Dekontunuzu bu e-postaya yanıt olarak iletebilirsiniz.
 

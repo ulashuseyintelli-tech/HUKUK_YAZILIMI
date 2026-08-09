@@ -287,7 +287,7 @@ export class ExpenseNotificationService {
         bankAccounts: {
           where: { isDefault: true },
           take: 1,
-          select: { iban: true }
+          select: { iban: true, accountName: true }
         }
       },
     });
@@ -337,11 +337,40 @@ export class ExpenseNotificationService {
 
     // C1-B05-A: legacy hardcoded render + EmailProviderService KALDIRILDI. Kanonik zincir:
     // EXPENSE_REQUEST template → NotificationDispatcherService (idempotent, G4 atomik claim, POL-4).
+    // W4-ACT02A/B (owner sözleşmesi): ödeme isteyen e-posta IBAN'sız SESSİZCE GÖNDERİLMEZ —
+    // fail-closed sonuç + güvenli audit üretilir; müvekkile eksik ödeme talimatı çıkmaz.
+    if (!finalIban) {
+      await this.prisma.expenseAuditLog.create({
+        data: {
+          expenseRequestId: requestId,
+          action: 'EMAIL_FAILED',
+          details: { via: 'dispatcher', outcome: 'iban-missing-fail-closed' },
+          userId,
+        },
+      });
+      this.logger.warn(`Masraf talebi bildirimi engellendi: doğrulanmış ödeme IBAN'ı yok (requestId=${requestId})`);
+      return { success: false, reason: 'IBAN_MISSING' as const };
+    }
+
     const formatMoney = (n: number) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const itemsText = emailData.items.map((it) => `- ${it.label}: ${formatMoney(it.amount)} TL`).join('\n');
+    // Owner sözleşmesi: kalem TÜRÜ/AÇIKLAMASI kaybolamaz — items request kayıtlarından render edilir
+    // (template hardcoded kategori listesi TAŞIMAZ). Açıklama varsa etikete " — açıklama" eklenir.
+    const itemsText = request.requestItems
+      .map((item) => {
+        const base = `- ${item.label}: ${formatMoney(item.finalAmount.toNumber())} TL`;
+        const desc = (item.description ?? '').trim();
+        return desc && desc !== item.label ? `${base} — ${desc}` : base;
+      })
+      .join('\n');
     const dueDateText = emailData.dueDate
       ? new Date(emailData.dueDate).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' })
       : 'Belirtilmedi';
+
+    // Hesap sahibi/unvan: Office'in DOĞRULANMIŞ default ödeme hesabından (env override mevcut desen).
+    const paymentAccountHolder = accountHolder
+      || office?.bankAccounts?.[0]?.accountName
+      || office?.name
+      || '';
 
     // POL-4: yalnız insan-okur alanlar; raw iç-ID YOK. Fail-closed: template'in TÜM token'ları sağlanır.
     const tokens: Record<string, string> = {
@@ -351,7 +380,9 @@ export class ExpenseNotificationService {
       items: itemsText,
       totalAmount: formatMoney(emailData.totalAmount),
       dueDate: dueDateText,
-      officeIban: emailData.iban ?? 'Belirtilmedi',
+      officeIban: finalIban,
+      accountHolder: paymentAccountHolder,
+      paymentReference: emailData.paymentDescription ?? `${emailData.caseFileNumber ?? ''} - Masraf`,
       officeName: emailData.lawyerName ?? '',
       officePhone: emailData.officePhone ?? '',
     };

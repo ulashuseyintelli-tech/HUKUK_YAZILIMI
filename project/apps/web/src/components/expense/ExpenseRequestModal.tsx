@@ -44,9 +44,11 @@ const EXPENSE_TYPES = [
   { value: "HACIZ", label: "Haciz Gideri" },
   { value: "SATIS_AVANSI", label: "Satış Avansı" },
   { value: "BILIRKISI", label: "Bilirkişi Ücreti" },
-  { value: "KEŞIF", label: "Keşif Gideri" },
+  // W4 kod hijyeni: value'lar ASCII stable code (Türkçe karakterli kod üretimi durduruldu;
+  // production'da eski KEŞIF/HARÇ kodlu kayıt yok — salt-okuma doğrulandı). Etiketler değişmedi.
+  { value: "KESIF", label: "Keşif Gideri" },
   { value: "POSTA", label: "Posta/Kargo" },
-  { value: "HARÇ", label: "Harç" },
+  { value: "HARC", label: "Harç" },
   { value: "DIGER", label: "Diğer" },
 ];
 

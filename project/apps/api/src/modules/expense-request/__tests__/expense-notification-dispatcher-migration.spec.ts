@@ -57,6 +57,43 @@ function makeService(dispatchResult: any, opts: { requestStatus?: string } = {})
   return { svc, prisma, dispatcher, emailProvider, auditCreate, taskCreate, reqUpdate, tx };
 }
 
+describe('W4 içerik sözleşmesi — IBAN fail-closed + accountHolder/paymentReference + item description', () => {
+  it('doğrulanmış IBAN yoksa mail SESSİZCE GÖNDERİLMEZ: dispatch=0 + iban-missing güvenli audit + IBAN_MISSING', async () => {
+    const { svc, prisma, dispatcher, auditCreate } = makeService({ status: 'sent', notificationId: 'n-1' });
+    prisma.office.findFirst.mockResolvedValue({ name: 'Telli Hukuk', phone: '0212', email: 'ofis@x', bankAccounts: [] });
+    const result = await svc.sendExpenseRequest(TENANT, REQ, USER);
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, reason: 'IBAN_MISSING' });
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'EMAIL_FAILED', details: expect.objectContaining({ outcome: 'iban-missing-fail-closed' }) }),
+    }));
+  });
+
+  it('tokens: accountHolder (default hesap/office unvanı) + paymentReference (client-safe) + IBAN', async () => {
+    const { svc, dispatcher } = makeService({ status: 'sent', notificationId: 'n-1' });
+    await svc.sendExpenseRequest(TENANT, REQ, USER);
+    const tokens = dispatcher.dispatch.mock.calls[0][2].tokens;
+    expect(tokens.officeIban).toBe('TR11');
+    expect(tokens.accountHolder).toBe('Telli Hukuk'); // accountName yok → Office unvanı
+    expect(tokens.paymentReference).toBe('2026/1234 - Masraf'); // raw iç-ID YOK
+  });
+
+  it('items token kalem AÇIKLAMASINI taşır; açıklama etikete eşitse tekrarlanmaz', async () => {
+    const { svc, prisma, dispatcher } = makeService({ status: 'sent', notificationId: 'n-1' });
+    prisma.expenseRequest.findFirst.mockResolvedValue(makeRequest({
+      requestItems: [
+        { label: 'Tebligat Gideri', finalAmount: { toNumber: () => 500 }, description: 'İki adet tebligat gönderimi' },
+        { label: 'Harç', finalAmount: { toNumber: () => 750.5 }, description: 'Harç' }, // etiketle aynı → tekrar yok
+      ],
+    }));
+    await svc.sendExpenseRequest(TENANT, REQ, USER);
+    const items = dispatcher.dispatch.mock.calls[0][2].tokens.items as string;
+    expect(items).toContain('- Tebligat Gideri: 500,00 TL — İki adet tebligat gönderimi');
+    expect(items).toContain('- Harç: 750,50 TL');
+    expect(items).not.toContain('Harç: 750,50 TL — Harç');
+  });
+});
+
 describe('C1-B05-A ExpenseNotificationService migration', () => {
   it('EmailProviderService’e GİTMEZ; dispatcher EXPENSE_REQUEST + stable dedupeKey ile çağrılır', async () => {
     const { svc, dispatcher, emailProvider } = makeService({ status: 'sent', notificationId: 'n-1' });
