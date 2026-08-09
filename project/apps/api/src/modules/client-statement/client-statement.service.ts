@@ -669,7 +669,7 @@ export class ClientStatementService {
           caseClientId: null,
           debit: e.totalAmount,
           credit: ZERO,
-          note: `Masraf talebi: ${e.totalAmount} ${e.currency} (${e.status})`,
+          note: this.expenseRequestNote(e.status),
         },
       });
     }
@@ -933,7 +933,7 @@ export class ClientStatementService {
           debit: ZERO,
           credit: ZERO,
           runningBalance: running, // BİLGİ satırı — bakiyeyi oynatmaz
-          note: `Talep: ${it.r.totalAmount} ${it.r.currency} (${it.r.status})`,
+          note: this.expenseRequestNote(it.r.status),
         });
       } else if (it.kind === 'proceeds') {
         if (it.d.type === CollectionDispositionLineType.CLIENT_PAYABLE) {
@@ -1152,6 +1152,40 @@ export class ClientStatementService {
       if (amount) result.push({ caseId, amount });
     }
     return result;
+  }
+
+  /**
+   * W4-ACT02A içerik düzeltmesi (owner GO): masraf-talebi satır notu CLIENT-SAFE üretilir.
+   * Ham currency ("TRY") ve ham enum status ("PENDING" vb.) müvekkil yüzeyine ÇIKMAZ; tutar
+   * açıklamada TEKRAR yazılmaz (Borç/Alacak sütununda tr-TR biçimiyle zaten gösterilir).
+   * Client-level ve case-level satırlar AYNI merkezi etiketi tüketir (ikinci mapping YOK).
+   */
+  private expenseRequestNote(status: string): string {
+    return `Masraf talebi (${this.expenseRequestStatusLabel(status)})`;
+  }
+
+  /** ExpenseRequestStatus → client-safe Türkçe etiket. Bilinmeyen değerde raw enum SIZDIRILMAZ. */
+  private expenseRequestStatusLabel(status: string): string {
+    switch (status) {
+      case 'PENDING':
+        return 'onay bekliyor';
+      case 'SENT':
+        return 'gönderildi';
+      case 'REMINDED':
+        return 'hatırlatıldı';
+      case 'PARTIAL':
+        return 'kısmi ödendi';
+      case 'RECEIVED':
+        return 'ödeme alındı';
+      case 'PAID':
+        return 'ödendi';
+      case 'LAWYER_PAID':
+        return 'büro tarafından karşılandı';
+      case 'OVERDUE':
+        return 'vadesi geçti';
+      default:
+        return 'işlemde';
+    }
   }
 
   private mapLedgerType(t: BalanceLedgerType): ClientStatementLineType {
