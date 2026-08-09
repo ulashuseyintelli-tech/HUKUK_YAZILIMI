@@ -541,11 +541,9 @@ export class ClientStatementService {
       });
       opening = opening.minus(payoutBefore._sum.amount ?? ZERO);
     }
-    const erBefore = await this.prisma.expenseRequest.aggregate({
-      _sum: { totalAmount: true },
-      where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: { lt: periodStart } },
-    });
-    opening = opening.minus(erBefore._sum.totalAmount ?? ZERO);
+    // W4 MODEL-1 RATIFIED (owner D2): PENDING ExpenseRequest bilgi/ödeme TALEBİDİR — açılış
+    // bakiyesine KATILMAZ (önceki erBefore düşümü kaldırıldı). Bakiye etkisi yalnız POSTED
+    // gerçekleşen masraf (EXPENSE_ACTUAL ledger) hareketinden gelir.
     const epBefore = await this.prisma.expensePayment.aggregate({
       _sum: { amount: true },
       where: { expenseRequest: { tenantId, clientId }, paymentDate: { lt: periodStart } },
@@ -654,12 +652,17 @@ export class ClientStatementService {
     // ExpenseRequest — müvekkilin masraf borcu artar → net pozisyon DÜŞER (debit −).
     const ers = await this.prisma.expenseRequest.findMany({
       where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: { gte: periodStart, lte: periodEnd } },
-      select: { id: true, caseId: true, totalAmount: true, currency: true, status: true, createdAt: true },
+      select: {
+        id: true, caseId: true, totalAmount: true, currency: true, status: true, createdAt: true,
+        requestItems: { select: { label: true }, orderBy: { sortOrder: 'asc' } },
+      },
     });
     for (const e of ers) {
+      // W4 MODEL-1 (owner D2): talep satırı BİLGİ satırıdır — debit=0/credit=0/effect=0;
+      // tutar Borç sütunundan kalktığı için client-safe NOTE içinde tr-TR biçimiyle gösterilir.
       items.push({
         date: e.createdAt,
-        effect: e.totalAmount.negated(),
+        effect: ZERO,
         draft: {
           lineDate: e.createdAt,
           lineType: ClientStatementLineType.EXPENSE_REQUESTED,
@@ -667,9 +670,9 @@ export class ClientStatementService {
           refId: e.id,
           caseId: e.caseId,
           caseClientId: null,
-          debit: e.totalAmount,
+          debit: ZERO,
           credit: ZERO,
-          note: this.expenseRequestNote(e.status),
+          note: this.expenseRequestNote(e.status, e.totalAmount, e.requestItems),
         },
       });
     }
@@ -818,7 +821,10 @@ export class ClientStatementService {
     if (includeRequests) {
       requestRows = await this.prisma.expenseRequest.findMany({
         where: { tenantId, caseId, createdAt: { gte: periodStart, lte: periodEnd } },
-        select: { id: true, totalAmount: true, currency: true, status: true, createdAt: true },
+        select: {
+          id: true, totalAmount: true, currency: true, status: true, createdAt: true,
+          requestItems: { select: { label: true }, orderBy: { sortOrder: 'asc' } },
+        },
         orderBy: { createdAt: 'asc' },
       });
     }
@@ -933,7 +939,7 @@ export class ClientStatementService {
           debit: ZERO,
           credit: ZERO,
           runningBalance: running, // BİLGİ satırı — bakiyeyi oynatmaz
-          note: this.expenseRequestNote(it.r.status),
+          note: this.expenseRequestNote(it.r.status, it.r.totalAmount, (it.r as any).requestItems),
         });
       } else if (it.kind === 'proceeds') {
         if (it.d.type === CollectionDispositionLineType.CLIENT_PAYABLE) {
@@ -1160,8 +1166,18 @@ export class ClientStatementService {
    * açıklamada TEKRAR yazılmaz (Borç/Alacak sütununda tr-TR biçimiyle zaten gösterilir).
    * Client-level ve case-level satırlar AYNI merkezi etiketi tüketir (ikinci mapping YOK).
    */
-  private expenseRequestNote(status: string): string {
-    return `Masraf talebi (${this.expenseRequestStatusLabel(status)})`;
+  private expenseRequestNote(
+    status: string,
+    totalAmount?: Prisma.Decimal,
+    requestItems?: ReadonlyArray<{ label: string }>,
+  ): string {
+    // W4 MODEL-1 (owner D2): tutar Borç sütunundan kalktı → NOTE içinde tr-TR biçimiyle gösterilir.
+    // Tek kalemli taleplerde kategori/purpose özeti başa gelir ("Tebligat Gideri talebi: …").
+    const purpose = requestItems && requestItems.length === 1 ? `${requestItems[0].label} talebi` : 'Masraf talebi';
+    const label = this.expenseRequestStatusLabel(status);
+    if (totalAmount === undefined) return `${purpose} (${label})`;
+    const amountTr = Number(totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `${purpose}: ${amountTr} TL (${label})`;
   }
 
   /** ExpenseRequestStatus → client-safe Türkçe etiket. Bilinmeyen değerde raw enum SIZDIRILMAZ. */

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { ExpenseRequestService, CreateExpenseRequestDto, UpdateExpenseRequestDto, PaymentInput } from './expense-request.service';
+import { activeExpenseCatalogForClient } from './expense-item-catalog';
 import { ExpenseGateService } from './expense-gate.service';
 import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpenseViewService } from './expense-view.service';
@@ -39,6 +40,15 @@ export class ExpenseRequestController {
   @Get('stats')
   async getStats(@Req() req: AuthRequest, @Query('caseId') caseId?: string) {
     return this.service.getStats(req.user.tenantId, caseId);
+  }
+
+  /**
+   * W4 D1 — kanonik masraf kalemi kataloğu (API-authoritative TEK kaynak; web ikinci
+   * bağımsız sabit liste TAŞIMAZ). DİKKAT: ':id' route'undan ÖNCE tanımlı (route-shadow önlemi).
+   */
+  @Get('catalog')
+  getCatalog() {
+    return activeExpenseCatalogForClient();
   }
 
   @Get('by-case/:caseId')

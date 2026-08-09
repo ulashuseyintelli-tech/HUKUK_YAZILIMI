@@ -286,7 +286,7 @@ export class ExpenseNotificationService {
         email: true,
         bankAccounts: {
           where: { isDefault: true },
-          take: 1,
+          take: 2, // W4 D3: 0 veya >1 default fail-closed tespiti için ikinciyi de getir
           select: { iban: true, accountName: true }
         }
       },
@@ -339,17 +339,27 @@ export class ExpenseNotificationService {
     // EXPENSE_REQUEST template → NotificationDispatcherService (idempotent, G4 atomik claim, POL-4).
     // W4-ACT02A/B (owner sözleşmesi): ödeme isteyen e-posta IBAN'sız SESSİZCE GÖNDERİLMEZ —
     // fail-closed sonuç + güvenli audit üretilir; müvekkile eksik ödeme talimatı çıkmaz.
-    if (!finalIban) {
+    // W4 D3 + iletişim sözleşmesi fail-closed kapıları: eksik/muğlak ödeme talimatı veya
+    // geçersiz kalem seti ile müvekkil maili ASLA çıkmaz; güvenli audit üretilir.
+    const failClosed = async (outcome: string, reason: string) => {
       await this.prisma.expenseAuditLog.create({
-        data: {
-          expenseRequestId: requestId,
-          action: 'EMAIL_FAILED',
-          details: { via: 'dispatcher', outcome: 'iban-missing-fail-closed' },
-          userId,
-        },
+        data: { expenseRequestId: requestId, action: 'EMAIL_FAILED', details: { via: 'dispatcher', outcome }, userId },
       });
-      this.logger.warn(`Masraf talebi bildirimi engellendi: doğrulanmış ödeme IBAN'ı yok (requestId=${requestId})`);
-      return { success: false, reason: 'IBAN_MISSING' as const };
+      this.logger.warn(`Masraf talebi bildirimi engellendi (${outcome}) requestId=${requestId}`);
+      return { success: false as const, reason };
+    };
+    const defaultAccounts = office?.bankAccounts ?? [];
+    if (!this.configService.get('BANK_IBAN') && defaultAccounts.length !== 1) {
+      return failClosed(defaultAccounts.length === 0 ? 'default-account-missing' : 'default-account-ambiguous', 'PAYMENT_ACCOUNT_INVALID');
+    }
+    if (!finalIban) {
+      return failClosed('iban-missing-fail-closed', 'IBAN_MISSING');
+    }
+    if (!request.requestItems || request.requestItems.length === 0) {
+      return failClosed('items-missing', 'ITEMS_MISSING');
+    }
+    if (request.requestItems.some((it) => it.finalAmount.toNumber() <= 0) || emailData.totalAmount <= 0) {
+      return failClosed('non-positive-amount', 'AMOUNT_INVALID');
     }
 
     const formatMoney = (n: number) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -371,6 +381,9 @@ export class ExpenseNotificationService {
       || office?.bankAccounts?.[0]?.accountName
       || office?.name
       || '';
+    if (!paymentAccountHolder.trim()) {
+      return failClosed('account-holder-missing', 'ACCOUNT_HOLDER_MISSING');
+    }
 
     // POL-4: yalnız insan-okur alanlar; raw iç-ID YOK. Fail-closed: template'in TÜM token'ları sağlanır.
     const tokens: Record<string, string> = {
