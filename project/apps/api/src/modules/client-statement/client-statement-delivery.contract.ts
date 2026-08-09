@@ -1,5 +1,11 @@
 import type { ClientStatementStatus } from '@prisma/client';
-import { assertStatementRenderable } from './client-statement-pdf.document';
+import {
+  assertStatementRenderable,
+  displayCurrency,
+  formatClosingBalanceLine,
+  formatDateTrIstanbul,
+  formatTrAmount,
+} from './client-statement-pdf.document';
 import type { ClientStatementRenderV1 } from './client-statement-render.contract';
 
 /**
@@ -77,27 +83,36 @@ export interface ClientStatementDeliveryPort {
  * render sözleşmesinden türer. İç ID (statementId/caseId/refId/...) TAŞIMAZ.
  */
 export function buildStatementDeliveryTokens(render: ClientStatementRenderV1): Record<string, string> {
+  const fileNo = render.fileReference?.value ?? '';
+  // Client-level (tek dosya yok) → clause AÇIKÇA "" (sessiz strip YOK, fail-closed manifest'i).
+  // Case-level → yalnız insan-okur dosya numarası.
+  const fileReferenceClause = fileNo ? `${fileNo} sayılı dosyanız için ` : '';
+  const caseFileSuffix = fileNo ? ` — ${fileNo}` : '';
   return {
     clientName: render.clientName,
     officeName: render.officeName,
-    periodStart: render.periodStart.toISOString().slice(0, 10),
-    periodEnd: render.periodEnd.toISOString().slice(0, 10),
-    openingBalance: render.openingBalance,
-    closingBalance: render.closingBalance,
+    periodStart: formatDateTrIstanbul(render.periodStart),
+    periodEnd: formatDateTrIstanbul(render.periodEnd),
+    openingBalance: formatTrAmount(render.openingBalance),
+    closingBalance: formatTrAmount(render.closingBalance),
+    // Kapanış bakiyesi kullanıcı satırı — nötr etiketli, mutlak tutar (owner kararı).
+    closingBalanceLine: formatClosingBalanceLine(render.closingBalance, render.currency),
     currency: render.currency,
     lineCount: String(render.lines.length),
     // Dosya referansı yalnız X2 primitifinden gelir; yoksa BOŞ kalır (fallback YOK).
-    caseFileNumber: render.fileReference?.value ?? '',
+    caseFileNumber: fileNo,
+    fileReferenceClause,
+    caseFileSuffix,
   };
 }
 
-const yyyymmdd = (d: Date): string =>
-  `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
-
-const dateTr = (d: Date): string => {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
+// Ek dosya adı da Europe/Istanbul yereline göre (gövde tarihleriyle tutarlı; UTC gün kayması yok).
+const yyyymmdd = (d: Date): string => {
+  const [dd, mm, yyyy] = formatDateTrIstanbul(d).split('.');
+  return `${yyyy}${mm}${dd}`;
 };
+
+const dateTr = formatDateTrIstanbul;
 
 /** Ek dosya adı: iç ID YOK; yalnız kapsam + dönem (deterministik). */
 export function buildStatementAttachmentFilename(render: ClientStatementRenderV1): string {
@@ -135,8 +150,8 @@ export function buildStatementDeliveryMessage(input: {
     `Dönem: ${periodLabel}`,
     `Kapsam: ${scopeLabel}`,
     ...(refLine ? [refLine] : []),
-    `Açılış bakiyesi: ${render.openingBalance} ${render.currency}`,
-    `Kapanış bakiyesi: ${render.closingBalance} ${render.currency}`,
+    `Açılış bakiyesi: ${formatTrAmount(render.openingBalance)} ${displayCurrency(render.currency)}`,
+    formatClosingBalanceLine(render.closingBalance, render.currency),
     `Hareket sayısı: ${render.lines.length}`,
   ];
 

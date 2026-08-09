@@ -163,8 +163,8 @@ describe('CAD C3-B02 — ekstre PDF belge sözleşmesi', () => {
 
   it('[B02-12] açılış ve kapanış bakiyeleri belgede yer alır', () => {
     const serialized = JSON.stringify(buildClientStatementPdfDocument(baseRender()));
-    expect(serialized).toContain('Açılış bakiyesi: 100.00 TRY');
-    expect(serialized).toContain('Kapanış bakiyesi: 120.00 TRY');
+    expect(serialized).toContain('Açılış bakiyesi: 100,00 TL');
+    expect(serialized).toContain('Dönem Sonu Bakiye: 120,00 TL (Müvekkil lehine)');
   });
 
   it('[X3-B03] tahakkuk faizi bilgi tutarı olarak görünür; kaynak iç-ID ve bakiye etkisi render dışı kalır', () => {
@@ -204,7 +204,7 @@ describe('CAD C3-B02 — ekstre PDF belge sözleşmesi', () => {
     const doc = buildClientStatementPdfDocument(render);
     const serializedDoc = JSON.stringify(doc);
     expect(serializedDoc).toContain('Bilgi tutarı');
-    expect(serializedDoc).toContain('45.67');
-    expect(serializedDoc).toContain('120.00 (değişmedi)');
+    expect(serializedDoc).toContain('45,67');
+    expect(serializedDoc).toContain('120,00 (değişmedi)');
   });
 });
