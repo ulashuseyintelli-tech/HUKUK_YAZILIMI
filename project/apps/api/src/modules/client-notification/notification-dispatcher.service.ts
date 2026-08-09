@@ -70,18 +70,9 @@ export class NotificationDispatcherService {
     const dedupeKey = input.dedupeKey ?? this.buildDedupeKey(input.templateCode, input.refType, input.refId);
 
     try {
-      // 1) Idempotency: aynı dedupeKey için SENT var mı? (force değilse)
-      if (!input.force) {
-        const existing = await this.prisma.clientNotification.findFirst({
-          where: { tenantId, dedupeKey, status: 'SENT' },
-          select: { id: true },
-        });
-        if (existing) {
-          return { status: 'skipped', notificationId: existing.id, dedupeKey };
-        }
-      }
-
-      // 2) Şablonu bul + render et
+      // 1) Şablonu bul + render et (fail-closed: çözülmemiş {{token}} → throw → aşağıda 'failed').
+      //    Render CLAIM'den ÖNCE: kalıcı claim satırına güvenli subject/body yazılabilsin, hatalı
+      //    şablon için orphan claim oluşmasın.
       const template = await this.messageTemplate.findByCode(tenantId, input.templateCode);
       const { subject, body } = this.messageTemplate.renderTemplate(
         { subject: template.subject, body: template.body },
@@ -91,8 +82,7 @@ export class NotificationDispatcherService {
         ? this.messageTemplate.renderTemplate({ subject: template.subject, body: template.body }, input.persistedTokens)
         : undefined;
 
-      // 3) Gönder (best-effort) — sendEmail başarısızsa ClientNotification FAILED yazar + throw eder
-      const res = await this.clientNotification.sendEmail(tenantId, userId, {
+      const sendDto = {
         clientId: input.clientId,
         caseId: input.caseId,
         type: input.type,
@@ -103,8 +93,40 @@ export class NotificationDispatcherService {
         templateId: template.id,
         dedupeKey,
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
-      });
+      };
 
+      // 2) G4 atomik claim (force değilse). Inv-1: SENT/PENDING/FAILED üçü de EXISTING → normal
+      //    dispatch retry ETMEZ (retry yalnız resend/force). Inv-5: claim sonucu public DispatchResult'a
+      //    map edilir (status kümesi 'sent'|'failed'|'skipped' DEĞİŞMEZ).
+      if (!input.force) {
+        const claim = await this.clientNotification.claimNotificationSlot(tenantId, userId, sendDto);
+        if (claim.kind !== 'ACQUIRED') {
+          // EXISTING_PENDING | EXISTING_SENT | EXISTING_FAILED → skipped (ikinci normal send yok).
+          return { status: 'skipped', notificationId: claim.notificationId, dedupeKey };
+        }
+        // 3) Yalnız claim sahibi provider'a ulaşır (Inv-2/3). reuseNotificationId ile claim tx DIŞINDA gönderilir.
+        const res = await this.clientNotification.sendEmail(tenantId, userId, {
+          ...sendDto,
+          reuseNotificationId: claim.notificationId,
+        });
+        return { status: 'sent', notificationId: res.notificationId, dedupeKey };
+      }
+
+      // force = resend (owner düzeltme-2): claim BYPASS EDİLMEZ, kilitsiz force-send YASAK.
+      // Aynı advisory lock altında YALNIZ FAILED→PENDING reclaim gönderebilir; PENDING/SENT/kayıt-yok → RED.
+      const reclaim = await this.clientNotification.reclaimFailedNotificationSlot(tenantId, userId, sendDto);
+      if (reclaim.kind !== 'RECLAIMED') {
+        // EXISTING_PENDING | EXISTING_SENT | NO_RECORD → resend RED → skipped (yeni satır/gönderim yok).
+        return {
+          status: 'skipped',
+          ...(reclaim.kind !== 'NO_RECORD' ? { notificationId: reclaim.notificationId } : {}),
+          dedupeKey,
+        };
+      }
+      const res = await this.clientNotification.sendEmail(tenantId, userId, {
+        ...sendDto,
+        reuseNotificationId: reclaim.notificationId,
+      });
       return { status: 'sent', notificationId: res.notificationId, dedupeKey };
     } catch (error: any) {
       // BEST-EFFORT: hata yutulur, çağırana fırlatılmaz (state bozulmaz).

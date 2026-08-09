@@ -32,9 +32,16 @@ describe("ClientNotificationService provider error sanitization", () => {
 
   it("SMTP provider sırrını DB, response ve logdan redakte eder", async () => {
     const rawSecret = "smtp-secret-value";
+    // Owner safety (C1-B05-A): persist edilen FAILED errorMessage yalnız KESİN red (SMTP 5xx) yolunda
+    // yazılır (belirsiz/generic hata → PENDING, errorMessage yok). Gerçek SMTP auth reddi 535 döner;
+    // redaksiyon sözleşmesi bu kesin-red errorMessage üzerinde doğrulanır.
     const sendMail = jest
       .fn()
-      .mockRejectedValue(new Error(`Authentication failed password=${rawSecret} apiKey=another-secret`));
+      .mockRejectedValue(
+        Object.assign(new Error(`Authentication failed password=${rawSecret} apiKey=another-secret`), {
+          responseCode: 535,
+        }),
+      );
     (nodemailer.createTransport as jest.Mock).mockReturnValue({ sendMail });
     office.getFullSmtpSettings.mockResolvedValue({
       smtpHost: "smtp.example.com",

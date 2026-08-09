@@ -126,9 +126,11 @@ describe('CAD C3 — sendEmail attachment taşıma', () => {
     expect(row.status).toBe('PENDING');
   });
 
-  it('[ATT-4] provider hatasında SENT kaydı ÜRETİLMEZ (FAILED damgalanır)', async () => {
+  it('[ATT-4] KESİN provider reddinde (SMTP 5xx) SENT kaydı ÜRETİLMEZ (FAILED damgalanır)', async () => {
     const { service, updated } = makeService();
-    sendMail.mockRejectedValue(new Error('smtp down'));
+    // Owner safety: FAILED yalnız KESİN red (SMTP 5xx). Belirsiz (generic/timeout) → PENDING
+    // (ayrı olarak client-notification-send-outcome.spec.ts kapsar). Burada kesin-red kanıtı.
+    sendMail.mockRejectedValue(Object.assign(new Error('smtp down'), { responseCode: 550 }));
 
     await expect(
       (service as any).sendEmail(TENANT, USER, {
@@ -155,6 +157,14 @@ describe('CAD C3 — dispatcher zincirinden ek geçişi', () => {
     };
     const clientNotification: any = {
       sendEmail: jest.fn().mockResolvedValue({ success: true, notificationId: 'notif-1' }),
+      // C1-B05-A G4: dispatch artık provider'dan ÖNCE atomik claim eder. alreadySent → EXISTING_SENT
+      // (skip, ikinci gönderim yok); aksi halde ACQUIRED (yalnız claim sahibi sendEmail'e ulaşır).
+      claimNotificationSlot: jest.fn().mockResolvedValue(
+        options.alreadySent
+          ? { kind: 'EXISTING_SENT', notificationId: 'notif-existing' }
+          : { kind: 'ACQUIRED', notificationId: 'notif-1' },
+      ),
+      reclaimFailedNotificationSlot: jest.fn().mockResolvedValue({ kind: 'NO_RECORD' }),
     };
     const messageTemplate: any = {
       findByCode: jest.fn().mockResolvedValue({ id: 'tpl-1', subject: 'Ekstre {{periodEnd}}', body: 'Sayın {{clientName}}' }),

@@ -127,7 +127,34 @@ export interface SendEmailDto {
   dedupeKey?: string; // Faz 3 idempotency anahtarı (opsiyonel; ClientNotification.dedupeKey'e yazılır)
   /** Opsiyonel mail ekleri — TAŞIMA-ONLY (içerik DB'ye yazılmaz). Verilmezse davranış birebir aynıdır. */
   attachments?: readonly ClientNotificationAttachment[];
+  /**
+   * G4 (C1-B05-A): önceden atomik claim edilmiş PENDING kaydın id'si. Verildiğinde sendEmail
+   * YENİ kayıt OLUŞTURMAZ; kaydı tenant+client+dedupeKey+PENDING ile YENİDEN DOĞRULAYIP (Inv-2)
+   * o kayıt üzerinden gönderir. Verilmezse davranış birebir eskisi gibidir (geriye-uyumlu).
+   */
+  reuseNotificationId?: string;
 }
+
+/**
+ * G4 atomik claim sonucu (C1-B05-A, Inv-5). Yalnız `ACQUIRED` gönderim yapabilir; diğerleri
+ * mevcut kaydı işaret eder. Public DispatchResult şekli DEĞİŞMEZ — dispatcher bunu map eder.
+ */
+export type NotificationClaimResult =
+  | { kind: 'ACQUIRED'; notificationId: string }
+  | { kind: 'EXISTING_PENDING'; notificationId: string }
+  | { kind: 'EXISTING_SENT'; notificationId: string }
+  | { kind: 'EXISTING_FAILED'; notificationId: string };
+
+/**
+ * G4 resend reclaim sonucu (C1-B05-A, owner düzeltme-2). resend/force YENİ satır oluşturamaz ve
+ * kilitsiz gönderemez. Aynı advisory lock altında YALNIZ FAILED → PENDING atomik geçişiyle mevcut
+ * kayıt yeniden sahiplenilir (RECLAIMED). PENDING/SENT → RED; kayıt yoksa NO_RECORD.
+ */
+export type NotificationReclaimResult =
+  | { kind: 'RECLAIMED'; notificationId: string }
+  | { kind: 'EXISTING_PENDING'; notificationId: string }
+  | { kind: 'EXISTING_SENT'; notificationId: string }
+  | { kind: 'NO_RECORD' };
 
 export interface SendSmsDto {
   clientId: string;
@@ -587,48 +614,71 @@ export class ClientNotificationService {
 
   // E-posta gönder
   async sendEmail(tenantId: string, userId: string, dto: SendEmailDto) {
-    // Müvekkil bilgilerini al
+    // Inv-2: reuse yolu → provider'a ulaşmadan ÖNCE claim kaydını tenant+client+dedupeKey+PENDING ile
+    // YENİDEN DOĞRULA ve id'yi al. Pre-send hataları (no-recipient/SMTP) bu claim'i FAILED işaretler
+    // (orphan-PENDING bırakılmaz; owner düzeltme-3).
+    let claimRowId: string | null = null;
+    if (dto.reuseNotificationId) {
+      const claimed = await this.prisma.clientNotification.findFirst({
+        where: {
+          id: dto.reuseNotificationId,
+          tenantId,
+          clientId: dto.clientId,
+          ...(dto.dedupeKey ? { dedupeKey: dto.dedupeKey } : { dedupeKey: null }),
+          status: "PENDING",
+        },
+        select: { id: true },
+      });
+      if (!claimed) {
+        throw new BadRequestException(
+          "Claim doğrulaması başarısız (tenant/client/dedupeKey/PENDING eşleşmedi) — gönderim iptal edildi",
+        );
+      }
+      claimRowId = claimed.id;
+    }
+    const markClaimFailed = async (reason: string): Promise<void> => {
+      if (claimRowId) {
+        await this.prisma.clientNotification
+          .update({ where: { id: claimRowId }, data: { status: "FAILED", errorMessage: reason.slice(0, 300) } })
+          .catch(() => undefined);
+      }
+    };
+
+    // Müvekkil + CANONICAL recipient resolution (TEK source-of-truth): primary EMAIL → any EMAIL → client.email.
     const client = await this.prisma.client.findFirst({
       where: { id: dto.clientId, tenantId },
       include: { contacts: true },
     });
-
     if (!client) {
+      await markClaimFailed("client-not-found");
       throw new BadRequestException("Müvekkil bulunamadı");
     }
-
-    // E-posta adresini bul
-    const emailContact = client.contacts?.find(
-      (c) => c.type === "EMAIL" && c.isPrimary
-    ) || client.contacts?.find((c) => c.type === "EMAIL");
-    
+    const emailContact =
+      client.contacts?.find((c) => c.type === "EMAIL" && c.isPrimary) ||
+      client.contacts?.find((c) => c.type === "EMAIL");
     const recipientEmail = emailContact?.value || client.email;
-
     if (!recipientEmail) {
+      // Fail-closed: geçerli alıcı yok → provider çağrısı YOK, claim FAILED (güvenli terminal).
+      await markClaimFailed("recipient-missing");
       throw new BadRequestException("Müvekkilin e-posta adresi bulunamadı");
     }
 
-    // SMTP ayarlarını al
     const smtpSettings = await this.officeService.getFullSmtpSettings(tenantId);
-
     if (!smtpSettings.smtpHost || !smtpSettings.smtpUser) {
+      await markClaimFailed("smtp-not-configured");
       throw new BadRequestException(
-        "E-posta ayarları yapılandırılmamış. Lütfen Büro Ayarları > E-posta bölümünden SMTP ayarlarını yapın."
+        "E-posta ayarları yapılandırılmamış. Lütfen Büro Ayarları > E-posta bölümünden SMTP ayarlarını yapın.",
       );
     }
 
     const safeHtmlBody = sanitizeNotificationHtml(dto.body);
     const safePersistedBody = sanitizeNotificationHtml(dto.persistedBody ?? dto.body);
 
-    // Nodemailer transporter oluştur
     const transporter = nodemailer.createTransport({
       host: smtpSettings.smtpHost,
       port: smtpSettings.smtpPort || 587,
       secure: smtpSettings.smtpSecure || false,
-      auth: {
-        user: smtpSettings.smtpUser,
-        pass: smtpSettings.smtpPass,
-      },
+      auth: { user: smtpSettings.smtpUser, pass: smtpSettings.smtpPass },
     } as nodemailer.TransportOptions);
 
     // Ek TAŞIMA-ONLY: içerik burada tutulmaz, yalnız nodemailer'a devredilir.
@@ -648,28 +698,29 @@ export class ClientNotificationService {
         : {}),
     };
 
-    // Bildirim kaydı oluştur
-    const notification = await this.prisma.clientNotification.create({
-      data: {
-        tenantId,
-        clientId: dto.clientId,
-        caseId: dto.caseId,
-        channel: "EMAIL",
-        type: dto.type,
-        subject: dto.persistedSubject ?? dto.subject,
-        body: safePersistedBody,
-        status: "PENDING",
-        sentById: userId,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-        dedupeKey: dto.dedupeKey,
-      },
-    });
+    // Kayıt: reuse (claim satırı) VEYA yeni oluştur (geriye-uyumlu doğrudan çağıranlar; call-shape korunur).
+    const notification: { id: string } = claimRowId
+      ? { id: claimRowId }
+      : await this.prisma.clientNotification.create({
+          data: {
+            tenantId,
+            clientId: dto.clientId,
+            caseId: dto.caseId,
+            channel: "EMAIL",
+            type: dto.type,
+            subject: dto.persistedSubject ?? dto.subject,
+            body: safePersistedBody,
+            status: "PENDING",
+            sentById: userId,
+            metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+            dedupeKey: dto.dedupeKey,
+          },
+        });
 
+    // Provider gönderimi
+    const fromName = smtpSettings.smtpFromName || "Hukuk Bürosu";
+    const fromEmail = smtpSettings.smtpFromEmail || smtpSettings.smtpUser;
     try {
-      // E-posta gönder
-      const fromName = smtpSettings.smtpFromName || "Hukuk Bürosu";
-      const fromEmail = smtpSettings.smtpFromEmail || smtpSettings.smtpUser;
-
       await transporter.sendMail({
         from: `"${fromName}" <${fromEmail}>`,
         to: recipientEmail,
@@ -677,37 +728,148 @@ export class ClientNotificationService {
         ...(attachments ? { attachments } : {}),
         html: safeHtmlBody,
       });
-
-      // Başarılı - durumu güncelle
-      await this.prisma.clientNotification.update({
-        where: { id: notification.id },
-        data: {
-          status: "SENT",
-          sentAt: new Date(),
-        },
-      });
-
-      this.logger.log(`E-posta gönderildi: ${maskEmail(recipientEmail)}`);
-
-      return {
-        success: true,
-        notificationId: notification.id,
-        recipient: recipientEmail,
-      };
     } catch (error: any) {
+      // OWNER SAFETY: provider çağrısı BAŞLADIKTAN sonra outcome sınıflandırması.
+      // FAILED yalnız KESİN RED (kalıcı SMTP 5xx yanıtı). Diğer her şey (timeout/connection-reset/
+      // transport-exception/4xx/responseCode yok) = SONUÇ BELİRSİZ → PENDING KALIR (güvenli varsayılan;
+      // FAILED VARSAYILMAZ). Belirsizde teslim olmuş olabilir → kör resend duplicate riski.
       const safeError = this.sanitizeProviderError(error?.message);
-      // Hata - durumu güncelle
+      const rc = typeof error?.responseCode === "number" ? error.responseCode : undefined;
+      const definitiveRejection = rc !== undefined && rc >= 500 && rc < 600;
+      if (definitiveRejection) {
+        await this.prisma.clientNotification.update({
+          where: { id: notification.id },
+          data: { status: "FAILED", errorMessage: safeError },
+        });
+        this.logger.error(`E-posta kesin reddedildi (SMTP ${rc}): ${safeError}`);
+        throw new BadRequestException(`E-posta gönderilemedi (kesin red)`);
+      }
+      // Belirsiz sonuç → PENDING kalır (FAILED yapılmaz), delivery-uncertain. Raw error kullanıcıya çıkmaz.
+      this.logger.error(
+        `E-posta gönderim sonucu BELİRSİZ — kayıt PENDING kalıyor (manuel reconciliation): notif=${notification.id}`,
+      );
+      throw new BadRequestException("E-posta gönderim sonucu belirsiz — teslim doğrulanamadı (manuel reconciliation gerekir)");
+    }
+
+    // Provider KABUL ETTİ. Inv-4 (owner düzeltmesi): SENT damgası AYRI ve ZORUNLU kanıttır.
+    // Damga başarısızsa KALICI KANIT YOKTUR → sonuç `sent` DÖNEMEZ; sanitize `failed` throw edilir.
+    // Kayıt PENDING KALIR (FAILED'a çevrilmez — mail gitmiş olabilir) → normal dispatch tekrar
+    // gönderemez (EXISTING_PENDING skip). Belirsizlik manuel reconciliation ister; kör resend yok.
+    try {
       await this.prisma.clientNotification.update({
         where: { id: notification.id },
+        data: { status: "SENT", sentAt: new Date() },
+      });
+    } catch (markError: any) {
+      this.logger.error(
+        `SENT damgası yazılamadı; kalıcı kanıt yok, kayıt PENDING kalıyor (manuel reconciliation): notif=${notification.id}`,
+      );
+      throw new BadRequestException(
+        "E-posta gönderim sonucu kalıcılaştırılamadı — sonuç belirsiz (manuel reconciliation gerekir)",
+      );
+    }
+
+    this.logger.log(`E-posta gönderildi: ${maskEmail(recipientEmail)}`);
+    return { success: true, notificationId: notification.id, recipient: recipientEmail };
+  }
+
+  /**
+   * G4 (C1-B05-A) — ATOMİK + KALICI CLAIM. Provider çağrısından ÖNCE, migration OLMADAN.
+   * Advisory xact-lock (Inv-3: hashtextextended(tenant|sep|dedupeKey)) altında dedupeKey için
+   * mevcut kayıt kontrolü + yoksa PENDING claim satırı create. Lock xact-scoped → COMMIT'te
+   * bırakılır; provider ağ çağrısı bu tx'in DIŞINDA yapılır. İki concurrent çağrıdan yalnız biri
+   * ACQUIRED alır; diğeri EXISTING_PENDING görür (Inv-1: SENT/PENDING/FAILED üçü de EXISTING —
+   * normal dispatch FAILED'ı da retry etmez, retry yalnız resend yolundan force ile).
+   */
+  async claimNotificationSlot(
+    tenantId: string,
+    userId: string,
+    dto: SendEmailDto,
+  ): Promise<NotificationClaimResult> {
+    if (!dto.dedupeKey) {
+      throw new BadRequestException("claimNotificationSlot: dedupeKey zorunlu");
+    }
+    const lockKeyText = `client-notification-dispatch|${tenantId}|${dto.dedupeKey}`;
+    const safePersistedBody = sanitizeNotificationHtml(dto.persistedBody ?? dto.body);
+    const metadata = dto.templateId ? { templateId: dto.templateId } : undefined;
+
+    return this.prisma.$transaction(async (tx) => {
+      // Inv-3: deterministic advisory xact lock (tenant + domain-separator + dedupeKey)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKeyText}, 0))`;
+
+      const existing = await tx.clientNotification.findFirst({
+        where: { tenantId, dedupeKey: dto.dedupeKey },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, status: true },
+      });
+      if (existing) {
+        if (existing.status === "SENT") return { kind: "EXISTING_SENT", notificationId: existing.id };
+        if (existing.status === "PENDING") return { kind: "EXISTING_PENDING", notificationId: existing.id };
+        // FAILED (veya diğer terminal): normal dispatch RETRY ETMEZ (Inv-1).
+        return { kind: "EXISTING_FAILED", notificationId: existing.id };
+      }
+
+      const row = await tx.clientNotification.create({
         data: {
-          status: "FAILED",
-          errorMessage: safeError,
+          tenantId,
+          clientId: dto.clientId,
+          caseId: dto.caseId,
+          channel: "EMAIL",
+          type: dto.type,
+          subject: dto.persistedSubject ?? dto.subject,
+          body: safePersistedBody,
+          status: "PENDING",
+          sentById: userId,
+          metadata,
+          dedupeKey: dto.dedupeKey,
+        },
+        select: { id: true },
+      });
+      return { kind: "ACQUIRED", notificationId: row.id };
+    });
+  }
+
+  /**
+   * G4 resend (owner düzeltme-2) — resend/force YENİ satır oluşturmaz ve kilitsiz göndermez.
+   * Aynı advisory lock (Inv-3) altında dedupeKey için mevcut kayıt: PENDING→RED, SENT→RED,
+   * FAILED→atomik FAILED→PENDING reclaim (aynı satır) → provider'a reuse ile gider. Kayıt yoksa NO_RECORD.
+   */
+  async reclaimFailedNotificationSlot(
+    tenantId: string,
+    _userId: string,
+    dto: SendEmailDto,
+  ): Promise<NotificationReclaimResult> {
+    if (!dto.dedupeKey) {
+      throw new BadRequestException("reclaimFailedNotificationSlot: dedupeKey zorunlu");
+    }
+    const lockKeyText = `client-notification-dispatch|${tenantId}|${dto.dedupeKey}`;
+    const safePersistedBody = sanitizeNotificationHtml(dto.persistedBody ?? dto.body);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKeyText}, 0))`;
+
+      const existing = await tx.clientNotification.findFirst({
+        where: { tenantId, dedupeKey: dto.dedupeKey },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, status: true },
+      });
+      if (!existing) return { kind: "NO_RECORD" };
+      if (existing.status === "SENT") return { kind: "EXISTING_SENT", notificationId: existing.id };
+      if (existing.status === "PENDING") return { kind: "EXISTING_PENDING", notificationId: existing.id };
+
+      // FAILED → atomik FAILED→PENDING reclaim (AYNI satır; yeni satır YOK). errorMessage temizlenir,
+      // güncel render (subject/body) yazılır; reuse re-verify (Inv-2) bu PENDING satırı doğrular.
+      await tx.clientNotification.update({
+        where: { id: existing.id },
+        data: {
+          status: "PENDING",
+          errorMessage: null,
+          subject: dto.persistedSubject ?? dto.subject,
+          body: safePersistedBody,
         },
       });
-
-      this.logger.error(`E-posta gönderilemedi: ${safeError}`);
-      throw new BadRequestException(`E-posta gönderilemedi: ${safeError}`);
-    }
+      return { kind: "RECLAIMED", notificationId: existing.id };
+    });
   }
 
   // SMS gönder (NetGSM API)
