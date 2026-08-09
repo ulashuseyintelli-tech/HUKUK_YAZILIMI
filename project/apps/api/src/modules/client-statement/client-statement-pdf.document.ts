@@ -58,10 +58,54 @@ export function lineLabelTr(type: ClientStatementLineType): string {
   return CLIENT_STATEMENT_LINE_LABELS_TR[type];
 }
 
-const dateTr = (d: Date): string => {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
-};
+/**
+ * Tarih gösterimi Europe/Istanbul yereline göre (UTC gün kayması YOK). Sabit zaman
+ * dilimi + sabit girdi ile deterministiktir (saat/rastgelelik kullanılmaz).
+ */
+export function formatDateTrIstanbul(d: Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('day')}.${get('month')}.${get('year')}`;
+}
+
+/** tr-TR tutar biçimi (binlik "."; ondalık ","; 2 hane). İşaret korunur. ICU'dan bağımsız, deterministik. */
+export function formatTrAmount(value: string | { toString(): string }): string {
+  const n = Number(typeof value === 'string' ? value : value.toString());
+  const safe = Number.isFinite(n) ? n : 0;
+  const neg = safe < 0;
+  const [intPart, decPart] = Math.abs(safe).toFixed(2).split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${neg ? '-' : ''}${grouped},${decPart}`;
+}
+
+/** Kullanıcı-yüzü para birimi gösterimi: ISO 'TRY' → 'TL' (Türkçe yerleşik); diğerleri olduğu gibi. */
+export function displayCurrency(currency: string): string {
+  return currency === 'TRY' ? 'TL' : currency;
+}
+
+/**
+ * Kapanış (dönem sonu) bakiye satırı — OWNER KARARI (nötr, hukuki borç/alacak hükmü kurmaz):
+ *   raw < 0 → "... (Büro lehine)"
+ *   raw > 0 → "... (Müvekkil lehine)"
+ *   raw = 0 → "... (Bakiye bulunmamaktadır)"
+ * Etiketli gösterimde MUTLAK tutar kullanılır; eksi işareti ayrıca gösterilmez.
+ * E-posta ve PDF birebir aynı stringi kullanır.
+ */
+export function formatClosingBalanceLine(value: string | { toString(): string }, currency: string): string {
+  const n = Number(typeof value === 'string' ? value : value.toString());
+  const safe = Number.isFinite(n) ? n : 0;
+  const [intPart, decPart] = Math.abs(safe).toFixed(2).split('.');
+  const abs = `${intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${decPart}`;
+  const label = safe < 0 ? 'Büro lehine' : safe > 0 ? 'Müvekkil lehine' : 'Bakiye bulunmamaktadır';
+  return `Dönem Sonu Bakiye: ${abs} ${displayCurrency(currency)} (${label})`;
+}
+
+const dateTr = formatDateTrIstanbul;
 
 /** Deterministik belge tanımı (saat/rastgelelik KULLANILMAZ). */
 export function buildClientStatementPdfDocument(render: ClientStatementRenderV1): {
@@ -74,7 +118,7 @@ export function buildClientStatementPdfDocument(render: ClientStatementRenderV1)
     ['Müvekkil', render.clientName],
     ['Kapsam', scopeLabel],
     ['Dönem', `${dateTr(render.periodStart)} – ${dateTr(render.periodEnd)}`],
-    ['Para birimi', render.currency],
+    ['Para birimi', displayCurrency(render.currency)],
   ];
   if (render.fileReference) {
     headerRows.push([render.fileReference.label, render.fileReference.value]);
@@ -98,10 +142,10 @@ export function buildClientStatementPdfDocument(render: ClientStatementRenderV1)
     l.label,
     ...(showFileColumn ? [l.fileReference ? l.fileReference.value : '—'] : []),
     l.note ?? '',
-    ...(showInformationalAmount ? [l.informationalAmount ?? '—'] : []),
-    l.isInformational ? '—' : l.debit,
-    l.isInformational ? '—' : l.credit,
-    l.isInformational ? `${l.runningBalance} (değişmedi)` : l.runningBalance,
+    ...(showInformationalAmount ? [l.informationalAmount ? formatTrAmount(l.informationalAmount) : '—'] : []),
+    l.isInformational ? '—' : formatTrAmount(l.debit),
+    l.isInformational ? '—' : formatTrAmount(l.credit),
+    l.isInformational ? `${formatTrAmount(l.runningBalance)} (değişmedi)` : formatTrAmount(l.runningBalance),
   ]);
 
   return {
@@ -109,9 +153,9 @@ export function buildClientStatementPdfDocument(render: ClientStatementRenderV1)
     content: [
       { text: 'MÜVEKKİL EKSTRESİ', style: 'title' },
       { table: { body: headerRows }, style: 'meta' },
-      { text: `Açılış bakiyesi: ${render.openingBalance} ${render.currency}`, style: 'balance' },
+      { text: `Açılış bakiyesi: ${formatTrAmount(render.openingBalance)} ${displayCurrency(render.currency)}`, style: 'balance' },
       { table: { headerRows: 1, body: [columns, ...body] }, style: 'lines' },
-      { text: `Kapanış bakiyesi: ${render.closingBalance} ${render.currency}`, style: 'balance' },
+      { text: formatClosingBalanceLine(render.closingBalance, render.currency), style: 'balance' },
       { text: CLIENT_STATEMENT_PDF_INFO_NOTE, style: 'footnote' },
     ],
   };

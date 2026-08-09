@@ -40,6 +40,18 @@ export interface TemplateTokens {
   [key: string]: string | undefined;
 }
 
+/**
+ * Render sonrası çözülmemiş {{token}} kaldığında fail-closed hata: malformed içerik
+ * provider'a GÖNDERİLMEZ (sessiz global strip YOK). Yalnız token ADLARINI taşır —
+ * değer/PII/secret İÇERMEZ; çağıran dispatch bunu kontrollü FAILED'a çevirir.
+ */
+export class UnresolvedTemplateTokenError extends Error {
+  constructor(public readonly tokenNames: string[]) {
+    super(`Çözülmemiş şablon token(lar)ı: ${tokenNames.join(', ')}`);
+    this.name = 'UnresolvedTemplateTokenError';
+  }
+}
+
 @Injectable()
 export class MessageTemplateService {
   constructor(private prisma: PrismaService) {}
@@ -143,11 +155,25 @@ export class MessageTemplateService {
     let subject = template.subject || undefined;
     let body = template.body;
 
-    // Replace all tokens
+    // Replace all provided tokens
     for (const [key, value] of Object.entries(tokens)) {
       const regex = new RegExp(`{{${key}}}`, 'g');
       if (subject) subject = subject.replace(regex, value || '');
       body = body.replace(regex, value || '');
+    }
+
+    // FAIL-CLOSED (owner kritik düzeltmesi): çözülmemiş {{token}} kalırsa malformed
+    // içerik ÜRETİLMEZ — sessiz strip YOK. Yalnız token ADLARI toplanır (değer/PII/secret
+    // sızmaz); çağıran dispatch bunu kontrollü FAILED'a çevirir, provider'a gönderilmez.
+    const unresolved = new Set<string>();
+    const collect = (s: string | undefined): void => {
+      if (!s) return;
+      for (const m of s.matchAll(/{{\s*([\w.]+)\s*}}/g)) unresolved.add(m[1]);
+    };
+    collect(subject);
+    collect(body);
+    if (unresolved.size > 0) {
+      throw new UnresolvedTemplateTokenError([...unresolved].sort());
     }
 
     return { subject, body };
@@ -336,14 +362,17 @@ Saygılarımızla,
         name: 'Müvekkil Ekstresi Hazır',
         category: 'STATEMENT_READY' as MessageTemplateCategory,
         channel: 'EMAIL' as MessageTemplateChannel,
-        subject: '{{caseFileNumber}} - Hesap Ekstreniz Hazır',
+        // caseFileSuffix: client-level "" (temiz), case-level " — {insan-okur no}". Ham {{}} kalmaz.
+        subject: 'Hesap Ekstreniz Hazır{{caseFileSuffix}}',
+        // fileReferenceClause: client-level "" (dosya cümlesi YOK), case-level "{no} sayılı dosyanız için ".
+        // closingBalanceLine: nötr etiketli, mutlak tutar (owner kararı). Tarih Europe/Istanbul, para tr-TR.
         body: `Sayın {{clientName}},
 
-{{executionFileNumber}} sayılı dosyanız için {{periodStart}} - {{periodEnd}} dönemine ait hesap ekstreniz hazırlanmıştır.
+{{fileReferenceClause}}{{periodStart}} - {{periodEnd}} dönemine ait hesap ekstreniz hazırlanmıştır.
 
-Dönem Sonu Bakiye: {{closingBalance}} TL
+{{closingBalanceLine}}
 
-Detay için bürumuzla iletişime geçebilirsiniz.
+Ayrıntılı bilgi için büromuzla iletişime geçebilirsiniz.
 
 Saygılarımızla,
 {{officeName}}`,

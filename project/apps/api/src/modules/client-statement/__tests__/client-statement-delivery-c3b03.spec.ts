@@ -110,7 +110,7 @@ describe('CAD C3-B03 — içerikli ekstre maili + PDF eki', () => {
     expect(msg.contractVersion).toBe(CLIENT_STATEMENT_DELIVERY_CONTRACT_VERSION);
     expect(msg.to).toBe(RECIPIENT);
     expect(msg.subject).toContain('01.06.2026 – 30.06.2026');
-    for (const expected of ['Dönem:', 'Kapsam:', 'Açılış bakiyesi: 100.00 TRY', 'Kapanış bakiyesi: 120.00 TRY', 'Hareket sayısı: 1']) {
+    for (const expected of ['Dönem:', 'Kapsam:', 'Açılış bakiyesi: 100,00 TL', 'Dönem Sonu Bakiye: 120,00 TL (Müvekkil lehine)', 'Hareket sayısı: 1']) {
       expect(msg.text).toContain(expected);
       expect(msg.html).toContain(expected);
     }

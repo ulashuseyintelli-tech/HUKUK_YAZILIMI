@@ -73,8 +73,8 @@ describe('CAD C3 — teslim token sözleşmesi', () => {
     const tokens = buildStatementDeliveryTokens(makeRender());
 
     expect(tokens.clientName).toBe('Deneme Müvekkil');
-    expect(tokens.periodEnd).toBe('2026-02-28');
-    expect(tokens.closingBalance).toBe('250.00');
+    expect(tokens.periodEnd).toBe('28.02.2026'); // Europe/Istanbul yerel; UTC gün kayması yok
+    expect(tokens.closingBalance).toBe('250,00'); // tr-TR
     expect(tokens.lineCount).toBe('1');
     // Dosya referansı X2 primitifinden gelir; yoksa fallback ÜRETİLMEZ.
     expect(tokens.caseFileNumber).toBe('');
