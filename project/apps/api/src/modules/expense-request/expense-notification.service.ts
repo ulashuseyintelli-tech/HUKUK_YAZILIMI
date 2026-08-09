@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EmailProviderService, EmailOptions } from '@/modules/notification/email-provider.service';
+import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { maskEmail } from '@/common/pii-mask.util';
 
 export interface EmailContent {
@@ -41,6 +42,7 @@ export class ExpenseNotificationService {
     private prisma: PrismaService,
     private emailProvider: EmailProviderService,
     private configService: ConfigService,
+    private readonly dispatcher: NotificationDispatcherService,
   ) {}
 
   /**
@@ -271,11 +273,9 @@ export class ExpenseNotificationService {
       throw new NotFoundException('Masraf talebi bulunamadı');
     }
 
-    // Client email bul
-    const clientEmail = request.client.email || request.client.contacts?.[0]?.value;
-    if (!clientEmail) {
-      throw new NotFoundException('Müvekkil e-posta adresi bulunamadı');
-    }
+    // OWNER düzeltme-2: recipient resolution/gating SERVICE'te YAPILMAZ; dispatcher→sendEmail canonical
+    // çözer (primary EMAIL → any EMAIL → client.email → fail-closed). Aşağıdaki yalnız veri alanı.
+    const clientEmail = request.client.email || request.client.contacts?.[0]?.value || '';
 
     // Office bilgilerini al (IBAN için bankAccounts'a bak)
     const office = await this.prisma.office.findFirst({
@@ -335,107 +335,96 @@ export class ExpenseNotificationService {
       officeEmail: office?.email || undefined,
     };
 
-    // Email render et
-    const emailContent = this.renderExpenseEmail(emailData);
+    // C1-B05-A: legacy hardcoded render + EmailProviderService KALDIRILDI. Kanonik zincir:
+    // EXPENSE_REQUEST template → NotificationDispatcherService (idempotent, G4 atomik claim, POL-4).
+    const formatMoney = (n: number) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const itemsText = emailData.items.map((it) => `- ${it.label}: ${formatMoney(it.amount)} TL`).join('\n');
+    const dueDateText = emailData.dueDate
+      ? new Date(emailData.dueDate).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : 'Belirtilmedi';
 
-    // Email gönder
-    const emailOptions: EmailOptions = {
-      to: clientEmail,
-      subject: emailContent.subject,
-      text: emailContent.text,
-      html: emailContent.html,
+    // POL-4: yalnız insan-okur alanlar; raw iç-ID YOK. Fail-closed: template'in TÜM token'ları sağlanır.
+    const tokens: Record<string, string> = {
+      caseFileNumber: emailData.caseFileNumber ?? '',
+      clientName: emailData.clientName,
+      executionFileNumber: emailData.executionFileNumber ?? '',
+      items: itemsText,
+      totalAmount: formatMoney(emailData.totalAmount),
+      dueDate: dueDateText,
+      officeIban: emailData.iban ?? 'Belirtilmedi',
+      officeName: emailData.lawyerName ?? '',
+      officePhone: emailData.officePhone ?? '',
     };
 
-    const result = await this.emailProvider.send(emailOptions);
+    // Stable domain dedupe key (timestamp YOK): ExpenseRequest id.
+    const dedupeKey = `EXPENSE_REQUEST:ExpenseRequest:${requestId}:1`;
+    const dispatch = await this.dispatcher.dispatch(tenantId, userId, {
+      clientId: request.clientId,
+      ...(request.caseId ? { caseId: request.caseId } : {}),
+      templateCode: 'EXPENSE_REQUEST',
+      type: 'MASRAF_ISTEK',
+      tokens,
+      dedupeKey,
+      refType: 'ExpenseRequest',
+      refId: requestId,
+    });
 
-    if (result.success) {
-      const formattedTotal = emailData.totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+    // dispatch → business-state map (owner düzeltme-3): ExpenseRequest SENT YALNIZ sent|skipped'te
+    // (skipped = önceden kalıcı SENT → idempotent reconcile). Audit/task YALNIZ ilk SENT geçişinde.
+    // failed (PENDING/uncertain/definitive-red/no-recipient/unresolved/claim-red) → SENT DEĞİL.
+    const delivered = dispatch.status === 'sent' || dispatch.status === 'skipped';
+    if (delivered) {
       const now = new Date();
+      const formattedTotal = formatMoney(emailData.totalAmount);
       const formattedDate = now.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-      // Masraf talebini güncelle + Task + Müvekkil Notu oluştur
       await this.prisma.$transaction(async (tx) => {
-        // Masraf talebini güncelle
+        const current = await tx.expenseRequest.findUnique({ where: { id: requestId }, select: { status: true } });
+        if (current?.status === 'SENT') return; // zaten SENT → duplicate audit/task ÜRETİLMEZ (idempotent)
         await tx.expenseRequest.update({
           where: { id: requestId },
           data: {
             status: 'SENT',
             sentAt: now,
             sentVia: 'EMAIL',
-            renderedSubject: emailContent.subject,
-            renderedBody: emailContent.text,
+            renderedSubject: `${emailData.caseFileNumber ?? ''} - Masraf Talebi`,
+            renderedBody: `EXPENSE_REQUEST şablonu ile kanonik dispatcher üzerinden gönderildi (bildirim=${dispatch.notificationId ?? 'reconciled'})`,
           },
         });
-
-        // Audit log
         await tx.expenseAuditLog.create({
           data: {
             expenseRequestId: requestId,
             action: 'EMAIL_SENT',
-            details: {
-              to: clientEmail,
-              subject: emailContent.subject,
-              messageId: result.messageId,
-              provider: result.provider,
-            },
+            details: { via: 'dispatcher', notificationId: dispatch.notificationId ?? null, reconciled: dispatch.status === 'skipped' },
             userId,
           },
         });
-
-        // Yapılacaklar'a görev ekle - Masraf takibi için
         await tx.task.create({
           data: {
             tenantId,
             caseId: request.caseId,
-            // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
             title: `Masraf Takibi - ${request.case.fileNumber}`,
-            description: `${formattedTotal} TL masraf talebi müvekkile gönderildi. Ödeme takibi yapılmalı.\n\nGönderim: ${formattedDate}\nAlıcı: ${clientEmail}`,
+            description: `${formattedTotal} TL masraf talebi müvekkile gönderildi. Ödeme takibi yapılmalı.\n\nGönderim: ${formattedDate}`,
             status: 'PENDING',
             priority: 'MEDIUM',
             createdById: userId === 'system' ? null : userId,
           },
         });
-
-        // Müvekkil Bildirimleri'ne kayıt ekle
-        if (request.clientId) {
-          await tx.clientNotification.create({
-            data: {
-              tenantId,
-              clientId: request.clientId,
-              caseId: request.caseId,
-              channel: 'EMAIL',
-              type: 'MASRAF_ISTEK',
-              subject: emailContent.subject,
-              body: `📧 Masraf talebi e-postası gönderildi.\n\nTutar: ${formattedTotal} TL\nAlıcı: ${clientEmail}`,
-              status: 'SENT',
-              sentAt: now,
-              sentById: userId === 'system' ? 'system' : userId,
-            },
-          });
-        }
       });
-
-      this.logger.log(`Expense email sent to ${maskEmail(clientEmail)} for request ${requestId}`);
-    } else {
-      this.logger.error(`Failed to send expense email: ${result.errorMessage}`);
-      
-      // Hata logla
-      await this.prisma.expenseAuditLog.create({
-        data: {
-          expenseRequestId: requestId,
-          action: 'EMAIL_FAILED',
-          details: {
-            to: clientEmail,
-            errorCode: result.errorCode,
-            errorMessage: result.errorMessage,
-            provider: result.provider,
-          },
-          userId,
-        },
-      });
+      this.logger.log(`Masraf talebi bildirimi gönderildi (dispatcher, ${dispatch.status}): requestId=${requestId}`);
+      return { success: true, notificationId: dispatch.notificationId };
     }
 
-    return result;
+    // failed → ExpenseRequest SENT OLMAZ. Güvenli audit (raw provider error/secret ÇIKMAZ).
+    await this.prisma.expenseAuditLog.create({
+      data: {
+        expenseRequestId: requestId,
+        action: 'EMAIL_FAILED',
+        details: { via: 'dispatcher', outcome: 'delivery-not-confirmed' },
+        userId,
+      },
+    });
+    this.logger.warn(`Masraf talebi bildirimi teslim doğrulanamadı (requestId=${requestId})`);
+    return { success: false };
   }
 
   /**

@@ -893,6 +893,9 @@ describe('ExpenseNotificationService - Property Tests', () => {
         { provide: ClientSettlementReadService, useValue: mockClientSettlementReadService },
         { provide: EmailProviderService, useValue: mockEmailProviderService },
         { provide: ConfigService, useValue: mockConfigService },
+        // C1-B05-A: sendExpenseRequest artık kanonik NotificationDispatcherService kullanıyor;
+        // render testleri saf renderExpenseEmail'i sınar ama servisin instantiate olması için gerekli.
+        { provide: NotificationDispatcherService, useValue: mockDispatcher },
       ],
     }).compile();
 
