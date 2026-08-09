@@ -64,3 +64,14 @@ B implementasyonu şunlardan **en az birini** gerektirir; ikisi de C1 allowed-pa
 → **B = PENDING / NEXT (BLOCKED_EXACT DEĞİL).** Owner bu decision-pack üzerinden (1) allowed-path genişletir,
 (2) migration yetkisi verir, veya (3) alternatif kanonik trigger belirtirse; B, A ile aynı B05 çalışmasında
 uygulanır. C1-B05-A (pre-expense) bu sayfadan bağımsız olarak tamamlanmıştır (kanıt: aynı PR).
+
+---
+
+## 6. SONUÇ (2026-08-09) — OWNER DECISION UYGULANDI
+
+Owner "C1-B05-B TYPED EXPENSE EVENT + DURABLE DELIVERY INTENT" kararıyla (1)+(2)'yi BİRLİKTE verdi:
+allowed-path genişlemesi (case-balance/client-notification/message-template/client-statement +
+schema.prisma + migrations) ve bu exact iş için migration yetkisi. §4'teki tavsiye mimari
+(dedicated typed posting + after-commit intent) owner'ın QUEUED/PENDING/SENT/FAILED state ayrımı
+düzeltmesiyle uygulandı. Kanıt ve kapanış: `C1-B05-B-TYPED-EXPENSE-ACTUAL-CLOSEOUT-R01.md`
+(corrective completion PR — bu sayfa artık TARİHSEL analiz kaydıdır).

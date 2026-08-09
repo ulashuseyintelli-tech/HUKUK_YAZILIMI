@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { ClientNotificationService } from '@/modules/client-notification/client-notification.service';
+import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import {
   AccountingJournalWriterService,
   buildAccountingJournal,
@@ -49,6 +51,28 @@ export interface DebitBalanceDto {
   description?: string;
 }
 
+/**
+ * C1-B05-B — TYPED gerçekleşen-masraf posting komutu girdisi (owner kararı).
+ * postingKey: çağıran sağlar, STABLE (timestamp yok); aynı (tenant, postingKey) EN FAZLA 1 kez POST edilir.
+ */
+export interface PostExpenseActualDto {
+  amount: number;
+  postingKey: string;
+  description?: string;
+}
+
+export interface PostExpenseActualResult {
+  success: true;
+  alreadyPosted: boolean;
+  ledgerId: string;
+  newBalance: number;
+  notification:
+    | { outcome: 'QUEUED_AND_DISPATCHED'; notificationId: string; dispatchStatus: string }
+    | { outcome: 'QUEUED'; notificationId: string }
+    | { outcome: 'RECIPIENT_SCOPE_AMBIGUOUS' }
+    | { outcome: 'ALREADY_POSTED_NO_NEW_INTENT' };
+}
+
 export interface ReverseExpensePaymentBalanceLedgerInput {
   expensePaymentId: string;
   originalBalanceLedgerId: string;
@@ -83,6 +107,11 @@ export class CaseBalanceService {
   constructor(
     private prisma: PrismaService,
     private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
+    // C1-B05-B: typed EXPENSE_ACTUAL posting için delivery-intent bağımlılıkları.
+    // @Optional: mevcut unit testler `new CaseBalanceService(prisma)` ile kurulabilir kalır;
+    // postExpenseActual bu bağımlılıklar olmadan çağrılırsa açıkça reddeder (fail-closed).
+    @Optional() private readonly clientNotification?: ClientNotificationService,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcherService,
   ) {}
 
   /**
@@ -274,6 +303,188 @@ export class CaseBalanceService {
       ledgerId: result.ledger.id,
       isLow: Number(result.balance.balance) < Number(balance.lowThreshold || 500),
     };
+  }
+
+  /**
+   * C1-B05-B — YETKİLİ TYPED GERÇEKLEŞEN-MASRAF POSTING KOMUTU (owner kararı).
+   *
+   * Generic debit()'ten farkları:
+   * - Ledger satırı yazım anında DURABLE + TYPED sınıflandırılır (entryKind=EXPENSE_ACTUAL);
+   *   haciz/operasyon/manuel/reversal DEBIT'leri bu değeri ASLA almaz.
+   * - Posting idempotency: (tenantId, postingKey) advisory lock + DB unique → EN FAZLA 1 ledger satırı.
+   * - Finansal kayıt + QUEUED notification delivery-intent AYNI transaction'da kalıcılaşır (outcome-4);
+   *   provider çağrısı COMMIT SONRASI yapılır (outcome-5); mail başarısızlığı POSTED kaydı
+   *   rollback ETMEZ (outcome-6) — dispatch best-effort'tur ve asla throw ile yayılmaz.
+   * - Alıcı: dosyanın KESİN TEK creditor müvekkili (CaseClient ∪ Case.clientId aday kümesi tam 1
+   *   farklı müvekkile inerse); belirsizse GÖNDERİM YOK (broadcast yasak) — posting yine POSTED olur.
+   * - ExpenseRequest RECEIVED/PAID bu komuta DÖNÜŞTÜRÜLMEZ (onlar müvekkil ödemesi = CREDIT).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseBalanceController.postExpenseActual() → POST /cases/:caseId/balance/expense-actual (ADMIN)
+   * </remarks>
+   */
+  async postExpenseActual(
+    tenantId: string,
+    caseId: string,
+    dto: PostExpenseActualDto,
+    userId: string,
+  ): Promise<PostExpenseActualResult> {
+    if (!this.clientNotification || !this.notificationDispatcher) {
+      throw new ConflictException('postExpenseActual: notification bağımlılıkları yapılandırılmamış');
+    }
+    if (!Number.isFinite(dto.amount) || dto.amount <= 0) {
+      throw new BadRequestException('Geçersiz tutar: pozitif sayı olmalı');
+    }
+    if (typeof dto.postingKey !== 'string' || !/^[A-Za-z0-9._:-]{1,120}$/.test(dto.postingKey)) {
+      throw new BadRequestException('Geçersiz postingKey: 1-120 karakter, [A-Za-z0-9._:-]');
+    }
+
+    // Tenant fail-closed sahiplik + bakiye (debit() ile aynı tek nokta).
+    const balance = await this.getOrCreateBalance(tenantId, caseId);
+
+    // Dosya + KESİN creditor müvekkil çözümü (tek source-of-truth aday kümesi; belirsiz → gönderim yok).
+    const caseRow = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: {
+        id: true,
+        clientId: true,
+        fileNumber: true,
+        executionFileNumber: true,
+        caseClients: { select: { clientId: true } },
+      },
+    });
+    if (!caseRow) {
+      throw new NotFoundException('Dava bulunamadı');
+    }
+    const candidateClientIds = new Set<string>(caseRow.caseClients.map((cc) => cc.clientId));
+    if (caseRow.clientId) candidateClientIds.add(caseRow.clientId);
+    const recipientClientId = candidateClientIds.size === 1 ? [...candidateClientIds][0] : null;
+
+    // Bildirim token'ları (POL-4: yalnız insan-okur alanlar; raw iç ID YOK; tr-TR biçim).
+    let tokens: Record<string, string> | null = null;
+    if (recipientClientId) {
+      const [client, office] = await Promise.all([
+        this.prisma.client.findFirst({ where: { id: recipientClientId, tenantId }, select: { displayName: true, name: true } }),
+        this.prisma.office.findFirst({ where: { tenantId }, select: { name: true, phone: true } }),
+      ]);
+      tokens = {
+        clientName: client?.displayName || client?.name || 'Müvekkil',
+        caseFileNumber: caseRow.fileNumber ?? '',
+        executionFileNumber: caseRow.executionFileNumber ?? '',
+        expenseDate: new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        description: dto.description || 'Gerçekleşen masraf',
+        amount: dto.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        currency: 'TL',
+        officeName: office?.name ?? '',
+        officePhone: office?.phone ?? '',
+      };
+    }
+
+    // Bakiye yeterliliği: debit() davranışı birebir (politika icat edilmez).
+    if (Number(balance.balance) < dto.amount) {
+      throw new BadRequestException(
+        `Yetersiz bakiye. Mevcut: ${balance.balance} TL, Gerekli: ${dto.amount} TL`
+      );
+    }
+
+    const lockKeyText = `expense-actual-post|${tenantId}|${dto.postingKey}`;
+    const txResult = await this.prisma.$transaction(async (tx) => {
+      // Aynı (tenant, postingKey) posting'leri serileştir; DB unique constraint son savunma hattıdır.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKeyText}, 0))`;
+
+      const existing = await tx.balanceLedger.findFirst({
+        where: { tenantId, postingKey: dto.postingKey },
+        select: { id: true },
+      });
+      if (existing) {
+        // İdempotent replay: ikinci ledger/intent/mail YOK (outcome: en fazla 1). Mevcut intent'e
+        // DOKUNULMAZ (QUEUED ise drain işler; PENDING/SENT/FAILED durumları korunur).
+        return { alreadyPosted: true as const, ledgerId: existing.id, intentId: null, newBalance: Number(balance.balance) };
+      }
+
+      const ledger = await tx.balanceLedger.create({
+        data: {
+          tenantId,
+          caseBalanceId: balance.id,
+          type: BalanceLedgerType.DEBIT,
+          amount: -dto.amount, // Negatif (debit ile aynı işaret sözleşmesi)
+          entryKind: 'EXPENSE_ACTUAL',
+          postingKey: dto.postingKey,
+          source: `expense_actual:${dto.postingKey}`,
+          sourceId: dto.postingKey,
+          description: dto.description || 'Gerçekleşen masraf',
+          createdById: userId,
+        },
+      });
+
+      const updatedBalance = await tx.caseBalance.update({
+        where: { id: balance.id },
+        data: { balance: { decrement: dto.amount } },
+      });
+
+      // Journal: mevcut BalanceLedger DEBIT yolu birebir (suppress prefix'lerine düşmez).
+      const journalDraft = this.buildBalanceLedgerJournalDraft(tenantId, caseId, ledger as JournalableBalanceLedgerRow);
+      if (journalDraft) {
+        await this.writeBalanceLedgerJournal(tx, journalDraft);
+      }
+
+      // QUEUED delivery-intent AYNI TX'te (outcome-4). Render YOK; provider YOK.
+      let intentId: string | null = null;
+      if (recipientClientId && tokens) {
+        const intent = await this.clientNotification!.enqueueEmailIntentInTransaction(tx, tenantId, userId, {
+          clientId: recipientClientId,
+          caseId,
+          type: 'MASRAF_GERCEKLESEN',
+          dedupeKey: `EXPENSE_ACTUAL_POSTED:BalanceLedger:${ledger.id}:1`,
+          templateCode: 'EXPENSE_ACTUAL_POSTED',
+          tokens,
+        });
+        intentId = intent.notificationId;
+      }
+
+      return { alreadyPosted: false as const, ledgerId: ledger.id, intentId, newBalance: Number(updatedBalance.balance) };
+    });
+
+    // COMMIT SONRASI best-effort teslim (outcome-5/6): başarısızlık POSTED kaydı ETKİLEMEZ.
+    if (txResult.alreadyPosted) {
+      return {
+        success: true,
+        alreadyPosted: true,
+        ledgerId: txResult.ledgerId,
+        newBalance: txResult.newBalance,
+        notification: { outcome: 'ALREADY_POSTED_NO_NEW_INTENT' },
+      };
+    }
+    if (!txResult.intentId) {
+      this.logger.warn(`postExpenseActual: alıcı çözülemedi (aday=${candidateClientIds.size}) — bildirim üretilmedi (caseId=${caseId})`);
+      return {
+        success: true,
+        alreadyPosted: false,
+        ledgerId: txResult.ledgerId,
+        newBalance: txResult.newBalance,
+        notification: { outcome: 'RECIPIENT_SCOPE_AMBIGUOUS' },
+      };
+    }
+    try {
+      const dispatch = await this.notificationDispatcher!.dispatchQueuedIntent(tenantId, userId, txResult.intentId);
+      return {
+        success: true,
+        alreadyPosted: false,
+        ledgerId: txResult.ledgerId,
+        newBalance: txResult.newBalance,
+        notification: { outcome: 'QUEUED_AND_DISPATCHED', notificationId: txResult.intentId, dispatchStatus: dispatch.status },
+      };
+    } catch {
+      // dispatchQueuedIntent zaten throw etmez; bu guard salt savunmadır. Intent QUEUED/PENDING kalır.
+      return {
+        success: true,
+        alreadyPosted: false,
+        ledgerId: txResult.ledgerId,
+        newBalance: txResult.newBalance,
+        notification: { outcome: 'QUEUED', notificationId: txResult.intentId },
+      };
+    }
   }
 
   /// <remarks>
