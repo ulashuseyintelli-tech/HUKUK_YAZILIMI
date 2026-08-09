@@ -1750,3 +1750,34 @@ GO-MIGRATE GATE = HİÇ AÇILMAMIŞ (RETROAKTİF KAPATILAMAZ) / OWNER ATTRIBUTIO
 
 IMPLEMENTATION AUTHORITY: NONE — bu kayıt hiçbir yeni yetki üretmez.
 ```
+
+## 26. WAVE 4 pre-activation frontier ölçümü — 4 pending migration (2026-08-09, salt-okuma)
+
+Owner "WAVE 4 READINESS CORRECTION" hard-gate ölçümü (production mutation YOK; explicit
+`_prisma_migrations` SELECT + exact dizin sayımı + `prisma migrate status` çaprazı):
+
+```text
+CANONICAL MAIN (ölçüm anı) : 3728ffcf (bu kayıt d20ba035 tabanından yazıldı)
+PRODUCTION hukuk_db        : applied=121 · failed/rolled-back=0 · repo-dışı orphan=0
+REPO migrations/           : 125 dizin (exact; migrate status çaprazı: "125 migrations found")
+PENDING                    : 4 — deploy TEK seferde dördünü uygular
+```
+
+| Pending migration | SHA-256 (migration.sql) | Kaynak hat |
+|---|---|---|
+| 20260809090000_client_statement_interest_projection | 0B5951656E0F131E874F1283CEC640358C9624E151CC304D541E793BC577325A | X3 |
+| 20260809090100_client_statement_interest_projection_shape | DCF0B87A330204AFA9C15B6B2008E4F38EE3FEA09F4C732EE8BC84845E9B470A | X3 |
+| 20260809090500_client_statement_delivery_ledger | 489CA17C61E276CEA846368F3D436E29303AC90BA68882A6A3CC0BFA5135A74D | C3-B05 |
+| 20260809210000_expense_actual_typed_posting | 3C89B3C0A514B97ACAFFD125789768CE8B308F8D99EE764A4F9667D21FD7C86E | C1-B05-B |
+
+Notlar:
+- Dördü de ADDITIVE/backward-compatible; izole test DB'de baseline(121-eş frontier)→125 deploy,
+  fresh-full rebuild ve checksum parity kanıtları WAVE 4 readiness paketlerindedir.
+- Tarihsel duplicate timestamp kaydı (deploy engeli DEĞİL; ad-bazlı sıralama belirsizliği çözer):
+  `20260627000000_k1_safe_login_provisioning` + `20260627000000_tm3_m1_collection_disposition`,
+  `20260628000000_error_logs_persistent_dedupe` + `20260628000000_tm3_fazb0_client_statement_caseid_nullable`
+  (dördü de UYGULANMIŞ).
+- §25'teki "109/109, kuyruk boş" ifadesi 2026-07-29 tarihlidir; bu bölüm güncel durumu kaydeder.
+
+IMPLEMENTATION AUTHORITY: NONE — bu kayıt live-apply yetkisi ÜRETMEZ; production APPLY owner-gated
+WAVE 4 ACTIVATION kapsamındadır.
