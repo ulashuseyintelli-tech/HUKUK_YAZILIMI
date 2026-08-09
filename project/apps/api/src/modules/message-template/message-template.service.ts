@@ -258,7 +258,7 @@ Hesap Sahibi: {{accountHolder}}
 IBAN: {{officeIban}}
 Ödeme Açıklaması: {{paymentReference}}
 
-Ödemeniz alındıktan sonra bu avanstan yapılan her gerçekleşen masraf size ayrıca bildirilecektir.
+Ödemeniz alındıktan sonra bu avans kullanılarak karşılanan masrafların her biri ayrıca tarafınıza bildirilecektir.
 
 Dekontunuzu bu e-postaya yanıt olarak iletebilirsiniz.
 

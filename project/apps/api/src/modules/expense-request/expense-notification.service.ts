@@ -4,6 +4,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { EmailProviderService, EmailOptions } from '@/modules/notification/email-provider.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { maskEmail } from '@/common/pii-mask.util';
+import { findExpenseCatalogEntry } from './expense-item-catalog';
 
 export interface EmailContent {
   subject: string;
@@ -365,11 +366,14 @@ export class ExpenseNotificationService {
     const formatMoney = (n: number) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     // Owner sözleşmesi: kalem TÜRÜ/AÇIKLAMASI kaybolamaz — items request kayıtlarından render edilir
     // (template hardcoded kategori listesi TAŞIMAZ). Açıklama varsa etikete " — açıklama" eklenir.
+    // R02: müvekkil yüzeyinde SENTENCE-CASE müvekkil etiketi kullanılır (katalog clientLabel;
+    // katalog dışı legacy kodda kayıtlı label'a düşer).
     const itemsText = request.requestItems
       .map((item) => {
-        const base = `- ${item.label}: ${formatMoney(item.finalAmount.toNumber())} TL`;
+        const clientLabel = findExpenseCatalogEntry((item as any).itemCode ?? '')?.clientLabel ?? item.label;
+        const base = `- ${clientLabel}: ${formatMoney(item.finalAmount.toNumber())} TL`;
         const desc = (item.description ?? '').trim();
-        return desc && desc !== item.label ? `${base} — ${desc}` : base;
+        return desc && desc !== item.label && desc !== clientLabel ? `${base} — ${desc}` : base;
       })
       .join('\n');
     const dueDateText = emailData.dueDate
@@ -395,9 +399,11 @@ export class ExpenseNotificationService {
       dueDate: dueDateText,
       officeIban: finalIban,
       accountHolder: paymentAccountHolder,
-      paymentReference: emailData.paymentDescription ?? `${emailData.caseFileNumber ?? ''} - Masraf`,
+      // R02: client-safe ödeme açıklaması "…- Masraf avansı" (owner kabul metni).
+      paymentReference: `${emailData.caseFileNumber ?? ''} - Masraf avansı`,
       officeName: emailData.lawyerName ?? '',
-      officePhone: emailData.officePhone ?? '',
+      // R02: telefon müvekkil yüzeyinde "0212 230 89 10" biçiminde gösterilir.
+      officePhone: this.formatDisplayPhone(emailData.officePhone),
     };
 
     // Stable domain dedupe key (timestamp YOK): ExpenseRequest id.
@@ -469,6 +475,18 @@ export class ExpenseNotificationService {
     });
     this.logger.warn(`Masraf talebi bildirimi teslim doğrulanamadı (requestId=${requestId})`);
     return { success: false };
+  }
+
+  /**
+   * R02 — müvekkil yüzeyi telefon biçimi: 11 haneli 0XXXXXXXXXX → "0XXX XXX XX XX".
+   * Beklenmeyen biçimler olduğu gibi bırakılır (serbest metin otomatik düzeltilmez).
+   */
+  private formatDisplayPhone(phone?: string): string {
+    const digits = (phone ?? '').replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('0')) {
+      return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 9)} ${digits.slice(9, 11)}`;
+    }
+    return phone ?? '';
   }
 
   /**
