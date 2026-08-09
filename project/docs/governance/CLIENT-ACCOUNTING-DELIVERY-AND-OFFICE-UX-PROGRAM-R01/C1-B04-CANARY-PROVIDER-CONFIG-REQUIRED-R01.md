@@ -42,14 +42,26 @@ istemci erişiminin kapalı olması · host/port/TLS uyuşmazlığı · hesap ki
 | Mailbox SMTP/harici-istemci erişimi açık mı | **UNKNOWN** (provider-tarafı) |
 | Hesap kilitli/throttled mı | **UNKNOWN** (provider-tarafı) |
 
-## 4. SECRET DISCIPLINE
-- SMTP parolası ajan tarafından HİÇBİR log/kanıt/PR'a yazılmadı.
-- Parola izole canary'ye owner-run hidden-stdin script'iyle girildi; **iş sonunda
-  `smtpPass=NULL`** yapıldı (row-count=1, `passNowNull:true` doğrulandı).
-- Geçici owner-run script'leri repo/worktree DIŞI task dizininden kaldırıldı;
-  RC immutable worktree `git status --porcelain=v1 --untracked-files=all` = 0 satır.
-- NOT (owner'a bildirildi): canlı denemede owner parolayı yanlışlıkla sohbet
-  transkriptine düşürdü → ilgili hesap parolası owner tarafından rotate edilmeli.
+## 4. SECRET DISCIPLINE / EXPOSURE (owner-ratified sınıflandırma)
+
+```text
+REPOSITORY/LOG/PR EXPOSURE: 0
+CHAT TRANSCRIPT EXPOSURE:    YES / CREDENTIAL COMPROMISED
+ROTATION REQUIRED:          YES
+```
+
+- **REPOSITORY/LOG/PR EXPOSURE = 0:** SMTP parolası ajan tarafından hiçbir dosya,
+  commit mesajı, PR açıklaması, log veya çıktıya YAZILMADI. Parola izole canary'ye
+  owner-run hidden-stdin script'iyle girildi; **iş sonunda `smtpPass=NULL`** yapıldı
+  (row-count=1, `passNowNull:true` doğrulandı). Geçici owner-run script'leri
+  repo/worktree DIŞI task dizininden kaldırıldı; RC immutable worktree
+  `git status --porcelain=v1 --untracked-files=all` = 0 satır.
+- **CHAT TRANSCRIPT EXPOSURE = YES / CREDENTIAL COMPROMISED:** canlı denemede owner
+  parolayı yanlışlıkla oturum sohbet transkriptine düşürdü. Bu bir credential
+  compromise'dir — repo/log/PR temiz olması bunu telafi ETMEZ.
+- **ROTATION REQUIRED = YES:** ilgili hesabın credential'ı owner tarafından rotate
+  edilmelidir. (Parolanın kendisi, parçaları veya transkript bağlantısı bu kayda
+  BİLİNÇLİ olarak yazılmamıştır.)
 
 ## 5. PRODUCTION-CLASS RECONCILIATION (ADIM 1 — tamamlandı)
 B04 denemesi sırasında production-class `demo-firma` (hukuk_db) üzerinde oluşan
@@ -74,13 +86,17 @@ zorunlu bir aktivasyon gate'idir.
 Gerçek teslim yeniden denemesi ANCAK kalıcı + şifreli credential yönetimi
 hazırlandıktan sonra yapılır; owner her çalıştırmada yeniden parola GİRMEYECEK.
 
-## 8. KORUNAN ARTIFACTLAR (SİLME)
-- İzole canary DB `hukuk_canary_c1b04` — B05 tamamlanana kadar korunur (evidence).
+## 8. KORUNAN ARTIFACTLAR (SİLME — B04 RESUMPTION tamamlanana kadar)
+- İzole canary DB `hukuk_canary_c1b04` — **B04 RESUMPTION** tamamlanana kadar korunur.
 - RC2 branch `rc2/c1b03-authfix` + dört runtime/rollback dizini — SİLİNMEZ.
 
-## 9. VERDICT
-C1-B04 = **PAUSED / PROVIDER_CONFIGURATION_REQUIRED**. REAL DELIVERY = 0.
+## 9. VERDICT / STATUS
+```text
+C1-B04       = PAUSED / PROVIDER_CONFIGURATION_REQUIRED  (REAL DELIVERY = 0)
+C1-B05       = NOT ELIGIBLE / WAITING_FOR_PREDECESSOR
+NEXT ELIGIBLE = C1-B04 provider remediation/resumption
+```
 Pipeline (statement + PDF + attachment + dispatch-to-provider + dedupe tasarımı) =
 VERIFIED. Gerçek inbox teslimi, geçerli/şifreli SMTP credential yönetimi hazır
-olduğunda ayrı mini-adımda yapılacaktır. C1-B05 PENDING (B04 gerçek-teslim borcu +
-şifreli-credential gate ile).
+olduğunda ayrı mini-adımda yapılacaktır. C1-B04 **ENGINEERING_COMPLETE DEĞİLDİR** ve
+C1-B05 predecessor gate'i (B04 gerçek canary teslimi) aşılmadan başlamaz.
