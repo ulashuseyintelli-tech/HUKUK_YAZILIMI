@@ -1,13 +1,19 @@
 import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { IsBoolean, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsInt, IsObject, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import { Request } from 'express';
+import { AdminGuard } from '@/modules/auth/guards/admin.guard';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
 import { CLIENT_WORKSPACE_COMMAND } from '../client/client-workspace-command-authority';
 import { ClientNotificationAuthorityAdapter } from './client-notification-authority.adapter';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string; role?: string };
+}
+
+/** C1-B05-B — QUEUED intent drain gövdesi (ADMIN). */
+class ProcessQueuedDto {
+  @IsInt() @Min(1) @Max(50) @IsOptional() limit?: number;
 }
 
 /** Manuel resend gövdesi. tokens çağıran tarafından doldurulur (m3a-4). */
@@ -38,6 +44,17 @@ export class NotificationDispatchController {
    * Manuel resend — POST /client-notifications/resend
    * SENT varsa göndermez (force=true ile açık tekrar gönderim).
    */
+  /**
+   * C1-B05-B — QUEUED intent kurtarma (ADMIN). Yalnız QUEUED satırlar işlenir;
+   * PENDING (belirsiz) OTOMATİK yeniden gönderilmez, SENT/FAILED dokunulmaz.
+   * POST /client-notifications/process-queued
+   */
+  @Post('process-queued')
+  @UseGuards(AdminGuard)
+  async processQueued(@Req() req: AuthRequest, @Body() dto: ProcessQueuedDto) {
+    return this.dispatcher.drainQueuedNotifications(req.user.tenantId, req.user.id, dto.limit ?? 10);
+  }
+
   @Post('resend')
   async resend(@Req() req: AuthRequest, @Body() dto: ResendNotificationDto) {
     return this.authority.run(

@@ -199,6 +199,9 @@ export class MessageTemplateService {
         return [...commonTokens, 'subjectLabel', 'decision'];
       case 'STATEMENT_READY':
         return [...commonTokens, 'periodStart', 'periodEnd', 'closingBalance'];
+      case 'EXPENSE_ACTUAL':
+        // C1-B05-B: gerçekleşen masraf — insan-okur dosya referansı + tarih + açıklama + tr-TR tutar.
+        return [...commonTokens, 'expenseDate', 'description', 'amount', 'currency'];
       default:
         return commonTokens;
     }
@@ -207,6 +210,28 @@ export class MessageTemplateService {
   // Varsayılan şablonları oluştur (seed için)
   async seedDefaultTemplates(tenantId: string) {
     const templates = [
+      {
+        // C1-B05-B: gerçekleşen masraf bildirimi (ayrı template/event — owner kararı).
+        // Raw iç ID YOK; yalnız insan-okur dosya referansı; fail-closed render tüm token'ları ister.
+        code: 'EXPENSE_ACTUAL_POSTED',
+        name: 'Gerçekleşen Masraf Bildirimi',
+        category: 'EXPENSE_ACTUAL' as MessageTemplateCategory,
+        channel: 'EMAIL' as MessageTemplateChannel,
+        subject: '{{caseFileNumber}} - Gerçekleşen Masraf Bildirimi',
+        body: `Sayın {{clientName}},
+
+{{caseFileNumber}} numaralı dosyanızda aşağıdaki masraf gerçekleşmiş ve masraf avansı bakiyenizden karşılanmıştır:
+
+Masraf Tarihi: {{expenseDate}}
+Açıklama: {{description}}
+Tutar: {{amount}} {{currency}}
+
+Bu bildirim bilgilendirme amaçlıdır; ayrıca bir ödeme talep edilmemektedir.
+
+Saygılarımızla,
+{{officeName}}
+{{officePhone}}`,
+      },
       {
         code: 'EXPENSE_REQUEST',
         name: 'Masraf Talebi',

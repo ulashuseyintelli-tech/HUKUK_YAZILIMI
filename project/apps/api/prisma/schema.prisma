@@ -5687,6 +5687,7 @@ enum MessageTemplateCategory {
   CLIENT_APPROVAL // Müvekkil işlem onayı / onay sonucu (Faz 3)
   STATEMENT_READY // Müvekkil ekstresi hazır (Faz 3)
   PAYMENT_INFO // Ödeme alındı / kısmi ödeme bakiye (Faz 3)
+  EXPENSE_ACTUAL // Gerçekleşen masraf bildirimi (C1-B05-B)
   OTHER // Diğer
 }
 
@@ -7386,6 +7387,16 @@ model BalanceLedger {
   source   String // "expense_request:xxx", "operation:haciz", "manual_adjust"
   sourceId String? // İlgili kayıt ID
 
+  // C1-B05-B — TYPED gerçekleşen-masraf sınıflandırması (owner kararı).
+  // YALNIZ yetkili postExpenseActual komutu yazar; generic debit/reversal NULL bırakır.
+  // Tarihsel satırlar backfill EDİLMEZ (owner: geçmiş tahminle yeniden sınıflandırılmaz).
+  entryKind BalanceLedgerEntryKind?
+
+  // C1-B05-B — posting idempotency anahtarı (çağıran sağlar; timestamp içermez).
+  // Aynı (tenantId, postingKey) için EN FAZLA 1 ledger satırı — DB-garantili (unique).
+  // NULL = typed-posting dışı satır (mevcut tüm satırlar); NULL'lar unique'e takılmaz.
+  postingKey String?
+
   // Açıklama
   description String?
 
@@ -7396,6 +7407,7 @@ model BalanceLedger {
   expensePaymentReversalOriginals ExpensePaymentReversal[] @relation("ExpensePaymentReversalOriginalBalanceLedger")
   expensePaymentReversalResults   ExpensePaymentReversal[] @relation("ExpensePaymentReversalReversalBalanceLedger")
 
+  @@unique([tenantId, postingKey])
   @@index([tenantId])
   @@index([caseBalanceId])
   @@index([type])
@@ -7407,6 +7419,13 @@ enum BalanceLedgerType {
   DEBIT // Masraf yapıldı
   ADJUST // Manuel düzeltme
   REFUND // İade
+}
+
+// C1-B05-B — BalanceLedger typed sınıflandırma (owner kararı: generic DEBIT trigger OLAMAZ).
+// EXPENSE_ACTUAL yalnız yetkili gerçek-masraf posting komutundan yazılır; haciz/operasyon/
+// manuel/reversal DEBIT'leri bu değeri ASLA almaz.
+enum BalanceLedgerEntryKind {
+  EXPENSE_ACTUAL // Gerçekleşen büro masrafı (typed, durable, yazım anında)
 }
 
 // Aşama Tetikleyici Kuralları

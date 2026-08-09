@@ -147,4 +147,125 @@ export class NotificationDispatcherService {
     // force=false ise dispatch zaten SENT'i skip eder; force=true açık tekrar gönderim.
     return this.dispatch(tenantId, userId, input);
   }
+
+  /**
+   * C1-B05-B — QUEUED delivery-intent'i işler (COMMIT SONRASI çağrılır; ASLA throw etmez).
+   * Sıra: render (fail-closed → FAILED) → atomik QUEUED→PENDING claim (advisory lock) →
+   * provider (mevcut sendEmail reuse yolu; SENT/PENDING/FAILED semantiği DEĞİŞMEZ).
+   * QUEUED olmayan satıra DOKUNMAZ: PENDING otomatik yeniden gönderilmez (crash kuralı),
+   * SENT tekrar gönderilmez, FAILED yalnız explicit reclaim/resend ile.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseBalanceService.postExpenseActual() → posting tx COMMIT sonrası best-effort teslim
+   * - NotificationDispatcherService.drainQueuedNotifications() → crash sonrası QUEUED kurtarma
+   * </remarks>
+   */
+  async dispatchQueuedIntent(tenantId: string, userId: string, notificationId: string): Promise<DispatchResult> {
+    let dedupeKey = '';
+    try {
+      const row = await this.prisma.clientNotification.findFirst({
+        where: { id: notificationId, tenantId },
+        select: { id: true, status: true, dedupeKey: true, clientId: true, caseId: true, type: true, metadata: true },
+      });
+      if (!row || !row.dedupeKey) {
+        return { status: 'failed', dedupeKey, error: 'intent-not-found' };
+      }
+      dedupeKey = row.dedupeKey;
+      if (row.status !== 'QUEUED') {
+        // PENDING (belirsiz/in-flight) / SENT / FAILED → bu yol DOKUNMAZ.
+        return { status: 'skipped', notificationId: row.id, dedupeKey };
+      }
+
+      const meta = (row.metadata ?? {}) as { templateCode?: string; tokens?: Record<string, string> };
+      if (!meta.templateCode || !meta.tokens) {
+        await this.markQueuedIntentFailed(tenantId, row.id, 'intent-metadata-missing');
+        return { status: 'failed', notificationId: row.id, dedupeKey, error: 'intent-metadata-missing' };
+      }
+
+      // Render — FAIL-CLOSED. Hata: yalnız token ADLARI / jenerik sınıf (PII/secret yok) → FAILED.
+      let rendered: { subject?: string; body: string };
+      let template: { id: string; subject: string | null };
+      try {
+        const t = await this.messageTemplate.findByCode(tenantId, meta.templateCode);
+        template = { id: t.id, subject: t.subject };
+        rendered = this.messageTemplate.renderTemplate({ subject: t.subject, body: t.body }, meta.tokens);
+      } catch (renderError: any) {
+        const reason =
+          renderError?.name === 'UnresolvedTemplateTokenError'
+            ? `unresolved-tokens: ${(renderError.tokenNames ?? []).join(',')}`.slice(0, 300)
+            : `template-render-failed: ${meta.templateCode}`;
+        await this.markQueuedIntentFailed(tenantId, row.id, reason);
+        return { status: 'failed', notificationId: row.id, dedupeKey, error: reason };
+      }
+
+      const subject = rendered.subject || template.subject || '';
+      const claim = await this.clientNotification.claimQueuedNotificationSlot(tenantId, row.id, {
+        subject,
+        body: rendered.body,
+      });
+      if (claim.kind !== 'CLAIMED') {
+        // Concurrent claim kazandı veya satır QUEUED değil → ikinci gönderim YOK.
+        return { status: 'skipped', ...(claim.kind === 'NOT_QUEUED' ? { notificationId: claim.notificationId } : {}), dedupeKey };
+      }
+
+      // Provider — claim tx'i COMMIT edildikten sonra (mevcut kanıtlı yol; tx içinde provider YOK).
+      const res = await this.clientNotification.sendEmail(tenantId, userId, {
+        clientId: row.clientId,
+        caseId: row.caseId ?? undefined,
+        type: row.type,
+        subject,
+        body: rendered.body,
+        templateId: template.id,
+        dedupeKey,
+        reuseNotificationId: row.id,
+      });
+      return { status: 'sent', notificationId: res.notificationId, dedupeKey };
+    } catch (error: any) {
+      // BEST-EFFORT: finansal POSTED kayıt asla etkilenmez; satır durumu sendEmail tarafından yönetildi
+      // (deterministik/5xx → FAILED; belirsiz → PENDING kalır — otomatik resend YOK).
+      this.logger.warn(`QUEUED intent dispatch başarısız (dedupeKey=${dedupeKey}): ${error.message}`);
+      return { status: 'failed', dedupeKey, error: error.message };
+    }
+  }
+
+  /**
+   * C1-B05-B — crash kurtarma: commit sonrası claim öncesi düşen QUEUED intent'ler güvenle
+   * yeniden işlenir (yalnız QUEUED; PENDING/SENT/FAILED bu taramada DOKUNULMAZ).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - NotificationDispatchController.processQueued() → POST /client-notifications/process-queued (ADMIN)
+   * </remarks>
+   */
+  async drainQueuedNotifications(
+    tenantId: string,
+    userId: string,
+    limit = 10,
+  ): Promise<{ processed: number; sent: number; failed: number; skipped: number }> {
+    const take = Math.min(Math.max(1, Math.floor(limit)), 50);
+    const rows = await this.prisma.clientNotification.findMany({
+      where: { tenantId, status: 'QUEUED' },
+      orderBy: { createdAt: 'asc' },
+      take,
+      select: { id: true },
+    });
+    const summary = { processed: 0, sent: 0, failed: 0, skipped: 0 };
+    for (const r of rows) {
+      const result = await this.dispatchQueuedIntent(tenantId, userId, r.id);
+      summary.processed += 1;
+      summary[result.status] += 1;
+    }
+    return summary;
+  }
+
+  /** QUEUED intent'i kontrollü FAILED yapar (render/metadata hatası; PII/secret yazılmaz). */
+  private async markQueuedIntentFailed(tenantId: string, notificationId: string, reason: string): Promise<void> {
+    await this.prisma.clientNotification
+      .updateMany({
+        where: { id: notificationId, tenantId, status: 'QUEUED' },
+        data: { status: 'FAILED', errorMessage: reason.slice(0, 300) },
+      })
+      .catch(() => undefined);
+  }
 }

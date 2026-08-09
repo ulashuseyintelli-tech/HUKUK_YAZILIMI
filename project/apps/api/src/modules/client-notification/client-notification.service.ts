@@ -1,4 +1,5 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { OfficeService } from "../office/office.service";
 import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
@@ -155,6 +156,29 @@ export type NotificationReclaimResult =
   | { kind: 'EXISTING_PENDING'; notificationId: string }
   | { kind: 'EXISTING_SENT'; notificationId: string }
   | { kind: 'NO_RECORD' };
+
+/**
+ * C1-B05-B — durable delivery-intent (QUEUED-first). Finansal posting tx'i YALNIZ QUEUED
+ * intent oluşturur; provider'a hiç dokunmaz. State ayrımı (owner kararı):
+ *   QUEUED   → provider henüz çağrılmadı; güvenle (yeniden) işlenebilir.
+ *   PENDING  → provider çağrısı başladı veya sonuç belirsiz; OTOMATİK resend YOK.
+ *   SENT     → provider kabul + kalıcı SENT damgası.
+ *   FAILED   → pre-provider deterministik veya kesin red; yalnız explicit reclaim.
+ */
+export interface EnqueueEmailIntentParams {
+  clientId: string;
+  caseId?: string;
+  type: string;
+  dedupeKey: string; // stable — timestamp içermez
+  templateCode: string;
+  /** Render CLAIM anında yapılır (posting tx'i şablona bağımlı DEĞİL); token'lar intent'te taşınır. */
+  tokens: Record<string, string>;
+}
+
+export type QueuedNotificationClaimResult =
+  | { kind: 'CLAIMED'; notificationId: string }
+  | { kind: 'NOT_QUEUED'; notificationId: string; status: string }
+  | { kind: 'NOT_FOUND' };
 
 export interface SendSmsDto {
   clientId: string;
@@ -869,6 +893,95 @@ export class ClientNotificationService {
         },
       });
       return { kind: "RECLAIMED", notificationId: existing.id };
+    });
+  }
+
+  /**
+   * C1-B05-B — QUEUED delivery-intent'i FİNANSAL POSTING TX'İ İÇİNDE kalıcılaştırır (owner outcome-4).
+   * Render YAPMAZ (şablon hatası finansal tx'i bozamaz); token'lar metadata'da taşınır. Provider'a
+   * dokunmaz. Aynı dedupeKey için mevcut satır varsa yeni satır AÇMAZ (idempotent replay).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseBalanceService.postExpenseActual() → typed EXPENSE_ACTUAL posting tx'i (aynı transaction)
+   * </remarks>
+   */
+  async enqueueEmailIntentInTransaction(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    userId: string,
+    params: EnqueueEmailIntentParams,
+  ): Promise<{ notificationId: string; created: boolean }> {
+    if (!params.dedupeKey) {
+      throw new BadRequestException("enqueueEmailIntentInTransaction: dedupeKey zorunlu");
+    }
+    const existing = await tx.clientNotification.findFirst({
+      where: { tenantId, dedupeKey: params.dedupeKey },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (existing) {
+      return { notificationId: existing.id, created: false };
+    }
+    const row = await tx.clientNotification.create({
+      data: {
+        tenantId,
+        clientId: params.clientId,
+        caseId: params.caseId,
+        channel: "EMAIL",
+        type: params.type,
+        // Nötr placeholder — PII/render İÇERMEZ; gerçek içerik claim anında render edilip yazılır.
+        subject: "Bildirim kuyruğa alındı",
+        body: "Gerçekleşen masraf bildirimi kuyruğa alındı (henüz gönderilmedi).",
+        status: "QUEUED",
+        sentById: userId,
+        metadata: { intent: "EMAIL_TEMPLATE", templateCode: params.templateCode, tokens: params.tokens },
+        dedupeKey: params.dedupeKey,
+      },
+      select: { id: true },
+    });
+    return { notificationId: row.id, created: true };
+  }
+
+  /**
+   * C1-B05-B — atomik QUEUED→PENDING claim (advisory lock altında; commit sonrası provider).
+   * YALNIZ QUEUED satır claim edilebilir; PENDING/SENT/FAILED DOKUNULMAZ (PENDING otomatik
+   * yeniden gönderilmez — owner crash kuralı). Render edilmiş içerik claim ile birlikte yazılır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - NotificationDispatcherService.dispatchQueuedIntent() → render sonrası atomik claim
+   * </remarks>
+   */
+  async claimQueuedNotificationSlot(
+    tenantId: string,
+    notificationId: string,
+    rendered: { subject: string; body: string },
+  ): Promise<QueuedNotificationClaimResult> {
+    // dedupeKey immutable — lock anahtarı için önce okunur; status kararı LOCK ALTINDA verilir.
+    const row = await this.prisma.clientNotification.findFirst({
+      where: { id: notificationId, tenantId },
+      select: { id: true, dedupeKey: true },
+    });
+    if (!row || !row.dedupeKey) return { kind: "NOT_FOUND" };
+    const lockKeyText = `client-notification-dispatch|${tenantId}|${row.dedupeKey}`;
+    const safeBody = sanitizeNotificationHtml(rendered.body);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKeyText}, 0))`;
+      const current = await tx.clientNotification.findFirst({
+        where: { id: notificationId, tenantId },
+        select: { id: true, status: true },
+      });
+      if (!current) return { kind: "NOT_FOUND" };
+      if (current.status !== "QUEUED") {
+        return { kind: "NOT_QUEUED", notificationId: current.id, status: current.status };
+      }
+      await tx.clientNotification.update({
+        where: { id: current.id },
+        data: { status: "PENDING", subject: rendered.subject, body: safeBody },
+      });
+      return { kind: "CLAIMED", notificationId: current.id };
     });
   }
 

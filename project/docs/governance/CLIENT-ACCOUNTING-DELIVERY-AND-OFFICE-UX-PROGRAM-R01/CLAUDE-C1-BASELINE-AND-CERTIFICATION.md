@@ -23,12 +23,14 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
-BLOCKS TOTAL: 5   COMPLETED: 3 (B01, B02, B03)
-ACTIVATION DEBT: production plaintext-smtpPass YASAK → CREDENTIAL_ENCRYPTION_KEY +
-                 AES-256-GCM at-rest credential gate (B05'e devredildi, owner direktifi)
-LANE STATUS:  B03 CLOSED/RUNTIME_VERIFIED/CLEAN-IMMUTABLE-RC — Web RC2 45b24a0c (1488063d+authfix, tek temiz commit).
-              B04 = PAUSED / PROVIDER_CONFIGURATION_REQUIRED (real delivery=0, pipeline/PDF=verified; 535 auth).
-              B05 PENDING (B04 gerçek-teslim borcu + şifreli-credential gate).
+BLOCKS TOTAL: 5   COMPLETED: 5 (B01, B02, B03, B04, B05 — B05 kaydı corrective PR merge'i ile atomik)
+ACTIVATION DEBT: kalıcı production CREDENTIAL_ENCRYPTION_KEY provisioning (enc:v1 mühendisliği B04'te
+                 hazır; anahtar owner-side) + C3 schedule + EXPENSE_ACTUAL_POSTED şablon seed'i
+                 (mevcut tenant'lar) — B05 sertifikasyon bloğunda kayıtlı.
+LANE STATUS:  B03 CLOSED/RUNTIME_VERIFIED (doğal-oturum UAT, #2315). B04 ENGINEERING_COMPLETE/
+              COMPOSITE_ACCEPTANCE (Turhost gerçek teslim + content düzeltmesi #2322). B05
+              PRODUCT_COMPLETE — A #2323 (kanonik dispatcher + G4) + B corrective PR (typed
+              EXPENSE_ACTUAL + durable delivery-intent + migration 20260809210000).
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -211,3 +213,34 @@ Activation borcu doğmuşsa (X3 migration, C3 schedule) ayrı kaydedilir ve owne
 mevcut production mutation disiplinine tabidir.
 
 **BLOCK RESULT:** `ENGINEERING_COMPLETE` veya `WAITING_FOR_OWNER_DECISION`
+
+> **B04 SONUÇ DÜZELTMESİ (2026-08-09, owner-ratified):** Turhost gerçek teslim controlled recovery ile
+> TAMAMLANDI (transport+PDF PASS, owner inbox teyidi); content-acceptance düzeltmesi #2322 `b130c658`
+> merge. **B04 = ENGINEERING_COMPLETE / COMPOSITE_ACCEPTANCE.** Detay: `C1-B04-CANARY-DELIVERY-PASS-R02.md`.
+
+> **B05 SONUCU (2026-08-09, owner GO-COMPLETE):** İki parçalı teslim — owner kararı gereği A erken
+> merge'i ARA TESLİM sayıldı, B ayrı corrective completion PR'ı ile tamamlandı:
+> - **B05-A (pre-expense) #2323 `a02df8ee`:** legacy expense maili → kanonik EXPENSE_REQUEST template +
+>   NotificationDispatcherService; G4 atomik claim/reclaim (advisory-lock, migration'sız); provider-outcome
+>   güvenlik sınıflandırması (kesin 5xx→FAILED; belirsiz→PENDING, kör resend yok). Gerçek-PG concurrency 4/4.
+> - **B05-B (post-expense, bu PR):** TYPED `EXPENSE_ACTUAL` posting (`BalanceLedger.entryKind` + tenant-başına
+>   unique `postingKey`; yalnız ADMIN-gate `postExpenseActual`; generic DEBIT/reversal/ExpenseRequest
+>   RECEIVED-PAID ASLA trigger değil) + DURABLE delivery-intent (QUEUED→PENDING→SENT/FAILED; posting tx'i
+>   yalnız QUEUED üretir, provider commit sonrası; PENDING otomatik resend edilmez; FAILED yalnız explicit
+>   reclaim). Tek additive migration `20260809210000` (preflight: rakip writer YOK; izole test DB'de
+>   baseline+frontier+fresh-rebuild deploy PASS; backfill YOK). Kanıt: unit 27 + gerçek-PG 11 test PASS —
+>   `C1-B05-B-TYPED-EXPENSE-ACTUAL-CLOSEOUT-R01.md`.
+>
+> **§9 SERTİFİKASYON (kanıt haritası):** ofis ekranı (X1 workspace + C2/C3 yüzeyleri CLOSED) · portal
+> (B03 doğal-oturum UAT `RUNTIME_VERIFIED`, #2315) · doğru finansal içerik (B04 content-acceptance
+> düzeltmesi #2322 + B05 tr-TR/POL-4/fail-closed içerik testleri) · PDF (B04 gerçek ekstre PDF teslimi) ·
+> yetki (ADMIN/authority-gate'ler + POL-5) · audit (ledger+journal+notification aynı source identity) ·
+> idempotency (G4 claim + posting `postingKey` unique, gerçek-PG concurrency kanıtı) · GERÇEK canary
+> teslimi (B04 Turhost, owner inbox teyidi). **C1-B05 = PRODUCT_COMPLETE — bu kayıt B05-B corrective
+> PR'ının merge'i ile atomik doğrudur.**
+>
+> **KALAN ACTIVATION DEBT (PRODUCT_COMPLETE'i bloklamaz; owner production-mutation disiplinine tabi):**
+> (1) kalıcı production `CREDENTIAL_ENCRYPTION_KEY` provisioning (enc:v1 mühendisliği B04'te hazır;
+> anahtar owner-side), (2) C3 schedule/cron aktivasyonu (bayrak OFF, envanter C3 sayfasında),
+> (3) B05-B `EXPENSE_ACTUAL_POSTED` şablonunun mevcut tenant'lara seed'i (yeni tenant'ta otomatik;
+> mevcutta `seedDefaultTemplates` owner-run).

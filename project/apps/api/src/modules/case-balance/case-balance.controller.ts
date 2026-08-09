@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
-import { CaseBalanceService, CreditBalanceDto, DebitBalanceDto } from './case-balance.service';
+import { CaseBalanceService, CreditBalanceDto, DebitBalanceDto, PostExpenseActualDto } from './case-balance.service';
 import { AuthGuard } from '@nestjs/passport';
+import { AdminGuard } from '@/modules/auth/guards/admin.guard';
 import { Request } from 'express';
 
 interface AuthRequest extends Request {
@@ -58,5 +59,22 @@ export class CaseBalanceController {
     @Req() req: AuthRequest,
   ) {
     return this.caseBalanceService.debit(req.user.tenantId, caseId, dto, req.user.id);
+  }
+
+  /**
+   * C1-B05-B — YETKİLİ typed gerçekleşen-masraf posting'i (owner kararı).
+   * POST /cases/:caseId/balance/expense-actual
+   * ADMIN-gate (POL-5: staff nihai finansal yazım yapamaz; repo'nun canonical yükseltilmiş
+   * rol yüzeyi = ADMIN). Generic debit'ten farklı olarak typed EXPENSE_ACTUAL sınıflandırması
+   * + posting idempotency + QUEUED bildirim intenti üretir.
+   */
+  @Post('expense-actual')
+  @UseGuards(AdminGuard)
+  async postExpenseActual(
+    @Param('caseId') caseId: string,
+    @Body() dto: PostExpenseActualDto,
+    @Req() req: AuthRequest,
+  ) {
+    return this.caseBalanceService.postExpenseActual(req.user.tenantId, caseId, dto, req.user.id);
   }
 }
