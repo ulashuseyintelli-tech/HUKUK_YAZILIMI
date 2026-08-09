@@ -58,15 +58,47 @@ function makeService(dispatchResult: any, opts: { requestStatus?: string } = {})
 }
 
 describe('W4 içerik sözleşmesi — IBAN fail-closed + accountHolder/paymentReference + item description', () => {
-  it('doğrulanmış IBAN yoksa mail SESSİZCE GÖNDERİLMEZ: dispatch=0 + iban-missing güvenli audit + IBAN_MISSING', async () => {
+  it('0 default hesap → PAYMENT_ACCOUNT_INVALID fail-closed (dispatch=0 + güvenli audit)', async () => {
     const { svc, prisma, dispatcher, auditCreate } = makeService({ status: 'sent', notificationId: 'n-1' });
     prisma.office.findFirst.mockResolvedValue({ name: 'Telli Hukuk', phone: '0212', email: 'ofis@x', bankAccounts: [] });
     const result = await svc.sendExpenseRequest(TENANT, REQ, USER);
     expect(dispatcher.dispatch).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, reason: 'PAYMENT_ACCOUNT_INVALID' });
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'EMAIL_FAILED', details: expect.objectContaining({ outcome: 'default-account-missing' }) }),
+    }));
+  });
+
+  it('>1 default hesap → keyfî seçim YOK; PAYMENT_ACCOUNT_INVALID fail-closed', async () => {
+    const { svc, prisma, dispatcher } = makeService({ status: 'sent', notificationId: 'n-1' });
+    prisma.office.findFirst.mockResolvedValue({ name: 'Telli Hukuk', phone: '0212', email: 'ofis@x', bankAccounts: [{ iban: 'TR11' }, { iban: 'TR22' }] });
+    const result = await svc.sendExpenseRequest(TENANT, REQ, USER);
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, reason: 'PAYMENT_ACCOUNT_INVALID' });
+  });
+
+  it('tek default hesap ama IBAN boş → IBAN_MISSING fail-closed', async () => {
+    const { svc, prisma, dispatcher, auditCreate } = makeService({ status: 'sent', notificationId: 'n-1' });
+    prisma.office.findFirst.mockResolvedValue({ name: 'Telli Hukuk', phone: '0212', email: 'ofis@x', bankAccounts: [{ iban: null }] });
+    const result = await svc.sendExpenseRequest(TENANT, REQ, USER);
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
     expect(result).toEqual({ success: false, reason: 'IBAN_MISSING' });
     expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ action: 'EMAIL_FAILED', details: expect.objectContaining({ outcome: 'iban-missing-fail-closed' }) }),
+      data: expect.objectContaining({ details: expect.objectContaining({ outcome: 'iban-missing-fail-closed' }) }),
     }));
+  });
+
+  it('kalem yok / sıfır tutar → ITEMS_MISSING / AMOUNT_INVALID fail-closed', async () => {
+    const a = makeService({ status: 'sent', notificationId: 'n-1' });
+    a.prisma.expenseRequest.findFirst.mockResolvedValue(makeRequest({ requestItems: [] }));
+    expect(await a.svc.sendExpenseRequest(TENANT, REQ, USER)).toEqual({ success: false, reason: 'ITEMS_MISSING' });
+    const b = makeService({ status: 'sent', notificationId: 'n-1' });
+    b.prisma.expenseRequest.findFirst.mockResolvedValue(makeRequest({
+      requestItems: [{ label: 'Harç', finalAmount: { toNumber: () => 0 } }],
+    }));
+    expect(await b.svc.sendExpenseRequest(TENANT, REQ, USER)).toEqual({ success: false, reason: 'AMOUNT_INVALID' });
+    expect(a.dispatcher.dispatch).not.toHaveBeenCalled();
+    expect(b.dispatcher.dispatch).not.toHaveBeenCalled();
   });
 
   it('tokens: accountHolder (default hesap/office unvanı) + paymentReference (client-safe) + IBAN', async () => {

@@ -286,7 +286,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       const result = await service.create('tenant-1', 'user-1', {
         caseId: 'case-1',
         clientId: 'client-1',
-        items: [{ type: 'FILING', description: 'Filing', amount: 250 }],
+        items: [{ type: 'HARC', description: 'Filing harci', amount: 250 }],
       });
 
       expect(result.id).toBe('manual-exp-1');
@@ -349,7 +349,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       await expect(service.create('tenant-1', 'user-1', {
         caseId: 'case-1',
         clientId: 'client-1',
-        items: [{ type: 'FILING', description: 'Filing', amount: 250 }],
+        items: [{ type: 'HARC', description: 'Filing harci', amount: 250 }],
         paidByLawyer: true,
       })).rejects.toThrow('ExpenseRequest journal write failed: DB_WRITE_FAILED');
 
@@ -369,7 +369,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       const result = await service.create('tenant-1', 'user-1', {
         caseId: 'case-1',
         clientId: 'client-1',
-        items: [{ type: 'FILING', description: 'Filing', amount: 250 }],
+        items: [{ type: 'HARC', description: 'Filing harci', amount: 250 }],
       });
 
       expect(result.id).toBe('manual-exp-replay');

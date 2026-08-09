@@ -2532,6 +2532,11 @@ class ApiClient {
     return this.request<any[]>('/cost-packages');
   }
 
+  /** W4 D1 — kanonik masraf kalemi kataloğu (API tek kaynak; web sabit liste taşımaz). */
+  async getExpenseCatalog() {
+    return this.request<Array<{ code: string; officeLabel: string; clientLabel: string; group: string; manualDescriptionRequired: boolean }>>('/expense-requests/catalog');
+  }
+
   async getCostPackage(code: string) {
     return this.request<any>(`/cost-packages/${code}`);
   }

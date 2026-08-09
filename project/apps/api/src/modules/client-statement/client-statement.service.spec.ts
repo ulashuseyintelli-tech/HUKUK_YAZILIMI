@@ -665,21 +665,28 @@ describe('ClientStatementService', () => {
       expect(lines.every((l: any) => ALLOWED_REFS.includes(l.refType))).toBe(true);
     });
 
-    it('math: payable +1000 − payout 400 − talep 300 + tahsil 100 = net 400; runningBalance sıralı', async () => {
+    it('math (W4 MODEL-1 RATIFIED): payable +1000 − payout 400 + tahsil 100 = net 700; PENDING talep 0/0 BİLGİ ve bakiyeyi OYNATMAZ', async () => {
       seedFourSources();
       await service.createClientLevel(TENANT, CLIENT, USER, CL_DTO);
-      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('400');
+      // Owner D2: PENDING ExpenseRequest bilgi/ödeme talebidir — closing'e KATILMAZ.
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('700');
       const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
       // tarih sırası: er1(2000)→dl1(3000)→po1(4000)→ep1(5000)
       expect(lines.map((l: any) => l.refId)).toEqual(['er1', 'dl1', 'po1', 'ep1']);
-      expect(lines.find((l: any) => l.refId === 'er1').runningBalance.toString()).toBe('-300');
-      expect(lines.find((l: any) => l.refId === 'dl1').runningBalance.toString()).toBe('700');
-      expect(lines.find((l: any) => l.refId === 'po1').runningBalance.toString()).toBe('300');
-      expect(lines.find((l: any) => l.refId === 'ep1').runningBalance.toString()).toBe('400');
-      // yön: payable credit, payout debit, talep debit, tahsil credit
+      expect(lines.find((l: any) => l.refId === 'er1').runningBalance.toString()).toBe('0'); // bilgi satırı — oynatmaz
+      expect(lines.find((l: any) => l.refId === 'dl1').runningBalance.toString()).toBe('1000');
+      expect(lines.find((l: any) => l.refId === 'po1').runningBalance.toString()).toBe('600');
+      expect(lines.find((l: any) => l.refId === 'ep1').runningBalance.toString()).toBe('700');
+      // yön: payable credit, payout debit, talep 0/0 (BİLGİ — tutar client-safe note'ta), tahsil credit
       expect(lines.find((l: any) => l.refId === 'dl1').credit.toString()).toBe('1000');
       expect(lines.find((l: any) => l.refId === 'po1').debit.toString()).toBe('400');
-      expect(lines.find((l: any) => l.refId === 'er1').debit.toString()).toBe('300');
+      const er = lines.find((l: any) => l.refId === 'er1');
+      expect(er.debit.toString()).toBe('0');
+      expect(er.credit.toString()).toBe('0');
+      expect(er.note).toContain('300,00 TL');
+      expect(er.note).toContain('onay bekliyor');
+      expect(er.note).not.toContain('TRY');
+      expect(er.note).not.toContain('PENDING');
       expect(lines.find((l: any) => l.refId === 'ep1').credit.toString()).toBe('100');
     });
 

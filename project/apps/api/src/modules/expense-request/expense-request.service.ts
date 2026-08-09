@@ -18,8 +18,11 @@ import {
   reverseAccountingJournalEntryInTransaction,
 } from '@/modules/accounting-journal';
 
+import { findExpenseCatalogEntry } from './expense-item-catalog';
+
 export interface ExpenseItem {
-  type: string;        // TEBLIGAT, HACIZ, SATIS_AVANSI, BILIRKISI, DIGER
+  /** Kanonik katalog kodu veya bilinen legacy alias (create anında kanonik koda çözülür). */
+  type: string;
   description: string;
   amount: number;
 }
@@ -183,12 +186,26 @@ export class ExpenseRequestService {
     }
 
     // W4 (owner sözleşmesi): "Diğer" kalemi AÇIKLAMASIZ kabul edilmez — server-side guard
-    // (web formu zaten istiyor; buradaki kontrol istemciden bağımsız fail-closed emniyettir).
-    for (const item of dto.items ?? []) {
-      if (item.type === 'DIGER' && !(item.description ?? '').trim()) {
-        throw new BadRequestException('"Diğer" masraf kalemi için açıklama zorunludur');
-      }
+    // (web formu zaten istiyor; buradaki kontrol istemciden bağımsız fail-closed emniyettir.)
+    // W4 D1 (owner): YENİ kayıtlar YALNIZ kanonik katalog kodlarıyla yazılır; legacy alias'lar
+    // kanonik koda çözülür; bilinmeyen kod REDDEDİLİR. Manuel kalemlerde anlamlı açıklama zorunlu.
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('En az bir masraf kalemi zorunludur');
     }
+    const normalizedItems = dto.items.map((item) => {
+      const entry = findExpenseCatalogEntry(item.type);
+      if (!entry) {
+        throw new BadRequestException(`Bilinmeyen masraf kalemi kodu: ${item.type}`);
+      }
+      if (!(Number.isFinite(item.amount) && item.amount > 0)) {
+        throw new BadRequestException(`Masraf kalemi tutarı pozitif olmalı (${entry.officeLabel})`);
+      }
+      const description = (item.description ?? '').trim();
+      if (!description) {
+        throw new BadRequestException(`"${entry.officeLabel}" kalemi için anlamlı açıklama zorunludur`);
+      }
+      return { canonicalCode: entry.code, label: entry.officeLabel, description, amount: item.amount };
+    });
 
     // Validate client exists
     const client = await this.prisma.client.findFirst({
@@ -199,7 +216,7 @@ export class ExpenseRequestService {
     }
 
     // Calculate total
-    const totalAmount = dto.items.reduce((sum, item) => sum + item.amount, 0);
+    const totalAmount = normalizedItems.reduce((sum, item) => sum + item.amount, 0);
 
     const expenseRequest = await this.prisma.$transaction(async (tx) => {
       const created = await tx.expenseRequest.create({
@@ -219,6 +236,23 @@ export class ExpenseRequestService {
           client: { select: { id: true, name: true, displayName: true } },
         },
       });
+
+      // W4: manuel talepler de KANONİK ExpenseRequestItem satırları üretir — mail/ekstre kalem
+      // dökümü tek kaynaktan (requestItems) beslenir; JSON `items` geriye-uyum için aynen kalır.
+      let sortOrder = 0;
+      for (const item of normalizedItems) {
+        await tx.expenseRequestItem.create({
+          data: {
+            expenseRequestId: created.id,
+            itemCode: item.canonicalCode,
+            label: item.label,
+            description: item.description,
+            suggestedAmount: item.amount,
+            finalAmount: item.amount,
+            sortOrder: sortOrder++,
+          },
+        });
+      }
 
       await this.writeExpenseRequestRecordedJournal(tx, tenantId, userId, created as JournalableExpenseRequestRow);
       return created;
@@ -657,13 +691,20 @@ export class ExpenseRequestService {
     const totalAmount = basvurmaHarci + vekaletHarci + pesinHarc + dosyaGideri + tebligatGideri + vekaletPulu;
 
     // Masraf kalemleri listesi
+    // W4 D1: otomatik kalemler kanonik katalogtan varsayılan client-safe açıklama alır.
+    const withDesc = (itemCode: string, label: string, suggestedAmount: number) => ({
+      itemCode,
+      label,
+      suggestedAmount,
+      description: findExpenseCatalogEntry(itemCode)?.defaultClientDescription ?? label,
+    });
     const calculatedItems = [
-      { itemCode: 'BASVURMA_HARCI', label: 'Başvurma Harcı', suggestedAmount: basvurmaHarci },
-      { itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: pesinHarc },
-      { itemCode: 'VEKALET_HARCI', label: 'Vekalet Harcı', suggestedAmount: vekaletHarci },
-      { itemCode: 'TEBLIGAT_GIDERI', label: 'Tebligat Gideri', suggestedAmount: tebligatGideri },
-      { itemCode: 'DOSYA_GIDERI', label: 'Dosya Gideri', suggestedAmount: dosyaGideri },
-      { itemCode: 'VEKALET_PULU', label: 'Vekalet Pulu', suggestedAmount: vekaletPulu },
+      withDesc('BASVURMA_HARCI', 'Başvurma Harcı', basvurmaHarci),
+      withDesc('PESIN_HARC', 'Peşin Harç', pesinHarc),
+      withDesc('VEKALET_HARCI', 'Vekalet Harcı', vekaletHarci),
+      withDesc('TEBLIGAT_GIDERI', 'Tebligat Gideri', tebligatGideri),
+      withDesc('DOSYA_GIDERI', 'Dosya Gideri', dosyaGideri),
+      withDesc('VEKALET_PULU', 'Vekalet Pulu', vekaletPulu),
     ];
 
     // Default due date: 5 iş günü sonra
@@ -698,6 +739,7 @@ export class ExpenseRequestService {
             expenseRequestId: expenseRequest.id,
             itemCode: item.itemCode,
             label: item.label,
+            description: (item as any).description ?? findExpenseCatalogEntry(item.itemCode)?.defaultClientDescription,
             suggestedAmount: item.suggestedAmount,
             finalAmount: item.suggestedAmount,
             calcParams: {},

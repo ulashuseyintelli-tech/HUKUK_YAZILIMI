@@ -39,18 +39,9 @@ interface ComputedItem {
   wasOverridden?: boolean;
 }
 
-const EXPENSE_TYPES = [
-  { value: "TEBLIGAT", label: "Tebligat Gideri" },
-  { value: "HACIZ", label: "Haciz Gideri" },
-  { value: "SATIS_AVANSI", label: "Satış Avansı" },
-  { value: "BILIRKISI", label: "Bilirkişi Ücreti" },
-  // W4 kod hijyeni: value'lar ASCII stable code (Türkçe karakterli kod üretimi durduruldu;
-  // production'da eski KEŞIF/HARÇ kodlu kayıt yok — salt-okuma doğrulandı). Etiketler değişmedi.
-  { value: "KESIF", label: "Keşif Gideri" },
-  { value: "POSTA", label: "Posta/Kargo" },
-  { value: "HARC", label: "Harç" },
-  { value: "DIGER", label: "Diğer" },
-];
+// W4 D1: masraf türleri API-authoritative kanonik katalogtan yüklenir (tek kaynak);
+// web İKİNCİ bağımsız sabit liste TAŞIMAZ. Katalog yüklenemezse manuel ekleme fail-closed kapanır.
+type ExpenseCatalogEntry = { value: string; label: string; manualDescriptionRequired: boolean };
 
 export function ExpenseRequestModal({
   isOpen,
@@ -74,8 +65,11 @@ export function ExpenseRequestModal({
 
   // Manuel mod için eski state
   const [items, setItems] = useState<ExpenseItem[]>([
-    { type: "TEBLIGAT", description: "Tebligat gideri", amount: 0 },
+    { type: "TEBLIGAT_GIDERI", description: "Tebligat gönderim gideri", amount: 0 },
   ]);
+  // W4 D1: kanonik katalog (API'den)
+  const [expenseTypes, setExpenseTypes] = useState<ExpenseCatalogEntry[]>([]);
+  const [catalogError, setCatalogError] = useState(false);
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setSaving] = useState(false);
@@ -90,6 +84,13 @@ export function ExpenseRequestModal({
       const defaultDate = new Date();
       defaultDate.setDate(defaultDate.getDate() + 7);
       setDueDate(defaultDate.toISOString().split("T")[0]);
+      // W4 D1: kanonik katalog API'den yüklenir (fail-closed: yüklenemezse manuel ekleme kapalı)
+      api.getExpenseCatalog()
+        .then((rows) => {
+          setExpenseTypes((rows || []).map((r) => ({ value: r.code, label: r.officeLabel, manualDescriptionRequired: r.manualDescriptionRequired })));
+          setCatalogError(false);
+        })
+        .catch(() => { setExpenseTypes([]); setCatalogError(true); });
     }
   }, [isOpen]);
 
@@ -164,7 +165,7 @@ export function ExpenseRequestModal({
     const newItems = [...items];
     if (field === "type") {
       newItems[index].type = value as string;
-      const typeLabel = EXPENSE_TYPES.find((t) => t.value === value)?.label || "";
+      const typeLabel = expenseTypes.find((t) => t.value === value)?.label || "";
       newItems[index].description = typeLabel;
     } else if (field === "amount") {
       newItems[index].amount = Number(value) || 0;
@@ -240,7 +241,7 @@ export function ExpenseRequestModal({
       onClose();
       
       // Reset form
-      setItems([{ type: "TEBLIGAT", description: "Tebligat gideri", amount: 0 }]);
+      setItems([{ type: "TEBLIGAT_GIDERI", description: "Tebligat gönderim gideri", amount: 0 }]);
       setComputedItems([]);
       setSelectedPackage("");
       setNotes("");
@@ -405,7 +406,12 @@ export function ExpenseRequestModal({
                       onChange={(e) => updateItem(index, "type", e.target.value)}
                       className="w-32 border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
                     >
-                      {EXPENSE_TYPES.map((type) => (
+                      {catalogError && (
+                        <option value="" disabled>
+                          Katalog yüklenemedi — kalem seçilemez
+                        </option>
+                      )}
+                      {expenseTypes.map((type) => (
                         <option key={type.value} value={type.value}>
                           {type.label}
                         </option>
