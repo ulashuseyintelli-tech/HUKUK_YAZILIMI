@@ -51,9 +51,12 @@ Kanonik mail yolu ClientNotification'dır; minimum genişleme onun üzerinde yap
 
 **Preflight (kanıt):** 0 açık PR; ~90 branch/~48 worktree'de `git log --all --not origin/main -- prisma`
 BOŞ; hiçbir worktree'de uncommitted prisma değişikliği yok; canonical temiz → RAKİP MIGRATION WRITER YOK.
-**Test:** izole `hukuk_b05b_test` (SAFE_NAME_RE uyumlu): (a) baseline 125-migration deploy PASS →
-(b) yalnız yeni migration frontier-upgrade deploy PASS → (c) drop + fresh FULL 126-migration rebuild
+**Test:** izole `hukuk_b05b_test` (SAFE_NAME_RE uyumlu): (a) baseline 124-migration deploy PASS →
+(b) yalnız yeni migration frontier-upgrade deploy PASS → (c) drop + fresh FULL 125-migration rebuild
 deploy PASS (rollback/rebuild kanıtı). Production migrate/deploy/mutation YAPILMADI.
+*(W4 SAYIM DÜZELTMESİ 2026-08-09: bu satırdaki sayılar ilk yazımda 125/126 idi — preflight ajanının
+yaklaşık sayımından türetilmiş HATA. Exact dizin sayımı + `prisma migrate status` çaprazı: baseline=124,
+bu migration dahil toplam=125. Deploy PASS kanıtlarının kendisi değişmedi; yalnız sayılar düzeltildi.)*
 
 ## 4. BİLDİRİM İÇERİĞİ + ALICI
 

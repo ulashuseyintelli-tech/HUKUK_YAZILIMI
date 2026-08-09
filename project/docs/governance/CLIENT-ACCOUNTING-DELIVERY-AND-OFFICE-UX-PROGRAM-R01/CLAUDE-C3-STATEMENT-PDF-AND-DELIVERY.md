@@ -24,7 +24,10 @@ SHARED CONTRACTS:
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C3-B01 → C3-B02 → C3-B03 → C3-B04 → C3-B05
 BLOCKS TOTAL: 5   COMPLETED: 5   (B05 kalıcı adaptörü X3 şemasına bağlı)
-ACTIVATION DEBT: DOĞDU — (1) aylık schedule activation, (2) kalıcı teslim defteri şeması
+ACTIVATION DEBT: (1) aylık schedule activation — cron packaging düzeltmesi MERGED (#2325 d20ba035;
+                 cron artık direct runtime dep), aktivasyon = flag-ON yeni process cutover (owner-gated);
+                 (2) kalıcı teslim defteri — şema/kod MERGED (20260809090500_client_statement_delivery_ledger,
+                 W4 düzeltmesi 2026-08-09: "şema eksik" kısmı BAYATTI); kalan yalnız production APPLY (owner-gated)
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
