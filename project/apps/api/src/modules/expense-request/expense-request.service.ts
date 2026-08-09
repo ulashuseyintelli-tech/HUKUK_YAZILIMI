@@ -182,6 +182,14 @@ export class ExpenseRequestService {
       throw new NotFoundException('Takip bulunamadı');
     }
 
+    // W4 (owner sözleşmesi): "Diğer" kalemi AÇIKLAMASIZ kabul edilmez — server-side guard
+    // (web formu zaten istiyor; buradaki kontrol istemciden bağımsız fail-closed emniyettir).
+    for (const item of dto.items ?? []) {
+      if (item.type === 'DIGER' && !(item.description ?? '').trim()) {
+        throw new BadRequestException('"Diğer" masraf kalemi için açıklama zorunludur');
+      }
+    }
+
     // Validate client exists
     const client = await this.prisma.client.findFirst({
       where: { id: dto.clientId, tenantId },
@@ -444,13 +452,13 @@ export class ExpenseRequestService {
             amount: paidAmount,
             source: `expense_request:${id}`,
             sourceId: id,
-            description: `Masraf talebi �demesi (${(existing as any).packageCode || 'manuel'})`,
+            description: `Masraf talebi �demesi (${(existing as any).packageCode || 'manuel'})`,
           },
           userId,
         );
       } catch (error) {
         console.error('Bakiye kredisi eklenemedi:', error);
-        // Hata olsa bile masraf talebi g�ncellendi, devam et
+        // Hata olsa bile masraf talebi g�ncellendi, devam et
       }
     }
 
