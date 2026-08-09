@@ -23,8 +23,12 @@ FORBIDDEN PATHS:
 
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
-BLOCKS TOTAL: 5   COMPLETED: 3 (B01, B02, B03)   ACTIVATION DEBT: NONE
-LANE STATUS:  B03 CLOSED/RUNTIME_VERIFIED/CLEAN-IMMUTABLE-RC — Web RC2 45b24a0c (1488063d+authfix, tek temiz commit); B04..B05 WAITING
+BLOCKS TOTAL: 5   COMPLETED: 3 (B01, B02, B03)
+ACTIVATION DEBT: production plaintext-smtpPass YASAK → CREDENTIAL_ENCRYPTION_KEY +
+                 AES-256-GCM at-rest credential gate (B05'e devredildi, owner direktifi)
+LANE STATUS:  B03 CLOSED/RUNTIME_VERIFIED/CLEAN-IMMUTABLE-RC — Web RC2 45b24a0c (1488063d+authfix, tek temiz commit).
+              B04 = PAUSED / PROVIDER_CONFIGURATION_REQUIRED (real delivery=0, pipeline/PDF=verified; 535 auth).
+              B05 PENDING (B04 gerçek-teslim borcu + şifreli-credential gate).
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -162,6 +166,20 @@ kalemleri, net pay, para birimi, tarih ve izin verilen dosya referansı **doğru
 yasak alan sızmış mı. "Mail gitti" tek başına PASS DEĞİLDİR.
 
 **BLOCK RESULT:** `RUNTIME_VERIFIED`
+
+> **B04 DURUMU (2026-08-09):** `PAUSED / PROVIDER_CONFIGURATION_REQUIRED` —
+> REAL DELIVERY=0, PIPELINE/PDF=VERIFIED. İzole canary DB (`hukuk_canary_c1b04`,
+> NON_PRODUCTION, 121 migration) üzerinde statement + PDF eki + dispatch-to-provider
+> kanıtlandı; ancak gerçek SMTP turunda provider **535 authentication** döndü
+> (535'ten parola-türü çıkarımı YAPILMADI). Config secretless doğrulandı
+> (user/from EXACT=mailbox, host/port/TLS geçerli SSL kombosu); mailbox SMTP-erişimi
+> ve hesap kilit/throttle durumu UNKNOWN (provider-tarafı). Canary `smtpPass`→NULL
+> (row-count=1), geçici owner-run script'leri kaldırıldı, RC worktree temiz.
+> Production-class demo-firma B04 mutation'ları exact-ID rollback ile geri alındı
+> (audit korundu). **B04 PASS/ENGINEERING_COMPLETE İLAN EDİLMEDİ.** Sonraki gerçek
+> teslim denemesi ANCAK kalıcı+şifreli credential yönetimi (`CREDENTIAL_ENCRYPTION_KEY`
+> + AES-256-GCM at-rest) hazır olduğunda; owner her seferinde parola girmeyecek.
+> Detay: `C1-B04-CANARY-PROVIDER-CONFIG-REQUIRED-R01.md`.
 
 ---
 
