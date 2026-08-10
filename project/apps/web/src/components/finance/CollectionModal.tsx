@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, XCircle, Eye } from "lucide-react";
 import { api, type PaymentPreviewResponseDTO } from "@/lib/api";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 
 const COLLECTION_TYPES = [
   { value: "TAHSILAT", label: "Tahsilat" },
@@ -68,6 +69,8 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
   const [previewError, setPreviewError] = useState<string | null>(null);
   // P0-1: create için stabil idempotency key (modal her açıldığında yenilenir).
   const [idempotencyKey, setIdempotencyKey] = useState<string>("");
+  // PR-1: kanonik guarded-edge tüketicisi (case-status entegrasyonuyla aynı hook; ikinci mimari kurulmaz).
+  const { run: runGuarded, modal: guardedModal } = useGuardedAction();
   const [form, setForm] = useState({
     type: "TAHSILAT",
     channel: "BANKA",
@@ -172,15 +175,36 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
         currency: form.currency,
       };
 
-      if (collection?.id) {
-        await api.updateCollection(caseId, collection.id, data);
-      } else {
-        // P0-1: create'te stabil idempotencyKey gönder (yoksa taze üret — güvenlik ağı).
-        await api.createCollection(caseId, {
-          ...data,
-          idempotencyKey: idempotencyKey || newIdempotencyKey(),
-        });
+      // PR-1: guarded-edge tüketicisi. Backend CONFIRM_REQUIRED zarfı dönerse (HTTP 200/201 — hata DEĞİL)
+      // önce onay modalı açılır, onaylanırsa AYNI idempotencyKey ile TEK retry yapılır. Zarf dönmezse
+      // davranış aynen korunur. Başarı yalnız status==='ok' olduğunda işlenir → sessiz "yalancı başarı" biter.
+      const stableIdempotencyKey = idempotencyKey || newIdempotencyKey();
+      const result = await runGuarded((confirmation) =>
+        collection?.id
+          ? // UPDATE (PATCH) receipt-authorization kapısından GEÇMEZ → zarf dönmez, token GÖNDERİLMEZ.
+            // runGuarded bu yolda inert kalır (zarf yoksa doğrudan {ok}).
+            api.updateCollection(caseId, collection.id, data)
+          : api.createCollection(caseId, {
+              ...data,
+              // P0-1: create'te stabil idempotencyKey gönder (yoksa taze üret — güvenlik ağı).
+              // Retry'da AYNI anahtar kullanılır → çift tahsilat oluşmaz.
+              idempotencyKey: stableIdempotencyKey,
+              confirmationToken: confirmation?.token,
+            }),
+      );
+
+      if (result.status === "cancelled") {
+        return; // kullanıcı vazgeçti: mutation YOK, başarı işleme YOK, modal açık kalır
       }
+      if (result.status === "approval_pending") {
+        // TERMİNAL: onay talebine yönlendi, kayıt OLUŞMADI. Başarı SAYILMAZ.
+        alert(
+          result.envelope.message ||
+            "İşlem onay talebine yönlendirildi; tahsilat henüz kaydedilmedi.",
+        );
+        return;
+      }
+
       onSuccess();
       onClose();
     } catch (error: any) {
@@ -459,6 +483,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
           </div>
         </form>
       </div>
+      {guardedModal}
     </div>
   );
 }

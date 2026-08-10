@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import {
   Building2, Briefcase, Home, CreditCard, Plus, X, Send, Clock, CheckCircle,
   AlertTriangle, ChevronRight, Loader2, FileText, Users, MapPin,
@@ -1780,6 +1781,8 @@ interface AddCollectionModalProps {
 }
 
 function AddCollectionModal({ externalCase, onClose, onSaved }: AddCollectionModalProps) {
+  // PR-1: kanonik guarded-edge tüketicisi (case-status ile aynı hook).
+  const { run: runGuarded, modal: guardedModal } = useGuardedAction();
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     amount: "",
@@ -1805,11 +1808,26 @@ function AddCollectionModal({ externalCase, onClose, onSaved }: AddCollectionMod
 
     try {
       setSaving(true);
-      await api.post(`/external-cases/${externalCase.id}/collection`, {
-        amount,
-        date: formData.date,
-        notes: formData.notes,
-      });
+      // PR-1: guarded-edge tüketicisi. CONFIRM_REQUIRED zarfı HTTP 200 ile döner (hata DEĞİL);
+      // önceden yanıt hiç incelenmeden onSaved() çağrılıyordu → tahsilat oluşmadan yalancı başarı.
+      const outcome = await runGuarded((confirmation) =>
+        api.post(`/external-cases/${externalCase.id}/collection`, {
+          amount,
+          date: formData.date,
+          notes: formData.notes,
+          confirmationToken: confirmation?.token,
+        }),
+      );
+
+      if (outcome.status === "cancelled") return; // tahsilat EKLENMEDİ
+      if (outcome.status === "approval_pending") {
+        alert(
+          outcome.envelope.message ||
+            "İşlem onay talebine yönlendirildi; tahsilat henüz eklenmedi.",
+        );
+        return;
+      }
+
       onSaved();
     } catch (err: any) {
       alert(err.message || "Tahsilat eklenemedi");
@@ -1819,6 +1837,7 @@ function AddCollectionModal({ externalCase, onClose, onSaved }: AddCollectionMod
   };
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
         {/* Header */}
@@ -1938,6 +1957,8 @@ function AddCollectionModal({ externalCase, onClose, onSaved }: AddCollectionMod
         </form>
       </div>
     </div>
+      {guardedModal}
+    </>
   );
 }
 
