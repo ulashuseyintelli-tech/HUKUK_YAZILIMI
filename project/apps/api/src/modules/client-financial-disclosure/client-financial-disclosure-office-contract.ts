@@ -129,6 +129,12 @@ export interface OfficeDisclosureTimelineSurface {
 export interface OfficeDisclosurePreparationSource {
   /** Ham collection/disposition kimliği değildir; salt-okunur, tek yönlü bir referanstır. */
   readonly preparationReference: string;
+  /**
+   * PR-1.2 — SUNUCU TARAFINDA hesaplanan gorunurluk bayragi (nihai yetki DEGIL).
+   * Kural: bagli avukat VEYA MUHASEBE + canPrepareCollectionDisposition.
+   * UI rol string'i tahmin etmez; enforcement komut yolundadir.
+   */
+  readonly canCreateFinancialDisclosure: boolean;
   /** Client-visible dosya referansı; executionFileNumber/internal ID fallback'i yoktur. */
   readonly officeFileNumber: string;
   readonly postedAt: string;

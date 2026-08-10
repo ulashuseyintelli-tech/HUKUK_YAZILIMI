@@ -12,6 +12,10 @@ import {
   type ValidatedJournalEntryDraft,
 } from '../accounting-journal';
 import { PostDispositionDto } from './dto/post-disposition.dto';
+import {
+  PREPARE_ELIGIBILITY_INCLUDE,
+  isPrepareEligibleUser,
+} from '../client-financial-disclosure/client-financial-disclosure-prepare-eligibility';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder';
 import { FinanceRiskEngine } from './finance-risk.engine';
@@ -369,16 +373,13 @@ export class DispositionPostingService {
    * final-approver OLAMAZ — bu kural burada dokunulmadan kalır).
    */
   async isPrepareEligible(userId: string, tenantId: string): Promise<boolean> {
+    // PR-1.2: predikat tek kanonik yardımcıya taşındı; X1 ofis projeksiyonu da
+    // `canCreateFinancialDisclosure` bayrağını AYNI kuraldan hesaplar (kopya yok).
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        lawyer: { select: { id: true } },
-        staffMember: { select: { staffType: true, canPrepareCollectionDisposition: true } },
-      },
+      include: PREPARE_ELIGIBILITY_INCLUDE,
     });
-    if (!user || !user.isActive || user.tenantId !== tenantId) return false;
-    if (user.lawyer) return true;
-    return !!user.staffMember && user.staffMember.staffType === 'MUHASEBE' && user.staffMember.canPrepareCollectionDisposition === true;
+    return isPrepareEligibleUser(user, tenantId);
   }
 
   /** isPrepareEligible false ise 403 — dağıtım hazırlama (recommend/preview) yetkisi yok. */

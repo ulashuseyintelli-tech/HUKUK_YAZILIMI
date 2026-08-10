@@ -92,6 +92,8 @@ export interface OfficeDisclosureHistorySurface {
 export interface OfficeDisclosurePreparationSource {
   /** Ham disposition kimliği değildir; PRE01 tarafından üretilen tek yönlü referanstır. */
   readonly preparationReference: string;
+  /** PR-1.2 — sunucu tarafinda hesaplanan gorunurluk bayragi; nihai yetki backend'de. */
+  readonly canCreateFinancialDisclosure: boolean;
   /** Etiket: "Büro dosya no"; canonical kaynak yalnız Case.fileNumber. */
   readonly officeFileNumber: string;
   readonly postedAt: string;
@@ -102,6 +104,16 @@ export interface OfficeDisclosurePreparationSource {
     readonly currentVersionId: string | null;
     readonly status: OfficeDisclosureStatus | null;
   } | null;
+}
+
+/** PR-1.2 — create komutunun client-safe yanıtı; ham disposition/source ID İÇERMEZ. */
+export interface OfficeDisclosureCreateResult {
+  readonly disclosureId: string;
+  readonly disclosureVersionId: string;
+  readonly version: number;
+  readonly status: string;
+  /** true → aynı kaynak için kök ZATEN vardı; ikinci kök oluşturulmadı. */
+  readonly replayed: boolean;
 }
 
 export interface OfficeDisclosurePreparationSurface {
@@ -188,6 +200,31 @@ export const clientFinancialDisclosureApi = {
       `/client-financial-disclosures/office/clients/${encodeURIComponent(clientId)}/preparation-sources`,
     );
     return response.data;
+  },
+
+  /**
+   * PR-1.2 — Office workspace: seçili hazırlama kaynağından İLK finansal bildirim kökünü kurar.
+   *
+   * Ham disposition ID GÖNDERİLMEZ ve GÖRÜLMEZ; yalnız tek yönlü `preparationReference`
+   * taşınır. GÖVDE YOKTUR: `caseId`/`caseClientId`/idempotency anahtarı sunucuda
+   * dispozisyondan türetilir. Aynı kaynak için tekrar çağrı ikinci kök ÜRETMEZ
+   * (`replayed: true` döner) — idempotency backend sözleşmesindedir.
+   */
+  async createFromPreparationSource(
+    clientId: string,
+    preparationReference: string,
+  ): Promise<OfficeDisclosureCreateResult> {
+    const response = await apiClient.post<{ data: OfficeDisclosureCreateResult }>(
+      `/client-financial-disclosures/office/clients/${encodeURIComponent(
+        clientId,
+      )}/preparation-sources/${encodeURIComponent(preparationReference)}/financial-disclosure`,
+    );
+    const created = (response.data as { data?: OfficeDisclosureCreateResult })?.data;
+    if (!created || typeof created.disclosureVersionId !== 'string') {
+      // Yanıt doğrulanmadan BAŞARI SAYILMAZ (sessiz yalancı başarı engeli).
+      throw new Error('DISCLOSURE_CREATE_RESPONSE_INVALID');
+    }
+    return created;
   },
 
   /** Office workspace -> GET the frozen X2 renderer output for one scoped version. */

@@ -11,6 +11,7 @@ import { CollectionReversalService } from './collection-reversal.service';
 import { PaymentReversedRegistrar } from './payment-reversed.registrar';
 import { DispositionPostingService } from './disposition-posting.service';
 import { ClientFinancialDisclosureCommandService } from './client-financial-disclosure-command.service';
+import { ClientFinancialDisclosureOfficeCommandController } from './client-financial-disclosure-office-command.controller';
 import { ClientFinancialDisclosureModule } from '../client-financial-disclosure/client-financial-disclosure.module';
 import { DistributionRecommendationService } from './distribution-recommendation.service';
 import { DispositionController } from './disposition.controller';
@@ -51,6 +52,8 @@ import { CaseFeeAgreementController } from './case-fee-agreement.controller';
     ClientOffsetController,
     ClientPayoutManualReversalController,
     CaseFeeAgreementController,
+    // PR-1.2: X1 ofis yuzeyinin komut ucu (okuma controller'i FD modulunde; dairesel bagimlilik olmasin diye burada).
+    ClientFinancialDisclosureOfficeCommandController,
   ],
   providers: [
     CollectionDispositionService,

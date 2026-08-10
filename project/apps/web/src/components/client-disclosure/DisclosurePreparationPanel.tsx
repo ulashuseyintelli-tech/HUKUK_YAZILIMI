@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, Spinner } from '@hukuk/ui';
 import { ClipboardList } from 'lucide-react';
 import {
@@ -29,9 +29,46 @@ function ExistingDisclosureState({ source }: { source: OfficeDisclosurePreparati
   );
 }
 
-/** X1-B02: PRE01'in yalnız POSTED kaynaklardan kurduğu salt-okunur seçim yüzeyi. */
+/**
+ * X1-B02 seçim yüzeyi + PR-1.2 komut aksiyonu.
+ *
+ * PR-1.2 ÖNCESİ: panel salt-okunurdu ve hiçbir ekran FD kökü oluşturamıyordu →
+ * bir müvekkilin İLK bildirimi ofis yüzeyinden kurulamıyordu.
+ * Artık seçili kaynak için gerçek create komutu çalışır. Ham disposition ID
+ * gönderilmez/gösterilmez; yalnız tek yönlü `preparationReference` taşınır.
+ */
 export function DisclosurePreparationPanel({ clientId }: { clientId: string }) {
   const [selectedReference, setSelectedReference] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [createError, setCreateError] = useState<string | null>(null);
+  // CIFT-SUBMIT KILIDI: `isPending` ayni tick icinde henuz guncellenmedigi icin
+  // hizli ard arda tiklamalar birden fazla mutation baslatabiliyordu. Senkron ref
+  // kilidi, React re-render'ini beklemeden ikinci cagriyi engeller.
+  const inFlight = useRef(false);
+
+  // Endpoint guarded confirmation ENVELOPE DONDURMEZ (controller'da authorize() yok) →
+  // gereksiz guarded-action sarmalayici EKLENMEZ; gercek sozlesmeye uyulur.
+  const create = useMutation({
+    mutationFn: (preparationReference: string) =>
+      clientFinancialDisclosureApi.createFromPreparationSource(clientId, preparationReference),
+    onMutate: () => setCreateError(null),
+    onSettled: () => {
+      inFlight.current = false;
+    },
+    onSuccess: async () => {
+      // Basari YALNIZ dogrulanmis yanittan sonra islenir; iki yuzey de FRESH yenilenir.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['client-financial-disclosures', 'office-list', clientId] }),
+        queryClient.invalidateQueries({
+          queryKey: ['client-financial-disclosures', 'office-preparation-sources', clientId],
+        }),
+      ]);
+    },
+    onError: () => {
+      // Secim KORUNUR, panel kapanmaz; kullanici tekrar deneyebilir.
+      setCreateError('Finansal bildirim hazırlanamadı. Yetkinizi kontrol edip yeniden deneyin.');
+    },
+  });
   // PR-1.1 — `catch { return null }` KALDIRILDI.
   //
   // Eski hâlde hata yakalanıp `null` dönüyordu; react-query bunu BAŞARILI bir sonuç
@@ -66,6 +103,8 @@ export function DisclosurePreparationPanel({ clientId }: { clientId: string }) {
       </div>
     );
   }
+
+  const canCreate = sources.data.items.some((item) => item.canCreateFinancialDisclosure);
 
   return (
     <Card className="p-4">
@@ -110,6 +149,47 @@ export function DisclosurePreparationPanel({ clientId }: { clientId: string }) {
         <p role="status" className="mt-3 text-sm font-medium text-blue-800">
           Hazırlama kaynağı seçildi.
         </p>
+      ) : null}
+
+      {/* PR-1.2 — komut aksiyonu. Capability SUNUCUDAN gelir; UI rol tahmini yapmaz. */}
+      {sources.data.items.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          <button
+            type="button"
+            data-testid="disclosure-create-button"
+            disabled={!selectedReference || !canCreate || create.isPending}
+            onClick={() => {
+              if (!selectedReference || !canCreate || create.isPending) return;
+              if (inFlight.current) return; // senkron kilit: ayni tick'te ikinci mutation YOK
+              inFlight.current = true;
+              create.mutate(selectedReference);
+            }}
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {create.isPending ? 'Hazırlanıyor…' : 'Finansal Bildirim Hazırla'}
+          </button>
+
+          {!canCreate ? (
+            <p className="text-xs text-gray-500">
+              Finansal bildirim hazırlama yetkiniz yok (avukat veya yetkilendirilmiş muhasebe
+              personeli gerekir).
+            </p>
+          ) : null}
+
+          {createError ? (
+            <p role="alert" data-testid="disclosure-create-error" className="text-sm text-red-700">
+              {createError}
+            </p>
+          ) : null}
+
+          {create.isSuccess && !createError ? (
+            <p role="status" data-testid="disclosure-create-success" className="text-sm text-green-700">
+              {create.data.replayed
+                ? 'Bu kaynak için bildirim zaten mevcuttu; güncel kayıt gösteriliyor.'
+                : `Finansal bildirim hazırlandı (sürüm v${create.data.version}, ${create.data.status}).`}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </Card>
   );
