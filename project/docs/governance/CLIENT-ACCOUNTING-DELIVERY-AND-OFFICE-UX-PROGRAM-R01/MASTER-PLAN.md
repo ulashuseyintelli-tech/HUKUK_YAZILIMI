@@ -310,25 +310,62 @@ PRODUCT_COMPLETE ancak şunlar BİRLİKTE kanıtlandığında ilan edilir:
 
 ```text
 PROGRAM:                  CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01
-PROGRAM STATUS:           MASTER PLAN MATERIALIZED — yürütme BAŞLAMADI
-BASELINE:                 c867c18a438d92b108da0ab73e4e31c4d79db60f
+PROGRAM STATUS:           ENGINEERING_COMPLETE 6/6 · PRODUCTION PARTIAL · NOT TERMINAL
+                          (TERMINAL CONSOLIDATION R01 — 2026-08-10)
+BASELINE:                 c867c18a438d92b108da0ab73e4e31c4d79db60f (materyalizasyon)
+KONSOLIDASYON TABANI:     452f79e7c2c915538b62803386a9c7712df9006d (fresh main)
 DOCUMENT SET:             MASTER-PLAN + C1 + C2 + C3 + X1 + X2 + X3
 
-C1 STATUS:                NOT STARTED — NEXT ELIGIBLE (öncülü yok)
-C1 BLOCKS:                P0+P1+P8 · TOTAL 5 · COMPLETED 0
-C2 STATUS:                IN PROGRESS — C2-B01 ANALYSIS_DELIVERED (2026-08-07; envanter: C2-B01-SURFACE-CONTRACT-INVENTORY-R01.md; eksik endpoint YOK; NEXT: C2-B02)
-C2 BLOCKS:                P2 · TOTAL 4 · COMPLETED 0
-C3 STATUS:                NOT STARTED — WAITING_FOR_PREDECESSOR (C1-B01)
-C3 BLOCKS:                P5+P6 · TOTAL 5 · COMPLETED 0
-X1 STATUS:                ENGINEERING_COMPLETE / CLOSED · PRE01 + B01–B05 COMPLETE · 5/5 PRODUCT BLOCKS COMPLETE · REMAINING PRODUCT ENGINEERING: NONE
-X1 BLOCKS:                P3 · TOTAL 5 · COMPLETED 5 · REMAINING 0 · PRODUCTION: NOT ACTIVE · PERSISTENT ACTIVATION: OWNER-GATED / NOT PERFORMED · CANONICAL CHAIN: #2281, #2284, #2287, #2290, #2292, #2294, #2296
-X2 STATUS:                NOT STARTED — WAITING_FOR_PREDECESSOR (C1-B01)
-X2 BLOCKS:                P4 · TOTAL 4 · COMPLETED 0
-X3 STATUS:                ENGINEERING_COMPLETE / ACTIVATION_PENDING — NEXT ELIGIBLE NONE WITHIN X3
-X3 BLOCKS:                P7 · TOTAL 3 · COMPLETED 3 · REMAINING NONE
+── ÜÇ EKSENLİ SINIFLANDIRMA ─────────────────────────────────────────────────
 
-MIGRATION OWNER:          X3 (tek aktif migration görevi)
-ACTIVATION DEBT:          X3 migrations production APPLY · CLIENT_STATEMENT_MONTHLY_DELIVERY activation · real DB/runtime UAT
+C1  ENGINEERING: COMPLETE 5/5    PRODUCTION: ACTIVE        ACTIVATION: CLOSED
+    W4 zinciri (ACT01 + ACT02A + ACT02B) üç kalemlik borcu KAPATTI:
+    CREDENTIAL_ENCRYPTION_KEY → ACT01 · şablon seed → ACT01 (9/3/0) ·
+    C3 schedule → ACT02B.  Kanıt: W4-ACT02B-PRODUCTION-ACTIVATION-R01.md
+C2  ENGINEERING: COMPLETE 4/4    PRODUCTION: N/A (frontend) ACTIVATION: NONE
+C3  ENGINEERING: COMPLETE 5/5    PRODUCTION: ACTIVE        ACTIVATION: CLOSED
+    CLIENT_STATEMENT_MONTHLY_DELIVERY=true KALICI (W4-ACT02B);
+    cron `0 3 1 * *` Europe/Istanbul, sonraki koşu 2026-09-01 03:00.
+X1  ENGINEERING: COMPLETE 5/5    PRODUCTION: NOT ACTIVE    ACTIVATION: OPEN (owner-gated)
+    Kanonik zincir: #2281 #2284 #2287 #2290 #2292 #2294 #2296
+X2  ENGINEERING: COMPLETE 4/4    PRODUCTION: NOT ACTIVE    ACTIVATION: OPEN (owner-gated)
+    CANONICAL: PR #2333 / merge SHA 452f79e7c2c915538b62803386a9c7712df9006d
+    PUBLICATION ACTIVATION: OWNER-GATED / NOT PERFORMED — PRODUCTION_ACTIVE SAYILMAZ.
+X3  ENGINEERING: COMPLETE 3/3    PRODUCTION: APPLIED       ACTIVATION: CLOSED
+    Üç migration (20260809090000 · 090100 · 090500) frontier 125/125 içinde;
+    repo migration sayısı 125 = uygulanan frontier 125 (unfinished=0, rolled_back=0).
+
+── BAYAT KAYIT TESPİTİ (bu konsolidasyonla düzeltildi) ──────────────────────
+
+C1 "NOT STARTED"          → BAYAT.  Gerçek: 5/5 + PRODUCT_COMPLETE + PRODUCTION_ACTIVE
+C2 "COMPLETED 0"          → BAYAT.  Gerçek: 4/4 ENGINEERING_COMPLETE (2026-08-07)
+C3 "NOT STARTED"          → BAYAT.  Gerçek: 5/5 (#2275 · #2282 · #2285 · #2288 · #2291)
+X2 "NOT STARTED"          → BAYAT.  Gerçek: 4/4 ENGINEERING_COMPLETE / CLOSED (#2333)
+ACTIVATION DEBT satırı    → BAYAT.  X3 migration APPLY ve MONTHLY_DELIVERY KAPANDI.
+
+SAYFA BAŞLIĞI BAYATLIĞI — CROSS-LANE RULE gereği BU SAYFADAN DÜZELTİLMEZ:
+C3 ve X3 sayfa başlıkları hâlâ `ACTIVATION_PENDING` taşıyor; #2332 yalnız C1
+sayfasını güncelledi. Kanonik gerçeklik W4-ACT02B kanıt dokümanıdır. Düzeltme
+ilgili lane'in kendi işidir (X2 bunu #2333 ile kendi sayfasında yaptı).
+
+── KALAN BORÇ — PROGRAMIN TERMİNAL OLMASINI ENGELLEYEN ─────────────────────
+
+RESIDUAL-1  FD PUBLICATION ACTIVATION — OWNER-GATED / NOT PERFORMED
+            X1 (ofis çalışma alanı) ve X2 (renderer) mühendislik olarak hazır;
+            production yayın AÇILMADI. Bu konsolidasyon onu AKTİVE ETMEZ ve
+            PRODUCTION_ACTIVE SAYMAZ.
+RESIDUAL-2  OLAY BİLDİRİMİ (FD) CANARY — YAPILMADI
+            Master plan §10 İKİ canary şart koşar. Dönemsel ekstre canary'si
+            YAPILDI (C1-B04-CANARY-DELIVERY-PASS-R02 + W4-ACT02A / MONTHLY_STATEMENT_PDF).
+            FD olay-bildirimi canary'si YOK.
+
+MIGRATION OWNER:          X3 — aktif migration görevi YOK (paket tamamlandı ve uygulandı)
+TERMINAL DISPOSITION:     KAYDEDİLEMEZ — RESIDUAL-1 ve RESIDUAL-2 AÇIK.
+                          Kapanış eşiği (§9) "gerçek canary teslimi" şartını FD
+                          tarafı için KARŞILAMIYOR. Program TERMINAL_CLOSED
+                          İLAN EDİLMEZ.
+NEXT ELIGIBLE:            OWNER DECISION — FD publication activation + FD canary
+                          (ayrı owner GO; bu program kendiliğinden açamaz)
 ÖNCEKİ PROGRAM:           TERMINAL_CLOSED / PRODUCTION_VERIFIED / CANONICAL — DOKUNULMAZ
 PROGRAM LOCK:             CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
