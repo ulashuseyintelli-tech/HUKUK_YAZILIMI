@@ -310,7 +310,7 @@ PRODUCT_COMPLETE ancak şunlar BİRLİKTE kanıtlandığında ilan edilir:
 
 ```text
 PROGRAM:                  CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01
-PROGRAM STATUS:           ENGINEERING_COMPLETE 6/6 · PRODUCTION PARTIAL · NOT TERMINAL
+PROGRAM STATUS:           ENGINEERING_COMPLETE 6/6 · PRODUCTION ACTIVE · NOT TERMINAL
                           (TERMINAL CONSOLIDATION R01 — 2026-08-10)
 BASELINE:                 c867c18a438d92b108da0ab73e4e31c4d79db60f (materyalizasyon)
 KONSOLIDASYON TABANI:     452f79e7c2c915538b62803386a9c7712df9006d (fresh main)
@@ -326,11 +326,15 @@ C2  ENGINEERING: COMPLETE 4/4    PRODUCTION: N/A (frontend) ACTIVATION: NONE
 C3  ENGINEERING: COMPLETE 5/5    PRODUCTION: ACTIVE        ACTIVATION: CLOSED
     CLIENT_STATEMENT_MONTHLY_DELIVERY=true KALICI (W4-ACT02B);
     cron `0 3 1 * *` Europe/Istanbul, sonraki koşu 2026-09-01 03:00.
-X1  ENGINEERING: COMPLETE 5/5    PRODUCTION: NOT ACTIVE    ACTIVATION: OPEN (owner-gated)
+X1  ENGINEERING: COMPLETE 5/5    PRODUCTION: ACTIVE        ACTIVATION: RECONCILED
     Kanonik zincir: #2281 #2284 #2287 #2290 #2292 #2294 #2296
-X2  ENGINEERING: COMPLETE 4/4    PRODUCTION: NOT ACTIVE    ACTIVATION: OPEN (owner-gated)
+X2  ENGINEERING: COMPLETE 4/4    PRODUCTION: ACTIVE        ACTIVATION: RECONCILED
     CANONICAL: PR #2333 / merge SHA 452f79e7c2c915538b62803386a9c7712df9006d
-    PUBLICATION ACTIVATION: OWNER-GATED / NOT PERFORMED — PRODUCTION_ACTIVE SAYILMAZ.
+    PUBLICATION: runtime ölçümüyle LEVEL_2 (WRITE=true, PUBLICATION=true).
+    RELEASE5 @ ecf32001 · .env 10:12:49 → API başlangıç 10:13:08 (env YÜKLENDİ) ·
+    derlenmiş guard verdict LEVEL_2. Kanıt: FD-ACTIVATION-RECONCILIATION-R01.md
+    ⚠ ÖNCEKİ "NOT ACTIVE / NOT PERFORMED" KAYITLARI YANLIŞTI (#2334 dahil) —
+      runtime ölçümü yerine sayfa iddiası kullanılmıştı. BU OTURUM FLAG AÇMADI.
 X3  ENGINEERING: COMPLETE 3/3    PRODUCTION: APPLIED       ACTIVATION: CLOSED
     Üç migration (20260809090000 · 090100 · 090500) frontier 125/125 içinde;
     repo migration sayısı 125 = uygulanan frontier 125 (unfinished=0, rolled_back=0).
@@ -350,22 +354,29 @@ ilgili lane'in kendi işidir (X2 bunu #2333 ile kendi sayfasında yaptı).
 
 ── KALAN BORÇ — PROGRAMIN TERMİNAL OLMASINI ENGELLEYEN ─────────────────────
 
-RESIDUAL-1  FD PUBLICATION ACTIVATION — OWNER-GATED / NOT PERFORMED
-            X1 (ofis çalışma alanı) ve X2 (renderer) mühendislik olarak hazır;
-            production yayın AÇILMADI. Bu konsolidasyon onu AKTİVE ETMEZ ve
-            PRODUCTION_ACTIVE SAYMAZ.
-RESIDUAL-2  OLAY BİLDİRİMİ (FD) CANARY — YAPILMADI
+RESIDUAL-1  FD PUBLICATION ACTIVATION — ✅ RECONCILED (2026-08-10)
+            Production ZATEN LEVEL_2 aktif; borç "aktivasyon" değil, KAYIT DRIFT'iydi.
+            KALAN: X1/X2 sayfa başlıklarının kendi lane authority'siyle düzeltilmesi
+            (CROSS-LANE RULE gereği bu sayfadan yapılmaz).
+RESIDUAL-2  OLAY BİLDİRİMİ (FD) CANARY — AÇIK / BLOCKED_OWNER_DECISION
             Master plan §10 İKİ canary şart koşar. Dönemsel ekstre canary'si
             YAPILDI (C1-B04-CANARY-DELIVERY-PASS-R02 + W4-ACT02A / MONTHLY_STATEMENT_PDF).
-            FD olay-bildirimi canary'si YOK.
+            FD canary'si YOK: canlıdaki tek FD 2026-08-07'de, deterministik
+            renderer'dan (2026-08-08 · #2277 · #2279) ÖNCE yayınlandı → kanıt yerine GEÇMEZ.
+            BLOCKER: FD kökü olmayan POSTED disposition yalnız TELLİ HUKUK'ta (2 adet);
+            Demo Firma'nın tek POSTED'ı zaten tüketilmiş. Gerçek müvekkil verisiyle
+            canary owner tarafından YASAKLANMIŞTIR.
+            GEREKEN: owner tarafından belirlenmiş güvenli canary substratı.
+            Kanıt: FD-ACTIVATION-RECONCILIATION-R01.md §6
 
 MIGRATION OWNER:          X3 — aktif migration görevi YOK (paket tamamlandı ve uygulandı)
-TERMINAL DISPOSITION:     KAYDEDİLEMEZ — RESIDUAL-1 ve RESIDUAL-2 AÇIK.
+TERMINAL DISPOSITION:     KAYDEDİLEMEZ — RESIDUAL-2 AÇIK.
                           Kapanış eşiği (§9) "gerçek canary teslimi" şartını FD
                           tarafı için KARŞILAMIYOR. Program TERMINAL_CLOSED
                           İLAN EDİLMEZ.
-NEXT ELIGIBLE:            OWNER DECISION — FD publication activation + FD canary
-                          (ayrı owner GO; bu program kendiliğinden açamaz)
+NEXT ELIGIBLE:            OWNER DECISION — FD canary için GÜVENLİ SUBSTRAT tahsisi
+                          (Demo Firma'da canary POSTED disposition veya üretim yetkisi).
+                          Aktivasyon tarafı KAPANDI — yeni GO gerekmiyor.
 ÖNCEKİ PROGRAM:           TERMINAL_CLOSED / PRODUCTION_VERIFIED / CANONICAL — DOKUNULMAZ
 PROGRAM LOCK:             CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
