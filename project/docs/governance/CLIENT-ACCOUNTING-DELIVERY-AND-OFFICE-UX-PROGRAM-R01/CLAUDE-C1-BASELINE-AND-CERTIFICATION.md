@@ -244,3 +244,29 @@ mevcut production mutation disiplinine tabidir.
 > anahtar owner-side), (2) C3 schedule/cron aktivasyonu (bayrak OFF, envanter C3 sayfasında),
 > (3) B05-B `EXPENSE_ACTUAL_POSTED` şablonunun mevcut tenant'lara seed'i (yeni tenant'ta otomatik;
 > mevcutta `seedDefaultTemplates` owner-run).
+
+---
+
+## W4 — PRODUCTION ACTIVATION ZİNCİRİ (OWNER GO'LARI İLE KAPANDI)
+
+> **W4 SONUÇ (2026-08-10, owner GO-COMPLETE zinciri):**
+>
+> ```text
+> W4-ACT01  FOUNDATION CUTOVER   = COMPLETE          (backup + 121→125 + release cutover +
+>                                                     stable CEK + SMTP re-provision + template 9/3/0)
+> W4-ACT02A SINGLE CANARY        = CLOSED / ACCEPTED (1 gerçek e-posta; içerik kabulü PDF v3
+>                                                     SHA 55541291…c166; düzeltme PR'ları #2327-#2331)
+> W4-ACT02B GLOBAL ACTIVATION    = PRODUCTION_ACTIVE / COMPLETE
+> ```
+>
+> `CLIENT_STATEMENT_MONTHLY_DELIVERY=true` kalıcı; API=`HY_W4_RELEASE5`@`ecf32001`,
+> Web=`HY_W4_RELEASE3`@`c59a7cbe`; cron `0 3 1 * *` Europe/Istanbul, sonraki koşu
+> **2026-09-01 03:00** (envanter 33→34); ACT02B sırasında gerçek provider çağrısı **0**;
+> bounded impact PLAN: 8 taranan → beklenen gerçek e-posta **0**; queue 0/0/0;
+> migration 125/125; rollback GEREKMEDİ (pointer sırası RELEASE4→RELEASE3→RELEASE2→rc-*).
+> Yukarıdaki üç kalemlik ACTIVATION DEBT bu zincirle **CLOSED** (CEK→ACT01,
+> şablon seed→ACT01 allowlist 9/3/0, C3 schedule→ACT02B).
+> Kanıt: `W4-ACT02B-PRODUCTION-ACTIVATION-R01.md`.
+>
+> **C1 LANE = PRODUCT_COMPLETE + PRODUCTION_ACTIVE.**
+> NEXT ELIGIBLE = CLIENT PROGRAM TERMINAL CONSOLIDATION (ayrı owner GO).
