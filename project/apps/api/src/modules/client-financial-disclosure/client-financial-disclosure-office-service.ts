@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
 import {
+  buildPreparationReference,
+  preparationReferenceEquals,
+} from './client-financial-disclosure-preparation-reference';
+import {
+  PREPARE_ELIGIBILITY_SELECT,
+  isPrepareEligibleUser,
+} from './client-financial-disclosure-prepare-eligibility';
+import {
   ClientFinancialDisclosureStatus,
   type Prisma,
   type PrismaClient,
@@ -106,6 +114,8 @@ type ApprovalRequestProjection = {
 
 type ResolvedOfficeScope = {
   readonly approverEligible: boolean;
+  /** PR-1.2 — X1 create aksiyonunun GÖRÜNÜRLÜK bayrağı (nihai yetki komut yolunda). */
+  readonly prepareEligible: boolean;
   readonly caseClientIds: readonly string[];
 };
 
@@ -185,6 +195,13 @@ export class ClientFinancialDisclosureOfficeService {
       scope.tenantId,
       sources.map((source) => source.caseId),
     );
+
+    // PR-1.2: capability SUNUCU TARAFINDA hesaplanır; UI rol string'i tahmin etmez.
+    // Bu yalnız GÖRÜNÜRLÜK bayrağıdır — nihai yetki kararı komut yolundaki
+    // `createFromDisposition` içindedir (defense-in-depth).
+    // Aktör ZATEN resolveScope() içinde okundu; İKİNCİ sorgu açılmaz.
+    const canCreateFinancialDisclosure = resolved.prepareEligible;
+
     const items = sources.map((source) => {
       if (source.postedAt === null) throw new OfficeDisclosureProjectionForbiddenError();
       const officeFileNumber = officeFileNumbers.get(source.caseId);
@@ -192,6 +209,7 @@ export class ClientFinancialDisclosureOfficeService {
       const existing = source.clientFinancialDisclosures[0] ?? null;
       return {
         preparationReference: this.preparationReference(scope.tenantId, source.id),
+        canCreateFinancialDisclosure,
         officeFileNumber,
         postedAt: this.isoRequired(source.postedAt),
         currency: source.currency,
@@ -374,7 +392,8 @@ export class ClientFinancialDisclosureOfficeService {
   private async resolveScope(scope: OfficeDisclosureReadScope): Promise<ResolvedOfficeScope> {
     const actor = await this.prisma.user.findFirst({
       where: { id: scope.actorUserId, tenantId: scope.tenantId, isActive: true },
-      select: DISCLOSURE_APPROVER_CANDIDATE_SELECT,
+      // PR-1.2: prepare-eligibility AYNI sorgudan türetilir (ek round-trip yok).
+      select: { ...DISCLOSURE_APPROVER_CANDIDATE_SELECT, ...PREPARE_ELIGIBILITY_SELECT },
     });
     if (!actor) throw new OfficeDisclosureProjectionForbiddenError();
 
@@ -399,6 +418,7 @@ export class ClientFinancialDisclosureOfficeService {
     }
     return {
       approverEligible: isDisclosureApproverEligible(actor, scope.tenantId),
+      prepareEligible: isPrepareEligibleUser(actor as never, scope.tenantId),
       caseClientIds: caseClients.map((entry) => entry.id),
     };
   }
@@ -625,10 +645,54 @@ export class ClientFinancialDisclosureOfficeService {
     );
   }
 
+  /** PR-1.2: tek kanonik üretece delege — algoritma burada KOPYALANMAZ. */
   private preparationReference(tenantId: string, dispositionId: string): string {
-    return createHash('sha256')
-      .update(`client-financial-disclosure-office-source-v1:${tenantId}:${dispositionId}`)
-      .digest('base64url');
+    return buildPreparationReference(tenantId, dispositionId);
+  }
+
+  /**
+   * PR-1.2 — KOMUT YOLU İÇİN GÜVENLİ ÇÖZÜM.
+   *
+   * Tek yönlü `preparationReference`'tan disposition'a dönüş; referans TERSİNE
+   * ÇEVRİLMEZ. Yalnız bu aktörün/tenant'ın GERÇEKTEN hazırlamaya uygun adayları
+   * yeniden hash'lenip sabit-zamanlı karşılaştırılır. Böylece:
+   *   - başka tenant/client referansı,
+   *   - kurcalanmış/biçimsiz referans,
+   *   - artık uygun olmayan (POSTED değil / kapsam dışı) kaynak
+   * hepsi AYNI generic NotFound ile fail-closed olur; varlık bilgisi sızmaz ve
+   * global bir hash-oracle oluşmaz.
+   */
+  async resolvePreparationSourceDispositionId(
+    scope: OfficeDisclosureReadScope,
+    preparationReference: string,
+  ): Promise<string> {
+    if (typeof preparationReference !== 'string' || preparationReference.length === 0) {
+      throw new OfficeDisclosureProjectionNotFoundError();
+    }
+    const resolved = await this.resolveScope(scope);
+    if (resolved.caseClientIds.length === 0) {
+      throw new OfficeDisclosureProjectionNotFoundError();
+    }
+    const candidates = await this.prisma.collectionDisposition.findMany({
+      where: {
+        tenantId: scope.tenantId,
+        status: 'POSTED',
+        beneficiaryScope: 'SINGLE_CASE_CLIENT',
+        caseClientId: { in: [...resolved.caseClientIds] },
+        ...(scope.caseId ? { caseId: scope.caseId } : {}),
+      },
+      select: { id: true },
+    });
+
+    let matched: string | null = null;
+    for (const candidate of candidates) {
+      // Erken çıkış YOK: tüm adaylar taranır, eşleşme sabit-zamanlı karşılaştırılır.
+      if (preparationReferenceEquals(this.preparationReference(scope.tenantId, candidate.id), preparationReference)) {
+        matched = candidate.id;
+      }
+    }
+    if (!matched) throw new OfficeDisclosureProjectionNotFoundError();
+    return matched;
   }
 
   private auditEventType(action: string): OfficeDisclosureTimelineEventType | null {
