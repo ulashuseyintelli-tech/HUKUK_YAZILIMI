@@ -32,24 +32,37 @@ function ExistingDisclosureState({ source }: { source: OfficeDisclosurePreparati
 /** X1-B02: PRE01'in yalnız POSTED kaynaklardan kurduğu salt-okunur seçim yüzeyi. */
 export function DisclosurePreparationPanel({ clientId }: { clientId: string }) {
   const [selectedReference, setSelectedReference] = useState<string | null>(null);
+  // PR-1.1 — `catch { return null }` KALDIRILDI.
+  //
+  // Eski hâlde hata yakalanıp `null` dönüyordu; react-query bunu BAŞARILI bir sonuç
+  // sayıyor, isError hiç true olmuyordu. Sonuç: "yüklenemedi" ile "kaynak yok" ayırt
+  // edilemiyordu ve kullanıcının yeniden deneme yolu yoktu.
+  // Artık hata YUKARI VERİLİR (fail-closed davranış korunur: hata hâlinde liste
+  // gösterilmez), ayrımlar korunur ve kullanıcı yeniden deneyebilir.
+  // Ham API hata gövdesi kullanıcıya GÖSTERİLMEZ — generic mesaj kullanılır.
   const sources = useQuery({
     queryKey: ['client-financial-disclosures', 'office-preparation-sources', clientId],
-    // Ham API hata gövdesini query state'ine dahi taşımadan generic fail-closed sonuç üretir.
-    queryFn: async () => {
-      try {
-        return await clientFinancialDisclosureApi.listPreparationSources(clientId);
-      } catch {
-        return null;
-      }
-    },
+    queryFn: () => clientFinancialDisclosureApi.listPreparationSources(clientId),
     retry: false,
   });
 
   if (sources.isLoading) return <Spinner data-testid="disclosure-preparation-loading" />;
   if (sources.isError || !sources.isSuccess || !sources.data) {
     return (
-      <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        Bildirim hazırlama kaynakları yüklenemedi.
+      <div
+        role="alert"
+        data-testid="disclosure-preparation-error"
+        className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+      >
+        <p>Bildirim hazırlama kaynakları yüklenemedi.</p>
+        <button
+          type="button"
+          onClick={() => void sources.refetch()}
+          disabled={sources.isFetching}
+          className="mt-2 rounded-md border border-red-300 bg-white px-3 py-1 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
+        >
+          {sources.isFetching ? 'Yeniden deneniyor…' : 'Yeniden dene'}
+        </button>
       </div>
     );
   }

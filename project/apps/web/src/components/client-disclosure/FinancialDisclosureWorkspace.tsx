@@ -111,31 +111,44 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
     enabled: Boolean(selection),
   });
 
-  if (list.isLoading) return <Spinner data-testid="financial-disclosures-loading" />;
-  if (list.isError || !list.isSuccess) {
-    return (
-      <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        Finansal bildirimler yüklenemedi. Yetki ve müvekkil kapsamını kontrol edin.
-      </div>
-    );
-  }
-  if (list.data.items.length === 0) {
-    return (
-      <Card className="p-4">
-        <h2 className="font-semibold">Finansal bildirimler</h2>
-        <p className="mt-2 text-sm text-gray-500">Bu müvekkil için finansal bildirim bulunmuyor.</p>
-      </Card>
-    );
-  }
+  // PR-1.1 — HAZIRLAMA PANELİ HER DURUMDA RENDER EDİLİR.
+  //
+  // ÖNCEKİ KUSUR: liste boş/yükleniyor/hatalı iken fonksiyon ERKEN DÖNÜYOR ve
+  // <DisclosurePreparationPanel/> hiç mount olmuyordu. Hazırlama paneli ise bir
+  // müvekkilin İLK bildirimini oluşturmanın TEK yoluydu → tavuk-yumurta kilidi:
+  // ilk finansal bildirim ofis yüzeyinden HİÇBİR ZAMAN oluşturulamıyordu
+  // (ağ izinde preparation-sources çağrısı hiç görünmüyordu).
+  //
+  // Liste yüzeyi ile hazırlama yüzeyi BAĞIMSIZDIR: liste endpoint'i hata verse bile
+  // hazırlama kullanılabilir kalır. Yetki sınırları backend'de; burada değişmez.
+  const listSurface = list.isLoading ? (
+    <Spinner data-testid="financial-disclosures-loading" />
+  ) : list.isError || !list.isSuccess ? (
+    <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      Finansal bildirimler yüklenemedi. Yetki ve müvekkil kapsamını kontrol edin.
+    </div>
+  ) : list.data.items.length === 0 ? (
+    <Card className="p-4">
+      <h2 className="font-semibold">Finansal bildirimler</h2>
+      <p className="mt-2 text-sm text-gray-500">Bu müvekkil için finansal bildirim bulunmuyor.</p>
+    </Card>
+  ) : null;
+
+  const hasItems = list.isSuccess && list.data.items.length > 0;
 
   return (
     <div className="space-y-4">
       <DisclosurePreparationPanel clientId={clientId} />
-      <DisclosureList
-        items={list.data.items}
-        selectedVersionId={selection?.versionId ?? null}
-        onSelect={(item) => setSelectedVersionId(item.versionId)}
-      />
+
+      {listSurface}
+
+      {hasItems ? (
+        <DisclosureList
+          items={list.data.items}
+          selectedVersionId={selection?.versionId ?? null}
+          onSelect={(item) => setSelectedVersionId(item.versionId)}
+        />
+      ) : null}
 
       {selection ? (
         <DisclosurePreviewPanel clientId={clientId} versionId={selection.versionId} />
@@ -160,6 +173,7 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
         />
       ) : null}
 
+      {selection ? (
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
           <h2 className="text-base font-semibold">Bildirim detayı</h2>
@@ -232,6 +246,7 @@ export function FinancialDisclosureWorkspace({ clientId }: { clientId: string })
           ) : null}
         </Card>
       </div>
+      ) : null}
     </div>
   );
 }
