@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { sanitizeLawyerIbanPayload } from "@/lib/lawyer-iban-payload";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -321,9 +322,16 @@ function OfficeSettingsInner() {
   const submitLawyer = async (data: any, confirmSimilarNameUpdate: boolean) => {
     setSaving(true);
     try {
-      if (editingLawyer?.id) await api.put(`/lawyers/${editingLawyer.id}`, { ...data, confirmSimilarNameUpdate });
+      // PR-1 IBAN SÖZLEŞMESİ: backend (lawyer.service.ts CANDIDATE-H1) `iban` alanını
+      // "ya HİÇ gönderme ya da geçerli TAM değer" olarak şart koşar; boş/whitespace/maskeli
+      // değer 400 INVALID_IBAN_UPDATE ile reddedilir. Form ise IBAN'ı olmayan avukatta
+      // `iban: ""` üretiyordu → IBAN'sız hiçbir avukat düzenlenemiyordu.
+      // Çözüm: boş/whitespace ise alanı body'den TAMAMEN ÇIKAR (mevcut değer korunur),
+      // doluysa normalize edip (boşluksuz, büyük harf) gönder. Backend guard'ı DEĞİŞMEZ.
+      const payload = sanitizeLawyerIbanPayload(data);
+      if (editingLawyer?.id) await api.put(`/lawyers/${editingLawyer.id}`, { ...payload, confirmSimilarNameUpdate });
       else {
-        const res = await api.post("/lawyers", data);
+        const res = await api.post("/lawyers", payload);
         const body = (res as any)?.data?.data ?? (res as any)?.data;
         if (body?._existingReturned) alert("Bu avukat zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
       }

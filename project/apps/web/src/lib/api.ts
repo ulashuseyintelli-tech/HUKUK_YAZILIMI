@@ -5793,6 +5793,9 @@ export interface CreateCollectionDTO {
   bankName?: string;
   accountNo?: string;
   notes?: string;
+  // PR-1: guarded-edge CONFIRM_REQUIRED retry'ında backend'e geri verilen onay token'ı.
+  // İlk denemede undefined; zarf gelirse kullanıcı onayı sonrası TEK retry'da dolu gider.
+  confirmationToken?: string;
 }
 
 export interface UpdateCollectionDTO {

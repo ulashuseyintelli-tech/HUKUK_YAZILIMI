@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { Building2, RefreshCw, ArrowDownLeft, ArrowUpRight, Link2, CheckCircle, Clock, Plus } from "lucide-react";
 
 interface BankPanelProps {
@@ -47,6 +48,8 @@ interface BankStats {
 }
 
 export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
+  // PR-1: kanonik guarded-edge tuketicisi (case-status ile ayni hook).
+  const { run: runGuarded, modal: guardedModal } = useGuardedAction();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [unmatchedTransactions, setUnmatchedTransactions] = useState<BankTransaction[]>([]);
   const [stats, setStats] = useState<BankStats | null>(null);
@@ -111,9 +114,27 @@ export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
     }
 
     try {
-      const result = await api.post(`/bank/transactions/${transactionId}/match`, { caseId });
-      
-      if (result.data) {
+      // PR-1: guarded-edge tüketicisi. Backend CONFIRM_REQUIRED zarfını HTTP 200 ile döner
+      // (hata DEĞİL). Önceden zarf `result.data` üzerinden truthy görünüp "başarıyla eşleştirildi"
+      // yazdırıyordu → tahsilat oluşmadan yalancı başarı. Artık başarı yalnız status==='ok'.
+      const outcome = await runGuarded((confirmation) =>
+        api.post(`/bank/transactions/${transactionId}/match`, {
+          caseId,
+          confirmationToken: confirmation?.token,
+        }),
+      );
+
+      if (outcome.status === "cancelled") return; // eşleştirme YAPILMADI
+      if (outcome.status === "approval_pending") {
+        alert(
+          outcome.envelope.message ||
+            "İşlem onay talebine yönlendirildi; eşleştirme henüz yapılmadı.",
+        );
+        return;
+      }
+
+      const result = outcome.data as any;
+      if (result?.data) {
         alert("İşlem başarıyla eşleştirildi ve tahsilat kaydı oluşturuldu");
         onTransactionMatched?.(result.data.transaction, result.data.collection);
         loadData();
@@ -175,6 +196,7 @@ export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
   }
 
   return (
+    <>
     <div className="bg-white rounded-lg shadow">
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200">
@@ -397,5 +419,7 @@ export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
         )}
       </div>
     </div>
+      {guardedModal}
+    </>
   );
 }
