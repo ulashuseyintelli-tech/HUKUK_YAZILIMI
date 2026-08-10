@@ -91,10 +91,15 @@ describe('CAD C3-B02 — ekstre PDF belge sözleşmesi', () => {
     const serialized = JSON.stringify(doc);
     expect(serialized).toContain('(değişmedi)');
     expect(serialized).toContain(CLIENT_STATEMENT_PDF_INFO_NOTE);
-    // bilgi satırında borç/alacak rakam yerine '—'
+    // R02 owner kabulü: bilgi satırında Borç/Alacak AÇIKÇA '0,00' gösterilir ('—' değil) —
+    // dipnottaki "borç ve alacak sütunu 0" ifadesiyle birebir tutarlı.
     const table = (doc.content as any[]).find((c) => c?.table?.headerRows === 1);
-    const infoRow = table.table.body.at(-1);
-    expect(infoRow).toContain('—');
+    const infoRow = table.table.body.at(-1) as string[];
+    // Borç ve Alacak hücreleri (son üç sütun: debit, credit, running) — '—' YASAK, açıkça 0,00.
+    const debitCell = infoRow[infoRow.length - 3];
+    const creditCell = infoRow[infoRow.length - 2];
+    expect(debitCell).toBe('0,00');
+    expect(creditCell).toBe('0,00');
   });
 
   // 3. Fail-closed durum kapısı

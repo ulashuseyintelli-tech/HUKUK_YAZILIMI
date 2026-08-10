@@ -143,8 +143,10 @@ export function buildClientStatementPdfDocument(render: ClientStatementRenderV1)
     ...(showFileColumn ? [l.fileReference ? l.fileReference.value : '—'] : []),
     l.note ?? '',
     ...(showInformationalAmount ? [l.informationalAmount ? formatTrAmount(l.informationalAmount) : '—'] : []),
-    l.isInformational ? '—' : formatTrAmount(l.debit),
-    l.isInformational ? '—' : formatTrAmount(l.credit),
+    // R02 owner kabulü: bilgi satırında Borç/Alacak '—' değil AÇIKÇA 0,00 gösterilir —
+    // Model-1, dipnot ve kabul kanıtı aynı şeyi söyler (bilgi satırında değerler zaten 0'dır).
+    formatTrAmount(l.debit),
+    formatTrAmount(l.credit),
     l.isInformational ? `${formatTrAmount(l.runningBalance)} (değişmedi)` : formatTrAmount(l.runningBalance),
   ]);
 
