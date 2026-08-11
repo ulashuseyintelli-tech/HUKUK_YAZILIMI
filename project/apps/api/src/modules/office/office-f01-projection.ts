@@ -88,6 +88,28 @@ const LAWYER_S1_FIELDS = new Set([
   'createdAt',
   'updatedAt',
   'displayName',
+  // PR-1.5 — PERSONEL İLETİŞİM ALANLARI (owner kararı 2026-08-11).
+  //
+  // BULGU: bu alanlar hiçbir katmanda sınıflandırılmamıştı, dolayısıyla allowlist onları
+  // sessizce düşürüyordu. Sonuç iki katlıydı: (1) Avukat Düzenle ekranı kayıtlı e-posta/
+  // telefon/adresi BOŞ gösteriyordu, (2) form aynı boş değerleri geri POST ettiği için her
+  // kaydetme bu alanları GERÇEKTEN siliyordu. Giriş daveti kartı da e-postayı bulamadığı
+  // için hiç açılamıyordu.
+  //
+  // SINIF: bunlar `name`/`surname`/`title` ile AYNI sınıf personel iletişim verisidir —
+  // yetkili aktöre görünür (S1), yetkisiz aktöre görünmez (S0 DEĞİL).
+  //
+  // KAPSAM DIŞI (bilinçli): `tckn`, `iban`, `bankName`, `branchName`, `vergiDairesi`,
+  // `vergiNo` kimlik/finans verisidir ve S1'e ALINMAZ; `tckn`/`iban` hariçliği ayrıca
+  // office-f01-authorization.spec.ts ile sabitlenmiştir.
+  'email',
+  'phone',
+  'mobilePhone',
+  'whatsappPhone',
+  'fax',
+  'address',
+  'city',
+  'district',
 ]);
 
 function projectFields<T extends Record<string, unknown>>(
