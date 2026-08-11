@@ -110,6 +110,9 @@ type ApprovalRequestProjection = {
   readonly targetRef: string;
   readonly requesterUserId: string;
   readonly createdAt: Date;
+  /** PR-1.3 — tüketilmiş karar tespiti için (UI'a ham hâliyle RENDER EDİLMEZ). */
+  readonly status: string;
+  readonly approverUserId: string | null;
 };
 
 type ResolvedOfficeScope = {
@@ -495,6 +498,8 @@ export class ClientFinancialDisclosureOfficeService {
         targetRef: true,
         requesterUserId: true,
         createdAt: true,
+        status: true,
+        approverUserId: true,
       },
     });
     return new Map(
@@ -578,6 +583,17 @@ export class ClientFinancialDisclosureOfficeService {
         request !== undefined &&
         request.requesterUserId !== actorUserId &&
         version.officeApprovedById !== actorUserId,
+      // PR-1.3 — tüketilmiş karar kurtarma. Generic onay kutusu talebi APPROVED yapıp
+      // domain geçişini atladığında versiyon kilitlenir. Komut YALNIZ kararı VEREN
+      // kişiye gösterilir; nihai kapı domain servisindedir.
+      canReconcileConsumedApproval:
+        write &&
+        status === 'OFFICE_APPROVAL_PENDING' &&
+        version.officeApprovedById === null &&
+        request !== undefined &&
+        request.status === 'APPROVED' &&
+        request.approverUserId !== null &&
+        request.approverUserId === actorUserId,
       canPublish: publish && eligible && status === 'CONTENT_APPROVED',
       canRetryPublication: publish && eligible && status === 'SEND_FAILED',
       canReverse: publish && eligible && status === 'PUBLISHED',

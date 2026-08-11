@@ -182,6 +182,32 @@ export class ClientFinancialDisclosureController {
   }
 
   /**
+   * PR-1.3 — TÜKETİLMİŞ ONAY KARARINI BİLDİRİME UYGULA (recovery).
+   *
+   * Cagrildigi yerler:
+   * - Office FD workspace "Onay kararını bildirime uygula" ->
+   *   POST /client-financial-disclosures/:disclosureVersionId/reconcile-consumed-office-approval
+   *
+   * AÇIK KOMUTTUR: GET yolunda veya sayfa yüklenirken ASLA çalışmaz. Genel bir
+   * status-advance ucu DEĞİLDİR — yalnız kararı VEREN kullanıcı kendi kararını
+   * uygulayabilir; kayıtlı approver/decidedAt aynen taşınır, talep yeniden mutate
+   * edilmez, yeni kayıt üretilmez, ikinci çağrı idempotent replay'dir.
+   */
+  @Post(':disclosureVersionId/reconcile-consumed-office-approval')
+  reconcileConsumedOfficeApproval(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
+    @Param('disclosureVersionId') disclosureVersionId: string,
+  ) {
+    this.assertWriteEnabled();
+    return this.approval.reconcileConsumedOfficeApproval({
+      tenantId,
+      disclosureVersionId,
+      actorUserId,
+    });
+  }
+
+  /**
    * Cagrildigi yerler:
    * - ClientFinancialDisclosureController.requestContentApproval() -> POST /client-financial-disclosures/:disclosureVersionId/request-content-approval (icerik ve alici onay talebi)
    */

@@ -16,6 +16,7 @@ const DISCLOSURE_APPROVAL_TARGET = 'ClientFinancialDisclosureVersion';
 type ApprovalAction =
   | { readonly kind: 'request-office' }
   | { readonly kind: 'complete-office' }
+  | { readonly kind: 'reconcile-consumed' }
   | { readonly kind: 'request-content'; readonly recipientEmail: string }
   | { readonly kind: 'complete-content' }
   | { readonly kind: 'publish' };
@@ -23,6 +24,7 @@ type ApprovalAction =
 const successMessage: Record<ApprovalAction['kind'], string> = {
   'request-office': 'Ofis onay talebi oluşturuldu.',
   'complete-office': 'Ofis onayı tamamlandı.',
+  'reconcile-consumed': 'Kayıtlı onay kararı bildirime uygulandı.',
   'request-content': 'İçerik ve alıcı onaya gönderildi.',
   'complete-content': 'İçerik onayı tamamlandı.',
   publish: 'Yayın ve teslim işlemi tamamlandı.',
@@ -31,6 +33,7 @@ const successMessage: Record<ApprovalAction['kind'], string> = {
 const errorMessage: Record<ApprovalAction['kind'], string> = {
   'request-office': 'Ofis onay talebi oluşturulamadı.',
   'complete-office': 'Ofis onayı tamamlanamadı.',
+  'reconcile-consumed': 'Kayıtlı onay kararı bildirime uygulanamadı.',
   'request-content': 'İçerik onay talebi oluşturulamadı.',
   'complete-content': 'İçerik onayı tamamlanamadı.',
   publish: 'Yayın ve teslim işlemi tamamlanamadı.',
@@ -59,6 +62,8 @@ export function DisclosureApprovalPanel({
       switch (action.kind) {
         case 'request-office':
           return clientFinancialDisclosureApi.requestOfficeApproval(versionId);
+        case 'reconcile-consumed':
+          return clientFinancialDisclosureApi.reconcileConsumedOfficeApproval(versionId);
         case 'complete-office': {
           // Inbox yalnız eligible approver'a, kendi talepleri hariç, tenant-scoped kayıt döndürür.
           // ID komut bağlama girdisidir; UI'a render edilmez ve disclosure projection'ına eklenmez.
@@ -147,6 +152,22 @@ export function DisclosureApprovalPanel({
             onClick={() => mutation.mutate({ kind: 'complete-office' })}
           >
             {pendingKind === 'complete-office' ? <Spinner className="h-4 w-4" /> : 'Ofis onayını tamamla'}
+          </Button>
+        ) : null}
+
+        {actions.canReconcileConsumedApproval ? (
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="reconcile-consumed-approval"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate({ kind: 'reconcile-consumed' })}
+          >
+            {pendingKind === 'reconcile-consumed' ? (
+              <Spinner className="h-4 w-4" />
+            ) : (
+              'Onay kararını bildirime uygula'
+            )}
           </Button>
         ) : null}
 

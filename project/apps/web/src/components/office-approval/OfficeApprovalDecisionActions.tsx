@@ -7,6 +7,10 @@
 // (detail görünürlük kuralı gereği requester-olmayan görüntüleyici zaten eligible-approver'dır).
 import { useState } from "react";
 import { officeApprovalApi, type OfficeApprovalDetail } from "@/lib/api/office-approval";
+import {
+  isDomainOwnedApproval,
+  domainOwnedApprovalGuidance,
+} from "./domain-owned-approval";
 
 type DecisionKind = "approve" | "reject" | "revision" | "approve-with-changes" | "cancel";
 
@@ -114,6 +118,24 @@ export function OfficeApprovalDecisionActions({ detail, currentUserId, onDecided
   };
 
   const noteMissing = activeAction !== null && NOTE_REQUIRED[activeAction] && note.trim().length === 0;
+
+  // PR-1.3 — DOMAIN-OWNED TÜR: karar bu yüzeyden VERİLEMEZ.
+  // Generic onay, talebi tüketip domain geçişini atlıyordu → bildirim kilitleniyordu.
+  // Talep görünür kalır ve bekleyen sayısına dahildir; yalnız karar butonları YOKTUR.
+  if (isDomainOwnedApproval(detail.actionCode)) {
+    return (
+      <div className="border-t pt-4 mt-4" data-testid="decision-actions-domain-owned">
+        <div className="text-xs text-gray-500 mb-2">Karar</div>
+        <div
+          role="note"
+          className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <p className="font-medium">Bu karar onay kutusundan verilemez.</p>
+          <p className="mt-1">{domainOwnedApprovalGuidance(detail.actionCode)}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="border-t pt-4 mt-4" data-testid="decision-actions">

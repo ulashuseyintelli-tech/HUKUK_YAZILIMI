@@ -37,6 +37,8 @@ export interface OfficeDisclosureActionCapabilities {
   readonly canCompleteOfficeApproval: boolean;
   readonly canRequestContentApproval: boolean;
   readonly canCompleteContentApproval: boolean;
+  /** PR-1.3 — generic yüzeyde tüketilmiş kararı bildirime uygulama komutu. */
+  readonly canReconcileConsumedApproval: boolean;
   readonly canPublish: boolean;
   readonly canRetryPublication: boolean;
   readonly canReverse: boolean;

@@ -361,6 +361,155 @@ export class ClientFinancialDisclosureApprovalService {
   }
 
   /**
+   * PR-1.3 — TÜKETİLMİŞ ONAY TALEBİ RECONCILIATION (idempotent).
+   *
+   * NEDEN: generic Onay Kutusu FD talebini APPROVED yapıp domain geçişini ATLAMIŞTI;
+   * `completeOfficeApproval` ise talebin PENDING olmasını şart koştuğu için
+   * `DISCLOSURE_APPROVAL_REQUEST_CONSUMED` ile kilitleniyordu. Bu metot KAYITLI KARARI
+   * kanıt sayar; kararı YENİDEN VERMEZ, talebi yeniden mutate ETMEZ, yeni kayıt ÜRETMEZ.
+   *
+   * Kaydedilen `approverUserId` ve `decidedAt` AYNEN taşınır — recovery'nin çalıştığı an
+   * onay zamanı gibi yazılmaz.
+   *
+   * Kanıt sayılabilmesi için TÜMÜ gerekir: talep bu versiyona bağlı · tür FD office
+   * approval · versiyon hâlâ OFFICE_APPROVAL_PENDING ve onaysız · snapshot birebir ·
+   * karar kaydı tam (approver + decidedAt) · approver eligible · self-approval değil ·
+   * talep APPROVED (CANCELLED/REJECTED/APPROVED_WITH_CHANGES kanıt DEĞİLDİR).
+   */
+  async reconcileConsumedOfficeApproval(input: {
+    disclosureVersionId: string;
+    tenantId: string;
+    /** ZORUNLU: komutu veren kullanıcı. Kayıtlı approver ile AYNI olmak zorundadır. */
+    actorUserId: string;
+  }): Promise<DisclosureApprovalTransitionResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockVersion(tx, input.tenantId, input.disclosureVersionId);
+        const version = await this.loadVersion(tx, input.tenantId, input.disclosureVersionId);
+        this.assertNotTerminal(version);
+
+        // IDEMPOTENT: zaten ilerlemişse yeni geçiş/audit ÜRETİLMEZ.
+        if (
+          version.status === ClientFinancialDisclosureStatus.OFFICE_APPROVED &&
+          version.officeApprovedById !== null
+        ) {
+          return {
+            disclosureVersionId: version.id,
+            previousStatus: version.status,
+            status: version.status,
+            replayed: true,
+            approvalRequestId: version.officeApprovalRequestId ?? '',
+          };
+        }
+
+        this.assertExactStatus(version, ClientFinancialDisclosureStatus.OFFICE_APPROVAL_PENDING);
+        if (!version.officeApprovalRequestId) {
+          throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_REQUEST_NOT_FOUND');
+        }
+
+        const request = await tx.officeApprovalRequest.findFirst({
+          where: { id: version.officeApprovalRequestId, tenantId: version.tenantId },
+          select: {
+            id: true,
+            actionCode: true,
+            targetType: true,
+            targetRef: true,
+            requesterUserId: true,
+            approverUserId: true,
+            decidedAt: true,
+            savedIntent: true,
+            payloadHash: true,
+            status: true,
+          },
+        });
+        if (!request) {
+          throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_REQUEST_NOT_FOUND');
+        }
+        if (
+          request.actionCode !== CLIENT_FINANCIAL_DISCLOSURE_APPROVE_ACTION_CODE ||
+          request.targetType !== CLIENT_FINANCIAL_DISCLOSURE_APPROVAL_TARGET_TYPE ||
+          request.targetRef !== version.id
+        ) {
+          throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_REQUEST_MISMATCH');
+        }
+
+        // YALNIZ düz APPROVED kanıttır. APPROVED_WITH_CHANGES niyeti değiştirir →
+        // FD içeriği mühürlü olduğu için kanıt SAYILMAZ. REJECTED/CANCELLED/EXPIRED de değil.
+        if (request.status !== OfficeApprovalStatus.APPROVED) {
+          throw new ClientFinancialDisclosureApprovalError(
+            request.status === OfficeApprovalStatus.PENDING_APPROVAL
+              ? 'DISCLOSURE_APPROVAL_STATUS_INVALID'
+              : 'DISCLOSURE_APPROVAL_UNSUPPORTED_CONSUMED_DECISION',
+          );
+        }
+        if (!request.approverUserId || !request.decidedAt) {
+          throw new ClientFinancialDisclosureApprovalError(
+            'DISCLOSURE_APPROVAL_UNSUPPORTED_CONSUMED_DECISION',
+          );
+        }
+
+        const intent = this.readIntent(request.savedIntent);
+        if (!intent || intent.disclosureVersionId !== version.id) {
+          throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_REQUEST_MISMATCH');
+        }
+        if (
+          intent.snapshotHash !== version.snapshotHash ||
+          stableJsonHash(intent) !== request.payloadHash
+        ) {
+          throw new ClientFinancialDisclosureApprovalError('DISCLOSURE_APPROVAL_STALE_SNAPSHOT');
+        }
+        if (request.requesterUserId === request.approverUserId) {
+          throw new ClientFinancialDisclosureApprovalAuthorizationError(
+            'DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN',
+          );
+        }
+
+        // ZORUNLU KONTROL 2 — recovery GENEL bir status-advance komutu DEĞİLDİR.
+        // Yalnız KARARI VEREN kişi kendi kararını bildirime uygulayabilir; başka bir
+        // kullanıcı (yetkili olsa bile) başkasının kararını taşıyamaz.
+        if (request.approverUserId !== input.actorUserId) {
+          throw new ClientFinancialDisclosureApprovalAuthorizationError(
+            'DISCLOSURE_APPROVAL_NOT_ELIGIBLE',
+          );
+        }
+
+        // Eligibility karar anındaki kayda değil, canonical kurala göre YENİDEN doğrulanır.
+        await this.assertApproverEligible(tx, request.approverUserId, version.tenantId);
+        await this.assertSnapshotFresh(tx, version);
+
+        // KAYITLI karar aynen taşınır; recovery zamani onay zamani DEGILDIR.
+        const moved = await tx.clientFinancialDisclosureVersion.updateMany({
+          where: {
+            id: version.id,
+            tenantId: version.tenantId,
+            status: ClientFinancialDisclosureStatus.OFFICE_APPROVAL_PENDING,
+            officeApprovalRequestId: request.id,
+            officeApprovedById: null,
+          },
+          data: {
+            status: ClientFinancialDisclosureStatus.OFFICE_APPROVED,
+            officeApprovedAt: request.decidedAt,
+            officeApprovedById: request.approverUserId,
+          },
+        });
+        // Eszamanli recovery: yalniz BIR gecis; digeri 0 satir gorur.
+        this.assertSingleTransition(moved.count);
+
+        // Talep YENIDEN MUTATE EDILMEZ — zaten APPROVED.
+        return {
+          disclosureVersionId: version.id,
+          previousStatus: ClientFinancialDisclosureStatus.OFFICE_APPROVAL_PENDING,
+          status: ClientFinancialDisclosureStatus.OFFICE_APPROVED,
+          replayed: false,
+          approvalRequestId: request.id,
+        };
+      });
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
+
+  /**
    * `OFFICE_APPROVED → CONTENT_APPROVAL_PENDING` (§5.3). İçerik onayı İKİNCİ bir
    * `OfficeApprovalRequest` DEĞİLDİR (§41.2 KARAR 5): versiyon üzerinde ayrı, denetlenebilir
    * bir lifecycle transition'dır. Bildirim içeriği serbest metinden ALINMAZ; tenant-scoped
