@@ -122,3 +122,18 @@ src/modules/lawyer/__tests__/lawyer-credential-response-containment.spec.ts
 # ve sonuca uydurmak icin revize EDILEMEZ. Cold-path yalniz uc kosul birlikte saglanirsa
 # dogrulanir; R01 kaydi hicbir dispositionda silinmez.
 src/scripts/__tests__/office-cap02-telemetry-perf-r02.core.spec.ts
+
+# -- OFFICE-SC-F01 LAWYER FIELD-TIER PROJECTION (PR-1.5) --------------------
+# F01 alan-katmani projeksiyonu bir ALLOWLIST tir: kumede olmayan alan sessizce
+# DUSER. office-f01-authorization.spec.ts kapsama sinirini (tckn/iban/uyapToken/
+# eSignatureSerial haric tutulur) sabitler ama HICBIR manifeste bagli DEGILDI, yani
+# CI da hic kosmuyordu. PR-1.5 bu dosyayi degistirdigi icin ikisi de baglanir.
+#
+# PR-1.5 (contact-tier): personel iletisim alanlari (email/phone/mobilePhone/
+# whatsappPhone/fax/address/city/district) siniflandirilmamisti, allowlist onlari
+# dusuruyordu. Sonuc: Avukat Duzenle ekrani kayitli degeri BOS gosteriyor, form ayni
+# bosu geri yaziyor ve veri SESSIZCE siliniyordu; giris daveti karti da e-posta
+# bulamadigi icin acilamiyordu. Yeni spec iki yonu birden kilitler: iletisim alanlari
+# yetkiliye GORUNUR, kimlik/finans (tckn/iban/bank*/vergi*) her iki duzeyde de GIZLI.
+src/modules/office/__tests__/office-f01-authorization.spec.ts
+src/modules/office/__tests__/office-f01-lawyer-contact-tier.spec.ts

@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { sanitizeLawyerIbanPayload } from "@/lib/lawyer-iban-payload";
+import { buildLawyerUpdatePayload } from "@/lib/lawyer-update-payload";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -1277,6 +1278,10 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
   });
 
   // K1-7-4B: kaydedilmemiş değişiklik tespiti (davet KAYDEDİLMİŞ kişi bilgisinden üretilir).
+  // PR-1.5: aynı ilk-yükleme anı, güncelleme gövdesinin de referansıdır — dokunulmayan
+  // alan gönderilmez, böylece sunucudan gelmeyen değer geri yazılıp SİLİNEMEZ.
+  const lawyerInitialForm = useRef<typeof form | null>(null);
+  if (lawyerInitialForm.current === null) lawyerInitialForm.current = form;
   const lawyerInitialJson = useRef<string | null>(null);
   if (lawyerInitialJson.current === null) lawyerInitialJson.current = JSON.stringify(form);
   const isLawyerDirty = lawyerInitialJson.current !== JSON.stringify(form);
@@ -1328,7 +1333,10 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.surname.trim()) { alert("Ad ve Soyad zorunlu"); return; }
-    onSave(form);
+    // PR-1.5: GÜNCELLEMEDE yalnız değişen alanlar gönderilir. Form, sunucunun kapsama
+    // gereği taşımadığı alanları boş başlatıyor; tamamını POST etmek o alanları siliyordu.
+    // OLUŞTURMADA fark alınmaz — tüm alanlar gönderilir (davranış DEĞİŞMEZ).
+    onSave(lawyer?.id ? buildLawyerUpdatePayload(lawyerInitialForm.current, form) : form);
   };
 
   const RANK_OPTIONS = [
