@@ -29,6 +29,8 @@ export interface OfficeDisclosureActionCapabilities {
   readonly canCompleteOfficeApproval: boolean;
   readonly canRequestContentApproval: boolean;
   readonly canCompleteContentApproval: boolean;
+  /** PR-1.3 — tüketilmiş onay kararını bildirime uygulama komutu. */
+  readonly canReconcileConsumedApproval: boolean;
   readonly canPublish: boolean;
   readonly canRetryPublication: boolean;
   readonly canReverse: boolean;
@@ -225,6 +227,17 @@ export const clientFinancialDisclosureApi = {
       throw new Error('DISCLOSURE_CREATE_RESPONSE_INVALID');
     }
     return created;
+  },
+
+  /**
+   * PR-1.3 — tüketilmiş onay kararını bildirime uygular (AÇIK KOMUT; GET'te asla).
+   * Kayıtlı approver/decidedAt korunur; talep yeniden mutate edilmez.
+   */
+  async reconcileConsumedOfficeApproval(versionId: string): Promise<unknown> {
+    const response = await apiClient.post(
+      `/client-financial-disclosures/${encodeURIComponent(versionId)}/reconcile-consumed-office-approval`,
+    );
+    return response.data;
   },
 
   /** Office workspace -> GET the frozen X2 renderer output for one scoped version. */

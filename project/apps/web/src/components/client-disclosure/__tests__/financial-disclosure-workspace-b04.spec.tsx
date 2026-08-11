@@ -36,6 +36,7 @@ const noActions: OfficeDisclosureActionCapabilities = {
   canCompleteOfficeApproval: false,
   canRequestContentApproval: false,
   canCompleteContentApproval: false,
+  canReconcileConsumedApproval: false,
   canPublish: false,
   canRetryPublication: false,
   canReverse: false,

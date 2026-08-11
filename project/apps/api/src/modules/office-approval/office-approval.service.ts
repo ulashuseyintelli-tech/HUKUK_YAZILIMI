@@ -42,6 +42,7 @@ import { OfficeApprovalDomainSyncService } from './office-approval-domain-sync.s
 import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
 import { isValidTckn } from '../../common/identity-validation.util';
+import { assertGenericDecisionAllowed } from './office-approval-domain-ownership';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -136,6 +137,8 @@ export class OfficeApprovalService {
   /** Approver (≠requester, yetkili) PENDING talebi APPROVED yapar. Dış-etki YÜRÜTÜLMEZ (yalnız karar). */
   async approve(id: string, approverUserId: string, note?: string): Promise<OfficeApprovalRequest> {
     const req = await this.requireRequest(id);
+    // PR-1.3: domain-owned tur ise generic yuzey KARAR VEREMEZ (statu mutasyonundan ONCE).
+    assertGenericDecisionAllowed(req.actionCode);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     await this.assertApproveSelfApprovalPolicy(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
@@ -146,6 +149,7 @@ export class OfficeApprovalService {
   async reject(id: string, approverUserId: string, note: string): Promise<OfficeApprovalRequest> {
     if (!note || !note.trim()) throw new BadRequestException('Reddetme gerekçesi zorunludur.');
     const req = await this.requireRequest(id);
+    assertGenericDecisionAllowed(req.actionCode);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
@@ -167,6 +171,7 @@ export class OfficeApprovalService {
       throw new BadRequestException('Değiştirilmiş niyet (replacementSavedIntent) zorunludur.');
     }
     const req = await this.requireRequest(id);
+    assertGenericDecisionAllowed(req.actionCode);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);

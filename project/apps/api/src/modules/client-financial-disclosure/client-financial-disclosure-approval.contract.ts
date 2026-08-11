@@ -54,6 +54,9 @@ export const CLIENT_FINANCIAL_DISCLOSURE_APPROVAL_INVARIANT_ERROR_CODES = [
   'DISCLOSURE_APPROVAL_CONTENT_REQUIRED',
   'DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH',
   'DISCLOSURE_APPROVAL_CONCURRENT_TRANSITION',
+  // PR-1.3: generic yuzey tarafindan tuketilmis fakat FD yasam dongusune
+  // RECONCILE EDILEMEYEN karar (REJECTED / APPROVED_WITH_CHANGES / eksik karar kaydi).
+  'DISCLOSURE_APPROVAL_UNSUPPORTED_CONSUMED_DECISION',
 ] as const;
 
 export type ClientFinancialDisclosureApprovalAuthorizationErrorCode =
@@ -194,6 +197,8 @@ function approvalMessage(code: ClientFinancialDisclosureApprovalErrorCode): stri
       'Notification content and approved recipient binding are required.',
     DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH:
       'Persisted notification content failed hash re-verification.',
+    DISCLOSURE_APPROVAL_UNSUPPORTED_CONSUMED_DECISION:
+      'The approval request was consumed with a decision that cannot be reconciled into the disclosure lifecycle.',
     DISCLOSURE_APPROVAL_CONCURRENT_TRANSITION:
       'A concurrent lifecycle transition already advanced this disclosure version.',
   };
