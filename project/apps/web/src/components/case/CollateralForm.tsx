@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Edit2, Save, X, Building2, Car, Loader2 } from "lucide-react";
 import { api, CaseCollateral, CollateralType } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface CollateralFormProps {
   caseId: string;
@@ -49,6 +50,8 @@ const emptyForm = {
 export function CollateralForm({ caseId, onTotalChange }: CollateralFormProps) {
   const [collaterals, setCollaterals] = useState<CaseCollateral[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3e: okuma hatasi sessizce yutulmuyor; gorunur + tekrar denenebilir.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -59,6 +62,7 @@ export function CollateralForm({ caseId, onTotalChange }: CollateralFormProps) {
   }, [caseId]);
 
   const loadCollaterals = async () => {
+    setLoadError(null);
     try {
       const data = await api.getCollateralsByCase(caseId);
       setCollaterals(data);
@@ -67,6 +71,7 @@ export function CollateralForm({ caseId, onTotalChange }: CollateralFormProps) {
       onTotalChange?.({ estimated: totalEstimated, mortgage: totalMortgage });
     } catch (err) {
       console.error("Teminatlar yuklenemedi:", err);
+      setLoadError(toActionErrorMessage(err, "Teminatlar alınamadı"));
     } finally {
       setLoading(false);
     }
@@ -170,6 +175,17 @@ export function CollateralForm({ caseId, onTotalChange }: CollateralFormProps) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button type="button" onClick={() => loadCollaterals()} className="mt-2 text-xs text-blue-600 underline hover:text-blue-800">
+          Tekrar dene
+        </button>
       </div>
     );
   }

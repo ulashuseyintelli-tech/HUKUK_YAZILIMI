@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Scale, Save, Loader2, Edit2, Trash2 } from "lucide-react";
 import { api, CaseJudgment, NafakaType } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface JudgmentFormProps {
   caseId: string;
@@ -49,11 +50,14 @@ export function JudgmentForm({ caseId, onTotalChange }: JudgmentFormProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  // WSMR-A3e: okuma hatasi ile "kayit yok" AYNI SEY DEGILDIR.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
 
   useEffect(() => { loadJudgment(); }, [caseId]);
 
   const loadJudgment = async () => {
+    setLoadError(null);
     try {
       const data = await api.getJudgmentByCase(caseId);
       if (data) {
@@ -84,8 +88,13 @@ export function JudgmentForm({ caseId, onTotalChange }: JudgmentFormProps) {
         setEditing(true);
       }
     } catch (err) {
-      console.error("Ilam yuklenemedi:", err);
-      setEditing(true);
+      // WSMR-A3e · VERI KAYBI RISKI KAPATILDI.
+      // Eskiden okuma hatasinda da `setEditing(true)` yapiliyordu: ag hatasi
+      // "kayit YOK" ile ayni gorunuyor, kullanici BOS formu doldurup
+      // kaydedince mevcut kaydin uzerine yazma/mukerrer kayit riski doguyordu.
+      // Artik hata GORUNUR olur ve duzenleme moduna GECILMEZ.
+      setEditing(false);
+      setLoadError(toActionErrorMessage(err, 'İlam bilgisi alınamadı'));
     } finally {
       setLoading(false);
     }
@@ -155,6 +164,22 @@ export function JudgmentForm({ caseId, onTotalChange }: JudgmentFormProps) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  // WSMR-A3e: okuma hatasi GORUNUR; duzenleme moduna DUSULMEZ (veri kaybi riski).
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button
+          type="button"
+          onClick={loadJudgment}
+          className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }

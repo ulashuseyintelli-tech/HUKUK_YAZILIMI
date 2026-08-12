@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { FileSignature, CheckCircle, XCircle, Clock, Upload, RefreshCw } from "lucide-react";
 
 interface ESignPanelProps {
@@ -38,6 +39,8 @@ export function ESignPanel({ caseId, documentId, documentName, onSigned }: ESign
   const [stats, setStats] = useState<ESignStats | null>(null);
   const [providerStatus, setProviderStatus] = useState<{ provider: string; configured: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3e: okuma hatasi sessizce yutulmuyor; gorunur + tekrar denenebilir.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
   
   // Form state
@@ -53,6 +56,7 @@ export function ESignPanel({ caseId, documentId, documentName, onSigned }: ESign
   }, [caseId, documentId]);
 
   const loadData = async () => {
+    setLoadError(null);
     setLoading(true);
     try {
       const [statusRes, historyRes] = await Promise.all([
@@ -65,6 +69,7 @@ export function ESignPanel({ caseId, documentId, documentName, onSigned }: ESign
       setHistory(historyRes.data || []);
     } catch (error) {
       console.error("E-imza verisi yüklenemedi:", error);
+      setLoadError(toActionErrorMessage(error, "E-imza verisi alınamadı"));
     } finally {
       setLoading(false);
     }
@@ -152,6 +157,17 @@ export function ESignPanel({ caseId, documentId, documentName, onSigned }: ESign
           <div className="h-6 bg-gray-200 rounded w-1/3"></div>
           <div className="h-32 bg-gray-200 rounded"></div>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button type="button" onClick={() => loadData()} className="mt-2 text-xs text-blue-600 underline hover:text-blue-800">
+          Tekrar dene
+        </button>
       </div>
     );
   }

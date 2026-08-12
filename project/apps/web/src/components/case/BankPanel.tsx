@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { Building2, RefreshCw, ArrowDownLeft, ArrowUpRight, Link2, CheckCircle, Clock, Plus } from "lucide-react";
 
@@ -54,6 +55,8 @@ export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
   const [unmatchedTransactions, setUnmatchedTransactions] = useState<BankTransaction[]>([]);
   const [stats, setStats] = useState<BankStats | null>(null);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3e: okuma hatasi sessizce yutulmuyor; gorunur + tekrar denenebilir.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"accounts" | "unmatched" | "add">("accounts");
   
@@ -71,6 +74,7 @@ export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
   }, []);
 
   const loadData = async () => {
+    setLoadError(null);
     setLoading(true);
     try {
       const [accountsRes, unmatchedRes, statsRes] = await Promise.all([
@@ -84,6 +88,7 @@ export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
       setStats(statsRes.data);
     } catch (error) {
       console.error("Banka verisi yüklenemedi:", error);
+      setLoadError(toActionErrorMessage(error, "Banka verisi alınamadı"));
     } finally {
       setLoading(false);
     }
@@ -191,6 +196,17 @@ export function BankPanel({ caseId, onTransactionMatched }: BankPanelProps) {
           <div className="h-6 bg-gray-200 rounded w-1/3"></div>
           <div className="h-32 bg-gray-200 rounded"></div>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button type="button" onClick={() => loadData()} className="mt-2 text-xs text-blue-600 underline hover:text-blue-800">
+          Tekrar dene
+        </button>
       </div>
     );
   }
