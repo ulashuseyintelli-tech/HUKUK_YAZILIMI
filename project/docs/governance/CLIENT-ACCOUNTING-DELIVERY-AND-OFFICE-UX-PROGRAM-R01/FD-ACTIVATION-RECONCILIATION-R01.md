@@ -201,3 +201,109 @@ RESIDUAL-2  FD CANARY (deterministik renderer zinciri)
 
 **TERMINAL KAPANIŞ YAZILAMAZ** — owner talimatı §9'daki "FD canary PASS" ve
 "production activation residual = 0" koşulları birlikte sağlanmıyor.
+
+---
+
+# R02 — FD CANARY TAMAMLANDI + TERMİNAL UZLAŞTIRMA (2026-08-12)
+
+```text
+OWNER GO:       canlı oturum kararları (2026-08-10/11) — üçüncü onaycı provizyonu +
+                canary substratı; yayın owner tarafından BİZZAT yürütüldü
+TARİH:          canary 2026-08-11 · salt-okuma uzlaştırma 2026-08-12
+CANONICAL BASE: bc06f5cb324773111d9ff09236bc157b90c7bdb8 (uzlaştırma anı)
+SONUÇ:          RESIDUAL-2 KAPANDI — R01 §6 HARD STOP owner substrat kararıyla çözüldü
+                Bu uzlaştırmada YAZMA İŞLEMİ YAPILMADI (yalnız DB salt-okuma + bu kayıt)
+```
+
+## R02.1 SUBSTRAT — R01 §6 HARD STOP'UN ÇÖZÜMÜ (owner kararı)
+
+R01 §6 "GEREKEN (ii): kaydın üretilmesi için açık owner yetkisi" yolu gerçekleşti:
+
+```text
+ÜÇÜNCÜ KİŞİ : owner canlı oturumda provizyon etti — fatmatest@tellihukuk.com
+              (FATMA ULUCA TELLİ, davet akışı LOGIN_INVITE_PROVISIONING_ENABLED ile,
+              onay yetkisi FATMA avukat kaydıyla birleştirilmiş, PARTNER)
+SUBSTRAT    : TELLİ HUKUK tenant'ında SENTETİK smoke-case
+              (client-timeline-smoke-v1-case) üzerinde 1,00 TRY POSTED disposition
+              (cmsnh2c5b0046swi5c0h8da7v). GERÇEK müvekkil verisi KULLANILMADI.
+§10 NOTU    : "Demo tenant" tercihi owner kararıyla sentetik-smoke-case substratına
+              revize edildi; "TELLİ HUKUK GERÇEK müvekkillerine gönderim yok" kuralı
+              İHLAL EDİLMEDİ (alıcı owner-kontrollü adres, case-client sentetik).
+```
+
+## R02.2 ETKİNLEŞTİRME ZİNCİRİ (canary'yi mümkün kılan engineering)
+
+```text
+#2336  PR-1    guarded-edge zarf tüketimi + avukat IBAN sözleşme onarımı   cdf00062
+#2337  PR-1.1  ilk FD ofis yüzeyinden hazırlanabilsin                      f84f3db5
+#2338  PR-1.2  X1 ofis yüzeyinden finansal bildirim oluşturma              ea1a2e5b
+#2339  PR-1.3  FD onay sahipliği + tüketilmiş karar reconciliation         2a388b10
+#2340  PR-1.5  avukat iletişim alanları görünürlüğü + sessiz veri kaybı    77a347a9
+RELEASE9 @2a388b10 · RELEASE10 @77a347a9 (API+Web, canary bu runtime'da koştu)
+```
+
+## R02.3 SALT-OKUMA KANIT TABLOSU (2026-08-12, canlı DB'den)
+
+```text
+VERSIYON     : cmsnrjaj90004exnxx3w89yy8 · v1 · PUBLISHED
+publishedAt  : 2026-08-11T11:01:23.177Z
+PROVIDER     : providerMessageId <6d093324-c451-1a26-b7af-8e9472bbc2a8@tellihukuk.com>
+               providerAcceptedAt DOLU · sendFailureCode NULL
+               (§35.10 kanonik eşik "gerçek provider kabulü + KALICI message ID" SAĞLANDI)
+ALICI        : approvedRecipientEmail = ulastelli@limagroup.com.tr (TEK izinli alıcı)
+SUBSTRAT     : kök cmsnrjaj30002exnx9l7svkhz · case client-timeline-smoke-v1-case ·
+               POSTED disposition cmsnh2c5b0046swi5c0h8da7v · totalCollected 1,00 TRY
+DEDUPE       : kök altında versiyon = 1 · tenant PUBLISHED = 1 ·
+               aynı sendIdempotencyKey = 1 · supersede/reversal/cancel = NULL
+AUDIT        : CLIENT_FINANCIAL_DISCLOSURE_SENT   2026-08-11T11:01:23.177Z
+               CLIENT_FINANCIAL_DISCLOSURE_PUBLISHED 2026-08-11T11:01:23.179Z (AYRI satırlar)
+ÜÇ AYRI KİŞİ : talep eden  EGE DURUSOY        admin@tellihukuk.com
+(§41.2)        ofis onayı  ULAŞ HÜSEYİN TELLİ  APPROVED 2026-08-10T22:19:40
+                           (OfficeApprovalRequest cmsnrta1j0007exnxvgo1f09o)
+               içerik onayı FATMA ULUCA TELLİ  2026-08-11T11:01:18 — ÜÇÜ FARKLI KİŞİ
+REGRESYON    : w5 FD'si (Demo Firma cmsj0e6zo000ltqj9yu19z6hy) DEĞİŞMEDİ (upd 2026-08-07) ·
+               aylık ekstre ledger SENT×1 KORUNDU (upd 2026-08-09 — canary'den ÖNCE) ·
+               FD evreni 2 kök / 2 versiyon (w5 + canary) — fazla yayın YOK
+TEST         : monthly-statement regresyonu 11 suite / 187 test PASS (2026-08-11 koşusu)
+```
+
+## R02.4 GÜNCEL RESIDUAL TABLOSU
+
+```text
+RESIDUAL-1  RECONCILED (değişmedi).
+            KALAN DEFTER İŞİ: X1 sayfa başlığı hâlâ "PRODUCTION: NOT ACTIVE" (bayat).
+            CROSS-LANE — CODEX lane'inin işi (X2 kendisininkini #2333'te düzeltti).
+            Mühendislik/ürün borcu DEĞİL → TERMİNALİ BLOKLAMAZ.
+RESIDUAL-2  ✅ KAPANDI (bu R02) — FD canary GERÇEK teslimle tamamlandı.
+```
+
+## R02.5 §9 KAPANIŞ EŞİĞİ DEĞERLENDİRMESİ
+
+```text
+ofis ekranı            ✓  X1 5/5 + #2337/#2338 (FD ofis yüzeyinden oluşturuldu)
+portal                 ✓  C1 (PRODUCT_COMPLETE)
+doğru finansal içerik  ✓  X2 deterministik renderer LEVEL_2 + C1-B04 içerik onarımı
+PDF                    ✓  C3 + MONTHLY_STATEMENT_PDF canary (C1-B04 R02)
+yetki                  ✓  §41.2 üç-ayrı-kişi CANLI kanıt + #2339 onay sahipliği onarımı
+audit                  ✓  SENT + PUBLISHED ayrı audit satırları
+idempotency            ✓  @@unique([tenantId, sendIdempotencyKey]) + tek yayın kanıtı
+GERÇEK canary teslimi  ✓  dönemsel ekstre (C1-B04 R02) + olay bildirimi (2026-08-11)
+                          — §10 "TAM 1 + TAM 1" sağlandı
+
+SONUÇ : PRODUCT_COMPLETE kriterlerinin TAMAMI kanıtlı → TERMINAL_READY.
+İLAN  : TERMINAL_CLOSED ilanı OWNER RATİFİKASYONUNA bırakıldı
+        ("kendi commit'in kendi kanıtın olamaz" kuralı).
+```
+
+## R02.6 KAPSAM NOTLARI
+
+```text
+PR-2 SCOPE REBOUND : sessiz-mutasyon işi owner kararıyla
+                     WEB-SILENT-MUTATION-RELIABILITY-R01 programına devredildi
+                     (A1 CLOSED #2341 @3f47ef78; kalan dilimler A2..D o programda).
+                     OWNER KURALI: bu backlog CLIENT terminalini TEK BAŞINA BLOKLAMAZ.
+RELEASE11          : Web-only @3f47ef78 cutover 2026-08-12 (dinleyici kimlik-kanıtlı,
+                     /auth/login 200) · API RELEASE10'da DOKUNULMADI (A1 API'yi değiştirmedi).
+EGE İLETİŞİM VERİSİ: PR-1.5 öncesi sessiz kayıpta silinen alanları owner elle
+                     yeniden girecek (owner beyanı) — engineering borcu değil.
+```
