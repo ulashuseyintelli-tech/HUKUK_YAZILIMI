@@ -10,6 +10,7 @@ import {
   api, Tebligat, TebligatType, TebligatAddressType, TebligatChannel, 
   TebligatStatus, TebligatPttResult, TebligatSummary, PttTrackingResult 
 } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface TebligatPanelProps {
   caseId: string;
@@ -86,6 +87,8 @@ export function TebligatPanel({ caseId, caseDebtorId, readOnly = false, onTeblig
   const [tebligatlar, setTebligatlar] = useState<Tebligat[]>([]);
   const [summary, setSummary] = useState<TebligatSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3e: okuma hatasi sessizce yutulmuyor; gorunur + tekrar denenebilir.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [selectedTebligat, setSelectedTebligat] = useState<Tebligat | null>(null);
   const [showPttResult, setShowPttResult] = useState(false);
@@ -118,6 +121,7 @@ export function TebligatPanel({ caseId, caseDebtorId, readOnly = false, onTeblig
   }, [caseId, caseDebtorId]);
 
   const loadData = async () => {
+    setLoadError(null);
     setLoading(true);
     try {
       const [tebligatData, summaryData] = await Promise.all([
@@ -130,6 +134,7 @@ export function TebligatPanel({ caseId, caseDebtorId, readOnly = false, onTeblig
       setSummary(summaryData);
     } catch (err) {
       console.error("Tebligat verileri yuklenemedi:", err);
+      setLoadError(toActionErrorMessage(err, "Tebligat verileri alınamadı"));
     } finally {
       setLoading(false);
     }
@@ -230,6 +235,17 @@ export function TebligatPanel({ caseId, caseDebtorId, readOnly = false, onTeblig
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button type="button" onClick={() => loadData()} className="mt-2 text-xs text-blue-600 underline hover:text-blue-800">
+          Tekrar dene
+        </button>
       </div>
     );
   }

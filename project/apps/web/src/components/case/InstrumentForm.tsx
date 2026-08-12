@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Edit2, Save, X, FileText, Loader2 } from "lucide-react";
 import { api, CaseInstrument, InstrumentType } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { FEATURE_FLAGS } from "@/lib/config/feature-flags";
 import { InstrumentChainPanel } from "./InstrumentChainPanel";
 
@@ -55,6 +56,8 @@ const emptyForm = {
 export function InstrumentForm({ caseId, instrumentType, onTotalChange }: InstrumentFormProps) {
   const [instruments, setInstruments] = useState<CaseInstrument[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3e: okuma hatasi sessizce yutulmuyor; gorunur + tekrar denenebilir.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -65,6 +68,7 @@ export function InstrumentForm({ caseId, instrumentType, onTotalChange }: Instru
   }, [caseId]);
 
   const loadInstruments = async () => {
+    setLoadError(null);
     try {
       const data = await api.getInstrumentsByCase(caseId);
       setInstruments(data);
@@ -72,6 +76,7 @@ export function InstrumentForm({ caseId, instrumentType, onTotalChange }: Instru
       onTotalChange?.(total);
     } catch (err) {
       console.error("Kambiyo senetleri yuklenemedi:", err);
+      setLoadError(toActionErrorMessage(err, "Kambiyo senetleri alınamadı"));
     } finally {
       setLoading(false);
     }
@@ -161,6 +166,17 @@ export function InstrumentForm({ caseId, instrumentType, onTotalChange }: Instru
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button type="button" onClick={() => loadInstruments()} className="mt-2 text-xs text-blue-600 underline hover:text-blue-800">
+          Tekrar dene
+        </button>
       </div>
     );
   }
