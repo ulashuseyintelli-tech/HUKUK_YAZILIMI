@@ -24,9 +24,9 @@ FORBIDDEN PATHS:
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C1-B01 → C1-B02 → C1-B03 → C1-B04 → C1-B05
 BLOCKS TOTAL: 5   COMPLETED: 5 (B01, B02, B03, B04, B05 — B05 kaydı corrective PR merge'i ile atomik)
-ACTIVATION DEBT: kalıcı production CREDENTIAL_ENCRYPTION_KEY provisioning (enc:v1 mühendisliği B04'te
-                 hazır; anahtar owner-side) + C3 schedule + EXPENSE_ACTUAL_POSTED şablon seed'i
-                 (mevcut tenant'lar) — B05 sertifikasyon bloğunda kayıtlı.
+ACTIVATION DEBT: CLOSED — W4 zinciri (ACT01 + ACT02A + ACT02B) üç kalemi kapattı:
+                 CREDENTIAL_ENCRYPTION_KEY → ACT01 · EXPENSE_ACTUAL_POSTED şablon seed → ACT01
+                 (9/3/0) · C3 schedule → ACT02B. Kanıt: W4-ACT02B-PRODUCTION-ACTIVATION-R01.md
 LANE STATUS:  B03 CLOSED/RUNTIME_VERIFIED (doğal-oturum UAT, #2315). B04 ENGINEERING_COMPLETE/
               COMPOSITE_ACCEPTANCE (Turhost gerçek teslim + content düzeltmesi #2322). B05
               PRODUCT_COMPLETE — A #2323 (kanonik dispatcher + G4) + B corrective PR (typed
@@ -270,3 +270,14 @@ mevcut production mutation disiplinine tabidir.
 >
 > **C1 LANE = PRODUCT_COMPLETE + PRODUCTION_ACTIVE.**
 > NEXT ELIGIBLE = CLIENT PROGRAM TERMINAL CONSOLIDATION (ayrı owner GO).
+
+---
+
+## FINAL RECONCILIATION (2026-08-12 — owner cross-lane yetkisiyle, yürütücü: Claude)
+
+Bu sayfanın yaşayan durum satırları, owner'ın 2026-08-12 TERMINAL_CLOSED
+ratifikasyonundaki açık cross-lane governance yetkisiyle kanıta göre düzeltildi.
+Tarihsel blok kayıtları DEĞİŞTİRİLMEDİ. Kanıt: FD-ACTIVATION-RECONCILIATION-R01
+(§3 runtime ölçümü + R02 canary kanıt tablosu) · W4-ACT02B-PRODUCTION-ACTIVATION-R01 ·
+MASTER-PLAN §11 FINAL DISPOSITION. Program: PRODUCT_COMPLETE / PRODUCTION_ACTIVE /
+TERMINAL_CLOSED.

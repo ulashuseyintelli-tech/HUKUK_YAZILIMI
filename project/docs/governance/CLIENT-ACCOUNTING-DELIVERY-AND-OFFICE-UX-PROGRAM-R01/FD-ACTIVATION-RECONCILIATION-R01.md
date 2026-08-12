@@ -270,11 +270,13 @@ TEST         : monthly-statement regresyonu 11 suite / 187 test PASS (2026-08-11
 ## R02.4 GÜNCEL RESIDUAL TABLOSU
 
 ```text
-RESIDUAL-1  RECONCILED (değişmedi).
-            KALAN DEFTER İŞİ: X1 sayfa başlığı hâlâ "PRODUCTION: NOT ACTIVE" (bayat).
-            CROSS-LANE — CODEX lane'inin işi (X2 kendisininkini #2333'te düzeltti).
-            Mühendislik/ürün borcu DEĞİL → TERMİNALİ BLOKLAMAZ.
+RESIDUAL-1  ✅ TAM KAPANDI. Aktivasyon 2026-08-10'da RECONCILED idi; kalan defter
+            işi (X1 + X2 sayfa başlıklarının bayatlığı) 2026-08-12'de owner'ın
+            TERMINAL_CLOSED ratifikasyonundaki açık cross-lane yetkisiyle düzeltildi.
 RESIDUAL-2  ✅ KAPANDI (bu R02) — FD canary GERÇEK teslimle tamamlandı.
+
+TOPLAM CLIENT RESIDUAL = 0  ·  PROGRAM: PRODUCT_COMPLETE / PRODUCTION_ACTIVE /
+TERMINAL_CLOSED (owner ratification 2026-08-12; MASTER-PLAN §11 FINAL DISPOSITION).
 ```
 
 ## R02.5 §9 KAPANIŞ EŞİĞİ DEĞERLENDİRMESİ

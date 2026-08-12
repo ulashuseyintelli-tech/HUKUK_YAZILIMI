@@ -24,10 +24,10 @@ SHARED CONTRACTS:
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   C3-B01 → C3-B02 → C3-B03 → C3-B04 → C3-B05
 BLOCKS TOTAL: 5   COMPLETED: 5   (B05 kalıcı adaptörü X3 şemasına bağlı)
-ACTIVATION DEBT: (1) aylık schedule activation — cron packaging düzeltmesi MERGED (#2325 d20ba035;
-                 cron artık direct runtime dep), aktivasyon = flag-ON yeni process cutover (owner-gated);
-                 (2) kalıcı teslim defteri — şema/kod MERGED (20260809090500_client_statement_delivery_ledger,
-                 W4 düzeltmesi 2026-08-09: "şema eksik" kısmı BAYATTI); kalan yalnız production APPLY (owner-gated)
+ACTIVATION DEBT: CLOSED — (1) aylık schedule ACTIVE: CLIENT_STATEMENT_MONTHLY_DELIVERY=true
+                 KALICI (W4-ACT02B), cron `0 3 1 * *` Europe/Istanbul, sonraki koşu 2026-09-01;
+                 (2) kalıcı teslim defteri PRODUCTION'DA: migration 20260809090500 APPLIED
+                 (frontier 125/125), canlı ledger SENT×1 (R02 uzlaştırması 2026-08-12 salt-okuma)
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -211,8 +211,19 @@ maili GİTMEZ. Yukarıdaki iki kalem owner teyidine tabidir.
 ## SAYFA DURUMU VE HANDOFF
 
 ```text
-STATUS: ENGINEERING_COMPLETE / ACTIVATION_PENDING
-NOT:    PRODUCTION_COMPLETE DEĞİLDİR.
-HANDOFF: C3 writer terminal handoff → X3 (kalıcı teslim defteri şeması/migration).
-SONRAKİ HAT: X3-B02 → X3-B03 (migration-owner yetkisiyle).
+STATUS: ENGINEERING_COMPLETE / PRODUCTION_ACTIVE / ACTIVATION_CLOSED
+NOT:    Aylık teslim canlı ve zamanlanmış (W4-ACT02B); dönemsel ekstre canary'si PASS (C1-B04 R02).
+HANDOFF: TAMAMLANDI — X3 şema/migration paketi APPLIED (frontier 125/125).
+SONRAKİ HAT: NONE — PROGRAM TERMINAL_CLOSED (owner ratification 2026-08-12).
 ```
+
+---
+
+## FINAL RECONCILIATION (2026-08-12 — owner cross-lane yetkisiyle, yürütücü: Claude)
+
+Bu sayfanın yaşayan durum satırları, owner'ın 2026-08-12 TERMINAL_CLOSED
+ratifikasyonundaki açık cross-lane governance yetkisiyle kanıta göre düzeltildi.
+Tarihsel blok kayıtları DEĞİŞTİRİLMEDİ. Kanıt: FD-ACTIVATION-RECONCILIATION-R01
+(§3 runtime ölçümü + R02 canary kanıt tablosu) · W4-ACT02B-PRODUCTION-ACTIVATION-R01 ·
+MASTER-PLAN §11 FINAL DISPOSITION. Program: PRODUCT_COMPLETE / PRODUCTION_ACTIVE /
+TERMINAL_CLOSED.
