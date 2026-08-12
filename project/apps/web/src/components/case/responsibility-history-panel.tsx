@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { reportClientError } from "@/lib/error-reporter";
 import { confidenceLabel, confidenceTooltip, confidenceBadgeClass } from "@/lib/responsibility-at";
 import {
   type ResponsibilityHistoryResult,
@@ -48,7 +49,18 @@ export function ResponsibilityHistoryPanel({ caseId, reloadToken }: { caseId: st
         for (const c of res?.data?.data ?? []) map[c.id] = c.displayName;
         setNameById(map);
       })
-      .catch(() => {});
+      .catch((e) => {
+        // WSMR-A3f · INTENTIONAL_BEST_EFFORT_AND_OBSERVABLE
+        // Ad haritasi IKINCIL zenginlestirmedir: basarisiz olursa satirlar yine
+        // render edilir (ham kimlik degil, bos ad). Ana veriyi dusurmemek icin
+        // hata YUTULMAZ, merkezi reporter'a bildirilir.
+        reportClientError({
+          level: "WARN",
+          message: "Sorumluluk gecmisi ad eslemesi yuklenemedi",
+          stack: e instanceof Error ? e.stack : undefined,
+          metadata: { safeErrorCode: "NAME_LOOKUP_FAILED" },
+        });
+      });
     api
       .get<{ data: { id: string; name: string; surname: string }[] }>("/users")
       .then((res) => {
@@ -57,7 +69,18 @@ export function ResponsibilityHistoryPanel({ caseId, reloadToken }: { caseId: st
         for (const u of res?.data?.data ?? []) map[u.id] = `${u.name} ${u.surname}`.trim();
         setUserById(map);
       })
-      .catch(() => {});
+      .catch((e) => {
+        // WSMR-A3f · INTENTIONAL_BEST_EFFORT_AND_OBSERVABLE
+        // Ad haritasi IKINCIL zenginlestirmedir: basarisiz olursa satirlar yine
+        // render edilir (ham kimlik degil, bos ad). Ana veriyi dusurmemek icin
+        // hata YUTULMAZ, merkezi reporter'a bildirilir.
+        reportClientError({
+          level: "WARN",
+          message: "Sorumluluk gecmisi ad eslemesi yuklenemedi",
+          stack: e instanceof Error ? e.stack : undefined,
+          metadata: { safeErrorCode: "NAME_LOOKUP_FAILED" },
+        });
+      });
     return () => {
       active = false;
     };
