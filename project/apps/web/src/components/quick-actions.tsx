@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { runMutation } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { useRouter } from 'next/navigation';
 import { 
   Zap, Plus, FileText, Users, Calendar, 
@@ -24,6 +26,7 @@ const QUICK_ACTIONS = [
 export function QuickActions() {
   const [isOpen, setIsOpen] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const seedLock = useKeyedSubmitLock();
   const [seedResult, setSeedResult] = useState<any>(null);
   const router = useRouter();
 
@@ -102,34 +105,57 @@ export function QuickActions() {
   }, [isDragging, position]);
 
   const handleSeedData = async () => {
-    setSeeding(true);
     setSeedResult(null);
-    try {
-      const token = localStorage.getItem('token');
-      const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-      
-      // Önce seed işlemi
-      const res = await fetch('http://localhost:8080/api/seed/all', {
-        method: 'POST',
-        headers,
-      });
-      const data = await res.json();
-      
-      // Sonra mevcut verileri düzelt
-      await fetch('http://localhost:8080/api/seed/fix-clients', { method: 'POST', headers });
-      await fetch('http://localhost:8080/api/seed/fix-lawyers', { method: 'POST', headers });
-      
-      setSeedResult(data);
-      setTimeout(() => {
-        setSeedResult(null);
-        setIsOpen(false);
-        window.location.reload();
-      }, 2000);
-    } catch (e) {
-      setSeedResult({ success: false, message: 'Hata oluştu' });
-    } finally {
-      setSeeding(false);
-    }
+
+    // PR-2A1 (dev araci): `fetch` !ok'ta throw ETMEZ — eski kod hata govdesini
+    // sonuc diye gosterip 2 sn sonra sayfayi KOSULSUZ yeniden yukluyordu. Basari
+    // yan etkisi (reload) yalniz DOGRULANMIS basarida calisir; ayni-tick cift tik
+    // senkron kilitle tek mutation uretir.
+    await seedLock.run('quick-actions:seed', async () => {
+      setSeeding(true);
+      try {
+        const outcome = await runMutation({
+          mutate: async () => {
+            const token = localStorage.getItem('token');
+            const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+            const throwIfNotOk = async (res: Response) => {
+              if (res.ok) return res;
+              const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+              throw {
+                status: res.status,
+                body: { message: typeof body?.message === 'string' ? body.message : undefined },
+              };
+            };
+            const res = await throwIfNotOk(
+              await fetch('http://localhost:8080/api/seed/all', { method: 'POST', headers }),
+            );
+            const data = await res.json();
+            await throwIfNotOk(
+              await fetch('http://localhost:8080/api/seed/fix-clients', { method: 'POST', headers }),
+            );
+            await throwIfNotOk(
+              await fetch('http://localhost:8080/api/seed/fix-lawyers', { method: 'POST', headers }),
+            );
+            return data;
+          },
+          // Tazeleme yok: basarinin dogal devami tam sayfa reload'idir.
+          failureMessage: 'Örnek veri yüklenemedi. Veri DEĞİŞMEDİ.',
+        });
+        if (!seedLock.isMounted()) return;
+        if (outcome.status === 'FAILED') {
+          setSeedResult({ success: false, message: outcome.error.message });
+          return; // reload YOK
+        }
+        setSeedResult(outcome.data as { success?: boolean; message?: string });
+        setTimeout(() => {
+          setSeedResult(null);
+          setIsOpen(false);
+          window.location.reload();
+        }, 2000);
+      } finally {
+        if (seedLock.isMounted()) setSeeding(false);
+      }
+    });
   };
 
   const handleAction = (action: any) => {

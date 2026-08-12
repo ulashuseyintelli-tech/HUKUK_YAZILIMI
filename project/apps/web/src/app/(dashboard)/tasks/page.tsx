@@ -5,6 +5,10 @@ import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, Tr
 import { Badge } from "@hukuk/ui";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { ActionError } from "@/components/ui/action-error";
+import { toActionErrorMessage } from "@/lib/action-error";
+import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
+import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 
 interface Task {
   id: string;
@@ -59,6 +63,18 @@ const statusLabels: Record<string, string> = {
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  // PR-2A1: durum degisikligi hatasi GORUNUR; gorev durumu uydurulmaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadTasks({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
   const [filter, setFilter] = useState("all");
   // Kategori filtresi: İcra görevleri ile operasyonel eksikleri ayır (görev enflasyonu önlemi).
   const [categoryFilter, setCategoryFilter] = useState<"all" | "LEGAL_WORKFLOW" | "OPERATIONAL_COMPLETENESS">("all");
@@ -83,12 +99,18 @@ export default function TasksPage() {
     loadLookups();
   }, []);
 
-  const loadTasks = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: hata YUTULMAZ; malformed yanit GERCEK EMPTY sayilmaz.
+  const loadTasks = async (opts?: { propagateError?: boolean }): Promise<void> => {
+    setLoadError(null);
     try {
       const res = await api.get("/tasks");
-      setTasks(res.data?.data || res.data || []);
+      const raw = (res as { data?: unknown })?.data as { data?: unknown } | unknown[];
+      const rows = Array.isArray(raw) ? raw : (raw as { data?: unknown })?.data;
+      if (!Array.isArray(rows)) throw new Error("MALFORMED_LIST_RESPONSE");
+      setTasks(rows as Task[]);
     } catch (e) {
-      console.error("Görevler yüklenemedi:", e);
+      setLoadError(toActionErrorMessage(e, "Görevler yüklenemedi."));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -146,12 +168,26 @@ export default function TasksPage() {
   };
 
   const handleStatusChange = async (task: Task, newStatus: string) => {
-    try {
-      await api.put(`/tasks/${task.id}`, { status: newStatus });
-      loadTasks();
-    } catch (e) {
-      console.error(e);
-    }
+    setActionError(null);
+    setStaleNotice(null);
+    // PR-2A1: gorev bazli kilit — ayni goreve ikinci degisiklik baslamaz, farkli
+    // gorevler bloklanmaz. Durum yalniz dogrulanmis reload ile kesinlesir.
+    await rowLock.run(`task:status:${task.id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.put(`/tasks/${task.id}`, { status: newStatus }),
+        refresh: () => loadTasks({ propagateError: true }),
+        failureMessage: "Görev durumu güncellenemedi. Durum DEĞİŞMEDİ.",
+        staleMessage: "Görev durumu GÜNCELLENDİ, ancak liste yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        setActionError(outcome.error.message);
+        // Eski durum GERI gorunur: canonical liste yeniden okunur (select geri doner).
+        await runRefreshOnly(() => loadTasks({ propagateError: true }));
+        return;
+      }
+      if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
+    });
   };
 
   const openEditModal = (task: Task) => {
@@ -207,6 +243,17 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-6">
+      {/* PR-2A1: okuma ve mutation hatalari GORUNUR. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Görevler</h1>

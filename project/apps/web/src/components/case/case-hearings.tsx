@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
 import { Gavel, Plus, Trash2, Edit, X, Check, Loader2, Calendar, Clock, MapPin, FileText, AlertCircle } from 'lucide-react';
 
 interface Hearing {
@@ -57,39 +61,43 @@ export function CaseHearings({ caseId }: CaseHearingsProps) {
     nextHearingDate: '',
   });
   const [saving, setSaving] = useState(false);
+  // PR-2A1: mutation hatası GÖRÜNÜR olmalı. Eski davranış hatayı yutup duruşmayı yerel
+  // olarak uyduruyordu; kullanıcı kayıtlı sanıyor, veritabanında hiçbir şey yok.
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Mutation BAŞARILI ama liste tazelenemedi → kayıt durur, görünüm bayat. Ayrı yüzey:
+  // "kaydedilemedi" demek çift kayda yol açardı.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const submitLock = useSubmitLock();
+  const rowLock = useKeyedSubmitLock();
 
   useEffect(() => {
-    loadHearings();
+    void loadHearings();
   }, [caseId]);
 
-  const loadHearings = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: okuma yolu hatayi YUTMAZ ve demo veri URETMEZ.
+  //
+  // Iki cagrim ACIKCA ayrilir (bos catch/suppression YOK — bu programin kendi kurali):
+  //  - initial load: hata state'e yazilir, promise KONTROLLU tamamlanir
+  //  - mutation refresh (`propagateError: true`): ayni hata state'e yazilir VE cagirana
+  //    propagate edilir; aksi halde `runMutation` refresh basarisizligini goremez,
+  //    yanlislikla SUCCESS uretir ve SUCCESS_STALE hic calismaz.
+  //
+  // Malformed yanit GERCEK EMPTY sayilmaz: `data` dizi degilse dogrulanmis bos liste
+  // degildir -> gorunur load error + refresh failure.
+  const loadHearings = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/hearings`);
-      setHearings(res.data?.data || []);
+      const rows = (res as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(rows)) {
+        throw new Error('MALFORMED_LIST_RESPONSE');
+      }
+      setHearings(rows as never);
     } catch (e) {
-      // Demo data
-      setHearings([
-        {
-          id: '1',
-          date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          time: '10:00',
-          court: 'İstanbul 5. İcra Hukuk Mahkemesi',
-          courtRoom: 'Salon 3',
-          type: 'ilk',
-          status: 'scheduled',
-        },
-        {
-          id: '2',
-          date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          time: '14:00',
-          court: 'İstanbul 5. İcra Hukuk Mahkemesi',
-          type: 'ara',
-          status: 'completed',
-          result: 'Bilirkişi raporu bekleniyor. Dosya ertelendi.',
-          nextHearingDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ]);
+      setLoadError(toActionErrorMessage(e, 'Duruşmalar yüklenemedi.'));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -97,69 +105,97 @@ export function CaseHearings({ caseId }: CaseHearingsProps) {
 
   const handleSave = async () => {
     if (!formData.date || !formData.court || !formData.type) return;
-    setSaving(true);
+    // PR-2A1: senkron kilit — hızlı çift tık ikinci bir POST üretmez (create yolunda
+    // idempotency anahtarı YOK, çift kayıt gerçek risktir).
+    const started = await submitLock.run(async () => {
+      setSaving(true);
+      setActionError(null);
+      setStaleNotice(null);
 
-    try {
-      if (editingId) {
-        await api.put(`/cases/${caseId}/hearings/${editingId}`, formData);
-      } else {
-        await api.post(`/cases/${caseId}/hearings`, formData);
-      }
-      loadHearings();
-    } catch (e) {
-      // Demo: add locally
-      const newHearing: Hearing = {
-        id: editingId || Date.now().toString(),
-        date: formData.date,
-        time: formData.time,
-        court: formData.court,
-        courtRoom: formData.courtRoom,
-        type: formData.type,
-        status: 'scheduled',
-        notes: formData.notes,
-      };
-      
-      if (editingId) {
-        setHearings(prev => prev.map(h => h.id === editingId ? newHearing : h));
-      } else {
-        setHearings(prev => [...prev, newHearing]);
-      }
-    } finally {
+      const outcome = await runMutation({
+        mutate: () =>
+          editingId
+            ? api.put(`/cases/${caseId}/hearings/${editingId}`, formData)
+            : api.post(`/cases/${caseId}/hearings`, formData),
+        // Başarı YALNIZ sunucudan yeniden okunarak yansıtılır; form verisinden kayıt
+        // ÜRETİLMEZ (eski davranış tam olarak bunu yapıyordu).
+        refresh: () => loadHearings({ propagateError: true }),
+        failureMessage: 'Duruşma kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+      });
+
+      // Unmount olduysa kullanıcı state'i YAZILMAZ; mutation başarılı da sayılmaz,
+      // iptal de edilmiş sayılmaz — yalnız UI'a yansıtılmaz.
+      if (!submitLock.isMounted()) return outcome;
+
       setSaving(false);
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return outcome; // form ve modal KORUNUR
+      }
+      // Başarı yan etkileri yalnız burada.
       resetForm();
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+      return outcome;
+    });
+
+    // Kilit doluyken çağrı hiç başlamadı → `saving` bayrağı da bozulmamalı.
+    if (started === undefined && !saving) setSaving(false);
   };
 
   const handleSaveResult = async () => {
     if (!showResultModal) return;
-    setSaving(true);
+    const targetId = showResultModal;
 
-    try {
-      await api.put(`/cases/${caseId}/hearings/${showResultModal}/result`, resultData);
-      loadHearings();
-    } catch (e) {
-      // Demo: update locally
-      setHearings(prev => prev.map(h => 
-        h.id === showResultModal 
-          ? { ...h, ...resultData }
-          : h
-      ));
-    } finally {
+    await submitLock.run(async () => {
+      setSaving(true);
+      setActionError(null);
+      setStaleNotice(null);
+
+      const outcome = await runMutation({
+        mutate: () => api.put(`/cases/${caseId}/hearings/${targetId}/result`, resultData),
+        refresh: () => loadHearings({ propagateError: true }),
+        failureMessage: 'Duruşma sonucu kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Duruşma sonucu KAYDEDİLDİ, ancak liste yenilenemedi.',
+      });
+
+      if (!submitLock.isMounted()) return;
+
       setSaving(false);
+      if (outcome.status === 'FAILED') {
+        // Modal ve form KORUNUR; kullanıcı kontrollü biçimde yeniden gönderebilir.
+        setActionError(outcome.error.message);
+        return;
+      }
+      // SUCCESS ve SUCCESS_STALE: kayıt KESİNLEŞTİ → modal kapanır, aynı payload yeniden
+      // gönderilemez. Stale bandı liste yüzeyinde görünür kalır.
       setShowResultModal(null);
       setResultData({ status: 'completed', result: '', nextHearingDate: '' });
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Bu duruşmayı silmek istediğinize emin misiniz?')) return;
-    
-    try {
-      await api.delete(`/cases/${caseId}/hearings/${id}`);
-    } catch (e) {
-      // Demo: remove locally
-    }
-    setHearings(prev => prev.filter(h => h.id !== id));
+    setActionError(null);
+
+    setStaleNotice(null);
+
+    // PR-2A1: PESSIMISTIC silme + satır bazlı kilit. Eski davranış satırı `try/catch`
+    // DIŞINDA listeden çıkarıyordu → silme başarısız olsa bile duruşma kayboluyordu.
+    // Anahtar kararlı kayıt kimliğidir (liste index'i DEĞİL).
+    await rowLock.run(`hearing:${caseId}:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/cases/${caseId}/hearings/${id}`),
+        refresh: () => loadHearings({ propagateError: true }),
+        failureMessage: 'Duruşma silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.',
+        staleMessage: 'Duruşma SİLİNDİ, ancak liste yenilenemedi. Görünen liste bayat olabilir.',
+      });
+
+      if (!rowLock.isMounted()) return;
+      // Hata hâlinde satır ve seçim durumu AYNEN korunur — hiçbir state yazılmaz.
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleEdit = (hearing: Hearing) => {
@@ -173,6 +209,17 @@ export function CaseHearings({ caseId }: CaseHearingsProps) {
       notes: hearing.notes || '',
     });
     setShowAddForm(true);
+  };
+
+  // PR-2A1: stale bandindaki tekrar denemesi YALNIZ okuma yolunu calistirir.
+  // Mutation callback'i ASLA yeniden cagrilmaz -> cift kayit uretilemez.
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadHearings({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null); // basarili tazeleme -> band TEMIZLENIR
+    // basarisizsa band ve retry KORUNUR
   };
 
   const resetForm = () => {
@@ -222,6 +269,27 @@ export function CaseHearings({ caseId }: CaseHearingsProps) {
 
   return (
     <div className="space-y-4">
+      {/* PR-2A1: mutation hataları burada GÖRÜNÜR. Sessizce yutulmaz, kayıt uydurulmaz. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {/* Mutation başarılı ama tazeleme başarısız → kayıt durur, görünüm bayat. */}
+      {staleNotice ? (
+        <div
+          role="status"
+          data-testid="stale-notice"
+          className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          <span className="flex-1">{staleNotice}</span>
+          <button
+            type="button"
+            onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh"
+            className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100"
+          >
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
+
       {/* Upcoming Alert */}
       {upcomingHearings.length > 0 && (
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -523,7 +591,12 @@ function HearingCard({
           <button onClick={onEdit} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded">
             <Edit className="h-4 w-4" />
           </button>
-          <button onClick={onDelete} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="Duruşmayı sil"
+            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+          >
             <Trash2 className="h-4 w-4" />
           </button>
         </div>

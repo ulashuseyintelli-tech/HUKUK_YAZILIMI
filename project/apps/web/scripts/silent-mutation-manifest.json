@@ -1,0 +1,425 @@
+{
+  "program": "WEB-SILENT-MUTATION-RELIABILITY-R01",
+  "slice": "A1",
+  "provenance": {
+    "BASE_SCAN": {
+      "ref": "77a347a9831522aebddcb4a0ec14767ff21c851b",
+      "note": "A1 worktree'sinin acildigi canonical merge SHA",
+      "falseSuccess": 32,
+      "demoFallback": 69,
+      "astViolations": 102
+    },
+    "CURRENT_SCAN": {
+      "ref": "working-tree",
+      "note": "commit oncesi calisma agaci; her olcumde yeniden uretilir"
+    },
+    "FINAL_SCAN": {
+      "ref": null,
+      "note": "squash-merge sonrasi canonical main; A1 kapanisinda doldurulur"
+    }
+  },
+  "axes": {
+    "FALSE_SUCCESS": {
+      "baseline": 32,
+      "terminal": [
+        "FIXED",
+        "BEST_EFFORT_OBSERVABLE",
+        "TESTED_FALSE_POSITIVE"
+      ]
+    },
+    "DEMO_FALLBACK": {
+      "baseline": 69,
+      "terminal": [
+        "REMOVED",
+        "DEPENDENCY_FIXED",
+        "DEV_TEST_ONLY_TESTED"
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "key": "components/case/case-hearings.tsx#handleSave",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-hearings.tsx#handleSaveResult",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-deadlines.tsx#handleSubmit",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-expenses.tsx#handleSave",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-notes.tsx#addNote",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-attachments.tsx#handleUpload",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-checklist.tsx#handleAddItem",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-comments.tsx#handleSendComment",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-comments.tsx#handleSendReply",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-links.tsx#handleAddLink",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/IntakeLinksCard.tsx#handleRevoke",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/UyapPanel.tsx#handleDocumentSubmit",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/UyapPanel.tsx#handleRetryFailed",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/UyapPanel.tsx#handleHacizSubmit",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/claim-item/ClaimItemPanel.tsx#handleDelete",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/claim-item/ClaimItemPanel.tsx#handleRecalculateInterest",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/icrabot/CaseAutomationPanel.tsx#handleApproveTask",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/reminders/reminder-widget.tsx#addReminder",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/reports/scheduled-reports.tsx#saveReport",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/quick-actions.tsx#handleSeedData",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/calendar/page.tsx#handleAddEvent",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/calendar/page.tsx#handleUpdateEvent",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/cases/new/page.tsx#generateTakipTalebiPreview",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/notifications/page.tsx#doTestSend",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#handleDeleteLawyer",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#handleDeleteBankAccount",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#handleDeleteStaff",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#handleSaveBankAccount",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#OfficeSettingsInner:defaultLawyer",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#OfficeSettingsInner:lawyerOrder",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED",
+      "note": "MISATTRIBUTION_CORRECTED: baseline 2. OfficeSettingsInner false-success dugumu staff-default DEGIL lawyer-order idi (satir 744 /lawyers/order/update); staff-default P3 idi ve ayrica pessimistic yapildi"
+    },
+    {
+      "key": "app/(dashboard)/tasks/page.tsx#handleStatusChange",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "app/portal/documents/page.tsx#handleUpload",
+      "axis": "FALSE_SUCCESS",
+      "slice": "A1",
+      "status": "FIXED"
+    },
+    {
+      "key": "components/case/case-hearings.tsx#handleDelete",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-hearings.tsx#loadHearings",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-deadlines.tsx#handleToggleComplete",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-deadlines.tsx#handleDelete",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-deadlines.tsx#loadDeadlines",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-expenses.tsx#handleDelete",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-expenses.tsx#loadExpenses",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-notes.tsx#loadNotes",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-notes.tsx#deleteNote",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-links.tsx#loadLinks",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-links.tsx#handleRemoveLink",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-checklist.tsx#loadChecklist",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-checklist.tsx#handleToggle",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-checklist.tsx#handleSaveEdit",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-checklist.tsx#handleDelete",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-comments.tsx#loadComments",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-comments.tsx#loadUsers",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED",
+      "classification": "MANIFEST_OMISSION",
+      "evidence": "git show 77a347a9:project/apps/web/src/components/case/case-comments.tsx -> satir 90 // Demo users; baseline 69 icinde, manifestte eksikti"
+    },
+    {
+      "key": "components/case/case-comments.tsx#handleDeleteComment",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/case-attachments.tsx#loadAttachments",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/case/case-attachments.tsx#handleDelete",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "REMOVED"
+    },
+    {
+      "key": "components/case/UyapPanel.tsx#loadData",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/claim-item/ClaimItemPanel.tsx#loadData",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#loadOffice",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/office/page.tsx#loadStaff",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "app/portal/documents/page.tsx#fetchDocuments",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "app/(dashboard)/tasks/page.tsx#loadTasks",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "app/(dashboard)/settings/notifications/page.tsx#load",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "app/(dashboard)/calendar/page.tsx#fetchEvents",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    },
+    {
+      "key": "components/icrabot/CaseAutomationPanel.tsx#loadData",
+      "axis": "DEMO_FALLBACK",
+      "slice": "A1",
+      "status": "DEPENDENCY_FIXED"
+    }
+  ],
+  "baselineIntegrity": {
+    "DEMO_FALLBACK": {
+      "originalBaseline": 69,
+      "amendment": 0,
+      "correctedBaseline": 69,
+      "reason": "loadUsers base SHA 77a347a9 taramasinda MEVCUTTU (satir 90); baseline degismez, kayit MANIFEST_OMISSION"
+    }
+  },
+  "handoffNotes": [
+    {
+      "id": "SCANNER_GAP",
+      "target": "WSMR-D",
+      "text": "demo fallback in auxiliary read loader (loadUsers): AST scanner yalniz mutation cagrilarini gezer; yardimci okuma yukleyicilerindeki demo fallback kapsam DISINDA kalir. Bu dugum grep ile bulundu, scanner ile DEGIL."
+    }
+  ]
+}

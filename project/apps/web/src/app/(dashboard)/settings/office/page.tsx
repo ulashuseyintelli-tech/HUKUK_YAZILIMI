@@ -6,6 +6,10 @@ import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loa
 import { api } from "@/lib/api";
 import { sanitizeLawyerIbanPayload } from "@/lib/lawyer-iban-payload";
 import { buildLawyerUpdatePayload } from "@/lib/lawyer-update-payload";
+import { ActionError } from "@/components/ui/action-error";
+import { toActionErrorMessage } from "@/lib/action-error";
+import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
+import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -79,6 +83,20 @@ function OfficeSettingsInner() {
   const [office, setOffice] = useState<Office | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // PR-2A1: islem turune gore AYRI hata/stale yuzeyleri — genel band hangi islemin
+  // basarisiz oldugunu belirsizlestirirdi.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lawyerActionError, setLawyerActionError] = useState<string | null>(null);
+  const [bankActionError, setBankActionError] = useState<string | null>(null);
+  const [staffActionError, setStaffActionError] = useState<string | null>(null);
+  const [lawyerStale, setLawyerStale] = useState<string | null>(null);
+  const [bankStale, setBankStale] = useState<string | null>(null);
+  const [staffStale, setStaffStale] = useState<string | null>(null);
+  // Mutation'i KESINLESMIS fakat gorunumu bayat kaynaklar (`lawyer:`/`bank:`/`staff:` onekli).
+  // Ilgili kaynagin delete/toggle aksiyonu kapali tutulur; digerleri calismaya devam eder.
+  const [staleLockedIds, setStaleLockedIds] = useState<string[]>([]);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const rowLock = useKeyedSubmitLock();
   const [saved, setSaved] = useState(false);
   // Office bölümüne özel belirgin geri bildirim (paylaşılan saved/saving'e dokunmadan)
   const [officeStatus, setOfficeStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -117,7 +135,7 @@ function OfficeSettingsInner() {
 
   useEffect(() => { loadOffice(); loadStaff(); }, []);
 
-  const loadStaff = async () => {
+  const loadStaff = async (opts?: { propagateError?: boolean }) => {
     try {
       const res = await api.get("/staff");
       console.log('Staff API yanıtı:', res.data);
@@ -128,10 +146,14 @@ function OfficeSettingsInner() {
       }));
       console.log('İşlenmiş staff verisi:', staffData.map((s: any) => ({ id: s.id, name: s.firstName, isDefault: s.isDefaultForNewCases })));
       setStaffList([...staffData]); // Yeni array referansı oluştur
-    } catch (e) { console.error("Personel yüklenemedi:", e); }
+    } catch (e) {
+      // PR-2A1 DEPENDENCY_FIXED: okuma hatasi YUTULMAZ; bos liste gibi gosterilmez.
+      setLoadError(toActionErrorMessage(e, "Personel listesi yüklenemedi."));
+      if (opts?.propagateError) throw e;
+    }
   };
 
-  const loadOffice = async () => {
+  const loadOffice = async (opts?: { propagateError?: boolean }) => {
     try {
       const res = await api.get("/office");
       setOffice(res.data);
@@ -200,11 +222,30 @@ function OfficeSettingsInner() {
         caseTaskTeamLeadDays: escRes.data?.caseTaskTeamLeadDays ?? 2,
         caseTaskManagerDays: escRes.data?.caseTaskManagerDays ?? 3,
       });
-    } catch (e) { console.error("Büro bilgileri yüklenemedi:", e); }
+    } catch (e) {
+      // PR-2A1 DEPENDENCY_FIXED: okuma hatasi YUTULMAZ; mutation refresh'i olarak
+      // cagrildiginda propagate edilir (aksi halde SUCCESS_STALE hic calismaz).
+      setLoadError(toActionErrorMessage(e, "Büro bilgileri yüklenemedi."));
+      if (opts?.propagateError) throw e;
+    }
     finally { setLoading(false); }
   };
 
   const showSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  // Stale banttaki tekrar denemesi YALNIZ okuma yolunu calistirir; mutation ASLA tekrarlanmaz.
+  const staleRefresh = async (kind: "lawyer" | "bank" | "staff") => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() =>
+      kind === "staff" ? loadStaff({ propagateError: true }) : loadOffice({ propagateError: true }),
+    );
+    setRefreshingStale(false);
+    if (!ok) return; // band ve kilitli kaynak isaretleri KORUNUR
+    if (kind === "lawyer") setLawyerStale(null);
+    else if (kind === "bank") setBankStale(null);
+    else setStaffStale(null);
+    setStaleLockedIds((prev) => prev.filter((k) => !k.startsWith(kind + ":")));
+  };
 
   const handleSaveOffice = async () => {
     setSaving(true);
@@ -348,22 +389,161 @@ function OfficeSettingsInner() {
   const handleSaveLawyer = (data: any) => submitLawyer(data, false);
 
   const handleDeleteLawyer = async (id: string) => {
+    // Cancel mutation BAŞLATMAZ.
     if (!confirm("Avukat pasifleştirilecek, kalıcı olarak silinmeyecektir. Devam edilsin mi?")) return;
-    try { await api.delete(`/lawyers/${id}`); await loadOffice(); showSaved(); } catch (e) { console.error(e); }
+    setLawyerActionError(null);
+    setLawyerStale(null);
+
+    // PR-2A1: PESSIMISTIC + kaynak bazlı kilit — aynı avukata çift tık tek mutation,
+    // farklı avukatlar birbirini BLOKLAMAZ. Satır yalnız doğrulanmış success sonrası gider.
+    await rowLock.run(`office:lawyer:delete:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/lawyers/${id}`),
+        refresh: () => loadOffice({ propagateError: true }),
+        failureMessage: "Avukat pasifleştirilemedi. Kayıt DURUYOR, lütfen tekrar deneyin.",
+        staleMessage: "Avukat PASİFLEŞTİRİLDİ, ancak liste yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        // Satır KORUNUR; backend'in typed mesajı görünür (yeni iş kuralı uydurulmaz).
+        setLawyerActionError(outcome.error.message);
+        return;
+      }
+      showSaved();
+      if (outcome.status === "SUCCESS_STALE") {
+        // Pasifleştirme KESİNLEŞTİ; bayat listede görünen bu satır yeniden tetiklenemez.
+        setLawyerStale(outcome.stale);
+        setStaleLockedIds((p) => (p.includes(`lawyer:${id}`) ? p : [...p, `lawyer:${id}`]));
+      }
+    });
+  };
+
+  // PR-2A1 — `isDefaultForNewCases` ÇOKLU-SEÇİM bayrağıdır (owner sözleşme notu
+  // DEFAULT_FLAG_IS_MULTI_VALUED, 2026-08-12): birden fazla varsayılan MEŞRUDUR;
+  // tekil-varsayılan invariantı YOKTUR ve burada uydurulmaz. Kilit bu yüzden KAYNAK
+  // bazlıdır: aynı kayda çift tık tek mutation, farklı kayıtlar bloklanmaz.
+  const handleSetDefaultLawyer = async (lawyerId: string) => {
+    setLawyerActionError(null);
+    setLawyerStale(null);
+    await rowLock.run(`office:default-lawyer:${lawyerId}`, async () => {
+      // Payload STALE render değerinden değil, mutation ANINDAKİ canonical satırdan üretilir.
+      const current = office?.lawyers?.find((l: any) => l.id === lawyerId);
+      if (!current) return;
+      const next = !current.isDefaultForNewCases;
+      const outcome = await runMutation({
+        mutate: () => api.put(`/lawyers/${lawyerId}`, { isDefaultForNewCases: next }),
+        // Optimistic KALICI state YOK; seçim yalnız doğrulanmış reload ile kesinleşir.
+        refresh: () => loadOffice({ propagateError: true }),
+        failureMessage: "Varsayılan ayarı güncellenemedi. Mevcut seçim DEĞİŞMEDİ.",
+        staleMessage: "Varsayılan ayarı GÜNCELLENDİ, ancak liste yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        setLawyerActionError(outcome.error.message);
+        return; // eski görünür seçim KORUNUR
+      }
+      showSaved();
+      if (outcome.status === "SUCCESS_STALE") {
+        setLawyerStale(outcome.stale);
+        setStaleLockedIds((p) => (p.includes(`lawyer:${lawyerId}`) ? p : [...p, `lawyer:${lawyerId}`]));
+      }
+    });
+  };
+
+  const handleSetDefaultStaff = async (staffId: string) => {
+    setStaffActionError(null);
+    setStaffStale(null);
+    await rowLock.run(`office:default-staff:${staffId}`, async () => {
+      const current = staffList.find((st: any) => st.id === staffId);
+      if (!current) return;
+      const next = !current.isDefaultForNewCases;
+      const outcome = await runMutation({
+        mutate: () => api.put(`/staff/${staffId}`, { isDefaultForNewCases: next }),
+        refresh: () => loadStaff({ propagateError: true }),
+        failureMessage: "Varsayılan ayarı güncellenemedi. Mevcut seçim DEĞİŞMEDİ.",
+        staleMessage: "Varsayılan ayarı GÜNCELLENDİ, ancak liste yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        setStaffActionError(outcome.error.message);
+        return;
+      }
+      showSaved();
+      if (outcome.status === "SUCCESS_STALE") {
+        setStaffStale(outcome.stale);
+        setStaleLockedIds((p) => (p.includes(`staff:${staffId}`) ? p : [...p, `staff:${staffId}`]));
+      }
+    });
   };
 
   const handleSaveBankAccount = async (data: any) => {
-    setSaving(true);
-    try {
-      if (editingBank?.id) await api.put(`/office/bank-accounts/${editingBank.id}`, data);
-      else await api.post("/office/bank-accounts", data);
-      await loadOffice(); setShowBankModal(false); setEditingBank(null); showSaved();
-    } catch (e) { console.error(e); } finally { setSaving(false); }
+    // PR-1 IBAN sözleşmesi banka hesapları için de geçerlidir: boş/whitespace/maskeli
+    // IBAN `""` olarak GÖNDERİLMEZ — alan payload'dan tamamen çıkarılır (mevcut değer
+    // korunur), doluysa normalize edilir. Aynı sanitizer yeniden kullanılır.
+    const payload = sanitizeLawyerIbanPayload(data);
+    const targetId = editingBank?.id ?? null;
+    // Kilit işlem kapsamına göre: update → kararlı hesap kimliği, create → ofis yüzeyi.
+    const lockKey = targetId ? `office:bank-account:save:${targetId}` : "office:bank-account:create";
+
+    await rowLock.run(lockKey, async () => {
+      setSaving(true);
+      setBankActionError(null);
+      setBankStale(null);
+      // `setSaving(false)` TEK finally'de — beklenmeyen exception loading'i kilitleyemez.
+      try {
+        const outcome = await runMutation({
+          mutate: () =>
+            targetId
+              ? api.put(`/office/bank-accounts/${targetId}`, payload)
+              : api.post("/office/bank-accounts", payload),
+          refresh: () => loadOffice({ propagateError: true }),
+          failureMessage: "Banka hesabı kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.",
+          staleMessage: "Banka hesabı KAYDEDİLDİ, ancak liste yenilenemedi.",
+        });
+        if (!rowLock.isMounted()) return;
+        if (outcome.status === "FAILED") {
+          // Modal AÇIK kalır, form KORUNUR, `showSaved()` ÇALIŞMAZ.
+          setBankActionError(outcome.error.message);
+          return;
+        }
+        // SUCCESS ve SUCCESS_STALE: kayıt KESİNLEŞTİ → modal kapanır, aynı payload
+        // yeniden gönderilemez. Yerel form nesnesinden listeye sahte hesap EKLENMEZ;
+        // liste yalnız sunucudan okunur.
+        setShowBankModal(false);
+        setEditingBank(null);
+        showSaved();
+        if (outcome.status === "SUCCESS_STALE") setBankStale(outcome.stale);
+      } finally {
+        if (rowLock.isMounted()) setSaving(false);
+      }
+    });
   };
 
   const handleDeleteBankAccount = async (id: string) => {
+    // Cancel mutation BAŞLATMAZ.
     if (!confirm("Silmek istediğinize emin misiniz?")) return;
-    try { await api.delete(`/office/bank-accounts/${id}`); await loadOffice(); showSaved(); } catch (e) { console.error(e); }
+    setBankActionError(null);
+    setBankStale(null);
+
+    // PR-2A1: PESSIMISTIC + kaynak bazlı kilit (`office:bank-account:delete:${id}`).
+    await rowLock.run(`office:bank-account:delete:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/office/bank-accounts/${id}`),
+        refresh: () => loadOffice({ propagateError: true }),
+        failureMessage: "Banka hesabı silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.",
+        staleMessage: "Banka hesabı SİLİNDİ, ancak liste yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        setBankActionError(outcome.error.message);
+        return; // satır KORUNUR
+      }
+      showSaved();
+      if (outcome.status === "SUCCESS_STALE") {
+        setBankStale(outcome.stale);
+        setStaleLockedIds((p) => (p.includes(`bank:${id}`) ? p : [...p, `bank:${id}`]));
+      }
+    });
   };
 
   // PR-S/PR-U3: benzer-isim review. create: forceCreate ("Ayrı kişi olarak kaydet").
@@ -393,8 +573,30 @@ function OfficeSettingsInner() {
   const handleSaveStaff = (data: any) => submitStaff(data, {});
 
   const handleDeleteStaff = async (id: string) => {
+    // Cancel mutation BAŞLATMAZ.
     if (!confirm("Silmek istediğinize emin misiniz?")) return;
-    try { await api.delete(`/staff/${id}`); await loadStaff(); showSaved(); } catch (e) { console.error(e); }
+    setStaffActionError(null);
+    setStaffStale(null);
+
+    // PR-2A1: PESSIMISTIC + kaynak bazlı kilit (`office:staff:delete:${id}`).
+    await rowLock.run(`office:staff:delete:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/staff/${id}`),
+        refresh: () => loadStaff({ propagateError: true }),
+        failureMessage: "Personel silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.",
+        staleMessage: "Personel SİLİNDİ, ancak liste yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        setStaffActionError(outcome.error.message);
+        return; // satır KORUNUR
+      }
+      showSaved();
+      if (outcome.status === "SUCCESS_STALE") {
+        setStaffStale(outcome.stale);
+        setStaleLockedIds((p) => (p.includes(`staff:${id}`) ? p : [...p, `staff:${id}`]));
+      }
+    });
   };
 
   const roleLabels: Record<string, string> = { OWNER: "Sahip", PARTNER: "Ortak", EMPLOYEE: "Avukat", INTERN: "Stajyer" };
@@ -454,6 +656,7 @@ function OfficeSettingsInner() {
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-primary" />
               <h1 className="text-lg font-bold">Büro Ayarları</h1>
+      <ActionError message={loadError} />
             </div>
             {saved && <span className="text-green-600 text-xs flex items-center gap-1"><Check className="h-3 w-3" />Kaydedildi</span>}
           </div>
@@ -679,6 +882,15 @@ function OfficeSettingsInner() {
         {drawerSection === "bank" && (
         <div className="h-full flex flex-col bg-white">
           <CollectionHeader title="Banka Hesapları" description="Tahsilat ve masraf için büro hesapları" actionLabel="Ekle" onAction={() => { setEditingBank(null); setShowBankModal(true); }} />
+          <ActionError message={bankActionError} />
+          {bankStale ? (
+            <div role="status" className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <span className="flex-1">{bankStale}</span>
+              <button type="button" onClick={() => staleRefresh("bank")} disabled={refreshingStale} className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+                Banka hesap listesini yenile
+              </button>
+            </div>
+          ) : null}
           <div className="px-5 py-4">
             <div className="rounded-xl border-2 border-blue-300 bg-blue-50/30 p-2">
               <div className="divide-y divide-blue-100">
@@ -693,7 +905,7 @@ function OfficeSettingsInner() {
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1.5 hover:bg-blue-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button onClick={() => handleDeleteBankAccount(acc.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => handleDeleteBankAccount(acc.id)} disabled={staleLockedIds.includes(`bank:${acc.id}`)} aria-label={`${acc.bankName} banka hesabını sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}
@@ -706,6 +918,15 @@ function OfficeSettingsInner() {
         {drawerSection === "lawyers" && (
         <div className="h-full flex flex-col bg-white">
           <CollectionHeader title="Avukatlar" description="Büro avukatları — sıra ve yeni-takip varsayılanı" actionLabel="Ekle" onAction={() => { setEditingLawyer(null); setShowLawyerModal(true); }} />
+          <ActionError message={lawyerActionError} />
+          {lawyerStale ? (
+            <div role="status" className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <span className="flex-1">{lawyerStale}</span>
+              <button type="button" onClick={() => staleRefresh("lawyer")} disabled={refreshingStale} className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+                Avukat listesini yenile
+              </button>
+            </div>
+          ) : null}
           <div className="px-5 py-4">
             <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-2">
               <div className="divide-y divide-indigo-100">
@@ -740,12 +961,29 @@ function OfficeSettingsInner() {
                       const [draggedLawyer] = lawyers.splice(draggedIndex, 1);
                       lawyers.splice(index, 0, draggedLawyer);
 
-                      // API'ye gönder
-                      try {
-                        await api.put('/lawyers/order/update', { lawyerIds: lawyers.map(l => l.id) });
-                        await loadOffice();
+                      // PR-2A1: eski davranış hatayı yutuyordu — sürükleme görsel olarak
+                      // "başarılı" görünürken sunucudaki sıra DEĞİŞMEMİŞ oluyordu
+                      // (yalancı başarı). Hata artık GÖRÜNÜR; başarısızlıkta canonical
+                      // sıra sunucudan yeniden okunur. Kilit sıralama yüzeyi bazlıdır.
+                      setLawyerActionError(null);
+                      await rowLock.run('office:lawyer-order', async () => {
+                        const outcome = await runMutation({
+                          mutate: () =>
+                            api.put('/lawyers/order/update', { lawyerIds: lawyers.map(l => l.id) }),
+                          refresh: () => loadOffice({ propagateError: true }),
+                          failureMessage: 'Sıralama kaydedilemedi. Sunucudaki sıra DEĞİŞMEDİ.',
+                          staleMessage: 'Sıralama KAYDEDİLDİ, ancak liste yenilenemedi.',
+                        });
+                        if (!rowLock.isMounted()) return;
+                        if (outcome.status === 'FAILED') {
+                          setLawyerActionError(outcome.error.message);
+                          // Görsel sıra ile sunucu sırası ayrışmasın: canonical yeniden okunur.
+                          await runRefreshOnly(() => loadOffice({ propagateError: true }));
+                          return;
+                        }
                         showSaved();
-                      } catch (err) { console.error(err); }
+                        if (outcome.status === 'SUCCESS_STALE') setLawyerStale(outcome.stale);
+                      });
                     }}
                     className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${lawyer.isDefaultForNewCases ? 'border-amber-400' : 'border-transparent'} hover:bg-white/60 cursor-move transition-colors`}
                   >
@@ -759,14 +997,11 @@ function OfficeSettingsInner() {
                     <div className="flex items-center gap-1 shrink-0">
                       {/* Varsayılan Seç Butonu */}
                       <button
-                        onClick={async () => {
-                          try {
-                            await api.put(`/lawyers/${lawyer.id}`, { isDefaultForNewCases: !lawyer.isDefaultForNewCases });
-                            await loadOffice();
-                            showSaved();
-                          } catch (e) { console.error(e); }
-                        }}
-                        className={`px-2 py-1 rounded-md text-[10.5px] font-medium transition-colors ${
+                        type="button"
+                        onClick={() => handleSetDefaultLawyer(lawyer.id)}
+                        disabled={staleLockedIds.includes(`lawyer:${lawyer.id}`)}
+                        aria-label={`${lawyer.name} ${lawyer.surname} varsayılan ayarını değiştir`}
+                        className={`px-2 py-1 rounded-md text-[10.5px] font-medium transition-colors disabled:opacity-40 ${
                           lawyer.isDefaultForNewCases
                             ? 'bg-amber-500 text-white hover:bg-amber-600'
                             : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
@@ -776,7 +1011,7 @@ function OfficeSettingsInner() {
                         {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
                       </button>
                       <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Pasifleştir"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => handleDeleteLawyer(lawyer.id)} disabled={staleLockedIds.includes(`lawyer:${lawyer.id}`)} aria-label={`${lawyer.name} ${lawyer.surname} avukatını pasifleştir`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Pasifleştir"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}
@@ -791,6 +1026,15 @@ function OfficeSettingsInner() {
         {drawerSection === "staff" && (
         <div className="h-full flex flex-col bg-white">
           <CollectionHeader title="Personel" description="Büro personeli — sıra ve yeni-takip varsayılanı" actionLabel="Ekle" onAction={() => { setEditingStaff(null); setShowStaffModal(true); }} />
+          <ActionError message={staffActionError} />
+          {staffStale ? (
+            <div role="status" className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <span className="flex-1">{staffStale}</span>
+              <button type="button" onClick={() => staleRefresh("staff")} disabled={refreshingStale} className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+                Personel listesini yenile
+              </button>
+            </div>
+          ) : null}
           <div className="px-5 py-4">
             <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-2">
               <div className="divide-y divide-indigo-100">
@@ -850,25 +1094,13 @@ function OfficeSettingsInner() {
                     <div className="flex items-center gap-1 shrink-0">
                       {/* Varsayılan Seç Butonu */}
                       <button
-                        onClick={async () => {
-                          const newValue = !staff.isDefaultForNewCases;
-
-                          // Optimistic update
-                          setStaffList(prev => prev.map(s =>
-                            s.id === staff.id ? { ...s, isDefaultForNewCases: newValue } : s
-                          ));
-
-                          try {
-                            await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
-                            showSaved();
-                          } catch (e) {
-                            console.error(e);
-                            // Hata durumunda geri al
-                            setStaffList(prev => prev.map(s =>
-                              s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
-                            ));
-                          }
-                        }}
+                        type="button"
+                        // PR-2A1: eski davranış OPTIMISTIC yazıp hatada geri alıyordu —
+                        // kalıcı optimistic state YASAK; seçim yalnız sunucu kabulü +
+                        // doğrulanmış reload sonrası kesinleşir (handleSetDefaultStaff).
+                        onClick={() => handleSetDefaultStaff(staff.id)}
+                        disabled={staleLockedIds.includes(`staff:${staff.id}`)}
+                        aria-label={`${staff.firstName ?? ''} ${staff.lastName ?? ''} varsayılan ayarını değiştir`}
                         className={`px-2 py-1 rounded-md text-[10.5px] font-medium transition-colors ${
                           staff.isDefaultForNewCases
                             ? 'bg-amber-500 text-white hover:bg-amber-600'
@@ -879,7 +1111,7 @@ function OfficeSettingsInner() {
                         {staff.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
                       </button>
                       <button onClick={() => { setEditingStaff(staff); setShowStaffModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button onClick={() => handleDeleteStaff(staff.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button type="button" onClick={() => handleDeleteStaff(staff.id)} disabled={staleLockedIds.includes(`staff:${staff.id}`)} aria-label={`${staff.firstName ?? ''} ${staff.lastName ?? ''} personelini sil`} className="p-1.5 hover:bg-red-100 rounded-md disabled:opacity-40" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}
@@ -1171,7 +1403,7 @@ function OfficeSettingsInner() {
           </div>
         </div>
       )}
-      {showBankModal && <BankModal account={editingBank} onSave={handleSaveBankAccount} onClose={() => { setShowBankModal(false); setEditingBank(null); }} saving={saving} />}
+      {showBankModal && <BankModal account={editingBank} onSave={handleSaveBankAccount} onClose={() => { setShowBankModal(false); setEditingBank(null); setBankActionError(null); }} saving={saving} errorMessage={bankActionError} />}
       {showStaffModal && <StaffModal staff={editingStaff} onSave={handleSaveStaff} onClose={() => { setShowStaffModal(false); setEditingStaff(null); }} saving={saving} />}
 
       {/* PR-S: benzer-isim review diyaloğu (kimliksiz personel, otomatik karar YOK) */}
@@ -1507,7 +1739,7 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
 }
 
 // Banka Modal
-function BankModal({ account, onSave, onClose, saving }: { account: any; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
+function BankModal({ account, onSave, onClose, saving, errorMessage }: { account: any; onSave: (data: any) => void; onClose: () => void; saving: boolean; errorMessage?: string | null }) {
   const [form, setForm] = useState({
     bankName: account?.bankName || "", branchName: account?.branchName || "",
     iban: account?.iban || "", accountName: account?.accountName || "", isDefault: account?.isDefault || false,
@@ -1523,6 +1755,8 @@ function BankModal({ account, onSave, onClose, saving }: { account: any; onSave:
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-2 text-xs">
+          {/* PR-2A1: kaydetme hatasi MODAL ICINDE gorunur; modal acik ve form korunur. */}
+          <ActionError message={errorMessage} />
           <div className="grid grid-cols-2 gap-2">
             <div><label>Banka *</label><input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
             <div><label>Şube</label><input value={form.branchName} onChange={e => setForm({...form, branchName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>

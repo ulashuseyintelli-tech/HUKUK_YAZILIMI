@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
 import { StickyNote, Plus, Trash2, Clock, User } from 'lucide-react';
 
 interface Note {
@@ -22,21 +26,39 @@ export function CaseNotes({ caseId }: CaseNotesProps) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  // PR-2A1: mutation hatasi GORUNUR; kayit uydurulmaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const submitLock = useSubmitLock();
+  const rowLock = useKeyedSubmitLock();
+  // Stale bandindaki tekrar denemesi YALNIZ okuma yolunu calistirir; mutation ASLA tekrarlanmaz.
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadNotes({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
 
   useEffect(() => {
-    loadNotes();
+    void loadNotes();
   }, [caseId]);
 
-  const loadNotes = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: okuma yolu hatayı YUTMAZ ve demo veri ÜRETMEZ.
+  // `addNote`'un refresh'i budur; yutarsa `runMutation` tazeleme hatasını göremez,
+  // yanlışlıkla SUCCESS üretir ve SUCCESS_STALE hiç çalışmaz.
+  const loadNotes = async (opts?: { propagateError?: boolean }): Promise<void> => {
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/notes`);
-      setNotes(res.data || []);
+      const rows = (res as { data?: unknown })?.data;
+      // Malformed yanıt GERÇEK EMPTY sayılmaz.
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      setNotes(rows as Note[]);
     } catch (e) {
-      // Demo data
-      setNotes([
-        { id: '1', content: 'Borçlu ile telefon görüşmesi yapıldı. Taksit talebi var.', createdAt: new Date().toISOString(), isPrivate: false },
-        { id: '2', content: 'Müvekkile bilgi verildi.', createdAt: new Date(Date.now() - 86400000).toISOString(), isPrivate: true },
-      ]);
+      setLoadError(toActionErrorMessage(e, 'Notlar yüklenemedi.'));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -44,33 +66,53 @@ export function CaseNotes({ caseId }: CaseNotesProps) {
 
   const addNote = async () => {
     if (!newNote.trim()) return;
-    setAdding(true);
-    try {
-      await api.post(`/cases/${caseId}/notes`, { content: newNote, isPrivate });
-      setNewNote('');
-      loadNotes();
-    } catch (e) {
-      // Optimistic update for demo
-      setNotes(prev => [{
-        id: Date.now().toString(),
-        content: newNote,
-        createdAt: new Date().toISOString(),
-        isPrivate,
-      }, ...prev]);
-      setNewNote('');
-    } finally {
+    // PR-2A1: create yolunda idempotency anahtarı YOK → senkron kilit şart.
+    await submitLock.run(async () => {
+      setAdding(true);
+      setActionError(null);
+      setStaleNotice(null);
+
+      const outcome = await runMutation({
+        mutate: () => api.post(`/cases/${caseId}/notes`, { content: newNote, isPrivate }),
+        // Başarı YALNIZ sunucudan yeniden okunarak yansıtılır; yerel not ÜRETİLMEZ
+        // (eski davranış "optimistic update for demo" ile tam bunu yapıyordu).
+        refresh: () => loadNotes({ propagateError: true }),
+        failureMessage: 'Not kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Not KAYDEDİLDİ, ancak liste yenilenemedi.',
+      });
+
+      if (!submitLock.isMounted()) return;
       setAdding(false);
-    }
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return; // form KORUNUR, metin kaybolmaz
+      }
+      // SUCCESS ve SUCCESS_STALE: kayıt KESİNLEŞTİ → aynı payload yeniden gönderilemez.
+      setNewNote('');
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const deleteNote = async (noteId: string) => {
     if (!confirm('Bu notu silmek istediğinize emin misiniz?')) return;
-    try {
-      await api.delete(`/cases/${caseId}/notes/${noteId}`);
-      setNotes(prev => prev.filter(n => n.id !== noteId));
-    } catch (e) {
-      setNotes(prev => prev.filter(n => n.id !== noteId));
-    }
+    setActionError(null);
+    setStaleNotice(null);
+
+    // PR-2A1: PESSIMISTIC silme + satır bazlı kilit. Eski davranış `catch` içinde de
+    // satırı listeden çıkarıyordu → silme başarısızken not ekrandan kayboluyordu.
+    // Anahtar kararlı kayıt kimliğidir (liste index'i DEĞİL).
+    await rowLock.run(`note:${caseId}:${noteId}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/cases/${caseId}/notes/${noteId}`),
+        refresh: () => loadNotes({ propagateError: true }),
+        failureMessage: 'Not silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.',
+        staleMessage: 'Not SİLİNDİ, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      // Hata hâlinde satır ve seçim durumu AYNEN korunur — hiçbir state yazılmaz.
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const formatDate = (date: string) => {
@@ -85,6 +127,16 @@ export function CaseNotes({ caseId }: CaseNotesProps) {
 
   return (
     <div className="bg-white rounded-xl border p-4">
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
       <h3 className="font-semibold flex items-center gap-2 mb-4">
         <StickyNote className="h-5 w-5 text-yellow-500" />
         Notlar

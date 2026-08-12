@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { MessageSquare, Send, Reply, Trash2, MoreVertical, User, Clock, AtSign, Loader2 } from 'lucide-react';
 
 interface Comment {
@@ -26,54 +30,42 @@ export function CaseComments({ caseId }: CaseCommentsProps) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
+  // PR-2A1: mutation hatasi GORUNUR; yorum uydurulmaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  // Yorum ve yanit AYRI submit anahtarlari kullanir; biri digerini bloklamaz.
+  const submitLock = useKeyedSubmitLock();
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadComments({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSearch, setMentionSearch] = useState('');
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    loadComments();
+    void loadComments();
     loadUsers();
   }, [caseId]);
 
-  const loadComments = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: hata YUTULMAZ, demo veri URETILMEZ, malformed empty SAYILMAZ.
+  const loadComments = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/comments`);
-      setComments(res.data?.data || []);
+      const rows = (res as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      setComments(rows as Comment[]);
     } catch (e) {
-      // Demo data
-      setComments([
-        {
-          id: '1',
-          text: 'Borçlu ile iletişime geçildi, ödeme planı görüşülecek.',
-          user: 'Av. Mehmet',
-          userId: 'user-1',
-          timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          mentions: [],
-          replies: [
-            {
-              id: '1-1',
-              text: '@Admin Ödeme planı onaylandı mı?',
-              user: 'Muhasebe',
-              userId: 'user-2',
-              timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-              mentions: ['Admin'],
-              replies: [],
-              parentId: '1',
-            },
-          ],
-        },
-        {
-          id: '2',
-          text: 'Haciz talebi hazırlandı, @Av. Mehmet onayınıza sunulmuştur.',
-          user: 'Admin',
-          userId: 'user-3',
-          timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-          mentions: ['Av. Mehmet'],
-          replies: [],
-        },
-      ]);
+      setLoadError(toActionErrorMessage(e, 'Yorumlar yuklenemedi.'));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -87,99 +79,110 @@ export function CaseComments({ caseId }: CaseCommentsProps) {
         name: `${u.name} ${u.surname}`.trim(),
       })));
     } catch (e) {
-      // Demo users
-      setUsers([
-        { id: '1', name: 'Admin' },
-        { id: '2', name: 'Av. Mehmet' },
-        { id: '3', name: 'Muhasebe' },
-      ]);
+      // PR-2A1: @bahsetme listesi UYDURULMAZ. Eski davranış üç sahte kullanıcı
+      // ("Admin", "Av. Mehmet", "Muhasebe") üretiyordu; kullanıcı var olmayan birini
+      // etiketleyip haber verdiğini sanabilirdi. Liste boş kalır, öneri sunulmaz.
+      setUsers([]);
+      setLoadError(toActionErrorMessage(e, 'Kullanıcı listesi yüklenemedi; bahsetme önerisi kapalı.'));
     }
   };
 
   const handleSendComment = async () => {
     if (!newComment.trim()) return;
-    setSending(true);
-
     const mentions = extractMentions(newComment);
 
-    try {
-      await api.post(`/cases/${caseId}/comments`, {
-        text: newComment,
-        mentions,
+    // PR-2A1: yorum ve yanıt AYRI submit anahtarı kullanır — yanıt gönderirken yeni
+    // yorum gönderimi gereksiz yere bloklanmaz. Create yolunda idempotency anahtarı
+    // YOK, bu yüzden senkron kilit şart.
+    await submitLock.run(`comment:new:${caseId}`, async () => {
+      setSending(true);
+      setActionError(null);
+      setStaleNotice(null);
+
+      const outcome = await runMutation({
+        mutate: () => api.post(`/cases/${caseId}/comments`, { text: newComment, mentions }),
+        // Başarı YALNIZ sunucudan yeniden okunarak yansıtılır; yerel yorum ÜRETİLMEZ
+        // (eski davranış "Ben / current-user" diye sahte bir yazar bile uyduruyordu).
+        refresh: () => loadComments({ propagateError: true }),
+        failureMessage: 'Yorum gönderilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Yorum GÖNDERİLDİ, ancak liste yenilenemedi.',
       });
-      loadComments();
-    } catch (e) {
-      // Demo: add locally
-      const comment: Comment = {
-        id: Date.now().toString(),
-        text: newComment,
-        user: 'Ben',
-        userId: 'current-user',
-        timestamp: new Date().toISOString(),
-        mentions,
-        replies: [],
-      };
-      setComments(prev => [comment, ...prev]);
-    } finally {
+
+      if (!submitLock.isMounted()) return;
       setSending(false);
+      if (outcome.status === 'FAILED') {
+        // `setNewComment('')` eskiden `finally` içindeydi → hata hâlinde de metin
+        // siliniyordu. Artık metin KORUNUR.
+        setActionError(outcome.error.message);
+        return;
+      }
+      // SUCCESS ve SUCCESS_STALE: kayıt KESİNLEŞTİ → aynı yorum yeniden gönderilemez.
       setNewComment('');
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleSendReply = async (parentId: string) => {
     if (!replyText.trim()) return;
-    setSending(true);
-
     const mentions = extractMentions(replyText);
 
-    try {
-      await api.post(`/cases/${caseId}/comments/${parentId}/reply`, {
-        text: replyText,
-        mentions,
+    // PR-2A1: yanıtın kendi submit anahtarı vardır (üst yorum kimliğine bağlı) —
+    // farklı yorumlara yanıt birbirini bloklamaz, ama AYNI yoruma ikinci tık hiç başlamaz.
+    await submitLock.run(`comment:reply:${caseId}:${parentId}`, async () => {
+      setSending(true);
+      setActionError(null);
+      setStaleNotice(null);
+
+      const outcome = await runMutation({
+        mutate: () =>
+          api.post(`/cases/${caseId}/comments/${parentId}/reply`, { text: replyText, mentions }),
+        // Başarı YALNIZ sunucudan yeniden okunarak yansıtılır; yerel yanıt ÜRETİLMEZ.
+        refresh: () => loadComments({ propagateError: true }),
+        failureMessage: 'Yanıt gönderilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Yanıt GÖNDERİLDİ, ancak liste yenilenemedi.',
       });
-      loadComments();
-    } catch (e) {
-      // Demo: add locally
-      const reply: Comment = {
-        id: Date.now().toString(),
-        text: replyText,
-        user: 'Ben',
-        userId: 'current-user',
-        timestamp: new Date().toISOString(),
-        mentions,
-        replies: [],
-        parentId,
-      };
-      setComments(prev => prev.map(c => 
-        c.id === parentId 
-          ? { ...c, replies: [...c.replies, reply] }
-          : c
-      ));
-    } finally {
+
+      if (!submitLock.isMounted()) return;
       setSending(false);
+      if (outcome.status === 'FAILED') {
+        // `setReplyText('')` ve `setReplyingTo(null)` eskiden `finally` içindeydi →
+        // hata hâlinde yanıt kutusu kapanıp metin siliniyordu. Artık İKİSİ DE KORUNUR.
+        setActionError(outcome.error.message);
+        return;
+      }
+      // SUCCESS ve SUCCESS_STALE: kayıt KESİNLEŞTİ → aynı yanıt yeniden gönderilemez;
+      // geriye yalnız refresh-only eylemi kalır.
       setReplyText('');
       setReplyingTo(null);
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleDeleteComment = async (commentId: string, parentId?: string) => {
     if (!confirm('Bu yorumu silmek istediğinize emin misiniz?')) return;
 
-    try {
-      await api.delete(`/cases/${caseId}/comments/${commentId}`);
-    } catch (e) {
-      // Demo: remove locally
-    }
+    setActionError(null);
+    setStaleNotice(null);
 
-    if (parentId) {
-      setComments(prev => prev.map(c => 
-        c.id === parentId 
-          ? { ...c, replies: c.replies.filter(r => r.id !== commentId) }
-          : c
-      ));
-    } else {
-      setComments(prev => prev.filter(c => c.id !== commentId));
-    }
+    // PR-2A1: PESSIMISTIC silme. Yerel çıkarma `try/catch` DIŞINDA idi → silme
+    // başarısız olsa bile yorum/yanıt ekrandan kayboluyordu. Anahtar kararlı kayıt
+    // kimliğidir; yanıt ile üst yorum ayrı anahtar alır, birbirini bloklamaz.
+    await rowLock.run(`comment:${caseId}:${commentId}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/cases/${caseId}/comments/${commentId}`),
+        refresh: () => loadComments({ propagateError: true }),
+        failureMessage: parentId
+          ? 'Yanıt silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.'
+          : 'Yorum silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.',
+        staleMessage: parentId
+          ? 'Yanıt SİLİNDİ, ancak liste yenilenemedi.'
+          : 'Yorum SİLİNDİ, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      // Hata hâlinde satır ve seçim durumu AYNEN korunur — hiçbir state yazılmaz.
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const extractMentions = (text: string): string[] => {
@@ -265,6 +268,30 @@ export function CaseComments({ caseId }: CaseCommentsProps) {
 
   return (
     <div className="space-y-4">
+      {/* PR-2A1: okuma ve mutation hataları GÖRÜNÜR; sessizce yutulmaz. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {/* Mutation başarılı ama tazeleme başarısız → kayıt durur, görünüm bayat.
+          Yalnız refresh-only eylemi sunulur; mutation ASLA tekrarlanmaz. */}
+      {staleNotice ? (
+        <div
+          role="status"
+          data-testid="stale-notice"
+          className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          <span className="flex-1">{staleNotice}</span>
+          <button
+            type="button"
+            onClick={handleStaleRefresh}
+            disabled={refreshingStale}
+            data-testid="stale-refresh"
+            className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50"
+          >
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
+
       {/* New Comment Input */}
       <div className="relative">
         <textarea

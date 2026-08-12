@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
+import { runMutation } from "@/lib/mutation-outcome";
 import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
@@ -4302,6 +4303,8 @@ function DuesStep({
   const [showTakipTalebiPreview, setShowTakipTalebiPreview] = useState(false);
   const [takipTalebiContent, setTakipTalebiContent] = useState<string>("");
   const [generatingTakipTalebi, setGeneratingTakipTalebi] = useState(false);
+  // PR-2A1: onizleme hatasi GORUNUR; fallback belge uretilmez.
+  const [takipTalebiPreviewError, setTakipTalebiPreviewError] = useState<string | null>(null);
   const [calculatingInterest, setCalculatingInterest] = useState(false);
   const [generatingFromRules, setGeneratingFromRules] = useState(false);
   const [validationResult, setValidationResult] = useState<{
@@ -4708,6 +4711,7 @@ function DuesStep({
   // Takip Talebi (Örnek 1) önizleme
   const generateTakipTalebiPreview = async () => {
     setGeneratingTakipTalebi(true);
+    setTakipTalebiPreviewError(null);
     try {
       const templateData = {
         fileNumber: caseData.fileNumber || "2025/...",
@@ -4743,25 +4747,30 @@ function DuesStep({
         executionPath: caseData.executionPath || "HACIZ",
       };
 
-      const response = await api.post("/template-engine/takip-talebi/preview", templateData);
-      setTakipTalebiContent(response.data?.html || response.data?.content || "Belge oluşturulamadı");
-      setShowTakipTalebiPreview(true);
-    } catch (error) {
-      console.error("Takip talebi oluşturma hatası:", error);
-      // Fallback: Basit önizleme
-      const simplePreview = `
-        <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px;">
-          <h2 style="text-align: center;">TAKİP TALEBİ (ÖRNEK 1)</h2>
-          <p><strong>Dosya No:</strong> ${caseData.fileNumber || "..."}</p>
-          <p><strong>Takip Tarihi:</strong> ${caseData.startDate || new Date().toLocaleDateString('tr-TR')}</p>
-          <hr/>
-          <h3>ALACAK KALEMLERİ:</h3>
-          ${dues.map((d, i) => `<p>${i + 1}. ${d.description || d.type}: ${parseFloat(d.amount || "0").toLocaleString('tr-TR')} ${currencySymbol}</p>`).join('')}
-          <hr/>
-          <p><strong>TOPLAM:</strong> ${kapak.total.toLocaleString('tr-TR')} ${currencySymbol}</p>
-        </div>
-      `;
-      setTakipTalebiContent(simplePreview);
+      // PR-2A1: onizleme YALNIZ gercek sablon motoru ciktisiyla acilir. Eski davranis
+      // hata halinde UYDURMA bir ornek takip talebi belgesi uretip gercek ciktiymis gibi
+      // ONIZLETIYORDU — fallback belge URETILMEZ. Malformed yanit basari SAYILMAZ.
+      const outcome = await runMutation({
+        mutate: async () => {
+          const response = await api.post("/template-engine/takip-talebi/preview", templateData);
+          const body = (response as { data?: { html?: unknown; content?: unknown } })?.data;
+          const content =
+            typeof body?.html === "string" && body.html.trim()
+              ? body.html
+              : typeof body?.content === "string" && body.content.trim()
+                ? body.content
+                : null;
+          if (content === null) throw new Error("MALFORMED_PREVIEW_RESPONSE");
+          return content;
+        },
+        failureMessage: "Takip talebi önizlemesi oluşturulamadı. Belge ÜRETİLMEDİ.",
+      });
+
+      if (outcome.status === "FAILED") {
+        setTakipTalebiPreviewError(outcome.error.message);
+        return; // onizleme ACILMAZ
+      }
+      setTakipTalebiContent(outcome.data);
       setShowTakipTalebiPreview(true);
     } finally {
       setGeneratingTakipTalebi(false);
@@ -5295,6 +5304,11 @@ function DuesStep({
               {/* Takip Talebi Önizle Butonu */}
               {dues.length > 0 && kapak.total > 0 && (
                 <div className="mt-4 flex justify-end">
+                  {takipTalebiPreviewError ? (
+                    <div role="alert" data-testid="takip-preview-error" className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                      {takipTalebiPreviewError}
+                    </div>
+                  ) : null}
                   <button
                     type="button"
                     onClick={generateTakipTalebiPreview}

@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
 import { Link2, Plus, Trash2, Search, X, Loader2, ExternalLink, ArrowRight } from 'lucide-react';
 
 interface LinkedCase {
@@ -35,28 +39,36 @@ export function CaseLinks({ caseId, caseNumber }: CaseLinksProps) {
   const [linkType, setLinkType] = useState<string>('related');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  // PR-2A1: mutation hatasi GORUNUR; baglanti uydurulmaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const submitLock = useSubmitLock();
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadLinks({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
 
   useEffect(() => {
-    loadLinks();
+    void loadLinks();
   }, [caseId]);
 
-  const loadLinks = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: hata YUTULMAZ, demo veri URETILMEZ, malformed empty SAYILMAZ.
+  const loadLinks = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/links`);
-      setLinks(res.data?.data || []);
+      const rows = (res as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      setLinks(rows as LinkedCase[]);
     } catch (e) {
-      // Demo data
-      setLinks([
-        {
-          id: '1',
-          caseId: 'case-2',
-          fileNumber: '2024/1002',
-          clientName: 'ABC Şirketi',
-          linkType: 'related',
-          notes: 'Aynı borçlu ile ilgili dosya',
-        },
-      ]);
+      setLoadError(toActionErrorMessage(e, 'Bagli dosyalar yuklenemedi.'));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -78,41 +90,53 @@ export function CaseLinks({ caseId, caseNumber }: CaseLinksProps) {
 
   const handleAddLink = async () => {
     if (!selectedCase) return;
-    setSaving(true);
-    
-    try {
-      await api.post(`/cases/${caseId}/links`, {
-        linkedCaseId: selectedCase.id,
-        linkType,
-        notes,
+    // PR-2A1: create yolunda idempotency anahtari YOK -> senkron kilit sart.
+    await submitLock.run(async () => {
+      setSaving(true);
+      setActionError(null);
+      setStaleNotice(null);
+
+      const outcome = await runMutation({
+        mutate: () =>
+          api.post(`/cases/${caseId}/links`, {
+            linkedCaseId: selectedCase.id,
+            linkType,
+            notes,
+          }),
+        // Basari YALNIZ sunucudan yeniden okunarak yansitilir; yerel baglanti URETILMEZ.
+        refresh: () => loadLinks({ propagateError: true }),
+        failureMessage: 'Baglanti kaydedilemedi. Kayit YAPILMADI, lutfen tekrar deneyin.',
+        staleMessage: 'Baglanti KAYDEDILDI, ancak liste yenilenemedi.',
       });
-      loadLinks();
-    } catch (e) {
-      // Demo: add locally
-      const newLink: LinkedCase = {
-        id: Date.now().toString(),
-        caseId: selectedCase.id,
-        fileNumber: selectedCase.fileNumber,
-        clientName: selectedCase.client?.displayName || selectedCase.client?.name,
-        linkType: linkType as LinkedCase['linkType'],
-        notes,
-      };
-      setLinks(prev => [...prev, newLink]);
-    } finally {
+
+      if (!submitLock.isMounted()) return;
       setSaving(false);
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return; // modal ve form KORUNUR
+      }
       resetModal();
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleRemoveLink = async (linkId: string) => {
     if (!confirm('Bu bağlantıyı kaldırmak istediğinize emin misiniz?')) return;
     
-    try {
-      await api.delete(`/cases/${caseId}/links/${linkId}`);
-    } catch (e) {
-      // Demo: remove locally
-    }
-    setLinks(prev => prev.filter(l => l.id !== linkId));
+    setActionError(null);
+    setStaleNotice(null);
+    // PR-2A1: PESSIMISTIC silme + satir bazli kilit (kararli kayit kimligi).
+    await rowLock.run(`case-link:${caseId}:${linkId}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/cases/${caseId}/links/${linkId}`),
+        refresh: () => loadLinks({ propagateError: true }),
+        failureMessage: 'Baglanti kaldirilamadi. Kayit DURUYOR, lutfen tekrar deneyin.',
+        staleMessage: 'Baglanti KALDIRILDI, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const resetModal = () => {
@@ -139,7 +163,16 @@ export function CaseLinks({ caseId, caseNumber }: CaseLinksProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
       </div>
     );
   }

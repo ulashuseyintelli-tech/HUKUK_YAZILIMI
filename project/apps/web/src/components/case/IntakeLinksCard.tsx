@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
+import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import {
   api,
   IntakeLink,
@@ -113,15 +115,20 @@ export default function IntakeLinksCard({
   const [copied, setCopied] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState("");
+  const [revokeStale, setRevokeStale] = useState("");
+  const rowLock = useKeyedSubmitLock();
 
-  const loadLinks = useCallback(async () => {
+  const loadLinks = useCallback(async (opts?: { propagateError?: boolean }) => {
     setListError("");
     try {
       const data = await api.listIntakeLinks(caseId);
       setLinks(data);
-    } catch {
+    } catch (e) {
+      // PR-2A1 DEPENDENCY_FIXED: bos liste GERCEK durum sanilmasin; hata gorunur ve
+      // mutation refresh'i olarak cagrildiginda propagate edilir.
       setLinks([]);
       setListError("Linkler yüklenemedi.");
+      if (opts?.propagateError) throw e;
     }
   }, [caseId]);
 
@@ -200,19 +207,30 @@ export default function IntakeLinksCard({
   };
 
   const handleRevoke = async (id: string) => {
-    setRevokingId(id);
     setRevokeError("");
-    try {
-      await api.revokeIntakeLink(id);
-      await loadLinks(); // yalnız BAŞARIDA yenile
-    } catch (err) {
-      // Sessiz kalma: personel "iptal edildi" sanmasın. Liste yenilenmez →
-      // link gerçekte ACTIVE kalır ve listede öyle görünür (yanlış güven yok).
-      const msg = err instanceof Error && err.message ? err.message : "Link iptal edilemedi.";
-      setRevokeError(msg);
-    } finally {
-      setRevokingId(null);
-    }
+    setRevokeStale("");
+    // PR-2A1: `revokingId` React state'i ayni-tick cift tiki KESMEZ; gercek kilit
+    // senkron keyed lock'tur. Ayrica eski akis iptal BASARILI + liste yenileme
+    // BASARISIZ durumunu "Link iptal edilemedi" diye TERS raporluyordu.
+    await rowLock.run(`intake-link:revoke:${id}`, async () => {
+      setRevokingId(id);
+      try {
+        const outcome = await runMutation({
+          mutate: () => api.revokeIntakeLink(id),
+          refresh: () => loadLinks({ propagateError: true }),
+          failureMessage: "Link iptal edilemedi. Link AKTİF kaldı, lütfen tekrar deneyin.",
+          staleMessage: "Link İPTAL EDİLDİ, ancak liste yenilenemedi.",
+        });
+        if (!rowLock.isMounted()) return;
+        if (outcome.status === "FAILED") {
+          setRevokeError(outcome.error.message);
+          return;
+        }
+        if (outcome.status === "SUCCESS_STALE") setRevokeStale(outcome.stale);
+      } finally {
+        if (rowLock.isMounted()) setRevokingId(null);
+      }
+    });
   };
 
   return (
@@ -351,6 +369,9 @@ export default function IntakeLinksCard({
           Mevcut linkler güvenlik nedeniyle tekrar görüntülenemez. Gerekirse yeni link üretip eskisini iptal edin.
         </p>
         {listError && <p className="text-sm text-red-600 mb-2">{listError}</p>}
+        {revokeStale ? (
+          <div role="status" data-testid="stale-notice" className="mt-1 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800"><span className="flex-1">{revokeStale}</span><button type="button" onClick={() => void loadLinks()} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1 font-medium hover:bg-amber-100">Listeyi yenile</button></div>
+        ) : null}
         {revokeError && <p className="text-sm text-red-600 mb-2">{revokeError}</p>}
         {links === null ? (
           <p className="text-sm text-slate-400">Yükleniyor…</p>
