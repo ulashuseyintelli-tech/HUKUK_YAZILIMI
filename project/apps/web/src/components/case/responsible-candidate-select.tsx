@@ -37,6 +37,7 @@ export function ResponsibleCandidateSelect({
 }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -45,7 +46,10 @@ export function ResponsibleCandidateSelect({
       .then((res) => {
         if (active) setCandidates(res?.data?.data ?? []);
       })
-      .catch(() => {})
+      .catch(() => {
+        // WSMR-A3f: bos dropdown "aday YOK" gibi okunuyordu; hata GORUNUR olur.
+        if (active) setLoadFailed(true);
+      })
       .finally(() => {
         if (active) setLoading(false);
       });
@@ -75,7 +79,7 @@ export function ResponsibleCandidateSelect({
       }}
       className={className ?? "w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-60"}
     >
-      <option value="">{loading ? "Yükleniyor…" : (placeholder ?? "Seçiniz")}</option>
+      <option value="">{loading ? "Yükleniyor…" : loadFailed ? "Adaylar alınamadı" : (placeholder ?? "Seçiniz")}</option>
       {lawyers.length > 0 && (
         <optgroup label="Avukatlar">
           {lawyers.map((c) => (

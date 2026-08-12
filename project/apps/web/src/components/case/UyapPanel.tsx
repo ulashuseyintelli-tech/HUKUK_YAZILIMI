@@ -64,6 +64,10 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   const [caseDebtors, setCaseDebtors] = useState<DebtorListItemDTO[]>([]);
   const [selectedCaseDebtorId, setSelectedCaseDebtorId] = useState<string | undefined>(undefined);
   const [hacizError, setHacizError] = useState<string | null>(null);
+  // WSMR-A3f: borclu okuma hatasi icin ayri gorunur durum.
+  const [debtorLoadError, setDebtorLoadError] = useState<string | null>(null);
+  // WSMR-A3f: risk sorgusu hatasi "risk YOK" ile KARISTIRILMAZ.
+  const [riskLoadError, setRiskLoadError] = useState<string | null>(null);
   // PR-2A1: okuma, evrak ve retry hatalari AYRI ve GORUNUR.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState<string | null>(null);
@@ -84,10 +88,16 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
     // caseId değişince önceki seçim KESİNLİKLE taşınmaz (yanlış dosyada yanlış borçlu riski).
     setSelectedCaseDebtorId(undefined);
     setHacizError(null);
+    setDebtorLoadError(null);
     api
       .getCaseDebtors(caseId)
       .then((res) => setCaseDebtors(res.items || []))
-      .catch(() => setCaseDebtors([]));
+      .catch((e) => {
+        // WSMR-A3f: borclu listesi hatasi BOS LISTEYE cevriliyordu — icra
+        // panelinde "bu dosyada borclu YOK" gibi okunuyordu. Artik hata gorunur.
+        setCaseDebtors([]);
+        setDebtorLoadError(toActionErrorMessage(e, 'Borçlu listesi alınamadı.'));
+      });
   }, [caseId]);
 
   // Dosyada tam 1 aktif borçlu varsa otomatik seç; ancak request yine de bu seçimi
@@ -98,13 +108,22 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
     }
   }, [caseDebtors]);
 
-  // Haciz sekmesi açılınca riski bir kez çek (lazy). Hata sessiz (read-only, kritik değil).
+  // Haciz sekmesi açılınca riski bir kez çek (lazy).
+  // WSMR-A3f: hata artık SESSİZ DEĞİL. Eskiden `overallLevel: "YOK"` yazılıyordu:
+  // risk sorgusu ÇÖKMÜŞKEN kullanıcıya "haciz öncesi risk YOK" deniyordu — icra
+  // bağlamında yanlış-olumsuz risk beyanı. Artık risk state'i DOLDURULMAZ ve
+  // hata görünür olur; "bilinmiyor" ile "yok" karışmaz.
   useEffect(() => {
     if (activeTab !== "haciz" || preHacizRisk !== null) return;
     api
       .getPreHacizIntelligence(caseId)
       .then((r) => setPreHacizRisk({ debtors: r.debtors || [], overallLevel: r.overallLevel || "YOK" }))
-      .catch(() => setPreHacizRisk({ debtors: [], overallLevel: "YOK" }));
+      .catch((e) => {
+        setPreHacizRisk(null);
+        setRiskLoadError(
+          toActionErrorMessage(e, "Haciz öncesi risk bilgisi alınamadı; risk durumu BİLİNMİYOR."),
+        );
+      });
   }, [activeTab, caseId, preHacizRisk]);
 
   // PR-2A1 DEPENDENCY_FIXED: `console.error` tek başına handling değildir — panel
@@ -609,6 +628,24 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
                 </select>
               )}
             </div>
+
+            {riskLoadError && (
+              <p
+                role="alert"
+                className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
+              >
+                {riskLoadError}
+              </p>
+            )}
+
+            {debtorLoadError && (
+              <p
+                role="alert"
+                className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
+              >
+                {debtorLoadError}
+              </p>
+            )}
 
             {hacizError && (
               <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

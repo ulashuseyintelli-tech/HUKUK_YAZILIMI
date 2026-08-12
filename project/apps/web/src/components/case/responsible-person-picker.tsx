@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 // M2-G3b: Dosya detayında "Dosya Sorumlusu" seçici. Aday listesi (G2) + mevcut (G3b GET) okur,
 // seçimde PATCH (G3a) ile gerçek kişiye yazar. case.service.ts'e dokunmaz.
@@ -36,6 +37,7 @@ export function ResponsiblePersonPicker({
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const [candRes, curRes] = await Promise.all([
         api.get<{ data: Candidate[] }>("/cases/responsible-candidates"),
@@ -43,8 +45,12 @@ export function ResponsiblePersonPicker({
       ]);
       setCandidates(candRes?.data?.data ?? []);
       setCurrent(curRes?.data ?? null);
-    } catch {
-      // aday/mevcut yüklenemezse sessizce boş bırak
+    } catch (e) {
+      // WSMR-A3f: `error` state ZATEN vardi ama kullanilmiyordu; okuma hatasi
+      // sessizce bos birakiliyor, kullanici "aday yok" saniyordu.
+      setCandidates([]);
+      setCurrent(null);
+      setError(toActionErrorMessage(e, "Sorumlu adayları alınamadı."));
     } finally {
       setLoading(false);
     }
