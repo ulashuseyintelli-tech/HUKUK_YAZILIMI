@@ -171,3 +171,13 @@ src/modules/staff/__tests__/staff-update-duplicate-guard.spec.ts
 src/modules/execution-office/__tests__/execution-office.module.spec.ts
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: fail-closed disposable runtime harness contract.
 src/scripts/office-e2e-disposable-runtime.spec.ts
+
+# ── OFFICE-P2-IDENTITY-COMPLETION-R01 (CLAUDE-C1 WAVE 2) ───────────────────────
+# D1 zinciri "dry-run → diff owner onayına sunulur → operate"tır; repo'da dry-run
+# core'unu CANLI DB snapshot'ıyla besleyen halka yoktu (core yalnız sentetik snapshot
+# ile unit-test ediliyordu). plan.core iki saf halka ekler: owner girdi paketinin
+# fail-closed yapısal doğrulaması (bilinmeyen alan/sözlük dışı değer → paketin TAMAMI
+# reddedilir) + dry-run raporundan deterministik operate planı (BIND için optimistic-
+# concurrency preflight timestamp'leri; CREATE için kanonik auth/invite yolu işaretlenir).
+# Yazım yolu (.ts runner) CI'da koşmaz; salt-okuma dry-run runner'ı da koşmaz.
+src/scripts/__tests__/office-cap02-identity-binding-plan.core.spec.ts
