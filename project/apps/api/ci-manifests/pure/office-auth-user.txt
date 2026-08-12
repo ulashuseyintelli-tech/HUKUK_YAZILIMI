@@ -137,3 +137,5 @@ src/scripts/__tests__/office-cap02-telemetry-perf-r02.core.spec.ts
 # yetkiliye GORUNUR, kimlik/finans (tckn/iban/bank*/vergi*) her iki duzeyde de GIZLI.
 src/modules/office/__tests__/office-f01-authorization.spec.ts
 src/modules/office/__tests__/office-f01-lawyer-contact-tier.spec.ts
+# OFFICE-P6A-RUNTIME-TRUTH-AND-RELEASE-R01 temporary manifest lease
+src/scripts/__tests__/office-runtime-release-readiness.core.spec.ts
