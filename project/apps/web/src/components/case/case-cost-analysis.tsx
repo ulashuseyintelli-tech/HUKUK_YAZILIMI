@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { DollarSign, TrendingUp, TrendingDown, PieChart, Loader2, ArrowRight } from 'lucide-react';
 
 interface CostItem {
@@ -28,43 +29,36 @@ interface CaseCostAnalysisProps {
 export function CaseCostAnalysis({ caseId }: CaseCostAnalysisProps) {
   const [data, setData] = useState<CostAnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3c: GET basarisizsa UYDURMA kayit uretilmez; gorunur hata + retry.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadAnalysis();
   }, [caseId]);
 
   const loadAnalysis = async () => {
+    setLoadError(null);
     setLoading(true);
     try {
       const res = await api.get(`/cases/${caseId}/cost-analysis`);
-      setData(res.data?.data || res.data);
+      // WSMR-A3c: govde SOZLESMEYE UYMUYORSA gercek veri sayilmaz -> ERROR.
+      // Eskiden dogrulanmadan atanıyordu; eksik `expenses` alani render'i
+      // `undefined.map` ile COKERTIYORDU (CI'da yakalandi).
+      const body = (res as { data?: any })?.data?.data ?? (res as { data?: any })?.data;
+      const valid =
+        body &&
+        typeof body === 'object' &&
+        typeof body.totalExpenses === 'number' &&
+        typeof body.totalRevenue === 'number' &&
+        Array.isArray(body.expenses) &&
+        Array.isArray(body.revenue);
+      if (!valid) throw new Error('MALFORMED_COST_ANALYSIS_RESPONSE');
+      setData(body as CostAnalysisData);
     } catch (e) {
-      // Demo data
-      setData({
-        totalExpenses: 4500,
-        totalRevenue: 25000,
-        profit: 20500,
-        profitMargin: 82,
-        expenses: [
-          { category: 'harc', label: 'Harç', amount: 2500, color: 'blue' },
-          { category: 'posta', label: 'Posta/Tebligat', amount: 850, color: 'green' },
-          { category: 'bilirkisi', label: 'Bilirkişi', amount: 500, color: 'purple' },
-          { category: 'yol', label: 'Yol/Ulaşım', amount: 350, color: 'orange' },
-          { category: 'diger', label: 'Diğer', amount: 300, color: 'gray' },
-        ],
-        revenue: [
-          { category: 'tahsilat', label: 'Tahsilat', amount: 20000, color: 'green' },
-          { category: 'vekalet', label: 'Vekalet Ücreti', amount: 5000, color: 'blue' },
-        ],
-        monthlyTrend: [
-          { month: 'Oca', expense: 1200, revenue: 0 },
-          { month: 'Şub', expense: 800, revenue: 5000 },
-          { month: 'Mar', expense: 500, revenue: 8000 },
-          { month: 'Nis', expense: 1000, revenue: 7000 },
-          { month: 'May', expense: 600, revenue: 3000 },
-          { month: 'Haz', expense: 400, revenue: 2000 },
-        ],
-      });
+      // WSMR-A3c · UYDURMA KAYITLAR KALDIRILDI. Eskiden burada sabit sahte
+      // veri GERCEK dosya bilgisi gibi gosteriliyordu.
+      setData(null);
+      setLoadError(toActionErrorMessage(e, 'Maliyet analizi alınamadı'));
     } finally {
       setLoading(false);
     }
@@ -90,6 +84,22 @@ export function CaseCostAnalysis({ caseId }: CaseCostAnalysisProps) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  // WSMR-A3c: hata gorunur ve salt-okuma tekrar denenebilir.
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button
+          type="button"
+          onClick={loadAnalysis}
+          className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { History, RotateCcw, ChevronDown, ChevronRight, User, Clock, Loader2, Search, Filter } from 'lucide-react';
 
 interface FieldChange {
@@ -49,6 +50,8 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
 export function CaseHistory({ caseId, onRevert }: CaseHistoryProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3c: GET basarisizsa UYDURMA kayit uretilmez; gorunur hata + retry.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterAction, setFilterAction] = useState<string>('');
@@ -59,58 +62,16 @@ export function CaseHistory({ caseId, onRevert }: CaseHistoryProps) {
   }, [caseId]);
 
   const loadHistory = async () => {
+    setLoadError(null);
     setLoading(true);
     try {
       const res = await api.get(`/cases/${caseId}/history`);
       setHistory(res.data?.data || []);
     } catch (e) {
-      // Demo data
-      setHistory([
-        {
-          id: '1',
-          action: 'UPDATE',
-          userId: 'u1',
-          userName: 'Av. Mehmet Yılmaz',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          changes: [
-            { field: 'status', fieldLabel: 'Durum', oldValue: 'DERDEST', newValue: 'ISLEMDE' },
-            { field: 'notes', fieldLabel: 'Notlar', oldValue: null, newValue: 'Haciz talebi hazırlandı' },
-          ],
-          canRevert: true,
-        },
-        {
-          id: '2',
-          action: 'STATUS_CHANGE',
-          userId: 'u2',
-          userName: 'Admin',
-          timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          changes: [
-            { field: 'riskLevel', fieldLabel: 'Risk Seviyesi', oldValue: 'MEDIUM', newValue: 'HIGH' },
-          ],
-          canRevert: true,
-        },
-        {
-          id: '3',
-          action: 'UPDATE',
-          userId: 'u1',
-          userName: 'Av. Mehmet Yılmaz',
-          timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          changes: [
-            { field: 'principalAmount', fieldLabel: 'Ana Para', oldValue: 100000, newValue: 125000 },
-            { field: 'interestAmount', fieldLabel: 'Faiz', oldValue: 15000, newValue: 20000 },
-          ],
-          canRevert: false,
-        },
-        {
-          id: '4',
-          action: 'CREATE',
-          userId: 'u2',
-          userName: 'Admin',
-          timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          changes: [],
-          canRevert: false,
-        },
-      ]);
+      // WSMR-A3c · UYDURMA KAYITLAR KALDIRILDI. Eskiden burada sabit sahte
+      // veri GERCEK dosya bilgisi gibi gosteriliyordu.
+      setHistory([]);
+      setLoadError(toActionErrorMessage(e, 'Dosya geçmişi alınamadı'));
     } finally {
       setLoading(false);
     }
@@ -181,6 +142,22 @@ export function CaseHistory({ caseId, onRevert }: CaseHistoryProps) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  // WSMR-A3c: hata gorunur ve salt-okuma tekrar denenebilir.
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button
+          type="button"
+          onClick={loadHistory}
+          className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }
