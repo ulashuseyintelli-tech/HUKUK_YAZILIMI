@@ -3,6 +3,15 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { FileText, User, Calendar, Bell, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import {
+  type DashboardReadState,
+  fromResponse,
+  fromError,
+  freshData,
+  staleData,
+  isPending,
+  isStale,
+} from '@/lib/dashboard-read-state';
 
 interface Activity {
   id: string;
@@ -21,40 +30,47 @@ const ACTIVITY_ICONS: Record<string, { icon: any; color: string }> = {
   collection: { icon: AlertCircle, color: 'bg-purple-100 text-purple-600' },
 };
 
+/**
+ * WSMR-A2: iki ayrı sessiz kusur vardı.
+ *  1. GET başarısızsa DÖRT SAHTE aktivite üretiliyordu — uydurma tahsilat
+ *     ("Tahsilat kaydedildi · 5.000 TL") gerçek denetim kaydı gibi görünüyordu.
+ *  2. Yanıt `logs` taşımıyorsa liste sessizce BOŞ kalıyordu; bozuk gövde
+ *     "hiç aktivite yok" diye okunuyordu.
+ * Artık ikisi de ERROR üretir; gerçek boşluk yalnız doğrulanmış yanıttan doğar.
+ */
+const validateActivities = (raw: unknown): Activity[] | undefined => {
+  const logs = (raw as { data?: { logs?: unknown } })?.data?.logs;
+  if (!Array.isArray(logs)) return undefined;
+  const out: Activity[] = [];
+  for (const l of logs as Array<Record<string, any>>) {
+    if (!l || typeof l !== 'object' || typeof l.id !== 'string') return undefined;
+    out.push({
+      id: l.id,
+      type:
+        l.action === 'CREATE' ? 'case_created' : l.action === 'UPDATE' ? 'case_updated' : 'notification',
+      title: l.description || `${l.action} - ${l.entityType}`,
+      timestamp: l.createdAt,
+      user: l.userName,
+    } as Activity);
+  }
+  return out;
+};
+
 export function ActivityFeed() {
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<DashboardReadState<Activity[]>>({ status: 'IDLE' });
+  const activities = freshData(state) ?? staleData(state) ?? [];
 
   useEffect(() => {
     loadActivities();
   }, []);
 
   const loadActivities = async () => {
+    setState((p) => (isPending(p) ? { status: 'LOADING' } : p));
     try {
-      // Audit log'dan son aktiviteleri çek
       const res = await api.get('/audit/logs?limit=10');
-      if (res.data?.logs) {
-        const mapped = res.data.logs.map((log: any) => ({
-          id: log.id,
-          type: log.action === 'CREATE' ? 'case_created' : 
-                log.action === 'UPDATE' ? 'case_updated' : 
-                'notification',
-          title: log.description || `${log.action} - ${log.entityType}`,
-          timestamp: log.createdAt,
-          user: log.userName,
-        }));
-        setActivities(mapped);
-      }
+      setState(fromResponse(res, validateActivities, (v) => v.length === 0, Date.now()));
     } catch (e) {
-      // Demo data
-      setActivities([
-        { id: '1', type: 'case_created', title: 'Yeni takip oluşturuldu', description: '2024/1234', timestamp: new Date().toISOString(), user: 'Admin' },
-        { id: '2', type: 'task_completed', title: 'Görev tamamlandı', description: 'Haciz talebi hazırlandı', timestamp: new Date(Date.now() - 3600000).toISOString() },
-        { id: '3', type: 'collection', title: 'Tahsilat kaydedildi', description: '5.000 TL', timestamp: new Date(Date.now() - 7200000).toISOString() },
-        { id: '4', type: 'notification', title: 'Vekalet süresi uyarısı', description: '3 vekalet 30 gün içinde dolacak', timestamp: new Date(Date.now() - 10800000).toISOString() },
-      ]);
-    } finally {
-      setLoading(false);
+      setState((prev) => fromError(e, prev, { endpoint: '/audit/logs', widget: 'Aktivite akışı' }));
     }
   };
 
@@ -73,7 +89,7 @@ export function ActivityFeed() {
     return date.toLocaleDateString('tr-TR');
   };
 
-  if (loading) {
+  if (isPending(state)) {
     return (
       <div className="bg-white rounded-xl border p-4">
         <div className="h-6 bg-gray-200 rounded w-32 mb-4 animate-pulse" />
@@ -97,11 +113,28 @@ export function ActivityFeed() {
           <Clock className="h-5 w-5 text-gray-500" />
           Son Aktiviteler
         </h3>
-        <span className="text-xs text-gray-500">{activities.length} kayıt</span>
+        {/* Hata halinde "0 kayıt" yazmak da yalancı sıfırdır — sayaç yalnız doğrulanmış veride. */}
+        {freshData(state) !== undefined && (
+          <span className="text-xs text-gray-500">{activities.length} kayıt</span>
+        )}
       </div>
 
       <div className="space-y-1">
-        {activities.length === 0 ? (
+        {isStale(state) && (
+          <p className="mb-2 text-xs text-yellow-700">Güncel olmayabilir</p>
+        )}
+        {state.status === 'ERROR' && !isStale(state) ? (
+          <div className="text-center py-8">
+            <p className="text-sm font-medium text-red-600">Aktiviteler alınamadı</p>
+            <button
+              type="button"
+              onClick={loadActivities}
+              className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+            >
+              Tekrar dene
+            </button>
+          </div>
+        ) : activities.length === 0 ? (
           <p className="text-center text-gray-500 py-8 text-sm">Henüz aktivite yok</p>
         ) : (
           activities.map((activity) => {

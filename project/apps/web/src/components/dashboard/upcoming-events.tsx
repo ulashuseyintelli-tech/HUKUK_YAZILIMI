@@ -4,6 +4,15 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Calendar, Clock, MapPin, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import {
+  type DashboardReadState,
+  fromResponse,
+  fromError,
+  freshData,
+  staleData,
+  isPending,
+  isStale,
+} from '@/lib/dashboard-read-state';
 
 interface CalendarEvent {
   id: string;
@@ -21,28 +30,40 @@ const EVENT_COLORS: Record<string, string> = {
   DIGER: 'border-l-gray-500 bg-gray-50',
 };
 
+/**
+ * WSMR-A2: GET başarısızsa ÜÇ SAHTE ETKİNLİK üretiliyordu — uydurma duruşma
+ * ("Duruşma - 2024/1234", "İstanbul 5. İcra Mahkemesi") gerçek ajanda kaydı gibi
+ * görünüyordu. Artık hata görünür ve tekrar denenebilir; gerçek boş ajanda yalnız
+ * doğrulanmış yanıttan doğar.
+ */
+const validateEvents = (raw: unknown): CalendarEvent[] | undefined => {
+  const list = (raw as { data?: unknown })?.data;
+  if (!Array.isArray(list)) return undefined;
+  for (const e of list) {
+    if (!e || typeof e !== 'object') return undefined;
+    const ev = e as Record<string, unknown>;
+    if (typeof ev.id !== 'string' || typeof ev.date !== 'string') return undefined;
+  }
+  return list as CalendarEvent[];
+};
+
 export function UpcomingEvents() {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<DashboardReadState<CalendarEvent[]>>({ status: 'IDLE' });
+  const events = freshData(state) ?? staleData(state) ?? [];
 
   useEffect(() => {
     loadEvents();
   }, []);
 
   const loadEvents = async () => {
+    setState((p) => (isPending(p) ? { status: 'LOADING' } : p));
     try {
       const res = await api.get('/calendar/upcoming?limit=5');
-      setEvents(res.data || []);
+      setState(fromResponse(res, validateEvents, (v) => v.length === 0, Date.now()));
     } catch (e) {
-      // Demo data
-      const today = new Date();
-      setEvents([
-        { id: '1', title: 'Duruşma - 2024/1234', date: new Date(today.getTime() + 86400000).toISOString().split('T')[0], time: '10:00', type: 'DURUSMA', location: 'İstanbul 5. İcra Mahkemesi' },
-        { id: '2', title: 'Vekalet yenileme', date: new Date(today.getTime() + 172800000).toISOString().split('T')[0], type: 'HATIRLATICI' },
-        { id: '3', title: 'Müvekkil toplantısı', date: new Date(today.getTime() + 259200000).toISOString().split('T')[0], time: '14:30', type: 'GOREV' },
-      ]);
-    } finally {
-      setLoading(false);
+      setState((prev) =>
+        fromError(e, prev, { endpoint: '/calendar/upcoming', widget: 'Yaklaşan etkinlikler' }),
+      );
     }
   };
 
@@ -67,9 +88,9 @@ export function UpcomingEvents() {
     return diff;
   };
 
-  if (loading) {
+  if (isPending(state)) {
     return (
-      <div className="bg-white rounded-xl border p-4">
+      <div className="bg-white rounded-xl border p-4" role="status" aria-label="Yaklaşan etkinlikler yükleniyor">
         <div className="h-6 bg-gray-200 rounded w-40 mb-4 animate-pulse" />
         {[1, 2, 3].map(i => (
           <div key={i} className="h-16 bg-gray-100 rounded-lg mb-2 animate-pulse" />
@@ -90,7 +111,22 @@ export function UpcomingEvents() {
         </Link>
       </div>
 
-      {events.length === 0 ? (
+      {isStale(state) && (
+        <p className="mb-2 text-xs text-yellow-700">Güncel olmayabilir</p>
+      )}
+
+      {state.status === 'ERROR' && !isStale(state) ? (
+        <div className="text-center py-8">
+          <p className="text-sm font-medium text-red-600">Etkinlikler alınamadı</p>
+          <button
+            type="button"
+            onClick={loadEvents}
+            className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      ) : events.length === 0 ? (
         <p className="text-center text-gray-500 py-8 text-sm">Yaklaşan etkinlik yok</p>
       ) : (
         <div className="space-y-2">

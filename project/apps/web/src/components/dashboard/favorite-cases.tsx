@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { reportClientError } from '@/lib/error-reporter';
 import { Star, FileText, ChevronRight, X } from 'lucide-react';
 import Link from 'next/link';
 
@@ -12,9 +13,16 @@ interface FavoriteCase {
   status: string;
 }
 
+/**
+ * WSMR-A2: her favori için `api.get(...).catch(() => null)` yapılıp `null`'lar
+ * filtreleniyordu. Beş favoriden üçü yüklenemezse kullanıcı SESSİZCE yalnız ikisini
+ * görüyor, kaybolanlardan haberi olmuyordu. Artık kısmi hata GÖRÜNÜR ve tekrar
+ * denenebilir; hiçbir favori sessizce düşmez.
+ */
 export function FavoriteCases() {
   const [cases, setCases] = useState<FavoriteCase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failedCount, setFailedCount] = useState(0);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -22,8 +30,11 @@ export function FavoriteCases() {
   }, []);
 
   const loadFavorites = async () => {
+    setLoading(true);
+    setFailedCount(0);
     const saved = localStorage.getItem('favoriteCases');
     if (!saved) {
+      setCases([]);
       setLoading(false);
       return;
     }
@@ -32,32 +43,39 @@ export function FavoriteCases() {
     setFavoriteIds(ids);
 
     if (ids.length === 0) {
+      setCases([]);
       setLoading(false);
       return;
     }
 
-    try {
-      // Her favori için dosya bilgisini çek
-      const promises = ids.slice(0, 5).map(id => 
-        api.get(`/cases/${id}`).catch(() => null)
-      );
-      const results = await Promise.all(promises);
-      
-      const validCases = results
-        .filter(r => r?.data)
-        .map((r: any) => ({
-          id: r.data.id,
-          fileNumber: r.data.fileNumber,
-          clientName: r.data.client?.displayName || r.data.client?.name,
-          status: r.data.caseStatus || r.data.status,
-        }));
-      
-      setCases(validCases);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    const wanted = ids.slice(0, 5);
+    const results = await Promise.allSettled(wanted.map((id) => api.get(`/cases/${id}`)));
+
+    const loaded: FavoriteCase[] = [];
+    let failed = 0;
+    results.forEach((r, i) => {
+      const body = r.status === 'fulfilled' ? (r.value as { data?: any })?.data : undefined;
+      if (r.status !== 'fulfilled' || !body || typeof body.id !== 'string') {
+        failed += 1;
+        reportClientError({
+          level: 'ERROR',
+          message: 'favori dosya okunamadı',
+          endpoint: '/cases/:id',
+          metadata: { safeErrorCode: 'FAVORITE_CASE_READ_FAILED' },
+        });
+        return;
+      }
+      loaded.push({
+        id: body.id,
+        fileNumber: body.fileNumber,
+        clientName: body.client?.displayName || body.client?.name,
+        status: body.caseStatus || body.status,
+      } as FavoriteCase);
+    });
+
+    setCases(loaded);
+    setFailedCount(failed);
+    setLoading(false);
   };
 
   const removeFavorite = (caseId: string) => {
@@ -111,6 +129,22 @@ export function FavoriteCases() {
           {favoriteIds.length}
         </span>
       </div>
+
+      {/* Kısmi hata artık SESSİZ değil: kaç favorinin okunamadığı yazılır. */}
+      {failedCount > 0 && (
+        <div className="mb-2 rounded-lg bg-red-50 px-2 py-1.5">
+          <p className="text-xs font-medium text-red-700">
+            {failedCount} favori dosya alınamadı
+          </p>
+          <button
+            type="button"
+            onClick={loadFavorites}
+            className="text-xs text-blue-600 underline hover:text-blue-800"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
 
       <div className="space-y-2">
         {cases.map((c) => (

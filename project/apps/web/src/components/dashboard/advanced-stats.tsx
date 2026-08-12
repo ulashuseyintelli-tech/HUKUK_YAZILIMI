@@ -2,6 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import {
+  type DashboardReadState,
+  fromResponse,
+  fromError,
+  freshData,
+  staleData,
+  isPending,
+  isStale,
+} from '@/lib/dashboard-read-state';
 import { 
   TrendingUp, TrendingDown, DollarSign, Users, FileText, 
   Calendar, Target, PieChart, BarChart3, ArrowUpRight, ArrowDownRight
@@ -26,9 +35,23 @@ interface StatsData {
   monthlyTrend: { month: string; cases: number; collections: number }[];
 }
 
+/**
+ * WSMR-A2: GET başarısızsa UYDURMA BİR FİNANSAL TABLO basılıyordu — 1.250 dosya,
+ * 2.450.000 TL tahsilat, %28,8 tahsilat oranı, sahte risk/durum dağılımları.
+ * Kullanıcı bunu gerçek ofis verisi sanıyordu. Ayrıca `res.data?.data` doğrulanmadan
+ * atanıyordu: gövde bozuksa bileşen sessizce hiçbir şey render etmiyordu.
+ */
+const validateStats = (raw: unknown): StatsData | undefined => {
+  const d = (raw as { data?: { data?: unknown } })?.data?.data as Record<string, unknown> | undefined;
+  if (!d || typeof d !== 'object') return undefined;
+  const nums = ['totalCases', 'activeCases', 'closedCases', 'totalCollected', 'collectionRate'] as const;
+  if (!nums.every((k) => typeof d[k] === 'number' && Number.isFinite(d[k]))) return undefined;
+  return d as unknown as StatsData;
+};
+
 export function AdvancedStats() {
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<DashboardReadState<StatsData>>({ status: 'IDLE' });
+  const stats = freshData(state) ?? staleData(state);
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
 
   useEffect(() => {
@@ -36,45 +59,14 @@ export function AdvancedStats() {
   }, [period]);
 
   const loadStats = async () => {
+    setState((p) => (isPending(p) ? { status: 'LOADING' } : p));
     try {
       const res = await api.get(`/reports/advanced-stats?period=${period}`);
-      setStats(res.data?.data);
+      setState(fromResponse(res, validateStats, () => false, Date.now()));
     } catch (e) {
-      // Demo data
-      setStats({
-        totalCases: 1250,
-        activeCases: 890,
-        closedCases: 360,
-        totalClients: 45,
-        totalDebtors: 1180,
-        totalCollected: 2450000,
-        totalPrincipal: 8500000,
-        collectionRate: 28.8,
-        avgCaseDuration: 145,
-        casesThisMonth: 48,
-        casesLastMonth: 42,
-        collectionsThisMonth: 185000,
-        collectionsLastMonth: 165000,
-        riskDistribution: [
-          { name: 'Düşük', count: 320, color: '#22c55e' },
-          { name: 'Orta', count: 450, color: '#eab308' },
-          { name: 'Yüksek', count: 120, color: '#ef4444' },
-        ],
-        statusDistribution: [
-          { name: 'Derdest', count: 650, color: '#3b82f6' },
-          { name: 'Haciz', count: 180, color: '#f97316' },
-          { name: 'Satış', count: 60, color: '#8b5cf6' },
-        ],
-        monthlyTrend: [
-          { month: 'Oca', cases: 35, collections: 120000 },
-          { month: 'Şub', cases: 42, collections: 145000 },
-          { month: 'Mar', cases: 38, collections: 135000 },
-          { month: 'Nis', cases: 45, collections: 165000 },
-          { month: 'May', cases: 48, collections: 185000 },
-        ],
-      });
-    } finally {
-      setLoading(false);
+      setState((prev) =>
+        fromError(e, prev, { endpoint: '/reports/advanced-stats', widget: 'Gelişmiş istatistikler' }),
+      );
     }
   };
 
@@ -87,7 +79,7 @@ export function AdvancedStats() {
     return ((current - previous) / previous * 100).toFixed(1);
   };
 
-  if (loading) {
+  if (isPending(state)) {
     return (
       <div className="bg-white rounded-xl border p-6">
         <div className="animate-pulse space-y-4">
@@ -102,13 +94,29 @@ export function AdvancedStats() {
     );
   }
 
-  if (!stats) return null;
+  if (!stats) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center">
+        <p className="text-sm font-medium text-red-600">İstatistikler alınamadı</p>
+        <button
+          type="button"
+          onClick={loadStats}
+          className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
+      </div>
+    );
+  }
 
   const caseChange = Number(getChangePercent(stats.casesThisMonth, stats.casesLastMonth));
   const collectionChange = Number(getChangePercent(stats.collectionsThisMonth, stats.collectionsLastMonth));
 
   return (
     <div className="space-y-4">
+      {isStale(state) && (
+        <p className="text-xs text-yellow-700">Güncel olmayabilir</p>
+      )}
       {/* Period Selector */}
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2">
