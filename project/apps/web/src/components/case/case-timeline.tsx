@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { 
   Clock, FileText, Send, CheckCircle, AlertCircle, 
   CreditCard, Gavel, FileCheck, User
@@ -36,26 +37,26 @@ interface CaseTimelineProps {
 export function CaseTimeline({ caseId }: CaseTimelineProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3c: GET basarisizsa UYDURMA kayit uretilmez; gorunur hata + retry.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadTimeline();
   }, [caseId]);
 
   const loadTimeline = async () => {
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/timeline`);
-      setEvents(res.data || []);
+      // WSMR-A3c: bozuk govde gercek "bos cizelge" SAYILMAZ -> ERROR.
+      const rows = (res as { data?: unknown })?.data;
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      setEvents(rows as never);
     } catch (e) {
-      // Demo data
-      const now = new Date();
-      setEvents([
-        { id: '1', type: 'CREATED', title: 'Dosya oluşturuldu', date: new Date(now.getTime() - 30 * 86400000).toISOString(), user: 'Admin' },
-        { id: '2', type: 'TEBLIGAT', title: 'Ödeme emri gönderildi', description: 'PTT ile tebligat', date: new Date(now.getTime() - 25 * 86400000).toISOString() },
-        { id: '3', type: 'TEBLIGAT', title: 'Tebligat teslim edildi', date: new Date(now.getTime() - 20 * 86400000).toISOString() },
-        { id: '4', type: 'HACIZ', title: 'Banka haczi talebi', description: 'Tüm bankalara haciz yazısı', date: new Date(now.getTime() - 15 * 86400000).toISOString() },
-        { id: '5', type: 'TAHSILAT', title: 'Kısmi tahsilat', description: '5.000 TL tahsil edildi', date: new Date(now.getTime() - 10 * 86400000).toISOString() },
-        { id: '6', type: 'NOTE', title: 'Not eklendi', description: 'Borçlu ile görüşme yapıldı', date: new Date(now.getTime() - 5 * 86400000).toISOString(), user: 'Av. Mehmet' },
-      ]);
+      // WSMR-A3c · UYDURMA KAYITLAR KALDIRILDI. Eskiden burada sabit sahte
+      // veri GERCEK dosya bilgisi gibi gosteriliyordu.
+      setEvents([]);
+      setLoadError(toActionErrorMessage(e, 'Zaman çizelgesi alınamadı'));
     } finally {
       setLoading(false);
     }
@@ -90,6 +91,22 @@ export function CaseTimeline({ caseId }: CaseTimelineProps) {
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  // WSMR-A3c: hata gorunur ve salt-okuma tekrar denenebilir.
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button
+          type="button"
+          onClick={loadTimeline}
+          className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }
