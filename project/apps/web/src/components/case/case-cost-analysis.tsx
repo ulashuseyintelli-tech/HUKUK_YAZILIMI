@@ -41,7 +41,19 @@ export function CaseCostAnalysis({ caseId }: CaseCostAnalysisProps) {
     setLoading(true);
     try {
       const res = await api.get(`/cases/${caseId}/cost-analysis`);
-      setData(res.data?.data || res.data);
+      // WSMR-A3c: govde SOZLESMEYE UYMUYORSA gercek veri sayilmaz -> ERROR.
+      // Eskiden dogrulanmadan atanıyordu; eksik `expenses` alani render'i
+      // `undefined.map` ile COKERTIYORDU (CI'da yakalandi).
+      const body = (res as { data?: any })?.data?.data ?? (res as { data?: any })?.data;
+      const valid =
+        body &&
+        typeof body === 'object' &&
+        typeof body.totalExpenses === 'number' &&
+        typeof body.totalRevenue === 'number' &&
+        Array.isArray(body.expenses) &&
+        Array.isArray(body.revenue);
+      if (!valid) throw new Error('MALFORMED_COST_ANALYSIS_RESPONSE');
+      setData(body as CostAnalysisData);
     } catch (e) {
       // WSMR-A3c · UYDURMA KAYITLAR KALDIRILDI. Eskiden burada sabit sahte
       // veri GERCEK dosya bilgisi gibi gosteriliyordu.

@@ -32,9 +32,15 @@ describe('CaseCostAnalysis', () => {
     expect(screen.getByRole('button', { name: 'Tekrar dene' })).toBeTruthy();
   });
 
+  it('bozuk gövde: sözleşmeye uymayan yanıt gerçek veri SAYILMAZ', async () => {
+    mocked.get.mockResolvedValue({ data: { data: { totalExpenses: 1 } } }); // eksik alanlar
+    render(<CaseCostAnalysis caseId="c1" />);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+  });
+
   it('retry başarısı: gerçek veri gelir, mutation üretilmez', async () => {
     mocked.get.mockRejectedValueOnce(new Error('geçici')).mockResolvedValue({
-      data: { data: { totalExpenses: 1, totalRevenue: 2, profit: 1, profitMargin: 50, expensesByCategory: [], monthlyTrend: [] } },
+      data: { data: { totalExpenses: 1, totalRevenue: 2, profit: 1, profitMargin: 50, expenses: [], revenue: [], monthlyTrend: [] } },
     });
     render(<CaseCostAnalysis caseId="c1" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Tekrar dene' }));
