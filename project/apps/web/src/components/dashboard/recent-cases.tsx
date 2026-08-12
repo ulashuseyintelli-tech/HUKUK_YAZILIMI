@@ -4,6 +4,15 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { FileText, Clock, ChevronRight, Star, StarOff } from 'lucide-react';
 import Link from 'next/link';
+import {
+  type DashboardReadState,
+  fromResponse,
+  fromError,
+  freshData,
+  staleData,
+  isPending,
+  isStale,
+} from '@/lib/dashboard-read-state';
 
 interface RecentCase {
   id: string;
@@ -15,9 +24,33 @@ interface RecentCase {
   isFavorite?: boolean;
 }
 
+/**
+ * WSMR-A2: GET başarısızsa ÜÇ SAHTE DOSYA üretiliyordu — uydurma takip numarası,
+ * müvekkil ve borçlu adı ("2024/1234 · ABC Ltd. · Ahmet Yılmaz") gerçek dosya gibi
+ * listeleniyordu. Artık hata görünür; gerçek boşluk yalnız doğrulanmış yanıttan doğar.
+ */
+const validateCases = (raw: unknown): RecentCase[] | undefined => {
+  const body = raw as { data?: unknown };
+  const inner = (body?.data as { data?: unknown })?.data;
+  const list = Array.isArray(inner) ? inner : Array.isArray(body?.data) ? body.data : undefined;
+  if (!Array.isArray(list)) return undefined;
+  const out: RecentCase[] = [];
+  for (const c of list.slice(0, 5) as Array<Record<string, any>>) {
+    if (!c || typeof c !== 'object' || typeof c.id !== 'string') return undefined;
+    out.push({
+      id: c.id,
+      fileNumber: c.fileNumber,
+      clientName: c.client?.displayName || c.client?.name,
+      debtorName: c.debtors?.[0]?.debtor?.name,
+      status: c.caseStatus || c.status,
+    } as RecentCase);
+  }
+  return out;
+};
+
 export function RecentCases() {
-  const [cases, setCases] = useState<RecentCase[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<DashboardReadState<RecentCase[]>>({ status: 'IDLE' });
+  const cases = freshData(state) ?? staleData(state) ?? [];
   const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
@@ -26,25 +59,12 @@ export function RecentCases() {
   }, []);
 
   const loadRecentCases = async () => {
+    setState((p) => (isPending(p) ? { status: 'LOADING' } : p));
     try {
       const res = await api.get('/cases?limit=5&sort=updatedAt');
-      const data = res.data?.data || res.data || [];
-      setCases(data.slice(0, 5).map((c: any) => ({
-        id: c.id,
-        fileNumber: c.fileNumber,
-        clientName: c.client?.displayName || c.client?.name,
-        debtorName: c.debtors?.[0]?.debtor?.name,
-        status: c.caseStatus || c.status,
-      })));
+      setState(fromResponse(res, validateCases, (v) => v.length === 0, Date.now()));
     } catch (e) {
-      // Demo data
-      setCases([
-        { id: '1', fileNumber: '2024/1234', clientName: 'ABC Ltd.', debtorName: 'Ahmet Yılmaz', status: 'ACTIVE' },
-        { id: '2', fileNumber: '2024/1235', clientName: 'XYZ A.Ş.', debtorName: 'Mehmet Demir', status: 'ACTIVE' },
-        { id: '3', fileNumber: '2024/1236', clientName: 'Test Şirketi', debtorName: 'Ali Veli', status: 'CLOSED' },
-      ]);
-    } finally {
-      setLoading(false);
+      setState((prev) => fromError(e, prev, { endpoint: '/cases', widget: 'Son dosyalar' }));
     }
   };
 
@@ -80,7 +100,7 @@ export function RecentCases() {
     return labels[status] || status;
   };
 
-  if (loading) {
+  if (isPending(state)) {
     return (
       <div className="bg-white rounded-xl border p-4">
         <div className="h-6 bg-gray-200 rounded w-32 mb-4 animate-pulse" />
@@ -103,7 +123,21 @@ export function RecentCases() {
         </Link>
       </div>
 
-      {cases.length === 0 ? (
+      {isStale(state) && (
+        <p className="mb-2 text-xs text-yellow-700">Güncel olmayabilir</p>
+      )}
+      {state.status === 'ERROR' && !isStale(state) ? (
+        <div className="text-center py-8">
+          <p className="text-sm font-medium text-red-600">Dosyalar alınamadı</p>
+          <button
+            type="button"
+            onClick={loadRecentCases}
+            className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      ) : cases.length === 0 ? (
         <p className="text-center text-gray-500 py-8 text-sm">Henüz dosya yok</p>
       ) : (
         <div className="space-y-2">
