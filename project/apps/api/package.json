@@ -13,6 +13,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:phase9c": "jest --testPathPattern=\"bundle-manifest|bundle-seal\" --verbose",
+    "test:office-e2e": "npx --yes tsx src/scripts/office-e2e-disposable-runtime.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "npx --yes tsx prisma/seed.ts",

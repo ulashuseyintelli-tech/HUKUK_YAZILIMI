@@ -139,3 +139,35 @@ src/modules/office/__tests__/office-f01-authorization.spec.ts
 src/modules/office/__tests__/office-f01-lawyer-contact-tier.spec.ts
 # OFFICE-P6A-RUNTIME-TRUTH-AND-RELEASE-R01 temporary manifest lease
 src/scripts/__tests__/office-runtime-release-readiness.core.spec.ts
+
+# OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01 — CI coverage closure
+# Fresh inventory at base 6c8e77ca: these current, DB-free OFFICE specs had no
+# manifest owner. Keep them in the existing OFFICE process; do not add a Jest step.
+src/modules/audit/__tests__/audit-confirm-token-replay.spec.ts
+src/modules/audit/__tests__/audit-safe-projection.spec.ts
+src/modules/audit/__tests__/audit.service.safe-projection.spec.ts
+src/modules/lawyer/__tests__/lawyer-deactivate-lifecycle.spec.ts
+src/modules/lawyer/__tests__/lawyer-list-masking.spec.ts
+src/modules/lawyer/__tests__/lawyer-office-approval-delegation.spec.ts
+src/modules/lawyer/__tests__/lawyer-privileged-field-guard.spec.ts
+src/modules/lawyer/__tests__/lawyer-update-duplicate-guard.spec.ts
+src/modules/lawyer/__tests__/lawyer-update-iban-guard-preserve.spec.ts
+src/modules/office-approval/__tests__/domain-owned-approval-enumeration.spec.ts
+src/modules/office-approval/__tests__/office-approval-domain-sync.service.spec.ts
+src/modules/office-approval/__tests__/office-approval-executor-backoff.spec.ts
+src/modules/office-approval/__tests__/office-approval-executor-cron.service.spec.ts
+src/modules/office-approval/__tests__/office-approval-executor.service.spec.ts
+src/modules/office-approval/__tests__/office-approval-read.service.spec.ts
+src/modules/office-approval/__tests__/office-approval.controller.spec.ts
+src/modules/office-approval/__tests__/office-approval.service.spec.ts
+src/modules/office/__tests__/office-credential-encryption.characterization.spec.ts
+src/modules/office/__tests__/office-credential-encryption.util.spec.ts
+src/modules/office/__tests__/office-credential-settings-guard.spec.ts
+src/modules/staff/__tests__/staff-deactivate-lifecycle.spec.ts
+src/modules/staff/__tests__/staff-duplicate-guard.spec.ts
+src/modules/staff/__tests__/staff-list-masking.spec.ts
+src/modules/staff/__tests__/staff-update-duplicate-guard.spec.ts
+# OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: actual execution-office module surface and lifecycle.
+src/modules/execution-office/__tests__/execution-office.module.spec.ts
+# OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01: fail-closed disposable runtime harness contract.
+src/scripts/office-e2e-disposable-runtime.spec.ts
