@@ -181,3 +181,11 @@ src/scripts/office-e2e-disposable-runtime.spec.ts
 # concurrency preflight timestamp'leri; CREATE için kanonik auth/invite yolu işaretlenir).
 # Yazım yolu (.ts runner) CI'da koşmaz; salt-okuma dry-run runner'ı da koşmaz.
 src/scripts/__tests__/office-cap02-identity-binding-plan.core.spec.ts
+
+# ── OFFICE-P2-IDENTITY-COMPLETION-R01 — B03 OPERATE (CREATE yolu) ──────────────
+# Owner-ratified B02 kanonik eşlemesi (2026-08-13) CREATE_NEW_USER×3 gerektirir; yazım
+# yolu kanonik UserInviteService.issue()'dur (pending User + AYNI tx'te OWN-01 bağ).
+# invite-issue.core kişi başına ISSUE / ALREADY_APPLIED / FAIL_CLOSED kararını verir:
+# owner eşlemesiyle birebir uyum (profil e-posta drift'i dahil, owner kural 7), duplicate
+# personel/e-posta reddi, beklenmeyen mevcut-User fail-closed'u. Runner CI'da koşmaz.
+src/scripts/__tests__/office-cap02-identity-binding-invite-issue.core.spec.ts
