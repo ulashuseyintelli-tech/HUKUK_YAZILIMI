@@ -310,9 +310,8 @@ PRODUCT_COMPLETE ancak şunlar BİRLİKTE kanıtlandığında ilan edilir:
 
 ```text
 PROGRAM:                  CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01
-PROGRAM STATUS:           PRODUCT_COMPLETE (§9 SEKİZ KALEM KANITLI) · PRODUCTION ACTIVE ·
-                          TERMINAL_READY — İLAN OWNER RATİFİKASYONUNDA
-                          (FD CANARY RECONCILIATION R02 — 2026-08-12)
+PROGRAM STATUS:           PRODUCT_COMPLETE · PRODUCTION_ACTIVE · TERMINAL_CLOSED
+                          (OWNER RATIFICATION — 2026-08-12)
 BASELINE:                 c867c18a438d92b108da0ab73e4e31c4d79db60f (materyalizasyon)
 KONSOLIDASYON TABANI:     452f79e7c2c915538b62803386a9c7712df9006d (fresh main)
 DOCUMENT SET:             MASTER-PLAN + C1 + C2 + C3 + X1 + X2 + X3
@@ -348,17 +347,20 @@ C3 "NOT STARTED"          → BAYAT.  Gerçek: 5/5 (#2275 · #2282 · #2285 · #
 X2 "NOT STARTED"          → BAYAT.  Gerçek: 4/4 ENGINEERING_COMPLETE / CLOSED (#2333)
 ACTIVATION DEBT satırı    → BAYAT.  X3 migration APPLY ve MONTHLY_DELIVERY KAPANDI.
 
-SAYFA BAŞLIĞI BAYATLIĞI — CROSS-LANE RULE gereği BU SAYFADAN DÜZELTİLMEZ:
-C3 ve X3 sayfa başlıkları hâlâ `ACTIVATION_PENDING` taşıyor; #2332 yalnız C1
-sayfasını güncelledi. Kanonik gerçeklik W4-ACT02B kanıt dokümanıdır. Düzeltme
-ilgili lane'in kendi işidir (X2 bunu #2333 ile kendi sayfasında yaptı).
+SAYFA BAŞLIĞI BAYATLIĞI — ✅ KAPANDI (2026-08-12): owner'ın TERMINAL_CLOSED
+ratifikasyonundaki açık cross-lane yetkisiyle X1 · X2 · C1 (ACTIVATION DEBT) ·
+C3 · X3 yaşayan durum satırları kanıta göre düzeltildi (yürütücü: Claude;
+kanıt: W4-ACT02B + FD-ACTIVATION-RECONCILIATION-R01 §3/R02). C2 zaten tutarlıydı.
+Tarihsel blok kayıtları DEĞİŞTİRİLMEDİ; dosya adlarındaki CODEX ibaresi tarihsel
+kimliktir, yeniden adlandırma YAPILMADI (owner talimatı md.8).
 
 ── KALAN BORÇ — PROGRAMIN TERMİNAL OLMASINI ENGELLEYEN ─────────────────────
 
-RESIDUAL-1  FD PUBLICATION ACTIVATION — ✅ RECONCILED (2026-08-10)
+RESIDUAL-1  FD PUBLICATION ACTIVATION — ✅ RECONCILED (2026-08-10) + BAŞLIKLAR KAPANDI
             Production ZATEN LEVEL_2 aktif; borç "aktivasyon" değil, KAYIT DRIFT'iydi.
-            KALAN: X1/X2 sayfa başlıklarının kendi lane authority'siyle düzeltilmesi
-            (CROSS-LANE RULE gereği bu sayfadan yapılmaz).
+            X1/X2 sayfa başlıkları 2026-08-12'de owner'ın açık cross-lane governance
+            yetkisiyle (TERMINAL_CLOSED ratifikasyonu md.4) kanıta göre düzeltildi
+            — yürütücü: Claude. KALAN: YOK.
 RESIDUAL-2  OLAY BİLDİRİMİ (FD) CANARY — ✅ KAPANDI (2026-08-11 canary · 2026-08-12 uzlaştırma)
             R01 §6 HARD STOP owner substrat kararıyla çözüldü: üçüncü onaycı
             (fatmatest) provizyon edildi; sentetik smoke-case üzerinde 1,00 TRY
@@ -369,15 +371,21 @@ RESIDUAL-2  OLAY BİLDİRİMİ (FD) CANARY — ✅ KAPANDI (2026-08-11 canary ·
             Kanıt: FD-ACTIVATION-RECONCILIATION-R01.md R02 (salt-okuma DB kanıt tablosu)
 
 MIGRATION OWNER:          X3 — aktif migration görevi YOK (paket tamamlandı ve uygulandı)
-TERMINAL DISPOSITION:     TERMINAL_READY — §9 sekiz kalem BİRLİKTE kanıtlandı (R02):
-                          ofis ekranı + portal + doğru finansal içerik + PDF + yetki +
-                          audit + idempotency + GERÇEK canary teslimi (dönemsel + olay).
-                          TERMINAL_CLOSED İLANI OWNER RATİFİKASYONU İLE ("kendi
-                          commit'in kendi kanıtın olamaz"). Kalan defter işi yalnız
-                          X1 sayfa başlığı bayatlığı (CROSS-LANE, CODEX) — BLOKLAMAZ.
-NEXT ELIGIBLE:            OWNER RATIFICATION — TERMINAL_CLOSED ilanı.
-                          (WSMR-R01 A2..D AYRI programdır; owner kuralı gereği
-                          CLIENT terminalini TEK BAŞINA BLOKLAMAZ.)
+TERMINAL DISPOSITION:     ✅ TERMINAL_CLOSED — FINAL DISPOSITION KAYDI:
+                          · OWNER RATIFICATION: 2026-08-12 (canlı oturum; doğrulanmış
+                            kanıt listesiyle — ENGINEERING 6/6, FD publication ACTIVE,
+                            frontier 125/125, iki canary PASS, dedupe/idempotency PASS,
+                            four-eyes PASS, audit ayrımı PASS, regresyonlar korunmuş)
+                          · MERGE ZİNCİRİ: #2341 / 3f47ef78 (WSMR-A1 kod) ·
+                            #2342 / bc06f5cb (A1 register + FINAL_SCAN) ·
+                            #2343 / 05818b97 (FD canary R02 + TERMINAL_READY)
+                          · FD CANARY KANITI: FD-ACTIVATION-RECONCILIATION-R01 R02
+                            (salt-okuma DB kanıt tablosu, v1 PUBLISHED 2026-08-11)
+                          · WSMR-R01 A2..D: AYRI reliability programı — NON-BLOCKING,
+                            CLIENT residual'ı DEĞİLDİR
+                          · RESIDUAL = 0 (açık CLIENT kalemi YOK · açık PR = 0)
+NEXT ELIGIBLE:            NONE — PROGRAM TERMİNAL. (WSMR-R01: A2 NEXT_ELIGIBLE,
+                          ayrı program sayfasından yürür.)
 ÖNCEKİ PROGRAM:           TERMINAL_CLOSED / PRODUCTION_VERIFIED / CANONICAL — DOKUNULMAZ
 PROGRAM LOCK:             CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```

@@ -25,9 +25,11 @@ BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   X2-B01 → X2-B02 → X2-B03 → X2-B04
 BLOCKS TOTAL: 4   COMPLETED: 4   REMAINING: 0
 ENGINEERING STATUS: ENGINEERING_COMPLETE / CLOSED
-PRODUCTION STATUS: CODE PRESENT / BOUND / REACHABLE · FLAGS DEFAULT-OFF · NOT ACTIVE
-ACTIVATION: OWNER-GATED / NOT PERFORMED
-NEXT ELIGIBLE: CLIENT PROGRAM TERMINAL CONSOLIDATION
+PRODUCTION STATUS: ACTIVE — LEVEL_2 (WRITE=true · PUBLICATION=true; runtime ölçümü,
+                   FD-ACTIVATION-RECONCILIATION-R01 §3; renderer zinciri R02 canary'siyle
+                   GERÇEK teslimde kanıtlandı 2026-08-11)
+ACTIVATION: RECONCILED — yeni aktivasyon YAPILMADI, kayıt drift'i düzeltildi
+NEXT ELIGIBLE: NONE — CLIENT PROGRAM TERMINAL_CLOSED (owner ratification 2026-08-12)
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
 
@@ -193,3 +195,14 @@ belirlenmemiştir**; mevcut modül desenine bakılarak kanıta dayanarak seçili
 ## GERÇEK DURMA KOŞULLARI (bu hatta)
 
 **D-1** owner politikasıyla gerçek çelişki · **D-2** başka müvekkil verisi sızıntısı.
+
+---
+
+## FINAL RECONCILIATION (2026-08-12 — owner cross-lane yetkisiyle, yürütücü: Claude)
+
+Bu sayfanın yaşayan durum satırları, owner'ın 2026-08-12 TERMINAL_CLOSED
+ratifikasyonundaki açık cross-lane governance yetkisiyle kanıta göre düzeltildi.
+Tarihsel blok kayıtları DEĞİŞTİRİLMEDİ. Kanıt: FD-ACTIVATION-RECONCILIATION-R01
+(§3 runtime ölçümü + R02 canary kanıt tablosu) · W4-ACT02B-PRODUCTION-ACTIVATION-R01 ·
+MASTER-PLAN §11 FINAL DISPOSITION. Program: PRODUCT_COMPLETE / PRODUCTION_ACTIVE /
+TERMINAL_CLOSED.

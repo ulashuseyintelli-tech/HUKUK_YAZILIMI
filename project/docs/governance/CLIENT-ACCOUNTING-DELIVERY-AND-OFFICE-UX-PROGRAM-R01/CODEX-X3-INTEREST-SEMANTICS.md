@@ -21,8 +21,10 @@ FORBIDDEN PATHS:
 BLOCK ORDER (DEĞİŞTİRİLEMEZ):
   X3-B01 → X3-B02 → X3-B03
 BLOCKS TOTAL: 3   COMPLETED: 3   REMAINING: NONE
-ACTIVATION DEBT: X3 migration production APPLY · CLIENT_STATEMENT_MONTHLY_DELIVERY activation · real DB/runtime UAT
-CURRENT DISPOSITION: ENGINEERING_COMPLETE / ACTIVATION_PENDING
+ACTIVATION DEBT: CLOSED — migration paketi APPLIED (üç migration frontier 125/125 içinde,
+                 unfinished=0) · CLIENT_STATEMENT_MONTHLY_DELIVERY ACTIVE (W4-ACT02B) ·
+                 UAT: C1-B03 RUNTIME_VERIFIED
+CURRENT DISPOSITION: ENGINEERING_COMPLETE / PRODUCTION_APPLIED / ACTIVATION_CLOSED
 NEXT ELIGIBLE: NONE WITHIN X3 — C1-B03 fresh main'de RUNTIME_VERIFIED; program devamı ayrı lane sırasından türetilir
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
@@ -256,10 +258,11 @@ diagnostic için scope genişletilmedi.
 **BLOCK RESULT:** `ENGINEERING_COMPLETE` + `ACTIVATION_PENDING`
 
 ```text
-X3 STATUS:                    ENGINEERING_COMPLETE / ACTIVATION_PENDING
+X3 STATUS:                    ENGINEERING_COMPLETE / PRODUCTION_APPLIED / ACTIVATION_CLOSED
 BLOCKS:                       3/3 COMPLETED
 REMAINING ENGINEERING BLOCK:  NONE
-PRODUCTION DEBT:              migration APPLY · monthly-delivery flag · real DB/runtime UAT
+PRODUCTION DEBT:              NONE — migration APPLIED (125/125) · monthly-delivery ACTIVE ·
+                              UAT C1-B03 RUNTIME_VERIFIED (kanıt: W4-ACT02B + MASTER-PLAN §11)
 NEXT ELIGIBLE:                NONE WITHIN X3 — C1-B03 fresh main'de RUNTIME_VERIFIED
 OWNER AUTHORIZATION REQUIRED: NO — engineering kapanışı için
 ```
@@ -276,3 +279,14 @@ göre, en küçük şema etkisi ilkesiyle kanıta dayanarak seçilir.
 
 **D-1** owner politikasıyla gerçek çelişki · **D-7** production migration için
 backup/restore kapısının sağlanamaması.
+
+---
+
+## FINAL RECONCILIATION (2026-08-12 — owner cross-lane yetkisiyle, yürütücü: Claude)
+
+Bu sayfanın yaşayan durum satırları, owner'ın 2026-08-12 TERMINAL_CLOSED
+ratifikasyonundaki açık cross-lane governance yetkisiyle kanıta göre düzeltildi.
+Tarihsel blok kayıtları DEĞİŞTİRİLMEDİ. Kanıt: FD-ACTIVATION-RECONCILIATION-R01
+(§3 runtime ölçümü + R02 canary kanıt tablosu) · W4-ACT02B-PRODUCTION-ACTIVATION-R01 ·
+MASTER-PLAN §11 FINAL DISPOSITION. Program: PRODUCT_COMPLETE / PRODUCTION_ACTIVE /
+TERMINAL_CLOSED.

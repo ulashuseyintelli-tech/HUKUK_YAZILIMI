@@ -29,8 +29,9 @@ X1 STATUS: ENGINEERING_COMPLETE / CLOSED
 BLOCKS: PRE01 + B01–B05 COMPLETE
 PRODUCT BLOCKS: 5/5 COMPLETE
 REMAINING PRODUCT ENGINEERING: NONE
-PRODUCTION: NOT ACTIVE
-PERSISTENT ACTIVATION: OWNER-GATED / NOT PERFORMED
+PRODUCTION: ACTIVE — LEVEL_2 (runtime ölçümü; FD-ACTIVATION-RECONCILIATION-R01 §3)
+PERSISTENT ACTIVATION: RECONCILED — production zaten aktifti; FD canary'si bu yüzeyden
+                       yayınlandı (2026-08-11, R02 kanıt tablosu)
 CANONICAL CHAIN: #2281, #2284, #2287, #2290, #2292, #2294, #2296
 PROGRAM LOCK: CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
@@ -135,3 +136,14 @@ bağlamında alt sayfa) peşinen belirlenmemiştir; mevcut
 
 **D-2** başka müvekkil verisi sızıntısı · **D-4** staff final approval/publish
 erişimi · **D-5** duplicate gerçek gönderim riski.
+
+---
+
+## FINAL RECONCILIATION (2026-08-12 — owner cross-lane yetkisiyle, yürütücü: Claude)
+
+Bu sayfanın yaşayan durum satırları, owner'ın 2026-08-12 TERMINAL_CLOSED
+ratifikasyonundaki açık cross-lane governance yetkisiyle kanıta göre düzeltildi.
+Tarihsel blok kayıtları DEĞİŞTİRİLMEDİ. Kanıt: FD-ACTIVATION-RECONCILIATION-R01
+(§3 runtime ölçümü + R02 canary kanıt tablosu) · W4-ACT02B-PRODUCTION-ACTIVATION-R01 ·
+MASTER-PLAN §11 FINAL DISPOSITION. Program: PRODUCT_COMPLETE / PRODUCTION_ACTIVE /
+TERMINAL_CLOSED.
