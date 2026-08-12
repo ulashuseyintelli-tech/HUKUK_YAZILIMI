@@ -310,8 +310,9 @@ PRODUCT_COMPLETE ancak şunlar BİRLİKTE kanıtlandığında ilan edilir:
 
 ```text
 PROGRAM:                  CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01
-PROGRAM STATUS:           ENGINEERING_COMPLETE 6/6 · PRODUCTION ACTIVE · NOT TERMINAL
-                          (TERMINAL CONSOLIDATION R01 — 2026-08-10)
+PROGRAM STATUS:           PRODUCT_COMPLETE (§9 SEKİZ KALEM KANITLI) · PRODUCTION ACTIVE ·
+                          TERMINAL_READY — İLAN OWNER RATİFİKASYONUNDA
+                          (FD CANARY RECONCILIATION R02 — 2026-08-12)
 BASELINE:                 c867c18a438d92b108da0ab73e4e31c4d79db60f (materyalizasyon)
 KONSOLIDASYON TABANI:     452f79e7c2c915538b62803386a9c7712df9006d (fresh main)
 DOCUMENT SET:             MASTER-PLAN + C1 + C2 + C3 + X1 + X2 + X3
@@ -358,25 +359,25 @@ RESIDUAL-1  FD PUBLICATION ACTIVATION — ✅ RECONCILED (2026-08-10)
             Production ZATEN LEVEL_2 aktif; borç "aktivasyon" değil, KAYIT DRIFT'iydi.
             KALAN: X1/X2 sayfa başlıklarının kendi lane authority'siyle düzeltilmesi
             (CROSS-LANE RULE gereği bu sayfadan yapılmaz).
-RESIDUAL-2  OLAY BİLDİRİMİ (FD) CANARY — AÇIK / BLOCKED_OWNER_DECISION
-            Master plan §10 İKİ canary şart koşar. Dönemsel ekstre canary'si
-            YAPILDI (C1-B04-CANARY-DELIVERY-PASS-R02 + W4-ACT02A / MONTHLY_STATEMENT_PDF).
-            FD canary'si YOK: canlıdaki tek FD 2026-08-07'de, deterministik
-            renderer'dan (2026-08-08 · #2277 · #2279) ÖNCE yayınlandı → kanıt yerine GEÇMEZ.
-            BLOCKER: FD kökü olmayan POSTED disposition yalnız TELLİ HUKUK'ta (2 adet);
-            Demo Firma'nın tek POSTED'ı zaten tüketilmiş. Gerçek müvekkil verisiyle
-            canary owner tarafından YASAKLANMIŞTIR.
-            GEREKEN: owner tarafından belirlenmiş güvenli canary substratı.
-            Kanıt: FD-ACTIVATION-RECONCILIATION-R01.md §6
+RESIDUAL-2  OLAY BİLDİRİMİ (FD) CANARY — ✅ KAPANDI (2026-08-11 canary · 2026-08-12 uzlaştırma)
+            R01 §6 HARD STOP owner substrat kararıyla çözüldü: üçüncü onaycı
+            (fatmatest) provizyon edildi; sentetik smoke-case üzerinde 1,00 TRY
+            POSTED disposition ile deterministik renderer zincirinden GERÇEK teslim.
+            v1 cmsnrjaj90004exnxx3w89yy8 PUBLISHED · providerMessageId KALICI ·
+            alıcı ulastelli@limagroup.com.tr (tek izinli) · üç ayrı kişi (§41.2) ·
+            dedupe/w5/monthly regresyon KORUNDU. Etkinleştirme zinciri #2336..#2340.
+            Kanıt: FD-ACTIVATION-RECONCILIATION-R01.md R02 (salt-okuma DB kanıt tablosu)
 
 MIGRATION OWNER:          X3 — aktif migration görevi YOK (paket tamamlandı ve uygulandı)
-TERMINAL DISPOSITION:     KAYDEDİLEMEZ — RESIDUAL-2 AÇIK.
-                          Kapanış eşiği (§9) "gerçek canary teslimi" şartını FD
-                          tarafı için KARŞILAMIYOR. Program TERMINAL_CLOSED
-                          İLAN EDİLMEZ.
-NEXT ELIGIBLE:            OWNER DECISION — FD canary için GÜVENLİ SUBSTRAT tahsisi
-                          (Demo Firma'da canary POSTED disposition veya üretim yetkisi).
-                          Aktivasyon tarafı KAPANDI — yeni GO gerekmiyor.
+TERMINAL DISPOSITION:     TERMINAL_READY — §9 sekiz kalem BİRLİKTE kanıtlandı (R02):
+                          ofis ekranı + portal + doğru finansal içerik + PDF + yetki +
+                          audit + idempotency + GERÇEK canary teslimi (dönemsel + olay).
+                          TERMINAL_CLOSED İLANI OWNER RATİFİKASYONU İLE ("kendi
+                          commit'in kendi kanıtın olamaz"). Kalan defter işi yalnız
+                          X1 sayfa başlığı bayatlığı (CROSS-LANE, CODEX) — BLOKLAMAZ.
+NEXT ELIGIBLE:            OWNER RATIFICATION — TERMINAL_CLOSED ilanı.
+                          (WSMR-R01 A2..D AYRI programdır; owner kuralı gereği
+                          CLIENT terminalini TEK BAŞINA BLOKLAMAZ.)
 ÖNCEKİ PROGRAM:           TERMINAL_CLOSED / PRODUCTION_VERIFIED / CANONICAL — DOKUNULMAZ
 PROGRAM LOCK:             CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY
 ```
