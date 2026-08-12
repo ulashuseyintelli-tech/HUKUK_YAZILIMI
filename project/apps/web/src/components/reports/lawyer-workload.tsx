@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { Scale, FileText, Clock, CheckCircle, AlertTriangle, TrendingUp } from 'lucide-react';
 
 interface LawyerWorkload {
@@ -21,6 +22,8 @@ interface LawyerWorkload {
 export function LawyerWorkloadReport() {
   const [lawyers, setLawyers] = useState<LawyerWorkload[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3b: GET basarisizsa DEMO KAYIT uretilmez; gorunur hata + retry.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<'table' | 'cards'>('cards');
 
   useEffect(() => {
@@ -28,17 +31,16 @@ export function LawyerWorkloadReport() {
   }, []);
 
   const loadData = async () => {
+    setLoadError(null);
     try {
       const res = await api.get('/reports/lawyer-workload');
       setLawyers(res.data?.data || []);
     } catch (e) {
-      // Demo data
-      setLawyers([
-        { id: '1', name: 'Ahmet', surname: 'Yılmaz', barNumber: '12345', totalCases: 85, activeCases: 62, pendingTasks: 15, completedThisMonth: 8, avgResponseTime: 2.5, upcomingHearings: 3, workloadScore: 78 },
-        { id: '2', name: 'Ayşe', surname: 'Demir', barNumber: '23456', totalCases: 65, activeCases: 48, pendingTasks: 8, completedThisMonth: 12, avgResponseTime: 1.8, upcomingHearings: 5, workloadScore: 65 },
-        { id: '3', name: 'Mehmet', surname: 'Kaya', barNumber: '34567', totalCases: 42, activeCases: 35, pendingTasks: 22, completedThisMonth: 4, avgResponseTime: 4.2, upcomingHearings: 2, workloadScore: 92 },
-        { id: '4', name: 'Fatma', surname: 'Öztürk', barNumber: '45678', totalCases: 55, activeCases: 40, pendingTasks: 10, completedThisMonth: 6, avgResponseTime: 2.1, upcomingHearings: 4, workloadScore: 58 },
-      ]);
+      // WSMR-A3b · UYDURMA RAPOR KAYITLARI KALDIRILDI.
+      // Eskiden burada sabit sahte satirlar (uydurma unvan, dosya sayisi ve
+      // tahsilat tutari) GERCEK rapor gibi gosteriliyordu.
+      setLawyers([]);
+      setLoadError(toActionErrorMessage(e, 'Avukat iş yükü raporu alınamadı'));
     } finally {
       setLoading(false);
     }
@@ -76,6 +78,22 @@ export function LawyerWorkloadReport() {
             <div key={i} className="h-48 bg-gray-100 rounded-xl animate-pulse" />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  // WSMR-A3b: hata gorunur ve tekrar denenebilir; sahte satir GOSTERILMEZ.
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button
+          type="button"
+          onClick={loadData}
+          className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }

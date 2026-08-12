@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { Users, TrendingUp, DollarSign, FileText, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import Link from 'next/link';
 
@@ -21,6 +22,8 @@ interface ClientPerformance {
 export function ClientPerformanceReport() {
   const [clients, setClients] = useState<ClientPerformance[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A3b: GET basarisizsa DEMO KAYIT uretilmez; gorunur hata + retry.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'totalCases' | 'collectionRate' | 'totalCollected'>('totalCases');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -29,17 +32,16 @@ export function ClientPerformanceReport() {
   }, []);
 
   const loadData = async () => {
+    setLoadError(null);
     try {
       const res = await api.get('/reports/client-performance');
       setClients(res.data?.data || []);
     } catch (e) {
-      // Demo data
-      setClients([
-        { id: '1', name: 'ABC Holding A.Ş.', totalCases: 45, activeCases: 32, closedCases: 13, totalPrincipal: 2500000, totalCollected: 850000, collectionRate: 34, avgCaseDuration: 120 },
-        { id: '2', name: 'XYZ Bankası', totalCases: 120, activeCases: 95, closedCases: 25, totalPrincipal: 8500000, totalCollected: 2100000, collectionRate: 24.7, avgCaseDuration: 180 },
-        { id: '3', name: 'Mehmet Yılmaz', totalCases: 8, activeCases: 5, closedCases: 3, totalPrincipal: 450000, totalCollected: 280000, collectionRate: 62.2, avgCaseDuration: 90 },
-        { id: '4', name: 'Demir İnşaat Ltd.', totalCases: 22, activeCases: 18, closedCases: 4, totalPrincipal: 1200000, totalCollected: 320000, collectionRate: 26.7, avgCaseDuration: 150 },
-      ]);
+      // WSMR-A3b · UYDURMA RAPOR KAYITLARI KALDIRILDI.
+      // Eskiden burada sabit sahte satirlar (uydurma unvan, dosya sayisi ve
+      // tahsilat tutari) GERCEK rapor gibi gosteriliyordu.
+      setClients([]);
+      setLoadError(toActionErrorMessage(e, 'Müvekkil performans raporu alınamadı'));
     } finally {
       setLoading(false);
     }
@@ -71,6 +73,22 @@ export function ClientPerformanceReport() {
           ))}
         </div>
         <div className="h-64 bg-gray-100 rounded-xl animate-pulse" />
+      </div>
+    );
+  }
+
+  // WSMR-A3b: hata gorunur ve tekrar denenebilir; sahte satir GOSTERILMEZ.
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center" role="alert">
+        <p className="text-sm font-medium text-red-600">{loadError}</p>
+        <button
+          type="button"
+          onClick={loadData}
+          className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }
