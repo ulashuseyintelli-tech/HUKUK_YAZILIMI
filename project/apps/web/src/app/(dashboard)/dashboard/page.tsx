@@ -10,6 +10,14 @@ import {
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useUserSettings } from '@/lib/user-settings';
+import {
+  type DashboardReadState,
+  fromSettled,
+  freshData,
+  isPending,
+  isStale,
+  staleData,
+} from '@/lib/dashboard-read-state';
 
 import { ActivityFeed } from '@/components/dashboard/activity-feed';
 import { UpcomingEvents } from '@/components/dashboard/upcoming-events';
@@ -56,13 +64,84 @@ interface ExpiringPoa {
   daysRemaining: number;
 }
 
+/**
+ * Yanıt doğrulayıcıları — WSMR-A2.
+ *
+ * Her biri gövdeyi ya beklenen şekle indirger ya da `undefined` döner. `undefined`
+ * BOZUK yanıt demektir ve gerçek sıfır/boş SAYILMAZ; çağıran onu ERROR'a çevirir.
+ * Sayı alanları `Number.isFinite` ile denetlenir: eksik alan veya `null` geldiğinde
+ * kart "0" göstermek yerine "veri alınamadı" durumuna düşer.
+ */
+const validateAutomationStats = (raw: unknown): AutomationStats | undefined => {
+  const d = (raw as { data?: { data?: unknown } })?.data?.data as Record<string, unknown> | undefined;
+  if (!d || typeof d !== 'object') return undefined;
+  const keys = ['totalCases', 'autoCases', 'pendingActions', 'completedToday'] as const;
+  if (!keys.every((k) => typeof d[k] === 'number' && Number.isFinite(d[k]))) return undefined;
+  return {
+    totalCases: d.totalCases as number,
+    autoCases: d.autoCases as number,
+    pendingActions: d.pendingActions as number,
+    completedToday: d.completedToday as number,
+  };
+};
+
+const validateAiConfigured = (raw: unknown): boolean | undefined => {
+  const d = (raw as { data?: { data?: unknown } })?.data?.data as Record<string, unknown> | undefined;
+  if (!d || typeof d !== 'object') return undefined;
+  // Yapılandırılmamış olduğunu iddia etmek için GERÇEK bir `false` gerekir.
+  return typeof d.isOpenAiConfigured === 'boolean' ? d.isOpenAiConfigured : undefined;
+};
+
+const validateRiskSummary = (raw: unknown): RiskSummaryData | undefined => {
+  const d = (raw as { data?: { data?: unknown } })?.data?.data as Record<string, unknown> | undefined;
+  if (!d || typeof d !== 'object') return undefined;
+  if (typeof d.totalActive !== 'number' || !Number.isFinite(d.totalActive)) return undefined;
+  if (!Array.isArray(d.distribution)) return undefined;
+  const s = d.summary as Record<string, unknown> | undefined;
+  if (!s || typeof s !== 'object') return undefined;
+  if (!(['high', 'medium', 'low', 'unassigned'] as const).every((k) => typeof s[k] === 'number')) {
+    return undefined;
+  }
+  return d as unknown as RiskSummaryData;
+};
+
+const validateExpiringPoas = (raw: unknown): ExpiringPoa[] | undefined => {
+  const d = (raw as { data?: { data?: unknown } })?.data?.data;
+  if (!Array.isArray(d)) return undefined;
+  const now = Date.now();
+  const out: ExpiringPoa[] = [];
+  for (const poa of d as Array<Record<string, any>>) {
+    if (!poa || typeof poa !== 'object' || typeof poa.id !== 'string') return undefined;
+    const validUntil = new Date(poa.validUntil);
+    if (Number.isNaN(validUntil.getTime())) return undefined;
+    out.push({
+      id: poa.id,
+      clientName: poa.client?.displayName || 'Bilinmeyen Müvekkil',
+      lawyerName: poa.lawyers?.[0]?.lawyer
+        ? `${poa.lawyers[0].lawyer.name} ${poa.lawyers[0].lawyer.surname}`
+        : 'Bilinmeyen Avukat',
+      validUntil: poa.validUntil,
+      daysRemaining: Math.ceil((validUntil.getTime() - now) / (1000 * 60 * 60 * 24)),
+    });
+  }
+  return out;
+};
+
 export default function DashboardPage() {
-  const [automationStats, setAutomationStats] = useState<AutomationStats | null>(null);
-  const [riskSummary, setRiskSummary] = useState<RiskSummaryData | null>(null);
+  const [automation, setAutomation] = useState<DashboardReadState<AutomationStats>>({ status: 'IDLE' });
+  const [risk, setRisk] = useState<DashboardReadState<RiskSummaryData>>({ status: 'IDLE' });
+  const [ai, setAi] = useState<DashboardReadState<boolean>>({ status: 'IDLE' });
+  const [poas, setPoas] = useState<DashboardReadState<ExpiringPoa[]>>({ status: 'IDLE' });
 
-  const [aiConfigured, setAiConfigured] = useState(false);
-
-  const [expiringPoas, setExpiringPoas] = useState<ExpiringPoa[]>([]);
+  const automationStats = freshData(automation) ?? staleData(automation);
+  const riskSummary = freshData(risk) ?? staleData(risk);
+  const expiringPoas = freshData(poas) ?? staleData(poas) ?? [];
+  /**
+   * ÜÇ DURUMLU: `true` | `false` | `undefined` (bilinmiyor).
+   * `false` YALNIZ doğrulanmış yanıttan doğar; hata/yükleniyor halinde `undefined`
+   * kalır ve arayüz "AI Yapılandırılmadı" İDDİA ETMEZ.
+   */
+  const aiConfigured = freshData(ai) ?? staleData(ai);
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
   const { settings, updateSettings } = useUserSettings();
   const widgets = settings.dashboardWidgets;
@@ -111,47 +190,49 @@ export default function DashboardPage() {
     loadDashboardData();
   }, []);
 
+  /**
+   * Dört okuma yolu BİRBİRİNDEN BAĞIMSIZ yürür (`allSettled`): birinin hatası
+   * diğerlerinin doğrulanmış verisini düşürmez. Hiçbir yol hatayı varsayılan
+   * değere çevirmez; her yol kendi durumunu taşır.
+   */
   const loadDashboardData = async () => {
-    try {
-      const [autoRes, aiRes, riskRes, poaRes] = await Promise.all([
-        api.get('/automation/stats').catch(() => ({ data: null })),
-        api.get('/ai/stats').catch(() => ({ data: null })),
-        api.get('/reports/risk-summary').catch(() => ({ data: null })),
-        api.get('/poa/expiring/list?days=30').catch(() => ({ data: null })),
-      ]);
-      
-      if (autoRes.data?.data) {
-        setAutomationStats(autoRes.data.data);
-      }
-      if (aiRes.data?.data) {
-        setAiConfigured(aiRes.data.data.isOpenAiConfigured);
-      }
-      if (riskRes.data?.data) {
-        setRiskSummary(riskRes.data.data);
-      }
-      if (poaRes.data?.data) {
-        // Süresi dolmak üzere olan vekaletleri işle
-        const poas = poaRes.data.data.map((poa: any) => {
-          const validUntil = new Date(poa.validUntil);
-          const now = new Date();
-          const diffTime = validUntil.getTime() - now.getTime();
-          const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          
-          return {
-            id: poa.id,
-            clientName: poa.client?.displayName || 'Bilinmeyen Müvekkil',
-            lawyerName: poa.lawyers?.[0]?.lawyer ? 
-              `${poa.lawyers[0].lawyer.name} ${poa.lawyers[0].lawyer.surname}` : 
-              'Bilinmeyen Avukat',
-            validUntil: poa.validUntil,
-            daysRemaining,
-          };
-        });
-        setExpiringPoas(poas);
-      }
-    } catch (error) {
-      console.error('Dashboard data load error:', error);
-    }
+    setAutomation((p) => (isPending(p) ? { status: 'LOADING' } : p));
+    setRisk((p) => (isPending(p) ? { status: 'LOADING' } : p));
+    setAi((p) => (isPending(p) ? { status: 'LOADING' } : p));
+    setPoas((p) => (isPending(p) ? { status: 'LOADING' } : p));
+
+    const [autoRes, aiRes, riskRes, poaRes] = await Promise.allSettled([
+      api.get('/automation/stats'),
+      api.get('/ai/stats'),
+      api.get('/reports/risk-summary'),
+      api.get('/poa/expiring/list?days=30'),
+    ]);
+    const now = Date.now();
+
+    setAutomation((prev) =>
+      fromSettled(autoRes, validateAutomationStats, () => false, prev, {
+        endpoint: '/automation/stats',
+        widget: 'Otomasyon istatistikleri',
+      }, now),
+    );
+    setAi((prev) =>
+      fromSettled(aiRes, validateAiConfigured, () => false, prev, {
+        endpoint: '/ai/stats',
+        widget: 'AI durumu',
+      }, now),
+    );
+    setRisk((prev) =>
+      fromSettled(riskRes, validateRiskSummary, (v) => v.totalActive === 0, prev, {
+        endpoint: '/reports/risk-summary',
+        widget: 'Risk özeti',
+      }, now),
+    );
+    setPoas((prev) =>
+      fromSettled(poaRes, validateExpiringPoas, (v) => v.length === 0, prev, {
+        endpoint: '/poa/expiring/list',
+        widget: 'Süresi dolan vekaletler',
+      }, now),
+    );
   };
 
   return (
@@ -183,13 +264,20 @@ export default function DashboardPage() {
           >
             <Settings2 className="h-3 w-3" /> Widget Ayarları
           </button>
-          {aiConfigured ? (
+          {aiConfigured === true && (
             <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
               <Brain className="h-3 w-3" /> AI Aktif
             </span>
-          ) : (
+          )}
+          {aiConfigured === false && (
             <span className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
               <Brain className="h-3 w-3" /> AI Yapılandırılmadı
+            </span>
+          )}
+          {aiConfigured === undefined && (
+            <span className="flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+              <Brain className="h-3 w-3" />
+              {isPending(ai) ? 'AI durumu yükleniyor…' : 'AI durumu alınamadı'}
             </span>
           )}
         </div>
@@ -258,10 +346,10 @@ export default function DashboardPage() {
               <div key={widgetId} {...wrapperProps}>
                 {dragHandle}
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard title="Toplam Dosya" value={automationStats?.totalCases?.toString() || '0'} icon={<FileText className="h-5 w-5" />} color="blue" />
-                  <StatCard title="Otomatik Mod" value={automationStats?.autoCases?.toString() || '0'} subtitle="dosya" icon={<Zap className="h-5 w-5" />} color="green" />
-                  <StatCard title="Bekleyen İşlem" value={automationStats?.pendingActions?.toString() || '0'} icon={<Clock className="h-5 w-5" />} color="yellow" />
-                  <StatCard title="Bugün Tamamlanan" value={automationStats?.completedToday?.toString() || '0'} icon={<CheckSquare className="h-5 w-5" />} color="purple" />
+                  <StatCard title="Toplam Dosya" state={automation} select={(s) => s.totalCases} onRetry={loadDashboardData} icon={<FileText className="h-5 w-5" />} color="blue" />
+                  <StatCard title="Otomatik Mod" state={automation} select={(s) => s.autoCases} onRetry={loadDashboardData} subtitle="dosya" icon={<Zap className="h-5 w-5" />} color="green" />
+                  <StatCard title="Bekleyen İşlem" state={automation} select={(s) => s.pendingActions} onRetry={loadDashboardData} icon={<Clock className="h-5 w-5" />} color="yellow" />
+                  <StatCard title="Bugün Tamamlanan" state={automation} select={(s) => s.completedToday} onRetry={loadDashboardData} icon={<CheckSquare className="h-5 w-5" />} color="purple" />
                 </div>
               </div>
             );
@@ -270,7 +358,7 @@ export default function DashboardPage() {
             return (
               <div key={widgetId} {...wrapperProps}>
                 {dragHandle}
-                <RiskAutomationSection riskSummary={riskSummary} aiConfigured={aiConfigured} />
+                <RiskAutomationSection riskSummary={riskSummary} riskState={risk} aiConfigured={aiConfigured} onRetry={loadDashboardData} />
               </div>
             );
           
@@ -359,19 +447,62 @@ export default function DashboardPage() {
   );
 }
 
+/**
+ * WSMR-A2: kart değeri artık hazır bir string DEĞİL, okuma durumundan türetilir.
+ * `state` + `select` alır; böylece "gerçek 0" ile "veri alınamadı" aynı görünemez.
+ */
 function StatCard({
   title,
-  value,
+  state,
+  select,
   subtitle,
   icon,
   color = 'blue',
+  onRetry,
 }: {
   title: string;
-  value: string;
+  state: DashboardReadState<AutomationStats>;
+  select: (value: AutomationStats) => number;
   subtitle?: string;
   icon: React.ReactNode;
   color?: 'blue' | 'green' | 'yellow' | 'purple';
+  onRetry: () => void;
 }) {
+  const fresh = freshData(state);
+  const stale = staleData(state);
+  const value = fresh ?? stale;
+
+  let body: React.ReactNode;
+  if (isPending(state)) {
+    body = (
+      <span className="text-sm text-muted-foreground" role="status">
+        Yükleniyor…
+      </span>
+    );
+  } else if (state.status === 'ERROR' && value === undefined) {
+    // Hata + gösterilecek doğrulanmış veri yok → RAKAM BASILMAZ.
+    body = (
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium text-red-600">Veri alınamadı</span>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="self-start text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
+      </span>
+    );
+  } else {
+    body = (
+      <span className="flex flex-col gap-0.5">
+        <span>{value === undefined ? '—' : String(select(value as AutomationStats))}</span>
+        {isStale(state) && (
+          <span className="text-[10px] font-normal text-yellow-700">Güncel olmayabilir</span>
+        )}
+      </span>
+    );
+  }
   const colors = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
@@ -386,49 +517,19 @@ function StatCard({
         <span className={`p-1.5 sm:p-2 rounded-lg ${colors[color]}`}>{icon}</span>
       </div>
       <div className="mt-2 sm:mt-3">
-        <span className="text-2xl sm:text-3xl font-bold">{value}</span>
-        {subtitle && <span className="ml-1 text-xs sm:text-sm text-muted-foreground">{subtitle}</span>}
+        <span className="text-2xl sm:text-3xl font-bold">{body}</span>
+        {subtitle && freshData(state) !== undefined && (
+          <span className="ml-1 text-xs sm:text-sm text-muted-foreground">{subtitle}</span>
+        )}
       </div>
     </div>
   );
 }
 
-function RiskBar({ 
-  label, 
-  count, 
-  total, 
-  color 
-}: { 
-  label: string; 
-  count: number; 
-  total: number; 
-  color: 'green' | 'yellow' | 'orange' | 'red';
-}) {
-  const percentage = total > 0 ? (count / total) * 100 : 0;
-  const colors = {
-    green: 'bg-green-500',
-    yellow: 'bg-yellow-500',
-    orange: 'bg-orange-500',
-    red: 'bg-red-500',
-  };
+// NOT: sabit renkli `RiskBar` KALDIRILDI — tek çağrısı, veri yokken dört sıfır risk
+// çubuğu çizen sahte fallback'ti (WSMR-A2). Gerçek veri `RiskBarDynamic` ile çizilir.
 
-  return (
-    <div>
-      <div className="flex justify-between text-sm mb-1">
-        <span>{label}</span>
-        <span className="font-medium">{count}</span>
-      </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div 
-          className={`h-full ${colors[color]} rounded-full transition-all`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function RiskBarDynamic({ 
+function RiskBarDynamic({
   label, 
   count, 
   total, 
@@ -513,7 +614,18 @@ function ExpiringPoasWidget({ expiringPoas }: { expiringPoas: ExpiringPoa[] }) {
 }
 
 // Risk & Automation Section
-function RiskAutomationSection({ riskSummary, aiConfigured }: { riskSummary: RiskSummaryData | null; aiConfigured: boolean }) {
+function RiskAutomationSection({
+  riskSummary,
+  riskState,
+  aiConfigured,
+  onRetry,
+}: {
+  riskSummary: RiskSummaryData | undefined;
+  riskState: DashboardReadState<RiskSummaryData>;
+  /** ÜÇ DURUMLU: `undefined` = bilinmiyor (hata/yükleniyor). */
+  aiConfigured: boolean | undefined;
+  onRetry: () => void;
+}) {
   return (
     <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
       {/* Risk Dağılımı */}
@@ -522,30 +634,54 @@ function RiskAutomationSection({ riskSummary, aiConfigured }: { riskSummary: Ris
           <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
           Risk Dağılımı
         </h2>
-        {riskSummary ? (
-          <div className="space-y-3">
-            {riskSummary.distribution.map((risk) => (
-              <RiskBarDynamic 
-                key={risk.code} 
-                label={risk.name} 
-                count={risk.count} 
-                total={riskSummary.totalActive} 
-                color={risk.color || '#9ca3af'} 
-              />
-            ))}
-            <div className="pt-3 mt-3 border-t">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Toplam Aktif Dosya</span>
-                <span className="font-semibold">{riskSummary.totalActive}</span>
-              </div>
-            </div>
+        {/*
+          WSMR-A2: eski davranış, veri yokken DÖRT SIFIR RİSK ÇUBUĞU çiziyordu —
+          API çökmüşken kullanıcı "hiç riskli dosya yok" diye okuyordu. Artık
+          yükleniyor / gerçek boş / hata durumları ayrı.
+        */}
+        {isPending(riskState) && (
+          <p className="text-sm text-muted-foreground" role="status">
+            Risk dağılımı yükleniyor…
+          </p>
+        )}
+        {!isPending(riskState) && riskSummary === undefined && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-red-600">Risk dağılımı alınamadı</p>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="text-xs text-blue-600 underline hover:text-blue-800"
+            >
+              Tekrar dene
+            </button>
           </div>
-        ) : (
+        )}
+        {riskSummary !== undefined && (
           <div className="space-y-3">
-            <RiskBar label="Düşük Risk" count={0} total={1} color="green" />
-            <RiskBar label="Orta Risk" count={0} total={1} color="yellow" />
-            <RiskBar label="Yüksek Risk" count={0} total={1} color="orange" />
-            <RiskBar label="Belirsiz" count={0} total={1} color="red" />
+            {isStale(riskState) && (
+              <p className="text-xs text-yellow-700">Güncel olmayabilir</p>
+            )}
+            {riskSummary.totalActive === 0 ? (
+              <p className="text-sm text-muted-foreground">Aktif riskli dosya yok.</p>
+            ) : (
+              <>
+                {riskSummary.distribution.map((risk) => (
+                  <RiskBarDynamic
+                    key={risk.code}
+                    label={risk.name}
+                    count={risk.count}
+                    total={riskSummary.totalActive}
+                    color={risk.color || '#9ca3af'}
+                  />
+                ))}
+                <div className="pt-3 mt-3 border-t">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Toplam Aktif Dosya</span>
+                    <span className="font-semibold">{riskSummary.totalActive}</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -556,90 +692,69 @@ function RiskAutomationSection({ riskSummary, aiConfigured }: { riskSummary: Ris
           <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
           Otomasyon Durumu
         </h2>
+        {/*
+          WSMR-A2 — BLOCKED_CONTRACT_EVIDENCE: "Kural Motoru / İş Akışı / Tebligat
+          Çalışıyor" satırları HİÇBİR veri kaynağına dayanmıyordu; motor çökse bile
+          yeşil "Çalışıyor" yazıyordu. Sağlık durumu veren bir endpoint sözleşmesi
+          repository'de YOK, uydurulmaz da — bu yüzden yanlış iddia kaldırıldı ve
+          yerine dürüst bir yokluk bildirimi kondu. Gerçek health endpoint'i
+          tanımlandığında bu blok ona bağlanır.
+        */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <span className="text-sm">Kural Motoru</span>
-            <span className="text-green-600 text-sm font-medium">Çalışıyor</span>
-          </div>
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <span className="text-sm">İş Akışı Motoru</span>
-            <span className="text-green-600 text-sm font-medium">Çalışıyor</span>
-          </div>
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <span className="text-sm">Tebligat Sistemi</span>
-            <span className="text-green-600 text-sm font-medium">Aktif</span>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Motor sağlık durumu için doğrulanmış bir veri kaynağı bulunmuyor.
+          </p>
           <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
             <span className="text-sm">AI Karar Modülü</span>
-            <span className={`text-sm font-medium ${aiConfigured ? 'text-green-600' : 'text-yellow-600'}`}>
-              {aiConfigured ? 'Aktif' : 'Yapılandır'}
-            </span>
+            {aiConfigured === undefined ? (
+              <span className="text-gray-600 text-sm font-medium">Durum alınamadı</span>
+            ) : (
+              <span
+                className={`text-sm font-medium ${aiConfigured ? 'text-green-600' : 'text-yellow-600'}`}
+              >
+                {aiConfigured ? 'Aktif' : 'Yapılandır'}
+              </span>
+            )}
           </div>
         </div>
       </div>
-
-      {/* Yaklaşan İşlemler */}
-      <div className="bg-white rounded-xl border p-4 sm:p-6">
-        <h2 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
-          <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
-          Yaklaşan Otomatik İşlemler
-        </h2>
-        <div className="space-y-3">
-          {[
-            { file: '2024/1234', action: 'Haciz talebi', time: '2 saat' },
-            { file: '2024/1235', action: 'Tebligat kontrolü', time: '4 saat' },
-            { file: '2024/1236', action: 'Satış talebi', time: '1 gün' },
-            { file: '2024/1237', action: 'Risk analizi', time: '2 gün' },
-          ].map((item, i) => (
-            <div key={i} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-              <div>
-                <p className="text-sm font-medium">{item.file}</p>
-                <p className="text-xs text-muted-foreground">{item.action}</p>
-              </div>
-              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                {item.time}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/*
+        WSMR-A2: "Yaklaşan Otomatik İşlemler" bloğu KALDIRILDI. Sabit dört sahte
+        dosya (2024/1234 "Haciz talebi 2 saat" …) gerçek planlanmış icra işlemiymiş
+        gibi gösteriliyordu. Zamanlanmış işlemleri veren bir endpoint sözleşmesi YOK
+        → BLOCKED_CONTRACT_EVIDENCE. Uydurma hukuki işlem gösterilmez.
+      */}
     </div>
   );
 }
 
 // AI Suggestions Widget
-function AiSuggestionsWidget({ aiConfigured }: { aiConfigured: boolean }) {
+//
+// WSMR-A2 — BLOCKED_CONTRACT_EVIDENCE: AI yapılandırılmış olduğunda burada ÜÇ SABİT
+// uydurma öneri ("2024/1234 · Banka haczi önerilir · %85 güven") gerçek model çıktısı
+// gibi gösteriliyordu. Avukata sahte hukuki tavsiye ve sahte güven skoru sunmak kabul
+// edilemez; öneri döndüren bir endpoint sözleşmesi de repository'de YOK. Uydurma
+// içerik kaldırıldı, yerine dürüst durum bildirimi kondu.
+function AiSuggestionsWidget({ aiConfigured }: { aiConfigured: boolean | undefined }) {
   return (
     <div className="bg-white rounded-xl border p-4 sm:p-6">
       <h2 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
         <Brain className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
         AI Önerileri
       </h2>
-      {aiConfigured ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            { file: '2024/1234', suggestion: 'Banka haczi önerilir', confidence: 85 },
-            { file: '2024/1235', suggestion: 'Araç sorgulaması yapılmalı', confidence: 78 },
-            { file: '2024/1236', suggestion: 'Taksitlendirme önerilebilir', confidence: 72 },
-          ].map((item, i) => (
-            <div key={i} className="p-3 bg-indigo-50 rounded-lg">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium">{item.file}</span>
-                <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded">
-                  %{item.confidence} güven
-                </span>
-              </div>
-              <p className="text-sm text-indigo-700">{item.suggestion}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-8 text-muted-foreground">
-          <Brain className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">AI modülü yapılandırılmadı</p>
-          <p className="text-xs mt-1">OpenAI API anahtarını .env dosyasına ekleyin</p>
-        </div>
-      )}
+      <div className="text-center py-8 text-muted-foreground">
+        <Brain className="h-12 w-12 mx-auto mb-3 opacity-30" />
+        {aiConfigured === undefined && <p className="text-sm">AI durumu alınamadı</p>}
+        {aiConfigured === false && (
+          <>
+            <p className="text-sm">AI modülü yapılandırılmadı</p>
+            <p className="text-xs mt-1">OpenAI API anahtarını .env dosyasına ekleyin</p>
+          </>
+        )}
+        {aiConfigured === true && (
+          <p className="text-sm">Bu dosya için öneri kaynağı henüz bağlı değil.</p>
+        )}
+      </div>
     </div>
   );
 }
