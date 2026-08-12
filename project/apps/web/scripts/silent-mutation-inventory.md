@@ -10,7 +10,7 @@
 |---|---|---|
 | BASE_SCAN | `77a347a9831522aebddcb4a0ec14767ff21c851b` | A1 worktree'sinin acildigi canonical merge SHA |
 | CURRENT_SCAN | `working-tree` | commit oncesi calisma agaci; her olcumde yeniden uretilir |
-| FINAL_SCAN | `PENDING` | squash-merge sonrasi canonical main; A1 kapanisinda doldurulur |
+| FINAL_SCAN | `3f47ef78d40fe957ad9958989ba3e7cf41e80c6f` | squash-merge sonrasi canonical main; A1 kapanis olcumu |
 
 BASE_SCAN sayimlari: false-success 32 · demo-fallback 69 · AST 102.
 Fark yalniz bu iki olcum arasindaki diff'ten turetilir; main'deki baska degisiklikler A1 basarisi SAYILMAZ.

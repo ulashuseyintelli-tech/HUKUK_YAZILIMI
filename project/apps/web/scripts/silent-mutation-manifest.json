@@ -14,8 +14,11 @@
       "note": "commit oncesi calisma agaci; her olcumde yeniden uretilir"
     },
     "FINAL_SCAN": {
-      "ref": null,
-      "note": "squash-merge sonrasi canonical main; A1 kapanisinda doldurulur"
+      "ref": "3f47ef78d40fe957ad9958989ba3e7cf41e80c6f",
+      "note": "squash-merge sonrasi canonical main; A1 kapanis olcumu",
+      "falseSuccessUnresolved": 0,
+      "astViolations": 58,
+      "demoFallbackFresh": 41
     }
   },
   "axes": {
