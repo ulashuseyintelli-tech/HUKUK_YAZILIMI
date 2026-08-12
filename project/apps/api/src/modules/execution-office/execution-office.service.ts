@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -51,10 +51,46 @@ export class ExecutionOfficeService {
     });
   }
 
+  /**
+   * Tenant-scoped icra dairesi guncellemesi. Request sahiplik/sistem alanlarini
+   * tasiyamaz; updateMany predicate'i hedefi atomik olarak id + trusted tenantId
+   * ile sinirlar, boylece read-before-write/TOCTOU araligi olusmaz.
+   *
+   * Cagrildigi yerler:
+   * - ExecutionOfficeController.update() -> PUT /execution-offices/:id
+   */
   async update(tenantId: string, id: string, data: any) {
-    return this.prisma.executionOffice.update({
-      where: { id },
-      data,
+    const updateData = {
+      name: data.name,
+      city: data.city,
+      district: data.district,
+      officeCode: data.officeCode,
+      uyapCode: data.uyapCode,
+      taxNumber: data.taxNumber,
+      bankName: data.bankName,
+      branchName: data.branchName,
+      iban: data.iban,
+      ibanHarc: data.ibanHarc,
+      ibanCezaevi: data.ibanCezaevi,
+      address: data.address,
+      phone: data.phone,
+      fax: data.fax,
+    };
+    if (Object.values(updateData).every((value) => value === undefined)) {
+      throw new BadRequestException('Guncellenecek izinli bir icra dairesi alani bulunamadi.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.executionOffice.updateMany({
+        where: { id, tenantId },
+        data: updateData,
+      });
+      if (count === 0) {
+        throw new NotFoundException('Icra dairesi bulunamadi.');
+      }
+      return tx.executionOffice.findFirstOrThrow({
+        where: { id, tenantId },
+      });
     });
   }
 

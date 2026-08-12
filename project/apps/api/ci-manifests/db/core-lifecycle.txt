@@ -35,3 +35,7 @@ src/modules/interest-engine/__tests__/golden-fixture-matrix.db-gated.integration
 src/modules/interest-engine/__tests__/scenario-diagnostic.db-gated.integration.spec.ts
 src/modules/poa/__tests__/poa-tenant-safety.db-gated.integration.spec.ts
 src/modules/reporting-line/__tests__/reporting-line-user-fk.db-gated.integration.spec.ts
+
+# OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01 — register/seed lifecycle coverage.
+# Requires TEST_DATABASE_URL and must execute on the disposable PostgreSQL job.
+src/modules/auth/__tests__/auth-register-seed.integration.spec.ts
