@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { 
   Bot, 
   Play, 
@@ -38,6 +42,18 @@ export function CaseAutomationPanel({ caseId, className }: CaseAutomationPanelPr
   const [tasks, setTasks] = useState<BotTask[]>([]);
   const [evidence, setEvidence] = useState<EvidenceReport | null>(null);
   const [loading, setLoading] = useState(true);
+  // PR-2A1: onay hatasi GORUNUR; icrabot gorev onayi sessizce kaybolamaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadData({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
 
@@ -45,8 +61,10 @@ export function CaseAutomationPanel({ caseId, className }: CaseAutomationPanelPr
     loadData();
   }, [caseId]);
 
-  const loadData = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: okuma hatasi YUTULMAZ; panel sessizce bos kalamaz.
+  const loadData = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [twinRes, tasksRes] = await Promise.all([
         icrabotApi.getDigitalTwin(caseId),
@@ -55,7 +73,8 @@ export function CaseAutomationPanel({ caseId, className }: CaseAutomationPanelPr
       setTwin(twinRes.data);
       setTasks(tasksRes.data);
     } catch (err) {
-      console.error('Otomasyon verisi yüklenemedi:', err);
+      setLoadError(toActionErrorMessage(err, 'Otomasyon verisi yüklenemedi.'));
+      if (opts?.propagateError) throw err;
     } finally {
       setLoading(false);
     }
@@ -107,15 +126,29 @@ export function CaseAutomationPanel({ caseId, className }: CaseAutomationPanelPr
   };
 
   const handleApproveTask = async (taskId: string) => {
-    setActionLoading(taskId);
-    try {
-      await icrabotApi.approveTask(taskId);
-      await loadData();
-    } catch (err) {
-      console.error('Görev onaylanamadı:', err);
-    } finally {
-      setActionLoading(null);
-    }
+    setActionError(null);
+    setStaleNotice(null);
+    // PR-2A1: gorev bazli kilit — ayni goreve ayni-tick ikinci onay HIC baslamaz;
+    // farkli gorevler bloklanmaz. Onay yalniz dogrulanmis sonucla yansitilir.
+    await rowLock.run(`icrabot:approve:${taskId}`, async () => {
+      setActionLoading(taskId);
+      try {
+        const outcome = await runMutation({
+          mutate: () => icrabotApi.approveTask(taskId),
+          refresh: () => loadData({ propagateError: true }),
+          failureMessage: 'Görev onaylanamadı. Görev BEKLEMEDE kaldı, lütfen tekrar deneyin.',
+          staleMessage: 'Görev ONAYLANDI, ancak panel yenilenemedi.',
+        });
+        if (!rowLock.isMounted()) return;
+        if (outcome.status === 'FAILED') {
+          setActionError(outcome.error.message);
+          return; // gorev satiri KORUNUR
+        }
+        if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+      } finally {
+        if (rowLock.isMounted()) setActionLoading(null);
+      }
+    });
   };
 
   if (loading) {
@@ -130,6 +163,17 @@ export function CaseAutomationPanel({ caseId, className }: CaseAutomationPanelPr
 
   return (
     <Card className={cn('overflow-hidden', className)}>
+      {/* PR-2A1: okuma ve onay hatalari GORUNUR. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+            Paneli yenile
+          </button>
+        </div>
+      ) : null}
       {/* Header */}
       <div 
         className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-purple-50 cursor-pointer"
@@ -181,7 +225,7 @@ export function CaseAutomationPanel({ caseId, className }: CaseAutomationPanelPr
             <Button
               size="sm"
               variant="outline"
-              onClick={loadData}
+              onClick={() => void loadData()}
               disabled={actionLoading !== null}
             >
               <RefreshCw className="w-4 h-4 mr-1" />

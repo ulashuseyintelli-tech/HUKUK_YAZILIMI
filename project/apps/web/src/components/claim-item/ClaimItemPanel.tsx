@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
 import {
   DollarSign,
@@ -94,24 +98,52 @@ export function ClaimItemPanel({
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  // PR-2A1: finansal mutation hatalari GORUNUR; faiz/kalem degeri uydurulmaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
+  // Silmesi KESINLESMIS fakat listede hala gorunen kalemler (SUCCESS_STALE).
+  const [deletedStaleIds, setDeletedStaleIds] = useState<string[]>([]);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadData({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) {
+      setStaleNotice(null);
+      setDeletedStaleIds([]);
+    }
+  };
   const [addType, setAddType] = useState<string>("");
   const [editItem, setEditItem] = useState<ClaimItem | null>(null); // PR-5c: metadata-edit modal hedefi
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [caseId]);
 
-  const loadData = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: `console.error` tek başına handling değildir — panel
+  // sessizce boşalıyordu. Hata GÖRÜNÜR; mutation refresh'i olarak çağrıldığında
+  // (`propagateError: true`) çağırana propagate edilir, aksi hâlde `runMutation`
+  // tazeleme hatasını göremez ve SUCCESS_STALE hiç çalışmaz.
+  // Malformed yanıt GERÇEK EMPTY sayılmaz: finansal listede boş liste ile bozuk
+  // yanıt aynı şey değildir.
+  const loadData = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [itemsRes, summaryRes] = await Promise.all([
         api.get(`/claim-items/case/${caseId}`),
         api.get(`/claim-items/case/${caseId}/summary`),
       ]);
-      setItems(itemsRes.data?.data || []);
-      setSummary(summaryRes.data?.data || null);
+      const rows = (itemsRes as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      setItems(rows as ClaimItem[]);
+      setSummary(((summaryRes as { data?: { data?: unknown } })?.data?.data as ClaimSummary) ?? null);
     } catch (error) {
-      console.error("Alacak kalemleri yüklenemedi:", error);
+      setLoadError(toActionErrorMessage(error, 'Alacak kalemleri yüklenemedi.'));
+      if (opts?.propagateError) throw error;
     } finally {
       setLoading(false);
     }
@@ -122,26 +154,78 @@ export function ClaimItemPanel({
   };
 
   const handleDelete = async (id: string) => {
+    // Cancel mutation BAŞLATMAZ; hiçbir istek gitmez, retry üretilmez.
     if (!confirm("Bu alacak kalemi için silme talebi oluşturulsun mu?")) return;
-    try {
-      const res = await api.delete(`/claim-items/${id}`);
-      if (res.data?.data?.approvalRequired) {
-        alert("Silme talebi onaya gönderildi.");
-      } else {
-        loadData();
+    setActionError(null);
+    setStaleNotice(null);
+    setApprovalNotice(null);
+
+    // PR-2A1: aynı kalem için senkron keyed lock; FARKLI kalemler birbirini bloklamaz.
+    await rowLock.run(`claim-item:delete:${caseId}:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/claim-items/${id}`),
+        // Tazeleme yalnız TERMINAL domain success'te anlamlıdır; `approvalRequired`
+        // dalında aşağıda ATLANIR (bkz. refresh koşulu).
+        refresh: undefined,
+        failureMessage: 'Alacak kalemi silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.',
+      });
+
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === 'FAILED') {
+        // Satır ve seçim AYNEN korunur (pessimistic).
+        setActionError(outcome.error.message);
+        return;
       }
-    } catch (error) {
-      console.error("Silme hatası:", error);
-    }
+
+      // HTTP başarısı ≠ domain başarısı. `approvalRequired` bir ARA DURUMDUR:
+      // silme GERÇEKLEŞMEDİ, kalem duruyor. Bu yüzden success yan etkisi (liste
+      // tazeleme, satır kaldırma) ÇALIŞMAZ; yalnız mevcut onay yüzeyi bildirilir.
+      const envelope = (outcome.data as { data?: { data?: { approvalRequired?: boolean } } })
+        ?.data?.data;
+      if (envelope?.approvalRequired) {
+        setApprovalNotice(
+          'Silme talebi onaya gönderildi. Alacak kalemi ONAY VERİLENE KADAR DURUR.',
+        );
+        return;
+      }
+
+      // Terminal domain success → liste sunucudan yeniden okunur.
+      const refreshed = await runRefreshOnly(() => loadData({ propagateError: true }));
+      if (!rowLock.isMounted()) return;
+      if (!refreshed) {
+        // Silme KESİNLEŞTİ; tekrar delete SUNULMAZ, yalnız refresh-only uzlaştırma.
+        setStaleNotice('Alacak kalemi SİLİNDİ, ancak liste yenilenemedi.');
+        setDeletedStaleIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      }
+    });
   };
 
   const handleRecalculateInterest = async () => {
-    try {
-      await api.post(`/claim-items/case/${caseId}/recalculate-interest`);
-      loadData();
-    } catch (error) {
-      console.error("Faiz hesaplama hatası:", error);
-    }
+    setActionError(null);
+    setStaleNotice(null);
+    setApprovalNotice(null);
+
+    // PR-2A1: ANAHTAR gerçek endpoint sözleşmesinden türer —
+    // `POST /claim-items/case/:caseId/recalculate-interest` DOSYA kapsamlıdır,
+    // kalem kimliği taşımaz. Bu yüzden anahtar da dosya bazlıdır; kalem kimliği
+    // eklemek aynı dosya için eşzamanlı çift hesaplamaya izin verirdi.
+    await rowLock.run(`claim-item:interest:${caseId}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.post(`/claim-items/case/${caseId}/recalculate-interest`),
+        // Sonuç YALNIZ sunucudan yeniden okunarak gösterilir; yerel faiz değeri
+        // ASLA uydurulmaz. Başarısızlıkta eski değerler olduğu gibi kalır.
+        refresh: () => loadData({ propagateError: true }),
+        failureMessage: 'Faiz yeniden hesaplanamadı. Mevcut değerler DEĞİŞMEDİ.',
+        staleMessage: 'Faiz YENİDEN HESAPLANDI, ancak liste yenilenemedi.',
+      });
+
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return;
+      }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   if (loading) {
@@ -152,9 +236,41 @@ export function ClaimItemPanel({
     );
   }
 
-
   return (
     <div className="space-y-6">
+      {/* PR-2A1: okuma ve finansal mutation hataları GÖRÜNÜR — tek kopya, ana render
+          dalında. Loading erken dönüşünde bant GÖSTERİLMEZ (loading/load-error/data
+          durumları birbirine karışmaz). */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {approvalNotice ? (
+        <div
+          role="status"
+          data-testid="approval-notice"
+          className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800"
+        >
+          {approvalNotice}
+        </div>
+      ) : null}
+      {staleNotice ? (
+        <div
+          role="status"
+          data-testid="stale-notice"
+          className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          <span className="flex-1">{staleNotice}</span>
+          <button
+            type="button"
+            onClick={handleStaleRefresh}
+            disabled={refreshingStale}
+            data-testid="stale-refresh"
+            className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50"
+          >
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
+
       {/* Özet Kartları */}
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -299,8 +415,17 @@ export function ClaimItemPanel({
                   )}
                   {!readOnly && (
                   <button
+                    type="button"
                     onClick={() => handleDelete(item.id)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                    // PR-2A1: `title="Sil"` erisilebilir ad olarak YETMEZ ve coklu
+                    // kalemde hangi satir oldugunu ayirt ettirmez. Ad kalem kimligine
+                    // baglanir; ekran okuyucu ve testler dogru satiri hedefler.
+                    aria-label={`${itemTypeLabels[item.itemType]?.label ?? 'Kalem'} kalemini sil`}
+                    // SUCCESS_STALE: silme KESINLESTI, gorunum bayat — bu satir icin
+                    // silme AKSIYONU KAPALI; yalniz refresh-only uzlastirma sunulur.
+                    // Diger kalemler ETKILENMEZ.
+                    disabled={deletedStaleIds.includes(item.id)}
+                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg disabled:opacity-40 disabled:hover:bg-transparent"
                     title="Sil"
                   >
                     <Trash2 className="h-4 w-4" />

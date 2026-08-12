@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
 import { Calendar, Clock, AlertTriangle, Plus, Edit, Trash2, Check, X, Loader2, Bell } from 'lucide-react';
 
 interface Deadline {
@@ -34,6 +38,13 @@ export function CaseDeadlines({ caseId }: CaseDeadlinesProps) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // PR-2A1: mutation hatasi GORUNUR olmali; sure kaydi uydurulamaz (zamanasimi riski).
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Mutation BASARILI ama liste tazelenemedi -> kayit durur, gorunum bayat.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const submitLock = useSubmitLock();
+  const rowLock = useKeyedSubmitLock();
 
   const [formData, setFormData] = useState({
     title: '',
@@ -44,47 +55,32 @@ export function CaseDeadlines({ caseId }: CaseDeadlinesProps) {
   });
 
   useEffect(() => {
-    loadDeadlines();
+    void loadDeadlines();
   }, [caseId]);
 
-  const loadDeadlines = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: okuma yolu hatayi YUTMAZ ve demo veri URETMEZ.
+  //
+  // Iki cagrim ACIKCA ayrilir (bos catch/suppression YOK — bu programin kendi kurali):
+  //  - initial load: hata state'e yazilir, promise KONTROLLU tamamlanir
+  //  - mutation refresh (`propagateError: true`): ayni hata state'e yazilir VE cagirana
+  //    propagate edilir; aksi halde `runMutation` refresh basarisizligini goremez,
+  //    yanlislikla SUCCESS uretir ve SUCCESS_STALE hic calismaz.
+  //
+  // Malformed yanit GERCEK EMPTY sayilmaz: `data` dizi degilse dogrulanmis bos liste
+  // degildir -> gorunur load error + refresh failure.
+  const loadDeadlines = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/deadlines`);
-      setDeadlines(res.data?.data || []);
+      const rows = (res as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(rows)) {
+        throw new Error('MALFORMED_LIST_RESPONSE');
+      }
+      setDeadlines(rows as never);
     } catch (e) {
-      // Demo data
-      const today = new Date();
-      setDeadlines([
-        {
-          id: '1',
-          title: 'Ödeme Emri Tebligatı',
-          type: 'TEBLIGAT',
-          dueDate: new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          reminderDays: 2,
-          isCompleted: false,
-          createdAt: new Date(today.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '2',
-          title: 'İtiraz Süresi',
-          type: 'ITIRAZ',
-          dueDate: new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          reminderDays: 3,
-          isCompleted: false,
-          notes: 'Borçlu itiraz edebilir',
-          createdAt: new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '3',
-          title: 'Haciz Talebi Son Tarih',
-          type: 'HACIZ',
-          dueDate: new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          reminderDays: 5,
-          isCompleted: true,
-          createdAt: new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ]);
+      setLoadError(toActionErrorMessage(e, 'Süreler yüklenemedi.'));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -92,37 +88,35 @@ export function CaseDeadlines({ caseId }: CaseDeadlinesProps) {
 
   const handleSubmit = async () => {
     if (!formData.title || !formData.dueDate) return;
-    setSaving(true);
+    // PR-2A1: senkron kilit -> hizli cift tik ikinci bir POST uretmez.
+    await submitLock.run(async () => {
+      setSaving(true);
+      setActionError(null);
+      setStaleNotice(null);
 
-    try {
-      if (editingId) {
-        await api.patch(`/cases/${caseId}/deadlines/${editingId}`, formData);
-      } else {
-        await api.post(`/cases/${caseId}/deadlines`, formData);
-      }
-      loadDeadlines();
-    } catch (e) {
-      // Demo: add/update locally
-      if (editingId) {
-        setDeadlines(prev => prev.map(d => 
-          d.id === editingId 
-            ? { ...d, ...formData, dueDate: new Date(formData.dueDate).toISOString() }
-            : d
-        ));
-      } else {
-        const newDeadline: Deadline = {
-          id: Date.now().toString(),
-          ...formData,
-          dueDate: new Date(formData.dueDate).toISOString(),
-          isCompleted: false,
-          createdAt: new Date().toISOString(),
-        };
-        setDeadlines(prev => [...prev, newDeadline]);
-      }
-    } finally {
+      const outcome = await runMutation({
+        mutate: () =>
+          editingId
+            ? api.patch(`/cases/${caseId}/deadlines/${editingId}`, formData)
+            : api.post(`/cases/${caseId}/deadlines`, formData),
+        // Basari YALNIZ sunucudan yeniden okunarak yansitilir; form verisinden kayit
+        // URETILMEZ. Eski davranis sureyi yerel uyduruyordu = takip edilmeyen sure.
+        refresh: () => loadDeadlines({ propagateError: true }),
+        failureMessage: 'Süre kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Süre KAYDEDİLDİ, ancak liste yenilenemedi. Görünen liste bayat olabilir.',
+      });
+
+      if (!submitLock.isMounted()) return;
+
       setSaving(false);
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return; // form KORUNUR, yeniden gonderilebilir
+      }
+      // SUCCESS ve SUCCESS_STALE: kayit KESINLESTI -> ayni payload yeniden gonderilemez.
       resetForm();
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleEdit = (deadline: Deadline) => {
@@ -141,25 +135,54 @@ export function CaseDeadlines({ caseId }: CaseDeadlinesProps) {
     const deadline = deadlines.find(d => d.id === id);
     if (!deadline) return;
 
-    try {
-      await api.patch(`/cases/${caseId}/deadlines/${id}`, { isCompleted: !deadline.isCompleted });
-    } catch (e) {
-      // Demo: update locally
-    }
-    setDeadlines(prev => prev.map(d => 
-      d.id === id ? { ...d, isCompleted: !d.isCompleted } : d
-    ));
+    // PR-2A1: yerel guncelleme eskiden try/catch DISINDA idi -> istek basarisiz olsa bile
+    // sure "tamamlandi" gorunuyordu. Artik yalniz sunucu kabul ettikten sonra degisir.
+    setActionError(null);
+    setStaleNotice(null);
+    // Anahtar kararli kayit kimligidir (liste index'i DEGIL).
+    await rowLock.run(`deadline:${caseId}:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () =>
+          api.patch(`/cases/${caseId}/deadlines/${id}`, { isCompleted: !deadline.isCompleted }),
+        refresh: () => loadDeadlines({ propagateError: true }),
+        failureMessage: 'Süre durumu güncellenemedi. Kayıt DEĞİŞMEDİ.',
+        staleMessage: 'Süre durumu GÜNCELLENDİ, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Bu son tarihi silmek istediğinize emin misiniz?')) return;
 
-    try {
-      await api.delete(`/cases/${caseId}/deadlines/${id}`);
-    } catch (e) {
-      // Demo: remove locally
-    }
-    setDeadlines(prev => prev.filter(d => d.id !== id));
+    // PR-2A1: PESSIMISTIC silme. Satir yalniz sunucu silmeyi kabul ettikten sonra kaybolur.
+    setActionError(null);
+    setStaleNotice(null);
+    await rowLock.run(`deadline:${caseId}:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/cases/${caseId}/deadlines/${id}`),
+        refresh: () => loadDeadlines({ propagateError: true }),
+        failureMessage: 'Süre silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.',
+        staleMessage: 'Süre SİLİNDİ, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      // Hata halinde satir ve secim durumu AYNEN korunur.
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
+  };
+
+  // PR-2A1: stale bandindaki tekrar denemesi YALNIZ okuma yolunu calistirir.
+  // Mutation callback'i ASLA yeniden cagrilmaz -> cift kayit uretilemez.
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadDeadlines({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null); // basarili tazeleme -> band TEMIZLENIR
+    // basarisizsa band ve retry KORUNUR
   };
 
   const resetForm = () => {
@@ -231,6 +254,18 @@ export function CaseDeadlines({ caseId }: CaseDeadlinesProps) {
 
   return (
     <div className="space-y-4">
+      {/* PR-2A1: mutation hatalari GORUNUR; sessizce yutulmaz, kayit uydurulmaz. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-medium flex items-center gap-2">
@@ -402,7 +437,9 @@ export function CaseDeadlines({ caseId }: CaseDeadlinesProps) {
                       <Edit className="h-4 w-4" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDelete(deadline.id)}
+                      aria-label="Süreyi sil"
                       className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                     >
                       <Trash2 className="h-4 w-4" />

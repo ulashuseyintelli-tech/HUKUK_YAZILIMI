@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
 import { Receipt, Plus, Trash2, Edit, X, Check, Loader2, DollarSign, Calendar, Tag } from 'lucide-react';
 
 interface Expense {
@@ -42,38 +46,51 @@ export function CaseExpenses({ caseId }: CaseExpensesProps) {
     billable: true,
   });
   const [saving, setSaving] = useState(false);
+  // PR-2A1: masraf finansal kayittir; hata halinde uydurulamaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Mutation BAŞARILI ama liste tazelenemedi → kayıt durur, görünüm bayat.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const submitLock = useSubmitLock();
+  const rowLock = useKeyedSubmitLock();
+
+  // Stale bandındaki tekrar denemesi YALNIZ okuma yolunu çalıştırır; mutation callback'i
+  // ASLA yeniden çağrılmaz → çift kayıt üretilemez.
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadExpenses({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
 
   useEffect(() => {
-    loadExpenses();
+    void loadExpenses();
   }, [caseId]);
 
-  const loadExpenses = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: okuma yolu hatayi YUTMAZ ve demo veri URETMEZ.
+  //
+  // Iki cagrim ACIKCA ayrilir (bos catch/suppression YOK — bu programin kendi kurali):
+  //  - initial load: hata state'e yazilir, promise KONTROLLU tamamlanir
+  //  - mutation refresh (`propagateError: true`): ayni hata state'e yazilir VE cagirana
+  //    propagate edilir; aksi halde `runMutation` refresh basarisizligini goremez,
+  //    yanlislikla SUCCESS uretir ve SUCCESS_STALE hic calismaz.
+  //
+  // Malformed yanit GERCEK EMPTY sayilmaz: `data` dizi degilse dogrulanmis bos liste
+  // degildir -> gorunur load error + refresh failure.
+  const loadExpenses = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/expenses`);
-      setExpenses(res.data?.data || []);
+      const rows = (res as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(rows)) {
+        throw new Error('MALFORMED_LIST_RESPONSE');
+      }
+      setExpenses(rows as never);
     } catch (e) {
-      // Demo data
-      setExpenses([
-        {
-          id: '1',
-          date: new Date().toISOString(),
-          category: 'harç',
-          description: 'Başvuru harcı',
-          amount: 500,
-          billable: true,
-          billed: false,
-        },
-        {
-          id: '2',
-          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          category: 'posta',
-          description: 'Tebligat masrafı',
-          amount: 150,
-          billable: true,
-          billed: true,
-        },
-      ]);
+      setLoadError(toActionErrorMessage(e, 'Masraflar yüklenemedi.'));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -81,52 +98,61 @@ export function CaseExpenses({ caseId }: CaseExpensesProps) {
 
   const handleSave = async () => {
     if (!formData.category || !formData.amount) return;
-    setSaving(true);
-    
-    const expenseData = {
-      ...formData,
-      amount: parseFloat(formData.amount),
-    };
+    // PR-2A1: senkron kilit — hızlı çift tık ikinci bir POST üretmez.
+    await submitLock.run(async () => {
+      setSaving(true);
+      setActionError(null);
+      setStaleNotice(null);
 
-    try {
-      if (editingId) {
-        await api.put(`/cases/${caseId}/expenses/${editingId}`, expenseData);
-      } else {
-        await api.post(`/cases/${caseId}/expenses`, expenseData);
-      }
-      loadExpenses();
-    } catch (e) {
-      // Demo: add locally
-      const newExpense: Expense = {
-        id: editingId || Date.now().toString(),
-        date: formData.date,
-        category: formData.category,
-        description: formData.description,
+      const expenseData = {
+        ...formData,
         amount: parseFloat(formData.amount),
-        billable: formData.billable,
-        billed: false,
       };
-      
-      if (editingId) {
-        setExpenses(prev => prev.map(exp => exp.id === editingId ? newExpense : exp));
-      } else {
-        setExpenses(prev => [...prev, newExpense]);
-      }
-    } finally {
+
+      const outcome = await runMutation({
+        mutate: () =>
+          editingId
+            ? api.put(`/cases/${caseId}/expenses/${editingId}`, expenseData)
+            : api.post(`/cases/${caseId}/expenses`, expenseData),
+        // Başarı YALNIZ sunucudan yeniden okunarak yansıtılır; form verisinden kayıt
+        // ÜRETİLMEZ (eski davranış masrafı yerel uyduruyordu).
+        refresh: () => loadExpenses({ propagateError: true }),
+        failureMessage: 'Masraf kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Masraf KAYDEDİLDİ, ancak liste yenilenemedi.',
+      });
+
+      if (!submitLock.isMounted()) return;
+
       setSaving(false);
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return; // form KORUNUR, yeniden gönderilebilir
+      }
+      // SUCCESS ve SUCCESS_STALE: kayıt KESİNLEŞTİ → aynı payload yeniden gönderilemez.
       resetForm();
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Bu masrafı silmek istediğinize emin misiniz?')) return;
     
-    try {
-      await api.delete(`/cases/${caseId}/expenses/${id}`);
-    } catch (e) {
-      // Demo: remove locally
-    }
-    setExpenses(prev => prev.filter(exp => exp.id !== id));
+    // PR-2A1: PESSIMISTIC silme + satır bazlı kilit (anahtar kararlı kayıt kimliği,
+    // liste index'i DEĞİL). Aynı satıra ikinci tık hiç başlamaz.
+    setActionError(null);
+    setStaleNotice(null);
+    await rowLock.run(`expense:${caseId}:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/cases/${caseId}/expenses/${id}`),
+        refresh: () => loadExpenses({ propagateError: true }),
+        failureMessage: 'Masraf silinemedi. Kayıt DURUYOR, lütfen tekrar deneyin.',
+        staleMessage: 'Masraf SİLİNDİ, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      // Hata hâlinde satır ve seçim durumu AYNEN korunur — hiçbir state yazılmaz.
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleEdit = (expense: Expense) => {
@@ -179,6 +205,30 @@ export function CaseExpenses({ caseId }: CaseExpensesProps) {
 
   return (
     <div className="space-y-4">
+      {/* PR-2A1: mutation hatalari GORUNUR. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {/* Mutation başarılı ama tazeleme başarısız → kayıt durur, görünüm bayat.
+          Band liste yüzeyindedir: modal kapansa bile görünür kalır. */}
+      {staleNotice ? (
+        <div
+          role="status"
+          data-testid="stale-notice"
+          className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          <span className="flex-1">{staleNotice}</span>
+          <button
+            type="button"
+            onClick={handleStaleRefresh}
+            disabled={refreshingStale}
+            data-testid="stale-refresh"
+            className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50"
+          >
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="p-3 bg-blue-50 rounded-lg">
@@ -340,7 +390,9 @@ export function CaseExpenses({ caseId }: CaseExpensesProps) {
                       <Edit className="h-4 w-4" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDelete(expense.id)}
+                      aria-label="Masrafı sil"
                       className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                     >
                       <Trash2 className="h-4 w-4" />

@@ -179,7 +179,7 @@ describe("I15-D1-R1 — UyapPanel haciz CaseDebtor target-binding", () => {
     fireEvent.click(screen.getByText("Haciz Talebi Gönder"));
 
     await waitFor(() =>
-      expect(screen.getByText("Haciz talebi gönderilemedi. Lütfen tekrar deneyin.")).toBeInTheDocument(),
+      expect(screen.getByText("Haciz talebi gönderilemedi. Talep İLETİLMEDİ, lütfen tekrar deneyin.")).toBeInTheDocument(),
     );
     expect(screen.queryByText(/Internal stack trace/)).not.toBeInTheDocument();
   });

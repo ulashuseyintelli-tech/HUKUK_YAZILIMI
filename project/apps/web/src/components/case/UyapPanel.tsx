@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
+import { FileReadError, readFileAsBase64 } from '@/lib/read-file-base64';
 import {
   api,
   UyapStatus,
@@ -59,9 +64,23 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   const [caseDebtors, setCaseDebtors] = useState<DebtorListItemDTO[]>([]);
   const [selectedCaseDebtorId, setSelectedCaseDebtorId] = useState<string | undefined>(undefined);
   const [hacizError, setHacizError] = useState<string | null>(null);
+  // PR-2A1: okuma, evrak ve retry hatalari AYRI ve GORUNUR.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const submitLock = useSubmitLock();
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadData({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
 
   useEffect(() => {
-    loadData();
+    void loadData();
     // caseId değişince önceki seçim KESİNLİKLE taşınmaz (yanlış dosyada yanlış borçlu riski).
     setSelectedCaseDebtorId(undefined);
     setHacizError(null);
@@ -88,8 +107,13 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
       .catch(() => setPreHacizRisk({ debtors: [], overallLevel: "YOK" }));
   }, [activeTab, caseId, preHacizRisk]);
 
-  const loadData = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: `console.error` tek başına handling değildir — panel
+  // sessizce boş kalıyordu. Hata artık GÖRÜNÜR; mutation refresh'i olarak çağrıldığında
+  // (`propagateError: true`) çağırana propagate edilir, aksi hâlde `runMutation`
+  // tazeleme hatasını göremez ve SUCCESS_STALE hiç çalışmaz.
+  const loadData = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [statusRes, poaRes, historyRes] = await Promise.all([
         api.getUyapStatus(),
@@ -100,7 +124,8 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
       setPoaValidation(poaRes);
       setHistory(historyRes);
     } catch (error) {
-      console.error("UYAP veri yükleme hatası:", error);
+      setLoadError(toActionErrorMessage(error, 'UYAP verileri yüklenemedi.'));
+      if (opts?.propagateError) throw error;
     } finally {
       setLoading(false);
     }
@@ -108,30 +133,63 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
 
   const handleDocumentSubmit = async () => {
     if (!documentFile || !documentName) return;
-    
-    setSubmitting(true);
-    try {
-      // Convert file to base64
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(",")[1];
-        await api.submitUyapDocument({
-          caseId,
-          documentType,
-          documentContent: base64,
-          documentName,
+
+    // PR-2A1: mutation eskiden `reader.onload` içindeydi; dış `try/catch` onu
+    // YAKALAYAMIYORDU (geç çalışır). Hata hiçbir yerde görünmüyor, `finally` de reader
+    // bitmeden çalıştığı için düğme anında yeniden etkinleşiyordu. Zincir artık tek bir
+    // await akışında: okuma → mutation → refresh. Senkron kilit çift gönderimi keser.
+    await submitLock.run(async () => {
+      setSubmitting(true);
+      setDocumentError(null);
+      setStaleNotice(null);
+
+      // `setSubmitting(false)` TEK bir `finally`'dedir; dallara dağıtılmaz. Beklenmeyen
+      // bir exception veya ileride eklenecek erken dönüş loading'i kalıcı KİLİTLEYEMEZ.
+      // Dallarda yalnız UI başarı/hata state'leri ayrışır.
+      try {
+        // (1) DOSYA OKUMA — API hatasından AYRI. Okuma başarısızsa mutation HİÇ BAŞLAMAZ.
+        let base64: string;
+        try {
+          base64 = await readFileAsBase64(documentFile);
+        } catch (readError) {
+          if (!submitLock.isMounted()) return;
+          setDocumentError(
+            readError instanceof FileReadError
+              ? `${readError.message} Evrak GÖNDERİLMEDİ.`
+              : 'Dosya okunamadı. Evrak GÖNDERİLMEDİ.',
+          );
+          return;
+        }
+
+        // (2) API MUTATION + tazeleme — ayrı sonuçlar.
+        const outcome = await runMutation({
+          mutate: () =>
+            api.submitUyapDocument({
+              caseId,
+              documentType,
+              documentContent: base64,
+              documentName,
+            }),
+          refresh: () => loadData({ propagateError: true }),
+          failureMessage: 'Evrak gönderilemedi. Evrak UYAP’a İLETİLMEDİ, lütfen tekrar deneyin.',
+          staleMessage: 'Evrak İLETİLDİ, ancak panel yenilenemedi.',
         });
-        setDocumentName("");
+
+        if (!submitLock.isMounted()) return;
+        if (outcome.status === 'FAILED') {
+          // Form KORUNUR: dosya ve ad silinmez, kullanıcı yeniden gönderebilir.
+          setDocumentError(outcome.error.message);
+          return;
+        }
+        // SUCCESS ve SUCCESS_STALE: gönderim KESİNLEŞTİ → aynı evrak yeniden gönderilemez.
+        setDocumentName('');
         setDocumentFile(null);
-        loadData();
         onDocumentSubmitted?.();
-      };
-      reader.readAsDataURL(documentFile);
-    } catch (error) {
-      console.error("Evrak gönderme hatası:", error);
-    } finally {
-      setSubmitting(false);
-    }
+        if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+      } finally {
+        if (submitLock.isMounted()) setSubmitting(false);
+      }
+    });
   };
 
   const handleHacizSubmit = async () => {
@@ -139,36 +197,86 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
     // validation her koşulda çalışır, bu yalnız UX'tir (owner kural #6).
     if (!hacizAmount || !selectedCaseDebtorId) return;
 
-    setSubmitting(true);
-    setHacizError(null);
-    try {
-      await api.sendUyapHacizRequest({
-        caseId,
-        caseDebtorId: selectedCaseDebtorId,
-        targetType: hacizType,
-        targetDetails: { notes: hacizDetails },
-        amount: parseFloat(hacizAmount),
-      });
-      setHacizAmount("");
-      setHacizDetails("");
-      loadData();
-    } catch (error) {
-      console.error("Haciz talebi hatası:", error);
-      // Owner kural #8: backend hatası güvenli biçimde gösterilir (ham hata/stack DEĞİL).
-      setHacizError("Haciz talebi gönderilemedi. Lütfen tekrar deneyin.");
-    } finally {
-      setSubmitting(false);
-    }
+    // PR-2A1: `disabled={submitting}` YALNIZ görsel korumadır — React state aynı tick
+    // içinde flush olmaz, dolayısıyla aynı-tick çift giriş veya programatik çağrı için
+    // concurrency garantisi VERMEZ. Gerçek kilit senkron `useKeyedSubmitLock`'tur.
+    // Anahtar endpoint kapsamına göre dosya bazlıdır: `sendUyapHacizRequest` `caseId`
+    // taşır, dolayısıyla farklı dosyaların haciz talepleri birbirini bloklamaz.
+    await rowLock.run(`uyap:haciz:${caseId}`, async () => {
+      setSubmitting(true);
+      setHacizError(null);
+      setStaleNotice(null);
+
+      // Kilit ve loading TEK `finally` ile bırakılır; dallara dağıtılmaz.
+      try {
+        const outcome = await runMutation({
+          mutate: () =>
+            api.sendUyapHacizRequest({
+              caseId,
+              caseDebtorId: selectedCaseDebtorId,
+              targetType: hacizType,
+              targetDetails: { notes: hacizDetails },
+              amount: parseFloat(hacizAmount),
+            }),
+          refresh: () => loadData({ propagateError: true }),
+          // Owner kural #8: ham hata/stack DEĞİL, güvenli mesaj.
+          failureMessage: 'Haciz talebi gönderilemedi. Talep İLETİLMEDİ, lütfen tekrar deneyin.',
+          staleMessage: 'Haciz talebi İLETİLDİ, ancak panel yenilenemedi.',
+        });
+
+        // Unmount sonrası state YAZILMAZ.
+        if (!rowLock.isMounted()) return;
+        if (outcome.status === 'FAILED') {
+          // Form ve panel KORUNUR: tutar/detay silinmez, kullanıcı yeniden gönderebilir.
+          setHacizError(outcome.error.message);
+          return;
+        }
+        // Reset YALNIZ doğrulanmış response sonrası.
+        setHacizAmount('');
+        setHacizDetails('');
+        if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+      } finally {
+        if (rowLock.isMounted()) setSubmitting(false);
+      }
+    });
   };
 
   const handleRetryFailed = async () => {
-    try {
-      const result = await api.retryUyapFailedRequests();
-      alert(`${result.retriedCount} istek yeniden denendi`);
-      loadData();
-    } catch (error) {
-      console.error("Retry hatası:", error);
-    }
+    setDocumentError(null);
+    setStaleNotice(null);
+
+    // PR-2A1: `console.error` tek başına handling DEĞİLDİR — kullanıcı retry'ın
+    // başarısız olduğunu hiç görmüyordu.
+    //
+    // ANAHTAR SEÇİMİ endpoint sözleşmesinden türer: `POST /uyap/retry-failed` HİÇBİR
+    // argüman almaz (ne caseId ne kayıt kimliği) — TOPLU, dosya-üstü bir operasyondur.
+    // Bu yüzden anahtar GLOBAL'dir; `caseId` eklemek farklı dosyalardaki iki panelin
+    // aynı toplu retry'ı eşzamanlı tetiklemesine izin verirdi. Endpoint ileride tekil
+    // kayıt retry'ına dönerse anahtara kayıt kimliği EKLENMELİDİR.
+    await rowLock.run('uyap:retry-failed', async () => {
+      const outcome = await runMutation({
+        mutate: () => api.retryUyapFailedRequests(),
+        refresh: () => loadData({ propagateError: true }),
+        failureMessage:
+          'Başarısız istekler yeniden denenemedi. Kayıtlar BAŞARISIZ durumda KALDI.',
+        staleMessage: 'Yeniden deneme YAPILDI, ancak panel yenilenemedi.',
+      });
+
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === 'FAILED') {
+        // Kayıtlar mevcut FAILED durumunda kalır; hiçbir state yazılmaz.
+        setDocumentError(outcome.error.message);
+        return;
+      }
+      // Başarı YALNIZ doğrulanmış response sonrası gösterilir.
+      const retried = (outcome.data as { retriedCount?: number } | undefined)?.retriedCount;
+      setRetryNotice(
+        typeof retried === 'number'
+          ? `${retried} istek yeniden denendi.`
+          : 'Başarısız istekler yeniden denendi.',
+      );
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   if (loading) {
@@ -210,6 +318,40 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
 
   return (
     <div className="bg-white rounded-lg shadow">
+      {/* PR-2A1: okuma, evrak ve retry hataları AYRI yüzeylerde ve GÖRÜNÜR. */}
+      <div className="space-y-2 px-6 pt-4 empty:hidden">
+        <ActionError message={loadError} />
+        <ActionError message={documentError} />
+        {retryNotice ? (
+          <div
+            role="status"
+            data-testid="retry-notice"
+            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"
+          >
+            {retryNotice}
+          </div>
+        ) : null}
+        {/* Mutation başarılı ama panel tazelenemedi → gönderim durur, görünüm bayat. */}
+        {staleNotice ? (
+          <div
+            role="status"
+            data-testid="stale-notice"
+            className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            <span className="flex-1">{staleNotice}</span>
+            <button
+              type="button"
+              onClick={handleStaleRefresh}
+              disabled={refreshingStale}
+              data-testid="stale-refresh"
+              className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50"
+            >
+              Paneli yenile
+            </button>
+          </div>
+        ) : null}
+      </div>
+
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
@@ -229,7 +371,9 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
 
       {/* Tabs */}
       <div className="border-b border-gray-200">
-        <nav className="flex -mb-px">
+        {/* PR-2A1: sekmeler düz `button` idi — `role`/`aria-selected`/`aria-controls`
+            yoktu, ekran okuyucu dört ilgisiz düğme görüyordu. Semantik tab seti. */}
+        <nav className="flex -mb-px" role="tablist" aria-label="UYAP panel sekmeleri">
           {[
             { id: "status", label: "Durum" },
             { id: "document", label: "Evrak Gönder" },
@@ -238,6 +382,11 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
           ].map((tab) => (
             <button
               key={tab.id}
+              type="button"
+              role="tab"
+              id={`uyap-tab-${tab.id}`}
+              aria-selected={activeTab === tab.id}
+              aria-controls={`uyap-panel-${tab.id}`}
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-4 py-3 text-sm font-medium border-b-2 ${
                 activeTab === tab.id
@@ -255,7 +404,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
       <div className="p-6">
         {/* Status Tab */}
         {activeTab === "status" && (
-          <div className="space-y-6">
+          <div role="tabpanel" id="uyap-panel-status" aria-labelledby="uyap-tab-status" className="space-y-6">
             {/* Connection Status */}
             <div className="bg-gray-50 rounded-lg p-4">
               <h4 className="font-medium text-gray-900 mb-3">Bağlantı Durumu</h4>
@@ -319,7 +468,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
 
         {/* Document Tab */}
         {activeTab === "document" && (
-          <div className="space-y-4">
+          <div role="tabpanel" id="uyap-panel-document" aria-labelledby="uyap-tab-document" className="space-y-4">
             {!poaValidation?.canProceedToUyap && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
                 <p className="text-sm text-yellow-800">
@@ -380,7 +529,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
 
         {/* Haciz Tab */}
         {activeTab === "haciz" && (
-          <div className="space-y-4">
+          <div role="tabpanel" id="uyap-panel-haciz" aria-labelledby="uyap-tab-haciz" className="space-y-4">
             {!poaValidation?.canProceedToUyap && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
                 <p className="text-sm text-yellow-800">
@@ -521,7 +670,7 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
 
         {/* History Tab */}
         {activeTab === "history" && (
-          <div className="space-y-3">
+          <div role="tabpanel" id="uyap-panel-history" aria-labelledby="uyap-tab-history" className="space-y-3">
             {history.length === 0 ? (
               <p className="text-center text-gray-500 py-8">
                 Henüz UYAP işlemi yapılmamış.

@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
+import { ActionError } from '@/components/ui/action-error';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock, useSubmitLock } from '@/lib/use-submit-lock';
 import { Paperclip, Upload, Download, Trash2, Eye, File, FileText, Image, FileSpreadsheet, Loader2, X, FolderOpen } from 'lucide-react';
 
 interface Attachment {
@@ -48,48 +52,37 @@ export function CaseAttachments({ caseId }: CaseAttachmentsProps) {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // PR-2A1: mutation hatasi GORUNUR; yuklenmemis dosya listeye EKLENMEZ.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const submitLock = useSubmitLock();
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => loadAttachments({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadAttachments();
+    void loadAttachments();
   }, [caseId]);
 
-  const loadAttachments = async () => {
+  // PR-2A1 DEPENDENCY_FIXED: hata YUTULMAZ, demo dosya URETILMEZ, malformed empty SAYILMAZ.
+  const loadAttachments = async (opts?: { propagateError?: boolean }): Promise<void> => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.get(`/cases/${caseId}/attachments`);
-      setAttachments(res.data?.data || []);
+      const rows = (res as { data?: { data?: unknown } })?.data?.data;
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      setAttachments(rows as Attachment[]);
     } catch (e) {
-      // Demo data
-      setAttachments([
-        {
-          id: '1',
-          name: 'Vekaletname.pdf',
-          size: 245000,
-          type: 'application/pdf',
-          category: 'vekalet',
-          uploadedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          uploadedBy: 'Admin',
-        },
-        {
-          id: '2',
-          name: 'Borç Senedi.pdf',
-          size: 128000,
-          type: 'application/pdf',
-          category: 'belge',
-          uploadedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          uploadedBy: 'Av. Mehmet',
-        },
-        {
-          id: '3',
-          name: 'Tebligat Mazbatası.jpg',
-          size: 520000,
-          type: 'image/jpeg',
-          category: 'tebligat',
-          uploadedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          uploadedBy: 'Admin',
-        },
-      ]);
+      setLoadError(toActionErrorMessage(e, 'Ekler yuklenemedi.'));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -97,36 +90,45 @@ export function CaseAttachments({ caseId }: CaseAttachmentsProps) {
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    setUploading(true);
 
-    const formData = new FormData();
-    Array.from(files).forEach(file => {
-      formData.append('files', file);
-    });
-    formData.append('category', selectedCategory || 'diger');
+    // PR-2A1: upload yolunda idempotency anahtarı YOK → senkron kilit şart.
+    // Sürükle-bırak ile dosya seçici aynı tick içinde iki POST üretebiliyordu.
+    await submitLock.run(async () => {
+      setUploading(true);
+      setActionError(null);
+      setStaleNotice(null);
 
-    try {
-      await api.post(`/cases/${caseId}/attachments`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const formData = new FormData();
+      Array.from(files).forEach(file => {
+        formData.append('files', file);
       });
-      loadAttachments();
-    } catch (e) {
-      // Demo: add locally
-      const newAttachments: Attachment[] = Array.from(files).map((file, i) => ({
-        id: Date.now().toString() + i,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        category: selectedCategory || 'diger',
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: 'Ben',
-      }));
-      setAttachments(prev => [...prev, ...newAttachments]);
-    } finally {
+      formData.append('category', selectedCategory || 'diger');
+
+      const outcome = await runMutation({
+        mutate: () =>
+          api.post(`/cases/${caseId}/attachments`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          }),
+        // Başarı YALNIZ sunucudan yeniden okunarak yansıtılır. Eski davranış yüklenmemiş
+        // dosyaları listeye ekliyordu — kullanıcı vekaletnameyi yüklendi sanıyor, dosya
+        // hiçbir yerde yok. Bir hukuk bürosunda bu, kayıp evrak demektir.
+        refresh: () => loadAttachments({ propagateError: true }),
+        failureMessage: 'Dosya yüklenemedi. Hiçbir dosya KAYDEDİLMEDİ, lütfen tekrar deneyin.',
+        staleMessage: 'Dosya YÜKLENDİ, ancak liste yenilenemedi.',
+      });
+
+      if (!submitLock.isMounted()) return;
       setUploading(false);
+      if (outcome.status === 'FAILED') {
+        // Kategori seçimi ve dosya girdisi KORUNUR; kullanıcı yeniden gönderebilir.
+        setActionError(outcome.error.message);
+        return;
+      }
+      // SUCCESS ve SUCCESS_STALE: yükleme KESİNLEŞTİ → aynı dosyalar yeniden gönderilemez.
       setSelectedCategory('');
       if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleDownload = async (attachment: Attachment) => {
@@ -150,12 +152,23 @@ export function CaseAttachments({ caseId }: CaseAttachmentsProps) {
   const handleDelete = async (id: string) => {
     if (!confirm('Bu dosyayı silmek istediğinize emin misiniz?')) return;
 
-    try {
-      await api.delete(`/cases/${caseId}/attachments/${id}`);
-    } catch (e) {
-      // Demo: remove locally
-    }
-    setAttachments(prev => prev.filter(a => a.id !== id));
+    setActionError(null);
+    setStaleNotice(null);
+
+    // PR-2A1: PESSIMISTIC silme + satır bazlı kilit. Satır çıkarma `try/catch` DIŞINDA
+    // idi → silme başarısız olsa bile evrak ekrandan kayboluyordu.
+    await rowLock.run(`attachment:${caseId}:${id}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.delete(`/cases/${caseId}/attachments/${id}`),
+        refresh: () => loadAttachments({ propagateError: true }),
+        failureMessage: 'Dosya silinemedi. Evrak DURUYOR, lütfen tekrar deneyin.',
+        staleMessage: 'Dosya SİLİNDİ, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      // Hata hâlinde satır ve seçim durumu AYNEN korunur.
+      if (outcome.status === 'FAILED') setActionError(outcome.error.message);
+      else if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -194,6 +207,30 @@ export function CaseAttachments({ caseId }: CaseAttachmentsProps) {
 
   return (
     <div className="space-y-4">
+      {/* PR-2A1: okuma ve mutation hataları GÖRÜNÜR; sessizce yutulmaz. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {/* Yükleme başarılı ama tazeleme başarısız → evrak durur, görünüm bayat.
+          Yalnız refresh-only eylemi sunulur; yükleme ASLA tekrarlanmaz. */}
+      {staleNotice ? (
+        <div
+          role="status"
+          data-testid="stale-notice"
+          className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          <span className="flex-1">{staleNotice}</span>
+          <button
+            type="button"
+            onClick={handleStaleRefresh}
+            disabled={refreshingStale}
+            data-testid="stale-refresh"
+            className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50"
+          >
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
+
       {/* Upload Area */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}

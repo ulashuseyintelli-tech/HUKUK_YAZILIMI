@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { ActionError } from "@/components/ui/action-error";
+import { toActionErrorMessage } from "@/lib/action-error";
+import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
+import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, MapPin, FileText, Plus, X } from "lucide-react";
 
 interface CalendarEvent {
@@ -33,6 +37,18 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  // PR-2A1: etkinlik hatasi GORUNUR; kayit uydurulmaz, modal hata halinde kapanmaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const rowLock = useKeyedSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => fetchEvents({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
   const [newEvent, setNewEvent] = useState({ title: "", description: "", date: "", time: "", type: "HATIRLATICI", location: "" });
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
@@ -40,14 +56,16 @@ export default function CalendarPage() {
     fetchEvents();
   }, [currentDate]);
 
-  const fetchEvents = async () => {
+  const fetchEvents = async (opts?: { propagateError?: boolean }) => {
     setLoading(true);
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
       const res = await api.get(`/calendar/events?year=${year}&month=${month}`);
       // API response: { data: [...] } ve api.get sarıyor: { data: { data: [...] } } veya { data: [...] }
-      const eventList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      const eventList = Array.isArray(res.data) ? res.data : (res.data?.data as unknown);
+      // PR-2A1 DEPENDENCY_FIXED: malformed yanit GERCEK EMPTY sayilmaz.
+      if (!Array.isArray(eventList)) throw new Error("MALFORMED_LIST_RESPONSE");
       // Tarihleri YYYY-MM-DD formatına çevir
       const formattedEvents = eventList.map((e: any) => ({
         ...e,
@@ -55,8 +73,9 @@ export default function CalendarPage() {
       }));
       setEvents(formattedEvents);
     } catch (e) {
-      console.error("Etkinlikler yüklenemedi:", e);
-      setEvents([]);
+      // PR-2A1 DEPENDENCY_FIXED: hata YUTULMAZ ve bos takvim gibi GOSTERILMEZ.
+      setLoadError(toActionErrorMessage(e, "Takvim etkinlikleri yüklenemedi."));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -93,14 +112,25 @@ export default function CalendarPage() {
 
   const handleAddEvent = async () => {
     if (!newEvent.title || !newEvent.date) return;
-    try {
-      await api.post("/calendar/events", newEvent);
+    setActionError(null);
+    setStaleNotice(null);
+    // PR-2A1: create yolunda idempotency anahtari YOK -> senkron kilit sart.
+    await rowLock.run("calendar:event:create", async () => {
+      const outcome = await runMutation({
+        mutate: () => api.post("/calendar/events", newEvent),
+        refresh: () => fetchEvents({ propagateError: true }),
+        failureMessage: "Etkinlik kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.",
+        staleMessage: "Etkinlik KAYDEDİLDİ, ancak takvim yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        setActionError(outcome.error.message);
+        return; // modal ve form KORUNUR
+      }
       setShowAddModal(false);
       setNewEvent({ title: "", description: "", date: "", time: "", type: "HATIRLATICI", location: "" });
-      fetchEvents();
-    } catch (e) {
-      console.error(e);
-    }
+      if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
+    });
   };
 
   const handleDeleteEvent = async (id: string) => {
@@ -128,15 +158,26 @@ export default function CalendarPage() {
 
   const handleUpdateEvent = async () => {
     if (!editingEvent || !newEvent.title || !newEvent.date) return;
-    try {
-      await api.put(`/calendar/events/${editingEvent.id}`, newEvent);
+    const targetId = editingEvent.id;
+    setActionError(null);
+    setStaleNotice(null);
+    await rowLock.run(`calendar:event:save:${targetId}`, async () => {
+      const outcome = await runMutation({
+        mutate: () => api.put(`/calendar/events/${targetId}`, newEvent),
+        refresh: () => fetchEvents({ propagateError: true }),
+        failureMessage: "Etkinlik güncellenemedi. Kayıt DEĞİŞMEDİ, lütfen tekrar deneyin.",
+        staleMessage: "Etkinlik GÜNCELLENDİ, ancak takvim yenilenemedi.",
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === "FAILED") {
+        setActionError(outcome.error.message);
+        return; // modal ve form KORUNUR
+      }
       setShowAddModal(false);
       setEditingEvent(null);
       setNewEvent({ title: "", description: "", date: "", time: "", type: "HATIRLATICI", location: "" });
-      fetchEvents();
-    } catch (e) {
-      console.error(e);
-    }
+      if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
+    });
   };
 
   const handleToggleComplete = async (event: CalendarEvent) => {
@@ -176,6 +217,17 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-4">
+      {/* PR-2A1: okuma ve mutation hatalari GORUNUR. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+            Takvimi yenile
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CalendarIcon className="h-5 w-5 text-blue-600" />

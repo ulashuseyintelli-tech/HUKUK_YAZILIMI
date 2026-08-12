@@ -102,7 +102,9 @@ describe("IntakeLinksCard (link üret / listele / iptal)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^İptal$/i }));
     await waitFor(() => expect(revokeIntakeLink).toHaveBeenCalledWith("l1"));
     // Açık hata mesajı görünür (sessiz değil)
-    await waitFor(() => expect(screen.getByText(/Sunucu reddetti/i)).toBeTruthy());
+    // PR-2A1: ham Error.message YUZEYE CIKMAZ (guvenli sozlesme); alan-ozel
+    // fallback gosterilir. Sunucunun kullaniciya yonelik mesaji `body.message` ile gelir.
+    await waitFor(() => expect(screen.getByText(/Link iptal edilemedi/i)).toBeTruthy());
     // Liste SAHTE güncellenmedi: başarısızlıkta reload YOK + link hâlâ ACTIVE
     expect(listIntakeLinks.mock.calls.length).toBe(loadCallsBefore);
     expect(screen.getByText("Aktif")).toBeTruthy();

@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ActionError } from '@/components/ui/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { api } from '@/lib/api';
 import { Bell, Plus, Check, Clock, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
@@ -20,6 +23,10 @@ export function ReminderWidget() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  // PR-2A1: hatirlatici hatasi GORUNUR; localStorage'a sahte kayit YAZILMAZ.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const rowLock = useKeyedSubmitLock();
   const [newReminder, setNewReminder] = useState({
     title: '',
     description: '',
@@ -31,7 +38,7 @@ export function ReminderWidget() {
     loadReminders();
   }, []);
 
-  const loadReminders = async () => {
+  const loadReminders = async (opts?: { propagateError?: boolean }) => {
     try {
       // API'den hatırlatıcıları çek
       const res = await api.get('/calendar/events?type=HATIRLATICI');
@@ -47,11 +54,9 @@ export function ReminderWidget() {
         priority: e.priority || 'medium',
       })));
     } catch (e) {
-      // localStorage'dan yükle
-      const saved = localStorage.getItem('reminders');
-      if (saved) {
-        setReminders(JSON.parse(saved));
-      }
+      // PR-2A1 DEPENDENCY_FIXED: mutation refresh'i olarak cagrildiginda hata propagate
+      // edilir; ilk yukleme davranisi (sessiz bos liste) PR-2B kapsaminda ele alinacak.
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -59,31 +64,34 @@ export function ReminderWidget() {
 
   const addReminder = async () => {
     if (!newReminder.title || !newReminder.dueDate) return;
+    setActionError(null);
+    setStaleNotice(null);
 
-    const reminder: Reminder = {
-      id: Date.now().toString(),
-      ...newReminder,
-      isCompleted: false,
-    };
-
-    try {
-      await api.post('/calendar/events', {
-        title: newReminder.title,
-        description: newReminder.description,
-        date: newReminder.dueDate,
-        type: 'HATIRLATICI',
-        priority: newReminder.priority,
+    // PR-2A1: eski davranis hata halinde hatirlaticiyi localStorage'a UYDURUYORDU ve
+    // form/modal kapanisi try DISINDAYDI (hata halinde de "eklendi" gorunuyordu).
+    await rowLock.run('reminder:create', async () => {
+      const outcome = await runMutation({
+        mutate: () =>
+          api.post('/calendar/events', {
+            title: newReminder.title,
+            description: newReminder.description,
+            date: newReminder.dueDate,
+            type: 'HATIRLATICI',
+            priority: newReminder.priority,
+          }),
+        refresh: () => loadReminders({ propagateError: true }),
+        failureMessage: 'Hatırlatıcı eklenemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Hatırlatıcı EKLENDİ, ancak liste yenilenemedi.',
       });
-      loadReminders();
-    } catch (e) {
-      // localStorage'a kaydet
-      const updated = [...reminders, reminder];
-      setReminders(updated);
-      localStorage.setItem('reminders', JSON.stringify(updated));
-    }
-
-    setNewReminder({ title: '', description: '', dueDate: '', priority: 'medium' });
-    setShowAddModal(false);
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return; // form ve modal KORUNUR
+      }
+      setNewReminder({ title: '', description: '', dueDate: '', priority: 'medium' });
+      setShowAddModal(false);
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const toggleComplete = async (id: string) => {
@@ -153,6 +161,13 @@ export function ReminderWidget() {
 
   return (
     <div className="bg-white rounded-xl border p-4">
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={() => void loadReminders()} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100">Listeyi yenile</button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold flex items-center gap-2">
           <Bell className="h-5 w-5 text-orange-500" />

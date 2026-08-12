@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ActionError } from '@/components/ui/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 import { api } from '@/lib/api';
 import { Clock, Plus, Trash2, Mail, Calendar, Play, Pause, Edit, X, Check, Bell } from 'lucide-react';
 
@@ -34,6 +37,10 @@ export function ScheduledReports() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingReport, setEditingReport] = useState<ScheduledReport | null>(null);
+  // PR-2A1: rapor plani hatasi GORUNUR; yerel sahte kayit URETILMEZ.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const rowLock = useKeyedSubmitLock();
   const [formData, setFormData] = useState<{
     name: string;
     reportType: string;
@@ -56,11 +63,12 @@ export function ScheduledReports() {
     loadReports();
   }, []);
 
-  const loadReports = async () => {
+  const loadReports = async (opts?: { propagateError?: boolean }) => {
     try {
       const res = await api.get('/reports/scheduled');
       setReports(res.data?.data || []);
     } catch (e) {
+      if (opts?.propagateError) throw e;
       // Demo data
       setReports([
         {
@@ -109,23 +117,29 @@ export function ScheduledReports() {
       nextRun: calculateNextRun(formData),
     };
 
-    try {
-      if (editingReport) {
-        await api.put(`/reports/scheduled/${editingReport.id}`, newReport);
-      } else {
-        await api.post('/reports/scheduled', newReport);
+    setActionError(null);
+    setStaleNotice(null);
+    const targetId = editingReport?.id ?? null;
+    // PR-2A1: eski davranis hata halinde raporu YEREL listeye uyduruyordu ve resetForm
+    // try DISINDAYDI. Kilit islem kapsamina gore: update -> rapor kimligi, create -> yuzey.
+    await rowLock.run(targetId ? `report:save:${targetId}` : 'report:create', async () => {
+      const outcome = await runMutation({
+        mutate: () =>
+          targetId
+            ? api.put(`/reports/scheduled/${targetId}`, newReport)
+            : api.post('/reports/scheduled', newReport),
+        refresh: () => loadReports({ propagateError: true }),
+        failureMessage: 'Rapor planı kaydedilemedi. Kayıt YAPILMADI, lütfen tekrar deneyin.',
+        staleMessage: 'Rapor planı KAYDEDİLDİ, ancak liste yenilenemedi.',
+      });
+      if (!rowLock.isMounted()) return;
+      if (outcome.status === 'FAILED') {
+        setActionError(outcome.error.message);
+        return; // form KORUNUR
       }
-      loadReports();
-    } catch (e) {
-      // Local update
-      if (editingReport) {
-        setReports(prev => prev.map(r => r.id === editingReport.id ? newReport : r));
-      } else {
-        setReports(prev => [...prev, newReport]);
-      }
-    }
-
-    resetForm();
+      resetForm();
+      if (outcome.status === 'SUCCESS_STALE') setStaleNotice(outcome.stale);
+    });
   };
 
   const calculateNextRun = (data: typeof formData): string => {
@@ -233,6 +247,13 @@ export function ScheduledReports() {
 
   return (
     <div className="space-y-4">
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={() => void loadReports()} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100">Listeyi yenile</button>
+        </div>
+      ) : null}
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2">

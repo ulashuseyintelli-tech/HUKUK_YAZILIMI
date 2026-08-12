@@ -170,6 +170,9 @@ describe("ClaimItemPanel — PR-5c metadata-only edit", () => {
     fireEvent.click(screen.getByTitle("Sil"));
 
     await waitFor(() => expect(del).toHaveBeenCalledWith("/claim-items/i1"));
-    expect(alertSpy).toHaveBeenCalledWith("Silme talebi onaya gönderildi.");
+    // PR-2A1: approvalRequired artik alert degil KALICI onay bandiyla bildirilir;
+    // basari yan etkisi (liste tazeleme) CALISMAZ.
+    await waitFor(() => expect(screen.getByTestId("approval-notice")).toBeTruthy());
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 });

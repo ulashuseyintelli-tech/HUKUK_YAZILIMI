@@ -15,6 +15,9 @@ import {
   ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, Clock, Inbox, Send,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
+import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
+import { useKeyedSubmitLock } from '@/lib/use-submit-lock';
 
 const PROVIDER_LABEL: Record<string, string> = {
   NETGSM: 'NetGSM',
@@ -178,8 +181,14 @@ export default function NotificationControlCenterPage() {
   const [testResult, setTestResult] = useState<
     null | { success: boolean; channel: string; status: string; recipient?: string; errorMessage?: string }
   >(null);
+  const [testStale, setTestStale] = useState<string | null>(null);
+  const testLock = useKeyedSubmitLock();
+  const handleTestStaleRefresh = async () => {
+    const ok = await runRefreshOnly(() => load({ silent: true, propagateError: true }));
+    if (ok) setTestStale(null);
+  };
 
-  const load = useCallback(async (opts?: { silent?: boolean }) => {
+  const load = useCallback(async (opts?: { silent?: boolean; propagateError?: boolean }) => {
     const silent = opts?.silent;
     if (!silent) { setLoading(true); setError(false); setAdminOnly(false); }
     try {
@@ -190,6 +199,9 @@ export default function NotificationControlCenterPage() {
         if (e?.response?.status === 403) setAdminOnly(true);
         else setError(true);
       }
+      // PR-2A1 DEPENDENCY_FIXED: mutation refresh'i olarak cagrildiginda hata
+      // YUTULMAZ; aksi halde SUCCESS_STALE ayrimi hic calismaz.
+      if (opts?.propagateError) throw e;
     } finally {
       if (!silent) setLoading(false);
     }
@@ -260,17 +272,42 @@ export default function NotificationControlCenterPage() {
 
   const doTestSend = async (channel: 'EMAIL' | 'SMS') => {
     if (!testClientId || !testConfirm || testSending) return;
-    setTestSending(channel);
-    setTestResult(null);
-    try {
-      const r = await api.post('/client-notifications/test-send', { clientId: testClientId, channel, confirm: true });
-      setTestResult((r.data?.data ?? r.data));
-      await load({ silent: true }); // Son Gönderimler'i sessizce tazele (sayfa "Yükleniyor"a düşmeden)
-    } catch (e: any) {
-      setTestResult({ success: false, channel, status: 'FAILED', errorMessage: e?.response?.data?.message || 'Gönderim başarısız' });
-    } finally {
-      setTestSending(null);
-    }
+    // PR-2A1: bu uc GERCEK musteriye gercek e-posta/SMS gonderir. Eski kod tazelemeyi
+    // mutation ile AYNI try icinde tutuyordu — tazeleme dusunce BASARILI gonderim
+    // "Gönderim başarısız" diye raporlaniyor, kullanici tekrar deneyip CIFT bildirim
+    // uretebiliyordu. Ayrica `testSending` React state'i ayni-tick cift tiki KESMEZ;
+    // gercek kilit senkron keyed lock'tur (kanal bazli).
+    await testLock.run(`notifications:test-send:${channel}`, async () => {
+      setTestSending(channel);
+      setTestResult(null);
+      setTestStale(null);
+      try {
+        const outcome = await runMutation({
+          mutate: () =>
+            api.post('/client-notifications/test-send', { clientId: testClientId, channel, confirm: true }),
+          refresh: () => load({ silent: true, propagateError: true }),
+          failureMessage: 'Gönderim başarısız',
+        });
+        if (!testLock.isMounted()) return;
+        if (outcome.status === 'FAILED') {
+          setTestResult({ success: false, channel, status: 'FAILED', errorMessage: outcome.error.message });
+          return;
+        }
+        // Gonderim KESINLESTI — sonuc sunucunun dondugu gercek payload'tan gosterilir.
+        const r = outcome.data as { data?: { data?: unknown } };
+        const payload = ((r?.data as { data?: unknown })?.data ?? r?.data) as
+          | { success: boolean; channel: string; status: string; recipient?: string; errorMessage?: string }
+          | null
+          | undefined;
+        setTestResult(payload ?? null);
+        if (outcome.status === 'SUCCESS_STALE') {
+          // Basari GERI CEVRILMEZ; yalniz liste bayat. Tekrar gonderim SUNULMAZ.
+          setTestStale('Gönderim YAPILDI, ancak "Son Gönderimler" listesi yenilenemedi.');
+        }
+      } finally {
+        if (testLock.isMounted()) setTestSending(null);
+      }
+    });
   };
 
   return (
@@ -536,7 +573,15 @@ export default function NotificationControlCenterPage() {
             <p className="text-amber-600">SMS gönderimi ücret doğurabilir.</p>
           </div>
 
-          {testResult && (
+          {testStale ? (
+              <div role="status" data-testid="test-stale-notice" className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <span className="flex-1">{testStale}</span>
+                <button type="button" onClick={handleTestStaleRefresh} data-testid="test-stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100">
+                  Listeyi yenile
+                </button>
+              </div>
+            ) : null}
+            {testResult && (
             <div className={`rounded-lg px-3 py-2 text-[12px] border ${testResult.success ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
               {testResult.success
                 ? <span><span className="font-medium">Gönderildi</span> ({CHANNEL_LABEL[testResult.channel] || testResult.channel}{testResult.recipient ? ` → ${testResult.recipient}` : ''}). Son Gönderimler'de görebilirsiniz.</span>

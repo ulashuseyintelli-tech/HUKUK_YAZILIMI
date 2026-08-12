@@ -8,6 +8,10 @@ import { FileText, Upload, Download, Trash2, Clock, CheckCircle, XCircle, File }
 // ENDPOINT'i bu helper'dan gelir; `URL.createObjectURL` ile üretilen yerel blob URL'i
 // API base URL ile BİRLEŞTİRİLMEZ (mevcut davranış korundu).
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { ActionError } from "@/components/ui/action-error";
+import { toActionErrorMessage } from "@/lib/action-error";
+import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
+import { useSubmitLock } from "@/lib/use-submit-lock";
 
 interface Document {
   id: string;
@@ -34,13 +38,35 @@ export default function PortalDocumentsPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [uploadForm, setUploadForm] = useState({ type: "DIGER", title: "", description: "" });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // PR-2A1: yukleme hatasi GORUNUR; basarisiz yukleme "yuklendi" gibi davranamaz.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  const [refreshingStale, setRefreshingStale] = useState(false);
+  const submitLock = useSubmitLock();
+  const handleStaleRefresh = async () => {
+    setRefreshingStale(true);
+    const ok = await runRefreshOnly(() => fetchDocuments({ propagateError: true }));
+    setRefreshingStale(false);
+    if (ok) setStaleNotice(null);
+  };
+
+  /** `fetch` HTTP hatasinda throw ETMEZ; sozlesme burada acikca kurulur. */
+  const throwIfNotOk = async (res: Response): Promise<Response> => {
+    if (res.ok) return res;
+    const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+    throw {
+      status: res.status,
+      body: { message: typeof body?.message === "string" ? body.message : undefined },
+    };
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchDocuments();
   }, []);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = async (opts?: { propagateError?: boolean }) => {
     const token = localStorage.getItem("portal_token");
     // CLIENT-REMEDIATION-CLOSEOUT-R01: erken dönüşte de loading KESİN olarak kapatılır.
     // Önceki halde `return` ifadesi aşağıdaki try/finally'den ÖNCE çalıştığı için
@@ -50,16 +76,21 @@ export default function PortalDocumentsPage() {
       setLoading(false);
       return;
     }
+    setLoadError(null);
     try {
-      const res = await fetch(portalApiUrl("/api/portal/documents"), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDocuments(data);
-      }
+      // PR-2A1 DEPENDENCY_FIXED: !ok sessizce yutuluyordu (liste bayat kaliyordu);
+      // malformed yanit GERCEK EMPTY sayilmaz.
+      const res = await throwIfNotOk(
+        await fetch(portalApiUrl("/api/portal/documents"), {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      );
+      const data: unknown = await res.json();
+      if (!Array.isArray(data)) throw new Error("MALFORMED_LIST_RESPONSE");
+      setDocuments(data as Document[]);
     } catch (e) {
-      console.error(e);
+      setLoadError(toActionErrorMessage(e, "Belgeler yüklenemedi."));
+      if (opts?.propagateError) throw e;
     } finally {
       setLoading(false);
     }
@@ -70,31 +101,47 @@ export default function PortalDocumentsPage() {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
 
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("type", uploadForm.type);
-      formData.append("title", uploadForm.title);
-      if (uploadForm.description) formData.append("description", uploadForm.description);
+    // PR-2A1: create yolunda idempotency anahtari YOK -> senkron kilit sart.
+    await submitLock.run(async () => {
+      setUploading(true);
+      setActionError(null);
+      setStaleNotice(null);
+      try {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("type", uploadForm.type);
+        formData.append("title", uploadForm.title);
+        if (uploadForm.description) formData.append("description", uploadForm.description);
 
-      const res = await fetch(portalApiUrl("/api/portal/documents/upload"), {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
+        const outcome = await runMutation({
+          mutate: async () =>
+            throwIfNotOk(
+              await fetch(portalApiUrl("/api/portal/documents/upload"), {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` },
+                body: formData,
+              }),
+            ),
+          refresh: () => fetchDocuments({ propagateError: true }),
+          failureMessage: "Belge yüklenemedi. Dosya GÖNDERİLMEDİ, lütfen tekrar deneyin.",
+          staleMessage: "Belge YÜKLENDİ, ancak liste yenilenemedi.",
+        });
 
-      if (res.ok) {
+        if (!submitLock.isMounted()) return;
+        if (outcome.status === "FAILED") {
+          // Form ve modal KORUNUR; eski davranis !ok'ta SESSIZCE hicbir sey yapmiyordu.
+          setActionError(outcome.error.message);
+          return;
+        }
+        // SUCCESS ve SUCCESS_STALE: yukleme KESINLESTI -> ayni dosya yeniden gonderilemez.
         setShowUpload(false);
         setSelectedFile(null);
         setUploadForm({ type: "DIGER", title: "", description: "" });
-        fetchDocuments();
+        if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
+      } finally {
+        if (submitLock.isMounted()) setUploading(false);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setUploading(false);
-    }
+    });
   };
 
   const handleDownload = async (doc: Document) => {
@@ -160,6 +207,17 @@ export default function PortalDocumentsPage() {
 
   return (
     <div className="space-y-4">
+      {/* PR-2A1: okuma ve yukleme hatalari GORUNUR; sessizce yutulmaz. */}
+      <ActionError message={loadError} />
+      <ActionError message={actionError} />
+      {staleNotice ? (
+        <div role="status" data-testid="stale-notice" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="flex-1">{staleNotice}</span>
+          <button type="button" onClick={handleStaleRefresh} disabled={refreshingStale} data-testid="stale-refresh" className="shrink-0 rounded border border-amber-300 px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50">
+            Listeyi yenile
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold flex items-center gap-2"><FileText className="h-5 w-5" /> Belgelerim</h1>
         <button onClick={() => setShowUpload(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -172,6 +230,7 @@ export default function PortalDocumentsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-lg font-semibold mb-4">Belge Yükle</h2>
+            <ActionError message={actionError} />
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Belge Türü</label>
