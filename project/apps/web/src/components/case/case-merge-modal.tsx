@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { reportClientError } from "@/lib/error-reporter";
 import { Merge, X, Loader2, Search, Check, AlertTriangle, ArrowRight } from 'lucide-react';
 
 interface CaseMergeModalProps {
@@ -53,6 +54,12 @@ export function CaseMergeModal({ isOpen, onClose, sourceCaseId, sourceCaseNumber
       setSearchResults(results);
     } catch (e) {
       console.error(e);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: case-merge-modal",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     } finally {
       setSearching(false);
     }
@@ -74,6 +81,12 @@ export function CaseMergeModal({ isOpen, onClose, sourceCaseId, sourceCaseNumber
       }, 2000);
     } catch (e) {
       console.error(e);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: case-merge-modal",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
       alert('Birleştirme sırasında bir hata oluştu');
     } finally {
       setMerging(false);

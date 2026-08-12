@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { reportClientError } from "@/lib/error-reporter";
 
 interface UyapStatusPanelProps {
   caseId: string;
@@ -61,6 +62,12 @@ export function UyapStatusPanel({ caseId }: UyapStatusPanelProps) {
       setStats(statsRes.data || null);
     } catch (err) {
       console.error('UYAP durumu yüklenemedi:', err);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: UyapStatusPanel",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     } finally {
       setLoading(false);
     }
@@ -76,6 +83,12 @@ export function UyapStatusPanel({ caseId }: UyapStatusPanelProps) {
       fetchData();
     } catch (err) {
       console.error('Yeniden deneme başarısız:', err);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: UyapStatusPanel",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     }
   };
 

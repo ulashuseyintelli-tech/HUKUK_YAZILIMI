@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { reportClientError } from "@/lib/error-reporter";
 import { FileText, Download, Loader2, CheckCircle, AlertCircle, X, Files } from 'lucide-react';
 
 interface BulkDocumentGeneratorProps {
@@ -94,6 +95,12 @@ export function BulkDocumentGenerator({ selectedCaseIds, isOpen, onClose }: Bulk
       link.remove();
     } catch (e) {
       console.error('İndirme hatası:', e);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: bulk-document-generator",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     }
   };
 

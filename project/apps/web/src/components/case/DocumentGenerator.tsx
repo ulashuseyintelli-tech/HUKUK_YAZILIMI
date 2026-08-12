@@ -13,6 +13,7 @@ import {
   Send,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { reportClientError } from "@/lib/error-reporter";
 
 interface DocumentTemplate {
   id: string;
@@ -81,6 +82,12 @@ export function DocumentGenerator({
       }
     } catch (err: any) {
       console.error('Belge durumu kontrol hatası:', err);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: DocumentGenerator",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
       setDocumentStatus({
         canGenerate: false,
         missingFields: ['API bağlantı hatası'],
@@ -97,6 +104,12 @@ export function DocumentGenerator({
       setTemplates(response.data);
     } catch (err) {
       console.error("Şablonlar yüklenemedi:", err);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: DocumentGenerator",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
       // Fallback: statik liste
       setTemplates([
         {
@@ -239,6 +252,12 @@ export function DocumentGenerator({
       URL.revokeObjectURL(url);
     } catch (err: any) {
       console.error('PDF indirme hatası:', err);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: DocumentGenerator",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
       setError(err.message || 'PDF indirme hatası');
     } finally {
       setDownloading(null);
@@ -267,6 +286,12 @@ export function DocumentGenerator({
       URL.revokeObjectURL(url);
     } catch (err: any) {
       console.error('Word indirme hatası:', err);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: DocumentGenerator",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
       setError(err.message || 'Word indirme hatası');
     } finally {
       setDownloading(null);
@@ -295,6 +320,12 @@ export function DocumentGenerator({
       URL.revokeObjectURL(url);
     } catch (err: any) {
       console.error('UDF oluşturma hatası:', err);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: DocumentGenerator",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
       setError(err.message || 'UDF oluşturma hatası');
     } finally {
       setDownloading(null);

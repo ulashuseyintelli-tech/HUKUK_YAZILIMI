@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
+import { downloadVerified } from '@/lib/verified-download';
 import { ActionError } from '@/components/ui/action-error';
 import { toActionErrorMessage } from '@/lib/action-error';
 import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
@@ -136,14 +137,15 @@ export function CaseAttachments({ caseId }: CaseAttachmentsProps) {
       const res = await api.get(`/cases/${caseId}/attachments/${attachment.id}/download`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = attachment.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // WSMR-A3g: govde dogrulanmadan indirme tetiklenmez; dosya adi SUNUCUDAN
+      // geldigi icin yol/kontrol-karakteri enjeksiyonuna karsi temizlenir.
+      const outcome = downloadVerified(res.data, {
+        fileName: attachment.name,
+        fallbackFileName: 'ek-dosya',
+      });
+      if (!outcome.ok) {
+        alert(outcome.message);
+      }
     } catch (e) {
       alert('İndirme başarısız');
     }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { toActionErrorMessage } from '@/lib/action-error';
+import { downloadVerified } from '@/lib/verified-download';
 import { FileText, Plus, Trash2, Download, Save, Play, X, GripVertical, Settings } from 'lucide-react';
 
 interface ReportColumn {
@@ -144,13 +145,15 @@ export function CustomReportBuilder() {
         responseType: 'blob',
       });
       
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `rapor_${new Date().toISOString().split('T')[0]}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      // WSMR-A3g: bos/JSON govde "indirildi" sayilmaz.
+      const outcome = downloadVerified(res.data, {
+        fileName: `rapor_${new Date().toISOString().split('T')[0]}.xlsx`,
+        fallbackFileName: 'rapor.xlsx',
+      });
+      if (!outcome.ok) {
+        setExportError(outcome.message);
+        return;
+      }
     } catch (e) {
       // WSMR-A3b: export sessizce yutulmuyordu -> kullanici dosyanin indigini
       // saniyordu. Artik hata GORUNUR.
