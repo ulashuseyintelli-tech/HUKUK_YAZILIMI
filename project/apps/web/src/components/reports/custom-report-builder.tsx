@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { FileText, Plus, Trash2, Download, Save, Play, X, GripVertical, Settings } from 'lucide-react';
 
 interface ReportColumn {
@@ -46,6 +47,9 @@ export function CustomReportBuilder() {
   const [reportName, setReportName] = useState('');
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // WSMR-A3b: rapor onizleme ve Excel disa aktarma hatalari GORUNUR olur.
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [filters, setFilters] = useState({
     dateFrom: '',
@@ -73,6 +77,7 @@ export function CustomReportBuilder() {
 
   const generateReport = async () => {
     setGenerating(true);
+    setReportError(null);
     try {
       const params = new URLSearchParams();
       params.append('columns', enabledColumns.map(c => c.field).join(','));
@@ -85,12 +90,12 @@ export function CustomReportBuilder() {
       const res = await api.get(`/reports/custom?${params.toString()}`);
       setPreviewData(res.data?.data || []);
     } catch (e) {
-      // Demo data
-      setPreviewData([
-        { fileNumber: '2024/001', clientName: 'ABC Ltd.', debtorName: 'Mehmet Y.', principalAmount: 50000, caseStatus: 'DERDEST' },
-        { fileNumber: '2024/002', clientName: 'XYZ A.Ş.', debtorName: 'Ahmet K.', principalAmount: 125000, caseStatus: 'HACIZ' },
-        { fileNumber: '2024/003', clientName: 'ABC Ltd.', debtorName: 'Fatma D.', principalAmount: 75000, caseStatus: 'DERDEST' },
-      ]);
+      // WSMR-A3b · UYDURMA RAPOR SATIRLARI KALDIRILDI.
+      // Eskiden burada sabit sahte dosyalar (2024/001 · ABC Ltd. · 50.000)
+      // GERCEK rapor onizlemesi gibi gosteriliyordu; kullanici bunu disa
+      // aktarabiliyordu.
+      setPreviewData([]);
+      setReportError(toActionErrorMessage(e, 'Rapor oluşturulamadı. Lütfen tekrar deneyin.'));
     } finally {
       setGenerating(false);
     }
@@ -129,6 +134,7 @@ export function CustomReportBuilder() {
   };
 
   const exportToExcel = async () => {
+    setExportError(null);
     try {
       const params = new URLSearchParams();
       params.append('columns', enabledColumns.map(c => c.field).join(','));
@@ -146,7 +152,9 @@ export function CustomReportBuilder() {
       link.click();
       link.remove();
     } catch (e) {
-      console.error('Export hatası:', e);
+      // WSMR-A3b: export sessizce yutulmuyordu -> kullanici dosyanin indigini
+      // saniyordu. Artik hata GORUNUR.
+      setExportError(toActionErrorMessage(e, 'Excel dışa aktarma başarısız oldu.'));
     }
   };
 
@@ -313,6 +321,11 @@ export function CustomReportBuilder() {
               </div>
             </div>
 
+            {reportError || exportError ? (
+              <div className="rounded-lg bg-red-50 p-3 mb-3" role="alert">
+                <p className="text-sm font-medium text-red-700">{reportError || exportError}</p>
+              </div>
+            ) : null}
             {previewData.length === 0 ? (
               <div className="p-12 text-center text-gray-500">
                 <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
