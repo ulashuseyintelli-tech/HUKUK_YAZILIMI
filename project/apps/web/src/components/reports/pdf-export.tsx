@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { FileText, Download, Loader2, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { toActionErrorMessage } from '@/lib/action-error';
+import { downloadVerified } from '@/lib/verified-download';
 
 interface PdfExportProps {
   isOpen: boolean;
@@ -54,15 +55,21 @@ export function PdfExportModal({ isOpen, onClose, caseIds, reportType }: PdfExpo
         responseType: 'blob',
       });
 
-      // Download the PDF
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `rapor_${selectedTemplate}_${new Date().toISOString().split('T')[0]}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      // WSMR-A3g: govde DOGRULANMADAN indirme tetiklenmez. `response.ok` tek
+      // basina yeterli degildi: HTTP 200 + JSON hata govdesi veya sifir baytlik
+      // yanit da Blob olarak geliyordu ve kullanici "rapor indi" saniyordu.
+      const outcome = downloadVerified(response.data, {
+        fileName: `rapor_${selectedTemplate}_${new Date().toISOString().split('T')[0]}.pdf`,
+        fallbackFileName: 'rapor.pdf',
+        expectedType: 'application/pdf',
+      });
+
+      if (!outcome.ok) {
+        // Basari yan etkisi YOK: toast, kapatma ve reset calismaz.
+        setSuccess(false);
+        setExportError(outcome.message);
+        return;
+      }
 
       setSuccess(true);
       setTimeout(() => {

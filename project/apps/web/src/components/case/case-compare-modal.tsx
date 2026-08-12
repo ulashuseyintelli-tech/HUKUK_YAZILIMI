@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { reportClientError } from "@/lib/error-reporter";
 import { GitCompare, X, Search, Loader2, ArrowRight, Check, AlertTriangle, ChevronDown, ChevronUp, Users, DollarSign, FileText } from 'lucide-react';
 
 interface CaseCompareModalProps {
@@ -84,6 +85,12 @@ export function CaseCompareModal({ isOpen, onClose, currentCaseId, currentCaseNu
       setCurrentCase(mapCaseData(data));
     } catch (e) {
       console.error(e);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: case-compare-modal",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     }
   };
 
@@ -129,6 +136,12 @@ export function CaseCompareModal({ isOpen, onClose, currentCaseId, currentCaseNu
       setSearchResults(results);
     } catch (e) {
       console.error(e);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: case-compare-modal",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     } finally {
       setSearching(false);
     }
@@ -144,6 +157,12 @@ export function CaseCompareModal({ isOpen, onClose, currentCaseId, currentCaseNu
       setSearchQuery('');
     } catch (e) {
       console.error(e);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: case-compare-modal",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     } finally {
       setLoading(false);
     }

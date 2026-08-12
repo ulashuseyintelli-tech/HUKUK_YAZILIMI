@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { api } from '@/lib/api';
 import { User, Clock, Activity, LogIn, LogOut, FileText, Loader2, Calendar } from 'lucide-react';
 
@@ -24,6 +25,7 @@ interface UserActivityReportProps {
 export function UserActivityReport({ period = 'month' }: UserActivityReportProps) {
   const [users, setUsers] = useState<UserActivity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState(period);
 
   useEffect(() => {
@@ -31,32 +33,15 @@ export function UserActivityReport({ period = 'month' }: UserActivityReportProps
   }, [selectedPeriod]);
 
   const loadData = async () => {
+    setLoadError(null);
     setLoading(true);
     try {
       const res = await api.get(`/reports/user-activity?period=${selectedPeriod}`);
       setUsers(res.data?.data || []);
     } catch (e) {
-      // Demo data
-      setUsers([
-        {
-          id: '1', name: 'Av. Mehmet Yılmaz', email: 'mehmet@buro.com', role: 'Avukat',
-          totalActions: 245, loginCount: 22, lastLogin: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          lastAction: 'Dosya güncelleme', activeHours: [0, 0, 0, 0, 0, 0, 0, 0, 15, 35, 42, 38, 25, 30, 45, 40, 35, 28, 12, 0, 0, 0, 0, 0],
-          actionBreakdown: [{ type: 'Görüntüleme', count: 120 }, { type: 'Güncelleme', count: 85 }, { type: 'Oluşturma', count: 40 }]
-        },
-        {
-          id: '2', name: 'Ayşe Demir', email: 'ayse@buro.com', role: 'Sekreter',
-          totalActions: 380, loginCount: 25, lastLogin: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-          lastAction: 'Belge yükleme', activeHours: [0, 0, 0, 0, 0, 0, 0, 0, 25, 45, 55, 48, 35, 42, 50, 45, 38, 32, 15, 0, 0, 0, 0, 0],
-          actionBreakdown: [{ type: 'Görüntüleme', count: 180 }, { type: 'Güncelleme', count: 120 }, { type: 'Oluşturma', count: 80 }]
-        },
-        {
-          id: '3', name: 'Admin', email: 'admin@buro.com', role: 'Yönetici',
-          totalActions: 156, loginCount: 18, lastLogin: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-          lastAction: 'Ayar değişikliği', activeHours: [0, 0, 0, 0, 0, 0, 0, 0, 10, 20, 25, 22, 18, 15, 20, 18, 12, 8, 5, 0, 0, 0, 0, 0],
-          actionBreakdown: [{ type: 'Görüntüleme', count: 80 }, { type: 'Güncelleme', count: 50 }, { type: 'Oluşturma', count: 26 }]
-        },
-      ]);
+      // WSMR-A3g · UYDURMA KULLANICI KAYITLARI KALDIRILDI.
+      setUsers([]);
+      setLoadError(toActionErrorMessage(e, 'Kullanıcı etkinlik raporu alınamadı.'));
     } finally {
       setLoading(false);
     }

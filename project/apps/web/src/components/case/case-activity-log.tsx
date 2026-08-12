@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { api } from '@/lib/api';
 import { Activity, Filter, Search, User, Clock, FileText, Edit, Trash2, Plus, Eye, Download, Upload, Send } from 'lucide-react';
 
@@ -43,6 +44,7 @@ const ACTION_COLORS: Record<string, string> = {
 export function CaseActivityLog({ caseId }: CaseActivityLogProps) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('');
 
@@ -51,70 +53,15 @@ export function CaseActivityLog({ caseId }: CaseActivityLogProps) {
   }, [caseId]);
 
   const loadActivities = async () => {
+    setLoadError(null);
     setLoading(true);
     try {
       const res = await api.get(`/cases/${caseId}/activities`);
       setActivities(res.data?.data || []);
     } catch (e) {
-      // Demo data
-      setActivities([
-        {
-          id: '1',
-          action: 'Dosya oluşturuldu',
-          actionType: 'CREATE',
-          description: 'Yeni icra takibi dosyası açıldı',
-          user: 'Admin',
-          timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '2',
-          action: 'Borçlu eklendi',
-          actionType: 'CREATE',
-          description: 'Ahmet Yılmaz borçlu olarak eklendi',
-          user: 'Admin',
-          timestamp: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '3',
-          action: 'Belge yüklendi',
-          actionType: 'UPLOAD',
-          description: 'Vekaletname.pdf yüklendi',
-          user: 'Av. Mehmet',
-          timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '4',
-          action: 'Durum güncellendi',
-          actionType: 'UPDATE',
-          description: 'Dosya durumu "İşlemde" olarak değiştirildi',
-          user: 'Admin',
-          timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '5',
-          action: 'Tahsilat kaydedildi',
-          actionType: 'CREATE',
-          description: '5.000 ₺ tahsilat kaydı eklendi',
-          user: 'Muhasebe',
-          timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '6',
-          action: 'Dosya görüntülendi',
-          actionType: 'VIEW',
-          description: 'Dosya detayları görüntülendi',
-          user: 'Av. Mehmet',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: '7',
-          action: 'E-posta gönderildi',
-          actionType: 'SEND',
-          description: 'Müvekkile bilgilendirme e-postası gönderildi',
-          user: 'Admin',
-          timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-        },
-      ]);
+      // WSMR-A3g · UYDURMA AKTIVITE KAYITLARI KALDIRILDI.
+      setActivities([]);
+      setLoadError(toActionErrorMessage(e, 'Etkinlik kaydı alınamadı.'));
     } finally {
       setLoading(false);
     }

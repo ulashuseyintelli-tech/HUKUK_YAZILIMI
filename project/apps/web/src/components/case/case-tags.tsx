@@ -27,12 +27,14 @@ export function CaseTags({ caseId, onTagsChange }: CaseTagsProps) {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#3b82f6');
   const [loading, setLoading] = useState(true);
+  const [staleFromCache, setStaleFromCache] = useState(false);
 
   useEffect(() => {
     loadTags();
   }, [caseId]);
 
   const loadTags = async () => {
+    setStaleFromCache(false);
     try {
       const [caseTagsRes, allTagsRes] = await Promise.all([
         api.get(`/cases/${caseId}/tags`),
@@ -41,6 +43,9 @@ export function CaseTags({ caseId, onTagsChange }: CaseTagsProps) {
       setTags(caseTagsRes.data || []);
       setAllTags(allTagsRes.data || []);
     } catch (e) {
+      // WSMR-A3g: localStorage BAYAT bir onbellektir; sunucu verisi gibi
+      // gosterilemez. Yukleniyorsa kullaniciya ACIKCA bayat oldugu bildirilir.
+      setStaleFromCache(true);
       // localStorage'dan yükle
       const savedTags = localStorage.getItem(`caseTags_${caseId}`);
       const savedAllTags = localStorage.getItem('allCaseTags');

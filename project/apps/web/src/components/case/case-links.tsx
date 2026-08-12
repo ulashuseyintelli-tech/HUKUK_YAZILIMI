@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { reportClientError } from "@/lib/error-reporter";
 import { ActionError } from '@/components/ui/action-error';
 import { toActionErrorMessage } from '@/lib/action-error';
 import { runMutation, runRefreshOnly } from '@/lib/mutation-outcome';
@@ -83,6 +84,12 @@ export function CaseLinks({ caseId, caseNumber }: CaseLinksProps) {
       setSearchResults(results);
     } catch (e) {
       console.error(e);
+      // WSMR-A3g: sessiz yutma YOK — merkezi reporter'a bildirilir.
+      reportClientError({
+        level: "WARN",
+        message: "okuma hatasi: case-links",
+        metadata: { safeErrorCode: "READ_FAILED" },
+      });
     } finally {
       setSearching(false);
     }
