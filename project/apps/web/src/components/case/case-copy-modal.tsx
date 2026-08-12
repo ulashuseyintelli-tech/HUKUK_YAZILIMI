@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { Copy, X, Loader2, Check, FileText } from 'lucide-react';
+import { Copy, X, Loader2, Check, FileText, AlertCircle } from 'lucide-react';
+import { toActionErrorMessage } from '@/lib/action-error';
 
 interface CaseCopyModalProps {
   isOpen: boolean;
@@ -25,9 +26,12 @@ export function CaseCopyModal({ isOpen, onClose, sourceCaseId, sourceCaseNumber,
   const [copying, setCopying] = useState(false);
   const [success, setSuccess] = useState(false);
   const [newCaseId, setNewCaseId] = useState<string | null>(null);
+  // WSMR-A3: kopyalama basarisizsa GORUNUR hata; sahte dosya kimligi URETILMEZ.
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const handleCopy = async () => {
     setCopying(true);
+    setCopyError(null);
     try {
       const res = await api.post(`/cases/${sourceCaseId}/copy`, {
         newFileNumber: newFileNumber || undefined,
@@ -40,10 +44,14 @@ export function CaseCopyModal({ isOpen, onClose, sourceCaseId, sourceCaseNumber,
         onCopied?.(createdCaseId);
       }, 1500);
     } catch (e) {
-      console.error(e);
-      // Demo success
-      setNewCaseId('demo-new-case');
-      setSuccess(true);
+      // WSMR-A3 · UYDURMA KAYIT + YALANCI BASARI KALDIRILDI.
+      // Eskiden kopyalama basarisiz oldugunda `setNewCaseId('demo-new-case')` ile
+      // OLMAYAN bir dosya kimligi uyduruluyor ve "kopyalandi" gosteriliyordu;
+      // kullanici var olmayan bir dosyaya yonlendirilebiliyordu. Artik basari yan
+      // etkisi CALISMAZ, kimlik uydurulmaz ve hata gorunur olur.
+      setSuccess(false);
+      setNewCaseId(null);
+      setCopyError(toActionErrorMessage(e, 'Dosya kopyalanamadı. Lütfen tekrar deneyin.'));
     } finally {
       setCopying(false);
     }
@@ -98,6 +106,12 @@ export function CaseCopyModal({ isOpen, onClose, sourceCaseId, sourceCaseNumber,
         ) : (
           <>
             <div className="p-4 space-y-4">
+              {copyError && (
+                <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3" role="alert">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-600 mt-0.5" />
+                  <p className="text-sm font-medium text-red-700">{copyError}</p>
+                </div>
+              )}
               {/* Source Case */}
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-xs text-blue-600 mb-1">Kaynak Dosya</p>

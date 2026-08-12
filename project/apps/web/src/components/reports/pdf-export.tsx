@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { FileText, Download, Loader2, X, CheckCircle } from 'lucide-react';
+import { FileText, Download, Loader2, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { toActionErrorMessage } from '@/lib/action-error';
 
 interface PdfExportProps {
   isOpen: boolean;
@@ -23,6 +24,8 @@ export function PdfExportModal({ isOpen, onClose, caseIds, reportType }: PdfExpo
   const [selectedTemplate, setSelectedTemplate] = useState(reportType || '');
   const [generating, setGenerating] = useState(false);
   const [success, setSuccess] = useState(false);
+  // WSMR-A3: PDF uretimi basarisizsa GORUNUR hata; "olusturuldu" denmez.
+  const [exportError, setExportError] = useState<string | null>(null);
   const [options, setOptions] = useState({
     includeDetails: true,
     includeCharts: true,
@@ -35,6 +38,7 @@ export function PdfExportModal({ isOpen, onClose, caseIds, reportType }: PdfExpo
     if (!selectedTemplate) return;
 
     setGenerating(true);
+    setExportError(null);
     try {
       const params = new URLSearchParams();
       params.append('template', selectedTemplate);
@@ -66,13 +70,14 @@ export function PdfExportModal({ isOpen, onClose, caseIds, reportType }: PdfExpo
         onClose();
       }, 2000);
     } catch (e) {
-      console.error('PDF oluşturma hatası:', e);
-      // Demo: Show success anyway
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        onClose();
-      }, 2000);
+      // WSMR-A3 · YALANCI BASARI KALDIRILDI.
+      // Eskiden burada `// Demo: Show success anyway` yorumuyla `setSuccess(true)`
+      // vardi: PDF URETILEMEDIGI halde kullaniciya "Rapor olusturuldu" deniyor ve
+      // modal kendiliginden kapaniyordu. Kullanici indirilmeyen bir raporu
+      // indirilmis saniyordu. Artik basari yan etkisi CALISMAZ; hata gorunur olur
+      // ve kullanici yeniden deneyebilir.
+      setSuccess(false);
+      setExportError(toActionErrorMessage(e, 'Rapor oluşturulamadı. Lütfen tekrar deneyin.'));
     } finally {
       setGenerating(false);
     }
@@ -104,6 +109,12 @@ export function PdfExportModal({ isOpen, onClose, caseIds, reportType }: PdfExpo
             </div>
           ) : (
             <>
+              {exportError && (
+                <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3" role="alert">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-600 mt-0.5" />
+                  <p className="text-sm font-medium text-red-700">{exportError}</p>
+                </div>
+              )}
               {/* Template Selection */}
               <div>
                 <label className="block text-sm font-medium mb-2">Rapor Şablonu</label>
