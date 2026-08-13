@@ -6,6 +6,7 @@ import { MessageCircle, Send, User, Building2 } from "lucide-react";
 // `http://localhost:8080` adresine gidiyordu — farklı origin'li dağıtımlarda mesajlaşma
 // (listeleme/okundu-işaretleme/gönderme) sessizce çalışmıyordu.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface Message {
   id: string;
@@ -21,6 +22,9 @@ export default function PortalMessagesPage() {
   const [loading, setLoading] = useState(true);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  // WSMR-A4g: okuma ve gonderme hatalari AYRI ayri gorunur olur.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,16 +53,21 @@ export default function PortalMessagesPage() {
       setLoading(false);
       return;
     }
+    setLoadError(null);
     try {
       const res = await fetch(portalApiUrl("/api/portal/messages"), {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data);
-      }
+      if (!res.ok) throw new Error(`MESSAGES_HTTP_${res.status}`);
+      const data = await res.json();
+      // Govde SOZLESMEYE karsi dogrulanir: dizi degilse basari sayilmaz.
+      if (!Array.isArray(data)) throw new Error("MALFORMED_MESSAGE_LIST");
+      setMessages(data);
     } catch (e) {
-      console.error(e);
+      // WSMR-A4g: okuma hatasi "Henuz mesaj yok" ile AYNI gorunemez. Muvekkil,
+      // burodan gelmis bir mesaji goremedigi halde yazisma bos saniyordu.
+      setMessages([]);
+      setLoadError(toActionErrorMessage(e, "Mesajlar yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -68,11 +77,22 @@ export default function PortalMessagesPage() {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
     try {
-      await fetch(portalApiUrl("/api/portal/messages/mark-read"), {
+      const res = await fetch(portalApiUrl("/api/portal/messages/mark-read"), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-    } catch (e) {}
+      if (!res.ok) throw new Error(`MARK_READ_HTTP_${res.status}`);
+    } catch {
+      // WSMR-A4g · KASITLI SESSIZ — terminal sinif: FALSE_POSITIVE_WITH_TESTED_RULE_REASON.
+      //
+      // Kural: bu handler YEREL STATE'E HIC YAZMAZ. Basarisi bir UI iddiasina
+      // donusmedigi icin basarisizligi da YALAN bir UI iddiasi uretemez; okundu
+      // bilgisinin tek kaynagi sunucudur ve bir sonraki yuklemede dogru yansir.
+      // Kullanicinin BASLATMADIGI bir arka plan yan etkisi icin hata bandi basmak
+      // yaniltici olurdu. `res.ok` kontrolu yine de eklendi ki bu kural ileride
+      // biri buraya yerel bir "okundu" yazarsa testle kirilsin.
+      // Davranis kaniti: a4g-portal-messages.spec.tsx > "mark-read"
+    }
   };
 
   const handleSend = async () => {
@@ -81,6 +101,7 @@ export default function PortalMessagesPage() {
     if (!token) return;
 
     setSending(true);
+    setSendError(null);
     try {
       const res = await fetch(portalApiUrl("/api/portal/messages"), {
         method: "POST",
@@ -91,12 +112,17 @@ export default function PortalMessagesPage() {
         body: JSON.stringify({ content: newMessage }),
       });
 
-      if (res.ok) {
-        setNewMessage("");
-        fetchMessages();
-      }
+      if (!res.ok) throw new Error(`SEND_MESSAGE_HTTP_${res.status}`);
+      setNewMessage("");
+      fetchMessages();
     } catch (e) {
-      console.error(e);
+      // WSMR-A4g · SESSIZ GONDERIM HATASI KALDIRILDI.
+      //
+      // Eski hâlde `res.ok` degilse HICBIR SEY yapilmiyordu: hata gorunmuyor,
+      // "Gonder" dugmesi normale donuyordu. Muvekkil burosuna hic ulasmayan bir
+      // mesaji gonderilmis sanabilirdi. Metin KORUNUR (kaybolmaz) ve hata
+      // gorunur olur; yeniden gonderme kullanicinin acik eylemidir.
+      setSendError(toActionErrorMessage(e, "Mesaj gönderilemedi."));
     } finally {
       setSending(false);
     }
@@ -123,7 +149,19 @@ export default function PortalMessagesPage() {
       {/* Mesaj Listesi */}
       <div className="flex-1 bg-white rounded-lg border overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.length === 0 ? (
+          {loadError ? (
+            /* WSMR-A4g: yukleme HATASI "Henuz mesaj yok" ile ayni gorunemez. */
+            <div className="text-center py-12" role="alert">
+              <p className="text-sm font-medium text-red-600">{loadError}</p>
+              <button
+                type="button"
+                onClick={fetchMessages}
+                className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+              >
+                Tekrar dene
+              </button>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               <MessageCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
               <p>Henüz mesaj yok</p>
@@ -154,6 +192,11 @@ export default function PortalMessagesPage() {
 
         {/* Mesaj Gönderme */}
         <div className="border-t p-3">
+          {sendError && (
+            <div role="alert" className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {sendError}
+            </div>
+          )}
           <div className="flex gap-2">
             <textarea
               value={newMessage}
