@@ -170,6 +170,10 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
   const [actions, setActions] = useState<ClientActionCatalogItem[]>([]);
   const [snapshot, setSnapshot] = useState<ClientOperatingSnapshot | null>(null);
   const [retryOpenRequest, setRetryOpenRequest] = useState(0);
+  // WSMR-A4m: baslangic yuklemesi hatasinda kullanicinin SALT-OKUMA olarak
+  // tekrar deneyebilmesi icin. Bu sayac, `clientId` DEGISMEDEN de efekti
+  // yeniden tetikler.
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const refreshModels = useCallback(async () => {
     const [catalog, snap] = await Promise.all([api.getClientActionCatalog(clientId), api.getClientOperatingSnapshot(clientId)]);
@@ -191,6 +195,9 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
       })
       .catch(() => {
         if (!active) return;
+        // WSMR-A4m: `state('error')` ile ISLEMLER/anlik-durum AYRI tutulur —
+        // "yuklendi ama bos" ile "yuklenemedi" KARISTIRILMAZ (bu ayrim zaten
+        // vardi). Eklenen: kullanicinin gorebilecegi bir salt-okuma retry.
         setActions([]);
         setSnapshot(null);
         setState('error');
@@ -199,7 +206,7 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
     return () => {
       active = false;
     };
-  }, [clientId]);
+  }, [clientId, loadAttempt]);
 
   const enabledCount = useMemo(() => actions.filter((item) => item.enabled).length, [actions]);
   const retryAsNewSignal = useMemo(() => snapshot?.signals.find(isRetryAsNewSignal) ?? null, [snapshot]);
@@ -216,9 +223,18 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
 
   if (state === 'error') {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-        <AlertCircle className="h-4 w-4 shrink-0" />
-        İşlemler yüklenemedi.
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <span className="flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          İşlemler yüklenemedi.
+        </span>
+        <button
+          type="button"
+          onClick={() => setLoadAttempt((n) => n + 1)}
+          className="shrink-0 text-xs font-medium underline hover:text-red-900"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }
