@@ -196,6 +196,7 @@ Program Task12 `TPA-04D-I02` `NOT STARTED`; bu kayıt Task12 execution başlatma
 | **VER-25 (mevcut WIP sayfa aidiyeti)** | CLOSED / STALE (2026-07-10): yalnız bu register satırında bulunuyor; kanonik bağımsız gereksinim yok. MPB-027 zaten kapalı olduğundan tahmine dayalı yeni workstream üretilmedi. |
 | **VER-26 (H1-H7 + P4 + TBK100 umbrella)** | CLOSED / SPLIT (2026-07-10): P4 Office Approval FE PR #823/#832 ile teslim edilmiş ve P4-6 DONE; H1-H7 için kanonik tek umbrella bulunmadı; TBK100 ayrı CCB-001/ADR-014/CAN-CUT-02 hattında izleniyor. Duplicate umbrella verification kapatıldı. |
 | **VER-27 (offset ADR / authz handoff cross-reference)** | CLOSED / GOVERNANCE RECONCILED (2026-07-10): offset payout değildir, DBIND §5 uygulanmaz ve v1 `DIRECT_CAPABILITY` modeli korunur. Eski Guided-Open/always-gated anlatısı ADR'den çıkarıldı; OfficeApproval/four-eyes gelecekte ancak yeni owner-authorized workstream ile açılabilir. Runtime değişmedi. |
+| **OFFICE / P5 SECURITY — PHASE A + PHASE B + B02R1 (OFFICE-P5-SECURITY-R01)** | **CLOSED / VERIFIED (2026-08-13; kanonik kayıt: OFFICE-P8-C4-CANONICAL-RECONCILIATION-R01).** Zincir: Phase A evidence PR #2362 squash `e6a22c7f8c6bf1531e36229971df0f84f0a46bcb` → Phase B PR #2368 squash `4e228cb2a535a2ffac9ea9901a7904dddaada8a4` (F-B01-01, B02, B04/S3, B05) → B02R1 PR #2371 squash `957eae28e0c48abb352ca435baa1d5c8b8f3649a` (seed public-institutions ADMIN rol kapısı). Üçü de gh ile MERGED + origin/main ancestry VERIFIED; #2371 CI rollup 9/9 SUCCESS. F-B02-01 CLOSED. Lane evidence: `office-p5-security-r01/` (TAŞINMADI, pointer). RUNTIME RESIDUAL AYRIDIR: canlı API RELEASE10 @ `77a347a9831522aebddcb4a0ec14767ff21c851b`; canonical main değişiklikleri canlıya uygulanmış SAYILMAZ (deployment disposition BLOCKED_BY_RUNTIME_MODEL). P5 residual'ları blocker DEĞİL, SUCCESSOR INVENTORY: F-B01-03/04/05 · StaffDetailModal diff-payload · /auth/me passwordChangedAt · CLF-P5-01→X1-P6 — bkz. `OFFICE-DELIVERY-MANIFEST.md` §13.4 + `product-backlog.md` § OFFICE P8-C4. |
 
 ---
 
@@ -324,7 +325,7 @@ Program Task12 `TPA-04D-I02` `NOT STARTED`; bu kayıt Task12 execution başlatma
 | Master Verification Required | 13 (VER-02, VER-05, VER-07, VER-09, VER-10, VER-12, VER-14, VER-16, VER-20, VER-21, VER-22, VER-29, VER-33) |
 | Master Workflow Queue — PENDING | 6 grup |
 | Master Workflow Queue — DONE | 7 zincir/kayıt |
-| Closed Register | 60 (VER-13 / RCV-PR407-CLOSE-B-GOV closure eklendi) |
+| Closed Register | 61 (OFFICE / P5 SECURITY — OFFICE-P5-SECURITY-R01 closure eklendi; 2026-08-13 P8-C4) |
 | Archived Register | 7 (ARC-05 split sonrası tek satır, A parçası Closed'a gitti) |
 | Superseded Register | 1 |
 | Blocked Register | 10 (tümü re-verified, KAPALI sayılır) |

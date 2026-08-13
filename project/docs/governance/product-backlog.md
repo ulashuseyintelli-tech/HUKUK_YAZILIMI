@@ -3652,3 +3652,49 @@ PROGRAM LOCK              NAFAKA FIRST
 
 Bu current-state kaydı yeni backlog seçimi veya runtime authority üretmez. Nafaka-first lock
 korunur; production-signature authority preflight yalnız salt-okunur ayrı successor adayıdır.
+
+---
+
+## OFFICE P8-C4 Canonical Reconciliation — 2026-08-13
+
+```text
+RECONCILIATION TASK       OFFICE-P8-C4-CANONICAL-RECONCILIATION-R01
+NİTELİK                   ARA UZLAŞTIRMA — P8 FINAL CLOSEOUT DEĞİL (X4 + kalan lane'ler açık)
+P5 SECURITY               CLOSED / VERIFIED — #2362 e6a22c7f8c6bf1531e36229971df0f84f0a46bcb
+                          → #2368 4e228cb2a535a2ffac9ea9901a7904dddaada8a4
+                          → #2371 957eae28e0c48abb352ca435baa1d5c8b8f3649a; F-B02-01 CLOSED
+DELIVERY ATTRIBUTION      P6A #2352 · P6B #2356 · P2 #2357 + #2359 · P3 #2364 · P7 #2358
+                          (tam SHA'lar ve notlar: OFFICE-DELIVERY-MANIFEST.md §13.2)
+RUNTIME RESIDUAL          BLOCKED_BY_RUNTIME_MODEL — canlı API RELEASE10 @
+                          77a347a9831522aebddcb4a0ec14767ff21c851b; canonical main canlıya
+                          uygulanmış SAYILMAZ; P6 hash-matrisi tazelenmeden capability
+                          deployment verdict YOK
+```
+
+### Successor Inventory (blocker DEĞİL — envanter; execution authority NONE)
+
+Tümü `OWNER GO REQUIRED / NOT STARTED`; bu liste öncelik/sıra seçmez, yeni disposition
+üretmez (pointer detayı: `OFFICE-DELIVERY-MANIFEST.md` §13.4):
+
+- F-B01-03 · F-B01-04 · F-B01-05 (`office-p5-security-r01/b01-credential-containment-runtime-status.md`)
+- StaffDetailModal diff-payload (`office-p5-security-r01/b03-staff-authorization-compatibility-matrix.md`)
+- /auth/me `passwordChangedAt` görünürlük kalemi (`office-p5-security-r01/README.md`)
+- CLF-P5-01 → X1-P6 (`office-p5-security-r01/b01-credential-containment-runtime-status.md`)
+- CLF-P7-01/02/03 — stale yorumlar + BankSettlement reachability düzeltmesi (`office-p7-dormant-r01/cross-lane-findings.md`)
+- CLF-O0-01 — requestRevision domain-owned guard → X4 (owner P8-C4 handoff envanteri; repo-içi kart yok)
+- Kozmetik personel ad-hijyeni (owner P8-C4 handoff envanteri)
+
+### OFFICE-WR01 — Master Plan Kaydı
+
+```text
+OFFICE-WR01               DECISION_RATIFIED / DECOMPOSITION_REQUIRED
+KARARLAR                  D-WR-1..6 RATIFIED · D-WR-7 OPEN
+BLOK İSKELETİ             B01..B10 (decomposition ayrı yetkili iş; bu kayıt sıra/scope seçmez)
+DAL                       PRODUCT EXTENSION
+P8 FINAL İLİŞKİSİ         BEKLETMEZ — P8 FINAL blocker'ı DEĞİL
+EXECUTION AUTHORITY       NONE
+```
+
+Bu bölüm governance-only kayıt uzlaştırmasıdır; kod/schema/migration/DB/runtime/flag
+değişikliği YOK. Kaynak: owner P8-C4 handoff (2026-08-13) + `decision-log.md` 2026-08-13
+OFFICE P8-C4 satırları.
