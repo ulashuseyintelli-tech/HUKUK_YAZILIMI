@@ -66,7 +66,23 @@ function route(map: Record<string, () => unknown>) {
 
 /** "Toplam Dosya" kartının gövde metni. */
 async function totalCard(): Promise<HTMLElement> {
-  return (await screen.findByText('Toplam Dosya')).closest('div')!.parentElement as HTMLElement;
+  const card = (await screen.findByText('Toplam Dosya')).closest('div')!
+    .parentElement as HTMLElement;
+  /**
+   * WSMR-A4l DUZELTMESI — YARIS KAPATILDI.
+   *
+   * Etiket ("Toplam Dosya") YUKLEME sirasinda da render ediliyor; bu yuzden
+   * `findByText` kart YERLESMEDEN cozulebiliyordu ve `textContent` hala
+   * "Yükleniyor…" iken dogrulaniyordu. Yerel makinede gecen bu yaris, CI'nin
+   * daha yavas runner'inda "expected 'Toplam DosyaYükleniyor…' to contain '0'"
+   * seklinde kirmiziya dustu.
+   *
+   * Kart ARA durumdan cikana kadar beklenir. Bu bir zayiflatma DEGILDIR:
+   * cagiran testlerin iddialari (gercek 0 basilir / yalanci sifir YASAK)
+   * aynen gecerlidir, yalnizca DOGRU ana uygulanir.
+   */
+  await vi.waitFor(() => expect(card.textContent).not.toMatch(/Yükleniyor/));
+  return card;
 }
 
 let consoleErr: ReturnType<typeof vi.spyOn>;
