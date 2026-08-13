@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculat
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { runMutation } from "@/lib/mutation-outcome";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
@@ -4306,6 +4307,8 @@ function DuesStep({
   // PR-2A1: onizleme hatasi GORUNUR; fallback belge uretilmez.
   const [takipTalebiPreviewError, setTakipTalebiPreviewError] = useState<string | null>(null);
   const [calculatingInterest, setCalculatingInterest] = useState(false);
+  // WSMR-A4f: faiz hesabi hatasi GORUNUR; yerel tahmin uretilmez.
+  const [interestError, setInterestError] = useState<string | null>(null);
   const [generatingFromRules, setGeneratingFromRules] = useState(false);
   const [validationResult, setValidationResult] = useState<{
     isValid: boolean;
@@ -4891,34 +4894,40 @@ function DuesStep({
     }
 
     setCalculatingInterest(true);
+    setInterestError(null);
+    setInterestResult(null);
     try {
-      const rate = interestForm.customRate 
-        ? parseFloat(interestForm.customRate) 
+      const rate = interestForm.customRate
+        ? parseFloat(interestForm.customRate)
         : interestRates[interestForm.interestType];
-      
+
       const response = await api.get(`/rule-engine/interest?principal=${principal}&startDate=${startDate}&endDate=${interestForm.endDate}&rate=${rate}`);
-      const result = response.data;
-      setInterestResult(result);
+      const result = response.data as { interest?: unknown; days?: unknown; rate?: unknown } | null;
+      // Gövde SÖZLEŞMEYE karşı doğrulanır: eksik/bozuk yanıt BAŞARI sayılmaz.
+      if (
+        !result ||
+        typeof result.interest !== "number" ||
+        typeof result.days !== "number" ||
+        typeof result.rate !== "number"
+      ) {
+        throw new Error("MALFORMED_INTEREST_RESPONSE");
+      }
+      setInterestResult(result as typeof interestResult);
     } catch (err) {
-      console.error("Faiz hesaplama hatası:", err);
-      // Fallback: Manuel hesaplama
-      const rate = interestForm.customRate 
-        ? parseFloat(interestForm.customRate) 
-        : interestRates[interestForm.interestType];
-      const start = new Date(startDate);
-      const end = new Date(interestForm.endDate);
-      const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-      const dailyRate = rate / 365 / 100;
-      const interest = principal * dailyRate * days;
-      
-      setInterestResult({
-        principal,
-        rate,
-        days,
-        interest: Math.round(interest * 100) / 100,
-        total: principal + interest,
-        description: `${days} gün için %${rate} ${interestForm.interestType.toLowerCase()} faiz`,
-      });
+      // WSMR-A4f · UYDURMA YEREL FAİZ HESABI KALDIRILDI.
+      //
+      // Burada `/rule-engine/interest` hata verdiginde faiz YEREL olarak
+      //     principal * (rate / 365 / 100) * gun
+      // formuluyle uretiliyor, sonuc ekranda gercek hesap gibi gosteriliyor ve
+      // "Kalem Olarak Ekle" ile interestAmount / interestRate alanlarina
+      // yaziliyordu. Bu duz formul 3095 sayili Kanun kapsamindaki donemsel oran
+      // degisimlerini yok sayan bir TAHMINDIR; hukuki bir talebe yazilamaz.
+      //
+      // Ayni dosyadaki `calculateAutoInterest` zaten dogru kurali belgeliyor:
+      // "API erisilemezse null doner - TAHMIN YAPILMAZ". Faiz hesabi artik
+      // fail-closed: sonuc uretilmez, hata gorunur olur.
+      setInterestResult(null);
+      setInterestError(toActionErrorMessage(err, "Faiz hesaplanamadı."));
     }
     setCalculatingInterest(false);
   };
@@ -5171,7 +5180,16 @@ function DuesStep({
               {calculatingInterest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
               Hesapla
             </button>
-            
+
+            {interestError && (
+              <div
+                role="alert"
+                className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                {interestError}
+              </div>
+            )}
+
             {interestResult && (
               <div className="flex-1 flex items-center justify-between bg-white rounded-lg p-3 border border-orange-200">
                 <div className="text-sm">

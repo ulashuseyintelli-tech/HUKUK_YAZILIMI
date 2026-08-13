@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { Plus, MoreVertical, Clock, User, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
@@ -33,26 +34,33 @@ const PRIORITY_COLORS: Record<string, string> = {
 export default function KanbanPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
 
   useEffect(() => {
     loadTasks();
   }, []);
 
+  /**
+   * WSMR-A4f · UYDURMA GOREV KAYITLARI KALDIRILDI.
+   *
+   * `/tasks` hata verdiginde bes adet sahte hukuki gorev ("Haciz talebi
+   * hazirla", "Tebligat kontrolu", ...) panoya diziliyordu. Kullanici bunlari
+   * gercek is listesi sanip planlama yapabilir, gercek gorevleri ise hic
+   * gormedigi icin kacirabilirdi. Artik yuk hatasi GORUNUR ve pano bos kalir.
+   */
   const loadTasks = async () => {
+    setLoadError(null);
     try {
       const res = await api.get('/tasks');
-      setTasks(res.data || []);
+      const raw = (res as { data?: unknown })?.data;
+      const rows = Array.isArray(raw) ? raw : (raw as { data?: unknown } | undefined)?.data;
+      if (!Array.isArray(rows)) throw new Error('MALFORMED_LIST_RESPONSE');
+      setTasks(rows as Task[]);
     } catch (e) {
-      console.error(e);
-      // Demo data
-      setTasks([
-        { id: '1', title: 'Haciz talebi hazırla', status: 'PENDING', priority: 'HIGH', dueDate: '2025-12-15' },
-        { id: '2', title: 'Tebligat kontrolü', status: 'IN_PROGRESS', priority: 'MEDIUM' },
-        { id: '3', title: 'Müvekkil görüşmesi', status: 'PENDING', priority: 'LOW' },
-        { id: '4', title: 'Dosya inceleme', status: 'REVIEW', priority: 'MEDIUM' },
-        { id: '5', title: 'Rapor hazırla', status: 'COMPLETED', priority: 'LOW' },
-      ]);
+      setTasks([]);
+      setLoadError(toActionErrorMessage(e, 'Görevler yüklenemedi.'));
     } finally {
       setLoading(false);
     }
@@ -72,17 +80,25 @@ export default function KanbanPage() {
       return;
     }
 
+    const movedId = draggedTask.id;
+    const previousStatus = draggedTask.status;
+
     // Optimistic update
-    setTasks(prev => prev.map(t => 
-      t.id === draggedTask.id ? { ...t, status: columnId } : t
+    setMoveError(null);
+    setTasks(prev => prev.map(t =>
+      t.id === movedId ? { ...t, status: columnId } : t
     ));
 
     try {
-      await api.put(`/tasks/${draggedTask.id}`, { status: columnId });
+      await api.put(`/tasks/${movedId}`, { status: columnId });
     } catch (e) {
-      console.error(e);
-      // Revert on error
-      loadTasks();
+      // WSMR-A4f: basarisiz tasima ONCEKI duruma geri alinir. Eskiden burada
+      // loadTasks() cagriliyordu; o da hata verirse pano sahte demo gorevlere
+      // dusuyordu — yani basarisiz bir mutasyon uydurma veriyle sonuclaniyordu.
+      setTasks(prev => prev.map(t =>
+        t.id === movedId ? { ...t, status: previousStatus } : t
+      ));
+      setMoveError(toActionErrorMessage(e, 'Görev durumu güncellenemedi.'));
     }
 
     setDraggedTask(null);
@@ -125,8 +141,27 @@ export default function KanbanPage() {
         </Link>
       </div>
 
+      {moveError && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {moveError}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex-1 flex items-center justify-center">Yükleniyor...</div>
+      ) : loadError ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center" role="alert">
+            <p className="text-sm font-medium text-red-600">{loadError}</p>
+            <button
+              type="button"
+              onClick={loadTasks}
+              className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+            >
+              Tekrar dene
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
           {COLUMNS.map(column => (
