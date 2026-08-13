@@ -34,6 +34,8 @@ export function Header() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  // WSMR-A4j: erisilemeyen arama kaynaklari GORUNUR olur; "sonuc yok" ile karismaz.
+  const [failedSources, setFailedSources] = useState<string[]>([]);
   const searchRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const router = useRouter();
@@ -66,34 +68,74 @@ export function Header() {
 
     const timer = setTimeout(async () => {
       setSearching(true);
-      try {
-        const [casesRes, clientsRes, debtorsRes] = await Promise.all([
-          api.get(`/cases?search=${encodeURIComponent(searchQuery)}&limit=5`).catch(() => ({ data: [] })),
-          api.get(`/clients?search=${encodeURIComponent(searchQuery)}&limit=5`).catch(() => ({ data: [] })),
-          api.get(`/debtors?search=${encodeURIComponent(searchQuery)}&limit=5`).catch(() => ({ data: [] })),
-        ]);
+      setFailedSources([]);
+      /**
+       * WSMR-A4j · ARAMA KAYNAĞI HATASI "SONUÇ YOK" DEMEK DEĞİLDİR.
+       *
+       * Eski hâlde üç kaynağın her biri `.catch(() => ({ data: [] }))` ile
+       * sessizce boş diziye düşüyordu. Render tarafı (aşağıda) tam olarak bu
+       * durumda **"Sonuç bulunamadı"** basıyor. Yani `/cases` erişilemezken
+       * gerçekten VAR OLAN bir takip aranınca ekran "yok" diyordu; avukat
+       * dosyanın bulunmadığı sonucuna varabilirdi. Bu bileşen dashboard'un
+       * TÜM sayfalarında render ediliyor, dolayısıyla yüzey genel.
+       *
+       * Artık her kaynak BAĞIMSIZ değerlendirilir: başarılı olanlar listelenir,
+       * başarısız olanlar isimleriyle GÖRÜNÜR olur. "Hiç sonuç yok" ancak ÜÇ
+       * kaynak da doğrulanmış biçimde boş döndüğünde yazılır.
+       */
+      const SOURCES = [
+        {
+          label: 'Takipler',
+          url: `/cases?search=${encodeURIComponent(searchQuery)}&limit=5`,
+          map: (c: any): SearchResult => ({
+            type: 'case', id: c.id, title: c.fileNumber,
+            subtitle: c.executionFileNumber || c.type,
+          }),
+        },
+        {
+          label: 'Müvekkiller',
+          url: `/clients?search=${encodeURIComponent(searchQuery)}&limit=5`,
+          map: (c: any): SearchResult => ({
+            type: 'client', id: c.id, title: c.displayName || c.name,
+            subtitle: c.tckn || c.vkn,
+          }),
+        },
+        {
+          label: 'Borçlular',
+          url: `/debtors?search=${encodeURIComponent(searchQuery)}&limit=5`,
+          map: (d: any): SearchResult => ({
+            type: 'debtor', id: d.id, title: d.name, subtitle: d.identityNo,
+          }),
+        },
+      ] as const;
 
-        const results: SearchResult[] = [];
-        
-        (casesRes.data || []).slice(0, 3).forEach((c: any) => {
-          results.push({ type: 'case', id: c.id, title: c.fileNumber, subtitle: c.executionFileNumber || c.type });
-        });
-        
-        (clientsRes.data || []).slice(0, 3).forEach((c: any) => {
-          results.push({ type: 'client', id: c.id, title: c.displayName || c.name, subtitle: c.tckn || c.vkn });
-        });
-        
-        (debtorsRes.data || []).slice(0, 3).forEach((d: any) => {
-          results.push({ type: 'debtor', id: d.id, title: d.name, subtitle: d.identityNo });
-        });
+      const settled = await Promise.allSettled(
+        SOURCES.map((src) => api.get(src.url)),
+      );
 
-        setSearchResults(results);
-        setShowResults(true);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setSearching(false);
-      }
+      const results: SearchResult[] = [];
+      const failed: string[] = [];
+
+      settled.forEach((outcome, i) => {
+        const src = SOURCES[i];
+        if (outcome.status === 'rejected') {
+          failed.push(src.label);
+          return;
+        }
+        const raw = (outcome.value as { data?: unknown })?.data;
+        const rows = Array.isArray(raw) ? raw : (raw as { data?: unknown } | undefined)?.data;
+        // Gövde SÖZLEŞMEYE karşı doğrulanır: dizi değilse BAŞARI sayılmaz.
+        if (!Array.isArray(rows)) {
+          failed.push(src.label);
+          return;
+        }
+        rows.slice(0, 3).forEach((row) => results.push(src.map(row)));
+      });
+
+      setSearchResults(results);
+      setFailedSources(failed);
+      setShowResults(true);
+      setSearching(false);
     }, 300);
 
     return () => clearTimeout(timer);
@@ -216,12 +258,28 @@ export function Header() {
                   {searchResults.length} sonuç bulundu
                 </div>
               )}
+              {failedSources.length > 0 && (
+                /* WSMR-A4j: KISMI basarisizlik gizlenmez — eksik kaynak isimle soylenir. */
+                <div role="alert" className="px-4 py-2 text-xs text-red-700 bg-red-50 border-t">
+                  {failedSources.join(', ')} aranamadı; bu sonuçlar EKSİK olabilir.
+                </div>
+              )}
             </div>
           )}
           
           {showResults && searchQuery.length >= 2 && searchResults.length === 0 && !searching && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg p-4 text-center text-sm text-gray-500 z-50">
-              Sonuç bulunamadı
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg p-4 text-center text-sm z-50">
+              {failedSources.length > 0 ? (
+                /* WSMR-A4j: HATA "sonuc yok" ile AYNI gorunemez. */
+                <div role="alert" className="text-red-700">
+                  <p className="font-medium">{failedSources.join(', ')} aranamadı.</p>
+                  <p className="mt-1 text-xs">
+                    Kayıt bulunmadığı anlamına GELMEZ; arama tamamlanamadı.
+                  </p>
+                </div>
+              ) : (
+                <span className="text-gray-500">Sonuç bulunamadı</span>
+              )}
             </div>
           )}
         </div>
