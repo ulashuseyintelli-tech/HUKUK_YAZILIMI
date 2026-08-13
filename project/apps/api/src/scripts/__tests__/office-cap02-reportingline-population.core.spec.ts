@@ -1,4 +1,5 @@
 import {
+  buildPopulationDiff,
   buildPopulationInputPack,
   dryRunPopulation,
   type AuthorizablePersonnelCandidate,
@@ -326,5 +327,71 @@ describe('STEP 7 -> STEP 8 zinciri', () => {
 
     const out = dryRunPopulation(pack.records, snapshot());
     expect(out).toMatchObject({ total: 2, pass: 2, fail: 0, eligibleForOperate: true });
+  });
+});
+
+describe('P3-B02 — owner-evidenced population diff', () => {
+  it('mevcut birebir satiri NO_OP, eksik satiri CREATE olarak ayirir', () => {
+    const input = [
+      rec({ actorUserId: 'u-manager', disposition: 'TOP_LEVEL', managerUserId: null }),
+      rec({ actorUserId: 'u-actor', managerUserId: 'u-manager' }),
+    ];
+    const out = buildPopulationDiff(
+      input,
+      snapshot({
+        activeLines: [
+          {
+            tenantId: T1,
+            actorUserId: 'u-manager',
+            managerUserId: null,
+            disposition: 'TOP_LEVEL',
+          },
+        ],
+      }),
+    );
+
+    expect(out).toMatchObject({
+      total: 2,
+      create: 1,
+      replace: 0,
+      noOp: 1,
+      fail: 0,
+      eligibleForOperate: true,
+    });
+  });
+
+  it('tek fark mevcut aktif hiyerarsi ise REPLACE uretir', () => {
+    const out = buildPopulationDiff(
+      [rec({ actorUserId: 'u-second', managerUserId: 'u-actor' })],
+      snapshot({
+        activeLines: [
+          {
+            tenantId: T1,
+            actorUserId: 'u-second',
+            managerUserId: 'u-manager',
+            disposition: 'MANAGED',
+          },
+        ],
+      }),
+    );
+
+    expect(out).toMatchObject({ replace: 1, fail: 0, eligibleForOperate: true });
+    expect(out.records[0]).toMatchObject({
+      operation: 'REPLACE',
+      current: { disposition: 'MANAGED', managerUserId: 'u-manager' },
+      desired: { disposition: 'MANAGED', managerUserId: 'u-actor' },
+      blockingFailures: [],
+    });
+  });
+
+  it('cycle veya tenant hatasini REPLACE ile maskelemez', () => {
+    const input = [
+      rec({ actorUserId: 'u-actor', managerUserId: 'u-second' }),
+      rec({ actorUserId: 'u-second', managerUserId: 'u-actor' }),
+    ];
+    const out = buildPopulationDiff(input, snapshot());
+
+    expect(out).toMatchObject({ replace: 0, fail: 2, eligibleForOperate: false });
+    expect(out.records.every((record) => record.blockingFailures.includes('CYCLE'))).toBe(true);
   });
 });

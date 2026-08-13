@@ -1,9 +1,15 @@
 import {
   buildInitialPopulationPlan,
+  buildPopulationGraphPlan,
   InitialPopulationPlanError,
+  selectPopulationStepsForOperate,
   type InitialPopulationConfig,
+  type PopulationGraphConfig,
 } from '../office-cap02-reportingline-initial-population.plan';
-import { dryRunPopulation } from '../office-cap02-reportingline-population.core';
+import {
+  buildPopulationDiff,
+  dryRunPopulation,
+} from '../office-cap02-reportingline-population.core';
 
 /**
  * OFFICE-P2-CAP02-REPORTINGLINE-INITIAL-POPULATION-I01 plan doğrulaması.
@@ -14,6 +20,10 @@ const TENANT = 'cmm61v99600007a6smfkarha9';
 const PARTNER = 'cmqw01nk00002nmjnt3xd8cum';
 const EGE = 'cmqw5igtz000b12fgfilmvst9';
 const AT = '2026-07-28T16:23:36.769Z';
+const FATMA = 'u-fatma';
+const AYSU = 'u-aysu';
+const BUSRA = 'u-busra';
+const FATIH = 'u-fatih';
 
 const config = (o: Partial<InitialPopulationConfig> = {}): InitialPopulationConfig => ({
   tenantSlug: 't-telli',
@@ -210,5 +220,102 @@ describe('idempotency kapisi — runner davranis sozlesmesi', () => {
     });
     expect(out.noOp === out.total && out.total > 0).toBe(false);
     expect(out.total).toBe(0);
+  });
+});
+
+const ownerGraphConfig = (
+  over: Partial<PopulationGraphConfig> = {},
+): PopulationGraphConfig => ({
+  tenantSlug: 't-telli',
+  actors: [
+    { actorUserId: PARTNER, disposition: 'TOP_LEVEL', managerUserId: null },
+    { actorUserId: FATMA, disposition: 'MANAGED', managerUserId: PARTNER },
+    { actorUserId: EGE, disposition: 'MANAGED', managerUserId: FATMA },
+    { actorUserId: AYSU, disposition: 'MANAGED', managerUserId: EGE },
+    { actorUserId: BUSRA, disposition: 'MANAGED', managerUserId: EGE },
+    { actorUserId: FATIH, disposition: 'MANAGED', managerUserId: EGE },
+  ],
+  validFrom: '2026-08-13T12:00:00.000Z',
+  authorityRef: 'OFFICE-P3-REPORTINGLINE-COMPLETION-R01-OWNER-HIERARCHY',
+  evidenceRef: 'OWNER-HIERARCHY-DECISION-2026-08-13',
+  ...over,
+});
+
+describe('P3-B02 — altı kişilik owner graph planı', () => {
+  it('manager her zaman raporlayan aktörden önce sıralanır', () => {
+    const plan = buildPopulationGraphPlan(ownerGraphConfig());
+    const index = new Map(plan.steps.map((step, i) => [step.actorUserId, i]));
+
+    expect(plan.steps).toHaveLength(6);
+    for (const step of plan.steps) {
+      if (step.managerUserId) {
+        expect(index.get(step.managerUserId)).toBeLessThan(index.get(step.actorUserId) as number);
+      }
+    }
+  });
+
+  it('mevcut iki satira karsi 4 CREATE + 1 REPLACE + 1 NO_OP diff uretir', () => {
+    const plan = buildPopulationGraphPlan(ownerGraphConfig());
+    const users = [PARTNER, FATMA, EGE, AYSU, BUSRA, FATIH].map((userId) => ({
+      userId,
+      tenantId: TENANT,
+      isActive: true,
+    }));
+    const diff = buildPopulationDiff(plan.records, {
+      tenantIdBySlug: { 't-telli': TENANT },
+      users,
+      activeLines: [
+        { tenantId: TENANT, actorUserId: PARTNER, managerUserId: null, disposition: 'TOP_LEVEL' },
+        { tenantId: TENANT, actorUserId: EGE, managerUserId: PARTNER, disposition: 'MANAGED' },
+      ],
+    });
+
+    expect(diff).toMatchObject({
+      total: 6,
+      create: 4,
+      replace: 1,
+      noOp: 1,
+      fail: 0,
+      eligibleForOperate: true,
+    });
+    expect(selectPopulationStepsForOperate(plan, diff).map((step) => step.actorUserId)).toEqual([
+      FATMA,
+      EGE,
+      AYSU,
+      BUSRA,
+      FATIH,
+    ]);
+  });
+
+  it('paket disi manager, duplicate actor ve cycle fail-closed reddedilir', () => {
+    expect(() =>
+      buildPopulationGraphPlan(
+        ownerGraphConfig({
+          actors: [{ actorUserId: EGE, disposition: 'MANAGED', managerUserId: 'missing' }],
+        }),
+      ),
+    ).toThrow(/MANAGER_NOT_IN_GRAPH/);
+
+    expect(() =>
+      buildPopulationGraphPlan(
+        ownerGraphConfig({
+          actors: [
+            { actorUserId: EGE, disposition: 'TOP_LEVEL', managerUserId: null },
+            { actorUserId: EGE, disposition: 'TOP_LEVEL', managerUserId: null },
+          ],
+        }),
+      ),
+    ).toThrow(/DUPLICATE_ACTOR/);
+
+    expect(() =>
+      buildPopulationGraphPlan(
+        ownerGraphConfig({
+          actors: [
+            { actorUserId: EGE, disposition: 'MANAGED', managerUserId: FATMA },
+            { actorUserId: FATMA, disposition: 'MANAGED', managerUserId: EGE },
+          ],
+        }),
+      ),
+    ).toThrow(/CYCLE/);
   });
 });

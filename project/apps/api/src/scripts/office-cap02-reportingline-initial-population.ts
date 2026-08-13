@@ -1,9 +1,8 @@
 /**
  * OFFICE-P2-CAP02-REPORTINGLINE-INITIAL-POPULATION-I01 — kontrollü operasyon runner'ı.
  *
- * Owner-onaylı ilk iki kişilik authorization graph'ını production'a yazar:
- *   Partner User -> TOP_LEVEL
- *   Ege User     -> MANAGED (manager = Partner)
+ * Owner-onaylı organizasyonel ReportingLine graph'ını kontrollü DB'ye yazar.
+ * ReportingLine yetkilendirme, permission, policy veya final onay hakkı üretmez.
  *
  * YAZIM YOLU: kanonik `ReportingLineService.markTopLevel()` / `assignManager()`.
  * Doğrudan SQL veya doğrudan `prisma.reportingLine.create()` KULLANILMAZ — böylece
@@ -16,8 +15,12 @@
  * KULLANIM
  *   DATABASE_URL=... node office-cap02-reportingline-initial-population.js \
  *     --tenantId=<id> --tenantSlug=<slug> --actingUserId=<admin-user-id> \
- *     --partnerUserId=<id> --managedUserId=<id> \
+ *     --record=<actor-id>:TOP_LEVEL \
+ *     --record=<actor-id>:MANAGED:<manager-id> [--record=...] \
  *     --validFrom=<iso> --authorityRef=<ref> --evidenceRef=<ref> [--apply]
+ *
+ * Eski iki-kisilik CLI (`--partnerUserId` + `--managedUserId`) backward-compatible
+ * olarak korunur. `--record` verilirse self-contained owner graph modu kullanılır.
  *
  * `--apply` VERİLMEZSE hiçbir şey yazılmaz; yalnız dry-run raporu basılır.
  */
@@ -27,48 +30,88 @@ import { AuditService } from '../modules/audit/audit.service';
 import { ReportingLineService } from '../modules/reporting-line/reporting-line.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
-  dryRunPopulation,
+  buildPopulationDiff,
   type ActiveReportingLineSnapshot,
   type PopulationSnapshot,
 } from './office-cap02-reportingline-population.core';
-import { buildInitialPopulationPlan } from './office-cap02-reportingline-initial-population.plan';
+import {
+  buildInitialPopulationPlan,
+  buildPopulationGraphPlan,
+  selectPopulationStepsForOperate,
+  type PopulationActorDecision,
+} from './office-cap02-reportingline-initial-population.plan';
 
 const arg = (name: string): string | undefined => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : undefined;
 };
+const allArgs = (name: string): string[] =>
+  process.argv
+    .filter((value) => value.startsWith(`--${name}=`))
+    .map((value) => value.slice(name.length + 3));
 const required = (name: string): string => {
   const value = arg(name);
   if (!value) throw new Error(`POPULATION_MISSING_ARG: --${name}`);
   return value;
 };
 
+const parseActorDecision = (value: string): PopulationActorDecision => {
+  const [actorUserId, disposition, managerUserId, extra] = value.split(':');
+  if (extra !== undefined || !actorUserId) {
+    throw new Error(`POPULATION_INVALID_RECORD: ${value}`);
+  }
+  if (disposition === 'TOP_LEVEL' && managerUserId === undefined) {
+    return { actorUserId, disposition, managerUserId: null };
+  }
+  if (disposition === 'MANAGED' && managerUserId) {
+    return { actorUserId, disposition, managerUserId };
+  }
+  throw new Error(`POPULATION_INVALID_RECORD: ${value}`);
+};
+
 async function main(): Promise<void> {
   const tenantId = required('tenantId');
   const tenantSlug = required('tenantSlug');
   const actingUserId = required('actingUserId');
-  const partnerUserId = required('partnerUserId');
-  const managedUserId = required('managedUserId');
   const validFrom = required('validFrom');
   const authorityRef = required('authorityRef');
   const evidenceRef = required('evidenceRef');
   const apply = process.argv.includes('--apply');
+  const recordArgs = allArgs('record');
 
-  const plan = buildInitialPopulationPlan({
-    tenantSlug,
-    partnerUserId,
-    managedUserId,
-    validFrom,
-    authorityRef,
-    evidenceRef,
-  });
+  const plan =
+    recordArgs.length > 0
+      ? buildPopulationGraphPlan({
+          tenantSlug,
+          actors: recordArgs.map(parseActorDecision),
+          validFrom,
+          authorityRef,
+          evidenceRef,
+        })
+      : buildInitialPopulationPlan({
+          tenantSlug,
+          partnerUserId: required('partnerUserId'),
+          managedUserId: required('managedUserId'),
+          validFrom,
+          authorityRef,
+          evidenceRef,
+        });
 
   const prisma = new PrismaClient();
   try {
-    // --- Snapshot: dry-run icin taze production durumu -----------------------
+    // --- Snapshot: dry-run icin taze kontrollü DB durumu --------------------
+    const referencedUserIds = [
+      ...new Set(
+        plan.records.flatMap((record) =>
+          record.managerUserId
+            ? [record.actorUserId, record.managerUserId]
+            : [record.actorUserId],
+        ),
+      ),
+    ];
     const [users, activeLines] = await Promise.all([
       prisma.user.findMany({
-        where: { id: { in: [partnerUserId, managedUserId] } },
+        where: { id: { in: referencedUserIds } },
         select: { id: true, tenantId: true, isActive: true },
       }),
       prisma.reportingLine.findMany({
@@ -83,21 +126,28 @@ async function main(): Promise<void> {
       activeLines: activeLines as ActiveReportingLineSnapshot[],
     };
 
-    const dryRun = dryRunPopulation(plan.records, snapshot);
+    const dryRun = buildPopulationDiff(plan.records, snapshot);
     console.log('DRY_RUN', JSON.stringify({
       total: dryRun.total,
-      pass: dryRun.pass,
+      create: dryRun.create,
+      replace: dryRun.replace,
       noOp: dryRun.noOp,
       fail: dryRun.fail,
       eligibleForOperate: dryRun.eligibleForOperate,
     }));
     for (const r of dryRun.records) {
-      console.log(`  ${r.verdict.padEnd(6)} ${r.disposition.padEnd(9)} ${r.actorUserId}` +
-        (r.failures.length ? `  ${r.failures.join(',')}` : ''));
+      const current = r.current
+        ? `${r.current.disposition}:${r.current.managerUserId ?? 'NULL'}`
+        : 'ABSENT';
+      const desired = `${r.desired.disposition}:${r.desired.managerUserId ?? 'NULL'}`;
+      console.log(
+        `  ${r.operation.padEnd(7)} ${r.actorUserId}  ${current} -> ${desired}` +
+          (r.blockingFailures.length ? `  ${r.blockingFailures.join(',')}` : ''),
+      );
     }
 
     if (!dryRun.eligibleForOperate) {
-      console.log('RESULT DRY_RUN_FAILED — production yazimi YAPILMADI');
+      console.log('RESULT DRY_RUN_FAILED — DB yazimi YAPILMADI');
       process.exitCode = 2;
       return;
     }
@@ -120,7 +170,8 @@ async function main(): Promise<void> {
     const service = new ReportingLineService(prismaService, audit);
 
     const applied: string[] = [];
-    for (const step of plan.steps) {
+    const stepsToApply = selectPopulationStepsForOperate(plan, dryRun);
+    for (const step of stepsToApply) {
       if (step.kind === 'MARK_TOP_LEVEL') {
         const out = await service.markTopLevel(tenantId, actingUserId, 'ADMIN', {
           actorUserId: step.actorUserId,
@@ -139,48 +190,64 @@ async function main(): Promise<void> {
     // --- Post-commit reconciliation (runner ciktisindan bagimsiz sorgular) ---
     const after = await prisma.reportingLine.findMany({
       where: { tenantId, validUntil: null },
-      select: { actorUserId: true, managerUserId: true, disposition: true },
+      select: {
+        actorUserId: true,
+        managerUserId: true,
+        disposition: true,
+        actor: { select: { name: true } },
+        manager: { select: { name: true } },
+      },
+      orderBy: { actor: { name: 'asc' } },
     });
-    const topLevel = after.filter((r) => r.disposition === 'TOP_LEVEL').length;
-    const managed = after.filter((r) => r.disposition === 'MANAGED').length;
-    const selfManager = after.filter((r) => r.managerUserId === r.actorUserId).length;
-    const duplicateActor = after.length - new Set(after.map((r) => r.actorUserId)).size;
-    const managerNullOnTopLevel = after.filter(
-      (r) => r.disposition === 'TOP_LEVEL' && r.managerUserId !== null,
-    ).length;
-    const managedWithoutManager = after.filter(
-      (r) => r.disposition === 'MANAGED' && r.managerUserId === null,
-    ).length;
-
-    const crossTenant = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-      `SELECT count(*)::bigint AS n FROM "ReportingLine" r
-       JOIN "User" a ON a.id = r."actorUserId"
-       LEFT JOIN "User" m ON m.id = r."managerUserId"
-       WHERE r."validUntil" IS NULL
-         AND (a."tenantId" <> r."tenantId" OR (m.id IS NOT NULL AND m."tenantId" <> r."tenantId"))`,
-    );
-
+    const expectedByActor = new Map(plan.records.map((record) => [record.actorUserId, record]));
+    const actualByActor = new Map(after.map((record) => [record.actorUserId, record]));
+    const mismatchedActors = plan.records
+      .filter((expected) => {
+        const actual = actualByActor.get(expected.actorUserId);
+        return (
+          !actual ||
+          actual.disposition !== expected.disposition ||
+          (actual.managerUserId ?? null) !== (expected.managerUserId ?? null)
+        );
+      })
+      .map((record) => record.actorUserId);
+    const unexpectedActors = after
+      .filter((record) => !expectedByActor.has(record.actorUserId))
+      .map((record) => record.actorUserId);
+    const integrity = await service.reconciliation(tenantId);
     const reconciliation = {
       activeRows: after.length,
-      topLevel,
-      managed,
-      selfManager,
-      duplicateActor,
-      managerNullOnTopLevel,
-      managedWithoutManager,
-      crossTenant: Number(crossTenant[0]?.n ?? 0n),
+      expectedRows: plan.records.length,
+      mismatchedActors,
+      unexpectedActors,
+      ...integrity,
     };
     console.log('RECONCILIATION', JSON.stringify(reconciliation));
+    console.log(
+      'ROWS',
+      JSON.stringify(
+        after.map((row) => ({
+          actorUserId: row.actorUserId,
+          actorName: row.actor.name,
+          disposition: row.disposition,
+          managerUserId: row.managerUserId,
+          managerName: row.manager?.name ?? null,
+        })),
+      ),
+    );
 
     const pass =
-      reconciliation.activeRows === 2 &&
-      reconciliation.topLevel === 1 &&
-      reconciliation.managed === 1 &&
-      reconciliation.selfManager === 0 &&
-      reconciliation.duplicateActor === 0 &&
-      reconciliation.managerNullOnTopLevel === 0 &&
-      reconciliation.managedWithoutManager === 0 &&
-      reconciliation.crossTenant === 0;
+      reconciliation.activeRows === reconciliation.expectedRows &&
+      reconciliation.mismatchedActors.length === 0 &&
+      reconciliation.unexpectedActors.length === 0 &&
+      reconciliation.unclassifiedActors === 0 &&
+      reconciliation.cycles === 0 &&
+      reconciliation.selfManagerRelationships === 0 &&
+      reconciliation.duplicateActiveDispositions === 0 &&
+      reconciliation.invalidManagedWithoutManager === 0 &&
+      reconciliation.invalidTopLevelWithManager === 0 &&
+      reconciliation.invalidDateRangeRelationships === 0 &&
+      reconciliation.inactiveOrCrossTenantReferences === 0;
 
     console.log('RESULT', pass ? 'PASS' : 'FAIL');
     if (!pass) process.exitCode = 3;

@@ -10,9 +10,10 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 
 /**
- * ReportingLine Population Core + Top-Level Disposition Persistence — CAP-02
- * object-scope enablement. Manager–personel raporlama ilişkilerinin (User→User)
- * oluşturulması/bakımı/doğrulaması. Object-scope FİLTRELEME/deny AKTİVE ETMEZ.
+ * ReportingLine Population Core + Top-Level Disposition Persistence — CAP-02.
+ * Manager–personel organizasyonel raporlama ilişkilerinin (User→User)
+ * oluşturulması/bakımı/doğrulaması. Yetkilendirme, permission, policy, object-scope
+ * filtresi veya final onay hakkı ÜRETMEZ.
  *
  * Current-state otoritesi = aktör başına TEK aktif ReportingLine kaydı:
  *   MANAGED     → disposition=MANAGED,   managerUserId dolu
