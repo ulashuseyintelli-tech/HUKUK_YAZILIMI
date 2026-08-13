@@ -14,6 +14,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { api, ClientInfoRequestDTO, UyapQueryDTO } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { ClientInfoRequestModal } from './modals/ClientInfoRequestModal';
 import { UyapQueryModal } from './modals/UyapQueryModal';
 import { UyapQueryResponseModal } from './modals/UyapQueryResponseModal';
@@ -40,10 +41,11 @@ interface AddressStats {
     crossFile: number;
     manual: number;
   };
+  /** WSMR-A4k: `null` = BILINMIYOR (kaynak okunamadi). 0 ile KARISTIRILMAZ. */
   pendingRequests: {
-    uyap: number;
-    institution: number;
-    client: number;
+    uyap: number | null;
+    institution: number | null;
+    client: number | null;
   };
 }
 
@@ -73,6 +75,10 @@ export function AddressResearchWidget({
   onAddressAdded
 }: AddressResearchWidgetProps) {
   const [stats, setStats] = useState<AddressStats | null>(null);
+  // WSMR-A4k: birincil okuma hatasi GORUNUR; sayim uydurulmaz.
+  const [statsError, setStatsError] = useState<string | null>(null);
+  // WSMR-A4k: okunamayan IKINCIL kaynaklar isimle bildirilir.
+  const [partialSources, setPartialSources] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Modal states
@@ -84,16 +90,65 @@ export function AddressResearchWidget({
   
   const [sendingEmail, setSendingEmail] = useState(false);
 
+  /**
+   * WSMR-A4k · UYDURMA ADRES İSTATİSTİĞİ KALDIRILDI.
+   *
+   * Dört kaynağın her biri `.catch(() => [])` ile sessizce boş diziye düşüyordu
+   * ve widget bu boş dizilerden SAYIM üretip ekrana kesin bir olgu gibi
+   * basıyordu: "0 adres bulundu". Yani adres okuması başarısızken borçlunun
+   * HİÇ adresi yokmuş gibi görünüyordu — avukat adres araştırmasını
+   * tamamlanmış sanabilir ya da gereksiz yere yeni UYAP sorgusu açabilirdi.
+   *
+   * Artık kaynaklar AYRILIR:
+   *  · BİRİNCİL (`getDebtorAddresses`) başarısızsa sayım HİÇ üretilmez; görünür
+   *    hata + salt-okuma retry gösterilir.
+   *  · İKİNCİL kaynaklar (UYAP / müzekkere / müvekkil talebi) başarısızsa adres
+   *    sayıları geçerli kalır, ama o kaynağın bekleyen sayısı `null` (BİLİNMİYOR)
+   *    olur — 0 olarak UYDURULMAZ — ve eksiklik bandı görünür.
+   */
   const loadStats = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [addresses, uyapQueries, letters, clientRequests] = await Promise.all([
-        api.getDebtorAddresses(debtorId).catch(() => []),
-        api.getUyapQueriesForDebtor(caseDebtorId).catch(() => []),
-        api.getInstitutionLettersForDebtor(caseDebtorId).catch(() => []),
-        api.getClientInfoRequestsForCase(caseId).catch(() => []),
-      ]);
+    setLoading(true);
+    setStatsError(null);
+    setPartialSources([]);
 
+    const [addrOutcome, uyapOutcome, letterOutcome, reqOutcome] = await Promise.allSettled([
+      api.getDebtorAddresses(debtorId),
+      api.getUyapQueriesForDebtor(caseDebtorId),
+      api.getInstitutionLettersForDebtor(caseDebtorId),
+      api.getClientInfoRequestsForCase(caseId),
+    ]);
+
+    // BIRINCIL kaynak: adres listesi. Dogrulanamazsa hicbir sayim uretilmez.
+    if (addrOutcome.status === 'rejected' || !Array.isArray(addrOutcome.value)) {
+      setStats(null);
+      setStatsError(
+        addrOutcome.status === 'rejected'
+          ? toActionErrorMessage(addrOutcome.reason, 'Adres bilgileri okunamadı.')
+          : 'Adres bilgileri okunamadı.',
+      );
+      setLoading(false);
+      return;
+    }
+
+    const addresses = addrOutcome.value;
+    const partial: string[] = [];
+    /** Ikincil kaynak: basarisizsa 0 UYDURMAK yerine BILINMIYOR (null) doner. */
+    const secondary = (
+      outcome: PromiseSettledResult<unknown>,
+      label: string,
+    ): any[] | null => {
+      if (outcome.status === 'rejected' || !Array.isArray(outcome.value)) {
+        partial.push(label);
+        return null;
+      }
+      return outcome.value;
+    };
+
+    const uyapQueries = secondary(uyapOutcome, 'UYAP sorguları');
+    const letters = secondary(letterOutcome, 'Müzekkereler');
+    const clientRequests = secondary(reqOutcome, 'Müvekkil talepleri');
+
+    try {
       const bySource = {
         uyap: addresses.filter((a: any) => a.source === 'UYAP_QUERY').length,
         institution: addresses.filter((a: any) => a.source === 'INSTITUTION_LETTER').length,
@@ -103,11 +158,14 @@ export function AddressResearchWidget({
       };
 
       const pendingRequests = {
-        uyap: uyapQueries.filter((q: any) => q.status === 'PENDING').length,
-        institution: letters.filter((l: any) => l.status === 'SENT').length,
-        client: clientRequests.filter((r: ClientInfoRequestDTO) => 
-          r.status === 'SENT' && (!r.debtorId || r.debtorId === debtorId)
-        ).length,
+        uyap: uyapQueries === null ? null : uyapQueries.filter((q: any) => q.status === 'PENDING').length,
+        institution: letters === null ? null : letters.filter((l: any) => l.status === 'SENT').length,
+        client:
+          clientRequests === null
+            ? null
+            : clientRequests.filter((r: ClientInfoRequestDTO) =>
+                r.status === 'SENT' && (!r.debtorId || r.debtorId === debtorId)
+              ).length,
       };
 
       setStats({
@@ -115,8 +173,11 @@ export function AddressResearchWidget({
         bySource,
         pendingRequests,
       });
+      setPartialSources(partial);
     } catch (error) {
-      console.error('Adres istatistikleri yüklenemedi:', error);
+      // Govde beklenen bicimde degilse SAYIM URETILMEZ.
+      setStats(null);
+      setStatsError(toActionErrorMessage(error, 'Adres istatistikleri hesaplanamadı.'));
     } finally {
       setLoading(false);
     }
@@ -163,12 +224,37 @@ export function AddressResearchWidget({
     );
   }
 
+  /**
+   * WSMR-A4k: BIRINCIL okuma basarisizsa hicbir SAYIM basilmaz — "0 adres"
+   * uydurma bir olgu iddiasi olurdu.
+   */
+  if (statsError) {
+    return (
+      <div role="alert" className={compact ? 'text-xs text-red-600' : 'p-3 text-sm text-red-600'}>
+        <p className="font-medium">{statsError}</p>
+        <p className="mt-0.5 text-[11px]">
+          Bu borçlunun adresi OLMADIĞI anlamına gelmez; liste okunamadı.
+        </p>
+        <button
+          type="button"
+          onClick={loadStats}
+          className="mt-1 text-[11px] text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
+      </div>
+    );
+  }
+
   // Kompakt versiyon
   if (compact) {
     const hasAddresses = (stats?.total || 0) > 0;
-    const hasPending = (stats?.pendingRequests.uyap || 0) + 
-                       (stats?.pendingRequests.institution || 0) + 
-                       (stats?.pendingRequests.client || 0) > 0;
+    // `null` = BILINMIYOR; toplama katilmaz, "bekleyen yok" varsayilmaz.
+    const hasPending = [
+      stats?.pendingRequests.uyap,
+      stats?.pendingRequests.institution,
+      stats?.pendingRequests.client,
+    ].some((n) => typeof n === 'number' && n > 0);
 
     return (
       <>
@@ -241,6 +327,13 @@ export function AddressResearchWidget({
           {stats?.total || 0} adres
         </div>
       </div>
+      {partialSources.length > 0 && (
+        /* WSMR-A4k: okunamayan IKINCIL kaynaklar gizlenmez — bekleyen talep
+           sayilari BILINMIYOR, 0 DEGIL. */
+        <div role="alert" className="p-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-800">
+          {partialSources.join(', ')} okunamadı; bekleyen talep sayıları EKSİK olabilir.
+        </div>
+      )}
       {readOnly && (
         <div className="p-2 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
           Pasif kayit: yeni adres arastirma operasyonlari kapali.
