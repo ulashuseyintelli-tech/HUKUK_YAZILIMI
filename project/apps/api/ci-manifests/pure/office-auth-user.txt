@@ -189,3 +189,19 @@ src/scripts/__tests__/office-cap02-identity-binding-plan.core.spec.ts
 # owner eşlemesiyle birebir uyum (profil e-posta drift'i dahil, owner kural 7), duplicate
 # personel/e-posta reddi, beklenmeyen mevcut-User fail-closed'u. Runner CI'da koşmaz.
 src/scripts/__tests__/office-cap02-identity-binding-invite-issue.core.spec.ts
+
+# ── OFFICE-P5-SECURITY-COMPLETION-R01 — PHASE B (F-B01-01 + P5-B02 + P5-B04/S3) ─
+# F-B01-01: GET /api/auth/me select'siz tam User satiri donduruyordu (passwordHash +
+# tokenVersion dahil) — /auth/me public projection + yanit-ta-yok negatif assertion'lar.
+# P5-B02: seedStaff/seedLawyers dogrudan `prisma.*.create(... as any)` ile servis
+# duplicate/name-match guard'larini bypass ediyordu — kanonik StaffService/LawyerService
+# yolu; SIMILAR_NAME_REVIEW satiri forceCreate ile GECILMEZ, acikca raporlanir.
+# P5-B04 (S3): staff okuma yuzeyi F01-yetkisiz aktore alan-daraltma (8 bayrak + tckn);
+# findOne tckn maskesi; maskeli-tckn geri-yazim korumasi; typed DTO (tam-satir PUT
+# toleransli); guard-metadata + negatif/cross-tenant/data-leak testleri.
+src/modules/auth/__tests__/auth-me-credential-containment.spec.ts
+src/modules/seed/__tests__/seed-staff-lawyer-canonical-service.spec.ts
+src/modules/staff/__tests__/staff-controller-guards.spec.ts
+src/modules/staff/__tests__/staff-read-projection.spec.ts
+src/modules/staff/__tests__/staff-dto-validation.spec.ts
+src/modules/staff/__tests__/staff-update-masked-tckn.spec.ts

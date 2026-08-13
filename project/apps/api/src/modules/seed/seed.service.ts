@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ClientService, type ClientMutationActorContext } from '../client/client.service';
+import { StaffService } from '../staff/staff.service';
+import { LawyerService } from '../lawyer/lawyer.service';
 import { assertCreateIdentityChecksum } from '../client/client-identity-checksum.util';
 import { PUBLIC_INSTITUTIONS_DATA } from '../public-institution/public-institution-seed';
 import { EXTENDED_INSTITUTIONS_DATA } from '../public-institution/public-institution-seed-extended';
@@ -23,6 +25,11 @@ export class SeedService {
     private prisma: PrismaService,
     private audit: AuditService,
     private clientService: ClientService,
+    // P5-B02 (OFFICE-P5-SECURITY-COMPLETION-R01): staff/lawyer seed'i artık kanonik
+    // servislerden yazar. TS-opsiyonel bırakılmasının tek nedeni mevcut spec'lerin
+    // 3-parametreli kurulumunu kırmamaktır; Nest DI üretimde her zaman enjekte eder.
+    private staffService?: StaffService,
+    private lawyerService?: LawyerService,
   ) {}
 
   /**
@@ -159,8 +166,14 @@ export class SeedService {
     return { created, message: `${created} banka hesabı oluşturuldu` };
   }
 
+  /**
+   * P5-B02 (OFFICE-P5-SECURITY-COMPLETION-R01): doğrudan `prisma.lawyer.create(... as any)`
+   * KALDIRILDI — kayıtlar kanonik LawyerService.create üzerinden yazılır; duplicate guard
+   * (barNumber/TCKN/ad-soyad → mevcut döndür + gerekirse reactivate) ve office bağlama tek
+   * merkezden uygulanır, ikinci bir dedup otoritesi İCAT EDİLMEZ (seedClients / OWN-13 D04
+   * emsali). İdempotency korunur: mevcut satır `_existingReturned` ile döner, created SAYILMAZ.
+   */
   async seedLawyers(tenantId: string) {
-    const office = await this.prisma.office.findFirst({ where: { tenantId } });
     const lawyers = [
       { name: 'Mehmet', surname: 'Yılmaz', barNumber: '12345', barCity: 'İstanbul', email: 'mehmet@hukuk.com', phone: '05321234567', title: 'Av.', role: 'PARTNER' },
       { name: 'Ayşe', surname: 'Kaya', barNumber: '12346', barCity: 'İstanbul', email: 'ayse@hukuk.com', phone: '05321234568', title: 'Av.', role: 'PARTNER' },
@@ -174,16 +187,23 @@ export class SeedService {
       { name: 'Selin', surname: 'Aydın', barNumber: '12354', barCity: 'İstanbul', email: 'selin@hukuk.com', phone: '05321234576', title: 'Av.', role: 'EMPLOYEE' },
     ];
     let created = 0;
+    let existing = 0;
     for (const l of lawyers) {
-      const exists = await this.prisma.lawyer.findFirst({ where: { tenantId, barNumber: l.barNumber } });
-      if (!exists) {
-        await this.prisma.lawyer.create({ data: { tenantId, officeId: office?.id, ...l, isActive: true } as any });
-        created++;
-      }
+      const res: any = await this.lawyerService!.create(tenantId, l as any);
+      if (res?._existingReturned) existing++;
+      else created++;
     }
-    return { created, message: `${created} avukat oluşturuldu` };
+    return { created, existing, message: `${created} avukat oluşturuldu (${existing} mevcut)` };
   }
 
+  /**
+   * P5-B02 (OFFICE-P5-SECURITY-COMPLETION-R01): doğrudan `prisma.staffMember.create(... as any)`
+   * KALDIRILDI — kayıtlar kanonik StaffService.create üzerinden yazılır: kesin kimlik
+   * (TCKN/e-posta) eşleşmesi mevcut satırı döndürür (gerekirse reactivate), yalnız ad-soyad
+   * eşleşmesi 409 SIMILAR_NAME_REVIEW üretir. Seed insan kararı VEREMEZ: review çıkan satır
+   * `forceCreate` ile GEÇİLMEZ, atlanır ve `skippedForReview` ile açıkça raporlanır.
+   * Satır-bazlı devam korunur (D07 emsali); review-dışı hatalar YUTULMAZ.
+   */
   async seedStaff(tenantId: string) {
     const staff = [
       { firstName: 'Ahmet', lastName: 'Yılmaz', staffType: 'OFIS_KATIBI', email: 'ahmet@hukuk.com', phone: '05331234567' },
@@ -198,14 +218,27 @@ export class SeedService {
       { firstName: 'Tolga', lastName: 'Yavuz', staffType: 'ARSIV', email: 'tolga@hukuk.com', phone: '05331234576' },
     ];
     let created = 0;
+    let existing = 0;
+    let skippedForReview = 0;
     for (const s of staff) {
-      const exists = await this.prisma.staffMember.findFirst({ where: { tenantId, email: s.email } });
-      if (!exists) {
-        await this.prisma.staffMember.create({ data: { tenantId, ...s, isActive: true } as any });
-        created++;
+      try {
+        const res: any = await this.staffService!.create(tenantId, s);
+        if (res?._existingReturned) existing++;
+        else created++;
+      } catch (e: any) {
+        if (e instanceof ConflictException && (e.getResponse() as any)?.code === 'SIMILAR_NAME_REVIEW') {
+          skippedForReview++;
+          continue;
+        }
+        throw e;
       }
     }
-    return { created, message: `${created} personel oluşturuldu` };
+    return {
+      created,
+      existing,
+      skippedForReview,
+      message: `${created} personel oluşturuldu (${existing} mevcut, ${skippedForReview} isim-benzerliği nedeniyle atlandı)`,
+    };
   }
 
 
