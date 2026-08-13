@@ -14,7 +14,24 @@
       "productionAccessRequired": false,
       "expectedProof": "positive and negative role, tenant and field-level tests",
       "eligibleAfter": ["fresh owner grant"],
-      "status": "NOT_STARTED"
+      "status": "NOT_STARTED",
+      "statusReconciliations": [
+        {
+          "reconciledAt": "2026-08-13",
+          "supersedes": "NOT_STARTED",
+          "repositorySourceStatus": "IMPLEMENTED_MERGED_SOURCE_CANONICAL",
+          "runtimeDisposition": "STALE_BLOCKED_BY_RUNTIME_MODEL",
+          "productionActive": false,
+          "technicalImplementationReopened": false,
+          "evidence": {
+            "pullRequest": 2076,
+            "squashCommit": "2cae1fb11685674fe78898d2781f06f5f6f30aeb",
+            "mergedAt": "2026-08-01T22:49:37Z",
+            "verifiedAncestorOfOriginMainAt": "a57d085d7fb8fdfbb084766e498bbad10c2fb934"
+          },
+          "nextDisposition": "CONTINUE_CANONICAL_SUCCESSOR_ORDER"
+        }
+      ]
     },
     {
       "order": 2,

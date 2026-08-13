@@ -19,3 +19,14 @@ journey can be included. Production evidence remains after local correctness. Ph
 orphan hygiene is last because it does not affect canonical repository behavior.
 
 The resolved W2 parser task is not re-opened. No row is execution authority.
+
+## Append-only status reconciliation
+
+The table above is the original 2026-07-31 registration snapshot and is retained
+unchanged. For a task with reconciliation entries, the latest dated entry below is
+the current repository status. A repository/source status does not prove runtime or
+production activation and does not create execution authority.
+
+| Reconciled at | Task | Supersedes | Repository/source status | Runtime disposition | Evidence | Next disposition |
+|---|---|---|---|---|---|---|
+| 2026-08-13 | `OFFICE-SC-F01-AUTHORIZATION-BREADTH-AND-SENSITIVE-PROJECTION-R01` | `NOT STARTED` registration snapshot | `IMPLEMENTED / MERGED / SOURCE-CANONICAL` | `STALE / BLOCKED_BY_RUNTIME_MODEL`; no production-active claim | PR #2076, squash `2cae1fb11685674fe78898d2781f06f5f6f30aeb`, merged 2026-08-01; squash verified in current `origin/main` ancestry | Technical implementation is not re-opened. Continue only with canonical successor order. |
