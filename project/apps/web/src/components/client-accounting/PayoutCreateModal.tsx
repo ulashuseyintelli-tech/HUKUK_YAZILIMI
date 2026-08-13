@@ -17,6 +17,7 @@
  */
 
 import { useState } from 'react';
+import { createIdempotencyKey } from '@/lib/idempotency-key';
 import { useMutation } from '@tanstack/react-query';
 import { Button, Spinner } from '@hukuk/ui';
 import { X, AlertCircle, Wallet } from 'lucide-react';
@@ -34,9 +35,10 @@ interface PayoutCreateModalProps {
 }
 
 function genIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  return `payout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // WSMR-A4c: Math.random fallback KALDIRILDI (backend dedupe sozlesmesi).
+  return createIdempotencyKey('payout');
 }
+
 
 /** Backend hata mesajını kullanıcı diline çevirir (mesaj backend otoritesini değiştirmez). */
 function friendlyError(message: string): string {
@@ -65,25 +67,40 @@ export function PayoutCreateModal({
   //    setShowPayoutModal(false) → UNMOUNT. Bir sonraki "Ödeme Talebi Oluştur" → fresh MOUNT → YENİ key.
   //  - Sonuç: aynı sayfa oturumunda ikinci ödeme ESKİ key'i KULLANMAZ → hatalı
   //    IDEMPOTENCY_KEY_CONFLICT ile yanlışlıkla bloke OLMAZ. (kanıt: payout-create-modal-idempotency.test.tsx)
-  const [idempotencyKey] = useState<string>(genIdempotencyKey);
+  // WSMR-A4c: guvenli entropy YOKSA anahtar URETILMEZ ve mutation BASLATILMAZ.
+  // Lazy initializer ATARSA bilesen coker; bu yuzden hata state'e alinir.
+  const [keyState] = useState<{ key: string | null; error: string | null }>(() => {
+    try {
+      return { key: genIdempotencyKey(), error: null };
+    } catch (e) {
+      return { key: null, error: e instanceof Error ? e.message : 'Güvenli anahtar üretilemedi.' };
+    }
+  });
+  const idempotencyKey = keyState.key;
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [step, setStep] = useState<'form' | 'confirm'>('form');
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Guvenli entropy yoksa kullaniciya GORUNUR bildirim (butonlar da kapali).
+  const entropyError = keyState.error;
+
   const outstandingNum =
     outstanding != null && Number.isFinite(Number(outstanding)) ? Number(outstanding) : null;
 
   const mutation = useMutation({
-    mutationFn: () =>
-      clientAccountingApi.requestPayout({
+    mutationFn: () => {
+      // Fail-closed: guvenli anahtar yoksa API'ye HIC gidilmez.
+      if (!idempotencyKey) throw new Error('INSECURE_ENTROPY');
+      return clientAccountingApi.requestPayout({
         caseId,
         caseClientId,
         amount: amount.replace(',', '.'),
         currency,
         note: note.trim() || undefined,
         idempotencyKey,
-      }),
+      });
+    },
     onSuccess: (result) => onSuccess(result),
   });
 
@@ -160,6 +177,13 @@ export function PayoutCreateModal({
                   className="w-full border rounded px-3 py-2 text-sm"
                 />
               </div>
+              {/* WSMR-A4c: guvenli anahtar uretilemediyse islem BASLATILAMAZ. */}
+              {entropyError && (
+                <div className="flex items-center gap-2 text-red-600 text-xs" role="alert">
+                  <AlertCircle className="w-4 h-4" />
+                  {entropyError}
+                </div>
+              )}
               {validationError && (
                 <div className="flex items-center gap-2 text-red-600 text-xs">
                   <AlertCircle className="w-4 h-4" />
@@ -173,7 +197,7 @@ export function PayoutCreateModal({
                 <Button variant="ghost" onClick={onClose}>
                   Vazgeç
                 </Button>
-                <Button onClick={goConfirm} disabled={!amountValid || exceedsOutstanding}>
+                <Button onClick={goConfirm} disabled={!amountValid || exceedsOutstanding || !idempotencyKey}>
                   Devam
                 </Button>
               </div>
@@ -208,7 +232,7 @@ export function PayoutCreateModal({
                 <Button variant="ghost" onClick={() => setStep('form')} disabled={mutation.isPending}>
                   Geri
                 </Button>
-                <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+                <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !idempotencyKey}>
                   {mutation.isPending ? <Spinner className="w-4 h-4" /> : 'Onay Talebi Oluştur'}
                 </Button>
               </div>

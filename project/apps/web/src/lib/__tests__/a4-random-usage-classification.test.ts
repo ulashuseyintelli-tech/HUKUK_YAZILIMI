@@ -14,67 +14,12 @@ const SRC = path.resolve(__dirname, '..', '..');
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), 'utf8');
 
 /* ─────────────────────────────────────────────────────────────────────────
-   AİLE A — IDEMPOTENCY ANAHTARI ÜRETİCİLERİ
-   FALSE_POSITIVE_WITH_TESTED_RULE_REASON gerekçesi:
-   crypto.randomUUID BİRİNCİL kaynaktır; Math.random yalnız secure-context
-   olmayan ortamda FALLBACK'tir. Değer kullanıcıya iş verisi olarak SUNULMAZ,
-   finansal/hukuki bir miktar ÜRETMEZ ve dedupe sözleşmesini BOZMAZ — anahtar
-   yeniden denemede KORUNUR (aşağıda dosya bazında kanıtlanır).
+   NOT — AİLE A (finansal idempotency anahtarlari) BU DOSYADAN CIKARILDI.
+   O bulgular FALSE_POSITIVE DEGIL, **FIXED**'dir: anahtar backend dedupe
+   sozlesmesine gonderildigi icin `Math.random()` fallback'i KALDIRILDI ve
+   uretim fail-closed yapildi. Davranis kaniti: `idempotency-key.test.ts`
+   ve `payout-insecure-entropy.spec.tsx`. Ayni bulgu iki sinifta SAYILMAZ.
    ───────────────────────────────────────────────────────────────────────── */
-const IDEMPOTENCY_GENERATORS = [
-  { file: 'lib/api.ts', fn: 'generateClientWorkspaceIdempotencyKey', prefix: 'cw-' },
-  { file: 'components/client-accounting/OffsetDrawer.tsx', fn: 'genIdempotencyKey', prefix: 'offset-' },
-  { file: 'components/client-accounting/PayoutCreateModal.tsx', fn: 'genIdempotencyKey', prefix: 'payout-' },
-  { file: 'components/finance/CollectionModal.tsx', fn: 'newIdempotencyKey', prefix: 'col-' },
-];
-
-describe('AİLE A — idempotency anahtarı üreticileri', () => {
-  for (const g of IDEMPOTENCY_GENERATORS) {
-    it(`${g.file} · crypto.randomUUID BİRİNCİL, Math.random yalnız fallback`, () => {
-      const src = read(g.file);
-      const idx = src.indexOf(g.fn);
-      expect(idx).toBeGreaterThan(-1);
-      const body = src.slice(idx, idx + 400);
-      // crypto.randomUUID once denenir ve ERKEN DONER.
-      expect(body).toMatch(/crypto\s*\.\s*randomUUID/);
-      expect(body).toMatch(/return\s+crypto\s*\.\s*randomUUID\(\)/);
-      // Math.random YALNIZ o return'den SONRA (fallback konumunda) gecer.
-      const uuidPos = body.indexOf('crypto.randomUUID()');
-      const randPos = body.indexOf('Math.random');
-      if (randPos > -1) expect(randPos).toBeGreaterThan(uuidPos);
-    });
-  }
-
-  it('fallback deseni yeterince benzersiz (zaman damgasi + rastgele son ek)', () => {
-    const make = () => `col-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const keys = new Set(Array.from({ length: 2000 }, make));
-    expect(keys.size).toBe(2000); // cakisma YOK
-  });
-});
-
-describe('AİLE A — dedupe sözleşmesi: anahtar yeniden denemede KORUNUR', () => {
-  it('CollectionModal · retry AYNI anahtarla yapilir', () => {
-    const src = read('components/finance/CollectionModal.tsx');
-    // Anahtar state'te tutulur ve retry'da yeniden URETILMEZ.
-    expect(src).toMatch(/const \[idempotencyKey, setIdempotencyKey\] = useState/);
-    expect(src).toMatch(/stableIdempotencyKey\s*=\s*idempotencyKey\s*\|\|/);
-  });
-
-  it('PayoutCreateModal · MOUNT basina BIR KEZ (lazy initializer)', () => {
-    const src = read('components/client-accounting/PayoutCreateModal.tsx');
-    // `useState(genIdempotencyKey)` — FONKSIYON referansi; `useState(genIdempotencyKey())` OLSAYDI
-    // her render'da yeniden uretilirdi. Setter YOK: degistirilemez.
-    expect(src).toMatch(/useState<string>\(genIdempotencyKey\)/);
-    expect(src).not.toMatch(/useState<string>\(genIdempotencyKey\(\)\)/);
-  });
-
-  it('OffsetDrawer · anahtar ONIZLENEN offset e kilitli', () => {
-    const src = read('components/client-accounting/OffsetDrawer.tsx');
-    // Key preview ile birlikte uretilir ve mutation ONU kullanir.
-    expect(src).toMatch(/setPreview\(\{[^}]*key:\s*genIdempotencyKey\(\)/);
-    expect(src).toMatch(/idempotencyKey:\s*preview!\.key/);
-  });
-});
 
 /* ─────────────────────────────────────────────────────────────────────────
    AİLE B — TEKNİK UI KİMLİKLERİ (taslak satır anahtarları)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createIdempotencyKey } from '@/lib/idempotency-key';
 import { X, Loader2, XCircle, Eye } from "lucide-react";
 import { api, type PaymentPreviewResponseDTO } from "@/lib/api";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
@@ -43,15 +44,10 @@ function labelPreviewMessage(code: string, labels: Record<string, string>) {
 // P0-1 (S9): tahsilat işlemi başına stabil idempotency key. Aynı modal oturumunda
 //   double-click/retry aynı key'i taşır → backend tek tahsilat yazar.
 function newIdempotencyKey(): string {
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID();
-    }
-  } catch {
-    /* secure-context değilse fallback */
-  }
-  return `col-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // WSMR-A4c: Math.random fallback KALDIRILDI (backend dedupe sozlesmesi).
+  return createIdempotencyKey('col');
 }
+
 
 interface CollectionModalProps {
   isOpen: boolean;

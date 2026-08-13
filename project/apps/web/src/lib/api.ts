@@ -1,4 +1,5 @@
 import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
+import { createIdempotencyKey } from "./idempotency-key";
 import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
 import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
 import { reportClientError, shouldReportNetworkError } from "./error-reporter"; // PR-4: yalnız network-failure
@@ -6,8 +7,9 @@ import { reportClientError, shouldReportNetworkError } from "./error-reporter"; 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 function generateClientWorkspaceIdempotencyKey() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  return `cw-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // WSMR-A4c: Math.random fallback KALDIRILDI — bu anahtar backend dedupe
+  // sozlesmesine (`Idempotency-Key`) gider; guvenli entropy yoksa ATAR.
+  return createIdempotencyKey("cw");
 }
 
 // Debug: Log API URL on client side
