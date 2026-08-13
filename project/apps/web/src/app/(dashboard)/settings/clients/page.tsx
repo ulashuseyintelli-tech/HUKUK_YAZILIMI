@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields } from "@/lib/poa-ux";
 import { hasStructuredAddresses } from "@/lib/client-write";
 import {
@@ -91,22 +92,48 @@ export default function ClientsSettingsPage() {
 
   // Görevdeki "Müvekkile git" linki: /settings/clients?edit={clientId} ile gelince o müvekkilin
   // düzenleme modalını OTOMATİK aç (üste sıralama davranışı sortedClients'ta korunur).
+  /**
+   * WSMR-A4h · DETAY OKUNAMAZSA DÜZENLEME MODALI LİSTE SATIRIYLA AÇILMAZ.
+   *
+   * Müvekkil düzenleme modalı İKİ ayrı yerden açılıyordu (satırdaki ad düğmesi
+   * ve `?edit={id}` deep-link'i) ve İKİSİ de detay okuması başarısız olunca
+   * modalı LİSTE SATIRINDAN tohumluyordu.
+   *
+   * Bu sayfanın kendi notu (VER-02) liste projeksiyonunun detaydan DAR olduğunu
+   * zaten kayda geçiriyor: "liste projeksiyonu `addresses` İÇERMEZ (findAll ≠
+   * findOne)". `ClientModal` ise tüm formu bu proptan tohumlar ve `handleSave`
+   * TAM FORM `PUT` gönderir — yani listede bulunmayan alanlar boş/varsayılan
+   * değerleriyle geri yazılır.
+   *
+   * Tek kapı: gövde doğrulanmadan modal AÇILMAZ; hata görünür olur.
+   */
+  const openClientForEdit = async (clientId: string) => {
+    setDeepLinkError(null);
+    try {
+      const res = await api.get(`/clients/${clientId}`);
+      const body = res.data?.data ?? res.data;
+      if (!body || typeof body !== "object" || body.id !== clientId) {
+        throw new Error("MALFORMED_CLIENT_DETAIL");
+      }
+      setEditingClient(body);
+      setScannedData(null);
+      setShowModal(true);
+    } catch (e) {
+      setEditingClient(null);
+      setShowModal(false);
+      setDeepLinkError(toActionErrorMessage(e, "Müvekkil kaydı yüklenemedi."));
+    }
+  };
+
   const deepLinkHandledRef = useRef(false);
+  // WSMR-A4h: deep-link detay okumasi basarisizsa duzenleme modali ACILMAZ.
+  const [deepLinkError, setDeepLinkError] = useState<string | null>(null);
   useEffect(() => {
     if (!editClientId || deepLinkHandledRef.current || clients.length === 0) return;
     const target = clients.find((c: any) => c.id === editClientId);
     if (!target) return;
     deepLinkHandledRef.current = true;
-    (async () => {
-      try {
-        const res = await api.get(`/clients/${editClientId}`);
-        setEditingClient(res.data?.data || res.data);
-      } catch {
-        setEditingClient(target);
-      }
-      setScannedData(null);
-      setShowModal(true);
-    })();
+    void openClientForEdit(editClientId);
   }, [editClientId, clients]);
 
   // Task 4A: /clients/new → /settings/clients?new=1 redirect'i create modalini OTOMATİK açar
@@ -310,6 +337,12 @@ export default function ClientsSettingsPage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden p-4">
+      {/* WSMR-A4h: detay okunamadi -> modal ACILMAZ, gorunur hata basilir. */}
+      {deepLinkError && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {deepLinkError}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold">Müvekkiller (Alacaklılar)</h1>
@@ -476,22 +509,8 @@ export default function ClientsSettingsPage() {
                     </td>
                     <td className="px-3 py-2">
                       <button 
-                        onClick={async () => { 
-                          // Müvekkil detayını POA'larla birlikte çek
-                          try {
-                            const res = await api.get(`/clients/${client.id}`);
-                            const fullClient = res.data?.data || res.data;
-                            setEditingClient(fullClient); 
-                            setScannedData(null); 
-                            setShowModal(true); 
-                          } catch (e) {
-                            console.error("Müvekkil detayı yüklenemedi:", e);
-                            // Fallback: liste verisini kullan
-                            setEditingClient(client); 
-                            setScannedData(null); 
-                            setShowModal(true);
-                          }
-                        }} 
+                        onClick={() => openClientForEdit(client.id)}
+                        
                         className="font-medium text-left hover:text-primary hover:underline transition-colors"
                         title="Düzenlemek için tıklayın"
                       >
@@ -571,17 +590,7 @@ export default function ClientsSettingsPage() {
                         <button onClick={() => { setSmsClient(client); setShowSmsModal(true); }} className="p-1.5 text-purple-500 hover:bg-purple-50 rounded" title="SMS Gönder">
                           <MessageSquare className="h-4 w-4" />
                         </button>
-                        <button onClick={async () => { 
-                          try {
-                            const res = await api.get(`/clients/${client.id}`);
-                            const fullClient = res.data?.data || res.data;
-                            setEditingClient(fullClient); 
-                          } catch (e) {
-                            setEditingClient(client); 
-                          }
-                          setScannedData(null); 
-                          setShowModal(true); 
-                        }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Düzenle">
+                        <button onClick={() => openClientForEdit(client.id)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Düzenle">
                           <Edit2 className="h-4 w-4" />
                         </button>
                         {canManageLifecycle && (

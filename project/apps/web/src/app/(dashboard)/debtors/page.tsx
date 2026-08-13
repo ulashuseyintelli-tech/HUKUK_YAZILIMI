@@ -22,6 +22,7 @@ import {
   Download,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import {
   Debtor,
   DebtorAddress,
@@ -117,6 +118,8 @@ export default function DebtorsPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedDebtor, setSelectedDebtor] = useState<Debtor | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // WSMR-A4h: detay okuma hatasi GORUNUR olur; modal liste satiriyla acilmaz.
+  const [detailError, setDetailError] = useState<{ id: string; message: string } | null>(null);
   const [loadingPublicInstitutions, setLoadingPublicInstitutions] = useState(false);
   const [loadingTestDebtors, setLoadingTestDebtors] = useState(false);
 
@@ -204,15 +207,37 @@ export default function DebtorsPage() {
   };
 
 
+  /**
+   * WSMR-A4h · DETAY OKUNAMAZSA LİSTE SATIRIYLA MODAL AÇILMAZ.
+   *
+   * Eski hâlde detay okuması başarısız olunca modal LİSTE SATIRIYLA açılıyordu.
+   * Liste projeksiyonu detaydan DARDIR (findAll ≠ findOne) ve `DebtorDetailModal`
+   * tüm düzenleme formunu bu proptan tohumlayıp `handleSave` ile TAM FORM
+   * gönderiyor. En ağır sonuç tereke (ESTATE) borçlularda: `estateHeirs` liste
+   * satırında yoksa form `heirs = []` ile açılır ve kaydedince backend mirasçı
+   * listesini BOŞ liste ile REPLACE eder — yani veri SİLİNİR. Ayrıca eksik
+   * alanlar kullanıcıya "kayıt yok" gibi görünür.
+   *
+   * Artık okuma başarısızsa modal HİÇ açılmaz; görünür hata çıkar.
+   */
   const handleDebtorClick = async (debtor: Debtor) => {
+    setDetailError(null);
     try {
-      // Detaylı bilgiyi çek
       const res = await api.get<{ data: Debtor }>(`/debtors/${debtor.id}`);
-      setSelectedDebtor(res.data?.data || debtor);
+      const body = res.data?.data ?? res.data;
+      // Gövde SÖZLEŞMEYE karşı doğrulanır: kimliği doğrulanmamış gövde detay sayılmaz.
+      if (!body || typeof body !== "object" || (body as Debtor).id !== debtor.id) {
+        throw new Error("MALFORMED_DEBTOR_DETAIL");
+      }
+      setSelectedDebtor(body as Debtor);
       setShowDetailModal(true);
     } catch (e) {
-      setSelectedDebtor(debtor);
-      setShowDetailModal(true);
+      setSelectedDebtor(null);
+      setShowDetailModal(false);
+      setDetailError({
+        id: debtor.id,
+        message: toActionErrorMessage(e, "Borçlu detayı yüklenemedi."),
+      });
     }
   };
 
@@ -252,6 +277,26 @@ export default function DebtorsPage() {
 
   return (
     <div className="p-6">
+      {/* WSMR-A4h: detay okunamadi -> modal ACILMAZ, bunun yerine gorunur hata. */}
+      {detailError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          <p className="font-medium">{detailError.message}</p>
+          <button
+            type="button"
+            onClick={() => {
+              const target = debtors.find((d) => d.id === detailError.id);
+              if (target) handleDebtorClick(target);
+            }}
+            className="mt-1 text-xs underline hover:text-red-900"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">

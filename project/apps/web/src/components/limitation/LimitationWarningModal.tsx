@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { AlertTriangle, Clock, CheckCircle, XCircle, Info } from 'lucide-react';
+import { toActionErrorMessage } from '@/lib/action-error';
 
 // ============================================
 // TİPLER
@@ -95,6 +96,8 @@ export function LimitationWarningModal({
   result,
 }: LimitationWarningModalProps) {
   const [isLoading, setIsLoading] = useState(false);
+  // WSMR-A4h: risk kaydi yazilamadiginda GORUNUR olur; sessizce ilerlenmez.
+  const [logError, setLogError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -102,42 +105,68 @@ export function LimitationWarningModal({
   const config = getLevelConfig(status.level);
   const Icon = config.icon;
 
+  const logRisk = async (ackAction: 'PROCEED' | 'BACK') => {
+    const res = await fetch('/api/limitation-engine/log-risk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        claimTypeCode: status.ruleCode,
+        level: status.level,
+        ackAction,
+      }),
+    });
+    // `fetch` HTTP hatasinda throw ETMEZ; sozlesme burada acikca kurulur.
+    if (!res.ok) throw new Error(`LOG_RISK_HTTP_${res.status}`);
+  };
+
+  /**
+   * WSMR-A4h · KAYDEDİLEMEYEN RİSK ONAYIYLA SESSİZCE İLERLEME KALDIRILDI.
+   *
+   * Bu kayıt bir DENETİM İZİDİR: avukatın zamanaşımı uyarısını gördüğünü ve
+   * riski üstlenerek devam ettiğini belgeler. Eski hâlde iki ayrı yoldan
+   * sessizce kayboluyordu:
+   *   1. `fetch` yanıtı HİÇ kontrol edilmiyordu — 403/500 dönse bile başarı
+   *      sayılıp `onProceed()` çalışıyordu.
+   *   2. Ağ hatası catch'e düşünce yine `onProceed()` çağrılıyordu.
+   * Sonuç: kayıt yokken takip başlatılıyor, sonradan "uyarıldı mı" sorusunun
+   * cevabı bulunamıyordu.
+   *
+   * Politika KORUNDU: devam etme yetkisi hâlâ kullanıcıdadır — burada hukuki
+   * bir eşik icat edilmez. Değişen tek şey, kaydın yazılamadığının GÖRÜNÜR
+   * olması ve devam etmenin AÇIK ikinci bir karar hâline gelmesidir.
+   */
   const handleProceed = async () => {
     setIsLoading(true);
+    setLogError(null);
     try {
-      // Risk logunu kaydet
-      await fetch('/api/limitation-engine/log-risk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          claimTypeCode: status.ruleCode,
-          level: status.level,
-          ackAction: 'PROCEED',
-        }),
-      });
+      await logRisk('PROCEED');
       onProceed();
     } catch (error) {
-      console.error('Risk log kaydedilemedi:', error);
-      onProceed();
+      setLogError(toActionErrorMessage(error, 'Risk onayı kaydedilemedi.'));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleBack = async () => {
+    setLogError(null);
     try {
-      await fetch('/api/limitation-engine/log-risk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          claimTypeCode: status.ruleCode,
-          level: status.level,
-          ackAction: 'BACK',
-        }),
-      });
+      await logRisk('BACK');
+      onClose();
     } catch (error) {
-      console.error('Risk log kaydedilemedi:', error);
+      setLogError(toActionErrorMessage(error, 'Risk kaydı yazılamadı.'));
     }
+  };
+
+  /** Kayıt yazılamadığını GÖREREK devam etme — açık, ikinci bir kullanıcı kararı. */
+  const proceedWithoutLog = () => {
+    setLogError(null);
+    onProceed();
+  };
+
+  /** Kayıt yazılamadığını GÖREREK kapatma. */
+  const closeWithoutLog = () => {
+    setLogError(null);
     onClose();
   };
 
@@ -223,24 +252,46 @@ export function LimitationWarningModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-3">
-          <button
-            onClick={handleBack}
-            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            {status.level === 'RED' ? 'Geri Dön' : 'İncele'}
-          </button>
-          <button
-            onClick={handleProceed}
-            disabled={isLoading}
-            className={`px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 ${
-              status.level === 'RED'
-                ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-          >
-            {isLoading ? 'Kaydediliyor...' : 'Devam Et'}
-          </button>
+        <div className="px-6 py-4 bg-gray-50 border-t">
+          {logError && (
+            <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p className="font-medium">{logError}</p>
+              <p className="mt-1 text-xs">
+                Bu kayıt, uyarıyı görüp riski üstlendiğinizi belgeler. Yazılamadığı için
+                işleme devam ederseniz kayıt OLUŞMAZ.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                <button type="button" onClick={handleProceed} className="underline hover:text-red-900">
+                  Tekrar dene
+                </button>
+                <button type="button" onClick={proceedWithoutLog} className="underline hover:text-red-900">
+                  Kayıt olmadan devam et
+                </button>
+                <button type="button" onClick={closeWithoutLog} className="underline hover:text-red-900">
+                  Kayıt olmadan kapat
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={handleBack}
+              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              {status.level === 'RED' ? 'Geri Dön' : 'İncele'}
+            </button>
+            <button
+              onClick={handleProceed}
+              disabled={isLoading}
+              className={`px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 ${
+                status.level === 'RED'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {isLoading ? 'Kaydediliyor...' : 'Devam Et'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

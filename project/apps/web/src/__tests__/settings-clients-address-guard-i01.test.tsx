@@ -120,13 +120,14 @@ function modalInputs(container: HTMLElement): HTMLInputElement[] {
   return Array.from(modalRoot.querySelectorAll('input'));
 }
 
-async function clickEditFor(displayName: string) {
+async function clickEditFor(displayName: string, opts: { expectModal?: boolean } = {}) {
   await screen.findByText(displayName);
   const editButtons = screen.getAllByTitle('Düzenle');
   const nameCell = screen.getByText(displayName).closest('tr');
   const editButton = (nameCell?.querySelector('button[title="Düzenle"]') ?? editButtons[0]) as Element;
   fireEvent.click(editButton);
-  await screen.findByText('Müvekkil Düzenle');
+  // WSMR-A4h: detay okunamazsa modal ARTIK ACILMIYOR; [13] bu yolu bilerek kullanir.
+  if (opts.expectModal !== false) await screen.findByText('Müvekkil Düzenle');
 }
 
 beforeEach(() => {
@@ -281,16 +282,25 @@ describe('[12-13] structured belirleme kaynağı ve fail-safe', () => {
     );
   });
 
-  it('[13] detaylı fetch BAŞARISIZ olursa (yalnız liste-fallback) güvenli tarafa geçilir', async () => {
-    // catch bloğu editingClient'i liste satırıyla set eder (addresses alanı YOK, undefined).
-    // "yok" ile "bilinmiyor" KARIŞTIRILMAZ: guard bu durumda da yönetiliyor VARSAYAR.
+  it('[13] detaylı fetch BAŞARISIZ olursa düzenleme modalı HİÇ açılmaz', async () => {
+    // WSMR-A4h GÜNCELLEMESİ — I01'in koruduğu değer AYNEN korunuyor, daha yukarıda.
+    //
+    // I01 bu senaryoda liste-satırı fallback'ini KABUL edip adres bölümünü salt-okumaya
+    // düşürüyordu ("yok" ile "bilinmiyor" karıştırılmasın). Ancak fallback yalnız adresi
+    // değil TÜM formu dar liste projeksiyonundan tohumluyordu ve `handleSave` TAM FORM
+    // `PUT` gönderiyor; gender/notes/canWaive gibi listede bulunmayan alanlar da boş
+    // değerleriyle geri yazılabiliyordu. WSMR-A4h bu yüzden fallback'i tamamen kaldırdı:
+    // gövde doğrulanmadan modal AÇILMAZ.
+    //
+    // I01'in asıl güvenlik iddiası (düzenlenebilir adres alanı ORTAYA ÇIKMAZ) bu hâlde de
+    // geçerlidir ve aşağıda aynen doğrulanır — artık daha güçlü bir nedenle: form hiç yok.
     mockGetRouter({}, [toListRow(STRUCTURED)], { detailFails: ['client-2'] });
     render(<ClientsSettingsPage />);
-    await clickEditFor('Beste Müvekkil');
+    await clickEditFor('Beste Müvekkil', { expectModal: false });
 
-    await waitFor(() =>
-      expect(screen.getByTestId('settings-client-address-managed')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.queryByText('Müvekkil Düzenle')).toBeNull();
     expect(screen.queryByPlaceholderText('Adres')).toBeNull();
+    expect(screen.queryByTestId('settings-client-address-managed')).toBeNull();
   });
 });
