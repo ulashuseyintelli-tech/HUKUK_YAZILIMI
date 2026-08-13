@@ -14,6 +14,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // WSMR-A4l: `tsconfig.json` paths ile AYNI eslesme. Bu alias eksik oldugu
+      // icin `lib/api/interest-engine.ts` (ve onu dolayli ceken sihirbaz
+      // sayfasi) vitest'te HIC yuklenemiyordu; sayfa duzeyinde davranis testi
+      // yazilamiyordu. Uretim davranisi degismez — yalniz test resolve'u.
+      '@shared/types': path.resolve(__dirname, '../../packages/types/src'),
     },
   },
 });

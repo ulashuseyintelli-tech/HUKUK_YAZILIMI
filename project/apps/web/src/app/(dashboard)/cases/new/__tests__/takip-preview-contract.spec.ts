@@ -6,62 +6,47 @@ import path from 'node:path';
  * PR-2A1 — TAKIP TALEBI ONIZLEME SOZLESMESI
  * stable key: app/(dashboard)/cases/new/page.tsx#generateTakipTalebiPreview
  *
- * Eski davranis hata halinde UYDURMA bir "TAKİP TALEBİ (ÖRNEK 1)" belgesi uretip
- * gercek sablon ciktisiymis gibi onizletiyordu — avukat sahte icra belgesi taslagina
- * guvenebilirdi. 5300+ satirlik sihirbazin tam render'i orantisiz oldugu icin bu spec
- * sozlesmeyi KAYNAK duzeyinde kilitler; davranissal dogrulama, ayni `toActionErrorMessage`
- * + throw zincirini kullanan diger 26 signature'in matrisleriyle ortaktir.
+ * ── CROSS-PROGRAM CONSUMER TEST UPDATE · WSMR-A4l ──────────────────────────
+ * Bu spec'in KONUSU KALDIRILDI. `generateTakipTalebiPreview`, hiçbir yerden
+ * render edilmeyen `DuesStep` bileşeninin içindeydi; WSMR-A4l bu erişilemez
+ * taşıyıcıyı UNSUPPORTED_SYNTHETIC_UI_REMOVED olarak kaldırdı (dört kanıt:
+ * render consumer yok · dynamic import/glob yok · route erişimi yok ·
+ * production bundle consumer yok).
+ *
+ * Spec SİLİNMEDİ. PR-2A1'in koruduğu değer — "hata hâlinde UYDURMA bir
+ * 'TAKİP TALEBİ (ÖRNEK 1)' belgesi üretilip gerçek şablon çıktısıymış gibi
+ * önizletilemez" — daha güçlü bir biçimde kilitleniyor: yol tümüyle yok.
+ * Biri ileride bu sihirbaza uydurma bir önizleme geri getirirse test kırılır.
+ *
+ * A1 MUHASEBESİ: `generateTakipTalebiPreview` imzası A1'in terminal raporunda
+ * FIXED olarak sayılıdır ve orada kalır. WSMR-A4 bu imzayı YENİDEN saymaz;
+ * A4l yalnız erişilemez taşıyıcının kaldırılmasını üstlenir.
+ * ──────────────────────────────────────────────────────────────────────────
  */
 
 const SRC = fs.readFileSync(path.resolve(__dirname, '..', 'page.tsx'), 'utf8');
 
-function previewSegment(): string {
-  const i = SRC.indexOf('const generateTakipTalebiPreview = async');
-  expect(i).toBeGreaterThan(-1);
-  const next = SRC.indexOf('const validateClaimItems', i);
-  return SRC.slice(i, next > i ? next : i + 4000);
-}
+/** Kod gövdesi — açıklama satırları çıkarılır ki yorumlar eşleşmeyi kandırmasın. */
+const CODE = SRC.split(/\r?\n/)
+  .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+  .join('\n');
 
-describe('generateTakipTalebiPreview sozlesmesi', () => {
-  it('UYDURMA fallback belge KALDIRILDI', () => {
-    const seg = previewSegment();
-    expect(seg).not.toContain('TAKİP TALEBİ (ÖRNEK 1)');
-    expect(seg).not.toContain('simplePreview');
-    // Hata dalinda setTakipTalebiContent CAGRILMAZ (icerik uydurulamaz).
-    const catchPart = seg.slice(seg.indexOf('} catch'));
-    expect(catchPart).not.toContain('setTakipTalebiContent(');
-    expect(catchPart).not.toContain('setShowTakipTalebiPreview(true)');
+describe('takip talebi onizleme — kaldirma kilidi', () => {
+  it('generateTakipTalebiPreview ARTIK BILDIRILMIYOR', () => {
+    expect(CODE).not.toMatch(/generateTakipTalebiPreview/);
   });
 
-  it('malformed yanit BASARI SAYILMAZ — bos/eksik html-content throw eder', () => {
-    const seg = previewSegment();
-    expect(seg).toContain('MALFORMED_PREVIEW_RESPONSE');
-    // "Belge oluşturulamadı" metni BELGE ICERIGI olarak basilamaz.
-    expect(seg).not.toContain('|| "Belge oluşturulamadı"');
+  it('UYDURMA fallback belge geri GELMEDI', () => {
+    expect(CODE).not.toContain('TAKİP TALEBİ (ÖRNEK 1)');
+    expect(CODE).not.toContain('simplePreview');
+    expect(CODE).not.toContain('setTakipTalebiContent');
   });
 
-  it('hata GORUNUR ve guvenli mesajla yuzeye cikar', () => {
-    const seg = previewSegment();
-    expect(seg).toContain('setTakipTalebiPreviewError(');
-    // Guvenli mesaj runMutation/toActionError zincirinden gelir (outcome.error.message).
-    expect(seg).toContain('outcome.error.message');
-    expect(seg).not.toMatch(/console\.error/);
-    expect(seg).not.toMatch(/catch\s*\([^)]*\)\s*\{\s*\}/);
+  it('tasiyici bilesen DuesStep de bildirilmiyor', () => {
+    expect(CODE).not.toMatch(/function\s+DuesStep\s*\(/);
   });
 
-  it('hata bandi onizleme dugmesinin YANINDA render ediliyor', () => {
-    expect(SRC).toContain('data-testid="takip-preview-error"');
-    const band = SRC.indexOf('takip-preview-error');
-    const btn = SRC.indexOf('onClick={generateTakipTalebiPreview}');
-    expect(band).toBeGreaterThan(-1);
-    expect(btn).toBeGreaterThan(-1);
-    expect(Math.abs(btn - band)).toBeLessThan(600); // ayni JSX bolgesi
-  });
-
-  it('basari yolu YALNIZ dogrulanmis string icerikle onizleme acar', () => {
-    const seg = previewSegment();
-    const successPart = seg.slice(0, seg.indexOf('} catch'));
-    expect(seg).toContain('typeof body?.html === ');
-    expect(successPart).toContain('setShowTakipTalebiPreview(true)');
+  it('modul hala gecerli bir route sayfasi olarak default export ediyor', () => {
+    expect(CODE).toMatch(/export\s+default\s+function\s+/);
   });
 });
