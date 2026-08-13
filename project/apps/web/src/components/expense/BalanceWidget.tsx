@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Wallet, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, Plus } from "lucide-react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface BalanceWidgetProps {
   caseId: string;
@@ -30,22 +31,28 @@ export function BalanceWidget({ caseId, onCreateExpenseRequest, compact = false 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * WSMR-A4f · UYDURMA SIFIR BAKIYE KALDIRILDI.
+   *
+   * Okuma hata verdiginde widget `balance: 0`, `lowThreshold: 500`,
+   * `isLow: true` iceren SAHTE bir bakiye kaydi uretiyordu. Ekranda bu,
+   * "0 ₺ · Eşik: 500 ₺ · Bakiye düşük" seklinde GERCEK bir mali rakam gibi
+   * goruniyor ve "Masraf Talebi Oluştur" cagrisini tetikliyordu. 500 esik
+   * degeri de bu katmanda uydurulmustu. Artik okuma basarisiz olursa rakam
+   * DEGIL, gorunur hata ve salt-okuma tekrar denemesi gosterilir.
+   */
   const loadBalance = async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await api.getCaseBalance(caseId);
+      if (!data || typeof (data as BalanceData).balance !== "number") {
+        throw new Error("MALFORMED_BALANCE_RESPONSE");
+      }
       setBalance(data);
-    } catch (err: any) {
-      // Bakiye henüz oluşturulmamış olabilir
-      setBalance({
-        id: "",
-        caseId,
-        balance: 0,
-        lowThreshold: 500,
-        isLow: true,
-        recentLedger: [],
-      });
+    } catch (err: unknown) {
+      setBalance(null);
+      setError(toActionErrorMessage(err, "Masraf bakiyesi okunamadı."));
     } finally {
       setLoading(false);
     }
@@ -65,6 +72,27 @@ export function BalanceWidget({ caseId, onCreateExpenseRequest, compact = false 
             <div className="h-6 bg-gray-200 rounded w-32" />
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className={`bg-white rounded-lg border border-red-200 p-4 ${compact ? "p-3" : ""}`}
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+          <p className="text-sm font-medium text-red-600">{error}</p>
+        </div>
+        <button
+          type="button"
+          onClick={loadBalance}
+          className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }
