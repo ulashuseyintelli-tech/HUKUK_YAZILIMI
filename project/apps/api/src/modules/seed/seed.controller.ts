@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { SeedService } from './seed.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 import { buildClientMutationActor } from '../client/client.service';
 
 @Controller('seed')
@@ -93,7 +94,15 @@ export class SeedController {
 
   // OWN-13 I02-R3 (owner D03): önceden kimliksizdi (auth gerektirmiyordu) — bütün /seed/*
   // yüzeyi en az JwtAuthGuard ister kararı gereği ARTIK KİMLİKSİZ DEĞİL.
-  @UseGuards(JwtAuthGuard)
+  //
+  // P5-B02R1 (OFFICE-P5-B02R1, owner-ratified): bu uç /seed/* içindeki TEK global
+  // (tenant'sız) tablo mutasyonudur — PublicInstitution satırları TÜM tenant'ların ortak
+  // referans verisidir. JwtAuthGuard tek başına herhangi bir tenant'ın herhangi bir
+  // kullanıcısına global yazım verir; bu yüzden ek ADMIN rol kapısı buradadır. Diğer
+  // seed uçları tenant-scoped'tur ve BİLEREK dokunulmamıştır (blanket dönüşüm yasak).
+  // seedAll içindeki servis-düzeyi çağrı bu kapıdan geçmez; seedAll'ın kendi elevated
+  // aktör kapısı vardır (assertCanRunElevatedClientBulkOperation).
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Post('public-institutions')
   async seedPublicInstitutions() {
     return this.seedService.seedPublicInstitutions();

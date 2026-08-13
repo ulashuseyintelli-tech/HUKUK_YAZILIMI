@@ -8,6 +8,7 @@
 import "reflect-metadata";
 import { SeedController } from "../seed.controller";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { AdminGuard } from "../../auth/guards/admin.guard";
 
 const GUARDS_METADATA = "__guards__";
 function methodGuards(method: string): any[] {
@@ -40,4 +41,19 @@ describe("SeedController — bütün /seed/* route'ları JwtAuthGuard ile korunu
   it("seedPublicInstitutions ARTIK kimliksiz DEĞİL (önceki regresyon kapatıldı)", () => {
     expect(methodGuards("seedPublicInstitutions").length).toBeGreaterThan(0);
   });
+
+  // P5-B02R1 (owner-ratified): /seed/* içindeki TEK global (tenant'sız) tablo mutasyonu
+  // ek ADMIN rol kapısı taşır; diğer uçlar tenant-scoped'tur ve AdminGuard TAŞIMAZ
+  // (blanket dönüşüm yasağının regresyon kilidi).
+  it("seedPublicInstitutions → JwtAuthGuard + AdminGuard (global tablo mutasyonu, B02R1)", () => {
+    expect(methodGuards("seedPublicInstitutions")).toContain(JwtAuthGuard);
+    expect(methodGuards("seedPublicInstitutions")).toContain(AdminGuard);
+  });
+
+  it.each(routes.filter((r) => r !== "seedPublicInstitutions"))(
+    "%s → AdminGuard TAŞIMAZ (blanket dönüşüm yok — B02R1 kapsam kilidi)",
+    (method) => {
+      expect(methodGuards(method)).not.toContain(AdminGuard);
+    },
+  );
 });
