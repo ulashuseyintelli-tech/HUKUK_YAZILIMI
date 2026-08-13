@@ -27,11 +27,18 @@ export class StaffService {
   }
 
   // Tek personel getir
+  //
+  // P5-B04 (S3, owner-ratified): detay yüzeyi de liste ile AYNI tckn maskesini uygular
+  // (önceden raw dönüyordu — herhangi bir authenticated tenant kullanıcısı ham TCKN
+  // okuyabiliyordu). CANDIDATE-F1 kaydındaki "findOne DEĞİŞMEZ" cümlesi o task'in kapsam
+  // sınırıydı, kalıcı sözleşme değil; S3 bunu açıkça genişletir. Ölçülen hiçbir tüketici
+  // findOne'dan ham TCKN okumuyor (P5-B03 §5 — endpoint'in web/API tüketicisi yok).
   async findOne(id: string, tenantId: string) {
-    return this.prisma.staffMember.findFirst({
+    const row = await this.prisma.staffMember.findFirst({
       where: { id, tenantId },
       include: { caseAssignments: true },
     });
+    return row ? this.maskListRow(row) : row;
   }
 
   /**
@@ -120,6 +127,15 @@ export class StaffService {
       where: { id, tenantId },
     });
     if (!existing) throw new NotFoundException('Personel bulunamadı');
+
+    // P5-B04: liste/detay yanıtları maskeli TCKN taşır (örn. 123****01) ve ölçülen tüketici
+    // (cases/new StaffDetailModal — P5-B03 §5 site #8) satırın TAMAMINI geri PUT eder.
+    // Maskeli değer "değişiklik" sayılıp (a) DUPLICATE_IDENTITY'yi yanlış tetiklemesin,
+    // (b) persist edilip GERÇEK TCKN'yi EZMESİN (veri kaybı) diye '*' içeren tckn
+    // no-change sayılır. Gerçek TCKN 11 hane rakamdır — '*' asla meşru değer değildir.
+    if (typeof data?.tckn === 'string' && data.tckn.includes('*')) {
+      data = { ...data, tckn: undefined };
+    }
 
     // PR-U3: UPDATE-PATH DUPLICATE GUARD (önce HİÇ yoktu → edit ile mükerrer üretilebiliyordu).
     // Self (id) HARİÇ, yalnız AKTİF diğer kayıtlar. confirmSimilarNameUpdate yalnız İSİM review'ını

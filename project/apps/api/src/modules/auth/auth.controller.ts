@@ -5,6 +5,7 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { LoginRateLimitGuard } from "./guards/login-rate-limit.guard";
 import { CurrentUser } from "./decorators/current-user.decorator";
 import { PasswordResetService } from "./password-reset/password-reset.service";
+import { toPublicAuthMeUser } from "./user-public-projection";
 
 @Controller("auth")
 export class AuthController {
@@ -48,6 +49,9 @@ export class AuthController {
   @Get("me")
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: any) {
-    return { user };
+    // F-B01-01 (P5-B01 evidence): request.user select'siz tam Prisma satırıdır;
+    // passwordHash/tokenVersion yanıta çıkmasın diye bu uç kendi public
+    // projection'ından geçer (bounded — yalnız /auth/me, login/register değişmez).
+    return { user: toPublicAuthMeUser(user) };
   }
 }

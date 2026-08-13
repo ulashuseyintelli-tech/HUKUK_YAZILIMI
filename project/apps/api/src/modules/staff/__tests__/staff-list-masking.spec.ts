@@ -2,8 +2,12 @@
  * CANDIDATE-F1 (WAVE 3 — Privacy Revival, RATIFIED WITH RECORDED LIMITATIONS):
  * Personnel List Masked Default. StaffService liste projeksiyonları (findAll/findByType)
  * hassas alanı (tckn) mevcut pii-mask.util ile varsayılan maskeler; null/boş KORUNUR
- * (sentinel üretilmez). Detail (findOne) MASKELEMEZ (raw döner). Response shape korunur.
- * Kapsam: yalnız list; detail/edit/search/duplicate-guard DEĞİŞMEZ.
+ * (sentinel üretilmez). Response shape korunur.
+ *
+ * P5-B04 (S3, OFFICE-P5-SECURITY-COMPLETION-R01, owner-ratified) GÜNCELLEMESİ:
+ * CANDIDATE-F1'in "findOne MASKELEMEZ" sınırı o task'in kapsam notuydu; S3 detay yüzeyini
+ * de aynı maskeye bağlar (ölçülen hiçbir tüketici findOne'dan ham TCKN okumuyordu —
+ * P5-B03 §5). findOne artık liste ile aynı maskeyi uygular.
  */
 import { StaffService } from '../staff.service';
 
@@ -48,12 +52,18 @@ describe('CANDIDATE-F1 — StaffService list masking (tckn)', () => {
     expect(res[0].tckn).toBe('');
   });
 
-  it('findOne (detail) tckn MASKELEMEZ — raw döner', async () => {
+  it('findOne (detail) tckn artık MASKELİ döner (P5-B04/S3 — CANDIDATE-F1 sınırı owner kararıyla genişletildi)', async () => {
     const { svc } = build([
       { id: 's1', firstName: 'A', lastName: 'B', tckn: '12345678901', caseAssignments: [] },
     ]);
     const res = await svc.findOne('s1', TENANT);
-    expect(res?.tckn).toBe('12345678901');
+    expect(res?.tckn).toBe('123****01');
+  });
+
+  it('findOne: kayıt yoksa null döner (maskeleme null-güvenli)', async () => {
+    const { svc } = build([]);
+    const res = await svc.findOne('yok', TENANT);
+    expect(res).toBeNull();
   });
 
   it('diğer alanlar + response shape DEĞİŞMEZ', async () => {

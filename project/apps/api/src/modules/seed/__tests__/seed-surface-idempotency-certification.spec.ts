@@ -17,7 +17,10 @@ const clientServiceStub = () =>
     create: jest.fn(),
   } as any);
 
-const svcWith = (prisma: any) => new SeedService(prisma, noopAudit(), clientServiceStub());
+// P5-B02 (OFFICE-P5-SECURITY-COMPLETION-R01): seedStaff/seedLawyers artık kanonik
+// StaffService/LawyerService.create üzerinden yazar — ilgili iki vaka yeni sözleşmeyi sınar.
+const svcWith = (prisma: any, extras: { staffService?: any; lawyerService?: any } = {}) =>
+  new SeedService(prisma, noopAudit(), clientServiceStub(), extras.staffService, extras.lawyerService);
 
 describe('SeedService — kalan yüzeylerin idempotency sertifikasyonu (C1-B06)', () => {
   it('seedOffice: mevcut ofis varsa CREATE değil UPDATE (idempotent onarım)', async () => {
@@ -59,32 +62,29 @@ describe('SeedService — kalan yüzeylerin idempotency sertifikasyonu (C1-B06)'
     expect(prisma.officeBankAccount.create).toHaveBeenCalledTimes(2);
   });
 
-  it('seedLawyers: barNumber mevcutsa satır atlanır (tenant-scoped probe)', async () => {
-    const prisma: any = {
-      office: { findFirst: jest.fn().mockResolvedValue({ id: 'o1' }) },
-      lawyer: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'l1' }), // hepsi mevcut
-        create: jest.fn(),
-      },
-    };
-    const res: any = await svcWith(prisma).seedLawyers('t1');
+  it('seedLawyers: mevcut satır (_existingReturned) created SAYILMAZ; yazım kanonik LawyerService yoluyla, doğrudan prisma YOK (P5-B02)', async () => {
+    const lawyerService = { create: jest.fn().mockResolvedValue({ id: 'l1', _existingReturned: true }) };
+    const prisma: any = { lawyer: { findFirst: jest.fn(), create: jest.fn() } };
+    const res: any = await svcWith(prisma, { lawyerService }).seedLawyers('t1');
     expect(res.created).toBe(0);
+    expect(res.existing).toBe(10);
+    expect(lawyerService.create).toHaveBeenCalledTimes(10);
+    // yazım tenant-scoped ve kanonik servis üzerinden
+    expect(lawyerService.create.mock.calls[0][0]).toBe('t1');
     expect(prisma.lawyer.create).not.toHaveBeenCalled();
-    // probe tenant-scoped
-    const args = prisma.lawyer.findFirst.mock.calls[0][0];
-    expect(args.where.tenantId).toBe('t1');
+    expect(prisma.lawyer.findFirst).not.toHaveBeenCalled();
   });
 
-  it('seedStaff: email mevcutsa satır atlanır', async () => {
-    const prisma: any = {
-      staffMember: {
-        findFirst: jest.fn().mockResolvedValue({ id: 's1' }),
-        create: jest.fn(),
-      },
-    };
-    const res: any = await svcWith(prisma).seedStaff('t1');
+  it('seedStaff: mevcut kimlik (_existingReturned) created SAYILMAZ; yazım kanonik StaffService yoluyla, doğrudan prisma YOK (P5-B02)', async () => {
+    const staffService = { create: jest.fn().mockResolvedValue({ id: 's1', _existingReturned: true }) };
+    const prisma: any = { staffMember: { findFirst: jest.fn(), create: jest.fn() } };
+    const res: any = await svcWith(prisma, { staffService }).seedStaff('t1');
     expect(res.created).toBe(0);
+    expect(res.existing).toBe(10);
+    expect(staffService.create).toHaveBeenCalledTimes(10);
+    expect(staffService.create.mock.calls[0][0]).toBe('t1');
     expect(prisma.staffMember.create).not.toHaveBeenCalled();
+    expect(prisma.staffMember.findFirst).not.toHaveBeenCalled();
   });
 
   it('seedDebtors: identityNo mevcutsa satır atlanır, eksikler tenant ile yazılır', async () => {

@@ -3,20 +3,31 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StaffService } from './staff.service';
 import { StaffType } from '@prisma/client';
 import { OfficeF01AuthorizationGuard } from '../office-approval/office-f01-authorization.guard';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { projectStaffRowForActor, projectStaffRowsForActor } from './staff-public-projection';
+import { CreateStaffDto, UpdateStaffDto, UpdateStaffOrderDto } from './dto/staff.dto';
 
 @Controller('staff')
 @UseGuards(JwtAuthGuard)
 export class StaffController {
-  constructor(private staffService: StaffService) {}
+  constructor(
+    private staffService: StaffService,
+    // P5-B04 (S3): okuma yüzeyi kapı DEĞİL projeksiyon — aktörün F01 yetkisi burada
+    // sorulur, yanıt alan-daraltmasından geçer. Mutasyon kapısı (F01 guard) DEĞİŞMEZ.
+    private officeApproval: OfficeApprovalService,
+  ) {}
 
   // Tüm personeli listele
   @Get()
   async findAll(@Request() req: any, @Query('type') type?: string) {
     const tenantId = req.user.tenantId;
-    if (type) {
-      return { data: await this.staffService.findByType(tenantId, type as StaffType) };
-    }
-    return { data: await this.staffService.findAll(tenantId) };
+    const authorized = await this.officeApproval.isF01ActorAuthorized(req.user.id, tenantId);
+    const rows = type
+      ? await this.staffService.findByType(tenantId, type as StaffType)
+      : await this.staffService.findAll(tenantId);
+    // P5-B04 (S3): F01-yetkisiz aktöre yetki bayrakları + tckn anahtarı düşürülür;
+    // yetkili aktörün yanıtı birebir bugünkü gibidir.
+    return { data: projectStaffRowsForActor(rows, authorized) };
   }
 
   // Tek personel getir
@@ -27,13 +38,14 @@ export class StaffController {
     if (!staff) {
       return { error: 'Personel bulunamadı' };
     }
-    return { data: staff };
+    const authorized = await this.officeApproval.isF01ActorAuthorized(req.user.id, tenantId);
+    return { data: projectStaffRowForActor(staff, authorized) };
   }
 
   // Yeni personel ekle
   @Post()
   @UseGuards(OfficeF01AuthorizationGuard)
-  async create(@Request() req: any, @Body() body: any) {
+  async create(@Request() req: any, @Body() body: CreateStaffDto) {
     const tenantId = req.user.tenantId;
     try {
       const staff = await this.staffService.create(tenantId, body);
@@ -49,7 +61,7 @@ export class StaffController {
   // Personel güncelle
   @Put(':id')
   @UseGuards(OfficeF01AuthorizationGuard)
-  async update(@Request() req: any, @Param('id') id: string, @Body() body: any) {
+  async update(@Request() req: any, @Param('id') id: string, @Body() body: UpdateStaffDto) {
     const tenantId = req.user.tenantId;
     try {
       const staff = await this.staffService.update(id, tenantId, body);
@@ -78,7 +90,7 @@ export class StaffController {
   // Sıralama güncelle
   @Put('order/update')
   @UseGuards(OfficeF01AuthorizationGuard)
-  async updateOrder(@Request() req: any, @Body() body: { staffIds: string[] }) {
+  async updateOrder(@Request() req: any, @Body() body: UpdateStaffOrderDto) {
     const tenantId = req.user.tenantId;
     try {
       await this.staffService.updateOrder(tenantId, body.staffIds);
