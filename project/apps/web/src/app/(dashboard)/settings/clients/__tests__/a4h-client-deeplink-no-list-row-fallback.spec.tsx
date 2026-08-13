@@ -37,7 +37,11 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/components/client/PoaScannerWizard', () => ({ PoaScannerWizard: () => null }));
 vi.mock('@/components/bulk-email-modal', () => ({ BulkEmailModal: () => null }));
 
-const mocked = api as unknown as { get: ReturnType<typeof vi.fn> };
+const mocked = api as unknown as {
+  get: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
+  post: ReturnType<typeof vi.fn>;
+};
 
 /** Liste satiri: DAR projeksiyon (addresses, gender, notes YOK). */
 const LIST_ROW = {
@@ -61,7 +65,12 @@ afterEach(() => cleanup());
 function routeApi(detail: () => unknown) {
   mocked.get.mockImplementation((url: string) => {
     const u = String(url);
-    if (/^\/clients\/[^/?]+$/.test(u)) return Promise.resolve(detail());
+    // DIKKAT: sayfa `/clients/lifecycle-eligibility` de cagiriyor ve bu da
+    // `/clients/<seg>` desenine uyuyor. DETAY yolu YALNIZ gercek id icindir;
+    // aksi halde sayac tabanli fixture'larda yanlis cagri tuketilirdi.
+    if (/^\/clients\/[^/?]+$/.test(u) && !u.includes('lifecycle-eligibility')) {
+      return Promise.resolve(detail());
+    }
     if (u.startsWith('/clients')) return Promise.resolve({ data: { data: [LIST_ROW] } });
     return Promise.resolve({ data: { data: [] } });
   });
@@ -152,5 +161,65 @@ describe('Kapı 3 — ?edit={id} deep-link', () => {
     expect(await screen.findByText('Müvekkil Düzenle')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(mocked.get).toHaveBeenCalledWith('/clients/cli-1');
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   WSMR-A4i — YIKICI DUZENLEME KORUMASI (owner zorunlu matrisi).
+   ───────────────────────────────────────────────────────────────────────────── */
+describe('A4i — yıkıcı düzenleme koruması', () => {
+  it('detay hatasinda HICBIR PUT/POST cagrisi yapilmaz (uc kapi icin de)', async () => {
+    routeApi(() => Promise.reject(new Error('network down')));
+    render(<ClientsSettingsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ayşe Yılmaz' }));
+    await screen.findByRole('alert');
+
+    expect(mocked.put).not.toHaveBeenCalled();
+    expect(mocked.post).not.toHaveBeenCalled();
+  });
+
+  it('dar liste projeksiyonu edit payload uretmez — form alanlari HIC render edilmez', async () => {
+    routeApi(() => Promise.reject(new Error('network down')));
+    render(<ClientsSettingsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ayşe Yılmaz' }));
+    await screen.findByRole('alert');
+
+    // Modal hic acilmadigi icin dar projeksiyondan tohumlanacak alan da yok.
+    expect(screen.queryByText('Müvekkil Düzenle')).toBeNull();
+    expect(screen.queryByPlaceholderText('Adres')).toBeNull();
+  });
+
+  it('deep-link BASARISIZ olursa state edit-ready KALMAZ', async () => {
+    searchParams = new URLSearchParams('edit=cli-1');
+    routeApi(() => Promise.reject(new Error('network down')));
+    render(<ClientsSettingsPage />);
+    await screen.findByRole('alert');
+
+    // URL parametresi hala duruyor olabilir; ONEMLI olan UI durumu: modal KAPALI
+    // ve duzenlenecek kayit SECILI DEGIL. Yeniden render/refresh edit modunu
+    // kendiliginden ACMAZ.
+    expect(screen.queryByText('Müvekkil Düzenle')).toBeNull();
+    expect(mocked.put).not.toHaveBeenCalled();
+  });
+
+  it('retry BASARILI olursa modal YALNIZ taze detayla acilir', async () => {
+    let attempt = 0;
+    routeApi(() => {
+      attempt += 1;
+      return attempt === 1
+        ? Promise.reject(new Error('geçici'))
+        : Promise.resolve({ data: { data: DETAIL } });
+    });
+    render(<ClientsSettingsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ayşe Yılmaz' }));
+    await screen.findByRole('alert');
+
+    // Ayni kapiya ikinci tik = kullanicinin salt-okuma yeniden denemesi.
+    fireEvent.click(screen.getByRole('button', { name: 'Ayşe Yılmaz' }));
+
+    expect(await screen.findByText('Müvekkil Düzenle')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(attempt).toBe(2);
+    expect(mocked.put).not.toHaveBeenCalled();
   });
 });

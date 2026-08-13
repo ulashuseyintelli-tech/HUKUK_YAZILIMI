@@ -33,7 +33,12 @@ vi.mock('@/components/debtor/NewDebtorModal', () => ({
   NewDebtorModal: () => null,
 }));
 
-const mocked = api as unknown as { get: ReturnType<typeof vi.fn> };
+const mocked = api as unknown as {
+  get: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
+  post: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
+};
 
 /** Liste satiri: DAR projeksiyon — estateHeirs, riskNotes, notes YOK. */
 const LIST_ROW = {
@@ -132,5 +137,69 @@ describe('Borçlu detayı — okuma hatası', () => {
 
     await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
     expect(attempt).toBe(2);
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   WSMR-A4i — YIKICI DUZENLEME KORUMASI (owner zorunlu matrisi).
+   ───────────────────────────────────────────────────────────────────────────── */
+describe('A4i — yıkıcı düzenleme koruması', () => {
+  it('detay hatasinda HICBIR PUT/PATCH/POST cagrisi yapilmaz', async () => {
+    routeApi(() => Promise.reject(new Error('network down')));
+    render(<DebtorsPage />);
+    await clickRow();
+    await screen.findByRole('alert');
+
+    expect(mocked.put).not.toHaveBeenCalled();
+    expect(mocked.post).not.toHaveBeenCalled();
+    expect(mocked.delete).not.toHaveBeenCalled();
+  });
+
+  it('dar liste projeksiyonu edit formuna DONUSMEZ (mirasci alani hic render edilmez)', async () => {
+    routeApi(() => Promise.reject(new Error('network down')));
+    render(<DebtorsPage />);
+    await clickRow();
+    await screen.findByRole('alert');
+
+    // Liste satirinda estateHeirs YOK. Eski davranista modal acilir, form
+    // heirs=[] ile tohumlanir ve "Mirasci yok" gorunurdu; kaydedilince backend
+    // mirasci listesini BOS liste ile REPLACE ederdi.
+    expect(screen.queryByText(/Mirasçılar/)).toBeNull();
+    expect(screen.queryByText(/Mirasçı yok/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '+ Mirasçı Ekle' })).toBeNull();
+  });
+
+  it('estateHeirs YUKLENMEDEN bos listeyle REPLACE gonderilmez', async () => {
+    routeApi(() => Promise.reject(new Error('network down')));
+    render(<DebtorsPage />);
+    await clickRow();
+    await screen.findByRole('alert');
+
+    // Hicbir yazma cagrisi yok; dolayisiyla estateHeirs: [] tasiyan payload da yok.
+    const writeCalls = [
+      ...mocked.put.mock.calls,
+      ...mocked.post.mock.calls,
+    ];
+    expect(writeCalls).toHaveLength(0);
+  });
+
+  it('retry BASARILI olursa modal YALNIZ taze detayla acilir', async () => {
+    let attempt = 0;
+    routeApi(() => {
+      attempt += 1;
+      return attempt === 1
+        ? Promise.reject(new Error('geçici'))
+        : Promise.resolve({ data: { data: DETAIL } });
+    });
+    render(<DebtorsPage />);
+    await clickRow();
+    fireEvent.click(await screen.findByRole('button', { name: 'Tekrar dene' }));
+
+    // Modal ACILDI ve icerigi TAZE detaydan geliyor (liste satirindan degil).
+    expect(
+      await screen.findByRole('heading', { name: 'Merhum Ahmet Yılmaz Terekesi' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(mocked.put).not.toHaveBeenCalled();
   });
 });
