@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Clock, CheckCircle, XCircle, Info } from 'lucide-react';
 import { toActionErrorMessage } from '@/lib/action-error';
+import { useSubmitLock } from '@/lib/use-submit-lock';
 
 // ============================================
 // TİPLER
@@ -98,6 +99,9 @@ export function LimitationWarningModal({
   const [isLoading, setIsLoading] = useState(false);
   // WSMR-A4h: risk kaydi yazilamadiginda GORUNUR olur; sessizce ilerlenmez.
   const [logError, setLogError] = useState<string | null>(null);
+  // WSMR-A4i: `isLoading` AYNI TICK icinde guncellenmez — hizli cift tik iki denetim
+  // kaydi (ve iki onProceed) uretebilirdi. Kilit SENKRONDUR.
+  const submitLock = useSubmitLock();
 
   if (!isOpen) return null;
 
@@ -135,36 +139,46 @@ export function LimitationWarningModal({
    * bir eşik icat edilmez. Değişen tek şey, kaydın yazılamadığının GÖRÜNÜR
    * olması ve devam etmenin AÇIK ikinci bir karar hâline gelmesidir.
    */
-  const handleProceed = async () => {
-    setIsLoading(true);
-    setLogError(null);
-    try {
-      await logRisk('PROCEED');
-      onProceed();
-    } catch (error) {
-      setLogError(toActionErrorMessage(error, 'Risk onayı kaydedilemedi.'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const handleProceed = () =>
+    submitLock.run(async () => {
+      setIsLoading(true);
+      // Bayat hata YENI denemede TEMIZLENIR — eski hata yeni sonucu golgeleyemez.
+      setLogError(null);
+      try {
+        await logRisk('PROCEED');
+        onProceed();
+      } catch (error) {
+        setLogError(toActionErrorMessage(error, 'Risk onayı kaydedilemedi.'));
+      } finally {
+        if (submitLock.isMounted()) setIsLoading(false);
+      }
+    });
 
-  const handleBack = async () => {
-    setLogError(null);
-    try {
-      await logRisk('BACK');
-      onClose();
-    } catch (error) {
-      setLogError(toActionErrorMessage(error, 'Risk kaydı yazılamadı.'));
-    }
-  };
+  const handleBack = () =>
+    submitLock.run(async () => {
+      setLogError(null);
+      try {
+        await logRisk('BACK');
+        onClose();
+      } catch (error) {
+        setLogError(toActionErrorMessage(error, 'Risk kaydı yazılamadı.'));
+      }
+    });
 
-  /** Kayıt yazılamadığını GÖREREK devam etme — açık, ikinci bir kullanıcı kararı. */
+  /**
+   * Kayıt yazılamadığını GÖREREK devam etme — açık, İKİNCİ bir kullanıcı kararı.
+   *
+   * Bu düğme YALNIZCA hata bandı görünürken render edilir; yani ilk "Devam Et"
+   * tıklaması bu onayın yerine GEÇEMEZ. Yetki modeli değişmez: çağrılan callback
+   * yine ebeveynin verdiği `onProceed`'dir — burada yeni bir yetki üretilmez.
+   */
   const proceedWithoutLog = () => {
+    if (!logError) return; // savunma: band yokken bu yol cagrilamaz
     setLogError(null);
     onProceed();
   };
 
-  /** Kayıt yazılamadığını GÖREREK kapatma. */
+  /** Kayıt yazılamadığını GÖREREK kapatma — `onProceed` ÇAĞRILMAZ. */
   const closeWithoutLog = () => {
     setLogError(null);
     onClose();

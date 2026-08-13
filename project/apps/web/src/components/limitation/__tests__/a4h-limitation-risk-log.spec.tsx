@@ -168,3 +168,120 @@ describe('Kayıt yazılamadığında kullanıcı kararı', () => {
     expect(band.textContent).toMatch(/kayıt OLUŞMAZ/i);
   });
 });
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   WSMR-A4i — OWNER'IN ZORUNLU KILDIGI DENETIM MATRISI.
+   Her satir ayri ayri kanitlanir; hicbiri digerinin yerine gecmez.
+   ───────────────────────────────────────────────────────────────────────────── */
+describe('A4i — zorunlu denetim matrisi', () => {
+  it('403 → onProceed 0 (500 ve network ile AYNI davranis)', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 403 });
+    renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Devam Et' }));
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(onProceed).not.toHaveBeenCalled();
+  });
+
+  it('2xx → onProceed TAM OLARAK BIR kez', async () => {
+    fetchMock.mockResolvedValue({ ok: true });
+    renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Devam Et' }));
+
+    await vi.waitFor(() => expect(onProceed).toHaveBeenCalledTimes(1));
+    // Ek bir gecikmeli cagri OLMADIGI da dogrulanir.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onProceed).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('HIZLI CIFT TIK → TEK audit cagrisi ve TEK proceed', async () => {
+    let resolveFetch: (v: unknown) => void = () => {};
+    fetchMock.mockImplementation(() => new Promise((r) => { resolveFetch = r; }));
+    renderModal();
+
+    const btn = screen.getByRole('button', { name: 'Devam Et' });
+    // AYNI TICK icinde iki tik: `isLoading` henuz re-render etmedi.
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch({ ok: true });
+    await vi.waitFor(() => expect(onProceed).toHaveBeenCalledTimes(1));
+  });
+
+  it('override OLMADAN modal kapatilirsa onProceed 0', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Devam Et' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Kayıt olmadan kapat' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onProceed).not.toHaveBeenCalled();
+  });
+
+  it('backdrop ile kapatma da onProceed URETMEZ', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    const { container } = renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Devam Et' }));
+    await screen.findByRole('alert');
+    const backdrop = container.querySelector('.absolute.inset-0') as HTMLElement;
+    fireEvent.click(backdrop);
+
+    expect(onProceed).not.toHaveBeenCalled();
+  });
+
+  it('BAYAT hata yeni denemede TEMIZLENIR', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 }).mockResolvedValue({ ok: true });
+    renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Devam Et' }));
+    const band = await screen.findByRole('alert');
+    expect(band).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
+
+    // ONCE sonucu bekle: band `setLogError(null)` ile SENKRON temizlendigi icin
+    // yalniz band'i beklemek istegi beklemeden gecerdi (yanlis-yesil tuzagi).
+    await vi.waitFor(() => expect(onProceed).toHaveBeenCalledTimes(1));
+    // Basaridan sonra band KALMAZ; eski hata yeni sonucu golgelemez.
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('ILK onay tikligi IKINCI onayin yerine GECMEZ', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    renderModal();
+
+    // Ilk tik: override dugmeleri HENUZ YOK.
+    expect(screen.queryByRole('button', { name: 'Kayıt olmadan devam et' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Devam Et' }));
+    await screen.findByRole('alert');
+
+    // Override ANCAK hata gorunduKTEN SONRA ortaya cikar ve ayri bir tik ister.
+    expect(onProceed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Kayıt olmadan devam et' }));
+    expect(onProceed).toHaveBeenCalledTimes(1);
+  });
+
+  it('override YETKI URETMEZ — cagrilan callback ebeveynin onProceed I', async () => {
+    // Modal kendi basina bir yetki kapisi acmaz: devam yetkisi ebeveynin verdigi
+    // callback'tedir. Ebeveyn devam ettirmek istemiyorsa modali hic acmaz veya
+    // onProceed'i kendi kuralina bagli tutar. Burada dogrulanan: override AYNI
+    // callback'i cagirir, alternatif/gizli bir yol KULLANMAZ.
+    fetchMock.mockResolvedValue({ ok: false, status: 403 });
+    renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Devam Et' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Kayıt olmadan devam et' }));
+
+    expect(onProceed).toHaveBeenCalledTimes(1);
+    // Override sirasinda YENI bir audit istegi uydurulmaz.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
