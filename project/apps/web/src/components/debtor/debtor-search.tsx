@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { api } from '@/lib/api';
 import { Search, User, Building, X, Loader2, Phone, Mail } from 'lucide-react';
 
@@ -24,6 +25,7 @@ interface DebtorSearchProps {
 export function DebtorSearch({ onSelect, placeholder = 'Borçlu ara (ad, TCKN, VKN)...' }: DebtorSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<DebtorResult[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,22 +55,18 @@ export function DebtorSearch({ onSelect, placeholder = 'Borçlu ara (ad, TCKN, V
   }, [query]);
 
   const searchDebtors = async () => {
+    setSearchError(null);
     setLoading(true);
     try {
       const res = await api.get(`/debtors/search?q=${encodeURIComponent(query)}`);
       setResults(res.data?.data || []);
     } catch (e) {
-      // Demo data
-      const demoResults: DebtorResult[] = [
-        { id: '1', type: 'REAL' as const, displayName: 'Ahmet Yılmaz', tckn: '12345678901', phone: '0532 123 45 67', activeCases: 2, totalDebt: 150000 },
-        { id: '2', type: 'LEGAL' as const, displayName: 'XYZ Ticaret Ltd. Şti.', vkn: '1234567890', phone: '0212 123 45 67', email: 'info@xyz.com', activeCases: 5, totalDebt: 850000 },
-        { id: '3', type: 'REAL' as const, displayName: 'Mehmet Kaya', tckn: '98765432109', activeCases: 1, totalDebt: 45000 },
-      ].filter(d => 
-        d.displayName.toLowerCase().includes(query.toLowerCase()) ||
-        d.tckn?.includes(query) ||
-        d.vkn?.includes(query)
-      );
-      setResults(demoResults);
+      // WSMR-A4e · UYDURMA BORCLU KAYITLARI KALDIRILDI.
+      // Arama basarisiz oldugunda sahte borclular uretiliyordu — uydurma
+      // TCKN/VKN, telefon ve borc tutari ("Ahmet Yilmaz · 12345678901 ·
+      // 150.000"). Kullanici bunlari GERCEK kayit sanip islem baslatabilirdi.
+      setResults([]);
+      setSearchError(toActionErrorMessage(e, 'Borçlu araması yapılamadı.'));
     } finally {
       setLoading(false);
       setShowResults(true);
@@ -114,6 +112,18 @@ export function DebtorSearch({ onSelect, placeholder = 'Borçlu ara (ad, TCKN, V
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : searchError ? (
+            /* WSMR-A4e: arama HATASI "sonuç bulunamadı" ile aynı görünemez. */
+            <div className="text-center py-6" role="alert">
+              <p className="text-sm font-medium text-red-600">{searchError}</p>
+              <button
+                type="button"
+                onClick={searchDebtors}
+                className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+              >
+                Tekrar dene
+              </button>
             </div>
           ) : results.length === 0 ? (
             <div className="text-center py-6 text-gray-500">
