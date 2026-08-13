@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createIdempotencyKey } from '@/lib/idempotency-key';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Badge, Spinner } from '@hukuk/ui';
 import { X, ArrowLeftRight, AlertCircle, Lock, CheckCircle2, Info } from 'lucide-react';
@@ -31,9 +32,10 @@ interface OffsetDrawerProps {
 }
 
 function genIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  return `offset-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // WSMR-A4c: Math.random fallback KALDIRILDI (backend dedupe sozlesmesi).
+  return createIdempotencyKey('offset');
 }
+
 
 /** Başarılı mahsup mutasyonu sonrası tazelenecek Genel Cari query key'leri (tek noktada; apply+reverse paylaşır). */
 const OFFSET_INVALIDATE_KEYS = [
