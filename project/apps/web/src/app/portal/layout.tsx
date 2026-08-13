@@ -8,6 +8,7 @@ import { Scale, FileText, FileCheck, LogOut, User, Home, Bell, Check, FolderOpen
 // `http://localhost:8080` adresine gidiyordu — web ile API farklı origin'deyse (staging/
 // production) bildirim zili sessizce çalışmıyordu (catch blokları hatayı yutuyor).
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface Notification {
   id: string;
@@ -27,6 +28,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  // WSMR-A4g: bildirim okuma/isaretleme hatalari GORUNUR olur; sahte yerel
+  // "okundu" durumu uretilmez.
+  const [notificationError, setNotificationError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,11 +58,19 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         const res = await fetch(portalApiUrl("/api/portal/notifications/unread-count"), {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (res.ok) {
-          const data = await res.json();
-          setUnreadCount(data.count);
-        }
-      } catch (e) {}
+        if (!res.ok) throw new Error(`UNREAD_COUNT_HTTP_${res.status}`);
+        const data = await res.json();
+        // Govde sozlesmeye karsi dogrulanir: sayi degilse rozet BASILMAZ.
+        if (typeof data?.count !== "number") throw new Error("MALFORMED_UNREAD_COUNT");
+        setUnreadCount(data.count);
+      } catch (e) {
+        // WSMR-A4g: sayac okunamadiysa rozet DOGRULANMIS son degerinde kalir;
+        // sifirlanip "okunmamis bildirim yok" izlenimi VERMEZ. Durum zil
+        // menusunde gorunur hale gelir (bkz. notificationError bandi).
+        setNotificationError(
+          toActionErrorMessage(e, "Bildirimler okunamadı; sayı güncel olmayabilir."),
+        );
+      }
     };
 
     fetchUnreadCount();
@@ -80,15 +92,22 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const fetchNotifications = async () => {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
+    setNotificationError(null);
     try {
       const res = await fetch(portalApiUrl("/api/portal/notifications"), {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data);
-      }
-    } catch (e) {}
+      if (!res.ok) throw new Error(`NOTIFICATIONS_HTTP_${res.status}`);
+      const data = await res.json();
+      // Govde SOZLESMEYE karsi dogrulanir: dizi degilse basari sayilmaz.
+      if (!Array.isArray(data)) throw new Error("MALFORMED_NOTIFICATION_LIST");
+      setNotifications(data);
+    } catch (e) {
+      // WSMR-A4g: okuma hatasi "Bildirim yok" ile AYNI gorunemez. Liste
+      // temizlenir ve hata bandi basilir.
+      setNotifications([]);
+      setNotificationError(toActionErrorMessage(e, "Bildirimler yüklenemedi."));
+    }
   };
 
   const handleBellClick = () => {
@@ -98,30 +117,48 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     setShowNotifications(!showNotifications);
   };
 
+  /**
+   * WSMR-A4g · SAHTE "OKUNDU" DURUMU KALDIRILDI.
+   *
+   * Eski hâlde `fetch` yanıtı HİÇ kontrol edilmiyordu. `fetch` yalnız ağ
+   * hatasında reject eder; 403/500 gibi yanıtlar normal biçimde çözülür. Yani
+   * sunucu yazmayı REDDETSE bile bildirim yerelde "okundu" işaretleniyor ve
+   * okunmamış sayacı düşüyordu. Müvekkil, gerçekte hâlâ okunmamış duran bir
+   * bildirimi ele alınmış sanabilirdi. Artık başarı YALNIZ `res.ok` ile
+   * doğrulandıktan sonra yerel duruma yazılır.
+   */
   const markAsRead = async (id: string) => {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
+    setNotificationError(null);
     try {
-      await fetch(portalApiUrl(`/api/portal/notifications/${id}/read`), {
+      const res = await fetch(portalApiUrl(`/api/portal/notifications/${id}/read`), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error(`MARK_READ_HTTP_${res.status}`);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (e) {}
+    } catch (e) {
+      setNotificationError(toActionErrorMessage(e, "Bildirim okundu olarak işaretlenemedi."));
+    }
   };
 
   const markAllAsRead = async () => {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
+    setNotificationError(null);
     try {
-      await fetch(portalApiUrl("/api/portal/notifications/read-all"), {
+      const res = await fetch(portalApiUrl("/api/portal/notifications/read-all"), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error(`MARK_ALL_READ_HTTP_${res.status}`);
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       setUnreadCount(0);
-    } catch (e) {}
+    } catch (e) {
+      setNotificationError(toActionErrorMessage(e, "Bildirimler okundu olarak işaretlenemedi."));
+    }
   };
 
   const handleLogout = () => {
@@ -173,8 +210,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                       </button>
                     )}
                   </div>
+                  {notificationError && (
+                    <div role="alert" className="px-3 py-2 border-b bg-red-50 text-xs text-red-700">
+                      <p className="font-medium">{notificationError}</p>
+                      <button
+                        type="button"
+                        onClick={fetchNotifications}
+                        className="mt-1 underline hover:text-red-900"
+                      >
+                        Tekrar dene
+                      </button>
+                    </div>
+                  )}
                   <div className="max-h-72 overflow-y-auto">
-                    {notifications.length === 0 ? (
+                    {notificationError ? null : notifications.length === 0 ? (
                       <div className="p-4 text-center text-gray-500 text-sm">Bildirim yok</div>
                     ) : (
                       notifications.map(n => (

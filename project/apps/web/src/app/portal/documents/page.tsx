@@ -11,6 +11,7 @@ import { portalApiUrl } from "@/lib/config/portal-api-url";
 import { ActionError } from "@/components/ui/action-error";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { runMutation, runRefreshOnly } from "@/lib/mutation-outcome";
+import { downloadVerified } from "@/lib/verified-download";
 import { useSubmitLock } from "@/lib/use-submit-lock";
 
 interface Document {
@@ -144,42 +145,66 @@ export default function PortalDocumentsPage() {
     });
   };
 
+  /**
+   * WSMR-A4g · SESSIZ INDIRME HATASI KALDIRILDI.
+   *
+   * Eski hâlde `res.ok` degilse HICBIR SEY olmuyordu: tiklama hicbir iz
+   * birakmadan yutuluyordu. Ayrica govde HIC dogrulanmadan indiriliyordu —
+   * sunucu JSON hata govdesi dondurse bile o govde belge adiyla diske
+   * yaziliyordu. Artik indirme A3g'nin `downloadVerified` primitifinden gecer:
+   * bos govde / sifir bayt / JSON hata govdesi indirilmez, hata gorunur olur.
+   */
   const handleDownload = async (doc: Document) => {
     const token = localStorage.getItem("portal_token");
     if (!token) return;
+    setActionError(null);
     try {
-      const res = await fetch(portalApiUrl(`/api/portal/documents/${doc.id}/download`), {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await throwIfNotOk(
+        await fetch(portalApiUrl(`/api/portal/documents/${doc.id}/download`), {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      );
+      const blob = await res.blob();
+      const outcome = downloadVerified(blob, {
+        fileName: doc.fileName,
+        fallbackFileName: "belge",
       });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = doc.fileName;
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
+      if (!outcome.ok) setActionError(outcome.message);
     } catch (e) {
-      console.error(e);
+      setActionError(toActionErrorMessage(e, "Belge indirilemedi."));
     }
   };
 
+  /**
+   * WSMR-A4g · SESSIZ SILME HATASI KALDIRILDI.
+   *
+   * Kullanici onay diyalogunu kabul ettikten sonra istek basarisiz olursa eski
+   * hâlde hicbir sey gorunmuyordu; liste de tazelenmedigi icin belge yerinde
+   * kaliyor, kullanici ise silme isleminin gectigini varsayabiliyordu.
+   */
   const handleDelete = async (id: string) => {
     if (!confirm("Bu belgeyi silmek istediğinize emin misiniz?")) return;
     const token = localStorage.getItem("portal_token");
     if (!token) return;
-    try {
-      const res = await fetch(portalApiUrl(`/api/portal/documents/${id}`), {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        fetchDocuments();
-      }
-    } catch (e) {
-      console.error(e);
+    setActionError(null);
+    const outcome = await runMutation({
+      mutate: async () => {
+        await throwIfNotOk(
+          await fetch(portalApiUrl(`/api/portal/documents/${id}`), {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        );
+        return true;
+      },
+      refresh: fetchDocuments,
+      failureMessage: "Belge silinemedi.",
+    });
+    if (outcome.status === "FAILED") {
+      setActionError(outcome.error.message);
+      return;
     }
+    if (outcome.status === "SUCCESS_STALE") setStaleNotice(outcome.stale);
   };
 
   const formatFileSize = (bytes: number) => {
