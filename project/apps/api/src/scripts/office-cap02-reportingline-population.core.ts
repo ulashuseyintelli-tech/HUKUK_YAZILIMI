@@ -3,17 +3,21 @@
  *
  * İki owner görevinin tooling katmanı tek modülde:
  *   STEP 7  OFFICE-P2-CAP02-REPORTINGLINE-POPULATION-INPUT-PACK-R01
- *           `buildPopulationInputPack()` — authorizable personel evreninden input paketi üretir.
+ *           `buildPopulationInputPack()` — aktif ve User'a bağlı personel evreninden input paketi üretir.
  *   STEP 8  OFFICE-P2-CAP02-REPORTINGLINE-POPULATION-DRY-RUN-R01
  *           `dryRunPopulation()` — paketi hiçbir şey yazmadan graph seviyesinde doğrular.
+ *   P3-B02  `buildPopulationDiff()` — owner-evidenced hedef graph ile mevcut aktif
+ *           graph arasındaki CREATE / REPLACE / NO_OP farkını üretir.
  *
  * MİMARİ İLKE — bu dosya Prisma/NestJS import ETMEZ, DB'ye erişemez; repository durumu
  * dışarıdan snapshot olarak geçilir. Sistem saati ve `fs` kullanılmaz. Mutation riski
  * yapısal olarak yoktur.
  *
- * KANONİK KURALLAR (decision-log 2026-07-28 / OFFICE-DELIVERY-MANIFEST §11):
- *   AUTHORIZABLE PERSONNEL  aktif Lawyer|StaffMember + aktif same-tenant User binding
- *                           + authorization-graph is gereksinimi
+ * BAĞLAYICI SINIR: ReportingLine yalnız organizasyonel raporlama gerçeğidir;
+ * yetkilendirme, permission, policy veya final onay hakkı üretmez.
+ *
+ * KANONİK YAPISAL KURALLAR:
+ *   ELIGIBLE PERSONNEL      aktif Lawyer|StaffMember + aktif same-tenant User binding
  *   MANAGED                 managerUserId ZORUNLU
  *   TOP_LEVEL               managerUserId NULL
  *   UNCLASSIFIED            persist EDİLMEZ — aktif kaydın YOKLUĞUNDAN türetilir
@@ -185,6 +189,32 @@ export interface PopulationDryRunReport {
   records: PopulationRecordResult[];
 }
 
+export type PopulationOperation = 'CREATE' | 'REPLACE' | 'NO_OP' | 'FAIL';
+
+export interface PopulationDiffRecord {
+  actorUserId: string;
+  operation: PopulationOperation;
+  current: {
+    disposition: PersistedDisposition;
+    managerUserId: string | null;
+  } | null;
+  desired: {
+    disposition: PersistedDisposition;
+    managerUserId: string | null;
+  };
+  blockingFailures: PopulationFailureCode[];
+}
+
+export interface PopulationDiffReport {
+  total: number;
+  create: number;
+  replace: number;
+  noOp: number;
+  fail: number;
+  eligibleForOperate: boolean;
+  records: PopulationDiffRecord[];
+}
+
 const isIsoInstant = (value: string): boolean =>
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(value) &&
   !Number.isNaN(Date.parse(value));
@@ -280,4 +310,68 @@ export function dryRunPopulation(
   const noOp = records.filter((r) => r.verdict === 'NO_OP').length;
 
   return { total: records.length, pass, fail, noOp, eligibleForOperate: fail === 0, records };
+}
+
+/**
+ * Owner tarafından açıkça tanımlanmış hedef graph için kişi-bazlı fark üretir.
+ * Bu fonksiyon authority üretmez; çağıran exact owner kararını sağlamalıdır.
+ *
+ * Raw dry-run'ın `EXISTING_ACTIVE_LINE_CONFLICT` hükmü korunur. Bu tek failure ise
+ * hedef kayıt güvenli bir REPLACE adayıdır: kanonik servis mevcut satırı `validUntil`
+ * ile kapatıp yeni satırı açar. Başka herhangi bir failure REPLACE ile maskelenmez.
+ */
+export function buildPopulationDiff(
+  input: ReadonlyArray<PopulationInputRecord>,
+  snapshot: PopulationSnapshot,
+): PopulationDiffReport {
+  const dryRun = dryRunPopulation(input, snapshot);
+  const activeByActor = new Map(snapshot.activeLines.map((line) => [line.actorUserId, line]));
+
+  const records: PopulationDiffRecord[] = dryRun.records.map((record) => {
+    const desired = input.find((candidate) => candidate.actorUserId === record.actorUserId);
+    if (!desired) {
+      throw new Error(`POPULATION_DIFF_INPUT_NOT_FOUND: ${record.actorUserId}`);
+    }
+    const existing = activeByActor.get(record.actorUserId);
+    const blockingFailures = record.failures.filter(
+      (failure) => failure !== 'EXISTING_ACTIVE_LINE_CONFLICT',
+    );
+
+    let operation: PopulationOperation;
+    if (record.verdict === 'NO_OP') operation = 'NO_OP';
+    else if (record.verdict === 'PASS') operation = 'CREATE';
+    else if (
+      existing &&
+      blockingFailures.length === 0 &&
+      record.failures.length === 1 &&
+      record.failures[0] === 'EXISTING_ACTIVE_LINE_CONFLICT'
+    ) {
+      operation = 'REPLACE';
+    } else operation = 'FAIL';
+
+    return {
+      actorUserId: record.actorUserId,
+      operation,
+      current: existing
+        ? { disposition: existing.disposition, managerUserId: existing.managerUserId }
+        : null,
+      desired: { disposition: desired.disposition, managerUserId: desired.managerUserId },
+      blockingFailures,
+    };
+  });
+
+  const create = records.filter((record) => record.operation === 'CREATE').length;
+  const replace = records.filter((record) => record.operation === 'REPLACE').length;
+  const noOp = records.filter((record) => record.operation === 'NO_OP').length;
+  const fail = records.filter((record) => record.operation === 'FAIL').length;
+
+  return {
+    total: records.length,
+    create,
+    replace,
+    noOp,
+    fail,
+    eligibleForOperate: fail === 0,
+    records,
+  };
 }
