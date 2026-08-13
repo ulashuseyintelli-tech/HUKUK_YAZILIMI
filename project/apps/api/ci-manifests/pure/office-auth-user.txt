@@ -205,3 +205,10 @@ src/modules/staff/__tests__/staff-controller-guards.spec.ts
 src/modules/staff/__tests__/staff-read-projection.spec.ts
 src/modules/staff/__tests__/staff-dto-validation.spec.ts
 src/modules/staff/__tests__/staff-update-masked-tckn.spec.ts
+
+# ── OFFICE-P5-B02R1 — public-institutions ADMIN kapisi (owner-ratified successor) ─
+# /seed/* icindeki TEK global (tenant'siz) tablo mutasyonuna ek ADMIN rol kapisi.
+# Gercek guard zinciri (JwtStrategy+JwtAuthGuard+AdminGuard) kontrollu test app'inde:
+# 401/403/ADMIN-basari + route-scoped kilit (blanket donusum yok) + global/idempotent
+# servis semantigi.
+src/modules/seed/__tests__/seed-public-institutions-admin-gate.spec.ts
