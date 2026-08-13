@@ -739,6 +739,9 @@ export default function CasesPage() {
   const [risks, setRisks] = useState<any[]>([]);
   const [asamalar, setAsamalar] = useState<any[]>([]);
   const [cities, setCities] = useState<string[]>([]);
+  // WSMR-A4k: okunamayan filtre kaynaklari ISIMLE gorunur; bos menu "secenek yok"
+  // olarak yorumlanamaz.
+  const [lookupFailures, setLookupFailures] = useState<string[]>([]);
   const [executionOffices, setExecutionOffices] = useState<any[]>([]);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [activeQuickFilters, setActiveQuickFilters] = useState<string[]>([]);
@@ -995,29 +998,77 @@ export default function CasesPage() {
     }
   }, []);
 
+  /**
+   * WSMR-A4k · OKUNAMAYAN FİLTRE KAYNAĞI "SEÇENEK YOK" DEĞİLDİR.
+   *
+   * Beş lookup kaynağının her biri `.catch(() => bos)` ile sessizce boşa
+   * düşüyordu. Bu listeler takip listesindeki FİLTRE menülerini besliyor
+   * (müvekkil, avukat, personel, risk/aşama, icra dairesi + şehir). Kaynak
+   * okunamadığında menü boş açılıyor ve kullanıcı "bu büroda müvekkil yok"
+   * ya da "bu aşama tanımlı değil" gibi yanlış bir sonuca varabiliyordu;
+   * daha kötüsü, filtrelemek istediği kaydı bulamayıp yok sanabiliyordu.
+   *
+   * Artık her kaynak BAĞIMSIZ değerlendirilir; okunamayanlar İSİMLE görünür.
+   */
   const loadLookupData = async () => {
-    try {
-      const [clientsRes, lawyersRes, staffRes, lookupsRes, officesRes] = await Promise.all([
-        api.get('/clients').catch(() => ({ data: { data: [] } })),
-        api.getLawyers().catch(() => []),
-        api.get('/staff').catch(() => ({ data: { data: [] } })),
-        api.get('/lookups').catch(() => ({ data: { data: { risk: [], asama: [] } } })),
-        api.get('/execution-offices').catch(() => ({ data: { data: [] } })),
-      ]);
-      
-      setClients(clientsRes.data?.data || []);
-      setLawyers(lawyersRes || []);
-      setStaff(staffRes.data?.data || []);
-      setRisks(lookupsRes.data?.data?.risk || []);
-      setAsamalar(lookupsRes.data?.data?.asama || []);
-      
-      const offices = officesRes.data?.data || [];
-      setExecutionOffices(offices);
-      const uniqueCities = [...new Set(offices.map((o: any) => o.city))].sort() as string[];
-      setCities(uniqueCities);
-    } catch (error) {
-      console.error("Lookup verileri yüklenemedi:", error);
+    setLookupFailures([]);
+    const [clientsOut, lawyersOut, staffOut, lookupsOut, officesOut] = await Promise.allSettled([
+      api.get('/clients'),
+      api.getLawyers(),
+      api.get('/staff'),
+      api.get('/lookups'),
+      api.get('/execution-offices'),
+    ]);
+
+    const failures: string[] = [];
+    /** Basarili + SOZLESMEYE uygun ise degeri, aksi halde null doner. */
+    const take = (
+      outcome: PromiseSettledResult<unknown>,
+      label: string,
+      pick: (value: any) => any,
+      isValid: (value: any) => boolean,
+    ): any => {
+      if (outcome.status === 'rejected') {
+        failures.push(label);
+        return null;
+      }
+      const picked = pick(outcome.value);
+      if (!isValid(picked)) {
+        failures.push(label);
+        return null;
+      }
+      return picked;
+    };
+
+    const isArr = (v: unknown) => Array.isArray(v);
+
+    const clients = take(clientsOut, 'Müvekkiller', (v) => v?.data?.data, isArr);
+    if (clients) setClients(clients);
+
+    const lawyers = take(lawyersOut, 'Avukatlar', (v) => v, isArr);
+    if (lawyers) setLawyers(lawyers);
+
+    const staff = take(staffOut, 'Personel', (v) => v?.data?.data, isArr);
+    if (staff) setStaff(staff);
+
+    const lookups = take(
+      lookupsOut,
+      'Risk/aşama tanımları',
+      (v) => v?.data?.data,
+      (v) => !!v && isArr(v.risk) && isArr(v.asama),
+    );
+    if (lookups) {
+      setRisks(lookups.risk);
+      setAsamalar(lookups.asama);
     }
+
+    const offices = take(officesOut, 'İcra daireleri', (v) => v?.data?.data, isArr);
+    if (offices) {
+      setExecutionOffices(offices);
+      setCities([...new Set(offices.map((o: any) => o.city))].sort() as string[]);
+    }
+
+    setLookupFailures(failures);
   };
 
   const loadSavedFilters = () => {
@@ -1603,6 +1654,20 @@ export default function CasesPage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {lookupFailures.length > 0 && (
+        /* WSMR-A4k: filtre menusu BOS acildiysa bunun nedeni gorunur olmali. */
+        <div role="alert" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="font-medium">{lookupFailures.join(', ')}</span> yüklenemedi;
+          ilgili filtre seçenekleri EKSİK. Boş görünmesi kayıt olmadığı anlamına gelmez.
+          <button
+            type="button"
+            onClick={loadLookupData}
+            className="ml-2 underline hover:text-amber-900"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
