@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { Globe, FileText, MessageCircle, CheckCircle, XCircle, Clock, Send, User } from "lucide-react";
 
 interface PendingDocument {
@@ -46,6 +47,12 @@ export default function PortalManagementPage() {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  // WSMR-A4m: her okuma/gonderme yuzeyi kendi hatasini AYRI tasir; "bos" ile
+  // "okunamadi" karistirilmaz.
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [clientsError, setClientsError] = useState<string | null>(null);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeTab === "documents") {
@@ -55,26 +62,42 @@ export default function PortalManagementPage() {
     }
   }, [activeTab]);
 
+  /**
+   * WSMR-A4m · Okuma başarısız olunca `setPendingDocs([])` "Bekleyen belge
+   * yok" render'ini TETİKLİYORDU — gerçekte onaylanmayı bekleyen belgeler
+   * OLDUĞU hâlde okunamadığında hiç yokmuş gibi görünüyordu (admin bekleyen
+   * onayları KAÇIRABİLİRDİ). Artık liste boşaltılmaz, hata ayrı görünür olur.
+   */
   const fetchPendingDocs = async () => {
     setLoading(true);
+    setDocsError(null);
     try {
       const res = await api.get("/portal/admin/documents/pending");
-      setPendingDocs(Array.isArray(res.data) ? res.data : (res.data?.data || []));
+      const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? null);
+      if (!Array.isArray(rows)) throw new Error("MALFORMED_PENDING_DOCS");
+      setPendingDocs(rows);
     } catch (e) {
-      console.error(e);
-      setPendingDocs([]);
+      setDocsError(toActionErrorMessage(e, "Bekleyen belgeler yüklenemedi."));
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * WSMR-A4m · Okuma başarısız olunca liste sessizce eski/boş hâlde
+   * kalıyordu ve ekran "Portal erişimi olan müvekkil yok" diyebiliyordu —
+   * gerçek durumla ilgisi olmayan bir olgu iddiası. Artık hata görünür olur.
+   */
   const fetchClients = async () => {
     setLoading(true);
+    setClientsError(null);
     try {
       const res = await api.get("/portal/admin/messages/clients");
-      setClients(Array.isArray(res.data) ? res.data : (res.data?.data || []));
+      const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? null);
+      if (!Array.isArray(rows)) throw new Error("MALFORMED_CLIENT_LIST");
+      setClients(rows);
     } catch (e) {
-      console.error(e);
+      setClientsError(toActionErrorMessage(e, "Müvekkil listesi yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -99,29 +122,45 @@ export default function PortalManagementPage() {
     }
   };
 
+  /**
+   * WSMR-A4m · Mesaj okuma başarısız olduğunda okunmamış rozeti YİNE DE
+   * sıfırlanıyordu (kod BAŞARI beklemeden sıfırlıyordu) — admin gerçekte
+   * hâlâ okunmamış duran bir mesajı görmüş sanabilirdi. Rozet artık YALNIZ
+   * mesajlar DOĞRULANMIŞ biçimde okunduktan sonra sıfırlanır.
+   */
   const selectClient = async (client: ClientWithMessages) => {
     setSelectedClient(client);
+    setMessagesError(null);
     try {
       const res = await api.get<{ messages: any[] }>(`/portal/admin/messages/${client.id}`);
-      setMessages(res.data?.messages || []);
-      // Okunmamış sayısını sıfırla
+      const rows = res.data?.messages;
+      if (!Array.isArray(rows)) throw new Error("MALFORMED_MESSAGE_LIST");
+      setMessages(rows);
       setClients(prev => prev.map(c => c.id === client.id ? { ...c, unreadCount: 0 } : c));
     } catch (e) {
-      console.error(e);
+      setMessages([]);
+      setMessagesError(toActionErrorMessage(e, "Mesajlar yüklenemedi."));
     }
   };
 
+  /**
+   * WSMR-A4m · Gönderim başarısız olunca hiçbir geri bildirim yoktu — admin
+   * "Gönder"e tıkladı, yazı kayboldu mu bilemiyordu (yazılan metin
+   * KORUNUYORDU ama bu görünmüyordu). Artık hata görünür olur.
+   */
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedClient) return;
     setSending(true);
+    setSendError(null);
     try {
       await api.post(`/portal/admin/messages/${selectedClient.id}`, { content: newMessage });
       setNewMessage("");
       // Mesajları yenile
       const res = await api.get<{ messages: any[] }>(`/portal/admin/messages/${selectedClient.id}`);
-      setMessages(res.data?.messages || []);
+      const rows = res.data?.messages;
+      if (Array.isArray(rows)) setMessages(rows);
     } catch (e) {
-      console.error(e);
+      setSendError(toActionErrorMessage(e, "Mesaj gönderilemedi."));
     } finally {
       setSending(false);
     }
@@ -154,7 +193,20 @@ export default function PortalManagementPage() {
         <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
       ) : activeTab === "documents" ? (
         /* Bekleyen Belgeler */
-        pendingDocs.length === 0 ? (
+        docsError ? (
+          /* WSMR-A4m: okuma HATASI "bekleyen belge yok" ile AYNI gorunemez. */
+          <div className="text-center py-12 bg-red-50 rounded-lg border border-red-200" role="alert">
+            <XCircle className="h-10 w-10 text-red-500 mx-auto mb-3" />
+            <p className="text-red-700 font-medium">{docsError}</p>
+            <button
+              type="button"
+              onClick={fetchPendingDocs}
+              className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+            >
+              Tekrar dene
+            </button>
+          </div>
+        ) : pendingDocs.length === 0 ? (
           <div className="text-center py-12 bg-gray-50 rounded-lg">
             <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
             <p className="text-gray-600">Bekleyen belge yok</p>
@@ -204,7 +256,19 @@ export default function PortalManagementPage() {
           <div className="w-72 bg-white rounded-lg border overflow-hidden flex flex-col">
             <div className="p-3 border-b font-medium text-sm">Müvekkiller</div>
             <div className="flex-1 overflow-y-auto">
-              {clients.length === 0 ? (
+              {clientsError ? (
+                /* WSMR-A4m: okuma HATASI "musteri yok" ile AYNI gorunemez. */
+                <div className="p-4 text-center text-sm" role="alert">
+                  <p className="text-red-600 font-medium">{clientsError}</p>
+                  <button
+                    type="button"
+                    onClick={fetchClients}
+                    className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+                  >
+                    Tekrar dene
+                  </button>
+                </div>
+              ) : clients.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-sm">Portal erişimi olan müvekkil yok</div>
               ) : (
                 clients.map(client => (
@@ -236,6 +300,19 @@ export default function PortalManagementPage() {
                 <div className="p-3 border-b font-medium text-sm flex items-center gap-2">
                   <User className="h-4 w-4" /> {selectedClient.displayName}
                 </div>
+                {messagesError && (
+                  /* WSMR-A4m: mesaj okuma hatasi GORUNUR olur. */
+                  <div role="alert" className="px-4 py-2 border-b bg-red-50 text-xs text-red-700 flex items-center justify-between gap-2">
+                    <span>{messagesError}</span>
+                    <button
+                      type="button"
+                      onClick={() => selectClient(selectedClient)}
+                      className="underline hover:text-red-900 shrink-0"
+                    >
+                      Tekrar dene
+                    </button>
+                  </div>
+                )}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {messages.map(msg => (
                     <div key={msg.id} className={`flex ${msg.senderType === "OFFICE" ? "justify-end" : "justify-start"}`}>
@@ -248,11 +325,18 @@ export default function PortalManagementPage() {
                     </div>
                   ))}
                 </div>
-                <div className="border-t p-3 flex gap-2">
-                  <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} onKeyPress={e => e.key === "Enter" && sendMessage()} placeholder="Mesajınızı yazın..." className="flex-1 border rounded-lg px-3 py-2" />
-                  <button onClick={sendMessage} disabled={sending || !newMessage.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
-                    <Send className="h-4 w-4" /> Gönder
-                  </button>
+                <div className="border-t p-3">
+                  {sendError && (
+                    <div role="alert" className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                      {sendError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} onKeyPress={e => e.key === "Enter" && sendMessage()} placeholder="Mesajınızı yazın..." className="flex-1 border rounded-lg px-3 py-2" />
+                    <button onClick={sendMessage} disabled={sending || !newMessage.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                      <Send className="h-4 w-4" /> Gönder
+                    </button>
+                  </div>
                 </div>
               </>
             )}

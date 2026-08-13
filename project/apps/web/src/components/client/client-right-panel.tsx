@@ -62,6 +62,8 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
   const [state, setState] = useState<LoadState>('loading');
   const [snapshot, setSnapshot] = useState<ClientOperatingSnapshot | null>(null);
   const [actions, setActions] = useState<ClientActionCatalogItem[]>([]);
+  // WSMR-A4m: baslangic yuklemesi hatasinda salt-okuma tekrar deneme icin.
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -76,6 +78,8 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
       })
       .catch(() => {
         if (!active) return;
+        // WSMR-A4m: `state('error')` ile bos veriden AYRI tutulur (zaten
+        // vardi). Eklenen: gorunur salt-okuma retry.
         setSnapshot(null);
         setActions([]);
         setState('error');
@@ -84,7 +88,7 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
     return () => {
       active = false;
     };
-  }, [clientId]);
+  }, [clientId, loadAttempt]);
 
   const importantSignals = useMemo(
     () =>
@@ -110,9 +114,18 @@ export function ClientRightPanel({ clientId, onNavigateActions, onNavigateActivi
   if (state === 'error' || !snapshot) {
     return (
       <aside className="w-full min-w-0 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 xl:sticky xl:top-4 xl:self-start" role="alert" aria-label="Operasyon paneli hatası">
-        <div className="flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          Operasyon paneli yüklenemedi.
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            Operasyon paneli yüklenemedi.
+          </span>
+          <button
+            type="button"
+            onClick={() => setLoadAttempt((n) => n + 1)}
+            className="shrink-0 text-xs font-medium underline hover:text-red-900"
+          >
+            Tekrar dene
+          </button>
         </div>
       </aside>
     );

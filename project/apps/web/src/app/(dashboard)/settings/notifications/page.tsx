@@ -175,6 +175,9 @@ export default function NotificationControlCenterPage() {
 
   // PR-N3: Gerçek Test Gönderimi durumu
   const [clients, setClients] = useState<any[]>([]);
+  // WSMR-A4m: müvekkil listesi okunamazsa GORUNUR olur; secici sessizce
+  // "hicbir muvekkil yok" gibi bos kalmaz.
+  const [clientsError, setClientsError] = useState<string | null>(null);
   const [testClientId, setTestClientId] = useState('');
   const [testConfirm, setTestConfirm] = useState(false);
   const [testSending, setTestSending] = useState<null | 'EMAIL' | 'SMS'>(null);
@@ -210,11 +213,23 @@ export default function NotificationControlCenterPage() {
   useEffect(() => { load(); }, [load]);
 
   // Müvekkil listesi (test gönderimi seçici). Arama YOK ki contacts[] gelsin (has-email/phone türetimi için).
-  useEffect(() => {
+  const loadClients = useCallback(() => {
+    setClientsError(null);
     api.get('/clients')
-      .then((r) => setClients((r.data?.data ?? r.data) || []))
-      .catch(() => setClients([]));
+      .then((r) => {
+        const rows = (r.data?.data ?? r.data) as unknown;
+        // WSMR-A4m: govde dizi degilse BASARI sayilmaz — sessizce bos
+        // secici "hicbir muvekkil yok" gibi gorunemez.
+        if (!Array.isArray(rows)) throw new Error('MALFORMED_CLIENT_LIST');
+        setClients(rows);
+      })
+      .catch((e) => {
+        setClients([]);
+        setClientsError(toActionErrorMessage(e, 'Müvekkil listesi yüklenemedi.'));
+      });
   }, []);
+
+  useEffect(() => { loadClients(); }, [loadClients]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">Yükleniyor...</div>;
@@ -517,6 +532,19 @@ export default function NotificationControlCenterPage() {
             (bağlantı testinden farklıdır — gerçekten gönderir). Sonuç aşağıdaki <span className="font-medium">Son Gönderimler</span>'de görünür.
           </p>
 
+          {clientsError && (
+            /* WSMR-A4m: okuma HATASI "hicbir muvekkil yok" ile AYNI gorunemez. */
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+              {clientsError}
+              <button
+                type="button"
+                onClick={loadClients}
+                className="ml-2 underline hover:text-red-900"
+              >
+                Tekrar dene
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="text-[12px]">
               <span className="block text-gray-500 mb-1">Müvekkil</span>

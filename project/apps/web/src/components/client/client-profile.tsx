@@ -43,6 +43,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import type { Client } from '@/lib/api/client.types';
 import { ClientActivityTab } from '@/components/client/client-activity-tab';
 import { ClientActionsTab } from '@/components/client/client-actions-tab';
@@ -162,6 +163,9 @@ const statusColor = (s?: string | null) => {
 export function ClientProfile({ clientId }: ClientProfileProps) {
   const [client, setClient] = useState<Client | null>(null);
   const [cases, setCases] = useState<ClientCaseRow[]>([]);
+  // WSMR-A4m: dosya listesi okunamadiysa GORUNUR olur; "bagli dosya yok"
+  // ile "okunamadi" KARISTIRILMAZ.
+  const [casesError, setCasesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -267,6 +271,29 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     }
   };
 
+  /**
+   * WSMR-A4m · Dosyalar ayrı endpoint (GET /cases?clientId; findOne cases döndürmez).
+   *
+   * Okuma başarısız olursa eski hâlde `setCases([])` "Bağlı dosya bulunamadı"
+   * render'ini TETİKLİYORDU — müvekkilin dosyaları OLDUĞU hâlde okunamadığında
+   * boşmuş gibi görünüyordu. Artık hata AYRI durumda tutulur; liste boşaltılmaz
+   * (önceki doğrulanmış veri varsa korunur), görünür hata + salt-okuma retry
+   * sunulur. `retry` true ise yalnız BU okuma tekrarlanır — müvekkil verisi
+   * yeniden çekilmez.
+   */
+  const loadCases = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setCasesError(null);
+    try {
+      const caseRes = await api.getCases({ clientId, limit: 100 });
+      const list = (caseRes?.data ?? []) as ClientCaseRow[];
+      if (!Array.isArray(list)) throw new Error('MALFORMED_CASE_LIST');
+      setCases(list);
+      setCasesError(null);
+    } catch (caseErr) {
+      setCasesError(toActionErrorMessage(caseErr, 'Dosyalar yüklenemedi.'));
+    }
+  };
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -275,14 +302,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
       try {
         const c = await loadClient();
         if (active) setClient(c);
-        // Dosyalar ayrı endpoint (GET /cases?clientId; findOne cases döndürmez).
-        try {
-          const caseRes = await api.getCases({ clientId, limit: 100 });
-          const list = (caseRes?.data ?? []) as ClientCaseRow[];
-          if (active) setCases(Array.isArray(list) ? list : []);
-        } catch {
-          if (active) setCases([]);
-        }
+        if (active) await loadCases({ silent: true });
       } catch (e: any) {
         if (active) setError(e?.message || 'Müvekkil yüklenemedi');
       } finally {
@@ -425,7 +445,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
           {/* Genel */}
           {tab === 'overview' && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <OverviewCard icon={<FileText className="h-3.5 w-3.5" />} label="Dosya" value={String(cases.length)} />
+              <OverviewCard icon={<FileText className="h-3.5 w-3.5" />} label="Dosya" value={casesError ? '—' : String(cases.length)} />
               <OverviewCard icon={<FileCheck className="h-3.5 w-3.5" />} label="Vekalet" value={String(poas.length)} />
               <OverviewCard icon={<Phone className="h-3.5 w-3.5" />} label="Telefon" value={phone || '—'} />
               <OverviewCard icon={<Mail className="h-3.5 w-3.5" />} label="E-posta" value={email || '—'} />
@@ -478,7 +498,19 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
           {/* Dosyalar */}
           {tab === 'cases' && (
             <div className="space-y-3">
-              {cases.length === 0 ? (
+              {casesError ? (
+                /* WSMR-A4m: okuma HATASI "bağlı dosya bulunamadı" ile AYNI görünemez. */
+                <div className="text-center py-6" role="alert">
+                  <p className="text-sm font-medium text-red-600">{casesError}</p>
+                  <button
+                    type="button"
+                    onClick={() => loadCases()}
+                    className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+                  >
+                    Tekrar dene
+                  </button>
+                </div>
+              ) : cases.length === 0 ? (
                 <p className="text-center py-6 text-gray-500">Bağlı dosya bulunamadı</p>
               ) : (
                 cases.map((c) => (

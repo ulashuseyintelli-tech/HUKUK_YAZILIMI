@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, AlertTriangle, Info, Bug, CheckCircle, RefreshCw } from "lucide-react";
 import { api, type ErrorLogRecord, type ErrorLogStats } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { ErrorLogDetailDrawer } from "@/components/error/ErrorLogDetailDrawer";
 import { relativeTime } from "@/lib/relative-time";
 import { getErrorLogPresentation } from "@/lib/error-log-presentation";
@@ -26,10 +27,14 @@ export default function ErrorLogsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selected, setSelected] = useState<ErrorLogRecord | null>(null);
+  // WSMR-A4m: 403-DISI okuma hatasi GORUNUR olur; "henuz log yok" ile
+  // KARISTIRILMAZ. 403 davranisina (setForbidden) DOKUNULMADI.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setForbidden(false);
+    setLoadError(null);
     try {
       const [list, st] = await Promise.all([
         api.getErrorLogs({ level: levelFilter || undefined, source: sourceFilter || undefined, page, limit: PAGE_SIZE }),
@@ -43,7 +48,11 @@ export default function ErrorLogsPage() {
         setForbidden(true);
         setLogs([]);
       } else {
-        console.error("Error fetching logs:", e);
+        // WSMR-A4m: eski halde bu dal SESSIZDI — `logs` bos KALIYOR ve ekran
+        // "Henüz log kaydı yok" diyordu; gercekte okuma BASARISIZ olmustu.
+        // `stats` de ilk deger (0/0/0/0) ile fake sayilar gosterebiliyordu.
+        // Artik hata GORUNUR ve stat kartlari "-" ile isaretlenir.
+        setLoadError(toActionErrorMessage(e, "Loglar yüklenemedi."));
       }
     } finally {
       setLoading(false);
@@ -85,11 +94,25 @@ export default function ErrorLogsPage() {
         </button>
       </div>
 
+      {loadError && (
+        /* WSMR-A4m: okuma HATASI "henuz log yok" ile AYNI gorunemez. */
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={fetchData}
+            className="shrink-0 text-xs font-medium underline hover:text-red-900"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard value={stats.total} label="Toplam Log" />
-        <StatCard value={stats.errors} label="Hata" tone="red" />
-        <StatCard value={stats.warnings} label="Uyarı" tone="yellow" />
-        <StatCard value={stats.unresolved} label="Çözülmemiş" tone="orange" />
+        <StatCard value={loadError ? "—" : stats.total} label="Toplam Log" />
+        <StatCard value={loadError ? "—" : stats.errors} label="Hata" tone="red" />
+        <StatCard value={loadError ? "—" : stats.warnings} label="Uyarı" tone="yellow" />
+        <StatCard value={loadError ? "—" : stats.unresolved} label="Çözülmemiş" tone="orange" />
       </div>
 
       <div className="flex gap-3 mb-4">
@@ -112,7 +135,7 @@ export default function ErrorLogsPage() {
       <div className="bg-white rounded-lg border">
         {loading ? (
           <div className="p-8 text-center text-gray-500">Yükleniyor...</div>
-        ) : logs.length === 0 ? (
+        ) : loadError ? null : logs.length === 0 ? (
           <div className="p-8 text-center text-gray-500">Henüz log kaydı yok</div>
         ) : (
           <div className="divide-y">
@@ -170,7 +193,7 @@ export default function ErrorLogsPage() {
   );
 }
 
-function StatCard({ value, label, tone }: { value: number; label: string; tone?: "red" | "yellow" | "orange" }) {
+function StatCard({ value, label, tone }: { value: number | string; label: string; tone?: "red" | "yellow" | "orange" }) {
   const card =
     tone === "red" ? "bg-red-50 border-red-200" : tone === "yellow" ? "bg-yellow-50 border-yellow-200" : tone === "orange" ? "bg-orange-50 border-orange-200" : "bg-white";
   const num = tone === "red" ? "text-red-600" : tone === "yellow" ? "text-yellow-600" : tone === "orange" ? "text-orange-600" : "";
