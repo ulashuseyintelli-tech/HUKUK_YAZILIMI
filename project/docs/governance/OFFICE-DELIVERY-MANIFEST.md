@@ -1851,3 +1851,88 @@ Hepsi `OWNER GO REQUIRED / NOT STARTED` durumundadır. Bu manifest bölümü yen
 karar, implementation grant, migration, deployment veya production activation authority
 üretmez. Evidence seti:
 `project/docs/governance/office-spring-cleaning-reconciliation-r01/`.
+
+---
+
+## 13. OFFICE P8-C4 Canonical Reconciliation — 2026-08-13 (ARA UZLAŞTIRMA)
+
+Bu bölüm `OFFICE-P8-C4-CANONICAL-RECONCILIATION-R01` görevinin kanonik kayıt yüzeyidir:
+biriken kayıt borcunu kapatır; **P8 FINAL CLOSEOUT DEĞİLDİR** (X4 ve kalan lane'ler
+kapanmadan final sertifikasyon yapılmaz). Append-only'dir; tarihsel kayıtları silmez ve
+yeniden yazmaz; yeni semantic karar, implementation grant, migration, deployment veya
+production activation authority ÜRETMEZ. 15 çelişkinin tam onarımı ve 9 OD paketleme bu
+bölümün işi DEĞİLDİR (P8 FINAL kapsamı).
+
+### 13.1 P5 SECURITY — Program Status + Workstream Ledger (CLOSED / VERIFIED)
+
+```text
+WORKSTREAM                OFFICE-P5-SECURITY-R01
+PROGRAM STATUS            CLOSED / VERIFIED (2026-08-13)
+CHAIN                     #2362 → #2368 → #2371 (üç squash SHA da origin/main ancestry VERIFIED)
+F-B02-01                  CLOSED (#2371)
+LANE EVIDENCE             project/docs/governance/office-p5-security-r01/ (TAŞINMADI, pointer)
+RUNTIME CERTIFICATION     NONE — bkz. §13.3
+```
+
+Workstream ledger (P5 zinciri):
+
+| Adım | PR | Squash SHA | Kapsam | Doğrulama |
+|---|---|---|---|---|
+| Phase A (evidence-only) | #2362 | `e6a22c7f8c6bf1531e36229971df0f84f0a46bcb` | B01 containment runtime yeniden-doğrulama + B03 staff yetki uyumluluk matrisi | gh MERGED 2026-08-13T10:04:51Z; ancestry VERIFIED |
+| Phase B | #2368 | `4e228cb2a535a2ffac9ea9901a7904dddaada8a4` | /auth/me credential containment, seed kanonik-servis yolu, staff okuma projeksiyonu + DTO (F-B01-01, B02, B04/S3, B05) | gh MERGED 2026-08-13T10:48:07Z; ancestry VERIFIED |
+| B02R1 | #2371 | `957eae28e0c48abb352ca435baa1d5c8b8f3649a` | seed public-institutions ucuna ADMIN rol kapısı (global tablo mutasyonu) | gh MERGED 2026-08-13T13:33:39Z; CI rollup 9/9 SUCCESS; ancestry VERIFIED |
+
+Test/CI kanıtı ilgili PR kayıtlarında korunur; bu tablo onları TAŞIMAZ, işaret eder.
+
+### 13.2 Delivery Attribution (biriken borç kapanışı)
+
+Aşağıdaki teslimlerin hiçbiri bu kayıttan önce canonical register'da değildi (ölçülmüş
+boşluk — 2026-08-13 altı-dosya grep doğrulaması). Bu tablo attribution kaydıdır; ilgili
+lane'lerin workstream statülerini KAPATMAZ.
+
+| Lane | PR | Squash SHA | Kapsam / Not |
+|---|---|---|---|
+| P6A | #2352 | `c0f37c58265d463efa85de101f55d8c17a42af82` | runtime truth readiness scanner |
+| P6B | #2356 | `76cd85f38324a9b4a79c192c5da10be2e4f54402` | secure execution office updates + CI gap closure — execution-office hardening gerekçesi = **AUTHORIZED DELIVERY WITH JUSTIFICATION RESIDUAL** |
+| P2 | #2357 | `ecf9748f12d8233b401273b3465d319b0225487d` | identity-binding dry-run DB harness ve plan çekirdeği (P2-B03 hazırlık) |
+| P2 | #2359 | `271e81d3f0007fe91562608ea7f73ad05758c233` | invite-issue operate runner ve karar çekirdeği (P2-B03 operate, CREATE yolu) |
+| P3 | #2364 | `24bf5346886557f3322de8f7549f39eaec396944` | ReportingLine initial population tooling |
+| P7 | #2358 | `66773661e67f95495f5a9955a93b6d8b8d4a09c8` | P7 dormant capability disposition evidence (P7-B01+B02) — lane evidence: `office-p7-dormant-r01/` |
+
+### 13.3 Runtime Residual (deployment disposition)
+
+```text
+DEPLOYMENT DISPOSITION    BLOCKED_BY_RUNTIME_MODEL
+CANLI API REFERANSI       RELEASE10 @ 77a347a9831522aebddcb4a0ec14767ff21c851b (#2340)
+CANONICAL MAIN → CANLI    UYGULANMIŞ SAYILMAZ (hot-deploy modeli; blob-hash mutabakatı şart)
+CAPABILITY DEPLOYMENT     VERDICT VERİLEMEZ — P6 hash-matrisi tazelenmeden
+                          (office-p6-runtime-truth-r01/runtime-truth-and-release-readiness.md)
+```
+
+### 13.4 Successor Inventory (blocker DEĞİL — envanter)
+
+Hiçbir satır yeni disposition, öncelik veya execution authority üretmez; tümü ayrı owner
+yetkisi ister (`OWNER GO REQUIRED / NOT STARTED`).
+
+| Kalem | Kaynak / Pointer | Not |
+|---|---|---|
+| F-B01-03 · F-B01-04 · F-B01-05 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | P5 B01 kalan bulgular |
+| StaffDetailModal diff-payload | `office-p5-security-r01/b03-staff-authorization-compatibility-matrix.md` | allowlist projection + tam-form POST riskine karşı fark-payload |
+| /auth/me passwordChangedAt | `office-p5-security-r01/README.md` | credential metadata görünürlük kalemi |
+| CLF-P5-01 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | successor hedefi X1-P6 |
+| CLF-P7-01 / CLF-P7-02 / CLF-P7-03 | `office-p7-dormant-r01/cross-lane-findings.md` | stale yorumlar + BankSettlement reachability düzeltmesi |
+| CLF-O0-01 | Owner P8-C4 handoff envanteri (repo-içi kart yok) | requestRevision domain-owned guard → X4 |
+| Kozmetik personel ad-hijyeni | Owner P8-C4 handoff envanteri | kozmetik; blocker değil |
+
+### 13.5 OFFICE-WR01 — Master Plan Kaydı
+
+```text
+OFFICE-WR01               DECISION_RATIFIED / DECOMPOSITION_REQUIRED
+KARARLAR                  D-WR-1..6 RATIFIED · D-WR-7 OPEN
+BLOK İSKELETİ             B01..B10 (decomposition ayrı yetkili iş; bu kayıt sıra/scope seçmez)
+DAL                       PRODUCT EXTENSION
+P8 FINAL İLİŞKİSİ         BEKLETMEZ — P8 FINAL blocker'ı DEĞİL
+EXECUTION AUTHORITY       NONE (bu kayıt kimlik+statü envanteridir)
+```
+
+Kaynak: owner P8-C4 handoff (2026-08-13) + `decision-log.md` 2026-08-13 OFFICE P8-C4 satırları.

@@ -200,6 +200,24 @@ NOTES: Bu bulgu `OFFICE-DELIVERY-MANIFEST.md` §2b'de "register-intake bekleyen 
 
 ---
 
+## OFFICE P8-C4 Reconciliation Note — 2026-08-13
+
+`OFFICE-P5-SECURITY-R01` zinciri (#2362 `e6a22c7f8c6bf1531e36229971df0f84f0a46bcb` → #2368
+`4e228cb2a535a2ffac9ea9901a7904dddaada8a4` → #2371 `957eae28e0c48abb352ca435baa1d5c8b8f3649a`)
+canonical main'e merge edilmiş ve workstream **CLOSED / VERIFIED** olarak kaydedilmiştir
+(`master-triage-register.md` §D; `OFFICE-DELIVERY-MANIFEST.md` §13). Bu not hiçbir `STF-PRD-*`
+kartının DOMAIN STATUS / EVIDENCE STATUS / FINDING VERDICT alanını DEĞİŞTİRMEZ ve yeni
+disposition ÜRETMEZ (P8-C4 scope lock).
+
+RUNTIME SINIRI: canlı API referansı RELEASE10 @ `77a347a9831522aebddcb4a0ec14767ff21c851b`;
+canonical main değişiklikleri canlıya uygulanmış SAYILMAZ (deployment disposition
+**BLOCKED_BY_RUNTIME_MODEL**). Bu nedenle merge edilmiş güvenlik düzeltmeleri runtime-mitigation
+kanıtı olarak OKUNAMAZ; capability deployment verdict'i P6 hash-matrisi tazelenmeden verilemez
+(`office-p6-runtime-truth-r01/runtime-truth-and-release-readiness.md`). P5 kalan bulguları
+(F-B01-03/04/05 vd.) blocker değil SUCCESSOR INVENTORY'dir: `OFFICE-DELIVERY-MANIFEST.md` §13.4.
+
+---
+
 ## CLIENT-SEC-H2 Structural Findings (STF-PRD-* ailesinden ayrı, CLIENT domain provenance)
 
 Aşağıdaki iki kart, MÜVEKKİL/CLIENT Canonical Analysis programının CLIENT-SEC-H2 hattından (bkz. `decision-log.md` CLIENT-SEC-H2 kaydı) gelir; OFFICE'in kendi `OFF/OD` karar setine bağlı değildir ve yukarıdaki "STF-PRD-* toplam: 12" sayımına dahil değildir. Bu dosyanın "Statü otoritesi ayrımı" kuralı (yukarıda) bu iki karta da aynen uygulanır.
