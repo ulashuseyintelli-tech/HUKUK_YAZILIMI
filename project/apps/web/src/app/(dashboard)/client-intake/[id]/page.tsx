@@ -10,6 +10,7 @@ import {
   IntakeSubmissionStatus,
   IntakeFieldReviewStatus,
 } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 /**
  * Müvekkil Bilgi Formu — Gönderim İncelemesi (Faz 4.7 PR-C1) — personel/JWT.
@@ -55,12 +56,16 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
   const [sub, setSub] = useState<IntakeSubmissionDetail | null>(null);
   const [caseLabel, setCaseLabel] = useState("");
   const [notFound, setNotFound] = useState(false);
+  // WSMR-A4j: okuma HATASI ile dogrulanmis YOKLUK ayri durumlardir.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setError("");
+    setLoadError(null);
+    setNotFound(false);
     try {
       const d = await api.getIntakeSubmission(params.id);
       setSub(d);
@@ -76,8 +81,20 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
       } catch {
         setCaseLabel(d.caseId);
       }
-    } catch {
-      setNotFound(true);
+    } catch (e) {
+      // WSMR-A4j · OKUMA HATASI "KAYIT YOK" DEGILDIR.
+      //
+      // Eski halde HER hata `setNotFound(true)` yapiyordu: ag kesintisi, 500,
+      // yetki hatasi — hepsi ekranda "Gonderim bulunamadi." olarak goruniyordu.
+      // VAR OLAN bir basvuru silinmis gibi okunuyor, kullanici kuyruga donup
+      // kaydi aramaktan vazgecebiliyordu.
+      //
+      // Artik YALNIZ sunucunun dogruladigi 404 yokluk sayilir.
+      if ((e as { status?: number })?.status === 404) {
+        setNotFound(true);
+        return;
+      }
+      setLoadError(toActionErrorMessage(e, "Gönderim yüklenemedi."));
     }
   }, [params.id]);
 
@@ -151,6 +168,23 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
     });
   };
 
+  if (loadError) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <Link href="/client-intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
+        <div className="mt-4" role="alert">
+          <p className="text-sm font-medium text-red-600">{loadError}</p>
+          <button
+            type="button"
+            onClick={load}
+            className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (notFound) {
     return (
       <div className="max-w-3xl mx-auto">

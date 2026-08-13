@@ -9,6 +9,7 @@ import {
   IntakeFieldCategory,
   PromoteAddressInput,
 } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 /**
  * Müvekkil Bilgi Formu — Kanoniğe Aktarım / Promote (Faz 4.7 PR-C2b) — personel/JWT.
@@ -65,6 +66,9 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
   const [debtorId, setDebtorId] = useState("");
   const [caseLabel, setCaseLabel] = useState("");
   const [notFound, setNotFound] = useState(false);
+  // WSMR-A4j: okuma HATASI ile dogrulanmis YOKLUK ayri durumlardir.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [debtorsError, setDebtorsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
@@ -73,6 +77,9 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
 
   const load = useCallback(async () => {
     setError("");
+    setLoadError(null);
+    setNotFound(false);
+    setDebtorsError(null);
     try {
       const d = await api.getIntakeSubmission(params.id);
       setSub(d);
@@ -82,8 +89,11 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
         const opts = (cd.items ?? []).map((it) => ({ id: it.id, label: it.displayName }));
         setDebtors(opts);
         setDebtorId((prev) => prev || (opts[0]?.id ?? ""));
-      } catch {
+      } catch (e) {
+        // WSMR-A4j: borclu listesi OKUNAMADIYSA bos liste sessizce GOSTERILMEZ —
+        // aktarim hedefi yokmus gibi gorunup kullanici yanlis karar verebilirdi.
         setDebtors([]);
+        setDebtorsError(toActionErrorMessage(e, "Dosya borçluları yüklenemedi."));
       }
       // Okunabilir başlık (best-effort).
       try {
@@ -96,8 +106,20 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
       } catch {
         setCaseLabel(d.caseId);
       }
-    } catch {
-      setNotFound(true);
+    } catch (e) {
+      // WSMR-A4j · OKUMA HATASI "KAYIT YOK" DEGILDIR.
+      //
+      // Eski halde HER hata `setNotFound(true)` yapiyordu: ag kesintisi, 500,
+      // yetki hatasi — hepsi ekranda "Gonderim bulunamadi." olarak goruniyordu.
+      // VAR OLAN bir basvuru silinmis gibi okunuyor, kullanici kuyruga donup
+      // kaydi aramaktan vazgecebiliyordu.
+      //
+      // Artik YALNIZ sunucunun dogruladigi 404 yokluk sayilir.
+      if ((e as { status?: number })?.status === 404) {
+        setNotFound(true);
+        return;
+      }
+      setLoadError(toActionErrorMessage(e, "Gönderim yüklenemedi."));
     }
   }, [params.id]);
 
@@ -150,6 +172,23 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
     }
   };
 
+  if (loadError) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <Link href="/client-intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
+        <div className="mt-4" role="alert">
+          <p className="text-sm font-medium text-red-600">{loadError}</p>
+          <button
+            type="button"
+            onClick={load}
+            className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (notFound) {
     return (
       <div className="max-w-3xl mx-auto">
@@ -187,7 +226,22 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
       {/* Aktarım hedefi: CaseDebtor (zorunlu) */}
       <div className="mt-4">
         <label className="block text-xs font-medium text-slate-600 mb-1">Aktarım hedefi borçlu</label>
-        {debtors.length === 0 ? (
+        {debtorsError ? (
+          /* WSMR-A4j: okuma HATASI "bu dosyada borclu yok" KESIN iddiasina donusemez. */
+          <div role="alert" className="text-sm text-red-600">
+            <p className="font-medium">{debtorsError}</p>
+            <p className="mt-1 text-xs">
+              Bu dosyada borçlu OLMADIĞI anlamına gelmez; liste okunamadı.
+            </p>
+            <button
+              type="button"
+              onClick={load}
+              className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+            >
+              Tekrar dene
+            </button>
+          </div>
+        ) : debtors.length === 0 ? (
           <p className="text-sm text-red-600">Bu dosyada borçlu yok; aktarım yapılamaz.</p>
         ) : (
           <select
