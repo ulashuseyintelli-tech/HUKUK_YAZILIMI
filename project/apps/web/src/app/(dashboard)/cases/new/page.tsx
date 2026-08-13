@@ -410,6 +410,9 @@ export default function NewCasePage() {
   const [responsiblePerson, setResponsiblePerson] = useState<ResponsibleSelection | null>(null);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
+  // WSMR-A4l: dogrulanamayan kaynaklar ISIMLE gorunur; bos havuz "kayit yok"
+  // olarak yorumlanamaz. Yeni denemede bayat hata TEMIZLENIR.
+  const [loadFailures, setLoadFailures] = useState<string[]>([]);
 
   // LocalStorage'dan taslak yükle (sayfa yenilendiğinde) - EN ÖNCE ÇALIŞMALI
   useEffect(() => {
@@ -587,34 +590,86 @@ export default function NewCasePage() {
   }, [lookups.mahiyetTipi, lookups.takipTuru, documentSource, caseData.subCategory]);
 
   const loadExistingData = async () => {
+    setLoadFailures([]);
     try {
-      let staffLoadFailed = false; // PR-ASSIGN-2b: /staff fetch hatası → payload'da undefined fallback
-      let lookupsFetchFailed = false; // PR-D: /lookups fetch hatası → açık uyarı banner'ı (boş veriden ayrı)
-      const [lawyersRes, clientsRes, debtorsRes, officesRes, lookupsRes, usersRes, staffRes] = await Promise.all([
-        api.getLawyers().catch((e) => { console.error("getLawyers error:", e); return []; }), 
-        api.get('/clients').catch((e) => { console.error("getClients error:", e); return { data: { data: [] } }; }), 
-        api.searchDebtors().catch((e) => { console.error("searchDebtors error:", e); return []; }), 
-        api.get('/execution-offices').catch(() => ({ data: { data: [] } })),
-        api.get('/lookups').catch(() => { lookupsFetchFailed = true; return { data: { data: { takipTuru: [], asama: [], risk: [], durumEtiketi: [], mahiyetTipi: [] } } }; }),
-        api.get('/users').catch(() => ({ data: { data: [] } })),
-        api.get('/staff').catch(() => { staffLoadFailed = true; return { data: { data: [] } }; }),
+      /**
+       * WSMR-A4l · YEDİ KAYNAK BAĞIMSIZ DEĞERLENDİRİLİR.
+       *
+       * Eski hâlde her çağrı kendi `.catch(...)` ile sessizce boş değere
+       * düşüyordu; sihirbaz bu boşluğu GERÇEK veri gibi kullanıyordu. Sonuç:
+       * okunamayan avukat/müvekkil/borçlu/daire/kullanıcı havuzları ekranda
+       * "kayıt yok" gibi görünüyor, kullanıcı var olan bir müvekkili seçemeyip
+       * yenisini oluşturmaya yönelebiliyordu.
+       *
+       * Dosyada ZATEN iki kaynak için doğru desen kuruluydu ve KORUNDU:
+       *  · PR-ASSIGN-2b — `/staff` yüklenemediyse payload'da `staff` alanı
+       *    `undefined` gider (boş `[]` GÖNDERİLMEZ), böylece backend
+       *    varsayılan personeli EZİLMEZ.
+       *  · PR-D — `/lookups` fetch hatası boş veriden AYRI banner'a bağlıdır.
+       * Aynı ilke kalan beş kaynağa da genişletildi: doğrulanmayan kaynak için
+       * setter HİÇ çağrılmaz — önceki (doğrulanmış) veri korunur ve durum
+       * `loadFailures` üzerinden GÖRÜNÜR olur.
+       */
+      const settled = await Promise.allSettled([
+        api.getLawyers(),
+        api.get('/clients'),
+        api.searchDebtors(),
+        api.get('/execution-offices'),
+        api.get('/lookups'),
+        api.get('/users'),
+        api.get('/staff'),
       ]);
-      const allLawyers = lawyersRes || [];
-      setExistingLawyers(allLawyers);
-      console.log("Full clientsRes:", JSON.stringify(clientsRes, null, 2));
-      const clientsList = clientsRes?.data?.data || [];
-      console.log("Extracted clientsList length:", clientsList.length);
-      setExistingClients(clientsList);
-      setExistingDebtors(debtorsRes?.data || debtorsRes || []);
-      setExecutionOffices(officesRes?.data?.data || []);
-      setLookups(lookupsRes?.data?.data || { takipTuru: [], asama: [], risk: [], durumEtiketi: [], mahiyetTipi: [] });
-      setLookupsLoadFailed(lookupsFetchFailed); // PR-D: fetch hatası vs boş veri ayrımı için
-      setUsers(usersRes?.data?.data || []);
-      const allStaff = staffRes?.data?.data || [];
-      setExistingStaff(allStaff);
-      // PR-ASSIGN-2b: yalnız /staff başarıyla yüklendiyse payload'da staff[] gönderilecek
-      // (yüklenemediyse undefined → backend default personel). Boş [] gönderip default'ları düşürmeyiz.
-      setStaffListLoaded(!staffLoadFailed);
+      const [lawyersOut, clientsOut, debtorsOut, officesOut, lookupsOut, usersOut, staffOut] = settled;
+
+      const failures: string[] = [];
+      /** Doğrulanan değeri döner; rejected/malformed ise `null` + hata kaydı. */
+      const take = (
+        outcome: PromiseSettledResult<unknown>,
+        label: string,
+        pick: (value: any) => any,
+        isValid: (value: any) => boolean,
+      ): any => {
+        if (outcome.status === 'rejected') { failures.push(label); return null; }
+        const picked = pick(outcome.value);
+        if (!isValid(picked)) { failures.push(label); return null; }
+        return picked;
+      };
+      const isArr = (v: unknown) => Array.isArray(v);
+
+      const allLawyers = take(lawyersOut, 'Avukatlar', (v) => v, isArr);
+      if (allLawyers) setExistingLawyers(allLawyers);
+
+      const clientsList = take(clientsOut, 'Müvekkiller', (v) => v?.data?.data, isArr);
+      if (clientsList) setExistingClients(clientsList);
+
+      const debtorsList = take(debtorsOut, 'Borçlular', (v) => v?.data ?? v, isArr);
+      if (debtorsList) setExistingDebtors(debtorsList);
+
+      const offices = take(officesOut, 'İcra daireleri', (v) => v?.data?.data, isArr);
+      if (offices) setExecutionOffices(offices);
+
+      const lookupsData = take(
+        lookupsOut,
+        'Takip türü/aşama tanımları',
+        (v) => v?.data?.data,
+        (v) => !!v && isArr(v.takipTuru) && isArr(v.asama),
+      );
+      if (lookupsData) setLookups(lookupsData);
+      // PR-D KORUNDU: fetch hatası vs boş veri ayrımı.
+      const lookupsFetchFailed = lookupsData === null;
+      setLookupsLoadFailed(lookupsFetchFailed);
+
+      const usersList = take(usersOut, 'Kullanıcılar', (v) => v?.data?.data, isArr);
+      if (usersList) setUsers(usersList);
+
+      const allStaff = take(staffOut, 'Personel', (v) => v?.data?.data, isArr);
+      if (allStaff) setExistingStaff(allStaff);
+      // PR-ASSIGN-2b KORUNDU: yalnız /staff DOĞRULANDIYSA payload'da staff[] gider
+      // (aksi hâlde undefined → backend default personel). Boş [] gönderip
+      // backend'deki mevcut veriyi EZMEYİZ.
+      setStaffListLoaded(allStaff !== null);
+
+      setLoadFailures(failures);
       
       // Varsayılan avukatları otomatik seç (localStorage'dan veya mevcut seçimden yüklenmemişse)
       // lawyers state'i zaten localStorage'dan yüklendiyse dokunma
@@ -625,7 +680,10 @@ export default function NewCasePage() {
         }
         
         // Mevcut avukat yoksa varsayılanları yükle
-        const defaultLawyers = allLawyers.filter((l: any) => l.isDefaultForNewCases && l.isActive);
+        // WSMR-A4l: kaynak DOGRULANMADIYSA `allLawyers` null olur — varsayilan
+        // secim yapilmaz, mevcut secim KORUNUR. Bos listeyle "varsayilan yok"
+        // sonucuna VARILMAZ.
+        const defaultLawyers = (allLawyers ?? []).filter((l: any) => l.isDefaultForNewCases && l.isActive);
         console.log("🔍 Varsayılan avukatlar:", defaultLawyers.length);
         
         if (defaultLawyers.length > 0) {
@@ -658,7 +716,8 @@ export default function NewCasePage() {
         }
         
         // Mevcut personel yoksa varsayılanları yükle
-        const defaultStaff = allStaff.filter((s: any) => s.isDefaultForNewCases && s.isActive !== false);
+        // WSMR-A4l: ayni kural personel icin de gecerli (bkz. PR-ASSIGN-2b).
+        const defaultStaff = (allStaff ?? []).filter((s: any) => s.isDefaultForNewCases && s.isActive !== false);
         console.log("🔍 Varsayılan personeller:", defaultStaff.length);
         
         if (defaultStaff.length > 0) {
@@ -680,9 +739,9 @@ export default function NewCasePage() {
       });
       
       // Varsayılan aşama: "Dosya Açıldı"
-      const defaultAsama = lookupsRes?.data?.data?.asama?.find((a: LookupItem) => a.code === 'DOSYA_ACILDI');
+      const defaultAsama = lookupsData?.asama?.find((a: LookupItem) => a.code === 'DOSYA_ACILDI');
       // Varsayılan durum etiketi: "Yeni Dosya"
-      const defaultDurumEtiketi = lookupsRes?.data?.data?.durumEtiketi?.find((d: LookupItem) => d.code === 'YENI_DOSYA' || d.name?.toLowerCase().includes('yeni'));
+      const defaultDurumEtiketi = lookupsData?.durumEtiketi?.find((d: LookupItem) => d.code === 'YENI_DOSYA' || d.name?.toLowerCase().includes('yeni'));
       if (defaultAsama || defaultDurumEtiketi) {
         setCaseData(prev => ({ 
           ...prev, 
@@ -693,13 +752,23 @@ export default function NewCasePage() {
       try {
         const nextFileNumber = await api.getNextFileNumber();
         if (nextFileNumber) setCaseData(prev => ({ ...prev, fileNumber: nextFileNumber }));
-      } catch (e) { console.error("Dosya numarası alınamadı:", e); }
+      } catch {
+        // WSMR-A4l: sira numarasi alinamadiysa UYDURULMAZ ve sessiz de kalmaz.
+        // Alan bos kalir (kullanici elle girebilir) ve eksiklik bandinda gorunur.
+        setLoadFailures((prev) => (prev.includes('Sıradaki dosya no') ? prev : [...prev, 'Sıradaki dosya no']));
+      }
       
       // Data yükleme tamamlandı
       setDataLoaded(true);
-    } catch (err) { 
-      console.error("Mevcut veriler yüklenemedi:", err); 
-      setDataLoaded(true); // Hata olsa bile dataLoaded'ı set et
+    } catch (err) {
+      // WSMR-A4l: yedi kaynak artik allSettled ile TEK TEK ele aliniyor; bu dis
+      // catch yalnizca beklenmeyen bir son-islem hatasinda calisir. Sihirbazi
+      // kilitlememek icin `dataLoaded` yine set edilir (mevcut davranis
+      // KORUNDU) ama durum artik SESSIZ degil: eksiklik bandinda gorunur.
+      setLoadFailures((prev) =>
+        prev.includes('Sihirbaz hazırlığı') ? prev : [...prev, 'Sihirbaz hazırlığı'],
+      );
+      setDataLoaded(true);
     }
   };
 
@@ -1358,6 +1427,22 @@ export default function NewCasePage() {
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+      {loadFailures.length > 0 && (
+        /* WSMR-A4l: dogrulanamayan kaynaklar ISIMLE gorunur ve HER adimda
+           gorunur kalir. Bos secim havuzu "kayit yok" olarak yorumlanamaz;
+           tekrar deneme SALT-OKUMADIR ve hicbir mutasyon uretmez. */
+        <div role="alert" className="mb-2 p-2 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-800 flex-shrink-0">
+          <span className="font-medium">{loadFailures.join(', ')}</span> yüklenemedi;
+          ilgili seçim listeleri EKSİK. Boş görünmesi kayıt olmadığı anlamına gelmez.
+          <button
+            type="button"
+            onClick={loadExistingData}
+            className="ml-2 underline hover:text-amber-900"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-1 flex-shrink-0">
         <Link href="/cases" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Takiplere Dön
@@ -4271,1245 +4356,24 @@ function SelectedCreditorsList({ creditors, onRemove }: { creditors: Party[]; on
 }
 
 
-// Alacak Kalemleri Adımı - Faiz Hesaplama ve Kapak Hesabı
-function DuesStep({
-  dues,
-  caseData,
-  onAddDue,
-  onUpdateDue,
-  onRemoveDue,
-  getTotalDues,
-  extractedData,
-  wizardData,
-  creditors,
-  caseDebtors,
-  selectedOffice,
-  lawyers,
-}: {
-  dues: DueItem[];
-  caseData: any;
-  onAddDue: () => void;
-  onUpdateDue: (index: number, field: keyof DueItem, value: any) => void;
-  onRemoveDue: (index: number) => void;
-  getTotalDues: () => number;
-  extractedData?: Record<string, any>;
-  wizardData?: Record<string, any>;
-  creditors: Array<{ name: string; [key: string]: any }>;
-  caseDebtors: any[];
-  selectedOffice: any;
-  lawyers: Array<{ name: string; surname: string; [key: string]: any }>;
-}) {
-  const [showInterestPanel, setShowInterestPanel] = useState(false);
-  const [showPeriodSelector, setShowPeriodSelector] = useState(false);
-  const [showTakipTalebiPreview, setShowTakipTalebiPreview] = useState(false);
-  const [takipTalebiContent, setTakipTalebiContent] = useState<string>("");
-  const [generatingTakipTalebi, setGeneratingTakipTalebi] = useState(false);
-  // PR-2A1: onizleme hatasi GORUNUR; fallback belge uretilmez.
-  const [takipTalebiPreviewError, setTakipTalebiPreviewError] = useState<string | null>(null);
-  const [calculatingInterest, setCalculatingInterest] = useState(false);
-  // WSMR-A4f: faiz hesabi hatasi GORUNUR; yerel tahmin uretilmez.
-  const [interestError, setInterestError] = useState<string | null>(null);
-  const [generatingFromRules, setGeneratingFromRules] = useState(false);
-  const [validationResult, setValidationResult] = useState<{
-    isValid: boolean;
-    errors: { id: string; message: string }[];
-    warnings: { id: string; message: string }[];
-  } | null>(null);
-  const [interestResult, setInterestResult] = useState<{
-    principal: number;
-    rate: number;
-    days: number;
-    interest: number;
-    total: number;
-    description: string;
-  } | null>(null);
-  const [interestForm, setInterestForm] = useState({
-    principalIndex: -1, // Hangi ana para kalemi için hesaplanacak
-    interestType: (caseData.interestType === "TICARI" ? "TICARI" : "YASAL") as "YASAL" | "TICARI" | "AVANS" | "TEMERRUT",
-    customRate: "",
-    startDate: "",
-    endDate: new Date().toISOString().split("T")[0],
-  });
-
-  // Faiz oranları (2024 yılı için)
-  // NOT: YASAL faiz dönemsel hesaplanmalı (2006-2024: %9, 2024+: %24)
-  const interestRates = {
-    YASAL: 24, // 2024 sonrası oran, 2024 öncesi %9 - dönemsel hesaplama gerekli
-    TICARI: 48, // Ticari faiz (avans faizi x 1.5) yaklaşık
-    AVANS: 32, // Avans faizi (TCMB reeskont)
-    TEMERRUT: 24, // Temerrüt faizi (yasal faiz ile aynı)
-  };
-
-  // Ana para kalemlerini bul
-  const principalDues = dues.filter(d => d.type === "PRINCIPAL");
-  
-  // Çek takibi mi kontrol et
-  const isCekTakibi = caseData.subCategory === "CEK" || caseData.mahiyetKodu === "CEK";
-  
-  // Nafaka veya Kira takibi mi kontrol et (dönemsel alacak)
-  const isNafakaTakibi = caseData.subCategory === "NAFAKA" || caseData.mahiyetKodu === "NAFAKA";
-  const isKiraTakibi = caseData.subCategory === "KIRA" || caseData.mahiyetKodu === "KIRA";
-  const isPeriodic = isNafakaTakibi || isKiraTakibi;
-  
-  // Çek tazminatı kalemi var mı kontrol et
-  const hasCekTazminati = dues.some(d => d.description?.includes("Çek Tazminatı") || d.description?.includes("tazminat"));
-  
-  /**
-   * Otomatik faiz hesaplama fonksiyonu - BACKEND API KULLANIMI
-   * 
-   * Backend interest-engine preview endpoint'ini kullanır.
-   * API erişilemezse null döner - TAHMİN YAPILMAZ.
-   * 
-   * @see docs/single-source-of-truth-architecture.md
-   * @see lib/api/interest-engine.ts
-   */
-  const calculateAutoInterest = async (principal: number, dueDate: string, interestType: "YASAL" | "TICARI") => {
-    const today = new Date();
-    const due = new Date(dueDate);
-    
-    // Vade tarihi gelecekte ise faiz hesaplanmaz
-    if (due >= today) return null;
-    
-    const days = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-    if (days <= 0) return null;
-    
-    try {
-      // Backend preview API'den hesaplama al
-      const { interestEngineApi, InterestTypeCode } = await import('@/lib/api/interest-engine');
-      
-      const engineType = interestType === "TICARI" 
-        ? InterestTypeCode.COMMERCIAL_AVANS_3095_2_2 
-        : InterestTypeCode.LEGAL_3095;
-      
-      const result = await interestEngineApi.preview({
-        principalAmount: principal,
-        currency: 'TRY',
-        interestType: engineType,
-        startDate: dueDate,
-        endDate: today.toISOString().split("T")[0],
-      });
-      
-      if (!result.success || !result.data) {
-        console.warn('[calculateAutoInterest] Backend preview failed:', result.error);
-        // API erişilemezse null döner - TAHMİN YAPILMAZ
-        return null;
-      }
-      
-      return {
-        interest: result.data.estimatedInterest,
-        days: result.data.days,
-        rate: result.data.currentRate,
-        startDate: dueDate,
-        endDate: today.toISOString().split("T")[0],
-      };
-    } catch (error) {
-      console.error('[calculateAutoInterest] API error:', error);
-      // API erişilemezse null döner - TAHMİN YAPILMAZ
-      return null;
-    }
-  };
-
-  // Ana para değiştiğinde çek tazminatını ve faizi otomatik hesapla/güncelle
-  const handlePrincipalAmountChange = async (index: number, newAmount: string) => {
-    onUpdateDue(index, "amount", newAmount);
-    
-    const amount = parseFloat(newAmount) || 0;
-    if (amount <= 0) return;
-    
-    const dueDate = dues[index]?.dueDate;
-    
-    // 1. Çek takibi ise tazminat hesapla
-    if (isCekTakibi) {
-      const tazminatAmount = amount * 0.10; // %10 çek tazminatı
-      
-      // Mevcut tazminat kalemini bul veya yeni ekle
-      const tazminatIndex = dues.findIndex(d => d.description?.includes("Çek Tazminatı"));
-      
-      if (tazminatIndex >= 0) {
-        onUpdateDue(tazminatIndex, "amount", tazminatAmount.toFixed(2));
-      } else if (!hasCekTazminati) {
-        setTimeout(() => {
-          onAddDue();
-          setTimeout(() => {
-            const newIndex = dues.length;
-            onUpdateDue(newIndex, "type", "OTHER");
-            onUpdateDue(newIndex, "amount", tazminatAmount.toFixed(2));
-            onUpdateDue(newIndex, "description", "Çek Tazminatı (%10)");
-            onUpdateDue(newIndex, "dueDate", dueDate || new Date().toISOString().split("T")[0]);
-          }, 50);
-        }, 50);
-      }
-    }
-    
-    // 2. Vade tarihi varsa ve geçmişse faiz hesapla
-    if (dueDate) {
-      const interestType = isCekTakibi || caseData.interestType === "TICARI" ? "TICARI" : "YASAL";
-      const autoInterest = await calculateAutoInterest(amount, dueDate, interestType);
-      
-      if (autoInterest && autoInterest.interest > 0) {
-        // Bu ana para için mevcut faiz kalemini bul
-        const existingInterestIndex = dues.findIndex(d => 
-          d.type === "INTEREST" && 
-          d.description?.includes(dues[index]?.description || "Ana Para")
-        );
-        
-        const interestLabel = interestType === "TICARI" ? "Ticari" : "Yasal";
-        const description = `İşlemiş ${interestLabel} Faiz (${dues[index]?.description || "Ana Para"} - ${autoInterest.days} gün)`;
-        
-        if (existingInterestIndex >= 0) {
-          // Mevcut faizi güncelle
-          onUpdateDue(existingInterestIndex, "amount", autoInterest.interest.toFixed(2));
-          onUpdateDue(existingInterestIndex, "description", description);
-        } else {
-          // Yeni faiz kalemi ekle
-          const delay = isCekTakibi ? 200 : 100; // Çek tazminatı eklendiyse biraz daha bekle
-          setTimeout(() => {
-            onAddDue();
-            setTimeout(() => {
-              const newIndex = dues.length + (isCekTakibi && !hasCekTazminati ? 1 : 0);
-              onUpdateDue(newIndex, "type", "INTEREST");
-              onUpdateDue(newIndex, "amount", autoInterest.interest.toFixed(2));
-              onUpdateDue(newIndex, "description", description);
-              onUpdateDue(newIndex, "dueDate", autoInterest.endDate);
-              onUpdateDue(newIndex, "interestType", interestType);
-              onUpdateDue(newIndex, "interestRate", autoInterest.rate);
-              onUpdateDue(newIndex, "interestStartDate", autoInterest.startDate);
-              onUpdateDue(newIndex, "interestEndDate", autoInterest.endDate);
-            }, 50);
-          }, delay);
-        }
-      }
-    }
-  };
-  
-  // Vade tarihi değiştiğinde faiz başlangıç tarihini otomatik ayarla ve faizi hesapla
-  const handleDueDateChange = async (index: number, newDate: string) => {
-    onUpdateDue(index, "dueDate", newDate);
-    
-    // Ana para kalemi ise ve faiz paneli açıksa, faiz başlangıç tarihini güncelle
-    if (dues[index]?.type === "PRINCIPAL" && interestForm.principalIndex === index) {
-      setInterestForm(prev => ({ ...prev, startDate: newDate }));
-    }
-    
-    // Ana para kalemi ise ve tutar varsa, faizi otomatik hesapla
-    if (dues[index]?.type === "PRINCIPAL") {
-      const amount = parseFloat(dues[index]?.amount || "0");
-      if (amount > 0 && newDate) {
-        const interestType = isCekTakibi || caseData.interestType === "TICARI" ? "TICARI" : "YASAL";
-        const autoInterest = await calculateAutoInterest(amount, newDate, interestType);
-        
-        if (autoInterest && autoInterest.interest > 0) {
-          // Bu ana para için mevcut faiz kalemini bul
-          const existingInterestIndex = dues.findIndex(d => 
-            d.type === "INTEREST" && 
-            d.description?.includes(dues[index]?.description || "Ana Para")
-          );
-          
-          const interestLabel = interestType === "TICARI" ? "Ticari" : "Yasal";
-          const description = `İşlemiş ${interestLabel} Faiz (${dues[index]?.description || "Ana Para"} - ${autoInterest.days} gün)`;
-          
-          if (existingInterestIndex >= 0) {
-            // Mevcut faizi güncelle
-            onUpdateDue(existingInterestIndex, "amount", autoInterest.interest.toFixed(2));
-            onUpdateDue(existingInterestIndex, "description", description);
-            onUpdateDue(existingInterestIndex, "interestStartDate", autoInterest.startDate);
-            onUpdateDue(existingInterestIndex, "interestEndDate", autoInterest.endDate);
-          } else {
-            // Yeni faiz kalemi ekle
-            setTimeout(() => {
-              onAddDue();
-              setTimeout(() => {
-                const newIdx = dues.length;
-                onUpdateDue(newIdx, "type", "INTEREST");
-                onUpdateDue(newIdx, "amount", autoInterest.interest.toFixed(2));
-                onUpdateDue(newIdx, "description", description);
-                onUpdateDue(newIdx, "dueDate", autoInterest.endDate);
-                onUpdateDue(newIdx, "interestType", interestType);
-                onUpdateDue(newIdx, "interestRate", autoInterest.rate);
-                onUpdateDue(newIdx, "interestStartDate", autoInterest.startDate);
-                onUpdateDue(newIdx, "interestEndDate", autoInterest.endDate);
-              }, 50);
-            }, 100);
-          }
-        }
-      }
-    }
-  };
-
-  // ClaimEngine'den otomatik alacak kalemleri oluştur
-  const generateFromClaimEngine = async () => {
-    // subCategory veya formCode'dan takip türünü belirle
-    const subCategory = caseData.subCategory || caseData.formCode || "ILAMSIZ_GENEL";
-    
-    setGeneratingFromRules(true);
-    try {
-      // 1. ClaimEngine'den alacak kalemlerini al
-      const claimResponse = await api.post("/claim-engine/generate-items", {
-        subCategory,
-        extractedData: extractedData || {
-          total_amount: caseData.totalAmount,
-          currency: caseData.currency,
-          due_date: caseData.dueDate,
-        },
-        wizardData: wizardData || {},
-      });
-
-      const generatedItems = claimResponse.data || [];
-      
-      // 2. Fee Engine'den masrafları al
-      const caseType = caseData.takipTuruId ? 
-        (caseData.mahiyetKodu === "CEK" ? "KAMBIYO" : 
-         caseData.mahiyetKodu === "SENET" ? "KAMBIYO" :
-         caseData.subCategory === "NAFAKA" ? "ILAMLI" :
-         caseData.subCategory === "DOVIZ" ? "ILAMLI" :
-         caseData.subCategory === "KIRA" ? "KIRA" :
-         "ILAMSIZ") : "ILAMSIZ";
-      
-      const principalAmount = parseFloat(caseData.totalAmount || "0") || 0;
-      
-      let feeItems: any[] = [];
-      try {
-        const feeResponse = await api.post("/fee-engine/calculate-opening-fees", {
-          caseType,
-          principalAmount,
-          accruedInterest: 0,
-          debtorCount: 1,
-          postageType: "NORMAL",
-        });
-        feeItems = feeResponse.data?.items || [];
-      } catch (feeError) {
-        console.log("Fee Engine hatası (devam ediliyor):", feeError);
-        alert("Masraf kalemleri (harç, vekalet ücreti, tebligat gideri vb.) otomatik eklenemedi. Lütfen 'Masrafları Ekle' butonuyla tekrar deneyin veya kalemleri manuel kontrol edin.");
-      }
-      
-      // Tüm kalemleri birleştir
-      const allItems = [...generatedItems, ...feeItems];
-      
-      if (allItems.length === 0) {
-        // Varsayılan ana para kalemi ekle
-        onAddDue();
-        return;
-      }
-      
-      // Oluşturulan kalemleri dues'a ekle
-      for (let i = 0; i < allItems.length; i++) {
-        const item = allItems[i];
-        if (item.amount || item.required) {
-          onAddDue();
-          // State güncellemesi için biraz bekle
-          await new Promise(resolve => setTimeout(resolve, 150));
-          const newIndex = dues.length + i;
-          const typeMap: Record<string, DueItem["type"]> = {
-            PRINCIPAL: "PRINCIPAL",
-            ACCRUED_INTEREST: "INTEREST",
-            POST_INTEREST_RULE: "INTEREST",
-            PENALTY: "OTHER",
-            FEE: "EXPENSE",
-            POSTAGE: "EXPENSE",
-            STAMP: "EXPENSE",
-            ATTORNEY_FEE: "EXPENSE",
-            EXPENSE: "EXPENSE",
-            OTHER: "OTHER",
-          };
-          onUpdateDue(newIndex, "type", typeMap[item.type] || "OTHER");
-          onUpdateDue(newIndex, "amount", (item.amount || 0).toString());
-          onUpdateDue(newIndex, "description", item.label || item.description || "Alacak kalemi");
-          if (item.dueDate) onUpdateDue(newIndex, "dueDate", item.dueDate);
-        }
-      }
-    } catch (error) {
-      console.error("Otomatik oluşturma hatası:", error);
-      // Hata durumunda varsayılan ana para kalemi ekle
-      onAddDue();
-    } finally {
-      setGeneratingFromRules(false);
-    }
-  };
-
-  // Fee Engine'den sadece masrafları ekle
-  const addFeesFromEngine = async () => {
-    const caseType = caseData.takipTuruId ? 
-      (caseData.mahiyetKodu === "CEK" ? "KAMBIYO" : 
-       caseData.mahiyetKodu === "SENET" ? "KAMBIYO" :
-       caseData.subCategory === "NAFAKA" ? "ILAMLI" :
-       caseData.subCategory === "DOVIZ" ? "ILAMLI" :
-       caseData.subCategory === "KIRA" ? "KIRA" :
-       "ILAMSIZ") : "ILAMSIZ";
-    
-    // Ana para toplamını hesapla
-    const principalTotal = dues
-      .filter(d => d.type === "PRINCIPAL")
-      .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-    
-    // İşlemiş faiz toplamını hesapla
-    const interestTotal = dues
-      .filter(d => d.type === "INTEREST")
-      .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-    
-    setGeneratingFromRules(true);
-    try {
-      const response = await api.post("/fee-engine/calculate-opening-fees", {
-        caseType,
-        principalAmount: principalTotal,
-        accruedInterest: interestTotal,
-        debtorCount: 1,
-        postageType: "NORMAL",
-      });
-      
-      const feeItems = response.data?.items || [];
-      
-      if (feeItems.length === 0) {
-        alert("Bu takip türü için masraf bulunamadı.");
-        return;
-      }
-      
-      // Mevcut masraf kalemlerini kontrol et (tekrar eklemeyi önle)
-      const existingFeeDescriptions = dues
-        .filter(d => d.type === "EXPENSE")
-        .map(d => d.description?.toLowerCase());
-      
-      for (let i = 0; i < feeItems.length; i++) {
-        const item = feeItems[i];
-        
-        // Aynı masraf zaten varsa atla
-        if (existingFeeDescriptions.includes(item.label?.toLowerCase())) {
-          continue;
-        }
-        
-        onAddDue();
-        await new Promise(resolve => setTimeout(resolve, 150));
-        const newIndex = dues.length + i;
-        onUpdateDue(newIndex, "type", "EXPENSE");
-        onUpdateDue(newIndex, "amount", (item.amount || 0).toString());
-        onUpdateDue(newIndex, "description", item.label || "Masraf");
-        onUpdateDue(newIndex, "dueDate", new Date().toISOString().split("T")[0]);
-      }
-      
-      // Toplam masrafı göster
-      const totalFees = response.data?.total || 0;
-      console.log(`✅ ${feeItems.length} masraf kalemi eklendi. Toplam: ${totalFees.toFixed(2)} ₺`);
-      
-    } catch (error) {
-      console.error("Masraf ekleme hatası:", error);
-      alert("Masraflar eklenirken bir hata oluştu.");
-    } finally {
-      setGeneratingFromRules(false);
-    }
-  };
-
-  // Dönem seçiciden gelen dönemleri alacak kalemi olarak ekle
-  const handlePeriodsSelected = async (periods: { year: number; month: number; amount: number; dueDate: string; description: string }[]) => {
-    for (let i = 0; i < periods.length; i++) {
-      const period = periods[i];
-      onAddDue();
-      await new Promise(resolve => setTimeout(resolve, 150));
-      const newIndex = dues.length + i;
-      onUpdateDue(newIndex, "type", "PRINCIPAL");
-      onUpdateDue(newIndex, "amount", period.amount.toString());
-      onUpdateDue(newIndex, "description", period.description);
-      onUpdateDue(newIndex, "dueDate", period.dueDate);
-    }
-  };
-
-  // Takip Talebi (Örnek 1) önizleme
-  const generateTakipTalebiPreview = async () => {
-    setGeneratingTakipTalebi(true);
-    setTakipTalebiPreviewError(null);
-    try {
-      const templateData = {
-        fileNumber: caseData.fileNumber || "2025/...",
-        filingDate: caseData.startDate || new Date().toISOString().split("T")[0],
-        executionOffice: {
-          name: "... İcra Müdürlüğü",
-          city: "...",
-        },
-        creditors: [], // Wizard'dan gelecek
-        lawyers: [], // Wizard'dan gelecek
-        debtors: [], // Wizard'dan gelecek
-        claimItems: dues.map(d => ({
-          type: d.type,
-          description: d.description || (d.type === "PRINCIPAL" ? "Asıl Alacak" : d.type === "INTEREST" ? "Faiz" : "Masraf"),
-          amount: parseFloat(d.amount) || 0,
-          currency: caseData.currency || "TRY",
-          dueDate: d.dueDate,
-        })),
-        totals: {
-          principal: kapak.principal,
-          interest: kapak.interest,
-          fees: kapak.expense,
-          total: kapak.total,
-          currency: caseData.currency || "TRY",
-        },
-        interestInfo: {
-          type: caseData.interestType === "TICARI" ? "TICARI" : "YASAL",
-          description: caseData.interestDescription || "yasal faizi ile birlikte",
-          variableRate: true,
-        },
-        caseType: caseData.subCategory?.includes("ILAMLI") ? "ILAMLI" : "ILAMSIZ",
-        subCategory: caseData.subCategory || "GENEL",
-        executionPath: caseData.executionPath || "HACIZ",
-      };
-
-      // PR-2A1: onizleme YALNIZ gercek sablon motoru ciktisiyla acilir. Eski davranis
-      // hata halinde UYDURMA bir ornek takip talebi belgesi uretip gercek ciktiymis gibi
-      // ONIZLETIYORDU — fallback belge URETILMEZ. Malformed yanit basari SAYILMAZ.
-      const outcome = await runMutation({
-        mutate: async () => {
-          const response = await api.post("/template-engine/takip-talebi/preview", templateData);
-          const body = (response as { data?: { html?: unknown; content?: unknown } })?.data;
-          const content =
-            typeof body?.html === "string" && body.html.trim()
-              ? body.html
-              : typeof body?.content === "string" && body.content.trim()
-                ? body.content
-                : null;
-          if (content === null) throw new Error("MALFORMED_PREVIEW_RESPONSE");
-          return content;
-        },
-        failureMessage: "Takip talebi önizlemesi oluşturulamadı. Belge ÜRETİLMEDİ.",
-      });
-
-      if (outcome.status === "FAILED") {
-        setTakipTalebiPreviewError(outcome.error.message);
-        return; // onizleme ACILMAZ
-      }
-      setTakipTalebiContent(outcome.data);
-      setShowTakipTalebiPreview(true);
-    } finally {
-      setGeneratingTakipTalebi(false);
-    }
-  };
-
-  // Frontend validasyonu - alacak kalemlerini kontrol et
-  const validateClaimItems = () => {
-    const errors: { id: string; message: string }[] = [];
-    const warnings: { id: string; message: string }[] = [];
-    
-    // 1. Ana para kontrolü
-    const principalItems = dues.filter(d => d.type === "PRINCIPAL");
-    if (principalItems.length === 0) {
-      errors.push({ id: "no_principal", message: "Asıl alacak (ana para) kalemi olmadan takip oluşturulamaz." });
-    }
-    
-    // 2. Tutar kontrolü
-    const emptyAmounts = dues.filter(d => !d.amount || parseFloat(d.amount) <= 0);
-    if (emptyAmounts.length > 0) {
-      errors.push({ id: "empty_amount", message: `${emptyAmounts.length} kalemde tutar girilmemiş.` });
-    }
-    
-    // 3. Çek takibi için tazminat kontrolü
-    if (isCekTakibi && principalItems.length > 0 && !hasCekTazminati) {
-      warnings.push({ id: "no_cek_tazminati", message: "Çek takibinde %10 çek tazminatı eklenmemiş. Otomatik eklemek için ana para tutarını güncelleyin." });
-    }
-    
-    // 4. İlamlı takip için kesinleşme kontrolü
-    if ((caseData.subCategory === "ILAMLI" || caseData.mahiyetKodu === "TAZMINAT") && !caseData.hasArticle4Request) {
-      warnings.push({ id: "ilam_finalization", message: "Bazı ilamlar kesinleşmeden icraya konulamaz. Kesinleşme şerhini kontrol edin." });
-    }
-    
-    // 5. Döviz takibi için kur kuralı kontrolü
-    if (caseData.subCategory === "DOVIZ" && !caseData.exchangeRateType) {
-      errors.push({ id: "forex_policy", message: "Döviz alacağı için kur kuralı seçilmelidir." });
-    }
-    
-    // 6. Nafaka takibi için dönem kontrolü
-    if (caseData.subCategory === "NAFAKA" && principalItems.length === 0) {
-      warnings.push({ id: "nafaka_periods", message: "Nafaka takibinde dönemsel alacak kalemleri eklenmeli." });
-    }
-    
-    // 7. Faiz kalemi varsa ama ana para yoksa
-    const interestItems = dues.filter(d => d.type === "INTEREST");
-    if (interestItems.length > 0 && principalItems.length === 0) {
-      errors.push({ id: "interest_without_principal", message: "Faiz kalemi var ama ana para kalemi yok." });
-    }
-    
-    // 8. Toplam tutar kontrolü
-    const total = dues.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-    if (total <= 0 && dues.length > 0) {
-      errors.push({ id: "zero_total", message: "Toplam alacak tutarı sıfır veya negatif olamaz." });
-    }
-    
-    setValidationResult({
-      isValid: errors.length === 0,
-      errors,
-      warnings,
-    });
-  };
-
-  // Alacak kalemleri değiştiğinde validasyonu çalıştır
-  useEffect(() => {
-    if (dues.length > 0) {
-      validateClaimItems();
-    } else {
-      setValidationResult(null);
-    }
-  }, [dues, caseData.subCategory, caseData.mahiyetKodu, caseData.hasArticle4Request, caseData.exchangeRateType]);
-
-  // ClaimEngine ile doğrulama (opsiyonel - hata verirse sessizce geç)
-  const validateWithClaimEngine = async () => {
-    const subCategory = caseData.subCategory || caseData.formCode;
-    const caseType = caseData.caseType || caseData.formCategory;
-    
-    if (!caseType || !subCategory) return;
-
-    try {
-      const response = await api.post("/claim-engine/validate", {
-        caseType,
-        subCategory,
-        claimItems: dues.map(d => ({ type: d.type })),
-        extractedData: extractedData || {},
-        wizardData: wizardData || {},
-      });
-
-      if (response.data) {
-        // Backend validasyonunu frontend ile birleştir
-        setValidationResult(prev => ({
-          isValid: (prev?.isValid ?? true) && response.data.isValid,
-          errors: [...(prev?.errors || []), ...(response.data.errors || [])],
-          warnings: [...(prev?.warnings || []), ...(response.data.warnings || [])],
-        }));
-      }
-    } catch (error) {
-      // Doğrulama hatası kritik değil, sessizce geç
-      console.log("Backend doğrulama atlandı:", error);
-    }
-  };
-
-  // Faiz hesapla
-  const calculateInterest = async () => {
-    if (interestForm.principalIndex < 0) {
-      alert("Lütfen faiz hesaplanacak ana para kalemini seçin");
-      return;
-    }
-    
-    const principalDue = principalDues[interestForm.principalIndex];
-    if (!principalDue) return;
-
-    const principal = parseFloat(principalDue.amount) || 0;
-    const startDate = interestForm.startDate || principalDue.dueDate;
-    
-    if (!startDate) {
-      alert("Lütfen faiz başlangıç tarihi belirleyin");
-      return;
-    }
-
-    setCalculatingInterest(true);
-    setInterestError(null);
-    setInterestResult(null);
-    try {
-      const rate = interestForm.customRate
-        ? parseFloat(interestForm.customRate)
-        : interestRates[interestForm.interestType];
-
-      const response = await api.get(`/rule-engine/interest?principal=${principal}&startDate=${startDate}&endDate=${interestForm.endDate}&rate=${rate}`);
-      const result = response.data as { interest?: unknown; days?: unknown; rate?: unknown } | null;
-      // Gövde SÖZLEŞMEYE karşı doğrulanır: eksik/bozuk yanıt BAŞARI sayılmaz.
-      if (
-        !result ||
-        typeof result.interest !== "number" ||
-        typeof result.days !== "number" ||
-        typeof result.rate !== "number"
-      ) {
-        throw new Error("MALFORMED_INTEREST_RESPONSE");
-      }
-      setInterestResult(result as typeof interestResult);
-    } catch (err) {
-      // WSMR-A4f · UYDURMA YEREL FAİZ HESABI KALDIRILDI.
-      //
-      // Burada `/rule-engine/interest` hata verdiginde faiz YEREL olarak
-      //     principal * (rate / 365 / 100) * gun
-      // formuluyle uretiliyor, sonuc ekranda gercek hesap gibi gosteriliyor ve
-      // "Kalem Olarak Ekle" ile interestAmount / interestRate alanlarina
-      // yaziliyordu. Bu duz formul 3095 sayili Kanun kapsamindaki donemsel oran
-      // degisimlerini yok sayan bir TAHMINDIR; hukuki bir talebe yazilamaz.
-      //
-      // Ayni dosyadaki `calculateAutoInterest` zaten dogru kurali belgeliyor:
-      // "API erisilemezse null doner - TAHMIN YAPILMAZ". Faiz hesabi artik
-      // fail-closed: sonuc uretilmez, hata gorunur olur.
-      setInterestResult(null);
-      setInterestError(toActionErrorMessage(err, "Faiz hesaplanamadı."));
-    }
-    setCalculatingInterest(false);
-  };
-
-  // Hesaplanan faizi alacak kalemi olarak ekle
-  const addInterestAsDue = () => {
-    if (!interestResult) return;
-    
-    const principalDue = principalDues[interestForm.principalIndex];
-    const interestTypeLabels = {
-      YASAL: "Yasal Faiz",
-      TICARI: "Ticari Faiz",
-      AVANS: "Avans Faizi",
-      TEMERRUT: "Temerrüt Faizi",
-    };
-    
-    // Yeni faiz kalemi ekle
-    onAddDue();
-    // Son eklenen kalemi güncelle
-    setTimeout(() => {
-      const newIndex = dues.length;
-      onUpdateDue(newIndex, "type", "INTEREST");
-      onUpdateDue(newIndex, "amount", interestResult.interest.toFixed(2));
-      onUpdateDue(newIndex, "description", `${interestTypeLabels[interestForm.interestType]} (${principalDue?.description || "Ana Para"} için - ${interestResult.days} gün)`);
-      onUpdateDue(newIndex, "dueDate", interestForm.endDate);
-      onUpdateDue(newIndex, "interestType", interestForm.interestType);
-      onUpdateDue(newIndex, "interestRate", interestResult.rate);
-      onUpdateDue(newIndex, "interestAmount", interestResult.interest);
-      onUpdateDue(newIndex, "interestStartDate", interestForm.startDate || principalDue?.dueDate);
-      onUpdateDue(newIndex, "interestEndDate", interestForm.endDate);
-    }, 100);
-    
-    setInterestResult(null);
-    setShowInterestPanel(false);
-  };
-
-  // Kapak hesabı (toplam alacak özeti)
-  const getKapakHesabi = () => {
-    const principal = dues.filter(d => d.type === "PRINCIPAL").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-    const interest = dues.filter(d => d.type === "INTEREST").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-    const expense = dues.filter(d => d.type === "EXPENSE").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-    const other = dues.filter(d => d.type === "OTHER").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-    const total = principal + interest + expense + other;
-    
-    return { principal, interest, expense, other, total };
-  };
-
-  const kapak = getKapakHesabi();
-  const currencySymbol = caseData.currency === "USD" ? "$" : caseData.currency === "EUR" ? "€" : "₺";
-
-  return (
-    <div className="space-y-4">
-      {/* Başlık */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-xl font-semibold">Alacak Kalemleri</h2>
-          <p className="text-sm text-muted-foreground">Ana para, faiz, masraf ve diğer alacak kalemlerini ekleyin</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button 
-            type="button" 
-            onClick={generateFromClaimEngine}
-            disabled={generatingFromRules}
-            className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1 px-3 py-1.5 border border-emerald-200 rounded-lg hover:bg-emerald-50 disabled:opacity-50"
-          >
-            {generatingFromRules ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileCheck className="h-4 w-4" />
-            )}
-            Otomatik Oluştur
-          </button>
-          <button 
-            type="button" 
-            onClick={addFeesFromEngine}
-            disabled={generatingFromRules}
-            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 px-3 py-1.5 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:opacity-50"
-          >
-            {generatingFromRules ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Receipt className="h-4 w-4" />
-            )}
-            Masrafları Ekle
-          </button>
-          {isPeriodic && (
-            <button 
-              type="button" 
-              onClick={() => setShowPeriodSelector(true)}
-              className="text-sm text-purple-600 hover:text-purple-700 flex items-center gap-1 px-3 py-1.5 border border-purple-200 rounded-lg hover:bg-purple-50"
-            >
-              <Calendar className="h-4 w-4" /> Dönem Seç
-            </button>
-          )}
-          <button 
-            type="button" 
-            onClick={() => setShowInterestPanel(!showInterestPanel)} 
-            className="text-sm text-orange-600 hover:text-orange-700 flex items-center gap-1 px-3 py-1.5 border border-orange-200 rounded-lg hover:bg-orange-50"
-          >
-            <Calculator className="h-4 w-4" /> Faiz Hesapla
-          </button>
-          <button type="button" onClick={onAddDue} className="text-sm text-primary hover:underline flex items-center gap-1">
-            <Plus className="h-4 w-4" /> Kalem Ekle
-          </button>
-        </div>
-      </div>
-
-      {/* Çek Takibi Bilgi Kutusu */}
-      {isCekTakibi && (
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-start gap-2">
-            <Banknote className="h-5 w-5 text-blue-600 mt-0.5" />
-            <div className="text-sm text-blue-800">
-              <p className="font-medium mb-1">Çek Takibi - Otomatik Hesaplama Aktif</p>
-              <ul className="space-y-1 text-xs">
-                <li>✅ Ana para girildiğinde <strong>%10 çek tazminatı</strong> otomatik eklenir</li>
-                <li>✅ Vade tarihi geçmişse <strong>işlemiş ticari faiz</strong> otomatik hesaplanır</li>
-                <li>• Kambiyo takiplerinde ticari faiz (%{interestRates.TICARI}) uygulanır</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Genel Takip Bilgi Kutusu (Çek değilse) */}
-      {!isCekTakibi && dues.length === 0 && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-start gap-2">
-            <Calculator className="h-5 w-5 text-green-600 mt-0.5" />
-            <div className="text-sm text-green-800">
-              <p className="font-medium mb-1">Otomatik Faiz Hesaplama</p>
-              <ul className="space-y-1 text-xs">
-                <li>✅ Ana para ve vade tarihi girildiğinde <strong>işlemiş faiz</strong> otomatik hesaplanır</li>
-                <li>✅ Faiz türü: {caseData.interestType === "TICARI" ? `Ticari (%${interestRates.TICARI})` : `Yasal (%${interestRates.YASAL})`}</li>
-                <li>• Masrafları eklemek için "Masrafları Ekle" butonunu kullanın</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Doğrulama Uyarıları */}
-      {validationResult && (validationResult.errors.length > 0 || validationResult.warnings.length > 0) && (
-        <div className="space-y-2">
-          {validationResult.errors.map((err) => (
-            <div key={err.id} className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-              {err.message}
-            </div>
-          ))}
-          {validationResult.warnings.map((warn) => (
-            <div key={warn.id} className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
-              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-              {warn.message}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Faiz Hesaplama Paneli */}
-      {showInterestPanel && (
-        <div className="border-2 border-orange-200 rounded-lg p-4 bg-orange-50/50">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="h-5 w-5 text-orange-600" />
-            <h3 className="font-semibold text-orange-800">Faiz Hesaplama</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
-            {/* Ana Para Seçimi */}
-            <div>
-              <label className="block text-xs font-medium mb-1">Ana Para Kalemi</label>
-              <select 
-                value={interestForm.principalIndex}
-                onChange={e => {
-                  const idx = parseInt(e.target.value);
-                  setInterestForm(prev => ({ 
-                    ...prev, 
-                    principalIndex: idx,
-                    startDate: idx >= 0 ? principalDues[idx]?.dueDate || "" : ""
-                  }));
-                }}
-                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
-              >
-                <option value={-1}>Seçin...</option>
-                {principalDues.map((due, idx) => (
-                  <option key={idx} value={idx}>
-                    {due.description || `Ana Para ${idx + 1}`} - {parseFloat(due.amount || "0").toLocaleString('tr-TR')} {currencySymbol}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Faiz Türü */}
-            <div>
-              <label className="block text-xs font-medium mb-1">Faiz Türü</label>
-              <select 
-                value={interestForm.interestType}
-                onChange={e => setInterestForm(prev => ({ ...prev, interestType: e.target.value as any, customRate: "" }))}
-                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
-              >
-                <option value="YASAL">Yasal Faiz (%{interestRates.YASAL})</option>
-                <option value="TICARI">Ticari Faiz (%{interestRates.TICARI})</option>
-                <option value="AVANS">Avans Faizi (%{interestRates.AVANS})</option>
-                <option value="TEMERRUT">Temerrüt Faizi (%{interestRates.TEMERRUT})</option>
-              </select>
-            </div>
-
-            {/* Özel Oran */}
-            <div>
-              <label className="block text-xs font-medium mb-1">Özel Oran (%)</label>
-              <input 
-                type="number" 
-                value={interestForm.customRate}
-                onChange={e => setInterestForm(prev => ({ ...prev, customRate: e.target.value }))}
-                placeholder={`Varsayılan: ${interestRates[interestForm.interestType]}`}
-                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
-              />
-            </div>
-
-            {/* Başlangıç Tarihi */}
-            <div>
-              <label className="block text-xs font-medium mb-1">Başlangıç (Vade)</label>
-              <input 
-                type="date" 
-                value={interestForm.startDate}
-                onChange={e => setInterestForm(prev => ({ ...prev, startDate: e.target.value }))}
-                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
-              />
-            </div>
-
-            {/* Bitiş Tarihi */}
-            <div>
-              <label className="block text-xs font-medium mb-1">Bitiş (Bugün)</label>
-              <input 
-                type="date" 
-                value={interestForm.endDate}
-                onChange={e => setInterestForm(prev => ({ ...prev, endDate: e.target.value }))}
-                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button 
-              type="button" 
-              onClick={calculateInterest}
-              disabled={calculatingInterest || interestForm.principalIndex < 0}
-              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {calculatingInterest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
-              Hesapla
-            </button>
-
-            {interestError && (
-              <div
-                role="alert"
-                className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-              >
-                {interestError}
-              </div>
-            )}
-
-            {interestResult && (
-              <div className="flex-1 flex items-center justify-between bg-white rounded-lg p-3 border border-orange-200">
-                <div className="text-sm">
-                  <span className="text-gray-600">{interestResult.description}</span>
-                  <div className="font-semibold text-orange-700">
-                    Faiz: {interestResult.interest.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}
-                  </div>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={addInterestAsDue}
-                  className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 flex items-center gap-1"
-                >
-                  <Plus className="h-4 w-4" /> Kalem Olarak Ekle
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Alacak Kalemleri Listesi */}
-      {dues.length === 0 ? (
-        <div className="text-center py-12 border-2 border-dashed rounded-lg">
-          <p className="text-muted-foreground mb-4">Henüz alacak kalemi eklenmedi</p>
-          <button type="button" onClick={onAddDue} className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">
-            <Plus className="h-4 w-4" /> İlk Kalemi Ekle
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {dues.map((due, index) => (
-            <div key={index} className={`border rounded-lg p-4 relative ${due.type === "INTEREST" ? "border-orange-200 bg-orange-50/30" : due.type === "EXPENSE" ? "border-blue-200 bg-blue-50/30" : ""}`}>
-              <button type="button" onClick={() => onRemoveDue(index)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500">
-                <X className="h-5 w-5" />
-              </button>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1">Kalem Türü</label>
-                  <select 
-                    value={due.type} 
-                    onChange={e => onUpdateDue(index, "type", e.target.value)} 
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                  >
-                    <option value="PRINCIPAL">Ana Para</option>
-                    <option value="INTEREST">Faiz</option>
-                    <option value="EXPENSE">Masraf</option>
-                    <option value="OTHER">Diğer</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Tutar ({currencySymbol}) <span className="text-red-500">*</span></label>
-                  <input 
-                    type="number" 
-                    value={due.amount} 
-                    onChange={e => due.type === "PRINCIPAL" ? handlePrincipalAmountChange(index, e.target.value) : onUpdateDue(index, "amount", e.target.value)} 
-                    placeholder="0.00" 
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Vade Tarihi</label>
-                  <input 
-                    type="date" 
-                    value={due.dueDate} 
-                    onChange={e => handleDueDateChange(index, e.target.value)} 
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Açıklama</label>
-                  <input 
-                    type="text" 
-                    value={due.description} 
-                    onChange={e => onUpdateDue(index, "description", e.target.value)} 
-                    placeholder="Ör: Kira alacağı" 
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
-                  />
-                </div>
-              </div>
-              {/* Faiz detayları (varsa) */}
-              {due.type === "INTEREST" && due.interestRate && (
-                <div className="mt-2 pt-2 border-t border-orange-200 text-xs text-orange-700">
-                  <span className="font-medium">%{due.interestRate}</span> oran ile hesaplandı
-                  {due.interestStartDate && due.interestEndDate && (
-                    <span className="ml-2">({due.interestStartDate} - {due.interestEndDate})</span>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-
-          {/* Kapak Hesabı (Toplam Alacak Özeti) */}
-          <div className="mt-6 border-2 border-primary/20 rounded-lg overflow-hidden">
-            <div className="bg-primary/5 px-4 py-2 flex items-center gap-2">
-              <Receipt className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold">Kapak Hesabı (Alacak Özeti)</h3>
-            </div>
-            <div className="p-4">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                <div className="text-center p-3 bg-gray-50 rounded-lg">
-                  <div className="text-xs text-gray-500 mb-1">Ana Para</div>
-                  <div className="font-semibold text-lg">{kapak.principal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
-                </div>
-                <div className="text-center p-3 bg-orange-50 rounded-lg">
-                  <div className="text-xs text-orange-600 mb-1">Faiz</div>
-                  <div className="font-semibold text-lg text-orange-700">{kapak.interest.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
-                </div>
-                <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <div className="text-xs text-blue-600 mb-1">Masraf</div>
-                  <div className="font-semibold text-lg text-blue-700">{kapak.expense.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
-                </div>
-                <div className="text-center p-3 bg-gray-50 rounded-lg">
-                  <div className="text-xs text-gray-500 mb-1">Diğer</div>
-                  <div className="font-semibold text-lg">{kapak.other.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
-                </div>
-                <div className="text-center p-3 bg-primary/10 rounded-lg border-2 border-primary/30">
-                  <div className="text-xs text-primary mb-1 font-medium">TOPLAM ALACAK</div>
-                  <div className="font-bold text-xl text-primary">{kapak.total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
-                </div>
-              </div>
-              
-              {/* Faiz açıklaması */}
-              {caseData.interestDescription && (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                  <strong>Faiz Talebi:</strong> {caseData.interestDescription}
-                </div>
-              )}
-              
-              {/* Takip Talebi Önizle Butonu */}
-              {dues.length > 0 && kapak.total > 0 && (
-                <div className="mt-4 flex justify-end">
-                  {takipTalebiPreviewError ? (
-                    <div role="alert" data-testid="takip-preview-error" className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                      {takipTalebiPreviewError}
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={generateTakipTalebiPreview}
-                    disabled={generatingTakipTalebi}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {generatingTakipTalebi ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileCheck className="h-4 w-4" />
-                    )}
-                    Takip Talebi Önizle
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Takip Talebi Önizleme Modal */}
-      {showTakipTalebiPreview && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-            <div className="bg-green-600 px-6 py-4 flex items-center justify-between text-white">
-              <div className="flex items-center gap-3">
-                <FileCheck className="h-6 w-6" />
-                <h2 className="text-lg font-semibold">Takip Talebi (Örnek 1) Önizleme</h2>
-              </div>
-              <button onClick={() => setShowTakipTalebiPreview(false)} className="text-white/80 hover:text-white">
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              <div dangerouslySetInnerHTML={{ __html: takipTalebiContent }} />
-            </div>
-            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowTakipTalebiPreview(false)}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-100"
-              >
-                Kapat
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  // Basit text indirme
-                  const blob = new Blob([takipTalebiContent.replace(/<[^>]*>/g, '')], { type: 'text/plain;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.txt`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-2"
-              >
-                <ArrowRight className="h-4 w-4" /> TXT İndir
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const token = localStorage.getItem("token");
-                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/word`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                      body: JSON.stringify({
-                        fileNumber: caseData.fileNumber,
-                        creditors: creditors.filter(c => c.name),
-                        debtors: caseDebtors,
-                        dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
-                        executionOffice: selectedOffice,
-                        lawyers: lawyers.filter(l => l.name && l.surname),
-                        caseDate: caseData.startDate,
-                        currency: caseData.currency,
-                      }),
-                    });
-                    if (!response.ok) throw new Error('Word oluşturulamadı');
-                    const blob = await response.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.docx`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  } catch (err) {
-                    console.error('Word indirme hatası:', err);
-                    alert('Word dosyası oluşturulamadı');
-                  }
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-              >
-                <FileCheck className="h-4 w-4" /> Word İndir
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const token = localStorage.getItem("token");
-                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/pdf`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                      body: JSON.stringify({
-                        fileNumber: caseData.fileNumber,
-                        creditors: creditors.filter(c => c.name),
-                        debtors: caseDebtors,
-                        dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
-                        executionOffice: selectedOffice,
-                        lawyers: lawyers.filter(l => l.name && l.surname),
-                        caseDate: caseData.startDate,
-                        currency: caseData.currency,
-                      }),
-                    });
-                    if (!response.ok) throw new Error('PDF oluşturulamadı');
-                    const blob = await response.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.pdf`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  } catch (err) {
-                    console.error('PDF indirme hatası:', err);
-                    alert('PDF dosyası oluşturulamadı');
-                  }
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
-              >
-                <FileCheck className="h-4 w-4" /> PDF İndir
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const token = localStorage.getItem("token");
-                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/xml`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                      body: JSON.stringify({
-                        fileNumber: caseData.fileNumber,
-                        creditors: creditors.filter(c => c.name),
-                        debtors: caseDebtors,
-                        dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
-                        executionOffice: selectedOffice,
-                        lawyers: lawyers.filter(l => l.name && l.surname),
-                        caseDate: caseData.startDate,
-                        currency: caseData.currency,
-                      }),
-                    });
-                    if (!response.ok) throw new Error('XML oluşturulamadı');
-                    const blob = await response.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.xml`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  } catch (err) {
-                    console.error('XML indirme hatası:', err);
-                    alert('XML dosyası oluşturulamadı');
-                  }
-                }}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-              >
-                <FileCheck className="h-4 w-4" /> XML İndir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Dönem Seçici Modal */}
-      {showPeriodSelector && (
-        <PeriodSelector
-          type={isNafakaTakibi ? "NAFAKA" : "KIRA"}
-          monthlyAmount={parseFloat(caseData.monthlyNafakaAmount || "0") || 1000}
-          currency={caseData.currency || "TRY"}
-          onPeriodsSelected={handlePeriodsSelected}
-          onClose={() => setShowPeriodSelector(false)}
-        />
-      )}
-    </div>
-  );
-}
+// WSMR-A4l · ERISILEMEZ OLU BILESEN KALDIRILDI — UNSUPPORTED_SYNTHETIC_UI_REMOVED
+//
+// `DuesStep` bileseni bu dosyada bildirilmis ama HICBIR yerden tuketilmiyordu.
+// Kaldirma oncesi dort kanit ayri ayri uretildi (PR govdesinde kayitli):
+//   1. render consumer YOK  — `<DuesStep` tum agacta 0 eslesme
+//   2. dynamic import/glob YOK — import()/import.meta.glob/require.context 0
+//   3. route erisimi YOK — sembol export EDILMIYOR, route default export
+//      (`NewCasePage`) onu referans etmiyor
+//   4. production bundle consumer YOK — DuesStep-e OZGU dort string
+//      (`Cek Tazminati (%10)`, `MALFORMED_PREVIEW_RESPONSE`, `Bu takip turu
+//      icin masraf bulunamadi.`, `takip-preview-error`) `.next` ciktisinda
+//      0 dosyada geciyor
+//
+// Icinde tasidiklari ve birlikte giden riskler: `/rule-engine/interest`
+// hatasinda faizi YEREL formulle ureten fallback (WSMR-A4f`de fail-closed
+// yapilmisti) ve %10 sabit cek tazminati orani.
+//
+// crossReference — PR-2A1 (WSMR-A1): `generateTakipTalebiPreview` imzasi bu
+// bilesenin icindeydi ve A1 tarafindan remediye edilmisti. O imza burada
+// YENIDEN FIXED SAYILMAZ; A1`in terminal raporundaki kaydi gecerlidir. Bu
+// kaldirma yalnizca erisilemez tasiyicinin kendisini kapsar.
