@@ -177,6 +177,109 @@ GRANT EXPIRY:
 TERMINAL CLOSEOUT
 ```
 
+### OFFICE F06 open-owner-decision disposition record
+
+```text
+recordType : OWNER_DECISION_DISPOSITION
+recordId : OFFICE-SC-F06-OPEN-OD-DECISION-PACK-R01-OD01
+programId : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+decision : RATIFIED
+issuedAt : 2026-08-13
+packageRef : project/docs/governance/office-p4-authz-r01/f06-open-od-decision-package.md
+packagePr : #2376
+packageSha : a3db41bda8c9f09bcec5c563862f5ca10e0a9411
+optionB : OFF/OD-02, OFF/OD-03, OFF/OD-06, OFF/OD-07, OFF/OD-12, OFF/OD-13, OFF/OD-16, OFF/OD-19
+keepDeferred : OFF/OD-04
+implementationAuthority : NONE
+```
+
+Owner yorum metinleri (aynen):
+
+```text
+Mimari olarak B ağırlıklı set doğru; OD-04’ü ise gereksiz model büyümesini önlemek için deferred tutuyoruz.
+```
+
+```text
+- OD-02 + OD-07:
+  Çoklu organizasyon üyeliğine uygun model kabul edilmiştir.
+  Üyelik durumu, roller ve yetkiler tenant/organization bağlamında bağımsızdır.
+  Global paylaşılan rol veya tenant sınırını aşan yetki üretilmez.
+```
+
+```text
+- OD-03 + OD-04:
+  Bir Person için organizasyon başına yalnız bir aktif Employment bulunabilir;
+  tarihsel kayıtlar korunur.
+  Dış avukat/yüklenici yaşam döngüsü bu görevde yeniden açılmaz.
+  KEEP_DEFERRED yeni entity, migration veya implementation authority üretmez.
+```
+
+```text
+- OD-06:
+  FoundingLawyer yalnız tarihsel organizasyon niteliğidir.
+  Teknik bypass, örtük yetki, title-based authorization veya DBIND §5 istisnası üretmez.
+```
+
+```text
+- OD-12 + OD-13:
+  Explicit canonical istisna yoksa farklı approval seviyeleri farklı Person’larca tamamlanır.
+  Delegasyon, delegator’ın mevcut kapsamını aşamaz.
+  Approval delegation ayrıca ve açıkça yetkilendirilmedikçe genel delegasyona dahil değildir.
+  ADR-009 tek motor olarak korunur.
+```
+
+```text
+- OD-16:
+  Offboarding sırası privileged freeze/revoke → kontrollü reassignment şeklindedir.
+  Yetki açık bırakılarak reassignment yapılmaz.
+```
+
+```text
+- OD-19:
+  Workload metrikleri yalnız kapasite ve iş planlaması amacıyla kullanılabilir.
+  Tek başına performans, disiplin, ücret, terfi veya işten çıkarma değerlendirmesi oluşturamaz.
+```
+
+### OFFICE CAP-09A consumer-only semantic authority record
+
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=OFFICE-CAP-09A-CONSUMER-01-R01-SA01 -->
+
+```text
+recordType : SEMANTIC_AUTHORITY
+recordId : OFFICE-CAP-09A-CONSUMER-01-R01-SA01
+programId : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+taskId : OFFICE-CAP-09A-CONSUMER-01-R01-GOVERNANCE-MATERIALIZATION-R01
+targetTaskId : OFFICE-CAP-09A-CONSUMER-01-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+decision : RATIFIED
+issuedAt : 2026-08-13
+status : ACTIVE_AFTER_APPROVED_MERGE
+consumerBoundary : EXISTING AuditService API CALLED FROM OFFICE LIFECYCLE WRITE PATHS
+coreConsumer : StaffService TRANSACTIONAL AUDIT PARITY
+attributionInvariant : OFF-INV-08
+attributionFields : ACTING PERSON; USER ACCOUNT; TENANT/ORGANIZATION; ROLE/AUTHORITY SOURCE; DELEGATOR/DELEGATE; TARGET RESOURCE; BEFORE/AFTER; REASON; TIMESTAMP; OUTCOME; CORRELATION
+tenantScope : REQUIRED
+auditMutationModel : APPEND_ONLY
+hardDelete : PROHIBITED
+producerDisposition : DORMANT_CANONICAL / NOT_AUTHORIZED / DO_NOT_OPEN
+producerForbidden : AuditLog SCHEMA; AuditService BODY; audit-metadata-builder; COLUMN; INDEX; MIGRATION; DB; FLAG; RUNTIME; PRODUCTION
+exactTaskBinding : REQUIRED
+exactPrBinding : REQUIRED
+exactHeadBinding : REQUIRED
+exactScopeBinding : REQUIRED
+requiredChecksBinding : REQUIRED
+singleUseConsumption : REQUIRED
+transfer : PROHIBITED
+expansion : PROHIBITED
+productionActivation : NOT_AUTHORIZED
+standingAuthority : PROHIBITED
+reusableAuthority : PROHIBITED
+globalAuthority : PROHIBITED
+```
+
 ### OFFICE-SC-F01 authorization breadth and sensitive projection semantic authority record
 
 ```text
@@ -315,6 +418,7 @@ globalAuthority : PROHIBITED
 
 | Date | Decision | Scope | Source | Follow-up |
 |---|---|---|---|---|
+| 2026-08-13 | **OFFICE P4 / F06 OPEN OD OWNER DISPOSITION — RATIFIED:** `OFF/OD-02`, `OFF/OD-03`, `OFF/OD-06`, `OFF/OD-07`, `OFF/OD-12`, `OFF/OD-13`, `OFF/OD-16` ve `OFF/OD-19` için **OPTION B**; `OFF/OD-04` için **KEEP_DEFERRED**. Yedi owner yorum bloğu bu dosyadaki `OFFICE F06 open-owner-decision disposition record` altında özetlenmeden kaydedildi. | F06 karar-paketi kapanışı ve aynı PR'da `OFFICE-CAP-09A-CONSUMER-01-R01-SA01` + ona bağlı tek-kullanımlık EG01 materyalizasyonu. Ürün kodu, schema, migration, DB, flag, runtime ve production değişikliği YOK. | `office-p4-authz-r01/f06-open-od-decision-package.md`; PR #2376 / `a3db41bda8c9f09bcec5c563862f5ca10e0a9411`; owner PAGE-O0 ratifikasyonu (2026-08-13). | Sekiz OD `CLOSED / CANONICAL — OPTION B`; OD-04 `KEEP_DEFERRED` ve `DEFERRED` kalır. EG01 ancak bu governance PR canonical main'e merge edilirse etkinleşir; yalnız ayrı PR'daki consumer implementasyonunu yetkilendirir; producer `DORMANT_CANONICAL / NOT AUTHORIZED / DO NOT OPEN` kalır. |
 | 2026-08-13 | **OFFICE P8-C4 CANONICAL RECONCILIATION — R01 (ARA UZLAŞTIRMA) / OFFICE P5 SECURITY = CLOSED / VERIFIED:** `OFFICE-P5-SECURITY-R01` workstream'i kapandı. Zincir: Phase A evidence PR #2362 squash `e6a22c7f8c6bf1531e36229971df0f84f0a46bcb` → Phase B PR #2368 squash `4e228cb2a535a2ffac9ea9901a7904dddaada8a4` (/auth/me credential containment, seed kanonik-servis yolu, staff okuma projeksiyonu + DTO — F-B01-01, B02, B04/S3, B05) → B02R1 PR #2371 squash `957eae28e0c48abb352ca435baa1d5c8b8f3649a` (seed public-institutions ucuna ADMIN rol kapısı, global tablo mutasyonu). Üç PR de gh ile MERGED doğrulandı (2026-08-13T10:04:51Z · 10:48:07Z · 13:33:39Z), üç squash SHA da origin/main ancestry'de VERIFIED; #2371 CI rollup 9/9 SUCCESS. **F-B02-01 CLOSED** (#2371). Biriken delivery-attribution borcu bu kayıtla kapatılır (hiçbiri daha önce canonical register'da değildi — 2026-08-13 grep ölçümü): P6A #2352 `c0f37c58265d463efa85de101f55d8c17a42af82` · P6B #2356 `76cd85f38324a9b4a79c192c5da10be2e4f54402` (execution-office hardening gerekçesi = AUTHORIZED DELIVERY WITH JUSTIFICATION RESIDUAL) · P2 #2357 `ecf9748f12d8233b401273b3465d319b0225487d` + #2359 `271e81d3f0007fe91562608ea7f73ad05758c233` · P3 #2364 `24bf5346886557f3322de8f7549f39eaec396944` · P7 #2358 `66773661e67f95495f5a9955a93b6d8b8d4a09c8`. RUNTIME RESIDUAL: deployment disposition **BLOCKED_BY_RUNTIME_MODEL** — canlı API referansı RELEASE10 @ `77a347a9831522aebddcb4a0ec14767ff21c851b` (#2340); canonical main değişiklikleri canlıya uygulanmış SAYILMAZ; capability deployment verdict'i P6 hash-matrisi tazelenmeden VERİLEMEZ. SUCCESSOR INVENTORY (blocker DEĞİL, envanter): F-B01-03 · F-B01-04 · F-B01-05 · StaffDetailModal diff-payload · /auth/me passwordChangedAt · CLF-P5-01→X1-P6 · CLF-P7-01/02/03 (stale yorumlar + BankSettlement reachability düzeltmesi) · CLF-O0-01 (requestRevision domain-owned guard → X4) · kozmetik personel ad-hijyeni. | Governance-only kayıt uzlaştırması; kod/schema/migration/DB/runtime/flag değişikliği YOK. Bu görev P8 FINAL CLOSEOUT DEĞİLDİR; 15 çelişkinin tam onarımı ve 9 OD paketleme P8 FINAL'in işidir, burada AÇILMAZ. P5 residual'ları blocker kolonuna TAŞINMAZ. | Owner P8-C4 handoff (2026-08-13, GO-COMPLETE); lane evidence pointer'ları: `office-p5-security-r01/` · `office-p6-runtime-truth-r01/` · `office-p7-dormant-r01/` (TAŞINMADI); gh PR #2362/#2368/#2371 MERGED + ancestry doğrulaması bu oturumda komutla alındı. | `OFFICE-DELIVERY-MANIFEST.md` §13 (program status + workstream ledger + attribution + successor inventory) · `master-triage-register.md` §D P5 closure satırı · `product-backlog.md` § OFFICE P8-C4 · `OFFICE-RISK-REGISTER.md` OFFICE bölge notu · `active-roadmap.md` OFFICE satırı. P8 FINAL ve kalan lane'ler (X4 dahil) AYRI owner yetkisinde; bu kayıt sıra seçmez. |
 | 2026-08-13 | **OFFICE-WR01 — MASTER PLAN KAYDI: DECISION_RATIFIED / DECOMPOSITION_REQUIRED:** Owner P8-C4 handoff'u (T5) uyarınca OFFICE-WR01 master plana işlendi: **D-WR-1..6 RATIFIED + D-WR-7 OPEN**; **B01..B10 blok iskeleti** tanımlı (decomposition ayrı yetkili iş); **PRODUCT EXTENSION dalı** kayıtlı. OFFICE-WR01, P8 FINAL'i BEKLETMEZ ve P8 FINAL blocker'ı olarak sınıflandırılmaz. Bu kayıt kimlik+statü envanteridir; karar içerik detayları owner oturum kaydındadır. Bu satır yeni semantic karar, implementation grant, decomposition seçimi veya execution authority ÜRETMEZ. | Docs-only master-plan kaydı; ürün diff YOK. B01..B10 decomposition/execution için ayrı owner GO gerekir. | Owner P8-C4 handoff (2026-08-13) — T5 talimatı. | `product-backlog.md` § OFFICE P8-C4 (OFFICE-WR01 kaydı) · `OFFICE-DELIVERY-MANIFEST.md` §13.5. NEXT: decomposition owner yetkisinde; bu satır sıra/scope seçmez. |
 | 2026-08-09 | <!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=CLIENT-ACCOUNTING-DELIVERY-X1-TERMINAL-CLOSEOUT-R01-SA01 --> **CLIENT-ACCOUNTING-DELIVERY-X1-TERMINAL-CLOSEOUT-R01-SA01 — TASK-BOUND SEMANTIC AUTHORITY:** Owner, `CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01` içindeki X1 hattı için PR zinciri `#2281 → #2284 → #2287 → #2290 → #2292 → #2294 → #2296` canonical main ancestry'sinde doğrulandığında şu terminal gerçekleri ratify eder: `X1 STATUS: ENGINEERING_COMPLETE / CLOSED`; `BLOCKS: PRE01 + B01–B05 COMPLETE`; `5/5 PRODUCT BLOCKS COMPLETE`; `REMAINING PRODUCT ENGINEERING: NONE`; `PRODUCTION: NOT ACTIVE`; `PERSISTENT ACTIVATION: OWNER-GATED / NOT PERFORMED`; canonical chain `#2281, #2284, #2287, #2290, #2292, #2294, #2296`. Yalnız `CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01/CODEX-X1-FD-OFFICE-WORKSPACE.md` status alanı ile aynı programın `MASTER-PLAN.md` X1 status-register satırları bu terminal gerçekle güncellenebilir. `X2 NOT STARTED` yazılmaz veya taşınmaz; X2 B01–B04 `ENGINEERING_COMPLETE / MERGED` repository gerçeği teknik işi yeniden açmak için kullanılamaz. | `CLIENT ACCOUNTING DELIVERY + CLIENT OFFICE UX ONLY`; yalnız exact X1 terminal governance reconciliation. Ürün kodu, ürün testi, schema, migration, flag, runtime, production, persistent activation, başka lane satırı, X1/X2 teknik işi ve governance framework onarımı veya kapsam genişletmesi kapsam dışıdır. | Owner'ın bu oturumdaki `OWNER AUTHORIZATION — X1 TERMINAL GOVERNANCE RECONCILIATION` talimatı; fresh main ancestry kanıtı `#2281/#2284/#2287/#2290/#2292/#2294/#2296`. Bu kayıt tek başına execution grant değildir; minimum exact task-bound EG ve immutable request/result zinciri zorunludur. | Exact iki-dosya execution required checks PASS ve CLEAN/MERGEABLE gate'leriyle normal squash-merge edilirse `X1 PRODUCT ENGINEERING CLOSED` ve `GOVERNANCE RESIDUAL CLOSED` canonical olur; production aktif değildir, persistent activation ayrıca owner-gated kalır; yeni owner onayı gerekmez. |
