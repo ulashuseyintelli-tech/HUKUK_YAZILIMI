@@ -61,6 +61,8 @@ export default function DebtorsPage() {
   // client-side kesim + client-side arama/sayfalama KALDIRILDI). Sorting bu PR'da yok.
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A4r: okuma HATASI "Henüz borçlu kaydı yok" ile AYNI görünemez.
+  const [debtorsLoadError, setDebtorsLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<DebtorType | "ALL">("ALL");
@@ -148,6 +150,7 @@ export default function DebtorsPage() {
     const myReq = ++reqIdRef.current;
     try {
       setLoading(true);
+      if (myReq === reqIdRef.current) setDebtorsLoadError(null);
       const qs = buildDebtorQuery({ page: currentPage, limit: PAGE_SIZE, search: debouncedSearch, type: typeFilter, riskLevel: riskFilter, city: debouncedCity, sortBy: sortBy ?? undefined, sortOrder });
       // findAll → { data: Debtor[], meta: { total, page, limit, totalPages } }
       const res = await api.get<{ data: Debtor[]; meta: { total: number; totalPages: number } }>(
@@ -158,7 +161,11 @@ export default function DebtorsPage() {
       setTotal(res.data?.meta?.total || 0);
       setTotalPages(res.data?.meta?.totalPages || 1);
     } catch (e) {
-      if (myReq === reqIdRef.current) console.error("Error fetching debtors:", e);
+      // WSMR-A4r: eskiden yalniz console.error ile YUTULUYORDU — "Henüz
+      // borçlu kaydı yok" render'i okuma hatasiyla AYNI ekrana dusuyordu.
+      if (myReq === reqIdRef.current) {
+        setDebtorsLoadError(toActionErrorMessage(e, "Borçlular yüklenemedi."));
+      }
     } finally {
       if (myReq === reqIdRef.current) setLoading(false);
     }
@@ -487,8 +494,26 @@ export default function DebtorsPage() {
 
 
       {/* Table */}
+      {debtorsLoadError && debtors.length > 0 && (
+        // WSMR-A4r: liste ZATEN yukluyken bir YENILEME basarisiz olursa
+        // mevcut veri SILINMEZ — yalnizca bu gorunur uyari belirir.
+        <div role="alert" className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+          <span>{debtorsLoadError}</span>
+          <button type="button" onClick={fetchDebtors} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+            Tekrar dene
+          </button>
+        </div>
+      )}
       {loading ? (
         <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
+      ) : debtorsLoadError && debtors.length === 0 ? (
+        // WSMR-A4r: okuma HATASI "Henüz borçlu kaydı yok" ile AYNI UI DEGILDIR.
+        <div className="text-center py-12" role="alert">
+          <p className="text-red-600 font-medium">{debtorsLoadError}</p>
+          <button type="button" onClick={fetchDebtors} className="mt-2 text-sm text-primary underline hover:no-underline">
+            Tekrar dene
+          </button>
+        </div>
       ) : debtors.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
           {debouncedSearch ? "Sonuç bulunamadı" : "Henüz borçlu kaydı yok"}
