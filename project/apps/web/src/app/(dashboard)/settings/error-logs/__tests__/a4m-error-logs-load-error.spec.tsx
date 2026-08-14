@@ -19,7 +19,15 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/components/error/ErrorLogDetailDrawer', () => ({
-  ErrorLogDetailDrawer: () => null,
+  // WSMR-A4v testleri `onResolved` callback'ini tetiklemek icin bu sahte
+  // "Cozuldu isaretle" dugmesini kullanir; gercek drawer UI'i bu spec'in
+  // konusu DEGIL.
+  ErrorLogDetailDrawer: ({ log, onResolved }: { log: { id: string } | null; onResolved: (l: { id: string; isResolved: boolean }) => void }) =>
+    log ? (
+      <button type="button" onClick={() => onResolved({ ...log, isResolved: true })}>
+        Çözüldü işaretle
+      </button>
+    ) : null,
 }));
 
 const mocked = api as unknown as {
@@ -107,5 +115,64 @@ describe('Hata Logları — 403-dışı okuma hatası', () => {
 
     expect(await screen.findAllByText('Hata')).not.toHaveLength(0);
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   WSMR-A4v — COZUM SONRASI ISTATISTIK YENILEMESI BASARISIZ OLURSA STAT
+   KARTLARI SESSIZCE BAYAT KALMAZ.
+
+   `handleResolved` cozum kaydini (log listesi + secili kayit) zaten DOGRU
+   uyguluyordu — bu ASLA sorgulanmadi. Yalniz ikincil `getErrorLogStats()`
+   yenilemesi basarisiz olursa eskiden `.catch(() => undefined)` ile
+   YUTULUYORDU; kartlar bir onceki (artik YANLIS) sayiyi gostermeye devam
+   ediyordu, uyarisiz. Ayni "—" mekanizmasi (WSMR-A4m) burada da kullanilir.
+   ───────────────────────────────────────────────────────────────────────── */
+describe('Hata Logları — çözüm sonrası istatistik yenileme hatası', () => {
+  /**
+   * Log satirini secer (ham `message` degil, humanized sunum render edilir).
+   * DIKKAT: "Yenile" dugmesinin `textContent`'i ikon SVG'si yuzunden bosluklu
+   * (" Yenile") -- birebir esitlik yerine `includes` ile disarida tutulur.
+   */
+  async function selectFirstLogRow() {
+    const row = await vi.waitFor(() => {
+      const buttons = screen.getAllByRole('button');
+      const found = buttons.find((b) => !b.textContent?.includes('Yenile'));
+      if (!found) throw new Error('Log satiri dugmesi henuz yok');
+      return found;
+    });
+    fireEvent.click(row);
+  }
+
+  it('AG HATASI: stat kartlari "—" ile isaretlenir, cozum kaydi KORUNUR', async () => {
+    mocked.getErrorLogs.mockResolvedValue(LOGS);
+    mocked.getErrorLogStats
+      .mockResolvedValueOnce(STATS)
+      .mockImplementationOnce(serverError);
+    render(<ErrorLogsPage />);
+
+    await selectFirstLogRow();
+    fireEvent.click(await screen.findByRole('button', { name: 'Çözüldü işaretle' }));
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    // Cozum kaydi (log listesi guncellemesi) hala uygulanmis durumda —
+    // satir hala render ediliyor (isResolved isareti gorunur).
+    expect(screen.getAllByRole('button').some((b) => b.textContent !== 'Yenile' && b.textContent !== 'Çözüldü işaretle')).toBe(true);
+  });
+
+  it('BASARILI yenileme: hata YOK, gercek sayilar gorunur', async () => {
+    mocked.getErrorLogs.mockResolvedValue(LOGS);
+    const UPDATED_STATS = { total: 5, errors: 1, warnings: 1, unresolved: 2 };
+    mocked.getErrorLogStats
+      .mockResolvedValueOnce(STATS)
+      .mockResolvedValueOnce(UPDATED_STATS);
+    render(<ErrorLogsPage />);
+
+    await selectFirstLogRow();
+    fireEvent.click(await screen.findByRole('button', { name: 'Çözüldü işaretle' }));
+
+    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.queryByText('—')).toBeNull();
   });
 });
