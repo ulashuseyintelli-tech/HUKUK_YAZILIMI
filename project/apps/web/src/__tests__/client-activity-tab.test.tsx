@@ -232,4 +232,68 @@ describe('ClientActivityTab', () => {
     );
     expect(screen.queryByRole('button', { name: 'Daha fazla göster' })).toBeNull();
   });
+
+  /* ─────────────────────────────────────────────────────────────────────
+     WSMR-A4u — "DAHA FAZLA" OKUMASI BAŞARISIZ OLURSA "LİSTE BİTTİ"
+     YALANI ÜRETİLMEZ.
+
+     Eski hâlde `loadMore`'un catch dalı `setHasNextPage(false)` çağırıyordu
+     — bu hem YANLIŞ bir "listenin sonuna gelindi" iddiası üretiyor hem de
+     TEK retry yolu olan "Daha fazla göster" düğmesini kendisi GİZLİYORDU
+     (kullanıcı kilitli kalıyordu). Artık hata GÖRÜNÜR olur; düğme YERİNDE
+     kalır; zaten yüklü öğeler SİLİNMEZ.
+     ───────────────────────────────────────────────────────────────────── */
+  it('AG HATASI: "Daha fazla göster" GIZLENMEZ, gorunur hata cikar, mevcut ogeler KORUNUR', async () => {
+    apiMock.get.mockResolvedValueOnce({
+      data: {
+        data: [notificationItem()],
+        pageInfo: { nextCursor: 'cursor-1', hasNextPage: true, limit: 25 },
+      },
+    });
+
+    render(<ClientActivityTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy());
+    const loadMoreButton = screen.getByRole('button', { name: 'Daha fazla göster' });
+
+    apiMock.get.mockRejectedValueOnce(new Error('network down'));
+    fireEvent.click(loadMoreButton);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    // Dugme GIZLENMEDI -- kullanici tekrar deneyebilir.
+    expect(screen.getByRole('button', { name: 'Daha fazla göster' })).toBeTruthy();
+    // Mevcut oge hala DOM'da.
+    expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('retry BASARILI olursa hata kalkar ve yeni oge eklenir', async () => {
+    apiMock.get.mockResolvedValueOnce({
+      data: {
+        data: [notificationItem()],
+        pageInfo: { nextCursor: 'cursor-1', hasNextPage: true, limit: 25 },
+      },
+    });
+
+    render(<ClientActivityTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy());
+    const loadMoreButton = screen.getByRole('button', { name: 'Daha fazla göster' });
+
+    apiMock.get.mockRejectedValueOnce(new Error('network down'));
+    fireEvent.click(loadMoreButton);
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+
+    apiMock.get.mockResolvedValueOnce({
+      data: {
+        data: [intakeItem()],
+        pageInfo: { nextCursor: null, hasNextPage: false, limit: 25 },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Daha fazla göster' }));
+
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Daha fazla göster' })).toBeNull();
+  });
 });

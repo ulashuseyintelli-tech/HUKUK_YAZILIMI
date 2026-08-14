@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Bell, CheckCircle2, Clock, FileText, Link2, Mail, MessageSquare, XCircle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 
 interface ClientActivityTabProps {
   clientId: string;
@@ -157,6 +158,10 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
   const [error, setError] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasNextPage, setHasNextPage] = useState(false);
+  // WSMR-A4u: "daha fazla" okuması basarisiz olursa hasNextPage FALSE
+  // yapilmiyor artik — bu, listenin gercekten bittigi yalanini uretiyor
+  // VE tek retry yolu olan dugmeyi kendisi SILIYORDU.
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
@@ -190,6 +195,7 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
   const loadMore = () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
+    setLoadMoreError(null);
     api
       .get<ClientTimelineResponse>(timelineEndpoint(clientId, nextCursor))
       .then((res) => {
@@ -197,7 +203,13 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
         setNextCursor(res.data?.pageInfo?.nextCursor ?? null);
         setHasNextPage(Boolean(res.data?.pageInfo?.hasNextPage));
       })
-      .catch(() => setHasNextPage(false))
+      .catch((e) => {
+        // WSMR-A4u: eskiden `setHasNextPage(false)` cagriliyordu — bu,
+        // "listenin sonuna gelindi" YALANINI uretiyordu VE tek retry yolu
+        // olan "Daha fazla goster" dugmesini kendisi GIZLIYORDU.
+        // `hasNextPage`/`nextCursor` DEGISTIRILMEZ; dugme yerinde kalir.
+        setLoadMoreError(toActionErrorMessage(e, 'Daha fazla kayıt yüklenemedi.'));
+      })
       .finally(() => setLoadingMore(false));
   };
 
@@ -261,6 +273,11 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
         })}
       </div>
 
+      {loadMoreError && (
+        <p role="alert" className="mb-1 text-center text-xs text-red-600">
+          {loadMoreError}
+        </p>
+      )}
       {hasNextPage && (
         <button
           type="button"
