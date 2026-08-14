@@ -936,6 +936,17 @@ export default function CaseDetailPage() {
     clientRequest: any;
   }>>([]);
   const [loadingExpenseData, setLoadingExpenseData] = useState(false);
+  // WSMR-A4-AB-2: TEK kaynak (`getExpenseThreeViewForCase`) UC ayri panele
+  // (tasks/muvekkilTalepleri/financeItems) besleniyor — eskiden okuma hatasi
+  // yalniz `console.error` ile YUTULUYOR, `expenseThreeViewData` hep `[]`
+  // donuyordu. Bu panelller BASKA kaynaklarla (addressTasks/addressNotes/
+  // collections) da BESLENDIGI icin tamamen bos GORUNMEZ — ama masraf
+  // kalemleri SESSIZCE kaybolur, kullanici bunu "bu dosyada masraf yok"
+  // sanabilir. Ayri state + yalniz-bu-kaynagi-tekrar-deneyen retry.
+  const [expenseThreeViewLoadError, setExpenseThreeViewLoadError] = useState<string | null>(null);
+  const [expenseThreeViewRetrying, setExpenseThreeViewRetrying] = useState(false);
+  const expenseThreeViewFetchTokenRef = useRef(0);
+  const expenseThreeViewFetchInFlightRef = useRef(false);
   
   // Fix highlight state
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
@@ -1406,17 +1417,45 @@ export default function CaseDetailPage() {
   // Fetch expense three-view data for OperationDeck
   const fetchExpenseThreeViewData = useCallback(async () => {
     if (!params.id) return;
+    if (expenseThreeViewFetchInFlightRef.current) return; // cift retry -> tek aktif istek
+    expenseThreeViewFetchInFlightRef.current = true;
+    const token = ++expenseThreeViewFetchTokenRef.current;
     try {
       setLoadingExpenseData(true);
       const data = await api.getExpenseThreeViewForCase(params.id as string);
-      setExpenseThreeViewData(data || []);
+      if (!isMountedRef.current || token !== expenseThreeViewFetchTokenRef.current) return; // bayat/unmount
+      // Govde SOZLESMEYE karsi dogrulanir: dizi DEGILSE (malformed 200 govdesi)
+      // asagidaki `.map()`/`.filter()` cagirilari (tasks/muvekkilTalepleri/
+      // financeItems) dogal bir TypeError firlatirdi.
+      if (!Array.isArray(data)) {
+        throw new Error("MALFORMED_EXPENSE_THREE_VIEW_RESPONSE");
+      }
+      setExpenseThreeViewData(data);
+      setExpenseThreeViewLoadError(null);
     } catch (error) {
-      console.error("Masraf verileri yüklenemedi:", error);
-      setExpenseThreeViewData([]);
+      if (!isMountedRef.current || token !== expenseThreeViewFetchTokenRef.current) return;
+      // Eskiden yalniz console.error ile YUTULUYORDU (expenseThreeViewData hep
+      // [] donuyordu). ONCEKI basariyla yuklenmis veri SILINMEZ — yalniz yeni
+      // hata bandi eklenir; tasks/muvekkilTalepleri/financeItems'daki DIGER
+      // kaynaklardan (addressTasks/addressNotes/collections) gelen ogeler bu
+      // hatadan ETKILENMEZ (ayri diziler, page.tsx render'inda birlestirilir).
+      setExpenseThreeViewLoadError(toActionErrorMessage(error, "Masraf görev/talep/finans verileri yüklenemedi."));
     } finally {
-      setLoadingExpenseData(false);
+      if (token === expenseThreeViewFetchTokenRef.current) {
+        expenseThreeViewFetchInFlightRef.current = false;
+        if (isMountedRef.current) setLoadingExpenseData(false);
+      }
     }
   }, [params.id]);
+
+  const retryExpenseThreeView = useCallback(async () => {
+    setExpenseThreeViewRetrying(true);
+    try {
+      await fetchExpenseThreeViewData();
+    } finally {
+      if (isMountedRef.current) setExpenseThreeViewRetrying(false);
+    }
+  }, [fetchExpenseThreeViewData]);
 
   // Fetch debtor detail for drawer
   const fetchDebtorDetail = useCallback(async (caseDebtorId: string) => {
@@ -3073,6 +3112,25 @@ export default function CaseDetailPage() {
                     className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {dispositionsRetrying ? "Deneniyor…" : "Tekrar dene"}
+                  </button>
+                </div>
+              )}
+              {expenseThreeViewLoadError && (
+                // WSMR-A4-AB-2: masraf ucclu-goruntu okumasi basarisiz olursa
+                // tasks/muvekkilTalepleri/financeItems panelleri SESSIZCE eksik
+                // KALMAZ — bu kaynak baska (addressTasks/addressNotes/
+                // collections) kaynaklarla PAYLASILDIGI icin panel tamamen bos
+                // gorunmeyebilir, ama masraf kalemleri kaybolur. Retry YALNIZ
+                // bu kaynagi tekrar dener (diger okumalar/mutation'lar TETIKLENMEZ).
+                <div role="alert" className="m-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+                  <span>{expenseThreeViewLoadError} Görev/talep/finans listelerinde masraf kalemleri eksik olabilir.</span>
+                  <button
+                    type="button"
+                    onClick={retryExpenseThreeView}
+                    disabled={expenseThreeViewRetrying}
+                    className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {expenseThreeViewRetrying ? "Deneniyor…" : "Tekrar dene"}
                   </button>
                 </div>
               )}

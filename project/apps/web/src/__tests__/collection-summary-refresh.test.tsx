@@ -466,6 +466,17 @@ describe("collection summary refresh", () => {
     expect(source).not.toContain("await api.deleteCollection(caseData.id, col.id);");
   });
 
+  /**
+   * WSMR-A4-AB-2 PREFLIGHT NOTU: bu test SADECE KABLOLAMA (wiring) doğrular —
+   * ilgili sembol/prop adlarının kaynakta VAR olduğunu, kaldırılmadığını
+   * kilitler. Bunun DAVRANIŞSAL kanıtı (okuma hatasında "gerçekten boş"
+   * iddiası ÜRETİLMEZ + retry + veri korunur + stale/dedup guard) AYRI ve
+   * DAHA GÜÇLÜ bir yerde yaşıyor: `cases/[id]/__tests__/
+   * a4-ab-1-case-detail-dispositions-load-error.spec.tsx` (11 render-tabanlı
+   * test). Sembol adı DEĞİŞSE bile davranış o dosyadaki testlerle KİLİTLİ
+   * kalır — burası yalnız "wiring sessizce sökülmesin" için ek bir savunma
+   * katmanıdır, davranışın TEK kanıtı DEĞİLDİR.
+   */
   it("case page dağıtım/mutabakat panelini disposition read modeliyle besler", () => {
     const source = readCasePageSource();
 
@@ -478,7 +489,10 @@ describe("collection summary refresh", () => {
     expect(source).toContain("setDispositionsLoadError(null);");
     expect(source).toContain("muhasebeKayitlari={operationAccountingRecords}");
     // Okuma hatasinda notr yer tutucuya duser (gercekten-bos iddiasi URETMEZ).
-    expect(source).toContain('accountingEmptyMessage={dispositionsLoadError ? "—" : operationAccountingEmptyMessage}');
+    // Tam ternary syntax'ina DEGIL, SEMANTIK bagimliliga (accountingEmptyMessage
+    // prop'u dispositionsLoadError'a kosullu) bakar — degisken/format
+    // yeniden duzenlense bile bu invariant kirilirsa test KIRILIR.
+    expect(source).toMatch(/accountingEmptyMessage=\{dispositionsLoadError[^}]*operationAccountingEmptyMessage\}/);
     expect(source).toContain("eligibleDispositionClients={eligibleDispositionClients}");
     expect(source).toContain("postingDispositionId={postingDispositionId}");
     expect(source).toContain("onRecommendDisposition={handleRecommendCollectionDisposition}");
