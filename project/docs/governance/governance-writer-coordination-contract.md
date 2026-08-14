@@ -2244,6 +2244,52 @@ writer/admin surfaces, schema, migration, runtime, or production activation;
 PR-2 (CAP-09A consumer implementation) requires a distinct task-bound Execution
 Grant consumed only after Phase B merges to canonical main.
 
+## OFFICE CAP-09A consumer validator whitespace repair — exact two-phase binding
+
+Owner-ratified 2026-08-14. This binding publishes one exact bootstrap tuple and
+then recognizes one exact repair PR for the CAP-09A consumer EG literal check.
+Phase A contains no repair behavior. Neither phase authorizes PR-1 governance
+content changes, PR-2 implementation, producer work, or a general control-plane
+allowlist.
+
+### Phase A — validator-repair binding
+
+```text
+Task ID : OFFICE-CAP-09A-CONSUMER-01-R01-VALIDATOR-WHITESPACE-REPAIR-BINDING-R01
+Mode : OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01
+Program : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+Base : 1dd2dea901dbe1f5f94eb8eb09011966fe4f7ee7
+Head ref : codex/office-cap09a-r01-validator-whitespace-repair-binding
+Scope : M project/scripts/governance-coordination.cjs
+        M project/scripts/governance-coordination.test.cjs
+        M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Base, branch, task/mode or exact M/M/M path-status drift is rejected. This
+bootstrap owner ratification authorizes only publication of this binding; repair
+logic in Phase A is prohibited.
+
+### Phase B — bounded whitespace repair
+
+```text
+Task ID : OFFICE-CAP-09A-CONSUMER-01-R01-VALIDATOR-WHITESPACE-REPAIR-R01
+Mode : OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_R01
+Head ref : codex/office-cap09a-r01-validator-whitespace-repair
+Scope : M project/scripts/governance-coordination.cjs
+        M project/scripts/governance-coordination.test.cjs
+TARGET: executionGrantRequiredLiterals whitespace equivalence only
+NORMALIZATION: collapse consecutive whitespace to one ASCII space, then trim
+AUTHORITY MARKER / SA BINDING / OTHER PATH LITERALS: UNCHANGED
+WILDCARD / PREFIX / GENERAL ALLOWLIST: PROHIBITED
+PR-1 / PR-2 AUTHORITY: NONE
+```
+
+Phase B must descend from a base containing this exact contract binding and can
+change only the exact M/M tuple. It cannot transfer to another task or branch,
+weaken path or authority checks, modify governance materialization content, or
+authorize product, schema, migration, DB, runtime, production, CAP-09A producer,
+W3F07, CLF-O0-01, or PermissionGrant work.
+
 ### Terminal bootstrap — MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01
 
 Programme `REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01`, task
