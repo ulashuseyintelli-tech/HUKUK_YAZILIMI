@@ -57,7 +57,7 @@ import { LegalResponsibleLawyerModal } from "@/components/case/LegalResponsibleL
 import { LegalResponsibleDrawerAction } from "@/components/case/legal-responsible-drawer-action";
 import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
-import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
+import { ExpenseRequestModal, BalanceWidget } from "@/components/expense";
 import { SendMessageModal } from "@/components/message/SendMessageModal";
 import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDetailDrawer } from "@/components/debtor";
 import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
