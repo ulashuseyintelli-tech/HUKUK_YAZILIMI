@@ -886,6 +886,9 @@ export default function CaseDetailPage() {
   // Address Task State (Yapılacaklar ve Notlar için)
   const [addressTasks, setAddressTasks] = useState<any[]>([]);
   const [addressNotes, setAddressNotes] = useState<any[]>([]);
+  // WSMR-A4y: okuma HATASI, Operasyon Masasi'nin gorev/talep/not listelerinin
+  // SESSIZCE bos gorunmesine (gercekten-bos ile ayirt edilemez) yol acmasin.
+  const [addressTasksLoadError, setAddressTasksLoadError] = useState<string | null>(null);
   const [loadingAddressTasks, setLoadingAddressTasks] = useState(false);
   
   // Expense Three-View State (OperationDeck entegrasyonu)
@@ -1293,6 +1296,7 @@ export default function CaseDetailPage() {
     if (!params.id) return;
     try {
       setLoadingAddressTasks(true);
+      setAddressTasksLoadError(null);
       const [tasksRes, notesRes] = await Promise.all([
         api.getAddressTasksForCase(params.id as string),
         api.getAddressNotesForCase(params.id as string),
@@ -1316,7 +1320,10 @@ export default function CaseDetailPage() {
       setAddressTasks(formattedTasks);
       setAddressNotes(notesRes?.notes || []);
     } catch (error) {
-      console.error("Adres görevleri yüklenemedi:", error);
+      // WSMR-A4y: eskiden yalniz console.error ile YUTULUYORDU — Operasyon
+      // Masasi'nin gorev/talep/not listeleri SESSIZCE bos kaliyordu; okuma
+      // hatasi gercekten-bos ile ayirt edilemiyordu.
+      setAddressTasksLoadError(toActionErrorMessage(error, "Adres görevleri yüklenemedi."));
     } finally {
       setLoadingAddressTasks(false);
     }
@@ -2955,6 +2962,18 @@ export default function CaseDetailPage() {
 
             {/* Operasyon Masası - Accordion Paneller */}
             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+              {addressTasksLoadError && (
+                // WSMR-A4y: adres gorev/not okumasi basarisiz olursa
+                // Operasyon Masasi'nin ilgili bolumleri SESSIZCE bos
+                // gorunmez — bu bant gorevler/talepler/notlar arasinda
+                // KISMEN veri eksik olabilecegini acikca bildirir.
+                <div role="alert" className="m-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+                  <span>{addressTasksLoadError}</span>
+                  <button type="button" onClick={fetchAddressTasksAndNotes} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+                    Tekrar dene
+                  </button>
+                </div>
+              )}
               <OperationDeck
                 caseId={caseData.id}
                 muhasebeKayitlari={operationAccountingRecords}
