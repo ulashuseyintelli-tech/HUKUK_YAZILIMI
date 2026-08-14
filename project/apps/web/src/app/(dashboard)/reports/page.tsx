@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { ResponsibleCandidateSelect, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
 import { splitPersonelByOwnership } from "@/lib/personel-report-grouping";
 import {
@@ -91,7 +92,11 @@ export default function ReportsPage() {
   const [riskReport, setRiskReport] = useState<{ summary: RiskSummary[]; cases: any[] } | null>(null);
   const [durumReport, setDurumReport] = useState<any[]>([]);
   const [caseList, setCaseList] = useState<CaseListItem[]>([]);
-  
+  // WSMR-A4q: okuma HATASI ilgili "Henüz ... yok" render'i ile AYNI görünemez.
+  const [reportsLoadError, setReportsLoadError] = useState<string | null>(null);
+  const [caseListLoadError, setCaseListLoadError] = useState<string | null>(null);
+  const [lookupsLoadError, setLookupsLoadError] = useState<string | null>(null);
+
   // Toplu güncelleme state'leri
   const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
   const [showBatchPanel, setShowBatchPanel] = useState(false);
@@ -142,6 +147,7 @@ export default function ReportsPage() {
 
   const loadLookups = async () => {
     try {
+      setLookupsLoadError(null);
       const [takipTuruRes, mahiyetTipiRes, riskRes, durumEtiketiRes, usersRes] = await Promise.all([
         api.get("/lookups/takipTuru"),
         api.get("/lookups/mahiyetTipi"),
@@ -157,13 +163,18 @@ export default function ReportsPage() {
         users: usersRes.data?.data || [],
       });
     } catch (error) {
-      console.error("Lookup verileri yüklenemedi:", error);
+      // WSMR-A4q: eskiden yalniz console.error ile YUTULUYORDU — filtre
+      // menuleri (takip turu, mahiyet tipi, risk, durum, kullanicilar)
+      // sessizce BOS aciliyordu; kullanici "bu secenek tanimli degil"
+      // sonucuna varabiliyordu.
+      setLookupsLoadError(toActionErrorMessage(error, "Filtre listeleri yüklenemedi."));
     }
   };
 
   const loadReports = async () => {
     setLoading(true);
     try {
+      setReportsLoadError(null);
       if (activeTab === "dashboard") {
         const res = await api.get("/reports/dashboard");
         setDashboardStats(res.data?.data);
@@ -180,7 +191,11 @@ export default function ReportsPage() {
         await loadCaseList();
       }
     } catch (error) {
-      console.error("Rapor yüklenemedi:", error);
+      // WSMR-A4q: eskiden yalniz console.error ile YUTULUYORDU — dashboard
+      // sekmesi tamamen BOS render ediliyor, personel/durum sekmeleri ise
+      // "Henüz veri yok" ile AYNI ekrana dusuyordu (asagidaki render
+      // kontrastina bakiniz).
+      setReportsLoadError(toActionErrorMessage(error, "Rapor yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -188,6 +203,7 @@ export default function ReportsPage() {
 
   const loadCaseList = async () => {
     try {
+      setCaseListLoadError(null);
       const params = new URLSearchParams();
       if (filters.takipTuruId) params.append("takipTuruId", filters.takipTuruId);
       if (filters.mahiyetTipiId) params.append("mahiyetTipiId", filters.mahiyetTipiId);
@@ -202,7 +218,9 @@ export default function ReportsPage() {
       const res = await api.get(`/reports/cases-with-summary?${params.toString()}`);
       setCaseList(res.data?.data || []);
     } catch (error) {
-      console.error("Dosya listesi yüklenemedi:", error);
+      // WSMR-A4q: eskiden yalniz console.error ile YUTULUYORDU — "Henüz
+      // dosya yok" render'i okuma hatasiyla AYNI ekrana dusuyordu.
+      setCaseListLoadError(toActionErrorMessage(error, "Dosya listesi yüklenemedi."));
     }
   };
 
@@ -346,6 +364,33 @@ export default function ReportsPage() {
           ))}
         </div>
       </div>
+
+      {/* WSMR-A4q: uc bagimsiz okuma hatasi (rapor/dosya listesi/filtre
+          lookup'lari) buradan GORUNUR — veri ZATEN varsa SILINMEZ. */}
+      {reportsLoadError && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+          <span>{reportsLoadError}</span>
+          <button type="button" onClick={loadReports} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+            Tekrar dene
+          </button>
+        </div>
+      )}
+      {caseListLoadError && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+          <span>{caseListLoadError}</span>
+          <button type="button" onClick={loadCaseList} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+            Tekrar dene
+          </button>
+        </div>
+      )}
+      {lookupsLoadError && (
+        <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-center justify-between gap-3">
+          <span>{lookupsLoadError} Bazı filtre seçenekleri EKSİK olabilir.</span>
+          <button type="button" onClick={loadLookups} className="shrink-0 rounded bg-amber-100 px-2 py-1 text-amber-800 hover:bg-amber-200">
+            Tekrar dene
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
@@ -742,7 +787,17 @@ export default function ReportsPage() {
                         </td>
                       </tr>
                     ))}
-                    {caseList.length === 0 && (
+                    {caseListLoadError && caseList.length === 0 ? (
+                      // WSMR-A4q: okuma HATASI "Henüz dosya yok" ile AYNI UI DEGILDIR.
+                      <tr>
+                        <td colSpan={11} className="px-4 py-8 text-center" role="alert">
+                          <p className="text-red-600 font-medium">{caseListLoadError}</p>
+                          <button type="button" onClick={loadCaseList} className="mt-2 text-sm text-primary underline hover:no-underline">
+                            Tekrar dene
+                          </button>
+                        </td>
+                      </tr>
+                    ) : caseList.length === 0 && (
                       <tr>
                         <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
                           Henüz dosya yok
@@ -759,6 +814,17 @@ export default function ReportsPage() {
           {/* Personel Performans — M2-G5b-2: Gerçek Kişi / Legacy iki bölüm (ownerType yok → legacy) */}
           {activeTab === "personel" && (() => {
             const { realPersons, legacy } = splitPersonelByOwnership(personelReport);
+            if (reportsLoadError && personelReport.length === 0) {
+              // WSMR-A4q: okuma HATASI "Henüz veri yok" ile AYNI UI DEGILDIR.
+              return (
+                <div className="bg-white rounded-xl border p-8 text-center" role="alert">
+                  <p className="text-red-600 font-medium">{reportsLoadError}</p>
+                  <button type="button" onClick={loadReports} className="mt-2 text-sm text-primary underline hover:no-underline">
+                    Tekrar dene
+                  </button>
+                </div>
+              );
+            }
             if (personelReport.length === 0) {
               return (
                 <div className="bg-white rounded-xl border p-8 text-center text-muted-foreground">
@@ -870,7 +936,15 @@ export default function ReportsPage() {
                   )}
                 </div>
               ))}
-              {durumReport.length === 0 && (
+              {reportsLoadError && durumReport.length === 0 ? (
+                // WSMR-A4q: okuma HATASI "Henüz ... yok" ile AYNI UI DEGILDIR.
+                <div className="text-center py-8" role="alert">
+                  <p className="text-red-600 font-medium">{reportsLoadError}</p>
+                  <button type="button" onClick={loadReports} className="mt-2 text-sm text-primary underline hover:no-underline">
+                    Tekrar dene
+                  </button>
+                </div>
+              ) : durumReport.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   Henüz durum etiketi atanmış dosya yok
                 </div>
