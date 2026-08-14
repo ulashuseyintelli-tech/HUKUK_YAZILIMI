@@ -849,6 +849,11 @@ export default function CaseDetailPage() {
   const [collectionDispositions, setCollectionDispositions] = useState<CollectionDispositionDTO[]>([]);
   const [postingDispositionId, setPostingDispositionId] = useState<string | null>(null);
   const [loadingFinance, setLoadingFinance] = useState(false);
+  // WSMR-A4w: okuma HATASI, alacak kalemlerinin (dues) sessizce YALNIZ
+  // caseData.principalAmount ile degistirilmesine (faiz/masraf/vekalet
+  // ucreti gibi diger kalemler sessizce KAYBOLUR) VE "Henüz ödeme yok"
+  // (collections) YANLIS iddiasina yol acmasin.
+  const [financeLoadError, setFinanceLoadError] = useState<string | null>(null);
   const [financialSummaryRefreshKey, setFinancialSummaryRefreshKey] = useState(0);
   
   // Due Modal State
@@ -1034,6 +1039,7 @@ export default function CaseDetailPage() {
     if (!params.id) return;
     try {
       setLoadingFinance(true);
+      setFinanceLoadError(null);
       const [duesRes, collectionsRes, dispositionsRes] = await Promise.all([
         api.getCaseDues(params.id as string),
         api.getCaseCollections(params.id as string),
@@ -1046,7 +1052,15 @@ export default function CaseDetailPage() {
       setCollections(collectionsRes || []);
       setCollectionDispositions(dispositionsRes || []);
     } catch (error) {
-      console.error("Finans verileri yüklenemedi:", error);
+      // WSMR-A4w: eskiden yalniz console.error ile YUTULUYORDU. `dues`
+      // bos kalinca render "Asıl Alacak: {caseData.principalAmount}" ile
+      // TAMAMMIS gibi gorunuyordu — faiz/masraf/vekalet ucreti gibi diger
+      // kalemler SESSIZCE kayboluyordu (yarim veri, tam veri gibi
+      // sunuluyordu). `collections` bos kalinca da "Henüz ödeme yok"
+      // okuma hatasiyla AYNI ekrana dusuyordu. Artik ikisi de gorunur
+      // hata + retry ile degistirilir; caseData.principalAmount fallback'i
+      // YALNIZ gercekten-bos (hata YOK) durumda kalir.
+      setFinanceLoadError(toActionErrorMessage(error, "Finans verileri yüklenemedi."));
     } finally {
       setLoadingFinance(false);
     }
@@ -2678,6 +2692,15 @@ export default function CaseDetailPage() {
                   <div className="bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2 min-h-[80px] max-h-[150px] overflow-y-auto">
                     {loadingFinance ? (
                       <p className="text-[9px] text-gray-400 text-center py-2">Yükleniyor...</p>
+                    ) : financeLoadError && dues.length === 0 ? (
+                      // WSMR-A4w: okuma HATASI yalniz "Asıl Alacak" ile
+                      // AYNI gorunemez — diger kalemler kaybolmus OLABILIR.
+                      <div className="text-center py-2" role="alert">
+                        <p className="text-[9px] text-red-600 font-medium">{financeLoadError}</p>
+                        <button type="button" onClick={fetchFinanceData} className="text-[9px] text-primary underline hover:no-underline">
+                          Tekrar dene
+                        </button>
+                      </div>
                     ) : dues.length > 0 ? (
                       <div className="space-y-1">
                         {dues.map((due: any) => {
@@ -2780,6 +2803,14 @@ export default function CaseDetailPage() {
                   <div className="bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2 min-h-[80px] max-h-[150px] overflow-y-auto">
                     {loadingFinance ? (
                       <p className="text-[9px] text-gray-400 text-center py-2">Yükleniyor...</p>
+                    ) : financeLoadError && collections.length === 0 ? (
+                      // WSMR-A4w: okuma HATASI "Henüz ödeme yok" ile AYNI UI DEGILDIR.
+                      <div className="text-center py-2" role="alert">
+                        <p className="text-[9px] text-red-600 font-medium">{financeLoadError}</p>
+                        <button type="button" onClick={fetchFinanceData} className="text-[9px] text-primary underline hover:no-underline">
+                          Tekrar dene
+                        </button>
+                      </div>
                     ) : collections.length > 0 ? (
                       <div className="space-y-1">
                         {[...collections]
