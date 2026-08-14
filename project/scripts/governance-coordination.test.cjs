@@ -524,6 +524,9 @@ function runFixtureGit(args, cwd, options = {}) {
 
 function createAuthorityGitFixture(repoPath, content) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-authority-'));
+  // Bu kurucu `t` almaz; temp dizini proses-sonu temizlik kaydina eklenir
+  // (P1-b kural 8 — sizinti kapatma; kayit defteri asagida tanimlidir).
+  processExitFixtureRoots.push(root);
   runFixtureGit(['init', '--quiet'], root);
   runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
   runFixtureGit(['config', 'user.email', 'governance-coordination@example.invalid'], root);
@@ -1233,6 +1236,85 @@ function getRootStage2ReconciliationSeed() {
   );
   return rootStage2ReconciliationSeed;
 }
+
+// --- P1-b fetch-seed -------------------------------------------------------
+// Gercek repodan (REPO_ROOT) yapilan tam `git fetch` her fixture'da tekrar
+// pack muzakeresi + obje kopyasi demektir. rootStage2ReconciliationSeed
+// deseninin genellemesi: canonical HEAD tarihi TEK immutable bare seed'e bir
+// kez alinir; fixture'lar objeleri `clone --shared` / alternates ile okur.
+// Seed SALT-OKUNUR kaynaktir — hicbir test mutation'i seed'e yazilmaz; tum
+// commit/ref mutasyonlari fixture'in kendi .git'inde kalir ve fixture'lar
+// birbirinden izole kalir (her fixture ayri klon/ayri temp dizin).
+// Ortuk suite invarianti (P1-b ile acikca belgelendi): fixture'larin
+// referansladigi her control-plane binding SHA'si KANONIK HEAD ATASI
+// olmalidir — seed yalniz HEAD tarihinden kurulur (GH-02 orphan-SHA dersinin
+// fail-closed hali).
+let executionBaseSeed;
+
+function getExecutionBaseSeed() {
+  if (executionBaseSeed) return executionBaseSeed;
+  // Memo YALNIZ tum kurulum adimlari basariyla bittikten sonra atanir;
+  // hata yolunda yarim dizin silinir ki sonraki cagri yeniden deneyebilsin
+  // (eski per-fixture-fetch dayanikliligiyla parite) ve temp sizmasin.
+  const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-execution-seed-'));
+  try {
+    runFixtureGit(['init', '--quiet', '--bare'], seed);
+    runFixtureGit(
+      ['fetch', '--quiet', '--no-tags', REPO_ROOT, 'HEAD:refs/heads/seed-main'],
+      seed,
+    );
+    runFixtureGit(['symbolic-ref', 'HEAD', 'refs/heads/seed-main'], seed);
+  } catch (error) {
+    fs.rmSync(seed, { recursive: true, force: true });
+    throw error;
+  }
+  process.once('exit', () => fs.rmSync(seed, { recursive: true, force: true }));
+  executionBaseSeed = seed;
+  return executionBaseSeed;
+}
+
+// Onceden init edilmis bir fixture reposuna seed objelerini alternates ile
+// baglar: kanonik SHA'lar obje kopyalanmadan cozulur olur. Eski davranistaki
+// `fetch REPO_ROOT <sha>` cagrisinin yerine gecer; ref OLUSTURMAZ (eski fetch
+// de yalniz FETCH_HEAD yazardi ve hicbir test FETCH_HEAD kullanmaz).
+// requiredSha verilirse varligi ACIKCA assert edilir: eksikse yaniltici bir
+// checkout hatasi yerine invarianti adlandiran tek satirlik hata uretilir.
+function linkExecutionSeedObjects(root, requiredSha) {
+  const infoDir = path.join(root, '.git', 'objects', 'info');
+  fs.mkdirSync(infoDir, { recursive: true });
+  fs.appendFileSync(
+    path.join(infoDir, 'alternates'),
+    `${path.join(getExecutionBaseSeed(), 'objects')}\n`,
+    'utf8',
+  );
+  if (requiredSha) {
+    const probe = spawnSync(
+      'git',
+      ['rev-parse', '--verify', '--quiet', `${requiredSha}^{commit}`],
+      { cwd: root, encoding: 'utf8', stdio: 'pipe', windowsHide: true },
+    );
+    assert.equal(
+      probe.status,
+      0,
+      `binding SHA ${requiredSha} seed'de yok — seed kanonik HEAD tarihinden ` +
+        "kurulur ve her binding SHA'si kanonik HEAD atasi olmalidir " +
+        '(worktree origin/main uzerine tazelenmeli; GH-02 orphan-SHA kontrolu yapin)',
+    );
+  }
+}
+
+// `t` almayan fixture kurucularinin temp dizinleri icin proses-sonu temizlik
+// kaydi (P1-b kural 8: tum temp dizinler t.after/finally ile temizlenir).
+const processExitFixtureRoots = [];
+process.once('exit', () => {
+  for (const dir of processExitFixtureRoots) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* temizlik hatasi test sonucunu etkilemez */
+    }
+  }
+});
 
 function createRootStage2ReconciliationFixture(t, options = {}) {
   const binding =
@@ -2188,10 +2270,7 @@ function createPb01ClosureTargetGitFixture(t, options = {}) {
     root,
   );
   runFixtureGit(['config', 'core.autocrlf', 'false'], root);
-  runFixtureGit(
-    ['fetch', '--quiet', '--no-tags', REPO_ROOT, target.implementation.squashSha],
-    root,
-  );
+  linkExecutionSeedObjects(root, target.implementation.squashSha);
   runFixtureGit(
     ['checkout', '--quiet', '-b', 'pb01-closure-base', target.implementation.squashSha],
     root,
@@ -2309,10 +2388,7 @@ function createKc01ClosureTargetGitFixture(t, options = {}) {
     root,
   );
   runFixtureGit(['config', 'core.autocrlf', 'false'], root);
-  runFixtureGit(
-    ['fetch', '--quiet', '--no-tags', REPO_ROOT, target.implementation.squashSha],
-    root,
-  );
+  linkExecutionSeedObjects(root, target.implementation.squashSha);
   runFixtureGit(
     ['checkout', '--quiet', '-b', 'kc01-closure-base', target.implementation.squashSha],
     root,
@@ -2430,10 +2506,7 @@ function createKc01Tr01OwnershipReconciliationTargetGitFixture(t, options = {}) 
     root,
   );
   runFixtureGit(['config', 'core.autocrlf', 'false'], root);
-  runFixtureGit(
-    ['fetch', '--quiet', '--no-tags', REPO_ROOT, target.implementation.sequenceAuthoritySha],
-    root,
-  );
+  linkExecutionSeedObjects(root, target.implementation.sequenceAuthoritySha);
   runFixtureGit(
     [
       'checkout',
@@ -2564,10 +2637,7 @@ function createGh02SyncedGitFixture(t) {
     root,
   );
   runFixtureGit(['config', 'core.autocrlf', 'false'], root);
-  runFixtureGit(
-    ['fetch', '--quiet', '--no-tags', REPO_ROOT, binding.workflowPr.canonicalMergeSha],
-    root,
-  );
+  linkExecutionSeedObjects(root, binding.workflowPr.canonicalMergeSha);
 
   runFixtureGit(
     ['checkout', '--quiet', '-b', 'workflow-head', binding.workflowPr.originalBaseSha],
@@ -2613,16 +2683,33 @@ function createDetachedGitFixture(t, startRef) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-execution-base-'));
   const root = path.join(parent, 'repo');
   t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
-  fs.mkdirSync(root);
-  runFixtureGit(['init', '--quiet'], root);
+  // P1-b: gercek repodan tam fetch yerine tek immutable seed'den paylasimli
+  // klon (objeler alternates ile okunur, kopyalanmaz). Testin tum commit/ref
+  // mutasyonlari klonun kendi .git'ine yazilir; seed salt-okunur kalir.
+  runFixtureGit(
+    [
+      'clone',
+      '--quiet',
+      '--origin',
+      'origin',
+      '--shared',
+      '--no-checkout',
+      getExecutionBaseSeed(),
+      root,
+    ],
+    parent,
+  );
   runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
   runFixtureGit(
     ['config', 'user.email', 'governance-coordination@example.invalid'],
     root,
   );
   runFixtureGit(['config', 'core.autocrlf', 'false'], root);
-  runFixtureGit(['fetch', '--quiet', '--no-tags', REPO_ROOT, 'HEAD'], root);
   runFixtureGit(['checkout', '--quiet', '--detach', startRef], root);
+  // Fixture sekli eski davranisla birebir: eski kurulumda hicbir yerel dal ve
+  // remote yoktu; klonun getirdigi origin ve seed-main dali kaldirilir.
+  runFixtureGit(['remote', 'remove', 'origin'], root);
+  runFixtureGit(['branch', '--quiet', '-D', 'seed-main'], root);
   return root;
 }
 
@@ -6983,6 +7070,7 @@ test('malformed isolated request fails before register generation', (t) => {
 
 test('duplicate request fingerprint is rejected deterministically', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gov-coord-'));
+  processExitFixtureRoots.push(tempRoot); // P1-b kural 8: sizinti kapatma
   const requestsRoot = path.join(tempRoot, 'requests');
   const resultsRoot = path.join(tempRoot, 'results');
   fs.mkdirSync(path.join(requestsRoot, 'one'), { recursive: true });
@@ -8268,7 +8356,7 @@ test('OFFICE authority binding accepts only unchanged protected-path descendants
     ['config', 'user.email', 'governance-coordination@example.invalid'],
     root,
   );
-  runFixtureGit(['fetch', '--quiet', '--no-tags', REPO_ROOT, binding.bindingPr.baseSha], root);
+  linkExecutionSeedObjects(root, binding.bindingPr.baseSha);
   runFixtureGit(['checkout', '--quiet', '-b', 'office-base', binding.bindingPr.baseSha], root);
   fs.writeFileSync(path.join(root, 'unrelated.md'), 'unrelated main advance\n', 'utf8');
   runFixtureGit(['add', '--all'], root);
