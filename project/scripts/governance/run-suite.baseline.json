@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "description": "Governance suite beklenen test sayisi baseline'lari. Her kayit belirli bir suiteSourceSha256'ya baglidir (P0-R1.5): suite kaynagi degistiginde eski kayit YENI suite'e uygulanmaz ve eski sonuclar otomatik reuse edilmez. Yeni kayit yalniz owner-reviewed olarak eklenir; kaynak, ilk persistent kosunun result.tap '# tests' degeridir. Kayit yoksa runner yalniz TAP ic tutarliligini zorlar ve run.json'a NONE_FOR_SUITE_SHA yazar.",
+  "baselines": []
+}
