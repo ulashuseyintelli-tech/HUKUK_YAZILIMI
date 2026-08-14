@@ -38,9 +38,14 @@ function LoginForm() {
   const prefillTenantSlug = searchParams.get("tenantSlug") ?? "";
   const [tenantSlug, setTenantSlug] = useState(prefillTenantSlug);
   const [email, setEmail] = useState("");
-  // OFFICE-AUTH-P02-HARDENING-R01: varsayılan false (fail-closed) — capability fetch
-  // başarısız olursa veya flag kapalıysa link hiç gösterilmez.
+  // OFFICE-AUTH-P02-HARDENING-R01: varsayılan false — capability fetch tamamlanana kadar
+  // veya flag kapalıysa link gösterilmez (bu KISIM değişmedi: link kendisi yalnız flag
+  // gerçekten açıkken görünür, tahmini/iyimser gösterim YOK).
+  // WSMR-A4-AA (Aday 2): fetch HATASI ile flag'in gerçekten kapalı olması artık AYRIŞTIRILIR
+  // — aşağıdaki `passwordRecoveryCheckError` bunu görünür kılar (sessiz işlev kaybı yerine).
   const [passwordRecoveryEnabled, setPasswordRecoveryEnabled] = useState(false);
+  const [passwordRecoveryCheckError, setPasswordRecoveryCheckError] = useState(false);
+  const [passwordRecoveryCheckAttempt, setPasswordRecoveryCheckAttempt] = useState(0);
 
   // Beni hatırla ile önceki ziyarette kaydedilmiş kurum/e-posta varsa doldur.
   // URL'den gelen açık tenantSlug (account-recovery dönüşü) önceliklidir.
@@ -56,18 +61,23 @@ function LoginForm() {
 
   useEffect(() => {
     let cancelled = false;
+    setPasswordRecoveryCheckError(false);
     api
       .getAuthCapabilities()
       .then((capabilities) => {
         if (!cancelled) setPasswordRecoveryEnabled(capabilities.passwordRecoveryEnabled);
       })
       .catch(() => {
-        // Fail-closed: fetch hatasında link gösterilmez (varsayılan false zaten korunur).
+        // WSMR-A4-AA (Aday 2): link YİNE gösterilmez (bilinmeyen durumda iyimser gösterim
+        // yok) ANCAK artık SESSİZ değil — "kayıt yok"a (burada: "özellik kapalı") karışan
+        // okuma hatası deseni: kullanıcı "bu kurumda şifre sıfırlama yok" ile "şu an
+        // kontrol edilemedi" arasındaki farkı görebilmeli + tekrar deneyebilmeli.
+        if (!cancelled) setPasswordRecoveryCheckError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [passwordRecoveryCheckAttempt]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -183,6 +193,16 @@ function LoginForm() {
                 <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
                   Şifremi unuttum
                 </Link>
+              )}
+              {!passwordRecoveryEnabled && passwordRecoveryCheckError && (
+                <button
+                  type="button"
+                  onClick={() => setPasswordRecoveryCheckAttempt((n) => n + 1)}
+                  className="text-sm text-muted-foreground hover:text-primary hover:underline"
+                  data-testid="password-recovery-check-retry"
+                >
+                  Şifremi unuttum bağlantısı yüklenemedi · Tekrar dene
+                </button>
               )}
             </div>
 

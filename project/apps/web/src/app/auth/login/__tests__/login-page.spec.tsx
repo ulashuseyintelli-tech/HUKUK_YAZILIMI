@@ -123,11 +123,33 @@ describe("LoginPage — OFFICE-AUTH-P01", () => {
       expect(screen.queryByRole("link", { name: /Şifremi unuttum/i })).toBeNull();
     });
 
-    it("[11] capability fetch HATA verirse → link gösterilmez (fail-closed)", async () => {
+    it("[11] capability fetch HATA verirse → link gösterilmez, AMA sessiz değil: görünür hata + retry çıkar (WSMR-A4-AA Aday 2)", async () => {
       getAuthCapabilitiesMock.mockRejectedValue(new Error("network error"));
       render(<LoginPage />);
       await waitFor(() => expect(getAuthCapabilitiesMock).toHaveBeenCalled());
       expect(screen.queryByRole("link", { name: /Şifremi unuttum/i })).toBeNull();
+      expect(await screen.findByTestId("password-recovery-check-retry")).toBeTruthy();
+    });
+
+    it("[12] retry tıklanınca capability fetch tekrar denenir → başarılıysa link görünür, retry kalkar", async () => {
+      getAuthCapabilitiesMock.mockRejectedValueOnce(new Error("network error"));
+      render(<LoginPage />);
+      const retryBtn = await screen.findByTestId("password-recovery-check-retry");
+
+      getAuthCapabilitiesMock.mockResolvedValueOnce({ passwordRecoveryEnabled: true });
+      fireEvent.click(retryBtn);
+
+      await waitFor(() => expect(screen.getByRole("link", { name: /Şifremi unuttum/i })).toBeTruthy());
+      expect(screen.queryByTestId("password-recovery-check-retry")).toBeNull();
+      expect(getAuthCapabilitiesMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("[13] flag GERÇEKTEN kapalı (hata YOK) → ne link ne retry gösterilir (gerçek 'yok' ile okuma hatası KARIŞMAZ)", async () => {
+      getAuthCapabilitiesMock.mockResolvedValue({ passwordRecoveryEnabled: false });
+      render(<LoginPage />);
+      await waitFor(() => expect(getAuthCapabilitiesMock).toHaveBeenCalled());
+      expect(screen.queryByRole("link", { name: /Şifremi unuttum/i })).toBeNull();
+      expect(screen.queryByTestId("password-recovery-check-retry")).toBeNull();
     });
   });
 });

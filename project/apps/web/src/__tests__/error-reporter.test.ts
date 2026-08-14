@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import {
   reportClientError,
   isNetworkError,
@@ -77,6 +80,64 @@ describe("reportClientError", () => {
     window.localStorage.setItem("token", "tok");
     reportClientError({ level: "WARN", message: "w" });
     expect(JSON.parse((global as any).fetch.mock.calls[0][1].body).level).toBe("WARN");
+  });
+});
+
+describe("reportClientError — dış catch (WSMR-A4-AA Aday 4)", () => {
+  /**
+   * DF002 `lib/error-reporter.ts:115` — dış `try { ... } catch { /* ASLA throw etme *\/ }`.
+   *
+   * Owner talebi: `getToken` VE fingerprint/metadata hazırlığı AYRI AYRI throw ettirilip
+   * (a) çağıranın etkilenmediği, (b) recursion/ikinci `reportClientError` çağrısı
+   * oluşmadığı kanıtlansın.
+   *
+   * Aşağıdaki iki test bu iki alt-senaryoyu AYRI AYRI tetikler — ama dürüstlük için not:
+   * `getToken()`'ın (satır 57-64) KENDİ iç try/catch'i zaten var. `window.localStorage`
+   * erişimi throw ederse bunu getToken kendi içinde yakalar ve `null` döner — dış catch'e
+   * (115) HİÇ ULAŞMAZ. Yani "getToken throw ederse dış catch korur" senaryosu MEVCUT
+   * kodda YAPISAL OLARAK ULAŞILAMAZ (getToken kendi savunmasını zaten yapıyor — iki
+   * katmanlı savunma). Aşağıdaki testler bunu AÇIKÇA ayırt eder: ilk test dış catch'i
+   * (115) GERÇEKTEN tetikler (fingerprint/metadata erişimi throw eder); ikinci test
+   * getToken'ın KENDİ iç catch'inin (61-63) uçtan uca aynı garantiyi sağladığını kanıtlar.
+   */
+
+  it("fingerprint/metadata hazırlığı throw ederse: DIŞ CATCH (115) çalışır — throw dışarı SIZMAZ, fetch ÇAĞRILMAZ", () => {
+    window.localStorage.setItem("token", "tok");
+    // input'un HER alanına erişim throw eder → fingerprint(input) içindeki ilk `i.level`
+    // erişiminde patlar; bu erişim try(115) İÇİNDE, herhangi bir iç try'da DEĞİL.
+    const poisoned = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("boom: poisoned input property access");
+        },
+      },
+    ) as any;
+
+    expect(() => reportClientError(poisoned)).not.toThrow();
+    expect((global as any).fetch).not.toHaveBeenCalled();
+  });
+
+  it("localStorage.getItem throw ederse: getToken KENDİ iç catch'iyle (61-63) yutar — reportClientError yine THROW ETMEZ, fetch ÇAĞRILMAZ", () => {
+    const spy = vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
+      throw new Error("SecurityError: localStorage devre dışı");
+    });
+    try {
+      expect(() => reportClientError({ message: "x" })).not.toThrow();
+      expect((global as any).fetch).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("RECURSION/ikinci reportClientError çağrısı YOK: kaynakta kendine referans sıfır (statik kilit)", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(resolve(here, "../lib/error-reporter.ts"), "utf8");
+    const selfCalls = src.match(/reportClientError\(/g) ?? [];
+    // Tek eşleşme: `export function reportClientError(` bildirimi. Gövdede kendine
+    // (veya başka bir yerde) ikinci bir `reportClientError(...)` çağrısı YOK — dış catch
+    // kendi hatasını raporlamak için reporter'ı TEKRAR ÇAĞIRMAZ (loop riski yok).
+    expect(selfCalls.length).toBe(1);
   });
 });
 
