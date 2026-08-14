@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 import { Shield, User, Clock, FileText, RefreshCw } from 'lucide-react';
 
 type AuditSafeScalar = string | number | boolean | null;
@@ -157,6 +158,8 @@ function SafePresenceNotice({ projection }: { projection?: AuditSafeProjection |
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A4t: okuma HATASI "Kayıt bulunamadı" ile AYNI görünemez.
+  const [logsLoadError, setLogsLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     action: '',
     entityType: '',
@@ -173,6 +176,7 @@ export default function AuditLogPage() {
   const loadLogs = async () => {
     try {
       setLoading(true);
+      setLogsLoadError(null);
       const params = new URLSearchParams();
       params.append('page', page.toString());
       params.append('limit', '20');
@@ -185,7 +189,9 @@ export default function AuditLogPage() {
         setTotalPages(res.data.totalPages || 1);
       }
     } catch (error) {
-      console.error('Audit logs yüklenemedi:', error);
+      // WSMR-A4t: eskiden yalniz console.error ile YUTULUYORDU — "Kayıt
+      // bulunamadı" render'i okuma hatasiyla AYNI ekrana dusuyordu.
+      setLogsLoadError(toActionErrorMessage(error, 'Denetim kayıtları yüklenemedi.'));
     } finally {
       setLoading(false);
     }
@@ -221,6 +227,17 @@ export default function AuditLogPage() {
           Yenile
         </button>
       </div>
+
+      {logsLoadError && logs.length > 0 && (
+        // WSMR-A4t: liste ZATEN yukluyken bir YENILEME basarisiz olursa
+        // mevcut veri SILINMEZ — yalnizca bu gorunur uyari belirir.
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+          <span>{logsLoadError}</span>
+          <button type="button" onClick={loadLogs} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+            Tekrar dene
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 mb-4 p-3 bg-white rounded-lg border">
         <select
@@ -271,6 +288,16 @@ export default function AuditLogPage() {
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-muted-foreground">
                     Yükleniyor...
+                  </td>
+                </tr>
+              ) : logsLoadError && logs.length === 0 ? (
+                // WSMR-A4t: okuma HATASI "Kayıt bulunamadı" ile AYNI UI DEGILDIR.
+                <tr>
+                  <td colSpan={6} className="p-8 text-center" role="alert">
+                    <p className="text-red-600 font-medium">{logsLoadError}</p>
+                    <button type="button" onClick={loadLogs} className="mt-2 text-sm text-primary underline hover:no-underline">
+                      Tekrar dene
+                    </button>
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
