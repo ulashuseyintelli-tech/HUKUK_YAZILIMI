@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, Edit2, Check, X, Upload, Download, Building2, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface ExecutionOffice {
   id: string;
@@ -29,6 +30,10 @@ export default function ExecutionOfficesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<ExecutionOffice>>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  // WSMR-A4s: okuma HATASI "İcra dairesi bulunamadı" ile AYNI görünemez.
+  // `message` üstteki gecici (3sn'de kaybolan) mutasyon geri bildirimidir —
+  // liste okuma hatasi ayri, KALICI bir durum gerektirir.
+  const [officesLoadError, setOfficesLoadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Sıralama state'leri
@@ -42,11 +47,14 @@ export default function ExecutionOfficesPage() {
   const loadOffices = async () => {
     try {
       setLoading(true);
+      setOfficesLoadError(null);
       const params = selectedCity ? `?city=${encodeURIComponent(selectedCity)}` : "";
       const response = await api.get(`/execution-offices${params}`);
       setOffices(response?.data?.data || []);
     } catch (err) {
-      console.error("İcra daireleri yüklenemedi:", err);
+      // WSMR-A4s: eskiden yalniz console.error ile YUTULUYORDU — "İcra
+      // dairesi bulunamadı" render'i okuma hatasiyla AYNI ekrana dusuyordu.
+      setOfficesLoadError(toActionErrorMessage(err, "İcra daireleri yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -252,9 +260,27 @@ export default function ExecutionOfficesPage() {
 
 
       {/* Tablo */}
+      {officesLoadError && offices.length > 0 && (
+        // WSMR-A4s: liste ZATEN yukluyken bir YENILEME basarisiz olursa
+        // mevcut veri SILINMEZ — yalnizca bu gorunur uyari belirir.
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 flex items-center justify-between gap-3">
+          <span>{officesLoadError}</span>
+          <button type="button" onClick={loadOffices} className="shrink-0 rounded bg-red-100 px-3 py-1 text-red-800 hover:bg-red-200">
+            Tekrar dene
+          </button>
+        </div>
+      )}
       <div className="bg-white rounded-xl border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-muted-foreground">Yükleniyor...</div>
+        ) : officesLoadError && sortedOffices.length === 0 ? (
+          // WSMR-A4s: okuma HATASI "İcra dairesi bulunamadı" ile AYNI UI DEGILDIR.
+          <div className="p-8 text-center" role="alert">
+            <p className="text-red-600 font-medium">{officesLoadError}</p>
+            <button type="button" onClick={loadOffices} className="mt-2 text-sm text-primary underline hover:no-underline">
+              Tekrar dene
+            </button>
+          </div>
         ) : sortedOffices.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">İcra dairesi bulunamadı</div>
         ) : (
