@@ -823,6 +823,11 @@ export default function CaseDetailPage() {
   const [caseDebtors, setCaseDebtors] = useState<DebtorListItemDTO[]>([]);
   const [debtorsSummary, setDebtorsSummary] = useState<DebtorsSummaryDTO | null>(null);
   const [loadingDebtors, setLoadingDebtors] = useState(false);
+  // WSMR-A4x: okuma HATASI notr "—" ile AYNI gorunemez. `caseDebtorLinks`
+  // (caseData.debtors) zaten meşru bir fallback — bu bayrak yalniz O DA
+  // bossa (gercek hata mi yoksa gercekten borclu yok mu belirsizligini
+  // gidermek icin) devreye girer.
+  const [debtorsLoadError, setDebtorsLoadError] = useState<string | null>(null);
   const [selectedDebtorDetail, setSelectedDebtorDetail] = useState<DebtorDetailDTO | null>(null);
   const [loadingDebtorDetail, setLoadingDebtorDetail] = useState(false);
   
@@ -1024,11 +1029,15 @@ export default function CaseDetailPage() {
     if (!params.id) return;
     try {
       setLoadingDebtors(true);
+      setDebtorsLoadError(null);
       const response = await api.getCaseDebtors(params.id as string, { includePassive: true });
       setCaseDebtors(response.items);
       setDebtorsSummary(response.summary);
     } catch (error) {
-      console.error("Borçlular yüklenemedi:", error);
+      // WSMR-A4x: eskiden yalniz console.error ile YUTULUYORDU. `caseDebtors`
+      // bos kalinca render `caseDebtorLinks` fallback'ine (meşru) DUSER; ama
+      // O DA bossa notr "—" ile okuma hatasi AYNI ekrana dusuyordu.
+      setDebtorsLoadError(toActionErrorMessage(error, "Borçlular yüklenemedi."));
     } finally {
       setLoadingDebtors(false);
     }
@@ -2642,6 +2651,15 @@ export default function CaseDetailPage() {
                       </div>
                     </div>
                   ))
+                ) : debtorsLoadError ? (
+                  // WSMR-A4x: iki kaynak da (yeni API + fallback) bossa,
+                  // okuma HATASI notr "—" ile AYNI UI DEGILDIR.
+                  <div className="text-center py-2" role="alert">
+                    <p className="text-[9px] text-red-600 font-medium">{debtorsLoadError}</p>
+                    <button type="button" onClick={fetchCaseDebtors} className="text-[9px] text-primary underline hover:no-underline">
+                      Tekrar dene
+                    </button>
+                  </div>
                 ) : (
                   <p className="text-[10px] text-gray-400 text-center py-2">—</p>
                 )}
