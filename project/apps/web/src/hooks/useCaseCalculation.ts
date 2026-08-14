@@ -12,7 +12,7 @@
  * @see ARCHITECTURE.md - Source of Truth Matrix
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api/client';
 
 // ============================================
@@ -118,30 +118,63 @@ export function useCaseCalculation({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // WSMR-A4-AB-3: bu hook eskiden hicbir iptal/bayatlik korumasi TASIMIYORDU —
+  // `await` sonrasi (basari VEYA hata dalinda) dogrudan setState cagriliyordu.
+  // Component GERCEKTEN unmount olmussa (rota degisimi, StrictMode'un simule
+  // ettigi mount->cleanup->remount gecisi DEGIL — o SENKRON, asagida ayrica
+  // aciklaniyor) veya `caseId`/`calculationDate` degisip YENI bir istek zaten
+  // baslatilmissa (hizli caseId degisimi), ESKI (bayat) istegin GEC gelen
+  // yaniti/reddi hala state'e YAZILIYORDU. Test ortaminda bu, cevre (jsdom/
+  // React) test dosyalari arasi teardown SIRASINDA gerceklesirse `window is
+  // not defined` unhandled rejection'ina yol aciyordu (React'in state-guncelleme
+  // zamanlamasi `window` global'ine erisir). Bu SESSIZCE yutulan bir hata
+  // DEGIL, GERCEK bir kusurdu — component/istek artik GECERSIZKEN state
+  // yazilmasi PRODUCTION'da da yanlis: kullanici baska bir dosyaya gecmisse
+  // eski dosyanin hesap ozeti YANLISLIKLA yeni ekrana yazilabilirdi.
+  //
+  // isMountedRef: GERCEK unmount korumasi (component omru boyunca gecerli).
+  // fetchTokenRef: jenerasyon sayaci — her fetchCalculation cagrisi kendi
+  // token'ini alir; yalniz EN SON baslatilan istegin sonucu state'e yazilir.
+  // StrictMode'un mount->cleanup->remount dongusu TAMAMEN SENKRONDUR (aralarinda
+  // await/microtask YOK) — bu yuzden isMountedRef bu gecis sirasinda YANLIS
+  // false TAKILI KALMAZ (bkz. a4-ab-2-preflight-strictmode-ismounted.spec.tsx'te
+  // AYNI desen icin zaten kanitlanan analiz).
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const fetchTokenRef = useRef(0);
+
   const fetchCalculation = useCallback(async (date?: string) => {
     if (!caseId) {
       setError('Case ID gerekli');
       return;
     }
 
+    const token = ++fetchTokenRef.current;
     setLoading(true);
     setError(null);
 
     try {
       const targetDate = date || calculationDate || new Date().toISOString().split('T')[0];
-      
+
       // Backend'den hesap özeti al
       const response = await apiClient.get<CaseCalculationResult>(
         `/cases/${caseId}/calculation-summary?date=${targetDate}`
       );
-      
+
+      if (!isMountedRef.current || token !== fetchTokenRef.current) return; // unmount/bayat istek
       setData(response.data);
     } catch (err: any) {
+      if (!isMountedRef.current || token !== fetchTokenRef.current) return; // unmount/bayat istek
       console.error('[useCaseCalculation] Error:', err);
       setError(err.message || 'Hesap özeti alınamadı');
       setData(null);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && token === fetchTokenRef.current) setLoading(false);
     }
   }, [caseId, calculationDate]);
 
