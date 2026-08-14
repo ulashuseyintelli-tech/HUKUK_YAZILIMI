@@ -9376,10 +9376,17 @@ test('OFFICE CAP-09A consumer binding cannot expand its own scope on replay', (t
   );
 });
 
-test('OFFICE CAP-09A consumer governance materialization validates each file against its own literals', (t) => {
+function officeCap09aGovernanceMaterializationFixture(t, producerDisposition) {
   const binding =
     coordination.OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01;
   const target = binding.targetPr;
+  const producerLiteral = target.executionGrantRequiredLiterals.find((literal) =>
+    literal.startsWith('DORMANT_CANONICAL /'),
+  );
+  assert.ok(producerLiteral);
+  const renderedProducerDisposition =
+    producerDisposition ??
+    '- CAP-09A producer work remains `DORMANT_CANONICAL / NOT AUTHORIZED / DO NOT\n  OPEN`.';
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-cap09a-target-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   runFixtureGit(['init', '--quiet'], root);
@@ -9418,21 +9425,94 @@ test('OFFICE CAP-09A consumer governance materialization validates each file aga
       `semanticAuthorityRef.kind : ${target.semanticAuthority.kind}`,
       `semanticAuthorityRef.path : ${target.semanticAuthority.path}`,
       `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
-      ...target.executionGrantRequiredLiterals,
+      ...target.executionGrantRequiredLiterals.map((literal) =>
+        literal === producerLiteral ? renderedProducerDisposition : literal,
+      ),
     ].join('\n') + '\n',
   );
   const head = commitFixture(root, 'target');
 
+  return { base, head, root, target };
+}
+
+function validateOfficeCap09aGovernanceMaterializationFixture(fixture) {
+  const { base, head, root, target } = fixture;
+  return coordination.validateOfficeCap09aConsumerGovernanceMaterializationScope({
+    base,
+    head,
+    headRef: target.headRef,
+    changes: target.changedPaths,
+    taskId: target.taskId,
+    cwd: root,
+  });
+}
+
+test('OFFICE CAP-09A consumer governance materialization validates real wrapped EG literals', (t) => {
+  const fixture = officeCap09aGovernanceMaterializationFixture(t);
+
   assert.deepEqual(
-    coordination.validateOfficeCap09aConsumerGovernanceMaterializationScope({
-      base,
-      head,
-      headRef: target.headRef,
-      changes: target.changedPaths,
-      taskId: target.taskId,
-      cwd: root,
-    }),
-    { mode: target.mode, taskId: target.taskId },
+    validateOfficeCap09aGovernanceMaterializationFixture(fixture),
+    { mode: fixture.target.mode, taskId: fixture.target.taskId },
+  );
+});
+
+test('OFFICE CAP-09A consumer governance materialization accepts single-line EG literals', (t) => {
+  const fixture = officeCap09aGovernanceMaterializationFixture(
+    t,
+    '- CAP-09A producer work remains `DORMANT_CANONICAL / NOT AUTHORIZED / DO NOT OPEN`.',
+  );
+
+  assert.deepEqual(
+    validateOfficeCap09aGovernanceMaterializationFixture(fixture),
+    { mode: fixture.target.mode, taskId: fixture.target.taskId },
+  );
+});
+
+test('OFFICE CAP-09A consumer governance materialization rejects EG literal with OPEN missing', (t) => {
+  const fixture = officeCap09aGovernanceMaterializationFixture(
+    t,
+    '- CAP-09A producer work remains `DORMANT_CANONICAL / NOT AUTHORIZED / DO NOT`.',
+  );
+
+  expectCode(
+    () => validateOfficeCap09aGovernanceMaterializationFixture(fixture),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('OFFICE CAP-09A consumer governance materialization rejects altered NOT AUTHORIZED wording', (t) => {
+  const fixture = officeCap09aGovernanceMaterializationFixture(
+    t,
+    '- CAP-09A producer work remains `DORMANT_CANONICAL / NOT PERMITTED / DO NOT OPEN`.',
+  );
+
+  expectCode(
+    () => validateOfficeCap09aGovernanceMaterializationFixture(fixture),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('OFFICE CAP-09A consumer governance materialization rejects reordered EG literal words', (t) => {
+  const fixture = officeCap09aGovernanceMaterializationFixture(
+    t,
+    '- CAP-09A producer work remains `NOT AUTHORIZED / DORMANT_CANONICAL / DO NOT OPEN`.',
+  );
+
+  expectCode(
+    () => validateOfficeCap09aGovernanceMaterializationFixture(fixture),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('OFFICE CAP-09A consumer governance materialization rejects altered EG literal punctuation', (t) => {
+  const fixture = officeCap09aGovernanceMaterializationFixture(
+    t,
+    '- CAP-09A producer work remains `DORMANT_CANONICAL - NOT AUTHORIZED / DO NOT OPEN`.',
+  );
+
+  expectCode(
+    () => validateOfficeCap09aGovernanceMaterializationFixture(fixture),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
   );
 });
 

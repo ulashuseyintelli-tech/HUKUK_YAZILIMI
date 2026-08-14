@@ -7897,8 +7897,14 @@ function validateOfficeCap09aConsumerGovernanceMaterializationScope(options) {
   const grant = gitShow(head, target.executionGrant.path, cwd);
   assertExactAuthorityMarker(grant, target.executionGrant);
   assertExactSemanticBinding(grant, target.semanticAuthority);
+  const normalizedExecutionGrant =
+    normalizeOfficeCap09aExecutionGrantLiteralWhitespace(grant);
   for (const literal of target.executionGrantRequiredLiterals) {
-    if (!grant.includes(literal)) {
+    if (
+      !normalizedExecutionGrant.includes(
+        normalizeOfficeCap09aExecutionGrantLiteralWhitespace(literal),
+      )
+    ) {
       reject(
         'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
         `OFFICE CAP-09A consumer EG is missing ${literal}`,
@@ -7907,6 +7913,10 @@ function validateOfficeCap09aConsumerGovernanceMaterializationScope(options) {
   }
 
   return { mode: target.mode, taskId: target.taskId };
+}
+
+function normalizeOfficeCap09aExecutionGrantLiteralWhitespace(value) {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function validateOfficeCap09aConsumerWhitespaceRepairBindingScope(options) {
