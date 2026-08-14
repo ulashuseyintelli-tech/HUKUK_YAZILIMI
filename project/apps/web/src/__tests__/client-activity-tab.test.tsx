@@ -295,5 +295,47 @@ describe('ClientActivityTab', () => {
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Daha fazla göster' })).toBeNull();
+    // WSMR-A4 RECONCILIATION: catch dali `nextCursor`'u DEGISTIRMEZ (yalniz
+    // basari dalinda guncellenir) — retry AYNI cursor-1 ile gider, YENI/YANLIS
+    // bir cursor UYDURULMAZ. Ikinci (retry) cagrinin URL'i dogrudan kontrol
+    // edilir; tek toplam-cagri-sayisi degil, GERCEK parametre.
+    expect(apiMock.get).toHaveBeenNthCalledWith(
+      2,
+      '/clients/client-1/timeline?limit=25&sources=client_notification,intake_submission,client_intake_link_delivery,client_document_request,poa_expiry_notification_delivery&cursor=cursor-1',
+    );
+  });
+
+  /* WSMR-A4 RECONCILIATION: cift-tik kilidi — `loadingMore` bayragi ayni
+     tikta ikinci istegi ENGELLER. Bu guard onceden VARDI (WSMR-A4u
+     dokunmadi) ama davranissal olarak dogrulanan bir test EKSIKTI. */
+  it('CIFT TIK: loadingMore aktifken ikinci tik EK CAGRI URETMEZ', async () => {
+    apiMock.get.mockResolvedValueOnce({
+      data: {
+        data: [notificationItem()],
+        pageInfo: { nextCursor: 'cursor-1', hasNextPage: true, limit: 25 },
+      },
+    });
+
+    render(<ClientActivityTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy());
+    const loadMoreButton = screen.getByRole('button', { name: 'Daha fazla göster' });
+
+    let resolveSecondCall!: (v: unknown) => void;
+    apiMock.get.mockReturnValueOnce(new Promise((r) => { resolveSecondCall = r; }));
+
+    fireEvent.click(loadMoreButton);
+    // Istek HALA beklerken (loadingMore=true) ikinci tik: guard EK cagriyi
+    // engellemeli.
+    fireEvent.click(loadMoreButton);
+
+    resolveSecondCall({
+      data: { data: [intakeItem()], pageInfo: { nextCursor: null, hasNextPage: false, limit: 25 } },
+    });
+
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
+    // Toplam cagri: ilk yukleme (1) + tek loadMore (1) = 2. Ikinci tik
+    // FAZLADAN bir cagri URETMEDI.
+    expect(apiMock.get).toHaveBeenCalledTimes(2);
   });
 });
