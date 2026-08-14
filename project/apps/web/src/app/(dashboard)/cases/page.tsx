@@ -14,6 +14,7 @@ import {
 import { CASE_STATUS_OPTIONS } from "@/lib/case-statuses";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { bulkAssignResponsible, type BulkAssignResult } from "@/lib/bulk-assign-responsible";
 import { BulkDocumentGenerator } from "@/components/case";
 import { ResponsibleCandidateSelect, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
@@ -716,6 +717,9 @@ export default function CasesPage() {
   
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A4o: okuma HATASI "Takip bulunamadı" ile AYNI gorunemez — ana takip
+  // listesi sayfasi bu bulgu icin en yuksek trafikli yuzey.
+  const [casesLoadError, setCasesLoadError] = useState<string | null>(null);
   const [selectedCases, setSelectedCases] = useState<string[]>([]);
   const [showBulkDocModal, setShowBulkDocModal] = useState(false);
   const [processingIds, setProcessingIds] = useState<string[]>([]);
@@ -1109,6 +1113,7 @@ export default function CasesPage() {
   const fetchCases = async () => {
     try {
       setLoading(true);
+      setCasesLoadError(null);
       const params: any = {};
       if (filters.status.length > 0) params.status = filters.status.join(',');
       if (filters.caseType.length > 0) params.type = filters.caseType.join(',');
@@ -1122,14 +1127,29 @@ export default function CasesPage() {
       if (urlClientId) params.clientId = urlClientId;
 
       const response = await api.getCases(params);
-      setCases(response.data || []);
+      // Govde SOZLESMEYE karsi dogrulanir: HTTP 200 ile donen malformed/bos bir
+      // govde BASARI SAYILMAZ. Aksi halde `response.data` erisimi dogal bir
+      // `TypeError` firlatir — bu da asagidaki `toActionErrorMessage`'in AG
+      // HATASI sezgisiyle (`.name === "TypeError"`) yanlislikla "sunucuya
+      // ulasilamadi" olarak siniflandirilir (bkz. lib/action-error.ts
+      // `isNetworkError`). Sunucu aslinda YANIT VERDI, yalniz govde bozuk —
+      // kullaniciya dogru mesaj gitmesi icin acikca `Error` firlatilir.
+      if (!response || typeof response !== "object" || !Array.isArray(response.data)) {
+        throw new Error("MALFORMED_CASES_RESPONSE");
+      }
+      setCases(response.data);
       // SAHIPSIZ-DOSYALAR-G1b: doğru sahipsiz toplamı (server-side; chip rozeti). Best-effort.
       api.get('/cases/stats').then((r: any) => {
         setOwnerlessCount(r?.data?.ownerless ?? 0);
         setLegalResponsibleMissingCount(r?.data?.legalResponsibleMissing ?? 0); // WP-3a
       }).catch(() => {});
     } catch (error) {
-      console.error("Takipler yüklenemedi:", error);
+      // WSMR-A4o: eskiden yalniz console.error ile YUTULUYORDU. Ilk yuklemede
+      // `cases` baslangic degeri ([]) oldugu icin bu, asagidaki "Takip
+      // bulunamadı" (gercekten bos) render'i ile AYNI ekrana dusuyordu — okuma
+      // hatasi yokluk gibi gorunuyordu. Artik gorunur olur; mevcut `cases`
+      // (bir onceki basarili yuklemeden kalan) SILINMEZ.
+      setCasesLoadError(toActionErrorMessage(error, "Takipler yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -1654,6 +1674,21 @@ export default function CasesPage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {casesLoadError && cases.length > 0 && (
+        /* WSMR-A4o: liste ZATEN yukluyken bir YENILEME basarisiz olursa mevcut
+           veri SILINMEZ — yalnizca bu gorunur uyari belirir (tablo govdesindeki
+           hata+retry hucresi yalniz veri hic YOKKEN gorunur, bununla CAKISMAZ). */
+        <div role="alert" className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+          <span>{casesLoadError}</span>
+          <button
+            type="button"
+            onClick={fetchCases}
+            className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
       {lookupFailures.length > 0 && (
         /* WSMR-A4k: filtre menusu BOS acildiysa bunun nedeni gorunur olmali. */
         <div role="alert" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -2464,6 +2499,20 @@ export default function CasesPage() {
                 <td colSpan={12} className="p-8 text-center">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                   <p className="text-muted-foreground">Yükleniyor...</p>
+                </td>
+              </tr>
+            ) : casesLoadError && sortedCases.length === 0 ? (
+              // WSMR-A4o: okuma HATASI "Takip bulunamadı" ile AYNI UI DEGILDIR.
+              <tr>
+                <td colSpan={12} className="p-8 text-center" role="alert">
+                  <p className="text-red-600 font-medium">{casesLoadError}</p>
+                  <button
+                    type="button"
+                    onClick={fetchCases}
+                    className="mt-2 text-sm text-primary underline hover:no-underline"
+                  >
+                    Tekrar dene
+                  </button>
                 </td>
               </tr>
             ) : sortedCases.length === 0 ? (
