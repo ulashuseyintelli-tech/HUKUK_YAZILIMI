@@ -66,7 +66,18 @@ export default function ErrorLogsPage() {
   const handleResolved = (updated: ErrorLogRecord) => {
     setSelected(updated);
     setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-    api.getErrorLogStats().then(setStats).catch(() => undefined);
+    // WSMR-A4v: cozum kaydi BASARILI oldu (yukaridaki iki satir zaten
+    // uygulandi) — ama bu ikincil sayac YENILEMESI basarisiz olursa stat
+    // kartlari eskiden SESSIZCE bayat kaliyordu (yanlis sayi, uyarisiz).
+    // `loadError` render'i zaten "—" ile bu durumu isaretleyen tek
+    // mekanizma (satir ~112-115); ayni sinyal burada da kullanilir.
+    api
+      .getErrorLogStats()
+      .then((s) => {
+        setStats(s);
+        setLoadError(null);
+      })
+      .catch((e) => setLoadError(toActionErrorMessage(e, "İstatistikler güncellenemedi.")));
   };
 
   const onFilter = (setter: (v: string) => void) => (v: string) => {
