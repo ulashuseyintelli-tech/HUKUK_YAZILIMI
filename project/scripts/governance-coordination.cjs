@@ -2145,6 +2145,52 @@ const OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01 =
       ]),
     }),
   });
+const OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01 =
+  Object.freeze({
+    taskId:
+      'OFFICE-CAP-09A-CONSUMER-01-R01-VALIDATOR-WHITESPACE-REPAIR-BINDING-R01',
+    programId: 'OFFICE-P4-AUTHORIZATION-COMPLETION-R01',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    bindingPr: Object.freeze({
+      mode:
+        'OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01',
+      baseSha: '1dd2dea901dbe1f5f94eb8eb09011966fe4f7ee7',
+      headRef:
+        'codex/office-cap09a-r01-validator-whitespace-repair-binding',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId:
+        'OFFICE-CAP-09A-CONSUMER-01-R01-VALIDATOR-WHITESPACE-REPAIR-R01',
+      mode: 'OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_R01',
+      headRef: 'codex/office-cap09a-r01-validator-whitespace-repair',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+      ]),
+    }),
+  });
 const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01 =
   Object.freeze({
     taskId:
@@ -5183,6 +5229,47 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
 
+  const officeCap09aWhitespaceRepairBinding =
+    OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
+  const officeCap09aWhitespaceRepairBindingPr =
+    officeCap09aWhitespaceRepairBinding.bindingPr;
+  const officeCap09aWhitespaceRepairTargetPr =
+    officeCap09aWhitespaceRepairBinding.targetPr;
+
+  if (
+    context.headRef === officeCap09aWhitespaceRepairBindingPr.headRef ||
+    (context.base === officeCap09aWhitespaceRepairBindingPr.baseSha &&
+      hasExactChangeSet(changes, officeCap09aWhitespaceRepairBindingPr.changedPaths))
+  ) {
+    if (
+      context.base !== officeCap09aWhitespaceRepairBindingPr.baseSha ||
+      context.headRef !== officeCap09aWhitespaceRepairBindingPr.headRef ||
+      !hasExactChangeSet(changes, officeCap09aWhitespaceRepairBindingPr.changedPaths)
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE CAP-09A consumer validator whitespace repair binding requires its exact base, branch and M/M/M scope',
+      );
+    }
+    return {
+      mode: officeCap09aWhitespaceRepairBindingPr.mode,
+      taskId: officeCap09aWhitespaceRepairBinding.taskId,
+    };
+  }
+
+  if (context.headRef === officeCap09aWhitespaceRepairTargetPr.headRef) {
+    if (!hasExactChangeSet(changes, officeCap09aWhitespaceRepairTargetPr.changedPaths)) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE CAP-09A consumer validator whitespace repair requires its exact M/M scope',
+      );
+    }
+    return {
+      mode: officeCap09aWhitespaceRepairTargetPr.mode,
+      taskId: officeCap09aWhitespaceRepairTargetPr.taskId,
+    };
+  }
+
   if (context.headRef === nafakaTerminalTargetPr.headRef) {
     if (!hasExactChangeSet(changes, nafakaTerminalTargetPr.changedPaths)) {
       reject(
@@ -7815,6 +7902,89 @@ function validateOfficeCap09aConsumerGovernanceMaterializationScope(options) {
       reject(
         'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
         `OFFICE CAP-09A consumer EG is missing ${literal}`,
+      );
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
+function validateOfficeCap09aConsumerWhitespaceRepairBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
+  const stage1 = binding.bindingPr;
+  const target = binding.targetPr;
+
+  if (
+    base !== stage1.baseSha ||
+    headRef !== stage1.headRef ||
+    taskId !== binding.taskId ||
+    !hasExactChangeSet(changes, stage1.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE CAP-09A consumer validator whitespace repair binding requires its exact base, task, branch and M/M/M scope',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    stage1.mode,
+    stage1.baseSha,
+    stage1.headRef,
+    target.taskId,
+    target.mode,
+    target.headRef,
+    ...stage1.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    ...target.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer validator whitespace repair contract is missing ${expectedLiteral}`,
+      );
+    }
+  }
+  return { mode: stage1.mode, taskId: binding.taskId };
+}
+
+function validateOfficeCap09aConsumerWhitespaceRepairScope(options) {
+  const { base, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
+  const target = binding.targetPr;
+
+  if (
+    headRef !== target.headRef ||
+    taskId !== target.taskId ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE CAP-09A consumer validator whitespace repair requires its exact task, branch and M/M scope',
+    );
+  }
+
+  const contract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    target.taskId,
+    target.mode,
+    target.headRef,
+    ...target.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer validator whitespace repair target contract is missing ${expectedLiteral}`,
       );
     }
   }
@@ -11440,6 +11610,29 @@ function validatePrScope(options) {
     });
   }
 
+  const officeCap09aWhitespaceRepairBinding =
+    OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
+  if (classification.mode === officeCap09aWhitespaceRepairBinding.bindingPr.mode) {
+    return validateOfficeCap09aConsumerWhitespaceRepairBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+  if (classification.mode === officeCap09aWhitespaceRepairBinding.targetPr.mode) {
+    return validateOfficeCap09aConsumerWhitespaceRepairScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
   if (classification.mode === MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01.mode) {
     return validateTransitionBootstrapScope({ base, head, headRef, changes, cwd });
   }
@@ -12596,6 +12789,7 @@ module.exports = {
   validateTransitionBootstrapScope,
   OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01,
   OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01,
+  OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01,
   OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
   OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
   REGISTER_REPO_PATH,
@@ -12673,6 +12867,8 @@ module.exports = {
   validateNafakaTerminalStateCloseoutScope,
   validateOfficeCap09aConsumerControlPlaneBindingScope,
   validateOfficeCap09aConsumerGovernanceMaterializationScope,
+  validateOfficeCap09aConsumerWhitespaceRepairBindingScope,
+  validateOfficeCap09aConsumerWhitespaceRepairScope,
   validateNafakaTerminalStateControlPlaneBindingScope,
   validateNafakaTerminalStateReconciliationScope,
   validateTr01AuthorityBootstrapBindingScope,

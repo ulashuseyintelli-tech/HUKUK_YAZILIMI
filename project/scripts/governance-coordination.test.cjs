@@ -9436,6 +9436,131 @@ test('OFFICE CAP-09A consumer governance materialization validates each file aga
   );
 });
 
+function officeCap09aWhitespaceRepairBindingFixture(t) {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  return { ...fixture, binding };
+}
+
+test('OFFICE CAP-09A consumer validator whitespace repair binding accepts only the exact tuple', (t) => {
+  const fixture = officeCap09aWhitespaceRepairBindingFixture(t);
+  const { binding } = fixture;
+  assert.deepEqual(
+    coordination.validateOfficeCap09aConsumerWhitespaceRepairBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      taskId: binding.taskId,
+      changes: binding.bindingPr.changedPaths,
+      cwd: fixture.root,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.taskId },
+  );
+});
+
+test('OFFICE CAP-09A consumer validator whitespace repair binding rejects base, task, branch and scope drift', (t) => {
+  const fixture = officeCap09aWhitespaceRepairBindingFixture(t);
+  const { binding } = fixture;
+  const exact = {
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    taskId: binding.taskId,
+    changes: binding.bindingPr.changedPaths,
+    cwd: fixture.root,
+  };
+  for (const mutation of [
+    { base: fixture.unrelated },
+    { taskId: `${binding.taskId}-EXTRA` },
+    { headRef: `${binding.bindingPr.headRef}-copy` },
+    { changes: binding.bindingPr.changedPaths.slice(0, 2) },
+  ]) {
+    expectCode(
+      () =>
+        coordination.validateOfficeCap09aConsumerWhitespaceRepairBindingScope({
+          ...exact,
+          ...mutation,
+        }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('OFFICE CAP-09A consumer validator whitespace repair target classification and dispatch accept only M/M', (t) => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
+  const target = binding.targetPr;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-cap09a-whitespace-repair-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  writeFixtureRepoFile(
+    root,
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  writeFixtureRepoFile(root, target.changedPaths[0].path, '// base validator\n');
+  writeFixtureRepoFile(root, target.changedPaths[1].path, '// base tests\n');
+  const base = commitFixture(root, 'base');
+  writeFixtureRepoFile(root, target.changedPaths[0].path, '// repaired validator\n');
+  writeFixtureRepoFile(root, target.changedPaths[1].path, '// repaired tests\n');
+  const head = commitFixture(root, 'repair');
+
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base,
+      head,
+      headRef: target.headRef,
+      cwd: root,
+    }),
+    { mode: target.mode, taskId: target.taskId },
+  );
+});
+
+test('OFFICE CAP-09A consumer validator whitespace repair target cannot authorize another task, branch or path', (t) => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
+  const target = binding.targetPr;
+  const fixture = officeCap09aWhitespaceRepairBindingFixture(t);
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerWhitespaceRepairScope({
+        base: fixture.head,
+        headRef: target.headRef,
+        taskId: `${target.taskId}-EXTRA`,
+        changes: target.changedPaths,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  for (const headRef of [`${target.headRef}-copy`, `${target.headRef}/*`]) {
+    expectCode(
+      () => coordination.classifyPrChangeSet(target.changedPaths, { headRef }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(
+        [
+          ...target.changedPaths,
+          { status: 'M', path: 'project/docs/governance/decision-log.md' },
+        ],
+        { headRef: target.headRef },
+      ),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
 function buildAuthorityMarkerForTest(authority) {
   return coordination.buildAuthorityMarker(authority);
 }
