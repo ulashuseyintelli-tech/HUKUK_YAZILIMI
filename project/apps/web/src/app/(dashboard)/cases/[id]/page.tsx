@@ -543,9 +543,14 @@ interface ExecutionOfficeSelectProps {
   saving: boolean;
   onChange: (officeId: string) => void;
   currentOfficeName?: string;
+  // WSMR-A4z: okuma HATASI, listenin "İcra dairesi yok" ile AYNI gorunmesini
+  // ONLEMEK icin ayri gecirilir. Liste zaten bossa secim yapilamaz — fail-closed
+  // yapi bu ayrimdan BAGIMSIZ zaten dogru; tek eksik gorunurlukti.
+  loadError?: string | null;
+  onRetry?: () => void;
 }
 
-function ExecutionOfficeSelect({ value, offices, loading, saving, onChange, currentOfficeName }: ExecutionOfficeSelectProps) {
+function ExecutionOfficeSelect({ value, offices, loading, saving, onChange, currentOfficeName, loadError, onRetry }: ExecutionOfficeSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -621,7 +626,21 @@ function ExecutionOfficeSelect({ value, offices, loading, saving, onChange, curr
               </div>
             )}
 
-            {filteredOffices.length === 0 ? (
+            {loadError && filteredOffices.length === 0 && !search ? (
+              // WSMR-A4z: okuma HATASI "İcra dairesi yok" ile AYNI UI DEGILDIR.
+              <div className="px-3 py-4 text-center" role="alert">
+                <p className="text-sm text-red-600 font-medium">{loadError}</p>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onRetry(); }}
+                    className="mt-1 text-xs text-primary underline hover:no-underline"
+                  >
+                    Tekrar dene
+                  </button>
+                )}
+              </div>
+            ) : filteredOffices.length === 0 ? (
               <div className="px-3 py-4 text-sm text-gray-500 text-center">
                 {search ? 'Sonuç bulunamadı' : 'İcra dairesi yok'}
               </div>
@@ -781,6 +800,10 @@ export default function CaseDetailPage() {
   const [teamModalOpen, setTeamModalOpen] = useState(false);
   const [availableLawyers, setAvailableLawyers] = useState<any[]>([]);
   const [availableStaff, setAvailableStaff] = useState<any[]>([]);
+  // WSMR-A4z: okuma HATASI "Eklenebilecek avukat/personel yok" ile AYNI
+  // görünemez. Liste bos kaldigi icin "Ekle" dugmesi zaten YOK — fail-closed
+  // yapisal olarak dogru; eksik olan GORUNURLUKTU.
+  const [teamOptionsLoadError, setTeamOptionsLoadError] = useState<string | null>(null);
   
   // Personel Drawer State
   const [staffDrawerOpen, setStaffDrawerOpen] = useState(false);
@@ -834,6 +857,8 @@ export default function CaseDetailPage() {
   // İcra Dairesi Seçimi State
   const [executionOffices, setExecutionOffices] = useState<any[]>([]);
   const [loadingOffices, setLoadingOffices] = useState(false);
+  // WSMR-A4z: okuma HATASI "İcra dairesi yok" ile AYNI görünemez.
+  const [executionOfficesLoadError, setExecutionOfficesLoadError] = useState<string | null>(null);
   const [savingOffice, setSavingOffice] = useState(false);
   
   // Takip Tarihi (caseDate) Düzenleme State
@@ -1523,27 +1548,32 @@ export default function CaseDetailPage() {
 
   // Ekip modal açıldığında avukat ve personel listesini yükle
   const loadTeamOptions = async () => {
+    setTeamOptionsLoadError(null);
     try {
       const [lawyersRes, staffRes] = await Promise.all([
         api.getLawyers(),
         api.getStaffMembers(),
       ]);
-      
+
       // API response { data: [...] } formatında dönüyor
       const lawyers = (lawyersRes as any)?.data || lawyersRes || [];
       const staff = (staffRes as any)?.data || staffRes || [];
-      
+
       // Zaten dosyada olan avukatları filtrele
       const existingLawyerIds = caseData?.lawyers?.map(l => l.lawyer.id) || [];
       const filteredLawyers = (Array.isArray(lawyers) ? lawyers : []).filter((l: any) => !existingLawyerIds.includes(l.id));
       setAvailableLawyers(filteredLawyers);
-      
+
       // Zaten dosyada olan personelleri filtrele
       const existingStaffIds = caseData?.staff?.map(s => s.staffMember.id) || [];
       const filteredStaff = (Array.isArray(staff) ? staff : []).filter((s: any) => !existingStaffIds.includes(s.id));
       setAvailableStaff(filteredStaff);
     } catch (error) {
-      console.error('Ekip listesi yüklenemedi:', error);
+      // WSMR-A4z: eskiden yalniz console.error ile YUTULUYORDU — modal
+      // "Eklenebilecek avukat/personel yok" diyordu; okuma hatasi gercek
+      // yoklukla AYNI ekrana dusuyordu. Liste bos kaldigi icin "Ekle"
+      // dugmesi zaten YOK (fail-closed yapisal olarak dogru).
+      setTeamOptionsLoadError(toActionErrorMessage(error, "Ekip listesi yüklenemedi."));
     }
   };
 
@@ -1664,12 +1694,17 @@ export default function CaseDetailPage() {
   // İcra dairelerini yükle
   const loadExecutionOffices = async () => {
     setLoadingOffices(true);
+    setExecutionOfficesLoadError(null);
     try {
       const res = await api.getExecutionOffices();
       const offices = (res as any)?.data || res || [];
       setExecutionOffices(Array.isArray(offices) ? offices : []);
     } catch (error) {
-      console.error('İcra daireleri yüklenemedi:', error);
+      // WSMR-A4z: eskiden yalniz console.error ile YUTULUYORDU — secici
+      // acildiginda "İcra dairesi yok" render'i okuma hatasiyla AYNI
+      // ekrana dusuyordu. Liste bos kaldigi icin secim yapilamiyor
+      // (fail-closed zaten yapisal olarak dogru) — eksik olan GORUNURLUKTU.
+      setExecutionOfficesLoadError(toActionErrorMessage(error, "İcra daireleri yüklenemedi."));
     } finally {
       setLoadingOffices(false);
     }
@@ -3664,6 +3699,8 @@ export default function CaseDetailPage() {
                   saving={savingOffice}
                   onChange={handleExecutionOfficeChange}
                   currentOfficeName={caseData.executionOffice?.name}
+                  loadError={executionOfficesLoadError}
+                  onRetry={loadExecutionOffices}
                 />
                 {savingOffice && <p className="text-xs text-purple-600 mt-1">Kaydediliyor...</p>}
               </div>
@@ -4228,7 +4265,15 @@ export default function CaseDetailPage() {
             <div className="flex-1 overflow-y-auto p-4">
               {teamModalTab === 'lawyers' ? (
                 <div className="space-y-2">
-                  {availableLawyers.length === 0 ? (
+                  {teamOptionsLoadError && availableLawyers.length === 0 ? (
+                    // WSMR-A4z: okuma HATASI "Eklenebilecek avukat yok" ile AYNI UI DEGILDIR.
+                    <div className="text-center py-8" role="alert">
+                      <p className="text-sm text-red-600 font-medium">{teamOptionsLoadError}</p>
+                      <button type="button" onClick={loadTeamOptions} className="mt-2 text-sm text-primary underline hover:no-underline">
+                        Tekrar dene
+                      </button>
+                    </div>
+                  ) : availableLawyers.length === 0 ? (
                     <p className="text-center text-gray-500 py-8">Eklenebilecek avukat yok</p>
                   ) : (
                     availableLawyers.map((lawyer: any) => {
@@ -4267,7 +4312,15 @@ export default function CaseDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {availableStaff.length === 0 ? (
+                  {teamOptionsLoadError && availableStaff.length === 0 ? (
+                    // WSMR-A4z: okuma HATASI "Eklenebilecek personel yok" ile AYNI UI DEGILDIR.
+                    <div className="text-center py-8" role="alert">
+                      <p className="text-sm text-red-600 font-medium">{teamOptionsLoadError}</p>
+                      <button type="button" onClick={loadTeamOptions} className="mt-2 text-sm text-primary underline hover:no-underline">
+                        Tekrar dene
+                      </button>
+                    </div>
+                  ) : availableStaff.length === 0 ? (
                     <p className="text-center text-gray-500 py-8">Eklenebilecek personel yok</p>
                   ) : (
                     availableStaff.map((staff: any) => {
