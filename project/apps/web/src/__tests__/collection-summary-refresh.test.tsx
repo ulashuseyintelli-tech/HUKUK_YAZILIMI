@@ -470,9 +470,15 @@ describe("collection summary refresh", () => {
     const source = readCasePageSource();
 
     expect(source).toContain("api.getCollectionDispositionsByCase(params.id as string)");
-    expect(source).toContain("setCollectionDispositions(dispositionsRes || []);");
+    // WSMR-A4-AB-1: dispositions artik AYRI `fetchDispositions()` fonksiyonuyla
+    // okunur (retry/stale-token/in-flight guard + malformed-body kontrolü icin) —
+    // `dispositionsRes` degiskeni KALKTI, sonuc dogrudan bu fonksiyon icinde
+    // set edilir.
+    expect(source).toContain("setCollectionDispositions(data);");
+    expect(source).toContain("setDispositionsLoadError(null);");
     expect(source).toContain("muhasebeKayitlari={operationAccountingRecords}");
-    expect(source).toContain("accountingEmptyMessage={operationAccountingEmptyMessage}");
+    // Okuma hatasinda notr yer tutucuya duser (gercekten-bos iddiasi URETMEZ).
+    expect(source).toContain('accountingEmptyMessage={dispositionsLoadError ? "—" : operationAccountingEmptyMessage}');
     expect(source).toContain("eligibleDispositionClients={eligibleDispositionClients}");
     expect(source).toContain("postingDispositionId={postingDispositionId}");
     expect(source).toContain("onRecommendDisposition={handleRecommendCollectionDisposition}");

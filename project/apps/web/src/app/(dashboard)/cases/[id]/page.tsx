@@ -884,6 +884,19 @@ export default function CaseDetailPage() {
   // ucreti gibi diger kalemler sessizce KAYBOLUR) VE "Henüz ödeme yok"
   // (collections) YANLIS iddiasina yol acmasin.
   const [financeLoadError, setFinanceLoadError] = useState<string | null>(null);
+  // WSMR-A4-AB-1: `collectionDispositions` BAĞIMSIZ üçüncü finans kaynağıdır
+  // (dues/collections'tan ayrı Promise). Eskiden okuma hatası yalnız
+  // `console.warn` ile YUTULUYOR, `dispositionsRes` hep `[]` dönüyordu —
+  // `operationAccountingRecords` hep BOŞ oluyor ve "Bu dosyada henüz
+  // dağıtım/mutabakat kaydı yok." (operationAccountingEmptyMessage) okuma
+  // hatasıyla AYNI ekrana düşüyordu. Ayrı state + ayrı (yalnız bu kaynağı
+  // tekrar deneyen) retry — dues/collections'ı YENİDEN ÇEKMEZ.
+  const [dispositionsLoadError, setDispositionsLoadError] = useState<string | null>(null);
+  const [dispositionsRetrying, setDispositionsRetrying] = useState(false);
+  // Jenerasyon token'ı: bayat yanıt (eski istek yeni istekten SONRA döner) UI'a
+  // YAZMAZ. In-flight bayrağı: çift retry aynı anda İKİNCİ isteği başlatmaz.
+  const dispositionsFetchTokenRef = useRef(0);
+  const dispositionsFetchInFlightRef = useRef(false);
   const [financialSummaryRefreshKey, setFinancialSummaryRefreshKey] = useState(0);
   
   // Due Modal State
@@ -1071,23 +1084,59 @@ export default function CaseDetailPage() {
     }
   }, [params.id]);
 
+  // WSMR-A4-AB-1: dispositions BAĞIMSIZ okunur — dues/collections'ı bloklamaz
+  // ve onlardan bağımsız kendi PARTIAL/ERROR durumunu yönetir. Hem ilk
+  // yüklemede (fetchFinanceData içinden) hem de yalnız-bu-kaynağı-tekrar-
+  // deneyen retry butonundan çağrılır; İKİSİ DE AYNI fonksiyonu kullanır.
+  const fetchDispositions = useCallback(async () => {
+    if (!params.id) return;
+    if (dispositionsFetchInFlightRef.current) return; // çift retry -> tek aktif istek
+    dispositionsFetchInFlightRef.current = true;
+    const token = ++dispositionsFetchTokenRef.current;
+    try {
+      const data = await api.getCollectionDispositionsByCase(params.id as string);
+      if (!isMountedRef.current || token !== dispositionsFetchTokenRef.current) return; // bayat/unmount
+      // Govde SOZLESMEYE karsi dogrulanir: dizi DEGILSE (malformed 200 govdesi)
+      // asagidaki .map() (operationAccountingRecords) dogal bir TypeError
+      // firlatirdi — burada acikca Error firlatilip gorunur hataya cevrilir.
+      if (!Array.isArray(data)) {
+        throw new Error("MALFORMED_DISPOSITIONS_RESPONSE");
+      }
+      setCollectionDispositions(data);
+      setDispositionsLoadError(null);
+    } catch (error) {
+      if (!isMountedRef.current || token !== dispositionsFetchTokenRef.current) return;
+      // Eskiden yalniz console.warn ile YUTULUYORDU (dispositionsRes hep []
+      // donuyordu). Diger finans kaynaklari (dues/collections) bu hatadan
+      // ETKILENMEZ — mevcut collectionDispositions (varsa) SILINMEZ.
+      setDispositionsLoadError(toActionErrorMessage(error, "Dağıtım/mutabakat kayıtları yüklenemedi."));
+    } finally {
+      if (token === dispositionsFetchTokenRef.current) dispositionsFetchInFlightRef.current = false;
+    }
+  }, [params.id]);
+
+  const retryDispositions = useCallback(async () => {
+    setDispositionsRetrying(true);
+    try {
+      await fetchDispositions();
+    } finally {
+      if (isMountedRef.current) setDispositionsRetrying(false);
+    }
+  }, [fetchDispositions]);
+
   // Fetch dues and collections
   const fetchFinanceData = useCallback(async () => {
     if (!params.id) return;
     try {
       setLoadingFinance(true);
       setFinanceLoadError(null);
-      const [duesRes, collectionsRes, dispositionsRes] = await Promise.all([
+      const [duesRes, collectionsRes] = await Promise.all([
         api.getCaseDues(params.id as string),
         api.getCaseCollections(params.id as string),
-        api.getCollectionDispositionsByCase(params.id as string).catch((error) => {
-          console.warn("Dağıtım ve mutabakat kayıtları yüklenemedi:", error);
-          return [];
-        }),
+        fetchDispositions(),
       ]);
       setDues(duesRes || []);
       setCollections(collectionsRes || []);
-      setCollectionDispositions(dispositionsRes || []);
     } catch (error) {
       // WSMR-A4w: eskiden yalniz console.error ile YUTULUYORDU. `dues`
       // bos kalinca render "Asıl Alacak: {caseData.principalAmount}" ile
@@ -1101,7 +1150,7 @@ export default function CaseDetailPage() {
     } finally {
       setLoadingFinance(false);
     }
-  }, [params.id]);
+  }, [params.id, fetchDispositions]);
 
   const refreshCollectionDependentViews = useCallback(() => {
     setFinancialSummaryRefreshKey((key) => key + 1);
@@ -3009,10 +3058,34 @@ export default function CaseDetailPage() {
                   </button>
                 </div>
               )}
+              {dispositionsLoadError && (
+                // WSMR-A4-AB-1: dagitim/mutabakat okumasi basarisiz olursa
+                // "Bu dosyada henüz dağıtım/mutabakat kaydı yok." (gercekten-bos
+                // mesaji) ile AYNI ekrana dusmez — muhasebeKayitlari KISMEN
+                // eksik olabilecegini acikca bildirir. Retry YALNIZ bu kaynagi
+                // tekrar dener (dues/collections'i yeniden CEKMEZ).
+                <div role="alert" className="m-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+                  <span>{dispositionsLoadError} Toplam/dağıtım görünümü eksik olabilir.</span>
+                  <button
+                    type="button"
+                    onClick={retryDispositions}
+                    disabled={dispositionsRetrying}
+                    className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {dispositionsRetrying ? "Deneniyor…" : "Tekrar dene"}
+                  </button>
+                </div>
+              )}
               <OperationDeck
                 caseId={caseData.id}
                 muhasebeKayitlari={operationAccountingRecords}
-                accountingEmptyMessage={operationAccountingEmptyMessage}
+                // WSMR-A4-AB-1: okuma hatasi varken `muhasebeKayitlari` yine BOS
+                // olur (dispositionsLoadError'da collectionDispositions YAZILMAZ)
+                // — OperationDeck'in varsayilan "gercekten bos" mesaji ("Bu
+                // dosyada henuz dagitim/mutabakat kaydi yok.") bu durumda YANLIS
+                // bir KESIN yokluk iddiasi olur. Hata zaten yukaridaki bantta
+                // GORUNUR; burada notr bir yer tutucuya dusulur.
+                accountingEmptyMessage={dispositionsLoadError ? "—" : operationAccountingEmptyMessage}
                 eligibleDispositionClients={eligibleDispositionClients}
                 postingDispositionId={postingDispositionId}
                 onRecommendDisposition={handleRecommendCollectionDisposition}
