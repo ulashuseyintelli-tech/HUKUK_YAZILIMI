@@ -42,6 +42,7 @@ import {
   Search,
 } from "lucide-react";
 import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
 import {
   CASE_STAFF_ROLE_OPTIONS,
@@ -692,6 +693,9 @@ export default function CaseDetailPage() {
   const guardedPrimaryDisplayDate = getGuardedPrimaryDisplayDate(searchParams);
   
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
+  // WSMR-A4n: okuma HATASI ile sunucunun DOGRULADIGI 404 yokluk AYRI durumlardir.
+  // "Takip bulunamadı" ARTIK yalnız gerçek 404'te yazılır.
+  const [caseLoadError, setCaseLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -916,16 +920,33 @@ export default function CaseDetailPage() {
     }
   }, [fixParam, loading]);
 
+  /**
+   * WSMR-A4n · OKUMA HATASI "TAKİP BULUNAMADI" DEĞİLDİR.
+   *
+   * Bu, dosya çalışma alanının BİRİNCİL yüklemesi ve onlarca mutasyon-sonrası
+   * yenilemenin ortak kapısı. Eski hâlde HER hata — ağ kesintisi, 500, yetki —
+   * yalnız `console.error` ile yutuluyordu. İlk yüklemede bu, `caseData` null
+   * kaldığı için doğrudan **"Takip bulunamadı"** ekranına dönüşüyordu: var olan
+   * bir dosya erişilemediğinde silinmiş/yanlış ID gibi görünüyordu.
+   *
+   * Artık YALNIZ sunucunun doğruladığı 404 gerçek yokluk sayılır. Diğer her
+   * hata görünür olur (`caseLoadError`); zaten yüklü `caseData` SİLİNMEZ —
+   * mutasyon-sonrası yenileme başarısız olursa önceki (doğrulanmış) veri
+   * korunur, yalnızca üstte görünür bir uyarı belirir.
+   */
   const fetchCase = useCallback(async () => {
     try {
       setLoading(true);
+      setCaseLoadError(null);
       const data = await api.getCase(params.id as string);
-      console.log('[CaseDetail] API response:', data);
-      console.log('[CaseDetail] claimItems:', data?.claimItems);
       setCaseData(data);
       setEditedData({});
     } catch (error) {
-      console.error("Takip yüklenemedi:", error);
+      if ((error as { status?: number })?.status === 404) {
+        setCaseData(null);
+      } else {
+        setCaseLoadError(toActionErrorMessage(error, "Takip yüklenemedi."));
+      }
     } finally {
       setLoading(false);
     }
@@ -1861,6 +1882,25 @@ export default function CaseDetailPage() {
     return <div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
+  if (caseLoadError && !caseData) {
+    /* WSMR-A4n: okuma HATASI "Takip bulunamadı" ile AYNI görünemez. */
+    return (
+      <div className="text-center py-12" role="alert">
+        <p className="text-red-600 font-medium">{caseLoadError}</p>
+        <button
+          type="button"
+          onClick={fetchCase}
+          className="mt-2 text-sm text-primary underline hover:no-underline"
+        >
+          Tekrar dene
+        </button>
+        <div>
+          <Link href="/cases" className="text-primary hover:underline mt-2 inline-block">Takiplere dön</Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!caseData) {
     return (
       <div className="text-center py-12">
@@ -1874,7 +1914,26 @@ export default function CaseDetailPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F1F3F6]">
-      
+
+      {caseLoadError && (
+        /* WSMR-A4n: dosya ZATEN yüklüyken bir YENİLEME (mutasyon-sonrası
+           fetchCase çağrısı) başarısız olursa mevcut veri SİLİNMEZ — yalnızca
+           bu görünür uyarı belirir; kullanıcı görüntülediği verinin bayat
+           olabileceğini bilir. */
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2 flex-shrink-0" role="alert">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-red-800">{caseLoadError}</span>
+            <button
+              type="button"
+              onClick={fetchCase}
+              className="text-xs px-3 py-1.5 bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors shrink-0"
+            >
+              Tekrar dene
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* FIX MODE BANNER - Eksiklik giderme modunda göster */}
       {fixParam && fromFilter && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex-shrink-0">
