@@ -697,6 +697,16 @@ export default function CaseDetailPage() {
   // "Takip bulunamadı" ARTIK yalnız gerçek 404'te yazılır.
   const [caseLoadError, setCaseLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // WSMR-A4n: fetchCase UNMOUNT sonrasi tamamlanirsa state guncellemesi
+  // YAPILMAZ (React uyarisi + gereksiz is). fetchCase 10'dan fazla yerden
+  // cagrildigi icin bu bayrak component omru boyunca GECERLIDIR.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editedData, setEditedData] = useState<Partial<CaseDetail>>({});
@@ -939,16 +949,25 @@ export default function CaseDetailPage() {
       setLoading(true);
       setCaseLoadError(null);
       const data = await api.getCase(params.id as string);
+      if (!isMountedRef.current) return;
+      // Govde SOZLESMEYE karsi dogrulanir: HTTP 200 ile donen malformed/bos
+      // bir govde BASARI SAYILMAZ. Aksi halde `!caseData` bekci kosulu bunu
+      // "Takip bulunamadı" (onaylı 404) ile AYNI ekrana dusururdu — sunucunun
+      // dogrulamadigi bir yokluk iddiasi.
+      if (!data || typeof data !== "object" || !("id" in data)) {
+        throw new Error("MALFORMED_CASE_RESPONSE");
+      }
       setCaseData(data);
       setEditedData({});
     } catch (error) {
+      if (!isMountedRef.current) return;
       if ((error as { status?: number })?.status === 404) {
         setCaseData(null);
       } else {
         setCaseLoadError(toActionErrorMessage(error, "Takip yüklenemedi."));
       }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }, [params.id]);
 
