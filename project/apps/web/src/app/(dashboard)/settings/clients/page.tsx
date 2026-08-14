@@ -34,6 +34,8 @@ export default function ClientsSettingsPage() {
 
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A4p: okuma HATASI "Henüz müvekkil eklenmedi" ile AYNI görünemez.
+  const [clientsLoadError, setClientsLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [showModal, setShowModal] = useState(false);
@@ -84,9 +86,15 @@ export default function ClientsSettingsPage() {
 
   const loadClients = async () => {
     try {
+      setClientsLoadError(null);
       const res = await api.get("/clients");
       setClients(res.data?.data || []);
-    } catch (e) { console.error("Müvekkiller yüklenemedi:", e); }
+    } catch (e) {
+      // WSMR-A4p: eskiden yalniz console.error ile YUTULUYORDU. `clients`
+      // baslangic degeri ([]) oldugu icin bu, asagidaki "Henüz müvekkil
+      // eklenmedi" (gercekten bos) render'i ile AYNI ekrana dusuyordu.
+      setClientsLoadError(toActionErrorMessage(e, "Müvekkiller yüklenemedi."));
+    }
     finally { setLoading(false); }
   };
 
@@ -423,8 +431,34 @@ export default function ClientsSettingsPage() {
       </div>
 
       {/* Liste - Tablo Görünümü */}
+      {clientsLoadError && (
+        // WSMR-A4p: liste ZATEN yukluyken bir YENILEME basarisiz olursa
+        // mevcut veri SILINMEZ — yalnizca bu gorunur uyari belirir.
+        <div role="alert" className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+          <span>{clientsLoadError}</span>
+          <button
+            type="button"
+            onClick={loadClients}
+            className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200"
+          >
+            Tekrar dene
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-auto border rounded-lg">
-        {filtered.length === 0 ? (
+        {clientsLoadError && clients.length === 0 ? (
+          // WSMR-A4p: okuma HATASI "Henüz müvekkil eklenmedi" ile AYNI UI DEGILDIR.
+          <div className="text-center py-12" role="alert">
+            <p className="text-red-600 font-medium">{clientsLoadError}</p>
+            <button
+              type="button"
+              onClick={loadClients}
+              className="mt-2 text-sm text-primary underline hover:no-underline"
+            >
+              Tekrar dene
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             {search || typeFilter !== "ALL" ? "Sonuç bulunamadı" : "Henüz müvekkil eklenmedi"}
           </div>
@@ -1359,6 +1393,7 @@ function ClientModal({ client, scannedData, capabilities, onSave, onClose, savin
 // E-posta Gönderme Modal
 function SendEmailModal({ client, onClose }: { client: any; onClose: () => void }) {
   const [templates, setTemplates] = useState<any[]>([]);
+  const [templatesLoadError, setTemplatesLoadError] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -1372,10 +1407,15 @@ function SendEmailModal({ client, onClose }: { client: any; onClose: () => void 
 
   const loadTemplates = async () => {
     try {
+      setTemplatesLoadError(null);
       const res = await api.get("/client-notifications/templates");
       setTemplates(res.data || []);
     } catch (e) {
-      console.error("Şablonlar yüklenemedi:", e);
+      // WSMR-A4p: sablon opsiyonel oldugundan (kullanici manuel yazabilir)
+      // bu HATA gonderimi ENGELLEMEZ — ama sessizce yutulmak yerine GORUNUR
+      // olur ki kullanici bos acilan menunun "sablon yok" ANLAMINA
+      // gelmedigini bilsin.
+      setTemplatesLoadError(toActionErrorMessage(e, "Şablonlar yüklenemedi."));
     }
   };
 
@@ -1450,6 +1490,14 @@ function SendEmailModal({ client, onClose }: { client: any; onClose: () => void 
           {/* Şablon Seçimi */}
           <div>
             <label className="block text-sm font-medium mb-1">Şablon (Opsiyonel)</label>
+            {templatesLoadError && (
+              <div role="alert" className="mb-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-800 flex items-center justify-between gap-2">
+                <span>{templatesLoadError}</span>
+                <button type="button" onClick={loadTemplates} className="shrink-0 underline hover:no-underline">
+                  Tekrar dene
+                </button>
+              </div>
+            )}
             <select
               value={selectedTemplate}
               onChange={e => handleTemplateChange(e.target.value)}
@@ -1765,7 +1813,10 @@ function ImportClientsModal({ onClose, onSuccess }: { onClose: () => void; onSuc
 function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void }) {
   const [poas, setPoas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // WSMR-A4p: okuma HATASI "Henüz vekalet kaydı yok" ile AYNI görünemez.
+  const [poasLoadError, setPoasLoadError] = useState<string | null>(null);
   const [lawyers, setLawyers] = useState<any[]>([]);
+  const [lawyersLoadError, setLawyersLoadError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -1793,10 +1844,13 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
 
   const loadPoas = async () => {
     try {
+      setPoasLoadError(null);
       const res = await api.get(`/poa/client/${client.id}`);
       setPoas(res.data || []);
     } catch (e) {
-      console.error("Vekaletler yüklenemedi:", e);
+      // WSMR-A4p: eskiden yalniz console.error ile YUTULUYORDU — "Henüz
+      // vekalet kaydı yok" render'i okuma hatasiyla AYNI ekrana dusuyordu.
+      setPoasLoadError(toActionErrorMessage(e, "Vekaletler yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -1804,10 +1858,13 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
 
   const loadLawyers = async () => {
     try {
+      setLawyersLoadError(null);
       const res = await api.get("/lawyers");
       setLawyers(res.data?.data || res.data || []);
     } catch (e) {
-      console.error("Avukatlar yüklenemedi:", e);
+      // WSMR-A4p: bos donen avukat listesi "atanacak avukat yok" gibi
+      // gorunuyordu; artik okuma hatasi GORUNUR (formun altinda).
+      setLawyersLoadError(toActionErrorMessage(e, "Avukatlar yüklenemedi."));
     }
   };
 
@@ -1948,9 +2005,35 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
         </div>
 
         <div className="p-4">
+          {poasLoadError && poas.length > 0 && (
+            // WSMR-A4p: liste ZATEN yukluyken bir YENILEME basarisiz olursa
+            // mevcut veri SILINMEZ — yalnizca bu gorunur uyari belirir.
+            <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+              <span>{poasLoadError}</span>
+              <button type="button" onClick={loadPoas} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+                Tekrar dene
+              </button>
+            </div>
+          )}
+          {lawyersLoadError && (
+            <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+              <span>{lawyersLoadError}</span>
+              <button type="button" onClick={loadLawyers} className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200">
+                Tekrar dene
+              </button>
+            </div>
+          )}
           {/* Vekalet Listesi */}
           {loading ? (
             <div className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>
+          ) : poasLoadError && poas.length === 0 ? (
+            // WSMR-A4p: okuma HATASI "Henüz vekalet kaydı yok" ile AYNI UI DEGILDIR.
+            <div className="text-center py-8" role="alert">
+              <p className="text-red-600 font-medium">{poasLoadError}</p>
+              <button type="button" onClick={loadPoas} className="mt-2 text-sm text-primary underline hover:no-underline">
+                Tekrar dene
+              </button>
+            </div>
           ) : poas.length === 0 && !showAddForm ? (
             <div className="text-center py-8 text-muted-foreground">
               <FileCheck className="h-12 w-12 mx-auto mb-2 opacity-30" />
