@@ -9215,6 +9215,231 @@ test('Nafaka terminal reconciliation rejects wildcard and prefix-like branches',
   }
 });
 
+function officeCap09aConsumerBindingFixture(t) {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01;
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  return { ...fixture, binding };
+}
+
+test('OFFICE CAP-09A consumer control-plane binding accepts only exact tuple and scope', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  assert.deepEqual(
+    coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      taskId: binding.taskId,
+      changes: binding.bindingPr.changedPaths,
+      cwd: fixture.root,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.taskId },
+  );
+});
+
+test('OFFICE CAP-09A consumer binding rejects wrong task ID', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        taskId: 'OFFICE-SC-F02-NON-CANONICAL-R01',
+        changes: binding.bindingPr.changedPaths,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer binding rejects a fourth changed path', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        taskId: binding.taskId,
+        changes: [
+          ...binding.bindingPr.changedPaths,
+          { status: 'M', path: 'project/docs/governance/product-backlog.md' },
+        ],
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer binding rejects wildcard/prefix-like task matching', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        taskId: `${binding.taskId}-EXTRA`,
+        changes: binding.bindingPr.changedPaths,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer binding rejects a different branch', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: `${binding.bindingPr.headRef}-copy`,
+        taskId: binding.taskId,
+        changes: binding.bindingPr.changedPaths,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer binding rejects a non-exact or different base', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+        base: fixture.unrelated,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        taskId: binding.taskId,
+        changes: binding.bindingPr.changedPaths,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer binding rejects apps/ product-code paths', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        taskId: binding.taskId,
+        changes: [
+          ...binding.bindingPr.changedPaths.slice(0, 2),
+          { status: 'M', path: 'project/apps/api/src/modules/staff/staff.service.ts' },
+        ],
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer binding cannot expand its own scope on replay', (t) => {
+  const fixture = officeCap09aConsumerBindingFixture(t);
+  const { binding } = fixture;
+  const first = coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    taskId: binding.taskId,
+    changes: binding.bindingPr.changedPaths,
+    cwd: fixture.root,
+  });
+  assert.deepEqual(first, { mode: binding.bindingPr.mode, taskId: binding.taskId });
+  expectCode(
+    () =>
+      coordination.validateOfficeCap09aConsumerControlPlaneBindingScope({
+        base: binding.bindingPr.baseSha,
+        head: fixture.head,
+        headRef: binding.bindingPr.headRef,
+        taskId: binding.taskId,
+        changes: binding.bindingPr.changedPaths.slice(0, 2),
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer governance materialization validates each file against its own literals', (t) => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01;
+  const target = binding.targetPr;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-cap09a-target-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  writeFixtureRepoFile(root, target.semanticAuthority.path, '# decision-log\n');
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/OFFICE-OWNER-DECISIONS.md',
+    '# owner-decisions\n',
+  );
+  const base = commitFixture(root, 'base');
+
+  writeFixtureRepoFile(
+    root,
+    target.semanticAuthority.path,
+    [
+      '# decision-log',
+      buildAuthorityMarkerForTest(target.semanticAuthority),
+      ...target.decisionLogRequiredLiterals,
+    ].join('\n') + '\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    'project/docs/governance/OFFICE-OWNER-DECISIONS.md',
+    ['# owner-decisions', ...target.ownerDecisionsRequiredLiterals].join('\n') + '\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    target.executionGrant.path,
+    [
+      buildAuthorityMarkerForTest(target.executionGrant),
+      `semanticAuthorityRef.kind : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
+      ...target.executionGrantRequiredLiterals,
+    ].join('\n') + '\n',
+  );
+  const head = commitFixture(root, 'target');
+
+  assert.deepEqual(
+    coordination.validateOfficeCap09aConsumerGovernanceMaterializationScope({
+      base,
+      head,
+      headRef: target.headRef,
+      changes: target.changedPaths,
+      taskId: target.taskId,
+      cwd: root,
+    }),
+    { mode: target.mode, taskId: target.taskId },
+  );
+});
+
+function buildAuthorityMarkerForTest(authority) {
+  return coordination.buildAuthorityMarker(authority);
+}
+
 // ---------------------------------------------------------------------------
 // REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01 — terminal bootstrap
 //

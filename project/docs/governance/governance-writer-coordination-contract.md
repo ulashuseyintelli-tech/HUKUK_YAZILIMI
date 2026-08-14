@@ -2191,6 +2191,59 @@ PHASE B CONTROL-PLANE MUTATION: PROHIBITED
 PRODUCTION SIGNATURE / KMS / RUNTIME / UYAP: PROHIBITED
 ```
 
+## OFFICE CAP-09A CONSUMER-01 governance materialization — exact two-phase binding
+
+Owner-ratified 2026-08-13. This binding recognizes one exact control-plane
+publication followed by one exact OFFICE CAP-09A consumer-only governance
+materialization (decision-log F06 disposition + OFFICE-OWNER-DECISIONS.md
+update + one new task-local EG01 file). It does not create a generic governance
+allowlist, wildcard task matching, reusable execution authority, or CAP-09A
+producer authority. CAP-09A producer remains DORMANT_CANONICAL.
+
+### Phase A — control-plane binding
+
+```text
+Task ID : OFFICE-CAP-09A-CONSUMER-01-R01-GOVERNANCE-MATERIALIZATION-BINDING-R01
+Mode : OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01
+Program : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+Base : 11a2c555e4c23658b713c62ce6095f2d11182af5
+Head ref : codex/office-cap09a-r01-validator-binding
+Scope : M project/scripts/governance-coordination.cjs
+        M project/scripts/governance-coordination.test.cjs
+        M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+Base, branch, task/mode or exact M/M/M path-status drift is rejected. This
+binding cannot be reused for another task or another revision.
+
+### Phase B — governance materialization
+
+```text
+Task ID : OFFICE-CAP-09A-CONSUMER-01-R01-GOVERNANCE-MATERIALIZATION-R01
+Target task : OFFICE-CAP-09A-CONSUMER-01-R01
+Mode : OFFICE_CAP09A_CONSUMER_01_R01
+Head ref : codex/office-cap09a-consumer-r01-gov
+Scope : M project/docs/governance/decision-log.md
+        M project/docs/governance/OFFICE-OWNER-DECISIONS.md
+        A project/docs/governance/coordination-execution-grants/OFFICE-CAP-09A-CONSUMER-01-R01-EG01.md
+Semantic authority : OFFICE-CAP-09A-CONSUMER-01-R01-SA01
+Execution grant : OFFICE-CAP-09A-CONSUMER-01-R01-EG01
+CAP-09A CONSUMER-ONLY MATERIALIZATION ONLY
+CAP-09A PRODUCER: DORMANT_CANONICAL / NOT AUTHORIZED
+SECOND USE: FAIL-CLOSED
+```
+
+Phase B requires an exact semantic-authority marker, an exact execution-grant
+marker and an exact SA-to-EG reference. A base that already contains either the
+SA marker or the EG path is consumed and rejected. Decision-log,
+OFFICE-OWNER-DECISIONS.md and EG01 are each validated only against their own
+path-specific canonical literals.
+
+This binding does not authorize CAP-09A producer work, PermissionGrant
+writer/admin surfaces, schema, migration, runtime, or production activation;
+PR-2 (CAP-09A consumer implementation) requires a distinct task-bound Execution
+Grant consumed only after Phase B merges to canonical main.
+
 ### Terminal bootstrap — MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01
 
 Programme `REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01`, task

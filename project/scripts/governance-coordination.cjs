@@ -2061,6 +2061,90 @@ const RECEIVABLE_NAFAKA_TERMINAL_STATE_RECONCILIATION_R01_CONTROL_PLANE_BINDING_
       ]),
     }),
   });
+const OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01 =
+  Object.freeze({
+    taskId:
+      'OFFICE-CAP-09A-CONSUMER-01-R01-GOVERNANCE-MATERIALIZATION-BINDING-R01',
+    programId: 'OFFICE-P4-AUTHORIZATION-COMPLETION-R01',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    bindingPr: Object.freeze({
+      mode:
+        'OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01',
+      baseSha: '11a2c555e4c23658b713c62ce6095f2d11182af5',
+      headRef: 'codex/office-cap09a-r01-validator-binding',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    targetPr: Object.freeze({
+      taskId:
+        'OFFICE-CAP-09A-CONSUMER-01-R01-GOVERNANCE-MATERIALIZATION-R01',
+      targetTaskId: 'OFFICE-CAP-09A-CONSUMER-01-R01',
+      mode: 'OFFICE_CAP09A_CONSUMER_01_R01',
+      headRef: 'codex/office-cap09a-consumer-r01-gov',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/decision-log.md',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/docs/governance/OFFICE-OWNER-DECISIONS.md',
+        }),
+        Object.freeze({
+          status: 'A',
+          path:
+            'project/docs/governance/coordination-execution-grants/OFFICE-CAP-09A-CONSUMER-01-R01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'OFFICE-CAP-09A-CONSUMER-01-R01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/OFFICE-CAP-09A-CONSUMER-01-R01-EG01.md',
+        recordId: 'OFFICE-CAP-09A-CONSUMER-01-R01-EG01',
+      }),
+      decisionLogRequiredLiterals: Object.freeze([
+        'OFFICE-CAP-09A-CONSUMER-01-R01-SA01',
+        'decision : RATIFIED',
+        'producerDisposition : DORMANT_CANONICAL / NOT_AUTHORIZED / DO_NOT_OPEN',
+        'coreConsumer : StaffService TRANSACTIONAL AUDIT PARITY',
+        'OFFICE-SC-F06-OPEN-OD-DECISION-PACK-R01-OD01',
+        'optionB : OFF/OD-02, OFF/OD-03, OFF/OD-06, OFF/OD-07, OFF/OD-12, OFF/OD-13, OFF/OD-16, OFF/OD-19',
+        'keepDeferred : OFF/OD-04',
+      ]),
+      ownerDecisionsRequiredLiterals: Object.freeze([
+        '19 CLOSED / CANONICAL',
+        '1 DEFERRED / CANONICAL:',
+        'OWNER SELECTION: OPTION B — CLOSED / CANONICAL (2026-08-13, F06 pack)',
+        'OWNER SELECTION: KEEP_DEFERRED — DEFERRED / CANONICAL (2026-08-13, F06 pack)',
+      ]),
+      executionGrantRequiredLiterals: Object.freeze([
+        'GO-COMPLETE — IMPLEMENTATION PR ONLY',
+        'singleUseConsumption : REQUIRED',
+        'transfer : PROHIBITED',
+        'expansion : PROHIBITED',
+        'DORMANT_CANONICAL / NOT AUTHORIZED / DO NOT OPEN',
+      ]),
+    }),
+  });
 const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01 =
   Object.freeze({
     taskId:
@@ -5060,6 +5144,45 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
 
+  const officeCap09aConsumerBinding =
+    OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01;
+  const officeCap09aConsumerBindingPr = officeCap09aConsumerBinding.bindingPr;
+  const officeCap09aConsumerTargetPr = officeCap09aConsumerBinding.targetPr;
+
+  if (
+    context.headRef === officeCap09aConsumerBindingPr.headRef ||
+    (context.base === officeCap09aConsumerBindingPr.baseSha &&
+      hasExactChangeSet(changes, officeCap09aConsumerBindingPr.changedPaths))
+  ) {
+    if (
+      context.base !== officeCap09aConsumerBindingPr.baseSha ||
+      context.headRef !== officeCap09aConsumerBindingPr.headRef ||
+      !hasExactChangeSet(changes, officeCap09aConsumerBindingPr.changedPaths)
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE CAP-09A consumer governance materialization binding requires its exact base, branch and M/M/M scope',
+      );
+    }
+    return {
+      mode: officeCap09aConsumerBindingPr.mode,
+      taskId: officeCap09aConsumerBinding.taskId,
+    };
+  }
+
+  if (context.headRef === officeCap09aConsumerTargetPr.headRef) {
+    if (!hasExactChangeSet(changes, officeCap09aConsumerTargetPr.changedPaths)) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE CAP-09A consumer governance materialization requires its exact M/M/A scope',
+      );
+    }
+    return {
+      mode: officeCap09aConsumerTargetPr.mode,
+      taskId: officeCap09aConsumerTargetPr.taskId,
+    };
+  }
+
   if (context.headRef === nafakaTerminalTargetPr.headRef) {
     if (!hasExactChangeSet(changes, nafakaTerminalTargetPr.changedPaths)) {
       reject(
@@ -7222,9 +7345,7 @@ function rootAuthorityBootstrapContractLiterals(binding) {
     binding.bindingPr.mode,
     binding.bindingPr.baseSha,
     binding.bindingPr.headRef,
-    ...binding.bindingPr.changedPaths.map(
-      ({ status, path: repoPath }) => `${status} ${repoPath}`,
-    ),
+    ...binding.bindingPr.changedPaths.map(({ status, path: p }) => `${status} ${p}`),
     binding.targetPr.taskId,
     binding.targetPr.mode,
     binding.targetPr.headRef,
@@ -7587,6 +7708,114 @@ function validateNafakaTerminalStateReconciliationScope(options) {
           `${repoPath} is missing canonical Nafaka state ${stateLiteral}`,
         );
       }
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
+function validateOfficeCap09aConsumerControlPlaneBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01;
+  const stage1 = binding.bindingPr;
+
+  if (
+    base !== stage1.baseSha ||
+    headRef !== stage1.headRef ||
+    taskId !== binding.taskId ||
+    !hasExactChangeSet(changes, stage1.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE CAP-09A consumer governance materialization binding requires its exact base, task, branch and M/M/M scope',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    binding.targetPr.taskId,
+    binding.targetPr.headRef,
+    ...binding.bindingPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer binding contract is missing ${expectedLiteral}`,
+      );
+    }
+  }
+  return { mode: stage1.mode, taskId: binding.taskId };
+}
+
+function validateOfficeCap09aConsumerGovernanceMaterializationScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01;
+  const target = binding.targetPr;
+
+  if (
+    headRef !== target.headRef ||
+    taskId !== target.taskId ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE CAP-09A consumer governance materialization requires its exact task, branch and M/M/A scope',
+    );
+  }
+
+  const semanticMarker = buildAuthorityMarker(target.semanticAuthority);
+  const baseDecisionLog = gitShow(base, target.semanticAuthority.path, cwd);
+  if (
+    baseDecisionLog.includes(semanticMarker) ||
+    gitTreeEntry(base, target.executionGrant.path, cwd)
+  ) {
+    reject(
+      'OFFICE_CAP09A_CONSUMER_EXECUTION_GRANT_REUSED',
+      'OFFICE CAP-09A consumer SA/EG tuple has already been materialized',
+    );
+  }
+
+  const decisionLog = gitShow(head, target.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(decisionLog, target.semanticAuthority);
+  for (const literal of target.decisionLogRequiredLiterals) {
+    if (!decisionLog.includes(literal)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer decision-log is missing ${literal}`,
+      );
+    }
+  }
+
+  const ownerDecisionsPath = target.changedPaths.find(
+    ({ path: p }) => p === 'project/docs/governance/OFFICE-OWNER-DECISIONS.md',
+  ).path;
+  const ownerDecisions = gitShow(head, ownerDecisionsPath, cwd);
+  for (const literal of target.ownerDecisionsRequiredLiterals) {
+    if (!ownerDecisions.includes(literal)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer OFFICE-OWNER-DECISIONS.md is missing ${literal}`,
+      );
+    }
+  }
+
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  for (const literal of target.executionGrantRequiredLiterals) {
+    if (!grant.includes(literal)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer EG is missing ${literal}`,
+      );
     }
   }
 
@@ -11188,6 +11417,29 @@ function validatePrScope(options) {
     });
   }
 
+  const officeCap09aConsumerBinding =
+    OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01;
+  if (classification.mode === officeCap09aConsumerBinding.bindingPr.mode) {
+    return validateOfficeCap09aConsumerControlPlaneBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+  if (classification.mode === officeCap09aConsumerBinding.targetPr.mode) {
+    return validateOfficeCap09aConsumerGovernanceMaterializationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
   if (classification.mode === MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01.mode) {
     return validateTransitionBootstrapScope({ base, head, headRef, changes, cwd });
   }
@@ -12343,6 +12595,7 @@ module.exports = {
   extractTransitionBootstrapDeclaration,
   validateTransitionBootstrapScope,
   OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01,
+  OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01,
   OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
   OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
   REGISTER_REPO_PATH,
@@ -12418,6 +12671,8 @@ module.exports = {
   validateKc01Tr01OwnershipReconciliationBindingScope,
   validateKc01Tr01OwnershipReconciliationScope,
   validateNafakaTerminalStateCloseoutScope,
+  validateOfficeCap09aConsumerControlPlaneBindingScope,
+  validateOfficeCap09aConsumerGovernanceMaterializationScope,
   validateNafakaTerminalStateControlPlaneBindingScope,
   validateNafakaTerminalStateReconciliationScope,
   validateTr01AuthorityBootstrapBindingScope,
