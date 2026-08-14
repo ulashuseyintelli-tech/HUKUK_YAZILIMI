@@ -165,6 +165,11 @@ describe('Intake promote — okuma hatası', () => {
 
    Aşağıdaki testler bu kuralı DAVRANIŞSAL olarak kilitler: biri ileride buraya
    uydurma bir etiket koyarsa test kırılır.
+
+   WSMR-A4-AA (Aday 3) re-adjudication: owner "iki ayrı davranış testiyle kanıtla —
+   yanlış etiket/boş değer/yanlış navigasyon oluşmadığını" talep etti. Üç iddia da
+   AŞAĞIDA ayrı ayrı assert edilir (yanlış etiket YOK, `label.textContent` boş
+   DEĞİL tam `case-1`, `href` HER ZAMAN gerçek caseId'e gider — caseLabel'e değil).
    ───────────────────────────────────────────────────────────────────────────── */
 describe('Dosya etiketi — okunamayınca gerçek kimliğe düşer', () => {
   it('getCase HATASI: uydurma dosya no / muvekkil adi GOSTERILMEZ', async () => {
@@ -173,10 +178,14 @@ describe('Dosya etiketi — okunamayınca gerçek kimliğe düşer', () => {
     render(<IntakeSubmissionDetailPage params={params} />);
 
     // Gercek caseId gorunur...
-    expect(await screen.findByText('case-1')).toBeTruthy();
+    const label = await screen.findByText('case-1');
+    expect(label.textContent).toBe('case-1'); // BOS DEGER degil — tam ve dogru metin.
     // ...uydurma bir dosya numarasi veya isim ASLA basilmaz.
     expect(screen.queryByText(/2026\/123/)).toBeNull();
     expect(screen.queryByText(/Ayşe Yılmaz/)).toBeNull();
+    // YANLIS NAVIGASYON olusmaz: link hedefi caseLabel'e degil, HER ZAMAN gercek
+    // sub.caseId'e baglidir (enrichment sonucundan bagimsiz).
+    expect((label.closest('a') as HTMLAnchorElement).getAttribute('href')).toBe('/cases/case-1');
   });
 
   it('getCase HATASI sayfayi hataya DUSURMEZ (kozmetik degradasyon)', async () => {
@@ -202,7 +211,11 @@ describe('Dosya etiketi — okunamayınca gerçek kimliğe düşer', () => {
     mocked.getCase.mockRejectedValue(new Error('network down'));
     render(<IntakePromotePage params={params} />);
 
-    expect(await screen.findByText('case-1')).toBeTruthy();
+    const label = await screen.findByText('case-1');
+    expect(label.textContent).toBe('case-1'); // BOS DEGER degil.
     expect(screen.queryByText(/2026\/123/)).toBeNull();
+    expect(screen.queryByText(/Ayşe Yılmaz/)).toBeNull();
+    // YANLIS NAVIGASYON olusmaz: link hedefi HER ZAMAN gercek sub.caseId'e baglidir.
+    expect((label.closest('a') as HTMLAnchorElement).getAttribute('href')).toBe('/cases/case-1');
   });
 });
