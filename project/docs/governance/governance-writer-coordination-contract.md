@@ -2290,6 +2290,89 @@ weaken path or authority checks, modify governance materialization content, or
 authorize product, schema, migration, DB, runtime, production, CAP-09A producer,
 W3F07, CLF-O0-01, or PermissionGrant work.
 
+## OFFICE F03/F04 authority chain — exact four-stage binding
+
+Owner-ratified 2026-08-15. This binding recognizes four distinct sequential
+PRs: this control-plane publication, F03 authority materialization, F03
+test-only implementation, and F04 authority plus status reconciliation. The
+stages cannot be combined, skipped, transferred, or matched by prefix or
+wildcard. Runtime remains BLOCKED_BY_RUNTIME_MODEL.
+
+### G0 — protected-writer binding
+
+```text
+Task ID : OFFICE-F03-F04-AUTHORITY-BINDING-R01
+Mode : OFFICE_F03_F04_AUTHORITY_BINDING_R01
+Program : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+Base : 943a9bbb59b2f9c5d05253c5b41e44cf3bc14a2d
+Head ref : codex/office-f03-f04-authority-binding-r01
+Scope : M project/scripts/governance-coordination.cjs
+        M project/scripts/governance-coordination.test.cjs
+        M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+G0 is the only phase whose authority comes directly from the owner
+ratification. Exact base, task, mode, branch and M/M/M scope are mandatory.
+
+### Target A — F03 authority materialization
+
+```text
+Task ID : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-AUTHORITY-MATERIALIZATION-R01
+Mode : OFFICE_SC_F03_DEDICATED_OFFICE_E2E_R01_AUTHORITY_MATERIALIZATION_R01
+Head ref : codex/office-f03-authority-materialization-r01
+Scope : M project/docs/governance/decision-log.md
+        A project/docs/governance/coordination-execution-grants/OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-EG01.md
+Semantic authority : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-SA01
+Execution grant : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-EG01
+TEST-ONLY DEDICATED OFFICE E2E
+DATABASE : DISPOSABLE POSTGRESQL ONLY
+SECOND USE : FAIL-CLOSED
+```
+
+Target A is accepted only from a base containing this G0 contract and no prior
+F03 SA01 marker or EG01 path. The EG must bind exactly to the SA and to Target
+B's branch and one-file scope.
+
+### Target B — F03 implementation
+
+```text
+Task ID : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01
+Mode : OFFICE_SC_F03_DEDICATED_OFFICE_E2E_R01
+Head ref : codex/office-f03-dedicated-e2e-r01
+Scope : M project/apps/api/src/modules/office/__tests__/office-e2e.db-gated.integration.spec.ts
+Required authority : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-SA01
+Required grant : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-EG01
+SINGLE-USE : REQUIRED
+```
+
+Target B is rejected unless canonical base contains the exact Target A SA/EG
+pair. Any prior post-authority delivery on the exact implementation path is a
+consumed grant and is rejected. No product service, schema, migration, runtime,
+flag, production or authoritative database path is authorized.
+
+### Target C — F04 authority and status reconciliation
+
+```text
+Task ID : OFFICE-SC-F04-STATUS-RECONCILIATION-R01
+Mode : OFFICE_SC_F04_STATUS_RECONCILIATION_R01
+Head ref : codex/office-f04-status-reconciliation-r01
+Scope : M project/docs/governance/decision-log.md
+        A project/docs/governance/coordination-execution-grants/OFFICE-SC-F04-STATUS-RECONCILIATION-R01-EG01.md
+        M project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-execution-order.md
+        M project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-task-register.json
+Semantic authority : OFFICE-SC-F04-STATUS-RECONCILIATION-R01-SA01
+Execution grant : OFFICE-SC-F04-STATUS-RECONCILIATION-R01-EG01
+STATUS RECONCILIATION ONLY
+SECOND USE : FAIL-CLOSED
+```
+
+Target C materializes its task-local SA/EG and consumes that authority in the
+same exact four-path reconciliation PR. It requires the canonical F03 delivery,
+valid successor-register JSON, and the ratified terminal literals. It cannot
+start F05 or F07 or authorize CAP-09A producer, CLF-O0-01, W3F07,
+PermissionGrant, OFFICE-WR01, schema, migration, DB, runtime, flag or production
+activation work.
+
 ### Terminal bootstrap — MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01
 
 Programme `REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01`, task
