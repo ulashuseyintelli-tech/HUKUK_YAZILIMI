@@ -792,7 +792,19 @@ export default function CaseDetailPage() {
     suspendedCases: number;
   } | null>(null);
   const [loadingClientStats, setLoadingClientStats] = useState(false);
-  
+  // WSMR-A4-AB-12: eskiden yalniz console.error ile YUTULUYORDU. `clientStats`
+  // basta `null` oldugu icin bu, "yakin vade"/"durgun dosya" (staleCases30d/
+  // nearExpiryCases) uyari gostergelerinin SESSIZCE hic gorunmemesine yol
+  // aciyordu — bir avukat gercekte YAKLASAN sure/vade uyarisi olan bir
+  // muvekkili "uyari yok" saniyordu (bkz. render'daki clientStats?.staleCases30d
+  // > 0 kosullari). Onceki basariyla yuklenmis stats bir SONRAKI okuma
+  // basarisiz olursa SILINMEZ; yalniz bayat oldugu bantta belirtilir.
+  const [clientStatsLoadError, setClientStatsLoadError] = useState<string | null>(null);
+  const [clientStatsRetrying, setClientStatsRetrying] = useState(false);
+  const clientStatsFetchTokenRef = useRef(0);
+  const clientStatsFetchInFlightRef = useRef(false);
+  const clientStatsPrevClientIdRef = useRef<string | null>(null);
+
   // Mesaj Gönder Modal State
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   
@@ -1666,12 +1678,23 @@ export default function CaseDetailPage() {
   };
 
   // Client stats fetch for work card
-  const fetchClientStats = async (clientId: string) => {
+  const fetchClientStats = useCallback(async (clientId: string) => {
+    if (clientStatsFetchInFlightRef.current) return; // çift retry -> tek aktif istek
+    clientStatsFetchInFlightRef.current = true;
+    const token = ++clientStatsFetchTokenRef.current;
     setLoadingClientStats(true);
     try {
       const response = await api.getCases({ clientId, limit: 500 });
-      const cases = response?.data || response || [];
-      
+      if (!isMountedRef.current || token !== clientStatsFetchTokenRef.current) return; // bayat/unmount
+      // Gövde SÖZLEŞMEYE karşı doğrulanır: dizi DEĞİLSE (malformed gövde) aşağıdaki
+      // .forEach/.filter doğal bir TypeError fırlatırdı — burada açıkça Error
+      // fırlatılıp görünür hataya çevrilir.
+      const rawCases = response?.data ?? response;
+      if (!Array.isArray(rawCases)) {
+        throw new Error("MALFORMED_CLIENT_STATS_RESPONSE");
+      }
+      const cases = rawCases as any[];
+
       // Calculate remaining days for each case
       const calculateRemaining = (caseDate: string, lastAction?: string) => {
         const baseDate = lastAction ? new Date(lastAction) : new Date(caseDate);
@@ -1726,21 +1749,54 @@ export default function CaseDetailPage() {
         suspendedCases: cases.filter((c: any) => c.status === 'SUSPENDED').length,
       };
       setClientStats(stats);
+      setClientStatsLoadError(null);
     } catch (error) {
-      console.error('Client stats yüklenemedi:', error);
+      if (!isMountedRef.current || token !== clientStatsFetchTokenRef.current) return;
+      // clientStats BİLEREK dokunulmaz — önceki başarıyla yüklenmiş stats (varsa)
+      // SİLİNMEZ; yalnız bayat olduğu bantta görünür olur. Retry YALNIZ bu
+      // okumayı tekrar dener, hiçbir mutation TETİKLENMEZ.
+      setClientStatsLoadError(toActionErrorMessage(error, "Müvekkil istatistikleri yüklenemedi."));
     } finally {
-      setLoadingClientStats(false);
+      if (token === clientStatsFetchTokenRef.current) {
+        clientStatsFetchInFlightRef.current = false;
+        if (isMountedRef.current) setLoadingClientStats(false);
+      }
     }
-  };
+  }, []);
+
+  const retryClientStats = useCallback(async () => {
+    if (!selectedClient?.id) return;
+    setClientStatsRetrying(true);
+    try {
+      await fetchClientStats(selectedClient.id);
+    } finally {
+      if (isMountedRef.current) setClientStatsRetrying(false);
+    }
+  }, [fetchClientStats, selectedClient?.id]);
 
   // Client drawer açıldığında stats fetch et
   useEffect(() => {
-    if (clientDrawerOpen && selectedClient?.id) {
-      fetchClientStats(selectedClient.id);
-    } else {
+    const currentClientId = selectedClient?.id ?? null;
+    if (clientStatsPrevClientIdRef.current !== currentClientId) {
+      // Müvekkil KİMLİĞİ değişti (farklı müvekkil seçildi) — ÖNCEKİ müvekkilin
+      // stats/hata durumu YENİ müvekkilin bağlamında YANLIŞLIKLA görünmez.
+      // NOT: drawer'ın yalnız kapanması (AYNI müvekkil için) bu dalı TETİKLEMEZ
+      // — aynı kaynak kimliği için önceki başarılı veri korunur (aşağıya bkz.).
+      clientStatsPrevClientIdRef.current = currentClientId;
       setClientStats(null);
+      setClientStatsLoadError(null);
     }
-  }, [clientDrawerOpen, selectedClient?.id]);
+    if (clientDrawerOpen && selectedClient?.id) {
+      // Drawer YENİDEN açıldı (aynı veya farklı müvekkil için) — ÖNCEKİ, belki
+      // hâlâ in-flight bir denemenin bayrağı bu YENİ denemeyi ENGELLEMEMELİ;
+      // jenerasyon token'ı ESKİ denemenin GEÇ gelen yanıtını zaten ATLAR
+      // (A4-AB-8'de yakalanan aynı tasarım hatası — bkz. retryClientStats'ın
+      // KENDİ çift-tıklama koruması bu sıfırlamadan ETKİLENMEZ, çünkü retry
+      // doğrudan fetchClientStats'ı çağırır, bu efekti TETİKLEMEZ).
+      clientStatsFetchInFlightRef.current = false;
+      fetchClientStats(selectedClient.id);
+    }
+  }, [clientDrawerOpen, selectedClient?.id, fetchClientStats]);
 
   // Ekip modal açıldığında
   useEffect(() => {
@@ -4035,6 +4091,27 @@ export default function CaseDetailPage() {
                 {selectedClient.phone && <span className="ml-3">📞 {selectedClient.phone}</span>}
               </p>
             </div>
+
+            {clientStatsLoadError && (
+              // WSMR-A4-AB-12: okuma hatası "0 aktif dosya"/uyarı-yok GİBİ GÖRÜNMEZ —
+              // aşağıdaki üç panel (Dosya Yoğunluğu/Finansal Durum/Uyarılar) hep AYNI
+              // `clientStats`'ı okur; tek bant burada yeter. Retry YALNIZ bu okumayı
+              // (fetchClientStats) tekrar dener.
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+                <span>
+                  {clientStatsLoadError}
+                  {clientStats ? " Gösterilen istatistikler bayat olabilir." : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={retryClientStats}
+                  disabled={clientStatsRetrying}
+                  className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {clientStatsRetrying ? "Deneniyor…" : "Tekrar dene"}
+                </button>
+              </div>
+            )}
 
             {/* DOSYA YOĞUNLUĞU - 3 sütun */}
             <div className="bg-slate-50 rounded-lg p-3">
