@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight } from "lucide-react";
+import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { sanitizeLawyerIbanPayload } from "@/lib/lawyer-iban-payload";
 import { buildLawyerUpdatePayload } from "@/lib/lawyer-update-payload";
@@ -132,6 +132,66 @@ function OfficeSettingsInner() {
     specialDays: any[]; holidayClients: any[];
   } | null>(null);
   const [sendingGreetingKey, setSendingGreetingKey] = useState<string | null>(null);
+  // WSMR-A4-AB-13: eskiden `/greetings/today` hatası yalnız `console.error` ile
+  // YUTULUYORDU ve `todayGreetings` TAMAMEN BOŞ dizilerle dolduruluyordu — bu,
+  // aşağıdaki render'da "Bugün gönderilecek tebrik yok." (gerçekten-boş) ile
+  // AYNI göründüğü için personel gerçek bir okuma arızasını "bugün tebrik yok"
+  // sanıp doğum günü/yıldönümü/bayram tebriklerini GÖNDERMEYİ ATLAYABİLİRDİ.
+  const [todayGreetingsLoadError, setTodayGreetingsLoadError] = useState<string | null>(null);
+  const [todayGreetingsRetrying, setTodayGreetingsRetrying] = useState(false);
+  const todayGreetingsIsMountedRef = useRef(true);
+  useEffect(() => {
+    todayGreetingsIsMountedRef.current = true;
+    return () => {
+      todayGreetingsIsMountedRef.current = false;
+    };
+  }, []);
+  const todayGreetingsTokenRef = useRef(0);
+  const todayGreetingsInFlightRef = useRef(false);
+
+  // ACT-12: `loadOffice`'in ana sırasından ÇIKARILDI — kendi görünür hata/retry'sine
+  // sahip, ayrı okuma yolu. `loadOffice` YİNE aynı noktada çağırır (tetikleme
+  // noktası DEĞİŞMEDİ, yalnız yutulan hata görünür hale getirildi).
+  const loadTodayGreetings = useCallback(async () => {
+    if (todayGreetingsInFlightRef.current) return; // çift retry -> tek aktif istek
+    todayGreetingsInFlightRef.current = true;
+    const token = ++todayGreetingsTokenRef.current;
+    try {
+      const todayRes = await api.get("/greetings/today");
+      if (!todayGreetingsIsMountedRef.current || token !== todayGreetingsTokenRef.current) return; // bayat/unmount
+      const d = todayRes?.data;
+      if (!d || typeof d !== "object" || Array.isArray(d)) {
+        throw new Error("MALFORMED_TODAY_GREETINGS_RESPONSE");
+      }
+      setTodayGreetings({
+        birthdays: Array.isArray(d.birthdays) ? d.birthdays : [],
+        foundingAnniversaries: Array.isArray(d.foundingAnniversaries) ? d.foundingAnniversaries : [],
+        poaAnniversaries: Array.isArray(d.poaAnniversaries) ? d.poaAnniversaries : [],
+        specialDays: Array.isArray(d.specialDays) ? d.specialDays : [],
+        holidayClients: Array.isArray(d.holidayClients) ? d.holidayClients : [],
+      });
+      setTodayGreetingsLoadError(null);
+    } catch (e) {
+      if (!todayGreetingsIsMountedRef.current || token !== todayGreetingsTokenRef.current) return;
+      // todayGreetings BİLEREK dokunulmaz — önceki başarıyla yüklenmiş liste
+      // (varsa) SİLİNMEZ; yalnız bayat olduğu bantta görünür olur. Retry
+      // YALNIZ bu okumayı tekrar dener.
+      setTodayGreetingsLoadError(toActionErrorMessage(e, "Bugünkü tebrikler yüklenemedi."));
+    } finally {
+      if (token === todayGreetingsTokenRef.current) {
+        todayGreetingsInFlightRef.current = false;
+      }
+    }
+  }, []);
+
+  const retryTodayGreetings = useCallback(async () => {
+    setTodayGreetingsRetrying(true);
+    try {
+      await loadTodayGreetings();
+    } finally {
+      if (todayGreetingsIsMountedRef.current) setTodayGreetingsRetrying(false);
+    }
+  }, [loadTodayGreetings]);
 
   useEffect(() => { loadOffice(); loadStaff(); }, []);
 
@@ -192,20 +252,9 @@ function OfficeSettingsInner() {
         autoGreetingEnabled: greetingRes.data?.autoGreetingEnabled ?? true,
         autoGreetingTime: greetingRes.data?.autoGreetingTime || "09:00",
       });
-      // ACT-12: bugün gönderilecek tebrikler (önizleme)
-      try {
-        const todayRes = await api.get("/greetings/today");
-        setTodayGreetings({
-          birthdays: todayRes.data?.birthdays || [],
-          foundingAnniversaries: todayRes.data?.foundingAnniversaries || [],
-          poaAnniversaries: todayRes.data?.poaAnniversaries || [],
-          specialDays: todayRes.data?.specialDays || [],
-          holidayClients: todayRes.data?.holidayClients || [],
-        });
-      } catch (e) {
-        console.error("Bugünkü tebrikler yüklenemedi:", e);
-        setTodayGreetings({ birthdays: [], foundingAnniversaries: [], poaAnniversaries: [], specialDays: [], holidayClients: [] });
-      }
+      // ACT-12: bugün gönderilecek tebrikler (önizleme) — WSMR-A4-AB-13: ayrı
+      // fonksiyona çıkarıldı, hata artık görünür (bkz. loadTodayGreetings).
+      loadTodayGreetings();
       // Görev & eskalasyon ayarlarını yükle
       const escRes = await api.get("/office/escalation-settings");
       setEscalationForm({
@@ -1224,9 +1273,44 @@ function OfficeSettingsInner() {
             </div>
             {/* ACT-12: Bugün ne gidecek? önizlemesi */}
             <div className="p-2 border rounded bg-blue-50 mt-2">
-              <p className="font-medium text-blue-700 mb-2">📋 Bugün Ne Gidecek?</p>
-              {!todayGreetings ? (
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-medium text-blue-700">📋 Bugün Ne Gidecek?</p>
+                <button
+                  type="button"
+                  onClick={retryTodayGreetings}
+                  disabled={todayGreetingsRetrying}
+                  title="Yenile"
+                  className="p-0.5 hover:bg-blue-100 rounded disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 text-blue-500 ${todayGreetingsRetrying ? "animate-spin" : ""}`} />
+                </button>
+              </div>
+              {todayGreetingsLoadError && (
+                // WSMR-A4-AB-13: okuma hatası "Bugün gönderilecek tebrik yok." (gerçekten-
+                // boş) İLE KARIŞMAZ — personel gerçek bir tebriği ATLAMAZ. Retry YALNIZ
+                // bu okumayı (loadTodayGreetings) tekrar dener.
+                <div role="alert" className="mb-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] text-red-800 flex items-center justify-between gap-2">
+                  <span>
+                    {todayGreetingsLoadError}
+                    {todayGreetings ? " Liste bayat olabilir." : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={retryTodayGreetings}
+                    disabled={todayGreetingsRetrying}
+                    className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-red-800 hover:bg-red-200 disabled:opacity-50"
+                  >
+                    {todayGreetingsRetrying ? "..." : "Tekrar dene"}
+                  </button>
+                </div>
+              )}
+              {!todayGreetings && !todayGreetingsLoadError ? (
                 <p className="text-[10px] text-gray-500">Yükleniyor...</p>
+              ) : !todayGreetings ? (
+                // İlk okuma başarısız oldu, önceden yüklenmiş bir liste de YOK —
+                // "Bugün gönderilecek tebrik yok." iddiası ÜRETİLMEZ (yukarıdaki
+                // bant zaten hatayı gösteriyor).
+                null
               ) : (() => {
                 const rows: { key: string; label: string; name: string; clientId: string; type: string; specialDayId?: string }[] = [];
                 const nameOf = (c: any) => c.displayName || c.companyName || `${c.firstName || ""} ${c.lastName || ""}`.trim();
