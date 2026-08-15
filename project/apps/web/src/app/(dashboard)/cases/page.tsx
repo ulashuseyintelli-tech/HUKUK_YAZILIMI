@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -813,8 +813,56 @@ export default function CasesPage() {
   const [bulkOwner, setBulkOwner] = useState<ResponsibleSelection | null>(null);
   const [bulkResult, setBulkResult] = useState<BulkAssignResult | null>(null);
   const [exportingCases, setExportingCases] = useState(false);
-  const [ownerlessCount, setOwnerlessCount] = useState(0); // SAHIPSIZ-DOSYALAR-G1b: getStats.ownerless
-  const [legalResponsibleMissingCount, setLegalResponsibleMissingCount] = useState(0); // WP-3a: getStats.legalResponsibleMissing
+  // WSMR-A4-AB-11: `undefined` = HENÜZ BİLİNMİYOR (ilk yükleme sürüyor veya son okuma
+  // başarısız oldu) — `0` YALNIZ backend'in doğruladığı gerçek sıfır için kullanılır.
+  // `QuickFilterChip` zaten `count === undefined` iken rozet basmıyor (bkz.
+  // components/ui/QuickFilterChip.tsx) — bu ayrım için PAYLAŞILAN bileşen DEĞİŞTİRİLMEDİ.
+  const [ownerlessCount, setOwnerlessCount] = useState<number | undefined>(undefined); // SAHIPSIZ-DOSYALAR-G1b: getStats.ownerless
+  const [legalResponsibleMissingCount, setLegalResponsibleMissingCount] = useState<number | undefined>(undefined); // WP-3a: getStats.legalResponsibleMissing
+  const [statsLoadError, setStatsLoadError] = useState<string | null>(null);
+  const [statsRetrying, setStatsRetrying] = useState(false);
+  const statsIsMountedRef = useRef(true);
+  useEffect(() => {
+    statsIsMountedRef.current = true;
+    return () => {
+      statsIsMountedRef.current = false;
+    };
+  }, []);
+  const statsTokenRef = useRef(0);
+
+  // WSMR-A4-AB-11: `/cases/stats` eskiden `fetchCases` içinde satır-içi `.then().catch(()=>{})`
+  // ile çağrılıyordu — hata TAMAMEN yutuluyordu, "Sahipsiz"/"Hukuki Sorumlu Avukat Eksik"
+  // uyum rozetleri sessizce 0'da KALIYORDU (gerçek sıfır ile okuma hatası AYIRT EDİLEMİYORDU).
+  // Ayrı fonksiyona çıkarıldı: görünür hata + yalnız bu kaynağa retry + jenerasyon token
+  // (bayat yanıt yeni state'i ezmez) + önceki başarılı sayaç bir SONRAKİ okuma
+  // başarısız olursa SİLİNMEZ (yalnız bayat olduğu bantta belirtilir).
+  const fetchStats = useCallback(async () => {
+    const token = ++statsTokenRef.current;
+    setStatsLoadError(null);
+    try {
+      const r: any = await api.get('/cases/stats');
+      if (!statsIsMountedRef.current || token !== statsTokenRef.current) return; // bayat/unmount
+      if (!r || typeof r !== "object" || !r.data || typeof r.data !== "object") {
+        throw new Error("MALFORMED_CASES_STATS_RESPONSE");
+      }
+      setOwnerlessCount(r.data.ownerless ?? 0);
+      setLegalResponsibleMissingCount(r.data.legalResponsibleMissing ?? 0);
+    } catch (error) {
+      if (!statsIsMountedRef.current || token !== statsTokenRef.current) return;
+      // ownerlessCount/legalResponsibleMissingCount BİLEREK dokunulmaz — önceki
+      // başarıyla yüklenmiş sayaç (varsa) SİLİNMEZ; yalnız bayat olduğu bantta görünür olur.
+      setStatsLoadError(toActionErrorMessage(error, "Uyum sayaçları yüklenemedi."));
+    }
+  }, []);
+
+  const retryStats = useCallback(async () => {
+    setStatsRetrying(true);
+    try {
+      await fetchStats();
+    } finally {
+      if (statsIsMountedRef.current) setStatsRetrying(false);
+    }
+  }, [fetchStats]);
 
   useEffect(() => {
     loadLookupData();
@@ -1138,11 +1186,9 @@ export default function CasesPage() {
         throw new Error("MALFORMED_CASES_RESPONSE");
       }
       setCases(response.data);
-      // SAHIPSIZ-DOSYALAR-G1b: doğru sahipsiz toplamı (server-side; chip rozeti). Best-effort.
-      api.get('/cases/stats').then((r: any) => {
-        setOwnerlessCount(r?.data?.ownerless ?? 0);
-        setLegalResponsibleMissingCount(r?.data?.legalResponsibleMissing ?? 0); // WP-3a
-      }).catch(() => {});
+      // SAHIPSIZ-DOSYALAR-G1b: doğru sahipsiz toplamı (server-side; chip rozeti).
+      // WSMR-A4-AB-11: artık fire-and-forget silent-swallow DEĞİL — bkz. fetchStats().
+      fetchStats();
     } catch (error) {
       // WSMR-A4o: eskiden yalniz console.error ile YUTULUYORDU. Ilk yuklemede
       // `cases` baslangic degeri ([]) oldugu icin bu, asagidaki "Takip
@@ -1767,6 +1813,28 @@ export default function CasesPage() {
           >
             <X className="h-3 w-3" />
             Filtreyi Kaldır
+          </button>
+        </div>
+      )}
+
+      {statsLoadError && (
+        // WSMR-A4-AB-11: "Sahipsiz"/"Hukuki Sorumlu Avukat Eksik" uyum rozetleri okuma
+        // hatasında sessizce 0 GÖSTERMEZ — QuickFilterChip zaten count=undefined iken
+        // rozet basmıyor (bkz. yukarıdaki state yorumu); bu bant AYRICA görünür hata + retry.
+        <div role="alert" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-center justify-between gap-3">
+          <span>
+            {statsLoadError}{" "}
+            {ownerlessCount !== undefined || legalResponsibleMissingCount !== undefined
+              ? "Uyum rozetleri (Sahipsiz / Hukuki Sorumlu Avukat Eksik) bayat olabilir."
+              : "Uyum rozetleri (Sahipsiz / Hukuki Sorumlu Avukat Eksik) şu an gösterilemiyor."}
+          </span>
+          <button
+            type="button"
+            onClick={retryStats}
+            disabled={statsRetrying}
+            className="shrink-0 rounded bg-amber-100 px-2 py-1 text-amber-800 hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {statsRetrying ? "Deneniyor…" : "Tekrar dene"}
           </button>
         </div>
       )}
