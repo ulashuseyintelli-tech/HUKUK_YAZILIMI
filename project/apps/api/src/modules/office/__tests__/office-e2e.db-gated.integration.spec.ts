@@ -57,6 +57,7 @@ interface Fixture {
   adminAId: string;
   adminBId: string;
   adminAToken: string;
+  adminBToken: string;
   partnerUserId: string;
   partnerToken: string;
   partnerLawyerId: string;
@@ -114,7 +115,7 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
     officeApproval = new OfficeApprovalService(prisma as never, audit);
     const officeService = new OfficeService(prisma as never, audit, officeApproval);
     const lawyerService = new LawyerService(prisma as never, audit, officeApproval);
-    const staffService = new StaffService(prisma as never);
+    const staffService = new StaffService(prisma as never, audit);
     const reportingLineService = new ReportingLineService(prisma as never, audit);
     const emailProvider = {
       send: jest.fn(async (options: { text?: string }) => {
@@ -343,6 +344,11 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
       password: PASSWORD,
       tenantSlug: registeredA.tenant.slug,
     });
+    const adminBLogin = await authService.login({
+      email: sharedEmail,
+      password: PASSWORD,
+      tenantSlug: registeredB.tenant.slug,
+    });
     const partnerLogin = await authService.login({
       email: partnerUser.email,
       password: PASSWORD,
@@ -362,6 +368,7 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
       adminAId: registeredA.user.id,
       adminBId: registeredB.user.id,
       adminAToken: adminLogin.token,
+      adminBToken: adminBLogin.token,
       partnerUserId: partnerUser.id,
       partnerToken: partnerLogin.token,
       partnerLawyerId: partnerLawyer.id,
@@ -532,7 +539,211 @@ describeWithDisposableDatabase('OFFICE E2E A-J - controlled Nest HTTP and dispos
     expect(active).toMatchObject({ managerUserId: fixture.partnerUserId, disposition: 'MANAGED' });
   });
 
-  it('E - Office approval request is visible, approved once, and remains decision-only', async () => {
+  it('F03-01 - authorized same-tenant approval succeeds', async () => {
+    const pending = await officeApproval.createPendingRequest({
+      tenantId: fixture.tenantAId,
+      actionCode: ActionCode.CHANGE_STATUS,
+      targetType: 'CASE',
+      targetRef: `f03-authorized-${randomUUID()}`,
+      requesterUserId: fixture.plainUserId,
+      savedIntent: { status: 'CLOSED' },
+      idempotencyKey: `f03-authorized-${randomUUID()}`,
+    });
+
+    const approved = await request(app.getHttpServer())
+      .post(`/api/office-approvals/${pending.id}/approve`)
+      .set(authorization(fixture.partnerToken))
+      .send({ note: 'F03 same-tenant approval' })
+      .expect(201);
+
+    expect(approved.body.data).toMatchObject({
+      id: pending.id,
+      status: 'APPROVED',
+      executionStatus: 'NOT_RUN',
+    });
+    expect(await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({
+      tenantId: fixture.tenantAId,
+      requesterUserId: fixture.plainUserId,
+      approverUserId: fixture.partnerUserId,
+      status: 'APPROVED',
+      executionStatus: 'NOT_RUN',
+    });
+  });
+
+  it('F03-02 - unauthorized actor receives 403', async () => {
+    const pending = await officeApproval.createPendingRequest({
+      tenantId: fixture.tenantAId,
+      actionCode: ActionCode.CHANGE_STATUS,
+      targetType: 'CASE',
+      targetRef: `f03-unauthorized-${randomUUID()}`,
+      requesterUserId: fixture.partnerUserId,
+      savedIntent: { status: 'CLOSED' },
+      idempotencyKey: `f03-unauthorized-${randomUUID()}`,
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/office-approvals/${pending.id}/approve`)
+      .set(authorization(fixture.plainToken))
+      .send({ note: 'Must remain unauthorized' })
+      .expect(403);
+
+    expect(await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({
+      status: 'PENDING_APPROVAL',
+      approverUserId: null,
+    });
+  });
+
+  it('F03-03 - cross-tenant approval remains invisible', async () => {
+    const pending = await officeApproval.createPendingRequest({
+      tenantId: fixture.tenantAId,
+      actionCode: ActionCode.CHANGE_STATUS,
+      targetType: 'CASE',
+      targetRef: `f03-cross-tenant-${randomUUID()}`,
+      requesterUserId: fixture.plainUserId,
+      savedIntent: { status: 'CLOSED' },
+      idempotencyKey: `f03-cross-tenant-${randomUUID()}`,
+    });
+
+    await request(app.getHttpServer())
+      .get(`/api/office-approvals/${pending.id}`)
+      .set(authorization(fixture.adminBToken))
+      .expect(404);
+
+    expect(await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({
+      tenantId: fixture.tenantAId,
+      status: 'PENDING_APPROVAL',
+    });
+  });
+
+  it('F03-04 - generic CHANGE_STATUS self-approval is forbidden', async () => {
+    const pending = await officeApproval.createPendingRequest({
+      tenantId: fixture.tenantAId,
+      actionCode: ActionCode.CHANGE_STATUS,
+      targetType: 'CASE',
+      targetRef: `f03-self-approval-${randomUUID()}`,
+      requesterUserId: fixture.partnerUserId,
+      savedIntent: { status: 'CLOSED' },
+      idempotencyKey: `f03-self-approval-${randomUUID()}`,
+    });
+
+    const denied = await request(app.getHttpServer())
+      .post(`/api/office-approvals/${pending.id}/approve`)
+      .set(authorization(fixture.partnerToken))
+      .send({ note: 'Must not approve own request' })
+      .expect(400);
+    expect(JSON.stringify(denied.body)).toContain('SELF_APPROVAL_FORBIDDEN');
+    expect(await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({
+      status: 'PENDING_APPROVAL',
+      approverUserId: null,
+    });
+  });
+
+  it('F03-05 - staff deactivation writes CAP-09A AuditLog read-back', async () => {
+    const suffix = randomUUID();
+    const linkedUser = await prisma.user.create({
+      data: {
+        tenantId: fixture.tenantAId,
+        email: `f03-audit-${suffix}@example.test`,
+        passwordHash: await bcrypt.hash(PASSWORD, 4),
+        name: 'F03',
+        surname: 'Audit',
+        role: 'USER',
+      },
+    });
+    const staff = await prisma.staffMember.create({
+      data: {
+        tenantId: fixture.tenantAId,
+        officeId: fixture.officeAId,
+        userId: linkedUser.id,
+        firstName: 'F03',
+        lastName: 'Audit',
+        staffType: 'DIGER',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/api/staff/${staff.id}`)
+      .set(authorization(fixture.adminAToken))
+      .expect(200, { success: true });
+
+    const [staffReadBack, userReadBack, auditReadBack] = await Promise.all([
+      prisma.staffMember.findUniqueOrThrow({ where: { id: staff.id } }),
+      prisma.user.findUniqueOrThrow({ where: { id: linkedUser.id } }),
+      prisma.auditLog.findFirstOrThrow({
+        where: { tenantId: fixture.tenantAId, action: 'STAFF_DEACTIVATE', entityId: staff.id },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    expect(staffReadBack.isActive).toBe(false);
+    expect(userReadBack.isActive).toBe(false);
+    expect(auditReadBack).toMatchObject({
+      tenantId: fixture.tenantAId,
+      action: 'STAFF_DEACTIVATE',
+      entityType: 'STAFF',
+      entityId: staff.id,
+      userId: fixture.adminAId,
+      actorType: 'USER',
+      decisionResult: 'SUCCESS',
+      reasonCode: 'OFFICE_F01_AUTHORIZED',
+      policyRef: 'OFFICE-GOVERNANCE:OFF-INV-08',
+      policyVersion: '2026-08-13',
+      oldValues: { isActive: true },
+      newValues: { isActive: false },
+      metadata: {
+        actorRole: 'ADMIN',
+        authoritySource: 'OFFICE_F01_AUTHORIZATION_GUARD',
+        linkedUserAccountDeactivated: true,
+        softDelete: true,
+      },
+    });
+    expect(auditReadBack.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(auditReadBack.correlationId).toBe(auditReadBack.requestId);
+  });
+
+  it('F03-06 - audit failure rolls back Staff and linked User', async () => {
+    const suffix = randomUUID();
+    const linkedUser = await prisma.user.create({
+      data: {
+        tenantId: fixture.tenantAId,
+        email: `f03-rollback-${suffix}@example.test`,
+        passwordHash: await bcrypt.hash(PASSWORD, 4),
+        name: 'F03',
+        surname: 'Rollback',
+        role: 'USER',
+      },
+    });
+    const staff = await prisma.staffMember.create({
+      data: {
+        tenantId: fixture.tenantAId,
+        officeId: fixture.officeAId,
+        userId: linkedUser.id,
+        firstName: 'F03',
+        lastName: 'Rollback',
+        staffType: 'DIGER',
+      },
+    });
+    const auditFailure = jest
+      .spyOn(audit, 'logInTransaction')
+      .mockRejectedValueOnce(new Error('F03_SYNTHETIC_AUDIT_FAILURE'));
+
+    const failed = await request(app.getHttpServer())
+      .delete(`/api/staff/${staff.id}`)
+      .set(authorization(fixture.adminAToken))
+      .expect(200);
+    auditFailure.mockRestore();
+
+    expect(failed.body).toEqual({ error: 'F03_SYNTHETIC_AUDIT_FAILURE' });
+    const [staffReadBack, userReadBack, auditCount] = await Promise.all([
+      prisma.staffMember.findUniqueOrThrow({ where: { id: staff.id } }),
+      prisma.user.findUniqueOrThrow({ where: { id: linkedUser.id } }),
+      prisma.auditLog.count({ where: { entityId: staff.id, action: 'STAFF_DEACTIVATE' } }),
+    ]);
+    expect(staffReadBack.isActive).toBe(true);
+    expect(userReadBack.isActive).toBe(true);
+    expect(auditCount).toBe(0);
+  });
+
+  it('F03-07 - office approval differential regression remains intact', async () => {
     const pending = await officeApproval.createPendingRequest({
       tenantId: fixture.tenantAId,
       actionCode: ActionCode.CHANGE_STATUS,
