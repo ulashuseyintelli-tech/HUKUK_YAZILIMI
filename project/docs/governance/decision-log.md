@@ -280,6 +280,42 @@ reusableAuthority : PROHIBITED
 globalAuthority : PROHIBITED
 ```
 
+### OFFICE-SC-F03 dedicated OFFICE E2E semantic authority record
+
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-SA01 -->
+
+```text
+recordType : SEMANTIC_AUTHORITY
+recordId : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-SA01
+programId : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+taskId : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01-AUTHORITY-MATERIALIZATION-R01
+targetTaskId : OFFICE-SC-F03-DEDICATED-OFFICE-E2E-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+decision : RATIFIED
+issuedAt : 2026-08-15
+status : ACTIVE_AFTER_APPROVED_MERGE
+scope : TEST-ONLY DEDICATED OFFICE E2E
+productBehavior : UNCHANGED
+approvalPolicy : UNCHANGED
+reportingLine : ORGANIZATIONAL EVIDENCE ONLY / NOT POLICY AUTHORITY
+database : DISPOSABLE POSTGRESQL ONLY
+authoritativeDatabase : PROHIBITED
+cap09aConsumer : CANONICAL PREDECESSOR / TEST CONSUMPTION ONLY
+cap09aProducer : DORMANT_CANONICAL / NOT_AUTHORIZED / DO_NOT_OPEN
+runtime : BLOCKED_BY_RUNTIME_MODEL
+productionActivation : NOT_AUTHORIZED
+exactTaskBinding : REQUIRED
+exactBranchBinding : REQUIRED
+exactScopeBinding : REQUIRED
+singleUseConsumption : REQUIRED
+transfer : PROHIBITED
+expansion : PROHIBITED
+standingAuthority : PROHIBITED
+reusableAuthority : PROHIBITED
+globalAuthority : PROHIBITED
+```
+
 ### OFFICE-SC-F01 authorization breadth and sensitive projection semantic authority record
 
 ```text
