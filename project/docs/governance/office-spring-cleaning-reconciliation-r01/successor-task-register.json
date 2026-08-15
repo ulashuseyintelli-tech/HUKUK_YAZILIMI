@@ -45,7 +45,24 @@
       "productionAccessRequired": false,
       "expectedProof": "nine decision-log closures with exact options",
       "eligibleAfter": ["fresh owner decision grant"],
-      "status": "NOT_STARTED"
+      "status": "NOT_STARTED",
+      "statusReconciliations": [
+        {
+          "reconciledAt": "2026-08-16",
+          "supersedes": "NOT_STARTED",
+          "repositorySourceStatus": "DECISION_COMPLETE / MERGED / CANONICAL",
+          "runtimeDisposition": "BLOCKED_BY_RUNTIME_MODEL",
+          "evidence": {
+            "decisionPackagePullRequest": 2376,
+            "decisionPackageSquashCommit": "a3db41bda8c9f09bcec5c563862f5ca10e0a9411",
+            "ownerDispositionPullRequest": 2403,
+            "ownerDispositionSquashCommit": "c9fed0a5c8201c5a5a8f3a57e51b2fe957a208ac",
+            "verifiedAncestorOfOriginMainAt": "4450c816cb612c0f5b233f158990cf9902c6d807"
+          },
+          "remainingOwnerGate": false,
+          "nextDisposition": "CLOSED"
+        }
+      ]
     },
     {
       "order": 3,
@@ -59,7 +76,25 @@
       "productionAccessRequired": false,
       "expectedProof": "producer to AuditService to independent read-back plus negative boundary",
       "eligibleAfter": ["fresh owner grant"],
-      "status": "NOT_STARTED"
+      "status": "NOT_STARTED",
+      "statusReconciliations": [
+        {
+          "reconciledAt": "2026-08-16",
+          "supersedes": "NOT_STARTED",
+          "repositorySourceStatus": "ENGINEERING_COMPLETE / MERGED / CANONICAL",
+          "executionGrantDisposition": "CONSUMED / EXPIRED",
+          "producerDisposition": "DORMANT_CANONICAL / NOT_AUTHORIZED / DO NOT OPEN",
+          "runtimeDisposition": "BLOCKED_BY_RUNTIME_MODEL",
+          "productionActivation": "NONE",
+          "evidence": {
+            "pullRequest": 2405,
+            "squashCommit": "943a9bbb59b2f9c5d05253c5b41e44cf3bc14a2d",
+            "mergedAt": "2026-08-15T05:15:19Z",
+            "verifiedAncestorOfOriginMainAt": "4450c816cb612c0f5b233f158990cf9902c6d807"
+          },
+          "technicalImplementationReopened": false
+        }
+      ]
     },
     {
       "order": 4,
@@ -73,7 +108,27 @@
       "productionAccessRequired": false,
       "expectedProof": "entrypoint through persistence/read-back and negative boundaries",
       "eligibleAfter": ["dependencies disposed","fresh owner grant"],
-      "status": "NOT_STARTED"
+      "status": "NOT_STARTED",
+      "statusReconciliations": [
+        {
+          "reconciledAt": "2026-08-16",
+          "supersedes": "NOT_STARTED",
+          "repositorySourceStatus": "TERMINAL_CLOSED / ENGINEERING_COMPLETE / MERGED / POST_MERGE_ACCEPTED",
+          "executionGrantDisposition": "CONSUMED / EXPIRED",
+          "implementationEffect": "TEST_ONLY",
+          "runtimeEffect": "NONE",
+          "productionEffect": "NONE",
+          "programRuntimeDisposition": "BLOCKED_BY_RUNTIME_MODEL",
+          "evidence": {
+            "authorityPullRequest": 2414,
+            "authoritySquashCommit": "8f9b50f326b6648cef028714173c21f9ad324368",
+            "implementationPullRequest": 2416,
+            "implementationSquashCommit": "4450c816cb612c0f5b233f158990cf9902c6d807",
+            "verifiedAncestorOfOriginMainAt": "4450c816cb612c0f5b233f158990cf9902c6d807"
+          },
+          "technicalImplementationReopened": false
+        }
+      ]
     },
     {
       "order": 5,
@@ -87,7 +142,45 @@
       "productionAccessRequired": false,
       "expectedProof": "focused suite and required-CI binding",
       "eligibleAfter": ["fresh owner grant"],
-      "status": "NOT_STARTED"
+      "status": "NOT_STARTED",
+      "statusReconciliations": [
+        {
+          "reconciledAt": "2026-08-16",
+          "supersedes": "NOT_STARTED",
+          "repositorySourceStatus": "TERMINAL_CLOSED / ENGINEERING_COMPLETE / MERGED / CANONICAL — P6B EVIDENCE SATISFIED",
+          "p6bTaskId": "OFFICE-P6B-EXECUTION-OFFICE-CONSUMER-IMPLEMENTATION-R01",
+          "p6bResidualDisposition": "FULLY_MET",
+          "runtimeEffect": "NONE",
+          "productionEffect": "NONE",
+          "programRuntimeDisposition": "BLOCKED_BY_RUNTIME_MODEL",
+          "evidence": {
+            "pullRequest": 2356,
+            "squashCommit": "76cd85f38324a9b4a79c192c5da10be2e4f54402",
+            "mergedAt": "2026-08-12T21:14:16Z",
+            "verifiedAncestorOfOriginMainAt": "4450c816cb612c0f5b233f158990cf9902c6d807",
+            "executionOfficeSourceAndSpecsAfterP6b": "UNCHANGED",
+            "laterManifestDrift": "PURE_MANIFEST_ADDITIONS_ONLY; P6B ENTRY PRESERVED",
+            "freshFocusedTests": "15 / 15 PASS ON DISPOSABLE POSTGRESQL",
+            "p6bRequiredCi": "9 / 9 PASS",
+            "currentRequiredCi": "9 / 9 PASS"
+          },
+          "relatedProgramDispositions": [
+            {
+              "item": "F02",
+              "status": "NON-CANONICAL / NOT_CREATED"
+            },
+            {
+              "item": "CLF-O0-01",
+              "status": "UNTOUCHED / OUT_OF_SCOPE"
+            },
+            {
+              "item": "RUNTIME_AND_PRODUCTION",
+              "status": "BLOCKED_BY_RUNTIME_MODEL; production activation : NONE"
+            }
+          ],
+          "technicalImplementationReopened": false
+        }
+      ]
     },
     {
       "order": 6,
@@ -101,7 +194,17 @@
       "productionAccessRequired": true,
       "expectedProof": "deployed SHA/config, restart, mail delivery and independent read-back",
       "eligibleAfter": ["explicit production access and activation grant"],
-      "status": "NOT_STARTED"
+      "status": "NOT_STARTED",
+      "statusReconciliations": [
+        {
+          "reconciledAt": "2026-08-16",
+          "supersedes": "NOT_STARTED",
+          "repositorySourceStatus": "NOT_AUTHORIZED",
+          "runtimeDisposition": "BLOCKED_BY_RUNTIME_MODEL",
+          "productionActivation": "NONE",
+          "nextDisposition": "DO_NOT_START_WITHOUT_DISTINCT_OWNER_GRANT_AND_PRODUCTION_ACCESS"
+        }
+      ]
     },
     {
       "order": 7,
@@ -115,7 +218,17 @@
       "productionAccessRequired": false,
       "expectedProof": "registration, branch, PR, unique-WIP and physical path terminal evidence",
       "eligibleAfter": ["fresh owner grant"],
-      "status": "NOT_STARTED"
+      "status": "NOT_STARTED",
+      "statusReconciliations": [
+        {
+          "reconciledAt": "2026-08-16",
+          "supersedes": "NOT_STARTED",
+          "repositorySourceStatus": "NOT_STARTED / ORDER_LOCKED",
+          "runtimeEffect": "NONE",
+          "productionEffect": "NONE",
+          "nextDisposition": "RETURN_TO_PAGE_O0_FOR_DISTINCT_OWNER_GATE"
+        }
+      ]
     }
   ]
 }
