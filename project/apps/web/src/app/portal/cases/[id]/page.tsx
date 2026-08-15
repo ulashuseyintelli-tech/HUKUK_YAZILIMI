@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, User, Loader2, Clock, StickyNote } from "lucide-react";
+import { ArrowLeft, FileText, User, Loader2, Clock, StickyNote, RefreshCw, AlertTriangle } from "lucide-react";
 // CLIENT-REMEDIATION-CLOSEOUT-R01: module-level `NEXT_PUBLIC_API_URL || "http://localhost:8080"
 // fallback'i kaldırıldı — production'da env eksikse sessizce kullanıcının localhost'una
 // düşüyordu. Base URL artık canonical config katmanından gelir (dev fallback yalnız orada,
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 
 const statusLabels: Record<string, string> = {
@@ -85,39 +86,102 @@ function formatTrDate(value: string | Date): string {
 
 export default function PortalCaseDetailPage() {
   const params = useParams();
-  const router = useRouter();
+  const caseId = params.id as string;
+
   const [caseData, setCaseData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // WSMR-A4-AB-8: `getCaseDetail` (backend) tenant+client sahipliğini TEK
+  // `NotFoundException` (404) ile birleştirir (portal.service.ts) — "dosya yok" ile
+  // "dosya var ama senin değil" AYRIMI backend'de zaten YOK; UI ayrıca bir ayrım
+  // ÜRETMEZ/sızdırmaz. `notFound` bu doğrulanmış 404 için; `loadError` GERÇEK (transient)
+  // okuma hataları (network/5xx/malformed) için — ikisi AYNI ekrana düşmez, "dosya yok"
+  // görüntüsü yalnız onaylı 404'te üretilir.
+  const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const loadTokenRef = useRef(0);
+  const loadInFlightRef = useRef(false);
+  const prevIdRef = useRef<string | null>(null);
+
+  const loadCase = useCallback(async () => {
+    if (loadInFlightRef.current) return; // cift retry -> tek aktif istek
+    loadInFlightRef.current = true;
+    const requestToken = ++loadTokenRef.current;
+    try {
+      const authToken = localStorage.getItem("portal_token");
+      const res = await fetch(portalApiUrl(`/api/portal/cases/${caseId}`), {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (!isMountedRef.current || requestToken !== loadTokenRef.current) return; // bayat/unmount
+
+      if (res.status === 404) {
+        setNotFound(true);
+        setCaseData(null);
+        setLoadError(null);
+        return;
+      }
+      if (!res.ok) throw new Error(`CASE_HTTP_${res.status}`);
+
+      const data: unknown = await res.json();
+      if (!isMountedRef.current || requestToken !== loadTokenRef.current) return;
+      // NOT: `id` burada ZORUNLU TUTULMAZ — mevcut alan-görünürlük sözleşmesi (§28.4)
+      // `id`/`description`/`lifecycleEvents` gibi alanların response'tan tamamen
+      // ÇIKARILMASINA izin verir (regresyon testi [6]); yalnız gerçekten ANLAMSIZ
+      // şekiller (null/dizi/primitif) MALFORMED sayılır.
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("MALFORMED_CASE_RESPONSE");
+      }
+      // Önceki başarıyla yüklenmiş veri, bu okuma başarılı olana kadar KORUNUR.
+      setCaseData(data);
+      setNotFound(false);
+      setLoadError(null);
+    } catch (e) {
+      if (!isMountedRef.current || requestToken !== loadTokenRef.current) return;
+      // caseData BİLEREK dokunulmaz — önceki başarıyla yüklenmiş veri (varsa) SİLİNMEZ;
+      // yalnız bayat olduğu bantta görünür olur. Retry YALNIZ bu okumayı tekrar dener.
+      setLoadError(toActionErrorMessage(e, "Dosya yüklenemedi."));
+    } finally {
+      if (requestToken === loadTokenRef.current) {
+        loadInFlightRef.current = false;
+        if (isMountedRef.current) setLoading(false);
+      }
+    }
+  }, [caseId]);
 
   useEffect(() => {
-    loadCase();
-  }, [params.id]);
-
-  const loadCase = async () => {
-    try {
-      const token = localStorage.getItem("portal_token");
-      const res = await fetch(portalApiUrl(`/api/portal/cases/${params.id}`), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      if (!res.ok) {
-        if (res.status === 404) {
-          router.push("/portal/cases");
-          return;
-        }
-        throw new Error("Dosya yüklenemedi");
-      }
-      
-      const data = await res.json();
-      setCaseData(data);
-    } catch (e) {
-      console.error("Dosya yüklenemedi:", e);
-    } finally {
-      setLoading(false);
+    if (prevIdRef.current !== caseId) {
+      // Farklı bir dosyaya geçiliyor — ÖNCEKİ dosyanın verisi YENİ dosyanın başlığı
+      // altında YANLIŞLIKLA görünmez (farklı hukuki dosya = farklı veri, karıştırılmaz).
+      prevIdRef.current = caseId;
+      setCaseData(null);
+      setNotFound(false);
+      setLoadError(null);
+      setLoading(true);
+      // ÖNCEKİ (farklı) caseId'nin hâlâ süren isteği bu YENİ okumayı ENGELLEMEMELİ —
+      // token kontrolü zaten o eski isteğin GEÇ gelen yanıtını uygulanmaktan alıkoyar.
+      loadInFlightRef.current = false;
     }
-  };
+    loadCase();
+  }, [caseId, loadCase]);
 
-  if (loading) {
+  const retryLoad = useCallback(async () => {
+    setRetrying(true);
+    try {
+      await loadCase();
+    } finally {
+      if (isMountedRef.current) setRetrying(false);
+    }
+  }, [loadCase]);
+
+  if (loading && !caseData) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -125,7 +189,9 @@ export default function PortalCaseDetailPage() {
     );
   }
 
-  if (!caseData) {
+  if (notFound) {
+    // Onaylı 404 — backend'in "yok"/"senin değil" birleşik sözleşmesiyle tutarlı, güvenli
+    // ortak mesaj. Transient değildir; retry SUNULMAZ (bkz. yukarıdaki yorum).
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">Dosya bulunamadı</p>
@@ -134,6 +200,31 @@ export default function PortalCaseDetailPage() {
         </Link>
       </div>
     );
+  }
+
+  if (!caseData && loadError) {
+    // ERROR — "dosya yok" görüntüsü ÜRETİLMEZ (eskiden notFound'la AYNI "!caseData"
+    // dalına düşüp confirmed-absence gibi görünüyordu). Görünür + retry'li ayrı durum.
+    return (
+      <div className="text-center py-12" role="alert">
+        <AlertTriangle className="h-10 w-10 mx-auto text-red-400 mb-2" />
+        <p className="text-red-700 font-medium">{loadError}</p>
+        <button
+          type="button"
+          onClick={retryLoad}
+          disabled={retrying}
+          className="mt-3 inline-flex items-center gap-1 rounded bg-red-100 px-3 py-1.5 text-sm text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed mx-auto"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
+          {retrying ? "Deneniyor…" : "Tekrar dene"}
+        </button>
+      </div>
+    );
+  }
+
+  if (!caseData) {
+    // Teorik olarak ulaşılmaz (loading/notFound/error yukarıda kapsandı) — savunma amaçlı.
+    return null;
   }
 
   return (
@@ -149,6 +240,15 @@ export default function PortalCaseDetailPage() {
             {caseData.executionFileNumber && `İcra No: ${caseData.executionFileNumber}`}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={retryLoad}
+          disabled={retrying}
+          title="Yenile"
+          className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className={`h-4 w-4 text-gray-500 ${retrying ? "animate-spin" : ""}`} />
+        </button>
         <span className={`ml-auto px-3 py-1 rounded-full text-sm ${
           caseData.caseStatus === "DERDEST" || caseData.caseStatus === "ISLEMDE" 
             ? "bg-green-100 text-green-700" 
@@ -157,6 +257,24 @@ export default function PortalCaseDetailPage() {
           {statusLabels[caseData.caseStatus] || caseData.caseStatus}
         </span>
       </div>
+
+      {loadError && (
+        // WSMR-A4-AB-8: bu bant YALNIZ caseData ZATEN varken bir SONRAKİ okuma (yenile/
+        // caseId aynı kalan retry) başarısız olduğunda görünür — aşağıdaki veri BAYAT
+        // olabilir ama SİLİNMEDİ. Retry YALNIZ loadCase'i tekrar dener, mutation YOK.
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 flex items-center justify-between gap-3">
+          <span>{loadError} Gösterilen bilgiler bayat olabilir.</span>
+          <button
+            type="button"
+            onClick={retryLoad}
+            disabled={retrying}
+            className="shrink-0 flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
+            {retrying ? "Deneniyor…" : "Tekrar dene"}
+          </button>
+        </div>
+      )}
 
       {/* Müvekkil Notu — yalnız değer varsa render edilir, dahiliNot ile birleştirilmez/karıştırılmaz */}
       {caseData.muvekkilNotu && (
