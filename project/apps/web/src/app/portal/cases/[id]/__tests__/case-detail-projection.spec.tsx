@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
+import { useParams } from "next/navigation";
 import PortalCaseDetailPage from "@/app/portal/cases/[id]/page";
 
 /**
@@ -13,12 +14,8 @@ import PortalCaseDetailPage from "@/app/portal/cases/[id]/page";
  * ana alacak işareti, dayanak belge, faiz bilgisi (yalnız saklı alanlar, hesaplama YOK),
  * KDV/BSMV/KKDF göstergeleri, kesinleşme bilgisi (inconsistent-state fail-closed).
  */
-const pushMock = vi.fn();
-const routerMock = { push: pushMock };
-
 vi.mock("next/navigation", () => ({
-  useRouter: () => routerMock,
-  useParams: () => ({ id: "case-1" }),
+  useParams: vi.fn(),
 }));
 
 const APPROVED_CASE_DETAIL = {
@@ -86,6 +83,7 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem("portal_token", "test-token");
+    vi.mocked(useParams).mockReturnValue({ id: "case-1" } as any);
   });
 
   afterEach(() => {
@@ -586,15 +584,216 @@ describe("Portal case detail page — CLIENT-P2-U03-I01 explicit projection", ()
     expect(container.querySelector(".animate-spin")).toBeTruthy();
   });
 
-  it("[7b] mevcut 404 davranışı korunur (/portal/cases'e yönlendirir)", async () => {
+  it("[7b] WSMR-A4-AB-8: 404 artık SESSİZCE yönlendirmez — inline 'Dosya bulunamadı' + 'Dosyalara Dön' gösterir", async () => {
     stubFetch({ ok: false, status: 404 });
     render(<PortalCaseDetailPage />);
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/portal/cases"));
+    await waitFor(() => expect(screen.getByText("Dosya bulunamadı")).toBeTruthy());
+    expect(screen.getByText("Dosyalara Dön")).toBeTruthy();
+    // 404 transient DEĞİLDİR — bu ekranda retry SUNULMAZ.
+    expect(screen.queryByRole("button", { name: /Tekrar dene/ })).toBeNull();
   });
 
-  it("[7c] mevcut genel hata davranışı korunur (\"Dosya bulunamadı\" gösterilir)", async () => {
+  it("[7c] WSMR-A4-AB-8: genel hata (500) ARTIK 'Dosya bulunamadı' İLE KARIŞMAZ — ayrı, görünür ERROR", async () => {
     stubFetch({ ok: false, status: 500 });
     render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Dosya bulunamadı")).toBeNull();
+    expect(screen.getByRole("button", { name: /Tekrar dene/ })).toBeTruthy();
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: any) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * WSMR-A4-AB-8 — `app/portal/cases/[id]/page.tsx#loadCase`.
+ *
+ * ERİŞİLEBİLİRLİK: `page.tsx` App Router'da `/portal/cases/[id]` route'unun KENDİSİ;
+ * `portal/cases/page.tsx:114` `<Link href={\`/portal/cases/${c.id}\`}>` ile dosya listesinden
+ * koşulsuz erişiliyor. Canlı, koşulsuz erişilebilir — davranışsal patch uygulandı.
+ *
+ * SÖZLEŞME (backend, doğrulandı — apps/api/src/modules/portal/portal.service.ts#getCaseDetail):
+ * `Case.findFirst({ where: { id, tenantId, showToClient: true, OR: [{clientId}, {caseClients:
+ * {some:{clientId}}}] } })` — eşleşme yoksa (dosya GERÇEKTEN yok VEYA başka bir müvekkile ait)
+ * TEK `NotFoundException` (404) atılır. Backend "yok" ile "senin değil"i ZATEN AYIRMIYOR —
+ * 403 hiç dönmüyor. Bu yüzden onaylı 404'ü NOT_FOUND saymak (varlık sızdırmadan) sözleşmeye
+ * uygundur; UI ayrıca bir ayrım ÜRETMEZ. `PortalAuthGuard` ayrı `UnauthorizedException` (401)
+ * atar — bu oturum/token sorunudur, dosya varlığıyla ilgisizdir, sayfa genel ERROR yoluna düşer
+ * (eskisi gibi özel bir dal AÇILMADI — mevcut mimariye uygun, kapsam dışı büyütme yok).
+ */
+describe("WSMR-A4-AB-8 — loadCase okuma hatası", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("portal_token", "test-token");
+    vi.mocked(useParams).mockReturnValue({ id: "case-1" } as any);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+  });
+
+  it("[R1] ilk yükleme başarısı: veri render edilir (regresyon)", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+  });
+
+  it("[R2] 500 → sahte 'dosya yok' YOK, görünür ERROR + retry", async () => {
+    stubFetch({ ok: false, status: 500 });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Dosya bulunamadı")).toBeNull();
+  });
+
+  it("[R2b] network failure → sahte 'dosya yok' YOK, görünür ERROR + retry", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Dosya bulunamadı")).toBeNull();
+  });
+
+  it("[R2c] 401 (geçersiz/süresi dolmuş portal oturumu) → genel ERROR yoluna düşer, 'dosya yok' İDDİA ETMEZ", async () => {
+    stubFetch({ ok: false, status: 401 });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Dosya bulunamadı")).toBeNull();
+  });
+
+  it("[R3] retry başarı: hata kalkar, veri render edilir", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Tekrar dene/ }));
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("[R3b] retry YALNIZ case kaynağını çağırır (tüm fetch çağrıları aynı caseId endpoint'ine gider)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Tekrar dene/ }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).toMatch(/\/api\/portal\/cases\/case-1$/);
+    }
+  });
+
+  it("[R4] malformed 200 gövdesi (dizi) → ERROR sayılır, çökme YOK, 'dosya yok' İDDİA ETMEZ", async () => {
+    stubFetch({ ok: true, json: async () => [APPROVED_CASE_DETAIL] });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Dosya bulunamadı")).toBeNull();
+  });
+
+  it("[R4b] boş 200 gövdesi (null) → ERROR sayılır, çökme YOK", async () => {
+    stubFetch({ ok: true, json: async () => null });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  });
+
+  it("[R5] başarıdan sonraki manuel yenileme hatası: ÖNCEKİ veri korunur + bayat bandı gösterilir", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => APPROVED_CASE_DETAIL })
+      .mockResolvedValueOnce({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByTitle("Yenile"));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    // Veri HÂLÂ ekranda — SİLİNMEDİ, yalnız bayat olduğu bantta belirtildi.
+    expect(screen.getByText("2026/123")).toBeTruthy();
+    expect(screen.getByText(/bayat olabilir/)).toBeTruthy();
+  });
+
+  it("[R6] hızlı caseId değişimi: ESKİ (geciken) yanıt YENİYİ ezmez", async () => {
+    const d1 = deferred<any>();
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (String(url).endsWith("/case-1")) return d1.promise;
+      return Promise.resolve({ ok: true, json: async () => ({ ...APPROVED_CASE_DETAIL, id: "case-2", fileNumber: "2026/CASE2" }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(useParams).mockReturnValue({ id: "case-1" } as any);
+    const { rerender } = render(<PortalCaseDetailPage />);
+
+    // case-2'ye HIZLICA geçiliyor — case-1'in isteği HENÜZ çözülmedi.
+    vi.mocked(useParams).mockReturnValue({ id: "case-2" } as any);
+    rerender(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/CASE2")).toBeTruthy());
+
+    // case-1'in GECİKMİŞ yanıtı ŞİMDİ çözülüyor — ekranı EZMEMELİ.
+    d1.resolve({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByText("2026/CASE2")).toBeTruthy();
+    expect(screen.queryByText("2026/123")).toBeNull();
+  });
+
+  it("[R7] unmount sonrası gecikmeli yanıt state güncellemesi/unhandled rejection ÜRETMEZ", async () => {
+    const rejections: unknown[] = [];
+    const onUnhandledRejection = (err: unknown) => rejections.push(err);
+    process.on("unhandledRejection", onUnhandledRejection);
+    try {
+      const d = deferred<any>();
+      vi.stubGlobal("fetch", vi.fn().mockReturnValue(d.promise));
+      const { unmount } = render(<PortalCaseDetailPage />);
+      unmount();
+      d.resolve({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
+  it("[R8] onaylı 404: güvenli ortak 'erişilemiyor' görünümü — 'senin değil' ile 'hiç yok' AYRIMI sızmaz", async () => {
+    stubFetch({ ok: false, status: 404 });
+    render(<PortalCaseDetailPage />);
     await waitFor(() => expect(screen.getByText("Dosya bulunamadı")).toBeTruthy());
+    // Aynı ekran, hem "gerçekten yok" hem "başka müvekkile ait" durumunda GÖRÜNÜR —
+    // backend zaten ikisini TEK 404'te birleştiriyor (bkz. üst açıklama).
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("[R8b] 404 ile 500 farklı ekranlar üretir (NOT_FOUND ile ERROR karışmaz)", async () => {
+    stubFetch({ ok: false, status: 404 });
+    const { unmount } = render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("Dosya bulunamadı")).toBeTruthy());
+    const notFoundHadAlert = screen.queryByRole("alert") !== null;
+    unmount();
+
+    stubFetch({ ok: false, status: 500 });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    const errorHasNotFoundText = screen.queryByText("Dosya bulunamadı") !== null;
+
+    expect(notFoundHadAlert).toBe(false);
+    expect(errorHasNotFoundText).toBe(false);
+  });
+
+  it("[R9] mevcut portal navigasyonu regresyonsuz: 'Dosyalara Dön' geri linki her zaman çalışır durumda", async () => {
+    stubFetch({ ok: true, json: async () => APPROVED_CASE_DETAIL });
+    render(<PortalCaseDetailPage />);
+    await waitFor(() => expect(screen.getByText("2026/123")).toBeTruthy());
+    const backLinks = screen.getAllByRole("link").filter((a) => a.getAttribute("href") === "/portal/cases");
+    expect(backLinks.length).toBeGreaterThan(0);
   });
 });
