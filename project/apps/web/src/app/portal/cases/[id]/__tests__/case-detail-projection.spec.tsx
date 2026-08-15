@@ -796,4 +796,74 @@ describe("WSMR-A4-AB-8 — loadCase okuma hatası", () => {
     const backLinks = screen.getAllByRole("link").filter((a) => a.getAttribute("href") === "/portal/cases");
     expect(backLinks.length).toBeGreaterThan(0);
   });
+
+  // ── OWNER PRE-MERGE ADDENDUM (PR #2413) — cross-ID izolasyonu, exact 6 madde ───────────
+  //
+  // [R6] (yukarıda) 4. maddeyi KISMEN kapsar: A'nın isteği B'ye geçilene kadar hiç
+  // SONUÇLANMAMIŞ, sonra B başarır, sonra A'nın GEÇ gelen BAŞARI'sı B'yi ezmiyor. Aşağıdaki
+  // [R10]/[R11] geri kalan maddeleri (1/2/3/5/6 + rejection varyantı) tam ve AYRIK kapatır.
+
+  it("[R10] cross-ID izolasyonu 1/2/3/5/6: A BAŞARIYLA yüklenir (görünür veri) → B'ye geçilir → B yüklenirken A'nın verisi DOM'da HİÇ görünmez → B BAŞARISIZ olur → A verisi 'stale' olarak KORUNMAZ, B'ye özgü TEMİZ ERROR (bayat etiketi YOK) gösterilir", async () => {
+    const dB = deferred<any>();
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (String(url).endsWith("/case-A")) {
+        return Promise.resolve({ ok: true, json: async () => ({ ...APPROVED_CASE_DETAIL, id: "case-A", fileNumber: "2026/CASE-A" }) });
+      }
+      if (String(url).endsWith("/case-B")) return dB.promise;
+      return Promise.reject(new Error("unexpected url: " + url));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(useParams).mockReturnValue({ id: "case-A" } as any);
+    const { rerender } = render(<PortalCaseDetailPage />);
+
+    // 1. caseId=A başarıyla yüklenir (görünür veri).
+    await waitFor(() => expect(screen.getByText("2026/CASE-A")).toBeTruthy());
+
+    // 2. Route caseId=B'ye değişir.
+    vi.mocked(useParams).mockReturnValue({ id: "case-B" } as any);
+    rerender(<PortalCaseDetailPage />);
+
+    // 3. B yüklenirken (dB henüz çözülmedi) A'ya ait dosya numarası DOM'da GÖRÜNMEZ.
+    expect(screen.queryByText("2026/CASE-A")).toBeNull();
+
+    // 5. B başarısız olur.
+    dB.resolve({ ok: false, status: 500 });
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+
+    // A'nın verisi "stale" olarak B URL'sinde KORUNMAZ — B'ye özgü TEMİZ ERROR: ne A'nın
+    // dosya numarası ne de aynı-caseId retry'sine özgü "bayat olabilir" metni görünür.
+    expect(screen.queryByText("2026/CASE-A")).toBeNull();
+    expect(screen.queryByText(/bayat olabilir/)).toBeNull();
+
+    // 6. Stale-preservation'ın YALNIZ aynı-caseId senaryosunda geçerli olduğu ayrımı: [R5]
+    // (yukarıda) AYNI caseId'de tam bu deseni ("veri KORUNUR + bayat bandı") doğrular; burada
+    // (FARKLI caseId) AYNI koşullarda veri KORUNMADIĞI — çift yönlü sınır kanıtlanmış olur.
+  });
+
+  it("[R11] cross-ID izolasyonu 4 (rejection varyantı): A'nın isteği B'ye geçilene kadar SONUÇLANMAMIŞ; B başarısız olur; A'nın GEÇ gelen REJECTION'ı B'nin ERROR durumunu EZMEZ/DEĞİŞTİRMEZ", async () => {
+    const dA = deferred<any>();
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (String(url).endsWith("/case-A")) return dA.promise;
+      if (String(url).endsWith("/case-B")) return Promise.resolve({ ok: false, status: 500 });
+      return Promise.reject(new Error("unexpected url: " + url));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(useParams).mockReturnValue({ id: "case-A" } as any);
+    const { rerender } = render(<PortalCaseDetailPage />);
+
+    // A'nın isteği HENÜZ sonuçlanmadan B'ye geçilir.
+    vi.mocked(useParams).mockReturnValue({ id: "case-B" } as any);
+    rerender(<PortalCaseDetailPage />);
+
+    // B başarısız olur — kendi ERROR durumuna düşer.
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("2026/CASE-A")).toBeNull();
+
+    // A'nın GEÇ gelen REJECTION'ı ŞİMDİ çözülür — B'nin ERROR durumunu DEĞİŞTİRMEMELİ
+    // (state güncellemesi token kontrolüyle ATLANMALI; farklı bir hataya SIÇRAMAMALI).
+    dA.reject(new Error("stale network error for A"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByText("2026/CASE-A")).toBeNull();
+  });
 });
