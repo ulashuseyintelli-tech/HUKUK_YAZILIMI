@@ -9729,6 +9729,388 @@ test('OFFICE CAP-09A consumer validator whitespace repair target cannot authoriz
   );
 });
 
+function officeF03F04BindingFixture(t) {
+  const binding = coordination.OFFICE_F03_F04_AUTHORITY_BINDING_R01;
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  return { ...fixture, binding };
+}
+
+function renderOfficeF03Authority(binding) {
+  const target = binding.f03AuthorityPr;
+  return {
+    decisionLog: [
+      '# decision-log',
+      buildAuthorityMarkerForTest(target.semanticAuthority),
+      ...target.decisionLogRequiredLiterals,
+    ].join('\n') + '\n',
+    grant: [
+      buildAuthorityMarkerForTest(target.executionGrant),
+      `semanticAuthorityRef.kind : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
+      ...target.executionGrantRequiredLiterals,
+    ].join('\n') + '\n',
+  };
+}
+
+function createOfficeF03AuthorityFixture(t) {
+  const binding = coordination.OFFICE_F03_F04_AUTHORITY_BINDING_R01;
+  const target = binding.f03AuthorityPr;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-f03-authority-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  writeFixtureRepoFile(root, target.semanticAuthority.path, '# decision-log\n');
+  const preBinding = commitFixture(root, 'pre-binding');
+  writeFixtureRepoFile(
+    root,
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  const base = commitFixture(root, 'binding');
+  const rendered = renderOfficeF03Authority(binding);
+  writeFixtureRepoFile(root, target.semanticAuthority.path, rendered.decisionLog);
+  writeFixtureRepoFile(root, target.executionGrant.path, rendered.grant);
+  const head = commitFixture(root, 'F03 authority');
+  return { binding, target, root, preBinding, base, head };
+}
+
+function createOfficeF03ImplementationFixture(t, options = {}) {
+  const binding = coordination.OFFICE_F03_F04_AUTHORITY_BINDING_R01;
+  const authority = binding.f03AuthorityPr;
+  const target = binding.f03ImplementationPr;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-f03-implementation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  writeFixtureRepoFile(
+    root,
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  writeFixtureRepoFile(root, authority.semanticAuthority.path, '# decision-log\n');
+  writeFixtureRepoFile(root, target.changedPaths[0].path, '// existing E2E\n');
+  const preAuthority = commitFixture(root, 'pre-authority');
+  const rendered = renderOfficeF03Authority(binding);
+  writeFixtureRepoFile(root, authority.semanticAuthority.path, rendered.decisionLog);
+  writeFixtureRepoFile(root, authority.executionGrant.path, rendered.grant);
+  const authorityBase = commitFixture(root, 'F03 authority');
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[0].path,
+    ['// existing E2E', ...target.requiredLiterals].join('\n') + '\n',
+  );
+  const firstDelivery = commitFixture(root, 'F03 implementation');
+  if (!options.reused) {
+    return {
+      binding,
+      target,
+      root,
+      preAuthority,
+      base: authorityBase,
+      head: firstDelivery,
+    };
+  }
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[0].path,
+    ['// replayed E2E', ...target.requiredLiterals].join('\n') + '\n',
+  );
+  return {
+    binding,
+    target,
+    root,
+    preAuthority,
+    base: firstDelivery,
+    head: commitFixture(root, 'F03 replay'),
+  };
+}
+
+function createOfficeF04ReconciliationFixture(t) {
+  const implementationFixture = createOfficeF03ImplementationFixture(t);
+  const { binding, root } = implementationFixture;
+  const target = binding.f04ReconciliationPr;
+  const authority = binding.f03AuthorityPr;
+  const implementation = binding.f03ImplementationPr;
+  runFixtureGit(['checkout', '--quiet', implementationFixture.head], root);
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[2].path,
+    '# successor order\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[3].path,
+    JSON.stringify({ stages: [] }, null, 2) + '\n',
+  );
+  const base = commitFixture(root, 'F03 terminal base');
+  const decisionLog = [
+    fs.readFileSync(fixturePath(root, authority.semanticAuthority.path), 'utf8').trimEnd(),
+    buildAuthorityMarkerForTest(target.semanticAuthority),
+    ...target.decisionLogRequiredLiterals,
+  ].join('\n') + '\n';
+  writeFixtureRepoFile(root, target.semanticAuthority.path, decisionLog);
+  writeFixtureRepoFile(
+    root,
+    target.executionGrant.path,
+    [
+      buildAuthorityMarkerForTest(target.executionGrant),
+      `semanticAuthorityRef.kind : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
+      ...target.executionGrantRequiredLiterals,
+    ].join('\n') + '\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[2].path,
+    ['# successor order', ...target.reconciliationRequiredLiterals].join('\n') + '\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[3].path,
+    JSON.stringify(
+      {
+        taskId: target.taskId,
+        implementationTask: implementation.taskId,
+        evidence: target.reconciliationRequiredLiterals,
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  const head = commitFixture(root, 'F04 reconciliation');
+  return { binding, target, root, base, head };
+}
+
+test('OFFICE F03/F04 G0 binding accepts the exact owner-ratified tuple', (t) => {
+  const fixture = officeF03F04BindingFixture(t);
+  const { binding } = fixture;
+  assert.deepEqual(
+    coordination.validateOfficeF03F04AuthorityBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      taskId: binding.taskId,
+      changes: binding.bindingPr.changedPaths,
+      cwd: fixture.root,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.taskId },
+  );
+});
+
+test('OFFICE F03/F04 G0 binding rejects task, branch, base and scope drift', (t) => {
+  const fixture = officeF03F04BindingFixture(t);
+  const { binding } = fixture;
+  const exact = {
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    taskId: binding.taskId,
+    changes: binding.bindingPr.changedPaths,
+    cwd: fixture.root,
+  };
+  for (const mutation of [
+    { taskId: `${binding.taskId}-EXTRA` },
+    { headRef: `${binding.bindingPr.headRef}-copy` },
+    { base: fixture.unrelated },
+    { changes: binding.bindingPr.changedPaths.slice(0, 2) },
+    {
+      changes: [
+        ...binding.bindingPr.changedPaths,
+        { status: 'M', path: 'project/apps/api/src/modules/staff/staff.service.ts' },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF03F04AuthorityBindingScope({ ...exact, ...mutation }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('OFFICE F03 authority materialization requires G0 and accepts exact SA/EG', (t) => {
+  const fixture = createOfficeF03AuthorityFixture(t);
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    { mode: fixture.target.mode, taskId: fixture.target.taskId },
+  );
+  expectCode(
+    () => coordination.validateOfficeF03AuthorityMaterializationScope({
+      base: fixture.preBinding,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      taskId: fixture.target.taskId,
+      changes: fixture.target.changedPaths,
+      cwd: fixture.root,
+    }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('OFFICE F03 authority materialization rejects wrong tuple and SA/EG reuse', (t) => {
+  const fixture = createOfficeF03AuthorityFixture(t);
+  const exact = {
+    base: fixture.base,
+    head: fixture.head,
+    headRef: fixture.target.headRef,
+    taskId: fixture.target.taskId,
+    changes: fixture.target.changedPaths,
+    cwd: fixture.root,
+  };
+  for (const mutation of [
+    { taskId: `${fixture.target.taskId}-EXTRA` },
+    { headRef: `${fixture.target.headRef}-copy` },
+    { changes: fixture.target.changedPaths.slice(0, 1) },
+    {
+      changes: [
+        ...fixture.target.changedPaths,
+        { status: 'M', path: 'project/apps/api/src/modules/staff/staff.service.ts' },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF03AuthorityMaterializationScope({ ...exact, ...mutation }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  expectCode(
+    () => coordination.validateOfficeF03AuthorityMaterializationScope({
+      ...exact,
+      base: fixture.head,
+    }),
+    'OFFICE_F03_EXECUTION_GRANT_REUSED',
+  );
+});
+
+test('OFFICE F03 implementation accepts only the exact authorized matrix', (t) => {
+  const fixture = createOfficeF03ImplementationFixture(t);
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    { mode: fixture.target.mode, taskId: fixture.target.taskId },
+  );
+});
+
+test('OFFICE F03 implementation rejects missing authority and tuple expansion', (t) => {
+  const fixture = createOfficeF03ImplementationFixture(t);
+  const exact = {
+    base: fixture.base,
+    head: fixture.head,
+    headRef: fixture.target.headRef,
+    taskId: fixture.target.taskId,
+    changes: fixture.target.changedPaths,
+    cwd: fixture.root,
+  };
+  expectCode(
+    () => coordination.validateOfficeF03ImplementationScope({
+      ...exact,
+      base: fixture.preAuthority,
+    }),
+    'OFFICE_F03_AUTHORITY_REQUIRED',
+  );
+  for (const mutation of [
+    { taskId: `${fixture.target.taskId}-EXTRA` },
+    { headRef: `${fixture.target.headRef}-copy` },
+    { changes: [] },
+    {
+      changes: [
+        ...fixture.target.changedPaths,
+        { status: 'M', path: 'project/apps/api/src/modules/staff/staff.service.ts' },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF03ImplementationScope({ ...exact, ...mutation }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('OFFICE F03 implementation rejects a second EG use', (t) => {
+  const fixture = createOfficeF03ImplementationFixture(t, { reused: true });
+  expectCode(
+    () => coordination.validateOfficeF03ImplementationScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      taskId: fixture.target.taskId,
+      changes: fixture.target.changedPaths,
+      cwd: fixture.root,
+    }),
+    'OFFICE_F03_EXECUTION_GRANT_REUSED',
+  );
+});
+
+test('OFFICE F04 materializes and consumes its own exact reconciliation SA/EG', (t) => {
+  const fixture = createOfficeF04ReconciliationFixture(t);
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    { mode: fixture.target.mode, taskId: fixture.target.taskId },
+  );
+});
+
+test('OFFICE F04 rejects tuple expansion, reuse and prefix-like transfer', (t) => {
+  const fixture = createOfficeF04ReconciliationFixture(t);
+  const exact = {
+    base: fixture.base,
+    head: fixture.head,
+    headRef: fixture.target.headRef,
+    taskId: fixture.target.taskId,
+    changes: fixture.target.changedPaths,
+    cwd: fixture.root,
+  };
+  expectCode(
+    () => coordination.validateOfficeF04StatusReconciliationScope({
+      ...exact,
+      changes: [
+        ...fixture.target.changedPaths,
+        { status: 'M', path: 'project/apps/api/src/modules/office/office.service.ts' },
+      ],
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+  expectCode(
+    () => coordination.validateOfficeF04StatusReconciliationScope({
+      ...exact,
+      base: fixture.head,
+    }),
+    'OFFICE_F04_EXECUTION_GRANT_REUSED',
+  );
+  expectCode(
+    () => coordination.classifyPrChangeSet(fixture.target.changedPaths, {
+      headRef: `${fixture.target.headRef}/*`,
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
 function buildAuthorityMarkerForTest(authority) {
   return coordination.buildAuthorityMarker(authority);
 }
