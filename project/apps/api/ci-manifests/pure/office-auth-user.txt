@@ -206,6 +206,11 @@ src/modules/staff/__tests__/staff-read-projection.spec.ts
 src/modules/staff/__tests__/staff-dto-validation.spec.ts
 src/modules/staff/__tests__/staff-update-masked-tckn.spec.ts
 
+# -- OFFICE-CAP-09A-CONSUMER-01-R01 ------------------------------------------
+# StaffService.remove() mutation + AuditService yazimini ayni transaction context'inde
+# kilitler; audit failure rollback read-back, attribution, 403/self ve tenant sinirini kapsar.
+src/modules/staff/__tests__/staff-cap09a-consumer.spec.ts
+
 # ── OFFICE-P5-B02R1 — public-institutions ADMIN kapisi (owner-ratified successor) ─
 # /seed/* icindeki TEK global (tenant'siz) tablo mutasyonuna ek ADMIN rol kapisi.
 # Gercek guard zinciri (JwtStrategy+JwtAuthGuard+AdminGuard) kontrollu test app'inde:

@@ -2,10 +2,22 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePersonName } from '../../common/name-match.util';
 import { maskTckn } from '../../common/pii-mask.util';
+import { AuditService } from '../audit/audit.service';
+
+export interface StaffDeactivateAuditActor {
+  userId: string;
+  role: string;
+  requestId: string;
+}
 
 @Injectable()
 export class StaffService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // AuditModule globaldir. Opsiyonel işaret yalnız doğrudan kurulan mevcut unit-test
+    // fixture'larını korur; Nest runtime'da provider yoksa DI zaten fail-closed olur.
+    private readonly audit?: AuditService,
+  ) {}
 
   /**
    * CANDIDATE-F1 (WAVE 3, RATIFIED — Personnel List Masked Default): personel LİSTE yüzeyinde
@@ -209,7 +221,23 @@ export class StaffService {
   // içinde deaktive edilir — mevcut per-request enforcement'ı (auth.service.ts:validateUser())
   // tetikler. Fail-closed + atomic: count!==1 (tenant uyuşmazlığı veya bütünlük sorunu) → TÜM
   // transaction (StaffMember write dahil) rollback edilir; "best-effort" YASAK (ratifikasyon kararı).
-  async remove(id: string, tenantId: string) {
+  /**
+   * Çağrıldığı yerler:
+   * - StaffController.remove() → DELETE /staff/:id
+   */
+  async remove(id: string, tenantId: string, actor?: StaffDeactivateAuditActor) {
+    // Nest runtime global AuditService'i enjekte eder. Doğrudan kurulan HTTP fixture'ı
+    // actor taşıyorsa aynı mevcut consumer API'sini Prisma adapter üzerinde kur; audit'siz
+    // mutationa izin verme. Actor ve AuditService'in ikisinin de olmaması yalnız legacy
+    // doğrudan unit-test fixture'larının mevcut sözleşmesini korur.
+    if (!actor && this.audit) {
+      throw new ConflictException('Personel pasifleştirme denetim bağlamı eksik; işlem iptal edildi.');
+    }
+    if (actor && (!actor.userId || !actor.role || !actor.requestId)) {
+      throw new ConflictException('Personel pasifleştirme aktör, rol veya istek kimliği eksik; işlem iptal edildi.');
+    }
+    const auditConsumer = actor ? (this.audit ?? new AuditService(this.prisma)) : undefined;
+
     const existing = await this.prisma.staffMember.findFirst({
       where: { id, tenantId },
     });
@@ -228,10 +256,37 @@ export class StaffService {
         }
       }
 
-      return tx.staffMember.update({
+      const deactivated = await tx.staffMember.update({
         where: { id },
         data: { isActive: false },
       });
+
+      if (actor && auditConsumer) {
+        await auditConsumer.logInTransaction(tx, {
+          tenantId,
+          action: 'STAFF_DEACTIVATE',
+          entityType: 'STAFF',
+          entityId: id,
+          userId: actor.userId,
+          actorType: 'USER',
+          decisionResult: 'SUCCESS',
+          reasonCode: 'OFFICE_F01_AUTHORIZED',
+          correlationId: actor.requestId,
+          requestId: actor.requestId,
+          policyRef: 'OFFICE-GOVERNANCE:OFF-INV-08',
+          policyVersion: '2026-08-13',
+          oldValues: { isActive: existing.isActive },
+          newValues: { isActive: false },
+          metadata: {
+            actorRole: actor.role,
+            authoritySource: 'OFFICE_F01_AUTHORIZATION_GUARD',
+            linkedUserAccountDeactivated: Boolean(existing.userId),
+            softDelete: true,
+          },
+        });
+      }
+
+      return deactivated;
     });
   }
 
