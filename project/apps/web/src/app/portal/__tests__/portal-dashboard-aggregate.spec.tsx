@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 import PortalHomePage from "@/app/portal/page";
+
+const pushMock = vi.fn();
+// KARARLI referans (mevcut portal-api-base-url-usage.spec.tsx / A4-AB-9 case-list-projection
+// deseniyle AYNI) — her `useRouter()` çağrısında YENİ bir obje döndürmek `loadCases`'in
+// `[router]` bağımlılığını "değişti" sanıp useEffect'i beklenmedik yeniden tetikler (WSMR-A4-
+// AB-9'da tam bu hata 4 testi FAIL etmişti; burada baştan doğru desenle başlanıyor).
+const routerMock = { push: pushMock };
+vi.mock("next/navigation", () => ({
+  useRouter: () => routerMock,
+}));
 
 /**
  * CLIENT-POL-F-R01 — Portal dashboard (ana sayfa) finansal aggregate remediation.
@@ -52,6 +62,7 @@ describe("PortalHomePage — CLIENT-POL-F-R01 financial aggregate remediation", 
     localStorage.clear();
     localStorage.setItem("portal_token", "t-123");
     localStorage.setItem("portal_user", JSON.stringify({ clientName: "Test Müvekkil" }));
+    pushMock.mockClear();
   });
 
   afterEach(() => {
@@ -132,15 +143,14 @@ describe("PortalHomePage — CLIENT-POL-F-R01 financial aggregate remediation", 
     expect(screen.queryByText("Tahsil Edilen")).toBeNull();
   });
 
-  it("[8] error state korunur — fetch reddedilirse çökmez, sayfa yine render edilir", async () => {
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("[8] WSMR-A4-AB-10: ağ hatası artık sıfır sayaç/'Henüz dosya bulunmuyor' İLE KARIŞMAZ — görünür ERROR", async () => {
     fetchMock.mockRejectedValue(new Error("network down"));
     render(<PortalHomePage />);
 
-    await waitFor(() => expect(screen.getByText("Toplam Dosya")).toBeTruthy());
-    expect(screen.getByText("Henüz dosya bulunmuyor")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Toplam Dosya")).toBeNull();
+    expect(screen.queryByText("Henüz dosya bulunmuyor")).toBeNull();
     expect(screen.queryByText("Toplam Alacak")).toBeNull();
-    errSpy.mockRestore();
   });
 
   it("[9] navigation korunur — 'Tümünü Gör' ve dosya satırı linkleri doğru hedeflere gider", async () => {
@@ -151,5 +161,199 @@ describe("PortalHomePage — CLIENT-POL-F-R01 financial aggregate remediation", 
     expect(screen.getByRole("link", { name: /Tümünü Gör/ }).getAttribute("href")).toBe("/portal/cases");
     const caseLink = screen.getByText("2026/111").closest("a");
     expect(caseLink?.getAttribute("href")).toBe("/portal/cases/c1");
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: any) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * WSMR-A4-AB-10 — `app/portal/page.tsx#loadCases`.
+ *
+ * ERİŞİLEBİLİRLİK: `page.tsx` App Router'da `/portal` route'unun KENDİSİ — hem
+ * `layout.tsx`'te koşulsuz sekme, hem `login/page.tsx:41` `router.push("/portal")` ile
+ * girişten SONRAKİ varsayılan iniş noktası. Canlı, koşulsuz erişilebilir.
+ *
+ * TÜKETİCİLER: `loadCases` sonucu "Toplam Dosya" (`cases.length`), "Aktif Dosya"
+ * (DERDEST/İŞLEMDE filtre sayısı) sayaçlarını VE "Son Dosyalar" (ilk 5) önizleme
+ * listesini/CTA linklerini besler — case-list/case-detail sayfalarına AYRI, kendi tüketici
+ * yüzeyleri.
+ *
+ * SÖZLEŞME: A4-AB-9 ile AYNI endpoint (`getClientCases` — liste, 404 kavramı yok, 403 yok,
+ * `PortalAuthGuard` ayrı 401). Kod KÖRLEMESİNE kopyalanmadı — bu sayfaya özgü tüketiciler
+ * (sayaçlar + önizleme) için ayrı JSX/render dalları yazıldı; yeni bir paylaşılan
+ * abstraction/hook ÜRETİLMEDİ (tek kullanım, mevcut mimariye uygun dar patch).
+ */
+describe("WSMR-A4-AB-10 — loadCases okuma hatası (portal ana sayfa)", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.clear();
+    localStorage.setItem("portal_token", "t-123");
+    localStorage.setItem("portal_user", JSON.stringify({ clientName: "Test Müvekkil" }));
+    pushMock.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    cleanup();
+  });
+
+  it("[R1] gerçek veri: doğru sayaç/özet render edilir (regresyon)", async () => {
+    mockCasesResponse(CASES);
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByText("2026/111")).toBeTruthy());
+    const values = screen.getAllByText(/^[0-9]+$/).map((el) => el.textContent);
+    expect(values).toContain("2");
+    expect(values).toContain("1");
+  });
+
+  it("[R2] gerçek boş liste: sayaçlar 0, 'Henüz dosya bulunmuyor', ERROR bandı YOK", async () => {
+    mockCasesResponse([]);
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByText("Henüz dosya bulunmuyor")).toBeTruthy());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("[R3] ilk yükleme 500 hatası → sahte sıfır/empty YOK, görünür ERROR + retry", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Toplam Dosya")).toBeNull();
+    expect(screen.queryByText("Henüz dosya bulunmuyor")).toBeNull();
+    expect(screen.getByRole("button", { name: /Tekrar dene/ })).toBeTruthy();
+  });
+
+  it("[R4] retry başarı: hata kalkar, gerçek özet render edilir", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => CASES });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Tekrar dene/ }));
+    await waitFor(() => expect(screen.getByText("2026/111")).toBeTruthy());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("[R4b] retry YALNIZ loadCases'i (liste kaynağını) tekrar çağırır", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Tekrar dene/ }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).toMatch(/\/api\/portal\/cases$/);
+    }
+  });
+
+  it("[R5] malformed 200 gövdesi (dizi değil) → ERROR, çökme YOK", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ unexpected: "shape" }) });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText("Henüz dosya bulunmuyor")).toBeNull();
+  });
+
+  it("[R5b] boş 200 gövdesi (null) → ERROR, çökme YOK", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => null });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  });
+
+  it("[R6] başarılı özet sonrası manuel yenileme hatası: ÖNCEKİ özet/liste korunur + bayat bandı", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => CASES })
+      .mockResolvedValueOnce({ ok: false, status: 500 });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByText("2026/111")).toBeTruthy());
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByTitle("Yenile"));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    // Özet/liste HÂLÂ ekranda — SİLİNMEDİ, yalnız bayat olduğu bantta belirtildi.
+    expect(screen.getByText("2026/111")).toBeTruthy();
+    const values = screen.getAllByText(/^[0-9]+$/).map((el) => el.textContent);
+    expect(values).toContain("2");
+    expect(screen.getByText(/bayat olabilir/)).toBeTruthy();
+  });
+
+  it("[R7] çift hızlı retry tıklaması: in-flight guard İKİNCİ isteği hiç başlatmaz (eski yanıt yeniyi ezemez)", async () => {
+    const d2 = deferred<any>();
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 }).mockReturnValueOnce(d2.promise as any);
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    const retryBtn = screen.getByRole("button", { name: /Tekrar dene/ });
+    fireEvent.click(retryBtn);
+    fireEvent.click(retryBtn); // in-flight guard + disabled attribute -> YOK SAYILMALI
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2)); // 1 ilk + 1 retry, İKİNCİ YOK
+    d2.resolve({ ok: true, json: async () => [] });
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("[R8] unmount sonrası gecikmeli yanıt state güncellemesi/unhandled rejection ÜRETMEZ", async () => {
+    const rejections: unknown[] = [];
+    const onUnhandledRejection = (err: unknown) => rejections.push(err);
+    process.on("unhandledRejection", onUnhandledRejection);
+    try {
+      const d = deferred<any>();
+      fetchMock.mockReturnValue(d.promise);
+      const { unmount } = render(<PortalHomePage />);
+      unmount();
+      d.resolve({ ok: true, json: async () => CASES });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
+  it("[R9] 401 ile gerçek-boş liste AYRILIR: 401'de sıfır sayaç/'Henüz dosya bulunmuyor' GÖSTERİLMEZ, login'e yönlendirilir + token temizlenir", async () => {
+    localStorage.setItem("portal_token", "expired-token");
+    fetchMock.mockResolvedValue({ ok: false, status: 401 });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/portal/login"));
+    expect(screen.queryByText("Toplam Dosya")).toBeNull();
+    expect(screen.queryByText("Henüz dosya bulunmuyor")).toBeNull();
+    expect(localStorage.getItem("portal_token")).toBeNull();
+  });
+
+  it("[R9b] gerçek-boş liste (200 + []) 401 ile KARIŞMAZ — login'e yönlendirme OLMAZ", async () => {
+    mockCasesResponse([]);
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByText("Henüz dosya bulunmuyor")).toBeTruthy());
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("[R10] tenant dışı dosya/toplam sızıntısı yok: ERROR mesajı ham sunucu gövdesini YANSITMAZ", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: "İç hata: 47 dosya, tenant-xyz" }),
+    });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.queryByText(/47 dosya/)).toBeNull();
+    expect(screen.queryByText(/tenant-xyz/)).toBeNull();
+  });
+
+  it("[R11] ana sayfa → dosya listesi/detayı navigasyonu regresyonsuz (hata sonrası retry ile kurtarılan veri üzerinden de)", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => CASES });
+    render(<PortalHomePage />);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Tekrar dene/ }));
+    await waitFor(() => expect(screen.getByText("2026/111")).toBeTruthy());
+    expect(screen.getByRole("link", { name: /Tümünü Gör/ }).getAttribute("href")).toBe("/portal/cases");
+    expect(screen.getByText("2026/111").closest("a")?.getAttribute("href")).toBe("/portal/cases/c1");
   });
 });
