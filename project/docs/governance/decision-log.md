@@ -316,6 +316,42 @@ reusableAuthority : PROHIBITED
 globalAuthority : PROHIBITED
 ```
 
+### OFFICE-SC-F04 verified status reconciliation semantic authority record
+
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=OFFICE-SC-F04-STATUS-RECONCILIATION-R01-SA01 -->
+
+```text
+recordType : SEMANTIC_AUTHORITY
+recordId : OFFICE-SC-F04-STATUS-RECONCILIATION-R01-SA01
+programId : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+taskId : OFFICE-SC-F04-STATUS-RECONCILIATION-R01
+targetTaskId : OFFICE-SC-F04-STATUS-RECONCILIATION-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+decision : RATIFIED
+issuedAt : 2026-08-16
+status : ACTIVE_FOR_THIS_EXACT_RECONCILIATION_PR
+scope : VERIFIED STATUS RECONCILIATION ONLY
+appendOnly : REQUIRED
+canonicalFactsOnly : PR / SQUASH SHA / CI / POST-MERGE ACCEPTANCE
+newProductBehavior : PROHIBITED
+newPolicy : PROHIBITED
+newRuntimeSemantics : PROHIBITED
+reportingLine : ORGANIZATIONAL EVIDENCE ONLY / NOT POLICY AUTHORITY
+runtime : BLOCKED_BY_RUNTIME_MODEL
+schemaMigrationDatabase : NONE
+productionActivation : NOT_AUTHORIZED
+exactTaskBinding : REQUIRED
+exactBranchBinding : REQUIRED
+exactScopeBinding : REQUIRED
+singleUseConsumption : REQUIRED
+transfer : PROHIBITED
+expansion : PROHIBITED
+standingAuthority : PROHIBITED
+reusableAuthority : PROHIBITED
+globalAuthority : PROHIBITED
+```
+
 ### OFFICE-SC-F01 authorization breadth and sensitive projection semantic authority record
 
 ```text
