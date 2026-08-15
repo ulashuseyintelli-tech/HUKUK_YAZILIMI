@@ -1,5 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, HttpException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { getRequestId } from '../../common/request-id.middleware';
 import { StaffService } from './staff.service';
 import { StaffType } from '@prisma/client';
 import { OfficeF01AuthorizationGuard } from '../office-approval/office-f01-authorization.guard';
@@ -80,7 +82,13 @@ export class StaffController {
   async remove(@Request() req: any, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
     try {
-      await this.staffService.remove(id, tenantId);
+      await this.staffService.remove(id, tenantId, {
+        userId: req.user.id,
+        role: req.user.role,
+        // Normal runtime'da RequestIdMiddleware değeri taşınır. Doğrudan Nest HTTP
+        // fixture'ında middleware yoksa deactivation yine izlenebilir tekil id üretir.
+        requestId: getRequestId(req) ?? randomUUID(),
+      });
       return { success: true };
     } catch (error: any) {
       return { error: error.message };
