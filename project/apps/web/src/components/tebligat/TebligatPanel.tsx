@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Mail, Send, CheckCircle, XCircle, Clock, AlertTriangle,
   MapPin, Building2, FileText, Plus, ChevronRight, Loader2,
   Home, RefreshCw, Info
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 // Tebligat Türleri
 const TebligatTypeLabels: Record<string, string> = {
@@ -151,24 +152,53 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
   const [showPttResultModal, setShowPttResultModal] = useState(false);
   const [showMernisModal, setShowMernisModal] = useState(false);
   const [selectedTebligat, setSelectedTebligat] = useState<Tebligat | null>(null);
-
+  // WSMR-A4-AB-6: okuma HATASI eskiden yalniz `console.error` ile YUTULUYORDU;
+  // `tebligatlar`/`summary`/`priorityCheck` degismiyordu — ilk yuklemede bu,
+  // "Henüz tebligat oluşturulmadı" (gercekten-bos) ile AYNI ekrana dusuyordu;
+  // SONRAKI bir okuma hatasinda ise ONCEKI (dogrulanmis) veri sessizce BAYAT
+  // kalirdi. Ayrica `priorityCheck` (TK m.10 adres onceligi) okunamazsa
+  // `NewTebligatModal` bunu "kisitlama yok" ile KARISTIRIYORDU (fail-open) —
+  // aşağıda `priorityCheckUnavailable` ile bu ayrimi acikca yapiyoruz.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    loadData();
-  }, [caseId, caseDebtorId]);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const loadTokenRef = useRef(0);
+  const loadInFlightRef = useRef(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (loadInFlightRef.current) return; // cift retry -> tek aktif istek
+    loadInFlightRef.current = true;
+    const token = ++loadTokenRef.current;
     try {
       setLoading(true);
-      
+
       // Tebligatları yükle
-      const endpoint = caseDebtorId 
+      const endpoint = caseDebtorId
         ? `/tebligat/case-debtor/${caseDebtorId}`
         : `/tebligat/case/${caseId}`;
       const res = await api.get(endpoint);
-      setTebligatlar(res.data || []);
+      if (!isMountedRef.current || token !== loadTokenRef.current) return; // bayat/unmount
+      if (!Array.isArray(res.data)) {
+        throw new Error("MALFORMED_TEBLIGAT_LIST_RESPONSE");
+      }
+      // Her parca BASARDIKCA HEMEN uygulanir (orijinal davranisla AYNI) —
+      // sonraki bir parca (ornegin priorityCheck) basarisiz olursa ONCEKI
+      // basarili parcalar (tebligatlar/summary) GERI ALINMAZ; yalniz
+      // kalan parca(lar) eski degerinde kalir + hata bandi eklenir.
+      setTebligatlar(res.data);
 
       // Özet yükle
       const summaryRes = await api.get(`/tebligat/summary?caseId=${caseId}`);
+      if (!isMountedRef.current || token !== loadTokenRef.current) return;
+      if (!summaryRes.data || typeof summaryRes.data !== "object") {
+        throw new Error("MALFORMED_TEBLIGAT_SUMMARY_RESPONSE");
+      }
       setSummary(summaryRes.data);
 
       // Adres öncelik kontrolü
@@ -176,14 +206,41 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
         const priorityRes = await api.get(
           `/tebligat/check-priority/${caseId}?caseDebtorId=${caseDebtorId}`
         );
-        setPriorityCheck(priorityRes.data);
+        if (!isMountedRef.current || token !== loadTokenRef.current) return;
+        setPriorityCheck(priorityRes.data ?? null);
       }
+
+      setLoadError(null);
     } catch (err) {
-      console.error("Tebligat verileri yüklenemedi:", err);
+      if (!isMountedRef.current || token !== loadTokenRef.current) return;
+      // Eskiden yalniz console.error ile YUTULUYORDU. ONCEKI basariyla
+      // yuklenmis veri (tebligatlar/summary/priorityCheck) SILINMEZ.
+      setLoadError(toActionErrorMessage(err, "Tebligat verileri yüklenemedi."));
     } finally {
-      setLoading(false);
+      if (token === loadTokenRef.current) {
+        loadInFlightRef.current = false;
+        if (isMountedRef.current) setLoading(false);
+      }
     }
-  };
+  }, [caseId, caseDebtorId]);
+
+  useEffect(() => {
+    loadData();
+  }, [caseId, caseDebtorId, loadData]);
+
+  const retryLoadData = useCallback(async () => {
+    setRetrying(true);
+    try {
+      await loadData();
+    } finally {
+      if (isMountedRef.current) setRetrying(false);
+    }
+  }, [loadData]);
+
+  // TK m.10 adres onceligi BILINMIYOR (caseDebtorId verildi ama okuma
+  // hatasi nedeniyle priorityCheck gelemedi) — "kisitlama yok" SANILMASIN.
+  // Fail-closed: en katı varsayima (mustUseBilinen) dus.
+  const priorityCheckUnavailable = Boolean(caseDebtorId) && !priorityCheck && Boolean(loadError);
 
   const handleSendTebligat = async (tebligatId: string) => {
     try {
@@ -255,6 +312,24 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
         </div>
       )}
 
+      {loadError && (
+        // WSMR-A4-AB-6: okuma hatasi "henuz tebligat oluşturulmadı" veya
+        // sessizce bayat ozet/oncelik verisiyle KARISMAZ. Retry YALNIZ bu
+        // okumayi (loadData) tekrar dener — hicbir mutation TETIKLENMEZ.
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 flex items-center justify-between gap-3">
+          <span>{loadError} Mevcut liste/özet bayat olabilir.</span>
+          <button
+            type="button"
+            onClick={retryLoadData}
+            disabled={retrying}
+            className="shrink-0 flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
+            {retrying ? "Deneniyor…" : "Tekrar dene"}
+          </button>
+        </div>
+      )}
+
       {/* Adres Öncelik Uyarısı */}
       {priorityCheck && (
         <div className={`p-3 rounded-lg mb-4 ${
@@ -321,6 +396,12 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
         <div className="text-center py-8 text-muted-foreground">
           <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
           Yükleniyor...
+        </div>
+      ) : tebligatlar.length === 0 && loadError ? (
+        // Okuma hatasi "gercekten bos" iddiasi URETMEZ — ust bantta zaten
+        // gorunur hata + retry var, burada notr bir yer tutucuya dusulur.
+        <div className="text-center py-8 border-2 border-dashed rounded-lg text-muted-foreground text-sm">
+          —
         </div>
       ) : tebligatlar.length === 0 ? (
         <div className="text-center py-8 border-2 border-dashed rounded-lg">
@@ -466,6 +547,7 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
           caseId={caseId}
           caseDebtorId={caseDebtorId}
           priorityCheck={priorityCheck}
+          priorityCheckUnavailable={priorityCheckUnavailable}
           onClose={() => setShowNewModal(false)}
           onSaved={() => {
             setShowNewModal(false);
@@ -515,12 +597,22 @@ interface NewTebligatModalProps {
   caseId: string;
   caseDebtorId?: string;
   priorityCheck: AddressPriorityCheck | null;
+  /**
+   * WSMR-A4-AB-6: TK m.10 adres önceliği kontrolü okuma hatası nedeniyle
+   * ALINAMADI (caseDebtorId verildi ama priorityCheck gelemedi). `null`
+   * priorityCheck ile "kısıtlama yok" YANLIŞ karıştırılmasın — fail-closed:
+   * bilinmeyen durumda en katı varsayıma (mustUseBilinen) düşülür.
+   */
+  priorityCheckUnavailable?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function NewTebligatModal({ caseId, caseDebtorId, priorityCheck, onClose, onSaved }: NewTebligatModalProps) {
+function NewTebligatModal({ caseId, caseDebtorId, priorityCheck, priorityCheckUnavailable = false, onClose, onSaved }: NewTebligatModalProps) {
   const [saving, setSaving] = useState(false);
+  // Fail-closed: okuma hatası nedeniyle önceliği BİLMİYORSAK, biliniyormuş
+  // gibi (kısıtlama yok) DEĞİL, en katı kural (mustUseBilinen) geçerli sayılır.
+  const effectiveMustUseBilinen = Boolean(priorityCheck?.mustUseBilinen) || priorityCheckUnavailable;
   const [formData, setFormData] = useState({
     tebligatType: "ODEME_EMRI",
     addressType: priorityCheck?.mustUseBilinen ? "BILINEN" : "BILINEN",
@@ -580,6 +672,18 @@ function NewTebligatModal({ caseId, caseDebtorId, priorityCheck, onClose, onSave
             </div>
           </div>
         )}
+        {!priorityCheck?.mustUseBilinen && priorityCheckUnavailable && (
+          // WSMR-A4-AB-6: bu GERÇEK bir TK m.10 tespiti DEĞİL — adres
+          // önceliği kontrolü okunamadı; kısıtlama yok SANILMASIN diye
+          // fail-closed olarak aynı kısıtlama uygulanıyor, ama gerekçe
+          // AÇIKÇA farklı belirtiliyor (yanlış "kesin" iddia YOK).
+          <div className="mx-4 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-amber-700">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Adres önceliği kontrolü yüklenemedi; güvenlik için yalnızca bilinen adrese izin veriliyor.</span>
+            </div>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
@@ -604,10 +708,10 @@ function NewTebligatModal({ caseId, caseDebtorId, priorityCheck, onClose, onSave
               value={formData.addressType}
               onChange={(e) => setFormData({ ...formData, addressType: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
-              disabled={priorityCheck?.mustUseBilinen}
+              disabled={effectiveMustUseBilinen}
             >
               <option value="BILINEN">Bilinen Adres (TK m.10)</option>
-              <option value="MERNIS" disabled={priorityCheck?.mustUseBilinen}>
+              <option value="MERNIS" disabled={effectiveMustUseBilinen}>
                 MERNİS Adresi (TK m.10/2)
               </option>
               <option value="TICARET_SICIL">Ticaret Sicil Adresi</option>
