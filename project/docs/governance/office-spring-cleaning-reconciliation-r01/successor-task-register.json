@@ -227,6 +227,66 @@
           "runtimeEffect": "NONE",
           "productionEffect": "NONE",
           "nextDisposition": "RETURN_TO_PAGE_O0_FOR_DISTINCT_OWNER_GATE"
+        },
+        {
+          "reconciledAt": "2026-08-16",
+          "supersedes": "NOT_STARTED / ORDER_LOCKED",
+          "repositorySourceStatus": "TERMINAL_CLOSED / PHYSICAL_DISPOSITION_RECORDED",
+          "executionGrantDisposition": "CONSUMED / EXPIRED",
+          "physicalTargetDispositions": [
+            {
+              "targetId": "p6a",
+              "absolutePath": "C:\\Development\\HUKUK_YAZILIMI\\HY_office_p6a_runtime_truth",
+              "classification": "CLEAN_MERGED_RESIDUAL",
+              "disposition": "PRESERVED / ORPHANED_WORKTREE_DIR / CLEANUP_BLOCKED_BY_PLATFORM",
+              "physicalState": "PRESENT / UNCHANGED / UNREGISTERED NON-EMPTY RESIDUAL",
+              "recoveryStatus": "NOT_REQUIRED / MERGED SOURCE PROVEN / NO UNIQUE WIP DETECTED",
+              "sourcePullRequest": 2352,
+              "sourceHeadCommit": "9dff2861d1fc4b1a8b583dba69da7aa8459d1173",
+              "sourceSquashCommit": "c0f37c58265d463efa85de101f55d8c17a42af82"
+            },
+            {
+              "targetId": "p3_reportingline",
+              "absolutePath": "C:\\Development\\HUKUK_YAZILIMI\\HY_office_p3_reportingline",
+              "classification": "CLEAN_MERGED_RESIDUAL",
+              "disposition": "PRESERVED / ORPHANED_WORKTREE_DIR / CLEANUP_BLOCKED_BY_PLATFORM",
+              "physicalState": "PRESENT / UNCHANGED / UNREGISTERED NON-EMPTY RESIDUAL",
+              "recoveryStatus": "NOT_REQUIRED / MERGED SOURCE PROVEN / NO UNIQUE WIP DETECTED",
+              "sourcePullRequest": 2364,
+              "sourceHeadCommit": "46fb7a21ebf53427b057e3702b38f221f5e4cd50",
+              "sourceSquashCommit": "24bf5346886557f3322de8f7549f39eaec396944"
+            }
+          ],
+          "runtimeEffect": "NONE",
+          "productionEffect": "NONE",
+          "programRuntimeDisposition": "BLOCKED_BY_RUNTIME_MODEL",
+          "relatedProgramDispositions": [
+            {
+              "item": "F02",
+              "status": "NON-CANONICAL"
+            },
+            {
+              "item": "F05",
+              "status": "NOT_AUTHORIZED"
+            },
+            {
+              "item": "CAP-09A producer",
+              "status": "DORMANT_CANONICAL"
+            },
+            {
+              "item": "W3F07",
+              "status": "UNTOUCHED"
+            }
+          ],
+          "evidence": {
+            "bindingPullRequest": 2425,
+            "bindingSquashCommit": "3692910d4d78363e38b00c3b22a9748528bd4f92",
+            "authorityPullRequest": 2427,
+            "authoritySquashCommit": "aa1e725384a177d296b5e2ccbbdb9467c93c9220",
+            "closureEvidence": "project/docs/governance/office-p4-authz-r01/f07-cap02-physical-orphan-disposition.md",
+            "verifiedAtOriginMain": "1634c2ddac908e1963a6549a2a4c0921592f107c"
+          },
+          "nextDisposition": "RETURN_TO_PAGE_O0_NO_AUTOMATIC_SUCCESSOR"
         }
       ]
     }
