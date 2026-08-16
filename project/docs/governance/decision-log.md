@@ -352,6 +352,49 @@ reusableAuthority : PROHIBITED
 globalAuthority : PROHIBITED
 ```
 
+### OFFICE-SC-F07 CAP-02 physical orphan disposition semantic authority record
+
+<!-- GOV-COORD-AUTHORITY kind=SEMANTIC_AUTHORITY recordId=OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-SA01 -->
+
+```text
+recordType : SEMANTIC_AUTHORITY
+recordId : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-SA01
+programId : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+taskId : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-AUTHORITY-MATERIALIZATION-R01
+targetTaskId : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01
+ownerName : Av. Ulaş Hüseyin Telli
+ownerRole : Repository Owner / Semantic Authority
+decision : RATIFIED
+issuedAt : 2026-08-16
+status : ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK
+scope : PHYSICAL ORPHAN DISPOSITION ONLY
+physicalTargetCount : 2
+physicalTarget.p6a : C:\Development\HUKUK_YAZILIMI\HY_office_p6a_runtime_truth
+physicalTarget.p3_reportingline : C:\Development\HUKUK_YAZILIMI\HY_office_p3_reportingline
+preflightInventory : READ_ONLY / PER_TARGET / REQUIRED
+recoverability : FIRST
+dirtyUnmergedUnknownContent : PRESERVE
+eligibleCleanup : PROVEN_CLEAN_MERGED_OR_EMPTY_STALE_RESIDUAL_ONLY
+recursivePhysicalDelete : PROHIBITED
+reparseTargetTraversal : PROHIBITED
+W3F07 : PROHIBITED / UNTOUCHED
+otherPhysicalTargets : PROHIBITED
+productCode : PROHIBITED
+policyChange : PROHIBITED
+schemaMigrationDatabase : NONE
+runtime : BLOCKED_BY_RUNTIME_MODEL
+productionActivation : NONE / NOT_AUTHORIZED
+exactTaskBinding : REQUIRED
+exactBranchBinding : REQUIRED
+exactScopeBinding : REQUIRED
+singleUseConsumption : REQUIRED
+transfer : PROHIBITED
+expansion : PROHIBITED
+standingAuthority : PROHIBITED
+reusableAuthority : PROHIBITED
+globalAuthority : PROHIBITED
+```
+
 ### OFFICE-SC-F01 authorization breadth and sensitive projection semantic authority record
 
 ```text
