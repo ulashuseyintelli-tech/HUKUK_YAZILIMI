@@ -7,6 +7,7 @@ import {
   AlertTriangle, Scroll, FileCheck
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { MAX_OCR_UPLOAD_BYTES, MAX_OCR_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { nameMatchKey } from "@/lib/lawyer-match";
 import { buildExtractionFeedbackPayload } from "./ocr-feedback-telemetry";
@@ -289,6 +290,12 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // WSMR-A4-AB-15: "Bunu kullan" (mevcut borçlu ekleme) başarısız olduğunda görünür
+  // hata + retry — bkz. handleUseExistingDebtor.
+  const [useExistingDebtorError, setUseExistingDebtorError] = useState<string | null>(null);
+  const [useExistingDebtorRetrying, setUseExistingDebtorRetrying] = useState(false);
+  const lastUseExistingCandidateRef = useRef<{ id: string; name: string } | null>(null);
+
   useEffect(() => {
     loadDebtors();
   }, []);
@@ -389,9 +396,18 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   };
 
   // PR-D: Kimliksiz benzer-isim review'unda "Bunu kullan" → yeni kayıt AÇMA, mevcut borçluyu dosyaya ekle.
+  //
+  // WSMR-A4-AB-15 KUSUR (fix öncesi): id ile çekme (`api.get`) başarısız olursa `existing`
+  // tanımsız kalıyordu, ama modal YİNE DE "başarılıymış gibi" kapanıyordu (`setShowNewDebtorModal
+  // (false)` koşulsuzdu) — kullanıcı, seçtiği mevcut borçlunun dosyaya eklendiğini SANIYORDU,
+  // oysa `selectedDebtors` hiç değişmemişti. Sihirbazın zorunlu adımında (bkz. `caseDebtors.
+  // length === 0` kapısı) bu, ya kafa karıştırıcı bir blokla ya da — dosyada BAŞKA borçlu zaten
+  // varsa — fark edilmeden EKSİK TARAFLA açılan bir takip dosyasıyla sonuçlanabiliyordu.
   const handleUseExistingDebtor = async (candidate: { id: string; name: string }) => {
+    lastUseExistingCandidateRef.current = candidate;
     // Zaten bu dosyaya eklenmişse tekrar ekleme (addDebtorToCase mükerrer korumasız).
     if (selectedDebtors.some((sd) => sd.debtorId === candidate.id)) {
+      setUseExistingDebtorError(null);
       setShowNewDebtorModal(false);
       setEditingDebtor(null);
       return;
@@ -401,14 +417,36 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
       // Liste 500 ile sınırlı; aday listede yoksa id ile çek.
       try {
         const res = await api.get(`/debtors/${candidate.id}`);
-        existing = res.data?.data || res.data;
-      } catch (err: any) {
-        console.error("Mevcut borçlu yüklenemedi:", err?.message || err);
+        const fetched = res.data?.data || res.data;
+        if (!fetched || typeof fetched !== "object" || typeof fetched.id !== "string") {
+          throw new Error("MALFORMED_DEBTOR_RESPONSE");
+        }
+        existing = fetched as Debtor;
+      } catch (err) {
+        // Modal artık SESSİZCE "başarılıymış gibi" kapanmaz — görünür, kalıcı bir hata +
+        // retry sunulur; addDebtorToCase ÇAĞRILMAZ (bozuk/eksik veriyle sessizce eklenmez).
+        setUseExistingDebtorError(toActionErrorMessage(err, "Mevcut borçlu yüklenemedi."));
+        setShowNewDebtorModal(false);
+        setEditingDebtor(null);
+        return;
       }
     }
-    if (existing) addDebtorToCase(existing);
+    setUseExistingDebtorError(null);
+    addDebtorToCase(existing);
     setShowNewDebtorModal(false);
     setEditingDebtor(null);
+  };
+
+  // YALNIZ handleUseExistingDebtor'ı, en son başarısız olan aday ile tekrar dener.
+  const retryUseExistingDebtor = async () => {
+    const candidate = lastUseExistingCandidateRef.current;
+    if (!candidate) return;
+    setUseExistingDebtorRetrying(true);
+    try {
+      await handleUseExistingDebtor(candidate);
+    } finally {
+      setUseExistingDebtorRetrying(false);
+    }
   };
 
   // Sihirbaz: Dosya seçimi
@@ -983,6 +1021,32 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
           </button>
         </div>
       </div>
+
+      {useExistingDebtorError && (
+        // WSMR-A4-AB-15: "Bunu kullan" başarısız oldu — modal kapandı ama borçlu dosyaya
+        // EKLENMEDİ; bu bant kapanana kadar kalıcıdır (otomatik kaybolmaz), "Seçili Borçlular"
+        // listesinin sessizce eksik kalmasını engeller. Retry YALNIZ aynı adayla bu işlemi tekrar dener.
+        <div role="alert" className="mb-2 flex-shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+          <span>{useExistingDebtorError} Borçlu dosyaya EKLENMEDİ.</span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={retryUseExistingDebtor}
+              disabled={useExistingDebtorRetrying}
+              className="rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {useExistingDebtorRetrying ? "Deneniyor…" : "Tekrar dene"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setUseExistingDebtorError(null)}
+              className="rounded px-2 py-1 text-red-700 hover:bg-red-100"
+            >
+              Kapat
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 grid grid-cols-2 gap-2 min-h-0 overflow-hidden">
         {/* Sol Panel: Borçlu Rehberi */}
