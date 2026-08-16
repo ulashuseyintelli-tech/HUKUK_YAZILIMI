@@ -139,29 +139,67 @@ Fatih        → Ege
 | **B03** | round-robin + single-assignee | Blok-özel ek ön-koşul saptanmadı |
 | **B04** | reassignment / absence / audit | Blok-özel ek ön-koşul saptanmadı |
 | **B05** | first-review | Blok-özel ek ön-koşul saptanmadı |
-| **B06** | approval-orchestration + ledger | **`BLOCKED_DEPENDENCY`** — bkz. §2.1 |
+| **B06** | approval-orchestration + ledger | **`UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED`** — bkz. §2.1 |
 | **B07** | notification + digest | Blok-özel ek ön-koşul saptanmadı |
 | **B08** | UI-API admin | Blok-özel ek ön-koşul saptanmadı |
 | **B09** | migration + runtime verify | **`BLOCKED_DEPENDENCY`** — cross-workstream migration contract **YOK** (§2.3) |
 | **B10** | governance closure | Tüm önceki blokların terminal durumuna bağlı (yapısal) |
 
-### 2.1 B06 ön-koşulu — `X4/P4 canonical closure`: **DOĞRULANAMADI**
+### 2.1 B06 ön-koşulu — `X4/P4 canonical closure`: **`UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED`**
 
-PAGE-O0 aktarımına göre X4/P4 kapanmıştır. **Bu brief, kendi fresh `origin/main`
-kontrolünde bunu doğrulayamadı — aksine, karşıt kanıt buldu.** Kural gereği
-(§2 talimatı) B06 **`BLOCKED_DEPENDENCY`** olarak işaretlenir; "kapandı"
-yazılmaz.
+PAGE-O0 aktarımına göre X4/P4 kapanmıştır. Bu brief, kendi fresh `origin/main`
+kontrolünde **ne kapanışı doğrulayabildi ne de açıklığı kesinleştirebildi.**
+Sebep yapısaldır: `X4/P4` etiketi **iki farklı kapanış kavramına** işaret
+edebilir ve repo bu iki kavram için **birbirinden ayrı** kanıt taşır. Ön-koşulun
+hangisini kastettiği owner tarafından netleştirilmelidir.
 
-**Karşıt kanıt (VERIFIED, `origin/main` @ `f5ccdb0b`):**
+> `X4/P4 canonical closure` → **UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED**
+> Bu brief "kapandı" da yazmaz, "açık" da yazmaz.
+
+#### (a) Fonksiyonel P4 write-path closure — **kapandığı yönünde kanıt VAR**
+
+Onay motorunun yazma yolu (`OfficeApprovalRequest` yaşam döngüsü + enforce)
+kapanmış görünüyor:
 
 | Bulgu | Kanıt |
 |---|---|
-| **X4 açıkça AÇIK** | `OFFICE-DELIVERY-MANIFEST.md:1860` — *"**P8 FINAL CLOSEOUT DEĞİLDİR** (X4 ve kalan lane'ler kapanmadan final sertifikasyon yapılmaz)"* (aynı ifade `product-backlog.md:3662`) |
-| **X4 alıcı taraf** | `OFFICE-DELIVERY-MANIFEST.md:1924` — `CLF-O0-01 · requestRevision domain-owned guard → X4`. X4 hâlâ **iş alan** bir hedef; kapanmış bir lane değil |
-| **P4 hâlâ uçuşta** | Umbrella program `OFFICE-P4-AUTHORIZATION-COMPLETION-R01`. Bu programa bağlı semantic authority kayıtları **2026-08-15 ve 2026-08-16** tarihli: F03 `issuedAt : 2026-08-15`, F04 `issuedAt : 2026-08-16 / status : ACTIVE_FOR_THIS_EXACT_RECONCILIATION_PR`, F07 `issuedAt : 2026-08-16 / status : ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK` (`decision-log.md` §§ OFFICE-SC-F03/F04/F07 authority record blokları) |
-| **Successor envanteri açık** | `OFFICE-DELIVERY-MANIFEST.md` §13.4 — tüm successor kalemleri `OWNER GO REQUIRED / NOT STARTED` |
+| P4 approval motoru teslim + enforce DONE | `master-triage-register.md:197` — *"P4 Office Approval FE PR #823/#832 ile teslim edilmiş ve **P4-6 DONE**"* (VER-26, 2026-07-10) |
+| `P4-6 = enforce` semantiği | `office-approval-shadow.service.ts:13-15` — *"İşlemi durdurma + typed response + fail-closed = 'enforce' (P4-6)"* |
+| Write-path kodda mevcut | `office-approval.service.ts` — `createPendingRequest` / `approve` / `reject` / `approveWithChanges` / `requestRevision` / `cancel` + executor (`office-approval-executor.service.ts`) |
 
-**Kapandığı doğrulanan alt-parçalar (tamlık için, P4'ün *bütününü* kapatmaz):**
+**B06'nın fiilen ihtiyaç duyduğu şey budur** — üzerine `ALL`/`QUORUM`/
+`SEQUENTIAL` politikalarını inşa edeceği çalışan bir tek-aşamalı motor. Bu
+okumaya göre ön-koşul **karşılanmıştır**.
+
+#### (b) Umbrella final closeout — **kapanmadığı yönünde kanıt VAR**
+
+Program/lane düzeyindeki final sertifikasyon kapanmamıştır:
+
+| Bulgu | Kanıt |
+|---|---|
+| P8 FINAL X4'ü bekliyor | `OFFICE-DELIVERY-MANIFEST.md:1860` — *"**P8 FINAL CLOSEOUT DEĞİLDİR** (X4 ve kalan lane'ler kapanmadan final sertifikasyon yapılmaz)"* (aynı ifade `product-backlog.md:3662`) |
+| X4 hâlâ **iş alan** taraf | `OFFICE-DELIVERY-MANIFEST.md:1924` — `CLF-O0-01 · requestRevision domain-owned guard → X4` |
+| `OFFICE-P4-AUTHORIZATION-COMPLETION-R01` uçuşta | Bu umbrella'ya bağlı semantic authority kayıtları **2026-08-15 / 2026-08-16** tarihli: F03 `issuedAt : 2026-08-15`; F04 `issuedAt : 2026-08-16 / status : ACTIVE_FOR_THIS_EXACT_RECONCILIATION_PR`; F07 `issuedAt : 2026-08-16 / status : ACTIVE_AFTER_APPROVED_MERGE_SINGLE_TASK` (`decision-log.md` §§ OFFICE-SC-F03/F04/F07 authority record blokları) |
+| Successor envanteri açık | `OFFICE-DELIVERY-MANIFEST.md` §13.4 — tüm kalemler `OWNER GO REQUIRED / NOT STARTED` |
+
+#### (c) X4'ün kendisi hakkında ölçülen boşluk
+
+Repo'da **X4'ün ne teslim ettiğini tanımlayan bir lane sayfası veya kapanış
+kaydı yoktur**; X4 yalnız *başka kalemlerin hedefi* olarak (`… → X4`) geçer.
+Dolayısıyla "X4 kapandı mı" sorusu repo kanıtıyla **hiçbir yönde**
+cevaplanamaz — bu bir bilgi boşluğudur, bir açıklık tespiti değildir.
+
+#### Sonuç
+
+`(a)` kapanmış, `(b)` kapanmamış, `(c)` ölçülemiyor. Bu üçü aynı etiket altında
+toplandığı için tek bir verdict verilemez. **Ön-koşul "P4 write-path"i mi yoksa
+"umbrella final closeout"u mu kastediyor?** — bkz. §5 Açık Soru 5.
+
+Not: B06 zaten §4'teki D3 gerilimi ve §5 Açık Soru 1 (D-WR-7) sebebiyle owner
+kararı beklemektedir; bu belirsizlik **ek** bir engel getirmez, mevcut owner
+kapısına eklenir.
+
+**Ancestry doğrulanan alt-parçalar (tamlık için; hiçbiri P4'ün *bütününü* kapatmaz):**
 
 | Kalem | PR | Squash SHA | main ancestry |
 |---|---|---|---|
@@ -171,34 +209,49 @@ yazılmaz.
 | F06 open-OD disposition | `#2376` | `a3db41bda8c9f09bcec5c563862f5ca10e0a9411` | `ANCESTOR_OF_MAIN` (VERIFIED) |
 | P7 dormant disposition | `#2358` | `66773661e67f95495f5a9955a93b6d8b8d4a09c8` | `ANCESTOR_OF_MAIN` (VERIFIED) |
 
-### 2.2 WR01 implementation ön-koşulu — `C2 PHASE B CLOSED`: **DOĞRULANAMADI**
+### 2.2 WR01 implementation ön-koşulu — `C2 PHASE B CLOSED`: **KARŞILANDI (VERIFIED)**
 
-**`C2 PHASE B` etiketi repository'de hiç geçmiyor** (tam-repo markdown taraması:
-0 eşleşme). Repo'da "C2" adında **birbirinden farklı en az iki lane** vardır ve
-hiçbiri "PHASE B" alt-bölümü taşımaz:
+`"C2 PHASE B"` literal dizgisi repository'de geçmez; ancak **semantik bağ
+kurulabildi ve repo kanıtıyla doğrulandı.** `C2`, executor **lane kimliğidir**
+(`CLAUDE-C2`) ve OFFICE lane kanıt belgelerinde açıkça kayıtlıdır.
 
-| Aday | Konum | Yapı | "PHASE B" var mı |
-|---|---|---|---|
-| CLIENT C2 (mutation authority + address lifecycle) | `CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01/CLAUDE-CLIENT-C2.md` | blok tabanlı | HAYIR |
-| CAD C2 (C3/KVKK ofis yüzeyleri) | `CLIENT-ACCOUNTING-DELIVERY-AND-OFFICE-UX-PROGRAM-R01/CLAUDE-C2-COMPLIANCE-OFFICE-SURFACES.md` | `C2-B01 → C2-B02 → C2-B03 → C2-B04` | HAYIR |
+**Zincir (her adım VERIFIED, `origin/main` @ `f5ccdb0b`):**
 
-Repo'da **"PHASE B" taşıyan ve CLOSED olan tek OFFICE kalemi**, C2 lane'i değil,
-P5 SECURITY'dir: `master-triage-register.md:199` —
-*"OFFICE / P5 SECURITY — PHASE A + PHASE B + B02R1 (OFFICE-P5-SECURITY-R01) |
-CLOSED / VERIFIED (2026-08-13)"* (SHA'ları §2.1 tablosunda, üçü de ancestry
-VERIFIED).
+| # | Adım | Kanıt |
+|---|---|---|
+| 1 | `CLAUDE-C2` = OFFICE execution lane | `office-p5-security-r01/README.md:8` — tablo satırı: `| Lane | CLAUDE-C2 (OFFICE execution lane) |` |
+| 2 | C2'nin görevi = `OFFICE-P5-SECURITY-COMPLETION-R01` | `office-p5-security-r01/README.md:7` — `| Task | OFFICE-P5-SECURITY-COMPLETION-R01 |` |
+| 3 | Bu lane PHASE A / PHASE B ile bölünmüş | `office-p5-security-r01/README.md:9,20` — `| Phase | PHASE A — evidence-only (B01 + B03) |`; *"PHASE B (B02/B04/B05 implementasyonu) yalnız X3 terminal + PAGE-O0 lease sonrası açılır"* |
+| 4 | PHASE B gerçekten açıldı ve teslim edildi | PR `#2368` squash `4e228cb2a535a2ffac9ea9901a7904dddaada8a4` — */auth/me credential containment, seed kanonik-servis yolu, staff okuma projeksiyonu + DTO (F-B01-01, B02, B04/S3, B05)*; commit başlığı literal olarak *"P5 guvenlik PHASE B"* |
+| 5 | PHASE B main'de | `git merge-base --is-ancestor 4e228cb2 origin/main` → **`ANCESTOR_OF_MAIN`** (VERIFIED) |
+| 6 | Program CLOSED | `master-triage-register.md:199` — *"**OFFICE / P5 SECURITY — PHASE A + PHASE B + B02R1 (OFFICE-P5-SECURITY-R01)** — **CLOSED / VERIFIED** (2026-08-13; kanonik kayıt: `OFFICE-P8-C4-CANONICAL-RECONCILIATION-R01`)"*; `F-B02-01 CLOSED`; üç SHA da *"gh ile MERGED + origin/main ancestry VERIFIED"* |
+| 7 | Kanonik ikinci kayıt | `OFFICE-DELIVERY-MANIFEST.md` §13.1 — `PROGRAM STATUS: CLOSED / VERIFIED (2026-08-13)`, `CHAIN: #2362 → #2368 → #2371` |
 
-**Değerlendirme:** "C2 PHASE B" bir **executor-sayfa kimliği** (C1…C5 gibi)
-olabilir ve o sayfanın teslim ettiği iş P5 PHASE B olabilir. Ancak bu eşleme
-`INFERRED`'dir, `VERIFIED` değildir — executor-sayfa kimlikleri repo'da
-tutulmaz. Talimat gereği doğrulanamayan ön-koşul **"sağlandı" yazılmaz**:
+**Adım 3'teki lease kapısı da karşılanmıştır:** PHASE B'nin ön-koşulu olan
+*"X3 terminal + PAGE-O0 lease"*, PHASE B'nin fiilen merge edilmiş olmasıyla
+(adım 4-5) geriye dönük olarak doğrulanır — açılmamış olsaydı `#2368`
+bulunmazdı. Aynı README §1, DB write ve CI manifest lease'lerinin o tarihte
+`CODEX-X3`'te olduğunu ve C2'nin bunlara **dokunmadığını** kayıt altına alır.
+
+**Identity completion bağlamı (yan doğrulama):** C-lane kimlikleri repo'da tek
+başına P5'e özgü değildir — `office-p5-security-r01/b03-staff-authorization-compatibility-matrix.md:59`
+*"3 aktif ve üçü de User'a bağlı (**C1 P2-B03 pilotları**)"* der; `:75` *"**C1'in
+bağladığı** 3 personel"* diye devam eder. Yani C1 identity-binding pilotlarını,
+C2 P5 security'yi, C3 P7 dormant'ı (`office-p7-dormant-r01/README.md:3` —
+`LANE: CLAUDE-C3`), C4 P8 reconciliation'ı (`cross-lane-findings.md:11` —
+`TARGET LANE: CLAUDE-C4 (P8)`) yürütmüştür. **C-numaralı executor sayfa şeması
+repo'da tutarlı biçimde kayıtlıdır**; §2.2'nin ilk okumasındaki "executor-sayfa
+kimlikleri repo'da tutulmaz" varsayımı yanlıştı.
 
 ```text
-C2 PHASE B CLOSED   → UNVERIFIED / OWNER CONFIRMATION REQUIRED
+C2 PHASE B CLOSED   → KARŞILANDI / VERIFIED
+                      (CLAUDE-C2 lane · OFFICE-P5-SECURITY-R01 PHASE B ·
+                       PR #2368 · squash 4e228cb2 · ancestry VERIFIED ·
+                       program CLOSED / VERIFIED 2026-08-13)
 ```
 
-Bu, **WR01 implementation'ının tamamının** ön-koşuludur (tek bir bloğun değil);
-dolayısıyla B01-B10'un **hiçbiri** owner bu etiketi netleştirmeden açılamaz.
+**Sonuç:** Bu ön-koşul **B01-B10'u bloklamaz.** Önceki taslakta yer alan
+*"hiçbir blok açılamaz"* çıkarımı **geri alınmıştır**.
 
 ### 2.3 B09 ön-koşulu — `cross-workstream migration contract`: **KARŞILANMAMIŞ**
 
@@ -220,7 +273,7 @@ cross-workstream sözleşme bulunmamaktadır. B09 bu nedenle
 | **B03** | (emsal yok — §3.8) | `office-work-round-robin.ts` (saf, IO-suz) + persist adaptörü | Deterministik sıra fonksiyonu ayrı, concurrency-safe persist ayrı tutulmalı. **Repo'da round-robin emsali YOK** |
 | **B04** | `modules/audit/audit.service.ts` | `office-work-reassignment.service.ts` | Yeniden atama + yokluk + audit izi. D-WR-1'in "sırayı tüketmez" kuralı burada da geçerli |
 | **B05** | `office-approval.service.ts` (statü makinesi deseni) | `office-first-review.service.ts` | Uygulayıcı ≠ kontrolör ayrımı. Veri modeli **yalnız B01 contract'ında** tarif edilir |
-| **B06** | `office-approval.service.ts`, `client-payout-approval.policy.ts`, `client-financial-disclosure-approval.policy.ts` | `office-approval-policy-vocabulary.ts` + politika-başına policy dosyaları | Mevcut `resolveApproverEligible()` **actionCode dispatch** desenini genişletir. `ALL/QUORUM/SEQUENTIAL` için çok-kararlı taşıyıcı gerekir → §5 Açık Soru 2. **`BLOCKED_DEPENDENCY`** |
+| **B06** | `office-approval.service.ts`, `client-payout-approval.policy.ts`, `client-financial-disclosure-approval.policy.ts` | `office-approval-policy-vocabulary.ts` + politika-başına policy dosyaları | Mevcut `resolveApproverEligible()` **actionCode dispatch** desenini genişletir. `ALL/QUORUM/SEQUENTIAL` için çok-kararlı taşıyıcı gerekir → §5 Açık Soru 2. Ön-koşul: **`UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED`** (§2.1) |
 | **B07** | `operational-escalation.service.ts` (tier + çift-gönderim guard + SENT/FAILED/SKIPPED sonucu) | `office-work-digest.service.ts` | Bildirim fan-out'u D-WR-3 gereği karar sayısından **ayrı** kalmalı. D-WR-5: digest'te kişi-performans alanı **olmaz** |
 | **B08** | `office.controller.ts` (`opStaffTypes` / eskalasyon listelerinin admin yüzeyi) | `office-work-routing.controller.ts` + admin DTO'ları | **UYARI (VERIFIED emsal riski):** `office-p5-security-r01/b03-...matrix.md` — allowlist projection + tam-form POST birleşimi sınıflandırılmamış alanı önce görünmez yapıp sonra siler. Admin yüzeyi **fark-payload** ile tasarlanmalı |
 | **B09** | `prisma/migrations/**` | — | Ön-koşul yok (§2.3). **`BLOCKED_DEPENDENCY`** |
@@ -496,16 +549,20 @@ Cross-workstream migration contract yoktur. B09 (a) böyle bir contract'ın
 üretilmesini mi bekleyecek, (b) WR01'e özel dar bir migration protokolü mü
 tanımlanacak, yoksa (c) WR01 migration-suz mu tasarlanacak?
 
-**AÇIK SORU 4 — "C2 PHASE B" etiketinin karşılığı (§2.2):**
-Bu etiket repository'de geçmiyor ve iki farklı "C2" lane'i mevcut. Owner hangi
-somut workstream'i kastediyor? (Repo'da PHASE B taşıyan tek CLOSED OFFICE
-kalemi P5 SECURITY'dir.) **WR01'in tüm blokları bu cevaba bağlıdır.**
+**~~AÇIK SORU 4~~ — ÇÖZÜLDÜ (soru değil, teyit kalemi):**
+`"C2 PHASE B"` = `CLAUDE-C2` lane'inin `OFFICE-P5-SECURITY-R01` PHASE B teslimi;
+`CLOSED / VERIFIED` (§2.2, yedi adımlı zincir). Owner'dan **karar** gerekmiyor;
+yalnız bu eşlemenin kastedilen olduğu teyit edilebilir.
 
-**AÇIK SORU 5 — X4/P4 ön-koşulunun gerçek anlamı (§2.1):**
-Repo kanıtı X4'ün **açık** olduğunu söylüyor ve P4 umbrella'sı 2026-08-16
-itibarıyla hâlâ uçuşta. B06'nın ön-koşulu (a) P4'ün **tamamının** kapanması mı,
-(b) yalnız belirli F-kalemlerinin (F01/F03/F04/F06/F07) kapanması mı, yoksa
-(c) aktarımdaki "kapanmıştır" ifadesi bayat mı?
+**AÇIK SORU 5 — `X4/P4 canonical closure` ön-koşulunun kapsamı (§2.1):**
+Etiket iki ayrı kapanış kavramını birlikte anıyor ve repo bunlar için **ters
+yönde** kanıt taşıyor: **fonksiyonel P4 write-path** kapanmış görünüyor
+(`P4-6 DONE`, VER-26), **umbrella final closeout** ise kapanmamış (P8 FINAL X4'ü
+bekliyor); **X4'ün kendisi** için repo'da kapanış/teslim kaydı hiç yok.
+B06'nın ön-koşulu bunlardan hangisidir?
+*(a)* fonksiyonel write-path yeterli mi — bu okumada ön-koşul **karşılanmıştır**;
+*(b)* umbrella final closeout mu gerekiyor — bu okumada B06 gerçekten bekler;
+*(c)* X4 için ayrı bir tanım/lane sayfası mı üretilmeli?
 
 **AÇIK SORU 6 — `PermissionGrant`'ın canlı tüketicileri (§3.7):**
 Tablo üç bounded-context tarafından okunuyor ve `revokedAt` alanı yok. WR01
@@ -516,15 +573,18 @@ yoksa (b) kendi delegasyon taşıyıcısını mı kullanacak?
 
 ## 6. Önerilen execution sırası — **TAVSİYE** (owner GO'suz bağlayıcı DEĞİL)
 
-> Aşağıdaki sıra bağımlılık grafiğinden türetilmiş bir **öneridir**. Owner
-> GO'su olmadan hiçbir blok açılamaz; ayrıca §2.2 gereği **hiçbir blok** "C2
-> PHASE B" netleşmeden başlayamaz.
+> Aşağıdaki sıra bağımlılık grafiğinden türetilmiş bir **öneridir**. Owner GO'su
+> olmadan hiçbir blok açılamaz — ama bu, WR01'in *bütününün* bloklu olduğu
+> anlamına gelmez: `C2 PHASE B` ön-koşulu **karşılanmıştır** (§2.2) ve açık
+> kalan belirsizlikler (§2.1, §2.3) yalnız **B06 ve B09**'a dokunur.
+
+**Salt analiz / docs-only contract çalışması otomatik bloklanmaz.** §2.1 ve
+§2.3'teki `UNVERIFIED` / `BLOCKED_DEPENDENCY` kalemleri **ürün
+implementasyonuna** ilişkindir. B01 gibi kod-üretmeyen, yalnız tip/sözleşme ve
+`actionCode` sınıflandırması üreten bir blok bu belirsizliklerden **etkilenmez**;
+tersine, onları cevaplanabilir hâle getirir.
 
 ```text
-KADEME 0 (ön-koşul temizliği — kod işi DEĞİL)
-  · Açık Soru 4 (C2 PHASE B) ve Açık Soru 5 (X4/P4) owner tarafından cevaplanır
-  · Bu iki cevap gelmeden aşağıdaki hiçbir kademe açılmaz
-
 KADEME 1  B01  contract + taxonomy
   Gerekçe: D-WR-3 sözlüğü, D-WR-4 sınıflandırması ve B03'ün sıfır-emsal
   belirsizliği (§3.8) yalnız burada kapanır. B02/B03/B05/B06 hepsi bunun
@@ -544,8 +604,9 @@ KADEME 4  B04  reassignment/absence/audit  (B03'e bağlı)
           B05  first-review                (B01'e bağlı; B03'ten bağımsız)
 
 KADEME 5  B06  approval-orchestration + ledger
-  ŞU ANDA BLOCKED_DEPENDENCY (§2.1). Ayrıca Açık Soru 2 (D3 gerilimi) ve
-  Açık Soru 1 (D-WR-7) çözülmeden tasarlanamaz.
+  Ön-koşul UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED (§2.1 — Açık Soru 5).
+  Bağımsız olarak Açık Soru 2 (D3 gerilimi) ve Açık Soru 1 (D-WR-7) çözülmeden
+  tasarlanamaz; yani §2.1 netleşse bile B06 owner kapısında bekler.
 
 KADEME 6  B08  UI-API admin                (B02+B03+B06'ya bağlı)
 
@@ -555,11 +616,13 @@ KADEME 7  B09  migration + runtime verify
 KADEME 8  B10  governance closure          (hepsine bağlı)
 ```
 
-**Sıra dışı gözlem (TAVSİYE):** B06 ve B09'un ikisi de bloklu olduğundan,
-owner sadece **B01**'i açarak programın en büyük belirsizliğini (D-WR-4
-envanteri + B03 contract'ı + `ALL/QUORUM/SEQUENTIAL` taşıyıcı şekli) tek bir
-salt-tasarım bloğunda kapatabilir; bu, D-WR-7 ve Açık Soru 2'yi cevaplanabilir
-hâle getirir.
+**Sıra dışı gözlem (TAVSİYE):** açık kalan iki belirsizlik yalnız B06 ve B09'a
+dokunduğundan, owner **B01**'i bunları beklemeden açabilir. B01 salt tasarım
+üretir (tip/sözleşme + `actionCode` sınıflandırması), kod davranışı değiştirmez
+ve programın en büyük belirsizliğini — D-WR-4 envanteri, B03 contract'ı (sıfır
+emsal, §3.8) ve `ALL/QUORUM/SEQUENTIAL` taşıyıcı şekli — tek bir blokta
+kapatır. Bu, D-WR-7 (Açık Soru 1) ve D3↔B06 gerilimini (Açık Soru 2) **ancak o
+zaman** cevaplanabilir hâle getirir.
 
 ---
 
@@ -570,8 +633,8 @@ hâle getirir.
 | `git fetch origin main` → SHA | `f5ccdb0bfa95ee0f5e0a86b1a926a261d3a50595` (2026-08-16 13:00:21 +0300) VERIFIED |
 | `decision-log.md:539` WR01 kaydı | `DECISION_RATIFIED / DECOMPOSITION_REQUIRED` — **değişmemiş** VERIFIED |
 | §3'teki 9 emsal dosya yolu | **9/9 mevcut**, aynı yol, aynı amaç VERIFIED (§3 tablosu) |
-| X4/P4 canonical closure | **DOĞRULANAMADI** → B06 `BLOCKED_DEPENDENCY` (§2.1) |
-| C2 PHASE B CLOSED | **DOĞRULANAMADI** (etiket repo'da yok) → `UNVERIFIED` (§2.2) |
+| X4/P4 canonical closure | **`UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED`** — fonksiyonel write-path kapanmış, umbrella final closeout kapanmamış, X4'ün kendisi ölçülemiyor (§2.1) |
+| C2 PHASE B CLOSED | **KARŞILANDI / VERIFIED** — `CLAUDE-C2` lane · `OFFICE-P5-SECURITY-R01` PHASE B · PR `#2368` · squash `4e228cb2` · ancestry `ANCESTOR_OF_MAIN` · program `CLOSED / VERIFIED` (§2.2) |
 | Cross-workstream migration contract | **YOK** → B09 `BLOCKED_DEPENDENCY` (§2.3) |
 | Rakip PR — başlık/body | `gh pr list --search "OFFICE-WR01 in:title,body" --state open` → `[]` |
 | Rakip PR — mekanik dosya taraması | `gh pr list --state open --json number,files` + `office-p4-authz-r01\|OFFICE-WR01\|office-approval` testi → **0**. Repository'de **hiç açık PR yok** (gh auth VERIFIED, merged PR listesi ile sanity-check yapıldı) |
@@ -605,7 +668,12 @@ RATIFIYE EDİLEN      YOK — hiçbir D-WR kaydı yeniden ratifiye edilmedi
 SEÇİLEN SIRA         YOK — §6 yalnız TAVSİYEDİR
 YARATILAN MODEL      YOK — hiçbir Prisma modeli / migration / entity icat edilmedi
 ÇÖZÜLEN GERİLİM      YOK — D-WR-7 ve D3↔B06 açık bırakıldı
-BLOKLU BLOKLAR       B06 (X4/P4) · B09 (migration contract)
-PROGRAM ÖN-KOŞULU    C2 PHASE B = UNVERIFIED → tüm bloklar owner cevabına bağlı
+PROGRAM ÖN-KOŞULU    C2 PHASE B = KARŞILANDI / VERIFIED (§2.2) — WR01 bütünü
+                     bloklu DEĞİL
+B06 ÖN-KOŞULU        UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED (§2.1)
+B09 ÖN-KOŞULU        BLOCKED_DEPENDENCY — cross-workstream migration contract
+                     YOK (§2.3)
+DİĞER BLOKLAR        Ön-koşul engeli saptanmadı; owner GO'suna tabi
 SONRAKİ ADIM         PAGE-O0 — owner §0 kaynak doğrulaması + §5 açık soruları
+                     (Soru 4 çözüldü; Soru 1/2/3/5/6 açık)
 ```
