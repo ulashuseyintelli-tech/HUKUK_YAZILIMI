@@ -218,3 +218,11 @@ src/modules/staff/__tests__/staff-cap09a-consumer.spec.ts
 # 401/403/ADMIN-basari + route-scoped kilit (blanket donusum yok) + global/idempotent
 # servis semantigi.
 src/modules/seed/__tests__/seed-public-institutions-admin-gate.spec.ts
+
+# -- OFFICE-WR01-B07 — WORK DIGEST (salt-okunur is durumu ozeti) ---------------
+# B01 sozlesmesinin (office-work-routing.spec.ts, yukarida) yaninda duran salt-okunur
+# digest. Spec pozitif aggregate davranisinin yaninda negatif sinirlari da kilitler:
+# D-WR-5 (kisi-performansi/kisi-bazli gruplama yok) ve D-WR-3 (karar/onay sayisi yok)
+# tip sekli + import kilidi ile mekanik olarak kanitlanir. DB gerektirmez; ayni OFFICE
+# process'inde kosar, yeni Jest step ACILMAZ.
+src/modules/office-approval/__tests__/office-work-digest.service.spec.ts
