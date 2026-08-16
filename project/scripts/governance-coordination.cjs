@@ -2145,6 +2145,64 @@ const OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01 =
       ]),
     }),
   });
+const OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01 =
+  Object.freeze({
+    taskId:
+      'OFFICE-CAP-09A-CONSUMER-01-R01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01',
+    programId: 'OFFICE-P4-AUTHORIZATION-COMPLETION-R01',
+    contractPath:
+      'project/docs/governance/governance-writer-coordination-contract.md',
+    bindingPr: Object.freeze({
+      mode:
+        'OFFICE_CAP_09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01',
+      baseSha: 'f5ccdb0bfa95ee0f5e0a86b1a926a261d3a50595',
+      headRef:
+        'codex/office-cap-09a-consumer-01-r01-terminal-closeout-binding-r01',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path: 'project/scripts/governance-coordination.test.cjs',
+        }),
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/governance-writer-coordination-contract.md',
+        }),
+      ]),
+    }),
+    closeoutPr: Object.freeze({
+      taskId: 'OFFICE-CAP-09A-CONSUMER-01-R01',
+      mode: 'OFFICE_CAP_09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_R01',
+      originalBaseSha: 'f5ccdb0bfa95ee0f5e0a86b1a926a261d3a50595',
+      headRef: 'codex/office-cap-09a-consumer-01-r01-terminal-closeout',
+      changedPaths: Object.freeze([
+        Object.freeze({
+          status: 'M',
+          path:
+            'project/docs/governance/coordination-execution-grants/OFFICE-CAP-09A-CONSUMER-01-R01-EG01.md',
+        }),
+      ]),
+      semanticAuthority: Object.freeze({
+        kind: 'SEMANTIC_AUTHORITY',
+        path: 'project/docs/governance/decision-log.md',
+        recordId: 'OFFICE-CAP-09A-CONSUMER-01-R01-SA01',
+      }),
+      executionGrant: Object.freeze({
+        kind: 'EXECUTION_GRANT',
+        path:
+          'project/docs/governance/coordination-execution-grants/OFFICE-CAP-09A-CONSUMER-01-R01-EG01.md',
+        recordId: 'OFFICE-CAP-09A-CONSUMER-01-R01-EG01',
+      }),
+      implementation: Object.freeze({
+        pullRequestNumber: 2405,
+        squashSha: '943a9bbb59b2f9c5d05253c5b41e44cf3bc14a2d',
+      }),
+    }),
+  });
 const OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01 =
   Object.freeze({
     taskId:
@@ -5510,6 +5568,58 @@ function classifyPrChangeSet(changes, context = {}) {
     };
   }
 
+  const officeCap09aConsumerTerminalCloseoutBinding =
+    OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const officeCap09aConsumerTerminalCloseoutBindingPr =
+    officeCap09aConsumerTerminalCloseoutBinding.bindingPr;
+  const officeCap09aConsumerTerminalCloseoutPr =
+    officeCap09aConsumerTerminalCloseoutBinding.closeoutPr;
+
+  if (
+    context.headRef === officeCap09aConsumerTerminalCloseoutBindingPr.headRef ||
+    (context.base === officeCap09aConsumerTerminalCloseoutBindingPr.baseSha &&
+      hasExactChangeSet(
+        changes,
+        officeCap09aConsumerTerminalCloseoutBindingPr.changedPaths,
+      ))
+  ) {
+    if (
+      context.base !== officeCap09aConsumerTerminalCloseoutBindingPr.baseSha ||
+      context.headRef !== officeCap09aConsumerTerminalCloseoutBindingPr.headRef ||
+      !hasExactChangeSet(
+        changes,
+        officeCap09aConsumerTerminalCloseoutBindingPr.changedPaths,
+      )
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE CAP-09A consumer terminal closeout binding requires its exact base, branch and M/M/M scope',
+      );
+    }
+    return {
+      mode: officeCap09aConsumerTerminalCloseoutBindingPr.mode,
+      taskId: officeCap09aConsumerTerminalCloseoutBinding.taskId,
+    };
+  }
+
+  if (context.headRef === officeCap09aConsumerTerminalCloseoutPr.headRef) {
+    if (
+      !hasExactChangeSet(
+        changes,
+        officeCap09aConsumerTerminalCloseoutPr.changedPaths,
+      )
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE CAP-09A consumer terminal closeout requires the exact single-file M scope',
+      );
+    }
+    return {
+      mode: officeCap09aConsumerTerminalCloseoutPr.mode,
+      taskId: officeCap09aConsumerTerminalCloseoutPr.taskId,
+    };
+  }
+
   const officeCap09aWhitespaceRepairBinding =
     OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
   const officeCap09aWhitespaceRepairBindingPr =
@@ -8303,6 +8413,256 @@ function validateOfficeCap09aConsumerGovernanceMaterializationScope(options) {
       reject(
         'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
         `OFFICE CAP-09A consumer EG is missing ${literal}`,
+      );
+    }
+  }
+
+  return { mode: target.mode, taskId: target.taskId };
+}
+
+function validateOfficeCap09aConsumerTerminalCloseoutBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const bindingPr = binding.bindingPr;
+  const target = binding.closeoutPr;
+
+  if (
+    taskId !== binding.taskId ||
+    base !== bindingPr.baseSha ||
+    headRef !== bindingPr.headRef ||
+    !hasExactChangeSet(changes, bindingPr.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE CAP-09A consumer terminal closeout control-plane binding mismatch',
+    );
+  }
+
+  const contract = gitShow(head, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    bindingPr.mode,
+    bindingPr.baseSha,
+    bindingPr.headRef,
+    ...bindingPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    target.headRef,
+    ...target.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    target.semanticAuthority.recordId,
+    target.executionGrant.recordId,
+    String(target.implementation.pullRequestNumber),
+    target.implementation.squashSha,
+    'CONSUMED / CLOSED',
+    'FAIL-CLOSED',
+    'PROHIBITED',
+  ]) {
+    if (!contract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer terminal closeout contract is missing ${expectedLiteral}`,
+      );
+    }
+  }
+
+  return { mode: bindingPr.mode, taskId: binding.taskId };
+}
+
+function validateOfficeCap09aConsumerTerminalCloseoutScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding =
+    OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+
+  if (
+    taskId !== target.taskId ||
+    headRef !== target.headRef ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE CAP-09A consumer terminal closeout target binding mismatch',
+    );
+  }
+
+  const baseContract = gitShow(base, binding.contractPath, cwd);
+  for (const expectedLiteral of [
+    binding.taskId,
+    binding.programId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    target.headRef,
+    target.semanticAuthority.recordId,
+    target.executionGrant.recordId,
+    String(target.implementation.pullRequestNumber),
+    target.implementation.squashSha,
+    'CONSUMED / CLOSED',
+    'FAIL-CLOSED',
+    'PROHIBITED',
+  ]) {
+    if (!baseContract.includes(expectedLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `current target base is missing canonical OFFICE CAP-09A consumer terminal closeout binding ${expectedLiteral}`,
+      );
+    }
+  }
+
+  requireGitCommit(
+    target.implementation.squashSha,
+    'CONTROL_PLANE_BINDING_OBJECT_UNAVAILABLE',
+    cwd,
+  );
+  if (!gitIsAncestor(target.implementation.squashSha, base, cwd)) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE CAP-09A consumer implementation squash is not an ancestor of the closeout base',
+    );
+  }
+
+  const implementationSubject = runGit(
+    ['show', '-s', '--format=%s', target.implementation.squashSha],
+    cwd,
+  ).stdout.trim();
+  if (
+    !implementationSubject.endsWith(
+      `(#${target.implementation.pullRequestNumber})`,
+    )
+  ) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE CAP-09A consumer implementation commit is not bound to PR #2405',
+    );
+  }
+
+  const expectedImplementationChanges = [
+    {
+      status: 'M',
+      path: 'project/apps/api/ci-manifests/pure/office-auth-user.txt',
+    },
+    {
+      status: 'A',
+      path:
+        'project/apps/api/src/modules/staff/__tests__/staff-cap09a-consumer.spec.ts',
+    },
+    {
+      status: 'M',
+      path: 'project/apps/api/src/modules/staff/staff.controller.ts',
+    },
+    {
+      status: 'M',
+      path: 'project/apps/api/src/modules/staff/staff.service.ts',
+    },
+  ];
+  const implementationChanges = parseGitChanges(
+    `${target.implementation.squashSha}^`,
+    target.implementation.squashSha,
+    cwd,
+  );
+  if (!hasExactChangeSet(implementationChanges, expectedImplementationChanges)) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE CAP-09A consumer implementation does not consume the exact M/A/M/M four-path scope',
+    );
+  }
+
+  const staffServicePath =
+    'project/apps/api/src/modules/staff/staff.service.ts';
+  const staffServiceDiff = runGit(
+    [
+      'diff',
+      '--unified=0',
+      `${target.implementation.squashSha}^`,
+      target.implementation.squashSha,
+      '--',
+      staffServicePath,
+    ],
+    cwd,
+  ).stdout;
+  for (const auditConsumerLiteral of [
+    '+import { AuditService } from',
+    'await auditConsumer.logInTransaction(',
+    "policyRef: 'OFFICE-GOVERNANCE:OFF-INV-08'",
+  ]) {
+    if (!staffServiceDiff.includes(auditConsumerLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer implementation is missing AuditService evidence ${auditConsumerLiteral}`,
+      );
+    }
+  }
+
+  const baseDecisionBlob = gitBlobSha(
+    base,
+    target.semanticAuthority.path,
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    cwd,
+  );
+  const headDecisionBlob = gitBlobSha(
+    head,
+    target.semanticAuthority.path,
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    cwd,
+  );
+  if (baseDecisionBlob !== headDecisionBlob) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'decision-log.md cannot change in the OFFICE CAP-09A consumer terminal closeout PR',
+    );
+  }
+  const semanticAuthority = gitShow(head, target.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(semanticAuthority, target.semanticAuthority);
+
+  const baseGrant = gitShow(base, target.executionGrant.path, cwd);
+  const grant = gitShow(head, target.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, target.executionGrant);
+  assertExactSemanticBinding(grant, target.semanticAuthority);
+  const appendedReceipt = grant.slice(baseGrant.length);
+  if (
+    !grant.startsWith(baseGrant) ||
+    !appendedReceipt.startsWith('\n## Terminal consumption receipt\n') ||
+    countOccurrences(grant, '## Terminal consumption receipt') !== 1
+  ) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE CAP-09A consumer terminal receipt must be one append-only section',
+    );
+  }
+
+  for (const grantLiteral of [
+    'TASK STATUS                : CLOSED',
+    'CHANGE STATUS              : MERGED',
+    'DELIVERY STATUS            : PASS',
+    'SEMANTIC AUTHORITY         : CANONICAL',
+    `SEMANTIC AUTHORITY RECORD  : ${target.semanticAuthority.recordId}`,
+    'EXECUTION GRANT            : CONSUMED / CLOSED',
+    `EXECUTION GRANT RECORD     : ${target.executionGrant.recordId}`,
+    `IMPLEMENTATION PR          : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA         : ${target.implementation.squashSha}`,
+    'IMPLEMENTATION SCOPE       : 4 PATHS / VERIFIED',
+    'AUDITSERVICE CONSUMER      : TRANSACTIONAL / VERIFIED',
+    'REQUIRED CI                : 9/9 PASS',
+    'PRODUCER                   : DORMANT_CANONICAL / NOT_AUTHORIZED / DO NOT OPEN',
+    'PRODUCTION ACTIVATION      : PROHIBITED',
+    'F03 / P8 SUCCESSOR         : NOT AUTO-STARTED',
+    'SECOND USE                 : FAIL-CLOSED',
+    'WAITING FOR OWNER          : NO FOR CLOSEOUT — RETURN TO PAGE-O0',
+  ]) {
+    if (!appendedReceipt.includes(grantLiteral)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE CAP-09A consumer terminal receipt is missing ${grantLiteral}`,
       );
     }
   }
@@ -12542,6 +12902,35 @@ function validatePrScope(options) {
     });
   }
 
+  const officeCap09aConsumerTerminalCloseoutBinding =
+    OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  if (
+    classification.mode ===
+    officeCap09aConsumerTerminalCloseoutBinding.bindingPr.mode
+  ) {
+    return validateOfficeCap09aConsumerTerminalCloseoutBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+  if (
+    classification.mode ===
+    officeCap09aConsumerTerminalCloseoutBinding.closeoutPr.mode
+  ) {
+    return validateOfficeCap09aConsumerTerminalCloseoutScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
   const officeCap09aWhitespaceRepairBinding =
     OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01;
   if (classification.mode === officeCap09aWhitespaceRepairBinding.bindingPr.mode) {
@@ -13795,6 +14184,7 @@ module.exports = {
   validateTransitionBootstrapScope,
   OFFICE_F01_STAGE2_VALIDATOR_RECONCILIATION_R01,
   OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01,
+  OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01,
   OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01,
   OFFICE_F03_F04_AUTHORITY_BINDING_R01,
   OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01,
@@ -13875,6 +14265,8 @@ module.exports = {
   validateNafakaTerminalStateCloseoutScope,
   validateOfficeCap09aConsumerControlPlaneBindingScope,
   validateOfficeCap09aConsumerGovernanceMaterializationScope,
+  validateOfficeCap09aConsumerTerminalCloseoutBindingScope,
+  validateOfficeCap09aConsumerTerminalCloseoutScope,
   validateOfficeCap09aConsumerWhitespaceRepairBindingScope,
   validateOfficeCap09aConsumerWhitespaceRepairScope,
   validateOfficeF03F04AuthorityBindingScope,
