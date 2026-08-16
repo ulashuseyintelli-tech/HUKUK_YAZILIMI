@@ -89,6 +89,16 @@ export function DebtorDetailDrawer({
   const debtorFetchInFlightRef = useRef(false);
   const prevCaseDebtorIdRef = useRef<string | null>(null);
 
+  // WSMR-A4-AB-18: çapraz-dosya uyarısının okunamaması eskiden "uyarı yok" ile AYNI
+  // görünüyordu (bkz. fetchCrossFileAlert). Bu güvenlik-kritik bir tamamlayıcı bilgi —
+  // aynı borçlunun BAŞKA bir dosyada eş zamanlı güncellendiği uyarısı sessizce
+  // kaybolursa, bir avukat güncel olmayan bilgiyle işlem yapabilir.
+  const [crossFileAlertLoadError, setCrossFileAlertLoadError] = useState<string | null>(null);
+  const [crossFileAlertRetrying, setCrossFileAlertRetrying] = useState(false);
+  const crossFileAlertFetchTokenRef = useRef(0);
+  const crossFileAlertFetchInFlightRef = useRef(false);
+  const crossFileAlertDebtorIdRef = useRef<string | null>(null);
+
   const fetchDebtor = useCallback(async () => {
     if (debtorFetchInFlightRef.current) return; // çift retry/tetik -> tek aktif istek
     debtorFetchInFlightRef.current = true;
@@ -155,16 +165,52 @@ export function DebtorDetailDrawer({
   }, [isOpen, caseDebtorId, fetchDebtor]);
 
   // DBND-D6A-1: pull/MVP — push bildirim değil; drawer her açıldığında güncel durumu sorgular.
-  // Hata durumunda sessizce yok say (banner göstermez) — bu tamamlayıcı bir bilgi, akışı bloklamamalı.
-  const fetchCrossFileAlert = async (debtorId: string) => {
+  //
+  // WSMR-A4-AB-18 KUSUR (fix öncesi): hata durumunda `setCrossFileAlert(null)` çağrılıyordu —
+  // bu, GERÇEKTEN uyarı olmadığı durumla (`hasAlert: false`) BİREBİR AYNI değere düşüyordu.
+  // Artık okuma hatası ayrı, görünür bir bantla gösterilir; "uyarı yok" ile ASLA KARIŞTIRILMAZ.
+  const fetchCrossFileAlert = useCallback(async (debtorId: string) => {
+    if (crossFileAlertDebtorIdRef.current !== debtorId) {
+      // Borçlu KİMLİĞİ değişti (debtor.id — cross-file uyarının gerçek anahtarı) —
+      // ÖNCEKİ borçlunun uyarı/hata durumu YENİ borçlunun bağlamında YANLIŞLIKLA görünmez.
+      crossFileAlertDebtorIdRef.current = debtorId;
+      setCrossFileAlert(null);
+      setCrossFileAlertLoadError(null);
+    }
+    if (crossFileAlertFetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    crossFileAlertFetchInFlightRef.current = true;
+    const token = ++crossFileAlertFetchTokenRef.current;
     try {
       const alert = await api.getCrossFileDebtorAlerts(debtorId, caseId);
+      if (!isMountedRef.current || token !== crossFileAlertFetchTokenRef.current) return; // bayat/unmount
+      if (!alert || typeof alert !== "object" || typeof alert.hasAlert !== "boolean") {
+        throw new Error("MALFORMED_CROSS_FILE_ALERT_RESPONSE");
+      }
       setCrossFileAlert(alert.hasAlert ? alert : null);
+      setCrossFileAlertLoadError(null);
     } catch (err) {
+      if (!isMountedRef.current || token !== crossFileAlertFetchTokenRef.current) return;
       console.error("Cross-file borçlu uyarısı yüklenemedi:", err);
-      setCrossFileAlert(null);
+      // crossFileAlert BİLEREK dokunulmaz — önceki bilinen durum (varsa) SİLİNMEZ; yalnız
+      // bayat olduğu bantta görünür olur. Retry YALNIZ bu okumayı tekrar dener.
+      setCrossFileAlertLoadError(toActionErrorMessage(err, "Çapraz dosya uyarısı yüklenemedi."));
+    } finally {
+      if (token === crossFileAlertFetchTokenRef.current) {
+        crossFileAlertFetchInFlightRef.current = false;
+      }
     }
-  };
+  }, [caseId]);
+
+  const retryCrossFileAlert = useCallback(async () => {
+    if (!debtor?.id) return;
+    setCrossFileAlertRetrying(true);
+    crossFileAlertFetchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await fetchCrossFileAlert(debtor.id);
+    } finally {
+      if (isMountedRef.current) setCrossFileAlertRetrying(false);
+    }
+  }, [debtor?.id, fetchCrossFileAlert]);
 
   const fetchHistory = async () => {
     if (history.length > 0) return; // Already loaded
@@ -294,6 +340,25 @@ export function DebtorDetailDrawer({
             </button>
           </div>
         </div>
+
+        {/* WSMR-A4-AB-18: çapraz-dosya uyarısı okunamadı — "uyarı yok" ile ASLA
+            KARIŞTIRILMAZ. Aşağıdaki amber bant varsa (stale veri) BİRLİKTE gösterilir. */}
+        {crossFileAlertLoadError && (
+          <div role="alert" className="flex items-start justify-between gap-2 px-4 py-2 bg-red-50 border-b border-red-200 text-red-800 text-xs">
+            <span>
+              {crossFileAlertLoadError}
+              {crossFileAlert ? " Aşağıdaki çapraz-dosya uyarısı bayat olabilir." : ""}
+            </span>
+            <button
+              type="button"
+              onClick={retryCrossFileAlert}
+              disabled={crossFileAlertRetrying}
+              className="shrink-0 underline hover:no-underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {crossFileAlertRetrying ? "Deneniyor…" : "Tekrar dene"}
+            </button>
+          </div>
+        )}
 
         {/* DBND-D6A-1: paylaşılan Debtor.id cross-file uyarısı (pull/MVP, push bildirim değil) */}
         {crossFileAlert && (
