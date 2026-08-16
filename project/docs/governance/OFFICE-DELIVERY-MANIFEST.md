@@ -1927,7 +1927,10 @@ yetkisi ister (`OWNER GO REQUIRED / NOT STARTED`).
 ### 13.5 OFFICE-WR01 — Master Plan Kaydı
 
 ```text
-OFFICE-WR01               DECISION_RATIFIED / DECOMPOSITION_REQUIRED
+OFFICE-WR01               DECISION_RATIFIED / DECOMPOSITION_COMPLETE / OWNER_SOURCE_VERIFIED
+DECOMPOSITION             OFFICE-WR01-DECOMPOSITION-BRIEF-R01 — ANALYSIS_COMPLETE / OWNER_SOURCE_VERIFIED
+BRIEF KAYNAĞI             office-wr01-decomposition-r01/wr01-decomposition-brief-r01.md
+BRIEF PR                  #2432 · squash 25931406ac39b874e170201704bb4618817a4bd8
 KARARLAR                  D-WR-1..6 RATIFIED · D-WR-7 OPEN
 BLOK İSKELETİ             B01..B10 (decomposition ayrı yetkili iş; bu kayıt sıra/scope seçmez)
 DAL                       PRODUCT EXTENSION
