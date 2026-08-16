@@ -798,6 +798,18 @@ function uyapM01CloseoutChanges() {
   );
 }
 
+function officeCap09aConsumerTerminalCloseoutBindingChanges() {
+  return coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
+function officeCap09aConsumerTerminalCloseoutChanges() {
+  return coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01.closeoutPr.changedPaths.map(
+    ({ status, path: repoPath }) => ({ status, path: repoPath }),
+  );
+}
+
 function pb01BindingChanges() {
   return coordination.RCV_CLAIM_FORM_PB01_AUTHORITY_BOOTSTRAP_CONTROL_PLANE_BINDING_R01.bindingPr.changedPaths.map(
     ({ status, path: repoPath }) => ({ status, path: repoPath }),
@@ -1635,6 +1647,182 @@ function rcvColBindingContractContent(
       : []),
     '',
   ].join('\n');
+}
+
+function officeCap09aConsumerTerminalCloseoutContractContent(
+  binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01,
+) {
+  const target = binding.closeoutPr;
+  return [
+    '# OFFICE CAP-09A consumer terminal closeout contract fixture',
+    binding.taskId,
+    binding.programId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    ...binding.bindingPr.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    target.taskId,
+    target.mode,
+    target.originalBaseSha,
+    target.headRef,
+    ...target.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    target.semanticAuthority.recordId,
+    target.executionGrant.recordId,
+    String(target.implementation.pullRequestNumber),
+    target.implementation.squashSha,
+    'CONSUMED / CLOSED',
+    'FAIL-CLOSED',
+    'PROHIBITED',
+    '',
+  ].join('\n');
+}
+
+function createOfficeCap09aConsumerTerminalCloseoutGitFixture(t, options = {}) {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const target = binding.closeoutPr;
+  const root = createDetachedGitFixture(t, target.implementation.squashSha);
+
+  let replacementCommit;
+  if (options.implementationReplacement) {
+    const implementationParent = runFixtureGit(
+      ['rev-parse', `${target.implementation.squashSha}^`],
+      root,
+    );
+    if (options.implementationReplacement === 'EXTRA_SCOPE') {
+      const extraPath = path.join(root, 'project', 'unexpected-closeout-scope.txt');
+      fs.writeFileSync(extraPath, 'unexpected\n', 'utf8');
+    } else if (options.implementationReplacement === 'MISSING_AUDIT_CALL') {
+      const staffServicePath = path.join(
+        root,
+        'project',
+        'apps',
+        'api',
+        'src',
+        'modules',
+        'staff',
+        'staff.service.ts',
+      );
+      const staffService = fs.readFileSync(staffServicePath, 'utf8');
+      assert.ok(staffService.includes('auditConsumer.logInTransaction('));
+      fs.writeFileSync(
+        staffServicePath,
+        staffService.replace(
+          'auditConsumer.logInTransaction(',
+          "auditConsumer['logInTransaction'](",
+        ),
+        'utf8',
+      );
+    } else {
+      assert.fail(
+        `unknown implementationReplacement ${options.implementationReplacement}`,
+      );
+    }
+    runFixtureGit(['add', '--all'], root);
+    const replacementTree = runFixtureGit(['write-tree'], root);
+    const implementationSubject = runFixtureGit(
+      ['show', '-s', '--format=%s', target.implementation.squashSha],
+      root,
+    );
+    replacementCommit = runFixtureGit(
+      [
+        'commit-tree',
+        replacementTree,
+        '-p',
+        implementationParent,
+        '-m',
+        implementationSubject,
+      ],
+      root,
+    );
+    runFixtureGit(['reset', '--hard', target.implementation.squashSha], root);
+  }
+
+  const contractPath = path.join(root, ...binding.contractPath.split('/'));
+  fs.writeFileSync(
+    contractPath,
+    officeCap09aConsumerTerminalCloseoutContractContent(binding),
+    'utf8',
+  );
+  runFixtureGit(['add', '--', binding.contractPath], root);
+  runFixtureGit(
+    ['commit', '--quiet', '-m', 'canonical OFFICE CAP-09A closeout binding'],
+    root,
+  );
+  const base = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  const grantPath = path.join(root, ...target.executionGrant.path.split('/'));
+  const terminalReceipt = [
+    '',
+    '## Terminal consumption receipt',
+    '',
+    'Bu bölüm yeni semantic authority veya ikinci grant kullanımı üretmez.',
+    '',
+    '```text',
+    'TASK STATUS                : CLOSED',
+    'CHANGE STATUS              : MERGED',
+    'DELIVERY STATUS            : PASS',
+    'SEMANTIC AUTHORITY         : CANONICAL',
+    `SEMANTIC AUTHORITY RECORD  : ${target.semanticAuthority.recordId}`,
+    'EXECUTION GRANT            : CONSUMED / CLOSED',
+    `EXECUTION GRANT RECORD     : ${target.executionGrant.recordId}`,
+    `IMPLEMENTATION PR          : #${target.implementation.pullRequestNumber}`,
+    `IMPLEMENTATION SHA         : ${target.implementation.squashSha}`,
+    'IMPLEMENTATION SCOPE       : 4 PATHS / VERIFIED',
+    'AUDITSERVICE CONSUMER      : TRANSACTIONAL / VERIFIED',
+    'REQUIRED CI                : 9/9 PASS',
+    'PRODUCER                   : DORMANT_CANONICAL / NOT_AUTHORIZED / DO NOT OPEN',
+    'PRODUCTION ACTIVATION      : PROHIBITED',
+    'F03 / P8 SUCCESSOR         : NOT AUTO-STARTED',
+    '```',
+    '',
+    '```text',
+    'SECOND USE                 : FAIL-CLOSED',
+    'WAITING FOR OWNER          : NO FOR CLOSEOUT — RETURN TO PAGE-O0',
+    '```',
+    '',
+  ];
+  if (options.omitLiteral) {
+    terminalReceipt.splice(terminalReceipt.indexOf(options.omitLiteral), 1);
+  }
+  if (options.wrongImplementationPr) {
+    terminalReceipt[terminalReceipt.indexOf(
+      `IMPLEMENTATION PR          : #${target.implementation.pullRequestNumber}`,
+    )] = 'IMPLEMENTATION PR          : #9999';
+  }
+  if (options.wrongImplementationSha) {
+    terminalReceipt[terminalReceipt.indexOf(
+      `IMPLEMENTATION SHA         : ${target.implementation.squashSha}`,
+    )] = `IMPLEMENTATION SHA         : ${'0'.repeat(40)}`;
+  }
+  fs.appendFileSync(grantPath, terminalReceipt.join('\n'), 'utf8');
+  if (options.changeDecisionLog) {
+    const decisionPath = path.join(
+      root,
+      ...target.semanticAuthority.path.split('/'),
+    );
+    fs.appendFileSync(decisionPath, '\nUNAUTHORIZED CLOSEOUT CHANGE\n', 'utf8');
+  }
+  runFixtureGit(['add', '--all'], root);
+  runFixtureGit(['commit', '--quiet', '-m', 'close OFFICE CAP-09A grant'], root);
+  const head = runFixtureGit(['rev-parse', 'HEAD'], root);
+
+  if (replacementCommit) {
+    runFixtureGit(
+      [
+        'update-ref',
+        `refs/replace/${target.implementation.squashSha}`,
+        replacementCommit,
+      ],
+      root,
+    );
+  }
+  return { root, base, head };
 }
 
 function createRcvColTargetGitFixture(t, options = {}) {
@@ -5343,6 +5531,130 @@ test('UYAP-M01 closeout rejects an incomplete terminal receipt', (t) => {
       }),
     'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
   );
+});
+
+test('OFFICE CAP-09A consumer closeout binding accepts the exact fresh-base M/M/M tuple', () => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const classification = coordination.classifyPrChangeSet(
+    officeCap09aConsumerTerminalCloseoutBindingChanges(),
+    {
+      base: binding.bindingPr.baseSha,
+      headRef: binding.bindingPr.headRef,
+    },
+  );
+  assert.equal(classification.mode, binding.bindingPr.mode);
+  assert.equal(classification.taskId, binding.taskId);
+
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    officeCap09aConsumerTerminalCloseoutContractContent(binding),
+  );
+  const result =
+    coordination.validateOfficeCap09aConsumerTerminalCloseoutBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      changes: officeCap09aConsumerTerminalCloseoutBindingChanges(),
+      taskId: binding.taskId,
+      cwd: fixture.root,
+    });
+  assert.equal(result.mode, binding.bindingPr.mode);
+  assert.equal(result.taskId, binding.taskId);
+});
+
+test('OFFICE CAP-09A consumer closeout binding rejects expanded control-plane scope', () => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const expanded = officeCap09aConsumerTerminalCloseoutBindingChanges();
+  expanded.push({ status: 'M', path: 'project/docs/governance/decision-log.md' });
+  expectCode(
+    () =>
+      coordination.classifyPrChangeSet(expanded, {
+        base: binding.bindingPr.baseSha,
+        headRef: binding.bindingPr.headRef,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer closeout accepts one append-only EG terminal receipt', (t) => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const fixture = createOfficeCap09aConsumerTerminalCloseoutGitFixture(t);
+  const result = coordination.validatePrScope({
+    base: fixture.base,
+    head: fixture.head,
+    headRef: binding.closeoutPr.headRef,
+    cwd: fixture.root,
+  });
+  assert.equal(result.mode, binding.closeoutPr.mode);
+  assert.equal(result.taskId, binding.closeoutPr.taskId);
+});
+
+test('OFFICE CAP-09A consumer closeout rejects wrong implementation PR or SHA', (t) => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  for (const options of [
+    { wrongImplementationPr: true },
+    { wrongImplementationSha: true },
+  ]) {
+    const fixture = createOfficeCap09aConsumerTerminalCloseoutGitFixture(
+      t,
+      options,
+    );
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.closeoutPr.headRef,
+          cwd: fixture.root,
+        }),
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    );
+  }
+});
+
+test('OFFICE CAP-09A consumer closeout rejects decision-log.md mutation', (t) => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  const fixture = createOfficeCap09aConsumerTerminalCloseoutGitFixture(t, {
+    changeDecisionLog: true,
+  });
+  expectCode(
+    () =>
+      coordination.validatePrScope({
+        base: fixture.base,
+        head: fixture.head,
+        headRef: binding.closeoutPr.headRef,
+        cwd: fixture.root,
+      }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE CAP-09A consumer closeout verifies implementation scope and AuditService consumption', (t) => {
+  const binding =
+    coordination.OFFICE_CAP09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01;
+  for (const implementationReplacement of [
+    'EXTRA_SCOPE',
+    'MISSING_AUDIT_CALL',
+  ]) {
+    const fixture = createOfficeCap09aConsumerTerminalCloseoutGitFixture(t, {
+      implementationReplacement,
+    });
+    expectCode(
+      () =>
+        coordination.validatePrScope({
+          base: fixture.base,
+          head: fixture.head,
+          headRef: binding.closeoutPr.headRef,
+          cwd: fixture.root,
+        }),
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+    );
+  }
 });
 
 test('PB01 binding PR requires exact base branch scope and contract content', () => {

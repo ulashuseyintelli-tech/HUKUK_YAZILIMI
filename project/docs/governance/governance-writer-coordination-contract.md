@@ -2290,6 +2290,47 @@ weaken path or authority checks, modify governance materialization content, or
 authorize product, schema, migration, DB, runtime, production, CAP-09A producer,
 W3F07, CLF-O0-01, or PermissionGrant work.
 
+### OFFICE CAP-09A Consumer terminal closeout — exact publication binding
+
+Bu ek yalnız merge edilmiş OFFICE CAP-09A consumer implementation sonucunun
+existing task-local execution-grant dosyasına append-only terminal receipt
+olarak yazılmasını tanır. Yeni semantic authority, ikinci grant kullanımı,
+production activation veya successor execution authority üretmez.
+
+```text
+Closeout binding task : OFFICE-CAP-09A-CONSUMER-01-R01-TERMINAL-CLOSEOUT-CONTROL-PLANE-BINDING-R01
+Closeout binding mode : OFFICE_CAP_09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_CONTROL_PLANE_BINDING_R01
+Closeout binding base : f5ccdb0bfa95ee0f5e0a86b1a926a261d3a50595
+Closeout binding ref  : codex/office-cap-09a-consumer-01-r01-terminal-closeout-binding-r01
+Closeout binding scope:
+  M project/scripts/governance-coordination.cjs
+  M project/scripts/governance-coordination.test.cjs
+  M project/docs/governance/governance-writer-coordination-contract.md
+
+Closeout task : OFFICE-CAP-09A-CONSUMER-01-R01
+Closeout mode : OFFICE_CAP_09A_CONSUMER_01_R01_TERMINAL_CLOSEOUT_R01
+Original closeout base : f5ccdb0bfa95ee0f5e0a86b1a926a261d3a50595
+Closeout ref : codex/office-cap-09a-consumer-01-r01-terminal-closeout
+Closeout scope:
+  M project/docs/governance/coordination-execution-grants/OFFICE-CAP-09A-CONSUMER-01-R01-EG01.md
+
+Semantic authority record : OFFICE-CAP-09A-CONSUMER-01-R01-SA01
+Execution grant record     : OFFICE-CAP-09A-CONSUMER-01-R01-EG01
+Implementation PR          : 2405
+Implementation squash      : 943a9bbb59b2f9c5d05253c5b41e44cf3bc14a2d
+Grant terminal state       : CONSUMED / CLOSED
+Second use                 : FAIL-CLOSED
+Production activation      : PROHIBITED
+```
+
+Validator closeout binding PR'ında exact `M/M/M` control-plane tuple'ını;
+target closeout PR'ında yalnız existing EG dosyasının `M` durumunu, canonical
+SA/EG referanslarını, implementation PR/SHA kanıtını, implementation squash'ın
+exact `M/A/M/M` dört-yol scope'unu, `staff.service.ts` diff'indeki
+`AuditService.logInTransaction` tüketimini, required CI ve `SECOND USE:
+FAIL-CLOSED` terminal receipt alanlarını doğrular. `decision-log.md` closeout
+PR'ında değiştirilemez; böylece mevcut semantic authority duplicate edilmez.
+
 ## OFFICE F03/F04 authority chain — exact four-stage binding
 
 Owner-ratified 2026-08-15. This binding recognizes four distinct sequential
