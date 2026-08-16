@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Spinner } from '@hukuk/ui';
 import { Database, Info, X } from 'lucide-react';
-import { 
-  api, 
-  UyapQueryType, 
+import {
+  api,
+  UyapQueryType,
   UyapQueryTypeInfo,
-  UyapQuerySuggestion 
+  UyapQuerySuggestion
 } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 
 interface UyapQueryModalProps {
   open: boolean;
@@ -32,31 +33,91 @@ export function UyapQueryModal({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // WSMR-A4-AB-20: hata durumunda eskiden hiçbir state dokunulmuyordu (yalnız
+  // console.error) — boş/açıklamasız bir sorgu-türü ızgarası "yalancı boşluk"
+  // gibi görünüyordu (görünür hata YOKTU). Ayrıca bu modal örneği açık/kapalı
+  // arası UNMOUNT OLMUYOR (yalnız `open` prop'u değişir) — kimlik değişim
+  // koruması olmadan, ÖNCEKİ borçlunun sorgu türü/öneri/seçimi YENİ borçlunun
+  // bağlamında sessizce kalabiliyordu (modal reopen/identity izolasyon açığı).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    if (open) {
-      loadData();
-    }
-  }, [open, caseDebtorId]);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const fetchTokenRef = useRef(0);
+  const fetchInFlightRef = useRef(false);
+  const prevCaseDebtorIdRef = useRef<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (fetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    fetchInFlightRef.current = true;
+    const token = ++fetchTokenRef.current;
+    setLoading(true);
     try {
-      setLoading(true);
       const [types, sugg] = await Promise.all([
         api.getUyapQueryTypes(),
         api.getSuggestedUyapQueries(caseDebtorId),
       ]);
+      if (!isMountedRef.current || token !== fetchTokenRef.current) return; // bayat/unmount
+      if (!Array.isArray(types) || !Array.isArray(sugg)) {
+        throw new Error('MALFORMED_UYAP_QUERY_RESPONSE');
+      }
       setQueryTypes(types);
       setSuggestions(sugg);
-      
+      setLoadError(null);
       if (sugg.length > 0) {
         setSelectedType(sugg[0].queryType);
       }
-    } catch (error) {
-      console.error('Veri yüklenemedi:', error);
+    } catch (err) {
+      if (!isMountedRef.current || token !== fetchTokenRef.current) return;
+      console.error('Veri yüklenemedi:', err);
+      // queryTypes/suggestions BİLEREK dokunulmaz — önceki başarıyla yüklenmiş
+      // liste (varsa) SİLİNMEZ; yalnız bayat olduğu bantta görünür olur. Bu ARTIK
+      // açıklamasız boş bir ızgarayla ("yalancı boşluk") KARIŞTIRILMAZ.
+      setLoadError(toActionErrorMessage(err, 'UYAP sorgu türleri/önerileri yüklenemedi.'));
     } finally {
-      setLoading(false);
+      if (token === fetchTokenRef.current) {
+        fetchInFlightRef.current = false;
+        if (isMountedRef.current) setLoading(false);
+      }
     }
-  };
+  }, [caseDebtorId]);
+
+  const retryLoad = useCallback(async () => {
+    setRetrying(true);
+    fetchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await loadData();
+    } finally {
+      if (isMountedRef.current) setRetrying(false);
+    }
+  }, [loadData]);
+
+  useEffect(() => {
+    if (open) {
+      if (prevCaseDebtorIdRef.current !== caseDebtorId) {
+        // Borçlu KİMLİĞİ değişti (bu modal örneği açık/kapalı arası UNMOUNT
+        // OLMADIĞI için farklı bir borçlu için yeniden kullanılabilir) — ÖNCEKİ
+        // borçlunun sorgu türü/öneri/seçimi/notu YENİ borçlunun bağlamında
+        // YANLIŞLIKLA görünmez veya YANLIŞ borçluya gönderilmez.
+        prevCaseDebtorIdRef.current = caseDebtorId;
+        setQueryTypes([]);
+        setSuggestions([]);
+        setSelectedType(null);
+        setNotes('');
+        setLoadError(null);
+      }
+      // Modal (yeniden) açıldı — ÖNCEKİ, belki hâlâ in-flight bir denemenin
+      // bayrağı YENİ denemeyi ENGELLEMEMELİ; jenerasyon token'ı ESKİ denemenin
+      // GEÇ gelen yanıtını zaten atlar (A4-AB-8/12/14 ile aynı tasarım deseni).
+      fetchInFlightRef.current = false;
+      loadData();
+    }
+  }, [open, caseDebtorId, loadData]);
 
   const handleSubmit = async () => {
     if (!selectedType) return;
@@ -102,11 +163,30 @@ export function UyapQueryModal({
           </div>
 
           <div className="p-4 overflow-y-auto max-h-[60vh]">
+            {loadError && (
+              // WSMR-A4-AB-20: okuma hatası açıklamasız boş bir sorgu-türü ızgarasıyla
+              // ("yalancı boşluk") ASLA KARIŞTIRILMAZ. Önceki başarıyla yüklenmiş liste
+              // (varsa) aşağıda GÖRÜNMEYE devam eder — yalnız bayat olabileceği belirtilir.
+              <div role="alert" className="mb-3 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                <span>
+                  {loadError}
+                  {queryTypes.length > 0 || suggestions.length > 0 ? ' Gösterilen liste bayat olabilir.' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={retryLoad}
+                  disabled={retrying}
+                  className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {retrying ? 'Deneniyor…' : 'Tekrar dene'}
+                </button>
+              </div>
+            )}
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Spinner size="md" />
               </div>
-            ) : (
+            ) : loadError && queryTypes.length === 0 ? null : (
               <div className="space-y-4">
                 {suggestions.length > 0 && (
                   <div className="bg-blue-50 rounded-lg p-3">
