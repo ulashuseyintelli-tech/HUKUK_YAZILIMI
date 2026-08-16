@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X,
   User,
@@ -13,6 +13,7 @@ import {
   Clock,
   Send,
   RotateCcw,
+  RefreshCw,
   History,
   ChevronDown,
   ChevronUp,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { Button } from "@hukuk/ui";
 import { api, DebtorDetailDTO, ServiceHistoryItem, DebtorRoleLabels, UpdateServiceStatusDTO, CrossFileDebtorAlertDTO } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import { AlertBadge } from "./AlertBadge";
 import { ServiceUpdateModal } from "./modals/ServiceUpdateModal";
 import { ServiceHistoryTimeline } from "./ServiceHistoryTimeline";
@@ -71,26 +73,86 @@ export function DebtorDetailDrawer({
   const [activeTab, setActiveTab] = useState<DrawerTab>('info');
   const [crossFileAlert, setCrossFileAlert] = useState<CrossFileDebtorAlertDTO | null>(null);
 
-  // Fetch debtor detail
+  // WSMR-A4-AB-14: bu bileşende önceden ne isMountedRef ne de bir jenerasyon/in-flight
+  // koruması vardı — okuma hatası yalnız console.error ile yutuluyor, "debtor" null
+  // kalıyor ve render "Borçlu bilgisi bulunamadı" (kesin yokluk iddiası) gösteriyordu.
+  const [debtorLoadError, setDebtorLoadError] = useState<string | null>(null);
+  const [debtorRetrying, setDebtorRetrying] = useState(false);
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    if (isOpen && caseDebtorId) {
-      fetchDebtor();
-    }
-  }, [isOpen, caseDebtorId]);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const debtorFetchTokenRef = useRef(0);
+  const debtorFetchInFlightRef = useRef(false);
+  const prevCaseDebtorIdRef = useRef<string | null>(null);
 
-  const fetchDebtor = async () => {
+  const fetchDebtor = useCallback(async () => {
+    if (debtorFetchInFlightRef.current) return; // çift retry/tetik -> tek aktif istek
+    debtorFetchInFlightRef.current = true;
+    const token = ++debtorFetchTokenRef.current;
     setIsLoading(true);
     try {
       const data = await api.getCaseDebtorDetail(caseId, caseDebtorId);
+      if (!isMountedRef.current || token !== debtorFetchTokenRef.current) return; // bayat/unmount
+      if (
+        !data ||
+        typeof data !== "object" ||
+        typeof (data as any).id !== "string" ||
+        !(data as any).service ||
+        !(data as any).assets ||
+        !Array.isArray((data as any).riskFlags)
+      ) {
+        throw new Error("MALFORMED_DEBTOR_DETAIL_RESPONSE");
+      }
       setDebtor(data);
       setQuickNote(data.quickNote || "");
+      setDebtorLoadError(null);
       fetchCrossFileAlert(data.id);
     } catch (err) {
+      if (!isMountedRef.current || token !== debtorFetchTokenRef.current) return;
       console.error("Borçlu detayı yüklenemedi:", err);
+      // debtor BİLEREK dokunulmaz — önceki başarıyla yüklenmiş kayıt (varsa) SİLİNMEZ;
+      // yalnız bayat olduğu bantta görünür olur. Bu ARTIK "Borçlu bilgisi bulunamadı"
+      // (kesin yokluk iddiası) ile ASLA KARIŞTIRILMAZ — okuma hatası ayrı, görünür bir
+      // role="alert" bandıyla gösterilir.
+      setDebtorLoadError(toActionErrorMessage(err, "Borçlu detayı yüklenemedi."));
     } finally {
-      setIsLoading(false);
+      if (token === debtorFetchTokenRef.current) {
+        debtorFetchInFlightRef.current = false;
+        if (isMountedRef.current) setIsLoading(false);
+      }
     }
-  };
+  }, [caseId, caseDebtorId]);
+
+  const retryDebtor = useCallback(async () => {
+    setDebtorRetrying(true);
+    try {
+      await fetchDebtor();
+    } finally {
+      if (isMountedRef.current) setDebtorRetrying(false);
+    }
+  }, [fetchDebtor]);
+
+  // Fetch debtor detail
+  useEffect(() => {
+    if (isOpen && caseDebtorId) {
+      if (prevCaseDebtorIdRef.current !== caseDebtorId) {
+        // Borçlu KİMLİĞİ değişti (aynı örnek farklı bir borçlu için yeniden kullanılırsa) —
+        // ÖNCEKİ borçlunun verisi/hatası YENİ borçlunun bağlamında YANLIŞLIKLA görünmez.
+        prevCaseDebtorIdRef.current = caseDebtorId;
+        setDebtor(null);
+        setDebtorLoadError(null);
+      }
+      // Drawer (yeniden) açıldı — ÖNCEKİ, belki hâlâ in-flight bir denemenin bayrağı
+      // YENİ denemeyi ENGELLEMEMELİ; jenerasyon token'ı ESKİ denemenin GEÇ gelen
+      // yanıtını zaten atlar (A4-AB-8/12'de yakalanan aynı tasarım deseni).
+      debtorFetchInFlightRef.current = false;
+      fetchDebtor();
+    }
+  }, [isOpen, caseDebtorId, fetchDebtor]);
 
   // DBND-D6A-1: pull/MVP — push bildirim değil; drawer her açıldığında güncel durumu sorgular.
   // Hata durumunda sessizce yok say (banner göstermez) — bu tamamlayıcı bir bilgi, akışı bloklamamalı.
@@ -217,9 +279,20 @@ export function DebtorDetailDrawer({
               <p className="text-xs text-gray-500 mt-0.5">Salt okunur - yeni operasyonlar kapali.</p>
             )}
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={retryDebtor}
+              disabled={debtorRetrying || isLoading}
+              className="p-1 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Borçlu bilgisini yenile"
+            >
+              <RefreshCw className={`w-4 h-4 ${debtorRetrying ? "animate-spin" : ""}`} />
+            </button>
+            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* DBND-D6A-1: paylaşılan Debtor.id cross-file uyarısı (pull/MVP, push bildirim değil) */}
@@ -292,13 +365,47 @@ export function DebtorDetailDrawer({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
+          {debtorLoadError && !debtor ? (
+            // WSMR-A4-AB-14: okuma hatası (ilk yükleme veya henüz hiç başarılı olmamış
+            // yeniden deneme) — "Borçlu bilgisi bulunamadı" (kesin yokluk) İLE ASLA
+            // KARIŞTIRILMAZ; ayrı, görünür bir hata + retry sunulur.
+            <div role="alert" className="p-4">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-800">
+                <p>{debtorLoadError}</p>
+                <button
+                  type="button"
+                  onClick={retryDebtor}
+                  disabled={debtorRetrying}
+                  className="mt-2 rounded bg-red-100 px-3 py-1.5 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {debtorRetrying ? "Deneniyor…" : "Tekrar dene"}
+                </button>
+              </div>
+            </div>
+          ) : isLoading ? (
             <div className="p-8 text-center text-gray-500">
               <Clock className="w-6 h-6 animate-spin mx-auto mb-2" />
               Yükleniyor...
             </div>
           ) : debtor ? (
             <>
+              {debtorLoadError && (
+                // Önceki başarılı okuma sonrası bir SONRAKI okuma (retry/yenile/child
+                // onUpdate) başarısız oldu — debtor verisi SİLİNMEDİ, yalnız bayat
+                // olabileceği görünür bir bantla belirtiliyor (YALNIZ fetchDebtor'ı
+                // tekrar dener, başka bir mutation TETİKLEMEZ).
+                <div role="alert" className="mx-2.5 mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 flex items-center justify-between gap-3">
+                  <span>{debtorLoadError} Gösterilen bilgiler bayat olabilir.</span>
+                  <button
+                    type="button"
+                    onClick={retryDebtor}
+                    disabled={debtorRetrying}
+                    className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {debtorRetrying ? "Deneniyor…" : "Tekrar dene"}
+                  </button>
+                </div>
+              )}
               {/* Info Tab Content */}
               {activeTab === 'info' && (
                 <div className="p-2.5 space-y-2">
