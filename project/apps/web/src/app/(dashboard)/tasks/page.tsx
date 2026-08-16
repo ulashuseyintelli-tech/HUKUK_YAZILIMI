@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, Trash2, Edit2, X, User } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import Link from "next/link";
@@ -83,7 +83,28 @@ export default function TasksPage() {
   const [saving, setSaving] = useState(false);
   const [cases, setCases] = useState<{ id: string; fileNumber: string }[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string }[]>([]);
-  
+  // WSMR-A4-AC-05: eskiden `Promise.all` + yalnız console.error ile HER İKİ
+  // kaynak da SESSİZCE boş kalıyordu. cases/users BAĞIMSIZDIR (ayrı,
+  // OPSİYONEL <select> alanlarını besler — handleSave'de caseId/assigneeId
+  // ikisi de `undefined` gidebilir, TEK zorunlu alan `title`'dir) — bu
+  // yüzden bir kaynağın hatası diğerinin başarılı verisini SİLMEMELİ ve
+  // hangi kaynağın hata verdiği AYRI AYRI görünür olmalı.
+  const [casesLoadError, setCasesLoadError] = useState<string | null>(null);
+  const [usersLoadError, setUsersLoadError] = useState<string | null>(null);
+  const [casesRetrying, setCasesRetrying] = useState(false);
+  const [usersRetrying, setUsersRetrying] = useState(false);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const casesFetchTokenRef = useRef(0);
+  const casesFetchInFlightRef = useRef(false);
+  const usersFetchTokenRef = useRef(0);
+  const usersFetchInFlightRef = useRef(false);
+
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -116,18 +137,80 @@ export default function TasksPage() {
     }
   };
 
-  const loadLookups = async () => {
+  const loadCases = useCallback(async () => {
+    if (casesFetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    casesFetchInFlightRef.current = true;
+    const token = ++casesFetchTokenRef.current;
     try {
-      const [casesRes, usersRes] = await Promise.all([
-        api.get("/cases?limit=100"),
-        api.get("/users"),
-      ]);
-      setCases(casesRes.data?.data || []);
-      setUsers(usersRes.data?.data || []);
+      const res = await api.get("/cases?limit=100");
+      if (!isMountedRef.current || token !== casesFetchTokenRef.current) return; // bayat/unmount
+      const data = res?.data?.data;
+      // Sözleşme: backend başarılı yanıtta HER ZAMAN dizi döner (case.service.ts
+      // #findAll -> Prisma findMany + 1:1 map, asla undefined/null değil) —
+      // dizi değilse GERÇEKTEN beklenmeyen/malformed bir gövdedir.
+      if (!Array.isArray(data)) throw new Error("MALFORMED_CASES_RESPONSE");
+      setCases(data);
+      setCasesLoadError(null);
     } catch (e) {
-      console.error(e);
+      if (!isMountedRef.current || token !== casesFetchTokenRef.current) return;
+      // cases BİLEREK dokunulmaz — önceki başarıyla yüklenmiş liste (varsa)
+      // SİLİNMEZ; yalnız bayat olduğu bantta görünür olur.
+      setCasesLoadError(toActionErrorMessage(e, "Dosyalar yüklenemedi."));
+    } finally {
+      if (token === casesFetchTokenRef.current) casesFetchInFlightRef.current = false;
     }
-  };
+  }, []);
+
+  const loadUsers = useCallback(async () => {
+    if (usersFetchInFlightRef.current) return;
+    usersFetchInFlightRef.current = true;
+    const token = ++usersFetchTokenRef.current;
+    try {
+      const res = await api.get("/users");
+      if (!isMountedRef.current || token !== usersFetchTokenRef.current) return;
+      const data = res?.data?.data;
+      // Sözleşme: backend başarılı yanıtta HER ZAMAN dizi döner (user.service.ts
+      // #findByTenant -> Prisma findMany, asla undefined/null değil; controller
+      // yorumu da "res.data.data" zarfını AÇIKÇA teyit eder) — dizi değilse
+      // GERÇEKTEN beklenmeyen/malformed bir gövdedir.
+      if (!Array.isArray(data)) throw new Error("MALFORMED_USERS_RESPONSE");
+      setUsers(data);
+      setUsersLoadError(null);
+    } catch (e) {
+      if (!isMountedRef.current || token !== usersFetchTokenRef.current) return;
+      setUsersLoadError(toActionErrorMessage(e, "Kullanıcılar yüklenemedi."));
+    } finally {
+      if (token === usersFetchTokenRef.current) usersFetchInFlightRef.current = false;
+    }
+  }, []);
+
+  const retryCases = useCallback(async () => {
+    setCasesRetrying(true);
+    casesFetchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await loadCases();
+    } finally {
+      if (isMountedRef.current) setCasesRetrying(false);
+    }
+  }, [loadCases]);
+
+  const retryUsers = useCallback(async () => {
+    setUsersRetrying(true);
+    usersFetchInFlightRef.current = false;
+    try {
+      await loadUsers();
+    } finally {
+      if (isMountedRef.current) setUsersRetrying(false);
+    }
+  }, [loadUsers]);
+
+  // WSMR-A4-AC-05: cases/users BAĞIMSIZ kaynaklardır — biri diğerini
+  // BEKLEMEZ/ENGELLEMEZ (eskiden Promise.all yüzünden biri hata verince
+  // İKİSİ de sessizce boş kalıyordu).
+  const loadLookups = useCallback(() => {
+    void loadCases();
+    void loadUsers();
+  }, [loadCases, loadUsers]);
 
   const handleSave = async () => {
     if (!form.title) return;
@@ -506,6 +589,25 @@ export default function TasksPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">İlgili Dosya</label>
+                {casesLoadError && (
+                  // WSMR-A4-AC-05: dosya listesi opsiyoneldir — eksikliği formu
+                  // ENGELLEMEZ ("Seçiniz" ile boş bırakılabilir) ama okuma
+                  // hatası SESSİZCE bu boşlukla KARIŞTIRILMAZ.
+                  <div role="alert" className="mb-1 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800">
+                    <span>
+                      {casesLoadError}
+                      {cases.length > 0 ? ' Gösterilen liste bayat olabilir.' : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={retryCases}
+                      disabled={casesRetrying}
+                      className="shrink-0 rounded bg-red-100 px-2 py-0.5 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {casesRetrying ? 'Deneniyor…' : 'Tekrar dene'}
+                    </button>
+                  </div>
+                )}
                 <select
                   value={form.caseId}
                   onChange={(e) => setForm({ ...form, caseId: e.target.value })}
@@ -520,6 +622,22 @@ export default function TasksPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">Atanan Kişi</label>
+                {usersLoadError && (
+                  <div role="alert" className="mb-1 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800">
+                    <span>
+                      {usersLoadError}
+                      {users.length > 0 ? ' Gösterilen liste bayat olabilir.' : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={retryUsers}
+                      disabled={usersRetrying}
+                      className="shrink-0 rounded bg-red-100 px-2 py-0.5 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {usersRetrying ? 'Deneniyor…' : 'Tekrar dene'}
+                    </button>
+                  </div>
+                )}
                 <select
                   value={form.assigneeId}
                   onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}
