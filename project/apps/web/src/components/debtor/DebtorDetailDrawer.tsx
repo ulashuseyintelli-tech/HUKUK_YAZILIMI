@@ -99,6 +99,17 @@ export function DebtorDetailDrawer({
   const crossFileAlertFetchInFlightRef = useRef(false);
   const crossFileAlertDebtorIdRef = useRef<string | null>(null);
 
+  // WSMR-A4-AB-19: tebligat geçmişi okuma hatasında eskiden hiçbir state dokunulmuyordu
+  // (yalnız console.error) — bu, "Henüz tebligat geçmişi yok" (ServiceHistoryTimeline'ın
+  // gerçek-boş render'ı) ile AYIRT EDİLEMEZ bir hata sunuyordu. Ayrıca `history`/
+  // `showHistory` caseDebtorId DEĞİŞİMİNDE hiç temizlenmiyordu — `fetchHistory`'nin
+  // "zaten yüklüyse tekrar çekme" korumasıyla birleşince, ÖNCEKİ borçlunun tebligat
+  // geçmişi YENİ borçlunun panelinde SESSİZCE kalabiliyordu (cross-debtor veri sızıntısı).
+  const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
+  const [historyRetrying, setHistoryRetrying] = useState(false);
+  const historyFetchTokenRef = useRef(0);
+  const historyFetchInFlightRef = useRef(false);
+
   const fetchDebtor = useCallback(async () => {
     if (debtorFetchInFlightRef.current) return; // çift retry/tetik -> tek aktif istek
     debtorFetchInFlightRef.current = true;
@@ -155,6 +166,12 @@ export function DebtorDetailDrawer({
         prevCaseDebtorIdRef.current = caseDebtorId;
         setDebtor(null);
         setDebtorLoadError(null);
+        // WSMR-A4-AB-19: tebligat geçmişi de AYNI kimlik değişiminde temizlenir —
+        // aksi halde `fetchHistory`'nin "zaten yüklüyse tekrar çekme" koruması,
+        // ÖNCEKİ borçlunun geçmişini YENİ borçlunun panelinde sessizce bırakır.
+        setHistory([]);
+        setShowHistory(false);
+        setHistoryLoadError(null);
       }
       // Drawer (yeniden) açıldı — ÖNCEKİ, belki hâlâ in-flight bir denemenin bayrağı
       // YENİ denemeyi ENGELLEMEMELİ; jenerasyon token'ı ESKİ denemenin GEÇ gelen
@@ -212,21 +229,50 @@ export function DebtorDetailDrawer({
     }
   }, [debtor?.id, fetchCrossFileAlert]);
 
-  const fetchHistory = async () => {
-    if (history.length > 0) return; // Already loaded
+  const fetchHistory = useCallback(async () => {
+    if (historyFetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    historyFetchInFlightRef.current = true;
+    const token = ++historyFetchTokenRef.current;
     setIsHistoryLoading(true);
     try {
       const data = await api.getServiceHistory(caseId, caseDebtorId);
+      if (!isMountedRef.current || token !== historyFetchTokenRef.current) return; // bayat/unmount
+      if (!Array.isArray(data)) {
+        throw new Error("MALFORMED_SERVICE_HISTORY_RESPONSE");
+      }
       setHistory(data);
+      setHistoryLoadError(null);
     } catch (err) {
+      if (!isMountedRef.current || token !== historyFetchTokenRef.current) return;
       console.error("Tebligat geçmişi yüklenemedi:", err);
+      // history BİLEREK dokunulmaz — önceki başarıyla yüklenmiş kayıtlar (varsa)
+      // SİLİNMEZ; yalnız bayat olduğu bantta görünür olur. "Henüz tebligat geçmişi
+      // yok" ile ASLA KARIŞTIRILMAZ.
+      setHistoryLoadError(toActionErrorMessage(err, "Tebligat geçmişi yüklenemedi."));
     } finally {
-      setIsHistoryLoading(false);
+      if (token === historyFetchTokenRef.current) {
+        historyFetchInFlightRef.current = false;
+        if (isMountedRef.current) setIsHistoryLoading(false);
+      }
     }
-  };
+  }, [caseId, caseDebtorId]);
+
+  const retryHistory = useCallback(async () => {
+    setHistoryRetrying(true);
+    historyFetchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await fetchHistory();
+    } finally {
+      if (isMountedRef.current) setHistoryRetrying(false);
+    }
+  }, [fetchHistory]);
 
   const handleToggleHistory = () => {
-    if (!showHistory) {
+    // Yalnız hiç yüklenmemişse (gerçek boş VEYA henüz hiç denenmemiş) fetch tetiklenir;
+    // zaten başarıyla yüklenmiş kayıtlar açıp-kapamada tekrar tekrar ÇEKİLMEZ (mevcut
+    // davranış korunur — "zaten yüklü" kontrolü artık burada, fetchHistory'nin kendisi
+    // A4-AB-14/18 ile aynı sözleşmeye uyar: her çağrıldığında GERÇEKTEN çeker).
+    if (!showHistory && history.length === 0) {
       fetchHistory();
     }
     setShowHistory(!showHistory);
@@ -239,6 +285,7 @@ export function DebtorDetailDrawer({
       await api.updateServiceStatus(caseId, caseDebtorId, data);
       await fetchDebtor();
       setHistory([]); // Reset history to refetch
+      setHistoryLoadError(null); // taze reset — önceki bir hatanın etiketi burada anlamsız kalır
       onUpdate?.();
     } finally {
       setIsUpdating(false);
@@ -252,6 +299,7 @@ export function DebtorDetailDrawer({
       await api.startNewServiceAttempt(caseId, caseDebtorId);
       await fetchDebtor();
       setHistory([]);
+      setHistoryLoadError(null); // taze reset — önceki bir hatanın etiketi burada anlamsız kalır
       onUpdate?.();
     } catch (err: any) {
       alert(err.message || "Yeni tebligat başlatılamadı");
@@ -680,18 +728,57 @@ export function DebtorDetailDrawer({
                 </div>
 
                 {/* History Toggle */}
-                <button
-                  onClick={handleToggleHistory}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 pt-1"
-                >
-                  <History className="w-4 h-4" />
-                  Tebligat Geçmişi
-                  {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
+                <div className="flex items-center gap-1 pt-1">
+                  <button
+                    onClick={handleToggleHistory}
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    <History className="w-4 h-4" />
+                    Tebligat Geçmişi
+                    {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                  {showHistory && (
+                    // WSMR-A4-AB-19: manuel yenile — başarı sonrası kayıtlar zaten yüklüyken
+                    // (fetchHistory "zaten yüklü" durumunda toggle ile tekrar çekmez) tek
+                    // meşru yeniden-deneme yolu; olmadan "başarı sonrası tekrar başarısızlık,
+                    // önceki veri korunur" senaryosu test EDİLEMEZDİ (A4-AB-13/14/18 ile aynı
+                    // konvansiyon).
+                    <button
+                      type="button"
+                      onClick={retryHistory}
+                      disabled={historyRetrying || isHistoryLoading}
+                      className="p-0.5 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Tebligat geçmişini yenile"
+                    >
+                      <RefreshCw className={`w-3 h-3 text-gray-500 ${historyRetrying ? "animate-spin" : ""}`} />
+                    </button>
+                  )}
+                </div>
 
                 {showHistory && (
                   <div className="pt-1 border-t">
-                    <ServiceHistoryTimeline history={history} isLoading={isHistoryLoading} />
+                    {historyLoadError && (
+                      // WSMR-A4-AB-19: okuma hatası "Henüz tebligat geçmişi yok" (gerçek
+                      // boşluk) İLE ASLA KARIŞTIRILMAZ. Önceki başarıyla yüklenmiş kayıtlar
+                      // (varsa) aşağıda GÖRÜNMEYE devam eder — yalnız bayat olabileceği belirtilir.
+                      <div role="alert" className="mb-2 flex items-start justify-between gap-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] text-red-700">
+                        <span>
+                          {historyLoadError}
+                          {history.length > 0 ? " Gösterilen geçmiş bayat olabilir." : ""}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={retryHistory}
+                          disabled={historyRetrying}
+                          className="shrink-0 underline hover:no-underline disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {historyRetrying ? "Deneniyor…" : "Tekrar dene"}
+                        </button>
+                      </div>
+                    )}
+                    {historyLoadError && history.length === 0 && !isHistoryLoading ? null : (
+                      <ServiceHistoryTimeline history={history} isLoading={isHistoryLoading} />
+                    )}
                   </div>
                 )}
               </div>
