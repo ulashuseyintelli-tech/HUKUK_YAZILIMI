@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { X, Send, Loader2, Mail, MessageSquare, Eye, RefreshCw } from "lucide-react";
 import { api, MessageTemplate, MessageTemplateCategory, MessageTemplateChannel } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 interface SendMessageModalProps {
   isOpen: boolean;
@@ -74,34 +75,83 @@ export function SendMessageModal({
   const [customSubject, setCustomSubject] = useState('');
   const [customBody, setCustomBody] = useState('');
 
-  // Şablonları yükle
+  // WSMR-A4-AC-07: eskiden catch dalında yalnız console.error ile hata
+  // yutuluyordu — `templates` boş kalınca "Bu kanal için şablon
+  // bulunamadı" (GERÇEK boşlukla AYNI) görünüyordu. Gönderme tarafı
+  // (handleSend) SIMULATED/TODO'DUR ve bu dilimde DEĞİŞTİRİLMEZ — yalnız
+  // bu okuma yolu (loadTemplates) düzeltilir.
+  const [templateLoadError, setTemplateLoadError] = useState<string | null>(null);
+  const [templateRetrying, setTemplateRetrying] = useState(false);
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    if (isOpen) {
-      loadTemplates();
-    }
-  }, [isOpen, defaultCategory]);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const templatesFetchTokenRef = useRef(0);
+  const templatesFetchInFlightRef = useRef(false);
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
+    if (templatesFetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    templatesFetchInFlightRef.current = true;
+    const token = ++templatesFetchTokenRef.current;
     setLoading(true);
     try {
       const data = await api.getMessageTemplates({
         category: defaultCategory,
         isActive: true,
       });
+      if (!isMountedRef.current || token !== templatesFetchTokenRef.current) return; // bayat/unmount
+      // Sözleşme: backend başarılı yanıtta HER ZAMAN dizi döner
+      // (message-template.service.ts#findAll -> Prisma findMany, asla
+      // undefined/null değil) — dizi değilse GERÇEKTEN beklenmeyen/
+      // malformed bir gövdedir; `as` cast ile gizlenmez.
+      if (!Array.isArray(data)) throw new Error('MALFORMED_MESSAGE_TEMPLATES_RESPONSE');
       setTemplates(data);
-      
-      // Varsayılan şablon seç
+      setTemplateLoadError(null);
+
+      // Varsayılan şablon seç (mevcut sözleşme — DOKUNULMADI)
       if (data.length > 0) {
         const defaultTemplate = data.find(t => t.category === defaultCategory) || data[0];
         setSelectedTemplateId(defaultTemplate.id);
         setSelectedChannel(defaultTemplate.channel);
       }
     } catch (error) {
+      if (!isMountedRef.current || token !== templatesFetchTokenRef.current) return;
       console.error('Şablonlar yüklenemedi:', error);
+      // templates BİLEREK dokunulmaz — önceki başarıyla yüklenmiş liste
+      // (varsa) SİLİNMEZ; yalnız bayat olduğu bantta görünür olur. Sahte/
+      // varsayılan bir şablon ÜRETİLMEZ.
+      setTemplateLoadError(toActionErrorMessage(error, 'Mesaj şablonları yüklenemedi.'));
     } finally {
-      setLoading(false);
+      if (token === templatesFetchTokenRef.current) {
+        templatesFetchInFlightRef.current = false;
+        if (isMountedRef.current) setLoading(false);
+      }
     }
-  };
+  }, [defaultCategory]);
+
+  const retryTemplates = useCallback(async () => {
+    setTemplateRetrying(true);
+    templatesFetchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await loadTemplates();
+    } finally {
+      if (isMountedRef.current) setTemplateRetrying(false);
+    }
+  }, [loadTemplates]);
+
+  // Şablonları yükle
+  useEffect(() => {
+    if (isOpen) {
+      // Modal yeniden açıldığında ÖNCEKİ hata state'i TAŞINMAZ — yeni
+      // deneme başlarken temizlenir (loading zaten loadTemplates'in
+      // kendisi tarafından senkron ayarlanır).
+      setTemplateLoadError(null);
+      loadTemplates();
+    }
+  }, [isOpen, defaultCategory, loadTemplates]);
 
   // Seçili şablon
   const selectedTemplate = useMemo(() => {
@@ -347,6 +397,27 @@ export function SendMessageModal({
               ) : (
                 /* Şablon Seçimi */
                 <div className="space-y-3">
+                  {templateLoadError && (
+                    // WSMR-A4-AC-07: okuma hatası "Bu kanal için şablon
+                    // bulunamadı" (GERÇEK boşluk) ile ASLA KARIŞTIRILMAZ.
+                    // Önceki başarıyla yüklenmiş şablonlar (varsa) aşağıda
+                    // seçilebilir kalmaya devam eder — yalnız bayat
+                    // olabileceği belirtilir.
+                    <div role="alert" className="flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                      <span>
+                        {templateLoadError}
+                        {templates.length > 0 ? ' Gösterilen şablonlar bayat olabilir.' : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={retryTemplates}
+                        disabled={templateRetrying}
+                        className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {templateRetrying ? 'Deneniyor…' : 'Tekrar dene'}
+                      </button>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Şablon Seçin</label>
                     <select
@@ -355,7 +426,7 @@ export function SendMessageModal({
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
                     >
                       {filteredTemplates.length === 0 ? (
-                        <option value="">Bu kanal için şablon bulunamadı</option>
+                        <option value="">{templateLoadError ? 'Şablonlar yüklenemedi' : 'Bu kanal için şablon bulunamadı'}</option>
                       ) : (
                         filteredTemplates.map((template) => (
                           <option key={template.id} value={template.id}>
