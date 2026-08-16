@@ -2373,6 +2373,80 @@ start F05 or F07 or authorize CAP-09A producer, CLF-O0-01, W3F07,
 PermissionGrant, OFFICE-WR01, schema, migration, DB, runtime, flag or production
 activation work.
 
+## OFFICE F07 CAP-02 physical orphan disposition — exact three-stage binding
+
+Owner-ratified 2026-08-16. This binding recognizes three distinct sequential
+PRs: this control-plane publication, F07 authority materialization, and F07
+physical disposition evidence plus canonical closure. The stages cannot be
+combined, skipped, transferred, or matched by prefix or wildcard. Physical
+mutation is recoverability-first and is limited to the two exact absolute paths
+below. Runtime remains `BLOCKED_BY_RUNTIME_MODEL`; production activation is
+`NONE`.
+
+### G0 — protected-writer binding
+
+```text
+Task ID : OFFICE-SC-F07-CAP02-ORPHAN-DISPOSITION-BINDING-R01
+Mode : OFFICE_SC_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01
+Program : OFFICE-P4-AUTHORIZATION-COMPLETION-R01
+Base : d848df01d4e08735926edd001b0b78f3e3b85d97
+Head ref : codex/office-f07-orphan-binding-r01
+Scope : M project/scripts/governance-coordination.cjs
+        M project/scripts/governance-coordination.test.cjs
+        M project/docs/governance/governance-writer-coordination-contract.md
+```
+
+G0 is the only phase whose authority comes directly from the owner
+ratification. Exact base, task, mode, branch and M/M/M scope are mandatory.
+
+### Target A — F07 authority materialization
+
+```text
+Task ID : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-AUTHORITY-MATERIALIZATION-R01
+Mode : OFFICE_SC_F07_CAP02_PHYSICAL_ORPHAN_DISPOSITION_R01_AUTHORITY_MATERIALIZATION_R01
+Head ref : codex/office-f07-authority-materialization-r01
+Scope : M project/docs/governance/decision-log.md
+        A project/docs/governance/coordination-execution-grants/OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-EG01.md
+Semantic authority : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-SA01
+Execution grant : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-EG01
+Target p6a : C:\Development\HUKUK_YAZILIMI\HY_office_p6a_runtime_truth
+Target p3_reportingline : C:\Development\HUKUK_YAZILIMI\HY_office_p3_reportingline
+RECOVERABILITY : FIRST
+SECOND USE : FAIL-CLOSED
+```
+
+Target A is accepted only from a base containing this G0 contract and no prior
+F07 SA01 marker or EG01 path. The EG must bind exactly to the SA, both physical
+targets, Target B's branch, and its three-file repository scope. Product code,
+policy change, W3F07 and every other physical directory are prohibited.
+
+### Target B — F07 execution and closure
+
+```text
+Task ID : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01
+Mode : OFFICE_SC_F07_CAP02_PHYSICAL_ORPHAN_DISPOSITION_R01
+Head ref : codex/office-f07-orphan-disposition-r01
+Scope : A project/docs/governance/office-p4-authz-r01/f07-cap02-physical-orphan-disposition.md
+        M project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-execution-order.md
+        M project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-task-register.json
+Required authority : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-SA01
+Required grant : OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-EG01
+Target p6a : C:\Development\HUKUK_YAZILIMI\HY_office_p6a_runtime_truth
+Target p3_reportingline : C:\Development\HUKUK_YAZILIMI\HY_office_p3_reportingline
+SINGLE-USE : REQUIRED
+```
+
+Target B is rejected unless canonical base contains the exact Target A SA/EG
+pair. The evidence document must contain exactly two `targetId` and
+`absolutePath` records, one for each bound target, and one of the six ratified
+classifications for each target. A prior canonical Target B evidence path is a
+consumed grant and is rejected. A broad directory, another orphan, W3F07, an
+extra/missing/wrong-status repository path, or a prefix-like branch is rejected.
+Recursive physical deletion is prohibited; registered worktree cleanup must use
+the canonical worktree cleanup runbook. No schema, migration, DB, runtime, flag,
+production, CLF-O0-01, PermissionGrant, OFFICE-WR01 or CAP-09A producer work is
+authorized.
+
 ### Terminal bootstrap — MERGE-FLOW-TRANSITION-GENERIC-CREATE-R01
 
 Programme `REPOSITORY-WIDE-MERGE-FLOW-REMEDIATION-R01`, task

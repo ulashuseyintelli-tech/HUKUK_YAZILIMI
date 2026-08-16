@@ -10111,6 +10111,338 @@ test('OFFICE F04 rejects tuple expansion, reuse and prefix-like transfer', (t) =
   );
 });
 
+function officeF07BindingFixture(t) {
+  const binding = coordination.OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const fixture = createAuthorityGitFixture(
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  return { ...fixture, binding };
+}
+
+function renderOfficeF07Authority(binding) {
+  const target = binding.authorityPr;
+  const physicalTargetLiterals = binding.physicalTargets.flatMap(
+    ({ targetId, absolutePath }) => [targetId, absolutePath],
+  );
+  return {
+    decisionLog: [
+      '# decision-log',
+      buildAuthorityMarkerForTest(target.semanticAuthority),
+      ...target.decisionLogRequiredLiterals,
+      ...physicalTargetLiterals,
+    ].join('\n') + '\n',
+    grant: [
+      buildAuthorityMarkerForTest(target.executionGrant),
+      `semanticAuthorityRef.kind : ${target.semanticAuthority.kind}`,
+      `semanticAuthorityRef.path : ${target.semanticAuthority.path}`,
+      `semanticAuthorityRef.recordId : ${target.semanticAuthority.recordId}`,
+      ...target.executionGrantRequiredLiterals,
+      ...physicalTargetLiterals,
+    ].join('\n') + '\n',
+  };
+}
+
+function createOfficeF07AuthorityFixture(t) {
+  const binding = coordination.OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const target = binding.authorityPr;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'office-f07-authority-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runFixtureGit(['init', '--quiet'], root);
+  runFixtureGit(['config', 'user.name', 'Governance Coordination Test'], root);
+  runFixtureGit(
+    ['config', 'user.email', 'governance-coordination@example.invalid'],
+    root,
+  );
+  writeFixtureRepoFile(root, target.semanticAuthority.path, '# decision-log\n');
+  const preBinding = commitFixture(root, 'pre-binding');
+  writeFixtureRepoFile(
+    root,
+    binding.contractPath,
+    fs.readFileSync(fixturePath(REPO_ROOT, binding.contractPath), 'utf8'),
+  );
+  const base = commitFixture(root, 'F07 binding');
+  const rendered = renderOfficeF07Authority(binding);
+  writeFixtureRepoFile(root, target.semanticAuthority.path, rendered.decisionLog);
+  writeFixtureRepoFile(root, target.executionGrant.path, rendered.grant);
+  const head = commitFixture(root, 'F07 authority');
+  return { binding, target, root, preBinding, base, head };
+}
+
+function renderOfficeF07Evidence(binding) {
+  return [
+    '# F07 physical orphan disposition',
+    '',
+    'targetId : p6a',
+    'absolutePath : C:\\Development\\HUKUK_YAZILIMI\\HY_office_p6a_runtime_truth',
+    'classification : RECOVERABLE_UNMERGED',
+    'disposition : PRESERVED / OWNER_ACTION_REQUIRED',
+    'physicalState : PRESENT / UNCHANGED',
+    'recoveryStatus : RECOVERABLE',
+    '',
+    'targetId : p3_reportingline',
+    'absolutePath : C:\\Development\\HUKUK_YAZILIMI\\HY_office_p3_reportingline',
+    'classification : CLEAN_MERGED_RESIDUAL',
+    'disposition : PRESERVED / CLEANUP_BLOCKED_BY_PLATFORM',
+    'physicalState : PRESENT / UNCHANGED',
+    'recoveryStatus : NOT_REQUIRED',
+    '',
+    ...binding.closurePr.requiredLiterals,
+  ].join('\n') + '\n';
+}
+
+function createOfficeF07ClosureFixture(t) {
+  const authorityFixture = createOfficeF07AuthorityFixture(t);
+  const { binding, root } = authorityFixture;
+  const target = binding.closurePr;
+  runFixtureGit(['checkout', '--quiet', authorityFixture.head], root);
+  writeFixtureRepoFile(root, target.changedPaths[1].path, '# successor order\n');
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[2].path,
+    JSON.stringify({ stages: [] }, null, 2) + '\n',
+  );
+  const base = commitFixture(root, 'F07 authority base');
+  writeFixtureRepoFile(root, target.changedPaths[0].path, renderOfficeF07Evidence(binding));
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[1].path,
+    ['# successor order', ...target.requiredLiterals].join('\n') + '\n',
+  );
+  writeFixtureRepoFile(
+    root,
+    target.changedPaths[2].path,
+    JSON.stringify({ taskId: target.taskId, evidence: target.requiredLiterals }, null, 2) + '\n',
+  );
+  const head = commitFixture(root, 'F07 closure');
+  return { binding, target, root, preAuthority: authorityFixture.base, base, head };
+}
+
+test('OFFICE F07 G0 binding accepts the exact owner-ratified tuple', (t) => {
+  const fixture = officeF07BindingFixture(t);
+  const { binding } = fixture;
+  assert.deepEqual(
+    coordination.validateOfficeF07OrphanDispositionBindingScope({
+      base: binding.bindingPr.baseSha,
+      head: fixture.head,
+      headRef: binding.bindingPr.headRef,
+      taskId: binding.taskId,
+      changes: binding.bindingPr.changedPaths,
+      cwd: fixture.root,
+    }),
+    { mode: binding.bindingPr.mode, taskId: binding.taskId },
+  );
+});
+
+test('OFFICE F07 G0 rejects wrong task, branch, base, status, extra path and W3F07 injection', (t) => {
+  const fixture = officeF07BindingFixture(t);
+  const { binding } = fixture;
+  const exact = {
+    base: binding.bindingPr.baseSha,
+    head: fixture.head,
+    headRef: binding.bindingPr.headRef,
+    taskId: binding.taskId,
+    changes: binding.bindingPr.changedPaths,
+    cwd: fixture.root,
+  };
+  for (const mutation of [
+    { taskId: `${binding.taskId}-EXTRA` },
+    { headRef: `${binding.bindingPr.headRef}-copy` },
+    { base: fixture.unrelated },
+    { changes: binding.bindingPr.changedPaths.slice(0, 2) },
+    {
+      changes: binding.bindingPr.changedPaths.map((entry, index) =>
+        index === 0 ? { ...entry, status: 'A' } : entry,
+      ),
+    },
+    {
+      changes: [
+        ...binding.bindingPr.changedPaths,
+        {
+          status: 'M',
+          path: 'C:/Development/HY_WT/W3F07/office-approval-executor-cron.service.ts',
+        },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF07OrphanDispositionBindingScope({ ...exact, ...mutation }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+});
+
+test('OFFICE F07 authority materialization requires G0 and accepts exact SA/EG', (t) => {
+  const fixture = createOfficeF07AuthorityFixture(t);
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    { mode: fixture.target.mode, taskId: fixture.target.taskId },
+  );
+  expectCode(
+    () => coordination.validateOfficeF07AuthorityMaterializationScope({
+      base: fixture.preBinding,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      taskId: fixture.target.taskId,
+      changes: fixture.target.changedPaths,
+      cwd: fixture.root,
+    }),
+    'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+  );
+});
+
+test('OFFICE F07 authority rejects tuple drift and SA/EG reuse', (t) => {
+  const fixture = createOfficeF07AuthorityFixture(t);
+  const exact = {
+    base: fixture.base,
+    head: fixture.head,
+    headRef: fixture.target.headRef,
+    taskId: fixture.target.taskId,
+    changes: fixture.target.changedPaths,
+    cwd: fixture.root,
+  };
+  for (const mutation of [
+    { taskId: `${fixture.target.taskId}-EXTRA` },
+    { headRef: `${fixture.target.headRef}-copy` },
+    { changes: fixture.target.changedPaths.slice(0, 1) },
+    {
+      changes: [
+        ...fixture.target.changedPaths,
+        { status: 'M', path: 'project/docs/governance/product-backlog.md' },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF07AuthorityMaterializationScope({ ...exact, ...mutation }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  expectCode(
+    () => coordination.validateOfficeF07AuthorityMaterializationScope({ ...exact, base: fixture.head }),
+    'OFFICE_F07_EXECUTION_GRANT_REUSED',
+  );
+});
+
+test('OFFICE F07 execution accepts only the exact authorized two-target closure', (t) => {
+  const fixture = createOfficeF07ClosureFixture(t);
+  assert.deepEqual(
+    coordination.validatePrScope({
+      base: fixture.base,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      cwd: fixture.root,
+    }),
+    { mode: fixture.target.mode, taskId: fixture.target.taskId },
+  );
+});
+
+test('OFFICE F07 execution rejects missing authority, scope/status expansion and prefix transfer', (t) => {
+  const fixture = createOfficeF07ClosureFixture(t);
+  const exact = {
+    base: fixture.base,
+    head: fixture.head,
+    headRef: fixture.target.headRef,
+    taskId: fixture.target.taskId,
+    changes: fixture.target.changedPaths,
+    cwd: fixture.root,
+  };
+  expectCode(
+    () => coordination.validateOfficeF07OrphanDispositionScope({
+      ...exact,
+      base: fixture.preAuthority,
+    }),
+    'OFFICE_F07_AUTHORITY_REQUIRED',
+  );
+  for (const mutation of [
+    { taskId: `${fixture.target.taskId}-EXTRA` },
+    { headRef: `${fixture.target.headRef}-copy` },
+    { changes: fixture.target.changedPaths.slice(0, 2) },
+    {
+      changes: fixture.target.changedPaths.map((entry, index) =>
+        index === 0 ? { ...entry, status: 'M' } : entry,
+      ),
+    },
+    {
+      changes: [
+        ...fixture.target.changedPaths,
+        { status: 'A', path: 'project/docs/governance/office-p4-authz-r01/W3F07.md' },
+      ],
+    },
+  ]) {
+    expectCode(
+      () => coordination.validateOfficeF07OrphanDispositionScope({ ...exact, ...mutation }),
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+    );
+  }
+  expectCode(
+    () => coordination.classifyPrChangeSet(fixture.target.changedPaths, {
+      headRef: `${fixture.target.headRef}/*`,
+    }),
+    'CONTROL_PLANE_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE F07 execution rejects a second EG use', (t) => {
+  const fixture = createOfficeF07ClosureFixture(t);
+  expectCode(
+    () => coordination.validateOfficeF07OrphanDispositionScope({
+      base: fixture.head,
+      head: fixture.head,
+      headRef: fixture.target.headRef,
+      taskId: fixture.target.taskId,
+      changes: fixture.target.changedPaths,
+      cwd: fixture.root,
+    }),
+    'OFFICE_F07_EXECUTION_GRANT_REUSED',
+  );
+});
+
+test('OFFICE F07 execution rejects broad-directory and wrong-orphan target records', (t) => {
+  const fixture = createOfficeF07ClosureFixture(t);
+  runFixtureGit(['checkout', '--quiet', fixture.head], fixture.root);
+  const evidencePath = fixture.target.changedPaths[0].path;
+  const broadEvidence = fs.readFileSync(fixturePath(fixture.root, evidencePath), 'utf8') +
+    [
+      'targetId : broad_parent',
+      'absolutePath : C:\\Development\\HUKUK_YAZILIMI',
+      'classification : UNKNOWN / OWNER_DECISION_REQUIRED',
+      'disposition : BLOCKED_UNKNOWN_PROVENANCE',
+      'physicalState : PRESENT',
+      'recoveryStatus : UNKNOWN',
+    ].join('\n') + '\n';
+  writeFixtureRepoFile(fixture.root, evidencePath, broadEvidence);
+  const broadHead = commitFixture(fixture.root, 'broad target injection');
+  expectCode(
+    () => coordination.validateOfficeF07OrphanDispositionScope({
+      base: fixture.base,
+      head: broadHead,
+      headRef: fixture.target.headRef,
+      taskId: fixture.target.taskId,
+      changes: fixture.target.changedPaths,
+      cwd: fixture.root,
+    }),
+    'OFFICE_F07_PHYSICAL_TARGET_SCOPE_FORBIDDEN',
+  );
+});
+
+test('OFFICE F07 exact branches reject wildcard and prefix-like classification', () => {
+  const binding = coordination.OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  for (const target of [binding.bindingPr, binding.authorityPr, binding.closurePr]) {
+    for (const headRef of [`${target.headRef}-copy`, `${target.headRef}/*`]) {
+      expectCode(
+        () => coordination.classifyPrChangeSet(target.changedPaths, { headRef }),
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      );
+    }
+  }
+});
+
 function buildAuthorityMarkerForTest(authority) {
   return coordination.buildAuthorityMarker(authority);
 }

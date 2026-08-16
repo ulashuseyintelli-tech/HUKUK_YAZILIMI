@@ -2352,6 +2352,126 @@ const OFFICE_F03_F04_AUTHORITY_BINDING_R01 = Object.freeze({
     ]),
   }),
 });
+const OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01 = Object.freeze({
+  taskId: 'OFFICE-SC-F07-CAP02-ORPHAN-DISPOSITION-BINDING-R01',
+  programId: 'OFFICE-P4-AUTHORIZATION-COMPLETION-R01',
+  contractPath:
+    'project/docs/governance/governance-writer-coordination-contract.md',
+  physicalTargets: Object.freeze([
+    Object.freeze({
+      targetId: 'p6a',
+      absolutePath:
+        'C:\\Development\\HUKUK_YAZILIMI\\HY_office_p6a_runtime_truth',
+    }),
+    Object.freeze({
+      targetId: 'p3_reportingline',
+      absolutePath:
+        'C:\\Development\\HUKUK_YAZILIMI\\HY_office_p3_reportingline',
+    }),
+  ]),
+  bindingPr: Object.freeze({
+    mode: 'OFFICE_SC_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01',
+    baseSha: 'd848df01d4e08735926edd001b0b78f3e3b85d97',
+    headRef: 'codex/office-f07-orphan-binding-r01',
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path: 'project/scripts/governance-coordination.test.cjs',
+      }),
+      Object.freeze({
+        status: 'M',
+        path:
+          'project/docs/governance/governance-writer-coordination-contract.md',
+      }),
+    ]),
+  }),
+  authorityPr: Object.freeze({
+    taskId:
+      'OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-AUTHORITY-MATERIALIZATION-R01',
+    mode:
+      'OFFICE_SC_F07_CAP02_PHYSICAL_ORPHAN_DISPOSITION_R01_AUTHORITY_MATERIALIZATION_R01',
+    headRef: 'codex/office-f07-authority-materialization-r01',
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'M',
+        path: 'project/docs/governance/decision-log.md',
+      }),
+      Object.freeze({
+        status: 'A',
+        path:
+          'project/docs/governance/coordination-execution-grants/OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-EG01.md',
+      }),
+    ]),
+    semanticAuthority: Object.freeze({
+      kind: 'SEMANTIC_AUTHORITY',
+      path: 'project/docs/governance/decision-log.md',
+      recordId:
+        'OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-SA01',
+    }),
+    executionGrant: Object.freeze({
+      kind: 'EXECUTION_GRANT',
+      path:
+        'project/docs/governance/coordination-execution-grants/OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-EG01.md',
+      recordId:
+        'OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-EG01',
+    }),
+    decisionLogRequiredLiterals: Object.freeze([
+      'OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01-SA01',
+      'decision : RATIFIED',
+      'scope : PHYSICAL ORPHAN DISPOSITION ONLY',
+      'recoverability : FIRST',
+      'productCode : PROHIBITED',
+      'W3F07 : PROHIBITED / UNTOUCHED',
+    ]),
+    executionGrantRequiredLiterals: Object.freeze([
+      'GO-COMPLETE — F07 EXECUTION/CLOSURE PR ONLY',
+      'singleUseConsumption : REQUIRED',
+      'branch : codex/office-f07-orphan-disposition-r01',
+      'A project/docs/governance/office-p4-authz-r01/f07-cap02-physical-orphan-disposition.md',
+      'M project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-execution-order.md',
+      'M project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-task-register.json',
+      'transfer : PROHIBITED',
+      'expansion : PROHIBITED',
+      'terminalDisposition : CONSUMED / EXPIRED',
+    ]),
+  }),
+  closurePr: Object.freeze({
+    taskId: 'OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01',
+    mode: 'OFFICE_SC_F07_CAP02_PHYSICAL_ORPHAN_DISPOSITION_R01',
+    headRef: 'codex/office-f07-orphan-disposition-r01',
+    changedPaths: Object.freeze([
+      Object.freeze({
+        status: 'A',
+        path:
+          'project/docs/governance/office-p4-authz-r01/f07-cap02-physical-orphan-disposition.md',
+      }),
+      Object.freeze({
+        status: 'M',
+        path:
+          'project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-execution-order.md',
+      }),
+      Object.freeze({
+        status: 'M',
+        path:
+          'project/docs/governance/office-spring-cleaning-reconciliation-r01/successor-task-register.json',
+      }),
+    ]),
+    requiredLiterals: Object.freeze([
+      'OFFICE-SC-F07-CAP02-PHYSICAL-ORPHAN-DISPOSITION-R01',
+      'F02 : NON-CANONICAL',
+      'F05 : NOT_AUTHORIZED',
+      'CAP-09A producer : DORMANT_CANONICAL',
+      'runtime : BLOCKED_BY_RUNTIME_MODEL',
+      'production activation : NONE',
+      'W3F07 : UNTOUCHED',
+      'EG01 : CONSUMED / EXPIRED',
+    ]),
+  }),
+});
 const GOVERNANCE_CLOSEOUT_LIVE_LEDGER_GAP_R01_STAGE2_VALIDATOR_RECONCILIATION_R01 =
   Object.freeze({
     taskId:
@@ -5493,6 +5613,58 @@ function classifyPrChangeSet(changes, context = {}) {
     );
   }
 
+  const officeF07Binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const officeF07BindingPr = officeF07Binding.bindingPr;
+  const officeF07AuthorityPr = officeF07Binding.authorityPr;
+  const officeF07ClosurePr = officeF07Binding.closurePr;
+
+  if (
+    context.headRef === officeF07BindingPr.headRef ||
+    (context.base === officeF07BindingPr.baseSha &&
+      hasExactChangeSet(changes, officeF07BindingPr.changedPaths))
+  ) {
+    if (
+      context.base !== officeF07BindingPr.baseSha ||
+      context.headRef !== officeF07BindingPr.headRef ||
+      !hasExactChangeSet(changes, officeF07BindingPr.changedPaths)
+    ) {
+      reject(
+        'CONTROL_PLANE_SCOPE_FORBIDDEN',
+        'OFFICE F07 orphan disposition binding requires its exact base, branch and M/M/M scope',
+      );
+    }
+    return {
+      mode: officeF07BindingPr.mode,
+      taskId: officeF07Binding.taskId,
+    };
+  }
+
+  for (const target of [officeF07AuthorityPr, officeF07ClosurePr]) {
+    if (context.headRef === target.headRef) {
+      if (!hasExactChangeSet(changes, target.changedPaths)) {
+        reject(
+          'CONTROL_PLANE_SCOPE_FORBIDDEN',
+          `${target.taskId} requires its exact path-status scope`,
+        );
+      }
+      return { mode: target.mode, taskId: target.taskId };
+    }
+  }
+
+  if (
+    [officeF07BindingPr, officeF07AuthorityPr, officeF07ClosurePr].some(
+      (target) =>
+        context.headRef &&
+        context.headRef !== target.headRef &&
+        context.headRef.startsWith(target.headRef),
+    )
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE F07 orphan disposition chain rejects prefix-like or wildcard branch transfer',
+    );
+  }
+
   if (context.headRef === nafakaTerminalTargetPr.headRef) {
     if (!hasExactChangeSet(changes, nafakaTerminalTargetPr.changedPaths)) {
       reject(
@@ -8514,6 +8686,238 @@ function validateOfficeF04StatusReconciliationScope(options) {
       reject(
         'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
         `OFFICE F04 reconciliation records are missing ${literal}`,
+      );
+    }
+  }
+  return { mode: target.mode, taskId: target.taskId };
+}
+
+function assertOfficeF07BindingContractAtRef(ref, target, cwd = REPO_ROOT) {
+  const binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  if (!gitTreeEntry(ref, binding.contractPath, cwd)) {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE F07 binding contract is absent from the execution base',
+    );
+  }
+  const contract = gitShow(ref, binding.contractPath, cwd);
+  const expectedLiterals = [
+    binding.taskId,
+    binding.programId,
+    binding.bindingPr.mode,
+    binding.bindingPr.baseSha,
+    binding.bindingPr.headRef,
+    target.taskId,
+    target.mode,
+    target.headRef,
+    ...target.changedPaths.map(
+      ({ status, path: repoPath }) => `${status} ${repoPath}`,
+    ),
+    ...binding.physicalTargets.flatMap(({ targetId, absolutePath }) => [
+      targetId,
+      absolutePath,
+    ]),
+  ];
+  if (target.semanticAuthority) {
+    expectedLiterals.push(target.semanticAuthority.recordId);
+  }
+  if (target.executionGrant) {
+    expectedLiterals.push(target.executionGrant.recordId);
+  }
+  for (const literal of expectedLiterals) {
+    if (!contract.includes(literal)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE F07 binding contract is missing ${literal}`,
+      );
+    }
+  }
+  return contract;
+}
+
+function assertOfficeF07AuthorityAtRef(ref, cwd = REPO_ROOT) {
+  const binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const authority = binding.authorityPr;
+  if (
+    !gitTreeEntry(ref, authority.semanticAuthority.path, cwd) ||
+    !gitTreeEntry(ref, authority.executionGrant.path, cwd)
+  ) {
+    reject(
+      'OFFICE_F07_AUTHORITY_REQUIRED',
+      'F07 execution/closure requires canonical SA01 and EG01 on its base',
+    );
+  }
+
+  const decisionLog = gitShow(ref, authority.semanticAuthority.path, cwd);
+  assertExactAuthorityMarker(decisionLog, authority.semanticAuthority);
+  for (const literal of [
+    ...authority.decisionLogRequiredLiterals,
+    ...binding.physicalTargets.flatMap(({ targetId, absolutePath }) => [
+      targetId,
+      absolutePath,
+    ]),
+  ]) {
+    if (!decisionLog.includes(literal)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE F07 decision-log is missing ${literal}`,
+      );
+    }
+  }
+
+  const grant = gitShow(ref, authority.executionGrant.path, cwd);
+  assertExactAuthorityMarker(grant, authority.executionGrant);
+  assertExactSemanticBinding(grant, authority.semanticAuthority);
+  for (const literal of [
+    ...authority.executionGrantRequiredLiterals,
+    ...binding.physicalTargets.flatMap(({ targetId, absolutePath }) => [
+      targetId,
+      absolutePath,
+    ]),
+  ]) {
+    if (!grant.includes(literal)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE F07 EG is missing ${literal}`,
+      );
+    }
+  }
+}
+
+function assertOfficeF07PhysicalTargetEvidence(content) {
+  const binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const targetIdLines = content.match(/^targetId[\t ]*:[\t ]*.+$/gm) || [];
+  const absolutePathLines = content.match(/^absolutePath[\t ]*:[\t ]*.+$/gm) || [];
+  if (
+    targetIdLines.length !== binding.physicalTargets.length ||
+    absolutePathLines.length !== binding.physicalTargets.length
+  ) {
+    reject(
+      'OFFICE_F07_PHYSICAL_TARGET_SCOPE_FORBIDDEN',
+      'F07 evidence must contain exactly two targetId and absolutePath records',
+    );
+  }
+
+  const allowedClassifications = [
+    'ACTIVE_OWNER_WIP',
+    'RECOVERABLE_UNMERGED',
+    'CLEAN_MERGED_RESIDUAL',
+    'UNREGISTERED_EMPTY_SKELETON',
+    'STALE_REPARSE_ENTRY',
+    'UNKNOWN / OWNER_DECISION_REQUIRED',
+  ];
+  for (const { targetId, absolutePath } of binding.physicalTargets) {
+    const targetRecord = new RegExp(
+      `^targetId[\\t ]*:[\\t ]*${escapeRegExp(targetId)}[\\t ]*$` +
+        `[\\s\\S]*?^absolutePath[\\t ]*:[\\t ]*${escapeRegExp(absolutePath)}[\\t ]*$` +
+        `[\\s\\S]*?^classification[\\t ]*:[\\t ]*(?:${allowedClassifications.map(escapeRegExp).join('|')})[\\t ]*$` +
+        `[\\s\\S]*?^disposition[\\t ]*:[\\t ]*\\S.*$` +
+        `[\\s\\S]*?^physicalState[\\t ]*:[\\t ]*\\S.*$` +
+        `[\\s\\S]*?^recoveryStatus[\\t ]*:[\\t ]*\\S.*$`,
+      'm',
+    );
+    if (!targetRecord.test(content)) {
+      reject(
+        'OFFICE_F07_PHYSICAL_TARGET_SCOPE_FORBIDDEN',
+        `F07 evidence is missing the exact bounded record for ${targetId}`,
+      );
+    }
+  }
+}
+
+function validateOfficeF07OrphanDispositionBindingScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const stage = binding.bindingPr;
+  if (
+    base !== stage.baseSha ||
+    headRef !== stage.headRef ||
+    taskId !== binding.taskId ||
+    !hasExactChangeSet(changes, stage.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE F07 orphan disposition binding requires its exact base, task, branch and M/M/M scope',
+    );
+  }
+  for (const target of [binding.authorityPr, binding.closurePr]) {
+    assertOfficeF07BindingContractAtRef(head, target, cwd);
+  }
+  return { mode: stage.mode, taskId: binding.taskId };
+}
+
+function validateOfficeF07AuthorityMaterializationScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const target = binding.authorityPr;
+  if (
+    headRef !== target.headRef ||
+    taskId !== target.taskId ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE F07 authority materialization requires its exact task, branch and M/A scope',
+    );
+  }
+  assertOfficeF07BindingContractAtRef(base, target, cwd);
+
+  const semanticMarker = buildAuthorityMarker(target.semanticAuthority);
+  const baseDecisionLog = gitShow(base, target.semanticAuthority.path, cwd);
+  if (
+    baseDecisionLog.includes(semanticMarker) ||
+    gitTreeEntry(base, target.executionGrant.path, cwd)
+  ) {
+    reject(
+      'OFFICE_F07_EXECUTION_GRANT_REUSED',
+      'OFFICE F07 SA/EG tuple has already been materialized',
+    );
+  }
+  assertOfficeF07AuthorityAtRef(head, cwd);
+  return { mode: target.mode, taskId: target.taskId };
+}
+
+function validateOfficeF07OrphanDispositionScope(options) {
+  const { base, head, headRef, changes, taskId, cwd = REPO_ROOT } = options;
+  const binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  const target = binding.closurePr;
+  if (
+    headRef !== target.headRef ||
+    taskId !== target.taskId ||
+    !hasExactChangeSet(changes, target.changedPaths)
+  ) {
+    reject(
+      'CONTROL_PLANE_SCOPE_FORBIDDEN',
+      'OFFICE F07 execution/closure requires its exact task, branch and A/M/M scope',
+    );
+  }
+  assertOfficeF07BindingContractAtRef(base, target, cwd);
+  assertOfficeF07AuthorityAtRef(base, cwd);
+  if (gitTreeEntry(base, target.changedPaths[0].path, cwd)) {
+    reject(
+      'OFFICE_F07_EXECUTION_GRANT_REUSED',
+      'OFFICE F07 EG01 has already been consumed by a closure delivery',
+    );
+  }
+
+  const evidence = gitShow(head, target.changedPaths[0].path, cwd);
+  assertOfficeF07PhysicalTargetEvidence(evidence);
+  const order = gitShow(head, target.changedPaths[1].path, cwd);
+  const register = gitShow(head, target.changedPaths[2].path, cwd);
+  try {
+    JSON.parse(register);
+  } catch {
+    reject(
+      'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+      'OFFICE F07 successor task register must remain valid JSON',
+    );
+  }
+  const closure = `${evidence}\n${order}\n${register}`;
+  for (const literal of target.requiredLiterals) {
+    if (!closure.includes(literal)) {
+      reject(
+        'CONTROL_PLANE_BINDING_CONTENT_MISMATCH',
+        `OFFICE F07 closure records are missing ${literal}`,
       );
     }
   }
@@ -12203,6 +12607,38 @@ function validatePrScope(options) {
     });
   }
 
+  const officeF07Binding = OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01;
+  if (classification.mode === officeF07Binding.bindingPr.mode) {
+    return validateOfficeF07OrphanDispositionBindingScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+  if (classification.mode === officeF07Binding.authorityPr.mode) {
+    return validateOfficeF07AuthorityMaterializationScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+  if (classification.mode === officeF07Binding.closurePr.mode) {
+    return validateOfficeF07OrphanDispositionScope({
+      base,
+      head,
+      headRef,
+      changes,
+      taskId: classification.taskId,
+      cwd,
+    });
+  }
+
   if (classification.mode === MERGE_FLOW_TRANSITION_TERMINAL_BOOTSTRAP_R01.mode) {
     return validateTransitionBootstrapScope({ base, head, headRef, changes, cwd });
   }
@@ -13361,6 +13797,7 @@ module.exports = {
   OFFICE_CAP09A_CONSUMER_01_R01_GOVERNANCE_MATERIALIZATION_BINDING_R01,
   OFFICE_CAP09A_CONSUMER_01_R01_VALIDATOR_WHITESPACE_REPAIR_BINDING_R01,
   OFFICE_F03_F04_AUTHORITY_BINDING_R01,
+  OFFICE_F07_CAP02_ORPHAN_DISPOSITION_BINDING_R01,
   OFFICE_SPRING_CLEANING_RECONCILIATION_R01_AUTHORITY_BOOTSTRAP_R01,
   OWNER_WIP_MULTI_SOURCE_PATH_OWNERSHIP_R01,
   REGISTER_REPO_PATH,
@@ -13444,6 +13881,9 @@ module.exports = {
   validateOfficeF03AuthorityMaterializationScope,
   validateOfficeF03ImplementationScope,
   validateOfficeF04StatusReconciliationScope,
+  validateOfficeF07OrphanDispositionBindingScope,
+  validateOfficeF07AuthorityMaterializationScope,
+  validateOfficeF07OrphanDispositionScope,
   validateNafakaTerminalStateControlPlaneBindingScope,
   validateNafakaTerminalStateReconciliationScope,
   validateTr01AuthorityBootstrapBindingScope,
