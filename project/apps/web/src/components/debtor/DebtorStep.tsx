@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import React, { useState, useEffect, useRef, useCallback, type Dispatch, type SetStateAction } from "react";
 import { 
   Search, Users, Building2, Landmark, X, AlertCircle,
   ScanLine, Sparkles, Upload, FileText, Loader2, CheckCircle,
@@ -296,23 +296,63 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   const [useExistingDebtorRetrying, setUseExistingDebtorRetrying] = useState(false);
   const lastUseExistingCandidateRef = useRef<{ id: string; name: string } | null>(null);
 
+  // WSMR-A4-AB-17: "Borçlu Rehberi" (existingDebtors) okuma hatasında eskiden liste
+  // sessizce BOŞA zorlanıyordu — bu, gerçek "kayıt yok" ile okuma arızasını AYIRT
+  // EDİLEMEZ kılıp mükerrer borçlu oluşturma riskini artırıyordu (kullanıcı, aslında
+  // sistemde kayıtlı bir borçluyu bulamayınca onu tekrar/duplicate olarak açabilirdi).
+  const [debtorsLoadError, setDebtorsLoadError] = useState<string | null>(null);
+  const [debtorsRetrying, setDebtorsRetrying] = useState(false);
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    loadDebtors();
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const debtorsFetchTokenRef = useRef(0);
+  const debtorsFetchInFlightRef = useRef(false);
+
+  const loadDebtors = useCallback(async () => {
+    if (debtorsFetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    debtorsFetchInFlightRef.current = true;
+    const token = ++debtorsFetchTokenRef.current;
+    setLoading(true);
+    try {
+      const res = await api.get("/debtors?limit=500");
+      if (!isMountedRef.current || token !== debtorsFetchTokenRef.current) return; // bayat/unmount
+      const list = res.data?.data || res.data;
+      if (!Array.isArray(list)) {
+        throw new Error("MALFORMED_DEBTORS_RESPONSE");
+      }
+      setExistingDebtors(list);
+      setDebtorsLoadError(null);
+    } catch (err) {
+      if (!isMountedRef.current || token !== debtorsFetchTokenRef.current) return;
+      console.error("Borçlular yüklenemedi:", err);
+      // existingDebtors BİLEREK dokunulmaz — önceki başarıyla yüklenmiş rehber (varsa)
+      // SİLİNMEZ; yalnız bayat olduğu bantta görünür olur. Retry YALNIZ bu okumayı
+      // (loadDebtors) tekrar dener, hiçbir mutation TETİKLEMEZ.
+      setDebtorsLoadError(toActionErrorMessage(err, "Borçlular yüklenemedi."));
+    } finally {
+      if (token === debtorsFetchTokenRef.current) {
+        debtorsFetchInFlightRef.current = false;
+        if (isMountedRef.current) setLoading(false);
+      }
+    }
   }, []);
 
-  const loadDebtors = async () => {
+  const retryDebtors = useCallback(async () => {
+    setDebtorsRetrying(true);
     try {
-      setLoading(true);
-      const res = await api.get("/debtors?limit=500");
-      setExistingDebtors(res.data?.data || res.data || []);
-    } catch (err: any) {
-      console.error("Borçlular yüklenemedi:", err?.message || err);
-      // Hata durumunda boş liste göster
-      setExistingDebtors([]);
+      await loadDebtors();
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setDebtorsRetrying(false);
     }
-  };
+  }, [loadDebtors]);
+
+  useEffect(() => {
+    loadDebtors();
+  }, [loadDebtors]);
 
   const filteredDebtors = existingDebtors.filter((d) => {
     const matchesSearch = !searchTerm || 
@@ -1091,9 +1131,29 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
 
           {/* Borçlu Listesi */}
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+            {debtorsLoadError && (
+              // WSMR-A4-AB-17: okuma hatası (ilk yükleme veya sonraki bir tazeleme)
+              // "Borçlu bulunamadı" (gerçek yokluk) İLE ASLA KARIŞTIRILMAZ. Önceki
+              // başarıyla yüklenmiş rehber (varsa) aşağıda GÖRÜNMEYE devam eder —
+              // yalnız bayat olabileceği belirtilir.
+              <div role="alert" className="p-1.5 bg-red-50 border border-red-200 rounded flex items-start justify-between gap-1 text-[10px] text-red-700">
+                <span>
+                  {debtorsLoadError}
+                  {existingDebtors.length > 0 ? " Liste bayat olabilir." : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={retryDebtors}
+                  disabled={debtorsRetrying}
+                  className="shrink-0 underline hover:no-underline disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {debtorsRetrying ? "Deneniyor…" : "Tekrar dene"}
+                </button>
+              </div>
+            )}
             {loading ? (
               <div className="text-center py-4 text-muted-foreground text-xs">Yükleniyor...</div>
-            ) : filteredDebtors.length === 0 ? (
+            ) : debtorsLoadError && existingDebtors.length === 0 ? null : filteredDebtors.length === 0 ? (
               <div className="text-center py-4 text-muted-foreground text-xs">
                 {searchTerm ? "Sonuç bulunamadı" : "Borçlu bulunamadı"}
               </div>
