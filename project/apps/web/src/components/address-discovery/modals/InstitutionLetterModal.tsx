@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Spinner } from '@hukuk/ui';
 import { Building2, X } from 'lucide-react';
 import { api, InstitutionType, InstitutionTemplateInfo } from '@/lib/api';
+import { toActionErrorMessage } from '@/lib/action-error';
 
 interface InstitutionLetterModalProps {
   open: boolean;
@@ -44,11 +45,89 @@ export function InstitutionLetterModal({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // WSMR-A4-AC-02: eskiden hata durumunda hiçbir state dokunulmuyordu (yalnız
+  // console.error) — açıklamasız boş bir kurum ızgarası "şablon yok" (gerçek
+  // boşlukla AYNI) görünüyordu. Ayrıca bu modal örneği açık/kapalı arası
+  // UNMOUNT OLMUYOR (yalnız `open` prop'u değişir) — kimlik değişim koruması
+  // olmadan, ÖNCEKİ borçlunun seçimi/taslak metni YENİ borçlunun bağlamında
+  // sessizce kalıp YANLIŞ borçluya gönderilebiliyordu (UyapQueryModal,
+  // WSMR-A4-AB-20 ile birebir aynı anti-pattern — bu onun ikizi).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const fetchTokenRef = useRef(0);
+  const fetchInFlightRef = useRef(false);
+  const prevCaseDebtorIdRef = useRef<string | null>(null);
+
+  const loadTemplates = useCallback(async () => {
+    if (fetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    fetchInFlightRef.current = true;
+    const token = ++fetchTokenRef.current;
+    setLoading(true);
+    try {
+      const data = await api.getInstitutionTemplates();
+      if (!isMountedRef.current || token !== fetchTokenRef.current) return; // bayat/unmount
+      if (!Array.isArray(data)) {
+        throw new Error('MALFORMED_INSTITUTION_TEMPLATES_RESPONSE');
+      }
+      setTemplates(data);
+      setLoadError(null);
+    } catch (err) {
+      if (!isMountedRef.current || token !== fetchTokenRef.current) return;
+      console.error('Şablonlar yüklenemedi:', err);
+      // templates BİLEREK dokunulmaz — önceki başarıyla yüklenmiş liste
+      // (varsa) SİLİNMEZ; yalnız bayat olduğu bantta görünür olur. "Şablon
+      // yok" ile ASLA KARIŞTIRILMAZ.
+      setLoadError(toActionErrorMessage(err, 'Kurum yazısı şablonları yüklenemedi.'));
+    } finally {
+      if (token === fetchTokenRef.current) {
+        fetchInFlightRef.current = false;
+        if (isMountedRef.current) setLoading(false);
+      }
+    }
+  }, []);
+
+  const retryLoad = useCallback(async () => {
+    setRetrying(true);
+    fetchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await loadTemplates();
+    } finally {
+      if (isMountedRef.current) setRetrying(false);
+    }
+  }, [loadTemplates]);
+
   useEffect(() => {
     if (open) {
+      if (prevCaseDebtorIdRef.current !== caseDebtorId) {
+        // Borçlu KİMLİĞİ değişti (bu modal örneği açık/kapalı arası UNMOUNT
+        // OLMADIĞI için farklı bir borçlu için yeniden kullanılabilir) —
+        // ÖNCEKİ borçlunun seçimi/taslak metni YENİ borçlunun bağlamında
+        // YANLIŞLIKLA görünmez veya YANLIŞ borçluya gönderilmez. (Şablon
+        // listesinin kendisi caseDebtorId'e bağlı DEĞİL — API sözleşmesi
+        // parametre almıyor — bu yüzden `templates` burada TEMİZLENMEZ,
+        // yalnız borçluya özgü seçim/taslak state'i temizlenir.)
+        prevCaseDebtorIdRef.current = caseDebtorId;
+        setSelectedInstitution(null);
+        setSelectedLetterType('');
+        setSubject('');
+        setBody('');
+        setLoadError(null);
+      }
+      // Modal (yeniden) açıldı — ÖNCEKİ, belki hâlâ in-flight bir denemenin
+      // bayrağı YENİ denemeyi ENGELLEMEMELİ; jenerasyon token'ı ESKİ
+      // denemenin GEÇ gelen yanıtını zaten atlar (A4-AB-8/12/14/20 ile aynı
+      // tasarım deseni).
+      fetchInFlightRef.current = false;
       loadTemplates();
     }
-  }, [open]);
+  }, [open, caseDebtorId, loadTemplates]);
 
   useEffect(() => {
     if (selectedInstitution) {
@@ -59,18 +138,6 @@ export function InstitutionLetterModal({
       }
     }
   }, [selectedInstitution, templates]);
-
-  const loadTemplates = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getInstitutionTemplates();
-      setTemplates(data);
-    } catch (error) {
-      console.error('Şablonlar yüklenemedi:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubmit = async () => {
     if (!selectedInstitution || !selectedLetterType) return;
@@ -118,11 +185,31 @@ export function InstitutionLetterModal({
 
           {/* Content */}
           <div className="p-4 overflow-y-auto max-h-[60vh]">
+            {loadError && (
+              // WSMR-A4-AC-02: okuma hatası açıklamasız boş bir kurum ızgarasıyla
+              // ("şablon yok" gerçek boşluğu) ASLA KARIŞTIRILMAZ. Önceki başarıyla
+              // yüklenmiş liste (varsa) aşağıda GÖRÜNMEYE devam eder — yalnız bayat
+              // olabileceği belirtilir.
+              <div role="alert" className="mb-3 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                <span>
+                  {loadError}
+                  {templates.length > 0 ? ' Gösterilen liste bayat olabilir.' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={retryLoad}
+                  disabled={retrying}
+                  className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {retrying ? 'Deneniyor…' : 'Tekrar dene'}
+                </button>
+              </div>
+            )}
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Spinner size="md" />
               </div>
-            ) : (
+            ) : loadError && templates.length === 0 ? null : (
               <div className="space-y-4">
                 {/* Institution Selection */}
                 <div className="space-y-2">
