@@ -1,35 +1,83 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Settings, Wand2, Bell, Zap, Eye, RotateCcw, Check, Moon, Sun, MapPin } from "lucide-react";
 import { useUserSettings, UserSettings } from "@/lib/user-settings";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetSettings, loaded } = useUserSettings();
   const [saved, setSaved] = useState(false);
   const [cities, setCities] = useState<string[]>([]);
+  // WSMR-A4-AC-04: eskiden catch dalında yalnız console.error ile hata
+  // yutuluyordu — `cities` boş kalınca "Varsayılan İl" seçim kutusu
+  // açıklamasız yalnız "Seçilmedi" seçeneğiyle görünüyordu, okuma arızası
+  // ile "gerçekten hiçbir icra dairesi/il yok" AYIRT EDİLEMİYORDU. Ayrıca
+  // hiçbir retry yolu yoktu.
+  const [citiesLoadError, setCitiesLoadError] = useState<string | null>(null);
+  const [citiesRetrying, setCitiesRetrying] = useState(false);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const citiesFetchTokenRef = useRef(0);
+  const citiesFetchInFlightRef = useRef(false);
+
+  const loadCities = useCallback(async () => {
+    if (citiesFetchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    citiesFetchInFlightRef.current = true;
+    const token = ++citiesFetchTokenRef.current;
+    try {
+      const res = await api.get('/execution-offices');
+      if (!isMountedRef.current || token !== citiesFetchTokenRef.current) return; // bayat/unmount
+      const offices = res?.data?.data;
+      // Sözleşme: backend başarılı yanıtta HER ZAMAN dizi döner (Prisma
+      // findMany boş sonuçta bile [] döner, asla undefined/null değil —
+      // execution-office.service.ts#findAll) — dizi değilse GERÇEKTEN
+      // beklenmeyen/malformed bir gövde demektir; `as` cast ile gizlenmez.
+      if (!Array.isArray(offices)) {
+        throw new Error('MALFORMED_EXECUTION_OFFICES_RESPONSE');
+      }
+      const uniqueCities = [...new Set(offices.map((o: any) => o.city))] as string[];
+      // Sıralama: İstanbul, Ankara, İzmir önce, sonra alfabetik
+      const bigCities = ['İstanbul', 'Ankara', 'İzmir'];
+      const sorted = [
+        ...bigCities.filter(c => uniqueCities.includes(c)),
+        ...uniqueCities.filter(c => !bigCities.includes(c)).sort((a, b) => a.localeCompare(b, 'tr'))
+      ];
+      setCities(sorted);
+      setCitiesLoadError(null);
+    } catch (e) {
+      if (!isMountedRef.current || token !== citiesFetchTokenRef.current) return;
+      console.error('İller yüklenemedi:', e);
+      // cities BİLEREK dokunulmaz — önceki başarıyla yüklenmiş liste
+      // (varsa) SİLİNMEZ; yalnız bayat olduğu bantta görünür olur.
+      setCitiesLoadError(toActionErrorMessage(e, 'İller yüklenemedi.'));
+    } finally {
+      if (token === citiesFetchTokenRef.current) {
+        citiesFetchInFlightRef.current = false;
+      }
+    }
+  }, []);
+
+  const retryCities = useCallback(async () => {
+    setCitiesRetrying(true);
+    citiesFetchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await loadCities();
+    } finally {
+      if (isMountedRef.current) setCitiesRetrying(false);
+    }
+  }, [loadCities]);
 
   // İlleri yükle
   useEffect(() => {
-    const loadCities = async () => {
-      try {
-        const res = await api.get('/execution-offices');
-        const offices = res?.data?.data || [];
-        const uniqueCities = [...new Set(offices.map((o: any) => o.city))] as string[];
-        // Sıralama: İstanbul, Ankara, İzmir önce, sonra alfabetik
-        const bigCities = ['İstanbul', 'Ankara', 'İzmir'];
-        const sorted = [
-          ...bigCities.filter(c => uniqueCities.includes(c)),
-          ...uniqueCities.filter(c => !bigCities.includes(c)).sort((a, b) => a.localeCompare(b, 'tr'))
-        ];
-        setCities(sorted);
-      } catch (e) {
-        console.error('İller yüklenemedi:', e);
-      }
-    };
     loadCities();
-  }, []);
+  }, [loadCities]);
 
   const handleToggle = (key: keyof UserSettings) => {
     updateSettings({ [key]: !settings[key] });
@@ -122,6 +170,26 @@ export default function SettingsPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Varsayılan İl</label>
               <p className="text-xs text-muted-foreground mb-2">Yeni takip oluştururken bu il otomatik seçili gelir ve liste başında görünür</p>
+              {citiesLoadError && (
+                // WSMR-A4-AC-04: okuma hatası "Seçilmedi" gerçek boşluğuyla
+                // ASLA KARIŞTIRILMAZ. Önceki başarıyla yüklenmiş il listesi
+                // (varsa) aşağıda seçilebilir kalmaya devam eder — yalnız
+                // bayat olabileceği belirtilir.
+                <div role="alert" className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                  <span>
+                    {citiesLoadError}
+                    {cities.length > 0 ? ' Gösterilen il listesi bayat olabilir.' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={retryCities}
+                    disabled={citiesRetrying}
+                    className="shrink-0 rounded bg-red-100 px-2 py-1 text-red-800 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {citiesRetrying ? 'Deneniyor…' : 'Tekrar dene'}
+                  </button>
+                </div>
+              )}
               <select
                 value={settings.defaultCity}
                 onChange={(e) => handleSelect("defaultCity", e.target.value)}
