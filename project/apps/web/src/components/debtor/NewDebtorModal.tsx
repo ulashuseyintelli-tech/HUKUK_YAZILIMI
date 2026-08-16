@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { X, Loader2, Users, Building2, Landmark, Plus, MapPin, Search, Scroll, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { toActionErrorMessage } from "@/lib/action-error";
 import {
   Debtor, DebtorType, DebtorAddress, PublicInstitutionType, EstateHeir,
   DebtorTypeLabels, PublicInstitutionTypeLabels,
@@ -815,32 +816,91 @@ function PublicInstitutionFields({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PublicInstitutionResult[]>([]);
   const [searching, setSearching] = useState(false);
+  // WSMR-A4-AC-06: eskiden catch dalında yalnız console.error ile hata
+  // yutuluyordu — arama hatası "Sonuç bulunamadı. Manuel olarak
+  // girebilirsiniz." (GERÇEK boşlukla AYNI) ile ayırt edilemiyordu. Ayrıca
+  // jenerasyon token'ı olmadan ESKİ sorgunun geç gelen yanıtı YENİ sorgunun
+  // (veya minimum karakterin altına düşülmüş boş state'in) sonucunu
+  // ezebiliyordu.
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const searchTokenRef = useRef(0);
+  const searchInFlightRef = useRef(false);
+
+  const runSearch = useCallback(async (query: string) => {
+    if (searchInFlightRef.current) return; // çift-tetik -> tek aktif istek
+    searchInFlightRef.current = true;
+    const token = ++searchTokenRef.current;
+    setSearching(true);
+    try {
+      const res = await api.get<PublicInstitutionResult[]>(`/public-institutions/search?q=${encodeURIComponent(query)}&limit=15`);
+      if (!isMountedRef.current || token !== searchTokenRef.current) return; // bayat/unmount
+      // Sözleşme: backend başarılı yanıtta HER ZAMAN dizi döner
+      // (public-institution.service.ts#search -> kısa-sorgu guard'ı [] veya
+      // Prisma findMany, asla undefined/null değil) — dizi değilse GERÇEKTEN
+      // beklenmeyen/malformed bir gövdedir; `as` cast ile gizlenmez.
+      if (!Array.isArray(res.data)) throw new Error("MALFORMED_PUBLIC_INSTITUTION_SEARCH_RESPONSE");
+      setSearchResults(res.data);
+      setSearchError(null);
+      setShowDropdown(true);
+    } catch (e) {
+      if (!isMountedRef.current || token !== searchTokenRef.current) return;
+      console.error("Search error:", e);
+      // Bu bir otomatik-tamamlama önerisidir, kalıcı bir liste DEĞİL — yeni
+      // sorgu ESKİ (alakasız) sonuçlarla KARIŞTIRILMAMASI için sonuçlar
+      // temizlenir; hata AYRI, görünür bir bantla (retry dahil) sunulur.
+      setSearchResults([]);
+      setSearchError(toActionErrorMessage(e, "Kamu kurumu araması yapılamadı."));
+      setShowDropdown(true);
+    } finally {
+      if (token === searchTokenRef.current) {
+        searchInFlightRef.current = false;
+        if (isMountedRef.current) setSearching(false);
+      }
+    }
+  }, []);
+
+  const retrySearch = useCallback(async () => {
+    setRetrying(true);
+    searchInFlightRef.current = false; // manuel retry -> in-flight bayrağını sıfırla
+    try {
+      await runSearch(searchQuery);
+    } finally {
+      if (isMountedRef.current) setRetrying(false);
+    }
+  }, [runSearch, searchQuery]);
 
   // Debounced search
   useEffect(() => {
     if (searchQuery.length < 2) {
+      // Minimum karakterin altına düşüldü: bekleyen timer zaten cleanup ile
+      // iptal edilir; AYRICA token bumplanır ki HALA in-flight olan (timer
+      // çoktan ateşlenmiş) eski bir isteğin GEÇ yanıtı artık "güncel"
+      // sayılmaz ve bu temiz/boş state'i EZMEZ.
+      ++searchTokenRef.current;
       setSearchResults([]);
+      setSearchError(null);
+      setShowDropdown(false);
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await api.get<PublicInstitutionResult[]>(`/public-institutions/search?q=${encodeURIComponent(searchQuery)}&limit=15`);
-        setSearchResults(res.data || []);
-        setShowDropdown(true);
-      } catch (e) {
-        console.error("Search error:", e);
-      } finally {
-        setSearching(false);
-      }
+    const timer = setTimeout(() => {
+      searchInFlightRef.current = false; // yeni sorgu -> önceki in-flight bayrağı zorlanmaz, token zaten korur
+      runSearch(searchQuery);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, runSearch]);
 
   // Click outside to close
   useEffect(() => {
@@ -940,7 +1000,23 @@ function PublicInstitutionFields({
         )}
         
         {/* Dropdown */}
-        {showDropdown && searchResults.length > 0 && (
+        {showDropdown && searchError && (
+          // WSMR-A4-AC-06: arama hatası "Sonuç bulunamadı" (gerçek boşluk)
+          // ile ASLA KARIŞTIRILMAZ — ayrı, görünür bir bant + retry.
+          <div role="alert" className="absolute z-50 w-full mt-1 bg-white border border-red-200 rounded-lg shadow-lg p-3 text-sm">
+            <p className="text-red-600 font-medium mb-1">{searchError}</p>
+            <p className="text-xs text-gray-500 mb-2">Kurum bilgilerini aşağıdan manuel olarak da girebilirsiniz.</p>
+            <button
+              type="button"
+              onClick={retrySearch}
+              disabled={retrying}
+              className="text-xs text-blue-600 underline hover:text-blue-800 disabled:opacity-50 disabled:no-underline"
+            >
+              {retrying ? "Deneniyor…" : "Tekrar dene"}
+            </button>
+          </div>
+        )}
+        {showDropdown && !searchError && searchResults.length > 0 && (
           <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
             {searchResults.map((inst) => (
               <button
@@ -960,7 +1036,7 @@ function PublicInstitutionFields({
             ))}
           </div>
         )}
-        {showDropdown && searchQuery.length >= 2 && searchResults.length === 0 && !searching && (
+        {showDropdown && !searchError && searchQuery.length >= 2 && searchResults.length === 0 && !searching && (
           <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg p-3 text-sm text-gray-500">
             Sonuç bulunamadı. Manuel olarak girebilirsiniz.
           </div>
