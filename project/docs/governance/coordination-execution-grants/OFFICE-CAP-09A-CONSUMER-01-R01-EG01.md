@@ -73,3 +73,49 @@ squash-merged, canonical main and post-merge acceptance are verified, cleanup is
 completed and the terminal report is issued, the grant expires automatically.
 It cannot be transferred, expanded or reused. F03 does not start automatically;
 the executor returns to PAGE-O0 for the next owner gate.
+
+## Terminal consumption receipt
+
+Bu bölüm yeni semantic authority veya ikinci grant kullanımı üretmez. Yukarıdaki
+tek kullanımlık grant ile tamamlanan exact task'in terminal delivery kanıtını
+append-only kaydeder.
+
+```text
+TASK STATUS                : CLOSED
+CHANGE STATUS              : MERGED
+DELIVERY STATUS            : PASS
+SEMANTIC AUTHORITY         : CANONICAL
+SEMANTIC AUTHORITY RECORD  : OFFICE-CAP-09A-CONSUMER-01-R01-SA01
+EXECUTION GRANT            : CONSUMED / CLOSED
+EXECUTION GRANT RECORD     : OFFICE-CAP-09A-CONSUMER-01-R01-EG01
+IMPLEMENTATION PR          : #2405
+IMPLEMENTATION SHA         : 943a9bbb59b2f9c5d05253c5b41e44cf3bc14a2d
+IMPLEMENTATION SCOPE       : 4 PATHS / VERIFIED
+AUDITSERVICE CONSUMER      : TRANSACTIONAL / VERIFIED
+REQUIRED CI                : 9/9 PASS
+PRODUCER                   : DORMANT_CANONICAL / NOT_AUTHORIZED / DO NOT OPEN
+PRODUCTION ACTIVATION      : PROHIBITED
+F03 / P8 SUCCESSOR         : NOT AUTO-STARTED
+```
+
+Delivery evidence:
+
+- Implementation PR `#2405` exact `M/A/M/M` four-path scope ile squash-merge
+  edildi; canonical squash SHA
+  `943a9bbb59b2f9c5d05253c5b41e44cf3bc14a2d` olarak doğrulandı.
+- `StaffService`, existing `AuditService` instance'ının `logInTransaction`
+  çağrısını Staff lifecycle transaction'ı içinde ve
+  `OFFICE-GOVERNANCE:OFF-INV-08` policy reference ile tüketir; audit yazma
+  hatasında Staff mutation rollback semantiği korunur.
+- Implementation PR required GitHub checks `9/9 PASS`; squash canonical
+  `main` ancestry'sinde doğrulandı.
+- Schema, migration, DB, flag, runtime veya production activation değişikliği
+  yoktur. CAP-09A producer `DORMANT_CANONICAL / NOT_AUTHORIZED / DO NOT OPEN`
+  kalır.
+- F03 veya P8 successor otomatik başlamaz; terminal closeout sonrasında control
+  PAGE-O0'a döner.
+
+```text
+SECOND USE                 : FAIL-CLOSED
+WAITING FOR OWNER          : NO FOR CLOSEOUT — RETURN TO PAGE-O0
+```
