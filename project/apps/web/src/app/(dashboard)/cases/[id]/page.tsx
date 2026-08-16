@@ -41,7 +41,7 @@ import {
   PauseCircle,
   Search,
 } from "lucide-react";
-import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
+import { api, DebtorListItemDTO, DebtorsSummaryDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
 import {
@@ -863,9 +863,7 @@ export default function CaseDetailPage() {
   // bossa (gercek hata mi yoksa gercekten borclu yok mu belirsizligini
   // gidermek icin) devreye girer.
   const [debtorsLoadError, setDebtorsLoadError] = useState<string | null>(null);
-  const [selectedDebtorDetail, setSelectedDebtorDetail] = useState<DebtorDetailDTO | null>(null);
-  const [loadingDebtorDetail, setLoadingDebtorDetail] = useState(false);
-  
+
   // İcra Dairesi Seçimi State
   const [executionOffices, setExecutionOffices] = useState<any[]>([]);
   const [loadingOffices, setLoadingOffices] = useState(false);
@@ -1469,21 +1467,20 @@ export default function CaseDetailPage() {
     }
   }, [fetchExpenseThreeViewData]);
 
-  // Fetch debtor detail for drawer
-  const fetchDebtorDetail = useCallback(async (caseDebtorId: string) => {
-    if (!params.id) return;
-    try {
-      setLoadingDebtorDetail(true);
-      const detail = await api.getCaseDebtorDetail(params.id as string, caseDebtorId);
-      setSelectedDebtorDetail(detail);
-    } catch (error) {
-      console.error("Borçlu detayı yüklenemedi:", error);
-    } finally {
-      setLoadingDebtorDetail(false);
-    }
-  }, [params.id]);
-
   // Handle debtor row click
+  //
+  // WSMR-A4-AB-16 (owner GO — REMOVED): burada eskiden ayrı bir
+  // `fetchDebtorDetail(debtor.caseDebtorId)` çağrısı vardı, sonucu
+  // `selectedDebtorDetail`/`loadingDebtorDetail` state'lerine yazıyordu.
+  // Fresh 5-kapılı erişilebilirlik analizi doğruladı: bu iki state
+  // HİÇBİR render/prop/mutation tarafından tüketilmiyordu (yalnız
+  // yazılıyordu) — gerçek `DebtorDetailDrawer` bileşeni kendi bağımsız
+  // fetch sözleşmesini kullanıyor (bkz. render call'i aşağıda: yalnız
+  // isOpen/caseId/caseDebtorId/clientId/clientEmail/onUpdate geçirilir,
+  // detail/loading prop hiç yok — WSMR-A4-AB-14'te bu bileşenin kendi
+  // okuma-hatası davranışı zaten ayrıca düzeltildi). Ölü kod + dead
+  // import (`DebtorDetailDTO`) birlikte kaldırıldı; drawer'ın kendisi
+  // hâlâ `setSelectedDebtor`/`setDebtorDrawerOpen` ile açılır.
   const handleDebtorClick = useCallback((debtor: DebtorListItemDTO) => {
     // Set basic info immediately for drawer header
     setSelectedDebtor({
@@ -1494,9 +1491,7 @@ export default function CaseDetailPage() {
       role: debtor.role,
     });
     setDebtorDrawerOpen(true);
-    // Fetch full detail
-    fetchDebtorDetail(debtor.caseDebtorId);
-  }, [fetchDebtorDetail]);
+  }, []);
 
   useEffect(() => {
     if (params.id) fetchCase();
@@ -4581,7 +4576,6 @@ export default function CaseDetailPage() {
           onClose={() => {
             setDebtorDrawerOpen(false);
             setSelectedDebtor(null);
-            setSelectedDebtorDetail(null);
           }}
           caseId={caseData.id}
           caseDebtorId={selectedDebtor.caseDebtorId}
