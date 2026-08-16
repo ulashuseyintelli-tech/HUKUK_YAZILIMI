@@ -3,7 +3,7 @@
 ```text
 DOKÜMAN            wr01-decomposition-brief-r01.md
 GÖREV              OFFICE-WR01-DECOMPOSITION-BRIEF-R01 (GO-ANALYZE / SALT ANALİZ)
-STATÜ              DRAFT / PENDING_OWNER_SOURCE_VERIFICATION
+STATÜ              ANALYSIS_COMPLETE / OWNER_SOURCE_VERIFIED
 BASE               origin/main @ f5ccdb0bfa95ee0f5e0a86b1a926a261d3a50595 (2026-08-16)
 ÜRETİLEN AUTHORITY NONE — bu doküman karar üretmez, ratifiye etmez, sıra/scope seçmez
 ÜRÜN DİFF          YOK (kod / schema / migration / test / flag / runtime / production: DOKUNULMADI)
@@ -17,13 +17,14 @@ BASE               origin/main @ f5ccdb0bfa95ee0f5e0a86b1a926a261d3a50595 (2026-
 > dayanır; `decision-log.md` satır 539'daki `OFFICE-WR01 — MASTER PLAN KAYDI`
 > yalnız **kimlik+statü envanteridir** ve kararların içerik detayını taşımaz
 > (kaydın kendi ifadesi: *"Bu kayıt kimlik+statü envanteridir; karar içerik
-> detayları owner oturum kaydındadır."*). **Owner bu bölümü onaylamadan önce
-> doğrulamalıdır.**
+> detayları owner oturum kaydındadır."*). **Owner, §1'deki D-WR-1..7 ve
+> §2'deki B01-B10 aktarımının kendi kararlarını doğru yansıttığını
+> doğrulamıştır** (owner source verification, 2026-08-16).
 
-> **NOT 2 — STATÜ KİLİDİ.** Bu doküman, owner doğrulamasına kadar
-> `DRAFT / PENDING_OWNER_SOURCE_VERIFICATION` statüsündedir; **hiçbir D-WR
-> kaydını yeniden ratifiye etmez**, hiçbir bloğa execution authority vermez ve
-> B01-B10 arasında bağlayıcı bir sıra seçmez.
+> **NOT 2 — STATÜ.** Bu doküman `ANALYSIS_COMPLETE / OWNER_SOURCE_VERIFIED`
+> statüsündedir. Owner doğrulaması **yalnız aktarımın doğruluğuna** ilişkindir;
+> doküman **hiçbir D-WR kaydını yeniden ratifiye etmez**, hiçbir bloğa execution
+> authority vermez ve B01-B10 arasında bağlayıcı bir sıra seçmez.
 
 ### 0.1 Repo'da fiilen yazılı olan (VERIFIED)
 
@@ -662,7 +663,7 @@ klasör konvansiyonuna uyan bir yol"*u serbest bırakmıştı. Bu doküman
 ## 8. Terminal disposition
 
 ```text
-STATÜ                DRAFT / PENDING_OWNER_SOURCE_VERIFICATION
+STATÜ                ANALYSIS_COMPLETE / OWNER_SOURCE_VERIFIED
 ÜRETİLEN KARAR       YOK
 RATIFIYE EDİLEN      YOK — hiçbir D-WR kaydı yeniden ratifiye edilmedi
 SEÇİLEN SIRA         YOK — §6 yalnız TAVSİYEDİR
@@ -674,6 +675,6 @@ B06 ÖN-KOŞULU        UNVERIFIED / OWNER_SCOPE_CONFIRMATION_REQUIRED (§2.1)
 B09 ÖN-KOŞULU        BLOCKED_DEPENDENCY — cross-workstream migration contract
                      YOK (§2.3)
 DİĞER BLOKLAR        Ön-koşul engeli saptanmadı; owner GO'suna tabi
-SONRAKİ ADIM         PAGE-O0 — owner §0 kaynak doğrulaması + §5 açık soruları
-                     (Soru 4 çözüldü; Soru 1/2/3/5/6 açık)
+SONRAKİ ADIM         PAGE-O0 — §5 açık soruları (Soru 4 çözüldü; Soru
+                     1/2/3/5/6 AÇIK KALIR). Otomatik implementasyon YOK.
 ```
