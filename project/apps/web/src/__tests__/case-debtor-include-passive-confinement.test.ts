@@ -46,7 +46,6 @@ describe("PR-R1 includePassive confinement", () => {
       .sort();
 
     expect(includePassiveCallers).toEqual([
-      "app/(dashboard)/cases/[id]/page-v2.tsx",
       "app/(dashboard)/cases/[id]/page.tsx",
       "app/(dashboard)/cases/[id]/v2/page.tsx",
     ]);
