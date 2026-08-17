@@ -2435,6 +2435,11 @@ model Office {
   rateSchedules           RateSchedule[]
   interestCalculationLogs InterestCalculationLog[]
 
+  // OFFICE-WR01-B02 (AŞAMA 1-2): effective-dated havuz katmanı. Bu iki ilişki HENÜZ hiçbir
+  // okuyucu/yazıcı tarafından kullanılmaz; yukarıdaki düz diziler source-of-truth olarak kalır.
+  workPoolMemberships OfficeWorkPoolMembership[]
+  workPoolEpochs      OfficeWorkPoolEpoch[]
+
   @@index([tenantId])
 }
 
@@ -2561,6 +2566,11 @@ model Lawyer {
 
   uyapOperationsAsActingLawyer   UyapOperation[] @relation("UyapOperationActingLawyer")
   uyapOperationsAsSignatureOwner UyapOperation[] @relation("UyapOperationSignatureOwner")
+
+  // OFFICE-WR01-B02 (AŞAMA 1-2): tenant-safe composite FK'nin ters ucu. onDelete: Restrict —
+  // havuz üyeliği olan avukat FİZİKSEL olarak silinemez (pasifleştirilebilir; üretim yaşam
+  // döngüsü zaten soft-deactivate'tir, lawyer.service.ts delete() → isActive=false).
+  officeWorkPoolMemberships OfficeWorkPoolMembership[]
 
   @@unique([id, tenantId])
   @@unique([userId])
@@ -10499,4 +10509,140 @@ model ClientFinancialDisclosureLine {
   @@index([tenantId, disclosureVersionId])
   @@index([sourceDispositionLineId])
   @@index([type])
+}
+
+// ==================== OFFICE-WR01-B02 — EFFECTIVE-DATED WORK POOLS ====================
+//
+// Kaynak sözleşme: project/docs/governance/office-wr01-decomposition-r01/
+//   b02-effective-dated-pools-design-r01.md (PR #2444, squash 75edf7af)
+//   — §6 schema contract · §7 resolver sözleşmesi · §8 backfill/migration ·
+//     owner kararları OD-B02-01..04 RATIFIED (2026-08-17) ·
+//     düzeltmeler CF-B02-01 (anchor) / CF-B02-02 (concurrency) / CF-B02-03 (effectiveAt).
+//
+// AŞAMA SINIRI (§9.2). Bu katman YALNIZ AŞAMA 1 (schema introduction) + AŞAMA 2
+// (validated backfill) kapsamındadır. Bugün bu iki tabloyu okuyan veya yazan HİÇBİR
+// runtime yüzeyi YOKTUR: source-of-truth hâlâ Office.opStaffTypes /
+// Office.escalationManagerLawyerIds / Office.escalationFounderLawyerIds düz dizileridir.
+// Resolver (AŞAMA 3), admin dual-write + applyTargetState() primitive'i (AŞAMA 4),
+// drift gözlemi (AŞAMA 5) ve okuma cutover'ı (AŞAMA 6) AYRI ve AÇIK owner yetkisi ister;
+// bu şema onları başlatmaz.
+//
+// ADLANDIRMA. §6 taslak sözleşmesi enum adlarını "PoolKind / MembershipProvenance /
+// EpochProvenance" çalışma adlarıyla verir ve adların implementation'da kesinleşeceğini
+// açıkça yazar. Bu şemada model adları taslakla BİREBİR aynıdır; enum adları ise repo
+// konvansiyonuna (ReportingLineDisposition, PermissionGrantScope, CollectionDispositionLineType)
+// uyacak biçimde sahip modelle ön-eklenmiştir — 231 enum'luk global Prisma ad uzayında
+// çıplak "PoolKind" okunabilirlik ve çakışma riski taşır. Semantik değişmemiştir.
+
+/// Havuz taksonomisi (§6.1). OD-B02-02 (a) RATIFIED: kapsam YALNIZ üç havuzdur.
+/// Office.escalationTeamLeadLawyerIds ve Office.poaExpiryRecipientLawyerIds yapısal olarak
+/// aynı sınıftadır ve model onları schema değişikliği OLMADAN taşıyabilir; fakat migration +
+/// runtime taşıması AYRI authority ister — enum'a değer eklemek TEK BAŞINA yeterli DEĞİLDİR.
+enum OfficeWorkPoolKind {
+  OP_STAFF_TYPE // üye taşıyıcısı: StaffType  ← Office.opStaffTypes
+  ESCALATION_MANAGER // üye taşıyıcısı: Lawyer id ← Office.escalationManagerLawyerIds
+  ESCALATION_FOUNDER // üye taşıyıcısı: Lawyer id ← Office.escalationFounderLawyerIds
+}
+
+/// Üyelik satırının tarihsel kaynağı (§6.2). LEGACY_CUTOVER_IMPORT: cutover anında düz
+/// diziden ithal edilmiş — validFrom bir İTHAL tarihidir, politikanın gerçek başlangıcı
+/// DEĞİLDİR (§4 T3 ≠ T1). ADMIN_DECLARED: admin yazma yüzeyinden beyan (AŞAMA 4+).
+/// OWNER_EVIDENCED_HISTORICAL: owner'ın kanıtladığı gerçek tarih — OD-B02-01 (A) gereği
+/// bu migration onu KULLANMAZ; ileride kanıt gelirse schema değişikliği gerekmesin diye tanımlıdır.
+enum OfficeWorkPoolMembershipProvenance {
+  LEGACY_CUTOVER_IMPORT
+  ADMIN_DECLARED
+  OWNER_EVIDENCED_HISTORICAL
+}
+
+/// Bilgi sınırı kaydının kaynağı (§6.6). TENANT_PROVISIONED: büro o an doğdu, öncesi
+/// hakkında bilgi GERÇEKTEN yok (AŞAMA 4'te getOrCreate yazacak, §6.7).
+enum OfficeWorkPoolEpochProvenance {
+  LEGACY_CUTOVER_IMPORT
+  TENANT_PROVISIONED
+  OWNER_EVIDENCED_HISTORICAL
+}
+
+/// Effective-dated havuz ÜYELİĞİ (§6.2, Alternatif 2). Yarı-açık aralık [validFrom, validUntil):
+/// ardışık dönemler sınırda ne boşluk ne örtüşme üretir (§7.1).
+///
+/// FİZİKSEL DELETE YOKTUR (§6.5): üyelik ancak kapanır (validUntil) veya iptal edilir
+/// (revokedAt). revokedAt ≠ validUntil — "geri alındı" ile "süresi doldu" ayrımı
+/// PermissionGrant'ta KAYBEDİLMİŞTİR (§12) ve B02 bunu tekrarlamaz.
+///
+/// Üyelik YETKİ ÜRETMEZ: havuz "kim aday" der; "kim onaylayabilir" B06'nın eligibility
+/// katmanıdır (§12, §13).
+model OfficeWorkPoolMembership {
+  id String @id @default(cuid())
+
+  /// Tenant düzlemi + büro kimliği AYNI kolondur: Office.tenantId @unique olduğu için FK
+  /// doğrudan Office(tenantId)'ye kurulur → ayrı officeId kolonu YOK, diverge imkânsız (§6.2).
+  tenantId String
+  office   Office @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  poolKind OfficeWorkPoolKind
+
+  /// Üye taşıyıcıları XOR'dur; DB-level CHECK ile zorlanır (migration, §6.3 CHECK 1-2).
+  memberLawyerId  String?
+  memberStaffType StaffType?
+
+  /// Tenant-safe composite FK → Lawyer(id, tenantId) (schema.prisma @@unique([id, tenantId])).
+  /// onDelete: Restrict — ReportingLine'ın gerekçesiyle aynı: sessiz yetki kaybı yerine açık hata.
+  /// memberLawyerId nullable olduğu için (MATCH SIMPLE) staff-type satırlarında FK denetlenmez.
+  memberLawyer Lawyer? @relation(fields: [memberLawyerId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  /// Effective başlangıç (INCLUSIVE).
+  validFrom       DateTime  @default(now())
+  /// Planlı bitiş (EXCLUSIVE); null = açık uçlu. "Plan" — irade beyanı değil (§4 T7).
+  validUntil      DateTime?
+  /// İrade beyanıyla sonlandırma (EXCLUSIVE); geçmişteki aktifliği DEĞİŞTİRMEZ (§4 T6, §7.2).
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  provenance OfficeWorkPoolMembershipProvenance
+
+  createdByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  /// Resolver'ın birincil yolu (§6.4).
+  @@index([tenantId, poolKind, validFrom])
+  /// Açık uçlu / kapanmış ayrımı.
+  @@index([tenantId, poolKind, validUntil])
+  /// "Bu avukat hangi havuzlarda".
+  @@index([memberLawyerId])
+}
+
+/// Knowledge-boundary anchor (§6.6, CF-B02-01). Bilgi sınırı membership satırlarının
+/// VARLIĞINDAN BAĞIMSIZ, kalıcı ve birinci-sınıf bir kayıttır: üç havuzu da boş olan bir
+/// tenant'ta hiç membership satırı oluşmaz, dolayısıyla sınır membership'ten TÜRETİLEMEZ.
+/// Türetme denenirse cutover ÖNCESİ "UNKNOWN" ile cutover SONRASI gerçek "EMPTY" ayırt
+/// edilemez hâle gelir — CF-B02-01'in düzelttiği hata tam olarak budur.
+///
+/// Sentinel (sahte üye) satırı YASAKTIR (§6.6, R-15): üyelik tablosunu kirletir ve bir
+/// filtrenin unutulması hayalet üyeye bildirim gönderir.
+///
+/// Anchor ASLA retire edilmez (§9.5): legacy kolonlar düşse de bilgi sınırı kalıcıdır.
+model OfficeWorkPoolEpoch {
+  id String @id @default(cuid())
+
+  tenantId String
+  office   Office @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  poolKind OfficeWorkPoolKind
+
+  /// Bilginin başladığı an. Bu andan ÖNCE sistem o havuz hakkında hiçbir şey iddia etmez.
+  /// Resolver bunu OKUR; membership'lerin min(validFrom) değerini HESAPLAMAZ (§7.6 madde 7).
+  knownFrom DateTime
+
+  provenance OfficeWorkPoolEpochProvenance
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Havuz başına TAM OLARAK bir anchor.
+  @@unique([tenantId, poolKind])
+  @@index([tenantId])
 }
