@@ -1,14 +1,31 @@
-# OFFICE-WR01-B02 — EFFECTIVE-DATED POOLS: SCHEMA + MIGRATION CONTRACT DESIGN (R01)
+# OFFICE-WR01-B02 — EFFECTIVE-DATED POOLS: SCHEMA + MIGRATION CONTRACT DESIGN (R01 · CORRECTION R02)
 
 ```text
 DOKÜMAN            b02-effective-dated-pools-design-r01.md
 GÖREV              OFFICE-WR01-B02-EFFECTIVE-DATED-POOLS-DESIGN-R01
+DÜZELTME GÖREVİ    OFFICE-WR01-B02-EFFECTIVE-DATED-POOLS-DESIGN-CORRECTION-R02
 ÇALIŞMA SEVİYESİ   LEVEL 2 FULL (schema + migration sözleşmesi)
-STATÜ              DESIGN_COMPLETE / OWNER_DECISION_REQUIRED
+STATÜ              DESIGN_COMPLETE / OWNER_RATIFIED / READY_FOR_IMPLEMENTATION_GO
 BASE               origin/main @ 7e497cfa6ffbed1a4377a3d63b84712ad35cc1c2 (2026-08-16)
-ÜRETİLEN AUTHORITY NONE — bu doküman implementation başlatmaz, owner kararı vermez
+ÜRETİLEN AUTHORITY NONE — bu doküman implementation başlatmaz; ayrı ve açık owner
+                   implementation GO'su zorunludur
 ÜRÜN DİFF          YOK (schema / migration / kod / test / flag / runtime / DB: DOKUNULMADI)
 ```
+
+## R02 — düzeltme ve ratifikasyon kaydı
+
+| Kalem | Durum |
+|---|---|
+| `OD-B02-01` historical-start/backfill | **APPROVED: A** (owner, PAGE-O0, 2026-08-17) — §15.1 |
+| `OD-B02-02` havuz kapsamı | **APPROVED: (a)** — yalnız üç alan; §15.2 |
+| `OD-B02-03` okuma cutover'ı | **APPROVED: (a)** — altı yüzeyin tamamı; §15.3 |
+| `OD-B02-04` yazma yüzeyi | **APPROVED: (a)** — immediate-effect; §15.4 |
+| `CF-B02-01` boş havuz cutover anchor'ı | **DÜZELTİLDİ** — R01'in "cutoverAt'i membership `validFrom`'undan türet" sözleşmesi **GEÇERSİZDİR**; yerine üyelikten bağımsız `OfficeWorkPoolEpoch` anchor'ı; §6.6, §7.6, §8.4, §8.6, §9.5 |
+| `CF-B02-02` replace-all concurrency | **DÜZELTİLDİ** — R01'in "partial unique index yarışı kapatır, version/CAS gereksizdir" sonucu **GEÇERSİZDİR**; yerine tenant-başına serialization noktası; §11.5 |
+
+R01'in geçersiz kılınan iki sonucu bu dokümanda **silinmedi**, açıkça
+`GEÇERSİZ (R01)` etiketiyle korunarak yerine geçen sözleşme yazıldı — böylece
+düzeltmenin ne olduğu ve neyi değiştirdiği izlenebilir kalır.
 
 ---
 
@@ -43,12 +60,13 @@ dokümanın asgari predecessor gerçeğidir ve yeniden yorumlanmamıştır:
 
 | Başlık | Karar |
 |---|---|
-| **Önerilen model** | **Alternatif 2** — tek normalize effective-dated üyelik tablosu (`OfficeWorkPoolMembership` çalışma adı), `poolKind` discriminator + ayrık üye taşıyıcıları (`memberLawyerId` XOR `memberStaffType`), CHECK ile zorlanmış |
-| **Kalıcı source-of-truth** | Cutover'dan sonra **yeni effective-dated tablo** (hem okuma hem yazma). `Office.opStaffTypes` / `escalationManagerLawyerIds` / `escalationFounderLawyerIds` **transition-only türetilmiş projeksiyon** hâline gelir ve ayrı bir retirement gate'inde düşer |
+| **Önerilen model** | **Alternatif 2** — normalize effective-dated **üyelik** tablosu (`OfficeWorkPoolMembership` çalışma adı), `poolKind` discriminator + ayrık üye taşıyıcıları (`memberLawyerId` XOR `memberStaffType`), CHECK ile zorlanmış; **artı** üyelikten bağımsız **knowledge-boundary anchor** tablosu (`OfficeWorkPoolEpoch`, `CF-B02-01`) |
+| **Kalıcı source-of-truth** | Cutover'dan sonra **yeni effective-dated tablolar** (hem okuma hem yazma). `Office.opStaffTypes` / `escalationManagerLawyerIds` / `escalationFounderLawyerIds` **transition-only türetilmiş projeksiyon** hâline gelir ve ayrı bir retirement gate'inde düşer |
 | **Geçiş yaklaşımı** | 7 aşama; dual-write **tek Prisma transaction'ında** (aynı DB, ACID) ve **süreli**; süresiz iki source-of-truth **yoktur**. Legacy→yeni yönü cutover'da tek noktada döner |
-| **Backfill** | Seçenek **A** önerilir: mevcut üyeler yalnız deterministik cutover timestamp'inden itibaren effective; cutover **öncesi** için sistem "boş havuz" değil **`UNKNOWN` (kayıt yok)** döner. Bu, C'nin provenance etiketiyle birlikte uygulanır |
-| **Unresolved owner decisions** | **4 adet** — `OD-B02-01` (historical-start/backfill politikası), `OD-B02-02` (havuz kapsamı: 3 alan mı, yapısal olarak aynı 5 alan mı), `OD-B02-03` (WR01 dışı 4 tüketicinin okuma cutover'ı), `OD-B02-04` (future-dated yazma yüzeyi WR01 kapsamında mı) |
-| **Terminal readiness** | **`DESIGN_COMPLETE / OWNER_DECISION_REQUIRED`** — `DETERMINISTIC_READY_FOR_IMPLEMENTATION` **DEĞİLDİR** |
+| **Backfill** | **Seçenek A — owner tarafından ratifiye edildi** (`OD-B02-01`): mevcut üyeler yalnız deterministik cutover timestamp'inden itibaren effective; cutover **öncesi** için sistem "boş havuz" değil **`UNKNOWN`** döner. Bilgi sınırı **anchor'dan** gelir, membership satırından **değil** (`CF-B02-01`) |
+| **Concurrency** | Replace-all yazımı **tenant başına serialize edilir** (`SELECT … FOR UPDATE`, `CF-B02-02`). Partial unique index yalnız defense-in-depth backstop'tur; tek başına yarışı **kapatmaz** |
+| **Owner kararları** | **4/4 RATIFIED** (2026-08-17): `OD-B02-01` A · `OD-B02-02` (a) · `OD-B02-03` (a) · `OD-B02-04` (a). Açık owner kararı **kalmamıştır** |
+| **Terminal readiness** | **`DESIGN_COMPLETE / OWNER_RATIFIED / READY_FOR_IMPLEMENTATION_GO`** — tasarım tarafı deterministiktir; eksik olan tek şey **implementation authority**'sidir (§16.1) |
 
 **Owner'ın beş bağlayıcı koşuluna karşılık:**
 
@@ -283,10 +301,17 @@ Değerlendirme eksenleri talimat §6.4'te sabittir. Puanlama yerine her eksende
 | **Genişleme** | **Zayıf** — `escalationTeamLeadLawyerIds`, `poaExpiryRecipientLawyerIds`, B03'ün round-robin aday havuzu, B05'in first-review havuzu → her yeni havuz **yeni tablo + yeni migration** |
 | B09 emsali | Zayıf (desen tekrarlanabilir değil) |
 
-### Alternatif 2 — Tek normalize effective-dated üyelik tablosu **(ÖNERİLEN)**
+### Alternatif 2 — Normalize effective-dated üyelik tablosu **(ÖNERİLEN)**
 
 `OfficeWorkPoolMembership`: `poolKind` discriminator + `memberLawyerId` XOR
 `memberStaffType`, CHECK ile zorlanmış.
+
+> **R02 EKİ (`CF-B02-01`):** bu alternatif, üyelik tablosunun **yanına**
+> üyelikten bağımsız bir knowledge-boundary anchor tablosu (`OfficeWorkPoolEpoch`)
+> ekler (§6.6). Aşağıdaki karşılaştırma üyelik katmanına ilişkindir; anchor
+> **her alternatifte gereklidir** — boş havuz sorunu Alternatif 1'de de,
+> 2'de de aynı biçimde ortaya çıkar. Dolayısıyla anchor bir **seçim ekseni
+> değil**, ortak bir ön koşuldur ve alternatifler arası tercihi değiştirmez.
 
 | Eksen | Sonuç |
 |---|---|
@@ -484,8 +509,87 @@ CHECK (("revokedAt" IS NULL) = ("revokedByUserId" IS NULL))
 | **Future-dated kayıt** | Model düzeyinde **desteklenir** (`validFrom > now`). Yazma yüzeyinden erişilebilirliği `OD-B02-04`'e bağlıdır. Partial unique index future-dated açık satırı da bağlar → aynı üye için ikinci bir açık uçlu satır oluşturulamaz (istenen davranış) |
 | **Revoke** | `revokedAt = now`, `revokedByUserId` set. `validUntil` **değiştirilmez** (planlanan bitiş kaydı korunur) |
 | **Expire** | `validUntil` set. `revokedAt` null kalır |
-| **Boş havuz** | İki ayrı hâl vardır ve **karıştırılmaz**: (a) `asOf`'ta hiç aktif satır yok ama tenant için kayıt var → `EMPTY`; (b) `asOf < cutoverAt` ve satırların tümü `LEGACY_CUTOVER_IMPORT` → `UNKNOWN`. Bkz. §7.6 |
+| **Boş havuz** | İki ayrı hâl vardır ve **karıştırılmaz**: (a) `asOf >= anchor.knownFrom` ve aktif satır yok → `RESOLVED / EMPTY`; (b) `asOf < anchor.knownFrom` (veya anchor yok) → `UNKNOWN`. Ayrım **anchor'dan** gelir, membership varlığından **değil** — bkz. §6.6, §7.6 (`CF-B02-01`) |
 | **Silme** | **Fiziksel DELETE yoktur.** Üyelik ancak kapanır veya iptal edilir. Bu, tarihsel modelin varlık sebebidir |
+
+### 6.6 Knowledge-boundary anchor — `OfficeWorkPoolEpoch` (`CF-B02-01`)
+
+> **GEÇERSİZ (R01).** R01 §7.6, `cutoverAt(tenant)` değerini
+> *"`provenance = LEGACY_CUTOVER_IMPORT` olan satırların `validFrom` değeri"*
+> olarak türetiyordu. **Bu sözleşme geçersizdir.**
+>
+> **Kök neden (owner tespiti, ratifiye):** bir tenant'ın migration anında üç
+> havuzu da boş olabilir — mevcut şemada bu tamamen olağandır, çünkü iki lawyer
+> dizisi `DEFAULT ARRAY[]::TEXT[]` ile gelir (`20260615050000`). O tenant için
+> **hiçbir membership satırı oluşmaz**, dolayısıyla türetilecek bir `validFrom`
+> yoktur ve sistem şu iki durumu **ayıramaz**:
+> cutover **öncesi** `UNKNOWN` ile cutover **sonrası gerçek** `EMPTY`.
+> Bilgi sınırının veri varlığına bağlanması, boş havuzda sınırı **yok eder**.
+
+**Bağlayıcı kural:** knowledge boundary **membership satırlarının varlığından
+bağımsız**, kalıcı ve birinci-sınıf bir kayıttır.
+
+| Alan | Tip | Sözleşme |
+|---|---|---|
+| `id` | `String @id @default(cuid())` | Repo standardı |
+| `tenantId` | `String` | FK → `Office(tenantId)` (`Office.tenantId @unique`, `schema.prisma:2345`), `onDelete: Cascade` |
+| `poolKind` | enum | §6.1 ile **aynı** kapalı küme |
+| `knownFrom` | `DateTime` | **Bilginin başladığı an.** Bu andan önce sistem o havuz hakkında hiçbir şey iddia etmez |
+| `provenance` | enum | `LEGACY_CUTOVER_IMPORT` \| `TENANT_PROVISIONED` \| `OWNER_EVIDENCED_HISTORICAL` |
+| `createdAt` / `updatedAt` | `DateTime` | Repo standardı |
+| **unique** | `@@unique([tenantId, poolKind])` | Havuz başına **tam olarak bir** anchor |
+
+**Neden ayrı tablo, neden sentinel membership değil:**
+
+- Sentinel (sahte üye) satırı, üyelik tablosunun anlamını kirletir: her okuyucu
+  ve her parite sorgusu "bu satır gerçek üye mi" filtresi taşımak zorunda kalır;
+  bir yerde unutulması **hayalet üye** üretir (bildirim gönderilen sahte alıcı).
+  Talimat da sentinel'i açıkça yasaklamıştır ve bu tasarım kullanmaz.
+- `Office`'e kolon eklemek (`opStaffTypesKnownFrom` gibi) havuz başına ayrı kolon
+  ister → `OD-B02-02`'nin gelecekte açılabilir bıraktığı iki havuz için **yeni
+  migration** gerekir; anchor tablosu yeni satırla çözer.
+- Ayrı tablo `provenance`'ı havuz bazında taşır; `OWNER_EVIDENCED_HISTORICAL`
+  bir gün geldiğinde (`OD-B02-01`'in açık bıraktığı yol) sınır **havuz bazında**
+  geriye çekilebilir.
+
+**Anchor ile membership arasındaki ilişki (bağlayıcı):**
+
+```text
+knownFrom  <= her LEGACY_CUTOVER_IMPORT membership'in validFrom değeri
+```
+
+Migration bu ikisini **aynı snapshot değişkeninden** yazar (§8.4 ADIM 4), yani
+eşit olurlar. Eşitlik bir **çıktıdır**, bir türetme kuralı **değildir**:
+resolver `knownFrom`'u okur, membership'lerin minimumunu **hesaplamaz** (§7.6,
+madde 7).
+
+### 6.7 Anchor'ın yaşam döngüsü ve tenant provisioning
+
+`OfficeService.getOrCreate` (`office.service.ts:115-127`, create `:136`)
+`Office` satırını **tembel** yaratır: bir tenant'ın Office kaydı ilk okuma/yazma
+anında oluşabilir. Dolayısıyla anchor **yalnız migration'da** üretilemez.
+
+**Sözleşme:**
+
+1. `getOrCreate`, `Office` satırını yarattığı **aynı `prisma.$transaction`
+   içinde** o tenant için `PoolKind` kümesinin **tamamına** anchor satırı yazar.
+   `Office` yaratımı ile anchor yaratımı **atomiktir**; biri olup diğeri
+   olmayamaz.
+2. Yeni anchor'ların `knownFrom` değeri **office yaratım anıdır** ve
+   `provenance = TENANT_PROVISIONED` olur. Bu doğrudur ve bir iddia icat etmez:
+   büro o an doğmuştur, öncesi hakkında bilgi **gerçekten** yoktur.
+3. Anchor yazımı **idempotenttir**: `@@unique([tenantId, poolKind])` üzerinde
+   `ON CONFLICT DO NOTHING`. `getOrCreate`'in eşzamanlı iki çağrısında
+   `Office.tenantId @unique` zaten birini elerken, anchor tarafı da sessizce
+   tekilleşir.
+4. **Anchor yoksa `UNKNOWN`.** Resolver eksik anchor'ı asla "şimdi yarat" veya
+   "boş kabul et" diye yorumlamaz; fail-closed davranır ve structured hata
+   loglar. Gerekçe: anchor'ın yokluğu bir **bilgi yokluğudur**; onu `EMPTY`'ye
+   çevirmek `CF-B02-01`'in düzelttiği hatanın ta kendisidir.
+5. Bu davranışın tüketici etkisi **regresyon değildir**: bugün boş dizi →
+   alıcı yok → `SKIPPED` (`operational-escalation.service.ts:275-278`). Yeni
+   modelde `EMPTY` de `UNKNOWN` de alıcı üretmez → aynı `SKIPPED`; fark yalnız
+   **log ayrımıdır**.
 
 ---
 
@@ -550,25 +654,55 @@ havuzda gösterir. Bu, `PermissionGrant`'ın `validUntil`-geri-çekme yöntemini
 Composite FK (`Lawyer(id, tenantId)`) sayesinde cross-tenant üye DB düzeyinde
 imkânsızdır — koruma yalnız servis katmanında kalmaz.
 
-### 7.6 Boş sonuç, `UNKNOWN` ve provenance
+### 7.6 Boş sonuç, `UNKNOWN` ve knowledge boundary (`CF-B02-01` ile düzeltildi)
+
+> **GEÇERSİZ (R01).** *"`cutoverAt(tenant)` = `LEGACY_CUTOVER_IMPORT` satırlarının
+> `validFrom` değeri; ayrı bir konfigürasyon kolonu gerekmez."* — boş havuzda
+> hiçbir satır olmadığı için bu türetme **tanımsızdır** (§6.6).
+
+**Yürürlükteki sözleşme — bilgi sınırı anchor'dan okunur:**
 
 ```text
 resolve(poolKind, asOf, tenantId) → { status, members }
 
-status = RESOLVED  : asOf >= cutoverAt(tenant)  → members (boş olabilir → EMPTY)
-status = UNKNOWN   : asOf <  cutoverAt(tenant)  → members = []  +  "kayıt yok"
+anchor := OfficeWorkPoolEpoch(tenantId, poolKind)          -- §6.6
+
+anchor YOK                        → UNKNOWN  + structured error log (fail-closed)
+asOf <  anchor.knownFrom          → UNKNOWN  + members = []
+asOf >= anchor.knownFrom          → RESOLVED + members = {aktif(satır, asOf)}
+                                    members boş ise  → RESOLVED / EMPTY
 ```
 
-**Bu ayrım tasarımın merkezidir.** `asOf < cutoverAt` için sistem "havuz boştu"
-**diyemez** — çünkü bilmiyor (§2.2). `UNKNOWN` dönmek, C8 bulgusu 5'in
-("geçmiş tarih icat eden backfill kabul edilemez") doğrudan teknik karşılığıdır.
+Üç durum **birbirinden ayrıdır** ve hiçbiri diğerine indirgenmez:
 
-`cutoverAt(tenant)` türetimi: o tenant'ta `provenance = LEGACY_CUTOVER_IMPORT`
-olan satırların `validFrom` değeri (tek snapshot olduğu için tekildir). Ayrı bir
-konfigürasyon kolonu gerekmez.
+| Durum | Anlamı | Bugünkü modelde karşılığı |
+|---|---|---|
+| `UNKNOWN` | Sistem o an hakkında bilgi taşımıyor | **YOK** — bugün ifade edilemez |
+| `RESOLVED / EMPTY` | Sistem biliyor: havuz o an **gerçekten** boştu | Boş dizi (ama "bilmiyorum"dan ayırt edilemez) |
+| `RESOLVED / members` | Sistem biliyor: bu üyeler vardı | Dolu dizi |
 
-`OD-B02-01` seçenek B veya C'ye giderse bu eşik satır-bazlı olur
-(`provenance = OWNER_EVIDENCED_HISTORICAL` satırları için `UNKNOWN` yoktur).
+**Boş havuzlu tenant senaryosu (`CF-B02-01`'in kapattığı boşluk):**
+
+```text
+Tenant T: migration anında üç havuz da boş.
+  membership satırı  : 0 adet
+  anchor satırı      : 3 adet (poolKind başına bir), knownFrom = cutoverAt
+
+resolve(ESCALATION_MANAGER, asOf = cutover - 1 gün) → UNKNOWN      ✔ doğru
+resolve(ESCALATION_MANAGER, asOf = cutover + 1 gün) → RESOLVED/EMPTY ✔ doğru
+
+R01 sözleşmesinde ikisi de ayırt edilemezdi — türetilecek validFrom yoktu.
+```
+
+**Madde 7 (bağlayıcı):** membership satırlarının `min(validFrom)` değeri
+knowledge boundary olarak **kullanılmaz** — ne resolver'da, ne raporlamada, ne
+de doğrulama sorgularında. Tek kaynak `anchor.knownFrom`'dur.
+
+`OD-B02-01` **A olarak ratifiye edildiği** için bugün tüm anchor'lar
+`LEGACY_CUTOVER_IMPORT` (mevcut tenant'lar) veya `TENANT_PROVISIONED` (sonradan
+doğan tenant'lar) provenance'ı taşır. Owner ileride kanıtlanmış tarih sağlarsa
+ilgili anchor `OWNER_EVIDENCED_HISTORICAL` provenance'ı ile geriye çekilir —
+bu, **schema değişikliği gerektirmeyen** bir yol olarak açık bırakılmıştır.
 
 ### 7.7 Silinmiş / pasif kullanıcı davranışı
 
@@ -616,9 +750,11 @@ farkını (tür filtresi vs. kimlik filtresi) yok eder.
 
 ### 8.2 Seçenekler
 
-#### Seçenek A — Cutover-only effective (ÖNERİLEN)
+#### Seçenek A — Cutover-only effective **(OWNER APPROVED — `OD-B02-01`)**
 
-Tüm mevcut üyeler `validFrom = cutoverAt`, `provenance = LEGACY_CUTOVER_IMPORT`.
+Tüm mevcut üyeler `validFrom = cutoverAt`, `provenance = LEGACY_CUTOVER_IMPORT`;
+**her tenant × havuz için** `knownFrom = cutoverAt` anchor'ı yazılır — havuz boş
+olsa bile (`CF-B02-01`).
 
 | Eksen | Sonuç |
 |---|---|
@@ -665,11 +801,14 @@ anlamı taşır.
 
 ```text
 ÖNERİ         : Seçenek A (provenance etiketiyle birlikte)
-KİLİTLENDİ Mİ : HAYIR — OD-B02-01 owner kararıdır (§15)
+KİLİTLENDİ Mİ : EVET — OD-B02-01 APPROVED: A  (owner, PAGE-O0, 2026-08-17)
 ```
 
-Bu doküman A'yı **teknik gerekçesiyle önerir**; owner kararı verilmeden hiçbir
-seçenek "karar" olarak kaydedilmemiştir.
+R01 bu satırda `HAYIR — owner kararıdır` diyordu. Owner kararı **verilmiştir**
+(§15.1); A artık bir öneri değil, tasarımın **bağlayıcı** backfill politikasıdır.
+B ve C karşılaştırma amacıyla korunmuştur; owner ileride kanıtlanmış tarih
+sağlarsa B'ye geçiş yolu `OWNER_EVIDENCED_HISTORICAL` provenance'ı ile
+**schema değişikliği gerektirmeden** açıktır.
 
 ### 8.4 Migration planı (dosya ÜRETİLMEDİ)
 
@@ -700,24 +839,47 @@ ADIM 1  PREFLIGHT / VALIDATION (constraint'lerden ÖNCE)
         > bu dosyaya politika GÖMÜLMEZ (Client partial-unique migration'ının
         > birebir ilkesi).
 
-ADIM 2  CREATE TYPE  (PoolKind, MembershipProvenance)
-ADIM 3  CREATE TABLE (§6.2)
+ADIM 2  CREATE TYPE  (PoolKind, MembershipProvenance, EpochProvenance)
+ADIM 3  CREATE TABLE (§6.2 membership  +  §6.6 OfficeWorkPoolEpoch anchor)
 ADIM 4  SNAPSHOT     cutoverAt := <migration içinde TEK KEZ hesaplanan
                      deterministik timestamp; her INSERT'te now() ÇAĞRILMAZ>
-ADIM 5  BACKFILL     havuz başına INSERT ... SELECT unnest(...)
+
+ADIM 5  ANCHOR SEED  ← CF-B02-01 (BACKFILL'DEN ÖNCE)
+                     INSERT INTO "OfficeWorkPoolEpoch" (tenantId, poolKind,
+                       knownFrom, provenance)
+                     SELECT o."tenantId", k.kind, <cutoverAt>, 'LEGACY_CUTOVER_IMPORT'
+                     FROM "Office" o
+                     CROSS JOIN (VALUES ('OP_STAFF_TYPE'),('ESCALATION_MANAGER'),
+                                        ('ESCALATION_FOUNDER')) AS k(kind);
+
+                     → HER mevcut Office için 3 anchor. Havuzun BOŞ olması
+                       anchor'ı ETKİLEMEZ. Beklenen satır sayısı:
+                       count("Office") × 3  (ADIM 8 / V8 bunu doğrular)
+
+ADIM 6  BACKFILL     havuz başına INSERT ... SELECT unnest(...)
                      validFrom = cutoverAt, validUntil = NULL, revokedAt = NULL,
                      provenance = 'LEGACY_CUTOVER_IMPORT'
                      Sıra: OP_STAFF_TYPE → ESCALATION_MANAGER → ESCALATION_FOUNDER
                      (sıra semantik taşımaz; determinizm için sabittir)
-ADIM 6  CONSTRAINTS  §6.3 CHECK'leri  (veri girdikten SONRA — böylece backfill'in
+                     Boş dizide unnest 0 satır üretir → membership YOK, anchor VAR.
+
+ADIM 7  CONSTRAINTS  §6.3 CHECK'leri  (veri girdikten SONRA — böylece backfill'in
                      kendisi de constraint tarafından doğrulanır)
-ADIM 7  INDEXES      §6.3 partial unique + §6.4 index'ler
-ADIM 8  VERIFICATION §8.6 sorguları; mismatch → RAISE EXCEPTION → rollback
+ADIM 8  INDEXES      §6.3 partial unique + §6.4 index'ler + anchor unique
+                     (tenantId, poolKind)
+ADIM 9  VERIFICATION §8.6 sorguları; mismatch → RAISE EXCEPTION → rollback
 ```
 
+**ADIM 5'in ADIM 6'dan önce olması bağlayıcıdır:** anchor'ın varlığı üyeliğe
+bağlı olmadığı için sıra tersine çevrilirse boş havuzlu tenant'lar sessizce
+anchor'sız kalabilir — `CF-B02-01`'in kapattığı boşluk yeniden açılır.
+
 **Neden `now()` her satırda çağrılmaz:** aynı transaction içinde `now()` sabit
-kalsa da, tek bir değişkene alınması niyeti açık kılar ve `cutoverAt`'ın
-§7.6'daki eşik türetimi için **tekil** olmasını garanti eder.
+kalsa da, tek bir değişkene alınması niyeti açık kılar ve **anchor'ların
+`knownFrom` değeri ile membership'lerin `validFrom` değerinin aynı kaynaktan**
+yazılmasını garanti eder (§6.6 sınır ilişkisi, V10). Bu bir **eşitlik
+çıktısıdır**; resolver hâlâ yalnız `anchor.knownFrom`'u okur, membership'lerden
+**hiçbir eşik türetmez** (§7.6 madde 7).
 
 ### 8.5 Idempotency
 
@@ -755,7 +917,26 @@ V6  TENANT BÜTÜNLÜĞÜ
 V7  PROVENANCE
     backfill satırlarının tamamı LEGACY_CUTOVER_IMPORT ve tek bir validFrom
     değerine sahip → distinct(validFrom) == 1 per tenant
+
+V8  ANCHOR EKSİKSİZLİĞİ                                    ← CF-B02-01
+    count("OfficeWorkPoolEpoch") == count("Office") × 3
+    ve her (tenantId, poolKind) için TAM OLARAK 1 anchor
+    → anchor'ı olmayan tenant/havuz: 0
+
+V9  BOŞ HAVUZ PARİTESİ                                     ← CF-B02-01
+    Legacy dizisi BOŞ olan her (tenant, havuz) için:
+      membership satırı == 0   (doğru)
+      anchor satırı     == 1   (ZORUNLU)
+
+V10 ANCHOR ↔ MEMBERSHIP SINIRI                             ← CF-B02-01
+    her LEGACY_CUTOVER_IMPORT membership için:
+      anchor.knownFrom <= membership.validFrom  → 0 ihlal
 ```
+
+> **V9 neden ayrı bir kalem:** parite sorguları doğaları gereği "iki taraf da
+> boş" durumunda **sessizce geçer**. Boş havuzlu bir tenant'ta anchor hiç
+> yazılmasaydı V1–V7'nin **hiçbiri** bunu yakalamazdı — `CF-B02-01`'in tarif
+> ettiği hata tam olarak bu kör noktada yaşıyordu. V8+V9 kör noktayı kapatır.
 
 Herhangi biri başarısızsa **RAISE EXCEPTION → tam rollback**.
 
@@ -867,6 +1048,22 @@ yazmalardır** (elle SQL, seed script, başka bir servis). §2.3 taraması bugü
 gösterir (`prisma.office.update` çağrıları içinde bu alanları set eden başka
 yüzey yoktur) — bu, dual-write'ın kapsanabilir olduğunun ölçülmüş dayanağıdır.
 
+### 9.5 Anchor'ın aşamalar boyunca durumu (`CF-B02-01`)
+
+| Aşama | Anchor durumu |
+|---|---|
+| 1 (schema) | Anchor tablosu **membership ile birlikte** yaratılır; ikisi ayrı PR'a bölünmez |
+| 2 (backfill) | ADIM 5 tüm mevcut Office'lere 3'er anchor yazar; V8/V9 doğrular |
+| 3 (read-path) | Resolver anchor'ı **okur**; parity harness `UNKNOWN` durumunu legacy ile karşılaştırmaz (legacy'de karşılığı yoktur — bu beklenen asimetridir ve parite sorgusundan **dışlanır**) |
+| 4 (dual-write) | `getOrCreate` §6.7'ye göre yeni tenant'a anchor yazar; bu **Aşama 4'te devreye girer**, çünkü ilk yazma yolu orasıdır |
+| 5 (observation) | V8/V9 periyodik koşar: anchor'sız Office **sıfır** olmalı |
+| 6 (cutover) | Okuyucular `UNKNOWN`/`EMPTY` ayrımını tüketmeye başlar |
+| 7 (retirement) | Anchor **kalır** — legacy kolonlar düşer, bilgi sınırı kalıcıdır |
+
+**Anchor asla retire edilmez.** Legacy diziler geçici, bilgi sınırı kalıcıdır:
+"2026 öncesi hakkında bilgim yok" ifadesi legacy kolonlar silindikten sonra da
+doğrudur ve sorgulanabilir kalmalıdır.
+
 ---
 
 ## 10. Sözleşmenin B09 ile ilişkisi
@@ -970,25 +1167,112 @@ açmaz**.
 > birebir tekrarı. **B02 tasarımı bu nedenle okuma yolunu değiştirmez** ve
 > allowlist güncellemesini §8.8'in ön koşulu olarak kaydeder.
 
-### 11.5 Race condition ve concurrency
+### 11.5 Race condition ve concurrency (`CF-B02-02` ile düzeltildi)
 
-**Mevcut risk (bugün de var):** iki admin aynı anda kaydederse son yazan kazanır;
-`Office.updatedAt` dışında bir sürüm kontrolü yoktur.
+> **GEÇERSİZ (R01).** *"DB garantisi (birincil): partial unique index yarışı veri
+> düzeyinde kapatır… `version` kolonu bu senaryo için gereksizdir."*
+> **Bu sonuç geçersizdir.**
+>
+> **Kök neden (owner tespiti, ratifiye):** partial unique index yalnız **aynı
+> üyeye** ait ikinci açık satırı engeller. **Farklı üyelerde** eşzamanlı
+> replace-all isteklerini serialize **etmez**:
+>
+> ```text
+> Başlangıç: {A}
+>
+> İstek 1 hedefi: {A, B}          İstek 2 hedefi: {A, C}
+> İkisi de başlangıcı {A} okur.
+> İstek 1 → B ekler               İstek 2 → C ekler
+> Hiçbir index ihlali YOK (farklı üyeler, farklı satırlar).
+>
+> Sonuç: {A, B, C}  →  ne İstek 1'in hedefi, ne İstek 2'nin hedefi.
+> ```
+>
+> Bu bir **lost update / non-serializable read-modify-write** anomalisidir ve
+> unique index'in ilgi alanının **tamamen dışındadır**.
 
-**Effective-dated modelde risk DEĞİŞİR:** fark hesabı "oku → hesapla → yaz"
-olduğu için, iki eşzamanlı istek aynı üyeyi iki kez açabilir.
+#### 11.5.1 Riskin kaynağı: anomali BU TASARIMLA doğuyor
 
-**Bu tasarımın cevabı — üç katmanlı:**
+Bugün böyle bir anomali **yoktur** ve bu ayrım dürüstçe kaydedilmelidir:
 
-1. **DB garantisi (birincil):** §6.3 partial unique index, aynı üye için ikinci
-   açık satırı `23505` ile reddeder. Yarış **veri düzeyinde kapanır**; uygulama
-   bunu tipli bir çakışma hatasına çevirir.
-2. **Transaction:** fark hesabı + tüm mutasyonlar **tek** `prisma.$transaction`
-   içinde; okuma da aynı transaction içinde yapılır.
-3. **Optimistic concurrency (opsiyonel, önerilmez):** `Office`'e `version`
-   kolonu eklemek bu senaryo için **gereksizdir**, çünkü (1) zaten kapatıyor.
-   Ayrıca repo emsali (`20260802190000` migration şerhi) `version`/CAS eklemenin
-   ayrı bir owner kapısı olduğunu kaydeder. **B02 version kolonu önermez.**
+| | Bugün (legacy) | Effective-dated model |
+|---|---|---|
+| Yazma şekli | Tek `UPDATE`; tüm dizi **körlemesine** ikame edilir | **Oku → farkı hesapla → N satır yaz** |
+| Eşzamanlılık sonucu | Son yazan kazanır; sonuç **her zaman** bir isteğin hedefidir (`{A,B}` **veya** `{A,C}`) | Serialize edilmezse sonuç **hiçbir isteğin hedefi olmayabilir** (`{A,B,C}`) |
+| Anomali sınıfı | Yok (blind write) | Lost update |
+
+Yani read-modify-write'a geçiş **yeni** bir concurrency yükümlülüğü doğurur.
+Bu yükümlülüğü karşılamayan bir implementasyon, mevcut davranıştan **daha
+kötüdür** — owner'ın 5. koşulu ("admin yazma yolu kontrolsüz kırılamaz") bu
+nedenle burada da bağlayıcıdır.
+
+#### 11.5.2 Yürürlükteki sözleşme — tenant başına serialization noktası
+
+```text
+prisma.$transaction(async (tx) => {
+  // 1) SERIALIZATION NOKTASI — fark hesabından ÖNCE, transaction'ın İLK ifadesi
+  await tx.$queryRaw`SELECT "id" FROM "Office" WHERE "tenantId" = ${tenantId} FOR UPDATE`;
+
+  // 2) mevcut aktif üyeler AYNI transaction içinde okunur (§11.2)
+  // 3) fark hesabı  → ekle / kapat / revoke
+  // 4) legacy projeksiyon yazımı (Aşama 4/6 yönüne göre)
+});
+```
+
+**Neden `Office` satırı kilitleniyor:** `Office.tenantId @unique`
+(`schema.prisma:2345`) olduğu için tenant başına **tam olarak bir** satır
+vardır — doğal ve tekil bir serialization anchor'ıdır. Ayrı bir "lock tablosu"
+veya advisory lock icat edilmesine gerek yoktur.
+
+**Sonuç:** İstek 2, İstek 1 commit edene kadar bekler; sonra `{A,B}` durumunu
+okur ve `{A,C}` hedefine göre farkı hesaplar → `B` kapanır, `C` açılır.
+Nihai sonuç `{A,C}` — **son yazanın hedefi**, yani bugünkü replace-all
+semantiğinin birebir korunması.
+
+#### 11.5.3 Repo-native emsal (VERIFIED)
+
+| Desen | Repo kanıtı |
+|---|---|
+| `SELECT … FOR UPDATE` (bloklayan) | `bundle-seal/__tests__/bundle-seal.integration.spec.ts:222` |
+| `FOR UPDATE NOWAIT` → deterministik 409/423 | `bundle-seal.repository.ts:48` (`lockBundleNowait`), hata kodu eşlemesi `bundle-seal.errors.ts:122` (`55P03`) |
+| `FOR UPDATE SKIP LOCKED` (worker throughput) | `bundle-seal.repository.ts:81` |
+| `Serializable` + `P2034` retry | `password-reset.service.ts:126` (izolasyon) + `:128-135` (retry döngüsü) + `:138-142` (yalnız P2034/ilgili P2002 retry'lenir şerhi) |
+
+Yani **her iki çözüm ailesi de** repo-native'dir; icat edilen bir mekanizma
+yoktur.
+
+#### 11.5.4 Seçim ve reddedilenler
+
+| Seçenek | Değerlendirme |
+|---|---|
+| **`SELECT … FOR UPDATE` (bloklayan) — SEÇİLDİ** | Admin UX **birebir korunur**: kullanıcı hiçbir hata görmez, ikinci kaydetme sıraya girer. Yazma frekansı büro ayar ekranında son derece düşüktür; bekleme pratikte ölçülemez. Yeni kolon, yeni migration, yeni hata kodu **gerektirmez** |
+| `FOR UPDATE NOWAIT` → 409/423 | Deterministik ama **kullanıcıya yeni bir hata durumu** getirir → admin panelinde yeni UI davranışı ister (B08 kapsamı). Ayar ekranı için gereksiz sertlik |
+| `Serializable` + P2034 retry | Doğru ama daha pahalı ve daha geniş etkili; retry döngüsü + hata sınıflandırma yükü getirir. `password-reset` gibi **enumeration-hassas** bir akışta gerekçeliydi; burada tek satırlık kilit yeterlidir |
+| **`version`/CAS kolonu — REDDEDİLDİ** | `Office`'e sürüm kolonu eklemek **ayrı bir owner kapısıdır** (repo şerhi: `20260802190000` migration'ının `FIND-C4 (version/CAS)` notu). Ayrıca kullanıcıya 409 gösterir ve `OD-B02-04`'ün immediate-effect kararıyla gereksiz bir UX bedeli yaratır |
+| Yalnız partial unique index | **YETERSİZ** — bu bölümün düzelttiği hata |
+
+#### 11.5.5 Partial unique index'in yeni rolü
+
+Index **kaldırılmaz**; rolü **birincil kontrolden defense-in-depth backstop'a**
+indirilir:
+
+- Serialization noktasını atlayan **herhangi bir** yazma yolu (elle SQL, gelecek
+  bir servis, hatalı refactor) aynı üye için ikinci açık satır yazamaz → `23505`.
+- Yani index bir **invariant sigortasıdır**, bir concurrency kontrolü değil.
+
+#### 11.5.6 Implementation gate'i (zorunlu test)
+
+`CF-B02-02` yalnız metinle kapanmaz. İmplementasyonda **gerçek PostgreSQL**
+üzerinde bir db-gated eşzamanlılık testi zorunludur (repo emsali:
+`password-reset.db-gated.integration.spec.ts`):
+
+```text
+Başlangıç {A}; iki eşzamanlı PUT: hedef {A,B} ve hedef {A,C}
+BEKLENEN : nihai aktif küme {A,B} VEYA {A,C}  —  {A,B,C} ASLA
+```
+
+Mock'lu bir unit test bu garantiyi **kanıtlayamaz**; kilit davranışı gerçek
+transaction gerektirir.
 
 ### 11.6 Authorization ve tenant isolation
 
@@ -1051,25 +1335,47 @@ alınır.
 
 | # | Risk | Etki | Implementation aşamasında zorunlu gate |
 |---|---|---|---|
-| R-01 | **Geçmiş tarih uydurulması** | Hukuki/denetsel yanlış beyan | Test: `asOf < cutoverAt` → `status = UNKNOWN` (asla `EMPTY`). Migration testi: tüm backfill satırları `LEGACY_CUTOVER_IMPORT` ve tek `validFrom` (V7) |
+| R-01 | **Geçmiş tarih uydurulması** | Hukuki/denetsel yanlış beyan | Test: `asOf < anchor.knownFrom` → `status = UNKNOWN` (asla `EMPTY`) — **boş havuzlu tenant dahil** (`CF-B02-01`). Migration testi: tüm backfill satırları `LEGACY_CUTOVER_IMPORT` ve tek `validFrom` (V7, V10) |
 | R-02 | **Tenant data leakage** | Kritik | Test: başka tenant'ın üyesi hiçbir `asOf`'ta görünmez. Migration V6. FK `Lawyer(id, tenantId)` |
 | R-03 | **Interval overlap** (kapalı aralıklar — index kapatmaz) | Belirsiz havuz | Fark hesaplayıcı birim testleri + V5 sorgusu bir izleme kontrolü olarak periyodik koşar. `btree_gist`/EXCLUDE **ayrı** sertleştirme kalemi (repo-novel) |
 | R-04 | **Dual-write drift** | İki gerçek | Aşama 5 gözlem penceresi; V2 pariteliği; çıkış koşulu `DRIFT = 0` |
 | R-05 | **Partial migration** | Yarım şema | Tek transaction + preflight RAISE (§8.4). "Kısmi durum YOK" ilkesi |
 | R-06 | **Invalid / orphan / cross-tenant member ID** | Migration fail veya sessiz kayıp | ADIM 1 preflight; **sessiz düşürme YASAK**; anomali → owner'lı pre-clean kapısı |
-| R-07 | **Concurrent admin update** | Çift üyelik | Partial unique index (`23505`) + tek transaction; tipli çakışma hatası (§11.5) |
+| R-07 | **Concurrent admin update — lost update** (`CF-B02-02`) | **Hiçbir isteğin hedefi olmayan havuz** (`{A,B,C}`) | Tenant başına `SELECT … FOR UPDATE` serialization noktası (§11.5.2); partial unique index yalnız backstop (§11.5.5); **zorunlu db-gated eşzamanlılık testi** (§11.5.6). R01'in "index yeterli" sonucu GEÇERSİZ |
 | R-08 | **Timezone boundary** | Yanlış `asOf` | Sözleşme: yalnız UTC instant; yerel tarih→instant dönüşümü B02 kapsamı dışı (§7.3). Test: sınır anında (`validFrom` tam eşitliği) dahil, `validUntil` tam eşitliğinde hariç |
 | R-09 | **Revocation/expiry karışıklığı** | Denetim kaybı | Ayrı kolonlar + §11.3 kuralı + test: revoke edilen üye `asOf < revokedAt`'ta **hâlâ** havuzda |
 | R-10 | **Legacy reader'ın kaldırılmadan bozulması** | 4 bounded context'te bildirim kaybı | Aşama 6 flag'i; §2.3'teki **altı** yüzeyin her biri için ayrı taşıma kanıtı; `OD-B02-03` |
 | R-11 | **Rollback sonrası iki modelin ayrışması** | Sessiz tutarsızlık | Aşama 1-5'te legacy authoritative olduğu için rollback ucuz. Aşama 6 sonrası rollback → önce projeksiyondan legacy'yi yeniden üret, sonra flag'i çevir (sıra bağlayıcıdır) |
 | R-12 | **Allowlist projeksiyonu + tam-form POST veri silmesi** | **Veri kaybı** | §11.4 tuzağı: okuma yolu değiştirilmeden allowlist güncellenmez; değiştirilecekse allowlist **aynı PR'da** güncellenir + regresyon testi |
 | R-13 | **Nullable üye çifti (Alternatif 2'nin kabul edilen bedeli)** | Geçersiz satır | 5 CHECK constraint (§6.3) + uygulama tarafında discriminated union |
+| R-14 | **Anchor'sız tenant/havuz** (`CF-B02-01`) | `UNKNOWN` ile gerçek `EMPTY` ayrımı kaybolur — boş havuzda sessizce | Migration ADIM 5 (backfill'den ÖNCE) + V8/V9 doğrulaması + `getOrCreate` atomik anchor yazımı (§6.7) + resolver fail-closed `UNKNOWN` (§7.6). Parite sorguları boş havuzu **trivially** geçtiği için V9 ayrı kalem olarak zorunludur |
+| R-15 | **Sentinel membership cazibesi** | Hayalet üye → sahte alıcıya bildirim | Anchor **ayrı tabloda**; sentinel satır tasarımda **yasaklıdır** (§6.6). Test: üyelik tablosunda "gerçek üye değil" anlamına gelen hiçbir satır tipi bulunmaz |
 
 ---
 
-## 15. Owner'a açık kararlar
+## 15. Owner kararları — **4/4 RATIFIED** (2026-08-17)
 
-### `OD-B02-01` — Historical-start / backfill policy **(ZORUNLU)**
+> R01'de bu bölüm **açık sorulardan** oluşuyordu. Owner PR #2444'ü inceledi ve
+> dördünü de karara bağladı. Aşağıda her kalem için **owner kararı** ve
+> **tasarımdaki bağlayıcı karşılığı** birlikte verilmiştir. Seçenek
+> karşılaştırmaları, kararın hangi zemine oturduğu izlenebilsin diye
+> korunmuştur.
+
+### 15.1 `OD-B02-01` — Historical-start / backfill policy → **APPROVED: A**
+
+```text
+OWNER KARARI (2026-08-17):
+  Mevcut üyeler yalnız deterministik cutover anından itibaren effective kabul
+  edilir. Cutover öncesi geçmiş hakkında üyelik iddiası kurulmaz. Geçmiş tarih
+  icat edilmez. Backfill provenance değeri LEGACY_CUTOVER_IMPORT olur. Owner
+  tarafından ayrıca kanıtlanmış tarih sağlanmadıkça historical backfill YAPILMAZ.
+```
+
+**Tasarımdaki bağlayıcı karşılığı:** §8.4 ADIM 4-6 (tek snapshot + tek provenance
+değeri) · §7.6 (`asOf < knownFrom` → `UNKNOWN`) · §6.6 (bilgi sınırı anchor'da) ·
+V7/V10 doğrulamaları. `OWNER_EVIDENCED_HISTORICAL` provenance değeri şemada
+**tanımlı kalır** ama migration onu **kullanmaz**; ileride kanıt gelirse schema
+değişikliği gerekmez.
 
 | Seçenek | Ne demek | Etkisi |
 |---|---|---|
@@ -1077,10 +1383,26 @@ alınır.
 | **B** | Kanıtlanabilen üyeler owner tarihiyle, kalanlar cutover'dan | Kanıt kalitesine bağlı; migration'a deterministik olmayan girdi girer; **ön koşulu bu oturumda mevcut değil** (repository'de owner tarih kaydı yok) |
 | **C** | Unknown-origin legacy provenance modeli | Resolver davranışı A ile aynı; ek maliyeti nullable `validFrom` (resolver + index karmaşıklığı). C'nin tek gerçek katkısı olan `provenance` etiketi **zaten A'nın içindedir** |
 
-**Teknik öneri:** **A**. Gerekçe: tek kanıt-uyumlu seçenek olması, en düşük
-karmaşıklık, ve B'ye ileri uyum.
+**Teknik öneri (R01):** **A** — owner tarafından **onaylandı**. Gerekçe: tek
+kanıt-uyumlu seçenek olması, en düşük karmaşıklık, ve B'ye ileri uyum.
 
-### `OD-B02-02` — Havuz kapsamı
+### 15.2 `OD-B02-02` — Havuz kapsamı → **APPROVED: (a)**
+
+```text
+OWNER KARARI (2026-08-17):
+  B02 migration kapsamı YALNIZ üç alandır: opStaffTypes,
+  escalationManagerLawyerIds, escalationFounderLawyerIds.
+  escalationTeamLeadLawyerIds ve poaExpiryRecipientLawyerIds bu implementation
+  kapsamına ALINMAZ. Normalize model bunları gelecekte schema değişikliği
+  gerektirmeden destekleyebilir; fakat migration ve runtime taşıması AYRI
+  authority gerektirir.
+```
+
+**Tasarımdaki bağlayıcı karşılığı:** §6.1 `PoolKind` kümesi **üç değerle**
+başlar; §8.4 ADIM 5-6 yalnız bu üç havuzu tarar; V8'in beklenen sayısı
+`count("Office") × 3`'tür. Dördüncü/beşinci havuz için enum'a değer eklemek
+**tek başına yeterli değildir** — migration + runtime taşıması ayrı authority
+ister ve bu doküman onu vermez.
 
 Model, yapısal olarak **aynı** olan beş alanı taşıyabilir. B02'nin
 adlandırılmış kapsamı üçtür.
@@ -1091,10 +1413,37 @@ adlandırılmış kapsamı üçtür.
 - **(b)** Beşi birlikte taşınır → tek model, tek desen; ancak kapsam WR01
   dışına (`AUTOMATION`, dosya görevi eskalasyonu) taşar.
 
-**Teknik öneri:** **(a)** — kapsam disiplini. Model (b)'yi schema değişikliği
-olmadan destekler; ikinci taşıma ayrı ve ucuz bir iş olur.
+**Teknik öneri (R01):** **(a)** — owner tarafından **onaylandı**. Kapsam
+disiplini; model (b)'yi schema değişikliği olmadan destekler.
 
-### `OD-B02-03` — WR01 dışı tüketicilerin okuma cutover'ı
+### 15.3 `OD-B02-03` — Okuma cutover'ı → **APPROVED: (a)**
+
+```text
+OWNER KARARI (2026-08-17):
+  Ölçülen ALTI okuma yüzeyinin TAMAMI nihai cutover'da resolver'a geçecektir.
+  Taşıma implementation sırasında küçük ve doğrulanabilir aşamalara bölünebilir.
+  Nihai source-of-truth cutover, altı yüzeyin TAMAMINDA parity sağlanmadan
+  YAPILAMAZ. Kısa ömürlü read-source flag kullanılabilir. Süresiz legacy
+  okuyucu veya süresiz dual source-of-truth KABUL EDİLMEZ.
+```
+
+**Tasarımdaki bağlayıcı karşılığı:** §2.3'teki altı yüzey (dördü WR01 dışı) §9.2
+Aşama 3-6'da taşınır. Owner'ın "küçük ve doğrulanabilir aşamalara bölünebilir"
+izni **cutover'ı bölmez**: taşıma kademeli olabilir, **source-of-truth dönüşü
+tektir ve altı yüzeyin tamamında parity ön koşuludur**. Aşama 6 flag'i §9.3'te
+zaten kısa ömürlü olarak gerekçelendirilmiştir ve Aşama 7'de **kaldırılır**.
+
+**Cutover ön koşulu (bağlayıcı kontrol listesi):**
+
+```text
+□ operational-escalation.service.ts:218-256      parity PASS
+□ case-task-escalation.service.ts:259-270        parity PASS
+□ poa-expiry-delivery.service.ts:331-333         parity PASS
+□ client-notification.service.ts:473-474         parity PASS
+□ office.service.ts:499-516  (admin GET)         parity PASS
+□ scripts/g6-backfill-dry-run.ts:58-66           parity PASS
+Altısı da PASS değilse cutover YAPILMAZ.
+```
 
 §2.3'te ölçülen **altı** okuma yüzeyinin **dördü WR01 dışıdır**
 (`ESCALATION` ×2, `AUTOMATION`, `CLIENT-NOTIFICATION`).
@@ -1105,10 +1454,25 @@ olmadan destekler; ikinci taşıma ayrı ve ucuz bir iş olur.
   projeksiyondan okumaya devam eder → legacy kolonlar **süresiz** yaşar ve §9.2
   Aşama 7 **hiç gelmez**.
 
-**Teknik öneri:** **(a)**, Aşama 6 flag'iyle. (b) "süresiz iki source-of-truth"
-sonucunu doğurur ve owner'ın 4. koşuluyla çelişir.
+**Teknik öneri (R01):** **(a)**, Aşama 6 flag'iyle — owner tarafından
+**onaylandı**. (b) "süresiz iki source-of-truth" sonucunu doğururdu.
 
-### `OD-B02-04` — Future-dated yazma yüzeyi WR01 kapsamında mı?
+### 15.4 `OD-B02-04` — Yazma yüzeyi → **APPROVED: (a)**
+
+```text
+OWNER KARARI (2026-08-17):
+  WR01 kapsamındaki mevcut admin yazma yüzeyi IMMEDIATE-EFFECT kalacaktır.
+  Ekleme: validFrom = now.  Çıkarma: revokedAt = now.
+  Future-dated model schema seviyesinde desteklenebilir.
+  Future-dated admin endpoint/DTO/UI bu işin kapsamında DEĞİLDİR ve ayrı
+  authority gerektirir. B08 bu kararla otomatik BAŞLAMAZ.
+```
+
+**Tasarımdaki bağlayıcı karşılığı:** §11.2 fark hesabı · §11.3 (çıkarma =
+`revokedAt`, expire **değil**) · §11.4 (`validFrom = now`) · §6.5 (future-dated
+satır **model düzeyinde** geçerli kalır ama yazma yüzeyinden erişilemez).
+§11.1'deki class-DTO zorunluluğu şerhi bu kararla **tetiklenmez**: yeni alan
+eklenmediği için mevcut gövde tipi olduğu gibi kalır.
 
 Model future-dated kaydı **destekler** (§6.5). Soru, WR01'de **admin'in bunu
 kullanabilecek olup olmadığıdır**.
@@ -1119,29 +1483,39 @@ kullanabilecek olup olmadığıdır**.
 - **(b)** Evet — yeni endpoint + yeni DTO (+ class DTO zorunluluğu, §11.1
   şerhi) + B08 ekran işi.
 
-**Teknik öneri:** **(a)** WR01 için; (b) ayrı bir blok/karar olarak
-kaydedilir. Gerekçe: (b), B02'yi B08 UI işine bağımlı kılar ve blok sınırını
-bulanıklaştırır.
+**Teknik öneri (R01):** **(a)** WR01 için — owner tarafından **onaylandı**.
 
-> Repository incelemesinde owner kararı gerektiren **başka** bir nokta
-> saptanmamıştır. Teknik olarak belirlenebilir olan konular (revocation kolonu,
-> aralık semantiği, index stratejisi, transaction sınırı, resolver imzası,
-> silinmiş/pasif kullanıcı davranışı, concurrency yanıtı) **bu dokümanda
-> karara bağlanmış**, owner'a sorulmamıştır.
+### 15.5 Açık kalan owner kararı
+
+```text
+YOK. Dört kalemin dördü de ratifiye edilmiştir (2026-08-17).
+```
+
+`CF-B02-01` ve `CF-B02-02` düzeltmeleri **yeni owner kararı doğurmamıştır**:
+her ikisi de repository kanıtı ve repo-native emsallerle çözülmüştür (anchor
+tablosu için `ReportingLine`/`Client` desenleri; serialization için
+`bundle-seal` ve `password-reset` emsalleri). Özellikle `version`/CAS
+kolonundan **bilinçli olarak kaçınılmıştır** (§11.5.4), çünkü o yol ayrı bir
+owner kapısı açardı.
 
 ---
 
 ## 16. Terminal disposition
 
 ```text
-STATÜ                     DESIGN_COMPLETE / OWNER_DECISION_REQUIRED
-ÖNERİLEN MODEL            Alternatif 2 — tek normalize effective-dated üyelik tablosu
-KALICI SOURCE-OF-TRUTH    Yeni effective-dated tablo (cutover sonrası okuma+yazma)
+STATÜ                     DESIGN_COMPLETE / OWNER_RATIFIED / READY_FOR_IMPLEMENTATION_GO
+ÖNERİLEN MODEL            Alternatif 2 — normalize effective-dated üyelik tablosu
+                          + üyelikten bağımsız knowledge-boundary anchor (CF-B02-01)
+KALICI SOURCE-OF-TRUTH    Yeni effective-dated tablolar (cutover sonrası okuma+yazma)
 LEGACY ALANLARIN ROLÜ     Transition-only projection; Aşama 7'de retire
+                          (anchor RETIRE EDİLMEZ — bilgi sınırı kalıcıdır)
 GEÇİŞ MODELİ              7 aşama; dual-write tek ACID transaction'da ve SÜRELİ
 BACKFILL SEÇENEKLERİ      A / B / C
-ÖNERİLEN BACKFILL         A (provenance etiketiyle)
-AÇIK OWNER KARARLARI      OD-B02-01 · OD-B02-02 · OD-B02-03 · OD-B02-04
+RATIFIYE BACKFILL         A (LEGACY_CUTOVER_IMPORT provenance) — OD-B02-01 APPROVED
+CONCURRENCY               Tenant başına SELECT … FOR UPDATE serialization noktası;
+                          partial unique index yalnız backstop (CF-B02-02)
+AÇIK OWNER KARARLARI      YOK — 4/4 RATIFIED (2026-08-17)
+DÜZELTMELER               CF-B02-01 (anchor) · CF-B02-02 (concurrency) UYGULANDI
 ADMIN YAZMA UYUMU         KORUNUR — PUT /office/escalation-settings sözleşmesi değişmez
 B09 İLİŞKİSİ              YALNIZ EMSAL/PATTERN — dependency KAPANMADI, status mutation YOK
 ÜRETİLEN SCHEMA           YOK — Prisma modeli/migration/SQL dosyası YAZILMADI
@@ -1149,28 +1523,38 @@ B09 İLİŞKİSİ              YALNIZ EMSAL/PATTERN — dependency KAPANMADI, st
 DB / PRODUCTION MUTATION  YOK
 ```
 
-### 16.1 Neden `DETERMINISTIC_READY_FOR_IMPLEMENTATION` değil
+### 16.1 Readiness'in sınırı — eksik olan tek şey authority'dir
 
-`OD-B02-01` (historical-start/backfill politikası) bu sayfada **owner'a açık
-bırakılmıştır** ve repository'de bu kararı veren ratifiye edilmiş bir kayıt
-**yoktur** (`decision-log.md` WR01 kaydı `EXECUTION AUTHORITY: NONE` der;
-D-WR-1..6 havuz tarihçesi hakkında hüküm içermez). `OD-B02-02/03/04` ise kapsam
-ve cross-program etki kararlarıdır.
+R01'de terminal sonuç `OWNER_DECISION_REQUIRED` idi, çünkü dört karar açıktı.
+**Bu engel kalkmıştır:** dördü de 2026-08-17'de ratifiye edildi ve iki zorunlu
+düzeltme uygulandı. Tasarım artık migration'ın gövdesini, enum içeriğini, PR
+sınırını ve DTO yüzeyini **belirsizlik bırakmadan** tarif eder.
 
-Karar alınmadan implementasyona geçilemez, çünkü:
+Buna rağmen bu doküman implementation'ı **başlatmaz**:
 
-- `OD-B02-01` **migration'ın gövdesini** belirler (backfill'in `validFrom`
-  değeri ve `provenance` dağılımı);
-- `OD-B02-02` **enum içeriğini** ve migration'ın taradığı kolon kümesini belirler;
-- `OD-B02-03` **hangi modüllerin** değiştiğini ve dolayısıyla PR sınırını belirler;
-- `OD-B02-04` **DTO ve endpoint yüzeyini** belirler.
+```text
+DESIGN READINESS     : sağlandı  (owner kararları ratifiye + düzeltmeler uygulandı)
+IMPLEMENTATION GO    : YOK       (ayrı ve açık owner yetkisi gerekir)
+```
+
+Bu ayrım bilinçlidir: "tasarım deterministik" ile "yazmaya yetkiliyim" aynı şey
+değildir. C10 sayfası implementation yetkisi vermediğini açıkça yazar.
+
+**Implementation açıldığında ilk üç zorunlu kalem (kapanış kriterleri):**
+
+1. Anchor tablosu **membership ile aynı** schema PR'ında (§9.5 Aşama 1) —
+   ayrılırsa `CF-B02-01` boşluğu geçici olarak yeniden açılır.
+2. Migration ADIM 5 (anchor seed) **ADIM 6'dan önce**; V8/V9 doğrulaması
+   olmadan migration merge edilmez.
+3. `CF-B02-02` için **gerçek PostgreSQL** üzerinde db-gated eşzamanlılık testi
+   (§11.5.6); mock'lu test bu gate'i karşılamaz.
 
 ### 16.2 Sonraki adım
 
 ```text
-PAGE-O0 → §15'teki dört kararın owner tarafından ratifiye edilmesi.
-Implementation için AYRI ve AÇIK owner GO zorunludur.
-Bu doküman implementation GO'su İÇERMEZ.
+PAGE-O0 → (1) PR #2444 owner review/merge
+          (2) B02 implementation için AYRI ve AÇIK owner GO
+Bu doküman implementation GO'su İÇERMEZ ve kendi kendine yetki üretmez.
 ```
 
 ---
@@ -1200,3 +1584,18 @@ Bu doküman implementation GO'su İÇERMEZ.
 | Docs-only governance yolu | Mekanik emsal: PR #2432 (`25931406`) **tek dosya**, `office-wr01-decomposition-r01/` altında, coordination-v2 request/grant artifact'ı **olmadan** merge edilmiş; #2436 ise register yüzeylerine dokunduğu için `applyMechanicalOperation` + SA kaydı gerektirmiş. Bu doküman **register yüzeyine dokunmaz** → #2432 yolu geçerlidir VERIFIED |
 | Yürürlükteki F04/F07 binding'leri | `governance-writer-coordination-contract.md:2414, 2488` — bu binding'ler **kendi** görevlerinin OFFICE-WR01 işi yapmasını yasaklar; başka bir lane'in WR01 docs işini **bloklamaz** VERIFIED |
 | Dirty base / scope collision | Yok — worktree temiz (`git status --porcelain` → 0 satır) VERIFIED |
+
+### 17.1 R02 düzeltme turu — ek preflight (2026-08-17)
+
+| Kontrol | Sonuç |
+|---|---|
+| Branch/PR sürekliliği | Aynı branch `claude/office-wr01-b02-effective-dated-pools-design-r01`, aynı PR **#2444** (OPEN); yeni PR açılmadı VERIFIED |
+| R01 teslim SHA | `a2afd581b8825c859dbb605f9cd4057e95c2b02c` (R01 içerik commit'i `47b82c97` + CI retrigger boş commit'i) VERIFIED |
+| `origin/main` | `7e497cfa` — R01 turundan beri **değişmedi**; rebase gerekmedi VERIFIED |
+| PR dosya kapsamı (server-side) | `gh pr view 2444 --json files` → yalnız `b02-effective-dated-pools-design-r01.md` VERIFIED |
+| `Office` lazy creation | `office.service.ts:115-127` findUnique + `:136` create → anchor'ın `getOrCreate` içinde atomik yazılması zorunluluğu buradan türedi (§6.7) VERIFIED |
+| Boş dizi default'u | `20260615050000` — `DEFAULT ARRAY[]::TEXT[]`; yani "boş havuzlu tenant" olağan bir durumdur, `CF-B02-01`'in senaryosu teoriden ibaret değildir VERIFIED |
+| `FOR UPDATE` emsali | `bundle-seal.repository.ts:48` (NOWAIT), `:81` (SKIP LOCKED); `bundle-seal.integration.spec.ts:222` (düz `FOR UPDATE`); hata kodu `bundle-seal.errors.ts:122` = `55P03` VERIFIED |
+| `Serializable` + P2034 emsali | `password-reset.service.ts:126` izolasyon, `:128-135` retry döngüsü, `:138-142` retry sınıflandırma şerhi VERIFIED |
+| `version`/CAS'ın owner kapısı olduğu | `20260802190000_client_identity_active_partial_unique/migration.sql` — `FIND-C4 (version/CAS)` notu: *"atomik birlikte deploy KANITLANAMADI … ayrı iş"* VERIFIED |
+| Ürün diff | R02 turunda da YOK — schema/migration/kod/test/config: dokunulmadı VERIFIED |
