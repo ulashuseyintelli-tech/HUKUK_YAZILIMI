@@ -4,8 +4,11 @@
 DOKÜMAN            b02-effective-dated-pools-design-r01.md
 GÖREV              OFFICE-WR01-B02-EFFECTIVE-DATED-POOLS-DESIGN-R01
 DÜZELTME GÖREVİ    OFFICE-WR01-B02-EFFECTIVE-DATED-POOLS-DESIGN-CORRECTION-R02
+TAMAMLAMA GÖREVİ   OFFICE-WR01-B02-EFFECTIVE-DATED-POOLS-DESIGN-COMPLETENESS-R03
 ÇALIŞMA SEVİYESİ   LEVEL 2 FULL (schema + migration sözleşmesi)
-STATÜ              DESIGN_COMPLETE / OWNER_RATIFIED / READY_FOR_IMPLEMENTATION_GO
+STATÜ              DESIGN_COMPLETE / OWNER_RATIFIED /
+                   DETERMINISTIC_READY_FOR_IMPLEMENTATION /
+                   IMPLEMENTATION_NOT_AUTHORIZED
 BASE               origin/main @ 7e497cfa6ffbed1a4377a3d63b84712ad35cc1c2 (2026-08-16)
 ÜRETİLEN AUTHORITY NONE — bu doküman implementation başlatmaz; ayrı ve açık owner
                    implementation GO'su zorunludur
@@ -26,6 +29,19 @@ BASE               origin/main @ 7e497cfa6ffbed1a4377a3d63b84712ad35cc1c2 (2026-
 R01'in geçersiz kılınan iki sonucu bu dokümanda **silinmedi**, açıkça
 `GEÇERSİZ (R01)` etiketiyle korunarak yerine geçen sözleşme yazıldı — böylece
 düzeltmenin ne olduğu ve neyi değiştirdiği izlenebilir kalır.
+
+## R03 — tamamlama kaydı (owner incelemesi sonrası)
+
+Owner disposition: `CF-B02-01` **ACCEPTED** · `CF-B02-02` çekirdek çözümü
+**ACCEPTED** · `OD-B02-01..04` **OWNER_RATIFIED** · implementation
+**NOT_AUTHORIZED**.
+
+| Kalem | İçerik |
+|---|---|
+| `CF-B02-02` tamamlaması | **Ortak mutation primitive'i + lock invariant** (§11.5.7) ve **zorunlu concurrency test matrisi T1–T5** (§11.5.8). Serialization artık admin endpoint'ine özgü değil, **tüm** membership yazma yollarını bağlar |
+| `CF-B02-03` **YENİ** | **Serialize edilmiş `effectiveAt`** (§11.5.9). PostgreSQL `now()`/`CURRENT_TIMESTAMP` transaction başlangıcında donduğu için kilit beklemesi boyunca ilerlemez; zaman damgası kilit **alındıktan sonra** üretilmelidir. Yeni owner kararı **değildir** — teknik doğruluk koşuludur. İşlendiği yerler: §4 (T8), §7.3, §11.2, §11.3, §11.4, §11.5.2, §11.5.9, §14 (R-16), §16.1, §16 |
+| Retry/idempotency | Mutlak *"tek transaction olduğu için gerekmez"* ifadesi **kaldırıldı**; yerine sınıflandırılmış + bounded retry sözleşmesi (§9.4a) |
+| Terminal statü | `READY_FOR_IMPLEMENTATION_GO` → **`DETERMINISTIC_READY_FOR_IMPLEMENTATION / IMPLEMENTATION_NOT_AUTHORIZED`** |
 
 ---
 
@@ -64,9 +80,10 @@ dokümanın asgari predecessor gerçeğidir ve yeniden yorumlanmamıştır:
 | **Kalıcı source-of-truth** | Cutover'dan sonra **yeni effective-dated tablolar** (hem okuma hem yazma). `Office.opStaffTypes` / `escalationManagerLawyerIds` / `escalationFounderLawyerIds` **transition-only türetilmiş projeksiyon** hâline gelir ve ayrı bir retirement gate'inde düşer |
 | **Geçiş yaklaşımı** | 7 aşama; dual-write **tek Prisma transaction'ında** (aynı DB, ACID) ve **süreli**; süresiz iki source-of-truth **yoktur**. Legacy→yeni yönü cutover'da tek noktada döner |
 | **Backfill** | **Seçenek A — owner tarafından ratifiye edildi** (`OD-B02-01`): mevcut üyeler yalnız deterministik cutover timestamp'inden itibaren effective; cutover **öncesi** için sistem "boş havuz" değil **`UNKNOWN`** döner. Bilgi sınırı **anchor'dan** gelir, membership satırından **değil** (`CF-B02-01`) |
-| **Concurrency** | Replace-all yazımı **tenant başına serialize edilir** (`SELECT … FOR UPDATE`, `CF-B02-02`). Partial unique index yalnız defense-in-depth backstop'tur; tek başına yarışı **kapatmaz** |
+| **Concurrency** | Replace-all yazımı **tenant başına serialize edilir** (`SELECT … FOR UPDATE`, `CF-B02-02`). Kilit **tek ortak mutation primitive'inde** alınır ve **her** membership yazma yolunu bağlar (§11.5.7). Partial unique index yalnız defense-in-depth backstop'tur; tek başına yarışı **kapatmaz** |
+| **Zaman üretimi** | `effectiveAt` **kilit alındıktan sonra** `clock_timestamp()` ile **tek kez** üretilir ve mutation'ın tüm tarihsel yazmalarında kullanılır (`CF-B02-03`). Transaction-start `now()` **kaynak olarak kullanılmaz** |
 | **Owner kararları** | **4/4 RATIFIED** (2026-08-17): `OD-B02-01` A · `OD-B02-02` (a) · `OD-B02-03` (a) · `OD-B02-04` (a). Açık owner kararı **kalmamıştır** |
-| **Terminal readiness** | **`DESIGN_COMPLETE / OWNER_RATIFIED / READY_FOR_IMPLEMENTATION_GO`** — tasarım tarafı deterministiktir; eksik olan tek şey **implementation authority**'sidir (§16.1) |
+| **Terminal readiness** | **`DESIGN_COMPLETE / OWNER_RATIFIED / DETERMINISTIC_READY_FOR_IMPLEMENTATION / IMPLEMENTATION_NOT_AUTHORIZED`** — tasarım deterministiktir; eksik olan tek şey **implementation authority**'sidir (§16.1) |
 
 **Owner'ın beş bağlayıcı koşuluna karşılık:**
 
@@ -259,6 +276,12 @@ hatanın ta kendisidir.
 | T5 | **Kayıt oluşturma zamanı** | `createdAt` (`@default(now())`) | Kesin |
 | T6 | **İptal (revocation) anı** | `revokedAt` — irade beyanıyla sonlandırma | Kesin |
 | T7 | **Planlı bitiş (scheduled expiry)** | `validUntil` — baştan planlanmış son | Kesin |
+| T8 | **Serialization anı** — mutation'ın gerçekten sıraya girdiği an (`CF-B02-03`) | `effectiveAt` — `Office` satırı `FOR UPDATE` ile kilitlendikten **sonra** üretilir; mutation içindeki **tüm** tarihsel yazmaların tek kaynağıdır (§11.5.9) | Kesin |
+
+**T8 ≠ transaction-start.** `effectiveAt`, transaction'ın *başladığı* an değil,
+mutation'ın *serialize olduğu* andır. PostgreSQL'de `now()` transaction başlangıcını
+dondurduğu için bu ikisi kilit beklemesi boyunca ayrışır; ayrışma tarihsel sırayı
+gerçek sıradan koparır (§11.5.9 kök neden).
 
 **Bağlayıcı kural:** `T3 ≠ T1`. Migration zamanı hiçbir yerde, hiçbir alan
 adında, hiçbir rapor satırında "politikanın geçmişte gerçekten başladığı tarih"
@@ -633,6 +656,21 @@ havuzda gösterir. Bu, `PermissionGrant`'ın `validUntil`-geri-çekme yöntemini
   **B02'nin kapsamı dışındadır**; bir tüketici gün-granülerliği isterse dönüşümü
   kendi katmanında yapar ve bunu açıkça belgeler.
 
+**Yazma tarafındaki zaman kaynağı (`CF-B02-03`):** resolver'ın okuduğu tarihsel
+eksen, yazma tarafında **serialization anıyla** (`effectiveAt`) üretilir —
+transaction-start `now()` ile değil (§11.5.9). Resolver'ın predikatı bu ayrımdan
+**etkilenmez** (aynı UTC instant ekseni), fakat predikatın verdiği cevabın
+**doğru sıralı** olması yazma tarafının bu sözleşmeye uymasına bağlıdır:
+
+```text
+Sıra invariant'ı (§11.5.9 madde 8):
+  önce serialize edilen mutation'ın effectiveAt'i, sonra serialize edilenin
+  effectiveAt'inden BÜYÜK OLAMAZ.
+
+İhlal edilirse resolver "kim ne zaman havuzdaydı" sorusuna, kendi mantığı doğru
+olmasına rağmen, YANLIŞ cevap verir — çünkü veri yanlış sıralanmıştır.
+```
+
 ### 7.4 Aynı anda birden fazla geçerli satır
 
 - **Aynı (tenant, poolKind, üye)** için bu durum §6.3 partial unique index'i
@@ -1001,7 +1039,8 @@ AŞAMA 4  ADMIN WRITE-PATH COMPATIBILITY (dual-write)
            (a) legacy dizileri günceller  [authoritative]
            (b) fark hesabından effective-dated mutasyonu uygular  [mirror]
          SOT: legacy.  Atomiklik: tek ACID transaction (aynı DB) → partial
-         failure İMKÂNSIZ, retry/idempotency katmanı GEREKMEZ.
+         COMMIT İMKÂNSIZ. Retry/idempotency ise §9.4a'ya tabidir
+         (sınıflandırılmış + bounded); "gerekmez" DENMEZ.
 
 AŞAMA 5  DRIFT / MISMATCH OBSERVATION
          Sürekli parite kontrolü (§8.6 V2, current-state projeksiyonu üzerinde).
@@ -1037,8 +1076,8 @@ AŞAMA 7  LEGACY FIELD RETIREMENT
 |---|---|
 | Hangi taraf authoritative | Aşama 4'te **legacy**; Aşama 6'da **yeni tablo**. Aynı anda ikisi asla değil |
 | Transaction atomikliği | **Tek `prisma.$transaction`** — iki yazma aynı Postgres transaction'ında |
-| Partial failure | **Yapısal olarak imkânsız**; ikisi birlikte commit veya birlikte rollback |
-| Retry / idempotency | **Gerekmez** — dağıtık yazma yok. (Karşı örnek: outbox/webhook desenleri gereklidir; burada değil) |
+| Partial failure | **Partial commit** yapısal olarak imkânsız; ikisi birlikte commit veya birlikte rollback |
+| Retry / idempotency | **Sınıflandırılmış ve bounded** — bkz. §9.4a. "Tek transaction olduğu için gerekmez" **denemez** |
 | Drift tespiti | §8.6 V2 pariteliği + Aşama 5 gözlem penceresi |
 | Sonlandırma koşulu | Aşama 7 tamamlandığında dual-write **kodu silinir** |
 
@@ -1047,6 +1086,42 @@ yazmalardır** (elle SQL, seed script, başka bir servis). §2.3 taraması bugü
 `Office` dizilerine yazan **tek** yolun `updateEscalationSettings` olduğunu
 gösterir (`prisma.office.update` çağrıları içinde bu alanları set eden başka
 yüzey yoktur) — bu, dual-write'ın kapsanabilir olduğunun ölçülmüş dayanağıdır.
+
+### 9.4a Retry ve idempotency sözleşmesi (R03 düzeltmesi)
+
+> **GEÇERSİZ (R01/R02).** *"Retry / idempotency: **Gerekmez** — dağıtık yazma
+> yok."* Bu mutlak ifade kaldırılmıştır.
+
+Atomicity ile dayanıklılık aynı şey değildir:
+
+1. **Atomicity partial commit'i engeller.** Aynı transaction'daki iki yazma
+   birlikte commit olur veya birlikte geri alınır — bu doğrudur ve korunur.
+2. **Atomicity tek başına** deadlock, lock timeout, statement/idle timeout,
+   serialization failure veya **belirsiz bağlantı sonucunu** (istemci commit
+   cevabını alamadan bağlantının kopması) ortadan **kaldırmaz**. Bunların hepsi
+   tek bir transaction'da da gerçekleşebilir.
+3. **Target-state PUT semantik olarak yeniden uygulanabilirdir** — aynı hedef
+   küme ikinci kez uygulandığında fark hesabı boş çıkar ve yeni satır üretilmez
+   (§11.2 "değişmeyene dokunma" kuralı). Bu, yeniden denemeyi **güvenli** kılan
+   yapısal özelliktir; ancak tek başına bir retry politikası **değildir**.
+4. **Retry yalnız sınıflandırılmış ve bounded olabilir:**
+   - retry'lenebilir hata kümesi **gerçek repository hata kodlarına** göre
+     belirlenir (Prisma `P2034`, PostgreSQL `40001`/`40P01`, lock timeout
+     `55P03`; emsal `bundle-seal.errors.ts:122` ve
+     `password-reset.service.ts:138-142`);
+   - **ilgisiz** bir hata (ör. `23514` CHECK ihlali, `23503` FK ihlali, doğrulama
+     hatası) **asla** retry tetiklemez — bunlar veri/politika hatalarıdır ve
+     retry ile düzelmez;
+   - deneme sayısı **sabit bir üst sınırla** bağlanır (emsal:
+     `REQUEST_TRANSACTION_MAX_ATTEMPTS`, `password-reset.service.ts`);
+   - **kör/unbounded retry yasaktır.**
+5. **Belirsiz sonuç için okuma-doğrulama:** bağlantı kopması gibi sonucu
+   bilinmeyen durumlarda implementasyon körlemesine yeniden yazmaz; hedef
+   durumu **okur** ve ancak farklıysa yeniden uygular. Target-state semantiği
+   (madde 3) bunu güvenli kılar.
+6. Bu kararlar **implementation aşamasında gerçek repository hata kodlarına
+   göre** verilir; bu doküman kod yazmadan hata kodu listesi **dondurmaz** —
+   yukarıdakiler emsal olarak verilmiştir, kapalı küme olarak değil.
 
 ### 9.5 Anchor'ın aşamalar boyunca durumu (`CF-B02-01`)
 
@@ -1121,13 +1196,18 @@ aynı opsiyonellikle kalır. Yeni alanlar yalnız **eklenirse** eklenir
 Mevcut payload `[A, B, C]` biçiminde **hedef durumdur**. Fark hesabı:
 
 ```text
-mevcutAktif := resolve(poolKind, asOf = now, tenantId)     -- küme
-hedef       := payload[poolKind]                            -- küme
+-- Office satırı FOR UPDATE ile kilitlenmiş ve effectiveAt üretilmiştir (§11.5.2)
+mevcutAktif := resolve(poolKind, asOf = effectiveAt, tenantId)   -- küme
+hedef       := payload[poolKind]                                  -- küme
 
-eklenecek := hedef \ mevcutAktif   → yeni satır: validFrom = now
-çıkarılacak := mevcutAktif \ hedef → mevcut açık satır KAPATILIR
-değişmeyen := kesişim              → DOKUNULMAZ  (satır KORUNUR)
+eklenecek   := hedef \ mevcutAktif   → yeni satır: validFrom = effectiveAt
+çıkarılacak := mevcutAktif \ hedef   → açık satır: revokedAt  = effectiveAt
+değişmeyen  := kesişim               → DOKUNULMAZ  (satır KORUNUR)
 ```
+
+Okuma da (`asOf = effectiveAt`) yazma da **aynı** `effectiveAt` değerini
+kullanır: mutation'ın okuduğu durum ile yazdığı durum tek bir ana bağlanır,
+"okuma anı ile yazma anı arasında kayan pencere" oluşmaz (`CF-B02-03` madde 5).
 
 **"Değişmeyene dokunma" kuralı zorunludur:** naif bir "hepsini kapat, hepsini
 yeniden aç" yaklaşımı her kaydetmede tüm üyeliklerin geçmişini parçalar ve
@@ -1136,16 +1216,19 @@ modele en tehlikeli çevirisidir ve açıkça yasaklanmıştır.
 
 ### 11.3 Çıkarılan üye: expire mı, revoke mu?
 
-**Kural:** admin panelinden listeden çıkarma = **`revokedAt = now`**, çünkü bu
-bir **irade beyanıdır** (T6), planlanmış bir bitiş değil (T7). `validUntil`
-yalnız `OD-B02-04` ile açılırsa (future-dated/planlı bitiş) kullanılır.
+**Kural:** admin panelinden listeden çıkarma = **`revokedAt = effectiveAt`**,
+çünkü bu bir **irade beyanıdır** (T6), planlanmış bir bitiş değil (T7).
+`validUntil` yalnız `OD-B02-04` ile açılırsa (future-dated/planlı bitiş)
+kullanılır. Zaman kaynağı `now()` değil, kilit sonrası üretilen `effectiveAt`
+değeridir (`CF-B02-03`).
 
 Bu ayrım, `PermissionGrant`'ın kaybettiği bilginin B02'de **korunmasıdır** (§12).
 
 ### 11.4 Yeni üyenin `validFrom` değeri
 
-`validFrom = now` (yazma anı). Future-dated değer mevcut endpoint ile **ifade
-edilemez** — payload düz bir id dizisidir, tarih taşımaz.
+`validFrom = effectiveAt` — yani **serialization anı** (`CF-B02-03`), naif bir
+"yazma anı" değil. Future-dated değer mevcut endpoint ile **ifade edilemez** —
+payload düz bir id dizisidir, tarih taşımaz.
 
 Future-dated değişiklik için **yeni endpoint + yeni DTO gerekir**
 (`POST /office/work-pools/:poolKind/memberships` gibi). Bu, `OD-B02-04`
@@ -1213,11 +1296,20 @@ prisma.$transaction(async (tx) => {
   // 1) SERIALIZATION NOKTASI — fark hesabından ÖNCE, transaction'ın İLK ifadesi
   await tx.$queryRaw`SELECT "id" FROM "Office" WHERE "tenantId" = ${tenantId} FOR UPDATE`;
 
-  // 2) mevcut aktif üyeler AYNI transaction içinde okunur (§11.2)
-  // 3) fark hesabı  → ekle / kapat / revoke
-  // 4) legacy projeksiyon yazımı (Aşama 4/6 yönüne göre)
+  // 2) EFFECTIVE-AT — kilit ALINDIKTAN SONRA, TEK KEZ  (CF-B02-03, §11.5.9)
+  //    now() / CURRENT_TIMESTAMP KULLANILMAZ (transaction-start'ta donar);
+  //    uygulama katmanında önceden hesaplanmış new Date() de KULLANILMAZ.
+  const [{ effective_at: effectiveAt }] =
+    await tx.$queryRaw`SELECT clock_timestamp() AS effective_at`;
+
+  // 3) mevcut aktif üyeler AYNI transaction içinde okunur (§11.2)
+  // 4) fark hesabı  → ekle (validFrom = effectiveAt) / revoke (revokedAt = effectiveAt)
+  // 5) legacy projeksiyon yazımı (Aşama 4/6 yönüne göre)
 });
 ```
+
+Adım 1 ve 2'nin **bu sırada ve bitişik** olması bağlayıcıdır: kilit alınmadan
+üretilen bir zaman damgası serialization anını temsil etmez (§11.5.9 madde 7).
 
 **Neden `Office` satırı kilitleniyor:** `Office.tenantId @unique`
 (`schema.prisma:2345`) olduğu için tenant başına **tam olarak bir** satır
@@ -1272,7 +1364,157 @@ BEKLENEN : nihai aktif küme {A,B} VEYA {A,C}  —  {A,B,C} ASLA
 ```
 
 Mock'lu bir unit test bu garantiyi **kanıtlayamaz**; kilit davranışı gerçek
-transaction gerektirir.
+transaction gerektirir. Tam matris §11.5.8'dedir.
+
+#### 11.5.7 Ortak mutation primitive'i ve lock invariant'ı (bağlayıcı)
+
+Serialization sözleşmesi **mevcut admin endpoint'ine özgü değildir.**
+`OfficeWorkPoolMembership` üzerinde mutation yapan **bütün** uygulama yolları
+aynı sözleşmeyi kullanmak zorundadır.
+
+```text
+LOCK INVARIANT (bağlayıcı):
+  Bir OfficeWorkPoolMembership satırını INSERT/UPDATE eden her yol, aynı
+  transaction içinde ve YAZMADAN ÖNCE ilgili Office satırında FOR UPDATE
+  kilidini almış olmak ZORUNDADIR.
+```
+
+1. **Tek primitive.** Havuz mutasyonu **tek bir repository/service primitive'i**
+   üzerinden yapılır (çalışma adı: `OfficeWorkPoolMutationService.applyTargetState()`).
+   Kilit alma, `effectiveAt` üretimi (§11.5.9), fark hesabı, membership yazımı ve
+   legacy projeksiyon **bu primitive'in içindedir**; çağıranlar bu adımları
+   kendileri kurgulamaz.
+2. **Kilitsiz yazma yasaktır.** Primitive'i atlayarak doğrudan
+   `prisma.officeWorkPoolMembership.create/update/updateMany` çağıran hiçbir yol
+   kabul edilmez.
+3. **Gelecekteki yollar da bağlıdır.** `OD-B02-04` ileride açılır ve future-dated
+   endpoint eklenirse, o endpoint de **aynı primitive'i** kullanmak zorundadır.
+   Aynı kural B03'ün atama motoru, B04'ün yeniden atama akışı, seed/script
+   yolları ve olası bulk import için de geçerlidir.
+4. **Index bir kontrol değildir.** Partial unique index farklı üyelerdeki
+   lost-update'i **engellemez**; yalnız defense-in-depth backstop'tur (§11.5.5).
+   Bu cümle, primitive'in gerekliliğini azaltan bir gerekçe olarak
+   **kullanılamaz**.
+5. **Zorunlu yapısal test.** Implementation'da bir mimari koruma testi bulunur:
+   kaynak ağacında `officeWorkPoolMembership` üzerinde yazma çağrısı yapan
+   dosyaların kümesi **yalnız** primitive dosyasıdır. Yeni bir yazıcı eklenirse
+   test kırılır. (Emsal: repo'daki eksiksizlik-kilidi deseni — B01
+   `Record<ActionCode, …>` ve `STAFF_PRIVILEGED_READ_FIELDS` alan listesi kilidi.)
+
+#### 11.5.8 Zorunlu concurrency test matrisi (gerçek PostgreSQL)
+
+**Genel invariant (bağlayıcı):**
+
+```text
+Başarıyla tamamlanan eşzamanlı replace-all isteklerinden sonra final aktif küme,
+tamamlanan isteklerden BİRİNİN exact hedef kümesi olmalıdır.
+```
+
+"Birleşik", "ara" veya "kısmi" bir sonuç — yani hiçbir isteğin hedefi olmayan
+küme — **her senaryoda ihlaldir**.
+
+| # | Başlangıç | İstek 1 hedefi | İstek 2 hedefi | Kabul edilen final | Yasak sonuç |
+|---|---|---|---|---|---|
+| **T1** | `{A}` | `{A,B}` | `{A,C}` | `{A,B}` **veya** `{A,C}` | `{A,B,C}` |
+| **T2** | `{A}` | `{}` | `{A,B}` | `{}` **veya** `{A,B}` | `{B}`, `{A}` gibi ara/birleşik hedef |
+| **T3** | `{A}` | `{A,B}` | `{A,B}` | `{A,B}` | `B` için **birden fazla açık** membership satırı |
+| **T4** | `{A,B}` | `{A}` | `{A,B,C}` | `{A}` **veya** `{A,B,C}` | "`B` revoke edilmiş **ama** `C` eklenmiş" (`{A,C}`) |
+
+**T5 — kilit bekleme, abort ve retry sınıflandırması:**
+
+- Kilit bekleyen isteğin davranışı ölçülür: bekler, kilidi alır, **taze** durumu
+  okur ve farkı ona göre hesaplar.
+- **Kör/unbounded retry yasaktır.** Retry yalnız **sınıflandırılmış** ve
+  **bounded** olabilir (§9.4a).
+- Retry'lenebilir hata kümesi **repository-native sınıflandırmayla** belirlenir;
+  ilgisiz bir hata retry tetikleyemez. Emsal:
+  `password-reset.service.ts:138-142` — *"YALNIZ (a) P2034 … veya (b) partial-index
+  P2002 retry'e uygundur; `tokenHash` gibi İLGİSİZ bir P2002 asla retry
+  tetiklemez"*.
+- **Mock test lock garantisinin kanıtı sayılamaz.** T1–T5'in tamamı gerçek
+  PostgreSQL üzerinde db-gated integration testi olarak koşar (emsal:
+  `password-reset.db-gated.integration.spec.ts`,
+  `bundle-seal.integration.spec.ts`).
+
+**T3'ün ayrı bir kalem olma sebebi:** iki isteğin **aynı** hedefi vermesi,
+naif bir implementasyonda "her ikisi de `B`'yi ekler" sonucunu doğurur. Burada
+partial unique index gerçekten devreye girer (`23505`) — ama bu, index'in
+concurrency kontrolü olduğu anlamına **gelmez**: T1/T2/T4'te index sessizdir.
+T3, backstop'un çalıştığını **ayrıca** kanıtlar.
+
+#### 11.5.9 `CF-B02-03` — serialize edilmiş `effectiveAt`
+
+> **DÜZELTME (R03).** R02'de seçilen `FOR UPDATE` doğrudur, ancak **zaman
+> üretimi ayrıca bağlanmalıdır**. Aksi hâlde kilit sırası ile tarihsel sıra
+> birbirinden ayrışır.
+
+**Kök neden (bağlayıcı teknik olgu):** PostgreSQL'de `now()` /
+`CURRENT_TIMESTAMP` **transaction başlangıç anını** temsil eder ve transaction
+boyunca **sabittir** — kilit beklerken **ilerlemez**.
+
+```text
+t0  İstek 2 transaction'ı BAŞLAR        → now() = t0 (donar)
+t1  İstek 2, FOR UPDATE kilidinde BEKLER
+t2  İstek 1 COMMIT eder                  → İstek 1'in yazdığı satırlar ~t2
+t3  İstek 2 kilidi ALIR ve mutasyonu uygular
+    now() hâlâ t0  →  effectiveAt = t0 < t2
+
+SONUÇ: sonra serialize edilen mutation, ÖNCE serialize edilenden DAHA ERKEN
+       bir effectiveAt taşır. Tarihsel sıra, gerçek serialization sırasıyla
+       ÇELİŞİR: aynı üyenin revokedAt'i validFrom'undan önce görünebilir,
+       "kim ne zaman havuzdaydı" sorusu yanlış cevaplanır.
+```
+
+**Bağlayıcı sözleşme:**
+
+1. Transaction'ın **ilk işi** `Office` satırını `FOR UPDATE` ile kilitlemektir.
+2. Kilit **başarıyla alındıktan hemen sonra** tek bir `effectiveAt` üretilir.
+3. `effectiveAt` **transaction-start `now()` değerinden türetilmez** — ne
+   doğrudan, ne `now() + interval`, ne de ona dayanan bir hesapla.
+4. Gerçek duvar saati gereken yerde **`clock_timestamp()`** (veya repository
+   tarafından doğrulanmış eşdeğer mekanizma) kullanılır. `clock_timestamp()`
+   `now()`'un aksine **çağrı anını** döner; kilit sonrası ilk ifade olarak
+   çağrıldığında serialization anını temsil eder.
+5. **Aynı mutation içindeki bütün tarihsel yazmalar aynı `effectiveAt`
+   değerini kullanır:**
+   - yeni membership'lerin `validFrom`;
+   - çıkarılan üyelerin `revokedAt`;
+   - varsa audit/change metadata zamanı;
+   - legacy projeksiyonla ilişkilendirilen zaman kanıtı.
+6. **Satır başına ayrı saat çağrısı yapılmaz.** Tek mutation içinde iki farklı
+   zaman damgası oluşması, aynı işlemin parçalarını farklı anlara dağıtır ve
+   `[validFrom, validUntil)` sınırlarında yapay boşluk/örtüşme üretir.
+7. `effectiveAt` **kilit alınmadan** uygulama katmanında önceden hesaplanmaz
+   (`new Date()` ile servis başında üretmek **yasaktır**) — bu, `now()` hatasının
+   uygulama katmanındaki eşdeğeridir.
+8. **Tarihsel sıra invariant'ı:**
+
+   ```text
+   Önce serialize edilen mutation'ın effectiveAt değeri, sonra serialize edilen
+   mutation'ın effectiveAt değerinden BÜYÜK OLAMAZ.
+   ```
+
+9. **Zorunlu gerçek PostgreSQL testi (T6):**
+
+   ```text
+   İstek 1 Office lock'unu tutar
+   İstek 2 lock'ta bekler
+   İstek 1 commit eder
+   İstek 2 lock'u alır ve mutasyonu uygular
+   DOĞRULA: İstek 2'nin effectiveAt değeri, İstek 1'in commit'inden SONRAKİ
+            bir anı temsil eder  (effectiveAt_2 >= effectiveAt_1)
+   DOĞRULA: oluşan membership/revocation aralıkları ters veya geçersiz DEĞİL
+            (validFrom < validUntil; revokedAt >= validFrom — §6.3 CHECK'leri)
+   ```
+
+**Not — CHECK'lerle ilişki:** §6.3'teki `revokedAt >= validFrom` ve
+`validFrom < validUntil` CHECK'leri bu hatanın bir kısmını **yakalar** (fail-closed
+`23514`), ama hepsini değil: iki **farklı** üyenin satırları arasında sıra
+bozulması hiçbir CHECK'i ihlal etmez. Yani CHECK'ler `CF-B02-03`'ün yerine
+geçmez; onun **son savunma hattıdır**.
+
+**`CF-B02-03` yeni bir owner kararı değildir** — effective-dated modelin teknik
+doğruluk koşuludur ve §15'e yeni bir OD eklemez.
 
 ### 11.6 Authorization ve tenant isolation
 
@@ -1350,6 +1592,9 @@ alınır.
 | R-13 | **Nullable üye çifti (Alternatif 2'nin kabul edilen bedeli)** | Geçersiz satır | 5 CHECK constraint (§6.3) + uygulama tarafında discriminated union |
 | R-14 | **Anchor'sız tenant/havuz** (`CF-B02-01`) | `UNKNOWN` ile gerçek `EMPTY` ayrımı kaybolur — boş havuzda sessizce | Migration ADIM 5 (backfill'den ÖNCE) + V8/V9 doğrulaması + `getOrCreate` atomik anchor yazımı (§6.7) + resolver fail-closed `UNKNOWN` (§7.6). Parite sorguları boş havuzu **trivially** geçtiği için V9 ayrı kalem olarak zorunludur |
 | R-15 | **Sentinel membership cazibesi** | Hayalet üye → sahte alıcıya bildirim | Anchor **ayrı tabloda**; sentinel satır tasarımda **yasaklıdır** (§6.6). Test: üyelik tablosunda "gerçek üye değil" anlamına gelen hiçbir satır tipi bulunmaz |
+| R-16 | **Transaction-start `now()` ile üretilen zaman damgası** (`CF-B02-03`) | Tarihsel sıra gerçek serialization sırasıyla **çelişir**; "kim ne zaman havuzdaydı" yanlış cevaplanır; sınırda `revokedAt < validFrom` üretilebilir | `effectiveAt` **kilit alındıktan sonra**, `clock_timestamp()` (veya doğrulanmış eşdeğeri) ile **tek kez** üretilir (§11.5.9). Zorunlu test **T6**. §6.3 CHECK'leri yalnız **son savunma hattıdır**: aynı üyedeki ihlali yakalar, farklı üyeler arası sıra bozulmasını **yakalamaz** |
+| R-17 | **Kilidi atlayan mutation yolu** (§11.5.7) | Lost update; T1/T2/T4 ihlali — hiçbir isteğin hedefi olmayan havuz | Tek `applyTargetState()` primitive'i + **lock invariant**; primitive dışında `officeWorkPoolMembership` yazımı **yasak**; bunu sabitleyen **yapısal test** (§11.5.7 madde 5). Gelecekteki future-dated endpoint, B03/B04 akışları ve script yolları da bağlıdır |
+| R-18 | **Kör/unbounded retry** (§9.4a) | Deadlock fırtınası; ilgisiz hatanın maskelenmesi; veri değil ama **kullanılabilirlik** kaybı | Retry yalnız **sınıflandırılmış** (gerçek repository hata kodları) ve **bounded** (sabit üst sınır); belirsiz sonuçta körlemesine yazma yerine **oku-doğrula** (§9.4a madde 5) |
 
 ---
 
@@ -1491,7 +1736,8 @@ kullanabilecek olup olmadığıdır**.
 YOK. Dört kalemin dördü de ratifiye edilmiştir (2026-08-17).
 ```
 
-`CF-B02-01` ve `CF-B02-02` düzeltmeleri **yeni owner kararı doğurmamıştır**:
+`CF-B02-01`, `CF-B02-02` ve `CF-B02-03` düzeltmeleri **yeni owner kararı
+doğurmamıştır**:
 her ikisi de repository kanıtı ve repo-native emsallerle çözülmüştür (anchor
 tablosu için `ReportingLine`/`Client` desenleri; serialization için
 `bundle-seal` ve `password-reset` emsalleri). Özellikle `version`/CAS
@@ -1503,7 +1749,9 @@ owner kapısı açardı.
 ## 16. Terminal disposition
 
 ```text
-STATÜ                     DESIGN_COMPLETE / OWNER_RATIFIED / READY_FOR_IMPLEMENTATION_GO
+STATÜ                     DESIGN_COMPLETE / OWNER_RATIFIED /
+                          DETERMINISTIC_READY_FOR_IMPLEMENTATION /
+                          IMPLEMENTATION_NOT_AUTHORIZED
 ÖNERİLEN MODEL            Alternatif 2 — normalize effective-dated üyelik tablosu
                           + üyelikten bağımsız knowledge-boundary anchor (CF-B02-01)
 KALICI SOURCE-OF-TRUTH    Yeni effective-dated tablolar (cutover sonrası okuma+yazma)
@@ -1513,9 +1761,15 @@ GEÇİŞ MODELİ              7 aşama; dual-write tek ACID transaction'da ve S�
 BACKFILL SEÇENEKLERİ      A / B / C
 RATIFIYE BACKFILL         A (LEGACY_CUTOVER_IMPORT provenance) — OD-B02-01 APPROVED
 CONCURRENCY               Tenant başına SELECT … FOR UPDATE serialization noktası;
+                          TEK ortak mutation primitive'i + lock invariant;
                           partial unique index yalnız backstop (CF-B02-02)
+CONCURRENCY TEST MATRİSİ  T1-T5 zorunlu (gerçek PostgreSQL) + T6 (CF-B02-03)
+EFFECTIVE-AT KAYNAĞI      Kilit SONRASI clock_timestamp() — tek kez, tüm tarihsel
+                          yazmalarda ortak; transaction-start now() YASAK (CF-B02-03)
+RETRY/IDEMPOTENCY         Sınıflandırılmış + bounded; "gerekmez" ifadesi KALDIRILDI (§9.4a)
 AÇIK OWNER KARARLARI      YOK — 4/4 RATIFIED (2026-08-17)
-DÜZELTMELER               CF-B02-01 (anchor) · CF-B02-02 (concurrency) UYGULANDI
+DÜZELTMELER               CF-B02-01 (anchor) · CF-B02-02 (concurrency + ortak
+                          primitive + test matrisi) · CF-B02-03 (effectiveAt) UYGULANDI
 ADMIN YAZMA UYUMU         KORUNUR — PUT /office/escalation-settings sözleşmesi değişmez
 B09 İLİŞKİSİ              YALNIZ EMSAL/PATTERN — dependency KAPANMADI, status mutation YOK
 ÜRETİLEN SCHEMA           YOK — Prisma modeli/migration/SQL dosyası YAZILMADI
@@ -1526,28 +1780,34 @@ DB / PRODUCTION MUTATION  YOK
 ### 16.1 Readiness'in sınırı — eksik olan tek şey authority'dir
 
 R01'de terminal sonuç `OWNER_DECISION_REQUIRED` idi, çünkü dört karar açıktı.
-**Bu engel kalkmıştır:** dördü de 2026-08-17'de ratifiye edildi ve iki zorunlu
-düzeltme uygulandı. Tasarım artık migration'ın gövdesini, enum içeriğini, PR
-sınırını ve DTO yüzeyini **belirsizlik bırakmadan** tarif eder.
+**Bu engel kalkmıştır:** dördü de 2026-08-17'de ratifiye edildi ve üç zorunlu
+düzeltme (`CF-B02-01/02/03`) uygulandı. Tasarım artık migration'ın gövdesini,
+enum içeriğini, PR sınırını, DTO yüzeyini, concurrency sözleşmesini ve zaman
+üretimini **belirsizlik bırakmadan** tarif eder.
 
 Buna rağmen bu doküman implementation'ı **başlatmaz**:
 
 ```text
-DESIGN READINESS     : sağlandı  (owner kararları ratifiye + düzeltmeler uygulandı)
-IMPLEMENTATION GO    : YOK       (ayrı ve açık owner yetkisi gerekir)
+DESIGN READINESS     : DETERMINISTIC_READY_FOR_IMPLEMENTATION
+IMPLEMENTATION GO    : YOK — IMPLEMENTATION_NOT_AUTHORIZED
+                       (ayrı ve açık owner yetkisi gerekir)
 ```
 
 Bu ayrım bilinçlidir: "tasarım deterministik" ile "yazmaya yetkiliyim" aynı şey
 değildir. C10 sayfası implementation yetkisi vermediğini açıkça yazar.
 
-**Implementation açıldığında ilk üç zorunlu kalem (kapanış kriterleri):**
+**Implementation gate'i — kapanış kriterleri (hepsi zorunlu):**
 
-1. Anchor tablosu **membership ile aynı** schema PR'ında (§9.5 Aşama 1) —
-   ayrılırsa `CF-B02-01` boşluğu geçici olarak yeniden açılır.
-2. Migration ADIM 5 (anchor seed) **ADIM 6'dan önce**; V8/V9 doğrulaması
-   olmadan migration merge edilmez.
-3. `CF-B02-02` için **gerçek PostgreSQL** üzerinde db-gated eşzamanlılık testi
-   (§11.5.6); mock'lu test bu gate'i karşılamaz.
+| # | Kriter | Kaynak |
+|---|---|---|
+| G1 | Anchor tablosu **membership ile aynı** schema PR'ında | §9.5 Aşama 1 — ayrılırsa `CF-B02-01` boşluğu geçici olarak yeniden açılır |
+| G2 | Migration'da **anchor seed (ADIM 5) backfill'den (ADIM 6) önce**; V8/V9/V10 doğrulaması olmadan merge yok | §8.4, §8.6 |
+| G3 | **Tek** `applyTargetState()` mutation primitive'i + lock invariant + primitive dışı yazımı yasaklayan **yapısal test** | §11.5.7 |
+| G4 | **Concurrency matrisi T1–T5** gerçek PostgreSQL üzerinde db-gated test olarak PASS | §11.5.8 |
+| G5 | **`effectiveAt` testi T6**: kilit sonrası üretim + sıra invariant'ı + geçersiz aralık yok | §11.5.9 madde 9 |
+| G6 | Kod tabanında havuz mutation yolunda **transaction-start `now()` / `CURRENT_TIMESTAMP` / önceden hesaplanmış `new Date()`** kullanılmadığı doğrulanır | §11.5.9 madde 3, 7 |
+| G7 | Retry politikası **sınıflandırılmış + bounded**; kör retry yok | §9.4a |
+| G8 | Cutover öncesi **altı okuma yüzeyinin tamamında** parity PASS | §15.3 kontrol listesi |
 
 ### 16.2 Sonraki adım
 
@@ -1599,3 +1859,17 @@ Bu doküman implementation GO'su İÇERMEZ ve kendi kendine yetki üretmez.
 | `Serializable` + P2034 emsali | `password-reset.service.ts:126` izolasyon, `:128-135` retry döngüsü, `:138-142` retry sınıflandırma şerhi VERIFIED |
 | `version`/CAS'ın owner kapısı olduğu | `20260802190000_client_identity_active_partial_unique/migration.sql` — `FIND-C4 (version/CAS)` notu: *"atomik birlikte deploy KANITLANAMADI … ayrı iş"* VERIFIED |
 | Ürün diff | R02 turunda da YOK — schema/migration/kod/test/config: dokunulmadı VERIFIED |
+
+### 17.2 R03 tamamlama turu — ek preflight (2026-08-17)
+
+| Kontrol | Sonuç |
+|---|---|
+| PR durumu | #2444 **OPEN**, draft değil, base `main` VERIFIED |
+| Beklenen head | `10279afb1ed5519e1f5f3fd6b128c8f73fe299b4` — **eşleşti** (local == remote == PR head) VERIFIED |
+| PR dosya kapsamı | `gh pr view --json files` → yalnız bu tasarım dokümanı VERIFIED |
+| `origin/main` drift | `7e497cfa` — R01/R02 turlarından beri **değişmedi**; `git log 7e497cfa..origin/main` **boş** → rebase gerekmedi VERIFIED |
+| Rakip writer / scope collision | `gh pr list --state open` → **yalnız #2444** (bu görevin PR'ı) VERIFIED |
+| `reviewDecision` | boş (zorunlu approving review sayısı 0) VERIFIED |
+| Worktree | `git status --porcelain` → 0 satır (temiz) VERIFIED |
+| `now()` transaction-start semantiği | PostgreSQL sözleşmesi; `CF-B02-03` bu olguya dayanır. Repository'de havuz mutation kodu **henüz yoktur**, dolayısıyla düzeltilecek mevcut bir çağrı **yoktur** — hüküm önleyicidir (G6 gate'i implementation'da ölçer) OBSERVED |
+| `clock_timestamp()` repo kullanımı | Mevcut migration/servis ağacında **kullanılmıyor** → B02 implementasyonunda ilk kullanım olacaktır; bu nedenle G6 gate'i ve T6 testi zorunlu kılındı VERIFIED |
