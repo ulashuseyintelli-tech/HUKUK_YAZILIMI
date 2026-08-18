@@ -226,3 +226,12 @@ src/modules/seed/__tests__/seed-public-institutions-admin-gate.spec.ts
 # tip sekli + import kilidi ile mekanik olarak kanitlanir. DB gerektirmez; ayni OFFICE
 # process'inde kosar, yeni Jest step ACILMAZ.
 src/modules/office-approval/__tests__/office-work-digest.service.spec.ts
+
+# -- OFFICE-WR01-B02 ASAMA 3 — EFFECTIVE-DATED HAVUZ RESOLVER FOUNDATION ------
+# Saf katman: predikat sinirlari (validFrom inclusive / validUntil-revokedAt exclusive),
+# UNKNOWN(ANCHOR_MISSING|BEFORE_KNOWN_FROM) ile RESOLVED/EMPTY ayrimi, tenant izolasyonu,
+# ayni uyede dedupe+tani, tasiyici ayrimi ve parite harness sozlesmesi. Ayrica ASAMA 3 in
+# NEGATIF sinirlarini kaynak taramasiyla kilitler: evaluator da IO yok, resolver katmaninda
+# pasif-kullanici filtresi yok, repository salt-okunur, office.module.ts te wiring yok.
+# DB gerektirmez; ayni OFFICE process inde kosar, yeni Jest step ACILMAZ.
+src/modules/office/work-pool/__tests__/office-work-pool-resolver.spec.ts

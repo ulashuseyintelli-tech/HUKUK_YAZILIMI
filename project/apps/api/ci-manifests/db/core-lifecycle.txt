@@ -39,3 +39,10 @@ src/modules/reporting-line/__tests__/reporting-line-user-fk.db-gated.integration
 # OFFICE-P6B-CI-E2E-EXECUTION-OFFICE-R01 — register/seed lifecycle coverage.
 # Requires TEST_DATABASE_URL and must execute on the disposable PostgreSQL job.
 src/modules/auth/__tests__/auth-register-seed.integration.spec.ts
+
+# OFFICE-WR01-B02 ASAMA 3 — resolver paritesi (gercek Postgres).
+# Saf testlerin kanitlayamadigi bes seyi disposable DB de olcer: TIMESTAMP(3) sinir davranisi,
+# ORM duzeyinde tenant izolasyonu, bir cozumlemenin TAM 2 SELECT uretmesi (olculmus deger),
+# pasif avukatin uyeliginin SUZULMEDIGI ve legacy duz diziler ile resolver ciktisinin
+# sirasiz kume esitligi. TEST_DATABASE_URL ister.
+src/modules/office/work-pool/__tests__/office-work-pool-parity.db-gated.integration.spec.ts
