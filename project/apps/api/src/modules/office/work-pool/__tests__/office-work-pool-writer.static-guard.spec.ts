@@ -377,12 +377,16 @@ describe('OFFICE-WR01-B02 A4 — tek writer ve yapisal kilitler', () => {
     for (const [, value] of aliases) expect(value).toBe(expectedCommand);
 
     // (f) DERLENMIS HEDEF: `nest build` kosulmus bir agacta dosya GERCEKTEN vardir.
-    //     DURUSTLUK SINIRI — CI'nin `Test Suite` job'i build KOSMAZ, bu yuzden kontrol
-    //     dist yoksa uygulanamaz. Vacuous gecmeyi onlemek icin kosul `dist`in VARLIGIDIR:
-    //     dist varsa hedef ZORUNLUDUR. Build sonrasi varligin kendisi ayrica C14-R1A'nin
-    //     D1-D4 gercek-process kanitlariyla olculmustur.
-    const distRoot = join(API_ROOT, 'dist');
-    if (existsSync(distRoot)) {
+    //     DURUSTLUK SINIRI — CI'nin `Test Suite` job'i build KOSMAZ, bu yuzden kontrol her
+    //     ortamda uygulanamaz. Kosul olarak `dist` dizininin VARLIGI KULLANILAMAZ: tsconfig
+    //     `incremental: true` + `outDir: ./dist` tasidigi icin CI'nin `tsc --noEmit` adimi
+    //     dist'i YALNIZ `.tsbuildinfo` icin yaratir — derlenmis JS olmadan. (Bu, guard'in ilk
+    //     halinin CI'da dusme sebebiydi; kosul artik olculmus bir olguya dayaniyor.)
+    //     Dogru gosterge build'in KENDI entry artifact'idir: `start` script'inin calistirdigi
+    //     `main.js` varsa `nest build` gercekten kosmustur ve ayni derlemenin catch-up
+    //     ciktisini da uretmis OLMASI ZORUNLUDUR.
+    const buildMarker = join(API_ROOT, startPath);
+    if (existsSync(buildMarker)) {
       expect(existsSync(join(API_ROOT, `${distPrefix}${CATCH_UP_ENTRY}.js`))).toBe(true);
     }
 
