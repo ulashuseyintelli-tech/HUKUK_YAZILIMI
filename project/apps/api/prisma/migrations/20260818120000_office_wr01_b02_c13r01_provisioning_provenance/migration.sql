@@ -1,0 +1,34 @@
+-- =============================================================================================
+-- OFFICE-WR01-B02 · C13-R01 — PROVISIONING MEMBERSHIP PROVENANCE (additive enum value)
+-- =============================================================================================
+-- OWNER TESPITI (C13-OD-02): yeni Office yaratiminda `getOrCreate`'in materyalize ettigi havuz
+-- uyelikleri `LEGACY_CUTOVER_IMPORT` ile yaziliyordu. Bu SEMANTIK OLARAK YANLISTIR: ithal
+-- edilen bir legacy gecmis yoktur; buro O AN dogmus ve uyelik sema VARSAYILANINDAN
+-- (`Office.opStaffTypes @default([MUHASEBE, ADLI_KATIP, SEKRETER])`) turemistir. Bu satirlarda
+-- `validFrom` bir ithal tarihi degil, politikanin GERCEK baslangicidir.
+--
+-- ASIMETRI KUSURUN KANITIYDI: `OfficeWorkPoolEpochProvenance` zaten `TENANT_PROVISIONED`
+-- tasiyordu ve anchor tarafi DOGRU yaziliyordu; yalniz membership enum'unda karsiligi yoktu.
+-- Bu migration o asimetriyi kapatir.
+--
+-- KAPSAM: TAMAMEN ADDITIVE. Tek bir enum degeri eklenir.
+--   - Veri UPDATE'i YOK. Mevcut hicbir satirin provenance'i degistirilmez.
+--   - DROP / RENAME YOK (Postgres enum degerleri zaten RENAME/DROP edilemez).
+--   - Backfill YOK ve GEREKMEZ: B02 schema migration'i (20260817120000) HICBIR persistent
+--     DB'ye uygulanmamistir (C13 preflight: _prisma_migrations'ta kayit 0, tablolar yok),
+--     dolayisiyla yanlis provenance ile yazilmis TEK BIR SATIR DAHI mevcut degildir.
+--     Duzeltilecek gecmis veri olmadigi icin bu migration veri dokunusu ICERMEZ.
+--
+-- NEDEN TEK DOSYA YETERLI: Postgres, `ALTER TYPE ... ADD VALUE` ile eklenen degerin AYNI
+-- transaction icinde KULLANILMASINA izin vermez ("unsafe use of new value ... before it has
+-- been committed"). Repo emsali 20260723120000_of01_history_p04a1_r2_completion_mode_schema
+-- bu yuzden ADD VALUE ile onu REFERANS EDEN CHECK'i iki ayri dosyaya bolmustur. Burada yeni
+-- degeri referans eden hicbir CHECK/constraint/DEFAULT YOKTUR — deger yalniz UYGULAMA
+-- KATMANINDAN, sonraki transaction'larda yazilir — bu nedenle bolme GEREKMEZ.
+--
+-- Explicit BEGIN/COMMIT EKLENMEMISTIR: Prisma her migration dosyasini kendi transaction'inda
+-- kosar ve elle sarmalama, basarisizlikta dosyanin kendi fail-closed teshisini jenerik
+-- "current transaction is aborted" hatasina cevirir (B02 ASAMA 1-2 R01 onariminda olculdu).
+-- =============================================================================================
+
+ALTER TYPE "OfficeWorkPoolMembershipProvenance" ADD VALUE 'TENANT_PROVISIONED';

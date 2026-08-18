@@ -354,6 +354,20 @@ describeWithDisposableDb(
       jest.setTimeout(600_000);
 
       const B02_DIR = '20260817120000_office_wr01_b02_effective_dated_work_pools';
+      /**
+       * B02'NIN TIPLERINE BAGLI SONRAKI MIGRATION'LAR.
+       *
+       * Bu harness sablon DB'yi "B02 HARIC tum gecmis" olarak kurar. B02'den SONRA gelen ve
+       * onun urettigi bir tipi/tabloyu REFERANS EDEN her migration da cikarilmak ZORUNDADIR;
+       * aksi halde sablon deploy'u `type "OfficeWorkPoolMembershipProvenance" does not exist`
+       * ile duser ve B02'nin kendi davranisi olculemez. C13-R01 (provisioning provenance)
+       * `ALTER TYPE ... ADD VALUE` ile tam bu bagimliligi tasir.
+       *
+       * Liste BUYUYEBILIR: B02 tiplerine dokunan her yeni migration buraya eklenmelidir.
+       */
+      const B02_DEPENDENT_DIRS = [
+        '20260818120000_office_wr01_b02_c13r01_provisioning_provenance',
+      ];
       const PRISMA_DIR = join(__dirname, '../../../../prisma');
       const NEW_TYPES = [
         'OfficeWorkPoolKind',
@@ -410,6 +424,10 @@ describeWithDisposableDb(
         const target = join(tree, 'migrations', B02_DIR);
         if (dropB02) {
           rmSync(target, { recursive: true, force: true });
+          // B02'ye bagimli sonraki migration'lar da dusurulur (yukaridaki serh).
+          for (const dependent of B02_DEPENDENT_DIRS) {
+            rmSync(join(tree, 'migrations', dependent), { recursive: true, force: true });
+          }
         } else if (mutate) {
           writeFileSync(join(target, 'migration.sql'), mutate(MIGRATION_SQL), 'utf8');
         }

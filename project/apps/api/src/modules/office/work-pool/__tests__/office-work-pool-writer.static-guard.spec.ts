@@ -271,6 +271,43 @@ describe('OFFICE-WR01-B02 A4 — tek writer ve yapisal kilitler', () => {
     expect(Object.keys(OFFICE_WORK_POOL_LEGACY_COLUMN).sort()).toEqual([...OFFICE_WORK_POOL_KINDS].sort());
   });
 
+  it('(12) C13-R01: provisioning TENANT_PROVISIONED, catch-up LEGACY_CUTOVER_IMPORT', () => {
+    // Dilim sınırları TANIM adlarıdır: `assertLegacyPassthroughIsPoolFree` CAĞRISI
+    // `applyTargetState` içinde daha ÖNCE geçtiği için sınır olarak kullanılamaz (negatif
+    // uzunlukta boş dilim üretir ve guard sessizce vacuous olurdu).
+    const provisioningStart = MUTATION_SERVICE_SOURCE.indexOf(
+      'async materializeProvisioningSnapshot(',
+    );
+    const provisioningEnd = MUTATION_SERVICE_SOURCE.indexOf(
+      'private assertLegacyPassthroughIsPoolFree(',
+    );
+    expect(provisioningStart).toBeGreaterThan(-1);
+    expect(provisioningEnd).toBeGreaterThan(provisioningStart);
+    const provisioning = MUTATION_SERVICE_SOURCE.slice(provisioningStart, provisioningEnd);
+    expect(provisioning).toContain("provenance: 'TENANT_PROVISIONED'");
+    expect(provisioning).not.toContain("provenance: 'LEGACY_CUTOVER_IMPORT'");
+
+    // Catch-up yolu provenance'i CAGIRANDAN alir ve arac onu LEGACY_CUTOVER_IMPORT olarak
+    // gecirir — orada gercekten duz diziden ithal vardir. Iki yolun AYRI degeri tasidigi
+    // kaynak duzeyinde de kilitlenir (davranis kaniti A2/A4 db-gated testlerindedir).
+    const catchUp = stripTsComments(
+      readFileSync(join(API_SRC, 'scripts/office-work-pool-anchor-catchup.ts'), 'utf8'),
+    );
+    expect(catchUp).toContain("membershipProvenance: 'LEGACY_CUTOVER_IMPORT'");
+    expect(catchUp).not.toContain("membershipProvenance: 'TENANT_PROVISIONED'");
+  });
+
+  it('(13) C13-R01: belirsiz commit dogrulamasi CIFT yuzeydir ve yalniz INDETERMINATE tetikler', () => {
+    // Basari kosulu IKI yuzeyin de esitligidir; tek yuzey yeterli SAYILAMAZ.
+    expect(MUTATION_SERVICE_SOURCE).toContain('membershipMatchesTarget && legacyMatchesTarget');
+    expect(MUTATION_SERVICE_SOURCE).toContain("verification = 'BOTH_SURFACES_MATCH'");
+    expect(MUTATION_SERVICE_SOURCE).toContain("verification = 'MISMATCH_REAPPLIED'");
+
+    // Dogrulama YALNIZ belirsiz-commit sinifindan sonra acilir; kesin rollback (SERIALIZATION)
+    // icin acilmaz — normal fark hesabi zaten taze okur.
+    expect(MUTATION_SERVICE_SOURCE).toContain("verifyBeforeApply = errorClass === 'INDETERMINATE'");
+  });
+
   it('(11) hata siniflandirmasi: yalniz gercek concurrency/belirsizlik retrylenir', () => {
     expect(classifyOfficeWorkPoolMutationError({ code: 'P2034' })).toBe('SERIALIZATION');
     expect(classifyOfficeWorkPoolMutationError({ code: '40001' })).toBe('SERIALIZATION');

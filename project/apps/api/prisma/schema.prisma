@@ -10549,10 +10549,18 @@ enum OfficeWorkPoolKind {
 /// DEĞİLDİR (§4 T3 ≠ T1). ADMIN_DECLARED: admin yazma yüzeyinden beyan (AŞAMA 4+).
 /// OWNER_EVIDENCED_HISTORICAL: owner'ın kanıtladığı gerçek tarih — OD-B02-01 (A) gereği
 /// bu migration onu KULLANMAZ; ileride kanıt gelirse schema değişikliği gerekmesin diye tanımlıdır.
+///
+/// TENANT_PROVISIONED (C13-R01): büro O AN doğdu ve havuz üyeliği şema VARSAYILANINDAN
+/// (`Office.opStaffTypes @default([MUHASEBE, ADLI_KATIP, SEKRETER])`) materyalize edildi;
+/// `validFrom` bir ithal tarihi DEĞİL, politikanın GERÇEK başlangıcıdır. C13'te bu satırlar
+/// `LEGACY_CUTOVER_IMPORT` ile yazılıyordu — ithal edilen bir legacy geçmiş olmadığı için
+/// bu YANLIŞTI (owner tespiti C13-OD-02). Değer, `OfficeWorkPoolEpochProvenance`'taki aynı
+/// adlı üyenin karşılığıdır: anchor tarafı zaten doğruydu, asimetri kusurun kendisiydi.
 enum OfficeWorkPoolMembershipProvenance {
   LEGACY_CUTOVER_IMPORT
   ADMIN_DECLARED
   OWNER_EVIDENCED_HISTORICAL
+  TENANT_PROVISIONED
 }
 
 /// Bilgi sınırı kaydının kaynağı (§6.6). TENANT_PROVISIONED: büro o an doğdu, öncesi

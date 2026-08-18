@@ -21,7 +21,6 @@ import {
 import {
   classifyOfficeWorkPoolMutationError,
   extractOfficeWorkPoolErrorCode,
-  isRetryableOfficeWorkPoolMutationError,
   OfficeWorkPoolActorRequiredError,
   OfficeWorkPoolApplyTargetStateResult,
   OfficeWorkPoolAnchorPolicy,
@@ -31,6 +30,7 @@ import {
   OfficeWorkPoolTargetStateSource,
   OfficeWorkPoolUnknownMemberError,
   OfficeWorkPoolUnknownStateError,
+  OfficeWorkPoolVerificationOutcome,
   OFFICE_WORK_POOL_KINDS,
   OFFICE_WORK_POOL_LEGACY_COLUMN,
   OFFICE_WORK_POOL_LEGACY_COLUMNS,
@@ -87,9 +87,15 @@ export class OfficeWorkPoolMutationService {
    *
    * BOUNDED + SINIFLANDIRILMIŞ RETRY (§9.4a/4): yalnız `SERIALIZATION` ve `INDETERMINATE`
    * sınıfları yeniden denenir, en fazla `OFFICE_WORK_POOL_MUTATION_MAX_ATTEMPTS` kez.
-   * Yeniden deneme KÖR DEĞİLDİR: her deneme YENİ bir transaction açar, kilidi yeniden alır,
-   * durumu TAZE okur ve farkı yeniden hesaplar — iki yüzey de hedefle eşitse fark boş çıkar
-   * ve hiçbir satır yazılmaz (§9.4a/5 "oku-doğrula, farklıysa uygula").
+   *
+   * YENİDEN DENEME KÖR DEĞİLDİR. Her deneme YENİ bir transaction açar ve kilidi yeniden alır.
+   * Ayrıca (C13-R01) iki sınıf AYRI ele alınır:
+   *  - `SERIALIZATION` → transaction KESİN geri alındı; normal fark hesabı zaten taze okur.
+   *  - `INDETERMINATE` → commit olup olmadığı BİLİNMİYOR; sonraki deneme yazmadan önce
+   *    legacy dizileri VE aktif üyelik kümelerini hedefle karşılaştırır (§9.4a/5, §6.1).
+   *    İKİSİ de eşitse hiçbir havuz yazımı yapılmaz (`BOTH_SURFACES_MATCH`); biri farklıysa
+   *    hedef durum yeniden uygulanır (`MISMATCH_REAPPLIED`). TEK yüzeyin eşitliği başarı
+   *    kanıtı SAYILMAZ.
    */
   async applyTargetState(params: {
     readonly tenantId: string;
@@ -105,10 +111,15 @@ export class OfficeWorkPoolMutationService {
     this.assertLegacyPassthroughIsPoolFree(params.legacyPassthrough);
 
     let lastError: unknown;
+    // C13-R01 (§9.4a/5, handoff §6.1): önceki deneme sonucu BELİRSİZ bıraktıysa (bağlantı
+    // koptu / transaction API hatası) bir sonraki deneme KÖR YENİDEN UYGULAMA yapmaz; önce
+    // AYNI kilitli transaction içinde İKİ YÜZEYİ de hedefle karşılaştırır.
+    let verifyBeforeApply = false;
+
     for (let attempt = 1; attempt <= OFFICE_WORK_POOL_MUTATION_MAX_ATTEMPTS; attempt++) {
       try {
         const outcome = await this.prisma.$transaction(
-          async (tx) => this.runAttempt(tx, params),
+          async (tx) => this.runAttempt(tx, { ...params, verifyBeforeApply }),
           // Kilit bekleme payı: bu transaction bir satır kilidi tutar ve ikinci istek onu
           // bekler. Prisma varsayılanları (maxWait 2s / timeout 5s) bekleyen isteği yapay
           // olarak düşürürdü. Repo emsali: external-case-status-transition.service.ts:313.
@@ -117,20 +128,23 @@ export class OfficeWorkPoolMutationService {
         return { ...outcome, attempts: attempt };
       } catch (error) {
         lastError = error;
-        if (
-          !isRetryableOfficeWorkPoolMutationError(error) ||
-          attempt === OFFICE_WORK_POOL_MUTATION_MAX_ATTEMPTS
-        ) {
+        const errorClass = classifyOfficeWorkPoolMutationError(error);
+        if (errorClass === 'FATAL' || attempt === OFFICE_WORK_POOL_MUTATION_MAX_ATTEMPTS) {
           throw error;
         }
+        // SERIALIZATION: transaction KESİN geri alındı — doğrulanacak belirsizlik yoktur,
+        // normal fark hesabı zaten taze okur. INDETERMINATE: yazıldı mı bilinmiyor → bir
+        // sonraki deneme çift-yüzey doğrulamayla başlar.
+        verifyBeforeApply = errorClass === 'INDETERMINATE';
         this.logger.warn(
           JSON.stringify({
             event: 'office_work_pool_mutation_retry',
             tenantId: params.tenantId,
             attempt,
             maxAttempts: OFFICE_WORK_POOL_MUTATION_MAX_ATTEMPTS,
-            errorClass: classifyOfficeWorkPoolMutationError(error),
+            errorClass,
             errorCode: extractOfficeWorkPoolErrorCode(error) ?? null,
+            nextAttemptVerifiesBothSurfaces: verifyBeforeApply,
           }),
         );
       }
@@ -165,12 +179,18 @@ export class OfficeWorkPoolMutationService {
    * §11.5.7'nin tek-writer garantisi delinir ve iki ayrı "üyelik nasıl yazılır" tanımı
    * doğardı. Metot `applyTargetState`'in yerine geçmez; yalnız YARATIM anına özgüdür.
    *
-   * PROVENANCE: `LEGACY_CUTOVER_IMPORT`. Yeni enum değeri İCAT EDİLMEZ (§13). `ADMIN_DECLARED`
-   * YANLIŞ olurdu — hiçbir admin bu üyeleri beyan etmemiştir, değer şema varsayılanından
-   * gelir. `LEGACY_CUTOVER_IMPORT`'un taşıdığı iddia ise "bu satır düz diziden materyalize
-   * edildi ve `validFrom` bir İTHAL tarihidir, politikanın kanıtlanmış başlangıcı değildir" —
-   * burada gerçekte `validFrom` başlangıcın ta kendisidir, yani sözleşme gerçekten olduğundan
-   * DAHA AZINI iddia eder. Eksik iddia güvenlidir; fazla iddia olmazdı.
+   * ═══ PROVENANCE: `TENANT_PROVISIONED` (C13-R01 onarımı) ═══════════════════════════════
+   * C13'te bu satırlar `LEGACY_CUTOVER_IMPORT` ile yazılıyordu. **YANLIŞTI** (owner tespiti
+   * C13-OD-02): ithal edilen bir legacy geçmiş yoktur, büro O AN doğmuştur ve `validFrom` bir
+   * ithal tarihi değil politikanın GERÇEK başlangıcıdır. "Gerçekte olduğundan daha azını iddia
+   * ediyor, o hâlde güvenli" gerekçesi reddedilmiştir: `OfficeWorkPoolEpochProvenance` zaten
+   * `TENANT_PROVISIONED` taşıyordu ve anchor tarafı doğru yazılıyordu — asimetri, güvenli bir
+   * yaklaşım değil kusurun kendisiydi. Eksik enum değeri C13-R01 migration'ıyla eklendi.
+   *
+   * `ADMIN_DECLARED` da yanlış olurdu: hiçbir admin bu üyeleri beyan etmemiştir.
+   * Catch-up yolu (`applyTargetState` + `ADOPT_LEGACY_SNAPSHOT`) `LEGACY_CUTOVER_IMPORT`
+   * kullanmaya DEVAM eder — orada gerçekten düz diziden ithal vardır ve `validFrom` gerçekten
+   * bir ithal tarihidir.
    *
    * @returns yazılan üyelik satırı sayısı
    */
@@ -195,7 +215,7 @@ export class OfficeWorkPoolMutationService {
           memberLawyerId: carrier === 'LAWYER' ? key : null,
           memberStaffType: carrier === 'STAFF_TYPE' ? (key as StaffType) : null,
           validFrom: params.at,
-          provenance: 'LEGACY_CUTOVER_IMPORT',
+          provenance: 'TENANT_PROVISIONED',
           // Yaratımdan doğan satırlarda aktör YOKTUR (§6.2 `createdByUserId` şerhi).
           createdByUserId: null,
         });
@@ -231,6 +251,11 @@ export class OfficeWorkPoolMutationService {
       readonly anchorPolicy?: OfficeWorkPoolAnchorPolicy;
       readonly membershipProvenance?: OfficeWorkPoolMembershipProvenance;
       readonly anchorProvenance?: OfficeWorkPoolEpochProvenance;
+      /**
+       * C13-R01: önceki deneme commit sonucunu BELİRSİZ bıraktı. Yazmadan önce iki yüzey de
+       * hedefle karşılaştırılır (§9.4a/5). Yalnız retry döngüsü set eder.
+       */
+      readonly verifyBeforeApply?: boolean;
     },
   ): Promise<Omit<OfficeWorkPoolApplyTargetStateResult, 'attempts'>> {
     const { tenantId, source, actorUserId } = params;
@@ -278,6 +303,8 @@ export class OfficeWorkPoolMutationService {
         office: office ?? officeRow,
         changes: [],
         provisionedAnchorKinds: [],
+        // Havuz alanı gönderilmedi → doğrulanacak havuz yüzeyi de yoktur.
+        verification: 'NOT_REQUIRED',
       };
     }
 
@@ -409,6 +436,54 @@ export class OfficeWorkPoolMutationService {
       });
     }
 
+    // ── 4a) BELİRSİZ COMMIT SONRASI ÇİFT-YÜZEY DOĞRULAMA (C13-R01, §9.4a/5) ───────────────
+    // Bir önceki deneme "yazıldı mı?" sorusunu cevapsız bıraktıysa, hedef durum KÖRLEMESİNE
+    // yeniden uygulanmaz. Aynı kilitli transaction'da ve aynı taze okumada İKİ yüzey birlikte
+    // hedefle karşılaştırılır. TEK yüzeyin eşitliği başarı kanıtı SAYILMAZ: legacy'nin hedefe
+    // eşit olması commit'i kanıtlamaz (bu PR'da legacy zaten hedefe yazılır), membership'in
+    // eşit olması da yalnız aynası olduğu diziyi doğrulamaz.
+    let verification: OfficeWorkPoolVerificationOutcome = 'NOT_REQUIRED';
+    if (params.verifyBeforeApply === true) {
+      // Membership yüzeyi: fark BOŞsa aktif küme hedefe eşittir (fark taze okumadan hesaplandı).
+      const membershipMatchesTarget = revokeRowIds.length === 0 && inserts.length === 0;
+      // Legacy yüzeyi: kilit altında okunan dizi, hedefle SIRASIZ KÜME olarak karşılaştırılır
+      // (payload'daki tekrar bir uyumsuzluk değildir — §7 replace-all sözleşmesi birebir korunur).
+      const legacyMatchesTarget = requestedKinds.every((poolKind) => {
+        const current = officeRow[OFFICE_WORK_POOL_LEGACY_COLUMN[poolKind]];
+        const currentSet = new Set((Array.isArray(current) ? current : []).map((m) => String(m)));
+        const targetSet = new Set((rawTargets[poolKind] ?? []).map((m) => String(m)));
+        return (
+          currentSet.size === targetSet.size && [...targetSet].every((key) => currentSet.has(key))
+        );
+      });
+
+      if (membershipMatchesTarget && legacyMatchesTarget) {
+        verification = 'BOTH_SURFACES_MATCH';
+        // Kayıp cevabın arkasındaki transaction GERÇEKTEN commit olmuştu → hiçbir HAVUZ yazımı
+        // yapılmaz: yeni tarihsel satır doğmaz, legacy havuz dizisi yeniden yazılmaz.
+        //
+        // Havuz-DIŞI passthrough alanları yine yazılır: onların commit durumu bu iki yüzeyden
+        // KANITLANAMAZ ve skaler bir yeniden yazma idempotenttir (tarihsel satır üretmez).
+        // Bunları da atlamak, doğrulanmamış bir şeyi doğrulanmış saymak olurdu.
+        const office = await this.writeLegacyProjection(
+          tx,
+          tenantId,
+          params.legacyPassthrough,
+          {},
+        );
+        return {
+          effectiveAt,
+          office: office ?? officeRow,
+          changes,
+          provisionedAnchorKinds,
+          verification,
+        };
+      }
+      // En az bir yüzey hedeften farklı → transaction commit OLMAMIŞTIR (veya kısmen farklı bir
+      // duruma kaymıştır). Bounded politika izin verdiği için hedef durum yeniden uygulanır.
+      verification = 'MISMATCH_REAPPLIED';
+    }
+
     // ── 5) REVOKE — irade beyanı; validUntil DEĞİŞTİRİLMEZ (§11.3) ────────────────────────
     if (revokeRowIds.length > 0) {
       await tx.officeWorkPoolMembership.updateMany({
@@ -458,6 +533,7 @@ export class OfficeWorkPoolMutationService {
       office: updatedOffice ?? officeRow,
       changes,
       provisionedAnchorKinds,
+      verification,
     };
   }
 
