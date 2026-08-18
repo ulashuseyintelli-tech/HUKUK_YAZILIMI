@@ -11,14 +11,73 @@
 --   Office.escalationManagerLawyerIds / Office.escalationFounderLawyerIds düz dizileridir.
 --   Resolver (AŞAMA 3), dual-write (AŞAMA 4) ve okuma cutover'ı (AŞAMA 6) AYRI authority ister.
 --
--- ADIM 0 — TEK TRANSACTION. Bütün migration tek transaction'da koşar (Prisma Migrate davranışı;
---   repo emsali: 20260718120000_office_reporting_line_disposition, 20260718140000). Preflight
---   veya doğrulama anomali bulursa RAISE EXCEPTION → TAM ROLLBACK. Kısmi durum YOK, sessiz
---   onarım YOK. ADIM 4'ün `ON COMMIT DROP` temp tablosu bu gereksinimi yapısal olarak da
---   zorunlu kılar: transaction dışında koşulursa migration ADIM 5'te gürültülü biçimde durur.
+-- ADIM 0 — TEK TRANSACTION.
+--   DOĞRULANAN SÖZLEŞMENİN SINIRI (owner disposition R01, OPTION B): bu migration'ın
+--   atomikliği "Prisma migration'ları transaction'a sarar" gibi EVRENSEL bir iddiaya
+--   dayanmaz. Doğrulanan şey dardır ve tam olarak şudur:
+--     · repository'nin pinli Prisma sürümü (bkz. apps/api/package.json),
+--     · PostgreSQL 16,
+--     · exact `prisma migrate deploy` yolu.
+--   Bu üçlü altında ADIM 1 veya ADIM 9'un RAISE'i TAM ROLLBACK üretir; kısmi durum YOK,
+--   sessiz onarım YOK. Başka bir çalıştırma yolu (elle `psql -f`, `prisma db execute`,
+--   farklı Prisma sürümü) bu sözleşmenin KAPSAMI DIŞINDADIR ve ayrıca doğrulanmalıdır.
+--
+--   BU SÖZLEŞME CI'DA KİLİTLİDİR. `office-work-pool-effective-dating-migration.db-gated
+--   .integration.spec.ts` gerçek `prisma migrate deploy` yolunda ADIM 9'da kasıtlı bir
+--   doğrulama hatası üretir ve type/table/index/constraint/backfill kalıntısının SIFIR
+--   olduğunu ölçer. Gelecekte çalıştırıcının davranışı değişirse test FAIL-CLOSED düşer;
+--   sessizce bozulamaz. Bu yüzden dosyaya explicit `BEGIN;`/`COMMIT;` EKLENMEZ: ölçüldü ki
+--   explicit `BEGIN;`, RAISE sonrası hatayı jenerik "current transaction is aborted"
+--   mesajına çevirerek ADIM 1/ADIM 9'un exact sayaç teşhisini YOK EDİYOR (§8.4'ün
+--   "RAISE EXCEPTION exact sayılarla" şartı). In-band teşhis korunmuştur.
+--
+--   ADIM 4'ün `ON COMMIT DROP` temp tablosu tek-transaction gereksinimini yapısal olarak
+--   ayrıca zorunlu kılar: transaction dışında koşulursa migration ADIM 5'te gürültülü durur.
+--
+-- OWNER KARARLARI — OFFICE-WR01-B02-AŞAMA-1-2-TRANSACTION-ATOMICITY-REPAIR-R01 (2026-08-18)
+--   1) CUID PREFLIGHT DISPOSITION = OWNER_RATIFIED. `cuid` biçimi relational validity DEĞİLDİR.
+--      B02 için geçerli lawyer-id ölçütü: boş/whitespace olmaması + aynı tenant'ta gerçek bir
+--      Lawyer satırına referans vermesi. Bu nedenle ADIM 1'in ORPHAN (b) + CROSS-TENANT (c)
+--      kontrolü BAĞLAYICIDIR ve cuid-regex kullanılmaması owner tarafından RATİFİYE EDİLMİŞTİR.
+--   2) AŞAMA 4 ANCHOR CATCH-UP = REQUIRED PREDECESSOR. Bu migration ile AŞAMA 4 arasında
+--      yaratılan Office satırları anchor'sız kalır (getOrCreate'in atomik anchor yazımı §6.7
+--      gereği AŞAMA 4'e aittir). AŞAMA 4, atomik yazıma EK OLARAK aradaki mevcut Office
+--      satırları için idempotent catch-up/backfill + V8/V9 doğrulaması İÇERMEK ZORUNDADIR.
+--      Bu kalem C11'i reopen ETMEZ; AŞAMA 3 veya 4 otomatik BAŞLAMAZ.
 --
 -- BU MIGRATION HİÇBİR SATIRI UPDATE VEYA DELETE ETMEZ (§8.5). Legacy diziler yalnız OKUNUR;
 --   veri kaybı olasılığı SIFIRDIR ve geri dönüş (forward-fix) yalnız yeni tabloları düşürmektir.
+
+-- TEŞHİS SORGULARI (R01 repair, 2026-08-18) — BLOCKED alan operatör için
+--   ADIM 1 BLOCKED verdiğinde exact sayaçlar hata mesajında zaten gelir (in-band teşhis
+--   korunmuştur). Aşağıdaki sorgular AYNI sayaçları migration'ı yeniden koşmadan, apply
+--   ÖNCESİ veya sonrası tek komutla verir — böylece owner'lı pre-clean kapısı anomaliyi
+--   doğrudan ölçebilir. Repo emsali: `20260802190000_client_identity_active_partial_unique`
+--   header'ındaki envanter sorguları.
+--
+--   SELECT
+--     (SELECT COUNT(*) FROM (SELECT x."tenantId", x.m FROM (SELECT o."tenantId",
+--        unnest(o."escalationManagerLawyerIds") AS m FROM "Office" o) x
+--        GROUP BY 1,2 HAVING COUNT(*)>1) d)                                AS duplicate_manager,
+--     (SELECT COUNT(*) FROM (SELECT x."tenantId", x.m FROM (SELECT o."tenantId",
+--        unnest(o."escalationFounderLawyerIds") AS m FROM "Office" o) x
+--        GROUP BY 1,2 HAVING COUNT(*)>1) d)                                AS duplicate_founder,
+--     (SELECT COUNT(*) FROM (SELECT x."tenantId", x.m FROM (SELECT o."tenantId",
+--        unnest(o."opStaffTypes") AS m FROM "Office" o) x
+--        GROUP BY 1,2 HAVING COUNT(*)>1) d)                                AS duplicate_staff_type,
+--     (SELECT COUNT(*) FROM (SELECT DISTINCT x."tenantId", x.m FROM (SELECT o."tenantId",
+--        unnest(o."escalationManagerLawyerIds" || o."escalationFounderLawyerIds") AS m
+--        FROM "Office" o) x WHERE btrim(x.m) <> ''
+--        AND NOT EXISTS (SELECT 1 FROM "Lawyer" l WHERE l."id" = x.m)) o1)  AS orphan_lawyer,
+--     (SELECT COUNT(*) FROM (SELECT DISTINCT x."tenantId", x.m FROM (SELECT o."tenantId",
+--        unnest(o."escalationManagerLawyerIds" || o."escalationFounderLawyerIds") AS m
+--        FROM "Office" o) x WHERE EXISTS (SELECT 1 FROM "Lawyer" l WHERE l."id" = x.m)
+--        AND NOT EXISTS (SELECT 1 FROM "Lawyer" l WHERE l."id" = x.m
+--                        AND l."tenantId" = x."tenantId")) c1)              AS cross_tenant_lawyer,
+--     (SELECT COUNT(*) FROM (SELECT x."tenantId", x.m FROM (SELECT o."tenantId",
+--        unnest(o."escalationManagerLawyerIds" || o."escalationFounderLawyerIds") AS m
+--        FROM "Office" o) x WHERE x.m IS NULL OR btrim(x.m) = '') i1)       AS invalid_lawyer_id;
+
 
 -- =============================================================================================
 -- ADIM 1 — PREFLIGHT / VALIDATION (constraint'lerden ÖNCE)

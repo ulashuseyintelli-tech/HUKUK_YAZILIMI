@@ -19,10 +19,12 @@
  *     StaffType). Kanonik şemanın tamamı değildir; tam-şema kanıtı (2) numaralı bloktadır.
  */
 import { PrismaClient } from '@prisma/client';
+import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
-import { readFileSync } from 'fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
-import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { FORBIDDEN_DB, resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -94,6 +96,14 @@ export function splitSqlStatements(sql: string): string[] {
   return statements;
 }
 
+/**
+ * Bir statement'ın önündeki yorum satırlarını atıp çıplak SQL'i verir. Ayırıcı yorumları
+ * bir sonraki ifadeye iliştirdiği için BEGIN/COMMIT tespiti buna dayanır.
+ */
+export function bareStatement(statement: string): string {
+  return statement.replace(/^(?:\s*--[^\n]*\n)*\s*/, '').trim();
+}
+
 /** Migration'ın DOKUNDUĞU yüzeyin minimal ama birebir DDL'i (sandbox baseline). */
 const SANDBOX_BASELINE = [
   `CREATE TYPE "StaffType" AS ENUM ('STAJYER_AVUKAT','OFIS_KATIBI','ADLI_KATIP','SEKRETER','MUHASEBE','ARSIV','DIGER')`,
@@ -149,6 +159,43 @@ describeWithDisposableDb(
         ]) {
           expect(MIGRATION_SQL).toContain(counter);
         }
+      });
+
+      it('ADIM 0: dosyada explicit BEGIN/COMMIT YOKTUR — in-band exact-sayaç teşhisi korunur', () => {
+        // OWNER DISPOSITION R01 / OPTION B. Explicit `BEGIN;` eklemek ölçülmüş biçimde
+        // ADIM 1/ADIM 9'un RAISE mesajını jenerik "current transaction is aborted"a
+        // çevirip §8.4'ün "RAISE EXCEPTION exact sayılarla" şartını yok ediyordu.
+        // Atomiklik ise (aşağıdaki gerçek-deploy testinde ölçüldüğü üzere) zaten vardır.
+        const statements = splitSqlStatements(MIGRATION_SQL).map(bareStatement);
+        expect(statements.filter((x) => /^(BEGIN|COMMIT)$/i.test(x))).toHaveLength(0);
+      });
+
+      it('ADIM 0 sözleşmesinin SINIRI dosyada dar tanımlıdır — evrensel Prisma iddiası YOK', () => {
+        // Doğrulanan sözleşme: pinli Prisma sürümü + PostgreSQL 16 + exact migrate deploy yolu.
+        expect(MIGRATION_SQL).toContain('exact `prisma migrate deploy` yolu');
+        expect(MIGRATION_SQL).toContain('PostgreSQL 16');
+        expect(MIGRATION_SQL).toContain('KAPSAMI DIŞINDADIR');
+        expect(MIGRATION_SQL).toContain('FAIL-CLOSED');
+      });
+
+      it('teşhis telafisi: BLOCKED sonrası operatörün koşacağı sorgular header içinde KAYITLIDIR', () => {
+        expect(MIGRATION_SQL).toContain('TEŞHİS SORGULARI');
+        for (const counter of [
+          'AS duplicate_manager',
+          'AS duplicate_founder',
+          'AS duplicate_staff_type',
+          'AS orphan_lawyer',
+          'AS cross_tenant_lawyer',
+          'AS invalid_lawyer_id',
+        ]) {
+          expect(MIGRATION_SQL).toContain(counter);
+        }
+      });
+
+      it('R01 repair owner kararları migration dosyasında KAYITLIDIR', () => {
+        expect(MIGRATION_SQL).toContain('CUID PREFLIGHT DISPOSITION = OWNER_RATIFIED');
+        expect(MIGRATION_SQL).toContain('AŞAMA 4 ANCHOR CATCH-UP = REQUIRED PREDECESSOR');
+        expect(MIGRATION_SQL).toContain('OFFICE-WR01-B02-AŞAMA-1-2-TRANSACTION-ATOMICITY-REPAIR-R01');
       });
 
       it('G1: anchor tablosu membership ile AYNI migration dosyasındadır (§9.5 AŞAMA 1)', () => {
@@ -291,6 +338,251 @@ describeWithDisposableDb(
     });
 
     // ==========================================================================================
+    // (3a) ADIM 0 — TEK TRANSACTION GARANTİSİ, GERÇEK `prisma migrate deploy` YOLUNDA
+    // ==========================================================================================
+    //
+    // (3) numaralı sandbox matrisi atomikliği KENDİ açtığı interactive transaction içinde
+    // ölçer — yani sonuçta harness'ın transaction'ını sınar, migration'ın kendi sınırını
+    // değil. Bu blok o boşluğu kapatır: gerçek Prisma Migrate motoru, gerçek migration
+    // geçmişi ve gerçek `_prisma_migrations` ledger'ı üzerinden koşar.
+    //
+    // ÖLÇÜLEN GERÇEK (dürüstlük şerhi): Prisma Migrate 5.22 migration dosyasını explicit
+    // BEGIN/COMMIT olmadan da kendi transaction'ına sarar. Bu testin kanıtladığı şey
+    // "atomiklik ARTIK var" değil, "atomiklik ARTIK dosyanın kendi sözleşmesidir ve
+    // gerçek deploy yolunda ÖLÇÜLÜYOR"dur.
+    describe('ADIM 0 tek-transaction garantisi — gerçek prisma migrate deploy', () => {
+      jest.setTimeout(600_000);
+
+      const B02_DIR = '20260817120000_office_wr01_b02_effective_dated_work_pools';
+      const PRISMA_DIR = join(__dirname, '../../../../prisma');
+      const NEW_TYPES = [
+        'OfficeWorkPoolKind',
+        'OfficeWorkPoolMembershipProvenance',
+        'OfficeWorkPoolEpochProvenance',
+      ];
+
+      let tmpRoot = '';
+      let templateDb = '';
+      let admin: PrismaClient;
+      const createdDbs: string[] = [];
+
+      /** Aynı sunucu, farklı veritabanı. Ad fail-closed doğrulanır (dev DB'ye asla). */
+      function urlFor(db: string): string {
+        expect(db).not.toBe(FORBIDDEN_DB);
+        const url = new URL(TEST_DB_URL);
+        url.pathname = `/${db}`;
+        return url.toString();
+      }
+
+      function newDbName(label: string): string {
+        return `b02tx_${label}_${randomUUID().replace(/-/g, '').slice(0, 16)}_test`;
+      }
+
+      function prismaCliEntry(): string {
+        return require.resolve('prisma/package.json').replace(/package\.json$/, 'build/index.js');
+      }
+
+      function deploy(tree: string, url: string): { ok: boolean; output: string } {
+        try {
+          const out = execFileSync(
+            process.execPath,
+            [prismaCliEntry(), 'migrate', 'deploy', '--schema', join(tree, 'schema.prisma')],
+            { env: { ...process.env, DATABASE_URL: url }, encoding: 'utf8', stdio: 'pipe' },
+          );
+          return { ok: true, output: String(out) };
+        } catch (error) {
+          const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown };
+          return {
+            ok: false,
+            output: `${String(e.stdout ?? '')}${String(e.stderr ?? '')}${String(e.message ?? '')}`,
+          };
+        }
+      }
+
+      function buildTree(
+        name: string,
+        mutate?: (sql: string) => string,
+        dropB02 = false,
+      ): string {
+        const tree = join(tmpRoot, name);
+        cpSync(join(PRISMA_DIR, 'migrations'), join(tree, 'migrations'), { recursive: true });
+        cpSync(join(PRISMA_DIR, 'schema.prisma'), join(tree, 'schema.prisma'));
+        const target = join(tree, 'migrations', B02_DIR);
+        if (dropB02) {
+          rmSync(target, { recursive: true, force: true });
+        } else if (mutate) {
+          writeFileSync(join(target, 'migration.sql'), mutate(MIGRATION_SQL), 'utf8');
+        }
+        return tree;
+      }
+
+      async function queryDb<T>(db: string, sql: string): Promise<T[]> {
+        const client = new PrismaClient({ datasources: { db: { url: urlFor(db) } } });
+        try {
+          return await client.$queryRawUnsafe<T[]>(sql);
+        } finally {
+          await client.$disconnect();
+        }
+      }
+
+      async function cloneTemplate(label: string): Promise<string> {
+        const db = newDbName(label);
+        createdDbs.push(db);
+        await admin.$executeRawUnsafe(`CREATE DATABASE "${db}" TEMPLATE "${templateDb}"`);
+        return db;
+      }
+
+      beforeAll(async () => {
+        admin = new PrismaClient({ datasources: { db: { url: urlFor('postgres') } } });
+        await admin.$connect();
+
+        tmpRoot = mkdtempSync(join(tmpdir(), 'b02tx-'));
+
+        // Şablon veritabanı: B02 HARİÇ gerçek migration geçmişi + gerçek fixture verisi.
+        templateDb = newDbName('tmpl');
+        createdDbs.push(templateDb);
+        await admin.$executeRawUnsafe(`CREATE DATABASE "${templateDb}"`);
+
+        const baseDeploy = deploy(buildTree('base', undefined, true), urlFor(templateDb));
+        expect(baseDeploy.output).toContain('successfully applied');
+        expect(baseDeploy.ok).toBe(true);
+
+        const seed = new PrismaClient({ datasources: { db: { url: urlFor(templateDb) } } });
+        try {
+          await seed.tenant.create({
+            data: { id: 'b02tx-t1', name: 'B02 TX Tenant', slug: `b02tx-${randomUUID()}` },
+          });
+          await seed.lawyer.createMany({
+            data: [
+              { id: 'b02tx-law-a', tenantId: 'b02tx-t1', name: 'A', surname: 'Yonetici' },
+              { id: 'b02tx-law-b', tenantId: 'b02tx-t1', name: 'B', surname: 'Kurucu' },
+            ],
+          });
+          await seed.office.create({
+            data: {
+              id: 'b02tx-off-1',
+              tenantId: 'b02tx-t1',
+              name: 'B02 TX Buro',
+              escalationManagerLawyerIds: ['b02tx-law-a'],
+              escalationFounderLawyerIds: ['b02tx-law-b'],
+              opStaffTypes: ['MUHASEBE', 'SEKRETER'],
+            },
+          });
+        } finally {
+          // CREATE DATABASE ... TEMPLATE, şablona AÇIK bağlantı kalmamasını ister.
+          await seed.$disconnect();
+        }
+      });
+
+      afterAll(async () => {
+        for (const db of [...createdDbs].reverse()) {
+          try {
+            await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${db}" WITH (FORCE)`);
+          } catch {
+            /* temizlik best-effort */
+          }
+        }
+        await admin.$disconnect();
+        if (tmpRoot) rmSync(tmpRoot, { recursive: true, force: true });
+      });
+
+      it('KONTROL — gerçek B02, gerçek deploy: preflight geçer, backfill üretilir, V1-V10 PASS', async () => {
+        const db = await cloneTemplate('ok');
+        const result = deploy(buildTree('real'), urlFor(db));
+        expect(result.output).toContain('successfully applied');
+        expect(result.ok).toBe(true);
+
+        const [counts] = await queryDb<{ memberships: bigint; epochs: bigint; legacy: bigint }>(
+          db,
+          `SELECT (SELECT COUNT(*) FROM "OfficeWorkPoolMembership")::bigint AS memberships,
+                  (SELECT COUNT(*) FROM "OfficeWorkPoolEpoch")::bigint AS epochs,
+                  (SELECT COUNT(*) FROM "OfficeWorkPoolMembership"
+                    WHERE "provenance" = 'LEGACY_CUTOVER_IMPORT')::bigint AS legacy`,
+        );
+        // 1 Office × 3 havuz = 3 anchor · 2 staff type + 1 manager + 1 founder = 4 üyelik
+        expect(Number(counts.epochs)).toBe(3);
+        expect(Number(counts.memberships)).toBe(4);
+        expect(Number(counts.legacy)).toBe(4);
+      });
+
+      it('ADIM 9 kasıtlı doğrulama hatası — deploy DÜŞER, type/table/index/constraint/backfill kalıntısı SIFIRDIR', async () => {
+        const db = await cloneTemplate('fail');
+
+        // Preflight'ı GEÇEN fakat ADIM 9'da düşen türev. Enjeksiyon V1-V10 IF'inin hemen
+        // öncesindedir: CREATE TYPE/TABLE, anchor seed, backfill, CHECK'ler ve index'lerin
+        // TAMAMI çalışmış olur — rollback bu yüzden gerçek bir kalıntı testidir.
+        const inject = (sql: string): string => {
+          const marker = '  IF v1_count_parity > 0 OR';
+          expect(sql).toContain(marker);
+          return sql.replace(
+            marker,
+            `  v10_anchor_boundary := 1; -- KASITLI ADIM 9 HATASI (yalniz test kopyasi)\n${marker}`,
+          );
+        };
+        const result = deploy(buildTree('fail', inject), urlFor(db));
+
+        expect(result.ok).toBe(false);
+
+        // IN-BAND TEŞHİS: operatör ADIM 9'un exact sayaçlarını hata mesajında GÖRÜR.
+        // Bu assertion aynı zamanda explicit BEGIN/COMMIT'in geri sızmasına karşı kilittir:
+        // eklendiği anda mesaj jenerik aborta düşer ve bu test FAIL-CLOSED kırılır.
+        expect(result.output).toContain('BLOCKED office-work-pool backfill verification');
+        expect(result.output).toContain('v10_anchor_boundary=1');
+
+        const [residue] = await queryDb<{
+          types: bigint;
+          tables: bigint;
+          indexes: bigint;
+          checks: bigint;
+          fkeys: bigint;
+        }>(
+          db,
+          `SELECT
+             (SELECT COUNT(*) FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+               WHERE n.nspname = 'public' AND t.typname IN (${NEW_TYPES.map((t) => `'${t}'`).join(', ')}))::bigint AS types,
+             (SELECT COUNT(*) FROM information_schema.tables
+               WHERE table_schema = 'public' AND table_name LIKE 'OfficeWorkPool%')::bigint AS tables,
+             (SELECT COUNT(*) FROM pg_indexes
+               WHERE schemaname = 'public'
+                 AND (indexname LIKE 'OfficeWorkPool%' OR indexname LIKE 'office_work_pool%'))::bigint AS indexes,
+             (SELECT COUNT(*) FROM pg_constraint WHERE conname LIKE 'office_work_pool%')::bigint AS checks,
+             (SELECT COUNT(*) FROM pg_constraint WHERE conname LIKE 'OfficeWorkPool%')::bigint AS fkeys`,
+        );
+        expect({
+          types: Number(residue.types),
+          tables: Number(residue.tables),
+          indexes: Number(residue.indexes),
+          checks: Number(residue.checks),
+          fkeys: Number(residue.fkeys),
+        }).toEqual({ types: 0, tables: 0, indexes: 0, checks: 0, fkeys: 0 });
+
+        // Backfill kalıntısı: tablolar yok → satır da yok. Buna KARŞILIK kaynak veri
+        // BOZULMADAN durur — yani rollback YALNIZ B02'yi geri aldı, öncesini değil.
+        const [survivors] = await queryDb<{ offices: bigint; lawyers: bigint; arrays: bigint }>(
+          db,
+          `SELECT (SELECT COUNT(*) FROM "Office")::bigint AS offices,
+                  (SELECT COUNT(*) FROM "Lawyer")::bigint AS lawyers,
+                  (SELECT cardinality("escalationManagerLawyerIds") + cardinality("escalationFounderLawyerIds")
+                          + cardinality("opStaffTypes") FROM "Office" LIMIT 1)::bigint AS arrays`,
+        );
+        expect(Number(survivors.offices)).toBe(1);
+        expect(Number(survivors.lawyers)).toBe(2);
+        expect(Number(survivors.arrays)).toBe(4);
+
+        // Ledger sözleşmesi (dürüstlük şerhi): schema/data rollback TAMDIR, fakat
+        // `_prisma_migrations` içinde BAŞARISIZ kayıt KORUNUR (finished_at NULL). Bu
+        // "yeniden deneme kendiliğinden açık" DEMEK DEĞİLDİR: yeniden deploy öncesinde
+        // repo-native `prisma migrate resolve --rolled-back` recovery adımı GEREKEBİLİR.
+        const [ledger] = await queryDb<{ finished: bigint }>(
+          db,
+          `SELECT COUNT(*)::bigint AS finished FROM _prisma_migrations
+            WHERE migration_name = '${B02_DIR}' AND finished_at IS NOT NULL`,
+        );
+        expect(Number(ledger.finished)).toBe(0);
+      });
+    });
+
+    // ==========================================================================================
     // (3) M1-M7 FIXTURE MATRİSİ — migration izole şemada GERÇEKTEN yeniden uygulanır
     // ==========================================================================================
     describe('M1-M7 fixture matrisi', () => {
@@ -319,9 +611,18 @@ describeWithDisposableDb(
         return schema;
       }
 
-      /** Migration'ı TEK transaction'da sandbox şemasına uygular. */
+      /**
+       * Migration'ı TEK transaction'da sandbox şemasına uygular.
+       *
+       * Harness kendi interactive transaction'ını açar ve `SET LOCAL search_path` ile
+       * sandbox şemasına bağlar. Dosyada explicit `BEGIN;`/`COMMIT;` BULUNMAMALIDIR
+       * (OPTION B); aksi hâlde iç içe COMMIT dış transaction'ı erken kapatırdı. Bu
+       * kontrol bunu yapısal olarak sabitler.
+       */
       async function applyMigration(schema: string): Promise<{ ok: boolean; error?: string }> {
-        const statements = splitSqlStatements(MIGRATION_SQL);
+        const all = splitSqlStatements(MIGRATION_SQL);
+        expect(all.filter((x) => /^(BEGIN|COMMIT)$/i.test(bareStatement(x)))).toHaveLength(0);
+        const statements = all;
         try {
           await prisma.$transaction(
             async (tx) => {
