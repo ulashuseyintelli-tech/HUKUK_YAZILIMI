@@ -145,6 +145,9 @@ const NON_RUNTIME_ALLOWLIST: readonly string[] = [
   'modules/office/work-pool/__tests__/office-work-pool-parity.db-gated.integration.spec.ts',
   // AŞAMA 4 T1-T6 / A1-A5 matrisi: fixture kurulumu ve doğrudan-yazma NEGATİF kontrolleri.
   'modules/office/work-pool/__tests__/office-work-pool-dual-write.db-gated.integration.spec.ts',
+  // C14-R2-R01 CLI env-loading harness'ı: yalnız kendi `owp-cli-env-*` fixture'ını kurar ve
+  // siler; membership/anchor yazımı CLI'ın KENDİ primitive yolundan olur, testten DEĞİL.
+  'modules/office/work-pool/__tests__/office-work-pool-anchor-catchup-cli.db-gated.integration.spec.ts',
   // Bu guard'ın kendisi: kalıp literalleri kaynakta geçtiği için kendini eşler.
   'modules/office/work-pool/__tests__/office-work-pool-writer.static-guard.spec.ts',
 ];
@@ -357,8 +360,21 @@ describe('OFFICE-WR01-B02 A4 — tek writer ve yapisal kilitler', () => {
     expect(startPath.endsWith(entrySuffix)).toBe(true);
     const distPrefix = startPath.slice(0, startPath.length - entrySuffix.length);
     expect(distPrefix).toBe('dist/');
-    const expectedCommand = `node ${distPrefix}${CATCH_UP_ENTRY}.js`;
+    // C14-R2-R01 (OD-02): komut derlenmis JS'i `--env-file=.env` ile calistirir. Gerekce
+    // GO-03'te production'da OLCULDU: CLI dotenv YUKLEMEZ ve `new PrismaClient()` yalnizca
+    // `process.env.DATABASE_URL`e bakar; bayraksiz cagri PrismaClientInitializationError
+    // verir. Bayrak, calistirma sozlesmesinin PARCASIDIR — opsiyonel degil.
+    const ENV_FLAG = '--env-file=.env';
+    const compiledPath = `${distPrefix}${CATCH_UP_ENTRY}.js`;
+    const expectedCommand = `node ${ENV_FLAG} ${compiledPath}`;
     expect(pkg.scripts[SCRIPT_NAME]).toBe(expectedCommand);
+
+    // (b2) Bayrak ZORUNLU ve derlenmis yoldan ONCE gelir (node onu argv olarak degil,
+    //      kendi secenegi olarak yorumlasin diye).
+    const value = pkg.scripts[SCRIPT_NAME];
+    expect(value).toContain(ENV_FLAG);
+    expect(value.indexOf(ENV_FLAG)).toBeLessThan(value.indexOf(compiledPath));
+    expect(value.startsWith('node ')).toBe(true);
 
     // (c) Kaynak yolu gercekten vardir — turetim bir yazim hatasi uzerine kurulamaz.
     expect(existsSync(join(API_SRC, 'scripts/office-work-pool-anchor-catchup.ts'))).toBe(true);
@@ -367,6 +383,10 @@ describe('OFFICE-WR01-B02 A4 — tek writer ve yapisal kilitler', () => {
     for (const forbidden of ['npx', 'tsx', 'ts-node', '--yes']) {
       expect(pkg.scripts[SCRIPT_NAME]).not.toContain(forbidden);
     }
+
+    // (d2) TypeScript KAYNAK yolu ile calistirilamaz — yalniz derlenmis `.js` hedefi.
+    expect(pkg.scripts[SCRIPT_NAME]).not.toMatch(/\.ts(\s|$)/);
+    expect(pkg.scripts[SCRIPT_NAME]).toContain('.js');
 
     // (e) ALIAS REGRESYONU: baska HICBIR script catch-up'i farkli bir yoldan calistiramaz.
     //     Bir gun `owp:anchor-catchup:dev` diye tsx'li bir kardes eklenirse burada duser.
@@ -387,8 +407,14 @@ describe('OFFICE-WR01-B02 A4 — tek writer ve yapisal kilitler', () => {
     //     ciktisini da uretmis OLMASI ZORUNLUDUR.
     const buildMarker = join(API_ROOT, startPath);
     if (existsSync(buildMarker)) {
-      expect(existsSync(join(API_ROOT, `${distPrefix}${CATCH_UP_ENTRY}.js`))).toBe(true);
+      expect(existsSync(join(API_ROOT, compiledPath))).toBe(true);
     }
+
+    // (f2) `.tsbuildinfo` ASLA build gostergesi sayilmaz. Bu, C14-R2 GO-02'de olculen
+    //      olgunun kilidi: `tsc --noEmit` dist'i yalniz onbellek icin yaratabilir.
+    //      Marker'in kendisi `.tsbuildinfo` OLAMAZ.
+    expect(buildMarker.endsWith('.tsbuildinfo')).toBe(false);
+    expect(startPath.endsWith('.js')).toBe(true);
 
     // (g) Kaynakta entry guard KORUNUR: dosya import edildiginde main CALISMAZ.
     const catchUpSource = stripTsComments(
