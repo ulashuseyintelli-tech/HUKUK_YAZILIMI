@@ -235,3 +235,16 @@ src/modules/office-approval/__tests__/office-work-digest.service.spec.ts
 # pasif-kullanici filtresi yok, repository salt-okunur, office.module.ts te wiring yok.
 # DB gerektirmez; ayni OFFICE process inde kosar, yeni Jest step ACILMAZ.
 src/modules/office/work-pool/__tests__/office-work-pool-resolver.spec.ts
+
+# -- OFFICE-WR01-B02 ASAMA 4 — ADMIN WRITE-PATH DUAL-WRITE (G3-G7) -----------
+# Yapisal kilitler: primitive DISINDA runtime membership writer sifir, mutation zaman
+# yuzeyinde now()/CURRENT_TIMESTAMP/new Date() yok, tek clock_timestamp cagrisi, Office
+# kilidi transactionin ILK DB ifadesi, bounded/recursive-olmayan retry, mutation icinde
+# public resolver service cagrisi yok, admin GET hala legacy okuyor, CONSUMER WIRING 0/6.
+# DB gerektirmez; ayni OFFICE process inde kosar, yeni Jest step ACILMAZ.
+src/modules/office/work-pool/__tests__/office-work-pool-writer.static-guard.spec.ts
+# Retry dongusu: hata enjeksiyonuyla deneme sayisi, her denemenin YENI transaction actigi,
+# P2034/40001/40P01 ve belirsiz-commit siniflarinin retrylendigi, CHECK/FK/unique/domain
+# hatalarinin ASLA retrylenmedigi ve havuz kolonu passthrough guardinin transaction ACMADAN
+# reddettigi olculur. Lock davranisi BURADA KANITLANMAZ (db-gated matriste).
+src/modules/office/work-pool/__tests__/office-work-pool-mutation-retry.spec.ts
