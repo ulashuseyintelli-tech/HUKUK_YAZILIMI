@@ -267,3 +267,6 @@ src/modules/execution-office/__tests__/execution-office-update-security.db-gated
 # OFFICE-WR01-B02 ASAMA 1-2: effective-dated havuz migration'inin gercek PostgreSQL uzerinde
 # yeniden uygulanmasi (M1-M7 fixture matrisi) + uygulanmis kanonik sema kanitlari.
 src/modules/office/__tests__/office-work-pool-effective-dating-migration.db-gated.integration.spec.ts
+# OFFICE-WR01-B02 C14-R2-R01: catch-up CLI'inin --env-file=.env sozlesmesi GERCEK PROCESS ile.
+# GO-03'te olculen kusurun regresyon kilidi: CLI dotenv yuklemez, bayraksiz cagri fail-closed.
+src/modules/office/work-pool/__tests__/office-work-pool-anchor-catchup-cli.db-gated.integration.spec.ts

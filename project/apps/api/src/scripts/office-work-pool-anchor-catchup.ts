@@ -45,10 +45,16 @@
  * ═══ KULLANIM ══════════════════════════════════════════════════════════════════════════
  * PRODUCTION KANONİK BİÇİMİ derlenmiş JavaScript'tir; `npx`/`tsx` ve runtime transpilation
  * KULLANILMAZ (C14-R1A). Bakım penceresinde uzak paket indirmesine bağımlı olmak kabul
- * edilemez; komut `nest build` çıktısını doğrudan pinli Node ile çalıştırır:
+ * edilemez; komut `nest build` çıktısını doğrudan pinli Node ile çalıştırır.
  *
- *   node dist/apps/api/src/scripts/office-work-pool-anchor-catchup.js
- *   node dist/apps/api/src/scripts/office-work-pool-anchor-catchup.js --apply --drained-confirmed
+ * `--env-file=.env` SÖZLEŞMENİN PARÇASIDIR, opsiyonel değildir (C14-R2-R01 / OD-02). Bu dosya
+ * dotenv YÜKLEMEZ ve `new PrismaClient()` yalnızca `process.env.DATABASE_URL`e bakar; bayraksız
+ * çağrı `PrismaClientInitializationError` verir. Bu, C14-R2 GO-03'te production'da ÖLÇÜLDÜ:
+ * ilk çağrı DB'ye hiç bağlanmadan exit 1 döndü (yazım 0). Çalışma dizini `apps/api` olmalıdır;
+ * `.env` oradadır ve bayrak göreli çözülür.
+ *
+ *   node --env-file=.env dist/apps/api/src/scripts/office-work-pool-anchor-catchup.js
+ *   node --env-file=.env dist/apps/api/src/scripts/office-work-pool-anchor-catchup.js --apply --drained-confirmed
  *
  * Developer ergonomisi için aynı derlenmiş dosyayı çalıştıran paket script'i de vardır
  * (paket adı `@hukuk/api`; kısa `--filter api` biçimi YANLIŞTIR):
