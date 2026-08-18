@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative, sep } from 'path';
 import {
   classifyOfficeWorkPoolMutationError,
@@ -331,5 +331,76 @@ describe('OFFICE-WR01-B02 A4 — tek writer ve yapisal kilitler', () => {
 
     // 55P03 BİLEREK allowlist DIŞINDADIR: düz bekleyen FOR UPDATE bu kodu üretemez (§11.5.4).
     expect(classifyOfficeWorkPoolMutationError({ code: '55P03' })).toBe('FATAL');
+  });
+
+  it('(14) C14-R1A: catch-up production yuzeyi DERLENMIS Node yoludur, dinamik indirme YOKTUR', () => {
+    const API_ROOT = join(API_SRC, '..');
+    const PACKAGE_JSON_RAW = readFileSync(join(API_ROOT, 'package.json'), 'utf8');
+    const pkg = JSON.parse(PACKAGE_JSON_RAW) as { scripts: Record<string, string> };
+    const nestCli = JSON.parse(readFileSync(join(API_ROOT, 'nest-cli.json'), 'utf8')) as {
+      entryFile: string;
+    };
+    const SCRIPT_NAME = 'owp:anchor-catchup';
+    // Kaynagin monorepo koku (`project/`) gorelisi — nest'in dist yerlesimi bu koku korur.
+    const CATCH_UP_ENTRY = 'apps/api/src/scripts/office-work-pool-anchor-catchup';
+
+    // (a) Script TAM BIR KEZ tanimlidir. Sayim HAM METIN uzerinde yapilir: JSON.parse
+    //     tekrarlanan anahtari sessizce teke indirir ve ikinci bir tanim gorunmez kalirdi.
+    const declarations = PACKAGE_JSON_RAW.match(new RegExp(`"${SCRIPT_NAME}"\\s*:`, 'g')) ?? [];
+    expect(declarations).toHaveLength(1);
+
+    // (b) Beklenen komut ICAT EDILMEZ; build yerlesiminden TURETILIR. Cikarim, canli
+    //     runtime'in fiilen kullandigi `start` script'i ile nest-cli `entryFile`ini
+    //     birbirine baglar: yerlesim degisirse ikisi BIRLIKTE degismek zorundadir.
+    const startPath = pkg.scripts.start.replace(/^node\s+/, '');
+    const entrySuffix = `${nestCli.entryFile}.js`;
+    expect(startPath.endsWith(entrySuffix)).toBe(true);
+    const distPrefix = startPath.slice(0, startPath.length - entrySuffix.length);
+    expect(distPrefix).toBe('dist/');
+    const expectedCommand = `node ${distPrefix}${CATCH_UP_ENTRY}.js`;
+    expect(pkg.scripts[SCRIPT_NAME]).toBe(expectedCommand);
+
+    // (c) Kaynak yolu gercekten vardir — turetim bir yazim hatasi uzerine kurulamaz.
+    expect(existsSync(join(API_SRC, 'scripts/office-work-pool-anchor-catchup.ts'))).toBe(true);
+
+    // (d) Dinamik yurutucu / uzak paket indirme izi YOKTUR.
+    for (const forbidden of ['npx', 'tsx', 'ts-node', '--yes']) {
+      expect(pkg.scripts[SCRIPT_NAME]).not.toContain(forbidden);
+    }
+
+    // (e) ALIAS REGRESYONU: baska HICBIR script catch-up'i farkli bir yoldan calistiramaz.
+    //     Bir gun `owp:anchor-catchup:dev` diye tsx'li bir kardes eklenirse burada duser.
+    const aliases = Object.entries(pkg.scripts).filter(([, value]) =>
+      value.includes('office-work-pool-anchor-catchup'),
+    );
+    expect(aliases.map(([name]) => name)).toEqual([SCRIPT_NAME]);
+    for (const [, value] of aliases) expect(value).toBe(expectedCommand);
+
+    // (f) DERLENMIS HEDEF: `nest build` kosulmus bir agacta dosya GERCEKTEN vardir.
+    //     DURUSTLUK SINIRI — CI'nin `Test Suite` job'i build KOSMAZ, bu yuzden kontrol her
+    //     ortamda uygulanamaz. Kosul olarak `dist` dizininin VARLIGI KULLANILAMAZ: tsconfig
+    //     `incremental: true` + `outDir: ./dist` tasidigi icin CI'nin `tsc --noEmit` adimi
+    //     dist'i YALNIZ `.tsbuildinfo` icin yaratir — derlenmis JS olmadan. (Bu, guard'in ilk
+    //     halinin CI'da dusme sebebiydi; kosul artik olculmus bir olguya dayaniyor.)
+    //     Dogru gosterge build'in KENDI entry artifact'idir: `start` script'inin calistirdigi
+    //     `main.js` varsa `nest build` gercekten kosmustur ve ayni derlemenin catch-up
+    //     ciktisini da uretmis OLMASI ZORUNLUDUR.
+    const buildMarker = join(API_ROOT, startPath);
+    if (existsSync(buildMarker)) {
+      expect(existsSync(join(API_ROOT, `${distPrefix}${CATCH_UP_ENTRY}.js`))).toBe(true);
+    }
+
+    // (g) Kaynakta entry guard KORUNUR: dosya import edildiginde main CALISMAZ.
+    const catchUpSource = stripTsComments(
+      readFileSync(join(API_SRC, 'scripts/office-work-pool-anchor-catchup.ts'), 'utf8'),
+    );
+    expect(catchUpSource).toContain('require.main === module');
+
+    // (h) FAIL-CLOSED sozlesmesi KORUNUR: `--apply` tek basina yazmaz.
+    expect(catchUpSource).toContain("argv.includes('--apply')");
+    expect(catchUpSource).toContain("argv.includes('--drained-confirmed')");
+    expect(catchUpSource).toMatch(/if\s*\(\s*apply\s*&&\s*!\s*drainedConfirmed\s*\)/);
+    expect(catchUpSource).toContain('DRAIN_NOT_CONFIRMED');
+    expect(catchUpSource).toMatch(/DRAIN_NOT_CONFIRMED[\s\S]*?process\.exit\(2\)/);
   });
 });

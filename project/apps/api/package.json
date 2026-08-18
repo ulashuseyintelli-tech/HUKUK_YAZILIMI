@@ -27,7 +27,7 @@
     "backfill:due-claimitem": "npx --yes tsx scripts/backfill-due-to-claimitem.ts",
     "inventory:due-claimitem": "npx --yes tsx scripts/inventory-due-claimitem.ts",
     "inventory:rich-interest-uyap": "npx --yes tsx scripts/inventory-rich-interest-uyap-readiness.ts",
-    "owp:anchor-catchup": "npx --yes tsx src/scripts/office-work-pool-anchor-catchup.ts",
+    "owp:anchor-catchup": "node dist/apps/api/src/scripts/office-work-pool-anchor-catchup.js",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
