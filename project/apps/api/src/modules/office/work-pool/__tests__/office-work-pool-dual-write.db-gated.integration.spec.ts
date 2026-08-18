@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { OfficeWorkPoolKind, PrismaClient, StaffType } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { describeDb } from '../../../../../test/describe-db';
@@ -391,6 +392,139 @@ describeDb('OFFICE-WR01-B02 A4 — dual-write + concurrency (gercek Postgres)', 
   }, 120_000);
 
   // ══════════════════════════════════════════════════════════════════════════════════════
+  // V1-V3 — C13-R01: BELİRSİZ COMMIT SONRASI ÇİFT-YÜZEY READ-VERIFICATION (§9.4a/5, §6.1)
+  // ══════════════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Belirsiz commit sonucunu GERÇEKÇİ biçimde üretir — hata enjekte edilen yer sonucu belirler:
+   *
+   *  - `AFTER_COMMIT`: transaction GERÇEKTEN commit olur, sonra istemciye bağlantı hatası
+   *    döner. "Yazıldı mı?" sorusunun cevabı DB'de EVET, istemcide BİLİNMİYOR.
+   *  - `BEFORE_RUN` : transaction HİÇ çalışmaz. Cevap DB'de HAYIR, istemcide BİLİNMİYOR.
+   *
+   * Her iki hâlde istemcinin gördüğü şey AYNIDIR (`P1017`); ayrımı yalnız çift-yüzey
+   * doğrulama yapabilir. Mock'lu bir `$transaction` bunu kanıtlayamazdı — gerçek commit gerekir.
+   */
+  function makeAmbiguousClient(when: 'AFTER_COMMIT' | 'BEFORE_RUN'): PrismaService {
+    let armed = true;
+    const proxy = new Proxy(prisma, {
+      get(target, prop) {
+        if (prop === '$transaction') {
+          return async (...args: unknown[]) => {
+            if (when === 'BEFORE_RUN' && armed) {
+              armed = false;
+              throw { code: 'P1017' };
+            }
+            const run = target.$transaction as unknown as (...a: unknown[]) => Promise<unknown>;
+            const result = await run.apply(target, args);
+            if (when === 'AFTER_COMMIT' && armed) {
+              armed = false;
+              throw { code: 'P1017' };
+            }
+            return result;
+          };
+        }
+        const value = Reflect.get(target, prop) as unknown;
+        return typeof value === 'function' ? (value as () => unknown).bind(target) : value;
+      },
+    });
+    return proxy as unknown as PrismaService;
+  }
+
+  function makeAmbiguousMutation(when: 'AFTER_COMMIT' | 'BEFORE_RUN') {
+    const service = new OfficeWorkPoolMutationService(makeAmbiguousClient(when));
+    jest
+      .spyOn((service as unknown as { logger: { warn: () => void } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+    return service;
+  }
+
+  it('V1 — COMMIT OLMUS fakat cevap kaybolmus: iki yuzey de esit → TEKRAR YAZMA YOK', async () => {
+    await resetPool(T, [A]);
+
+    const service = makeAmbiguousMutation('AFTER_COMMIT');
+    const result = await service.applyTargetState({
+      tenantId: T,
+      source: { mode: 'EXPLICIT', targetStates: { ESCALATION_MANAGER: [A, B] } },
+      actorUserId: ACTOR,
+    });
+
+    expect(result.attempts).toBe(2);
+    expect(result.verification).toBe('BOTH_SURFACES_MATCH');
+
+    // Hedef durum ZATEN uygulanmıştı; ikinci deneme hiçbir havuz yazımı yapmadı.
+    const change = result.changes.find((c) => c.poolKind === POOL);
+    expect(change?.addedMemberKeys).toEqual([]);
+    expect(change?.revokedMemberKeys).toEqual([]);
+    expect([...(change?.unchangedMemberKeys ?? [])].sort()).toEqual([A, B].sort());
+
+    // TEKRAR YAZMA OLMADIĞININ ASIL KANITI: B satırı BİR tanedir ve `validFrom` değeri
+    // doğrulama transaction'ının `effectiveAt`'inden ÖNCEDİR — yani ilk (commit olmuş)
+    // denemede yazılmıştır, ikinci denemede YENİDEN yazılmamıştır. Kör yeniden uygulama
+    // olsaydı B için ikinci bir tarihsel satır doğar (veya partial unique index `23505`
+    // ile patlardı) ve `validFrom` doğrulama anına eşitlenirdi.
+    const bRows = await prisma.officeWorkPoolMembership.findMany({
+      where: { tenantId: T, poolKind: POOL, memberLawyerId: B },
+    });
+    expect(bRows).toHaveLength(1);
+    expect(bRows[0].validFrom.getTime()).toBeLessThan(result.effectiveAt.getTime());
+    expect(bRows[0].revokedAt).toBeNull();
+
+    // A'ya da dokunulmadı; toplam satır sayısı iki (A + B).
+    expect(
+      await prisma.officeWorkPoolMembership.count({ where: { tenantId: T, poolKind: POOL } }),
+    ).toBe(2);
+    expect(await activeMembers(T)).toEqual([A, B].sort());
+    expect(await legacyManagers(T)).toEqual([A, B].sort());
+  }, 120_000);
+
+  it('V2 — COMMIT OLMAMIS ambiguous failure: mismatch tespit edilir, bounded reapply yapilir', async () => {
+    await resetPool(T, [A]);
+
+    const service = makeAmbiguousMutation('BEFORE_RUN');
+    const result = await service.applyTargetState({
+      tenantId: T,
+      source: { mode: 'EXPLICIT', targetStates: { ESCALATION_MANAGER: [A, C] } },
+      actorUserId: ACTOR,
+    });
+
+    expect(result.attempts).toBe(2);
+    expect(result.verification).toBe('MISMATCH_REAPPLIED');
+
+    // Hedef durum ikinci denemede uygulandı ve İKİ yüzey de hedefe eşitlendi.
+    expect(await activeMembers(T)).toEqual([A, C].sort());
+    expect(await legacyManagers(T)).toEqual([A, C].sort());
+
+    // C satırı DOĞRULAMA/UYGULAMA transaction'ının kendi `effectiveAt`'iyle yazılmıştır.
+    const cRow = await prisma.officeWorkPoolMembership.findFirstOrThrow({
+      where: { tenantId: T, poolKind: POOL, memberLawyerId: C },
+    });
+    expect(cRow.validFrom.getTime()).toBe(result.effectiveAt.getTime());
+  }, 120_000);
+
+  it('V3 — TEK yuzey esitligi basari SAYILMAZ: legacy hedefe esit ama uyelik degilse REAPPLY', async () => {
+    // Kasıtlı olarak ASİMETRİK başlangıç: legacy dizi {A,B}, aktif üyelik yalnız {A}.
+    await resetPool(T, [A]);
+    await prisma.office.update({
+      where: { tenantId: T },
+      data: { escalationManagerLawyerIds: [A, B] },
+    });
+
+    const service = makeAmbiguousMutation('BEFORE_RUN');
+    const result = await service.applyTargetState({
+      tenantId: T,
+      source: { mode: 'EXPLICIT', targetStates: { ESCALATION_MANAGER: [A, B] } },
+      actorUserId: ACTOR,
+    });
+
+    // YALNIZ legacy'ye bakan bir doğrulama "eşit, iş bitti" der ve üyelik tablosunu KALICI
+    // olarak eksik bırakırdı. Çift-yüzey kuralı bunu yakalar.
+    expect(result.verification).toBe('MISMATCH_REAPPLIED');
+    expect(result.changes.find((c) => c.poolKind === POOL)?.addedMemberKeys).toEqual([B]);
+    expect(await activeMembers(T)).toEqual([A, B].sort());
+  }, 120_000);
+
+  // ══════════════════════════════════════════════════════════════════════════════════════
   // T6 — CF-B02-03: effectiveAt kilit SONRASI üretilir
   // ══════════════════════════════════════════════════════════════════════════════════════
 
@@ -497,13 +631,23 @@ describeDb('OFFICE-WR01-B02 A4 — dual-write + concurrency (gercek Postgres)', 
     const legacyBefore = await legacyManagers(T);
 
     // Bu tenant'a ait OLMAYAN bir lawyer id → composite FK (§6.2) `23503` ile reddeder.
-    await expect(
-      officeService.updateEscalationSettings(
+    //
+    // C13-OD-01 (OWNER RATIFIED): bu reddin istemciye **HTTP 400** olarak dönmesi artık
+    // sözleşmedir; onceki sessiz kabul davranisi KORUNMAYACAKTIR. Yalniz "reddedildi"
+    // demek yetmez — ham 23503'un 500'e donusmesi ile bilincli 400 arasindaki fark
+    // ratifiye edilen davranisin ta kendisidir, bu yuzden STATUS KODU assert edilir.
+    const rejection = await officeService
+      .updateEscalationSettings(
         T,
         { escalationManagerLawyerIds: [A, 'owp-a4-yok-lawyer'], opReminderDays: 99 },
         ACTOR,
-      ),
-    ).rejects.toThrow();
+      )
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(rejection).toBeInstanceOf(BadRequestException);
+    expect((rejection as BadRequestException).getStatus()).toBe(400);
 
     // Legacy dizi DE, havuz-dışı alan DA, üyelik satırları DA değişmemiştir.
     const office = await prisma.office.findUniqueOrThrow({ where: { tenantId: T } });
@@ -581,7 +725,12 @@ describeDb('OFFICE-WR01-B02 A4 — dual-write + concurrency (gercek Postgres)', 
     expect(provisioned).toHaveLength(office.opStaffTypes.length);
     expect(provisioned.every((m) => m.poolKind === 'OP_STAFF_TYPE')).toBe(true);
     expect(provisioned.every((m) => m.validFrom.getTime() === office.createdAt.getTime())).toBe(true);
-    expect(provisioned.every((m) => m.provenance === 'LEGACY_CUTOVER_IMPORT')).toBe(true);
+    // C13-R01: provisioning uyeligi TENANT_PROVISIONED'dir. Buro O AN dogmustur ve uyelik
+    // sema VARSAYILANINDAN turemistir; ithal edilen bir legacy gecmis YOKTUR. Anchor tarafi
+    // zaten TENANT_PROVISIONED yaziyordu — bu assertion iki tarafin ARTIK ayni semantigi
+    // tasidigini kilitler (C13'teki asimetri kusurunun regresyon korumasi).
+    expect(provisioned.every((m) => m.provenance === 'TENANT_PROVISIONED')).toBe(true);
+    expect(anchors.every((a) => a.provenance === 'TENANT_PROVISIONED')).toBe(true);
     expect(await activeMembers(T_NEW, 'OP_STAFF_TYPE')).toEqual([...office.opStaffTypes].sort());
 
     // İkinci `getOrCreate` mevcut Office'i döndürür; yeni tarihsel satır ÜRETMEZ.
@@ -650,6 +799,10 @@ describeDb('OFFICE-WR01-B02 A4 — dual-write + concurrency (gercek Postgres)', 
     });
     expect(memberships).toHaveLength(2);
     expect(memberships.every((m) => m.validFrom.getTime() === catchUpAt)).toBe(true);
+    // CATCH-UP YOLU LEGACY_CUTOVER_IMPORT OLARAK KORUNUR (C13-R01 madde 3): burada gercekten
+    // duz diziden ithal vardir ve validFrom bir ITHAL tarihidir, politikanin kanitlanmis
+    // baslangici DEGILDIR. Provisioning yolunun TENANT_PROVISIONED'a gecmesi bu yolu
+    // ETKILEMEZ; iki yolun AYRI provenance tasidigi burada kilitlenir.
     expect(memberships.every((m) => m.provenance === 'LEGACY_CUTOVER_IMPORT')).toBe(true);
 
     // Legacy alanlara HİÇBİR değişiklik yapılmadı (§5.3 madde 6).

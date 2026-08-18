@@ -86,8 +86,23 @@ export interface OfficeWorkPoolPoolChange {
   readonly unchangedMemberKeys: readonly string[];
 }
 
+/**
+ * Belirsiz-commit sonrası çift-yüzey doğrulamasının sonucu (C13-R01, §9.4a/5).
+ *
+ * - `NOT_REQUIRED`        : önceki deneme belirsizlik bırakmadı (ilk deneme veya kesin rollback).
+ * - `BOTH_SURFACES_MATCH` : legacy diziler VE aktif üyelik kümeleri hedefe eşitti → hiçbir havuz
+ *                           yazımı yapılmadı. "Commit olmuş ama cevap kaybolmuş" hâlinin kanıtı.
+ * - `MISMATCH_REAPPLIED`  : en az bir yüzey hedeften farklıydı → hedef durum yeniden uygulandı.
+ */
+export type OfficeWorkPoolVerificationOutcome =
+  | 'NOT_REQUIRED'
+  | 'BOTH_SURFACES_MATCH'
+  | 'MISMATCH_REAPPLIED';
+
 /** `applyTargetState()` sonucu. */
 export interface OfficeWorkPoolApplyTargetStateResult {
+  /** Çift-yüzey doğrulamasının bu koşumdaki sonucu (C13-R01). */
+  readonly verification: OfficeWorkPoolVerificationOutcome;
   /** Kilit ALINDIKTAN SONRA `clock_timestamp()` ile üretilen TEK zaman (§11.5.9). */
   readonly effectiveAt: Date;
   /** Kaçıncı denemede commit edildi (bounded retry kanıtı, §9.4a/4). */
