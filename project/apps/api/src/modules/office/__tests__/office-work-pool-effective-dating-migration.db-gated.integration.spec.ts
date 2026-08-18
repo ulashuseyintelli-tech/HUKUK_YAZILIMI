@@ -161,19 +161,21 @@ describeWithDisposableDb(
         }
       });
 
-      it('ADIM 0: transaction sınırı migration dosyasının KENDİSİNDE — explicit BEGIN ilk, COMMIT son ifadedir', () => {
+      it('ADIM 0: dosyada explicit BEGIN/COMMIT YOKTUR — in-band exact-sayaç teşhisi korunur', () => {
+        // OWNER DISPOSITION R01 / OPTION B. Explicit `BEGIN;` eklemek ölçülmüş biçimde
+        // ADIM 1/ADIM 9'un RAISE mesajını jenerik "current transaction is aborted"a
+        // çevirip §8.4'ün "RAISE EXCEPTION exact sayılarla" şartını yok ediyordu.
+        // Atomiklik ise (aşağıdaki gerçek-deploy testinde ölçüldüğü üzere) zaten vardır.
         const statements = splitSqlStatements(MIGRATION_SQL).map(bareStatement);
-        expect(statements[0]).toBe('BEGIN');
-        expect(statements[statements.length - 1]).toBe('COMMIT');
-        // Tek bir transaction: iç içe/ek BEGIN veya COMMIT yok.
-        expect(statements.filter((x) => /^(BEGIN|COMMIT)$/i.test(x))).toHaveLength(2);
-        // Repo emsali gerçekten var (bu iki migration her CI koşumunda deploy edilir).
-        expect(
-          readFileSync(
-            join(__dirname, '../../../../prisma/migrations/00000000000001_legal_kernel_triggers/migration.sql'),
-            'utf8',
-          ),
-        ).toMatch(/^BEGIN;/m);
+        expect(statements.filter((x) => /^(BEGIN|COMMIT)$/i.test(x))).toHaveLength(0);
+      });
+
+      it('ADIM 0 sözleşmesinin SINIRI dosyada dar tanımlıdır — evrensel Prisma iddiası YOK', () => {
+        // Doğrulanan sözleşme: pinli Prisma sürümü + PostgreSQL 16 + exact migrate deploy yolu.
+        expect(MIGRATION_SQL).toContain('exact `prisma migrate deploy` yolu');
+        expect(MIGRATION_SQL).toContain('PostgreSQL 16');
+        expect(MIGRATION_SQL).toContain('KAPSAMI DIŞINDADIR');
+        expect(MIGRATION_SQL).toContain('FAIL-CLOSED');
       });
 
       it('teşhis telafisi: BLOCKED sonrası operatörün koşacağı sorgular header içinde KAYITLIDIR', () => {
@@ -521,11 +523,11 @@ describeWithDisposableDb(
 
         expect(result.ok).toBe(false);
 
-        // ÖLÇÜLEN DAVRANIŞ (ve bilinen bedeli): explicit `BEGIN;` altında RAISE olduğunda
-        // Prisma Migrate migration'ın kendi fail-closed mesajını DEĞİL, jenerik abort
-        // hatasını raporlar. Atomiklik korunur (aşağıdaki kalıntı ölçümü), TEŞHİS kaybolur;
-        // telafi migration header'ındaki teşhis sorgularıdır (aşağıda ayrıca test edilir).
-        expect(result.output).toMatch(/current transaction is aborted/i);
+        // IN-BAND TEŞHİS: operatör ADIM 9'un exact sayaçlarını hata mesajında GÖRÜR.
+        // Bu assertion aynı zamanda explicit BEGIN/COMMIT'in geri sızmasına karşı kilittir:
+        // eklendiği anda mesaj jenerik aborta düşer ve bu test FAIL-CLOSED kırılır.
+        expect(result.output).toContain('BLOCKED office-work-pool backfill verification');
+        expect(result.output).toContain('v10_anchor_boundary=1');
 
         const [residue] = await queryDb<{
           types: bigint;
@@ -567,7 +569,10 @@ describeWithDisposableDb(
         expect(Number(survivors.lawyers)).toBe(2);
         expect(Number(survivors.arrays)).toBe(4);
 
-        // Ledger: B02 BAŞARILI olarak işaretlenmemiştir → yeniden deneme mümkün kalır.
+        // Ledger sözleşmesi (dürüstlük şerhi): schema/data rollback TAMDIR, fakat
+        // `_prisma_migrations` içinde BAŞARISIZ kayıt KORUNUR (finished_at NULL). Bu
+        // "yeniden deneme kendiliğinden açık" DEMEK DEĞİLDİR: yeniden deploy öncesinde
+        // repo-native `prisma migrate resolve --rolled-back` recovery adımı GEREKEBİLİR.
         const [ledger] = await queryDb<{ finished: bigint }>(
           db,
           `SELECT COUNT(*)::bigint AS finished FROM _prisma_migrations
@@ -609,16 +614,15 @@ describeWithDisposableDb(
       /**
        * Migration'ı TEK transaction'da sandbox şemasına uygular.
        *
-       * Dosyanın kendi `BEGIN;` / `COMMIT;` çifti burada SOYULUR: bu harness zaten kendi
-       * interactive transaction'ını açar ve `SET LOCAL search_path` ile sandbox şemasına
-       * bağlar; iç içe COMMIT dış transaction'ı erken kapatırdı. Soyma sayısı ayrıca
-       * YAPISAL BİR KONTROLDÜR — tam bir BEGIN ve tam bir COMMIT beklenir.
+       * Harness kendi interactive transaction'ını açar ve `SET LOCAL search_path` ile
+       * sandbox şemasına bağlar. Dosyada explicit `BEGIN;`/`COMMIT;` BULUNMAMALIDIR
+       * (OPTION B); aksi hâlde iç içe COMMIT dış transaction'ı erken kapatırdı. Bu
+       * kontrol bunu yapısal olarak sabitler.
        */
       async function applyMigration(schema: string): Promise<{ ok: boolean; error?: string }> {
         const all = splitSqlStatements(MIGRATION_SQL);
-        expect(all.filter((x) => /^BEGIN$/i.test(bareStatement(x)))).toHaveLength(1);
-        expect(all.filter((x) => /^COMMIT$/i.test(bareStatement(x)))).toHaveLength(1);
-        const statements = all.filter((x) => !/^(BEGIN|COMMIT)$/i.test(bareStatement(x)));
+        expect(all.filter((x) => /^(BEGIN|COMMIT)$/i.test(bareStatement(x)))).toHaveLength(0);
+        const statements = all;
         try {
           await prisma.$transaction(
             async (tx) => {

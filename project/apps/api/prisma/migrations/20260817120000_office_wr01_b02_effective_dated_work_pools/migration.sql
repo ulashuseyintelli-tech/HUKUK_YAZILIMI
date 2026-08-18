@@ -11,22 +11,28 @@
 --   Office.escalationManagerLawyerIds / Office.escalationFounderLawyerIds düz dizileridir.
 --   Resolver (AŞAMA 3), dual-write (AŞAMA 4) ve okuma cutover'ı (AŞAMA 6) AYRI authority ister.
 --
--- ADIM 0 — TEK TRANSACTION (R01 REPAIR ile SQL'in KENDİSİNDE kurulur).
---   Transaction sınırı artık çalıştırıcının implicit davranışına DEĞİL, aşağıdaki explicit
---   `BEGIN;` / dosya sonundaki `COMMIT;` çiftine dayanır. Repo emsali: `00000000000001_legal_
---   kernel_triggers` ve `20260721002219_legal_application_writer_evidence` — ikisi de her CI
---   koşumunda `prisma migrate deploy` ile uygulanır.
+-- ADIM 0 — TEK TRANSACTION.
+--   DOĞRULANAN SÖZLEŞMENİN SINIRI (owner disposition R01, OPTION B): bu migration'ın
+--   atomikliği "Prisma migration'ları transaction'a sarar" gibi EVRENSEL bir iddiaya
+--   dayanmaz. Doğrulanan şey dardır ve tam olarak şudur:
+--     · repository'nin pinli Prisma sürümü (bkz. apps/api/package.json),
+--     · PostgreSQL 16,
+--     · exact `prisma migrate deploy` yolu.
+--   Bu üçlü altında ADIM 1 veya ADIM 9'un RAISE'i TAM ROLLBACK üretir; kısmi durum YOK,
+--   sessiz onarım YOK. Başka bir çalıştırma yolu (elle `psql -f`, `prisma db execute`,
+--   farklı Prisma sürümü) bu sözleşmenin KAPSAMI DIŞINDADIR ve ayrıca doğrulanmalıdır.
 --
---   ÖLÇÜLEN GERÇEK (dürüstlük şerhi): Prisma Migrate 5.22 migration dosyasını BUGÜN de kendi
---   transaction'ına sarar; explicit BEGIN/COMMIT eklenmeden önce de kasıtlı hata TAM ROLLBACK
---   üretiyordu. Yani bu değişiklik bir defect repair DEĞİL, garantinin sahipliğini araçtan
---   dosyaya taşıyan bir SERTLEŞTİRMEDİR: migration'ın atomikliği artık Prisma sürümünün
---   implicit davranışına, `prisma db execute` gibi alternatif çalıştırma yollarına veya elle
---   `psql -f` koşumuna bağlı değildir.
+--   BU SÖZLEŞME CI'DA KİLİTLİDİR. `office-work-pool-effective-dating-migration.db-gated
+--   .integration.spec.ts` gerçek `prisma migrate deploy` yolunda ADIM 9'da kasıtlı bir
+--   doğrulama hatası üretir ve type/table/index/constraint/backfill kalıntısının SIFIR
+--   olduğunu ölçer. Gelecekte çalıştırıcının davranışı değişirse test FAIL-CLOSED düşer;
+--   sessizce bozulamaz. Bu yüzden dosyaya explicit `BEGIN;`/`COMMIT;` EKLENMEZ: ölçüldü ki
+--   explicit `BEGIN;`, RAISE sonrası hatayı jenerik "current transaction is aborted"
+--   mesajına çevirerek ADIM 1/ADIM 9'un exact sayaç teşhisini YOK EDİYOR (§8.4'ün
+--   "RAISE EXCEPTION exact sayılarla" şartı). In-band teşhis korunmuştur.
 --
---   Preflight (ADIM 1) veya doğrulama (ADIM 9) anomali bulursa RAISE EXCEPTION → TAM ROLLBACK.
---   Kısmi durum YOK, sessiz onarım YOK. ADIM 4'ün `ON COMMIT DROP` temp tablosu bu gereksinimi
---   yapısal olarak da zorunlu kılar.
+--   ADIM 4'ün `ON COMMIT DROP` temp tablosu tek-transaction gereksinimini yapısal olarak
+--   ayrıca zorunlu kılar: transaction dışında koşulursa migration ADIM 5'te gürültülü durur.
 --
 -- OWNER KARARLARI — OFFICE-WR01-B02-AŞAMA-1-2-TRANSACTION-ATOMICITY-REPAIR-R01 (2026-08-18)
 --   1) CUID PREFLIGHT DISPOSITION = OWNER_RATIFIED. `cuid` biçimi relational validity DEĞİLDİR.
@@ -42,14 +48,12 @@
 -- BU MIGRATION HİÇBİR SATIRI UPDATE VEYA DELETE ETMEZ (§8.5). Legacy diziler yalnız OKUNUR;
 --   veri kaybı olasılığı SIFIRDIR ve geri dönüş (forward-fix) yalnız yeni tabloları düşürmektir.
 
--- ÖLÇÜLEN YAN ETKİ ve TELAFİSİ (R01 repair, 2026-08-18) — TEŞHİS SORGULARI
---   Explicit `BEGIN;` altında bir RAISE olduğunda `prisma migrate deploy` artık aşağıdaki
---   fail-closed mesajı DEĞİL, jenerik `current transaction is aborted` hatasını raporlar
---   (ölçüldü: aynı fixture ile BEGIN'li koşum jenerik hata, BEGIN'siz koşum
---   `P0001 BLOCKED ... orphan_lawyer=1 ...` verdi; her iki koşumda da kalıntı SIFIRDI).
---   Rollback etkilenmez, TEŞHİS etkilenir. Telafi, repo emsaliyle aynıdır
---   (`20260802190000_client_identity_active_partial_unique` header'ındaki envanter
---   sorguları): BLOCKED alan operatör anomali sınıfını tek komutla aşağıdan öğrenir.
+-- TEŞHİS SORGULARI (R01 repair, 2026-08-18) — BLOCKED alan operatör için
+--   ADIM 1 BLOCKED verdiğinde exact sayaçlar hata mesajında zaten gelir (in-band teşhis
+--   korunmuştur). Aşağıdaki sorgular AYNI sayaçları migration'ı yeniden koşmadan, apply
+--   ÖNCESİ veya sonrası tek komutla verir — böylece owner'lı pre-clean kapısı anomaliyi
+--   doğrudan ölçebilir. Repo emsali: `20260802190000_client_identity_active_partial_unique`
+--   header'ındaki envanter sorguları.
 --
 --   SELECT
 --     (SELECT COUNT(*) FROM (SELECT x."tenantId", x.m FROM (SELECT o."tenantId",
@@ -74,7 +78,6 @@
 --        unnest(o."escalationManagerLawyerIds" || o."escalationFounderLawyerIds") AS m
 --        FROM "Office" o) x WHERE x.m IS NULL OR btrim(x.m) = '') i1)       AS invalid_lawyer_id;
 
-BEGIN;
 
 -- =============================================================================================
 -- ADIM 1 — PREFLIGHT / VALIDATION (constraint'lerden ÖNCE)
@@ -570,5 +573,3 @@ BEGIN
       v9_empty_pool_parity, v10_anchor_boundary;
   END IF;
 END $verify$;
-
-COMMIT;
