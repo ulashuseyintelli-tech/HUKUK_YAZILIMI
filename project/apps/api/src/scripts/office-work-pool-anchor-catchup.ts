@@ -43,8 +43,22 @@
  * serialize edilir. `ADOPT_LEGACY_SNAPSHOT` modu legacy alanlara HİÇBİR yazma yapmaz.
  *
  * ═══ KULLANIM ══════════════════════════════════════════════════════════════════════════
- *   pnpm --filter api owp:anchor-catchup                       # yalnız ölçüm (varsayılan)
- *   pnpm --filter api owp:anchor-catchup -- --apply --drained-confirmed
+ * PRODUCTION KANONİK BİÇİMİ derlenmiş JavaScript'tir; `npx`/`tsx` ve runtime transpilation
+ * KULLANILMAZ (C14-R1A). Bakım penceresinde uzak paket indirmesine bağımlı olmak kabul
+ * edilemez; komut `nest build` çıktısını doğrudan pinli Node ile çalıştırır:
+ *
+ *   node dist/apps/api/src/scripts/office-work-pool-anchor-catchup.js
+ *   node dist/apps/api/src/scripts/office-work-pool-anchor-catchup.js --apply --drained-confirmed
+ *
+ * Developer ergonomisi için aynı derlenmiş dosyayı çalıştıran paket script'i de vardır
+ * (paket adı `@hukuk/api`; kısa `--filter api` biçimi YANLIŞTIR):
+ *
+ *   pnpm --filter @hukuk/api owp:anchor-catchup                       # yalnız ölçüm (varsayılan)
+ *   pnpm --filter @hukuk/api owp:anchor-catchup -- --apply --drained-confirmed
+ *
+ * `pnpm run ... --` biçimi argv'ye literal bir `--` elemanı geçirir; bayrak tespiti
+ * `argv.includes(...)` olduğu için bu zararsızdır, yine de production komutu doğrudan
+ * `node` biçimidir.
  *
  * Çıkış kodu: dört sayaçtan biri sıfır değilse NON-ZERO.
  * Bağlantı bilgisi (connection string / kimlik) HİÇBİR koşulda loglanmaz.
