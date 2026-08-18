@@ -46,3 +46,10 @@ src/modules/auth/__tests__/auth-register-seed.integration.spec.ts
 # pasif avukatin uyeliginin SUZULMEDIGI ve legacy duz diziler ile resolver ciktisinin
 # sirasiz kume esitligi. TEST_DATABASE_URL ister.
 src/modules/office/work-pool/__tests__/office-work-pool-parity.db-gated.integration.spec.ts
+
+# OFFICE-WR01-B02 ASAMA 4 — zorunlu gercek-PostgreSQL matrisi (§11.5.6 baglayici).
+# T1-T4 lost-update invarianti (final kume tamamlanan isteklerden BIRININ exact hedefi),
+# T5 kilit-bekleme + TAZE okuma, T6 CF-B02-03 (effectiveAt kilit SONRASI uretilir),
+# S1-S5 hedef-durum semantigi + legacy/membership atomik rollback + admin GET degismedi,
+# A1-A5 anchor yasam dongusu ve catch-up idempotensi. TEST_DATABASE_URL ister.
+src/modules/office/work-pool/__tests__/office-work-pool-dual-write.db-gated.integration.spec.ts
