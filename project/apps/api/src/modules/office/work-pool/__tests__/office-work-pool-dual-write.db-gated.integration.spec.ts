@@ -316,11 +316,13 @@ describeDb('OFFICE-WR01-B02 A4 — dual-write + concurrency (gercek Postgres)', 
       where: { tenantId: T, poolKind: POOL, memberLawyerId: B, validUntil: null, revokedAt: null },
     });
     expect(openRows).toBe(1);
-    const [second] = [outcome.r1, outcome.r2].filter(
-      (r) => r.effectiveAt.getTime() === outcome.lastRequest.effectiveAt.getTime(),
-    );
-    expect(second.changes[0]?.addedMemberKeys.length + second.changes[0]?.revokedMemberKeys.length)
-      .toBeGreaterThanOrEqual(0);
+    // SONRA serialize edilen istek, kilidi aldıktan sonra TAZE durumu okur ve `B`'nin zaten
+    // açık olduğunu görür → farkı BOŞ hesaplar. Naif bir implementasyonda "her ikisi de B'yi
+    // ekler" olurdu ve `23505` backstop'una çarpardı; burada backstop'a HİÇ GEREK KALMAZ.
+    const lastChange = outcome.lastRequest.changes.find((c) => c.poolKind === POOL);
+    expect(lastChange?.addedMemberKeys).toEqual([]);
+    expect(lastChange?.revokedMemberKeys).toEqual([]);
+    expect([...(lastChange?.unchangedMemberKeys ?? [])].sort()).toEqual([A, B].sort());
   }, 120_000);
 
   it('T4 — {A,B} + hedefler {A} ve {A,B,C} → yarim sonuc ({A,C}) YASAK', async () => {
