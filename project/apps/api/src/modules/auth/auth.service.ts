@@ -7,6 +7,7 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "@/prisma/prisma.service";
 import { RegisterDto, LoginDto } from "./dto/auth.dto";
+import { toPublicAuthTenant, toPublicAuthUser } from "./user-public-projection";
 
 export type FindTenantsResult =
   | { status: "NONE" }
@@ -71,8 +72,8 @@ export class AuthService {
 
     return {
       token,
-      user: this.sanitizeUser(result.user),
-      tenant: result.tenant,
+      user: toPublicAuthUser(result.user),
+      tenant: toPublicAuthTenant(result.tenant),
     };
   }
 
@@ -111,8 +112,8 @@ export class AuthService {
 
     return {
       token,
-      user: this.sanitizeUser(user),
-      tenant: user.tenant,
+      user: toPublicAuthUser(user),
+      tenant: toPublicAuthTenant(user.tenant),
     };
   }
 
@@ -184,10 +185,5 @@ export class AuthService {
       .replace(/ç/g, "c")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
-  }
-
-  private sanitizeUser(user: any) {
-    const { passwordHash, ...rest } = user;
-    return rest;
   }
 }
