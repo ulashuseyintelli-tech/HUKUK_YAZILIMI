@@ -200,7 +200,13 @@ src/scripts/__tests__/office-cap02-identity-binding-invite-issue.core.spec.ts
 # P5-B04 (S3): staff okuma yuzeyi F01-yetkisiz aktore alan-daraltma (8 bayrak + tckn);
 # findOne tckn maskesi; maskeli-tckn geri-yazim korumasi; typed DTO (tam-satir PUT
 # toleransli); guard-metadata + negatif/cross-tenant/data-leak testleri.
+# OFFICE-AUTH-PUBLIC-USER-PROJECTION-R02: register/login//auth/me UCU DE tek merkezi
+# allowlist projeksiyonundan (toPublicAuthUser/toPublicAuthTenant) gecer. Blacklist
+# (sanitizeUser + AUTH_ME_CREDENTIAL_FIELDS) KALDIRILDI. Containment spec allowlist
+# sozlesmesini differential kilitler; http spec GERCEK Nest adapter uzerinde tel-uzeri
+# serialization olcer (mock tek basina yeterli degildir).
 src/modules/auth/__tests__/auth-me-credential-containment.spec.ts
+src/modules/auth/__tests__/auth-public-user-http.spec.ts
 src/modules/seed/__tests__/seed-staff-lawyer-canonical-service.spec.ts
 src/modules/staff/__tests__/staff-controller-guards.spec.ts
 src/modules/staff/__tests__/staff-read-projection.spec.ts
