@@ -278,3 +278,21 @@ src/modules/tenant/__tests__/tenant-lifecycle.spec.ts
 src/modules/auth/__tests__/auth-lifecycle-enforcement.spec.ts
 src/modules/tenant/__tests__/tenant-lifecycle-worker-scope.spec.ts
 src/modules/tenant/__tests__/tenant-lifecycle-enforcement-http.spec.ts
+
+# C15-S1-MODIFIED PR-3 — Tenant lifecycle GECIS OTORITESI (SAF, DB YOK).
+# PR-2 yaptirimi kurmustu; PR-3 durumu DEGISTIREBILEN ic servisi ekler (uretim
+# call-site'i SIFIR — statik kapiyla sabitlenir). Bu uc spec sunlari kilitler:
+#   edges     : WITHHELD_SAFETY_CRITICAL_EDGES tam 3 (PROVISIONING->ACTIVE,
+#               QUIESCING->SUSPENDED, QUIESCING->RETIRED); exposed tam 5;
+#               union PR-1 tablosundan TURETILEREK 8'e esit; kesisim bos.
+#               PROVISIONING->RETIRED tabloda YOK ve eklenmedi.
+#   reason    : gercek geciste zorunlu; trim-bos/201+/credential-yapistirma
+#               desenleri red; hata mesaji reason icerigini SIZDIRMAZ.
+#   transition: birim sozlesme — SET LOCAL lock_timeout -> advisory lock ->
+#               taze SELECT -> no-op (yazim 0/audit 0) -> withheld KOSULSUZ red
+#               (ayri tipli hata) -> tablo -> hedef -> CAS -> ayni-tx audit.
+#               Servis ici retry YOK ($transaction tam 1 cagri).
+# DB gerektirmez; ayni AUTH process inde kosar, yeni Jest step ACILMAZ.
+src/modules/tenant/__tests__/tenant-lifecycle-edges.spec.ts
+src/modules/tenant/__tests__/tenant-lifecycle-reason.spec.ts
+src/modules/tenant/__tests__/tenant-lifecycle-transition.spec.ts
