@@ -72,3 +72,24 @@ src/modules/summary-engine/__tests__/allocation-evidence-inventory.static-guard.
 #                     KNOWN_GAPS listesi BUYUYEMEZ.
 src/common/__tests__/w3-async-runtime-binding.static-guard.spec.ts
 src/common/__tests__/w3-prisma-model-reference.static-guard.spec.ts
+
+# C15-S1-MODIFIED PR-2 — Tenant enumeration ENVANTER KAPISI (AST + TypeChecker).
+# PR-2 uc worker'in tenant enumeration sorgusuna `lifecycle: ACTIVE` ekledi. Bu
+# kapi o uc yamanin dogrulugunu degil, `prisma.tenant` uzerinden enumeration yapan
+# call-site KUMESININ kapali kaldigini korur: yeni bir enumeration eklenirse CI
+# duser ve yazarini siniflandirmaya zorlar.
+#
+# Neden regex DEGIL: `const d = prisma.tenant; d.findMany()` veya yuklemi bir
+# yardimci fonksiyona tasimak `prisma.tenant.findMany` metnini kaynaktan tamamen
+# siler; metin aramasi bunu goremez. Kapi bunun yerine cagrilan metodun SEMBOLUNU
+# cozer ve bildiriminin generated Prisma client icindeki `TenantDelegate`
+# arayuzune ait oldugunu dogrular (declaration provenance; salt `typeToString()`
+# metin karsilastirmasi KULLANILMAZ). Cozulemeyen `(prisma as any).x` cagrilari
+# sessizce atlanmaz: alicida `tenant` adi varsa fail-closed yakalanir, yoksa
+# sinirli bir envantere yazilir ve tavani asarsa kapi duser.
+#
+# Mutasyon provasi (yerel): direct / alias / helper-move / any-cast kacislarinin
+# DORDU de kapiyi dusurdu; ilgisiz bir delegate (user.findMany) dusurmedi.
+# DB gerektirmez. Olculen sure ~31s (TypeScript program kurulumu); yeni Jest
+# step ACILMAZ, mevcut architecture-guards process inde kosar.
+src/modules/tenant/__tests__/tenant-lifecycle-findmany-inventory.static-guard.spec.ts

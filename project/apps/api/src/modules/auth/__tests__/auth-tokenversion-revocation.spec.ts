@@ -22,7 +22,7 @@ const ACTIVE_USER = (tokenVersion: number) => ({
   role: "ADMIN",
   isActive: true,
   tokenVersion,
-  tenant: { id: "t1", slug: "tenant-one" },
+  tenant: { id: "t1", slug: "tenant-one", lifecycle: "ACTIVE" },
 });
 
 describe("AuthService — OFFICE-AUTH-P01 tokenVersion revocation", () => {

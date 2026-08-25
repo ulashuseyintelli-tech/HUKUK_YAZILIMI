@@ -258,3 +258,23 @@ src/modules/office/work-pool/__tests__/office-work-pool-mutation-retry.spec.ts
 # Durum kumesi, sekiz izinli gecis, fail-closed reddetme, hedef tutarliligi ve
 # yuklem temeli kilitlenir. Auth/worker/quiesce yaptirimi PR-2/3/4'tedir.
 src/modules/tenant/__tests__/tenant-lifecycle.spec.ts
+
+# C15-S1-MODIFIED PR-2 — Tenant lifecycle YAPTIRIMI (SAF, DB YOK).
+# PR-1 saf tip katmanini kurmustu; PR-2 onu login/JWT ve worker enumeration
+# yuzeylerine bagladi. Bu uc spec o baglamanin davranisini kilitler:
+#   auth  : ACTIVE olmayan tenant'in HICBIR principal'i login olamaz ve mevcut
+#           JWT dogrulanamaz. Rol istisnasi YOKTUR. Kontrol bcrypt'ten SONRA
+#           yapilir (zamanlama sizintisi olmasin) ve isActive'den ONCE gelir
+#           (ayirt edici mesaj sizmasin). Tum ret yollarinda govde generic 401
+#           olmali; lifecycle DEGERI veya "lifecycle"/"tenant" sozcugu sizmamali.
+#   worker: eleme QUERY-LEVEL'dir. Testler `tenant.findMany` cagrisinin ARGUMAN
+#           nesnesini okur ve `where.lifecycle === "ACTIVE"` oldugunu dogrular;
+#           "once hepsini cek sonra ele" kalibi kabul edilmez.
+#   http  : gercek Nest HTTP boru hatti + supertest. APP_INTERCEPTOR mutating
+#           metotlarda (POST/PUT/PATCH/DELETE) fail-closed 403 verir; okuma
+#           metotlari etkilenmez. Gercek AppModule KULLANILMAZ (cron/provider
+#           baslatmamak icin) — stub Prisma ve test-only guard ile kurulur.
+# DB gerektirmez; ayni AUTH process inde kosar, yeni Jest step ACILMAZ.
+src/modules/auth/__tests__/auth-lifecycle-enforcement.spec.ts
+src/modules/tenant/__tests__/tenant-lifecycle-worker-scope.spec.ts
+src/modules/tenant/__tests__/tenant-lifecycle-enforcement-http.spec.ts

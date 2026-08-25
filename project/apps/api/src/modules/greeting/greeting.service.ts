@@ -5,6 +5,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 import { reportCronJobFailure } from "../../common/cron-failure-reporting";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
+import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
 
 /**
  * Office.autoGreetingTime ("HH:mm") değerini saat/dakikaya ayrıştırır.
@@ -434,10 +435,18 @@ export class GreetingService {
     }
   }
 
-  /** greetingSchedulerTick'in dış (tüm-tenant) sorgusu — hata halinde bu tick'i güvenli şekilde atlar. */
+  /**
+   * greetingSchedulerTick'in dış sorgusu — hata halinde bu tick'i güvenli şekilde atlar.
+   *
+   * C15-S1-MODIFIED PR-2: eleme QUERY-LEVEL'dır. Yüklem enumeration sorgusunun KENDİSİNDE
+   * bulunur; "önce hepsini çek, sonra ikinci bir kontrolle ele" YAPILMAZ — aradaki pencerede
+   * ACTIVE olmayan bir tenant seçilmiş olurdu. ACTIVE dışındaki tüm durumlar
+   * (PROVISIONING/QUIESCING/SUSPENDED/RETIRED) DB tarafında elenir.
+   */
   private async findTenantsForGreetingTick() {
     try {
       return await this.prisma.tenant.findMany({
+        where: ACTIVE_TENANT_WHERE,
         include: {
           office: {
             select: {
