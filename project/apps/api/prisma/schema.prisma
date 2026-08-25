@@ -196,6 +196,19 @@ model Tenant {
   // Hesap tipi (profesyonel vs vatandaş)
   accountType AccountType @default(PROFESSIONAL)
 
+  // C15-S1-MODIFIED PR-1 — Tenant lifecycle temeli (ADDITIVE, davranış değiştirmez).
+  // Bu PR yalnız alanları ve tip güvenliğini getirir; login/JWT/resolver/worker
+  // yaptırımı ve quiesce akışı PR-2/PR-3/PR-4'tedir. `@default(ACTIVE)` sayesinde
+  // mevcut tenant'ların davranışı DEĞİŞMEZ (geriye dönük uyumluluk buradan gelir).
+  lifecycle          TenantLifecycle  @default(ACTIVE)
+  // YALNIZ QUIESCING sırasında dolu: geçişin hedefi (SUSPENDED | RETIRED).
+  // Worker yüklemi tek koşul kalsın diye ayrı SUSPENDING/RETIRING durumu YOK.
+  lifecycleTarget    TenantLifecycle?
+  lifecycleChangedAt DateTime?
+  lifecycleReason    String?
+  // Quiesce faz-1/faz-2 arası idempotency + lost-response korelasyonu.
+  quiesceToken       String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -289,6 +302,10 @@ model Tenant {
 
   @@index([slug])
   @@index([accountType])
+  // PR-2'de background worker'lar `where: { lifecycle: 'ACTIVE' }` ile query-level
+  // eleme yapacak; index o yüklem içindir. Tablo bugün küçük olduğu için normal
+  // CREATE INDEX yeterlidir (CONCURRENTLY migration transaction'ında çalışamaz).
+  @@index([lifecycle])
 }
 
 enum AccountType {
@@ -3776,6 +3793,20 @@ model FormSubType {
 }
 
 // ==================== ENUMS ====================
+
+// C15-S1-MODIFIED — Tenant yaşam döngüsü.
+// PROVISIONING : yaratılıyor / doğrulanmamış — login YOK, worker YOK
+// ACTIVE       : normal işletim — worker YALNIZ bunu seçer
+// QUIESCING    : geçiş; yeni iş YOK, in-flight boşalıyor — login YOK, worker YOK
+// SUSPENDED    : terminal-geçici — login YOK, worker YOK, veri korunur
+// RETIRED      : terminal-kalıcı (mantıksal emeklilik; DELETE değildir)
+enum TenantLifecycle {
+  PROVISIONING
+  ACTIVE
+  QUIESCING
+  SUSPENDED
+  RETIRED
+}
 
 enum Plan {
   FREE
