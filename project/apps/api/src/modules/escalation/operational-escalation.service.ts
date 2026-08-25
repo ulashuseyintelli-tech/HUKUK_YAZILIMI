@@ -11,6 +11,7 @@ import { TenantNotifier, DispatchResult } from "./tenant-notifier.service";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 import { reportCronJobFailure } from "../../common/cron-failure-reporting";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
+import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
 
 interface Recipients {
   emails: { name: string; email: string }[]; // ad-soyad ile hitap için isim taşınır
@@ -71,7 +72,12 @@ export class OperationalEscalationService {
     let skipped = 0;
     let failed = 0;
 
-    const tenants = await this.prisma.tenant.findMany({ include: { office: true } });
+    // C15-S1-MODIFIED PR-2: eleme QUERY-LEVEL. Yüklem enumeration sorgusunun KENDİSİNDE;
+    // "önce hepsini çek sonra ele" YAPILMAZ (aradaki pencerede ACTIVE olmayan tenant seçilirdi).
+    const tenants = await this.prisma.tenant.findMany({
+      where: ACTIVE_TENANT_WHERE,
+      include: { office: true },
+    });
 
     for (const tenant of tenants) {
       const office = tenant.office;

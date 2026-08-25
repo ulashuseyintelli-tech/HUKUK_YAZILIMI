@@ -25,7 +25,7 @@ const USER_T1 = {
   passwordHash: HASH,
   role: "ADMIN",
   isActive: true,
-  tenant: { id: "t1", slug: "tenant-one", name: "Tenant One" },
+  tenant: { id: "t1", slug: "tenant-one", name: "Tenant One", lifecycle: "ACTIVE" },
 };
 
 const USER_T2 = {
@@ -35,7 +35,7 @@ const USER_T2 = {
   passwordHash: bcrypt.hashSync("other-pass", 10),
   role: "USER",
   isActive: true,
-  tenant: { id: "t2", slug: "tenant-two", name: "Tenant Two" },
+  tenant: { id: "t2", slug: "tenant-two", name: "Tenant Two", lifecycle: "ACTIVE" },
 };
 
 describe("AuthService — AUTH-01 tenant-aware login", () => {

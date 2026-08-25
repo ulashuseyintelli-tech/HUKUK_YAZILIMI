@@ -38,6 +38,7 @@ const tenantRow = () => ({
   plan: 'PRO',
   settings: { internal: TENANT_INTERNAL },
   accountType: 'PROFESSIONAL',
+  lifecycle: 'ACTIVE',
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-02T00:00:00Z'),
 });
@@ -250,11 +251,11 @@ describe('R02 — validateUser kapıları (T14/T16)', () => {
   });
 
   it('T16: password change sonrası (tokenVersion arttı) eski token → Unauthorized', async () => {
-    await expect(build({ id: 'u1', isActive: true, tokenVersion: 4 }).validateUser('u1', 3)).rejects.toThrow();
+    await expect(build({ id: 'u1', isActive: true, tokenVersion: 4, tenant: { lifecycle: 'ACTIVE' } }).validateUser('u1', 3)).rejects.toThrow();
   });
 
   it('T16b: yeni tokenVersion ile geçerli → satır döner', async () => {
-    await expect(build({ id: 'u1', isActive: true, tokenVersion: 4 }).validateUser('u1', 4)).resolves.toMatchObject({
+    await expect(build({ id: 'u1', isActive: true, tokenVersion: 4, tenant: { lifecycle: 'ACTIVE' } }).validateUser('u1', 4)).resolves.toMatchObject({
       id: 'u1',
     });
   });

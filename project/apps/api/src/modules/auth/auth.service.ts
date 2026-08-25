@@ -8,6 +8,7 @@ import * as bcrypt from "bcrypt";
 import { PrismaService } from "@/prisma/prisma.service";
 import { RegisterDto, LoginDto } from "./dto/auth.dto";
 import { toPublicAuthTenant, toPublicAuthUser } from "./user-public-projection";
+import { isLoginableLifecycle } from "../tenant/tenant-lifecycle";
 
 export type FindTenantsResult =
   | { status: "NONE" }
@@ -104,6 +105,22 @@ export class AuthService {
       throw new UnauthorizedException("Geçersiz e-posta veya şifre");
     }
 
+    // C15-S1-MODIFIED PR-2: tenant lifecycle yaptırımı. ACTIVE olmayan tenant'ın HİÇBİR
+    // principal'ı login OLAMAZ — ADMIN dâhil, rol istisnası YOKTUR.
+    //
+    // SIRA KRİTİKTİR: kontrol bcrypt karşılaştırmasından SONRA yapılır. ÖNCE yapılsaydı
+    // mesaj aynı kalsa bile non-ACTIVE tenant bcrypt maliyetini ÖDEMEDEN hızlıca dönerdi
+    // ve ACTIVE/non-ACTIVE ayrımı ZAMANLAMA üzerinden sızardı. Bu sırayla her yol aynı
+    // bcrypt işini yapar; mesaj da "kullanıcı yok" / "yanlış parola" dallarıyla BİREBİR
+    // AYNIDIR. Lifecycle adı veya değeri yanıta hiçbir biçimde yansımaz.
+    //
+    // isActive kontrolünden ÖNCEDİR: aksi hâlde non-ACTIVE bir tenant'ın pasif kullanıcısı
+    // "Hesabınız devre dışı bırakılmış" ayırt edici mesajını alır ve tenant hakkında dolaylı
+    // bilgi sızardı.
+    if (!isLoginableLifecycle(user.tenant?.lifecycle)) {
+      throw new UnauthorizedException("Geçersiz e-posta veya şifre");
+    }
+
     if (!user.isActive) {
       throw new UnauthorizedException("Hesabınız devre dışı bırakılmış");
     }
@@ -152,6 +169,14 @@ export class AuthService {
     });
 
     if (!user || !user.isActive) {
+      throw new UnauthorizedException();
+    }
+
+    // C15-S1-MODIFIED PR-2: tenant lifecycle yaptırımı — JWT tarafı. Tenant ACTIVE'den
+    // çıktığı anda, ÖNCEDEN üretilmiş geçerli JWT'ler de bir sonraki istekte reddedilir
+    // (tokenVersion artışına gerek YOK; kontrol User değil TENANT düzeyindedir).
+    // Rol istisnası YOKTUR. Mesaj mevcut bare UnauthorizedException ile aynıdır.
+    if (!isLoginableLifecycle(user.tenant?.lifecycle)) {
       throw new UnauthorizedException();
     }
 
