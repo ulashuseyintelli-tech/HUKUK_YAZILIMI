@@ -53,3 +53,7 @@ src/modules/office/work-pool/__tests__/office-work-pool-parity.db-gated.integrat
 # S1-S5 hedef-durum semantigi + legacy/membership atomik rollback + admin GET degismedi,
 # A1-A5 anchor yasam dongusu ve catch-up idempotensi. TEST_DATABASE_URL ister.
 src/modules/office/work-pool/__tests__/office-work-pool-dual-write.db-gated.integration.spec.ts
+# C15-S1-MODIFIED PR-1 — Tenant lifecycle ADDITIVE sema temeli (GERCEK Postgres 16).
+# DB enum == TS sabiti, NOT NULL + DEFAULT ACTIVE, index varligi, geriye donuk
+# uyumluluk (lifecycle yazilmadan ACTIVE dogar), NULL satir 0 ve tenant izolasyonu.
+src/modules/tenant/__tests__/tenant-lifecycle.db-gated.integration.spec.ts

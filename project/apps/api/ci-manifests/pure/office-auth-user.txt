@@ -254,3 +254,7 @@ src/modules/office/work-pool/__tests__/office-work-pool-writer.static-guard.spec
 # hatalarinin ASLA retrylenmedigi ve havuz kolonu passthrough guardinin transaction ACMADAN
 # reddettigi olculur. Lock davranisi BURADA KANITLANMAZ (db-gated matriste).
 src/modules/office/work-pool/__tests__/office-work-pool-mutation-retry.spec.ts
+# C15-S1-MODIFIED PR-1 — Tenant lifecycle tip/gecis guvenligi (SAF, DB YOK).
+# Durum kumesi, sekiz izinli gecis, fail-closed reddetme, hedef tutarliligi ve
+# yuklem temeli kilitlenir. Auth/worker/quiesce yaptirimi PR-2/3/4'tedir.
+src/modules/tenant/__tests__/tenant-lifecycle.spec.ts
