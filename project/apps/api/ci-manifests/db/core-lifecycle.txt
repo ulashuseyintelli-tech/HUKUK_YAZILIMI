@@ -57,3 +57,13 @@ src/modules/office/work-pool/__tests__/office-work-pool-dual-write.db-gated.inte
 # DB enum == TS sabiti, NOT NULL + DEFAULT ACTIVE, index varligi, geriye donuk
 # uyumluluk (lifecycle yazilmadan ACTIVE dogar), NULL satir 0 ve tenant izolasyonu.
 src/modules/tenant/__tests__/tenant-lifecycle.db-gated.integration.spec.ts
+
+# C15-S1-MODIFIED PR-3 — gecis otoritesi GERCEK Postgres 16 kanitlari:
+# deterministik eszamanlilik (baraj deseni: iki bagimsiz baglanti kilitte
+# bloklanir, tam biri yazar, digeri temiz no-op, TAM 1 audit satiri),
+# busy yolu (3000ms lock_timeout -> 55P03 -> LifecycleTransitionBusyError,
+# TEK deneme — sure olcumuyle), audit-rollback (logInTransaction hatasi
+# CAS UPDATE'i geri alir), withheld 3 kenar x 3 quiesceToken varyanti red,
+# tam tur ACTIVE->QUIESCING->ACTIVE (token uretim/temizlik, clock_timestamp
+# sirasi, TAM 2 audit satiri, aktor kimligi uydurulmaz).
+src/modules/tenant/__tests__/tenant-lifecycle-transition.db-gated.integration.spec.ts

@@ -93,3 +93,19 @@ src/common/__tests__/w3-prisma-model-reference.static-guard.spec.ts
 # DB gerektirmez. Olculen sure ~31s (TypeScript program kurulumu); yeni Jest
 # step ACILMAZ, mevcut architecture-guards process inde kosar.
 src/modules/tenant/__tests__/tenant-lifecycle-findmany-inventory.static-guard.spec.ts
+
+# C15-S1-MODIFIED PR-3 — GOVERNANCE-WRITER ENVANTER KAPISI (AST + TypeChecker).
+# Bes governance alani BIRLIKTE korunur: lifecycle, lifecycleTarget,
+# lifecycleChangedAt, lifecycleReason, quiesceToken. Prisma yazma yuzeyinde
+# (create/createMany/update/updateMany/upsert; upsert'un iki kolu) onayli yazar
+# SIFIR; raw SQL yuzeyinde (fonksiyon cagrisi VE tagged-template bicimleri) tek
+# onayli yazar transition servisidir — clock_timestamp() zorunlulugu CAS update'i
+# raw SQL yapar, yonetilmeyen raw yazim SIFIRDIR. Dinamik/spread/cozulemeyen
+# Tenant verisi FAIL-CLOSED governance yazari sayilir. Ayrica servis kaynak
+# sabitleri: onsoz (SET LOCAL lock_timeout -> kilit -> SELECT), CAS yuklemi,
+# logInTransaction zorunlu / log() yasak, retry dongusu yok, quiesceToken
+# hicbir karar dalinda okunmaz.
+# Mutasyon provasi (yerel, --no-cache): kilit kaldirma / CAS yuklemi kaldirma /
+# audit susturma / withheld gevsetme / sahte yazar — BESI de olduruldu; negatif
+# kontrol dusmedi. DB gerektirmez; mevcut process'te kosar, yeni step ACILMAZ.
+src/modules/tenant/__tests__/tenant-lifecycle-governance-writer.static-guard.spec.ts
