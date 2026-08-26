@@ -209,3 +209,19 @@ Bu kayit: deployment YAPMAZ · migration UYGULAMAZ · lifecycle aktivasyonu
 BASLATMAZ · PR-4B/PR-4C/canary/qualification/observation ACMAZ · T+24 hukmu
 KURMAZ (T+24 PENDING) · sira SECMEZ. Bu kaydi tasiyan PR'in merge'i AYRI owner
 checkpoint'ine tabidir.
+
+## EK-1 — T+24 SUPERSESSION VE JOURNAL-POINTER SERHI (append, 2026-08-26)
+
+Bu kaydin §5/§6'sindaki "T+24 CLOSEOUT PENDING" hukmu TARIHSELDIR;
+superseding terminal kayit: `office-wr01-decomposition-r01/authpub-r03-t24-terminal-closeout-r01.md`
+(RECORD ID `AUTHPUB-R03-T24-TERMINAL-CLOSEOUT-R01`, SHA-256
+`1a5377bcd9216919b56508d2b1da4d666591066a55e3f9b0c1378d6127a55304`).
+
+§9'daki journal pointer'i (`f0137bda…` / 42490 B) KAYIT-ANI TARIHSEL
+OLCUMUDUR ve bugun itibariyle YENIDEN URETILEMEMEKTEDIR (owner adjudication:
+HISTORICAL PREFIX INTEGRITY = NOT PROVEN · EXACT CAUSE = UNRECOVERABLE /
+INCONCLUSIVE · OBSERVED DIVERGENCE = 42490B RECORDED -> 42487B SURVIVING
+PREFIX · SEMANTIC CONTRADICTION = NOT IDENTIFIED · APPEND-ONLY MECHANICAL
+PROOF = ONLY FROM VERIFIED 44877B PREFIX FORWARD). Journal'in GUNCEL kimligi:
+48161 B / SHA-256 `9456ca28698f480d47f5fbe57df3a36e4d94c13912c04186951e959e535746b7`.
+Tarihsel pointer satiri DEGISTIRILMEMISTIR; bu serh onu supersede eder.
