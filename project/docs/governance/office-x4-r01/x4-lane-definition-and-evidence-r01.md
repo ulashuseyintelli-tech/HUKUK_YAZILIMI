@@ -95,6 +95,20 @@ attribution'dır** — delivery, runtime, deployment veya terminal verdict
 | D14 (OFFICE-P4 umbrella terminal kaydı) | `P8-FOLD` kalır ve artık **`X4 TERMINAL ADJUDICATION` bağımlıdır** (lane materyalizasyonu bağımlılığı bu kayıtla karşılandı; adjudication AÇIK) |
 | WR01-B06 | X4 **tanım belirsizliği** bu kayıtla ÇÖZÜLÜR (brief §2.1 Açık Soru 5'in kavramsal ayağı); ancak B06, diğer owner soruları (D-WR-7, D3↔B06 gerilimi) ve bağımlılıkları nedeniyle **otomatik açılmaz** |
 
+### D.1 Append-only materyalizasyon notu — CLF-O0-01 SUCCESSOR-RECORD (2026-08-26T21:06:41Z UTC)
+
+Üstteki tablodaki `SUCCESSOR-RECORD NOT YET MATERIALIZED` ifadesi, bu dosyanın
+üretildiği andaki DOĞRU TARİHSEL DURUM olarak DEĞİŞTİRİLMEDEN korunmuştur.
+C21 — X4 TERMINAL ADJUDICATION Kapı 3 GO'su (D10 owner-ratified
+`SUCCESSOR-RECORD` disposition'ının materyalizasyon yetkisi) uyarınca successor
+kaydı artık MATERYALİZE EDİLMİŞTİR:
+[`clf-o0-01-successor-record-r01.md`](./clf-o0-01-successor-record-r01.md).
+Materyalizasyon zamanı: 2026-08-26T21:06:41Z (UTC). Commit bağlamı: C21 PR1 —
+base `origin/main @ efb631dbcc55f65a60ca778931bf7f633656024d`, branch
+`claude/c21-x4-terminal-adjudication-r01`. Successor kaydı
+`EXECUTION AUTHORITY: NONE` taşır; guard patch'ini yetkilendirmez, planlamaz,
+ima etmez.
+
 ## E. X4 terminal sözleşmesi
 
 Gelecekteki owner terminal adjudication için minimum kapılar:
@@ -120,3 +134,45 @@ EVIDENCE_MAPPED /
 TERMINAL_VERDICT_PENDING_OWNER /
 P8_FINAL_BLOCKED
 ```
+
+### F.1 Kapı 4 — F05 adjudication girdisi (append-only, 2026-08-26T21:06:41Z UTC)
+
+```text
+F05: NOT_AUTHORIZED / CARRY-FORWARD
+```
+
+Açık beyanlar:
+
+- X4 terminal verdict'i F05'i KAPATMAZ.
+- X4 terminal verdict'i F05'i KAPSAMAZ.
+- X4 terminal verdict'i F05 implementation yetkisi VERMEZ.
+- X4 terminal verdict'i F05'in tamamlandığını İMA ETMEZ.
+- F05, ayrı yetki ve ayrı çalışma gerektiren bir carry-forward kalemidir
+  (F04 launch, runtime/DB/production yetkisini açıkça saklı tutar —
+  `successor-execution-order.md` 2026-08-16 satırı; P8 paketi D12:
+  SUCCESSOR-RECORD).
+- X4 verdict'i F05'ten BAĞIMSIZ değerlendirilebilir.
+
+### F.2 Kapı 5 — X4 ≠ P8 umbrella ayrımı (append-only, 2026-08-26T21:06:41Z UTC)
+
+X4 terminal adjudication, P8 FINAL umbrella closure DEĞİLDİR; X4'ün CLOSED
+sınıfı bir verdict alması yalnız P8 ön-koşul listesindeki ilgili
+`X4 TERMINAL ADJUDICATION` bağımlılığını karşılayabilir; bu sonuç P8 FINAL
+launch, P8 terminal closure veya diğer açık ön-koşulların ("15" supersession +
+fresh reconciliation envanteri, C.1 non-authorizing cross-reference
+materyalizasyonu, D13 kapsamındaki T+24/P6 hash-matrisi bağımlılıkları, D14
+OFFICE-P4 umbrella terminal kaydı dahil) tamamlandığı anlamına GELMEZ; kalan
+P8 ön-koşulları kendi AYRI owner GO ve fresh kanıt zincirlerine tabidir;
+sonraki faza OTOMATİK GEÇİŞ YOKTUR. Bu ayrım PR1 hazırlanırken fresh HEAD
+üzerinde birlikte doğrulanmıştır: §B.2 owner-ratified tanım + P8 paketi
+(`office-p8-final-r01/p8-precondition-package-r01.md` §E/§F —
+`P8_FINAL BLOCKED`) + güncel main durumu + C19/C20 kanonik kayıtları
+(#2459 `1f36bee0ea686650d8ee3c0c37ec356c8b20ba6e` ·
+#2460 `436989dd495235f3d4be9afb86ba14577c78e629` ·
+#2461 `a6fce03664888bb5b16df682905691582e52ddcf` ·
+#2462 `681bc8b0c54948ef1bdc7506d254d8e2e4367195` ·
+#2464 `efb631dbcc55f65a60ca778931bf7f633656024d` — tümü MERGED ve origin/main
+ancestor'ı, VERIFIED) + planlanan PR1 diff'i (yalnız `office-x4-r01/` altında,
+append-only). Doğrulama SHA'sı: fresh main
+`efb631dbcc55f65a60ca778931bf7f633656024d` · doğrulama zamanı:
+2026-08-26T21:06:41Z (UTC).
