@@ -1781,3 +1781,23 @@ Notlar:
 
 IMPLEMENTATION AUTHORITY: NONE — bu kayıt live-apply yetkisi ÜRETMEZ; production APPLY owner-gated
 WAVE 4 ACTIVATION kapsamındadır.
+
+### 20260825160000_tenant_lifecycle_foundation (kayit: 2026-08-26, OFFICE-C15-GOVERNANCE-LEDGER-CATCHUP-R01)
+
+DURUM: MERGED (canonical main, PR #2454 squash
+30db4aca3c10625ebf4946d71a8022a8d2599ab6) · LOKAL kalici DB'de PENDING ·
+PRODUCTION'da NOT APPLIED (production ledger LAST_MIGRATION =
+20260818120000_office_wr01_b02_c13r01_provisioning_provenance; 127/0/0) ·
+C15 ASAMA 5 FROZEN.
+
+BAGLAYICI KURAL (owner, 2026-08-26): herhangi bir generic migrate/deploy
+calismasi bu migration'i istemeden production'a tasiyabilir. Exact migration
+allowlist yoksa HARD STOP; AYRI owner GO olmadan production'a UYGULANAMAZ.
+Bu kayit ve kaynak gorevi migration CALISTIRMAZ — IMPLEMENTATION AUTHORITY:
+NONE.
+
+SUPERSEDING POINTER: tam matris ve baglayici kurallar
+`office-wr01-decomposition-r01/wr01-c14-c15-ledger-reconciliation-r01.md`
+(RECORD ID `WR01-C14-C15-LEDGER-RECONCILIATION-R01`, SHA-256
+`c8c3c746956aed66aa48a2a30639b0a843ad95858781eee6601967818c40e135`) kaydindadir; bu blok o kaydin
+bu register'daki SUPERSEDING pointer'idir.

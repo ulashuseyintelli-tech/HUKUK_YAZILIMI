@@ -3701,3 +3701,13 @@ EXECUTION AUTHORITY       NONE
 Bu bölüm governance-only kayıt uzlaştırmasıdır; kod/schema/migration/DB/runtime/flag
 değişikliği YOK. Kaynak: owner P8-C4 handoff (2026-08-13) + `decision-log.md` 2026-08-13
 OFFICE P8-C4 satırları.
+
+### OFFICE-C15-GOVERNANCE-LEDGER-CATCHUP-R01 — Reconciliation Pointer (2026-08-26)
+
+WR01 B01-B10 / C14 / C15 / AUTHPUB-RELEASE13 zincirlerinin geriye donuk kayit
+uzlastirmasi TEK additive kayitta: `office-wr01-decomposition-r01/wr01-c14-c15-ledger-reconciliation-r01.md`
+(RECORD ID `WR01-C14-C15-LEDGER-RECONCILIATION-R01`, SHA-256
+`c8c3c746956aed66aa48a2a30639b0a843ad95858781eee6601967818c40e135`, SUPERSEDING). Acik-kalem
+snapshot (45 kalem: GO-BEKLEYEN 20 / BLOKLU 10 / KAPALI 11 / UNKNOWN 4) ve
+MERGED!=DEPLOYED ayrimlari oradadir. Bu pointer execution authority URETMEZ;
+P8-C4 bolumu ve tarihsel satirlar DEGISTIRILMEMISTIR; T+24 PENDING.
