@@ -3,9 +3,9 @@
 ```text
 DOKÜMAN            office-p8-final-r01/p8-precondition-package-r01.md
 GÖREV              OFFICE-P8-FINAL-PRECONDITION-PACKAGE-R01 (SAYFA C19 / GO-IMPLEMENT — DOCS-ONLY ANALİZ PAKETİ)
-STATÜ              OWNER_DECISIONS_MATERIALIZED / 19_OF_20_DISPOSED /
-                   D17 OWNER_SOURCE_REQUIRED / P8_FINAL BLOCKED
+STATÜ              OWNER_DECISIONS_MATERIALIZED / 20_OF_20_DISPOSED / P8_FINAL BLOCKED
 RATİFİKASYON       C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01 (2026-08-26) — bkz. §F
+                   C19-P8-PRECONDITION-D17-SUPERSESSION-RATIFICATION-R01 (2026-08-26) — bkz. §F.1
 BASE               origin/main @ e1e164ed487ac9832171d10cb3be247a888274e1 (2026-08-26)
 ÜRETİLEN AUTHORITY NONE — bu paket P8 FINAL'i AÇMAZ, kapanış/sertifikasyon üretmez,
                    X4 hakkında verdict VERMEZ, register satırı yazmaz
@@ -16,7 +16,9 @@ BASE               origin/main @ e1e164ed487ac9832171d10cb3be247a888274e1 (2026-
 > **Kural hatırlatması (yürürlükteki owner kuralı):** X4/P4 için kesin verdict
 > verilmez. Bu paket yalnız kanıt derler ve sınıflandırılmış seçenekler sunar.
 > Karar hücreleri owner işaretlemesi için **BOŞ** bırakılmıştı; 2026-08-26 owner
-> ratifikasyonu ile dolduruldu (bkz. §F). D17 hariç hiçbir hücre boş değildir.
+> ratifikasyonu ile dolduruldu (bkz. §F); D17, 2026-08-26 owner supersession
+> ratifikasyonu ile çözülmüştür (bkz. §F.1) — 20/20 DISPOSED. Bu yalnız
+> karar/disposition tamamlanmasıdır; tarihsel C12 eşleşmesi KANITLANMAMIŞTIR.
 
 ---
 
@@ -260,7 +262,8 @@ append-only reconciliation (OBSERVED) · `b01-credential-containment-runtime-sta
 Seçenekler: `P8-FOLD` (P8 FINAL kapsamına katılır) · `SUCCESSOR-RECORD` (ayrı
 successor kaydı olarak kalır/açılır) · `DEFER` (ertelenir). Hücreler paketin ilk
 teslimatında boştu; **2026-08-26 owner ratifikasyonu ile doldurulmuştur (bkz. §F)**.
-D17 `OWNER_SOURCE_REQUIRED` kalır.
+D17, 2026-08-26 owner supersession ratifikasyonu ile çözülmüştür (bkz. §F.1) —
+20/20 DISPOSED; tarihsel C12 eşleşmesi hakkında olgusal iddia üretilmemiştir.
 
 | Kalem | Mevcut durum (kanıt) | Bağımlılık | OWNER KARARI |
 |---|---|---|---|
@@ -280,7 +283,7 @@ D17 `OWNER_SOURCE_REQUIRED` kalır.
 | OFFICE-P4 umbrella terminal kaydı | **UNKNOWN** (§8 snapshot; owner §8.2 kuralıyla zorla sınıflandırılmadı) | **A bölümü kararına bağlı** | **D14: P8-FOLD** — X4 lane bağımlı |
 | WR01-B07 kalan kapsam (notification) | **UNKNOWN** (§8 snapshot; ledger §2 B07 satırı) | WR01 programı — P8 FINAL blocker'ı DEĞİL (decision-log:540) | **D15: DEFER** |
 | "escalation CI manifest" kalemi | **OWNER_SOURCE_REQUIRED** — bu adla/anlamla eşleşen kayıt `project/docs/governance/**` taramasında bulunamadı (ci-manifests bağı dahil arandı); kalem C19 talimat metninde anılır, repo'da karşılığı ölçülemedi | — | **D16: SUCCESSOR-RECORD** — owner-ratified source: **B12** ("6 escalation spec'inden 5'i hiçbir CI manifest'te değil"); gerçek CI değişikliği ayrı task-bound iş |
-| "C12" kalemi | **OWNER_SOURCE_REQUIRED** — `\bC12\b` deseni governance genelinde 0 eşleşme; kalem C19 talimat metninde "runtime residual/C12" olarak anılır, repo'da karşılığı ölçülemedi | — | **D17: OWNER_SOURCE_REQUIRED / SINIFLANDIRILMADI** — WR01 C12 (CLAUDE-C12 / Aşama 3 Resolver / PR #2448) ile explicit cross-reference kanıtlanamadı; **P8 FINAL blocker'ı olarak korunur** |
+| "C12" kalemi | **OWNER_SOURCE_REQUIRED** — `\bC12\b` deseni governance genelinde 0 eşleşme; kalem C19 talimat metninde "runtime residual/C12" olarak anılır, repo'da karşılığı ölçülemedi | — | **D17: HISTORICAL IDENTIFIER SUPERSEDED / CURRENT DISPOSITION: SUCCESSOR-RECORD / WR01 LANE** *(2026-08-26, §F.1)* — tarihsel "runtime residual/C12" ile CLAUDE-C12 arasında exact cross-reference KANITLANMAMIŞTIR; bu karar geriye dönük eşitlik teyidi DEĞİLDİR. Güncel bağımsız kalem: WR01 C12 / Aşama 3 Resolver / PR #2448 / consumer wiring 0/6. Gerçek WR01 successor kaydının açılması bu görevde yapılmaz; ayrı owner GO ister |
 
 Not — `residual-register.md`'nin 7 satırından F01/F06/CAP09A/F03/F04/F07
 `successor-execution-order.md` reconciliation'larıyla kapanmış durumdadır
@@ -300,13 +303,17 @@ bu tablonun konusu değildir.
 - T+24 / AUTHPUB / C15_EVIDENCE yüzeylerine dokunulmadı.
 
 ```text
-TERMİNAL STATÜ     OWNER_DECISIONS_MATERIALIZED / 19_OF_20_DISPOSED /
-                   D17 OWNER_SOURCE_REQUIRED / P8_FINAL BLOCKED
-SONRAKİ ADIM       §F kararlarının uygulanması — X4 lane kaydı (A.3=c), "15"
-                   supersession + fresh envanter (B.4=2), non-authorizing
-                   cross-reference materyalizasyonu (C.1=EVET) ve
-                   SUCCESSOR-RECORD kayıtları — AYRI owner GO'larına tabidir.
-                   P8 FINAL launch handoff'u HAZIRLANMAMIŞTIR — OTOMATİK GEÇİŞ YOK.
+TERMİNAL STATÜ     OWNER_DECISIONS_MATERIALIZED / 20_OF_20_DISPOSED /
+                   P8_FINAL BLOCKED
+P8_FINAL GEREKÇE   D17 disposition'ı TAMAMLANMIŞTIR; bu durum P8 FINAL'i AÇMAZ
+                   veya READY yapmaz. Şunlar tamamlanmadan P8 FINAL launch
+                   handoff'u hazırlanamaz: X4 lane materyalizasyonu (A.3=c) ·
+                   "15" supersession + fresh reconciliation envanteri (B.4=2) ·
+                   C.1 non-authorizing cross-reference materyalizasyonu ·
+                   OFFICE-P4 umbrella terminal kaydı (D14) · D13 kapsamındaki
+                   T+24/P6 hash-matrisi ve diğer açık P8-FOLD bağımlılıkları.
+SONRAKİ ADIM       Yukarıdaki materyalizasyonlar ve SUCCESSOR-RECORD kayıtları
+                   AYRI owner GO'larına tabidir — OTOMATİK GEÇİŞ YOK.
 ```
 
 ---
@@ -343,3 +350,34 @@ iştir.
 Resolver / PR #2448 / consumer wiring 0/6) arasında explicit cross-reference
 KANITLANAMADI; kalem `OWNER_SOURCE_REQUIRED / SINIFLANDIRILMADI` kalır ve
 **P8 FINAL blocker'ı olarak korunur**.
+
+### F.1 D17 SUPERSESSION / OWNER RATIFICATION — 2026-08-26
+
+Owner kararı (`C19-P8-PRECONDITION-D17-SUPERSESSION-RATIFICATION-R01` ile
+RATİFİYE; anlam kaybı olmadan kayıt):
+
+> Tarihsel "runtime residual/C12" ifadesinin özgün referansı geri
+> kazanılamamıştır ve geriye dönük olarak CLAUDE-C12 ile aynı olduğu
+> TEYİT EDİLMEMEKTEDİR. Bu belirsiz tarihsel tanımlayıcı açıkça SUPERSEDE
+> edilir. Repo'da gözlemlenen WR01 C12 / Aşama 3 Resolver / PR #2448 /
+> consumer wiring 0/6 residual'ı güncel ve bağımsız kalem olarak
+> SUCCESSOR-RECORD / WR01 LANE şeklinde sınıflandırılır. Bu karar tarihsel
+> C12 eşleşmesi hakkında olgusal iddia üretmez; yalnız bugünkü disposition'ı
+> belirler.
+
+```text
+Historical attribution   UNRECOVERED / NOT RETROACTIVELY CONFIRMED
+Historical identifier    SUPERSEDED
+Current independent item WR01 C12 / Aşama 3 Resolver / PR #2448 /
+                         consumer wiring 0/6
+Disposition              SUCCESSOR-RECORD / WR01 LANE
+Decision total           20/20 DISPOSED
+P8 FINAL                 BLOCKED BY REMAINING PRECONDITIONS
+WR01 authority           NONE — implementation/successor creation yetkisi
+                         ÜRETİLMEDİ
+```
+
+Üstteki §F checkpoint bloğu ve içindeki `D = 19/20 DISPOSED` kaydı ile "D17
+kaydı" paragrafı, önceki checkpoint'in DOĞRU TARİHSEL SONUCU olarak
+DEĞİŞTİRİLMEDEN korunmuştur; bu alt bölüm append-only'dir ve o tarihsel kaydı
+supersede eder.
