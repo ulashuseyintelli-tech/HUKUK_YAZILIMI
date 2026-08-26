@@ -1939,3 +1939,15 @@ EXECUTION AUTHORITY       NONE (bu kayıt kimlik+statü envanteridir)
 ```
 
 Kaynak: owner P8-C4 handoff (2026-08-13) + `decision-log.md` 2026-08-13 OFFICE P8-C4 satırları.
+
+### 13.6 RUNTIME REFERANSI — SUPERSEDING POINTER (2026-08-26, retrospective reconciliation)
+
+$13.3'teki "CANLI API REFERANSI RELEASE10 @ 77a347a9..." satiri 2026-08-13
+anlik goruntusudur ve DEGISTIRILMEMISTIR. Guncel kanonik hukum SUPERSEDING
+kayittadir: `office-wr01-decomposition-r01/wr01-c14-c15-ledger-reconciliation-r01.md`
+(RECORD ID `WR01-C14-C15-LEDGER-RECONCILIATION-R01`, SHA-256
+`7d0f804e6b85e0bc924d37f8bf1ac84910060ea6464d709570a7a5019f7d16de`):
+**RELEASE13 = ACTIVE / VERIFIED / T+24 CLOSEOUT PENDING** (RELEASE12 = onceki
+aktif runtime + mevcut rollback target). T+24 tamamlanmadan TERMINALLY CLOSED /
+OBSERVATION COMPLETE / FULLY QUALIFIED hukumleri YASAKTIR. Bu bolum yeni
+semantic karar veya execution authority URETMEZ.
