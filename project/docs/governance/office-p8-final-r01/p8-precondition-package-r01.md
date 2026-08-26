@@ -1,0 +1,291 @@
+# OFFICE P8 FINAL — ÖN-KOŞUL NETLEŞTİRME PAKETİ (R01)
+
+```text
+DOKÜMAN            office-p8-final-r01/p8-precondition-package-r01.md
+GÖREV              OFFICE-P8-FINAL-PRECONDITION-PACKAGE-R01 (SAYFA C19 / GO-IMPLEMENT — DOCS-ONLY ANALİZ PAKETİ)
+STATÜ              DRAFT / PENDING_OWNER_DECISION
+BASE               origin/main @ e1e164ed487ac9832171d10cb3be247a888274e1 (2026-08-26)
+ÜRETİLEN AUTHORITY NONE — bu paket P8 FINAL'i AÇMAZ, kapanış/sertifikasyon üretmez,
+                   X4 hakkında verdict VERMEZ, register satırı yazmaz
+ÜRÜN DİFF          YOK (kod / schema / migration / test / flag / runtime / production /
+                   T+24 / AUTHPUB / C15_EVIDENCE: DOKUNULMADI)
+```
+
+> **Kural hatırlatması (yürürlükteki owner kuralı):** X4/P4 için kesin verdict
+> verilmez. Bu paket yalnız kanıt derler ve sınıflandırılmış seçenekler sunar.
+> Karar hücreleri owner işaretlemesi için **BOŞ** bırakılmıştır.
+
+---
+
+## 0. Preflight kanıt kaydı (2026-08-26)
+
+| Kontrol | Sonuç |
+|---|---|
+| `git fetch origin main` → `main == origin/main` | `e1e164ed487ac9832171d10cb3be247a888274e1` — eşit (VERIFIED) |
+| Açık PR taraması (`gh pr list --state open`) | **0 açık PR** — WR01/AUTHPUB dosya çakışması yok (VERIFIED) |
+| `decision-log.md` satır 536/538/539/540 | WR01 SA01 · F06 OD disposition · P8-C4 · WR01 master plan — taze okundu (OBSERVED) |
+| `OFFICE-DELIVERY-MANIFEST.md` §13 (§13.1–§13.6) | taze okundu; §13.6 superseding RELEASE13 pointer dahil (OBSERVED) |
+| `successor-execution-order.md` | orijinal snapshot + append-only reconciliation satırları taze okundu (OBSERVED) |
+| `wr01-decomposition-brief-r01.md` §2.1 | X4/P4 üç-kavram ayrımı (a/b/c) taze okundu (OBSERVED) |
+| `f06-open-od-decision-package.md` | 9 karar kartı taze okundu (OBSERVED) |
+| PR #2374 tam diff | 219 satır, 6 governance dosyası; tamamı okundu (OBSERVED) |
+| `wr01-c14-c15-ledger-reconciliation-r01.md` (#2458) | §2/§8/§9 dahil taze okundu — 2026-08-26 açık-kalem snapshot'ı (OBSERVED) |
+| Teslimat yolu konvansiyonu | lane-başına-klasör deseni doğrulandı (`office-p4-authz-r01/`, `office-p5-security-r01/`, …); `office-p8-final-r01/` bu PR ile açılır (VERIFIED) |
+
+---
+
+## A. X4 KANIT DOSYASI — VERDICT YOK
+
+### A.1 X4'e atfedilebilir PR/SHA zinciri (14 PR; tümü bu oturumda `gh` + `git merge-base --is-ancestor` ile doğrulandı)
+
+Talimattaki aday küme doğrulandı; düzeltme gerekmedi. F03 = #2414+#2416,
+F04 reconciliation = #2419, F07 = #2425+#2427+#2429 netleşmiştir.
+
+| # | PR | Squash SHA | Başlık (gh) | Ancestry | Kanonik kayıtta PR-numarası görünümü |
+|---|---|---|---|---|---|
+| 1 | #2376 | `a3db41bda8c9f09bcec5c563862f5ca10e0a9411` | docs(office): reconcile F01 and prepare F06 decisions | ANCESTOR (VERIFIED) | `successor-execution-order.md` F06 satırı + `decision-log.md:192` (`packagePr : #2376`) |
+| 2 | #2392 | `9108af0f2ae24942450e8445a3c55fe07f2cfa8c` | governance: bind OFFICE CAP-09A materialization | ANCESTOR (VERIFIED) | **HİÇBİR governance register'ında anılmıyor** (ölçüldü — bkz. A.1.1) |
+| 3 | #2395 | `d5f409799f673e80bd2e9c5f77ce198758bf0b98` | feat(governance): bind CAP-09A whitespace repair | ANCESTOR (VERIFIED) | **anılmıyor** |
+| 4 | #2397 | `46d513ad982266e71d98ac3dbf39377ca87fe2af` | fix(governance): allow wrapped CAP-09A grant literals | ANCESTOR (VERIFIED) | **anılmıyor** |
+| 5 | #2403 | `c9fed0a5c8201c5a5a8f3a57e51b2fe957a208ac` | docs(office): ratify F06 and grant CAP-09A consumer | ANCESTOR (VERIFIED) | `successor-execution-order.md` F06 satırı ("owner dispositions PR #2403") |
+| 6 | #2405 | `943a9bbb59b2f9c5d05253c5b41e44cf3bc14a2d` | OFFICE CAP-09A: add transactional Staff audit consumer | ANCESTOR (VERIFIED) | `successor-execution-order.md` CAP-09A satırı |
+| 7 | #2433 | `347fb21891e9c612670970573fa31f4f92543418` | OFFICE CAP-09A: bind consumer terminal closeout | ANCESTOR (VERIFIED) | **anılmıyor** |
+| 8 | #2434 | `1f2ae106ac26c8fe40b51e3aafb16501156e197f` | OFFICE CAP-09A: close consumer execution grant | ANCESTOR (VERIFIED) | **anılmıyor** (yalnız `coordination-execution-grants/OFFICE-CAP-09A-CONSUMER-01-R01-EG01.md` dosyasının kendisini günceller) |
+| 9 | #2414 | `8f9b50f326b6648cef028714173c21f9ad324368` | docs(governance): materialize OFFICE F03 authority | ANCESTOR (VERIFIED) | `successor-execution-order.md` F03 satırı |
+| 10 | #2416 | `4450c816cb612c0f5b233f158990cf9902c6d807` | test(office): add dedicated F03 E2E matrix | ANCESTOR (VERIFIED) | `successor-execution-order.md` F03 + F04 satırları |
+| 11 | #2419 | `069c12b66e09c3984216f53a9018edb6dab5f84c` | docs(office): reconcile F04 successor status | ANCESTOR (VERIFIED) | **anılmıyor** — F04/F05/F07-order-lock reconciliation satırlarını `successor-execution-order.md`'ye EKLEYEN PR'ın kendisidir (gh files ile doğrulandı), ancak hiçbir satır #2419'u PR-numarası olarak taşımaz |
+| 12 | #2425 | `3692910d4d78363e38b00c3b22a9748528bd4f92` | feat(governance): bind OFFICE F07 orphan disposition | ANCESTOR (VERIFIED) | `successor-execution-order.md` F07 kapanış satırı ("G0 PR #2425") |
+| 13 | #2427 | `aa1e725384a177d296b5e2ccbbdb9467c93c9220` | docs(governance): materialize OFFICE F07 authority | ANCESTOR (VERIFIED) | `successor-execution-order.md` F07 kapanış satırı ("authority PR #2427") |
+| 14 | #2429 | `1df784f07fd757ae64f7736e023642d1c5f64f08` | docs(office): close F07 orphan dispositions | ANCESTOR (VERIFIED) | **anılmıyor** — F07 kapanış satırlarını ekleyen PR'ın kendisi (gh files ile doğrulandı) |
+
+#### A.1.1 Ölçülmüş attribution boşluğu (VERIFIED, 2026-08-26 grep)
+
+`project/docs/governance/**` genelinde `#2392 · #2395 · #2397 · #2419 · #2429 ·
+#2433 · #2434` dizgileri **0 eşleşme** döndürür. Yani 14 PR'lık zincirin **7'si**
+canonical governance yüzeylerinde PR-numarası olarak kayıtlı değildir. Bunların
+4'ü control-plane/grant mekaniğidir (#2392/#2395/#2397 binding, #2434 EG close),
+2'si reconciliation içeriğini taşıyan PR'ın kendisidir (#2419, #2429), 1'i
+consumer terminal closeout binding'idir (#2433). Bu bir **ölçümdür**; attribution
+kaydı gerekip gerekmediği owner kararıdır (P8 FINAL kapsamına girebilir).
+
+### A.2 Üç okumanın güncel kanıtla yeniden değerlendirilmesi (C5 brief §2.1 a/b/c ayrımı)
+
+#### (a) Fonksiyonel P4 write-path closure — kapandığı yönünde kanıt VAR (değişmedi)
+
+- `master-triage-register.md:197` — VER-26: P4 Office Approval FE PR #823/#832
+  teslim + **P4-6 DONE** (OBSERVED).
+- Brief §2.1(a)'daki kod kanıtları (`office-approval.service.ts` write-path +
+  executor) brief'te VERIFIED kayıtlıdır; bu paket o ölçümü tekrarlamadı.
+- **Güncel ek kanıt:** F-serisi successor'ların tamamı (F01, F06, CAP-09A
+  consumer, F03, F04, F07) `successor-execution-order.md` append-only
+  reconciliation satırlarında MERGED/CLOSED/TERMINAL_CLOSED durumundadır
+  (OBSERVED); yalnız F05 `NOT_AUTHORIZED` kalır.
+
+#### (b) Umbrella final closeout — kapanmadığı yönünde kanıt VAR (değişmedi, tazelendi)
+
+- `OFFICE-DELIVERY-MANIFEST.md:1860` — "**P8 FINAL CLOSEOUT DEĞİLDİR** (X4 ve
+  kalan lane'ler kapanmadan final sertifikasyon yapılmaz)" (OBSERVED).
+- 2026-08-26 açık-kalem snapshot'ı (`wr01-c14-c15-ledger-reconciliation-r01.md`
+  §8, #2458): **"P8 FINAL closeout" BLOKLU sınıfındadır**; "OFFICE-P4 umbrella
+  terminal kaydı" **UNKNOWN** sınıfındadır (OBSERVED).
+- `CLF-O0-01 · requestRevision domain-owned guard → X4` kalemi hâlâ açıktır:
+  manifest §13.4 + §8 snapshot GO-BEKLEYEN listesi (OBSERVED).
+
+#### (c) X4'ün kendi lane kaydı — boşluk DEVAM EDİYOR, üstüne taze owner sınıflandırması eklendi
+
+- Repo'da X4'ün ne teslim ettiğini tanımlayan lane sayfası/kapanış kaydı **hâlâ
+  yoktur**; `decision-log.md`'de `X4` dizgisi yalnız satır 539'da geçer (iki kez:
+  CLF-O0-01 hedefi + "kalan lane'ler (X4 dahil) AYRI owner yetkisinde")
+  (VERIFIED, grep).
+- **Yeni (2026-08-26):** açık-kalem snapshot'ı §8, "X4 lane'i"ni **UNKNOWN**
+  sınıfına koyar ve owner §8.2 kuralı gereği zorla sınıflandırmaz (OBSERVED).
+- Ledger reconciliation §2 B06 satırı: "**X4 belirsizliği çözülmeden
+  tasarlanamaz**" (OBSERVED) — B06'nın ön-koşulu bu belirsizliğe bağlanmıştır.
+
+#### A.3 Owner'a soru (bu paket CEVAPLAMAZ)
+
+> **X4 CLOSED beyanı hangi tanımla verilecek?**
+>
+> - **(a) Fonksiyonel P4 write-path yeterli** → kanıt A.2(a); bu okumada X4
+>   ekseni kapanmış sayılır, ancak CLF-O0-01 (→X4) kaleminin yeni hedefi
+>   tanımlanmalıdır.
+> - **(b) Umbrella final closeout gerekli** → kanıt A.2(b); bu okumada X4, P8
+>   FINAL'in içinde veya öncesinde ayrı kapanış ister.
+> - **(c) X4 için ayrı tanım/lane sayfası üretilmeli** → kanıt A.2(c); üretim
+>   işi ayrı owner GO'suna tabidir. A.1 tablosu bu sayfanın hammaddesi olarak
+>   kullanılabilir (bu paket o sayfayı ÜRETMEZ).
+>
+> `OWNER_DECISION: ____________________` *(a / b / c — owner işaretler)*
+
+---
+
+## B. "15 ÇELİŞKİ" LİSTESİNİN MATERYALİZASYONU
+
+### B.1 Ölçüm — listenin repo'daki durumu
+
+"15 çelişki" ifadesi `project/docs/governance/**` genelinde **yalnız iki yerde**
+ve yalnız **sayı olarak** geçer (VERIFIED, grep):
+
+1. `decision-log.md:539` — "15 çelişkinin tam onarımı ve 9 OD paketleme P8
+   FINAL'in işidir, burada AÇILMAZ."
+2. `OFFICE-DELIVERY-MANIFEST.md:1863` — aynı ifade (§13 giriş).
+
+PR #2374'ün tam diff'i de (219 satır, OBSERVED) sayıyı taşır, listeyi taşımaz.
+Her iki kaydın kaynak kolonu "Owner P8-C4 handoff (2026-08-13)" der;
+`decision-log.md:540` aynı handoff için "karar içerik detayları owner oturum
+kaydındadır" notunu düşer. **Sonuç: 15 kalemlik numaralandırılmış liste repo'dan
+kurtarılamamıştır.**
+
+### B.2 Kurtarma oranı — açık beyan
+
+```text
+DOĞRULANMIŞ LİSTE ÜYESİ     : 0 / 15
+REPO'DAN KURTARILAN ADAY    : 8 kalem (B.3 — üyelik KANITLANAMAZ, aday statüsünde)
+LİSTENİN KENDİSİ            : OWNER_SOURCE_REQUIRED (owner P8-C4 oturum kaydı)
+```
+
+### B.3 Aday havuzu (repo'da kayıtlı, çelişki-nitelikli kalemler)
+
+Aşağıdaki kalemler repo kanıtıyla tespit edilmiş kayıt-çelişkisi/bayatlık
+örnekleridir. **Hiçbirinin "15"in üyesi olduğu iddia edilmez**; owner, B.4
+şablonunu doldururken bunlardan eşleşenleri işaretleyebilir.
+
+| Aday | Çelişki | Kanıt | Güncel durum |
+|---|---|---|---|
+| CAND-01 | `app.module.ts:193` "route/cron YOK" yorumu ↔ `office-approval-executor-cron.service.ts:56` `@Cron` kaydı | `cross-lane-findings.md` CLF-P7-01 (OBSERVED) | AÇIK (successor envanterinde) |
+| CAND-02 | `schema.prisma:10008` "PermissionGrant'ı hiçbir authorization consumer okumuyor" yorumu ↔ 3+ gerçek okuyucu (BANK/CLIENT-INTAKE/UYAP) | CLF-P7-02 + `wr01-decomposition-brief-r01.md` §3.7 bağımsız doğrulaması (OBSERVED) | AÇIK (successor envanterinde) |
+| CAND-03 | BankSettlementEvidence "written-but-not-operational" register kaydı ↔ PR #1910 ile auth'lu controller'a bağlanmış yazıcılar | CLF-P7-03 (OBSERVED) | AÇIK (hedef register OFFICE dışı) |
+| CAND-04 | `/auth/me passwordChangedAt`: içerik RELEASE13'te kapalı (cert T7 PASS) ↔ register satırı GO-bekliyor; disposition kaydı yok | `wr01-c14-c15-ledger-reconciliation-r01.md` §8 UNKNOWN sınıfı — kayıt kendisi "celiskisi" adlandırmasını kullanır (OBSERVED) | AÇIK / UNKNOWN |
+| CAND-05 | `od-decision-register.md` başlığı "All records below remain OWNER_DECISION_REQUIRED" ↔ `decision-log.md:538` sekiz OD CLOSED/CANONICAL + OD-04 DEFERRED (2026-08-13) | Bu oturumda ölçüldü (OBSERVED); dosyada "tarihsel snapshot korunur" notu YOK | AÇIK aday — bayat şimdiki-zaman iddiası |
+| CAND-06 | `OFFICE-RISK-REGISTER.md:190` ↔ `decision-log.md:30` CAP-09 authority çelişkisi | `t5-preflight/office-stale-register-reconciliation.md` §6 (OBSERVED; tespit 2026-07 dönemi) | GÜNCEL DURUMU BU PAKETTE YENİDEN ÖLÇÜLMEDİ |
+| CAND-07 | OFFICE-AUTH-P02-HARDENING-R01 "OPEN / NOT IMPLEMENTED" backlog satırları ↔ kod+DB gerçekte uygulanmış | `t5-preflight/office-stale-register-reconciliation.md` §3-4; `active-roadmap.md:57` düzeltme notu (OBSERVED) | DÜZELTİLMİŞ (tarihsel aday; 2026-07-26/31 supersession) |
+| CAND-08 | Manifest §8 "NEXT/CURRENT UNIT: NONE" ↔ CAP-09 seçimi (decision-log:30, 2026-07-22) | `t5-preflight/office-stale-register-reconciliation.md` §3c (OBSERVED) | DÜZELTİLMİŞ (tarihsel aday) |
+
+Not: `stale-comment-reconciliation.md` (spring-cleaning) "GOVERNANCE STATUS
+DRIFTS 3" ölçümünü kaydeder; bu üçlü CAND-07/CAND-08 ailesiyle örtüşür ve ayrı
+kalem sayılmamıştır.
+
+### B.4 Numaralandırılmış taslak liste — OWNER_SOURCE_REQUIRED şablonu
+
+Owner P8-C4 oturum kaydından doldurulmak üzere; aday eşleşmeleri owner
+işaretler. **Bu paket hiçbir satırı icat ederek doldurmamıştır.**
+
+```text
+Ç-01 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-02 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-03 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-04 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-05 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-06 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-07 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-08 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-09 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-10 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-11 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-12 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-13 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-14 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+Ç-15 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
+```
+
+---
+
+## C. 9 OD ↔ F06 TÜKETİM EŞLEMESİ
+
+Kaynaklar: `f06-open-od-decision-package.md` (9 karar kartı, OBSERVED) ·
+`decision-log.md:184-243` disposition kaydı + `:538` ratifikasyon satırı
+(OBSERVED) · `OFFICE-OWNER-DECISIONS.md` kanonik dossier (OBSERVED) ·
+`od-decision-register.md` (OBSERVED, bayat — B.3 CAND-05).
+
+**Sınıflandırma dikkat notu (ölçüldü):** `decision-log.md:550`'deki "OD-01–OD-08"
+F01 alan-sınıflandırma bağlamıdır; satır 643+ bölgesindeki `COL/OD-*` RCV-COL
+programıdır; C15-PR4'ün kendi "OD-1..9" seti ayrıdır
+(`C15-PR4-ANALYSIS-DESIGN-R02`, repo-dışı). Bu bölüm YALNIZ `OFF/OD-*` F06
+kümesini eşler; bu üç komşu küme ile karıştırılmamıştır.
+
+| OD | F06 paket kartı | Owner disposition (kanıt) | Kanonik dossier yansıması | Sonraki iş tüketimi (kanıt) | Durum |
+|---|---|---|---|---|---|
+| OFF/OD-02 | UserAccount çoklu tenant/org membership | **OPTION B** — `decision-log.md:193` + `:205-209` yorum bloğu | `OFFICE-OWNER-DECISIONS.md:24` — CLOSED/CANONICAL (2026-08-13, F06 pack) (OBSERVED) | Hiçbir merged implementasyon tüketmedi (membership schema işi açılmadı — karar guard'ı gereği policy-only) | POLICY CLOSED / İMPLEMENTASYONCA TÜKETİLMEDİ |
+| OFF/OD-03 | Çoklu Employment | **OPTION B** — `:193` + `:212-217` | `:27` — CLOSED/CANONICAL (OBSERVED) | Tüketilmedi (Employment modeli işi açılmadı) | POLICY CLOSED / TÜKETİLMEDİ |
+| OFF/OD-04 | External counsel/contractor lifecycle | **KEEP_DEFERRED** — `:194` + `:212-217` | `:30` — DEFERRED/CANONICAL (OBSERVED) | Tüketim beklenmez (deferred; yeniden açma Legal Ops + HR talebine bağlı) | DEFERRED — tüketim yok, kurala uygun |
+| OFF/OD-06 | FoundingLawyer tarihsel statü | **OPTION B** — `:193` + `:220-223` | `:36` — CLOSED/CANONICAL (OBSERVED) | Doğrudan tüketen merged iş yok. **İlişkili (INFERRED):** WR01 D-WR-6 FOUNDER=`ANY_ONE` tasarımı; brief §1.3 FOUNDER kimliğinin ReportingLine'dan bağımsızlığını doğrular ve OD-06'nın "bypass üretmez" sınırıyla çelişmez — ancak brief `OFF/OD-06`'ya açık atıf YAPMAZ | POLICY CLOSED / INFERRED-İLİŞKİLİ (WR01-B06 tasarım aşamasında; B06 NOT STARTED) |
+| OFF/OD-07 | Tenant↔Organization cardinality | **OPTION B** — `:193` + `:205-209` | `:39` — CLOSED/CANONICAL (OBSERVED) | Tüketilmedi (org migration işi açılmadı; karar guard'ı schema işini açıkça dışlar) | POLICY CLOSED / TÜKETİLMEDİ |
+| OFF/OD-12 | Çoklu approval seviyesi tek Person | **OPTION B** — `:193` + `:226-231` (ADR-009 tek motor korunur) | `:54` — CLOSED/CANONICAL (OBSERVED) | Doğrudan tüketen merged iş yok. **İlişkili (INFERRED):** WR01 D-WR-3 politika sözlüğü + B06 çok-kararlı taşıyıcı ihtiyacı bu kararın üstüne kurulacak; B06 NOT STARTED / X4-bloklu (ledger §2) | POLICY CLOSED / INFERRED-İLİŞKİLİ (B06 bekliyor) |
+| OFF/OD-13 | Delegation kapsamı | **OPTION B** — `:193` + `:226-231` (delegasyon delegator'ı aşamaz) | `:57` — CLOSED/CANONICAL (OBSERVED) | Doğrudan tüketen merged iş yok. **İlişkili (INFERRED):** WR01 D-WR-3 delegasyon nitelikleri (action-scoped + süreli + geri-alınabilir + yetki büyütemez) OD-13/B ile aynı ailedendir; brief §3.7 `PermissionGrant` fark analizi bu kararın gelecek tüketicisinin ön-analizidir | POLICY CLOSED / INFERRED-İLİŞKİLİ |
+| OFF/OD-16 | Offboarding revoke↔reassignment sırası | **OPTION B** — `:193` + `:234-237` (freeze/revoke → reassignment) | `:66` — CLOSED/CANONICAL (OBSERVED) | Tüketilmedi (offboarding orchestration işi açılmadı; OFF-INV-07 korunur) | POLICY CLOSED / TÜKETİLMEDİ |
+| OFF/OD-19 | Workload metriği amacı | **OPTION B** — `:193` + `:240-243` (yalnız planlama) | `:75` — CLOSED/CANONICAL (OBSERVED) | Doğrudan tüketen merged iş yok. **İlişkili (INFERRED):** WR01 D-WR-5 "digest kişi-performans üretmez" kuralı OD-19/B ile aynı sınırı taşır; B07 digest katmanı MERGED (#2442) ancak brief/B07 kaydı `OFF/OD-19`'a açık atıf yapmaz | POLICY CLOSED / INFERRED-İLİŞKİLİ (B07 kalan kapsamı UNKNOWN — ledger §2) |
+
+### C.1 Eşleme sonucu
+
+- **9/9 OD, F06 paketinin kartlarıyla birebir eşleşti** — paket dışı veya
+  eşleşmeyen OD yoktur.
+- Governance tüketimi TAM: disposition (`decision-log.md:184-243` + `:538`) +
+  kanonik dossier güncellemesi (19/20 CLOSED sayımı,
+  `OFFICE-OWNER-DECISIONS.md:9` ve `:80`) tutarlıdır (OBSERVED).
+- İmplementasyon tüketimi SIFIR: hiçbir OD implementation authority üretmedi
+  (kayıtların kendi beyanı) ve hiçbir merged implementasyon bu kararları
+  tüketmedi. WR01 D-WR eşleşmeleri **INFERRED** etiketlidir — WR01 kayıtları
+  `OFF/OD-*`'a açık atıf yapmaz.
+- `OWNER_CONFIRMATION_REQUIRED` işaretli tek belirsizlik: D-WR↔OFF/OD
+  INFERRED bağlarının (OD-06↔D-WR-6, OD-12/13↔D-WR-3, OD-19↔D-WR-5) P8 FINAL
+  kayıtlarında **açık cross-reference'a dönüştürülüp dönüştürülmeyeceği**.
+  Bu paket dönüştürmez.
+
+---
+
+## D. SUCCESSOR DISPOSITION TABLOSU — KARAR HÜCRELERİ BOŞ
+
+Kaynaklar: `OFFICE-DELIVERY-MANIFEST.md` §13.4 (OBSERVED) ·
+`wr01-c14-c15-ledger-reconciliation-r01.md` §8 açık-kalem snapshot'ı 2026-08-26
+(OBSERVED) · `residual-register.md` (OBSERVED) · `successor-execution-order.md`
+append-only reconciliation (OBSERVED) · `b01-credential-containment-runtime-status.md`
+§9 (OBSERVED).
+
+Seçenekler: `P8-FOLD` (P8 FINAL kapsamına katılır) · `SUCCESSOR-RECORD` (ayrı
+successor kaydı olarak kalır/açılır) · `DEFER` (ertelenir). **Hiçbir hücre bu
+paket tarafından doldurulmamıştır.**
+
+| Kalem | Mevcut durum (kanıt) | Bağımlılık | OWNER KARARI |
+|---|---|---|---|
+| F-B01-03 — GET/PUT yetki asimetrisi (`office.controller.ts:144-147, 178-181` ↔ `:151+167, :185+198`) | AÇIK / GO-BEKLEYEN (b01 §9; §8 snapshot) | F01 sonrası projection policy'siyle tutarlılık | ____________ |
+| F-B01-04 — `OfficeService.getOrCreate` public ham yüzey (4 dış çağıran yalnız `office.name` okuyor) | AÇIK / GO-BEKLEYEN (b01 §9; §8 snapshot) | — | ____________ |
+| F-B01-05 — `Lawyer.uyapToken` "// Şifrelenmiş" yorumu kod karşılıksız (yazan servis yok, DB doluluğu 0) | AÇIK / GO-BEKLEYEN, düşük öncelik (b01 §9; §8 snapshot) | — | ____________ |
+| StaffDetailModal diff-payload | AÇIK / GO-BEKLEYEN (manifest §13.4; §8 snapshot) — allowlist projection + tam-form POST veri-silme riskine karşı fark-payload | b03 matrisi; F01 policy | ____________ |
+| /auth/me `passwordChangedAt` | **UNKNOWN / çelişkili** — içerik RELEASE13'te kapalı (cert T7 PASS) ↔ register GO-bekliyor; disposition kaydı yok (§8 snapshot; B.3 CAND-04) | RELEASE13 sertifika kayıtları (repo-dışı pointer, §9 ledger) | ____________ |
+| CLF-P5-01 (successor hedefi X1-P6) | AÇIK / GO-BEKLEYEN (manifest §13.4; §8 snapshot) | X1-P6 lane'i | ____________ |
+| CLF-P7-01 — app.module stale yorum | AÇIK / GO-BEKLEYEN (cross-lane-findings; §8 snapshot; B.3 CAND-01) | tek-satır doc düzeltmesi | ____________ |
+| CLF-P7-02 — PermissionGrant stale şema yorumu | AÇIK / GO-BEKLEYEN (cross-lane-findings; WR01 brief §3.7; B.3 CAND-02) | WR01-B01/B06 delegasyon tasarımıyla kesişir | ____________ |
+| CLF-P7-03 — BankSettlement reachability register düzeltmesi | AÇIK / GO-BEKLEYEN; hedef register OFFICE dışı (cross-lane-findings; B.3 CAND-03) | `spring-cleaning/PROGRAM-WIDE-…-REGISTER-R01.md` sahibi lane | ____________ |
+| CLF-O0-01 — requestRevision domain-owned guard → X4 | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | **A bölümü kararına bağlı** (X4 tanımı) | ____________ |
+| Kozmetik personel ad-hijyeni | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | — | ____________ |
+| F05 — `OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01` | **NOT_AUTHORIZED** — tek başlamamış successor; F04 launch runtime/DB/production yetkisini açıkça saklı tutar (successor-execution-order 2026-08-16 satırı) | yeni task-bound owner grant + production erişimi | ____________ |
+| P8-C4 runtime residual / capability deployment verdict | **BLOCKED_BY_RUNTIME_MODEL** (manifest §13.3); §13.6 superseding pointer: güncel runtime hükmü RELEASE13 = ACTIVE/VERIFIED/T+24 PENDING; verdict P6 hash-matrisi tazelenmeden VERİLEMEZ; §8 snapshot BLOKLU sınıfı | T+24 closeout + P6 hash-matrisi tazeleme | ____________ |
+| OFFICE-P4 umbrella terminal kaydı | **UNKNOWN** (§8 snapshot; owner §8.2 kuralıyla zorla sınıflandırılmadı) | **A bölümü kararına bağlı** | ____________ |
+| WR01-B07 kalan kapsam (notification) | **UNKNOWN** (§8 snapshot; ledger §2 B07 satırı) | WR01 programı — P8 FINAL blocker'ı DEĞİL (decision-log:540) | ____________ |
+| "escalation CI manifest" kalemi | **OWNER_SOURCE_REQUIRED** — bu adla/anlamla eşleşen kayıt `project/docs/governance/**` taramasında bulunamadı (ci-manifests bağı dahil arandı); kalem C19 talimat metninde anılır, repo'da karşılığı ölçülemedi | — | ____________ |
+| "C12" kalemi | **OWNER_SOURCE_REQUIRED** — `\bC12\b` deseni governance genelinde 0 eşleşme; kalem C19 talimat metninde "runtime residual/C12" olarak anılır, repo'da karşılığı ölçülemedi | — | ____________ |
+
+Not — `residual-register.md`'nin 7 satırından F01/F06/CAP09A/F03/F04/F07
+`successor-execution-order.md` reconciliation'larıyla kapanmış durumdadır
+(OBSERVED); tabloya yalnız hâlâ açık/karar-bekleyen kalemler alınmıştır. Kapanmış
+kalemlerin P8 FINAL'de nasıl ANILACAĞI (ledger özeti vb.) P8 FINAL tasarım işidir,
+bu tablonun konusu değildir.
+
+---
+
+## E. STOP-CONDITION UYGUNLUK BEYANI VE TERMİNAL STATÜ
+
+- Kanıt yerine varsayım gereken her satır `OWNER_SOURCE_REQUIRED` /
+  `OWNER_CONFIRMATION_REQUIRED` bırakıldı; hiçbir liste icat edilmedi (B.4, D).
+- X4 için hiçbir CLOSED/NOT-CLOSED hükmü yazılmadı; üç-okuma + soru formatı
+  korundu (A).
+- P8 FINAL başlatılmadı; hiçbir register'a P8 satırı yazılmadı.
+- T+24 / AUTHPUB / C15_EVIDENCE yüzeylerine dokunulmadı.
+
+```text
+TERMİNAL STATÜ     P8_PRECONDITION_PACKAGE_DELIVERED / DRAFT / PENDING_OWNER_DECISION
+SONRAKİ ADIM       Owner, A.3 sorusunu + B.4 şablonunu + C.1 confirmation kalemini +
+                   D tablosunun karar hücrelerini cevaplar/doldurur. Paket merge edilip
+                   cevaplar geldiğinde P8 FINAL launch handoff'u PAGE-O0'da hazırlanabilir
+                   hâle gelir — OTOMATİK GEÇİŞ YOK.
+```
