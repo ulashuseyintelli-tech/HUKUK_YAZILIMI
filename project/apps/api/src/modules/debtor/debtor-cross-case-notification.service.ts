@@ -2,6 +2,9 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 import { AuditService } from "@/modules/audit/audit.service";
+// C15 PR-4A: tenantId'siz (cross-tenant) dal QUERY-LEVEL olarak ACTIVE tenant'a daraltılır;
+// tenant-scoped dal DEĞİŞMEZ.
+import { ACTIVE_TENANT_WHERE } from "@/modules/tenant/tenant-lifecycle";
 
 /**
  * DBND-D6A-2 — Shared Debtor Cross-Case Persistent Notification.
@@ -271,7 +274,7 @@ export class DebtorCrossCaseNotificationService {
       where: {
         status: "PENDING",
         expiresAt: { lte: now },
-        ...(tenantId ? { tenantId } : {}),
+        ...(tenantId ? { tenantId } : { tenant: ACTIVE_TENANT_WHERE }),
       },
       data: { status: "EXPIRED", expiredAt: now },
     });
@@ -291,7 +294,7 @@ export class DebtorCrossCaseNotificationService {
   /// </remarks>
   async expireStaleNotificationsForInactiveRecipients(tenantId?: string, now: Date = new Date()): Promise<number> {
     const inactiveUsers = await this.prisma.user.findMany({
-      where: { isActive: false, ...(tenantId ? { tenantId } : {}) },
+      where: { isActive: false, ...(tenantId ? { tenantId } : { tenant: ACTIVE_TENANT_WHERE }) },
       select: { id: true },
     });
     if (inactiveUsers.length === 0) return 0;
@@ -301,7 +304,7 @@ export class DebtorCrossCaseNotificationService {
       where: {
         status: "PENDING",
         recipientUserId: { in: inactiveUserIds },
-        ...(tenantId ? { tenantId } : {}),
+        ...(tenantId ? { tenantId } : { tenant: ACTIVE_TENANT_WHERE }),
       },
       select: { id: true, tenantId: true, recipientUserId: true },
     });

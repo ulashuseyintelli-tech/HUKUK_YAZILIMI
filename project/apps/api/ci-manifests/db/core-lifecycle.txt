@@ -67,3 +67,10 @@ src/modules/tenant/__tests__/tenant-lifecycle.db-gated.integration.spec.ts
 # tam tur ACTIVE->QUIESCING->ACTIVE (token uretim/temizlik, clock_timestamp
 # sirasi, TAM 2 audit satiri, aktor kimligi uydurulmaz).
 src/modules/tenant/__tests__/tenant-lifecycle-transition.db-gated.integration.spec.ts
+
+# C15 PR-4A — ACTIVE daraltmasinin GERCEK Postgres davranisi.
+# Bes lifecycle durumunda bes tenant + esit uygunlukta fixture zinciri; kullanilan
+# HER iliski yolu (tenant: / case.tenant / caseDebtor.case.tenant) icin ACTIVE
+# PARITESI + dort non-ACTIVE durumun dislandigi + parite karsi-kaniti (yuklemsiz
+# sorgu 5 tenant'i da gorur) gercek sorguyla dogrulanir.
+src/modules/tenant/__tests__/tenant-lifecycle-cron-scope.db-gated.integration.spec.ts

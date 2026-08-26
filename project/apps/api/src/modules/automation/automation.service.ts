@@ -9,6 +9,8 @@ import { filterConfirmedCollections, sumConfirmedCollections } from "../../commo
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 import { reportCronJobFailure } from "../../common/cron-failure-reporting";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
+// C15 PR-4A: cross-tenant taramalar QUERY-LEVEL olarak ACTIVE tenant'a daraltılır.
+import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
 
 // Otomasyon açık olan statüler (C.19)
 const AUTOMATION_ENABLED_STATUSES: LegalCaseStatus[] = [
@@ -50,6 +52,7 @@ export class AutomationService {
       // Otomatik modda olan ve işlem zamanı gelen dosyaları bul (C.19-20)
       const casesToProcess = await this.prisma.case.findMany({
         where: {
+          tenant: ACTIVE_TENANT_WHERE,
           isAutoMode: true,
           isAutomationEnabled: true, // Yeni flag kontrolü
           status: CaseStatus.ACTIVE,
@@ -117,6 +120,7 @@ export class AutomationService {
     try {
       const activeCases = await this.prisma.case.findMany({
         where: {
+          tenant: ACTIVE_TENANT_WHERE,
           status: CaseStatus.ACTIVE,
           caseStatus: { in: AUTOMATION_ENABLED_STATUSES },
           nextActionAt: { not: null },
@@ -222,6 +226,7 @@ export class AutomationService {
 
       const result = await this.prisma.clientPowerOfAttorney.updateMany({
         where: {
+          tenant: ACTIVE_TENANT_WHERE,
           isLimited: true,
           status: PoaStatus.ACTIVE,
           validUntil: { lt: now },
@@ -271,7 +276,7 @@ export class AutomationService {
 
     try {
       const activeCases = await this.prisma.case.findMany({
-        where: { status: CaseStatus.ACTIVE },
+        where: { tenant: ACTIVE_TENANT_WHERE, status: CaseStatus.ACTIVE },
         include: {
           collections: true,
           debtors: {

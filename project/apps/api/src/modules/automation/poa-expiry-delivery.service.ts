@@ -3,6 +3,9 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
 import { DispatchResult, TenantNotifier } from "../escalation/tenant-notifier.service";
+// C15 PR-4A: scope'suz (cron / cross-tenant) dal QUERY-LEVEL olarak ACTIVE tenant'a daraltılır;
+// tenant-scoped manuel dal DEĞİŞMEZ.
+import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
 
 type RecipientSource = "PRIMARY_ATTORNEY" | "POA_ATTORNEY" | "ESCALATION_MANAGER" | "ADMIN_FALLBACK" | "OFFICE_OVERRIDE";
 type DeliveryStatus = "PENDING" | "SENT" | "FAILED";
@@ -118,7 +121,7 @@ export class PoaExpiryDeliveryService {
         isActive: true,
         status: "ACTIVE",
         validUntil: { gte: now, lte: until },
-        ...(scope.tenantId ? { client: { tenantId: scope.tenantId } } : {}),
+        ...(scope.tenantId ? { client: { tenantId: scope.tenantId } } : { tenant: ACTIVE_TENANT_WHERE }),
       },
       include: {
         client: { select: { id: true, displayName: true, tenantId: true } },

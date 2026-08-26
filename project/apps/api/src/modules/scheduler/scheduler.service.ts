@@ -8,6 +8,10 @@ import { DueType } from '@prisma/client';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter'; // PR-3
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service'; // P1-I13 (R02-B): NO-NEW-WORK-FOR-PASSIVE
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
+// C15 PR-4A: cross-tenant taramalar QUERY-LEVEL olarak ACTIVE tenant'a daraltılır;
+// "önce hepsini çek sonra ele" YAPILMAZ. Yalnız SEÇİM engellenir — backfill/catch-up
+// SAĞLANMAZ (nafaka/89-ihbarname/e-tebligat şerhi PR-4A kapsam beyanındadır).
+import { ACTIVE_TENANT_WHERE } from '../tenant/tenant-lifecycle';
 
 /**
  * Zamanlayıcı Servisi
@@ -74,6 +78,7 @@ export class SchedulerService {
         (args) =>
           this.db.case.findMany({
             where: {
+              tenant: ACTIVE_TENANT_WHERE,
               workflowStage: 'WAITING_RESPONSE',
               nextActionAt: { lte: new Date() },
               isAutomationEnabled: true,
@@ -166,6 +171,7 @@ export class SchedulerService {
         (args) =>
           this.db.case.findMany({
             where: {
+              tenant: ACTIVE_TENANT_WHERE,
               subCategory: 'NAFAKA',
               isAutomationEnabled: true,
               caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
@@ -263,6 +269,7 @@ export class SchedulerService {
         (args) =>
           this.db.case.findMany({
             where: {
+              tenant: ACTIVE_TENANT_WHERE,
               isMtsCase: true,
               mtsReturnDate: { lte: sevenDaysAgo },
               isAutomationEnabled: true,
@@ -422,6 +429,7 @@ export class SchedulerService {
 
       const upcomingTasks = await this.db.task.count({
         where: {
+          tenant: ACTIVE_TENANT_WHERE,
           status: 'PENDING',
           dueDate: { lte: tomorrow },
         },
@@ -473,6 +481,8 @@ export class SchedulerService {
         (args) =>
           this.db.thirdParty.findMany({
             where: {
+              // ThirdParty'de tenant İLİŞKİSİ yok (yalnız skaler); yol: caseDebtor.case.tenant
+              caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
               ihbarname89_1_date: { lte: sevenDaysAgo },
               ihbarname89_2_date: null,
               responseDate: null,
@@ -495,6 +505,7 @@ export class SchedulerService {
         (args) =>
           this.db.thirdParty.findMany({
             where: {
+              caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
               ihbarname89_2_date: { lte: sevenDaysAgo },
               ihbarname89_3_date: null,
               responseDate: null,
@@ -601,6 +612,7 @@ export class SchedulerService {
         (args) =>
           this.db.externalCase.findMany({
             where: {
+              caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
               attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
               attachedAt: { lte: thirtyDaysAgo },
             },
@@ -766,6 +778,7 @@ export class SchedulerService {
         (args) =>
           this.db.tebligat.findMany({
             where: {
+              case: { tenant: ACTIVE_TENANT_WHERE },
               status: 'GONDERILDI',
               barcodeNo: { not: null },
               channel: 'PTT',
@@ -781,6 +794,7 @@ export class SchedulerService {
         (args) =>
           this.db.tebligat.findMany({
             where: {
+              case: { tenant: ACTIVE_TENANT_WHERE },
               status: 'GONDERILDI',
               barcodeNo: { not: null },
               channel: { in: ['UETS', 'KEP'] },

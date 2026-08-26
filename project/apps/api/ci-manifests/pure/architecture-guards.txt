@@ -109,3 +109,15 @@ src/modules/tenant/__tests__/tenant-lifecycle-findmany-inventory.static-guard.sp
 # audit susturma / withheld gevsetme / sahte yazar — BESI de olduruldu; negatif
 # kontrol dusmedi. DB gerektirmez; mevcut process'te kosar, yeni step ACILMAZ.
 src/modules/tenant/__tests__/tenant-lifecycle-governance-writer.static-guard.spec.ts
+
+# C15 PR-4A — CRON SANSUSU + ACTIVE-PREDICATE KALICILIK KAPISI (AST).
+# (A) @Cron kumesi TAM envanter (33 bound + 2 dormant icrabot); addCronJob TAM 1
+#     (client-statement dinamik kaydi — W3 kapisinin 33 sayacina GORUNMEZDI, bu kapi
+#     o kor noktayi kapatir). Yeni zamanlayici yuzeyi = FAIL.
+# (B) 24 onayli call-site'in where-agacinda ACTIVE_TENANT_WHERE tanimlayicisi;
+#     kimlik satir-bagimsiz (dosya :: kapsayan metot :: model.metod :: sira).
+#     Onceki kapilarin hicbiri where-seklini pinlemiyordu; kapi-yesili "scoping indi"
+#     kaniti degildi — bu kapi o boslugu kapatir. Yuklemi kaldirmak = FAIL.
+# (C) NEGATIF PIN: calculateDailyStats yuklem TASIMAZ (OD-D owner karari bekliyor);
+#     karar alinmadan sessiz kapsam genisletme = FAIL.
+src/modules/tenant/__tests__/tenant-lifecycle-cron-predicate.static-guard.spec.ts

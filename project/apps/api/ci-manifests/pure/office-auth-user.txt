@@ -296,3 +296,10 @@ src/modules/tenant/__tests__/tenant-lifecycle-enforcement-http.spec.ts
 src/modules/tenant/__tests__/tenant-lifecycle-edges.spec.ts
 src/modules/tenant/__tests__/tenant-lifecycle-reason.spec.ts
 src/modules/tenant/__tests__/tenant-lifecycle-transition.spec.ts
+
+# C15 PR-4A — cross-tenant cron taramalarinin QUERY-LEVEL ACTIVE daraltmasi (SAF, DB YOK).
+# 24 onayli call-site'in HER BIRI icin sorgunun CAGRI ARGUMANI dogrulanir (PR-2
+# worker-scope deseni): dogru iliski yolunda ACTIVE_TENANT_WHERE var mi; paylasilan
+# metotlarda tenant-scoped dal DEGISMEDI mi; calculateDailyStats (OD-D bekliyor)
+# NEGATIF kontrol olarak yuklem TASIMIYOR mu. "Once cek sonra ele" bu testlerden gecemez.
+src/modules/tenant/__tests__/tenant-lifecycle-cron-scope.spec.ts

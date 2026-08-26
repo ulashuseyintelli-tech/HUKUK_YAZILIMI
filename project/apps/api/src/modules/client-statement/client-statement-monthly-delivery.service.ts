@@ -3,6 +3,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { ClientStatementStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { OfficeService } from '@/modules/office/office.service';
+import { ACTIVE_TENANT_WHERE } from '@/modules/tenant/tenant-lifecycle';
 import { resolveSchedulerTimezone } from '../../common/scheduler-timezone';
 import { ClientStatementService } from './client-statement.service';
 import { ClientStatementPdfService } from './client-statement-pdf.service';
@@ -199,7 +200,9 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
     const clients = (await this.prisma.client.findMany({
       where: {
         isActive: true,
-        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        // C15 PR-4A: scope'suz (cron) dal QUERY-LEVEL olarak ACTIVE tenant'a daraltılır;
+        // tenant-scoped manuel dal DEĞİŞMEZ.
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : { tenant: ACTIVE_TENANT_WHERE }),
         ...(scope.clientId ? { id: scope.clientId } : {}),
       },
       select: {

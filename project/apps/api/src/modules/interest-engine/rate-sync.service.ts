@@ -7,6 +7,7 @@ import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
+import { ACTIVE_TENANT_WHERE } from '../tenant/tenant-lifecycle';
 
 /**
  * TCMB Faiz Oranı Senkronizasyon Servisi
@@ -47,8 +48,11 @@ export class RateSyncService {
     this.logger.log('TCMB faiz oranı senkronizasyonu başlıyor...');
 
     try {
-      // Get all tenants
+      // C15 PR-4A: yalnız ACTIVE tenant'ların office'leri — non-ACTIVE tenant'a
+      // per-tenant RateSchedule yazımı ve tenant başına EVDS çağrısı yapılmaz.
+      // (Bu motorda "tenant.id" = Office.id; predicate Office->Tenant ilişkisindedir.)
       const tenants = await this.prisma.office.findMany({
+        where: { tenant: ACTIVE_TENANT_WHERE },
         select: { id: true },
       });
 
@@ -73,6 +77,7 @@ export class RateSyncService {
 
     try {
       const tenants = await this.prisma.office.findMany({
+        where: { tenant: ACTIVE_TENANT_WHERE }, // C15 PR-4A: yalnız ACTIVE tenant office'leri
         select: { id: true },
       });
 
