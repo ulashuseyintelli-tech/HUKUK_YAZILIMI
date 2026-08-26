@@ -67,7 +67,7 @@ statusCheckRollup.
 |---|---|---|---|---|---|---|---|
 | T0 baseline + canary gate | BLOCKED / FROZEN (gate: olculen 3 tenant'ta condition3+condition4 FAIL; pencere BASLAMADI) | — | — | — | — | HAYIR | Asama-5 init gorevi (repo-disi kanit) |
 | Canary safety design R01/R01A | DESIGN COMPLETE / IMPLEMENTATION NOT AUTHORIZED | — | — | — | — | HAYIR | analiz gorevi |
-| S1-MODIFIED PR-1 lifecycle foundation | MERGED / NOT DEPLOYED | #2454 | 30db4aca3c10625ebf4946d71a8022a8d2599ab6 | ATA (main); R13 atasi DEGIL | 9/9 | HAYIR | owner GO bu gorusme zincirinde verildi; REGULARIZED isareti VERILMEDI (owner §8.4 listesi PR-2/3/4A) → kayit: SESSION-WITNESSED / REGULARIZATION PENDING |
+| S1-MODIFIED PR-1 lifecycle foundation | MERGED / NOT DEPLOYED | #2454 | 30db4aca3c10625ebf4946d71a8022a8d2599ab6 | ATA (main); R13 atasi DEGIL | 9/9 | HAYIR | OWNER_GO_REGULARIZED · recordedAt 2026-08-26T11:58:00Z · historicalTarget PR-1 (#2454) · retrospective true · backdated false · kaynak: owner mesaji (bu gorusme zinciri; ratifikasyon: C15-LEDGER-CATCHUP-MERGE-R01) |
 | S1-MODIFIED PR-2 enforcement | MERGED / NOT DEPLOYED | #2455 | 0e0a0aebc43b7835e11067239c1791c34b5385e1 | ATA; R13 atasi DEGIL | 9/9 | HAYIR | OWNER_GO_REGULARIZED · recordedAt 2026-08-26T11:38:00Z · historicalTarget PR-2 (#2455) · retrospective true · kaynak: owner mesaji (bu gorusme zinciri; ratifikasyon: owner adjudication §8.4) |
 | S1-MODIFIED PR-3 transition authority | MERGED / NOT DEPLOYED / DORMANT / NOT DI-BOUND / uretim call-site 0 | #2456 | 115d872d805da097bb4d6642755b2d0261d287e7 | ATA; R13 atasi DEGIL | 9/9 | HAYIR | OWNER_GO_REGULARIZED · recordedAt 2026-08-26T11:38:00Z · historicalTarget PR-3 (#2456) · retrospective true · ayrica owner post-merge adjudication: iki sapma ratifiye (tek tagged-template raw CAS; DI kaydi PR-4'e) |
 | PR-4A cron lifecycle enforcement | MERGED / NOT DEPLOYED | #2457 | 66c9271da11a43486caa9891389fec6e4eca52b8 | = kapsam tabani | 9/9 | HAYIR (RELEASE13 payload 3798/3798 + aggregate EXACT olcumuyle kanitli) | OWNER_GO_REGULARIZED · recordedAt 2026-08-26T11:38:00Z · historicalTarget PR-4A (#2457, LIMITED GO + C15-PR4A-MERGE-R01) · retrospective true |
@@ -121,9 +121,14 @@ gorusme zincirinde FIILEN verildigi RATIFIYE edilmistir. Kayit sozlesmesi:
 
 ```text
 OWNER_GO_REGULARIZED
-  recordedAt       : 2026-08-26T11:38:00Z   (gercek kayit zamani — geriye tarihlenMEMIStir)
-  historicalTarget : PR-2 (#2455) · PR-3 (#2456) · PR-4A (#2457 — LIMITED GO + C15-PR4A-MERGE-R01)
   retrospective    : true
+  backdated        : false   (gercek kayit zamanlari; geriye tarihlenMEMIStir)
+  historicalTarget : PR-1 (#2454)  recordedAt 2026-08-26T11:58:00Z
+                     (ratifikasyon: C15-LEDGER-CATCHUP-MERGE-R01 owner karari)
+                     PR-2 (#2455)  recordedAt 2026-08-26T11:38:00Z
+                     PR-3 (#2456)  recordedAt 2026-08-26T11:38:00Z
+                     PR-4A (#2457) recordedAt 2026-08-26T11:38:00Z
+                     (PR-2/3/4A ratifikasyonu: owner adjudication §8.4)
   not              : Bu kayitlar gecmis tarihte yazilmis veya o tarihte kanonik
                      artefakt varmis gibi GOSTERILMEZ. GO metin taslaklari
                      (C15-PR2-GO-TEXT-R01A "TASLAK", C15-PR3-GO-TEXT-R03
@@ -132,9 +137,7 @@ OWNER_GO_REGULARIZED
 ```
 
 Regularize EDILMEYENLER (mekanik owner-mesaj bagi kurulamadi → UNKNOWN kalir,
-owner §8.4 kurali): B01 (#2439) · B07 (#2442) · B02 asama GO'lari (#2444-#2452)
-· PR-1 (#2454 — gorusme-zinciri tanikligi var, ancak §8.4 ratifikasyon listesi
-disinda; REGULARIZATION PENDING).
+owner §8.4 kurali): B01 (#2439) · B07 (#2442) · B02 asama GO'lari (#2444-#2452).
 
 ## 8. ACIK-KALEM SNAPSHOT (scope-bound; 45 kalem, adli, tekil kategori)
 

@@ -1799,5 +1799,5 @@ NONE.
 SUPERSEDING POINTER: tam matris ve baglayici kurallar
 `office-wr01-decomposition-r01/wr01-c14-c15-ledger-reconciliation-r01.md`
 (RECORD ID `WR01-C14-C15-LEDGER-RECONCILIATION-R01`, SHA-256
-`7d0f804e6b85e0bc924d37f8bf1ac84910060ea6464d709570a7a5019f7d16de`) kaydindadir; bu blok o kaydin
+`c8c3c746956aed66aa48a2a30639b0a843ad95858781eee6601967818c40e135`) kaydindadir; bu blok o kaydin
 bu register'daki SUPERSEDING pointer'idir.
