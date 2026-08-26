@@ -347,6 +347,11 @@ src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-tenan
 src/modules/calc-preview/tenant-context/__tests__/tenant-context.guard.spec.ts
 src/modules/calc-preview/tenant-context/__tests__/tenant-context.resolver.spec.ts
 src/modules/client-notification/client-notification-bulk-email-security.spec.ts
+src/modules/escalation/__tests__/case-task-escalation-content.spec.ts
+src/modules/escalation/__tests__/case-task-escalation-logic.spec.ts
+src/modules/escalation/__tests__/case-task-escalation.service.spec.ts
+src/modules/escalation/__tests__/escalation-logic.spec.ts
+src/modules/escalation/__tests__/operational-escalation.service.spec.ts
 src/modules/escalation/__tests__/tenant-notifier.service.spec.ts
 src/modules/interest-engine/__tests__/payment-boundary.characterization.spec.ts
 src/modules/interest-engine/legal-application-plan/__tests__/i05-unit-property-security.spec.ts
