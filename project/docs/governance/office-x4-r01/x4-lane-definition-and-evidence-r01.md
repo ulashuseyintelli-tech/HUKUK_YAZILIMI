@@ -176,3 +176,73 @@ ancestor'ı, VERIFIED) + planlanan PR1 diff'i (yalnız `office-x4-r01/` altında
 append-only). Doğrulama SHA'sı: fresh main
 `efb631dbcc55f65a60ca778931bf7f633656024d` · doğrulama zamanı:
 2026-08-26T21:06:41Z (UTC).
+
+## G. TERMINAL ADJUDICATION
+
+### G.1 Owner verdict (aynen) ve ratifikasyon kaydı
+
+```text
+C21 OWNER VERDICT: (b) X4 = CLOSED_WITH_RECORDED_RESIDUALS
+```
+
+```text
+RATİFİKASYON        2026-08-26 (UTC) — C21 oturumu owner checkpoint yanıtı;
+                    PR1 merge + cleanup sonrası sunulan kapı matrisi (1–5
+                    PRODUCED/VERIFIED · 6 OWNER VERDICT REQUIRED), residual
+                    özeti ve üç-seçenekli verdict paketine açık yanıt
+KAYIT ZAMANI (UTC)  2026-08-26T21:44:53Z
+PR1 SQUASH          33121ea1f919048a0896048a53886a26df48fe8d (#2465)
+PR2 PREFLIGHT HEAD  33121ea1f919048a0896048a53886a26df48fe8d
+                    (main == origin/main · açık PR 0 · 2026-08-26T21:43:55Z)
+EXECUTION AUTHORITY NONE — bu bölüm yalnız verdict kaydıdır
+```
+
+### G.2 Terminal sonuç
+
+```text
+X4 = CLOSED_WITH_RECORDED_RESIDUALS
+```
+
+Terminal ifadede ÖZELLİKLE KORUNAN residual'lar (silinmemiş, değiştirilmemiş,
+kapanmış implementation gibi gösterilmemiştir):
+
+- **CLF-O0-01** — yalnız SUCCESSOR-RECORD olarak yaşar
+  ([`clf-o0-01-successor-record-r01.md`](./clf-o0-01-successor-record-r01.md)
+  + §D.1 pointer'ı); gerçek guard patch'i YAPILMAMIŞTIR ve YETKİLİ DEĞİLDİR
+  (ayrı task-bound SA/EG gerekir); W3F07 owner-WIP, successor kaydının §D fresh
+  gözleminde TERMINAL DEĞİLDİ.
+- **F05** — `NOT_AUTHORIZED / CARRY-FORWARD` (§F.1); X4 terminal verdict'i
+  F05'i kapatmaz, kapsamaz, implementation yetkisi vermez, tamamlanmış saymaz.
+
+### G.3 Owner checkpoint dayanakları — Kapı 1–5 kanıt pointer'ları
+
+- Kapı 1 — 14 PR/SHA zinciri + ancestry: §C
+  (lane kaydı #2462 `681bc8b0c54948ef1bdc7506d254d8e2e4367195`)
+- Kapı 2 — Yedi attribution boşluğunun kanonik disposition'ı: §C (aynı kayıt)
+- Kapı 3 — CLF-O0-01 SUCCESSOR-RECORD: `clf-o0-01-successor-record-r01.md` +
+  §D.1 (PR1 #2465 `33121ea1f919048a0896048a53886a26df48fe8d`)
+- Kapı 4 — F05 adjudication girdisi: §F.1 (PR1 #2465)
+- Kapı 5 — X4 ≠ P8 umbrella ayrımı fresh doğrulaması: §F.2
+  (doğrulama SHA `efb631dbcc55f65a60ca778931bf7f633656024d`; PR1 #2465)
+- PR1 doğrulama zinciri: CI 9/9 PASS (zorunlu: Web Tests (vitest) +
+  Architectural Guardrails) · sınıflandırma `GOV_COORD_NON_COORDINATION_PR` ·
+  diff 180+/0− append-only, yalnız `office-x4-r01/`
+- PR2 preflight korunum kanıtı (2026-08-26T21:43:55Z):
+  `efb631db..33121ea1` arası değişiklik yalnız PR1'in 2 dosyası;
+  `office-approval/` modülü + `office-p8-final-r01/` +
+  `governance-coordination.cjs` diff'i BOŞ → CLF-O0-01 kaynak↔kayıt ilişkisi,
+  X4/P8 ayrımı ve docs-only classify yolu KORUNMUŞ (VERIFIED); lane'de önceden
+  `## G` bölümü YOK (tek-kullanımlık kapı tüketilmemiş — VERIFIED)
+
+### G.4 Sınır beyanları
+
+- **X4 ≠ P8 umbrella ayrımı bu kayıtla KORUNMUŞTUR** (§F.2): bu verdict yalnız
+  P8 ön-koşul listesindeki `X4 TERMINAL ADJUDICATION` bağımlılığını
+  karşılayabilir; P8 FINAL launch, P8 terminal closure veya diğer açık
+  ön-koşulların tamamlanması anlamına GELMEZ. D14 kaleminin kendisi (OFFICE-P4
+  umbrella terminal kaydı) üretilmemiştir ve `P8-FOLD` olarak AÇIK kalır.
+- **Sonraki faza OTOMATİK GEÇİŞ YOKTUR**; kalan P8 ön-koşulları kendi AYRI
+  owner GO ve fresh kanıt zincirlerine tabidir.
+- Bu bölüm append-only'dir; §A–§F.2 tarihsel kayıtları DEĞİŞTİRİLMEMİŞTİR
+  (§F "Stabil terminal" bloğu, PR1-öncesi tarihsel durumun kaydı olarak
+  korunur; güncel terminal sonuç §G.2'dedir).
