@@ -2,7 +2,7 @@
 
 ```text
 DOKÜMAN            office-p8-final-r01/p8-precondition-package-r01.md
-GÖREV              OFFICE-P8-FINAL-PRECONDITION-PACKAGE-R01 (SAYFA C19 / GO-ANALYZE — SALT ANALİZ)
+GÖREV              OFFICE-P8-FINAL-PRECONDITION-PACKAGE-R01 (SAYFA C19 / GO-IMPLEMENT — DOCS-ONLY ANALİZ PAKETİ)
 STATÜ              DRAFT / PENDING_OWNER_DECISION
 BASE               origin/main @ e1e164ed487ac9832171d10cb3be247a888274e1 (2026-08-26)
 ÜRETİLEN AUTHORITY NONE — bu paket P8 FINAL'i AÇMAZ, kapanış/sertifikasyon üretmez,
