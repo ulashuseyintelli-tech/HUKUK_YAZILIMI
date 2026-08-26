@@ -72,6 +72,9 @@ canonical governance yüzeylerinde PR-numarası olarak kayıtlı değildir. Bunl
 2'si reconciliation içeriğini taşıyan PR'ın kendisidir (#2419, #2429), 1'i
 consumer terminal closeout binding'idir (#2433). Bu bir **ölçümdür**; attribution
 kaydı gerekip gerekmediği owner kararıdır (P8 FINAL kapsamına girebilir).
+*[Tarihsel ölçüm — 2026-08-26: yedi boşluğun güncel attribution'ı X4 lane
+dosyasında materyalize edildi (`ATTRIBUTION GAP MATERIALIZED IN X4 RECORD`,
+`office-x4-r01/x4-lane-definition-and-evidence-r01.md` §C).]*
 
 ### A.2 Üç okumanın güncel kanıtla yeniden değerlendirilmesi (C5 brief §2.1 a/b/c ayrımı)
 
@@ -101,7 +104,9 @@ kaydı gerekip gerekmediği owner kararıdır (P8 FINAL kapsamına girebilir).
 - Repo'da X4'ün ne teslim ettiğini tanımlayan lane sayfası/kapanış kaydı **hâlâ
   yoktur**; `decision-log.md`'de `X4` dizgisi yalnız satır 539'da geçer (iki kez:
   CLF-O0-01 hedefi + "kalan lane'ler (X4 dahil) AYRI owner yetkisinde")
-  (VERIFIED, grep).
+  (VERIFIED, grep). *[Tarihsel pre-materialization ölçümü — 2026-08-26'da
+  X4 lane kaydı materyalize edildi:
+  `office-x4-r01/x4-lane-definition-and-evidence-r01.md` (bkz. §F.2).]*
 - **Yeni (2026-08-26):** açık-kalem snapshot'ı §8, "X4 lane'i"ni **UNKNOWN**
   sınıfına koyar ve owner §8.2 kuralı gereği zorla sınıflandırmaz (OBSERVED).
 - Ledger reconciliation §2 B06 satırı: "**X4 belirsizliği çözülmeden
@@ -120,9 +125,12 @@ kaydı gerekip gerekmediği owner kararıdır (P8 FINAL kapsamına girebilir).
 >   işi ayrı owner GO'suna tabidir. A.1 tablosu bu sayfanın hammaddesi olarak
 >   kullanılabilir (bu paket o sayfayı ÜRETMEZ).
 >
-> `OWNER_DECISION: (c) — AYRI X4 LANE KAYDI` — **APPROVED / LANE NOT YET
-> MATERIALIZED** (ratifikasyon: C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01,
-> 2026-08-26). X4 lane dosyası bu görevde ÜRETİLMEMİŞTİR; üretim ayrı owner GO ister.
+> `OWNER_DECISION: (c) — AYRI X4 LANE KAYDI` — **APPROVED / LANE MATERIALIZED /
+> TERMINAL VERDICT PENDING_OWNER** (ratifikasyon:
+> C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01, 2026-08-26; materyalizasyon:
+> C19-X4-LANE-DEFINITION-AND-EVIDENCE-R01, 2026-08-26 — bkz. §F.2). Lane kaydı:
+> `office-x4-r01/x4-lane-definition-and-evidence-r01.md`. X4 terminal verdict
+> RATİFİYE DEĞİLDİR; ayrı owner adjudication ister.
 
 ---
 
@@ -276,11 +284,11 @@ D17, 2026-08-26 owner supersession ratifikasyonu ile çözülmüştür (bkz. §F
 | CLF-P7-01 — app.module stale yorum | AÇIK / GO-BEKLEYEN (cross-lane-findings; §8 snapshot; B.3 CAND-01) | tek-satır doc düzeltmesi | **D7: P8-FOLD** *(patch ayrıca yetkilendirilir — §F)* |
 | CLF-P7-02 — PermissionGrant stale şema yorumu | AÇIK / GO-BEKLEYEN (cross-lane-findings; WR01 brief §3.7; B.3 CAND-02) | WR01-B01/B06 delegasyon tasarımıyla kesişir | **D8: P8-FOLD** *(patch ayrıca yetkilendirilir — §F)* |
 | CLF-P7-03 — BankSettlement reachability register düzeltmesi | AÇIK / GO-BEKLEYEN; hedef register OFFICE dışı (cross-lane-findings; B.3 CAND-03) | `spring-cleaning/PROGRAM-WIDE-…-REGISTER-R01.md` sahibi lane | **D9: SUCCESSOR-RECORD** |
-| CLF-O0-01 — requestRevision domain-owned guard → X4 | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | **A bölümü kararına bağlı** (X4 tanımı) | **D10: SUCCESSOR-RECORD** — X4 lane bağımlı |
+| CLF-O0-01 — requestRevision domain-owned guard → X4 | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | **A bölümü kararına bağlı** (X4 tanımı) | **D10: SUCCESSOR-RECORD** — X4 lane pointer'ı mevcut: `office-x4-r01/x4-lane-definition-and-evidence-r01.md` §D; gerçek successor kaydı AÇILMADI (ayrı owner GO) |
 | Kozmetik personel ad-hijyeni | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | — | **D11: DEFER** |
 | F05 — `OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01` | **NOT_AUTHORIZED** — tek başlamamış successor; F04 launch runtime/DB/production yetkisini açıkça saklı tutar (successor-execution-order 2026-08-16 satırı) | yeni task-bound owner grant + production erişimi | **D12: SUCCESSOR-RECORD** |
 | P8-C4 runtime residual / capability deployment verdict | **BLOCKED_BY_RUNTIME_MODEL** (manifest §13.3); §13.6 superseding pointer: güncel runtime hükmü RELEASE13 = ACTIVE/VERIFIED/T+24 PENDING; verdict P6 hash-matrisi tazelenmeden VERİLEMEZ; §8 snapshot BLOKLU sınıfı | T+24 closeout + P6 hash-matrisi tazeleme | **D13: P8-FOLD** — T+24 + P6 hash-matrisi bağımlı |
-| OFFICE-P4 umbrella terminal kaydı | **UNKNOWN** (§8 snapshot; owner §8.2 kuralıyla zorla sınıflandırılmadı) | **A bölümü kararına bağlı** | **D14: P8-FOLD** — X4 lane bağımlı |
+| OFFICE-P4 umbrella terminal kaydı | **UNKNOWN** (§8 snapshot; owner §8.2 kuralıyla zorla sınıflandırılmadı) | **A bölümü kararına bağlı** | **D14: P8-FOLD** — `X4 TERMINAL ADJUDICATION` bağımlı *(lane materyalizasyonu bağımlılığı 2026-08-26'da karşılandı — §F.2; adjudication AÇIK)* |
 | WR01-B07 kalan kapsam (notification) | **UNKNOWN** (§8 snapshot; ledger §2 B07 satırı) | WR01 programı — P8 FINAL blocker'ı DEĞİL (decision-log:540) | **D15: DEFER** |
 | "escalation CI manifest" kalemi | **OWNER_SOURCE_REQUIRED** — bu adla/anlamla eşleşen kayıt `project/docs/governance/**` taramasında bulunamadı (ci-manifests bağı dahil arandı); kalem C19 talimat metninde anılır, repo'da karşılığı ölçülemedi | — | **D16: SUCCESSOR-RECORD** — owner-ratified source: **B12** ("6 escalation spec'inden 5'i hiçbir CI manifest'te değil"); gerçek CI değişikliği ayrı task-bound iş |
 | "C12" kalemi | **OWNER_SOURCE_REQUIRED** — `\bC12\b` deseni governance genelinde 0 eşleşme; kalem C19 talimat metninde "runtime residual/C12" olarak anılır, repo'da karşılığı ölçülemedi | — | **D17: HISTORICAL IDENTIFIER SUPERSEDED / CURRENT DISPOSITION: SUCCESSOR-RECORD / WR01 LANE** *(2026-08-26, §F.1)* — tarihsel "runtime residual/C12" ile CLAUDE-C12 arasında exact cross-reference KANITLANMAMIŞTIR; bu karar geriye dönük eşitlik teyidi DEĞİLDİR. Güncel bağımsız kalem: WR01 C12 / Aşama 3 Resolver / PR #2448 / consumer wiring 0/6. Gerçek WR01 successor kaydının açılması bu görevde yapılmaz; ayrı owner GO ister |
@@ -305,9 +313,10 @@ bu tablonun konusu değildir.
 ```text
 TERMİNAL STATÜ     OWNER_DECISIONS_MATERIALIZED / 20_OF_20_DISPOSED /
                    P8_FINAL BLOCKED
-P8_FINAL GEREKÇE   D17 disposition'ı TAMAMLANMIŞTIR; bu durum P8 FINAL'i AÇMAZ
-                   veya READY yapmaz. Şunlar tamamlanmadan P8 FINAL launch
-                   handoff'u hazırlanamaz: X4 lane materyalizasyonu (A.3=c) ·
+P8_FINAL GEREKÇE   D17 disposition'ı ve X4 LANE MATERYALİZASYONU (§F.2)
+                   TAMAMLANMIŞTIR; bu durum P8 FINAL'i AÇMAZ veya READY yapmaz.
+                   Şunlar tamamlanmadan P8 FINAL launch handoff'u hazırlanamaz:
+                   X4 TERMINAL ADJUDICATION (ayrı owner verdict) ·
                    "15" supersession + fresh reconciliation envanteri (B.4=2) ·
                    C.1 non-authorizing cross-reference materyalizasyonu ·
                    OFFICE-P4 umbrella terminal kaydı (D14) · D13 kapsamındaki
@@ -381,3 +390,30 @@ WR01 authority           NONE — implementation/successor creation yetkisi
 kaydı" paragrafı, önceki checkpoint'in DOĞRU TARİHSEL SONUCU olarak
 DEĞİŞTİRİLMEDEN korunmuştur; bu alt bölüm append-only'dir ve o tarihsel kaydı
 supersede eder.
+
+### F.2 X4 LANE MATERIALIZATION / OWNER RATIFICATION — 2026-08-26
+
+Owner GO'su (`C19-X4-LANE-DEFINITION-AND-EVIDENCE-R01`) uyarınca A.3=(c) kararı
+materyalize edildi: X4 lane tanım ve kanıt kaydı üretildi —
+**`office-x4-r01/x4-lane-definition-and-evidence-r01.md`**.
+
+```text
+X4 TANIMI            RATİFİYE — attribution + açık residual disposition lane'i;
+                     write-path ile AYRI · umbrella/P8 closeout ile AYRI ·
+                     P4 kanıtı girdi · P8 FINAL aşağı-akış tüketici (döngü YOK)
+KANIT ZİNCİRİ        14 PR/SHA — 14/14 MERGED + ancestry VERIFIED (lane §C)
+ATTRIBUTION GAP      7 PR (#2392 #2395 #2397 #2419 #2429 #2433 #2434) →
+                     ATTRIBUTION GAP MATERIALIZED IN X4 RECORD (yalnız
+                     governance attribution; delivery/runtime/verdict ÜRETMEZ)
+X4 TERMINAL VERDICT  PENDING_OWNER — CLOSED/NOT CLOSED hükmü YOK; sözleşme
+                     kapıları lane §E'de (1-2 üretildi; 3-6 AÇIK)
+A.3 DURUMU           APPROVED / LANE MATERIALIZED / TERMINAL VERDICT
+                     PENDING_OWNER
+D14 BAĞIMLILIĞI      "X4 lane materyalizasyonu" → "X4 TERMINAL ADJUDICATION"
+DEĞİŞMEYENLER        20_OF_20_DISPOSED · P8_FINAL BLOCKED · CLF-O0-01 successor
+                     kaydı AÇILMADI · F05 NOT_AUTHORIZED · WR01-B06 otomatik
+                     AÇILMADI · execution/implementation authority NONE
+```
+
+A.2(c) ve A.1.1'deki pre-materialization ölçümleri tarihsel kayıt olarak
+DEĞİŞTİRİLMEDEN korunmuş, yalnız güncel pointer notları eklenmiştir.
