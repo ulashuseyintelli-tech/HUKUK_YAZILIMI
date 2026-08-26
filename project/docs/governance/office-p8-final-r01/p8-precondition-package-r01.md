@@ -301,8 +301,7 @@ bu tablonun konusu değildir.
 
 ```text
 TERMİNAL STATÜ     OWNER_DECISIONS_MATERIALIZED / 19_OF_20_DISPOSED /
-                   D17 OWNER_SOURCE_REQUIRED / P8_FINAL BLOCKED /
-                   PENDING_OWNER_MERGE_CHECKPOINT
+                   D17 OWNER_SOURCE_REQUIRED / P8_FINAL BLOCKED
 SONRAKİ ADIM       §F kararlarının uygulanması — X4 lane kaydı (A.3=c), "15"
                    supersession + fresh envanter (B.4=2), non-authorizing
                    cross-reference materyalizasyonu (C.1=EVET) ve
