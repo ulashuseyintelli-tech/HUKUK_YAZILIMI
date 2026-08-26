@@ -1951,3 +1951,14 @@ kayittadir: `office-wr01-decomposition-r01/wr01-c14-c15-ledger-reconciliation-r0
 aktif runtime + mevcut rollback target). T+24 tamamlanmadan TERMINALLY CLOSED /
 OBSERVATION COMPLETE / FULLY QUALIFIED hukumleri YASAKTIR. Bu bolum yeni
 semantic karar veya execution authority URETMEZ.
+
+### 13.7 AUTHPUB-R03 T+24 TERMINAL CLOSEOUT — SUPERSEDING POINTER (2026-08-26)
+
+§13.6'daki "T+24 CLOSEOUT PENDING" hukmu TARIHSELDIR; degistirilmemistir.
+Guncel terminal hukum: `office-wr01-decomposition-r01/authpub-r03-t24-terminal-closeout-r01.md`
+(RECORD ID `AUTHPUB-R03-T24-TERMINAL-CLOSEOUT-R01`, SHA-256
+`1a5377bcd9216919b56508d2b1da4d666591066a55e3f9b0c1378d6127a55304`):
+**AUTHPUB-R03 = T+24 PASS / TERMINALLY CLOSED / CLOSED WITH PROCEDURAL
+NONCONFORMANCE** · RELEASE13 = ACTIVE / VERIFIED · SECURITY RESPONSE FIX = T+24
+VERIFIED / CLOSED. C15 ASAMA 5 BLOCKED/FROZEN, qualification/observation NOT
+STARTED, PR-4B/PR-4C NOT AUTHORIZED kalir. Bu bolum yeni yetki URETMEZ.

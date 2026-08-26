@@ -3711,3 +3711,13 @@ uzlastirmasi TEK additive kayitta: `office-wr01-decomposition-r01/wr01-c14-c15-l
 snapshot (45 kalem: GO-BEKLEYEN 20 / BLOKLU 10 / KAPALI 11 / UNKNOWN 4) ve
 MERGED!=DEPLOYED ayrimlari oradadir. Bu pointer execution authority URETMEZ;
 P8-C4 bolumu ve tarihsel satirlar DEGISTIRILMEMISTIR; T+24 PENDING.
+
+### AUTHPUB-R03 T+24 Terminal Closeout — Superseding Pointer (2026-08-26)
+
+Yukaridaki reconciliation pointer'indaki "T+24 PENDING" ifadesi TARIHSELDIR.
+Terminal hukum: `office-wr01-decomposition-r01/authpub-r03-t24-terminal-closeout-r01.md`
+(RECORD ID `AUTHPUB-R03-T24-TERMINAL-CLOSEOUT-R01`, SHA-256
+`1a5377bcd9216919b56508d2b1da4d666591066a55e3f9b0c1378d6127a55304`) —
+AUTHPUB-R03 = T+24 PASS / TERMINALLY CLOSED / CLOSED WITH PROCEDURAL
+NONCONFORMANCE · RELEASE13 = ACTIVE / VERIFIED. C15 ASAMA 5 BLOCKED/FROZEN
+kalir; PR-4B/PR-4C NOT AUTHORIZED. Bu pointer yeni yetki URETMEZ.
