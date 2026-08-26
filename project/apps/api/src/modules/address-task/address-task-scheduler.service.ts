@@ -7,6 +7,8 @@ import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
+// C15 PR-4A: cross-tenant taramalar QUERY-LEVEL olarak ACTIVE tenant'a daraltılır.
+import { ACTIVE_TENANT_WHERE } from '../tenant/tenant-lifecycle';
 
 /**
  * Address Task Scheduler Service
@@ -117,6 +119,7 @@ export class AddressTaskSchedulerService {
       // nextRunAt <= now olan CLIENT_ANNUAL_ADDRESS_REFRESH görevlerini bul
       const annualTasks = await this.prisma.addressTask.findMany({
         where: {
+          tenant: ACTIVE_TENANT_WHERE,
           taskType: 'CLIENT_ANNUAL_ADDRESS_REFRESH',
           status: 'PENDING',
           nextRunAt: { lte: now },
@@ -178,7 +181,7 @@ export class AddressTaskSchedulerService {
     try {
       // Pending outbox event'lerini bul
       const pendingEvents = await this.prisma.addressOutboxEvent.findMany({
-        where: { status: 'PENDING' },
+        where: { tenant: ACTIVE_TENANT_WHERE, status: 'PENDING' },
         orderBy: { createdAt: 'asc' },
         take: 100, // Batch size
       });

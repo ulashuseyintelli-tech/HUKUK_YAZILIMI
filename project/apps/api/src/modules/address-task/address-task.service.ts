@@ -3,6 +3,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ClientNotificationService } from '../client-notification/client-notification.service';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import { maskPhone } from '../../common/pii-mask.util';
+// C15 PR-4A: tenantId'siz (cron / cross-tenant) dal QUERY-LEVEL olarak ACTIVE tenant'a
+// daraltılır; HTTP tenant-scoped dal DEĞİŞMEZ.
+import { ACTIVE_TENANT_WHERE } from '../tenant/tenant-lifecycle';
 import {
   AddressTask,
   AddressTaskType,
@@ -413,7 +416,7 @@ export class AddressTaskService {
 
     return this.prisma.addressTask.findMany({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        ...(tenantId ? { tenantId } : { tenant: ACTIVE_TENANT_WHERE }),
         status: 'WAITING_EXTERNAL',
         dueAt: { lt: now },
         attemptCount: { lt: 3 }, // maxAttempts'ten küçük
@@ -428,7 +431,7 @@ export class AddressTaskService {
   async findTasksAtMaxAttempts(tenantId?: string): Promise<AddressTask[]> {
     return this.prisma.addressTask.findMany({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        ...(tenantId ? { tenantId } : { tenant: ACTIVE_TENANT_WHERE }),
         status: 'WAITING_EXTERNAL',
         attemptCount: { gte: 3 },
       },
