@@ -3,7 +3,9 @@
 ```text
 DOKÜMAN            office-p8-final-r01/p8-precondition-package-r01.md
 GÖREV              OFFICE-P8-FINAL-PRECONDITION-PACKAGE-R01 (SAYFA C19 / GO-IMPLEMENT — DOCS-ONLY ANALİZ PAKETİ)
-STATÜ              DRAFT / PENDING_OWNER_DECISION
+STATÜ              OWNER_DECISIONS_MATERIALIZED / 19_OF_20_DISPOSED /
+                   D17 OWNER_SOURCE_REQUIRED / P8_FINAL BLOCKED
+RATİFİKASYON       C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01 (2026-08-26) — bkz. §F
 BASE               origin/main @ e1e164ed487ac9832171d10cb3be247a888274e1 (2026-08-26)
 ÜRETİLEN AUTHORITY NONE — bu paket P8 FINAL'i AÇMAZ, kapanış/sertifikasyon üretmez,
                    X4 hakkında verdict VERMEZ, register satırı yazmaz
@@ -13,7 +15,8 @@ BASE               origin/main @ e1e164ed487ac9832171d10cb3be247a888274e1 (2026-
 
 > **Kural hatırlatması (yürürlükteki owner kuralı):** X4/P4 için kesin verdict
 > verilmez. Bu paket yalnız kanıt derler ve sınıflandırılmış seçenekler sunar.
-> Karar hücreleri owner işaretlemesi için **BOŞ** bırakılmıştır.
+> Karar hücreleri owner işaretlemesi için **BOŞ** bırakılmıştı; 2026-08-26 owner
+> ratifikasyonu ile dolduruldu (bkz. §F). D17 hariç hiçbir hücre boş değildir.
 
 ---
 
@@ -115,7 +118,9 @@ kaydı gerekip gerekmediği owner kararıdır (P8 FINAL kapsamına girebilir).
 >   işi ayrı owner GO'suna tabidir. A.1 tablosu bu sayfanın hammaddesi olarak
 >   kullanılabilir (bu paket o sayfayı ÜRETMEZ).
 >
-> `OWNER_DECISION: ____________________` *(a / b / c — owner işaretler)*
+> `OWNER_DECISION: (c) — AYRI X4 LANE KAYDI` — **APPROVED / LANE NOT YET
+> MATERIALIZED** (ratifikasyon: C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01,
+> 2026-08-26). X4 lane dosyası bu görevde ÜRETİLMEMİŞTİR; üretim ayrı owner GO ister.
 
 ---
 
@@ -188,6 +193,14 @@ işaretler. **Bu paket hiçbir satırı icat ederek doldurmamıştır.**
 Ç-15 : OWNER_SOURCE_REQUIRED    (aday eşleşme: ______ )
 ```
 
+**OWNER KARARI B.4 (2026-08-26, C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01):
+SEÇENEK 2 — APPROVED.** Tarihsel "15" sayısı AÇIKÇA SUPERSEDE edilecek ve yerine
+fresh reconciliation envanteri üretilecektir (owner gerekçesi: özgün 15 kalem repo
+ve geçmiş kayıt taramalarında bulunamadı). Yukarıdaki şablon tarihsel kayıt olarak
+KORUNUR ve DOLDURULMAZ. Supersession kaydı ile fresh envanter bu görevde
+ÜRETİLMEMİŞTİR (SUPERSESSION VE FRESH ENVANTER NOT YET MATERIALIZED); ayrı owner
+GO ister.
+
 ---
 
 ## C. 9 OD ↔ F06 TÜKETİM EŞLEMESİ
@@ -230,6 +243,9 @@ kümesini eşler; bu üç komşu küme ile karıştırılmamıştır.
   INFERRED bağlarının (OD-06↔D-WR-6, OD-12/13↔D-WR-3, OD-19↔D-WR-5) P8 FINAL
   kayıtlarında **açık cross-reference'a dönüştürülüp dönüştürülmeyeceği**.
   Bu paket dönüştürmez.
+  **OWNER KARARI C.1 (2026-08-26): EVET** — bağlar yalnız explicit,
+  **NON-AUTHORIZING** cross-reference olarak kayda alınacaktır; hiçbir yetki
+  üretmez. Dönüştürme işlemi bu görevde YAPILMAMIŞTIR.
 
 ---
 
@@ -242,28 +258,29 @@ append-only reconciliation (OBSERVED) · `b01-credential-containment-runtime-sta
 §9 (OBSERVED).
 
 Seçenekler: `P8-FOLD` (P8 FINAL kapsamına katılır) · `SUCCESSOR-RECORD` (ayrı
-successor kaydı olarak kalır/açılır) · `DEFER` (ertelenir). **Hiçbir hücre bu
-paket tarafından doldurulmamıştır.**
+successor kaydı olarak kalır/açılır) · `DEFER` (ertelenir). Hücreler paketin ilk
+teslimatında boştu; **2026-08-26 owner ratifikasyonu ile doldurulmuştur (bkz. §F)**.
+D17 `OWNER_SOURCE_REQUIRED` kalır.
 
 | Kalem | Mevcut durum (kanıt) | Bağımlılık | OWNER KARARI |
 |---|---|---|---|
-| F-B01-03 — GET/PUT yetki asimetrisi (`office.controller.ts:144-147, 178-181` ↔ `:151+167, :185+198`) | AÇIK / GO-BEKLEYEN (b01 §9; §8 snapshot) | F01 sonrası projection policy'siyle tutarlılık | ____________ |
-| F-B01-04 — `OfficeService.getOrCreate` public ham yüzey (4 dış çağıran yalnız `office.name` okuyor) | AÇIK / GO-BEKLEYEN (b01 §9; §8 snapshot) | — | ____________ |
-| F-B01-05 — `Lawyer.uyapToken` "// Şifrelenmiş" yorumu kod karşılıksız (yazan servis yok, DB doluluğu 0) | AÇIK / GO-BEKLEYEN, düşük öncelik (b01 §9; §8 snapshot) | — | ____________ |
-| StaffDetailModal diff-payload | AÇIK / GO-BEKLEYEN (manifest §13.4; §8 snapshot) — allowlist projection + tam-form POST veri-silme riskine karşı fark-payload | b03 matrisi; F01 policy | ____________ |
-| /auth/me `passwordChangedAt` | **UNKNOWN / çelişkili** — içerik RELEASE13'te kapalı (cert T7 PASS) ↔ register GO-bekliyor; disposition kaydı yok (§8 snapshot; B.3 CAND-04) | RELEASE13 sertifika kayıtları (repo-dışı pointer, §9 ledger) | ____________ |
-| CLF-P5-01 (successor hedefi X1-P6) | AÇIK / GO-BEKLEYEN (manifest §13.4; §8 snapshot) | X1-P6 lane'i | ____________ |
-| CLF-P7-01 — app.module stale yorum | AÇIK / GO-BEKLEYEN (cross-lane-findings; §8 snapshot; B.3 CAND-01) | tek-satır doc düzeltmesi | ____________ |
-| CLF-P7-02 — PermissionGrant stale şema yorumu | AÇIK / GO-BEKLEYEN (cross-lane-findings; WR01 brief §3.7; B.3 CAND-02) | WR01-B01/B06 delegasyon tasarımıyla kesişir | ____________ |
-| CLF-P7-03 — BankSettlement reachability register düzeltmesi | AÇIK / GO-BEKLEYEN; hedef register OFFICE dışı (cross-lane-findings; B.3 CAND-03) | `spring-cleaning/PROGRAM-WIDE-…-REGISTER-R01.md` sahibi lane | ____________ |
-| CLF-O0-01 — requestRevision domain-owned guard → X4 | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | **A bölümü kararına bağlı** (X4 tanımı) | ____________ |
-| Kozmetik personel ad-hijyeni | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | — | ____________ |
-| F05 — `OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01` | **NOT_AUTHORIZED** — tek başlamamış successor; F04 launch runtime/DB/production yetkisini açıkça saklı tutar (successor-execution-order 2026-08-16 satırı) | yeni task-bound owner grant + production erişimi | ____________ |
-| P8-C4 runtime residual / capability deployment verdict | **BLOCKED_BY_RUNTIME_MODEL** (manifest §13.3); §13.6 superseding pointer: güncel runtime hükmü RELEASE13 = ACTIVE/VERIFIED/T+24 PENDING; verdict P6 hash-matrisi tazelenmeden VERİLEMEZ; §8 snapshot BLOKLU sınıfı | T+24 closeout + P6 hash-matrisi tazeleme | ____________ |
-| OFFICE-P4 umbrella terminal kaydı | **UNKNOWN** (§8 snapshot; owner §8.2 kuralıyla zorla sınıflandırılmadı) | **A bölümü kararına bağlı** | ____________ |
-| WR01-B07 kalan kapsam (notification) | **UNKNOWN** (§8 snapshot; ledger §2 B07 satırı) | WR01 programı — P8 FINAL blocker'ı DEĞİL (decision-log:540) | ____________ |
-| "escalation CI manifest" kalemi | **OWNER_SOURCE_REQUIRED** — bu adla/anlamla eşleşen kayıt `project/docs/governance/**` taramasında bulunamadı (ci-manifests bağı dahil arandı); kalem C19 talimat metninde anılır, repo'da karşılığı ölçülemedi | — | ____________ |
-| "C12" kalemi | **OWNER_SOURCE_REQUIRED** — `\bC12\b` deseni governance genelinde 0 eşleşme; kalem C19 talimat metninde "runtime residual/C12" olarak anılır, repo'da karşılığı ölçülemedi | — | ____________ |
+| F-B01-03 — GET/PUT yetki asimetrisi (`office.controller.ts:144-147, 178-181` ↔ `:151+167, :185+198`) | AÇIK / GO-BEKLEYEN (b01 §9; §8 snapshot) | F01 sonrası projection policy'siyle tutarlılık | **D1: SUCCESSOR-RECORD** |
+| F-B01-04 — `OfficeService.getOrCreate` public ham yüzey (4 dış çağıran yalnız `office.name` okuyor) | AÇIK / GO-BEKLEYEN (b01 §9; §8 snapshot) | — | **D2: SUCCESSOR-RECORD** |
+| F-B01-05 — `Lawyer.uyapToken` "// Şifrelenmiş" yorumu kod karşılıksız (yazan servis yok, DB doluluğu 0) | AÇIK / GO-BEKLEYEN, düşük öncelik (b01 §9; §8 snapshot) | — | **D3: P8-FOLD** *(patch ayrıca yetkilendirilir — §F)* |
+| StaffDetailModal diff-payload | AÇIK / GO-BEKLEYEN (manifest §13.4; §8 snapshot) — allowlist projection + tam-form POST veri-silme riskine karşı fark-payload | b03 matrisi; F01 policy | **D4: SUCCESSOR-RECORD** |
+| /auth/me `passwordChangedAt` | **UNKNOWN / çelişkili** — içerik RELEASE13'te kapalı (cert T7 PASS) ↔ register GO-bekliyor; disposition kaydı yok (§8 snapshot; B.3 CAND-04) | RELEASE13 sertifika kayıtları (repo-dışı pointer, §9 ledger) | **D5: P8-FOLD** |
+| CLF-P5-01 (successor hedefi X1-P6) | AÇIK / GO-BEKLEYEN (manifest §13.4; §8 snapshot) | X1-P6 lane'i | **D6: SUCCESSOR-RECORD** |
+| CLF-P7-01 — app.module stale yorum | AÇIK / GO-BEKLEYEN (cross-lane-findings; §8 snapshot; B.3 CAND-01) | tek-satır doc düzeltmesi | **D7: P8-FOLD** *(patch ayrıca yetkilendirilir — §F)* |
+| CLF-P7-02 — PermissionGrant stale şema yorumu | AÇIK / GO-BEKLEYEN (cross-lane-findings; WR01 brief §3.7; B.3 CAND-02) | WR01-B01/B06 delegasyon tasarımıyla kesişir | **D8: P8-FOLD** *(patch ayrıca yetkilendirilir — §F)* |
+| CLF-P7-03 — BankSettlement reachability register düzeltmesi | AÇIK / GO-BEKLEYEN; hedef register OFFICE dışı (cross-lane-findings; B.3 CAND-03) | `spring-cleaning/PROGRAM-WIDE-…-REGISTER-R01.md` sahibi lane | **D9: SUCCESSOR-RECORD** |
+| CLF-O0-01 — requestRevision domain-owned guard → X4 | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | **A bölümü kararına bağlı** (X4 tanımı) | **D10: SUCCESSOR-RECORD** — X4 lane bağımlı |
+| Kozmetik personel ad-hijyeni | AÇIK / GO-BEKLEYEN; repo-içi kart yok (manifest §13.4; §8 snapshot) | — | **D11: DEFER** |
+| F05 — `OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01` | **NOT_AUTHORIZED** — tek başlamamış successor; F04 launch runtime/DB/production yetkisini açıkça saklı tutar (successor-execution-order 2026-08-16 satırı) | yeni task-bound owner grant + production erişimi | **D12: SUCCESSOR-RECORD** |
+| P8-C4 runtime residual / capability deployment verdict | **BLOCKED_BY_RUNTIME_MODEL** (manifest §13.3); §13.6 superseding pointer: güncel runtime hükmü RELEASE13 = ACTIVE/VERIFIED/T+24 PENDING; verdict P6 hash-matrisi tazelenmeden VERİLEMEZ; §8 snapshot BLOKLU sınıfı | T+24 closeout + P6 hash-matrisi tazeleme | **D13: P8-FOLD** — T+24 + P6 hash-matrisi bağımlı |
+| OFFICE-P4 umbrella terminal kaydı | **UNKNOWN** (§8 snapshot; owner §8.2 kuralıyla zorla sınıflandırılmadı) | **A bölümü kararına bağlı** | **D14: P8-FOLD** — X4 lane bağımlı |
+| WR01-B07 kalan kapsam (notification) | **UNKNOWN** (§8 snapshot; ledger §2 B07 satırı) | WR01 programı — P8 FINAL blocker'ı DEĞİL (decision-log:540) | **D15: DEFER** |
+| "escalation CI manifest" kalemi | **OWNER_SOURCE_REQUIRED** — bu adla/anlamla eşleşen kayıt `project/docs/governance/**` taramasında bulunamadı (ci-manifests bağı dahil arandı); kalem C19 talimat metninde anılır, repo'da karşılığı ölçülemedi | — | **D16: SUCCESSOR-RECORD** — owner-ratified source: **B12** ("6 escalation spec'inden 5'i hiçbir CI manifest'te değil"); gerçek CI değişikliği ayrı task-bound iş |
+| "C12" kalemi | **OWNER_SOURCE_REQUIRED** — `\bC12\b` deseni governance genelinde 0 eşleşme; kalem C19 talimat metninde "runtime residual/C12" olarak anılır, repo'da karşılığı ölçülemedi | — | **D17: OWNER_SOURCE_REQUIRED / SINIFLANDIRILMADI** — WR01 C12 (CLAUDE-C12 / Aşama 3 Resolver / PR #2448) ile explicit cross-reference kanıtlanamadı; **P8 FINAL blocker'ı olarak korunur** |
 
 Not — `residual-register.md`'nin 7 satırından F01/F06/CAP09A/F03/F04/F07
 `successor-execution-order.md` reconciliation'larıyla kapanmış durumdadır
@@ -283,9 +300,47 @@ bu tablonun konusu değildir.
 - T+24 / AUTHPUB / C15_EVIDENCE yüzeylerine dokunulmadı.
 
 ```text
-TERMİNAL STATÜ     P8_PRECONDITION_PACKAGE_DELIVERED / DRAFT / PENDING_OWNER_DECISION
-SONRAKİ ADIM       Owner, A.3 sorusunu + B.4 şablonunu + C.1 confirmation kalemini +
-                   D tablosunun karar hücrelerini cevaplar/doldurur. Paket merge edilip
-                   cevaplar geldiğinde P8 FINAL launch handoff'u PAGE-O0'da hazırlanabilir
-                   hâle gelir — OTOMATİK GEÇİŞ YOK.
+TERMİNAL STATÜ     OWNER_DECISIONS_MATERIALIZED / 19_OF_20_DISPOSED /
+                   D17 OWNER_SOURCE_REQUIRED / P8_FINAL BLOCKED /
+                   PENDING_OWNER_MERGE_CHECKPOINT
+SONRAKİ ADIM       §F kararlarının uygulanması — X4 lane kaydı (A.3=c), "15"
+                   supersession + fresh envanter (B.4=2), non-authorizing
+                   cross-reference materyalizasyonu (C.1=EVET) ve
+                   SUCCESSOR-RECORD kayıtları — AYRI owner GO'larına tabidir.
+                   P8 FINAL launch handoff'u HAZIRLANMAMIŞTIR — OTOMATİK GEÇİŞ YOK.
 ```
+
+---
+
+## F. OWNER CHECKPOINT SONUCU — C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01 (2026-08-26)
+
+Kaynak: owner ratifikasyon talimatı (2026-08-26); main binding
+`1f36bee0ea686650d8ee3c0c37ec356c8b20ba6e`.
+
+```text
+A.3  = (c) AYRI X4 LANE KAYDI             APPROVED / LANE NOT YET MATERIALIZED
+B.4  = (2) "15" AÇIK SUPERSESSION +       APPROVED / SUPERSESSION VE FRESH
+       FRESH RECONCILIATION ENVANTERİ     ENVANTER NOT YET MATERIALIZED
+C.1  = EVET                               yalnız explicit NON-AUTHORIZING
+                                          cross-reference
+D    = 19/20 DISPOSED                     D1-D16 işaretlendi; D17
+                                          OWNER_SOURCE_REQUIRED — P8 FINAL
+                                          blocker'ı olarak KORUNUR
+```
+
+**Bu ratifikasyonun kendi sınırları:** X4 lane dosyası ÜRETİLMEDİ · "15"
+supersession kaydı ve fresh çelişki envanteri ÜRETİLMEDİ · D-WR↔OFF/OD
+cross-reference materyalizasyonu YAPILMADI · **D3/D7/D8'in `P8-FOLD` sınıfı kod
+veya schema yorum patch'i YETKİLENDİRMEZ** — yalnız kalemi P8 kapsamına alır,
+gerçek patch ayrıca yetkilendirilir · register / manifest / decision-log /
+runtime / T+24 / AUTHPUB / C15_EVIDENCE yüzeylerine DOKUNULMADI · P8 FINAL
+launch handoff'u HAZIRLANMADI.
+
+**D16 kaynak kaydı:** owner-ratified source **B12** — "6 escalation spec'inden
+5'i hiçbir CI manifest'te değil"; gerçek CI manifest değişikliği ayrı task-bound
+iştir.
+
+**D17 kaydı:** "runtime residual/C12" ile WR01 C12 (CLAUDE-C12 / Aşama 3
+Resolver / PR #2448 / consumer wiring 0/6) arasında explicit cross-reference
+KANITLANAMADI; kalem `OWNER_SOURCE_REQUIRED / SINIFLANDIRILMADI` kalır ve
+**P8 FINAL blocker'ı olarak korunur**.
