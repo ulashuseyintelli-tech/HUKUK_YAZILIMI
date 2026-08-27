@@ -26,3 +26,15 @@ GROUP 3  Workload purpose                          OD-19
 
 The owner may decide these in a dedicated pack, but implementation remains a separate
 task and authority gate. No default above is executable authority.
+
+## Historical snapshot notice (appended 2026-08-27 — Ç-F04 P8-REPAIR)
+
+The heading statement above ("All records below remain `OWNER_DECISION_REQUIRED`") is preserved
+unchanged as a historical snapshot of the pre-decision state and no longer reflects the current
+decision state. All nine OD records in this register have since been disposed by the owner:
+eight as `OPTION B — CLOSED / CANONICAL` (`OFF/OD-02`, `OFF/OD-03`, `OFF/OD-06`, `OFF/OD-07`,
+`OFF/OD-12`, `OFF/OD-13`, `OFF/OD-16`, `OFF/OD-19`) and `OFF/OD-04` as `KEEP_DEFERRED`
+(2026-08-13, F06 Open OD Decision Pack). Authoritative closure evidence: `decision-log.md`
+(2026-08-13 F06 disposition row) and `OFFICE-OWNER-DECISIONS.md` (19/20 CLOSED tally). This
+notice changes no historical row above, selects or ratifies no option, creates no implementation
+authority, and does not alter `OFF/OD-04`'s deferred status.
