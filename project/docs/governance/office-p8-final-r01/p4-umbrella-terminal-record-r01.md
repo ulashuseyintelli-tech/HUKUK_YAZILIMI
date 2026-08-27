@@ -222,3 +222,68 @@ AÇIK EVIDENCE GAP             1 — §G: owner'ın 2026-08-16 civarı sözlü/o
                               beyan bağımsız closure kanıtı olarak
                               KULLANILMAMIŞTIR (sınıflandırması §G'de).
 ```
+
+## TERMINAL VERDICT
+
+*(Append-only ek — C23 PR2, 2026-08-27. §A–§J tarihsel içeriği
+DEĞİŞTİRİLMEMİŞTİR; §I'daki `PENDING_OWNER` placeholder'ı, PR1 anındaki doğru
+tarihsel durum olarak korunur ve bu bölümle SUPERSEDE edilir.)*
+
+### Owner verdict (aynen) ve ratifikasyon kaydı
+
+Owner'ın exact verdict mesajı (C23 oturumu owner checkpoint yanıtı; PR1 merge +
+cleanup sonrası sunulan kapanış matrisi, residual özeti ve üç-seçenekli verdict
+paketine açık yanıt):
+
+```text
+C23 OWNER VERDICT: (b) UMBRELLA = CLOSED_WITH_RECORDED_RESIDUALS
+```
+
+```text
+RATİFİKASYON KAYDI (UTC)  2026-08-27T18:25:12Z — geriye tarihlenMEMİŞtir
+PR1 EVIDENCE POINTER      bu dosya §A–§J (OFFICE-P4-UMBRELLA-TERMINAL-RECORD-R01)
+PR1                       #2470
+PR1 SQUASH SHA            ddcb69db424f48ccfd78e67c44a92fa478593100
+FRESH PR2 BASE SHA        ddcb69db424f48ccfd78e67c44a92fa478593100
+                          (main == origin/main · açık PR 0 ·
+                          tek-kullanımlık kapı fresh doğrulandı: bu dosyada
+                          önceden `## TERMINAL VERDICT` bölümü YOKTU)
+EXECUTION AUTHORITY       NONE — bu bölüm yalnız verdict kaydıdır
+```
+
+### Terminal sonuç
+
+```text
+UMBRELLA (OFFICE-P4-AUTHORIZATION-COMPLETION-R01) =
+CLOSED_WITH_RECORDED_RESIDUALS
+```
+
+Mandatory closure sonucu: §D zinciri 11/11 mandatory kalem VERIFIED —
+`UNVERIFIED 0` (7 `VERIFIED_TERMINAL` · 2 `VERIFIED_CANONICAL` ·
+1 `VERIFIED_EXCLUDED_NON_CANONICAL` (F02) · 1 `VERIFIED_CARRY_FORWARD` (F05)).
+
+Terminal ifadede ÖZELLİKLE KORUNAN residual/carry-forward kalemleri
+(silinmemiş, düşürülmemiş, kapanmış/uygulanmış gibi gösterilmemiştir — §E):
+
+- **F05** — `NOT_AUTHORIZED / CARRY-FORWARD`; bu verdict F05'i kapatmaz,
+  kapsamaz, tamamlanmış göstermez, implementation yetkisi vermez.
+- **Runtime residual / D13** — `BLOCKED_BY_RUNTIME_MODEL`; bu verdict
+  residual'ı çözmez veya düşürmez.
+- **CLF-O0-01** — yalnız SUCCESSOR-RECORD olarak materyalize; gerçek guard
+  patch'i yapılmamıştır ve bu verdict onu yetkilendirmez.
+- **Ç-F01..Ç-F05** — `P8-REPAIR` ratifiye; execution/repair yetkisi yoktur ve
+  bu verdict onarımları yapmaz veya tamamlanmış saymaz.
+
+### Sınır beyanları
+
+```text
+NON-AUTHORIZING — this umbrella terminal record creates no implementation, repair, successor, schema, migration, deployment, register-flip, runtime, or execution authority.
+```
+
+- **X4 ↔ umbrella AYRIDIR** (§B/§F; X4 lane §B.2 owner-ratified tanım): X4'ün
+  C21 verdict'i (`X4 = CLOSED_WITH_RECORDED_RESIDUALS`) bu umbrella
+  verdict'inden ayrı yaşar; bu bölüm X4 kaydını değiştirmez; döngü yoktur.
+- **P8 FINAL BAŞLATILMAMIŞTIR**: bu verdict P8 FINAL launch veya closure
+  değildir; yalnız P8 ön-koşul listesindeki D14 satırını karşılayabilir
+  (paket §D.19). Kalan P8 ön-koşulları (D13 dahil) kendi AYRI owner GO'larına
+  tabidir; sonraki faza otomatik geçiş yoktur.
