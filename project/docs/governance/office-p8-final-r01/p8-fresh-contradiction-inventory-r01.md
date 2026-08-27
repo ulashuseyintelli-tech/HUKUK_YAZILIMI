@@ -349,3 +349,51 @@ SCHEMA AUTHORITY: NONE
 Fresh taramada exploit detayı, aktif güvenlik açığı, credential, token, secret veya
 kötüye kullanılabilir operasyonel ayrıntı BULUNMAMIŞTIR; bu dosya güvenlik-hassas
 içerik taşımaz.
+
+---
+
+## G. OWNER DISPOSITION RATIFICATION
+
+*(Append-only ek — C22 PR2, 2026-08-27. §A–§F tarihsel içeriği DEĞİŞTİRİLMEMİŞTİR.)*
+
+Owner ratifikasyon mesajı C22 oturumunda alınmıştır; kayıt zamanı (UTC)
+**2026-08-27T17:28:27Z** — geriye tarihlenMEMİŞtir. Mesajın karar gövdesi aynen:
+
+```text
+C22 OWNER DISPOSITION RATIFICATION:
+Ç-F01 = P8-REPAIR
+Ç-F02 = P8-REPAIR
+Ç-F03 = P8-REPAIR
+Ç-F04 = P8-REPAIR
+Ç-F05 = P8-REPAIR
+Ç-F06 = RECORD-ONLY
+Ç-F07 = RECORD-ONLY
+Ç-F08 = RECORD-ONLY
+RATIFICATION: APPROVED
+```
+
+| Ç-F | Owner'ın exact disposition'ı | Ratifikasyon mesajındaki ifade | Ratifikasyon kaydı (UTC) | Statü |
+|---|---|---|---|---|
+| Ç-F01 | `P8-REPAIR` | `Ç-F01 = P8-REPAIR` | 2026-08-27T17:28:27Z | `RATIFIED` |
+| Ç-F02 | `P8-REPAIR` | `Ç-F02 = P8-REPAIR` | 2026-08-27T17:28:27Z | `RATIFIED` |
+| Ç-F03 | `P8-REPAIR` | `Ç-F03 = P8-REPAIR` | 2026-08-27T17:28:27Z | `RATIFIED` |
+| Ç-F04 | `P8-REPAIR` | `Ç-F04 = P8-REPAIR` | 2026-08-27T17:28:27Z | `RATIFIED` |
+| Ç-F05 | `P8-REPAIR` | `Ç-F05 = P8-REPAIR` | 2026-08-27T17:28:27Z | `RATIFIED` |
+| Ç-F06 | `RECORD-ONLY` | `Ç-F06 = RECORD-ONLY` | 2026-08-27T17:28:27Z | `RATIFIED` |
+| Ç-F07 | `RECORD-ONLY` | `Ç-F07 = RECORD-ONLY` | 2026-08-27T17:28:27Z | `RATIFIED` |
+| Ç-F08 | `RECORD-ONLY` | `Ç-F08 = RECORD-ONLY` | 2026-08-27T17:28:27Z | `RATIFIED` |
+
+Bağlayıcı beyanlar:
+
+- Owner, sekiz kalemin sekizini de açıkça karara bağlamıştır; belirsiz veya
+  yazılmamış kalem YOKTUR. §D'deki boş owner hücrelerinin operatif karşılığı bu
+  bölümdür; §D tarihsel kayıt olarak değiştirilmeden korunur.
+- **Bu ratifikasyon hiçbir onarımı veya implementasyonu kendiliğinden
+  YETKİLENDİRMEZ.** `P8-REPAIR` disposition'ı yalnız kalemi gelecekteki P8
+  kapsamına onarım adayı olarak sınıflar; her gerçek onarım ayrı owner
+  yetkisine tabidir. `RECORD-ONLY` kalemleri için ek iş AÇILMAZ.
+- CAND-03 (`NOT-REPRODUCIBLE`) operatif liste dışında ölçüm kaydı olarak
+  korunur; bu ratifikasyon onun hakkında karar ÜRETMEZ (D9 owner disposition'ı
+  ayrıca yürürlüktedir).
+- §F yetki beyanı aynen yürürlüktedir: EXECUTION / REPAIR / IMPLEMENTATION /
+  SUCCESSOR / SCHEMA AUTHORITY: NONE.

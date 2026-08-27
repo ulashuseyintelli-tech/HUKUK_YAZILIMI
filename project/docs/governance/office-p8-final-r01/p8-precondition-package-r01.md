@@ -533,3 +533,27 @@ NON-AUTHORIZING — this cross-reference creates no implementation, successor, s
 - **WR01 brief, `OFFICE-OWNER-DECISIONS.md`, F06 paketi ve OD/D-WR kaynak
   belgeleri bu görevde DEĞİŞTİRİLMEMİŞTİR** (yalnız salt-okuma fresh doğrulama
   yapılmıştır).
+
+### B.6 FRESH INVENTORY OWNER DISPOSITION RATIFICATION
+
+*(Append-only ek — C22 PR2, 2026-08-27. Önceki bölümler DEĞİŞTİRİLMEMİŞTİR.)*
+
+- **Owner ratifikasyonu ALINMIŞTIR** (C22 oturumu; kayıt zamanı UTC
+  2026-08-27T17:28:27Z; `RATIFICATION: APPROVED`).
+- **Bütün Ç-F kalemlerinin (8/8) disposition'ı kaydedilmiştir:**
+  Ç-F01..Ç-F05 = `P8-REPAIR` · Ç-F06..Ç-F08 = `RECORD-ONLY`. Belirsiz veya
+  karara bağlanmamış kalem yoktur.
+- **Kanonik inventory pointer'ı:**
+
+```text
+office-p8-final-r01/p8-fresh-contradiction-inventory-r01.md   (§G — owner disposition ratification kaydı)
+```
+
+- Bu kayıtla hiçbir **repair / implementation / successor / schema / execution**
+  yetkisi DOĞMAMIŞTIR; `P8-REPAIR` sınıfı kalemlerin gerçek onarımı ayrı owner
+  yetkisine tabidir, `RECORD-ONLY` kalemleri için iş açılmaz.
+- **C22 materyalizasyon kapısı TAMAMLANMIŞTIR:** B.4=SEÇENEK-2 (§B.5 + fresh
+  envanter + §G ratifikasyonu) ve C.1=EVET (§C.2) ön-koşul materyalizasyonları
+  kapanmıştır. Bu sonuç P8 FINAL'i AÇMAZ; kalan P8 ön-koşulları (D13 kapsamındaki
+  P6 hash-matrisi bağımlılıkları, D14 OFFICE-P4 umbrella terminal kaydı ve diğer
+  açık P8-FOLD kalemleri) kendi AYRI owner GO'larına tabidir.
