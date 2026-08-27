@@ -10046,7 +10046,8 @@ enum OfficeApprovalExecutionStatus {
 // OFF/OD-05 (title != SystemRole, izin ayrı verilir) + OFF/OD-08 (manager-tipi erişimde
 // varsayılan scope = direct-report/team, global ayrı izin) + OFF/OD-09 (sınırlı/süreli direct
 // grant, explicit deny yalnız gerçek ihtiyaçta) hedef modelini yapısal olarak temsil eder.
-// Bu tablo HENÜZ hiçbir authorization consumer tarafından okunmuyor — yalnız şema temeli.
+// Bu tabloyu üç OFFICE-dışı authorization servisi okur (permissionGrant.findMany): BANK settlement-verifier ·
+// CLIENT-INTAKE-REVIEW · UYAP trigger-haciz. OFFICE-içi authorization consumer'ı henüz yoktur.
 
 enum PermissionGrantScope {
   DIRECT_REPORTS // OFF/OD-08 varsayılan alt-kapsam: yalnız doğrudan rapor eden kişiler
