@@ -588,3 +588,49 @@ office-p8-final-r01/p4-umbrella-terminal-record-r01.md
   schema, migration, deployment, register-flip, runtime veya execution
   yetkisi üretmez. F05 / runtime-D13 / CLF-O0-01 / Ç-F01..05 residual'ları
   record §E'de literal korunur.
+
+### D.19 D14 OWNER TERMINAL VERDICT MATERIALIZATION
+
+*(Append-only ek — C23 PR2, 2026-08-27. Önceki bölümler DEĞİŞTİRİLMEMİŞTİR.
+Bölüm numarası notu: C23 talimatındaki `D.16` başlığı §D tablosundaki `D16`
+owner karar kimliğiyle çakıştığından, talimatın çakışma hükmü uyarınca D.18'i
+izleyen serbest append-only numara `D.19` kullanılmıştır; hiçbir tarihsel
+başlık renumber edilmemiştir.)*
+
+- **Owner terminal verdict'i ALINMIŞTIR** (C23 oturumu owner checkpoint
+  yanıtı; ratifikasyon kaydı UTC **2026-08-27T18:25:12Z**). Mesaj aynen:
+
+```text
+C23 OWNER VERDICT: (b) UMBRELLA = CLOSED_WITH_RECORDED_RESIDUALS
+```
+
+- **Kanonik evidence record pointer'ı** (verdict append'i `## TERMINAL
+  VERDICT` bölümü bu kayıtla aynı PR'dadır):
+
+```text
+office-p8-final-r01/p4-umbrella-terminal-record-r01.md
+```
+
+- **PR1 kanıtı:** #2470 · squash `ddcb69db424f48ccfd78e67c44a92fa478593100`
+  (origin/main ancestor, VERIFIED) · exact 2 dosya · classifier
+  `GOV_COORD_NON_COORDINATION_PR` · CI 9/9 PASS · `MERGEABLE/CLEAN` ·
+  merge sonrası main sync + cleanup tamamlandı · açık PR 0.
+- **D14 durumu (verdict'e göre):**
+
+```text
+D14 = SATISFIED
+(OFFICE-P4 umbrella terminal kaydı: UMBRELLA = CLOSED_WITH_RECORDED_RESIDUALS;
+mandatory zincir 11/11 VERIFIED, UNVERIFIED 0)
+```
+
+- **Residual'lar bu verdict'le KAPANMAMIŞTIR:** F05
+  (`NOT_AUTHORIZED / CARRY-FORWARD`) · runtime residual/D13
+  (`BLOCKED_BY_RUNTIME_MODEL`; P6 hash-matrisi bağımlı) · CLF-O0-01 (yalnız
+  SUCCESSOR-RECORD; guard patch yetkisiz) · Ç-F01..Ç-F05 (`P8-REPAIR`;
+  execution yetkisi yok). Ç-F06..08 `RECORD-ONLY` kalır.
+- **Non-authorizing sınır:** bu kayıt hiçbir implementation, repair,
+  successor, schema, migration, deployment, register-flip, runtime veya
+  execution yetkisi üretmez. **P8 FINAL başlatılmamıştır** ve D14'ün
+  karşılanması P8 FINAL launch/closure anlamına gelmez; kalan açık P8
+  ön-koşulları (D13 kapsamındaki P6 hash-matrisi bağımlılıkları ve diğer açık
+  P8-FOLD kalemleri) kendi AYRI owner GO'larına tabidir.
