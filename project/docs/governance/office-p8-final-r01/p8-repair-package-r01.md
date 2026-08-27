@@ -648,3 +648,158 @@ Fresh ölçümlerde exploit detayı, credential, token, secret veya güvenlik-ha
 operasyonel ayrıntı BULUNMAMIŞ ve bu dosyaya YAZILMAMIŞTIR. Bu paket yalnız
 kayıt-tutarlılığı analizi taşır. Gelecekteki execution PR'ları bu dosyadaki
 taslakları ancak AYRI owner GO'su + fresh revalidasyonla kullanabilir.
+
+## 10. C25 EXECUTION RECEIPT — G1/G2/G3/G5 (append-only, 2026-08-27)
+
+Bu bölüm, C25 owner GO'su (2026-08-27, "C25 — P8-REPAIR EXECUTION: G1/G2/G3/G5,
+G4 KESİN HARİÇ") kapsamında yürütülen dört execution grubunun GERÇEK sonuçlarını
+kaydeder. Yukarıdaki §1–§9 tarihsel paket metni ve tüm `OWNER EXECUTION
+AUTHORIZATION: PENDING_OWNER — NOT GRANTED BY C24` hücreleri DEĞİŞTİRİLMEMİŞTİR
+(C24 gerçekten authority üretmemiştir; execution authority'si C25 GO'sundan
+gelmiştir). Bu receipt yalnız kayıttır: repair dependency düşürmez, D13'ü
+başlatmaz, P8 FINAL'i başlatmaz, hiçbir bulgu/successor/residual kapatmaz.
+
+```text
+PREFLIGHT BASE        2423b7102f3cebc5486b6a78413524c0ba7a768d
+                      (beklenen main ile BİREBİR; local==origin/main; drift YOK;
+                      açık PR envanteri preflight anında 0)
+FRESH CHECK           4/4 REPRODUCED (G1 · G2 · G3 · G5, MEASURED_AT_SHA 2423b710);
+                      base(65da5965)→fresh(2423b710) tam delta = yalnız bu paket
+                      dosyası (A) → dört hedefte sıfır drift
+W3F07 OVERLAP (fresh) NO_EXACT_FILE_OVERLAP — 4 hedef ↔ W3F07 15 tracked-M +
+                      4 untracked (tümü project/apps/api/src/**); salt-okuma
+ROUTE-IDENTITY        G1+G2+G3 TEK PR'DA BİRLEŞTİRİLMEDİ — atomic rollback/revert
+                      sınırı birleşimde tek squash'a iner; özdeşlik testi bu
+                      alanda belirsiz → C25 §2.2 fail-safe: AYRI PR. G5 zaten
+                      zorunlu ayrı. Toplam: 4 execution PR + 1 receipt PR.
+EXECUTION SIRASI      G1 → G2 → G3 → G5; her grup bir önceki merge sonrası fresh
+                      origin/main üzerinden yeni task worktree/branch ile açıldı
+```
+
+### 10.1 Grup sonuçları
+
+```text
+GROUP                       C24-G1
+ITEM                        Ç-F04
+RESULT                      MERGED
+TARGET                      project/docs/governance/office-spring-cleaning-reconciliation-r01/od-decision-register.md
+BASE SHA                    2423b7102f3cebc5486b6a78413524c0ba7a768d
+HEAD SHA                    938f15e73ab5124cc7cb35b5bc5ddea5ae1d1624
+PR                          #2473
+SQUASH SHA                  a3866989f83a195b800637aa5589dcaf7c855700
+MERGED AT UTC               2026-08-27T20:11:27Z
+ACTUAL CLASSIFIER           GOV_COORD_NON_COORDINATION_PR (validate-pr-scope, actual base/head)
+AUTHORITY ROUTE             C25 owner execution GO + NON_COORDINATION_PR rotası
+                            (SA/EG veya mechanical-op TETİKLENMEDİ)
+CI RESULT                   9/9 PASS (FAILED/CANCELLED/TIMED-OUT = 0); MERGEABLE + CLEAN
+CANONICAL MAIN VERIFICATION ancestry VERIFIED; şerh origin/main içeriğinde doğrulandı;
+                            diff +12/−0 (salt append)
+PRESERVED STATES            tüm tarihsel satırlar; 9 OD kaydı; OD-04 KEEP_DEFERRED;
+                            hiçbir opsiyon seçilmedi/ratifiye edilmedi
+```
+
+```text
+GROUP                       C24-G2
+ITEM                        Ç-F05
+RESULT                      MERGED
+TARGET                      project/docs/governance/OFFICE-RISK-REGISTER.md
+BASE SHA                    a3866989f83a195b800637aa5589dcaf7c855700
+HEAD SHA                    814f4c9887b67b10d483b7ef9f4975ea953885e5
+PR                          #2474
+SQUASH SHA                  4a4e996fd0fb3616adc0aef70cc240e67610001c
+MERGED AT UTC               2026-08-27T20:24:20Z
+ACTUAL CLASSIFIER           GOV_COORD_NON_COORDINATION_PR (validate-pr-scope, actual base/head)
+AUTHORITY ROUTE             C25 owner execution GO + NON_COORDINATION_PR rotası
+CI RESULT                   9/9 PASS; MERGEABLE + CLEAN
+CANONICAL MAIN VERIFICATION ancestry VERIFIED; reconciliation satırı origin/main'de doğrulandı;
+                            diff +1/−0 (kart-içi salt append)
+PRESERVED STATES            BULGU KAPATILMADI; FINDING VERDICT OPEN/NOT CLOSED;
+                            MITIGATION STATUS OPEN/NOT MITIGATED; :190/:192/:193 tarihsel
+                            satırlar; CAP-09A producer DORMANT_CANONICAL; yeni yetki YOK
+```
+
+```text
+GROUP                       C24-G3
+ITEM                        Ç-F03
+RESULT                      MERGED
+TARGET                      project/docs/governance/OFFICE-DELIVERY-MANIFEST.md
+BASE SHA                    4a4e996fd0fb3616adc0aef70cc240e67610001c
+HEAD SHA                    ab4fbcad33cad7d3a02b02bf01ccfcab9c8c4e01
+PR                          #2475
+SQUASH SHA                  cf6043a83c1341a38ea76d8e3601cbb388e3c400
+MERGED AT UTC               2026-08-27T20:38:14Z
+ACTUAL CLASSIFIER           GOV_COORD_NON_COORDINATION_PR (validate-pr-scope, actual base/head)
+AUTHORITY ROUTE             C25 owner execution GO + NON_COORDINATION_PR rotası
+CI RESULT                   9/9 PASS; MERGEABLE + CLEAN
+CANONICAL MAIN VERIFICATION ancestry VERIFIED; §13.4 altı blockquote şerh origin/main'de
+                            doğrulandı; diff +10/−0 (salt append; mixed-EOL dosyada
+                            bayt-güvenli insert, dosyanın kalanı bit-bit korundu)
+PRESERVED STATES            /auth/me passwordChangedAt successor kalemi AÇIK; :1921 satırı
+                            ve §13.4 tablosu; T+24/AUTHPUB-R03 terminal kayıtları; RELEASE13;
+                            C15 Aşama 5 FROZEN; decision-log.md owner-WIP DOKUNULMADI
+```
+
+```text
+GROUP                       C24-G5
+ITEM                        Ç-F02
+RESULT                      MERGED
+TARGET                      project/apps/api/prisma/schema.prisma
+BASE SHA                    cf6043a83c1341a38ea76d8e3601cbb388e3c400
+HEAD SHA                    2fac77416b21a2137c52227e689d66fdcaf1a730
+PR                          #2476
+SQUASH SHA                  14be8cd5e0225a2ebceaad98704e2e411f92ef79
+MERGED AT UTC               2026-08-27T20:50:12Z
+ACTUAL CLASSIFIER           GOV_COORD_NON_COORDINATION_PR (validate-pr-scope, actual base/head)
+AUTHORITY ROUTE             C25 owner execution GO + NON_COORDINATION_PR rotası
+                            (koordinasyon zinciri project/apps/ için denied — kullanılmadı)
+CI RESULT                   9/9 PASS; MERGEABLE + CLEAN
+CANONICAL MAIN VERIFICATION ancestry VERIFIED; yeni yorum :10049-:10050 origin/main'de
+                            doğrulandı; diff −1/+2 (yalnız yetkili yorum satırı)
+§6 KANIT KAPILARI           (1) pinned prisma 5.22.0 (spec ^5.8.0) migrate diff
+                            --from-schema-datamodel/--to-schema-datamodel --script →
+                            "-- This is an empty migration." exit 0 (fresh base/cand);
+                            (2) prisma/migrations/** altında A/M/D YOK;
+                            (3) generated/lockfile drift YOK (git status yalnız schema M);
+                            (4) prisma validate PASS (exit 0);
+                            (5) before/after SHA-256 =
+                            e2fe0858ca909a15399349df48ad2bcd865ef18fed78d1e1b8525b07ee2b8fdc /
+                            918bbae7ff3099c69fdd13556c4fa394d741164751ae1d94c6e58d8f8634baad;
+                            /// doc-comment dönüşümü YOK; prisma format hedef üzerinde
+                            ÇALIŞTIRILMADI; prisma generate lokal ÇALIŞTIRILMADI
+                            (canonical qualification CI'da koşar — 9/9 PASS buna dahildir)
+FRESH CONSUMER SAYIMI       Paketle BİREBİR: TAM 3 runtime consumer (BANK settlement-verifier ·
+                            CLIENT-INTAKE-REVIEW · UYAP trigger-haciz; permissionGrant.findMany)
+                            + TAM 6 spec/test dosyası → MATERIAL_DRIFT YOK
+PRESERVED STATES            PermissionGrant datamodel'i aynen; :10089 ReportingLine yorumu
+                            DOKUNULMADI; CLF-P7-02 successor kaydı AÇIK (bu kalem KAPANMADI)
+```
+
+### 10.2 G4 literal kaydı
+
+```text
+G4 / Ç-F01 = BLOCKED_COMPETING_WRITER
+EXECUTION = NOT AUTHORIZED BY C25
+W3F07 = UNTOUCHED
+
+blockerCode      BLOCKED_COMPETING_WRITER
+blockingLayer    WORKTREE / UNCOMMITTED OWNER-WIP (C:/Development/HY_WT/W3F07,
+                 branch claude/w3-f07-cron-overlap-job-identity-r01 @ 4da92ab1)
+evidence         Ç-F01 ölçüm-hedef dosyası office-approval-executor-cron.service.ts
+                 W3F07'de uncommitted M (bu oturumda salt-okuma yeniden teyit edildi)
+whyNotRevision   Çelişki semantiği geçerli; bloke nedeni içerik değil, aynı-dosya
+                 competing-writer fail-closed kuralıdır (C24 §3.1 + C25 §0.1)
+requiredAction   W3F07 terminal disposition + fresh main reconciliation + G4 için
+                 AYRI owner GO
+preservedWip     W3F07 worktree/branch/dosyaları bu görevde AÇILIP KAYDEDİLMEDİ,
+                 stage/format/restore/merge EDİLMEDİ
+```
+
+### 10.3 Receipt sonucu
+
+```text
+P8-REPAIR TOTAL      4/5 EXECUTED (G1 · G2 · G3 · G5 MERGED; G4 BLOCKED)
+D13                  NOT STARTED (bu receipt başlatmaz)
+P8 FINAL             BLOCKED (bu receipt başlatmaz; D14 dahil ön-koşullar düşürülmedi)
+Ç-F06..Ç-F08         RECORD-ONLY — iş açılmadı
+SECRET/TOKEN/NONCE   YOK — bu bölüme güvenlik-hassas içerik yazılmamıştır
+```
