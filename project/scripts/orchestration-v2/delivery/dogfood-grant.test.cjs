@@ -366,8 +366,70 @@ test('DG05  the request names a task grant, and dispatch validates against it', 
   // The exact expression executor-adapter.cjs uses to choose what to validate.
   const handed = resolved.grant || resolved.standingGrant;
   assert.notEqual(handed, resolved.standingGrant, 'the standing grant must not be what dispatch validates');
-  authority.validateAgainstGrant({ grant: handed, spec: resolved.spec, revoked: false, nowMs: Date.now() });
+
+  // NOT Date.now(). The R02 grant is a HISTORICAL artefact: the task ran,
+  // merged and closed, and its expiresAt is a generation-time value
+  // (make-dogfood-authority.cjs: issuance + 30 days). Validated against the
+  // wall clock, this test became a time bomb — from the day that window ended,
+  // every PR failed here with GRANT_EXPIRED while the regression it guards
+  // (dispatch validating the WRONG OBJECT) was entirely absent (DGF-01/DGF-02).
+  //
+  // So the dispatch-selection property is asserted at a deterministic instant
+  // inside the grant's own validity window. The grant carries no issuedAt
+  // field; the issuance instant derives from the generator's lifetime contract
+  // (expiresAt − 30 days), and the chosen instant is asserted to sit strictly
+  // between the two, so even a regenerated grant keeps the bound by
+  // construction.
+  const expiresAtMs = Date.parse(handed.expiresAt);
+  assert.ok(Number.isFinite(expiresAtMs), 'the task grant must carry a parseable expiresAt');
+  const GRANT_LIFETIME_MS = 30 * 24 * 3600 * 1000;
+  const issuedAtMs = expiresAtMs - GRANT_LIFETIME_MS;
+  const validNowMs = issuedAtMs + Math.floor(GRANT_LIFETIME_MS / 2);
+  assert.ok(
+    issuedAtMs < validNowMs && validNowMs < expiresAtMs,
+    'the deterministic instant must sit strictly inside the validity window',
+  );
+  const binding = authority.validateAgainstGrant({
+    grant: handed,
+    spec: resolved.spec,
+    revoked: false,
+    nowMs: validNowMs,
+  });
+
+  // The full authority conjunction ran on the objects the request named —
+  // grantKind, manualMergeRequired, owner evidence, task pinning and every
+  // pinned digest live inside validateAgainstGrant — and the binding it
+  // returns names the same task the request does.
+  assert.equal(binding.grantId, handed.grantId);
+  assert.equal(binding.pinned.taskId, resolved.request.taskId);
 
   // And the field whose absence produced the refusal, stated rather than implied.
   assert.equal(typeof handed.manualMergeRequired, 'boolean');
+});
+
+test('DG05b expiry stays fail-closed: at expiresAt the same dispatch validation refuses GRANT_EXPIRED', () => {
+  // The negative control for DG05's deterministic instant. DG05 stops reading
+  // the wall clock; what must NOT quietly follow is the expiry gate weakening.
+  // authority.cjs refuses at `exp <= nowMs`, so the boundary instant itself is
+  // the exact first moment of refusal — asserted here with the same grant, the
+  // same spec and the same call, differing only in nowMs.
+  const requestMod = require('../service/request.cjs');
+  const authority = require('../orchestrator/authority.cjs');
+
+  const resolved = requestMod.load({ repoCwd: REPO_ROOT, requestPath: REQUEST_REL, verifyArtefacts: false });
+  assert.ok(resolved.grant, 'the request must name a task grant');
+  const expiresAtMs = Date.parse(resolved.grant.expiresAt);
+  assert.ok(Number.isFinite(expiresAtMs), 'the task grant must carry a parseable expiresAt');
+
+  assert.throws(
+    () =>
+      authority.validateAgainstGrant({
+        grant: resolved.grant,
+        spec: resolved.spec,
+        revoked: false,
+        nowMs: expiresAtMs,
+      }),
+    (e) => e.code === 'GRANT_EXPIRED',
+    'an expired grant must refuse dispatch with exactly GRANT_EXPIRED',
+  );
 });
