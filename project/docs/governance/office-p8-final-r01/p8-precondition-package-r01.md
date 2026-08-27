@@ -417,3 +417,119 @@ DEĞİŞMEYENLER        20_OF_20_DISPOSED · P8_FINAL BLOCKED · CLF-O0-01 succe
 
 A.2(c) ve A.1.1'deki pre-materialization ölçümleri tarihsel kayıt olarak
 DEĞİŞTİRİLMEDEN korunmuş, yalnız güncel pointer notları eklenmiştir.
+
+### B.5 HISTORICAL “15” IDENTIFIER SUPERSESSION AND FRESH INVENTORY MATERIALIZATION
+
+*(Append-only ek — C22, 2026-08-27, main `71014ab28d2cda5d773586edb5365ea1b6f99cb9`.
+§B.1–§B.4 tarihsel içeriği DEĞİŞTİRİLMEMİŞTİR.)*
+
+- **§B.4 owner kararı `SEÇENEK-2` bu ekle MATERYALİZE EDİLMEKTEDİR**
+  (ratifikasyon: C19-P8-PRECONDITION-OWNER-DECISION-RATIFICATION-R01, 2026-08-26;
+  materyalizasyon GO'su: C22, 2026-08-27).
+- Tarihsel "15 çelişki" sayı-tanımlayıcısı **yalnız operatif tanımlayıcı olarak
+  supersede edilmiştir** (D17 emsal deseni — §F.1).
+- Özgün 15 üyeli liste **`UNRECOVERED`** durumundadır; geriye dönük olarak
+  **oluşturulmamış ve doğrulanmamıştır**.
+- Fresh Ç-F envanteri tarihsel listeden **bağımsız bir ölçümdür**; fresh kalemlerin
+  **hiçbiri** tarihsel "15"in üyesi olarak iddia edilmez.
+- **Operatif pointer:**
+
+```text
+office-p8-final-r01/p8-fresh-contradiction-inventory-r01.md
+```
+
+- Tarihsel sayı kayıtlarının fresh konumları bulunmuş ve KORUNMUŞTUR:
+  `decision-log.md:539` ve `OFFICE-DELIVERY-MANIFEST.md:1863`
+  (2026-08-27 fresh grep; `project/docs/governance/**` genelinde başka konum yok).
+  **Decision-log ve manifest DEĞİŞTİRİLMEMİŞTİR.**
+- §B.4'teki tarihsel `Ç-01..Ç-15` şablonu DOLDURULMAMIŞ, DEĞİŞTİRİLMEMİŞ ve
+  SİLİNMEMİŞTİR; tarihsel kayıt olarak korunur.
+- Bu kayıt hiçbir **repair / implementation / successor / schema / execution**
+  yetkisi ÜRETMEZ.
+- Fresh envanterdeki Ç-F disposition'ları **owner ratifikasyonu BEKLEMEKTEDİR**
+  (`PENDING_OWNER_DECISION`); bu ek hiçbir disposition'ı karara bağlamaz.
+
+### C.2 NON-AUTHORIZING CROSS-REFERENCE MATERIALIZATION
+
+*(Append-only ek — C22, 2026-08-27, main `71014ab28d2cda5d773586edb5365ea1b6f99cb9`.
+§C/§C.1 tarihsel içeriği DEĞİŞTİRİLMEMİŞTİR. §C.1 owner kararı `EVET` (2026-08-26)
+bu ekle materyalize edilmektedir.)*
+
+Ratifiye edilen üç bağ, exact olarak:
+
+```text
+OD-06 ↔ D-WR-6
+OD-12/13 ↔ D-WR-3
+OD-19 ↔ D-WR-5
+```
+
+#### C.2.1 OD-06 ↔ D-WR-6
+
+- **OD kaydı:** `project/docs/governance/OFFICE-OWNER-DECISIONS.md:35-36`
+  (`OFF/OD-06` — FoundingLawyer tarihsel statü; OWNER SELECTION: OPTION B —
+  CLOSED/CANONICAL, 2026-08-13 F06 pack). Disposition kanıtı:
+  `decision-log.md:193` (optionB satırı) + `:220-223` (OD-06 owner yorum bloğu);
+  F06 kartı: `office-p4-authz-r01/f06-open-od-decision-package.md:96`.
+- **D-WR kaydı:** `project/docs/governance/office-wr01-decomposition-r01/wr01-decomposition-brief-r01.md:65`
+  (D-WR-6 — FOUNDER = `ANY_ONE`; RATIFIED aktarım) + `:106-125` (§1.3 FOUNDER
+  kimliği ↔ ReportingLine ayrımı alt bölümü).
+- **C.1 owner kararındaki ilişki tanımı (paket §C tablosu, OD-06 satırı):** WR01
+  D-WR-6 FOUNDER=`ANY_ONE` tasarımı; brief §1.3 FOUNDER kimliğinin
+  ReportingLine'dan bağımsızlığını doğrular ve OD-06'nın "bypass üretmez"
+  sınırıyla çelişmez — brief `OFF/OD-06`'ya açık atıf yapmaz (INFERRED).
+- **Bağın niteliği:** `EXPLICIT CROSS-REFERENCE OF RATIFIED INFERRED RELATION`
+
+```text
+NON-AUTHORIZING — this cross-reference creates no implementation, successor, schema, migration, deployment, or execution authority and does not change the status of WR01-B06 or WR01-B07.
+```
+
+#### C.2.2 OD-12/13 ↔ D-WR-3
+
+- **OD kayıtları:** `project/docs/governance/OFFICE-OWNER-DECISIONS.md:53-54`
+  (`OFF/OD-12` — çoklu approval seviyesi; OPTION B — CLOSED/CANONICAL) ve `:56-57`
+  (`OFF/OD-13` — delegation kapsamı; OPTION B — CLOSED/CANONICAL). Disposition
+  kanıtı: `decision-log.md:193` + `:226-231` (OD-12+13 owner yorum bloğu);
+  F06 kartları: `f06-open-od-decision-package.md:121` ve `:136`.
+- **D-WR kaydı:** `wr01-decomposition-brief-r01.md:62` (D-WR-3 — politika sözlüğü
+  `ANY_ONE/ALL/QUORUM/SEQUENTIAL/PARALLEL`; bildirim kümesi ≠ kapanış karar sayısı;
+  delegasyon action-scoped + süreli + geri-alınabilir + yetki büyütemez) +
+  `:442-449` (§3.7 D-WR-3 ↔ `PermissionGrant` fark analizi).
+- **C.1 owner kararındaki ilişki tanımı (paket §C tablosu, OD-12 ve OD-13
+  satırları):** OD-12 için — WR01 D-WR-3 politika sözlüğü + B06 çok-kararlı
+  taşıyıcı ihtiyacı bu kararın üstüne kurulacaktır; OD-13 için — D-WR-3 delegasyon
+  nitelikleri OD-13/B ile aynı ailedendir ve brief §3.7 `PermissionGrant` fark
+  analizi bu kararın gelecek tüketicisinin ön-analizidir (INFERRED).
+- **Bağın niteliği:** `EXPLICIT CROSS-REFERENCE OF RATIFIED INFERRED RELATION`
+
+```text
+NON-AUTHORIZING — this cross-reference creates no implementation, successor, schema, migration, deployment, or execution authority and does not change the status of WR01-B06 or WR01-B07.
+```
+
+#### C.2.3 OD-19 ↔ D-WR-5
+
+- **OD kaydı:** `project/docs/governance/OFFICE-OWNER-DECISIONS.md:74-75`
+  (`OFF/OD-19` — workload metriğinin kullanım amacı; OPTION B — CLOSED/CANONICAL).
+  Disposition kanıtı: `decision-log.md:193` + `:240-243` (OD-19 owner yorum bloğu);
+  F06 kartı: `f06-open-od-decision-package.md:166`.
+- **D-WR kaydı:** `wr01-decomposition-brief-r01.md:64` (D-WR-5 — digest
+  kişi-performans üretmez; yalnız iş durumu / bekleyen / gecikme / eskalasyon).
+- **C.1 owner kararındaki ilişki tanımı (paket §C tablosu, OD-19 satırı):** WR01
+  D-WR-5 "digest kişi-performans üretmez" kuralı OD-19/B ile aynı sınırı taşır;
+  B07 digest katmanı MERGED (#2442) ancak brief/B07 kaydı `OFF/OD-19`'a açık atıf
+  yapmaz (INFERRED).
+- **Bağın niteliği:** `EXPLICIT CROSS-REFERENCE OF RATIFIED INFERRED RELATION`
+
+```text
+NON-AUTHORIZING — this cross-reference creates no implementation, successor, schema, migration, deployment, or execution authority and does not change the status of WR01-B06 or WR01-B07.
+```
+
+#### C.2.4 Sınır beyanları
+
+- Bu kayıt OD veya D-WR kararlarını **BİRLEŞTİRMEZ**.
+- Yeni **ownership ÜRETMEZ**.
+- Bir kaydı diğerinin **implementation yetkisi YAPMAZ**.
+- Kaynak belgelerin **semantic outcome'unu DEĞİŞTİRMEZ**; üç bağ da yalnız
+  ratifiye edilmiş INFERRED ilişkinin explicit kaydıdır.
+- **WR01 brief, `OFFICE-OWNER-DECISIONS.md`, F06 paketi ve OD/D-WR kaynak
+  belgeleri bu görevde DEĞİŞTİRİLMEMİŞTİR** (yalnız salt-okuma fresh doğrulama
+  yapılmıştır).
