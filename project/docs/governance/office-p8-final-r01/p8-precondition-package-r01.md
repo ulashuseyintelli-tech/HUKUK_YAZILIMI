@@ -557,3 +557,34 @@ office-p8-final-r01/p8-fresh-contradiction-inventory-r01.md   (§G — owner dis
   kapanmıştır. Bu sonuç P8 FINAL'i AÇMAZ; kalan P8 ön-koşulları (D13 kapsamındaki
   P6 hash-matrisi bağımlılıkları, D14 OFFICE-P4 umbrella terminal kaydı ve diğer
   açık P8-FOLD kalemleri) kendi AYRI owner GO'larına tabidir.
+
+### D.18 D14 UMBRELLA TERMINAL EVIDENCE MATERIALIZATION
+
+*(Append-only ek — C23 PR1, 2026-08-27. Önceki bölümler DEĞİŞTİRİLMEMİŞTİR.
+Bölüm numarası notu: C23 talimatındaki `D.15`/`D.16` başlık numaraları, §D
+tablosunda owner karar kimlikleri olarak kullanılmış `D15`/`D16`/`D17` ile
+çakıştığından, talimatın çakışma hükmü uyarınca bir sonraki serbest append-only
+numara `D.18` kullanılmıştır; hiçbir tarihsel başlık renumber edilmemiştir.)*
+
+- **D14 umbrella terminal EVIDENCE RECORD'u oluşturulmuştur** (C23 PR1
+  materyalizasyonu). Operatif pointer:
+
+```text
+office-p8-final-r01/p4-umbrella-terminal-record-r01.md
+```
+
+- Fresh ölçüm SHA'sı: `ed81cb2fd841b86a7ee2e0790c7125d54bffe5d9`
+  (local main == origin/main; ölçüm zamanı UTC 2026-08-27T18:03:30Z).
+- Evidence record'un kapanış zinciri sayımı: 11 mandatory kalem —
+  `UNVERIFIED 0` (7 `VERIFIED_TERMINAL` · 2 `VERIFIED_CANONICAL` ·
+  1 `VERIFIED_EXCLUDED_NON_CANONICAL` (F02) · 1 `VERIFIED_CARRY_FORWARD`
+  (F05)).
+- **Terminal verdict henüz `PENDING_OWNER` durumundadır** (record §I); bu ek
+  verdict yazmaz.
+- **D14 henüz KARŞILANDI İLAN EDİLMEMİŞTİR**; D14'ün nihai durumu yalnız owner
+  terminal verdict'i sonrasında (C23 PR2) kaydedilebilir. P8 FINAL BLOKLU
+  kalır.
+- Record NON-AUTHORIZING'dir: hiçbir implementation, repair, successor,
+  schema, migration, deployment, register-flip, runtime veya execution
+  yetkisi üretmez. F05 / runtime-D13 / CLF-O0-01 / Ç-F01..05 residual'ları
+  record §E'de literal korunur.
