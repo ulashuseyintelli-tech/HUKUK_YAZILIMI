@@ -1924,6 +1924,16 @@ yetkisi ister (`OWNER GO REQUIRED / NOT STARTED`).
 | CLF-O0-01 | Owner P8-C4 handoff envanteri (repo-içi kart yok) | requestRevision domain-owned guard → X4 |
 | Kozmetik personel ad-hijyeni | Owner P8-C4 handoff envanteri | kozmetik; blocker değil |
 
+> **Kayıt-düzeyi güncellik şerhi — /auth/me passwordChangedAt (2026-08-27, Ç-F03 P8-REPAIR):**
+> Yukarıdaki `/auth/me passwordChangedAt` satırı successor-inventory kaydı olarak KORUNUR. İçerik
+> tarafındaki güvenlik kapanışı terminal kayıtlıdır: `RELEASE13 = ACTIVE / VERIFIED`,
+> `SECURITY RESPONSE FIX = T+24 VERIFIED / CLOSED`, `AUTHPUB-R03 = T+24 PASS / TERMINALLY CLOSED`
+> (kanıt: `office-wr01-decomposition-r01/authpub-r03-t24-terminal-closeout-r01.md` §1). Kayıt-düzeyi
+> disposition owner tarafından `D5: P8-FOLD` (2026-08-26) ve `Ç-F03 = P8-REPAIR` (2026-08-27) olarak
+> ratifiye edilmiştir (`office-p8-final-r01/` kayıtları). Bu şerh successor kalemini KAPATMAZ, SİLMEZ
+> veya tamamlanmış GÖSTERMEZ; nihai kayıt-düzeyi kapanış P8 kapsamındaki AYRI owner işlemine tabidir.
+> `decision-log.md` tarafındaki tarihsel envanter satırı owner-WIP olarak DOKUNULMAMIŞTIR.
+
 ### 13.5 OFFICE-WR01 — Master Plan Kaydı
 
 ```text
