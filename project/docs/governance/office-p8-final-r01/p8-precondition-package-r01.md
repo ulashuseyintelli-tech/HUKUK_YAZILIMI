@@ -645,7 +645,7 @@ başlık renumber edilmemiştir.)*
   C28-PR1). Operatif pointer:
 
 ```text
-office-p8-final-r01/p8-d13-runtime-residual-matrix-r01.md   (C28-PR1)
+office-p8-final-r01/p8-d13-runtime-residual-matrix-r01.md   (C28-PR1 / #2483)
 ```
 
 - **Measurement baseline:** canonical `f0d44e42ee0d119024d266a1fb5b135341853dfe`
