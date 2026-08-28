@@ -634,3 +634,34 @@ mandatory zincir 11/11 VERIFIED, UNVERIFIED 0)
   karşılanması P8 FINAL launch/closure anlamına gelmez; kalan açık P8
   ön-koşulları (D13 kapsamındaki P6 hash-matrisi bağımlılıkları ve diğer açık
   P8-FOLD kalemleri) kendi AYRI owner GO'larına tabidir.
+
+### D.20 D13 FRESH P6 HASH-MATRIX MEASUREMENT MATERIALIZATION
+
+*(Append-only ek — C28 PR1, 2026-08-28. Önceki bölümler DEĞİŞTİRİLMEMİŞTİR.
+D.19'u izleyen serbest append-only numara kullanılmıştır; hiçbir tarihsel
+başlık renumber edilmemiştir.)*
+
+- **D13 için onarımlar-sonrası fresh P6 hash-matrisi ÜRETİLMİŞTİR** (C28 FAZ 1 /
+  C28-PR1). Operatif pointer:
+
+```text
+office-p8-final-r01/p8-d13-runtime-residual-matrix-r01.md   (C28-PR1 / #2483)
+```
+
+- **Measurement baseline:** canonical `f0d44e42ee0d119024d266a1fb5b135341853dfe`
+  (local main == origin/main, fresh; C27 #2481/#2482 ancestry VERIFIED; açık PR 0)
+  ↔ RELEASE13 `0cf1642f65818801d389ae797479da40939c9e7d`
+  (`C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE13`, tracked temiz); ölçüm
+  penceresi UTC 2026-08-28T18:20Z–18:45Z; `LIVE_PROCESS_IDENTITY = VERIFIED`
+  (port 8080 / PID 45348 → RELEASE13 dist `main.js`; scanner consumer `PRESENT`).
+- **Özet sayım:** 22 operatif satır — `DEPLOYED_MATCH_VERIFIED` 8 ·
+  `RUNTIME_RESIDUAL_RECORDED` 8 (distinct kök 7) ·
+  `SOURCE_TEXT_DRIFT_RUNTIME_NEUTRAL` 2 · `NOT_RUNTIME_APPLICABLE` 3 ·
+  `HISTORICAL_TERMINAL_REFERENCE_ONLY` 1; alan-düzeyi `UNKNOWN` 3
+  (C15/B02 migration DB apply fresh doğrulanmadı · süreç cwd/env ölçülmedi).
+- **D13 VERDICT = PENDING_OWNER.** Bu pointer D13'ü KARŞILANMIŞ SAYMAZ; hiçbir
+  residual'ı kapatmaz; deploy / F05 / execution / repair yetkisi ÜRETMEZ;
+  tarihsel D13 satırları (§D tablosu D13 dahil) DEĞİŞTİRİLMEMİŞTİR.
+- **P8 FINAL hâlâ BAŞLAMAMIŞTIR** (`BLOCKED`); D13 disposition'ı C28 FAZ 2 owner
+  checkpoint'inin konusudur ve owner verdict'i AYRI kayıtla (C28-PR2)
+  materyalize edilecektir.
