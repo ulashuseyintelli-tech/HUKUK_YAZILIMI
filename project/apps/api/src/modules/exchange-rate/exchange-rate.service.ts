@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { runWithOverlapGuard } from '../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 export interface ExchangeRate {
@@ -40,18 +41,23 @@ export class ExchangeRateService {
   }
 
   // Her gun saat 15:30'da TCMB kurlarini guncelle (TCMB 15:30'da gunceller)
-  @Cron('30 15 * * 1-5', { timeZone: SCHEDULER_TIMEZONE }) // Pazartesi-Cuma 15:30
+  @Cron('30 15 * * 1-5', { name: 'ExchangeRateService.scheduledRateUpdate', timeZone: SCHEDULER_TIMEZONE }) // Pazartesi-Cuma 15:30
   async scheduledRateUpdate() {
-    this.logger.log('Zamanlanmis kur guncellemesi basliyor...');
-    const success = await this.fetchRatesFromTCMB();
-    if (!success) {
-      // fetchRatesFromTCMB kendi hatasini yutar (fallback'e duser) — burada YALNIZ
-      // gorunurluk icin ErrorLog'a bildiriyoruz, davranis (fallback) DEGISMEZ.
-      reportCronJobFailure(
-        this.errorReporter,
-        'exchangeRate.scheduledRateUpdate',
-        new Error('TCMB kur guncellemesi basarisiz, fallback kurlar kullanildi'),
-      );
+    const result = await runWithOverlapGuard('ExchangeRateService.scheduledRateUpdate', async () => {
+      this.logger.log('Zamanlanmis kur guncellemesi basliyor...');
+      const success = await this.fetchRatesFromTCMB();
+      if (!success) {
+        // fetchRatesFromTCMB kendi hatasini yutar (fallback'e duser) — burada YALNIZ
+        // gorunurluk icin ErrorLog'a bildiriyoruz, davranis (fallback) DEGISMEZ.
+        reportCronJobFailure(
+          this.errorReporter,
+          'exchangeRate.scheduledRateUpdate',
+          new Error('TCMB kur guncellemesi basarisiz, fallback kurlar kullanildi'),
+        );
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] ExchangeRateService.scheduledRateUpdate already running, skipping');
     }
   }
 

@@ -8,6 +8,7 @@ import {
   isIcrabotOutboxCronEnabled,
 } from './outbox.constants';
 import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
+import { runWithOverlapGuard } from '../../../common/scheduler-overlap-guard';
 
 /**
  * Icrabot v28 outbox platform cron'u.
@@ -18,7 +19,6 @@ import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 @Injectable()
 export class OutboxCronService {
   private readonly logger = new Logger(OutboxCronService.name);
-  private running = false;
 
   constructor(
     private readonly actionHandlerService: ActionHandlerService,
@@ -34,17 +34,11 @@ export class OutboxCronService {
    * /// - Nest ScheduleModule → @Cron(EVERY_MINUTE) platform outbox tüketimi
    * /// </remarks>
    */
-  @Cron(CronExpression.EVERY_MINUTE, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'OutboxCronService.processOutboxActions', timeZone: SCHEDULER_TIMEZONE })
   async processOutboxActions(): Promise<void> {
     if (!isIcrabotOutboxCronEnabled()) return;
 
-    if (this.running) {
-      this.logger.warn('[outbox-cron] previous run still active, skipping');
-      return;
-    }
-
-    this.running = true;
-    try {
+    const result = await runWithOverlapGuard('OutboxCronService.processOutboxActions', async () => {
       const recovered = await this.outboxService.recoverStaleProcessingActions();
       const limit = getIcrabotOutboxBatchSize();
       const pending = await this.actionHandlerService.processPendingActions({ kind: 'platform' }, limit);
@@ -55,13 +49,14 @@ export class OutboxCronService {
           `[outbox-cron] processed recovered=${recovered.recoveredCount}, failedRecovered=${recovered.failedCount}, deadRecovered=${recovered.deadCount}, pending=${pending.length}, retryable=${retryable.length}`,
         );
       }
-    } catch (error) {
+    }).catch((error) => {
       // PR-3: outbox cron hatasını ErrorLog'a düşür (source=CRON). Davranış KORUNUR → rethrow
       // (Nest yine yükseltir/loglar). report() fire-and-forget + swallow → akışı bozmaz.
       void this.errorReporter.report({ source: 'CRON', operation: 'outbox.processOutboxActions', error });
       throw error;
-    } finally {
-      this.running = false;
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[outbox-cron] previous run still active, skipping');
     }
   }
 }

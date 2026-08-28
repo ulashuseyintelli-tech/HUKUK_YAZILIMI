@@ -12,6 +12,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { runWithOverlapGuard } from '../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 interface UsageRecord {
@@ -207,96 +208,111 @@ export class DeprecatedUsageTrackerService implements OnModuleInit {
    * Günlük rapor oluştur ve logla.
    * Her gün 00:05'te çalışır.
    */
-  @Cron('5 0 * * *', { timeZone: SCHEDULER_TIMEZONE })
+  @Cron('5 0 * * *', { name: 'DeprecatedUsageTrackerService.generateDailyReport', timeZone: SCHEDULER_TIMEZONE })
   async generateDailyReport(): Promise<void> {
-    try {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const dateStr = yesterday.toISOString().split('T')[0];
+    const result = await runWithOverlapGuard('DeprecatedUsageTrackerService.generateDailyReport', async () => {
+      try {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const dateStr = yesterday.toISOString().split('T')[0];
 
-      const report = this.getDailyReport(dateStr);
+        const report = this.getDailyReport(dateStr);
 
-      // Zero usage günlerini güncelle
-      const trackedServices = ['RuleEngine (automation)', 'RuleEngineService (rule-engine)'];
+        // Zero usage günlerini güncelle
+        const trackedServices = ['RuleEngine (automation)', 'RuleEngineService (rule-engine)'];
 
-      for (const serviceName of trackedServices) {
-        const serviceUsage = report.services[serviceName];
+        for (const serviceName of trackedServices) {
+          const serviceUsage = report.services[serviceName];
 
-        if (!serviceUsage || serviceUsage.totalCalls === 0) {
-          // Sıfır kullanım - counter artır
-          const current = this.zeroUsageDays.get(serviceName) || 0;
-          this.zeroUsageDays.set(serviceName, current + 1);
+          if (!serviceUsage || serviceUsage.totalCalls === 0) {
+            // Sıfır kullanım - counter artır
+            const current = this.zeroUsageDays.get(serviceName) || 0;
+            this.zeroUsageDays.set(serviceName, current + 1);
 
-          this.logger.log(
-            `📊 ${serviceName}: ${current + 1} gün ardışık sıfır kullanım`
-          );
-        } else {
-          // Kullanım var - counter sıfırla
-          this.zeroUsageDays.set(serviceName, 0);
+            this.logger.log(
+              `📊 ${serviceName}: ${current + 1} gün ardışık sıfır kullanım`
+            );
+          } else {
+            // Kullanım var - counter sıfırla
+            this.zeroUsageDays.set(serviceName, 0);
 
-          this.logger.warn(
-            `⚠️ ${serviceName}: ${serviceUsage.totalCalls} kullanım (${dateStr})`
-          );
+            this.logger.warn(
+              `⚠️ ${serviceName}: ${serviceUsage.totalCalls} kullanım (${dateStr})`
+            );
+          }
         }
-      }
 
-      // Silme için hazır olanları bildir
-      for (const serviceName of trackedServices) {
-        if (this.isReadyForRemoval(serviceName)) {
-          this.logger.log(
-            `✅ ${serviceName}: 7 gün sıfır kullanım - SİLME İÇİN HAZIR!`
-          );
+        // Silme için hazır olanları bildir
+        for (const serviceName of trackedServices) {
+          if (this.isReadyForRemoval(serviceName)) {
+            this.logger.log(
+              `✅ ${serviceName}: 7 gün sıfır kullanım - SİLME İÇİN HAZIR!`
+            );
+          }
         }
+      } catch (error) {
+        this.logger.error('Günlük deprecated usage raporu hatası:', error);
+        reportCronJobFailure(this.errorReporter, 'deprecatedUsageTracker.generateDailyReport', error);
       }
-    } catch (error) {
-      this.logger.error('Günlük deprecated usage raporu hatası:', error);
-      reportCronJobFailure(this.errorReporter, 'deprecatedUsageTracker.generateDailyReport', error);
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] DeprecatedUsageTrackerService.generateDailyReport already running, skipping');
     }
   }
 
   /**
    * Buffer'ı DB'ye yaz (her saat).
    */
-  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_HOUR, { name: 'DeprecatedUsageTrackerService.flushBuffer', timeZone: SCHEDULER_TIMEZONE })
   async flushBuffer(): Promise<void> {
-    if (this.usageBuffer.length === 0) return;
+    const result = await runWithOverlapGuard('DeprecatedUsageTrackerService.flushBuffer', async () => {
+      if (this.usageBuffer.length === 0) return;
 
-    const records = [...this.usageBuffer];
-    this.usageBuffer = [];
+      const records = [...this.usageBuffer];
+      this.usageBuffer = [];
 
-    try {
-      // Batch insert (CpeDeprecatedUsage tablosu varsa)
-      // Şimdilik sadece log
-      this.logger.debug(`Flushed ${records.length} deprecated usage records`);
-    } catch (error) {
-      // Hata durumunda buffer'a geri ekle
-      this.usageBuffer.push(...records);
-      this.logger.error('Failed to flush deprecated usage buffer', error);
-      reportCronJobFailure(this.errorReporter, 'deprecatedUsageTracker.flushBuffer', error);
+      try {
+        // Batch insert (CpeDeprecatedUsage tablosu varsa)
+        // Şimdilik sadece log
+        this.logger.debug(`Flushed ${records.length} deprecated usage records`);
+      } catch (error) {
+        // Hata durumunda buffer'a geri ekle
+        this.usageBuffer.push(...records);
+        this.logger.error('Failed to flush deprecated usage buffer', error);
+        reportCronJobFailure(this.errorReporter, 'deprecatedUsageTracker.flushBuffer', error);
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] DeprecatedUsageTrackerService.flushBuffer already running, skipping');
     }
   }
 
   /**
    * Eski kayıtları temizle (30 günden eski).
    */
-  @Cron('0 3 * * *', { timeZone: SCHEDULER_TIMEZONE }) // Her gün 03:00
+  @Cron('0 3 * * *', { name: 'DeprecatedUsageTrackerService.cleanupOldRecords', timeZone: SCHEDULER_TIMEZONE }) // Her gün 03:00
   async cleanupOldRecords(): Promise<void> {
-    try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - 30);
-      const cutoffStr = cutoffDate.toISOString().split('T')[0];
+    const result = await runWithOverlapGuard('DeprecatedUsageTrackerService.cleanupOldRecords', async () => {
+      try {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - 30);
+        const cutoffStr = cutoffDate.toISOString().split('T')[0];
 
-      // Memory'deki eski günleri temizle
-      for (const [date] of this.dailyUsage) {
-        if (date < cutoffStr) {
-          this.dailyUsage.delete(date);
+        // Memory'deki eski günleri temizle
+        for (const [date] of this.dailyUsage) {
+          if (date < cutoffStr) {
+            this.dailyUsage.delete(date);
+          }
         }
-      }
 
-      this.logger.debug('Cleaned up old deprecated usage records');
-    } catch (error) {
-      this.logger.error('Eski deprecated usage kaydı temizleme hatası:', error);
-      reportCronJobFailure(this.errorReporter, 'deprecatedUsageTracker.cleanupOldRecords', error);
+        this.logger.debug('Cleaned up old deprecated usage records');
+      } catch (error) {
+        this.logger.error('Eski deprecated usage kaydı temizleme hatası:', error);
+        reportCronJobFailure(this.errorReporter, 'deprecatedUsageTracker.cleanupOldRecords', error);
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] DeprecatedUsageTrackerService.cleanupOldRecords already running, skipping');
     }
   }
 }

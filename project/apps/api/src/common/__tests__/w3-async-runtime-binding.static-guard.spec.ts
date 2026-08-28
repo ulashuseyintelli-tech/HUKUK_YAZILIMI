@@ -439,12 +439,29 @@ function methodBodyByName(file: string, name: string): string | null {
   return sliceBalanced(src, braceStart, '{', '}') || null;
 }
 /**
- * Bir @Cron metodunun govdesi TEK bir `this.X(...)` cagrisindan ibaretse (orn.
- * errorLogRetention.handleCron -> runRetentionCleanup), gercek mantik/hata-raporlama
- * o delege metodun icindedir — onun govdesini de dahil eder (tek seviye, ayni dosya).
+ * W3-F07: `runWithOverlapGuard(jobId, async () => { <ic-govde> })` sarmalayicisi
+ * bir INDIRECTION KATMANIdir (failure-reporting'in kendisiyle ilgisi yok — bkz.
+ * common/scheduler-overlap-guard.ts). Delege-tespiti bu sarmalayicinin ICINE
+ * bakabilsin diye, varsa once onu soyar (ic arrow fonksiyonunun govdesini
+ * dondurur); sarmalayici yoksa girdiyi degistirmeden birakir. Katkisal bir
+ * on-adimdir — asagidaki tek-seviye delege regex'i degismez.
+ */
+function unwrapOverlapGuard(body: string): string {
+  const m = /runWithOverlapGuard\s*\(\s*(['"])[^'"]*\1\s*,\s*async\s*\(\)\s*=>\s*\{/.exec(body);
+  if (!m) return body;
+  const braceStart = m.index + m[0].length - 1;
+  const arrowBody = sliceBalanced(body, braceStart, '{', '}');
+  return arrowBody ? arrowBody.slice(1, -1).trim() : body;
+}
+
+/**
+ * Bir @Cron metodunun govdesi (W3-F07 overlap-guard sarmalayicisi soyulduktan
+ * sonra) TEK bir `this.X(...)` cagrisindan ibaretse (orn. errorLogRetention.handleCron
+ * -> runRetentionCleanup), gercek mantik/hata-raporlama o delege metodun
+ * icindedir — onun govdesini de dahil eder (tek seviye, ayni dosya).
  */
 function effectiveBody(cm: CronMethod): string {
-  const inner = cm.body.slice(1, -1).trim();
+  const inner = unwrapOverlapGuard(cm.body.slice(1, -1).trim());
   const delegate = /^(?:await\s+)?(?:return\s+)?this\.([A-Za-z_$][A-Za-z0-9_$]*)\([^)]*\)\s*;?$/.exec(inner);
   if (!delegate) return cm.body;
   const delegateBody = methodBodyByName(cm.file, delegate[1]);
@@ -598,5 +615,151 @@ describe('W3-F06 — dormant async subtree disposition guard (registry-driven)',
         : [...CLEAN.keys()].some((f) => f.startsWith(r.rootPath));
       expect(exists).toBe(true);
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W3-F07-CRON-OVERLAP-AND-JOB-IDENTITY-R01
+// ═══════════════════════════════════════════════════════════════════════════
+import { SCHEDULER_JOB_REGISTRY, SCHEDULER_JOB_REGISTRY_COUNT } from '../scheduler-job-registry';
+
+/** `@Cron(...)` cagri metninden `name: '...'`/`name: "..."` degerini cikarir (varsa). */
+function extractCronName(argsText: string): string | null {
+  const m = /name\s*:\s*(['"])(.*?)\1/.exec(argsText);
+  return m ? m[2] : null;
+}
+
+/**
+ * BAGIMSIZ per-metod (dosya, sinif, metod, argsText) cikarimi. CRON_METHODS (W3-F04)
+ * govde cikarir, argsText SAKLAMAZ — coklu-@Cron dosyalarinda (orn. 8 metodlu
+ * SchedulerService) dosya-seviyeli CRON_CALL_ARGS listesiyle CAPRAZ karsilastirma
+ * yanlis (metod-X'in adini metod-Y'nin adiyla) eslestirir. Bu yuzden W3-F07 kendi
+ * tek-gecisli, metod-argsText'i BIRLIKTE tasiyan tarama helper'ini kullanir —
+ * CRON_METHODS'a (W3-F04, sertifikali) DOKUNMAZ/degistirmez.
+ */
+type CronMethodArgs = { file: string; cls: string; method: string; argsText: string };
+const CRON_METHOD_ARGS: CronMethodArgs[] = [];
+for (const [file, src] of CLEAN) {
+  const classPositions: Array<{ name: string; start: number }> = [];
+  {
+    const re = /export\s+class\s+([A-Za-z0-9_]+)/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = re.exec(src)) !== null) classPositions.push({ name: cm[1], start: cm.index });
+  }
+  const clsAt = (pos: number): string => {
+    let name = 'UNKNOWN';
+    for (const cp of classPositions) { if (cp.start <= pos) name = cp.name; else break; }
+    return name;
+  };
+  let idx = 0;
+  for (;;) {
+    const at = src.indexOf('@Cron', idx);
+    if (at === -1) break;
+    let p = at + 5;
+    while (p < src.length && /\s/.test(src[p])) p++;
+    if (src[p] !== '(') { idx = at + 5; continue; }
+    const argsText = sliceBalanced(src, p, '(', ')');
+    const afterArgs = p + Math.max(argsText.length, 1);
+    const window = src.slice(afterArgs, afterArgs + 400);
+    const sig = /\basync\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/.exec(window);
+    if (sig) {
+      CRON_METHOD_ARGS.push({ file, cls: clsAt(at), method: sig[1], argsText });
+    }
+    idx = afterArgs;
+  }
+}
+const isBoundMethodArgs = (m: CronMethodArgs) => boundOwners(`${m.file}#${m.cls}`).length > 0;
+
+const VALID_OVERLAP_POLICIES = new Set([
+  'ALLOW_PARALLEL',
+  'DENY_PARALLEL',
+  'QUEUE_NEXT',
+  'SKIP_IF_RUNNING',
+]);
+
+describe('W3-F07 — cron overlap + job identity guard (registry-driven)', () => {
+  it('[21] SCHEDULER_JOB_REGISTRY BOS degildir, sayisi sertifikali degeri korur, her kayit gecerli bir overlapPolicy tasir', () => {
+    expect(SCHEDULER_JOB_REGISTRY.length).toBe(SCHEDULER_JOB_REGISTRY_COUNT);
+    expect(SCHEDULER_JOB_REGISTRY.length).toBe(33);
+    for (const r of SCHEDULER_JOB_REGISTRY) {
+      expect(VALID_OVERLAP_POLICIES.has(r.overlapPolicy)).toBe(true);
+      if (r.overlapPolicy === 'ALLOW_PARALLEL' || r.overlapPolicy === 'QUEUE_NEXT') {
+        expect(typeof r.policyReason).toBe('string');
+        expect(r.policyReason!.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('[22] registry jobId degerleri BENZERSIZDIR (duplicate registration statik kaniti)', () => {
+    const ids = SCHEDULER_JOB_REGISTRY.map((r) => r.jobId);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('[23] BAGLI her @Cron cagrisi explicit `name` tasir (crypto.randomUUID() fallback YASAK)', () => {
+    const violations: string[] = [];
+    for (const m of CRON_METHOD_ARGS) {
+      if (!isBoundMethodArgs(m)) continue; // dormant (icrabot) — W3-F06/W3-F07 kapsam disi
+      if (!extractCronName(m.argsText)) {
+        violations.push(`${m.file}#${m.cls}.${m.method}: name eksik — ${m.argsText.replace(/\s+/g, ' ').slice(0, 100)}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('[24] BAGLI her @Cron `name` degeri ya canonical `${Class}.${method}` semasina uyar ya da registry\'de legacyName=true olarak belgelenmis bir istisnadir', () => {
+    const legacyNames = new Set(
+      SCHEDULER_JOB_REGISTRY.filter((r) => r.legacyName).map((r) => r.jobId),
+    );
+    const violations: string[] = [];
+    for (const m of CRON_METHOD_ARGS) {
+      if (!isBoundMethodArgs(m)) continue;
+      const name = extractCronName(m.argsText);
+      if (!name) continue; // [23] zaten bunu ayri yakalar
+      const canonical = `${m.cls}.${m.method}`;
+      if (name !== canonical && !legacyNames.has(name)) {
+        violations.push(`${m.file}#${m.cls}.${m.method}: name='${name}' beklenen='${canonical}' (veya belgelenmis miras ad)`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('[25] registry\'deki 33 jobId\'nin TAMAMI kaynakta gercek bir @Cron `name` olarak GORUNUR (bidirectional tamlik)', () => {
+    const namesInSource = new Set<string>();
+    for (const m of CRON_METHOD_ARGS) {
+      const name = extractCronName(m.argsText);
+      if (name) namesInSource.add(name);
+    }
+    const missing = SCHEDULER_JOB_REGISTRY.map((r) => r.jobId).filter((id) => !namesInSource.has(id));
+    expect(missing).toEqual([]);
+  });
+
+  it('[26] BAGLI her @Cron metodu (govdesinde veya tek-seviye delege ettigi metodda) runWithOverlapGuard( cagirir', () => {
+    const violations: string[] = [];
+    for (const cm of CRON_METHODS) {
+      if (!isBoundCarrier(cm)) continue; // dormant (icrabot) — kapsam disi
+      const eff = effectiveBody(cm);
+      if (!/runWithOverlapGuard\s*\(/.test(eff)) {
+        violations.push(`${cm.file}#${cm.cls}.${cm.method}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('[27] runWithOverlapGuard kullanan her TUKETICI dosya onu canonical common modulunden import eder', () => {
+    const CANONICAL_FILE = 'common/scheduler-overlap-guard.ts';
+    const missing: string[] = [];
+    for (const [file, src] of CLEAN) {
+      if (file === CANONICAL_FILE) continue;
+      if (!/runWithOverlapGuard\s*\(/.test(src)) continue;
+      if (!/from\s*['"][^'"]*common\/scheduler-overlap-guard['"]/.test(src)) missing.push(file);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('[28] DORMANT icrabot @Cron metodlari identity/overlap kontrolunden istisna tutulur (W3-F06/W3-F07 kapsam disi)', () => {
+    const dormant = CRON_METHODS.filter((cm) => !isBoundCarrier(cm));
+    expect(dormant.length).toBe(2);
+    // Bu test hicbir sey ASSERT ETMEZ (mevcut davranislarini degistirmeyiz) — yalniz
+    // [23]-[26]'nin bunlari BILINCLI atladigini kayit altina alir.
   });
 });

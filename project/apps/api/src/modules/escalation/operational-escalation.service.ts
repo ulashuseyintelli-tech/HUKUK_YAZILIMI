@@ -10,6 +10,7 @@ import {
 import { TenantNotifier, DispatchResult } from "./tenant-notifier.service";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 import { reportCronJobFailure } from "../../common/cron-failure-reporting";
+import { runWithOverlapGuard } from "../../common/scheduler-overlap-guard";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
 
@@ -53,13 +54,20 @@ export class OperationalEscalationService {
     private errorReporter: IntegrationErrorReporter
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
+  // W3-F07: overlap guard yalniz bu cron-entrypoint'i sarar — processEscalations()
+  // manuel/test cagrisi icin bagimsiz cagrilabilir kalir.
+  @Cron(CronExpression.EVERY_HOUR, { name: 'OperationalEscalationService.scheduledRun', timeZone: SCHEDULER_TIMEZONE })
   async scheduledRun(): Promise<void> {
-    try {
-      await this.processEscalations();
-    } catch (error) {
-      this.logger.error("Operasyonel eskalasyon turu hatası:", error);
-      reportCronJobFailure(this.errorReporter, "operationalEscalation.scheduledRun", error);
+    const result = await runWithOverlapGuard('OperationalEscalationService.scheduledRun', async () => {
+      try {
+        await this.processEscalations();
+      } catch (error) {
+        this.logger.error("Operasyonel eskalasyon turu hatası:", error);
+        reportCronJobFailure(this.errorReporter, "operationalEscalation.scheduledRun", error);
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn("[scheduler] OperationalEscalationService.scheduledRun already running, skipping");
     }
   }
 

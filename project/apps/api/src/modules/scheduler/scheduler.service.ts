@@ -12,6 +12,7 @@ import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 // "önce hepsini çek sonra ele" YAPILMAZ. Yalnız SEÇİM engellenir — backfill/catch-up
 // SAĞLANMAZ (nafaka/89-ihbarname/e-tebligat şerhi PR-4A kapsam beyanındadır).
 import { ACTIVE_TENANT_WHERE } from '../tenant/tenant-lifecycle';
+import { runWithOverlapGuard } from '../../common/scheduler-overlap-guard';
 
 /**
  * Zamanlayıcı Servisi
@@ -48,57 +49,50 @@ export class SchedulerService {
     void this.errorReporter.report({ source: 'CRON', operation: `scheduler.${operation}`, error });
   }
 
-  // --- isRunning guards ---
-  private isRunning_checkPaymentOrderDeadlines = false;
-  private isRunning_processNafakaPeriods = false;
-  private isRunning_checkMtsReturns = false;
-  // isRunning_retryFailedUyapRequests kaldırıldı — retryFailedUyapRequests
+  // W3-F07: eski per-metod isRunning_* boolean alanları canonical runWithOverlapGuard
+  // (common/scheduler-overlap-guard.ts) ile DEĞİŞTİRİLDİ — process-genelinde paylaşılan
+  // jobId anahtarlı Set, ayrı ayrı alan bakımı gerektirmez.
+  // isRunning_retryFailedUyapRequests zaten kaldırılmıştı — retryFailedUyapRequests
   // UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02 ile devre dışı (ölü yol, cron yok).
-  private isRunning_checkIhbarnameDeadlines = false;
-  private isRunning_checkExternalCaseFollowups = false;
-  private isRunning_checkTebligatStatus = false;
-  // isRunning_sendDueReminders kaldırıldı — sendDueReminders F2'de devre dışı (ölü yol).
+  // isRunning_sendDueReminders zaten kaldırılmıştı — sendDueReminders F2'de devre dışı (ölü yol).
 
   /**
    * Her gün saat 09:00'da çalışır
    * Ödeme emri süresi dolan dosyaları kontrol eder
    */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_DAY_AT_9AM, { name: 'SchedulerService.checkPaymentOrderDeadlines', timeZone: SCHEDULER_TIMEZONE })
   async checkPaymentOrderDeadlines() {
-    if (this.isRunning_checkPaymentOrderDeadlines) {
+    const guardResult = await runWithOverlapGuard('SchedulerService.checkPaymentOrderDeadlines', async () => {
+      this.logger.log('⏰ Ödeme emri süre kontrolü başladı...');
+
+      try {
+        const result = await runBatched(
+          (args) =>
+            this.db.case.findMany({
+              where: {
+                tenant: ACTIVE_TENANT_WHERE,
+                workflowStage: 'WAITING_RESPONSE',
+                nextActionAt: { lte: new Date() },
+                isAutomationEnabled: true,
+                caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
+              },
+              include: {
+                debtors: { include: { debtor: true } },
+              },
+              ...args,
+            }),
+          (caseData) => this.processExpiredPaymentOrder(caseData),
+        );
+
+        this.schedulerMetrics.record('checkPaymentOrderDeadlines', result);
+        this.logger.log(`📋 ${result.processed} dosyada süre dolmuş (truncated: ${result.truncated})`);
+      } catch (error) {
+        this.logger.error('Ödeme emri kontrolü hatası:', error);
+        this.reportCronError('checkPaymentOrderDeadlines', error);
+      }
+    });
+    if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] checkPaymentOrderDeadlines already running, skipping');
-      return;
-    }
-    this.isRunning_checkPaymentOrderDeadlines = true;
-
-    this.logger.log('⏰ Ödeme emri süre kontrolü başladı...');
-
-    try {
-      const result = await runBatched(
-        (args) =>
-          this.db.case.findMany({
-            where: {
-              tenant: ACTIVE_TENANT_WHERE,
-              workflowStage: 'WAITING_RESPONSE',
-              nextActionAt: { lte: new Date() },
-              isAutomationEnabled: true,
-              caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
-            },
-            include: {
-              debtors: { include: { debtor: true } },
-            },
-            ...args,
-          }),
-        (caseData) => this.processExpiredPaymentOrder(caseData),
-      );
-
-      this.schedulerMetrics.record('checkPaymentOrderDeadlines', result);
-      this.logger.log(`📋 ${result.processed} dosyada süre dolmuş (truncated: ${result.truncated})`);
-    } catch (error) {
-      this.logger.error('Ödeme emri kontrolü hatası:', error);
-      this.reportCronError('checkPaymentOrderDeadlines', error);
-    } finally {
-      this.isRunning_checkPaymentOrderDeadlines = false;
     }
   }
 
@@ -154,43 +148,40 @@ export class SchedulerService {
   /// - SchedulerController.checkNafaka() → POST /scheduler/check/nafaka (manuel nafaka dönem kontrolü)
   /// - SchedulerService.processNafakaPeriods() → @Cron('0 8 1 * *') (aylık otomatik nafaka dönem kontrolü)
   /// </remarks>
-  @Cron('0 8 1 * *', { timeZone: SCHEDULER_TIMEZONE }) // Her ayın 1'i saat 08:00
+  @Cron('0 8 1 * *', { name: 'SchedulerService.processNafakaPeriods', timeZone: SCHEDULER_TIMEZONE }) // Her ayın 1'i saat 08:00
   async processNafakaPeriods() {
-    if (this.isRunning_processNafakaPeriods) {
+    const guardResult = await runWithOverlapGuard('SchedulerService.processNafakaPeriods', async () => {
+      this.logger.log('⏰ Nafaka dönem kontrolü başladı...');
+
+      try {
+        const currentMonth = new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+
+        const result = await runBatched(
+          (args) =>
+            this.db.case.findMany({
+              where: {
+                tenant: ACTIVE_TENANT_WHERE,
+                subCategory: 'NAFAKA',
+                isAutomationEnabled: true,
+                caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
+              },
+              include: {
+                dues: true,
+              },
+              ...args,
+            }),
+          (caseData) => this.addNafakaPeriod(caseData, currentMonth),
+        );
+
+        this.schedulerMetrics.record('processNafakaPeriods', result);
+        this.logger.log(`📋 ${result.processed} nafaka dosyası işlendi (truncated: ${result.truncated})`);
+      } catch (error) {
+        this.logger.error('Nafaka dönem kontrolü hatası:', error);
+        this.reportCronError('processNafakaPeriods', error);
+      }
+    });
+    if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] processNafakaPeriods already running, skipping');
-      return;
-    }
-    this.isRunning_processNafakaPeriods = true;
-
-    this.logger.log('⏰ Nafaka dönem kontrolü başladı...');
-
-    try {
-      const currentMonth = new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
-
-      const result = await runBatched(
-        (args) =>
-          this.db.case.findMany({
-            where: {
-              tenant: ACTIVE_TENANT_WHERE,
-              subCategory: 'NAFAKA',
-              isAutomationEnabled: true,
-              caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
-            },
-            include: {
-              dues: true,
-            },
-            ...args,
-          }),
-        (caseData) => this.addNafakaPeriod(caseData, currentMonth),
-      );
-
-      this.schedulerMetrics.record('processNafakaPeriods', result);
-      this.logger.log(`📋 ${result.processed} nafaka dosyası işlendi (truncated: ${result.truncated})`);
-    } catch (error) {
-      this.logger.error('Nafaka dönem kontrolü hatası:', error);
-      this.reportCronError('processNafakaPeriods', error);
-    } finally {
-      this.isRunning_processNafakaPeriods = false;
     }
   }
 
@@ -252,42 +243,39 @@ export class SchedulerService {
    * Her gün saat 10:00'da çalışır
    * MTS dosyalarında 7 gün kontrolü
    */
-  @Cron(CronExpression.EVERY_DAY_AT_10AM, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_DAY_AT_10AM, { name: 'SchedulerService.checkMtsReturns', timeZone: SCHEDULER_TIMEZONE })
   async checkMtsReturns() {
-    if (this.isRunning_checkMtsReturns) {
+    const guardResult = await runWithOverlapGuard('SchedulerService.checkMtsReturns', async () => {
+      this.logger.log('⏰ MTS dönüş kontrolü başladı...');
+
+      try {
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+        const result = await runBatched(
+          (args) =>
+            this.db.case.findMany({
+              where: {
+                tenant: ACTIVE_TENANT_WHERE,
+                isMtsCase: true,
+                mtsReturnDate: { lte: sevenDaysAgo },
+                isAutomationEnabled: true,
+                caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
+                workflowStage: { not: 'ENFORCEMENT' },
+              },
+              ...args,
+            }),
+          (caseData) => this.processMtsReturn(caseData),
+        );
+
+        this.schedulerMetrics.record('checkMtsReturns', result);
+        this.logger.log(`📋 ${result.processed} MTS dosyasında süre dolmuş (truncated: ${result.truncated})`);
+      } catch (error) {
+        this.logger.error('MTS kontrolü hatası:', error);
+        this.reportCronError('checkMtsReturns', error);
+      }
+    });
+    if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] checkMtsReturns already running, skipping');
-      return;
-    }
-    this.isRunning_checkMtsReturns = true;
-
-    this.logger.log('⏰ MTS dönüş kontrolü başladı...');
-
-    try {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-      const result = await runBatched(
-        (args) =>
-          this.db.case.findMany({
-            where: {
-              tenant: ACTIVE_TENANT_WHERE,
-              isMtsCase: true,
-              mtsReturnDate: { lte: sevenDaysAgo },
-              isAutomationEnabled: true,
-              caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
-              workflowStage: { not: 'ENFORCEMENT' },
-            },
-            ...args,
-          }),
-        (caseData) => this.processMtsReturn(caseData),
-      );
-
-      this.schedulerMetrics.record('checkMtsReturns', result);
-      this.logger.log(`📋 ${result.processed} MTS dosyasında süre dolmuş (truncated: ${result.truncated})`);
-    } catch (error) {
-      this.logger.error('MTS kontrolü hatası:', error);
-      this.reportCronError('checkMtsReturns', error);
-    } finally {
-      this.isRunning_checkMtsReturns = false;
     }
   }
 
@@ -387,32 +375,37 @@ export class SchedulerService {
    * Her gün gece yarısı çalışır
    * Günlük istatistikleri hesaplar
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'SchedulerService.calculateDailyStats', timeZone: SCHEDULER_TIMEZONE })
   async calculateDailyStats() {
-    this.logger.log('⏰ Günlük istatistik hesaplama başladı...');
+    const result = await runWithOverlapGuard('SchedulerService.calculateDailyStats', async () => {
+      this.logger.log('⏰ Günlük istatistik hesaplama başladı...');
 
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-      const stats = await this.db.case.groupBy({
-        by: ['caseStatus'],
-        _count: true,
-      });
+        const stats = await this.db.case.groupBy({
+          by: ['caseStatus'],
+          _count: true,
+        });
 
-      const automationStats = await this.db.decisionLog.count({
-        where: {
-          isAutomatic: true,
-          createdAt: { gte: today },
-        },
-      });
+        const automationStats = await this.db.decisionLog.count({
+          where: {
+            isAutomatic: true,
+            createdAt: { gte: today },
+          },
+        });
 
-      this.logger.log(`📊 Günlük istatistikler:`);
-      this.logger.log(`   - Dosya durumları: ${JSON.stringify(stats)}`);
-      this.logger.log(`   - Bugünkü otomatik işlemler: ${automationStats}`);
-    } catch (error) {
-      this.logger.error('İstatistik hesaplama hatası:', error);
-      this.reportCronError('calculateDailyStats', error);
+        this.logger.log(`📊 Günlük istatistikler:`);
+        this.logger.log(`   - Dosya durumları: ${JSON.stringify(stats)}`);
+        this.logger.log(`   - Bugünkü otomatik işlemler: ${automationStats}`);
+      } catch (error) {
+        this.logger.error('İstatistik hesaplama hatası:', error);
+        this.reportCronError('calculateDailyStats', error);
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] SchedulerService.calculateDailyStats already running, skipping');
     }
   }
 
@@ -420,27 +413,32 @@ export class SchedulerService {
    * Her saat başı çalışır
    * Yaklaşan görevleri kontrol eder
    */
-  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_HOUR, { name: 'SchedulerService.checkUpcomingTasks', timeZone: SCHEDULER_TIMEZONE })
   async checkUpcomingTasks() {
-    this.logger.log('⏰ Yaklaşan görev kontrolü...');
+    const result = await runWithOverlapGuard('SchedulerService.checkUpcomingTasks', async () => {
+      this.logger.log('⏰ Yaklaşan görev kontrolü...');
 
-    try {
-      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      try {
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-      const upcomingTasks = await this.db.task.count({
-        where: {
-          tenant: ACTIVE_TENANT_WHERE,
-          status: 'PENDING',
-          dueDate: { lte: tomorrow },
-        },
-      });
+        const upcomingTasks = await this.db.task.count({
+          where: {
+            tenant: ACTIVE_TENANT_WHERE,
+            status: 'PENDING',
+            dueDate: { lte: tomorrow },
+          },
+        });
 
-      if (upcomingTasks > 0) {
-        this.logger.log(`⚠️ ${upcomingTasks} görev yarına kadar tamamlanmalı`);
+        if (upcomingTasks > 0) {
+          this.logger.log(`⚠️ ${upcomingTasks} görev yarına kadar tamamlanmalı`);
+        }
+      } catch (error) {
+        this.logger.error('Görev kontrolü hatası:', error);
+        this.reportCronError('checkUpcomingTasks', error);
       }
-    } catch (error) {
-      this.logger.error('Görev kontrolü hatası:', error);
-      this.reportCronError('checkUpcomingTasks', error);
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] SchedulerService.checkUpcomingTasks already running, skipping');
     }
   }
 
@@ -462,83 +460,80 @@ export class SchedulerService {
    * Her gün saat 10:00'da çalışır
    * 89 İhbarname sürelerini kontrol eder
    */
-  @Cron(CronExpression.EVERY_DAY_AT_10AM, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_DAY_AT_10AM, { name: 'SchedulerService.checkIhbarnameDeadlines', timeZone: SCHEDULER_TIMEZONE })
   async checkIhbarnameDeadlines() {
-    if (this.isRunning_checkIhbarnameDeadlines) {
+    const guardResult = await runWithOverlapGuard('SchedulerService.checkIhbarnameDeadlines', async () => {
+      this.logger.log('⏰ 89 İhbarname süre kontrolü başladı...');
+
+      try {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        // 89/1 süresi dolan (89/2 gönderilmemiş)
+        const result89_1 = await runBatched(
+          (args) =>
+            this.db.thirdParty.findMany({
+              where: {
+                // ThirdParty'de tenant İLİŞKİSİ yok (yalnız skaler); yol: caseDebtor.case.tenant
+                caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
+                ihbarname89_1_date: { lte: sevenDaysAgo },
+                ihbarname89_2_date: null,
+                responseDate: null,
+              },
+              include: {
+                caseDebtor: {
+                  include: {
+                    case: { select: { id: true, fileNumber: true, tenantId: true } },
+                    debtor: { select: { name: true } },
+                  },
+                },
+              },
+              ...args,
+            }),
+          (tp) => this.createIhbarnameReminderTask(tp, '89/2'),
+        );
+
+        // 89/2 süresi dolan (89/3 gönderilmemiş)
+        const result89_2 = await runBatched(
+          (args) =>
+            this.db.thirdParty.findMany({
+              where: {
+                caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
+                ihbarname89_2_date: { lte: sevenDaysAgo },
+                ihbarname89_3_date: null,
+                responseDate: null,
+              },
+              include: {
+                caseDebtor: {
+                  include: {
+                    case: { select: { id: true, fileNumber: true, tenantId: true } },
+                    debtor: { select: { name: true } },
+                  },
+                },
+              },
+              ...args,
+            }),
+          (tp) => this.createIhbarnameReminderTask(tp, '89/3'),
+        );
+
+        // Toplam sonuçları birleştir ve raporla
+        const totalProcessed = result89_1.processed + result89_2.processed;
+        const totalBatches = result89_1.batches + result89_2.batches;
+        const anyTruncated = result89_1.truncated || result89_2.truncated;
+        this.schedulerMetrics.record('checkIhbarnameDeadlines', {
+          processed: totalProcessed,
+          batches: totalBatches,
+          truncated: anyTruncated,
+        });
+
+        this.logger.log(`📋 89/1 süresi dolan: ${result89_1.processed}, 89/2 süresi dolan: ${result89_2.processed} (truncated: ${anyTruncated})`);
+      } catch (error) {
+        this.logger.error('89 İhbarname kontrolü hatası:', error);
+        this.reportCronError('checkIhbarnameDeadlines', error);
+      }
+    });
+    if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] checkIhbarnameDeadlines already running, skipping');
-      return;
-    }
-    this.isRunning_checkIhbarnameDeadlines = true;
-
-    this.logger.log('⏰ 89 İhbarname süre kontrolü başladı...');
-
-    try {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-      // 89/1 süresi dolan (89/2 gönderilmemiş)
-      const result89_1 = await runBatched(
-        (args) =>
-          this.db.thirdParty.findMany({
-            where: {
-              // ThirdParty'de tenant İLİŞKİSİ yok (yalnız skaler); yol: caseDebtor.case.tenant
-              caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
-              ihbarname89_1_date: { lte: sevenDaysAgo },
-              ihbarname89_2_date: null,
-              responseDate: null,
-            },
-            include: {
-              caseDebtor: {
-                include: {
-                  case: { select: { id: true, fileNumber: true, tenantId: true } },
-                  debtor: { select: { name: true } },
-                },
-              },
-            },
-            ...args,
-          }),
-        (tp) => this.createIhbarnameReminderTask(tp, '89/2'),
-      );
-
-      // 89/2 süresi dolan (89/3 gönderilmemiş)
-      const result89_2 = await runBatched(
-        (args) =>
-          this.db.thirdParty.findMany({
-            where: {
-              caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
-              ihbarname89_2_date: { lte: sevenDaysAgo },
-              ihbarname89_3_date: null,
-              responseDate: null,
-            },
-            include: {
-              caseDebtor: {
-                include: {
-                  case: { select: { id: true, fileNumber: true, tenantId: true } },
-                  debtor: { select: { name: true } },
-                },
-              },
-            },
-            ...args,
-          }),
-        (tp) => this.createIhbarnameReminderTask(tp, '89/3'),
-      );
-
-      // Toplam sonuçları birleştir ve raporla
-      const totalProcessed = result89_1.processed + result89_2.processed;
-      const totalBatches = result89_1.batches + result89_2.batches;
-      const anyTruncated = result89_1.truncated || result89_2.truncated;
-      this.schedulerMetrics.record('checkIhbarnameDeadlines', {
-        processed: totalProcessed,
-        batches: totalBatches,
-        truncated: anyTruncated,
-      });
-
-      this.logger.log(`📋 89/1 süresi dolan: ${result89_1.processed}, 89/2 süresi dolan: ${result89_2.processed} (truncated: ${anyTruncated})`);
-    } catch (error) {
-      this.logger.error('89 İhbarname kontrolü hatası:', error);
-      this.reportCronError('checkIhbarnameDeadlines', error);
-    } finally {
-      this.isRunning_checkIhbarnameDeadlines = false;
     }
   }
 
@@ -594,48 +589,45 @@ export class SchedulerService {
   /**
    * Alacak haczi (dış dosya) takibi
    */
-  @Cron(CronExpression.EVERY_DAY_AT_11AM, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_DAY_AT_11AM, { name: 'SchedulerService.checkExternalCaseFollowups', timeZone: SCHEDULER_TIMEZONE })
   async checkExternalCaseFollowups() {
-    if (this.isRunning_checkExternalCaseFollowups) {
-      this.logger.warn('[scheduler] checkExternalCaseFollowups already running, skipping');
-      return;
-    }
-    this.isRunning_checkExternalCaseFollowups = true;
+    const guardResult = await runWithOverlapGuard('SchedulerService.checkExternalCaseFollowups', async () => {
+      this.logger.log('⏰ Alacak haczi takip kontrolü başladı...');
 
-    this.logger.log('⏰ Alacak haczi takip kontrolü başladı...');
+      try {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-      const result = await runBatched(
-        (args) =>
-          this.db.externalCase.findMany({
-            where: {
-              caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
-              attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
-              attachedAt: { lte: thirtyDaysAgo },
-            },
-            include: {
-              caseDebtor: {
-                include: {
-                  case: { select: { id: true, fileNumber: true, tenantId: true } },
-                  debtor: { select: { name: true } },
+        const result = await runBatched(
+          (args) =>
+            this.db.externalCase.findMany({
+              where: {
+                caseDebtor: { case: { tenant: ACTIVE_TENANT_WHERE } },
+                attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
+                attachedAt: { lte: thirtyDaysAgo },
+              },
+              include: {
+                caseDebtor: {
+                  include: {
+                    case: { select: { id: true, fileNumber: true, tenantId: true } },
+                    debtor: { select: { name: true } },
+                  },
                 },
               },
-            },
-            ...args,
-          }),
-        (ec) => this.createExternalCaseFollowupTask(ec),
-      );
+              ...args,
+            }),
+          (ec) => this.createExternalCaseFollowupTask(ec),
+        );
 
-      this.schedulerMetrics.record('checkExternalCaseFollowups', result);
-      this.logger.log(`📋 ${result.processed} dış dosya takip edildi (truncated: ${result.truncated})`);
-    } catch (error) {
-      this.logger.error('Alacak haczi takip kontrolü hatası:', error);
-      this.reportCronError('checkExternalCaseFollowups', error);
-    } finally {
-      this.isRunning_checkExternalCaseFollowups = false;
+        this.schedulerMetrics.record('checkExternalCaseFollowups', result);
+        this.logger.log(`📋 ${result.processed} dış dosya takip edildi (truncated: ${result.truncated})`);
+      } catch (error) {
+        this.logger.error('Alacak haczi takip kontrolü hatası:', error);
+        this.reportCronError('checkExternalCaseFollowups', error);
+      }
+    });
+    if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] checkExternalCaseFollowups already running, skipping');
     }
   }
 
@@ -762,58 +754,55 @@ export class SchedulerService {
    * PR-S2: cron artık db.tebligat.update'i DOĞRUDAN çağırmaz; tüm sonuçlar TebligatService'in
    * ortak senkron kapısından geçer (CaseDebtor.serviceStatus + istihbarat tetiği cron'da da çalışır).
    */
-  @Cron('0 */4 * * *', { timeZone: SCHEDULER_TIMEZONE }) // Her 4 saatte bir
+  @Cron('0 */4 * * *', { name: 'SchedulerService.checkTebligatStatus', timeZone: SCHEDULER_TIMEZONE }) // Her 4 saatte bir
   async checkTebligatStatus() {
-    if (this.isRunning_checkTebligatStatus) {
+    const result = await runWithOverlapGuard('SchedulerService.checkTebligatStatus', async () => {
+      this.logger.log('⏰ Tebligat durum kontrolü başladı...');
+
+      try {
+        // 1) PTT (fiziksel) barkod sorgu
+        const pttResult = await runBatched(
+          (args) =>
+            this.db.tebligat.findMany({
+              where: {
+                case: { tenant: ACTIVE_TENANT_WHERE },
+                status: 'GONDERILDI',
+                barcodeNo: { not: null },
+                channel: 'PTT',
+              },
+              ...args,
+            }),
+          (tebligat) => this.queryPttBarcode(tebligat),
+        );
+        this.schedulerMetrics.record('checkTebligatStatus', pttResult);
+
+        // 2) UETS/KEP (elektronik) teslim sorgu — PR-S2: e-tebligat artık cron kapsamında
+        const electronicResult = await runBatched(
+          (args) =>
+            this.db.tebligat.findMany({
+              where: {
+                case: { tenant: ACTIVE_TENANT_WHERE },
+                status: 'GONDERILDI',
+                barcodeNo: { not: null },
+                channel: { in: ['UETS', 'KEP'] },
+              },
+              ...args,
+            }),
+          (tebligat) => this.queryElectronicDelivery(tebligat),
+        );
+        this.schedulerMetrics.record('checkTebligatStatus', electronicResult);
+
+        this.logger.log(
+          `📋 PTT ${pttResult.processed} + e-tebligat ${electronicResult.processed} sorgulandı ` +
+            `(truncated: ${pttResult.truncated || electronicResult.truncated})`,
+        );
+      } catch (error) {
+        this.logger.error('Tebligat kontrolü hatası:', error);
+        this.reportCronError('checkTebligatStatus', error);
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] checkTebligatStatus already running, skipping');
-      return;
-    }
-    this.isRunning_checkTebligatStatus = true;
-
-    this.logger.log('⏰ Tebligat durum kontrolü başladı...');
-
-    try {
-      // 1) PTT (fiziksel) barkod sorgu
-      const pttResult = await runBatched(
-        (args) =>
-          this.db.tebligat.findMany({
-            where: {
-              case: { tenant: ACTIVE_TENANT_WHERE },
-              status: 'GONDERILDI',
-              barcodeNo: { not: null },
-              channel: 'PTT',
-            },
-            ...args,
-          }),
-        (tebligat) => this.queryPttBarcode(tebligat),
-      );
-      this.schedulerMetrics.record('checkTebligatStatus', pttResult);
-
-      // 2) UETS/KEP (elektronik) teslim sorgu — PR-S2: e-tebligat artık cron kapsamında
-      const electronicResult = await runBatched(
-        (args) =>
-          this.db.tebligat.findMany({
-            where: {
-              case: { tenant: ACTIVE_TENANT_WHERE },
-              status: 'GONDERILDI',
-              barcodeNo: { not: null },
-              channel: { in: ['UETS', 'KEP'] },
-            },
-            ...args,
-          }),
-        (tebligat) => this.queryElectronicDelivery(tebligat),
-      );
-      this.schedulerMetrics.record('checkTebligatStatus', electronicResult);
-
-      this.logger.log(
-        `📋 PTT ${pttResult.processed} + e-tebligat ${electronicResult.processed} sorgulandı ` +
-          `(truncated: ${pttResult.truncated || electronicResult.truncated})`,
-      );
-    } catch (error) {
-      this.logger.error('Tebligat kontrolü hatası:', error);
-      this.reportCronError('checkTebligatStatus', error);
-    } finally {
-      this.isRunning_checkTebligatStatus = false;
     }
   }
 
