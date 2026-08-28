@@ -234,3 +234,129 @@ RATIFICATION: APPROVED
 
 Listelenmeyen item karara baglanmis sayilmaz. Bu belge ve PR1 hicbir Faz 2
 execution, G4 / C-F01, CLF-O0-01, D13 veya P8 FINAL yetkisi uretmez.
+
+---
+
+# FAZ 2 KAPANIS RECEIPT'I (append-only; 2026-08-28)
+
+Yukaridaki Faz 1 envanteri TARIHSEL kayittir, degistirilmemistir. Bu bolum Faz 2
+yurutmesinin kapanis receipt'idir.
+
+## R1. Owner ratifikasyonlari (exact, 2026-08-28)
+
+1. **C26 OWNER DISPOSITION RATIFICATION** — `PORT_TO_PR: GROUP P1 = [W3F07-I01..W3F07-I19
+   tamami]` · `DISCARD_BACKED_UP: NONE` · `DEFER_PRESERVE: NONE` · `WORKTREE END STATE:
+   REMOVE_AFTER_VERIFIED_CONSUMPTION` · `BRANCH END STATE: DELETE_AFTER_VERIFIED_CONSUMPTION`
+   · `RATIFICATION: APPROVED`.
+2. **C26 OWNER DECISION — LOCAL DB-GATED TEST DISPOSITION** — `APPROVED — CONDITIONAL A→B`
+   (tek bounded W3-F03 kontrol deneyi, hard timeout 12 dk; hang/fail-to-complete →
+   `LOCAL_DB_GATED_ENVIRONMENT_FAILURE` + CI canonical gate; PASS → dur).
+3. **C26 MANIFEST WIRING: APPROVED** — yalniz 2 exact satir
+   (`pure/uyap-icrabot-tebligat.txt` → `src/common/scheduler-overlap-guard.spec.ts`;
+   `db/domain-integration.txt` → `src/common/__tests__/w3-f07-cron-overlap-identity-runtime.db-gated.integration.spec.ts`);
+   scope = 19 port item + 2 CI manifest = 21 dosya; `RATIFICATION: APPROVED`.
+
+## R2. Terminal item disposition'lari
+
+- **W3F07-I01..I19 (19/19): PORT_TO_PR — CONSUMED_CANONICAL.** DISCARD listesi: NONE.
+  DEFER listesi: NONE. SPLIT child: uretilmedi (Faz 1 tespitiyle tutarli).
+- I16 (db-gated spec) fresh-main reconciliation kapsaminda UC minimal uyarlama aldi
+  (semantik iddialar A-G degismedi):
+  (a) her `app.close()` oncesi `clearSharedPromRegistry` (W3-F03 deseni; kok neden:
+  W3F07 sonrasi main'e giren `simulation_drift_total` metrik seti, temizlenmeyen
+  paylasilan PROM_REGISTRY'de ikinci boot'u kiriyordu);
+  (b) E senaryosu errorLog kaniti metod duzeyine (`runRetentionCleanup` spy) — K3
+  config-gate (`ERROR_LOG_RETENTION_ENABLED` yok → no-op) Prisma-level sinyali yapisal
+  olarak engelliyordu;
+  (c) E senaryosu "birbirini engellemez" kaniti guard-MODUL spy'ina — MIKRO-OLCUM:
+  Prisma 5 delegate'inde `client.office.findMany !== client.office.findMany` (metod her
+  erisimde yeniden uretilir) → `jest.spyOn(prisma.<model>, 'fn')` servis-ici cagriyi
+  YAKALAYAMAZ; yeni kanit iki jobId'nin de cagrilip IKISININ DE `'RAN'` donmesi.
+- Diger 18 item: backup payload/patch'ten birebir (drift'siz 12 byte-parity; drift'li
+  7'de C15 `ACTIVE_TENANT_WHERE` satirlari sayimla korunarak — 3/3, 5/5, 2/2, 2/2,
+  2/2, 3/3, 10/10 — 16 conflict bolgesi el ile reconcile edildi).
+
+## R3. Port PR zinciri ve kanitlar
+
+```text
+PORT PR            = #2479 (4 commit: d800e7a2 port → 09698c0b manifest wiring →
+                     e6a4a21f registry-hijyen → ea993541 K3-kaniti → 69462437 guard-spy)
+SQUASH SHA         = 87a94d5d536ccbdc541d5ff504d54314b2f92fab (mergedAt 2026-08-28T16:36:04Z)
+CI (final head)    = 9/9 PASS (Test Suite 10m48s dahil) · MERGEABLE · mergeStateStatus=CLEAN
+CLASSIFIER         = GOV_COORD_NON_COORDINATION_PR (her head'de fresh; 4 kez)
+SCOPE              = exact 21 dosya (19 item + 2 manifest); lockfile/package/generated drift 0
+SPEC LOG KANITI    = db/domain-integration: PASS w3-f07-...spec.ts, "Tests: 627 passed,
+                     627 total" (624+3, 0 skipped) · pure/uyap-icrabot-tebligat: PASS
+                     scheduler-overlap-guard.spec.ts, "Tests: 1407 passed, 1407 total"
+                     (1400+7, 0 skipped) — discovery + kosma + skip-yok + PASS ayri ayri
+CONSUMPTION KANITI = tree-parity: squash^{tree} == branch-head^{tree}
+                     == d4120d1f613cd70296ba9645e60e73e458d0b535 (PASS)
+ONCEKI FAIL TURLARI= 3 (paylasilan-registry → K3-gate → Prisma-delegate); her biri kok
+                     neden kanitiyla kapatildi; UNSTABLE'da merge YAPILMADI
+```
+
+## R4. LOCAL CONTROL RECONCILIATION (owner-zorunlu kayit)
+
+```text
+CONTROL SPEC     = src/common/__tests__/w3-f03-scheduler-timezone-runtime.db-gated.integration.spec.ts
+JEST_EXIT        = 124 (testler YESIL bitti; jest process acik async handle nedeniyle
+                   exit EDEMEDI, 720s hard-timeout kesti — "Jest did not exit one second
+                   after the test run has completed")
+DURATION         = test 88.785 s / suite Time 90.178 s / surec 720 s'te kesildi
+FINAL RESULT     = Tests: 1 passed, 1 total (PASS satiri mevcut) + FAILED_TO_COMPLETE
+                   (process-level) → LOCAL_DB_GATED_ENVIRONMENT_FAILURE dogrulandi;
+                   W3F07 lokal db-gated sonucu FAILED_TO_COMPLETE_LOCAL / NON-CANONICAL;
+                   CI Test Suite canonical runtime gate olarak kullanildi (R3 kanitlari)
+LOG SHA-256      = d980275a5d6cf4fd321d18cd9e264c85ba2d03a9139bbef3c4d7ea9e6399ce0b
+                   (kalici kopya: <BACKUP ROOT>/local-control/w3f03-control-run.log)
+DISCOVERY RESULT = W3F07 spec'i lokal jest discovery'de: pattern'li listede MEVCUT ve
+                   full --listTests ciktisinda (1121 dosya) MEVCUT
+EK               = Sonraki lokal kosu CI-paritesi bayraklariyla (--ci --forceExit
+                   --runInBand --runTestsByPath) yapildi: 3/3 PASS, JEST_EXIT=0 —
+                   exit-hang'in --forceExit yoklugundan kaynaklandigi boylece kanitlandi
+```
+
+## R5. Backup, worktree ve branch final state
+
+```text
+BACKUP ROOT        = C:/Development/HY_EVIDENCE/C26-W3F07-20260828T131059Z/
+                     (PRESERVED / RESTORE-PROVEN / NOT DELETED; manifest txt SHA-256
+                     9d91c68842176df24b53ad75b9ba67b6eb8ab5930830c8ce16ccca2e4bae9db7)
+BACKUP COPY PARITY = PASS · RESTORE REHEARSAL = PASS · MANIFEST REVERIFY = PASS
+SOURCE CLEANUP     = ratifikasyon-sonrasi VE cleanup-oncesi iki ayri tam hash re-check:
+                     19/19 esit (SOURCE DRIFT 0) · aktif writer NONE · 15 tracked
+                     explicit `git restore --`, 4 untracked explicit `rm --` (broad
+                     komut KULLANILMADI) · ardindan `git status --porcelain` = 0
+W3F07 WORKTREE     = git kaydi kaldirildi (worktree list'te YOK); dizinde YALNIZ
+                     node_modules iskeleti kaldi (node_modules-disi dosya sayisi = 0;
+                     Windows uzun-path) → ORPHANED / CLEANUP_BLOCKED_BY_PLATFORM
+                     (recorded residual; aktif WIP verisi SIFIR; junction riski nedeniyle
+                     fiziksel recursive silme YAPILMADI)
+W3F07 BRANCH       = claude/w3-f07-cron-overlap-job-identity-r01 lokal SILINDI
+                     (4da92ab1'den; unique committed delta 0 dogrulanmisti); remote'ta
+                     hic yayimlanmamisti (ls-remote 0)
+PORT WORKTREE      = HY_C26_W3F07_PORT_P1: git kaydi kaldirildi; dizin kalintisi
+                     ORPHANED_WORKTREE_DIR (icerik = merge edilmis 69462437 kopyasi,
+                     tree-parity ile canonical'da; veri kaybi yok) — fiziksel silme yok
+PORT BRANCH        = claude/c26-w3f07-port-p1-r01 lokal+remote SILINDI (merge gh ile
+                     dogrulandiktan sonra)
+```
+
+## R6. Non-blocking deviation kaydi
+
+- Faz 2 bootstrap'inda bir kez `npx prisma generate` repo-koku disi/yanlis CLI'ya
+  dustu (`No command registered for generate`); hicbir repo-diff veya kalici artifact
+  uretmedi; dogru yol (`pnpm run db:generate`, apps/api icinde) kullanildi.
+- Tanisal yan-bulgu (kapsam disi, degistirilmedi): `uyap-stats-tenant-scope` spec'indeki
+  `jest.spyOn(prisma.uyapRequestLog, 'count')` deseni ayni Prisma-delegate davranisi
+  nedeniyle cagri yakalayamaz; o testte assert "HIC cagrilmadi" yonunde oldugundan
+  bugun yesildir — backlog adayi olarak not edilir.
+
+## R7. Kapsam beyanlari
+
+- G4 / C-F01: NOT EXECUTED — bu receipt hicbir G4 yetkisi uretmez; G4 durumu DEGISMEDI
+  (yalniz on-kosulu olan W3F07 competing-writer cozuldu).
+- Kapsam disi mutation: YOK (canonical root'a yazilmadi; diger kullanici WIP'lerine
+  dokunulmadi; out-of-repo persistent memory yazilmadi).
+- Disposable test PostgreSQL'leri (c26-w3f07-pg, c26-w3f07-pg2) kanit alindiktan sonra
+  container+volume duzeyinde temizlendi.
