@@ -190,7 +190,7 @@ function getConditionalImports(): Type<unknown>[] {
     OfficeModule,
     PermissionDiagnosticsModule,
     OfficeApprovalModule,
-    OfficeApprovalExecutorModule, // P4-5A: CHANGE_STATUS deferred executor (internal callable; route/cron YOK)
+    OfficeApprovalExecutorModule, // P4-5A: CHANGE_STATUS deferred executor (internal callable; route YOK; config-gated @Cron sweep VAR — default-OFF no-op; bkz. office-approval-executor-cron.service.ts)
     StaffModule,
     ClientNotificationModule,
     GreetingModule,
