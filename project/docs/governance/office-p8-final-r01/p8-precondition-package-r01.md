@@ -715,3 +715,30 @@ P8 FINAL OWNER GO REQUIRED = YES
 - **Non-authorizing sınır:** bu kayıt hiçbir deploy, release, F05, repair,
   implementation, successor, schema, migration, register-flip, runtime veya
   execution yetkisi ÜRETMEZ; P8 FINAL launch'ı AYRI owner GO'suna tabidir.
+
+### D.22 P8 FINAL CERTIFICATION PENDING POINTER
+
+*(Append-only ek — C29 PR1, 2026-08-28. Önceki bölümler DEĞİŞTİRİLMEMİŞTİR.
+D.21'i izleyen serbest append-only numara kullanılmıştır.)*
+
+- **P8 FINAL verdict'siz sertifikasyon kaydı ÜRETİLMİŞTİR** (C29 PR1).
+  Operatif pointer:
+
+```text
+office-p8-final-r01/p8-final-certification-r01.md   (C29-PR1)
+```
+
+- **Precondition set = COMPLETE** (6/6 SATISFIED; sertifikasyon §4 fresh
+  ancestry matrisi — 26/26 ANCESTOR, main `1ff7e8c433e684f88b1ffb6c4653cce9948cb301`).
+- **P8 FINAL VERDICT = PENDING_OWNER.** Bu pointer terminal verdict YAZMAZ;
+  verdict yalnız owner checkpoint ratifikasyonu ve tüm owner-approved mandatory
+  register operasyonları MERGED/CANONICAL olduktan sonra FINAL VERDICT PR ile
+  etkinleşir.
+- **REGISTER OPERATIONS = NOT AUTHORIZED** — sertifikasyon §9'daki REG-01..03
+  planı `PENDING_OWNER` durumundadır; hiçbir register yüzeyi bu PR ile
+  değiştirilmemiştir.
+- **OFFICE PROGRAM TERMINAL STATUS = NOT YET EFFECTIVE.** Runtime deployment
+  completion ve production readiness CLAIM EDİLMEZ; residual/successor/WR01
+  sınırları sertifikasyon §5–§8'de literal korunur.
+- Bu ek hiçbir implementation, repair, successor, schema, migration, deploy,
+  register-flip, runtime veya execution yetkisi ÜRETMEZ.
