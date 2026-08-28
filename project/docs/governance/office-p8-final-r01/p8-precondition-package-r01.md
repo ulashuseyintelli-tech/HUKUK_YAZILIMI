@@ -685,7 +685,7 @@ DEPLOYMENT COMPLETION = NOT CLAIMED
   `## TERMINAL VERDICT` bölümü bu PR'dadır):
 
 ```text
-office-p8-final-r01/p8-d13-runtime-residual-matrix-r01.md   (C28-PR2)
+office-p8-final-r01/p8-d13-runtime-residual-matrix-r01.md   (C28-PR2 / #2484)
 ```
 
 - **PR1 kanıtı:** #2483 · squash `320fffe7b789ebe2f7ac64adcc5ddbd94aeada76`

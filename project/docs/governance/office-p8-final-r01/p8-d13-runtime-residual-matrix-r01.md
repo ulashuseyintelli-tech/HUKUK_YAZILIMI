@@ -289,4 +289,4 @@ kökünü, §13.4 discovery kayıtlarını (Web RELEASE11 ↔ API RELEASE13 root
 ayrışması dahil) ve §8'deki 3 `UNKNOWN` alanını (C15/B02 DB-apply · süreç
 cwd/env) AYNEN AÇIK bırakır; F01 `PUBLIC_S0_ONLY` canlı kanıt boşluğu için
 güvenlik veya public-projection uygunluğu VARSAYILMAZ; **P8 FINAL'i başlatmaz
-veya kapatmaz** — yalnız D13 ön-koşulunu satisfied yapar. Kayıt PR'ı: C28-PR2.
+veya kapatmaz** — yalnız D13 ön-koşulunu satisfied yapar. Kayıt PR'ı: C28-PR2 / #2484.
