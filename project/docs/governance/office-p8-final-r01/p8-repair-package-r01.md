@@ -803,3 +803,78 @@ P8 FINAL             BLOCKED (bu receipt başlatmaz; D14 dahil ön-koşullar dü
 Ç-F06..Ç-F08         RECORD-ONLY — iş açılmadı
 SECRET/TOKEN/NONCE   YOK — bu bölüme güvenlik-hassas içerik yazılmamıştır
 ```
+
+## 11. C27 FINAL RECEIPT — G4 EXECUTION + P8-REPAIR 5/5 CANONICAL DOĞRULAMA (append-only, 2026-08-28)
+
+Bu bölüm, C27 owner GO'su (2026-08-28, "C27 — G4/Ç-F01 EXECUTION + P8-REPAIR 5/5 KAPANIŞ
+DOĞRULAMASI") kapsamında yürütülen G4 execution'ının ve beş grubun fresh canonical
+doğrulamasının kaydıdır. Yukarıdaki §1–§10 tarihsel metni DEĞİŞTİRİLMEMİŞTİR. C24
+execution authority ÜRETMEMİŞTİR; G1/G2/G3/G5 execution yetkisi C25 owner GO'sundan,
+G4 execution + 5/5 doğrulama + bu receipt yetkisi C27 owner GO'sundan gelmiştir. Bu
+receipt yalnız kayıttır: hiçbir bulgu/successor/residual kapatmaz, repair-sonrası hiçbir
+yeni iş açmaz, register/manifest/decision-log yüzeylerine dokunmaz.
+
+```text
+KAYIT ZAMANI (UTC)   2026-08-28T18:02Z (GitHub server saati referans alındı)
+G4 BLOCKER ÇÖZÜMÜ    C26 (W3F07 = COMPLETED / CLOSED; 19/19 PORT_TO_PR CONSUMED_CANONICAL;
+                     #2479 squash 87a94d5d536ccbdc541d5ff504d54314b2f92fab + #2480 squash
+                     c747ec4bb5e48eec5a78964abc6d75e1918f6b91 ancestry VERIFIED; W3F07
+                     branch lokal+remote YOK; fresh taramada 66 worktree × app.module.ts
+                     uncommitted WIP = 0; açık PR = 0) → BLOCKED_COMPETING_WRITER = RESOLVED
+G4 PREFLIGHT BASE    c747ec4bb5e48eec5a78964abc6d75e1918f6b91 (fresh reproduce: REPRODUCED —
+                     Kanıt A :193 bayat yorum, blame 9716a221f (C26 portu dokunmamış);
+                     Kanıt B @Cron :59 name 'officeApprovalExecutor' + timeZone
+                     SCHEDULER_TIMEZONE + runWithOverlapGuard :61, son commit 87a94d5d;
+                     route: executor modülünde controllers YOK, @Controller yalnız
+                     office-approval.controller.ts; runSweep default-OFF no-op :80-:83)
+G4 EXECUTION         PR #2481 / squash 6e6541ce01e73e489cfafc77200aa05107273757
+                     (mergedAt 2026-08-28T17:58:39Z)
+G4 DIFF              exact 1 dosya (project/apps/api/src/app.module.ts) · tek satır −1/+1 ·
+                     kod öneki iki tarafta BİREBİR → executable token/AST/davranış delta 0 ·
+                     EOL lf driftsiz · C24 §3.1 taslağı BİREBİR uygulandı (semantic
+                     uyarlama SIFIR; satır konumu :193 değişmemişti)
+G4 CLASSIFIER        GOV_COORD_NON_COORDINATION_PR (validate-pr-scope, actual base/head;
+                     koordinasyon zinciri project/apps/ için denied — kullanılmadı)
+G4 CI                9/9 PASS (FAILED/CANCELLED/TIMED-OUT = 0) · MERGEABLE ·
+                     mergeStateStatus=CLEAN (literal)
+G4 CONSUMPTION       tree-parity: squash^{tree} == branch-head^{tree} ==
+                     e27807b14d4c94194091731fa5c5b6381eeec8c0 (PASS)
+G4 KORUNANLAR        CLF-P7-01 successor kaydı AÇIK (OFFICE-DELIVERY-MANIFEST §13.4 :1923
+                     satırı duruyor; bu onarım kalemi KAPATMAZ); cron decorator/guard/
+                     testler/provider wiring DEĞİŞMEDİ; runtime davranış delta 0; W3F07
+                     backup ve platform-cleanup residual'larına DOKUNULMADI
+```
+
+### 11.1 P8-REPAIR 5/5 canonical doğrulama matrisi
+
+Tüm satırlar fresh canonical main `6e6541ce01e73e489cfafc77200aa05107273757` üzerinde
+içerik (`git grep`/`git show`) ve ancestry (`git merge-base --is-ancestor`, exit 0)
+düzeyinde bu görevde YENİDEN ölçülmüştür; önceki receipt'lere körlemesine güvenilmemiştir.
+
+| Grup/kalem | Canonical hedef (fresh) | İçerik kanıtı | Korunan sınır | Execution PR | Squash SHA | Ancestry | Fresh verdict |
+|---|---|---|---|---|---|---|---|
+| G1/Ç-F04 | `od-decision-register.md:30` | "Historical snapshot notice (appended 2026-08-27 — Ç-F04 P8-REPAIR)" bölümü mevcut | `:3` tarihsel iddia AYNEN + 9 OD satırı (`:9`-`:17`) AYNEN; hiçbir opsiyon seçilmedi/ratifiye edilmedi | #2473 | `a3866989f83a195b800637aa5589dcaf7c855700` | PASS | VERIFIED_EXECUTED_CANONICAL |
+| G2/Ç-F05 | `OFFICE-RISK-REGISTER.md:194` | "IMPLEMENTATION-STATE RECONCILIATION (2026-08-27 — Ç-F05 P8-REPAIR)" satırı STF-PRD-AUDIT-001 kartında mevcut | FINDING VERDICT `:190` `OPEN / NOT CLOSED` AYNEN; `:192`/`:193` tarihsel authority kayıtları AYNEN; CAP-09A producer `DORMANT_CANONICAL` | #2474 | `4a4e996fd0fb3616adc0aef70cc240e67610001c` | PASS | VERIFIED_EXECUTED_CANONICAL |
+| G3/Ç-F03 | `OFFICE-DELIVERY-MANIFEST.md:1927` | "Kayıt-düzeyi güncellik şerhi — /auth/me passwordChangedAt (2026-08-27, Ç-F03 P8-REPAIR)" blockquote §13.4 altında mevcut | `:1921` successor-inventory satırı AYNEN; successor kalemi AÇIK; `decision-log.md` DOKUNULMADI | #2475 | `cf6043a83c1341a38ea76d8e3601cbb388e3c400` | PASS | VERIFIED_EXECUTED_CANONICAL |
+| G4/Ç-F01 | `app.module.ts:193` | "route YOK; config-gated @Cron sweep VAR — default-OFF no-op" yorumu mevcut; eski "route/cron YOK" ifadesi 0 eşleşme; cron service `:59` named `@Cron` + `:61` guard AYNEN | CLF-P7-01 successor kaydı AÇIK; cron runtime davranışı ve default-OFF semantiği DEĞİŞMEDİ | #2481 | `6e6541ce01e73e489cfafc77200aa05107273757` | PASS | VERIFIED_EXECUTED_CANONICAL |
+| G5/Ç-F02 | `schema.prisma:10049`-`:10050` | "Bu tabloyu üç OFFICE-dışı authorization servisi okur (permissionGrant.findMany): BANK settlement-verifier · CLIENT-INTAKE-REVIEW · UYAP trigger-haciz. OFFICE-içi authorization consumer'ı henüz yoktur." iki satır mevcut | PermissionGrant datamodel AYNEN; `:10087`-`:10092` ReportingLine/TEAM-MANAGER blok yorumu DOKUNULMADI (CLF-P7-02 AÇIK); migration durumu DEĞİŞMEDİ | #2476 | `14be8cd5e0225a2ebceaad98704e2e411f92ef79` | PASS | VERIFIED_EXECUTED_CANONICAL |
+
+### 11.2 Sonuç
+
+```text
+P8-REPAIR EXECUTION = 5/5 VERIFIED
+
+G4 / Ç-F01           EXECUTED / MERGED / CANONICAL — successor/bulgu kaydı (CLF-P7-01)
+                     KAPATILMADI; yalnız bayat yorum onarıldı, runtime davranışı değişmedi
+YETKİ KAYNAĞI        C24 = NON-AUTHORIZING ANALYSIS PACKAGE (execution authority ÜRETMEDİ);
+                     G1/G2/G3/G5 execution = C25 owner GO; G4 execution + 5/5 canonical
+                     doğrulama + bu receipt = C27 owner GO
+D13                  NOT STARTED — bu receipt D13 için YALNIZ onarımlar-sonrası başlangıç
+                     kanıtıdır; D13 ölçüm/verdict yetkisi ÜRETMEZ
+P8 FINAL             NOT STARTED / BLOCKED
+NEXT PHASE           NOT AUTOMATICALLY STARTED — sıradaki adımlar (1) D13 fresh P6
+                     hash-matrisi + runtime residual verdict, (2) P8 FINAL launch; her biri
+                     AYRI owner GO ister
+EXECUTION AUTHORITY CREATED FOR FUTURE WORK: NONE
+SECRET/TOKEN/NONCE   YOK — bu bölüme güvenlik-hassas içerik yazılmamıştır
+```
