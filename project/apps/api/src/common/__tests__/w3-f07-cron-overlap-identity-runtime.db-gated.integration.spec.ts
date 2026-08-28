@@ -43,7 +43,7 @@ import { AppModule } from "../../app.module";
 import { SCHEDULER_JOB_REGISTRY, SCHEDULER_JOB_REGISTRY_COUNT } from "../scheduler-job-registry";
 import { ErrorLogRetentionService } from "../../modules/error-log/retention/error-log-retention.service";
 import { RateSyncService } from "../../modules/interest-engine/rate-sync.service";
-import { PrismaService } from "../../prisma/prisma.service";
+import * as overlapGuardModule from "../scheduler-overlap-guard";
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -148,30 +148,36 @@ describeWithDisposableDb(
 
     it(
       "E: parallel execution (farkli job) — GERCEK DI-resolved iki FARKLI servis " +
-        "(farkli jobId) ESZAMANLI calisirken BIRBIRINI ENGELLEMEZ, ikisinin de gercek " +
-        "govdesi calisir (govde-yurutme kaniti; rateSync tarafi Prisma-level)",
+        "(farkli jobId) ESZAMANLI calisirken BIRBIRINI ENGELLEMEZ: her iki guard " +
+        "cagrisi da RAN doner (SKIPPED_ALREADY_RUNNING YOK) ve errorLog govdesi calisir",
       async () => {
         const { app } = await bootApp();
         try {
           const errorLogSvc = app.get(ErrorLogRetentionService);
           const rateSyncSvc = app.get(RateSyncService);
-          const prisma = app.get(PrismaService);
-          // "Gercekten calisti" kaniti: errorLog tarafinda Prisma-level sinyal
-          // config-gated'dir — ERROR_LOG_RETENTION_ENABLED yoksa runRetentionCleanup
-          // K3 geregi no-op doner ve errorLog.findMany'ye HIC inmez (CI'da env yok).
-          // Bu yuzden errorLog kaniti METOD duzeyinde alinir (B ile ayni teknik:
-          // guard SKIP etseydi runRetentionCleanup HIC cagrilmazdi); Prisma-level
-          // kanit rateSync tarafinda devam eder (office.findMany config'ten bagimsiz,
-          // apiKey kontrolu per-tenant sync'in ICINDEDIR — findMany her durumda kosar).
+          // "Birbirini engellemedi" kaniti guard-MODUL spy'i ile alinir: ts-jest CJS
+          // derlemesinde servislerin named-import cagrilari her seferinde modul-exports
+          // uzerinden okunur, dolayisiyla spy GERCEK cagriyi gorur ve donus degerine
+          // ('RAN' | 'SKIPPED_ALREADY_RUNNING') dogrudan erisir. NOT: Prisma 5 model
+          // delegate'inin METOD property'si her erisimde yeniden uretilir
+          // (client.office.findMany !== client.office.findMany) — bu yuzden
+          // jest.spyOn(prisma.office, 'findMany') servis-ici cagriyi YAKALAYAMAZ ve
+          // Prisma-level kanit burada yapisal olarak kullanilamaz. errorLog tarafinda
+          // ayrica govde-metodu kaniti korunur (runRetentionCleanup K3 config-gate'i
+          // nedeniyle Prisma'ya inmeyebilir ama guard SKIP etseydi HIC cagrilmazdi).
+          const guardSpy = jest.spyOn(overlapGuardModule, "runWithOverlapGuard");
           const errorLogBodySpy = jest.spyOn(errorLogSvc, "runRetentionCleanup");
-          const officePrismaSpy = jest.spyOn(prisma.office, "findMany");
 
           await Promise.all([errorLogSvc.handleCron(), rateSyncSvc.syncMonthlyMevduatRates()]);
 
-          expect(errorLogBodySpy).toHaveBeenCalledTimes(1); // errorLogRetention govdesi GERCEKTEN cagrildi (SKIP degil)
-          expect(officePrismaSpy).toHaveBeenCalled(); // rateSync govdesi GERCEKTEN calisti — birbirini ENGELLEMEDI
+          const calledJobIds = guardSpy.mock.calls.map((c) => c[0]);
+          expect(calledJobIds).toContain("errorLogRetention");
+          expect(calledJobIds).toContain("RateSyncService.syncMonthlyMevduatRates");
+          const guardResults = await Promise.all(guardSpy.mock.results.map((r) => r.value));
+          expect(guardResults).toEqual(guardResults.map(() => "RAN")); // hicbiri SKIP edilmedi — birbirini ENGELLEMEDI
+          expect(errorLogBodySpy).toHaveBeenCalledTimes(1); // errorLogRetention govdesi GERCEKTEN cagrildi
           errorLogBodySpy.mockRestore();
-          officePrismaSpy.mockRestore();
+          guardSpy.mockRestore();
         } finally {
           clearSharedPromRegistry(app); // her close oncesi sart (W3-F03 ile ayni desen)
           await app.close();
