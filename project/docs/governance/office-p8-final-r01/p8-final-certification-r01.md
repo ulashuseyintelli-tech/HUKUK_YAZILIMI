@@ -453,3 +453,92 @@ NEW EXECUTION AUTHORITY = NONE
 
 Secret, token, credential, exploit detayı, process command-line/environment
 içeriği veya kullanıcı-profili mutlak path'i bu kayda YAZILMAMIŞTIR.
+
+## TERMINAL VERDICT
+
+*(Append-only ek — C29 FINAL VERDICT PR, 2026-08-28. §1–§12 tarihsel içeriği ve
+§12'deki `TERMINAL VERDICT = PENDING_OWNER` literal'i DEĞİŞTİRİLMEMİŞTİR; bu
+bölüm o PENDING durumunu owner verdict'iyle supersede eder.)*
+
+### Owner ratifikasyonu (karar gövdesi aynen) ve kayıt
+
+**Owner ratifikasyonu ALINMIŞTIR** (C29 oturumu owner checkpoint yanıtı; kayıt
+zamanı UTC **2026-08-28T21:36:46Z** — bu append'in yazım anındaki GitHub server
+saati; geriye tarihlenMEMİŞtir). Karar gövdesi aynen:
+
+```text
+C29 OWNER RATIFICATION:
+TERMINAL VERDICT:
+OFFICE PROGRAM = TERMINALLY_CLOSED_WITH_RECORDED_RESIDUALS
+REGISTER OPERATIONS:
+- [REG-01] = APPROVED — exact metin: p8-final-certification-r01.md §9 @ 2ca8ec682e3b9c3ce33af117cc0dca024562fc43
+- [REG-02] = APPROVED — exact metin: p8-final-certification-r01.md §9 @ 2ca8ec682e3b9c3ce33af117cc0dca024562fc43
+- [REG-03] = APPROVED — exact metin: p8-final-certification-r01.md §9 @ 2ca8ec682e3b9c3ce33af117cc0dca024562fc43
+PLACEHOLDERS:
+- <VERDICT> = TERMINALLY_CLOSED_WITH_RECORDED_RESIDUALS
+- <EXEC-DATE> = materializasyon anındaki fresh GitHub server UTC tarihi
+PR GROUPING / ROUTES:
+- [REG-01 + REG-02 + REG-03] = TEK REGISTER PR / GOV_COORD_NON_COORDINATION_PR / APPEND-ONLY / MECHANICAL-OP: NONE / SA: NONE
+EFFECTIVE CONDITION:
+TERMINAL VERDICT yalnız REG-01, REG-02 ve REG-03 MERGED / CANONICAL olduktan ve
+resulting text fresh doğrulandıktan sonra FINAL VERDICT PR ile effective olacaktır.
+RESIDUAL PRESERVATION: R1–R32 aynen açık/kayıtlı; runtime deployment completion
+ve production readiness iddia edilmez; WR01 status unchanged; F05 ve successor
+kayıtları kapanmaz; ORPHANED_WORKTREE_DIR korunur (cleanup yetkisi verilmemiştir);
+NEW EXECUTION AUTHORITY = NONE.
+RATIFICATION: APPROVED
+```
+
+### Yürütme receipt'i ve effective-condition doğrulaması
+
+```text
+PR1 (sertifikasyon)      #2485 · squash 2ca8ec682e3b9c3ce33af117cc0dca024562fc43
+                         · CI 9/9 PASS · MERGEABLE/CLEAN · classifier
+                         GOV_COORD_NON_COORDINATION_PR · ancestry VERIFIED
+REGISTER PR (REG-01..03) #2486 · squash efa9f6ba7ef6ab694f0b318dfd5710f7e1d2dcec
+                         · exact 3 dosya (+25/−0, salt append) · CI 9/9 PASS ·
+                         MERGEABLE/CLEAN literal · combined-diff classifier
+                         GOV_COORD_NON_COORDINATION_PR · mechanical-op NONE ·
+                         SA NONE · ancestry VERIFIED · <EXEC-DATE> = 2026-08-28
+                         (GitHub server UTC, materyalizasyon anı)
+RESULTING TEXT           3/3 fresh doğrulandı (canonical main efa9f6ba):
+                         OFFICE-DELIVERY-MANIFEST.md "## 14. OFFICE P8 FINAL
+                         CLOSEOUT (2026-08-28)" · product-backlog.md "## OFFICE
+                         P8 FINAL Closeout — 2026-08-28" · decision-log.md:536
+                         owner terminal verdict satırı
+EFFECTIVE CONDITION      SAĞLANDI — tüm owner-approved mandatory register
+                         operasyonları MERGED/CANONICAL + resulting text fresh
+                         doğrulanmış durumda; verdict bu FINAL VERDICT PR'ın
+                         canonical main'e merge'iyle effective olur
+```
+
+### Exact terminal disposition
+
+```text
+OFFICE P0–P8 GOVERNANCE PROGRAM =
+TERMINALLY_CLOSED_WITH_RECORDED_RESIDUALS
+```
+
+Terminal ifadede ÖZELLİKLE KORUNAN kalemler (silinmemiş, düşürülmemiş,
+kapanmış/uygulanmış gibi gösterilmemiştir): §5 konsolide tablosunun R1–R32
+kalemlerinin TAMAMI — 7 runtime-residual kökü · Web RELEASE11 ↔ API RELEASE13
+ayrışması · 3 alan-düzeyi UNKNOWN · F01 `PUBLIC_S0_ONLY` canlı kanıt boşluğu ·
+F05 `NOT_AUTHORIZED / CARRY_FORWARD` · CLF-O0-01 / CLF-P5-01 / CLF-P7-01..03 ·
+CAP-09A producer `DORMANT_CANONICAL` · successor envanteri · D17→WR01-C12 ·
+Ç-F06..08 `RECORD-ONLY` · orphan/backup-retention kayıtları · B02 Aşama 5 +
+C15 zinciri FROZEN durumları.
+
+### Sınır beyanları
+
+```text
+RUNTIME DEPLOYMENT COMPLETION = NOT CLAIMED
+PRODUCTION READINESS = NOT CLAIMED
+WR01 = SEPARATE PRODUCT EXTENSION / STATUS UNCHANGED
+RECORDED RESIDUALS / SUCCESSORS = PRESERVED
+NEW EXECUTION AUTHORITY = NONE
+```
+
+Bu bölüm yalnız verdict kaydıdır; hiçbir implementation, repair, successor,
+schema, migration, deployment, register-flip, runtime veya execution yetkisi
+üretmez. Sonraki faza OTOMATİK GEÇİŞ YOKTUR; kalan tüm işler AYRI owner
+GO'larına tabidir.

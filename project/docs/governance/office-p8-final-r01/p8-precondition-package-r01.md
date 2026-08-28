@@ -742,3 +742,39 @@ office-p8-final-r01/p8-final-certification-r01.md   (C29-PR1)
   sınırları sertifikasyon §5–§8'de literal korunur.
 - Bu ek hiçbir implementation, repair, successor, schema, migration, deploy,
   register-flip, runtime veya execution yetkisi ÜRETMEZ.
+
+### D.23 P8 FINAL CERTIFICATION — OWNER TERMINAL VERDICT POINTER
+
+*(Append-only ek — C29 FINAL VERDICT PR, 2026-08-28. Önceki bölümler ve
+D.22'deki PENDING durumu tarihsel kayıt olarak DEĞİŞTİRİLMEMİŞTİR; bu bölüm
+D.22'nin PENDING_OWNER durumunu supersede eder.)*
+
+- **Owner terminal verdict'i ALINMIŞTIR** (C29 oturumu; kayıt zamanı UTC
+  2026-08-28T21:36:46Z; `RATIFICATION: APPROVED`). Exact disposition:
+
+```text
+OFFICE P0–P8 GOVERNANCE PROGRAM = TERMINALLY_CLOSED_WITH_RECORDED_RESIDUALS
+```
+
+- **Kanonik verdict kaydı** (owner ratifikasyonu aynen, yürütme receipt'i ve
+  effective-condition doğrulaması dahil; `## TERMINAL VERDICT` bölümü bu
+  FINAL VERDICT PR'dadır):
+
+```text
+office-p8-final-r01/p8-final-certification-r01.md
+```
+
+- **PR zinciri:** PR1 #2485 `2ca8ec682e3b9c3ce33af117cc0dca024562fc43` ·
+  REGISTER PR #2486 `efa9f6ba7ef6ab694f0b318dfd5710f7e1d2dcec` (REG-01/02/03;
+  resulting text 3/3 fresh doğrulandı) · FINAL VERDICT PR = bu PR.
+- **Program terminal durumu:** P8 FINAL = TERMINALLY CLOSED; OFFICE governance
+  programı yukarıdaki owner verdict'iyle terminal kapanmıştır; verdict bu PR'ın
+  canonical main'e merge'iyle effective olur.
+- **Korunan sınırlar:** RUNTIME DEPLOYMENT COMPLETION = NOT CLAIMED ·
+  PRODUCTION READINESS = NOT CLAIMED · WR01 = SEPARATE PRODUCT EXTENSION /
+  STATUS UNCHANGED · F05 `NOT_AUTHORIZED / CARRY_FORWARD` · sertifikasyon §5
+  R1–R32 residual/successor kalemleri AYNEN AÇIK/KAYITLI · ORPHANED_WORKTREE_DIR
+  kayıtları korunur (cleanup yetkisi verilmemiştir).
+- Bu ek hiçbir implementation, repair, successor, schema, migration, deploy,
+  register-flip, runtime veya execution yetkisi ÜRETMEZ; sonraki faz AYRI owner
+  GO'suna tabidir.
