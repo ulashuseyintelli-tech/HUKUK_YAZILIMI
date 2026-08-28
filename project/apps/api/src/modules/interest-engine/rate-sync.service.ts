@@ -6,6 +6,7 @@ import { InterestTypeCode, RateSourceType } from './types';
 import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { runWithOverlapGuard } from '../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 import { ACTIVE_TENANT_WHERE } from '../tenant/tenant-lifecycle';
 
@@ -43,27 +44,32 @@ export class RateSyncService {
    * Günlük TCMB faiz oranı senkronizasyonu
    * Her gün 09:30'da çalışır (TCMB duyurularından sonra)
    */
-  @Cron('30 9 * * *', { timeZone: SCHEDULER_TIMEZONE })
+  @Cron('30 9 * * *', { name: 'RateSyncService.syncTcmbRates', timeZone: SCHEDULER_TIMEZONE })
   async syncTcmbRates(): Promise<void> {
-    this.logger.log('TCMB faiz oranı senkronizasyonu başlıyor...');
+    const result = await runWithOverlapGuard('RateSyncService.syncTcmbRates', async () => {
+      this.logger.log('TCMB faiz oranı senkronizasyonu başlıyor...');
 
-    try {
-      // C15 PR-4A: yalnız ACTIVE tenant'ların office'leri — non-ACTIVE tenant'a
-      // per-tenant RateSchedule yazımı ve tenant başına EVDS çağrısı yapılmaz.
-      // (Bu motorda "tenant.id" = Office.id; predicate Office->Tenant ilişkisindedir.)
-      const tenants = await this.prisma.office.findMany({
-        where: { tenant: ACTIVE_TENANT_WHERE },
-        select: { id: true },
-      });
+      try {
+        // C15 PR-4A: yalnız ACTIVE tenant'ların office'leri — non-ACTIVE tenant'a
+        // per-tenant RateSchedule yazımı ve tenant başına EVDS çağrısı yapılmaz.
+        // (Bu motorda "tenant.id" = Office.id; predicate Office->Tenant ilişkisindedir.)
+        const tenants = await this.prisma.office.findMany({
+          where: { tenant: ACTIVE_TENANT_WHERE },
+          select: { id: true },
+        });
 
-      for (const tenant of tenants) {
-        await this.syncRatesForTenant(tenant.id);
+        for (const tenant of tenants) {
+          await this.syncRatesForTenant(tenant.id);
+        }
+
+        this.logger.log('TCMB faiz oranı senkronizasyonu tamamlandı');
+      } catch (error) {
+        this.logger.error(`TCMB sync hatası: ${error instanceof Error ? error.message : error}`);
+        reportCronJobFailure(this.errorReporter, 'rateSync.syncTcmbRates', error);
       }
-
-      this.logger.log('TCMB faiz oranı senkronizasyonu tamamlandı');
-    } catch (error) {
-      this.logger.error(`TCMB sync hatası: ${error instanceof Error ? error.message : error}`);
-      reportCronJobFailure(this.errorReporter, 'rateSync.syncTcmbRates', error);
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] RateSyncService.syncTcmbRates already running, skipping');
     }
   }
 
@@ -71,22 +77,27 @@ export class RateSyncService {
    * Aylık mevduat faizi senkronizasyonu
    * Her ayın 2. günü 10:00'da çalışır
    */
-  @Cron('0 10 2 * *', { timeZone: SCHEDULER_TIMEZONE })
+  @Cron('0 10 2 * *', { name: 'RateSyncService.syncMonthlyMevduatRates', timeZone: SCHEDULER_TIMEZONE })
   async syncMonthlyMevduatRates(): Promise<void> {
-    this.logger.log('Aylık mevduat faizi senkronizasyonu başlıyor...');
+    const result = await runWithOverlapGuard('RateSyncService.syncMonthlyMevduatRates', async () => {
+      this.logger.log('Aylık mevduat faizi senkronizasyonu başlıyor...');
 
-    try {
-      const tenants = await this.prisma.office.findMany({
-        where: { tenant: ACTIVE_TENANT_WHERE }, // C15 PR-4A: yalnız ACTIVE tenant office'leri
-        select: { id: true },
-      });
+      try {
+        const tenants = await this.prisma.office.findMany({
+          where: { tenant: ACTIVE_TENANT_WHERE }, // C15 PR-4A: yalnız ACTIVE tenant office'leri
+          select: { id: true },
+        });
 
-      for (const tenant of tenants) {
-        await this.syncMevduatRates(tenant.id);
+        for (const tenant of tenants) {
+          await this.syncMevduatRates(tenant.id);
+        }
+      } catch (error) {
+        this.logger.error(`Mevduat sync hatası: ${error instanceof Error ? error.message : error}`);
+        reportCronJobFailure(this.errorReporter, 'rateSync.syncMonthlyMevduatRates', error);
       }
-    } catch (error) {
-      this.logger.error(`Mevduat sync hatası: ${error instanceof Error ? error.message : error}`);
-      reportCronJobFailure(this.errorReporter, 'rateSync.syncMonthlyMevduatRates', error);
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] RateSyncService.syncMonthlyMevduatRates already running, skipping');
     }
   }
 

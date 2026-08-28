@@ -7,6 +7,7 @@ import { readOfficeApprovalExecutorConfig } from './office-approval-executor.con
 import { isRetryBackoffElapsed } from './office-approval-executor-backoff';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { runWithOverlapGuard } from '../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 // P4-5B/P4-5C-2 — OfficeApproval executor AUTOMATION (config-gated cron). Onaylanmış (APPROVED/APPROVED_WITH_CHANGES) NOT_RUN
@@ -53,13 +54,20 @@ export class OfficeApprovalExecutorCronService {
     private readonly errorReporter: IntegrationErrorReporter,
   ) {}
 
+  // W3-F07: overlap guard yalniz bu cron-entrypoint'i sarar — runSweep() testler icin
+  // bagimsiz cagrilabilir kalir (dogrudan cagiran testlerin donus degeri sozlesmesi degismez).
   @Cron(CronExpression.EVERY_30_MINUTES, { name: 'officeApprovalExecutor', timeZone: SCHEDULER_TIMEZONE })
   async handleCron(): Promise<void> {
-    try {
-      await this.runSweep();
-    } catch (error) {
-      this.logger.error('OfficeApproval executor tick hatası:', error);
-      reportCronJobFailure(this.errorReporter, 'officeApprovalExecutorCron.handleCron', error);
+    const result = await runWithOverlapGuard('officeApprovalExecutor', async () => {
+      try {
+        await this.runSweep();
+      } catch (error) {
+        this.logger.error('OfficeApproval executor tick hatası:', error);
+        reportCronJobFailure(this.errorReporter, 'officeApprovalExecutorCron.handleCron', error);
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] officeApprovalExecutor already running, skipping');
     }
   }
 

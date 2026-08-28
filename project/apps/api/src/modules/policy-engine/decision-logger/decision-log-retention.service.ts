@@ -31,6 +31,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../../common/cron-failure-reporting';
+import { runWithOverlapGuard } from '../../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../../error-log/integration-error-reporter';
 
 /**
@@ -72,19 +73,26 @@ export class DecisionLogRetentionService {
    * UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02: ARTIK HİÇBİR KAYIT SİLMEZ. Yalnızca retention
    * penceresine düşen aday sayısını ölçer ve raporlar (gözlemlenebilirlik korunur).
    */
-  @Cron(CronExpression.EVERY_DAY_AT_3AM, { timeZone: SCHEDULER_TIMEZONE })
+  // W3-F07: overlap guard yalniz bu cron-entrypoint'i sarar — sweep() testler/manuel
+  // cagri icin bagimsiz cagrilabilir kalir (RetentionSweepResult donus sozlesmesi degismez).
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, { name: 'DecisionLogRetentionService.archiveOldRecords', timeZone: SCHEDULER_TIMEZONE })
   async archiveOldRecords(): Promise<void> {
-    this.logger.log('Starting decision log retention sweep (READ-ONLY)...');
+    const guardResult = await runWithOverlapGuard('DecisionLogRetentionService.archiveOldRecords', async () => {
+      this.logger.log('Starting decision log retention sweep (READ-ONLY)...');
 
-    try {
-      const result = await this.sweep();
-      this.logger.log(
-        `Retention sweep completed. Candidates: ${result.eligibleCandidates}, deleted: 0 ` +
-          '(destructive retention disabled — ARCH-4 arşiv sözleşmesi bekleniyor).',
-      );
-    } catch (error) {
-      this.logger.error('Retention sweep failed', error);
-      reportCronJobFailure(this.errorReporter, 'decisionLogRetention.archiveOldRecords', error);
+      try {
+        const result = await this.sweep();
+        this.logger.log(
+          `Retention sweep completed. Candidates: ${result.eligibleCandidates}, deleted: 0 ` +
+            '(destructive retention disabled — ARCH-4 arşiv sözleşmesi bekleniyor).',
+        );
+      } catch (error) {
+        this.logger.error('Retention sweep failed', error);
+        reportCronJobFailure(this.errorReporter, 'decisionLogRetention.archiveOldRecords', error);
+      }
+    });
+    if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] DecisionLogRetentionService.archiveOldRecords already running, skipping');
     }
   }
 

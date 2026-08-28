@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../common/cron-failure-reporting';
+import { runWithOverlapGuard } from '../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../error-log/integration-error-reporter';
 
 export interface GazetteNotification {
@@ -39,23 +40,28 @@ export class GazetteWatcherService {
   }
 
   // Her gun saat 09:00'da kontrol et
-  @Cron('0 9 * * *', { timeZone: SCHEDULER_TIMEZONE })
+  @Cron('0 9 * * *', { name: 'GazetteWatcherService.checkGazette', timeZone: SCHEDULER_TIMEZONE })
   async checkGazette(): Promise<void> {
-    this.logger.log('Resmi Gazete kontrolu basliyor...');
-    
-    try {
-      // Resmi Gazete RSS/API kontrolu
-      const updates = await this.fetchGazetteUpdates();
-      
-      if (updates.length > 0) {
-        this.logger.log(`${updates.length} yeni guncelleme bulundu`);
-        this.notifications.push(...updates);
+    const result = await runWithOverlapGuard('GazetteWatcherService.checkGazette', async () => {
+      this.logger.log('Resmi Gazete kontrolu basliyor...');
+
+      try {
+        // Resmi Gazete RSS/API kontrolu
+        const updates = await this.fetchGazetteUpdates();
+
+        if (updates.length > 0) {
+          this.logger.log(`${updates.length} yeni guncelleme bulundu`);
+          this.notifications.push(...updates);
+        }
+
+        this.lastCheckDate = new Date();
+      } catch (error) {
+        this.logger.error('Resmi Gazete kontrol hatasi:', error);
+        reportCronJobFailure(this.errorReporter, 'gazetteWatcher.checkGazette', error);
       }
-      
-      this.lastCheckDate = new Date();
-    } catch (error) {
-      this.logger.error('Resmi Gazete kontrol hatasi:', error);
-      reportCronJobFailure(this.errorReporter, 'gazetteWatcher.checkGazette', error);
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] GazetteWatcherService.checkGazette already running, skipping');
     }
   }
 

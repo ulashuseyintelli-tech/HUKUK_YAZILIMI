@@ -11,6 +11,7 @@ import {
 import { caseTaskEscalationSubject, buildCaseTaskEmailHtml, buildCaseTaskSmsText } from "./case-task-escalation-content";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 import { reportCronJobFailure } from "../../common/cron-failure-reporting";
+import { runWithOverlapGuard } from "../../common/scheduler-overlap-guard";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
 
@@ -46,14 +47,21 @@ export class CaseTaskEscalationService {
     return process.env.CASE_TASK_ESCALATION_ENABLED === "true";
   }
 
-  @Cron(CronExpression.EVERY_HOUR, { timeZone: SCHEDULER_TIMEZONE })
+  // W3-F07: overlap guard yalniz bu cron-entrypoint'i sarar — processCaseTaskEscalations()
+  // manuel/test cagrisi icin (flag'den bagimsiz) cagrilabilir kalir.
+  @Cron(CronExpression.EVERY_HOUR, { name: 'CaseTaskEscalationService.scheduledRun', timeZone: SCHEDULER_TIMEZONE })
   async scheduledRun(): Promise<void> {
     if (!this.isEnabled()) return; // FLAG OFF → çalışmaz (D-G6'da açılır)
-    try {
-      await this.processCaseTaskEscalations();
-    } catch (error) {
-      this.logger.error("Dosya görevi eskalasyon turu hatası:", error);
-      reportCronJobFailure(this.errorReporter, "caseTaskEscalation.scheduledRun", error);
+    const result = await runWithOverlapGuard('CaseTaskEscalationService.scheduledRun', async () => {
+      try {
+        await this.processCaseTaskEscalations();
+      } catch (error) {
+        this.logger.error("Dosya görevi eskalasyon turu hatası:", error);
+        reportCronJobFailure(this.errorReporter, "caseTaskEscalation.scheduledRun", error);
+      }
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn("[scheduler] CaseTaskEscalationService.scheduledRun already running, skipping");
     }
   }
 

@@ -306,3 +306,4 @@ src/common/scheduler-timezone.spec.ts
 # ASLA throw/reject etmedigini kanitlayan DB-free birim testi (bkz db/domain-integration.txt
 # icin DB-gated GERCEK ErrorLog yazimi eslesi).
 src/common/cron-failure-reporting.spec.ts
+src/common/scheduler-overlap-guard.spec.ts

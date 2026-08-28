@@ -8,6 +8,7 @@ import {
 } from './error-log-retention.config';
 import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 import { reportCronJobFailure } from '../../../common/cron-failure-reporting';
+import { runWithOverlapGuard } from '../../../common/scheduler-overlap-guard';
 import { IntegrationErrorReporter } from '../integration-error-reporter';
 
 // PR-6: Hata logu retention temizliği (config-tabanlı, hard delete, batch).
@@ -28,9 +29,17 @@ export class ErrorLogRetentionService {
   ) {}
 
   // Günlük 03:30 Europe/Istanbul. Yalnız config.enabled ise siler.
+  // W3-F07: overlap guard yalniz bu cron-entrypoint'i sarar — runRetentionCleanup()
+  // testler/manuel cagri icin bagimsiz cagrilabilir kalir (W3-F04'teki case-task-escalation/
+  // operational-escalation/office-approval-executor-cron ile AYNI desen).
   @Cron('30 3 * * *', { name: 'errorLogRetention', timeZone: SCHEDULER_TIMEZONE })
   async handleCron(): Promise<void> {
-    await this.runRetentionCleanup();
+    const result = await runWithOverlapGuard('errorLogRetention', async () => {
+      await this.runRetentionCleanup();
+    });
+    if (result === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] errorLogRetention already running, skipping');
+    }
   }
 
   /**

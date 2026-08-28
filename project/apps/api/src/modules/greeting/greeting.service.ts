@@ -4,6 +4,7 @@ import { ClientNotificationService } from "../client-notification/client-notific
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { SCHEDULER_TIMEZONE } from "../../common/scheduler-timezone";
 import { reportCronJobFailure } from "../../common/cron-failure-reporting";
+import { runWithOverlapGuard } from "../../common/scheduler-overlap-guard";
 import { IntegrationErrorReporter } from "../error-log/integration-error-reporter";
 import { ACTIVE_TENANT_WHERE } from "../tenant/tenant-lifecycle";
 
@@ -354,84 +355,89 @@ export class GreetingService {
    *   service.sendGreeting() / findTodayGreetings().
    * </remarks>
    */
-  @Cron(CronExpression.EVERY_MINUTE, { timeZone: SCHEDULER_TIMEZONE })
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'GreetingService.greetingSchedulerTick', timeZone: SCHEDULER_TIMEZONE })
   async greetingSchedulerTick() {
-    const now = new Date();
+    const guardResult = await runWithOverlapGuard('GreetingService.greetingSchedulerTick', async () => {
+      const now = new Date();
 
-    // Tüm tenant'ları al (otomatik tebrik için gerekli office alanlarıyla)
-    const tenants = await this.findTenantsForGreetingTick();
-    if (tenants === null) return;
+      // Tüm tenant'ları al (otomatik tebrik için gerekli office alanlarıyla)
+      const tenants = await this.findTenantsForGreetingTick();
+      if (tenants === null) return;
 
-    for (const tenant of tenants) {
-      const office = tenant.office;
+      for (const tenant of tenants) {
+        const office = tenant.office;
 
-      // Office kaydı yoksa: aynı-gün guard'ı için damgalanacak satır yok → güvenli tarafta atla
-      // (henüz hiç büro ayarı yapılmamış tenant; otomatik tebrik yapılandırılmamış sayılır).
-      if (!office) continue;
+        // Office kaydı yoksa: aynı-gün guard'ı için damgalanacak satır yok → güvenli tarafta atla
+        // (henüz hiç büro ayarı yapılmamış tenant; otomatik tebrik yapılandırılmamış sayılır).
+        if (!office) continue;
 
-      const enabled = office.autoGreetingEnabled ?? true;
+        const enabled = office.autoGreetingEnabled ?? true;
 
-      // autoGreetingTime ayarı bozuksa 09:00'a düş ve uyar (sessizce yanlış saatte çalışma)
-      const parsed = parseGreetingTime(office.autoGreetingTime);
-      if (parsed.fallbackUsed && office.autoGreetingTime != null) {
-        this.logger.warn(
-          `Tenant ${tenant.id}: autoGreetingTime ayrıştırılamadı ("${office.autoGreetingTime}"), 09:00 varsayılanı kullanılıyor`
-        );
-      }
+        // autoGreetingTime ayarı bozuksa 09:00'a düş ve uyar (sessizce yanlış saatte çalışma)
+        const parsed = parseGreetingTime(office.autoGreetingTime);
+        if (parsed.fallbackUsed && office.autoGreetingTime != null) {
+          this.logger.warn(
+            `Tenant ${tenant.id}: autoGreetingTime ayrıştırılamadı ("${office.autoGreetingTime}"), 09:00 varsayılanı kullanılıyor`
+          );
+        }
 
-      if (!shouldRunGreetingNow(now, office.autoGreetingTime, office.lastGreetingRunAt, enabled)) {
-        continue;
-      }
-
-      try {
-        const greetings = await this.findTodayGreetings(tenant.id);
-
-        // Sistem kullanıcısı (ilk admin) — yoksa gönderim yapılamaz, damgalama YOK
-        const systemUser = await this.prisma.user.findFirst({
-          where: { tenantId: tenant.id, role: "ADMIN" },
-        });
-        if (!systemUser) {
-          this.logger.warn(`Tenant ${tenant.id}: ADMIN kullanıcı yok, tebrik gönderilemedi (damgalanmadı)`);
+        if (!shouldRunGreetingNow(now, office.autoGreetingTime, office.lastGreetingRunAt, enabled)) {
           continue;
         }
 
-        // Doğum günü tebrikleri
-        for (const client of greetings.birthdays) {
-          await this.sendGreeting(tenant.id, systemUser.id, client.id, "BIRTHDAY", client.greetingChannel || "EMAIL");
-        }
+        try {
+          const greetings = await this.findTodayGreetings(tenant.id);
 
-        // Kuruluş yıldönümü tebrikleri
-        for (const client of greetings.foundingAnniversaries) {
-          await this.sendGreeting(tenant.id, systemUser.id, client.id, "FOUNDING_ANNIVERSARY", client.greetingChannel || "EMAIL");
-        }
-
-        // Vekalet yıldönümü tebrikleri
-        for (const client of greetings.poaAnniversaries) {
-          await this.sendGreeting(tenant.id, systemUser.id, client.id, "POA_ANNIVERSARY", client.greetingChannel || "EMAIL");
-        }
-
-        // Bayram/özel gün tebrikleri
-        for (const specialDay of greetings.specialDays) {
-          for (const client of greetings.holidayClients) {
-            const type = specialDay.type === "MEMORIAL" ? "MEMORIAL" : "HOLIDAY";
-            await this.sendGreeting(tenant.id, systemUser.id, client.id, type, client.greetingChannel || "EMAIL", specialDay.id);
+          // Sistem kullanıcısı (ilk admin) — yoksa gönderim yapılamaz, damgalama YOK
+          const systemUser = await this.prisma.user.findFirst({
+            where: { tenantId: tenant.id, role: "ADMIN" },
+          });
+          if (!systemUser) {
+            this.logger.warn(`Tenant ${tenant.id}: ADMIN kullanıcı yok, tebrik gönderilemedi (damgalanmadı)`);
+            continue;
           }
+
+          // Doğum günü tebrikleri
+          for (const client of greetings.birthdays) {
+            await this.sendGreeting(tenant.id, systemUser.id, client.id, "BIRTHDAY", client.greetingChannel || "EMAIL");
+          }
+
+          // Kuruluş yıldönümü tebrikleri
+          for (const client of greetings.foundingAnniversaries) {
+            await this.sendGreeting(tenant.id, systemUser.id, client.id, "FOUNDING_ANNIVERSARY", client.greetingChannel || "EMAIL");
+          }
+
+          // Vekalet yıldönümü tebrikleri
+          for (const client of greetings.poaAnniversaries) {
+            await this.sendGreeting(tenant.id, systemUser.id, client.id, "POA_ANNIVERSARY", client.greetingChannel || "EMAIL");
+          }
+
+          // Bayram/özel gün tebrikleri
+          for (const specialDay of greetings.specialDays) {
+            for (const client of greetings.holidayClients) {
+              const type = specialDay.type === "MEMORIAL" ? "MEMORIAL" : "HOLIDAY";
+              await this.sendGreeting(tenant.id, systemUser.id, client.id, type, client.greetingChannel || "EMAIL", specialDay.id);
+            }
+          }
+
+          // SADECE buraya HATASIZ ulaşıldıysa damgala → aynı-gün tekrar gönderim guard'ı
+          await this.prisma.office.update({
+            where: { id: office.id },
+            data: { lastGreetingRunAt: new Date() },
+          });
+
+          this.logger.log(
+            `Tenant ${tenant.id}: ${greetings.birthdays.length} doğum günü, ${greetings.foundingAnniversaries.length} kuruluş, ${greetings.poaAnniversaries.length} vekalet yıldönümü, ${greetings.specialDays.length} özel gün gönderildi (damgalandı)`
+          );
+        } catch (e: any) {
+          // Hata → damgalama YOK → sonraki dakika tekrar denenir (o gün tebrik atlanmaz)
+          this.logger.error(`Tenant ${tenant.id} tebrik hatası (damgalanmadı, retry edilecek): ${e.message}`);
+          reportCronJobFailure(this.errorReporter, "greeting.greetingSchedulerTick", e, { tenantId: tenant.id });
         }
-
-        // SADECE buraya HATASIZ ulaşıldıysa damgala → aynı-gün tekrar gönderim guard'ı
-        await this.prisma.office.update({
-          where: { id: office.id },
-          data: { lastGreetingRunAt: new Date() },
-        });
-
-        this.logger.log(
-          `Tenant ${tenant.id}: ${greetings.birthdays.length} doğum günü, ${greetings.foundingAnniversaries.length} kuruluş, ${greetings.poaAnniversaries.length} vekalet yıldönümü, ${greetings.specialDays.length} özel gün gönderildi (damgalandı)`
-        );
-      } catch (e: any) {
-        // Hata → damgalama YOK → sonraki dakika tekrar denenir (o gün tebrik atlanmaz)
-        this.logger.error(`Tenant ${tenant.id} tebrik hatası (damgalanmadı, retry edilecek): ${e.message}`);
-        reportCronJobFailure(this.errorReporter, "greeting.greetingSchedulerTick", e, { tenantId: tenant.id });
       }
+    });
+    if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
+      this.logger.warn('[scheduler] GreetingService.greetingSchedulerTick already running, skipping');
     }
   }
 
