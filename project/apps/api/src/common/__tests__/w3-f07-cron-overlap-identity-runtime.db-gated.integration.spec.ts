@@ -149,25 +149,28 @@ describeWithDisposableDb(
     it(
       "E: parallel execution (farkli job) — GERCEK DI-resolved iki FARKLI servis " +
         "(farkli jobId) ESZAMANLI calisirken BIRBIRINI ENGELLEMEZ, ikisinin de gercek " +
-        "govdesi calisir (Prisma cagrisi kaniti)",
+        "govdesi calisir (govde-yurutme kaniti; rateSync tarafi Prisma-level)",
       async () => {
         const { app } = await bootApp();
         try {
           const errorLogSvc = app.get(ErrorLogRetentionService);
           const rateSyncSvc = app.get(RateSyncService);
           const prisma = app.get(PrismaService);
-          // "Gercekten calisti" kaniti: guard'dan bagimsiz, her iki servisin KENDI
-          // Prisma model cagrisinin (govdesinin gercekten yurutuldugunun dogrudan
-          // gozlemi) en az bir kez tetiklendigini dogrudan Prisma seviyesinde dogrula
-          // (dis-servis spy'lari private metod erisimine ihtiyac duymaz).
-          const errorLogPrismaSpy = jest.spyOn(prisma.errorLog, "findMany");
+          // "Gercekten calisti" kaniti: errorLog tarafinda Prisma-level sinyal
+          // config-gated'dir — ERROR_LOG_RETENTION_ENABLED yoksa runRetentionCleanup
+          // K3 geregi no-op doner ve errorLog.findMany'ye HIC inmez (CI'da env yok).
+          // Bu yuzden errorLog kaniti METOD duzeyinde alinir (B ile ayni teknik:
+          // guard SKIP etseydi runRetentionCleanup HIC cagrilmazdi); Prisma-level
+          // kanit rateSync tarafinda devam eder (office.findMany config'ten bagimsiz,
+          // apiKey kontrolu per-tenant sync'in ICINDEDIR — findMany her durumda kosar).
+          const errorLogBodySpy = jest.spyOn(errorLogSvc, "runRetentionCleanup");
           const officePrismaSpy = jest.spyOn(prisma.office, "findMany");
 
           await Promise.all([errorLogSvc.handleCron(), rateSyncSvc.syncMonthlyMevduatRates()]);
 
-          expect(errorLogPrismaSpy).toHaveBeenCalled(); // errorLogRetention govdesi GERCEKTEN calisti
+          expect(errorLogBodySpy).toHaveBeenCalledTimes(1); // errorLogRetention govdesi GERCEKTEN cagrildi (SKIP degil)
           expect(officePrismaSpy).toHaveBeenCalled(); // rateSync govdesi GERCEKTEN calisti — birbirini ENGELLEMEDI
-          errorLogPrismaSpy.mockRestore();
+          errorLogBodySpy.mockRestore();
           officePrismaSpy.mockRestore();
         } finally {
           clearSharedPromRegistry(app); // her close oncesi sart (W3-F03 ile ayni desen)
