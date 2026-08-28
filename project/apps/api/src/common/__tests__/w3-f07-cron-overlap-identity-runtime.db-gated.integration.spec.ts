@@ -120,6 +120,7 @@ describeWithDisposableDb(
         // sansina DEGIL, 33 GERCEK deterministik isme dayanir. Sayisal olarak da dogrula.
         expect(bootB.registry.getCronJobs().size).toBe(SCHEDULER_JOB_REGISTRY_COUNT);
 
+        clearSharedPromRegistry(bootB.app); // sonraki it()'lerin boot'lari icin sart (W3-F03 ile ayni desen)
         await expect(bootB.app.close()).resolves.toBeUndefined(); // F (Boot B)
       },
     );
@@ -139,6 +140,7 @@ describeWithDisposableDb(
           expect(spy).toHaveBeenCalledTimes(1); // ikinci cagri overlap-guard tarafindan SKIP edildi
           spy.mockRestore();
         } finally {
+          clearSharedPromRegistry(app); // her close oncesi sart (W3-F03 ile ayni desen)
           await app.close();
         }
       },
@@ -168,6 +170,7 @@ describeWithDisposableDb(
           errorLogPrismaSpy.mockRestore();
           officePrismaSpy.mockRestore();
         } finally {
+          clearSharedPromRegistry(app); // her close oncesi sart (W3-F03 ile ayni desen)
           await app.close();
         }
       },
