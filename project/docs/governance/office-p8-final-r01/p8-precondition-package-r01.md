@@ -665,3 +665,53 @@ office-p8-final-r01/p8-d13-runtime-residual-matrix-r01.md   (C28-PR1 / #2483)
 - **P8 FINAL hâlâ BAŞLAMAMIŞTIR** (`BLOCKED`); D13 disposition'ı C28 FAZ 2 owner
   checkpoint'inin konusudur ve owner verdict'i AYRI kayıtla (C28-PR2)
   materyalize edilecektir.
+
+### D.21 D13 OWNER TERMINAL VERDICT MATERIALIZATION
+
+*(Append-only ek — C28 PR2, 2026-08-28. Önceki bölümler DEĞİŞTİRİLMEMİŞTİR.
+D.20'yi izleyen serbest append-only numara kullanılmıştır.)*
+
+- **Owner verdict'i ALINMIŞTIR** (C28 oturumu owner checkpoint yanıtı; kayıt
+  zamanı UTC **2026-08-28T20:00:01Z**; `RATIFICATION: APPROVED`). Exact
+  disposition:
+
+```text
+D13 = SATISFIED_WITH_RECORDED_RUNTIME_RESIDUAL
+RUNTIME DEPLOYMENT RESIDUAL = CARRY_FORWARD / SEPARATE OWNER GO
+DEPLOYMENT COMPLETION = NOT CLAIMED
+```
+
+- **Kanonik verdict kaydı** (owner mesajı aynen, adjudication scope dahil,
+  `## TERMINAL VERDICT` bölümü bu PR'dadır):
+
+```text
+office-p8-final-r01/p8-d13-runtime-residual-matrix-r01.md   (C28-PR2 / #2484)
+```
+
+- **PR1 kanıtı:** #2483 · squash `320fffe7b789ebe2f7ac64adcc5ddbd94aeada76`
+  (origin/main ancestor, VERIFIED) · exact 2 dosya · classifier
+  `GOV_COORD_NON_COORDINATION_PR` (actual base/head) · CI 9/9 PASS ·
+  `MERGEABLE / CLEAN` · merge sonrası main sync + cleanup tamamlandı · açık PR 0.
+- **Owner adjudication scope'unun korunan sınırları:** 7 runtime-residual kökü
+  AYNEN AÇIK · Web RELEASE11 ↔ API RELEASE13 root ayrışması kayıtlı discovery ·
+  C15/B02 DB-apply + süreç cwd/env `UNKNOWN` alanları KAPANMIŞ SAYILMAZ · F01
+  `PUBLIC_S0_ONLY` canlı kanıt boşluğu korunur (güvenlik/public-projection
+  uygunluğu VARSAYILMAZ) · `DEPLOYMENT COMPLETION = NOT CLAIMED` ·
+  `PRODUCTION READINESS = NOT CLAIMED` · F05 `NOT AUTHORIZED / NOT CLOSED`.
+- **P8 FINAL ön-koşul matrisi (bu verdict sonrası):**
+
+```text
+X4 TERMINAL ADJUDICATION = SATISFIED
+"15" SUPERSESSION + FRESH INVENTORY = SATISFIED
+C.1 CROSS-REFERENCE = SATISFIED
+D14 UMBRELLA TERMINAL RECORD = SATISFIED
+P8-REPAIR = 5/5 VERIFIED
+D13 = SATISFIED
+P8 FINAL PRECONDITION SET = COMPLETE
+P8 FINAL = NOT STARTED
+P8 FINAL OWNER GO REQUIRED = YES
+```
+
+- **Non-authorizing sınır:** bu kayıt hiçbir deploy, release, F05, repair,
+  implementation, successor, schema, migration, register-flip, runtime veya
+  execution yetkisi ÜRETMEZ; P8 FINAL launch'ı AYRI owner GO'suna tabidir.

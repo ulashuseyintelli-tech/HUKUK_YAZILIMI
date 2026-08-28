@@ -248,3 +248,45 @@ TERMINAL VERDICT: PENDING_OWNER
 
 Secret, token, nonce, credential, exploit detayı, process command-line/environment içeriği
 veya absolute kullanıcı-profili path'i bu kayda YAZILMAMIŞTIR.
+
+## TERMINAL VERDICT
+
+*(Append-only ek — C28 PR2 / FAZ 2, 2026-08-28. §1–§14 tarihsel içeriği ve
+§14'teki `TERMINAL VERDICT: PENDING_OWNER` literal'i DEĞİŞTİRİLMEMİŞTİR; bu bölüm
+o PENDING durumunu owner verdict'iyle supersede eder.)*
+
+**Owner verdict'i ALINMIŞTIR** (C28 oturumu owner checkpoint yanıtı; kayıt zamanı
+UTC 2026-08-28T20:00:01Z). Mesaj aynen:
+
+```text
+C28 OWNER VERDICT:
+D13 = SATISFIED_WITH_RECORDED_RUNTIME_RESIDUAL
+RATIFICATION: APPROVED
+
+OWNER ADJUDICATION SCOPE:
+- RUNTIME DEPLOYMENT RESIDUAL = CARRY_FORWARD / SEPARATE OWNER GO
+- DEPLOYMENT COMPLETION = NOT CLAIMED
+- PRODUCTION READINESS = NOT CLAIMED
+- F05 = NOT AUTHORIZED / NOT CLOSED
+- PR1'deki 7 runtime-residual kökü aynen korunacaktır.
+- LIVE WEB RELEASE11 ↔ LIVE API RELEASE13 root ayrışması kayıtlı discovery olarak korunacaktır.
+- C15/B02 DB-apply ve process cwd/env UNKNOWN alanları kapatılmış sayılmayacaktır.
+- F01 PUBLIC_S0_ONLY canlı kanıt boşluğu özellikle korunacak; güvenlik veya public-projection uygunluğu varsayılmayacaktır.
+- P8 FINAL bu verdict ile başlamaz veya kapanmaz; yalnız D13 önkoşulu satisfied olur.
+```
+
+**Verdict'in etkisi (seçenek b):**
+
+```text
+D13 PRECONDITION = SATISFIED_WITH_RECORDED_RUNTIME_RESIDUAL
+RUNTIME DEPLOYMENT RESIDUAL = CARRY_FORWARD / SEPARATE OWNER GO
+DEPLOYMENT COMPLETION = NOT CLAIMED
+```
+
+Bu verdict: runtime'ın güncel olduğunu İDDİA ETMEZ; deploy'u tamamlanmış SAYMAZ;
+F05'i KAPATMAZ (`NOT AUTHORIZED / NOT CLOSED` korunur); §13.1'deki 7 residual
+kökünü, §13.4 discovery kayıtlarını (Web RELEASE11 ↔ API RELEASE13 root
+ayrışması dahil) ve §8'deki 3 `UNKNOWN` alanını (C15/B02 DB-apply · süreç
+cwd/env) AYNEN AÇIK bırakır; F01 `PUBLIC_S0_ONLY` canlı kanıt boşluğu için
+güvenlik veya public-projection uygunluğu VARSAYILMAZ; **P8 FINAL'i başlatmaz
+veya kapatmaz** — yalnız D13 ön-koşulunu satisfied yapar. Kayıt PR'ı: C28-PR2 / #2484.
