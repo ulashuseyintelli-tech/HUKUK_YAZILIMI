@@ -943,3 +943,240 @@ NEXT: owner checkpoint → ratifikasyon gelirse PR2 (append-only karar kaydi);
       implementation + rehearsal AYRI owner GO ister; production cutover
       AYRICA yetkilendirilir.
 ```
+
+---
+
+## OWNER DESIGN RATIFICATION — TERMINAL KAYIT
+
+*(Append-only ek — C31 PR2, 2026-08-29. Yukaridaki §A-§M ve "TERMINAL BEYAN
+(PR1 ani)" tarihsel icerigi DEGISTIRILMEMISTIR; bu bolum PR1 anindaki
+BLOCKED_OWNER_DECISION durumunu owner ratifikasyonuyla supersede eder.)*
+
+**Owner design ratification ALINMISTIR** (C31 oturumu owner checkpoint yaniti;
+kayit zamani UTC 2026-08-29 — bu append'in yazim ani). Ratifikasyon govdesi
+aynen:
+
+```text
+C31 OWNER DESIGN RATIFICATION:
+
+K-1 MIMARI:
+C — QUIESCED SEALED-HOST COORDINATION
+
+Karar sınırı:
+- Compile-time launcher pin disiplini korunur.
+- Trust-root dosya sistemine taşınmaz.
+- Runtime manifest veya süresiz dual-pin kabulü oluşturulmaz.
+- Her release geçişi yetkili build + qualification + reseal zincirinden geçer.
+- Pin doğrulaması hiçbir aşamada kapatılmaz veya gevşetilmez.
+
+K-2 WATCHDOG:
+F-A — BOUNDED / JOURNAL-VISIBLE COMPONENT QUIESCE
+
+Bağlayıcı koşul:
+- W2 RestartOnFailure semantiği G4/R-11 kapsamında deneysel olarak kanıtlanmadan
+  implementation READY veya production-ready sayılamaz.
+- Quiesce yalnız hedef component ve tek transaction içindir.
+- Süreli, journal-visible ve crash-recoverable olmalıdır.
+- Süre aşımında fail-closed recovery çalışmalıdır.
+- Watchdog’un bütünüyle kapatılması yasaktır.
+
+K-3 API/WEB SIRASI:
+SIRALI İKİ TRANSACTION — API ÖNCE, WEB SONRA
+
+Bağlayıcı koşullar:
+- API ve Web ayrı terminal sonuç üretir.
+- API başarısızsa Web transaction başlamaz.
+- API başarılı/Web başarısız sonucu geçerli kısmi durum olarak kaydedilir.
+- Ortak sealed host binary iki component pinini birlikte taşıyorsa C32;
+  API pin güncellemesinin Web pinini, Web restart güvenliğini ve rollback
+  kabiliyetini değiştirmediğini çapraz testle kanıtlar.
+- İkinci Web reseal generation’ı, başarılı API pinini aynen korumalıdır.
+
+K-4 RELEASE14:
+J-A — MEVCUT IMMUTABLE RELEASE14 CANDIDATE’İ YENİDEN KULLAN
+
+Bağlayıcı freshness kapıları:
+- C32 başlangıcında current main ile runtime-relevant tree delta yeniden ölçülür.
+- Runtime-relevant delta 0 değilse J-A yetkisi otomatik düşer; fresh release cut
+  owner checkpoint’e taşınır.
+- RELEASE14 manifest, API dist, Web build, dependency lock, migration set,
+  .env hash/ACL ve launcher candidate’ları fresh yeniden doğrulanır.
+- Herhangi bir hash veya ACL drift’inde candidate kullanılmaz.
+- .env içeriği okunmaz.
+
+K-5 ENGINEERING LANE:
+HY_OPS_DURABILITY_R04
+
+Lane sınırı:
+- Sealed-host engineering, qualification ve disposable rehearsal bu lane’de
+  yürütülür.
+- Canlı C:\Ops\hukuk veya production task yüzeyi C32 kapsamında değildir.
+- Yeni host binary için source → build → manifest → sealed binary identity
+  zinciri G1 ile yeniden kurulmalıdır.
+
+K-6 SAYFA YAPISI:
+TEK C32 IMPLEMENTATION + DISPOSABLE REHEARSAL
++
+AYRI PRODUCTION CUTOVER SAYFASI
+
+C32:
+- engineering;
+- deterministic build;
+- sealed bundle;
+- state-machine implementation;
+- disposable rehearsal;
+- G1–G17 qualification;
+- production mutation 0.
+
+Production:
+- C32 terminal kapanışından sonra;
+- fresh hash-bound owner authorization;
+- ayrı UUIDv4 ve UTC window;
+- ayrı backup/rollback sözleşmesi;
+- ayrı GO.
+
+K-7 RETENTION + HARDENING:
+RETENTION = AYNEN KORU
+
+Korunacaklar:
+- RELEASE14 candidate + .env;
+- RELEASE13/12/11 rollback kökleri;
+- BACKUP-01 dump;
+- C30_EVIDENCE + execution journal;
+- HY_OPS_DURABILITY_R03 sealed paketi;
+- canlı C:\Ops\hukuk düzeni.
+
+ACL HARDENING:
+C32 KAPSAMI DIŞI / NOT AUTHORIZED.
+
+Administrators ownership veya bin/pwsh ACL değişikliği C32’ye karıştırılmayacaktır.
+ACL hardening ayrı salt-okuma analiz + compatibility qualification + owner GO
+gerektirir. C32 yalnız mevcut ACL sözleşmesini korur ve drift’i doğrular.
+
+EK BAĞLAYICI TASARIM KOŞULLARI:
+
+1. “Atomik” yalnız journal-korumalı, crash-recoverable mantıksal atomikliktir;
+   çok-dosyalı fiziksel atomiklik iddia edilmez.
+
+2. Sealed host binary API ve Web launcher pinlerini aynı binary içinde taşıyorsa
+   C32 aşağıdaki generation matrisini kanıtlar:
+   - G0 = API-old / Web-old
+   - G1 = API-new / Web-old
+   - G2 = API-new / Web-new
+   - rollback G1 → G0
+   - Web-failure durumunda G2 → G1
+   Her generation için binary, iki launcher ve rollback bundle hash’leri sealed
+   manifestte bulunmalıdır.
+
+3. Host binary + launcher candidate + rollback artefaktı tek transaction bundle
+   kimliğiyle bağlanır. Karışık generation kabul edilmez.
+
+4. Journal recovery; binary, launcher, çalışan release ve Scheduled Task sonucunu
+   birlikte reconcile eder. Yalnız launcher dosyasını geri yazmak yeterli recovery
+   sayılmaz.
+
+5. Lost-response halinde ikinci UAC/writer çağrısı yapılmaz. Önce hash, task,
+   listener, process entry-path ve journal üzerinden reconciliation yapılır.
+
+6. G1–G17’nin tamamı PASS olmadan:
+   DETERMINISTIC_READY_FOR_PRODUCTION,
+   PRODUCTION_READY veya CUTOVER_AUTHORIZED hükmü üretilemez.
+
+7. C32 başarısı yalnız:
+   IMPLEMENTATION_AND_REHEARSAL_QUALIFIED /
+   PRODUCTION_NOT_AUTHORIZED
+   sonucunu üretebilir.
+
+8. C30-F01 root-cause verdict’i kabul edilmiştir:
+   exit 104 = VERIFIED LAUNCHER SCRIPT HASH MISMATCH.
+   Canlı binary bağı VERIFIED_VIA_SEALED_ATTESTATION olarak kaydedilir;
+   reproducible-build kanıtı varmış gibi genişletilmez.
+
+9. C30, OFFICE terminal sertifikasyonu, F05, runtime residual’lar ve AUTHPUB
+   statüleri değişmez.
+
+PR2 AUTHORITY:
+
+Bu ratifikasyon yalnız:
+
+- c30-f01-launcher-pin-atomic-cutover-design-r01.md dosyasına append-only owner
+  karar kaydı;
+- yukarıdaki K-1..K-7 kararları ve bağlayıcı koşullar;
+- IMPLEMENTATION AUTHORITY: NONE;
+- PRODUCTION AUTHORITY: NONE;
+- C32 için ayrı owner GO gerekliliği;
+- actual-diff classifier;
+- CI;
+- literal MERGEABLE/CLEAN halinde squash-merge;
+- server-side doğrulama;
+- ff-only main sync;
+- worktree/branch cleanup
+
+için tek kullanımlık yetkidir.
+
+Canlı/disposable rehearsal, implementation, host build, ACL değişikliği veya
+production mutation yetkisi vermez.
+
+RATIFICATION: APPROVED
+```
+
+### Ratifikasyonun tasarima islenmesi (baglayici sonuclar)
+
+```text
+K-1 → §C.5 SECENEK C terminal secili tasarimdir; §C.3 (A) ve §C.4 (B1/B2)
+      REDDEDILMIS ALTERNATIF olarak tarihsel kayitta kalir. §C.2'deki
+      trust-root ikilemi owner tarafindan "binary'de kalir" yonunde
+      kapatilmistir; pin dogrulamasi hicbir asamada gevsetilemez.
+K-2 → §F.3 F-A terminal secili modeldir; F-B REDDEDILMISTIR. §F.1 W2
+      [INFERRED] davranisi, G4/R-11 deneysel kaniti olmadan READY hukmu
+      uretemez (baglayici).
+K-3 → §G "sirali iki transaction, API once" terminal secili siradir; ortak
+      binary cift-pin tasiyorsa EK KOSUL 2'deki G0/G1/G2 generation matrisi
+      C32 kanit yukumlulugune eklenir.
+K-4 → §J J-A terminal secili dispositiondur; freshness kapilari (runtime-
+      relevant delta 0 sarti, tam fresh re-hash seti, drift'te otomatik
+      dusme) J-A yetkisinin AYRILMAZ parcasidir.
+K-5 → §K-5 onerisi aynen: successor engineering lane = HY_OPS_DURABILITY_R04;
+      canli yuzeyler C32 kapsami DISINDA.
+K-6 → §K-6 onerisi aynen: TEK C32 (implementation + disposable rehearsal +
+      G1-G17 qualification; production mutation 0) + AYRI production cutover
+      sayfasi (fresh hash-bound authorization, ayri UUID/pencere/GO).
+K-7 → Retention listesi AYNEN korunur. §E/10 ve §K-7'deki ACL HARDENING
+      ONERISI C32 KAPSAMI DISI / NOT AUTHORIZED iladir; C32 yalniz mevcut
+      ACL sozlesmesini korur ve drift'i dogrular.
+EK KOSULLAR 1-9 → §C.1 atomiklik tanimi, §D recovery butunlugu (dortlu
+      reconciliation), §E/16 journal-dosya reconciliation, lost-response
+      tek-cagri disiplini, G-kapilari esiği ve C32 terminal-sonuc sinifi
+      (IMPLEMENTATION_AND_REHEARSAL_QUALIFIED / PRODUCTION_NOT_AUTHORIZED)
+      baglayici hale gelmistir. Kok-neden verdict'i (exit 104 = VERIFIED
+      LAUNCHER SCRIPT HASH MISMATCH; canli binary bagi
+      VERIFIED_VIA_SEALED_ATTESTATION) owner tarafindan KABUL edilmistir ve
+      genisletilemez. C30/OFFICE/F05/runtime-residual/AUTHPUB statuleri
+      DEGISMEZ.
+```
+
+### Exact terminal disposition
+
+```text
+C31 = C30_F01_ATOMIC_CUTOVER_DESIGN_RATIFIED /
+      DETERMINISTIC_READY_FOR_IMPLEMENTATION /
+      COMPLETED / CLOSED
+```
+
+Bu statu YALNIZ tasarimin implementation'a hazir oldugunu ifade eder;
+implementation veya production yetkisi URETMEZ.
+
+### Sinir beyanlari
+
+```text
+IMPLEMENTATION AUTHORITY   = NONE (C32 ayri owner GO ister)
+PRODUCTION AUTHORITY       = NONE (production cutover ayri sayfa + ayri GO)
+REHEARSAL                  = NOT EXECUTED / NOT AUTHORIZED (C32 kapsaminda)
+HOST BUILD                 = NOT AUTHORIZED (HY_OPS_DURABILITY_R04, C32 GO'suyla)
+ACL HARDENING              = NOT AUTHORIZED (ayri analiz + qualification + GO)
+PRODUCTION MUTATION (C31)  = 0 (PR2 aninda yeniden dogrulandi)
+RETENTION                  = K-7 listesi AYNEN
+NEXT PHASE                 = C32 (tek sayfa: implementation + disposable
+                             rehearsal) — OTOMATIK BASLAMAZ; owner GO gerekir
+AUTOMATIC TRANSITION       = NONE
+```
