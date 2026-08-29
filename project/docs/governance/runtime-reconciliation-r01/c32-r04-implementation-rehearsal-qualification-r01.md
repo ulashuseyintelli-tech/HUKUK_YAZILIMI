@@ -453,3 +453,243 @@ AUTOMATIC TRANSITION     = NONE
 Bu kayit yalnizca implementation ve disposable rehearsal'in qualification
 durumunu tespit eder; production cutover, canli yuzey degisikligi veya yeni
 execution authority URETMEZ.
+
+---
+
+## SUPPLEMENT — C32-BLK-02 PATH-RELOCATABLE PACKAGE REVISION (R1)
+
+*(Append-only ek. Yukaridaki §A-§K tarihsel icerigi DEGISTIRILMEMISTIR. Bu bolum
+owner'in `PATH-RELOCATABLE REVISION AUTHORIZED / EXACT SIX-FILE SCOPE / SINGLE USE /
+PRODUCTION MUTATION NONE` ratifikasyonu kapsaminda yurutulen package-identity
+remediation'in kaydidir.)*
+
+### S.1 Blocker zinciri ve yeniden siniflandirma
+
+```text
+C32-BLK-01  UNMANIFESTED_FILE_INSIDE_R04_PACKAGE_ROOT
+            (owner tespiti: 31-dosyalik manifest disinda kalan fiziksel dosya;
+            physical package root exact-set dogrulamasi PASS DEGILDI)
+            -> bounded package-rematerialization yurutuldu; adim 7 self-containment
+            kapisinda ikinci kusur ortaya cikti.
+
+C32-BLK-02  (ilk raporlama)  BLOCKED_UNOWNED_SOURCE_DEPENDENCY
+            (owner tarafindan atanan kod; TARIHSEL KAYITTA KORUNUR)
+            (owner reclassification) BLOCKED_LOCATION_BOUND_PACKAGE_SELF_DEPENDENCY
+            Kanitlanan exact sinif "unowned source dependency" DEGILDIR:
+            orphan runtime bagi = 0. Gercek kusur, ALTI calistirilabilir dosyanin
+            eski R04 package root'una ABSOLUTE-PATH ile baglanmasidir.
+```
+
+Ilk remediation turunun (C32-BLK-01) urettigi kanitlar korunmustur: source-root
+33-dosya envanteri, 31-dosya byte-exact canonical payload, acyclic manifest/receipt
+modeli ve iki bagimsiz exact-set verification. Bu supplement onlari SUPERSEDE
+etmez; uzerine self-containment kapisini ekler.
+
+### S.2 Original root ve orphan preservation
+
+```text
+ORIGINAL ROOT   C:\Development\HUKUK_YAZILIMI\HY_OPS_DURABILITY_R04
+SINIF           SOURCE_PACKAGE_WITH_PRESERVED_UNMANIFESTED_RESIDUAL /
+                NOT_CANONICAL_DELIVERY_PACKAGE
+DURUM           33 dosya; envanter hash'i remediation ONCESI == SONRASI (IDENTICAL)
+                dosya duzenleme / silme / tasima / yeniden adlandirma / ACL
+                degisikligi = 0
+ORPHAN          engine\hukuk-cutover-engine.ps1
+                SHA-256 4F6F7E6217D52629A3D278B44B49C3D562D21314888D46227128B86038A68147
+                18691 byte
+                PRESERVED / NOT_EXECUTED / NOT_INCLUDED
+                (canonical payload'a girmedi; sahiplik/provenance ICAT EDILMEDI)
+IKINCI MANIFEST-DISI KALEM
+                manifest\r04-sha256-manifest.txt (manifest kendi hash'ini
+                iceremez). Canonical yapida bu sorun YAPISAL olarak cozulur:
+                manifest payload\ DISINDA tutulur.
+```
+
+### S.3 Exact six-file revision allowlist ve before/after
+
+Revision koku: `HY_OPS_DURABILITY_R04_R1_f92156ad-12ce-4a1b-b7b5-b74aea6ed76a`
+(fresh UUIDv4; reparse yok; original root / C:\Ops\hukuk / RELEASE kokleri /
+repo worktree DISINDA). Once 31 yetkili dosya byte-exact kopyalandi (parity 31/31),
+sonra YALNIZ asagidaki alti dosyada bounded revision yapildi.
+
+| # | Dosya | before SHA-256 (12) | after SHA-256 (12) | boyut | minimal diff |
+|---|---|---|---|---|---|
+| 1 | build\build-r04-host.ps1 | 7DEBC3FB876C | 2A1CA3173F49 | 6668 -> 10690 B | +66 / -4 |
+| 2 | build\make-evidence-manifest.ps1 | DC478F2ADCFF | 03C57ED20370 | 3702 -> 8153 B | +100 / -22 |
+| 3 | build\make-template.ps1 | BE6FAF0FE265 | F9F9CCA265D7 | 4676 -> 8457 B | +65 / -6 |
+| 4 | evidence\make-gate-matrix.ps1 | EB322A291D3F | 743162C80736 | 6997 -> 10560 B | +62 / -5 |
+| 5 | rehearsal\run-rehearsal.ps1 | BB86E6B6D28C | 5782B2408FD0 | 38146 -> 41803 B | +66 / -9 |
+| 6 | rehearsal\setup-env.ps1 | 7694F04FDCC5 | B121A8EF1CBA | 8367 -> 13193 B | +80 / -4 |
+
+**Kapsam dogrulamasi (olculdu):** degismeyen dosya = 25 · degisen dosya = 6 ·
+allowlist disi degisiklik = 0 · yeni dosya = 0.
+
+### S.4 PackageRoot / WorkspaceRoot sozlesmesi
+
+```text
+PACKAGE ROOT
+  - $PSScriptRoot + [Path]::GetFullPath ile script konumundan CANONICAL turetilir;
+  - environment-variable ve current-working-directory fallback'i YOKTUR;
+  - caller tarafindan serbest override EDILEMEZ (parametre degildir);
+  - reparse/junction zinciri FAIL-CLOSED reddedilir (PACKAGEROOT-VIOLATION):
+    junction uzerinden cagri paket kimliginin substitution'ina kapi birakir;
+  - yalniz READ-ONLY source/tool/fixture girdilerinin kokudur.
+
+WORKSPACE ROOT
+  - yazim yapan her scriptte MANDATORY EXPLICIT parametredir;
+  - canonical resolved path ile dogrulanir; 8.3/short-name reddedilir;
+  - MEVCUT olmali (auto-create YOK) ve giris scriptlerinde BOS olmali;
+  - package root altinda OLAMAZ (immutable pakete yazim engeli);
+  - herhangi bir paket koku altinda OLAMAZ (segment-adi fence: HY_OPS_DURABILITY*);
+  - C:\Ops\hukuk, RELEASE kokleri ve repo worktree altinda OLAMAZ;
+  - reparse/junction OLAMAZ;
+  - build output, generated source, provenance output, journal, log,
+    rehearsal-results ve gate-matrix YALNIZ buraya yazilir.
+
+NOT (fence tasarimi): original-root fence'i MUTLAK YOL LITERALI ile degil
+SEGMENT-ADI ile kurulmustur; boylece "executable icinde original R04 absolute
+path = 0" kapisi korunurken "WorkspaceRoot original root altinda" negatif testi
+de fail-closed kalir.
+```
+
+Dosya bazli davranis (owner §4) uygulanmistir: `build-r04-host` template'i
+PackageRoot'tan okur ve derleme ciktisini yalniz WorkspaceRoot altindaki OutDir'e
+yazar (OutDir workspace disi ise fail-closed); `make-evidence-manifest` explicit
+`-PayloadRoot`/`-OutputRoot` alir, resolved payload path'i receipt'e yazar ve
+implicit fallback yapmaz; `make-template` provenance'i PackageRoot'tan okur,
+uretilen template/provenance ciktisini WorkspaceRoot'a yazar; `make-gate-matrix`
+sonuclari WorkspaceRoot'tan okur ve matrisi oraya yazar; `run-rehearsal` engine/load
+ve fixture'lari PackageRoot'tan okur, journal/result/log'u yalniz WorkspaceRoot'a
+yazar; `setup-env` fixture/build kaynaklarini PackageRoot'tan alir, disposable
+environment'i yalniz WorkspaceRoot altinda kurar ve resolved PackageRoot/
+WorkspaceRoot kimliklerini `root-receipt.json` baslangic receipt'ine yazar.
+
+### S.5 Relocatability ve isolation negatif kapilari
+
+Statik tarama (executable/config = 18 dosya: .ps1/.cs/.js):
+
+```text
+original R04 absolute path        = 0
+C:\Ops\hukuk WRITE TARGET         = 0   (gecen satirlar yalniz deny-list/sabit)
+RELEASE11/12/13/14 live path      = 0
+environment fallback              = 0
+current-directory bagimliligi     = 0
+secret/.env value access          = 0
+parser/compile error              = 0
+HukukPlatform-API/Web referansi   = yalniz isolation-guard NEGATIF fixture'i
+port 8080/3002                    = yalniz isolation-guard rejection testi
+tarihsel evidence (log)           = evidence\rehearsal-run.log ve run1.log
+                                    (metin; executable/config DEGIL - owner §5 izinli)
+```
+
+Negatif suite **11/11 PASS** (hepsi fail-closed):
+
+| Test | Senaryo | Sonuc |
+|---|---|---|
+| N-01 | WorkspaceRoot package root altinda | WORKSPACE-VIOLATION |
+| N-02 | WorkspaceRoot original root altinda | WORKSPACE-VIOLATION (segment fence) |
+| N-03 | WorkspaceRoot C:\Ops\hukuk altinda | WORKSPACE-VIOLATION |
+| N-04 | WorkspaceRoot mevcut degil | WORKSPACE-VIOLATION |
+| N-05 | WorkspaceRoot bos degil | WORKSPACE-VIOLATION |
+| N-06 | WorkspaceRoot reparse/junction | WORKSPACE-VIOLATION |
+| N-07 | PackageRoot reparse/junction uzerinden cagri | PACKAGEROOT-VIOLATION |
+| N-08 | mutlak olmayan WorkspaceRoot | WORKSPACE-VIOLATION |
+| N-09 | 8.3/short-name (~) WorkspaceRoot | WORKSPACE-VIOLATION |
+| N-10 | isolation guard: canli task/port/path/.env | GUARD-VIOLATION (6/6) |
+| N-11 | build OutDir WorkspaceRoot disinda | WORKSPACE-VIOLATION |
+| ek | package yolu BOSLUK iceriyor | PASS (yalniz WorkspaceRoot'a yazdi) |
+
+**N-07 ara FAIL kaydi (gizlenmemistir):** ilk turda PackageRoot junction uzerinden
+cagrildiginda paket FAIL-OPEN calisti (tam rehearsal kosuldu, exit 0). Kok neden:
+`$PSScriptRoot` junction yolunu verir ve PackageRoot turetimi reparse denetimi
+yapmiyordu. Duzeltme alti dosyanin tamamina PackageRoot reparse-zinciri denetimi
+eklenerek yapildi; yeniden kosumda N-07 fail-closed oldu.
+
+### S.6 Iki farkli package-location kosumu (RUN-A / RUN-B)
+
+```text
+RUN-A  PackageRoot  = HY_OPS_DURABILITY_R04_R1_f92156ad-12ce-4a1b-b7b5-b74aea6ed76a
+       WorkspaceRoot= C:\Development\HUKUK_YAZILIMI\C32_WS_A  (fresh, bos)
+       CWD          = C:\Development\HUKUK_YAZILIMI
+       rehearsal    = 16/16 PASS      G1-G17 = 17/17 PASS
+
+RUN-B  PackageRoot  = HY_OPS_DURABILITY_R04_R1_RELOCATED_7e49b383-174e-423e-98f6-3d0dc9ad46a9
+                      (R1 payload byte-exact ikinci konuma kopyalandi; 31/31 parity)
+       WorkspaceRoot= C:\Development\HUKUK_YAZILIMI\C32_WS_B  (fresh, bos)
+       CWD          = ucuncu, ilgisiz dizin (scratchpad\third-unrelated-cwd)
+       rehearsal    = 16/16 PASS      G1-G17 = 17/17 PASS
+```
+
+Her iki kosumda: resolved PackageRoot dogru · resolved WorkspaceRoot dogru ·
+original root read/write dependency = 0 · package payload write = 0 (her iki paket
+kosum sonrasi 31 dosya) · disposable residual = 0 · production before == after.
+
+**Semantik denklik:** test-bazinda PASS deseni BIREBIR ayni; iki konumdan uretilen
+payload manifestleri BIREBIR AYNI. Nondeterminizm yalniz sealed binary alanlarinda
+ve ratifiye seal-attestation modeliyle sinirli kalmistir (her generation icin
+`semanticIdentity = True`; ayni-cikti-adi metadata zarfi).
+
+### S.7 Tam regression
+
+Alti dosyadaki her revizyondan sonra hedefli test ile yetinilmemis, fresh ortamda
+bastan kosulmustur: parser/static checks · isolation negative suite (11/11) ·
+clean build (her generation icin iki derleme + seal-attestation) · R03 regression
+(host fail-closed kollari 104/108/109/110/111 R-07..R-10 ile deneysel uretildi) ·
+state-transition exhaustive suite (R-04 13/13 + R-05/R-06/R-15) · 16/16 rehearsal ·
+G1-G17 · production fingerprint. Kismi yeniden kosum ile qualification YAPILMAMISTIR.
+
+### S.8 Final canonical immutable package
+
+```text
+CANONICAL ROOT   C:\Development\HUKUK_YAZILIMI\
+                 HY_OPS_DURABILITY_R04_CANONICAL_R1_6de94db3-6a65-4b8f-87b0-e2fd97774fbe
+YAPI             payload\ (31 yetkili dosya) + manifest\ + receipts\
+PAYLOAD MANIFEST manifest\R04-R1-CANONICAL-PAYLOAD-MANIFEST.json
+                 SHA-256 E532ED4213F082174F37312229AE10B60FD57F3F91FFE535AF08A83DD52BB65D
+                 (yalniz payload\ kapsar; KENDI HASH'INI ICERMEZ - acyclic)
+PACKAGE RECEIPT  receipts\R04-R1-CANONICAL-PACKAGE-RECEIPT.json
+                 SHA-256 01E4E007766A1B1030A09CBF84A054DE27D91039B0D61448A54D1BB8DA777E49
+                 (payload-manifest hash'ini TASIR; kendi hash'ini ICERMEZ)
+EXACT-SET        iki bagimsiz verifier process (PID 11692 / 50468):
+                 fileCount=31 · missing=0 · extra=0 · hashMismatch=0 ·
+                 sizeMismatch=0 · reparse=0 · secret=0 -> PASS / PASS
+ORPHAN           final package'a GIRMEDI (payload'da mevcut degil)
+ABSOLUTE PATH    final package executable'larinda original absolute path = 0
+                 (18 executable tarandi)
+```
+
+Dis closeout kaydi olarak receipt SHA-256 bu bolumde verilmistir; self-reference
+uretilmemistir.
+
+### S.9 Production mutation ve residual
+
+```text
+PRODUCTION BEFORE == AFTER : TRUE (remediation basi ve sonu olculdu)
+  bin 5/5 hash              degismedi
+  task XML hash'leri        degismedi (API/Web Running)
+  host PID                  api=48292 web=6252 (degismedi)
+  listener PID              8080=7476 (RELEASE13) · 3002=24872 (RELEASE11)
+  pwsh clone                994 (degismedi)
+ORIGINAL ROOT              33 dosya, envanter hash IDENTICAL (mutation 0)
+DISPOSABLE RESIDUAL        Scheduled Task 0 · rehearsal host sureci 0
+SECRET EXPOSURE            0 (.env icerigi OKUNMADI)
+ACL HARDENING              YAPILMADI (K-7: NOT AUTHORIZED)
+```
+
+### S.10 Supplement terminal beyani
+
+```text
+C32 = QUALIFICATION_RECORDED /
+      CANONICAL_PACKAGE_IDENTITY_VERIFIED /
+      PATH_RELOCATABLE_CANONICAL_PACKAGE_VERIFIED /
+      OWNER_VERDICT_REQUIRED
+
+TERMINAL VERDICT         = PENDING_OWNER
+IMPLEMENTATION AUTHORITY = CONSUMED_BY_C32
+PRODUCTION AUTHORITY     = NONE
+AUTOMATIC TRANSITION     = NONE
+```
+
+Bu supplement production cutover, canli yuzey degisikligi, ACL hardening veya
+yeni execution authority URETMEZ; yalniz canonical package kimliginin ve
+konum-bagimsizliginin dogrulanmis oldugunu tespit eder.
