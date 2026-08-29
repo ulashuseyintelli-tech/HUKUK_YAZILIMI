@@ -403,11 +403,14 @@ Kaynak: `evidence\g1-g17-matrix.json` (rehearsal sonuclarindan TURETILMISTIR).
 
 ```text
 RES-01  ORPHAN DOSYA (kapsam disi): R04 kokunde
-        engine\hukuk-cutover-engine.ps1 (18KB) bu oturumun uretimi DEGILDIR
+        engine\hukuk-cutover-engine.ps1
+        SHA-256 4F6F7E6217D52629A3D278B44B49C3D562D21314888D46227128B86038A68147
+        (18691 byte; mtime 2026-08-29T18:11:39) bu oturumun uretimi DEGILDIR
         ve bu implementation tarafindan REFERANS EDILMEZ (load.ps1 dot-source
-        etmez). Aktif es-zamanli C32 oturumu bulunmadi (peer taramasi: tumu
-        offline). Dosyaya DOKUNULMADI; qualified evidence manifestinin
-        KAPSAMI DISINDA tutuldu (engine allowlist). Disposition owner'a aittir.
+        etmez; alternatif bundle-tabanli tasarim taslagi). Aktif es-zamanli C32
+        oturumu bulunmadi (peer taramasi: tumu offline). Dosyaya DOKUNULMADI ve
+        HIC CALISTIRILMADI; qualified evidence manifestinin KAPSAMI DISINDA
+        tutuldu (engine allowlist). Disposition owner'a aittir.
 RES-02  G13 reproducible-build YOK (toolchain siniri; §E.2). Kimlik modeli
         seal-attestation'dir ve owner EK-KOSUL-8 ile uyumludur. Roslyn/SDK
         kurulursa byte-exact determinizm AYRI bir calisma konusudur.
