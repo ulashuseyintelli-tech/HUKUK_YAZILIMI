@@ -9,7 +9,7 @@ TARIH              2026-08-29/30 (UTC; C32 kapanisi 916efa16 sonrasi fresh)
 BASELINE           main == origin/main == 916efa16 (fresh fetch) · acik PR 0 · tracked modified 0
 
 IMPLEMENTATION                 = DELIVERED (HY_OPS_DURABILITY_R05)
-DISPOSABLE QUALIFICATION       = RUN-A 37/37 PASS · RUN-B 37/37 PASS (semantik denk)
+DISPOSABLE QUALIFICATION       = RUN-A 38/38 PASS · RUN-B 38/38 PASS (semantik denk)
 PRODUCTION BEFORE == AFTER     = TRUE (mutation 0; dort olcum noktasi)
 SMOKE IDENTITY                 = PENDING_OWNER_INPUT (mevcut mekanizma BULUNAMADI)
 TERMINAL VERDICT               = PENDING_OWNER
@@ -255,9 +255,9 @@ C34 gercek production envelope **URETMEDI**; qualification yalniz synthetic
 
 ---
 
-## F. ZORUNLU TEST MATRISI — 37 TEST
+## F. ZORUNLU TEST MATRISI — 38 TEST
 
-### §12.1 statik ve birim kapilari (16)
+### §12.1 statik ve birim kapilari (17)
 
 | ID | Ad | Sonuc |
 |---|---|---|
@@ -275,7 +275,8 @@ C34 gercek production envelope **URETMEDI**; qualification yalniz synthetic
 | S-11 | ACL sinifi olcumu (broad-SID yazma tespiti) | PASS |
 | S-11b | bin ACL sozlesmesi (protected + broad-SID yazma YOK) | PASS |
 | S-12 | workspace fence: production / paket-koku / relative reddi | PASS |
-| S-13 | `--verify-seal` side-effect 0 (log/dizin yazimi yok) | PASS |
+| S-13 | `--verify-seal` gate-FAIL yolu: exit 102, diske yazim 0 (C33-OBS-01 senaryosu) | PASS |
+| S-13b | `--verify-seal` OK yolu: exit 0 + kimlik ozeti; log/bin degismedi, listener 0, host process 0 | PASS |
 | S-14 | paket kodunda secret deseni yok | PASS |
 
 ### §12.3 reseal matrisi (3)
@@ -330,20 +331,23 @@ kimlikleri ile kurulur.
 ## G. IKI BAGIMSIZ QUALIFICATION TURU (§13)
 
 ```text
-                RUN-A                                  RUN-B
-PackageRoot     ...R05_CANONICAL_52b8fbdf...\payload   ...R05_CANONICAL_RELOCATED_cfbc4862...\payload
-WorkspaceRoot   C34_WS_A2_739f5349-...                 C34_WS_B2_2cad3a44-...
-CWD             C:\Development\HUKUK_YAZILIMI          C:\Development\HUKUK_YAZILIMI\C34_CWD_C
-task prefix     Hukuk-C34-R05-847cdc3d-...             Hukuk-C34-R05-8b04cea5-...
-port seti       63124 / 61540                          59979 / 54596
-pwsh klonu      994                                    994
-SONUC           37/37 PASS                             37/37 PASS
-production write 0                                     0
-repo/CWD artifact 0                                    0
+                  RUN-A                                    RUN-B
+PackageRoot       ...R05_CANONICAL_1a5c982c...\payload     ...R05_CANONICAL_RELOCATED_a09f985d...\payload
+WorkspaceRoot     C34_WS_A3_1ddd86fa-...                   C34_WS_B3_a306cd73-...
+CWD               C:\Development\HUKUK_YAZILIMI            C:\Development\HUKUK_YAZILIMI\C34_CWD_C
+task prefix       Hukuk-C34-R05-ab846a17-...               Hukuk-C34-R05-3b680183-...
+port seti         54061 / 58635                            52437 / 61463
+pwsh klonu        994                                      994
+SONUC             38/38 PASS                               38/38 PASS
+production write  0                                        0
+repo/CWD artifact 0                                        0
 ```
 
+Her iki tur da exact-set dogrulanmis canonical pakete karsi kosuldu; manifest
+parity A==B [VERIFIED].
+
 **Semantik denklik:** test-bazinda sonuc vektoru BIREBIR ayni
-(SHA-256 `E6CA11A257E0C2720B58588108BA2A3E65BB097AD2F02906AEE883F036A0E3E5`).
+(SHA-256 `7B52B26112298F09CB7D80C656D328DE43719182975EFC8C8CD412A93299AD63`).
 Farkliliklar yalniz seal-attestation modelinin izin verdigi binary alanlarinda ve
 her generation icin `semanticIdentity = True` (metadata zarfi 43–48 byte,
 peSubsystem = 2).
@@ -356,13 +360,17 @@ peSubsystem = 2).
 AG0 = api-old / web-old      AG1 = api-new / web-old      AG2 = api-new / web-new
 rollback AG1->AG0 (T-02)  ·  AG2->AG1 (T-04/T-07)
 
-RUN-A  AG0 2E3B88A418F2EE891E042825F40165721CF969BB21E74CFD0379FADA0E4B81AE
-       AG1 C1F27391D44ABDC00390B61D80C8809AFAD8E17477671612807D3B70AE1572C3
-       AG2 566924F6E0DC971A2E7E11E4DD2AB3983B19F23FE86F2AB6EC20F904DD49845D
-RUN-B  AG0 E167DE72674CD70B7BBFCE77CF8B507386FE7068D384FD39E2888BA21FBC169D
-       AG1 13C020BADCB14E2D81B30E7F4504B84E7014FAF8323BEAADE7AB7D783D69A91E
-       AG2 8AE8C3749C0FA750E26F8095B2FF9205CA741B05B5B715947DD6792329930258
+RUN-A  AG0 A307AE3FE25B7F97CBF3BDB09E89B993BD66A9B31AC1A713E1F17A09B5531912
+       AG1 53F28C93DF1945A062B80FB785CC2B7BF2D4FF2AC89BCEFD94DBCB452DCA0D7B
+       AG2 0B8EFF0F51DB4D50060F8B79B614CF5117DAE00473A22DD5898027D39C6CF25A
+RUN-B  AG0 32B1BA84A8DC4CD773BBD272C4CF65895BF1058CDDA0B86F614BFA008508D920
+       AG1 D79FC82C56871AA4E67422678A5EECF50BBD774AC5950995AA49BC724BCB2DF7
+       AG2 F89BA696776EA29674B2374FE9A2717F84526AE871DAF8C1F92B4E6AA4790260
 ```
+
+Generation binary'leri her turda o turun disposable koku icin fresh uretilir
+(pin'ler o kokun yollarina/launcher hash'lerine baglidir); tur-arasi binary
+esitligi BEKLENMEZ ve IDDIA EDILMEZ. Denklik test sonuc vektorunde olculur.
 
 Her generation icin dogrulanan: launcher pin capraz bagi · binary semantic
 identity · PE subsystem = 2 · seal attestation (template + filled-source +
@@ -383,23 +391,27 @@ template'i ile YENIDEN uretilmelidir** (residual RES-04).
 
 ```text
 CANONICAL ROOT     C:\Development\HUKUK_YAZILIMI\
-                   HY_OPS_DURABILITY_R05_CANONICAL_52b8fbdf-7a41-41c5-8af9-4d51c0b1db2e
-YAPI               payload\ (33 dosya, 372.633 B) + manifest\ + receipts\ + evidence\
+                   HY_OPS_DURABILITY_R05_CANONICAL_1a5c982c-5837-450c-b624-20997b8d9198
+YAPI               payload\ (33 dosya) + manifest\ + receipts\ + evidence\
 PAYLOAD MANIFEST   manifest\R05-PAYLOAD-MANIFEST.json
-                   SHA-256 939890C710DF80CB5DB225F2A0CCCA89F717BA8CC6A929FC71E6CAEC93DCC664
+                   SHA-256 F8B27F873047A8EC01D91F460D6A42EB53B095DD804926BB8915658DAC16FB4E
                    (yalniz payload\ kapsar; KENDI hash'ini ICERMEZ — acyclic)
 PACKAGE RECEIPT    receipts\R05-CANONICAL-PACKAGE-RECEIPT.json
-                   SHA-256 A5066F2094E6F0A91B27C819528324F52BB590D8E0D29ABD6CCB144E77FBBECF
+                   SHA-256 8E4DC10F108F51106938AE3BC4C11BA2940E58ECAC929ACCC6DCE314609010C3
                    (payload-manifest hash'ini TASIR; kendi hash'ini ICERMEZ)
-EXACT-SET          iki bagimsiz verifier process (PID 41916 / 18968):
+EXACT-SET          iki bagimsiz verifier process (PID 3912 / 48940):
                    fileCount=33 · missing=0 · extra=0 · hashMismatch=0 ·
                    sizeMismatch=0 · reparse=0 · secret=0  ->  PASS / PASS
-EVIDENCE           evidence\ (17 dosya; payload DISI, manifest kapsami DISINDA):
+EVIDENCE           evidence\ (payload DISI, manifest kapsami DISINDA):
                    RUN-A/RUN-B sonuclari + loglari + env manifestleri +
-                   AG0/AG1/AG2 gen-build-manifest'leri + dort production fingerprint
-RELOCATED KOPYA    HY_OPS_DURABILITY_R05_CANONICAL_RELOCATED_cfbc4862-0a9a-4ddd-a61f-7b0b7bd88f59
+                   AG0/AG1/AG2 gen-build-manifest'leri + production fingerprint'ler
+RELOCATED KOPYA    HY_OPS_DURABILITY_R05_CANONICAL_RELOCATED_a09f985d-d09a-4fa0-9ae7-ca45abcaf841
                    (RUN-B vehicle; manifest parity A==B [VERIFIED])
 DEV ROOT           HY_OPS_DURABILITY_R05 (33 dosya; KORUNUR)
+SUPERSEDED         HY_OPS_DURABILITY_R05_CANONICAL_52b8fbdf-... ve
+                   ..._CANONICAL_RELOCATED_cfbc4862-... : S-13b revizyonundan ONCEKI
+                   tur (37/38 kapsam). SILINMEDI, tarihsel kanit olarak KORUNUR;
+                   terminal qualification YALNIZ 1a5c982c koku icin gecerlidir.
 ```
 
 Anahtar payload kimlikleri:
@@ -496,6 +508,7 @@ parola deseni (`syn-<32hex>`) **0 dosya**, sentetik kullanici adresi **0 dosya**
 | 7 | T-02/T-04 rollback FAIL | senaryo yanlis kurgulanmisti: T7 sonrasi R_INIT state machine tarafindan DOGRU sekilde reddediliyor | T-02/T-04 in-transaction rollback'e cevrildi; T-02b state-machine reddini POZITIF kanit olarak ekledi | tam matris |
 | 8 | canonical paket duzeninde writer manifesti bulamiyor | manifest `<canonical>\manifest\` (payload'un KARDESI) altindadir | writer iki konumu da dener (`..\manifest\` ve `manifest\`) | **RUN-A ve RUN-B tam matris YENIDEN kosuldu (canonical pakete karsi)** |
 | 9 | teardown kendi shell'ini oldurdu | naif "commandLine kok yolunu iceriyor" eslesmesi teardown'in KENDI komut satirini da yakaliyordu | self + ata surec zinciri haric tutuldu; eslesme launcher/releases yollarina daraltildi; canli `C:\Ops\hukuk` host'u icin acik RED | — |
+| 10 | S-13 iddiasi EKSIK kapsamliydi | S-13 `--verify-seal`'i `generations\AG1\` icinden calistiriyordu → self-identity kapisi duser (exit 102). Bu C33-OBS-01 senaryosunu DOGRU kanitlar ama modun **OK yolunu** (tum kapilar PASS → exit 0 + kimlik ozeti, yine yan etki 0) kanitlamiyordu | S-13b eklendi: binary AKTIF bin yolundan calistirilir; exit 0, `VERIFY-SEAL OK` govdesi, log/bin degismedi, listener 0, host process 0 | **RUN-A ve RUN-B tam matris YENIDEN kosuldu (38/38); canonical paket YENIDEN uretildi** |
 
 Her kod degisikliginden sonra **tam matris** temiz ortamda bastan kosulmustur;
 kismi yeniden kosum ile qualification YAPILMAMISTIR. Nihai RUN-A ve RUN-B, exact-set
@@ -542,7 +555,8 @@ RES-06  Analogue ortam GERCEK HTTP/dist/BUILD_ID/pwsh-klonu kullanir ancak
 RES-07  ACL HARDENING yapilmadi (C31 K-7 kapsam disi). Mevcut ACL sozlesmesi
         korundu ve drift dogrulandi.
 
-EVIDENCE GAP: yok (37/37 × 2 tur + exact-set 2 verifier + 4 fingerprint tam kanitli).
+EVIDENCE GAP: yok (38/38 × 2 tur + exact-set 2 verifier + production fingerprint
+zinciri tam kanitli).
 ```
 
 ---
@@ -555,10 +569,10 @@ C34 = PRODUCTION_EXECUTION_ENGINE_IMPLEMENTED_AND_DISPOSABLY_QUALIFIED /
       TERMINAL VERDICT = PENDING_OWNER
 
 IMPLEMENTATION           = DELIVERED (HY_OPS_DURABILITY_R05)
-DISPOSABLE QUALIFICATION = RUN-A 37/37 · RUN-B 37/37 · semantik denk
-CANONICAL PACKAGE        = HY_OPS_DURABILITY_R05_CANONICAL_52b8fbdf-7a41-41c5-8af9-4d51c0b1db2e
-                           payload manifest 939890C710DF80CB5DB225F2A0CCCA89F717BA8CC6A929FC71E6CAEC93DCC664
-                           package receipt  A5066F2094E6F0A91B27C819528324F52BB590D8E0D29ABD6CCB144E77FBBECF
+DISPOSABLE QUALIFICATION = RUN-A 38/38 · RUN-B 38/38 · semantik denk
+CANONICAL PACKAGE        = HY_OPS_DURABILITY_R05_CANONICAL_1a5c982c-5837-450c-b624-20997b8d9198
+                           payload manifest F8B27F873047A8EC01D91F460D6A42EB53B095DD804926BB8915658DAC16FB4E
+                           package receipt  8E4DC10F108F51106938AE3BC4C11BA2940E58ECAC929ACCC6DCE314609010C3
 PRODUCTION MUTATION      = 0 (FP#1 == FP#2 == FP#3 == FP#4)
 C33-BLK-01               = REMEDIATED (production-capable engine mevcut ve disposably qualified)
 C33-OBS-01               = KAPATILDI (deferred logging + gate sirasi + --verify-seal)
