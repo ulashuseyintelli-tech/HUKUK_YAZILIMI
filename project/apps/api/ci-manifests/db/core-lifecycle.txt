@@ -74,3 +74,11 @@ src/modules/tenant/__tests__/tenant-lifecycle-transition.db-gated.integration.sp
 # PARITESI + dort non-ACTIVE durumun dislandigi + parite karsi-kaniti (yuklemsiz
 # sorgu 5 tenant'i da gorur) gercek sorguyla dogrulanir.
 src/modules/tenant/__tests__/tenant-lifecycle-cron-scope.db-gated.integration.spec.ts
+
+# C36 — SMOKE principal yasam dongusu, GERCEK Postgres.
+# provisioning EXACT 3 satir (Tenant+User+SmokePrincipal; Office/Lawyer/Staff/Client/
+# Case/Task/lookup = 0), ayni nonce ile ikinci cagri ALREADY_PRESENT_NO_MUTATION
+# (ikinci INSERT YOK), bozuk imza/kapali pencere reddi, normal /auth/login'in smoke
+# principal'i REDDETMESI, revoke idempotence + generation, generation/expiry/isActive
+# uyusmazliklarinda fail-closed DENY.
+src/modules/auth/smoke/__tests__/smoke-principal-lifecycle.db-gated.integration.spec.ts

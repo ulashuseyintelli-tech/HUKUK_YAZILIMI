@@ -21,6 +21,10 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuthController } from '../auth.controller';
 import { AuthService } from '../auth.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+// C36: /auth/me artik SmokeOrJwtAuthGuard kullanir (smoke claim'i YOKSA aynen
+// JwtAuthGuard'a devreder). Bu spec'in IDDIALARI DEGISMEDI; yalniz guard override'i
+// gercek route dekoratorunu takip eder. Projeksiyon sozlesmesi ayni sekilde zorlanir.
+import { SmokeOrJwtAuthGuard } from '../smoke/smoke-or-jwt-auth.guard';
 import { LoginRateLimitGuard } from '../guards/login-rate-limit.guard';
 import { PasswordResetService } from '../password-reset/password-reset.service';
 
@@ -117,6 +121,8 @@ describe('R02 — auth public-user gerçek HTTP serialization', () => {
       ],
     })
       .overrideGuard(JwtAuthGuard)
+      .useClass(StubJwtAuthGuard)
+      .overrideGuard(SmokeOrJwtAuthGuard)
       .useClass(StubJwtAuthGuard)
       .overrideGuard(LoginRateLimitGuard)
       .useClass(PassThroughGuard)
