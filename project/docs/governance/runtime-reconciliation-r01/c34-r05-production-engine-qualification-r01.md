@@ -587,3 +587,233 @@ Bu kayit yalnizca implementation ve production-analogue disposable qualification
 durumunu tespit eder; production cutover, canli yuzey degisikligi, authorization
 envelope veya yeni execution authority **URETMEZ**. Production cutover C33'un
 fresh Stage-0'i ve o gune ait hash-bound owner GO'su ile yurutulur.
+
+---
+
+## SUPPLEMENT — C34-S1 ELEVATED TASK SCHEDULER PROVIDER QUALIFICATION
+
+*(Append-only ek. Yukaridaki §A-§N tarihsel icerigi DEGISTIRILMEMISTIR. Bu bolum
+owner'in `TERMINAL VERDICT = WITHHELD / RES-01 = OWNER-ATTENDED ELEVATED DISPOSABLE
+QUALIFICATION REQUIRED` karari uzerine yurutulen RES-01 remediation'inin kaydidir.)*
+
+### S1.1 Owner yetkisi ve kapsam
+
+```text
+C34 OWNER CHECKPOINT DECISION (aynen):
+  TERMINAL VERDICT = WITHHELD
+  RES-01 = OWNER-ATTENDED ELEVATED DISPOSABLE QUALIFICATION REQUIRED
+  SMOKE_IDENTITY = PENDING_OWNER_INPUT / DOES NOT BLOCK C34 ENGINE QUALIFICATION /
+                   BLOCKS C33 FULL RECONCILIATION GO
+  PRODUCTION AUTHORITY = NONE
+```
+
+Owner gerekcesi kabul edilmistir: production engine'in dort temel operasyonundan
+**ikisi** (`STOP_SCHEDULED_TASK` / `START_SCHEDULED_TASK`) Task Scheduler RPC
+katmanina baglidir; host kod yolunun test edilmesi bu katmanin yerine gecmez.
+
+Genisletilmis operasyon kumesi YALNIZ qualification setup/cleanup icindir.
+**R05 production elevated-writer operation enum'u DEGISMEMISTIR** (dort op).
+
+### S1.2 Kritik on-bulgu: RPC katmani ELEVATION ISTER
+
+Fresh olcum (bu oturum, non-elevated):
+
+```text
+Get-ScheduledTask       (READ_STATE)   OK
+Export-ScheduledTask    (EXPORT_XML)   OK
+Enable-ScheduledTask                   Erisim engellendi
+Disable-ScheduledTask                  Erisim engellendi
+Start-ScheduledTask                    Erisim engellendi
+```
+
+Task'in principal'i mevcut kullanici (`ulastelli`, RunLevel=Limited) olmasina
+ragmen Enable/Disable/Start **non-elevated REDDEDILIYOR**. Bu, C34 §M RES-03'un
+("production'da writer ELEVATED calisacaktir") bagimsiz ve olculmus teyididir ve
+C34'un disposable turlarinin neden `DIRECT_HOST` saglayicisiyla kosuldugunu
+aciklar. Sonuc: **S1 matrisinin tamami ELEVATED surecte kosulmustur.**
+
+### S1.3 Fresh preflight (elevation ONCESI, 8/8)
+
+```text
+main == origin/main == 6a96e187                                        [VERIFIED]
+acik PR = 0 · tracked modified = 0                                     [VERIFIED]
+R05 payload manifest F8B27F87...FB4E · receipt 8E4DC10F...10C3 exact    [VERIFIED]
+production stable-core 277A6E46...FAF6 exact                           [VERIFIED]
+canli task fingerprint (salt-okuma):
+  HukukPlatform-API  Running/Enabled xmlSha 747D2941...AE58 action "...host.exe api"
+  HukukPlatform-Web  Running/Enabled xmlSha 6AA4544A...BD4B action "...host.exe web"
+canli watchdog task = YOK (yalniz API/Web)                             [VERIFIED]
+disposable isimler sistemde ABSENT · residual task/process/workspace 0 [VERIFIED]
+disposable root fresh / empty / non-reparse                            [VERIFIED]
+```
+
+### S1.4 Elevation yontemi ve disposable task kimlikleri
+
+```text
+YONTEM         owner-attended UAC -> Start-Process -Verb RunAs (pwsh)
+ELEVATED YUZEY minimal: elevated-task-admin.ps1 (REGISTER/DELETE/EXPORT) +
+               run-s1-matrix.ps1 (RPC matrisi). Baska hicbir elevated islem YOK.
+TOOL HASH      elevated-task-admin.ps1
+                 BDF01C76268C0A9302C39B9BB2A6A30B0BDC693AA9A9C8A115742731A6AC7077
+               run-s1-matrix.ps1
+                 C106219F23EF51021607AF1B6945BFC010A31C8A78BDA3DA15DA5A8A96624AD2
+
+TURN-1 UUID    8d327d84-7d6a-476f-b152-519cb1333516     portlar 59312 / 54906
+  API       xmlSha CA49BE22CC3A212D7D595C1E92EE173BF9D1F31153636E4ABB1FFD64E922CDBC
+  Web       xmlSha 21EF82E82AE699510C9789E5952C7DBA868CD470BF8AD1AC14D08E8F06563DCB
+  Watchdog  xmlSha 011207F5627815CA08C94AFFF9A72F5EC2B0A5CF7A3529DF8BA3A991819D9104
+
+TURN-2 UUID    3ef76cff-21da-4993-9fe6-b2f6bab07b44     portlar 54384 / 54486
+  API       xmlSha 5901FA49A8E5C141771767D58B8510927C8F488DD499A0273C41011A132D5259
+  Web       xmlSha 9AF51677CF2046699FB0391B0B4AC646D2C2AF155D86A5844DF2F27AD9DD2D12
+  Watchdog  xmlSha DC580E0BDE3250FCAD1BDEBF54D43E946BB006E7C75C5D1BAF5BD08D982016C3
+```
+
+Task adlari degiskenden serbestce URETILMEZ: `TaskUuid` GUID olarak dogrulanir,
+ad `^Hukuk-C34-R05-<uuid>-(API|Web|Watchdog)$` desenine EXACT uyar, canli adlar
+literal DENY listesindedir, action path disposable kok altinda olmak zorundadir,
+portlar 8080/3002 olamaz ve kok `\C34_S1_WS` desenini tasimalidir.
+
+### S1.5 Zorunlu qualification matrisi — 16 KAPI x 2 BAGIMSIZ TUR
+
+| ID | Kapi (C34-S1 §4) | TURN-1 | TURN-2 |
+|---|---|---|---|
+| E-01 | Disposable API/Web/Watchdog registration | PASS | PASS |
+| E-02 | Export XML exact action / principal / trigger / settings | PASS | PASS |
+| E-03 | `Start-ScheduledTask` -> host/listener/content identity | PASS | PASS |
+| E-04 | `Stop-ScheduledTask` -> bounded graceful quiesce | PASS | PASS |
+| E-05 | WM_CLOSE -> job kill-on-close zinciri | PASS | PASS |
+| E-06 | `MultipleInstances=IgnoreNew` davranisi | PASS | PASS |
+| E-07 | `RestartOnFailure` gercek Task Scheduler RPC uzerinden | PASS | PASS |
+| E-08 | Enable/Disable state gecisleri | PASS | PASS |
+| E-09 | API once / Web sonra sirali transaction | PASS | PASS |
+| E-10 | Lost-response: olcum-once, ikinci Start/Stop GONDERILMEZ | PASS | PASS |
+| E-10b | Dosya adimi replay reddi (preimage / anti-replay) | PASS | PASS |
+| E-11 | Stale / wrong UUID task adi fail-closed | PASS | PASS |
+| E-12 | Gercek `HukukPlatform-API` / `HukukPlatform-Web` adlari fail-closed | PASS | PASS |
+| E-13 | Wrong port / action path / write target / XML hash fail-closed | PASS | PASS |
+| E-14 | Quiesce signal + normal drain (force escalation KAPALI) | PASS | PASS |
+| E-14b | Sinyalsiz kisa drain -> `QUIESCE_TIMEOUT` fail-closed | PASS | PASS |
+
+```text
+TURN-1 = 16/16 PASS      TURN-2 = 16/16 PASS      FAIL = 0
+SEMANTIK DENKLIK = TRUE  (sonuc vektoru SHA-256
+                          DDC757D2DA697467895B90C0743C063BF1F95DA90E3C2624F95C8D08801B0493)
+Turlar arasi kasitli farklar: fresh UUID · fresh disposable kok · ayri port seti.
+```
+
+### S1.6 Kapi-bazinda exact kanit (iki turda da dogrulandi)
+
+```text
+E-02  action = "<disposableRoot>\bin\hukuk-task-host.exe api|web" EXACT ·
+      principal ulastelli / Limited / Interactive · MultipleInstances=IgnoreNew ·
+      RestartCount=3 · RestartInterval=PT1M · Watchdog trigger Repetition=PT15M
+
+E-03  listener=1 · taskState=Running · hostProc=1 · entryPathMatch=True ·
+      gercek API_V1 probe ok=True (404/401/401 + dist kimligi + authenticated
+      projection sizinti 0)
+
+E-04  provider=SCHEDULED_TASK · elapsed 2.3s (T1) / 2.1s (T2) ·
+      stopTimeoutSec=45 · listener=0 · forceEscalated=FALSE
+
+E-05  hostAlive=False · pwsh child 1->0 · node child 1->0
+      (WM_CLOSE -> Environment.Exit(1) -> job kill-on-close tum agaci topladi)
+
+E-06  ikinci Start calisan instance'i BOZMADI: beforePids == afterPids ·
+      lastTaskResult = 0x800710E0  (PRODUCTION'DA GOZLENEN AYNI KOD)
+
+E-07  host force-kill -> 90 saniye gozlem: RESTART GOZLENMEDI ·
+      taskState=Ready · lastTaskResult=0xFFFFFFFF · numberOfMissedRuns=0
+      >>> C31 §F.1 W2 [INFERRED] davranisi ARTIK GERCEK TASK SCHEDULER RPC
+          KATMANI UZERINDE DENEYSEL OLARAK DOGRULANMISTIR: nonzero-exit/kill
+          "completed" sayilir, RestartOnFailure TETIKLENMEZ. Bu, F-A bounded
+          quiesce sozlesmesinin neden ZORUNLU oldugunun dogrudan kanitidir.
+
+E-09  api=T7_COMMITTED -> web=T7_COMMITTED (K-3 sirali model, SCHEDULED_TASK
+      saglayicisi ile uctan uca)
+
+E-10  crash T5 (START) sonrasi: decision=ROLLBACK (OLCUMDEN turedi) ·
+      recoveryTerminal=BLOCKED_NO_PREBOUND_ROLLBACK_PLAN (plan ICAT EDILMEDI) ·
+      task LastRunTime DEGISMEDI -> IKINCI Start/Stop RPC'si GONDERILMEDI
+
+E-11  wrong-UUID task: quiesceOk=False reason="task yok: ..." ·
+      Start-ScheduledTask throw
+
+E-12  IKI KATMANLI red: sema (disposable profile canli task adi TASIYAMAZ) +
+      guard (Assert-R5TaskName canli adi reddeder) · canli task Running->Running
+
+E-14b sinyalsiz 2sn drain -> Ok=False reason="QUIESCE_TIMEOUT: force escalation
+      profilde KAPALI" · escalated=False · host hala ayakta · normal yolla toparlandi
+```
+
+### S1.7 Ara FAIL ve duzeltmeler (gizlenmedi)
+
+| # | Bulgu | Kok neden | Duzeltme |
+|---|---|---|---|
+| S1-1 | matris E-03'te durdu | `Start-ViaTask` donusunde PowerShell tek-elemanli diziyi ACIYOR; StrictMode `.Count` hatasi | cagri yerleri `@()` ile sarildi |
+| S1-2 | E-10 FAIL | Iddia yanlis kurulmustu: `START_SCHEDULED_TASK` adiminda crash apply ILE receipt ARASINDA olur, receipt hic yazilmaz, dolayisiyla receipt-tabanli anti-replay TEK BASINA blok URETMEZ | E-10 gercek gereksinime cevrildi (olcum-once + ikinci RPC yok + plan icat edilmez); dosya adimindaki preimage-tabanli replay reddi AYRI kapi olarak E-10b'ye alindi |
+| S1-3 | E-11 FAIL | Saglayici yapisal `Ok=$false` doner, throw ETMEZ | iddia donus nesnesine baglandi + `Start-ScheduledTask` throw'u ayrica olculdu |
+| S1-4 | E-12 script'i cokertti | `Test-R5Profile` canli task adini SEMA katmaninda reddediyor (beklenenden ERKEN) | iki katmanli red (sema + guard) olarak yeniden kuruldu — daha guclu kanit |
+| S1-5 | E-14 timeout dali tetiklenmedi | sinyal gonderildikten sonra 1sn drain zaten yetiyordu; "timeout" adi kanitla ortusmuyordu | E-14 durust ada cevrildi; GERCEK timeout dali icin sinyalsiz E-14b eklendi |
+
+Her duzeltmeden sonra matris **TAM** kosuldu; kismi yeniden kosum ile qualification
+YAPILMAMISTIR. Nihai iki tur (TURN-1/TURN-2) ayni matris surumuyle kosulmustur.
+
+### S1.8 R05 canonical package identity — DEGISMEDI (byte-level)
+
+C34-S1 test kodu **R05 development root'unda DEGIL**, ayri `C34_S1_TOOLS` kokunde
+tutulmustur; canonical payload'a hicbir dosya eklenmemis/degistirilmemistir.
+Qualification sonrasi fresh exact-set dogrulamasi:
+
+```text
+CANONICAL ROOT     HY_OPS_DURABILITY_R05_CANONICAL_1a5c982c-5837-450c-b624-20997b8d9198
+payloadFileCount   33
+missing 0 · extra 0 · hashMismatch 0 · sizeMismatch 0 · reparse 0 · secret 0
+verdict            PASS
+PAYLOAD MANIFEST   F8B27F873047A8EC01D91F460D6A42EB53B095DD804926BB8915658DAC16FB4E   (DEGISMEDI)
+PACKAGE RECEIPT    8E4DC10F108F51106938AE3BC4C11BA2940E58ECAC929ACCC6DCE314609010C3   (DEGISMEDI)
+```
+
+Bu nedenle C34-S1 §4'un "kod degisirse RUN-A/RUN-B 38/38 yeniden kosulur + paket
+yeniden materialize edilir" kosulu TETIKLENMEMISTIR; mevcut canonical identity
+korunmustur ve bu byte-level kanitlanmistir.
+
+S1 kanitlari canonical paketin `evidence\` dizinine (payload DISI, manifest
+kapsami DISINDA) eklenmistir: iki tur sonucu + loglari + env manifestleri +
+register/delete kayitlari + preflight/final fingerprint + `s1-tools\`.
+
+### S1.9 Cleanup kapisi (§5)
+
+```text
+DISPOSABLE TASKS             = 0     (her iki UUID seti de elevated DELETE ile kaldirildi)
+DISPOSABLE HOSTS             = 0
+DISPOSABLE LISTENERS         = 0
+DISPOSABLE ROOT              = ABSENT (her iki C34_S1_WS_* koku)
+CANLI HOST                   = 2     (dokunulmadi)
+CANLI TASK (delete aninda)   = HukukPlatform-API Running · HukukPlatform-Web Running
+PRODUCTION BEFORE == AFTER   = TRUE  (S1 preflight 277A6E46...FAF6 == S1 final 277A6E46...FAF6)
+```
+
+Cleanup DOGRULANMADAN qualification yazilmamistir. `BLOCKED_CLEANUP_RESIDUAL`
+durumu OLUSMAMISTIR.
+
+### S1.10 Supplement terminal beyani
+
+```text
+RES-01 = CLOSED_BY_ELEVATED_DISPOSABLE_RPC_QUALIFICATION
+         (16 kapi x 2 bagimsiz tur; gercek Task Scheduler RPC katmani)
+
+R05 CANONICAL PACKAGE     = DEGISMEDI (F8B27F87...FB4E / 8E4DC10F...10C3)
+PRODUCTION MUTATION       = 0
+PRODUCTION AUTHORITY      = NONE
+SMOKE_IDENTITY            = PENDING_OWNER_INPUT
+                            (bu turda secret deposu / credential / production
+                             kullanicisi OLUSTURULMADI)
+C33 FULL RECONCILIATION   = BLOCKED_BY_SMOKE_IDENTITY
+C34 TERMINAL VERDICT      = PENDING_OWNER
+AUTOMATIC TRANSITION      = NONE
+```
+
+Bu supplement production cutover, canli yuzey degisikligi, authorization envelope
+veya yeni execution authority **URETMEZ**; yalnizca RES-01'in elevated disposable
+Task Scheduler RPC qualification'i ile kapandigini tespit eder.
