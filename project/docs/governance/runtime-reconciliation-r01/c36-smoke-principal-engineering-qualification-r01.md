@@ -334,3 +334,274 @@ C36 sonrasinda production sayfasi ayri olarak gerekir: fresh main'den yeni immut
 release candidate · fresh R05/package/baseline binding · owner-controlled credential ve
 signing material · hash-bound provisioning/cutover plani · kisa UTC window + fresh nonce ·
 ayri production owner GO.
+
+---
+
+## OWNER TERMINAL VERDICT — C36 TERMINAL KAYIT
+
+*(Append-only ek — C36 PR4. Yukaridaki §A-§L tarihsel icerigi DEGISTIRILMEMISTIR;
+ara FAIL kayitlari, kok-neden analizleri ve olculmus davranislar SILINMEMIS ve YENIDEN
+YAZILMAMISTIR. Bu bolum C36'nin terminal disposition'ini kaydeder.)*
+
+**Owner terminal verdict ALINMISTIR.** Verdict govdesi aynen:
+
+```text
+C36 OWNER TERMINAL VERDICT:
+
+C36 =
+SMOKE_PRINCIPAL_IMPLEMENTED_AND_CROSS_VERSION_QUALIFIED /
+PRODUCTION_NOT_AUTHORIZED
+
+QUALIFICATION:
+- RUN-A = 26/26 PASS
+- RUN-B = 26/26 PASS
+- SEMANTIC VERDICT VECTOR = IDENTICAL
+- CROSS-VERSION R13 ROLLBACK SAFETY = VERIFIED
+- REVOKE-INDEPENDENT LEGACY DENIAL = VERIFIED
+- MUTATING ROUTE ACCOUNTING = COMPLETE / UNEXPLAINED 0
+- REGISTERED MUTATING ROUTES = 470/470 SMOKE DENIED
+- REGISTERED READ ROUTES = 438/438 SMOKE DENIED
+- PACKAGE EXACT-SET = PASS/PASS
+- PRODUCTION MUTATION = 0
+- SECRET/TOKEN EXPOSURE = 0
+
+OWNER DISPOSITION:
+OPTION A — APPROVED
+
+RESIDUAL DISPOSITIONS:
+
+R-01:
+HY_C36_PR2 ORPHANED DIRECTORY =
+PRESERVE / RECORDED_RESIDUAL /
+NO_FORCE_DELETE /
+FUTURE MR-058-CLASS CLEANUP ONLY
+
+R-02:
+c36-runa-pg + c36-runb-pg =
+DELETE_AFTER_VERIFICATION
+
+R-03:
+SELF-CREDENTIAL ROTATION =
+NOT_REQUIRED_BY_C36 /
+SURFACE_INTENTIONALLY_MINIMIZED /
+NOT_A_QUALIFICATION_GAP
+
+R-04:
+PRODUCTION SIGNING KEY =
+NOT_CREATED / CORRECT /
+PRODUCTION-PAGE OWNER INPUT
+
+R-05:
+SPEC-SCOPE TSC BASELINE 529 =
+PREEXISTING / OUT_OF_SCOPE /
+CI PRODUCTION TYPECHECK 0 ERROR /
+NON_BLOCKING
+
+C35:
+BLOCKED_MINIMUM_PRIVILEGE_AND_QUARANTINE_CONTRACT /
+CANONICALLY_RECORDED /
+AWAITING_PRODUCTION-SAFE_SMOKE_PROVISIONING
+
+C33:
+NOT_STARTED /
+FULL RECONCILIATION REMAINS BLOCKED UNTIL
+SMOKE IDENTITY IS ACTUALLY PROVISIONED_AND_VERIFIED
+
+PRODUCTION AUTHORITY:
+NONE
+
+RATIFICATION: APPROVED
+```
+
+### V.1 PR / SHA zinciri
+
+```text
+PR1  #2498  squash 8340dd1b867b1e3a1306296ffc314e0a275974fe   C35 governance materialization
+PR2  #2499  squash c0d986b320de5d6d84c130af2f2be2bcbb308cff   implementation
+            final head b11e5d4e0d8a053b118b5ed934f04c5a0b526afb
+            head tree == squash tree == 9d01c076254138cff5ebfc22fe26c7223416842e  (PARITY PASS)
+PR3  #2500  squash e240252ed29588d38f84bd69adb338dfd59b7a0c   qualification record
+            head 1adf1d8aaa83662a94acc4a0eb2ac43104ea1f21
+            head tree == squash tree == dff8c179baad15d5ef21cb8b4e6d62dc51cf451e  (PARITY PASS)
+PR4  bu append-only terminal verdict
+```
+
+### V.2 C36-DEV-01 adjudication ozeti
+
+```text
+D1 = RATIFIED_TRANSIENT_UNTRACKED_ARTIFACT / NO_COMMIT_OR_MERGED_TREE_EFFECT
+D2 = RATIFIED_STOP_CONDITION_CONTINUATION / EXACT_SELF_CLEANUP_ACCEPTED /
+     PROCESS_DEVIATION_RECORDED
+C36-DEV-01 = ADJUDICATED / CLOSED
+```
+
+Artefakt `project/docs/governance/runtime-reconciliation-r01/c35-smoke-identity-provisioning-r01.md`
+yolunda 0 bayt olarak olustu (git object `e69de29bb2d1d6434b8b29ae775ad8c2e48c5391`;
+SHA-256 `E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855`), untracked
+kaldi, hicbir commit'e girmedi, exact literal path ile silindi (glob/recurse/parent
+cleanup 0), dirty set 10 -> 11 -> 10 exact parity ile dondu.
+**Duzeltici islem:** final head `b11e5d4e` uzerinde RUN-A/RUN-B TAM yeniden kosuldu;
+onceki kosum final qualification olarak KULLANILMADI.
+
+### V.3 RUN-A / RUN-B (final head)
+
+```text
+RUN-A  26/26 PASS · 0 FAIL   pg 5433/c36_runa_test · port 18081/18082
+RUN-B  26/26 PASS · 0 FAIL   pg 5434/c36_runb_test · port 18091/18092
+       (farkli DB · port · WorkRoot · CWD · UUID/nonce · credential · secret)
+
+SEMANTIK VERDICT VEKTORU (SHA-256), her iki kosumda BIREBIR:
+52A8062EF48943D1CCE7FFAF58E1451CED1943BEBDA60DFDD83BBB01779C1E86
+```
+
+### V.4 G-17 — revoke'tan BAGIMSIZ legacy denial (belirleyici kanit)
+
+```text
+senaryo   smoke principal PROVISION EDILDI, smoke token URETILDI,
+          REVOKE HIC CAGRILMADI, ardindan RELEASE13'e donuldu
+olcum     RELEASE13 /auth/me            -> 401
+          RELEASE13 POST /api/cases     -> 401
+          RELEASE13 POST /auth/login    -> 401
+sonuc     RELEASE13 authenticated access = 0/3
+```
+
+Bu, uc bagimsiz yapisal katmanin sonucudur ve **revoke'un calismasina hic bagli
+degildir**: (L1) ayri imza secret'i — R13 token imzasini cozemez; (L2) bagli `User`
+kalici `isActive=false` — R13 `validateUser()` her JWT'de 401 atar; (L3) R13'te
+`/auth/smoke/*` route'u yoktur (404).
+
+```text
+REVOKE = CLEANUP
+REVOKE != ROLLBACK SECURITY BOUNDARY
+```
+
+### V.5 Route denklemi — tam kapali
+
+```text
+kanonik main mutating route                                 588
++ PR2'nin EKLEDIGI                                            3
+    POST /api/auth/smoke/login · /provision · /revoke
+= PR2 mutating toplami                                      591
+- probe dedup kaybi (ayni method + ayni SOMUT path)           4
+= benzersiz mutating probe                                  587
+- allowlisted mutating                                        2
+= sweep paydasi                                             585
+    = 470 SMOKE DENIED (403) + 115 runtime-KAYITSIZ (anonim de 404)
+
+read yuzeyi: 438/438 kayitli read route SMOKE DENIED (97 kayitsiz haric)
+ACIKLANAMAYAN ROUTE = 0
+```
+
+### V.6 Qualification package
+
+```text
+paket kok       C36_QUALIFICATION_PACKAGE_df25a5a6-b81b-44b3-a378-470aeecf21ce  (repo DISI)
+payload dosya   18
+payload manifest SHA-256
+                07C6B9A40B4B3637BC7266D3A3512E6F437A314ECA750E309A177DA2465C1B7D
+package receipt SHA-256
+                8CC6738C31E989AA75B30CD680FCF69D3BF57498E7FCC302B66FA9AFE6F364EC
+exact-set       V1 EXACT_SET_PASS · V2 EXACT_SET_PASS  (iki BAGIMSIZ surec)
+                missing 0 · extra 0 · hashMismatch 0 · sizeMismatch 0 · reparse 0
+```
+
+### V.7 Residual dispositions ve R-02 cleanup sonucu
+
+| # | Disposition | Sonuc |
+|---|---|---|
+| R-01 | `PRESERVE / RECORDED_RESIDUAL / NO_FORCE_DELETE / FUTURE MR-058-CLASS CLEANUP ONLY` | `HY_C36_PR2` dizini KORUNDU; **dokunulmadi**. Git kaydi prune edilmis, branch silinmis, worktree kaydi 0. |
+| R-02 | `DELETE_AFTER_VERIFICATION` | **UYGULANDI** — asagiya bakiniz |
+| R-03 | `NOT_REQUIRED_BY_C36 / SURFACE_INTENTIONALLY_MINIMIZED / NOT_A_QUALIFICATION_GAP` | kayit altina alindi |
+| R-04 | `NOT_CREATED / CORRECT / PRODUCTION-PAGE OWNER INPUT` | production signing key URETILMEDI |
+| R-05 | `PREEXISTING / OUT_OF_SCOPE / CI PRODUCTION TYPECHECK 0 ERROR / NON_BLOCKING` | kayit altina alindi |
+
+**R-02 exact cleanup kaydi**
+
+Silmeden ONCE kaydedilen kimlikler:
+
+```text
+c36-runa-pg
+  Id      38e7872503ceb6e522bc44c9179debb65d31538d8081c978b78f58832c412f78
+  Image   postgres:16-alpine (sha256:fd1e8d0274f13f5a03a2673a207b28e14823c2f2efc3ca4bb4197c8a9f841bdc)
+  Ports   5432/tcp -> 127.0.0.1:5433
+  Network bridge (varsayilan)
+  Mount   anonim volume e6f5b439e054...fa5f -> /var/lib/postgresql/data
+
+c36-runb-pg
+  Id      6b851bd74bd7ab2e89c24ce25fdba874605c5422372716ce0c92fc6ca7ff14a7
+  Image   postgres:16-alpine (ayni image)
+  Ports   5432/tcp -> 127.0.0.1:5434
+  Network bridge (varsayilan)
+  Mount   anonim volume 7c2384b053af...ade5 -> /var/lib/postgresql/data
+```
+
+Bagimlilik dogrulamasi (silmeden ONCE):
+
+```text
+production 5432 sahibi          = hukuk-postgres (AYRI container)
+hedeflerde 5432 yayini          = YOK (yalniz 5433 / 5434)
+hedeflere link/depends_on eden  = 0 container
+named volume paylasimi          = YOK (her ikisi de anonim volume)
+ag                              = varsayilan `bridge` (paylasim bagimlilik DEGILDIR)
+```
+
+Uygulama ve sonuc:
+
+```text
+docker stop c36-runa-pg -> OK      docker rm c36-runa-pg -> OK   kaldirildi = EVET
+docker stop c36-runb-pg -> OK      docker rm c36-runb-pg -> OK   kaldirildi = EVET
+
+container sayisi 97 -> 95 (fark 2; silinen adlar YALNIZ c36-runa-pg, c36-runb-pg)
+image silme    = 0   (postgres:16-alpine DURUYOR)
+network silme  = 0
+volume silme   = 0   (`docker rm` -v KULLANILMADI; anonim volume'lar KORUNDU)
+glob/prefix    = KULLANILMADI (yalniz iki exact ad)
+port 5433/5434 dinleyici = 0 / 0
+production 5432 dinleyici = SAG · hukuk-postgres / hukuk-redis / hukuk-minio /
+                            hukuk-meilisearch tamami healthy
+CLEANUP_BLOCKED_BY_PLATFORM = YOK (her iki silme de basarili)
+```
+
+### V.8 Terminal mutasyon beyani
+
+```text
+PRODUCTION MUTATION                 = 0
+RUNTIME/CONTROL-PLANE before==after = EVET (277A6E46E4E7B11F04D5D6F0C57F6E9CE1DB110FC2B6568CE21BC6BB89BCFAF6)
+PRODUCTION DB                       = DOKUNULMADI
+CANLI TASK / PID / LISTENER         = DOKUNULMADI (API pid 7476:8080 · Web pid 24872:3002)
+RELEASE11 / RELEASE13 / RELEASE14   = DOKUNULMADI
+R05 CANONICAL PACKAGE               = DOKUNULMADI
+CREDENTIAL CREATED                  = NO
+PRODUCTION SIGNING KEY CREATED      = NO
+SECRET / TOKEN EXPOSURE             = 0
+PERSISTENT MEMORY MUTATION          = 0
+SILINEN VARLIK                      = YALNIZ iki disposable container (R-02, owner-ratified)
+```
+
+### V.9 C36 TERMINAL DISPOSITION
+
+```text
+C36 =
+SMOKE_PRINCIPAL_IMPLEMENTED_AND_CROSS_VERSION_QUALIFIED /
+PRODUCTION_NOT_AUTHORIZED /
+COMPLETED / CLOSED / MERGED / CANONICAL
+
+C35 =
+CANONICALLY_RECORDED /
+PRODUCTION PROVISIONING PENDING
+
+C33 =
+NOT_STARTED /
+FRESH PRODUCTION PAGE AND OWNER GO REQUIRED
+
+PRODUCTION AUTHORITY = NONE
+NEXT PHASE           = NOT AUTOMATICALLY STARTED
+AUTOMATIC TRANSITION = NONE
+```
+
+Bu kayit C36'nin terminal qualification durumunu tespit eder; production cutover
+talimati, authorization envelope, canli yuzey degisikligi, credential veya yeni
+execution authority URETMEZ. Production provisioning ayri bir sayfada, fresh main'den
+uretilecek yeni immutable release candidate, fresh R05/package/baseline binding,
+owner-controlled credential ve signing material, hash-bound plan, kisa UTC window +
+fresh nonce ve ayri production owner GO ile yurutulur.
