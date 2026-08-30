@@ -1,7 +1,8 @@
 import { Controller, Post, Body, Get, UseGuards } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { RegisterDto, LoginDto, FindTenantsForEmailDto } from "./dto/auth.dto";
-import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { SmokeAllowed } from "./smoke/smoke-allowed.decorator";
+import { SmokeOrJwtAuthGuard } from "./smoke/smoke-or-jwt-auth.guard";
 import { LoginRateLimitGuard } from "./guards/login-rate-limit.guard";
 import { CurrentUser } from "./decorators/current-user.decorator";
 import { PasswordResetService } from "./password-reset/password-reset.service";
@@ -46,8 +47,15 @@ export class AuthController {
     return this.authService.findTenantsForEmail(dto.email);
   }
 
+  /**
+   * C36: `@SmokeAllowed()` bu route'u SMOKE allowlist'ine alır (owner allowlist md.2) ve
+   * `SmokeOrJwtAuthGuard` smoke token'ı kabul eder. NORMAL YOL DEĞİŞMEZ: smoke claim'i
+   * yoksa guard aynen `JwtAuthGuard`'a devreder. Yanıt projeksiyonu (`toPublicAuthUser`)
+   * her iki yolda da AYNIDIR → smoke doğrulaması gerçek production sözleşmesini ölçer.
+   */
   @Get("me")
-  @UseGuards(JwtAuthGuard)
+  @SmokeAllowed()
+  @UseGuards(SmokeOrJwtAuthGuard)
   me(@CurrentUser() user: AuthUserProjectionSource) {
     // R02: `request.user` select'siz tam Prisma satırıdır (`include: { tenant: true }`).
     // register/login/me ÜÇÜ de AYNI merkezi allowlist projeksiyonundan geçer; Prisma

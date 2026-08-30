@@ -394,10 +394,73 @@ model User {
   reportingLinesAsActor   ReportingLine[] @relation("ReportingLineActor")
   reportingLinesAsManager ReportingLine[] @relation("ReportingLineManager")
 
+  // C36: smoke-purpose kimlik köprüsü (one-to-one, opsiyonel). SALT geri-ilişkidir;
+  // `User` tablosuna KOLON EKLEMEZ (FK `SmokePrincipal.userId` üzerindedir), bu yüzden
+  // migration `User` tablosunu HİÇ değiştirmez ve RELEASE13 aynı şema üzerinde çalışır.
+  smokePrincipal SmokePrincipal? @relation("SmokePrincipalUser")
+
   @@unique([id, tenantId])
   @@unique([tenantId, email])
   @@unique([tenantId, id])
   @@index([tenantId])
+}
+
+/// C36 — SMOKE PRINCIPAL (release smoke doğrulaması için özel kimlik sınıfı).
+///
+/// NEDEN AYRI TABLO: mevcut `UserRole` (ADMIN/USER/VIEWER) bir yetki sınırı DEĞİLDİR —
+/// C35-BLK-01 ölçümü, VIEWER'ın bile 466 write route'a erişebildiğini kanıtladı. Bu yüzden
+/// smoke kimliği rol ile daraltılmaz; AYRI bir purpose kaydıyla temsil edilir ve yetkisi
+/// global deny-by-default katmanında (SmokeAuthorizationGuard) belirlenir.
+///
+/// BAĞLI `User` KAYDI KALICI OLARAK `isActive=false` TUTULUR. Bu, legacy-runtime
+/// fail-closed davranışının ÇEKİRDEĞİDİR: RELEASE13'ün `validateUser()` fonksiyonu her JWT
+/// doğrulamasında `!user.isActive` → 401 atar ve `login()` de aynı kullanıcıyı reddeder.
+/// Yani principal, revoke'un başarılı çalışmasına HİÇ BAĞLI OLMADAN legacy runtime'da
+/// kullanılamaz. Rollback güvenliği bu yapısal özellikten gelir; revoke yalnız temizliktir.
+///
+/// MIGRATION ADDITIVE'DİR: yeni enum + yeni tablo. Mevcut hiçbir tablo/kolon/enum
+/// değiştirilmez veya düşürülmez; RELEASE13 aynı DB şeması üzerinde çalışmaya devam eder.
+model SmokePrincipal {
+  id     String @id @default(cuid())
+  /// Bağlı login kaydı. `@unique` → bir User en fazla bir smoke principal olabilir.
+  userId String @unique
+  user   User   @relation("SmokePrincipalUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Amaç sabiti. Şu an tek geçerli değer `SMOKE`; enum ileride genişletilebilir.
+  purpose SmokePrincipalPurpose @default(SMOKE)
+  status  SmokePrincipalStatus  @default(ACTIVE)
+
+  /// Smoke credential'ının bcrypt hash'i. Ham secret DB'ye de log'a da ASLA yazılmaz.
+  credentialHash String
+
+  /// Session generation. Revoke veya credential rotation bunu artırır; üretilmiş TÜM
+  /// smoke token'lar bir sonraki istekte reddedilir (User.tokenVersion emsali).
+  authGeneration Int @default(0)
+
+  /// Provisioning envelope kimliği — replay reddi için. Aynı nonce ikinci kez kullanılamaz.
+  provisionNonce   String @unique
+  /// Provisioning receipt kimliği (opaque). Secret veya secret digest'i DEĞİLDİR.
+  provisionReceipt String
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Bounded lifetime. Süresi geçmiş principal login OLAMAZ (crash sonrası doğal kapanma).
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([status])
+  @@index([expiresAt])
+}
+
+/// C36: smoke principal amaç sabiti. Yalnız smoke doğrulaması için ayrılmıştır.
+enum SmokePrincipalPurpose {
+  SMOKE
+}
+
+/// C36: smoke principal durumu. REVOKED geri alınamaz (yeni principal gerekir).
+enum SmokePrincipalStatus {
+  ACTIVE
+  REVOKED
 }
 
 /// OFFICE-AUTH-P02: tenant-scoped, tek-kullanımlık parola sıfırlama token'ı (UserInvite emsali).

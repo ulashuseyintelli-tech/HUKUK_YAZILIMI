@@ -303,3 +303,14 @@ src/modules/tenant/__tests__/tenant-lifecycle-transition.spec.ts
 # metotlarda tenant-scoped dal DEGISMEDI mi; calculateDailyStats (OD-D bekliyor)
 # NEGATIF kontrol olarak yuklem TASIMIYOR mu. "Once cek sonra ele" bu testlerden gecemez.
 src/modules/tenant/__tests__/tenant-lifecycle-cron-scope.spec.ts
+
+# C36 — SMOKE principal fail-closed yetki katmani (SAF, DB YOK).
+# (A) smoke-deny-by-default-http: GERCEK Nest HTTP pipeline'inda APP_GUARD'in
+#     controller-level @UseGuards'DAN ve ValidationPipe'TAN once calistigi kanitlanir;
+#     guard'i HIC olmayan route da reddedilir (controller guard sirasina bagimlilik YOK),
+#     gecersiz govdeyle bile 403 (400 DEGIL) doner, normal trafige etki 0.
+# (B) smoke-allowlist-architecture: @SmokeAllowed() tasiyan route kumesi izin verilen
+#     UC yuzeye BIREBIR esittir; allowlist disindaki TUM mutating route'lar DENY
+#     tarafindadir (N/N). Yeni bir route'a dekorator eklemek = FAIL.
+src/modules/auth/smoke/__tests__/smoke-deny-by-default-http.spec.ts
+src/modules/auth/smoke/__tests__/smoke-allowlist-architecture.spec.ts

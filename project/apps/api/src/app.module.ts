@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { SmokeModule } from "./modules/auth/smoke/smoke.module";
 import { UserModule } from "./modules/user/user.module";
 import { TenantModule } from "./modules/tenant/tenant.module";
 import { CaseModule } from "./modules/case/case.module";
@@ -163,6 +164,8 @@ function getConditionalImports(): Type<unknown>[] {
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
+    // C36: global deny-by-default (APP_GUARD) + smoke auth yuzeyi.
+    SmokeModule,
     UserModule,
     TenantModule,
     CaseModule,
