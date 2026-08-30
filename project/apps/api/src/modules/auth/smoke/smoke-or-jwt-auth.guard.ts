@@ -26,7 +26,7 @@ export class SmokeOrJwtAuthGuard extends JwtAuthGuard {
     super();
   }
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
+  override async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const claims = request?.[SMOKE_CLAIMS_REQUEST_KEY] as SmokeTokenClaims | undefined;
 
