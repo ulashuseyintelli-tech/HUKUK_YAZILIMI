@@ -253,6 +253,18 @@ export class ScenarioHarnessService {
     caseId: string | undefined,
     scope: OutboxScope,
   ): Promise<{ timeline: number; actions: number }> {
+    // C37 / D-09 — PRODUCTION'DA YAPISAL OLARAK KAPALI.
+    //
+    // Bu metot cagiranin verdigi DIZINE yazar (parametrik yazim yuzeyi) ve
+    // production write allowlist'inde YOKTUR. Bugun production runtime
+    // graph'inda cagirani da yoktur; guard, ileride bir route baglanmasi
+    // halinde sessizce keyfi-yazim yuzeyi acilmasini engeller.
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'updateGolden production ortaminda devre disidir (C37 D-09: golden dosya yazimi gelistirme/test yuzeyidir).',
+      );
+    }
+
     const result = await this.runScenarioFromDir(scenarioDir, caseId, scope);
 
     const expectedTimelinePath = path.join(scenarioDir, 'expected_timeline.json');

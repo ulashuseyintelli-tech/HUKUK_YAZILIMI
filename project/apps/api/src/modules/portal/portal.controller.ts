@@ -16,8 +16,12 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { diskStorage } from "multer";
-import { extname, join } from "path";
-import { existsSync, unlinkSync, mkdirSync } from "fs";
+import { extname } from "path";
+import { existsSync, unlinkSync } from "fs";
+import {
+  assertSafeSegment,
+  runtimeStoragePaths,
+} from "../../common/storage/runtime-storage-paths";
 import { PortalService } from "./portal.service";
 import { ClientFinancialDisclosurePortalService } from "./client-financial-disclosure-portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
@@ -26,17 +30,32 @@ import { LoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
 import { CredentialRecoveryRateLimitGuard } from "../auth/guards/credential-recovery-rate-limit.guard";
 
 // Dosya yükleme ayarları
+//
+// C37: hedef dizin release DISI data root altindadir ve TENANT bazlidir.
+// tenantId istegin principal'inden (PortalAuthGuard -> req.portalUser) alinir;
+// istemciden gelen hicbir alan yol segmenti olarak kullanilmaz. Guard'lar
+// interceptor'lardan ONCE calisir, bu yuzden principal burada hazirdir.
 const portalDocStorage = diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = join(process.cwd(), "data", "portal-documents");
-    if (!existsSync(uploadPath)) {
-      mkdirSync(uploadPath, { recursive: true });
+  destination: (req: any, file, cb) => {
+    try {
+      const dir = runtimeStoragePaths().bucketDir(
+        "PORTAL_DOCUMENTS",
+        req?.portalUser?.tenantId,
+      );
+      cb(null, dir);
+    } catch (e) {
+      cb(e as Error, "");
     }
-    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `portal-${uniqueSuffix}${extname(file.originalname)}`);
+    try {
+      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      const name = `portal-${uniqueSuffix}${extname(file.originalname).toLowerCase()}`;
+      assertSafeSegment(name, "fileName");
+      cb(null, name);
+    } catch (e) {
+      cb(e as Error, "");
+    }
   },
 });
 
@@ -314,12 +333,25 @@ export class PortalController {
   @UseGuards(PortalAuthGuard)
   async downloadDocument(@Param("id") id: string, @Request() req: any, @Res() res: Response) {
     const doc = await this.portalService.getDocument(id, req.portalUser.clientId);
-    
-    if (!existsSync(doc.filePath)) {
+
+    // Veritabanindaki yol GUVENILMEZDIR: tenant kovasi icinde oldugu operasyon
+    // aninda dogrulanir (cross-tenant okuma ve reparse fail-closed).
+    let target: string;
+    try {
+      target = runtimeStoragePaths().assertContained(
+        "PORTAL_DOCUMENTS",
+        doc.filePath,
+        req.portalUser.tenantId,
+      );
+    } catch {
       throw new BadRequestException("Dosya bulunamadı");
     }
 
-    res.download(doc.filePath, doc.fileName);
+    if (!existsSync(target)) {
+      throw new BadRequestException("Dosya bulunamadı");
+    }
+
+    res.download(target, doc.fileName);
   }
 
   /**
@@ -330,10 +362,17 @@ export class PortalController {
   @UseGuards(PortalAuthGuard)
   async deleteDocument(@Param("id") id: string, @Request() req: any) {
     const result = await this.portalService.deleteDocument(id, req.portalUser.clientId);
-    
-    // Dosyayı diskten sil
-    if (result.filePath && existsSync(result.filePath)) {
-      unlinkSync(result.filePath);
+
+    // Dosyayı diskten sil — yalnizca tenant kovasi ICINDE ise (fail-closed)
+    if (result.filePath) {
+      const target = runtimeStoragePaths().assertContained(
+        "PORTAL_DOCUMENTS",
+        result.filePath,
+        req.portalUser.tenantId,
+      );
+      if (existsSync(target)) {
+        unlinkSync(target);
+      }
     }
 
     return { success: true };

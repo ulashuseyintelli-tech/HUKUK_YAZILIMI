@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { RuntimeStoragePaths, runtimeStoragePaths } from "../../common/storage/runtime-storage-paths";
 import type { AuditActor } from "@/modules/client/client.service";
 
 export const POA_UPLOAD_ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"] as const;
@@ -112,11 +113,19 @@ export class PoaService {
 
   // P1A: OfficeApprovalService revoke capability-gate için (ClientService.assertCanManageLifecycle /
   // LawyerService.assertCanManageLawyerLifecycle ile birebir desen). AuditService @Global (AuditModule).
+  private readonly storage: RuntimeStoragePaths;
+
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
     private officeApproval: OfficeApprovalService,
-  ) {}
+    storage?: RuntimeStoragePaths,
+  ) {
+    // DI her zaman saglar (StorageModule @Global). Dogrudan `new` ile kurulan
+    // testlerde ayni cozumleme/dogrulama zinciri kullanilir — production'da
+    // eksik/guvensiz kok yine HARD FAIL uretir.
+    this.storage = storage ?? runtimeStoragePaths();
+  }
 
   /**
    * Müvekkilin tüm vekaletlerini getir
@@ -631,21 +640,18 @@ export class PoaService {
   async uploadFile(poaId: string, file: Express.Multer.File, tenantId: string) {
     const poa = await this.findOne(poaId, tenantId);
 
-    // Uploads klasörünü oluştur
-    const uploadsDir = path.join(process.cwd(), "data", "uploads", "poa", tenantId);
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
-    // Dosya adı oluştur
+    // Dosya adı oluştur (release DISI data root; bkz. C37 storage sozlesmesi)
     const ext = path.extname(file.originalname);
     const filename = `${poaId}_${Date.now()}${ext}`;
-    const filePath = path.join(uploadsDir, filename);
+    const filePath = this.storage.filePath("POA_UPLOADS", filename, tenantId);
 
-    // Eski dosyayı sil
-    if (poa.filePath && fs.existsSync(poa.filePath)) {
+    // Eski dosyayı sil — yalnizca kova ICINDE ise (containment fail-closed)
+    if (poa.filePath) {
       try {
-        fs.unlinkSync(poa.filePath);
+        const previous = this.storage.assertContained("POA_UPLOADS", poa.filePath, tenantId);
+        if (fs.existsSync(previous)) {
+          fs.unlinkSync(previous);
+        }
       } catch (e) {
         this.logger.warn(`Eski dosya silinemedi: ${poa.filePath}`);
       }
@@ -738,8 +744,13 @@ export class PoaService {
   async deleteFile(poaId: string, tenantId: string) {
     const poa = await this.findOne(poaId, tenantId);
 
-    if (poa.filePath && fs.existsSync(poa.filePath)) {
-      fs.unlinkSync(poa.filePath);
+    // Veritabaninda saklanan yol GUVENILMEZDIR: silmeden once kova icinde
+    // oldugu operasyon aninda dogrulanir (TOCTOU + reparse dahil).
+    if (poa.filePath) {
+      const target = this.storage.assertContained("POA_UPLOADS", poa.filePath, tenantId);
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
     }
 
     await this.prisma.clientPowerOfAttorney.update({

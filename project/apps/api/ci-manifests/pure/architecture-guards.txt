@@ -121,3 +121,33 @@ src/modules/tenant/__tests__/tenant-lifecycle-governance-writer.static-guard.spe
 # (C) NEGATIF PIN: calculateDailyStats yuklem TASIMAZ (OD-D owner karari bekliyor);
 #     karar alinmadan sessiz kapsam genisletme = FAIL.
 src/modules/tenant/__tests__/tenant-lifecycle-cron-predicate.static-guard.spec.ts
+
+# C37-EXTERNAL-RUNTIME-STORAGE — RELEASE-KOKU YAZIM YUZEYI KAPISI.
+# Immutable release modeli, runtime'in release kokune HIC yazmamasina baglidir.
+# C37-R05 envanteri 10 yazim yuzeyi olcmustu; 6'si release ICINE dusuyordu
+# (poa uploads, portal-documents, tariffs, tesseract traineddata cache ve iki
+# latent Next.js cache yuzeyi). Bu uc spec o kumeyi kapali tutar:
+#   - runtime-storage-paths      : merkezi kok cozumleme + production zorunlulugu
+#                                  + traversal/ADS/reparse/reserved/case/Unicode
+#                                  reddi + tenant containment (50 kapi).
+#   - release-write-surface      : AST kapisi. Yazma API'sinin YOL argumani
+#     .static-guard                cwd/__dirname turevi tasiyorsa duser; ayrica
+#                                  10 yuzeyin disposition'ini pinler. Regex
+#                                  DEGIL: `const b = process.cwd()` zinciri
+#                                  metin aramasindan kacar. Iki negatif kontrol
+#                                  icerir (sentetik ihlal yakalanir, temiz kod
+#                                  yanlis alarm uretmez).
+#   - write-surface-behaviour    : calisma zamani davranisi — OCR salt-okuma
+#                                  (cacheMethod 'read') + model eksikse
+#                                  fail-closed, POA cross-tenant silme reddi,
+#                                  updateGolden production reddi.
+# DB gerektirmez; yeni Jest step ACILMAZ, mevcut architecture-guards process'inde kosar.
+src/common/storage/__tests__/runtime-storage-paths.spec.ts
+src/common/storage/__tests__/release-write-surface.static-guard.spec.ts
+src/common/storage/__tests__/write-surface-behaviour.spec.ts
+
+# C37 — TariffService dis veri koku davranisi: atomik yazim (temp+fsync+rename),
+# cross-process kilit, kayip-guncelleme onlemi (version DISKTEN turetilir) ve
+# production'da bos tarife koku = HARD FAIL. Tarife dosyasi mali hesaplamanin
+# TEK gercek kaynagidir; sessiz "tarife yok" kabul edilemez.
+src/modules/tariff/__tests__/tariff.service.external-storage.spec.ts

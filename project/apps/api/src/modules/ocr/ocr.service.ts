@@ -10,6 +10,10 @@ import { applyEndorsementPass, EndorsementExtractor } from "./endorsement-extrac
 import * as sharp from "sharp";
 import * as AdmZip from "adm-zip";
 import * as mammoth from "mammoth";
+import { RuntimeStoragePaths, runtimeStoragePaths } from "../../common/storage/runtime-storage-paths";
+
+/** Tesseract dil kodlari — model varlik kontrolu ve recognize cagrisi ayni kumeyi kullanir. */
+export const OCR_TESSERACT_LANGS: string[] = ["tur", "eng"];
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -691,11 +695,16 @@ export function sanitizeClientPhone(raw: unknown): string | undefined {
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
   private openai: OpenAI | null = null;
+  private readonly storage: RuntimeStoragePaths;
 
   constructor(
     private configService: ConfigService,
     @Optional() private claimEngineService?: ClaimEngineService,
+    storage?: RuntimeStoragePaths,
   ) {
+    // DI her zaman saglar (StorageModule @Global); dogrudan `new` ile kurulan
+    // testlerde ayni cozumleme/dogrulama zinciri kullanilir.
+    this.storage = storage ?? runtimeStoragePaths();
     const apiKey = this.configService.get<string>("OPENAI_API_KEY");
     if (apiKey && apiKey !== "sk-your-openai-api-key-here") {
       this.openai = new OpenAI({ apiKey });
@@ -1209,8 +1218,17 @@ JSON formatında yanıt ver:
       const base64Image = `data:image/png;base64,${processedBuffer.toString("base64")}`;
       
       // 3. Tesseract ile OCR yap - Türkçe + İngilizce dil desteği
+      //
+      // C37: dil modelleri release DISI, runtime icin SALT-OKUNUR bir kokten
+      // okunur. Model eksikse fail-closed hata verilir; ag uzerinden indirme
+      // veya release kokune cache yazimi YAPILMAZ.
+      //   cachePath   -> modellerin okundugu kok
+      //   cacheMethod -> 'read': okur, ASLA yazmaz (tesseract.js 6 sozlesmesi)
+      this.storage.assertOcrModelsPresent(OCR_TESSERACT_LANGS);
       this.logger.log("Tesseract OCR başlatılıyor (tur+eng)...");
-      const result = await Tesseract.recognize(base64Image, "tur+eng", {
+      const result = await Tesseract.recognize(base64Image, OCR_TESSERACT_LANGS.join("+"), {
+        cachePath: this.storage.ocrModelsRoot,
+        cacheMethod: "read",
         logger: (m) => {
           if (m.status === "recognizing text") {
             this.logger.debug(`OCR ilerleme: %${Math.round(m.progress * 100)}`);

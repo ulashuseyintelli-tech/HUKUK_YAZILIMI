@@ -1,5 +1,6 @@
 import { Module, Logger, Type, MiddlewareConsumer, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { StorageModule } from "./common/storage/storage.module";
 import { ScheduleModule } from "@nestjs/schedule";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -161,6 +162,9 @@ function getConditionalImports(): Type<unknown>[] {
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    // C37: runtime yazma yuzeyleri release DISI koklere baglanir. Production'da
+    // HUKUK_DATA_ROOT / HUKUK_OCR_MODELS_ROOT eksik veya guvensizse boot HARD FAIL.
+    StorageModule,
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
