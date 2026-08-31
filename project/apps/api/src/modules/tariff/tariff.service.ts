@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { RuntimeStoragePaths, runtimeStoragePaths } from '../../common/storage/runtime-storage-paths';
 import type { ITariffRepository, Tariff as SharedTariff } from '@shared/types';
 
 /**
@@ -71,9 +72,21 @@ export class TariffService implements ITariffRepository {
   private readonly configPath: string;
   private tariffs: Map<number, TariffData> = new Map();
 
-  constructor() {
-    this.configPath = path.join(process.cwd(), 'src/config/tariffs');
+  private readonly storage: RuntimeStoragePaths;
+
+  constructor(storage?: RuntimeStoragePaths) {
+    // DI her zaman saglar (StorageModule @Global); dogrudan `new` ile kurulan
+    // testlerde ayni cozumleme/dogrulama zinciri kullanilir.
+    this.storage = storage ?? runtimeStoragePaths();
+    this.configPath = this.storage.bucketDir('TARIFFS');
     this.loadAllTariffs();
+    // Tarife dosyasi mali hesaplamanin TEK gercek kaynagidir. Production'da bos
+    // bir kok sessizce "tarife yok" demek yerine boot'ta HARD FAIL uretir.
+    if (this.storage.isProduction && this.tariffs.size === 0) {
+      throw new Error(
+        `Tarife bulunamadi: ${this.configPath}. Production'da en az bir tarife dosyasi ZORUNLUDUR.`,
+      );
+    }
   }
 
   // ============================================
@@ -197,10 +210,6 @@ export class TariffService implements ITariffRepository {
   // Tum tarifeleri yukle
   private loadAllTariffs(): void {
     try {
-      if (!fs.existsSync(this.configPath)) {
-        fs.mkdirSync(this.configPath, { recursive: true });
-      }
-
       const files = fs.readdirSync(this.configPath).filter(f => f.endsWith('.yaml'));
       for (const file of files) {
         const year = parseInt(file.replace('.yaml', ''));
@@ -237,13 +246,26 @@ export class TariffService implements ITariffRepository {
         return { success: false, message: 'Gecersiz tarife verisi' };
       }
 
-      data.year = year;
-      data.version = (this.tariffs.get(year)?.version || 0) + 1;
+      const filePath = this.tariffFilePath(year);
 
-      // YAML olarak kaydet
-      const yamlContent = yaml.dump(data, { indent: 2, lineWidth: 120 });
-      const filePath = path.join(this.configPath, `${year}.yaml`);
-      fs.writeFileSync(filePath, yamlContent, 'utf8');
+      // Kayip guncelleme onlemi: version artirimi ve yazim, dosya bazli
+      // EXCLUSIVE kilit altinda yapilir; version DISKTEKI gercek degerden
+      // turetilir (bellek cache'i baska bir surec tarafindan bayatlatilmis
+      // olabilir).
+      const lock = this.acquireTariffLock(year);
+      if (!lock) {
+        return { success: false, message: `${year} yili tarifesi su an baska bir islem tarafindan yaziliyor` };
+      }
+      try {
+        data.year = year;
+        data.version = this.readVersionFromDisk(filePath) + 1;
+
+        // YAML olarak kaydet — atomik: once temp, sonra rename.
+        const yamlContent = yaml.dump(data, { indent: 2, lineWidth: 120 });
+        this.atomicWriteFile(filePath, yamlContent);
+      } finally {
+        this.releaseTariffLock(lock);
+      }
 
       // Cache'i guncelle
       this.tariffs.set(year, data);
@@ -256,10 +278,69 @@ export class TariffService implements ITariffRepository {
     }
   }
 
+  // ============================================
+  // C37 — depolama yardimcilari (release DISI data root)
+  // ============================================
+
+  /** `<TARIFFS kovasi>/<yil>.yaml` — yil segmenti fail-closed dogrulanir. */
+  private tariffFilePath(year: number): string {
+    if (!Number.isInteger(year) || year < 1900 || year > 9999) {
+      throw new Error(`Gecersiz tarife yili: ${String(year)}`);
+    }
+    return this.storage.filePath('TARIFFS', `${year}.yaml`);
+  }
+
+  /** Diskteki gercek version degeri (dosya yoksa 0). */
+  private readVersionFromDisk(filePath: string): number {
+    if (!fs.existsSync(filePath)) return 0;
+    try {
+      const current = yaml.load(fs.readFileSync(filePath, 'utf8')) as TariffData | undefined;
+      const v = current?.version;
+      return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Ayni dizinde temp yaz + fsync + rename. Kismi dosya nihai ada sahip olmaz. */
+  private atomicWriteFile(filePath: string, content: string): void {
+    const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(tempPath, 'wx');
+      fs.writeFileSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      fs.renameSync(tempPath, filePath);
+    } catch (error) {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch { /* yoksay */ }
+      }
+      try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* yoksay */ }
+      throw error;
+    }
+  }
+
+  /** Dosya bazli exclusive kilit (cross-process). Alinamazsa null. */
+  private acquireTariffLock(year: number): string | null {
+    const lockPath = `${this.tariffFilePath(year)}.lock`;
+    try {
+      fs.closeSync(fs.openSync(lockPath, 'wx'));
+      return lockPath;
+    } catch {
+      return null;
+    }
+  }
+
+  private releaseTariffLock(lockPath: string): void {
+    try { fs.unlinkSync(lockPath); } catch { /* yoksay */ }
+  }
+
   // Tarife sil
   deleteTariff(year: number): { success: boolean; message: string } {
     try {
-      const filePath = path.join(this.configPath, `${year}.yaml`);
+      const filePath = this.tariffFilePath(year);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
         this.tariffs.delete(year);

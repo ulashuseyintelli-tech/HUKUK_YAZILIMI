@@ -7,10 +7,14 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
   
-  // Image optimizasyonu
+  // C37 — release koku runtime icin SALT-OKUNURDUR.
+  // `next start` image optimizer'i optimize edilmis goruntuleri
+  // `<distDir>/cache/images` altina, yani release kokunun ICINE yazar.
+  // `unoptimized: true` bu yuzeyi yapisal olarak kapatir (endpoint donusum
+  // yapmaz, cache dizini hic olusmaz). Islevsel kayip yok: uygulama kodunda
+  // `next/image` kullanimi olculdu = 0.
   images: {
-    formats: ['image/avif', 'image/webp'],
-    minimumCacheTTL: 60,
+    unoptimized: true,
   },
   
   // Bundle optimizasyonu
