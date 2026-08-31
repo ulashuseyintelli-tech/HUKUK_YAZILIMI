@@ -13,7 +13,8 @@ import * as yaml from "js-yaml";
 import { RuntimeStoragePaths } from "../../../common/storage/runtime-storage-paths";
 import { TariffService, TariffData } from "../tariff.service";
 
-const FAKE_CWD = path.join("C:", "fake-release-tariff", "project", "apps", "api");
+const FS_ROOT = path.parse(process.cwd()).root;
+const FAKE_CWD = path.join(FS_ROOT, "c37-fake-release-tariff", "project", "apps", "api");
 
 function makeRoot(prefix: string): string {
   return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));

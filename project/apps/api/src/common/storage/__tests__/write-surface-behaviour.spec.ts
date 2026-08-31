@@ -12,13 +12,29 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import * as Tesseract from "tesseract.js";
 import { RuntimeStoragePaths, RuntimeStoragePathError } from "../runtime-storage-paths";
-import { OcrService, OCR_TESSERACT_LANGS } from "../../../modules/ocr/ocr.service";
 import { PoaService } from "../../../modules/poa/poa.service";
 import { ScenarioHarnessService } from "../../../modules/icrabot/v28-engine/scenario-harness.service";
 
-const FAKE_CWD = path.join("C:", "fake-release-behav", "project", "apps", "api");
+/**
+ * OCR bolumu YALNIZ Windows'ta kosar ve modulleri TEMBEL yukler.
+ *
+ * Gerekce (olculdu): `ocr.service` modul yuklemesinde `require("pdf-poppler")`
+ * yapar; bu paket Linux'ta yuklenirken `process.exit(1)` cagirir ve Jest
+ * worker'ini oldururur — testin kendisi calismadan tum suite duser. CI
+ * ubuntu-latest'te kostugu icin ust seviye import KULLANILAMAZ.
+ *
+ * Linux'ta kaybolan kapsam bosta BIRAKILMAZ:
+ *   - kodun sekli `release-write-surface.static-guard.spec.ts` ile (kaynak
+ *     metni okunur, import YOK) her platformda pinlenir;
+ *   - calisma zamani davranisi Windows'taki disposable read-only release
+ *     qualification'inda (derlenmis dist, gercek ACL) olculur.
+ */
+const IS_WIN = process.platform === "win32";
+const describeWin = IS_WIN ? describe : describe.skip;
+
+const FS_ROOT = path.parse(process.cwd()).root;
+const FAKE_CWD = path.join(FS_ROOT, "c37-fake-release-behav", "project", "apps", "api");
 const TENANT_A = "clx000000000000000000wa";
 const TENANT_B = "clx000000000000000000wb";
 
@@ -43,10 +59,21 @@ function storageFor(dataRoot: string, ocrRoot: string, nodeEnv = "test"): Runtim
   });
 }
 
-describe("C37 — OCR dil modeli dis kokten SALT-OKUNUR", () => {
+describeWin("C37 — OCR dil modeli dis kokten SALT-OKUNUR [WINDOWS]", () => {
   let dataRoot: string;
   let ocrRoot: string;
+  let Tesseract: typeof import("tesseract.js");
+  let OcrService: typeof import("../../../modules/ocr/ocr.service").OcrService;
+  let OCR_TESSERACT_LANGS: string[];
   const configStub = { get: jest.fn(() => undefined) } as any;
+
+  beforeAll(() => {
+    // Tembel yukleme: Linux'ta bu blok hic calismaz (bkz. dosya basligi).
+    Tesseract = require("tesseract.js");
+    const mod = require("../../../modules/ocr/ocr.service");
+    OcrService = mod.OcrService;
+    OCR_TESSERACT_LANGS = mod.OCR_TESSERACT_LANGS;
+  });
 
   beforeEach(() => {
     dataRoot = makeRoot("c37-b-data-");
@@ -184,7 +211,7 @@ describe("C37 — updateGolden production'da reddedilir (D-09)", () => {
     process.env.NODE_ENV = "production";
     const svc = build();
     const ran = jest.spyOn(svc, "runScenarioFromDir");
-    await expect(svc.updateGolden("C:\\herhangi\\dizin", undefined, {} as any)).rejects.toThrow(
+    await expect(svc.updateGolden(path.join(FS_ROOT, "c37-herhangi", "dizin"), undefined, {} as any)).rejects.toThrow(
       /production ortaminda devre disidir/,
     );
     expect(ran).not.toHaveBeenCalled();
@@ -197,7 +224,7 @@ describe("C37 — updateGolden production'da reddedilir (D-09)", () => {
     const ran = jest
       .spyOn(svc, "runScenarioFromDir")
       .mockRejectedValue(new Error("senaryo-yok"));
-    await expect(svc.updateGolden("C:\\herhangi\\dizin", undefined, {} as any)).rejects.toThrow(
+    await expect(svc.updateGolden(path.join(FS_ROOT, "c37-herhangi", "dizin"), undefined, {} as any)).rejects.toThrow(
       /senaryo-yok/,
     );
     expect(ran).toHaveBeenCalledTimes(1);

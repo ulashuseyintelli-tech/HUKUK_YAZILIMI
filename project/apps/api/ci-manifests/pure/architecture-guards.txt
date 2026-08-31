@@ -141,6 +141,17 @@ src/modules/tenant/__tests__/tenant-lifecycle-cron-predicate.static-guard.spec.t
 #                                  (cacheMethod 'read') + model eksikse
 #                                  fail-closed, POA cross-tenant silme reddi,
 #                                  updateGolden production reddi.
+#                                  NOT: OCR blogu YALNIZ Windows'ta kosar ve
+#                                  modulu TEMBEL yukler. `ocr.service` modul
+#                                  yuklemesinde `require("pdf-poppler")` yapar;
+#                                  bu paket Linux'ta process.exit(1) cagirip
+#                                  Jest worker'ini oldururur (CI ubuntu-latest).
+#                                  Kaybolan kapsam bosta degildir: kodun sekli
+#                                  static-guard ile her platformda pinlenir,
+#                                  davranis Windows'taki disposable read-only
+#                                  release qualification'inda olculur.
+#                                  Windows'a ozgu yol kapilari (UNC, 8.3) da
+#                                  acikca [WINDOWS] isaretiyle atlanir.
 # DB gerektirmez; yeni Jest step ACILMAZ, mevcut architecture-guards process'inde kosar.
 src/common/storage/__tests__/runtime-storage-paths.spec.ts
 src/common/storage/__tests__/release-write-surface.static-guard.spec.ts

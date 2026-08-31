@@ -22,6 +22,17 @@ import {
 const TENANT_A = "clx0000000000000000000a";
 const TENANT_B = "clx0000000000000000000b";
 
+/**
+ * Production hedefi Windows'tur; CI ubuntu-latest'te kosar. Yol iddialari
+ * platform-notr kurulur: mutlak yollar gercek dosya sistemi kokunden
+ * (`C:\` veya `/`) turetilir. Yalniz Windows'a OZGU kapilar (UNC, 8.3)
+ * acikca isaretlenip Windows disinda atlanir — sessiz yesil URETILMEZ.
+ */
+const FS_ROOT = path.parse(process.cwd()).root;
+const IS_WIN = process.platform === "win32";
+const itWin = IS_WIN ? it : it.skip;
+const fakeCwd = (name: string): string => path.join(FS_ROOT, name, "project", "apps", "api");
+
 /** Test kokleri kisa-ad (8.3) icermeyen gercek bir temel altinda kurulur. */
 function makeTempRoot(prefix: string): string {
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
@@ -39,7 +50,7 @@ function cleanup(dir: string): void {
 describe("C37 RuntimeStoragePaths — production ortam zorunluluklari", () => {
   let dataRoot: string;
   let ocrRoot: string;
-  const cwd = path.join("C:", "fake-release", "project", "apps", "api");
+  const cwd = fakeCwd("c37-fake-release");
 
   beforeAll(() => {
     dataRoot = makeTempRoot("c37-data-");
@@ -89,13 +100,13 @@ describe("C37 RuntimeStoragePaths — production ortam zorunluluklari", () => {
     );
   });
 
-  it("6) UNC yol HARD FAIL", () => {
+  itWin("6) UNC yol HARD FAIL [WINDOWS]", () => {
     expect(() =>
       new RuntimeStoragePaths({ env: prod({ HUKUK_DATA_ROOT: "\\\\server\\share\\data" }), cwd }),
     ).toThrow(/UNC yol/);
   });
 
-  it("7) 8.3 kisa ad iceren kok HARD FAIL", () => {
+  itWin("7) 8.3 kisa ad iceren kok HARD FAIL [WINDOWS]", () => {
     expect(() =>
       new RuntimeStoragePaths({ env: prod({ HUKUK_DATA_ROOT: "C:\\PROGRA~1\\data" }), cwd }),
     ).toThrow(/8.3 kisa ad/);
@@ -148,7 +159,7 @@ describe("C37 RuntimeStoragePaths — production ortam zorunluluklari", () => {
 });
 
 describe("C37 RuntimeStoragePaths — dev/test geriye uyumluluk", () => {
-  const cwd = path.join("C:", "repo", "project", "apps", "api");
+  const cwd = fakeCwd("c37-repo");
 
   it("14) degisken yoksa ESKI yerlesim korunur", () => {
     const s = new RuntimeStoragePaths({ env: { NODE_ENV: "test" } as NodeJS.ProcessEnv, cwd });
@@ -222,7 +233,7 @@ describe("C37 — segment guvenligi (fail-closed)", () => {
 });
 
 describe("C37 — containment ve tenant izolasyonu", () => {
-  const cwd = path.join("C:", "repo", "project", "apps", "api");
+  const cwd = fakeCwd("c37-repo");
   let root: string;
   let s: RuntimeStoragePaths;
 
@@ -236,8 +247,9 @@ describe("C37 — containment ve tenant izolasyonu", () => {
   afterAll(() => cleanup(root));
 
   it("19) ayirac siniri: kardes-onek yol ICERIDE sayilmaz", () => {
-    expect(isContained("C:\\ops\\data", "C:\\ops\\data-evil\\x")).toBe(false);
-    expect(isContained("C:\\ops\\data", "C:\\ops\\data\\x")).toBe(true);
+    const base = path.join(FS_ROOT, "ops", "data");
+    expect(isContained(base, path.join(FS_ROOT, "ops", "data-evil", "x"))).toBe(false);
+    expect(isContained(base, path.join(base, "x"))).toBe(true);
   });
 
   it("20) iki tenant AYRI dizine duser", () => {
@@ -254,9 +266,8 @@ describe("C37 — containment ve tenant izolasyonu", () => {
   });
 
   it("22) kova disindaki mutlak yol REDDEDILIR", () => {
-    expect(() => s.assertContained("POA_UPLOADS", "C:\\Windows\\system32\\drivers\\etc\\hosts", TENANT_A)).toThrow(
-      /kova disinda/,
-    );
+    const outside = path.join(FS_ROOT, "etc", "hosts");
+    expect(() => s.assertContained("POA_UPLOADS", outside, TENANT_A)).toThrow(/kova disinda/);
   });
 
   it("23) tenantId eksikse tenant-scoped kova REDDEDILIR", () => {
@@ -277,7 +288,7 @@ describe("C37 — containment ve tenant izolasyonu", () => {
 });
 
 describe("C37 — reparse point (junction) reddi", () => {
-  const cwd = path.join("C:", "repo", "project", "apps", "api");
+  const cwd = fakeCwd("c37-repo");
   let real: string;
   let linkParent: string;
 
@@ -334,7 +345,7 @@ describe("C37 — reparse point (junction) reddi", () => {
 });
 
 describe("C37 — OCR model kokü fail-closed", () => {
-  const cwd = path.join("C:", "repo", "project", "apps", "api");
+  const cwd = fakeCwd("c37-repo");
   let root: string;
   let ocr: string;
   let s: RuntimeStoragePaths;
