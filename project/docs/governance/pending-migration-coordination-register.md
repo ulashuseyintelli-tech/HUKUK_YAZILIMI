@@ -1801,3 +1801,25 @@ SUPERSEDING POINTER: tam matris ve baglayici kurallar
 (RECORD ID `WR01-C14-C15-LEDGER-RECONCILIATION-R01`, SHA-256
 `c8c3c746956aed66aa48a2a30639b0a843ad95858781eee6601967818c40e135`) kaydindadir; bu blok o kaydin
 bu register'daki SUPERSEDING pointer'idir.
+
+## 27. C36 smoke principal foundation migration — PENDING (2026-09-02, REGISTER-RECON-C30PLUS)
+
+```text
+MIGRATION      20260830120000_c36_smoke_principal_foundation
+WORKSTREAM     RUNTIME / C36 — smoke principal fail-closed authorization
+MERGE          PR #2499, 2026-08-30
+DURUM          PENDING — hukuk_db'ye UYGULANMADI
+KANIT          prisma migrate status: "Following migration have not yet been
+               applied: 20260830120000_c36_smoke_principal_foundation"
+BEKLENEN YETKİ owner GO (paylaşımlı hukuk_db; MIG-C36-APPLY kalemi)
+```
+
+Bu migration `C33` production cutover paketinin bir adımıdır ve **tek başına
+uygulanması yetkilendirilmemiştir**. Genel bir `migrate deploy` çalışması bu
+migration'ı istemeden production'a taşıyabilir: exact migration allowlist yoksa
+HARD STOP (2026-08-26 bağlayıcı kuralı burada da geçerlidir).
+
+Lane kaydı ve residual bağlamı: `runtime-reconciliation-r01/c36-smoke-principal-engineering-qualification-r01.md`
+(SHA-256 `5944ffdb03c40abc46ef771d1ad1b41cf44e115c1db53ba18eb3efe028f53b87`);
+merkezi ledger `OFFICE-DELIVERY-MANIFEST.md` §15.4. Bu kayıt migration
+ÇALIŞTIRMAZ — IMPLEMENTATION AUTHORITY: NONE.
