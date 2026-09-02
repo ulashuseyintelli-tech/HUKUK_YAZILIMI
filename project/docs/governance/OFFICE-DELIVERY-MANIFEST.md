@@ -1984,3 +1984,131 @@ F01 PUBLIC_S0_ONLY boşluğu AÇIK). WR01: SEPARATE PRODUCT EXTENSION / STATUS
 UNCHANGED. F05: NOT_AUTHORIZED / CARRY_FORWARD. Successor/residual kayıtları
 (sertifikasyon §5 R1–R32) AYNEN KORUNUR. NEW EXECUTION AUTHORITY: NONE. §13
 tarihsel kayıtları DEĞİŞTİRİLMEMİŞTİR.
+
+## 15. C30–C37 RUNTIME LANE — MERKEZI LEDGER (2026-09-02, REGISTER-RECON-C30PLUS)
+
+C30–C37 runtime zinciri bugüne kadar **hiçbir merkezi register'da görünmüyordu**
+(`decision-log.md`, bu manifest, `GOVERNANCE-INDEX.md` üzerinde `C30..C37` eşleşmesi
+= 0) ve C37'nin lane kaydı hiç yoktu. Bu bölüm o boşluğu kapatır ve lane kayıtlarının
+**mevcut** hükümlerini merkezileştirir. §13 ve §14 tarihsel kayıtları
+DEĞİŞTİRİLMEMİŞTİR. Bu bölüm yeni semantic karar veya execution authority ÜRETMEZ.
+
+### 15.1 Zincir — güncel hükümler
+
+| ID | Kapsam | GÜNCEL VERDICT | Owner decision | Production authority |
+|---|---|---|---|---|
+| C30 | RELEASE14 cutover denemesi + rollback + DB-apply kaydı | `RUNTIME_RECONCILIATION_RECORDED / COMPLETED / CLOSED` — outcome: `CUTOVER_FAILED / API_ROLLBACK_SUCCEEDED / DATABASE_MIGRATION_APPLIED_AND_VERIFIED / RUNTIME_RECONCILIATION_NOT_ACHIEVED` | verildi (kapanış) | NONE |
+| C31 | C30-F01 launcher hash-pin atomik cutover tasarımı (K-1..K-7) | `C30_F01_ATOMIC_CUTOVER_DESIGN_RATIFIED / DETERMINISTIC_READY_FOR_IMPLEMENTATION / COMPLETED / CLOSED` | ratifiye | NONE |
+| C32 | R04 implementation + disposable rehearsal qualification | `C30_F01_R04_IMPLEMENTATION_AND_REHEARSAL_QUALIFIED / PATH_RELOCATABLE_CANONICAL_PACKAGE_VERIFIED / PRODUCTION_NOT_AUTHORIZED / COMPLETED / CLOSED / MERGED / CANONICAL` | verildi | NONE |
+| C33 | Production cutover + full runtime reconciliation | `NOT_STARTED / FRESH PRODUCTION PAGE AND OWNER GO REQUIRED` | **BEKLİYOR** | NONE |
+| C34 | R05 production execution engine qualification (+S1 elevated provider) | `PRODUCTION_EXECUTION_ENGINE_QUALIFIED / PRODUCTION_NOT_AUTHORIZED / COMPLETED / CLOSED / MERGED / CANONICAL` | verildi | NONE |
+| C35 | Smoke identity provisioning | `CANONICALLY_RECORDED / PRODUCTION PROVISIONING PENDING` | **BEKLİYOR** | NONE |
+| C36 | Smoke principal fail-closed authorization + cross-version qualification | `SMOKE_PRINCIPAL_IMPLEMENTED_AND_CROSS_VERSION_QUALIFIED / PRODUCTION_NOT_AUTHORIZED / COMPLETED / CLOSED / MERGED / CANONICAL` | verildi (#2501) | NONE |
+| C37 | External runtime storage (release-root yazım yüzeyleri kapatıldı) | implementasyon `MERGED / CANONICAL` (#2502 · `7e54016f`), D-01..D-09 `RATIFIED`, qualification `15/15 PASS`; **owner terminal verdict HENÜZ VERİLMEDİ** | D-01..D-09 ratifiye; terminal verdict BEKLİYOR | NONE |
+
+**PRODUCTION AUTHORITY = NONE — sekiz kalemin TAMAMINDA.** Hiçbir satır production
+yetkisi verildiğini göstermez.
+
+### 15.2 Predecessor / successor bağı
+
+```text
+C30  (RELEASE14 cutover FAILED)
+  └─> C31  (F01 atomik cutover tasarımı)          predecessor: C30-F01 bulgusu
+       └─> C32  (R04 implementation + rehearsal)  predecessor: C31 tasarımı
+            └─> C34  (R05 production engine)      predecessor: C32 paketi
+                 ├─> C35  (smoke identity)        C34 çıktısı: SMOKE_IDENTITY = PENDING_OWNER_INPUT
+                 │     └─> C36  (smoke principal) predecessor: C35 ölçümü (C35-BLK-01)
+                 │           └─> MIG-C36-APPLY    1 pending migration (C36 foundation)
+                 └─> C33  (production cutover + full reconciliation)
+                           bağımlılık: C35 provisioning + MIG-C36-APPLY
+                           durum: NOT_STARTED — otomatik başlamaz
+
+C37  (external runtime storage)  — bağımsız kol; C30–C36 cutover zincirini
+     BLOKLAMAZ ve onlar tarafından bloklanmaz. Immutable release modelinin
+     ön koşulu (runtime, release köküne yazmaz).
+```
+
+### 15.3 Authoritative evidence — yol + SHA-256
+
+| ID | Kayıt | SHA-256 |
+|---|---|---|
+| C30 | `project/docs/governance/runtime-reconciliation-r01/release14-cutover-record-r01.md` | `1bc61c1a87c5f7ee9c5961242b071e635d0d5f10340d18e1102e91faf839058b` |
+| C31 | `project/docs/governance/runtime-reconciliation-r01/c30-f01-launcher-pin-atomic-cutover-design-r01.md` | `d68ece1ad45779fa527da9d653e22fff2066fe06cf9300f709a51ece650c5d79` |
+| C32 | `project/docs/governance/runtime-reconciliation-r01/c32-r04-implementation-rehearsal-qualification-r01.md` | `d7556d7d9f94b7fb755983c1e3173070a805716a6f18b01bafa4677d00800b16` |
+| C33 | (ayrı lane dosyası YOK — hüküm C36 kaydının owner terminal verdict bölümündedir) | — |
+| C34 | `project/docs/governance/runtime-reconciliation-r01/c34-r05-production-engine-qualification-r01.md` | `bd58ecfe1501b5ac468e928d51aa02d7a8689ae2c7d695029aa458717479d6d6` |
+| C35 | `project/docs/governance/runtime-reconciliation-r01/c35-smoke-identity-provisioning-r01.md` | `6cb84459b2da554758b842d192d1eaa90ae5a3109396d705cbb3d4b018c6db20` |
+| C36 | `project/docs/governance/runtime-reconciliation-r01/c36-smoke-principal-engineering-qualification-r01.md` | `5944ffdb03c40abc46ef771d1ad1b41cf44e115c1db53ba18eb3efe028f53b87` |
+| C37 | `project/docs/governance/runtime-reconciliation-r01/c37-external-runtime-storage-application-implementation-r01.md` | `baa4b20548fbbdfb8e65d0ab79f9293e8e93e2c181f3b505291dfe9476192faa` |
+
+Hash'ler bu bölümün yazıldığı andaki dosya içeriğine aittir; lane dosyaları append-only
+güncellenirse hash değişir — o durumda bu tablo yenilenir, tarihsel satır silinmez.
+
+### 15.4 Residual / açık kapılar
+
+```text
+C33   NOT_STARTED · fresh immutable release cut + owner credential/signing +
+      nonce'lu hash-bound GO + R05 engine ile cutover + owner verdict GEREKLİ
+C35   PRODUCTION PROVISIONING PENDING · owner-controlled credential ile
+      provisioning + doğrulama matrisi GEREKLİ · credential YARATILMADI
+C36   R-01  HY_C36_PR2 worktree dizini ORPHANED — PRESERVE / RECORDED_RESIDUAL /
+            NO_FORCE_DELETE / FUTURE MR-058-CLASS CLEANUP ONLY
+      R-02  disposable Postgres container'ları — DELETE_AFTER_VERIFICATION / UYGULANDI
+      R-03  self-credential rotation allowlist'e EKLENMEDİ —
+            NOT_REQUIRED_BY_C36 / SURFACE_INTENTIONALLY_MINIMIZED
+      R-04  production signing key ÜRETİLMEDİ —
+            NOT_CREATED / CORRECT / PRODUCTION-PAGE OWNER INPUT
+      R-05  tsconfig.prod.json dışı spec-kapsamlı tsc baseline 529 hata —
+            PREEXISTING / OUT_OF_SCOPE / CI PRODUCTION TYPECHECK 0 ERROR / NON_BLOCKING
+      MIG   20260830120000_c36_smoke_principal_foundation = PENDING (uygulanmadı)
+            kayıt: pending-migration-coordination-register.md §27
+C37   owner terminal verdict HENÜZ VERİLMEDİ (bu bölüm veremez — owner işi)
+
+CANLI RUNTIME (değişmedi)
+      SPLIT: API = R13 · Web = R11
+      RELEASE16 = BUILT / CANDIDATE — CANLIYA BAĞLANMADI (live-bound DEĞİL)
+```
+
+### 15.5 Superseded kayıtlar (tarihsel — silinmez)
+
+```text
+C33   "BLOCKED_PENDING_FRESH_RESUME_GO / FULL_RECONCILIATION_BLOCKED_BY_SMOKE_IDENTITY"
+      (C34 kaydı, satır 979-981)  →  SUPERSEDED by C36 kaydı (#2501, 2026-09-01):
+      "NOT_STARTED / FRESH PRODUCTION PAGE AND OWNER GO REQUIRED".
+      Tarihsel satır DEĞİŞTİRİLMEMİŞTİR.
+
+C36   Lane dosyasının satır 3 ve 318'indeki "TERMINAL VERDICT = PENDING_OWNER"
+      ifadeleri #2500 (C36-PR3) dönemine aittir ve AYNI DOSYANIN
+      "OWNER TERMINAL VERDICT — C36 TERMINAL KAYIT" bölümü (#2501, C36-PR4)
+      tarafından SUPERSEDE edilmiştir. Append-only disiplini gereği tarihsel
+      satırlar YENİDEN YAZILMAMIŞTIR; GÜNCEL hüküm §15.1'dedir.
+
+M-001 R12 öncesi "M-001 FAILED / açık" ara durumları ve
+      SEMANTIC-EQUIVALENCE "EQUIVALENCE_FAILED" ara gözlemi
+      SUPERSEDED_HISTORICAL_INTERMEDIATE'tir; GÜNCEL: M-001 = COMPLETE.
+
+R07R3 "hazır ama tetiklenmemiş / authorityIssued=false / residual PRESENT-UNTOUCHED"
+      sınıflandırması SUPERSEDED (kök neden SCANNER_MISS; cleanup 2026-09-02T11:28:11Z'de
+      tamamlanmıştı). GÜNCEL: R07R3 CLEANUP = COMPLETE / RESIDUAL_CLEARED_BY_HANDLE.
+```
+
+### 15.6 Program kapanışına etkisi
+
+```text
+OFFICE P0–P8 GOVERNANCE PROGRAM   TERMINALLY_CLOSED_WITH_RECORDED_RESIDUALS / DEĞİŞMEDİ
+C30–C32, C34, C36                 KAPALI — minimum kapanışı BLOKLAMAZ
+C37 (kod)                         MERGED / CANONICAL — minimum kapanışı BLOKLAMAZ
+M-001 · R07R3 cleanup             COMPLETE — artık blokaj DEĞİL
+C33 · C35 · MIG-C36-APPLY         PRODUCTION kapanışının kritik yolunda; owner GO bekler
+LEDGER GÖRÜNÜRLÜĞÜ                bu bölüm + C37 lane kaydı ile SAĞLANDI
+
+PRODUCTION AUTHORITY              NONE
+NEW EXECUTION AUTHORITY           NONE
+NEXT PHASE                        OTOMATİK BAŞLAMAZ
+```
+
+Kaynak paket (repo dışı, hash-bağlı): `HY_OFFICE_PHASE00_R01_FRESHNESS_RECON`
+MANIFEST `e70fbfc2f63b6a825dc3d0ba119b2984ad7870aa5339274eec6cd0154591f03d`,
+final rapor `5e14f8940a6843e32fa95f77adc0a307e9e286361ccbee8c9093a998bb9fa3b0`
+(`PHASE00_R01_COMPLETE`). Phase00-R01 metrikleri (33/71 · 90/180 · readiness 3/12)
+bu görevde DEĞİŞTİRİLMEMİŞTİR.
