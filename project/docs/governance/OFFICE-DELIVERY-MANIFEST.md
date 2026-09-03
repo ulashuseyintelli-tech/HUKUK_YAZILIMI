@@ -2112,3 +2112,23 @@ MANIFEST `e70fbfc2f63b6a825dc3d0ba119b2984ad7870aa5339274eec6cd0154591f03d`,
 final rapor `5e14f8940a6843e32fa95f77adc0a307e9e286361ccbee8c9093a998bb9fa3b0`
 (`PHASE00_R01_COMPLETE`). Phase00-R01 metrikleri (33/71 · 90/180 · readiness 3/12)
 bu görevde DEĞİŞTİRİLMEMİŞTİR.
+
+### 15.7 Retention/Orphan Disposition Uygulaması — 2026-09-03 (append-only)
+
+Owner, retention/orphan checkpoint'inin (MANIFEST `1bb082f145ac4e66f541016e3bcb84f24db187792066d46a9623b21cbb038d85`,
+payload `8a23743a0b446bafdfbd713cdc7e91a8b5729eff15c8cb9f06e4e52ae245ee64`) K-01…K-12
+kararlarını RATİFİYE etti; 12/12 karar bağlayıcı disposition kaydına işlendi:
+`office-retention-r01/retention-orphan-disposition-application-r01.md`.
+
+```text
+RETENTION DECISIONS        COMPLETE (K-01…K-12 · 12/12 APPLIED · digest parity 8/8 OK)
+ORPHAN DISPOSITION RECORD  COMPLETE (proven orphan 0 · tüm adaylar RETAIN/REVIEW kayıtlı)
+PHYSICAL CLEANUP           NOT_REQUIRED_FOR_MINIMUM_CLOSE · NOT_AUTHORIZED
+MINIMUM-CLOSE REMAINING    0  — OFFICE programı MINIMUM CLOSE seviyesinde KAPANDI
+PRODUCTION-READY           AÇIK (kritik yol §15.6; production authority NONE; c36 migration PENDING)
+REVIEW_REQUIRED (402)      ürün kapanışını engellemez; owner successor kararı olmadan TEMİZLENEMEZ
+CLEANUP AUTHORITY          ÜRETİLMEDİ (K-10); silme öncesi K-11/K-12 protokolleri ZORUNLU
+```
+
+Uygulama kanıt kökü (repo dışı, hash-bağlı): `HY_OFFICE_RETENTION_DECISION_APPLICATION_R01`
+(MANIFEST + detached checksum final raporda). Tarihsel kayıtlar DEĞİŞTİRİLMEMİŞTİR.
