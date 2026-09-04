@@ -15,8 +15,8 @@ services:
     environment:
       NODE_ENV: production
       TZ: UTC # legal-time hijyen: prod paritesi; faiz TZ-invariant (PR-3), UTC kilitlenir
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hukuk_db
-      JWT_SECRET: staging-jwt-secret-change-me
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL gerekli - docker/.env dosyasini olusturun}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET gerekli - docker/.env dosyasini olusturun}
       REDIS_URL: redis://redis:6379
       PORT: 8080
     ports:
@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD gerekli - docker/.env dosyasini olusturun}
       POSTGRES_DB: hukuk_db
     ports:
       - "5432:5432"
