@@ -1804,6 +1804,9 @@ bu register'daki SUPERSEDING pointer'idir.
 
 ## 27. C36 smoke principal foundation migration — PENDING (2026-09-02, REGISTER-RECON-C30PLUS)
 
+> **GÜNCEL DURUM (2026-09-05): SUPERSEDED — migration 2026-09-04'te hukuk_db'ye UYGULANDI; bkz. §28.**
+> Aşağıdaki §27 metni tarihsel PENDING kaydıdır; append-only disiplini gereği DEĞİŞTİRİLMEMİŞTİR.
+
 ```text
 MIGRATION      20260830120000_c36_smoke_principal_foundation
 WORKSTREAM     RUNTIME / C36 — smoke principal fail-closed authorization
@@ -1823,3 +1826,37 @@ Lane kaydı ve residual bağlamı: `runtime-reconciliation-r01/c36-smoke-princip
 (SHA-256 `5944ffdb03c40abc46ef771d1ad1b41cf44e115c1db53ba18eb3efe028f53b87`);
 merkezi ledger `OFFICE-DELIVERY-MANIFEST.md` §15.4. Bu kayıt migration
 ÇALIŞTIRMAZ — IMPLEMENTATION AUTHORITY: NONE.
+
+## 28. C36 smoke principal foundation migration — APPLIED / VERIFIED (2026-09-04, C36-R19 EXACT-ONE)
+
+```text
+MIGRATION      20260830120000_c36_smoke_principal_foundation
+DURUM          APPLIED / VERIFIED — hukuk_db'ye UYGULANDI (§27 PENDING kaydı SUPERSEDED)
+UYGULAMA       HY_C36_MIGRATION_EXECUTION_R19 (repo DIŞI owner paketi), owner-run
+               runId MIG-20260905-001653-ea3e85bb · 2026-09-04T21:16:53Z → 21:17:27Z (UTC)
+MEKANİZMA      EXACT-ONE: hash-pinli migration.sql (SHA-256 ab4fb20326759ee1081619bf5eb40f5d7f2e870ab3c11b0453da95084fedb2be,
+               1739 B) TEK PostgreSQL transaction'ında (BEGIN … COMMIT) + TAM BİR _prisma_migrations satırı
+               (checksum = sha256(migration.sql), applied_steps_count 1, logs NULL).
+               `prisma migrate deploy` KULLANILMADI (deploy-all yasağı); `prisma migrate status` yalnız
+               salt-okuma kapı: pre = pending exact-set {hedef} · post = "Database schema is up to date" (129 found)
+KAPILAR        29/29 PASS · otomatik rollback/restore 0 · FROZEN 20260825160000_tenant_lifecycle_foundation dokunulmadı
+LEDGER         128|128|0|0 → 129|129|0|0 (distinct 129 · duplicate 0) · hedef satır TAM 1 (finished, rolled_back NULL)
+NESNELER       enum SmokePrincipalPurpose + SmokePrincipalStatus · tablo SmokePrincipal · 4 index · FK SmokePrincipal_userId_fkey
+               · pkey = 9/9 (pre 0/9)
+KİMLİK         PostgreSQL 716ca9c0357b · system_identifier 7660053627876716578 (değişmedi) · R07 backup 26c78319… (değişmedi)
+               · API RELEASE13 pid 42772 + Web RELEASE11 kesintisiz (restart 0) · 5 port yalnız loopback, LAN 0/5
+AUTHORITY      tek-kullanımlık nonce 05f13593b5c747be888424f176d0c102 TÜKETİLDİ · R19 owner-command YENİDEN KULLANILAMAZ
+               · migration YENİDEN ÇALIŞTIRILMAZ
+OWNER TERMINAL C36_MIGRATION_APPLIED_AND_VERIFIED / 29_OF_29_PASS / LEDGER_129_OF_129 / TARGET_ROW_EXACT_ONE /
+               TARGET_OBJECTS_9_OF_9 / PRISMA_UP_TO_DATE / API_WEB_UNINTERRUPTED / BACKUP_UNCHANGED  (2026-09-05)
+KANIT          makbuz migration-receipts/MIGRATION-MIG-20260905-001653-ea3e85bb.json
+               (SHA-256 bb9e5b52e18f6ca982d88c0afa3838cc0e4a72a91293304cec734c93feaba4c1) · paket MANIFEST
+               (SHA-256 746bc23571331ce899fa3357a23ae4b3101589b04cbcb5f3b60e450e30714764) · bağımsız post-run
+               doğrulama iki yöntem (psql + prisma migrate status, 2026-09-05) · terminal sidecar
+               HY_C36_MIGRATION_EXECUTION_R19.TERMINAL-CLOSEOUT.json
+               (SHA-256 02951b8cb97b858986eaecddff2145a180d5c8ecc2b0d23813fddbf10870f8c8)
+```
+
+Pending migration kuyruğu bu kayıtla **0**'dır (129/129 uygulanmış). Bu kayıt yeni yetki ÜRETMEZ:
+smoke identity provisioning (C35 / C36 OPTION 1) ve C33 fresh release cutover ayrı owner yetkisi bekler.
+Merkezi ledger: `OFFICE-DELIVERY-MANIFEST.md` §15.4 (MIG-C36-APPLY = APPLIED).
