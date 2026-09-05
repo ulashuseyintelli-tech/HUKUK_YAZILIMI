@@ -674,7 +674,7 @@ export class DispositionPostingService {
    *       -> payout (payout tutar, allocation INSERT'in Collection FK kontrolunde bekler)
    *         -> gecikmis posting
    * `FOR NO KEY UPDATE` KEY SHARE ile CAKISMAZ; boylece FK kenari ortadan kalkar. Iptalin
-   * `UPDATE "Collection" SET status...` yazimi ise (key olmayan kolon) yine ayni sinifta kilit
+   * `Collection.status` degisikligi ise (key olmayan kolon) yine ayni sinifta kilit
    * istedigi icin BEKLEMEYE devam eder — F04'un kazanimi korunur.
    * Kilit transaction sonuna kadar tutulur; CollectionCancelExecutor ayni satiri UPDATE ettiginden
    * posting ile iptal bu satirda serialize olur (iptal once commit ederse posting CONFIRMED
