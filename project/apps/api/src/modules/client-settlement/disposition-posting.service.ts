@@ -229,6 +229,9 @@ export class DispositionPostingService {
     }
 
     // Posting anında collection YENİDEN doğrulanır (approve→post arası iptal/değişim guard).
+    // F04: bu, transaction DIŞINDA çalışan UCUZ ERKEN-FAIL'dir; READ COMMITTED'da sonraki iptal
+    // commit'ini göremez, bu yüzden YETKİLİ KARAR DEĞİLDİR. Yetkili kontrol, $transaction içindeki
+    // assertCollectionConfirmedForUpdate() (SELECT ... FOR NO KEY UPDATE) ile verilir.
     await this.assertCollectionConfirmed(disp);
 
     // Line'lar recommend'da yazıldı + approve'da donduruldu. Defense-in-depth: sum==totalAmount yeniden doğrula.
@@ -257,6 +260,10 @@ export class DispositionPostingService {
     );
 
     await this.prisma.$transaction(async (tx) => {
+      // F04: YETKILI tahsilat kontrolu. Collection satiri ILK finansal yazimdan ONCE kilitlenir
+      // ve kilit transaction sonuna kadar tutulur (asagidaki metodun dokumantasyonuna bakiniz).
+      await this.assertCollectionConfirmedForUpdate(tx, disp, tenantId);
+
       let caseBalanceId: string | null = null;
       for (const l of lines) {
         // OFFSET_CLIENT_ADVANCE → bakiye etkisi YALNIZ BalanceLedger'dan (avans defteri; çift-sayım yok).
@@ -650,6 +657,77 @@ export class DispositionPostingService {
     });
     if (!disp) throw new NotFoundException('Dağıtım kaydı bulunamadı');
     return disp;
+  }
+
+  /**
+   * F04 YETKILI KONTROL. `assertCollectionConfirmed` transaction DISINDA calisir; READ COMMITTED'da
+   * siradan bir SELECT, kaydin sonradan degismesini engellemez ve sonraki iptal commit'ini gormez.
+   * Bu yuzden karar BURADA, `SELECT ... FOR NO KEY UPDATE` ile kilitlenmis GUNCEL satir uzerinde verilir.
+   *
+   * NEDEN `FOR NO KEY UPDATE` (FOR UPDATE DEGIL): PostgreSQL, foreign key dogrulamasi icin
+   * REFERANS VERILEN satirda ORTULU bir `KEY SHARE` kilidi alir. `ClientPayoutAllocation.collectionId`
+   * -> `Collection(id)` FK'si nedeniyle, ClientPayoutService.create() payout advisory kilidini
+   * TUTARKEN yaptigi allocation INSERT'i bu ortulu kilide ihtiyac duyar. `FOR UPDATE` KEY SHARE ile
+   * CAKISIR ve su donguyu MUMKUN kilardi:
+   *   gecikmis posting (Collection kilidi tutar, clientOffset bekler)
+   *     -> offset (clientOffset tutar, payout bekler)
+   *       -> payout (payout tutar, allocation INSERT'in Collection FK kontrolunde bekler)
+   *         -> gecikmis posting
+   * `FOR NO KEY UPDATE` KEY SHARE ile CAKISMAZ; boylece FK kenari ortadan kalkar. Iptalin
+   * `UPDATE "Collection" SET status...` yazimi ise (key olmayan kolon) yine ayni sinifta kilit
+   * istedigi icin BEKLEMEYE devam eder — F04'un kazanimi korunur.
+   * Kilit transaction sonuna kadar tutulur; CollectionCancelExecutor ayni satiri UPDATE ettiginden
+   * posting ile iptal bu satirda serialize olur (iptal once commit ederse posting CONFIRMED
+   * goremez ve HIC finansal yazim birakmaz).
+   *
+   * KILIT SIRASI (dongusel bekleme analizi — yalniz asagida SAYILAN yollar icin):
+   *   post()                    : Collection(row) -> clientOffset(advisory, reimb. satiri varsa)
+   *                               -> CollectionDisposition(row, CAS) -> journal
+   *   CollectionCancelExecutor  : Collection(row) -> ledger/journal        [clientOffset/disposition ALMAZ]
+   *   Reversal PRE-POST (CAS)   : CollectionDisposition(row, tek-ifade)    [Collection/clientOffset ALMAZ]
+   *   Reversal POSTED yolu      : journal storno -> CollectionDisposition(row, marker)
+   *                               -> clientOffset(advisory, createReimbursementReversals)
+   *   ClientOffsetService       : clientOffset -> payout                   [Collection ALMAZ]
+   *
+   * DIKKAT: post() ile Reversal POSTED yolu, clientOffset ve CollectionDisposition ciftini
+   * TERS sirada alir (post: clientOffset->disposition; POSTED yolu: disposition->clientOffset).
+   * Buna ragmen dongu KAPANMAZ, iki nedenle:
+   *   (1) AYNI disposition: POSTED yoluna girebilmek icin kaydin POSTED GORUNMESI gerekir; bu da
+   *       ancak post() commit edip TUM kilitlerini biraktiktan sonra mumkundur (READ COMMITTED).
+   *       Iki akis ayni disposition uzerinde kilitleri es zamanli TUTAMAZ.
+   *   (2) FARKLI disposition: her akis YALNIZ kendi disposition satirini kilitler; digerinin
+   *       satirini hicbir zaman istemez. Ortak kaynak yalniz clientOffset advisory'sidir ve tek
+   *       kaynak uzerindeki bekleme dongu degildir.
+   * Yeni Collection kilidi bu degerlendirmeyi degistirmez. Collection satirinda kilit isteyen
+   * UC yol vardir: post() (bu metod), cancel executor'in UPDATE'i ve FK dogrulamasinin ORTULU
+   * `KEY SHARE` kilidi (ClientPayoutAllocation/ClientPayoutManualReversal -> Collection).
+   * Ilk ikisi Collection'i ILK kaynak olarak alir, dolayisiyla Collection'i beklerken
+   * clientOffset/disposition tutmazlar. Ucuncusu ise payout advisory kilidi TUTULURKEN gelir;
+   * bu yuzden mod `FOR NO KEY UPDATE`'tir ve o ortulu kilitle CAKISMAZ (yukaridaki gerekce). Mevcut clientOffset->payout asimetrisi (CBND-5)
+   * korunur. SKIP LOCKED KULLANILMAZ: atlanan finansal is asla basarili sayilmaz.
+   *
+   * Cagrildigi yerler:
+   *  - DispositionPostingService.post() -> $transaction icinde, ilk finansal yazimdan ONCE
+   */
+  private async assertCollectionConfirmedForUpdate(
+    tx: Prisma.TransactionClient,
+    disp: { collectionId: string; caseId: string },
+    tenantId: string,
+  ) {
+    const locked = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT "status"
+      FROM "Collection"
+      WHERE "id" = ${disp.collectionId}
+        AND "caseId" = ${disp.caseId}
+        AND "tenantId" = ${tenantId}
+      FOR NO KEY UPDATE
+    `;
+    if (locked.length === 0) {
+      throw new BadRequestException('Tahsilat scope dışı (tenant/case/collection mismatch)');
+    }
+    if (locked[0].status !== 'CONFIRMED') {
+      throw new BadRequestException(`Tahsilat ${locked[0].status} — posting yasak (CONFIRMED değil)`);
+    }
   }
 
   private async assertCollectionConfirmed(disp: { collectionId: string; caseId: string }) {

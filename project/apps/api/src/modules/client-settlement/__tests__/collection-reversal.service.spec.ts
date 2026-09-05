@@ -128,6 +128,8 @@ function buildPrisma(
     collectionDisposition: {
       findUnique: jest.fn().mockResolvedValue(disp),
       update: jest.fn().mockResolvedValue({ id: disp?.id ?? 'disp1', status: 'REVERSED' }),
+      // F04: pre-post gecisi KOSULLU (CAS). Varsayilan: kosul tuttu (count 1).
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     collectionDispositionLine: {
       findMany: jest.fn().mockResolvedValue(lineIds.map((id) => ({ id }))),
@@ -196,8 +198,16 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expect(res.outcome).toBe('reversed');
     expect(res.dispositionId).toBe('disp1');
     expect(res.reversalSourceEventId).toBe('evt-rev-1');
-    expect(prisma.collectionDisposition.update).toHaveBeenCalledWith({
-      where: { id: 'disp1' },
+    // F04: kosulsuz update DEGIL — kapsam + beklenen pre-post durumu kosula dahil.
+    expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
+    expect(prisma.collectionDisposition.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'disp1',
+        tenantId: 't1',
+        caseId: 'case1',
+        collectionId: 'col1',
+        status: { in: ['HELD_PENDING_DISTRIBUTION', 'DISTRIBUTION_RECOMMENDED', 'DISTRIBUTION_APPROVED'] },
+      },
       data: { status: 'REVERSED' },
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -210,7 +220,18 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_RECOMMENDED' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
     expect(res.outcome).toBe('reversed');
-    expect(prisma.collectionDisposition.update).toHaveBeenCalledWith({ where: { id: 'disp1' }, data: { status: 'REVERSED' } });
+    // F04: kosulsuz update DEGIL — kapsam + beklenen pre-post durumu kosula dahil.
+    expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
+    expect(prisma.collectionDisposition.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'disp1',
+        tenantId: 't1',
+        caseId: 'case1',
+        collectionId: 'col1',
+        status: { in: ['HELD_PENDING_DISTRIBUTION', 'DISTRIBUTION_RECOMMENDED', 'DISTRIBUTION_APPROVED'] },
+      },
+      data: { status: 'REVERSED' },
+    });
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expectNoForbiddenFinancialMutation(prisma);
   });
@@ -219,8 +240,52 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_APPROVED' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
     expect(res.outcome).toBe('reversed');
-    expect(prisma.collectionDisposition.update).toHaveBeenCalledWith({ where: { id: 'disp1' }, data: { status: 'REVERSED' } });
+    // F04: kosulsuz update DEGIL — kapsam + beklenen pre-post durumu kosula dahil.
+    expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
+    expect(prisma.collectionDisposition.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'disp1',
+        tenantId: 't1',
+        caseId: 'case1',
+        collectionId: 'col1',
+        status: { in: ['HELD_PENDING_DISTRIBUTION', 'DISTRIBUTION_RECOMMENDED', 'DISTRIBUTION_APPROVED'] },
+      },
+      data: { status: 'REVERSED' },
+    });
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expectNoForbiddenFinancialMutation(prisma);
+  });
+
+  // ── F04: CAS kaybi -> TEK KEZ yeniden degerlendirme ───────────────────────
+  it('F04: pre-post CAS kaybedilir ve guncel durum POSTED ise POSTED tersleme yolu isletilir', async () => {
+    // Okuma ani: DISTRIBUTION_APPROVED. Yazim ani: posting commit etmis, kayit POSTED.
+    const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_APPROVED' }));
+    prisma.collectionDisposition.updateMany.mockResolvedValue({ count: 0 });
+    prisma.collectionDisposition.findUnique
+      .mockResolvedValueOnce(disposition({ status: 'DISTRIBUTION_APPROVED' }))
+      .mockResolvedValueOnce(disposition({ status: 'POSTED' }));
+
+    const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+
+    // Bayat pre-post goruntusu POSTED'i EZMEDI; POSTED yolu isledi.
+    expect(res.outcome).toBe('posted-manual-reversal-required');
+    expect(res.manualReversalRequired).toBe(true);
+    expect(res.revalidatedAfterConflict).toBe(true);
+    expect(prisma.collectionDisposition.findUnique).toHaveBeenCalledTimes(2);
+    // POSTED dali kendi transaction'ini acar (journal storno + kalici marker).
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expectNoForbiddenFinancialMutation(prisma);
+  });
+
+  it('F04: yeniden degerlendirmeden sonra da pre-post ise sessiz basari URETILMEZ (gorunur hata)', async () => {
+    const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_APPROVED' }));
+    prisma.collectionDisposition.updateMany.mockResolvedValue({ count: 0 });
+    // Her iki okumada da pre-post: ikinci turda ConflictException beklenir (dead-letter gorunurlugu).
+    prisma.collectionDisposition.findUnique.mockResolvedValue(disposition({ status: 'DISTRIBUTION_APPROVED' }));
+
+    await expect(
+      svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX),
+    ).rejects.toThrow(/pre-post durumunda degil/);
     expectNoForbiddenFinancialMutation(prisma);
   });
 

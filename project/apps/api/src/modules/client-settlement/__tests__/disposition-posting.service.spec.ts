@@ -35,6 +35,12 @@ const DEFAULT_ELIGIBLE_USER = { isActive: true, tenantId: 't1', lawyer: { id: 'l
 function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any; expenseRequest?: any; user?: any } = {}) {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1), // ROLL-001: pg_advisory_xact_lock
+    // F04: assertCollectionConfirmedForUpdate() -> SELECT ... FOR UPDATE (kilitli Collection okumasi).
+    // Kilitli okuma, transaction disindaki `collection.findFirst` ile AYNI fixture'i yansitir.
+    $queryRaw: jest.fn().mockImplementation(async () => {
+      const col = opts.col === undefined ? { status: 'CONFIRMED' } : opts.col;
+      return col ? [{ status: col.status }] : [];
+    }),
     collectionDispositionLine: {
       deleteMany: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: `line-${data.type}` })),

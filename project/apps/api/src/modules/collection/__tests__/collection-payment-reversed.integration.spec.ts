@@ -151,6 +151,28 @@ function buildHarness() {
         Object.assign(disposition, args.data);
         return disposition;
       }),
+      // F04: pre-post gecisi KOSULLU (CAS). Store, gercek `updateMany` semantigini yansitir:
+      // where kosullarinin TAMAMI tutmayan satir guncellenmez ve count'a girmez.
+      updateMany: jest.fn(async (args: any) => {
+        const where = args.where ?? {};
+        const matched = Array.from(dispositions.values()).filter((row: any) => {
+          if (where.id !== undefined && row.id !== where.id) return false;
+          if (where.tenantId !== undefined && row.tenantId !== where.tenantId) return false;
+          if (where.caseId !== undefined && row.caseId !== where.caseId) return false;
+          if (where.collectionId !== undefined && row.collectionId !== where.collectionId) return false;
+          if (where.status !== undefined) {
+            const expected = where.status;
+            if (Array.isArray(expected?.in)) {
+              if (!expected.in.includes(row.status)) return false;
+            } else if (row.status !== expected) {
+              return false;
+            }
+          }
+          return true;
+        });
+        for (const row of matched) Object.assign(row, args.data);
+        return { count: matched.length };
+      }),
     },
     collectionDispositionLine: {
       findMany: jest.fn(async () => [{ id: 'disp-line-1' }]),
