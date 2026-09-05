@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { LawyerRole, LawyerRank } from "@prisma/client";
 import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
+import { PatchLawyerDto, UpdateLawyerDto, validateLawyerUpdateInput } from "./dto/update-lawyer.dto";
 
 @Controller("lawyers")
 @UseGuards(JwtAuthGuard)
@@ -118,77 +119,33 @@ export class LawyerController {
   // Avukat güncelle
   @Put(":id")
   @UseGuards(OfficeF01AuthorizationGuard)
-  update(
+  async update(
     @CurrentUser("tenantId") tenantId: string,
     // K1-4b: actor kimliği (canApproveOfficeActions guard + audit için). body.userId DEĞİL, truthful @CurrentUser.
     @CurrentUser("id") actorUserId: string,
     @CurrentUser("role") actorRole: string,
     @Param("id") id: string,
     @Body()
-    data: {
-      name?: string;
-      surname?: string;
-      tckn?: string;
-      gender?: string;
-      barNumber?: string;
-      barCity?: string;
-      tbbNo?: string;
-      vergiDairesi?: string;
-      vergiNo?: string;
-      email?: string;
-      phone?: string;
-      mobilePhone?: string;
-      whatsappPhone?: string;
-      fax?: string;
-      address?: string;
-      city?: string;
-      district?: string;
-      bankName?: string;
-      branchName?: string;
-      iban?: string;
-      isInHouseCounsel?: boolean;
-      isEmployee?: boolean;
-      role?: LawyerRole;
-      title?: string;
-      canSign?: boolean;
-      canAppearInUyap?: boolean;
-      canBeResponsible?: boolean;
-      isDefaultForNewCases?: boolean;
-      sortOrder?: number;
-      isActive?: boolean;
-      // Yeni alanlar
-      lawyerRank?: LawyerRank;
-      defaultPermissions?: any;
-      permissionsLocked?: boolean;
-      canModifyOtherPermissions?: boolean;
-      // K1-4b: Office Approval delegation flag — yalnız ADMIN/PARTNER yazabilir (service'te guard + audit).
-      canApproveOfficeActions?: boolean;
-    }
+    body: unknown
   ) {
+    // Explicit runtime DTO validation preserves opaque JSON without global transformation.
+    const data = await validateLawyerUpdateInput(body, UpdateLawyerDto);
     return this.lawyerService.update(tenantId, id, data, { userId: actorUserId, role: actorRole });
   }
 
   // Avukat kısmi güncelle (PATCH)
   @Patch(":id")
   @UseGuards(OfficeF01AuthorizationGuard)
-  patch(
+  async patch(
     @CurrentUser("tenantId") tenantId: string,
     // K1-4b: actor — PATCH yolundan da canApproveOfficeActions gelirse aynı guard/audit uygulansın.
     @CurrentUser("id") actorUserId: string,
     @CurrentUser("role") actorRole: string,
     @Param("id") id: string,
     @Body()
-    data: {
-      phone?: string;
-      email?: string;
-      address?: string;
-      bankName?: string;
-      branchName?: string;
-      iban?: string;
-      // K1-4b: delegation flag PATCH ile de gelebilir; service guard+audit uygular.
-      canApproveOfficeActions?: boolean;
-    }
+    body: unknown
   ) {
+    const data = await validateLawyerUpdateInput(body, PatchLawyerDto);
     return this.lawyerService.update(tenantId, id, data, { userId: actorUserId, role: actorRole });
   }
 

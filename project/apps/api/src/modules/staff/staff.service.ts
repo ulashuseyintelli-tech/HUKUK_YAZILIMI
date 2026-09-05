@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePersonName } from '../../common/name-match.util';
 import { maskTckn } from '../../common/pii-mask.util';
@@ -132,13 +132,23 @@ export class StaffService {
     });
   }
 
-  // Personel güncelle
+  /** Personel güncelle. Çağıran: StaffController.update (PUT). */
   async update(id: string, tenantId: string, data: any) {
     // Önce bu personelin bu tenant'a ait olduğunu kontrol et
     const existing = await this.prisma.staffMember.findFirst({
       where: { id, tenantId },
     });
     if (!existing) throw new NotFoundException('Personel bulunamadı');
+
+    // Echo-only compatibility: a normal profile update never writes lifecycle state.
+    if (data.isActive !== undefined) {
+      if (typeof data.isActive !== 'boolean') {
+        throw new BadRequestException({ code: 'INVALID_PROFILE_ACTIVE_UPDATE', message: 'isActive yalnız boolean olabilir.' });
+      }
+      if (data.isActive !== existing.isActive) {
+        throw new BadRequestException({ code: 'PROFILE_LIFECYCLE_CHANGE_NOT_ALLOWED', message: 'Profil güncellemesi aktiflik durumunu değiştiremez; ayrı lifecycle işlemi gerekir.' });
+      }
+    }
 
     // P5-B04: liste/detay yanıtları maskeli TCKN taşır (örn. 123****01) ve ölçülen tüketici
     // (cases/new StaffDetailModal — P5-B03 §5 site #8) satırın TAMAMINI geri PUT eder.
@@ -207,7 +217,6 @@ export class StaffService {
     if (data.canSendNotifications !== undefined) updateData.canSendNotifications = data.canSendNotifications;
     if (data.isDefaultForNewCases !== undefined) updateData.isDefaultForNewCases = data.isDefaultForNewCases;
     if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
-    if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
     return this.prisma.staffMember.update({
       where: { id },
