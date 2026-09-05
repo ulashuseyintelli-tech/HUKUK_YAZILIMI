@@ -201,6 +201,10 @@ src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-e2
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/collection/__tests__/collection-semantic-idempotency.db-gated.integration.spec.ts
 #
+#   F04 (posting / cancellation / reversal race): gercek PostgreSQL uzerinde iki commit
+#   sirasini bariyerlerle dogrular; kilitli Collection okumasi ve pre-post CAS regresyonu.
+src/modules/client-settlement/__tests__/f04-posting-reversal-race.db-gated.integration.spec.ts
+#
 #   DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW)
 #     collection-cancel-reversal.db-gated.integration.spec.ts: already follows the
 #     .db-gated.integration.spec.ts suffix convention (describeWithDisposableDb),

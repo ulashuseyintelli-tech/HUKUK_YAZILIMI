@@ -49,6 +49,19 @@ interface PostedDispositionForReversal {
   manualReversalRequiredAt: Date | null;
 }
 
+/**
+ * F04: post() HENUZ calismamis sayilan durumlar. Pre-post -> REVERSED gecisi YALNIZ bu
+ * kumedeyken gecerlidir ve kosullu (CAS) yazilir; POSTED bu kumede DEGILDIR.
+ */
+const PRE_POST_REVERSIBLE_STATUSES = [
+  'HELD_PENDING_DISTRIBUTION',
+  'DISTRIBUTION_RECOMMENDED',
+  'DISTRIBUTION_APPROVED',
+] as const;
+
+/** Status-dispatch girdisi - POSTED daliyla AYNI select shape'i. */
+type DispositionReversalCandidate = PostedDispositionForReversal;
+
 interface PostedDispositionLineJournalEvidence {
   id: string;
   sourceId: string;
@@ -91,6 +104,8 @@ export interface ReverseResult {
   alreadyMarked?: boolean;
   /** Reversal'Ä± tetikleyen outbox action id (provenance). FU1'den itibaren POSTED'de kalÄ±cÄ± kolona da yazÄ±lÄ±r. */
   reversalSourceEventId?: string;
+  /** F04: pre-post CAS kaybedildi; kayit yeniden okunup durum yeniden degerlendirildi. */
+  revalidatedAfterConflict?: boolean;
 }
 
 /**
@@ -195,6 +210,20 @@ export class CollectionReversalService {
       );
     }
 
+    return this.applyReversalByStatus(disp, collectionId, context, false);
+  }
+
+  /**
+   * F04 status-dispatch. Cagrildigi yerler:
+   *  - CollectionReversalService.reverseFromPaymentReversed() (ilk degerlendirme, revalidated=false)
+   *  - kendisi (pre-post CAS kaybedildiginde TAM BIR KEZ, revalidated=true) - sinirsiz retry YOK.
+   */
+  private async applyReversalByStatus(
+    disp: DispositionReversalCandidate,
+    collectionId: string,
+    context: ActionHandlerContext | undefined,
+    revalidated: boolean,
+  ): Promise<ReverseResult> {
     switch (disp.status) {
       // Kanonik enum'da ayrÄ± 'DRAFT'/'HELD' YOK; aktif taslak durumu = HELD_PENDING_DISTRIBUTION.
       // S8-B FAZ-0: DISTRIBUTION_RECOMMENDED/APPROVED de POSTED-Ã¶ncesi (post() henÃ¼z Ã§alÄ±ÅŸmamÄ±ÅŸ) â†’ HELD ile aynÄ±:
@@ -205,10 +234,28 @@ export class CollectionReversalService {
       case 'DISTRIBUTION_APPROVED': {
         // Aktif taslak/Ã¶neri/onay (POSTED Ã¶ncesi) â†’ gÃ¼venli REVERSED. Finansal taraf YOK (post henÃ¼z Ã§alÄ±ÅŸmamÄ±ÅŸ:
         // proceeds satÄ±rÄ±, ClientStatementLine, BalanceLedger, payout YAZILMAMIÅ). YalnÄ±z status set edilir (migration YOK).
-        await this.prisma.collectionDisposition.update({
-          where: { id: disp.id },
+        // F04: KOSULLU gecis (CAS). Kosulsuz `update({where:{id}})` bir POSTED commit'ini EZEBILIYORDU:
+        // posting'in satir kilidi cozuldugunde, bayat okumaya dayanan bu yazim POSTED'i REVERSED
+        // yapiyor; journal storno + manualReversalRequiredAt + reimbursement REVERSAL yazilmadan
+        // kaliyordu. Kapsam (tenant/case/collection) da kosula dahildir.
+        const cas = await this.prisma.collectionDisposition.updateMany({
+          where: {
+            id: disp.id,
+            tenantId: disp.tenantId,
+            caseId: disp.caseId,
+            collectionId,
+            status: { in: [...PRE_POST_REVERSIBLE_STATUSES] },
+          },
           data: { status: 'REVERSED' },
         });
+
+        if (cas.count === 0) {
+          // Yaris kaybedildi: kayit, okuma ile yazim arasinda degisti. Sessiz basari YOK, kor
+          // overwrite YOK, sinirsiz retry YOK - guncel kayit BIR KEZ yeniden okunur, kapsam
+          // dogrulanir ve durum yeniden degerlendirilir (POSTED ise POSTED tersleme yolu isler).
+          return this.revalidateAfterPrePostConflict(disp, collectionId, context, revalidated);
+        }
+
         this.logger.log(
           `CollectionDisposition REVERSED: ${disp.id} (collection=${collectionId}, ` +
             `from=${disp.status}, srcEvent=${context?.actionId})`,
@@ -316,6 +363,65 @@ export class CollectionReversalService {
   /// Cagrildigi yerler:
   /// - CollectionReversalService.reverseFromPaymentReversed() -> PAYMENT_REVERSED POSTED disposition journal storno
   /// </remarks>
+  /**
+   * F04: pre-post CAS kaybedildiginde guncel kaydi TEK KEZ yeniden okur, kapsami dogrular ve
+   * durumu yeniden degerlendirir. Ikinci kez de pre-post cikarsa gorunur hata (dead-letter) -
+   * sessiz basari URETILMEZ.
+   *
+   * Cagrildigi yerler:
+   *  - CollectionReversalService.applyReversalByStatus() -> pre-post dali, cas.count === 0
+   */
+  private async revalidateAfterPrePostConflict(
+    disp: DispositionReversalCandidate,
+    collectionId: string,
+    context: ActionHandlerContext | undefined,
+    revalidated: boolean,
+  ): Promise<ReverseResult> {
+    if (revalidated) {
+      throw new ConflictException(
+        `PAYMENT_REVERSED: disposition ${disp.id} yeniden degerlendirmeden sonra da beklenen ` +
+          `pre-post durumunda degil (collection=${collectionId}) - handled EDILMEDI`,
+      );
+    }
+
+    const fresh = await this.prisma.collectionDisposition.findUnique({
+      where: { collectionId },
+      select: {
+        id: true,
+        tenantId: true,
+        caseId: true,
+        caseClientId: true,
+        collectionId: true,
+        status: true,
+        currency: true,
+        manualReversalRequiredAt: true,
+      },
+    });
+
+    if (!fresh) {
+      throw new ConflictException(
+        `PAYMENT_REVERSED: disposition ${disp.id} CAS kaybindan sonra bulunamadi (collection=${collectionId})`,
+      );
+    }
+
+    // Kapsam yeniden dogrulanir (fail-closed) - ilk okumadaki tenant/case guard'larinin esi.
+    if (fresh.tenantId !== disp.tenantId || fresh.caseId !== disp.caseId || fresh.id !== disp.id) {
+      throw new Error(
+        `Disposition scope mismatch (fail-closed, revalidation): collection=${collectionId} ` +
+          `expected=${disp.tenantId}/${disp.caseId}/${disp.id} got=${fresh.tenantId}/${fresh.caseId}/${fresh.id}`,
+      );
+    }
+
+    this.logger.warn(
+      `PAYMENT_REVERSED pre-post CAS kaybedildi: disposition ${disp.id} ` +
+        `(collection=${collectionId}, okunan=${disp.status}, guncel=${fresh.status}, ` +
+        `srcEvent=${context?.actionId}) - durum yeniden degerlendiriliyor.`,
+    );
+
+    const result = await this.applyReversalByStatus(fresh, collectionId, context, true);
+    return { ...result, revalidatedAfterConflict: true };
+  }
+
   private async reversePostedDispositionLineJournals(
     tx: Prisma.TransactionClient,
     disp: PostedDispositionForReversal,
