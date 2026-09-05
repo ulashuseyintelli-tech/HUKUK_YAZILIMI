@@ -147,6 +147,7 @@ src/modules/audit/__tests__/audit-confirm-token-replay.spec.ts
 src/modules/audit/__tests__/audit-safe-projection.spec.ts
 src/modules/audit/__tests__/audit.service.safe-projection.spec.ts
 src/modules/lawyer/__tests__/lawyer-deactivate-lifecycle.spec.ts
+src/modules/lawyer/__tests__/lawyer-update-boundary.spec.ts
 src/modules/lawyer/__tests__/lawyer-list-masking.spec.ts
 src/modules/lawyer/__tests__/lawyer-office-approval-delegation.spec.ts
 src/modules/lawyer/__tests__/lawyer-privileged-field-guard.spec.ts
@@ -165,6 +166,7 @@ src/modules/office/__tests__/office-credential-encryption.characterization.spec.
 src/modules/office/__tests__/office-credential-encryption.util.spec.ts
 src/modules/office/__tests__/office-credential-settings-guard.spec.ts
 src/modules/staff/__tests__/staff-deactivate-lifecycle.spec.ts
+src/modules/staff/__tests__/staff-update-active-boundary.spec.ts
 src/modules/staff/__tests__/staff-duplicate-guard.spec.ts
 src/modules/staff/__tests__/staff-list-masking.spec.ts
 src/modules/staff/__tests__/staff-update-duplicate-guard.spec.ts

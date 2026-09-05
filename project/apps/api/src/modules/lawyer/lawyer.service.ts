@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { LawyerRole, LawyerRank } from "@prisma/client";
+import { LawyerRole, LawyerRank, Prisma } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
 import { maskTckn, maskIban } from "@/common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
@@ -8,6 +8,7 @@ import { OfficeApprovalService } from "../office-approval/office-approval.servic
 import type { AuditActor } from "@/modules/client/client.service";
 import { toPublicLawyer, toPublicLawyers } from "./lawyer-public-projection";
 import { projectF01Lawyer, F01ProjectionAccess } from "../office/office-f01-projection";
+import { UpdateLawyerDto, validateLawyerUpdateInput } from "./dto/update-lawyer.dto";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 // H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
@@ -307,62 +308,27 @@ export class LawyerService {
     return this.projectLawyerResponse(tenantId, withDisplayName(lawyer) as Record<string, unknown>, actor);
   }
 
-  // Avukat güncelle
+  /** Avukat güncelle. Çağıranlar: LawyerController.update (PUT), LawyerController.patch (PATCH). */
   async update(
     tenantId: string,
     id: string,
-    data: {
-      name?: string;
-      surname?: string;
-      tckn?: string;
-      gender?: string;
-      barNumber?: string;
-      barCity?: string;
-      tbbNo?: string;
-      vergiDairesi?: string;
-      vergiNo?: string;
-      email?: string;
-      phone?: string;
-      mobilePhone?: string;
-      whatsappPhone?: string;
-      fax?: string;
-      address?: string;
-      city?: string;
-      district?: string;
-      bankName?: string;
-      branchName?: string;
-      iban?: string;
-      isInHouseCounsel?: boolean;
-      isEmployee?: boolean;
-      role?: LawyerRole;
-      title?: string; // Unvan/Sıfat (Av., Stj. Av., Huk. Müş., vb.)
-      canSign?: boolean;
-      canAppearInUyap?: boolean;
-      canBeResponsible?: boolean;
-      isDefaultForNewCases?: boolean;
-      sortOrder?: number;
-      isActive?: boolean;
-      // Yeni alanlar — H2: yalnız ADMIN/PARTNER yazabilir (assertCanManagePrivilegedFields).
-      lawyerRank?: LawyerRank;
-      defaultPermissions?: any;
-      permissionsLocked?: boolean;
-      canModifyOtherPermissions?: boolean;
-      // PR-U1: isim benzerliği review'ını bilinçli geç ("Benzerliğe rağmen güncelle").
-      confirmSimilarNameUpdate?: boolean;
-      // K1-4b: Office Approval delegation flag. YALNIZ ADMIN/PARTNER yazabilir (assertCanManageOfficeApprovalDelegation);
-      // değer DEĞİŞİRSE AuditLog yazılır. Approver eligibility runtime'da ayrıca kontrol edilir (aktif+linkli+same-tenant).
-      canApproveOfficeActions?: boolean;
-    },
+    data: UpdateLawyerDto,
     actor?: LawyerUpdateActor,
   ) {
     // Avukatın bu tenant'a ait olduğunu kontrol et
     const existing = await this.findOne(tenantId, id);
 
+    // Direct service consumers obey the same runtime DTO contract as HTTP callers.
+    data = await validateLawyerUpdateInput(data, UpdateLawyerDto);
+    if (data.isActive !== undefined) {
+      if (data.isActive !== existing.isActive) {
+        throw new BadRequestException({ code: "PROFILE_LIFECYCLE_CHANGE_NOT_ALLOWED", message: "Profil güncellemesi aktiflik durumunu değiştiremez; ayrı lifecycle işlemi gerekir." });
+      }
+    }
     // CANDIDATE-H1 (RATIFIED): edit-safe IBAN update guard. IBAN alanı ya OMIT edilir (mevcut değer
     // korunur — Prisma undefined-skip) ya da geçerli tam değer girilir. Maskeli ('*') / boş / whitespace /
     // null / non-string REDDEDİLİR (400) — maskeli read-model değerinin round-trip'le gerçek IBAN üstüne
-    // yazılması önlenir. Kasıtlı silme bu slice'ta desteklenmez. (Bildirilen tip `iban?: string` compile-time
-    // kurgu; inline @Body + global ValidationPipe inert olduğu için runtime null/non-string ULAŞABİLİR → unknown.)
+    // yazılması önlenir. Kasıtlı silme desteklenmez; DTO bu alanın ret sözleşmesini burada tutar.
     if (data.iban !== undefined) {
       const ibanValue: unknown = data.iban;
       if (typeof ibanValue !== "string" || ibanValue.trim() === "" || ibanValue.includes("*")) {
@@ -417,19 +383,50 @@ export class LawyerService {
       }
     }
 
-    // confirmSimilarNameUpdate transient → prisma'ya YAZILMAZ.
+    // Explicit profile allow-map. Identity/relation fields never reach Prisma.
+    // isActive is NEVER written here, even for an unchanged echo: a concurrent
+    // DELETE must not be undone by a stale form value. confirmSimilarNameUpdate is transient.
+    const writeData: Prisma.LawyerUpdateInput = {};
+    if (data.name !== undefined) writeData.name = data.name;
+    if (data.surname !== undefined) writeData.surname = data.surname;
+    if (data.tckn !== undefined) writeData.tckn = data.tckn;
+    if (data.gender !== undefined) writeData.gender = data.gender;
+    if (data.barNumber !== undefined) writeData.barNumber = data.barNumber;
+    if (data.barCity !== undefined) writeData.barCity = data.barCity;
+    if (data.tbbNo !== undefined) writeData.tbbNo = data.tbbNo;
+    if (data.vergiDairesi !== undefined) writeData.vergiDairesi = data.vergiDairesi;
+    if (data.vergiNo !== undefined) writeData.vergiNo = data.vergiNo;
+    if (data.email !== undefined) writeData.email = data.email;
+    if (data.phone !== undefined) writeData.phone = data.phone;
+    if (data.mobilePhone !== undefined) writeData.mobilePhone = data.mobilePhone;
+    if (data.whatsappPhone !== undefined) writeData.whatsappPhone = data.whatsappPhone;
+    if (data.fax !== undefined) writeData.fax = data.fax;
+    if (data.address !== undefined) writeData.address = data.address;
+    if (data.city !== undefined) writeData.city = data.city;
+    if (data.district !== undefined) writeData.district = data.district;
+    if (data.bankName !== undefined) writeData.bankName = data.bankName;
+    if (data.branchName !== undefined) writeData.branchName = data.branchName;
+    if (data.iban !== undefined) writeData.iban = data.iban;
+    if (data.isInHouseCounsel !== undefined) writeData.isInHouseCounsel = data.isInHouseCounsel;
+    if (data.isEmployee !== undefined) writeData.isEmployee = data.isEmployee;
+    if (data.role !== undefined) writeData.role = data.role;
+    if (data.title !== undefined) writeData.title = data.title;
+    if (data.canSign !== undefined) writeData.canSign = data.canSign;
+    if (data.canAppearInUyap !== undefined) writeData.canAppearInUyap = data.canAppearInUyap;
+    if (data.canBeResponsible !== undefined) writeData.canBeResponsible = data.canBeResponsible;
+    if (data.isDefaultForNewCases !== undefined) writeData.isDefaultForNewCases = data.isDefaultForNewCases;
+    if (data.sortOrder !== undefined) writeData.sortOrder = data.sortOrder;
+
     // K1-4b: canApproveOfficeActions'ı generic write'tan AYIR; yalnız DEĞİŞİYORSA yetki kontrolü + audit ile yaz.
     // H2: yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions) da
     // AYNI ADMIN/PARTNER kapısına al — önceden bu alanlar generic write'a düz geçip herhangi bir JWT sahibi
     // tarafından değiştirilebiliyordu (yetki yükseltme).
     const {
-      confirmSimilarNameUpdate,
       canApproveOfficeActions,
       lawyerRank,
       defaultPermissions,
       permissionsLocked,
       canModifyOtherPermissions,
-      ...writeData
     } = data;
 
     // H2 GUARD: rütbe/yetki alanlarından biri payload'da VARSA, generic write'a girmeden ADMIN/PARTNER doğrula.
@@ -441,11 +438,12 @@ export class LawyerService {
 
     if (wantsPrivilegedFieldChange) {
       await this.assertCanManagePrivilegedFields(actor, tenantId);
-      if (lawyerRank !== undefined) (writeData as { lawyerRank?: LawyerRank }).lawyerRank = lawyerRank;
-      if (defaultPermissions !== undefined) (writeData as { defaultPermissions?: unknown }).defaultPermissions = defaultPermissions;
-      if (permissionsLocked !== undefined) (writeData as { permissionsLocked?: boolean }).permissionsLocked = permissionsLocked;
+      if (lawyerRank !== undefined) writeData.lawyerRank = lawyerRank;
+      // Preserve the former raw-null write's JSON null (not SQL NULL) semantics.
+      if (defaultPermissions !== undefined) writeData.defaultPermissions = defaultPermissions === null ? Prisma.JsonNull : defaultPermissions;
+      if (permissionsLocked !== undefined) writeData.permissionsLocked = permissionsLocked;
       if (canModifyOtherPermissions !== undefined) {
-        (writeData as { canModifyOtherPermissions?: boolean }).canModifyOtherPermissions = canModifyOtherPermissions;
+        writeData.canModifyOtherPermissions = canModifyOtherPermissions;
       }
     }
 
@@ -456,7 +454,7 @@ export class LawyerService {
     ) {
       // K1-4b GUARD: office-approval delegation'ı yalnız ADMIN veya linkli PARTNER avukat değiştirebilir.
       await this.assertCanManageOfficeApprovalDelegation(actor, tenantId);
-      (writeData as { canApproveOfficeActions?: boolean }).canApproveOfficeActions = canApproveOfficeActions;
+      writeData.canApproveOfficeActions = canApproveOfficeActions;
       delegationChange = {
         from: !!(existing as { canApproveOfficeActions?: boolean }).canApproveOfficeActions,
         to: canApproveOfficeActions,
