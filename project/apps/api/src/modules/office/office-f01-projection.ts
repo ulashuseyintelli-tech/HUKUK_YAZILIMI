@@ -152,3 +152,35 @@ export function projectF01Office<T extends Record<string, unknown>>(
   }
   return out;
 }
+
+/**
+ * F-B01-03 (2026-09-06) — S2 personel-referans listeleri (FCM01 #34/#35/#42/#48).
+ *
+ * OFF-INV-10 ve OFF/OD-18 (Option B) tam görünürlüğü "explicit field-level permission +
+ * purpose-bound access"e bağlar; ADM01 projeksiyon sözleşmesi S2 için "exact field-level
+ * permission" ister ve OD-07 "missing policy fails closed" der. Field-level permission
+ * taşıyıcısı henüz tanımlı/uygulanmış değildir (OFF-P2-CAP-07 kapısı) → HTTP okuma
+ * yüzeylerinde bu alanlar OMIT edilir (maskeleme değil, yokluk). PUT semantiği DEĞİŞMEZ:
+ * alan gönderilmezse mevcut değer korunur (undefined = UNCHANGED), açıkça `[]` gönderilmesi
+ * mevcut yazma yetkisine (F01 guard) tabi ayrı bir işlemdir. İç tüketiciler (servis getter'ları)
+ * bu helper'ı ÇAĞIRMAZ; omisyon controller sınırındadır.
+ */
+export const OFFICE_S2_REFERENCE_FIELDS = [
+  'escalationManagerLawyerIds',
+  'escalationFounderLawyerIds',
+  'escalationTeamLeadLawyerIds',
+  'poaExpiryRecipientLawyerIds',
+] as const;
+
+export type OfficeS2ReferenceField = (typeof OFFICE_S2_REFERENCE_FIELDS)[number];
+
+export function omitOfficeS2References<T extends Record<string, unknown>>(
+  row: T,
+): Omit<T, OfficeS2ReferenceField> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(row)) {
+    if ((OFFICE_S2_REFERENCE_FIELDS as readonly string[]).includes(key)) continue;
+    out[key] = row[key];
+  }
+  return out as Omit<T, OfficeS2ReferenceField>;
+}

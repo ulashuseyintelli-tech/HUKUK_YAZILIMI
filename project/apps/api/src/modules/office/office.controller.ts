@@ -16,6 +16,7 @@ import { StaffType } from "@prisma/client";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
+import { omitOfficeS2References } from "./office-f01-projection";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
@@ -142,6 +143,7 @@ export class OfficeController {
 
   // SMTP ayarlarını getir
   @Get("smtp-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   getSmtpSettings(@CurrentUser("tenantId") tenantId: string) {
     return this.officeService.getSmtpSettings(tenantId);
   }
@@ -176,6 +178,7 @@ export class OfficeController {
 
   // SMS ayarlarını getir
   @Get("sms-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   getSmsSettings(@CurrentUser("tenantId") tenantId: string) {
     return this.officeService.getSmsSettings(tenantId);
   }
@@ -201,6 +204,7 @@ export class OfficeController {
 
   // Otomatik tebrik ayarlarını getir
   @Get("greeting-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   getGreetingSettings(@CurrentUser("tenantId") tenantId: string) {
     return this.officeService.getGreetingSettings(tenantId);
   }
@@ -225,6 +229,7 @@ export class OfficeController {
 
   // İİK 78 ayarlarını getir (pasifleşme süresi)
   @Get("iik78-settings")
+  @UseGuards(OfficeF01AuthorizationGuard)
   getIik78Settings(@CurrentUser("tenantId") tenantId: string) {
     return this.officeService.getIik78Settings(tenantId);
   }
@@ -249,8 +254,10 @@ export class OfficeController {
 
   // ACT-07: Vekalet Süresi Uyarısı ayarlarını getir
   @Get("poa-expiry-settings")
-  getPoaExpirySettings(@CurrentUser("tenantId") tenantId: string) {
-    return this.officeService.getPoaExpirySettings(tenantId);
+  @UseGuards(OfficeF01AuthorizationGuard)
+  async getPoaExpirySettings(@CurrentUser("tenantId") tenantId: string) {
+    // F-B01-03: S2 alıcı referansı (poaExpiryRecipientLawyerIds) HTTP okuma yüzeyinde OMIT (explicit field-level permission yok).
+    return omitOfficeS2References(await this.officeService.getPoaExpirySettings(tenantId));
   }
 
   // ACT-07: Vekalet Süresi Uyarısı ayarlarını güncelle
@@ -274,8 +281,11 @@ export class OfficeController {
 
   // Görev & Eskalasyon ayarlarını getir
   @Get("escalation-settings")
-  getEscalationSettings(@CurrentUser("tenantId") tenantId: string) {
-    return this.officeService.getEscalationSettings(tenantId);
+  @UseGuards(OfficeF01AuthorizationGuard)
+  async getEscalationSettings(@CurrentUser("tenantId") tenantId: string) {
+    // F-B01-03: S2 alıcı referans listeleri (escalation*LawyerIds) HTTP okuma yüzeyinde OMIT (explicit field-level permission yok).
+    // Gönderilmeyen alan PUT'ta mevcut değeri korur; açık [] ayrı yazma işlemidir (F01 guard).
+    return omitOfficeS2References(await this.officeService.getEscalationSettings(tenantId));
   }
 
   // Görev & Eskalasyon ayarlarını güncelle

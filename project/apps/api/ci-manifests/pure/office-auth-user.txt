@@ -316,3 +316,14 @@ src/modules/tenant/__tests__/tenant-lifecycle-cron-scope.spec.ts
 #     tarafindadir (N/N). Yeni bir route'a dekorator eklemek = FAIL.
 src/modules/auth/smoke/__tests__/smoke-deny-by-default-http.spec.ts
 src/modules/auth/smoke/__tests__/smoke-allowlist-architecture.spec.ts
+
+# F-B01-03 (2026-09-05) - Office settings GET rotalarinda F01 yetkilendirmesi (SAF, DB YOK):
+#   (A) office-settings-get-authorization.http: GERCEK Nest HTTP pipeline (gercek guard + gercek
+#       OfficeApprovalService predicate'i, sahte prisma). Anonim 401; staff / duz USER / VIEWER / yetkisiz
+#       rank / pasif 403 (servis CAGRILMAZ - maskeleme yetki degildir); ADMIN / PARTNER / MANAGER /
+#       canApprove 200 yalniz kendi tenantId ile; cross-tenant izolasyon; PUT regresyonu; guard metadata 12/12.
+#   (B) office-settings-projection: servis projeksiyonu kapali envanter (EXACT anahtar kumeleri); HARD-DENY
+#       secret maskeli; S3 banka / PII / bilinmeyen kolon SIZMAZ; S2 referanslari yalniz yonetim yuzeyinde.
+src/modules/office/__tests__/office-settings-get-authorization.http.spec.ts
+src/modules/office/__tests__/office-settings-projection.spec.ts
+src/modules/office/__tests__/office-settings-update-semantics.spec.ts
