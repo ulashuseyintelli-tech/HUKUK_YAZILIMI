@@ -2018,9 +2018,9 @@ C30  (RELEASE14 cutover FAILED)
             └─> C34  (R05 production engine)      predecessor: C32 paketi
                  ├─> C35  (smoke identity)        C34 çıktısı: SMOKE_IDENTITY = PENDING_OWNER_INPUT
                  │     └─> C36  (smoke principal) predecessor: C35 ölçümü (C35-BLK-01)
-                 │           └─> MIG-C36-APPLY    1 pending migration (C36 foundation)
+                 │           └─> MIG-C36-APPLY    APPLIED / VERIFIED 2026-09-04 (C36-R19 EXACT-ONE, 29/29, ledger 129/129)
                  └─> C33  (production cutover + full reconciliation)
-                           bağımlılık: C35 provisioning + MIG-C36-APPLY
+                           bağımlılık: C35 provisioning (MIG-C36-APPLY = APPLIED 2026-09-04 — artık ön koşul değil)
                            durum: NOT_STARTED — otomatik başlamaz
 
 C37  (external runtime storage)  — bağımsız kol; C30–C36 cutover zincirini
@@ -2060,8 +2060,11 @@ C36   R-01  HY_C36_PR2 worktree dizini ORPHANED — PRESERVE / RECORDED_RESIDUAL
             NOT_CREATED / CORRECT / PRODUCTION-PAGE OWNER INPUT
       R-05  tsconfig.prod.json dışı spec-kapsamlı tsc baseline 529 hata —
             PREEXISTING / OUT_OF_SCOPE / CI PRODUCTION TYPECHECK 0 ERROR / NON_BLOCKING
-      MIG   20260830120000_c36_smoke_principal_foundation = PENDING (uygulanmadı)
-            kayıt: pending-migration-coordination-register.md §27
+      MIG   20260830120000_c36_smoke_principal_foundation = APPLIED / VERIFIED
+            (2026-09-04T21:17Z, C36-R19 EXACT-ONE owner-run 29/29; ledger 128→129 · 9/9 nesne ·
+            checksum exact · prisma status up to date · sysId/backup değişmedi · API/Web kesintisiz;
+            nonce 05f13593… TÜKETİLDİ, yeniden çalıştırılmaz)
+            kayıt: pending-migration-coordination-register.md §28 (§27 PENDING kaydı SUPERSEDED)
 C37   owner terminal verdict HENÜZ VERİLMEDİ (bu bölüm veremez — owner işi)
 
 CANLI RUNTIME (değişmedi)
@@ -2090,6 +2093,11 @@ M-001 R12 öncesi "M-001 FAILED / açık" ara durumları ve
 R07R3 "hazır ama tetiklenmemiş / authorityIssued=false / residual PRESENT-UNTOUCHED"
       sınıflandırması SUPERSEDED (kök neden SCANNER_MISS; cleanup 2026-09-02T11:28:11Z'de
       tamamlanmıştı). GÜNCEL: R07R3 CLEANUP = COMPLETE / RESIDUAL_CLEARED_BY_HANDLE.
+
+MIG-C36-APPLY "PENDING (uygulanmadı)" ifadeleri (bu bölümün 2026-09-02 sürümü, decision-log
+      2026-09-02 satırı, pending-migration-coordination-register.md §27) SUPERSEDED_HISTORICAL:
+      migration 2026-09-04T21:17Z'de C36-R19 EXACT-ONE owner-run ile UYGULANDI ve DOĞRULANDI
+      (register §28, decision-log 2026-09-05). Tarihsel satırlar DEĞİŞTİRİLMEMİŞTİR.
 ```
 
 ### 15.6 Program kapanışına etkisi
@@ -2099,7 +2107,8 @@ OFFICE P0–P8 GOVERNANCE PROGRAM   TERMINALLY_CLOSED_WITH_RECORDED_RESIDUALS / 
 C30–C32, C34, C36                 KAPALI — minimum kapanışı BLOKLAMAZ
 C37 (kod)                         MERGED / CANONICAL — minimum kapanışı BLOKLAMAZ
 M-001 · R07R3 cleanup             COMPLETE — artık blokaj DEĞİL
-C33 · C35 · MIG-C36-APPLY         PRODUCTION kapanışının kritik yolunda; owner GO bekler
+C33 · C35                         PRODUCTION kapanışının kritik yolunda; owner GO bekler
+MIG-C36-APPLY                     APPLIED / VERIFIED 2026-09-04 (C36-R19) — artık blokaj DEĞİL
 LEDGER GÖRÜNÜRLÜĞÜ                bu bölüm + C37 lane kaydı ile SAĞLANDI
 
 PRODUCTION AUTHORITY              NONE
