@@ -7,6 +7,11 @@ import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import { RuntimeStoragePaths, runtimeStoragePaths } from "../../common/storage/runtime-storage-paths";
 import type { AuditActor } from "@/modules/client/client.service";
+import {
+  CLIENT_WORKSPACE_COMMAND,
+  runAuthorizedClientWorkspaceCommand,
+  type ClientWorkspaceCommandActor,
+} from "../client/client-workspace-command-authority";
 
 export const POA_UPLOAD_ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"] as const;
 export const POA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
@@ -635,9 +640,60 @@ export class PoaService {
   }
 
   /**
-   * Vekalete dosya yükle
+   * Vekalete dosya yükle — OWN-13 I02-R6 (owner §13/11 eşiği) SERVİS-GİRİŞ kapısı.
+   *
+   * Legacy rota (`POST /poa/:id/upload`) yalnız JwtAuthGuard taşıyordu: VIEWER ve
+   * elevated olmayan USER vekalet dosyasını yükleyip mevcut dosyayı DEĞİŞTİREBİLİYORDU,
+   * AuditLog YOKTU. Yetki artık burada, GERÇEK yan etkiden (dosya yazımı + DB update) ÖNCE:
+   *  - `actor` ZORUNLU: actor geçirmeyen üretim çağrısı DERLENMEZ (OWN-13 R1 deseni),
+   *  - eşik C2-B02 ile AYNI frozen primitive (`runAuthorizedClientWorkspaceCommand`,
+   *    komut tipi `POA_FILE_UPLOAD`): ADMIN VEYA canonical elevated
+   *    (`officeApproval.isApproverEligible`); VIEWER/tanımsız rol fail-closed; cross-tenant
+   *    aktör TENANT_MISMATCH; `isApproverEligible` yalnız gerektiğinde sorgulanır,
+   *  - başarılı yükleme `CLIENT_WORKSPACE_COMMAND` AuditLog üretir (poaId + status; dosya
+   *    adı/yolu ve ham PII metadata'ya YAZILMAZ); yetkisiz aktörde hiçbir yazma ve audit
+   *    OLUŞMAZ; persist hata verirse audit ÜRETİLMEZ.
+   * Workspace rotası (`POST /clients/:clientId/poas/:poaId/file`) AYNI primitive'i
+   * ClientController.uploadPoaFile içinde çalıştırır (C2-B02, sertifikalı); bu yüzden
+   * `uploadFileForClientWorkspace` bu kapıdan DEĞİL doğrudan `persistPoaFile`'dan geçer —
+   * istek başına tam olarak BİR yetki kararı ve BİR audit kaydı. Response sözleşmesi DEĞİŞMEDİ.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - PoaController.uploadFile() -> POST /poa/:id/upload
    */
-  async uploadFile(poaId: string, file: Express.Multer.File, tenantId: string) {
+  async uploadFile(
+    poaId: string,
+    file: Express.Multer.File,
+    tenantId: string,
+    actor: ClientWorkspaceCommandActor,
+  ) {
+    // Tenant-scoped okuma (yan etki YOK): audit entityId için clientId gerekir; cross-tenant
+    // veya yok → NotFound (mevcut davranış). Yetki kararı hemen ardından, yazımdan ÖNCE gelir.
+    const poa = await this.findOne(poaId, tenantId);
+
+    return runAuthorizedClientWorkspaceCommand(
+      {
+        isApproverEligible: (userId, actorTenantId) =>
+          this.officeApproval.isApproverEligible(userId, actorTenantId),
+        auditLog: (input) => this.audit.log(input),
+      },
+      actor,
+      { tenantId, clientId: poa.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_FILE_UPLOAD },
+      () => this.persistPoaFile(poaId, file, tenantId),
+      () => ({ poaId, status: "uploaded" }),
+    );
+  }
+
+  /**
+   * Vekalet dosyasını fiziksel olarak yazar ve DB'yi günceller — yetki KARARI YOKTUR.
+   * PRIVATE: yalnız yetkisi ZATEN verilmiş iki giriş noktasından çağrılır.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - PoaService.uploadFile() (legacy rota; yetki + audit AYNI metotta, bu çağrıdan ÖNCE)
+   * - PoaService.uploadFileForClientWorkspace() (workspace rotası; yetki + audit
+   *   ClientController.uploadPoaFile'daki C2-B02 primitive'inde)
+   */
+  private async persistPoaFile(poaId: string, file: Express.Multer.File, tenantId: string) {
     const poa = await this.findOne(poaId, tenantId);
 
     // Dosya adı oluştur (release DISI data root; bkz. C37 storage sozlesmesi)
@@ -706,7 +762,9 @@ export class PoaService {
       throw new NotFoundException("Vekalet bulunamadi");
     }
 
-    const uploaded = await this.uploadFile(poaId, file, tenantId);
+    // OWN-13 I02-R6: yetki + audit çağıran ClientController.uploadPoaFile'daki C2-B02
+    // primitive'inde — burada İKİNCİ kapı/audit YOK; doğrudan persist adımı.
+    const uploaded = await this.persistPoaFile(poaId, file, tenantId);
 
     return {
       clientId: poa.clientId,
