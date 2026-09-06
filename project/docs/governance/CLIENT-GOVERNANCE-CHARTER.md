@@ -4475,7 +4475,8 @@ KAPISI (isIntakeReviewAuthorized); REVIEW ≠ PROMOTION.**
 ## §58 — CLIENT Faz 1: POA Yazma Yetkisi, Bilgi Talebi Yetkisi ve Kimlik Sikilastirmasi (OWNER GO 2026-09-06)
 
 Kaynak: owner `GO — CLIENT kalan kararlar → uygulama ve kabul` (2026-09-06; D-1 a+b, D-3 a+c, D-4 a,
-D-5 a, D-10 a) ve karar paketi `client-remaining-decisions-r01/DECISION-PACK-R01.md` (#2519).
+D-5 a, D-10 a); karar paketi `client-remaining-decisions-r01/DECISION-PACK-R01.md` (#2519,
+squash `eb4a61f8`); uygulama PR #2520.
 Bu bolum ADDITIVE'dir; §1–§57.5 metinleri DEGISMEDI. C2 frozen primitive'in **dar, additive**
 genislemesi owner tarafindan ONAYLANDI: mevcut komut esikleri ve intake review/promotion ayrimi
 (CR-1) DEGISMEDI.
