@@ -4418,7 +4418,7 @@ OWN-13 terminal etiketi owner dispozisyonu. ADMIN VEYA ELEVATED = §13/11 esigi
 
 ## §57 — OWN-13 Sinirli Terminal Kapanis (OWNER RATIFIED 2026-09-06)
 
-Kaynak: owner `GO — OWN-13 SINIRLI TERMINAL KAPANIS` (2026-09-06, IF GO-COMPLETE; docs PR #NNNN).
+Kaynak: owner `GO — OWN-13 SINIRLI TERMINAL KAPANIS` (2026-09-06, IF GO-COMPLETE; docs PR #2518).
 Bu bolum ADDITIVE'dir; §1–§55.6 metinleri DEGISMEDI; §56.2 ve §56.5'te yalniz asagidaki iki
 uzlastirma duzeltmesi yapildi (§57.3).
 
@@ -4436,7 +4436,7 @@ kapsami ve diger POA rotalarinin bekleyen politika kararlari **kendi kayitlarind
 | I01 | PR #2058 (§51) |
 | I02-R1 / R1A / R2 / R3 | PR #2073 (§52) · #2085 (§53) · #2096 (§54) · #2107 (§55) |
 | I02-R4 / R5 / R6 uzlastirmasi + R6 legacy POA upload servis-giris kapisi | PR #2517, squash `a401d64eb9d4143a87ffa745d0c105fe34dd628a`; PR CI 9/9 SUCCESS; merge sonrasi main CI run 34026340750 SUCCESS (§56) |
-| Bu kapanis kaydi | docs PR #NNNN (kod DEGISMEDI) |
+| Bu kapanis kaydi | docs PR #2518 (kod DEGISMEDI) |
 
 ### 57.3 Uzlastirma duzeltmeleri (register + Charter)
 
