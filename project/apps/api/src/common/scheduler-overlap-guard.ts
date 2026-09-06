@@ -45,9 +45,28 @@ export type SchedulerOverlapPolicy =
   | 'QUEUE_NEXT'
   | 'SKIP_IF_RUNNING';
 
-export type OverlapGuardResult = 'RAN' | 'SKIPPED_ALREADY_RUNNING';
+export type OverlapGuardResult = 'RAN' | 'RAN_AFTER_WAIT' | 'SKIPPED_ALREADY_RUNNING';
 
-const RUNNING_JOB_IDS = new Set<string>();
+/**
+ * F02 (manuel/global cron cakismasi): ayni jobId MESGULKEN ne yapilacagi.
+ *  - 'SKIP' (VARSAYILAN; mevcut 33 job'un davranisi DEGISMEZ): ikinci cagri sessizce atlanir.
+ *  - 'WAIT': ikinci cagri FIFO sirayla bekler, oncul bitince (HATA ile bitse bile) calisir ve
+ *    'RAN_AFTER_WAIT' doner. Paralellik YINE YOK — ayni jobId altinda hala tek calisan var;
+ *    fark "atla" yerine "sirala"dir. Manuel-tetiklenebilir job'larda atlanan bir global tick
+ *    bir sonraki tick'e kadar (nafaka: bir AY) is kaybi oldugundan bu mod secilir.
+ *    Bekleyen sayisi cagri hiziyla sinirlidir (ustune binen her cagri kuyruga girer).
+ */
+export interface OverlapGuardOptions {
+  readonly onBusy?: 'SKIP' | 'WAIT';
+}
+
+/**
+ * jobId -> o job icin EN SON planlanan calismanin (calisan VEYA kuyrukta bekleyen)
+ * tamamlanma sozu. Kayit varken job "mesgul"dur: SKIP cagrilari atlanir, WAIT cagrilari bu
+ * sozun ARKASINA eklenir. Kuyruga giren caller sirasini SENKRON alir; boylece oncul biterken
+ * araya bir SKIP cagrisinin sizip WAIT bekleyeniyle PARALEL calismasi imkansizdir.
+ */
+const ACTIVE_RUNS = new Map<string, Promise<void>>();
 
 /**
  * Canonical overlap guard. `jobId` MUTLAKA `SCHEDULER_JOB_REGISTRY`'deki
@@ -58,25 +77,31 @@ const RUNNING_JOB_IDS = new Set<string>();
 export async function runWithOverlapGuard(
   jobId: string,
   fn: () => Promise<void>,
+  options?: OverlapGuardOptions,
 ): Promise<OverlapGuardResult> {
-  if (RUNNING_JOB_IDS.has(jobId)) {
+  const predecessor = ACTIVE_RUNS.get(jobId);
+  if (predecessor && (options?.onBusy ?? 'SKIP') === 'SKIP') {
     return 'SKIPPED_ALREADY_RUNNING';
   }
-  RUNNING_JOB_IDS.add(jobId);
+  let release: () => void = () => undefined;
+  const mine = new Promise<void>((resolve) => { release = resolve; });
+  ACTIVE_RUNS.set(jobId, mine); // sira SENKRON alinir (FIFO kuyruk sonu)
   try {
+    if (predecessor) await predecessor; // asla reject etmez (bkz finally: release her yolda)
     await fn();
-    return 'RAN';
+    return predecessor ? 'RAN_AFTER_WAIT' : 'RAN';
   } finally {
-    RUNNING_JOB_IDS.delete(jobId);
+    release(); // fn hata firlatsa da bekleyen serbest kalir; hata yalniz KENDI caller'ina gider
+    if (ACTIVE_RUNS.get(jobId) === mine) ACTIVE_RUNS.delete(jobId); // yalniz kuyruk sonuysam sil
   }
 }
 
 /** Yalniz test/gozlemlenebilirlik amacli — production call site'lari kullanmaz. */
 export function isJobCurrentlyRunning(jobId: string): boolean {
-  return RUNNING_JOB_IDS.has(jobId);
+  return ACTIVE_RUNS.has(jobId); // calisan VEYA kuyrukta bekleyen varsa 'mesgul'
 }
 
 /** Yalniz test amacli — testler arasi sizintiyi engellemek icin. */
 export function resetOverlapGuardStateForTests(): void {
-  RUNNING_JOB_IDS.clear();
+  ACTIVE_RUNS.clear();
 }

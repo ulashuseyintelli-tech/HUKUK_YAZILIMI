@@ -106,6 +106,71 @@ describe('W3-F07 — scheduler-overlap-guard (runWithOverlapGuard) DB-free birim
     expect(isJobCurrentlyRunning('test.jobF')).toBe(false);
   });
 
+  // ── F02: opt-in WAIT modu (varsayilan SKIP yukaridaki [A]-[G] ile DEGISMEDI) ──
+  it('[H] WAIT: mesgulken gelen cagri ATLANMAZ, oncul bitince calisir ve RAN_AFTER_WAIT doner; fn ikisinde de tam 1 kez', async () => {
+    const gate = deferred();
+    const first = jest.fn(async () => { await gate.promise; });
+    const second = jest.fn(async () => undefined);
+    const p1 = runWithOverlapGuard('test.jobH', first, { onBusy: 'WAIT' });
+    await Promise.resolve();
+    const p2 = runWithOverlapGuard('test.jobH', second, { onBusy: 'WAIT' });
+    await Promise.resolve();
+    expect(second).not.toHaveBeenCalled(); // oncul bitmeden CALISMADI (paralellik yok)
+    expect(isJobCurrentlyRunning('test.jobH')).toBe(true);
+    gate.resolve();
+    expect(await p1).toBe('RAN');
+    expect(await p2).toBe('RAN_AFTER_WAIT');
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(isJobCurrentlyRunning('test.jobH')).toBe(false); // kuyruk temiz
+  });
+
+  it('[I] WAIT bekleyen kuyruktayken gelen SKIP cagrisi ATLANIR (araya sizip paralel calisamaz)', async () => {
+    const gate = deferred();
+    const first = jest.fn(async () => { await gate.promise; });
+    const waiter = jest.fn(async () => undefined);
+    const sneaker = jest.fn(async () => undefined);
+    const p1 = runWithOverlapGuard('test.jobI', first, { onBusy: 'WAIT' });
+    await Promise.resolve();
+    const p2 = runWithOverlapGuard('test.jobI', waiter, { onBusy: 'WAIT' });
+    const p3 = runWithOverlapGuard('test.jobI', sneaker); // varsayilan SKIP
+    expect(await p3).toBe('SKIPPED_ALREADY_RUNNING');
+    gate.resolve();
+    await p1; await p2;
+    expect(sneaker).not.toHaveBeenCalled();
+    expect(waiter).toHaveBeenCalledTimes(1);
+  });
+
+  it('[J] oncul fn HATA firlatirsa bekleyen yine calisir; hata yalniz oncul caller tarafina gider; state temiz', async () => {
+    const gate = deferred();
+    const first = jest.fn(async () => { await gate.promise; throw new Error('oncul patladi'); });
+    const second = jest.fn(async () => undefined);
+    const p1 = runWithOverlapGuard('test.jobJ', first, { onBusy: 'WAIT' });
+    await Promise.resolve();
+    const p2 = runWithOverlapGuard('test.jobJ', second, { onBusy: 'WAIT' });
+    gate.resolve();
+    await expect(p1).rejects.toThrow('oncul patladi');
+    expect(await p2).toBe('RAN_AFTER_WAIT');
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(isJobCurrentlyRunning('test.jobJ')).toBe(false);
+  });
+
+  it('[K] WAIT: ucuncu cagri FIFO — sira korunur, hepsi tam 1 kez, hicbiri paralel degil', async () => {
+    const order: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    const mk = (n: string) => jest.fn(async () => { active += 1; maxActive = Math.max(maxActive, active); order.push(n); await Promise.resolve(); active -= 1; });
+    const [a, b, c] = ['a', 'b', 'c'].map(mk);
+    const results = await Promise.all([
+      runWithOverlapGuard('test.jobK', a, { onBusy: 'WAIT' }),
+      runWithOverlapGuard('test.jobK', b, { onBusy: 'WAIT' }),
+      runWithOverlapGuard('test.jobK', c, { onBusy: 'WAIT' }),
+    ]);
+    expect(results).toEqual(['RAN', 'RAN_AFTER_WAIT', 'RAN_AFTER_WAIT']);
+    expect(order).toEqual(['a', 'b', 'c']);
+    expect(maxActive).toBe(1);
+  });
+
   it('[G] resetOverlapGuardStateForTests: paylasilan state\'i gercekten temizler (test izolasyonu)', async () => {
     const gate = deferred();
     const stuckPromise = runWithOverlapGuard('test.jobG', async () => {

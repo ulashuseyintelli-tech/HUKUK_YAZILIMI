@@ -155,12 +155,34 @@ describeWithDatabase('F02: manual scheduler trigger — real HTTP, JWT, policy a
     return prisma.decisionLog.count({ where: { caseId } });
   }
 
-  beforeAll(async () => {
-    A = await seedSide('a');
-    B = await seedSide('b');
-  });
+  // Vakalar birbirinin verisine DAYANMAZ: her `it` kendi A/B'sini kurar (fresh().
+  async function fresh(): Promise<void> { A = await seedSide('a'); B = await seedSide('b'); }
+
+  /** run-all / payment-orders icin GERCEK yazim ureten fixture: suresi dolmus odeme emri + MTS dosyasi. */
+  async function seedWorkflowCases(side: Side): Promise<{ paymentCaseId: string; mtsCaseId: string }> {
+    const sfx = randomUUID().slice(0, 8);
+    const payment = await prisma.case.create({
+      data: {
+        tenantId: side.tenantId, fileNumber: `F02-PO-${sfx}`, type: 'GENERAL_EXECUTION',
+        workflowStage: 'WAITING_RESPONSE', nextActionAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        isAutomationEnabled: true, caseStatus: 'DERDEST',
+      },
+      select: { id: true },
+    });
+    const mts = await prisma.case.create({
+      data: {
+        tenantId: side.tenantId, fileNumber: `F02-MTS-${sfx}`, type: 'GENERAL_EXECUTION',
+        isMtsCase: true, mtsReturnDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+        workflowStage: 'PAYMENT_ORDER', isAutomationEnabled: true, caseStatus: 'DERDEST',
+      },
+      select: { id: true },
+    });
+    return { paymentCaseId: payment.id, mtsCaseId: mts.id };
+  }
+  const stageOf = async (id: string) => (await prisma.case.findUnique({ where: { id }, select: { workflowStage: true, isMtsCase: true } }))!;
 
   it('KABUL-1a: lawyer\'siz USER → 403 ELEVATED_DENIED, hicbir tenant\'ta yan etki YOK', async () => {
+    await fresh();
     const res = await request(app.getHttpServer())
       .post('/api/scheduler/check/nafaka')
       .set('Authorization', bearer(A.plainUser, A.tenantId, 'USER'));
@@ -172,6 +194,7 @@ describeWithDatabase('F02: manual scheduler trigger — real HTTP, JWT, policy a
   });
 
   it('KABUL-1b: ADMIN tek basina (lawyer yok) → 403 ELEVATED_DENIED (I02-R3 ilkesi)', async () => {
+    await fresh();
     const res = await request(app.getHttpServer())
       .post('/api/scheduler/run-all')
       .set('Authorization', bearer(A.adminAlone, A.tenantId, 'ADMIN'));
@@ -181,6 +204,7 @@ describeWithDatabase('F02: manual scheduler trigger — real HTTP, JWT, policy a
   });
 
   it('KABUL-1c: VIEWER → 403 VIEWER_DENIED', async () => {
+    await fresh();
     const res = await request(app.getHttpServer())
       .post('/api/scheduler/check/mts')
       .set('Authorization', bearer(A.viewer, A.tenantId, 'VIEWER'));
@@ -189,12 +213,14 @@ describeWithDatabase('F02: manual scheduler trigger — real HTTP, JWT, policy a
   });
 
   it('KABUL-1d: JWT yoksa 401 (guard zinciri gercek)', async () => {
+    await fresh();
     const res = await request(app.getHttpServer()).post('/api/scheduler/check/nafaka');
     expect(res.status).toBe(401);
     expect(await nafakaDueCount(A.caseId)).toBe(0);
   });
 
   it('KABUL-2+3: A PARTNER\'inin yetkili nafaka cagrisi YALNIZ A\'da Due uretir; B\'de SIFIR', async () => {
+    await fresh();
     const res = await request(app.getHttpServer())
       .post('/api/scheduler/check/nafaka')
       .set('Authorization', bearer(A.partner, A.tenantId, 'USER'));
@@ -205,28 +231,49 @@ describeWithDatabase('F02: manual scheduler trigger — real HTTP, JWT, policy a
     expect(await decisionLogCount(B.caseId)).toBe(0);
   });
 
-  it('KABUL-2 (run-all): A PARTNER run-all → 201, B yine DOKUNULMAZ', async () => {
+  it('KABUL-2 (run-all): A PARTNER run-all → A\'da GERCEK yazim (odeme emri → ENFORCEMENT, MTS → PAYMENT_ORDER), B\'nin aynı fixture\'i DEGISMEZ', async () => {
+    await fresh();
+    const a = await seedWorkflowCases(A);
+    const b = await seedWorkflowCases(B);
     const res = await request(app.getHttpServer())
       .post('/api/scheduler/run-all')
       .set('Authorization', bearer(A.partner, A.tenantId, 'USER'));
     expect(res.status).toBe(201);
+    expect(res.body.outcomes).toEqual({ paymentOrders: 'RAN', mts: 'RAN', upcomingTasks: 'RAN' }); // atlanan is YOK
+    // A: izin verilen GERCEK yazimlar
+    expect((await stageOf(a.paymentCaseId)).workflowStage).toBe('ENFORCEMENT');
+    expect(await decisionLogCount(a.paymentCaseId)).toBe(1);
+    expect(await stageOf(a.mtsCaseId)).toEqual({ workflowStage: 'PAYMENT_ORDER', isMtsCase: false });
+    // B: AYNI kosullardaki dosyalar DOKUNULMADI
+    expect((await stageOf(b.paymentCaseId)).workflowStage).toBe('WAITING_RESPONSE');
+    expect(await decisionLogCount(b.paymentCaseId)).toBe(0);
+    expect(await stageOf(b.mtsCaseId)).toEqual({ workflowStage: 'PAYMENT_ORDER', isMtsCase: true });
     expect(await nafakaDueCount(B.caseId)).toBe(0);
-    expect(await decisionLogCount(B.caseId)).toBe(0);
   });
 
-  it('KABUL-4: zamanlanmis GLOBAL akis (cron giris noktasi, parametresiz) TUM aktif tenant\'lari isler', async () => {
-    // Manuel yol A'yi zaten isledi (idempotent: ayni donem tekrar yazilmaz). Cron yolu B'yi de islemeli.
-    await scheduler.processNafakaPeriods();
-    expect(await nafakaDueCount(A.caseId)).toBe(1); // tekrar YAZILMADI (mevcut idempotency)
+  it('KABUL-4: zamanlanmis GLOBAL akis (cron giris noktasi, parametresiz) TUM aktif tenant\'lari isler; tekrar tick cift yazmaz', async () => {
+    await fresh();
+    expect(await scheduler.processNafakaPeriods()).toBe('RAN');
+    expect(await nafakaDueCount(A.caseId)).toBe(1);
     expect(await nafakaDueCount(B.caseId)).toBe(1); // GLOBAL kapsam KORUNDU
+    expect(await scheduler.processNafakaPeriods()).toBe('RAN'); // sirali ikinci tick
+    expect(await nafakaDueCount(A.caseId)).toBe(1); // ayni donem CIFT yazilmadi
+    expect(await nafakaDueCount(B.caseId)).toBe(1);
   });
 
-  it('KABUL-5: B PARTNER\'i kendi tenant\'inda calisir, A\'ya dokunmaz (simetri)', async () => {
-    const before = await decisionLogCount(A.caseId);
+  it('KABUL-5 (simetri): B PARTNER\'inin payment-orders cagrisi B\'de GERCEK yazim uretir, A\'nin ayni fixture\'i DEGISMEZ', async () => {
+    await fresh();
+    const a = await seedWorkflowCases(A);
+    const b = await seedWorkflowCases(B);
     const res = await request(app.getHttpServer())
       .post('/api/scheduler/check/payment-orders')
       .set('Authorization', bearer(B.partner, B.tenantId, 'USER'));
     expect(res.status).toBe(201);
-    expect(await decisionLogCount(A.caseId)).toBe(before);
+    expect(res.body.outcome).toBe('RAN');
+    expect((await stageOf(b.paymentCaseId)).workflowStage).toBe('ENFORCEMENT'); // B'de izin verilen GERCEK yazim
+    expect(await decisionLogCount(b.paymentCaseId)).toBe(1);
+    expect((await stageOf(a.paymentCaseId)).workflowStage).toBe('WAITING_RESPONSE'); // A DOKUNULMADI
+    expect(await decisionLogCount(a.paymentCaseId)).toBe(0);
+    expect(await nafakaDueCount(A.caseId)).toBe(0);
   });
 });
