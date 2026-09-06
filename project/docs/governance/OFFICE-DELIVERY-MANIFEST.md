@@ -1852,6 +1852,19 @@ karar, implementation grant, migration, deployment veya production activation au
 üretmez. Evidence seti:
 `project/docs/governance/office-spring-cleaning-reconciliation-r01/`.
 
+> **Güncellik şerhi — successor sırası (2026-09-06, append-only; tarihsel metin DEĞİŞMEDİ):** yukarıdaki
+> "Hepsi `OWNER GO REQUIRED / NOT STARTED`" ifadesi **2026-07-31 kayıt anının snapshot'ıdır** ve öyle
+> korunur; güncel durum DEĞİLDİR. Kalem-bazlı güncel dispositionlar `office-spring-cleaning-reconciliation-r01/
+> successor-execution-order.md` "Reconciled at" tablosundadır (2026-08-13 / 2026-08-16 satırları); her satır
+> kendi PR/squash kanıtını taşır. Özellikle **F06** (`OFFICE-SC-F06-OPEN-OD-DECISION-PACK-R01`): 2026-08-16
+> uzlaştırmasında `DECISION_COMPLETE / MERGED / CANONICAL` (karar paketi PR #2376 squash
+> `a3db41bda8c9f09bcec5c563862f5ca10e0a9411`; owner dispositionları PR #2403 squash
+> `c9fed0a5c8201c5a5a8f3a57e51b2fe957a208ac`), owner disposition kaydı `decision-log.md` 2026-08-13
+> "OFFICE P4 / F06 OPEN OD OWNER DISPOSITION — RATIFIED": sekiz OD için OPTION B, **`OFF/OD-04` için
+> `KEEP_DEFERRED`** (`OFFICE-OWNER-DECISIONS.md` toplamı 19/20 CLOSED). **`OFF/OD-04` CLOSED DEĞİLDİR** —
+> `DEFERRED / CANONICAL` kalır ve yalnız yeni bir owner kararıyla yeniden açılır; bu şerh o kararı VERMEZ.
+> Bu şerh yeni semantic karar, grant, migration, deployment veya production activation authority ÜRETMEZ.
+
 ---
 
 ## 13. OFFICE P8-C4 Canonical Reconciliation — 2026-08-13 (ARA UZLAŞTIRMA)
@@ -2010,6 +2023,14 @@ DEĞİŞTİRİLMEMİŞTİR. Bu bölüm yeni semantic karar veya execution author
 **PRODUCTION AUTHORITY = NONE — sekiz kalemin TAMAMINDA.** Hiçbir satır production
 yetkisi verildiğini göstermez.
 
+> **Uzlaştırma şerhi (2026-09-06, append-only):** yukarıdaki tablodaki **C33**
+> (`NOT_STARTED / FRESH PRODUCTION PAGE AND OWNER GO REQUIRED`) ve **C35**
+> (`CANONICALLY_RECORDED / PRODUCTION PROVISIONING PENDING`) hükümleri **2026-09-02 kayıt anının**
+> durumudur; §15.5 disiplini gereği DEĞİŞTİRİLMEMİŞTİR. Güncel hüküm **§15.8**'dedir: C33 =
+> `RELEASE19_CUTOVER_APPLIED_AND_VERIFIED / TERMINAL_VERIFIED`, C35 =
+> `SMOKE_IDENTITY_PROVISIONED_AND_AUTHENTICATED_SMOKE_VERIFIED`. **Production authority her iki
+> satırda da NONE olarak KALIR** (tüm tek-kullanımlık nonce'lar tüketilmiştir).
+
 ### 15.2 Predecessor / successor bağı
 
 ```text
@@ -2142,3 +2163,62 @@ CLEANUP AUTHORITY          ÜRETİLMEDİ (K-10); silme öncesi K-11/K-12 protoko
 
 Uygulama kanıt kökü (repo dışı, hash-bağlı): `HY_OFFICE_RETENTION_DECISION_APPLICATION_R01`
 (MANIFEST + detached checksum final raporda). Tarihsel kayıtlar DEĞİŞTİRİLMEMİŞTİR.
+
+---
+
+### 15.8 C33 RELEASE18 → RELEASE19 cutover devri + C35/C36 smoke + F-B01-03 dar kabul — GÜNCEL HÜKÜM (2026-09-06, append-only)
+
+Bu bölüm §15.1'deki **C33** ve **C35** satırlarının güncel hükmünü verir; §15.5 disiplini gereği
+tarihsel satırlar DEĞİŞTİRİLMEMİŞTİR. Kaynak kayıtlar repo dışı owner paketleridir (hash-bağlı).
+
+| ID | GÜNCEL VERDICT (2026-09-06) | Owner decision | Production authority |
+|---|---|---|---|
+| C33 | `RELEASE19_CUTOVER_APPLIED_AND_VERIFIED / TERMINAL_VERIFIED` — owner-run R23 `CUT-20260906-155913-e945162f`, phase COMMITTED, kapılar **31/31**, engineExit 0, 2026-09-06T12:59:13Z → 13:00:05Z; salt-okuma terminal doğrulama 13:06:54Z, 13 kontrol. Öncülü RELEASE18 cutover (R22, 35/35, 2026-09-05) → `runtime-reconciliation-r01/c33-release18-cutover-record-r01.md` | RATIFIED — `OWNER-RATIFICATION-C33-RELEASE19-CUTOVER-20260906-R01` | NONE — tek-kullanım nonce `dd954d6b…` TÜKETİLDİ, yeniden koşum YASAK |
+| C35 | `SMOKE_IDENTITY_PROVISIONED_AND_AUTHENTICATED_SMOKE_VERIFIED` — R24 `SMK-20260905-191512-0d9a5059`, `C36_SMOKE_PROVISION_AND_AUTH_SMOKE_VERIFIED`, **23/23**, 2026-09-05T19:15:12Z → 19:15:18Z; öncülü R23 koşumu `PARTIAL / SUPERSEDED` | — | NONE — nonce TÜKETİLDİ |
+
+```text
+CANLI RUNTIME (2026-09-06T13:06:54Z, salt-okuma terminal doğrulama)
+      Sürüm        RELEASE19 — HY_W4_RELEASE19; aday kaynak commit a60d772b6c53ece6bc23b77821a2921ab0ec7942
+      Web BuildId  xFgJAoTFqlTjW89Zf2CYS
+      Launcher     host BB136AA4… · api B5716157… · web 3375A46F…
+      .env         3DBFAE32… (1748 bayt) — RELEASE18 ile bayt-eşit
+      Rollback     R18 nesli b53385527c47075918338289fac9f06afd97e525 (dizin KORUNUR)
+      Kesinti      14.673 s toplam (quiesce/drain 0.929 s · bin swap 0.094 s · start+probe 13.744 s)
+                   858 ms YALNIZ drain adımıdır; toplam kesinti DEĞİLDİR
+                   servis-bazlı geri-dönüş anları NOT_PROVEN (journal ayrı hazır-oldu damgası tutmaz)
+
+KANIT (repo dışı, SHA-256)
+      R23 makbuz    E36B2909B6AC525F70674536ED2EE59D2A3445D5DFEF7AA95F4CEA3ADA87F146
+      R23 journal   45078E8C4C075717FA3BDCC8E18BDC3458B81DA2A2AA64BDE7DCD5C58AE0AD6B
+      R23 terminal  28BB002AF12D577B062EB72E248D8134F8B50B6A6EA4E84BC59198067100ECB2
+      R22 makbuz    4588563E8DB091779E7FCB1ECB076C630FA29AD056A28F55A22E6EC88C5CB9FA
+      R22 journal   0047C5216B5E06022A0A83BAFC9E49FC343BEF07A0BD7B726D2010A6C7802A95
+      R22 sidecar   ED28FC7B3C804DE5888CDF16C33C9525689515609B0825069F06F4718D8AB91F
+      R21 sidecar   F37E4E5221A80C6CCFCB466624EA1231F4F66704373E62A7E0039DB7CAF050F3  (CLOSED / PREFLIGHT_FAILED)
+      R20 sidecar   48142E98F14E42C7109F2F812D1E99E894EC2F5D5E1E1939AABA7C0146E3901C  (CLOSED / SUPERSEDED)
+      R23 smoke     BEB35B3DC1373C55E066D68862F377B43AE2330183D926430534D37B037B2A3E  (PARTIAL / SUPERSEDED)
+      R24 smoke     A469EE0EC07C60CFC5A0212BAC0D6DD5263465300DF8B0A50BF722CD7E970E07  (VERIFIED)
+
+F-B01-03 — DAR OFFICE KABULÜ (yalnız okuma yüzeyi)
+      CODE_MERGED (#2514 a60d772b) → DEPLOYED (RELEASE19) → GET_AUTHZ_AND_PROJECTION_LIVE_ACCEPTED
+      Kapsam: altı settings GET rotasında yetkili 200 / yetkisiz staff 403 OFFICE_F01_AUTHORIZATION_REQUIRED /
+      anonim 401; dört S2 referans alanı GERÇEKTEN ABSENT; secret alanları MASKED/NULL.
+      UI Kaydet / PUT / PATCH yazma kabulü NOT_EXECUTED. Kayıt: decision-log 2026-09-06 + §13.4.
+
+RESIDUAL / AÇIK KAPILAR (bu bölüm KAPATMAZ)
+      F01    ölçülmemiş roller (düz USER, MANAGER/VIEWER, cross-office PUBLIC_S0_ONLY) → owner kararı
+      OFFICE escAssignees residual (iç tüketicide ADMIN-gate arkasında sayaç)
+      F05    NOT_AUTHORIZED / CARRY_FORWARD — task-bound grant YOK; gerçek e-posta teslimatı gözlenmedi;
+             SMS yapılandırılmamış (smsProvider yok; opSmsEnabled=true yalnız SKIPPED üretir)
+      F04    CLIENT canlı yarış kabulü ayrı; F04 birim spec CI manifest boşluğu (K-12) ayrı
+      C37    owner terminal verdict HENÜZ VERİLMEDİ
+
+SUPERSEDED (tarihsel — silinmez)
+      §15.1 "C33 = NOT_STARTED", "C35 = PROVISIONING PENDING" → bu bölümle SUPERSEDED_HISTORICAL
+      GOVERNANCE-INDEX runtime-reconciliation satırındaki aynı ifadeler → bu bölüm + lane kaydı ile güncellendi
+
+PRODUCTION AUTHORITY     NONE (tüm tek-kullanımlık nonce'lar TÜKETİLDİ)
+NEW EXECUTION AUTHORITY  NONE
+YENİ İSTİSNA/GRANT       ÜRETİLMEDİ (F01 rol istisnası, UI yazma kabulü, F05 grant'i DAHİL)
+```
+
