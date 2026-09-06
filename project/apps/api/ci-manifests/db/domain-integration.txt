@@ -256,6 +256,11 @@ src/scripts/__tests__/enforcement-action-backfill-profiler.db-gated.integration.
 #   bloktur (bkz pure/uyap-icrabot-tebligat.txt icin DB-free unit eslesi).
 src/common/__tests__/w3-f03-scheduler-timezone-runtime.db-gated.integration.spec.ts
 #
+#   F02 (manuel scheduler yetki/tenant siniri): GERCEK HTTP + JWT + OfficeApproval.isApproverEligible
+#   + PostgreSQL ile yetkisiz cagrinin sifir yan etkiyle reddi, A->B tenant izolasyonu ve cron
+#   giris noktasinin GLOBAL kapsaminin korunmasi.
+src/modules/scheduler/__tests__/scheduler-manual-run-boundary.db-gated.integration.spec.ts
+#
 #   W3-F04-CRON-TERMINAL-FAILURE-VISIBILITY-R01: GERCEK AppModule bootstrap + GERCEK
 #   ErrorLog tablosu ile temsilci cron failure-injection matrisi (A-F): success/no-work/
 #   failure-injected/config-gated-off/config-gated-on+failure/graceful-shutdown. Her

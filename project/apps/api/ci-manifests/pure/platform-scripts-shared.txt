@@ -188,6 +188,8 @@ src/modules/address-task/address-task-scheduler.service.spec.ts
 # above (primary domain is the CaseDebtor/lifecycle-guard family, not Scheduler). At the time this
 # was wired, 5 other pre-existing scheduler spec files were still unwired — resolved below by I14.
 src/modules/scheduler/__tests__/scheduler-passive-case-debtor-guard.spec.ts
+# F02 (manuel scheduler yetki/tenant siniri): saf politika tablosu + mock-servis kapsam sozlesmesi.
+src/modules/scheduler/__tests__/scheduler-manual-run-policy.spec.ts
 # DEBTOR-SCHEDULER-REQUIRED-CI-COVERAGE-P1-I14 (I13-SCHEDULER-CI-GAP, independent of LEGACY TASK 08):
 # fresh repo-wide sweep found these 5 pre-existing SchedulerService contract spec files (own business
 # logic — nafaka period generation, tebligat-sync cron paths, disabled due-reminders dead-path guard,

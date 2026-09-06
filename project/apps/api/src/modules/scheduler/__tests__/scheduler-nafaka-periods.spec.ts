@@ -33,6 +33,12 @@ jest.mock('../../tebligat/tebligat.service', () => ({
   TebligatService: class TebligatService {},
 }));
 
+// F02: SchedulerService artik OfficeApprovalService import ediyor (manuel tetik yetkisi). Bu spec cron yolunu
+// test eder ve o servisi KULLANMAZ; agir import zincirini (accounting-journal -> Prisma.Decimal) kesmek icin mock.
+jest.mock('../../office-approval/office-approval.service', () => ({
+  OfficeApprovalService: class OfficeApprovalService {},
+}));
+
 import { SchedulerService } from '../scheduler.service';
 import { DueType } from '@prisma/client';
 
@@ -49,7 +55,7 @@ describe('SchedulerService nafaka dönem üretimi', () => {
     const metrics: any = { record: jest.fn() };
     const tebligatService: any = {};
     const caseDebtorLifecycleGuard: any = { isPassiveByCaseAndDebtor: jest.fn().mockResolvedValue(false) };
-    const service = new SchedulerService(prisma, metrics, tebligatService, undefined, caseDebtorLifecycleGuard);
+    const service = new SchedulerService(prisma, metrics, tebligatService, undefined as any /* errorReporter — bu spec kullanmaz */, caseDebtorLifecycleGuard, undefined as any /* F02: officeApproval — cron yolu kullanmaz */);
 
     jest.spyOn((service as any).logger, 'log').mockImplementation(() => undefined);
     jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
