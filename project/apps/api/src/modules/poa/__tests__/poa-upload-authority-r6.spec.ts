@@ -61,7 +61,7 @@ function buildHarness(opts: { poaFound?: boolean; eligible?: boolean; persistErr
   const audit: AnyRecord = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn() };
   const officeApproval: AnyRecord = { isApproverEligible: jest.fn().mockResolvedValue(eligible) };
   const service = new PoaService(prisma as any, audit as any, officeApproval as any);
-  // Legacy response sözleşmesi (success/filePath/fileSize/mimeType) — DEĞİŞMEDİ.
+  // Persist adiminin ic sonucu (filePath tasir); D-5: legacy YANIT bunu asla disari vermez.
   const persistResult = {
     success: true,
     filePath: 'C:/secret/storage/tenant-1/poa-1.pdf',
@@ -72,7 +72,9 @@ function buildHarness(opts: { poaFound?: boolean; eligible?: boolean; persistErr
     if (persistError) throw persistError;
     return persistResult;
   });
-  return { service, prisma, audit, officeApproval, persist, persistResult };
+  // D-5: legacy `POST /poa/:id/upload` yanit sozlesmesi — filePath YOK.
+  const legacyResponse = { success: true, hasFile: true, fileSize: 1234, mimeType: 'application/pdf' };
+  return { service, prisma, audit, officeApproval, persist, persistResult, legacyResponse };
 }
 
 const actor = (role: string | undefined, tenantId: string = TENANT) => ({ userId: 'user-1', tenantId, role });
@@ -142,13 +144,14 @@ describe('PoaService.uploadFile — OWN-13 I02-R6 servis-giriş kapısı (legacy
     expectNoSideEffects(h);
   });
 
-  it('ADMIN -> persist (poaId/file/tenant) çalışır, eligibility HİÇ sorgulanmaz, TEK CLIENT_WORKSPACE_COMMAND audit; legacy response AYNEN', async () => {
+  it('ADMIN -> persist (poaId/file/tenant) çalışır, eligibility HİÇ sorgulanmaz, TEK CLIENT_WORKSPACE_COMMAND audit; legacy yanit filePath TASIMAZ (D-5)', async () => {
     const h = buildHarness();
     const file = buildFile();
 
     const result = await h.service.uploadFile(POA_ID, file, TENANT, actor('ADMIN'));
 
-    expect(result).toEqual(h.persistResult);
+    expect(result).toEqual(h.legacyResponse);
+    expect(JSON.stringify(result)).not.toContain('filePath');
     expect(h.persist).toHaveBeenCalledTimes(1);
     expect(h.persist).toHaveBeenCalledWith(POA_ID, file, TENANT);
     expect(h.officeApproval.isApproverEligible).not.toHaveBeenCalled();
@@ -239,7 +242,7 @@ describe('PoaController.uploadFile — JWT aktörü servise iletilir (rol politi
   });
 });
 
-describe('Uçtan uca (PoaController → PoaService) — legacy rota', () => {
+describe('Controller → servis zinciri (DB/dosya mock; gercek HTTP/DB E2E DEGIL) — legacy rota', () => {
   it('VIEWER JWT ile POST /poa/:id/upload akışı 403 ForbiddenException üretir; yazma/audit YOK', async () => {
     const h = buildHarness();
     const controller = new PoaController(h.service);
@@ -251,7 +254,7 @@ describe('Uçtan uca (PoaController → PoaService) — legacy rota', () => {
     expectNoSideEffects(h);
   });
 
-  it('ADMIN JWT ile akış persist + TEK audit üretir ve legacy response döner', async () => {
+  it('ADMIN JWT ile akış persist + TEK audit üretir; legacy yanıt filePath taşımaz (D-5)', async () => {
     const h = buildHarness();
     const controller = new PoaController(h.service);
 
@@ -259,7 +262,8 @@ describe('Uçtan uca (PoaController → PoaService) — legacy rota', () => {
       user: { id: 'user-1', tenantId: TENANT, role: 'ADMIN' },
     });
 
-    expect(result).toEqual(h.persistResult);
+    expect(result).toEqual(h.legacyResponse);
+    expect(JSON.stringify(result)).not.toContain('filePath');
     expect(h.persist).toHaveBeenCalledTimes(1);
     expect(h.audit.log).toHaveBeenCalledTimes(1);
   });

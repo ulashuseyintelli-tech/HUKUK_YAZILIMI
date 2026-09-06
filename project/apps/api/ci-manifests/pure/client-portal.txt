@@ -222,6 +222,31 @@ src/modules/client/__tests__/client-notification-authority-primitive-b06.spec.ts
 #     wrapper persist adimindan gecer — istek basina TEK yetki karari ve TEK audit.
 src/modules/poa/__tests__/poa-upload-authority-r6.spec.ts
 #
+#   D-4 (owner GO 2026-09-06) POA entity yazma yetkisi (SAF, DB-siz)
+#     POST /poa, PUT /poa/:id, POST /poa/:id/lawyers, DELETE /poa/:id/lawyers/:lawyerId,
+#     DELETE /poa/:id/file yalniz JwtAuthGuard tasiyordu (VIEWER bile ACTIVE vekalet acip K9
+#     capability'yi etkinlestirebiliyordu). Yetki artik PoaService girisinde, C2 frozen primitive
+#     + additive POA_* komut tipleriyle (ADMIN VEYA elevated; VIEWER/tanimsiz fail-closed);
+#     istek basina TEK karar + TEK audit (ic linkLawyers/dedup ayri karar uretmez); update
+#     allowlist'i status/isActive/clientId/dosya alanlarini 400 ile reddeder; revoke elevated-only
+#     AYNEN. D-5: legacy upload yaniti filePath tasimaz.
+src/modules/poa/__tests__/poa-mutation-authority-d4.spec.ts
+#
+#   D-1b (owner GO 2026-09-06) kimlik checksum sikilastirmasi (SAF, DB-siz)
+#     Faz 1'in dar Faz 4 dilimi: update() ile DEGISEN dolu TCKN/VKN checksum'dan gecer
+#     (degismeyen legacy deger dokunulmaz); her isActive:false->true gecisinde YAZILACAK SON
+#     kimlik gecerli olmali; yazma dogrulanan duruma kosullu (esszamanli degisiklik dogrulamayi
+#     gecersiz kilamaz). Bos kimlik ve identityNo sozlesmesi DEGISMEDI; mevcut veri DUZELTILMEZ.
+src/modules/client/__tests__/client-identity-checksum-tightening-d1b.spec.ts
+#
+#   D-3a (owner GO 2026-09-06) muvekkil bilgi talebi gonderim yetkisi + durum kapisi (SAF, DB-siz)
+#     create/reminder GERCEK e-posta gonderiyordu ve yalniz JwtAuthGuard tasiyordu (VIEWER dahil
+#     herkes gonderebiliyordu, audit yoktu). Artik C2 frozen primitive INFO_REQUEST_SEND /
+#     INFO_REQUEST_REMINDER_SEND (ADMIN VEYA elevated), respond/no-response D01 coarse
+#     (VIEWER DENY, USER/ADMIN ALLOW) + ortak aktorlu audit; saglayici basarisizligi basarili
+#     gonderim olarak KAYDEDILMEZ; otomatik dosya-olusturma yolu korunur ve istemciden asilamaz.
+src/modules/address-discovery/__tests__/client-info-request-authority-d3a.spec.ts
+#
 #   C2 REVIEW AUTHORITY EXTENSION — CR-1 sozlesme kaniti (SAF, DB-siz)
 #     Owner RATIFIED 2026-08-03: INTAKE_REVIEW_CLAIM/FIELD_DECIDE/SUBMISSION_REJECT
 #     komutlari INTAKE_REVIEW sinifinda — yetki sinyali isIntakeReviewAuthorized,
@@ -307,6 +332,12 @@ src/modules/client-intake-review/client-intake-review.service.spec.ts
 #     Only exact 'true' reaches authorization; missing/misleading values return the same
 #     DISCLOSURE_WRITE_NOT_ENABLED response before authorization, entity lookup, or write.
 src/modules/client-settlement/__tests__/client-financial-disclosure-command.spec.ts
+#
+#   D-10 (owner GO 2026-09-06; C33 K-12) F04 birim spec'leri — onceden HICBIR manifestte yoktu
+#     (CI'da kosmuyordu). #2512 F04 posting/reversal mock'lu birim testleri (SAF, DB-siz);
+#     gercek PostgreSQL yaris kaniti ayrica db/domain-integration'daki f04 db-gated spec'te.
+src/modules/client-settlement/__tests__/disposition-posting.service.spec.ts
+src/modules/client-settlement/__tests__/collection-reversal.service.spec.ts
 
 #   CODEX-CLIENT-X2-B05 dedicated Financial Disclosure approval/publication route adapter
 #     JWT tenant/actor scope, strict WRITE+PUBLICATION fail-closed gates, canonical approval

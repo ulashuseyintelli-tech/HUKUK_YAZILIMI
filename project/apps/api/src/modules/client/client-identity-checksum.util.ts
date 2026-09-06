@@ -35,3 +35,62 @@ export function assertCreateIdentityChecksum(data: {
     throw new BadRequestException("Geçersiz VKN (vergi kimlik no doğrulaması başarısız)");
   }
 }
+
+/**
+ * D-1b (owner GO 2026-09-06) — BİLİNÇLİ DAVRANIŞ SIKILAŞTIRMASI (Faz 1 → dar Faz 4 dilimi).
+ *
+ * Owner kararı: mevcut gerçek kimlik verisi DEĞİŞTİRİLMEZ ve yapay değerle tamamlanmaz; yalnız
+ * İLERİYE DÖNÜK iki yol sıkılaşır:
+ *   (1) `update()` ile DEĞİŞTİRİLEN ve DOLU olan TCKN/VKN değeri checksum'dan geçer;
+ *       değişmeyen legacy (geçersiz-checksum) değer AYNEN kalır ve isteği DÜŞÜRMEZ,
+ *   (2) her `isActive:false → true` geçişinde YAZILACAK SON kimlik değerleri geçerli olmalıdır.
+ *
+ * Korunan sözleşmeler: boş kimlik SERBEST (no-tckn müvekkil); `identityNo` (serbest/pasaport,
+ * deprecated alan) DOĞRULANMAZ; format kontrolü DTO'da kalır; audit/dedup davranışı değişmez.
+ * Bu kural canlıdaki 7 pasif geçersiz-checksum kaydını DÜZELTMEZ ("düzeltildi" sayılamaz);
+ * yalnız onların yetkisiz biçimde yeniden aktifleştirilmesini ve yeni geçersiz yazımı engeller.
+ */
+export function assertChangedIdentityChecksum(
+  incoming: { tckn?: string | null; vkn?: string | null },
+  existing: { tckn?: string | null; vkn?: string | null },
+): void {
+  const changedTckn = incoming.tckn !== undefined && (incoming.tckn ?? "") !== (existing.tckn ?? "");
+  const changedVkn = incoming.vkn !== undefined && (incoming.vkn ?? "") !== (existing.vkn ?? "");
+  assertCreateIdentityChecksum({
+    tckn: changedTckn ? incoming.tckn : null,
+    vkn: changedVkn ? incoming.vkn : null,
+  });
+}
+
+/** Reaktivasyonda YAZILACAK SON kimlik (yeni değer varsa o, yoksa mevcut) doğrulanır. */
+export function resolveEffectiveIdentity(
+  incoming: { tckn?: string | null; vkn?: string | null },
+  existing: { tckn?: string | null; vkn?: string | null },
+): { tckn: string | null; vkn: string | null } {
+  return {
+    tckn: (incoming.tckn !== undefined ? incoming.tckn : existing.tckn) ?? null,
+    vkn: (incoming.vkn !== undefined ? incoming.vkn : existing.vkn) ?? null,
+  };
+}
+
+/**
+ * Reaktivasyon kimlik kapısı. Geçersizse 400 + stabil `reasonCode`; alan ADLARI taşınır,
+ * DEĞER taşınmaz (PII yasağı). Düzeltme yolu: yetkili kullanıcı geçerli kimliği kaynak
+ * belgeye dayanarak girer, sonra kaydı aktifleştirir.
+ */
+export function assertReactivationIdentityChecksum(effective: { tckn: string | null; vkn: string | null }): void {
+  const offendingFields: string[] = [];
+  const tckn = (effective.tckn ?? "").trim();
+  if (tckn && !isValidTckn(tckn)) offendingFields.push("tckn");
+  const vkn = (effective.vkn ?? "").trim();
+  if (vkn && !isValidVkn(vkn)) offendingFields.push("vkn");
+  if (offendingFields.length > 0) {
+    throw new BadRequestException({
+      message:
+        "Kaydı aktifleştirmek için geçerli kimlik numarası gerekir (kimlik doğrulaması başarısız). " +
+        "Önce kaynak belgeye dayanarak kimliği düzeltin.",
+      reasonCode: "CLIENT_IDENTITY_CHECKSUM_INVALID",
+      offendingFields,
+    });
+  }
+}

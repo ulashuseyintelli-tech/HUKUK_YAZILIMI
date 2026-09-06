@@ -4468,3 +4468,120 @@ KAPALI GOSTERMEZ.
 **OWN-13 = CLOSED (I01 + I02 R1–R6, OWNER RATIFIED 2026-09-06). CLIENT URUNU VEYA PRODUCTION
 KABULU BU KAYITLA TAMAMLANMIS SAYILMAZ. WORKSPACE ESIGI (ADMIN VEYA ELEVATED) ≠ INTAKE REVIEW
 KAPISI (isIntakeReviewAuthorized); REVIEW ≠ PROMOTION.**
+
+
+---
+
+## §58 — CLIENT Faz 1: POA Yazma Yetkisi, Bilgi Talebi Yetkisi ve Kimlik Sikilastirmasi (OWNER GO 2026-09-06)
+
+Kaynak: owner `GO — CLIENT kalan kararlar → uygulama ve kabul` (2026-09-06; D-1 a+b, D-3 a+c, D-4 a,
+D-5 a, D-10 a); karar paketi `client-remaining-decisions-r01/DECISION-PACK-R01.md` (#2519,
+squash `eb4a61f8`); uygulama PR #2520.
+Bu bolum ADDITIVE'dir; §1–§57.5 metinleri DEGISMEDI. C2 frozen primitive'in **dar, additive**
+genislemesi owner tarafindan ONAYLANDI: mevcut komut esikleri ve intake review/promotion ayrimi
+(CR-1) DEGISMEDI.
+
+### 58.1 D-4 — POA entity yazma yetkisi
+
+`POST /poa` · `PUT /poa/:id` · `POST /poa/:id/lawyers` · `DELETE /poa/:id/lawyers/:lawyerId` ·
+`DELETE /poa/:id/file` yalniz `JwtAuthGuard` tasiyordu. `ClientPowerOfAttorney.status` varsayilani
+`ACTIVE` ve K9 (§13/9) gecerlilik yuklemi `isActive + status + validUntil` okudugu icin **yetkisiz
+olusturulan bir vekalet `canCollect/canSettle/canWaive/canRelease` yetkilerini ETKIN KILIYORDU.**
+
+| Konu | Karar |
+|---|---|
+| Esik | **ADMIN VEYA canonical elevated** (`officeApproval.isApproverEligible`) — C2-B02 §13/11 ile AYNI; VIEWER ve tanimsiz rol fail-closed; cross-tenant `TENANT_MISMATCH` |
+| Kapi yeri | **SERVIS girisi** (`PoaService`), gercek yan etkiden ONCE; `actor` ZORUNLU → actor'suz uretim cagrisi DERLENMEZ |
+| Komut tipleri (additive) | `POA_CREATE` · `POA_UPDATE` · `POA_LAWYERS_ADD` · `POA_LAWYER_REMOVE` · `POA_FILE_DELETE` (hepsi WORKSPACE sinifi) |
+| Revoke | `PoaService.delete()` **elevated-only KALIR** (P1A); ADMIN tek basina YETMEZ; bu primitive'den GECMEZ |
+| Alan allowlist'i | `update()` ile `status`/`isActive` (lifecycle), `clientId` (sahiplik) ve dosya alanlari **YAZILAMAZ** → 400 `POA_FIELD_NOT_WRITABLE` + yalniz alan ADLARI. Daha siki lifecycle kurali genel update ile ASILAMAZ |
+| Tek karar / tek audit | Istek basina TAM BIR yetki karari ve BIR `CLIENT_WORKSPACE_COMMAND` audit; ic avukat baglama (`linkLawyers`) ve dedup/suppress dali ayri karar/audit URETMEZ; basarisiz mutasyon audit URETMEZ |
+| Aktor kaynagi | YALNIZ sunucu tarafi JWT (`req.user`); govdeden aktor/tenant OKUNMAZ |
+
+**UI uyumu (ayni teslimin parcasi):** `cases/new` sihirbazinin **iki** vekalet yolu da yetki reddini
+acikca gosterir (onceki davranis: biri genel hata, digeri `console.warn` ile SESSIZ yutuyordu).
+Mesaj, muvekkilin KAYDEDILDIGINI ve yalniz vekaletin kaydedilmedigini soyler; yeniden denemede
+**mukerrer muvekkil/dosya URETILMEZ** (muvekkil secili kalir, vekaleti yetkili kullanici sonradan
+ekler). `settings/clients` kaydetme akisi ayni yuzeyi kullanir.
+
+### 58.2 D-5 — Legacy upload yanitindan `filePath` cikarildi
+
+`POST /poa/:id/upload` yaniti artik `LegacyPoaUploadResult` (`success`/`hasFile`/`fileSize`/`mimeType`);
+sunucu dosya yolu istemciye DONMEZ. **Gerekce (gerekcesiz "geriye uyumlu" etiketi kullanilmadi):**
+tek HTTP tuketici `settings/clients` sayfasidir ve yanit govdesini KULLANMAZ (`loadPoas()` ile listeyi
+yeniden okur); `filePath` yalniz liste yanitindaki `poa.filePath` alanindan okunur (o alan DEGISMEDI);
+workspace rotasi (`ClientWorkspacePoaUploadResult`) zaten yol tasimiyordu. Tip sozlesmesi acik.
+
+### 58.3 D-1b — Kimlik checksum sikilastirmasi (bilincli davranis degisikligi)
+
+Owner (a): **mevcut gercek kimlik verisi DEGISTIRILMEZ ve yapay degerle TAMAMLANMAZ.** Canli olcum
+(salt-okuma, PII cikti yok): 18 muvekkil, gecersiz TCKN **7 — hepsi PASIF, `telli-hukuk`, dosya bagi 0**,
+aktif gecersiz **0**. Bu kayitlar "duzeltildi" SAYILMAZ.
+
+Owner (b) — uygulanan dar Faz-4 dilimi:
+1. `update()` ile **DEGISTIRILEN ve dolu** TCKN/VKN checksum'dan gecer; degismeyen legacy (gecersiz)
+   deger isteği DUSURMEZ (kilitlenme yok).
+2. Her `isActive:false → true` gecisinde (update ve create/dedup yollari) **YAZILACAK SON kimlik**
+   (yeni ?? mevcut) gecerli olmalidir → 400 `CLIENT_IDENTITY_CHECKSUM_INVALID`, yalniz alan ADLARI.
+   Kimlik duzeltmesi ile aktivasyon AYNI istekte gelirse son degerler esas alinir.
+3. **Eszamanlilik:** aktivasyon yazimi dogrulanan DURUMA kosulludur (`isActive:false` + gonderilmeyen
+   kimlik alanlari icin mevcut deger); kayit bu arada degistiyse yazma OLMAZ → `CLIENT_STATE_CHANGED`.
+
+Korunanlar: bos kimlik SERBEST · `identityNo` (serbest/pasaport) DOGRULANMAZ · lifecycle yetkisi
+(`assertCanManageLifecycle`) ve R1A reactivate kapisi DEGISMEDI · `seed/fix-clients` davranisi DEGISMEDI.
+**Kalan:** 7 pasif kaydin kimligi ancak kaynak belgeye dayanarak, yetkili kullanici tarafindan tek tek
+duzeltilir (urun akisi).
+
+### 58.4 D-3a/c — Muvekkil bilgi talebi yetkisi ve audit
+
+`client-info-request` create/reminder **GERCEK e-posta** gonderiyordu ve dort ucta yalniz
+`JwtAuthGuard` vardi → VIEWER dahil herkes gonderebiliyordu, AuditLog YOKTU.
+
+| Yuzey | Esik | Audit |
+|---|---|---|
+| create · reminder (dis gonderim) | `INFO_REQUEST_SEND` / `INFO_REQUEST_REMINDER_SEND` — ADMIN VEYA elevated (§13/11 md.6) | `CLIENT_WORKSPACE_COMMAND` (requestId/status/caseId; e-posta icerigi ve adresi YOK) |
+| respond · no-response (durum) | D01 coarse — VIEWER DENY, USER/ADMIN ALLOW (**elevated SART DEGIL**) | `CLIENT_INFO_REQUEST_STATUS` (requestId/status/actorRole) |
+
+- **Saglayici basarisizligi basarili gonderim olarak KAYDEDILMEZ:** create'te "SENT" satiri geri alinir
+  ve 503 doner (primitive audit de uretilmez); reminder'da sayac ARTMAZ ve `reminderSentAt` yazilmaz.
+- Mevcut `ClientNotification` ve `AddressAuditLog` kayitlari KORUNUR; aktor alanlari (`sentById`,
+  `userId`) doldurulur — manuel yolda gercek kullanici, otomatik yolda `system`.
+- **Otomatik dosya-olusturma yolu korunur** (`sendAutoRequestOnCaseCreate` → private
+  `createRequestUnchecked`); HTTP yuzeyi yalniz gated metodu cagirir, istemci **"SYSTEM" veya
+  "skip-authority" secerek manuel kapiyi ASAMAZ**; aktor ve tenant yalniz sunucu tarafi JWT'den.
+- **(c)** `client-intel-statements` create'in owner-locked kapsam-disi karari (I1A) DEGISMEDI.
+
+### 58.5 D-10 — F04 birim spec'lerinin CI manifest bagi
+
+`disposition-posting.service.spec.ts` ve `collection-reversal.service.spec.ts` hicbir manifestte
+YOKTU (CI'da kosmuyordu). Ikisi de `pure/client-portal.txt` manifestine **tam dosya adiyla** baglandi
+ve CI logunda gercek PASS kaydi alindi. Bu kalem C33 K-12'dir; **F09 bulgularindan AYRIDIR**.
+
+### 58.6 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| `poa-mutation-authority-d4.spec.ts` (yeni) | 47/47 PASS · HEAD uretim kodunda **43/47 FAIL** (negatif kontrol) |
+| `client-identity-checksum-tightening-d1b.spec.ts` (yeni) | 17/17 PASS · HEAD kodunda KIRMIZI |
+| `client-info-request-authority-d3a.spec.ts` (yeni) | 29/29 PASS · HEAD kodunda KIRMIZI |
+| `poa-upload-authority-r6.spec.ts` (D-5 ile guncellendi) | 15/15 PASS |
+| `pure/client-portal.txt` tam manifest | 88 suite / 1373 test PASS |
+| `pure/architecture-guards.txt` (storage write-surface) | 47 suite / 997 test PASS |
+| `db/domain-integration.txt` tam manifest — **gercek PostgreSQL 16** (disposable, port 5437) | **60 suite / 648 test PASS** (F04 db-gated yaris spec'i dahil; `address-discovery` DB-gated spec'i 26/26) |
+| Web (`vitest run`, tamami) | 250 dosya / 2436 test PASS |
+| `tsc --noEmit` | **529 = baseline 529** (degisen dosyalarda 0; tek fark bilinen union-siralama gurultusu) |
+| schema/migration diff | **0** |
+
+Kanit sinifi: birim ve sozlesme testleri (Prisma, dosya sistemi, e-posta saglayicisi mock'lu).
+**Gercek HTTP/DB E2E DEGILDIR ve gercek aliciya e-posta GONDERILMEDI.**
+
+### 58.7 Bolum Self-Check
+
+Bu bolum: yeni RolesGuard veya paralel capability sistemi KURMAZ · OFFICE eligibility hesabini
+KOPYALAMAZ · mevcut komut esiklerini ve intake review/promotion ayrimini DEGISTIRMEZ · revoke
+esigini GEVSETMEZ · schema/migration URETMEZ · production verisini DEGISTIRMEZ · deploy YAPMAZ ·
+OWN-12, "Yol1" adaptoru ve MR-063'u KAPALI GOSTERMEZ · §1–§57.5 metinlerini DEGISTIRMEZ.
+
+**FAZ 1 ZORUNLU KALEMLERI KAPANDI. OWN-10 = KARAR VERILDI / VERI DUZELTMESI YAPILMADI (7 pasif kayit
+"duzeltildi" SAYILMAZ). OWN-15 = PARTIAL (Yol1 ayri teslim). OWN-12 = AYRI TESLIM.
+POA REVOKE ESIGI (elevated-only) DEGISMEDI. YAYIN: RELEASE19 adayi bu commit'leri ICERMEZ.**

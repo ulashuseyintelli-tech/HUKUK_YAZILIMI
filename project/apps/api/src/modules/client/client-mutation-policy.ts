@@ -441,6 +441,26 @@ export function decideClientWorkspaceCommand(actor: ClientMutationActor): Client
 // tanınmayan rol coarse fail-closed kalır.
 // =========================================================================================
 
+/**
+ * D-3a (owner GO 2026-09-06) — müvekkil bilgi talebinin DURUM işaretleri (yanıt alındı /
+ * yanıt yok). Bunlar dış gönderim DEĞİLDİR: eşik D01 coarse kuralıdır — VIEWER DENY,
+ * USER ve ADMIN ALLOW. Elevated şartı YOKTUR; gönderim komutları (INFO_REQUEST_*) ayrı ve
+ * daha yüksek eşiktedir (WORKSPACE sınıfı). Yeni altyapı kurulmaz, aynı sözlük kullanılır.
+ */
+export function decideClientOperationalCommand(actor: ClientMutationActor): ClientMutationDecision {
+  if (!actor?.userId) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.NO_ACTOR };
+  }
+  const role = normalizeRole(actor.role);
+  if (role === null) {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.UNKNOWN_ROLE };
+  }
+  if (role === 'VIEWER') {
+    return { allowed: false, reasonCode: CLIENT_MUTATION_REASON.VIEWER_DENIED };
+  }
+  return { allowed: true, reasonCode: CLIENT_MUTATION_REASON.ALLOWED };
+}
+
 /** Intake review komut kararı. Sıra: actor → rol → VIEWER → reviewAuthority sinyali. */
 export function decideClientIntakeReviewCommand(
   actor: ClientMutationActor & { reviewAuthority?: boolean },

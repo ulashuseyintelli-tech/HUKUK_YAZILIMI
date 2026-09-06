@@ -18,6 +18,7 @@ import { CrossFileService } from './cross-file.service';
 import { UyapQueryService } from './uyap-query.service';
 import { InstitutionLetterService } from './institution-letter.service';
 import { CreateClientInfoRequestDto } from './dto/client-info-request.dto';
+import type { ClientWorkspaceCommandActor } from '../client/client-workspace-command-authority';
 import { CreateUyapQueryDto, UpdateUyapQueryResponseDto, ProcessQueryAddressesDto } from './dto/uyap-query.dto';
 import { CreateInstitutionLetterDto, MarkLetterAsSentDto, MarkLetterAsRespondedDto } from './dto/institution-letter.dto';
 
@@ -33,6 +34,11 @@ export class AddressDiscoveryController {
     private institutionLetterService: InstitutionLetterService,
   ) {}
 
+  /** D-3a: aktör ve tenant YALNIZ sunucu tarafı JWT'den; gövdeden aktör/tenant alınmaz. */
+  private actorOf(req: any): ClientWorkspaceCommandActor {
+    return { userId: req?.user?.id, tenantId: req?.user?.tenantId, role: req?.user?.role };
+  }
+
   // ==================== CLIENT INFO REQUEST ====================
 
   /**
@@ -43,7 +49,7 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Body() dto: CreateClientInfoRequestDto,
   ) {
-    return this.clientInfoRequestService.createRequest(req.user.tenantId, dto);
+    return this.clientInfoRequestService.createRequest(req.user.tenantId, dto, this.actorOf(req));
   }
 
   /**
@@ -80,6 +86,7 @@ export class AddressDiscoveryController {
     return this.clientInfoRequestService.markAsResponded(
       req.user.tenantId,
       id,
+      this.actorOf(req),
       body.notes,
     );
   }
@@ -92,7 +99,7 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Param('id') id: string,
   ) {
-    return this.clientInfoRequestService.sendReminder(req.user.tenantId, id);
+    return this.clientInfoRequestService.sendReminder(req.user.tenantId, id, this.actorOf(req));
   }
 
   /**
@@ -103,7 +110,7 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Param('id') id: string,
   ) {
-    return this.clientInfoRequestService.markAsNoResponse(req.user.tenantId, id);
+    return this.clientInfoRequestService.markAsNoResponse(req.user.tenantId, id, this.actorOf(req));
   }
 
   // ==================== CROSS-FILE ====================

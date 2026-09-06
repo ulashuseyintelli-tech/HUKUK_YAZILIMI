@@ -11,7 +11,7 @@ import { toActionErrorMessage } from "@/lib/action-error";
 import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
-import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields } from "@/lib/poa-ux";
+import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields, poaCreateFailureMessage } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
 import { CASE_STAFF_ROLE_OPTIONS, CASE_STAFF_ROLE_GROUP_LABEL, CASE_STAFF_ROLE_HELP_TEXT, normalizeCaseStaffRole } from "@/lib/case-staff-role";
@@ -853,16 +853,28 @@ export default function NewCasePage() {
       // kayıtlarda kanonik tercih. Saf/test edilebilir mantık: lib/lawyer-match.ts
       poaData.lawyerIds = resolveLawyerIdsFromScan(result, existingLawyers);
 
-      const poaRes = await api.post("/poa", poaData);
-      // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; mesajı buna göre ver.
-      const poaSuppressed = isPoaDuplicateSuppressed(poaRes);
+      // D-4: vekalet yazimi yetki ister (ADMIN/onaylayici). Musteri ZATEN kaydedildi; vekalet reddi
+      // musteri adimini geri almaz ve yeniden denemede mukerrer musteri uretmez (musteri secili kalir).
+      let poaSuppressed = false;
+      let poaFailure: unknown = null;
+      try {
+        const poaRes = await api.post("/poa", poaData);
+        // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; mesajı buna göre ver.
+        poaSuppressed = isPoaDuplicateSuppressed(poaRes);
+      } catch (poaErr) {
+        poaFailure = poaErr;
+      }
 
       // 3. Müvekkil listesini yenile ve seçili olarak ekle
       const clientsRes = await api.get("/clients");
       setExistingClients(clientsRes.data?.data || []);
       addExistingCreditor(savedClient);
 
-      // 4. Bilgi mesajı göster
+      // 4. Bilgi mesajı göster — vekalet reddi SESSİZ geçilmez
+      if (poaFailure) {
+        alert(poaCreateFailureMessage(poaFailure, savedClient.displayName));
+        return;
+      }
       alert(poaSuppressed
         ? `✅ Müvekkil "${savedClient.displayName}" kaydedildi.\n\nBu vekalet zaten kayıtlıydı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.\n\nŞimdi takip türünü seçebilirsiniz.`
         : `✅ Müvekkil "${savedClient.displayName}" ve vekalet kaydı başarıyla oluşturuldu!\n\nŞimdi takip türünü seçebilirsiniz.`);
@@ -2272,7 +2284,9 @@ export default function NewCasePage() {
                 try {
                   await api.post("/poa", buildPoaCreatePayload(savedClient.id, data));
                 } catch (poaErr) {
-                  console.warn("Vekalet oluşturulamadı:", poaErr);
+                  // D-4: yetki reddi (veya baska hata) SESSİZ gecilmez; musteri kaydedildi, vekalet
+                  // kaydedilmedi — kullanici bunu gorur; musteri secili kalir (mukerrer kayit yok).
+                  alert(poaCreateFailureMessage(poaErr, savedClient.displayName));
                 }
               }
               // Listeyi yenile
