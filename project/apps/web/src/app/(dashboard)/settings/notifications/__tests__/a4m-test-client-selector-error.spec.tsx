@@ -29,7 +29,7 @@ const OVERVIEW = {
       greeting: { status: 'active', time: '09:00' },
       escalation: {
         status: 'active', reminderDays: 7, founderDays: 14, channels: ['EMAIL'],
-        assignees: 1, last24hSent: 0, last24hFailed: 0,
+        last24hSent: 0, last24hFailed: 0,
       },
       poa: { status: 'planned', reason: 'motor yok' },
     },

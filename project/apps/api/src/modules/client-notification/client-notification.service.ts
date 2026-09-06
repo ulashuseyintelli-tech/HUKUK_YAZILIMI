@@ -469,9 +469,14 @@ export class ClientNotificationService {
       escalation.opEmailEnabled && "EMAIL",
       escalation.opSmsEnabled && "SMS",
     ].filter(Boolean) as string[];
-    const escAssignees =
-      (escalation.escalationManagerLawyerIds?.length || 0) +
-      (escalation.escalationFounderLawyerIds?.length || 0);
+    // F-B01-03 / OFF-P2-CAP-07: escalation*LawyerIds alanlari S2'dir. ADM01 S2 icin "exact field-level
+    // permission" ister, OD-07 "missing policy fails closed" der ve tasiyici henuz yoktur. Bu alanlardan
+    // TURETILEN toplam (manager listesi uzunlugu + founder listesi uzunlugu) da S2 turevidir; rol kapisi
+    // (ADMIN) alan izni + purpose yerine GECMEZ. Politika tasiyicisi tanimlanana kadar HTTP okuma yuzeyine
+    // CIKARILMAZ (yokluk, maskeleme degil) ve yerine turetilmis baska bir alan KONMAZ.
+    // Buro Ayarlari sayfasi da ayni omit nedeniyle listeleri GOSTEREMEZ: orada sayi "—" olarak gosterilir
+    // (settings/office/page.tsx escAssignedCount === null) ve alanin gizli oldugu ayrica uyarilir.
+    // Servis getter'i ve escalation motoru DEGISMEZ: gercek alici listeleri ic tuketicide kullanilmaya devam eder.
 
     const engines = {
       greeting: {
@@ -485,7 +490,6 @@ export class ClientNotificationService {
         reminderDays: escalation.opReminderDays ?? null,
         founderDays: escalation.opFounderDays ?? null,
         channels: escChannels,
-        assignees: escAssignees,
         last24hSent: last24hEscalationSent,
         last24hFailed: last24hEscalationFailed,
       },

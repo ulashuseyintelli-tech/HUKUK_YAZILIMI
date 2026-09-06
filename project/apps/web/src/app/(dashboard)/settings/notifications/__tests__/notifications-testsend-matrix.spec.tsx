@@ -30,7 +30,7 @@ const OVERVIEW = {
     greeting: { status: 'ACTIVE', time: '09:00' },
     escalation: {
       status: 'ACTIVE', reminderDays: 3, founderDays: 6, channels: ['EMAIL'],
-      assignees: 2, last24hSent: 0, last24hFailed: 0,
+      last24hSent: 0, last24hFailed: 0,
     },
     poa: { status: 'PLANNED', reason: 'flag kapali' },
   },
