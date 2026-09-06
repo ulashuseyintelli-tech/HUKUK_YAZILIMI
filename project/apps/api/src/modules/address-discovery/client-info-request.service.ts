@@ -21,6 +21,7 @@ import {
   ClientInfoEmailData,
   generateClientInfoEmailSubject,
   generateClientInfoEmailText,
+  generateIntakeLinkTextBlock,
   generateClientInfoEmailHtml,
   generateReminderEmailSubject,
   generateReminderEmailText,
@@ -48,6 +49,21 @@ export class ClientInfoRequestService {
     ClientIntakeFieldCategory.ADDRESS,
     ClientIntakeFieldCategory.CONTACT,
   ];
+
+  /**
+   * YOL1 URUN KARARI (owner GO 2026-09-06, Faz 2): bilgi talebi baglantisi 7 GUN gecerlidir.
+   * Intake sozlesmesinin kendi varsayilani SURESIZ'dir; bu urun akisinda suresiz baglanti
+   * gondermek istenmez. Cagiran `intakeExpiresAt` ile ACIKCA baska bir tarih verebilir.
+   * Tek kullanim (maxUses=1) ve kapsam (ADDRESS+CONTACT) intake sozlesmesinin kendi
+   * varsayilanlaridir; BURADA KOPYALANMAZ.
+   */
+  private static readonly DEFAULT_INTAKE_LINK_TTL_DAYS = 7;
+
+  private static defaultIntakeExpiry(now = new Date()): string {
+    return new Date(
+      now.getTime() + ClientInfoRequestService.DEFAULT_INTAKE_LINK_TTL_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+  }
 
   /**
    * D-3a: C2 frozen primitive bağımlılıkları — elevated sinyali OFFICE'ten (`isApproverEligible`),
@@ -186,7 +202,7 @@ export class ClientInfoRequestService {
         actorUserId,
         {
           scope: dto.intakeScope ?? ClientInfoRequestService.DEFAULT_INTAKE_SCOPE,
-          expiresAt: dto.intakeExpiresAt,
+          expiresAt: dto.intakeExpiresAt ?? ClientInfoRequestService.defaultIntakeExpiry(),
           maxUses: dto.intakeMaxUses,
         },
       );
@@ -217,9 +233,19 @@ export class ClientInfoRequestService {
     //  - `transportBody`: e-posta saglayicisina gidecek metin; intake baglantisini (ham token)
     //    TASIR ve hicbir kalici yere yazilmaz.
     //  - `persistedBody`: DB'ye/yanita/audit'e giden metin; baglanti OLMADAN uretilir.
-    // Cagiran kendi `dto.emailBody`'sini verdiyse o metin zaten baglanti tasimaz (link bu
-    // serviste uretilir) → iki govde ayni olur.
-    const transportBody = dto.emailBody || generateClientInfoEmailText(emailData);
+    // Cagiranin kendi `dto.emailBody`'si baglanti TASIMAZ (link bu serviste uretilir); kalici
+    // govde bu yuzden her durumda baglantisizdir.
+    // YOL1 KULLANILABILIRLIGI (owner GO Faz 2): arayuz her zaman bir `emailBody` gonderir.
+    // Eskiden kullanici govdesi varsa baglanti e-postaya HIC girmiyordu → "Guvenli form
+    // baglantisi ekle" secenegi link URETIYOR ama gondermiyordu (sessiz islevsizlik).
+    // Artik baglanti blogu kullanicinin mesajinin SONUNA eklenir; blok TEK KAYNAKTAN gelir.
+    const transportBody = dto.emailBody
+      ? intakeUrl
+        ? `${dto.emailBody}
+
+${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
+        : dto.emailBody
+      : generateClientInfoEmailText(emailData);
     const persistedBody =
       dto.emailBody || generateClientInfoEmailText({ ...emailData, intakeUrl: undefined, intakeExpiresAt: null });
     const emailTo = dto.emailTo || client.email;

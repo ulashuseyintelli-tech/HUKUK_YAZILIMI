@@ -2,10 +2,13 @@
  * API Client - Base HTTP client with authentication
  */
 import { reportClientError, shouldReportNetworkError } from "../error-reporter"; // PR-4: yalnız network-failure
-import { buildApiHttpError, readErrorBody } from "../api-error"; // OWN-12 ADIM A: kanonik hata sozlesmesi
+// OWN-12 ADIM A (Faz 2): ortak tasima katmani — URL/baslik/ok-kontrolu TEK yerde.
+// `try` SINIRI burada KALIR: bu istemcide YALNIZ fetch try icindedir; ok-kontrolu DISARIDADIR,
+// yani HTTP hatasi ag raporlamasina girmez ve mesaj donusumune ugramaz (`api` bunlari yapar).
+import { API_BASE_URL, sendApiRequest, assertApiResponseOk } from "../api-transport";
 import { api } from "../api"; // CAD-C1-B03-AUTH-CONTINUITY-REMEDIATION-R01: OFFICE-AUTH-P01 kanonik token kaynağı (tek-kaynak)
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const API_URL = API_BASE_URL;
 
 // Debug: Log API URL on client side
 if (typeof window !== "undefined") {
@@ -31,18 +34,11 @@ export class ApiClient {
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const token = this.getToken();
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    };
 
     let response: Response;
     try {
-      response = await fetch(`${API_URL}/api${endpoint}`, {
-        ...options,
-        headers,
-      });
+      // OWN-12 ADIM A: URL + baslik kurma ORTAK katmanda; try SINIRI DEGISMEDI (yalniz fetch).
+      response = await sendApiRequest(endpoint, options, token);
     } catch (err: any) {
       // PR-4: yalnız gerçek ağ hatası raporlanır (HTTP response DEĞİL → backend loglar; /error-logs/log self-skip).
       if (shouldReportNetworkError(err, endpoint)) {
@@ -57,32 +53,21 @@ export class ApiClient {
       throw err;
     }
 
-    if (!response.ok) {
-      // P3-2B: 4xx/5xx hata GÖVDESİNİ KORU (.message + .body + .status). NOT: structured-200
-      // Guarded-Edge zarfı buraya GİRMEZ (response.ok=true → json döner, detektör ele alır).
-      // OWN-12 ADIM A: hata kurma KANONIK yardimcida (lib/api-error.ts); davranis AYNI.
-      throw buildApiHttpError(await readErrorBody(response), response.status);
-    }
+    // P3-2B: 4xx/5xx hata GÖVDESİNİ KORU (.message + .body + .status). NOT: structured-200
+    // Guarded-Edge zarfı buraya GİRMEZ (response.ok=true → json döner, detektör ele alır).
+    // OWN-12 ADIM A: ok-kontrolu ORTAK katmanda; try DISINDA kalmasi BILEREKTIR (dosya basi).
+    await assertApiResponseOk(response);
 
     return response.json();
   }
 
   async requestBlob(endpoint: string, options: RequestInit = {}): Promise<Blob> {
     const token = this.getToken();
-    const headers: HeadersInit = {
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    };
+    // Blob yolunda `Content-Type: application/json` EKLENMEZ (mevcut davranis).
+    const response = await sendApiRequest(endpoint, options, token, false);
 
-    const response = await fetch(`${API_URL}/api${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      // P3-2B: hata gövdesini KORU (request() ile aynı) — OWN-12 ADIM A: kanonik yardimci.
-      throw buildApiHttpError(await readErrorBody(response), response.status);
-    }
+    // P3-2B: hata gövdesini KORU (request() ile aynı) — OWN-12 ADIM A: kanonik ortak katman.
+    await assertApiResponseOk(response);
 
     return response.blob();
   }

@@ -19,6 +19,7 @@ import {
   type ClientFormValues,
 } from '@/lib/client-write';
 import {
+  deriveClientFormLockState,
   SENSITIVE_FIELD_LOCK_REASON,
   VIEWER_MUTATION_LOCK_REASON,
   type ClientMutationCapabilities,
@@ -83,12 +84,9 @@ export function ClientForm({
   // OWN-13 I01: `capabilities` verilmemişse (eski çağıran) davranış DEĞİŞMEZ — hiçbir alan
   // kilitlenmez. Verilmişse yalnız backend'in bildirdiği sonuç uygulanır; burada rol
   // karşılaştırması veya eşik hesabı YAPILMAZ.
-  const mutationBlocked = capabilities ? !(isCreate ? capabilities.canCreate : capabilities.canUpdateStandard) : false;
-  // Hassas alanlar (kimlik/unvan/tür/vergi/vekalet yetkileri) — owner D02 sınıflandırması.
-  // Create, hassas-update ayrımının İSTİSNASIDIR (owner): USER create yapabilir.
-  const sensitiveLocked = capabilities ? !isCreate && !capabilities.canUpdateSensitive : false;
-  const lockReason = mutationBlocked ? VIEWER_MUTATION_LOCK_REASON : SENSITIVE_FIELD_LOCK_REASON;
-  const identityDisabled = mutationBlocked || sensitiveLocked;
+  // OWN-12 ADIM C: hesap ORTAK modelde (`deriveClientFormLockState`); ClientModal ile AYNI kaynak.
+  const { mutationBlocked, sensitiveLocked, lockReason, identityDisabled } =
+    deriveClientFormLockState(capabilities, mode);
 
   const set = <K extends keyof ClientFormValues>(key: K, value: ClientFormValues[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));

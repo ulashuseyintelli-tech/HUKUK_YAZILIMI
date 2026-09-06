@@ -12,6 +12,8 @@ import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocu
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
 import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields, poaCreateFailureMessage } from "@/lib/poa-ux";
+// OWN-12 ADIM C: uc muvekkil formunun ORTAK alan modeli.
+import { applyScannedClientFields, emptyClientSharedFormFields } from "@/lib/client-form-fields";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
 import { CASE_STAFF_ROLE_OPTIONS, CASE_STAFF_ROLE_GROUP_LABEL, CASE_STAFF_ROLE_HELP_TEXT, normalizeCaseStaffRole } from "@/lib/case-staff-role";
@@ -3812,29 +3814,9 @@ function NewClientModal({ onSave, onClose, saving }: {
   onClose: () => void; 
   saving: boolean;
 }) {
-  const [form, setForm] = useState({
-    type: "PERSON" as "PERSON" | "COMPANY" | "PUBLIC",
-    firstName: "",
-    lastName: "",
-    tckn: "",
-    companyName: "",
-    vkn: "",
-    taxOffice: "",
-    phone: "",
-    email: "",
-    address: "",
-    city: "",
-    district: "",
-    canCollect: true,
-    canWaive: false,
-    canSettle: false,
-    canRelease: false,
-    // Vekaletname bilgileri
-    poaNumber: "",
-    poaDate: "",
-    notaryName: "",
-    notaryCity: "",
-  });
+  // OWN-12 ADIM C: ortak alan modeli (lib/client-form-fields.ts) — alan kumesi ve
+  // varsayilanlar uc formda TEK kaynaktan gelir.
+  const [form, setForm] = useState(emptyClientSharedFormFields());
 
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<{ confidence: number; lawyerName?: string; lawyerBarNumber?: string } | null>(null);
@@ -3871,30 +3853,9 @@ function NewClientModal({ onSave, onClose, saving }: {
 
       const data = response.data?.data || response.data;
       
-      // Form alanlarını doldur
-      setForm(prev => ({
-        ...prev,
-        type: data.clientType || prev.type,
-        firstName: data.firstName || prev.firstName,
-        lastName: data.lastName || prev.lastName,
-        tckn: data.tckn || prev.tckn,
-        companyName: data.companyName || prev.companyName,
-        vkn: data.vkn || prev.vkn,
-        taxOffice: data.taxOffice || prev.taxOffice,
-        phone: data.phone || prev.phone,
-        email: data.email || prev.email,
-        address: data.address || prev.address,
-        city: data.city || prev.city,
-        district: data.district || prev.district,
-        canCollect: data.canCollect ?? prev.canCollect,
-        canWaive: data.canWaive ?? prev.canWaive,
-        canSettle: data.canSettle ?? prev.canSettle,
-        canRelease: data.canRelease ?? prev.canRelease,
-        poaNumber: data.poaNumber || prev.poaNumber,
-        poaDate: data.poaDate || prev.poaDate,
-        notaryName: data.notaryName || prev.notaryName,
-        notaryCity: data.notaryCity || prev.notaryCity,
-      }));
+      // Form alanlarini doldur — OWN-12 ADIM C: birlestirme ORTAK modelde; semantik AYNI
+      // (bos tarama degeri mevcut girisi SILMEZ, acik `false` yetki KORUNUR).
+      setForm(prev => applyScannedClientFields(prev, data));
 
       setScanResult({
         confidence: data.confidence || 0,

@@ -137,6 +137,47 @@ describe('D-3b — baglanti uretimi mevcut intake sozlesmesini TUKETIR', () => {
     });
   });
 
+  it('YOL1 URUN KARARI: sure verilmezse baglanti 7 GUN gecerlidir (suresiz DEGIL)', async () => {
+    const h = buildHarness();
+    const before = Date.now();
+    await h.service.createRequest(TENANT, { ...DTO_BASE, attachIntakeLink: true }, ADMIN);
+    const dto = h.intakeLink.createForClientWorkspace.mock.calls[0][4];
+
+    expect(typeof dto.expiresAt).toBe('string');
+    const deltaDays = (new Date(dto.expiresAt).getTime() - before) / (24 * 60 * 60 * 1000);
+    expect(deltaDays).toBeGreaterThan(6.9);
+    expect(deltaDays).toBeLessThan(7.1);
+  });
+
+  it('YOL1 KULLANILABILIRLIGI: cagiran KENDI govdesini yazsa da baglanti e-postaya GIRER', async () => {
+    const h = buildHarness({ expiresAt: new Date('2026-10-15T00:00:00.000Z') });
+    const customBody = 'Sayin muvekkilimiz, borclunun adresini bize iletir misiniz?';
+    await h.service.createRequest(
+      TENANT,
+      { ...DTO_BASE, attachIntakeLink: true, emailBody: customBody },
+      ADMIN,
+    );
+
+    // Saglayiciya giden metin: kullanicinin mesaji + baglanti blogu.
+    const sent = h.emailProvider.send.mock.calls[0][0];
+    expect(sent.text).toContain(customBody);
+    expect(sent.text).toContain(INTAKE_URL);
+    expect(sent.text).toContain('15.10.2026');
+
+    // KALICI govde: kullanicinin mesaji AYNEN, baglanti YOK.
+    const persisted = h.prisma.clientInfoRequest.create.mock.calls[0][0].data.emailBody;
+    expect(persisted).toBe(customBody);
+    expect(persisted).not.toContain(INTAKE_URL);
+  });
+
+  it('cagiran govdesi VARSA ve baglanti ISTENMEDIYSE metin AYNEN kalir', async () => {
+    const h = buildHarness();
+    const customBody = 'Kendi mesajim';
+    await h.service.createRequest(TENANT, { ...DTO_BASE, emailBody: customBody }, ADMIN);
+    const sent = h.emailProvider.send.mock.calls[0][0];
+    expect(sent.text).toBe(customBody);
+  });
+
   it('uretilen URL e-postaya girer; son gecerlilik tarihi gosterilir', async () => {
     const h = buildHarness({ expiresAt: new Date('2026-10-15T00:00:00.000Z') });
     await h.service.createRequest(TENANT, { ...DTO_BASE, attachIntakeLink: true }, ADMIN);

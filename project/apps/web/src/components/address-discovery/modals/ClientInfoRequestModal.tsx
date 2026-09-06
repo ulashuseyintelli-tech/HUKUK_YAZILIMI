@@ -27,6 +27,9 @@ export function ClientInfoRequestModal({
   onSuccess,
 }: ClientInfoRequestModalProps) {
   const [loading, setLoading] = useState(false);
+  // YOL1 (owner GO 2026-09-06): guvenli form baglantisi VARSAYILAN OLARAK KAPALI.
+  // Kapali kaldigi surece mevcut davranis (serbest metin yaniti) hicbir sekilde degismez.
+  const [attachIntakeLink, setAttachIntakeLink] = useState(false);
   const [emailTo, setEmailTo] = useState(clientEmail);
   const [emailSubject, setEmailSubject] = useState(
     debtorName 
@@ -65,6 +68,9 @@ Saygılarımızla`
         emailTo: emailTo.trim(),
         emailSubject: emailSubject.trim(),
         emailBody: emailBody.trim(),
+        // Yalniz secildiginde gonderilir; kapsam (adres + iletisim), tek kullanim ve
+        // gecerlilik suresi BACKEND sozlesmesindedir — arayuz bunlari kendisi belirlemez.
+        ...(attachIntakeLink ? { attachIntakeLink: true } : {}),
       };
       await api.createClientInfoRequest(data);
       onSuccess?.();
@@ -156,6 +162,28 @@ Saygılarımızla`
               rows={6}
               className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             />
+          </div>
+
+          {/* YOL1: guvenli form baglantisi (opt-in). */}
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                data-testid="attach-intake-link"
+                checked={attachIntakeLink}
+                onChange={(e) => setAttachIntakeLink(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded"
+              />
+              <span className="text-sm text-gray-700">
+                <strong>Güvenli form bağlantısı ekle</strong>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Müvekkil, adres ve iletişim bilgilerini e-postaya yanıt yazmak yerine güvenli
+                  bir form üzerinden iletebilir. Bağlantı <strong>tek kullanımlıktır</strong> ve{' '}
+                  <strong>7 gün</strong> geçerlidir. Gelen yanıt inceleme kuyruğuna düşer;
+                  müvekkil kaydına <strong>otomatik işlenmez</strong>.
+                </span>
+              </span>
+            </label>
           </div>
 
           {debtorName && (

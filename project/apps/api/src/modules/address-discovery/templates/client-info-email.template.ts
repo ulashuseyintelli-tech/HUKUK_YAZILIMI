@@ -41,6 +41,23 @@ export function generateClientInfoEmailSubject(data: ClientInfoEmailData): strin
 }
 
 /**
+ * Güvenli form bağlantısı metin bloğu (D-3b "Yol1").
+ *
+ * TEK KAYNAK: hem varsayılan şablon hem de kullanıcının KENDİ yazdığı mesaja ekleme yapan
+ * yol bu bloğu kullanır. Kullanıcı gövde yazdığında blok eklenmezse "Güvenli form bağlantısı
+ * ekle" seçeneği sessizce işlevsiz kalırdı (bağlantı üretilir, e-postaya girmezdi).
+ */
+export function generateIntakeLinkTextBlock(
+  intakeUrl: string,
+  intakeExpiresAt?: Date | string | null,
+): string {
+  const deadline = formatIntakeDeadline(intakeExpiresAt ?? null);
+  return `Bilgileri güvenli formumuz üzerinden iletebilirsiniz:
+${intakeUrl}${deadline ? `
+(Bağlantı ${deadline} tarihine kadar geçerlidir.)` : ''}`;
+}
+
+/**
  * E-posta içeriği oluştur (düz metin)
  */
 export function generateClientInfoEmailText(data: ClientInfoEmailData): string {
@@ -53,9 +70,7 @@ Dosya No: ${data.caseNumber}
 
 Bu bilgiler, tebligat işlemlerinin sağlıklı yürütülmesi için gereklidir.
 ${data.intakeUrl
-  ? `Bilgileri güvenli formumuz üzerinden iletebilirsiniz:
-${data.intakeUrl}${formatIntakeDeadline(data.intakeExpiresAt) ? `
-(Bağlantı ${formatIntakeDeadline(data.intakeExpiresAt)} tarihine kadar geçerlidir.)` : ''}
+  ? `${generateIntakeLinkTextBlock(data.intakeUrl, data.intakeExpiresAt)}
 
 Dilerseniz bu e-postaya yanıt olarak da iletebilirsiniz.`
   : `Bilgilerinizi bu e-postaya yanıt olarak iletebilirsiniz.`}
