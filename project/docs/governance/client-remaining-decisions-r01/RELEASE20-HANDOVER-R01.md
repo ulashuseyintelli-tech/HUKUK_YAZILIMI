@@ -97,10 +97,10 @@ hicbiri RELEASE19'da YOKTUR:
    veritabanina ve API yanitlarina yazilir
 6. **Lifecycle aktivasyon yarisi duzeltmesi** — geri alinirsa gecikmis istek pasiflestirmeyi
    sessizce geri alabilir
-7. **Gonderim DURUMU duzeltmesi (PR #PENDING)** — geri alinirsa talep satiri yine saglayicidan ONCE
+7. **Gonderim DURUMU duzeltmesi (PR #2531)** — geri alinirsa talep satiri yine saglayicidan ONCE
    `SENT` yazilir; basarisiz veya dogrulanamayan gonderim kalici kayitta ve liste/detay ekraninda
    **basarili gorunur**, "gonderilmis talebe hatirlatma" yolu bu yanlis satir uzerinden acilir
-8. **Belirsiz gonderim ayrimi (PR #PENDING)** — geri alinirsa saglayici timeout'u ile kesin basarisizlik
+8. **Belirsiz gonderim ayrimi (PR #2531)** — geri alinirsa saglayici timeout'u ile kesin basarisizlik
    AYNI muamele gorur ve kullaniciya kesinlik iddia edilir
 9. Yol1 ve OWN-12 web katmani (`api.ts` hata yollarinin govde/durum kodu tasimasi dahil)
 
@@ -172,8 +172,8 @@ Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
 
 | Kalem | Durum |
 |---|---|
-| OWN-12 adim C — ortak cekirdek modelin uc formda tuketimi | **KAPANDI** (PR #PENDING; statik kullanim guard'i ile kilitli) |
-| `api.ts` FormData/blob hata yollari | **KAPANDI** (PR #PENDING; mesaj metinleri korundu, govde/durum kodu artik tasiniyor) |
+| OWN-12 adim C — ortak cekirdek modelin uc formda tuketimi | **KAPANDI** (PR #2531; statik kullanim guard'i ile kilitli) |
+| `api.ts` FormData/blob hata yollari | **KAPANDI** (PR #2531; mesaj metinleri korundu, govde/durum kodu artik tasiniyor) |
 | `ClientModal`'in iletisim/adres DIZI yuzeyi ve `type` genisligi | ACIK degil — **BILEREK baglama ozgu**; sahte ortaklik iddia edilmedi |
 | OWN-10 — yedi pasif kaydin kimlik duzeltmesi | ACIK; **veri DEGISTIRILMEDI**, guvenilir kaynak gerekir (urun akisi) |
 | OWN-15 — intel statement create politikasi | **KAPSAM DISI** (onceki owner karari) — uygulama engeli DEGILDIR |
