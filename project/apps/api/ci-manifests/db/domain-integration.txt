@@ -281,3 +281,17 @@ src/modules/office/__tests__/office-work-pool-effective-dating-migration.db-gate
 # OFFICE-WR01-B02 C14-R2-R01: catch-up CLI'inin --env-file=.env sozlesmesi GERCEK PROCESS ile.
 # GO-03'te olculen kusurun regresyon kilidi: CLI dotenv yuklemez, bayraksiz cagri fail-closed.
 src/modules/office/work-pool/__tests__/office-work-pool-anchor-catchup-cli.db-gated.integration.spec.ts
+#
+# CLIENT-P3-SOURCE-DEFECT-REMEDIATION-R01 (owner GO 2026-09-06, Faz 1) — uc kaynak kusurunun
+# regresyon kilidi. UCU DE gercek PostgreSQL'e YAZAR ve yazilan degeri GERI OKUR; sabit kayit
+# donduren mock bu kusurlari YAKALAYAMIYORDU. E-posta saglayicisi sahtedir (gercek alici YOK).
+#   1) intake token sizintisi: kalici `emailBody`, create/liste/detay yanitlari ve audit ham
+#      token/URL tasimaz; saglayiciya giden govde baglantiyi tasir (islev korunur).
+src/modules/address-discovery/__tests__/client-info-request-token-leak.db-gated.integration.spec.ts
+#   2) gonderim basarisizligi birlesik hata durumu: SENT satiri saglayicidan once yaziliyordu ve
+#      temizlik hatasi yutuluyordu → kayit kalirken kullaniciya "kayit olusturulmadi" deniyordu.
+src/modules/address-discovery/__tests__/client-info-request-send-failure.db-gated.integration.spec.ts
+#   3) lifecycle aktivasyon yarisi: sirasi BARIYERLE belirlenen gercek servis yollari
+#      (update + remove); ilk okumada AKTIF bulunan kaydin gecikmis `isActive:true` ile yeniden
+#      etkinlesmesi kapandi, gercek gecislerde yetki/kimlik/kosullu yazma AYNEN korunur.
+src/modules/client/__tests__/client-lifecycle-activation-race.db-gated.integration.spec.ts

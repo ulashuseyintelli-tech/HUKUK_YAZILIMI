@@ -11,6 +11,10 @@ import {
 import { decideClientOperationalCommand } from '../client/client-mutation-policy';
 import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
 import { ClientIntakeFieldCategory } from '@prisma/client';
+import {
+  redactInfoRequestRecord,
+  redactInfoRequestRecords,
+} from './client-info-request-redaction';
 import { maskEmail } from '../../common/pii-mask.util';
 import { CreateClientInfoRequestDto } from './dto/client-info-request.dto';
 import {
@@ -209,7 +213,15 @@ export class ClientInfoRequestService {
 
     // E-posta içeriğini oluştur
     const emailSubject = dto.emailSubject || generateClientInfoEmailSubject(emailData);
-    const emailBody = dto.emailBody || generateClientInfoEmailText(emailData);
+    // GUVENLIK (2026-09-06): iki AYRI govde.
+    //  - `transportBody`: e-posta saglayicisina gidecek metin; intake baglantisini (ham token)
+    //    TASIR ve hicbir kalici yere yazilmaz.
+    //  - `persistedBody`: DB'ye/yanita/audit'e giden metin; baglanti OLMADAN uretilir.
+    // Cagiran kendi `dto.emailBody`'sini verdiyse o metin zaten baglanti tasimaz (link bu
+    // serviste uretilir) → iki govde ayni olur.
+    const transportBody = dto.emailBody || generateClientInfoEmailText(emailData);
+    const persistedBody =
+      dto.emailBody || generateClientInfoEmailText({ ...emailData, intakeUrl: undefined, intakeExpiresAt: null });
     const emailTo = dto.emailTo || client.email;
 
     if (!emailTo) {
@@ -225,7 +237,8 @@ export class ClientInfoRequestService {
         debtorId: dto.debtorId,
         emailTo,
         emailSubject,
-        emailBody,
+        // GUVENLIK: kalici gövde baglanti TASIMAZ.
+        emailBody: persistedBody,
         status: 'SENT',
         sentAt: new Date(),
       },
@@ -236,24 +249,53 @@ export class ClientInfoRequestService {
     });
 
     // E-postayı gönder
-    const emailResult = await this.emailProvider.send({
-      to: emailTo,
-      subject: emailSubject,
-      text: emailBody,
-      html: generateClientInfoEmailHtml(emailData),
-    });
+    // GUVENLIK: baglantili govde YALNIZ burada kullanilir.
+    // (3) Belirsiz sonuc (saglayici istisna atarsa) BASARISIZ sayilir — "gonderildi" YAZILMAZ.
+    let emailOk = false;
+    let emailError: string | undefined;
+    try {
+      const emailResult = await this.emailProvider.send({
+        to: emailTo,
+        subject: emailSubject,
+        text: transportBody,
+        html: generateClientInfoEmailHtml(emailData),
+      });
+      emailOk = emailResult.success === true;
+      emailError = emailResult.errorMessage;
+    } catch (e: any) {
+      emailOk = false;
+      emailError = 'Gonderim sonucu belirsiz (saglayici hatasi)';
+      this.logger.error(`E-posta saglayicisi istisna atti: ${e?.message}`);
+    }
 
-    if (!emailResult.success) {
+    if (!emailOk) {
       // D-3a: sağlayıcı başarısızlığı BAŞARILI GÖNDERİM olarak KAYDEDİLMEZ. "SENT" satırı geri
       // alınır ve istek hata ile biter → primitive audit de üretmez (başarısız komut audit üretmez).
-      this.logger.warn(`E-posta gönderilemedi: ${emailResult.errorMessage}`);
-      await this.prisma.clientInfoRequest
-        .delete({ where: { id: request.id } })
-        .catch((e: any) => this.logger.error(`Başarısız talep kaydı geri alınamadı: ${e?.message}`));
-      throw new ServiceUnavailableException({
-        message: 'Bilgi talebi e-postası gönderilemedi; kayıt oluşturulmadı',
-        reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED',
-      });
+      //
+      // (3) DUZELTME: temizlik BASARISIZ olabilir. O durumda kayit SENT olarak KALIR; kullaniciya
+      // "kayit olusturulmadi" DENMEZ — hata mesaji kalici durumu birebir soyler ve kaydin kimligini
+      // verir ki elle kontrol edilebilsin. Iki durum AYRI `reasonCode` tasir.
+      this.logger.warn(`E-posta gönderilemedi: ${emailError}`);
+      let recordRemoved = false;
+      try {
+        await this.prisma.clientInfoRequest.delete({ where: { id: request.id } });
+        recordRemoved = true;
+      } catch (e: any) {
+        this.logger.error(`Başarısız talep kaydı geri alınamadı: ${e?.message}`);
+      }
+      throw new ServiceUnavailableException(
+        recordRemoved
+          ? {
+              message: 'Bilgi talebi e-postası gönderilemedi; kayıt oluşturulmadı',
+              reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED',
+            }
+          : {
+              message:
+                'Bilgi talebi e-postası gönderilemedi; talep kaydı KALDIRILAMADI ve "gönderildi" olarak görünüyor — kaydı elle kontrol edin',
+              reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED_RECORD_RETAINED',
+              requestId: request.id,
+            },
+      );
     } else {
       this.logger.log(`Müvekkil bilgi talebi gönderildi: ${maskEmail(emailTo)}`);
       
@@ -303,9 +345,11 @@ export class ClientInfoRequestService {
     }
 
     return {
-      ...request,
-      emailSent: emailResult.success,
-      emailError: emailResult.errorMessage,
+      // GUVENLIK: yanit redakte edilir (kayit zaten baglanti tasimaz; bu ikinci katman
+      // duzeltme oncesi yazilmis kayitlari ve gelecekteki regresyonu da kapsar).
+      ...redactInfoRequestRecord(request),
+      emailSent: emailOk,
+      emailError,
       // D-3b: yalniz link KIMLIGI doner; ham token/URL yanit govdesine YAZILMAZ.
       intakeLinkId,
     };
@@ -581,7 +625,8 @@ export class ClientInfoRequestService {
    * Dosya için talepleri getir
    */
   async getRequestsForCase(tenantId: string, caseId: string) {
-    return this.prisma.clientInfoRequest.findMany({
+    // GUVENLIK: okuma yolu da redakte edilir (duzeltme oncesi kayitlar baglanti tasiyabilir).
+    const rows = await this.prisma.clientInfoRequest.findMany({
       where: { tenantId, caseId },
       include: {
         client: { select: { id: true, displayName: true } },
@@ -589,6 +634,7 @@ export class ClientInfoRequestService {
       },
       orderBy: { sentAt: 'desc' },
     });
+    return redactInfoRequestRecords(rows);
   }
 
   /**
@@ -608,6 +654,7 @@ export class ClientInfoRequestService {
       throw new NotFoundException('Bilgi talebi bulunamadı');
     }
 
-    return request;
+    // GUVENLIK: detay yolu da redakte edilir.
+    return redactInfoRequestRecord(request);
   }
 }
