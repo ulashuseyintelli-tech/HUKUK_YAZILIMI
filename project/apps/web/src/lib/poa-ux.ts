@@ -5,16 +5,16 @@
  * yolların AYNI davranması garanti edilir; ıraksama riski kalkar).
  */
 
+import { unwrapEnvelope } from "./api-envelope";
+
 export const POA_DUPLICATE_MESSAGE =
   "Bu vekalet zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.";
 
 /** Dönen POST /poa yanıtında mükerrer-bastırma bayrağı var mı (her nesleme şekli için). */
 export function isPoaDuplicateSuppressed(res: any): boolean {
-  return !!(
-    res?._suppressedDuplicate ||
-    res?.data?._suppressedDuplicate ||
-    res?.data?.data?._suppressedDuplicate
-  );
+  // OWN-12 ADIM B: tolerant okuma kanonik cozumleyicide (zarf sozlesmesi DEGISMEDI).
+  const body = unwrapEnvelope<{ _suppressedDuplicate?: boolean }>(res);
+  return !!(res?._suppressedDuplicate || body?._suppressedDuplicate);
 }
 
 /** Müvekkil (Client) gövdesine ait OLMAYAN vekaletname alanları. */

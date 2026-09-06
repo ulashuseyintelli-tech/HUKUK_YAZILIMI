@@ -2,6 +2,7 @@
  * API Client - Base HTTP client with authentication
  */
 import { reportClientError, shouldReportNetworkError } from "../error-reporter"; // PR-4: yalnız network-failure
+import { buildApiHttpError, readErrorBody } from "../api-error"; // OWN-12 ADIM A: kanonik hata sozlesmesi
 import { api } from "../api"; // CAD-C1-B03-AUTH-CONTINUITY-REMEDIATION-R01: OFFICE-AUTH-P01 kanonik token kaynağı (tek-kaynak)
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -57,14 +58,10 @@ export class ApiClient {
     }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      // P3-2B: 4xx/5xx hata GÖVDESİNİ KORU (eski sadece-.message regresyonu giderildi). Caller'lar .message
-      // okumaya devam edebilir; ek olarak .body (structured) + .status erişilebilir. NOT: structured-200
-      // Guarded-Edge zarfı buraya GİRMEZ (response.ok=true → json döner, detektör ele alır), error'a çevrilmez.
-      const e = new Error((error && error.message) || "Bir hata oluştu") as Error & { body?: unknown; status?: number };
-      e.body = error;
-      e.status = response.status;
-      throw e;
+      // P3-2B: 4xx/5xx hata GÖVDESİNİ KORU (.message + .body + .status). NOT: structured-200
+      // Guarded-Edge zarfı buraya GİRMEZ (response.ok=true → json döner, detektör ele alır).
+      // OWN-12 ADIM A: hata kurma KANONIK yardimcida (lib/api-error.ts); davranis AYNI.
+      throw buildApiHttpError(await readErrorBody(response), response.status);
     }
 
     return response.json();
@@ -83,12 +80,8 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      // P3-2B: hata gövdesini KORU (request() ile aynı; .body + .status).
-      const e = new Error((error && error.message) || "Bir hata oluştu") as Error & { body?: unknown; status?: number };
-      e.body = error;
-      e.status = response.status;
-      throw e;
+      // P3-2B: hata gövdesini KORU (request() ile aynı) — OWN-12 ADIM A: kanonik yardimci.
+      throw buildApiHttpError(await readErrorBody(response), response.status);
     }
 
     return response.blob();
