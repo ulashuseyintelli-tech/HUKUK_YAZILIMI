@@ -47,9 +47,9 @@
       "id": "OFFICE-SC-R01-PROD-01",
       "class": "DEPLOYED_ENVIRONMENT_EVIDENCE",
       "priority": "P1",
-      "evidence": ["production not accessed","production activation not authorized"],
+      "evidence": ["production not accessed","production activation not authorized","2026-09-05/06: production access exercised under owner-run cutovers (R22 RELEASE18, R23 RELEASE19)","deployed SHA evidence: RELEASE19 a60d772b6c53ece6bc23b77821a2921ab0ec7942 (cutover CUT-20260906-155913-e945162f, TERMINAL_VERIFIED)","deployed config read-back without reading values; .env byte-equal RELEASE18<->RELEASE19 (3DBFAE32...)","restart evidence: cutover quiesce -> start+probe","real read-back: F01 read-only role matrix + F-B01-03 narrow live GET acceptance","mail path real delivery 2026-09-06T20:55:24Z: provider acceptance (HTTP 201, notification cmtqajdun000xobcxnew01ief type=TEST status=SENT) AND OWNER_MAILBOX_OBSERVED; kept as two separate proofs; terminal verification A12B3558CC388274960F1139067C7385978A8227894492F96CB6327780830FB7","single-send task-bound grant OFFICE-SC-F05-SINGLE-MAIL-DELIVERY-R01-EG01 RATIFIED and CONSUMED; one-shot marker preserved","SMS remains NOT_CONFIGURED - optional separate scope, not a closure condition (canonical expected proof: mail path)","delivery record merged: PR #2532 squash a810418d012721ef9d1c7343746c1655880eb8bf","owner closure disposition 2026-09-07; no new production authority granted"],
       "successorTaskId": "OFFICE-SC-F05-PRODUCTION-CONFIG-AND-DEPLOYED-EVIDENCE-R01",
-      "status": "PRODUCTION_ACCESS_AND_OWNER_GO_REQUIRED"
+      "status": "CLOSED_VERIFIED"
     },
     {
       "id": "OFFICE-SC-R01-ORPHAN-01",
