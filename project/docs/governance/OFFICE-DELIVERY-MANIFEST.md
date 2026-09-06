@@ -2210,6 +2210,10 @@ RESIDUAL / AÇIK KAPILAR (bu bölüm KAPATMAZ)
       OFFICE escAssignees residual (iç tüketicide ADMIN-gate arkasında sayaç)
       F05    NOT_AUTHORIZED / CARRY_FORWARD — task-bound grant YOK; gerçek e-posta teslimatı gözlenmedi;
              SMS yapılandırılmamış (smsProvider yok; opSmsEnabled=true yalnız SKIPPED üretir)
+             → 2026-09-07 GÜNCELLEME: F05 = **CLOSED / VERIFIED** (owner dispositionu; decision-log 2026-09-07;
+               residual OFFICE-SC-R01-PROD-01 → CLOSED_VERIFIED). Yukarıdaki iki satır 2026-09-06 durumudur ve
+               tarihsel olarak korunur. SMS NOT_CONFIGURED olarak AYRI ve İSTEĞE BAĞLI kapsamda kalır — çalışıyor
+               veya test edildi SAYILMAZ. Yeni production yetkisi ÜRETİLMEDİ; tek gönderim grant/marker TÜKETİLMİŞ.
       F04    CLIENT canlı yarış kabulü ayrı; F04 birim spec CI manifest boşluğu (K-12) ayrı
       C37    owner terminal verdict HENÜZ VERİLMEDİ
 
