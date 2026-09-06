@@ -101,6 +101,12 @@ Sekiz commit; **hicbiri canlida DEGIL**.
 
 ---
 
+> **GUNCELLEME (owner GO Faz 3, PR #PENDING):** asagidaki §2 commit listesi ve §3 kaynak commit'i
+> **BU BELGENIN ILK SURUMUNE** aittir (main `48ab1eb1`). Paket o tarihten sonra iki teslim daha
+> aldi (#2525 Faz 1 kaynak kusuru duzeltmeleri, #2528 Faz 2 OWN-12 A/C + Yol1 arayuzu) ve Office
+> hatti da docs commit'leri ekledi. **Guncel ve baglayici paket kimligi, kapsami, rollback bedeli
+> ve kabul plani `RELEASE20-HANDOVER-R01.md` belgesindedir.** Bu belge tarihsel kayit olarak durur.
+
 ## 3. Sonraki paket (RELEASE20) girdisi
 
 | Konu | Deger |
@@ -108,7 +114,7 @@ Sekiz commit; **hicbiri canlida DEGIL**.
 | Kaynak commit | main `48ab1eb1e0720a81b246b9bc6a3436e84bc8fbd5` (veya owner cutover aninda dogrulanan taze main) |
 | Ileri hedef | RELEASE20 (yeni aday worktree + zincir + muhur; RELEASE19 tooling forku) |
 | **Rollback hedefi** | **RELEASE19** (`a60d772b`) — o anki **dogrulanmis canli surum**; RELEASE18 DEGIL |
-| Rollback bedeli | Bu sekiz commit geri alinir: F02 yetki/kuyruk, R6 legacy POA upload kapisi, Faz 1 yetki kapilari (POA/bilgi talebi/kimlik), Yol1, OWN-12 web katmani. **F-B01-03 ve F04 canlida KALIR** (RELEASE19'da) — RELEASE18'e donmedigi surece guvenlik gerilemesi YOKTUR |
+| Rollback bedeli | **RELEASE19'a donus bu paketteki TUM yetki duzeltmelerini GERI ALIR** — bunlar RELEASE19'da YOKTUR: F02 manuel tetikleme yetkisi/tenant kapsami ve cron cakisma kuyrugu, OWN-13 R6 legacy POA upload kapisi, Faz 1 POA/bilgi talebi/kimlik yetki kapilari, intake token sizintisi duzeltmesi, lifecycle aktivasyon yarisi duzeltmesi, gonderim hata yolu duzeltmesi, Yol1 ve OWN-12 web katmani. **"Guvenlik gerilemesi yoktur" DENEMEZ:** rollback bu kapilari kaldirir ve sistem o kusurlarin bulundugu duruma doner. F-B01-03 ve F04 RELEASE19'da mevcuttur, yani onlar rollback'ten ETKILENMEZ; rollback karari bu iki grubun AYRIMI yapilarak verilir |
 | DB adimi | **YOK** (migration 0) |
 | Env adimi | **YOK** (yeni anahtar 0; RELEASE19 `.env` bayt-es kopyalanir) |
 | Kesinti beklentisi | RELEASE19 olcumu ~15 s; R22/R23 motoru ayni (quiesce → atomik bin degisimi → probe) |
@@ -131,7 +137,13 @@ yapilir. Gercek tenant'ta yalnizca **GET** ile salt-okuma dogrulama yapilir.
 | R-3 | DB `129\|129\|0\|0` + tenant/user/smoke sayimlari cutover oncesi = sonrasi | esit |
 | R-4 | Web BUILD_ID = RELEASE20 build kimligi; `/auth/login` 200 | esit |
 | R-5 | dist marker: `poa.service.js` icinde `persistPoaFile` + `POA_CREATE`; `scheduler.service.js` icinde WAIT | mevcut |
-| R-6 | Anonim: `POST /poa`, `POST /address-discovery/client-info-request`, manuel scheduler uclari | 401 |
+
+> **DUZELTME (owner GO Faz 3):** onceki surumde bu tabloda bir **R-6** satiri vardi:
+> anonim `POST /poa`, `POST /address-discovery/client-info-request` ve manuel scheduler uclarina
+> "401 bekleniyor" denerek **gercek tenant** salt-okuma listesinde tutulmustu. Bu YANLISTI:
+> 401 beklenmesi cagriyi salt-okuma YAPMAZ — istek yine de bir **yazma ucuna** gonderilir ve
+> beklenen sonuc gerceklesmezse gercek veride yan etki dogar. Satir bu tablodan CIKARILDI ve
+> asagiya, sentetik tenant adimlarina **A-0** olarak tasindi. Gercek tenant'ta yalnizca **GET** kalir.
 
 ### 4.2 Sentetik tenant (`demo-firma`) — yazma potansiyeli olan adimlar (D-8)
 
@@ -141,6 +153,7 @@ kontrollu aliciyi acikca yetkilendirir. **Gercek aliciya e-posta GONDERILMEZ.**
 
 | # | Adim | Beklenen | Not |
 |---|---|---|---|
+| A-0 | Anonim (token YOK): `POST /poa`, `POST /address-discovery/client-info-request`, manuel scheduler uclari | 401; hicbir kayit OLUSMAZ | **yazma ucu** — 401 beklentisi bunu salt-okuma yapmaz; sentetik tenant |
 | A-1 | VIEWER ile `POST /poa` | 403 `CLIENT_MUTATION_DENIED_VIEWER`; vekalet OLUSMAZ | **yazma denemesi** → sentetik tenant |
 | A-2 | Elevated olmayan USER ile `PUT /poa/:id` | 403 `WORKSPACE_COMMAND_DENIED` | sentetik |
 | A-3 | ADMIN ile `PUT /poa/:id` govdesinde `status` | 400 `POA_FIELD_NOT_WRITABLE` + `offendingFields:["status"]` | sentetik |

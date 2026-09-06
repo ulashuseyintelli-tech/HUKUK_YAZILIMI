@@ -1,0 +1,181 @@
+# RELEASE20 — TEK YAYIN DEVRI (CLIENT hatti → Office/C33)
+
+```text
+BELGE           : RELEASE20-HANDOVER-R01
+URETEN          : CLIENT hatti (owner GO 2026-09-06, Faz 3)
+YAYIN SAHIBI    : Office/C33 — motor, muhur, nonce ve owner-command O HATTA KALIR
+OLCUM ANI       : 2026-09-06, yerel salt-okuma (production yazmasi 0)
+DURUM           : DEVIR HAZIR — canli gecis onayi ISTENMEDI (owner ayrica verecek)
+KAYNAK COMMIT   : 506927e940385ced8cfbe5140837516aee10933b
+```
+
+> Bu belge, CLIENT hattinin **nihai** teslim durumunu Office/C33 yayin hattina devreder.
+> Onceki `RELEASE-RECONCILIATION-R01.md` tarihsel kayit olarak kalir; **baglayici paket
+> kimligi, kapsami, rollback bedeli ve kabul plani BURADADIR.**
+
+---
+
+## 1. Canli durum (yerel salt-okuma olcum, 2026-09-06)
+
+| Konu | Deger |
+|---|---|
+| Canli surum | **RELEASE19** `a60d772b` |
+| Canli API | pid 36544, `:::8080`, `HY_W4_RELEASE19\project\apps\api\dist\...` |
+| Canli Web | pid 36764, `:::3002`, `HY_W4_RELEASE19\project\apps\web\node_modules\...` |
+| RELEASE18 | dizin **mevcut** (eski rollback hedefi) |
+| RELEASE20 | dizin **YOK** — paket henuz uretilmedi |
+| Migration | repo 127 = canli 127 → **migration adimi YOK** |
+
+RELEASE19 **SUPERSEDED ILAN EDILMEMISTIR**: calisan surumdur ve bu paketin **rollback hedefidir**.
+
+---
+
+## 2. Paket kapsami — canlida OLMAYAN commit'ler (`a60d772b` → `506927e9`)
+
+| # | Squash SHA | PR | Icerik | Sinif |
+|---|---|---|---|---|
+| 1 | `1a626e79` | #2515 | fix(scheduler): manuel tetiklemede dogrulanmis aktor + tenant kapsami (F02) | **kod** |
+| 2 | `2a9c3c33` | #2516 | fix(scheduler): manuel/global cron cakismasinda is kaybini kapat (F02 tamamlayici) | **kod** |
+| 3 | `a401d64e` | #2517 | fix(poa): OWN-13 I02-R4/R5/R6 kapanis uzlastirmasi + legacy POA upload servis-giris kapisi | **kod** |
+| 4 | `93ceeedb` | #2518 | docs(governance): OWN-13 sinirli terminal kapanis — CLOSED (owner ratified) + uzlastirma duzeltmeleri | docs |
+| 5 | `eb4a61f8` | #2519 | docs(governance): CLIENT kalan kararlar tek paket R01 — OWN-10/12/15, POA politikasi, filePath, MR-063, RELEASE20 kapsami | docs |
+| 6 | `655a5dff` | #2520 | fix(client,poa): Faz 1 — POA yazma yetkisi, bilgi talebi yetkisi, kimlik sikilastirmasi (D-1b/D-3a/D-4/D-5/D-10) | **kod** |
+| 7 | `1ea32e6e` | #2521 | feat(client): Yol1 — bilgi talebine intake baglantisi (D-3 b) | **kod** |
+| 8 | `48ab1eb1` | #2522 | refactor(web): OWN-12 adim A (dar) + adim B — kanonik hata sozlesmesi ve cevap cozumleyici | **kod** |
+| 9 | `c32cc73a` | #2523 | docs(governance): yayin uzlastirmasi — RELEASE19 canli gercegi ve sonraki paket girdisi | docs |
+| 10 | `7c0f8575` | #2524 | docs(governance): F-B01-03 dar canli GET kabulu kaydi | docs |
+| 11 | `6f6170b8` | #2525 | fix(client): intake token sizintisi, lifecycle aktivasyon yarisi ve gonderim hata yolu (Faz 1) | **kod** |
+| 12 | `bc6f860d` | #2526 | docs(governance): maintenance-register MR-065/MR-066 mukerrer satir temizligi | docs |
+| 13 | `35ea83d1` | #2527 | docs(governance): OFFICE kayit uzlastirmasi — RELEASE18 -> RELEASE19 devri + F06 isaretcisi | docs |
+| 14 | `506927e9` | #2528 | feat(client): OWN-12 ortak tasima/kilit/alan modeli + Yol1 arayuz secenegi (Faz 2) | **kod** |
+
+**Kod (urun) commit'i: 8 · docs commit'i: 6 · toplam: 14.**
+
+### 2.1 Paket etkisi (olculdu)
+
+| Olcum | Deger |
+|---|---|
+| Migration | **0** (repo 127 = canli 127) |
+| Sema degisikligi | **0** |
+| Yeni env anahtari | **0** (RELEASE19 `.env` bayt-es kopyalanir) |
+| Lockfile degisikligi | **0** |
+| Veri degisikligi | **0** — bu paket hicbir mevcut kaydi degistirmez |
+| CI workflow degisikligi | **0** (`ci-manifests/` degisti; `ci.yml` DEGISMEDI) |
+
+### 2.2 Modul disi etki
+
+- **OFFICE:** paket OFFICE yuzeyine dokunmaz. F-B01-03 zaten canlidadir (RELEASE19).
+- **COLLECTION/ACCOUNTING:** F04 kodu zaten canlidadir (RELEASE19); pakette yalniz F04 birim
+  spec'inin CI manifest bagi vardir (kod degil).
+- **SCHEDULER:** F02 iki duzeltmesi bu pakettedir (canlida DEGIL).
+- **CLIENT/POA:** yazma yetkisi **daralir**; kabul plani §5'te dogrulanir.
+
+---
+
+## 3. Rollback
+
+| Konu | Deger |
+|---|---|
+| Rollback hedefi | **RELEASE19** (`a60d772b`) — dogrulanmis calisan surum; RELEASE18 DEGIL |
+| Yontem | Office/C33 cutover motorunun kendi geri alma yolu (bin degisimi geri) |
+| DB geri alma | **YOK** (migration 0, veri degisikligi 0) |
+| Env geri alma | **YOK** (yeni anahtar 0) |
+
+### 3.1 Rollback bedeli — ACIK VE EKSIKSIZ
+
+**RELEASE19'a donus, bu paketteki TUM yetki ve guvenlik duzeltmelerini GERI ALIR.** Bunlarin
+hicbiri RELEASE19'da YOKTUR:
+
+1. F02 — manuel scheduler tetiklemesinde dogrulanmis aktor ve tenant kapsami
+2. F02 — manuel/global cron cakismasinda is kaybi (WAIT kuyrugu)
+3. OWN-13 R6 — legacy `POST /poa/:id/upload` servis-giris yetki kapisi
+4. Faz 1 (D-4/D-5/D-1b/D-3a) — POA yazma yetkisi, legacy upload yanitindan `filePath` cikarilmasi,
+   kimlik checksum sikilastirmasi, bilgi talebi gonderim yetkisi
+5. **Intake token sizintisi duzeltmesi** — geri alinirsa kullanilabilir token yeniden uygulama
+   veritabanina ve API yanitlarina yazilir
+6. **Lifecycle aktivasyon yarisi duzeltmesi** — geri alinirsa gecikmis istek pasiflestirmeyi
+   sessizce geri alabilir
+7. **Gonderim hata yolu duzeltmesi** — geri alinirsa basarisiz gonderimde kayit "gonderildi"
+   kalirken kullaniciya "kayit olusturulmadi" denebilir
+8. Yol1 ve OWN-12 web katmani
+
+> **"Guvenlik gerilemesi yoktur" DENEMEZ.** Rollback bu kapilari kaldirir ve sistem, kapatilan
+> kusurlarin bulundugu duruma doner. F-B01-03 ve F04 RELEASE19'da mevcut oldugu icin **onlar**
+> rollback'ten etkilenmez; rollback karari bu iki grubun **ayrimi yapilarak** verilir.
+
+---
+
+## 4. Devir kosullari
+
+1. **Yayin sahibi Office/C33'tur.** Motor, muhur, nonce ve owner-command o hatta kalir; CLIENT
+   hatti cutover CALISTIRMAZ.
+2. **Iki sayfa ayni ortama es zamanli deployment YAPMAZ.**
+3. Paket, **kod bakimindan nihai** kaynak `506927e940385ced8cfbe5140837516aee10933b` uzerinden uretilir.
+   Bu belgeyi ekleyen docs commit'i (ve Office hattinin docs commit'leri) `apps/` altinda **hicbir dosyaya
+   dokunmaz**; paket icerigini DEGISTIRMEZ. Cutover aninda taze main dogrulanir; kod farki cikarsa bu belge
+   yeniden olculur.
+4. **Canli gecis onayi ISTENMEMISTIR.** Mevcut yayin yetkisi RELEASE19 icindi ve RELEASE20'yi
+   KAPSAMAZ; onay ancak paket kimligi (aday worktree + muhur + makbuz) somutlastiktan sonra ve
+   YALNIZ o pakete bagli olarak istenir.
+
+---
+
+## 5. Sinirli canli kabul plani (cutover SONRASI, owner GO ile)
+
+**D-8 kurali:** yazma potansiyeli olan **her** adim — "401/403 bekleniyor" denen POST/PUT/DELETE
+cagrilari **dahil** — yalnizca **sentetik oldugu dogrulanmis** tenant/kayitlarda yapilir.
+Gercek tenant'ta **yalnizca GET** vardir.
+
+### 5.1 Gercek tenant (`telli-hukuk`) — SALT-OKUMA, yazma YOK
+
+| # | Olcum | Beklenen |
+|---|---|---|
+| R-1 | Canli bin sha'lari = RELEASE20 generation; RELEASE19 kopyalari rollback icin mevcut | esit |
+| R-2 | API/Web gorevleri Running; tek surec zinciri; altyapi portlari loopback | esit |
+| R-3 | DB migration/tenant/user sayimlari cutover oncesi = sonrasi | esit |
+| R-4 | Web BUILD_ID = RELEASE20 build kimligi; `GET /auth/login` 200 | esit |
+| R-5 | dist marker: `client-info-request.service.js` icinde redaksiyon yardimcisi; `client.service.js` icinde lifecycle gecis kontrolu | mevcut |
+
+> Anonim "401 bekleniyor" POST denemeleri bu tabloda **YOKTUR** — 401 beklentisi bir cagriyi
+> salt-okuma yapmaz. Onlar §5.2'ye tasinmistir.
+
+### 5.2 Sentetik tenant (`demo-firma`) — yazma potansiyeli olan adimlar
+
+E-posta gonderen adimlarda **test saglayicisi** kullanilir. **Gercek aliciya e-posta GONDERILMEZ.**
+Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
+
+| # | Adim | Beklenen | Not |
+|---|---|---|---|
+| A-0 | Anonim (token YOK): `POST /poa`, `POST /address-discovery/client-info-request`, manuel scheduler uclari | 401; kayit OLUSMAZ | yazma ucu |
+| A-1 | VIEWER ile `POST /poa` | 403; vekalet OLUSMAZ | yazma denemesi |
+| A-2 | Elevated olmayan USER ile `PUT /poa/:id` | 403 | yazma denemesi |
+| A-3 | Yetkili aktor ile `POST /poa` | 201; kayit OLUSUR | pozitif yol |
+| A-4 | Legacy `POST /poa/:id/upload` yetkisiz aktorle | 403; dosya YAZILMAZ | R6 kapisi |
+| A-5 | Bilgi talebi gonderimi (test saglayicisi) | 201; DB'deki `emailBody` ham token/URL TASIMAZ | Faz 1 sizinti kapisi |
+| A-6 | Ayni talep `attachIntakeLink` ile | saglayiciya giden metin baglanti TASIR; kalici govde TASIMAZ | Yol1 |
+| A-7 | Pasif kaydi gecersiz kimlikle reaktive etme | 400 `CLIENT_IDENTITY_CHECKSUM_INVALID` | D-1b |
+| A-8 | Ayni degerle `isActive:true` tekrar gonderimi | 200; lifecycle alanina YAZILMAZ | yaris duzeltmesi |
+
+> **A-8 ve lifecycle yarisi:** yarisin kendisi (bariyer sirali eszamanli istek) canlida
+> **kurulmaz**; regresyon kilidi disposable PostgreSQL uzerinde kosulan DB testidir. Canlida
+> yalniz gozlenebilir sonuc dogrulanir.
+
+---
+
+## 6. Bu paketin ACIK kalemleri (yayin engelleyici DEGIL)
+
+| Kalem | Durum |
+|---|---|
+| OWN-12 adim C — `ClientModal` tam alan birlestirmesi | ACIK (ortak kilit + alan modeli teslim edildi) |
+| `api.ts` FormData/blob yollarinda elle hata kurma (govde/durum kodu tasimiyor) | ACIK |
+| OWN-10 — yedi pasif kaydin kimlik duzeltmesi | ACIK; **veri DEGISTIRILMEDI**, guvenilir kaynak gerekir |
+| OWN-15 — intel statement create capability | ACIK (owner-locked) |
+| OFFICE O-1..O-10 canli kabul, F04 canli yaris kabulu | Office/C33 kapsaminda ACIK |
+
+---
+
+## 7. Sinirlar
+
+Bu belge **olcum ve devirdir**; cutover CALISTIRMAZ. Yapilmayanlar: production yazmasi, servis
+durdurma/baslatma, `.env` okuma/yazma, gercek aliciya e-posta, RELEASE19'un SUPERSEDED ilani,
+Office paketine mudahale, canli gecis onayinin istenmesi. Olcumler yerel salt-okuma; PII cikti YOK.
