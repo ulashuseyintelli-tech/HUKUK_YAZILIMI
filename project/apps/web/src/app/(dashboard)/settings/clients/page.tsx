@@ -8,6 +8,8 @@ import { api } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields, isPoaAuthorizationDenied, poaCreateFailureMessage } from "@/lib/poa-ux";
 import { hasStructuredAddresses } from "@/lib/client-write";
+// OWN-12 ADIM C: uc muvekkil formunun ORTAK cekirdek alan modeli.
+import { buildClientCoreFields } from "@/lib/client-form-fields";
 import {
   CLIENT_CAPABILITIES_DENIED,
   deriveClientFormLockState,
@@ -764,18 +766,18 @@ function ClientModal({ client, scannedData, capabilities, onSave, onClose, savin
     deriveClientFormLockState(capabilities, isCreateMode ? 'create' : 'edit');
 
   const [form, setForm] = useState({
-    type: scannedData?.clientType || client?.type || "PERSON",
-    firstName: scannedData?.firstName || client?.firstName || "",
-    lastName: scannedData?.lastName || client?.lastName || "",
-    tckn: scannedData?.tckn || client?.tckn || "",
+    // OWN-12 ADIM C: kimlik + yetki bayraklari ORTAK modelden (lib/client-form-fields.ts).
+    // Oncelik (tarama → mevcut kayit → varsayilan) ve `client.name` yedegi AYNEN korunur.
+    ...buildClientCoreFields({
+      scanned: scannedData,
+      client,
+      companyNameFallback: client?.name,
+    }),
+    // `type` BILEREK ortak modelden ALINMAZ: bu yuzey backend'in `INDIVIDUAL` degerini de
+    // tasir, `ClientForm` ise yalniz PERSON/COMPANY/PUBLIC tanir. Deger hesabi AYNI, tur
+    // genisligi bu baglama ozgudur — sahte bir ortaklik iddia etmiyoruz.
+    type: (scannedData?.clientType || client?.type || "PERSON") as string,
     gender: client?.gender || "",
-    companyName: scannedData?.companyName || client?.companyName || client?.name || "",
-    vkn: scannedData?.vkn || client?.vkn || "",
-    taxOffice: scannedData?.taxOffice || client?.taxOffice || "",
-    canCollect: scannedData?.canCollect ?? client?.canCollect ?? true,
-    canWaive: scannedData?.canWaive ?? client?.canWaive ?? false,
-    canSettle: scannedData?.canSettle ?? client?.canSettle ?? false,
-    canRelease: scannedData?.canRelease ?? client?.canRelease ?? false,
     notes: client?.notes || "",
     // Vekaletname bilgileri
     poaNumber: scannedData?.poaNumber || "",

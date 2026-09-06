@@ -17,6 +17,8 @@ import {
   clientPrimaryPhone,
   clientResolvedAddress,
 } from './client-display';
+// OWN-12 ADIM C: uc muvekkil formunun ORTAK cekirdek alan modeli.
+import { buildClientCoreFields, emptyClientCoreFields } from './client-form-fields';
 
 export type ClientFormType = 'PERSON' | 'COMPANY' | 'PUBLIC';
 
@@ -45,49 +47,34 @@ export interface ClientFormValues {
 
 export function emptyClientFormValues(): ClientFormValues {
   return {
-    type: 'PERSON',
-    firstName: '',
-    lastName: '',
-    companyName: '',
-    tckn: '',
-    vkn: '',
-    taxOffice: '',
+    // OWN-12 ADIM C: kimlik + yetki cekirdegi ORTAK modelden (lib/client-form-fields.ts).
+    ...emptyClientCoreFields(),
     phone: '',
     email: '',
     address: '',
     city: '',
     district: '',
     region: '',
-    canCollect: true,
-    canWaive: false,
-    canSettle: false,
-    canRelease: false,
     notes: '',
   };
 }
 
 /** Edit formu hydration: mevcut Client kaydından form state kurar (GET /clients/:id sonrası). */
 export function clientFormValuesFromClient(client: Client): ClientFormValues {
+  // OWN-12 ADIM C: kimlik + yetki cekirdegi ORTAK modelden kurulur; `type` daraltmasi burada
+  // KALIR (bu form yalniz PERSON/COMPANY/PUBLIC tanir, bilinmeyen deger PERSON'a duser).
+  const core = buildClientCoreFields({ client: client as unknown as Record<string, unknown> });
   const type: ClientFormType =
     client.type === 'COMPANY' || client.type === 'PUBLIC' ? client.type : 'PERSON';
   return {
+    ...core,
     type,
-    firstName: client.firstName || '',
-    lastName: client.lastName || '',
-    companyName: client.companyName || '',
-    tckn: client.tckn || '',
-    vkn: client.vkn || '',
-    taxOffice: client.taxOffice || '',
     phone: clientPrimaryPhone(client) || '',
     email: clientPrimaryEmail(client) || '',
     address: client.address || '',
     city: client.city || '',
     district: client.district || '',
     region: client.region || '',
-    canCollect: client.canCollect ?? true,
-    canWaive: client.canWaive ?? false,
-    canSettle: client.canSettle ?? false,
-    canRelease: client.canRelease ?? false,
     notes: client.notes || '',
   };
 }

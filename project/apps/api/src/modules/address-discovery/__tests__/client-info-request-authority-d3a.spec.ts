@@ -183,10 +183,14 @@ describe('D-3a — gonderim komutlari WORKSPACE esiginde (ADMIN VEYA elevated)',
 });
 
 describe('D-3a — saglayici basarisizligi BASARILI GONDERIM olarak kaydedilmez', () => {
-  it('createRequest: e-posta basarisiz -> "SENT" kaydi geri alinir, 503, audit YOK', async () => {
+  it('createRequest: e-posta basarisiz -> kalici kayit HIC OLUSMAZ, 503, audit YOK', async () => {
+    // GONDERIM-SONRA-YAZ (owner GO 2026-09-06, adim 1): kayit artik saglayici DOGRULANDIKTAN
+    // sonra yazilir. Onceki sozlesme "once yaz, basarisizsa sil" idi ve silme basarisiz olunca
+    // DB'de yanlis "gonderildi" satiri KALIYORDU; geri-alma yolu ARTIK YOK.
     const h = buildHarness({ emailOk: false });
     await expect(h.service.createRequest(TENANT, DTO, actor('ADMIN'))).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(h.prisma.clientInfoRequest.delete).toHaveBeenCalledWith({ where: { id: REQUEST_ID } });
+    expect(h.prisma.clientInfoRequest.create).not.toHaveBeenCalled();
+    expect(h.prisma.clientInfoRequest.delete).not.toHaveBeenCalled();
     expect(h.prisma.clientNotification.create).not.toHaveBeenCalled();
     expect(h.audit.log).not.toHaveBeenCalled(); // basarisiz komut audit uretmez
   });

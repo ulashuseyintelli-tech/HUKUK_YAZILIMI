@@ -947,7 +947,9 @@ class ApiClient {
       };
       const response = await fetch(`${API_URL}/api${endpoint}`, { headers });
       if (!response.ok) {
-        throw new Error("İndirme hatası");
+        // OWN-12 ADIM A (Faz 4): kanonik hata sozlesmesi — mesaj metni KORUNUR, `body` ve
+        // `status` EKLENIR (eskiden bu yolda tumuyle kayboluyordu).
+        throw buildApiHttpError(await readErrorBody(response), response.status, "İndirme hatası");
       }
       const blob = await response.blob();
       return { data: blob as unknown as T };
@@ -974,8 +976,9 @@ class ApiClient {
       });
       
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || "Bir hata oluştu");
+        // OWN-12 ADIM A (Faz 4): kanonik hata sozlesmesi. Multipart `Content-Type` YUKARIDA
+        // bilerek silinir (boundary'yi tarayici koyar) — o davranis DEGISMEDI.
+        throw buildApiHttpError(await readErrorBody(response), response.status);
       }
       
       const data = await response.json();
@@ -2958,8 +2961,7 @@ class ApiClient {
       },
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'XML indirme hatası');
+      throw buildApiHttpError(await readErrorBody(response), response.status, 'XML indirme hatası');
     }
     return response.blob();
   }
@@ -2988,8 +2990,11 @@ class ApiClient {
       body: JSON.stringify({ caseIds, batchName }),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Toplu XML indirme hatası');
+      throw buildApiHttpError(
+        await readErrorBody(response),
+        response.status,
+        'Toplu XML indirme hatası',
+      );
     }
     return response.blob();
   }

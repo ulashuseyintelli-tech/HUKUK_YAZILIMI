@@ -245,13 +245,18 @@ describe('D-3b — yetki ve SISTEM yolu: kapi ASILAMAZ', () => {
 });
 
 describe('D-3b — saglayici basarisizligi: baglanti uretilse bile gonderim KAYDEDILMEZ', () => {
-  it('e-posta basarisiz -> talep kaydi geri alinir, 503, audit YOK', async () => {
+  it('e-posta basarisiz -> talep kaydi HIC OLUSMAZ, 503, audit YOK (baglanti uretilmis olsa bile)', async () => {
     const h = buildHarness({ emailOk: false });
     await expect(
       h.service.createRequest(TENANT, { ...DTO_BASE, attachIntakeLink: true }, ADMIN),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(h.prisma.clientInfoRequest.delete).toHaveBeenCalledWith({ where: { id: 'req-1' } });
+    // GONDERIM-SONRA-YAZ: kayit yazilmadigi icin geri-alma da YOK.
+    expect(h.prisma.clientInfoRequest.create).not.toHaveBeenCalled();
+    expect(h.prisma.clientInfoRequest.delete).not.toHaveBeenCalled();
     expect(h.audit.log).not.toHaveBeenCalled();
+    // Baglanti gonderimden ONCE uretilir (govdeye girer); basarisiz gonderimde kullanilmadan
+    // kalir ve kendi suresi (7 gun) dolar — token yalniz e-postada oldugu icin erisilemez.
+    expect(h.intakeLink.createForClientWorkspace).toHaveBeenCalledTimes(1);
   });
 });
 

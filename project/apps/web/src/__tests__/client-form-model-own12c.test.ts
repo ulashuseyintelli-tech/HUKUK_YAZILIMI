@@ -18,8 +18,11 @@ import {
 } from '@/lib/client-mutation-capabilities';
 import {
   applyScannedClientFields,
+  buildClientCoreFields,
+  emptyClientCoreFields,
   emptyClientSharedFormFields,
 } from '@/lib/client-form-fields';
+import { clientFormValuesFromClient, emptyClientFormValues } from '@/lib/client-write';
 
 const FULL: ClientMutationCapabilities = {
   canCreate: true,
@@ -138,5 +141,84 @@ describe('OWN-12 C — ortak alan modeli', () => {
     expect(next.gender).toBe('K');
     expect(next.note).toBe('ozel');
     expect(next.firstName).toBe('Ali');
+  });
+});
+
+describe('OWN-12 C — cekirdek alan modeli UC tuketici tarafindan da kullaniliyor', () => {
+  it('bos cekirdek: PERSON + canCollect ACIK', () => {
+    const core = emptyClientCoreFields();
+    expect(core.type).toBe('PERSON');
+    expect(core.canCollect).toBe(true);
+    expect(core.canWaive).toBe(false);
+    expect(core.taxOffice).toBe('');
+  });
+
+  it('ONCELIK: tarama → mevcut kayit → varsayilan', () => {
+    const core = buildClientCoreFields({
+      scanned: { firstName: 'Taramadan', tckn: '10000000146' },
+      client: { firstName: 'Kayittan', lastName: 'Soyad', tckn: '12345678028', taxOffice: 'Kadikoy' },
+    });
+    expect(core.firstName).toBe('Taramadan'); // tarama kazanir
+    expect(core.tckn).toBe('10000000146');
+    expect(core.lastName).toBe('Soyad'); // taramada yok → kayit
+    expect(core.taxOffice).toBe('Kadikoy');
+  });
+
+  it('BOOLEAN: kayittaki acik `false` KORUNUR (metin kuralina duşmez)', () => {
+    const core = buildClientCoreFields({ client: { canCollect: false, canSettle: true } });
+    expect(core.canCollect).toBe(false);
+    expect(core.canSettle).toBe(true);
+    expect(core.canWaive).toBe(false);
+  });
+
+  it('companyNameFallback: settings/clients formunun `client.name` yedegi KORUNUR', () => {
+    const withFallback = buildClientCoreFields({
+      client: { name: 'Eski Unvan A.S.' },
+      companyNameFallback: 'Eski Unvan A.S.',
+    });
+    expect(withFallback.companyName).toBe('Eski Unvan A.S.');
+    // Yedek verilmezse bos kalir (diger formlarin davranisi).
+    expect(buildClientCoreFields({ client: { name: 'Eski Unvan A.S.' } }).companyName).toBe('');
+  });
+
+  it('ClientForm (client-write): bos form cekirdek varsayilanlari AYNI', () => {
+    const form = emptyClientFormValues();
+    const core = emptyClientCoreFields();
+    expect(form.type).toBe(core.type);
+    expect(form.canCollect).toBe(core.canCollect);
+    expect(form.canWaive).toBe(core.canWaive);
+    expect(form.canSettle).toBe(core.canSettle);
+    expect(form.canRelease).toBe(core.canRelease);
+    expect(form.taxOffice).toBe(core.taxOffice);
+    // Bu formun KENDI alanlari korunur.
+    expect(form.region).toBe('');
+    expect(form.notes).toBe('');
+  });
+
+  it('ClientForm hydration: cekirdek alanlar kayittan, tur daraltmasi KORUNUR', () => {
+    const hydrated = clientFormValuesFromClient({
+      type: 'INDIVIDUAL',
+      firstName: 'Ayse',
+      lastName: 'Yilmaz',
+      tckn: '10000000146',
+      canCollect: false,
+      notes: 'not',
+    } as any);
+    // Bilinmeyen/desteklenmeyen tur PERSON'a duser (bu formun sozlesmesi DEGISMEDI).
+    expect(hydrated.type).toBe('PERSON');
+    expect(hydrated.firstName).toBe('Ayse');
+    expect(hydrated.tckn).toBe('10000000146');
+    expect(hydrated.canCollect).toBe(false);
+    expect(hydrated.notes).toBe('not');
+  });
+
+  it('cases/new alan kumesi cekirdegi GENISLETIR (kendi duz iletisim/adres alanlariyla)', () => {
+    const shared = emptyClientSharedFormFields();
+    const core = emptyClientCoreFields();
+    for (const key of Object.keys(core) as Array<keyof typeof core>) {
+      expect(shared[key]).toEqual(core[key]);
+    }
+    expect(shared.phone).toBe('');
+    expect(shared.poaNumber).toBe('');
   });
 });

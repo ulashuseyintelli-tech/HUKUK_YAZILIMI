@@ -254,30 +254,23 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
       throw new BadRequestException('Müvekkilin e-posta adresi bulunamadı');
     }
 
-    // Veritabanına kaydet
-    const request = await this.prisma.clientInfoRequest.create({
-      data: {
-        tenantId,
-        caseId: dto.caseId,
-        clientId: dto.clientId,
-        debtorId: dto.debtorId,
-        emailTo,
-        emailSubject,
-        // GUVENLIK: kalici gövde baglanti TASIMAZ.
-        emailBody: persistedBody,
-        status: 'SENT',
-        sentAt: new Date(),
-      },
-      include: {
-        client: { select: { id: true, displayName: true } },
-        debtor: { select: { id: true, name: true } },
-      },
-    });
-
-    // E-postayı gönder
-    // GUVENLIK: baglantili govde YALNIZ burada kullanilir.
-    // (3) Belirsiz sonuc (saglayici istisna atarsa) BASARISIZ sayilir — "gonderildi" YAZILMAZ.
-    let emailOk = false;
+    // GONDERIM-SONRA-YAZ (owner GO 2026-09-06, adim 1) — KALICI DURUM YALNIZ DOGRULANMIS
+    // SAGLAYICI SONUCUNA DAYANIR.
+    //
+    // ONCEKI KUSUR: satir `status: 'SENT'` ile saglayici cagrisindan ONCE yaziliyor, basarisizlikta
+    // silinmeye calisiliyordu. Silme de basarisiz olursa DB'de "gonderildi" satiri KALIYORDU; onceki
+    // duzeltme yalniz hata MESAJINI degistirmis, kalici yanlis durumu birakmisti. Artik kayit
+    // GONDERIM DOGRULANDIKTAN SONRA olusturulur → basarisiz/dogrulanamayan gonderim kalici kayitta,
+    // listede ve detayda GORUNMEZ; "gonderilmis talebe hatirlatma" yoluna da giremez (kayit yok).
+    // Bu, ayni dosyadaki `sendReminderUnchecked` ile AYNI desendir (once gonder, sonra yaz).
+    //
+    // UC SONUC AYRI DEGERLENDIRILIR:
+    //   sent          → saglayici acikca basarili dedi; kayit yazilir.
+    //   failed        → saglayici acikca basarisiz dedi; kayit YAZILMAZ.
+    //   indeterminate → saglayici istisna atti/yanit vermedi; e-posta iletilmis OLABILIR.
+    //                   Kayit YAZILMAZ ve KOR OTOMATIK TEKRAR GONDERIM YAPILMAZ; karar kullanicinin.
+    // GUVENLIK: baglantili `transportBody` YALNIZ burada kullanilir.
+    let sendOutcome: 'sent' | 'failed' | 'indeterminate' = 'failed';
     let emailError: string | undefined;
     try {
       const emailResult = await this.emailProvider.send({
@@ -286,43 +279,65 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
         text: transportBody,
         html: generateClientInfoEmailHtml(emailData),
       });
-      emailOk = emailResult.success === true;
+      sendOutcome = emailResult.success === true ? 'sent' : 'failed';
       emailError = emailResult.errorMessage;
     } catch (e: any) {
-      emailOk = false;
-      emailError = 'Gonderim sonucu belirsiz (saglayici hatasi)';
+      sendOutcome = 'indeterminate';
+      emailError = 'Gönderim sonucu doğrulanamadı (sağlayıcı yanıt vermedi)';
       this.logger.error(`E-posta saglayicisi istisna atti: ${e?.message}`);
     }
 
-    if (!emailOk) {
-      // D-3a: sağlayıcı başarısızlığı BAŞARILI GÖNDERİM olarak KAYDEDİLMEZ. "SENT" satırı geri
-      // alınır ve istek hata ile biter → primitive audit de üretmez (başarısız komut audit üretmez).
-      //
-      // (3) DUZELTME: temizlik BASARISIZ olabilir. O durumda kayit SENT olarak KALIR; kullaniciya
-      // "kayit olusturulmadi" DENMEZ — hata mesaji kalici durumu birebir soyler ve kaydin kimligini
-      // verir ki elle kontrol edilebilsin. Iki durum AYRI `reasonCode` tasir.
-      this.logger.warn(`E-posta gönderilemedi: ${emailError}`);
-      let recordRemoved = false;
-      try {
-        await this.prisma.clientInfoRequest.delete({ where: { id: request.id } });
-        recordRemoved = true;
-      } catch (e: any) {
-        this.logger.error(`Başarısız talep kaydı geri alınamadı: ${e?.message}`);
-      }
+    if (sendOutcome !== 'sent') {
+      // Basarisiz komut audit URETMEZ (primitive sozlesmesi) ve kalici kayit OLUSMAZ.
+      this.logger.warn(`E-posta gönderilemedi (${sendOutcome}): ${emailError}`);
       throw new ServiceUnavailableException(
-        recordRemoved
+        sendOutcome === 'failed'
           ? {
-              message: 'Bilgi talebi e-postası gönderilemedi; kayıt oluşturulmadı',
+              message: 'Bilgi talebi e-postası gönderilemedi; talep kaydı oluşturulmadı',
               reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED',
             }
           : {
               message:
-                'Bilgi talebi e-postası gönderilemedi; talep kaydı KALDIRILAMADI ve "gönderildi" olarak görünüyor — kaydı elle kontrol edin',
-              reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED_RECORD_RETAINED',
-              requestId: request.id,
+                'Bilgi talebi e-postasının gönderim sonucu DOĞRULANAMADI; talep kaydı oluşturulmadı ve otomatik tekrar gönderim YAPILMADI. E-posta iletilmiş olabilir — tekrar denemeden önce alıcıyla teyit edin.',
+              reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_INDETERMINATE',
             },
       );
-    } else {
+    }
+
+    // Gonderim DOGRULANDI → kalici kayit simdi olusur; `sentAt` gercek gonderim anidir.
+    const sentAt = new Date();
+    let request;
+    try {
+      request = await this.prisma.clientInfoRequest.create({
+        data: {
+          tenantId,
+          caseId: dto.caseId,
+          clientId: dto.clientId,
+          debtorId: dto.debtorId,
+          emailTo,
+          emailSubject,
+          // GUVENLIK: kalici gövde baglanti TASIMAZ.
+          emailBody: persistedBody,
+          status: 'SENT',
+          sentAt,
+        },
+        include: {
+          client: { select: { id: true, displayName: true } },
+          debtor: { select: { id: true, name: true } },
+        },
+      });
+    } catch (e: any) {
+      // E-POSTA GITTI ama kayit yazilamadi — UCUNCU ve AYRI durum. Kullaniciya "gonderilmedi"
+      // DENMEZ (yanlis olurdu ve mukerrer gonderime yol acardi); tekrar gondermemesi soylenir.
+      this.logger.error(`E-posta gonderildi ancak talep kaydi olusturulamadi: ${e?.message}`);
+      throw new ServiceUnavailableException({
+        message:
+          'Bilgi talebi e-postası GÖNDERİLDİ ancak talep kaydı oluşturulamadı. Tekrar göndermeyin; kaydı elle oluşturun veya sistem yöneticisine bildirin.',
+        reasonCode: 'CLIENT_INFO_REQUEST_SENT_BUT_NOT_RECORDED',
+      });
+    }
+
+    {
       this.logger.log(`Müvekkil bilgi talebi gönderildi: ${maskEmail(emailTo)}`);
       
       // Müvekkil Bildirimleri'ne kayıt ekle
@@ -374,8 +389,10 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
       // GUVENLIK: yanit redakte edilir (kayit zaten baglanti tasimaz; bu ikinci katman
       // duzeltme oncesi yazilmis kayitlari ve gelecekteki regresyonu da kapsar).
       ...redactInfoRequestRecord(request),
-      emailSent: emailOk,
-      emailError,
+      // Bu noktaya YALNIZ dogrulanmis gonderimde gelinir (digerleri throw eder), bu yuzden
+      // sozlesme alani her zaman true'dur; `emailError` yalniz geriye uyumluluk icin durur.
+      emailSent: true,
+      emailError: undefined as string | undefined,
       // D-3b: yalniz link KIMLIGI doner; ham token/URL yanit govdesine YAZILMAZ.
       intakeLinkId,
     };

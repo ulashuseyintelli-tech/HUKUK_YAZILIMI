@@ -23,7 +23,8 @@ export type ApiHttpError = Error & { body?: unknown; status?: number };
  * Basarisiz HTTP yanitindan kanonik hata nesnesi kurar.
  *
  * Sozlesme (IKI istemcide de AYNEN korunur):
- *  - `message`: sunucu gövdesindeki `message`, yoksa "Bir hata oluştu"
+ *  - `message`: sunucu gövdesindeki `message`, yoksa `fallbackMessage` (varsayilan
+ *    "Bir hata oluştu"; blob/indirme yollari kendi metnini verir)
  *  - `body`: ham gövde (yapisal alanlar — `code`, `candidates`, `reasonCode`, `fieldErrors` —
  *    review/validation akislari icin KORUNUR)
  *  - `status`: HTTP durum kodu
@@ -36,10 +37,14 @@ export type ApiHttpError = Error & { body?: unknown; status?: number };
  * davranisla BIREBIR aynidir: truthy her deger `String()` ile metne cevrilir, falsy deger
  * varsayilana duser.
  */
-export function buildApiHttpError(body: unknown, status: number): ApiHttpError {
+export function buildApiHttpError(
+  body: unknown,
+  status: number,
+  fallbackMessage = 'Bir hata oluştu',
+): ApiHttpError {
   const rawMessage =
     body && typeof body === 'object' ? (body as { message?: unknown }).message : undefined;
-  const message = rawMessage ? String(rawMessage) : 'Bir hata oluştu';
+  const message = rawMessage ? String(rawMessage) : fallbackMessage;
   const error = new Error(message) as ApiHttpError;
   error.body = body;
   error.status = status;
