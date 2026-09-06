@@ -2,11 +2,11 @@
 
 ```text
 BELGE           : RELEASE20-HANDOVER-R01
-URETEN          : CLIENT hatti (owner GO 2026-09-06, Faz 3)
+URETEN          : CLIENT hatti (owner GO 2026-09-06; Faz 3'te uretildi, kalan uygulama sonrasi TAZELENDI)
 YAYIN SAHIBI    : Office/C33 — motor, muhur, nonce ve owner-command O HATTA KALIR
 OLCUM ANI       : 2026-09-06, yerel salt-okuma (production yazmasi 0)
 DURUM           : DEVIR HAZIR — canli gecis onayi ISTENMEDI (owner ayrica verecek)
-KAYNAK COMMIT   : 506927e940385ced8cfbe5140837516aee10933b
+KAYNAK COMMIT   : 815fcf96a838229de60609f87206407f4ea9ca6e
 ```
 
 > Bu belge, CLIENT hattinin **nihai** teslim durumunu Office/C33 yayin hattina devreder.
@@ -24,13 +24,13 @@ KAYNAK COMMIT   : 506927e940385ced8cfbe5140837516aee10933b
 | Canli Web | pid 36764, `:::3002`, `HY_W4_RELEASE19\project\apps\web\node_modules\...` |
 | RELEASE18 | dizin **mevcut** (eski rollback hedefi) |
 | RELEASE20 | dizin **YOK** — paket henuz uretilmedi |
-| Migration | repo 127 = canli 127 → **migration adimi YOK** |
+| Migration | repo **129 dizin** = RELEASE19 **129 dizin**; `diff -r` ile icerik **birebir ayni** → **migration adimi YOK** |
 
 RELEASE19 **SUPERSEDED ILAN EDILMEMISTIR**: calisan surumdur ve bu paketin **rollback hedefidir**.
 
 ---
 
-## 2. Paket kapsami — canlida OLMAYAN commit'ler (`a60d772b` → `506927e9`)
+## 2. Paket kapsami — canlida OLMAYAN commit'ler (`a60d772b` → `815fcf96`)
 
 | # | Squash SHA | PR | Icerik | Sinif |
 |---|---|---|---|---|
@@ -48,14 +48,16 @@ RELEASE19 **SUPERSEDED ILAN EDILMEMISTIR**: calisan surumdur ve bu paketin **rol
 | 12 | `bc6f860d` | #2526 | docs(governance): maintenance-register MR-065/MR-066 mukerrer satir temizligi | docs |
 | 13 | `35ea83d1` | #2527 | docs(governance): OFFICE kayit uzlastirmasi — RELEASE18 -> RELEASE19 devri + F06 isaretcisi | docs |
 | 14 | `506927e9` | #2528 | feat(client): OWN-12 ortak tasima/kilit/alan modeli + Yol1 arayuz secenegi (Faz 2) | **kod** |
+| 15 | `8338c4e6` | #2529 | docs(governance): Faz 3 — temizlik kapanisi, kayit duzeltmeleri ve RELEASE20 devri | docs |
+| 16 | `815fcf96` | #2530 | fix(client): gonderim durumu dogrulanmis sonuca baglandi + OWN-12 ortak model tuketimi | **kod** |
 
-**Kod (urun) commit'i: 8 · docs commit'i: 6 · toplam: 14.**
+**Kod (urun) commit'i: 9 · docs commit'i: 7 · toplam: 16.**
 
 ### 2.1 Paket etkisi (olculdu)
 
 | Olcum | Deger |
 |---|---|
-| Migration | **0** (repo 127 = canli 127) |
+| Migration | **0 yeni migration** — repo 129 dizin = RELEASE19 129 dizin, icerik `diff -r` ile birebir ayni. **DUZELTME:** onceki surumdeki "127" HATALIYDI (sayim filtresi `00000000000000_baseline` ve `00000000000001_legal_kernel_triggers` dizinlerini atliyordu). Sayim repository DIZIN sayimidir; canli DB ledger olcumu DEGILDIR ve onun yerine kullanilmaz |
 | Sema degisikligi | **0** |
 | Yeni env anahtari | **0** (RELEASE19 `.env` bayt-es kopyalanir) |
 | Lockfile degisikligi | **0** |
@@ -95,9 +97,12 @@ hicbiri RELEASE19'da YOKTUR:
    veritabanina ve API yanitlarina yazilir
 6. **Lifecycle aktivasyon yarisi duzeltmesi** — geri alinirsa gecikmis istek pasiflestirmeyi
    sessizce geri alabilir
-7. **Gonderim hata yolu duzeltmesi** — geri alinirsa basarisiz gonderimde kayit "gonderildi"
-   kalirken kullaniciya "kayit olusturulmadi" denebilir
-8. Yol1 ve OWN-12 web katmani
+7. **Gonderim DURUMU duzeltmesi (PR #2531)** — geri alinirsa talep satiri yine saglayicidan ONCE
+   `SENT` yazilir; basarisiz veya dogrulanamayan gonderim kalici kayitta ve liste/detay ekraninda
+   **basarili gorunur**, "gonderilmis talebe hatirlatma" yolu bu yanlis satir uzerinden acilir
+8. **Belirsiz gonderim ayrimi (PR #2531)** — geri alinirsa saglayici timeout'u ile kesin basarisizlik
+   AYNI muamele gorur ve kullaniciya kesinlik iddia edilir
+9. Yol1 ve OWN-12 web katmani (`api.ts` hata yollarinin govde/durum kodu tasimasi dahil)
 
 > **"Guvenlik gerilemesi yoktur" DENEMEZ.** Rollback bu kapilari kaldirir ve sistem, kapatilan
 > kusurlarin bulundugu duruma doner. F-B01-03 ve F04 RELEASE19'da mevcut oldugu icin **onlar**
@@ -110,7 +115,7 @@ hicbiri RELEASE19'da YOKTUR:
 1. **Yayin sahibi Office/C33'tur.** Motor, muhur, nonce ve owner-command o hatta kalir; CLIENT
    hatti cutover CALISTIRMAZ.
 2. **Iki sayfa ayni ortama es zamanli deployment YAPMAZ.**
-3. Paket, **kod bakimindan nihai** kaynak `506927e940385ced8cfbe5140837516aee10933b` uzerinden uretilir.
+3. Paket, **kod bakimindan nihai** kaynak `815fcf96a838229de60609f87206407f4ea9ca6e` uzerinden uretilir.
    Bu belgeyi ekleyen docs commit'i (ve Office hattinin docs commit'leri) `apps/` altinda **hicbir dosyaya
    dokunmaz**; paket icerigini DEGISTIRMEZ. Cutover aninda taze main dogrulanir; kod farki cikarsa bu belge
    yeniden olculur.
@@ -155,6 +160,7 @@ Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
 | A-6 | Ayni talep `attachIntakeLink` ile | saglayiciya giden metin baglanti TASIR; kalici govde TASIMAZ | Yol1 |
 | A-7 | Pasif kaydi gecersiz kimlikle reaktive etme | 400 `CLIENT_IDENTITY_CHECKSUM_INVALID` | D-1b |
 | A-8 | Ayni degerle `isActive:true` tekrar gonderimi | 200; lifecycle alanina YAZILMAZ | yaris duzeltmesi |
+| A-9 | Bilgi talebi gonderimi TEST saglayicisi BASARISIZ dondurulerek | 503; **talep kaydi OLUSMAZ**, listede gorunmez | gonderim durumu |
 
 > **A-8 ve lifecycle yarisi:** yarisin kendisi (bariyer sirali eszamanli istek) canlida
 > **kurulmaz**; regresyon kilidi disposable PostgreSQL uzerinde kosulan DB testidir. Canlida
@@ -166,10 +172,11 @@ Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
 
 | Kalem | Durum |
 |---|---|
-| OWN-12 adim C — `ClientModal` tam alan birlestirmesi | ACIK (ortak kilit + alan modeli teslim edildi) |
-| `api.ts` FormData/blob yollarinda elle hata kurma (govde/durum kodu tasimiyor) | ACIK |
-| OWN-10 — yedi pasif kaydin kimlik duzeltmesi | ACIK; **veri DEGISTIRILMEDI**, guvenilir kaynak gerekir |
-| OWN-15 — intel statement create capability | ACIK (owner-locked) |
+| OWN-12 adim C — ortak cekirdek modelin uc formda tuketimi | **KAPANDI** (PR #2531; statik kullanim guard'i ile kilitli) |
+| `api.ts` FormData/blob hata yollari | **KAPANDI** (PR #2531; mesaj metinleri korundu, govde/durum kodu artik tasiniyor) |
+| `ClientModal`'in iletisim/adres DIZI yuzeyi ve `type` genisligi | ACIK degil — **BILEREK baglama ozgu**; sahte ortaklik iddia edilmedi |
+| OWN-10 — yedi pasif kaydin kimlik duzeltmesi | ACIK; **veri DEGISTIRILMEDI**, guvenilir kaynak gerekir (urun akisi) |
+| OWN-15 — intel statement create politikasi | **KAPSAM DISI** (onceki owner karari) — uygulama engeli DEGILDIR |
 | OFFICE O-1..O-10 canli kabul, F04 canli yaris kabulu | Office/C33 kapsaminda ACIK |
 
 ---
