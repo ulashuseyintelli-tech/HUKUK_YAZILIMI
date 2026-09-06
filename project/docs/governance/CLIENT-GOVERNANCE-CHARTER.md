@@ -4567,6 +4567,7 @@ ve CI logunda gercek PASS kaydi alindi. Bu kalem C33 K-12'dir; **F09 bulgularind
 | `poa-upload-authority-r6.spec.ts` (D-5 ile guncellendi) | 15/15 PASS |
 | `pure/client-portal.txt` tam manifest | 88 suite / 1373 test PASS |
 | `pure/architecture-guards.txt` (storage write-surface) | 47 suite / 997 test PASS |
+| `db/domain-integration.txt` tam manifest — **gercek PostgreSQL 16** (disposable, port 5437) | **60 suite / 648 test PASS** (F04 db-gated yaris spec'i dahil; `address-discovery` DB-gated spec'i 26/26) |
 | Web (`vitest run`, tamami) | 250 dosya / 2436 test PASS |
 | `tsc --noEmit` | **529 = baseline 529** (degisen dosyalarda 0; tek fark bilinen union-siralama gurultusu) |
 | schema/migration diff | **0** |
