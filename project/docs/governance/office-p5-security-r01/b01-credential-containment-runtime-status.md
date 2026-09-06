@@ -151,6 +151,7 @@ spec'i düşük-riskli eklenebilir. Karar PAGE-O0'a bırakıldı — NEW OWNER D
 ## 9. Diğer residual kayıtlar
 
 - F-B01-03 GET/PUT yetki asimetrisi (`office.controller.ts:144-147, 178-181` vs `:151+167, :185+198`).
+  **DURUM 2026-09-06: GET tarafi KAPANDI** — PR #2514 (`a60d772b`) merge, RELEASE19 ile canli, dar canli kabul `GET_AUTHZ_AND_PROJECTION_LIVE_ACCEPTED` (`decision-log.md` ayni tarih). **PUT/PATCH yazma kabulu HALA ACIK** (NOT_EXECUTED); `escAssignees` residual ayri acik.
 - F-B01-04 `OfficeService.getOrCreate` (`office.service.ts:115-153`) public ham yüzey; 4 dış çağıranın
   tümü yalnız `office.name` okuyor (`VERIFIED`, file:line ajan raporunda).
 - F-B01-05 `Lawyer.uyapToken` "// Şifrelenmiş" yorumu (schema:2536) kod karşılıksız; alana yazan servis
