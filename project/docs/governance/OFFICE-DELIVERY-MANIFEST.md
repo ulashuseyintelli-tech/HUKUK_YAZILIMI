@@ -1916,7 +1916,8 @@ yetkisi ister (`OWNER GO REQUIRED / NOT STARTED`).
 
 | Kalem | Kaynak / Pointer | Not |
 |---|---|---|
-| F-B01-03 · F-B01-04 · F-B01-05 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | P5 B01 kalan bulgular |
+| F-B01-04 · F-B01-05 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | P5 B01 kalan bulgular |
+| F-B01-03 (KAPANDI 2026-09-06) | `decision-log.md` 2026-09-06 satiri · paket `HY_OFFICE_FB0103_LIVE_ACCEPT_R01` | CODE_MERGED (#2514) -> DEPLOYED (RELEASE19) -> GET_AUTHZ_AND_PROJECTION_LIVE_ACCEPTED. Yalniz GET yetki + S2 omit; UI yazma kabulu ve `escAssignees` residual AYRI ACIK |
 | StaffDetailModal diff-payload | `office-p5-security-r01/b03-staff-authorization-compatibility-matrix.md` | allowlist projection + tam-form POST riskine karşı fark-payload |
 | /auth/me passwordChangedAt | `office-p5-security-r01/README.md` | credential metadata görünürlük kalemi |
 | CLF-P5-01 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | successor hedefi X1-P6 |
