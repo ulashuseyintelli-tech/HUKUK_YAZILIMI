@@ -121,6 +121,10 @@ function OfficeSettingsInner() {
   const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerIds: string[]; escalationFounderLawyerIds: string[]; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean; opStaffTypes: string[]; escalationTeamLeadLawyerIds: string[]; caseTaskOwnerDays: number; caseTaskTeamLeadDays: number; caseTaskManagerDays: number }>({ escalationManagerLawyerIds: [], escalationFounderLawyerIds: [], opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true, opStaffTypes: ["MUHASEBE", "ADLI_KATIP", "SEKRETER"], escalationTeamLeadLawyerIds: [], caseTaskOwnerDays: 2, caseTaskTeamLeadDays: 2, caseTaskManagerDays: 3 });
   // Eskalasyon kartı sağ-altta; üstteki global "Kaydedildi" görünmüyor → karta özel inline geri bildirim
   const [escalationStatus, setEscalationStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  // F-B01-03 (2026-09-06): S2 alıcı listeleri (escalation*LawyerIds) sunucu tarafından explicit field-level
+  // permission olmadan GÖNDERİLMEZ. Yalnız yanıtta GELEN liste alanları görünür/düzenlenebilir ve kaydedilir;
+  // görünmeyen alan boş listeye çevrilip PUT EDİLMEZ (sunucu gönderilmeyen alanı korur).
+  const [escalationRecipientsLoaded, setEscalationRecipientsLoaded] = useState<{ manager: boolean; founder: boolean; teamLead: boolean }>({ manager: false, founder: false, teamLead: false });
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -214,6 +218,9 @@ function OfficeSettingsInner() {
   };
 
   const loadOffice = async (opts?: { propagateError?: boolean }) => {
+    // F-B01-03: her (yeniden) yüklemede alıcı-listesi bayrakları SIFIRLANIR; yükleme başarısız olursa veya yanıt
+    // liste alanı taşımazsa gizli alanlar eski state'ten payload'a GİRMEZ (yalnız taze yanıtta gelen liste kaydedilir).
+    setEscalationRecipientsLoaded({ manager: false, founder: false, teamLead: false });
     try {
       const res = await api.get("/office");
       setOffice(res.data);
@@ -257,6 +264,12 @@ function OfficeSettingsInner() {
       loadTodayGreetings();
       // Görev & eskalasyon ayarlarını yükle
       const escRes = await api.get("/office/escalation-settings");
+      const escData = escRes.data ?? {};
+      setEscalationRecipientsLoaded({
+        manager: Array.isArray(escData.escalationManagerLawyerIds),
+        founder: Array.isArray(escData.escalationFounderLawyerIds),
+        teamLead: Array.isArray(escData.escalationTeamLeadLawyerIds),
+      });
       setEscalationForm({
         escalationManagerLawyerIds: escRes.data?.escalationManagerLawyerIds || [],
         escalationFounderLawyerIds: escRes.data?.escalationFounderLawyerIds || [],
@@ -364,15 +377,22 @@ function OfficeSettingsInner() {
     setSaving(true);
     setEscalationStatus(null);
     try {
-      await api.put("/office/escalation-settings", {
-        ...escalationForm,
+      // F-B01-03: yalnız yüklenen (görünen) alıcı listeleri gönderilir; görünmeyen liste alanı payload'a GİRMEZ →
+      // sunucu mevcut değeri korur. Açıkça boş liste ([]) yalnız kullanıcı görünen listeyi boşalttığında gider.
+      const { escalationManagerLawyerIds, escalationFounderLawyerIds, escalationTeamLeadLawyerIds, ...escalationScalars } = escalationForm;
+      const escalationPayload: Record<string, unknown> = {
+        ...escalationScalars,
         opReminderDays: Number(escalationForm.opReminderDays),
         opFounderDays: Number(escalationForm.opFounderDays),
         opRepeatMonths: Number(escalationForm.opRepeatMonths),
         caseTaskOwnerDays: Number(escalationForm.caseTaskOwnerDays),
         caseTaskTeamLeadDays: Number(escalationForm.caseTaskTeamLeadDays),
         caseTaskManagerDays: Number(escalationForm.caseTaskManagerDays),
-      });
+      };
+      if (escalationRecipientsLoaded.manager) escalationPayload.escalationManagerLawyerIds = escalationManagerLawyerIds;
+      if (escalationRecipientsLoaded.founder) escalationPayload.escalationFounderLawyerIds = escalationFounderLawyerIds;
+      if (escalationRecipientsLoaded.teamLead) escalationPayload.escalationTeamLeadLawyerIds = escalationTeamLeadLawyerIds;
+      await api.put("/office/escalation-settings", escalationPayload);
       showSaved();
       setEscalationStatus({ ok: true, msg: "✓ Kaydedildi" });
       setTimeout(() => setEscalationStatus((s) => (s?.ok ? null : s)), 3000);
@@ -691,7 +711,10 @@ function OfficeSettingsInner() {
   const lawyerRoleCounts = lawyers.reduce<Record<string, number>>((a, l) => { const k = lawyerRankLabel(l); a[k] = (a[k] || 0) + 1; return a; }, {});
   const lawyerDist = Object.keys(lawyerRoleCounts).length > 1 ? Object.entries(lawyerRoleCounts).map(([k, v]) => `${v} ${k}`).join(" · ") : "";
   const staffDist = Object.entries(staffList.reduce<Record<string, number>>((a, s) => { const k = getStaffTypeLabel(s.staffType); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, v]) => `${v} ${k}`).join(" · ");
-  const escAssignedCount = (escalationForm.escalationManagerLawyerIds?.length ?? 0) + (escalationForm.escalationFounderLawyerIds?.length ?? 0);
+  // F-B01-03: alıcı listeleri yüklenmediyse sayı "—" (görünmeyen alan 0 kişi gibi GÖSTERİLMEZ).
+  const escAssignedCount: number | null = (escalationRecipientsLoaded.manager || escalationRecipientsLoaded.founder)
+    ? (escalationForm.escalationManagerLawyerIds?.length ?? 0) + (escalationForm.escalationFounderLawyerIds?.length ?? 0)
+    : null;
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
@@ -835,7 +858,7 @@ function OfficeSettingsInner() {
                   <div className="flex justify-between gap-3"><span className="text-stone-500">Kurucu eskalasyonu</span><span className="font-medium text-gray-900">{escalationForm.opFounderDays} gün</span></div>
                   <div className="flex justify-between gap-3"><span className="text-stone-500">Periyot</span><span className="font-medium text-gray-900">{escalationForm.opRepeatMonths} ay</span></div>
                   <div className="flex justify-between gap-3"><span className="text-stone-500">Kanal</span><span className="font-medium text-gray-900">{[escalationForm.opEmailEnabled && "E-posta", escalationForm.opSmsEnabled && "SMS"].filter(Boolean).join(" + ") || "—"}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-stone-500">Atanan sorumlu</span><span className="font-medium text-gray-900">{escAssignedCount} kişi</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Atanan sorumlu</span><span className="font-medium text-gray-900">{escAssignedCount === null ? "—" : `${escAssignedCount} kişi`}</span></div>
                 </div>
                 <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Görev ağacını aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
               </button>
@@ -1353,11 +1376,12 @@ function OfficeSettingsInner() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Yönetici Avukat(lar)</label>
+                  {!escalationRecipientsLoaded.manager && <p className="text-[11px] text-amber-700 mb-1" data-testid="esc-recipients-hidden-manager">Alıcı listesi bu görünümde gösterilmez (alan-düzeyi izin tanımlı değil); mevcut alıcılar korunur, kaydetme bu listeyi değiştirmez.</p>}
                   <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
                     {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
                     {(office?.lawyers || []).map((l: any) => (
                       <label key={l.id} className="flex items-center gap-1.5">
-                        <input type="checkbox" checked={escalationForm.escalationManagerLawyerIds.includes(l.id)} onChange={e => {
+                        <input type="checkbox" disabled={!escalationRecipientsLoaded.manager} checked={escalationForm.escalationManagerLawyerIds.includes(l.id)} onChange={e => {
                           setEscalationForm(prev => ({ ...prev, escalationManagerLawyerIds: e.target.checked ? [...prev.escalationManagerLawyerIds, l.id] : prev.escalationManagerLawyerIds.filter(id => id !== l.id) }));
                         }} />
                         {l.name} {l.surname}
@@ -1367,11 +1391,12 @@ function OfficeSettingsInner() {
                 </div>
                 <div>
                   <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Kurucu/Ortak(lar)</label>
+                  {!escalationRecipientsLoaded.founder && <p className="text-[11px] text-amber-700 mb-1" data-testid="esc-recipients-hidden-founder">Alıcı listesi bu görünümde gösterilmez (alan-düzeyi izin tanımlı değil); mevcut alıcılar korunur, kaydetme bu listeyi değiştirmez.</p>}
                   <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
                     {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
                     {(office?.lawyers || []).map((l: any) => (
                       <label key={l.id} className="flex items-center gap-1.5">
-                        <input type="checkbox" checked={escalationForm.escalationFounderLawyerIds.includes(l.id)} onChange={e => {
+                        <input type="checkbox" disabled={!escalationRecipientsLoaded.founder} checked={escalationForm.escalationFounderLawyerIds.includes(l.id)} onChange={e => {
                           setEscalationForm(prev => ({ ...prev, escalationFounderLawyerIds: e.target.checked ? [...prev.escalationFounderLawyerIds, l.id] : prev.escalationFounderLawyerIds.filter(id => id !== l.id) }));
                         }} />
                         {l.name} {l.surname}
@@ -1419,11 +1444,12 @@ function OfficeSettingsInner() {
               <p className="text-[11px] text-gray-500 mb-3">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Motor şu an kapalı; bu ayarlar açıldığında geçerli olur.)</p>
               <div>
                 <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Takım Lideri Avukat(lar)</label>
+                {!escalationRecipientsLoaded.teamLead && <p className="text-[11px] text-amber-700 mb-1" data-testid="esc-recipients-hidden-teamlead">Alıcı listesi bu görünümde gösterilmez (alan-düzeyi izin tanımlı değil); mevcut alıcılar korunur, kaydetme bu listeyi değiştirmez.</p>}
                 <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
                   {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
                   {(office?.lawyers || []).map((l: any) => (
                     <label key={l.id} className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={escalationForm.escalationTeamLeadLawyerIds.includes(l.id)} onChange={e => {
+                      <input type="checkbox" disabled={!escalationRecipientsLoaded.teamLead} checked={escalationForm.escalationTeamLeadLawyerIds.includes(l.id)} onChange={e => {
                         setEscalationForm(prev => ({ ...prev, escalationTeamLeadLawyerIds: e.target.checked ? [...prev.escalationTeamLeadLawyerIds, l.id] : prev.escalationTeamLeadLawyerIds.filter(id => id !== l.id) }));
                       }} />
                       {l.name} {l.surname}
