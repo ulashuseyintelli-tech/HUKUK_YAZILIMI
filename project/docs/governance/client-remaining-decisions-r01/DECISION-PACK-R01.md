@@ -16,7 +16,7 @@ Bu paket **hiçbir kalemi listeyi boşaltmak için ertelemez veya kapatmaz**: he
 
 ---
 
-> **UZLAŞTIRMA NOTU (2026-09-06, PR #NNNN):** aşağıdaki §1.1 ve §3'ün yayın durumu bilgisi
+> **UZLAŞTIRMA NOTU (2026-09-06, PR #2523):** aşağıdaki §1.1 ve §3'ün yayın durumu bilgisi
 > (**"canlı RELEASE18 `b5338552`; RELEASE19 cutover YAPILMADI"**) **BAYATTIR**. Bu paket merge
 > edildikten sonra Office/C33 hattı RELEASE19 cutover'ını yürüttü ve doğruladı
 > (`C33_RELEASE19_CUTOVER_APPLIED_AND_VERIFIED`, 31/31 kapı, kesinti 14.7 s, DB değişmedi).
@@ -25,7 +25,7 @@ Bu paket **hiçbir kalemi listeyi boşaltmak için ertelemez veya kapatmaz**: he
 > talimatıyla **GEÇERSİZDİR**: RELEASE19 çalışan sürümdür ve sonraki paketin **rollback
 > hedefidir**. Kalemlerin (D-1..D-10) kendi içerikleri geçerliliğini korur.
 
-> **UZLAŞTIRMA NOTU (2026-09-06, PR #NNNN):** aşağıdaki §1.1 ve §3'ün yayın durumu bilgisi
+> **UZLAŞTIRMA NOTU (2026-09-06, PR #2523):** aşağıdaki §1.1 ve §3'ün yayın durumu bilgisi
 > (**"canlı RELEASE18 `b5338552`; RELEASE19 cutover YAPILMADI"**) **BAYATTIR**. Bu paket merge
 > edildikten sonra Office/C33 hattı RELEASE19 cutover'ını yürüttü ve doğruladı
 > (`C33_RELEASE19_CUTOVER_APPLIED_AND_VERIFIED`, 31/31 kapı, kesinti 14.7 s, DB değişmedi).
