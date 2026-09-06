@@ -4352,10 +4352,14 @@ uygulanmis / legacy rota KODDA EKSIK (bu PR'da kapandi).
 | R6 | `POST /clients/:clientId/poas/:poaId/file` (workspace) | C2-B02 kapisi + C2-B04 #2130 `e0b6260f` reconcile (`poa.service.ts` client/tenant/isActive scoping) | `client-poa-upload-command.spec.ts`, r4 spec |
 | R6 | `POST /poa/:id/upload` (legacy) | **bu PR** — bkz. §56.3 | `poa-upload-authority-r6.spec.ts` |
 
-Esik her yuzeyde AYNI ve owner §13/11 ile ratifiyedir (kayit: CLAUDE-CLIENT-C2.md §11 B02,
-2026-08-03; decision-log satiri bu uzlastirmayla eklendi): **ADMIN VEYA canonical elevated
-(`officeApproval.isApproverEligible`)**; VIEWER ve tanimsiz rol fail-closed; cross-tenant
+Esik, WORKSPACE sinifi komutlarda (dispatch · intake-link create/deliver/revoke · POA upload ·
+notification send/bulk/resend) AYNI ve owner §13/11 ile ratifiyedir (kayit: CLAUDE-CLIENT-C2.md
+§11 B02, 2026-08-03; decision-log satiri bu uzlastirmayla eklendi): **ADMIN VEYA canonical
+elevated (`officeApproval.isApproverEligible`)**; VIEWER ve tanimsiz rol fail-closed; cross-tenant
 TENANT_MISMATCH; basarili komut `CLIENT_WORKSPACE_COMMAND` audit; yetkisizde yan etki YOK.
+**Intake REVIEW komutlari bu esigin DISINDADIR:** ayri `isIntakeReviewAuthorized` kapisi (CR-1,
+owner RATIFIED 2026-08-03) — review ve promotion yetkileri AYRIDIR, rol adi (ADMIN dahil) yetki
+vermez, audit action'i ayridir (`CLIENT_INTAKE_REVIEW_COMMAND`). *(Ifade §57 ile uzlastirildi.)*
 Bu esik BILINCLI olarak core hassas-alan esigiyle (§51 D02) aynidir; adres-lifecycle/bulk
 esigi (§54/§55: YALNIZ elevated, ADMIN yetmez) DEGISMEDI. Yeni esik ICAT EDILMEDI.
 
@@ -4391,7 +4395,7 @@ politika ister) ve legacy upload response'undaki ham `filePath` alani (yetki dis
 
 | Kapsam | Sonuc |
 |---|---|
-| `poa-upload-authority-r6.spec.ts` (yeni; HEAD kodunda negatif kontrol KIRMIZI: VIEWER 403 uretmiyor, dosya yaziliyor, audit yok) | 15/15 PASS |
+| `poa-upload-authority-r6.spec.ts` (yeni; controller–servis birim testleri — DB/dosya islemleri mock, gercek HTTP/DB E2E DEGIL; HEAD kodunda negatif kontrol KIRMIZI: VIEWER 403 uretmiyor, dosya yaziliyor, audit yok) | 15/15 PASS |
 | `client-poa-upload-command.spec.ts` (tek-audit degismezi eklendi) | 8/8 PASS |
 | Odakli koşum (r6 + B04 + r4 + poa add-lawyers/idempotent/revoke) | 7 suite 102/102 PASS |
 | `pure/client-portal.txt` manifesti (yeni spec bagli; r4/b03/b06/CN-1/X3-B02/review-extension dahil) | 83 suite 1208/1208 PASS |
@@ -4408,3 +4412,59 @@ schema/migration URETMEZ · production'a ERISMEZ · §1–§55.6 metinlerini DEG
 OWNER-DEFERRED (C2-B05) · R8 (CASE/DEBTOR/OFFICE) D03 geregi kapsam disi · R9 gerekmedi.
 OWN-13 terminal etiketi owner dispozisyonu. ADMIN VEYA ELEVATED = §13/11 esigi
 (hassas-alan esigiyle ayni); ADRES-LIFECYCLE/BULK esigi (yalniz elevated) AYNEN.**
+
+
+---
+
+## §57 — OWN-13 Sinirli Terminal Kapanis (OWNER RATIFIED 2026-09-06)
+
+Kaynak: owner `GO — OWN-13 SINIRLI TERMINAL KAPANIS` (2026-09-06, IF GO-COMPLETE; docs PR #2518).
+Bu bolum ADDITIVE'dir; §1–§55.6 metinleri DEGISMEDI; §56.2 ve §56.5'te yalniz asagidaki iki
+uzlastirma duzeltmesi yapildi (§57.3).
+
+### 57.1 Owner karari (lossless)
+
+OWN-13 Client mutation capability-gate kapsamindaki **I01 ve I02 R1–R6 kapanisi ONAYLANDI;
+guncel durum CLOSED.** R7'nin OWN-10/12/15 kapsamindaki ertelenmis isleri, R8'in moduller arasi
+kapsami ve diger POA rotalarinin bekleyen politika kararlari **kendi kayitlarinda korunur**.
+**Bu karar butun CLIENT urununun veya production kabulunun tamamlandigi anlamina GELMEZ.**
+
+### 57.2 Baglanan kanit zinciri
+
+| Kalem | Kayit |
+|---|---|
+| I01 | PR #2058 (§51) |
+| I02-R1 / R1A / R2 / R3 | PR #2073 (§52) · #2085 (§53) · #2096 (§54) · #2107 (§55) |
+| I02-R4 / R5 / R6 uzlastirmasi + R6 legacy POA upload servis-giris kapisi | PR #2517, squash `a401d64eb9d4143a87ffa745d0c105fe34dd628a`; PR CI 9/9 SUCCESS; merge sonrasi main CI run 34026340750 SUCCESS (§56) |
+| Bu kapanis kaydi | docs PR #2518 (kod DEGISMEDI) |
+
+### 57.3 Uzlastirma duzeltmeleri (register + Charter)
+
+1. **Esik ifadesi WORKSPACE sinifiyla sinirlandi.** "Her yuzeyde ADMIN veya elevated" yalniz
+   WORKSPACE sinifi komutlar (dispatch · intake-link · POA upload · notification) icin gecerlidir.
+   Intake REVIEW komutlari ayri `isIntakeReviewAuthorized` kapisindadir; review ve promotion
+   yetkileri AYRIDIR (CR-1). §56.2 buna gore duzeltildi.
+2. **Kanit adlandirmasi.** `poa-upload-authority-r6.spec.ts` icindeki 15 test, DB/dosya islemleri
+   mock'lanan controller–servis birim testleridir; gercek HTTP/DB E2E DEGILDIR. §56.5 ve register
+   buna gore duzeltildi. (Spec'teki "Uctan uca (PoaController → PoaService)" describe etiketi
+   controller→servis zincirini kasteder; kod degismedigi icin etiket bu teslimde DOKUNULMADI.)
+
+### 57.4 Ayri korunan kayitlar (bu kapanisla KAPANMAZ)
+
+- **R7** → `master-triage-register.md` OWN-10 / OWN-12 / OWN-15 satirlari (OWNER-DEFERRED, C2-B05).
+- **R8** → CASE/DEBTOR/OFFICE implementasyonu D03 geregi OWN-13 kapsaminda DEGIL.
+- Diger `/poa` rotalarinin (`POST /poa`, `PUT /poa/:id`, `DELETE /poa/:id/file`,
+  `/poa/:id/lawyers`) rol politikasi ve legacy upload response'undaki ham `filePath` → owner
+  karari bekler (§56.4).
+- `HY_WT/OWN13_R46` orphan worktree dizini → `maintenance-register.md` MR-063 (fiziksel silme
+  AJAN tarafindan YAPILMADI; AGENTS §6).
+
+### 57.5 Bolum Self-Check
+
+Bu bolum: uygulama kodu DEGISTIRMEZ · yeni yetki/politika URETMEZ · schema/migration URETMEZ ·
+production'a ERISMEZ · §1–§55.6 metinlerini DEGISTIRMEZ · R7/R8 ve POA politika kararlarini
+KAPALI GOSTERMEZ.
+
+**OWN-13 = CLOSED (I01 + I02 R1–R6, OWNER RATIFIED 2026-09-06). CLIENT URUNU VEYA PRODUCTION
+KABULU BU KAYITLA TAMAMLANMIS SAYILMAZ. WORKSPACE ESIGI (ADMIN VEYA ELEVATED) ≠ INTAKE REVIEW
+KAPISI (isIntakeReviewAuthorized); REVIEW ≠ PROMOTION.**
