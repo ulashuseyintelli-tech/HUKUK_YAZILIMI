@@ -156,7 +156,13 @@ export class PoaController {
   ) {
     validatePoaUploadFile(file);
 
-    return this.poaService.uploadFile(id, file, req.user.tenantId);
+    // OWN-13 I02-R6: yetki kararı SERVİS girişinde (PoaService.uploadFile, owner §13/11 eşiği);
+    // controller yalnız JWT aktörünü iletir — rol politikası burada ÜRETİLMEZ.
+    return this.poaService.uploadFile(id, file, req.user.tenantId, {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+      role: req.user.role,
+    });
   }
 
   /**

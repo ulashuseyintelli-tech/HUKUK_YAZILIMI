@@ -213,6 +213,15 @@ src/modules/client/__tests__/client-intake-link-authority-primitive-b03.spec.ts
 #     X1 kendi rol politikasini URETMEZ; client-notification/ C2'ye kapali.
 src/modules/client/__tests__/client-notification-authority-primitive-b06.spec.ts
 #
+#   OWN-13 I02-R6 legacy POA upload servis-giris kapisi (SAF, DB-siz)
+#     R6 residual: `POST /poa/:id/upload` yalniz JwtAuthGuard tasiyordu (VIEWER ve
+#     elevated olmayan USER vekalet dosyasi yukleyip degistirebiliyordu, audit yoktu).
+#     Yetki artik PoaService.uploadFile SERVIS girisinde, C2-B02 ile AYNI frozen
+#     primitive ve POA_FILE_UPLOAD komut tipiyle (esik ADMIN VEYA elevated; yetkisizde
+#     yazma/audit YOK; persist hatasinda audit YOK). Workspace rotasi (C2-B02) degismedi;
+#     wrapper persist adimindan gecer — istek basina TEK yetki karari ve TEK audit.
+src/modules/poa/__tests__/poa-upload-authority-r6.spec.ts
+#
 #   C2 REVIEW AUTHORITY EXTENSION — CR-1 sozlesme kaniti (SAF, DB-siz)
 #     Owner RATIFIED 2026-08-03: INTAKE_REVIEW_CLAIM/FIELD_DECIDE/SUBMISSION_REJECT
 #     komutlari INTAKE_REVIEW sinifinda — yetki sinyali isIntakeReviewAuthorized,

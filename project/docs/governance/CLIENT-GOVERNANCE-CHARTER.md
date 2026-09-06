@@ -4323,3 +4323,88 @@ DEGISTIRMEZ.
 
 **R3-I01 CLOSED ≠ OWN-13 CLOSED. OWN-13 = PARTIAL. R4–R6 OPEN / NOT STARTED.
 ADMIN ≠ ELEVATED (ucuncu tekrar: create/update/address/bulk — D07/D04 hep AYNI esik).**
+
+
+---
+
+## §56 — OWN-13 / I02-R4–R6 Kapanis Uzlastirmasi + R6 Legacy POA Upload Servis-Giris Kapisi
+
+Kaynak: owner `GO — CLIENT / OWN-13 R4–R6 KALAN ISLERIN TAMAMLANMASI` (2026-09-06, IF
+GO-COMPLETE; PR #NNNN) ve repository-truth incelemesi. Bu bolum ADDITIVE'dir; §1–§55.6
+metinleri DEGISMEDI. §51.7 matrisindeki R4/R5/R6 satirlari ile §55.6'daki "R4–R6 OPEN / NOT
+STARTED" ifadesi bu bolumle SUPERSEDED (tarihsel metin korunur).
+
+### 56.1 Uzlastirma bulgusu
+
+Register OWN-13 satiri I02-R3'ten (2026-08-02) beri "R4-R6 hala ACIK" diyordu. Uc residual,
+CLIENT-MODULE-TERMINAL-COMPLETION-PROGRAM-R01 C2 hattinda 2026-08-03'te kapanmis, X1/X3
+hatlari primitive'leri baglamis, program 2026-08-12'de TERMINAL_CLOSED olmustu (#2344);
+yalniz OWN-13 register satiri ve bu Charter guncellenmemisti. Siniflandirma:
+R4 = uygulanmis / kaydi eksik · R5 = uygulanmis / kaydi eksik · R6 = workspace rotasi
+uygulanmis / legacy rota KODDA EKSIK (bu PR'da kapandi).
+
+### 56.2 R4/R5/R6 kanit zinciri
+
+| Id | Yuzey | Uygulama | Kanit |
+|---|---|---|---|
+| R4 | poa-reminder / template-notification / document-request dispatch (`ClientController`) + `client-notification` send-email/send-sms/bulk-email/resend | C2-B02 #2125 `db78211b` (characterization) + #2128 `3b8c511c`; C2-B06 #2133 `5ff6c076` (NOTIFICATION_* primitive); X1 CN-1 wiring #2140 `cbe49683` | `client-workspace-command-authorization-r4.spec.ts`, `client-notification-authority-primitive-b06.spec.ts`, `client-notification-authority-wiring.spec.ts` |
+| R5 | intake-link create / create-and-deliver (`ClientController`) + legacy `client-intake-links` create/revoke | C2-B03 #2129 `ae6ffd2b` (INTAKE_LINK_* primitive, FROZEN); X3-B02 #2150 `031f47cc` (legacy rotalar ayni primitive'e bagli); CR-1 review≠promote (owner RATIFIED 2026-08-03): C2 uzantisi #2146 `c7082313` + X3-B04 #2158 `80bd7e14` | `client-intake-link-authority-primitive-b03.spec.ts`, `client-intake-link.controller.spec.ts`, `client-intake-review-authority-extension.spec.ts` |
+| R6 | `POST /clients/:clientId/poas/:poaId/file` (workspace) | C2-B02 kapisi + C2-B04 #2130 `e0b6260f` reconcile (`poa.service.ts` client/tenant/isActive scoping) | `client-poa-upload-command.spec.ts`, r4 spec |
+| R6 | `POST /poa/:id/upload` (legacy) | **bu PR** — bkz. §56.3 | `poa-upload-authority-r6.spec.ts` |
+
+Esik her yuzeyde AYNI ve owner §13/11 ile ratifiyedir (kayit: CLAUDE-CLIENT-C2.md §11 B02,
+2026-08-03; decision-log satiri bu uzlastirmayla eklendi): **ADMIN VEYA canonical elevated
+(`officeApproval.isApproverEligible`)**; VIEWER ve tanimsiz rol fail-closed; cross-tenant
+TENANT_MISMATCH; basarili komut `CLIENT_WORKSPACE_COMMAND` audit; yetkisizde yan etki YOK.
+Bu esik BILINCLI olarak core hassas-alan esigiyle (§51 D02) aynidir; adres-lifecycle/bulk
+esigi (§54/§55: YALNIZ elevated, ADMIN yetmez) DEGISMEDI. Yeni esik ICAT EDILMEDI.
+
+### 56.3 R6 legacy rota — kapatilan bosluk ve uygulama
+
+`PoaController.uploadFile` → `PoaService.uploadFile` yalniz `JwtAuthGuard` tasiyordu: VIEWER ve
+elevated olmayan USER vekalet dosyasini yukleyip mevcut dosyayi DEGISTIREBILIYORDU; AuditLog
+YOKTU (HEAD kodunda negatif kontrol: VIEWER → hata yok, dosya YAZILDI, DB update 1, audit 0).
+Web `settings/clients` sayfasi bu rotayi kullanir.
+
+- Kapi **SERVIS GIRISINDE** (`PoaService.uploadFile(poaId, file, tenantId, actor)`): `actor`
+  ZORUNLU → actor gecirmeyen uretim cagrisi DERLENMEZ (R1 deseni). Tenant-scoped okumadan
+  (yan etki yok; NotFound davranisi ayni) sonra C2-B02 ile AYNI frozen primitive
+  (`runAuthorizedClientWorkspaceCommand`, komut tipi `POA_FILE_UPLOAD`) gercek yan etkiden
+  ONCE calisir. Controller yalniz JWT aktorunu iletir; rol politikasi controller'da URETILMEZ.
+- Yan etki (eski dosya silme + yazma + DB update) private `persistPoaFile`'a ayrildi.
+  Workspace wrapper `uploadFileForClientWorkspace` gated giristen DEGIL persist adimindan
+  gecer: istek basina tam olarak BIR yetki karari ve BIR audit (C2-B02 sertifikali controller
+  kapisi DEGISMEDI, cift audit YOK).
+- Yetkisiz aktorde dosya/DB yazimi ve audit YOK; persist hata verirse audit URETILMEZ;
+  audit metadata yalniz `commandType/actorRole/poaId/status` tasir (dosya adi/yolu, PII YOK).
+- Legacy response sozlesmesi ve web cagrisi DEGISMEDI. Schema/migration YOK. Deploy YOK.
+
+### 56.4 Degismeyenler ve kapsam disi
+
+R1–R3 kapilari · lifecycle esigi · C2-B02 alti-endpoint controller kapisi · X1/X3
+baglamalari · `poa.service.ts` scoping. **Kapsam disi (owner karari gerektirir):** `POST /poa`,
+`PUT /poa/:id`, `DELETE /poa/:id/file`, `POST/DELETE /poa/:id/lawyers` rotalarinin rol
+politikasi (§13/11 "gonderim/upload" kapsaminda DEGIL; vekalet ENTITY'si mutasyonlari ayri
+politika ister) ve legacy upload response'undaki ham `filePath` alani (yetki disi).
+
+### 56.5 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| `poa-upload-authority-r6.spec.ts` (yeni; HEAD kodunda negatif kontrol KIRMIZI: VIEWER 403 uretmiyor, dosya yaziliyor, audit yok) | 15/15 PASS |
+| `client-poa-upload-command.spec.ts` (tek-audit degismezi eklendi) | 8/8 PASS |
+| Odakli koşum (r6 + B04 + r4 + poa add-lawyers/idempotent/revoke) | 7 suite 102/102 PASS |
+| `pure/client-portal.txt` manifesti (yeni spec bagli; r4/b03/b06/CN-1/X3-B02/review-extension dahil) | 83 suite 1208/1208 PASS |
+| `tsc --noEmit`, degisen dosyalarda | 0 yeni |
+| schema/migration diff | 0 |
+
+### 56.6 Bolum Self-Check
+
+Bu bolum: yeni RolesGuard veya paralel capability sistemi KURMAZ · OFFICE eligibility hesabini
+KOPYALAMAZ · yeni esik ICAT ETMEZ · C2-B02 kapisini ve X1/X3 baglamalarini DEGISTIRMEZ ·
+schema/migration URETMEZ · production'a ERISMEZ · §1–§55.6 metinlerini DEGISTIRMEZ.
+
+**OWN-13 I02 R1–R6 CLOSED; residual listesi BOS. R7 (OWN-10/12/15) ayri satirlar —
+OWNER-DEFERRED (C2-B05) · R8 (CASE/DEBTOR/OFFICE) D03 geregi kapsam disi · R9 gerekmedi.
+OWN-13 terminal etiketi owner dispozisyonu. ADMIN VEYA ELEVATED = §13/11 esigi
+(hassas-alan esigiyle ayni); ADRES-LIFECYCLE/BULK esigi (yalniz elevated) AYNEN.**

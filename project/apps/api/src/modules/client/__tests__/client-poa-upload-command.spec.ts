@@ -25,12 +25,15 @@ function buildPoaServiceHarness(opts: { poa?: any } = {}) {
     },
   };
   const service = new PoaService(prisma, {} as any, {} as any);
-  jest.spyOn(service, 'uploadFile').mockResolvedValue({
+  // OWN-13 I02-R6: wrapper artık gated `uploadFile` girişinden DEĞİL, private persist
+  // adımından geçer (yetki + audit çağıran ClientController'ın C2-B02 primitive'inde).
+  jest.spyOn(service as any, 'persistPoaFile').mockResolvedValue({
     success: true,
     filePath: 'C:/secret/storage/tenant-1/poa-1.pdf',
     fileSize: 1234,
     mimeType: 'application/pdf',
   } as any);
+  jest.spyOn(service, 'uploadFile');
   return { service, prisma };
 }
 
@@ -70,7 +73,10 @@ describe('PoaService.uploadFileForClientWorkspace', () => {
       },
       select: { id: true, clientId: true },
     });
-    expect(service.uploadFile).toHaveBeenCalledWith('poa-1', file, 'tenant-1');
+    // Tek-audit değişmezi: yetki + audit ClientController.uploadPoaFile'daki C2-B02
+    // primitive'inde; wrapper gated girişi ÇAĞIRMAZ (istek başına BİR karar + BİR audit).
+    expect((service as any).persistPoaFile).toHaveBeenCalledWith('poa-1', file, 'tenant-1');
+    expect(service.uploadFile).not.toHaveBeenCalled();
     expect(result).toEqual({
       clientId: 'client-1',
       poaId: 'poa-1',
@@ -87,6 +93,7 @@ describe('PoaService.uploadFileForClientWorkspace', () => {
     const { service } = buildPoaServiceHarness({ poa: null });
 
     await expect(service.uploadFileForClientWorkspace('client-1', 'poa-foreign', buildFile(), 'tenant-1')).rejects.toBeInstanceOf(NotFoundException);
+    expect((service as any).persistPoaFile).not.toHaveBeenCalled();
     expect(service.uploadFile).not.toHaveBeenCalled();
   });
 });
