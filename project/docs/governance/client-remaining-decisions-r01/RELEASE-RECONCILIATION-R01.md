@@ -101,7 +101,7 @@ Sekiz commit; **hicbiri canlida DEGIL**.
 
 ---
 
-> **GUNCELLEME (owner GO Faz 3, PR #PENDING):** asagidaki §2 commit listesi ve §3 kaynak commit'i
+> **GUNCELLEME (owner GO Faz 3, PR #2529):** asagidaki §2 commit listesi ve §3 kaynak commit'i
 > **BU BELGENIN ILK SURUMUNE** aittir (main `48ab1eb1`). Paket o tarihten sonra iki teslim daha
 > aldi (#2525 Faz 1 kaynak kusuru duzeltmeleri, #2528 Faz 2 OWN-12 A/C + Yol1 arayuzu) ve Office
 > hatti da docs commit'leri ekledi. **Guncel ve baglayici paket kimligi, kapsami, rollback bedeli
