@@ -5,7 +5,12 @@ import { OfficeApprovalService } from '../office-approval/office-approval.servic
 import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../automation/poa-expiry-delivery.service';
 import { NotificationDispatcherService, type DispatchResult } from '../client-notification/notification-dispatcher.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
-import { assertCreateIdentityChecksum } from './client-identity-checksum.util';
+import {
+  assertChangedIdentityChecksum,
+  assertCreateIdentityChecksum,
+  assertReactivationIdentityChecksum,
+  resolveEffectiveIdentity,
+} from './client-identity-checksum.util';
 import {
   CLIENT_MUTATION_REASON,
   classifyClientPayload,
@@ -1493,6 +1498,9 @@ export class ClientService {
           // OWN-13 I02-R1A (owner clarification): `isActive:false → true` LIFECYCLE mutasyonudur.
           // Kapı HERHANGİ BİR DB mutation'dan ÖNCE çalışır — yetkisiz aktör hiçbir yazma yapmaz.
           await this.assertCanReactivateViaCreate(actor, tenantId);
+          // D-1b: create/dedup üzerinden aktifleştirmede de YAZILACAK SON kimlik (bu dalda
+          // mevcut kaydın kimliği — reaktivasyon başka alan yazmaz) geçerli olmalıdır.
+          assertReactivationIdentityChecksum(resolveEffectiveIdentity({}, existing));
           // C0-a: reaktivasyon mutation + audit AYNI transaction; CLIENT_CREATE'ten ayrı action.
           try {
           await this.prisma.$transaction(async (tx) => {
@@ -1500,8 +1508,16 @@ export class ClientService {
             // (`isActive:false`) KOŞULLU yapılır + tenant predicate taşır. Kayıt bu arada
             // değiştiyse `count===0` olur ve HİÇBİR bayrak çevrilmez; yetkisiz bir aktörün
             // ürettiği stale gözlem yetkili bir yazmaya dönüşemez.
+            // D-1b: yazma, doğruladığımız kimlik DEĞERLERİNE de koşullu — eşzamanlı bir
+            // kimlik değişikliği doğrulamayı geçersiz kılamaz (count===0 → hiçbir yazma/audit).
             const { count } = await tx.client.updateMany({
-              where: { id: existing.id, tenantId, isActive: false },
+              where: {
+                id: existing.id,
+                tenantId,
+                isActive: false,
+                tckn: existing.tckn,
+                vkn: existing.vkn,
+              },
               data: { isActive: true },
             });
             if (count === 0) return; // eşzamanlı değişim — audit de yazılmaz (olay gerçekleşmedi)
@@ -1724,6 +1740,18 @@ export class ClientService {
       await this.assertCanManageLifecycle(actor?.userId, tenantId);
     }
 
+    // D-1b (owner GO 2026-09-06) — BİLİNÇLİ SIKILAŞTIRMA, transaction'dan ÖNCE:
+    //  (1) DEĞİŞEN ve DOLU kimlik değeri checksum'dan geçer (değişmeyen legacy değer DOKUNULMAZ);
+    //  (2) aktifleştirme (false→true) varsa YAZILACAK SON kimlik (yeni ?? mevcut) geçerli olmalı —
+    //      kimlik düzeltmesi ile aktivasyon AYNI istekte gelirse son değerler esas alınır.
+    // Boş kimlik ve `identityNo` sözleşmesi DEĞİŞMEDİ.
+    assertChangedIdentityChecksum(data, existing);
+    const reactivating = data.isActive === true && existing.isActive === false;
+    const effectiveIdentity = resolveEffectiveIdentity(data, existing);
+    if (reactivating) {
+      assertReactivationIdentityChecksum(effectiveIdentity);
+    }
+
     // PR-U4: UPDATE-PATH kimlik-block (önce guard YOKTU). Müvekkilde TCKN zorunlu/kesin ayrıştırıcı →
     // isim-review YOK (false-positive riski); yalnız kesin kimlik (TCKN/VKN) collision block.
     // Self (id) HARİÇ, yalnız AKTİF kayıtlar, yalnız kimlik GERÇEKTEN değişince.
@@ -1782,8 +1810,18 @@ export class ClientService {
     try {
     await this.prisma.$transaction(async (tx) => {
       // P0.5: tenant-scoped write — update() whereUnique tenantId taşıyamaz; updateMany {id,tenantId} guard.
+      // D-1b TOCTOU: aktifleştirme, DOĞRULADIĞIMIZ duruma koşulludur — kayıt bu arada
+      // değiştiyse (başka bir yazma kimliği veya isActive'i çevirdiyse) yazma GERÇEKLEŞMEZ.
+      // Yalnız reaktivasyon dalında ek koşul; normal update davranışı DEĞİŞMEZ.
+      const reactivationGuard = reactivating
+        ? {
+            isActive: false,
+            ...(data.tckn === undefined ? { tckn: existing.tckn } : {}),
+            ...(data.vkn === undefined ? { vkn: existing.vkn } : {}),
+          }
+        : {};
       const { count } = await tx.client.updateMany({
-      where: { id, tenantId },
+      where: { id, tenantId, ...reactivationGuard },
       data: {
         type: data.type,
         displayName: displayName,
@@ -1827,7 +1865,17 @@ export class ClientService {
         greetingChannel: data.greetingChannel,
       },
     });
-      if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');
+      if (count === 0) {
+        // D-1b: reaktivasyon dalında sıfır sonuç, kaydın eşzamanlı değiştiği anlamına gelir
+        // (kayıt yok değil) → doğrulama geçersiz kılınamaz; istek çakışma ile reddedilir.
+        if (reactivating) {
+          throw new ConflictException({
+            code: 'CLIENT_STATE_CHANGED',
+            message: 'Kayıt bu sırada değişti; işlemi yeniden deneyin (aktifleştirme uygulanmadı)',
+          });
+        }
+        throw new NotFoundException('Müvekkil bulunamadı');
+      }
       const updated = await tx.client.findFirst({ where: { id, tenantId } });
       if (!updated) throw new NotFoundException('Müvekkil bulunamadı');
 

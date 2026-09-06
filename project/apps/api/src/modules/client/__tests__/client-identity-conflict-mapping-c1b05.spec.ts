@@ -88,7 +88,7 @@ describe("C1-B05 — P2002 → DUPLICATE_IDENTITY sözleşme çevirisi", () => {
     const { svc } = build({ txError: p2002() });
     expect.assertions(2);
     try {
-      await svc.update("self", "t1", { type: "PERSON", tckn: "22222222222" }, actorAdmin);
+      await svc.update("self", "t1", { type: "PERSON", tckn: "12345678028" }, actorAdmin);
     } catch (e: any) {
       expect(e).toBeInstanceOf(ConflictException);
       expect(e.getResponse().code).toBe("DUPLICATE_IDENTITY");

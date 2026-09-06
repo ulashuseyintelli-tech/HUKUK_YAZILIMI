@@ -3,9 +3,13 @@
  *
  * Kural domain/service katmanında (controller'da DEĞİL) → TÜM create yolları tutarlı kapsanır
  * (settings modal · cases/new · Excel import · seed · gelecekteki REST v2 / job / queue).
- * Doğrulama YALNIZ GERÇEKTEN YENİ kayıt için: dedup/reactivate (legacy, geçersiz-checksum dahil)
- * ETKİLENMEZ — eski veri kilitlenmez. update() DOKUNULMAZ (Faz 4'e ertelendi; bunu
- * client-update-duplicate-guard.spec geçersiz-checksum tckn ile update geçerek kanıtlar).
+ * Doğrulama YALNIZ GERÇEKTEN YENİ kayıt için: AKTİF duplicate eşleşmesi (legacy, geçersiz-checksum
+ * dahil) ETKİLENMEZ — eski veri kilitlenmez.
+ *
+ * D-1b (owner GO 2026-09-06) — BİLİNÇLİ DAVRANIŞ SIKILAŞTIRMASI: `isActive:false → true` geçişi
+ * (create/dedup üzerinden REACTIVATE) artık YAZILACAK SON kimliğin geçerli olmasını ister. Aktif
+ * duplicate yolu (mutasyon YOK) DEĞİŞMEDİ. Ayrıntı: Charter §58.3 ve
+ * client-identity-checksum-tightening-d1b.spec.ts.
  */
 import { BadRequestException } from "@nestjs/common";
 import { ClientService } from "../client.service";
@@ -80,13 +84,39 @@ describe("ClientService.create — TCKN/VKN checksum (Task A/Faz 1)", () => {
     expect(tx.client.create).toHaveBeenCalledTimes(1);
   });
 
-  it("DEDUP/reactivate: legacy geçersiz-checksum TCKN eşleşmesi → REDDEDİLMEZ (eski veri kilitlenmez)", async () => {
-    // Soft-deleted legacy müvekkilin tckn'i geçersiz-checksum; yeniden ekleme reactivate eder.
-    // Checksum dedup'TAN SONRA olduğundan bu yola HİÇ gelinmez → BadRequest YOK.
-    const { svc, tx } = svcFor({ id: "legacy1", isActive: false, displayName: "LEGACY", tckn: "11111111111" });
+  it("DEDUP (AKTİF eşleşme): legacy geçersiz-checksum TCKN → REDDEDİLMEZ (eski veri kilitlenmez)", async () => {
+    // Aktif duplicate: mutasyon YOK, mevcut kayıt döner. Checksum dedup'TAN SONRA olduğundan bu
+    // yola HİÇ gelinmez → BadRequest YOK. D-1b bu dalı DEĞİŞTİRMEZ (lifecycle geçişi yok).
+    const { svc, tx } = svcFor({ id: "legacy1", isActive: true, displayName: "LEGACY", tckn: "11111111111" });
     const res = await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111111" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect((res as any)._existingReturned).toBe(true);
+    expect((res as any)._reactivated).toBe(false);
+    expect(tx.client.create).not.toHaveBeenCalled();
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("D-1b — DEDUP/REACTIVATE: legacy geçersiz-checksum TCKN ile aktifleştirme REDDEDİLİR (bilinçli sıkılaştırma)", async () => {
+    // Soft-deleted legacy kaydın tckn'i geçersiz-checksum. isActive:false → true bir LIFECYCLE
+    // geçişidir; D-1b YAZILACAK SON kimliğin geçerli olmasını ister → 400, hiçbir yazma YOK.
+    // Kayıt "düzeltilmez": veri DOKUNULMADAN pasif kalır.
+    const { svc, tx } = svcFor({ id: "legacy1", isActive: false, displayName: "LEGACY", tckn: "11111111111" });
+    let caught: any;
+    try {
+      await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "11111111111" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(BadRequestException);
+    expect(caught.response.reasonCode).toBe("CLIENT_IDENTITY_CHECKSUM_INVALID");
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+    expect(tx.client.create).not.toHaveBeenCalled();
+  });
+
+  it("D-1b — DEDUP/REACTIVATE: GEÇERLİ checksum'lı pasif kayıt aktifleştirilebilir", async () => {
+    const { svc, tx } = svcFor({ id: "ok1", isActive: false, displayName: "OK", tckn: "10000000146" });
+    const res = await svc.create("t1", { type: "PERSON", firstName: "A", tckn: "10000000146" }, { userId: 'fixture-actor', tenantId: "t1", role: 'ADMIN' });
     expect((res as any)._reactivated).toBe(true);
+    expect(tx.client.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.client.create).not.toHaveBeenCalled();
   });
 });

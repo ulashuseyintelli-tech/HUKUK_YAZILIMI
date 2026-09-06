@@ -17,6 +17,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { PoaService, CreatePoaDto, UpdatePoaDto, validatePoaUploadFile } from "./poa.service";
+import type { ClientWorkspaceCommandActor } from "../client/client-workspace-command-authority";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -24,6 +25,11 @@ import * as path from "path";
 @UseGuards(JwtAuthGuard)
 export class PoaController {
   constructor(private readonly poaService: PoaService) {}
+
+  /** D-4: aktor ve tenant YALNIZ sunucu tarafi JWT'den; govdeden aktor/tenant alinmaz. */
+  private actorOf(req: any): ClientWorkspaceCommandActor {
+    return { userId: req?.user?.id, tenantId: req?.user?.tenantId, role: req?.user?.role };
+  }
 
   // ==================== SPESİFİK ROUTE'LAR ÖNCE ====================
   // NestJS'de parametreli route'lar (:id) spesifik route'lardan sonra gelmeli
@@ -92,7 +98,7 @@ export class PoaController {
    */
   @Post()
   async create(@Body() dto: CreatePoaDto, @Request() req: any) {
-    return this.poaService.create(dto, req.user.tenantId);
+    return this.poaService.create(dto, req.user.tenantId, this.actorOf(req));
   }
 
   /**
@@ -105,7 +111,7 @@ export class PoaController {
     @Body() dto: UpdatePoaDto,
     @Request() req: any
   ) {
-    return this.poaService.update(id, dto, req.user.tenantId);
+    return this.poaService.update(id, dto, req.user.tenantId, this.actorOf(req));
   }
 
   /**
@@ -127,7 +133,7 @@ export class PoaController {
     @Body() body: { lawyerIds: string[] },
     @Request() req: any
   ) {
-    return this.poaService.addLawyers(id, body.lawyerIds, req.user.tenantId);
+    return this.poaService.addLawyers(id, body.lawyerIds, req.user.tenantId, this.actorOf(req));
   }
 
   /**
@@ -140,7 +146,7 @@ export class PoaController {
     @Param("lawyerId") lawyerId: string,
     @Request() req: any
   ) {
-    return this.poaService.removeLawyer(id, lawyerId, req.user.tenantId);
+    return this.poaService.removeLawyer(id, lawyerId, req.user.tenantId, this.actorOf(req));
   }
 
   /**
@@ -158,11 +164,7 @@ export class PoaController {
 
     // OWN-13 I02-R6: yetki kararı SERVİS girişinde (PoaService.uploadFile, owner §13/11 eşiği);
     // controller yalnız JWT aktörünü iletir — rol politikası burada ÜRETİLMEZ.
-    return this.poaService.uploadFile(id, file, req.user.tenantId, {
-      userId: req.user.id,
-      tenantId: req.user.tenantId,
-      role: req.user.role,
-    });
+    return this.poaService.uploadFile(id, file, req.user.tenantId, this.actorOf(req));
   }
 
   /**
@@ -191,6 +193,6 @@ export class PoaController {
     @Param("id") id: string,
     @Request() req: any
   ) {
-    return this.poaService.deleteFile(id, req.user.tenantId);
+    return this.poaService.deleteFile(id, req.user.tenantId, this.actorOf(req));
   }
 }

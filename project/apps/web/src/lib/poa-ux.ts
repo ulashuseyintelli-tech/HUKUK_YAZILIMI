@@ -64,3 +64,40 @@ export function buildPoaCreatePayload(clientId: string, source: any): Record<str
     canRelease: source?.canRelease ?? false,
   };
 }
+
+/**
+ * D-4 (owner GO 2026-09-06): `POST /poa` (ve diger POA yazimlari) artik ADMIN VEYA yetkilendirilmis
+ * onaylayici ister. Yetki reddi (403 + stabil reasonCode) kullaniciya ACIKCA gosterilir; sessiz
+ * basari YOK. Musteri kaydi (POST /clients) zaten kaydedildiyse yeniden denemede mukerrer musteri
+ * uretilmez: musteri secili kalir, vekaleti yetkili kullanici sonradan ekler.
+ */
+export const POA_AUTHORIZATION_REASON_CODES: ReadonlySet<string> = new Set([
+  "CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND",
+  "CLIENT_MUTATION_DENIED_VIEWER",
+  "CLIENT_MUTATION_DENIED_UNKNOWN_ROLE",
+  "CLIENT_MUTATION_DENIED_NO_ACTOR",
+  "CLIENT_MUTATION_DENIED_TENANT_MISMATCH",
+]);
+
+/** Hata bir POA yetki reddi mi (HTTP 403 veya bilinen reasonCode)? */
+export function isPoaAuthorizationDenied(err: any): boolean {
+  const code = err?.body?.reasonCode ?? err?.response?.data?.reasonCode;
+  return err?.status === 403 || (typeof code === "string" && POA_AUTHORIZATION_REASON_CODES.has(code));
+}
+
+export const POA_AUTHORIZATION_DENIED_MESSAGE =
+  "Vekalet kaydı için yetkili onay gerekir (ADMIN veya yetkilendirilmiş onaylayıcı).";
+
+/**
+ * Vekalet kaydi BASARISIZ oldugunda gosterilecek metin. `clientLabel` verilirse musterinin
+ * KAYDEDILDIGI, yalniz vekaletin kaydedilmedigi ve yeniden musteri olusturulmayacagi acikca yazilir.
+ */
+export function poaCreateFailureMessage(err: any, clientLabel?: string): string {
+  const head = clientLabel
+    ? `Müvekkil "${clientLabel}" kaydedildi, ancak vekalet KAYDEDİLMEDİ.`
+    : "Vekalet KAYDEDİLMEDİ.";
+  const reason = isPoaAuthorizationDenied(err)
+    ? `${POA_AUTHORIZATION_DENIED_MESSAGE} Müvekkil yeniden oluşturulmaz; vekaleti yetkili bir kullanıcı sonradan ekleyebilir.`
+    : (err?.message || "Bilinmeyen hata");
+  return `${head}\n\n${reason}`;
+}

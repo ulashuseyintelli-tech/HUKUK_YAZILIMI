@@ -11,6 +11,8 @@ import { NotFoundException, BadRequestException } from "@nestjs/common";
 import { PoaService } from "../poa.service";
 
 const TENANT = "tenant-1";
+// D-4: addLawyers() artik aktor ZORUNLU (ADMIN → eligibility sorgusuz).
+const ADMIN = { userId: "u1", tenantId: TENANT, role: "ADMIN" };
 const POA_ID = "poa-1";
 
 function setup(opts: { poaFound?: boolean; lawyerCount?: number } = {}) {
@@ -39,7 +41,7 @@ describe("CBND-2 (H6) PoaService.addLawyers() — poaId tenant guard", () => {
   it("same-tenant poaId → findOne ile doğrulanır, createMany çalışır", async () => {
     const { svc, clientPowerOfAttorneyFindFirst, poaLawyerCreateMany } = setup();
 
-    const result = await svc.addLawyers(POA_ID, ["law-1", "law-2"], TENANT);
+    const result = await svc.addLawyers(POA_ID, ["law-1", "law-2"], TENANT, ADMIN);
 
     expect(clientPowerOfAttorneyFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: POA_ID, client: { tenantId: TENANT } } }),
@@ -57,7 +59,7 @@ describe("CBND-2 (H6) PoaService.addLawyers() — poaId tenant guard", () => {
   it("cross-tenant/geçersiz poaId → NotFoundException, lawyer sorgusu ve createMany HİÇ çağrılmaz", async () => {
     const { svc, lawyerFindMany, poaLawyerCreateMany } = setup({ poaFound: false });
 
-    await expect(svc.addLawyers("foreign-poa", ["law-1"], TENANT)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.addLawyers("foreign-poa", ["law-1"], TENANT, ADMIN)).rejects.toBeInstanceOf(NotFoundException);
     expect(lawyerFindMany).not.toHaveBeenCalled();
     expect(poaLawyerCreateMany).not.toHaveBeenCalled();
   });
@@ -65,7 +67,7 @@ describe("CBND-2 (H6) PoaService.addLawyers() — poaId tenant guard", () => {
   it("same-tenant poaId ama cross-tenant lawyerId → BadRequestException (mevcut davranış korunur)", async () => {
     const { svc, poaLawyerCreateMany } = setup({ lawyerCount: 1 }); // yalnız ilk lawyerId "bulunur"
 
-    await expect(svc.addLawyers(POA_ID, ["law-1", "foreign-law"], TENANT)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.addLawyers(POA_ID, ["law-1", "foreign-law"], TENANT, ADMIN)).rejects.toBeInstanceOf(BadRequestException);
     expect(poaLawyerCreateMany).not.toHaveBeenCalled();
   });
 });

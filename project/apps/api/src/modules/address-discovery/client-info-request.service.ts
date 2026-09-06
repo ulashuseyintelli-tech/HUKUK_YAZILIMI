@@ -1,6 +1,14 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EmailProviderService } from '../notification/email-provider.service';
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import {
+  CLIENT_WORKSPACE_COMMAND,
+  runAuthorizedClientWorkspaceCommand,
+  type ClientWorkspaceCommandActor,
+} from '../client/client-workspace-command-authority';
+import { decideClientOperationalCommand } from '../client/client-mutation-policy';
 import { maskEmail } from '../../common/pii-mask.util';
 import { CreateClientInfoRequestDto } from './dto/client-info-request.dto';
 import {
@@ -19,17 +27,81 @@ export class ClientInfoRequestService {
   constructor(
     private prisma: PrismaService,
     private emailProvider: EmailProviderService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
   ) {}
+
+  /**
+   * D-3a: C2 frozen primitive bağımlılıkları — elevated sinyali OFFICE'ten (`isApproverEligible`),
+   * audit ortak `AuditService.log`. OFFICE eligibility hesabı KOPYALANMAZ.
+   */
+  private workspaceCommandDeps() {
+    return {
+      isApproverEligible: (userId: string, tenantId: string) =>
+        this.officeApproval.isApproverEligible(userId, tenantId),
+      auditLog: (input: Parameters<AuditService['log']>[0]) => this.audit.log(input),
+    };
+  }
+
+  /**
+   * D-3a: durum işaretleri (respond / no-response) için D01 coarse kapısı — VIEWER DENY,
+   * USER/ADMIN ALLOW. Gönderim komutlarının WORKSPACE eşiğinden AYRIDIR ve onu gevşetmez.
+   */
+  private assertCanMarkStatus(actor: ClientWorkspaceCommandActor, tenantId: string): void {
+    const actorTenantId = String(actor?.tenantId ?? '').trim();
+    if (!actorTenantId || actorTenantId !== tenantId) {
+      throw new ForbiddenException({
+        message: 'Aktör hedef tenant ile eşleşmiyor.',
+        reasonCode: 'CLIENT_MUTATION_DENIED_TENANT_MISMATCH',
+      });
+    }
+    const decision = decideClientOperationalCommand({ userId: actor?.userId, role: actor?.role });
+    if (!decision.allowed) {
+      throw new ForbiddenException({
+        message: 'Bilgi talebi durumunu güncelleme yetkiniz yok.',
+        reasonCode: decision.reasonCode,
+      });
+    }
+  }
+
+  /**
+   * Müvekkil bilgi talebi oluştur ve GERÇEK e-posta gönder — D-3a (owner GO 2026-09-06):
+   * yetki + audit SERVİS GİRİŞİNDE, gönderimden ÖNCE.
+   *
+   * Önceden yalnız `JwtAuthGuard` vardı: VIEWER dahil her kimlikli kullanıcı müvekkile e-posta
+   * gönderebiliyordu ve AuditLog üretilmiyordu. Artık C2 frozen primitive (`INFO_REQUEST_SEND`,
+   * §13/11 madde 6 eşiği: ADMIN VEYA canonical elevated; VIEWER/tanımsız rol fail-closed;
+   * cross-tenant TENANT_MISMATCH) çalışır; yetkisiz aktörde sağlayıcı çağrısı ve DB mutasyonu
+   * OLUŞMAZ. Aktör ve tenant YALNIZ sunucu tarafı JWT'den gelir.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - AddressDiscoveryController.createClientInfoRequest() → POST /address-discovery/client-info-request
+   */
+  async createRequest(tenantId: string, dto: CreateClientInfoRequestDto, actor: ClientWorkspaceCommandActor) {
+    return runAuthorizedClientWorkspaceCommand(
+      this.workspaceCommandDeps(),
+      actor,
+      { tenantId, clientId: dto.clientId, commandType: CLIENT_WORKSPACE_COMMAND.INFO_REQUEST_SEND },
+      () => this.createRequestUnchecked(tenantId, dto, actor.userId ?? null),
+      (r: any) => ({ requestId: r?.id ?? null, status: 'sent', caseId: dto.caseId }),
+    );
+  }
 
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - AddressDiscoveryController.createClientInfoRequest() → POST /address-discovery/client-info-request (Manuel müvekkil bilgi talebi)
-  /// - ClientInfoRequestService.sendAutoRequestOnCaseCreate() → Takip oluşturma sonrası otomatik bilgi talebi
+  /// - ClientInfoRequestService.createRequest() → D-3a kapısından SONRA (manuel yol)
+  /// - ClientInfoRequestService.sendAutoRequestOnCaseCreate() → Takip oluşturma sonrası otomatik
+  ///   bilgi talebi (SİSTEM yolu; HTTP'den erişilemez, aktör taşımaz — istemci "SYSTEM" veya
+  ///   "skip-authority" seçerek manuel kapıyı AŞAMAZ).
   /// </remarks>
   /**
-   * Müvekkil bilgi talebi oluştur
+   * Müvekkil bilgi talebi oluştur (yetki KARARI YOKTUR)
    */
-  async createRequest(tenantId: string, dto: CreateClientInfoRequestDto) {
+  private async createRequestUnchecked(
+    tenantId: string,
+    dto: CreateClientInfoRequestDto,
+    actorUserId: string | null,
+  ) {
     // Case ve Client'ı doğrula
     const caseData = await this.prisma.case.findFirst({
       where: { id: dto.caseId, tenantId },
@@ -127,7 +199,16 @@ export class ClientInfoRequestService {
     });
 
     if (!emailResult.success) {
+      // D-3a: sağlayıcı başarısızlığı BAŞARILI GÖNDERİM olarak KAYDEDİLMEZ. "SENT" satırı geri
+      // alınır ve istek hata ile biter → primitive audit de üretmez (başarısız komut audit üretmez).
       this.logger.warn(`E-posta gönderilemedi: ${emailResult.errorMessage}`);
+      await this.prisma.clientInfoRequest
+        .delete({ where: { id: request.id } })
+        .catch((e: any) => this.logger.error(`Başarısız talep kaydı geri alınamadı: ${e?.message}`));
+      throw new ServiceUnavailableException({
+        message: 'Bilgi talebi e-postası gönderilemedi; kayıt oluşturulmadı',
+        reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED',
+      });
     } else {
       this.logger.log(`Müvekkil bilgi talebi gönderildi: ${maskEmail(emailTo)}`);
       
@@ -146,7 +227,8 @@ export class ClientInfoRequestService {
             body: `📬 Adres bilgisi talep e-postası gönderildi.\n\nBorçlu: ${debtor?.name || 'Belirtilmemiş'}\nAlıcı: ${emailTo}`,
             status: 'SENT',
             sentAt: now,
-            sentById: 'system',
+            // D-3a: ortak aktör — manuel yolda gerçek kullanıcı, otomatik yolda 'system'.
+            sentById: actorUserId ?? 'system',
           },
         });
         
@@ -164,6 +246,8 @@ export class ClientInfoRequestService {
             },
             showInNotes: true,
             noteText: `📬 Müvekkile adres bilgisi talebi gönderildi\nBorçlu: ${debtor?.name || 'Belirtilmemiş'}\nAlıcı: ${emailTo}`,
+            // D-3a: mevcut AddressAuditLog kaydı KORUNUR; yalnız aktör alanı doldurulur.
+            userId: actorUserId ?? undefined,
           },
         });
         
@@ -243,12 +327,13 @@ export class ClientInfoRequestService {
         // Her borçlu için ayrı talep gönder
         for (const caseDebtor of caseData.debtors) {
           try {
-            await this.createRequest(tenantId, {
+            // D-3a: SİSTEM yolu — manuel kapıdan geçmez, aktör taşımaz (audit 'system').
+            await this.createRequestUnchecked(tenantId, {
               caseId,
               clientId: client.id,
               debtorId: caseDebtor.debtor.id,
               emailTo: email,
-            });
+            }, null);
           } catch (error: any) {
             this.logger.error(`Bilgi talebi gönderilemedi: ${error.message}`);
           }
@@ -260,9 +345,32 @@ export class ClientInfoRequestService {
   }
 
   /**
-   * Hatırlatma e-postası gönder
+   * Hatırlatma e-postası gönder — D-3a: yetki + audit SERVİS GİRİŞİNDE (`INFO_REQUEST_REMINDER_SEND`,
+   * gönderimle AYNI eşik). Yetkisiz aktörde sağlayıcı çağrısı ve sayaç güncellemesi OLUŞMAZ.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - AddressDiscoveryController.sendClientInfoRequestReminder() → POST /address-discovery/client-info-request/:id/reminder
    */
-  async sendReminder(tenantId: string, requestId: string) {
+  async sendReminder(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor) {
+    // Tenant-scoped okuma (yan etki YOK): audit entityId için clientId; yok/cross-tenant → NotFound.
+    const owner = await this.prisma.clientInfoRequest.findFirst({
+      where: { id: requestId, tenantId },
+      select: { clientId: true },
+    });
+    if (!owner) {
+      throw new NotFoundException('Bilgi talebi bulunamadı');
+    }
+    return runAuthorizedClientWorkspaceCommand(
+      this.workspaceCommandDeps(),
+      actor,
+      { tenantId, clientId: owner.clientId, commandType: CLIENT_WORKSPACE_COMMAND.INFO_REQUEST_REMINDER_SEND },
+      () => this.sendReminderUnchecked(tenantId, requestId),
+      (r: any) => ({ requestId, status: 'reminder_sent', reminderCount: r?.reminderCount ?? null }),
+    );
+  }
+
+  /** Hatırlatma gövdesi — yetki KARARI YOKTUR; yalnız `sendReminder()` çağırır. */
+  private async sendReminderUnchecked(tenantId: string, requestId: string) {
     const request = await this.prisma.clientInfoRequest.findFirst({
       where: { id: requestId, tenantId },
       include: {
@@ -315,6 +423,15 @@ export class ClientInfoRequestService {
       text: generateReminderEmailText(emailData),
     });
 
+    // D-3a: sağlayıcı başarısızlığı gönderim SAYILMAZ — sayaç ve `reminderSentAt` YAZILMAZ.
+    if (!emailResult.success) {
+      this.logger.warn(`Hatırlatma e-postası gönderilemedi: ${emailResult.errorMessage}`);
+      throw new ServiceUnavailableException({
+        message: 'Hatırlatma e-postası gönderilemedi; hatırlatma kaydedilmedi',
+        reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED',
+      });
+    }
+
     // Güncelle
     const updated = await this.prisma.clientInfoRequest.update({
       where: { id: requestId },
@@ -332,9 +449,14 @@ export class ClientInfoRequestService {
   }
 
   /**
-   * Yanıt alındı olarak işaretle
+   * Yanıt alındı olarak işaretle — D-3a: VIEWER'a KAPALI, USER/ADMIN'e açık (D01 coarse);
+   * dış gönderim olmadığı için elevated ŞARTI YOKTUR. Başarılı mutasyon ortak aktörlü audit üretir.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - AddressDiscoveryController.markClientInfoRequestAsResponded() → PUT /address-discovery/client-info-request/:id/respond
    */
-  async markAsResponded(tenantId: string, requestId: string, notes?: string) {
+  async markAsResponded(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor, notes?: string) {
+    this.assertCanMarkStatus(actor, tenantId);
     const request = await this.prisma.clientInfoRequest.findFirst({
       where: { id: requestId, tenantId },
     });
@@ -343,7 +465,7 @@ export class ClientInfoRequestService {
       throw new NotFoundException('Bilgi talebi bulunamadı');
     }
 
-    return this.prisma.clientInfoRequest.update({
+    const result = await this.prisma.clientInfoRequest.update({
       where: { id: requestId },
       data: {
         status: 'RESPONDED',
@@ -355,12 +477,19 @@ export class ClientInfoRequestService {
         debtor: { select: { id: true, name: true } },
       },
     });
+
+    await this.logStatusAudit(tenantId, request.clientId, requestId, 'RESPONDED', actor);
+    return result;
   }
 
   /**
-   * Yanıt yok olarak işaretle
+   * Yanıt yok olarak işaretle — D-3a: VIEWER'a KAPALI, USER/ADMIN'e açık; başarılı mutasyon audit üretir.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - AddressDiscoveryController.markClientInfoRequestAsNoResponse() → PUT /address-discovery/client-info-request/:id/no-response
    */
-  async markAsNoResponse(tenantId: string, requestId: string) {
+  async markAsNoResponse(tenantId: string, requestId: string, actor: ClientWorkspaceCommandActor) {
+    this.assertCanMarkStatus(actor, tenantId);
     const request = await this.prisma.clientInfoRequest.findFirst({
       where: { id: requestId, tenantId },
     });
@@ -369,11 +498,35 @@ export class ClientInfoRequestService {
       throw new NotFoundException('Bilgi talebi bulunamadı');
     }
 
-    return this.prisma.clientInfoRequest.update({
+    const result = await this.prisma.clientInfoRequest.update({
       where: { id: requestId },
       data: {
         status: 'NO_RESPONSE',
       },
+    });
+
+    await this.logStatusAudit(tenantId, request.clientId, requestId, 'NO_RESPONSE', actor);
+    return result;
+  }
+
+  /**
+   * D-3a: durum işaretlerinin ortak aktörlü audit'i. Yalnız BAŞARILI mutasyondan sonra çağrılır;
+   * metadata yalnız talep kimliği ve yeni durumu taşır (e-posta içeriği/adresi YAZILMAZ).
+   */
+  private async logStatusAudit(
+    tenantId: string,
+    clientId: string,
+    requestId: string,
+    status: 'RESPONDED' | 'NO_RESPONSE',
+    actor: ClientWorkspaceCommandActor,
+  ): Promise<void> {
+    await this.audit.log({
+      tenantId,
+      userId: String(actor?.userId ?? ''),
+      action: 'CLIENT_INFO_REQUEST_STATUS',
+      entityType: 'Client',
+      entityId: clientId,
+      metadata: { requestId, status, actorRole: actor?.role ?? null },
     });
   }
 

@@ -36,6 +36,8 @@ const describeWin = IS_WIN ? describe : describe.skip;
 const FS_ROOT = path.parse(process.cwd()).root;
 const FAKE_CWD = path.join(FS_ROOT, "c37-fake-release-behav", "project", "apps", "api");
 const TENANT_A = "clx000000000000000000wa";
+/** D-4: depolama davranis testleri icin yetkili aktor (rol matrisi poa-mutation-authority-d4.spec.ts'te). */
+const ADMIN_ACTOR = { userId: "u1", tenantId: TENANT_A, role: "ADMIN" };
 const TENANT_B = "clx000000000000000000wb";
 
 function makeRoot(prefix: string): string {
@@ -157,7 +159,9 @@ describe("C37 — POA containment fail-closed", () => {
         update: jest.fn().mockResolvedValue({}),
       },
     } as any;
-    const svc = new PoaService(prisma, {} as any, {} as any, storage);
+    // D-4: deleteFile artik aktor ZORUNLU; bu spec depolama containment'ini olcer, bu yuzden
+    // ADMIN aktorle (eligibility sorgusuz) kosar — olculen davranis DEGISMEDI.
+    const svc = new PoaService(prisma, { log: jest.fn() } as any, { isApproverEligible: jest.fn() } as any, storage);
     jest.spyOn(svc, "findOne").mockResolvedValue(poa as any);
     return { svc, prisma };
   };
@@ -168,7 +172,7 @@ describe("C37 — POA containment fail-closed", () => {
     fs.writeFileSync(target, "x");
     const { svc } = buildService(storage, { filePath: target });
 
-    await svc.deleteFile("poa-1", TENANT_A);
+    await svc.deleteFile("poa-1", TENANT_A, ADMIN_ACTOR);
     expect(fs.existsSync(target)).toBe(false);
   });
 
@@ -178,7 +182,7 @@ describe("C37 — POA containment fail-closed", () => {
     fs.writeFileSync(victim, "x");
     const { svc } = buildService(storage, { filePath: victim });
 
-    await expect(svc.deleteFile("poa-1", TENANT_A)).rejects.toThrow(RuntimeStoragePathError);
+    await expect(svc.deleteFile("poa-1", TENANT_A, ADMIN_ACTOR)).rejects.toThrow(RuntimeStoragePathError);
     expect(fs.existsSync(victim)).toBe(true);
   });
 
@@ -188,7 +192,7 @@ describe("C37 — POA containment fail-closed", () => {
     fs.writeFileSync(outside, "x");
     const { svc } = buildService(storage, { filePath: outside });
 
-    await expect(svc.deleteFile("poa-1", TENANT_A)).rejects.toThrow(/kova disinda/);
+    await expect(svc.deleteFile("poa-1", TENANT_A, ADMIN_ACTOR)).rejects.toThrow(/kova disinda/);
     expect(fs.existsSync(outside)).toBe(true);
   });
 

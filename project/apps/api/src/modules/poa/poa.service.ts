@@ -16,6 +16,14 @@ import {
 export const POA_UPLOAD_ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"] as const;
 export const POA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 
+/** D-5: legacy `POST /poa/:id/upload` yaniti — sunucu dosya yolu YOK. */
+export interface LegacyPoaUploadResult {
+  success: true;
+  hasFile: true;
+  fileSize: number | null;
+  mimeType: string | null;
+}
+
 export interface ClientWorkspacePoaUploadResult {
   clientId: string;
   poaId: string;
@@ -101,15 +109,59 @@ export interface CreatePoaDto {
   lawyerIds?: string[];
 }
 
-export interface UpdatePoaDto extends Partial<CreatePoaDto> {
-  status?: PoaStatus;
-}
+/**
+ * D-4 (owner GO 2026-09-06): update ile YAZILABILIR alanlar acikca sinirlidir. `status`/`isActive`
+ * (lifecycle — yalniz revoke yolu), `clientId` (sahiplik) ve dosya alanlari (yalniz upload/deleteFile)
+ * bu tipte YOKTUR; runtime'da `projectPoaWritableInput` gonderilirse 400 ile REDDEDER.
+ */
+export type UpdatePoaDto = Partial<Omit<CreatePoaDto, 'clientId' | 'filePath' | 'fileSize' | 'mimeType'>>;
 
 export interface PoaValidationResult {
   isValid: boolean;
   poa?: any;
   message?: string;
   daysRemaining?: number;
+}
+
+// ── D-4 (owner GO 2026-09-06): POA yazma yuzeyi — alan allowlist'leri (mass-assignment KAPALI) ──
+/** CREATE ile yazilabilir alanlar = CreatePoaDto'nun bildirilen anahtarlari. */
+export const POA_CREATE_WRITABLE_FIELDS: readonly string[] = [
+  'clientId', 'notaryName', 'notaryCity', 'journalNo', 'poaNumber', 'dateIssued', 'isLimited', 'validUntil',
+  'scopeType', 'scopeDescription', 'canCollect', 'canWaive', 'canSettle', 'canRelease',
+  'filePath', 'fileSize', 'mimeType', 'lawyerIds',
+];
+/** UPDATE ile yazilabilir alanlar: lifecycle, sahiplik ve dosya alanlari HARIC. */
+export const POA_UPDATE_WRITABLE_FIELDS: readonly string[] = [
+  'notaryName', 'notaryCity', 'journalNo', 'poaNumber', 'dateIssued', 'isLimited', 'validUntil',
+  'scopeType', 'scopeDescription', 'canCollect', 'canWaive', 'canSettle', 'canRelease', 'lawyerIds',
+];
+/** Her iki islemde de gonderilmesi REDDEDILEN alanlar (sessizce dusurulmez): lifecycle/sahiplik yan kapidan gecemez. */
+export const POA_REJECTED_FIELDS: readonly string[] = ['status', 'isActive', 'tenantId', 'id', 'createdAt', 'updatedAt'];
+/** UPDATE'te ayrica reddedilen alanlar: sahiplik degisimi ve dosya alanlari (yalniz upload/deleteFile yolu). */
+export const POA_UPDATE_REJECTED_FIELDS: readonly string[] = ['clientId', 'filePath', 'fileSize', 'mimeType'];
+
+/**
+ * Ham govdeyi yazilabilir alanlara indirger. Reddedilen alanlar 400 + stabil `reasonCode` +
+ * yalniz alan ADLARI (deger tasinmaz); allowlist disi diger anahtarlar dusurulur.
+ */
+export function projectPoaWritableInput(
+  input: Record<string, unknown> | null | undefined,
+  op: 'CREATE' | 'UPDATE',
+): Record<string, unknown> {
+  const src = (input ?? {}) as Record<string, unknown>;
+  const rejectedSet = op === 'UPDATE' ? [...POA_REJECTED_FIELDS, ...POA_UPDATE_REJECTED_FIELDS] : POA_REJECTED_FIELDS;
+  const offendingFields = Object.keys(src).filter((k) => src[k] !== undefined && rejectedSet.includes(k));
+  if (offendingFields.length > 0) {
+    throw new BadRequestException({
+      message: 'Bu alanlar bu istekle yazilamaz (lifecycle/sahiplik/dosya alanlari ayri yollardan degisir)',
+      reasonCode: 'POA_FIELD_NOT_WRITABLE',
+      offendingFields,
+    });
+  }
+  const allow = op === 'UPDATE' ? POA_UPDATE_WRITABLE_FIELDS : POA_CREATE_WRITABLE_FIELDS;
+  const out: Record<string, unknown> = {};
+  for (const k of allow) if (src[k] !== undefined) out[k] = src[k];
+  return out;
 }
 
 @Injectable()
@@ -130,6 +182,18 @@ export class PoaService {
     // testlerde ayni cozumleme/dogrulama zinciri kullanilir — production'da
     // eksik/guvensiz kok yine HARD FAIL uretir.
     this.storage = storage ?? runtimeStoragePaths();
+  }
+
+  /**
+   * D-4: C2 frozen primitive'inin bagimliliklari — elevated sinyali OFFICE'ten (`isApproverEligible`,
+   * yalniz gerektiginde), audit `AuditService.log`. OFFICE eligibility hesabi KOPYALANMAZ.
+   */
+  private workspaceCommandDeps() {
+    return {
+      isApproverEligible: (userId: string, actorTenantId: string) =>
+        this.officeApproval.isApproverEligible(userId, actorTenantId),
+      auditLog: (input: Parameters<AuditService['log']>[0]) => this.audit.log(input),
+    };
   }
 
   /**
@@ -185,7 +249,43 @@ export class PoaService {
   /**
    * Yeni vekalet oluştur
    */
-  async create(dto: CreatePoaDto, tenantId: string) {
+  /**
+   * Yeni vekalet olustur — D-4 (owner GO 2026-09-06): yetki + audit SERVIS GIRISINDE.
+   *
+   * Onceden yalniz JwtAuthGuard vardi: VIEWER bile vekalet olusturabiliyor, `status` varsayilani ACTIVE
+   * oldugundan K9 capability bagi (canCollect/canSettle/...) yetkisiz olusturulan vekaletle etkinlesiyordu.
+   * Simdi: `actor` ZORUNLU; C2 frozen primitive (`POA_CREATE`, esik ADMIN VEYA canonical elevated;
+   * VIEWER/tanimsiz rol fail-closed; cross-tenant TENANT_MISMATCH) HERHANGI bir yazmadan ONCE; govde
+   * `projectPoaWritableInput` ile allowlist'e indirgenir (`status`/`isActive`/`tenantId` gonderimi 400).
+   * Istek basina TEK yetki karari ve TEK audit: dedup/suppress ve ic avukat baglama (`linkLawyers`)
+   * ayri karar/audit URETMEZ; audit metadata `status: created | duplicate_suppressed`.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - PoaController.create() -> POST /poa
+   */
+  async create(dto: CreatePoaDto, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    const input = projectPoaWritableInput(dto as unknown as Record<string, unknown>, 'CREATE') as unknown as CreatePoaDto;
+    if (!input.clientId) {
+      throw new BadRequestException('clientId zorunludur');
+    }
+    return runAuthorizedClientWorkspaceCommand(
+      this.workspaceCommandDeps(),
+      actor,
+      { tenantId, clientId: input.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_CREATE },
+      () => this.createUnchecked(input, tenantId),
+      (r: any) => ({
+        poaId: r?.id ?? null,
+        status: r?._suppressedDuplicate ? 'duplicate_suppressed' : 'created',
+        lawyerCount: input.lawyerIds?.length ?? 0,
+      }),
+    );
+  }
+
+  /**
+   * Vekalet olusturma govdesi — yetki KARARI YOKTUR; yalniz `create()` (yetki verilmis) cagirir.
+   * @remarks Çağrıldığı yerler: PoaService.create() (D-4 kapisindan sonra).
+   */
+  private async createUnchecked(dto: CreatePoaDto, tenantId: string) {
     // Müvekkil kontrolü
     const client = await this.prisma.client.findFirst({
       where: { id: dto.clientId, tenantId },
@@ -259,7 +359,7 @@ export class PoaService {
 
     // Avukatları ekle
     if (lawyerIds && lawyerIds.length > 0) {
-      await this.addLawyers(poa.id, lawyerIds, tenantId);
+      await this.linkLawyers(poa.id, lawyerIds, tenantId); // D-4: yetki+audit create()'te BIR kez; ic bag ayri karar URETMEZ
     }
 
     this.logger.log(`Yeni vekalet oluşturuldu: ${poa.id} (Müvekkil: ${client.displayName})`);
@@ -270,8 +370,39 @@ export class PoaService {
   /**
    * Vekalet güncelle
    */
-  async update(id: string, dto: UpdatePoaDto, tenantId: string) {
+  /**
+   * Vekalet guncelle — D-4: yetki + audit SERVIS GIRISINDE (`POA_UPDATE`, ADMIN VEYA elevated).
+   * Yazilabilir alanlar `POA_UPDATE_WRITABLE_FIELDS` ile acikca sinirli: `status`/`isActive`
+   * (lifecycle yalniz `delete()` = revoke, elevated-only), `clientId` ve dosya alanlari 400 ile
+   * reddedilir → genel update daha siki lifecycle kuralini ASAMAZ. Avukat listesi degisimi ayni
+   * istegin parcasidir (ayri karar/audit yok).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - PoaController.update() -> PUT /poa/:id
+   */
+  async update(id: string, dto: UpdatePoaDto, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    const input = projectPoaWritableInput(dto as unknown as Record<string, unknown>, 'UPDATE') as UpdatePoaDto;
+    // Tenant-scoped okuma (yan etki YOK): audit entityId icin clientId; yok/cross-tenant → NotFound.
     const existing = await this.findOne(id, tenantId);
+    return runAuthorizedClientWorkspaceCommand(
+      this.workspaceCommandDeps(),
+      actor,
+      { tenantId, clientId: existing.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_UPDATE },
+      () => this.updateUnchecked(id, input, tenantId, existing),
+      () => ({
+        poaId: id,
+        status: 'updated',
+        fields: Object.keys(input).filter((k) => k !== 'lawyerIds'),
+        lawyersReplaced: input.lawyerIds !== undefined,
+      }),
+    );
+  }
+
+  /**
+   * Guncelleme govdesi — yetki KARARI YOKTUR; yalniz `update()` (yetki verilmis) cagirir.
+   * @remarks Çağrıldığı yerler: PoaService.update() (D-4 kapisindan sonra).
+   */
+  private async updateUnchecked(id: string, dto: UpdatePoaDto, tenantId: string, existing: { validUntil?: Date | null }) {
 
     // Süreli vekalet kontrolü
     if (dto.isLimited && !dto.validUntil && !existing.validUntil) {
@@ -291,7 +422,7 @@ export class PoaService {
       await this.prisma.poaLawyer.deleteMany({ where: { poaId: id } });
       // Yeni avukatları ekle
       if (lawyerIds.length > 0) {
-        await this.addLawyers(id, lawyerIds, tenantId);
+        await this.linkLawyers(id, lawyerIds, tenantId); // D-4: tek karar/tek audit update()'te
       }
     }
 
@@ -354,9 +485,27 @@ export class PoaService {
   }
 
   /**
-   * Vekalete avukat ekle
+   * Vekalete avukat ekle — D-4: yetki + audit SERVIS GIRISINDE (`POA_LAWYERS_ADD`).
    *
-   * @remarks CBND-2 (H6): poaId tenant doğrulaması removeLawyer ile AYNI desende (findOne → Yetki
+   * @remarks Çağrıldığı yerler:
+   * - PoaController.addLawyers() -> POST /poa/:id/lawyers
+   */
+  async addLawyers(poaId: string, lawyerIds: string[], tenantId: string, actor: ClientWorkspaceCommandActor) {
+    const poa = await this.findOne(poaId, tenantId); // tenant-scoped okuma; audit icin clientId
+    return runAuthorizedClientWorkspaceCommand(
+      this.workspaceCommandDeps(),
+      actor,
+      { tenantId, clientId: poa.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_LAWYERS_ADD },
+      () => this.linkLawyers(poaId, lawyerIds, tenantId),
+      (r) => ({ poaId, status: 'lawyers_added', count: r.count }),
+    );
+  }
+
+  /**
+   * Avukat baglama govdesi — yetki KARARI YOKTUR (D-4: karar+audit cagiran giriste: create/update/addLawyers).
+   *
+   * @remarks Çağrıldığı yerler: PoaService.createUnchecked / updateUnchecked / addLawyers.
+   * CBND-2 (H6): poaId tenant doğrulaması removeLawyer ile AYNI desende (findOne → Yetki
    * kontrolü). Önceden yalnız lawyerIds tenant-doğrulanıyordu; poaId doğrulanmadan poaLawyer.createMany
    * çalıştırılıyordu → cross-tenant poaId (tahmin/sızma ile ele geçirilmiş cuid) ile yabancı tenant'ın
    * vekaletine yazılabiliyordu (ilk eklenen isPrimary:true → hedef POA'nın mevcut primary'siyle çift-
@@ -364,7 +513,7 @@ export class PoaService {
    * (create() satır ~220, update() satır ~252) zaten aynı tenant'a ait id kullanıyor — bu guard onlar
    * için no-op (fazladan bir tenant-scoped sorgu, davranış değişmez).
    */
-  async addLawyers(poaId: string, lawyerIds: string[], tenantId: string) {
+  private async linkLawyers(poaId: string, lawyerIds: string[], tenantId: string) {
     await this.findOne(poaId, tenantId); // Yetki kontrolü (removeLawyer ile aynı desen)
 
     // Avukatların varlığını kontrol et
@@ -447,16 +596,23 @@ export class PoaService {
   }
 
   /**
-   * Vekaletten avukat çıkar
+   * Vekaletten avukat cikar — D-4: yetki + audit SERVIS GIRISINDE (`POA_LAWYER_REMOVE`).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - PoaController.removeLawyer() -> DELETE /poa/:id/lawyers/:lawyerId
    */
-  async removeLawyer(poaId: string, lawyerId: string, tenantId: string) {
-    await this.findOne(poaId, tenantId); // Yetki kontrolü
-
-    await this.prisma.poaLawyer.deleteMany({
-      where: { poaId, lawyerId },
-    });
-
-    return { success: true };
+  async removeLawyer(poaId: string, lawyerId: string, tenantId: string, actor: ClientWorkspaceCommandActor) {
+    const poa = await this.findOne(poaId, tenantId); // Yetki kontrolü (tenant) + audit icin clientId
+    return runAuthorizedClientWorkspaceCommand(
+      this.workspaceCommandDeps(),
+      actor,
+      { tenantId, clientId: poa.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_LAWYER_REMOVE },
+      async () => {
+        const { count } = await this.prisma.poaLawyer.deleteMany({ where: { poaId, lawyerId } });
+        return { success: true as const, removed: count };
+      },
+      (r) => ({ poaId, status: 'lawyer_removed', removed: r.removed }),
+    );
   }
 
   /**
@@ -656,7 +812,8 @@ export class PoaService {
    * Workspace rotası (`POST /clients/:clientId/poas/:poaId/file`) AYNI primitive'i
    * ClientController.uploadPoaFile içinde çalıştırır (C2-B02, sertifikalı); bu yüzden
    * `uploadFileForClientWorkspace` bu kapıdan DEĞİL doğrudan `persistPoaFile`'dan geçer —
-   * istek başına tam olarak BİR yetki kararı ve BİR audit kaydı. Response sözleşmesi DEĞİŞMEDİ.
+   * istek başına tam olarak BİR yetki kararı ve BİR audit kaydı. D-5: yanıt `filePath` TAŞIMAZ
+   * (`LegacyPoaUploadResult`).
    *
    * @remarks Çağrıldığı yerler:
    * - PoaController.uploadFile() -> POST /poa/:id/upload
@@ -679,7 +836,19 @@ export class PoaService {
       },
       actor,
       { tenantId, clientId: poa.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_FILE_UPLOAD },
-      () => this.persistPoaFile(poaId, file, tenantId),
+      async () => {
+        // D-5 (owner GO 2026-09-06): legacy yanit sunucu dosya yolunu TASIMAZ. Tek HTTP tuketici
+        // (web settings/clients) govdeyi kullanmaz, listeyi yeniden yukler; tip sozlesmesi
+        // LegacyPoaUploadResult ile acik.
+        const uploaded = await this.persistPoaFile(poaId, file, tenantId);
+        const result: LegacyPoaUploadResult = {
+          success: true,
+          hasFile: true,
+          fileSize: uploaded.fileSize ?? null,
+          mimeType: uploaded.mimeType ?? null,
+        };
+        return result;
+      },
       () => ({ poaId, status: "uploaded" }),
     );
   }
@@ -797,10 +966,24 @@ export class PoaService {
   }
 
   /**
-   * Vekalet dosyasını sil
+   * Vekalet dosyasini sil — D-4: yetki + audit SERVIS GIRISINDE (`POA_FILE_DELETE`).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - PoaController.deleteFile() -> DELETE /poa/:id/file
    */
-  async deleteFile(poaId: string, tenantId: string) {
+  async deleteFile(poaId: string, tenantId: string, actor: ClientWorkspaceCommandActor) {
     const poa = await this.findOne(poaId, tenantId);
+    return runAuthorizedClientWorkspaceCommand(
+      this.workspaceCommandDeps(),
+      actor,
+      { tenantId, clientId: poa.clientId, commandType: CLIENT_WORKSPACE_COMMAND.POA_FILE_DELETE },
+      () => this.deleteFileUnchecked(poa, poaId, tenantId),
+      () => ({ poaId, status: 'file_deleted' }),
+    );
+  }
+
+  /** Dosya silme govdesi — yetki KARARI YOKTUR; yalniz `deleteFile()` cagirir. */
+  private async deleteFileUnchecked(poa: { filePath: string | null }, poaId: string, tenantId: string) {
 
     // Veritabaninda saklanan yol GUVENILMEZDIR: silmeden once kova icinde
     // oldugu operasyon aninda dogrulanir (TOCTOU + reparse dahil).

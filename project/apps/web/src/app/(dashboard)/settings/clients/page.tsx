@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
-import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields } from "@/lib/poa-ux";
+import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields, isPoaAuthorizationDenied, poaCreateFailureMessage } from "@/lib/poa-ux";
 import { hasStructuredAddresses } from "@/lib/client-write";
 import {
   CLIENT_CAPABILITIES_DENIED,
@@ -1909,7 +1909,8 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
         lawyerIds: [],
       });
     } catch (e: any) {
-      alert(e.message || "Vekalet eklenemedi");
+      // D-4: yetki reddi ACIK mesajla (sunucu reasonCode'u), sessiz basari yok.
+      alert(isPoaAuthorizationDenied(e) ? poaCreateFailureMessage(e) : (e.message || "Vekalet eklenemedi"));
     } finally {
       setSaving(false);
     }

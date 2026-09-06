@@ -4,6 +4,8 @@
  * anahtar DEĞİL. Eşleşme varsa yeni kayıt AÇILMAZ, mevcut aktif döner; boş alan zenginleşir, dolu ezilmez.
  */
 
+// D-4: create() artik aktor ZORUNLU; idempotency vakalari ADMIN aktorle (eligibility sorgusuz) kosar.
+const ADMIN = { userId: "u1", tenantId: "t1", role: "ADMIN" };
 import { PoaService, normalizeNotaryName, sameIssueDay, buildPoaEnrichment } from "../poa.service";
 
 describe("normalizeNotaryName (PR-2b hardening: diakritik + noktalama folding)", () => {
@@ -60,7 +62,7 @@ describe("PoaService.create — idempotency", () => {
     };
     // P1A: constructor 2 yeni parametre aldı (AuditService, OfficeApprovalService); idempotency
     // testleri revoke'a dokunmaz → boş mock yeter.
-    const svc = new PoaService(prisma, {} as any, {} as any);
+    const svc = new PoaService(prisma, { log: jest.fn() } as any, { isApproverEligible: jest.fn().mockResolvedValue(true) } as any);
     return { svc, prisma };
   };
 
@@ -71,7 +73,7 @@ describe("PoaService.create — idempotency", () => {
       { id: "poa-existing", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12"), poaNumber: "48", notaryCity: null },
     ]);
 
-    const res = await svc.create({ ...baseDto, poaNumber: "00468" } as any, "t1");
+    const res = await svc.create({ ...baseDto, poaNumber: "00468" } as any, "t1", ADMIN);
 
     expect(prisma.clientPowerOfAttorney.create).not.toHaveBeenCalled();
     expect((res as any)._suppressedDuplicate).toBe(true); // PR-2a: UX sinyali
@@ -83,7 +85,7 @@ describe("PoaService.create — idempotency", () => {
       { id: "poa-existing", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12"), poaNumber: "48", notaryCity: null },
     ]);
 
-    await svc.create({ ...baseDto, poaNumber: "00468", notaryCity: "İSTANBUL" } as any, "t1");
+    await svc.create({ ...baseDto, poaNumber: "00468", notaryCity: "İSTANBUL" } as any, "t1", ADMIN);
 
     const upd = prisma.clientPowerOfAttorney.update.mock.calls[0][0];
     expect(upd.where).toEqual({ id: "poa-existing" });
@@ -95,7 +97,7 @@ describe("PoaService.create — idempotency", () => {
       { id: "poa-existing", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12") },
     ]);
 
-    await svc.create({ ...baseDto, dateIssued: new Date("2026-02-01") } as any, "t1");
+    await svc.create({ ...baseDto, dateIssued: new Date("2026-02-01") } as any, "t1", ADMIN);
 
     expect(prisma.clientPowerOfAttorney.create).toHaveBeenCalled();
   });
@@ -103,7 +105,7 @@ describe("PoaService.create — idempotency", () => {
   it("anahtar eksik (noter yok) → güvenli taraf: YENİ kayıt açılır", async () => {
     const { svc, prisma } = build([]);
 
-    await svc.create({ clientId: "cli1", dateIssued: new Date("2026-01-12") } as any, "t1");
+    await svc.create({ clientId: "cli1", dateIssued: new Date("2026-01-12") } as any, "t1", ADMIN);
 
     expect(prisma.clientPowerOfAttorney.create).toHaveBeenCalled();
     expect(prisma.clientPowerOfAttorney.findMany).not.toHaveBeenCalled(); // dedupe sorgusu bile çalışmaz
@@ -112,7 +114,7 @@ describe("PoaService.create — idempotency", () => {
   it("hiç aktif POA yok → YENİ kayıt açılır", async () => {
     const { svc, prisma } = build([]);
 
-    await svc.create(baseDto as any, "t1");
+    await svc.create(baseDto as any, "t1", ADMIN);
 
     expect(prisma.clientPowerOfAttorney.create).toHaveBeenCalled();
   });
@@ -135,7 +137,7 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
       lawyer: { findMany: jest.fn().mockResolvedValue(opts.validLawyers ?? []) },
     };
     // P1A: constructor 2 yeni parametre aldı; bu testler revoke'a dokunmaz → boş mock yeter.
-    return { svc: new PoaService(prisma, {} as any, {} as any), prisma };
+    return { svc: new PoaService(prisma, { log: jest.fn() } as any, { isApproverEligible: jest.fn().mockResolvedValue(true) } as any), prisma };
   };
 
   const dupDto = { clientId: "cli1", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12") };
@@ -143,7 +145,7 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
 
   it("1) duplicate POA + yeni lawyerIds → eksik PoaLawyer eklenir (ilk=primary, skipDuplicates)", async () => {
     const { svc, prisma } = build(activeMatch, { existingLinks: [], validLawyers: [{ id: "law1" }, { id: "law2" }] });
-    const res = await svc.create({ ...dupDto, lawyerIds: ["law1", "law2"] }, "t1");
+    const res = await svc.create({ ...dupDto, lawyerIds: ["law1", "law2"] }, "t1", ADMIN);
     expect(res._suppressedDuplicate).toBe(true);
     expect(prisma.clientPowerOfAttorney.create).not.toHaveBeenCalled();
     expect(prisma.poaLawyer.createMany).toHaveBeenCalledTimes(1);
@@ -158,28 +160,28 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
 
   it("2) duplicate POA + zaten bağlı lawyerIds → createMany ÇAĞRILMAZ (duplicate yok)", async () => {
     const { svc, prisma } = build(activeMatch, { existingLinks: [{ lawyerId: "law1", isPrimary: true }], validLawyers: [{ id: "law1" }] });
-    await svc.create({ ...dupDto, lawyerIds: ["law1"] }, "t1");
+    await svc.create({ ...dupDto, lawyerIds: ["law1"] }, "t1", ADMIN);
     expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
     expect(prisma.lawyer.findMany).not.toHaveBeenCalled();
   });
 
   it("3) empty lawyerIds → NO-OP", async () => {
     const { svc, prisma } = build(activeMatch);
-    await svc.create({ ...dupDto, lawyerIds: [] }, "t1");
+    await svc.create({ ...dupDto, lawyerIds: [] }, "t1", ADMIN);
     expect(prisma.poaLawyer.findMany).not.toHaveBeenCalled();
     expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
   });
 
   it("3b) lawyerIds undefined → NO-OP", async () => {
     const { svc, prisma } = build(activeMatch);
-    await svc.create({ ...dupDto }, "t1");
+    await svc.create({ ...dupDto }, "t1", ADMIN);
     expect(prisma.poaLawyer.findMany).not.toHaveBeenCalled();
     expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
   });
 
   it("4) cross-tenant/invalid lawyerId → eklenmez, suppress PATLAMAZ", async () => {
     const { svc, prisma } = build(activeMatch, { existingLinks: [], validLawyers: [{ id: "law1" }] });
-    const res = await svc.create({ ...dupDto, lawyerIds: ["law1", "foreign"] }, "t1");
+    const res = await svc.create({ ...dupDto, lawyerIds: ["law1", "foreign"] }, "t1", ADMIN);
     expect(res._suppressedDuplicate).toBe(true);
     const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
     expect(arg.data).toEqual([{ tenantId: "t1", poaId: "poa-existing", lawyerId: "law1", isPrimary: true }]);
@@ -187,14 +189,14 @@ describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
 
   it("4b) hepsi cross-tenant → createMany çağrılmaz, suppress döner (throw yok)", async () => {
     const { svc, prisma } = build(activeMatch, { existingLinks: [], validLawyers: [] });
-    const res = await svc.create({ ...dupDto, lawyerIds: ["foreign"] }, "t1");
+    const res = await svc.create({ ...dupDto, lawyerIds: ["foreign"] }, "t1", ADMIN);
     expect(res._suppressedDuplicate).toBe(true);
     expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
   });
 
   it("5) mevcut bağ varsa yeni eklenen primary OLMAZ", async () => {
     const { svc, prisma } = build(activeMatch, { existingLinks: [{ lawyerId: "lawX", isPrimary: true }], validLawyers: [{ id: "law2" }] });
-    await svc.create({ ...dupDto, lawyerIds: ["law2"] }, "t1");
+    await svc.create({ ...dupDto, lawyerIds: ["law2"] }, "t1", ADMIN);
     const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
     expect(arg.data).toEqual([{ tenantId: "t1", poaId: "poa-existing", lawyerId: "law2", isPrimary: false }]);
   });

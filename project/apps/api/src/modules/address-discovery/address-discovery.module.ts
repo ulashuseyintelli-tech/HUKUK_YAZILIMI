@@ -10,9 +10,11 @@ import { UyapQueryService } from './uyap-query.service';
 import { InstitutionLetterService } from './institution-letter.service';
 import { PolicyEngineModule } from '../policy-engine/policy-engine.module';
 import { CaseDebtorLifecycleGuardModule } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module';
+// D-3a: bilgi talebi gonderim kapisi icin OFFICE eligibility (AuditService @Global).
+import { OfficeApprovalModule } from '../office-approval/office-approval.module';
 
 @Module({
-  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule), CaseDebtorLifecycleGuardModule],
+  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule), CaseDebtorLifecycleGuardModule, OfficeApprovalModule],
   controllers: [AddressDiscoveryController],
   providers: [
     AddressDiscoveryService,

@@ -9,6 +9,9 @@ import {
   hasPoaInput,
   stripPoaFields,
   buildPoaCreatePayload,
+  isPoaAuthorizationDenied,
+  poaCreateFailureMessage,
+  POA_AUTHORIZATION_DENIED_MESSAGE,
 } from "@/lib/poa-ux";
 
 describe("isPoaDuplicateSuppressed", () => {
@@ -103,5 +106,27 @@ describe("buildPoaCreatePayload", () => {
     expect(out.validUntil).toBeUndefined();
     expect(out.canCollect).toBe(true);
     expect(out.canWaive).toBe(false);
+  });
+});
+
+describe("D-4 — POA yetki reddi kullanıcı yüzeyi", () => {
+  it("403 + reasonCode → yetki reddi olarak tanınır", () => {
+    expect(isPoaAuthorizationDenied({ status: 403, body: { reasonCode: "CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND" } })).toBe(true);
+    expect(isPoaAuthorizationDenied({ body: { reasonCode: "CLIENT_MUTATION_DENIED_VIEWER" } })).toBe(true);
+    expect(isPoaAuthorizationDenied({ status: 400, body: { reasonCode: "POA_FIELD_NOT_WRITABLE" } })).toBe(false);
+    expect(isPoaAuthorizationDenied(new Error("network"))).toBe(false);
+  });
+  it("müvekkil kaydedildiyse mesaj bunu ve vekaletin KAYDEDİLMEDİĞİNİ açıkça söyler; yeniden müvekkil oluşturulmaz", () => {
+    const msg = poaCreateFailureMessage({ status: 403, body: { reasonCode: "CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND" } }, "Ayşe Yılmaz");
+    expect(msg).toContain('Müvekkil "Ayşe Yılmaz" kaydedildi');
+    expect(msg).toContain("vekalet KAYDEDİLMEDİ");
+    expect(msg).toContain(POA_AUTHORIZATION_DENIED_MESSAGE);
+    expect(msg).toContain("yeniden oluşturulmaz");
+  });
+  it("yetki dışı hata → sunucu mesajı korunur", () => {
+    const msg = poaCreateFailureMessage({ status: 400, message: "Süreli vekalet için geçerlilik bitiş tarihi zorunludur" });
+    expect(msg).toContain("Vekalet KAYDEDİLMEDİ");
+    expect(msg).toContain("geçerlilik bitiş tarihi");
+    expect(msg).not.toContain(POA_AUTHORIZATION_DENIED_MESSAGE);
   });
 });

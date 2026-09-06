@@ -15,7 +15,9 @@ describe('ClientInfoRequestService debtor ownership guard', () => {
       clientNotification: { create: jest.fn() },
     };
     emailProvider = { send: jest.fn() };
-    service = new ClientInfoRequestService(prisma, emailProvider);
+    // D-3a: ctor'a AuditService + OfficeApprovalService eklendi; bu vaka ADMIN aktorle kosar
+    // (eligibility sorgusuz) — olculen sey debtor ownership guard'idir.
+    service = new ClientInfoRequestService(prisma, emailProvider, { log: jest.fn() } as any, { isApproverEligible: jest.fn() } as any);
   });
 
   it('dto.debtorId verilen case içindeki CaseDebtor listesinde değilse reddeder', async () => {
@@ -41,7 +43,7 @@ describe('ClientInfoRequestService debtor ownership guard', () => {
         clientId: 'client-1',
         debtorId: 'same-tenant-but-not-in-case',
         emailTo: 'client@example.com',
-      }),
+      }, { userId: 'u1', tenantId: 'tenant-1', role: 'ADMIN' }),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(prisma.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({

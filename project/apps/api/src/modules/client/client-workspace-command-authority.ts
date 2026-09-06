@@ -18,7 +18,10 @@ import {
  * `assertCanUpdate` deseniyle aynı).
  *
  * @remarks Çağrıldığı yerler: ClientController.sendPoaReminder / sendTemplateNotification /
- * sendDocumentRequest / createIntakeLink / createAndDeliverIntakeLink / uploadPoaFile.
+ * sendDocumentRequest / createIntakeLink / createAndDeliverIntakeLink / uploadPoaFile;
+ * PoaService.uploadFile / create / update / addLawyers / removeLawyer / deleteFile (D-4, servis girisi);
+ * ClientIntakeLinkController (X3-B02); ClientNotificationAuthorityAdapter (X1 CN-1);
+ * ClientIntakeReviewController (X3-B04).
  */
 
 /** Audit `metadata.commandType` için stabil komut adları (owner §13/11 kapsam listesi). */
@@ -30,6 +33,17 @@ export const CLIENT_WORKSPACE_COMMAND = {
   INTAKE_LINK_CREATE_AND_DELIVER: 'INTAKE_LINK_CREATE_AND_DELIVER',
   INTAKE_LINK_REVOKE: 'INTAKE_LINK_REVOKE',
   POA_FILE_UPLOAD: 'POA_FILE_UPLOAD',
+  // D-4 (owner GO 2026-09-06, dar additive genisleme): POA ENTITY yazimlari — create/update/avukat
+  // baglama/avukat cikarma/dosya silme. Esik WORKSPACE sinifi (ADMIN VEYA elevated); revoke
+  // (PoaService.delete) elevated-only kalir ve BU primitive'den GECMEZ.
+  POA_CREATE: 'POA_CREATE',
+  POA_UPDATE: 'POA_UPDATE',
+  POA_LAWYERS_ADD: 'POA_LAWYERS_ADD',
+  POA_LAWYER_REMOVE: 'POA_LAWYER_REMOVE',
+  POA_FILE_DELETE: 'POA_FILE_DELETE',
+  // D-3a: muvekkile GERCEK e-posta gonderen bilgi talebi komutlari (§13/11 madde 6 esigi).
+  INFO_REQUEST_SEND: 'INFO_REQUEST_SEND',
+  INFO_REQUEST_REMINDER_SEND: 'INFO_REQUEST_REMINDER_SEND',
   NOTIFICATION_SEND_EMAIL: 'NOTIFICATION_SEND_EMAIL',
   NOTIFICATION_SEND_SMS: 'NOTIFICATION_SEND_SMS',
   NOTIFICATION_BULK_EMAIL: 'NOTIFICATION_BULK_EMAIL',
@@ -67,6 +81,13 @@ export const CLIENT_WORKSPACE_COMMAND_CLASS = {
   INTAKE_LINK_CREATE_AND_DELIVER: 'WORKSPACE',
   INTAKE_LINK_REVOKE: 'WORKSPACE',
   POA_FILE_UPLOAD: 'WORKSPACE',
+  POA_CREATE: 'WORKSPACE',
+  POA_UPDATE: 'WORKSPACE',
+  POA_LAWYERS_ADD: 'WORKSPACE',
+  POA_LAWYER_REMOVE: 'WORKSPACE',
+  POA_FILE_DELETE: 'WORKSPACE',
+  INFO_REQUEST_SEND: 'WORKSPACE',
+  INFO_REQUEST_REMINDER_SEND: 'WORKSPACE',
   NOTIFICATION_SEND_EMAIL: 'WORKSPACE',
   NOTIFICATION_SEND_SMS: 'WORKSPACE',
   NOTIFICATION_BULK_EMAIL: 'WORKSPACE',
