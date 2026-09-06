@@ -1,22 +1,21 @@
 /**
- * BILGI TALEBI GONDERIM BASARISIZLIGI — BIRLESIK HATA DURUMU REGRESYONU (gercek PostgreSQL).
+ * BILGI TALEBI GONDERIM DURUMU — KALICI DURUM DOGRULANMIS SONUCA DAYANIR (gercek PostgreSQL).
  *
- * KUSUR (duzeltme oncesi):
- *  - Talep kaydi `status: 'SENT'` olarak saglayici cagrisindan ONCE yaziliyordu.
- *  - Gonderim basarisiz olunca kayit siliniyordu, ama silme hatasi YUTULUYORDU
- *    (`.catch(() => {})`). Silme basarisiz oldugunda DB'de `SENT` satiri KALIRKEN kullaniciya
- *    "kayit olusturulmadi" deniyordu → **kalici durum ile hata mesaji CELISIYORDU.**
- *  - Saglayici istisna atarsa (sonuc BELIRSIZ) cagri yukari kacip kaydi da geride birakiyordu.
+ * KUSUR TARIHI (iki asama):
+ *  1. Ilk halde talep kaydi `status: 'SENT'` olarak saglayici cagrisindan ONCE yaziliyor,
+ *     basarisizlikta siliniyordu; silme hatasi YUTULUYORDU.
+ *  2. Ilk duzeltme yalniz HATA MESAJINI ayirdi — silme basarisiz oldugunda DB'de "gonderildi"
+ *     satiri KALMAYA devam ediyordu ve bu suite o yanlis durumu "beklenen sonuc" sayiyordu.
  *
- * Bu suite gercek PostgreSQL'e yazar ve kalici durumu GERI OKUR. E-posta saglayicisi sahtedir;
- * gercek aliciya gonderim YOKTUR.
+ * GECERLI SOZLESME (owner GO 2026-09-06, adim 1): kayit GONDERIM DOGRULANDIKTAN SONRA olusur.
+ *  - saglayici acikca basarili        → kayit yazilir, `sentAt` gercek gonderim anidir
+ *  - saglayici acikca basarisiz       → kayit HIC OLUSMAZ
+ *  - saglayici yanit vermez (belirsiz) → kayit HIC OLUSMAZ, otomatik tekrar gonderim YAPILMAZ
+ *  - gonderim OK ama DB yazimi hatali → AYRI durum: kullaniciya "gonderilmedi" DENMEZ
+ * Basarisiz talep kalici kayitta, listede ve detayda gorunmez; "gonderilmis talebe hatirlatma"
+ * yoluna da giremez (kayit yoktur).
  *
- * Beklenen (duzeltme sonrasi):
- *  - Basarisiz gonderim + temizlik BASARILI → kayit YOK, mesaj "kayit olusturulmadi".
- *  - Basarisiz gonderim + temizlik BASARISIZ → kayit KALIR, mesaj bunu SOYLER ve `requestId`
- *    verir; "kayit olusturulmadi" DENMEZ (mesaj kalici durumla celismez).
- *  - Belirsiz sonuc (saglayici istisnasi) BASARILI SAYILMAZ.
- *  - Basarili gonderim yolu DEGISMEZ.
+ * E-posta saglayicisi SAHTEDIR; gercek aliciya gonderim YOKTUR.
  */
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
@@ -32,11 +31,11 @@ import { ClientInfoRequestService } from '../client-info-request.service';
 
 const TEST_DATABASE_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DATABASE_URL) {
-  throw new Error('INFO_REQUEST_SEND_FAILURE_TEST_DATABASE_REQUIRED');
+  throw new Error('INFO_REQUEST_SEND_STATUS_TEST_DATABASE_REQUIRED');
 }
 const describeWithDatabase = TEST_DATABASE_URL ? describe : describe.skip;
 
-describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek PostgreSQL)', () => {
+describeWithDatabase('D-3a gonderim durumu: kalici kayit dogrulanmis sonuca dayanir (gercek PostgreSQL)', () => {
   jest.setTimeout(120_000);
 
   let prisma: PrismaClient;
@@ -47,10 +46,14 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
   let debtorId: string;
   let userId: string;
 
-  /** Saglayici davranisi: 'ok' | 'fail' (success:false) | 'throw' (belirsiz sonuc). */
+  /** Saglayici davranisi: 'ok' | 'fail' (success:false) | 'throw' (yanit yok → belirsiz). */
   let providerMode: 'ok' | 'fail' | 'throw';
-  /** true ise `clientInfoRequest.delete` gercek bir DB hatasi gibi patlar (temizlik basarisiz). */
-  let breakDelete: boolean;
+  /** true ise `clientInfoRequest.create` gercek bir DB hatasi gibi patlar. */
+  let breakCreate: boolean;
+  /** Cagri sirasi kaniti: 'send' ve 'create' olaylari olus sirasiyla. */
+  let callOrder: string[];
+  /** Saglayiciya kac kez gidildi (kor otomatik tekrar gonderim olcumu). */
+  let sendCount: number;
   let auditCalls: any[];
 
   beforeAll(async () => {
@@ -62,16 +65,23 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
     await prisma.$disconnect();
   });
 
-  /** Gercek PrismaClient'i saran proxy: yalniz `clientInfoRequest.delete` kontrollu sekilde bozulur. */
+  /** Gercek PrismaClient'i saran proxy: `clientInfoRequest.create/delete` gozlenir, create bozulabilir. */
   function buildPrismaProxy(): any {
-    const infoRequestDelegate: any = new Proxy((prisma as any).clientInfoRequest, {
+    const delegate: any = new Proxy((prisma as any).clientInfoRequest, {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);
+        if (prop === 'create' && typeof value === 'function') {
+          return async (...args: any[]) => {
+            callOrder.push('create');
+            if (breakCreate) {
+              throw new Error('SIMULATED_DB_FAILURE: connection terminated during create');
+            }
+            return value.apply(target, args);
+          };
+        }
         if (prop === 'delete' && typeof value === 'function') {
           return async (...args: any[]) => {
-            if (breakDelete) {
-              throw new Error('SIMULATED_DB_FAILURE: connection terminated during delete');
-            }
+            callOrder.push('delete');
             return value.apply(target, args);
           };
         }
@@ -80,7 +90,7 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
     });
     return new Proxy(prisma as any, {
       get(target, prop, receiver) {
-        if (prop === 'clientInfoRequest') return infoRequestDelegate;
+        if (prop === 'clientInfoRequest') return delegate;
         const value = Reflect.get(target, prop, receiver);
         return typeof value === 'function' ? value.bind(target) : value;
       },
@@ -89,12 +99,14 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
 
   beforeEach(async () => {
     providerMode = 'ok';
-    breakDelete = false;
+    breakCreate = false;
+    callOrder = [];
+    sendCount = 0;
     auditCalls = [];
     const sfx = randomUUID().slice(0, 8);
 
     const tenant = await prisma.tenant.create({
-      data: { name: `SendFail ${sfx}`, slug: `send-fail-${sfx}` },
+      data: { name: `SendStatus ${sfx}`, slug: `send-status-${sfx}` },
       select: { id: true },
     });
     tenantId = tenant.id;
@@ -102,10 +114,10 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
     const user = await prisma.user.create({
       data: {
         tenantId,
-        email: `sendfail-${sfx}@test.invalid`,
+        email: `sendstatus-${sfx}@test.invalid`,
         passwordHash: 'x'.repeat(20),
         name: 'Send',
-        surname: 'Fail',
+        surname: 'Status',
         role: 'ADMIN',
       },
       select: { id: true },
@@ -128,7 +140,7 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
     clientId = client.id;
 
     const kase = await prisma.case.create({
-      data: { tenantId, fileNumber: `SENDFAIL-${sfx}`, type: 'GENERAL_EXECUTION', clientId, caseStatus: 'DERDEST' },
+      data: { tenantId, fileNumber: `SENDST-${sfx}`, type: 'GENERAL_EXECUTION', clientId, caseStatus: 'DERDEST' },
       select: { id: true },
     });
     caseId = kase.id;
@@ -143,6 +155,8 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
 
     const emailProvider = {
       send: jest.fn(async () => {
+        callOrder.push('send');
+        sendCount += 1;
         if (providerMode === 'throw') throw new Error('SIMULATED_PROVIDER_TIMEOUT');
         if (providerMode === 'fail') return { success: false, errorMessage: 'SMTP 550 rejected' };
         return { success: true };
@@ -183,29 +197,42 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
     await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
   });
 
+  const actor = { userId: '', tenantId: '', role: 'ADMIN' };
   const send = () =>
     service.createRequest(
       tenantId,
       { caseId, clientId, debtorId, emailTo: 'muvekkil@test.invalid' } as any,
-      { userId, tenantId, role: 'ADMIN' } as any,
+      { ...actor, userId, tenantId },
     );
 
-  it('BASARISIZ GONDERIM + temizlik BASARILI: kayit YOK, mesaj kalici durumla TUTARLI', async () => {
+  async function persistedRows() {
+    return prisma.clientInfoRequest.findMany({
+      where: { tenantId },
+      select: { id: true, status: true, sentAt: true },
+    });
+  }
+
+  it('SIRA: saglayici cagrisi kalici yazmadan ONCE gelir', async () => {
+    providerMode = 'ok';
+    await send();
+    expect(callOrder).toEqual(['send', 'create']);
+    expect(callOrder.includes('delete')).toBe(false); // geri-alma yolu ARTIK YOK
+  });
+
+  it('SAGLAYICI ACIKCA BASARISIZ: kalici kayit HIC OLUSMAZ', async () => {
     providerMode = 'fail';
 
     await expect(send()).rejects.toMatchObject({
       response: { reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED' },
     });
 
-    const rows = await prisma.clientInfoRequest.findMany({ where: { tenantId } });
-    expect(rows).toHaveLength(0); // "kayit olusturulmadi" DOGRU
-    // Basarisiz komut audit URETMEZ.
-    expect(auditCalls).toHaveLength(0);
+    expect(await persistedRows()).toHaveLength(0);
+    expect(callOrder).toEqual(['send']); // create'e HIC gidilmedi
+    expect(auditCalls).toHaveLength(0); // basarisiz komut audit uretmez
   });
 
-  it('BIRLESIK HATA: gonderim basarisiz VE temizlik basarisiz → kayit KALIR, mesaj CELISMEZ', async () => {
-    providerMode = 'fail';
-    breakDelete = true;
+  it('BELIRSIZ SONUC: kayit OLUSMAZ, AYRI reasonCode, KOR OTOMATIK TEKRAR GONDERIM YOK', async () => {
+    providerMode = 'throw';
 
     let caught: any;
     try {
@@ -214,49 +241,91 @@ describeWithDatabase('D-3a gonderim basarisizligi: birlesik hata durumu (gercek 
     } catch (e: any) {
       caught = e;
     }
-
     const body = caught?.response ?? {};
-    expect(body.reasonCode).toBe('CLIENT_INFO_REQUEST_EMAIL_FAILED_RECORD_RETAINED');
-    expect(typeof body.requestId).toBe('string');
-    // KRITIK: kalici durum ile mesaj CELISMEZ — "kayit olusturulmadi" DENMEZ.
-    expect(body.message).not.toMatch(/kayıt oluşturulmadı/i);
-    expect(body.message).toMatch(/KALDIRILAMADI/);
 
-    // Kalici durum: kayit GERCEKTEN duruyor ve mesajin verdigi kimlikle bulunabiliyor.
-    const rows = await prisma.clientInfoRequest.findMany({
-      where: { tenantId },
-      select: { id: true, status: true },
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe(body.requestId);
-    expect(rows[0].status).toBe('SENT');
+    expect(body.reasonCode).toBe('CLIENT_INFO_REQUEST_EMAIL_INDETERMINATE');
+    // Belirsizlik kullaniciya ACIKCA soylenir; "gonderilemedi" kesinligi iddia EDILMEZ.
+    expect(body.message).toMatch(/DOĞRULANAMADI/);
+    expect(body.message).toMatch(/iletilmiş olabilir/);
+    expect(await persistedRows()).toHaveLength(0);
+    expect(sendCount).toBe(1); // otomatik yeniden deneme YOK
     expect(auditCalls).toHaveLength(0);
   });
 
-  it('BELIRSIZ SONUC: saglayici istisnasi BASARILI SAYILMAZ', async () => {
-    providerMode = 'throw';
-
-    await expect(send()).rejects.toMatchObject({
-      response: { reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED' },
-    });
-
-    const rows = await prisma.clientInfoRequest.findMany({ where: { tenantId } });
-    expect(rows).toHaveLength(0);
-    expect(auditCalls).toHaveLength(0);
-  });
-
-  it('BASARILI GONDERIM: davranis DEGISMEDI (kayit SENT kalir, audit uretilir)', async () => {
+  it('GONDERIM OK ama DB YAZIMI HATALI: AYRI durum — kullaniciya "gonderilmedi" DENMEZ', async () => {
     providerMode = 'ok';
+    breakCreate = true;
+
+    let caught: any;
+    try {
+      await send();
+      throw new Error('BEKLENEN HATA ATILMADI');
+    } catch (e: any) {
+      caught = e;
+    }
+    const body = caught?.response ?? {};
+
+    expect(body.reasonCode).toBe('CLIENT_INFO_REQUEST_SENT_BUT_NOT_RECORDED');
+    expect(body.message).toMatch(/GÖNDERİLDİ/);
+    expect(body.message).toMatch(/Tekrar göndermeyin/);
+    // Yanlis "gonderilmedi" ifadesi YOK (mukerrer gonderime yol acardi).
+    expect(body.message).not.toMatch(/gönderilemedi/i);
+    expect(await persistedRows()).toHaveLength(0);
+    expect(sendCount).toBe(1);
+  });
+
+  it('BASARILI GONDERIM: kayit SENT olarak yazilir, sentAt gonderimden SONRADIR', async () => {
+    providerMode = 'ok';
+    const before = new Date();
 
     const created: any = await send();
 
-    const rows = await prisma.clientInfoRequest.findMany({
-      where: { tenantId },
-      select: { id: true, status: true },
-    });
+    const rows = await persistedRows();
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(created.id);
     expect(rows[0].status).toBe('SENT');
+    expect(rows[0].sentAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(created.emailSent).toBe(true);
     expect(auditCalls.length).toBeGreaterThan(0);
+  });
+
+  it('LISTE/DETAY: basarisiz gonderim hicbir okuma yolunda GORUNMEZ', async () => {
+    providerMode = 'fail';
+    await expect(send()).rejects.toBeDefined();
+
+    const list: any[] = await service.getRequestsForCase(tenantId, caseId);
+    expect(list).toHaveLength(0);
+    expect(await persistedRows()).toHaveLength(0);
+  });
+
+  it('HATIRLATMA: basarisiz gonderim "gonderilmis talebe hatirlatma" yoluna GIREMEZ', async () => {
+    providerMode = 'fail';
+    await expect(send()).rejects.toBeDefined();
+
+    // Kayit olusmadigi icin hatirlatilacak talep de yoktur.
+    const rows = await persistedRows();
+    expect(rows).toHaveLength(0);
+    await expect(
+      service.sendReminder(tenantId, 'olmayan-talep-id', { ...actor, userId, tenantId } as any),
+    ).rejects.toThrow(/bulunamadı/i);
+  });
+
+  it('BASARILI sonra HATIRLATMA: pozitif yol KORUNUR', async () => {
+    providerMode = 'ok';
+    const created: any = await send();
+
+    const reminded: any = await service.sendReminder(tenantId, created.id, {
+      ...actor,
+      userId,
+      tenantId,
+    } as any);
+    expect(reminded).toBeDefined();
+
+    const row = await prisma.clientInfoRequest.findUniqueOrThrow({
+      where: { id: created.id },
+      select: { reminderCount: true, reminderSentAt: true },
+    });
+    expect(row.reminderCount).toBe(1);
+    expect(row.reminderSentAt).not.toBeNull();
   });
 });

@@ -18,8 +18,8 @@
 
 export type ClientFormPartyType = 'PERSON' | 'COMPANY' | 'PUBLIC';
 
-/** Uc formun ORTAK alanlari (kimlik + iletisim + adres + vekalet yetkileri + vekalet bilgisi). */
-export interface ClientSharedFormFields {
+/** Uc formun HEPSINDE bulunan kimlik alanlari. */
+export interface ClientIdentityFields {
   type: ClientFormPartyType;
   firstName: string;
   lastName: string;
@@ -27,16 +27,84 @@ export interface ClientSharedFormFields {
   companyName: string;
   vkn: string;
   taxOffice: string;
+}
+
+/** Uc formun HEPSINDE bulunan vekalet yetki bayraklari. */
+export interface ClientAuthorityFlags {
+  canCollect: boolean;
+  canWaive: boolean;
+  canSettle: boolean;
+  canRelease: boolean;
+}
+
+/**
+ * CEKIRDEK ortak alanlar: kimlik + yetki bayraklari.
+ *
+ * Iletisim (telefon/e-posta) ve adres BILEREK disaridadir: `settings/clients` bunlari DIZI
+ * olarak (coklu iletisim + yapisal adres), `cases/new` ve `ClientForm` ise DUZ alan olarak
+ * tutar. O farklar baglama ozgudur ve korunur.
+ */
+export type ClientCoreFormFields = ClientIdentityFields & ClientAuthorityFlags;
+
+/** Cekirdek alanlarin bos degerleri (`canCollect` VARSAYILAN ACIK — uc formda da ayni). */
+export function emptyClientCoreFields(): ClientCoreFormFields {
+  return {
+    type: 'PERSON',
+    firstName: '',
+    lastName: '',
+    tckn: '',
+    companyName: '',
+    vkn: '',
+    taxOffice: '',
+    canCollect: true,
+    canWaive: false,
+    canSettle: false,
+    canRelease: false,
+  };
+}
+
+/**
+ * Cekirdek alanlarin BASLANGIC degerlerini kaynaklardan kurar.
+ *
+ * ONCELIK (uc formda da ayni): tarama sonucu → mevcut kayit → varsayilan.
+ * Metin alanlarinda `||` (bos metin bir sonraki kaynaga duser), boolean bayraklarda `??`
+ * (kayittaki acik `false` KORUNUR). `companyNameFallback`, `settings/clients` formunun
+ * `client.name` yedegini bozmadan tasimak icindir.
+ */
+export function buildClientCoreFields(source: {
+  scanned?: Record<string, any> | null;
+  client?: Record<string, any> | null;
+  companyNameFallback?: string;
+}): ClientCoreFormFields {
+  const scanned = source.scanned ?? undefined;
+  const client = source.client ?? undefined;
+  const base = emptyClientCoreFields();
+  return {
+    type: (scanned?.clientType || client?.type || base.type) as ClientFormPartyType,
+    firstName: scanned?.firstName || client?.firstName || base.firstName,
+    lastName: scanned?.lastName || client?.lastName || base.lastName,
+    tckn: scanned?.tckn || client?.tckn || base.tckn,
+    companyName:
+      scanned?.companyName || client?.companyName || source.companyNameFallback || base.companyName,
+    vkn: scanned?.vkn || client?.vkn || base.vkn,
+    taxOffice: scanned?.taxOffice || client?.taxOffice || base.taxOffice,
+    canCollect: scanned?.canCollect ?? client?.canCollect ?? base.canCollect,
+    canWaive: scanned?.canWaive ?? client?.canWaive ?? base.canWaive,
+    canSettle: scanned?.canSettle ?? client?.canSettle ?? base.canSettle,
+    canRelease: scanned?.canRelease ?? client?.canRelease ?? base.canRelease,
+  };
+}
+
+/**
+ * `cases/new` sihirbazinin alan kumesi: CEKIRDEK + duz iletisim/adres + vekaletname bilgisi.
+ * Cekirdek kisim uc formda ORTAKTIR; kalani bu baglama ozgudur.
+ */
+export interface ClientSharedFormFields extends ClientCoreFormFields {
   phone: string;
   email: string;
   address: string;
   city: string;
   district: string;
-  /** Vekalet yetki bayraklari — POST /poa govdesine gider, /clients govdesine GITMEZ. */
-  canCollect: boolean;
-  canWaive: boolean;
-  canSettle: boolean;
-  canRelease: boolean;
   /** Vekaletname bilgisi — POST /poa govdesine gider, /clients govdesine GITMEZ. */
   poaNumber: string;
   poaDate: string;
@@ -47,22 +115,12 @@ export interface ClientSharedFormFields {
 /** Bos form: `canCollect` VARSAYILAN OLARAK acik (mevcut davranis, uc formda da ayni). */
 export function emptyClientSharedFormFields(): ClientSharedFormFields {
   return {
-    type: 'PERSON',
-    firstName: '',
-    lastName: '',
-    tckn: '',
-    companyName: '',
-    vkn: '',
-    taxOffice: '',
+    ...emptyClientCoreFields(),
     phone: '',
     email: '',
     address: '',
     city: '',
     district: '',
-    canCollect: true,
-    canWaive: false,
-    canSettle: false,
-    canRelease: false,
     poaNumber: '',
     poaDate: '',
     notaryName: '',
