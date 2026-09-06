@@ -27,12 +27,19 @@ export type ApiHttpError = Error & { body?: unknown; status?: number };
  *  - `body`: ham gövde (yapisal alanlar — `code`, `candidates`, `reasonCode`, `fieldErrors` —
  *    review/validation akislari icin KORUNUR)
  *  - `status`: HTTP durum kodu
+ *
+ * MESAJ DONUSUMU (regresyon duzeltmesi, owner GO 2026-09-06 Faz 2): birlestirme oncesi kod
+ * `new Error(body.message || 'Bir hata oluştu')` kuruyordu. `Error` yapicisi argumanina
+ * `String()` uyguladigi icin NestJS `ValidationPipe`'in `message: string[]` govdesi kullaniciya
+ * ULASIYORDU ("tckn gecersiz,email zorunlu"). Ilk birlestirmede yalniz `typeof === 'string'`
+ * kabul edilince bu detay KAYBOLDU ve kullanici "Bir hata oluştu" gordu. Asagidaki hesap eski
+ * davranisla BIREBIR aynidir: truthy her deger `String()` ile metne cevrilir, falsy deger
+ * varsayilana duser.
  */
 export function buildApiHttpError(body: unknown, status: number): ApiHttpError {
-  const message =
-    (body && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string'
-      ? (body as { message: string }).message
-      : '') || 'Bir hata oluştu';
+  const rawMessage =
+    body && typeof body === 'object' ? (body as { message?: unknown }).message : undefined;
+  const message = rawMessage ? String(rawMessage) : 'Bir hata oluştu';
   const error = new Error(message) as ApiHttpError;
   error.body = body;
   error.status = status;

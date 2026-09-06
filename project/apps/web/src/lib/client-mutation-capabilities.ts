@@ -57,6 +57,45 @@ export const SENSITIVE_FIELD_LOCK_REASON =
 export const VIEWER_MUTATION_LOCK_REASON =
   'Görüntüleyici (VIEWER) rolü müvekkil kaydı oluşturamaz veya değiştiremez.';
 
+/** Bir müvekkil formunun kilit durumu (hangi kontrol disabled, hangi gerekçeyle). */
+export interface ClientFormLockState {
+  /** Tüm mutasyon kapalı (VIEWER) — form gövdesi disabled + gerekçe gösterilir. */
+  mutationBlocked: boolean;
+  /** Yalnız hassas alanlar kapalı (edit modunda elevated yetki yok). */
+  sensitiveLocked: boolean;
+  /** Kullanıcıya gösterilecek gerekçe metni. */
+  lockReason: string;
+  /** Kimlik/unvan/vergi/vekalet-yetkisi kontrolleri disabled olmalı mı. */
+  identityDisabled: boolean;
+}
+
+/**
+ * OWN-12 ADIM C (owner GO 2026-09-06, Faz 2) — ORTAK KILIT MODELI.
+ *
+ * Bu hesap `ClientForm` ve `settings/clients` icindeki `ClientModal`'da BIREBIR KOPYA olarak
+ * duruyordu; iki kopyanin sessizce ayrismasi OWN-13 gorunurlugunu formlar arasinda tutarsiz
+ * hale getirirdi. Mantik DEGISMEDI, tek yere alindi:
+ *  - `capabilities` YOKSA (bilinmiyor) hicbir sey kilitlenmez — API yine de uygular.
+ *  - create, hassas-update ayriminin ISTISNASIDIR (owner D02): USER create yapabilir.
+ *  - Burada rol karsilastirmasi veya esik hesabi YOKTUR; yalniz backend sonucu okunur.
+ */
+export function deriveClientFormLockState(
+  capabilities: ClientMutationCapabilities | undefined,
+  mode: 'create' | 'edit',
+): ClientFormLockState {
+  const isCreate = mode === 'create';
+  const mutationBlocked = capabilities
+    ? !(isCreate ? capabilities.canCreate : capabilities.canUpdateStandard)
+    : false;
+  const sensitiveLocked = capabilities ? !isCreate && !capabilities.canUpdateSensitive : false;
+  return {
+    mutationBlocked,
+    sensitiveLocked,
+    lockReason: mutationBlocked ? VIEWER_MUTATION_LOCK_REASON : SENSITIVE_FIELD_LOCK_REASON,
+    identityDisabled: mutationBlocked || sensitiveLocked,
+  };
+}
+
 export function useClientMutationCapabilities(): ClientMutationCapabilities | undefined {
   // Başlangıç `undefined` = BİLİNMİYOR: fetch tamamlanana kadar kontroller kilitlenmez
   // (yanlışlıkla "yasak" göstermek yerine API'nin kararını bekleriz).

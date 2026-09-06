@@ -10,6 +10,7 @@ import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields, isPoaA
 import { hasStructuredAddresses } from "@/lib/client-write";
 import {
   CLIENT_CAPABILITIES_DENIED,
+  deriveClientFormLockState,
   normalizeClientCapabilities,
   SENSITIVE_FIELD_LOCK_REASON,
   VIEWER_MUTATION_LOCK_REASON,
@@ -757,10 +758,10 @@ function ClientModal({ client, scannedData, capabilities, onSave, onClose, savin
   // OWN-13 I01: BACKEND-DERIVED yetki sinyali. Modal politikayı yeniden hesaplamaz; API
   // enforcement authority olarak KALIR. `capabilities` verilmezse davranış DEĞİŞMEZ.
   const isCreateMode = !client;
-  const mutationBlocked = capabilities ? !(isCreateMode ? capabilities.canCreate : capabilities.canUpdateStandard) : false;
-  const sensitiveLocked = capabilities ? !isCreateMode && !capabilities.canUpdateSensitive : false;
-  const lockReason = mutationBlocked ? VIEWER_MUTATION_LOCK_REASON : SENSITIVE_FIELD_LOCK_REASON;
-  const identityDisabled = mutationBlocked || sensitiveLocked;
+  // OWN-12 ADIM C: kilit hesabi ORTAK modelde (`deriveClientFormLockState`); ClientForm ile AYNI
+  // kaynak. Mantik DEGISMEDI — iki kopyanin sessizce ayrismasi riski kapandi.
+  const { mutationBlocked, sensitiveLocked, lockReason, identityDisabled } =
+    deriveClientFormLockState(capabilities, isCreateMode ? 'create' : 'edit');
 
   const [form, setForm] = useState({
     type: scannedData?.clientType || client?.type || "PERSON",

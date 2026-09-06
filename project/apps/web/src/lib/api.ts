@@ -3,9 +3,12 @@ import { createIdempotencyKey } from "./idempotency-key";
 import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
 import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
 import { buildApiHttpError, readErrorBody } from './api-error'; // OWN-12 ADIM A: kanonik hata sozlesmesi
+// OWN-12 ADIM A (Faz 2): ortak tasima katmani — URL/baslik/ok-kontrolu tek yerde.
+// `try` SINIRI burada KALIR: fetch ve ok-kontrolu bu istemcide AYNI try icindedir.
+import { API_BASE_URL, sendApiRequest, assertApiResponseOk, buildApiUrl } from './api-transport';
 import { reportClientError, shouldReportNetworkError } from "./error-reporter"; // PR-4: yalnız network-failure
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const API_URL = API_BASE_URL;
 
 function generateClientWorkspaceIdempotencyKey() {
   // WSMR-A4c: Math.random fallback KALDIRILDI — bu anahtar backend dedupe
@@ -180,23 +183,15 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const token = this.getToken();
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    };
 
     try {
-      const response = await fetch(`${API_URL}/api${endpoint}`, {
-        ...options,
-        headers,
-      });
+      // OWN-12 ADIM A: URL + baslik kurma ORTAK katmanda; `try` SINIRI DEGISMEDI — ok-kontrolu
+      // bilerek bu try'in ICINDEDIR, cunku asagidaki catch HTTP hatasini da ele alir
+      // (ag-hatasi raporlama filtresi + kullanici mesaji donusumu). `apiClient` bunu YAPMAZ.
+      const response = await sendApiRequest(endpoint, options, token);
 
-      if (!response.ok) {
-        // PR-D: hata gövdesini KORU (code/candidates gibi yapısal alanlar) — review akışları için.
-        // OWN-12 ADIM A: hata kurma KANONIK yardimcida (lib/api-error.ts); davranis AYNI.
-        throw buildApiHttpError(await readErrorBody(response), response.status);
-      }
+      // PR-D: hata gövdesini KORU (code/candidates gibi yapısal alanlar) — review akışları için.
+      await assertApiResponseOk(response);
 
       return response.json();
     } catch (err: any) {

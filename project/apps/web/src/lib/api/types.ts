@@ -238,6 +238,12 @@ export interface CreateClientInfoRequestDTO {
   emailTo?: string;
   emailSubject?: string;
   emailBody?: string;
+  /**
+   * D-3b "Yol1" (owner GO 2026-09-06): e-postaya GUVENLI FORM baglantisi eklensin mi.
+   * VARSAYILAN KAPALI (alan gonderilmezse davranis DEGISMEZ). Kapsam/sure/tek-kullanim
+   * sozlesmesi BACKEND'dedir; arayuz kendi kapsam veya sure ONERMEZ.
+   */
+  attachIntakeLink?: boolean;
 }
 
 export interface ClientInfoRequestDTO {
