@@ -46,8 +46,14 @@ describeWithDatabase('D-3a gonderim durumu: kalici kayit dogrulanmis sonuca daya
   let debtorId: string;
   let userId: string;
 
-  /** Saglayici davranisi: 'ok' | 'fail' (success:false) | 'throw' (yanit yok → belirsiz). */
-  let providerMode: 'ok' | 'fail' | 'throw';
+  /**
+   * Saglayici davranisi:
+   *   'ok'            → kabul (`success:true` + ACCEPTED)
+   *   'fail'          → DOGRULANABILIR ret (`success:false` + REJECTED)
+   *   'throw'         → saglayici katmani disina istisna (yanit yok → belirsiz)
+   *   'silentFailure' → `success:false` AMA kesinlik BILDIRMEYEN saglayici (eski sozlesme)
+   */
+  let providerMode: 'ok' | 'fail' | 'throw' | 'silentFailure';
   /** true ise `clientInfoRequest.create` gercek bir DB hatasi gibi patlar. */
   let breakCreate: boolean;
   /** Cagri sirasi kaniti: 'send' ve 'create' olaylari olus sirasiyla. */
@@ -158,8 +164,15 @@ describeWithDatabase('D-3a gonderim durumu: kalici kayit dogrulanmis sonuca daya
         callOrder.push('send');
         sendCount += 1;
         if (providerMode === 'throw') throw new Error('SIMULATED_PROVIDER_TIMEOUT');
-        if (providerMode === 'fail') return { success: false, errorMessage: 'SMTP 550 rejected' };
-        return { success: true };
+        if (providerMode === 'fail') {
+          // DOGRULANABILIR ret: sunucu 550 ile acikca reddetti.
+          return { success: false, errorMessage: 'SMTP 550 rejected', deliveryOutcome: 'REJECTED' };
+        }
+        if (providerMode === 'silentFailure') {
+          // Kesinlik BILDIRMEYEN saglayici — `success:false` tek basina kesin ret KANITI DEGILDIR.
+          return { success: false, errorMessage: 'sebep bildirilmedi' };
+        }
+        return { success: true, deliveryOutcome: 'ACCEPTED' };
       }),
     };
     const audit = {
@@ -219,7 +232,7 @@ describeWithDatabase('D-3a gonderim durumu: kalici kayit dogrulanmis sonuca daya
     expect(callOrder.includes('delete')).toBe(false); // geri-alma yolu ARTIK YOK
   });
 
-  it('SAGLAYICI ACIKCA BASARISIZ: kalici kayit HIC OLUSMAZ', async () => {
+  it('SAGLAYICI DOGRULANABILIR RET BILDIRDI: kalici kayit HIC OLUSMAZ', async () => {
     providerMode = 'fail';
 
     await expect(send()).rejects.toMatchObject({
@@ -229,6 +242,19 @@ describeWithDatabase('D-3a gonderim durumu: kalici kayit dogrulanmis sonuca daya
     expect(await persistedRows()).toHaveLength(0);
     expect(callOrder).toEqual(['send']); // create'e HIC gidilmedi
     expect(auditCalls).toHaveLength(0); // basarisiz komut audit uretmez
+  });
+
+  it('KESINLIK BILDIRMEYEN saglayici: `success:false` tek basina KESIN RET SAYILMAZ', async () => {
+    // FAIL-SAFE: alan yoksa belirsiz kabul edilir. Aksi halde iletilmis olabilecek bir gonderim
+    // "gonderilemedi" diye bildirilir ve kullanici tekrar gonderir (mukerrer e-posta).
+    providerMode = 'silentFailure';
+
+    await expect(send()).rejects.toMatchObject({
+      response: { reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_INDETERMINATE' },
+    });
+    expect(await persistedRows()).toHaveLength(0);
+    expect(sendCount).toBe(1);
+    expect(auditCalls).toHaveLength(0);
   });
 
   it('BELIRSIZ SONUC: kayit OLUSMAZ, AYRI reasonCode, KOR OTOMATIK TEKRAR GONDERIM YOK', async () => {

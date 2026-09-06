@@ -30,12 +30,75 @@ import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
  * AWS_SECRET_ACCESS_KEY=xxx
  */
 
+/**
+ * Gonderim sonucunun KESINLIGI (owner GO 2026-09-07).
+ *
+ * NEDEN AYRI ALAN: `success: false` tek basina "mesaj gitmedi" KANITI DEGILDIR. Saglayici
+ * yollari istisnalari YAKALAYIP `success:false` donduruyor; bir SendGrid timeout'u ile kalici
+ * bir 400 reddi AYNI degeri uretiyordu. Cagiran ikisini ayirt edemeyince kullaniciya
+ * "gonderilemedi" deniyor, kullanici tekrar gonderiyor ve MUKERRER e-posta olusuyordu.
+ *
+ *  - `ACCEPTED`      : saglayici mesaji KABUL etti (`success: true` ile birlikte doner).
+ *                      **Alicinin posta kutusuna TESLIM KANITI DEGILDIR.**
+ *  - `REJECTED`      : gonderim KESIN olarak gerceklesmedi (dogrulanabilir ret: sunucu yaniti,
+ *                      kimlik dogrulama hatasi, baglantinin hic kurulmamasi, gecersiz adres).
+ *  - `INDETERMINATE` : sonuc DOGRULANAMADI — mesaj iletilmis OLABILIR (timeout, yanit kaybi,
+ *                      soket kopmasi). Cagiran kesinlik iddia ETMEMELI ve KOR TEKRAR GONDERIM
+ *                      YAPMAMALIDIR.
+ */
+export type EmailDeliveryOutcome = 'ACCEPTED' | 'REJECTED' | 'INDETERMINATE';
+
 export interface EmailResult {
   success: boolean;
   messageId?: string;
   errorCode?: string;
   errorMessage?: string;
   provider: string;
+  /**
+   * OPSIYONELDIR — mevcut `success` sozlesmesi DEGISMEDI ve mevcut tuketiciler etkilenmez.
+   * Alan YOKSA cagiran kesinlik VARSAYMAMALIDIR (fail-safe yorum: belirsiz).
+   */
+  deliveryOutcome?: EmailDeliveryOutcome;
+}
+
+/**
+ * Baglantinin HIC kurulmadigini gosteren tasima kodlari — bu durumda mesaj kesinlikle
+ * gonderilmemistir. Liste DAR tutulur: burada olmayan her sey BELIRSIZ sayilir.
+ */
+const TRANSPORT_NEVER_SENT_CODES: ReadonlySet<string> = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+]);
+
+/**
+ * SMTP tarafinda KESIN ret sayilan kodlar. `ETIMEDOUT`/`ESOCKET`/`ECONNRESET`/`EPIPE`
+ * BILEREK DISARIDA: bu durumlarda veri gonderilmis olabilir.
+ */
+const SMTP_DEFINITE_REJECT_CODES: ReadonlySet<string> = new Set([
+  'EAUTH',
+  'EENVELOPE',
+  'EMESSAGE',
+]);
+
+/** Hata nesnesinden KESINLIK cikarir; kanit yoksa BELIRSIZ doner. */
+function classifyTransportError(
+  error: any,
+  extraRejectCodes?: ReadonlySet<string>,
+): EmailDeliveryOutcome {
+  const code = String(error?.code ?? error?.cause?.code ?? '').toUpperCase();
+  if (code && TRANSPORT_NEVER_SENT_CODES.has(code)) return 'REJECTED';
+  if (code && extraRejectCodes?.has(code)) return 'REJECTED';
+  // SMTP kalici ret (5xx): sunucu mesaji acikca reddetti.
+  const responseCode = Number(error?.responseCode);
+  if (Number.isFinite(responseCode) && responseCode >= 500 && responseCode < 600) return 'REJECTED';
+  // AWS SDK: HTTP yaniti alinmissa sunucu istegi degerlendirmistir.
+  const awsStatus = Number(error?.$metadata?.httpStatusCode);
+  if (Number.isFinite(awsStatus) && awsStatus > 0) return 'REJECTED';
+  // Geri kalan her sey (timeout, abort, soket kopmasi, bilinmeyen) BELIRSIZDIR.
+  return 'INDETERMINATE';
 }
 
 export interface EmailOptions {
@@ -88,6 +151,8 @@ export class EmailProviderService {
         errorCode: 'INVALID_EMAIL',
         errorMessage: 'Geçersiz e-posta adresi',
         provider: this.provider,
+        // Hicbir tasima cagrisi YAPILMADI → kesin ret.
+        deliveryOutcome: 'REJECTED',
       };
     }
 
@@ -162,6 +227,7 @@ export class EmailProviderService {
         success: true,
         messageId: info.messageId,
         provider: 'smtp',
+        deliveryOutcome: 'ACCEPTED',
       };
     } catch (error: any) {
       this.logger.error('SMTP hatası:', error);
@@ -170,6 +236,7 @@ export class EmailProviderService {
         errorCode: error.code || 'SMTP_ERROR',
         errorMessage: error.message,
         provider: 'smtp',
+        deliveryOutcome: classifyTransportError(error, SMTP_DEFINITE_REJECT_CODES),
       };
     }
   }
@@ -216,23 +283,29 @@ export class EmailProviderService {
           success: true,
           messageId: messageId || undefined,
           provider: 'sendgrid',
+          deliveryOutcome: 'ACCEPTED',
         };
       }
 
-      const error = await response.json();
+      const error: any = await response.json().catch(() => ({}));
       return {
         success: false,
         errorCode: response.status.toString(),
         errorMessage: error.errors?.[0]?.message || 'SendGrid hatası',
         provider: 'sendgrid',
+        // HTTP YANITI ALINDI → saglayici istegi degerlendirdi ve KABUL ETMEDI.
+        deliveryOutcome: 'REJECTED',
       };
     } catch (error: any) {
       this.logger.error('SendGrid hatası:', error);
+      // Yanit ALINAMADI (timeout/abort/soket kopmasi) → istek sunucuya ULASMIS OLABILIR.
+      // Yalniz baglantinin hic kurulmadigi kodlar kesin ret sayilir.
       return {
         success: false,
         errorCode: 'NETWORK_ERROR',
         errorMessage: error.message,
         provider: 'sendgrid',
+        deliveryOutcome: classifyTransportError(error),
       };
     }
   }
@@ -254,6 +327,8 @@ export class EmailProviderService {
           errorCode: 'SDK_NOT_INSTALLED',
           errorMessage: 'AWS SES SDK yüklü değil',
           provider: 'ses',
+          // Hicbir tasima cagrisi YAPILMADI → kesin ret.
+          deliveryOutcome: 'REJECTED',
         };
       }
       
@@ -265,6 +340,13 @@ export class EmailProviderService {
           accessKeyId: this.configService.get('AWS_ACCESS_KEY_ID') || '',
           secretAccessKey: this.configService.get('AWS_SECRET_ACCESS_KEY') || '',
         },
+        // KOR TEKRAR GONDERIM YOK (owner GO 2026-09-07). AWS SDK v3 varsayilani `maxAttempts: 3`
+        // ile timeout/ag hatasinda istegi KENDILIGINDEN tekrarlar. E-posta gonderimi idempotent
+        // DEGILDIR: ilk istek sunucuya ulasmis ama yanit kaybolmussa tekrar MUKERRER e-posta
+        // uretir. Tek deneme + belirsiz sonucun kullaniciya bildirilmesi tercih edilir; tekrar
+        // karari kullanicinindir. SMTP (nodemailer) ve SendGrid (`fetchWithTimeout`) yollari
+        // zaten tek deneme yapar.
+        maxAttempts: 1,
       });
 
       const command = new SendEmailCommand({
@@ -290,6 +372,7 @@ export class EmailProviderService {
         success: true,
         messageId: response.MessageId,
         provider: 'ses',
+        deliveryOutcome: 'ACCEPTED',
       };
     } catch (error: any) {
       this.logger.error('AWS SES hatası:', error);
@@ -298,6 +381,7 @@ export class EmailProviderService {
         errorCode: error.code || 'SES_ERROR',
         errorMessage: error.message,
         provider: 'ses',
+        deliveryOutcome: classifyTransportError(error),
       };
     }
   }
@@ -317,6 +401,7 @@ export class EmailProviderService {
       success: true,
       messageId: `MOCK-${Date.now()}`,
       provider: 'mock',
+      deliveryOutcome: 'ACCEPTED',
     };
   }
 

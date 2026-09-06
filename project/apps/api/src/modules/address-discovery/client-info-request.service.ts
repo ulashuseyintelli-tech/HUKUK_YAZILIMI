@@ -264,13 +264,15 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
     // listede ve detayda GORUNMEZ; "gonderilmis talebe hatirlatma" yoluna da giremez (kayit yok).
     // Bu, ayni dosyadaki `sendReminderUnchecked` ile AYNI desendir (once gonder, sonra yaz).
     //
-    // UC SONUC AYRI DEGERLENDIRILIR:
-    //   sent          → saglayici acikca basarili dedi; kayit yazilir.
-    //   failed        → saglayici acikca basarisiz dedi; kayit YAZILMAZ.
-    //   indeterminate → saglayici istisna atti/yanit vermedi; e-posta iletilmis OLABILIR.
-    //                   Kayit YAZILMAZ ve KOR OTOMATIK TEKRAR GONDERIM YAPILMAZ; karar kullanicinin.
+    // UC SONUC AYRI DEGERLENDIRILIR (kesinlik saglayicinin `deliveryOutcome` alanindan gelir):
+    //   sent          → saglayici mesaji KABUL etti; kayit yazilir. (Teslim kaniti DEGILDIR.)
+    //   failed        → DOGRULANABILIR ret (sunucu yaniti, kimlik hatasi, baglanti kurulmamis,
+    //                   gecersiz adres); kayit YAZILMAZ.
+    //   indeterminate → sonuc dogrulanamadi (timeout, yanit kaybi, istisna, ya da saglayici
+    //                   kesinlik bildirmedi); e-posta iletilmis OLABILIR. Kayit YAZILMAZ ve
+    //                   KOR OTOMATIK TEKRAR GONDERIM YAPILMAZ; karar kullanicinin.
     // GUVENLIK: baglantili `transportBody` YALNIZ burada kullanilir.
-    let sendOutcome: 'sent' | 'failed' | 'indeterminate' = 'failed';
+    let sendOutcome: 'sent' | 'failed' | 'indeterminate' = 'indeterminate';
     let emailError: string | undefined;
     try {
       const emailResult = await this.emailProvider.send({
@@ -279,9 +281,21 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
         text: transportBody,
         html: generateClientInfoEmailHtml(emailData),
       });
-      sendOutcome = emailResult.success === true ? 'sent' : 'failed';
+      // KESINLIK SAGLAYICI SOZLESMESINDEN OKUNUR (owner GO 2026-09-07).
+      // ONCEKI KUSUR: `success === false` KESIN RET sayiliyordu. Gercek saglayici yollari
+      // (SMTP/SendGrid/SES) istisnalari YAKALAYIP `success:false` donduruyor — bir SendGrid
+      // timeout'u `NETWORK_ERROR` ile ayni degeri uretiyordu. Sonuc: mesaj iletilmis olabilecek
+      // bir gonderim kullaniciya "gonderilemedi" diye bildiriliyor, kullanici tekrar gonderiyor
+      // ve MUKERRER e-posta olusuyordu. Artik yalniz DOGRULANABILIR ret kesin sayilir; alan
+      // yoksa (eski/bilinmeyen saglayici) FAIL-SAFE olarak BELIRSIZ kabul edilir.
+      if (emailResult.success === true) {
+        sendOutcome = 'sent';
+      } else {
+        sendOutcome = emailResult.deliveryOutcome === 'REJECTED' ? 'failed' : 'indeterminate';
+      }
       emailError = emailResult.errorMessage;
     } catch (e: any) {
+      // Saglayici katmani disina kacan istisna: sonuc DOGRULANAMADI.
       sendOutcome = 'indeterminate';
       emailError = 'Gönderim sonucu doğrulanamadı (sağlayıcı yanıt vermedi)';
       this.logger.error(`E-posta saglayicisi istisna atti: ${e?.message}`);
@@ -559,11 +573,25 @@ ${generateIntakeLinkTextBlock(intakeUrl, intakeExpiresAt)}`
 
     // D-3a: sağlayıcı başarısızlığı gönderim SAYILMAZ — sayaç ve `reminderSentAt` YAZILMAZ.
     if (!emailResult.success) {
-      this.logger.warn(`Hatırlatma e-postası gönderilemedi: ${emailResult.errorMessage}`);
-      throw new ServiceUnavailableException({
-        message: 'Hatırlatma e-postası gönderilemedi; hatırlatma kaydedilmedi',
-        reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED',
-      });
+      // Kesinlik saglayici sozlesmesinden okunur (createRequest ile AYNI kural): `success:false`
+      // tek basina kesin ret kaniti DEGILDIR. Hatirlatma kaydi (reminderCount/reminderSentAt)
+      // ZATEN gonderimden SONRA yaziliyordu; degisen yalniz kullaniciya bildirilen KESINLIK.
+      const definiteReject = emailResult.deliveryOutcome === 'REJECTED';
+      this.logger.warn(
+        `Hatırlatma e-postası gönderilemedi (${definiteReject ? 'kesin ret' : 'belirsiz'}): ${emailResult.errorMessage}`,
+      );
+      throw new ServiceUnavailableException(
+        definiteReject
+          ? {
+              message: 'Hatırlatma e-postası gönderilemedi; hatırlatma kaydedilmedi',
+              reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_FAILED',
+            }
+          : {
+              message:
+                'Hatırlatma e-postasının gönderim sonucu DOĞRULANAMADI; hatırlatma kaydedilmedi ve otomatik tekrar gönderim YAPILMADI. E-posta iletilmiş olabilir — tekrar denemeden önce alıcıyla teyit edin.',
+              reasonCode: 'CLIENT_INFO_REQUEST_EMAIL_INDETERMINATE',
+            },
+      );
     }
 
     // Güncelle
