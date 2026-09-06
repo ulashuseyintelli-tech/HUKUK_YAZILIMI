@@ -2,6 +2,7 @@ import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
 import { createIdempotencyKey } from "./idempotency-key";
 import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
 import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
+import { buildApiHttpError, readErrorBody } from './api-error'; // OWN-12 ADIM A: kanonik hata sozlesmesi
 import { reportClientError, shouldReportNetworkError } from "./error-reporter"; // PR-4: yalnız network-failure
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -192,12 +193,9 @@ class ApiClient {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
         // PR-D: hata gövdesini KORU (code/candidates gibi yapısal alanlar) — review akışları için.
-        const e = new Error(error.message || "Bir hata oluştu") as any;
-        e.body = error;
-        e.status = response.status;
-        throw e;
+        // OWN-12 ADIM A: hata kurma KANONIK yardimcida (lib/api-error.ts); davranis AYNI.
+        throw buildApiHttpError(await readErrorBody(response), response.status);
       }
 
       return response.json();

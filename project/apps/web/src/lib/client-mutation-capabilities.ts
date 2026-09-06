@@ -14,6 +14,7 @@
  * müvekkil oluşturmayı imkânsız kılardı. Bu bir güvenlik boşluğu DEĞİLDİR: yetkiyi API
  * uygular (fail-closed, 9 mutation teeth ile kanıtlı); buradaki sinyal salt görünürlüktür.
  */
+import { unwrapEnvelope } from "./api-envelope";
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 
@@ -67,7 +68,8 @@ export function useClientMutationCapabilities(): ClientMutationCapabilities | un
       .get('/clients/lifecycle-eligibility')
       .then((res) => {
         if (!active) return;
-        setCaps(normalizeClientCapabilities((res as any)?.data?.data?.capabilities));
+        // OWN-12 ADIM B: tolerant okuma kanonik cozumleyicide.
+        setCaps(normalizeClientCapabilities(unwrapEnvelope<{ capabilities?: unknown }>(res)?.capabilities));
       })
       .catch(() => {
         // Ağ/yetki hatası → BİLİNMİYOR. Kilitlemeyiz; yetkisiz istek API'de 403 alır.

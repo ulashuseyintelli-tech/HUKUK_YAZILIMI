@@ -4653,3 +4653,100 @@ schema/migration URETMEZ · production verisine ERISMEZ · §1–§58.7 metinler
 **YOL1 ADAPTORU UYGULANDI (opt-in). OWN-15'in KALAN kalemi: `client-intel-statements` create
 capability kapisi — I1A owner-locked, DEGISTIRILMEDI. OWN-15 TERMINAL ETIKETI OWNER
 DISPOZISYONUDUR. HAM TOKEN/URL YALNIZ E-POSTADA; AUDIT VE YANITTA YOK.**
+
+
+---
+
+## §60 — OWN-12: API Istemcisi ve Cevap Cozumleme Birlestirmesi (OWNER D-2 b, 2026-09-06)
+
+Kaynak: owner `GO — CLIENT kalan kararlar → uygulama ve kabul` (2026-09-06), karar D-2 b
+("OWN-12'yi uygula; ayri, incelenebilir adimlarla; ortak API'nin diger modul tuketicilerini
+koru; yalniz kodu tek dosyada toplamak icin genis sozlesme degisikligi yapma; mevcut form
+islevleri ve yetki gorunurlugu kaybolmasin"). Bu bolum ADDITIVE'dir; §1–§59.5 DEGISMEDI.
+
+### 60.1 Olcum duzeltmesi (karar paketi §2.2)
+
+Karar paketi `apiClient` icin **"6 tuketici"** demisti; o olcum yalniz mutlak import
+(`from '@/lib/api/client'`) saymisti. Goreli import (`from './client'`) dahil **gercek sayi 34
+dosyadir** (30'u `lib/api/` altindaki modul sarmalayicilari). Bu sayi, adim A'da neden "sinifi
+silip tuketicileri tasima" secilmedigini ve tam tasima birlestirmesinin neden olculup geri
+alindigini (§60.2) belirler.
+
+### 60.2 ADIM A — dar birlestirme (olculmus geri alma ile)
+
+Iki istemci AYNI zinciri (fetch · token · hata govdesi · ag-hatasi raporlama) iki kez
+tasiyor. **Once tam tasima birlestirmesi uygulandi** (`apiClient` → yeni `api.transport`)
+ve **olculdu**: yerel web kosumunda 9 dosya / 48 test kirildi.
+
+**Kok neden (dar tekrar kosumla izole edildi):** iki istemcinin `try` SINIRLARI farklidir.
+`api.request` HTTP hatasini da kendi `catch`ine dusurur (ag-hatasi raporlama + "API sunucusuna
+baglanilamiyor…" mesaj donusumu); `apiClient.request` bunu YAPMAZ (HTTP hatasi `try` DISINDA
+firlatilir). Tasimayi tek metoda indirmek bu farki `apiClient` tuketicilerine tasidi:
+`a4w` / `a4z` case-detail okuma-hatasi suite'leri **baseline 11/11 PASS → 8 FAIL**.
+
+**Karar:** owner kisiti ("ortak API'nin diger modul tuketicilerini koru") geregi tam
+birlestirme **GERI ALINDI**. Birlestirme, davranisi degistirmeyen katmanla sinirlandi:
+
+- `lib/api-error.ts` (YENI): `buildApiHttpError(body, status)` + `readErrorBody(response)` —
+  basarisiz yanittan kurulan hata nesnesinin sozlesmesi (`message` · `body` · `status`) artik
+  TEK yerde tanimli; iki istemci de onu kullanir (uc cagri yeri).
+- **DEGISMEYEN:** public shape (`request` ham veri doner; `get/post/put/patch/delete` `{data}`
+  sarar), ag-hatasi davranislari (her istemci kendi oncekini korur), token tek-kaynagi
+  (CAD-C1-B03, OFFICE-AUTH-P01) ve **34 tuketici dosyanin tamami**.
+
+**ACIK:** tam tasima birlestirmesi. On kosul: iki istemcinin ag-hatasi/raporlama davranis
+farkinin ONCE test ile kilitlenmesi, sonra tek metotta cagiran-basi profil olarak ifade
+edilmesi. Bu adim UYGULANMADI ve CLOSED YAZILMADI.
+
+### 60.3 ADIM B — tek cevap cozumleyici
+
+Tolerant okuma deseni (`res.data?.data ?? res.data`) web genelinde **39** ayri yerde elle
+yaziliydi; her kopya kenar durumlari (null govde, dizi yanit, tek/cift zarf) farkli ele
+aliyordu. Kanonik `lib/api-envelope.ts` eklendi:
+
+| Fonksiyon | Sozlesme |
+|---|---|
+| `unwrapEnvelope<T>` | cift (`{data:{data:X}}`) ve tek (`{data:X}`) zarfi ayni sekilde cozer; zarfsiz govdeyi aynen doner; **dizi zarf SAYILMAZ**; en fazla IKI katman; `null`/`undefined` → `null` |
+| `unwrapList<T>` | cozulen govde dizi degilse **bos dizi** (arayuz `.map` ile patlamaz) |
+
+Muvekkil akislarindaki iki nokta baglandi: `poa-ux.isPoaDuplicateSuppressed` ve
+`client-mutation-capabilities`. **Backend zarf SOZLESMESI DEGISMEDI** — tek/cift zarf ayrimi
+aynen korunur; bu adim yalniz OKUMA tarafini teklestirir.
+
+### 60.4 ADIM C (form birlestirme) — ACIK, ayri adim
+
+Uc form farkli baglamlardadir:
+
+| Form | Yer | Ozgun girdi |
+|---|---|---|
+| `ClientForm` | `components/client/client-form.tsx` (437 satir) | sayfa formu |
+| `ClientModal` | `settings/clients/page.tsx` icinde | `capabilities` (OWN-13 yetki gorunurlugu) + `scannedData` |
+| `NewClientModal` | `cases/new/page.tsx` sihirbazi icinde | sihirbaz akisi + POA alanlari |
+
+UI'yi tek bilesene indirmek props/JSX sozlesmesini genisletir ve owner'in "genis sozlesme
+degisikligi yapma" kisitina girer. **Onerilen sira:** once ortak **payload kurma + capability
+gorunurluk modeli** ayri bir module cikarilir ve davranis testiyle kilitlenir; UI birlestirme
+AYRI adimda degerlendirilir. Bu adim **UYGULANMADI ve CLOSED YAZILMADI**.
+
+**(D) backend zarf normalizasyonu KAPSAM DISIDIR** (255 tuketici; owner kisiti).
+
+### 60.5 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| `api-envelope-own12.test.ts` (yeni) | 9/9 PASS |
+| `a4w` / `a4z` case-detail okuma-hatasi suite'leri (tam birlestirme geri alindiktan sonra) | 11/11 PASS (baseline ile ayni) |
+| `poa-ux.test.ts` (kanonik cozumleyiciye baglandi) | 16/16 PASS |
+| Web tamami (`vitest run`) | bkz. decision-log kaydi |
+| Web `tsc --noEmit` | **0 hata** |
+| API sozlesmesi / schema / migration | **degismedi / 0** |
+
+### 60.6 Bolum Self-Check
+
+Bu bolum: backend zarf sozlesmesini DEGISTIRMEZ · `apiClient` public shape'ini ve 34
+tuketicisini DEGISTIRMEZ · token tek-kaynagini DEGISTIRMEZ · OWN-13 capability gorunurlugunu
+KALDIRMAZ · form islevlerini DEGISTIRMEZ · ADIM C'yi KAPALI GOSTERMEZ · §1–§59.5 metinlerini
+DEGISTIRMEZ.
+
+**OWN-12 = ADIM A + B UYGULANDI; ADIM C ACIK (ayri adim); (D) KAPSAM DISI.
+ZARF SOZLESMESI DEGISMEDI — YALNIZ OKUMA TEKLESTIRILDI.**
