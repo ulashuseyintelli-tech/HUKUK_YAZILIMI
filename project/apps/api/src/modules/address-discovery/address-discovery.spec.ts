@@ -9,6 +9,11 @@ import { UyapQueryService } from './uyap-query.service';
 import { InstitutionLetterService } from './institution-letter.service';
 import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import { EmailProviderService } from '../notification/email-provider.service';
+// D-3a: ClientInfoRequestService artik AuditService + OfficeApprovalService ister (gonderim kapisi).
+// Bu suite address-discovery is akisini olcer, yetkiyi DEGIL → sahte saglayicilar (bu spec
+// ClientInfoRequestService metotlarini cagirmaz; yalniz enjeksiyon cozulur).
+import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { 
   AddressSource, 
   DebtorType, 
@@ -64,6 +69,8 @@ describeDb('AddressDiscoveryModule Integration Tests', () => {
             send: jest.fn().mockResolvedValue({ success: true }),
           },
         },
+        { provide: AuditService, useValue: { log: jest.fn(), logInTransaction: jest.fn() } },
+        { provide: OfficeApprovalService, useValue: { isApproverEligible: jest.fn().mockResolvedValue(true) } },
       ],
     }).compile();
 
