@@ -13,6 +13,12 @@
  * kapısından geçer.
  */
 
+// F02: SchedulerService artik OfficeApprovalService import ediyor (manuel tetik yetkisi). Bu spec cron yolunu
+// test eder ve o servisi KULLANMAZ; agir import zincirini (accounting-journal -> Prisma.Decimal) kesmek icin mock.
+jest.mock('../../office-approval/office-approval.service', () => ({
+  OfficeApprovalService: class OfficeApprovalService {},
+}));
+
 import { SchedulerService } from "../scheduler.service";
 
 describe("SchedulerService — cron tebligat synced-path (P0: PTT mock kapatıldı)", () => {
@@ -33,7 +39,7 @@ describe("SchedulerService — cron tebligat synced-path (P0: PTT mock kapatıld
     };
     const errorReporter: any = { reportCronError: jest.fn() };
     const caseDebtorLifecycleGuard: any = { isPassiveByCaseAndDebtor: jest.fn().mockResolvedValue(false) };
-    const svc = new SchedulerService(prisma, metrics, tebligatService, errorReporter, caseDebtorLifecycleGuard);
+    const svc = new SchedulerService(prisma, metrics, tebligatService, errorReporter, caseDebtorLifecycleGuard, undefined as any /* F02: officeApproval — cron yolu kullanmaz */);
     return { svc, prisma, tebligatService };
   };
 

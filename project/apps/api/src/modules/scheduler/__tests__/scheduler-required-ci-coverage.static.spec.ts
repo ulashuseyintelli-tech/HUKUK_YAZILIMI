@@ -52,6 +52,16 @@ const I14_SCHEDULER_MAPPED_SPECS = [
     spec: 'src/modules/scheduler/__tests__/scheduler-required-ci-coverage.static.spec.ts',
     manifest: 'pure/platform-scripts-shared.txt',
   },
+  // F02 (manuel scheduler yetki/tenant siniri): saf politika + mock-servis kapsam sozlesmesi.
+  {
+    spec: 'src/modules/scheduler/__tests__/scheduler-manual-run-policy.spec.ts',
+    manifest: 'pure/platform-scripts-shared.txt',
+  },
+  // F02: gercek HTTP + JWT + OfficeApproval + PostgreSQL siniri (db-gated).
+  {
+    spec: 'src/modules/scheduler/__tests__/scheduler-manual-run-boundary.db-gated.integration.spec.ts',
+    manifest: 'db/domain-integration.txt',
+  },
 ];
 
 function normalize(relativePath: string): string {
@@ -90,7 +100,7 @@ describe('DEBTOR-SCHEDULER-REQUIRED-CI-COVERAGE-P1-I14 required CI coverage', ()
   const schedulerSpecFiles = listSchedulerTestFiles();
 
   it('wires every scheduler/__tests__ spec file into required CI exactly once (structural drift guard)', () => {
-    expect(schedulerSpecFiles.length).toBeGreaterThanOrEqual(7);
+    expect(schedulerSpecFiles.length).toBeGreaterThanOrEqual(9);
 
     const membership = schedulerSpecFiles.map((spec) => ({
       spec,
@@ -101,7 +111,7 @@ describe('DEBTOR-SCHEDULER-REQUIRED-CI-COVERAGE-P1-I14 required CI coverage', ()
   });
 
   it('maps every known scheduler contract spec to exactly its intended manifest (semantic/wrong-domain drift guard)', () => {
-    expect(I14_SCHEDULER_MAPPED_SPECS.length).toBe(7);
+    expect(I14_SCHEDULER_MAPPED_SPECS.length).toBe(9);
 
     const membership = I14_SCHEDULER_MAPPED_SPECS.map(({ spec, manifest }) => {
       const targetManifest = manifestContents.get(manifest) ?? [];

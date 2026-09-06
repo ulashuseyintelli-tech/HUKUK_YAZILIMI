@@ -17,6 +17,12 @@ jest.mock('@nestjs/schedule', () => ({
 }), { virtual: true });
 
 import { CaseDebtorLifecycleStatus } from '@prisma/client';
+// F02: SchedulerService artik OfficeApprovalService import ediyor (manuel tetik yetkisi). Bu spec cron yolunu
+// test eder ve o servisi KULLANMAZ; agir import zincirini (accounting-journal -> Prisma.Decimal) kesmek icin mock.
+jest.mock('../../office-approval/office-approval.service', () => ({
+  OfficeApprovalService: class OfficeApprovalService {},
+}));
+
 import { SchedulerService } from '../scheduler.service';
 import { CaseDebtorLifecycleGuardService } from '../../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
@@ -80,7 +86,7 @@ describe('P1-I13 (R02-B) SchedulerService — passive CaseDebtor için yeni iş 
     const errorReporter: any = { report: jest.fn() };
     const guard = new CaseDebtorLifecycleGuardService(prisma);
 
-    const svc = new SchedulerService(prisma, metrics, tebligatService, errorReporter, guard);
+    const svc = new SchedulerService(prisma, metrics, tebligatService, errorReporter, guard, undefined as any /* F02: officeApproval — cron yolu kullanmaz */);
     jest.spyOn((svc as any).logger, 'log').mockImplementation(() => undefined);
     jest.spyOn((svc as any).logger, 'warn').mockImplementation(() => undefined);
     jest.spyOn((svc as any).logger, 'error').mockImplementation(() => undefined);

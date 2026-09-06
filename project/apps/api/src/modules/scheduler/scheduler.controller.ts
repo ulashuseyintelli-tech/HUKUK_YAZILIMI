@@ -1,6 +1,21 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import type { SchedulerActor } from './scheduler-manual-run-policy';
+
+/**
+ * F02: Manuel tetikleme uclari YALNIZ `SchedulerService.runManual` uzerinden gecer.
+ * Controller, servisin cron giris noktalarini (parametresiz = GLOBAL kapsam) DOGRUDAN
+ * CAGIRMAZ; boylece HTTP istegi global calisma baglamini SECEMEZ. Aktor JWT'den
+ * turetilir; yetki (I02-R3 elevated esigi) ve tenant kapsami servis sinirinda uygulanir.
+ */
+function actorFromRequest(req: { user?: { id?: string; tenantId?: string; role?: string } }): SchedulerActor {
+  return {
+    userId: req?.user?.id ?? '',
+    tenantId: req?.user?.tenantId ?? '',
+    role: req?.user?.role ?? '',
+  };
+}
 
 @Controller('scheduler')
 @UseGuards(JwtAuthGuard)
@@ -16,19 +31,19 @@ export class SchedulerController {
   }
 
   /**
-   * Tüm kontrolleri manuel çalıştır
+   * Tüm kontrolleri manuel çalıştır (aktörün tenant'ı ile sınırlı)
    */
   @Post('run-all')
-  async runAll() {
-    return this.schedulerService.runAllChecks();
+  async runAll(@Request() req: any) {
+    return this.schedulerService.runManual('run-all', actorFromRequest(req));
   }
 
   /**
    * Ödeme emri kontrolü
    */
   @Post('check/payment-orders')
-  async checkPaymentOrders() {
-    await this.schedulerService.checkPaymentOrderDeadlines();
+  async checkPaymentOrders(@Request() req: any) {
+    await this.schedulerService.runManual('payment-orders', actorFromRequest(req));
     return { message: 'Ödeme emri kontrolü tamamlandı' };
   }
 
@@ -36,8 +51,8 @@ export class SchedulerController {
    * Nafaka dönem kontrolü
    */
   @Post('check/nafaka')
-  async checkNafaka() {
-    await this.schedulerService.processNafakaPeriods();
+  async checkNafaka(@Request() req: any) {
+    await this.schedulerService.runManual('nafaka', actorFromRequest(req));
     return { message: 'Nafaka dönem kontrolü tamamlandı' };
   }
 
@@ -45,8 +60,8 @@ export class SchedulerController {
    * MTS dönüş kontrolü
    */
   @Post('check/mts')
-  async checkMts() {
-    await this.schedulerService.checkMtsReturns();
+  async checkMts(@Request() req: any) {
+    await this.schedulerService.runManual('mts', actorFromRequest(req));
     return { message: 'MTS kontrolü tamamlandı' };
   }
 
@@ -54,8 +69,8 @@ export class SchedulerController {
    * UYAP retry
    */
   @Post('check/uyap-retry')
-  async checkUyapRetry() {
-    await this.schedulerService.retryFailedUyapRequests();
+  async checkUyapRetry(@Request() req: any) {
+    await this.schedulerService.runManual('uyap-retry', actorFromRequest(req));
     return { message: 'UYAP retry kontrolü tamamlandı' };
   }
 }
