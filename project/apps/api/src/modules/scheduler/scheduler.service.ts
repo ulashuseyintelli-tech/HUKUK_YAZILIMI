@@ -60,15 +60,16 @@ export class SchedulerService {
   ) {}
 
   /**
-   * F02: secim `where`'ine tenant kapsamini uygular. GLOBAL kapsamda yalniz ACTIVE tenant
-   * filtresi (mevcut C15 PR-4A davranisi) kalir; manuel kapsamda buna `tenantId` eklenir.
+   * F02: manuel calismada secim `where`'ine YALNIZ `tenantId` daraltmasini ekler; GLOBAL
+   * kapsamda bos nesne doner. ACTIVE tenant filtresi (`tenant: ACTIVE_TENANT_WHERE`) bilerek
+   * call-site'ta LITERAL kalir: C15 PR-4A statik AST kapisi
+   * (tenant-lifecycle-cron-predicate.static-guard.spec.ts) bu tanimlayiciyi sorgu cagrisinin
+   * alt agacinda arar; helper icine tasinsaydi kalicilik kaniti kaybolurdu.
    * Alt yazimlar (case.update / due.create / decisionLog / caseLifecycle) secilen case'e
    * bagli oldugundan secimin daraltilmasi tum yazimlari ayni tenant sinirinda tutar.
    */
-  private scopedTenantWhere(scope: SchedulerScope) {
-    return scope
-      ? { tenant: ACTIVE_TENANT_WHERE, tenantId: scope.tenantId }
-      : { tenant: ACTIVE_TENANT_WHERE };
+  private manualTenantScope(scope: SchedulerScope): { tenantId?: string } {
+    return scope ? { tenantId: scope.tenantId } : {};
   }
 
   /** PR-3: cron hatasını ErrorLog'a düşür (source=CRON). fire-and-forget + swallow → davranış DEĞİŞMEZ. */
@@ -97,7 +98,8 @@ export class SchedulerService {
           (args) =>
             this.db.case.findMany({
               where: {
-                ...this.scopedTenantWhere(scope),
+                tenant: ACTIVE_TENANT_WHERE,
+                ...this.manualTenantScope(scope),
                 workflowStage: 'WAITING_RESPONSE',
                 nextActionAt: { lte: new Date() },
                 isAutomationEnabled: true,
@@ -187,7 +189,8 @@ export class SchedulerService {
           (args) =>
             this.db.case.findMany({
               where: {
-                ...this.scopedTenantWhere(scope),
+                tenant: ACTIVE_TENANT_WHERE,
+                ...this.manualTenantScope(scope),
                 subCategory: 'NAFAKA',
                 isAutomationEnabled: true,
                 caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
@@ -282,7 +285,8 @@ export class SchedulerService {
           (args) =>
             this.db.case.findMany({
               where: {
-                ...this.scopedTenantWhere(scope),
+                tenant: ACTIVE_TENANT_WHERE,
+                ...this.manualTenantScope(scope),
                 isMtsCase: true,
                 mtsReturnDate: { lte: sevenDaysAgo },
                 isAutomationEnabled: true,
@@ -450,7 +454,8 @@ export class SchedulerService {
 
         const upcomingTasks = await this.db.task.count({
           where: {
-            ...this.scopedTenantWhere(scope),
+            tenant: ACTIVE_TENANT_WHERE,
+            ...this.manualTenantScope(scope),
             status: 'PENDING',
             dueDate: { lte: tomorrow },
           },
