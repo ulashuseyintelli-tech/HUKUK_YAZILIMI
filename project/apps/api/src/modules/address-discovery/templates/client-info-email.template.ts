@@ -14,6 +14,23 @@ export interface ClientInfoEmailData {
   firmName: string;
   firmPhone?: string;
   firmEmail?: string;
+  /**
+   * D-3b ("Yol1", owner GO 2026-09-06): mevcut intake altyapisiyla uretilen tek-kullanimlik
+   * guvenli form baglantisi. YALNIZ talep sirasinda link uretildiyse doldurulur; yoksa e-posta
+   * onceki haliyle (serbest metin yaniti) gonderilir. Ham token e-posta DISINDA hicbir yere
+   * (DB, log, audit, yanit govdesi) yazilmaz — link sozlesmesi ClientIntakeLinkService'indir.
+   */
+  intakeUrl?: string;
+  /** Baglantinin son gecerlilik tarihi (varsa) — kullaniciya bilgi olarak gosterilir. */
+  intakeExpiresAt?: Date | string | null;
+}
+
+/** Baglanti bloğu icin tarih metni (yoksa bos). */
+function formatIntakeDeadline(value?: Date | string | null): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 /**
@@ -35,8 +52,13 @@ Borçlu: ${data.debtorName}${data.debtorIdentityNo ? ` (${data.debtorIdentityNo}
 Dosya No: ${data.caseNumber}
 
 Bu bilgiler, tebligat işlemlerinin sağlıklı yürütülmesi için gereklidir.
+${data.intakeUrl
+  ? `Bilgileri güvenli formumuz üzerinden iletebilirsiniz:
+${data.intakeUrl}${formatIntakeDeadline(data.intakeExpiresAt) ? `
+(Bağlantı ${formatIntakeDeadline(data.intakeExpiresAt)} tarihine kadar geçerlidir.)` : ''}
 
-Bilgilerinizi bu e-postaya yanıt olarak iletebilirsiniz.
+Dilerseniz bu e-postaya yanıt olarak da iletebilirsiniz.`
+  : `Bilgilerinizi bu e-postaya yanıt olarak iletebilirsiniz.`}
 
 Saygılarımızla,
 ${data.lawyerName}
@@ -76,7 +98,12 @@ export function generateClientInfoEmailHtml(data: ClientInfoEmailData): string {
     
     <p>Bu bilgiler, tebligat işlemlerinin sağlıklı yürütülmesi için gereklidir.</p>
     
-    <p><em>Bilgilerinizi bu e-postaya yanıt olarak iletebilirsiniz.</em></p>
+    <p><em>${data.intakeUrl
+      ? `Bilgileri güvenli formumuz üzerinden iletebilirsiniz:</p>
+    <p style="margin:16px 0"><a href="${data.intakeUrl}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">Bilgi Formunu Aç</a></p>
+    ${formatIntakeDeadline(data.intakeExpiresAt) ? `<p style="font-size:13px;color:#64748b">Bağlantı ${formatIntakeDeadline(data.intakeExpiresAt)} tarihine kadar geçerlidir.</p>` : ''}
+    <p>Dilerseniz bu e-postaya yanıt olarak da iletebilirsiniz.`
+      : `Bilgilerinizi bu e-postaya yanıt olarak iletebilirsiniz.`}</em></p>
     
     <div class="footer">
       <p style="margin: 0;">Saygılarımızla,</p>

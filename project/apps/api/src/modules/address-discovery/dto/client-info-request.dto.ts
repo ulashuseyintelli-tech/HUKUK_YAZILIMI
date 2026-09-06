@@ -1,5 +1,5 @@
-import { IsString, IsOptional, IsEmail, IsEnum } from 'class-validator';
-import { ClientInfoRequestStatus } from '@prisma/client';
+import { IsString, IsOptional, IsEmail, IsEnum, IsBoolean, IsArray, ArrayNotEmpty, IsDateString, IsInt, Min } from 'class-validator';
+import { ClientInfoRequestStatus, ClientIntakeFieldCategory } from '@prisma/client';
 
 export class CreateClientInfoRequestDto {
   @IsString()
@@ -22,6 +22,34 @@ export class CreateClientInfoRequestDto {
   @IsOptional()
   @IsString()
   emailBody?: string;
+
+  /**
+   * D-3b ("Yol1"): true ise talep e-postasina mevcut intake altyapisiyla uretilen guvenli form
+   * baglantisi eklenir. VARSAYILAN false → mevcut davranis (serbest metin yaniti) DEGISMEZ.
+   * Link uretimi ClientIntakeLinkService sozlesmesine tabidir (tenant/muvekkil/dosya siniri,
+   * token hash, sure/iptal/tekrar-kullanim); yanit review kuyruguna duser, promotion AYRI kalir.
+   */
+  @IsOptional()
+  @IsBoolean()
+  attachIntakeLink?: boolean;
+
+  /** Formun soracagi kategoriler. Verilmezse bilgi talebinin dogal kapsami: ADDRESS + CONTACT. */
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsEnum(ClientIntakeFieldCategory, { each: true })
+  intakeScope?: ClientIntakeFieldCategory[];
+
+  /** Baglanti son gecerlilik tarihi (ISO). Verilmezse intake sozlesmesinin varsayilani (suresiz). */
+  @IsOptional()
+  @IsDateString()
+  intakeExpiresAt?: string;
+
+  /** Azami kullanim (intake sozlesmesi varsayilani 1). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  intakeMaxUses?: number;
 }
 
 export class UpdateClientInfoRequestDto {

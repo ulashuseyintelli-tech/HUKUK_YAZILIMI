@@ -17,7 +17,7 @@ describe('ClientInfoRequestService debtor ownership guard', () => {
     emailProvider = { send: jest.fn() };
     // D-3a: ctor'a AuditService + OfficeApprovalService eklendi; bu vaka ADMIN aktorle kosar
     // (eligibility sorgusuz) — olculen sey debtor ownership guard'idir.
-    service = new ClientInfoRequestService(prisma, emailProvider, { log: jest.fn() } as any, { isApproverEligible: jest.fn() } as any);
+    service = new ClientInfoRequestService(prisma, emailProvider, { log: jest.fn() } as any, { isApproverEligible: jest.fn() } as any, { createForClientWorkspace: jest.fn() } as any);
   });
 
   it('dto.debtorId verilen case içindeki CaseDebtor listesinde değilse reddeder', async () => {
