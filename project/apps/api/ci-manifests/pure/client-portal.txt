@@ -247,6 +247,15 @@ src/modules/client/__tests__/client-identity-checksum-tightening-d1b.spec.ts
 #     gonderim olarak KAYDEDILMEZ; otomatik dosya-olusturma yolu korunur ve istemciden asilamaz.
 src/modules/address-discovery/__tests__/client-info-request-authority-d3a.spec.ts
 #
+#   D-3b ("Yol1", owner GO 2026-09-06) bilgi talebi -> intake baglantisi (SAF, DB-siz)
+#     Talep e-postasina mevcut intake altyapisiyla uretilen guvenli form baglantisi eklenir
+#     (opt-in; varsayilan KAPALI → mevcut serbest-metin davranisi degismez). Link uretimi
+#     ClientIntakeLinkService sozlesmesine tabidir: tenant/muvekkil/dosya siniri, token hash,
+#     sure/iptal/tekrar-kullanim. Ham token/URL yanit govdesine ve audit'e YAZILMAZ; yalniz
+#     link kimligi doner. Otomatik SISTEM yolu aktor tasimadigi icin link URETMEZ.
+#     review != promotion ayrimi DEGISMEZ.
+src/modules/address-discovery/__tests__/client-info-request-intake-link-d3b.spec.ts
+#
 #   C2 REVIEW AUTHORITY EXTENSION — CR-1 sozlesme kaniti (SAF, DB-siz)
 #     Owner RATIFIED 2026-08-03: INTAKE_REVIEW_CLAIM/FIELD_DECIDE/SUBMISSION_REJECT
 #     komutlari INTAKE_REVIEW sinifinda — yetki sinyali isIntakeReviewAuthorized,

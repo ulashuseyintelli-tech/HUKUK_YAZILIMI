@@ -12,9 +12,11 @@ import { PolicyEngineModule } from '../policy-engine/policy-engine.module';
 import { CaseDebtorLifecycleGuardModule } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module';
 // D-3a: bilgi talebi gonderim kapisi icin OFFICE eligibility (AuditService @Global).
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
+// D-3b ("Yol1"): bilgi talebine intake baglantisi eklemek icin mevcut intake servisi TUKETILIR.
+import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
 
 @Module({
-  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule), CaseDebtorLifecycleGuardModule, OfficeApprovalModule],
+  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule), CaseDebtorLifecycleGuardModule, OfficeApprovalModule, ClientIntakeLinkModule],
   controllers: [AddressDiscoveryController],
   providers: [
     AddressDiscoveryService,

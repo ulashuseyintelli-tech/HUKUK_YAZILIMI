@@ -14,6 +14,7 @@ import { EmailProviderService } from '../notification/email-provider.service';
 // ClientInfoRequestService metotlarini cagirmaz; yalniz enjeksiyon cozulur).
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
+import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
 import { 
   AddressSource, 
   DebtorType, 
@@ -71,6 +72,7 @@ describeDb('AddressDiscoveryModule Integration Tests', () => {
         },
         { provide: AuditService, useValue: { log: jest.fn(), logInTransaction: jest.fn() } },
         { provide: OfficeApprovalService, useValue: { isApproverEligible: jest.fn().mockResolvedValue(true) } },
+        { provide: ClientIntakeLinkService, useValue: { createForClientWorkspace: jest.fn() } },
       ],
     }).compile();
 

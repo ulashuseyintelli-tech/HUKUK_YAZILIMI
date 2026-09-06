@@ -4585,3 +4585,71 @@ OWN-12, "Yol1" adaptoru ve MR-063'u KAPALI GOSTERMEZ · §1–§57.5 metinlerini
 **FAZ 1 ZORUNLU KALEMLERI KAPANDI. OWN-10 = KARAR VERILDI / VERI DUZELTMESI YAPILMADI (7 pasif kayit
 "duzeltildi" SAYILMAZ). OWN-15 = PARTIAL (Yol1 ayri teslim). OWN-12 = AYRI TESLIM.
 POA REVOKE ESIGI (elevated-only) DEGISMEDI. YAYIN: RELEASE19 adayi bu commit'leri ICERMEZ.**
+
+
+---
+
+## §59 — CLIENT "Yol1": Bilgi Talebi ↔ Intake Baglantisi (OWNER D-3 b, 2026-09-06)
+
+Kaynak: owner `GO — CLIENT kalan kararlar → uygulama ve kabul` (2026-09-06), karar D-3 b.
+Bu bolum ADDITIVE'dir; §1–§58.7 metinleri DEGISMEDI. §58.4'teki gonderim yetki kapisi
+(D-3a) AYNEN gecerlidir ve bu genisletmeden ONCE calisir.
+
+### 59.1 Ne eklendi
+
+Muvekkil bilgi talebi e-postasina, **mevcut** intake altyapisiyla uretilen guvenli form
+baglantisi eklenebilir. Ozellik **opt-in**'dir (`attachIntakeLink`): verilmezse e-posta ve
+davranis onceki haliyle kalir (serbest metin yaniti).
+
+| Konu | Karar |
+|---|---|
+| Link uretimi | `ClientIntakeLinkService.createForClientWorkspace` **TUKETILIR** — bu teslim yeni token/sure/iptal sozlesmesi URETMEZ |
+| Tenant/muvekkil/dosya bagi | Intake servisinin `assertClientWorkspaceCreateBoundary` kapisinda; DEGISMEDI |
+| Token | Ham token DB'de YOK (sha256 hash); ham token ve URL YALNIZ e-postaya girer |
+| Varsayilan kapsam | `ADDRESS` + `CONTACT` (talep metninin dogal kapsami); cagiran `intakeScope` ile degistirir |
+| Sure / azami kullanim | `intakeExpiresAt` / `intakeMaxUses` cagirandan gelir ve intake servisine AYNEN gecer; verilmezse o servisin varsayilani |
+| Yetki | D-3a kapisi (`INFO_REQUEST_SEND`, ADMIN VEYA elevated) — link uretiminden ONCE |
+| Otomatik (SISTEM) yol | Aktor tasimaz → link URETMEZ; istemci bu yolla manuel kapiyi ASAMAZ |
+| review ≠ promotion | DEGISMEDI; intake review/promote yollarina DOKUNULMADI |
+
+### 59.2 Sizinti sinirlari
+
+Ham token ve form URL'i **yalniz e-posta govdesine** girer. Yanit govdesi, `CLIENT_WORKSPACE_COMMAND`
+audit metadata'si ve loglar yalniz `intakeLinkId` tasir. Saglayici basarisizliginda (D-3a)
+talep kaydi geri alinir ve audit URETILMEZ; link uretilmis olsa bile gonderim "basarili"
+sayilmaz.
+
+### 59.3 Owner onayina sunulan urun tercihleri (varsayilanlar)
+
+Bunlar uygulamayi DURDURMADI; mevcut sozlesmenin en yakin/dar secimleri kullanildi ve owner
+degistirebilir:
+
+1. Varsayilan kapsam `ADDRESS + CONTACT` (talep metni adres ve iletisim bilgisi ister).
+2. `maxUses` verilmezse intake sozlesmesinin varsayilani (1).
+3. `expiresAt` verilmezse **suresiz** (mevcut intake sozlesmesi boyle; sure zorunlulugu ayri karar).
+4. Baglanti UI'dan nasil tetiklenecegi (web yuzeyi) bu teslimde YOK — API opt-in hazir.
+
+### 59.4 Kanit
+
+| Kapsam | Sonuc |
+|---|---|
+| `client-info-request-intake-link-d3b.spec.ts` (yeni) | 15/15 PASS |
+| `client-info-request-authority-d3a.spec.ts` (audit alani additive) | 29/29 PASS |
+| `client-info-request-ownership.spec.ts` | PASS |
+| `address-discovery` DB-gated spec — **gercek PostgreSQL 16** (disposable) | 26/26 PASS |
+| `pure/client-portal.txt` tam manifest | bkz. decision-log kaydi |
+| `tsc --noEmit` | 529 = baseline 529 (degisen dosyalarda 0) |
+| schema/migration diff | **0** |
+
+Kanit sinifi: servis/sablon birim testleri (Prisma, e-posta saglayicisi ve intake servisi mock'lu)
++ bir DB-gated entegrasyon spec'i. **Gercek aliciya e-posta GONDERILMEDI.**
+
+### 59.5 Bolum Self-Check
+
+Bu bolum: yeni token/sure/iptal sozlesmesi URETMEZ · intake review/promotion ayrimini
+DEGISTIRMEZ · D-3a yetki esigini GEVSETMEZ · otomatik SISTEM yoluna yetki KAZANDIRMAZ ·
+schema/migration URETMEZ · production verisine ERISMEZ · §1–§58.7 metinlerini DEGISTIRMEZ.
+
+**YOL1 ADAPTORU UYGULANDI (opt-in). OWN-15'in KALAN kalemi: `client-intel-statements` create
+capability kapisi — I1A owner-locked, DEGISTIRILMEDI. OWN-15 TERMINAL ETIKETI OWNER
+DISPOZISYONUDUR. HAM TOKEN/URL YALNIZ E-POSTADA; AUDIT VE YANITTA YOK.**

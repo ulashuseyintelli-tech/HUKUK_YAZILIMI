@@ -80,8 +80,16 @@ function buildHarness(opts: { eligible?: boolean; emailOk?: boolean; requestFoun
   };
   const audit: AnyRecord = { log: jest.fn().mockResolvedValue(undefined) };
   const officeApproval: AnyRecord = { isApproverEligible: jest.fn().mockResolvedValue(eligible) };
-  const service = new ClientInfoRequestService(prisma as any, emailProvider as any, audit as any, officeApproval as any);
-  return { service, prisma, emailProvider, audit, officeApproval };
+  // D-3b: intake link servisi (Yol1) — bu suite baglantiyi ISTEMEZ; cagrilmadigi dogrulanir.
+  const intakeLink: AnyRecord = {
+    createForClientWorkspace: jest.fn().mockResolvedValue({
+      link: { id: 'link-1', expiresAt: null },
+      rawToken: 'raw',
+      intakeUrl: 'https://portal.test/intake/raw',
+    }),
+  };
+  const service = new ClientInfoRequestService(prisma as any, emailProvider as any, audit as any, officeApproval as any, intakeLink as any);
+  return { service, prisma, emailProvider, audit, officeApproval, intakeLink };
 }
 
 type Harness = ReturnType<typeof buildHarness>;
@@ -207,7 +215,8 @@ describe('D-3a — saglayici basarisizligi BASARILI GONDERIM olarak kaydedilmez'
     await h.service.createRequest(TENANT, DTO, actor('ADMIN'));
     const serialized = JSON.stringify(h.audit.log.mock.calls[0][0]);
     expect(serialized).not.toContain('muvekkil@example.test');
-    expect(Object.keys(h.audit.log.mock.calls[0][0].metadata).sort()).toEqual(['actorRole', 'caseId', 'commandType', 'requestId', 'status']);
+    // D-3b: 'intakeLinkId' additive alan (baglanti yoksa null); ham token/URL yine YOK.
+    expect(Object.keys(h.audit.log.mock.calls[0][0].metadata).sort()).toEqual(['actorRole', 'caseId', 'commandType', 'intakeLinkId', 'requestId', 'status']);
   });
 });
 

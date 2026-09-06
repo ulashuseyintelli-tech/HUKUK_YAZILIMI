@@ -9,6 +9,8 @@ import {
   type ClientWorkspaceCommandActor,
 } from '../client/client-workspace-command-authority';
 import { decideClientOperationalCommand } from '../client/client-mutation-policy';
+import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
+import { ClientIntakeFieldCategory } from '@prisma/client';
 import { maskEmail } from '../../common/pii-mask.util';
 import { CreateClientInfoRequestDto } from './dto/client-info-request.dto';
 import {
@@ -29,7 +31,19 @@ export class ClientInfoRequestService {
     private emailProvider: EmailProviderService,
     private audit: AuditService,
     private officeApproval: OfficeApprovalService,
+    // D-3b ("Yol1"): mevcut intake altyapisi TUKETILIR; bu servis kendi token/sure/iptal
+    // sozlesmesini URETMEZ.
+    private intakeLink: ClientIntakeLinkService,
   ) {}
+
+  /**
+   * D-3b: bilgi talebinin dogal kapsami — talep metni adres ve iletisim bilgisi ister.
+   * Cagiran `intakeScope` ile degistirebilir.
+   */
+  private static readonly DEFAULT_INTAKE_SCOPE: ClientIntakeFieldCategory[] = [
+    ClientIntakeFieldCategory.ADDRESS,
+    ClientIntakeFieldCategory.CONTACT,
+  ];
 
   /**
    * D-3a: C2 frozen primitive bağımlılıkları — elevated sinyali OFFICE'ten (`isApproverEligible`),
@@ -83,7 +97,13 @@ export class ClientInfoRequestService {
       actor,
       { tenantId, clientId: dto.clientId, commandType: CLIENT_WORKSPACE_COMMAND.INFO_REQUEST_SEND },
       () => this.createRequestUnchecked(tenantId, dto, actor.userId ?? null),
-      (r: any) => ({ requestId: r?.id ?? null, status: 'sent', caseId: dto.caseId }),
+      (r: any) => ({
+        requestId: r?.id ?? null,
+        status: 'sent',
+        caseId: dto.caseId,
+        // D-3b: baglanti uretildi mi (ham token/URL audit'e YAZILMAZ).
+        intakeLinkId: r?.intakeLinkId ?? null,
+      }),
     );
   }
 
@@ -148,6 +168,29 @@ export class ClientInfoRequestService {
       debtor = caseData.debtors[0].debtor;
     }
 
+    // D-3b ("Yol1"): istenirse mevcut intake altyapisiyla guvenli form baglantisi uretilir.
+    // Yalniz AKTOR'lu (manuel, yetkilendirilmis) yolda mumkundur: link `createdById` gercek
+    // kullanici ister; otomatik SISTEM yolu aktor tasimaz ve link URETMEZ.
+    let intakeUrl: string | undefined;
+    let intakeExpiresAt: Date | null = null;
+    let intakeLinkId: string | undefined;
+    if (dto.attachIntakeLink && actorUserId) {
+      const created = await this.intakeLink.createForClientWorkspace(
+        tenantId,
+        dto.clientId,
+        dto.caseId,
+        actorUserId,
+        {
+          scope: dto.intakeScope ?? ClientInfoRequestService.DEFAULT_INTAKE_SCOPE,
+          expiresAt: dto.intakeExpiresAt,
+          maxUses: dto.intakeMaxUses,
+        },
+      );
+      intakeUrl = created.intakeUrl;
+      intakeExpiresAt = created.link.expiresAt ?? null;
+      intakeLinkId = created.link.id;
+    }
+
     // E-posta şablonu verilerini hazırla
     const emailData: ClientInfoEmailData = {
       clientName: client.displayName || 'Müvekkil',
@@ -160,6 +203,8 @@ export class ClientInfoRequestService {
       firmName: office?.name || 'Hukuk Bürosu',
       firmPhone: office?.phone || undefined,
       firmEmail: office?.email || undefined,
+      intakeUrl,
+      intakeExpiresAt,
     };
 
     // E-posta içeriğini oluştur
@@ -261,6 +306,8 @@ export class ClientInfoRequestService {
       ...request,
       emailSent: emailResult.success,
       emailError: emailResult.errorMessage,
+      // D-3b: yalniz link KIMLIGI doner; ham token/URL yanit govdesine YAZILMAZ.
+      intakeLinkId,
     };
   }
 
