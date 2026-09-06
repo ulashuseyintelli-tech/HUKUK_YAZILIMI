@@ -4330,7 +4330,7 @@ ADMIN ≠ ELEVATED (ucuncu tekrar: create/update/address/bulk — D07/D04 hep AY
 ## §56 — OWN-13 / I02-R4–R6 Kapanis Uzlastirmasi + R6 Legacy POA Upload Servis-Giris Kapisi
 
 Kaynak: owner `GO — CLIENT / OWN-13 R4–R6 KALAN ISLERIN TAMAMLANMASI` (2026-09-06, IF
-GO-COMPLETE; PR #NNNN) ve repository-truth incelemesi. Bu bolum ADDITIVE'dir; §1–§55.6
+GO-COMPLETE; PR #2517) ve repository-truth incelemesi. Bu bolum ADDITIVE'dir; §1–§55.6
 metinleri DEGISMEDI. §51.7 matrisindeki R4/R5/R6 satirlari ile §55.6'daki "R4–R6 OPEN / NOT
 STARTED" ifadesi bu bolumle SUPERSEDED (tarihsel metin korunur).
 
