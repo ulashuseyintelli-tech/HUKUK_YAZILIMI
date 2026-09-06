@@ -43,8 +43,7 @@ export class SchedulerController {
    */
   @Post('check/payment-orders')
   async checkPaymentOrders(@Request() req: any) {
-    await this.schedulerService.runManual('payment-orders', actorFromRequest(req));
-    return { message: 'Ödeme emri kontrolü tamamlandı' };
+    return this.schedulerService.runManual('payment-orders', actorFromRequest(req)); // F02: guard outcome yanita gecer
   }
 
   /**
@@ -52,8 +51,7 @@ export class SchedulerController {
    */
   @Post('check/nafaka')
   async checkNafaka(@Request() req: any) {
-    await this.schedulerService.runManual('nafaka', actorFromRequest(req));
-    return { message: 'Nafaka dönem kontrolü tamamlandı' };
+    return this.schedulerService.runManual('nafaka', actorFromRequest(req)); // F02: guard outcome yanita gecer
   }
 
   /**
@@ -61,8 +59,7 @@ export class SchedulerController {
    */
   @Post('check/mts')
   async checkMts(@Request() req: any) {
-    await this.schedulerService.runManual('mts', actorFromRequest(req));
-    return { message: 'MTS kontrolü tamamlandı' };
+    return this.schedulerService.runManual('mts', actorFromRequest(req)); // F02: guard outcome yanita gecer
   }
 
   /**
@@ -70,7 +67,6 @@ export class SchedulerController {
    */
   @Post('check/uyap-retry')
   async checkUyapRetry(@Request() req: any) {
-    await this.schedulerService.runManual('uyap-retry', actorFromRequest(req));
-    return { message: 'UYAP retry kontrolü tamamlandı' };
+    return this.schedulerService.runManual('uyap-retry', actorFromRequest(req)); // F02: guard outcome yanita gecer
   }
 }

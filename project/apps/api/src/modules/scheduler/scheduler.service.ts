@@ -12,7 +12,7 @@ import { SCHEDULER_TIMEZONE } from '../../common/scheduler-timezone';
 // "önce hepsini çek sonra ele" YAPILMAZ. Yalnız SEÇİM engellenir — backfill/catch-up
 // SAĞLANMAZ (nafaka/89-ihbarname/e-tebligat şerhi PR-4A kapsam beyanındadır).
 import { ACTIVE_TENANT_WHERE } from '../tenant/tenant-lifecycle';
-import { runWithOverlapGuard } from '../../common/scheduler-overlap-guard';
+import { runWithOverlapGuard, type OverlapGuardResult } from '../../common/scheduler-overlap-guard';
 // F02: manuel tetik yetkisi — OWN-13 I02-R3 ile RATIFIYE elevated esigi (isApproverEligible).
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import {
@@ -89,7 +89,7 @@ export class SchedulerService {
    * Ödeme emri süresi dolan dosyaları kontrol eder
    */
   @Cron(CronExpression.EVERY_DAY_AT_9AM, { name: 'SchedulerService.checkPaymentOrderDeadlines', timeZone: SCHEDULER_TIMEZONE })
-  async checkPaymentOrderDeadlines(scope?: SchedulerScope) {
+  async checkPaymentOrderDeadlines(scope?: SchedulerScope): Promise<OverlapGuardResult> {
     const guardResult = await runWithOverlapGuard('SchedulerService.checkPaymentOrderDeadlines', async () => {
       this.logger.log('⏰ Ödeme emri süre kontrolü başladı...');
 
@@ -119,10 +119,11 @@ export class SchedulerService {
         this.logger.error('Ödeme emri kontrolü hatası:', error);
         this.reportCronError('checkPaymentOrderDeadlines', error);
       }
-    });
+    }, { onBusy: 'WAIT' }); // F02: manuel/global cakismasinda ATLAMA yerine SIRALA — is kaybi yok, paralellik yok
     if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] checkPaymentOrderDeadlines already running, skipping');
     }
+    return guardResult;
   }
 
   /**
@@ -178,7 +179,7 @@ export class SchedulerService {
   /// - SchedulerService.processNafakaPeriods() → @Cron('0 8 1 * *') (aylık otomatik nafaka dönem kontrolü)
   /// </remarks>
   @Cron('0 8 1 * *', { name: 'SchedulerService.processNafakaPeriods', timeZone: SCHEDULER_TIMEZONE }) // Her ayın 1'i saat 08:00
-  async processNafakaPeriods(scope?: SchedulerScope) {
+  async processNafakaPeriods(scope?: SchedulerScope): Promise<OverlapGuardResult> {
     const guardResult = await runWithOverlapGuard('SchedulerService.processNafakaPeriods', async () => {
       this.logger.log('⏰ Nafaka dönem kontrolü başladı...');
 
@@ -209,10 +210,11 @@ export class SchedulerService {
         this.logger.error('Nafaka dönem kontrolü hatası:', error);
         this.reportCronError('processNafakaPeriods', error);
       }
-    });
+    }, { onBusy: 'WAIT' }); // F02: manuel/global cakismasinda ATLAMA yerine SIRALA — is kaybi yok, paralellik yok
     if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] processNafakaPeriods already running, skipping');
     }
+    return guardResult;
   }
 
   /**
@@ -274,7 +276,7 @@ export class SchedulerService {
    * MTS dosyalarında 7 gün kontrolü
    */
   @Cron(CronExpression.EVERY_DAY_AT_10AM, { name: 'SchedulerService.checkMtsReturns', timeZone: SCHEDULER_TIMEZONE })
-  async checkMtsReturns(scope?: SchedulerScope) {
+  async checkMtsReturns(scope?: SchedulerScope): Promise<OverlapGuardResult> {
     const guardResult = await runWithOverlapGuard('SchedulerService.checkMtsReturns', async () => {
       this.logger.log('⏰ MTS dönüş kontrolü başladı...');
 
@@ -304,10 +306,11 @@ export class SchedulerService {
         this.logger.error('MTS kontrolü hatası:', error);
         this.reportCronError('checkMtsReturns', error);
       }
-    });
+    }, { onBusy: 'WAIT' }); // F02: manuel/global cakismasinda ATLAMA yerine SIRALA — is kaybi yok, paralellik yok
     if (guardResult === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] checkMtsReturns already running, skipping');
     }
+    return guardResult;
   }
 
   /**
@@ -445,7 +448,7 @@ export class SchedulerService {
    * Yaklaşan görevleri kontrol eder
    */
   @Cron(CronExpression.EVERY_HOUR, { name: 'SchedulerService.checkUpcomingTasks', timeZone: SCHEDULER_TIMEZONE })
-  async checkUpcomingTasks(scope?: SchedulerScope) {
+  async checkUpcomingTasks(scope?: SchedulerScope): Promise<OverlapGuardResult> {
     const result = await runWithOverlapGuard('SchedulerService.checkUpcomingTasks', async () => {
       this.logger.log('⏰ Yaklaşan görev kontrolü...');
 
@@ -468,10 +471,11 @@ export class SchedulerService {
         this.logger.error('Görev kontrolü hatası:', error);
         this.reportCronError('checkUpcomingTasks', error);
       }
-    });
+    }, { onBusy: 'WAIT' }); // F02: manuel/global cakismasinda ATLAMA yerine SIRALA — is kaybi yok, paralellik yok
     if (result === 'SKIPPED_ALREADY_RUNNING') {
       this.logger.warn('[scheduler] SchedulerService.checkUpcomingTasks already running, skipping');
     }
+    return result;
   }
 
   /**
@@ -481,12 +485,12 @@ export class SchedulerService {
   async runAllChecks(scope?: SchedulerScope) {
     this.logger.log(scope ? `🚀 Tüm kontroller manuel tetiklendi (tenant=${scope.tenantId})` : '🚀 Tüm kontroller tetiklendi...');
 
-    await this.checkPaymentOrderDeadlines(scope);
-    await this.checkMtsReturns(scope);
+    const paymentOrders = await this.checkPaymentOrderDeadlines(scope);
+    const mts = await this.checkMtsReturns(scope);
     await this.retryFailedUyapRequests();
-    await this.checkUpcomingTasks(scope);
+    const upcomingTasks = await this.checkUpcomingTasks(scope);
 
-    return { message: 'Tüm kontroller tamamlandı' };
+    return { message: 'Tüm kontroller tamamlandı', outcomes: { paymentOrders, mts, upcomingTasks } };
   }
 
   /**
@@ -509,15 +513,18 @@ export class SchedulerService {
     switch (operation) {
       case 'run-all':
         return this.runAllChecks(scope);
-      case 'payment-orders':
-        await this.checkPaymentOrderDeadlines(scope);
-        return { message: 'Ödeme emri kontrolü tamamlandı' };
-      case 'nafaka':
-        await this.processNafakaPeriods(scope);
-        return { message: 'Nafaka dönem kontrolü tamamlandı' };
-      case 'mts':
-        await this.checkMtsReturns(scope);
-        return { message: 'MTS kontrolü tamamlandı' };
+      case 'payment-orders': {
+        const outcome = await this.checkPaymentOrderDeadlines(scope);
+        return { message: 'Ödeme emri kontrolü tamamlandı', outcome };
+      }
+      case 'nafaka': {
+        const outcome = await this.processNafakaPeriods(scope);
+        return { message: 'Nafaka dönem kontrolü tamamlandı', outcome };
+      }
+      case 'mts': {
+        const outcome = await this.checkMtsReturns(scope);
+        return { message: 'MTS kontrolü tamamlandı', outcome };
+      }
       case 'uyap-retry':
         // Devre disi yol (UYAP-EVIDENCE-RUNTIME-INTEGRITY-R02); yetki kapisi yine de uygulanir.
         await this.retryFailedUyapRequests();
