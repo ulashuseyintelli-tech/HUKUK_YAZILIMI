@@ -1736,7 +1736,14 @@ export class ClientService {
     // lifecycle capability gate (assertCanManageLifecycle) — hem deaktivasyon (true→false) hem
     // reaktivasyon (false→true) buraya tabi; aynı değer/eksik alan → no-op, gate çalışmaz.
     // Transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz), remove()'daki desenle birebir.
-    if (data.isActive !== undefined && data.isActive !== existing.isActive) {
+    // CBND-6 + LIFECYCLE YARIS DUZELTMESI (2026-09-06): `isActive` YALNIZ GERCEK GECISTE
+    // yazilir. Ayni degerin tekrar gonderilmesi (no-op) kabul edilir ama lifecycle alanina
+    // DOKUNMAZ — aksi halde su yaris kaydi geri getiriyordu: istek A kaydi AKTIF okur, bu
+    // sirada istek B kaydi pasiflestirir, gecikmis A `isActive:true` yazarak pasiflestirmeyi
+    // SESSIZCE geri alirdi (yetki ve kimlik kapilari da calismazdi, cunku "gecis yok"
+    // goruluyordu).
+    const lifecycleTransition = data.isActive !== undefined && data.isActive !== existing.isActive;
+    if (lifecycleTransition) {
       await this.assertCanManageLifecycle(actor?.userId, tenantId);
     }
 
@@ -1746,7 +1753,7 @@ export class ClientService {
     //      kimlik düzeltmesi ile aktivasyon AYNI istekte gelirse son değerler esas alınır.
     // Boş kimlik ve `identityNo` sözleşmesi DEĞİŞMEDİ.
     assertChangedIdentityChecksum(data, existing);
-    const reactivating = data.isActive === true && existing.isActive === false;
+    const reactivating = lifecycleTransition && data.isActive === true;
     const effectiveIdentity = resolveEffectiveIdentity(data, existing);
     if (reactivating) {
       assertReactivationIdentityChecksum(effectiveIdentity);
@@ -1813,15 +1820,18 @@ export class ClientService {
       // D-1b TOCTOU: aktifleştirme, DOĞRULADIĞIMIZ duruma koşulludur — kayıt bu arada
       // değiştiyse (başka bir yazma kimliği veya isActive'i çevirdiyse) yazma GERÇEKLEŞMEZ.
       // Yalnız reaktivasyon dalında ek koşul; normal update davranışı DEĞİŞMEZ.
-      const reactivationGuard = reactivating
+      // Gecis yaziminin TOCTOU koruması: yazma, OKUDUGUMUZ lifecycle durumuna kosulludur.
+      // Kayit bu arada degistiyse (baska bir istek pasiflestirdi/aktiflestirdi) yazma
+      // GERCEKLESMEZ. Reaktivasyonda ayrica dogruladigimiz kimlik degerleri de kosula girer.
+      const lifecycleGuard = lifecycleTransition
         ? {
-            isActive: false,
-            ...(data.tckn === undefined ? { tckn: existing.tckn } : {}),
-            ...(data.vkn === undefined ? { vkn: existing.vkn } : {}),
+            isActive: existing.isActive,
+            ...(reactivating && data.tckn === undefined ? { tckn: existing.tckn } : {}),
+            ...(reactivating && data.vkn === undefined ? { vkn: existing.vkn } : {}),
           }
         : {};
       const { count } = await tx.client.updateMany({
-      where: { id, tenantId, ...reactivationGuard },
+      where: { id, tenantId, ...lifecycleGuard },
       data: {
         type: data.type,
         displayName: displayName,
@@ -1846,7 +1856,8 @@ export class ClientService {
         canSettle: data.canSettle,
         canRelease: data.canRelease,
         notes: data.notes,
-        isActive: data.isActive,
+        // Yalniz GERCEK gecişte yazilir; no-op istek lifecycle alanina DOKUNMAZ (yaris kapatildi).
+        isActive: lifecycleTransition ? data.isActive : undefined,
         // P0.7: create paritesi — create'te map'lenip update'te DÜŞEN alanlar (sessiz veri kaybı önlenir).
         isForeigner: data.isForeigner ?? undefined,
         nationality: data.nationality,
@@ -1866,9 +1877,9 @@ export class ClientService {
       },
     });
       if (count === 0) {
-        // D-1b: reaktivasyon dalında sıfır sonuç, kaydın eşzamanlı değiştiği anlamına gelir
-        // (kayıt yok değil) → doğrulama geçersiz kılınamaz; istek çakışma ile reddedilir.
-        if (reactivating) {
+        // Lifecycle gecişinde sıfır sonuç, kaydın eşzamanlı değiştiği anlamına gelir
+        // (kayıt yok değil) → doğrulama/yetki geçersiz kılınamaz; istek çakışma ile reddedilir.
+        if (lifecycleTransition) {
           throw new ConflictException({
             code: 'CLIENT_STATE_CHANGED',
             message: 'Kayıt bu sırada değişti; işlemi yeniden deneyin (aktifleştirme uygulanmadı)',
