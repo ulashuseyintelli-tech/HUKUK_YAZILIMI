@@ -295,3 +295,9 @@ src/modules/address-discovery/__tests__/client-info-request-send-failure.db-gate
 #      (update + remove); ilk okumada AKTIF bulunan kaydin gecikmis `isActive:true` ile yeniden
 #      etkinlesmesi kapandi, gercek gecislerde yetki/kimlik/kosullu yazma AYNEN korunur.
 src/modules/client/__tests__/client-lifecycle-activation-race.db-gated.integration.spec.ts
+#
+# CLIENT-P5-PROVIDER-OUTCOME-R01 (owner GO 2026-09-07) — saglayici sonucunun KESINLIGI talep
+# servisine dogru tasiniyor mu. GERCEK `EmailProviderService` kosar (taklit EDILMEZ); yalniz DIS
+# tasima cagrisi (SendGrid `fetch`) test katmaninda kontrollu basarisiz kilinir. Timeout/yanit
+# kaybi BELIRSIZ, HTTP yaniti alinan ret KESIN olarak siniflanir; ikisi de kalici SENT YAZMAZ.
+src/modules/address-discovery/__tests__/client-info-request-provider-outcome.db-gated.integration.spec.ts

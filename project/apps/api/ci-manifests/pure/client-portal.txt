@@ -255,6 +255,10 @@ src/modules/address-discovery/__tests__/client-info-request-authority-d3a.spec.t
 #     link kimligi doner. Otomatik SISTEM yolu aktor tasimadigi icin link URETMEZ.
 #     review != promotion ayrimi DEGISMEZ.
 src/modules/address-discovery/__tests__/client-info-request-intake-link-d3b.spec.ts
+# CLIENT-P5-PROVIDER-OUTCOME-R01: SMTP ve SES yollarinin kesinlik siniflandirmasi (gercek servis,
+# dis cagri kontrollu). Timeout/soket kopmasi BELIRSIZ; kimlik hatasi, zarf reddi, 5xx ve
+# baglantinin hic kurulmamasi KESIN ret.
+src/modules/notification/__tests__/email-provider-delivery-outcome.spec.ts
 #
 #   C2 REVIEW AUTHORITY EXTENSION — CR-1 sozlesme kaniti (SAF, DB-siz)
 #     Owner RATIFIED 2026-08-03: INTAKE_REVIEW_CLAIM/FIELD_DECIDE/SUBMISSION_REJECT
