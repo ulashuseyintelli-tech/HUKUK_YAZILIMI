@@ -26,6 +26,7 @@ function chk(id, desc, ok, observed) {
 
 (async () => {
   const base = L.requireEnv('F04_API_BASE_URL').replace(/\/+$/, '');
+  const password = L.requireLoginPassword(); // durum dosyasinda SAKLANMAZ
   const a = L.loadState();
   const bPath = L.requireEnv('F04_STATE_FILE_B');
   if (!fs.existsSync(bPath)) throw new Error(`ikinci tenant durum dosyasi yok: ${bPath}`);
@@ -52,7 +53,7 @@ function chk(id, desc, ok, observed) {
 
     L.step('B-1', 'A tenant aktoru ile oturum');
     const login = await L.httpJson('POST', `${base}/auth/login`, {
-      body: { email: a.userEmail, password: a.loginPassword, tenantSlug: a.slug },
+      body: { email: a.userEmail, password, tenantSlug: a.slug },
     });
     const lb = login.body || {};
     const token = lb.token || lb.access_token || lb.accessToken
