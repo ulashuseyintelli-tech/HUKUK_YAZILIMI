@@ -3744,7 +3744,7 @@ Ayrinti ve kanit: decision-log `RELEASE20-CUTOVER-APPLIED-R03`.
 | Kalem | Durum | Sorumlu hat | Siradaki kabul adimi |
 |---|---|---|---|
 | **OWN-10** — yedi pasif kimlik kaydi (gecersiz TCKN; hepsi PASIF, dosya bagi 0) | ACIK | CLIENT | Canli RELEASE20 uzerinde urun akisi dogrulamasi; veri duzeltmesi YOK karari korunur, Faz-4 korumasi yalniz degisen/reaktive kimlikte olculur |
-| **OFFICE O-1..O-10** — islevsel canli kabul | ACIK | OFFICE | On kalemin canli RELEASE20 uzerinde sirali kabulu; yazma potansiyeli olan HER adim yalniz dogrulanmis sentetik tenant'ta, gercek tenant'ta yalniz GET |
+| **OFFICE O-1..O-10** — islevsel canli kabul | **KISMI** — O-5 KAPALI; O-1/O-2/O-3/O-4/O-6/O-7/O-9 ACIK; O-8 NOT_EXECUTED; O-10 gozlem | OFFICE | Yetkili (ADMIN/PARTNER) ve staff hesaplariyla `Measure-OfficeO1toO9.ps1` kosumu + O-7 tarayici gozlemi; ayrinti asagida |
 | **F04** — canli yaris kabulu (posting/reversal serilestirme) | ACIK | CLIENT / COLLECTION | Canli RELEASE20'de yaris senaryosunun kabulu; disposable replay production kosumu gibi SUNULMAZ |
 
 **Ortak sinirlar (owner karari, degismedi):** gercek muvekkil verisine test yazimi YOK; gercek aliciya
@@ -3758,3 +3758,38 @@ Ayni sinif kusur mühürleyicide giderildi (bkz. decision-log `RELEASE20-PACKAGE
 tarafinda **owner onayli sha ve READY makbuzu korunsun diye DEGISTIRILMEDI**. Durum: **ACIK — owner karari**.
 Sorumlu hat: OFFICE/C33 yayin hatti. Siradaki adim: owner karari sonrasi izole onarim adayinda ayni
 "yokluk != okunamama" semantigi ile duzeltme ve preflight'in yeniden kosulmasi.
+
+### OFFICE O-1..O-10 — kalem kalem durum (2026-09-07)
+
+Kabul olcutlerinin kanonik kaynagi: `HY_OFFICE_CLOSURE_MAPPING_R01\F-B01-03-FIX-PACKAGE\
+NEXT-DEPLOY-SCOPE-AND-ACCEPTANCE-PLAN.md` §3 (A-1..A-10 = O-1..O-10).
+**Kabul kosulu: O-1..O-7 + O-9 BIRLIKTE; O-8 NOT_EXECUTED; O-10 yalniz gozlem.**
+
+| # | Olcum | Beklenen | Durum | Kanit / engel |
+|---|---|---|---|---|
+| O-1 | staff -> 6 settings GET | 6/6 403 `OFFICE_F01_AUTHORIZATION_REQUIRED` | **ACIK** | staff hesabi gerekir |
+| O-2 | staff -> `GET /api/office` | 403 | **ACIK** | staff hesabi gerekir |
+| O-3 | yetkili -> 6 settings GET | 6/6 200; escalation EXACT 9 (S2siz), poa-expiry EXACT 2; sirlar maskeli | **ACIK** | ADMIN/PARTNER hesabi gerekir |
+| O-4 | yetkili -> `/api/office`, `/api/lawyers/:id` | S0uS1; tckn/iban/uyapToken YOK | **ACIK** | ADMIN/PARTNER hesabi gerekir |
+| O-5 | anonim -> 6 settings GET | 401 | **KAPALI — PASS** | 6/6 401 olculdu (2026-09-07); kontrol `/api/office` 401 |
+| O-6 | DB ayak izi (olculen kapsam) | oncesi = sonrasi | **ACIK** | O-1..O-4 ile AYNI olcum oturumuna bagli |
+| O-7 | UI gorunum (yetkili, gercek tarayici) | alici kutulari devre disi + not; dashboard "Atanan sorumlu" = "—" | **ACIK** | yetkili hesap + tarayici gozlemi gerekir |
+| O-8 | UI Kaydet (PUT) | — | **NOT_EXECUTED** | tasarim geregi: AYRI production yazma onayi ister |
+| O-9 | `GET /api/client-notifications/overview` | hata yok; escAssignees sayisi ayni | **ACIK** | yetkili hesap gerekir; S2-turevi residual`i KAPATMAZ |
+| O-10 | eskalasyon motoru | — | **GOZLEM** | kabul degil; salt-okuma sayim teslimi kanitlamaz |
+
+**Canli artefakt dogrulamasi (mekanizma VAR; davranis kabulu DEGIL):** RELEASE20 dist`inde alti settings rotasi
+`OfficeF01AuthorizationGuard` ile bagli; `omitOfficeS2References` dort S2 alanini cikarir
+(`escalationFounder/Manager/TeamLeadLawyerIds`, `poaExpiryRecipientLawyerIds`).
+
+**Olcum araci (hazir):** `HY_C33_RELEASE20_CUTOVER_R24_VERIFY_20260907\Measure-OfficeO1toO9.ps1`
+sha256 `3C20BAAB73588458344B84BBECFC1F13B0E7F77CA77B7CF35532FA16ADE67AC3`. Yalniz GET (login POST haric);
+deger basmaz, anahtar ADI basar; parola `Read-Host -AsSecureString` ile YERELDE girilir ve hicbir yere yazilmaz
+(kabul plani §2.3). O-7 ve O-8 bu aracin kapsami disindadir.
+
+**F-B01-03 durumu:** `LIVE_OPEN` KALIR. Kapanis onerisi kabul plani §4 geregi yalniz **O-1, O-3 ve O-6**
+kanitiyla yapilir; bu kanit henuz URETILMEDI.
+
+**F02 (ayri kalem, O kapsamı DISI):** MAIN`DE EVET · CANLIDA EVET (`1a626e79`, `2a9c3c33` -> `08ce8e25` atasi;
+canli dist`te `scheduler-manual-run-policy.js` + `SKIPPED_ALREADY_RUNNING`) · **KABUL EDILDI HAYIR**.
+Eski "aday icermez" ifadesi RELEASE19 (`a60d772b`) icindir ve orada dogrudur; RELEASE20 icin BAYATTIR.
