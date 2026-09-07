@@ -3783,11 +3783,24 @@ NEXT-DEPLOY-SCOPE-AND-ACCEPTANCE-PLAN.md` §3 (A-1..A-10 = O-1..O-10).
 `OfficeF01AuthorizationGuard` ile bagli; `omitOfficeS2References` dort S2 alanini cikarir
 (`escalationFounder/Manager/TeamLeadLawyerIds`, `poaExpiryRecipientLawyerIds`).
 
-**Olcum araci (hazir):** `HY_C33_RELEASE20_CUTOVER_R24_VERIFY_20260907\Measure-OfficeO1toO9.ps1`
-sha256 `3C20BAAB73588458344B84BBECFC1F13B0E7F77CA77B7CF35532FA16ADE67AC3`. Yalniz GET (login POST haric);
-deger basmaz, anahtar ADI basar; parola `Read-Host -AsSecureString` ile YERELDE girilir ve hicbir yere yazilmaz
-(kabul plani §2.3). O-7 ve O-8 bu aracin kapsami disindadir.
+**Olcum araci (R02 — giris kusuru duzeltildi):** `HY_C33_RELEASE20_CUTOVER_R24_VERIFY_20260907\Measure-OfficeO1toO9.ps1`
+sha256 `D54E551FDE3A3531F4C6FBD18040C9A787B30E55E8C5D11098864CFDEB9EE642`.
 
+> **R01 kusuru (kapandi):** govde `{email,password}` gonderiyordu; `LoginDto` **`tenantSlug`** de ister →
+> HTTP 400 (dogrulama reddi, parola hatasi DEGIL) ve arac yanlislikla **exit 0** veriyordu.
+> Onceki kosum kayda `AUTHENTICATION_FAILED / KABUL OLCULMEDI` olarak gecti.
+
+R02: `tenantSlug` gonderir; 400`da alan dogrulama mesajlarini gosterir (ham response/header/token BASMAZ);
+401/429 ayri isaretlenir ve **otomatik tekrar YOKTUR**; giris basarili olsa bile **rol ve tenant `/auth/me` ile**
+**dogrulanmadan kabul testine gecmez**. Cikis: `0` PASS · `2` AUTHENTICATION_FAILED · `3` ROLE_OR_TENANT_MISMATCH ·
+`4` ACCEPTANCE_FAILED · `5` INCOMPLETE — **eksik olcum veya basarisiz kabul exit 0 uretemez**.
+Yerel fixture: **16/16 `MEASURE_TOOL_FIXTURE_PASS`** (400 / 401 / yanlis rol / yanlis tenant / basarili / kabul-basarisiz);
+gercek hesaplara deneme YOK. Parola `Read-Host -AsSecureString` ile yerelde; hicbir yere yazilmaz.
+O-7 ve O-8 bu aracin kapsami disindadir.
+
+**O-6 kapsami ve login yan etkisi:** arac DB`ye yazmaz (login POST disinda yalniz GET). O-6`nin once/sonra
+karsilastirmasi AYRI ve ELLE yapilir; **basarili giris oturum/denetim kaydi ve rate-limit sayaci uretebilir**,
+bu yuzden O-6 olcum penceresi aracin calismasini KAPSAMALIDIR.
 **F-B01-03 durumu:** `LIVE_OPEN` KALIR. Kapanis onerisi kabul plani §4 geregi yalniz **O-1, O-3 ve O-6**
 kanitiyla yapilir; bu kanit henuz URETILMEDI.
 
