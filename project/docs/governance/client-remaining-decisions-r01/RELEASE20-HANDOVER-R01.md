@@ -9,7 +9,7 @@ DURUM           : DEVIR HAZIR — canli gecis onayi ISTENMEDI (owner ayrica vere
 KAYNAK COMMIT   : 6dd25b31d2e9879236eda1ed3d3ec7eb74745d41
 ```
 
-> **ATIF KURALI (duzeltme, PR #PENDING):** bu belgede bir islev icin verilen PR numarasi, o islevi
+> **ATIF KURALI (duzeltme, PR #2536):** bu belgede bir islev icin verilen PR numarasi, o islevi
 > UYGULAYAN **kod PR'idir**. Kayit/governance PR'lari ayrica belirtilir. Onceki surumde gonderim
 > durumu ve OWN-12 tamamlamasi icin sehven **kayit PR'i #2531** yazilmisti; dogrusu **kod PR'i
 > #2530**'dur (#2531 yalniz bu belgeyi ve kayitlari tasir).
@@ -112,7 +112,7 @@ hicbiri RELEASE19'da YOKTUR:
    **basarili gorunur**, "gonderilmis talebe hatirlatma" yolu bu yanlis satir uzerinden acilir
 8. **Belirsiz gonderim ayrimi (kod PR #2530; kayit PR #2531)** — geri alinirsa saglayici istisnasi ile
    kesin basarisizlik AYNI muamele gorur ve kullaniciya kesinlik iddia edilir
-9. **Saglayici sonucunun KESINLIGI (kod PR #PENDING)** — geri alinirsa `EmailResult.deliveryOutcome`
+9. **Saglayici sonucunun KESINLIGI (kod PR #2536)** — geri alinirsa `EmailResult.deliveryOutcome`
    kaybolur; gercek SMTP/SendGrid/SES yollari istisnalari yakalayip `success:false` dondurdugu icin
    **timeout ile kalici ret ayni sayilir**: iletilmis olabilecek gonderim kullaniciya "gonderilemedi"
    diye bildirilir ve kullanici tekrar gonderir (MUKERRER e-posta). Ayrica `SESClient` varsayilan
@@ -190,7 +190,7 @@ Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
 |---|---|
 | OWN-12 adim C — ortak cekirdek modelin uc formda tuketimi | **KAPANDI** (kod PR #2530; statik kullanim guard'i ile kilitli) |
 | `api.ts` FormData/blob hata yollari | **KAPANDI** (kod PR #2530; mesaj metinleri korundu, govde/durum kodu artik tasiniyor) |
-| Saglayici sonucunun kesinligi (timeout ≠ kesin ret) | **KAPANDI** (kod PR #PENDING; gercek saglayici katmanindan gecen regresyon) |
+| Saglayici sonucunun kesinligi (timeout ≠ kesin ret) | **KAPANDI** (kod PR #2536; gercek saglayici katmanindan gecen regresyon) |
 | `ClientModal`'in iletisim/adres DIZI yuzeyi ve `type` genisligi | ACIK degil — **BILEREK baglama ozgu**; sahte ortaklik iddia edilmedi |
 | OWN-10 — yedi pasif kaydin kimlik duzeltmesi | ACIK; **veri DEGISTIRILMEDI**, guvenilir kaynak gerekir (urun akisi) |
 | OWN-15 — intel statement create politikasi | **KAPSAM DISI** (onceki owner karari) — uygulama engeli DEGILDIR |
