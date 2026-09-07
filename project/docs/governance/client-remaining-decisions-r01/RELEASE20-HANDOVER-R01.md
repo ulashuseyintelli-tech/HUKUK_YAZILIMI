@@ -165,7 +165,20 @@ Gercek tenant'ta **yalnizca GET** vardir.
 > Anonim "401 bekleniyor" POST denemeleri bu tabloda **YOKTUR** — 401 beklentisi bir cagriyi
 > salt-okuma yapmaz. Onlar §5.2'ye tasinmistir.
 
-### 5.2 Sentetik tenant (`demo-firma`) — yazma potansiyeli olan adimlar
+### 5.2 Yazma potansiyeli olan adimlar — **HEDEF TENANT YENIDEN SECILMELIDIR**
+
+> **DUZELTME (2026-09-07, PR #2542) — `demo-firma` SENTETIK DEGILDIR.** Bu bolum yazma adimlarini
+> `demo-firma`ya yonlendiriyordu; salt-okuma olcum bunu curuttu: bu tenant gercek ofis tenant`i
+> `telli-hukuk` ile **iki kullanici domain`i paylasir** (`hukuk.com`, `tellihukuk.com`), 7 ayri aktorun
+> audit izini tasir (son etkinlik 2026-08-06 — gercek ofisinkinden yeni) ve **icinde canli muhasebe akisi
+> islemistir** (3 CONFIRMED collection, 1 POSTED disposition, 8 journal). **Tenant ADI sentetiklik kaniti
+> degildir.** D-8 kurali geregi bu tenant`ta yazma adimi YURUTULMEZ. Gercekten bos/sentetik olan
+> `c36-smoke-principal`, `c36-smoke-principal-2` ve `local-development-office` ise **baska programlarin**
+> (C36 smoke, OFFICE CAP-02) olcum alanlaridir. Bu adimlarin hedefi, owner karariyla tahsis edilecek
+> **ayri bir sentetik tenant** olmalidir. Ayrinti: `decision-log.md` →
+> `CLIENT-P8-F04-LIVE-ACCEPTANCE-PRECONDITION-R01`.
+
+
 
 E-posta gonderen adimlarda **test saglayicisi** kullanilir. **Gercek aliciya e-posta GONDERILMEZ.**
 Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
