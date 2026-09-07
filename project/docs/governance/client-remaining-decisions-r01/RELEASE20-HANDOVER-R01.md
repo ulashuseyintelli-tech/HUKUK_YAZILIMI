@@ -14,6 +14,12 @@ KAYNAK COMMIT   : 6dd25b31d2e9879236eda1ed3d3ec7eb74745d41
 > durumu ve OWN-12 tamamlamasi icin sehven **kayit PR'i #2531** yazilmisti; dogrusu **kod PR'i
 > #2530**'dur (#2531 yalniz bu belgeyi ve kayitlari tasir).
 >
+> **ESZAMANLI YAZAR CAKISMASI (2026-09-07, PR #2537):** RELEASE20 aday paketi uretimi sirasinda
+> iki hat ayni dizinlere yazdi. Owner karariyla **tek uretici Office/C33**tur; CLIENT uretimi
+> DURDURULDU ve yeniden baslatilmayacak. Karisik uretimde olusan ara makbuzlar **gecerli yayin
+> kaniti degildir**. Cakisma bulgulari, devredilen supersede duzeltmesi ve hala tutarsiz kalan
+> dogrulayici satirlari: `RELEASE20-HANDOFF-TO-OFFICE-R01.md`.
+>
 > Bu belge, CLIENT hattinin **nihai** teslim durumunu Office/C33 yayin hattina devreder.
 > Onceki `RELEASE-RECONCILIATION-R01.md` tarihsel kayit olarak kalir; **baglayici paket
 > kimligi, kapsami, rollback bedeli ve kabul plani BURADADIR.**
