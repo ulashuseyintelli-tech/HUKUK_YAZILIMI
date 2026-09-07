@@ -22,18 +22,48 @@ import { isValidTckn, isValidVkn } from "../../common/identity-validation.util";
  *
  * Validator tek-kaynak: common/identity-validation.util (OCR/UYAP/import ile paylaşılır — kod tekrarı yok).
  */
+export const CLIENT_IDENTITY_CHECKSUM_INVALID = "CLIENT_IDENTITY_CHECKSUM_INVALID";
+
+/** Kullanıcıya gösterilen metinler — DEĞİŞTİRİLMEZ (istemci bunları gösteriyor). */
+const CHECKSUM_MESSAGES = {
+  tckn: "Geçersiz TCKN (kimlik no doğrulaması başarısız)",
+  vkn: "Geçersiz VKN (vergi kimlik no doğrulaması başarısız)",
+} as const;
+
+/**
+ * Checksum reddinin TEK gövde biçimi (CLIENT-IDENTITY-REASONCODE-CONSISTENCY, owner GO 2026-09-08).
+ *
+ * ÖNCE: create ve değişen-değer update yolları DÜZ METİN `BadRequestException` fırlatıyordu
+ * (`reasonCode` YOK, `offendingFields` YOK); yalnız reaktivasyon yapısal gövde döndürüyordu.
+ * Aynı checksum reddi iki farklı sözleşmeyle çıkıyor ve istemci bunları makinece ayırt edemiyordu.
+ *
+ * SONRA: üç yol da AYNI gövdeyi taşır — `{ message, reasonCode, offendingFields }`.
+ *   - `message`  : mevcut kullanıcı metni AYNEN korunur (geriye uyumluluk; istemci onu gösterir).
+ *   - `reasonCode`: stabil `CLIENT_IDENTITY_CHECKSUM_INVALID`.
+ *   - `offendingFields`: yalnız ALAN ADLARI (`tckn`/`vkn`). **Kimlik DEĞERİ taşınmaz** —
+ *     yanıt, log ve audit'e kimlik numarası girmez (PII yasağı, D08 emsali).
+ *
+ * HTTP durumu (400), kabul/red kuralları ve boş kimlik / `identityNo` sözleşmesi DEĞİŞMEZ.
+ * NestJS `HttpException`, gövdedeki `message` alanını `error.message` olarak da yansıtır;
+ * bu yüzden `e.message` okuyan mevcut tüketiciler (ör. seed log'u) etkilenmez.
+ */
+function identityChecksumError(message: string, offendingFields: string[]): BadRequestException {
+  return new BadRequestException({ message, reasonCode: CLIENT_IDENTITY_CHECKSUM_INVALID, offendingFields });
+}
+
 export function assertCreateIdentityChecksum(data: {
   tckn?: string | null;
   vkn?: string | null;
 }): void {
+  const offendingFields: string[] = [];
   const tckn = (data.tckn ?? "").trim();
-  if (tckn && !isValidTckn(tckn)) {
-    throw new BadRequestException("Geçersiz TCKN (kimlik no doğrulaması başarısız)");
-  }
+  if (tckn && !isValidTckn(tckn)) offendingFields.push("tckn");
   const vkn = (data.vkn ?? "").trim();
-  if (vkn && !isValidVkn(vkn)) {
-    throw new BadRequestException("Geçersiz VKN (vergi kimlik no doğrulaması başarısız)");
-  }
+  if (vkn && !isValidVkn(vkn)) offendingFields.push("vkn");
+  if (offendingFields.length === 0) return;
+  // Mesaj GERİYE UYUMLU: eskiden TCKN önce kontrol edilip ilk hatada fırlatılıyordu; ikisi de
+  // geçersizse kullanıcı yine TCKN metnini görür. `offendingFields` ise HEPSİNİ taşır.
+  throw identityChecksumError(CHECKSUM_MESSAGES[offendingFields[0] as "tckn" | "vkn"], offendingFields);
 }
 
 /**
@@ -85,12 +115,12 @@ export function assertReactivationIdentityChecksum(effective: { tckn: string | n
   const vkn = (effective.vkn ?? "").trim();
   if (vkn && !isValidVkn(vkn)) offendingFields.push("vkn");
   if (offendingFields.length > 0) {
-    throw new BadRequestException({
-      message:
-        "Kaydı aktifleştirmek için geçerli kimlik numarası gerekir (kimlik doğrulaması başarısız). " +
+    // Aynı gövde biçimi (tek kaynak: `identityChecksumError`); reaktivasyonun KENDİ kullanıcı
+    // metni korunur — bu yol zaten stabil `reasonCode` taşıyordu ve sözleşmesi DEĞİŞMEDİ.
+    throw identityChecksumError(
+      "Kaydı aktifleştirmek için geçerli kimlik numarası gerekir (kimlik doğrulaması başarısız). " +
         "Önce kaynak belgeye dayanarak kimliği düzeltin.",
-      reasonCode: "CLIENT_IDENTITY_CHECKSUM_INVALID",
       offendingFields,
-    });
+    );
   }
 }
