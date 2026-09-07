@@ -3733,3 +3733,28 @@ DEPLOYMENT COMPLETION = NOT CLAIMED · PRODUCTION READINESS = NOT CLAIMED ·
 WR01 = SEPARATE PRODUCT EXTENSION / STATUS UNCHANGED · F05 NOT_AUTHORIZED ·
 recorded residual/successor kayıtları KORUNUR · NEW EXECUTION AUTHORITY: NONE.
 P8-C4 bölümü ve tarihsel satırlar DEĞİŞTİRİLMEMİŞTİR.
+
+## RELEASE20 Canli Kabul Devri — 2026-09-07
+
+RELEASE20 **canliya alindi** (kosum `CUT-20260907-174422-7f9afc9e`, 31/31 PASS, rollback YOK,
+kesinti 13.716 s, DB olculen snapshot alanlari degismedi). Bu **TEKNIK YAYIN KABULUDUR**.
+Asagidaki **islevsel canli kabuller bu kosumla KAPANMAMISTIR** ve ilgili hatlara devredilmistir.
+Ayrinti ve kanit: decision-log `RELEASE20-CUTOVER-APPLIED-R03`.
+
+| Kalem | Durum | Sorumlu hat | Siradaki kabul adimi |
+|---|---|---|---|
+| **OWN-10** — yedi pasif kimlik kaydi (gecersiz TCKN; hepsi PASIF, dosya bagi 0) | ACIK | CLIENT | Canli RELEASE20 uzerinde urun akisi dogrulamasi; veri duzeltmesi YOK karari korunur, Faz-4 korumasi yalniz degisen/reaktive kimlikte olculur |
+| **OFFICE O-1..O-10** — islevsel canli kabul | ACIK | OFFICE | On kalemin canli RELEASE20 uzerinde sirali kabulu; yazma potansiyeli olan HER adim yalniz dogrulanmis sentetik tenant'ta, gercek tenant'ta yalniz GET |
+| **F04** — canli yaris kabulu (posting/reversal serilestirme) | ACIK | CLIENT / COLLECTION | Canli RELEASE20'de yaris senaryosunun kabulu; disposable replay production kosumu gibi SUNULMAZ |
+
+**Ortak sinirlar (owner karari, degismedi):** gercek muvekkil verisine test yazimi YOK; gercek aliciya
+test e-postasi YOK; rollback hedefi **RELEASE19 `a60d772b6c53ece6bc23b77821a2921ab0ec7942`** olarak durur.
+
+### Ayri acik kalem — paket araci kusuru
+
+`project` disi cutover paketinde: `tools/Invoke-OwnerPreflight.ps1` satir 246-248, claims/journal/
+cutover-receipts sayimlarini genel `-ErrorAction SilentlyContinue` ile yapar ve **erisim reddini 0 gosterir**.
+Ayni sinif kusur mühürleyicide giderildi (bkz. decision-log `RELEASE20-PACKAGE-REPAIRS-R01..R03`); preflight
+tarafinda **owner onayli sha ve READY makbuzu korunsun diye DEGISTIRILMEDI**. Durum: **ACIK — owner karari**.
+Sorumlu hat: OFFICE/C33 yayin hatti. Siradaki adim: owner karari sonrasi izole onarim adayinda ayni
+"yokluk != okunamama" semantigi ile duzeltme ve preflight'in yeniden kosulmasi.
