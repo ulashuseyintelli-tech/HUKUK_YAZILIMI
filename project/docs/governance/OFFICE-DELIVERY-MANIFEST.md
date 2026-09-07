@@ -1930,7 +1930,7 @@ yetkisi ister (`OWNER GO REQUIRED / NOT STARTED`).
 | Kalem | Kaynak / Pointer | Not |
 |---|---|---|
 | F-B01-04 · F-B01-05 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | P5 B01 kalan bulgular |
-| F-B01-03 (KAPANDI 2026-09-06) | `decision-log.md` 2026-09-06 satiri · paket `HY_OFFICE_FB0103_LIVE_ACCEPT_R01` | CODE_MERGED (#2514) -> DEPLOYED (RELEASE19) -> GET_AUTHZ_AND_PROJECTION_LIVE_ACCEPTED. Yalniz GET yetki + S2 omit; UI yazma kabulu ve `escAssignees` residual AYRI ACIK |
+| F-B01-03 (REGISTER CLOSED 2026-09-07) | `decision-log.md` 2026-09-06 satiri · paket `HY_OFFICE_FB0103_LIVE_ACCEPT_R01` | CODE_MERGED (#2514) -> DEPLOYED (RELEASE19) -> GET_AUTHZ_AND_PROJECTION_LIVE_ACCEPTED. Yalniz GET yetki + S2 omit; UI yazma kabulu ve `escAssignees` residual AYRI ACIK. **REGISTER SATIRI KAPANDI 2026-09-07** (owner ratifikasyonu `OFFICE-FB0103-CLOSED-R01`): RELEASE20 `08ce8e25` uzerinde O-1/O-3/O-6 kaniti — `OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01`, PR #2545 squash `b9d8094a`. Bkz. §15.9 |
 | StaffDetailModal diff-payload | `office-p5-security-r01/b03-staff-authorization-compatibility-matrix.md` | allowlist projection + tam-form POST riskine karşı fark-payload |
 | /auth/me passwordChangedAt | `office-p5-security-r01/README.md` | credential metadata görünürlük kalemi |
 | CLF-P5-01 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | successor hedefi X1-P6 |
@@ -2225,4 +2225,34 @@ PRODUCTION AUTHORITY     NONE (tüm tek-kullanımlık nonce'lar TÜKETİLDİ)
 NEW EXECUTION AUTHORITY  NONE
 YENİ İSTİSNA/GRANT       ÜRETİLMEDİ (F01 rol istisnası, UI yazma kabulü, F05 grant'i DAHİL)
 ```
-
+
+
+### 15.9 C33 RELEASE20 canlı runtime + F-B01-03 register kapanışı — GÜNCEL HÜKÜM (2026-09-07, append-only)
+
+§15.5 disiplini gereği §15.8 dahil hiçbir tarihsel satır DEĞİŞTİRİLMEMİŞTİR; bu bölüm yalnız güncel
+hükmü verir ve pointer ekler.
+
+| ID | GÜNCEL VERDICT (2026-09-07) | Kaynak kayıt | Production authority |
+|---|---|---|---|
+| C33 | `C33_RELEASE20_CUTOVER_APPLIED_AND_VERIFIED` (phase `COMMITTED`, failedGates 0) — owner-run R03 `CUT-20260907-174422-7f9afc9e`, kapılar **31/31**, canlı kaynak `08ce8e2559b4d1d67fcee245413de510209507f3`, Web BUILD_ID `LW4jlJUOMHrvVEqakKB3i` | decision-log `RELEASE20-CUTOVER-APPLIED-R03` (PR #2539) | NONE — nonce TÜKETİLDİ |
+| F-B01-03 | `LIVE_OPEN` → **`CLOSED`** (owner ratifikasyonu 2026-09-07); kabul planı §4 uyarınca yalnız O-1 / O-3 / O-6 kanıtıyla | decision-log `OFFICE-FB0103-CLOSED-R01` · kanıt `OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01` (PR #2545 · `b9d8094a`) | NONE |
+| OFFICE O-serisi | zorunlu küme (O-1..O-7 + O-9) **9/9 PASS**; O-8 `NOT_EXECUTED`, O-10 gözlem | PR #2545 squash `b9d8094a` | NONE |
+
+```text
+SUPERSEDED (tarihsel — silinmez)
+      §15.8 "C33 = RELEASE19 ... TERMINAL_VERIFIED" → canlı runtime açısından bu bölümle
+      SUPERSEDED_HISTORICAL; RELEASE19 artık ROLLBACK HEDEFİDİR, canlı değildir.
+      §13.4 "F-B01-03 (KAPANDI 2026-09-06)" etiketi → register satırı 2026-09-07 kapandı (bu bölüm).
+
+AÇIK KALIR (bu bölüm KAPATMAZ)
+      O-8     UI Kaydet / PUT yazma kabulü — ayrı production yazma onayı ister
+      residual escAssignees S2-türevi kalemi
+      OFF-P2-CAP-07  alan-düzeyi izin taşıyıcısı (kabul planı §4'te AYRI kalem, owner kararı)
+      F-B01-04 · F-B01-05  P5 B01 kalan bulguları
+      OWN-10  veri kalemi · F04  CLIENT canlı yarış kabulü · preflight SilentlyContinue bakımı
+      OFFICE / F01 / F04 GENEL CLOSED DEĞİLDİR
+
+PRODUCTION AUTHORITY     NONE
+NEW EXECUTION AUTHORITY  NONE
+YENİ İSTİSNA/GRANT       ÜRETİLMEDİ
+```

@@ -3790,7 +3790,8 @@ alan #2535 (`3ac49083`) ile HTTP okuma yuzeyinden KALDIRILDI ve o commit canlida
 hal: HTTP 200 **ve** alan YOK. Bu, S2-turevi residual`i tek basina KAPATMAZ.
 
 **F-B01-03:** kabul plani §4 kapanis onerisini O-1 / O-3 / O-6 kanitina baglar; ucu de PASS →
-`LIVE_OPEN → CLOSED` **onerilir**; nihai gecis owner ratifikasyonuna baglidir.
+`LIVE_OPEN → CLOSED` gecisi **owner tarafindan RATIFIYE EDILDI (2026-09-07)** —
+bkz. decision-log `OFFICE-FB0103-CLOSED-R01`.
 
 **Canli artefakt dogrulamasi (mekanizma VAR; davranis kabulu DEGIL):** RELEASE20 dist`inde alti settings rotasi
 `OfficeF01AuthorizationGuard` ile bagli; `omitOfficeS2References` dort S2 alanini cikarir
@@ -3798,6 +3799,12 @@ hal: HTTP 200 **ve** alan YOK. Bu, S2-turevi residual`i tek basina KAPATMAZ.
 
 **Olcum araci (R02 — giris kusuru duzeltildi):** `HY_C33_RELEASE20_CUTOVER_R24_VERIFY_20260907\Measure-OfficeO1toO9.ps1`
 sha256 `D54E551FDE3A3531F4C6FBD18040C9A787B30E55E8C5D11098864CFDEB9EE642`.
+
+> **SUPERSEDED (2026-09-07):** yukaridaki sha256 ile asagidaki R02 davranis tanimi ve `16/16` fixture
+> sayisi TARIHSELDIR. Kabulu tasiyan NIHAI arac surumu sha256
+> `CB0FD506FFE4D8088309E1A4D2AADE18AE89FD88473560344749F7266F43969E`,
+> fixture **27/27**; iki ek kusur duzeltildi (girilen `tenantSlug` cagirana donmuyordu; hata kodu `code`
+> degil **`message`** alanindan okunur). Ayrinti: `OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01`.
 
 > **R01 kusuru (kapandi):** govde `{email,password}` gonderiyordu; `LoginDto` **`tenantSlug`** de ister →
 > HTTP 400 (dogrulama reddi, parola hatasi DEGIL) ve arac yanlislikla **exit 0** veriyordu.
@@ -3814,8 +3821,11 @@ O-7 ve O-8 bu aracin kapsami disindadir.
 **O-6 kapsami ve login yan etkisi:** arac DB`ye yazmaz (login POST disinda yalniz GET). O-6`nin once/sonra
 karsilastirmasi AYRI ve ELLE yapilir; **basarili giris oturum/denetim kaydi ve rate-limit sayaci uretebilir**,
 bu yuzden O-6 olcum penceresi aracin calismasini KAPSAMALIDIR.
-**F-B01-03 durumu:** `LIVE_OPEN` KALIR. Kapanis onerisi kabul plani §4 geregi yalniz **O-1, O-3 ve O-6**
-kanitiyla yapilir; bu kanit henuz URETILMEDI.
+**F-B01-03 durumu:** `CLOSED` — owner ratifikasyonu **2026-09-07**. Kabul plani §4 kapanis onerisini
+yalniz **O-1, O-3 ve O-6** kanitina baglar; ucu de PASS uretildi (`OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01`,
+PR #2545 squash `b9d8094a`, canli RELEASE20 `08ce8e25`). Kapanis YALNIZ bu satiri kapatir:
+O-8 UI yazma kabulu, `escAssignees` residual`i, OFF-P2-CAP-07, F-B01-04/F-B01-05, OWN-10 ve F04 ACIK KALIR.
+Kayit: decision-log `OFFICE-FB0103-CLOSED-R01`.
 
 **F02 (ayri kalem, O kapsamı DISI):** MAIN`DE EVET · CANLIDA EVET (`1a626e79`, `2a9c3c33` -> `08ce8e25` atasi;
 canli dist`te `scheduler-manual-run-policy.js` + `SKIPPED_ALREADY_RUNNING`) · **KABUL EDILDI HAYIR**.

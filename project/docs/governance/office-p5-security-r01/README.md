@@ -53,7 +53,7 @@ Bu dizin lane-local kanıt belgesidir; canonical governance markdown değildir. 
 |---|---|---|---|
 | F-B01-01 | `GET /api/auth/me` yanıtı `passwordHash`/`tokenVersion`/`passwordChangedAt` içeriyor (yalnız çağıranın kendi satırı) | Credential containment açığı | **FIXED — PHASE B** (owner-ratified): `/auth/me` public projection (`user-public-projection.ts`) + negatif assertion spec'i; kapsam bounded (yalnız passwordHash+tokenVersion; passwordChangedAt owner kapsamı dışında, kayıtta kalır) |
 | F-B01-02 | Scanner F01 marker'ı `PUBLIC_S0_ONLY` tip-düzeyi string — derlemede silinir; hiçbir dist bu marker'ı içeremez → RELEASE10 için yanlış `STALE` | Ölçüm aracı defekti | **CROSS-LANE — GR-12 kayıtlı** (X1/P6 successor; bu lane DOKUNMAZ) |
-| F-B01-03 | `GET /office/smtp-settings` ve `GET /office/sms-settings` yalnız JwtAuthGuard (PUT karşılıkları F01+ADMIN) — secret'lar maskeli, konfig alanları tenant içi herkese görünür | Yetki asimetrisi (residual) | AÇIK — owner disposition (PHASE B kapsamına alınmadı) |
+| F-B01-03 | `GET /office/smtp-settings` ve `GET /office/sms-settings` yalnız JwtAuthGuard (PUT karşılıkları F01+ADMIN) — secret'lar maskeli, konfig alanları tenant içi herkese görünür | Yetki asimetrisi (residual) | **CLOSED — owner-ratified (2026-09-07)**: RELEASE20 `08ce8e25` canlısında altı settings GET ucu `OfficeF01AuthorizationGuard` ile bağlı (staff 6/6 403 `OFFICE_F01_AUTHORIZATION_REQUIRED`, yetkili 6/6 200, dört S2 alanı yok, sırlar maskeli/null, DB ayak izi farkı 0). Kanıt: `OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01` (PR #2545 · `b9d8094a`); ratifikasyon: `OFFICE-FB0103-CLOSED-R01`. PHASE B kapsamına alınmamış olması değişmedi — kapanış canlı kabul yoluyla geldi |
 | F-B01-04 | `OfficeService.getOrCreate` public ve ham satır döndürür (bugünkü 4 çağıranın tümü yalnız `name` okuyor — sızıntı yok) | Korumasız ham yüzey (residual) | AÇIK — owner disposition |
 | F-B01-05 | `Lawyer.uyapToken` şema yorumu "// Şifrelenmiş" — kod karşılığı yok; ayrıca alana yazan hiçbir servis yolu yok ve DB'de dolu satır 0 | Belge/kod tutarsızlığı (düşük) | Kayıt |
 | F-B03-01 | Handoff öncülü ("StaffController'da rol kapısı yok") canonical main için **bayat**: 4 mutasyon ucu #2076'dan beri `OfficeF01AuthorizationGuard` taşıyor; öncül yalnız GET'ler ve bayat RUNTIME dist'i için doğru | Öncül/repo çelişkisi (raporlandı) | B03 §2'de belgelendi |
@@ -61,6 +61,10 @@ Bu dizin lane-local kanıt belgesidir; canonical governance markdown değildir. 
 | F-B03-03 | Staff mutasyonlarında DTO yok (`body: any`) → global `ValidationPipe(whitelist)` etkisiz | Doğrulama boşluğu | **FIXED — PHASE B (B04/S3)**: typed DTO'lar (`dto/staff.dto.ts`, tam-satır PUT toleranslı) + guard-metadata/DTO wiring spec'i |
 | F-B03-04 | `POST /api/seed/staff` + `seedAll` → `as any` ile StaffService guard'larını bypass eden doğrudan `prisma.staffMember.create` (seedLawyers'ta eşdeğeri) | Seed yüzeyi | **FIXED — PHASE B (B02)**: seedStaff/seedLawyers kanonik StaffService/LawyerService.create yoluna bağlandı; SIMILAR_NAME_REVIEW satırı atlanıp açıkça raporlanır; spec'lerle kilitli |
 | F-B02-01 | Handoff'un "POST /seed/public-institutions guard'sız" öncülü de **bayat**: OWN-13 I02-R3 (owner D03) JwtAuthGuard eklemiş ve `seed-controller-guards.spec` regresyonu kilitliyor. Kalan residual: GLOBAL (tenant'sız) tabloya herhangi bir authenticated tenant kullanıcısının yazabilmesi (rol kapısı yok) | Öncül drift + residual | AÇIK — rol-gate eklemek D03'ün ratifiye semantiğini değiştirir; owner disposition ister (bu lane değiştirmedi) |
+
+> **F-B01-03 kapanış şerhi (2026-09-07):** kapanış YALNIZ bu bulgu satırını kapatır. `escAssignees`
+> S2-türevi residual'ı, O-8 UI yazma kabulü (NOT_EXECUTED), OFF-P2-CAP-07 ve F-B01-04 / F-B01-05
+> AÇIK kalır; OFFICE / F01 genel CLOSED değildir.
 
 Bilinen devredilmiş kalemler yeniden açılmadı (personel ad-hijyeni satırları, BLOCKED_BY_RUNTIME_MODEL
 deployment residual'ı, GR-01..GR-12).
