@@ -66,11 +66,11 @@ tenant'ını üretir: `f04-acc-<runId>`.
 ### 1.1 Tam yazma kapsamı
 
 **Kurulum: tam 11 satır** (atomik), mevcut hiçbir satır güncellenmez/silinmez.
-**Posting'in ürettiği:** 1 disposition güncellemesi (POSTED), 1 `CollectionDispositionExpenseApplication`
+**Posting'in ürettiği (9 kalem):** 1 `CollectionDisposition` güncellemesi (`POSTED` + `postedAt`), **1 `OfficeApprovalRequest` güncellemesi** (`executionStatus = SUCCEEDED` + `executedAt`; kaynak: `office-approval.service` → `markExecutionSucceeded` → `markExecution`), 1 `CollectionDispositionExpenseApplication`
 (APPLY 100,00), **2** `AccountingJournalEntry` + **4** `AccountingJournalLine`, 1 `AuditLog`.
-**`revoke-access` seçilirse:** 1 `User` satırında 2 alan (`isActive`, `tokenVersion`).
+**Kapanışta (`revoke-access`, canlı koşumun kullandığı mod — isteğe bağlı DEĞİL):** 1 `User` satırında 2 alan (`isActive`, `tokenVersion`).
 
-**Toplam canlı etki: 11 kurulum satırı + 8 posting satırı + (isteğe bağlı) 1 satır güncellemesi.**
+**Toplam canlı etki: 11 yeni kurulum satırı + posting akışının 9 kalemi + kapanışta 1 `User` satırı güncellemesi.** Bunların içinde **mevcut satır güncellemesi 3 tanedir**: `CollectionDisposition`, `OfficeApprovalRequest`, `User`. Kalanlar yeni satırdır.
 
 **Geri alınamaz kayıt: YOK.** `IcrabotTimelineEntry` DB seviyesinde silinemez
 (`immutable_violation: DELETE ... is forbidden. Legal facts are immutable.`) — bu yüzden varsayılan
@@ -239,7 +239,7 @@ node f04-run.js
 ```
 
 **Onaylanması istenen tam yazma kapsamı:** tek bir `f04-acc-<runId>` tenant'ında **11 kurulum satırı
-+ 8 posting satırı + 1 kullanıcı satırında 2 alan güncellemesi** (`revoke-access`: `isActive`, `tokenVersion`); kilit süresi için **§11 Bilinen kusur A** geçerlidir — kodla zorlanan bir ≤4 s garantisi YOKTUR; dış bildirim
++ posting akışının 9 kalemi + kapanışta 1 kullanıcı satırında 2 alan** (`revoke-access`: `isActive`, `tokenVersion`); bunlardan **3'ü mevcut satır güncellemesidir** (`CollectionDisposition`, `OfficeApprovalRequest`, `User`); kilit süresi için **§11 Bilinen kusur A** geçerlidir — kodla zorlanan bir ≤4 s garantisi YOKTUR; dış bildirim
 yok; gerçek tenant'a dokunulmaz; geri alınamaz kayıt üretilmez.
 
 **Kabul kapsamı: "posting'in kilit beklemesi ve finansal sonucu."** Bu koşum başarılı olsa bile
@@ -257,8 +257,9 @@ adımı, +11 satırlık ikinci tenant) ve A2-EXT (`reverse`) **ayrıca** onaylan
 
 ### Kusur A — kilit süresi kodla ≤4 s'ye zorlanmıyor
 
-Belgede daha önce "kilit ≤4 saniye" yazıyordu; bu **bütçe tavanına** (`LOCK_BUDGET_MS` max 4000)
-aitti, kodun zorladığı sınıra değil. Gerçekte üç ayrı katman var:
+Belge "garanti" kelimesini hiç kullanmadı; ancak onay istenen kapsam cümlesinde "kilit ≤4 saniye"
+**bir sınır olarak sunuldu** ve bu sınır **kodla zorlanmıyor**. İfade `LOCK_BUDGET_MS` tavanına (max 4000)
+aitti, kodun uyguladığı eşiklere değil. Gerçekte üç ayrı katman var:
 
 | Katman | Değer (varsayılan) | Kaynak |
 |---|---|---|
