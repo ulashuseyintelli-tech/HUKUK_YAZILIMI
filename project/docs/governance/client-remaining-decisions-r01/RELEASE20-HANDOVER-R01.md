@@ -6,9 +6,14 @@ URETEN          : CLIENT hatti (owner GO 2026-09-06; Faz 3'te uretildi, kalan uy
 YAYIN SAHIBI    : Office/C33 — motor, muhur, nonce ve owner-command O HATTA KALIR
 OLCUM ANI       : 2026-09-06, yerel salt-okuma (production yazmasi 0)
 DURUM           : DEVIR HAZIR — canli gecis onayi ISTENMEDI (owner ayrica verecek)
-KAYNAK COMMIT   : 815fcf96a838229de60609f87206407f4ea9ca6e
+KAYNAK COMMIT   : 6dd25b31d2e9879236eda1ed3d3ec7eb74745d41
 ```
 
+> **ATIF KURALI (duzeltme, PR #2536):** bu belgede bir islev icin verilen PR numarasi, o islevi
+> UYGULAYAN **kod PR'idir**. Kayit/governance PR'lari ayrica belirtilir. Onceki surumde gonderim
+> durumu ve OWN-12 tamamlamasi icin sehven **kayit PR'i #2531** yazilmisti; dogrusu **kod PR'i
+> #2530**'dur (#2531 yalniz bu belgeyi ve kayitlari tasir).
+>
 > Bu belge, CLIENT hattinin **nihai** teslim durumunu Office/C33 yayin hattina devreder.
 > Onceki `RELEASE-RECONCILIATION-R01.md` tarihsel kayit olarak kalir; **baglayici paket
 > kimligi, kapsami, rollback bedeli ve kabul plani BURADADIR.**
@@ -30,7 +35,7 @@ RELEASE19 **SUPERSEDED ILAN EDILMEMISTIR**: calisan surumdur ve bu paketin **rol
 
 ---
 
-## 2. Paket kapsami — canlida OLMAYAN commit'ler (`a60d772b` → `815fcf96`)
+## 2. Paket kapsami — canlida OLMAYAN commit'ler (`a60d772b` → `6dd25b31`)
 
 | # | Squash SHA | PR | Icerik | Sinif |
 |---|---|---|---|---|
@@ -50,8 +55,13 @@ RELEASE19 **SUPERSEDED ILAN EDILMEMISTIR**: calisan surumdur ve bu paketin **rol
 | 14 | `506927e9` | #2528 | feat(client): OWN-12 ortak tasima/kilit/alan modeli + Yol1 arayuz secenegi (Faz 2) | **kod** |
 | 15 | `8338c4e6` | #2529 | docs(governance): Faz 3 — temizlik kapanisi, kayit duzeltmeleri ve RELEASE20 devri | docs |
 | 16 | `815fcf96` | #2530 | fix(client): gonderim durumu dogrulanmis sonuca baglandi + OWN-12 ortak model tuketimi | **kod** |
+| 17 | `83b56bdd` | #2531 | docs(governance): RELEASE20 devir tazelemesi + migration sayimi duzeltmesi | docs |
+| 18 | `a810418d` | #2532 | docs(governance): OFFICE-SC-F05 tek mail teslimat kaydi (F05-5b VERIFIED) | docs |
+| 19 | `3db25358` | #2533 | docs(governance): OFFICE-SC-F05 workstream kapanisi — CLOSED / VERIFIED | docs |
+| 20 | `3ac49083` | #2535 | fix(office): escAssignees residual — S2 turevi sayac HTTP okuma yuzeyinden kaldirildi | **kod** |
+| 21 | `6dd25b31` | #2534 | fix(notification,client): saglayici gonderim sonucunun KESINLIGI talep servisine tasindi | **kod** |
 
-**Kod (urun) commit'i: 9 · docs commit'i: 7 · toplam: 16.**
+**Kod (urun) commit'i: 11 · docs commit'i: 10 · toplam: 21.**
 
 ### 2.1 Paket etkisi (olculdu)
 
@@ -97,11 +107,16 @@ hicbiri RELEASE19'da YOKTUR:
    veritabanina ve API yanitlarina yazilir
 6. **Lifecycle aktivasyon yarisi duzeltmesi** — geri alinirsa gecikmis istek pasiflestirmeyi
    sessizce geri alabilir
-7. **Gonderim DURUMU duzeltmesi (PR #2531)** — geri alinirsa talep satiri yine saglayicidan ONCE
+7. **Gonderim DURUMU duzeltmesi (kod PR #2530; kayit PR #2531)** — geri alinirsa talep satiri yine saglayicidan ONCE
    `SENT` yazilir; basarisiz veya dogrulanamayan gonderim kalici kayitta ve liste/detay ekraninda
    **basarili gorunur**, "gonderilmis talebe hatirlatma" yolu bu yanlis satir uzerinden acilir
-8. **Belirsiz gonderim ayrimi (PR #2531)** — geri alinirsa saglayici timeout'u ile kesin basarisizlik
-   AYNI muamele gorur ve kullaniciya kesinlik iddia edilir
+8. **Belirsiz gonderim ayrimi (kod PR #2530; kayit PR #2531)** — geri alinirsa saglayici istisnasi ile
+   kesin basarisizlik AYNI muamele gorur ve kullaniciya kesinlik iddia edilir
+9. **Saglayici sonucunun KESINLIGI (kod PR #2534)** — geri alinirsa `EmailResult.deliveryOutcome`
+   kaybolur; gercek SMTP/SendGrid/SES yollari istisnalari yakalayip `success:false` dondurdugu icin
+   **timeout ile kalici ret ayni sayilir**: iletilmis olabilecek gonderim kullaniciya "gonderilemedi"
+   diye bildirilir ve kullanici tekrar gonderir (MUKERRER e-posta). Ayrica `SESClient` varsayilan
+   3 denemeye doner ve tasima katmaninda KOR TEKRAR GONDERIM yeniden mumkun olur
 9. Yol1 ve OWN-12 web katmani (`api.ts` hata yollarinin govde/durum kodu tasimasi dahil)
 
 > **"Guvenlik gerilemesi yoktur" DENEMEZ.** Rollback bu kapilari kaldirir ve sistem, kapatilan
@@ -115,7 +130,7 @@ hicbiri RELEASE19'da YOKTUR:
 1. **Yayin sahibi Office/C33'tur.** Motor, muhur, nonce ve owner-command o hatta kalir; CLIENT
    hatti cutover CALISTIRMAZ.
 2. **Iki sayfa ayni ortama es zamanli deployment YAPMAZ.**
-3. Paket, **kod bakimindan nihai** kaynak `815fcf96a838229de60609f87206407f4ea9ca6e` uzerinden uretilir.
+3. Paket, **kod bakimindan nihai** kaynak `6dd25b31d2e9879236eda1ed3d3ec7eb74745d41` uzerinden uretilir.
    Bu belgeyi ekleyen docs commit'i (ve Office hattinin docs commit'leri) `apps/` altinda **hicbir dosyaya
    dokunmaz**; paket icerigini DEGISTIRMEZ. Cutover aninda taze main dogrulanir; kod farki cikarsa bu belge
    yeniden olculur.
@@ -161,6 +176,7 @@ Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
 | A-7 | Pasif kaydi gecersiz kimlikle reaktive etme | 400 `CLIENT_IDENTITY_CHECKSUM_INVALID` | D-1b |
 | A-8 | Ayni degerle `isActive:true` tekrar gonderimi | 200; lifecycle alanina YAZILMAZ | yaris duzeltmesi |
 | A-9 | Bilgi talebi gonderimi TEST saglayicisi BASARISIZ dondurulerek | 503; **talep kaydi OLUSMAZ**, listede gorunmez | gonderim durumu |
+| A-10 | Ayni gonderim, TEST saglayicisi YANIT VERMEYECEK sekilde (timeout) | 503 `..._EMAIL_INDETERMINATE`; kayit OLUSMAZ; saglayiciya **ikinci cagri YOK** | kesinlik ayrimi |
 
 > **A-8 ve lifecycle yarisi:** yarisin kendisi (bariyer sirali eszamanli istek) canlida
 > **kurulmaz**; regresyon kilidi disposable PostgreSQL uzerinde kosulan DB testidir. Canlida
@@ -172,8 +188,9 @@ Disposable ortamda kosulan hicbir test "production'da kosuldu" gibi SUNULMAZ.
 
 | Kalem | Durum |
 |---|---|
-| OWN-12 adim C — ortak cekirdek modelin uc formda tuketimi | **KAPANDI** (PR #2531; statik kullanim guard'i ile kilitli) |
-| `api.ts` FormData/blob hata yollari | **KAPANDI** (PR #2531; mesaj metinleri korundu, govde/durum kodu artik tasiniyor) |
+| OWN-12 adim C — ortak cekirdek modelin uc formda tuketimi | **KAPANDI** (kod PR #2530; statik kullanim guard'i ile kilitli) |
+| `api.ts` FormData/blob hata yollari | **KAPANDI** (kod PR #2530; mesaj metinleri korundu, govde/durum kodu artik tasiniyor) |
+| Saglayici sonucunun kesinligi (timeout ≠ kesin ret) | **KAPANDI** (kod PR #2534; gercek saglayici katmanindan gecen regresyon) |
 | `ClientModal`'in iletisim/adres DIZI yuzeyi ve `type` genisligi | ACIK degil — **BILEREK baglama ozgu**; sahte ortaklik iddia edilmedi |
 | OWN-10 — yedi pasif kaydin kimlik duzeltmesi | ACIK; **veri DEGISTIRILMEDI**, guvenilir kaynak gerekir (urun akisi) |
 | OWN-15 — intel statement create politikasi | **KAPSAM DISI** (onceki owner karari) — uygulama engeli DEGILDIR |
