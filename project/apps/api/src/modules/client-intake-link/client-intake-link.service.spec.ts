@@ -22,7 +22,7 @@ const mockPrisma: any = {
   $transaction: jest.fn(),
 };
 const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
-const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Buro' }) };
+const mockOffice: any = { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Test Buro' }) };
 const mockAudit = { log: jest.fn(), logInTransaction: jest.fn().mockResolvedValue(undefined) };
 
 const createdAt = new Date('2026-07-01T10:00:00.000Z');
@@ -71,7 +71,7 @@ describe('ClientIntakeLinkService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDispatcher.dispatch.mockResolvedValue({ status: 'sent', notificationId: 'notification-1', dedupeKey: 'dedupe-1' });
-    mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Buro' });
+    mockOffice.getOfficeIdentity.mockResolvedValue({ name: 'Test Buro' });
     mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
     mockPrisma.client.findFirst.mockResolvedValue({ id: CLIENT });
     mockPrisma.caseClient.findFirst.mockResolvedValue({ id: 'case-client-1' });
@@ -179,7 +179,7 @@ describe('ClientIntakeLinkService', () => {
       expect(createArg.select.tokenHash).toBeUndefined();
       expect(res.intakeUrl).toBe(`https://form.example.com/intake/${res.rawToken}`);
       expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
-      expect(mockOffice.getOrCreate).not.toHaveBeenCalled();
+      expect(mockOffice.getOfficeIdentity).not.toHaveBeenCalled();
     });
 
     it('client workspace create command case/client relation yoksa reddeder', async () => {

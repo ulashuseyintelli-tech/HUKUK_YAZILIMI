@@ -1929,7 +1929,7 @@ yetkisi ister (`OWNER GO REQUIRED / NOT STARTED`).
 
 | Kalem | Kaynak / Pointer | Not |
 |---|---|---|
-| F-B01-04 · F-B01-05 | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | P5 B01 kalan bulgular |
+| F-B01-04 (MAIN`DE KAPANDI 2026-09-07) · F-B01-05 (AÇIK) | `office-p5-security-r01/b01-credential-containment-runtime-status.md` | P5 B01 kalan bulgular. **F-B01-04:** ham `Office` satırı artık modül sınırını geçmez — beş tüketici dar `getOfficeIdentity()` yüzeyine bağlandı, cross-module çağrı static guard ile yasak (`OFFICE-FB0104-RAW-SURFACE-CONTAINED-R01`). **CANLIDA DEĞİL:** RELEASE20 `08ce8e25` bunu içermez, canlı kabul ayrı ve AÇIK. **F-B01-05** dokunulmadı |
 | F-B01-03 (REGISTER CLOSED 2026-09-07) | `decision-log.md` 2026-09-06 satiri · paket `HY_OFFICE_FB0103_LIVE_ACCEPT_R01` | CODE_MERGED (#2514) -> DEPLOYED (RELEASE19) -> GET_AUTHZ_AND_PROJECTION_LIVE_ACCEPTED. Yalniz GET yetki + S2 omit; UI yazma kabulu ve `escAssignees` residual AYRI ACIK. **REGISTER SATIRI KAPANDI 2026-09-07** (owner ratifikasyonu `OFFICE-FB0103-CLOSED-R01`): RELEASE20 `08ce8e25` uzerinde O-1/O-3/O-6 kaniti — `OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01`, PR #2545 squash `b9d8094a`. Bkz. §15.9 |
 | StaffDetailModal diff-payload | `office-p5-security-r01/b03-staff-authorization-compatibility-matrix.md` | allowlist projection + tam-form POST riskine karşı fark-payload |
 | /auth/me passwordChangedAt | `office-p5-security-r01/README.md` | credential metadata görünürlük kalemi |

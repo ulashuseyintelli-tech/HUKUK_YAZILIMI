@@ -102,7 +102,7 @@ function makeHarness(options: { withPort?: boolean; clients?: any[] } = {}): Har
     createClientLevel: jest.fn().mockResolvedValue({ id: 'stmt-1' }),
     findOne: jest.fn().mockResolvedValue(makeStatement()),
   };
-  const office: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Deneme Hukuk Bürosu' }) };
+  const office: any = { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Deneme Hukuk Bürosu' }) };
   const port = { send: jest.fn().mockResolvedValue({ success: true, messageId: 'msg-1' }) };
   const scheduler = { addCronJob: jest.fn() };
 
@@ -321,7 +321,7 @@ describe('CAD C3-B04 — üretim ve teslim akışı', () => {
     expect(result.deliveryMode).toBe('PLAN_ONLY');
     expect(result.targets[0].outcome).toBe('PLANNED');
     expect(result.delivered).toBe(0);
-    expect(h.office.getOrCreate).not.toHaveBeenCalled();
+    expect(h.office.getOfficeIdentity).not.toHaveBeenCalled();
   });
 
   it('[B04-15] port bağlıysa müvekkil başına TEK mail ve TEK PDF eki üretilir', async () => {

@@ -1385,7 +1385,7 @@ export class ExpenseRequestService {
           where: { id: caseId, tenantId },
           select: { fileNumber: true, executionFileNumber: true },
         }),
-        this.office.getOrCreate(tenantId),
+        this.office.getOfficeIdentity(tenantId),
       ]);
 
       const tokens: Record<string, string> = {

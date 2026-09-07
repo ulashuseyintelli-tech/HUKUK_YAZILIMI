@@ -106,6 +106,25 @@ export class OfficeService {
     return this.projectForActor(tenantId, office, actor);
   }
 
+  /**
+   * F-B01-04 — büro KİMLİĞİ (yalnız görünen ad), modül dışı tüketiciler için.
+   *
+   * `getOrCreate` HAM `Office` satırını döndürür: `smtpPass` / `smsApiKey` / `smsApiSecret`,
+   * dört S2 referans dizisi (`escalation{Manager,Founder,TeamLead}LawyerIds`,
+   * `poaExpiryRecipientLawyerIds`), `lawyers[]` (tckn, iban, uyapToken, email, phone) ve
+   * `bankAccounts[]` (IBAN). Bugünkü modül-dışı çağıranların HEPSİ yalnız `office.name`
+   * okuyup MÜVEKKİLE GİDEN bildirim/PDF token'ı üretiyor — yani ham satırın oraya kadar
+   * taşınması gereksiz ve tek bir dikkatsiz `...office` yayılımı sızıntı üretir.
+   *
+   * Bu metot o yüzü daraltır: dönen nesne YALNIZ `name` taşır. Yetki sözleşmesi
+   * DEĞİŞMEZ — çağıran zaten kendi tenant'ının bürosunu okuyordu; `getOrCreate`
+   * semantiği (yoksa yarat) aynen korunur, sadece dışarı çıkan alan kümesi daralır.
+   */
+  async getOfficeIdentity(tenantId: string): Promise<{ name: string }> {
+    const office = await this.getOrCreate(tenantId);
+    return { name: office.name };
+  }
+
   // Ayar değişikliğini AuditLog'a yaz: yalnız gönderilen alanların eski/yeni
   // değeri, secret'lar maskeli (AuditLog ikinci bir sızıntı kanalı olmasın).
   // audit.log hatayı içeride yutar → ayar güncellemesini bozmaz.

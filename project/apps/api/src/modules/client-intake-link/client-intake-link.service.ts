@@ -373,7 +373,7 @@ export class ClientIntakeLinkService {
     const [client, kase, office] = await Promise.all([
       this.prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { displayName: true, name: true, firstName: true, lastName: true } }),
       this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { fileNumber: true, executionFileNumber: true } }),
-      this.office.getOrCreate(tenantId),
+      this.office.getOfficeIdentity(tenantId),
     ]);
 
     return {
