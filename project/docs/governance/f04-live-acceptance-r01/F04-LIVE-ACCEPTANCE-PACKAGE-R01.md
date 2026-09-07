@@ -1,249 +1,232 @@
-# F04 CANLI KABUL PAKETİ — R01
+# F04 CANLI KABUL PAKETİ — R01 (revizyon **R02**: dar onarım)
 
 ```text
-DURUM             : PROVASI GEÇTİ / CANLI ÇALIŞTIRMA ONAYI BEKLİYOR
-KAYNAK            : owner GO "F04 — somut canlı kabul paketini hazırla" (2026-09-07)
+DURUM             : R02 ONARIMI PROVASI GEÇTİ / CANLI ÇALIŞTIRMA ONAYI BEKLİYOR
+KABUL KAPSAMI     : **posting'in kilit beklemesi ve finansal sonucu**
+                    (bütün F04 yarış kabulü DEĞİLDİR — §5)
+KAYNAK            : owner GO "F04 kabul paketi — dar onarım / canlı yazma yok" (2026-09-07)
 HEDEF SÜRÜM       : RELEASE20 — canlı kaynak 08ce8e2559b4d1d67fcee245413de510209507f3
-CANLIDA YAPILAN   : HİÇBİR ŞEY — bu tur canlı tenant/finansal kayıt OLUŞTURMADI
-PROVA ORTAMI      : disposable PostgreSQL 16 (127.0.0.1:5439) + canlı RELEASE20 dist'inin
-                    ayrı bir örneği (port 8099, izole cwd, canlı servislere DOKUNULMADI)
-CANLI DB          : ÖLÇÜLDÜ — prova öncesi/sonrası karşılaştırma `changed: 0`, "CANLI DB DEĞİŞMEDİ"
+CANLIDA YAPILAN   : HİÇBİR ŞEY — bu tur da canlı tenant/finansal kayıt OLUŞTURMADI
+CANLI DB          : ölçüldü, prova öncesi/sonrası `changed: 0` — "CANLI DB DEĞİŞMEDİ"
 IMPLEMENTATION AUTHORITY: NONE — bu belge canlı çalıştırma yetkisi ÜRETMEZ
 ```
 
 > `FOR NO KEY UPDATE` kilidi ve kapanmış F04 uygulaması (#2512) **değiştirilmedi**. Canlı API'ye
-> prototype/bariyer enjeksiyonu, servis değişikliği ve yeniden deployment **yapılmadı ve
-> yapılmayacaktır**. PR #2543'e dokunulmadı.
+> prototype/bariyer enjeksiyonu, servis değişikliği ve yeniden deployment **yok**. PR #2543'e
+> dokunulmadı.
+
+## R02'de düzeltilenler
+
+| # | Kusur | Onarım |
+|---|---|---|
+| 1 | Gözlem ve kilit tutma **ayrı** bütçelerdeydi; gözlem gecikirse kilit uzardı | **Ortak süre bütçesi**: kilidin alındığı andan başlar, gözlem + tutmayı birlikte kapsar; dolunca transaction kapanır. Tek bir gözlem sorgusu bile bütçeyle yarıştırılır |
+| 2 | Ön koşul FAIL olsa da posting gönderiliyordu | Ön koşul FAIL → **posting başlatılmaz**, yazma denemesi yok |
+| 3 | Gözlem hatası "kilit/bildirim yok"a dönüşüyordu | **Fail-closed**: ölçülemeyen zorunlu sonuç `OLCULEMEDI` olarak FAIL eder ve sıfırdan farklı çıkar |
+| 4 | İstemci timeout'u başarısızlık sayılıyordu | HTTP timeout sunucu işlemini **iptal etmez**: sonuç `BELIRSIZ` işaretlenir, kalıcı durumdan salt-okuma **uzlaştırılır**, **tekrar gönderim yok** |
+| 5 | Finansal doğrulama yüzeyseldi | Journal **türü/sayısı**, satır **tutarları/para birimi/hesap kodları/dengesi**, **kaynak+idempotency bağı**, **APPLY tutarı**, **doğru audit olayı** |
+| 6 | Kurulum 11 ayrı yazma; yarıda kesilirse yetim kayıt | **Atomik** (tek transaction) |
+| 7 | Commit sonrası durum dosyası yazılamazsa koşum kaybolurdu | **Kurtarılabilir `runId`** (8 hex, sır içermez, slug'a gömülü) + `f04-00-recover-state.js`; yazılamazsa nonzero çıkış |
+| 8 | Parola durum dosyasında düz JSON'daydı | Parola **saklanmaz**; `F04_LOGIN_PASSWORD` ile verilir, üretilirse bir kez stdout'a basılır |
+| 9 | Sentetik hesabın erişimi açık kalıyordu | **`revoke-access`** modu: `isActive=false` + `tokenVersion++`; finansal/audit kanıt **korunur** |
+| 10 | `purge`/`reverse` canlıda çalışabilirdi | **Canlı kapsam dışı**: `F04_ENVIRONMENT` verilmezse ortam **live** sayılır ve ikisi de reddedilir |
 
 ---
 
-## 1. Paket ne yapar, ne yapmaz
+## 1. Hedef sentetik alan
 
-**Yapar:** F04'ün *serileştirme* bacağının canlı sürümde gerçekten çalıştığını, canlı API'ye
-gerçek HTTP isteği göndererek ve PostgreSQL'in kendi kilit görüşünü (`pg_blocking_pids`) delil
-alarak kanıtlar. Ayrıca tenant sınırının canlıda korunduğunu doğrular.
-
-**Yapmaz:** on KABUL senaryosunun tamamını canlıda kurmaz — dokuzu kod enjeksiyonu ister
-(§5). Gerçek müvekkil verisine yazmaz, dış bildirim üretmez, mevcut kaydı güncellemez/silmez.
-
----
-
-## 2. Hedef sentetik alan
-
-`demo-firma` **kullanılmaz** (PR #2542 ile kanıtlandı: gerçek ofisle paylaşılan kullanıcı
-domainleri, 7 aktörün audit izi, canlı muhasebe akışı). `c36-smoke-principal`,
-`c36-smoke-principal-2` ve `local-development-office` **kullanılmaz** (başka programların
-ölçüm alanları). Paket **kendi tenant'ını üretir**.
+`demo-firma` **kullanılmaz** (PR #2542: gerçek ofisle paylaşılan kullanıcı domainleri, 7 aktörün
+audit izi, canlı muhasebe akışı). `c36-smoke-principal`, `c36-smoke-principal-2`,
+`local-development-office` **kullanılmaz** (başka programların ölçüm alanları). Paket kendi
+tenant'ını üretir: `f04-acc-<runId>`.
 
 | Öğe | Değer |
 |---|---|
-| Tenant slug | `f04-acc-<8 hex>` — her koşumda yeni; prefix bu pakete ayrılmıştır |
-| Aktör | 1 `User` (ADMIN) + 1 `Lawyer` (`lawyerRank: PARTNER`) — `isApproverEligible` ön koşulu |
-| Aktör e-postası | `f04-<sfx>@f04-acceptance.invalid` — RFC 2606 ayrılmış TLD, **teslim edilemez** |
+| Aktör | 1 `User` (ADMIN) + 1 `Lawyer` (PARTNER) — `isApproverEligible` ön koşulu |
+| Aktör e-postası | `f04-<runId>@f04-acceptance.invalid` — RFC 2606, **teslim edilemez** |
 | Müvekkil / dosya | 1 `Client` (PERSON) · 1 `Case` (`GENERAL_EXECUTION`) · 1 `CaseClient` (ALACAKLI) |
-| Tahsilat | 1 `Collection` — **100,00 TRY**, `TAHSILAT`, `status: CONFIRMED` — A2 kilidinin hedef satırı |
-| Masraf | 1 `ExpenseRequest` — **100,00 TRY**, `paidTotal 0,00`, `SENT` / `expenseApprovalStatus APPROVED` |
-| Onay | 1 `OfficeApprovalRequest` — `COLLECTION_DISPOSITION_POST`, `APPROVED` (P4 kaydı) |
-| Dağıtım | 1 `CollectionDisposition` — **100,00 TRY**, `DISTRIBUTION_APPROVED`, `SINGLE_CASE_CLIENT` |
-| Dağıtım satırı | 1 `CollectionDispositionLine` — `CLIENT_EXPENSE_REIMBURSEMENT`, **100,00 TRY** |
+| Tahsilat | 1 `Collection` — **100,00 TRY**, `CONFIRMED` — A2 kilidinin hedef satırı |
+| Masraf | 1 `ExpenseRequest` — **100,00 TRY**, `paidTotal 0,00`, `SENT`/`APPROVED` |
+| Onay | 1 `OfficeApprovalRequest` — `COLLECTION_DISPOSITION_POST`, `APPROVED` |
+| Dağıtım | 1 `CollectionDisposition` — **100,00 TRY**, `DISTRIBUTION_APPROVED` + 1 satır (`CLIENT_EXPENSE_REIMBURSEMENT`, 100,00) |
 
-Tutarlar bilinçli olarak **dağıtım toplamı = tahsilat tutarı = masraf tutarı = 100,00 TRY**
-seçilmiştir: tek satırlık dağıtım, artık/kalan üretmez ve beklenen sonuç aritmetik olarak tektir.
+### 1.1 Tam yazma kapsamı
 
-### 2.1 Azami yazma kapsamı
+**Kurulum: tam 11 satır** (atomik), mevcut hiçbir satır güncellenmez/silinmez.
+**Posting'in ürettiği:** 1 disposition güncellemesi (POSTED), 1 `CollectionDispositionExpenseApplication`
+(APPLY 100,00), **2** `AccountingJournalEntry` + **4** `AccountingJournalLine`, 1 `AuditLog`.
+**`revoke-access` seçilirse:** 1 `User` satırında 2 alan (`isActive`, `tokenVersion`).
 
-**Varsayılan koşum tam olarak 11 satır yazar** (yukarıdaki tablo) ve **mevcut hiçbir satırı
-güncellemez veya silmez**. Posting adımı bunlara kendi çıktısını ekler: 1 `CollectionDisposition`
-güncellemesi (POSTED), 1 `CollectionDispositionExpenseApplication` (APPLY), 2 `AccountingJournalEntry`
-+ satırları, 1 `AuditLog`. Provada ölçülen toplam etki: `collection 1 · disposition 1 · journal 3 ·
-expenseApplication 1 · audit 1`.
+**Toplam canlı etki: 11 kurulum satırı + 8 posting satırı + (isteğe bağlı) 1 satır güncellemesi.**
 
-**Geri alınabilirlik — ölçülmüş kısıt:** `IcrabotTimelineEntry` veritabanı seviyesinde silinemez.
-Provada doğrudan SQL ile doğrulandı:
-
-```text
-ERROR: immutable_violation: DELETE on "IcrabotTimelineEntry" is forbidden. Legal facts are immutable.
-```
-
-Bu yüzden **varsayılan kurulum bu kaydı hiç yazmaz**; paket canlıya geri alınamaz hiçbir satır
-bırakmaz. Kayıt yalnız `F04_WITH_REVERSAL_PRECONDITIONS=1` ile (A2-EXT, §6) yazılır ve o seçenek
-**ayrı onay ister**.
+**Geri alınamaz kayıt: YOK.** `IcrabotTimelineEntry` DB seviyesinde silinemez
+(`immutable_violation: DELETE ... is forbidden. Legal facts are immutable.`) — bu yüzden varsayılan
+kurulum onu **hiç yazmaz**; yalnız `F04_WITH_REVERSAL_PRECONDITIONS=1` (A2-EXT, ayrı onay) yazar.
 
 ---
 
-## 3. Kullanılacak ürün/API yolları ve yetki
+## 2. Ürün/API yolları ve yetki
 
-| Adım | Yol | Yetki | Not |
-|---|---|---|---|
-| Oturum | `POST /api/auth/login` | — | AUTH-01: `email` + `password` + **`tenantSlug` zorunlu**. Yanıt `{ token, user, tenant }` |
-| Ölçüm | `POST /api/collection-dispositions/:id/post` | `JwtAuthGuard` + servis içi capability: PARTNER/yetkilendirilmiş avukat + `DISTRIBUTION_APPROVED` + P4 approval-record | F04'ün ölçülen yolu |
-| Sınır | aynı uç, başka tenant'ın `:id`'si | aynı | KABUL-5 karşılığı; **reddedilmesi beklenir** |
-
-Kurulum adımı ürün API'si yerine doğrudan Prisma yazması kullanır. Gerekçe: CONFIRMED tahsilat +
-APPROVED dağıtım durumunu ürün akışından üretmek çok sayıda ek onay/iş akışı kaydı ve yan etki
-tetikler; doğrudan yazma **daha dar** ve daha öngörülebilir bir yazma kapsamı verir. **Ölçülen
-davranış** (posting) her koşulda gerçek HTTP üzerinden çalışır.
-
----
-
-## 4. Risk değerlendirmesi (mevcut kod üzerinden)
-
-| Risk | Değerlendirme | Dayanak |
+| Adım | Yol | Yetki |
 |---|---|---|
-| Gerçek tenant'a bağlantı | **YOK.** Üretilen tenant yeni; `Collection`/`Case`/`Client` bağları yalnız kendi içinde. Çapraz tenant sızıntısı ölçüldü: `Collection`↔`Case` tenant uyuşmazlığı **0** | PR #2542 ölçümü + G-2 kapısı |
-| Dış bildirim (e-posta/SMS) | **YOK.** `DispositionPostingService` bağımlılıkları: `PrismaService`, `OfficeApprovalService`, `ClientSettlementReadService`, `FinanceRiskEngine`, `FinanceApprovalIntentBuilder`, `AccountingJournalWriterService` — bildirim servisi **yok**; dosyada `notification`/`email`/`sms` çağrısı **0** | `disposition-posting.service.ts` |
-| Bildirim kuyruğuna düşme | Provada ölçüldü: `notificationQueue 0 · clientNotification 0 · clientStatementDeliveryLedger 0 · poaExpiryNotificationDelivery 0` | V-7 kapısı |
-| Gerçek alıcıya ulaşma | Aktör e-postası `*.invalid` (RFC 2606) — bir gönderim yanlışlıkla tetiklense bile teslim edilemez | §2 |
-| Ortak/çapraz rapor etkisi | Sentetik tenant global toplamlara katılır (ör. tüm-tenant sayımları). Tenant-scoped olmayan bir rapor **tespit edilmedi**; ayrım gerektiğinde slug prefix'i `f04-acc-` ile filtrelenebilir | §2 |
-| Canlı posting yolunu bloke etme | Kilit **yalnız bu paketin kendi Collection satırında**; başka satır/tablo kilitlenmez. Süre sınırlı ve fail-closed (§6.2) | G-4/G-5 |
-| Muhasebe defterine test satırı | **Gerçekleşir** ve kalıcıdır (dağıtım journal'ı). Bu bilinçli bir maliyettir; dispozisyon seçenekleri §8'de | — |
+| Oturum | `POST /api/auth/login` | AUTH-01: `email` + `password` + **`tenantSlug` zorunlu**; yanıt `{ token, ... }` |
+| Ölçüm | `POST /api/collection-dispositions/:id/post` | `JwtAuthGuard` + servis içi: PARTNER/yetkili avukat + `DISTRIBUTION_APPROVED` + P4 approval-record |
+| Sınır | aynı uç, başka tenant'ın `:id`'si | aynı — **reddedilmesi beklenir** |
+
+Kurulum ürün API'si yerine doğrudan Prisma yazması kullanır: CONFIRMED tahsilat + APPROVED dağıtım
+durumunu ürün akışından üretmek çok daha geniş bir yazma kapsamı ve yan etki doğurur. **Ölçülen
+davranış (posting) her koşulda gerçek HTTP üzerindendir.**
 
 ---
 
-## 5. On KABUL senaryosunun canlı karşılığı
+## 3. Risk değerlendirmesi (kod üzerinden)
 
-Kaynak: `f04-posting-reversal-race.db-gated.integration.spec.ts` (10 senaryo, disposable
-PostgreSQL, **10/10 PASS** — canlı SHA'nın F04 kod yüzeyiyle birebir aynı kaynakta doğrulandı).
-
-| Senaryo | Neyi doğrular | Canlıda? | Gerekçe |
-|---|---|---|---|
-| **KABUL-A2** | gerçek transaction, posting'in Collection kilidinde **bekler** | **EVET — bu paket** | Bariyer gerektirmez; kilit dışarıdan kontrollü tutulur (§6) |
-| **KABUL-5** | başka tenant'ın dağıtımı post **edilemez** | **EVET — bu paket** | Saf yetki/kapsam kontrolü, zamanlama gerektirmez (§7) |
-| KABUL-C | kilit modu FK'nın örtülü `KEY SHARE`'ini **bloklamaz** | **DOLAYLI — bu paket** | A2'de posting kilit sonrası **başarıyla tamamlanıyor**; `FOR UPDATE` olsaydı FK zinciri deadlock üretirdi. Ayrı bir negatif kontrol canlıda kurulamaz |
-| KABUL-A | posting kilidi önce alır, cancel bekler | HAYIR | Cancel executor'ı barrier ile başlatmayı gerektirir |
-| KABUL-1 | posting bayat CONFIRMED görüntüsüyle girerse finansal etki **bırakmaz** | HAYIR | `assertCollectionConfirmed` çağrısının **içine** bariyer gerekir |
-| KABUL-2 | bayat pre-post reversal POSTED'i **ezemez** | HAYIR | Reversal servisinin bayat görüntüyle çağrılması gerekir |
-| KABUL-3 | tekrarlı `PAYMENT_REVERSED` çift etki **üretmez** | HAYIR (A2-EXT'e bağlı) | `PAYMENT_REVERSED` üretimi + silinemez timeline kaydı ister |
-| KABUL-4 | iptal önce kazanırsa posting POSTED **yazamaz** | HAYIR | İki akışın commit sırasının kontrolü gerekir |
-| KABUL-B | transaction ortasındaki hata kalıcı yazım **bırakmaz** | HAYIR | Journal writer'a hata enjeksiyonu gerekir |
-| KABUL-D | gecikmiş posting + offset + payout **döngü kurmaz** | HAYIR | Çok adımlı bariyer dizisi gerekir |
-
-**Özet:** canlıda gerçekten doğrulanabilen üç şey vardır — (i) posting'in satır kilidini alması ve
-kilitliyken ilerlememesi, (ii) kilit kalkınca doğru finansal sonucu üretmesi, (iii) tenant sınırı.
-Kalan yedi senaryonun regresyon kilidi **disposable entegrasyon testidir** ve bu paket onu canlı
-kabul yerine **koymaz**.
+| Risk | Değerlendirme |
+|---|---|
+| Gerçek tenant'a bağlantı | **YOK** — yeni tenant; G-1/G-2 kapıları yasak slug'ları fail-closed reddeder |
+| Dış bildirim | **YOK** — `DispositionPostingService` bağımlılıkları prisma/officeApproval/readService/financeRisk/approvalIntentBuilder/journalWriter; dosyada `notification|email|sms` çağrısı **0**. V-9 ayrıca ölçer ve **sayılamazsa FAIL eder** |
+| Gerçek alıcıya ulaşma | Aktör e-postası `*.invalid` — teslim edilemez |
+| Canlı posting yolunu bloke etme | Kilit yalnız paketin kendi satırında; ortak bütçe ≤4 s; hata/timeout'ta ROLLBACK |
+| Ortak/çapraz rapor | Sentetik tenant global toplamlara katılır; `f04-acc-` prefix'i ile filtrelenebilir. Tenant-scoped olmayan rapor tespit edilmedi |
+| Muhasebe defterine kalıcı satır | **Gerçekleşir** (2 journal + 4 satır). Bilinçli maliyet; dispozisyon §7 |
 
 ---
 
-## 6. KABUL-A2 canlı karşılığı — `f04-02-a2-race.js`
+## 4. KABUL-A2 canlı karşılığı
 
-### 6.1 Yöntem
+### 4.1 Yöntem
+Hedef `Collection` satırı ayrı bağlantıda `FOR NO KEY UPDATE` ile kilitlenir → gerçek HTTP posting
+gönderilir → `pg_blocking_pids` ile posting'in beklediği kanıtlanır → kilit bırakılır → sonuç
+doğrulanır.
 
-1. Hedef `Collection` satırı ayrı bir bağlantıda `SELECT ... FOR NO KEY UPDATE` ile kilitlenir
-   (tek satır, tenant kapsamlı).
-2. Gerçek HTTP `POST /api/collection-dispositions/:id/post` gönderilir.
-3. PostgreSQL'e sorulur: kilidi tutan pid başka bir transaction'ı bloke ediyor mu?
-   Bekleyen sorgu metni posting'in kendi kilit cümlesi olmalıdır.
-4. İstek **henüz tamamlanmamış** olmalıdır.
-5. Kilit bırakılır; istek tamamlanır; posting/bakiye/audit sonucu doğrulanır.
+### 4.2 Ortak süre bütçesi
+`F04_LOCK_BUDGET_MS` — varsayılan **3500 ms**, tavan **4000 ms**. Bütçe **kilidin alındığı anda
+başlar** ve gözlem + tutmayı birlikte kapsar; tek bir gözlem sorgusu bile bütçeyle yarıştırılır.
+Bütçe dolarsa transaction kapanır (kilit bırakılır) ve adım FAIL eder.
 
-### 6.2 Kilit güvenliği ve süre sınırı
+**Tavan neden 4000:** posting Prisma interactive transaction `timeout`unu override etmez → varsayılan
+**5000 ms** geçerlidir. R01 provasında 8000 ms kilit posting'i **P2028/HTTP 500**'e düşürdü; bu bir
+F04 kusuru değil, ölçüm kurgusunun kusuruydu.
 
-- `SET LOCAL lock_timeout = '5s'` ve `SET LOCAL idle_in_transaction_session_timeout` uygulanır.
-- Kilit **varsayılan 2000 ms**, **tavan 4000 ms** tutulur (`F04_LOCK_HOLD_MS`).
-- **Neden tavan var:** posting akışı Prisma interactive transaction kullanır ve `timeout`u
-  override etmez → Prisma varsayılanı **5000 ms** geçerlidir. Provada kilit 8000 ms tutulduğunda
-  posting **P2028 ile HTTP 500** döndü. Bu bir F04 kusuru **değil**, ölçüm kurgusunun kusuruydu;
-  paket bu yüzden tavanlıdır ve bu bulgu burada kayıtlıdır.
-- Hata veya timeout durumunda Prisma transaction'ı **ROLLBACK** eder → kilit bırakılır. Script
-  ayrıca kapanışta "kilit sızıntısı" kontrolü yapar (A2-13) ve hata yolunda da ölçer.
+### 4.3 Kontroller (9)
+A2-0 ön koşul (FAIL → posting başlatılmaz) · A2-1 login · A2-4 `pg_blocking_pids` beklemesi ·
+A2-5 bekleyen sorgu `FOR NO KEY UPDATE` cümlesi · A2-6 istek kilitte bekliyor · A2-7 kilit sonrası
+tamamlandı (veya belirsizse **uzlaştırıldı**) · A2-8 süre farkı · A2-9 POSTED + `postedAt` ·
+A2-10 kilit sızıntısı yok (ölçülemezse FAIL).
 
-### 6.3 Beklenen sonuçlar (12 kontrol)
+---
+
+## 5. On senaryonun canlı karşılığı
+
+| Canlıda doğrulanabilir | Dolaylı | Canlıda kurulamaz |
+|---|---|---|
+| **KABUL-A2** (kilit beklemesi + finansal sonuç), **KABUL-5** (tenant sınırı) | **KABUL-C** (posting kilit sonrası tamamlanıyor; `FOR UPDATE` olsaydı FK zinciri deadlock verirdi) | A, 1, 2, 3, 4, B, D — `jest.spyOn` prototip bariyeri gerektirir |
+
+Kalan yedinin regresyon kilidi disposable entegrasyon testidir (canlı SHA `08ce8e25` kod yüzeyiyle
+**10/10 PASS**) ve **canlı kabul yerine konmaz**. **Bu paket bütün F04 yarış kabulünü kapatmaz.**
+
+---
+
+## 6. Finansal doğrulama (V-1..V-9)
+
+Tek sentetik işlem için **ölçülmüş** beklentiler:
 
 | # | Beklenen |
 |---|---|
-| A2-0 | `DISTRIBUTION_APPROVED` + `CONFIRMED`, `postedAt` yok |
-| A2-1 | login 200/201, token alınır |
-| A2-4 | `pg_blocking_pids`: kilidimiz en az bir transaction'ı bloke ediyor |
-| A2-5 | bekleyen sorgu: `SELECT "status" FROM "Collection" WHERE "id"=$1 AND "caseId"=$2 AND "tenantId"=$3 FOR NO KEY UPDATE` |
-| A2-6 | HTTP isteği kilit tutulurken **tamamlanmamış** |
-| A2-7 | kilit bırakılınca istek **201** |
-| A2-8 | istek süresi kilit süresinin en az %60'ı (gerçekten bekledi) |
-| A2-9 | `POSTED` + `postedAt` dolu + `manualReversalRequiredAt` **yok** |
-| A2-10 | masraf uygulaması **1 APPLY / 0 REVERSAL** |
-| A2-11 | `COLLECTION_DISTRIBUTION_POSTED` journal'ı yazıldı |
-| A2-12 | audit izi oluştu |
-| A2-13 | kilit sızıntısı yok |
+| V-1 | `POSTED` + `postedAt` + `manualReversalRequiredAt` yok + tutar 100 |
+| V-2 | **Tam 2 journal**: `COLLECTION_DISTRIBUTION_POSTED` ×1, `COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED` ×1 (fazlası = mükerrer/yanlış → FAIL) |
+| V-3 | **Tam 4 satır**; her journal DEBIT = CREDIT = **100,00 TRY**; hesaplar: dağıtım `CASH_CLEARING`/`CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE`, uygulama `CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE`/`CLIENT_EXPENSE_RECEIVABLE` |
+| V-4 | `idempotencyKey` **benzersiz**, tenant + kaynak kimliği gömülü; satırlar doğru `collectionId`/`dispositionLineId`'ye bağlı |
+| V-5 | **Tam 1 APPLY** (100,00) / 0 REVERSAL, doğru `expenseRequestId`; net uygulanan 100, kalan 0 |
+| V-6 | `OFFICE_APPROVAL_EXECUTION_SUCCEEDED` ×1, doğru aktör; FAIL/DENIED olay yok |
+| V-7a/b | İzolasyon: izlenen tenant'lar değişmedi (boş küme = FAIL); global artış bilgisi |
+| V-8 | Kilit/transaction sızıntısı yok (**ölçülemezse FAIL**) |
+| V-9 | Dış bildirim üretilmedi (**sayılamayan model = FAIL**) |
+
+**Ürünün kendi koruması (ölçüldü):** `AccountingJournalEntry` üzerinde
+`@@unique(tenantId, sourceType, sourceId, sourceAction)` vardır — aynı kaynak için ikinci bir
+`posted` journal **veritabanı seviyesinde engellenir**.
 
 ---
 
-## 7. KABUL-5 canlı karşılığı — `f04-05-tenant-boundary.js` (isteğe bağlı)
+## 7. Koşum sonrası dispozisyon
 
-İki sentetik tenant üretilir; A'nın aktörü B'nin dağıtımını post etmeyi dener. Beklenen: **2xx
-değil** ve B tarafında `status`/`postedAt`/journal/masraf uygulaması **değişmez**. Bu adım kendi
-başına hiçbir satır yazmaz.
-
----
-
-## 8. Koşum sonrası dispozisyon — silme **varsayılan değildir**
-
-| Mod | Ne yapar | Ne zaman |
+| Mod | Ne yapar | Canlıda? |
 |---|---|---|
-| **`preserve` (VARSAYILAN)** | Hiçbir kayıt silinmez/değiştirilmez; yazma **0**. Sentetik tenant kalıcı kabul kanıtı olarak durur; `f04-acc-` prefix'i onu gerçek ofisten ve diğer programlardan ayırır | Önerilen. Muhasebe defterinden satır kaldırmaz |
-| `reverse` | Ürünün **kendi** tersleme yolu (iptal → `PAYMENT_REVERSED` → POSTED tersleme: `manualReversalRequiredAt` + reimbursement REVERSAL). Veri **silmez**, politikaya uygun ters kayıt üretir | Muhasebe izinin kapatılması istenirse. **Bu script yürütmez** — A2-EXT kapsamı, ayrı onay ister ve silinemez timeline kaydı üretir |
-| `purge` | Sentetik tenant ve tüm satırları silinir. Yalnız `F04_CONFIRM_PURGE=YES-DELETE-SYNTHETIC-F04-TENANT` ile | Yalnız owner açık talimatıyla. Provada **"TEMİZ — sentetik tenant ve satırları KALMADI"** doğrulandı (varsayılan 11 satırlık kurulumda) |
+| **`preserve`** (varsayılan) | Yazma **0**; envanter raporlanır. Sentetik tenant kanıt olarak durur | ✅ |
+| **`revoke-access`** | **Canlıda önerilen kapanış.** `isActive=false` + `tokenVersion++` → mevcut JWT'ler geçersiz, yeni login **401**. Finansal/audit kayıtlara **dokunulmaz** ve bu doğrulanır | ✅ |
+| `reverse` | Ürünün kendi ters kayıt yolu (A2-EXT) | ❌ **Canlı kapsam dışı** |
+| `purge` | Sentetik tenant + tüm satırlar silinir | ❌ **Canlı kapsam dışı** (yalnız `F04_ENVIRONMENT=disposable` + token) |
 
-`purge` her koşulda **sonuç doğrulaması** yapar; kalıntı varsa `EKSİK TEMİZLİK` verdict'i verir ve
-sıfırdan farklı çıkış kodu döndürür.
+`F04_ENVIRONMENT` verilmezse ortam **live** kabul edilir (fail-safe).
 
 ---
 
-## 9. Başarısızlıkta toparlama
+## 8. Başarısızlıkta toparlama
 
-| Durum | Otomatik davranış | Gerekli müdahale |
+| Durum | Otomatik davranış | Müdahale |
 |---|---|---|
-| Kilit alınamadı (`lock_timeout`) | Transaction ROLLBACK, kilit yok | Yok; adım tekrar edilebilir |
-| Bekleme gözlenemedi | Kilit bırakılır, adım FAIL | Yok; posting ya hiç başlamamış ya da kilit yolu değişmiş → bulgu olarak raporlanır |
-| Posting 500 (P2028) | Kilit zaten bırakılmıştır | `F04_LOCK_HOLD_MS` düşürülür (≤4000). Dağıtım `DISTRIBUTION_APPROVED` kalır, finansal iz oluşmaz |
-| Posting kısmen yazdı | — | Ürün zaten transaction içinde çalışır (KABUL-B); `03-verify` kalıcı durumu bağımsız ölçer |
-| Script çöktü | Prisma transaction ROLLBACK | `03-verify` çalıştırılır; kilit sızıntısı V-6 ile ölçülür |
-| Sentetik tenant yarım kaldı | — | `04-teardown` `preserve` (varsayılan) veya owner onayıyla `purge` |
-
-**Canlı posting yolu riski:** kilit yalnız bu paketin kendi satırındadır; gerçek bir tahsilatın
-posting'i **etkilenmez**. En kötü durumda etkilenen tek şey paketin kendi sentetik dağıtımıdır.
+| Ön koşul FAIL | Posting **başlatılmaz**; yazma yok | Durum incelenir |
+| Bütçe dolar | Transaction kapanır, kilit bırakılır, FAIL | Bütçe/ortam gözden geçirilir. **Not:** posting isteği o an gönderilmiş olabilir ve tamamlanabilir — kalıcı durum `03-verify` ile okunur |
+| Gözlem yapılamaz | `OLCULEMEDI` + nonzero | Ölçüm koşulları düzeltilip tekrarlanır; sonuç "kilit yok" sayılmaz |
+| HTTP belirsiz | **Tekrar gönderilmez**; kalıcı durum salt-okuma uzlaştırılır | Uzlaşma sonucu rapordadır |
+| Kurulum yarıda kesilir | Transaction ROLLBACK → **hiçbir satır kalmaz** | Yok |
+| Durum dosyası yazılamaz | Nonzero + kurtarma talimatı | `F04_RUN_ID=<runId> node f04-00-recover-state.js` |
+| Script çöker | Prisma ROLLBACK | `03-verify` bağımsız ölçer |
 
 ---
 
-## 10. Prova sonuçları (disposable — **canlı kabul değildir**)
+## 9. Prova sonuçları (disposable — **canlı kabul değildir**)
 
-Ortam: disposable PostgreSQL 5439 + canlı RELEASE20 dist'inin ayrı örneği (port 8099, izole cwd).
-Canlı servisler (8080 / 3002) çalışmaya devam etti; canlı DB'ye **tek bir yazma yapılmadı**.
+Canlı RELEASE20 dist'inin ayrı örneği (port 8099, izole cwd) + disposable PG 5439. Canlı servisler
+(8080 / 3002) çalışmaya devam etti; **canlı DB'ye tek yazma yok** (`changed: 0`).
 
 | Adım | Sonuç |
 |---|---|
-| `01-setup` | **11/11** satır (geri alınamaz kayıt üretmeden) |
-| `02-a2-race` | **12/12 PASS** — kilit 2005 ms, bekleyen pid gözlendi, HTTP 201, istek 2064 ms |
-| `03-verify` | **8/8 PASS** — POSTED, 1 APPLY/0 REVERSAL, net uygulanan 100, kalan 0, journal + audit, izolasyon, sızıntı yok, bildirim yok |
-| `05-tenant-boundary` | **4/4 PASS** — çapraz post **HTTP 404**, hedef tenant değişmedi |
-| `04-teardown preserve` | yazma **0** |
-| `04-teardown purge` | **"TEMİZ — sentetik tenant ve satırları KALMADI"** |
-| Güvenlik kapıları | `telli-hukuk` → G-1 reddi · `demo-firma` → G-1 reddi · purge token'sız → reddedildi · `reverse` → yürütmedi |
-| Canlı DB karşılaştırması | `changed: 0` — **"CANLI DB DEĞİŞMEDİ"** |
+| `01-setup` (atomik) | **11/11**, parola state'te yok, kurtarma kimliği basıldı |
+| `02-a2-race` | **9/9 PASS** — kilit 756 ms / bütçe 3500 ms, bekleyen pid gözlendi, HTTP 201 |
+| `03-verify` | **10/10 PASS** — 2 journal, 4 satır, DEBIT=CREDIT=100, benzersiz idempotency, 1 APPLY, doğru audit |
+| `05-tenant-boundary` | **4/4 PASS** — çapraz post reddedildi, hedef değişmedi |
+| `00-recover-state` | durum kurtarıldı; baseline kaybı **dürüstçe** işaretlendi → verify V-7a `OLCULEMEDI` (**doğru davranış**) |
+| `04-teardown revoke-access` | erişim kapandı (login **401**), finansal/audit kanıt **korundu** |
+| `04-teardown` canlı kapısı | `purge` ve `reverse` **reddedildi** (ortam `live`) |
+| `06-negative-controls` | **8/8 PASS** (aşağıda) |
 
-Provada yakalanan ve düzeltilen kusurlar: (1) login'in `tenantSlug` zorunluluğu, (2) 80 karakterlik
-sorgu kırpması `FOR NO KEY UPDATE`'i gizliyordu, (3) 8000 ms kilit posting'i P2028'e düşürüyordu,
-(4) izolasyon kapısı boş izleme kümesiyle PASS veriyordu, (5) `IcrabotTimelineEntry` silinemediği
-için purge yarım kalıyordu → kurulum artık o kaydı hiç yazmıyor.
+### 9.1 Negatif kontroller — bozuk durumlar doğru reddedildi
+
+| # | Senaryo | Gözlenen |
+|---|---|---|
+| NC-0 | bozulmamış koşum | verify exit 0 |
+| NC-1 | kurulum yarıda kesilir | setup nonzero · **tenant oluşmadı** · durum dosyası yazılmadı |
+| NC-2 | geciken kilit gözlemi (bütçe 1 ms) | exit 3 · "bütçe doldu" · **kilit sızıntısı 0** |
+| NC-3 | başarısız kilit gözlemi | exit 3 · `OLCULEMEDI` · yanlış "kilit yok" iddiası **yok** |
+| NC-4 | ön koşul sağlanmıyor | exit 3 · "ON KOSUL SAGLANMADI" · **journal sayısı değişmedi** |
+| NC-5 | fazladan/yanlış journal | exit 2 · **V-2 FAIL** · ayrıca aynı kaynakta çift journal **DB unique kısıtıyla engellendi** |
+| NC-6 | eksik audit | exit 2 · **V-6 FAIL** · audit geri yüklendi |
+| NC-7 | sayılamayan bildirim | exit 2 · **V-9 `OLCULEMEDI`** · yanlış "bildirim yok" iddiası **yok** |
+
+Negatif kontroller **yalnız `F04_ENVIRONMENT=disposable`** ile çalışır (veri bozar, tablo adı
+değiştirir). Ürettiği tüm tenant'lar koşum sonunda purge edilir ("TEMİZ").
 
 ---
 
-## 11. Canlı çalıştırma için istenen onay
+## 10. Canlı çalıştırma için istenen onay
 
 ```bash
 export F04_DATABASE_URL="<canlı DATABASE_URL>"
 export F04_API_BASE_URL="http://127.0.0.1:8080/api"
 export F04_STATE_FILE="<oturum dizini>/f04-state.json"
 
-node f04-01-setup.js          # 11 satır, yeni f04-acc-* tenant
-node f04-02-a2-race.js        # KABUL-A2 canlı karşılığı (12 kontrol)
-node f04-03-verify.js         # bağımsız nihai doğrulama (8 kontrol)
-node f04-04-teardown.js       # preserve (varsayılan): yazma 0
+node f04-01-setup.js                              # 11 satır; parolayı ÇIKTIDAN alın
+export F04_LOGIN_PASSWORD='<çıktıdaki değer>'
+node f04-02-a2-race.js                            # KABUL-A2 (9 kontrol)
+node f04-03-verify.js                             # bağımsız doğrulama (10 kontrol)
+F04_TEARDOWN_MODE=revoke-access node f04-04-teardown.js   # erişimi kapat, kanıtı koru
 ```
 
-**Onay istenen kapsam:** yukarıdaki dört adım, tek bir `f04-acc-*` tenant'ında, toplam **11 satır
-kurulum + posting'in kendi çıktısı**; kilit **≤4 saniye**; dış bildirim yok; gerçek tenant'a
-dokunulmaz. KABUL-5 (§7) ve A2-EXT (§8 `reverse`) **ayrıca** onaylanmalıdır.
+**Onaylanması istenen tam yazma kapsamı:** tek bir `f04-acc-<runId>` tenant'ında **11 kurulum satırı
++ 8 posting satırı + 1 kullanıcı satırında 2 alan güncellemesi**; kilit **≤4 saniye**; dış bildirim
+yok; gerçek tenant'a dokunulmaz; geri alınamaz kayıt üretilmez.
 
-Onay verilirse koşum sonucu ve kalıcı durum ayrı bir kayıtla raporlanır; kabul ölçütlerinin
-tamamı karşılanırsa F04 canlı kabul kapsamı kapatılabilir — aksi halde beklenen/gerçekleşen
-sonuç farkı bulgu olarak kaydedilir.
+**Kabul kapsamı: "posting'in kilit beklemesi ve finansal sonucu."** Bu koşum başarılı olsa bile
+**bütün F04 yarış kabulü kapanmaz** — kalan yedi senaryo canlıda kurulamaz (§5). KABUL-5 (§2 sınır
+adımı, +11 satırlık ikinci tenant) ve A2-EXT (`reverse`) **ayrıca** onaylanmalıdır.
