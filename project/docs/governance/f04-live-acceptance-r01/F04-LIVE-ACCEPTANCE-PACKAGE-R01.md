@@ -1,10 +1,10 @@
-# F04 CANLI KABUL PAKETİ — R01 (revizyon **R02**: dar onarım)
+# F04 CANLI KABUL PAKETİ — R01 (revizyon **R03**: kalan hata yolları)
 
 ```text
-DURUM             : R02 ONARIMI PROVASI GEÇTİ / CANLI ÇALIŞTIRMA ONAYI BEKLİYOR
+DURUM             : R03 ONARIMI PROVASI GEÇTİ / CANLI ÇALIŞTIRMA ONAYI BEKLİYOR
 KABUL KAPSAMI     : **posting'in kilit beklemesi ve finansal sonucu**
                     (bütün F04 yarış kabulü DEĞİLDİR — §5)
-KAYNAK            : owner GO "F04 kabul paketi — dar onarım / canlı yazma yok" (2026-09-07)
+KAYNAK            : owner GO "kalan hata yollarını tamamla / canlı yazma yok" (2026-09-07)
 HEDEF SÜRÜM       : RELEASE20 — canlı kaynak 08ce8e2559b4d1d67fcee245413de510209507f3
 CANLIDA YAPILAN   : HİÇBİR ŞEY — bu tur da canlı tenant/finansal kayıt OLUŞTURMADI
 CANLI DB          : ölçüldü, prova öncesi/sonrası `changed: 0` — "CANLI DB DEĞİŞMEDİ"
@@ -14,6 +14,20 @@ IMPLEMENTATION AUTHORITY: NONE — bu belge canlı çalıştırma yetkisi ÜRETM
 > `FOR NO KEY UPDATE` kilidi ve kapanmış F04 uygulaması (#2512) **değiştirilmedi**. Canlı API'ye
 > prototype/bariyer enjeksiyonu, servis değişikliği ve yeniden deployment **yok**. PR #2543'e
 > dokunulmadı.
+
+## R03'te tamamlanan hata yolları
+
+| # | Kalan kusur | Onarım |
+|---|---|---|
+| 1 | Bütçe yalnız gözlemi kapsıyordu | Bütçe kilit alındıktan sonraki **bütün** işlemleri kapsar; her adımda `assertWithinBudget` |
+| 2 | DB korumaları bütçeden gevşekti (`lock_timeout` sabit 5 s, idle bütçe+15 s) | **Bütçeyle uyumlu**: `lock_timeout` = bütçe, `statement_timeout` ve `idle_in_transaction_session_timeout` = bütçe + tolerans |
+| 3 | Süre aşımı sessiz kalabiliyordu | Kilit bütçe+tolerans üzerinde tutulursa `A2-BUDGET` **FAIL** — süre aşımı PASS sayılmaz |
+| 4 | Kilit sonlanması dolaylı ölçülüyordu | `pg_stat_activity` ile **doğrudan** doğrulama (oturum/`xact_start`/bloke edilen) — **başarı ve hata yollarının ikisinde de** |
+| 5 | Erişim sonlandırma yalnız başarılı akışta | **Tek yürütücü** `f04-run.js`; `finally` bloğunda çalışır — kurulum/A2/doğrulama başarısız olsa da hesap kapanır |
+| 6 | State yazılamazsa akış kopuyordu | Yürütücü `runId` ile kurtarır ve kapatmayı yine yapar |
+| 7 | Envanter ölçüm hatası kapatmayı engelliyordu | Envanter yalnız rapor; ölçülemezse **kapatma yine yürür**, sonuç `EKSİK - kapanış DOĞRULANAMADI` diye raporlanır |
+| 8 | Parola stdout'a basılıyordu | **Hiç basılmaz**: yürütücü bellekte üretip alt sürecin ortamına geçirir; state'e de yazılmaz |
+| 9 | Belirsiz sonuçta POSTED değilse "gerçekleşmedi" deniyordu | Tamamlanma kanıtı yoksa sonuç **BELİRSİZ bırakılır**; POST **tekrarlanmaz** |
 
 ## R02'de düzeltilenler
 
@@ -182,14 +196,13 @@ Canlı RELEASE20 dist'inin ayrı örneği (port 8099, izole cwd) + disposable PG
 
 | Adım | Sonuç |
 |---|---|
-| `01-setup` (atomik) | **11/11**, parola state'te yok, kurtarma kimliği basıldı |
-| `02-a2-race` | **9/9 PASS** — kilit 756 ms / bütçe 3500 ms, bekleyen pid gözlendi, HTTP 201 |
+| `f04-run.js` (tek yürütücü) | **BAŞARILI** — setup 0 · A2 0 · verify 0 · revoke-access 0; parola çıktıda ve state'te **yok** (tarandı) |
+| `01-setup` (atomik) | **11/11**, parola basılmadı, kurtarma kimliği üretildi |
+| `02-a2-race` | **9/9 PASS** — kilit 752 ms / bütçe 3500 ms; A2-7 **doğrudan** doğrulama: `oturum=idle · açıkTransaction=false · bloke edilen=0` |
 | `03-verify` | **10/10 PASS** — 2 journal, 4 satır, DEBIT=CREDIT=100, benzersiz idempotency, 1 APPLY, doğru audit |
-| `05-tenant-boundary` | **4/4 PASS** — çapraz post reddedildi, hedef değişmedi |
-| `00-recover-state` | durum kurtarıldı; baseline kaybı **dürüstçe** işaretlendi → verify V-7a `OLCULEMEDI` (**doğru davranış**) |
-| `04-teardown revoke-access` | erişim kapandı (login **401**), finansal/audit kanıt **korundu** |
-| `04-teardown` canlı kapısı | `purge` ve `reverse` **reddedildi** (ortam `live`) |
-| `06-negative-controls` | **8/8 PASS** (aşağıda) |
+| `04-teardown revoke-access` | erişim kapandı, kanıt korundu (`ERISIM SONLANDIRILDI - finansal/audit kanit KORUNDU`) |
+| `06-negative-controls` | **12/12 PASS** (aşağıda) |
+| Canlı DB karşılaştırması | `changed: 0` — **"CANLI DB DEĞİŞMEDİ"** |
 
 ### 9.1 Negatif kontroller — bozuk durumlar doğru reddedildi
 
@@ -203,6 +216,10 @@ Canlı RELEASE20 dist'inin ayrı örneği (port 8099, izole cwd) + disposable PG
 | NC-5 | fazladan/yanlış journal | exit 2 · **V-2 FAIL** · ayrıca aynı kaynakta çift journal **DB unique kısıtıyla engellendi** |
 | NC-6 | eksik audit | exit 2 · **V-6 FAIL** · audit geri yüklendi |
 | NC-7 | sayılamayan bildirim | exit 2 · **V-9 `OLCULEMEDI`** · yanlış "bildirim yok" iddiası **yok** |
+| NC-8 | belirsiz HTTP sonucu (istemci 800 ms'de kesildi, kilit 3,1 s tutuldu) | kalıcı durum `DISTRIBUTION_APPROVED` → **BELİRSİZ bırakıldı**, "gerçekleşmedi" **denmedi**, **POST tekrarlanmadı** |
+| NC-9 | A2 başarısız (bütçe 1 ms) | yürütücü nonzero · **aktif kullanıcı 0** — `finally` erişimi kapattı |
+| NC-10 | durum dosyası silindi | `runId` ile kurtarıldı · revoke 0 · **aktif kullanıcı 0** |
+| NC-11 | envanter ölçülemiyor (`AuditLog` erişilemez) | **aktif kullanıcı 0** (kapatma engellenmedi) · verdict `EKSİK - kapanış DOĞRULANAMADI` · nonzero |
 
 Negatif kontroller **yalnız `F04_ENVIRONMENT=disposable`** ile çalışır (veri bozar, tablo adı
 değiştirir). Ürettiği tüm tenant'lar koşum sonunda purge edilir ("TEMİZ").
@@ -216,11 +233,9 @@ export F04_DATABASE_URL="<canlı DATABASE_URL>"
 export F04_API_BASE_URL="http://127.0.0.1:8080/api"
 export F04_STATE_FILE="<oturum dizini>/f04-state.json"
 
-node f04-01-setup.js                              # 11 satır; parolayı ÇIKTIDAN alın
-export F04_LOGIN_PASSWORD='<çıktıdaki değer>'
-node f04-02-a2-race.js                            # KABUL-A2 (9 kontrol)
-node f04-03-verify.js                             # bağımsız doğrulama (10 kontrol)
-F04_TEARDOWN_MODE=revoke-access node f04-04-teardown.js   # erişimi kapat, kanıtı koru
+# TEK YÜRÜTÜCÜ — parolayı bellekte üretir, hiçbir yere yazmaz;
+# kurulum/A2/doğrulama başarısız olsa bile `finally` ile erişimi kapatır.
+node f04-run.js
 ```
 
 **Onaylanması istenen tam yazma kapsamı:** tek bir `f04-acc-<runId>` tenant'ında **11 kurulum satırı

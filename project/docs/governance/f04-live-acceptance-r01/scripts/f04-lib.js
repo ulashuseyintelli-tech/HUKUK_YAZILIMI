@@ -224,6 +224,60 @@ class BudgetExceededError extends Error {
   constructor(m) { super(m); this.name = 'BudgetExceededError'; this.budgetExceeded = true; }
 }
 
+/**
+ * Kilit butcesi kilidin ALINDIGI andan itibaren gecerlidir ve kilit alindiktan SONRAKI
+ * BUTUN islemleri kapsar. Her adimdan once/sonra cagrilir; asilmissa transaction hemen
+ * sonlandirilir (kilit birakilir) ve sonuc PASS SAYILMAZ.
+ */
+function assertWithinBudget(deadlineAt, label) {
+  const over = Date.now() - deadlineAt;
+  if (over >= 0) {
+    throw new BudgetExceededError(`kilit butcesi doldu (${label}; +${over} ms)`);
+  }
+  return deadlineAt - Date.now();
+}
+
+/**
+ * Verilen backend pid'in OTURUM ve TRANSACTION durumu. Kilidin gercekten sonlandigini
+ * DOLAYLI degil DOGRUDAN dogrulamak icin kullanilir.
+ *   present=false            -> oturum kapandi (kilit yok)
+ *   inTransaction=false      -> transaction bitti (kilit birakildi)
+ *   inTransaction=true       -> HALA acik transaction (SIZINTI)
+ */
+async function sessionTxState(prisma, pid) {
+  const r = await prisma.$queryRawUnsafe(
+    `SELECT state, (xact_start IS NOT NULL) AS "inXact", backend_type AS "backendType"
+       FROM pg_stat_activity WHERE pid = $1`,
+    pid,
+  );
+  if (r.length === 0) return { present: false, state: null, inTransaction: false };
+  return { present: true, state: r[0].state, inTransaction: !!r[0].inXact };
+}
+
+/**
+ * Kilidin sonlandigini DOGRUDAN dogrula. Olculemezse "sonlandi" SAYILMAZ:
+ * ObservationError firlatir (fail-closed).
+ */
+async function assertLockReleased(prisma, holderPid) {
+  let st;
+  try {
+    st = await sessionTxState(prisma, holderPid);
+  } catch (e) {
+    throw new ObservationError(`kilit sonlanmasi DOGRULANAMADI (pg_stat_activity): ${e && e.message}`);
+  }
+  let blocked;
+  try {
+    blocked = await pidsBlockedBy(prisma, holderPid);
+  } catch (e) {
+    throw new ObservationError(`kilit sonlanmasi DOGRULANAMADI (pg_blocking_pids): ${e && e.message}`);
+  }
+  return {
+    released: !st.present || (!st.inTransaction && blocked.length === 0),
+    session: st,
+    stillBlocking: blocked.length,
+  };
+}
+
 /** Su an calisan sorgulardan, verilen tenant'a ait bekleyenleri bul (gozlem amacli). */
 async function activeWaiters(prisma) {
   return prisma.$queryRawUnsafe(
@@ -277,6 +331,6 @@ module.exports = {
   requireEnv, loadPrisma, saveState, loadState, requireLoginPassword, recoverState,
   assertOwnSlug, assertOwnTenant,
   newSuffix, backendPid, blockingPids, waitUntilBlockedBy, pidsBlockedBy, waitUntilSomeoneBlockedBy,
-  ObservationError, BudgetExceededError,
+  ObservationError, BudgetExceededError, assertWithinBudget, sessionTxState, assertLockReleased,
   activeWaiters, httpJson, log, step,
 };
