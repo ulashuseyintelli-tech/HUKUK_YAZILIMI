@@ -238,6 +238,7 @@ src/modules/poa/__tests__/poa-mutation-authority-d4.spec.ts
 #     kimlik gecerli olmali; yazma dogrulanan duruma kosullu (esszamanli degisiklik dogrulamayi
 #     gecersiz kilamaz). Bos kimlik ve identityNo sozlesmesi DEGISMEDI; mevcut veri DUZELTILMEZ.
 src/modules/client/__tests__/client-identity-checksum-tightening-d1b.spec.ts
+src/modules/client/__tests__/client-identity-reasoncode-consistency.spec.ts
 #
 #   D-3a (owner GO 2026-09-06) muvekkil bilgi talebi gonderim yetkisi + durum kapisi (SAF, DB-siz)
 #     create/reminder GERCEK e-posta gonderiyordu ve yalniz JwtAuthGuard tasiyordu (VIEWER dahil
