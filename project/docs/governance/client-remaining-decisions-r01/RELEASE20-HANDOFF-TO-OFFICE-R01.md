@@ -75,8 +75,9 @@ yanlis rollback hedefi yaziyordu.
 
 ### 3.2 HALA TUTARSIZ — Office/C33'un baglamasi gereken yerler
 
-Ayni duzeltme **dogrulayicilarda uygulanmamis durumda**; uretici ile dogrulayici su an CELISIYOR
-ve zincirin dusmesinin dogrudan sebebi budur:
+Ayni duzeltme **dogrulayicilarda uygulanmamis durumda**; uretici ile dogrulayici su an CELISIYOR.
+Bu celiski **dogrulanmis bir kusurdur**. Zincirin 8/11 sonucuna katkisi ve **tek neden olup
+olmadigi**, ayni pencerede eszamanli yazim da bulundugu icin mevcut kanitla **KESINLESMEMISTIR**:
 
 | Dosya | Satir | Su anki (YANLIS) | Olmasi gereken |
 |---|---|---|---|
