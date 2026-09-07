@@ -3745,7 +3745,7 @@ Ayrinti ve kanit: decision-log `RELEASE20-CUTOVER-APPLIED-R03`.
 |---|---|---|---|
 | **OWN-10** — yedi pasif kimlik kaydi (gecersiz TCKN; hepsi PASIF, dosya bagi 0) | **KABUL KAPSAMI KAPANDI / VERI KALEMI ACIK** | CLIENT | Canli RELEASE20 uzerinde urun akisi dogrulandi (2026-09-07, PR #2541): kabul olcutleri 5/5 + seed 5/5 + canli `invalidActive = 0`; canli DB yazmasi 0, yedi kayit DEGISMEDI. **Kalan is:** kimlik verisi ancak kaynak belgeye dayanarak, yetkili kullanici tarafindan urun akisi uzerinden tek tek duzeltilir — tahminle/turetmeyle TAMAMLANMAZ. |
 | **CLIENT-IDENTITY-REASONCODE-CONSISTENCY** — kimlik checksum reddinin hata sozlesmesi | ACIK | CLIENT | OWN-10 kabulunde OLCULDU (kusur DEGIL, olcut bunu istemiyor): `assertCreateIdentityChecksum` (create + DEGISEN deger yolu) duz metin 400 dondururken `assertReactivationIdentityChecksum` yapisal `{message, reasonCode: CLIENT_IDENTITY_CHECKSUM_INVALID, offendingFields}` donduruyor. Istemci iki redi stabil kodla ayirt edemiyor. Kucuk, geriye uyumlu birlestirme adayi; owner karari bekler. |
-| **OFFICE O-1..O-10** — islevsel canli kabul | **KISMI** — O-5 KAPALI; O-1/O-2/O-3/O-4/O-6/O-7/O-9 ACIK; O-8 NOT_EXECUTED; O-10 gozlem | OFFICE | Yetkili (ADMIN/PARTNER) ve staff hesaplariyla `Measure-OfficeO1toO9.ps1` kosumu + O-7 tarayici gozlemi; ayrinti asagida |
+| **OFFICE O-1..O-10** — islevsel canli kabul | **KAPANDI** — zorunlu kume (O-1..O-7 + O-9) TAMAMI PASS; O-8 NOT_EXECUTED; O-10 gozlem | OFFICE | Kabul tamamlandi (2026-09-07); bkz. decision-log `OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01`. Kalan: F-B01-03 kapanis onerisi owner ratifikasyonu bekler |
 | **F04** — canli yaris kabulu (posting/reversal serilestirme) | **ACIK / ON KOSUL EKSIK** | CLIENT / COLLECTION | Canli RELEASE20'de yaris senaryosunun kabulu; disposable replay production kosumu gibi SUNULMAZ. **PAKET HAZIR (2026-09-07, PR #2544): `f04-live-acceptance-r01/` — calistirilabilir kurulum + A2 yaris + dogrulama + dispozisyon; disposable provasi 11/11 + 12/12 + 8/8 + 4/4 PASS, canli DB DEGISMEDI. Kalan tek on kosul: canli yazma ONAYI.** Hazirlik TAMAM (2026-09-07, PR #2542): sozlesme cikarildi, canli kodda `FOR NO KEY UPDATE` + CAS dogrulandi, canli finansal veride ihlal izi 0, canli SHA kaynaginda 10/10 regresyon. **Kapanmasi icin gereken:** (a) F04`e tahsisli sentetik tenant (mevcut bos tenant`lar C36 smoke / OFFICE CAP-02`ye ait; `demo-firma` sentetik DEGIL), (b) o tenant`ta finansal zincir kurma + temizleme yetkisi, (c) bariyer gerektirmeyen senaryo alt kumesinin olcut olarak onayi (10 senaryonun 9`u kod enjeksiyonu ister, canlida kurulamaz). |
 
 **Ortak sinirlar (owner karari, degismedi):** gercek muvekkil verisine test yazimi YOK; gercek aliciya
@@ -3766,18 +3766,31 @@ Kabul olcutlerinin kanonik kaynagi: `HY_OFFICE_CLOSURE_MAPPING_R01\F-B01-03-FIX-
 NEXT-DEPLOY-SCOPE-AND-ACCEPTANCE-PLAN.md` §3 (A-1..A-10 = O-1..O-10).
 **Kabul kosulu: O-1..O-7 + O-9 BIRLIKTE; O-8 NOT_EXECUTED; O-10 yalniz gozlem.**
 
-| # | Olcum | Beklenen | Durum | Kanit / engel |
+| # | Olcum | Beklenen | Durum (2026-09-07) | Kanit |
 |---|---|---|---|---|
-| O-1 | staff -> 6 settings GET | 6/6 403 `OFFICE_F01_AUTHORIZATION_REQUIRED` | **ACIK** | staff hesabi gerekir |
-| O-2 | staff -> `GET /api/office` | 403 | **ACIK** | staff hesabi gerekir |
-| O-3 | yetkili -> 6 settings GET | 6/6 200; escalation EXACT 9 (S2siz), poa-expiry EXACT 2; sirlar maskeli | **ACIK** | ADMIN/PARTNER hesabi gerekir |
-| O-4 | yetkili -> `/api/office`, `/api/lawyers/:id` | S0uS1; tckn/iban/uyapToken YOK | **ACIK** | ADMIN/PARTNER hesabi gerekir |
-| O-5 | anonim -> 6 settings GET | 401 | **KAPALI — PASS** | 6/6 401 olculdu (2026-09-07); kontrol `/api/office` 401 |
-| O-6 | DB ayak izi (olculen kapsam) | oncesi = sonrasi | **ACIK** | O-1..O-4 ile AYNI olcum oturumuna bagli |
-| O-7 | UI gorunum (yetkili, gercek tarayici) | alici kutulari devre disi + not; dashboard "Atanan sorumlu" = "—" | **ACIK** | yetkili hesap + tarayici gozlemi gerekir |
+| O-1 | staff -> 6 settings GET | 6/6 403 `OFFICE_F01_AUTHORIZATION_REQUIRED` | **PASS** | 6/6 403; kod `message` alanindan okundu, eslesti |
+| O-2 | staff -> `GET /api/office` | 403 | **PASS** | 403 |
+| O-3 | yetkili -> 6 settings GET | 6/6 200; escalation EXACT 9 (S2siz), poa-expiry EXACT 2; sirlar maskeli | **PASS** | 6/6 200; dort S2 alani YOK; 9 ve 2 anahtar; `smtpPass`/`smsApiKey`/`smsApiSecret` maskeli veya null |
+| O-4 | yetkili -> `/api/office` | `tckn` / `iban` / `uyapToken` YOK | **PASS** | 200; sizinti YOK |
+| O-4-LAWYER | yetkili -> `/api/lawyers/:id` | ayni | **PASS** | id yetkilinin kendi listesinden kesfedildi (tahmin YOK); 200, sizinti YOK |
+| O-5 | anonim -> 6 settings GET | 401 | **PASS** | 6/6 401; kontrol `/api/office` 401 |
+| O-6 | DB ayak izi (olculen kapsam) | oncesi = sonrasi | **PASS** | 5 tenant x 7 alan, **fark 0** (18:15:28Z → 18:22:06Z) |
+| O-7 | UI gorunum (yetkili, gercek tarayici) | alici kutulari devre disi + not; "Atanan sorumlu" = "—" | **PASS** | canli DOM: 3 grup x 4 checkbox, **12/12 `disabled=true`**; not 3/3; `Atanan sorumlu` = "—"; yazma YOK |
 | O-8 | UI Kaydet (PUT) | — | **NOT_EXECUTED** | tasarim geregi: AYRI production yazma onayi ister |
-| O-9 | `GET /api/client-notifications/overview` | hata yok; escAssignees sayisi ayni | **ACIK** | yetkili hesap gerekir; S2-turevi residual`i KAPATMAZ |
+| O-9 | `GET /api/client-notifications/overview` | hata yok; S2-turevi sayac | **PASS** | 200; `escAssignees` alani YOK (bkz. asagidaki olcut duzeltmesi) |
 | O-10 | eskalasyon motoru | — | **GOZLEM** | kabul degil; salt-okuma sayim teslimi kanitlamaz |
+
+**Kabul kosulu (O-1..O-7 + O-9 BIRLIKTE) SAGLANDI → zorunlu OFFICE kabul kumesi KAPANDI.**
+Kanit hashleri ve ayrinti: decision-log `OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01`.
+Olcum araci `Measure-OfficeO1toO9.ps1` sha256 `CB0FD506…`; kosum PASS=8 / FAIL=0 / NOT_EXECUTED=0, exit 0;
+yerel fixture dogrulamasi 27/27 `MEASURE_TOOL_FIXTURE_PASS`.
+
+**A-9 olcut duzeltmesi:** "escAssignees sayisi oncekiyle ayni" karsilastirmasi RELEASE20 icin UYGULANAMAZ —
+alan #2535 (`3ac49083`) ile HTTP okuma yuzeyinden KALDIRILDI ve o commit canlidadir. Uygulanan olculebilir
+hal: HTTP 200 **ve** alan YOK. Bu, S2-turevi residual`i tek basina KAPATMAZ.
+
+**F-B01-03:** kabul plani §4 kapanis onerisini O-1 / O-3 / O-6 kanitina baglar; ucu de PASS →
+`LIVE_OPEN → CLOSED` **onerilir**; nihai gecis owner ratifikasyonuna baglidir.
 
 **Canli artefakt dogrulamasi (mekanizma VAR; davranis kabulu DEGIL):** RELEASE20 dist`inde alti settings rotasi
 `OfficeF01AuthorizationGuard` ile bagli; `omitOfficeS2References` dort S2 alanini cikarir
