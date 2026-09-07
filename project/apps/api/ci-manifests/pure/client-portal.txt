@@ -308,6 +308,8 @@ src/modules/client-notification/__tests__/client-notification-dto-validation.spe
 src/modules/client-notification/__tests__/client-notification-provider-error-sanitization.spec.ts
 src/modules/client-notification/__tests__/client-notification-authorization-characterization.spec.ts
 src/modules/client-notification/__tests__/client-notification-authority-wiring.spec.ts
+src/modules/client-notification/__tests__/client-notification-overview-s2-omission.spec.ts
+src/modules/client-notification/client-notification-overview.spec.ts
 #
 #   CODEX-CLIENT-X3-B01 intake security invariant regression lock (SAF, DB-siz)
 #     256-bit raw token + sha256-only persistence; generic invalid response; link-derived

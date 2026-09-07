@@ -56,7 +56,6 @@ interface Overview {
       reminderDays: number | null;
       founderDays: number | null;
       channels: string[];
-      assignees: number;
       last24hSent: number;
       last24hFailed: number;
     };
@@ -418,7 +417,6 @@ export default function NotificationControlCenterPage() {
               <Row label="İlk hatırlatma" value={engines.escalation.reminderDays != null ? `${engines.escalation.reminderDays} gün` : '—'} />
               <Row label="Kurucu eskalasyonu" value={engines.escalation.founderDays != null ? `${engines.escalation.founderDays} gün` : '—'} />
               <Row label="Kanal" value={engines.escalation.channels.map((c) => CHANNEL_LABEL[c] || c).join(' + ') || '—'} />
-              <Row label="Atanan sorumlu" value={`${engines.escalation.assignees} kişi`} />
               <Row label="Son 24s" value={`${engines.escalation.last24hSent} bildirim / ${engines.escalation.last24hFailed} başarısız`} />
             </div>
             <Link href="/settings/office?section=escalation" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-indigo-700 hover:text-indigo-800">
