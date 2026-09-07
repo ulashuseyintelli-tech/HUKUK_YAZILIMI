@@ -100,6 +100,14 @@ düzeltmeden reaktive edebilir; (r2) pasif kayıt düzenlemesi geçersiz TCKN'yi
 - (c) 7 kaydın ID listesi owner isterse salt-okuma ile **ayrı** teslim edilir (repo'ya yazılmaz); düzeltme UI üzerinden, kişi başına.
 - Geri dönüş: (b) kod-only, PR revert; veri değişmediği için veri geri alma yok.
 
+> **KABUL KAYDI (2026-09-07, PR #2541):** aşağıdaki kabul ölçütlerinin **tamamı** canlı RELEASE20 sürümü
+> (`08ce8e2559b4d1d67fcee245413de510209507f3`, Web `BUILD_ID LW4jlJUOMHrvVEqakKB3i`) üzerinde kanıtlandı:
+> ürün davranışı 5/5, seed `fix-clients` 5/5, canlı `invalidActive = 0` (salt-okuma; sayımlar 2026-09-06 ile
+> birebir aynı → yedi kayıt değişmedi). Yazma gerektiren adımlar yalnız disposable PostgreSQL'deki sentetik
+> tenant'ta koşuldu; canlı DB'ye **0 yazma**. **OWN-10'un KABUL KAPSAMI kapandı; veri kalemi (yedi kaydın
+> kaynak belgeye dayalı kimlik düzeltmesi) AÇIK kalır.** Ayrıntı: `decision-log.md` →
+> `CLIENT-P7-OWN10-LIVE-ACCEPTANCE-R01`.
+
 **Kabul ölçütü:** birim/entegrasyon: değişen geçersiz `tckn` ile update → 400; değişmeyen legacy değerle update → geçer; geçersiz
 kimlikli pasif kaydı reaktive → 400; geçerli kimlik → izin; seed `fix-clients` davranışı aynı. Canlı: `invalidActive = 0` korunur
 (salt-okuma sayım). **Sınıf:** (a)(c) karar; (b) **İSTEĞE BAĞLI** (öneri: RELEASE20'ye dahil — küçük, davranış kırmaz).

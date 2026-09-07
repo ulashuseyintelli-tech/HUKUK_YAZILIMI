@@ -3743,7 +3743,8 @@ Ayrinti ve kanit: decision-log `RELEASE20-CUTOVER-APPLIED-R03`.
 
 | Kalem | Durum | Sorumlu hat | Siradaki kabul adimi |
 |---|---|---|---|
-| **OWN-10** — yedi pasif kimlik kaydi (gecersiz TCKN; hepsi PASIF, dosya bagi 0) | ACIK | CLIENT | Canli RELEASE20 uzerinde urun akisi dogrulamasi; veri duzeltmesi YOK karari korunur, Faz-4 korumasi yalniz degisen/reaktive kimlikte olculur |
+| **OWN-10** — yedi pasif kimlik kaydi (gecersiz TCKN; hepsi PASIF, dosya bagi 0) | **KABUL KAPSAMI KAPANDI / VERI KALEMI ACIK** | CLIENT | Canli RELEASE20 uzerinde urun akisi dogrulandi (2026-09-07, PR #2541): kabul olcutleri 5/5 + seed 5/5 + canli `invalidActive = 0`; canli DB yazmasi 0, yedi kayit DEGISMEDI. **Kalan is:** kimlik verisi ancak kaynak belgeye dayanarak, yetkili kullanici tarafindan urun akisi uzerinden tek tek duzeltilir — tahminle/turetmeyle TAMAMLANMAZ. |
+| **CLIENT-IDENTITY-REASONCODE-CONSISTENCY** — kimlik checksum reddinin hata sozlesmesi | ACIK | CLIENT | OWN-10 kabulunde OLCULDU (kusur DEGIL, olcut bunu istemiyor): `assertCreateIdentityChecksum` (create + DEGISEN deger yolu) duz metin 400 dondururken `assertReactivationIdentityChecksum` yapisal `{message, reasonCode: CLIENT_IDENTITY_CHECKSUM_INVALID, offendingFields}` donduruyor. Istemci iki redi stabil kodla ayirt edemiyor. Kucuk, geriye uyumlu birlestirme adayi; owner karari bekler. |
 | **OFFICE O-1..O-10** — islevsel canli kabul | **KISMI** — O-5 KAPALI; O-1/O-2/O-3/O-4/O-6/O-7/O-9 ACIK; O-8 NOT_EXECUTED; O-10 gozlem | OFFICE | Yetkili (ADMIN/PARTNER) ve staff hesaplariyla `Measure-OfficeO1toO9.ps1` kosumu + O-7 tarayici gozlemi; ayrinti asagida |
 | **F04** — canli yaris kabulu (posting/reversal serilestirme) | ACIK | CLIENT / COLLECTION | Canli RELEASE20'de yaris senaryosunun kabulu; disposable replay production kosumu gibi SUNULMAZ |
 
