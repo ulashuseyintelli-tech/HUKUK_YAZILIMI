@@ -14,7 +14,7 @@ KAYNAK COMMIT   : 6dd25b31d2e9879236eda1ed3d3ec7eb74745d41
 > durumu ve OWN-12 tamamlamasi icin sehven **kayit PR'i #2531** yazilmisti; dogrusu **kod PR'i
 > #2530**'dur (#2531 yalniz bu belgeyi ve kayitlari tasir).
 >
-> **ESZAMANLI YAZAR CAKISMASI (2026-09-07, PR #PENDING):** RELEASE20 aday paketi uretimi sirasinda
+> **ESZAMANLI YAZAR CAKISMASI (2026-09-07, PR #2537):** RELEASE20 aday paketi uretimi sirasinda
 > iki hat ayni dizinlere yazdi. Owner karariyla **tek uretici Office/C33**tur; CLIENT uretimi
 > DURDURULDU ve yeniden baslatilmayacak. Karisik uretimde olusan ara makbuzlar **gecerli yayin
 > kaniti degildir**. Cakisma bulgulari, devredilen supersede duzeltmesi ve hala tutarsiz kalan
