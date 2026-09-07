@@ -17,8 +17,9 @@
  * (`f04-acc-<runId>`). Commit basarili olup durum dosyasi YAZILAMAZSA, betik kurtarma
  * talimatini basar ve SIFIRDAN FARKLI cikis kodu dondurur — sessizce basarili SAYILMAZ.
  *
- * SIR YONETIMI: parola durum dosyasina ASLA yazilmaz. `F04_LOGIN_PASSWORD` verilmisse o
- * kullanilir; verilmemisse uretilir ve YALNIZ BIR KEZ stdout'a basilir.
+ * SIR YONETIMI: parola durum dosyasina ASLA yazilmaz ve CIKTIYA ASLA BASILMAZ.
+ * `F04_LOGIN_PASSWORD` ZORUNLUDUR; tek yurutucu (`f04-run.js`) onu bellekte uretip alt
+ * surecin ortamina gecirir, boylece deger hicbir yere yazilmaz.
  *
  * GERI ALINABILIRLIK: varsayilan 11 satirin hepsi silinebilir. `IcrabotTimelineEntry` ise
  * veritabani seviyesinde SILINEMEZ ("immutable_violation: DELETE ... is forbidden. Legal facts
@@ -52,9 +53,9 @@ const ABORT_AFTER = process.env.F04_ABORT_AFTER || null;
   const slug = `${L.TENANT_PREFIX}${runId}`;
   L.assertOwnSlug(slug); // G-1
 
-  const generatedPassword = !process.env.F04_LOGIN_PASSWORD;
-  const loginPassword = process.env.F04_LOGIN_PASSWORD
-    || `F04-${crypto.randomBytes(12).toString('base64url')}!aB9`;
+  // SIR: parola CIKTIYA BASILMAZ ve durum dosyasina YAZILMAZ. Yalniz ortam degiskeninden
+  // alinir (tek yurutucu `f04-run.js` onu bellekte uretip alt surece gecirir).
+  const loginPassword = L.requireLoginPassword();
 
   try {
     // ── G-3 + izolasyon baseline (transaction DISINDA, yazmadan ONCE) ──
@@ -235,14 +236,6 @@ const ABORT_AFTER = process.env.F04_ABORT_AFTER || null;
       writtenRows: written,
       writtenRowCount: written.length,
     };
-
-    if (generatedPassword) {
-      L.log('');
-      L.log('  ============================================================');
-      L.log('  PAROLA (BIR KEZ gosterilir; durum dosyasina YAZILMAZ):');
-      L.log(`    export F04_LOGIN_PASSWORD='${loginPassword}'`);
-      L.log('  ============================================================');
-    }
 
     try {
       L.saveState(state);

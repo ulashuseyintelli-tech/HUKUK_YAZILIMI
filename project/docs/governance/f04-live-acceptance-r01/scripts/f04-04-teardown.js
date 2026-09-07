@@ -47,16 +47,21 @@ const DESTRUCTIVE = new Set(['purge', 'reverse']);
       );
     }
 
-    const inv = {
-      collection: await prisma.collection.count({ where: T }),
-      disposition: await prisma.collectionDisposition.count({ where: T }),
-      journal: await prisma.accountingJournalEntry.count({ where: T }),
-      expenseApplication: await prisma.collectionDispositionExpenseApplication.count({ where: T }),
-      audit: await prisma.auditLog.count({ where: T }),
-      client: await prisma.client.count({ where: T }),
-      case: await prisma.case.count({ where: T }),
-      user: await prisma.user.count({ where: T }),
-    };
+    // Envanter yalniz RAPOR icindir; olculemezse bu hesabin KAPATILMASINI ENGELLEMEZ.
+    const inv = {};
+    const invErrors = [];
+    for (const [k, model, where] of [
+      ['collection', 'collection', T], ['disposition', 'collectionDisposition', T],
+      ['journal', 'accountingJournalEntry', T],
+      ['expenseApplication', 'collectionDispositionExpenseApplication', T],
+      ['audit', 'auditLog', T], ['client', 'client', T], ['case', 'case', T], ['user', 'user', T],
+    ]) {
+      try { inv[k] = await prisma[model].count({ where }); }
+      catch (e) { inv[k] = 'SAYILAMADI'; invErrors.push(`${k}: ${String((e && e.message) || e).slice(0, 120)}`); }
+    }
+    if (invErrors.length) {
+      L.log(`      UYARI: envanter kismen olculemedi (${invErrors.length} model) — dispozisyon YINE DE yurutulur`);
+    }
 
     L.step('T', `dispozisyon modu: ${MODE.toUpperCase()} · ortam: ${ENVIRONMENT.toUpperCase()} · tenant ${st.slug}`);
     L.log(`      envanter: ${JSON.stringify(inv)}`);
@@ -92,28 +97,38 @@ const DESTRUCTIVE = new Set(['purge', 'reverse']);
         return b && u.tokenVersion > b.tokenVersion;
       }).length;
 
-      // Kanit korunmus mu? (finansal/audit sayimlari DEGISMEMELI)
-      const post = {
-        collection: await prisma.collection.count({ where: T }),
-        disposition: await prisma.collectionDisposition.count({ where: T }),
-        journal: await prisma.accountingJournalEntry.count({ where: T }),
-        expenseApplication: await prisma.collectionDispositionExpenseApplication.count({ where: T }),
-        audit: await prisma.auditLog.count({ where: T }),
-      };
-      const preserved = ['collection', 'disposition', 'journal', 'expenseApplication', 'audit']
-        .every((k) => post[k] === inv[k]);
+      // Kanit korunmus mu? Olculemeyen kalem "korundu" SAYILMAZ; sonuc DOGRULANAMADI olur.
+      const post = {}; const postErrors = [];
+      for (const [k, model] of [
+        ['collection', 'collection'], ['disposition', 'collectionDisposition'],
+        ['journal', 'accountingJournalEntry'],
+        ['expenseApplication', 'collectionDispositionExpenseApplication'], ['audit', 'auditLog'],
+      ]) {
+        try { post[k] = await prisma[model].count({ where: T }); }
+        catch (e) { post[k] = 'SAYILAMADI'; postErrors.push(k); }
+      }
+      const comparable = Object.keys(post).filter((k) => post[k] !== 'SAYILAMADI' && inv[k] !== 'SAYILAMADI');
+      const changed = comparable.filter((k) => post[k] !== inv[k]);
+      const notComparable = Object.keys(post).filter((k) => !comparable.includes(k));
+      const preserved = changed.length === 0 && notComparable.length === 0;
+
+      const closed = stillActive === 0;
+      let verdict;
+      if (closed && preserved) verdict = 'ERISIM SONLANDIRILDI - finansal/audit kanit KORUNDU';
+      else if (!closed) verdict = 'EKSIK - erisim TAM KAPANMADI';
+      else if (changed.length) verdict = 'EKSIK - kanit DEGISTI: ' + changed.join(', ');
+      else verdict = 'EKSIK - kapanis DOGRULANAMADI (olculemeyen kalem: ' + notComparable.join(', ') + ')';
 
       L.log(`      devre disi birakilan kullanici: ${res} · hala aktif: ${stillActive} · tokenVersion artan: ${bumped}`);
-      L.log(`      finansal/audit kanit korundu: ${preserved}`);
+      L.log(`      kanit korundu: ${preserved}${notComparable.length ? ` (olculemeyen: ${notComparable.join(', ')})` : ''}`);
       console.log(JSON.stringify({
         record: 'F04-LIVE-TEARDOWN', mode: 'revoke-access', environment: ENVIRONMENT,
         usersDeactivated: res, stillActive, tokenVersionBumped: bumped,
-        evidencePreserved: preserved, financialAuditCounts: post,
-        verdict: (stillActive === 0 && preserved)
-          ? 'ERISIM SONLANDIRILDI — finansal/audit kanit KORUNDU'
-          : 'EKSIK — erisim tam kapanmadi veya kanit degisti',
+        accessClosed: closed, evidencePreserved: preserved,
+        evidenceNotMeasurable: notComparable, evidenceChanged: changed,
+        financialAuditCounts: post, verdict,
       }, null, 1));
-      if (!(stillActive === 0 && preserved)) process.exitCode = 2;
+      if (!(closed && preserved)) process.exitCode = 2;
       return;
     }
 

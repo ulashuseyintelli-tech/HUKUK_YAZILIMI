@@ -202,6 +202,88 @@ function run(script, env, extra = {}) {
     }
 
     // ── temizlik: negatif kontrol tenant'i ──
+    // ── NC-8: BELIRSIZ HTTP sonucu → tamamlanma kaniti yoksa BELIRSIZ kalir, POST TEKRARLANMAZ ──
+    console.log('\n[NC-8] belirsiz HTTP sonucu (istemci timeout 1 ms)');
+    const nc8State = freshTenant('nc8');
+    const r8 = run('f04-02-a2-race.js', {
+      F04_STATE_FILE: nc8State, F04_LOGIN_PASSWORD: password,
+      // Istek sunucuya ULASIP kilitte beklesin, sonra istemci tarafi abort etsin:
+      // kilit butcesinden KISA ama baglanti kurulacak kadar UZUN.
+      // Kilit ~3.1 s tutulur; istemci 800 ms'de abort eder. Boylece istek SUNUCUYA ULASIR,
+      // kilitte BEKLER ve istemci tarafi kesilir -> sunucu islemi DEVAM EDER (belirsiz sonuc).
+      F04_POSTING_TIMEOUT_MS: '800',
+      F04_LOCK_BUDGET_MS: '3500', F04_MIN_HOLD_AFTER_OBSERVE_MS: '3000',
+    });
+    const noResend = /tekrar gonderim=YOK/.test(r8.out) || /TEKRAR GONDERILMEDI/.test(r8.out);
+    const noFalseNegative8 = !/GERCEKLESMEDI/.test(r8.out);
+    const indeterminateHandled = /BELIRSIZ/.test(r8.out);
+    rec('NC-8', 'belirsiz sonuc BELIRSIZ birakilir; POST TEKRARLANMAZ',
+      'BELIRSIZ isaretlenir + tekrar gonderim YOK + "gerceklesmedi" iddiasi YOK',
+      `exit=${r8.code} · belirsizIsaretlendi=${indeterminateHandled} · tekrarYok=${noResend}`
+      + ` · yanlisGerceklesmediIddiasi=${!noFalseNegative8}`,
+      indeterminateHandled && noResend && noFalseNegative8);
+
+    // ── NC-9: A2 basarisiz olsa da erisim `finally` ile KAPANIR (tek yurutucu) ──
+    console.log('\n[NC-9] tek yurutucu: A2 basarisiz olsa da erisim kapanir');
+    const nc9State = path.join(stateDir, 'nc-nc9-state.json');
+    if (fs.existsSync(nc9State)) fs.unlinkSync(nc9State);
+    const r9 = run('f04-run.js', {
+      F04_STATE_FILE: nc9State, F04_LOGIN_PASSWORD: password, F04_LOCK_BUDGET_MS: '1',
+    });
+    if (fs.existsSync(nc9State)) {
+      const s9 = JSON.parse(fs.readFileSync(nc9State, 'utf8'));
+      created.push(nc9State);
+      const t9 = await prisma.tenant.findFirst({ where: { slug: s9.slug }, select: { id: true } });
+      const active9 = t9 ? await prisma.user.count({ where: { tenantId: t9.id, isActive: true } }) : -1;
+      const journals9 = t9 ? await prisma.accountingJournalEntry.count({ where: { tenantId: t9.id } }) : -1;
+      rec('NC-9', 'A2 basarisiz olsa da erisim `finally` ile KAPANIR',
+        'kosum nonzero + aktif kullanici 0 + finansal kanit yerinde',
+        `exit=${r9.code} · aktifKullanici=${active9} · journal=${journals9}`,
+        r9.code !== 0 && active9 === 0);
+    } else {
+      rec('NC-9', 'A2 basarisiz olsa da erisim `finally` ile KAPANIR',
+        'durum dosyasi olusur ve hesap kapanir', `exit=${r9.code} · durum dosyasi YOK`, false);
+    }
+
+    // ── NC-10: durum dosyasi kaybolsa bile runId ile kurtarilip hesap KAPATILIR ──
+    console.log('\n[NC-10] durum dosyasi silindi -> runId ile kurtarma + kapatma');
+    const nc10State = freshTenant('nc10');
+    const s10 = JSON.parse(fs.readFileSync(nc10State, 'utf8'));
+    fs.unlinkSync(nc10State); // durum dosyasi KAYBOLDU
+    const rec10 = run('f04-00-recover-state.js', { F04_STATE_FILE: nc10State, F04_RUN_ID: s10.runId }).code;
+    const rev10 = run('f04-04-teardown.js', {
+      F04_STATE_FILE: nc10State, F04_LOGIN_PASSWORD: password, F04_TEARDOWN_MODE: 'revoke-access',
+    }).code;
+    const t10 = await prisma.tenant.findFirst({ where: { slug: s10.slug }, select: { id: true } });
+    const active10 = t10 ? await prisma.user.count({ where: { tenantId: t10.id, isActive: true } }) : -1;
+    rec('NC-10', 'durum dosyasi kaybolsa da runId ile kurtarilip hesap KAPATILIR',
+      'kurtarma exit 0 + revoke exit 0 + aktif kullanici 0',
+      `kurtarma=${rec10} · revoke=${rev10} · aktifKullanici=${active10} · runId=${s10.runId}`,
+      rec10 === 0 && rev10 === 0 && active10 === 0);
+
+    // ── NC-11: envanter olculemese bile hesap KAPATILIR; kapanis dogrulanamazsa EKSIK ──
+    console.log('\n[NC-11] envanter olcum hatasi -> kapatma engellenmez, eksik raporlanir');
+    const nc11State = freshTenant('nc11');
+    const s11 = JSON.parse(fs.readFileSync(nc11State, 'utf8'));
+    let renamed11 = false;
+    let r11 = null;
+    try {
+      await prisma.$executeRawUnsafe('ALTER TABLE "AuditLog" RENAME TO "AuditLog_nc11"');
+      renamed11 = true;
+      r11 = run('f04-04-teardown.js', {
+        F04_STATE_FILE: nc11State, F04_LOGIN_PASSWORD: password, F04_TEARDOWN_MODE: 'revoke-access',
+      });
+    } finally {
+      if (renamed11) await prisma.$executeRawUnsafe('ALTER TABLE "AuditLog_nc11" RENAME TO "AuditLog"');
+    }
+    const t11 = await prisma.tenant.findFirst({ where: { slug: s11.slug }, select: { id: true } });
+    const active11 = t11 ? await prisma.user.count({ where: { tenantId: t11.id, isActive: true } }) : -1;
+    const reportedIncomplete = !!(r11 && /DOGRULANAMADI|EKSIK/.test(r11.out));
+    rec('NC-11', 'envanter olculemese de hesap KAPATILIR, kapanis EKSIK raporlanir',
+      'aktif kullanici 0 + "DOGRULANAMADI/EKSIK" ibaresi + nonzero cikis',
+      `exit=${r11 && r11.code} · aktifKullanici=${active11} · eksikRaporlandi=${reportedIncomplete}`,
+      active11 === 0 && reportedIncomplete && !!r11 && r11.code !== 0);
+
     console.log('\n[TEMIZLIK] taban tenant purge ediliyor');
     for (const f of created) {
       const rc = run('f04-04-teardown.js', purgeEnv(f));
