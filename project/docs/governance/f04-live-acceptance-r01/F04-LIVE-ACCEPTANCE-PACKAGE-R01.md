@@ -99,7 +99,7 @@ davranış (posting) her koşulda gerçek HTTP üzerindendir.**
 | Gerçek tenant'a bağlantı | **YOK** — yeni tenant; G-1/G-2 kapıları yasak slug'ları fail-closed reddeder |
 | Dış bildirim | **YOK** — `DispositionPostingService` bağımlılıkları prisma/officeApproval/readService/financeRisk/approvalIntentBuilder/journalWriter; dosyada `notification|email|sms` çağrısı **0**. V-9 ayrıca ölçer ve **sayılamazsa FAIL eder** |
 | Gerçek alıcıya ulaşma | Aktör e-postası `*.invalid` — teslim edilemez |
-| Canlı posting yolunu bloke etme | Kilit yalnız paketin kendi satırında; ortak bütçe ≤4 s; hata/timeout'ta ROLLBACK |
+| Canlı posting yolunu bloke etme | Kilit yalnız paketin kendi satırında; hata/timeout'ta ROLLBACK. **Süre üst sınırı kodla ≤4 s'ye ZORLANMIYOR** — bkz. §11 Bilinen kusur A |
 | Ortak/çapraz rapor | Sentetik tenant global toplamlara katılır; `f04-acc-` prefix'i ile filtrelenebilir. Tenant-scoped olmayan rapor tespit edilmedi |
 | Muhasebe defterine kalıcı satır | **Gerçekleşir** (2 journal + 4 satır). Bilinçli maliyet; dispozisyon §7 |
 
@@ -113,7 +113,7 @@ gönderilir → `pg_blocking_pids` ile posting'in beklediği kanıtlanır → ki
 doğrulanır.
 
 ### 4.2 Ortak süre bütçesi
-`F04_LOCK_BUDGET_MS` — varsayılan **3500 ms**, tavan **4000 ms**. Bütçe **kilidin alındığı anda
+`F04_LOCK_BUDGET_MS` — varsayılan **3500 ms**, tavan **4000 ms**. **Bu bir üst sınır garantisi DEĞİLDİR; ölçülen katmanlar §11'de.** Bütçe **kilidin alındığı anda
 başlar** ve gözlem + tutmayı birlikte kapsar; tek bir gözlem sorgusu bile bütçeyle yarıştırılır.
 Bütçe dolarsa transaction kapanır (kilit bırakılır) ve adım FAIL eder.
 
@@ -239,9 +239,54 @@ node f04-run.js
 ```
 
 **Onaylanması istenen tam yazma kapsamı:** tek bir `f04-acc-<runId>` tenant'ında **11 kurulum satırı
-+ 8 posting satırı + 1 kullanıcı satırında 2 alan güncellemesi**; kilit **≤4 saniye**; dış bildirim
++ 8 posting satırı + 1 kullanıcı satırında 2 alan güncellemesi** (`revoke-access`: `isActive`, `tokenVersion`); kilit süresi için **§11 Bilinen kusur A** geçerlidir — kodla zorlanan bir ≤4 s garantisi YOKTUR; dış bildirim
 yok; gerçek tenant'a dokunulmaz; geri alınamaz kayıt üretilmez.
 
 **Kabul kapsamı: "posting'in kilit beklemesi ve finansal sonucu."** Bu koşum başarılı olsa bile
 **bütün F04 yarış kabulü kapanmaz** — kalan yedi senaryo canlıda kurulamaz (§5). KABUL-5 (§2 sınır
 adımı, +11 satırlık ikinci tenant) ve A2-EXT (`reverse`) **ayrıca** onaylanmalıdır.
+
+---
+
+## 11. Bilinen kusurlar — gelecekteki kullanım öncesi düzeltilecek
+
+> Owner tespiti (2026-09-07) ve `OFFİCE 33 - F04` oturumunun genişletmesi; **her ikisi de kaynakta**
+> **doğrulandı**. Bu kusurlar #2549'da kaydedilen koşumu (runId `ccd471d3`, paket `060e1e37`,
+> canlı RELEASE20 `08ce8e25`, squash `05f67a28`) **geçersiz kılmaz** — o koşumda kilit 750 ms
+> ölçüldü ve hesap kapatıldı. Kusurlar paketin **gelecekteki** kullanımını ilgilendirir.
+
+### Kusur A — kilit süresi kodla ≤4 s'ye zorlanmıyor
+
+Belgede daha önce "kilit ≤4 saniye" yazıyordu; bu **bütçe tavanına** (`LOCK_BUDGET_MS` max 4000)
+aitti, kodun zorladığı sınıra değil. Gerçekte üç ayrı katman var:
+
+| Katman | Değer (varsayılan) | Kaynak |
+|---|---|---|
+| `assertWithinBudget` — yalnız **transaction içi** adımlar | 3500 ms | `f04-02-a2-race.js` |
+| `A2-BUDGET` FAIL eşiği | `LOCK_BUDGET_MS + DB_GUARD_SLACK_MS` = **5000 ms** | `f04-02-a2-race.js:185` |
+| Prisma `$transaction` dış sınırı | `LOCK_BUDGET_MS + DB_GUARD_SLACK_MS + 5000` = **10000 ms** | `f04-02-a2-race.js:164` |
+| `statement_timeout` / `idle_in_transaction_session_timeout` | 5000 ms | `f04-02-a2-race.js:112-114` |
+
+Sonuç: **4000–5000 ms arası tutulan kilit hiçbir kontrolü düşürmez**; 5000 ms üstünde `A2-BUDGET`
+FAIL verir ama kilit o süreyi **zaten tutmuş** olur. Ayrıca `assertWithinBudget` kilidin
+bırakılma (commit/rollback) kuyruğunu kapsamaz.
+
+**Düzeltme yönü:** garanti metni ile assertion eşiği aynı sayıdan türemeli; dış sınır (Prisma tx
+timeout) bütçeyi aşmayacak şekilde bağlanmalı.
+
+### Kusur B — yürütücü commit sonrası hatada hesabı açık bırakabilir
+
+`f04-run.js:82` yalnız `setupCode === 0 || setupCode === 4` durumunda kapatma yapıyor; diğer her
+çıkış "kurulum commit edilmedi" sayılıyor. Ancak `f04-01-setup.js`'te satır 222'deki
+`if (written.length !== EXPECTED) throw`, `$transaction` (satır 104) **commit ettikten sonra**
+çalışır ve **exit 1** üretir. Yani tetikleyici yalnız SIGKILL/timeout (124) değil — **commit
+sonrası herhangi bir hata** aynı fail-open'a düşer ve sentetik hesap **açık kalır**.
+
+**Düzeltme yönü:** çıkış kodu beyaz listesi yerine, **durum dosyası veya `runId` ile tenant
+bulunabiliyorsa her çıkış kodunda kapatma denenmeli** (bilinmeyen çıkış "yapılmadı" sayılmaz).
+
+### Kayıt düzeltmesi
+
+`revoke-access` sırasındaki **kullanıcı satırı güncellemesi** (`isActive`, `tokenVersion`) erişim
+kapanışı kanıtı olarak kayıtlıydı ama **yazma envanterinde ayrı kalem sayılmamıştı**; §1.1 ve §10
+bu revizyonda düzeltildi.
