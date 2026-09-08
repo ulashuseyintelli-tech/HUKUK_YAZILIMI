@@ -77,58 +77,25 @@ const DESTRUCTIVE = new Set(['purge', 'reverse']);
 
     if (MODE === 'revoke-access') {
       L.step('T-1', 'sentetik hesabin ERISIMI sonlandiriliyor (finansal/audit kanit KORUNUR)');
-      const before = await prisma.user.findMany({
-        where: T, select: { id: true, isActive: true, tokenVersion: true },
-      });
-      // Yalniz bu tenant'in kullanicilari; tenant kapsamli updateMany.
-      const res = await prisma.$transaction(async (tx) => {
-        const r = await tx.user.updateMany({
-          where: { tenantId: st.tenantId, isActive: true },
-          data: { isActive: false, tokenVersion: { increment: 1 } },
-        });
-        return r.count;
-      });
-      const after = await prisma.user.findMany({
-        where: T, select: { id: true, isActive: true, tokenVersion: true },
-      });
-      const stillActive = after.filter((u) => u.isActive).length;
-      const bumped = after.filter((u) => {
-        const b = before.find((x) => x.id === u.id);
-        return b && u.tokenVersion > b.tokenVersion;
-      }).length;
+      // Kapatma mantigi TEK KAYNAKTA (`f04-lib.revokeTenantAccess`); `f04-09-close-access.js`
+      // de AYNISINI kullanir. Kopya yazilsaydi biri duzeltilip digeri bayat kalirdi.
+      const r = await L.revokeTenantAccess(prisma, st.tenantId);
 
-      // Kanit korunmus mu? Olculemeyen kalem "korundu" SAYILMAZ; sonuc DOGRULANAMADI olur.
-      const post = {}; const postErrors = [];
-      for (const [k, model] of [
-        ['collection', 'collection'], ['disposition', 'collectionDisposition'],
-        ['journal', 'accountingJournalEntry'],
-        ['expenseApplication', 'collectionDispositionExpenseApplication'], ['audit', 'auditLog'],
-      ]) {
-        try { post[k] = await prisma[model].count({ where: T }); }
-        catch (e) { post[k] = 'SAYILAMADI'; postErrors.push(k); }
-      }
-      const comparable = Object.keys(post).filter((k) => post[k] !== 'SAYILAMADI' && inv[k] !== 'SAYILAMADI');
-      const changed = comparable.filter((k) => post[k] !== inv[k]);
-      const notComparable = Object.keys(post).filter((k) => !comparable.includes(k));
-      const preserved = changed.length === 0 && notComparable.length === 0;
-
-      const closed = stillActive === 0;
-      let verdict;
-      if (closed && preserved) verdict = 'ERISIM SONLANDIRILDI - finansal/audit kanit KORUNDU';
-      else if (!closed) verdict = 'EKSIK - erisim TAM KAPANMADI';
-      else if (changed.length) verdict = 'EKSIK - kanit DEGISTI: ' + changed.join(', ');
-      else verdict = 'EKSIK - kapanis DOGRULANAMADI (olculemeyen kalem: ' + notComparable.join(', ') + ')';
-
-      L.log(`      devre disi birakilan kullanici: ${res} · hala aktif: ${stillActive} · tokenVersion artan: ${bumped}`);
-      L.log(`      kanit korundu: ${preserved}${notComparable.length ? ` (olculemeyen: ${notComparable.join(', ')})` : ''}`);
+      L.log(`      devre disi birakilan kullanici: ${r.deactivated} · hala aktif: ${r.stillActive}`
+        + ` · tokenVersion artan: ${r.tokenVersionBumped}`
+        + (r.alreadyClosed ? ' · (ZATEN KAPALIYDI — tekrar guvenli)' : ''));
+      L.log(`      kanit korundu: ${r.evidencePreserved}`
+        + (r.evidenceNotMeasurable.length ? ` (olculemeyen: ${r.evidenceNotMeasurable.join(', ')})` : ''));
       console.log(JSON.stringify({
         record: 'F04-LIVE-TEARDOWN', mode: 'revoke-access', environment: ENVIRONMENT,
-        usersDeactivated: res, stillActive, tokenVersionBumped: bumped,
-        accessClosed: closed, evidencePreserved: preserved,
-        evidenceNotMeasurable: notComparable, evidenceChanged: changed,
-        financialAuditCounts: post, verdict,
+        usersDeactivated: r.deactivated, stillActive: r.stillActive,
+        tokenVersionBumped: r.tokenVersionBumped, alreadyClosed: r.alreadyClosed,
+        accessClosed: r.accessClosed, evidencePreserved: r.evidencePreserved,
+        evidenceNotMeasurable: r.evidenceNotMeasurable, evidenceChanged: r.evidenceChanged,
+        financialAuditCounts: r.financialAuditCounts, verdict: r.verdict,
+        inventoryBefore: inv,
       }, null, 1));
-      if (!(closed && preserved)) process.exitCode = 2;
+      if (!(r.accessClosed && r.evidencePreserved)) process.exitCode = 2;
       return;
     }
 
