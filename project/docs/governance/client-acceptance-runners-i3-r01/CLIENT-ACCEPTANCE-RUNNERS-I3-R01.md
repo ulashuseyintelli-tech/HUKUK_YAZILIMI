@@ -3,10 +3,12 @@
 **İş:** R02 ana planındaki **İ3** — kabul düzeneklerinin hazırlanması (YEREL/DISPOSABLE)
 **Durum:** **KESİN KAPSAM TAMAM** — H2/H4/H5'in **24 hizmet ölçütünün tamamı** koşuldu ve PASS.
 H7'nin 6 ölçütü **koşullu** kapsamdadır (İ4 kararı → İ16) ve koşulmadı.
-**Türetildiği main:** `f647d0ba`
+**Türetildiği main:** `105e31a7`
 **Prova — iki sağlayıcı senaryosu:**
 - **A (`smtp`, onaylı):** `PASS 34 · FAIL 0 · ÖLÇÜLEMEYEN 6` (40 koşum satırı)
-- **B (`mock`, allowlist DIŞI):** `PASS 30 · FAIL 0 · ÖLÇÜLEMEYEN 10` — H4-08'in ret dalı burada ölçüldü
+- **B (`mock`, allowlist DIŞI):** `PASS 30 · FAIL 0` — H4-08'in ret dalı; **gerçek `dispatcher.send` 0→0**
+- **C (`mock --bypass-allowlist`, NEGATİF PROVA):** H4-08N `PASS` — allowlist kaldırılınca **gerçek send 0→1**, **SMTP bağlantısı 1→1**
+- **D (eksik yapılandırma, NEGATİF PROVA):** ön koşul reddetti, **gönderim çağrısı 0**
 - **Düzeneğin kendi negatif kontrolleri:** `PASS 8 · FAIL 0` — dördü **mutasyon kanıtlı**
 
 > **Sayım notu.** 40 koşum satırı 24 hizmet ölçütüne karşılık gelir: bazı ölçütler birden çok
@@ -95,7 +97,8 @@ vardır ve her biri farklı aktörle kanıtlanır.
 | H4-07a | İçerik onayı: **four-eyes** — ofis onaylayıcısı `FOUR_EYES`, talep eden `SELF_APPROVAL` ile RED | **PASS** |
 | H4-07c | **2. kapı** — saklanan `notificationContentHash` bozulur → **TAM** `DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH`; `snapshotHash` ve ofis onayı korunur | **PASS** |
 | H4-07b | **5. kapı** — `OfficeApprovalRequest.savedIntent.snapshotHash` bozulur → **2. kapı GEÇİLİR** ve **TAM** `DISCLOSURE_APPROVAL_STALE_SNAPSHOT`; onay damgaları korunur | **PASS** |
-| H4-08 | **A:** onaylı sağlayıcı (`smtp`) ile yayın ilerler · **B:** allowlist dışı (`mock`) → `403 PROVIDER_NOT_PRODUCTION`, `PUBLISHED` olmaz, `providerMessageId=null`, **sağlayıcıya çağrı yok** (yakalayıcı `0→0`) | **PASS** |
+| H4-08 | **A:** onaylı (`smtp`) → yayın ilerler, gerçek send `0→1` · **B:** allowlist dışı (`mock`) → `403 PROVIDER_NOT_PRODUCTION`, `PUBLISHED` olmaz, kabul damgaları `null`, **gerçek `dispatcher.send` `0→0`** | **PASS** |
+| H4-08N | **NEGATİF PROVA:** allowlist etkisizleştirilince gerçek send **`0→1`** (kabul kırılır), SMTP bağlantısı **`1→1`** | **PASS** |
 
 **Ön koşul ürünün KENDİ yolundan kuruldu.** `Collection → CollectionDisposition
 (DISTRIBUTION_APPROVED) → POST /collection-dispositions/:id/post → POSTED → POST
@@ -222,14 +225,46 @@ Enjeksiyon geri alınamazsa **bağımlı senaryolar çalıştırılmaz** (erişi
 Ölçülen (A koşumu): `ön koşul=OK (sağlayıcı='smtp', hedef=127.0.0.1:2526, LAN erişimi YOK)
 · sonda HTTP 201 · dispatcher çağrısı 2→3 · mesaj 0→1 · SONDA YAKALANDI=true`.
 
-## 5.3 "Mesaj yok" ≠ "dispatcher çağrılmadı"
+## 5.3 Üç ayrı ölçüm — hiçbiri diğerinin yerine geçmez
 
-İki ayrı sayaç: `count()` teslim edilen gövdeleri, `dispatcherCalls()` **açılan TCP
-oturumlarını** sayar. `EmailProviderService.sendViaSmtp` çağrılırsa bağlantı açılır; hiç
-çağrılmadıysa açılmaz — gerçek çağrı noktasının yerel ölçümü budur.
+| Ölçüm | Ne sayar | Kaynak |
+|---|---|---|
+| `count()` | Teslim edilen `.eml` gövdeleri | yakalayıcı |
+| `smtpConnections()` | **Açılan TCP oturumu** | yakalayıcı (`conn-*`) |
+| `dispatcherSendCalls()` | **Gerçek `dispatcher.send` çağrısı** | `i3-spy.js`, `publication.service.ts:213` |
 
-Ölçülen (B koşumu, `mock`): `[a] teslim mesajı 0→0 (yok) · [b] DISPATCHER ÇAĞRISI 1→1
-(çağrılmadı)`. İkisi de ölçülmeden PASS üretilmez.
+**SMTP bağlantısı "dispatcher çağrıldı" DEMEK DEĞİLDİR:** bir dispatcher (ör. mock) çağrılıp
+hiç TCP açmayabilir. Bu yüzden asıl iddia `dispatcherSendCalls()`'tur; **okunamazsa `null`
+döner ve sıfır KABUL EDİLMEZ** (ölçüt UNMEASURED).
+
+**Karşı örnek (C koşumu):** allowlist etkisizleştirilince `mock` dispatcher **çağrıldı**
+(`gerçek send 0→1`) ama **SMTP bağlantısı açılmadı** (`1→1`). İki ölçümün ayrı şeyler olduğu
+böylece gösterildi.
+
+### Spy — ürün kodu değiştirilmez
+
+`i3-spy.js` `node --require` ile yüklenir ve derlenmiş `dist` sınıflarının (`...EmailDispatcher`,
+`Unconfigured...Dispatcher`) `send` metotlarını **çalışma zamanında** sarmalar; davranışı
+değiştirmez, yalnız sayar. Repodaki hiçbir ürün dosyası değişmez ve sarmalama **yalnız izole
+prova sürecinin belleğinde** yaşar. `--bypass-allowlist` bayrağı §35.10 allowlist kontrolünü
+etkisizleştirir — **yalnız negatif prova için**.
+
+## 5.4 Yapılandırmanın tek kaynağı
+
+API'yi bir komutla, ön kontrolü ayrı `I3_API_*` beyanıyla beslemek **iki ayrı kaynak**tı; ikisi
+sessizce ayrışabilirdi. Artık `i3-start-api.js` API'yi başlatır **ve** kullandığı etkin ayarları
+`i3-api-config.json`'a yazar; `i3-run.js` **yalnız o dosyayı** okur, ayrı beyan kabul etmez.
+
+- **Eksik alan varsayılanla TAMAMLANMAZ** — `smtpHost` silindiğinde ön koşul reddeder.
+- **İsteklerin bu örneğe gittiği** doğrulanır: kayıtlı `pid`, API portunun gerçek dinleyicisi mi?
+- Yapılandırma dosyası **sır değeri içermez** (`secretsInConfig: false`).
+
+Ölçülen (A): `ön koşul=OK (ETKİN sağlayıcı='smtp', hedef=127.0.0.1:2526, API örneği pid=72336
+DOĞRULANDI, LAN erişimi YOK) · sonda HTTP 201 · SMTP bağlantısı 2→3 · mesaj 0→1`.
+
+**8.3 kısa ad tuzağı:** ürünün `assertNoReparse` koruması kısa ad (`ULASTE~1`) ile uzun adı
+"yol yeniden yönlendiriliyor" sayıp reddeder. Başlatıcı çalışma dizinini `realpath` ile
+çözer ve kısa ad kalırsa **fail-closed durur**.
 
 ## 6. Negatif kontroller
 

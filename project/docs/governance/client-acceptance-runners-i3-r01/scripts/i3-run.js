@@ -25,8 +25,28 @@ const os = require('os');
 const { spawn } = require('child_process');
 const L = require('./i3-lib');
 
-const SINK_PORT = Number(process.env.I3_SMTP_PORT || 2526);
-const CAPTURE = process.env.I3_SMTP_CAPTURE || path.join(process.cwd(), 'i3-smtp-capture');
+/**
+ * YAPILANDIRMA TEK KAYNAK: `i3-start-api.js` API'yi başlatırken ETKİN ayarları bu dosyaya
+ * yazar. Çalıştırıcı ayrı `I3_API_*` beyanı KABUL ETMEZ — iki kaynak sessizce ayrışabilir ve
+ * "etkin ayar" iddiası dayanaksız kalırdı. Dosya yoksa gönderim ölçütleri ÖLÇÜLEMEDİ olur.
+ */
+const CONFIG_FILE = process.env.I3_API_CONFIG || path.join(process.cwd(), 'i3-api-config.json');
+function loadApiConfig() {
+  try {
+    const c = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    // Eksik alan VARSAYILANLA TAMAMLANMAZ — eksikse yapilandirma GECERSIZDIR.
+    const need = ['emailProvider', 'smtpHost', 'smtpPort', 'apiPort', 'pid',
+      'instanceToken', 'sinkCaptureDir', 'spyCounterFile'];
+    const missing = need.filter((k) => c[k] === undefined || c[k] === null || c[k] === '');
+    return { config: c, missing, error: null };
+  } catch (e) {
+    return { config: null, missing: null, error: e && e.message ? e.message : String(e) };
+  }
+}
+const API_CFG = loadApiConfig();
+const SINK_PORT = API_CFG.config ? Number(API_CFG.config.smtpPort) : NaN;
+const CAPTURE = API_CFG.config ? API_CFG.config.sinkCaptureDir
+  : path.join(process.cwd(), 'i3-smtp-capture');
 
 function generatePassword() { return `I3!${crypto.randomBytes(18).toString('base64url')}7q`; }
 
@@ -100,26 +120,66 @@ function makeSinkHandle(available) {
       let anyLanReachable = false;
       for (const ip of lan) if (await probeTcp(ip, SINK_PORT, 900)) anyLanReachable = true;
 
-      const provider = (process.env.I3_API_EMAIL_PROVIDER || '').toLowerCase();
-      const host = process.env.I3_API_SMTP_HOST || '127.0.0.1';
-      const port = String(process.env.I3_API_SMTP_PORT || SINK_PORT);
+      // Ayarlar YALNIZ tek kaynaktan; env beyani kabul edilmez, eksik alan tamamlanmaz.
+      if (API_CFG.error || !API_CFG.config) {
+        return { ok: false, configError: API_CFG.error || 'yapilandirma yok',
+          loopbackReachable, anyLanReachable, lanChecked: lan.length };
+      }
+      if (API_CFG.missing.length > 0) {
+        return { ok: false, configMissing: API_CFG.missing,
+          loopbackReachable, anyLanReachable, lanChecked: lan.length };
+      }
+      const c = API_CFG.config;
+      const provider = String(c.emailProvider).toLowerCase();
+      const host = String(c.smtpHost);
+      const port = String(c.smtpPort);
       const providerOk = provider === 'smtp';
       const targetOk = ['127.0.0.1', 'localhost', '::1'].includes(host)
         && port === String(SINK_PORT);
+      // Isteklerin BU yapilandirmayla baslatilan ornege gittigi: kayitli pid, API portunun
+      // GERCEK dinleyicisi olmali.
+      let pidOk = false;
+      try {
+        const out = require('child_process')
+          .execSync(`netstat -ano -p tcp | findstr LISTENING | findstr :${c.apiPort}`,
+            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        pidOk = out.split(/\r?\n/).some((l) => l.trim().endsWith(String(c.pid)));
+      } catch (e) { pidOk = false; }
 
-      const ok = loopbackReachable && !anyLanReachable && lan.length > 0 && providerOk && targetOk;
+      const ok = loopbackReachable && !anyLanReachable && lan.length > 0
+        && providerOk && targetOk && pidOk;
       return {
         ok, loopbackReachable, anyLanReachable, lanChecked: lan.length,
-        provider, host, port, providerOk, targetOk,
+        provider, host, port, providerOk, targetOk, pidOk,
+        pid: c.pid, instanceToken: c.instanceToken,
       };
     },
     /**
-     * DISPATCHER ÇAĞRI SAYACI — "yakalayıcıda mesaj yok" ile AYNI ŞEY DEĞİLDİR.
-     * Mesaj sayısı teslim edilmiş gövdeleri sayar; bu ise **TCP oturumu açıldı mı**yı sayar.
-     * `EmailProviderService.sendViaSmtp` çağrılırsa nodemailer bağlanır ve `conn-*` yazılır;
-     * çağrı hiç yapılmadıysa bağlantı da açılmaz. Gerçek çağrı noktasının yerel ölçümüdür.
+     * SMTP BAĞLANTI SAYACI — açılan TCP oturumlarını sayar. Bu, "dispatcher çağrıldı mı"
+     * DEĞİLDİR: bir dispatcher (ör. mock) çağrılıp hiç bağlantı açmayabilir.
      */
-    dispatcherCalls() { return files('conn-').length; },
+    smtpConnections() { return files('conn-').length; },
+    /**
+     * GERÇEK `dispatcher.send` ÇAĞRI SAYACI — ürünün publication servisinin kullandığı
+     * çağrı noktasından (`publication.service.ts:213`) `i3-spy.js` ile okunur.
+     * OKUNAMAZSA `null` döner; çağıran bunu **sıfır kabul etmez**, ÖLÇÜLEMEDİ raporlar.
+     */
+    dispatcherSendCalls() {
+      try {
+        const f = API_CFG.config && API_CFG.config.spyCounterFile;
+        if (!f) return null;
+        const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+        return typeof j.dispatcherSend === 'number' ? j.dispatcherSend : null;
+      } catch (e) { return null; }
+    },
+    /** Spy'ın allowlist bypass modunda olup olmadığı (negatif prova bayrağı). */
+    allowlistBypassed() {
+      try {
+        const f = API_CFG.config && API_CFG.config.spyCounterFile;
+        if (!f) return null;
+        return JSON.parse(fs.readFileSync(f, 'utf8')).allowlistBypassed === true;
+      } catch (e) { return null; }
+    },
   };
 }
 
@@ -135,6 +195,11 @@ function makeSinkHandle(available) {
   console.log(`  veritabani : ${envInfo.dbHost}:${envInfo.dbPort}/${envInfo.dbName}`);
   console.log(`  API        : ${envInfo.apiHost}:${envInfo.apiPort}`);
   console.log('  parola     : bellekte uretildi — BASILMAZ, DOSYAYA YAZILMAZ');
+  console.log(`  yapilandirma: ${CONFIG_FILE}`
+    + (API_CFG.error ? ` (OKUNAMADI: ${API_CFG.error})`
+      : ` · saglayici=${API_CFG.config.emailProvider} · hedef=${API_CFG.config.smtpHost}:`
+        + `${API_CFG.config.smtpPort} · api pid=${API_CFG.config.pid}`
+        + (API_CFG.config.allowlistBypassed ? ' · ALLOWLIST BYPASS (negatif prova)' : '')));
 
   const prisma = L.AH.loadPrisma();
   const bcrypt = require(process.env.AH_BCRYPT_PATH
@@ -158,12 +223,15 @@ function makeSinkHandle(available) {
       console.error(`  (i3-sink baslatilamadi: ${e.message})`);
     }
     // Yol B yalnız API GERÇEKTEN bu sink'e yönlendirildiyse ölçülebilir.
-    const providerDeclared = (process.env.I3_API_EMAIL_PROVIDER || '').toLowerCase();
-    const providerSmtp = providerDeclared === 'smtp';
-    if (!providerSmtp) {
-      console.log('  UYARI: I3_API_EMAIL_PROVIDER=smtp bildirilmedi → H5-01 OLCULEMEDI olarak raporlanir');
+    const cfgProvider = API_CFG.config ? String(API_CFG.config.emailProvider).toLowerCase() : null;
+    const providerSmtp = cfgProvider === 'smtp';
+    if (API_CFG.error) {
+      console.log(`  UYARI: yapilandirma okunamadi (${API_CFG.error}) → gonderim olcutleri OLCULEMEDI`);
+    } else if (!providerSmtp) {
+      console.log(`  UYARI: etkin saglayici '${cfgProvider}' (smtp degil) → H5-01 OLCULEMEDI`);
     }
-    const sink = makeSinkHandle(sinkOk && providerSmtp);
+    const sink = makeSinkHandle(sinkOk && providerSmtp && !API_CFG.error
+      && API_CFG.missing.length === 0);
 
     // ── Kurulum (bu satırdan sonra yazma COMMIT edilmiş OLABİLİR) ──
     setupAttempted = true;
@@ -200,7 +268,7 @@ function makeSinkHandle(available) {
     R.check('I3-00', 'OLCUM GECERLI: user ile elev* AYNI rolde, fark YALNIZ PARTNER bagi',
       sameRole, `${roles} · ADMIN yolu KAPALI=${st.actors.elev1.role !== 'ADMIN'}`);
 
-    const ctx = { base, prisma, tokens, st, R, sink };
+    const ctx = { base, prisma, tokens, st, R, sink, apiConfig: API_CFG.config };
     await require('./i3-h2-address')(ctx);
     await require('./i3-h4-declarations')(ctx);
     await require('./i3-h5-intake')(ctx);

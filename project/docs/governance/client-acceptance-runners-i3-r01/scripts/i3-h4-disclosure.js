@@ -44,7 +44,7 @@ async function snap(prisma, vid) {
 }
 
 module.exports = async function runH4Disclosure(ctx) {
-  const { base, prisma, tokens, st, R, chain, chainError } = ctx;
+  const { base, prisma, tokens, st, R, chain, chainError, apiConfig } = ctx;
   const IDS = ['H4-06a', 'H4-06b', 'H4-07a', 'H4-07c', 'H4-07b', 'H4-08'];
   L.AH.step('H4-FD', 'finansal beyan onay zinciri — 5 senaryo');
 
@@ -337,24 +337,33 @@ module.exports = async function runH4Disclosure(ctx) {
   // değilse yayın **sağlayıcıya tek byte gitmeden** durur (charter §35.10). Sağlayıcı çağrısı
   // yapılmadığı, yakalayıcıdaki mesaj sayısının DEĞİŞMEMESİYLE ölçülür.
   {
-    const declared = (process.env.I3_API_EMAIL_PROVIDER || '').toLowerCase();
+    // ETKIN saglayici TEK KAYNAKTAN (i3-api-config.json); env beyani KABUL EDILMEZ.
+    const declared = apiConfig ? String(apiConfig.emailProvider || '').toLowerCase() : '';
     if (rContentOk.indeterminate || rContentOk.status >= 400 || afterContent.error
         || afterContent.value.contentApprovedById !== st.actors.elev3.id) {
       R.unmeasured('H4-08', 'yayin allowlist kapisi',
         `icerik onayi tamamlanamadi (HTTP ${rContentOk.status ?? 'belirsiz'}, code=${codeOf(rContentOk)})`);
     } else if (!declared) {
-      R.unmeasured('H4-08', 'yayin allowlist kapisi', 'I3_API_EMAIL_PROVIDER bildirilmedi');
+      R.unmeasured('H4-08', 'yayin allowlist kapisi',
+        'ETKIN saglayici yapilandirma dosyasindan okunamadi (i3-start-api.js ile baslatin)');
     } else {
       const approved = ['smtp', 'sendgrid', 'ses'].includes(declared);
       const before = await snap(prisma, vid);
-      // IKI AYRI OLCUM: (a) teslim edilen mesaj sayisi, (b) DISPATCHER CAGRI sayisi
-      // (TCP oturumu). "Yakalayicida mesaj yok" tek basina "cagri yapilmadi" DEMEZ.
+      // UC AYRI OLCUM — hicbiri digerinin yerine gecmez:
+      //   (a) teslim edilen mesaj sayisi        → yakalayicidaki `.eml`
+      //   (b) SMTP baglanti sayisi              → acilan TCP oturumu
+      //   (c) GERCEK `dispatcher.send` CAGRISI  → urunun publication servisinin cagri
+      //       noktasindan (`publication.service.ts:213`) spy ile okunur.
+      // (c) OKUNAMAZSA `null` doner ve SIFIR KABUL EDILMEZ → olcut UNMEASURED.
       const sentBefore = ctx.sink ? ctx.sink.count() : null;
-      const callsBefore = ctx.sink ? ctx.sink.dispatcherCalls() : null;
+      const connBefore = ctx.sink ? ctx.sink.smtpConnections() : null;
+      const sendBefore = ctx.sink ? ctx.sink.dispatcherSendCalls() : null;
       const rPub = await L.AH.httpJson('POST', url('publish'), { token: tokens.elev3, body: {}, timeoutMs: 25000 });
       const after = await snap(prisma, vid);
       const sentAfter = ctx.sink ? ctx.sink.count() : null;
-      const callsAfter = ctx.sink ? ctx.sink.dispatcherCalls() : null;
+      const connAfter = ctx.sink ? ctx.sink.smtpConnections() : null;
+      const sendAfter = ctx.sink ? ctx.sink.dispatcherSendCalls() : null;
+      const bypassed = ctx.sink ? ctx.sink.allowlistBypassed() : null;
 
       if (rPub.indeterminate || before.error || after.error) {
         R.unmeasured('H4-08', 'yayin allowlist kapisi', rPub.indeterminateReason || after.error);
@@ -363,7 +372,8 @@ module.exports = async function runH4Disclosure(ctx) {
           rPub.status < 400 && before.json !== after.json,
           `HTTP ${rPub.status} · durum ${before.value.status}→${after.value.status}`
           + (sentBefore === null ? '' : ` · yakalanan mesaj ${sentBefore}→${sentAfter}`
-            + ` · dispatcher cagrisi ${callsBefore}→${callsAfter}`));
+            + ` · SMTP baglantisi ${connBefore}→${connAfter}`
+            + ` · GERCEK dispatcher.send ${sendBefore}→${sendAfter}`));
       } else {
         // Allowlist DISI (§35.10 `assertProductionProvider`): saglayiciya TEK BYTE gitmeden
         // reddedilir. OLCULEN SEY — urun davranisi DEGISTIRILMEDI:
@@ -373,21 +383,47 @@ module.exports = async function runH4Disclosure(ctx) {
         //   (4) SAGLAYICIYA CAGRI YOK: yakalayici mesaj sayisi sabit.
         // Durum alaninin bir basarisizlik damgasi almasi urunun mesru davranisidir; olcut
         // "hic degismesin" demez, "YAYIN TAMAMLANMASIN" der.
-        // (a) teslim edilen mesaj yok  (b) DISPATCHER hic cagrilmadi — AYRI iddialar.
         const noMessage = sentBefore === null ? null : (sentAfter === sentBefore);
-        const noDispatcherCall = callsBefore === null ? null : (callsAfter === callsBefore);
+        const noSmtpConn = connBefore === null ? null : (connAfter === connBefore);
+        // GERCEK send cagrisi: okunamazsa null → SIFIR SAYILMAZ.
+        const noRealSend = (sendBefore === null || sendAfter === null)
+          ? null : (sendAfter === sendBefore);
         const notPublished = after.value.status !== 'PUBLISHED';
         const noProviderAccept = !after.value.providerMessageId && !after.value.providerAcceptedAt;
-        R.check('H4-08', `allowlist DISI (${declared}): RED + yayin TAMAMLANMAZ + saglayici kabulu YOK + DISPATCHER CAGRILMADI`,
-          rPub.status === 403 && notPublished && noProviderAccept
-          && noMessage === true && noDispatcherCall === true,
-          `HTTP ${rPub.status} · code=${codeOf(rPub)}`
-          + ` · durum ${before.value.status}→${after.value.status} (PUBLISHED DEGIL=${notPublished})`
-          + ` · providerMessageId=${after.value.providerMessageId ?? 'null'}`
-          + ` providerAcceptedAt=${after.value.providerAcceptedAt ? 'DOLU(!)' : 'null'}`
-          + ` · [a] teslim mesaji ${sentBefore}→${sentAfter} (yok=${noMessage})`
-          + ` · [b] DISPATCHER CAGRISI ${callsBefore}→${callsAfter} (cagrilmadi=${noDispatcherCall})`
-          + ` — (a) ve (b) AYRI iddialardir; ikisi de olculmeden PASS URETILMEZ`);
+        if (noRealSend === null) {
+          // Sayac OKUNAMADI → sifir kabul edilmez.
+          R.unmeasured('H4-08', 'allowlist DISI saglayici reddi',
+            'GERCEK dispatcher.send sayaci OKUNAMADI (spy dosyasi yok/bozuk) — sifir KABUL EDILMEZ');
+        } else if (bypassed === true) {
+          // NEGATIF PROVA modunda kabul beklentisi TERSINE doner (asagida H4-08N olcer).
+          R.unmeasured('H4-08', 'allowlist DISI saglayici reddi',
+            'allowlist BYPASS aktif — bu kosum negatif provadir, normal kabul olculmez');
+        } else {
+          R.check('H4-08', `allowlist DISI (${declared}): RED + yayin TAMAMLANMAZ + kabul damgasi YOK + GERCEK send CAGRISI SIFIR`,
+            rPub.status === 403 && notPublished && noProviderAccept
+            && noMessage === true && noRealSend === true,
+            `HTTP ${rPub.status} · code=${codeOf(rPub)}`
+            + ` · durum ${before.value.status}→${after.value.status} (PUBLISHED DEGIL=${notPublished},`
+            + ` SEND_PENDING mevcut sozlesme olarak KORUNUR)`
+            + ` · providerMessageId=${after.value.providerMessageId ?? 'null'}`
+            + ` providerAcceptedAt=${after.value.providerAcceptedAt ? 'DOLU(!)' : 'null'}`
+            + ` · [a] teslim mesaji ${sentBefore}→${sentAfter} (yok=${noMessage})`
+            + ` · [b] SMTP baglantisi ${connBefore}→${connAfter} (yeni yok=${noSmtpConn})`
+            + ` · [c] GERCEK dispatcher.send ${sendBefore}→${sendAfter} (cagri YOK=${noRealSend})`
+            + ` — (c) asil iddiadir; (a)/(b) onun yerine GECMEZ`);
+        }
+
+        // ── H4-08N · NEGATIF PROVA: allowlist etkisizlestirilince kabul KIRILIR ──
+        if (bypassed === true) {
+          const realSendHappened = noRealSend === false;
+          R.check('H4-08N', 'allowlist kontrolu ETKISIZLESTIRILINCE gercek send CAGRILIR → kabul KIRILIR',
+            realSendHappened,
+            `allowlistBypassed=${bypassed} · HTTP ${rPub.status} · code=${codeOf(rPub)}`
+            + ` · GERCEK dispatcher.send ${sendBefore}→${sendAfter}`
+            + ` (cagrildi=${realSendHappened} — bypass olmadan SIFIR olmaliydi)`
+            + ` · [karsi ornek] SMTP baglantisi ${connBefore}→${connAfter}`
+            + ` (mock dispatcher cagrilir ama TCP acmayabilir → iki olcum AYRI seydir)`);
+        }
       }
 
     }

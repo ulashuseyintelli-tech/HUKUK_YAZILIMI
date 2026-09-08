@@ -56,38 +56,50 @@ module.exports = async function runH5(ctx) {
   //       BAŞLAMAZ.
   let transportBound = false;
   if (!sink || !sink.available) {
-    R.unmeasured('H5-00', 'izolasyon on kosulu + tasima bagi',
-      'Yol B izolasyonu bildirilmedi (EMAIL_PROVIDER=smtp + loopback yakalama gerekir); '
-      + 'mock saglayici gercek tasima hatasi kaniti YERINE GECMEZ');
+    // Neden AYIRT EDILIR: eksik/bozuk yapilandirma ile "saglayici smtp degil" AYNI SEY DEGILDIR.
+    const cfg = ctx.apiConfig;
+    const why = !cfg
+      ? 'yapilandirma dosyasi OKUNAMADI (i3-start-api.js ile baslatin) — gonderim cagrisi=0'
+      : (cfg.smtpHost === undefined || cfg.smtpPort === undefined || cfg.emailProvider === undefined)
+        ? 'yapilandirmada ZORUNLU alan EKSIK (varsayilanla TAMAMLANMAZ) — gonderim cagrisi=0'
+        : `ETKIN saglayici '${String(cfg.emailProvider)}' (smtp degil); mock gercek tasima `
+          + 'hatasi kaniti YERINE GECMEZ — gonderim cagrisi=0';
+    R.unmeasured('H5-00', 'izolasyon on kosulu + tasima bagi', why);
   } else {
     const pre = await sink.verifyIsolationPreconditions();
     if (!pre.ok) {
       // ÖN KOŞUL BAŞARISIZ → SONDA ATILMAZ (gönderim çağrısı sıfır).
       R.check('H5-00', 'izolasyon ON KOSULU saglanmadi → sonda DAHIL gonderim yapilmadi',
         false,
-        `loopback=${pre.loopbackReachable} · LAN ${pre.lanChecked} adres erisilen=`
-        + `${pre.anyLanReachable ? 'VAR(!)' : 'YOK'} · bildirilen saglayici='${pre.provider}'`
-        + ` (smtp mi=${pre.providerOk}) · tasima hedefi=${pre.host}:${pre.port}`
-        + ` (yakalayici mi=${pre.targetOk}) · SONDA ATILMADI, gonderim cagrisi=0`);
+        (pre.configError ? `yapilandirma OKUNAMADI: ${pre.configError} · `
+          : pre.configMissing ? `yapilandirmada EKSIK alan: ${pre.configMissing.join(',')}`
+            + ' (varsayilanla TAMAMLANMAZ) · ' : '')
+        + `loopback=${pre.loopbackReachable} · LAN ${pre.lanChecked} adres erisilen=`
+        + `${pre.anyLanReachable ? 'VAR(!)' : 'YOK'}`
+        + (pre.provider === undefined ? '' : ` · ETKIN saglayici='${pre.provider}'`
+          + ` (smtp mi=${pre.providerOk}) · tasima hedefi=${pre.host}:${pre.port}`
+          + ` (yakalayici mi=${pre.targetOk}) · API ornegi dogrulandi=${pre.pidOk}`)
+        + ` · SONDA ATILMADI, gonderim cagrisi=0`);
     } else {
       await sink.setMode('');
       const probeSubject = `I3-BIND-PROBE-${st.runId}`;
       const msgBefore = sink.count();
-      const callsBefore = sink.dispatcherCalls();
+      const connBefore = sink.smtpConnections();
       const rProbe = await postInfoRequest(probeSubject);
       await new Promise((r) => setTimeout(r, 400));
       const captured = sink.readCaptured().filter((m) => m.includes(probeSubject));
       const reachedSink = captured.length >= 1;
-      const dispatched = sink.dispatcherCalls() > callsBefore;
+      const connected = sink.smtpConnections() > connBefore;
 
       // Sonda BELIRSIZ / BASARISIZ / YAKALANMAMIS ise bag KURULMAMIS sayilir.
       transportBound = !rProbe.indeterminate && rProbe.status < 400 && reachedSink;
 
-      R.check('H5-00', 'ON KOSUL saglandi ve SONDA davranisi dogruladi (dispatcher cagrildi, mesaj yakalandi)',
-        transportBound && dispatched,
-        `on kosul=OK (saglayici='${pre.provider}', hedef=${pre.host}:${pre.port}, LAN erisimi YOK)`
+      R.check('H5-00', 'ON KOSUL (tek kaynak) saglandi ve SONDA davranisi dogruladi',
+        transportBound && connected,
+        `on kosul=OK (ETKIN saglayici='${pre.provider}', hedef=${pre.host}:${pre.port},`
+        + ` API ornegi pid=${pre.pid} DOGRULANDI, LAN erisimi YOK)`
         + ` · sonda HTTP ${rProbe.indeterminate ? 'BELIRSIZ' : rProbe.status}`
-        + ` · dispatcher cagrisi ${callsBefore}→${sink.dispatcherCalls()} (cagrildi=${dispatched})`
+        + ` · SMTP baglantisi ${connBefore}→${sink.smtpConnections()} (acildi=${connected})`
         + ` · mesaj ${msgBefore}→${sink.count()} · SONDA YAKALANDI=${reachedSink}`);
     }
   }
