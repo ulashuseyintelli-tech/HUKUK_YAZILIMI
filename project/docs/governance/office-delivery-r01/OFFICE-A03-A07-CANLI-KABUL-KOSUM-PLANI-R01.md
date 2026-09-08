@@ -4,8 +4,10 @@
 **Ön koşul:** cutover tamamlanmış olacak; pencereyi ana yürütücü ilan edecek
 **Kapsam:** A-03 · A-04 · A-05 · A-06 · A-07 canlı kabul koşumunun sırası, yazma envanteri,
 bayrak yönetimi ve geri alma adımları
-**R02 eki (2026-09-08):** §3.3 kesinti sonucu + iki seçenek (owner kararı) · §3.4 yeniden
-başlatma doğrulaması · §3.5 bayrağın yetki yerine geçmediğinin pozitif ölçümü
+**R02 eki (2026-09-08):** §3.3 kesinti sonucu + iki seçenek · §3.4 yeniden başlatma
+doğrulaması · §3.5 bayrağın yetki yerine geçmediğinin pozitif ölçümü
+**R03 eki (2026-09-08):** owner **(a)'yı seçti ve pencereyi DARALTTI** — bayrak yalnız
+**A-07 yürütme adımı** için açılır (§1 tablosu 5a–5d, §3.1, §3.2 `finally`, §3.6 dört kalem)
 
 > **Bu belge bir kabul satırı KAPATMAZ.** İzole prova başarısı canlı kapanış sayılmaz.
 > A-07 için tamamlanmış olan yalnız **uygulama ve izole prova**dır (`2187a78b`); A-07'nin
@@ -19,15 +21,22 @@ Tümü **aynı** `off-acc-<runId>` tenant'ında ve **tek yürütücü** altında
 (`ow-run.js`; parolalar yalnız bellekte, kapanış `finally` yolunda, **çıkış kodu beyaz
 listesi YOK**).
 
-| Sıra | Adım | Ön koşul | Çıktı |
-|---|---|---|---|
-| 0 | **Kurulum** (9 satır, atomik) | G-0 ortam kapısı + G-0b API/DB bağı doğrulandı; izlenen tenant kümesi **boş değil** | `ow-state.json` (sır içermez) |
-| 1 | **A-03** ayar yüzeyi PUT (S-01…S-08) | kurulum COMMIT | Office satırında yalnız hedef alan değişir; banka hesabı net 0 |
-| 2 | **A-04** avukat + personel yazma | A-03 bitti | avukat/personel oluştur→güncelle→sil, net 0 |
-| 3 | **A-05** personel okuma | A-04'ün personeli mevcut | yazma YOK |
-| 4 | **A-06** raporlama hattı | iki kullanıcı mevcut | 1 `ReportingLine` (assign→end, **kayıt korunur**) |
-| 5 | **A-07** onay akışı + kontrollü yürütme | Case + `OfficeApprovalRequest` fixture'ı; **bayrak açık** | yürütme izi + kesin bağ |
-| 6 | **Kapanış** `revoke-access` | her hâlükârda (`finally`) | `User` satırlarında 2 alan |
+| Sıra | Adım | **Bayrak** | Ön koşul | Çıktı |
+|---|---|---|---|---|
+| 0 | **Kurulum** (9 satır, atomik) | **KAPALI** | G-0 ortam kapısı + G-0b API/DB bağı doğrulandı; izlenen tenant kümesi **boş değil** | `ow-state.json` (sır içermez) |
+| 1 | **A-03** ayar yüzeyi PUT (S-01…S-08) | **KAPALI** | kurulum COMMIT | Office satırında yalnız hedef alan değişir; banka hesabı net 0 |
+| 2 | **A-04** avukat + personel yazma | **KAPALI** | A-03 bitti | avukat/personel oluştur→güncelle→sil, net 0 |
+| 3 | **A-05** personel okuma | **KAPALI** | A-04'ün personeli mevcut | yazma YOK |
+| 4 | **A-06** raporlama hattı | **KAPALI** | iki kullanıcı mevcut | 1 `ReportingLine` (assign→end, **kayıt korunur**) |
+| 5a | **A-07 HAZIRLIK** — aktörler, `Case` + `OfficeApprovalRequest` fixture'ı, ölçüm hazırlığı | **KAPALI** | A-06 bitti | fixture hazır; hiçbir yürütme yapılmadı |
+| 5b | **BAYRAK AÇ** + API restart | KAPALI → **AÇIK** | 5a tamam | §3.4 doğrulaması geçti |
+| 5c | **A-07 yürütme adımı** | **AÇIK** | 5b doğrulandı | yürütme izi + kesin bağ |
+| 5d | **BAYRAK KAPAT** + API restart | AÇIK → **KAPALI** | her hâlükârda (`finally`) | uç **403** döner (§3.4) |
+| 6 | **Kapanış** `revoke-access` | KAPALI | her hâlükârda (`finally`) | `User` satırlarında 2 alan |
+
+> **Bayrak penceresi YALNIZ 5b–5d arasıdır** (owner kararı). A-03…A-06 ve A-07'nin
+> **hazırlığı** bayrak KAPALIYKEN koşar — kontrollü uca ihtiyaçları yoktur. Pencere böylece
+> tüm kabul koşumu değil, **yalnız A-07'nin yürütme adımı** kadardır.
 
 **Neden bu sıra:** A-05 A-04'ün ürettiği personeli okur; A-06 kurulumun iki kullanıcısını
 kullanır; A-07 en son gelir çünkü tek geri alınamayan adımdır (yürütme izi korunur).
@@ -78,15 +87,24 @@ Bu yolda **silinemeyen kayıt üretilmez**.
 | **Etkilenen süreçler** | Yalnız API süreci. Web (Next) süreci ve cron davranışı **etkilenmez** — bayrak `OFFICE_APPROVAL_EXECUTOR_ENABLED`'dan **bağımsızdır** ve genel cron'u açıp kapatmaz. |
 | **Varsayılan** | KAPALI (yokluk dahil). **Bayrak açıkken de** ADMIN + F01 + sunucuda çözülen tenant/ofis + kapsam kontrolleri zorunludur; bayrak yetki yerine geçmez. |
 
-### 3.1 Açma adımları
-1. Koşum penceresi ilan edilmiş ve cutover tamamlanmış olacak.
-2. `.env`'e `OFFICE_APPROVAL_CONTROLLED_EXECUTION_ENABLED=true` eklenir (**tek satır**;
-   başka anahtar değiştirilmez).
-3. API yeniden başlatılır; **eski dinleyicinin gerçekten öldüğü** ve yeni PID doğrulanır.
-4. Bayrağın etkin olduğu, A-07 adımının kendisiyle doğrulanır (ayrı bir "flag probe" isteği
-   **gerekmez**; kapalıyken uç zaten 403 döner).
+### 3.1 Açma adımları — **yalnız A-07 yürütme adımından hemen önce**
 
-### 3.2 GERİ ALMA adımları (koşum sonunda **zorunlu**)
+**Bayrak RELEASE21 normal başlangıcında KAPALIDIR** ve A-03…A-06 ile A-07 hazırlığı boyunca
+**kapalı kalır** (owner kararı). Açma, ancak aşağıdakiler tamamlandıktan sonra yapılır:
+
+1. Cutover tamamlanmış ve koşum penceresi ana yürütücü tarafından **ilan edilmiş** olacak.
+2. A-03…A-06 koşulmuş; **A-07 aktörleri, fixture'ı ve ölçümleri hazırlanmış** olacak (5a).
+3. `.env`'e `OFFICE_APPROVAL_CONTROLLED_EXECUTION_ENABLED=true` eklenir (**tek satır**;
+   başka anahtar değiştirilmez).
+4. API yeniden başlatılır; **eski dinleyicinin gerçekten öldüğü** ve yeni PID doğrulanır (§3.4).
+5. Ardından **yalnız** A-07 yürütme adımı (5c) koşar.
+
+### 3.2 GERİ ALMA adımları — **`finally` yolunda; BAŞARISIZLIKTA DA yürütülür**
+
+> Owner şartı: *"Başarısızlık hâlinde de kapatma ve erişim sonlandırma adımları yürütülsün."*
+> Bayrak kapatma, `revoke-access` ile **aynı disiplindedir**: A-07 ortasında hata olsa,
+> süreç kesilse veya ölçüm düşse bile **bayrak kapatılır ve erişim sonlandırılır**.
+> Kapatma kararı çıkış koduna **değil**, "bayrak şu an açık mı" ölçümüne dayanır.
 1. `.env`'den satır **kaldırılır** (veya `=false` yapılır — kaldırmak tercih edilir: yokluk
    zaten fail-safe kapalıdır).
 2. API yeniden başlatılır; yeni PID doğrulanır.
@@ -115,8 +133,20 @@ cutover'ın kesintisine **ek olarak** kısa kesinti(ler) doğurur.
 | Owner lafzıyla uyum | "Varsayılan KAPALI + **kontrollü açılma**" ifadesine daha yakın | "Kontrollü açılması ve koşum sonunda kapatılması" ifadesiyle **gerilimli** |
 
 **Bu belgenin tavsiyesi: (a).** Gerekçe: kontrollü uç yalnız kabul penceresinde canlıda
-etkin olur; güvenlik yüzeyi en dar tutulur. Ama kesinti bütçesi bir **owner kararıdır** ve
-(b) seçilirse plan aynen uygulanabilir — yalnız açma adımı cutover'a taşınır.
+etkin olur; güvenlik yüzeyi en dar tutulur.
+
+> ### ✅ KARAR (owner, 2026-09-08): **(a) SEÇİLDİ — ve pencere daha da DARALTILDI**
+>
+> Owner (a)'yı seçti, ama tarif ettiği pencere yukarıdaki (a)'dan **daha dardır**:
+> bayrak **RELEASE21 normal başlangıcında kapalı** olacak ve **A-03…A-06 ile A-07
+> hazırlığı boyunca kapalı kalacak**; yalnız **A-07 yürütme adımı** için açılıp hemen
+> sonra kapatılacak (§1 tablosu 5a–5d ve §3.1 buna göre yazıldı).
+>
+> Bu, bu belgenin ilk (a) tarifinden bir **daraltmadır** ve owner'ın tercihidir:
+> ilk tarif bayrağı tüm kabul koşumu boyunca açık bırakıyordu.
+>
+> **Bu seçim hazırlık kararını kapatır.** Bayrak seçimi yeniden sorulmaz. Somut yayın
+> paketi **ratifiye edilmeden** canlı bayrak değişimi veya koşum **başlatılmaz**.
 
 ### 3.4 Her yeniden başlatmanın **kendi doğrulaması** vardır
 
@@ -140,6 +170,19 @@ Bayrak **AÇIKKEN** yetkisiz aktörle kontrollü uç çağrılır ve **reddedild
 
 Bu ölçüm olmadan "bayrak yetki yerine geçmez" iddiası **kanıtlanmış sayılmaz** — yalnız
 kodda böyle yazması yeterli değildir.
+
+### 3.6 Pakete yazılacak dört kalem (owner ismen sıraladı)
+
+| # | Kalem | Değer |
+|---|---|---|
+| 1 | **Restart sayısı** | **2** — biri açma (5b), biri kapatma (5d). Başarısızlık hâlinde de kapatma restart'ı yürütülür, yani **en az 2** her koşumda. |
+| 2 | **Etkilenen süreçler** | **Yalnız API süreci.** Web (Next) süreci ve genel cron davranışı etkilenmez — bayrak `OFFICE_APPROVAL_EXECUTOR_ENABLED`'dan bağımsızdır ve genel cron'u açıp kapatmaz. |
+| 3 | **Toplam kesinti bütçesi** | **Ölçülen başlangıç→hazır: ~3,3 s** (izole ortamda iki örnek: **3264 ms** ve **3271 ms**; ölçüt: `POST /api/auth/login` boş gövdeye **400** dönene kadar). Buna **kapatma süresi eklenir**. İki restart için **beklenen toplam ≈ 7–10 s**; **güvenli tavan 60 s** önerilir. ⚠ Bu ölçüm **izole ortamda** alınmıştır; canlıda soğuk dosya sistemi ve daha büyük veri nedeniyle farklı olabilir — **canlı değer koşum sırasında ölçülüp rapora yazılacaktır**, bu satır tahmin değil **baz çizgidir**. |
+| 4 | **Toparlanma ölçütü** | Bir restart "başarılı/sağlıklı" **ancak şu üçü birlikte** sağlanınca sayılır: **(i)** eski dinleyici süreci **gerçekten ölmüş** ve PID **değişmiş**; **(ii)** port dinlemede ve `POST /api/auth/login` boş gövdeye **400** dönüyor (uygulama yalnız ayakta değil, **istek işliyor**); **(iii)** bayrağın beklenen durumu **uçtan** teyit edilmiş (açma sonrası uç yetkili aktörle çalışır; kapatma sonrası **403 `OFFICE_APPROVAL_CONTROLLED_EXECUTION_DISABLED`**). Üçünden biri sağlanmazsa restart **başarısız** sayılır ve koşum **durur**. |
+
+> Owner şartı: *"Kapanışı yalnız env dosyasından değil, çalışan süreç ve kontrollü ucun
+> reddetme davranışı üzerinden doğrulayın."* — §3.4 bunu zaten karşılar; §3.2 gereği
+> **başarısızlık yoluna da** uygulanır.
 
 ---
 
