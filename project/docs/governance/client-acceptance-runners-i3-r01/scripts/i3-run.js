@@ -21,6 +21,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const net = require('net');
+const os = require('os');
 const { spawn } = require('child_process');
 const L = require('./i3-lib');
 
@@ -57,21 +58,42 @@ function startSink() {
   });
 }
 
-/** Sağlayıcı kontrol yüzeyi: mod değişimi + konuşma/mesaj sayacı. */
+/** Sağlayıcı kontrol yüzeyi: mod değişimi · sayaç · taşıma gövdesi · ön doğrulama. */
 function makeSinkHandle(available) {
-  const countFiles = (pre) => {
-    try { return fs.readdirSync(CAPTURE).filter((f) => f.startsWith(pre)).length; }
-    catch (e) { return 0; }
+  const files = (pre) => {
+    try { return fs.readdirSync(CAPTURE).filter((f) => f.startsWith(pre)); }
+    catch (e) { return []; }
   };
   return {
     available,
-    expectedMax: 3, // H5-01'de üç POST → sağlayıcıya EN ÇOK üç konuşma
     async setMode(m) {
       fs.writeFileSync(path.join(CAPTURE, 'mode'), m || '', 'utf8');
       await new Promise((r) => setTimeout(r, 60));
     },
-    count() { return countFiles('msg-'); },
-    conversations() { return countFiles('conn-'); },
+    count() { return files('msg-').length; },
+    conversations() { return files('conn-').length; },
+    /** Yakalanan mesajların TAŞIMA gövdeleri (A-5/A-6 ölçümü bunu okur). */
+    readCaptured() {
+      return files('msg-').map((f) => {
+        try { return fs.readFileSync(path.join(CAPTURE, f), 'utf8'); }
+        catch (e) { return ''; }
+      });
+    },
+    /**
+     * GÖNDERİMDEN ÖNCE izolasyon doğrulaması: yakalayıcı loopback'te erişilir olmalı ve
+     * makinenin LAN adreslerinden erişilememelidir. "Adres .invalid" değil, TAŞIMA HEDEFİ
+     * kanıtı budur.
+     */
+    async verifyBoundBeforeSend() {
+      const loopbackReachable = await probeTcp('127.0.0.1', SINK_PORT);
+      const lan = [];
+      for (const list of Object.values(os.networkInterfaces())) {
+        for (const ni of (list || [])) if (ni.family === 'IPv4' && !ni.internal) lan.push(ni.address);
+      }
+      let anyLanReachable = false;
+      for (const ip of lan) if (await probeTcp(ip, SINK_PORT, 900)) anyLanReachable = true;
+      return { loopbackReachable, anyLanReachable, lanChecked: lan.length };
+    },
   };
 }
 
@@ -156,7 +178,17 @@ function makeSinkHandle(available) {
     await require('./i3-h2-address')(ctx);
     await require('./i3-h4-declarations')(ctx);
     await require('./i3-h5-intake')(ctx);
-    await require('./i3-h4-disclosure')(ctx); // H4-06/07/08 — ön koşul kurulabilirse
+    // ── H4-06/07/08 ön koşulu: ürünün KENDİ yolundan finansal beyan zinciri ──
+    // Aktivasyon bayrağı prova API'sinin KENDİ ortamındadır; canlı flag DEĞİŞTİRİLMEZ.
+    try {
+      ctx.chain = await L.setupDisclosureChain(prisma, st, runId);
+      console.log(`      finansal zincir kuruldu: disposition=${ctx.chain.dispositionId.slice(-8)}`);
+    } catch (e) {
+      ctx.chain = null;
+      console.log(`      finansal zincir KURULAMADI: ${e && e.message ? e.message.slice(0, 120) : e}`);
+      ctx.chainError = e && e.message ? e.message : String(e);
+    }
+    await require('./i3-h4-disclosure')(ctx);
 
     // ── H7: İ4 kapsam kararını bekler ──
     L.AH.step('H7', 'portal — I4 kapsam karari BEKLIYOR');
