@@ -165,6 +165,10 @@ src/modules/office-approval/__tests__/office-work-routing.spec.ts
 src/modules/office/__tests__/office-credential-encryption.characterization.spec.ts
 src/modules/office/__tests__/office-credential-encryption.util.spec.ts
 src/modules/office/__tests__/office-credential-settings-guard.spec.ts
+# OFFICE-FB0104-RAW-SURFACE-CONTAINED-R01: ham Office satiri modul sinirini gecmez
+#   (davranis: daraltilmis getOfficeIdentity yuzeyi; yapi: cross-module getOrCreate yasagi).
+src/modules/office/__tests__/office-identity-boundary-fb0104.spec.ts
+src/modules/office/__tests__/office-raw-row-cross-module.static-guard.spec.ts
 src/modules/staff/__tests__/staff-deactivate-lifecycle.spec.ts
 src/modules/staff/__tests__/staff-update-active-boundary.spec.ts
 src/modules/staff/__tests__/staff-duplicate-guard.spec.ts
