@@ -113,3 +113,67 @@ kendi doğruluğunu kanıtlar.
 Bu paket **A-01 tamamlanmadan çalıştırılmaz** (F-B01-04/F-B01-05 sınırları canlıda olmalı ki
 A-04'ün DTO reddi ölçülebilsin). Yeni yetki üretmez; tek-kullanımlık authority, mühür ve yürütücü
 kontrolleri aynen geçerlidir.
+
+## 10. UYGULANABİLİRLİK ŞERHİ — R01'in iki kusuru (2026-09-08, append-only)
+
+Bu paket bir **sözleşme belgesidir**; çalıştırılabilir betik içermez. Harness'ı uygulayıcı
+sayfa (OFFİCE 33-F04) yazar. Prova sırasında sözleşmenin **iki** kusuru ölçümle ortaya çıktı.
+§1–§9 tarihsel metni değişmez; aşağıdaki hükümler onları düzeltir ve uygulayıcı için bağlayıcıdır.
+
+### 10.1 §7'nin "boş küme → FAIL" kuralı ZORLANMIYORDU
+
+§7 şunu yazıyor: *"İzlenen tenant'larda fark ölçülemezse (boş küme) → FAIL."* Kural doğruydu
+ama **nasıl zorlanacağı** yazılmamıştı. Sonuç: F04'ün ilk prova koşumu, izlenen tenant sayısı
+**0** iken "fark 0" görüp **PASS** verdi. Ölçüm yapılmamıştı; ölçüt yine de sağlanmış göründü.
+
+**Kusur sınıfı:** gözlem kümesi boşken **kendiliğinden sağlanan** ölçüt. Bu, F04 hattında daha
+önce kayda geçen fail-open sınıfının aynısıdır — *ölçülemeyen sonuç "yok" sayılmaz*.
+
+**Bağlayıcı düzeltme:**
+
+1. İzlenen tenant kümesi **boşsa HARD FAIL** — koşum nonzero ile biter, "fark 0" raporlanamaz.
+2. Fark ölçümü, kabul kapsamı **DIŞINDA** en az bir **seyirci tenant** üzerinden okunur. Taze
+   disposable DB'de başka tenant bulunmadığı için seyirci tenant kurulum aşamasında yaratılır.
+3. Seyirci tenant için iki şey **kanıtlanır**: kabul kapsamı dışında olduğu **ve** ona hiçbir
+   yazma yapılmadığı. (Aksi hâlde "fark 0" yine anlamsızdır — bu kez farklı sebeple.)
+4. Kurulum envanteri bu nedenle **7 satır + seyirci tenant** olur; §3'ün 7 satırlık çekirdeği
+   değişmez, seyirci tenant **ölçüm altyapısıdır**, kabul hedefi değildir.
+
+Aynı sınama her sayısal ölçüte uygulanır: bir ölçüt "0 / fark yok / ihlal yok" diyorsa, önce
+**gözlem kümesinin boş olmadığı** kanıtlanır.
+
+### 10.2 §4'ün A-07 geri-düşüş kuralı DEVREYE GİRDİ — ölçümle
+
+§4, A-07 için *"finansal zincir gerektirmeyen en dar `actionCode` koşum anında kanıtla seçilir;
+hiçbiri uygun değilse A-07 okuma yüzeyi + yetki negatifi ile sınırlanır"* diyordu. Tarama
+yapıldı ve **böyle bir kod bulunmadı**. Ölçüm (ana yürütücü tarafından koddan bağımsız
+doğrulandı):
+
+| Ölçüm | Bulgu |
+|---|---|
+| Yürütme izini üreten tek yol | `OfficeApprovalExecutorService.execute` — kapsam guard'ı `actionCode !== 'CHANGE_STATUS' \|\| targetType !== 'LegalCase'` → `UNSUPPORTED_ACTION_CODE`. Başka hiçbir `actionCode` `OFFICE_APPROVAL_EXECUTION_*` izini executor üzerinden üretmez |
+| `CHANGE_STATUS/LegalCase` bedeli | §3'ün 7 satırında `Case` yok → **8. satır** gerekir; **ve** `OfficeApprovalExecutorCron` kapsamı **tam da budur** (`SCOPE = { actionCode:'CHANGE_STATUS', targetType:'LegalCase' }`) ve üç `findMany` sorgusunun üçünde de **tenantId yüklemi YOKTUR** (kod yorumu bunu "CROSS-TENANT" diye kasıtlı belgeliyor) → canlıda bırakılan fixture arka planda **kendiliğinden yürütülebilir** |
+| `COLLECTION_DISPOSITION_POST` bedeli | Yürütme izini gerçekten üretir ama executor üzerinden değil, disposition posting yolundan; **tam finansal zincir** ister |
+| `OFFICE_APPROVAL_EXECUTOR_ENABLED` | Cron'u kapatır (kapalıyken `findMany` hiç çağrılmaz) — fakat **kabul güvencesi sayılmaz**: konfig bir değişkendir, kanıt değil |
+
+**Sonuç:** finansal zincir gerektirmeyen en dar kod ile ADR-009 yürütme izini **aynı anda**
+sağlayan aday **yoktur**. Bu sürümde **canlı A-07, okuma yüzeyi + yetki negatifi ile
+SINIRLANIR**; yürütme-izi ölçütü **kapanmaz, açık kalır** ve teslim tablosunda bu sürümün
+açık sınırı olarak görünür. Uydurulmuş fixture ile genişletilmez.
+
+`CHANGE_STATUS/LegalCase` yolunun açılması **envanter (8. satır) ve risk (cron çarpışması)
+değişikliğidir**; uygulayıcının da ana yürütücünün de yetkisinde değildir — **owner kararına
+bağlıdır**.
+
+### 10.3 Derleme provenance'ı
+
+Prova, uygulamayı **sabit aday `d2223e78`** ile özdeş ağaçtan derler. Bugün ölçülen eşitlik:
+
+```text
+d2223e78:project/apps  tree = b26d922cd7f39121b0881b62305d6e90908c80e0
+f8d15f73:project/apps  tree = b26d922cd7f39121b0881b62305d6e90908c80e0   → EŞİT
+```
+
+Kanıt bu iki hash ile adaya bağlanır. Harness dalının **git tabanı** ayrı bir konudur ve
+güncel main'de kalabilir; bağlayıcı olan **ne derlendiğidir**. Harness `project/apps` altına
+dokunmaz (delta 0) — aksi hâlde sabit aday ve plan §8.3'teki devralınan kabuller geçersizleşir.
