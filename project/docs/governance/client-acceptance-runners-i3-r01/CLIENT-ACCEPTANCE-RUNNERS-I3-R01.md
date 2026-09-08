@@ -3,14 +3,18 @@
 **İş:** R02 ana planındaki **İ3** — kabul düzeneklerinin hazırlanması (YEREL/DISPOSABLE)
 **Durum:** **KESİN KAPSAM TAMAM** — H2/H4/H5'in **24 hizmet ölçütünün tamamı** koşuldu ve PASS.
 H7'nin 6 ölçütü **koşullu** kapsamdadır (İ4 kararı → İ16) ve koşulmadı.
-**Türetildiği main:** `a78339c2`
-**Prova:** `PASS 32 · FAIL 0 · ÖLÇÜLEMEYEN 6` (toplam 38 koşum satırı)
+**Türetildiği main:** `3bbdbcd8`
+**Prova — iki sağlayıcı senaryosu:**
+- **A (`smtp`, onaylı):** `PASS 34 · FAIL 0 · ÖLÇÜLEMEYEN 6` (40 koşum satırı)
+- **B (`mock`, allowlist DIŞI):** `PASS 30 · FAIL 0 · ÖLÇÜLEMEYEN 10` — H4-08'in ret dalı burada ölçüldü
+- **Düzeneğin kendi negatif kontrolleri:** `PASS 7 · FAIL 0`
 
-> **Sayım notu.** 38 koşum satırı 24 hizmet ölçütüne karşılık gelir: bazı ölçütler birden çok
-> senaryoya ayrılmıştır (H4-06→06a/06b · H4-07→07a/07b · H5-01→01/01b · H5-02→02a/02b ·
-> H5-05→05/05b) ve üç satır **yardımcı kontroldür** (`I3-00` ölçüm geçerliliği · `H5-00`
-> sağlayıcı ön doğrulaması · `I3-V` erişim sonlandırma). **Yardımcı kontroller hizmet ölçütü
-> sayısına EKLENMEZ.**
+> **Sayım notu.** 40 koşum satırı 24 hizmet ölçütüne karşılık gelir: bazı ölçütler birden çok
+> senaryoya ayrılmıştır (H4-06→06a/06b · H4-07→07a/07b/**07c** · H5-01→01/01b · H5-02→02a/02b ·
+> H5-05→05/05b · H5-06→06/**06b**) ve üç satır **yardımcı kontroldür** (`I3-00` ölçüm geçerliliği ·
+> `H5-00` taşıma bağı · `I3-V` erişim sonlandırma). **Yardımcı kontroller ve düzeneğin kendi
+> negatif kontrolleri (NC-1…NC-7) hizmet ölçütü sayısına EKLENMEZ ve yeni plan maddesi
+> SAYILMAZ.**
 
 ---
 
@@ -89,8 +93,9 @@ vardır ve her biri farklı aktörle kanıtlanır.
 | H4-06a | Büro onayı: **talep eden kendi onaylayamaz** → `403` + `SELF_APPROVAL` + durum değişmez | **PASS** |
 | H4-06b | Büro onayı: **eligible olmayan** (MUHASEBE personeli) onaylayamaz → `403` + durum değişmez | **PASS** |
 | H4-07a | İçerik onayı: **four-eyes** — ofis onaylayıcısı `FOUR_EYES`, talep eden `SELF_APPROVAL` ile RED | **PASS** |
-| H4-07b | Ofis onayından sonra içerik değişirse onay RED (`CONTENT_HASH_MISMATCH`) ve içerik onayı **yazılmaz** | **PASS** |
-| H4-08 | Yayın onaylı sağlayıcı (`smtp`) ile ilerler; allowlist dışıysa başlamaz | **PASS** |
+| H4-07b | **`STALE_SNAPSHOT`** — sürüm snapshot'ı değişince RED; içerik onayı yazılmaz | **PASS** |
+| H4-07c | **`CONTENT_HASH_MISMATCH`** — bildirim içeriği hash'i değişince RED; içerik onayı yazılmaz (**ayrı kontrol**) | **PASS** |
+| H4-08 | **A:** onaylı sağlayıcı (`smtp`) ile yayın ilerler · **B:** allowlist dışı (`mock`) → `403 PROVIDER_NOT_PRODUCTION`, `PUBLISHED` olmaz, `providerMessageId=null`, **sağlayıcıya çağrı yok** (yakalayıcı `0→0`) | **PASS** |
 
 **Ön koşul ürünün KENDİ yolundan kuruldu.** `Collection → CollectionDisposition
 (DISTRIBUTION_APPROVED) → POST /collection-dispositions/:id/post → POSTED → POST
@@ -114,10 +119,11 @@ kendi ortamındadır**; canlı flag değiştirilmemiştir.
 | H5-02a | Bağımsız bağlantı: ham token yalnız oluşturma yanıtında, okuma ucunda yok | **PASS** |
 | H5-02b | **Gerçek `attachIntakeLink` akışı**: bağlantı **taşıma gövdesinde VAR**, aynı işlemin `ClientInfoRequest` + `ClientNotification` + `AddressAuditLog` kayıtlarında **YOK** (= **A-5 + A-6**) | **PASS** |
 | H5-03 | İptal öncesi açık, sonrası kapalı (`status=REVOKED`); iptalli bağlantıdan **bu linke bağlı** submission oluşmaz | **PASS** |
-| H5-04 | Public gönderim kaydedilir; `ClientIntelStatement` ve `ClientAddress` **kimlik düzeyinde** değişmez | **PASS** |
+| H5-04 | Public gönderim kaydedilir; **`DebtorAddress`** ve `ClientIntelStatement` **alan düzeyinde** değişmez | **PASS** |
 | H5-05 | İnceleme: geçerli profilli USER/ADMIN/PARTNER **RED**; yalnız `client.intake.review` grant'ı izin verir | **PASS** |
 | H5-05b | Profil reddi ile grant reddi **aynı dış kodu** taşır (iç neden sızmaz) → profilsiz 403 grant kanıtı **sayılamaz** | **PASS** |
-| H5-06 | Aktarım: **inceleyen aktör ve ADMIN yetmez** (CR-1 md.6), PARTNER izin, **tekrar isteği yeni yazma üretmez** | **PASS** |
+| H5-06 | Aktarım: inceleyen aktör ve ADMIN RED → **hedefte satır ve audit oluşmaz**; PARTNER izin → **tam bir `DebtorAddress`** + `promotedRefType` damgası + **bir** aktarım audit'i | **PASS** |
+| H5-06b | **Tekrar sözleşmesi**: `400` "zaten promote edilmiş" — yeni `DebtorAddress` yok, alan değişmez, **yeni audit yok**. `500`/belirsiz PASS üretmez | **PASS** |
 
 ### 3.4 H7 — Portal (6 ölçüt, KOŞULLU — koşulmadı)
 
@@ -187,6 +193,13 @@ kullanılmaz.
 
 ---
 
+## 5.1 Taşıma bağı — erişilebilirlik tek başına yeterli değil
+
+`H5-00` artık yakalayıcının **erişilebilir olmasını** değil, **API'nin etkin taşıma hedefinin
+yakalayıcı olduğunu** ölçer: ürünün kendi gönderim yolundan bir **sonda** atılır ve
+yakalayıcıda görüldüğü doğrulanır. Sonda görünmezse `H5-01`, `H5-01b` ve `H5-02b`
+**gönderime geçmeden** ÖLÇÜLEMEDİ raporlanır (`NC-5` bu kapıyı sınar).
+
 ## 6. Negatif kontroller
 
 Ayrı bir negatif kontrol dosyası **yoktur**; her ölçüt zaten hedefli bir negatif kontrol
@@ -194,10 +207,28 @@ içerir — yetkisiz aktörün reddi **ve** o redde kalıcı etkinin olmadığı
 Önceden kapalı davranışlar için gerekçesiz geniş test tekrarı yapılmaz.
 
 **Yanlış PASS yollarını yakalayan dar kontroller** (§4.1'in ölçüm karşılıkları):
-`H5-00` sağlayıcı izolasyonunu **gönderimden önce** doğrular · `H5-05b` iki ret nedeninin
-ayırt edilemediğini gösterir · `H5-06` tekrar isteğinin sonucunu ölçer · `I3-00` iki aktörün
-rol eşitliğini doğrular (bozulursa ölçüm geçersiz) · `H4-06b` eligible olmayan **ama
-hazırlamaya yetkili** MUHASEBE personeliyle eşiğin gerçekten eligibility olduğunu ayırır.
+`H5-00` taşıma bağını sonda ile doğrular · `H5-05b` iki ret nedeninin ayırt edilemediğini
+gösterir · `H5-06b` tekrar isteğinin sonucunu ölçer · `I3-00` iki aktörün rol eşitliğini
+doğrular · `H4-06b` eligible olmayan **ama hazırlamaya yetkili** MUHASEBE personeliyle eşiğin
+gerçekten eligibility olduğunu ayırır.
+
+### 6.1 Düzeneğin KENDİSİNİ sınayan negatif kontroller (`i3-negative.js`)
+
+"Yanlış PASS yolları kapandı" **beyanı yeterli değildir**; karşılaştırma katmanına kasten bozuk
+durumlar verilir ve **kabul etmediği** ölçülür. Sonuç: **7/7 PASS**.
+
+| # | Enjekte edilen bozuk durum | Ölçülen |
+|---|---|---|
+| NC-1 | Aynı ID (`a1`), **değişmiş** `street`; kayıt sayısı aynı | Fark **yakalanır** — kimlik eşitliği yetmez |
+| NC-2 | Aynı içerikli **ikinci** satır (mükerrer hedef) | Fark **yakalanır** |
+| NC-3 | Tekrar isteğinde `500` / `409` | **Kabul edilmez**; yalnız `400` sözleşmesi PASS üretir |
+| NC-4 | Belirsiz HTTP ve `500` | Yetki reddi **sayılmaz**; `anyIndet` yakalar |
+| NC-5 | Taşıma bağı doğrulanmamış | Gönderim ölçütleri **UNMEASURED**, gönderime geçilmez |
+| NC-6 | Fotoğraf/sayım sorgusu düşer | Hata **yukarı taşınır**, `null` dönmez |
+| NC-7 | `unchanged()` null fotoğrafla çağrılır | **PASS vermez** (`unmeasured`) |
+
+Bu kontroller ürün uçlarına yazma yapmaz; yalnız ölçüm aracını besler. **Yeni plan maddesi
+sayılmazlar.**
 
 Ölçülen bozuk durum reddi örnekleri: VIEWER mutasyonu (H2-01) · elevated olmayan lifecycle
 (H2-03/04/05/06) · fiziksel silme (H2-07) · kapsam dışı okuma (H2-08) · invariant ihlali
@@ -223,7 +254,7 @@ altında kalır. Parola bellekte üretilir; çıktıya, durum dosyasına veya re
 
 ## 8. Bilinen kısıtlar
 
-1. **Login hız sınırı.** İ3 yedi aktörle çalışır → koşum başına ~7 login. `login-rate-limit.guard.ts`
+1. **Login hız sınırı.** İ3 sekiz aktörle çalışır → koşum başına ~7 login. `login-rate-limit.guard.ts`
    IP başına 10/dakika uygular ve aşılırsa **5 dakika** bloklar. Art arda koşumlarda blok
    oluşur; prova ortamında API'yi yeniden başlatmak in-memory sayacı sıfırlar (canlıda YAPILMAZ).
 2. **H7 kapsam kararı.** KB-01 (İ4) gelmeden altı ölçüt koşulmaz; bunlar **koşullu**
