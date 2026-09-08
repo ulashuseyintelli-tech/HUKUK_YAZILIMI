@@ -102,3 +102,26 @@ kayıtlar ve işe ait temizlik tamam.
 **Bu plan yeni yetki üretmez.** Cutover koşumu, tek-kullanımlık mühür/authority ve yürütücü
 kontrolleri aynen geçerlidir. Gerçek müşteri verisine test yazımı ve gerçek alıcıya test gönderimi
 YASAKTIR; yazma kabulleri yalnız izolasyonu doğrulanmış sentetik tenant'ta yapılır.
+
+---
+
+## 7. Ek — R01 sonrası ölçülen güncellemeler (append-only)
+
+**A-02 paketi üretildi:** `office-delivery-r01/OFFICE-YAZMA-KABUL-PAKETI-R01.md` — sentetik tenant
+`off-acc-<runId>`, 7 satırlık atomik kurulum, F01 yetki sözleşmesi (koddan ölçüldü), A-03…A-07
+ölçütleri, korunacak kayıtlar, `revoke-access` kapanışı ve fail-closed durma koşulları.
+
+**B-03 yeniden sınıflandırma:** `F-B01-05` kaleminin plan R01'deki öncülü ("yazan servis yolu yok,
+düşük öncelik") **bayat çıktı**. `#2555 fa1e3bb2` ölçümü: `POST /api/lawyers` gövdesi DTO sınıfı
+değil satır-içi tip literali ile tiplenmişti; tip runtime'da silindiği için global `ValidationPipe`
+(whitelist + forbidNonWhitelisted) metatype `Object` görüp çalışmıyordu ve gövde
+`prisma.lawyer.create({ data: { ...data } })` içine geçiyordu — **credential/tenant enjeksiyonu**.
+Onarım main'de (`create-lawyer.dto.ts` + controller + service allow-list; `uyapToken` şema yorumu
+düzeltildi). Kalem B listesinden çıkarılıp **A-01'in yüküne alınmıştır**; kapatılmamıştır,
+canlı kabulü A-01 ile birlikte yapılacaktır. **N = 7 DEĞİŞMEDİ.**
+
+**A-01 aday kimliği (ölçüldü):** aday `93f04f67`, canlı `08ce8e25`'ten 19 commit ileri; kod 26 dosya
+`+1016/−69`; **yeni migration 0** (şema değişimi yalnız yorum); veri etkisi yok; rollback hedefi
+RELEASE20 `08ce8e25`; beklenen kesinti R23/R20 emsaliyle 13,7–14,7 s mertebesi (garanti değil).
+Etkilenen hizmetler: **S-01** (projeksiyon sınırı) ve **S-09** (create yazma sınırı); diğer on
+hizmetin kod yüzeyi değişmedi.
