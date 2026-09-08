@@ -262,3 +262,86 @@ değişmemiştir. Bu ölçüm salt-okumadır: canlı DB'ye yazma 0, süreç muta
 
 Not: `GET /api/health` **404** döner — bu bir kusur kaydı DEĞİLDİR, o yolun bu sürümde
 bulunmadığının ölçümüdür; A-01/A-03 sağlık kontrolü bu yola bağlanmaz.
+
+### 8.9 MERKEZÎ DAĞITIM ve A-01 YETKİ KALEMİ (2026-09-08, append-only)
+
+Owner ek talimatı: owner'ın tek muhatabı **ana yürütücüdür**; görev iletimi, yanıt alma ve
+ilerleme takibi ana yürütücüdedir. Mevcut oturumlar kullanılır, aynı işi yapacak yeni oturum
+açılmaz. Owner sayfalar arası **rutin mesaj taşıyıcısı olarak kullanılmaz**.
+
+**Durum ayrımı zorunludur:** *hazırlandı* ≠ *gönderildi* ≠ *alındı* ≠ *başladı*. Ölçüt:
+`send_message` sonucu = gönderildi · hedefin oturum etkinliği sıçraması = alındı ·
+görevi aldığını bildiren **yanıt mesajı** = başladı.
+
+#### 8.9.1 Dağıtım kaydı
+
+| Kalem | Sorumlu | Gönderildi | Alındı | Başladı | İz |
+|---|---|---|---|---|---|
+| **A-01** | OFFİCE 33 | ✅ 2026-09-08 09:49 | ✅ | ✅ (altı alanlı rapor döndü) | Kasıtlı olarak **hiçbir artefakt yok** |
+| **A-03…A-07 canlı** | OFFİCE 33-F04 | ⛔ **dağıtılmadı** — A-01'e bağlı | — | — | — |
+| A-02 §8 disposable provası (hazırlık) | OFFİCE 33-F04 | ✅ 2026-09-08 09:49 | ✅ | ✅ | dal `claude/office-a02-rehearsal-r01` |
+
+#### 8.9.2 A-01 — yetki kalemi (teknik engel YOK)
+
+OFFİCE 33 A-01'i **koşmadı** ve hiçbir aday derleme kökü / paket / mühür / worktree üretmedi.
+Gerekçesi kabul edilmiştir: o oturuma owner'ın verdiği son kapsam **canlı deploy'u dışlar**
+("Canlı deploy, production DB yazımı, gerçek alıcıya test gönderimi ve O-8 Kaydet kabulü yok" +
+"ikinci işi kendiliğinden başlatma"). Ana yürütücünün görev mesajı **owner yetkisi üretmez**;
+meslektaş talebiyle kapsam dışı bir canlı işlemi başlatmak **yetki yıkamasıdır**.
+
+| Alan | İçerik |
+|---|---|
+| `blockerCode` | `NO_OWNER_GO_FOR_LIVE_CUTOVER` |
+| `blockingLayer` | authority (governance) — **teknik engel yok** |
+| `evidence` | OFFİCE 33'ün son owner talimatındaki kapsam cümlesi; ana yürütücü mesajındaki "bu mesaj yeni owner yetkisi ÜRETMEZ" ifadesi |
+| `whyNotRevision` | Eksik olan plan/aday/ölçüm değil — üçü de bağımsız doğrulandı. Eksik olan yalnız owner'ın **bu oturuma** verdiği canlı-işlem yetkisidir; revizyonla çözülmez |
+| `requiredAction` | Owner'dan bu oturuma açık A-01 GO'su (RatificationRef + tek-kullanımlık authority/nonce) |
+| `preservedWip` | **YOK** — çalışma ağacı temiz, açık PR yok, artefakt üretilmedi |
+
+#### 8.9.3 Bağımsız doğrulama — OFFİCE 33 ölçümleri (ana yürütücü tarafından yeniden koşuldu)
+
+| Ölçüm | OFFİCE 33 | Ana yürütücü | Sonuç |
+|---|---|---|---|
+| `project/apps` delta `08ce8e25..d2223e78` | 27 | 27 | ✅ |
+| Sınıflandırma | 11 runtime + 16 spec/manifest | 11 + 16 | ✅ |
+| Migration deltası | 0 | 0 | ✅ |
+| `ddcd4aba` / `fa1e3bb2` adayda | EVET | EVET | ✅ |
+| `schema.prisma` deltası | yalnız yorum (`uyapToken String?` önce/sonra aynı) | aynı | ✅ |
+| `d2223e78` (#2558) `project/apps` dokunuşu | 0 | 0 (yalnız `docs/governance` + 9 script) | ✅ |
+| `client-settlement` üretim çağrısı YOK | teyit | §8.7 ile aynı | ✅ |
+
+**Sonuç:** §8.2/§8.7'nin aday tanımı iki bağımsız ölçümle desteklidir. "CLIENT'i pakete dahil
+etme" sınırı aday ucu (#2558) yüzünden **ihlal olmuyor** — o commit `project/apps` altına
+dokunmuyor.
+
+#### 8.9.4 RatificationRef — motor literali bağı (mühürden ÖNCE doğrulanacak)
+
+RELEASE20 R24 mühürleyicisi (`tools/Seal-Package.ps1:40`) ref'i şu desenle kabul eder:
+
+```text
+^OWNER-RATIFICATION-C33-RELEASE20-CUTOVER-[0-9]{8}-R[0-9]{2}(-[A-Z0-9-]+)?$
+```
+
+Sürüm adı **literaldir**. Fiilen kullanılanlar: `…RELEASE20-CUTOVER-20260907-R01` ve `-R02`.
+Serbest biçimli "ULAS-…" ref bu desene uymaz ve S-00'da reddedilir.
+
+**Bağlayıcı kural:** yeni sürüm paketi forklanırken `Seal-Package.ps1` içindeki sürüm literali
+yeni sürüm adına güncellenir ve **S-00'ın ref'i kabul ettiği mühürden önce kanıtlanır**. Ref ile
+motor literali uyuşmuyorsa **DUR**; yürütücü kendi başına ref biçimi uydurmaz. (RELEASE17→18
+forkunda bu literal elle düzeltilmişti; atlanırsa mühür S-00'da düşer.)
+
+#### 8.9.5 F04 provasına iki bağlayıcı düzeltme
+
+1. **Derleme tabanı sabit aday `d2223e78`** — "güncel main" değil. Bugün maliyeti sıfır:
+   `d2223e78:project/apps` ve `f8d15f73:project/apps` ağaç hash'i **birebir eşit**
+   (`b26d922cd7f39121b0881b62305d6e90908c80e0`). Taban sabitlenmezse main ilerlediğinde prova
+   kanıtı kendiliğinden bayatlar.
+2. **Harness PR'inin `project/apps` deltası 0 olmalı.** `project/apps` altına dokunan bir merge,
+   ölçülmüş 27-dosya deltasını ve §8.3'teki devralınan kabulleri geçersiz kılar; A-01 yeniden
+   ölçülmek zorunda kalır. Tek istisna: yalnız `ci-manifests/*.txt` satırı (CI manifest tuzağı —
+   listeye eklenmeyen spec CI'da hiç koşmaz); kod/spec dosyası `project/apps` altına girmez.
+
+F04'ün doğru tespiti kayda geçer: **A-02 bir sözleşme belgesidir, çalıştırılabilir betik
+içermez.** Harness'ı F04 yazar; sözleşme belgesi yeniden yazılmaz. Ayrıca F04, provada
+uygulamayı F-B01-05'i içeren bir ağaçtan derleyeceği için **A-04'ün DTO reddi ölçütünü provada
+gerçekten ölçebilir** — bu, canlı A-04'ün A-01 bağımlılığını **değiştirmez**.
