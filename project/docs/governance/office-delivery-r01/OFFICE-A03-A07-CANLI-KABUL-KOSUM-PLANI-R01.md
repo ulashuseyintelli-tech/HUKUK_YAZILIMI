@@ -1,9 +1,11 @@
-# OFFICE A-03…A-07 — Canlı Kabul Koşum Planı (R01)
+# OFFICE A-03…A-07 — Canlı Kabul Koşum Planı (R01, **R02 eki ile**)
 
 **Durum:** HAZIRLIK — koşum **BAŞLAMADI** ve bu belge koşum yetkisi **ÜRETMEZ**
 **Ön koşul:** cutover tamamlanmış olacak; pencereyi ana yürütücü ilan edecek
 **Kapsam:** A-03 · A-04 · A-05 · A-06 · A-07 canlı kabul koşumunun sırası, yazma envanteri,
 bayrak yönetimi ve geri alma adımları
+**R02 eki (2026-09-08):** §3.3 kesinti sonucu + iki seçenek (owner kararı) · §3.4 yeniden
+başlatma doğrulaması · §3.5 bayrağın yetki yerine geçmediğinin pozitif ölçümü
 
 > **Bu belge bir kabul satırı KAPATMAZ.** İzole prova başarısı canlı kapanış sayılmaz.
 > A-07 için tamamlanmış olan yalnız **uygulama ve izole prova**dır (`2187a78b`); A-07'nin
@@ -95,6 +97,49 @@ Bu yolda **silinemeyen kayıt üretilmez**.
    bırakılmaz ve durum **açıkça raporlanır**.
 
 > Bu üç kalem (dosya/mekanizma · yeniden başlatma · geri alma) **paket envanterine** girer.
+
+### 3.3 ⚠ KESİNTİ SONUCU — bu koşum **kendi kesintisini üretir**
+
+Bayrağın yalnız yeniden başlatmayla değişebilmesinin doğrudan bir işletme sonucu vardır:
+**bayrağı açmak bir API yeniden başlatması, kapatmak bir tane daha.** Yani canlı kabul,
+cutover'ın kesintisine **ek olarak** kısa kesinti(ler) doğurur.
+
+> Bu kalem **yayın paketinin kesinti/kilit bütçesine** girer. Owner kesinti bütçesini
+> onaylarken bunu görmelidir. Aşağıdaki iki seçenek sunulur; **seçim owner'ındır.**
+
+| | **(a) Dar pencere** — iki ek yeniden başlatma | **(b) Tek ek yeniden başlatma** |
+|---|---|---|
+| Akış | Cutover bayrak **yokken** yapılır → bayrak aç + restart → A-03…A-07 → bayrak kaldır + restart | Bayrak cutover'ın `.env`'ine konur → cutover'ın **kendi** restart'ı etkinleştirir → A-03…A-07 → bayrak kaldır + restart |
+| Ek kesinti | **2** | **1** |
+| Ucun canlıda etkin kaldığı süre | Yalnız kabul penceresi — **en dar** | Cutover anından kabul bitene kadar — **daha geniş** |
+| Owner lafzıyla uyum | "Varsayılan KAPALI + **kontrollü açılma**" ifadesine daha yakın | "Kontrollü açılması ve koşum sonunda kapatılması" ifadesiyle **gerilimli** |
+
+**Bu belgenin tavsiyesi: (a).** Gerekçe: kontrollü uç yalnız kabul penceresinde canlıda
+etkin olur; güvenlik yüzeyi en dar tutulur. Ama kesinti bütçesi bir **owner kararıdır** ve
+(b) seçilirse plan aynen uygulanabilir — yalnız açma adımı cutover'a taşınır.
+
+### 3.4 Her yeniden başlatmanın **kendi doğrulaması** vardır
+
+"Restart yaptım" **yeterli değildir**; her yeniden başlatmadan sonra ölçülür:
+
+1. **Yeni PID** — eski dinleyicinin gerçekten öldüğü ve PID'in değiştiği.
+2. **Port dinlemede** — API isteğe yanıt veriyor.
+3. **Bayrağın beklenen durumu UÇTAN teyit edilir** — `.env`'e bakmak yetmez:
+   - açma sonrası: kontrollü uç **yetkili aktörle çalışır** (A-07 adımının kendisi kanıttır),
+   - kapatma sonrası: kontrollü uç **403 `OFFICE_APPROVAL_CONTROLLED_EXECUTION_DISABLED`** döner.
+
+### 3.5 Bayrağın **yetki yerine geçmediği** POZİTİF olarak ölçülür
+
+Bayrak **AÇIKKEN** yetkisiz aktörle kontrollü uç çağrılır ve **reddedildiği** gösterilir:
+
+| Aktör | Beklenen |
+|---|---|
+| `staffMember` bağlı kullanıcı (F01 negatif) | **403** |
+| ADMIN olmayan yetkili avukat | **403** (`..._ADMIN_REQUIRED`) |
+| Anonim | **401** |
+
+Bu ölçüm olmadan "bayrak yetki yerine geçmez" iddiası **kanıtlanmış sayılmaz** — yalnız
+kodda böyle yazması yeterli değildir.
 
 ---
 
