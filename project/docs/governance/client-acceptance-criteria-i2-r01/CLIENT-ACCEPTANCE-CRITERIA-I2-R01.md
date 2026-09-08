@@ -490,18 +490,42 @@ Bu yüzden:
   kanıtı değildir** — ölçüm o koşumda `ÖLÇÜLEMEDİ`dir
 - **Kanıt:** `YEREL-İZOLE`
 
-### H5-05 · İnceleme (review) ek eşik istemez
-- **İşlem:** `POST /client-intake-submissions/:id/claim`, `/fields/bulk-review`,
-  `POST /client-intake-fields/:fieldId/review`, `/reject`
-- **Dayanak:** `client-intake-review.service.ts:108,127,151,174` — **`isApproverEligible`
-  çağrısı YOKTUR**
-- **Aktör yetki bağı:** staff JWT yeterli; elevated **gerekmez**
+### H5-05 · İnceleme: AYRI ve BAĞIMSIZ `client.intake.review` yetkisi (CR-1)
+
+> **DÜZELTME KAYDI.** Bu ölçütün ilk iki yazımı YANLIŞTI ve İ3 koşumu ikisini de çürüttü:
+> ~~"staff JWT yeterli, ek eşik istemez"~~ (gerekçe: serviste `isApproverEligible` çağrısı yok) ve
+> ~~"eşik `ADMIN VEYA elevated`"~~ (o, WORKSPACE komutlarının eşiğidir). Ortak hata:
+> **tek bir kontrolün yokluğundan yetki yokluğu sonucu çıkarmak.**
+
+- **İşlem:** `POST /client-intake-submissions/:id/claim`, `/reject`,
+  `/fields/bulk-review`, `POST /client-intake-fields/:fieldId/review`
+- **Dayanak (CR-1, owner RATIFIED 2026-08-03):** `client-mutation-policy.ts:432-441,464-481`
+  (`decideClientIntakeReviewCommand` → `reviewAuthority` sinyali) ·
+  `client-workspace-command-authority.ts:222-230` (controller katmanı) ·
+  `client-intake-review-authorization.service.ts:5,26-90` (sinyalin kaynağı)
+- **Aktör yetki bağı — ÜÇ KOŞUL AYRI AYRI aranır, hiçbiri diğerini karşılamaz:**
+  1. **Coarse rol kapısı** — `VIEWER` fail-closed reddedilir; tanınmayan rol de reddedilir.
+  2. **Aktör profil koşulu** — aktör **TAM OLARAK BİR** profil taşımalıdır
+     (`Lawyer` **XOR** `StaffMember`); ikisi de yoksa veya ikisi de varsa
+     `CLIENT_INTAKE_REVIEW_ACTOR_PROFILE_INVALID`. Profil aktif ve aynı tenant'ta olmalıdır.
+  3. **Bağımsız review grant'i** — `PermissionGrant` üzerinde **exact GLOBAL**
+     `client.intake.review` **ALLOW** (geçerli bir `DENY` her zaman önceliklidir).
+     Süre alanları (`validFrom` ≤ now, `validUntil` null veya gelecekte) de aranır.
+- **`isApproverEligible` (promotion eşiği) bu kapıyı AÇMAZ ve ROL (ADMIN DAHİL) TEK BAŞINA
+  YETKİ VERMEZ.** Bunlar üç ayrı mekanizmadır ve birbirine genellenemez.
 - **Kapsam:** tenant + submission
-- **Başlangıç:** submission incelenmemiş
-- **Beklenen:** alanlar `APPROVED`/`REJECTED` işaretlenir; **kanonik kayıtta hiçbir değişiklik
-  olmaz** (inceleme aktarım değildir)
-- **Red halinde korunacak:** başka tenant'ın submission'ında işlem yapılamaz
+- **Başlangıç:** submission incelenmemiş; ölçülecek aktörlerin **geçerli profili olmalıdır**
+- **Beklenen:** grant'ı olan aktör alanları `APPROVED`/`REJECTED` işaretler; **kanonik kayıtta
+  (adres / `ClientIntelStatement`) hiçbir değişiklik olmaz** — inceleme aktarım değildir
+- **Red halinde korunacak:** grant'ı olmayan aktörde `403`; alan durumu ve kanonik kayıt
+  değişmez; başka tenant'ın submission'ında işlem yapılamaz
 - **Kanıt:** `YEREL-İZOLE`
+
+> **ÖLÇÜM KURALI (bağlayıcı).** Ürün, profil reddi ile grant reddini **aynı dış koda**
+> (`CLIENT_MUTATION_DENIED_INTAKE_REVIEW`) düşürür — iç ret nedenini sızdırmaz; bu doğru
+> güvenlik davranışıdır. Sonuç: **profilsiz bir aktörün 403'ü, grant reddinin kanıtı olarak
+> KULLANILAMAZ.** Negatif yetki senaryolarında aktörün geçerli profili bulunmalıdır; aksi hâlde
+> ölçüm neyi kanıtladığını söyleyemez.
 
 ### H5-06 · Aktarım (promote) elevated ister ve yalnız onaylı alanı taşır
 - **İşlem:** `POST /client-intake-submissions/:id/promote` ·
@@ -510,7 +534,9 @@ Bu yüzden:
   (`assertCanManagePromotion` → `isApproverEligible`) · idempotency `63,136-138` ·
   kısmi sonuç `66,177-182` (F46-K4)
 - **Aktör yetki bağı:** `isApproverEligible(userId, tenantId) === true` (PARTNER veya onay
-  yetkisi verilmiş avukat). **Bu, H5-05'ten farklı bir eşiktir ve genellenmemelidir.**
+  yetkisi verilmiş avukat). **Bu, H5-05'in `client.intake.review` grant'ından FARKLI ve
+  BAĞIMSIZ bir eşiktir** (CR-1 md.6: aynı aktör iki işlemi ancak İKİ yetkiyi AYRI AYRI
+  taşıyorsa yapar). ADMIN rolü bu kapıyı da AÇMAZ.
 - **Kapsam:** tenant + submission/alan
 - **Başlangıç:** alan `reviewStatus=APPROVED`, `promotedRefId=null`
 - **Beklenen:** yalnız `APPROVED` alanlar taşınır; **idempotent** (`promotedRefId` dolu alan
@@ -664,7 +690,7 @@ Yüzey (`portal.controller.ts:64-362`): `login`, `forgot-password`, `reset-passw
 |---|---|---|---|
 | H2 | H2-01…H2-10 | **İ13** | R02'de "davranış ölçütü İ2'de yazılır" denmişti → **yazıldı** |
 | H4 | H4-01…H4-08 | **İ14** | R02'de "beyan/rıza/KVKK davranış ölçütü İ2'de yazılır" → **yazıldı**; `K7_ACCESS_GATE`'in dosya bağı kuruldu |
-| H5 | H5-01…H5-06 | **İ11** | "review≠promote kapısı" H5-05/H5-06 olarak ayrıştırıldı |
+| H5 | H5-01…H5-06 | **İ11** | "review≠promote kapısı" H5-05/H5-06 olarak ayrıştırıldı; İ3 koşumu ikisinin **bağımsız** olduğunu ölçtü (grant vs eligibility) |
 | H7 | H7-00…H7-05 | **İ4** → DAHİL ise **İ16** | Ölçütler hazır; kapsam kararı **verilmedi** |
 
 **Çift sayım yok.** Aynı davranış iki hizmet altında ayrı ölçüt olarak yazılmadı:
