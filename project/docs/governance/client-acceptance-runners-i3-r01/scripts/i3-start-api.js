@@ -119,10 +119,32 @@ function probeTcp(host, port, timeoutMs = 1500) {
     EMAIL_FROM: 'noreply@ah-harness.invalid',
     CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED: 'true',
     CLIENT_FINANCIAL_DISCLOSURE_PUBLICATION_ENABLED: 'true',
+    // Bu ornegin KIMLIGI, API surecine GECIRILIR. Boylece `instanceToken` yalniz
+    // yapilandirma dosyasinda duran bir etiket olmaktan cikar: surec icinde calisan
+    // `i3-spy.js` onu sayac dosyasina yazar ve kosucu ikisini KARSILASTIRIR. Karsilastirma
+    // olmadan, dolu ama uyusmayan bir yapilandirma (or. dosyada 'smtp', surecte 'mock')
+    // on kosuldan GECER ve sonda atilirdi.
+    I3_INSTANCE_TOKEN: instanceToken,
     I3_SPY_FILE: SPY_FILE,
     I3_SMTP_CAPTURE: CAPTURE,
     ...(bypass ? { I3_SPY_BYPASS_ALLOWLIST: '1' } : {}),
   };
+
+  // ── `.env` GOLGESI: ConfigService dotenv'i cwd'den yukler. dotenv ZATEN TANIMLI
+  // process.env anahtarlarini EZMEZ, bu yuzden yukarida acikca verdigimiz degerler etkindir;
+  // yine de belirsizlik birakmamak icin tasima anahtarlarini golgeleyen bir `.env` varsa
+  // fail-closed dururuz — "etkin ayar" iddiasi tek kaynakli kalmali.
+  const dotenvPath = path.join(WORK, '.env');
+  if (fs.existsSync(dotenvPath)) {
+    const shadow = fs.readFileSync(dotenvPath, 'utf8').split(/\r?\n/)
+      .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
+      .map((l) => l.split('=')[0].trim())
+      .filter((k) => ['EMAIL_PROVIDER', 'SMTP_HOST', 'SMTP_PORT'].includes(k));
+    if (shadow.length) {
+      throw new Error(`calisma dizinindeki .env tasima anahtarlarini golgeliyor `
+        + `(${shadow.join(',')}) — etkin ayar tek kaynakli olmaz, fail-closed durur`);
+    }
+  }
 
   const out = fs.openSync(path.join(WORK, 'i3-api.out.log'), 'a');
   const err = fs.openSync(path.join(WORK, 'i3-api.err.log'), 'a');

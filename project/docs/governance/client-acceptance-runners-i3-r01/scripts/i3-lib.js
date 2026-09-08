@@ -465,9 +465,62 @@ const decide = {
   },
 };
 
+// =========================================================================================
+// CALISMA ZAMANI TANIGI — TEK KAYNAK
+//
+// Yapilandirma dosyasi "dolu" olabilir ve yine de CALISAN ornegi temsil ETMEYEBILIR
+// (or. dosyada `emailProvider:'smtp'`, surecte gercekte `mock`). Dosyayi okuyan kontroller
+// (providerOk/targetOk) boyle bir yalani AYIRT EDEMEZ; `pidOk` de gercek pid'de gecer.
+// Tanik, API surecinin ICINDEN yazan `i3-spy.js`'tir.
+//
+// Bu fonksiyon HEM izolasyon on kosulunda HEM de etkin saglayiciya gore dal secen
+// olcutlerde kullanilir. Kopyalanirsa biri duzeltilip digeri bayat kalir ve yalan
+// yapilandirma yeniden gecerdi.
+//
+// OKUNAMAZSA `readable:false` doner — cagiran bunu "eslesti" SAYMAZ.
+// =========================================================================================
+function readRuntimeWitness(config) {
+  const miss = (reason) => ({ ok: false, readable: false, reason, fields: {}, mismatch: null,
+    observed: null, provider: null });
+  if (!config || !config.spyCounterFile) return miss('yapilandirma/tanik dosyasi yolu YOK');
+  let spy;
+  try {
+    spy = JSON.parse(require('fs').readFileSync(config.spyCounterFile, 'utf8'));
+  } catch (e) {
+    return miss(e && e.message ? e.message : String(e));
+  }
+  const need = ['instanceToken', 'pid', 'emailProvider', 'smtpHost', 'smtpPort'];
+  const absent = need.filter((k) => spy[k] === undefined || spy[k] === null);
+  if (absent.length) return miss(`tanikta alan YOK: ${absent.join(',')}`);
+
+  const observed = {
+    provider: String(spy.emailProvider).toLowerCase(),
+    host: String(spy.smtpHost),
+    port: String(spy.smtpPort),
+  };
+  const fields = {
+    token: spy.instanceToken === config.instanceToken,
+    pid: Number(spy.pid) === Number(config.pid),
+    provider: observed.provider === String(config.emailProvider).toLowerCase(),
+    host: observed.host === String(config.smtpHost),
+    port: observed.port === String(config.smtpPort),
+  };
+  const mismatch = Object.keys(fields).filter((k) => fields[k] !== true);
+  return {
+    ok: mismatch.length === 0,
+    readable: true,
+    reason: null,
+    fields,
+    mismatch,
+    observed,
+    // Dal secimi icin: YALNIZ bag dogrulanmissa surecin BILDIRDIGI saglayici verilir.
+    provider: mismatch.length === 0 ? observed.provider : null,
+  };
+}
+
 module.exports = {
   AH, AH_DIR, VERDICT, Results,
   captureState, safeCapture, safeCount, diffState, unchanged,
   setupI3, setupDisclosureChain, ACTORS,
-  capturePromotionTargets, diffPromotionTargets, decide,
+  capturePromotionTargets, diffPromotionTargets, decide, readRuntimeWitness,
 };
