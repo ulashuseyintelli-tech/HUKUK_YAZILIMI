@@ -50,14 +50,20 @@ Beklenen (yanıt + kalıcı durum) · Red halinde korunacak veri · Kanıt yeri.
 
 Rotalar (`client-address.controller.ts:28-147`, tamamı `JwtAuthGuard` altında):
 
-| Rota | Servis | Eşik |
-|---|---|---|
-| `GET /clients/:clientId/addresses?status=active\|archived\|all` | `findForClient` | okuma (staff) |
-| `POST /clients/:clientId/addresses` | `create` | koşullu (aşağıda) |
-| `PUT /clients/:clientId/addresses/:addressId` | `update` | koşullu |
-| `DELETE /clients/:clientId/addresses/:addressId` | `remove` | — (her zaman reddedilir) |
-| `POST .../:addressId/archive` | `archive` | **her zaman elevated** |
-| `POST .../:addressId/restore` | `restore` | **her zaman elevated** |
+| Rota | Servis | Başarı kodu | Eşik |
+|---|---|---|---|
+| `GET /clients/:clientId/addresses?status=active\|archived\|all` | `findForClient` | `200` | okuma (staff) |
+| `POST /clients/:clientId/addresses` | `create` | **`201`** | koşullu (aşağıda) |
+| `PUT /clients/:clientId/addresses/:addressId` | `update` | `200` | koşullu |
+| `DELETE /clients/:clientId/addresses/:addressId` | `remove` | — | — (her zaman `400`) |
+| `POST .../:addressId/archive` | `archive` | **`201`** | **her zaman elevated** |
+| `POST .../:addressId/restore` | `restore` | **`201`** | **her zaman elevated** |
+
+**Başarı kodları controller'ın GERÇEK sözleşmesidir, beklentiden türetilmemiştir.**
+`client-address.controller.ts` içinde `@HttpCode` **yoktur**; NestJS varsayılanı geçerlidir →
+`@Post` **201**, `@Put`/`@Get` **200**. Arşivleme ve geri alma `@Post` olduğu için `201`
+döner — bunlar mevcut kayıt üzerinde durum değiştirse de kod `200` DEĞİLDİR.
+**Ürün kodu bu belgeye uydurulmaz; belge ürünü kaydeder.**
 
 Elevated eşiği (`client-mutation-policy.ts:327-364`, owner D02/D03/D07):
 
@@ -88,8 +94,8 @@ Elevated eşiği (`client-mutation-policy.ts:327-364`, owner D02/D03/D07):
 - **Aktör yetki bağı:** rol USER/ADMIN, **eligibility GEREKMEZ**
 - **Kapsam:** aktör tenant'ı = müvekkil tenant'ı
 - **Başlangıç:** müvekkilde **hiç** aktif (`isCurrent=true`) adres yok
-- **Beklenen:** `201`; oluşan satır `isCurrent=true` **ve** `isPrimary=true` (INV-03 gereği);
-  audit satırı aynı transaction'da
+- **Beklenen:** **`201`** (`@Post`, `@HttpCode` yok); oluşan satır `isCurrent=true` **ve**
+  `isPrimary=true` (INV-03 gereği); audit satırı aynı transaction'da
 - **Red halinde korunacak:** —
 - **Kanıt:** `YEREL-İZOLE`
 
@@ -104,8 +110,9 @@ Elevated eşiği (`client-mutation-policy.ts:327-364`, owner D02/D03/D07):
   **ADMIN rolü tek başına yetmez (D07).**
 - **Kapsam:** aktör tenant'ı = müvekkil tenant'ı
 - **Başlangıç:** müvekkilde aktif birincil adres **VAR**
-- **Beklenen (yetkili):** `200`; hedef `isPrimary=true`, eski birincil `isPrimary=false`,
-  **ikisi de** `isCurrent=true` (INV-06 tek birincil, INV-03 tam bir current primary)
+- **Beklenen (yetkili):** `PUT` yolunda **`200`**, `POST` yolunda **`201`**; hedef
+  `isPrimary=true`, eski birincil `isPrimary=false`, **ikisi de** `isCurrent=true`
+  (INV-06 tek birincil, INV-03 tam bir current primary)
 - **Red halinde korunacak (yetkisiz):** `403` `{ code: 'CLIENT_MUTATION_DENIED_LIFECYCLE' }`;
   **her iki** adres satırı alan düzeyinde değişmez; audit yazılmaz
 - **Kanıt:** `YEREL-İZOLE`
@@ -117,8 +124,8 @@ Elevated eşiği (`client-mutation-policy.ts:327-364`, owner D02/D03/D07):
 - **Aktör yetki bağı:** `isApproverEligible` zorunlu
 - **Kapsam:** aktör tenant'ı = müvekkil tenant'ı
 - **Başlangıç:** hedef adres `isPrimary=true`
-- **Beklenen (yetkili):** `200`; yalnız istenen alan değişir; birincillik/güncellik durumu
-  değişmez
+- **Beklenen (yetkili):** **`200`** (`@Put`); yalnız istenen alan değişir;
+  birincillik/güncellik durumu değişmez
 - **Red halinde korunacak (elevated olmayan USER):** `403 LIFECYCLE`; satır **hiç** değişmez
 - **Kanıt:** `YEREL-İZOLE`
 
@@ -131,8 +138,9 @@ Elevated eşiği (`client-mutation-policy.ts:327-364`, owner D02/D03/D07):
 - **Aktör yetki bağı:** `isApproverEligible` zorunlu — hedef birincil olmasa bile
 - **Kapsam:** aktör tenant'ı = müvekkil tenant'ı; adres o müvekkile ait
 - **Başlangıç:** hedef adres `isCurrent=true`
-- **Beklenen:** `200`; hedef `isCurrent=false` **ve** `isPrimary=false` (INV-02); arşiv satırı
-  birincil seçimine katılmaz (INV-07); lifecycle audit kaydı aynı transaction'da (§49.4)
+- **Beklenen:** **`201`** (`@Post`, `@HttpCode` yok); hedef `isCurrent=false` **ve**
+  `isPrimary=false` (INV-02); arşiv satırı birincil seçimine katılmaz (INV-07); lifecycle audit
+  kaydı aynı transaction'da (§49.4)
 - **Red halinde korunacak:** yetkisizde `403 LIFECYCLE`, satır değişmez, audit yok. **Zaten
   arşivli** hedefte sabit hata döner — *idempotent başarı değildir*; durum ve audit değişmez
 - **Kanıt:** `YEREL-İZOLE`
@@ -143,8 +151,8 @@ Elevated eşiği (`client-mutation-policy.ts:327-364`, owner D02/D03/D07):
 - **Aktör yetki bağı:** `isApproverEligible` zorunlu
 - **Kapsam:** aktör tenant'ı = müvekkil tenant'ı
 - **Başlangıç:** hedef adres `isCurrent=false`
-- **Beklenen:** `200`; hedef `isCurrent=true`; `makePrimary=true` ise birincillik devri de
-  gerçekleşir ve INV-03/INV-06 korunur
+- **Beklenen:** **`201`** (`@Post`, `@HttpCode` yok); hedef `isCurrent=true`;
+  `makePrimary=true` ise birincillik devri de gerçekleşir ve INV-03/INV-06 korunur
 - **Red halinde korunacak:** yetkisizde `403 LIFECYCLE`. **Zaten güncel** hedefte
   `400 CLIENT_ADDRESS_ALREADY_CURRENT`; durum ve audit değişmez
 - **Kanıt:** `YEREL-İZOLE`
@@ -188,15 +196,17 @@ Elevated eşiği (`client-mutation-policy.ts:327-364`, owner D02/D03/D07):
 - **Kanıt:** `YEREL-İZOLE`
 
 ### H2-10 · İletişim kişileri: ayrı CRUD yoktur, tam değiştirme vardır
-- **İşlem:** `PUT /clients/:id` gövdesinde `contacts` dizisi
-- **Dayanak:** `client.service.ts:1895` (`clientContact.deleteMany`) → `1921`
-  (`createMany`) — **ayrı `POST/PUT/DELETE /contacts` ucu YOKTUR**
-- **Aktör yetki bağı:** `contacts` alan sınıfı **STANDARD**'dır
-  (`client-mutation-policy.ts:84-104`); VIEWER reddedilir, elevated gerekmez
+- **İşlem:** `PUT /clients/:id` gövdesinde **`phones`** ve/veya **`emails`** dizileri
+- **Dayanak:** `client.service.ts:1893-1895` — tetikleyici koşul `if (data.phones || data.emails)`,
+  ardından `clientContact.deleteMany` → `createMany`. **Ayrı `POST/PUT/DELETE /contacts` ucu
+  YOKTUR** ve gövdede `contacts` adlı bir alan **KABUL EDİLMEZ**
+- **Aktör yetki bağı:** `phones`/`emails` alan sınıfı **STANDARD**'dır
+  (`client-mutation-policy.ts:86-89`); VIEWER reddedilir, elevated gerekmez
 - **Kapsam:** aktör tenant'ı = müvekkil tenant'ı (`ClientContact` kendi `tenantId`'sini
   taşımaz; kapsam `client.tenantId` üzerinden kurulur)
 - **Başlangıç:** müvekkilde N adet iletişim kaydı
-- **Beklenen:** istek gövdesindeki dizi **yeni tam küme** olur; gönderilmeyen kayıtlar **silinir**
+- **Beklenen:** `phones`/`emails` dizileri **yeni tam küme** olur; gönderilmeyen kayıtlar
+  **silinir** (`deleteMany` + `createMany`)
 - **Red halinde korunacak:** VIEWER isteğinde mevcut kayıtların tamamı korunur
 - **Kanıt:** `YEREL-İZOLE`
 
@@ -406,31 +416,54 @@ Bu yüzden:
 | `POST /client-intake-submissions/:id/promote` | promotion | **`isApproverEligible`** |
 | `POST /client-intake-fields/:fieldId/promote-address` · `/promote-soft` | promotion | **`isApproverEligible`** |
 
-### H5-01 · Bilgi talebi gönderimi Yol B'yi kullanır
-- **İşlem:** `ClientInfoRequest` gönderimi
-- **Dayanak:** `address-discovery/client-info-request.service.ts:3,286` ·
-  `notification/email-provider.service.ts:72-75`
-- **Aktör yetki bağı:** staff JWT
-- **Kapsam:** tenant + müvekkil
-- **Başlangıç:** gönderilecek talep hazır
-- **Beklenen:** sağlayıcı sonucu `success:true|false` olarak sınıflandırılır; **sağlayıcı
-  istisnası yakalanıp `success:false`'a çevrilir** (bir SendGrid timeout'u ile kalıcı hata
-  aynı sonuca düşer — bu bilinen bir sınıflandırma sınırıdır)
-- **Red halinde korunacak:** gönderim başarısızsa talep kaydı tutarlı kalır
-- **Kanıt:** `YEREL-İZOLE` — **İ1a provası bu yol için geçerli değildir (§5)**; env tabanlı
-  izolasyon ayrıca kurulmalıdır
+### H5-01 · Bilgi talebi gönderimi: üç sonuç ayrı değerlendirilir (= A-9 + A-10)
+- **İşlem:** `POST /address-discovery/client-info-request` → `ClientInfoRequestService.createRequest`
+- **Dayanak (#2534 `6dd25b31`):** `email-provider.service.ts:41-49`
+  (`EmailDeliveryOutcome = 'ACCEPTED' | 'REJECTED' | 'INDETERMINATE'`), `90-101`
+  (`classifyOutcome`; bilinmeyen durumda **fail-safe `INDETERMINATE`**) ·
+  `client-info-request.service.ts:267-320` (üç sonucun ayrı ele alınması)
+- **Aktör yetki bağı:** staff JWT + `ClientWorkspaceCommandActor` (yetki kapısı
+  `createRequest:114-119`; `createRequestUnchecked` doğrudan çağrılmaz)
+- **Kapsam:** tenant + müvekkil (+ dosya/borçlu)
+- **Başlangıç:** gönderilecek talep hazır; kalıcı `ClientInfoRequest` kaydı **yok**
+- **Beklenen — üç sonuç ayrı:**
+  | Sonuç | Koşul | Yanıt | Kalıcı durum |
+  |---|---|---|---|
+  | `sent` | `emailResult.success === true` (ACCEPTED) | başarı | `ClientInfoRequest` **yazılır**; `sentAt` gerçek gönderim anı. **Teslim kanıtı DEĞİLDİR** |
+  | `failed` | `success !== true` **ve** `deliveryOutcome === 'REJECTED'` | `503` + `reasonCode: CLIENT_INFO_REQUEST_EMAIL_FAILED` | kayıt **YAZILMAZ** |
+  | `indeterminate` | `success !== true` **ve** `deliveryOutcome !== 'REJECTED'`; ayrıca sağlayıcı katmanı dışına kaçan **istisna** | `503` + `reasonCode: CLIENT_INFO_REQUEST_EMAIL_INDETERMINATE` | kayıt **YAZILMAZ**; **kör otomatik tekrar gönderim YAPILMAZ** |
+- **`success:false` tek başına kesin ret DEĞİLDİR.** Gerçek sağlayıcı yolları (SMTP/SendGrid/SES)
+  istisnaları yakalayıp `success:false` döndürür; kesinlik **yalnız** `deliveryOutcome`
+  alanından okunur. Alan yoksa (eski/bilinmeyen sağlayıcı) fail-safe **BELİRSİZ**'dir
+- **Red/belirsizlikte korunacak:** `ClientInfoRequest`, `ClientNotification` ve
+  `AddressAuditLog` satırlarının **hiçbiri oluşmaz** (başarısız komut audit üretmez); ikinci bir
+  sağlayıcı çağrısı **yapılmaz**
+- **Kanıt:** `YEREL-İZOLE` — **İ1a provası bu yol için geçerli değildir (§5)**; Yol B'nin kendi
+  izolasyonu kurulmalıdır
 
-### H5-02 · Güvenli bağlantı üretimi: ham token yalnız oluşturma yanıtında
-- **İşlem:** `POST /client-intake-links/case/:caseId`
+> **Çift sayım uyarısı.** Bu ölçüt **A-9** (sağlayıcı reddi → 503, kayıt oluşmaz) ve **A-10**
+> (belirsiz sonuç → `..._EMAIL_INDETERMINATE`, ikinci çağrı yok) kabul kalemlerinin **ta
+> kendisidir** — `CLIENT_INFO_REQUEST_EMAIL_*` kodları bu servise aittir. R02'de A-9/A-10 İ12
+> satırında listelenmiştir; **aynı davranış İ11 ve İ12'de iki kez sayılmaz.** Ölçüm H5-01 olarak
+> **bir kez** yapılır; İ12 onu tekrar koşmaz, sonucu devralır.
+
+### H5-02 · Güvenli bağlantı: ham token kalıcı gövdede taşınmaz (= A-5 + A-6)
+- **İşlem:** `POST /client-intake-links/case/:caseId`, ardından `GET :id` ve
+  `GET case/:caseId`
 - **Dayanak:** `client-intake-link.controller.ts:21-23` ("rawToken yalnız create yanıtında;
   public submit YOK (4.4)")
 - **Aktör yetki bağı:** staff JWT
 - **Kapsam:** tenant + dosya
 - **Başlangıç:** dosya mevcut
-- **Beklenen:** `201`; yanıt ham token içerir; **sonraki hiçbir okuma ucu ham token
-  döndürmez** (`GET :id`, `GET case/:caseId` dahil)
-- **Red halinde korunacak:** —
+- **Beklenen:** `201`; ham token **yalnız oluşturma yanıtında** döner. **A-5:** kalıcı gövde
+  (`ClientNotification.body`, `ClientInfoRequest` alanları, audit kayıtları) ham token
+  **taşımaz**. **A-6:** bağlantı yalnız sağlayıcıya giden metinde bulunur (`transportBody`
+  — `client-info-request.service.ts:274` "bağlantılı `transportBody` YALNIZ burada kullanılır")
+- **Red halinde korunacak:** sonraki hiçbir okuma ucu ham token döndürmez
 - **Kanıt:** `YEREL-İZOLE`
+
+> **Çift sayım uyarısı.** Bu ölçüt **A-5** ve **A-6**'nın karşılığıdır (R02'de İ11'e atanmış).
+> Aynı davranış başka bir iş altında tekrar sayılmaz.
 
 ### H5-03 · Bağlantı iptali sonraki kullanımı kapatır
 - **İşlem:** `POST /client-intake-links/:id/revoke`, ardından `GET /public/intake/:token`
@@ -501,31 +534,55 @@ Yüzey (`portal.controller.ts:64-362`): `login`, `forgot-password`, `reset-passw
 `admin/create-user`, `admin/disable-user` (staff `JwtAuthGuard` **+ servis sınırında
 `isApproverEligible`** — rol tek başına yetmez, bkz. H7-00/H7-04).
 
-### H7-01 · Portal oturumu yalnız kendi müvekkil kapsamını görür
+> **İKİ AYRI KATMAN — birleştirilmemelidir.**
+> **(K1) Token kimliği doğrulaması** — `PortalAuthGuard` token'ın kime ait olduğunu belirler
+> (`type`, `isActive`, `tokenVersion`, `clientId`, `tenantId` DB ile eşleşir). Guard, *hangi
+> nesneye* erişilebileceğini söylemez.
+> **(K2) Nesne erişimi** — istenen dosya/belgenin **müvekkil ve tenant kapsamında çözülmesi**,
+> ilgili **servis sorgusunun `where` yüklemiyle** yapılır. Guard geçen bir token, kapsam dışı
+> bir nesneyi K2 reddettiği için alamaz.
+> H7-01 K1'i, **H7-02 K2'yi** ölçer; İ3 bunları ayrı senaryo olarak koşar.
+
+### H7-01 · Portal oturumu yalnız DB ile doğrulanmış kimlikle kurulur (K1)
 - **İşlem:** `GET /portal/cases`, `/financial-disclosures`, `/poas`, `/documents`,
   `/notifications`
 - **Dayanak:** `portal-auth.guard.ts:46-76` — `request.portalUser` **yalnız veritabanıyla
-  doğrulanmış** kimlikten yazılır; ham JWT claim'i downstream authority olarak bırakılmaz
+  doğrulanmış** kimlikten yazılır; ham JWT claim'i downstream authority olarak bırakılmaz.
+  Controller kapsamı **gövdeden değil** bu kimlikten geçirir
+  (`portal.controller.ts:112` → `getClientCases(req.portalUser.clientId, req.portalUser.tenantId)`)
 - **Aktör yetki bağı:** `ClientPortalUser` (`isActive=true`, `tokenVersion` eşleşir)
 - **Kapsam:** yalnız `portalUser.clientId` ve o müvekkilin `tenantId`'si
 - **Başlangıç:** portal kullanıcısı aktif; müvekkilinde en az bir dosya/belge
-- **Beklenen:** yalnız kendi müvekkiline ait kayıtlar döner
+- **Beklenen:** liste uçları yalnız kendi müvekkiline ait kayıtları döner; istemcinin
+  gövdede/sorguda gönderdiği herhangi bir `clientId` **dikkate alınmaz**
 - **Red halinde korunacak:** —
-- **Kanıt:** `CANLI-YETKİ` veya `YEREL-İZOLE` (İ4 sonrası; portal kullanıcısı oluşturmak
-  gerektiğinden İ1a altyapısına portal aktörü eklenmelidir — İ3'ün kapsamı)
+- **Kanıt:** `YEREL-İZOLE` (İ4 sonrası; portal aktörü İ1a altyapısına eklenmelidir)
 
-### H7-02 · Başka müvekkile/tenant'a erişim reddedilir
-- **İşlem:** portal token'ı ile başka müvekkilin `cases/:id` / `documents/:id` kimliği
-- **Dayanak:** `portal-auth.guard.ts:61-63` (`portalUser.clientId !== payload.clientId` veya
-  `client.tenantId !== payload.tenantId` → red)
-- **Aktör yetki bağı:** portal token
-- **Kapsam:** çapraz müvekkil ve çapraz tenant
-- **Başlangıç:** iki ayrı müvekkil (gerekirse iki tenant) — **karşı kayıtlar yalnız izole
+### H7-02 · Nesne erişimi servis sorgusunun kapsam yükleminde çözülür (K2)
+- **İşlem:** portal token'ı ile **başka müvekkile ait** `GET /portal/cases/:id` ve
+  `GET /portal/documents/:id/download`
+- **Dayanak (servis sorgusu — guard değil):**
+  - `portal.service.ts:452-467` `getCaseDetail(caseId, clientId, tenantId)` →
+    `where: { id, tenantId, OR: [ { clientId }, { caseClients: { some: { clientId } } } ] }`;
+    eşleşmezse **`404` "Dosya bulunamadı"**
+  - `portal.service.ts:854-860` `getDocument(documentId, clientId)` →
+    `where: { id: documentId, clientId }`; eşleşmezse **`404` "Belge bulunamadı"**
+- **Aktör yetki bağı:** geçerli portal token (K1 geçilmiş olmalı — bu ölçüt K1'i değil, K1
+  sonrasını ölçer)
+- **Kapsam:** çapraz müvekkil **ve** çapraz tenant
+- **Başlangıç:** iki ayrı müvekkil (ve ayrı tenant) ile karşı kayıtlar — **yalnız izole
   ortamda kurulur**
-- **Beklenen:** erişim reddedilir; kayıt içeriği sızmaz
-- **Red halinde korunacak:** hedef kayıt okunmaz, değişmez; yanıt varlık/yokluk ayrımı
-  sızdırmaz
+- **Beklenen:** her iki uçta `404`; kayıt içeriği yanıtta **yer almaz**
+- **Red halinde korunacak:** hedef kayıt okunmaz ve değişmez; yanıt "var ama yetkin yok" ile
+  "hiç yok" ayrımını sızdırmaz (ikisi de `404`)
 - **Kanıt:** `YEREL-İZOLE`
+
+> **İ3 için ölçüm notu — kapsam yüklemleri EŞİT DEĞİL.** `getCaseDetail` `tenantId`'yi
+> sorguya **açıkça** koyar; `getDocument` **koymaz** ve kapsamı yalnız `clientId` üzerinden
+> kurar. Belge yolunda tenant bağı dolaylıdır: `clientId` guard tarafından DB'den
+> doğrulanmıştır ve o müvekkilin tenant'ı da doğrulanmıştır. Bu bir kusur iddiası **değildir**;
+> ancak İ3 çapraz-tenant belge senaryosunu **ayrıca** koşmalı ve sonucu bu farkı bilerek
+> raporlamalıdır — "dosyada kapsandı, belgede de kapsanır" **çıkarımı yapılamaz**.
 
 ### H7-03 · Personel token'ı portal uçlarında geçerli değildir
 - **İşlem:** staff JWT ile `GET /portal/cases`
