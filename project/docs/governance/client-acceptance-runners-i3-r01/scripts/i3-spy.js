@@ -31,7 +31,26 @@ if (!SPY_FILE) {
     || 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE20/project/apps/api/dist/apps/api/src';
   const FD = path.join(DIST, 'modules/client-financial-disclosure');
 
-  const state = { dispatcherSend: 0, byProvider: {}, allowlistBypassed: false, wrapped: [] };
+  // CALISMA ZAMANI TANIKLIGI — bu nesne API surecinin KENDI icinden yazilir.
+  // `instanceToken` ve etkin tasima ayarlari burada yapilandirma dosyasindan DEGIL,
+  // surecin gercekten aldigi ortamdan okunur; kosucu ikisini karsilastirarak dosyanin
+  // calisan ornegi temsil ettigini dogrular. `null` degerler kosucuda "eslesti" SAYILMAZ.
+  const state = {
+    dispatcherSend: 0,
+    byProvider: {},
+    allowlistBypassed: false,
+    wrapped: [],
+    // ── calisan ornegin kimligi ve ETKIN ayarlari ──
+    instanceToken: process.env.I3_INSTANCE_TOKEN || null,
+    pid: process.pid,
+    emailProvider: process.env.EMAIL_PROVIDER || null,
+    smtpHost: process.env.SMTP_HOST || null,
+    smtpPort: process.env.SMTP_PORT || null,
+    // teshis: cwd'de `.env` var mi (starter zaten tasima anahtarlarini golgeleyeni reddeder)
+    dotenvInCwd: (() => {
+      try { return fs.existsSync(path.join(process.cwd(), '.env')); } catch (e) { return null; }
+    })(),
+  };
   const flush = () => {
     try { fs.writeFileSync(SPY_FILE, JSON.stringify(state), 'utf8'); }
     catch (e) { /* sayac yazilamazsa cagiran OKUYAMADI olarak raporlar */ }

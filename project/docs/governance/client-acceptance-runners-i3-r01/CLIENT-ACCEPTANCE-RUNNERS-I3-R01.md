@@ -257,14 +257,79 @@ sessizce ayrışabilirdi. Artık `i3-start-api.js` API'yi başlatır **ve** kull
 
 - **Eksik alan varsayılanla TAMAMLANMAZ** — `smtpHost` silindiğinde ön koşul reddeder.
 - **İsteklerin bu örneğe gittiği** doğrulanır: kayıtlı `pid`, API portunun gerçek dinleyicisi mi?
+- **Dosya, çalışan örneği temsil ediyor mu?** — §5.5.
 - Yapılandırma dosyası **sır değeri içermez** (`secretsInConfig: false`).
 
-Ölçülen (A): `ön koşul=OK (ETKİN sağlayıcı='smtp', hedef=127.0.0.1:2526, API örneği pid=72336
-DOĞRULANDI, LAN erişimi YOK) · sonda HTTP 201 · SMTP bağlantısı 2→3 · mesaj 0→1`.
+Ölçülen (A): `ön koşul=OK (ETKİN sağlayıcı='smtp', hedef=127.0.0.1:2526, API örneği pid=73252
+DOĞRULANDI, LAN erişimi YOK) · sonda HTTP 201 · SMTP bağlantısı 2→3 (açıldı=true) · mesaj 0→1 ·
+SONDA YAKALANDI=true`.
 
 **8.3 kısa ad tuzağı:** ürünün `assertNoReparse` koruması kısa ad (`ULASTE~1`) ile uzun adı
 "yol yeniden yönlendiriliyor" sayıp reddeder. Başlatıcı çalışma dizinini `realpath` ile
 çözer ve kısa ad kalırsa **fail-closed durur**.
+
+## 5.5 Tek kaynak yetmez — dosya ≠ çalışan örnek
+
+Tek kaynak, dosyanın **dolu** olmasını garanti eder; **doğru** olmasını değil. Yapılandırma
+`emailProvider:'smtp'` derken süreç gerçekte `mock` koşuyorsa:
+
+- `providerOk` dosyayı okur → **geçer**,
+- `targetOk` dosyayı okur → **geçer**,
+- `pidOk` gerçek dinleyiciyi bulur → **geçer**.
+
+Üç kontrol de dosyanın **kendi içindeki** tutarlılığa bakar; hiçbiri süreci sorgulamaz.
+`instanceToken` de yalnız dosyaya yazılıp **hiçbir yerde karşılaştırılmayan** bir etiketti.
+
+**Tanık, API sürecinin içinden yazan `i3-spy.js`'tir.** Başlatıcı `I3_INSTANCE_TOKEN`'ı sürece
+**geçirir**; spy kendi `process.pid`'ini ve sürecin gerçekten aldığı `EMAIL_PROVIDER` /
+`SMTP_HOST` / `SMTP_PORT` değerlerini sayaç dosyasına yazar. `i3-lib.readRuntimeWitness()`
+beş alanı dosyayla karşılaştırır; **okunamazsa "eşleşti" SAYILMAZ.**
+
+> `.env` gölgesi: `ConfigService` dotenv'i cwd'den yükler ve dotenv **zaten tanımlı**
+> `process.env` anahtarlarını ezmez — bu yüzden başlatıcının verdiği değerler etkindir. Yine de
+> taşıma anahtarlarını gölgeleyen bir `.env` varsa başlatıcı **fail-closed durur**.
+
+**Bağ yalnız ön koşulda değil, dal seçiminde de yüklüdür.** H4-08 önce `apiConfig.emailProvider`
+(bildirilen) değerinden dal seçiyordu; yalan yapılandırma "onaylı sağlayıcı" dalını açıyor ve
+ürün doğru davranırken (`403 PROVIDER_NOT_PRODUCTION`) **yanlış FAIL** üretiliyordu. Artık dal
+`readRuntimeWitness().provider` ile seçilir; bağ yoksa H4-08 **ÖLÇÜLEMEDİ** olur.
+
+### Ölçülen karşı örnek (dolu ama uyuşmayan yapılandırma)
+
+Süreç `--provider mock` ile başlatıldı, ardından dosyaya `emailProvider:"smtp"` yazıldı —
+**eksik alan yok**, `providerOk`/`targetOk`/`pidOk` üçü de geçiyor:
+
+| | Yama ÖNCESİ (`origin/main` düzeneği) | Yama SONRASI |
+|---|---|---|
+| Ön koşul | `ön koşul=OK` → **geçti** | `ÇALIŞMA ZAMANI BAĞI=false (UYUŞMAYAN alan: provider · sürecin bildirdiği: sağlayıcı='mock')` → **reddedildi** |
+| Sonda | **ATILDI** — `sonda HTTP 201` | **ATILMADI** |
+| Gerçek `dispatcher.send` | — | `0→0 (değişmedi=true)`, sayaç **okunabilir** |
+| H4-08 | yanlış dal → **FAIL** (ürün doğruyken) | **ÖLÇÜLEMEDİ — dal seçilmez** |
+| Toplam | `PASS 29 · FAIL 2 · ÖLÇÜLEMEYEN 9` | `PASS 29 · FAIL 1 · ÖLÇÜLEMEYEN 10` |
+
+Yama öncesi ret **sondadan sonra** (`SONDA YAKALANDI=false`) geliyordu; istenen, **sondadan
+önce** reddetmektir. Karşılaştırma testin içinde yeniden yazılmış bir kopyayla değil, **gerçek
+önceki düzenekle** (ayrı `origin/main` worktree'si) yapılmıştır.
+
+Sayaç okunamazsa `null` döner ve **sıfır kabul edilmez**: ret dalı bu durumda
+`GERÇEK dispatcher.send ÖLÇÜLEMEDİ (sayaç okunamadı — SIFIR KABUL EDİLMEZ)` yazar.
+
+### Prova matrisi (tamamı disposable; canlıda hiçbir şey çalıştırılmadı)
+
+| Prova | Yapılandırma | Sonuç |
+|---|---|---|
+| **A** `--provider smtp` | doğru | `PASS 34 · FAIL 0 · ÖLÇÜLEMEYEN 6` · `ÇALIŞMA ZAMANI BAĞI=true [token/pid/sağlayıcı/host/port süreççe DOĞRULANDI]` · sonda HTTP 201 · SMTP bağlantısı 2→3 · mesaj 0→1 · H4-08 yayın `PUBLISHED`, gerçek `dispatcher.send` 0→1 |
+| **B** `--provider mock` | doğru | `PASS 30 · FAIL 0 · ÖLÇÜLEMEYEN 10` · H4-08 `403 …PROVIDER_NOT_PRODUCTION`, `CONTENT_APPROVED→SEND_PENDING`, gerçek `dispatcher.send` 0→0 |
+| **C** `--provider mock --bypass-allowlist` | doğru | `PASS 30 · FAIL 0 · ÖLÇÜLEMEYEN 11` · H4-08N gerçek `dispatcher.send` **0→1** (bypass olmadan sıfır olmalıydı); karşı örnek: SMTP bağlantısı 1→1 |
+| **D** `smtpHost` **silinmiş** | eksik | `FAIL 0` · H5-00 **ÖLÇÜLEMEDİ — ZORUNLU alan EKSİK (varsayılanla TAMAMLANMAZ)** · gönderim çağrısı 0 |
+| **E** süreç `mock`, dosya `"smtp"` | **dolu ama uyuşmaz** | `PASS 29 · FAIL 1 · ÖLÇÜLEMEYEN 10` · H5-00 **sondadan ÖNCE reddedildi**, gerçek `dispatcher.send` 0→0 · H4-08 **ÖLÇÜLEMEDİ — dal seçilmez** |
+| **E′** aynı uyuşmazlık, **yama öncesi** düzenek | **dolu ama uyuşmaz** | `PASS 29 · FAIL 2 · ÖLÇÜLEMEYEN 9` · ön koşul **GEÇTİ** ve **sonda ATILDI** (`HTTP 201`) · H4-08 yanlış dal → **FAIL** |
+| **NC** `i3-negative.js` | — | `PASS 9 · FAIL 0` (NC-3/4/5/8/9 mutasyon kanıtlı) |
+
+E ile E′ arasındaki tek değişken **düzenektir**: API aynı komutla (`--provider mock`) ve aynı
+veritabanına karşı başlatıldı, aynı uyuşmazlık (`emailProvider→"smtp"`) aynı şekilde kuruldu.
+API **süreci** ikisi arasında yeniden başlatıldı — bu, login hız sınırının in-memory sayacını
+sıfırlamak için zorunludur (§8 md.1); dolayısıyla `pid` ve `instanceToken` doğal olarak farklıdır.
 
 ## 6. Negatif kontroller
 
@@ -285,8 +350,8 @@ fonksiyonlarını (`i3-lib.decide.*`) ve gerçek karşılaştırma katmanını �
 yeniden yazılmış bir `accepts`/`isDenied`/`gate` olsaydı, gerçek kapı bozulduğunda test yine
 geçerdi — kendi kendini onaylardı.
 
-**Mutasyon kanıtı:** NC-3/4/5/8'de gerçek kapı geçici olarak bozulur, ilgili kontrolün
-**kırıldığı** gösterilir ve düzeltme `finally` içinde geri konur. Sonuç: **8/8 PASS**.
+**Mutasyon kanıtı:** NC-3/4/5/8/9'da gerçek kapı geçici olarak bozulur, ilgili kontrolün
+**kırıldığı** gösterilir ve düzeltme `finally` içinde geri konur. Sonuç: **9/9 PASS**.
 
 | # | Enjekte edilen bozuk durum | Ölçülen |
 |---|---|---|
@@ -298,10 +363,11 @@ geçerdi — kendi kendini onaylardı.
 | NC-6 | Fotoğraf/sayım sorgusu düşer | Hata **yukarı taşınır**, `null` dönmez |
 | NC-7 | `unchanged()` null fotoğrafla çağrılır | **PASS vermez** (`unmeasured`) |
 | NC-8 | `matchesExactCode` "alternatif kabul" mutasyonu | **Kırılır** — "STALE **veya** CONTENT_HASH" kabulü iki senaryoyu ayrıştıramaz |
+| NC-9 | Dolu ama uyuşmayan yapılandırma (sağlayıcı, bayat `instanceToken`); tanık dosyası yok | **Reddedilir**; dal seçimi için sağlayıcı **verilmez**; okunamayan tanık "eşleşti" **sayılmaz** |
 
 **Mutasyon sonuçları:** NC-3 (`>=400 kabul`) · NC-4 (`>=400 red`) · NC-5 (`bağı yok say`) ·
-NC-8 (`alternatif kod kabul`) — dördünde de bozukken iddia **false** döndü (kontrol kırıldı) ve
-düzeltme geri kondu.
+NC-8 (`alternatif kod kabul`) · NC-9 (`yalnız okunabilirliğe bak`) — beşinde de bozukken iddia
+**false** döndü (kontrol kırıldı) ve düzeltme geri kondu.
 
 Bu kontroller ürün uçlarına yazma yapmaz; yalnız ölçüm aracını besler. **Yeni plan maddesi
 sayılmazlar.**
@@ -318,9 +384,15 @@ public uçtan aktarım (H5-04) · rolle inceleme (H5-05) · inceleyenle aktarım
 ```bash
 export AH_DATABASE_URL="postgresql://<kullanici>:<parola>@127.0.0.1:5439/hukuk_fix1_test"
 export AH_API_BASE_URL="http://127.0.0.1:8099/api"
-export I3_API_EMAIL_PROVIDER=smtp   # Yol B bildirimi; yoksa H5-01 UNMEASURED
 export I3_SMTP_PORT=2526
+
+# 1) API'yi BASLATICI ile ac — etkin ayarlari kendisi `i3-api-config.json`'a yazar.
+#    Ayri `I3_API_*` beyani KABUL EDILMEZ (bkz. 5.4/5.5).
+node i3-start-api.js --provider smtp     # veya: --provider mock
+# 2) Kosum
 node i3-run.js
+# 3) Bitince
+node i3-start-api.js --stop
 ```
 
 Tek süreçtir: ölçüm token'ları bellekte tutulur, böylece login sayısı hız sınırı bütçesi

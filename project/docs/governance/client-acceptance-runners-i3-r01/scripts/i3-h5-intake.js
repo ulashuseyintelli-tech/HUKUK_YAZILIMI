@@ -58,17 +58,38 @@ module.exports = async function runH5(ctx) {
   if (!sink || !sink.available) {
     // Neden AYIRT EDILIR: eksik/bozuk yapilandirma ile "saglayici smtp degil" AYNI SEY DEGILDIR.
     const cfg = ctx.apiConfig;
+    const rb0 = ctx.runtimeBinding;
+    // "ETKIN saglayici" demek icin CALISAN SURECIN bildirimi gerekir. Dosya ile surec
+    // ayrisiyorsa dosyadaki degeri "etkin" diye yazmak, kapatilmaya calisilan kusurun
+    // ta kendisidir; bu yuzden ayrisma varsa IKISI DE yazilir.
+    const providerPhrase = (() => {
+      const declared = String(cfg && cfg.emailProvider);
+      if (rb0 && rb0.readable && !rb0.ok && rb0.mismatch.includes('provider')) {
+        return `dosyanin bildirdigi saglayici '${declared}' ile SURECIN bildirdigi `
+          + `'${rb0.observed.provider}' AYRISIYOR (etkin ayar DOGRULANAMADI)`;
+      }
+      if (rb0 && !rb0.readable) {
+        return `saglayici '${declared}' (smtp degil) — CALISMA ZAMANI tanigi OKUNAMADI `
+          + `(${rb0.reason}), dosya beyani tek basina ETKIN AYAR KANITI DEGILDIR`;
+      }
+      return `ETKIN saglayici '${declared}' (smtp degil, surecce DOGRULANDI)`;
+    })();
     const why = !cfg
       ? 'yapilandirma dosyasi OKUNAMADI (i3-start-api.js ile baslatin) — gonderim cagrisi=0'
       : (cfg.smtpHost === undefined || cfg.smtpPort === undefined || cfg.emailProvider === undefined)
         ? 'yapilandirmada ZORUNLU alan EKSIK (varsayilanla TAMAMLANMAZ) — gonderim cagrisi=0'
-        : `ETKIN saglayici '${String(cfg.emailProvider)}' (smtp degil); mock gercek tasima `
-          + 'hatasi kaniti YERINE GECMEZ — gonderim cagrisi=0';
+        : `${providerPhrase}; mock gercek tasima hatasi kaniti YERINE GECMEZ — gonderim cagrisi=0`;
     R.unmeasured('H5-00', 'izolasyon on kosulu + tasima bagi', why);
   } else {
+    // Ret dalinda "sonda atilmadi" iddiasi OLCULUR: gercek `dispatcher.send` sayaci
+    // on kosuldan ONCE ve SONRA okunur. Sayac okunamazsa (null) SIFIR KABUL EDILMEZ.
+    const callsBeforePre = sink.dispatcherSendCalls();
     const pre = await sink.verifyIsolationPreconditions();
     if (!pre.ok) {
       // ÖN KOŞUL BAŞARISIZ → SONDA ATILMAZ (gönderim çağrısı sıfır).
+      const callsAfterPre = sink.dispatcherSendCalls();
+      const noSendMeasured = (callsBeforePre !== null && callsAfterPre !== null)
+        ? (callsAfterPre === callsBeforePre) : null;
       R.check('H5-00', 'izolasyon ON KOSULU saglanmadi → sonda DAHIL gonderim yapilmadi',
         false,
         (pre.configError ? `yapilandirma OKUNAMADI: ${pre.configError} · `
@@ -78,8 +99,19 @@ module.exports = async function runH5(ctx) {
         + `${pre.anyLanReachable ? 'VAR(!)' : 'YOK'}`
         + (pre.provider === undefined ? '' : ` · ETKIN saglayici='${pre.provider}'`
           + ` (smtp mi=${pre.providerOk}) · tasima hedefi=${pre.host}:${pre.port}`
-          + ` (yakalayici mi=${pre.targetOk}) · API ornegi dogrulandi=${pre.pidOk}`)
-        + ` · SONDA ATILMADI, gonderim cagrisi=0`);
+          + ` (yakalayici mi=${pre.targetOk}) · API ornegi dogrulandi=${pre.pidOk}`
+          + ` · CALISMA ZAMANI BAGI=${pre.runtimeBindingOk}`
+          + (pre.runtimeReadable === false
+            ? ` (tanik OKUNAMADI: ${pre.runtimeReason} — ESLESTI SAYILMAZ)`
+            : (pre.runtimeMismatch && pre.runtimeMismatch.length
+              ? ` (UYUSMAYAN alan: ${pre.runtimeMismatch.join(',')}`
+                + ` · surecin bildirdigi: saglayici='${pre.runtimeObserved.provider}'`
+                + ` hedef=${pre.runtimeObserved.host}:${pre.runtimeObserved.port})`
+              : '')))
+        + ` · SONDA ATILMADI · GERCEK dispatcher.send `
+        + (noSendMeasured === null
+          ? 'OLCULEMEDI (sayac okunamadi — SIFIR KABUL EDILMEZ)'
+          : `${callsBeforePre}→${callsAfterPre} (degismedi=${noSendMeasured})`));
     } else {
       await sink.setMode('');
       const probeSubject = `I3-BIND-PROBE-${st.runId}`;
@@ -97,7 +129,9 @@ module.exports = async function runH5(ctx) {
       R.check('H5-00', 'ON KOSUL (tek kaynak) saglandi ve SONDA davranisi dogruladi',
         transportBound && connected,
         `on kosul=OK (ETKIN saglayici='${pre.provider}', hedef=${pre.host}:${pre.port},`
-        + ` API ornegi pid=${pre.pid} DOGRULANDI, LAN erisimi YOK)`
+        + ` API ornegi pid=${pre.pid} DOGRULANDI, LAN erisimi YOK,`
+        + ` CALISMA ZAMANI BAGI=${pre.runtimeBindingOk}`
+        + ` [token/pid/saglayici/host/port surecce DOGRULANDI])`
         + ` · sonda HTTP ${rProbe.indeterminate ? 'BELIRSIZ' : rProbe.status}`
         + ` · SMTP baglantisi ${connBefore}→${sink.smtpConnections()} (acildi=${connected})`
         + ` · mesaj ${msgBefore}→${sink.count()} · SONDA YAKALANDI=${reachedSink}`);

@@ -108,8 +108,12 @@ function makeSinkHandle(available) {
      *   (b) makinenin LAN adreslerinden ERİŞİLEMİYOR,
      *   (c) prova API'sinin bildirilen etkin sağlayıcısı `smtp`,
      *   (d) bildirilen taşıma hedefi (host:port) YAKALAYICININ adresi.
-     * (c)/(d) `I3_API_*` bildirimlerinden okunur; bunlar prova API'sini başlatan komutla
-     * AYNI değerlerdir. Biri sağlanmazsa **sonda dahil** hiçbir gönderim yapılmaz.
+     *   (e) yapılandırma dosyasının değerleri, **çalışan API örneğinin kendi bildirdiği**
+     *       etkin değerlerle AYNI (`instanceToken`, `pid`, sağlayıcı, host, port).
+     * (e) olmadan dosya "dolu ama uyuşmaz" olabilir: `emailProvider:'smtp'` yazılıyken süreç
+     * gerçekte `mock` koşuyorsa (c)/(d) DOSYAYI okuduğu için geçer, `pidOk` de gerçek pid'de
+     * geçer ve sonda ATILIRDI. Tanık, API sürecinin içinden yazan `i3-spy.js`'tir.
+     * Biri sağlanmazsa **sonda dahil** hiçbir gönderim yapılmaz.
      */
     async verifyIsolationPreconditions() {
       const loopbackReachable = await probeTcp('127.0.0.1', SINK_PORT);
@@ -146,11 +150,20 @@ function makeSinkHandle(available) {
         pidOk = out.split(/\r?\n/).some((l) => l.trim().endsWith(String(c.pid)));
       } catch (e) { pidOk = false; }
 
+      // ── (e) CALISMA ZAMANI BAGI: dosya ↔ surecin KENDI bildirdigi etkin ayar ──
+      // Tanigi API surecinin icinden `i3-spy.js` yazar. Okunamazsa "eslesti" SAYILMAZ.
+      // (e) CALISMA ZAMANI BAGI — karar mantigi TEK KAYNAKTA (`i3-lib`), kopya YOK.
+      const runtime = L.readRuntimeWitness(c);
+      const runtimeBindingOk = runtime.ok;
+      const runtimeMismatch = runtime.mismatch;
+
       const ok = loopbackReachable && !anyLanReachable && lan.length > 0
-        && providerOk && targetOk && pidOk;
+        && providerOk && targetOk && pidOk && runtimeBindingOk;
       return {
         ok, loopbackReachable, anyLanReachable, lanChecked: lan.length,
         provider, host, port, providerOk, targetOk, pidOk,
+        runtimeBindingOk, runtimeReadable: runtime.readable,
+        runtimeReason: runtime.reason, runtimeMismatch, runtimeObserved: runtime.observed,
         pid: c.pid, instanceToken: c.instanceToken,
       };
     },
@@ -268,7 +281,11 @@ function makeSinkHandle(available) {
     R.check('I3-00', 'OLCUM GECERLI: user ile elev* AYNI rolde, fark YALNIZ PARTNER bagi',
       sameRole, `${roles} · ADMIN yolu KAPALI=${st.actors.elev1.role !== 'ADMIN'}`);
 
-    const ctx = { base, prisma, tokens, st, R, sink, apiConfig: API_CFG.config };
+    // Saglayiciya gore dal secen olcutler BILDIRILEN degeri degil, DOGRULANMIS
+    // calisma zamani bagini tuketir; bag yoksa o olcutler OLCULEMEDI olur.
+    const runtimeBinding = L.readRuntimeWitness(API_CFG.config);
+    const ctx = { base, prisma, tokens, st, R, sink, apiConfig: API_CFG.config,
+      runtimeBinding };
     await require('./i3-h2-address')(ctx);
     await require('./i3-h4-declarations')(ctx);
     await require('./i3-h5-intake')(ctx);

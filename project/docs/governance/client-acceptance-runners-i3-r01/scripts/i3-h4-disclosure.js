@@ -44,7 +44,7 @@ async function snap(prisma, vid) {
 }
 
 module.exports = async function runH4Disclosure(ctx) {
-  const { base, prisma, tokens, st, R, chain, chainError, apiConfig } = ctx;
+  const { base, prisma, tokens, st, R, chain, chainError, apiConfig, runtimeBinding } = ctx;
   const IDS = ['H4-06a', 'H4-06b', 'H4-07a', 'H4-07c', 'H4-07b', 'H4-08'];
   L.AH.step('H4-FD', 'finansal beyan onay zinciri — 5 senaryo');
 
@@ -337,15 +337,24 @@ module.exports = async function runH4Disclosure(ctx) {
   // değilse yayın **sağlayıcıya tek byte gitmeden** durur (charter §35.10). Sağlayıcı çağrısı
   // yapılmadığı, yakalayıcıdaki mesaj sayısının DEĞİŞMEMESİYLE ölçülür.
   {
-    // ETKIN saglayici TEK KAYNAKTAN (i3-api-config.json); env beyani KABUL EDILMEZ.
-    const declared = apiConfig ? String(apiConfig.emailProvider || '').toLowerCase() : '';
+    // ETKIN saglayici, yapilandirma dosyasinin BILDIRDIGI degil, CALISAN SURECIN
+    // dogrulanmis bildirimidir (`i3-lib.readRuntimeWitness`). Dosya "dolu ama uyusmaz"
+    // olabilir (or. dosyada 'smtp', surecte 'mock'); bildirilen degere gore dal secilirse
+    // yanlis beklenti kurulur ve urun dogru davranirken FAIL uretilir.
+    const rb = runtimeBinding;
+    const declared = rb && rb.ok ? rb.provider : '';
     if (rContentOk.indeterminate || rContentOk.status >= 400 || afterContent.error
         || afterContent.value.contentApprovedById !== st.actors.elev3.id) {
       R.unmeasured('H4-08', 'yayin allowlist kapisi',
         `icerik onayi tamamlanamadi (HTTP ${rContentOk.status ?? 'belirsiz'}, code=${codeOf(rContentOk)})`);
     } else if (!declared) {
       R.unmeasured('H4-08', 'yayin allowlist kapisi',
-        'ETKIN saglayici yapilandirma dosyasindan okunamadi (i3-start-api.js ile baslatin)');
+        !rb || !rb.readable
+          ? `CALISMA ZAMANI BAGI kurulamadi (tanik OKUNAMADI: ${(rb && rb.reason) || 'yok'}) `
+            + '— ETKIN saglayici DOGRULANAMADI, dal secilmez'
+          : `CALISMA ZAMANI BAGI UYUSMUYOR (alan: ${rb.mismatch.join(',')} · surecin `
+            + `bildirdigi saglayici='${rb.observed.provider}' · dosyanin bildirdigi='`
+            + `${String(apiConfig && apiConfig.emailProvider).toLowerCase()}') — dal secilmez`);
     } else {
       const approved = ['smtp', 'sendgrid', 'ses'].includes(declared);
       const before = await snap(prisma, vid);

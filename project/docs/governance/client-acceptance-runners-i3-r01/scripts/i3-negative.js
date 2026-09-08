@@ -132,6 +132,76 @@ function withBrokenGate(obj, key, brokenImpl, assertFn) {
       + ` · duzeltme geri kondu=${m.restored}`);
   }
 
+  // ── NC-9 · GERÇEK `readRuntimeWitness`: dosya ≠ çalışan örnek ──
+  // Kapı, yapılandırma dosyasının CALISAN ornegi temsil ettigini dogrular. Tanik dosyasi
+  // (spy) okunamazsa "eslesti" SAYILMAMALI; dolu ama uyusmayan deger REDDEDILMELI.
+  {
+    const os = require('os');
+    const fsx = require('fs');
+    const pathx = require('path');
+    const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'i3nc9-'));
+    const witness = pathx.join(dir, 'w.json');
+    const cfg = {
+      instanceToken: 'tok-1', pid: 4242, emailProvider: 'smtp',
+      smtpHost: '127.0.0.1', smtpPort: 2526, spyCounterFile: witness,
+    };
+    const write = (o) => fsx.writeFileSync(witness, JSON.stringify(o), 'utf8');
+
+    // (1) TAM eslesme → ok, ve dal secimi icin saglayici DONER
+    write({ instanceToken: 'tok-1', pid: 4242, emailProvider: 'smtp',
+      smtpHost: '127.0.0.1', smtpPort: '2526' });
+    const match = L.readRuntimeWitness(cfg);
+
+    // (2) DOLU ama UYUSMAZ saglayici → red, saglayici VERILMEZ
+    write({ instanceToken: 'tok-1', pid: 4242, emailProvider: 'mock',
+      smtpHost: '127.0.0.1', smtpPort: '2526' });
+    const badProvider = L.readRuntimeWitness(cfg);
+
+    // (3) BAYAT tanik (baska kosumun token'i) → red
+    write({ instanceToken: 'tok-ESKI', pid: 4242, emailProvider: 'smtp',
+      smtpHost: '127.0.0.1', smtpPort: '2526' });
+    const staleToken = L.readRuntimeWitness(cfg);
+
+    // (4) tanik OKUNAMAZ → "eslesti" SAYILMAZ (sessizce ok:true DONMEZ)
+    try { fsx.unlinkSync(witness); } catch (e) { /* zaten yok */ }
+    const unreadable = L.readRuntimeWitness(cfg);
+
+    const ok = match.ok === true && match.provider === 'smtp'
+      && badProvider.ok === false && badProvider.provider === null
+      && badProvider.readable === true && badProvider.mismatch.includes('provider')
+      && staleToken.ok === false && staleToken.mismatch.includes('token')
+      && unreadable.ok === false && unreadable.readable === false;
+
+    // MUTASYON: kapi YALNIZ okunabilirlige baksin (alan karsilastirmasini YOK SAYSIN).
+    const m = withBrokenGate(L, 'readRuntimeWitness',
+      (c) => {
+        try {
+          const w = JSON.parse(fsx.readFileSync(c.spyCounterFile, 'utf8'));
+          return { ok: true, readable: true, reason: null, fields: {}, mismatch: [],
+            observed: { provider: String(w.emailProvider).toLowerCase() },
+            provider: String(w.emailProvider).toLowerCase() };
+        } catch (e) { return { ok: false, readable: false, mismatch: null, provider: null }; }
+      },
+      () => {
+        write({ instanceToken: 'tok-1', pid: 4242, emailProvider: 'mock',
+          smtpHost: '127.0.0.1', smtpPort: '2526' });
+        return L.readRuntimeWitness(cfg).ok === false; // bozukken bu iddia COKER
+      });
+
+    try { fsx.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* onemsiz */ }
+
+    R.check('NC-9', 'GERCEK readRuntimeWitness: dolu ama uyusmayan yapilandirma REDDEDILIR; '
+      + 'okunamayan tanik "eslesti" SAYILMAZ — kapi bozulunca KIRILIR',
+      ok && m.brokenResult === false && m.restored,
+      `tam eslesme→ok=${match.ok} (saglayici='${match.provider}')`
+      + ` · uyusmaz saglayici→ok=${badProvider.ok} mismatch=[${badProvider.mismatch}]`
+      + ` saglayici=${badProvider.provider} (dal SECILEMEZ)`
+      + ` · bayat token→ok=${staleToken.ok} mismatch=[${staleToken.mismatch}]`
+      + ` · tanik YOK→ok=${unreadable.ok} readable=${unreadable.readable}`
+      + ` · MUTASYON("yalniz okunabilirlige bak"): iddia bozukken=${m.brokenResult}`
+      + ` (false = NC kirildi, dogru) · duzeltme geri kondu=${m.restored}`);
+  }
+
   // ── NC-6 · GERÇEK `safeCapture`/`safeCount`: sorgu düşerse null DÖNMEZ ──
   {
     const boom = async () => { throw new Error('DB dustu'); };
