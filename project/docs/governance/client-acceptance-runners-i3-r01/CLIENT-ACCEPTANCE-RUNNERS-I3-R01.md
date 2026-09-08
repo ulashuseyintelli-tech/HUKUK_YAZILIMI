@@ -326,7 +326,10 @@ Sayaç okunamazsa `null` döner ve **sıfır kabul edilmez**: ret dalı bu durum
 | **E′** aynı uyuşmazlık, **yama öncesi** düzenek | **dolu ama uyuşmaz** | `PASS 29 · FAIL 2 · ÖLÇÜLEMEYEN 9` · ön koşul **GEÇTİ** ve **sonda ATILDI** (`HTTP 201`) · H4-08 yanlış dal → **FAIL** |
 | **NC** `i3-negative.js` | — | `PASS 9 · FAIL 0` (NC-3/4/5/8/9 mutasyon kanıtlı) |
 
-E ile E′ arasındaki tek fark düzenektir; API örneği, uyuşmazlık ve veritabanı aynıdır.
+E ile E′ arasındaki tek değişken **düzenektir**: API aynı komutla (`--provider mock`) ve aynı
+veritabanına karşı başlatıldı, aynı uyuşmazlık (`emailProvider→"smtp"`) aynı şekilde kuruldu.
+API **süreci** ikisi arasında yeniden başlatıldı — bu, login hız sınırının in-memory sayacını
+sıfırlamak için zorunludur (§8 md.1); dolayısıyla `pid` ve `instanceToken` doğal olarak farklıdır.
 
 ## 6. Negatif kontroller
 
