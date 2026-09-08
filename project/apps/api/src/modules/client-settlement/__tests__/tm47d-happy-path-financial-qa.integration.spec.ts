@@ -81,7 +81,7 @@ describeDb('TM47D-6 happy path financial QA', () => {
     statementService = new ClientStatementService(
       prisma as any,
       { dispatch: jest.fn().mockResolvedValue(undefined) } as any,
-      { getOrCreate: jest.fn().mockResolvedValue({ name: 'TM47D QA Office' }) } as any,
+      { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'TM47D QA Office' }) } as any,
       audit,
     );
   });

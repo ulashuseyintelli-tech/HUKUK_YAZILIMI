@@ -340,7 +340,7 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
         client.id,
         caseIds,
       );
-      const office = await this.office.getOrCreate(client.tenantId);
+      const office = await this.office.getOfficeIdentity(client.tenantId);
 
       const render = buildClientStatementRender({
         statement: statement as any,

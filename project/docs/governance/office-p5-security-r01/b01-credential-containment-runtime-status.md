@@ -154,5 +154,14 @@ spec'i düşük-riskli eklenebilir. Karar PAGE-O0'a bırakıldı — NEW OWNER D
   **DURUM 2026-09-06: GET tarafi KAPANDI** — PR #2514 (`a60d772b`) merge, RELEASE19 ile canli, dar canli kabul `GET_AUTHZ_AND_PROJECTION_LIVE_ACCEPTED` (`decision-log.md` ayni tarih). **PUT/PATCH yazma kabulu HALA ACIK** (NOT_EXECUTED); `escAssignees` residual ayri acik.
 - F-B01-04 `OfficeService.getOrCreate` (`office.service.ts:115-153`) public ham yüzey; 4 dış çağıranın
   tümü yalnız `office.name` okuyor (`VERIFIED`, file:line ajan raporunda).
+  **DURUM 2026-09-07: MAIN`DE KAPANDI (canlida DEGIL).** Ölçülen çağıran sayısı **5**`tir (4 değil):
+  `client-approval`, `client-intake-link`, `client-statement`, `client-statement-monthly-delivery`,
+  `expense-request` — beşi de yalnız `office.name` okuyup MÜVEKKİLE GİDEN bildirim/PDF token`ı üretiyordu.
+  Dar `OfficeService.getOfficeIdentity()` yüzeyi eklendi (yalnız `name`), beş çağıran bağlandı;
+  `getOrCreate` modül İÇİNDE korunur (havuz anchor`ı + credential containment spec`leri kullanır) ve
+  modül dışı çağrı `office-raw-row-cross-module.static-guard.spec.ts` ile yasaklandı. Yetki sözleşmesi
+  değişmedi; "yoksa yarat" semantiği aynı. Kanıt: 5/5 + 3/3 spec, negatif kontrol kırmızı doğrulandı,
+  85 suite / 1476 test regresyon PASS. **Canlı RELEASE20 `08ce8e25` bu düzeltmeyi İÇERMEZ.**
+  Kayıt: decision-log `OFFICE-FB0104-RAW-SURFACE-CONTAINED-R01`.
 - F-B01-05 `Lawyer.uyapToken` "// Şifrelenmiş" yorumu (schema:2536) kod karşılıksız; alana yazan servis
   yolu yok, DB doluluğu 0 — düşük öncelik, kayıt amaçlı.

@@ -25,7 +25,7 @@ const mockPrisma: any = {
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
 };
 const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
-const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }) };
+const mockOffice: any = { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Test Büro' }) };
 
 describe('ClientApprovalService', () => {
   let service: ClientApprovalService;
@@ -33,7 +33,7 @@ describe('ClientApprovalService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDispatcher.dispatch.mockResolvedValue({ status: 'sent' });
-    mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Büro' });
+    mockOffice.getOfficeIdentity.mockResolvedValue({ name: 'Test Büro' });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClientApprovalService,

@@ -155,7 +155,7 @@ describe('CAD C3-B01 — ekstre veri sözleşmesi (characterization)', () => {
         ClientStatementService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationDispatcherService, useValue: { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) } },
-        { provide: OfficeService, useValue: { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }) } },
+        { provide: OfficeService, useValue: { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Test Büro' }) } },
         { provide: AuditService, useValue: { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() } },
         { provide: CaseBalanceService, useValue: { computeCaseBalance: jest.fn().mockResolvedValue({ currencyResults: [] }) } },
       ],

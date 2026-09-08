@@ -153,7 +153,7 @@ function makeHarness(options: { withLedger?: boolean; claimResult?: ClientStatem
     createClientLevel: jest.fn().mockResolvedValue({ id: 'stmt-1' }),
     findOne: jest.fn().mockResolvedValue(makeStatement()),
   };
-  const office: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Deneme Hukuk Bürosu' }) };
+  const office: any = { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Deneme Hukuk Bürosu' }) };
   const port = { send: jest.fn().mockResolvedValue({ success: true, messageId: 'msg-1' }) };
   const ledger = {
     claim: jest.fn().mockResolvedValue(

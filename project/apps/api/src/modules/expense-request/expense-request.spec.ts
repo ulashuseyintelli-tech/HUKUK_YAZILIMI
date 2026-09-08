@@ -115,7 +115,7 @@ const mockDispatcher = {
   dispatch: jest.fn().mockResolvedValue({ status: 'sent' }),
 };
 const mockOffice = {
-  getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }),
+  getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Test Büro' }),
 };
 
 // ExpenseCalculatorService artık getActiveSharedTariff() çağırıp camelCase okuyor (fixedFees/rateFees/minAmount).

@@ -36,7 +36,7 @@ const mockPrisma: any = {
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
 };
 const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
-const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }) };
+const mockOffice: any = { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'Test Büro' }) };
 // Faz 7-E: audit mock — logInTransaction (mutation ile aynı tx). clearAllMocks implementasyonu silmez
 // ama count default'unu da korur; logInTransaction no-op (hata yutmaz davranışı testte ayrıca kontrol edilmez).
 const mockAudit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
@@ -55,7 +55,7 @@ describe('ClientStatementService', () => {
     mockPrisma.ledgerAllocation.findMany.mockResolvedValue([]);
     mockCaseBalance.computeCaseBalance.mockResolvedValue({ currencyResults: [] });
     mockDispatcher.dispatch.mockResolvedValue({ status: 'sent' });
-    mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Büro' });
+    mockOffice.getOfficeIdentity.mockResolvedValue({ name: 'Test Büro' });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClientStatementService,
