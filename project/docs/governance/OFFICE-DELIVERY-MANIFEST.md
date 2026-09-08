@@ -2256,3 +2256,20 @@ PRODUCTION AUTHORITY     NONE
 NEW EXECUTION AUTHORITY  NONE
 YENİ İSTİSNA/GRANT       ÜRETİLMEDİ
 ```
+
+## 16. OFFICE BÜTÜNSEL CANLI TESLİM PLANI (2026-09-08)
+
+OFFICE'in mevcut sürümünün hizmet bazlı canlı teslimi için **tek plan**:
+`office-delivery-r01/OFFICE-BUTUNSEL-CANLI-TESLIM-PLANI-R01.md`.
+
+```text
+KAPSAM       12 hizmet (46 rota: office 17 · lawyers 9 · office-approvals 8 · staff 6 · reporting-lines 6)
+ÖLÇÜM TABANI main ddcd4aba (#2553) · canlı RELEASE20 08ce8e25 · rollback RELEASE19 a60d772b
+DURUM        doğrulanan 8/12 hizmet (okuma/yetki yüzeyi, O-serisi #2545)
+ZORUNLU İŞ   A-01..A-07 (N=7 SABİT) — F-B01-04'ün canlıya alınması, yazma kabul paketi,
+             ayar/avukat/personel yazma kabulü, personel okuma, raporlama hattı, onay akışı + kayıt
+SONRAKİ SÜRÜM B-01..B-08 (OFF-P2-CAP-07 · escAssignees residual · F-B01-05 · SMS sağlayıcı ·
+             O-10 motor kabulü · preflight SilentlyContinue · vitest flake · WR01)
+SINIR        Bu plan YENİ YETKİ ÜRETMEZ; cutover ve tek-kullanım yetki kontrolleri aynen geçerli.
+             §13/§15 tarihsel kayıtları DEĞİŞTİRİLMEMİŞTİR (append-only).
+```
