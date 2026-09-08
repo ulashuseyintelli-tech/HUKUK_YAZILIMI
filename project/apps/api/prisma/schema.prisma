@@ -1732,8 +1732,29 @@ model CaseStatusHistory {
   automationWasEnabled Boolean? // Otomasyon durumu değişti mi
   createdAt            DateTime         @default(now())
 
+  // OFFICE-A07: onay YURUTME kaniti — talebe VE denemeye ozgu kesin bag.
+  //
+  // NEDEN: `changeStatus`in IKI uretim cagirani var (CaseStatusController.changeStatus ve
+  // OfficeApprovalExecutorService.applyValidatedIntent). Ayni aktor, ayni Case'i, ayni
+  // pencerede, controller uzerinden ayni statuye getirebilir ve BIREBIR AYNI GORUNEN bir
+  // history satiri uretebilir. Bu yuzden "caseId + aktor + zaman + hedef statu" dortlusu
+  // yurutme kaniti olarak AYIRT EDICI DEGILDIR. Kesin bag bu iki alanla kurulur.
+  //
+  // SCALAR, FK YOK — kanonik modul-sinir deseni (`CollectionDisposition.approvalRequestId`
+  // ile ayni): modullerarasi FK kurulmaz.
+  //
+  // YALNIZ GUVENILIR EXECUTOR BAGLAMINDAN doldurulur. Controller yolu bu alanlari
+  // gonderemez: `ChangeCaseStatusDto` onlari TANIMAZ ve global ValidationPipe
+  // `forbidNonWhitelisted` ile 400 verir; servis imzasi da bagi ayri bir parametre olarak
+  // alir (govdeden TURETMEZ).
+  approvalRequestId    String? // OfficeApprovalRequest.id (scalar; FK YOK)
+  approvalAttempt      Int? // yurutme denemesi (claim anindaki retryCount)
+
   @@index([caseId])
   @@index([createdAt])
+  // Reconcile'in GERCEK yuklemi: (approvalRequestId, approvalAttempt) esitligi.
+  // Indeks tahminle degil, o sorguya gore secildi.
+  @@index([approvalRequestId, approvalAttempt])
 }
 
 // Dosya Belgeleri

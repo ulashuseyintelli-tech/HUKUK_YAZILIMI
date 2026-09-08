@@ -210,8 +210,22 @@ export class OfficeApprovalExecutorService {
     intent: ChangeStatusIntent,
     executorUserId: string,
   ): Promise<OfficeApprovalRequest> {
+    // OFFICE-A07 — DENEME BAGI. `markExecutionRetrying` retryCount'u ARTIRMAZ (artis
+    // markExecutionFailed'te olur), dolayisiyla retryCount bir deneme BOYUNCA sabittir ve
+    // deneme ayirt edicisi olarak kullanilabilir. Bag, changeStatus'un KENDI transaction'inda
+    // CaseStatusHistory satirina yazilir — yani Case degisikligiyle AYNI tx. Transaction geri
+    // alinirsa kanit da KALMAZ.
+    // `approvalAttempt` SAYI OLMAK ZORUNDA: `undefined` gecerse DB'ye NULL yazilir ve
+    // reconcile'in `approvalAttempt: <sayi>` esitligi ARTIK ESLESMEZ — kanit sonsuza dek
+    // bulunamaz hale gelir. (Yanlis basari URETMEZ, ama kabul de asla kapanamaz.)
+    // Semada `retryCount Int @default(0)` oldugu icin DB degeri her zaman sayidir; burada
+    // savunmaci normalize ediyoruz ki bag DB'deki degerle BIREBIR ayni olsun.
+    const attempt = Number.isFinite(Number(req.retryCount)) ? Number(req.retryCount) : 0;
+    const binding = { approvalRequestId: req.id, approvalAttempt: attempt };
     try {
-      await this.caseStatus.changeStatus(req.tenantId, req.targetRef, intent.status, approverUserId, intent.reason);
+      await this.caseStatus.changeStatus(
+        req.tenantId, req.targetRef, intent.status, approverUserId, intent.reason, binding,
+      );
     } catch (err) {
       this.logger.error(`apply(${req.id}): changeStatus hata → FAILED: ${(err as Error)?.message ?? err}`);
       return this.officeApproval.markExecutionFailed(req.id, approverUserId);

@@ -64,7 +64,8 @@ describe('P4-5A executor — happy path (acceptance #1, #2, #7)', () => {
   it('acc#1 APPROVED + savedIntent → changeStatus(tenant, targetRef, status, approverUserId, reason) + SUCCEEDED', async () => {
     const { svc, officeApproval, caseStatus } = mk(mkReq());
     const res = await svc.execute('r1', 't1', 'exec-u');
-    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', 'tahsil imkansız');
+    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', 'tahsil imkansız',
+      { approvalRequestId: 'r1', approvalAttempt: 0 }); // OFFICE-A07 bag
     expect(officeApproval.markExecutionRunning).toHaveBeenCalledWith('r1', 'appr-u'); // K3
     expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u'); // #7
     expect(res.executionStatus).toBe('SUCCEEDED');
@@ -79,13 +80,15 @@ describe('P4-5A executor — happy path (acceptance #1, #2, #7)', () => {
       }),
     );
     await svc.execute('r1', 't1', 'exec-u');
-    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'MAHSUP', 'appr-u', 'mahsup edildi');
+    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'MAHSUP', 'appr-u', 'mahsup edildi',
+      { approvalRequestId: 'r1', approvalAttempt: 0 }); // OFFICE-A07 bag
   });
 
   it('reason yoksa changeStatus reason=undefined ile çağrılır', async () => {
     const { svc, caseStatus } = mk(mkReq({ savedIntent: { status: 'BATAK' } }));
     await svc.execute('r1', 't1', 'exec-u');
-    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', undefined);
+    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', undefined,
+      { approvalRequestId: 'r1', approvalAttempt: 0 }); // OFFICE-A07 bag
   });
 });
 
@@ -206,7 +209,8 @@ describe('P4-5A executor — actor truthfulness (K4) + load/edge', () => {
   it('K4 actor = approverUserId (requesterUserId/executorUserId DEĞİL) — changeStatus + markExecution*', async () => {
     const { svc, officeApproval, caseStatus } = mk(mkReq({ requesterUserId: 'REQ', approverUserId: 'APPR' }));
     await svc.execute('r1', 't1', 'EXEC');
-    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'APPR', 'tahsil imkansız');
+    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'APPR', 'tahsil imkansız',
+      { approvalRequestId: 'r1', approvalAttempt: 0 }); // OFFICE-A07 bag
     expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'APPR');
     expect(caseStatus.changeStatus).not.toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'REQ', expect.anything());
     expect(caseStatus.changeStatus).not.toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'EXEC', expect.anything());
@@ -248,7 +252,8 @@ describe('P4-5A executor — sequence ordering + leak-free (K8) + route-yok (acc
       .sort();
     expect(called).toEqual(['getByIdForTenant', 'markExecutionRunning', 'markExecutionSucceeded'].sort());
     // ham savedIntent.reason yalnız case-domain changeStatus'a gider (meşru hukuki kayıt), OFFICE_APPROVAL_* audit'e DEĞİL.
-    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', 'tahsil imkansız');
+    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', 'tahsil imkansız',
+      { approvalRequestId: 'r1', approvalAttempt: 0 }); // OFFICE-A07 bag
   });
 
   it('acc#10 executor public route DEĞİL: sınıfta @Controller path + execute() route-method metadata YOK', () => {
@@ -372,7 +377,9 @@ describe('P4-5C-2 executor — executeRetry (bounded FAILED-retry; FAILED-entry;
     const res = await svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3);
     expect(officeApproval.markExecutionRetrying).toHaveBeenCalledWith('r1', 'appr-u', 3);
     expect(officeApproval.markExecutionRunning).not.toHaveBeenCalled(); // retry, NOT_RUN-claim DEĞİL
-    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', 'tahsil imkansız');
+    // OFFICE-A07: bag DENEMEYE ozgudur — bu fixture retryCount:1 (retry yolu), ilk denemede 0.
+    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', 'tahsil imkansız',
+      { approvalRequestId: 'r1', approvalAttempt: 1 });
     expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u');
     expect(res.executionStatus).toBe('SUCCEEDED');
   });
