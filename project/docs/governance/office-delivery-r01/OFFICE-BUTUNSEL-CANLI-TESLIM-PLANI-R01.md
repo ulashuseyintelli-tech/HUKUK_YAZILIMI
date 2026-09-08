@@ -219,3 +219,46 @@ sınıfıyla değil satır-içi tip literaliyle tipliydi; global `ValidationPipe
 gördüğü için hiç çalışmıyordu → gövde `prisma.lawyer.create` içine spread ediliyordu =
 credential/tenant enjeksiyonu). Kalem **B-03 → A-01 yüküne** taşındı; **yeni iş eklenmedi**,
 **N = 7 değişmedi**, eksik iş gizlenmedi.
+
+### 8.7 §8.2/§8.3 ÖLÇÜM DÜZELTMESİ (append-only şerh, 2026-09-08)
+
+§8'i yazarken iki sayısal/isimsel ayrıntıyı yanlış kaydettim. Aşağıdaki satırlar
+**doğrusudur**; §8.2 ve §8.3'ün tarihsel metni silinmez, bu şerh onları düzeltir.
+Uygulayıcı sayfalar A-01 ve A-03…A-07'de **bu şerhi** esas alır.
+
+| Yanlış kayıt | Ölçülen doğru değer | Ölçüm |
+|---|---|---|
+| §8.2: modül-dışı tüketiciler `client-approval`, `client-intake-link`, `client-statement` ×3, `client-settlement` | Beş **çalışma zamanı** tüketicisi: `client-approval.service.ts:239` · `client-intake-link.service.ts:376` · `client-statement.service.ts:434` · `client-statement-monthly-delivery.service.ts:343` · **`expense-request.service.ts:1388`**. `client-settlement`'ta yalnız **spec** mock'u değişti, çalışma zamanı çağrısı YOK | `git grep -n getOfficeIdentity d2223e78 -- project/apps/api/src`; `git show --name-only ddcd4aba -- .../client-settlement` → tek dosya, `__tests__/tm47d-…spec.ts` |
+| §8.3 dipnot: "`project/apps` deltası 3 commit ve **26** dosya" | **27** dosya | `git diff --name-only 08ce8e25..d2223e78 -- project/apps \| wc -l` = 27 |
+
+**Değişmeyen hükümler** (yeniden ölçüldü, doğru çıktı):
+
+- Adayın canlıya göre **çalışma zamanı** farkı gerçekten yalnız üç commit'tir. Commit
+  başına çalışma zamanı (spec/`ci-manifests` hariç) dosya sayısı: `ad484c49` = 1 ·
+  `ddcd4aba` = 6 · `fa1e3bb2` = 4 · `4f13a0ac` = 0 · `d2223e78` = 0 · `93f04f67` = 0 ·
+  `db2f52f3` = 0. Toplam **11 çalışma zamanı dosyası**, biri (`schema.prisma`) yalnız yorum.
+- **Yeni migration 0** (`git diff --name-only 08ce8e25..d2223e78 -- .../prisma/migrations` = 0).
+- Tüketici **sayısı** beştir (statik guard `office-raw-row-cross-module.static-guard.spec.ts`
+  "bes bilinen tuketici" ile aynı kümeyi bağlar); yanlış olan sayı değil, iki **isimdi**.
+
+**Adayın sabitliği:** main bu şerhle birlikte `d2223e78`'in ilerisindedir (#2559 → `09b792ef`),
+fakat aradaki tek fark **bu plan dosyasıdır**; `project/apps` dokunuşu **0**. Bu nedenle aday
+**`d2223e78` olarak SABİT KALIR**; "fresh main" kullanılmaz ve main'in ilerlemiş olması
+A-01'in adayını değiştirmez.
+
+### 8.8 CANLI DURUM — A-01 öncesi taze ölçüm (2026-09-08)
+
+| Ölçüm | Değer | Yöntem |
+|---|---|---|
+| API dinleyici | PID **61532**, port 8080 | `Get-NetTCPConnection -State Listen` |
+| API komut satırı | `node …\HY_W4_RELEASE20\project\apps\api\dist\apps\api\src\main.js` | `Win32_Process.CommandLine` |
+| Web dinleyici | PID **47868**, port 3002 | aynı |
+| Web komut satırı | `node …\HY_W4_RELEASE20\project\apps\web\node_modules\next\dist\bin\next start --port 3002` | aynı |
+| Web BUILD_ID | `LW4jlJUOMHrvVEqakKB3i` | `HY_W4_RELEASE20\project\apps\web\.next\BUILD_ID` |
+| Host süreçleri | `hukuk-task-host.exe api` PID 62736 · `… web` PID 42736 (başlangıç 2026-09-07 17:44–17:45) | `Get-Process` |
+
+Yani **canlı hâlâ RELEASE20 `08ce8e25`'tir**; RELEASE20 cutover'ından bu yana runtime
+değişmemiştir. Bu ölçüm salt-okumadır: canlı DB'ye yazma 0, süreç mutasyonu 0.
+
+Not: `GET /api/health` **404** döner — bu bir kusur kaydı DEĞİLDİR, o yolun bu sürümde
+bulunmadığının ölçümüdür; A-01/A-03 sağlık kontrolü bu yola bağlanmaz.
