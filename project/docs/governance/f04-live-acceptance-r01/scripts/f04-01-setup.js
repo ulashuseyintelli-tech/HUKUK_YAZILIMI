@@ -42,6 +42,13 @@ const WITH_REVERSAL_PRECONDITIONS = process.env.F04_WITH_REVERSAL_PRECONDITIONS 
 // YALNIZ NEGATIF KONTROL ICIN: transaction'i belirtilen adimdan SONRA bilerek dusurur.
 // Canli kosumda TANIMLANMAZ; amaci atomikligin gercekten calistigini kanitlamaktir.
 const ABORT_AFTER = process.env.F04_ABORT_AFTER || null;
+// YALNIZ NEGATIF KONTROL ICIN — COMMIT SONRASI hata yollari (paket §11 Kusur B provasi):
+//   F04_FAIL_AFTER_COMMIT=1 → commit'ten SONRA hata firlatir (exit 1 uretir).
+//   F04_KILL_AFTER_COMMIT=1 → commit'ten SONRA sureci ZORLA sonlandirir (finally CALISMAZ).
+// Ikisi de canli kosumda TANIMLANMAZ. Kayitlar COMMIT EDILMIS olur; amac erisim kapanisinin
+// cikis koduna DEGIL, `runId` ile alan aramasina bagli oldugunu kanitlamaktir.
+const FAIL_AFTER_COMMIT = process.env.F04_FAIL_AFTER_COMMIT === '1';
+const KILL_AFTER_COMMIT = process.env.F04_KILL_AFTER_COMMIT === '1';
 
 (async () => {
   const prisma = L.loadPrisma();
@@ -223,6 +230,15 @@ const ABORT_AFTER = process.env.F04_ABORT_AFTER || null;
 
     // ── COMMIT EDILDI. Buradan sonrasi kurtarilabilir olmalidir. ──
     L.step('S2', `KURULUM COMMIT EDILDI — ${written.length}/${EXPECTED} satir · runId=${runId} · tenant=${slug}`);
+
+    // NEGATIF KONTROL: commit sonrasi hata yollari. Kayitlar ARTIK MEVCUTTUR.
+    if (KILL_AFTER_COMMIT) {
+      console.error('!!! F04_KILL_AFTER_COMMIT=1 — surec ZORLA sonlandiriliyor (finally CALISMAYACAK)');
+      process.kill(process.pid, 'SIGKILL');
+    }
+    if (FAIL_AFTER_COMMIT) {
+      throw new Error('F04_FAIL_AFTER_COMMIT=1 — commit SONRASI negatif kontrol hatasi');
+    }
 
     const state = {
       package: 'F04-LIVE-ACCEPTANCE-R01',

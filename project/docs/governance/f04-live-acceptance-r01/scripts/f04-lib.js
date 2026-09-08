@@ -326,10 +326,113 @@ async function httpJson(method, url, { token, body, timeoutMs = 60000 } = {}) {
 function log(...a) { console.log(...a); }
 function step(id, msg) { console.log(`\n[${id}] ${msg}`); }
 
+// =========================================================================================
+// KABUL ALANININ BULUNMASI VE ERISIMIN KAPATILMASI — TEK KAYNAK
+//
+// KUSUR B (paket §11): yurutucu erisimi yalniz `setupCode 0|4` iken kapatiyordu. Oysa
+// `f04-01-setup.js:222` EXPECTED kontrolu `$transaction` COMMIT ETTIKTEN SONRA calisir ve
+// exit 1 uretir; ayrica `spawnSync(timeout)` commit sonrasi oldururse exit 124 olur. Her iki
+// halde de kayitlar MEVCUTTUR ama yurutucu "kurulum commit edilmedi" deyip hesabi ACIK BIRAKIR.
+//
+// Cozum: cikis kodu beyaz listesi YERINE, YAZMADAN ONCE belirlenmis `runId` ile alan aranir.
+// `runId` yurutucuda (f04-run.js) hicbir yazma yapilmadan uretilir ve tenant slug'ina
+// (`f04-acc-<runId>`) GOMULUDUR; bu yuzden hangi hata yolundan gecilirse gecilsin alan
+// bulunabilir. Bulunamiyorsa bu bir OLCUMDUR ("alan yok"), varsayim degildir.
+//
+// Kararin tek kaynakta olmasi sart: kopya yazilirsa biri duzeltilip digeri bayat kalir.
+// =========================================================================================
+
+/**
+ * Kabul alanini YALNIZ `runId`den bulur. SALT-OKUMA; hicbir kayit olusturmaz/degistirmez.
+ * Durum dosyasina BAGIMLI DEGILDIR — surec zorla sonlandirilmis olsa da calisir.
+ */
+async function findAcceptanceField(prisma, runId) {
+  const id = String(runId || '').toLowerCase();
+  if (!/^[0-9a-f]{8}$/.test(id)) throw new Error(`gecersiz runId='${runId}' (8 hex bekleniyor)`);
+  const slug = `${TENANT_PREFIX}${id}`;
+  assertOwnSlug(slug); // G-1: baska programin tenant'ina ASLA dokunulmaz
+  const tenant = await prisma.tenant.findFirst({ where: { slug }, select: { id: true } });
+  if (!tenant) return { runId: id, slug, exists: false, tenantId: null };
+  const users = await prisma.user.findMany({
+    where: { tenantId: tenant.id }, select: { id: true, isActive: true, tokenVersion: true },
+  });
+  return {
+    runId: id, slug, exists: true, tenantId: tenant.id,
+    users, activeUsers: users.filter((u) => u.isActive).length,
+  };
+}
+
+/**
+ * Bu kosuma ait tenant'in ERISIMINI kapatir: `isActive=false` + `tokenVersion++`.
+ * Finansal ve audit kayitlarina DOKUNULMAZ. TEKRARI GUVENLIDIR — ikinci cagri
+ * `deactivated:0` dondurur ve kapali durumu bozmaz.
+ *
+ * Olculemeyen kalem "korundu" SAYILMAZ; bu durumda `preserved:false` doner.
+ */
+async function revokeTenantAccess(prisma, tenantId) {
+  await assertOwnTenant(prisma, tenantId); // G-2
+  const T = { tenantId };
+  const sel = { id: true, isActive: true, tokenVersion: true };
+  const before = await prisma.user.findMany({ where: T, select: sel });
+
+  const countEvidence = async () => {
+    const out = {}; const errs = [];
+    for (const [k, model] of [
+      ['collection', 'collection'], ['disposition', 'collectionDisposition'],
+      ['journal', 'accountingJournalEntry'],
+      ['expenseApplication', 'collectionDispositionExpenseApplication'], ['audit', 'auditLog'],
+    ]) {
+      try { out[k] = await prisma[model].count({ where: T }); }
+      catch (e) { out[k] = 'SAYILAMADI'; errs.push(k); }
+    }
+    return { out, errs };
+  };
+  const pre = await countEvidence();
+
+  const deactivated = await prisma.$transaction(async (tx) => {
+    const r = await tx.user.updateMany({
+      where: { tenantId, isActive: true },
+      data: { isActive: false, tokenVersion: { increment: 1 } },
+    });
+    return r.count;
+  });
+
+  const after = await prisma.user.findMany({ where: T, select: sel });
+  const post = await countEvidence();
+
+  const stillActive = after.filter((u) => u.isActive).length;
+  const bumped = after.filter((u) => {
+    const b = before.find((x) => x.id === u.id);
+    return b && u.tokenVersion > b.tokenVersion;
+  }).length;
+
+  const comparable = Object.keys(post.out)
+    .filter((k) => post.out[k] !== 'SAYILAMADI' && pre.out[k] !== 'SAYILAMADI');
+  const changed = comparable.filter((k) => post.out[k] !== pre.out[k]);
+  const notComparable = Object.keys(post.out).filter((k) => !comparable.includes(k));
+  const preserved = changed.length === 0 && notComparable.length === 0;
+  const closed = stillActive === 0;
+
+  return {
+    deactivated, stillActive, tokenVersionBumped: bumped,
+    // Ikinci cagri: kapatilacak aktif kullanici KALMAMIS demektir (tekrar guvenli).
+    alreadyClosed: deactivated === 0 && before.length > 0 && before.every((u) => !u.isActive),
+    userCount: before.length,
+    accessClosed: closed, evidencePreserved: preserved,
+    evidenceChanged: changed, evidenceNotMeasurable: notComparable,
+    financialAuditCounts: post.out,
+    verdict: closed && preserved
+      ? 'ERISIM SONLANDIRILDI - finansal/audit kanit KORUNDU'
+      : !closed ? 'EKSIK - erisim TAM KAPANMADI'
+        : changed.length ? 'EKSIK - kanit DEGISTI: ' + changed.join(', ')
+          : 'EKSIK - kapanis DOGRULANAMADI (olculemeyen: ' + notComparable.join(', ') + ')',
+  };
+}
+
 module.exports = {
   TENANT_PREFIX, FORBIDDEN_SLUGS,
   requireEnv, loadPrisma, saveState, loadState, requireLoginPassword, recoverState,
-  assertOwnSlug, assertOwnTenant,
+  assertOwnSlug, assertOwnTenant, findAcceptanceField, revokeTenantAccess,
   newSuffix, backendPid, blockingPids, waitUntilBlockedBy, pidsBlockedBy, waitUntilSomeoneBlockedBy,
   ObservationError, BudgetExceededError, assertWithinBudget, sessionTxState, assertLockReleased,
   activeWaiters, httpJson, log, step,

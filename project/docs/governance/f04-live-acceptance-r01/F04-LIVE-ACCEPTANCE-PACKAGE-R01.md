@@ -1,4 +1,4 @@
-# F04 CANLI KABUL PAKETİ — R01 (revizyon **R03**: kalan hata yolları)
+# F04 CANLI KABUL PAKETİ — R01 (revizyon **R04**: erişim kapanışı hata yollarından bağımsız)
 
 ```text
 DURUM             : R03 ONARIMI PROVASI GEÇTİ / CANLI ÇALIŞTIRMA ONAYI BEKLİYOR
@@ -275,16 +275,92 @@ bırakılma (commit/rollback) kuyruğunu kapsamaz.
 **Düzeltme yönü:** garanti metni ile assertion eşiği aynı sayıdan türemeli; dış sınır (Prisma tx
 timeout) bütçeyi aşmayacak şekilde bağlanmalı.
 
-### Kusur B — yürütücü commit sonrası hatada hesabı açık bırakabilir
+### Kusur B — yürütücü commit sonrası hatada hesabı açık bırakıyordu → **GİDERİLDİ (İ5b)**
 
-`f04-run.js:82` yalnız `setupCode === 0 || setupCode === 4` durumunda kapatma yapıyor; diğer her
-çıkış "kurulum commit edilmedi" sayılıyor. Ancak `f04-01-setup.js`'te satır 222'deki
-`if (written.length !== EXPECTED) throw`, `$transaction` (satır 104) **commit ettikten sonra**
-çalışır ve **exit 1** üretir. Yani tetikleyici yalnız SIGKILL/timeout (124) değil — **commit
-sonrası herhangi bir hata** aynı fail-open'a düşer ve sentetik hesap **açık kalır**.
+**Kusurun kendisi.** `f04-run.js:82` yalnız `setupCode === 0 || setupCode === 4` durumunda
+kapatma yapıyordu; diğer her çıkış "kurulum commit edilmedi" sayılıyordu. Ancak
+`f04-01-setup.js`'te `if (written.length !== EXPECTED) throw`, `$transaction` **commit
+ettikten sonra** çalışır ve **exit 1** üretir; `spawnSync(timeout)` commit sonrası öldürürse
+**exit 124** olur. Her iki halde de kayıtlar **mevcuttur** ve hesap **açık kalırdı**.
 
-**Düzeltme yönü:** çıkış kodu beyaz listesi yerine, **durum dosyası veya `runId` ile tenant
-bulunabiliyorsa her çıkış kodunda kapatma denenmeli** (bilinmeyen çıkış "yapılmadı" sayılmaz).
+**Düzeltme.** Çıkış kodu beyaz listesi kaldırıldı. Alan artık **yazmadan önce belirlenmiş**
+`runId` ile aranır: `runId` yürütücüde hiçbir yazma yapılmadan üretilir ve tenant slug'ına
+(`f04-acc-<runId>`) gömülüdür, bu yüzden hangi hata yolundan geçilirse geçilsin bulunabilir.
+
+| Değişiklik | Dosya |
+|---|---|
+| `findAcceptanceField(prisma, runId)` — salt-okuma, G-1 korumalı alan arama | `f04-lib.js` |
+| `revokeTenantAccess(prisma, tenantId)` — kapatma mantığı **tek kaynak** | `f04-lib.js` |
+| `f04-09-close-access.js` — **yalnız `runId`** ile kapatır; durum dosyası GEREKMEZ, tekrarı güvenli | yeni |
+| `finally` artık çıkış kodundan bağımsız `f04-09` çağırır | `f04-run.js` |
+| `revoke-access` kopya mantığı tek kaynağa bağlandı | `f04-04-teardown.js` |
+| `F04_FAIL_AFTER_COMMIT` / `F04_KILL_AFTER_COMMIT` — **yalnız negatif kontrol** enjeksiyonu | `f04-01-setup.js` |
+
+**Süreç zorla sonlanırsa `finally` çalışmaz.** Bu hal için kapatma ayrı bir girişten
+çağrılabilir ve **tekrarı güvenlidir**:
+
+```bash
+F04_RUN_ID=<runId> F04_DATABASE_URL=... node f04-09-close-access.js
+```
+
+#### Hata yolu provaları (`f04-i5b-failure-paths.js`, disposable — **canlı kabul değildir**)
+
+`PASS 7 · FAIL 0 · ÖLÇÜLEMEYEN 0`. Her satırda zincir aynı: **hata yolu → oluşan alan →
+kapatma/kurtarma → doğrulanan sonuç**.
+
+| # | Hata yolu | Oluşan alan | Kapatma / kurtarma | Doğrulanan sonuç |
+|---|---|---|---|---|
+| H-1 | commit **öncesi** (`F04_ABORT_AFTER`) | **yok** (atomik) | kapatıcı çağrıldı | `fieldExists:false`, yazma **0**, exit 0 — "alan yok" **ölçülerek** bulundu |
+| H-2 | commit **sonrası** hata → setup **exit 1** | var (1 kullanıcı) | yürütücü `finally` → `f04-09` | aktif kullanıcı **0**; çıkış kodu 0/4 değilken de kapandı |
+| H-3 | commit **sonrası** öldürme → setup exit 1, durum dosyası **yok** | var | yürütücü `finally` → `f04-09` | aktif kullanıcı **0**; durum dosyası kapanışın ön koşulu **değil** |
+| H-3b1 | setup **doğrudan** öldürüldü → `finally` **hiç çalışmadı** | var | — | erişim **AÇIK** ölçüldü: aktif 1, HTTP oturum açma **201** |
+| H-3b2 | (aynı alan) | var | **sonraki** `f04-09` çağrısı, yalnız `runId` | aktif **1→0**, `tokenVersion` **+1**, kanıt korundu (`collection:1, disposition:1` değişmedi) |
+| H-3b3 | (aynı alan) | var | — | **HTTP geçişi**: aynı kimlik bilgisiyle **201 → 401** |
+| H-4 | tekrar | var | `f04-09` **ikinci** kez | `usersDeactivated:0`, `alreadyClosed:true`, aktif 0, exit 0 — kapalı durum bozulmadı |
+
+**Erişim ölçümü iki katmandır ve biri diğerinin yerine geçmez:** (a) DB'de `isActive` /
+`tokenVersion`, (b) HTTP oturum açma. **Tek başına bir 401 kanıt değildir** (yanlış parola da
+401 verir) — bu yüzden ölçüt, kapatmadan **önce 201** görülmüş olmasını şart koşar. Başarılı
+oturum açmanın gerçek sözleşmesi **201**'dir (`auth.controller.ts` `@Post("login")`, `@HttpCode`
+yok); beklenti 200'e sabitlenmemiştir.
+
+#### Mutasyon kanıtı — kapı yük taşıyor
+
+Aynı uyarıcı (`F04_FAIL_AFTER_COMMIT=1`), **yama öncesi yürütücü** (ayrı `origin/main`
+worktree'si; testin içinde yeniden yazılmış kopya değil):
+
+```text
+[KAPANIS] kurulum commit edilmedi — kapatilacak hesap YOK.
+    SONUC: BASARISIZ — kurulum basarisiz (exit 1) — atomik oldugu icin kayit KALMAZ
+```
+
+Bağımsız ölçüm ise: `fieldExists:true · activeUsers:1 · isActive:true · tokenVersion:0`.
+Yani yürütücü **iki yanlış iddia** basıyor ve hesabı **açık bırakıyordu**. Yamalı yürütücü
+aynı uyarıcıda alanı kapatıyor (H-2).
+
+#### Gözlem — kusurun disposable ortamdaki izi
+
+Prova veritabanında `f04-acc-` önekli **20 alan** bulundu; **10'u açık** (`tokenVersion=0`,
+yani hiç kapatılmamış) ve hepsi **2026-09-07** tarihli önceki koşumlardan kalma. Bu turda
+üretilen **7 alanın tamamı kapalıdır** (`tokenVersion=1`). Açık kalan 10 alan **bu turda
+kapatılmadı** — başka bir oturumun çalışmasına müdahale etmemek için; her biri tek komutla
+kapatılabilir (`F04_RUN_ID=<runId> node f04-09-close-access.js`).
+
+## 12. İ5b kapanış kaydı (CLIENT teslim planı R02)
+
+**İş:** İ5b — *"F04 paket kusuru B(ii) onarımı VEYA yazılı elle kurtarma yordamı"*.
+`f04-01-setup.js` KABUL-5'te kullanılacağı için her durumda gerekliydi.
+
+**Kapanış ölçütü ve karşılanma biçimi.** Yalnız yazılı elle kurtarma metni kapanış sayılmadı;
+seçilen çözüm **gerçek hata yollarında yerel olarak doğrulandı** (§11 Kusur B — H-1…H-4,
+`PASS 7 · FAIL 0 · ÖLÇÜLEMEYEN 0`) ve kapının yük taşıdığı **yama öncesi yürütücüyle**
+karşılaştırılarak gösterildi.
+
+**Kapsam dışı bırakılanlar (bu iş değiştirmez):** §11 **Kusur A** (kilit süresi) ayrı kalemdir
+ve İ5b'ye dahil değildir — CLIENT R02'de **İ5a** olarak koşulludur ve yalnız İ5=(a) seçilir
+**ve** kilit tutan bir senaryo canlıda kurulursa devreye girer. Bu revizyonda **canlı DB yazımı,
+deploy, gerçek gönderim ve F04/A2 canlı tekrarı YOKTUR**; provaların tamamı disposable
+ortamdadır ve **canlı kabul sayılmaz**.
 
 ### Kayıt düzeltmesi
 

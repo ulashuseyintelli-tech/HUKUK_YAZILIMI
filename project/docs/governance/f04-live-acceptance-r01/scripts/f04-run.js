@@ -5,7 +5,11 @@
  *   (a) **SIR:** sentetik hesabin parolasi burada BELLEKTE uretilir ve alt sureclere yalniz
  *       ORTAM DEGISKENI olarak gecirilir. Hicbir yere yazilmaz, hicbir ciktiya BASILMAZ.
  *   (b) **ERISIM SONLANDIRMA:** `finally` blogunda calisir — kurulum, A2 veya dogrulama
- *       BASARISIZ OLSA BILE sentetik hesabin erisimi kapatilir.
+ *       BASARISIZ OLSA BILE sentetik hesabin erisimi kapatilir. Kapatma CIKIS KODUNA
+ *       BAGLI DEGILDIR: alan, yazmadan once uretilen `runId` ile ARANIR (paket §11 Kusur B).
+ *   (d) **SUREC ZORLA SONLANDIRILIRSA** `finally` HIC CALISMAZ. Bu hal icin kapatma ayri
+ *       bir giristen tekrar cagrilabilir ve TEKRARI GUVENLIDIR:
+ *         F04_RUN_ID=<runId> node f04-09-close-access.js
  *   (c) **KURTARMA:** kurulum COMMIT edilip durum dosyasi yazilamazsa (setup exit 4),
  *       `runId` uzerinden durum kurtarilir ve akis devam eder; hesap yine kapatilir.
  *
@@ -76,29 +80,27 @@ function run(script, extraEnv = {}) {
     failure = failure || (e && e.message) || String(e);
     console.error('\nKOSUM HATASI:', failure);
   } finally {
-    // ── 4) ERISIM SONLANDIRMA — BASARISIZLIKTA DA CALISIR ──
-    // Kurulum hic commit edilmediyse kapatilacak hesap da yoktur.
-    const stateExists = fs.existsSync(STATE);
-    if (setupCode === 0 || setupCode === 4) {
-      if (!stateExists) {
-        console.log('\n[KAPANIS] durum dosyasi yok — runId ile son bir kurtarma deneniyor');
-        run('f04-00-recover-state.js', { F04_RUN_ID: RUN_ID });
-      }
-      if (fs.existsSync(STATE)) {
-        console.log('\n[KAPANIS] sentetik hesabin erisimi sonlandiriliyor (finansal/audit kanit KORUNUR)');
-        const rv = run('f04-04-teardown.js', { F04_TEARDOWN_MODE: 'revoke-access' });
-        if (rv !== 0) {
-          console.error('  !!! ERISIM KAPANISI EKSIK — teardown ciktisindaki verdict incelenmelidir.');
-          failure = failure || `erisim kapanisi eksik (exit ${rv})`;
-        }
-      } else {
-        console.error('  !!! DURUM KURTARILAMADI — hesap kapatilamadi.');
-        console.error(`      Elle kapatma: F04_RUN_ID=${RUN_ID} node f04-00-recover-state.js`);
-        console.error('                    F04_TEARDOWN_MODE=revoke-access node f04-04-teardown.js');
-        failure = failure || 'durum kurtarilamadi, hesap KAPATILAMADI';
-      }
-    } else {
-      console.log('\n[KAPANIS] kurulum commit edilmedi — kapatilacak hesap YOK.');
+    // ── 4) ERISIM SONLANDIRMA — CIKIS KODUNA BAGLI DEGIL ──
+    //
+    // ESKI DAVRANIS (paket §11 Kusur B): kapatma yalniz `setupCode 0|4` icin denenirdi ve
+    // diger her cikis "kurulum commit edilmedi" SAYILIRDI. Oysa `f04-01-setup.js:222`
+    // EXPECTED kontrolu COMMIT SONRASI calisip exit 1 uretir; `spawnSync(timeout)` commit
+    // sonrasi oldururse exit 124 olur. Ikisinde de kayitlar MEVCUTTUR ve hesap ACIK KALIRDI.
+    //
+    // YENI DAVRANIS: alan, YAZMADAN ONCE uretilen `RUN_ID` ile ARANIR. Bilinmeyen cikis kodu
+    // "yapilmadi" sayilmaz; "alan yok" sonucu da ARANARAK olculur, varsayilmaz.
+    console.log(`\n[KAPANIS] alan runId=${RUN_ID} ile araniyor (cikis kodu ${setupCode} DIKKATE ALINMAZ)`);
+    const cv = run('f04-09-close-access.js', { F04_RUN_ID: RUN_ID });
+    if (cv !== 0) {
+      console.error('  !!! ERISIM KAPANISI EKSIK — f04-09 ciktisindaki verdict incelenmelidir.');
+      console.error(`      Tekrar denenebilir (guvenli): F04_RUN_ID=${RUN_ID} node f04-09-close-access.js`);
+      failure = failure || `erisim kapanisi eksik (f04-09 exit ${cv})`;
+    }
+
+    // Durum dosyasi yalniz RAPOR/DOGRULAMA icindir; kapanisin on kosulu DEGILDIR.
+    if (!fs.existsSync(STATE) && (setupCode === 0 || setupCode === 4)) {
+      console.log('[KAPANIS] durum dosyasi yok — rapor icin runId ile kurtarma deneniyor (kapanis ZATEN yapildi)');
+      run('f04-00-recover-state.js', { F04_RUN_ID: RUN_ID });
     }
 
     console.log(`\n=== KOSUM OZETI · runId=${RUN_ID} ===`);
