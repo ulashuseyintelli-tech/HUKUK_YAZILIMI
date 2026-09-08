@@ -3827,6 +3827,7 @@ bu yuzden O-6 olcum penceresi aracin calismasini KAPSAMALIDIR.
 yalniz **O-1, O-3 ve O-6** kanitina baglar; ucu de PASS uretildi (`OFFICE-O-SERIES-ACCEPTANCE-CLOSED-R01`,
 PR #2545 squash `b9d8094a`, canli RELEASE20 `08ce8e25`). Kapanis YALNIZ bu satiri kapatir:
 O-8 UI yazma kabulu, `escAssignees` residual`i, OFF-P2-CAP-07, OWN-10 ve F04 ACIK KALIR.
+(**F01 rol/tenant matrisi** 2026-09-08`de OLCULDU — 15/15 karakterizasyon; davranis DEGISMEDI ve uc kalem owner urun karari bekler. **`escAssignees`** icin kod yuzeyinde SIFIR referans olculdu; **OFF-P2-CAP-07** alan-duzeyi izin TASIYICISI olarak ACIK KALIR — unmask governance BLOCKED. Kayit: decision-log `OFFICE-F01-ROLE-TENANT-MATRIX-R01`.)
 (**F-B01-04** 2026-09-07`de MAIN`DE kapandi — canli kabul ayri ve ACIK; yukaridaki tabloya bakiniz.)
 (**F-B01-05** 2026-09-08`de MAIN`DE kapandi — canli kabul ayri ve ACIK; yukaridaki tabloya bakiniz.)
 Kayit: decision-log `OFFICE-FB0103-CLOSED-R01`.
