@@ -2618,7 +2618,12 @@ model Lawyer {
 
   // UYAP Bilgileri (ileride kullanılacak)
   uyapUsername     String?
-  uyapToken        String? // Şifrelenmiş
+  // OFFICE-FB0105: bu alan ŞİFRELENMİŞ DEĞİLDİR. Eski "// Şifrelenmiş" yorumu kod
+  // karşılığı olmayan bir iddiaydı; repoda hiçbir şifreleme/çözme yolu yok. Alan
+  // ürün akışında YAZILMAZ: `POST /lawyers` DTO'su ve LawyerService.create allow-list'i
+  // reddeder, `update` allow-list'inde yoktur, public projeksiyondan da çıkarılır
+  // (LAWYER_CREDENTIAL_FIELDS). Şifreleme sözleşmesi kurulmadan DOLDURULMAMALIDIR.
+  uyapToken        String?
   eSignatureSerial String? // E-imza seri no
 
   // Durum

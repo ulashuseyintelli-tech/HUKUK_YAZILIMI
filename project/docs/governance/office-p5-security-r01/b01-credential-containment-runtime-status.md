@@ -165,3 +165,28 @@ spec'i düşük-riskli eklenebilir. Karar PAGE-O0'a bırakıldı — NEW OWNER D
   Kayıt: decision-log `OFFICE-FB0104-RAW-SURFACE-CONTAINED-R01`.
 - F-B01-05 `Lawyer.uyapToken` "// Şifrelenmiş" yorumu (schema:2536) kod karşılıksız; alana yazan servis
   yolu yok, DB doluluğu 0 — düşük öncelik, kayıt amaçlı.
+
+## F-B01-05 — `Lawyer.uyapToken` yazma sınırı (2026-09-08, MAIN)
+
+**Öncül düzeltmesi:** kayıttaki “alana yazan hiçbir servis yolu yok” ifadesi **BAYATTI**.
+`POST /api/lawyers` gövdesi DTO SINIFI ile değil satır-içi tip literali ile tipliydi; global
+`ValidationPipe` metatype `Object` gördüğü için çalışmıyor, gövde `LawyerService.create` içinde
+`...data` olarak EN SONDA spread ediliyordu.
+
+Ölçülen yazılabilir yüzey (düzeltmeden önce):
+
+- credential: `uyapToken`, `eSignatureSerial`, `uyapUsername`
+- tenant sınırı: gövdedeki `tenantId` güvenilen değeri EZİYORDU
+- sunucu denetimi: `officeId`, `sortOrder`, `id`, `userId`, `createdAt`, `updatedAt`,
+  `permissionsLockedBy`, `permissionsLockedAt`
+- K1-4b: `canApproveOfficeActions` guard`sız
+
+**Düzeltme:** `dto/create-lawyer.dto.ts` (`CreateLawyerDto` + `LAWYER_CREATE_PERSIST_FIELDS`),
+controller `@Body() data: CreateLawyerDto`, servis allow-list’i, sunucu denetimli alanların
+spread SONRASI yazılması, şema yorumunun gerçeğe uydurulması.
+
+**Kanıt:** `lawyer-create-write-boundary-fb0105.spec.ts` 23/23 (önce KIRMIZI 14/9);
+`pure/office-auth-user` 88 suite / 1548 test PASS; `tsconfig.prod.json` exit 0.
+
+**CANLIDA DEĞİL** — RELEASE20 `08ce8e25` içermez. **AÇIK:** create’te H2 otorite asimetrisi
+(owner ürün kararı; decision-log `OFFICE-FB0105-LAWYER-CREATE-WRITE-BOUNDARY-R01`).

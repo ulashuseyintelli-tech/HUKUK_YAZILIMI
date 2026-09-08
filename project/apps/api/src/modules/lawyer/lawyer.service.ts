@@ -9,6 +9,7 @@ import type { AuditActor } from "@/modules/client/client.service";
 import { toPublicLawyer, toPublicLawyers } from "./lawyer-public-projection";
 import { projectF01Lawyer, F01ProjectionAccess } from "../office/office-f01-projection";
 import { UpdateLawyerDto, validateLawyerUpdateInput } from "./dto/update-lawyer.dto";
+import { LAWYER_CREATE_PERSIST_FIELDS } from "./dto/create-lawyer.dto";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 // H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
@@ -295,13 +296,25 @@ export class LawyerService {
       _max: { sortOrder: true },
     });
 
+    // OFFICE-FB0105: gövde ARTIK spread EDİLMEZ. Eskiden `...data` en sonda spread ediliyordu;
+    // bu hem credential alanlarının (uyapToken/eSignatureSerial/uyapUsername) yazılmasına, hem de
+    // güvenilen `tenantId`/`officeId`/`sortOrder` değerlerinin gövdeden EZİLMESİNE izin veriyordu.
+    // Allow-list `update` yolundaki `writeData` deseniyle aynıdır ve HTTP dışı çağıranları da
+    // (seed.service `as any`, case.service) kapsar.
+    const createData: Record<string, unknown> = {};
+    for (const field of LAWYER_CREATE_PERSIST_FIELDS) {
+      const value = (data as Record<string, unknown>)[field];
+      if (value !== undefined) createData[field] = value;
+    }
+
     const lawyer = await this.prisma.lawyer.create({
       data: {
+        ...createData,
+        // Sunucu denetimindeki alanlar SONDA: gövde bunları ezemez.
         tenantId,
         officeId: office.id,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
-        ...data,
-      },
+      } as Prisma.LawyerUncheckedCreateInput,
     });
 
     // P01: credential alanlari public yanittan CIKARILIR.

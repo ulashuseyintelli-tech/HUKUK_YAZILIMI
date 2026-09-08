@@ -13,9 +13,9 @@ import {
 import { LawyerService } from "./lawyer.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
-import { LawyerRole, LawyerRank } from "@prisma/client";
 import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
 import { PatchLawyerDto, UpdateLawyerDto, validateLawyerUpdateInput } from "./dto/update-lawyer.dto";
+import { CreateLawyerDto } from "./dto/create-lawyer.dto";
 
 @Controller("lawyers")
 @UseGuards(JwtAuthGuard)
@@ -72,42 +72,9 @@ export class LawyerController {
   @UseGuards(OfficeF01AuthorizationGuard)
   create(
     @CurrentUser("tenantId") tenantId: string,
-    @Body()
-    data: {
-      name: string;
-      surname: string;
-      tckn?: string;
-      gender?: string;
-      barNumber?: string;
-      barCity?: string;
-      tbbNo?: string;
-      vergiDairesi?: string;
-      vergiNo?: string;
-      email?: string;
-      phone?: string;
-      mobilePhone?: string;
-      whatsappPhone?: string;
-      fax?: string;
-      address?: string;
-      city?: string;
-      district?: string;
-      bankName?: string;
-      branchName?: string;
-      iban?: string;
-      isInHouseCounsel?: boolean;
-      isEmployee?: boolean;
-      role?: LawyerRole;
-      title?: string;
-      canSign?: boolean;
-      canAppearInUyap?: boolean;
-      canBeResponsible?: boolean;
-      isDefaultForNewCases?: boolean;
-      // Yeni alanlar
-      lawyerRank?: LawyerRank;
-      defaultPermissions?: any;
-      permissionsLocked?: boolean;
-      canModifyOtherPermissions?: boolean;
-    },
+    // OFFICE-FB0105: satir-ici tip literali RUNTIME'DA SILINIR ve global ValidationPipe
+    // metatype `Object` gordugu icin HIC calismazdi. DTO SINIFI zorunlu.
+    @Body() data: CreateLawyerDto,
     @CurrentUser("id") actorUserId?: string,
     @CurrentUser("role") actorRole?: string,
   ) {
