@@ -125,9 +125,14 @@ cutover'ın kesintisine **ek olarak** kısa kesinti(ler) doğurur.
 > Bu kalem **yayın paketinin kesinti/kilit bütçesine** girer. Owner kesinti bütçesini
 > onaylarken bunu görmelidir. Aşağıdaki iki seçenek sunulur; **seçim owner'ındır.**
 
+> ⚠ **Aşağıdaki tablo, owner'a SUNULAN seçeneklerin tarihsel kaydıdır.** (a) satırındaki
+> akış, owner'ın seçtiği NİHAİ akış **DEĞİLDİR** — owner (a)'yı seçip pencereyi daha da
+> daralttı. **Uygulanacak akış §1 tablosu (5a–5d) ve §3.1'dir.** Bu tabloyu bağlamından
+> kopararak alıntılamayın; hemen altındaki KARAR kutusuyla birlikte okuyun.
+
 | | **(a) Dar pencere** — iki ek yeniden başlatma | **(b) Tek ek yeniden başlatma** |
 |---|---|---|
-| Akış | Cutover bayrak **yokken** yapılır → bayrak aç + restart → A-03…A-07 → bayrak kaldır + restart | Bayrak cutover'ın `.env`'ine konur → cutover'ın **kendi** restart'ı etkinleştirir → A-03…A-07 → bayrak kaldır + restart |
+| Akış (**sunulan hâli — nihai değil**) | Cutover bayrak **yokken** yapılır → bayrak aç + restart → A-03…A-07 → bayrak kaldır + restart | Bayrak cutover'ın `.env`'ine konur → cutover'ın **kendi** restart'ı etkinleştirir → A-03…A-07 → bayrak kaldır + restart |
 | Ek kesinti | **2** | **1** |
 | Ucun canlıda etkin kaldığı süre | Yalnız kabul penceresi — **en dar** | Cutover anından kabul bitene kadar — **daha geniş** |
 | Owner lafzıyla uyum | "Varsayılan KAPALI + **kontrollü açılma**" ifadesine daha yakın | "Kontrollü açılması ve koşum sonunda kapatılması" ifadesiyle **gerilimli** |
