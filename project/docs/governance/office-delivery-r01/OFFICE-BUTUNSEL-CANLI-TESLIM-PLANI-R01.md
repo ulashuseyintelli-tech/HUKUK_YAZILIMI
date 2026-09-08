@@ -345,3 +345,188 @@ F04'ün doğru tespiti kayda geçer: **A-02 bir sözleşme belgesidir, çalışt
 içermez.** Harness'ı F04 yazar; sözleşme belgesi yeniden yazılmaz. Ayrıca F04, provada
 uygulamayı F-B01-05'i içeren bir ağaçtan derleyeceği için **A-04'ün DTO reddi ölçütünü provada
 gerçekten ölçebilir** — bu, canlı A-04'ün A-01 bağımlılığını **değiştirmez**.
+
+### 8.10 A-07 KESİN YÜRÜTME BAĞI ve MIGRATION KARARI (2026-09-08, append-only)
+
+Bu bölüm A-07'nin "yürütme izi" ölçütünün nasıl kapatılacağını ve bunun A-01'in yayın
+adayına etkisini kayda geçirir. Owner kararlarıyla ilerledi; her hüküm ölçüme dayanır.
+
+#### 8.10.1 A-07 daraltılamadı — owner reddi
+
+Ana yürütücü, A-02 §4'ün geri-düşüş kuralına dayanarak A-07'nin "okuma yüzeyi + yetki
+negatifi" ile sınırlı kapanmasını önerdi. **Owner ONAYLAMADI:** yürütme izi açıkken A-07 ve
+bütünsel OFFICE teslimi tamamlanmış sayılamaz. Bu, planın "N=7 zorunlu iş" tanımını korur.
+
+#### 8.10.2 Belirleyici ölçüm — yürütmenin tek tetikleyicisi cron'du
+
+| Ölçüm | Bulgu |
+|---|---|
+| `OfficeApprovalExecutorService` enjeksiyonu (üretim) | **yalnız** `office-approval-executor-cron.service.ts:53` |
+| `office-approval.controller.ts` rotaları | `inbox` · `mine` · `:id` · `approve` · `reject` · `request-revision` · `approve-with-changes` · `cancel` — **yürütme ucu YOK** |
+| Modül şerhi | `office-approval-executor.module.ts:15` "internal callable … route YOK" |
+
+Sonuç: ADR-009 tek-motor yürütme izini üreten tek yol cron'du. Bu, owner'ın iki şartını
+(*"cron kabul satırını kontrolsüz yürütmesin"* + *"yürütme izi üretilsin"*) mevcut kodla
+**çelişkiye** soktu. Kod-dışı kaldıraç arandı, bulunamadı: cron/executor'da tenant lifecycle
+yüklemi **0**; tenant'ı pasifleştirmek cron kapsamından çıkarmıyor (ve çıkarsa da
+`isLoginableLifecycle` ACTIVE istediği için HTTP kabul koşulamıyor — iki yönlü ölü yol).
+
+#### 8.10.3 Devralınamayan kanıt — iki yolun ürettiği iz AYNI DEĞİL
+
+`markExecution` yardımcısı kaynak durum olarak `{NOT_RUN, RUNNING}` kabul eder; yani
+`markExecutionSucceeded` RUNNING'den geçmeden de çağrılabilir. Üç üretim yolu:
+`office-approval-executor.service.ts:220,276` · `client-settlement/disposition-posting.service.ts:368`
+· `client-settlement/client-payout.service.ts:286`.
+
+| Ölçüt | Executor (CHANGE_STATUS/LegalCase) | Disposition posting |
+|---|---|---|
+| `markExecutionRunning` STRICT NOT_RUN→RUNNING (çift-apply fence) | ✅ | ❌ |
+| `OFFICE_APPROVAL_EXECUTION_STARTED` | ✅ | ❌ |
+| Yaşam döngüsü | NOT_RUN → RUNNING → SUCCEEDED | **NOT_RUN → SUCCEEDED** |
+| `..._SUCCEEDED` | ✅ | ✅ |
+
+**Sonuç:** F04'ün #2549'daki `COLLECTION_DISPOSITION_POST` kanıtı terminal bir işaretçiydi,
+ADR-009 tek motor yürütmesi değil → **devralınamaz.** Owner'ın "yeni finansal zinciri
+kendiliğinizden kurmayın" şartı da geçerli olduğundan yol `CHANGE_STATUS/LegalCase`tir.
+
+#### 8.10.4 DELTA-A — owner seçimi (execute + reconcile)
+
+Owner DELTA-A'yı **execute + reconcile** kapsamıyla seçti; uygulama OFFİCE 33-F04'ün,
+aday/paket/mühür/cutover OFFİCE 33'ün, koordinasyon ana yürütücünündür. **Aynı dosya
+kapsamının tek yazarı** kuralı geçerlidir.
+
+Yetkilendirilen değişiklik: `CaseStatusHistory` üzerinde nullable **`approvalRequestId`** ve
+**`approvalAttempt`** + doğrulanmış sorguya uygun indeks (tek migration klasörü) · kontrollü
+`execute` ve **yalnız hedef talebe yönelik** `reconcile` uçları · varsayılan **KAPALI**, genel
+cron bayrağından **bağımsız** kabul bayrağı · F01 + ADMIN + sunucuda çözülen tenant/ofis +
+talep/Case/deneme kontrolleri (bayrak açıkken de zorunlu) · spec'ler + **CI manifesti**.
+
+Bağlayıcı: talep/deneme bağı **Case değişikliğiyle aynı transaction'da** yazılır · istemci bu
+bağı sahte üretemez · **kesin kanıt olmadan SUCCEEDED yazılmaz** · tekrar uygulama yapılmaz ·
+**genel cron reconcile davranışı değiştirilmez**.
+
+#### 8.10.5 İki ölçüm, iki geri çekilen hüküm
+
+**(a) Guard owner şartını sağlamıyordu.** Owner *"ADMIN olmak tenant/ofis sınırını
+kaldırmasın"* dedi. Ölçüm: `office-f01-authorization.guard.ts:32` `isF01ActorAuthorized`'ı
+`targetOfficeId` **vermeden** çağırıyor; `office-approval.service.ts:26` cross-office
+kontrolünü yalnız `targetOfficeId` verilince çalıştırıyor, `:30` ADMIN'i kısa-yoldan geçiriyor.
+Yani yeni uç guard'a dayansaydı şart **ilk gün ihlal** olurdu → `targetOfficeId` sunucuda
+türetilip servis katmanında açıkça geçirilecek; **paylaşımlı predicate DEĞİŞTİRİLMEZ**.
+Owner düzeltmesi: `Office.tenantId @unique` = **"en fazla bir ofis"** ("tam olarak bir" DEĞİL);
+ofis bulunamazsa veya ilişkilerde uyuşmazlık varsa **fail-closed reddedilir**. Bu uçtaki
+doğrulama **AK-1c'nin veya bütün F01 yüzeylerinin genel kapanışı olarak raporlanmaz**.
+
+**(b) Ana yürütücünün onayladığı reconcile eşiği YETERSİZDİ.** `caseId + aktör + zaman +
+hedef statü` yüklemi onaylanmıştı; owner *"aynı aktörün başka işlemi de bu koşulları
+sağlayabilir"* diyerek reddetti ve **haklıydı** — ölçüm: `changeStatus` **paylaşımlı**
+(`case-status.controller.ts:107` + executor `:214`), yani aynı aktör controller üzerinden
+birebir aynı görünen satırı üretebilir. `CaseStatusHistory` ve `DecisionLog`'da
+`approvalRequestId` **yoktu** → kesin bağ mevcut değildi. Ayrıca **yeniden deneme mümkün**
+(`executeRetry` + `markExecutionRetrying` FAILED→RUNNING, `retryCount < maxAttempts`), her
+deneme yeni history satırı üretir ve `markExecutionRetrying` `retryCount`'u **artırmaz** →
+`retryCount` tek başına deneme ayırt edicisi olamaz. Bu yüzden ayrı `approvalAttempt` alanı.
+
+#### 8.10.6 MIGRATION — C33 cutover motorunda KOŞAMAZ
+
+| Kanıt | Ölçüm |
+|---|---|
+| Motor başlığı | `engine/Invoke-C33Cutover.ps1:5` "YASAK: … DB restore/**migration**/credential rotation …" |
+| P-16 kapısı | `:499` `$litDen = @(('mig'+'rate'), …)` — parçalı jeton (tarayıcı kendini eşleştirmesin); `:505` `yasakLit=0` şartı → motora migration girerse **P-16 düşer** (19 zorunlu kapıdan biri) |
+| DB değişmezliği | `:351` `Get-DbSnapshot` → `count(*) FROM _prisma_migrations` (+ kırılım); `:455` dbPre · `:614` dbMid · `:634` dbPost · `:700` dbRb |
+| **Paket pini** | `pins/PINS.json:65` `"ledgerTuple": "129\|129\|0\|0"` · `:66` `"dbSnapshot": "129\|129\|0\|0\|…\|5\|36\|2"` |
+
+Motor "canlı DB'ye dokunmadım"ı **migration sayacıyla kanıtlıyor**; migration pencere içinde
+koşarsa bu kanıt modeli kendisiyle çelişir.
+
+**PİN ZATEN KAYMIŞ** (ana yürütücü ölçümü, salt-okuma, RELEASE20 dist'inin Prisma istemcisiyle):
+```
+pinli : 129|129|0|0|<sysid>|5|36|2
+canlı : 129|129|0|0|<sysid>|6|37|2      → Tenant 5→6 · User 36→37
+altıncı tenant: f04-acc-ccd471d3  2026-09-07T20:26:44Z  (#2549 canlı kabul koşumu)
+```
+Yani **RELEASE20 paketi bugün yeniden koşulsa kendi pin kapısında düşerdi.** Yapısal sonuç:
+**her canlı kabul koşumu bu tuple'ı oynatır** → A-03…A-07 canlı kabulünün cutover'dan SONRA
+gelmesi **tercih değil ZORUNLULUKTUR**; pin ölçümü ile mühür arasında canlıya tenant/kullanıcı
+yaratan hiçbir iş koşmaz (koordinasyon ana yürütücüde).
+
+#### 8.10.7 Kilit riski — ölçüldü, korumasız
+
+```
+lock_timeout = 0 · statement_timeout = 0 · idle_in_transaction_session_timeout = 0
+deadlock_timeout = 1000 ms · max_connections = 100 · PostgreSQL 16.14
+CaseStatusHistory: 930 satır · 408 kB toplam · açık işlem yok (ölçüm anında)
+depoda lock_timeout kullanan migration: 0/129 · CONCURRENTLY: 0/129
+```
+Risk **tablo boyutundan bağımsızdır**: `ADD COLUMN` ACCESS EXCLUSIVE ister; `lock_timeout=0`
+olduğu için kilit alınamazsa migration **süresiz bekler** ve talep kuyruğa girdiği anda
+**arkasındaki tüm yeni sorgular** (okuma dahil) bloke olur. 129 migration'ın kilit koruması
+olmadan uygulanmış olması güvenlik kanıtı **değildir** (hayatta kalma yanılgısı).
+Bağlayıcı: `SET LOCAL lock_timeout` (değer + gerekçe) · **düz `CREATE INDEX`** (CONCURRENTLY
+transaction içinde koşamaz → kısmi/INVALID indeks; düz kullanım `ADD COLUMN` ile **atomik**) ·
+migration öncesi açık/idle işlem ön-kontrolü. **"Nullable kolon zaten risksizdir" argümanı
+owner tarafından ismen yasaklanmıştır ve kullanılmamıştır.**
+
+#### 8.10.8 Migration sırası — dört seçenek, hepsi ölçülü gerekçeyle
+
+| # | Seçenek | Sonuç |
+|---|---|---|
+| **1** | Cutover **öncesi**, ayrı yetkili adım; motor dokunulmaz | **ÖNERİ** — bütçeye eklemez; atomik; RELEASE20 koşarken uygulanır, böylece "RELEASE20 genişlemiş şemayla çalışır" kanıtı **zorunlu ön koşul** hâline gelir (rollback güvencesiyle aynı kanıt) |
+| 2 | Cutover **sonrası** | **ELENDİ — ölçüldü:** `case-status.service.ts:206` `caseStatusHistory.findMany` `include` kullanıp modele `select` **vermiyor** → Prisma tüm skalar alanları çeker; RELEASE21 istemcisi kolonsuz şemaya karşı `column does not exist` alır. Kullanıcıya açık `GET /case-status/:caseId/history` (`controller:128`) **500** verir. Dar (tek okuma yolu) ama **gerçek** |
+| 3 | Cutover **içinde**, motor değiştirilerek | **REDDEDİLDİ** — P-16 düşer; dbSnapshot değişmezliği motorun garantisinin taşıyıcısı; kesinti bütçesine doğrudan eklenir |
+| 4 | Migration **hiç yapılmaz** | **REDDEDİLDİ** — owner'ın onayladığı A-07 kesin bağ tasarımını geri alır |
+
+Seçenek belgesi: `HY_C33_RELEASE21_CUTOVER_R25_PREP/MIGRATION-SIRA-SECENEKLERI-R01.md`
+(altı sütun her seçenek için dolu; **BEKLENTİ olarak kalan hiçbir eleme gerekçesi yoktur**).
+
+#### 8.10.9 Adayın ve ratifikasyonun durumu
+
+- Aday **`d2223e78` DEĞİL**; DELTA-A + güvenlik onarımları **aynı yeni adayda**, **tek cutover**.
+  `d2223e78` ayrıca canlıya **alınmayacak**.
+- `OWNER-RATIFICATION-…-R01` **ölü** (owner: içerik değişirse referans yeni adaya taşınmaz).
+  **R02 ayrıldı fakat mühür yetkisi DEĞİLDİR**; nihai ratifikasyon, ölçüm tamamlandıktan sonra
+  **yeni aday SHA · BUILD_ID · migration kimliği · rollback · paket digest'i** birlikte
+  bağlanarak **tek mesajda** sunulacaktır (ana yürütücü derler).
+- Aday artık **"migration 0" diye sunulmayacaktır.**
+- Rollback = uygulamanın doğrulanmış **RELEASE20** sürümüne dönüşü; **down migration
+  kolon/indeks/yürütme kanıtı SİLMEZ**; RELEASE20'nin genişlemiş şemayla çalıştığı **izole
+  provada** kanıtlanır.
+
+#### 8.10.10 Yetki sınırı — ana yürütücünün ihlali ve düzeltmesi
+
+Ana yürütücü, owner'ın migration kararını OFFİCE 33-F04'e aktarıp "yazabilirsin" dedi. **F04
+HARD STOP verdi ve haklıydı:** o oturumun GO'su migration'ı ismen dışlıyordu ve bir meslektaş
+oturumunun aktarımı — doğru aktarılmış olsa bile — o oturum için geçerli yetki üretmez
+(**yetki aklama** sınıfı). Ana yürütücü hükmü geri çekti ve owner'dan **F04 oturumuna dönük
+doğrudan yetki** istedi; owner verdi (kaynak geliştirme + izole prova + merge; **canlı
+migration/deploy/kabul yazımları hariç**). Owner ayrıca ana yürütücüye **onaylanan kapsam
+içinde doğrudan dağıtım** yetkisi tanıdı; kapsam genişletme ve nihai canlı ratifikasyon
+yetkisi tanınmadı.
+
+İkinci düzeltme: ana yürütücü OFFİCE 33'e migration kapsamını **tek kolon** diye aktarmıştı;
+owner'ın son yetki metninde `approvalAttempt` **ismen vardı**. OFFİCE 33 bunu kapsam sorusu
+olarak yükseltti — **doğru refleks**; hata aktarımdaydı, kapsam genişlemesi yoktu.
+
+#### 8.10.11 Prova durumu — canlı kabul DEĞİL
+
+```
+kurulum 7/7 · A-03 53/53 · A-04 27/27 · A-05 12/12 · A-06 17/17 · kapanış 3/3
+PROVA SONUÇ: PASS · FAIL 0 · OLCULEMEDI 0 · canlı :8080'e sıfır temas
+```
+Harness'ın **altı kendi kusuru** provada yakalandı (boş izleme kümesi PASS veriyordu ·
+"yazıldı" ölçütü yanlıştı · banka hesabı id'si ölçülemiyordu · seyircide kullanıcı yoktu ·
+login rate-limit · merkezî login atıl kalmıştı) — **hiçbiri ürün kusuru değildir**.
+Owner kuralı: **prova başarısı canlı kapanış sayılmaz**; A-03…A-06 kabul satırları canlı
+koşumla dolacaktır. Provalar korunur; yalnız yeni değişiklikten etkilenen kanıtlar yenilenir.
+
+#### 8.10.12 `f04-acc-ccd471d3` — korunur
+
+Owner: kayıtlar ve yürütme izi **korunacak**; bu tenant yeni OFFICE kabulünde
+**kullanılmayacak**; **silme veya yeniden etkinleştirme YOK**. Ana yürütücü salt-okuma
+doğrulaması:
+```
+kullanıcı 1 · isActive=false · tokenVersion=1 · role=ADMIN
+e-posta @f04-acceptance.invalid (teslim edilemez)
+korunan kayıt: OfficeApprovalRequest 1 · AuditLog 1
+```
+**Uyumsuzluk YOK** — somut düzeltme gerekmiyor.
