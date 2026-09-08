@@ -45,23 +45,50 @@ module.exports = async function runH5(ctx) {
       timeoutMs: 25000,
     });
 
-  // ══ H5-00 · Sağlayıcı izolasyonu GÖNDERİMDEN ÖNCE doğrulanır ══
+  // ══ H5-00 · API'nin ETKİN TAŞIMA HEDEFİ yakalayıcıya bağlı mı? (GÖNDERİMDEN ÖNCE) ══
+  // YAKALAYICININ ERİŞİLEBİLİR OLMASI TEK BAŞINA YETERLİ DEĞİLDİR: API başka bir hedefe
+  // gönderiyor olabilir. Bu yüzden bağ, ÜRÜNÜN KENDİ gönderim yolundan atılan bir SONDA ile
+  // kanıtlanır — sonda yakalayıcıda görünmezse **gönderime geçilmez** ve H5-01/H5-02b
+  // ÖLÇÜLEMEDİ raporlanır.
+  let transportBound = false;
   if (!sink || !sink.available) {
-    R.unmeasured('H5-00', 'saglayici izolasyonu gonderimden ONCE dogrulandi',
+    R.unmeasured('H5-00', 'API etkin tasima hedefi yakalayiciya bagli',
       'Yol B izolasyonu bildirilmedi (EMAIL_PROVIDER=smtp + loopback yakalama gerekir); '
       + 'mock saglayici gercek tasima hatasi kaniti YERINE GECMEZ');
   } else {
     const probe = await sink.verifyBoundBeforeSend();
-    R.check('H5-00', 'yerel yakalayici ERISILIR ve LAN adresinden ERISILEMEZ (gonderimden ONCE)',
-      probe.loopbackReachable && !probe.anyLanReachable && probe.lanChecked > 0,
-      `loopback=${probe.loopbackReachable ? 'ERISILIR' : 'ERISILEMEZ'}`
-      + ` · LAN ${probe.lanChecked} adres denendi, erisilen=${probe.anyLanReachable ? 'VAR(!)' : 'YOK'}`);
+    await sink.setMode('');
+    const probeSubject = `I3-BIND-PROBE-${st.runId}`;
+    const before = sink.count();
+    const rProbe = await postInfoRequest(probeSubject);
+    await new Promise((r) => setTimeout(r, 400));
+    const captured = sink.readCaptured().filter((m) => m.includes(probeSubject));
+    const reachedSink = captured.length >= 1;
+
+    transportBound = probe.loopbackReachable && !probe.anyLanReachable
+      && probe.lanChecked > 0 && reachedSink;
+
+    if (rProbe.indeterminate) {
+      R.unmeasured('H5-00', 'API etkin tasima hedefi yakalayiciya bagli',
+        `sonda gonderimi BELIRSIZ: ${rProbe.indeterminateReason}`);
+    } else {
+      R.check('H5-00', 'API ETKIN tasima hedefi yakalayicidir (sonda yakalandi); yakalayici LAN adresinden ERISILEMEZ',
+        transportBound,
+        `sonda HTTP ${rProbe.status} · yakalanan ${before}→${sink.count()}`
+        + ` · SONDA YAKALAYICIDA goruldu=${reachedSink} (erisilebilirlik TEK BASINA yeterli DEGIL)`
+        + ` · loopback=${probe.loopbackReachable} · LAN ${probe.lanChecked} adres, erisilen=`
+        + `${probe.anyLanReachable ? 'VAR(!)' : 'YOK'}`);
+    }
   }
 
   // ══ H5-01 · Üç sonuç ayrı: ACCEPTED / REJECTED / INDETERMINATE ══
-  if (!sink || !sink.available) {
-    R.unmeasured('H5-01', 'bilgi talebi ucu uc sonuc (A-9/A-10)', 'Yol B izolasyonu kurulmadi');
-    R.unmeasured('H5-01b', 'belirsiz sonucta otomatik tekrar gonderim yok', 'Yol B izolasyonu kurulmadi');
+  // TAŞIMA BAĞI DOĞRULANMADIYSA GÖNDERİME GEÇİLMEZ (H5-00).
+  if (!sink || !sink.available || !transportBound) {
+    const why = !sink || !sink.available
+      ? 'Yol B izolasyonu kurulmadi'
+      : 'API etkin tasima hedefi yakalayiciya BAGLI DOGRULANAMADI (H5-00) — gonderime GECILMEDI';
+    R.unmeasured('H5-01', 'bilgi talebi ucu uc sonuc (A-9/A-10)', why);
+    R.unmeasured('H5-01b', 'belirsiz sonucta otomatik tekrar gonderim yok', why);
   } else {
     // (a) ACCEPTED → kayıt YAZILIR
     await sink.setMode('');
@@ -155,9 +182,10 @@ module.exports = async function runH5(ctx) {
   }
 
   // H5-02b — GERÇEK attachIntakeLink akışı: aynı işlemde taşıma gövdesi ve kalıcı kayıtlar
-  if (!sink || !sink.available) {
+  if (!sink || !sink.available || !transportBound) {
     R.unmeasured('H5-02b', 'baglantili bilgi talebi: link TASIMADA, kalici kayitlarda YOK',
-      'Yol B yakalayicisi yok — tasima govdesi okunamaz');
+      !sink || !sink.available ? 'Yol B yakalayicisi yok — tasima govdesi okunamaz'
+        : 'API etkin tasima hedefi yakalayiciya BAGLI DOGRULANAMADI (H5-00) — gonderime GECILMEDI');
   } else {
     await sink.setMode('');
     const before = sink.count();
@@ -255,41 +283,46 @@ module.exports = async function runH5(ctx) {
       return;
     }
 
-    // Kanonik hedefler KİMLİK düzeyinde fotoğraflanır (sayım tek başına yeterli değil).
-    const intelBefore = await L.safeCount(() => prisma.clientIntelStatement.findMany({
-      where: { tenantId: st.tenantId }, select: { id: true }, orderBy: { id: 'asc' },
+    // AKTARIMIN GERCEK HEDEFLERI alan duzeyinde fotograflanir: `DebtorAddress` (promote-address'in
+    // kanonik hedefi), `ClientIntelStatement` (promote-soft'un hedefi) ve aktarim audit'i.
+    const dbgBefore = await L.safeCount(() => prisma.debtorAddress.findMany({
+      where: { debtorId: st.debtorId },
+      select: { id: true, street: true, city: true, source: true },
+      orderBy: { id: 'asc' },
     }));
-    const addrBefore = await L.safeCount(() => prisma.clientAddress.findMany({
-      where: { clientId: cid }, select: { id: true }, orderBy: { id: 'asc' },
+    const intelBefore = await L.safeCount(() => prisma.clientIntelStatement.findMany({
+      where: { tenantId: st.tenantId }, select: { id: true, category: true, value: true }, orderBy: { id: 'asc' },
     }));
     const rSubmit = await L.AH.httpJson('POST', `${base}/public/intake/${tok}`, {
       body: { fields: [{ category: 'ADDRESS', value: 'I3 sentetik adres beyani' }] },
     });
-    const intelAfter = await L.safeCount(() => prisma.clientIntelStatement.findMany({
-      where: { tenantId: st.tenantId }, select: { id: true }, orderBy: { id: 'asc' },
+    const dbgAfter = await L.safeCount(() => prisma.debtorAddress.findMany({
+      where: { debtorId: st.debtorId },
+      select: { id: true, street: true, city: true, source: true },
+      orderBy: { id: 'asc' },
     }));
-    const addrAfter = await L.safeCount(() => prisma.clientAddress.findMany({
-      where: { clientId: cid }, select: { id: true }, orderBy: { id: 'asc' },
+    const intelAfter = await L.safeCount(() => prisma.clientIntelStatement.findMany({
+      where: { tenantId: st.tenantId }, select: { id: true, category: true, value: true }, orderBy: { id: 'asc' },
     }));
     const sub = await prisma.clientIntakeSubmission.findFirst({
       where: { tenantId: st.tenantId }, orderBy: { createdAt: 'desc' }, select: { id: true },
     }).catch(() => null);
     submissionId = sub && sub.id;
 
-    const errs = [intelBefore, addrBefore, intelAfter, addrAfter].find((c) => c.error);
+    const errs = [dbgBefore, intelBefore, dbgAfter, intelAfter].find((c) => c.error);
     if (rSubmit.indeterminate) {
-      R.unmeasured('H5-04', 'public uc toplar, KANONIK kayda dokunmaz', rSubmit.indeterminateReason);
+      R.unmeasured('H5-04', 'public uc toplar, KANONIK hedeflere dokunmaz', rSubmit.indeterminateReason);
     } else if (errs) {
-      R.unmeasured('H5-04', 'public uc toplar, KANONIK kayda dokunmaz',
-        `kanonik kayit sorgusu DUSTU: ${errs.error}`);
+      R.unmeasured('H5-04', 'public uc toplar, KANONIK hedeflere dokunmaz',
+        `kanonik hedef sorgusu DUSTU: ${errs.error}`);
     } else {
+      const sameDbg = JSON.stringify(dbgBefore.value) === JSON.stringify(dbgAfter.value);
       const sameIntel = JSON.stringify(intelBefore.value) === JSON.stringify(intelAfter.value);
-      const sameAddr = JSON.stringify(addrBefore.value) === JSON.stringify(addrAfter.value);
-      R.check('H5-04', 'public gonderim kaydedilir; ClientIntelStatement ve ClientAddress KIMLIK duzeyinde DEGISMEZ',
-        rSubmit.status < 400 && !!submissionId && sameIntel && sameAddr,
+      R.check('H5-04', 'public gonderim kaydedilir; DebtorAddress ve ClientIntelStatement ALAN duzeyinde DEGISMEZ',
+        rSubmit.status < 400 && !!submissionId && sameDbg && sameIntel,
         `HTTP ${rSubmit.status} · submission olustu=${!!submissionId}`
-        + ` · intel kimlikleri AYNI=${sameIntel} (${intelBefore.value.length}→${intelAfter.value.length})`
-        + ` · adres kimlikleri AYNI=${sameAddr} (${addrBefore.value.length}→${addrAfter.value.length})`);
+        + ` · DebtorAddress alanlari AYNI=${sameDbg} (${dbgBefore.value.length}→${dbgAfter.value.length})`
+        + ` · intel alanlari AYNI=${sameIntel} (${intelBefore.value.length}→${intelAfter.value.length})`);
     }
   }
 
@@ -327,7 +360,8 @@ module.exports = async function runH5(ctx) {
     const after = fieldId ? await prisma.clientIntakeField.findUnique({
       where: { id: fieldId }, select: { reviewStatus: true, promotedRefId: true },
     }).catch(() => null) : null;
-    const intel = await cntIntel();
+    const tgt = await L.capturePromotionTargets(prisma,
+      { tenantId: st.tenantId, debtorId: st.debtorId, fieldId });
 
     const codeOf = (r) => (r.body && (r.body.code || r.body.reasonCode
       || (r.body.message && r.body.message.code))) || null;
@@ -347,13 +381,15 @@ module.exports = async function runH5(ctx) {
         isDenied(rViewer) && isDenied(rUser) && isDenied(rAdmin) && isDenied(rElev)
         && !profileNoise
         && rReviewer.status < 400 && rReview.status < 400
-        && after.reviewStatus === 'APPROVED' && after.promotedRefId === null,
+        && after.reviewStatus === 'APPROVED' && after.promotedRefId === null
+        && !tgt.error && tgt.debtorAddressCount === 0 && tgt.promoteAuditCount === 0,
         `VIEWER→${rViewer.status}/${codeOf(rViewer)} · USER→${rUser.status}/${codeOf(rUser)}`
         + ` · ADMIN→${rAdmin.status}/${codeOf(rAdmin)} · PARTNER→${rElev.status}/${codeOf(rElev)}`
         + ` · reviewer(grant)→${rReviewer.status} · review→${rReview.status}`
         + ` · PROFILE_INVALID gurultusu=${profileNoise ? 'VAR(!)' : 'YOK'}`
         + ` · alan=${after.reviewStatus} · promotedRefId=${after.promotedRefId}`
-        + ` · intel=${intel.error ? 'OKUNAMADI' : intel.value}`);
+        + ` · KANONIK HEDEF: DebtorAddress=${tgt.error ? 'OKUNAMADI' : tgt.debtorAddressCount}`
+        + ` aktarim audit=${tgt.error ? 'OKUNAMADI' : tgt.promoteAuditCount} (ikisi de 0 beklenir)`);
     }
   }
 
@@ -384,58 +420,73 @@ module.exports = async function runH5(ctx) {
     }
   }
 
-  // ══ H5-06 · Aktarım: YALNIZ `isApproverEligible`; TEKRAR isteğinin sonucu da ölçülür ══
+  // ══ H5-06 · Aktarım: GERÇEK HEDEF `DebtorAddress` + tekrar sözleşmesi ══
+  // Aktarımın kanonik hedefi `DebtorAddress`'tir (promotedRefType). Reddedilen aktörlerde
+  // hedefte SATIR OLUŞMAMALI ve aktarım audit'i YAZILMAMALIDIR; izin verilen aktörde tam
+  // olarak BİR satır oluşmalı ve alan damgalanmalıdır.
   if (!fieldId) {
     R.unmeasured('H5-06', 'aktarim yalniz isApproverEligible', 'onaylanmis alan yok');
+    R.unmeasured('H5-06b', 'tekrar sozlesmesi: yeni kayit/alan/audit URETMEZ', 'onaylanmis alan yok');
   } else {
     const promoteBody = { debtorId: st.debtorId, street: 'I3 aktarilan sentetik adres', city: 'Ankara' };
     const promote = (tag) => L.AH.httpJson('POST', `${base}/client-intake-fields/${fieldId}/promote-address`, {
       token: tokens[tag], body: promoteBody,
     });
+    const snapTargets = () => L.capturePromotionTargets(prisma,
+      { tenantId: st.tenantId, debtorId: st.debtorId, fieldId });
 
-    const capBefore = await L.safeCapture(prisma, cid);
-    const intelBefore = await L.safeCount(() => prisma.clientIntelStatement.count({ where: { tenantId: st.tenantId } }));
-
+    const t0 = await snapTargets();
     const rReviewer = await promote('reviewer'); // inceleyen aktör → RED (CR-1 md.6)
     const rAdmin = await promote('admin');       // rol tek başına yetmez
-    const capMid = await L.safeCapture(prisma, cid);
-    const intelMid = await L.safeCount(() => prisma.clientIntelStatement.count({ where: { tenantId: st.tenantId } }));
+    const t1 = await snapTargets();
 
     const rAllow = await promote('elev1');       // PARTNER → İZİN
-    const fieldAfter = await prisma.clientIntakeField.findUnique({
-      where: { id: fieldId }, select: { promotedRefId: true },
-    }).catch(() => null);
+    const t2 = await snapTargets();
 
-    // TEKRAR: sonucu da kontrol edilir (yalnız loglanmaz)
-    const rAgain = await promote('elev1');
-    const fieldFinal = await prisma.clientIntakeField.findUnique({
-      where: { id: fieldId }, select: { promotedRefId: true },
-    }).catch(() => null);
-
-    const denyClean = L.unchanged(capBefore.state, capMid.state);
-
-    if (anyIndet(rReviewer, rAdmin, rAllow, rAgain)) {
+    if (anyIndet(rReviewer, rAdmin, rAllow)) {
       R.unmeasured('H5-06', 'aktarim yalniz isApproverEligible', 'uclardan biri BELIRSIZ');
-    } else if (capBefore.error || capMid.error || intelBefore.error || intelMid.error) {
+      R.unmeasured('H5-06b', 'tekrar sozlesmesi', 'onceki adim BELIRSIZ');
+    } else if (t0.error || t1.error || t2.error) {
       R.unmeasured('H5-06', 'aktarim yalniz isApproverEligible',
-        `kalici durum sorgusu DUSTU: ${capBefore.error || capMid.error || intelBefore.error || intelMid.error}`);
-    } else if (!fieldAfter || !fieldFinal) {
-      R.unmeasured('H5-06', 'aktarim yalniz isApproverEligible', 'alan satiri okunamadi');
-    } else if (denyClean.unmeasured) {
-      R.unmeasured('H5-06', 'aktarim yalniz isApproverEligible', 'kalici durum fotografi alinamadi');
+        `hedef sorgusu DUSTU: ${t0.error || t1.error || t2.error}`);
+      R.unmeasured('H5-06b', 'tekrar sozlesmesi', 'hedef sorgusu DUSTU');
     } else {
-      R.check('H5-06', 'aktarim: INCELEYEN ve ADMIN RED (CR-1 md.6), PARTNER IZIN, TEKRAR yeni yazma URETMEZ',
-        isDenied(rReviewer) && isDenied(rAdmin) && denyClean.ok
-        && intelMid.value === intelBefore.value
-        && rAllow.status < 400 && !!fieldAfter.promotedRefId
-        && rAgain.status >= 400
-        && fieldFinal.promotedRefId === fieldAfter.promotedRefId,
+      const denyDiff = L.diffPromotionTargets(t0, t1);
+      const created = t2.debtorAddressCount - t1.debtorAddressCount;
+      R.check('H5-06', 'aktarim: INCELEYEN ve ADMIN RED — hedefte SATIR ve AUDIT olusmaz; PARTNER IZIN — TAM BIR DebtorAddress + damga',
+        isDenied(rReviewer) && isDenied(rAdmin) && denyDiff.length === 0
+        && rAllow.status < 400 && created === 1
+        && t2.field.promotedRefType === 'DebtorAddress' && !!t2.field.promotedRefId
+        && t2.promoteAuditCount === t1.promoteAuditCount + 1,
         `reviewer(grant VAR)→${rReviewer.status} · ADMIN→${rAdmin.status}`
-        + ` (kanonik etki=${denyClean.ok ? 'YOK' : denyClean.changes.join(',')},`
-        + ` intel ${intelBefore.value}→${intelMid.value})`
-        + ` · PARTNER→${rAllow.status} promotedRefId dolu=${!!fieldAfter.promotedRefId}`
-        + ` · TEKRAR→${rAgain.status} (>=400 beklenir) · ref DEGISMEDI=`
-        + `${fieldFinal.promotedRefId === fieldAfter.promotedRefId}`);
+        + ` · RED sonrasi hedef degisikligi=${denyDiff.length ? denyDiff.join(',') : 'YOK'}`
+        + ` · PARTNER→${rAllow.status} · DebtorAddress ${t1.debtorAddressCount}→${t2.debtorAddressCount}`
+        + ` (yeni=${created}) · promotedRefType=${t2.field.promotedRefType}`
+        + ` · aktarim audit ${t1.promoteAuditCount}→${t2.promoteAuditCount}`);
+
+      // ══ H5-06b · TEKRAR SÖZLEŞMESİ: "400 / Alan zaten promote edilmiş" ══
+      // Ürün davranışı DEĞİŞTİRİLMEZ; ölçülen şey: 400 (500 veya belirsiz PASS DEĞİLDİR),
+      // hedefte YENİ kayıt yok, alan DEĞİŞMEDİ, YENİ aktarım audit'i yok.
+      const rAgain = await promote('elev1');
+      const t3 = await snapTargets();
+      if (rAgain.indeterminate) {
+        R.unmeasured('H5-06b', 'tekrar sozlesmesi', 'tekrar istegi BELIRSIZ — PASS URETILMEZ');
+      } else if (t3.error) {
+        R.unmeasured('H5-06b', 'tekrar sozlesmesi', `hedef sorgusu DUSTU: ${t3.error}`);
+      } else {
+        const againDiff = L.diffPromotionTargets(t2, t3);
+        const msg = String((rAgain.body && (rAgain.body.message || rAgain.body.error)) || '');
+        R.check('H5-06b', 'tekrar: HTTP 400 "zaten promote edilmis" — yeni DebtorAddress, alan degisikligi ve yeni audit URETMEZ',
+          rAgain.status === 400 && againDiff.length === 0
+          && t3.debtorAddressCount === t2.debtorAddressCount
+          && t3.fieldJson === t2.fieldJson
+          && t3.promoteAuditCount === t2.promoteAuditCount,
+          `HTTP ${rAgain.status} (400 beklenir; 500/belirsiz PASS DEGILDIR)`
+          + ` · mesaj="${msg.slice(0, 48)}"`
+          + ` · hedef degisikligi=${againDiff.length ? againDiff.join(',') : 'YOK'}`
+          + ` · DebtorAddress=${t3.debtorAddressCount} (sabit) · alan AYNI=${t3.fieldJson === t2.fieldJson}`
+          + ` · aktarim audit=${t3.promoteAuditCount} (sabit)`);
+      }
     }
   }
 };

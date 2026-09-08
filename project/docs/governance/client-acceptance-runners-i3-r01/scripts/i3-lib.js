@@ -356,8 +356,74 @@ async function setupDisclosureChain(prisma, st, runId) {
   }, { timeout: Number(process.env.I3_SETUP_TX_TIMEOUT_MS || 30000), maxWait: 10000 });
 }
 
+/**
+ * AKTARIMIN GERCEK HEDEFLERI — sayim/kimlik degil, KORUNMASI GEREKEN ALANLAR.
+ *
+ * `promote-address` kanonik hedefi **`DebtorAddress`**'tir
+ * (`client-intake-promotion.service.ts:280` → `promotedRefType: 'DebtorAddress'`),
+ * `promote-soft` ise `ClientIntelStatement`. Aktarim audit'i
+ * `action='CLIENT_INTAKE_PROMOTE_ADDRESS'`, `entityType='CLIENT_INTAKE_FIELD'` ile yazilir ve
+ * YALNIZ gercek promote'ta (`created=true`) uretilir — DUPLICATE dalinda kanonik yazma da
+ * audit de YOKTUR.
+ */
+async function capturePromotionTargets(prisma, opts) {
+  const { tenantId, debtorId, fieldId } = opts;
+  try {
+    const [debtorAddresses, intel, field, promoteAudit] = await Promise.all([
+      prisma.debtorAddress.findMany({
+        where: { debtorId },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.clientIntelStatement.findMany({
+        where: { tenantId }, orderBy: { id: 'asc' },
+      }),
+      prisma.clientIntakeField.findUniqueOrThrow({
+        where: { id: fieldId },
+        select: {
+          reviewStatus: true, promotedRefType: true, promotedRefId: true,
+          promotedAt: true, promotedById: true, value: true,
+        },
+      }),
+      prisma.auditLog.count({
+        where: { entityType: 'CLIENT_INTAKE_FIELD', entityId: fieldId },
+      }),
+    ]);
+    return {
+      error: null,
+      // Alan duzeyinde: yalniz kimlik degil, korunmasi gereken ICERIK de karsilastirilir.
+      debtorAddressJson: JSON.stringify(debtorAddresses.map((a) => ({
+        id: a.id, street: a.street, city: a.city, district: a.district,
+        source: a.source, isActive: a.isActive,
+      }))),
+      debtorAddressCount: debtorAddresses.length,
+      intelJson: JSON.stringify(intel.map((i) => ({ id: i.id, category: i.category, value: i.value }))),
+      intelCount: intel.length,
+      fieldJson: JSON.stringify(field),
+      field,
+      promoteAuditCount: promoteAudit,
+    };
+  } catch (e) {
+    return { error: e && e.message ? e.message : String(e) };
+  }
+}
+
+/** Iki hedef fotografini karsilastirir; farklari alan adiyla listeler. */
+function diffPromotionTargets(a, b) {
+  const d = [];
+  if (a.debtorAddressJson !== b.debtorAddressJson) {
+    d.push(`DebtorAddress icerik~ (${a.debtorAddressCount}→${b.debtorAddressCount})`);
+  }
+  if (a.intelJson !== b.intelJson) d.push(`ClientIntelStatement icerik~ (${a.intelCount}→${b.intelCount})`);
+  if (a.fieldJson !== b.fieldJson) d.push('intake alani~');
+  if (a.promoteAuditCount !== b.promoteAuditCount) {
+    d.push(`aktarim audit~ (${a.promoteAuditCount}→${b.promoteAuditCount})`);
+  }
+  return d;
+}
+
 module.exports = {
   AH, AH_DIR, VERDICT, Results,
   captureState, safeCapture, safeCount, diffState, unchanged,
   setupI3, setupDisclosureChain, ACTORS,
+  capturePromotionTargets, diffPromotionTargets,
 };

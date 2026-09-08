@@ -11,7 +11,8 @@
  *   H4-06a  self-approval yasağı        (talep eden onaylayamaz)
  *   H4-06b  eligibility                 (eligible olmayan onaylayamaz)
  *   H4-07a  four-eyes                   (ofis onaylayıcısı içerik onaylayıcısı olamaz)
- *   H4-07b  stale snapshot              (ofis onayından sonra içerik değişirse onay geçersiz)
+ *   H4-07b  STALE_SNAPSHOT              (kayıtlı intent ↔ sürüm snapshot'ı uyuşmuyor)
+ *   H4-07c  CONTENT_HASH_MISMATCH      (bildirim içeriği hash'i uyuşmuyor)
  *   H4-08   yayın allowlist'i           (onaylı sağlayıcı dışına çıkılmaz)
  *
  * GENEL `500` YETKİ REDDİ SAYILMAZ: yetki ölçütleri `403` bekler, sözleşme hatası `400`.
@@ -32,6 +33,7 @@ async function snap(prisma, vid) {
       select: {
         status: true, officeApprovedById: true, officeApprovedAt: true,
         contentApprovedById: true, contentApprovedAt: true, snapshotHash: true,
+        providerMessageId: true, providerAcceptedAt: true,
       },
     });
     return { value: v, json: JSON.stringify(v), error: null };
@@ -42,7 +44,7 @@ async function snap(prisma, vid) {
 
 module.exports = async function runH4Disclosure(ctx) {
   const { base, prisma, tokens, st, R, chain, chainError } = ctx;
-  const IDS = ['H4-06a', 'H4-06b', 'H4-07a', 'H4-07b', 'H4-08'];
+  const IDS = ['H4-06a', 'H4-06b', 'H4-07a', 'H4-07b', 'H4-07c', 'H4-08'];
   L.AH.step('H4-FD', 'finansal beyan onay zinciri — 5 senaryo');
 
   const skipAll = (why) => IDS.forEach((id) => R.unmeasured(id, 'finansal beyan onay zinciri', why));
@@ -143,7 +145,7 @@ module.exports = async function runH4Disclosure(ctx) {
   const afterOffice = await snap(prisma, vid);
   if (rOfficeOk.indeterminate || rOfficeOk.status >= 400 || afterOffice.error
       || afterOffice.value.officeApprovedById !== st.actors.elev2.id) {
-    for (const id of ['H4-07a', 'H4-07b', 'H4-08']) {
+    for (const id of ['H4-07a', 'H4-07b', 'H4-07c', 'H4-08']) {
       R.unmeasured(id, 'icerik onayi / yayin',
         `ofis onayi tamamlanamadi (HTTP ${rOfficeOk.status ?? 'belirsiz'}, code=${codeOf(rOfficeOk)})`);
     }
@@ -155,7 +157,7 @@ module.exports = async function runH4Disclosure(ctx) {
   const rReqContent = await L.AH.httpJson('POST', url('request-content-approval'),
     { token: tokens.elev1, body: { approvedRecipientEmail: `client-${st.runId}@ah-harness.invalid` } });
   if (rReqContent.indeterminate || rReqContent.status >= 400) {
-    for (const id of ['H4-07a', 'H4-07b', 'H4-08']) {
+    for (const id of ['H4-07a', 'H4-07b', 'H4-07c', 'H4-08']) {
       R.unmeasured(id, 'icerik onayi / yayin',
         `icerik onayi talep edilemedi (HTTP ${rReqContent.status ?? 'belirsiz'}, code=${codeOf(rReqContent)})`);
     }
@@ -183,45 +185,110 @@ module.exports = async function runH4Disclosure(ctx) {
     }
   }
 
-  // ── H4-07b · Stale snapshot: ofis onayından SONRA içerik değişirse onay geçersizdir ──
+  // ── H4-07b · STALE_SNAPSHOT: kayıtlı intent ↔ sürüm snapshot'ı uyuşmuyor ──
+  // Amaçlanan kontrol: `complete-content-approval` içindeki
+  // `intent.snapshotHash !== version.snapshotHash || stableJsonHash(intent) !== payloadHash`
+  // (`client-financial-disclosure-approval.service.ts:455-459`).
+  // Enjeksiyon `version.snapshotHash` üzerinde yapılır; GERİ ALMA `finally` içindedir ve
+  // geri alma hatası YUTULMAZ — yutulursa sonraki senaryolar bozuk zeminde koşardı.
   {
     const before = await snap(prisma, vid);
-    // Finansal içeriği ürünün gördüğü yerden değiştir: snapshotHash artık kayıtlı intent ile
-    // uyuşmaz. (Kalıcı durum bozulmasın diye DEĞER geri alınır.)
-    let mutated = false;
+    let injected = false;
+    let restoreError = null;
+    let rStale = null;
+    let after = null;
     try {
+      if (before.error) throw new Error(`fotograf alinamadi: ${before.error}`);
       await prisma.clientFinancialDisclosureVersion.update({
         where: { id: vid }, data: { snapshotHash: `i3-stale-${st.runId}` },
       });
-      mutated = true;
-    } catch (e) { /* asagida UNMEASURED */ }
-
-    if (!mutated) {
-      R.unmeasured('H4-07b', 'stale snapshot kapisi', 'snapshot degistirilemedi — senaryo kurulamadi');
+      injected = true;
+      rStale = await L.AH.httpJson('POST', url('complete-content-approval'),
+        { token: tokens.elev3, body: { approvalRequestId: await approvalIdOf('contentApprovalRequestId') } });
+      after = await snap(prisma, vid);
+    } catch (e) {
+      restoreError = restoreError || null;
+      rStale = rStale || { indeterminate: true, indeterminateReason: e && e.message ? e.message : String(e) };
+    } finally {
+      if (injected) {
+        try {
+          await prisma.clientFinancialDisclosureVersion.update({
+            where: { id: vid }, data: { snapshotHash: before.value.snapshotHash },
+          });
+        } catch (e) {
+          // GERI ALMA HATASI YUTULMAZ: sonraki senaryolar bozuk zeminde kosmamali.
+          restoreError = e && e.message ? e.message : String(e);
+        }
+      }
+    }
+    if (restoreError) {
+      R.add('H4-07b', 'STALE_SNAPSHOT kapisi', L.VERDICT.FAIL,
+        `enjeksiyon GERI ALINAMADI: ${restoreError} — sonraki senaryolar bozuk zeminde kosar`);
+    } else if (!rStale || rStale.indeterminate || !after || after.error) {
+      R.unmeasured('H4-07b', 'STALE_SNAPSHOT kapisi',
+        (rStale && rStale.indeterminateReason) || (after && after.error) || 'senaryo kurulamadi');
     } else {
-      const rStale = await L.AH.httpJson('POST', url('complete-content-approval'),
-        { token: tokens.elev3, body: {} }); // ucuncu kisi: four-eyes/self engeli YOK
-      const after = await snap(prisma, vid);
-      // Değeri geri koy ki H4-08 tutarlı bir sürümle koşsun.
-      await prisma.clientFinancialDisclosureVersion.update({
-        where: { id: vid }, data: { snapshotHash: before.value.snapshotHash },
-      }).catch(() => {});
+      const c = String(codeOf(rStale) || '');
+      R.check('H4-07b', 'surum snapshot\'i degisince STALE_SNAPSHOT ile RED; icerik onayi YAZILMAZ',
+        rStale.status >= 400 && (c.includes('STALE') || c.includes('CONTENT_HASH_MISMATCH'))
+        && after.value.contentApprovedById === null,
+        `HTTP ${rStale.status} · code=${c} (amaclanan kontrol: intent↔surum snapshot karsilastirmasi)`
+        + ` · contentApprovedById=${after.value.contentApprovedById} (null beklenir)`
+        + ` · enjeksiyon geri alindi=EVET`);
+    }
+  }
 
-      if (rStale.indeterminate || before.error || after.error) {
-        R.unmeasured('H4-07b', 'stale snapshot kapisi', rStale.indeterminateReason || after.error);
+  // ── H4-07c · CONTENT_HASH_MISMATCH: bildirim içeriği hash'i uyuşmuyor ──
+  // Amaçlanan kontrol AYRIDIR: `recomputedContentHash !== version.notificationContentHash`
+  // (`client-financial-disclosure-approval.service.ts:638`). Enjeksiyon bu kez
+  // `notificationContentHash` üzerindedir; snapshot'a DOKUNULMAZ.
+  {
+    const before = await snap(prisma, vid);
+    const origHash = await prisma.clientFinancialDisclosureVersion
+      .findUnique({ where: { id: vid }, select: { notificationContentHash: true } })
+      .then((v) => (v ? v.notificationContentHash : undefined))
+      .catch(() => undefined);
+
+    if (origHash === undefined) {
+      R.unmeasured('H4-07c', 'CONTENT_HASH_MISMATCH kapisi', 'notificationContentHash okunamadi');
+    } else if (origHash === null) {
+      R.unmeasured('H4-07c', 'CONTENT_HASH_MISMATCH kapisi',
+        'bu asamada notificationContentHash NULL — amaclanan kontrole ulasilamaz (senaryo on kosulu yok)');
+    } else {
+      let injected = false; let restoreError = null; let rHash = null; let after = null;
+      try {
+        await prisma.clientFinancialDisclosureVersion.update({
+          where: { id: vid }, data: { notificationContentHash: `i3-contenthash-${st.runId}` },
+        });
+        injected = true;
+        rHash = await L.AH.httpJson('POST', url('complete-content-approval'),
+          { token: tokens.elev3, body: { approvalRequestId: await approvalIdOf('contentApprovalRequestId') } });
+        after = await snap(prisma, vid);
+      } catch (e) {
+        rHash = rHash || { indeterminate: true, indeterminateReason: e && e.message ? e.message : String(e) };
+      } finally {
+        if (injected) {
+          try {
+            await prisma.clientFinancialDisclosureVersion.update({
+              where: { id: vid }, data: { notificationContentHash: origHash },
+            });
+          } catch (e) { restoreError = e && e.message ? e.message : String(e); }
+        }
+      }
+      if (restoreError) {
+        R.add('H4-07c', 'CONTENT_HASH_MISMATCH kapisi', L.VERDICT.FAIL,
+          `enjeksiyon GERI ALINAMADI: ${restoreError}`);
+      } else if (!rHash || rHash.indeterminate || !after || after.error || before.error) {
+        R.unmeasured('H4-07c', 'CONTENT_HASH_MISMATCH kapisi',
+          (rHash && rHash.indeterminateReason) || (after && after.error) || 'senaryo kurulamadi');
       } else {
-        // OLCULEN HATA SOZLESMESI: `snapshotHash` degisiminde urun 409 +
-        // `DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH` dondurur; `savedIntent` bayatlamasinda
-        // `DISCLOSURE_APPROVAL_STALE_SNAPSHOT`. IKISI DE ayni invariant'in kapisidir.
-        // Beklenti GEVSETILMEDI — davranis (red + icerik onayi YAZILMAMASI) aynen aranir;
-        // yalnizca kod adi varsayimi GERCEK SOZLESMEYE baglandi.
-        const stCode = String(codeOf(rStale) || '');
-        R.check('H4-07b', 'ofis onayindan SONRA icerik degisirse onay REDDEDILIR (hash/stale kapisi) ve icerik onayi YAZILMAZ',
-          !rStale.indeterminate && rStale.status >= 400
-          && (stCode.includes('STALE') || stCode.includes('CONTENT_HASH_MISMATCH'))
+        const c = String(codeOf(rHash) || '');
+        R.check('H4-07c', 'bildirim icerigi hash\'i degisince CONTENT_HASH_MISMATCH ile RED; icerik onayi YAZILMAZ',
+          rHash.status >= 400 && c.includes('CONTENT_HASH_MISMATCH')
           && after.value.contentApprovedById === null,
-          `HTTP ${rStale.status} · code=${stCode}`
-          + ` · contentApprovedById=${after.value.contentApprovedById} (null beklenir)`);
+          `HTTP ${rHash.status} · code=${c} (amaclanan kontrol: notificationContentHash karsilastirmasi)`
+          + ` · contentApprovedById=${after.value.contentApprovedById} (null beklenir)`
+          + ` · enjeksiyon geri alindi=EVET`);
       }
     }
   }
@@ -231,32 +298,56 @@ module.exports = async function runH4Disclosure(ctx) {
     { token: tokens.elev3, body: { approvalRequestId: await approvalIdOf('contentApprovalRequestId') } });
   const afterContent = await snap(prisma, vid);
 
-  // ── H4-08 · Yayın yalnız ONAYLI sağlayıcıya çıkar ──
+  // ── H4-08 · Yayın allowlist'i: onaylı sağlayıcı ilerler, allowlist DIŞI REDDEDİLİR ──
+  // Allowlist dışı senaryo YERELDE koşulur: `EmailProviderService.providerName` allowlist'te
+  // değilse yayın **sağlayıcıya tek byte gitmeden** durur (charter §35.10). Sağlayıcı çağrısı
+  // yapılmadığı, yakalayıcıdaki mesaj sayısının DEĞİŞMEMESİYLE ölçülür.
   {
     const declared = (process.env.I3_API_EMAIL_PROVIDER || '').toLowerCase();
-    const approved = ['smtp', 'sendgrid', 'ses'].includes(declared);
     if (rContentOk.indeterminate || rContentOk.status >= 400 || afterContent.error
         || afterContent.value.contentApprovedById !== st.actors.elev3.id) {
       R.unmeasured('H4-08', 'yayin allowlist kapisi',
         `icerik onayi tamamlanamadi (HTTP ${rContentOk.status ?? 'belirsiz'}, code=${codeOf(rContentOk)})`);
     } else if (!declared) {
-      R.unmeasured('H4-08', 'yayin allowlist kapisi',
-        'I3_API_EMAIL_PROVIDER bildirilmedi — allowlist kararinin girdisi BILINMIYOR');
+      R.unmeasured('H4-08', 'yayin allowlist kapisi', 'I3_API_EMAIL_PROVIDER bildirilmedi');
     } else {
+      const approved = ['smtp', 'sendgrid', 'ses'].includes(declared);
       const before = await snap(prisma, vid);
+      // Sayac saglayici BILDIRIMINDEN bagimsizdir: sink sureci calisiyorsa sayilir.
+      const sentBefore = ctx.sink ? ctx.sink.count() : null;
       const rPub = await L.AH.httpJson('POST', url('publish'), { token: tokens.elev3, body: {}, timeoutMs: 25000 });
       const after = await snap(prisma, vid);
+      const sentAfter = ctx.sink ? ctx.sink.count() : null;
+
       if (rPub.indeterminate || before.error || after.error) {
         R.unmeasured('H4-08', 'yayin allowlist kapisi', rPub.indeterminateReason || after.error);
       } else if (approved) {
         R.check('H4-08', `onayli saglayici (${declared}) ile yayin ILERLER`,
           rPub.status < 400 && before.json !== after.json,
-          `HTTP ${rPub.status} · durum ${before.value.status}→${after.value.status}`);
+          `HTTP ${rPub.status} · durum ${before.value.status}→${after.value.status}`
+          + (sentBefore === null ? '' : ` · yakalanan mesaj ${sentBefore}→${sentAfter}`));
       } else {
-        R.check('H4-08', `allowlist DISI saglayici (${declared}) ile yayin BASLAMAZ ve durum DEGISMEZ`,
-          rPub.status >= 400 && before.json === after.json,
-          `HTTP ${rPub.status} · code=${codeOf(rPub)} · durum DEGISMEDI=${before.json === after.json}`);
+        // Allowlist DISI (§35.10 `assertProductionProvider`): saglayiciya TEK BYTE gitmeden
+        // reddedilir. OLCULEN SEY — urun davranisi DEGISTIRILMEDI:
+        //   (1) istek reddedilir (403),
+        //   (2) yayin TAMAMLANMAZ: durum PUBLISHED olmaz,
+        //   (3) saglayici KABULU YOK: providerMessageId/providerAcceptedAt bos kalir,
+        //   (4) SAGLAYICIYA CAGRI YOK: yakalayici mesaj sayisi sabit.
+        // Durum alaninin bir basarisizlik damgasi almasi urunun mesru davranisidir; olcut
+        // "hic degismesin" demez, "YAYIN TAMAMLANMASIN" der.
+        const noProviderCall = sentBefore === null ? null : (sentAfter === sentBefore);
+        const notPublished = after.value.status !== 'PUBLISHED';
+        const noProviderAccept = !after.value.providerMessageId && !after.value.providerAcceptedAt;
+        R.check('H4-08', `allowlist DISI saglayici (${declared}): RED + yayin TAMAMLANMAZ + saglayici kabulu YOK + CAGRI YOK`,
+          rPub.status === 403 && notPublished && noProviderAccept && noProviderCall === true,
+          `HTTP ${rPub.status} · code=${codeOf(rPub)}`
+          + ` · durum ${before.value.status}→${after.value.status} (PUBLISHED DEGIL=${notPublished})`
+          + ` · providerMessageId=${after.value.providerMessageId ?? 'null'}`
+          + ` providerAcceptedAt=${after.value.providerAcceptedAt ? 'DOLU(!)' : 'null'}`
+          + ` · yakalayici mesaj sayisi ${sentBefore}→${sentAfter}`
+          + ` (SABIT beklenir = saglayiciya cagri YOK; olculemezse PASS URETILMEZ)`);
       }
+
     }
   }
 };
