@@ -421,9 +421,53 @@ function diffPromotionTargets(a, b) {
   return d;
 }
 
+// =========================================================================================
+// KARAR FONKSIYONLARI — TEK KAYNAK
+//
+// Olcut modulleri VE negatif kontroller AYNI fonksiyonlari kullanir. Negatif kontrolde
+// kopyasi yeniden yazilirsa, gercek kapi bozuldugunda test YINE GECER (kopya bozulmadigi
+// icin) — bu, testin kendi kendini onaylamasidir. Bu yuzden karar mantigi BURADA tanimlanir
+// ve her iki taraf da `L.decide.*` uzerinden tuketir.
+// =========================================================================================
+const decide = {
+  /** Yetki reddi SADECE 403'tur; genel 500 "reddedildi" SAYILMAZ. */
+  isDenied(r) {
+    return !!r && r.indeterminate !== true && r.status === 403;
+  },
+  /** Verilen yanitlardan herhangi biri BELIRSIZ mi? (belirsizlik PASS uretemez) */
+  anyIndeterminate(...rs) {
+    return rs.some((r) => r && r.indeterminate === true);
+  },
+  /**
+   * Tekrar (idempotency) sozlesmesi: urun "Alan zaten promote edilmis" icin **400** doner.
+   * 500 / 409 / belirsiz KABUL EDILMEZ.
+   */
+  acceptsRepeatContract(r) {
+    return !!r && r.indeterminate !== true && r.status === 400;
+  },
+  /**
+   * Gonderim kapisi: yakalayici yoksa, bildirilmemisse VEYA tasima bagi dogrulanmamissa
+   * gonderime GECILMEZ. `true` = engelle.
+   */
+  blocksSending(sink, transportBound) {
+    return !sink || sink.available !== true || transportBound !== true;
+  },
+  /**
+   * Hata sozlesmesi TAM eslesme: beklenen kod, gozlenen kodun KENDISI olmali.
+   * Alternatif ("su VEYA bu") kabul edilmez.
+   */
+  matchesExactCode(r, expectedCode) {
+    if (!r || r.indeterminate === true) return false;
+    const b = r.body || {};
+    const code = b.code || b.reasonCode
+      || (b.message && (b.message.code || b.message.reasonCode)) || null;
+    return code === expectedCode;
+  },
+};
+
 module.exports = {
   AH, AH_DIR, VERDICT, Results,
   captureState, safeCapture, safeCount, diffState, unchanged,
   setupI3, setupDisclosureChain, ACTORS,
-  capturePromotionTargets, diffPromotionTargets,
+  capturePromotionTargets, diffPromotionTargets, decide,
 };
