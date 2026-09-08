@@ -80,11 +80,18 @@ function makeSinkHandle(available) {
       });
     },
     /**
-     * GÖNDERİMDEN ÖNCE izolasyon doğrulaması: yakalayıcı loopback'te erişilir olmalı ve
-     * makinenin LAN adreslerinden erişilememelidir. "Adres .invalid" değil, TAŞIMA HEDEFİ
-     * kanıtı budur.
+     * İZOLASYON ÖN KOŞULU — **hiçbir gönderim çağrısı yapmaz**.
+     *
+     * Sonda bir gönderimdir; izolasyonu VARSAYARAK atılan ilk gönderim olmamalıdır. Bu yüzden
+     * sondadan ÖNCE, yalnız ağ ve bildirim düzeyinde doğrulanır:
+     *   (a) yakalayıcı loopback'te dinliyor,
+     *   (b) makinenin LAN adreslerinden ERİŞİLEMİYOR,
+     *   (c) prova API'sinin bildirilen etkin sağlayıcısı `smtp`,
+     *   (d) bildirilen taşıma hedefi (host:port) YAKALAYICININ adresi.
+     * (c)/(d) `I3_API_*` bildirimlerinden okunur; bunlar prova API'sini başlatan komutla
+     * AYNI değerlerdir. Biri sağlanmazsa **sonda dahil** hiçbir gönderim yapılmaz.
      */
-    async verifyBoundBeforeSend() {
+    async verifyIsolationPreconditions() {
       const loopbackReachable = await probeTcp('127.0.0.1', SINK_PORT);
       const lan = [];
       for (const list of Object.values(os.networkInterfaces())) {
@@ -92,8 +99,27 @@ function makeSinkHandle(available) {
       }
       let anyLanReachable = false;
       for (const ip of lan) if (await probeTcp(ip, SINK_PORT, 900)) anyLanReachable = true;
-      return { loopbackReachable, anyLanReachable, lanChecked: lan.length };
+
+      const provider = (process.env.I3_API_EMAIL_PROVIDER || '').toLowerCase();
+      const host = process.env.I3_API_SMTP_HOST || '127.0.0.1';
+      const port = String(process.env.I3_API_SMTP_PORT || SINK_PORT);
+      const providerOk = provider === 'smtp';
+      const targetOk = ['127.0.0.1', 'localhost', '::1'].includes(host)
+        && port === String(SINK_PORT);
+
+      const ok = loopbackReachable && !anyLanReachable && lan.length > 0 && providerOk && targetOk;
+      return {
+        ok, loopbackReachable, anyLanReachable, lanChecked: lan.length,
+        provider, host, port, providerOk, targetOk,
+      };
     },
+    /**
+     * DISPATCHER ÇAĞRI SAYACI — "yakalayıcıda mesaj yok" ile AYNI ŞEY DEĞİLDİR.
+     * Mesaj sayısı teslim edilmiş gövdeleri sayar; bu ise **TCP oturumu açıldı mı**yı sayar.
+     * `EmailProviderService.sendViaSmtp` çağrılırsa nodemailer bağlanır ve `conn-*` yazılır;
+     * çağrı hiç yapılmadıysa bağlantı da açılmaz. Gerçek çağrı noktasının yerel ölçümüdür.
+     */
+    dispatcherCalls() { return files('conn-').length; },
   };
 }
 

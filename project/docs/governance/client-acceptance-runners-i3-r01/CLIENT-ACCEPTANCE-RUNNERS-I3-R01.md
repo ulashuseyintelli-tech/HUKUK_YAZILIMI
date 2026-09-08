@@ -3,11 +3,11 @@
 **İş:** R02 ana planındaki **İ3** — kabul düzeneklerinin hazırlanması (YEREL/DISPOSABLE)
 **Durum:** **KESİN KAPSAM TAMAM** — H2/H4/H5'in **24 hizmet ölçütünün tamamı** koşuldu ve PASS.
 H7'nin 6 ölçütü **koşullu** kapsamdadır (İ4 kararı → İ16) ve koşulmadı.
-**Türetildiği main:** `3bbdbcd8`
+**Türetildiği main:** `f647d0ba`
 **Prova — iki sağlayıcı senaryosu:**
 - **A (`smtp`, onaylı):** `PASS 34 · FAIL 0 · ÖLÇÜLEMEYEN 6` (40 koşum satırı)
 - **B (`mock`, allowlist DIŞI):** `PASS 30 · FAIL 0 · ÖLÇÜLEMEYEN 10` — H4-08'in ret dalı burada ölçüldü
-- **Düzeneğin kendi negatif kontrolleri:** `PASS 7 · FAIL 0`
+- **Düzeneğin kendi negatif kontrolleri:** `PASS 8 · FAIL 0` — dördü **mutasyon kanıtlı**
 
 > **Sayım notu.** 40 koşum satırı 24 hizmet ölçütüne karşılık gelir: bazı ölçütler birden çok
 > senaryoya ayrılmıştır (H4-06→06a/06b · H4-07→07a/07b/**07c** · H5-01→01/01b · H5-02→02a/02b ·
@@ -93,8 +93,8 @@ vardır ve her biri farklı aktörle kanıtlanır.
 | H4-06a | Büro onayı: **talep eden kendi onaylayamaz** → `403` + `SELF_APPROVAL` + durum değişmez | **PASS** |
 | H4-06b | Büro onayı: **eligible olmayan** (MUHASEBE personeli) onaylayamaz → `403` + durum değişmez | **PASS** |
 | H4-07a | İçerik onayı: **four-eyes** — ofis onaylayıcısı `FOUR_EYES`, talep eden `SELF_APPROVAL` ile RED | **PASS** |
-| H4-07b | **`STALE_SNAPSHOT`** — sürüm snapshot'ı değişince RED; içerik onayı yazılmaz | **PASS** |
-| H4-07c | **`CONTENT_HASH_MISMATCH`** — bildirim içeriği hash'i değişince RED; içerik onayı yazılmaz (**ayrı kontrol**) | **PASS** |
+| H4-07c | **2. kapı** — saklanan `notificationContentHash` bozulur → **TAM** `DISCLOSURE_APPROVAL_CONTENT_HASH_MISMATCH`; `snapshotHash` ve ofis onayı korunur | **PASS** |
+| H4-07b | **5. kapı** — `OfficeApprovalRequest.savedIntent.snapshotHash` bozulur → **2. kapı GEÇİLİR** ve **TAM** `DISCLOSURE_APPROVAL_STALE_SNAPSHOT`; onay damgaları korunur | **PASS** |
 | H4-08 | **A:** onaylı sağlayıcı (`smtp`) ile yayın ilerler · **B:** allowlist dışı (`mock`) → `403 PROVIDER_NOT_PRODUCTION`, `PUBLISHED` olmaz, `providerMessageId=null`, **sağlayıcıya çağrı yok** (yakalayıcı `0→0`) | **PASS** |
 
 **Ön koşul ürünün KENDİ yolundan kuruldu.** `Collection → CollectionDisposition
@@ -193,12 +193,43 @@ kullanılmaz.
 
 ---
 
-## 5.1 Taşıma bağı — erişilebilirlik tek başına yeterli değil
+## 5.1 İki kapı sırası — CONTENT_HASH önce, STALE sonra
 
-`H5-00` artık yakalayıcının **erişilebilir olmasını** değil, **API'nin etkin taşıma hedefinin
-yakalayıcı olduğunu** ölçer: ürünün kendi gönderim yolundan bir **sonda** atılır ve
-yakalayıcıda görüldüğü doğrulanır. Sonda görünmezse `H5-01`, `H5-01b` ve `H5-02b`
-**gönderime geçmeden** ÖLÇÜLEMEDİ raporlanır (`NC-5` bu kapıyı sınar).
+`completeContentApproval` (`approval.service.ts:598-672`) kapı sırası:
+`CONTENT_REQUIRED` → **`CONTENT_HASH_MISMATCH`** → `REQUEST_NOT_FOUND` ×2 →
+**`STALE_SNAPSHOT`** → `SELF_APPROVAL` → `FOUR_EYES` → eligibility.
+
+**`recomputedContentHash` `version.snapshotHash`'i içerir** (`:628-633`). Bu yüzden sürümün
+snapshot'ını bozmak **2. kapıyı** tetikler ve 5. kapıya **hiç ulaşılmaz**. İki senaryo bu
+nedenle farklı alanlara enjekte edilir ve her biri **tam kod eşleşmesi** arar (`>=400` yetmez):
+
+| Senaryo | Enjeksiyon | Ulaşılan kapı | Kanıt |
+|---|---|---|---|
+| H4-07c | `version.notificationContentHash` | **2.** | `409 CONTENT_HASH_MISMATCH`, tam eşleşme |
+| H4-07b | `OfficeApprovalRequest.savedIntent.snapshotHash` | **5.** | `409 STALE_SNAPSHOT`, tam eşleşme, **2. kapı geçildi=true** |
+
+Enjeksiyon geri alınamazsa **bağımlı senaryolar çalıştırılmaz** (erişim sonlandırma yine çalışır).
+
+## 5.2 İzolasyon ön koşulu → sonda (bu sırayla)
+
+`H5-00` iki aşamalıdır:
+1. **Ön koşul (gönderim çağrısı YOK)** — yakalayıcı loopback'te dinliyor, LAN adreslerinden
+   erişilemiyor, bildirilen etkin sağlayıcı `smtp`, bildirilen taşıma hedefi yakalayıcının
+   adresi. Biri sağlanmazsa **sonda dahil** gönderim çağrısı **sıfır**dır.
+2. **Sonda** — önceden kurulmuş izolasyonun **davranış doğrulaması**. Belirsiz, başarısız veya
+   yakalanmamışsa `transportBound=false` kalır ve sonraki gönderimler **başlamaz**.
+
+Ölçülen (A koşumu): `ön koşul=OK (sağlayıcı='smtp', hedef=127.0.0.1:2526, LAN erişimi YOK)
+· sonda HTTP 201 · dispatcher çağrısı 2→3 · mesaj 0→1 · SONDA YAKALANDI=true`.
+
+## 5.3 "Mesaj yok" ≠ "dispatcher çağrılmadı"
+
+İki ayrı sayaç: `count()` teslim edilen gövdeleri, `dispatcherCalls()` **açılan TCP
+oturumlarını** sayar. `EmailProviderService.sendViaSmtp` çağrılırsa bağlantı açılır; hiç
+çağrılmadıysa açılmaz — gerçek çağrı noktasının yerel ölçümü budur.
+
+Ölçülen (B koşumu, `mock`): `[a] teslim mesajı 0→0 (yok) · [b] DISPATCHER ÇAĞRISI 1→1
+(çağrılmadı)`. İkisi de ölçülmeden PASS üretilmez.
 
 ## 6. Negatif kontroller
 
@@ -214,8 +245,13 @@ gerçekten eligibility olduğunu ayırır.
 
 ### 6.1 Düzeneğin KENDİSİNİ sınayan negatif kontroller (`i3-negative.js`)
 
-"Yanlış PASS yolları kapandı" **beyanı yeterli değildir**; karşılaştırma katmanına kasten bozuk
-durumlar verilir ve **kabul etmediği** ölçülür. Sonuç: **7/7 PASS**.
+**Kopya mantık yoktur.** Kontroller ölçüt modüllerinin kullandığı **gerçek** karar
+fonksiyonlarını (`i3-lib.decide.*`) ve gerçek karşılaştırma katmanını çağırır. Testin içinde
+yeniden yazılmış bir `accepts`/`isDenied`/`gate` olsaydı, gerçek kapı bozulduğunda test yine
+geçerdi — kendi kendini onaylardı.
+
+**Mutasyon kanıtı:** NC-3/4/5/8'de gerçek kapı geçici olarak bozulur, ilgili kontrolün
+**kırıldığı** gösterilir ve düzeltme `finally` içinde geri konur. Sonuç: **8/8 PASS**.
 
 | # | Enjekte edilen bozuk durum | Ölçülen |
 |---|---|---|
@@ -226,6 +262,11 @@ durumlar verilir ve **kabul etmediği** ölçülür. Sonuç: **7/7 PASS**.
 | NC-5 | Taşıma bağı doğrulanmamış | Gönderim ölçütleri **UNMEASURED**, gönderime geçilmez |
 | NC-6 | Fotoğraf/sayım sorgusu düşer | Hata **yukarı taşınır**, `null` dönmez |
 | NC-7 | `unchanged()` null fotoğrafla çağrılır | **PASS vermez** (`unmeasured`) |
+| NC-8 | `matchesExactCode` "alternatif kabul" mutasyonu | **Kırılır** — "STALE **veya** CONTENT_HASH" kabulü iki senaryoyu ayrıştıramaz |
+
+**Mutasyon sonuçları:** NC-3 (`>=400 kabul`) · NC-4 (`>=400 red`) · NC-5 (`bağı yok say`) ·
+NC-8 (`alternatif kod kabul`) — dördünde de bozukken iddia **false** döndü (kontrol kırıldı) ve
+düzeltme geri kondu.
 
 Bu kontroller ürün uçlarına yazma yapmaz; yalnız ölçüm aracını besler. **Yeni plan maddesi
 sayılmazlar.**

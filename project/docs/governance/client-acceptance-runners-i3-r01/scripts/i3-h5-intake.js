@@ -18,9 +18,10 @@
 'use strict';
 const L = require('./i3-lib');
 
-/** Yetki reddi SADECE 403'tür; 500 "reddedildi" sayılmaz. */
-const isDenied = (r) => !r.indeterminate && r.status === 403;
-const anyIndet = (...rs) => rs.some((r) => r && r.indeterminate);
+// Karar mantigi TEK KAYNAKTAN gelir (`i3-lib.decide`) — negatif kontroller de AYNI
+// fonksiyonlari tuketir; kopya yazilsaydi gercek kapi bozuldugunda test yine gecerdi.
+const isDenied = L.decide.isDenied;
+const anyIndet = (...rs) => L.decide.anyIndeterminate(...rs);
 
 module.exports = async function runH5(ctx) {
   const { base, prisma, tokens, st, R, sink } = ctx;
@@ -45,45 +46,55 @@ module.exports = async function runH5(ctx) {
       timeoutMs: 25000,
     });
 
-  // ══ H5-00 · API'nin ETKİN TAŞIMA HEDEFİ yakalayıcıya bağlı mı? (GÖNDERİMDEN ÖNCE) ══
-  // YAKALAYICININ ERİŞİLEBİLİR OLMASI TEK BAŞINA YETERLİ DEĞİLDİR: API başka bir hedefe
-  // gönderiyor olabilir. Bu yüzden bağ, ÜRÜNÜN KENDİ gönderim yolundan atılan bir SONDA ile
-  // kanıtlanır — sonda yakalayıcıda görünmezse **gönderime geçilmez** ve H5-01/H5-02b
-  // ÖLÇÜLEMEDİ raporlanır.
+  // ══ H5-00 · İZOLASYON ÖN KOŞULU → sonra SONDA (davranış doğrulaması) ══
+  // İKİ AŞAMA, sıra bağlayıcıdır:
+  //   (1) ÖN KOŞUL — hiçbir gönderim çağrısı yapılmadan: yakalayıcı loopback'te, LAN'dan
+  //       erişilemez, bildirilen etkin sağlayıcı `smtp` ve taşıma hedefi yakalayıcının adresi.
+  //       Biri sağlanmazsa **sonda DAHİL** gönderim çağrısı SIFIR olur.
+  //   (2) SONDA — önceden kurulmuş izolasyonun DAVRANIŞ doğrulaması. Sonda belirsiz,
+  //       başarısız veya yakalanmamışsa `transportBound=false` kalır ve sonraki gönderimler
+  //       BAŞLAMAZ.
   let transportBound = false;
   if (!sink || !sink.available) {
-    R.unmeasured('H5-00', 'API etkin tasima hedefi yakalayiciya bagli',
+    R.unmeasured('H5-00', 'izolasyon on kosulu + tasima bagi',
       'Yol B izolasyonu bildirilmedi (EMAIL_PROVIDER=smtp + loopback yakalama gerekir); '
       + 'mock saglayici gercek tasima hatasi kaniti YERINE GECMEZ');
   } else {
-    const probe = await sink.verifyBoundBeforeSend();
-    await sink.setMode('');
-    const probeSubject = `I3-BIND-PROBE-${st.runId}`;
-    const before = sink.count();
-    const rProbe = await postInfoRequest(probeSubject);
-    await new Promise((r) => setTimeout(r, 400));
-    const captured = sink.readCaptured().filter((m) => m.includes(probeSubject));
-    const reachedSink = captured.length >= 1;
-
-    transportBound = probe.loopbackReachable && !probe.anyLanReachable
-      && probe.lanChecked > 0 && reachedSink;
-
-    if (rProbe.indeterminate) {
-      R.unmeasured('H5-00', 'API etkin tasima hedefi yakalayiciya bagli',
-        `sonda gonderimi BELIRSIZ: ${rProbe.indeterminateReason}`);
+    const pre = await sink.verifyIsolationPreconditions();
+    if (!pre.ok) {
+      // ÖN KOŞUL BAŞARISIZ → SONDA ATILMAZ (gönderim çağrısı sıfır).
+      R.check('H5-00', 'izolasyon ON KOSULU saglanmadi → sonda DAHIL gonderim yapilmadi',
+        false,
+        `loopback=${pre.loopbackReachable} · LAN ${pre.lanChecked} adres erisilen=`
+        + `${pre.anyLanReachable ? 'VAR(!)' : 'YOK'} · bildirilen saglayici='${pre.provider}'`
+        + ` (smtp mi=${pre.providerOk}) · tasima hedefi=${pre.host}:${pre.port}`
+        + ` (yakalayici mi=${pre.targetOk}) · SONDA ATILMADI, gonderim cagrisi=0`);
     } else {
-      R.check('H5-00', 'API ETKIN tasima hedefi yakalayicidir (sonda yakalandi); yakalayici LAN adresinden ERISILEMEZ',
-        transportBound,
-        `sonda HTTP ${rProbe.status} · yakalanan ${before}→${sink.count()}`
-        + ` · SONDA YAKALAYICIDA goruldu=${reachedSink} (erisilebilirlik TEK BASINA yeterli DEGIL)`
-        + ` · loopback=${probe.loopbackReachable} · LAN ${probe.lanChecked} adres, erisilen=`
-        + `${probe.anyLanReachable ? 'VAR(!)' : 'YOK'}`);
+      await sink.setMode('');
+      const probeSubject = `I3-BIND-PROBE-${st.runId}`;
+      const msgBefore = sink.count();
+      const callsBefore = sink.dispatcherCalls();
+      const rProbe = await postInfoRequest(probeSubject);
+      await new Promise((r) => setTimeout(r, 400));
+      const captured = sink.readCaptured().filter((m) => m.includes(probeSubject));
+      const reachedSink = captured.length >= 1;
+      const dispatched = sink.dispatcherCalls() > callsBefore;
+
+      // Sonda BELIRSIZ / BASARISIZ / YAKALANMAMIS ise bag KURULMAMIS sayilir.
+      transportBound = !rProbe.indeterminate && rProbe.status < 400 && reachedSink;
+
+      R.check('H5-00', 'ON KOSUL saglandi ve SONDA davranisi dogruladi (dispatcher cagrildi, mesaj yakalandi)',
+        transportBound && dispatched,
+        `on kosul=OK (saglayici='${pre.provider}', hedef=${pre.host}:${pre.port}, LAN erisimi YOK)`
+        + ` · sonda HTTP ${rProbe.indeterminate ? 'BELIRSIZ' : rProbe.status}`
+        + ` · dispatcher cagrisi ${callsBefore}→${sink.dispatcherCalls()} (cagrildi=${dispatched})`
+        + ` · mesaj ${msgBefore}→${sink.count()} · SONDA YAKALANDI=${reachedSink}`);
     }
   }
 
   // ══ H5-01 · Üç sonuç ayrı: ACCEPTED / REJECTED / INDETERMINATE ══
   // TAŞIMA BAĞI DOĞRULANMADIYSA GÖNDERİME GEÇİLMEZ (H5-00).
-  if (!sink || !sink.available || !transportBound) {
+  if (L.decide.blocksSending(sink, transportBound)) {
     const why = !sink || !sink.available
       ? 'Yol B izolasyonu kurulmadi'
       : 'API etkin tasima hedefi yakalayiciya BAGLI DOGRULANAMADI (H5-00) — gonderime GECILMEDI';
@@ -182,7 +193,7 @@ module.exports = async function runH5(ctx) {
   }
 
   // H5-02b — GERÇEK attachIntakeLink akışı: aynı işlemde taşıma gövdesi ve kalıcı kayıtlar
-  if (!sink || !sink.available || !transportBound) {
+  if (L.decide.blocksSending(sink, transportBound)) {
     R.unmeasured('H5-02b', 'baglantili bilgi talebi: link TASIMADA, kalici kayitlarda YOK',
       !sink || !sink.available ? 'Yol B yakalayicisi yok — tasima govdesi okunamaz'
         : 'API etkin tasima hedefi yakalayiciya BAGLI DOGRULANAMADI (H5-00) — gonderime GECILMEDI');
@@ -477,7 +488,7 @@ module.exports = async function runH5(ctx) {
         const againDiff = L.diffPromotionTargets(t2, t3);
         const msg = String((rAgain.body && (rAgain.body.message || rAgain.body.error)) || '');
         R.check('H5-06b', 'tekrar: HTTP 400 "zaten promote edilmis" — yeni DebtorAddress, alan degisikligi ve yeni audit URETMEZ',
-          rAgain.status === 400 && againDiff.length === 0
+          L.decide.acceptsRepeatContract(rAgain) && againDiff.length === 0
           && t3.debtorAddressCount === t2.debtorAddressCount
           && t3.fieldJson === t2.fieldJson
           && t3.promoteAuditCount === t2.promoteAuditCount,
