@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { OfficeApprovalExecutorService } from './office-approval-executor.service';
 import { OfficeApprovalExecutorCronService } from './office-approval-executor-cron.service';
+import { OfficeApprovalControlledExecutionService } from './office-approval-controlled-execution.service';
+import { OfficeApprovalControlledExecutionController } from './office-approval-controlled-execution.controller';
 import { OfficeApprovalModule } from './office-approval.module';
 import { CaseStatusModule } from '../case-status/case-status.module';
 import { PrismaModule } from '../../prisma/prisma.module';
@@ -18,7 +20,16 @@ import { PrismaModule } from '../../prisma/prisma.module';
 //    (executor zaten köprülüyor) → yeni circular-dep YOK. Public route YOK.
 @Module({
   imports: [PrismaModule, OfficeApprovalModule, CaseStatusModule],
-  providers: [OfficeApprovalExecutorService, OfficeApprovalExecutorCronService],
-  exports: [OfficeApprovalExecutorService],
+  // OFFICE-A07: kontrollu yurutme controller'i BURADA durur (OfficeApprovalModule'de DEGIL).
+  // Gerekce yukaridaki serhle ayni: executor'i OfficeApprovalModule'e tasimak circular
+  // module dependency yaratirdi. Bu tuketici modul her ikisini de import ettigi icin
+  // asiklik DAG korunur ve P4-2 wiring'ine DOKUNULMAZ.
+  controllers: [OfficeApprovalControlledExecutionController],
+  providers: [
+    OfficeApprovalExecutorService,
+    OfficeApprovalExecutorCronService,
+    OfficeApprovalControlledExecutionService,
+  ],
+  exports: [OfficeApprovalExecutorService, OfficeApprovalControlledExecutionService],
 })
 export class OfficeApprovalExecutorModule {}

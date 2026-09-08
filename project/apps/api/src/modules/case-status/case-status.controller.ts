@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { CaseStatusService } from './case-status.service';
+import { ChangeCaseStatusDto } from './dto/change-case-status.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
@@ -51,7 +52,10 @@ export class CaseStatusController {
     @Param('caseId') caseId: string,
     // body.userId DEPRECATED: artık OTORİTER DEĞİL, YOK SAYILIR (truthful actor @CurrentUser("id")'dan gelir).
     // P3-2C: body.confirmationToken OPSİYONEL; yalnız confirm-gate AÇIKKEN retry için anlamlı (default OFF → yok sayılır).
-    @Body() body: { status: LegalCaseStatus; reason?: string; userId?: string; confirmationToken?: string },
+    // OFFICE-A07: satir-ici tip literali RUNTIME'DA SILINIR ve global ValidationPipe
+    // metatype `Object` gordugu icin HIC calismazdi. Tipli DTO ile istemci
+    // `approvalRequestId`/`approvalAttempt` GONDEREMEZ (forbidNonWhitelisted -> 400).
+    @Body() body: ChangeCaseStatusDto,
   ) {
     // P2b-2c-2 CHANGE_STATUS observe (PRE-action; JwtAuthGuard'dan SONRA; enforced=false, best-effort, engelleme YOK).
     // GİZLİLİK: body.status/reason observe'a GEÇMEZ (yalnız actionCode + caseId). body.userId YOK SAYILIR.

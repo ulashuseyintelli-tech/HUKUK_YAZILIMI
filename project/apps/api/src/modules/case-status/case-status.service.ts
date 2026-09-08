@@ -68,6 +68,19 @@ const KNOWN_STATUSES: ReadonlySet<string> = new Set([
   'SULH',
 ]);
 
+/**
+ * OFFICE-A07 — onay yurutme bagi.
+ *
+ * YALNIZ guvenilir executor baglamindan gecirilir. HTTP govdesinden TURETILMEZ:
+ * `ChangeCaseStatusDto` bu alanlari TANIMAZ (global ValidationPipe `forbidNonWhitelisted`
+ * ile 400) ve controller onlari servise GECIRMEZ. Boylece istemci sahte bir yurutme
+ * kaniti URETEMEZ.
+ */
+export interface CaseStatusApprovalBinding {
+  approvalRequestId: string;
+  approvalAttempt: number;
+}
+
 export async function applyCaseStatusChange(
   prisma: any,
   tenantId: string,
@@ -75,6 +88,7 @@ export async function applyCaseStatusChange(
   newStatus: LegalCaseStatus,
   actorUserId: string,
   reason?: string,
+  approvalBinding?: CaseStatusApprovalBinding,
 ): Promise<any> {
   if (!newStatus || !KNOWN_STATUSES.has(newStatus)) {
     throw new BadRequestException(`Geçersiz statü değeri: ${String(newStatus)}`);
@@ -112,6 +126,15 @@ export async function applyCaseStatusChange(
         reason,
         changedById: actorUserId,
         automationWasEnabled: automationChanged ? nextAutomationEnabled : null,
+        // OFFICE-A07: kanit, Case degisikligiyle AYNI transaction'da yazilir.
+        // Sonradan iliski ekleyerek kanit URETILEMEZ; transaction geri alinirsa
+        // Case degisikligi gibi bu bag da KALMAZ.
+        ...(approvalBinding
+          ? {
+              approvalRequestId: approvalBinding.approvalRequestId,
+              approvalAttempt: approvalBinding.approvalAttempt,
+            }
+          : {}),
       },
     });
 
@@ -165,8 +188,12 @@ export class CaseStatusService {
     newStatus: LegalCaseStatus,
     actorUserId: string,
     reason?: string,
+    // OFFICE-A07: YALNIZ executor gecirir. Controller bu parametreyi HIC vermez.
+    approvalBinding?: CaseStatusApprovalBinding,
   ): Promise<any> {
-    const result = await applyCaseStatusChange(this.prisma, tenantId, caseId, newStatus, actorUserId, reason);
+    const result = await applyCaseStatusChange(
+      this.prisma, tenantId, caseId, newStatus, actorUserId, reason, approvalBinding,
+    );
 
     this.logger.log(`Case ${caseId} status changed to ${newStatus}`);
     return result;
