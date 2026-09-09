@@ -129,8 +129,71 @@ function assertNoSecrets(obj, p = '') {
   }
 }
 
+// =========================================================================================
+// LOGIN / JWT OLCUMU — parola YALNIZ bellekte; bu fonksiyonlar hicbir sey LOGLAMAZ.
+// Urun sozlesmesi (RELEASE21 auth.service.ts): login basari = 201 (@Post, @HttpCode yok);
+// kapatma sonrasi login -> 401 (isActive=false, :125); mevcut JWT -> validateUser: isActive /
+// lifecycle / tokenVersion uyusmazligi -> 401 (:170-186). "indeterminate" = tasima hatasi.
+// =========================================================================================
+async function httpJson(method, url, { token, body, timeoutMs = 60000 } = {}) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ctl.signal,
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch (e) { parsed = null; }
+    return { status: res.status, body: parsed, indeterminate: false };
+  } catch (e) {
+    return { status: null, body: null, indeterminate: true, reason: e && e.name === 'AbortError' ? 'timeout' : `tasima: ${e && e.message}` };
+  } finally { clearTimeout(timer); }
+}
+
+/** Login denemesi. Donen nesne PAROLA ICERMEZ; token yalniz bellekte tutulur. */
+async function login(base, email, password, tenantSlug) {
+  const r = await httpJson('POST', `${base}/auth/login`, { body: { email, password, tenantSlug } });
+  const token = r.body && (r.body.token || r.body.accessToken || (r.body.access_token)) || null;
+  return { status: r.status, indeterminate: r.indeterminate, reason: r.reason, token: r.status === 201 ? token : null };
+}
+
+/** Mevcut JWT hala gecerli mi? (validateUser: isActive / lifecycle / tokenVersion) */
+async function me(base, token) {
+  const r = await httpJson('GET', `${base}/auth/me`, { token });
+  return { status: r.status, indeterminate: r.indeterminate, reason: r.reason };
+}
+
+// =========================================================================================
+// KALICI CRON MARUZIYETI — AutomationService.updateRiskScores (her gun 00:00, bayraksiz) YALNIZ
+// `tenant.lifecycle=ACTIVE` ve `Case.status=ACTIVE` secer (automation.service.ts:308);
+// kullanicinin isActive'ine BAKMAZ. Yani erisim kapansa bile sentetik Case her gun
+// Case.update{riskScore} + RiskReport yazar — "yalniz gece acik kalirsa" DEGIL, KALICIDIR.
+// Urun-yerli, tek alanli kaldirac: Case.status -> CLOSED (uc case-tabanli cron da yalniz
+// ACTIVE secer; CaseStatus.CLOSED'a bagli hicbir kod yolu yok). Kanit satirlari SILINMEZ.
+// =========================================================================================
+/** Urunun kendi yuklemiyle OLCUM: bu tenant'ta cron'un secebilecegi Case sayisi. */
+async function caseCronPredicateCount(prisma, tenantId) {
+  return prisma.case.count({ where: { tenantId, status: 'ACTIVE', tenant: { lifecycle: 'ACTIVE' } } });
+}
+
+/** Cron maruziyetini kapat: YALNIZ bu tenant'in ACTIVE case'leri CLOSED olur. TEKRARI GUVENLI. */
+async function closeCaseCronExposure(prisma, tenantId) {
+  await assertOwnTenant(prisma, tenantId); // G-2
+  const before = await caseCronPredicateCount(prisma, tenantId);
+  const r = await prisma.case.updateMany({ where: { tenantId, status: 'ACTIVE' }, data: { status: 'CLOSED' } });
+  const after = await caseCronPredicateCount(prisma, tenantId);
+  const cases = await prisma.case.findMany({ where: { tenantId }, select: { id: true, status: true } });
+  return { caseRowsUpdated: r.count, cronPredicateBefore: before, cronPredicateAfter: after,
+    caseCronExposureClosed: after === 0, caseStatuses: cases.map((c) => c.status) };
+}
+
 module.exports = {
   TENANT_PREFIX, FORBIDDEN_SLUGS, FOREIGN_PREFIXES, ENVIRONMENTS, EnvironmentGateError,
   requireEnv, assertEnvironment, assertOwnSlug, assertOwnTenant, loadPrisma,
   findAcceptanceField, revokeTenantAccess, assertNoSecrets,
+  httpJson, login, me, caseCronPredicateCount, closeCaseCronExposure,
 };
