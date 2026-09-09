@@ -1222,3 +1222,41 @@ Koşum sonrası ana yürütücüye gelecek üç kanıt: bayrak **KAPALI** (uçta
 geçti** — §8.16.3).
 
 **Sayaç 6/7 · hizmet 11/12 · bütünsel teslim İLAN EDİLMEZ.**
+
+#### 8.16.7 KESİNTİ KAPANDI — toparlanma ölçüldü (2026-09-09 22:2xZ)
+
+Owner Docker Desktop'ı başlattı. Ana yürütücü **yeniden ölçtü** (eski teşhis tekrarlanmadı):
+
+```text
+docker engine .................. Server 29.7.2 / API 1.55        ERISILEBILIR
+hukuk-postgres ................. running (healthy) 127.0.0.1:5432
+                                 StartedAt 2026-09-09T22:16:04Z · restartCount=0 · unless-stopped
+5432 dinleyici ................. VAR (PID 18744)
+POST /api/auth/login (gercek) .. 401 "Gecersiz e-posta veya sifre"   <- DB'ye ULASILDI
+psql dogrudan .................. ledger=130 · tenants=7 · csh=930    <- kesinti oncesiyle AYNI
+API PID 27312 .................. AYAKTA, baslangic 15:30:03Z -> DEGISMEDI
+WEB PID 22440 .................. AYAKTA, baslangic 15:15:03Z -> DEGISMEDI
+gorevler ....................... ikisi de Running · 0x800710E0 (saglikli)
+```
+
+**§8.16.3'ün bağlayıcı toparlanma ölçütü GEÇTİ** — DB'ye dokunan sınama 401 döndürüyor, 500 değil.
+Bu, ölçütün yalnız "servis sağlıklı" demeyip **gerçekten DB'yi gördüğünün** ilk canlı kanıtıdır.
+
+**Nedensellik artık çıkarım değil, müdahaleyle doğrulanmıştır** (2026-08-28'deki
+`CONFIRMED_BY_INTERVENTION` kalıbının aynısı): **tek değişken** Postgres'in erişilebilir hâle
+gelmesiydi. API süreci **değişmedi**, yapılandırma **değişmedi**, **restart yapılmadı** —
+Prisma havuzu kendiliğinden yeniden bağlandı. §8.16.6'daki *"API restart'ı gerekmeyebilir"*
+öngörüsü doğrulandı.
+
+**Kesintinin SEBEBİ (Docker Desktop'ın neden çıktığı) hâlâ ÖLÇÜLMEDİ** ve bu kayıtta
+çözülmüş sayılmaz. Kesinti penceresi §8.16.1'deki pozitif sınırla kalır: 2026-09-09
+15:30:03Z sonrası, reboot olayı değil.
+
+**A-07 paketi doğrulandı:** beş dosyanın sha256'sı belgedeki tabloyla **5/5 EŞİT**; kanonik kök
+`origin/main` (`7f48d674`) ile aynı. Koşum owner'ın yükseltilmiş tek komutunu bekler.
+
+**Yan gözlem (kapsam dışı, bilgi):** `hy-fix1-testdb` container'ı çalışır durumda ve **5439**
+portunu tutuyor — o port disposable izole ölçümlerin portudur. A-07 canlı koşumunu etkilemez;
+ileride izole ölçüm yapılacaksa çakışır.
+
+**Sayaç değişmedi: 6/7.** Toparlanma, A-07 kabulü **değildir**; bütünsel teslim İLAN EDİLMEZ.
