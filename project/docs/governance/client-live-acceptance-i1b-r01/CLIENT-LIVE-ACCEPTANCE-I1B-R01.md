@@ -3,10 +3,10 @@
 ```text
 BELGE      : CLIENT-LIVE-ACCEPTANCE-I1B-R01
 İŞ         : R02 İ1b — "CANLI sentetik tenant tahsisi" (6/17 tamam · 11 kalan; İ1b AÇIK)
-DURUM      : HAZIRLIK TAMAMLANDI — CANLI YAZMA ONAYINA HAZIR DEĞİL (2 somut eksik, §9)
+DURUM      : İ1b CANLI YAZMA ONAYINA HAZIR — iki eksik DB dönünce kapatıldı (§9); canlı yazma YAPILMADI
 YETKİ      : Bu belge yetki ÜRETMEZ. R02 İ1b'ye yetki VERMEZ; production DB yazımı
              yalnız owner'ın YAZILI GO'su (CL_OWNER_GO_REF) ile başlar.
-YAPILMADI  : canlı yazma · canlı sayım (DB kapalı) · disposable prova (DB kapalı) · İ8…İ15
+YAPILMADI  : canlı yazma · İ8…İ15 · Docker/canlı DB'yi başlatma (owner tarafından döndü)
 ```
 
 ---
@@ -149,7 +149,18 @@ temizlenmez**; kapatıcı yalnız `cl-acc-<runId>` tenant'ının kullanıcılar�
 |---|---|
 | Sözdizimi | 5 CLIENT betiği + `f04-lib.js` OK |
 | F04 geriye uyumluluk | `f04-09:47` ve `f04-04:82` iki argümanlı çağrı **değişmedi** |
-| **Negatif kontroller** (`cl-i1b-negative.js`, gerçek kapılar) | **PASS 7 · FAIL 0 · ÖLÇÜLEMEYEN 1** — NC-1 live+GO ref yok → red · NC-2 biçimsiz ref → red · NC-3 disposable ortamda canlı DB → red · NC-4 live ortamda disposable DB → red · NC-5 ortam yok/tanınmıyor → red · NC-6 korunan/yabancı/yanlış önek red, `cl-acc-` geçer · NC-6b sır anahtarı red · **NC-7 (kapatıcı, olmayan alan) DB gerektirir → ÖLÇÜLEMEDİ** |
+| **Negatif kontroller** (`cl-i1b-negative.js`, gerçek kapılar) | **PASS 8 · FAIL 0 · ÖLÇÜLEMEYEN 0** — NC-1 live+GO ref yok → red · NC-2 biçimsiz ref → red · NC-3 disposable ortamda canlı DB → red · NC-4 live ortamda disposable DB → red · NC-5 ortam yok/tanınmıyor → red · NC-6 korunan/yabancı/yanlış önek red, `cl-acc-` geçer · NC-6b sır anahtarı red · NC-7 kapatıcı, olmayan alan → `fieldExists:false`, yazma 0 (disposable DB ile) |
+
+### 7.1 Disposable prova (`127.0.0.1:5439/hukuk_fix1_test`, 2026-09-10 — **canlı kabul değildir**)
+
+| Prova | Sonuç |
+|---|---|
+| **R1** `cl-run.js` kurulum→kapatma | `[S1] KURULUM COMMIT EDILDI — 6/6 satır · cl-acc-b846e372` → `[KAPANIS]` runId ile arama (çıkış kodu dikkate alınmadı) → `usersDeactivated 1 · stillActive 0 · tokenVersionBumped 1 · accessClosed true · evidencePreserved true` · exit 0/0 · SONUÇ BAŞARILI |
+| **R1 bağımsız ölçüm** (salt-okuma) | `user 1 · lawyer 1 · client 1 · case 1 · caseClient 1 · office 0 · clientContact 0` · `clientEmailNull true · caseAutomationDisabled true · caseAutoModeFalse true · tenantLifecycle ACTIVE · activeUsers 0 · users[isActive false, tokenVersion 1]` — §4/§5 değişmezleri **karşılandı** |
+| **R1 G-4** | durum dosyası anahtarları: `package createdAt environment ownerGoRef runId slug tenantId userId userEmail clientId caseId caseClientId passwordStored writtenRows writtenRowCount` — sır **yok** (`passwordStored:false`) |
+| **R1b** `cl-09` ikinci çağrı | `usersDeactivated 0 · alreadyClosed true · accessClosed true` · exit 0 — **tekrarı güvenli** |
+| **R2** atomiklik (`CL_ABORT_AFTER=Lawyer`) | setup exit 1 → bağımsız ölçüm `fieldExists:false` (Tenant+User+Lawyer **rollback**, yetim yok) → `cl-09` → `fieldExists:false · writeOperations 0 · "ALAN YOK — ölçüldü, varsayılmadı"` |
+| **Artık taraması** | disposable'da `cl-acc-` tenant **1** (R1, kapalı); R2'ninki yok |
 
 ---
 
@@ -168,17 +179,20 @@ hizmet kabulü üretmez.
 
 ---
 
-## 9. AÇIK EKSİKLER — onay ÖNCESİ kapatılmalı
+## 9. İKİ EKSİK — DB dönünce KAPATILDI (2026-09-10)
 
-| # | Eksik | Neden | Gereken |
-|---|---|---|---|
-| **1** | **Canlı sayım yapılamadı** | 2026-09-10 00:29 (yerel) itibarıyla **Docker Desktop daemon'u kapalı**; `5432` ve `5439` dinlemiyor; canlı API `login → 500`, `api-err` logunda 138× `Can't reach database server`. İlk düşen çağrı `icrabot/v28-engine/outbox.service.js:97`. **Owner ops olayı** — bu hat Docker/DB'yi başlatmaz | Docker/DB owner tarafından geri getirilince: `cl-acc-%`=0 kanıtı + mevcut slug listesi + `Office` sayımı (salt-okuma) |
-| **2** | **Disposable prova koşulmadı** | aynı daemon → `hukuk_fix1_test` de kapalı | DB dönünce: `CL_ENVIRONMENT=disposable` ile `cl-run.js` (kurulum→kapatma), `cl-01 --abort` atomiklik, `cl-09` tekrar güvenliği, NC-7 |
+**Kesinti kaydı.** 2026-09-10 00:29 yerel (09-09 21:29Z) itibarıyla Docker Desktop daemon'u
+kapalıydı; `5432`/`5439` dinlemiyordu; canlı API `login → 500`, `api-err` logunda 138×
+`Can't reach database server` (ilk düşen `icrabot/v28-engine/outbox.service.js:97`). Daemon
+~22:16Z'de **owner tarafında** geri geldi (bu hat Docker'ı ve canlı DB'yi **başlatmadı**); canlı
+API `login → 401`, ledger `130/130`, hedef migration uygulanmış, `CaseStatusHistory 930`
+(kesinti öncesiyle **aynı**). Disposable `hy-fix1-testdb` konteyneri daemon'la dönmemişti; **bu
+hat kendi test konteynerini** `docker start` ile açtı (canlı servis değil).
 
-**Bu iki eksik kapanmadan canlı yazma onayı istenmez.** Betikler yazıldı, sözdizimi ve kapı
-davranışı gerçek fonksiyonlarla doğrulandı; **prova görmemiş betik canlıya sürülmez**.
-
----
+| # | Eksik | Kapanış kanıtı |
+|---|---|---|
+| 1 | Canlı sayım | Salt-okuma, 2026-09-10: **7 tenant** — `telli-hukuk` (user 9/8 aktif · client 16 · **Office+SMTP dolu — tek gerçek ofis**) · `local-development-office` (17/0) · `demo-firma` (8/3) · `c36-smoke-principal(-2)` (1/0) · `f04-acc-ccd471d3` (1/0) · `off-acc-f851d975` (2/0, Office var/SMTP boş). **`cl-acc-%` = 0** → çakışma yok; diğer programların sentetik alanları **tamamı kapalı** (0 aktif). Başka programın tenant'ına dokunma riski: G-1 listesi + önek taraması bu kümeyi kapsıyor |
+| 2 | Disposable prova | §7.1 — R1/R1b/R2 + NC 8/8 |
 
 ## 10. Tek uygulanabilir onay paketi (eksikler kapandığında owner'a sunulacak metin)
 
@@ -208,4 +222,5 @@ BAŞARI     : §8'deki 5 ölçüt; makbuzlar CL-I1B-SETUP / CL-I1B-ACCESS-CLOSE.
 ```
 
 Owner'ın canlı yazma onayı **son adımdır**; İ1b ancak onaylı tahsis + §8 ölçütleri ile kapanır.
-İ8…İ15 **kendiliğinden başlatılmaz**.
+İ8…İ15 **kendiliğinden başlatılmaz**. Betikler disposable'da **prova görmüştür** (§7.1); canlıya
+sürülecek kimlik, bu belgenin birleştiği squash SHA'sıdır.
