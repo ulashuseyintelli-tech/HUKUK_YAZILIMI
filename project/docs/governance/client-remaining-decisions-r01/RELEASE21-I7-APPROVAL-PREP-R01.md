@@ -248,3 +248,137 @@ onayı ister.
 Migration · servis değişimi · cutover başlatma · production yazımı · `.env` üretimi · ACL
 değişikliği · paket/mühür değişikliği · Office/C33 çalışma alanına yazma. **Canlı mutasyon: 0.**
 Yalnız `SELECT` ve dosya okuması yapılmıştır.
+
+
+---
+
+# 13. UZLAŞTIRMA — CUTOVER UYGULANDI (2026-09-09, append-only)
+
+> §1–§12 **cutover öncesi** hazırlıktır ve olduğu gibi korunur. Bu bölüm, cutover
+> uygulandıktan sonra CLIENT hattının **bağımsız** salt-okuma ölçümüdür. Canlı mutasyon **0**.
+
+## 13.1 OFFICE/C33'ün sonuç raporu — bulundu ve okundu
+
+`HY_C33_RELEASE21_CUTOVER_R25_VERIFY_REPAIR_CANDIDATE_20260909T105432Z/cutover-receipts/`
+**`CUTOVER-CUT-20260909-143723-0b9bc330.json`**
+
+| Alan | Değer |
+|---|---|
+| `runId` | `CUT-20260909-143723-0b9bc330` |
+| `startedUtc` → `finishedUtc` | `2026-09-09T11:37:23Z` → `2026-09-09T11:39:04Z` — **101 sn** |
+| `phase` / `verdict` | `COMMITTED` / **`C33_RELEASE21_CUTOVER_APPLIED_AND_VERIFIED`** |
+| Kapılar | **31/31 PASS · 0 FAIL** |
+| `cutover.*` | `hostReplaced` · `apiLauncherReplaced` · `webLauncherReplaced` · `apiStarted` · `webStarted` · `committed` = hepsi `true` |
+| `rollback.performed` | `false` (gerekmedi) |
+| `dbMutations` · `provisioningCalls` · `forceKills` | **0 · 0 · 0** |
+| `dbPre` / `dbPost` | `130\|130\|0\|0\|…` / **aynı** |
+| `secrets.valuesWritten` / `envCopiedByteExact` | `0` / `true` |
+| **V-03** | **PRE-01/06/07/08 yeniden doğrulandı** |
+
+`dbPre == dbPost` olduğu için **migration bu koşumda uygulanmamıştır** — ledger cutover'dan
+önce zaten 130'du. Bu, §8.10.6'daki *"MIGRATION C33 cutover motorunda KOŞAMAZ"* kaydıyla
+tutarlıdır: migration ayrı bir işlemle uygulanmıştır.
+
+## 13.2 Ölçülen zaman çizgisi (hepsi 2026-09-09 UTC)
+
+```text
+09:23:24Z  MIGRATION uygulandi (_prisma_migrations.finished_at) — ledger 129 -> 130
+           ~2 sa 14 dk boyunca CANLI hala RELEASE20, migrate edilmis semaya karsi kostu
+11:37:23Z  CUTOVER basladi (makbuz startedUtc)
+11:37:55Z  host + launcher takasi (dosya mtime)
+11:39:04Z  CUTOVER bitti — COMMITTED, 31/31
+15:15:03Z  Web sureci yeniden basladi (PID 22440)
+15:30:03Z  API sureci yeniden basladi (PID 27312)
+```
+
+**Migration ÖNCE, cutover SONRA** — §9'daki adım sırasının güvenli hâli. Aradaki ~2 sa 14 dk,
+§5'te kurulan **uyumluluk dayanağının fiilen taşıdığı penceredir**: RELEASE20 iki yeni
+nullable kolonu tanımaz, `INSERT`/`SELECT` kolonları açıkça sıralar, dolayısıyla kolonlar
+atıl kalır. Bu pencerede kusur bildirilmemiştir.
+
+> §8.10.8'de **elenen** "cutover sonrası migration" seçeneği (RELEASE21 istemcisinin kolonsuz
+> şemaya karşı `GET /case-status/:caseId/history` 500'ü) **gerçekleşmemiştir**; uygulanan sıra
+> tam tersidir.
+
+## 13.3 CLIENT hattının bağımsız ölçümü (salt-okuma, yazma 0)
+
+| Ölçüm | Sonuç |
+|---|---|
+| Canlı dinleyiciler | API `:8080` **pid 27312** · Web `:3002` **pid 22440** (İ7 öncesi taban 61532/47868 **değişti**) |
+| Süreçlerin kökü | **ikisi de `HY_W4_RELEASE21`** |
+| Launcher pointer | `start-api.ps1:33` ve `start-web.ps1:26` → **`HY_W4_RELEASE21`** → **PRE-08 karşılandı** |
+| Canlı launcher sha256 | api **`4ACA26CD…`** · web **`DA62DD2D…`** — forward host'un `SHA_PAPI`/`SHA_PWEB` pinleriyle **birebir** |
+| `_prisma_migrations` | **130 kayıt · 130 başarılı · 0 sorunlu** |
+| Hedef migration | `20260908171230_office_a07_approval_execution_binding` — `finished=EVET`, `rolled_back=hayır` |
+| Fiili şema | `approvalRequestId text NULL` · `approvalAttempt integer NULL` · hedef indeks **VAR** |
+| `CaseStatusHistory` satır | **930** — cutover öncesi ölçümümle **aynı** → o tabloda iş-satırı mutasyonu **0** |
+
+## 13.4 İ7 ölçütünün üç ayağı
+
+R02 ölçütü: *"Cutover uygulandı ve doğrulandı; rollback hedefi kayıtlı."*
+
+| Ayak | Durum | Dayanak |
+|---|---|---|
+| **Cutover uygulandı** | ✅ | Makbuz `COMMITTED` + CLIENT hattının bağımsız ölçümü (§13.3) |
+| **Doğrulandı** | ✅ | 31/31 kapı PASS (V-03 ile PRE-01/06/07/08 yeniden doğrulandı; C-03/C-04 servisler ayakta; V-01 DB değişmedi; V-02 görevler Running) + ana yürütücünün bağımsız doğrulaması (OFFICE §8.12.2) + §13.3 |
+| **Rollback hedefi kayıtlı** | ⚠ **KUSURLU** | §13.5 |
+
+## 13.5 AÇIK KUSUR — rollback kaydındaki BUILD_ID düzeltilmedi
+
+§7'de cutover **öncesi** bildirdiğim kusur **giderilmeden** cutover uygulandı:
+
+| | |
+|---|---|
+| Kayıt | `cutover-staging/generations/WEB-LAUNCHER-GENERATION.json` → `rollbackGeneration` |
+| Etiket | `generationId: R20` · `releaseRoot: …\HY_W4_RELEASE20` |
+| `buildId` (gerçek) | **`lt2ag97od6jT4jHG2NX7N`** — bu **RELEASE18**'in BUILD_ID'sidir |
+| Olması gereken | **`LW4jlJUOMHrvVEqakKB3i`** (RELEASE20) |
+| Yeniden mühür | **YOK** — `packageDigest` hâlâ `851C07DFCD2C6FBBA3A705840A401D4E8693A8F75BA62EE964C8763200B84A22` |
+
+**Ölçülen BUILD_ID'ler:** R18 `lt2ag97od6jT4jHG2NX7N` · R19 `xFgJAoTFqlTjW89Zf2CYS` ·
+R20 `LW4jlJUOMHrvVEqakKB3i` · R21 (canlı) `g91HUaBesekB-R2rRawQj`.
+
+**Geri dönüş MALZEMESİ sağlamdır** (bu turda doğrulandı) — kusur yalnız kayıttadır:
+
+| Kalem | Ölçüm |
+|---|---|
+| staged `R20/start-api.ps1` | `DC4C5AE49B4319F3237CECFED6315923719D234D8C1681BAAB5979BDDEC32489` · `ReleaseRoot = HY_W4_RELEASE20` |
+| staged `R20/start-web.ps1` | `E95EF7D7928CFED007909B191B18C1EDB6BE5A5FBC89F6E391CB128B149B9F5B` |
+| staged `R20/hukuk-task-host.exe` | `B2B11057744A3614A0F291D226BDA0F6A27F0023C3AF95813B857D3F6450A5BA` |
+| RELEASE20 kökü · api `dist` · web `.next` | **mevcut** |
+
+**Risk:** geri dönüş sonrası doğrulama bu `buildId` alanına göre yapılırsa **yanlış FAIL**
+üretir; "düzeltme" adına RELEASE18'e yönelme riski doğar.
+
+## 13.6 İkinci kayıt açığı — cutover makbuzu depoda değil
+
+`CUTOVER-CUT-20260909-143723-0b9bc330.json` yalnız **çalışma dizinindedir**; `origin/main`'de
+RELEASE21 cutover sonuç kaydı **yoktur**. Ayrıca OFFICE teslim planının başlığı hâlâ
+*"Canlı: RELEASE20 @ `08ce8e25` · BUILD_ID `LW4jlJUOMHrvVEqakKB3i`"* demektedir — cutover'a
+göre **bayattır**. (Bu iki kalem OFFICE hattınındır; CLIENT hattı o belgeye yazmaz.)
+
+## 13.7 Şerh — canlı host binary'si mühürlü kayıtta yok
+
+Canlı `hukuk-task-host.exe` = **`1397C54C46D4E9979A79C929959129D54954F8CE36B7CFB333ED88C2522F9F22`**;
+staged forward host `6A1EB401…` ve rollback host `B2B11057…` ile **eşleşmez**. Bu,
+`HOST-GENERATION.json`'daki `byteExactReproducible: false` / `semanticIdentity: true`
+kaydıyla **tutarlıdır** (host yerel derlenir; kimlik bağı exe hash'i değil `pins`'tir) ve
+cutover kapısı C-02 `hostReplaced` ile geçmiştir. Yine de **fiilen çalışan host'un sha256'sı
+hiçbir mühürlü kayıtta bulunmamaktadır** — denetlenebilirlik açığı olarak kaydedilir.
+
+## 13.8 SONUÇ
+
+**İ7 KAPANMADI — sayaç 5/17'de korunur.** İlk iki ayak karşılandı ve bağımsız doğrulandı;
+üçüncü ayak (**rollback hedefi kayıtlı**) *maddeten* sağlanmış ama *kaydı kusurludur*.
+
+İ7'nin kapanması için gereken iki işlem (**ikisi de OFFICE/C33 hattında**):
+
+1. `WEB-LAUNCHER-GENERATION.json` → `rollbackGeneration.buildId` **`LW4jlJUOMHrvVEqakKB3i`**
+   olarak düzeltilip paket yeniden mühürlensin **veya** owner onaylı bir **erratum** kaydedilsin
+   (geri dönüş doğrulaması bu değerle yapılacak şekilde).
+2. Cutover makbuzu (`CUT-20260909-143723-0b9bc330`, verdict + 31/31) **depoya** alınsın ve
+   OFFICE planının "Canlı" başlığı RELEASE21'e güncellensin.
+
+Bu ikisi kapandığında İ7 ölçütü tam karşılanır ve sayaç **6/17** olur. Hizmet kabulü bu
+işlemlerden **etkilenmez**: **0/8 tam** kalır — cutover kod sürümünü değiştirir, hizmet
+kabulü üretmez.
