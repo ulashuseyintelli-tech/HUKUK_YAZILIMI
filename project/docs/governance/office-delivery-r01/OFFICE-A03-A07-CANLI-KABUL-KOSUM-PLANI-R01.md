@@ -89,6 +89,12 @@ değil — *ölçülemezlik*. A-07'nin ıskalanmasının en olası yolu budur.
 (`CaseStatusHistory` üzerinde `approvalRequestId` = talep id **VE** `approvalAttempt` = `retryCount`).
 Bulunamazsa sonuç **ÖLÇÜLEMEDİ**'dir; PASS **değildir**.
 
+> ⚠ **KOŞUMDA ÖLÇÜLEN DÜZELTME (2026-09-09, runId `f851d975`):** aşağıdaki üç kategori
+> **A-03…A-06'nın KENDİ kabul yazmalarını SAYMIYOR.** O adımlar tanımı gereği yazma
+> kabulüdür ve kendi satırlarını üretir: `Lawyer` +1 · `StaffMember` +1 (A-04) ·
+> `ReportingLine` +1 (A-06) · `BankAccount` +1/-1 net 0 (A-03) · `AuditLog` 11.
+> Gerçek ölçüm ve gerekçe: `OFFICE-A03-A07-CANLI-KABUL-SONUCU-R01.md` §3.
+
 ### 2.2 Yürütme — **4 YENİ SATIR + 2 FARKLI MEVCUT SATIR güncellemesi**
 **Yeni satırlar (4):** `AuditLog` ×2 (`OFFICE_APPROVAL_EXECUTION_STARTED` + `..._SUCCEEDED`)
 · `CaseStatusHistory` ×1 (bağ alanları dolu) · `DecisionLog` ×1.

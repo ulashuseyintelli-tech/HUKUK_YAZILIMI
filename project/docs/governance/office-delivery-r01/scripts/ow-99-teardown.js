@@ -23,7 +23,7 @@ const ENVIRONMENT = (process.env.OW_ENVIRONMENT || 'live').toLowerCase();
 const PURGE_TOKEN = 'YES-DELETE-SYNTHETIC-OFFICE-TENANT';
 
 (async () => {
-  L.assertDisposableEnvironment();
+  L.assertRunEnvironment();
   const st = L.loadState();
   L.assertOwnSlug(st.slug); // G-1
   const prisma = L.loadPrisma();

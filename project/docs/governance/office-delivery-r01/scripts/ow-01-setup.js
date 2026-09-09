@@ -27,7 +27,7 @@ const ABORT_AFTER = process.env.OW_ABORT_AFTER || null; // yalniz negatif kontro
 
 (async () => {
   // ── G-0: HERHANGI BIR YAZMADAN ONCE ──
-  const env = L.assertDisposableEnvironment();
+  const env = L.assertRunEnvironment();
   L.step('S0', `ortam kapisi GECILDI — db=${env.dbName}@${env.dbHost}:${env.dbPort} · api=${env.apiHost}:${env.apiPort}`);
 
   const prisma = L.loadPrisma();

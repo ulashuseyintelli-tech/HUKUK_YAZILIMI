@@ -43,11 +43,23 @@ const FORBIDDEN_SLUGS = new Set([
 /** F04 kabul hattinin alani; OFFICE kabulune devredilmez (A-02 §1). */
 const FORBIDDEN_PREFIXES = ['f04-acc-', 'ah-'];
 
-// Disposable kabul edilen TEK yapilandirma. Genisletmek owner kararidir.
+// Host'lar HER IKI ortamda da loopback OLMAK ZORUNDA.
 const ALLOWED_DB_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const ALLOWED_API_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+// Disposable kabul edilen TEK yapilandirma.
 const ALLOWED_DB_PORTS = new Set(['5439']);
 const ALLOWED_DB_NAMES = new Set(['hukuk_office_acc_test']);
-const ALLOWED_API_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+/**
+ * CANLI hedef — owner'in A-03..A-07 GO'su ile ACILDI (onceki GO "production DB'ye sentetik
+ * veri yazma"yi disliyordu). Kapsam DAR: yalniz `off-acc-<runId>` tenant'i; G-1..G-4 aynen
+ * gecerlidir ve `purge` canli ortamda YASAK kalir (ow-99).
+ */
+const LIVE_DB_PORTS = new Set(['5432']);
+const LIVE_DB_NAMES = new Set(['hukuk_db']);
+/** Canliya yazmak KAZAYLA olamaz: ortam 'live' ise bu jeton ZORUNLUDUR. */
+const LIVE_CONFIRM_TOKEN = 'YES-LIVE-OFFICE-ACCEPTANCE-A03-A07';
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -67,8 +79,26 @@ class ObservationError extends Error {
  * G-0 — ORTAM IZOLASYONU. HERHANGI BIR YAZMADAN ONCE cagrilir.
  * Ortam belirsizse (parse edilemeyen URL, allowlist disi host/port/ad) yazma BASLAMAZ.
  * Donen nesnede SIR YOKTUR: yalniz host/port/veritabani adi.
+ *
+ * IKI ORTAM, IKI AYRI ALLOWLIST — ve **varsayilan `live`**'dir (fail-safe: ortam
+ * soylenmediyse en kisitli davranilir). `live` secildiginde `OW_CONFIRM_LIVE` jetonu
+ * ZORUNLUDUR; boylece canliya yazma bir ortam degiskeni unutmasiyla OLAMAZ.
+ * Ortamlar arasi karisma da engellenir: disposable adi live portunda, live adi disposable
+ * portunda KABUL EDILMEZ (her ortam kendi ad+port ciftine kilitlidir).
  */
-function assertDisposableEnvironment() {
+function assertRunEnvironment() {
+  const environment = (process.env.OW_ENVIRONMENT || 'live').toLowerCase();
+  if (!['live', 'disposable'].includes(environment)) {
+    throw new EnvironmentGateError(`G-0 IHLALI: gecersiz OW_ENVIRONMENT='${environment}' (live|disposable)`);
+  }
+  if (environment === 'live' && process.env.OW_CONFIRM_LIVE !== LIVE_CONFIRM_TOKEN) {
+    throw new EnvironmentGateError(
+      "G-0 IHLALI: ortam 'live' ve OW_CONFIRM_LIVE jetonu YOK/yanlis — canliya yazma baslamaz",
+    );
+  }
+  const ports = environment === 'live' ? LIVE_DB_PORTS : ALLOWED_DB_PORTS;
+  const names = environment === 'live' ? LIVE_DB_NAMES : ALLOWED_DB_NAMES;
+
   const raw = requireEnv('OW_DATABASE_URL');
   let u;
   try { u = new URL(raw); } catch (e) {
@@ -80,11 +110,11 @@ function assertDisposableEnvironment() {
   if (!ALLOWED_DB_HOSTS.has(host)) {
     throw new EnvironmentGateError(`G-0 IHLALI: DB host '${host}' loopback degil`);
   }
-  if (!ALLOWED_DB_PORTS.has(port)) {
-    throw new EnvironmentGateError(`G-0 IHLALI: DB port '${port}' disposable allowlist'te yok`);
+  if (!ports.has(port)) {
+    throw new EnvironmentGateError(`G-0 IHLALI: DB port '${port}' '${environment}' allowlist'inde yok`);
   }
-  if (!ALLOWED_DB_NAMES.has(dbName)) {
-    throw new EnvironmentGateError(`G-0 IHLALI: DB adi '${dbName}' disposable allowlist'te yok`);
+  if (!names.has(dbName)) {
+    throw new EnvironmentGateError(`G-0 IHLALI: DB adi '${dbName}' '${environment}' allowlist'inde yok`);
   }
 
   const apiRaw = requireEnv('OW_API_BASE_URL');
@@ -95,7 +125,19 @@ function assertDisposableEnvironment() {
   if (!ALLOWED_API_HOSTS.has(a.hostname)) {
     throw new EnvironmentGateError(`G-0 IHLALI: API host '${a.hostname}' loopback degil`);
   }
-  return { dbHost: host, dbPort: port, dbName, apiHost: a.hostname, apiPort: a.port || '80' };
+  return { environment, dbHost: host, dbPort: port, dbName, apiHost: a.hostname, apiPort: a.port || '80' };
+}
+
+/**
+ * GERIYE DONUK AD — ortami ZORLA `disposable` yapar. Guncellenmemis bir cagiran kalirsa
+ * canliya DUSMEZ; disposable allowlist'ine carpar ve durur (fail-safe).
+ */
+function assertDisposableEnvironment() {
+  const prev = process.env.OW_ENVIRONMENT;
+  process.env.OW_ENVIRONMENT = 'disposable';
+  try { return assertRunEnvironment(); } finally {
+    if (prev === undefined) delete process.env.OW_ENVIRONMENT; else process.env.OW_ENVIRONMENT = prev;
+  }
 }
 
 function loadPrisma() {
@@ -266,8 +308,9 @@ function newRunId() { return crypto.randomBytes(4).toString('hex'); }
 
 module.exports = {
   TENANT_PREFIX, FORBIDDEN_SLUGS, FORBIDDEN_PREFIXES,
-  ALLOWED_DB_NAMES, ALLOWED_DB_PORTS,
-  requireEnv, assertDisposableEnvironment, EnvironmentGateError, ObservationError,
+  ALLOWED_DB_NAMES, ALLOWED_DB_PORTS, LIVE_DB_NAMES, LIVE_DB_PORTS, LIVE_CONFIRM_TOKEN,
+  requireEnv, assertRunEnvironment, assertDisposableEnvironment,
+  EnvironmentGateError, ObservationError,
   loadPrisma, saveState, loadState, assertNoSecrets, requireLoginPassword,
   assertOwnSlug, assertOwnTenant, httpJson, login, resolveTokens,
   makeRecorder, log, step, newRunId,
