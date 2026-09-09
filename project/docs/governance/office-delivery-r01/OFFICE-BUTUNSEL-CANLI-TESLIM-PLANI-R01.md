@@ -644,3 +644,106 @@ Sınırlar : id yetkilinin KENDİ listesinden keşfedilir (uydurulmuş id ile ö
 İkisi de peer görevini durdurur. Ana yürütücünün yetkisi **mevcut yetki içinde iş dağıtımıyla**
 sınırlıdır; **bir oturumun yetkisini genişletmek yalnız owner'ın kendi kanalındadır.** Aksi
 hâlde yetki aklaması olur ve owner'ın yazılı sınırı üçüncü bir tarafın cümlesiyle kalkar.
+
+### 8.12 A-03…A-06 CANLI KABUL KAPANDI · A-07 ÖLÇÜLEMEDİ (2026-09-09, append-only)
+
+Owner GO'yu OFFİCE 33-F04'e **doğrudan** yazdı; koşum yapıldı. `runId f851d975` ·
+tenant `off-acc-f851d975` · canlı RELEASE21 aday `2187a78b`.
+
+#### 8.12.1 Sayaç
+
+```text
+KAPANDI 6/7   A-01 · A-02 · A-03 (53/53) · A-04 (27/27) · A-05 (12/12) · A-06 (17/17)
+AÇIK    1/7   A-07 — OLCULEMEDI (hazırlık 5/5 PASS, yürütme BAŞLAMADI)
+```
+
+**A-07 PASS SAYILMAZ.** Yürütme izi yok; okuma + yetki negatifi kapanış yerine geçmez (§8.4).
+
+#### 8.12.2 Ana yürütücünün bağımsız doğrulaması
+
+Uygulayıcı raporu kanıt değildir. Ana yürütücü ölçümü ayrıca koştu (salt-okuma; canlı
+postgres'e `docker exec` SELECT, süreç ve ACL için PowerShell):
+
+| Ölçüm | F04 | Ana yürütücü | Sonuç |
+|---|---|---|---|
+| API PID | 50316, değişmedi | 50316 ayakta, `:8080` dinliyor, start **14:37:59Z** = cutover anı | ✅ **restart 0** |
+| ENV dosyası ACL | SYSTEM sahip · `ulastelli` Read | Owner `NT AUTHORITY\SYSTEM` · `TELLI\ulastelli` **Read, Synchronize** | ✅ |
+| ENV `LastWriteTime` | — | **14:37:38Z** (koşumdan önce) | ✅ dosya **hiç değişmedi** |
+| Bayrak satırı | hiç açılmadı | `.env` içinde ilgili satır **YOK** | ✅ |
+| `executionStatus` | NOT_RUN | `APPROVED` / **`NOT_RUN`** / `executedAt NULL` | ✅ fixture **tüketilmedi** |
+| `Case.caseStatus` | ISLEMDE (DERKENAR'a geçmedi) | **`ISLEMDE`** | ✅ |
+| Tenant içi `CaseStatusHistory` | 0 | **0** | ✅ |
+| Migration ledger | — | **130 / 130 / 0 / 0** — değişmedi | ✅ |
+| Global `CaseStatusHistory` | +0 | **930** — A-01'deki değerle aynı | ✅ |
+| Kalıcı satır | 23 | `tenantId`'li **22** + `Tenant` satırı **1** = **23** | ✅ tam isabet |
+
+Ek olarak, DELTA-A yürütme bağının **tüm tabloda** hiç yazılmadığı ölçüldü:
+`CaseStatusHistory WHERE "approvalRequestId" IS NOT NULL` → **0**. İki yeni kolon üretimde
+hâlâ kullanılmamıştır.
+
+**İzolasyon:** ölçülen küresel deltanın tamamı kendi tenant'ımızın satırlarıdır
+(tenant +1 · user +2 · case +1 · approval +1 · `CaseStatusHistory` **+0**). Bu, **ölçülen
+kapsamda** değişiklik saptanmadığı anlamına gelir; birkaç sayaçtan bütün veritabanının
+değişmediği sonucu çıkarılmaz.
+
+#### 8.12.3 A-07 — ölçülen tek engel
+
+```text
+EnvFile : C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE21\project\apps\api\.env
+sahip   : NT AUTHORITY\SYSTEM
+aktör   : TELLI\ulastelli — Read,Synchronize  ->  EPERM, bayrak satırı YAZILAMADI
+görev   : HukukPlatform-API · Running · RunAs=ulastelli · RunLevel=Limited
+kaynak  : C:\Ops\hukuk\bin\start-api.ps1:40  EnvFile = '...HY_W4_RELEASE21\...\.env'
+```
+
+Bu **C36 ENV-ACL sertleştirmesinin amaçlanan davranışıdır**; ürün kusuru değildir. Yetki
+yükseltme denenmedi (owner kuralı: erişim engeli varsa kapı atlanmaz, gereken tek yükseltilmiş
+komut bildirilir).
+
+**Fail-closed doğru çalıştı:** bayrak hiç açılmadı · restart 0 · `finally` yolu bellekteki
+değişkene değil **dosyadaki gerçeğe** baktı. Uç düzeyinden de kanıtlandı:
+`POST /office-approvals/<id>/execute` → **403 `OFFICE_APPROVAL_CONTROLLED_EXECUTION_DISABLED`**.
+Önceki turlarda bu yalnız yapılandırma düzeyinde gösterilebiliyordu.
+
+#### 8.12.4 DÜZELTME — §8.11.5-A yanlış bayrak adı veriyordu
+
+§8.11.5-A'daki GO taslağı A-07 için `OFFICE_APPROVAL_EXECUTOR_ENABLED` yazıyordu. **Yanlıştır.**
+Koddan ölçüldü (hem kaynak hem **canlı dist**):
+
+| Bayrak | Neyi açar | A-07 için |
+|---|---|---|
+| `OFFICE_APPROVAL_CONTROLLED_EXECUTION_ENABLED` | yalnız kontrollü uç (`office-approval-controlled-execution.service.ts:55`) | **GEREKEN BUDUR** |
+| `OFFICE_APPROVAL_EXECUTOR_ENABLED` | çapraz-tenant cron taraması (`office-approval-executor.config.ts:42`) | **GEREKMİYOR — açılmamalı** |
+
+Kodun kendi yorumu: kabul bayrağı *"genel cron bayrağı `OFFICE_APPROVAL_EXECUTOR_ENABLED`'DAN
+BAĞIMSIZDIR"*. Ölçüm: `office-approval-executor.service.ts` içinde `process.env` kullanımı
+**sıfır**; `office-approval-executor.config.ts`'i **yalnız** cron servisi import ediyor.
+
+**Sonuç — riski AZALTIR:** dar pencere, §10.2'de kaydedilen çapraz-tenant cron çarpışma
+riskini **hiç doğurmaz**. Cron kapalı kalır. Bu, owner'ın seçenek (a) kararının maliyet
+tahminini iyileştirir; kararı değiştirmez.
+
+#### 8.12.5 Gereken tek yükseltilmiş eylem
+
+Yükseltilmiş bir aktörün `.env` dosyasına tek satır yazması, ardından servisin yeniden
+başlatılması; koşum sonrası satırın geri alınması. Zamanlanmış görev `ulastelli` altında
+`Limited` düzeyde çalıştığı için **yükseltme yalnız dosya yazımı içindir**; restart'ın
+yükseltme gerektirip gerektirmediği ölçülmemiştir (canlı restart denenmedi).
+
+Bu bir **işletme/yetki** kararıdır; ne uygulayıcının ne ana yürütücünün yetkisindedir.
+
+#### 8.12.6 Envanter şerhi — F04'ün kendi düzeltmesi kabul edildi
+
+Koşum planı §2'nin üç kategorisi A-03…A-06'nın **kendi kabul yazmalarını saymıyordu**.
+Doğrulanmış gerçek: kurulum 7 + A-07 fixture 2 + `Lawyer`/`StaffMember`/`ReportingLine`
+kabul satırları + `AuditLog` 11 → kalıcı **23 satır**. Bu, #2549'da `OfficeApprovalRequest`
+güncellemesinin sayılmamasıyla **aynı sınıf** hatadır: güncellenen ve türetilen satırlar da sayılır.
+
+`purge` kullanılmadı · seyirci tenant kurulmadı (ikinci tenant yok) · kapanış `revoke-access`
+doğrulandı (2 sentetik `User`: `isActive=false`, `tokenVersion=1`).
+
+#### 8.12.7 Açık kalanlar
+
+A-07 · O-4 / O-4-LAWYER yenilemesi (§8.3, hâlâ yetki bekliyor) · AK-1a/1b/1c ve AK-2
+**KARAKTERİZE EDİLDİ / OWNER KARARI BEKLİYOR** (hüküm verilmedi, kod değişmedi) ·
+AK-3/CAP-07 B-01 sınırı. **Bütünsel teslim İLAN EDİLMEZ** — §6 bitiş çizgisi değişmedi.
