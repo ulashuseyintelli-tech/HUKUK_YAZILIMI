@@ -50,7 +50,7 @@ function unexpectedDiffs(before, after, expected) {
 }
 
 (async () => {
-  L.assertDisposableEnvironment();
+  L.assertRunEnvironment();
   const base = L.requireEnv('OW_API_BASE_URL').replace(/\/+$/, '');
   const st = L.loadState();
   L.assertOwnSlug(st.slug);

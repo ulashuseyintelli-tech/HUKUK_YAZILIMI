@@ -15,7 +15,7 @@ const L = require('./ow-lib');
 const RAW_TCKN = '11111111110'; // ow-01-setup.js'te yazilan sentetik deger
 
 (async () => {
-  L.assertDisposableEnvironment();
+  L.assertRunEnvironment();
   const base = L.requireEnv('OW_API_BASE_URL').replace(/\/+$/, '');
   const st = L.loadState();
   L.assertOwnSlug(st.slug);

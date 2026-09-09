@@ -21,6 +21,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const L = require('./ow-lib');
+const SVC = require('./ow-service');
 
 const HERE = __dirname;
 const STATE = process.env.OW_STATE_FILE || path.join(process.cwd(), 'ow-state.json');
@@ -31,6 +32,9 @@ const ADMIN_PW = process.env.OW_LOGIN_PASSWORD || `OW-${crypto.randomBytes(18).t
 const STAFF_PW = process.env.OW_STAFF_PASSWORD || `OW-${crypto.randomBytes(18).toString('base64url')}!cD7`;
 
 const steps = [];
+const restarts = [];      // her restart'in §3.4 olcumu
+const flagProbes = [];    // bayragin UCTAN olculen durumu
+let flagOpened = false;   // yalniz bilgi; KAPATMA KARARI dosyadaki gercege dayanir
 function run(script, extraEnv = {}) {
   const r = spawnSync(process.execPath, [path.join(HERE, script)], {
     env: {
@@ -69,12 +73,12 @@ async function tenantExists() {
 }
 
 // Kabul adimlari: dosya YOKSA atlanir ve raporda ATLANDI olarak gorunur.
+// A-07 BU LISTEDE DEGILDIR — bayrak penceresi gerektirdigi icin ayri sirada yurutulur.
 const ACCEPTANCE_STEPS = [
   'ow-03-settings.js',
   'ow-04-writes.js',
   'ow-05-staff-read.js',
   'ow-06-reporting.js',
-  'ow-07-approval.js',
   'ow-90-negative.js',
 ];
 
@@ -122,10 +126,76 @@ const ACCEPTANCE_STEPS = [
       const c = run(s, tokenEnv);
       if (c !== 0) failure = failure || `${s} basarisiz (exit ${c})`;
     }
+
+    // ─────────── A-07: DAR BAYRAK PENCERESI (plan §1 5a-5d, §3.1, §3.4) ───────────
+    // 5a hazirlik ve 5c yurutme AYRIDIR; bayrak yalniz ikisinin ARASINDA acilir.
+    if (fs.existsSync(path.join(HERE, 'ow-07-approval.js'))) {
+      const base = L.requireEnv('OW_API_BASE_URL').replace(/\/+$/, '');
+      const token = tokenEnv.OW_ADMIN_TOKEN;
+
+      // 5a — fixture, bayrak KAPALI iken
+      const p = run('ow-07-approval.js', { ...tokenEnv, OW_A07_PHASE: 'prepare' });
+      if (p !== 0) {
+        failure = failure || `A-07 hazirligi basarisiz (exit ${p}) — bayrak ACILMADI`;
+      } else {
+        // Acmadan ONCE bayragin GERCEKTEN kapali oldugunu UCTAN olc (§3.4 ilk yarisi)
+        if (token) {
+          const before = await SVC.probeFlagEndpoint(base, token);
+          flagProbes.push({ when: 'acma-oncesi', ...before });
+          console.log(`\n[BAYRAK] acma oncesi uctan olcum: ${before.verdict} (HTTP ${before.status})`);
+          if (before.verdict !== 'KAPALI') {
+            throw new Error(`bayrak acma oncesi 'KAPALI' degil (${before.verdict}) — kosum durur`);
+          }
+        }
+        // 5b — AC + restart + toparlanma dogrulamasi
+        console.log('\n[BAYRAK] ACILIYOR (yalniz A-07 yurutme adimi icin)');
+        SVC.setFlagFile(true);
+        flagOpened = true;
+        restarts.push(await SVC.restartApiAndVerify(base, { expectFlag: 'ACIK', token, label: 'BAYRAK-AC' }));
+
+        // 5c — yurutme
+        const x = run('ow-07-approval.js', { ...tokenEnv, OW_A07_PHASE: 'execute' });
+        if (x !== 0) failure = failure || `A-07 yurutme basarisiz (exit ${x})`;
+      }
+    } else {
+      skipped.push('ow-07-approval.js');
+    }
   } catch (e) {
     failure = failure || (e && e.message) || String(e);
     console.error('\nKOSUM HATASI:', failure);
   } finally {
+    // ── 5d BAYRAK KAPATMA — `finally` YOLUNDA, BASARISIZLIKTA DA ──
+    // Owner sarti: "Basarisizlikta da finally yolunda revoke-access ve bayrak kapatma/
+    // toparlanma adimlarini uygula." Karar `flagOpened` bayragina DEGIL, DOSYADAKI GERCEGE
+    // dayanir (F04 dersi: cikis kodu/bellek durumu beyaz listesi fail-open uretir).
+    try {
+      const onDisk = SVC.readFlagFile();
+      if (onDisk.enabled || flagOpened) {
+        const base = L.requireEnv('OW_API_BASE_URL').replace(/\/+$/, '');
+        console.log(`\n[BAYRAK] KAPATILIYOR (dosyada enabled=${onDisk.enabled}, acilmisti=${flagOpened})`);
+        SVC.setFlagFile(false);
+        const tok = process.env.OW_ADMIN_TOKEN;
+        const r = await SVC.restartApiAndVerify(base, { expectFlag: tok ? 'KAPALI' : undefined, tok, token: tok, label: 'BAYRAK-KAPAT' });
+        restarts.push(r);
+        if (tok) {
+          const after = await SVC.probeFlagEndpoint(base, tok);
+          flagProbes.push({ when: 'kapatma-sonrasi', ...after });
+          console.log(`[BAYRAK] kapatma sonrasi uctan olcum: ${after.verdict} (HTTP ${after.status})`);
+          if (after.verdict !== 'KAPALI') {
+            failure = failure || `bayrak kapatma UCTAN DOGRULANAMADI (${after.verdict})`;
+          }
+        } else {
+          failure = failure || 'bayrak kapatmasi uctan DOGRULANAMADI (token yok) — OLCULEMEDI';
+        }
+      } else {
+        console.log('\n[BAYRAK] dosyada kapali ve hic acilmadi — kapatilacak bir sey yok');
+      }
+    } catch (e) {
+      console.error(`\n!!! BAYRAK KAPATMA BASARISIZ: ${e && e.message}`);
+      console.error('    ELLE KAPATIN: EnvFile satirini kaldirin + Restart-ScheduledTask HukukPlatform-API');
+      failure = failure || `bayrak kapatma basarisiz: ${e && e.message}`;
+    }
+
     // ── ERISIM SONLANDIRMA — CIKIS KODUNA DEGIL, GERCEGE BAKAR ──
     const exists = await tenantExists();
     if (exists) {
@@ -152,6 +222,9 @@ const ACCEPTANCE_STEPS = [
     console.log(`\n=== PROVA OZETI · runId=${RUN_ID} ===`);
     for (const s of steps) console.log(`    ${s.script.padEnd(24)} exit=${s.code}`);
     if (skipped.length) console.log(`    ATLANDI (dosya yok): ${skipped.join(', ')}`);
+    for (const r of restarts) console.log(`    RESTART ${String(r.oldPid)}->${String(r.newPid)} hazir=${r.readyMs} ms bayrak(uc)=${r.flagVerdict}`);
+    for (const f of flagProbes) console.log(`    BAYRAK(${f.when}) = ${f.verdict} (HTTP ${f.status})`);
+    console.log(`    RESTART SAYISI: ${restarts.length}`);
     console.log(`    PROVA SONUC: ${failure ? `FAIL — ${failure}` : 'PASS'}`);
     console.log('    Parolalar hicbir yere yazilmadi.');
     process.exitCode = failure ? 1 : 0;
