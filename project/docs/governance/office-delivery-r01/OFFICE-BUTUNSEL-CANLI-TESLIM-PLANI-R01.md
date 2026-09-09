@@ -530,3 +530,117 @@ e-posta @f04-acceptance.invalid (teslim edilemez)
 korunan kayıt: OfficeApprovalRequest 1 · AuditLog 1
 ```
 **Uyumsuzluk YOK** — somut düzeltme gerekmiyor.
+
+### 8.11 İKİ YETKİ SERT DURUŞU — A-03…A-07 ve O-4/O-4-LAWYER (2026-09-09, append-only)
+
+A-01 canlı kanıtla kapandıktan sonra ana yürütücü kalan iki iş kalemini dağıttı. **İkisi de
+yetki gerekçesiyle reddedildi ve iki ret de doğrudur.** Bu bölüm reddin kaydıdır; §8.9.1'in
+dağıtım tablosunu günceller.
+
+#### 8.11.1 Sayaç
+
+```text
+ZORUNLU KABUL KÜMESİ   A-01 … A-07
+KAPANDI                2/7   A-02 (sözleşme + prova) · A-01 (cutover, canlı kanıt)
+AÇIK                   5/7   A-03 · A-04 · A-05 · A-06 · A-07
+DURUM                  BAŞLATILMADI (YETKİ YOK)
+CANLIYA YAZMA          0
+YENİLENMEMİŞ KABUL     O-4 · O-4-LAWYER  (§8.3 gereği ZORUNLU)
+BÜTÜNSEL TESLİM        İLAN EDİLMEDİ — §6 bitiş çizgisi değişmedi
+```
+
+#### 8.11.2 OFFİCE 33-F04 — A-03…A-07 · İSMEN DIŞLAMA
+
+| Alan | İçerik |
+|---|---|
+| `blockerCode` | `BLOCKED_AUTHORITY_MISSING` |
+| `blockingLayer` | authority (governance) — **teknik engel yok** |
+| `evidence` | F04'ün owner GO'su §3, aynen: *"Bu yetki … production DB'ye sentetik veri yazma … kapsamaz. Testler izole yerel ortamda, sentetik verilerle yapılır."* A-03…A-07 canlı kabulünün tanımı tam olarak budur |
+| `whyNotRevision` | Eksik olan plan, harness veya ölçüm değil — üçü de hazır ve doğrulandı. Eksik olan yalnız owner'ın **bu oturuma** verdiği canlı-yazma yetkisidir |
+| `requiredAction` | Owner'ın **kendi kanalından** F04'e yazacağı GO (§8.11.5-A) |
+| `preservedWip` | Koşum planı `0ae8a85d` + PR #2580 (§2.1.1 fixture ön koşulları); bayrak mekanizması ve tam env yolu tespit edildi; aday=canlı doğrulandı |
+
+Hazır olduğu ölçülen kalemler: plan · §2.1.1 ön koşullar · bayrak mekanizması ve
+`HY_W4_RELEASE21/project/apps/api/.env` yolu · route-mount + bayrak-kapalı yapılandırma kanıtı.
+
+#### 8.11.3 OFFİCE 33 — O-4 / O-4-LAWYER · KAPSAM SESSİZLİĞİ
+
+| Alan | İçerik |
+|---|---|
+| `blockerCode` | `BLOCKED_AUTHORITY_MISSING` |
+| `blockingLayer` | authority (governance) — **teknik engel yok** |
+| `evidence` | OFFİCE 33'ün bu oturumdaki owner GO'su C36 migration → C33 preflight/seal/V-03 onarımı → cutover → A-01 terminal doğrulaması zinciriyle sınırlı. O-serisi kabul testi bu zincirde **hiç geçmiyor** |
+| `whyNotRevision` | Yöntem bilinen ve owner'ca kabul edilmiş (#2545): canlı derlenmiş dist + disposable PG 5439 + sentetik tenant, canlı DB'ye 0 yazma. Eksik olan yöntem değil, **yetki kaynağı** |
+| `requiredAction` | Owner'ın **kendi kanalından** OFFİCE 33'e yazacağı GO (§8.11.5-B) |
+| `preservedWip` | `HY_W4_RELEASE21` dist doğrulanmış ve hazır; ölçüm aracı ÜRETİLMEDİ; canlı DB yazma 0 |
+
+#### 8.11.4 Ana yürütücünün kendi kusuru — kayda geçer
+
+1. **F04 görev mesajına "Kapsam içi iş için tekrar GO isteme" cümlesi kondu.** Bu cümle
+   owner'ın **ana yürütücüye** yazdığıydı (mesaj taşıyıcılığından kurtarma amaçlı); F04'ün
+   bağlamına taşınınca *"sorma"* baskısına dönüştü. F04'ün tespiti doğrudur:
+   **"bir daha sorma" talimatının kendisi taşıyıcı kanaldan gelemez.** Cümle geri çekildi.
+2. **OFFİCE 33'e kapsam savunması RİSK ekseninden yapıldı** ("salt-okuma, 0 canlı yazma,
+   dolayısıyla kapsam içi"). OFFİCE 33'ün cevabı bağlayıcıdır: **"mesele risk değil, YETKİ
+   KAYNAĞI."** Düşük risk yetki üretmez. Bir işin kapsam içi olduğunun tek geçerli kanıtı,
+   hedef oturumun **kendi GO metninde** o işin bulunmasıdır.
+
+Her iki kusur da aynı sınıftır: uygun sonuca, uygun olmayan eksenden varmaya çalışmak.
+
+#### 8.11.5 Gereken iki owner GO'su — owner'ın KENDİ kanalından
+
+Aşağıdaki iki metin **yeni karar içermez**; owner'ın bu programda zaten verdiği kararların
+(DELTA-A execute + reconcile · dar bayrak penceresi seçenek (a) · sentetik `Case` ilkesel
+onayı · dışlamalar · #2545 kabul yöntemi) derlemesidir. Eksik olan **yalnız kanaldır**.
+
+**A — OFFİCE 33-F04 · A-03…A-07**
+
+```text
+Kapsam      : A-03 · A-04 · A-05 · A-06 · A-07 (DELTA-A: execute + reconcile)
+Ortam       : CANLI RELEASE21 (HEAD 2187a78b) — canlı DB'ye yazma AÇIKÇA ONAYLI
+Alan        : TEK sentetik tenant  off-acc-<runId>
+              aktör e-postaları @office-acceptance.invalid (teslim edilemez)
+A-07 bayrak : OFFICE_APPROVAL_EXECUTOR_ENABLED dar pencere ONAYLI
+              HY_W4_RELEASE21/project/apps/api/.env
+              yalnız A-07 yürütme adımı için açılır
+              İKİ canlı API restart'ı onaylıdır (aç + kapat) — gerçek kesinti maliyeti
+              koşum sonunda kapatılır — BAŞARISIZLIKTA DA
+              kapanış env dosyasından DEĞİL, çalışan süreç + kontrollü ucun
+              reddetme davranışı üzerinden doğrulanır
+Kapanış     : revoke-access, finally yolunda; envanter hatası kapanışı engellemez
+              kapatma dallarında çıkış kodu beyaz listesi KULLANILMAZ
+
+DIŞLAMALAR : purge canlıda YASAK · gerçek alıcıya gönderim YOK · gerçek tenant verisine
+             dokunma YOK · ikinci sentetik tenant YOK · ayrı F04 finansal yarış koşumu YOK
+             yeni özellik / gerçek tenant veri düzeltmesi YOK
+             cutover veya migration TEKRAR ÇALIŞTIRILMAZ · otomatik DB restore YOK
+
+Belirsiz mutasyon sonucunda otomatik tekrar YOK — önce salt-okuma ile uzlaştır.
+Ölçülemeyen sonuç "yok" sayılmaz. Tek kullanımlık, devredilemez, koşum bitince tükenir.
+```
+
+**B — OFFİCE 33 · O-4 / O-4-LAWYER yenilemesi**
+
+```text
+Kapsam   : O-4 (GET /api/office sızıntı yok) · O-4-LAWYER (GET /api/lawyers/:id sızıntı yok)
+Gerekçe  : §8.3 — #2553 ve #2555 tam bu projeksiyonları değiştirdi; RELEASE20 PASS'ı
+           RELEASE21 için etkinlik kanıtı SAYILMAZ
+Yöntem   : #2545 kabul yöntemi — canlı RELEASE21 dist + disposable PostgreSQL 5439 +
+           sentetik tenant · CANLI DB'YE 0 YAZMA · canlı postgres'e yalnız salt-okuma SELECT
+Sınırlar : id yetkilinin KENDİ listesinden keşfedilir (uydurulmuş id ile ölçme)
+           ölçüm aracı paket DIŞI, sha raporlanır
+           incelenen alan/kayıt sayısı YAZDIRILIR (0 = kör ölçüm = FAIL)
+           ölçülemeyen sonuç "yok" sayılmaz → OLCULEMEDI + nonzero
+           cutover/migration TEKRAR ÇALIŞTIRILMAZ
+```
+
+#### 8.11.6 Bağlayıcı kalıp — iki dışlama sınıfı eşittir
+
+| Sınıf | Örnek | Hüküm |
+|---|---|---|
+| **İsmen dışlama** | F04 GO §3: "production DB'ye sentetik veri yazma … kapsamaz" | Meslektaş mesajı owner'ın **yazılı sınırını** kaldıramaz |
+| **Kapsam sessizliği** | OFFİCE 33 GO'sunda O-serisi hiç geçmiyor | Yetki **pozitiftir, artık değildir**: "yasaklanmamış" ≠ "yetkili" |
+
+İkisi de peer görevini durdurur. Ana yürütücünün yetkisi **mevcut yetki içinde iş dağıtımıyla**
+sınırlıdır; **bir oturumun yetkisini genişletmek yalnız owner'ın kendi kanalındadır.** Aksi
+hâlde yetki aklaması olur ve owner'ın yazılı sınırı üçüncü bir tarafın cümlesiyle kalkar.
