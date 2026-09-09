@@ -1078,3 +1078,122 @@ DISLAMALAR: mevcut ACL'ler gevsetilmeyecek · arac reddi veya erisim kontrolu
 
 Tek kullanimliktir, devredilemez, kosum bitince tukenir.
 ```
+
+### 8.16 CANLI KESİNTİ · A-07 MALİYET DÜZELTMESİ · TOPARLANMA ÖLÇÜTÜ KUSURU (2026-09-10, append-only)
+
+#### 8.16.1 CANLI KESİNTİ — teslim ilan edilemez
+
+F04, A-07 ön ölçümüne başlarken canlıyı bozuk buldu. Ana yürütücü bağımsız doğruladı
+(salt-okuma):
+
+```text
+5432 dinleyici ............................ YOK
+com.docker.service ........................ Stopped · StartType = Manual
+Docker Desktop / backend / dockerd ........ SUREC YOK
+POST /api/auth/login  (gercek govde) ...... 500   <- DB'ye DOKUNUR
+POST /api/auth/login  (bos govde) ......... 400   <- ValidationPipe, DB'ye DOKUNMAZ
+GET  /api/office      (anonim) ............ 401   <- auth guard, DB'ye DOKUNMAZ
+Web :3002 ................................. 200   <- Next DB'siz ayakta
+API PID 27312 / WEB 22440 ................. ayakta, RELEASE21
+```
+
+**Gerçek etki: gerçek tenant'lar login olamıyor.** Bu, A-07'den önceliklidir.
+
+**Bilinen olay sınıfı.** 2026-08-28'de aynısı yaşandı ve teşhisi kayıtlıdır: Docker autostart
+**iki katmanda** kapalı (`settings-store.json AutoStart=false` **ve** `StartupApproved=03`),
+bu hâliyle **her reboot aynı kesintiyi üretir**. Kurtarma emsali: **Docker'ı owner başlattı;
+ajan start yetkisini KULLANMADI (0 kez)**; 4 HUKUK container'ı `unless-stopped` ile
+kendiliğinden geldi. Bu turda da ne uygulayıcı ne ana yürütücü dokundu.
+
+**Fark:** o gün API crash-loop'taydı (`onModuleInit → $connect` boot'ta düşüyordu). Şimdi API
+ayakta — yani boot'ta DB **vardı**, sonradan gitti. Kesintinin başlangıç anı **ölçülmedi**;
+spekülasyon yapılmaz. Ölçülecek doğru yer Docker Desktop günlüğü ve görev geçmişidir.
+
+**A-03…A-06 kabulleri ETKİLENMEZ** — geçmişte ölçüldü ve kayıtlıdır. Kesinti bugünün
+çalışabilirliğini etkiler, dünkü ölçümü geçersiz kılmaz.
+
+#### 8.16.2 ANA YÜRÜTÜCÜNÜN İKİ KAYIT DÜZELTMESİ
+
+**(a) §8.13.3'teki "uygulama ayakta (401/200)" ifadesi YETERSİZDİ.** O probe **DB kesintisini
+göremez**: `GET /api/office` 401'i auth guard'dan, boş gövde 400'ü ValidationPipe'tan gelir ve
+**ikisi de DB'ye dokunmadan** üretilir. Ölçtüğüm şey "HTTP katmanı ayakta"dır, "sistem
+sağlıklı" değil. Kayıt bu şerhle okunur.
+
+**(b) §8.13.3'teki `LastTaskResult` yorumu YANLIŞTI.** `0x800710E0` (= 2147946720) bir hata
+kodu **değildir**; "çalışan örnek var" anlamında **sağlıklı** koddur. "Sıfır dışı, sebep
+belirsiz" nitelemesi geri alınır.
+
+#### 8.16.3 TOPARLANMA ÖLÇÜTÜ KUSURU — bağlayıcı düzeltme
+
+F04'ün tespiti: koşum planı §3.4'ün "toparlanma" ölçütü **boş gövdeye dönen 400**'e
+dayanıyordu. Bu ölçüt **DB kesintisini GÖREMEZ** — doğrulama katmanı DB'den önce çalışır.
+Yani servis tamamen veritabansızken bile ölçüt PASS verirdi.
+
+**Bağlayıcı düzeltme:** toparlanma ölçütü **DB'ye dokunan** bir sınama içerir:
+
+```text
+POST /api/auth/login  { gercek olmayan kullanici }
+  -> 401 BEKLENIR (DB'ye ulasildi, kullanici yok)
+  -> 500 gelirse VERITABANI YOK  -> toparlanma FAIL
+```
+
+Bu, kayıtlı **fail-open** sınıfının aynısıdır: *ölçülemeyen sonuç "yok" sayılmaz* ve
+**gözlem kümesi boşken kendiliğinden sağlanan ölçüt geçersizdir**. Aynı sınama her "servis
+sağlıklı" iddiası için geçerlidir.
+
+#### 8.16.4 A-07 MALİYET DÜZELTMESİ — §8.13.4 yanlıştı
+
+§8.13.4 yol (a)'yı *"2 satır güncelleme"* diye yazıyordu. **Çalışmazdı.** F04 ölçtü, ana
+yürütücü koddan doğruladı — `auth.service.ts` login kapısı sırayla:
+
+| Satır | Kapı | Sonuç |
+|---|---|---|
+| `:98` | `passwordHash` NULL mü? (K1-7: alan nullable) | 401 |
+| `:102` | `bcrypt.compare(dto.password, user.passwordHash)` | 401 |
+| `:120` | tenant lifecycle — **`isActive` kontrolünden ÖNCE** | 401 |
+| `:124` | `isActive` | "Hesabınız devre dışı bırakılmış" |
+
+`isActive=true` yapmak **tek başına yetmez**: kullanılabilir bir parola da gerekir. İlk koşumun
+parolası G-4 gereği yalnız bellekte üretilmişti ve hiçbir yere yazılmamıştı → **kurtarılamaz**.
+
+**Düzeltilmiş gerçek maliyet — hem daha dar hem farklı:**
+
+| | §8.13.4 (yanlış) | Ölçülmüş doğru |
+|---|---|---|
+| Dokunulan satır | 2 (admin + personel) | **1** — yalnız ADMIN; personel satırı **dokunulmaz** |
+| Alan | `isActive` | **`isActive` + taze `passwordHash`** |
+
+Gerekçe: A-07'nin kontrollü yürütme ucu yalnız **ADMIN** aktörü ister; personel aktörü
+A-04/A-05 kabullerine aitti ve onlar kapandı.
+
+**Not:** `:120`'deki tenant lifecycle kapısı `isActive`'den **öncedir**; `off-acc-f851d975`
+tenant'ının lifecycle değeri de koşum anında ölçülmelidir. DB erişilemediği için bu turda
+**ölçülemedi**.
+
+#### 8.16.5 A-07 paketi — durum
+
+F04 owner GO'sunu kendi kanalından aldı ve çalıştırma paketini üretti (PR #2589,
+`project/apps` deltası 0). Paketin kendi doğrulaması: **üç bağımsız kapı da bayrağı açmadan
+durdurdu** (yükseltilmemiş komut `exit 2` · ön ölçüm `exit 1`, `PF-1.write` EPERM +
+`PF-4.db` 500 + 13 ölçüt OLCULEMEDI · kapanış kuru koşum `exit 1`). GO'nun *"kapatma ve
+toparlanma yolu hazır olmadan bayrağı açma"* şartı **kodla zorlanıyor**.
+
+F04'ün ölçtüğü ikinci kusur: kanonik kökte `@prisma/client` ve `bcrypt` **yoktur**; sabit
+gömülü yol owner'ın makinesinde "modül yok" ile düşerdi. Paket aday yolları sırayla dener ve
+kullandığını yazdırır; ayrıca Prisma client'ın `approvalRequestId`/`approvalAttempt`
+alanlarını tanıdığını sınar — tanımasa **kanıt sorgusu sessizce boş dönerdi** ve A-07 yine
+ölçülemez kalırdı. Bu, "sessiz ölçülemezlik" sınıfının yeni bir örneğidir.
+
+**Fixture ve beş ön koşul OLCULEMEDI** (DB yok); son bilinen durum **bayat** sayılır ve paket
+koşum anında yeniden ölçer, tutmazsa durur.
+
+#### 8.16.6 Koşum için gereken iki şey — ikisi de owner'da
+
+1. Veritabanı ayağa kalksın (Docker Desktop owner tarafından başlatılır).
+2. Owner yükseltilmiş terminalinde tek komutu koşsun.
+
+Koşum sonrası ana yürütücüye gelecek üç kanıt: bayrak **KAPALI** (uçtan 403) · sentetik erişim
+**İPTAL** (401) · servis **TOPARLANDI** (PID değişti + istek işliyor + **DB'ye dokunan sınama
+geçti** — §8.16.3).
+
+**Sayaç 6/7 · hizmet 11/12 · bütünsel teslim İLAN EDİLMEZ.**
