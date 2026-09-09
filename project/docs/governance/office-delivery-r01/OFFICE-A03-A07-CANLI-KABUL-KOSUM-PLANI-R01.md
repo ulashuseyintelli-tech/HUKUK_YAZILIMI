@@ -59,6 +59,36 @@ F01 negatif) · `StaffMember` · `Lawyer`(ikinci) — **7 satır**
 aksi halde K5 staleness devreye girer (`caseStatus zaten hedef` → STALE) ve **yürütme izi
 hiç oluşmaz**.
 
+#### 2.1.1 A-07 ön koşul kontrol listesi — **yürütme izinin oluşmadığı BEŞ yol**
+
+Kaynakta doğrulandı (`apps/api/src/modules/office-approval/office-approval-executor.service.ts`,
+aday `2187a78b`). **Kritik ayrım görünürlüktür:** ilk iki satır isteği *başarılı gösterir*.
+
+| # | Koşul | Davranış | Görünürlük |
+|---|---|---|---|
+| **K5** | `case` YOK **∨** `caseStatus` **zaten** `intent.status` (`:193`) | `markExecutionStale` → `STALE` | ⚠ **SESSİZ** — 2xx döner, iz YOK |
+| **—** | `savedIntent` şekil-geçersiz / bozuk `CHANGE_STATUS` (`:105`) | `markExecutionFailed` → `FAILED` | ⚠ **SESSİZ** — 2xx döner, iz YOK |
+| **K6** | `executionStatus ≠ NOT_RUN` (`:85`) | `ConflictException` | **409** — gürültülü |
+| **K3** | eşzamanlı/çift claim; `NOT_RUN→RUNNING` CAS (`:111`) | `ConflictException` | **409** — gürültülü |
+| **—** | `approverUserId` boş (bozuk/legacy satır) (`:94`) | `ConflictException` | **409** — gürültülü |
+
+**Neden önemli:** iki SESSİZ yolda `execute` başarılı görünür, ama `CaseStatusHistory` üzerinde
+`approvalRequestId`/`approvalAttempt` bağı **hiç yazılmaz**; `reconcile` bu bağı arayamadığı için
+**`BELİRSİZ`** döner (`EXECUTION_EVIDENCE_NOT_FOUND`) ve **A-07 sessizce kapanamaz**. Yanlış başarı
+değil — *ölçülemezlik*. A-07'nin ıskalanmasının en olası yolu budur.
+
+**Fixture zorunlulukları (koşumdan önce tek tek doğrulanır):**
+
+1. `Case.caseStatus` **DERDEST dışı** bir başlangıç **VE** `intent.status` bundan **farklı**.
+2. `OfficeApprovalRequest.executionStatus` = **`NOT_RUN`** (fixture yeniden kullanılmaz).
+3. `approverUserId` **dolu** (`APPROVED`/`APPROVED_WITH_CHANGES` yolundan gelmiş olmalı).
+4. `savedIntent` **şekil-geçerli** (`status` ∈ `LegalCaseStatus`).
+5. **Her `execute` denemesi TEK KEZ** koşulur; K6 fixture'ı tüketir.
+
+**409 kuralı:** `409` alınırsa *"zaten yapıldı"* **VARSAYILMAZ**. İz doğrudan aranır
+(`CaseStatusHistory` üzerinde `approvalRequestId` = talep id **VE** `approvalAttempt` = `retryCount`).
+Bulunamazsa sonuç **ÖLÇÜLEMEDİ**'dir; PASS **değildir**.
+
 ### 2.2 Yürütme — **4 YENİ SATIR + 2 FARKLI MEVCUT SATIR güncellemesi**
 **Yeni satırlar (4):** `AuditLog` ×2 (`OFFICE_APPROVAL_EXECUTION_STARTED` + `..._SUCCEEDED`)
 · `CaseStatusHistory` ×1 (bağ alanları dolu) · `DecisionLog` ×1.
@@ -205,6 +235,8 @@ Koşum `off-acc-<runId>` tenant'ı + aktör kullanıcıları **yaratır** → ca
 ---
 
 ## 5. A-07 canlı adımı — kapsam ve **yasak**
+
+**Ön koşul:** fixture **§2.1.1 kontrol listesini** geçmeden bu adım başlatılmaz.
 
 **Yapılacak:** `CHANGE_STATUS`/`LegalCase` fixture'ı hazırlanır → kontrollü uçtan
 `POST /office-approvals/:id/execute` → yürütme izi doğrulanır:
