@@ -5,7 +5,10 @@ Kimlik        : OFFICE-BUTUNSEL-CANLI-TESLIM-PLANI-R01
 Tarih         : 2026-09-08
 Ölçüm tabanı  : main = ddcd4aba9a7f431c41c39e8a6092476326b7d5b1 (#2553) · açık PR 0
 Canlı         : RELEASE20 @ 08ce8e2559b4d1d67fcee245413de510209507f3 · BUILD_ID LW4jlJUOMHrvVEqakKB3i
+                ⚠ BAYAT (2026-09-08 durumu). GÜNCEL 2026-09-09:
+                RELEASE21 @ 2187a78b1621f168605920cdffccb17381dc171a · BUILD_ID g91HUaBesekB-R2rRawQj
 Rollback      : RELEASE19 @ a60d772b6c53ece6bc23b77821a2921ab0ec7942
+                ⚠ BAYAT. GÜNCEL rollback hedefi: RELEASE20 @ 08ce8e25 (bkz. §8.14)
 Rol           : OFFICE'in TEK teslim planı. Paralel kayıt sistemi veya ikinci ana plan DEĞİLDİR;
                 mevcut kayıtları (ODM, product-backlog, decision-log, O-serisi kabulü) DEVRALIR.
 Yetki         : Owner GO 2026-09-08 (bütünsel canlı teslim). Mevcut mühür / tek-kullanım yetki /
@@ -865,3 +868,89 @@ kabul tenant'ı         : off-acc-f851d975 · approval cmtu2zfrt0003ef2wvv2e8c9z
 ```
 
 Sayaç **6/7**. A-07 açık. **Bütünsel teslim İLAN EDİLMEZ.**
+
+### 8.14 CANLI BAŞLIK DÜZELTMESİ · CUTOVER MAKBUZU · ROLLBACK KAYIT KUSURU (2026-09-09, append-only)
+
+CLIENT hattının bağımsız uzlaştırması (PR #2585, **başka oturum**) bu planda üç kayıt açığı
+buldu. Üçü de ana yürütücü tarafından **bağımsız ölçümle doğrulandı**; ikisi burada kapanıyor,
+biri owner kararına gidiyor.
+
+#### 8.14.1 Canlı başlık bayattı — düzeltildi
+
+Belge başlığı cutover'dan sonra üç ekleme (§8.11 · §8.12 · §8.13) boyunca hâlâ
+*"Canlı: RELEASE20"* diyordu. Başlığa **güncel satır eklendi**; 2026-09-08 değeri silinmedi,
+"BAYAT" olarak işaretlendi. **§8.2'nin (SABİT YAYIN ADAYI) satırına DOKUNULMADI** — o, cutover
+öncesi durumu kaydeden tarihsel metindir ve tarihsel anlatı kaydırılmaz.
+
+#### 8.14.2 Cutover makbuzu — kayda geçti
+
+Makbuz depoda bir cutover sonuç kaydı olarak yoktu (runId yalnız F04'ün kabul belgesinde
+geçiyordu). Ana yürütücü makbuzu kaynaktan okudu ve hash'ledi:
+
+```text
+dosya        CUTOVER-CUT-20260909-143723-0b9bc330.json
+sha256       7DEED4E7F1A9AE543A9676DE706ACAD9AA92DD0CA45DB04E1D2B91AC4564C856
+runId        CUT-20260909-143723-0b9bc330
+phase        COMMITTED
+verdict      C33_RELEASE21_CUTOVER_APPLIED_AND_VERIFIED
+kapılar      pass 31 / total 31 · failedGates []
+süre         2026-09-09T11:37:23Z → 11:39:04Z  (101 sn)
+rollback     performed = false
+dbMutations  0 · provisioningCalls 0 · forceKills 0
+dbPre/dbPost 130|130|0|0|7660053627876716578|6|37|2  (İKİSİ AYNI)
+authority    CONSUMED · claimConsumed true
+```
+
+`dbPre == dbPost` olduğundan **migration bu koşumda uygulanmamıştır**; ayrı işlemle daha önce
+uygulanmıştı (§8.10.6 ile tutarlı).
+
+#### 8.14.3 AÇIK KUSUR — rollback kaydındaki `buildId` yanlış
+
+Ana yürütücünün bağımsız ölçümü (`HY_C33_RELEASE21_CANDIDATE/cutover-staging/generations/` ve
+mühürlü `…R25_VERIFY_REPAIR_CANDIDATE_20260909T105432Z/evidence/`, **iki kopyada da aynı**):
+
+```text
+WEB-LAUNCHER-GENERATION.json
+  forwardGeneration   id=R21  buildId=g91HUaBesekB-R2rRawQj   root=HY_W4_RELEASE21   ✅
+  rollbackGeneration  id=R20  root=HY_W4_RELEASE20                                   ✅
+                      buildId=lt2ag97od6jT4jHG2NX7N                                  ❌
+```
+
+Ölçülen BUILD_ID'ler: R18 `lt2ag97od6jT4jHG2NX7N` · R19 `xFgJAoTFqlTjW89Zf2CYS` ·
+R20 `LW4jlJUOMHrvVEqakKB3i` · R21 `g91HUaBesekB-R2rRawQj`. Yani rollback kaydı **RELEASE18'in**
+BUILD_ID'sini taşıyor; etiket ve release kökü doğru, yalnız `buildId` alanı eski nesilden
+kalmış. (API tarafında karşılık gelen bir generation dosyası **yoktur**; kusur web kaydına özgüdür.)
+
+**Sınıf: KAYIT kusuru, YETENEK kusuru değil.** Geri dönüş malzemesi sağlamdır — release kökü,
+staged launcher'lar ve RELEASE20 `dist`/`.next` yerindedir. **Risk:** geri dönüş doğrulaması bu
+alana göre yapılırsa **yanlış FAIL** üretir ve "düzeltme" adına RELEASE18'e yönelme riski doğar.
+
+**Ana yürütücünün kusuru kayda geçer:** A-01 `COMPLETED` olarak kapatılırken bu alan
+denetlenmedi. Rollback "performed=false" diye doğrulanmış olması, rollback **kaydının**
+doğrulandığı anlamına gelmiyordu; kullanılmayan bir kapının kaydı da ölçülmeliydi. Kusuru
+başka bir hattın (CLIENT) uzlaştırması yakaladı.
+
+**Kapatılması owner kararıdır** — dosya mühürlü paket kapsamındadır ve ana yürütücü mührü
+değiştirmez. İki seçenek:
+
+| Seçenek | İçerik |
+|---|---|
+| **(A) Düzelt + yeniden mühürle** | `rollbackGeneration.buildId` → `LW4jlJUOMHrvVEqakKB3i`; paket yeniden mühürlenir |
+| **(B) Owner onaylı erratum** | Paket dokunulmaz; geri dönüş doğrulamasının bu alan yerine `LW4jlJUOMHrvVEqakKB3i` değerini esas alacağı **yazılı** olarak kaydedilir |
+
+Ana yürütücü değerlendirmesi: geri dönüş bugün **gerekmiyor** ve malzeme sağlam; (B) daha dar
+ve mührü korur. Karar owner'ındır.
+
+#### 8.14.4 Devralınan şerh — canlı host binary'si mühürlü kayıtta yok
+
+CLIENT hattı ayrıca şunu kaydetti: fiilen çalışan `hukuk-task-host.exe` sha256'sı ne forward ne
+rollback staged host ile eşleşiyor. Bu, `HOST-GENERATION.json`'daki
+`byteExactReproducible: false` / `semanticIdentity: true` kaydıyla **tutarlıdır** (host yerel
+derlenir; kimlik bağı `pins`'tir) ve C-02 `hostReplaced` kapısı geçmiştir. Yine de **çalışan
+host'un sha256'sı hiçbir mühürlü kayıtta bulunmuyor** — denetlenebilirlik açığı olarak
+devralınır, bu turda kapatılmaz.
+
+#### 8.14.5 Sayaç etkisi
+
+**YOK.** A-01 kapalı kalır (cutover uygulandı ve bağımsız doğrulandı); §8.14.3 bir **kayıt**
+kusurudur ve teslim tablosunda **açık kalem** olarak görünür. Sayaç **6/7**, A-07 açık.
