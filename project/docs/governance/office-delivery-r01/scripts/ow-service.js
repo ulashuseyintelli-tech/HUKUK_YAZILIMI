@@ -95,6 +95,24 @@ function setFlagFile(enabled) {
   return { path: p, enabled, otherLines: baseline.length };
 }
 
+/**
+ * BASLATMA ZINCIRI ILERLIYOR MU — `hukuk-task-host` -> `pwsh` -> `node`.
+ * Butunluk kapanisi (994 dosya / 286.5 MB) sirasinda host AYAKTA ama pwsh HENUZ YOK;
+ * bu "askida" degil "calisiyor" demektir. Kor ikinci restart'i onlemek icin olculur.
+ */
+function launcherProgress() {
+  const r = ps(
+    "$h=@(Get-CimInstance Win32_Process -Filter \"Name='hukuk-task-host.exe'\" | "
+    + "Where-Object { $_.CommandLine -like '* api*' }).Count; "
+    + "$p=@(Get-CimInstance Win32_Process -Filter \"Name='pwsh.exe'\" | "
+    + "Where-Object { $_.CommandLine -like '*start-api.ps1*' }).Count; "
+    + "$n=@(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | "
+    + "Where-Object { $_.CommandLine -like '*apps*api*dist*main.js*' }).Count; "
+    + '"host=$h pwsh=$p node=$n"',
+  );
+  return (r.out || 'OLCULEMEDI').trim();
+}
+
 /** Bos govdeye login: 400 = "istek isliyor". "Port dinliyor" bunun YERINE GECMEZ. */
 async function apiAnswering(base) {
   const r = await L.httpJson('POST', `${base}/auth/login`, { body: {}, timeoutMs: 5000 });
@@ -141,16 +159,43 @@ async function restartApiAndVerify(base, { expectFlag, token, label }) {
   const start = ps(`Start-ScheduledTask -TaskName '${TASK_NAME}'`);
   if (start.code !== 0) throw new Error(`[${label}] gorev baslatilamadi: ${start.err || start.out}`);
 
-  // (ii) istek isliyor mu — 60 s butce
-  const readyDeadline = Date.now() + 60000;
+  // (ii) istek isliyor mu
+  //
+  // ⚠ 2026-09-10 OLAYI — BU BUTCE 60 s IDI VE YANLIS "TOPARLANMA BASARISIZ" URETTI.
+  // Olculen gercek: `hukuk-task-host` pwsh'i spawn etmeden ONCE **994 dosya / 286.5 MB**
+  // uzerinde tam butunluk kapanisi (FULL CLOSURE) yapar. host-api.log'dan:
+  //     2026-09-08 23:15  ms=400      2026-09-09 18:15  ms=418
+  //     2026-09-09 14:37  ms=2590     2026-09-09 18:30  ms=394
+  //     2026-09-10 01:56  ms=**50698**   <- soguk dosya onbellegi; toplam ~61 s
+  // Yani API BASLIYORDU; 60 s butcesi sadece ERKEN bitti. Sonuc: yanlis basarisizlik,
+  // ardindan KOR bir ikinci stop/start — ki o da devam eden baslatmayi OLDURDU.
+  // DERS: butce en yavas MESRU baslangictan buyuk olmali VE bekleme "ilerleme var mi"
+  // olcumuyle desteklenmeli.
+  const readyBudgetMs = Number(process.env.OW_API_READY_BUDGET_MS || 300000); // 5 dk
+  const readyDeadline = Date.now() + readyBudgetMs;
   let ready = false;
+  let lastProgress = '';
   for (;;) {
     if (await apiAnswering(base)) { ready = true; break; }
+    // ILERLEME KANITI: baslatici zinciri ayakta mi? (host -> pwsh -> node)
+    const prog = launcherProgress();
+    if (prog !== lastProgress) {
+      lastProgress = prog;
+      L.log(`      [${label}] bekleniyor (+${Math.round((Date.now() - t0) / 1000)} s) · zincir: ${prog}`);
+    }
     if (Date.now() > readyDeadline) break;
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 1000));
   }
   const readyMs = Date.now() - t0;
-  if (!ready) throw new Error(`[${label}] API 60 s icinde istek islemedi (toparlanma BASARISIZ)`);
+  if (!ready) {
+    // KOR TEKRAR YASAK: baslatma DEVAM EDIYOR olabilir. Ikinci bir stop/start onu OLDURUR.
+    throw new Error(
+      `[${label}] API ${Math.round(readyBudgetMs / 1000)} s icinde istek islemedi — `
+      + `zincir durumu: ${launcherProgress()}. `
+      + 'UYARI: baslatma DEVAM EDIYOR olabilir (butunluk kapanisi ~51 s surebilir). '
+      + 'IKINCI BIR stop/start KOSMAYIN; once C:/Ops/hukuk/logs/api/host-api.log son satirina bakin.',
+    );
+  }
 
   // (i) PID DEGISTI mi
   const newPid = apiPid();
@@ -174,6 +219,6 @@ async function restartApiAndVerify(base, { expectFlag, token, label }) {
 }
 
 module.exports = {
-  FLAG_KEY, TASK_NAME, resolveEnvFile, apiPid,
+  FLAG_KEY, TASK_NAME, resolveEnvFile, apiPid, launcherProgress,
   readFlagFile, setFlagFile, apiAnswering, probeFlagEndpoint, restartApiAndVerify,
 };
