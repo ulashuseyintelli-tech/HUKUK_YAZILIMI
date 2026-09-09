@@ -747,3 +747,121 @@ doğrulandı (2 sentetik `User`: `isActive=false`, `tokenVersion=1`).
 A-07 · O-4 / O-4-LAWYER yenilemesi (§8.3, hâlâ yetki bekliyor) · AK-1a/1b/1c ve AK-2
 **KARAKTERİZE EDİLDİ / OWNER KARARI BEKLİYOR** (hüküm verilmedi, kod değişmedi) ·
 AK-3/CAP-07 B-01 sınırı. **Bütünsel teslim İLAN EDİLMEZ** — §6 bitiş çizgisi değişmedi.
+
+### 8.13 O-4/O-4-LAWYER KAPANDI · A-07'NİN GERÇEK MALİYETİ · CANLI PID DEĞİŞİMİ (2026-09-09, append-only)
+
+#### 8.13.1 O-4 ve O-4-LAWYER — §8.3 yenilemesi TAMAMLANDI
+
+Owner görevi OFFİCE 33'e doğrudan yetkilendirdi. Sonuç **PASS**:
+
+```text
+O-4        : GET /api/office      · incelenen alan-yolu 82 (RECURSIVE) · 0/7 sızıntı
+O-4-LAWYER : GET /api/lawyers/:id · incelenen alan-yolu 38 (RECURSIVE) · 0/7 sızıntı
+             id KEŞİFLE bulundu (listenin ilk kaydı) — tahmin yok
+araç       : paket DIŞI · sha256 5E1664A4… (ilk kullanımdan ÖNCE kaydedildi)
+             negatif kontrol 5/5 (gerçek deepWalk kodu çıkarılıp sınandı)
+yöntem     : HY_W4_RELEASE21 dist · İKİNCİ süreç port 8181 · disposable PG 5439
+             canlı süreç ve canlı DB HİÇ dokunulmadı
+```
+
+Ana yürütücü doğrulaması (salt-okuma): üretimde `o4-acc-%` tenant **0**; Tenant 7 · User 39 ·
+Case 32 · `CaseStatusHistory` **930** · ledger 130/130 — F04 koşumu sonrasıyla **aynı**.
+"Canlı DB yazma 0" iddiası **ölçülen kapsamda** doğrulandı.
+
+**§8.3'ün "ETKİLENDİ → A-01 sonrası YENİLENİR" satırları artık kapalıdır.**
+
+#### 8.13.2 Metodolojik boşluk — geriye dönük şerh (kapatılmadı, kaydedildi)
+
+`#2545`'in orijinal aracı (`Measure-OfficeO1toO9.ps1`) `KeysOf()` ile **yalnız üst seviye**
+anahtarlara bakıyordu. `/api/office` yanıtı `lawyers[]` ve `bankAccounts[]` **nested dizi**
+taşır → üst-seviye tarama bu diziler içindeki bir sızıntıyı **kaçırabilirdi**.
+
+RELEASE21 koşumunda sızıntı **yoktur** (recursive, 5/5 negatif kontrollü). Ancak `#2545`'in
+O-4 PASS'i bu sınırla okunmalıdır. **Bağlayıcı kural: sızıntı taraması RECURSIVE olur;
+üst-seviye anahtar taraması "alan yok" kanıtı sayılmaz.** Bu, kayıtlı "eksik desenle yapılan
+ölçüm yanlıştır" sınıfının aynısıdır.
+
+#### 8.13.3 CANLI PID DEĞİŞİMİ — A-01 pinleri bayat
+
+```text
+API : PID 50316 → 27312   başlangıç 15:30:03Z  (yerel 18:30:03, TRT = UTC+3)
+WEB : PID 53612 → 22440   başlangıç 15:15:03Z  (yerel 18:15:03)
+kök : İKİSİ DE  HY_W4_RELEASE21  →  RELEASE21 hâlâ canlı, SÜRÜM KAYMASI YOK
+sağlık: GET /api/office → 401 · web / → 200   (uygulama ayakta)
+```
+
+**Zaman dilimi şerhi (zorunlu):** makine `Turkey Standard Time`, **UTC+3**;
+`Win32_Process.CreationDate` **`Kind=Local`** döner. `.ToString('u')` yerel değere `Z` ekler ama
+**çevirmez** — bu programda daha önce de tuzak olmuştur. Yukarıdaki değerler
+`ToUniversalTime()` ile açıkça dönüştürülmüştür. Aynı dönüşüm: `.env` yerel 14:37:38 =
+**11:37:38Z**.
+
+#### 8.13.3.1 PIN bayat, KANIT değil — ayrım bağlayıcıdır
+
+Restart'lar **15:15:03Z / 15:30:03Z**, yani kabul koşumundan (tenant oluşturma **12:34:53Z**)
+**SONRA** gerçekleşti. Bu nedenle:
+
+| Kavram | Durum |
+|---|---|
+| **Koşum penceresindeki PID** (API 50316) — *kanıt* | **GEÇERLİ** — F04'ün "restart 0" iddiası o pencereye aittir ve doğrudur |
+| **Anlık canlı PID** (API 27312) — *durum* | A-01 kaydındaki pin **BAYAT**, yenisi yukarıdadır |
+
+**Bayat olan PIN'dir, KANIT değildir.** Bu iki kavram ayrı tutulmazsa okuyan "kabul kanıtı
+geçersiz" sanabilir; değildir. `.env` damgasının **11:37:38Z** (koşumdan da önce) kalması,
+restart'ların bayrakla **ilgisiz** olduğunun ayrı kanıtıdır; DELTA-A hâlâ kapalıdır.
+
+F04 restart'ların **tam dakika başında ve 15 dk arayla** olmasından zamanlanmış/watchdog
+davranışı **hipotezi** kurdu. Hipotez kanıt değildir ve böyle kaydedilir; ölçülecekse doğru yer
+görev geçmişi ve `hukuk-task-host` günlüğüdür.
+
+Kabul kanıtları etkilenmedi: `.env` `LastWriteTime` 14:37:38 (değişmedi) · `OFFICE_APPROVAL*`
+satırı yok · `CaseStatusHistory` 930 · ledger 130/130.
+
+**Sebep ÖLÇÜLMEDİ.** Zamanlanmış görevler `Running`, son tetikleme 23:15:01, `LastTaskResult`
+sıfır dışı — bundan sebep çıkarmak spekülasyon olur. Kayda geçen tek hüküm: **A-01 kaydındaki
+PID pinleri artık geçerli değildir**; "bayat dinleyici" disiplini gereği yeni pinler yukarıdadır.
+
+#### 8.13.4 A-07 — kalan maliyet BİR DEĞİL İKİ yetki kalemidir
+
+Önceki kayıt (§8.12.5) A-07'yi "tek yükseltilmiş dosya yazımı" olarak sunuyordu. **Eksikti.**
+Kapanış `revoke-access` `finally` yolunda koştu ve sentetik aktörlerin erişimi kapandı:
+
+```text
+off-f851d975-admin@office-acceptance.invalid  ADMIN  isActive=false  tokenVersion=1
+off-f851d975-staff@office-acceptance.invalid  USER   isActive=false  tokenVersion=1
+```
+
+Kontrollü yürütme ucunun yetki zinciri (koddan ölçüldü):
+`JwtAuthGuard` → `OfficeF01AuthorizationGuard` → serviste `assertEnabled()` → `role==='ADMIN'`
+→ tenant'ın ofisi **sunucuda** çözülür → `isF01ActorAuthorized`. Yani **canlı bir oturum
+açılışı şarttır**; `isActive=false` + `tokenVersion` artışı hem yeni login'i hem eski JWT'yi
+geçersiz kılar.
+
+**Sonuç: fixture hazır ama çalıştırılabilir değil.** İki yol vardır:
+
+| Yol | Canlı DB maliyeti | Risk |
+|---|---|---|
+| **(a) Sentetik ADMIN'i yeniden etkinleştir** | **2 satır güncelleme** | Doğrulanmış fixture korunur (K5/K6 ön koşulları ölçülmüş durumda) |
+| (b) Yeni `runId` ile baştan kurulum | 9+ yeni satır | Ölçülmüş ön koşul durumunun aynen yeniden üretilmesi garanti değil |
+
+(a)'nın üstünlüğü ölçülmüştür, tahmin değildir: A-07'nin **beş ön koşulu**
+(`APPROVED/NOT_RUN`, attempt 0, `caseStatus=ISLEMDE` ≠ intent `DERKENAR`, `savedIntent`
+şekil-geçerli, `approverUserId` dolu) **şu anda doğrulanmış durumda duruyor** ve yeniden
+üretilmek zorunda değildir. (b)'de hepsi yeniden kurulur ve **yeniden ölçülmesi gerekir**;
+"aynısı çıkar" varsayılamaz. Ana yürütücü değerlendirmesi: **(a) daha dar ve kanıtı korur.** Ancak `revoke-access` önceki
+yetkinin **kapanışıydı**; yeniden açılması yeni bir owner kararıdır ve burada varsayılmaz.
+
+**A-07'nin tam kalan listesi:** ① yükseltilmiş `.env` yazımı
+(`OFFICE_APPROVAL_CONTROLLED_EXECUTION_ENABLED=true`) · ② API restart · ③ sentetik erişimin
+yeniden açılması (yol a veya b) · ④ execute + reconcile · ⑤ erişimin yeniden kapatılması ·
+⑥ bayrak satırının kaldırılması + restart. **Cron bayrağı hiçbir adımda açılmaz.**
+
+#### 8.13.5 Sabit referanslar
+
+```text
+A-03…A-06 kabul sonucu : OFFICE-A03-A07-CANLI-KABUL-SONUCU-R01.md @ ed80da5a (#2582, CI 9/9)
+§8.12 kaydı            : 74d85d66 (#2583, CI 9/9)
+kabul tenant'ı         : off-acc-f851d975 · approval cmtu2zfrt0003ef2wvv2e8c9z (APPROVED/NOT_RUN)
+```
+
+Sayaç **6/7**. A-07 açık. **Bütünsel teslim İLAN EDİLMEZ.**
