@@ -954,3 +954,127 @@ devralınır, bu turda kapatılmaz.
 
 **YOK.** A-01 kapalı kalır (cutover uygulandı ve bağımsız doğrulandı); §8.14.3 bir **kayıt**
 kusurudur ve teslim tablosunda **açık kalem** olarak görünür. Sayaç **6/7**, A-07 açık.
+
+### 8.15 NİHAİ TESLİM TABLOSU · ERRATUM BAĞI · KALAN TEK ENGEL (2026-09-10, append-only)
+
+Owner GO'su ("OFFICE SON KABUL VE TESLİM TAMAMLAMA") gereği tamamlanan tablo. **Bütünsel teslim
+İLAN EDİLMEMİŞTİR** — koşullar §8.15.4'te tek tek gösterilmiştir.
+
+#### 8.15.1 Kabul sınıfı etiketleri — karıştırılmaz
+
+| Etiket | Anlamı | Canlı DB'ye yazma |
+|---|---|---|
+| **CK** | **CANLI KABUL** — canlı RELEASE21 üzerinde, sentetik tenant `off-acc-f851d975` ile | **VAR** (yalnız sentetik tenant; 23 kalıcı satır) |
+| **İÖ** | **İZOLE ÖLÇÜM** — canlı derlenmiş dist + disposable PostgreSQL | **0** |
+| **DV** | **DEVRALINAN** — RELEASE20 kabulü; aday deltası bu yüzeye dokunmadı | — |
+| **AÇIK** | Kabul üretilmedi | — |
+
+**İÖ, CK yerine geçmez.** İki sınıf teslim tablosunda ayrı sütunda tutulur.
+
+#### 8.15.2 TESLİM TABLOSU — 12 hizmet
+
+| # | Hizmet | Rol / yetki | Ürün-hukuki sınır | Canlı sürüm | Kabul sonucu | Kanıt konumu |
+|---|---|---|---|---|---|---|
+| **S-01** | Büro kimlik ve profili (`GET/PUT /office`) | F01-yetkili; kendi tenant'ı | S2 alan-minimizasyonu (F-B01-03/04) | RELEASE21 `2187a78b` | **CK A-03 PASS** (PUT) · **İÖ O-4 PASS** (GET, 82 alan-yolu, 0/7 sızıntı) | §8.13.1 · SONUÇ-R01 @ `ed80da5a` |
+| **S-02** | Banka hesapları (`POST/PUT/DELETE /office/bank-accounts`) | F01-yetkili | Finansal veri minimizasyonu (`iban`) | RELEASE21 | **CK A-03 PASS** — yazma yolu ilk kez doğrudan kabul edildi | SONUÇ-R01 @ `ed80da5a` |
+| **S-03** | E-posta/SMTP (`GET/PUT /office/smtp-settings`) | F01-yetkili | `smtpPass` MASKED/NULL | RELEASE21 | **CK A-03 PASS** · **DV O-1/O-3/O-5** | SONUÇ-R01 · #2545 |
+| **S-04** | SMS (`GET/PUT /office/sms-settings`) | F01-yetkili | `smsApiKey`/`smsApiSecret` maskeli | RELEASE21 (rota) | **CK A-03 PASS** · **DV O-1/O-3/O-5** · ⚠ **sağlayıcı NOT_CONFIGURED** — ürün sınırı, kusur değil | SONUÇ-R01 · F05 kaydı |
+| **S-05** | Karşılama ayarları | F01-yetkili | — | RELEASE21 | **CK A-03 PASS** · **DV O-1/O-3/O-5** | SONUÇ-R01 |
+| **S-06** | İİK-78 ayarları | F01-yetkili | Ürünün uyguladığı İİK m.78 parametreleri; **genel hukuki uygunluk iddiası ÜRETİLMEZ** | RELEASE21 | **CK A-03 PASS** · **DV O-1/O-3/O-5** | SONUÇ-R01 |
+| **S-07** | Vekalet süre-dolumu ayarları | F01-yetkili | S2 omit (`poaExpiryRecipientLawyerIds`) | RELEASE21 | **CK A-03 PASS** · **DV O-3** (EXACT 2 anahtar) | SONUÇ-R01 |
+| **S-08** | Eskalasyon ayarları | F01-yetkili | S2 omit (3 alan) | RELEASE21 | **CK A-03 PASS** · **DV O-3/O-7/O-9** | SONUÇ-R01 · #2545 |
+| **S-09** | Avukat yönetimi (9 rota `/lawyers`) | F01-yetkili; yetki/rütbe alanları H2 aktörüne kilitli | P01 credential omit · #2511/F-B01-05 DTO yazma sınırı | RELEASE21 | **CK A-04 PASS** (DTO reddi dâhil) · **İÖ O-4-LAWYER PASS** (38 alan-yolu, 0/7) | §8.13.1 · SONUÇ-R01 |
+| **S-10** | Personel yönetimi (6 rota `/staff`) | Okuma oturumlu; yazma F01 | Liste maskeleme · `isActive` sınırı | RELEASE21 | **CK A-04 PASS** (yazma) · **CK A-05 PASS** (okuma, maskeleme) | SONUÇ-R01 |
+| **S-11** | Raporlama hattı (6 rota `/reporting-lines`) | **Yalnız ADMIN** | D-WR-6 FOUNDER `ANY_ONE` | RELEASE21 | **CK A-06 PASS** — RELEASE20'de hiç kabul yoktu | SONUÇ-R01 |
+| **S-12** | Büro onay akışı (8 rota `/office-approvals`) | Oturumlu aktör; `isApproverEligible` | ADR-009 tek onay motoru · OD-12/OD-13 OPTION B | RELEASE21 | ⛔ **AÇIK — A-07 OLCULEMEDI** (hazırlık 5/5 PASS, yürütme başlamadı) | §8.12.3 · §8.13.4 |
+
+**Doğrudan canlı kabulü olan hizmet: 11/12.** Açık: **S-12**.
+
+RELEASE20 tablosunda "doğrudan kabulü yok" olan dört hizmetten üçü (S-02 yazma yolu, S-10, S-11)
+bu turda **CK ile kapandı**; dördüncüsü (S-12) A-07'ye bağlıdır.
+
+#### 8.15.3 Release ve rollback kanıtları
+
+| Kalem | Durum | Konum |
+|---|---|---|
+| Cutover makbuzu | ✅ `COMMITTED` · 31/31 · sha256 `7DEED4E7…` | §8.14.2 |
+| Migration | ✅ ledger 129→130, ayrı işlem, cutover'da `dbPre == dbPost` | §8.14.2 · §8.10.6 |
+| Rollback malzemesi | ✅ RELEASE20 kökü + staged launcher'lar byte-exact | ERRATUM §2.2 |
+| Rollback **kaydı** (`buildId`) | ✅ **ERRATUM ile çözüldü** — hiçbir çalıştırılabilir yolda zorunlu kapı değil (ölçüldü) | `OFFICE-ROLLBACK-BUILDID-ERRATUM-R01.md` |
+| Jeneratördeki kök neden | ⚠ **AÇIK** — dar düzeltme incelemeye sunuldu, **uygulanmadı**; literal kalırsa R21→R22 forkunda **tekrarlar** | ERRATUM §4 |
+| Çalışan host sha256'sı | ⚠ **AÇIK** — hiçbir mühürlü kayıtta yok; sonradan ölçüm mühürlü kanıt SAYILMAZ | ERRATUM §5 |
+
+**Owner kuralı uygulandı:** *"release/rollback kanıtları tam"* ayağı, host denetlenebilirlik
+açığı nedeniyle **tam karşılanmamaktadır** ve bu açıkça kaydedilir — kapandı denmez.
+
+#### 8.15.4 GO-COMPLETE koşulları — tek tek
+
+| Koşul | Durum |
+|---|---|
+| A-07 kabulü doğrulanmış | ⛔ **HAYIR** — koşulmadı |
+| Bayrak kapatma / erişim iptali / toparlanma doğrulanmış | ⛔ **HAYIR** — A-07'ye bağlı |
+| Rollback kayıt kusuru operasyonel karşılığıyla çözülmüş | ✅ **EVET** — erratum + ölçülmüş tüketici analizi |
+| Kayıt PR'ları CI PASS + squash-merge, main sync, temizlik | ✅ #2582 `ed80da5a` · #2583 `74d85d66` · #2584 `a76b119e` · #2586 `28f41b68` |
+
+**İki koşul eksik olduğu için bütünsel teslim İLAN EDİLMEZ.** Sayaç **6/7**.
+
+#### 8.15.5 Kalan tek somut engel
+
+**F04 oturumu ARŞİVLENMİŞ durumdadır** (`isArchived: true`). Ana yürütücünün arşivden çıkarma
+yetkisi/aracı **yoktur** — mevcut oturum yönetimi aracı yalnız arşivleyebilir. Owner arşivden
+çıkarmayı onaylamıştır ancak işlemin **uygulamanın Arşiv listesinden owner tarafından** yapılması
+gerekir.
+
+Bu yapılmadan A-07 için hazırlık paketi F04'e iletilemez ve ikinci yürütücü oluşturma yasağı
+gereği başka bir oturuma verilemez.
+
+**Gereken eylem sırası:**
+
+1. Owner, `OFFİCE 33 - F04` oturumunu Arşiv listesinden geri açar.
+2. Owner, §8.15.6'daki GO metnini **F04'ün kendi kanalına** yazar.
+3. F04 hazırlık paketini üretir ve doğrular (canlı yazma yok), owner'a **tek çalıştırılabilir
+   paket** sunar.
+4. Owner yükseltilmiş terminalinde `.env` satırını açar; F04 kabulü koşar; kapatma, erişim
+   iptali ve toparlanma doğrulanır.
+5. Ana yürütücü bütünsel teslim kaydını yayımlar.
+
+#### 8.15.6 F04 için owner GO metni — owner'ın KENDİ kanalından yazılacak
+
+Bu metin ana yürütücü tarafından **hazırlanmıştır**; yetki ancak owner onu F04'ün kendi
+kanalına yazdığında doğar. Ana yürütücünün ilanı bu metnin yerine **geçmez**.
+
+```text
+OWNER GO — OFFICE A-07 KONTROLLU YURUTME KABULU (tek kullanimlik)
+
+Kapsam   : A-07 (DELTA-A execute + reconcile). MEVCUT fixture ile devam - YOL (a).
+Oturum   : bu oturum. Ikinci yurutucu olusturulmayacak; kanitlar ve harness korunacak.
+Tenant   : off-acc-f851d975 (MEVCUT). Yeni tenant/runId kurulumuna KENDILIGINDEN GECME.
+
+ON OLCUM (yurutmeden ONCE, yeniden olculecek):
+  tenant/kimlik bagi · bes on kosul · fixture APPROVED/NOT_RUN · attempt=0 ·
+  caseStatus=ISLEMDE. Tuketilmis execute islemini TEKRARLAMA.
+
+ERISIM   : off-acc-f851d975 icindeki MEVCUT sentetik ADMIN erisiminin kayitli IKI SATIRLIK
+           islemle YALNIZ kabul suresince yeniden acilmasi onaylidir.
+
+BAYRAK   : YALNIZ OFFICE_APPROVAL_CONTROLLED_EXECUTION_ENABLED kontrollu acilip kapatilir.
+           Buna bagli IKI API restart onaylidir. CRON BAYRAGI KAPALI KALACAK.
+           .env yazimini OWNER kendi yukseltilmis terminalinde yapar.
+
+YURUTUCUNUN HAZIRLIK YUKUMLULUGU (once hazirla ve DOGRULA, sonra owner'a sun):
+  - gercek EnvFile yoluna bagli acma VE kapama yordamlari
+  - ilk kullanim SHA-256 kayitlari
+  - toparlanma (recovery) adimlari
+  - owner'a TEK CALISTIRILABILIR PAKET
+  Sirlari terminale veya rapora DOKME.
+  KAPATMA VE TOPARLANMA YOLU HAZIR OLMADAN BAYRAGI ACMA.
+
+KAPANIS (basarisizlikta DA, finally/recovery yolunda):
+  bayragi kapat · API'yi yeniden baslat · sentetik erisimi revoke et · UCUNU DE DOGRULA.
+
+DISLAMALAR: mevcut ACL'ler gevsetilmeyecek · arac reddi veya erisim kontrolu
+  ATLATILMAYACAK · gercek tenant/alici islemi YOK · purge YOK · ayri finansal F04 kosumu YOK ·
+  yeniden muhur/deploy/migration/rollback YOK.
+
+Tek kullanimliktir, devredilemez, kosum bitince tukenir.
+```
