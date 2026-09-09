@@ -1099,15 +1099,40 @@ API PID 27312 / WEB 22440 ................. ayakta, RELEASE21
 
 **Gerçek etki: gerçek tenant'lar login olamıyor.** Bu, A-07'den önceliklidir.
 
-**Bilinen olay sınıfı.** 2026-08-28'de aynısı yaşandı ve teşhisi kayıtlıdır: Docker autostart
-**iki katmanda** kapalı (`settings-store.json AutoStart=false` **ve** `StartupApproved=03`),
-bu hâliyle **her reboot aynı kesintiyi üretir**. Kurtarma emsali: **Docker'ı owner başlattı;
+**⚠ ANA YÜRÜTÜCÜNÜN GERİ ALDIĞI İDDİA.** İlk raporda 2026-08-28 kaydına dayanılarak
+*"Docker autostart iki katmanda kapalı, her reboot aynı kesintiyi üretir"* denmişti. **Yanlıştır.**
+O kayıt sonuna kadar okunmamıştı; kusur **aynı gün `APPLY-R01` ile düzeltilmiştir**. Bugün ölçüldü:
+
+```text
+KATMAN 1  settings-store.json  AutoStart = True             ETKIN
+KATMAN 2  HKCU StartupApproved\Run "Docker Desktop" = 0x02   ETKIN
+HKCU Run girdisi ........................................... VAR
+com.docker.service ... Stopped / Manual  -> Docker Desktop TALEP UZERINE baslatir, KUSUR DEGIL
+```
+
+**Bu bir boot yapılandırması sorunu değildir; çalışan sürecin çıkmasıdır.** Owner'a "autostart'ı
+aç" denseydi **zaten açık olan** düzeltilmiş, gerçek sebep aranmamış kalırdı. Ders:
+**hatırlanan teşhis, yazıldığı andaki durumu anlatır; yeni olayda kök neden diye sunulmadan ÖLÇÜLÜR.**
+
+2026-08-28 kaydından **geçerli kalan** tek şey kurtarma emsalidir: **Docker'ı owner başlattı;
 ajan start yetkisini KULLANMADI (0 kez)**; 4 HUKUK container'ı `unless-stopped` ile
 kendiliğinden geldi. Bu turda da ne uygulayıcı ne ana yürütücü dokundu.
 
-**Fark:** o gün API crash-loop'taydı (`onModuleInit → $connect` boot'ta düşüyordu). Şimdi API
-ayakta — yani boot'ta DB **vardı**, sonradan gitti. Kesintinin başlangıç anı **ölçülmedi**;
-spekülasyon yapılmaz. Ölçülecek doğru yer Docker Desktop günlüğü ve görev geçmişidir.
+**Kesinti penceresi POZİTİF olarak sınırlandı.** `PrismaService.onModuleInit` şudur ve
+doğrulanmıştır: `async onModuleInit() { await this.$connect(); }` — DB yoksa bootstrap reddedilir
+ve süreç ölür. Bu, aşağıdaki çıkarımın taşıyıcı önculüdür:
+
+```text
+2026-09-08 20:03:57Z  son onyukleme
+2026-09-09 ~12:34Z    F04 kosumu CANLI DB'ye YAZDI (tenant olustu)   -> DB VARDI
+2026-09-09 15:30:03Z  API PID 27312 basladi ve DUSMEDI               -> DB VARDI
+2026-09-09 22:21Z     DB YOK, API hala ayakta
+```
+
+**Sonuç: kesinti 2026-09-09 15:30:03Z'den SONRA başladı ve bir reboot olayı DEĞİLDİR**
+(son önyükleme iki gün öncedir). API'nin hâlâ ayakta olması da bunu destekler: boot'ta bağlanmış,
+DB sonradan gitmiştir. **Sebep ölçülmedi**; spekülasyon yapılmaz. Ölçülecek doğru yer Windows
+olay günlüğü (kaynak "Docker Desktop") ve `%APPDATA%\Docker\log`'dur.
 
 **A-03…A-06 kabulleri ETKİLENMEZ** — geçmişte ölçüldü ve kayıtlıdır. Kesinti bugünün
 çalışabilirliğini etkiler, dünkü ölçümü geçersiz kılmaz.
