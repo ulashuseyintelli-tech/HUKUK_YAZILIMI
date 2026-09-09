@@ -382,3 +382,110 @@ hiçbir mühürlü kayıtta bulunmamaktadır** — denetlenebilirlik açığı o
 Bu ikisi kapandığında İ7 ölçütü tam karşılanır ve sayaç **6/17** olur. Hizmet kabulü bu
 işlemlerden **etkilenmez**: **0/8 tam** kalır — cutover kod sürümünü değiştirir, hizmet
 kabulü üretmez.
+
+
+---
+
+# 14. KAPANIŞ UZLAŞTIRMASI — OFFICE §8.14 SONRASI (2026-09-10, append-only)
+
+> §13, OFFICE §8.14 (#2586, squash `28f41b68`) **birleşmeden önce** yazılmıştı ve yalnız
+> **aday paketini** (`HY_C33_RELEASE21_CANDIDATE`) taramıştı. Bu bölüm, cutover'ın **fiilen
+> koşulduğu** R25 paketini de kapsayan salt-okuma uzlaştırmadır. Yeni koşum, migration, cutover,
+> yeniden mühürleme veya canlı kabul tekrarı **yapılmadı**. Canlı mutasyon **0**.
+
+## 14.1 OFFICE düzeltmesi — §8.14 ne yaptı, ne yapmadı
+
+| Kalem | §8.14 | Bu turda bağımsız doğrulama |
+|---|---|---|
+| Canlı başlık | güncel satır eklendi (`RELEASE21 @ 2187a78b… · g91HUaBesekB-R2rRawQj`), 2026-09-08 değeri **BAYAT** işaretli, §8.2 tarihsel metne dokunulmadı | `origin/main` satır 8-9'da mevcut ✔ |
+| Cutover makbuzu | depoya alındı: `CUTOVER-CUT-20260909-143723-0b9bc330.json` sha256 `7DEED4E7…`, `COMMITTED`, 31/31, `dbMutations 0` | dosyanın diskteki sha256'sı **birebir** `7DEED4E7F1A9AE543A9676DE706ACAD9AA92DD0CA45DB04E1D2B91AC4564C856` ✔ |
+| Rollback `buildId` kusuru | **açık kalem** olarak kaydedildi; iki seçenek (A: düzelt + yeniden mühür · B: owner onaylı erratum); ana yürütücü kendi kusurunu kayda geçirdi; karar owner'ın | aday paketi `packageDigest 851C07DF…` **değişmedi** → tarihsel mühür korunmuş ✔ |
+| Host hash şerhi | §13.7'den **devralındı, kapatılmadı** | **§14.3'te kapanıyor** — şerh eksik taramaya dayanıyordu |
+
+## 14.2 Bağ zinciri — makbuz ↔ canlı başlık ↔ rollback kaydı
+
+Cutover'ın **fiilen koşulduğu** paket: `HY_C33_RELEASE21_CUTOVER_R25_VERIFY_REPAIR_CANDIDATE_20260909T105432Z`.
+
+```text
+OWNER-RATIFICATION-C33-RELEASE21-CUTOVER-20260908-R02
+  └─ authority/CUTOVER-AUTHORITY.json   nonce c8c655b0…  singleUse  engine E991C78D…
+        boundIdentities: mainSha 2187a8b… · candidateDigest 569DDCE4… ·
+        manifestDigest D6082E19… · packageDigest 851C07DF… · ledger 130|130|0|0
+      └─ claims/CLAIM-c8c655b0….json    consumedUtc 2026-09-09T11:37:38Z  runId CUT-20260909-143723-0b9bc330
+            └─ cutover-receipts/CUTOVER-CUT-…json   P-02 MANIFEST 67 sapma=0 · P-03 engine=E991C78D…
+                  P-04 refParam=MATCH · P-05 buildId=g91HUaBesekB-R2rRawQj · COMMITTED · 31/31
+```
+
+**Etkin mühür = `MANIFEST.json` `payloadDigest 38CB70C74F0DFD1BC5D9D934AF59964D931C9502EAF3F034D1F740BD659AF98E`**
+(67 dosya). P-02 kapısı cutover anında "sapma=0" ölçtü; **bu turda 67 dosyanın tamamı diskle
+yeniden karşılaştırıldı: sapma 0.** Canlı başlık (§8.14.1) ile makbuz (§8.14.2) aynı kimliği
+taşır: kaynak `2187a78b…`, BUILD_ID `g91HUaBesekB-R2rRawQj`.
+
+**Rollback kaydı — yetkili olan doğrudur.** Mühürlü `docs/ROLLBACK-PINS.md` (MANIFEST'te, diskle
+birebir; orijinal R25 kopyasıyla **özdeş**):
+
+| Alan | Değer |
+|---|---|
+| Rollback hedefi | `HY_W4_RELEASE20` @ `08ce8e2559b4d1d67fcee245413de510209507f3` |
+| Rollback web BUILD_ID | **`LW4jlJUOMHrvVEqakKB3i`** ✔ (doğru) |
+| R20 üçlüsü | host `B2B11057…` · api `DC4C5AE4…` · web `E95EF7D7…` |
+| R20 kökü / `dist` / `.next` | diskte mevcut (§13.5'te doğrulandı) |
+
+Yanlış `buildId` (`lt2ag97od6jT4jHG2NX7N`) **yalnız aday paketinin staging dosyasında**
+(`cutover-staging/generations/WEB-LAUNCHER-GENERATION.json`) kalmıştır; bu dosya cutover
+motorunun rollback kararında **kullanılmaz** (OP-03b/P-13 kapıları `ROLLBACK-PINS.md` ve
+`.env` sha-pin'ini okur). Sınıf: **ikincil kayıt kusuru**, OFFICE §8.14.3'te owner kararına açık.
+
+## 14.3 Canlı host — tam hash ↔ üretim kaynağı ↔ yetkili uygulama kaydı
+
+§13.7'deki *"hiçbir mühürlü kayıtta yok"* şerhi **yanlıştı** — tarama yalnız aday paketinde
+yapılmıştı. R25 paketinde bağ **mühürlüdür**:
+
+| Bağ | Kayıt (MANIFEST'te, diskle birebir) | İçerik |
+|---|---|---|
+| **Tam hash** | `evidence/host-build-R21.txt` | `HOST R21 sha=1397C54C46D4E9979A79C929959129D54954F8CE36B7CFB333ED88C2522F9F22 bytes=26112 byteExact=False semantic=True pre!=post True api=True web=True` |
+| **Üretim kaynağı** | aynı dosya | `profileId=PRF-383c29db-…` · `SHA_PAPI=4ACA26CD…` · `SHA_PWEB=DA62DD2D…` · `MANIFEST=84E530B1…` — canlı launcher sha256'larıyla **birebir** (§13.3) |
+| **Yeniden üretim izi** | `docs/ROLLBACK-PINS.md` satır 37/47 · `FORK-PROVENANCE.json` `pins[0].to` / `rules[40].to` | *"host yeniden üretildi ve `FC686167…` → `1397C54C…` değişti; katman 2 forku yeniden koşuldu"* |
+| **Yetkili uygulama** | makbuz C-02 `host=True` (preimage→post) · P-03 `engine=E991C78D…` · authority/claim zinciri (§14.2) | host takası bu runId altında, tüketilmiş tek-kullanımlık nonce ile yapıldı |
+
+Canlı `hukuk-task-host.exe` bu turda yeniden ölçüldü: **`1397C54C…`** — kayıtla **birebir**.
+`byteExactReproducible:false` açıklaması bu bağın **yerine konmamıştır**; bağ, hash'in kendisi
+üzerinden kurulmuştur.
+
+## 14.4 Tarihsel paket/mühür korunmuş mu
+
+| Mühür | Değer | Durum |
+|---|---|---|
+| Aday `packageDigest` | `851C07DF…` | değişmedi ✔ (authority `boundIdentities` ile aynı) |
+| Aday `receiptDigest` | `94BAE511…` | değişmedi ✔ |
+| R25 immutable base `unsealedDigest` | `CC94722D…` | 55 dosya listesinden **yeniden hesaplandı, birebir** ✔ |
+| R25 etkin `payloadDigest` | `38CB70C7…` | 67 dosya diskle sapma 0 ✔ |
+
+APPROVED-IDENTITY (09:58Z) listesine göre sonradan değişen 5 dosya (`FORK-PROVENANCE.json`,
+`fork/fork-r24-to-r25.js`, `fork/templates/…forked.ps1`, `qualification/REAL-PRIMITIVES-RESULTS.json`,
+`qualification/Verify-Package.node.js`) VERIFY_REPAIR adayının **kayıtlı onarım deltasıdır**
+(`PACKAGE-IDENTITY.json` `repairScope`), mühür ihlali değildir; MANIFEST bu son hâli mühürler.
+
+## 14.5 İ7 ölçütü — tek kapanış sonucu
+
+R02: *"Cutover uygulandı ve doğrulandı; rollback hedefi kayıtlı."*
+
+| Ayak | Sonuç | Dayanak |
+|---|---|---|
+| Cutover uygulandı | ✅ | makbuz `COMMITTED` (depoda, sha `7DEED4E7…`) + §13.3 bağımsız ölçüm |
+| Doğrulandı | ✅ | 31/31 kapı (V-03: PRE-01/06/07/08) + OFFICE §8.12.2 + §13.3 + §14.2 zincir |
+| Rollback hedefi kayıtlı | ✅ | mühürlü `ROLLBACK-PINS.md`: RELEASE20 `08ce8e25…`, BUILD_ID `LW4jlJUO…`, üçlü hash; malzeme diskte |
+
+**İ7 KAPANDI → 6/17 tamam, 11 kalan.** §13.8'deki *"kapanmadı"* hükmü **düzeltilmiştir**:
+o hüküm rollback kaydını yalnız aday paketinin staging dosyasında aramıştı; cutover'ın
+kullandığı mühürlü kayıt doğrudur.
+
+**Taşınan açık kalem (kapanışı engellemez):** staging `buildId` kusuru — OFFICE §8.14.3, owner
+kararı (A/B). PR birleşmesi teknik kanıt sayılmadı; her bağ dosya hash'iyle ölçüldü.
+
+**Hizmet kabulü 0/8 tam kalır** — cutover kod sürümünü değiştirdi, hizmet kabulü üretmedi.
+
+## 14.6 Bu turda yapılmayanlar
+
+Migration · cutover · yeniden mühürleme · canlı kabul tekrarı · yeni koşum · OFFICE belgesine
+yazma · #2586'ya müdahale. Yalnız `SELECT`, dosya okuması ve hash hesabı.
