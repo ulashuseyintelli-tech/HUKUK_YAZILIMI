@@ -784,11 +784,35 @@ O-4 PASS'i bu sınırla okunmalıdır. **Bağlayıcı kural: sızıntı taramas�
 #### 8.13.3 CANLI PID DEĞİŞİMİ — A-01 pinleri bayat
 
 ```text
-API : PID 50316 → 27312   başlangıç 18:30:03
-WEB : PID 53612 → 22440   başlangıç 18:15:03
+API : PID 50316 → 27312   başlangıç 15:30:03Z  (yerel 18:30:03, TRT = UTC+3)
+WEB : PID 53612 → 22440   başlangıç 15:15:03Z  (yerel 18:15:03)
 kök : İKİSİ DE  HY_W4_RELEASE21  →  RELEASE21 hâlâ canlı, SÜRÜM KAYMASI YOK
 sağlık: GET /api/office → 401 · web / → 200   (uygulama ayakta)
 ```
+
+**Zaman dilimi şerhi (zorunlu):** makine `Turkey Standard Time`, **UTC+3**;
+`Win32_Process.CreationDate` **`Kind=Local`** döner. `.ToString('u')` yerel değere `Z` ekler ama
+**çevirmez** — bu programda daha önce de tuzak olmuştur. Yukarıdaki değerler
+`ToUniversalTime()` ile açıkça dönüştürülmüştür. Aynı dönüşüm: `.env` yerel 14:37:38 =
+**11:37:38Z**.
+
+#### 8.13.3.1 PIN bayat, KANIT değil — ayrım bağlayıcıdır
+
+Restart'lar **15:15:03Z / 15:30:03Z**, yani kabul koşumundan (tenant oluşturma **12:34:53Z**)
+**SONRA** gerçekleşti. Bu nedenle:
+
+| Kavram | Durum |
+|---|---|
+| **Koşum penceresindeki PID** (API 50316) — *kanıt* | **GEÇERLİ** — F04'ün "restart 0" iddiası o pencereye aittir ve doğrudur |
+| **Anlık canlı PID** (API 27312) — *durum* | A-01 kaydındaki pin **BAYAT**, yenisi yukarıdadır |
+
+**Bayat olan PIN'dir, KANIT değildir.** Bu iki kavram ayrı tutulmazsa okuyan "kabul kanıtı
+geçersiz" sanabilir; değildir. `.env` damgasının **11:37:38Z** (koşumdan da önce) kalması,
+restart'ların bayrakla **ilgisiz** olduğunun ayrı kanıtıdır; DELTA-A hâlâ kapalıdır.
+
+F04 restart'ların **tam dakika başında ve 15 dk arayla** olmasından zamanlanmış/watchdog
+davranışı **hipotezi** kurdu. Hipotez kanıt değildir ve böyle kaydedilir; ölçülecekse doğru yer
+görev geçmişi ve `hukuk-task-host` günlüğüdür.
 
 Kabul kanıtları etkilenmedi: `.env` `LastWriteTime` 14:37:38 (değişmedi) · `OFFICE_APPROVAL*`
 satırı yok · `CaseStatusHistory` 930 · ledger 130/130.
@@ -820,7 +844,11 @@ geçersiz kılar.
 | **(a) Sentetik ADMIN'i yeniden etkinleştir** | **2 satır güncelleme** | Doğrulanmış fixture korunur (K5/K6 ön koşulları ölçülmüş durumda) |
 | (b) Yeni `runId` ile baştan kurulum | 9+ yeni satır | Ölçülmüş ön koşul durumunun aynen yeniden üretilmesi garanti değil |
 
-Ana yürütücü değerlendirmesi: **(a) daha dar ve kanıtı korur.** Ancak `revoke-access` önceki
+(a)'nın üstünlüğü ölçülmüştür, tahmin değildir: A-07'nin **beş ön koşulu**
+(`APPROVED/NOT_RUN`, attempt 0, `caseStatus=ISLEMDE` ≠ intent `DERKENAR`, `savedIntent`
+şekil-geçerli, `approverUserId` dolu) **şu anda doğrulanmış durumda duruyor** ve yeniden
+üretilmek zorunda değildir. (b)'de hepsi yeniden kurulur ve **yeniden ölçülmesi gerekir**;
+"aynısı çıkar" varsayılamaz. Ana yürütücü değerlendirmesi: **(a) daha dar ve kanıtı korur.** Ancak `revoke-access` önceki
 yetkinin **kapanışıydı**; yeniden açılması yeni bir owner kararıdır ve burada varsayılmaz.
 
 **A-07'nin tam kalan listesi:** ① yükseltilmiş `.env` yazımı
