@@ -369,8 +369,11 @@ async function findAcceptanceField(prisma, runId) {
  *
  * Olculemeyen kalem "korundu" SAYILMAZ; bu durumda `preserved:false` doner.
  */
-async function revokeTenantAccess(prisma, tenantId) {
-  await assertOwnTenant(prisma, tenantId); // G-2
+async function revokeTenantAccess(prisma, tenantId, opts) {
+  // Sahiplik kapisi ENJEKTE EDILEBILIR (CLIENT I1b `cl-acc-` paketi ayni kapatma mantigini
+  // KOPYALAMADAN kullanir). Varsayilan F04'un kendi G-2'sidir; F04 cagiranlari degismez.
+  const assertOwn = (opts && typeof opts.assertOwn === 'function') ? opts.assertOwn : assertOwnTenant;
+  await assertOwn(prisma, tenantId); // G-2
   const T = { tenantId };
   const sel = { id: true, isActive: true, tokenVersion: true };
   const before = await prisma.user.findMany({ where: T, select: sel });
