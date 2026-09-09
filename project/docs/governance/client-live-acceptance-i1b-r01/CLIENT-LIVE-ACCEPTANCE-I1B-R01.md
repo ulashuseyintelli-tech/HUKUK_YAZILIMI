@@ -3,7 +3,7 @@
 ```text
 BELGE      : CLIENT-LIVE-ACCEPTANCE-I1B-R01
 İŞ         : R02 İ1b — "CANLI sentetik tenant tahsisi" (6/17 tamam · 11 kalan; İ1b AÇIK)
-DURUM      : İ1b CANLI YAZMA ONAYINA HAZIR — iki eksik DB dönünce kapatıldı (§9); canlı yazma YAPILMADI
+DURUM      : İ1b CANLI YAZMA ONAYINA HAZIR — R02: login sırası ölçülüyor + kalıcı cron etkisi kapatılıyor (§6/§7.2); canlı yazma YAPILMADI
 YETKİ      : Bu belge yetki ÜRETMEZ. R02 İ1b'ye yetki VERMEZ; production DB yazımı
              yalnız owner'ın YAZILI GO'su (CL_OWNER_GO_REF) ile başlar.
 YAPILMADI  : canlı yazma · İ8…İ15 · Docker/canlı DB'yi başlatma (owner tarafından döndü)
@@ -83,7 +83,7 @@ slug listesini kayda alır.
 
 | Cron | Kapı | Sentetik alana etkisi |
 |---|---|---|
-| `AutomationService.updateRiskScores` (her gün 00:00) | `tenant ACTIVE · status ACTIVE` — bayrak YOK | **günde 1 `Case.update{riskScore}` + 1 `RiskReport` satırı** — alan bir gece açık kalırsa **kabul edilen ek yazma**; aynı gün kapanırsa 0 |
+| `AutomationService.updateRiskScores` (her gün 00:00) | `tenant.lifecycle ACTIVE · Case.status ACTIVE` (`automation.service.ts:308`) — bayrak YOK, **kullanıcı `isActive`'ine BAKMAZ** | **Kullanıcı erişimi kapansa da KALICI:** Case ACTIVE kaldığı sürece **her gün** 1 `Case.update{riskScore}` + 1 `RiskReport`. Önceki *"sadece gece açık kalırsa"* ifadesi **yanlıştı** — düzeltildi. Kapanışta `Case.status→CLOSED` (§4.3) bu maruziyeti **0**'a indirir; disposable'da ölçüldü (§7.2) |
 | `updateDaysLeft` (01:00) | `nextActionAt not null` | 0 (alan `nextActionAt` null) |
 | `processPendingCases` (5 dk) | `isAutoMode true` (varsayılan false) + `isAutomationEnabled` | 0 |
 | Aylık ekstre (`0 3 1 * *`, bayrak **açık**) | `client.isActive` + alıcı e-posta | e-posta yok → `SKIPPED_NO_RECIPIENT`, **ledger/claim satırı YOK, `Office` yaratılmaz** |
@@ -91,11 +91,16 @@ slug listesini kayda alır.
 | Adres görevi / eskalasyon / POA / bildirim süresi | mevcut `AddressTask` / `Task` / `PoA` / `NotificationQueue` satırları | 0 (alan bunları içermez) |
 | Icrabot outbox | `IcrabotOutboxAction` satırları | 0 |
 
-**Alan aynı gün kapatılırsa cron kaynaklı yazma: 0.** Gece açık kalırsa: günde +2 satır (yukarıda).
+**Kapanış (§4.3) uygulanmadan cron kaynaklı yazma her gün devam eder** (yalnız `updateRiskScores`; diğerleri 0). Kapanış uygulandıktan sonra: **0** — ürünün kendi yüklemiyle ölçülür (`cronPredicateAfter`).
 
-### 4.3 Kapanış yazması
+### 4.3 Kapanış yazması (revize — 2 satır)
 
-1 `User` satırında 2 alan: `isActive=false`, `tokenVersion++` (`f04-lib.revokeTenantAccess`).
+| # | Tablo | Alan | Neden |
+|---|---|---|---|
+| 1 | `User` (1 satır) | `isActive=false`, `tokenVersion++` | login → 401 (`auth.service.ts:125`); mevcut JWT → 401 (`validateUser :171/:185`) — `f04-lib.revokeTenantAccess` |
+| 2 | `Case` (1 satır) | `status ACTIVE→CLOSED` | kalıcı cron maruziyetini bitirir: üç case-tabanlı cron da yalnız `status ACTIVE` seçer (`automation.service.ts:53/123/308`); `CaseStatus.CLOSED`'a bağlı hiçbir kod yolu yok — `cl-lib.closeCaseCronExposure` |
+
+Kanıt satırı **silinmez**; `Tenant.lifecycle` **değiştirilmez** (ürün `ACTIVE→SUSPENDED`'e doğrudan izin vermez: `ALLOWED_TRANSITIONS ACTIVE:[QUIESCING]`, QUIESCING `lifecycleTarget` ister — bu yol kullanılmadı).
 Finansal/audit kanıt: bu alanda **hiç üretilmez** (finansal akış YOK — R02 ölçütü).
 
 ### 4.4 İ8+ kabulleri için gerekecek EK kayıtlar (bu pakette YAZILMAZ — ayrı onay)
@@ -128,7 +133,21 @@ canlıda gerçek alıcıya gönderim **yapısal olarak** mümkün değildir.
 
 ---
 
-## 6. Başarısızlık ve kurtarma (İ5b mekanizması)
+## 6. Gerçek yürütme sırası (kaynakla) ve başarısızlık/kurtarma
+
+### 6.1 Sıra — `cl-run.js` (parola yalnız bellekte; login in-process, hiçbir çıktıya/dosyaya yazılmaz)
+
+| Adım | Ne | Beklenen | Kaynak |
+|---|---|---|---|
+| 1 | `cl-01-setup.js` | 6 satır COMMIT | tek transaction, `EXPECTED` içeride |
+| 2 | **DOĞRULAMA-A** — aktif hesapla `POST /auth/login` → `GET /auth/me` | **201** · **200** | `@Post("login")` (`@HttpCode` yok) → 201; `validateUser` geçer |
+| 3 | `finally` → `cl-09` | `User.isActive=false`+`tokenVersion++` · `Case.status=CLOSED` | §4.3 |
+| 4 | **DOĞRULAMA-B** — aynı kimlikle login · **eski JWT** ile `/auth/me` | **401** · **401** | `auth.service.ts:125` (`!user.isActive`) · `validateUser :171` (`!isActive`) ve `:185` (`tokenVersion` uyuşmazlığı) |
+| 5 | **TEKRAR** — `cl-09` ikinci çağrı | `alreadyClosed=true`, `usersDeactivated=0`, exit 0 | `revokeTenantAccess` tekrar güvenliği (İ5b H-4) |
+
+Kurallar: doğrulama **ölçülemezse** (API yok/belirsiz) kapatma **yine denenir**, sonuç *ÖLÇÜLEMEDİ* olur ve BAŞARILI verilmez; kapanış doğrulanamazsa (`accessClosed`/`evidencePreserved`/`caseCronExposureClosed` biri false) BAŞARILI verilmez (exit 1). Tek başına bir 401 kanıt değildir — önce 201/200 görülmüş olmalıdır.
+
+### 6.2 Başarısızlık ve kurtarma (İ5b mekanizması)
 
 | Hata yolu | Oluşan alan | Kapatma / kurtarma |
 |---|---|---|
@@ -162,6 +181,15 @@ temizlenmez**; kapatıcı yalnız `cl-acc-<runId>` tenant'ının kullanıcılar�
 | **R2** atomiklik (`CL_ABORT_AFTER=Lawyer`) | setup exit 1 → bağımsız ölçüm `fieldExists:false` (Tenant+User+Lawyer **rollback**, yetim yok) → `cl-09` → `fieldExists:false · writeOperations 0 · "ALAN YOK — ölçüldü, varsayılmadı"` |
 | **Artık taraması** | disposable'da `cl-acc-` tenant **1** (R1, kapalı); R2'ninki yok |
 
+### 7.2 R02 provası — login sırası + kalıcı cron etkisi (disposable, yerel API `127.0.0.1:8098` → 5439)
+
+| Adım | Ölçülen |
+|---|---|
+| **R3** `cl-run.js` | `[S1] 6/6 · cl-acc-947b09d5` → `[DOĞRULAMA-A] login=201 · /auth/me=200` → `[KAPANIS]` `usersDeactivated 1 · tokenVersionBumped 1 · caseRowsUpdated 1 · cronPredicate 1→0 · caseCronExposureClosed true` → `[DOĞRULAMA-B] login=401 · eski JWT /auth/me=401` → `[TEKRAR] alreadyClosed=true usersDeactivated=0 exit=0` → **SONUÇ: BAŞARILI** |
+| **R3 bağımsız ölçüm** (ürünün kendi yüklemi) | `cronSelectableCases 0 · Case status CLOSED · riskReports 0 · users[isActive false, tokenVersion 1] · activeUsers 0 · office 0 · clientContact 0`; durum dosyası anahtarlarında sır yok |
+| **R3b** üçüncü bağımsız `cl-09` | `usersDeactivated 0 · alreadyClosed true · caseRowsUpdated 0 · cronPredicateAfter 0` · exit 0 |
+| **Karşı kanıt** (Point 2) | Önceki kapatıcıyla (yalnız kullanıcı) kapanan R1 tenant'ı `cl-acc-b846e372`: `activeUsers 0` **ama** `cronSelectableCases 1` (Case ACTIVE) → kalıcı günlük yazma **gerçek**ti. Yeni `cl-09`: `usersDeactivated 0 · alreadyClosed true · caseRowsUpdated 1 · cronPredicate 1→0` → sonra `cronSelectableCases 0 · CLOSED` |
+
 ---
 
 ## 8. Başarı ölçütü (İ1b kapanışı)
@@ -173,6 +201,9 @@ temizlenmez**; kapatıcı yalnız `cl-acc-<runId>` tenant'ının kullanıcılar�
 4. `CL-I1B-ACCESS-CLOSE`: `accessClosed=true`, `evidencePreserved=true`, `tokenVersionBumped=1`;
    aynı kimlikle login **401** (İ5b ölçüm kuralı: önce 201 görülmüş olmalı).
 5. Tekrar çağrı: `usersDeactivated=0`, `alreadyClosed=true`, exit 0.
+6. Kalıcı cron maruziyeti: `caseCronExposureClosed=true`, `cronPredicateAfter=0` (ürünün kendi yüklemi).
+
+Ölçüt 3/4/5/6 artık `cl-run.js` tarafından **koşumda ölçülür** (`CL-I1B-RUN` makbuzu, `verification` alanı).
 
 Bu ölçütler karşılanınca İ1b kapanır (**7/17**); hizmet kabulü **0/8 tam** kalır — İ1b alan kurar,
 hizmet kabulü üretmez.
@@ -194,33 +225,62 @@ hat kendi test konteynerini** `docker start` ile açtı (canlı servis değil).
 | 1 | Canlı sayım | Salt-okuma, 2026-09-10: **7 tenant** — `telli-hukuk` (user 9/8 aktif · client 16 · **Office+SMTP dolu — tek gerçek ofis**) · `local-development-office` (17/0) · `demo-firma` (8/3) · `c36-smoke-principal(-2)` (1/0) · `f04-acc-ccd471d3` (1/0) · `off-acc-f851d975` (2/0, Office var/SMTP boş). **`cl-acc-%` = 0** → çakışma yok; diğer programların sentetik alanları **tamamı kapalı** (0 aktif). Başka programın tenant'ına dokunma riski: G-1 listesi + önek taraması bu kümeyi kapsıyor |
 | 2 | Disposable prova | §7.1 — R1/R1b/R2 + NC 8/8 |
 
-## 10. Tek uygulanabilir onay paketi (eksikler kapandığında owner'a sunulacak metin)
+## 10. Tek uygulanabilir onay paketi (owner'a sunulan metin)
+
+**Paket kimliği:** bu belgenin birleştiği squash SHA; betik sha256'ları (bu revizyon):
+
+| Betik | sha256 |
+|---|---|
+| `cl-lib.js` | `4CCDEF0DA5DC3C06FC9ED73DDE28CD4D94D853E01004F425968AB4B3B84A9903` |
+| `cl-01-setup.js` | `C6E3D3FE845ED364B0E52F7A30F113BC516C8BC5D868D9B6C49D8D9DD61460FD` |
+| `cl-09-close-access.js` | `012739987ED4176A114D6A33F18C76ACF2DB8614F7C954B453E04126A98862C4` |
+| `cl-run.js` | `EE12BF26A9EA9EE336CC39694A059EE793E74225B3FEFA44E7C73BE256714E05` |
+| `cl-i1b-negative.js` | `66FEE566A0F0E58FB3FDEA6A1E0F555BF834734622B83491691165404AE340D4` |
+| `f04-lib.js` (İ5b kapatma mantığı, `opts.assertOwn`) | `1D35429566BC0A0469F44ED028FEF829AF204A90C9A5565C6882EF99C6305CA8` |
+
+**Windows / PowerShell (uygulanabilir biçim; sır hiçbir yere yazdırılmaz):**
+
+```powershell
+# Ana depo kökünde. Canlı DATABASE_URL, RELEASE21 .env'den OKUNUR — yazdırılmaz.
+$envLine = Select-String -Path 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE21\project\apps\api\.env' -Pattern '^DATABASE_URL=' | Select-Object -First 1
+$env:CL_DATABASE_URL = ($envLine.Line -replace '^DATABASE_URL=', '').Trim('"')
+$env:CL_ENVIRONMENT  = 'live'
+$env:CL_API_BASE_URL = 'http://127.0.0.1:8080/api'
+$env:CL_OWNER_GO_REF = '<OWNER-GO-CLIENT-I1B-YYYYMMDD-Rnn>'   # owner'ın YAZILI GO'su — bu belge doldurmaz
+$env:CL_STATE_FILE   = "$env:TEMP\cl-i1b\cl-state.json"; New-Item -ItemType Directory -Force "$env:TEMP\cl-i1b" | Out-Null
+node .\project\docs\governance\client-live-acceptance-i1b-r01\scripts\cl-run.js
+```
+
+Zorla sonlanma / eksik kapanış halinde (tekrarı güvenli; aynı GO ref gerekir):
+
+```powershell
+$env:CL_RUN_ID = '<runId>'   # cl-state.json veya CL-I1B-SETUP makbuzundan
+node .\project\docs\governance\client-live-acceptance-i1b-r01\scripts\cl-09-close-access.js
+```
 
 ```text
-KOMUT      : CL_ENVIRONMENT=live
-             CL_DATABASE_URL=<canlı DATABASE_URL — .env'den, yazdırılmaz>
-             CL_OWNER_GO_REF=OWNER-GO-CLIENT-I1B-<YYYYMMDD>-R01   ← owner'ın YAZILI GO'su
-             CL_STATE_FILE=<oturum dizini>/cl-state.json
-             node client-live-acceptance-i1b-r01/scripts/cl-run.js
-             (paket kimliği: bu belgenin birleştiği squash SHA; betik sha256'ları makbuzda)
-
 HEDEF      : 127.0.0.1:5432/hukuk_db · tenant cl-acc-<runId> (koşumda üretilir, önceden yok)
 
-YAZILACAK  : TAM 6 satır (Tenant · User · Lawyer · Client[e-posta YOK] · Case[otomasyon KAPALI]
-             · CaseClient) + kapanışta 1 User satırında 2 alan. Mevcut satır güncellemesi YOK.
-             Office satırı YOK. Finansal satır YOK. Geri alınamaz satır YOK.
-             Gece açık kalırsa: günde +1 Case.update{riskScore} +1 RiskReport (cron; §4.2).
+YAZILACAK  : KURULUM 6 satır (Tenant · User · Lawyer · Client[e-posta YOK] · Case[otomasyon KAPALI]
+             · CaseClient) — tek transaction, mevcut satır güncellemesi YOK, Office YOK, finansal YOK.
+             KAPANIŞ 2 satır güncellemesi: User{isActive=false, tokenVersion++} · Case{status=CLOSED}.
+             Kapanış sonrası cron kaynaklı yazma: 0 (ölçülür). Kapanış ÖNCESİ açık kaldığı her gün:
+             +1 Case.update{riskScore} +1 RiskReport (updateRiskScores, bayraksız).
+
+SIRA       : setup → login 201 / me 200 → finally kapatma → login 401 / eski JWT 401 → tekrar cl-09
+             (parola yalnız bellekte; login in-process; log/state/repo'ya yazılmaz)
 
 DIŞ ETKİ   : e-posta/SMS/portal gönderimi YAPISAL OLARAK imkânsız (Office SMTP yok, Client
              e-postası yok, Yol B uçları çağrılmaz). Zamanlanmış işler §4.2/§5'te bağlı.
 
 BAŞARISIZLIK: G-0/G-1/G-3 → yazma başlamaz · commit öncesi hata → yetim kayıt yok ·
              commit sonrası hata/zorla sonlanma → cl-09 runId ile kapatır (tekrarı güvenli) ·
-             kapanış ölçülemezse başarı SAYILMAZ (exit 2).
+             doğrulama ölçülemezse kapatma YİNE denenir, BAŞARILI verilmez ·
+             kapanış doğrulanamazsa exit 1/2 — başarı SAYILMAZ.
 
-BAŞARI     : §8'deki 5 ölçüt; makbuzlar CL-I1B-SETUP / CL-I1B-ACCESS-CLOSE.
+BAŞARI     : §8'deki 6 ölçüt; makbuzlar CL-I1B-SETUP / CL-I1B-ACCESS-CLOSE / CL-I1B-RUN.
 ```
 
-Owner'ın canlı yazma onayı **son adımdır**; İ1b ancak onaylı tahsis + §8 ölçütleri ile kapanır.
-İ8…İ15 **kendiliğinden başlatılmaz**. Betikler disposable'da **prova görmüştür** (§7.1); canlıya
-sürülecek kimlik, bu belgenin birleştiği squash SHA'sıdır.
+Owner'ın canlı yazma onayı **son adımdır**; `CL_OWNER_GO_REF` bu belge tarafından **doldurulmaz**.
+İ1b ancak onaylı tahsis + §8 ölçütleri ile kapanır (→ 7/17). İ8…İ15 **kendiliğinden başlatılmaz**.
+Betikler disposable'da prova görmüştür (§7.1 · §7.2).
