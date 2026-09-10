@@ -134,91 +134,276 @@ async function probeFlagEndpoint(base, token) {
   return { verdict: 'BELIRSIZ', status: r.status, body: r.body };
 }
 
+/** Baslatici zinciri SAYISAL: host (task-host api) · pwsh (start-api.ps1) · node (api main.js). */
+function launcherChain() {
+  const m = /host=(\d+) pwsh=(\d+) node=(\d+)/.exec(launcherProgress());
+  if (!m) return null;
+  return { host: Number(m[1]), pwsh: Number(m[2]), node: Number(m[3]) };
+}
+
 /**
- * RESTART + §3.4 DOGRULAMASI. Uc kosul birlikte saglanmazsa HATA firlatir (kosum durur).
- * `expectFlag`: 'ACIK' | 'KAPALI' — uctan beklenen durum.
+ * Calisan BASLATICININ (pwsh start-api.ps1) baslangic ani — Unix ms (UTC). Yoksa null.
+ * EnvFile'i okuyan surec BUDUR (node degil): "guncel dosyayi okudu mu" sorusu buna gore
+ * cevaplanir. Dogrudan Unix ms uretilir — ToString('u') saat-dilimi tuzagi YOK.
  */
-async function restartApiAndVerify(base, { expectFlag, token, label }) {
-  const oldPid = apiPid();
-  L.log(`      [${label}] eski API PID = ${oldPid === null ? 'OLCULEMEDI' : oldPid}`);
-  const t0 = Date.now();
+function launcherStartMs() {
+  const r = ps(
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='pwsh.exe'\" | "
+    + "Where-Object { $_.CommandLine -like '*start-api.ps1*' } | "
+    + 'Sort-Object CreationDate -Descending | Select-Object -First 1; '
+    + 'if ($p) { ([DateTimeOffset]($p.CreationDate.ToUniversalTime())).ToUnixTimeMilliseconds() }',
+  );
+  const n = Number(r.out);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
-  const stop = ps(`Stop-ScheduledTask -TaskName '${TASK_NAME}'`);
-  if (stop.code !== 0) throw new Error(`[${label}] gorev durdurulamadi: ${stop.err || stop.out}`);
+/** Portu dinleyen surecin PID'i (yoksa null). */
+function listenerPid(port = 8080) {
+  const r = ps(`(Get-NetTCPConnection -LocalPort ${Number(port)} -State Listen -ErrorAction SilentlyContinue `
+    + '| Select-Object -First 1 -ExpandProperty OwningProcess)');
+  const n = Number(r.out);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
-  // Eski dinleyicinin GERCEKTEN oldugunu bekle (azami 60 s) — "durdurdum" YETMEZ.
-  const killDeadline = Date.now() + 60000;
-  for (;;) {
-    const p = apiPid();
-    if (p === null) break;
-    if (Date.now() > killDeadline) throw new Error(`[${label}] eski dinleyici 60 s icinde olmedi (PID ${p})`);
-    await new Promise((r) => setTimeout(r, 500));
+/**
+ * DB'YE DOKUNAN sinama. Bos govdeye 400 DB'yi GORMEZ (ValidationPipe once calisir —
+ * 2026-09-10'da DB kapaliyken de 400 donuyordu). Olmayan kullaniciyla login DB sorgusu yapar:
+ *   401 = DB ULASILDI · 500 = DB YOK · 429 = rate-limit (KANIT DEGIL)
+ */
+async function dbReachable(base, tenantSlug) {
+  const r = await L.httpJson('POST', `${base}/auth/login`, {
+    body: { email: 'ow-db-probe@invalid.local', password: 'x', tenantSlug: tenantSlug || 'off-acc-f851d975' },
+    timeoutMs: 20000,
+  });
+  return { ok: r.status === 401, status: r.status, measurable: r.status === 401 || r.status === 500 };
+}
+
+/**
+ * KAPANIS KARARI — SAF FONKSIYON (canli yan etkisi YOK; test edilebilir).
+ *
+ * Soru: bayrak dosyada KAPALI yazildiktan sonra, calisan/baslayan API bu GUNCEL dosyayi mi
+ * okudu? Belirleyici olcu, EnvFile'i okuyan BASLATICININ (pwsh) baslangic anidir:
+ *   - baslatici, dosyanin SON yaziminden SONRA basladiysa  -> guncel dosyayi okudu.
+ *   - ONCE basladiysa -> eski dosyayi (bayrak ACIK olabilir) okumus olabilir.
+ *
+ * 2026-09-10 DERSI: "cevap yok" = "askida" DEGILDIR. host butunluk kapanisindayken (pwsh
+ * henuz yok) baslatma CALISIYORDUR; durdurmak onu OLDURUR. Bu durumda gelecek baslatici
+ * zorunlu olarak simdiden sonra baslayacagi icin guncel dosyayi okuyacaktir -> BEKLE.
+ *
+ * Donus: { action: 'DONE_LOADED_CURRENT' | 'WAIT' | 'RESTART' | 'START', reason }
+ */
+function decideCloseAction({ flagFileMtimeMs, chain, launcherStartMs: ls, answering }) {
+  const known = ls !== null && ls !== undefined;
+  const fresh = known && ls > flagFileMtimeMs;
+  const anyChain = !!chain && (chain.host > 0 || chain.pwsh > 0 || chain.node > 0);
+  if (answering) {
+    if (fresh) return { action: 'DONE_LOADED_CURRENT', reason: 'calisan baslatici dosyanin SON yaziminden SONRA basladi -> guncel (KAPALI) dosyayi okudu' };
+    return {
+      action: 'RESTART',
+      reason: known ? 'calisan baslatici dosyanin son yaziminden ONCE basladi -> eski dosyayi okumus olabilir'
+        : 'baslatici baslangici OLCULEMEDI -> guncel dosyayi okudugu KANITLANAMAZ',
+    };
   }
-  L.log(`      [${label}] eski dinleyici oldu (+${Date.now() - t0} ms)`);
+  if (anyChain) {
+    if (chain.pwsh > 0 && !fresh) {
+      return { action: 'RESTART', reason: 'baslatma suruyor ama baslatici yazimdan ONCE basladi -> bu baslatma ESKI dosyayla; atilmasi gerekir' };
+    }
+    return {
+      action: 'WAIT',
+      reason: chain.pwsh > 0 ? 'baslatma DEVAM EDIYOR ve guncel dosyayi okudu — DURDURULMAZ'
+        : 'host butunluk kapanisinda (pwsh henuz yok) — gelecek baslatici guncel dosyayi okuyacak; DURDURULMAZ',
+    };
+  }
+  return { action: 'START', reason: 'zincir BOS ve API cevap vermiyor — baslatilmali' };
+}
 
-  const start = ps(`Start-ScheduledTask -TaskName '${TASK_NAME}'`);
-  if (start.code !== 0) throw new Error(`[${label}] gorev baslatilamadi: ${start.err || start.out}`);
+/** Gercek G/C. Testler bunlarin HERHANGI birini sahtesiyle degistirebilir (io parametresi). */
+function defaultIo(base) {
+  return {
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    log: (m) => L.log(m),
+    readFlag: () => readFlagFile(),
+    setFlag: (v) => setFlagFile(v),
+    flagMtimeMs: () => fs.statSync(resolveEnvFile()).mtimeMs,
+    chain: () => launcherChain(),
+    progress: () => launcherProgress(),
+    launcherStartMs: () => launcherStartMs(),
+    apiPid: () => apiPid(),
+    answering: () => apiAnswering(base),
+    probeFlag: (token) => probeFlagEndpoint(base, token),
+    stopTask: () => {
+      const s = ps(`Stop-ScheduledTask -TaskName '${TASK_NAME}'`);
+      if (s.code !== 0) throw new Error(`gorev durdurulamadi: ${s.err || s.out}`);
+    },
+    startTask: () => {
+      const s = ps(`Start-ScheduledTask -TaskName '${TASK_NAME}'`);
+      if (s.code !== 0) throw new Error(`gorev baslatilamadi: ${s.err || s.out}`);
+    },
+  };
+}
 
-  // (ii) istek isliyor mu
-  //
-  // ⚠ 2026-09-10 OLAYI — BU BUTCE 60 s IDI VE YANLIS "TOPARLANMA BASARISIZ" URETTI.
-  // Olculen gercek: `hukuk-task-host` pwsh'i spawn etmeden ONCE **994 dosya / 286.5 MB**
-  // uzerinde tam butunluk kapanisi (FULL CLOSURE) yapar. host-api.log'dan:
-  //     2026-09-08 23:15  ms=400      2026-09-09 18:15  ms=418
-  //     2026-09-09 14:37  ms=2590     2026-09-09 18:30  ms=394
-  //     2026-09-10 01:56  ms=**50698**   <- soguk dosya onbellegi; toplam ~61 s
-  // Yani API BASLIYORDU; 60 s butcesi sadece ERKEN bitti. Sonuc: yanlis basarisizlik,
-  // ardindan KOR bir ikinci stop/start — ki o da devam eden baslatmayi OLDURDU.
-  // DERS: butce en yavas MESRU baslangictan buyuk olmali VE bekleme "ilerleme var mi"
-  // olcumuyle desteklenmeli.
-  const readyBudgetMs = Number(process.env.OW_API_READY_BUDGET_MS || 300000); // 5 dk
-  const readyDeadline = Date.now() + readyBudgetMs;
+/**
+ * KAPANIS: bayragi KAPAT + API'yi guncel dosyayla ayaga getir — basarisizlikta DA calisir.
+ *
+ * 1) Bayrak dosyada KAPALI yazilir (HER DURUMDA ILK IS).
+ * 2) `decideCloseAction` her turda OLCUME gore karar verir:
+ *      WAIT  -> baslatma suruyor; DURDURULMAZ (2026-09-10 kor ikinci stop'u tekrarlanmaz)
+ *      RESTART -> calisan/baslayan surec ESKI dosyayi okumus olabilir; TEK stop+start
+ *      START -> zincir bos; baslat
+ *      DONE  -> guncel dosyayi okuyan surec cevap veriyor
+ * 3) Sayaclar AYRI tutulur: restart GIRISIMI · baslatma VERILDI · baslatma GOZLENDI · TOPARLANDI.
+ *
+ * Donus: ledger (asla firlatmaz; hata `ledger.error`e yazilir — cagiran kapanisi YARIDA birakmaz).
+ */
+async function closeFlagAndRecover(base, { label = 'KAPANIS', budgetMs, maxRestarts = 1, io } = {}) {
+  const x = { ...defaultIo(base), ...(io || {}) };
+  const ledger = {
+    label, flagWasOn: false, flagFileOff: false,
+    restartAttempts: 0, startsIssued: 0, startsObserved: 0,
+    recovered: false, waits: 0, decisions: [], error: null, elapsedMs: 0,
+  };
+  const t0 = x.now();
+  try {
+    const before = x.readFlag();
+    ledger.flagWasOn = !!before.enabled;
+    if (before.enabled) x.setFlag(false);
+    ledger.flagFileOff = x.readFlag().enabled === false;
+    if (!ledger.flagFileOff) { ledger.error = 'bayrak dosyada KAPATILAMADI'; return ledger; }
+
+    const mtime = x.flagMtimeMs();
+    let lastLauncher = x.launcherStartMs();
+    const budget = budgetMs || Number(process.env.OW_API_READY_BUDGET_MS || 300000);
+    const deadline = t0 + budget;
+
+    for (;;) {
+      const ls = x.launcherStartMs();
+      if (ls !== null && ls !== undefined && ls !== lastLauncher) { ledger.startsObserved += 1; lastLauncher = ls; }
+      const d = decideCloseAction({ flagFileMtimeMs: mtime, chain: x.chain(), launcherStartMs: ls, answering: await x.answering() });
+      if (ledger.decisions[ledger.decisions.length - 1] !== d.action) {
+        ledger.decisions.push(d.action);
+        x.log(`      [${label}] karar=${d.action} · ${d.reason}`);
+      }
+      if (d.action === 'DONE_LOADED_CURRENT') { ledger.recovered = true; break; }
+
+      if (d.action === 'RESTART') {
+        if (ledger.restartAttempts >= maxRestarts) {
+          ledger.error = `restart limiti (${maxRestarts}) doldu — baslatici hala eski dosyayi okumus gorunuyor`;
+          break;
+        }
+        ledger.restartAttempts += 1;
+        await x.stopTask();
+        const killDeadline = x.now() + 60000;
+        while (x.apiPid() !== null) {
+          if (x.now() > killDeadline) { ledger.error = 'eski dinleyici 60 s icinde olmedi'; break; }
+          await x.sleep(500);
+        }
+        if (ledger.error) break;
+        await x.startTask();
+        ledger.startsIssued += 1;
+        continue;
+      }
+
+      if (d.action === 'START') {
+        if (ledger.startsIssued > maxRestarts) { ledger.error = 'baslatma limiti doldu — zincir bos kaliyor'; break; }
+        await x.startTask();
+        ledger.startsIssued += 1;
+        await x.sleep(2000); // zincirin belirmesine zaman tani; hemen ikinci START verme
+        continue;
+      }
+
+      // WAIT — baslatma SURUYOR: DURDURULMAZ.
+      if (x.now() > deadline) {
+        ledger.error = `butce (${Math.round(budget / 1000)} s) doldu — baslatma DEVAM EDIYOR olabilir; `
+          + 'KAPANIS ONU DURDURMADI. C:/Ops/hukuk/logs/api/host-api.log son satirina bakin.';
+        break;
+      }
+      ledger.waits += 1;
+      await x.sleep(1000);
+    }
+  } catch (e) {
+    ledger.error = ledger.error || `kapanis G/C hatasi: ${e && e.message}`;
+  } finally {
+    ledger.elapsedMs = x.now() - t0;
+  }
+  return ledger;
+}
+
+/**
+ * RESTART + §3.4 DOGRULAMASI (ACMA yolu). TEK stop + TEK start — ASLA ikinci kez durdurmaz.
+ * Basarisizlikta firlatilan hatanin `.ledger` alani sayaclari tasir (girisim ≠ baslatma ≠ toparlanma).
+ */
+async function restartApiAndVerify(base, { expectFlag, token, label, io, readyBudgetMs } = {}) {
+  const x = { ...defaultIo(base), ...(io || {}) };
+  const ledger = {
+    label, restartAttempts: 0, startIssued: 0, startObserved: false, recovered: false,
+    oldPid: null, newPid: null, readyMs: null, flagVerdict: 'OLCULEMEDI',
+  };
+  const fail = (msg) => { const e = new Error(`[${label}] ${msg}`); e.ledger = ledger; return e; };
+
+  ledger.oldPid = x.apiPid();
+  const oldLauncher = x.launcherStartMs();
+  x.log(`      [${label}] eski API PID = ${ledger.oldPid === null ? 'OLCULEMEDI' : ledger.oldPid}`);
+  const t0 = x.now();
+
+  ledger.restartAttempts = 1;
+  try { await x.stopTask(); } catch (e) { throw fail(e.message); }
+
+  const killDeadline = x.now() + 60000;
+  for (;;) {
+    const p = x.apiPid();
+    if (p === null) break;
+    if (x.now() > killDeadline) throw fail(`eski dinleyici 60 s icinde olmedi (PID ${p})`);
+    await x.sleep(500);
+  }
+  x.log(`      [${label}] eski dinleyici oldu (+${x.now() - t0} ms)`);
+
+  try { await x.startTask(); } catch (e) { throw fail(e.message); }
+  ledger.startIssued = 1;
+
+  // ⚠ 2026-09-10: butce 60 s idi; butunluk kapanisi 50 698 ms surdu (toplam ~61 s) ->
+  // yanlis "BASARISIZ" + kor ikinci stop. Butce 300 s ve ilerleme OLCULUR.
+  const budget = readyBudgetMs || Number(process.env.OW_API_READY_BUDGET_MS || 300000);
+  const deadline = x.now() + budget;
   let ready = false;
   let lastProgress = '';
   for (;;) {
-    if (await apiAnswering(base)) { ready = true; break; }
-    // ILERLEME KANITI: baslatici zinciri ayakta mi? (host -> pwsh -> node)
-    const prog = launcherProgress();
+    const ls = x.launcherStartMs();
+    if (ls !== null && ls !== undefined && ls !== oldLauncher) ledger.startObserved = true;
+    if (await x.answering()) { ready = true; break; }
+    const prog = x.progress();
     if (prog !== lastProgress) {
       lastProgress = prog;
-      L.log(`      [${label}] bekleniyor (+${Math.round((Date.now() - t0) / 1000)} s) · zincir: ${prog}`);
+      x.log(`      [${label}] bekleniyor (+${Math.round((x.now() - t0) / 1000)} s) · zincir: ${prog}`);
     }
-    if (Date.now() > readyDeadline) break;
-    await new Promise((r) => setTimeout(r, 1000));
+    if (x.now() > deadline) break;
+    await x.sleep(1000);
   }
-  const readyMs = Date.now() - t0;
+  ledger.readyMs = x.now() - t0;
   if (!ready) {
-    // KOR TEKRAR YASAK: baslatma DEVAM EDIYOR olabilir. Ikinci bir stop/start onu OLDURUR.
-    throw new Error(
-      `[${label}] API ${Math.round(readyBudgetMs / 1000)} s icinde istek islemedi — `
-      + `zincir durumu: ${launcherProgress()}. `
-      + 'UYARI: baslatma DEVAM EDIYOR olabilir (butunluk kapanisi ~51 s surebilir). '
-      + 'IKINCI BIR stop/start KOSMAYIN; once C:/Ops/hukuk/logs/api/host-api.log son satirina bakin.',
-    );
+    // TEKRAR DURDURULMAZ. Karar kapanis yoluna birakilir; o da OLCUME gore bekler/yeniden baslatir.
+    throw fail(`API ${Math.round(budget / 1000)} s icinde istek islemedi — zincir: ${x.progress()}. `
+      + 'Baslatma DEVAM EDIYOR olabilir; bu fonksiyon IKINCI KEZ DURDURMAZ.');
   }
 
-  // (i) PID DEGISTI mi
-  const newPid = apiPid();
-  if (newPid === null) throw new Error(`[${label}] yeni API PID OLCULEMEDI`);
-  if (oldPid !== null && newPid === oldPid) {
-    throw new Error(`[${label}] PID DEGISMEDI (${newPid}) — eski surec yasiyor olabilir`);
-  }
+  ledger.newPid = x.apiPid();
+  if (ledger.newPid === null) throw fail('yeni API PID OLCULEMEDI');
+  if (ledger.oldPid !== null && ledger.newPid === ledger.oldPid) throw fail(`PID DEGISMEDI (${ledger.newPid})`);
 
-  // (iii) bayrak UCTAN teyit
-  let flagVerdict = 'OLCULEMEDI';
   if (token) {
-    const pr = await probeFlagEndpoint(base, token);
-    flagVerdict = pr.verdict;
-    if (expectFlag && flagVerdict !== expectFlag) {
-      throw new Error(`[${label}] bayrak uctan '${flagVerdict}' olctuk, '${expectFlag}' bekleniyordu`);
+    const pr = await x.probeFlag(token);
+    ledger.flagVerdict = pr.verdict;
+    if (expectFlag && pr.verdict !== expectFlag) {
+      throw fail(`bayrak uctan '${pr.verdict}' olculdu, '${expectFlag}' bekleniyordu`);
     }
   }
-
-  L.log(`      [${label}] TOPARLANDI · PID ${oldPid} -> ${newPid} · hazir ${readyMs} ms · bayrak(uc) ${flagVerdict}`);
-  return { oldPid, newPid, readyMs, flagVerdict };
+  ledger.recovered = true;
+  x.log(`      [${label}] TOPARLANDI · PID ${ledger.oldPid} -> ${ledger.newPid} · hazir ${ledger.readyMs} ms · bayrak(uc) ${ledger.flagVerdict}`);
+  return { oldPid: ledger.oldPid, newPid: ledger.newPid, readyMs: ledger.readyMs, flagVerdict: ledger.flagVerdict, ledger };
 }
 
 module.exports = {
-  FLAG_KEY, TASK_NAME, resolveEnvFile, apiPid, launcherProgress,
-  readFlagFile, setFlagFile, apiAnswering, probeFlagEndpoint, restartApiAndVerify,
+  FLAG_KEY, TASK_NAME, resolveEnvFile, apiPid, launcherProgress, launcherChain, launcherStartMs,
+  listenerPid, dbReachable, readFlagFile, setFlagFile, apiAnswering, probeFlagEndpoint,
+  decideCloseAction, defaultIo, closeFlagAndRecover, restartApiAndVerify,
 };

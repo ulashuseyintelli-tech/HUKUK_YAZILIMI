@@ -192,7 +192,9 @@ const ACCEPTANCE_STEPS = [
       }
     } catch (e) {
       console.error(`\n!!! BAYRAK KAPATMA BASARISIZ: ${e && e.message}`);
-      console.error('    ELLE KAPATIN: EnvFile satirini kaldirin + Restart-ScheduledTask HukukPlatform-API');
+      // `Restart-ScheduledTask` bu makinede YOKTUR (olculdu 2026-09-10) — eskiden burada oneriliyordu.
+      console.error('    ELLE KAPATIN: EnvFile satirini kaldirin; host-api.log son satirina bakin (baslatma suruyorsa DURDURMAYIN);');
+      console.error('    gerekirse: Stop-ScheduledTask -TaskName HukukPlatform-API ; Start-ScheduledTask -TaskName HukukPlatform-API');
       failure = failure || `bayrak kapatma basarisiz: ${e && e.message}`;
     }
 

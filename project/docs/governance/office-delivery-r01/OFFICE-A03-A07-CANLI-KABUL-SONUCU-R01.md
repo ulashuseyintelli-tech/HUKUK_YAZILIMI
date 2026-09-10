@@ -63,6 +63,12 @@ Bu, önceki turlarda yalnız *yapılandırma düzeyinde* kanıtlanabilen şeyin 
 
 ### A-07 için gereken (owner/işletme kararı)
 Bayrak satırını yazabilecek **yükseltilmiş bir aktör** + `Restart-ScheduledTask HukukPlatform-API`.
+
+> **ERRATUM (2026-09-10, ölçüldü):** `Restart-ScheduledTask` **bu makinede yoktur** — ne
+> PowerShell 7'de ne 5.1'de (`Get-Command -Module ScheduledTasks` yalnız `Start-`/`Stop-ScheduledTask`
+> döndürür). Doğru yol A-07 paketinin kapanış betiğidir (`a07-owner-pack/a07-99-close.js`); elle
+> gerekirse `Stop-ScheduledTask` + `Start-ScheduledTask` — ama önce `C:/Ops/hukuk/logs/api/host-api.log`
+> son satırına bakılır: başlatma sürüyorsa **durdurulmaz**.
 Mekanizma ölçüldü ve pakette: görev `HukukPlatform-API` → `hukuk-task-host.exe` →
 `pwsh -File C:\Ops\hukuk\bin\start-api.ps1` → `node main.js`; EnvFile yolu betikteki
 `EnvFile = …` satırından okunur.
