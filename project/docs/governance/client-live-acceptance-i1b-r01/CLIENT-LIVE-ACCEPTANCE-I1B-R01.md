@@ -3,7 +3,7 @@
 ```text
 BELGE      : CLIENT-LIVE-ACCEPTANCE-I1B-R01
 İŞ         : R02 İ1b — "CANLI sentetik tenant tahsisi" (6/17 tamam · 11 kalan; İ1b AÇIK)
-DURUM      : İ1b CANLI YAZMA ONAYINA HAZIR — R02: login sırası ölçülüyor + kalıcı cron etkisi kapatılıyor (§6/§7.2); canlı yazma YAPILMADI
+DURUM      : İ1b CANLI KABUL KAPANDI (OWNER-GO-CLIENT-I1B-20260910-R01; §11) — canlı DB'ye 6 satır yazıldı, erişim+cron kapatıldı, bağımsız doğrulandı
 YETKİ      : Bu belge yetki ÜRETMEZ. R02 İ1b'ye yetki VERMEZ; production DB yazımı
              yalnız owner'ın YAZILI GO'su (CL_OWNER_GO_REF) ile başlar.
 YAPILMADI  : canlı yazma · İ8…İ15 · Docker/canlı DB'yi başlatma (owner tarafından döndü)
@@ -284,3 +284,79 @@ BAŞARI     : §8'deki 6 ölçüt; makbuzlar CL-I1B-SETUP / CL-I1B-ACCESS-CLOSE 
 Owner'ın canlı yazma onayı **son adımdır**; `CL_OWNER_GO_REF` bu belge tarafından **doldurulmaz**.
 İ1b ancak onaylı tahsis + §8 ölçütleri ile kapanır (→ 7/17). İ8…İ15 **kendiliğinden başlatılmaz**.
 Betikler disposable'da prova görmüştür (§7.1 · §7.2).
+
+
+---
+
+# 11. CANLI KABUL — İ1b KAPANDI (owner GO 2026-09-10, append-only)
+
+> Owner GO **`OWNER-GO-CLIENT-I1B-20260910-R01`** ile canlı `hukuk_db`'ye sentetik alan yazıldı,
+> erişim + kalıcı cron maruziyeti kapatıldı ve **bağımsız salt-okuma ölçümüyle** doğrulandı.
+> Deploy/migration/servis restartı/gerçek gönderim YOK. Betikler onaylanan ağaç `195bb1f1`
+> (origin/main'de değişmemiş, hash'ler §10) — çalışma yolu detached worktree, aynı hash.
+
+## 11.1 Uygulama öncesi (yazmadan önce ölçüldü)
+
+| Kapı | Sonuç |
+|---|---|
+| Betik hash'leri = onaylanan `195bb1f1` | 6/6 AYNI (§10 tablosu) |
+| Hedef DB | `127.0.0.1:5432/hukuk_db`, RELEASE21; API pid 50716; bogus login → **401** (API↔DB canlı bağ) |
+| `targetIsLiveDb` (telli-hukuk var) | **true** |
+| runId (yazmadan önce, sırsız kayıt) | **`afce215b`** → slug `cl-acc-afce215b` |
+| Çakışma / `cl-acc-%` | `collision:false` · toplam **0** → `safeToWrite:true` |
+
+## 11.2 Uygulanan akış (`cl-run.js`, tek yürütücü) — `CL-I1B-RUN result: PASS`
+
+```text
+[S1] KURULUM COMMIT EDILDI — 6/6 satir · cl-acc-afce215b
+[DOGRULAMA-A] login=201 · /auth/me=200
+[KAPANIS]  usersDeactivated 1 · tokenVersionBumped 1 · accessClosed true · evidencePreserved true
+           caseRowsUpdated 1 · cronPredicate 1→0 · caseCronExposureClosed true
+[DOGRULAMA-B] login=401 · eski JWT /auth/me=401
+[TEKRAR]   cl-09 ikinci cagri: alreadyClosed=true · usersDeactivated=0 · exit 0
+SONUC: BASARILI · Parola ve token hicbir yere yazilmadi
+```
+
+## 11.3 Bağımsız salt-okuma doğrulaması (uygulayıcı raporundan AYRI)
+
+**Alan (`cl-acc-afce215b`):** `user 1 · lawyer 1 · client 1 · case 1 · caseClient 1 · **office 0** ·
+**clientContact 0** · **riskReport 0**`. Kullanıcı `isActive=false · tokenVersion=1 · activeUsers 0`;
+`clientEmailNull true`; `caseStatuses [CLOSED]`; **`caseCronSelectable 0`** (ürünün kendi yükü:
+`tenant ACTIVE + Case ACTIVE` → seçilebilir Case yok). `tenant.lifecycle ACTIVE` (değiştirilmedi).
+
+**İzolasyon — diğer tenant'lar yazımdan etkilenmedi** (koşum öncesi §9 sayımıyla aynı):
+
+| slug | user | client | office |
+|---|---|---|---|
+| telli-hukuk (gerçek) | 9 | 16 | 1 |
+| demo-firma | 8 | 2 | 1 |
+| local-development-office | 17 | 0 | 1 |
+| c36-smoke-principal(-2) | 1 / 1 | 0 | 0 |
+| f04-acc-ccd471d3 | 1 | 1 | 0 |
+| off-acc-f851d975 | 2 | 0 | 1 |
+| **cl-acc-afce215b (yeni)** | **1** | **1** | **0** |
+
+`cl-acc-%`: 0 → **1** (yalnız bu koşum). Diğerlerinin `user/client/office` sayıları değişmedi;
+hiçbir sentetik alanda `Office` yaratılmadı; `ClientContact (EMAIL)` 0 → gönderim yolu açılmadı.
+
+## 11.4 §8 ölçütleri — HEPSİ KARŞILANDI
+
+| # | Ölçüt | Kanıt |
+|---|---|---|
+| 1 | `CL-I1B-SETUP` · environment=live · ownerGoRef · 6 satır | ✅ makbuz |
+| 2 | `cl-acc-%` 0→1; diğer User/Client/Office değişmedi; ClientContact 0 | ✅ §11.3 |
+| 3 | login **201** | ✅ DOĞRULAMA-A |
+| 4 | `accessClosed`+`evidencePreserved`+`tokenVersionBumped 1`; login **401** | ✅ kapanış + DOĞRULAMA-B |
+| 5 | tekrar `usersDeactivated 0`+`alreadyClosed true`+exit 0 | ✅ TEKRAR |
+| 6 | `caseCronExposureClosed`+`cronPredicateAfter 0` (bağımsız `caseCronSelectable 0`) | ✅ §11.3 |
+
+## 11.5 Kalan durum ve kanıt
+
+Sentetik tenant **`cl-acc-afce215b` kalıcı kabul kanıtı olarak korunur** (purge YOK — R02 İ1b
+"finansal/audit kanıt korunur"; owner "kanıt kayıtlarını koru, başka alanları temizleme").
+Erişim kapalı (login/JWT 401), cron maruziyeti kapalı (Case CLOSED). Durum dosyası
+`cl-state-afce215b.json` **sır içermez** (`passwordStored:false`; grep izi yok). Canlı API :8080
+(RELEASE21) ve Web :3002 süreçlerine dokunulmadı; migration/deploy/restart/gönderim yapılmadı.
+
+**İ1b KAPANDI.** Sayaç R02: **7/17** (İ1a·İ2·İ3·İ5b·İ6·İ7·İ1b), 10 kalan. Hizmet kabulü
+**0/8 tam** (İ1b alan kurdu, hizmet kabulü üretmedi). İ8…İ15 başlatılmadı.
