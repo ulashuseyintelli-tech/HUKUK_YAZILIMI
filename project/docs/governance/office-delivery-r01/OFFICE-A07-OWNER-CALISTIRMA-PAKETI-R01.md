@@ -6,6 +6,86 @@
 
 ---
 
+## R02 — YENİDEN KOŞUM ÖNCESİ SON DOĞRULAMA (2026-09-10) · **R01 §3–§4'ün YERİNE GEÇER**
+
+> Aşağıdaki §0–§8 **R01'dir ve tarihseldir.** §0'daki DB kesintisi aynı gün kapandı; güncel
+> ölçüm R02.4'te. R01 §3 kimlik tablosu ve §4 komutu **bu bölümle geçersizdir** (bkz. §4 erratum).
+
+### R02.1 Owner komutunun hedefi ve GERÇEKTEN yüklenen zincir (ölçüldü)
+
+Hedef worktree **`C:\Development\HY_WT\OFF_A02`**. "Main'de var" bilgisi çalıştırılan worktree'nin
+güncelliği **yerine sayılmadı**: HEAD, disk içeriği ve `@277c8496` blob'u ayrı ayrı ölçüldü.
+#2593 ile gelen `ow-service.js` diskte `4B072FEA…` = `@277c8496` idi (**doğrulandı**); bu R02 onu
+aşağıdaki sürüme günceller.
+
+Çalışma anı modül izi — `Module._load` kancası, cwd **`C:\Windows\System32`** (owner'ınki):
+
+| rol | dosya | SHA-256 |
+|---|---|---|
+| giriş (owner çalıştırır) | `a07-owner-pack/a07-run.ps1` | `8C8C30F01DD0817AE2E21682D08CFD479B6D1BFF15F49F4EFA4D02BFF6137196` |
+| tek yürütücü | `a07-owner-pack/a07-run.js` | `EA94B91D400ABA9032DD1CC518061C4994F9629F96D7BDC2DADF599C13177AD9` |
+| alt süreç (ön ölçüm) | `a07-owner-pack/a07-00-preflight.js` | `A7342E6BD700B146FED8D68BBCE42D12092AFD6F868C04825EC4F02752039318` |
+| kapanış / kurtarma | `a07-owner-pack/a07-99-close.js` | `669DA9DDE3E89AFD675D42F962914EC43EDD66A7D5836AA564F10BFC1A387444` |
+| hüküm (zorunlu küme) | `a07-owner-pack/a07-verdict.js` | `DC4E217AB99016B4EA9C087A9650ADE4C9D8E4627FB6CEB1AFC0A8C2DD241E38` |
+| bağımlılık çözücü | `a07-owner-pack/a07-deps.js` | `522BF7D4084D5BF14BF230C05E8D65671E81FE4A97725891D16503351919D75D` |
+| **yardımcı** — servis/bayrak/restart | `scripts/ow-service.js` | `9D0D32D1569147BCCA60871ECF8EFB3C8F816A718F75ADF9641483FC740A27B0` |
+| **yardımcı** — G-0…G-4, HTTP, login | `scripts/ow-lib.js` | `612D20D1439DCAFEEB2C86AC867988133F26AE900D95F102571240D3A12F988A` |
+
+R01 kimlik kaydında **`ow-lib.js` hiç yoktu** — yüklenen her yardımcı artık kayda bağlı.
+Çözücü seçimi: `@prisma/client` ve `bcrypt` → `C:\Development\HY_WT\OFF_A02\project\apps\api\node_modules\…`.
+Satır sonu: `core.autocrlf=false`, `.js/.ps1` için eol kuralı yok, index/worktree **LF**, CR baytı **0**
+→ merge sonrası checkout **bayt-özdeş**; SHA'lar değişmez.
+
+### R02.2 Raporlama kusurları — kaynakta bulundu, düzeltildi
+
+| # | Kusur (R01 kaynağında) | Düzeltme |
+|---|---|---|
+| **A** | Özet yalnız **koşulan** ölçütleri sayıyordu; akış A07-04'te düşerse `3/3 PASS · FAIL 0` basılıyordu | `a07-verdict.js`: **21 zorunlu ölçüt** önceden ilan edilir; koşulmayan her biri `NOT_EXECUTED` sayılır; hüküm `failure` değişkenine değil **kümenin tamamına** dayanır |
+| **B** | `RESTART SAYISI: restarts.length + 1` — kapanış restart'ı **varsayılıyor**, açma restart'ı yalnız başarılıysa sayılıyordu | Açma ve kapanış için **ayrı defter**: restart girişimi · başlatma verildi · **yeni başlatıcı gözlendi** · **toparlandı** — hepsi ölçülerek |
+| **C** | Kapanış, bayrak açıkken **körlemesine Stop** veriyordu; süren başlatmanın hangi dosyayı okuduğunu sormuyordu | `decideCloseAction` + `closeFlagAndRecover`: karar **EnvFile'ı okuyan başlatıcının (pwsh) başlangıcı** ile dosyanın son yazımı karşılaştırılarak verilir — güncel dosyayı okuyan süren başlatma **DURDURULMAZ** (WAIT); yalnız eski dosyayı okumuş olabilecek süreç **tek kez** yeniden başlatılır |
+| **D** | Erişim iptali **uydurma parolayla login → 401** ile "kanıtlanıyordu" | Kanıt değildi: login kapısı bcrypt'i `isActive`'ten **önce** kontrol eder. Artık: DB (`isActive=false`) + **gerçek parolayla** login → *"devre dışı"* 401 + **eski token** → 401 (iptalden önce aynı token 403 alıyordu) |
+| **E** | Acil talimat **`Restart-ScheduledTask`** öneriyordu | **Bu makinede yok** (ne PowerShell 7 ne 5.1). Kaldırıldı; `Stop-` + `Start-ScheduledTask` ve **önce `host-api.log`** |
+
+Kapanış artık **alt süreç değil, in-process** çalışır: token ve taze parola kapanışa geçer, böylece
+bayrağın **uçtan 403** kanıtı erişim iptalinden **önce** alınır. Bağımsız kurtarma koşumunda
+(token/parola yok) bu kanıtlar **ÖLÇÜLEMEDİ** yazılır — 401 onların yerine **konmaz**.
+
+### R02.3 Canlı restart OLMADAN karar yolunun doğrulanması
+
+Test **üretim kodunun kendisini** çağırır (kopya değil); canlı G/C, `io` parametresiyle saat + bayrak
+dosyası + başlatıcı zinciri simülasyonuna bağlanır. Dosya: `project/scripts/orchestration-v2/office-acceptance/a07-decision.test.cjs`
+(`A9999AC2E4525CBCF21BC9F8644FD8AA8A8F6A2909FB33D27AF1266817104B4A`) — CI'ın mevcut
+`scripts/orchestration-v2/*/*.test.cjs` glob'u tarafından **iş akışı değiştirilmeden** koşulur.
+
+Yerel: odaklı **20/20** · CI glob'unun tamamı **743/743**. Senaryolar: **olay tekrarı** (bütünlük kapanışı
+50 698 ms → kapanış durdurmaz, bekler, toparlanır) · eski başlatıcı (tek restart) · **süre aşımı** (bütçe
+dolar, başlatma **durdurulmaz**) · zincir boş (tek START) · restart limiti · EPERM · açma süre aşımı (tek
+stop, **ikinci stop yok**) · açma başarı · başlatma≠toparlanma · hüküm ×4 · karar tablosu ×7.
+
+**Mutasyon denetimi** — eski kusur geçici kopyada geri getirildi, aynı test koşuldu:
+
+| # | geri getirilen kusur | sonuç |
+|---|---|---|
+| M0 | kontrol — mutasyon yok | 20/20 geçti |
+| M1 | süren başlatmayı körlemesine durdur (C) | **6 test düştü** |
+| M2 | koşulmayanları NOT_EXECUTED sayma (A) | **2 test düştü** |
+| M3 | "başlatma gözlendi"yi ölçmeden EVET say (B) | **1 test düştü** |
+| M4 | açma zaman aşımında ikinci kez durdur (olay) | **1 test düştü** |
+| M5 | hüküm yalnız `failure`'a baksın | **2 test düştü** |
+
+### R02.4 Canlı salt-okuma ölçüm (hazırlık — canlı yazma YOK)
+
+- **Ön ölçüm 23/24** — tek FAIL `PF-1.write` (EPERM; yükseltilmemiş terminal — **beklenen**). Fixture:
+  `APPROVED / NOT_RUN`, attempt **0**, yürütme izi bağı **0**, K5/K6 kapalı, `approverUserId` dolu,
+  `savedIntent` şekil-geçerli · DB **401** · Prisma DELTA-A alanlarını tanıyor · kabul ve cron bayrağı **KAPALI**.
+- **Kapanış kuru koşumu 3/4** — tek FAIL yine yazma izni. Şu an koşulsa karar: **`DONE_LOADED_CURRENT`**
+  (çalışan başlatıcı son `.env` yazımından sonra başlamış).
+
+**A-07 AÇIK.** Execute/reconcile, bayrak kapatma, erişim iptali ve toparlanma kanıtları owner koşumunda
+tamamlanmadan kapanmaz. Komut ve yol doğrulaması: kapanış raporunda.
+
+---
+
 ## ⛔ 0. ÖNCE BUNU OKUYUN — KOŞUM ŞU AN BAŞLAYAMAZ
 
 **Canlı PostgreSQL erişilemez durumda.** Ölçüm (2026-09-10, salt-okuma):
@@ -114,6 +194,12 @@ tanıdığı** ölçülür. Tanımayan bir client kanıt sorgusunu **sessizce bo
 ---
 
 ## 4. Owner'ın çalıştıracağı **TEK KOMUT**
+
+> **ERRATUM (2026-09-10, ölçüldü) — bu bölümdeki yol ve `git pull` önerisi YANLIŞTIR.**
+> Kanonik checkout'un git kökü `C:\Development\HUKUK_YAZILIMI\project`'tir ve izlenen yol da
+> `project/…` ile başlar; gerçek disk yolu **`…\HUKUK_YAZILIMI\project\project\docs\…`** olur. Aşağıdaki
+> tek-`project`'li yol **yoktur** (owner'ın `-File` hedefi bulunamadı, komut başlamadı). `git pull` da
+> doğrulanmadan önerildi; kanonik checkout sıklıkla başka oturumun dalındadır. Doğru komut **R02**'dedir.
 
 **Önce** kanonik kökü güncelleyin (paket bu PR ile gelir):
 
