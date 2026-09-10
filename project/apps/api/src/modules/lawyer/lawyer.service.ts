@@ -16,6 +16,8 @@ import { LAWYER_CREATE_PERSIST_FIELDS } from "./dto/create-lawyer.dto";
 // canModifyOtherPermissions) değiştirme yetkisi için de kullanılır.
 //  - userId: truthful @CurrentUser("id").  role: @CurrentUser("role") (ADMIN kısa-yolu).
 //  - Yalnız ADMIN VEYA linkli PARTNER avukat bu alanları değiştirebilir (assertActorIsAdminOrLinkedPartner).
+// AK-2: create'te ayrıcalıklı DEĞER atama (PARTNER/MANAGER rütbesi, canModifyOtherPermissions=true,
+// permissionsLocked=true) da aynı kurala bağlıdır.
 export interface LawyerUpdateActor {
   userId?: string;
   role?: string;
@@ -249,7 +251,18 @@ export class LawyerService {
       canModifyOtherPermissions?: boolean;
     },
     actor?: LawyerUpdateActor,
+    // AK-2: YALNIZ audit atfı (dosya içi / seed oluşturmada isteği yapan kullanıcı). Yetki (H2) ve
+    // yanıt projeksiyonu bundan ETKİLENMEZ — ikisi de yalnız `actor` ile yapılır.
+    attribution?: { userId?: string },
   ) {
+    // AK-2 (owner GO 2026-09-10): ayrıcalıklı DEĞERLE oluşturma, update'in H2 otorite kuralına
+    // bağlıdır (ADMIN veya aktif + aynı tenant + bağlı PARTNER). Kontrol HER yazmadan ÖNCE yapılır:
+    // mükerrer etkinleştirme ve ofis oluşturma da yazmadır; ret hâlinde hiçbiri gerçekleşmez ve
+    // ayrıcalıklı değer SESSİZCE düşürülmez.
+    if (this.isPrivilegedLawyerCreate(data)) {
+      await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId);
+    }
+
     // PR-AUDIT: duplicate guard — aynı baro no/TCKN VEYA aynı ad-soyad → yeni AÇMA, mevcut döndür.
     // (Eskiden guard yoktu → "Ulaş Hüseyin Telli" gibi mükerrer avukat açılıyordu → yetki/atama karışıklığı.)
     const wantName = normalizePersonName(data.name, data.surname);
@@ -307,14 +320,35 @@ export class LawyerService {
       if (value !== undefined) createData[field] = value;
     }
 
-    const lawyer = await this.prisma.lawyer.create({
-      data: {
-        ...createData,
-        // Sunucu denetimindeki alanlar SONDA: gövde bunları ezemez.
+    // AK-2: avukat satırı ve LAWYER_CREATE audit'i AYNI transaction'da yazılır. logInTransaction
+    // hata YUTMAZ → audit yazılamazsa transaction geri alınır, avukat kaydı kalıcılaşmaz.
+    const lawyer = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.lawyer.create({
+        data: {
+          ...createData,
+          // Sunucu denetimindeki alanlar SONDA: gövde bunları ezemez.
+          tenantId,
+          officeId: office.id,
+          sortOrder: (maxSort._max.sortOrder || 0) + 1,
+        } as Prisma.LawyerUncheckedCreateInput,
+      });
+      const auditUserId = actor?.userId || attribution?.userId || undefined;
+      await this.audit.logInTransaction(tx, {
         tenantId,
-        officeId: office.id,
-        sortOrder: (maxSort._max.sortOrder || 0) + 1,
-      } as Prisma.LawyerUncheckedCreateInput,
+        action: "LAWYER_CREATE",
+        entityType: "LAWYER",
+        entityId: created.id,
+        userId: auditUserId,
+        actorType: auditUserId ? "USER" : "SYSTEM",
+        // Yalnız yetki-ilgili alanların KALICI değerleri. Kimlik, iletişim, banka verisi ve
+        // gövdenin tamamı audit'e GİRMEZ.
+        metadata: {
+          lawyerRank: created.lawyerRank,
+          canModifyOtherPermissions: created.canModifyOtherPermissions,
+          permissionsLocked: created.permissionsLocked,
+        },
+      });
+      return created;
     });
 
     // P01: credential alanlari public yanittan CIKARILIR.
@@ -499,6 +533,7 @@ export class LawyerService {
    * ADMIN VEYA aktif + same-tenant + linkli PARTNER avukat mı? K1-4b (canApproveOfficeActions) ve
    * H2 (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions) yetki-alanı
    * guard'larının PAYLAŞTIĞI tek otorite kuralı; hata mesajları çağıran tarafından verilir.
+   * AK-2: create'teki ayrıcalıklı değer kontrolü (assertCanAssignPrivilegedFieldsOnCreate) da bunu kullanır.
    */
   private async assertActorIsAdminOrLinkedPartner(
     actor: LawyerUpdateActor | undefined,
@@ -565,6 +600,50 @@ export class LawyerService {
     return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
       noActor: "Yetki/rütbe alanlarını değiştirme yetkisi yok (kimlik çözülemedi).",
       unauthorized: "Yetki/rütbe alanları yalnız PARTNER veya ADMIN tarafından değiştirilebilir.",
+    });
+  }
+
+  /**
+   * AK-2 — avukat OLUŞTURMADA ayrıcalıklı DEĞER var mı? Alan gönderilmezse şema varsayılanı
+   * (LAWYER / false / false) yazılır ve ayrıcalıksızdır. UI create'te dört alanı HER ZAMAN
+   * gönderdiği için update'teki "alan varsa" kuralı burada KULLANILMAZ — yoksa normal şablonlar
+   * (Avukat / Yetkili Avukat / Stajyer) da reddedilirdi.
+   * `defaultPermissions` kural DIŞIDIR: sunucuda yetki girdisi değildir (dosya yetkisi
+   * CaseLawyer.casePermissions'tan okunur). Eski `role` (LawyerRole) de rütbe DEĞİLDİR.
+   * Metin "true" ayrıcalıklı sayılmaz ama kalıcılaşamaz da: HTTP'de DTO 400 verir (örtük dönüşüm
+   * yok), HTTP dışı çağıranda Prisma boolean sütuna metni reddeder.
+   */
+  private isPrivilegedLawyerCreate(data: {
+    lawyerRank?: LawyerRank;
+    permissionsLocked?: boolean;
+    canModifyOtherPermissions?: boolean;
+  }): boolean {
+    return (
+      data.lawyerRank === "PARTNER" ||
+      data.lawyerRank === "MANAGER" ||
+      data.canModifyOtherPermissions === true ||
+      data.permissionsLocked === true
+    );
+  }
+
+  /**
+   * AK-2 — ayrıcalıklı değerle avukat OLUŞTURMA yetkisi. Otorite kuralı update'in H2 kuralıyla
+   * AYNIDIR (assertActorIsAdminOrLinkedPartner); yalnız mesaj oluşturma bağlamını söyler.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.create() → isPrivilegedLawyerCreate(data) doğruysa, HER yazmadan ÖNCE
+   * ///    (POST /lawyers; actor=@CurrentUser). İç çağıranların `attribution`ı yetki SAYILMAZ.
+   * /// </remarks>
+   */
+  private async assertCanAssignPrivilegedFieldsOnCreate(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
+      noActor: "Yetki/rütbe alanlarıyla avukat oluşturma yetkisi yok (kimlik çözülemedi).",
+      unauthorized:
+        "PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.",
     });
   }
 

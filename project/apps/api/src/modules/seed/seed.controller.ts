@@ -25,7 +25,8 @@ export class SeedController {
   @UseGuards(JwtAuthGuard)
   @Post('lawyers')
   async seedLawyers(@Request() req: any) {
-    return this.seedService.seedLawyers(req.user.tenantId);
+    // AK-2: oluşturulan avukatların LAWYER_CREATE audit'i isteği yapan kullanıcıya bağlanır (yalnız atıf).
+    return this.seedService.seedLawyers(req.user.tenantId, { userId: req.user.id });
   }
 
   @UseGuards(JwtAuthGuard)

@@ -30,10 +30,11 @@ import { LawyerRank, LawyerRole } from "@prisma/client";
  *       UI'nin kendi yorumu da bunu zaten varsayıyor ("create DTO'su kabul etmiyor") ve
  *       create'te her zaman `false` gönderiyor → engellemek gerçek akış için ETKİSİZ.
  *
- * AÇIK KALAN (owner ürün kararı, bu DTO DEĞİŞTİRMEZ): `lawyerRank` / `defaultPermissions` /
- *   `permissionsLocked` / `canModifyOtherPermissions` create'te H2 otorite kontrolünden
- *   GEÇMEZ (update'te geçer). UI bunları create'te gerçekten ayarladığı için burada
- *   kabul edilmeye devam eder; simetriyi kurmak davranış değişikliğidir.
+ * AK-2 (owner GO 2026-09-10): `lawyerRank` / `defaultPermissions` / `permissionsLocked` /
+ *   `canModifyOtherPermissions` DTO'da kabul edilmeye DEVAM eder (UI create'te dördünü de
+ *   gönderir). Ayrıcalıklı DEĞERLERİN (PARTNER/MANAGER rütbesi, izin değiştirme=true, izin
+ *   kilidi=true) otorite kontrolü DTO'da DEĞİL, sunucuda `LawyerService.create` içinde, update'in
+ *   H2 kuralıyla aynı yardımcıyla yapılır. `defaultPermissions` bu kuralın dışındadır.
  */
 
 /**
@@ -94,7 +95,7 @@ export class CreateLawyerDto extends LawyerCreatePassthroughDto {
   @IsOptional() @IsEnum(LawyerRole) role?: LawyerRole;
   @IsOptional() @IsEnum(LawyerRank) lawyerRank?: LawyerRank;
 
-  // H2 alanları — create'te bugünkü davranış korunur (yukarıdaki "AÇIK KALAN" şerhi).
+  // H2 alanları — DTO yalnız TİP doğrular; ayrıcalıklı değer otoritesi serviste (AK-2).
   @IsOptional() @IsObject() defaultPermissions?: Record<string, unknown>;
   @IsOptional() @IsBoolean() permissionsLocked?: boolean;
   @IsOptional() @IsBoolean() canModifyOtherPermissions?: boolean;

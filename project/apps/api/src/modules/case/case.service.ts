@@ -564,7 +564,10 @@ export class CaseService {
           vergiDairesi: l.vergiDairesi, vergiNo: l.vergiNo,
           phone: l.phone, email: l.email, bankName: l.bankName, iban: l.iban,
           isInHouseCounsel: l.isInHouseCounsel, isEmployee: l.isEmployee, canSign: l.canSign,
-        });
+          // AK-2: yetki aktörü GEÇİLMEZ — yanıt F01 projeksiyonuna girer ve yetkisiz aktörde `id`yi
+          // düşürür (inline bağ kopar). Dosyayı açan kullanıcı YALNIZ audit atfı olarak geçer; bu
+          // gövdede ayrıcalıklı alan yoktur, H2 tetiklenmez.
+        }, undefined, { userId: clientMutationActor?.userId || undefined });
         l.id = resolved.id;
       }
     }

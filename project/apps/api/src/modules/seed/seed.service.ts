@@ -53,7 +53,8 @@ export class SeedService {
       ['office', () => this.seedOffice(tenantId)],
       ['bankAccounts', () => this.seedBankAccounts(tenantId)],
       ['lookups', () => this.seedLookups(tenantId)],
-      ['lawyers', () => this.seedLawyers(tenantId)],
+      // AK-2: avukat oluşturma audit'i seed'i başlatan kullanıcıya bağlanır (yalnız atıf; yetki değil).
+      ['lawyers', () => this.seedLawyers(tenantId, { userId: actor.userId || undefined })],
       ['staff', () => this.seedStaff(tenantId)],
       ['clients', () => this.seedClients(tenantId, actor)],
       ['debtors', () => this.seedDebtors(tenantId)],
@@ -173,7 +174,7 @@ export class SeedService {
    * merkezden uygulanır, ikinci bir dedup otoritesi İCAT EDİLMEZ (seedClients / OWN-13 D04
    * emsali). İdempotency korunur: mevcut satır `_existingReturned` ile döner, created SAYILMAZ.
    */
-  async seedLawyers(tenantId: string) {
+  async seedLawyers(tenantId: string, attribution?: { userId?: string }) {
     const lawyers = [
       { name: 'Mehmet', surname: 'Yılmaz', barNumber: '12345', barCity: 'İstanbul', email: 'mehmet@hukuk.com', phone: '05321234567', title: 'Av.', role: 'PARTNER' },
       { name: 'Ayşe', surname: 'Kaya', barNumber: '12346', barCity: 'İstanbul', email: 'ayse@hukuk.com', phone: '05321234568', title: 'Av.', role: 'PARTNER' },
@@ -189,7 +190,9 @@ export class SeedService {
     let created = 0;
     let existing = 0;
     for (const l of lawyers) {
-      const res: any = await this.lawyerService!.create(tenantId, l as any);
+      // AK-2: `attribution` YALNIZ LAWYER_CREATE audit atfıdır, yetki aktörü geçilmez. Seed
+      // satırlarında ayrıcalıklı değer yok — `role: 'PARTNER'` eski LawyerRole'dür, rütbe DEĞİL.
+      const res: any = await this.lawyerService!.create(tenantId, l as any, undefined, attribution);
       if (res?._existingReturned) existing++;
       else created++;
     }
