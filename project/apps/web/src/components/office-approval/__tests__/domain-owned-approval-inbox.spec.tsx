@@ -93,6 +93,30 @@ describe('Onay Kutusu — domain-owned talepler', () => {
     expect(screen.queryByTestId('decision-actions-domain-owned')).toBeNull();
   });
 
+  it('FD talebinde talep SAHİBİ de "Talebi Geri Çek" düğmesini GÖRMEZ (FD iptal sınırı; sunucu 409 döner)', () => {
+    render(
+      <OfficeApprovalDecisionActions
+        detail={detail('CLIENT_FINANCIAL_DISCLOSURE_APPROVE')}
+        currentUserId="user-req"
+        onDecided={() => {}}
+      />,
+    );
+    screen.getByTestId('decision-actions-domain-owned');
+    expect(screen.queryByRole('button', { name: 'Talebi Geri Çek' })).toBeNull();
+  });
+
+  it('FD DIŞI talepte talep sahibi "Talebi Geri Çek" düğmesini görür (regresyon)', () => {
+    render(
+      <OfficeApprovalDecisionActions
+        detail={detail('COLLECTION_DISPOSITION_POST')}
+        currentUserId="user-req"
+        onDecided={() => {}}
+      />,
+    );
+    screen.getByRole('button', { name: 'Talebi Geri Çek' });
+    expect(screen.queryByTestId('decision-actions-domain-owned')).toBeNull();
+  });
+
   it('küme predikatı backend ile aynı kodu tanır', () => {
     expect(isDomainOwnedApproval('CLIENT_FINANCIAL_DISCLOSURE_APPROVE')).toBe(true);
     expect(isDomainOwnedApproval('COLLECTION_DISPOSITION_POST')).toBe(false);

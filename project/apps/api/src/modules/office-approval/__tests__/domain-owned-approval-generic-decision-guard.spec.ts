@@ -11,13 +11,17 @@
  *   hemen sonra; durum denetiminden, öz-onay / rol / yetki okumalarından ve her yazmadan ÖNCE çalışır.
  * DEĞİŞMEYEN: domain-owned OLMAYAN türlerin karar davranışı ve VIEWER onay kararı sınırı (#2606). Geçmiş
  *   REVISION_REQUESTED kayıtlarına dokunulmaz (buradaki testler yalnız yazma YOKLUĞUNU ölçer).
+ * FD İPTAL SINIRI (owner GO 2026-09-10, ikinci GO): `cancel()` (talep sahibinin genel kutudan geri çekmesi) da kapıyı
+ *   çağırmıyordu → FD talebi CANCELLED'a çekilip sürüm aynı kilide düşüyordu. `cancel`'da kapı talep SAHİBİ
+ *   denetiminden SONRA, her yazmadan ÖNCE çalışır: talep sahibi 409, talep sahibi olmayan (başka tenant dahil)
+ *   bugünkü gibi 403. FD dışı iptal DEĞİŞMEDİ. Yeni geri çekme akışı / geçmiş kayıt kurtarması YOK.
  *
  * Kanıt sınıfı: TEST (gerçek servis, sahte prisma). PRODUCTION DAVRANIŞ KANITI DEĞİLDİR.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as ts from 'typescript';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OfficeApprovalService } from '../office-approval.service';
 import { DomainActionRequiredError } from '../office-approval-domain-ownership';
 import {
@@ -243,6 +247,72 @@ describe('3) domain-owned OLMAYAN türler DEĞİŞMEDİ (regresyon kontrolü)', 
   });
 });
 
+describe('5) FD İPTAL SINIRI — domain-owned talep genel kutudan geri ÇEKİLEMEZ; kimlik/tenant denetimi korunur', () => {
+  it('talep sahibi FD talebini geri çekmek ister → 409 DOMAIN_ACTION_REQUIRED; transaction / updateMany / domain senkronu / audit YOK', async () => {
+    const h = harness([fdPending('oar-fd')]);
+    const before = { ...h.store.get('oar-fd') };
+    const err = await h.svc.cancel('oar-fd', REQUESTER).catch((e: unknown) => e);
+    expectDomainActionRequired(err);
+    h.expectNoWrites('oar-fd', before);
+  });
+
+  it.each([
+    ['FD politikasınca uygun MANAGER', 'u-m'],
+    ['PARTNER', 'u-p'],
+    ['bağlı VIEWER-PARTNER', 'u-vp'],
+    ['başka tenant kullanıcısı', 'u-baska-tenant'],
+  ])('talep sahibi OLMAYAN (%s) → bugünkü gibi 403; 409 DEĞİL (kimlik denetimi kapıdan ÖNCE); yazma YOK', async (_label, actor) => {
+    const h = harness([fdPending('oar-fd')]);
+    const before = { ...h.store.get('oar-fd') };
+    const err = await h.svc.cancel('oar-fd', actor).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err).not.toBeInstanceOf(DomainActionRequiredError);
+    h.expectNoWrites('oar-fd', before);
+  });
+
+  it.each(['REVISION_REQUESTED', 'CANCELLED', 'APPROVED'])(
+    'FD talebi zaten %s (geçmiş kayıt): talep sahibi → 409 durum çatışması (DEĞİŞMEDİ); kayıt DEĞİŞMEZ',
+    async (status) => {
+      const h = harness([fdPending('oar-fd-old', { status, decidedAt: new Date('2026-09-01T10:00:00.000Z') })]);
+      const before = { ...h.store.get('oar-fd-old') };
+      const err = await h.svc.cancel('oar-fd-old', REQUESTER).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err).not.toBeInstanceOf(DomainActionRequiredError);
+      h.expectNoWrites('oar-fd-old', before);
+    },
+  );
+
+  it('bilinmeyen talep → 404 (DEĞİŞMEDİ); yazma YOK', async () => {
+    const h = harness([]);
+    const err = await h.svc.cancel('oar-yok', REQUESTER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+    expect(h.audit.log).not.toHaveBeenCalled();
+  });
+
+  it.each(['CHANGE_STATUS', 'CLIENT_PAYOUT_POST', 'COLLECTION_DISPOSITION_POST'])(
+    'FD DIŞI %s: talep sahibi geri çeker → CANCELLED; iptal + domain senkronu + audit birer kez (DEĞİŞMEDİ)',
+    async (code) => {
+      const h = harness([pending('oar-x', code)]);
+      const res = await h.svc.cancel('oar-x', REQUESTER);
+      expect(res).toMatchObject({ id: 'oar-x', status: 'CANCELLED' });
+      expect(h.prisma.officeApprovalRequest.updateMany).toHaveBeenCalledTimes(1);
+      expect(h.domainSync.syncAfterDecision).toHaveBeenCalledTimes(1);
+      expect(h.audit.log).toHaveBeenCalledTimes(1);
+      expect(h.audit.log.mock.calls[0][0]).toMatchObject({ action: 'OFFICE_APPROVAL_CANCELLED', userId: REQUESTER });
+    },
+  );
+
+  it.each(['CHANGE_STATUS', 'CLIENT_PAYOUT_POST'])('FD DIŞI %s: talep sahibi olmayan → 403 (DEĞİŞMEDİ); yazma YOK', async (code) => {
+    const h = harness([pending('oar-x', code)]);
+    const before = { ...h.store.get('oar-x') };
+    const err = await h.svc.cancel('oar-x', 'u-p').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    h.expectNoWrites('oar-x', before);
+  });
+});
+
 // ── 4) Yapısal kilit: kaynak AST'si (satır numarası / düz metin eşleşmesi KULLANILMAZ) ─────────────────────────
 const SERVICE_FILE = path.resolve(__dirname, '..', 'office-approval.service.ts');
 
@@ -309,4 +379,100 @@ describe('4) yapısal kilit — commitDecision çağıran HER genel karar metodu
       expect(s.commit).toBeGreaterThan(s.guard);
     },
   );
+});
+
+type StatusWriter = { name: string; guardArg: string | null; guard: number; firstWrite: number; requesterCheck: number };
+
+/**
+ * PUBLIC olup talep DURUMU yazan metotlar: `this.commitDecision(...)` çağıranlar + `officeApprovalRequest.updateMany`
+ * `data`sında `status` yazanlar. İlk yazma = ilk `this.commitDecision` / `this.prisma.$transaction` /
+ * `officeApprovalRequest.updateMany` çağrısı. `private` yardımcılar ve durum yazmayan public metotlar
+ * (createPendingRequest yalnız idempotencyKey; markExecution* yalnız executionStatus) bu kümeye GİRMEZ.
+ */
+function statusWritingPublicMethods(): StatusWriter[] {
+  const src = fs.readFileSync(SERVICE_FILE, 'utf8');
+  const sf = ts.createSourceFile(SERVICE_FILE, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const out: StatusWriter[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isClassDeclaration(node) && node.name?.text === 'OfficeApprovalService') {
+      for (const member of node.members) {
+        if (!ts.isMethodDeclaration(member) || !member.body) continue;
+        if (ts.getCombinedModifierFlags(member) & ts.ModifierFlags.Private) continue;
+        const seen = { writesStatus: false, writes: [] as number[], guard: -1, guardArg: null as string | null, requesterCheck: -1 };
+        const walk = (n: ts.Node): void => {
+          if (ts.isCallExpression(n)) {
+            const callee = n.expression.getText(sf);
+            const pos = n.getStart(sf);
+            if (callee === 'this.commitDecision') {
+              seen.writesStatus = true;
+              seen.writes.push(pos);
+            }
+            if (callee === 'this.prisma.$transaction') seen.writes.push(pos);
+            if (/officeApprovalRequest\.updateMany$/.test(callee)) {
+              seen.writes.push(pos);
+              const arg = n.arguments[0];
+              const data =
+                arg && ts.isObjectLiteralExpression(arg)
+                  ? arg.properties.find(
+                      (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText(sf) === 'data',
+                    )
+                  : undefined;
+              if (
+                data &&
+                ts.isObjectLiteralExpression(data.initializer) &&
+                data.initializer.properties.some((p) => ts.isPropertyAssignment(p) && p.name.getText(sf) === 'status')
+              ) {
+                seen.writesStatus = true;
+              }
+            }
+            if (callee === 'assertGenericDecisionAllowed' && seen.guard < 0) {
+              seen.guard = pos;
+              seen.guardArg = n.arguments[0]?.getText(sf) ?? null;
+            }
+          }
+          if (ts.isIfStatement(n) && seen.requesterCheck < 0 && /\brequesterUserId\b/.test(n.expression.getText(sf))) {
+            seen.requesterCheck = n.getStart(sf);
+          }
+          ts.forEachChild(n, walk);
+        };
+        walk(member.body);
+        if (!seen.writesStatus) continue;
+        out.push({
+          name: member.name.getText(sf),
+          guardArg: seen.guardArg,
+          guard: seen.guard,
+          firstWrite: Math.min(...seen.writes),
+          requesterCheck: seen.requesterCheck,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
+}
+
+describe('4b) yapısal kilit — talep DURUMU yazan HER public metot kapıyı ilk yazmadan ÖNCE çağırır (FD iptal sınırı dahil)', () => {
+  const writers = statusWritingPublicMethods();
+
+  it('durum yazan public metot kümesi tam olarak beş metottur (yeni yazma yolu = kapıyı ekle ve bu testi bilinçli güncelle)', () => {
+    expect(writers.map((w) => w.name).sort()).toEqual(['approve', 'approveWithChanges', 'cancel', 'reject', 'requestRevision']);
+  });
+
+  it.each(['approve', 'reject', 'requestRevision', 'approveWithChanges', 'cancel'])(
+    '%s: assertGenericDecisionAllowed(req.actionCode) ilk yazmadan (commitDecision / $transaction / updateMany) ÖNCE',
+    (name) => {
+      const w = writers.find((x) => x.name === name);
+      expect(w).toBeDefined();
+      const s = w as StatusWriter;
+      expect({ name, guardArg: s.guardArg, guardFound: s.guard >= 0 }).toEqual({ name, guardArg: 'req.actionCode', guardFound: true });
+      expect(s.firstWrite).toBeGreaterThan(s.guard);
+    },
+  );
+
+  it('cancel: talep SAHİBİ denetimi kapıdan ÖNCE (kimlik/tenant sonucu korunur: talep sahibi olmayan 403, 409 değil)', () => {
+    const w = writers.find((x) => x.name === 'cancel') as StatusWriter;
+    expect(w.requesterCheck).toBeGreaterThanOrEqual(0);
+    expect(w.guard).toBeGreaterThan(w.requesterCheck);
+  });
 });
