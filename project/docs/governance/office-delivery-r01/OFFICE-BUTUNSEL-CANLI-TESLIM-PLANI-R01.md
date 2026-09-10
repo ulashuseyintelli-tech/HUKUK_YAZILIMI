@@ -1078,3 +1078,185 @@ DISLAMALAR: mevcut ACL'ler gevsetilmeyecek · arac reddi veya erisim kontrolu
 
 Tek kullanimliktir, devredilemez, kosum bitince tukenir.
 ```
+
+### 8.16 CANLI KESİNTİ · A-07 MALİYET DÜZELTMESİ · TOPARLANMA ÖLÇÜTÜ KUSURU (2026-09-10, append-only)
+
+#### 8.16.1 CANLI KESİNTİ — teslim ilan edilemez
+
+F04, A-07 ön ölçümüne başlarken canlıyı bozuk buldu. Ana yürütücü bağımsız doğruladı
+(salt-okuma):
+
+```text
+5432 dinleyici ............................ YOK
+com.docker.service ........................ Stopped · StartType = Manual
+Docker Desktop / backend / dockerd ........ SUREC YOK
+POST /api/auth/login  (gercek govde) ...... 500   <- DB'ye DOKUNUR
+POST /api/auth/login  (bos govde) ......... 400   <- ValidationPipe, DB'ye DOKUNMAZ
+GET  /api/office      (anonim) ............ 401   <- auth guard, DB'ye DOKUNMAZ
+Web :3002 ................................. 200   <- Next DB'siz ayakta
+API PID 27312 / WEB 22440 ................. ayakta, RELEASE21
+```
+
+**Gerçek etki: gerçek tenant'lar login olamıyor.** Bu, A-07'den önceliklidir.
+
+**⚠ ANA YÜRÜTÜCÜNÜN GERİ ALDIĞI İDDİA.** İlk raporda 2026-08-28 kaydına dayanılarak
+*"Docker autostart iki katmanda kapalı, her reboot aynı kesintiyi üretir"* denmişti. **Yanlıştır.**
+O kayıt sonuna kadar okunmamıştı; kusur **aynı gün `APPLY-R01` ile düzeltilmiştir**. Bugün ölçüldü:
+
+```text
+KATMAN 1  settings-store.json  AutoStart = True             ETKIN
+KATMAN 2  HKCU StartupApproved\Run "Docker Desktop" = 0x02   ETKIN
+HKCU Run girdisi ........................................... VAR
+com.docker.service ... Stopped / Manual  -> Docker Desktop TALEP UZERINE baslatir, KUSUR DEGIL
+```
+
+**Bu bir boot yapılandırması sorunu değildir; çalışan sürecin çıkmasıdır.** Owner'a "autostart'ı
+aç" denseydi **zaten açık olan** düzeltilmiş, gerçek sebep aranmamış kalırdı. Ders:
+**hatırlanan teşhis, yazıldığı andaki durumu anlatır; yeni olayda kök neden diye sunulmadan ÖLÇÜLÜR.**
+
+2026-08-28 kaydından **geçerli kalan** tek şey kurtarma emsalidir: **Docker'ı owner başlattı;
+ajan start yetkisini KULLANMADI (0 kez)**; 4 HUKUK container'ı `unless-stopped` ile
+kendiliğinden geldi. Bu turda da ne uygulayıcı ne ana yürütücü dokundu.
+
+**Kesinti penceresi POZİTİF olarak sınırlandı.** `PrismaService.onModuleInit` şudur ve
+doğrulanmıştır: `async onModuleInit() { await this.$connect(); }` — DB yoksa bootstrap reddedilir
+ve süreç ölür. Bu, aşağıdaki çıkarımın taşıyıcı önculüdür:
+
+```text
+2026-09-08 20:03:57Z  son onyukleme
+2026-09-09 ~12:34Z    F04 kosumu CANLI DB'ye YAZDI (tenant olustu)   -> DB VARDI
+2026-09-09 15:30:03Z  API PID 27312 basladi ve DUSMEDI               -> DB VARDI
+2026-09-09 22:21Z     DB YOK, API hala ayakta
+```
+
+**Sonuç: kesinti 2026-09-09 15:30:03Z'den SONRA başladı ve bir reboot olayı DEĞİLDİR**
+(son önyükleme iki gün öncedir). API'nin hâlâ ayakta olması da bunu destekler: boot'ta bağlanmış,
+DB sonradan gitmiştir. **Sebep ölçülmedi**; spekülasyon yapılmaz. Ölçülecek doğru yer Windows
+olay günlüğü (kaynak "Docker Desktop") ve `%APPDATA%\Docker\log`'dur.
+
+**A-03…A-06 kabulleri ETKİLENMEZ** — geçmişte ölçüldü ve kayıtlıdır. Kesinti bugünün
+çalışabilirliğini etkiler, dünkü ölçümü geçersiz kılmaz.
+
+#### 8.16.2 ANA YÜRÜTÜCÜNÜN İKİ KAYIT DÜZELTMESİ
+
+**(a) §8.13.3'teki "uygulama ayakta (401/200)" ifadesi YETERSİZDİ.** O probe **DB kesintisini
+göremez**: `GET /api/office` 401'i auth guard'dan, boş gövde 400'ü ValidationPipe'tan gelir ve
+**ikisi de DB'ye dokunmadan** üretilir. Ölçtüğüm şey "HTTP katmanı ayakta"dır, "sistem
+sağlıklı" değil. Kayıt bu şerhle okunur.
+
+**(b) §8.13.3'teki `LastTaskResult` yorumu YANLIŞTI.** `0x800710E0` (= 2147946720) bir hata
+kodu **değildir**; "çalışan örnek var" anlamında **sağlıklı** koddur. "Sıfır dışı, sebep
+belirsiz" nitelemesi geri alınır.
+
+#### 8.16.3 TOPARLANMA ÖLÇÜTÜ KUSURU — bağlayıcı düzeltme
+
+F04'ün tespiti: koşum planı §3.4'ün "toparlanma" ölçütü **boş gövdeye dönen 400**'e
+dayanıyordu. Bu ölçüt **DB kesintisini GÖREMEZ** — doğrulama katmanı DB'den önce çalışır.
+Yani servis tamamen veritabansızken bile ölçüt PASS verirdi.
+
+**Bağlayıcı düzeltme:** toparlanma ölçütü **DB'ye dokunan** bir sınama içerir:
+
+```text
+POST /api/auth/login  { gercek olmayan kullanici }
+  -> 401 BEKLENIR (DB'ye ulasildi, kullanici yok)
+  -> 500 gelirse VERITABANI YOK  -> toparlanma FAIL
+```
+
+Bu, kayıtlı **fail-open** sınıfının aynısıdır: *ölçülemeyen sonuç "yok" sayılmaz* ve
+**gözlem kümesi boşken kendiliğinden sağlanan ölçüt geçersizdir**. Aynı sınama her "servis
+sağlıklı" iddiası için geçerlidir.
+
+#### 8.16.4 A-07 MALİYET DÜZELTMESİ — §8.13.4 yanlıştı
+
+§8.13.4 yol (a)'yı *"2 satır güncelleme"* diye yazıyordu. **Çalışmazdı.** F04 ölçtü, ana
+yürütücü koddan doğruladı — `auth.service.ts` login kapısı sırayla:
+
+| Satır | Kapı | Sonuç |
+|---|---|---|
+| `:98` | `passwordHash` NULL mü? (K1-7: alan nullable) | 401 |
+| `:102` | `bcrypt.compare(dto.password, user.passwordHash)` | 401 |
+| `:120` | tenant lifecycle — **`isActive` kontrolünden ÖNCE** | 401 |
+| `:124` | `isActive` | "Hesabınız devre dışı bırakılmış" |
+
+`isActive=true` yapmak **tek başına yetmez**: kullanılabilir bir parola da gerekir. İlk koşumun
+parolası G-4 gereği yalnız bellekte üretilmişti ve hiçbir yere yazılmamıştı → **kurtarılamaz**.
+
+**Düzeltilmiş gerçek maliyet — hem daha dar hem farklı:**
+
+| | §8.13.4 (yanlış) | Ölçülmüş doğru |
+|---|---|---|
+| Dokunulan satır | 2 (admin + personel) | **1** — yalnız ADMIN; personel satırı **dokunulmaz** |
+| Alan | `isActive` | **`isActive` + taze `passwordHash`** |
+
+Gerekçe: A-07'nin kontrollü yürütme ucu yalnız **ADMIN** aktörü ister; personel aktörü
+A-04/A-05 kabullerine aitti ve onlar kapandı.
+
+**Not:** `:120`'deki tenant lifecycle kapısı `isActive`'den **öncedir**; `off-acc-f851d975`
+tenant'ının lifecycle değeri de koşum anında ölçülmelidir. DB erişilemediği için bu turda
+**ölçülemedi**.
+
+#### 8.16.5 A-07 paketi — durum
+
+F04 owner GO'sunu kendi kanalından aldı ve çalıştırma paketini üretti (PR #2589,
+`project/apps` deltası 0). Paketin kendi doğrulaması: **üç bağımsız kapı da bayrağı açmadan
+durdurdu** (yükseltilmemiş komut `exit 2` · ön ölçüm `exit 1`, `PF-1.write` EPERM +
+`PF-4.db` 500 + 13 ölçüt OLCULEMEDI · kapanış kuru koşum `exit 1`). GO'nun *"kapatma ve
+toparlanma yolu hazır olmadan bayrağı açma"* şartı **kodla zorlanıyor**.
+
+F04'ün ölçtüğü ikinci kusur: kanonik kökte `@prisma/client` ve `bcrypt` **yoktur**; sabit
+gömülü yol owner'ın makinesinde "modül yok" ile düşerdi. Paket aday yolları sırayla dener ve
+kullandığını yazdırır; ayrıca Prisma client'ın `approvalRequestId`/`approvalAttempt`
+alanlarını tanıdığını sınar — tanımasa **kanıt sorgusu sessizce boş dönerdi** ve A-07 yine
+ölçülemez kalırdı. Bu, "sessiz ölçülemezlik" sınıfının yeni bir örneğidir.
+
+**Fixture ve beş ön koşul OLCULEMEDI** (DB yok); son bilinen durum **bayat** sayılır ve paket
+koşum anında yeniden ölçer, tutmazsa durur.
+
+#### 8.16.6 Koşum için gereken iki şey — ikisi de owner'da
+
+1. Veritabanı ayağa kalksın (Docker Desktop owner tarafından başlatılır).
+2. Owner yükseltilmiş terminalinde tek komutu koşsun.
+
+Koşum sonrası ana yürütücüye gelecek üç kanıt: bayrak **KAPALI** (uçtan 403) · sentetik erişim
+**İPTAL** (401) · servis **TOPARLANDI** (PID değişti + istek işliyor + **DB'ye dokunan sınama
+geçti** — §8.16.3).
+
+**Sayaç 6/7 · hizmet 11/12 · bütünsel teslim İLAN EDİLMEZ.**
+
+#### 8.16.7 KESİNTİ KAPANDI — toparlanma ölçüldü (2026-09-09 22:2xZ)
+
+Owner Docker Desktop'ı başlattı. Ana yürütücü **yeniden ölçtü** (eski teşhis tekrarlanmadı):
+
+```text
+docker engine .................. Server 29.7.2 / API 1.55        ERISILEBILIR
+hukuk-postgres ................. running (healthy) 127.0.0.1:5432
+                                 StartedAt 2026-09-09T22:16:04Z · restartCount=0 · unless-stopped
+5432 dinleyici ................. VAR (PID 18744)
+POST /api/auth/login (gercek) .. 401 "Gecersiz e-posta veya sifre"   <- DB'ye ULASILDI
+psql dogrudan .................. ledger=130 · tenants=7 · csh=930    <- kesinti oncesiyle AYNI
+API PID 27312 .................. AYAKTA, baslangic 15:30:03Z -> DEGISMEDI
+WEB PID 22440 .................. AYAKTA, baslangic 15:15:03Z -> DEGISMEDI
+gorevler ....................... ikisi de Running · 0x800710E0 (saglikli)
+```
+
+**§8.16.3'ün bağlayıcı toparlanma ölçütü GEÇTİ** — DB'ye dokunan sınama 401 döndürüyor, 500 değil.
+Bu, ölçütün yalnız "servis sağlıklı" demeyip **gerçekten DB'yi gördüğünün** ilk canlı kanıtıdır.
+
+**Nedensellik artık çıkarım değil, müdahaleyle doğrulanmıştır** (2026-08-28'deki
+`CONFIRMED_BY_INTERVENTION` kalıbının aynısı): **tek değişken** Postgres'in erişilebilir hâle
+gelmesiydi. API süreci **değişmedi**, yapılandırma **değişmedi**, **restart yapılmadı** —
+Prisma havuzu kendiliğinden yeniden bağlandı. §8.16.6'daki *"API restart'ı gerekmeyebilir"*
+öngörüsü doğrulandı.
+
+**Kesintinin SEBEBİ (Docker Desktop'ın neden çıktığı) hâlâ ÖLÇÜLMEDİ** ve bu kayıtta
+çözülmüş sayılmaz. Kesinti penceresi §8.16.1'deki pozitif sınırla kalır: 2026-09-09
+15:30:03Z sonrası, reboot olayı değil.
+
+**A-07 paketi doğrulandı:** beş dosyanın sha256'sı belgedeki tabloyla **5/5 EŞİT**; kanonik kök
+`origin/main` (`7f48d674`) ile aynı. Koşum owner'ın yükseltilmiş tek komutunu bekler.
+
+**Yan gözlem (kapsam dışı, bilgi):** `hy-fix1-testdb` container'ı çalışır durumda ve **5439**
+portunu tutuyor — o port disposable izole ölçümlerin portudur. A-07 canlı koşumunu etkilemez;
+ileride izole ölçüm yapılacaksa çakışır.
+
+**Sayaç değişmedi: 6/7.** Toparlanma, A-07 kabulü **değildir**; bütünsel teslim İLAN EDİLMEZ.
