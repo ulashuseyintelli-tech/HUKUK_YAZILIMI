@@ -366,6 +366,16 @@ src/modules/client-financial-disclosure/__tests__/client-financial-disclosure.co
 #     (office-approval-viewer-decision-boundary) bu spec'in yerine GECMEZ.
 src/modules/client-financial-disclosure/__tests__/consumed-approval-recovery-r01.spec.ts
 
+#   FD X1/X2 spec'leri (SAF, DB-siz) — ekleyen PR'lar hicbirini manifeste eklemedi; bu yuzden CI'da
+#     HIC kosmuyorlardi (2026-09-10 tespiti, #2607 ile ayni sinif). renderer (#2277, #2286): X2-B02
+#     deterministik metin + muhurlu payload; client-safe-file-reference (#2279): X2-B03 yalniz
+#     Case.fileNumber; office-contract (#2281, #2290): X1 PRE01 ofis okuma sozlesmesi, gercek-PostgreSQL
+#     karsiligi db/domain-integration.txt'te; office-preparation-command-r01 (#2338): PR-1.2 hazirlama.
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-renderer.spec.ts
+src/modules/client-financial-disclosure/__tests__/client-safe-file-reference.spec.ts
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-office-contract.spec.ts
+src/modules/client-financial-disclosure/__tests__/office-preparation-command-r01.spec.ts
+
 #   CODEX-CLIENT-X2-B06 Financial Disclosure fail-closed source and visibility boundary
 #     Only POSTED/SINGLE_CASE_CLIENT reaches the writer; non-POSTED state is not exposed,
 #     cluster scope returns exact UNSUPPORTED_SCOPE, and portal visibility stays published-only.

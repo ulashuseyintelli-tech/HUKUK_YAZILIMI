@@ -117,6 +117,13 @@
 #     manifestte kayitli degildi ve CI da hic kosmuyordu; charter §37 ile baglandi.
 src/modules/client-financial-disclosure/__tests__/track-b-i01-schema-foundation.db-gated.integration.spec.ts
 #
+#   CODEX-X1 PRE01 FD ofis okuma sozlesmesi — gercek PostgreSQL (#2281, #2290)
+#     Nesne kapsami tenant+client+case+version zinciriyle; cross-scope ayni 404; staff yayin yetkisi
+#     alamaz; ham provider/kaynak ID sizmaz. #2281 spec'i ekledi ama hicbir manifeste eklemedi; bu
+#     yuzden CI'da HIC kosmuyordu (2026-09-10 tespiti). Disposable Postgres 16 ile dogrulandi.
+#     SAF karsiligi pure/client-portal.txt'te.
+src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-office-contract.db-gated.integration.spec.ts
+#
 #   DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW)
 #     Four describeDb()-wrapped disposable-DB spec files (no .db-gated.integration
 #     suffix — same non-suffix convention already established by
