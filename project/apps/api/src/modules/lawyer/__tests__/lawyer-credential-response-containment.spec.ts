@@ -144,7 +144,11 @@ const buildLawyerSvc = (rows: any[]) => {
     $transaction: jest.fn().mockImplementation((fn: any) =>
       typeof fn === 'function'
         ? fn({
-            lawyer: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            // AK-2: create avukat satırını transaction içinde yazar → tx.lawyer.create dış mock'a bağlanır.
+            lawyer: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              create: (args: any) => prisma.lawyer.create(args),
+            },
             user: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
             caseLawyer: { update: jest.fn() },
           })

@@ -19,9 +19,10 @@
  *   saklanabilirdi. Bu spec o yolu kapatır.
  *
  * KAPSAM SINIRI: bu spec create'in HANGİ alanları persist ettiğini sabitler. Ayrıcalıklı
- *   alanların (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions/
- *   canApproveOfficeActions) create'te H2/K1-4b otorite kontrolünden GEÇMEMESİ ayrı bir
- *   kalemdir (owner ürün kararı) ve burada BİLEREK değiştirilmez — mevcut davranış korunur.
+ *   DEĞERLERİN (PARTNER/MANAGER rütbesi, canModifyOtherPermissions=true, permissionsLocked=true)
+ *   create'teki otorite kontrolü AK-2 ile eklendi ve `lawyer-create-privileged-boundary-ak2.spec.ts`
+ *   tarafından sabitlenir; bu spec yalnız persist sınırını (hangi alan yazılır) sabitlemeye devam
+ *   eder. canApproveOfficeActions create'te hiç persist EDİLMEZ (aşağıda).
  */
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import 'reflect-metadata';
@@ -42,7 +43,12 @@ const build = () => {
     office: { findUnique: jest.fn().mockResolvedValue({ id: 'O-trusted' }) },
     user: { findUnique: jest.fn().mockResolvedValue(null) },
   };
-  const audit: any = { log: jest.fn().mockResolvedValue(undefined) };
+  // AK-2: create avukat + audit'i tek transaction'da yazar; tx = aynı mock (writtenData korunur).
+  prisma.$transaction = jest.fn(async (fn: (tx: any) => unknown) => fn(prisma));
+  const audit: any = {
+    log: jest.fn().mockResolvedValue(undefined),
+    logInTransaction: jest.fn().mockResolvedValue(undefined),
+  };
   const officeApproval: any = { isApproverEligible: jest.fn().mockResolvedValue(true) };
   return { svc: new LawyerService(prisma, audit, officeApproval), prisma };
 };
@@ -123,19 +129,24 @@ describe('F-B01-05 — meşru create sözleşmesi KORUNUR (regresyon)', () => {
     expect(data.role).toBe('EMPLOYEE');
   });
 
-  it('UI\'nin create\'te ayarladığı rütbe/yetki alanları persist edilmeye DEVAM eder (davranış DEĞİŞMEDİ)', async () => {
+  it('UI\'nin create\'te ayarladığı rütbe/yetki alanları YETKİLİ aktörde persist edilmeye DEVAM eder', async () => {
     // settings/office LawyerModal create'te bunları gönderir ve `handleRankChange`
     // seçilen rütbeye göre GERÇEKTEN değiştirir (page.tsx:1605-1607, 1634+).
-    // Bu alanların create'te H2 otorite kontrolünden geçmemesi AYRI bir kalemdir
-    // (owner ürün kararı); bu lane o davranışı DEĞİŞTİRMEZ.
+    // AK-2 (owner GO 2026-09-10): ayrıcalıklı DEĞERLER artık update'in H2 otoritesine bağlıdır
+    // (ADMIN veya bağlı PARTNER). Yetkili aktörde persist sözleşmesi AYNEN korunur; yetkisiz ve
+    // aktörsüz çağrının reddi `lawyer-create-privileged-boundary-ak2.spec.ts` ile sabitlenir.
     const { svc, prisma } = build();
-    await svc.create(TENANT, {
-      ...MINIMAL,
-      lawyerRank: 'PARTNER' as never,
-      permissionsLocked: true,
-      canModifyOtherPermissions: true,
-      defaultPermissions: { canSeeFinance: true },
-    } as never);
+    await svc.create(
+      TENANT,
+      {
+        ...MINIMAL,
+        lawyerRank: 'PARTNER' as never,
+        permissionsLocked: true,
+        canModifyOtherPermissions: true,
+        defaultPermissions: { canSeeFinance: true },
+      } as never,
+      { userId: 'admin-1', role: 'ADMIN' },
+    );
     const data = writtenData(prisma);
     expect(data.lawyerRank).toBe('PARTNER');
     expect(data.permissionsLocked).toBe(true);
