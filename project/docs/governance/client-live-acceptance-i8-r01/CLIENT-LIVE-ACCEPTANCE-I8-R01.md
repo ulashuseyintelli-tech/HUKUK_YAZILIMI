@@ -161,8 +161,47 @@ ortam değişkeni olarak geçer. Durum dosyasına, çıktıya, log'a veya repoya
 
 ## 6. Yerel doğrulama — disposable ortamda ÖLÇÜLDÜ
 
-Ortam: `127.0.0.1:5439/hukuk_fix1_test` (kap `hy-fix1-testdb`) + RELEASE21 derlenmiş API
+Ortam: `127.0.0.1:5439/hukuk_fix1_test` (kap `hy-fix1-testdb`) + derlenmiş API
 `http://127.0.0.1:8098/api`. **Canlı DB'ye 0 yazma.**
+
+### 6.0 DÜZELTME — ölçülen ikilinin kimliği (R01 ilk sürümünde YANLIŞ yazılmıştı)
+
+Bu belgenin ilk sürümü provanın "RELEASE21 derlenmiş API" üzerinde koştuğunu söylüyordu.
+**Yanlıştır.** Prova başlatıcısı (`scratchpad/i5b/start-api.js`) sabit olarak şu ikiliyi
+başlatır: `HY_W4_RELEASE20/project/apps/api/dist/apps/api/src/main.js`. Koşum sırasında
+8098'i dinleyen süreç ölçüldü ve komut satırı bu yolu gösterdi.
+
+| Ne | Kimlik | Kaynak |
+|---|---|---|
+| **Ölçülen ikili** | **RELEASE20** @ `08ce8e2559b4d1d67fcee245413de510209507f3` (derleme 2026-09-07 10:51) | `.git/worktrees/HY_W4_RELEASE20/HEAD` |
+| Canlı sürüm | RELEASE21 @ `2187a78b1621f168605920cdffccb17381dc171a` | `.git/worktrees/HY_W4_RELEASE21/HEAD` |
+| Ölçüm kütüphaneleri (Prisma/bcrypt) | RELEASE21 yollarından | §7 komut bloğu |
+
+Betiklerin sha256'sı **değiştirilmedi** (§4 tablosu geçerli); `i8-02-unauthorized.js`
+başlığındaki "ÜRÜN DAYANAĞI (RELEASE21)" ifadesi, dayanağın **okunduğu kaynağı** belirtir —
+provanın koştuğu ikili yukarıdaki RELEASE20 dist'tir.
+
+**Ölçüm hâlâ geçerli mi — iddia değil, ÖLÇÜM:** R20→R21 arası `apps/api/src` altında
+**32 dosya** değişti (15 spec · 17 ürün). İ8'in dokunduğu her yüzey karşılaştırıldı:
+
+| Dosya | R20 ↔ R21 |
+|---|---|
+| `client.service.ts` (yetki kontrolü `:1718-1720`, ilk `$transaction` `:1818`, audit) | **BİREBİR AYNI** |
+| `client-mutation-policy.ts` (`classifyClientField`, `CLIENT_MUTATION_DENIED_*`) | **BİREBİR AYNI** |
+| `auth.service.ts` · `auth.controller.ts` (login 201/401, `tokenVersion`, `isActive`) | **BİREBİR AYNI** |
+| `common/identity-validation.util.ts` (`isValidTckn`) | **BİREBİR AYNI** |
+| `client-identity-checksum.util.ts` | FARKLI |
+
+Tek fark olan `client-identity-checksum.util.ts`, **yalnız geçersiz** kimlikte fırlatılan
+gövdeyi yapılandırır (`reasonCode` + `offendingFields` eklenir; HTTP 400 ve kullanıcı metni
+korunur). **P-2 geçerli** bir TCKN (`10000000146`) yazar → bu yol hiç tetiklenmez. Değişen
+diğer ürün dosyaları (case-status, client-approval, client-intake-link, client-statement,
+expense-request, lawyer, office-approval, office) İ8'in kullandığı üç uca
+(`POST /auth/login`, `GET /auth/me`, `PUT /clients/:id`) girmez; `Lawyer` satırı API'den
+değil doğrudan Prisma ile yazılır.
+
+**Sonuç:** prova sonuçları RELEASE21 için de geçerlidir; tekrar koşum gerekmez. Yine de
+**canlı koşum canlı RELEASE21 servisi üzerinde yapılacaktır** (§7).
 
 **Tam akış (runId `c2d7bfa9`):**
 
