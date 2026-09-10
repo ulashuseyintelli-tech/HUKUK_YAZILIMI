@@ -10,6 +10,7 @@ import { canonicalMoney, domainSeparatedHash } from './client-financial-disclosu
 import {
   DISCLOSURE_APPROVER_CANDIDATE_SELECT,
   isDisclosureApproverEligible,
+  isDisclosureDecisionRoleDenied,
 } from './client-financial-disclosure-approval-eligibility';
 import {
   CLIENT_FINANCIAL_DISCLOSURE_APPROVAL_INTENT_CONTRACT_VERSION,
@@ -314,6 +315,8 @@ export class ClientFinancialDisclosureApprovalService {
             'DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN',
           );
         }
+        // VIEWER ONAY KARARI SINIRI — rol karar anında, sürüm/talep yazmalarından ÖNCE okunur.
+        await this.assertDecisionRoleAllowed(tx, input.approverUserId);
         await this.assertApproverEligible(tx, input.approverUserId, version.tenantId);
         await this.assertSnapshotFresh(tx, version);
 
@@ -669,6 +672,8 @@ export class ClientFinancialDisclosureApprovalService {
             'DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION',
           );
         }
+        // VIEWER ONAY KARARI SINIRI — rol karar anında, sürüm yazmasından ÖNCE okunur.
+        await this.assertDecisionRoleAllowed(tx, input.contentApproverUserId);
         await this.assertApproverEligible(tx, input.contentApproverUserId, version.tenantId);
         await this.assertSnapshotFresh(tx, version);
 
@@ -774,6 +779,19 @@ export class ClientFinancialDisclosureApprovalService {
       throw new ClientFinancialDisclosureApprovalAuthorizationError(
         'DISCLOSURE_APPROVAL_TENANT_MISMATCH',
       );
+    }
+  }
+
+  /**
+   * VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki) — YALNIZ yeni karar yolları (`completeOfficeApproval`,
+   * `completeContentApproval`) çağırır. Rol aynı transaction içinde, karar anında ve sürüm/talep yazmalarından ÖNCE
+   * okunur; VIEWER, bağlı avukatının rütbesi/delegasyonu ne olursa olsun `DISCLOSURE_APPROVAL_NOT_ELIGIBLE` alır.
+   * Kayıtlı kararın kurtarılması (`reconcileConsumedOfficeApproval`) ve idempotent tekrarlar bu kapıya girmez.
+   */
+  private async assertDecisionRoleAllowed(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+    const actor = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (isDisclosureDecisionRoleDenied(actor?.role)) {
+      throw new ClientFinancialDisclosureApprovalAuthorizationError('DISCLOSURE_APPROVAL_NOT_ELIGIBLE');
     }
   }
 

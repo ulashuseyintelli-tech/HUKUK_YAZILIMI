@@ -20,6 +20,9 @@
 //  - PAYOUT-APPROVAL-2 (2026-07-04): eligibility artık actionCode'a göre dispatch edilir
 //    (resolveApproverEligible). CLIENT_PAYOUT_POST izole PayoutApprovalPolicy'ye gider (MANAGER dahil);
 //    her başka actionCode (disposition dahil) yukarıdaki kuralı AYNEN kullanır — sıfır regresyon.
+//  - VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki): karar anında DB rolü VIEWER ise karar YOK
+//    (403 OFFICE_APPROVAL_DECISION_DENIED_VIEWER); bağlı avukatın rütbesi/delegasyonu bu yasağı aşmaz. Okuma ve
+//    yürütme bağlamları DEĞİŞMEDİ (bkz. assertApprovalDecisionRoleAllowed).
 
 import {
   Injectable,
@@ -43,7 +46,7 @@ import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
 import { isValidTckn } from '../../common/identity-validation.util';
 import { assertGenericDecisionAllowed } from './office-approval-domain-ownership';
-import { isOfficeWriteDeniedForRole } from './office-write-role.policy';
+import { assertApprovalDecisionRole, isOfficeWriteDeniedForRole } from './office-write-role.policy';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -555,9 +558,22 @@ export class OfficeApprovalService {
 
   /** Approver yeterliliği — değilse 403. (Predikat resolveApproverEligible'da; karar metodları bunu çağırır.) */
   private async assertApproverEligibleForRequest(req: OfficeApprovalRequest, approverUserId: string): Promise<void> {
+    await this.assertApprovalDecisionRoleAllowed(approverUserId); // VIEWER ONAY KARARI SINIRI — rütbe/delege denetiminden ÖNCE
     if (!(await this.resolveApproverEligible(req, approverUserId))) {
       throw new ForbiddenException('Onay yetkisi yok (aktif, aynı tenant, PARTNER veya yetkilendirilmiş avukat gerekir).');
     }
+  }
+
+  /**
+   * VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki): rol KARAR ANINDA DB'den okunur (çağıranın beyanı
+   * değil); VIEWER hiçbir actionCode'da (payout ve FD politikaları dahil) karar veremez — bağlı avukatın
+   * rütbesi/delegasyonu bu yasağı AŞMAZ. Yalnız karar metotları (approve / reject / requestRevision /
+   * approveWithChanges) çağırır ve commitDecision'dan ÖNCE çalışır → ret halinde karar kaydı, domain senkronu ve
+   * audit YOK. isApproverEligible() DEĞİŞMEDİ: inbox/detay görünürlüğü ve onu kullanan diğer kapılar aynen kalır.
+   */
+  private async assertApprovalDecisionRoleAllowed(approverUserId: string): Promise<void> {
+    const actor = await this.prisma.user.findUnique({ where: { id: approverUserId }, select: { role: true } });
+    assertApprovalDecisionRole(actor?.role);
   }
 
   private async commitDecision(

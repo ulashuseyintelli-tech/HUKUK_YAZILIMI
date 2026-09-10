@@ -26,3 +26,21 @@ export function assertOfficeWriteRole(role: unknown): void {
     });
   }
 }
+
+/**
+ * VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki) — onay KARARI (onayla / reddet / revizyon iste /
+ * değiştirerek onayla) OFFICE onay kaydına yazmadır: VIEWER, bağlı avukatı PARTNER/MANAGER ya da delege olsa bile karar
+ * veremez. Yüklem yazma yasağıyla AYNIDIR (`isOfficeWriteDeniedForRole`); rol karar anında DB'den okunur
+ * (`OfficeApprovalService.assertApprovalDecisionRoleAllowed`). OKUMA (inbox/detay görünürlüğü) ve YÜRÜTME bağlamları
+ * bu kapıya girmez. FD dormant servisindeki kopya: `isDisclosureDecisionRoleDenied` (parite testle kilitli).
+ */
+export const OFFICE_APPROVAL_DECISION_DENIED_VIEWER = "OFFICE_APPROVAL_DECISION_DENIED_VIEWER";
+
+export function assertApprovalDecisionRole(role: unknown): void {
+  if (isOfficeWriteDeniedForRole(role)) {
+    throw new ForbiddenException({
+      code: OFFICE_APPROVAL_DECISION_DENIED_VIEWER,
+      message: "Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.",
+    });
+  }
+}
