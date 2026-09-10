@@ -67,7 +67,8 @@ describe('RFA-016 resolveInlinePartiesBeforeTx — inline taraf guard bypass kap
   });
 
   it('inline-yeni avukat → LawyerService.create çağrılır, id atanır', async () => {
-    const lawyerService = { create: jest.fn(async () => ({ id: 'lawyer-new' })) };
+    // AK-1a/AK-2: dosya içi yeni avukat artık önce yazmasız yetki ön kontrolünden geçer.
+    const lawyerService = { create: jest.fn(async () => ({ id: 'lawyer-new' })), assertCreateAuthorized: jest.fn() };
     const svc = build({ create: jest.fn() }, lawyerService, { create: jest.fn() });
     const dto: any = { lawyers: [{ name: 'Av. Mehmet', surname: 'Demir', barNumber: '5555' }] };
 

@@ -3,6 +3,7 @@ import { SeedService } from './seed.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { buildClientMutationActor } from '../client/client.service';
+import { assertOfficeWriteRole } from '../office-approval/office-write-role.policy';
 
 @Controller('seed')
 export class SeedController {
@@ -25,6 +26,7 @@ export class SeedController {
   @UseGuards(JwtAuthGuard)
   @Post('lawyers')
   async seedLawyers(@Request() req: any) {
+    assertOfficeWriteRole(req.user?.role); // AK-1a: VIEWER OFFICE'e yazamaz (seed dahil)
     // AK-2: oluşturulan avukatların LAWYER_CREATE audit'i isteği yapan kullanıcıya bağlanır (yalnız atıf).
     return this.seedService.seedLawyers(req.user.tenantId, { userId: req.user.id });
   }
@@ -58,6 +60,7 @@ export class SeedController {
   @UseGuards(JwtAuthGuard)
   @Post('staff')
   async seedStaff(@Request() req: any) {
+    assertOfficeWriteRole(req.user?.role); // AK-1a
     return this.seedService.seedStaff(req.user.tenantId);
   }
 
@@ -78,18 +81,21 @@ export class SeedController {
   @UseGuards(JwtAuthGuard)
   @Post('fix-lawyers')
   async fixLawyers(@Request() req: any) {
+    assertOfficeWriteRole(req.user?.role); // AK-1a
     return this.seedService.fixExistingLawyers(req.user.tenantId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('office')
   async seedOffice(@Request() req: any) {
+    assertOfficeWriteRole(req.user?.role); // AK-1a
     return this.seedService.seedOffice(req.user.tenantId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('bank-accounts')
   async seedBankAccounts(@Request() req: any) {
+    assertOfficeWriteRole(req.user?.role); // AK-1a
     return this.seedService.seedBankAccounts(req.user.tenantId);
   }
 

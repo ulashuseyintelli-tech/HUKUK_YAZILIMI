@@ -265,14 +265,7 @@ export class LawyerService {
 
     // PR-AUDIT: duplicate guard — aynı baro no/TCKN VEYA aynı ad-soyad → yeni AÇMA, mevcut döndür.
     // (Eskiden guard yoktu → "Ulaş Hüseyin Telli" gibi mükerrer avukat açılıyordu → yetki/atama karışıklığı.)
-    const wantName = normalizePersonName(data.name, data.surname);
-    const allLawyers = await this.prisma.lawyer.findMany({ where: { tenantId } });
-    const dup = allLawyers.find(
-      (l) =>
-        (data.barNumber && l.barNumber === data.barNumber) ||
-        (data.tckn && l.tckn === data.tckn) ||
-        (!!wantName && normalizePersonName(l.name, l.surname) === wantName),
-    );
+    const dup = await this.findDuplicateLawyer(tenantId, data);
     if (dup) {
       const wasInactive = (dup as any).isActive === false;
       let reactivated = false;
@@ -739,6 +732,58 @@ export class LawyerService {
       unauthorized:
         "Eşleşen kayıt ayrıcalıklı (PARTNER/MANAGER, izin değiştirme, izin kilidi veya ofis onayı) pasif bir avukat; yeniden etkinleştirme yalnız PARTNER veya ADMIN tarafından yapılabilir.",
     });
+  }
+
+  /**
+   * PR-AUDIT mükerrer araması — create ve `assertCreateAuthorized` ön kontrolünün ORTAK kaynağı: aynı baro no /
+   * TCKN VEYA aynı normalize ad-soyad. Tenant-kapsamlı; aktif ve pasif kayıtları birlikte tarar.
+   */
+  private async findDuplicateLawyer(
+    tenantId: string,
+    data: { name: string; surname: string; barNumber?: string | null; tckn?: string | null },
+  ) {
+    const wantName = normalizePersonName(data.name, data.surname);
+    const allLawyers = await this.prisma.lawyer.findMany({ where: { tenantId } });
+    return (
+      allLawyers.find(
+        (l) =>
+          (data.barNumber && l.barNumber === data.barNumber) ||
+          (data.tckn && l.tckn === data.tckn) ||
+          (!!wantName && normalizePersonName(l.name, l.surname) === wantName),
+      ) ?? null
+    );
+  }
+
+  /**
+   * AK-1a / AK-2 — create'in YETKİ kararlarını YAZMA YAPMADAN verir: ayrıcalıklı istek değeri (H2) ve mükerrer
+   * pasif AYRICALIKLI kayıt (H2). Çok adımlı çağıranlar reddi İLK kalıcı yazmadan önce almak için kullanır;
+   * create kendi kontrollerini yine uygular (koşullu yazma dahil).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CaseService.resolveInlinePartiesBeforeTx() → POST /cases dosya içi avukat, inline müvekkil yazılmadan ÖNCE.
+   * /// </remarks>
+   */
+  async assertCreateAuthorized(
+    tenantId: string,
+    data: {
+      name: string;
+      surname: string;
+      barNumber?: string;
+      tckn?: string;
+      lawyerRank?: LawyerRank;
+      permissionsLocked?: boolean;
+      canModifyOtherPermissions?: boolean;
+    },
+    actor?: LawyerUpdateActor,
+  ): Promise<void> {
+    if (this.isPrivilegedLawyerCreate(data)) {
+      await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId);
+    }
+    const dup = await this.findDuplicateLawyer(tenantId, data);
+    if (dup && dup.isActive === false && this.isPrivilegedLawyerRecord(dup)) {
+      await this.assertCanReactivatePrivilegedLawyer(actor, tenantId);
+    }
   }
 
   /**

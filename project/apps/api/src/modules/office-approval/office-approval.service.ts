@@ -43,6 +43,7 @@ import { PayoutApprovalPolicy } from './client-payout-approval.policy';
 import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disclosure-approval.policy';
 import { isValidTckn } from '../../common/identity-validation.util';
 import { assertGenericDecisionAllowed } from './office-approval-domain-ownership';
+import { isOfficeWriteDeniedForRole } from './office-write-role.policy';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -470,8 +471,16 @@ export class OfficeApprovalService {
    * canonical genel allowlist. Bu, action-specific approval politikalarını
    * genişletmez; approval kararları hâlâ resolveApproverEligible() üzerinden
    * kendi dar politikalarını uygular.
+   *
+   * AK-1a (owner GO 2026-09-10): `options.write` verilirse VIEWER elenir (OFFICE salt-okuma); verilmezse
+   * davranış DEĞİŞMEZ. Mutasyon rotaları `isF01WriteActorAuthorized` üzerinden çağırır.
    */
-  async isF01ActorAuthorized(userId: string, tenantId: string, targetOfficeId?: string): Promise<boolean> {
+  async isF01ActorAuthorized(
+    userId: string,
+    tenantId: string,
+    targetOfficeId?: string,
+    options?: { write?: boolean },
+  ): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -491,6 +500,10 @@ export class OfficeApprovalService {
 
     if (!user || !user.isActive || user.tenantId !== tenantId) return false;
 
+    // AK-1a: YAZMA niyetinde VIEWER, bağlı avukatın rütbesi veya delege bayrağı ne olursa olsun elenir.
+    // OKUMA (options.write yok) davranışı DEĞİŞMEZ — F01 GET'leri ve projeksiyonlar aynı kalır.
+    if (options?.write && isOfficeWriteDeniedForRole(user.role)) return false;
+
     // A staff/personnel identity cannot become an Office actor through a
     // mistakenly-true capability flag.
     if (user.staffMember) return false;
@@ -509,6 +522,14 @@ export class OfficeApprovalService {
       lawyer.lawyerRank === 'MANAGER' ||
       lawyer.canApproveOfficeActions === true
     );
+  }
+
+  /**
+   * AK-1a — F01 YAZMA yüklemi: `isF01ActorAuthorized` + VIEWER eleme (DB rolüne göre). OFFICE yazma
+   * rotalarının guard'ı (`OfficeF01AuthorizationGuard`, POST/PUT/PATCH/DELETE) bunu kullanır.
+   */
+  async isF01WriteActorAuthorized(userId: string, tenantId: string, targetOfficeId?: string): Promise<boolean> {
+    return this.isF01ActorAuthorized(userId, tenantId, targetOfficeId, { write: true });
   }
 
   /**
