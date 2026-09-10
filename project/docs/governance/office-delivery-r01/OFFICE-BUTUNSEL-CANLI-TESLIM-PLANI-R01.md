@@ -9,6 +9,7 @@ Canlı         : RELEASE20 @ 08ce8e2559b4d1d67fcee245413de510209507f3 · BUILD_I
                 RELEASE21 @ 2187a78b1621f168605920cdffccb17381dc171a · BUILD_ID g91HUaBesekB-R2rRawQj
 Rollback      : RELEASE19 @ a60d772b6c53ece6bc23b77821a2921ab0ec7942
                 ⚠ BAYAT. GÜNCEL rollback hedefi: RELEASE20 @ 08ce8e25 (bkz. §8.14)
+Durum         : 2026-09-10 · A-01…A-07 7/7 · BÜTÜNSEL TESLİM TAMAMLANDI (bkz. §8.18)
 Rol           : OFFICE'in TEK teslim planı. Paralel kayıt sistemi veya ikinci ana plan DEĞİLDİR;
                 mevcut kayıtları (ODM, product-backlog, decision-log, O-serisi kabulü) DEVRALIR.
 Yetki         : Owner GO 2026-09-08 (bütünsel canlı teslim). Mevcut mühür / tek-kullanım yetki /
@@ -1361,3 +1362,154 @@ restart **defteri** (B) · 60 s bütçe yerine ilerleme yoksa **bekleme**.
 #### 8.17.7 Sayaç
 
 **6/7 — değişmedi.** A-07 yürütülmedi. **Bütünsel teslim İLAN EDİLMEZ.**
+
+### 8.18 A-07 KAPANDI — 7/7 · NİHAİ TESLİM TABLOSU · BÜTÜNSEL TESLİM (2026-09-10, append-only)
+
+Owner R02 A-07 koşumunu yükseltilmiş terminalde çalıştırdı; paket **22/22 PASS** bildirdi. Ana
+yürütücü terminal çıktısını **kanıt saymadı**; paket kimliğine, olay günlüklerine ve DB/audit/
+history kayıtlarına **bağımsız** bağladı. Kabul **yeniden çalıştırılmadı**. Zamanlar UTC.
+
+#### 8.18.1 A-07 — bağımsız bağlama
+
+| Kalem | Bağımsız ölçüm |
+|---|---|
+| Paket kimliği | OFF_A02 HEAD `750b8235` (#2594, R02) · izlenen kirlilik 0 · 6/6 paket dosyası + `ow-lib.js`/`ow-service.js` 2/2 sha256 **R02 belgesiyle EŞİT** · paket dosyaları `origin/main`'e kadar değişmedi |
+| Koşum | olay 400/403 `RunspaceId 4459d088`: **10:04:48.557Z → 10:06:02.548Z (74,0 s)** · **tek koşum** |
+| Restart'lar | olay 400: Stop 10:04:54.558 / Start 10:04:55.308 (açma) · Stop 10:05:49.167 / Start 10:05:50.028 (kapanış) · Görev Zamanlayıcı 2×330 + 2×110 · `host-api.log` her iki başlangıçta `launcher pin ok 4ACA26CD…` + `FULL CLOSURE ok 994/994` |
+| Yürütme | `OfficeApprovalRequest` `APPROVED` / **`SUCCEEDED`** · `executedAt 10:05:47Z` · `retryCount 0` |
+| **Kesin bağ** | bu onaya bağlı `CaseStatusHistory` satırı **TAM 1** · `approvalRequestId = cmtu2zfrt…` · **`approvalAttempt = 0`** · `ISLEMDE → DERKENAR` · id `cmtvd3hrw0003wdcz154yobk1` (terminaldekiyle aynı) |
+| Reconcile | bağlı satır **1 → 1** — yeniden uygulama YOK (409 "yalnız RUNNING talepte anlamlıdır") |
+| Dava | `Case.caseStatus = DERKENAR` |
+| Audit | `OFFICE_APPROVAL_EXECUTION_STARTED` + `…_SUCCEEDED` 10:05:47Z · tenant audit 11 → **13** |
+| DecisionLog | dava için **1** satır — "Statü değiştirildi: ISLEMDE -> DERKENAR" (10:05:47.329Z) |
+| Erişim iptali | sentetik ADMIN `isActive=false` · `tokenVersion` **2 → 3** (10:06:00Z) · personel satırı **DOKUNULMADI** |
+| Bayrak | `.env` son yazım **10:05:47.408Z** · kabul ve **cron** satırı YOK · ACL değişmedi · canlı başlatıcı (pwsh 38260) **10:05:54.713Z** > yazım → **KAPALI dosyayı yükledi** |
+| Bayrak açık çalışma penceresi | bayraklı API (37048) dinlemeye **10:05:46.571Z**'de başladı, kapanış **10:05:49.167Z**'de durdurdu → **~2,6 s**; execute (10:05:47.324Z) bu pencerede. Cron bayrağı **hiç açılmadı** |
+| Servis | node 50716 · `HY_W4_RELEASE21` · DB'ye dokunan login **401** (10:09:35Z) · eski 44924 ve ara 37048 YOK |
+| Küresel | `CaseStatusHistory` 930 → **931** · bağ 0 → **1** · ledger 130 |
+
+**Yeniden ölçülemeyenler — sınır açıkça:** uçtan **403 DISABLED**, gerçek parolayla **"devre dışı"
+401** ve eski token **401** yeniden ölçülmedi — kimlik bilgisi bellekte üretilip atıldı; ölçmek için
+erişimi yeniden açmak gerekirdi. Bunların kanıtı: paketin koşum anı ölçümü + kalıcı DB durumu
+(`isActive=false`, `tokenVersion++`) + başlatıcı/dosya zaman sıralaması.
+
+#### 8.18.2 Aktör alanı — DELTA-A sorusu KODLA kapandı
+
+Owner'ın DELTA-A talimatı: *"Aktör alanının gerçek üreticisini doğrulayın, approverUserId olduğunu
+varsaymayın."* Bu koşumda `changedById = approverUserId = sentetik ADMIN` — **iki aday aynı kişi**,
+veri ayırt edemez. Kod ayırt eder:
+
+```text
+office-approval-executor.service.ts:31   K4 ACTOR: changeStatus + markExecution* icin actor = request.approverUserId
+                                         (degisikligi onaylayan adina uygulanir)
+office-approval-executor.service.ts:60   executorUserId = yurutmeyi tetikleyen internal context; resmi actor DEGIL
+office-approval-executor.service.ts:226  this.caseStatus.changeStatus(..., approverUserId, ..., binding)
+case-status.service.ts:127               changedById: actorUserId   (= aktarilan approverUserId)
+```
+
+**Hüküm:** `changedById` **tasarım gereği (K4) approverUserId'dir**; execute'u çağıranın kimliği
+`CaseStatusHistory`'ye yazılmaz (servis günlüğüne yazılır). **Kapsam sınırı:** bu kabul
+*onaylayan ≠ yürüten* durumunu sınamadı — kusur değil, kayıtlı sınır.
+
+#### 8.18.3 Eşzamanlı yazıcı — CLIENT I1b (ayrı tenant, owner onaylı)
+
+Küresel Tenant/User/Case **+1** A-07'den değildir: **`cl-acc-afce215b`**, oluşturulma
+**10:08:05Z** — A-07 koşumu bittikten **2 dk sonra**, `@cl-acceptance.invalid`, kullanıcı pasif.
+CLIENT hattının I1b canlı kabul alanı (`OWNER-GO-CLIENT-I1B-20260910-R01`, PR #2596). A-07'nin
+bütün yazmaları `off-acc-f851d975` içindedir; koşum penceresinde servis restart'larının tamamı
+A-07'nindir (2+2). **Sınır:** olay 400 filtrem yalnız `-File` PowerShell başlatmalarını görür; "0
+ilgisiz başlatma" başka yazıcı olmadığı anlamına gelmez — bu yazıcı DB'den tespit edilmiştir.
+
+#### 8.18.4 Host kimlik açığı — teslim ölçütüne etkisi (gerekçeli sonuç)
+
+**Açık ne:** çalışan `hukuk-task-host.exe`'nin sha256'sı **hiçbir mühürlü kayıtta yok**
+(ERRATUM §5). **Bugünkü ölçüm mühür kanıtı SAYILMAZ.**
+
+**Bugünkü ölçümün tek kullanımı — kaymanın olmadığını göstermek:** sha256 `1397C54C…` = CLIENT'in
+2026-09-09 ~20:5xZ ölçümü (≈13 saat ara, **aynı**); dosya son yazımı **2026-09-09 11:37:55Z** —
+cutover penceresinin (11:37:23Z–11:39:04Z) **içinde**. Yani çalışan host, cutover'ın yerleştirdiği
+dosyadır ve o günden beri değişmemiştir. Bu, açığın **büyümediğini** gösterir; açığı **kapatmaz**.
+
+**§6.6 ölçütü ("Release/rollback kanıtları … tam") neyi ister, açık neyi etkiler:**
+
+| Ölçütün amacı | Kanıt | Host açığı etkiler mi |
+|---|---|---|
+| Canlının **kimliği** | aday `2187a78b` · BUILD_ID `g91HUaBesekB-R2rRawQj` · mühürlü paket + makbuz 31/31 (`7DEED4E7…`) · **launcher pini `4ACA26CD…` her başlangıçta doğrulanıyor** (09-09 ve 09-10'da 5 gözlem) · pwsh closure **994/994** manifest-pinli | **Hayır** — host, tasarım gereği bayt kimliğinin dışında (`HOST-GENERATION.json`: `byteExactReproducible:false` / `semanticIdentity:true`); kimlik bağı çalıştırdığı her şeyi doğrulayan **pinlerdir** |
+| **Geri dönüş** | RELEASE20 kökü + staged launcher/host byte-exact · R-01 kapısı · `buildId` kaydı ERRATUM ile | **Hayır** |
+| **Denetlenebilirlik** — doğrulayıcının kendisi | host binary'sinin kimliği mühürden doğrulanamaz | **EVET** — açık budur |
+
+**Sonuç:** host açığı canlının kimliğini veya geri dönüş yeteneğini zayıflatmaz; **doğrulayıcının
+kendisinin bağımsız denetlenebilirliğini** eksik bırakır. Bu nedenle §6.6 **karşılanmıştır**; host
+denetlenebilirlik açığı **kapsam dışı AÇIK kalem** olarak kalır ve **kapanmış gösterilmez**. Kapanış
+yolu: bir sonraki cutover'da host sha256'sının **mühür anında** kayda alınması (ERRATUM §4'teki
+jeneratör literal düzeltmesiyle birlikte).
+
+**Geri alınan ifade:** §8.15.3 bu ayağı *"tam karşılanmamaktadır"* diye kaydetmişti. O tarihte
+ölçütün amacı ile açığın etkisi ayrıştırılmamıştı; ayrıştırma yukarıdadır. Owner aksine karar
+verirse bütünsel teslim **koşullu** sayılır.
+
+#### 8.18.5 Sayaç — 7/7
+
+```text
+A-01  cutover RELEASE21 ...................... KAPANDI  makbuz 7DEED4E7… · §8.14.2
+A-02  yazma kabul sozlesmesi + prova ......... KAPANDI  A-02 paketi · §8.10
+A-03  ayar yuzeyi PUT (8 yuzey) .............. KAPANDI  53/53 · SONUC-R01 @ ed80da5a
+A-04  avukat + personel yazma ................ KAPANDI  27/27 · SONUC-R01
+A-05  personel okuma (maskeleme) ............. KAPANDI  12/12 · SONUC-R01
+A-06  raporlama hatti ........................ KAPANDI  17/17 · SONUC-R01
+A-07  kontrollu yurutme (DELTA-A) ............ KAPANDI  22/22 · §8.18.1 · paket @ 750b8235
+                                                     ZORUNLU KABUL KUMESI: 7/7
+```
+
+#### 8.18.6 NİHAİ TESLİM TABLOSU — 12 hizmet
+
+Etiketler (§8.15.1): **CK** canlı kabul · **İÖ** izole ölçüm (canlı DB'ye 0 yazma) · **DV**
+devralınan. İÖ, CK yerine geçmez. Canlı sürüm tümünde **RELEASE21 `2187a78b`**.
+
+| # | Hizmet | Rol / yetki | Ürün-hukuki sınır | Kabul | Kanıt |
+|---|---|---|---|---|---|
+| S-01 | Büro kimlik ve profili | F01-yetkili; kendi tenant'ı | S2 minimizasyonu (F-B01-03/04) | **CK A-03** · **İÖ O-4** (82 alan-yolu, 0/7) | SONUÇ-R01 · §8.13.1 |
+| S-02 | Banka hesapları | F01-yetkili | `iban` minimizasyonu | **CK A-03** | SONUÇ-R01 |
+| S-03 | E-posta/SMTP | F01-yetkili | `smtpPass` maskeli | **CK A-03** · DV O-1/O-3/O-5 | SONUÇ-R01 · #2545 |
+| S-04 | SMS | F01-yetkili | secret maskeli · **sağlayıcı NOT_CONFIGURED** (ürün sınırı) | **CK A-03** · DV O-1/O-3/O-5 | SONUÇ-R01 · F05 |
+| S-05 | Karşılama ayarları | F01-yetkili | — | **CK A-03** · DV | SONUÇ-R01 |
+| S-06 | İİK-78 ayarları | F01-yetkili | ürün parametreleri; **genel hukuki uygunluk iddiası ÜRETİLMEZ** | **CK A-03** · DV | SONUÇ-R01 |
+| S-07 | Vekalet süre-dolumu | F01-yetkili | S2 omit | **CK A-03** · DV O-3 | SONUÇ-R01 |
+| S-08 | Eskalasyon ayarları | F01-yetkili | S2 omit (3 alan) | **CK A-03** · DV O-3/O-7/O-9 | SONUÇ-R01 · #2545 |
+| S-09 | Avukat yönetimi | F01; yetki/rütbe H2'ye kilitli | P01 credential omit · DTO yazma sınırı | **CK A-04** · **İÖ O-4-LAWYER** (38, 0/7) | SONUÇ-R01 · §8.13.1 |
+| S-10 | Personel yönetimi | okuma oturumlu; yazma F01 | liste maskeleme · `isActive` sınırı | **CK A-04** + **CK A-05** | SONUÇ-R01 |
+| S-11 | Raporlama hattı | **yalnız ADMIN** | D-WR-6 FOUNDER `ANY_ONE` | **CK A-06** | SONUÇ-R01 |
+| **S-12** | **Büro onay akışı** | oturumlu aktör; `isApproverEligible`; kontrollü yürütme **ADMIN + F01 + kabul bayrağı** | ADR-009 tek motor · OD-12/OD-13 OPTION B · **K4: actor = approverUserId** · cron **kapalı** | **CK A-07** (22/22; execute SUCCEEDED + kesin bağ + reconcile 1→1) | **§8.18.1** · paket @ `750b8235` |
+
+**Doğrudan canlı kabulü olan hizmet: 12/12.** Önceki kanıtlar (§2, §8.15.2) değiştirilmedi; bu tablo
+onların üzerine eklenir.
+
+#### 8.18.7 §6 bitiş çizgisi — altı koşul
+
+| # | Koşul | Durum | Dayanak |
+|---|---|---|---|
+| 1 | A-01…A-07 kanıtla tamamlanmış | ✅ | §8.18.5 — 7/7 |
+| 2 | On iki hizmet hedef canlı sürümde | ✅ | RELEASE21 `2187a78b` · §8.14.1 |
+| 3 | Rol, tenant, yapılandırma ve kullanıcı akışı kabulleri geçmiş | ✅ | §8.18.6 — 12/12 CK |
+| 4 | Devralınan ve yeni kanıtlar tabloda bağlı | ✅ | §8.18.6 kanıt sütunu |
+| 5 | Teslimi engelleyen açık kusur veya belirsiz işlem sonucu yok | ✅ | R01 denemesi temiz kapandı (§8.17) · R02 PASS · belirsiz mutasyon yok |
+| 6 | Release/rollback kanıtları, kayıtlar ve işe ait temizlik tamam | ✅ | §8.14 · ERRATUM · §8.18.4 (host açığı engellemez, açık kalır) · sentetik erişim iptal, kanıt satırları korundu |
+
+#### 8.18.8 Kapsam dışı AÇIK kalemler — kapanmış GÖSTERİLMEZ
+
+| Kalem | Durum |
+|---|---|
+| AK-1a · AK-1b · AK-1c · AK-2 | **KARAKTERİZE EDİLDİ / OWNER KARARI BEKLİYOR** — hüküm verilmedi, kod değişmedi |
+| AK-3 / CAP-07 | B-01 sınırı — teslimi engellemez (§5) |
+| `escAssignees` iç tüketici residual'ı | B-02 |
+| SMS sağlayıcı yapılandırması | B-04 — ürün sınırı |
+| O-8 (Kaydet kabulü) | NOT_EXECUTED — başlangıçtan kapsam dışı |
+| Host denetlenebilirlik açığı | §8.18.4 — kapanış yolu tanımlı |
+| Jeneratör literal düzeltmesi | ERRATUM §4 — uygulanmadı; R21→R22 forkunda tekrarlar |
+| Docker Desktop'ın 2026-09-09'daki çıkış nedeni | ölçülmedi (§8.16) |
+| Kabulde *onaylayan ≠ yürüten* durumu | sınanmadı (§8.18.2) |
+
+#### 8.18.9 SONUÇ
+
+§6'nın altı koşulu karşılanmış, kapsam dışı açıklar ayrıca listelenmiş ve kapanmış
+gösterilmemiştir. **Bu kaydın main'e alınmasıyla OFFICE BÜTÜNSEL CANLI TESLİMİ TAMAMLANMIŞTIR.**
