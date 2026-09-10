@@ -70,8 +70,10 @@ function assertEnvironment() {
   let ownerGoRef = null;
   if (envName === 'live') {
     ownerGoRef = process.env.CL_OWNER_GO_REF || '';
-    if (!/^OWNER-GO-CLIENT-I1B-[0-9]{8}-R[0-9]{2}$/.test(ownerGoRef)) {
-      throw new EnvironmentGateError('CL_ENVIRONMENT=live icin CL_OWNER_GO_REF (OWNER-GO-CLIENT-I1B-YYYYMMDD-Rnn) ZORUNLU — owner onayi olmadan canli yazma BASLAMAZ');
+    // I1b ve I8 canli kabul kosumlari AYNI paket ailesini kullanir; her ikisi de owner'in
+    // KENDI yazili GO ref'ini ister. Bicim kontrolu; ref'in gercekligi owner kanalindadir.
+    if (!/^OWNER-GO-CLIENT-I(1B|8)-[0-9]{8}-R[0-9]{2}$/.test(ownerGoRef)) {
+      throw new EnvironmentGateError('CL_ENVIRONMENT=live icin CL_OWNER_GO_REF (OWNER-GO-CLIENT-I1B|I8-YYYYMMDD-Rnn) ZORUNLU — owner onayi olmadan canli yazma BASLAMAZ');
     }
   }
   return { environment: envName, dbHost: host, dbPort: port, dbName, ownerGoRef };
