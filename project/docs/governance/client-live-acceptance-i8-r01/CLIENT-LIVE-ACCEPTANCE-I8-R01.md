@@ -200,8 +200,49 @@ expense-request, lawyer, office-approval, office) İ8'in kullandığı üç uca
 (`POST /auth/login`, `GET /auth/me`, `PUT /clients/:id`) girmez; `Lawyer` satırı API'den
 değil doğrudan Prisma ile yazılır.
 
-**Sonuç:** prova sonuçları RELEASE21 için de geçerlidir; tekrar koşum gerekmez. Yine de
-**canlı koşum canlı RELEASE21 servisi üzerinde yapılacaktır** (§7).
+**Kaynak eşdeğerliği tek başına yeterli DEĞİLDİR.** Bu tablo yalnız "aynı davranış beklenir"
+der; *ölçülmüş* sonuç üretmez. Bu yüzden aşağıdaki §6.1'de senaryolar **gerçekten RELEASE21
+derlemesi üzerinde** yeniden koşuldu. §6'daki RELEASE20 sonuçları **tarihsel kanıt olarak
+korunur** (silinmedi, değiştirilmedi).
+
+### 6.1 RELEASE21 DERLEMESİ ÜZERİNDE KOŞUM (disposable) — runId `27e60365`
+
+Senaryolar **genişletilmedi**; §6'daki aynı 11 gözlem, aynı betiklerle koşuldu.
+
+**Başlatmadan önceki kapılar (fail-closed, hepsi ölçüldü):**
+
+| Kapı | Ölçüm |
+|---|---|
+| Paket/hash bağı | 5/5 betik diskte, `origin/main` blob'unda ve §4 tablosunda **birebir aynı** |
+| Çalıştırılan derleme | `HY_W4_RELEASE21/project/apps/api/dist/apps/api/src/main.js` · sha256 `28D84796367BC409DBD1DEEE3FC89A35DEC844B6B6EB0DCAD954999AD8DE73F5` (beklenen değerle eşleşti) |
+| Derlemenin kaynağı | RELEASE21 @ `2187a78b1621f168605920cdffccb17381dc171a` (`.git/worktrees/HY_W4_RELEASE21/HEAD`); web `BUILD_ID g91HUaBesekB-R2rRawQj` |
+| DB hedefi | `127.0.0.1:5439/hukuk_fix1_test` — **disposable** (canlı `5432/hukuk_db` başlatıcı tarafından reddedilir) |
+| Hedef port | **8099** boş; canlı portlar (8080/3002/3000/3001/5432) hedef olarak **seçilemez** |
+| Süreç öldürme | **YOK** — başlatıcı hiçbir süreci sonlandırmaz; port doluysa başlamaz |
+
+**Başladıktan sonra çalışma yolu teyidi:** dinleyen PID `37584`'ün komut satırı okundu ve
+beklenen dist yolunu **birebir** taşıdığı doğrulandı (başlatıcının kendi raporu kanıt
+sayılmadı; `netstat` + `Win32_Process` ile bağımsız ölçüldü). API↔DB bağı ayrıca
+bogus login ile sınandı: **HTTP 401** (500 değil → gerçekten bu DB'ye bağlı).
+
+**Sonuç — RELEASE21 koşumu:**
+
+```
+[S0] ortam=disposable 127.0.0.1:5439/hukuk_fix1_test · slug=cl-acc-27e60365
+[S0] izolasyon tabani: 1225 komsu tenant · digest fb2a6249740878b2
+[S1] KURULUM COMMIT EDILDI — 6/6 satir
+  OK  P-0v · P-0u · P-0e · P-0x · U-1 · U-2 · U-3 · U-4 · P-1 · P-2 · U-6
+I8 YETKISIZ DENEME: PASS 11 · FAIL 0 · OLCULEMEYEN 0
+[DOGRULAMA] kapatma sonrasi login=401 · [TEKRAR] alreadyClosed=true exit=0
+    SONUC: BASARILI     result: PASS
+```
+
+**Kapanış sonrası bağımsız ölçüm:** `cl-acc-27e60365` → `user 3 · lawyer 1 · client 1 ·
+case 0 · caseClient 0 · office 0 · clientContact 0`; `activeUsers 0`; 3/3 aktör
+`isActive:false`, `tokenVersion:1`.
+
+**Koşum sonrası:** yalnız kendi prova sürecim (PID 37584 / port 8099) kapatıldı; **canlı
+API PID 50716 (:8080) ve Web PID 22440 (:3002) çalışmaya devam ediyor, dokunulmadı.**
 
 **Tam akış (runId `c2d7bfa9`):**
 
@@ -258,7 +299,7 @@ koşumdur. İlk provanın alanı (`cl-acc-53b3ab18`) bağımsız ölçümle **ka
 $env:CL_ENVIRONMENT   = 'live'
 $env:CL_OWNER_GO_REF  = '<owner GO ref>'          # owner verir; betik URETMEZ
 $env:CL_DATABASE_URL  = 'postgresql://<user>:<pass>@127.0.0.1:5432/hukuk_db'
-$env:CL_API_BASE_URL  = 'http://127.0.0.1:3001/api'
+$env:CL_API_BASE_URL  = 'http://127.0.0.1:8080/api'   # CANLI API — olculdu, asagi bkz.
 $env:CL_PRISMA_ROOT   = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE21/project/apps/api/node_modules/@prisma/client'
 $env:CL_BCRYPT_PATH   = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE21/project/apps/api/node_modules/bcrypt'
 $env:CL_RUN_ID        = '<8 hex — YAZMADAN ONCE belirlenir ve kayda gecer>'
@@ -319,3 +360,136 @@ Deploy · migration · servis restartı · canlı flag değişikliği · gerçek
 İstenen: **canlı sentetik alan kurulumu + yetkisiz deneme ölçümü + erişim kapatma** için
 yazılı owner GO'su. Ref biçimi `OWNER-GO-CLIENT-I8-YYYYMMDD-Rnn`.
 **Ref'i owner verir; bu paket ref üretmez ve varsayılmış ref ile koşmaz.**
+
+---
+
+## 12. NİHAİ UYGULAMA PAKETİ — tek sayfa
+
+### 12.1 Canlı hedefin ölçülmüş kimliği (DÜZELTME)
+
+Bu belgenin önceki turunda "canlı serviste dinleyici yok" denmişti; **o sonuç geri
+çekilmiştir.** Yanlış portlara (3000/3001) bakılmıştı. Ölçülen gerçek durum:
+
+| Bileşen | Hedef | PID | Çalıştırılan yol | Başlangıç |
+|---|---|---|---|---|
+| **Canlı API** | `http://127.0.0.1:8080/api` | 50716 | `HY_W4_RELEASE21/project/apps/api/dist/apps/api/src/main.js` | 2026-09-10 13:05 |
+| **Canlı Web** | `http://127.0.0.1:3002` | 22440 | `HY_W4_RELEASE21/project/apps/web/node_modules/next/dist/bin/next start --port 3002` | 2026-09-09 18:15 |
+
+Kaynak: `Win32_Process.CommandLine` (salt-okuma) + kayıtlı hedef bilgisi
+(`reference_runtime_local_ports_and_auth_routes`: API `8080/api`, Web `3002`). Kayıt
+`next dev` diyordu; **ölçülen komut `next start`** (prod build, `BUILD_ID g91HUaBesekB-R2rRawQj`).
+**Servis başlatılmadı, yeniden başlatılmadı, durdurulmadı.**
+
+### 12.2 İ8 — R02'deki tam ad ve kapanış ölçütü
+
+> **İ8 — "Sentetik alanın canlı sürümde doğrulanması + erişim sonlandırma provası"** (R02:204,
+> sınıf KAN, hizmet "tümü", 0,5 gün).
+> Ölçüt: *"Alan canlıda kurulu; yetkisiz denemelerde yazma 0; erişim kapatma çalışıyor
+> (**öncül: İ1b onayı**)"*
+
+| Bacak | Durum | Dayanak |
+|---|---|---|
+| **B1** alan canlıda kurulu | İ1b kanıtıyla **KARŞILANDI** | `cl-acc-afce215b` canlıda 6 satır COMMIT; login 201 + `/auth/me` 200 ölçüldü |
+| **B3** erişim kapatma çalışıyor | İ1b kanıtıyla **KARŞILANDI** | `cl-09` → login 401, eski JWT 401, tekrar `alreadyClosed` |
+| **B2** yetkisiz denemede yazma 0 | **AÇIK — bu koşumun konusu** | İ1b paketinde yoktu |
+
+### 12.3 Kalan senaryolar ve disposable sonuçları (11/11)
+
+| # | Senaryo | Beklenen | R20 koşumu | R21 koşumu |
+|---|---|---|---|---|
+| P-0v/u/e | üç aktör oturum açabiliyor | 201 | OK | OK |
+| P-0x | ölçüm geçerliliği: `user` ve `elevated` **aynı rolde**, fark yalnız PARTNER bağı | doğru | OK | OK |
+| U-1 | VIEWER `{phone}` | 403 `CLIENT_MUTATION_DENIED_VIEWER` + satır ve audit değişmedi | OK | OK |
+| U-2 | PARTNER bağı olmayan USER `{tckn}` | 403 `CLIENT_MUTATION_DENIED_SENSITIVE_FIELDS` + yazma 0 | OK | OK |
+| U-3 | anonim | 401 + yazma 0 | OK | OK |
+| U-4 | yabancı `cl-acc-` tenant kaydına yazma | ≥400 + **hedefte** satır ve audit değişmedi | OK | OK |
+| P-1 | USER standart alan (`phone`) | yazılır (uç çalışıyor) | OK | OK |
+| P-2 | PARTNER bağlı elevated hassas alan (`tckn`) | yazılır | OK | OK |
+| U-6 | komşu tenant dağılım parmak izi | değişmedi | OK | OK |
+
+**Toplam: PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0** (her iki derlemede de).
+
+### 12.4 Üç aktörün rol/yetki bağı
+
+| Aktör | `User.role` | Ek bağ | Beklenen yetki |
+|---|---|---|---|
+| `viewer-<runId>@cl-acceptance.invalid` | **VIEWER** | yok | hiçbir client mutation'ı yapamaz |
+| `user-<runId>@cl-acceptance.invalid` | **USER** | yok | standart alan yazar, **hassas alan yazamaz** |
+| `elevated-<runId>@cl-acceptance.invalid` | **USER** | `Lawyer{lawyerRank:'PARTNER', userId}` | hassas alan **yazar** |
+
+Yetki rol adından değil bağdan gelir: eşik `role==='ADMIN' \|\| isApproverEligible`
+(`client-mutation-policy.ts`). `user` ile `elevated` **aynı roldedir**; ADMIN yolu ikisinde
+de kapalıdır. P-0x bu kurgunun bozulmadığını her koşumda ölçer.
+
+### 12.5 Betik kimlikleri (tam sha256)
+
+| Dosya | sha256 |
+|---|---|
+| `client-live-acceptance-i8-r01/scripts/i8-01-setup.js` | `89FEE58EF484CDC31983A119B49FCC110D9F9C7A7AB93691FEA4B38FBE51AFD4` |
+| `client-live-acceptance-i8-r01/scripts/i8-02-unauthorized.js` | `F7E82D02BF75BDAE53224652A5FE28163EF72F4032DECD58917037FD967537BA` |
+| `client-live-acceptance-i8-r01/scripts/i8-run.js` | `489D4B4D2D235CD4EC99B53AE6CDE2FF9F6BDD1109EA745740821633BB1EF188` |
+| `client-live-acceptance-i1b-r01/scripts/cl-lib.js` | `A1DCB89BCC6FFC6EBE34433C9DCFC786CAC0809EBDD4AF3B21CD9C272817F446` |
+| `client-live-acceptance-i1b-r01/scripts/cl-09-close-access.js` | `012739987ED4176A114D6A33F18C76ACF2DB8614F7C954B453E04126A98862C4` |
+
+Koşumdan önce bu beş değer diskte **ve** `origin/main` blob'unda doğrulanır; uyuşmazsa koşulmaz.
+
+### 12.6 Kesin komut (canlı, onaydan sonra)
+
+```powershell
+$env:CL_ENVIRONMENT  = 'live'
+$env:CL_OWNER_GO_REF = '<owner GO ref>'
+$env:CL_DATABASE_URL = 'postgresql://<user>:<pass>@127.0.0.1:5432/hukuk_db'
+$env:CL_API_BASE_URL = 'http://127.0.0.1:8080/api'
+$env:CL_PRISMA_ROOT  = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE21/project/apps/api/node_modules/@prisma/client'
+$env:CL_BCRYPT_PATH  = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE21/project/apps/api/node_modules/bcrypt'
+$env:CL_RUN_ID       = '<8 hex — YAZMADAN ONCE belirlenir ve kayda gecer>'
+$env:CL_STATE_FILE   = '<paket disi yol>\i8-state.json'
+node .\project\docs\governance\client-live-acceptance-i8-r01\scripts\i8-run.js
+```
+
+### 12.7 Altı INSERT ve iki pozitif kontrol UPDATE'i
+
+**INSERT (tek transaction, İ8'in KENDİ tenant'ında):**
+
+| # | Tablo | Alanlar |
+|---|---|---|
+| 1 | `Tenant` | `slug='cl-acc-<runId>'`, `name='CL I8 <runId>'`, lifecycle **ACTIVE** |
+| 2 | `User` | `viewer-<runId>@cl-acceptance.invalid`, `role=VIEWER`, `passwordHash` (bcrypt) |
+| 3 | `User` | `user-<runId>@cl-acceptance.invalid`, `role=USER` |
+| 4 | `User` | `elevated-<runId>@cl-acceptance.invalid`, `role=USER` |
+| 5 | `Lawyer` | `lawyerRank='PARTNER'`, `userId=`(4) |
+| 6 | `Client` | `type='PERSON'`, `name='CL I8 Client <runId>'`, **email YOK** |
+
+**UPDATE (pozitif kontrol, kendi `Client` satırında):** `phone → '5550000002'` (P-1) ·
+`tckn → '10000000146'` (P-2, sentetik ve checksum geçerli, **gerçek kişi verisi değil**).
+
+**YAZILMAYAN:** `Case` · `CaseClient` (→ `updateRiskScores` hiçbir Case seçemez, kalıcı cron
+maruziyeti **yapısal olarak 0**) · `Office` · `ClientContact`. **DELETE yoktur.**
+`AuditLog` satırlarını ürün kendi yazar (P-1/P-2 başarılı olduğu için); silinmez.
+
+### 12.8 Hata / yarıda kesilme kurtarması
+
+| Durum | Davranış |
+|---|---|
+| Kurulum yarıda kesilirse | Tek transaction + EXPECTED kontrolü **transaction içinde** → ROLLBACK, **yetim satır 0** (`I8_ABORT_AFTER=user` ile ölçüldü) |
+| Ölçüm FAIL/ÖLÇÜLEMEDİ verirse | `finally` kapatmayı **yine de** çağırır (çıkış kodundan ve ölçüm sonucundan bağımsız) |
+| Süreç zorla sonlanırsa | `finally` çalışmayabilir → kurtarma **yalnız runId** ile: `$env:CL_RUN_ID='<runId>'; node .\project\docs\governance\client-live-acceptance-i1b-r01\scripts\cl-09-close-access.js` (tekrar-güvenli, İ5b'de ölçüldü) |
+| Durum dosyası yazılamazsa | Betik **exit 4** verir ve kurtarma komutunu basar; yürütücü kapatmayı yine çağırır |
+| Tenant çakışması / hedef uyuşmazlığı | G-1/G-2/G-3 kapıları → **hiçbir yazma yapılmaz** |
+| Kapanış doğrulanamazsa | **BAŞARILI verilmez** (`closureOk` + login 401 + tekrar şartı) |
+
+### 12.9 Üç aktörün erişiminin ve token'larının kapatılması
+
+`cl-09-close-access.js` her üç `User` satırında **`isActive=false`** yazar **ve
+`tokenVersion`'ı bir artırır**. `auth.service.ts` login yolunda `isActive` kontrolü, korumalı
+uçlarda ise `tokenVersion` karşılaştırması vardır → **o ana kadar dağıtılmış JWT'ler de
+geçersizleşir**. Ölçüm: kapatma sonrası login **401**, eski JWT ile `/auth/me` **401**;
+disposable koşumlarda 3/3 aktör `isActive:false`, `tokenVersion:1` (0→1) olarak doğrulandı.
+İkinci çağrı `alreadyClosed=true / usersDeactivated=0 / exit 0` verir.
+
+### 12.10 Korunacaklar
+
+`cl-acc-afce215b` (İ1b alanı) **KORUNUR**: yeniden açılmaz, kullanıcısı aktifleştirilmez,
+`Case`'i ACTIVE'e çekilmez. Oradaki tek dokunuş U-4'ün **reddedilmesi ölçülen** yazma
+denemesidir (yazma 0, audit dahil). Disposable prova alanları ve §6'daki RELEASE20 sonuçları
+**tarihsel kanıt** olarak korunur.
