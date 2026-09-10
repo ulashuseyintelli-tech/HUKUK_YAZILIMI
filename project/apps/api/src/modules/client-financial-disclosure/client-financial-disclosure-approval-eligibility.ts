@@ -47,3 +47,16 @@ export const DISCLOSURE_APPROVER_CANDIDATE_SELECT = {
   tenantId: true,
   lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } },
 } as const;
+
+/**
+ * VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki) — karar anında okunan kullanıcı rolü `VIEWER` ise
+ * aktör YENİ bir onay kararı (ofis onayı · içerik onayı) veremez; bağlı avukatın rütbesi/delegasyonu bu yasağı aşmaz.
+ *
+ * OFFICE tarafındaki `isOfficeWriteDeniedForRole` ile BİREBİR aynı kuraldır (parite testle kilitli:
+ * office-approval-viewer-decision-boundary.spec.ts). Dormant servis office-approval modülüne bağımlı olmasın diye
+ * burada tutulur (`CLIENT_FINANCIAL_DISCLOSURE_APPROVE_ACTION_CODE` sabitiyle aynı desen). Okuma (çalışma alanı
+ * `approverEligible`), yayın ve kayıtlı kararın kurtarılması bu yüklemi KULLANMAZ.
+ */
+export function isDisclosureDecisionRoleDenied(role: unknown): boolean {
+  return role === 'VIEWER';
+}

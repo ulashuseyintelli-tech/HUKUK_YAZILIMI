@@ -338,3 +338,12 @@ src/modules/auth/smoke/__tests__/smoke-allowlist-architecture.spec.ts
 src/modules/office/__tests__/office-settings-get-authorization.http.spec.ts
 src/modules/office/__tests__/office-settings-projection.spec.ts
 src/modules/office/__tests__/office-settings-update-semantics.spec.ts
+
+# VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki) - SAF, DB YOK:
+#   (A) office-approval-viewer-decision-boundary.http: GERCEK Nest HTTP pipeline (gercek controller + gercek
+#       servis, sahte prisma). Genel kutunun 4 karar rotasi, dagitim onayi ve FD ofis/icerik onayi: bagli VIEWER
+#       (PARTNER/MANAGER/delege) 403, karar kaydi / domain senkronu / audit YOK; izinli aktorler ve OKUMA degismedi.
+#   (B) office-approval-viewer-decision-boundary: tek yuklem + FD kopya paritesi; rol karar aninda DB'den okunur;
+#       baglam ayrimi (okuma, yurutme/kurtarma, kayitli kararin idempotent yaniti DEGISMEDI).
+src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.http.spec.ts
+src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.spec.ts

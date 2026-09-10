@@ -3845,14 +3845,25 @@ sonrasi durumunu tek yerde izler. **Canli yayin ve kabul her kalem icin AYRI asa
 | Kalem | Durum | Sorumlu hat | Siradaki kabul adimi |
 |---|---|---|---|
 | **AK-2** — avukat olusturmada ayricalik siniri + mukerrer daldan pasif ayricalikli kaydin yeniden etkinlestirilmesi | **MAIN`DE TAMAM / CANLIDA DEGIL** — #2599 `f079996e` + #2602 `7eaa1242` | OFFICE | Create'te PARTNER/MANAGER rutbesi, `canModifyOtherPermissions=true`, `permissionsLocked=true` ve mukerrer dalda pasif AYRICALIKLI kaydin yeniden etkinlestirilmesi yalniz ADMIN veya bagli PARTNER'e acik (403, yazma 0). `LAWYER_CREATE` / `LAWYER_REACTIVATE` audit'i ilgili yazmayla AYNI transaction'da. **Revert oncesi yazilmis audit satirlari KALIR.** Canli yayin + kabul ayri asama. |
-| **AK-1a** — VIEWER icin OFFICE salt-okuma siniri | **MAIN`DE TAMAM / CANLIDA DEGIL** — bu satiri getiren PR | OFFICE | VIEWER, bagli avukati PARTNER/MANAGER ya da delege olsa bile OFFICE'e yazamaz: F01 yazma rotalari (POST/PUT/PATCH/DELETE), `POST /cases` dosya ici avukat ve seed OFFICE uclari → 403 `OFFICE_WRITE_DENIED_VIEWER`, ilk kalici yazmadan ONCE. OKUMA davranisi DEGISMEDI. `POST /cases`'te avukat yetki reddi (VIEWER ve AK-2) artik inline muvekkil yazilmadan once verilir. Canli yayin + kabul ayri asama. |
+| **AK-1a** — VIEWER icin OFFICE salt-okuma siniri | **MAIN`DE TAMAM / CANLIDA DEGIL** — #2604 `ebb869be` | OFFICE | VIEWER, bagli avukati PARTNER/MANAGER ya da delege olsa bile OFFICE'e yazamaz: F01 yazma rotalari (POST/PUT/PATCH/DELETE), `POST /cases` dosya ici avukat ve seed OFFICE uclari → 403 `OFFICE_WRITE_DENIED_VIEWER`, ilk kalici yazmadan ONCE. OKUMA davranisi DEGISMEDI. `POST /cases`'te avukat yetki reddi (VIEWER ve AK-2) artik inline muvekkil yazilmadan once verilir. **Acik:** bu on kontrol yaris altinda BUTUN istek atomikligi SAGLAMAZ (asagida ayri takip). Canli yayin + kabul ayri asama. |
+| **AK-1a (ek)** — VIEWER onay karari siniri | **MAIN`DE TAMAM / CANLIDA DEGIL** — bu satiri getiren PR | OFFICE | VIEWER, bagli avukati PARTNER/MANAGER ya da delege olsa bile onay KARARI veremez: genel onay kutusu (onayla / reddet / revizyon iste / degistirerek onayla; payout ve FD talepleri dahil), dagitim onayi (`POST /collection-dispositions/:id/approve`) ve FD ofis + icerik onayi → 403 (`OFFICE_APPROVAL_DECISION_DENIED_VIEWER`; FD yolunda `DISCLOSURE_APPROVAL_NOT_ELIGIBLE`). Rol karar aninda DB'den okunur; ret karar kaydi, domain senkronu, audit ve FD surum yazmasindan ONCE. OKUMA (inbox/detay), yurutme/kurtarma yollari ve diger rollerin karar yetkisi DEGISMEDI; gecmis kararlar degistirilmedi, toplu iptal/yeniden atama YOK. Canli yayin + kabul ayri asama. |
 | **AK-1b** — cross-office kapsami | **OWNER KARARI BEKLIYOR** — kod DEGISMEDI | OFFICE | Plan §8.5 onerisi: aktorun kendi `officeId`'sinin varsayilan kapsam olarak uygulanmasi. |
 | **AK-1c** — ADMIN kisa-yol sirasi | **OWNER KARARI BEKLIYOR** — kod DEGISMEDI | OFFICE | Plan §8.5: siranin owner tarafindan teyidi; bilincliyse kayda gecirilmesi. |
 
 **Ayri takip (bu fazi ENGELLEMEZ; kapatilmis GOSTERILMEZ):** ayricaliksiz pasif avukatin create ile yeniden
 etkinlestirilmesi (CLIENT R1A "create yetkisi lifecycle yetkisini icermez" ilkesinin avukata uygulanmasi — owner
-karari) · VIEWER'in ofis onay karari verebilmesi (`isApproverEligible` rol elemez; F01 disi onay yetkisi — owner
-karari) · `POST /cases`'te CASE duzeyinde VIEWER kontrolu olmamasi (CASE alani; bu kaydin kapsami disi) · create'in
+karari) · AK-1a: `POST /cases` on kontrolu (VIEWER + AK-2 avukat reddi) yaris altinda BUTUN istek atomikligi
+SAGLAMAZ — on kontrol ile create arasinda kayit ayricalikli hale gelirse create yine 403 verir (fail-closed) ama
+inline muvekkil yazilmis olabilir; genel transaction refactor'i YAPILMADI · VIEWER'in onay YURUTME/KURTARMA
+yollari rol elemez — payout finalize (`PayoutApprovalPolicy`), dagitim post (`isApproverEligible`), FD yayin
+(`isDisclosureApproverEligible`) ve FD kayitli karar kurtarma (gecmisteki bir VIEWER karari bildirime
+uygulanabilir); karar degil yurutme baglami, owner karari · okuma projeksiyonlari rol elemez: onay kutusu
+inbox/detay gorunurlugu (`isApproverEligible`); web detay cekmecesi karar dugmelerini talep sahibi olmayan her
+goruntuleyiciye gosterir (`OfficeApprovalDecisionActions`) — bagli VIEWER dugmeyi gorur, sunucu 403 verir (UX)
+· `isApproverEligible`'i kullanan diger domain kapilari (CLIENT/POA/borclu/portal/zamanlayici/ucret
+sozlesmesi/intake vb.) rol elemez — bu kayitta envanterlenmedi · genel kutuda `request-revision` PR-1.3
+domain-sahiplik kapisini cagirmaz (FD talebi genel kutudan REVISION_REQUESTED'a cekilebilir; rolden bagimsiz)
+· `POST /cases`'te CASE duzeyinde VIEWER kontrolu olmamasi (CASE alani; bu kaydin kapsami disi) · create'in
 yeni kayit dalinda ofis otomatik olusturmanin transaction disinda kalmasi · seed'in OFFICE disi uclarinin yalniz
 JwtAuthGuard ile korunmasi (OWN-13 D03; canlida seed modulu KAPALI) · yerel junction kalintisi
 `C:\Development\HY_WT\AK2_LAWYER_CREATE` (repo disi; ayri temizlik kaydi).
