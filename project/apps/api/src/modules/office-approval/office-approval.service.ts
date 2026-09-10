@@ -193,10 +193,18 @@ export class OfficeApprovalService {
   /**
    * P4-1A — "Düzelt ve tekrar gönder": REJECTED DEĞİL (farklı kurumsal karar). Revizyon notu ZORUNLU.
    * status → REVISION_REQUESTED. (Resubmit akışı P4-2+; bu substrate yalnız kararı kaydeder.)
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - OfficeApprovalController.requestRevision() → POST /office-approvals/:id/request-revision.
+   * /// </remarks>
    */
   async requestRevision(id: string, approverUserId: string, note: string): Promise<OfficeApprovalRequest> {
     if (!note || !note.trim()) throw new BadRequestException('Revizyon notu zorunludur.');
     const req = await this.requireRequest(id);
+    // CLF-O0-01 (owner GO 2026-09-10): PR-1.3 kapısı burada da — domain-owned talep genel kutudan REVISION_REQUESTED'a
+    // çekilemez (FD sürümü tüketilmiş talebi kurtaramaz). Durum / öz-onay / yetki denetiminden ve her yazmadan ÖNCE.
+    assertGenericDecisionAllowed(req.actionCode);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     await this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligibleForRequest(req, approverUserId);
