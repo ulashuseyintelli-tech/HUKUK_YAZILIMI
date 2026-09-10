@@ -154,6 +154,7 @@ src/modules/lawyer/__tests__/lawyer-office-approval-delegation.spec.ts
 src/modules/lawyer/__tests__/lawyer-privileged-field-guard.spec.ts
 src/modules/lawyer/__tests__/lawyer-create-write-boundary-fb0105.spec.ts
 src/modules/lawyer/__tests__/lawyer-create-privileged-boundary-ak2.spec.ts
+src/modules/lawyer/__tests__/lawyer-create-duplicate-reactivation-ak2.spec.ts
 src/modules/lawyer/__tests__/lawyer-update-duplicate-guard.spec.ts
 src/modules/lawyer/__tests__/lawyer-update-iban-guard-preserve.spec.ts
 src/modules/office-approval/__tests__/domain-owned-approval-enumeration.spec.ts

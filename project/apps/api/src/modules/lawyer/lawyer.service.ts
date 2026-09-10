@@ -274,14 +274,65 @@ export class LawyerService {
         (!!wantName && normalizePersonName(l.name, l.surname) === wantName),
     );
     if (dup) {
-      const wasReactivated = (dup as any).isActive === false;
-      if (wasReactivated) {
-        await this.prisma.lawyer.update({ where: { id: dup.id }, data: { isActive: true } });
+      const wasInactive = (dup as any).isActive === false;
+      let reactivated = false;
+      if (wasInactive) {
+        // AK-2 (owner GO 2026-09-10, mükerrer yeniden etkinleştirme): istek değerlerinden BAĞIMSIZ olarak
+        // yeniden etkinleşecek kaydın MEVCUT ayrıcalığı değerlendirilir. Ayrıcalıklı kaydı yalnız H2
+        // otoritesi (ADMIN veya aktif + aynı tenant + bağlı PARTNER) yeniden etkinleştirir; kontrol HER
+        // yazmadan ÖNCE yapılır — yetkisiz istekte hiçbir yazma olmaz. Atıf yetki SAYILMAZ.
+        const privileged = this.isPrivilegedLawyerRecord(dup);
+        if (privileged) {
+          await this.assertCanReactivatePrivilegedLawyer(actor, tenantId);
+        }
+        // CLIENT R1A deseni: `dup` transaction DIŞINDA okundu → yazma, yetki kararının verildiği DURUMA
+        // (tenant + isActive:false + değerlendirilen ayrıcalık değerleri) koşullu. Kayıt bu arada
+        // değiştiyse count 0 olur: ne bayrak çevrilir ne audit yazılır. logInTransaction hata YUTMAZ →
+        // audit yazılamazsa yeniden etkinleştirme de geri alınır.
+        reactivated = await this.prisma.$transaction(async (tx) => {
+          const { count } = await tx.lawyer.updateMany({
+            where: {
+              id: dup.id,
+              tenantId,
+              isActive: false,
+              lawyerRank: dup.lawyerRank,
+              canModifyOtherPermissions: dup.canModifyOtherPermissions,
+              permissionsLocked: dup.permissionsLocked,
+              canApproveOfficeActions: dup.canApproveOfficeActions,
+            },
+            data: { isActive: true },
+          });
+          if (count === 0) return false;
+          const auditUserId = actor?.userId || attribution?.userId || undefined;
+          await this.audit.logInTransaction(tx, {
+            tenantId,
+            action: "LAWYER_REACTIVATE",
+            entityType: "LAWYER",
+            entityId: dup.id,
+            userId: auditUserId,
+            actorType: auditUserId ? "USER" : "SYSTEM",
+            // Yalnız yeniden etkinleşen kaydın yetki-ilgili değerleri; kimlik, ad ve iletişim verisi GİRMEZ.
+            metadata: {
+              reactivatedFromDuplicate: true,
+              privileged,
+              lawyerRank: dup.lawyerRank,
+              canModifyOtherPermissions: dup.canModifyOtherPermissions,
+              permissionsLocked: dup.permissionsLocked,
+              canApproveOfficeActions: dup.canApproveOfficeActions,
+            },
+          });
+          return true;
+        });
       }
+      // Eşzamanlı değişimde (count 0) yanıt kaydın GERÇEK durumunu gösterir; aksi hâlde kayıt aktiftir.
+      const current =
+        wasInactive && !reactivated
+          ? ((await this.prisma.lawyer.findFirst({ where: { id: dup.id, tenantId } })) ?? dup)
+          : { ...(dup as any), isActive: true };
       // P01: duplicate/reactivate dali da ayni response boundary'den gecer.
       return this.projectLawyerResponse(
         tenantId,
-        { ...(dup as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated },
+        { ...(current as any), _existingReturned: true, _reactivated: reactivated },
         actor,
       );
     }
@@ -534,6 +585,7 @@ export class LawyerService {
    * H2 (lawyerRank/defaultPermissions/permissionsLocked/canModifyOtherPermissions) yetki-alanı
    * guard'larının PAYLAŞTIĞI tek otorite kuralı; hata mesajları çağıran tarafından verilir.
    * AK-2: create'teki ayrıcalıklı değer kontrolü (assertCanAssignPrivilegedFieldsOnCreate) da bunu kullanır.
+   * AK-2: mükerrer daldaki ayrıcalıklı yeniden etkinleştirme kontrolü (assertCanReactivatePrivilegedLawyer) da.
    */
   private async assertActorIsAdminOrLinkedPartner(
     actor: LawyerUpdateActor | undefined,
@@ -644,6 +696,48 @@ export class LawyerService {
       noActor: "Yetki/rütbe alanlarıyla avukat oluşturma yetkisi yok (kimlik çözülemedi).",
       unauthorized:
         "PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.",
+    });
+  }
+
+  /**
+   * AK-2 — mükerrer dalda yeniden etkinleşecek KAYDIN mevcut ayrıcalığı var mı? Create gövdesinden farklı
+   * olarak `canApproveOfficeActions` da sayılır: create bu bayrağı hiç persist etmez, ama mevcut kayıt onu
+   * taşıyabilir (update'te K1-4b ile aynı ADMIN/PARTNER kuralıyla atanır) ve F01 aktörlüğü ile ofis onay
+   * yetkisini doğrudan belirler. `defaultPermissions` ve eski `role` (LawyerRole) yetki girdisi değildir.
+   */
+  private isPrivilegedLawyerRecord(row: {
+    lawyerRank?: LawyerRank | null;
+    canModifyOtherPermissions?: boolean | null;
+    permissionsLocked?: boolean | null;
+    canApproveOfficeActions?: boolean | null;
+  }): boolean {
+    return (
+      row.lawyerRank === "PARTNER" ||
+      row.lawyerRank === "MANAGER" ||
+      row.canModifyOtherPermissions === true ||
+      row.permissionsLocked === true ||
+      row.canApproveOfficeActions === true
+    );
+  }
+
+  /**
+   * AK-2 — pasif AYRICALIKLI avukatı yeniden etkinleştirme yetkisi. Otorite kuralı update'in H2 kuralıyla
+   * AYNIDIR (assertActorIsAdminOrLinkedPartner); yalnız mesaj yeniden etkinleştirme bağlamını söyler.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.create() → mükerrer dal, eşleşen kayıt pasif VE isPrivilegedLawyerRecord ise, HER
+   * ///    yazmadan ÖNCE (POST /lawyers, POST /cases dosya içi avukat, seed). Atıf yetki SAYILMAZ.
+   * /// </remarks>
+   */
+  private async assertCanReactivatePrivilegedLawyer(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
+      noActor: "Ayrıcalıklı pasif avukatı yeniden etkinleştirme yetkisi yok (kimlik çözülemedi).",
+      unauthorized:
+        "Eşleşen kayıt ayrıcalıklı (PARTNER/MANAGER, izin değiştirme, izin kilidi veya ofis onayı) pasif bir avukat; yeniden etkinleştirme yalnız PARTNER veya ADMIN tarafından yapılabilir.",
     });
   }
 

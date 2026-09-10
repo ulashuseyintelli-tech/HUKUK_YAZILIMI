@@ -204,7 +204,9 @@ describe('LawyerService — her yuzeyde credential alanlari YOK', () => {
 
   it('create — duplicate/reactivate dali (mevcut kayit dondurulur)', async () => {
     const { svc } = buildLawyerSvc([{ ...FULL_ROW, isActive: false }]);
-    const res: any = await svc.create(TENANT, { name: 'Ada', surname: 'Lovelace' });
+    // AK-2 (mükerrer yeniden etkinleştirme): FULL_ROW pasif bir PARTNER — ayrıcalıklı kaydı yalnız H2
+    // otoritesi (ADMIN / bağlı PARTNER) yeniden etkinleştirir. Bu spec yanıt sınırını sınar; aktör ADMIN.
+    const res: any = await svc.create(TENANT, { name: 'Ada', surname: 'Lovelace' }, { userId: 'U1', role: 'ADMIN' });
     expect(res._existingReturned).toBe(true);
     expect('uyapToken' in res).toBe(false);
     assertContained(res, 'create-duplicate');
