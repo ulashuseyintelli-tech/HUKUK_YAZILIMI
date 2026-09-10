@@ -49,6 +49,7 @@ import {
 // (tx.client/lawyer/debtor.create duplicate guard'ı atlıyordu → Şükrü-deseninin dış-kapı hali).
 import { buildClientMutationActor, ClientService, type ClientMutationActorContext } from "../client/client.service";
 import { LawyerService } from "../lawyer/lawyer.service";
+import { assertOfficeWriteRole } from "../office-approval/office-write-role.policy";
 import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
 import { ClaimItemWriterRouterService } from "../claim-item/claim-item-writer-router.service";
@@ -530,6 +531,18 @@ export class CaseService {
     // DEĞİLDİR — bu yol kullanıcı tarafından dolaylı tetiklenir. Actor bağlamı zorunlu.
     clientMutationActor: ClientMutationActorContext,
   ): Promise<void> {
+    // 0) AK-1a + AK-2 (owner GO 2026-09-10): avukat tarafının YETKİ reddi İLK kalıcı yazmadan — yani adım 1'de
+    //    inline müvekkil yazılmadan — ÖNCE verilir; önceden müvekkil yazılıp adım 2'de avukat 403'ü dönebiliyordu.
+    //    Transaction refactor'ı DEĞİLDİR: yalnız yetki kararı öne alınır, create kendi kontrollerini yine uygular.
+    //    OFFICE yazması yoksa (yalnız mevcut avukat id'si) bu ön kontrol devreye girmez.
+    const inlineLawyers = (dto.lawyers ?? []).filter((l) => !l.id && l.name && l.surname);
+    if (inlineLawyers.length > 0) {
+      assertOfficeWriteRole(clientMutationActor?.role); // AK-1a: VIEWER OFFICE'e yazamaz
+      for (const l of inlineLawyers) {
+        await this.lawyerService.assertCreateAuthorized(tenantId, this.toInlineLawyerCreateData(l)); // AK-2
+      }
+    }
+
     // 1) Müvekkil (creditor) — ClientService.create: identity (tckn/vkn) eşleşmesi → mevcut döndür
     //    (reactivate dahil). Kimliksizde fuzzy YOK (Müvekkil=TCKN kontratı). Throw etmez.
     if (dto.creditors?.length) {
@@ -558,16 +571,15 @@ export class CaseService {
     if (dto.lawyers?.length) {
       for (const l of dto.lawyers) {
         if (l.id || !l.name || !l.surname) continue;
-        const resolved: any = await this.lawyerService.create(tenantId, {
-          name: l.name, surname: l.surname, tckn: l.tckn, gender: l.gender,
-          barNumber: l.barNumber, barCity: l.barCity, tbbNo: l.tbbNo,
-          vergiDairesi: l.vergiDairesi, vergiNo: l.vergiNo,
-          phone: l.phone, email: l.email, bankName: l.bankName, iban: l.iban,
-          isInHouseCounsel: l.isInHouseCounsel, isEmployee: l.isEmployee, canSign: l.canSign,
-          // AK-2: yetki aktörü GEÇİLMEZ — yanıt F01 projeksiyonuna girer ve yetkisiz aktörde `id`yi
-          // düşürür (inline bağ kopar). Dosyayı açan kullanıcı YALNIZ audit atfı olarak geçer; bu
-          // gövdede ayrıcalıklı alan yoktur, H2 tetiklenmez.
-        }, undefined, { userId: clientMutationActor?.userId || undefined });
+        // AK-2: yetki aktörü GEÇİLMEZ — yanıt F01 projeksiyonuna girer ve yetkisiz aktörde `id`yi düşürür
+        // (inline bağ kopar). Dosyayı açan kullanıcı YALNIZ audit atfı olarak geçer; bu gövdede ayrıcalıklı
+        // alan yoktur, H2 tetiklenmez. Gövde, adım 0 ön kontrolüyle AYNI eşlemeden gelir.
+        const resolved: any = await this.lawyerService.create(
+          tenantId,
+          this.toInlineLawyerCreateData(l),
+          undefined,
+          { userId: clientMutationActor?.userId || undefined },
+        );
         l.id = resolved.id;
       }
     }
@@ -610,6 +622,17 @@ export class CaseService {
         }
       }
     }
+  }
+
+  /** Dosya içi yeni avukatın LawyerService gövdesi — create çağrısı ve adım 0 ön kontrolünün ORTAK eşlemesi. */
+  private toInlineLawyerCreateData(l: NonNullable<CreateCaseDto["lawyers"]>[number]) {
+    return {
+      name: l.name, surname: l.surname, tckn: l.tckn, gender: l.gender,
+      barNumber: l.barNumber, barCity: l.barCity, tbbNo: l.tbbNo,
+      vergiDairesi: l.vergiDairesi, vergiNo: l.vergiNo,
+      phone: l.phone, email: l.email, bankName: l.bankName, iban: l.iban,
+      isInHouseCounsel: l.isInHouseCounsel, isEmployee: l.isEmployee, canSign: l.canSign,
+    };
   }
 
   /// <remarks>

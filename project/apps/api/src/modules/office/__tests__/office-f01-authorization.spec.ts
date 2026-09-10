@@ -131,7 +131,8 @@ describe('OFFICE-SC-F01 — mutation guard', () => {
     const guard = new OfficeF01AuthorizationGuard(approval);
     await expect(
       guard.canActivate({
-        switchToHttp: () => ({ getRequest: () => ({ user: { id: 'u1', tenantId: TENANT } }) }),
+        // AK-1a: niyet HTTP fiilinden okunur; bu test OKUMA yolunu (kanonik yüklem) sınar.
+        switchToHttp: () => ({ getRequest: () => ({ method: 'GET', user: { id: 'u1', tenantId: TENANT } }) }),
       } as any),
     ).rejects.toThrow(ForbiddenException);
     expect(approval.isF01ActorAuthorized).toHaveBeenCalledWith('u1', TENANT);

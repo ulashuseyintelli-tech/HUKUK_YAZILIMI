@@ -14,6 +14,9 @@
  * girdi):
  *   (1) `UserRole` yalniz ADMIN icin kisa-yol olarak okunur. VIEWER rolundeki bir kullanici
  *       MANAGER avukata baglisa F01 kapisindan GECER — rol dizesi geri kalanda ELENMEZ.
+ *       AK-1a (owner GO 2026-09-10) KARARI: bu davranis OKUMA yukleminde KORUNUR (asagidaki
+ *       dogrulamalar degismedi); YAZMA niyetinde VIEWER elenir — `isF01WriteActorAuthorized`,
+ *       `office-viewer-write-boundary-ak1a*.spec.ts`.
  *   (2) `targetOfficeId` VERILMEZSE cross-office kontrolu HIC calismaz; baska ofise bagli
  *       PARTNER avukat, ofis belirtmeyen cagrilarda yetkili SAYILIR.
  *   (3) Cross-office kontrolu ADMIN kisa-yolundan ONCE gelir: baska ofise bagli bir ADMIN,
@@ -88,7 +91,7 @@ describe('F01 matris — avukat RUTBESI belirleyicidir', () => {
   });
 });
 
-describe('F01 matris — rol dizesi ADMIN disinda ELEYICI DEGILDIR (owner kararina girdi)', () => {
+describe('F01 matris — OKUMA yuklemi: rol dizesi ADMIN disinda ELEYICI DEGILDIR (AK-1a: okuma korunur, yazma ayri)', () => {
   it('VIEWER rolu + MANAGER avukat -> KABUL EDILIR (rol dizesi bakilmaz)', async () => {
     await expect(
       svc(
