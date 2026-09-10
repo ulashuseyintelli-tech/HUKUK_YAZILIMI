@@ -122,3 +122,11 @@ This successor record does not authorize, implement, schedule, or imply the CLF-
   `product-backlog.md:3684`
 - W3F07 fresh `git status --porcelain` + `rev-parse` çıktıları (C21 oturumu,
   2026-08-26 UTC)
+
+## H. Guncel karar referansi — CLF-O0-01 (append-only, 2026-09-10)
+
+Bu belgedeki CLF-O0-01 guard patch'ine iliskin yetki ifadeleri (yetkisiz / YETKILI DEGILDIR / does not authorize /
+yetkilendirmez) tarihsel kayit olarak DEGISTIRILMEDEN korunur. Guncel durum: owner GO 2026-09-10 (task-bound, iki GO)
+ile PR-1.3 domain-sahiplik kapisi genel onay kutusunda `request-revision` (#2608 `b335cc4a`) ve `cancel`
+(#2612) yollarina eklendi — MAIN'DE TAMAM / CANLIDA DEGIL. Takip: `product-backlog.md` → "OFFICE Teslim Sonrasi Acik
+Kararlar (AK)" bolumu, CLF-O0-01 satiri. Bu not yeni execution authority, kurtarma veya veri degisikligi yetkisi URETMEZ.

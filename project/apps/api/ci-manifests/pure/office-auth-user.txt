@@ -354,4 +354,7 @@ src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.s
 #   yazmadan ONCE); domain-owned olmayan turler ve VIEWER onay karari siniri (#2606) DEGISMEDI; AST yapisal kilidi
 #   (commitDecision cagiran her metot kapiyi ilk denetim olarak cagirir). Ustteki (A) http spec'inde FD genel kutu
 #   satiri artik 409'dur; oradaki VIEWER 403 satirlari FD disi turler icindir.
+# FD IPTAL SINIRI (owner GO 2026-09-10, ikinci GO) - ayni iki spec: genel kutu cancel() de kapiyi cagirir; talep sahibi
+#   409 DOMAIN_ACTION_REQUIRED, talep sahibi olmayan 403 (kimlik denetimi once); FD disi iptal degismedi. (A) http spec'i
+#   genel kutu rotalarini controller metadata'sindan KESFEDER: yeni bir yazma rotasi FD kapisi kanitlanmadan gecemez.
 src/modules/office-approval/__tests__/domain-owned-approval-generic-decision-guard.spec.ts

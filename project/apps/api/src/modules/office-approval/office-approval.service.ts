@@ -211,13 +211,25 @@ export class OfficeApprovalService {
     return this.commitDecision(id, OfficeApprovalStatus.REVISION_REQUESTED, approverUserId, note, 'OFFICE_APPROVAL_REVISION_REQUESTED');
   }
 
-  /** Talep sahibi (requester) kendi PENDING talebini geri çeker → CANCELLED. */
+  /**
+   * Talep sahibi (requester) kendi PENDING talebini geri çeker → CANCELLED.
+   * FD İPTAL SINIRI (owner GO 2026-09-10): domain-owned talep (PR-1.3) genel kutudan geri ÇEKİLEMEZ → 409
+   * DOMAIN_ACTION_REQUIRED, kalıcı yazma YOK. Kapı talep sahibi denetiminden SONRA çalışır: talep sahibi olmayan (başka
+   * tenant dahil) bugünkü gibi 403 alır; FD dışı iptal DEĞİŞMEZ. Yeni FD geri çekme akışı / geçmiş kayıt kurtarması YOK.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - OfficeApprovalController.cancel() → POST /office-approvals/:id/cancel.
+   * /// </remarks>
+   */
   async cancel(id: string, byUserId: string): Promise<OfficeApprovalRequest> {
     const req = await this.requireRequest(id);
     this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
     if (byUserId !== req.requesterUserId) {
       throw new ForbiddenException('Yalnız talep sahibi iptal edebilir.');
     }
+    // FD İPTAL SINIRI: domain-owned talep genel kutudan tüketilemez (FD sürümü CANCELLED talebi kurtaramaz).
+    assertGenericDecisionAllowed(req.actionCode);
     let updated: OfficeApprovalRequest | null = null;
     await this.prisma.$transaction(async (tx) => {
       const res = await tx.officeApprovalRequest.updateMany({

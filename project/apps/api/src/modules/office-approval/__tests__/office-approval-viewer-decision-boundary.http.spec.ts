@@ -10,16 +10,31 @@
  *   talebi genel kutudan HİÇBİR karar almaz (request-revision dahil; herkes 409 DOMAIN_ACTION_REQUIRED, kapı rol
  *   denetiminden ÖNCE). Bu yüzden FD satırı VIEWER_REACH'ten çıktı; VIEWER sınırı FD dışı türlerde ve FD domain
  *   yollarında (ofis / içerik onayı) DEĞİŞMEDİ.
+ * FD İPTAL SINIRI (owner GO 2026-09-10, ikinci GO): genel kutu `cancel` da kapıyı çağırır — talep sahibi 409
+ *   DOMAIN_ACTION_REQUIRED, talep sahibi olmayan bugünkü gibi 403 (kimlik denetimi kapıdan ÖNCE); FD dışı iptal
+ *   DEĞİŞMEDİ. Genel kutu rotaları controller metadata'sından KEŞFEDİLİR: yeni bir yazma rotası FD kapısı kanıtlanmadan
+ *   geçemez. Önceden TÜKETİLMİŞ FD taleplerinin kurtarılması bu işin DIŞINDADIR (aşağıdaki karakterizasyon açık kalemi
+ *   belgeler; yeni geri çekme akışı / veri değişikliği YOK).
  *
  * Giriş yolları (gerçek controller + gerçek servis, sahte prisma):
- *   - POST /office-approvals/:id/{approve, reject, request-revision, approve-with-changes}
+ *   - POST /office-approvals/:id/{approve, reject, request-revision, approve-with-changes, cancel} + GET inbox/mine/:id
  *   - POST /collection-dispositions/:id/approve (DispositionPostingService → OfficeApprovalService.approve)
  *   - POST /client-financial-disclosures/:id/complete-office-approval (FD servisi talebi DOĞRUDAN APPROVED yapar)
  *   - POST /client-financial-disclosures/:id/complete-content-approval (FD dört-göz içerik onayı)
+ *   - POST /client-financial-disclosures/:id/{reconcile-consumed-office-approval, request-office-approval} (FD kurtarma /
+ *     yeniden talep — yalnız karakterizasyon)
  *
  * Kanıt sınıfı: TEST (kontrollü Nest app, sahte kullanıcı/talep satırları). PRODUCTION DAVRANIŞ KANITI DEĞİLDİR.
  */
-import { CanActivate, ExecutionContext, INestApplication, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  INestApplication,
+  Injectable,
+  RequestMethod,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import * as request from 'supertest';
@@ -235,6 +250,8 @@ const fakePrisma: any = {
       hit.forEach((r) => Object.assign(r, data));
       return { count: hit.length };
     }),
+    // FD yeniden talep karakterizasyonu: yeni talep üretimi (yapılmamalı) kayda geçer, test çökmez.
+    create: jest.fn(async ({ data }: { data: Row }) => ({ id: 'oar-yeni', ...data })),
   },
   collectionDisposition: {
     findFirst: jest.fn(async () => ({ ...DISPOSITION })),
@@ -487,6 +504,138 @@ describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
       });
     },
   );
+
+  // ── FD İPTAL SINIRI (owner GO 2026-09-10, ikinci GO) ───────────────────────────────────────────────────────────
+  describe('FD İPTAL SINIRI — POST /office-approvals/:id/cancel', () => {
+    const FD_NON_REQUESTERS = FD_GENERIC_ACTORS.filter((a) => a !== 'requester');
+
+    it('talep sahibi → 409 DOMAIN_ACTION_REQUIRED; iptal / domain senkronu / audit YOK, talep PENDING kalır', async () => {
+      const res = await post('/office-approvals/oar-fd-generic/cancel', 'requester', {});
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('DOMAIN_ACTION_REQUIRED');
+      expectNoDecisionWrites('oar-fd-generic');
+    });
+
+    it.each(FD_NON_REQUESTERS)(
+      'talep sahibi OLMAYAN %s → bugünkü gibi 403 (kimlik denetimi kapıdan ÖNCE; 409 değil); yazma YOK',
+      async (actor) => {
+        const res = await post('/office-approvals/oar-fd-generic/cancel', actor, {});
+        expect(res.status).toBe(403);
+        expect(res.body.code).not.toBe('DOMAIN_ACTION_REQUIRED');
+        expectNoDecisionWrites('oar-fd-generic');
+      },
+    );
+
+    it('FD DIŞI (CHANGE_STATUS) talep sahibi → 201 CANCELLED; iptal + domain senkronu + audit birer kez (DEĞİŞMEDİ)', async () => {
+      const res = await post('/office-approvals/oar-generic/cancel', 'requester', {});
+      expect(res.status).toBe(201);
+      expect(res.body.data).toMatchObject({ id: 'oar-generic', status: 'CANCELLED' });
+      expect(fakePrisma.officeApprovalRequest.updateMany).toHaveBeenCalledTimes(1);
+      expect(domainSync.syncAfterDecision).toHaveBeenCalledTimes(1);
+      expect(audit.log).toHaveBeenCalledTimes(1);
+      expect(audit.log.mock.calls[0][0]).toMatchObject({ action: 'OFFICE_APPROVAL_CANCELLED', userId: REQUESTER });
+    });
+
+    it('FD DIŞI (CHANGE_STATUS) talep sahibi olmayan → 403 (DEĞİŞMEDİ); yazma YOK', async () => {
+      const res = await post('/office-approvals/oar-generic/cancel', 'partner', {});
+      expect(res.status).toBe(403);
+      expectNoDecisionWrites('oar-generic');
+    });
+
+    it('uçtan uca: geri çekme denemesi 409; talep PENDING kalır ve FD domain yolu sürümü ilerletir (kilit YOK)', async () => {
+      const cancel = await post(`/office-approvals/${FD_REQ_OFFICE}/cancel`, 'requester', {});
+      const complete = await post(`/client-financial-disclosures/${VERSION_OFFICE}/complete-office-approval`, 'manager', {
+        approvalRequestId: FD_REQ_OFFICE,
+      });
+      expect({
+        cancel: [cancel.status, cancel.body.code ?? cancel.body.data?.status],
+        complete: [complete.status, complete.body.status ?? complete.body.code],
+        request: db.requests.get(FD_REQ_OFFICE)?.status,
+        version: db.versions.get(VERSION_OFFICE)?.status,
+      }).toEqual({
+        cancel: [409, 'DOMAIN_ACTION_REQUIRED'],
+        complete: [201, 'OFFICE_APPROVED'],
+        request: 'APPROVED',
+        version: 'OFFICE_APPROVED',
+      });
+      expect(audit.log).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'OFFICE_APPROVAL_CANCELLED' }));
+    });
+  });
+
+  describe('önceden TÜKETİLMİŞ FD talebi (ör. bu sınırdan önce genel kutudan iptal) — AÇIK KALEM; bu iş kurtarmaz, veri değiştirmez', () => {
+    it('CANCELLED talebe bağlı sürüm FD yollarıyla ilerlemez: complete → REQUEST_CONSUMED, reconcile → UNSUPPORTED_CONSUMED_DECISION, yeniden talep → yeni kayıt YOK', async () => {
+      Object.assign(db.requests.get(FD_REQ_OFFICE) as Row, { status: 'CANCELLED', decidedAt: new Date('2026-09-01T10:00:00.000Z') });
+      const complete = await post(`/client-financial-disclosures/${VERSION_OFFICE}/complete-office-approval`, 'manager', {
+        approvalRequestId: FD_REQ_OFFICE,
+      });
+      const reconcile = await post(`/client-financial-disclosures/${VERSION_OFFICE}/reconcile-consumed-office-approval`, 'manager', {});
+      await post(`/client-financial-disclosures/${VERSION_OFFICE}/request-office-approval`, 'requester', {});
+      expect({ complete: [complete.status, complete.body.code], reconcile: [reconcile.status, reconcile.body.code] }).toEqual({
+        complete: [409, 'DISCLOSURE_APPROVAL_REQUEST_CONSUMED'],
+        reconcile: [409, 'DISCLOSURE_APPROVAL_UNSUPPORTED_CONSUMED_DECISION'],
+      });
+      expect(fakePrisma.officeApprovalRequest.create).not.toHaveBeenCalled();
+      expect(db.versions.get(VERSION_OFFICE)).toMatchObject({
+        status: 'OFFICE_APPROVAL_PENDING',
+        officeApprovalRequestId: FD_REQ_OFFICE,
+        officeApprovedById: null,
+      });
+      expect(db.requests.get(FD_REQ_OFFICE)).toMatchObject({ status: 'CANCELLED' });
+    });
+  });
+
+  describe("genel kutu × FD — TÜM rotalar controller metadata'sından keşfedilir (yeni kardeş uç sessizce geçemez)", () => {
+    /** Bilinen yazma rotaları ve geçerli gövdeleri. Yeni bir rota bu tabloya eklenmeden (ve FD kapısı kanıtlanmadan) geçemez. */
+    const WRITE_ROUTE_BODIES: Record<string, object> = {
+      ':id/approve': { note: 'uygun' },
+      ':id/reject': { note: 'gerekce' },
+      ':id/request-revision': { note: 'duzeltme' },
+      ':id/approve-with-changes': { replacementSavedIntent: { kind: 'degistirilmis' }, note: 'degisiklikle' },
+      ':id/cancel': {},
+    };
+    const routes = Object.getOwnPropertyNames(OfficeApprovalController.prototype)
+      .filter((name) => name !== 'constructor')
+      .map((name) => {
+        const handler = (OfficeApprovalController.prototype as unknown as Record<string, object>)[name];
+        return {
+          name,
+          method: Reflect.getMetadata(METHOD_METADATA, handler) as RequestMethod | undefined,
+          path: Reflect.getMetadata(PATH_METADATA, handler) as string | undefined,
+        };
+      })
+      .filter((r) => r.method !== undefined);
+    const writeRoutes = routes.filter((r) => r.method !== RequestMethod.GET);
+    const readRoutes = routes.filter((r) => r.method === RequestMethod.GET);
+
+    it('yazma rotası kümesi = bilinen beş rota; okuma rotaları = inbox / mine / :id (yeni rota → FD kapısını kanıtla, tabloya ekle)', () => {
+      expect(writeRoutes.map((r) => r.path).sort()).toEqual(Object.keys(WRITE_ROUTE_BODIES).sort());
+      expect(writeRoutes.every((r) => r.method === RequestMethod.POST)).toBe(true);
+      expect(readRoutes.map((r) => r.path).sort()).toEqual([':id', 'inbox', 'mine']);
+    });
+
+    it.each(Object.keys(WRITE_ROUTE_BODIES))(
+      'POST %s — FD talebinde HİÇBİR aktör yazma üretemez (409 domain kapısı / 403 kimlik)',
+      async (routePath) => {
+        for (const actor of FD_GENERIC_ACTORS) {
+          seed(sealed);
+          jest.clearAllMocks();
+          const res = await post(`/office-approvals/${routePath.replace(':id', 'oar-fd-generic')}`, actor, WRITE_ROUTE_BODIES[routePath]);
+          expect({ actor, status: res.status, allowed: [403, 409].includes(res.status) }).toMatchObject({ actor, allowed: true });
+          expectNoDecisionWrites('oar-fd-generic');
+        }
+      },
+    );
+
+    it.each(['inbox', 'mine', ':id'])('GET %s — FD talebi okunurken yazma YOK', async (routePath) => {
+      for (const actor of FD_GENERIC_ACTORS) {
+        jest.clearAllMocks();
+        await get(`/office-approvals/${routePath.replace(':id', 'oar-fd-generic')}`, actor);
+        expect(fakePrisma.$transaction).not.toHaveBeenCalled();
+        expect(fakePrisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+        expect(audit.log).not.toHaveBeenCalled();
+      }
+    });
+  });
 
   describe('OKUMA DEĞİŞMEDİ — bağlı VIEWER inbox ve detayı bugünkü gibi görür', () => {
     it.each(['viewer-partner', 'viewer-delegate'])('GET /office-approvals/inbox (%s) → 200, bekleyen talepler listelenir', async (actor) => {
