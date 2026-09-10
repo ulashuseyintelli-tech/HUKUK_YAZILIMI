@@ -6,6 +6,10 @@
  *   bağlı avukatı PARTNER/MANAGER ya da delege (`canApproveOfficeActions`) ise onay kararı veriyordu.
  * KURAL: karar anında DB'den okunan rol VIEWER ise karar YOK — 403; karar kaydı, domain senkronu ve audit YAZILMAZ.
  *   Okuma (inbox, detay) ve diğer rollerin karar yetkisi DEĞİŞMEZ.
+ * CLF-O0-01 (owner GO 2026-09-10): PR-1.3 domain-owned kapısı genel kutunun DÖRT karar rotasında da çalışır → FD
+ *   talebi genel kutudan HİÇBİR karar almaz (request-revision dahil; herkes 409 DOMAIN_ACTION_REQUIRED, kapı rol
+ *   denetiminden ÖNCE). Bu yüzden FD satırı VIEWER_REACH'ten çıktı; VIEWER sınırı FD dışı türlerde ve FD domain
+ *   yollarında (ofis / içerik onayı) DEĞİŞMEDİ.
  *
  * Giriş yolları (gerçek controller + gerçek servis, sahte prisma):
  *   - POST /office-approvals/:id/{approve, reject, request-revision, approve-with-changes}
@@ -342,17 +346,24 @@ const VIEWER_REACH = [
     viewers: ['viewer-partner', 'viewer-manager', 'viewer-delegate'],
     decisions: ALL_DECISIONS,
   },
-  {
-    requestId: 'oar-fd-generic',
-    title: 'CLIENT_FINANCIAL_DISCLOSURE_APPROVE — genel kutuda açık tek karar request-revision (FD politikası, MANAGER dahil)',
-    viewers: ['viewer-partner', 'viewer-manager', 'viewer-delegate'],
-    decisions: ['request-revision'],
-  },
+  // CLF-O0-01: FD talebi (oar-fd-generic) hiçbir genel karar rotasında karar yüklemine ULAŞMAZ — bkz. FD_GENERIC_ACTORS.
 ];
 
 const PERMITTED = [
   { requestId: 'oar-generic', title: 'CHANGE_STATUS', actors: ['partner', 'delegate', 'admin-partner'] },
   { requestId: 'oar-payout', title: 'CLIENT_PAYOUT_POST', actors: ['manager', 'partner'] },
+];
+
+/** CLF-O0-01: FD talebinde genel kutu karar VERDİRMEZ — FD politikasınca uygun, talep sahibi ve bağlı VIEWER aynı yanıtı alır. */
+const FD_GENERIC_ACTORS = [
+  'manager',
+  'partner',
+  'delegate',
+  'admin-partner',
+  'requester',
+  'viewer-partner',
+  'viewer-manager',
+  'viewer-delegate',
 ];
 
 describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
@@ -464,6 +475,18 @@ describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
       expectNoDecisionWrites('oar-fd-generic');
     });
   });
+
+  describe.each(DECISIONS)(
+    'PR-1.3 + CLF-O0-01 — FD talebi genel kutudan HİÇBİR karar almaz: POST /office-approvals/:id/$name',
+    (d) => {
+      it.each(FD_GENERIC_ACTORS)('%s → 409 DOMAIN_ACTION_REQUIRED; karar kaydı / domain senkronu / audit YOK', async (actor) => {
+        const res = await post(`/office-approvals/oar-fd-generic/${d.name}`, actor, d.body);
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('DOMAIN_ACTION_REQUIRED');
+        expectNoDecisionWrites('oar-fd-generic');
+      });
+    },
+  );
 
   describe('OKUMA DEĞİŞMEDİ — bağlı VIEWER inbox ve detayı bugünkü gibi görür', () => {
     it.each(['viewer-partner', 'viewer-delegate'])('GET /office-approvals/inbox (%s) → 200, bekleyen talepler listelenir', async (actor) => {

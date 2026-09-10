@@ -347,3 +347,11 @@ src/modules/office/__tests__/office-settings-update-semantics.spec.ts
 #       baglam ayrimi (okuma, yurutme/kurtarma, kayitli kararin idempotent yaniti DEGISMEDI).
 src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.http.spec.ts
 src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.spec.ts
+
+# CLF-O0-01 (owner GO 2026-09-10) - PR-1.3 domain-owned kapisi GENEL KARAR YOLLARININ DORDUNDE DE (SAF, DB YOK):
+#   requestRevision kapiyi cagirmiyordu -> FD talebi genel kutudan REVISION_REQUESTED'a cekiliyor, FD surumu kilitleniyordu.
+#   Spec: dort karar yolunda FD -> 409 DOMAIN_ACTION_REQUIRED (kapi durum / oz-onay / rol / yetki okumasindan ve her
+#   yazmadan ONCE); domain-owned olmayan turler ve VIEWER onay karari siniri (#2606) DEGISMEDI; AST yapisal kilidi
+#   (commitDecision cagiran her metot kapiyi ilk denetim olarak cagirir). Ustteki (A) http spec'inde FD genel kutu
+#   satiri artik 409'dur; oradaki VIEWER 403 satirlari FD disi turler icindir.
+src/modules/office-approval/__tests__/domain-owned-approval-generic-decision-guard.spec.ts
