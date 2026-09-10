@@ -1260,3 +1260,104 @@ portunu tutuyor — o port disposable izole ölçümlerin portudur. A-07 canlı 
 ileride izole ölçüm yapılacaksa çakışır.
 
 **Sayaç değişmedi: 6/7.** Toparlanma, A-07 kabulü **değildir**; bütünsel teslim İLAN EDİLMEZ.
+
+### 8.17 R01 A-07 DENEMESİ · ~3 DK KESİNTİ · EŞZAMANLI SÜREÇ · ATIF DÜZELTMELERİ (2026-09-10, append-only)
+
+Bu bölüm, 2026-09-09 akşamı gerçekleşen ve ana yürütücünün önceki kayıtlarında **bilinmeyen**
+bir olayı kaydeder: A-07, R01 paketiyle **bir kez denenmiş**, yürütülmeden kapanmıştır.
+Bütün zamanlar UTC'dir ve `ToUniversalTime()` ile açıkça dönüştürülmüştür.
+
+#### 8.17.1 Ne oldu — olay 400/403 ile ölçüldü
+
+Kaynak: `Windows PowerShell` günlüğü, olay **400** (motor başladı) ve **403** (motor durdu);
+başlangıç ve bitiş `RunspaceId` ile eşleştirildi.
+
+```text
+22:52:03.380Z -> 22:52:03.565Z   a07-run.ps1           OMUR 186 ms   <- yukseltme kapisi (exit 2)
+22:52:03.886Z -> 22:52:04.646Z   Get-ScheduledTask     ps1 BITTIKTEN 0,32 s SONRA -> cocugu DEGIL
+22:54:38.946Z -> 22:56:49.846Z   a07-run.ps1           OMUR 130,9 s  <- OWNER'IN TEK GERCEK KOSUMU
+   22:54:44.781Z  Stop-ScheduledTask  HukukPlatform-API    (acma restart'i)
+   22:54:46.660Z  Start-ScheduledTask HukukPlatform-API
+   22:55:47Z      .env yazimi (kapanis bayragi KALDIRDI)
+   22:55:48.153Z  Stop-ScheduledTask  HukukPlatform-API    (R01 kapanisinin KOR durdurmasi)
+   22:55:49.217Z  Start-ScheduledTask HukukPlatform-API
+22:56:40Z  pwsh 1632  ->  22:56:50Z  node 44924  ->  22:57:38Z  [api] STARTED port=8080
+```
+
+**Owner A-07 R01'i BİR KEZ çalıştırmıştır** (130,9 s). 22:52:03Z'deki iki başlatma owner'ın
+değil, F04/A-07 hattının kendi doğrulama testleridir (§8.17.4).
+
+#### 8.17.2 Etkisi — canlı DB ve servis
+
+| Kalem | Ölçüm |
+|---|---|
+| Kabul bayrağı | Dosyada ~1 dk açık kaldı; **hiçbir API süreci onu yüklemedi** — açma restart'ının başlattığı host (46960) `begin mode=api` yazmadan durduruldu |
+| `.env` | Kapanış **22:55:47Z**'de yazdı; `OFFICE_APPROVAL*` satırı YOK; ACL değişmedi (SYSTEM sahip, `ulastelli` Read) |
+| Sentetik ADMIN | `isActive=false` · `tokenVersion` **1→2** · `updatedAt` **22:56:49Z** = koşumun bittiği saniye → kapanış yeniden iptal etti |
+| Sentetik personel | **dokunulmadı** (`tokenVersion` 1, `updatedAt` 12:34:56Z) |
+| Fixture | **SAĞLAM** — `APPROVED` / `NOT_RUN` / `executedAt NULL` · `Case.caseStatus = ISLEMDE` |
+| Yürütme izi | `CaseStatusHistory` **930** (değişmedi) · `approvalRequestId IS NOT NULL` → **0** · 22:40Z sonrası tenant audit → **0** |
+| **Canlı etkisi** | **~3 dakika API kesintisi** — 27312 durduruldu 22:54:44Z, 44924 dinlemeye başladı 22:57:38Z. Denemenin **kendisi** kesinti üretti |
+
+**Kabul yürütülmedi.** Sayaç değişmez.
+
+#### 8.17.3 Atıf zinciri — üç düzeltme
+
+1. **Ana yürütücü "aktör belirlenmedi" demişti — yanlış enstrüman.** Görev Zamanlayıcı olay 330
+   (*"kullanıcı isteğiyle durdurdu"*) aktörü **ayırt edemez**: owner ve bütün Claude oturumları
+   aynı `TELLI\ulastelli` hesabıyla çalışır. Döküm araması da betik içinden dolaylı verilen komutu
+   göremez. **Doğru kaynak olay 400 `HostApplication`'dır** ve F04 tarafından bulunmuştur.
+2. **F04 önce 22:52:03Z'yi owner'ın "1. koşumu" diye atfetti — kendisi düzeltti.** Tek başına
+   olay 400 bir başlatmayı gösterir, bir koşumu değil; **403 ile ömür eşleştirmesi** 186 ms'lik
+   kapı çıkışını gerçek koşumdan ayırır.
+3. **Ana yürütücü bu hatalı atfı owner'a iletti** ("iki kez çalıştırdınız"). Düzeltildi: **bir kez**.
+
+#### 8.17.4 `x` rolü kimlik doğrulama hatası — kaynağı F04 testi, owner koşumu DEĞİL
+
+hukuk-postgres **22:52:06Z**'de iki kez `password authentication failed for user "x"` /
+`Role "x" does not exist` kaydetti. Kaynak (F04'ün kendi bildirimi, zaman ve rol adı eşleşiyor):
+modül çözümünü sınamak için **yükseltilmemiş** kabukta `node a07-00-preflight.js` doğrudan,
+yer tutucu `OW_DATABASE_URL` ile koşuldu; PF-5 Prisma bu yer tutucuyla **canlı** Postgres'e
+bağlanmayı denedi. **Yazma ve erişim YOK**; ama canlı host/port/ada yer tutucu kimlik
+yöneltmek gereksizdi ve üretim günlüğüne FATAL düşürdü — F04 bunu kendi kusuru olarak kayda
+geçirdi.
+
+**R02'de bu yol YOKTUR** (ana yürütücü ölçtü): 6 paket dosyasında `postgres(ql)://` literali
+**0**; `OW_DATABASE_URL` yalnız `a07-run.ps1:52`'de, başlatıcı betiğindeki `EnvFile` satırından
+okunan **gerçek** dosyanın `DATABASE_URL` satırından atanır; yol veya satır yoksa `exit 2`
+(satır 48, 51). Körlük kontrolü: aynı tarama bilinen literal için eşleşme bulur. "DB erişilebilir"
+kanıtı (PF-4.db) hiçbir zaman doğrudan PG bağlantısına dayanmamıştır — API üzerinden HTTP
+login → 401.
+
+#### 8.17.5 Eşzamanlı ilgisiz yükseltilmiş süreç — A-07'yi etkilemedi
+
+Aynı pencerede, A-07 paketiyle ilgisiz:
+
+```text
+22:54:54.848Z -> 22:54:58.158Z   scripts/r1-production-database-test.ps1 -CombinedCandidate   (3,3 s)
+22:56:13.069Z -> 22:56:19.450Z   ayni                                                          (6,4 s)
+```
+
+**Hedefi hukuk_db değil, `limax-sales-b01-postgres` (55432):** limax günlüğündeki iki
+`checkpoint starting: immediate force wait` (**22:54:57.8Z**, **22:56:19.2Z**) ilgili r1
+süreçlerinin **ömrünün içine** düşer; hukuk-postgres'te karşılık gelen kayıt yoktur. Betik hiçbir
+HUKUK dalında ve diskte bulunmadı; Codex geçmişinde 2026-09-06'da geçer — başka proje.
+
+**Sınır:** hukuk-postgres'te `log_connections = off`; başarılı bağlantılar loglanmaz. Hüküm:
+**ölçülen kapsamda dokunmadı.**
+
+**Ders:** kabul koşumu sırasında ilgisiz bir yükseltilmiş sürecin çalışması **teorik değil,
+gerçekleşmiştir**. R02 koşumundan önce paralel yükseltilmiş iş olmadığı doğrulanmalıdır.
+
+#### 8.17.6 R02 kararının zemini — sağlam
+
+Çalışan başlatıcı (pwsh 1632) **22:56:40Z**'de başladı; `.env` son yazımı **22:55:47Z** → başlatıcı
+bayrağı KAPALI dosyayı okudu. F04'ün R02 kuru koşumu bu yüzden `DONE_LOADED_CURRENT` verdi.
+Restart'ın kaynağı bilinir ve bayrak kapatmadan **sonra** gerçekleşmiştir. Fixture geçerlidir.
+
+R02, R01 denemesinin açığa çıkardığı kusurları kapatır: kapanışın **kör durdurması** (C) ·
+restart **defteri** (B) · 60 s bütçe yerine ilerleme yoksa **bekleme**.
+
+#### 8.17.7 Sayaç
+
+**6/7 — değişmedi.** A-07 yürütülmedi. **Bütünsel teslim İLAN EDİLMEZ.**
