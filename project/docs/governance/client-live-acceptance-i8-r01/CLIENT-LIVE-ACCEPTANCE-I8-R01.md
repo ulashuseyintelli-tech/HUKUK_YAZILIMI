@@ -493,3 +493,85 @@ disposable koşumlarda 3/3 aktör `isActive:false`, `tokenVersion:1` (0→1) ola
 `Case`'i ACTIVE'e çekilmez. Oradaki tek dokunuş U-4'ün **reddedilmesi ölçülen** yazma
 denemesidir (yazma 0, audit dahil). Disposable prova alanları ve §6'daki RELEASE20 sonuçları
 **tarihsel kanıt** olarak korunur.
+
+---
+
+## 13. CANLI KABUL KOŞUMU — YAPILDI ve KAPANDI
+
+**Yetki:** `OWNER-GO-CLIENT-I8-20260910-R01` (owner tarafından doğrudan verildi).
+**Alan:** `cl-acc-2ed1d6d0` · runId **`2ed1d6d0`** · canlı DB `127.0.0.1:5432/hukuk_db` ·
+API `http://127.0.0.1:8080/api` · onaylanan ağaç `7d03bb75` (#2601). Tarih: 2026-09-10.
+
+### 13.1 Yazmadan önceki kapılar — hepsi ÖLÇÜLDÜ
+
+| Kapı | Ölçüm | Sonuç |
+|---|---|---|
+| Onaylanan ağaç | worktree `7d03bb75fc31fae5b16a9cef6eb18ab770ef9cc1`'e sabitlendi | ✔ |
+| Betik kimlikleri | 5/5 betik §4 tablosu **ve** onaylanan ağaçla birebir | ✔ |
+| API süreç/derleme | `:8080` PID **50716** → RELEASE21 dist, sha256 `28D84796…`, kaynak `2187a78b…` | ✔ |
+| **DB bağı (401 tek başına sayılmadı)** | PID 50716 → `127.0.0.1:5432` **17 ESTABLISHED** bağlantı; `5439`'a **0** | ✔ |
+| DB kimliği | `5432` = konteyner `hukuk-postgres` / `postgres:16-alpine` / `POSTGRES_DB=hukuk_db`; canlı tenant'lar (`telli-hukuk`, `demo-firma`, `local-development-office`) mevcut | ✔ |
+| runId | **yazmadan önce** rezerve edildi, sırsız kayda geçti (`LIVE-RUN-RESERVATION.json`) | ✔ |
+| Çakışma (G-3) | `cl-acc-2ed1d6d0` → `fieldExists:false`; canlıda `cl-acc-` öneki yalnız `afce215b` | ✔ |
+
+### 13.2 Koşum — tek koşum, 11 senaryo, genişletme YOK
+
+**`PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0`** · setup **6/6 satır** COMMIT.
+
+| # | Ölçülen |
+|---|---|
+| P-0v/u/e | üç aktör de **HTTP 201** ile oturum açtı (alanın canlıda **kurulu ve çalışır** olduğunun kanıtı) |
+| P-0x | `user` ve `elevated` **aynı rolde** (USER), ADMIN yolu kapalı — ölçüm geçerli |
+| U-1 | **403 · `CLIENT_MUTATION_DENIED_VIEWER`** (genel 403 yetmez) · `phone` değişmedi · audit 0→0 |
+| U-2 | **403 · `CLIENT_MUTATION_DENIED_SENSITIVE_FIELDS`** · `tckn` değişmedi · audit 0→0 |
+| U-3 | anonim **401** · satır ve audit değişmedi |
+| U-4 | yabancı tenant (`cl-acc-afce215b`) kaydına yazma **HTTP 404** — canlıda izolasyon kaydı "bulunamadı" olarak örter (403 değil); **hedefte satır ve audit değişmedi** |
+| P-1 | **200** · `Client.phone` yazıldı |
+| P-2 | **200** · PARTNER bağlı elevated `Client.tckn` yazdı |
+| U-6 | 8 komşu tenant · client 20→20 · user 40→40 · digest `3afb6d981ab79bcc` **değişmedi** |
+
+### 13.3 Bağımsız salt-okuma doğrulaması (koşucunun raporu kanıt sayılmadı)
+
+```
+tenant cl-acc-2ed1d6d0 · lifecycle ACTIVE
+Client.phone = "5550000002"    → P-1 YAZILDI
+Client.tckn  = "10000000146"   → P-2 YAZILDI
+Client.email = null            → gönderim yolu kapalı
+elevated-…@cl-acceptance.invalid  rol=USER    lawyerBağ=PARTNER  isActive=false  tokenVersion=1
+user-…@cl-acceptance.invalid      rol=USER    lawyerBağ=-        isActive=false  tokenVersion=1
+viewer-…@cl-acceptance.invalid    rol=VIEWER  lawyerBağ=-        isActive=false  tokenVersion=1
+PARTNER bağlı aktör: 1 · aktif kullanıcı: 0 · tokenVersion≥1: 3/3
+Case: 0 · Office: 0 · AuditLog: 2 satır (ürünün kendi yazdığı; silinmedi)
+```
+
+### 13.4 Erişim ve oturum geçersizliği
+
+`cl-09` → 3/3 aktörde `isActive=false` **ve** `tokenVersion 0→1`; kapatma sonrası aynı
+kimlikle login **401**; ikinci çağrı `alreadyClosed=true / usersDeactivated=0 / exit 0`
+(tekrar-güvenli). `caseRowsUpdated 0` (Case yok) · `cronPredicate 0→0`.
+**Dürüst sınır:** eski JWT ile `/auth/me` **bu koşumda doğrudan denenmedi**; token
+geçersizliği `tokenVersion` artışıyla **dolaylı** kanıtlanmıştır (doğrudan ölçüm İ1b'de
+yapılmıştı, `CLIENT-LIVE-ACCEPTANCE-I1B-R01` §11).
+
+### 13.5 Korunum
+
+| Ne | Ölçüm |
+|---|---|
+| `cl-acc-afce215b` (İ1b) | `user 1 · lawyer 1 · client 1 · case 1 · caseClient 1` · `activeUsers 0` · `tokenVersion 1` — **DEĞİŞMEDİ**, yeniden açılmadı |
+| Diğer tenant'lar | 8→9 tenant; `telli-hukuk 9/8akt · client 16`, `demo-firma 8/3akt · client 2`, `local-development-office 17/0akt` ve sentetikler **birebir sabit** |
+| Canlı servisler | API PID 50716 · Web PID 22440 — **çalışmaya devam ediyor**, dokunulmadı |
+| Kapsam dışı | deploy · migration · servis restart · gerçek gönderim · İ9…İ15 — **yapılmadı** |
+
+### 13.6 R02 kapanış ölçütüne bağlama
+
+| Bacak | Ölçüt | Kanıt | Sonuç |
+|---|---|---|---|
+| **B1** | Alan canlıda kurulu | 6/6 satır COMMIT + üç aktörün **201** login'i | **KARŞILANDI** |
+| **B2** | Yetkisiz denemelerde **yazma 0** | U-1…U-4 dördü de PASS (tam ret kodları + satır/audit değişmedi); P-1/P-2 pozitif kontrolleri gerçek DB etkisiyle doğrulandı → ölçüm boş değil | **KARŞILANDI** |
+| **B3** | Erişim kapatma çalışıyor | `isActive=false` + `tokenVersion++`, login **401**, tekrar `alreadyClosed` | **KARŞILANDI** |
+| Öncül | İ1b onayı | `OWNER-GO-CLIENT-I1B-20260910-R01`, alan korunmuş | **SAĞLANDI** |
+
+**İ8 KAPANDI.** Sayaç **8/17**, kalan **9**.
+**Hizmet kabulü 0/8 tam KALIR** — İ8'in kapanışı hiçbir hizmetin kendi ölçüt setini
+karşılamaz; hizmet kabulü yalnız İ9…İ15'in ölçütleriyle değerlendirilir.
+**Sıradaki tek iş: İ9 (H1 kimlik kabulü) — başlatılmadı.**
