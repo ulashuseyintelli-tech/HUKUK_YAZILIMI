@@ -1812,6 +1812,12 @@ export class ClientService {
     let addressesSkipped = false;
 
     // C0-a: client + contact yazımı + audit AYNI transaction.
+    // B-1: SAF NO-OP bayrağı. Transaction DIŞINDA tanımlanır çünkü transaction'dan SONRA
+    // çalışan yan etkileri (iletişim görevi senkronu) de kapsar. Yalnız gerçekten hiçbir şey
+    // yazılmayan istekte true olur; ilişkisel yazma NİYETİ (phones/emails/addresses) varsa
+    // ASLA true olmaz — normal akış aynen korunur.
+    let pureNoOpDetected = false;
+
     // C1-B05: kimlik yazımı partial unique index'e takılırsa (PR-U4 probe'unu geçen yarış)
     // aynı DUPLICATE_IDENTITY sözleşmesine çevrilir.
     try {
@@ -1830,9 +1836,10 @@ export class ClientService {
             ...(reactivating && data.vkn === undefined ? { vkn: existing.vkn } : {}),
           }
         : {};
-      const { count } = await tx.client.updateMany({
-      where: { id, tenantId, ...lifecycleGuard },
-      data: {
+      // B-1: Prisma'ya VERILECEK etkin guncelleme verisi. Ayri degiskene alinir cunku
+      // `count === 0` sonucunun nedeni ("yazacak alan yoktu" mu, "satir yoktu" mu) yalnizca
+      // bu nesneye bakarak ayirt edilebilir. Davranis DEGISMEZ: ayni nesne aynen gecirilir.
+      const clientUpdateData: Record<string, unknown> = {
         type: data.type,
         displayName: displayName,
         // C1-B02: kimlik alanı gönderilmediyse ve data.name da yoksa name'e DOKUNULMAZ
@@ -1874,8 +1881,15 @@ export class ClientService {
         sendAnniversaryGreeting: data.sendAnniversaryGreeting,
         sendHolidayGreeting: data.sendHolidayGreeting,
         greetingChannel: data.greetingChannel,
-      },
-    });
+      };
+      // B-1: "etkin alan var mi" testi SADECE `undefined` uzerinden yapilir. Prisma'da
+      // `undefined` = DOKUNMA; `null`, `false`, `0` ve `''` ise GERCEK yazilacak degerlerdir
+      // ve bu testte VAR sayilirlar (owner: gercek degerleri undefined ile karistirma).
+      const hasEffectiveUpdateField = Object.values(clientUpdateData).some((v) => v !== undefined);
+      const { count } = await tx.client.updateMany({
+        where: { id, tenantId, ...lifecycleGuard },
+        data: clientUpdateData,
+      });
       if (count === 0) {
         // Lifecycle gecişinde sıfır sonuç, kaydın eşzamanlı değiştiği anlamına gelir
         // (kayıt yok değil) → doğrulama/yetki geçersiz kılınamaz; istek çakışma ile reddedilir.
@@ -1885,7 +1899,45 @@ export class ClientService {
             message: 'Kayıt bu sırada değişti; işlemi yeniden deneyin (aktifleştirme uygulanmadı)',
           });
         }
-        throw new NotFoundException('Müvekkil bulunamadı');
+        // B-1 (İ9 kabul bulgusu): `count === 0` İKİ AYRI DURUMDAN doğar ve bunlar
+        // AYRIŞTIRILMALIDIR:
+        //   (a) hedef satır GERÇEKTEN yok (silinmiş / başka tenant) → 404 doğrudur;
+        //   (b) satır DURUYOR **ve** yazılacak ETKİN ALAN yok — Prisma `updateMany`'yi tüm
+        //       alanları `undefined` olan bir `data` ile çağırdığımızda 0 sayar (ölçüldü:
+        //       `data={hepsi undefined}` → count 0, `data={name: AYNI değer}` → count 1).
+        //       Bu, geçerli bir NO-OP isteğidir; kayıt "bulunamadı" DEĞİLDİR.
+        // Eskiden ikisi de 404 üretiyordu: aynı değerle `isActive:true` gönderen istemci,
+        // var olan kaydı "bulunamadı" olarak görüyordu (kabul ölçütü A-8: 200 bekler).
+        //
+        // BAŞARIYA DEVAM İKİ KOŞULUN BİRLİKTE sağlanmasına bağlıdır:
+        //   1) `hasEffectiveUpdateField === false` — Prisma'ya verilen veri GERÇEKTEN boş.
+        //      Yazılacak bir alan VARDI ama satır güncellenmediyse bu no-op DEĞİLDİR
+        //      (satır kayboldu veya yüklem eşleşmedi) → 404 KALIR.
+        //   2) satır AYNI TENANT kapsamında hâlâ mevcut. Yalnız varlık YETMEZ; (1) olmadan
+        //      varlık başarı üretmez.
+        // Ayrım AYNI TRANSACTION İÇİNDE ölçülür (dışarıdaki `existing` okuması bayat olabilir).
+        // Yetki, tenant, kimlik ve lifecycle kapıları YUKARIDA çalıştı ve DEĞİŞMEDİ; burada
+        // yalnız ret nedeni doğrulanır. `count = 1` üretmek için `isActive`, `updatedAt` veya
+        // audit'e YAPAY YAZMA EKLENMEZ — no-op gerçekten hiçbir alanı yazmaz.
+        if (hasEffectiveUpdateField) throw new NotFoundException('Müvekkil bulunamadı');
+        const stillPresent = await tx.client.findFirst({
+          where: { id, tenantId },
+          select: { id: true },
+        });
+        if (!stillPresent) throw new NotFoundException('Müvekkil bulunamadı');
+        // (b) → akış devam eder: `updated` geri okunur, mevcut yanıt sözleşmesi korunur.
+        //
+        // SAF NO-OP: ana Client verisi boş OLMASININ YANINDA ilişkisel yazma NİYETİ de yoksa
+        // (contacts/addresses gönderilmemişse) bu istek hiçbir şey yazmamalıdır. Aksi hâlde
+        // aşağıdaki contacts/addresses blokları ve transaction SONRASI iletişim-görevi senkronu
+        // (`contactFollowUpStatus` yazar → `updatedAt` ilerler, yeni Task açılır) devreye girer
+        // ve "hiçbir alan yazılmaz" ölçütü ÇİĞNENİR. Bu yan etki yamadan ÖNCE görünmüyordu,
+        // çünkü akış 404 ile kesiliyor ve transaction geri alınıyordu; yani ayrımı yapmak
+        // BU YAMANIN sorumluluğudur.
+        pureNoOpDetected =
+          data.phones === undefined &&
+          data.emails === undefined &&
+          data.addresses === undefined;
       }
       const updated = await tx.client.findFirst({ where: { id, tenantId } });
       if (!updated) throw new NotFoundException('Müvekkil bulunamadı');
@@ -1972,12 +2024,19 @@ export class ClientService {
     }
 
     // PR-1: operasyonel iletişim eksiği görevini senkronla (WAIVED kararı 'existing'ten gelir)
-    await this.syncContactFollowUpTaskSafe(tenantId, {
-      id,
-      phone: primaryPhone,
-      email: primaryEmail,
-      contactFollowUpStatus: (existing as any).contactFollowUpStatus ?? null,
-    });
+    // B-1: SAF NO-OP'ta ATLANIR. Bu senkron `Client.contactFollowUpStatus` yazabilir ve yeni
+    // `Task` açabilir; hiçbir alan yazmayan bir istekte bunlar İSTENMEYEN YAN ETKİDİR
+    // (`updatedAt` ilerler, ölçüt "lifecycle/kayıt korunur" der). Gerçek iletişim
+    // güncellemelerinde (phone/email/phones/emails gönderildiğinde) `pureNoOpDetected` false
+    // kalır ve mevcut senkron AYNEN çalışır — davranış DEĞİŞMEZ.
+    if (!pureNoOpDetected) {
+      await this.syncContactFollowUpTaskSafe(tenantId, {
+        id,
+        phone: primaryPhone,
+        email: primaryEmail,
+        contactFollowUpStatus: (existing as any).contactFollowUpStatus ?? null,
+      });
+    }
 
     // includeInactive: update isActive:false yapmış olabilir (arşivleme); güncellenen kaydı yine döndür.
     const result = await this.findOne(id, tenantId, { includeInactive: true });

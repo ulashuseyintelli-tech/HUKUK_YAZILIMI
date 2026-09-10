@@ -273,6 +273,176 @@ describeWithDatabase('LIFECYCLE aktivasyon yarisi (gercek PostgreSQL, bariyer si
     expect(auditCalls.some((c) => c && c.action === 'CLIENT_UPDATE')).toBe(true);
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // B-1 (İ9 kabul bulgusu) — SAF NO-OP UPDATE
+  //
+  // KUSUR (yama öncesi): yukarıdaki "AYNI DEGER" testi payload'ına `phone` de koyduğu için
+  // `updateMany` gerçek bir alan yazıyor ve `count = 1` dönüyordu; kusur GÖRÜNMÜYORDU.
+  // Payload YALNIZ `isActive` (aynı değer) olduğunda ürünün Prisma'ya verdiği `data`nın TÜM
+  // alanları `undefined` olur; Prisma bu çağrıyı `count = 0` sayar ve servis bunu "kayıt
+  // bulunamadı" (404) olarak bildirirdi — kayıt DURURKEN. Kabul ölçütü A-8 bu istekte **200**
+  // bekler ("aynı değerle isActive:true tekrar gönderimi | 200; lifecycle alanına YAZILMAZ").
+  //
+  // Aşağıdaki dört test yamayı kilitler: no-op 200 döner, GERÇEK kayıt yokluğu 404 kalır,
+  // başka tenant'ın kaydı sızmaz ve yetkisiz aktör no-op üzerinden lifecycle geçişi yapamaz.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  it('B-1 SAF NO-OP: yalniz isActive (AYNI deger) gonderimi 200 doner; HICBIR alan yazilmaz (isActive, contactFollowUpStatus, updatedAt) ve YENI GOREV acilmaz', async () => {
+    // Kayit BILEREK telefon/e-postasiz kalir: eksik iletisim, senkronun yan etkisini
+    // tetikleyen kosuldur. Veriyi doldurmak kusuru GIZLERDI.
+    const id = await createClient(); // isActive: true, phone/email YOK
+    const before = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      select: { isActive: true, updatedAt: true, tckn: true, contactFollowUpStatus: true, phone: true, email: true },
+    });
+    expect(before.phone).toBeNull();
+    expect(before.email).toBeNull();
+    const taskCountBefore = await prisma.task.count({ where: { clientId: id } });
+    const service = buildService();
+
+    // Yama oncesi bu cagri NotFoundException firlatiyordu (kusurun yeniden uretimi).
+    const result: any = await service.update(id, tenantId, { isActive: true }, actor() as any);
+
+    // 1) Mevcut yanit sozlesmesi: guncellenen kayit dondurulur (findOne ciktisi).
+    expect(result).toBeTruthy();
+    expect(result.id).toBe(id);
+
+    // 2) Lifecycle alanina YAZILMAZ — `updateMany` cagrilarinin hicbiri isActive tasimaz.
+    expect(updateManyData.length).toBeGreaterThan(0);
+    for (const data of updateManyData) {
+      expect(data.isActive).toBeUndefined();
+    }
+
+    // 3) Satir GERCEKTEN degismedi: isActive, tckn, contactFollowUpStatus ve updatedAt korunur.
+    //    `updatedAt` esitligi KALDIRILMAZ: no-op yolunda hicbir yazma olmamalidir.
+    const after = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      select: { isActive: true, updatedAt: true, tckn: true, contactFollowUpStatus: true },
+    });
+    expect(after.isActive).toBe(true);
+    expect(after.tckn).toBe(before.tckn);
+    expect(after.contactFollowUpStatus).toBe(before.contactFollowUpStatus);
+    expect(after.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
+
+    // 4) YAN ETKI YOK: iletisim eksigi gorevi ACILMAZ (senkron saf no-op'ta atlanir).
+    const taskCountAfter = await prisma.task.count({ where: { clientId: id } });
+    expect(taskCountAfter).toBe(taskCountBefore);
+
+    // 5) Lifecycle audit'i URETILMEZ (reaktivasyon/deaktivasyon olayi YOK).
+    expect(auditCalls.some((c) => c && c.action === 'CLIENT_REACTIVATE')).toBe(false);
+    expect(auditCalls.some((c) => c && c.action === 'CLIENT_DELETE')).toBe(false);
+
+    // 6) GENEL audit davranisi AYRI olculur ve RAPORLANIR (gizlenmez, kaldirilmaz):
+    //    mevcut urun davranisi transaction icinde CLIENT_UPDATE audit'i yazmaktir; saf no-op
+    //    da bu akistan gecer. Bu satir davranisi KILITLER — degisirse test kirmizi olur.
+    const clientUpdateAudits = auditCalls.filter((c) => c && c.action === 'CLIENT_UPDATE');
+    expect(clientUpdateAudits).toHaveLength(1);
+  });
+
+  it('B-1 GERCEK ILETISIM GUNCELLEMESI: senkron AYNEN calisir — gorev acilir ve satir yazilir (no-op ayrimi davranisi BOZMAZ)', async () => {
+    const id = await createClient(); // phone/email YOK → eksik iletisim
+    const before = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      select: { updatedAt: true, phone: true },
+    });
+    const taskCountBefore = await prisma.task.count({ where: { clientId: id } });
+    const service = buildService();
+
+    // Gercek yazma NIYETI var (phone) → pureNoOp DEGIL → senkron calismali.
+    await service.update(id, tenantId, { phone: '5551112233' }, actor() as any);
+
+    const after = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      select: { updatedAt: true, phone: true },
+    });
+    expect(after.phone).toBe('5551112233');
+    expect(after.updatedAt.toISOString()).not.toBe(before.updatedAt.toISOString());
+
+    // Senkron calisti: e-posta HALA eksik oldugu icin iletisim gorevi ACILDI.
+    const taskCountAfter = await prisma.task.count({ where: { clientId: id } });
+    expect(taskCountAfter).toBe(taskCountBefore + 1);
+    const task = await prisma.task.findFirst({ where: { clientId: id }, select: { taskCategory: true, missingFields: true } });
+    expect(task?.taskCategory).toBe('OPERATIONAL_COMPLETENESS');
+    expect(task?.missingFields).toEqual(['email']);
+  });
+
+  it('B-1 GERCEK YOKLUK: var olmayan kayit icin 404 KORUNUR (no-op ile karistirilmaz)', async () => {
+    const service = buildService();
+    const ghostId = randomUUID();
+
+    await expect(
+      service.update(ghostId, tenantId, { isActive: true }, actor() as any),
+    ).rejects.toThrow(/bulunamadı/i);
+
+    // Hicbir yazma denemesi yapilmadi.
+    expect(updateManyData).toHaveLength(0);
+  });
+
+  it('B-1 TENANT SINIRI: baska tenant’in kaydina saf no-op 404 doner ve hedef DEGISMEZ', async () => {
+    const id = await createClient();
+    const before = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      select: { isActive: true, updatedAt: true },
+    });
+
+    const sfx = randomUUID().slice(0, 8);
+    const foreign = await prisma.tenant.create({
+      data: { name: `Foreign ${sfx}`, slug: `lifecycle-race-foreign-${sfx}` },
+      select: { id: true },
+    });
+    try {
+      const service = buildService();
+      // Aktor KENDI tenant'inda; hedef BASKA tenant'ta → tenant yuklemi eslesmez.
+      await expect(
+        service.update(id, foreign.id, { isActive: true }, { userId, tenantId: foreign.id, role: 'ADMIN' } as any),
+      ).rejects.toThrow(/bulunamadı/i);
+
+      const after = await prisma.client.findUniqueOrThrow({
+        where: { id },
+        select: { isActive: true, updatedAt: true },
+      });
+      expect(after.isActive).toBe(before.isActive);
+      expect(after.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
+    } finally {
+      await prisma.tenant.delete({ where: { id: foreign.id } }).catch(() => undefined);
+    }
+  });
+
+  it('B-1 YETKI: no-op yolu lifecycle kapisini ASMAZ — yetkisiz aktor GERCEK gecisi yapamaz, ayni deger ise hicbir sey yazilmaz', async () => {
+    const id = await createClient({ isActive: false });
+    lifecycleEligible = false;
+    const service = buildService();
+
+    // (a) GERCEK gecis (false→true): yetki kapisi CALISIR ve reddeder.
+    await expect(
+      service.update(id, tenantId, { isActive: true }, actor() as any),
+    ).rejects.toThrow(/yetki yok/i);
+    expect(updateManyData).toHaveLength(0);
+
+    // (b) AYNI deger (false→false): gecis YOK → yetki kapisi tetiklenmez, istek no-op olarak
+    //     kabul edilir; hicbir alan yazilmaz ve kayit PASIF kalir. Bu bir "asma" DEGILDIR:
+    //     lifecycle durumu degismedigi icin lifecycle yetkisi de gerekmez.
+    const before = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      select: { isActive: true, updatedAt: true, contactFollowUpStatus: true },
+    });
+    const taskCountBefore = await prisma.task.count({ where: { clientId: id } });
+    const result: any = await service.update(id, tenantId, { isActive: false }, actor() as any);
+    expect(result.id).toBe(id);
+    for (const data of updateManyData) {
+      expect(data.isActive).toBeUndefined();
+    }
+    const after = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      select: { isActive: true, updatedAt: true, contactFollowUpStatus: true },
+    });
+    expect(after.isActive).toBe(false);
+    expect(after.contactFollowUpStatus).toBe(before.contactFollowUpStatus);
+    expect(after.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
+    // Yetkisiz aktorun no-op'u da YAN ETKI URETMEZ: gorev acilmaz.
+    expect(await prisma.task.count({ where: { clientId: id } })).toBe(taskCountBefore);
+  });
+
   it('GERCEK GECIS: yetkisiz aktor reddedilir ve HICBIR alan yazilmaz', async () => {
     const id = await createClient({ isActive: false });
     lifecycleEligible = false;
