@@ -122,3 +122,36 @@ YETKI    : bu ek kabul yazmasi, yeniden muhur veya cutover tekrari yetkisi DEGIL
 - Owner istegi uzerine "Müvekkil modülü analiz ve faz durumu" oturumuna olculmus kanitlarla BILGI bildirimi yapildi. I9 canli
   kosumu AYRI owner GO ister.
 - Kabul yazmasi YOK; tuketilmis RELEASE21 A-07 fixture'i kullanilmadi. R27 motoru kostugu icin paket yeniden MUHURLENEMEZ.
+
+### Ek C.1 — Cutover oncesi gercek RELEASE21 PID'leri ve planlanmamis kesinti (ek olcum, salt-okuma, 2026-09-11 ~17:31Z)
+
+Ek C "Eski surecler" satiri 50716 / 22440'i olcer; bunlar 13:25Z'deki (-Live) PID'lerdir. Cutover'in degistirdigi gercek RELEASE21
+surecleri API **40216** (spawn 16:45:04Z) ve Web **31180** (spawn 16:33:12Z) idi; OFFICE 33 bu farki "neden olculmedi" notuyla
+bildirmisti. 17:31:06Z olcumu: 40216 / 31180 / 50716 / 22440 dordu de YOK; 46332 / 47004 ve host 43300 / 25372 calisiyor.
+
+Neden: Windows `System` ve `Microsoft-Windows-TaskScheduler/Operational` gunlukleri ile `C:\Ops\hukuk\logs\{api,web}\` altindaki
+host ve baslatici gunlukleri (yerel saat +03:00, UTC'ye cevrildi):
+
+| UTC | Olay |
+|---|---|
+| 16:10:04Z | Yeniden baslatma: `StartMenuExperienceHost.exe`, `TELLI\ulastelli` adina (olay 1074, "Diger (Planlanmamis)") |
+| 16:10:05Z | API ve Web host'lari stop-signal ile cikti; iki gorev sonucu `0x80070001` |
+| 16:12:46Z / 16:15:01Z | acilis; iki gorev "kullanici oturum acmadi" diye BASLAMADI (olay 332) |
+| 16:23:14Z | Ikinci yeniden baslatma: `TrustedInstaller.exe`, SYSTEM adina, "Isletim Sistemi: Yukseltme (Planlanmis)" `0x80020003` |
+| 16:25:01Z / 16:30:01Z | acilis; iki gorev yine BASLAMADI (olay 332) |
+| 16:31:56Z | oturum acildi; iki gorev Logon tetigiyle basladi (host 6880 / 10608); host 994/994 closure 16:33:00Z (63 sn) |
+| 16:33:18Z | Web STARTED :3002 pid 31180 |
+| 16:33:44Z | API baslaticisi: DB probe 1-6 `exit=20` (UNAVAILABLE), probe 7 `exit=23` (UNCLASSIFIED, `code=none`) → `DB_NOT_READY(UNCLASSIFIED) exit 23`; gorev bitti (`0x80070017`) |
+| 16:45:01Z | 15 dk zaman tetigi API gorevini yeniden baslatti (host 43836); 16:45:04Z DB hazir; **16:45:39Z API STARTED :8080 pid 40216** |
+
+Sureler (host stop-signal → baslatici STARTED; bu aralikta HTTP erisilebilirligi OLCULMEDI): **API 35 dk 33,8 sn · Web 23 dk 13,5 sn.**
+
+- Cutover ile iliskisi YOK: olay muhur ve cutover'dan once bitti; motor P-06 / P-07 / P-08 on durumu 16:57Z'de dogruladi (OLD, Running,
+  host=2). Paket kimligi, preflight ve -Live kanitlari bu olaya dayanmaz.
+- Gorevler oturum acik degilken baslamiyor (olay 332, bu olayda iki acilista olculdu); cokme toparlamasi 15 dk tetigi + DB kapisi ile
+  (`runtime-reconciliation-r01/c30-f01-launcher-pin-atomic-cutover-design-r01.md` satir 201).
+- Yeni gozlem: `Wait-HLDbReady` (`C:\Ops\hukuk\bin\start-api.ps1:345-362`) yalniz `exit=20`'yi yeniden dener (24 × 5 sn); `exit=23` hemen
+  doner. Acilista kodsuz DB hatasi 24 × 5 sn'lik sinirli beklemeyi 7. denemede (~32 sn) kesti (baslatici toplam ~44 sn); toparlanma
+  15 dk tetigine kaldi (11 dk 17 sn bekleme).
+  RELEASE22 baslaticisi ayni fonksiyonu tasir (R21 → R22 farki yalniz yollar) → ayni davranis RELEASE22'de de beklenir (CIKARIM; denenmedi).
+- Bu kayitla gorev, baslatici veya Windows ayari DEGISTIRILMEDI; iyilestirme owner karari.
