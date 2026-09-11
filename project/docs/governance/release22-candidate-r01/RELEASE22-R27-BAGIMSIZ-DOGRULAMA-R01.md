@@ -182,3 +182,45 @@ degerleri OFFICE 33 olctu (oturumlar arasi olcum mesaji) ve ana yurutucu ayni do
   tek kullanimlik, pencere 16:57:07Z–17:27:07Z, motor `52C9A220…` (claim'deki motor sha'si esit); claim 16:57:25Z (pencere icinde);
   makbuz `claimConsumed=true`, authority `CONSUMED`, `COMMITTED`, 31/31.
 - FALLBACK makbuz 0; `cutover-receipts` 1 · `claims` 1 · `journal` 2 dosya. Paket yalniz OKUNDU; yeniden muhur ve tekrar kosum YOK.
+
+## Ek D — OFFICE AK-2 / AK-1a canli kabul: ana yurutucu bagimsiz dogrulamasi (owner GO `OWNER-GO-OFFICE-AK-20260911-R01`)
+
+```text
+KOSUM    : runId e1293381 · tenant off-ak-e1293381 · paket office-live-acceptance-ak-r01 (7 arac; giris ak-live.ps1 A0C74CD9…)
+           owner kostu 2026-09-11T21:13:28Z → 21:13:30Z (yerel 2026-09-12 00:13) · PASS 31/31 · FAIL 0 · OLCULEMEDI 0 · cikis 0
+OLCUM    : ana yurutucu, salt-okuma; sonuc dosyasi icerikten hash'lendi; canli DB tek transaction `SET TRANSACTION READ ONLY`
+           (transaction_read_only=on, 127.0.0.1:5432/hukuk_db, 2026-09-11T21:17:26Z); DB adresi basilmadi
+YETKI    : bu ek kabul veya kurtarma tekrari yetkisi DEGILDIR; kabul TEK kez kosuldu, kurtarma gerekmedi
+```
+
+**Kosum oncesi (ayni GO madde 2; salt-okuma):** ref canlida kullanilmamis — `off-ak-*` tenant 0 / kullanici 0,
+`C:\Ops\hukuk\logs\office-ak-r01` yoktu, acik PR 0; ref main'de yalniz test ornegi (`ak-live-gates.test.ps1:13`,
+`ak-negative.js:41/47`; ikisi de yazmadan once durur) · paralel kabul kosucusu 0 (CLIENT I10 bekledi) · son 60 dk audit 0 ·
+kanonik `8d10b6e2`, owner komut yolunda 7/7 arac hash'i esit.
+
+| Kontrol | Olculen | Sonuc |
+|---|---|---|
+| Sonuc dosyasi | `C:\Ops\hukuk\logs\office-ak-r01\ak-live-result-20260912-001328.json` sha256 `F884CB666FE72EE5804EE2BD5D9C90E63CECE4BD5B0B0B91FA7A62097166609B` = owner'in bildirdigi; sir izi 0; `environment` live · 127.0.0.1:5432/hukuk_db · API 8080 · goRef dogru; `tools` 6/6 dondurulmus sha; 31 olcutun hepsi ok | ESIT |
+| Durum dosyasi | `ak-live-state-20260912-001328.json` sha256 `AA7D9DE306E49B01BE1E0DA4BB99B80116CAD049314B157BF3E9415B64E2B9D2`; sir izi 0; kurulum 12 satir, seyirci yok | ESIT |
+| Yazma envanteri | 139 `tenantId` tablosu tarandi: Office 1 · User 4 · Lawyer 9 · AuditLog 5 + Tenant 1 = **20 ekleme**; OfficeBankAccount 0 · StaffMember 0 · Case 0 · Client 0 · diger tablolar 0 | paket §6 ile BIREBIR |
+| Guncellemeler | 4 User kapanis (`isActive=false`, `tokenVersion=1`) + P1 ve P2 `isActive` false→true + T `title="AK Kabul"` = **7**; kurulumun 12 satiri yerinde (**silme 0**) | paket §6 ile BIREBIR |
+| Dort kullanici | admin ADMIN · partner USER · manager USER · viewer VIEWER — dordu de `isActive=false`, `tokenVersion=1` | DOGRULANDI |
+| Dort JWT | sonuc dosyasi K-2: kapanistan sonra admin / partner / manager / viewer `GET /lawyers` → 401 ×4 (belirsiz 0); DB'de mekanizma: pasif + `tokenVersion` artmis | DOGRULANDI (401 kosumun olcumu) |
+| Bes audit | 3 × `LAWYER_CREATE` (C1←manager, P1←admin, P2←partner; `actorType=USER`; metadata alanlari satirla esit) · 2 × `LAWYER_REACTIVATE` (P1←partner, P2←admin; `privileged:true`, `reactivatedFromDuplicate:true`); kapanis `auditBefore 5 = auditAfter 5` | KORUNDU |
+| Avukatlar | 9, hepsi aktif (paket §7 son durumu; owner GO: korunur); API ile olusanlar C1 LAWYER · P1 PARTNER + canModify + locked · P2 MANAGER + canModify | ESIT |
+| Buro | 1; `autoGreetingEnabled=false`, `lastGreetingRunAt=null` (tebrik cron'u damgalamadi) | ESIT |
+| Izolasyon | I-1: aktorlerin baska tenant'ta audit izi 0 (kosum ve ana yurutucu). I-3 yabanci tenant sayi ozeti: kosum oncesi = sonrasi `80bd81056f010f2f…` (10 tenant); ana yurutucu ayni dondurulmus `ak-lib.foreignFingerprint` ile 21:17:26Z'de yeniden hesapladi: `80bd81056f010f2f` | ESIT (yalniz sayi duzeyi) |
+| Canli servisler | API :8080 pid 46332 · Web :3002 pid 47004 — restart yok | DEGISMEDI |
+
+**Kapsam siniri:** I-3 ozeti yabanci tenant'larin kabul yuzeyindeki yedi tablosunun (user, lawyer, office, staffMember, case,
+client, officeBankAccount) tenant basina SATIR SAYISIDIR; guncellemeleri ve diger tablolari kapsamaz. Esitligi butun veritabaninin
+degismedigi anlamina GELMEZ. JWT 401'i kosumun kendi olcumudur; token'lar saklanmadigi icin yeniden denenmedi.
+
+**Kalici kanit (yerel):** `C:\Users\ulastelli\Documents\OFFICE-AK-EVIDENCE-20260912\` — sonuc ve durum dosyasinin kopyasi (kaynaklar
+`C:\Ops\hukuk\logs\office-ak-r01\` altinda yerinde), ana yurutucu salt-okuma betikleri ve dogrulama ciktisi (sha256
+`0E437E9AD49C90957D435267A50CA13AAAD9660AC22431FFEFB3AD91EDB1AC0D`); `MANIFEST-SHA256.txt` sha256 `5A7CA03BB01725D85879D228466970828D91F0DCDE05570A071B3E4E5521504E`; kaynak = kopya 5/5.
+
+**Karar:** owner GO kosulu (31/31 PASS + cikis 0 + bagimsiz kapanis dogrulamasi) SAGLANDI → **OFFICE AK-2 / AK-1a RELEASE22 canli
+kabulu KAPANDI.** Kosum kaydi OFFICE 33 paket belgesinde (ayri PR). Diger OFFICE/CLIENT acik kalemleri kendiliginden KAPANMAZ:
+AK-1a eki ve CLF-O0-01'in FD senaryolari (canlida kosulmaz), AK-1b/1c, ayricaliksiz pasif avukatin yeniden etkinlesmesi, AK1A-C1
+audit'siz guncelleme gozlemi, B-2. CLIENT I10: hat bos; ayri canli GO olmadan baslamaz.
