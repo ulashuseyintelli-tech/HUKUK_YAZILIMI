@@ -396,8 +396,8 @@ kendiliğinden değişmez.
 
 Deploy · migration · servis restartı · canlı flag değişikliği · gerçek alıcıya gönderim ·
 `Office`/`Case` yazma · silme · gerçek tenant'ta **GET dışında** herhangi bir çağrı · kimlikli
-`run-all` · İ1b/İ8/İ9 alanlarının (`cl-acc-afce215b`, `cl-acc-2ed1d6d0`, `cl-acc-d19ce2c7`)
-yeniden açılması · **ürün kodu değişikliği** · B-2 ürün yaması · **İ10…İ15** · İ16/İ17 · OFFICE
+`run-all` · İ1b/İ8/İ9 alanlarında (`cl-acc-afce215b`, `cl-acc-2ed1d6d0`, `cl-acc-d19ce2c7`)
+kullanıcı erişiminin yeniden açılması · **ürün kodu değişikliği** · B-2 ürün yaması · **İ10…İ15** · İ16/İ17 · OFFICE
 AK-2/AK-1a · başlatıcı dayanıklılık işi.
 
 ---
@@ -466,4 +466,5 @@ OFFICE kabulü, restart ve yayın yok. **Koşum tek kez yürütüldü.**
 A-7, A-8 bu koşumda) ve kapanış doğrulandı → **İ9 KAPANDI. CLIENT sayacı 8/17 → 9/17.**
 Hizmet kabulü **0/8 tam** — kendiliğinden değişmez. OFFICE AK-2/AK-1a ve başlatıcı dayanıklılık
 işi **açık kalır**. Belirsiz sonuç ve komşu tenant farkı olmadığı için uzlaştırma gerekmedi;
-tekrar ya da silme yapılmadı. `cl-acc-d19ce2c7` kapalıdır, kanıt olarak korunur ve yeniden açılmaz.
+tekrar ya da silme yapılmadı. `cl-acc-d19ce2c7`: kullanıcı erişimleri kapalı; tenant ACTIVE, Task açık,
+kanıt korunuyor. Kullanıcı erişimi yeniden açılmaz.
