@@ -3894,3 +3894,7 @@ owner preflight -> `-Live` gercek primitifler -> onayli kimlik -> muhur -> cutov
 · ana yurutucu bagimsiz dogrulamasi `RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md` Ek B — maddi bulgular: F1 motor bir kez kostuktan
 sonra (exit 1 dahil) R27 yeniden MUHURLENEMEZ, yeniden deneme yeni C33 paketi + yeni ratifikasyon ister; F2 "ayri adimlar" yolu
 OWNER-RUN kimlik kapilarini atlar (duzeltme yazicida) · muhur / authority / nonce / -Live / cutover / canli kabul YAZMASI YOK.
+
+**R27 yurutme paketi — F1–F6 DUZELTILDI (2026-09-11):** #2623 `f3ddb4a2` (yazici OFFICE 33) · ana yurutucu bagimsiz dogruladi
+(kaynak + Windows PowerShell 5.1 ayristirma: iki belgede 5'er blok, hata 0) · KALAN: paket ici `README.OWNER.md` §6 exit 1/2 satirlari
+→ owner GO ile Adim 3'te, onay anlik goruntusunden ONCE · muhur / authority / nonce / -Live / cutover / canli kabul YAZMASI YOK.
