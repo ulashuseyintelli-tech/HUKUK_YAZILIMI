@@ -86,3 +86,39 @@ bloklari hedef calisma ortami Windows PowerShell 5.1 ayristiricisiyla ayristiril
 elle kurtarma bloklari `& { ... }` tek ifade. KALAN: paket ICI `README.OWNER.md` §6 satir 89–91 (exit 1/2 "reseal"; satir 89'da
 `-Reseal -ResealReason` eksik) — yurutme paketi bunlari GECERSIZ sayar; duzeltme owner GO ile Adim 3'te, onay anlik goruntusunden ONCE
 (README kimlik tabaninda → digest degisir).
+
+## Ek C — RELEASE22 yayin sonrasi bagimsiz dogrulama (owner GO 2026-09-11 "RELEASE22 YAYIN SONRASI BAGIMSIZ DOGRULAMA")
+
+```text
+KOSUM    : CUT-20260911-195709-35289e18 · C33_RELEASE22_CUTOVER_APPLIED_AND_VERIFIED · 31/31 · cikis 0 (owner kostu; makbuz 16:58:28Z)
+OLCUM    : ana yurutucu, salt-okuma; canli 2026-09-11T17:03:59Z; paket durum dosyalari YALNIZ okundu (paket muhurlu, yazilmadi)
+YETKI    : bu ek kabul yazmasi, yeniden muhur veya cutover tekrari yetkisi DEGILDIR
+```
+
+| Kontrol | Olculen | Sonuc |
+|---|---|---|
+| API :8080 | tek dinleyici; node pid 46332 (baslangic 16:57:39Z); kok `HY_W4_RELEASE22`; komut satiri RELEASE22 dist `main.js` girisini tasiyor, RELEASE21 girisini tasimiyor | ESIT |
+| Web :3002 | tek dinleyici; node pid 47004 (16:58:11Z); kok `HY_W4_RELEASE22`; RELEASE22 `next` girisi | ESIT |
+| Eski surecler | RELEASE21 API pid 50716 ve Web pid 22440 | YOK |
+| Host ve gorevler | `hukuk-task-host` api=1 web=1; `HukukPlatform-API` / `-Web` Running, IgnoreNew, tetik Logon + 15 dk tekrar. Son 15 dk tetigi `0x800710E0` (ornek calisirken yeni ornek reddi; beklenen). CutoverWriter bu token ile gorunmez; motor P-07/V-03 yukseltilmis olctu | ESIT |
+| bin | host / start-api / start-web = R22 (`E744A74B` / `77B6FBCD` / `1B7654F6`) | ESIT |
+| Derleme ve HTTP (yalniz GET) | BUILD_ID dosyasi `xJZ1G1TsbOnHoWUzMD8CQ`; sunulan `_buildManifest` 200, eski `g91HUaBesekB-R2rRawQj` 404; API `/` 404; Web `/` 200; capabilities 200 | ESIT |
+| Aday | `HY_W4_RELEASE22` worktree HEAD `137406701248858221d12be94a941f8837a2a245` | ESIT |
+| Kod isaretleri | canli dist 3·3·3·1·2·5·1·1; `client.service.js` `01CA99AEC166362363135F79509DC88D9E60BD5D5A6CDCDAAD76E599978D5143` | ESIT |
+| Release-yerel env | RELEASE22 `.env` VAR; sha RELEASE21 `.env` ile ESIT (H-01 bayt kopyasi; icerik okunmadi) | ESIT |
+| Baslaticilar | R21 → R22 farki yalniz kok / calisma dizini / giris / env yollari; satir sayilari ayni; baglanma adresi baslaticida ayarlanmaz | ESIT |
+| Kesinti (journal) | `T1_QUIESCED-INTENT` 16:57:36.368Z → `T5_RESUMED` (api+web) 16:58:15.835Z = **39,467 s**; durdurma+bosaltma 693 ms; host + baslatici degisimi 16:57:37.129Z–37.225Z | OLCULDU |
+| DB (olculen kapsam) | motor `Get-DbSnapshot` (`engine\Invoke-C33Cutover.ps1:351`): migration defteri toplam/uygulanan/bekleyen/geri alinan 130/130/0/0, `system_identifier`, Tenant 9, User 43, SmokePrincipal 2 — oncesi = sonrasi; makbuz `dbMutations 0` | olculen kapsamda degisiklik saptanmadi |
+| Geri donus (RELEASE21) | kok HEAD `2187a78b`; `main.js` `28D84796…`; `next` `AFEE236A…`; `client.service.js` `5D3DF71C…`; BUILD_ID `g91HUaBesekB-R2rRawQj`; RELEASE21 `.env` VAR; paket generations/R21 `1397C54C` / `4ACA26CD` / `DA62DD2D` | YERINDE, DEGISMEDI |
+| Paket durumu | `pins/`, `authority/` (CONSUMED), claim `CLAIM-203d5835b8254e1d8dfa89b15ca26319.json`, NONCE marker, journal (13 satir, her satir `prev` ozeti tasir), makbuz `CUTOVER-CUT-20260911-195709-35289e18.json`, `MANIFEST.json` | muhurlu; YAZILMADI |
+
+**OFFICE 33 (paket yazicisi) makbuz / journal / claim icerik ve bag dogrulamasi:** #2626 (OFFICE 33): makbuz sha256 `E96E2DFEA030D2E7100E5BAAA28BA107CD687527B52772A5BA584E76FB106203`, MANIFEST payloadDigest `C7918A0DE9EB94D7DA3F1A45F4057DB20E40AFB29A4686DB8A96607A6B42D4F6`, COMMITTED, rollback yok. Ana yurutucu capraz kontrolu (salt-okuma): iki deger ESIT; authority, claim ve NONCE marker ayni nonce `203d5835b8254e1d8dfa89b15ca26319`; claim 16:57:25Z, tek kullanimlik authority penceresi (16:57:07Z–17:27:07Z) icinde; makbuz ve journal runId ayni; authority ve pins ref + paket R27 + aday `13740670` ESIT.
+
+**Notlar:**
+
+- Motor V-01 kapi aciklamasi "ledger 129" yazar; karsilastirmanin kendisi `dbPost == dbPre` (130). Metin bayat, davranis dogru.
+- API ve Web `::` uzerinde dinliyor. Baglanma adresi uygulama varsayilani; cutover degistirmedi (baslatici farki yalniz yollar).
+  Uygulama portlarinin ag disi erisimi bu turda OLCULMEDI; motor V-01 yalniz 5 altyapi portunun loopback oldugunu denetler (PASS).
+- Owner istegi uzerine "Müvekkil modülü analiz ve faz durumu" oturumuna olculmus kanitlarla BILGI bildirimi yapildi. I9 canli
+  kosumu AYRI owner GO ister.
+- Kabul yazmasi YOK; tuketilmis RELEASE21 A-07 fixture'i kullanilmadi. R27 motoru kostugu icin paket yeniden MUHURLENEMEZ.
