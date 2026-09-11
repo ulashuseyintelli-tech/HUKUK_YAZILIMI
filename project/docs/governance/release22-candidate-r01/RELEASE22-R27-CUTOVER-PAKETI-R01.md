@@ -10,6 +10,12 @@ KIMLIK DOS: PACKAGE-IDENTITY.json sha256 24DC59DBE03F44597FE6AFAA3891A74F931568F
 R26       : HY_C33_RELEASE21B1_CUTOVER_R26 DEGISTIRILMEDI — tarihsel/hazir; R26 icin muhur/authority/cutover YOK
 ONCEKI    : RELEASE22-ADAY-HAZIRLIK-R01 (#2614) — §4.5 bayat "R26" atfi bu PR ile duzeltildi
 DUZELTME  : 2026-09-11 — §7 cikis semantigi ve §8 elle kurtarma blogu (F1/F6); gecerli yurutme metni RELEASE22-R27-YURUTME-PAKETI-R01 §4 / §5.2
+GUNCEL    : 2026-09-11 — R27 YURUTULDU; RELEASE22 CANLI (CUT-20260911-195709-35289e18 · APPLIED_AND_VERIFIED · 31/31 · COMMITTED ·
+            rollback YOK; makbuz sha256 E96E2DFEA030D2E7100E5BAAA28BA107CD687527B52772A5BA584E76FB106203). KIMLIK / KIMLIK DOS
+            satirlari Adim 2 (-Live) ONCESI hazirlik anlik goruntusudur, yurutmeye dayanak DEGILDIR: onayli kimlik OR-03a
+            56AB80DABC4998E5621C909BE4421B8FB7E565A1A49DAA1578024E7B07E9EB9B (docs/APPROVED-IDENTITY-56AB80DA.json, owner onayi);
+            muhurlu MANIFEST payloadDigest C7918A0DE9EB94D7DA3F1A45F4057DB20E40AFB29A4686DB8A96607A6B42D4F6. Gecerli yurutme ve
+            kapanis: RELEASE22-R27-YURUTME-PAKETI-R01 (GUNCEL satiri) + RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md Ek C (ana yurutucu).
 ```
 
 Asagidaki bolumler, paket icindeki inceleme belgesinin (`docs/LIVE-APPROVAL-PACKAGE-R27.md`) metnidir; o dosyanin sha256 degeri
