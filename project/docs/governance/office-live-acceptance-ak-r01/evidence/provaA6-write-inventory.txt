@@ -1,0 +1,11 @@
+pgstat6-S1.json -> pgstat6-S2.json : degisen tablo 5 / 210
+
+table    ins upd del
+-----    --- --- ---
+AuditLog   5   0   0
+Lawyer     9   3   0
+Office     2   0   0
+Tenant     2   0   0
+User       5   4   0
+
+

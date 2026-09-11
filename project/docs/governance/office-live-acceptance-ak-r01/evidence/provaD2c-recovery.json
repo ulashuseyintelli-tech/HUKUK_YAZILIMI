@@ -1,0 +1,42 @@
+{
+  "record": "OFFICE-AK-D2-RECOVERY",
+  "runId": "9e03b205",
+  "recovery1": {
+    "record": "OFFICE-AK-CLOSE",
+    "runId": "9e03b205",
+    "slug": "off-ak-9e03b205",
+    "found": true,
+    "tenantId": "cmtxcy5mv000113sf92th1mz0",
+    "activeUsersBefore": 4,
+    "usersDeactivated": 4,
+    "stillActiveUsers": 0,
+    "casesClosed": 0,
+    "activeCasesAfter": 0,
+    "auditBefore": 5,
+    "auditAfter": 5,
+    "auditPreserved": true,
+    "alreadyClosed": false,
+    "greetingDisabled": true,
+    "verified": true
+  },
+  "recovery1Exit": 0,
+  "recovery2": {
+    "record": "OFFICE-AK-CLOSE",
+    "runId": "9e03b205",
+    "slug": "off-ak-9e03b205",
+    "found": true,
+    "tenantId": "cmtxcy5mv000113sf92th1mz0",
+    "activeUsersBefore": 0,
+    "usersDeactivated": 0,
+    "stillActiveUsers": 0,
+    "casesClosed": 0,
+    "activeCasesAfter": 0,
+    "auditBefore": 5,
+    "auditAfter": 5,
+    "auditPreserved": true,
+    "alreadyClosed": true,
+    "greetingDisabled": true,
+    "verified": true
+  },
+  "recovery2Exit": 0
+}

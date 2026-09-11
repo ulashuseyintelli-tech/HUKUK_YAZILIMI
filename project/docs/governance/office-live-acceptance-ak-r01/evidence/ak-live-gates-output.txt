@@ -1,0 +1,26 @@
+
+id    ok code desc                                                                                          seen                                                                                                            
+--    -- ---- ----                                                                                          ----                                                                                                            
+T0  True -    saf ASCII + PS ayristirma hatasiz                                                             nonAscii=0 psErr=0 ps51Err=0                                                                                    
+T1  True 2    GoRef bicimi yanlis -> K-GO                                                                   DURDU [K-GO] (yazma YOK): GoRef bicimi gecersiz ('OWNER-GO-OFFICE-A07-20260911-R01'; beklenen OWNER-GO-OFFICE-AK
+                                                                                                            -YYYYMMDD-Rnn)                                                                                                  
+T2  True 2    Recover runId buyuk harf -> K-GO                                                              DURDU [K-GO] (yazma YOK): Recover runId 8 kucuk hex olmali ('ABCDEF12')                                         
+T3  True 2    Recover runId kisa -> K-GO                                                                    DURDU [K-GO] (yazma YOK): Recover runId 8 kucuk hex olmali ('abc')                                              
+T4  True 2    Recover + PreflightOnly -> K-GO                                                               DURDU [K-GO] (yazma YOK): -Recover ve -PreflightOnly birlikte verilemez                                         
+T5a True 2    kopya agac degismemis -> K-ARC gecer, sonraki kapi (K-ENV) durur                              DURDU [K-ENV] (yazma YOK): baslatici yok: C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZI
+                                                                                                            LIMI-project\ebf5dee1-fab5-4e57-b9af-d5694be92dfd\scratchpad\ak-prova\gates-work3\yok-baslatici.ps1             
+T5b True 2    ak-cases.js kurcalandi -> K-ARC                                                               DURDU [K-ARC] (yazma YOK): arac SHA uyusmuyor: ak-cases.js (DA973F22604D8DB164A054F81000294F067D40F6BDE825211D6D
+                                                                                                            0AAAA69BE95D)                                                                                                   
+T5c True 2    ow-lib.js kurcalandi -> K-ARC                                                                 DURDU [K-ARC] (yazma YOK): arac SHA uyusmuyor: ..\..\office-delivery-r01\scripts\ow-lib.js (5C92244D71A54758AB09
+                                                                                                            EC941B5E9CAB30920849B173B38BE8D298EA78D8DC05)                                                                   
+T6  True 2    kosum: K-API + K-BLD CANLI surec/derleme uzerinde gecer; EnvFile kosan surumun degil -> K-ENV DURDU [K-ENV] (yazma YOK): EnvFile kosan surumun .env'i degil (C:\Users\ulastelli\AppData\Local\Temp\claude\C--D
+                                                                                                            evelopment-HUKUK-YAZILIMI-project\ebf5dee1-fab5-4e57-b9af-d5694be92dfd\scratchpad\ak-prova\gates-work3\fake-rele
+                                                                                                            ase\project\apps\api\.env <> C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22\project\apps\api\.env)               
+T7  True 2    kurtarma: hedef DB canli degil -> K-ENV                                                       DURDU [K-ENV] (yazma YOK): hedef DB beklenen degil (127.0.0.1:5441/hukuk_office_ak_acc_test)                    
+T8  True 2    baslaticida EnvFile satiri yok -> K-ENV                                                       DURDU [K-ENV] (yazma YOK): EnvFile satiri C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZI
+                                                                                                            LIMI-project\ebf5dee1-fab5-4e57-b9af-d5694be92dfd\scratchpad\ak-prova\gates-work3\fake-launcher-noenv.ps1 icinde
+                                                                                                             yok                                                                                                            
+
+
+
+AK-LIVE KAPI TESTLERI: 11/11

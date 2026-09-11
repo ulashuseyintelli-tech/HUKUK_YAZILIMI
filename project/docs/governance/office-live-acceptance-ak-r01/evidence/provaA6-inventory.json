@@ -1,0 +1,29 @@
+{
+ "slug": "off-ak-41e7f47d",
+ "tenant": 1,
+ "office": 1,
+ "officeGreeting": [
+  {
+   "autoGreetingEnabled": false,
+   "lastGreetingRunAt": null
+  }
+ ],
+ "user": 4,
+ "userActive": 0,
+ "userTokenVersions": [
+  1,
+  1,
+  1,
+  1
+ ],
+ "lawyer": 9,
+ "lawyerActive": 9,
+ "staffMember": 0,
+ "officeBankAccount": 0,
+ "case": 0,
+ "client": 0,
+ "auditByAction": [
+  "LAWYER_CREATE=3",
+  "LAWYER_REACTIVATE=2"
+ ]
+}

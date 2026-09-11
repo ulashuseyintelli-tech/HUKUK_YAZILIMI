@@ -1,0 +1,197 @@
+{
+ "record": "OFFICE-AK-ACCEPTANCE-R01",
+ "package": "office-live-acceptance-ak-r01",
+ "environment": {
+  "environment": "disposable",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5441",
+  "dbName": "hukuk_office_ak_acc_test",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8102",
+  "goRef": null
+ },
+ "tools": {
+  "ak-lib.js": "97EC6F432436053DA6B356BAF2D9650CCBB4A8C0EFAE967AA02374EC0F71DF98",
+  "ak-setup.js": "72A31B3D15F282DAB31B57EA1FAD5B430877FC517B61FD323C885422C25CB7B6",
+  "ak-cases.js": "1E8C59C01595A26B1CD8EB1BEA38F971D135AB37C2BDEA0F102C20C0B46A0160",
+  "ak-99-close.js": "DAAB14FEC295A2B4C5156D2E99DB7C83A8335F2660F23F4BD6D2D8140AAFAF0A",
+  "ak-run.js": "FD819B2565317F5D45197F6144382BD89B6DB3A25349A389A88BCC76FBF15251",
+  "ow-lib.js": "612D20D1439DCAFEEB2C86AC867988133F26AE900D95F102571240D3A12F988A"
+ },
+ "runId": "f1928684",
+ "slug": "off-ak-f1928684",
+ "startedAt": "2026-09-11T19:37:09.510Z",
+ "stage": "bitti",
+ "recovery": "AK_RUN_ID=f1928684 node ak-99-close.js",
+ "note": "DISPOSABLE PROVA — canli kabul YERINE GECMEZ",
+ "setup": {
+  "tenantId": "cmtxcy4vg00015zxgeda594oo",
+  "writtenRows": [
+   "Tenant",
+   "Office",
+   "User(ADMIN)",
+   "User(partner)",
+   "Lawyer(PARTNER,bagli)",
+   "User(manager)",
+   "Lawyer(MANAGER,bagli)",
+   "User(VIEWER)",
+   "Lawyer(PARTNER,VIEWER-bagli)",
+   "Lawyer(P1 pasif PARTNER)",
+   "Lawyer(P2 pasif delege)",
+   "Lawyer(T hedef)"
+  ],
+  "bystander": null
+ },
+ "finishedAt": "2026-09-11T19:37:10.378Z",
+ "verdict": "OLCULEMEDI",
+ "pass": 12,
+ "fail": 0,
+ "unmeasured": 0,
+ "total": 12,
+ "runError": "AK_ABORT_AFTER=AK2-P1 — negatif kontrol",
+ "results": [
+  {
+   "id": "AK2-N1",
+   "desc": "MANAGER -> lawyerRank PARTNER ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N2",
+   "desc": "MANAGER -> lawyerRank MANAGER ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N3",
+   "desc": "MANAGER -> canModifyOtherPermissions=true ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N4",
+   "desc": "MANAGER -> permissionsLocked=true ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N5",
+   "desc": "MANAGER -> pasif PARTNER kaydin (P1) mukerreri: yeniden etkinlestirme",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"Eşleşen kayıt ayrıcalıklı (PARTNER/MANAGER, izin değiştirme, izin kilidi veya ofis onayı) pasif bir avukat; ye\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N6",
+   "desc": "MANAGER -> pasif delege kaydin (P2) mukerreri: yeniden etkinlestirme",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"Eşleşen kayıt ayrıcalıklı (PARTNER/MANAGER, izin değiştirme, izin kilidi veya ofis onayı) pasif bir avukat; ye\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-C1",
+   "desc": "MANAGER -> ayricaliksiz create 201 + LAWYER_CREATE (userId=MANAGER)",
+   "ok": true,
+   "observed": "HTTP 201 · fark [auditLog+,lawyer+] beklenen [auditLog+,lawyer+] · avukat cmtxcy5a2000incm2qtdmdvrd rank=LAWYER · audit 1 userId=MANAGER"
+  },
+  {
+   "id": "AK2-P1",
+   "desc": "ADMIN -> PARTNER + canModify + locked ile create",
+   "ok": true,
+   "observed": "HTTP 201 · fark [auditLog+,lawyer+] beklenen [auditLog+,lawyer+] · avukat cmtxcy5bd000mncm2h8goyp4s lawyerRank=PARTNER canModifyOtherPermissions=true permissionsLocked=true · audit 1 metadata={\"lawyerRank\":\"PARTNER\",\"permissionsLocked\":true,\"canModifyOtherPermissions\":true}"
+  },
+  {
+   "id": "K-1",
+   "desc": "kapanis dogrulandi (aktif kullanici 0, aktif dava 0, audit korundu)",
+   "ok": true,
+   "observed": "{\"record\":\"OFFICE-AK-CLOSE\",\"runId\":\"f1928684\",\"slug\":\"off-ak-f1928684\",\"found\":true,\"tenantId\":\"cmtxcy4vg00015zxgeda594oo\",\"activeUsersBefore\":4,\"usersDeactivated\":4,\"stillActiveUsers\":0,\"casesClosed\":0,\"activeCasesAfter\":0,\"auditBefore\":2,\"auditAfter\":2,\"auditPreserved\":true,\"alreadyClosed\":false,\"greetingDisabled\":true,\"verified\":true}"
+  },
+  {
+   "id": "K-2",
+   "desc": "dagitilmis 4 JWT kapanistan sonra 401",
+   "ok": true,
+   "observed": "[{\"actor\":\"admin\",\"status\":401,\"indeterminate\":false},{\"actor\":\"partner\",\"status\":401,\"indeterminate\":false},{\"actor\":\"manager\",\"status\":401,\"indeterminate\":false},{\"actor\":\"viewer\",\"status\":401,\"indeterminate\":false}]"
+  },
+  {
+   "id": "I-1",
+   "desc": "aktorlerin BASKA tenant'ta audit izi 0",
+   "ok": true,
+   "observed": "sayi=0"
+  },
+  {
+   "id": "I-3",
+   "desc": "yabanci tenant sayi ozeti ilk API cagrisi oncesi = kapanis sonrasi (satir eklenmedi/silinmedi/tasinmadi)",
+   "ok": true,
+   "observed": "4 tenant · 1dc8fde8d475e449 -> 1dc8fde8d475e449 · {\"user\":8,\"lawyer\":10,\"office\":3,\"staffMember\":0,\"case\":0,\"client\":0,\"officeBankAccount\":0}"
+  }
+ ],
+ "close": {
+  "record": "OFFICE-AK-CLOSE",
+  "runId": "f1928684",
+  "slug": "off-ak-f1928684",
+  "found": true,
+  "tenantId": "cmtxcy4vg00015zxgeda594oo",
+  "activeUsersBefore": 4,
+  "usersDeactivated": 4,
+  "stillActiveUsers": 0,
+  "casesClosed": 0,
+  "activeCasesAfter": 0,
+  "auditBefore": 2,
+  "auditAfter": 2,
+  "auditPreserved": true,
+  "alreadyClosed": false,
+  "greetingDisabled": true,
+  "verified": true
+ },
+ "postClose": [
+  {
+   "actor": "admin",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "partner",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "manager",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "viewer",
+   "status": 401,
+   "indeterminate": false
+  }
+ ],
+ "isolation": {
+  "foreignBefore": {
+   "digest": "1dc8fde8d475e44933135e9f8eb3a202bb0389506a063ea6809a9e85ba290d7e",
+   "tenants": 4,
+   "totals": {
+    "user": 8,
+    "lawyer": 10,
+    "office": 3,
+    "staffMember": 0,
+    "case": 0,
+    "client": 0,
+    "officeBankAccount": 0
+   },
+   "excludedOwn": 1
+  },
+  "foreignAuditByActors": 0,
+  "foreignAfter": {
+   "digest": "1dc8fde8d475e44933135e9f8eb3a202bb0389506a063ea6809a9e85ba290d7e",
+   "tenants": 4,
+   "totals": {
+    "user": 8,
+    "lawyer": 10,
+    "office": 3,
+    "staffMember": 0,
+    "case": 0,
+    "client": 0,
+    "officeBankAccount": 0
+   },
+   "excludedOwn": 1
+  }
+ }
+}

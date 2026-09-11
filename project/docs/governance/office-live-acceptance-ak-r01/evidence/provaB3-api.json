@@ -1,0 +1,26 @@
+{
+ "record": "AK-API-CONFIG",
+ "startedAt": "2026-09-11T19:33:36.523Z",
+ "pid": 20540,
+ "port": "8102",
+ "apiBaseUrl": "http://127.0.0.1:8102/api",
+ "dist": "r21",
+ "distMain": "C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE21/project/apps/api/dist/apps/api/src/main.js",
+ "distMainSha256": "28D84796367BC409DBD1DEEE3FC89A35DEC844B6B6EB0DCAD954999AD8DE73F5",
+ "distMainIsNotBuildIdentity": true,
+ "discriminators": {
+  "lawyerServiceSha256": "5F3E64C93EA5BFA21CAA0421EE584D3AAAB60B95267BADAEA5B29F4A4CF66181",
+  "f01GuardSha256": "BE2CF6DC74A39509454E1B158E3BCC4FFC9CDF98FCBC029857CA491FC2D2E8EB",
+  "ak2DenyTextPresent": false
+ },
+ "db": "127.0.0.1:5441/hukuk_office_ak_acc_test",
+ "redis": "redis://127.0.0.1:6390",
+ "emailProvider": "mock",
+ "secretsInConfig": false,
+ "connections": {
+  "5432": 0,
+  "5441": 3,
+  "6379": 0
+ },
+ "isolated": true
+}
