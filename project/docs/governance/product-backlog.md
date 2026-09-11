@@ -3906,3 +3906,11 @@ sysId, Tenant/User/SmokePrincipal sayimlari; dbMutations 0) · ana yurutucu bagi
 bin R22, isaretler 3·3·3·1·2·5·1·1) · geri donus RELEASE21 @ `2187a78b` yerinde · R27 artik yeniden muhurlenemez · SIRADAKI
 (her biri AYRI owner GO): CLIENT I9 canli kosumu (on kosul SAGLANDI) · OFFICE AK-2 / AK-1a sentetik tenant islevsel kabulu · A-07
 yeniden KOSULMAZ · kabul yazmasi YOK.
+
+**OFFICE AK-2 / AK-1a CANLI KABUL KAPANDI (RELEASE22; 2026-09-12):** `OWNER-GO-OFFICE-AK-20260911-R01` · runId `e1293381` ·
+tenant `off-ak-e1293381` · PASS 31/31, cikis 0 (owner kostu 2026-09-11T21:13Z) · yalniz sentetik tenant'ta 20 ekleme / 7 guncelleme /
+0 silme · kapanista 4 kullanici pasif + tokenVersion 1, dort JWT 401, 5 audit korundu · ana yurutucu bagimsiz dogrulamasi
+`release22-candidate-r01/RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md` Ek D (salt-okuma DB; I-3 sayi ozeti `80bd81056f010f2f` esit —
+butun DB hakkinda hukum degil) · kosum kaydi OFFICE 33 paket belgesi · kalici kanit `Documents\OFFICE-AK-EVIDENCE-20260912` · ACIK
+KALANLAR kendiliginden kapanmaz: AK-1a eki ve CLF-O0-01 FD senaryolari, AK-1b/1c, AK1A-C1 audit'siz guncelleme gozlemi, ayricaliksiz
+pasif avukatin yeniden etkinlesmesi, B-2 · CLIENT I10: hat bos, ayri canli GO ile.
