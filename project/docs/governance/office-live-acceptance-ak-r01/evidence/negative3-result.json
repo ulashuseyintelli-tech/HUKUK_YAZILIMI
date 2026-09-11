@@ -1,0 +1,86 @@
+{
+ "record": "OFFICE-AK-NEGATIVE-R01",
+ "at": "2026-09-11T19:37:09.418Z",
+ "pass": 13,
+ "total": 13,
+ "results": [
+  {
+   "id": "NC-01",
+   "desc": "canli + jeton YOK -> durur",
+   "ok": true,
+   "observed": "G-0: ortam 'live' ve AK_CONFIRM_LIVE jetonu YOK/yanlis — canliya yazma baslamaz"
+  },
+  {
+   "id": "NC-02",
+   "desc": "canli + GO ref bicimi yanlis -> durur",
+   "ok": true,
+   "observed": "G-0: AK_OWNER_GO_REF bicimi gecersiz ('OWNER-GO-OFFICE-A07-20260911-R01'; beklenen OWNER-GO-OFFICE-AK-YYYYMMDD-Rnn)"
+  },
+  {
+   "id": "NC-03",
+   "desc": "disposable DB + CANLI API portu 8080 -> durur",
+   "ok": true,
+   "observed": "G-0: disposable DB ile CANLI API portu (8080) hedeflenemez"
+  },
+  {
+   "id": "NC-04",
+   "desc": "canli DB + test API portu -> durur",
+   "ok": true,
+   "observed": "G-0: canli DB ile canli olmayan API portu (8102) hedeflenemez"
+  },
+  {
+   "id": "NC-05",
+   "desc": "allowlist disi DB adi / portu / host / baska prova DB -> 4/4 durur",
+   "ok": true,
+   "observed": "DB adi 'hukuk_db' 'disposable' allowlist'inde yok | DB port '5432' 'disposable' allowlist'inde yok | DB host '10.34.25.53' loopback degil | DB port '5439' 'disposable' allowlist'inde yok"
+  },
+  {
+   "id": "NC-06",
+   "desc": "7 yabanci slug reddedilir, kendi slug kabul",
+   "ok": true,
+   "observed": "ret 7/7 · off-ak- kabul=true"
+  },
+  {
+   "id": "NC-07",
+   "desc": "kesin ret: 10 vakada beklenen karar",
+   "ok": true,
+   "observed": "dogru 10/10"
+  },
+  {
+   "id": "NC-08",
+   "desc": "parola ve token alani yazilamaz",
+   "ok": true,
+   "observed": "password=true token=true"
+  },
+  {
+   "id": "NC-09",
+   "desc": "bos gozlem kumesi -> ObservationError (\"degismedi\" SAYILMAZ)",
+   "ok": true,
+   "observed": "ObservationError=true"
+  },
+  {
+   "id": "NC-10",
+   "desc": "tek alan degisimi yakalanir (lawyer~id)",
+   "ok": true,
+   "observed": "fark=lawyer~cmtxcy4le0006rankxhe85nbv"
+  },
+  {
+   "id": "NC-11",
+   "desc": "bilinmeyen runId -> found=false, yazma 0",
+   "ok": true,
+   "observed": "{\"record\":\"OFFICE-AK-CLOSE\",\"runId\":\"ffffffff\",\"slug\":\"off-ak-ffffffff\",\"found\":false,\"verified\":true,\"note\":\"alan YOK (slug ile ARANDI) — kapatilacak erisim yok\"}"
+  },
+  {
+   "id": "NC-12",
+   "desc": "kapatma tekrar guvenli: 2. kosum alreadyClosed, tokenVersion bir kez artar",
+   "ok": true,
+   "observed": "1.: deaktive 1 · 2.: alreadyClosed=true deaktive 0 · tokenVersion 1->1"
+  },
+  {
+   "id": "NC-13",
+   "desc": "I-3 ozeti: kendi alanina ekleme DEGISTIRMEZ, yabanci tenanta ekleme DEGISTIRIR",
+   "ok": true,
+   "observed": "kendi: c4bcea4851b3=c4bcea4851b3 · yabanci: c4bcea4851b3->febee6e0c2d2 · user 5->6"
+  }
+ ]
+}

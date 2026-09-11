@@ -1,0 +1,2 @@
+pgstat6-S0.json -> pgstat6-S1.json : degisen tablo 0 / 210
+

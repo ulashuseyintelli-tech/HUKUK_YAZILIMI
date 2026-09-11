@@ -1,0 +1,326 @@
+{
+ "record": "OFFICE-AK-ACCEPTANCE-R01",
+ "package": "office-live-acceptance-ak-r01",
+ "environment": {
+  "environment": "disposable",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5441",
+  "dbName": "hukuk_office_ak_acc_test",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8102",
+  "goRef": null
+ },
+ "tools": {
+  "ak-lib.js": "97EC6F432436053DA6B356BAF2D9650CCBB4A8C0EFAE967AA02374EC0F71DF98",
+  "ak-setup.js": "72A31B3D15F282DAB31B57EA1FAD5B430877FC517B61FD323C885422C25CB7B6",
+  "ak-cases.js": "1E8C59C01595A26B1CD8EB1BEA38F971D135AB37C2BDEA0F102C20C0B46A0160",
+  "ak-99-close.js": "DAAB14FEC295A2B4C5156D2E99DB7C83A8335F2660F23F4BD6D2D8140AAFAF0A",
+  "ak-run.js": "FD819B2565317F5D45197F6144382BD89B6DB3A25349A389A88BCC76FBF15251",
+  "ow-lib.js": "612D20D1439DCAFEEB2C86AC867988133F26AE900D95F102571240D3A12F988A"
+ },
+ "runId": "41e7f47d",
+ "slug": "off-ak-41e7f47d",
+ "startedAt": "2026-09-11T19:36:35.976Z",
+ "stage": "bitti",
+ "recovery": "AK_RUN_ID=41e7f47d node ak-99-close.js",
+ "note": "DISPOSABLE PROVA — canli kabul YERINE GECMEZ",
+ "setup": {
+  "tenantId": "cmtxcxf0m0006uy2eaxnzvhj3",
+  "writtenRows": [
+   "Tenant",
+   "Office",
+   "User(ADMIN)",
+   "User(partner)",
+   "Lawyer(PARTNER,bagli)",
+   "User(manager)",
+   "Lawyer(MANAGER,bagli)",
+   "User(VIEWER)",
+   "Lawyer(PARTNER,VIEWER-bagli)",
+   "Lawyer(P1 pasif PARTNER)",
+   "Lawyer(P2 pasif delege)",
+   "Lawyer(T hedef)"
+  ],
+  "bystander": "off-ak-bystander-41e7f47d"
+ },
+ "finishedAt": "2026-09-11T19:36:37.436Z",
+ "verdict": "PASS",
+ "pass": 32,
+ "fail": 0,
+ "unmeasured": 0,
+ "total": 32,
+ "runError": null,
+ "results": [
+  {
+   "id": "AK2-N1",
+   "desc": "MANAGER -> lawyerRank PARTNER ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N2",
+   "desc": "MANAGER -> lawyerRank MANAGER ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N3",
+   "desc": "MANAGER -> canModifyOtherPermissions=true ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N4",
+   "desc": "MANAGER -> permissionsLocked=true ile create",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N5",
+   "desc": "MANAGER -> pasif PARTNER kaydin (P1) mukerreri: yeniden etkinlestirme",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"Eşleşen kayıt ayrıcalıklı (PARTNER/MANAGER, izin değiştirme, izin kilidi veya ofis onayı) pasif bir avukat; ye\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-N6",
+   "desc": "MANAGER -> pasif delege kaydin (P2) mukerreri: yeniden etkinlestirme",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"Eşleşen kayıt ayrıcalıklı (PARTNER/MANAGER, izin değiştirme, izin kilidi veya ofis onayı) pasif bir avukat; ye\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK2-C1",
+   "desc": "MANAGER -> ayricaliksiz create 201 + LAWYER_CREATE (userId=MANAGER)",
+   "ok": true,
+   "observed": "HTTP 201 · fark [auditLog+,lawyer+] beklenen [auditLog+,lawyer+] · avukat cmtxcxfft0002ncm2y9tlgpni rank=LAWYER · audit 1 userId=MANAGER"
+  },
+  {
+   "id": "AK2-P1",
+   "desc": "ADMIN -> PARTNER + canModify + locked ile create",
+   "ok": true,
+   "observed": "HTTP 201 · fark [auditLog+,lawyer+] beklenen [auditLog+,lawyer+] · avukat cmtxcxfhf0006ncm2b9euo5cm lawyerRank=PARTNER canModifyOtherPermissions=true permissionsLocked=true · audit 1 metadata={\"lawyerRank\":\"PARTNER\",\"permissionsLocked\":true,\"canModifyOtherPermissions\":true}"
+  },
+  {
+   "id": "AK2-P2",
+   "desc": "bagli PARTNER -> MANAGER + canModify ile create",
+   "ok": true,
+   "observed": "HTTP 201 · fark [auditLog+,lawyer+] beklenen [auditLog+,lawyer+] · avukat cmtxcxfiq000ancm29yzm5ce0 lawyerRank=MANAGER canModifyOtherPermissions=true · audit 1 metadata={\"lawyerRank\":\"MANAGER\",\"permissionsLocked\":false,\"canModifyOtherPermissions\":true}"
+  },
+  {
+   "id": "AK2-R1",
+   "desc": "bagli PARTNER -> P1 mukerreri: yeniden etkinlestirme",
+   "ok": true,
+   "observed": "HTTP 201 · fark [auditLog+,lawyer~] beklenen [auditLog+,lawyer~] · hedef cmtxcxf0y000ouy2e2kz9kuh5 isActive=true · audit 1 privileged=true"
+  },
+  {
+   "id": "AK2-R2",
+   "desc": "ADMIN -> P2 mukerreri: yeniden etkinlestirme",
+   "ok": true,
+   "observed": "HTTP 201 · fark [auditLog+,lawyer~] beklenen [auditLog+,lawyer~] · hedef cmtxcxf10000quy2eh0asv3ke isActive=true · audit 1 privileged=true"
+  },
+  {
+   "id": "AK1A-R1",
+   "desc": "VIEWER okuma: GET /lawyers",
+   "ok": true,
+   "observed": "HTTP 200 · listede T VAR (9 kayit)"
+  },
+  {
+   "id": "AK1A-R2",
+   "desc": "VIEWER okuma: GET /lawyers/:id (T)",
+   "ok": true,
+   "observed": "HTTP 200 · id eslesti"
+  },
+  {
+   "id": "AK1A-R3",
+   "desc": "VIEWER okuma: GET /lawyers/defaults",
+   "ok": true,
+   "observed": "HTTP 200"
+  },
+  {
+   "id": "AK1A-R4",
+   "desc": "VIEWER okuma: GET /office",
+   "ok": true,
+   "observed": "HTTP 200"
+  },
+  {
+   "id": "AK1A-R0",
+   "desc": "okumalar yazma uretmedi (goruntu ayni)",
+   "ok": true,
+   "observed": "fark yok"
+  },
+  {
+   "id": "AK1A-W1",
+   "desc": "VIEWER POST /lawyers (ayricaliksiz)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W2",
+   "desc": "VIEWER PUT /lawyers/:T",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W3",
+   "desc": "VIEWER PATCH /lawyers/:T",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W4",
+   "desc": "VIEWER DELETE /lawyers/:T (pasiflestirme)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W5",
+   "desc": "VIEWER PUT /lawyers/order/update",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W6",
+   "desc": "VIEWER PUT /lawyers/defaults/set",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W7",
+   "desc": "VIEWER PUT /office",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W8",
+   "desc": "VIEWER POST /office/bank-accounts",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-W9",
+   "desc": "VIEWER POST /staff",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_WRITE_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü OFFICE verisinde yazma işlemi yapamaz.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "AK1A-C1",
+   "desc": "bagli PARTNER (USER) PUT /lawyers/:T title -> 200, yalniz T degisir",
+   "ok": true,
+   "observed": "HTTP 200 · fark [lawyer~] beklenen [lawyer~] · T.title=AK Kabul"
+  },
+  {
+   "id": "AK1A-A1",
+   "desc": "anonim GET /lawyers -> 401",
+   "ok": true,
+   "observed": "HTTP 401 msg=\"Unauthorized\""
+  },
+  {
+   "id": "K-1",
+   "desc": "kapanis dogrulandi (aktif kullanici 0, aktif dava 0, audit korundu)",
+   "ok": true,
+   "observed": "{\"record\":\"OFFICE-AK-CLOSE\",\"runId\":\"41e7f47d\",\"slug\":\"off-ak-41e7f47d\",\"found\":true,\"tenantId\":\"cmtxcxf0m0006uy2eaxnzvhj3\",\"activeUsersBefore\":4,\"usersDeactivated\":4,\"stillActiveUsers\":0,\"casesClosed\":0,\"activeCasesAfter\":0,\"auditBefore\":5,\"auditAfter\":5,\"auditPreserved\":true,\"alreadyClosed\":false,\"greetingDisabled\":true,\"verified\":true}"
+  },
+  {
+   "id": "K-2",
+   "desc": "dagitilmis 4 JWT kapanistan sonra 401",
+   "ok": true,
+   "observed": "[{\"actor\":\"admin\",\"status\":401,\"indeterminate\":false},{\"actor\":\"partner\",\"status\":401,\"indeterminate\":false},{\"actor\":\"manager\",\"status\":401,\"indeterminate\":false},{\"actor\":\"viewer\",\"status\":401,\"indeterminate\":false}]"
+  },
+  {
+   "id": "I-1",
+   "desc": "aktorlerin BASKA tenant'ta audit izi 0",
+   "ok": true,
+   "observed": "sayi=0"
+  },
+  {
+   "id": "I-3",
+   "desc": "yabanci tenant sayi ozeti ilk API cagrisi oncesi = kapanis sonrasi (satir eklenmedi/silinmedi/tasinmadi)",
+   "ok": true,
+   "observed": "1 tenant · 304bee4c7a01af4c -> 304bee4c7a01af4c · {\"user\":1,\"lawyer\":0,\"office\":1,\"staffMember\":0,\"case\":0,\"client\":0,\"officeBankAccount\":0}"
+  },
+  {
+   "id": "I-2",
+   "desc": "seyirci tenant kurulumdan beri DEGISMEDI",
+   "ok": true,
+   "observed": "{\"lawyer\":0,\"user\":1,\"office\":1,\"staffMember\":0,\"officeBankAccount\":0,\"auditLog\":0}"
+  }
+ ],
+ "close": {
+  "record": "OFFICE-AK-CLOSE",
+  "runId": "41e7f47d",
+  "slug": "off-ak-41e7f47d",
+  "found": true,
+  "tenantId": "cmtxcxf0m0006uy2eaxnzvhj3",
+  "activeUsersBefore": 4,
+  "usersDeactivated": 4,
+  "stillActiveUsers": 0,
+  "casesClosed": 0,
+  "activeCasesAfter": 0,
+  "auditBefore": 5,
+  "auditAfter": 5,
+  "auditPreserved": true,
+  "alreadyClosed": false,
+  "greetingDisabled": true,
+  "verified": true
+ },
+ "postClose": [
+  {
+   "actor": "admin",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "partner",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "manager",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "viewer",
+   "status": 401,
+   "indeterminate": false
+  }
+ ],
+ "isolation": {
+  "foreignBefore": {
+   "digest": "304bee4c7a01af4c603314637fbf350336253ee7af5ea38a7b97ccd253c62c6b",
+   "tenants": 1,
+   "totals": {
+    "user": 1,
+    "lawyer": 0,
+    "office": 1,
+    "staffMember": 0,
+    "case": 0,
+    "client": 0,
+    "officeBankAccount": 0
+   },
+   "excludedOwn": 1
+  },
+  "foreignAuditByActors": 0,
+  "bystanderUnchanged": true,
+  "bystanderCounts": {
+   "lawyer": 0,
+   "user": 1,
+   "office": 1,
+   "staffMember": 0,
+   "officeBankAccount": 0,
+   "auditLog": 0
+  },
+  "foreignAfter": {
+   "digest": "304bee4c7a01af4c603314637fbf350336253ee7af5ea38a7b97ccd253c62c6b",
+   "tenants": 1,
+   "totals": {
+    "user": 1,
+    "lawyer": 0,
+    "office": 1,
+    "staffMember": 0,
+    "case": 0,
+    "client": 0,
+    "officeBankAccount": 0
+   },
+   "excludedOwn": 1
+  }
+ }
+}
