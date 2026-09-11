@@ -233,6 +233,7 @@ hiçbir koşumda (normal akış dahil) manuel scheduler işi başlamadı.
 yolunu çalıştırdığı için komut satırına güvenilmedi; canlı `:8080` PID 46332 ve `:3002` PID 47004
 **değişmedi**. Oturum DB konteyneri **durduruldu, silinmedi** (kanıt). Günlükler, vekil kayıtları,
 runId rezervasyonları ve özet: `C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i9s\runs\`.
+Kalıcı yerel kopya: `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i9s\` (manifest §13.4).
 
 ### 6.4 Bu doğrulamanın kanıtlamadığı
 
@@ -459,6 +460,26 @@ OFFICE kabulü, restart ve yayın yok. **Koşum tek kez yürütüldü.**
 `C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i9live\`
 — `RUN-RESERVATION-d19ce2c7.json` · `pre-d19ce2c7.json` · `a0-preprobe-d19ce2c7.json` ·
 `i9-run-d19ce2c7.log` · `i9-state-d19ce2c7.json` · `post-d19ce2c7.json`.
+
+**Kalıcı yerel kopya (owner GO'ları 2026-09-11 ve 2026-09-12).** Yukarıdaki asıllar geçici dizinde
+yerinde kalır; taşınmadı, silinmedi. Kopya bulut eşitlemesi dışındadır: `Documents` bilinen klasörü
+yereldir, OneDrive kökü (`C:\Users\ulastelli\OneDrive`) ayrıdır.
+
+| Kesin yol | Bayt | SHA256 |
+|---|---|---|
+| `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i9live\RUN-RESERVATION-d19ce2c7.json` | 2424 | `7BFCD61EA52B33D853B9981351445B39CAB3DD0105B3502C1D58A978B402A6C8` |
+| `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i9live\pre-d19ce2c7.json` | 423 | `35BACA6F4CF8B3E6DF12CC582343BEA96B9D04FB6F0C93BC69349FC0A1E20E93` |
+| `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i9live\a0-preprobe-d19ce2c7.json` | 530 | `3BBDB66C784BE275DD194F4BC4B9112F0B410B1AF0293917AE02A7B77C6F8AE5` |
+| `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i9live\i9-run-d19ce2c7.log` | 11113 | `A4A358A39E85A8975DE2FB068DD7E05FC4BC6B016555C802D4AD638BBD1ABEA2` |
+| `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i9live\i9-state-d19ce2c7.json` | 1254 | `196014A524AD3D1EB3E92F8C680D450D28381ECE429F6F2BF80DB822C2A8AAC8` |
+| `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i9live\post-d19ce2c7.json` | 1740 | `139CDE86F2411CDC7E102C3457B12D834FFDA8D3F8E135C165ACFC76BA6EA7FE` |
+
+- **Kaynak = kopya 6/6** (tam SHA256 ve bayt).
+- **İki taraflı doğrulama:** aynı hash'ler, ana yürütücünün bağımsız İ9 kapanış doğrulamasında (2026-09-11
+  20:47Z, canlı DB salt-okuma) kaydedilen değerlerle de eşleşir.
+- **Tüm kopyanın manifesti:** `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\MANIFEST-SHA256.txt`
+  (sha256 `7D9CA0A56DB5E6BC2C970A62F9952EB8D93F94BFCAFE23C2E323F99386D07AF3`) — `i9live` · `i9s` · `i10s`,
+  234 dosya · 2.065.730 bayt. Kopyadan önce sır taraması yapıldı: gerçek/şüpheli bulgu 0.
 
 ### 13.5 Karar
 

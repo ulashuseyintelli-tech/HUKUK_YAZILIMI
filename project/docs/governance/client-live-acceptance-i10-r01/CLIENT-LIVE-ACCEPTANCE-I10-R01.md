@@ -297,7 +297,9 @@ aynı dist yolunu çalıştırdığı için komut satırına güvenilmedi. Canl�
 47004 **değişmedi**. Oturum DB konteyneri **durduruldu, silinmedi** (kanıt). Kanıt klasörleri:
 `C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i10s\`
 → `runs\` · `runs2\` · `runs3\` (günlükler, vekil kayıtları, runId rezervasyonları, hash kayıtları,
-`summary.json`).
+`summary.json`). Kalıcı yerel kopya: `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i10s\`
+(manifest `…\CLIENT-EVIDENCE-20260911\MANIFEST-SHA256.txt`, sha256 `7D9CA0A56DB5E6BC2C970A62F9952EB8D93F94BFCAFE23C2E323F99386D07AF3`;
+asıllar yerinde).
 
 ### 7.5 Bu doğrulamanın kanıtlamadığı
 
