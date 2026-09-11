@@ -3877,3 +3877,13 @@ JwtAuthGuard ile korunmasi (OWN-13 D03; canlida seed modulu KAPALI) · yerel jun
 RELEASE21 `2187a78b` (kok icerigi muhurlu manifestiyle birebir; tek fark cutover `.env`'i) · cutover paketi (KATMAN 2) ve
 muhur owner RatificationRef'ine bagli, URETILMEDI; cutover / bayrak / migration / A-07 tekrari YOK · hedefli kabul plani
 ve FD kurtarma incelemesi `release22-candidate-r01/RELEASE22-ADAY-HAZIRLIK-R01.md`.
+
+**RELEASE22 TEK YAYIN HATTI — OWNER KARARI 2026-09-11 · KATMAN 2 = R27 HAZIR (MUHURSUZ) / CANLIDA DEGIL:** owner RELEASE22 @
+`137406701248858221d12be94a941f8837a2a245` adayini secti; RELEASE21B1 / R26 icin muhur, authority veya cutover YOK — R26 paketi
+degistirilmeden tarihsel/hazir kalir · R27 cutover paketi `HY_C33_RELEASE22_CUTOVER_R27` (repo disi, muhursuz; numara OFFICE 33
+tarafindan envanterden, R26 degil; ratifikasyon `-Rnn` revizyonu paket numarasi DEGILDIR) · paket kimligi `DBE6B8E5…` (48 dosya)
+· kayit #2615 `9840577d` (OFFICE 33: `release22-candidate-r01/RELEASE22-R27-CUTOVER-PAKETI-R01.md` + #2614 §4.5 duzeltmesi) · ana
+yurutucu bagimsiz dogrulamasi ayni belgenin Ek A'si (kimlik liste+disk esit; bagimsiz fork 25/32 bayt-ayni; S-06/S-08b/S-08c
+calistirilmis kapi PASS; RELEASE21 koku 88.132 birebir; R26 degismedi) · SIRADAKI (her biri AYRI owner GO): ratifikasyon ref'i ->
+owner preflight -> `-Live` gercek primitifler -> onayli kimlik -> muhur -> cutover -> teknik kabul -> OFFICE/CLIENT hedefli kabul
+(CLIENT I9 dahil). Bu kayit muhur/authority/cutover yetkisi DEGILDIR.
