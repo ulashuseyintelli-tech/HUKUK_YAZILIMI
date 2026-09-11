@@ -3898,3 +3898,11 @@ OWNER-RUN kimlik kapilarini atlar (duzeltme yazicida) · muhur / authority / non
 **R27 yurutme paketi — F1–F6 DUZELTILDI (2026-09-11):** #2623 `f3ddb4a2` (yazici OFFICE 33) · ana yurutucu bagimsiz dogruladi
 (kaynak + Windows PowerShell 5.1 ayristirma: iki belgede 5'er blok, hata 0) · KALAN: paket ici `README.OWNER.md` §6 exit 1/2 satirlari
 → owner GO ile Adim 3'te, onay anlik goruntusunden ONCE · muhur / authority / nonce / -Live / cutover / canli kabul YAZMASI YOK.
+
+**RELEASE22 CANLIDA (2026-09-11, C33 R27):** `CUT-20260911-195709-35289e18` · C33_RELEASE22_CUTOVER_APPLIED_AND_VERIFIED 31/31, cikis 0
+(owner kostu; makbuz 16:58:28Z) · kesinti (journal) 39,467 s · DB olculen kapsamda degisiklik saptanmadi (migration 130/130/0/0,
+sysId, Tenant/User/SmokePrincipal sayimlari; dbMutations 0) · ana yurutucu bagimsiz dogrulamasi
+`release22-candidate-r01/RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md` Ek C (API/Web kok HY_W4_RELEASE22, BUILD_ID `xJZ1G1TsbOnHoWUzMD8CQ`,
+bin R22, isaretler 3·3·3·1·2·5·1·1) · geri donus RELEASE21 @ `2187a78b` yerinde · R27 artik yeniden muhurlenemez · SIRADAKI
+(her biri AYRI owner GO): CLIENT I9 canli kosumu (on kosul SAGLANDI) · OFFICE AK-2 / AK-1a sentetik tenant islevsel kabulu · A-07
+yeniden KOSULMAZ · kabul yazmasi YOK.
