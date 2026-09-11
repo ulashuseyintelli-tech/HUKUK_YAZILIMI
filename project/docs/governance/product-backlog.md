@@ -3883,7 +3883,7 @@ ve FD kurtarma incelemesi `release22-candidate-r01/RELEASE22-ADAY-HAZIRLIK-R01.m
 degistirilmeden tarihsel/hazir kalir · R27 cutover paketi `HY_C33_RELEASE22_CUTOVER_R27` (repo disi, muhursuz; numara OFFICE 33
 tarafindan envanterden, R26 degil; ratifikasyon `-Rnn` revizyonu paket numarasi DEGILDIR) · paket kimligi `DBE6B8E5…` (48 dosya)
 · kayit #2615 `9840577d` (OFFICE 33: `release22-candidate-r01/RELEASE22-R27-CUTOVER-PAKETI-R01.md` + #2614 §4.5 duzeltmesi) · ana
-yurutucu bagimsiz dogrulamasi ayni belgenin Ek A'si (kimlik liste+disk esit; bagimsiz fork 25/32 bayt-ayni; S-06/S-08b/S-08c
+yurutucu bagimsiz dogrulamasi `release22-candidate-r01/RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md` (kimlik liste+disk esit; bagimsiz fork 25/32 bayt-ayni; S-06/S-08b/S-08c
 calistirilmis kapi PASS; RELEASE21 koku 88.132 birebir; R26 degismedi) · SIRADAKI (her biri AYRI owner GO): ratifikasyon ref'i ->
 owner preflight -> `-Live` gercek primitifler -> onayli kimlik -> muhur -> cutover -> teknik kabul -> OFFICE/CLIENT hedefli kabul
 (CLIENT I9 dahil). Bu kayit muhur/authority/cutover yetkisi DEGILDIR.

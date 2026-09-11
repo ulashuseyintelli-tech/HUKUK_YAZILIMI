@@ -4,7 +4,7 @@
 BELGE     : RELEASE22-R27-CUTOVER-PAKETI-R01
 KARAR     : OWNER KARARI 2026-09-11 "TEK YAYIN HATTI: RELEASE22" — aday 137406701248858221d12be94a941f8837a2a245
 YETKI     : bu kayit MUHURLEME, AUTHORITY ETKINLESTIRME veya CANLI CUTOVER yetkisi DEGILDIR
-PAKET     : R27 — C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27 (repo DISI; asagidaki yollar paket kokune goredir)
+PAKET     : R27 — C:DevelopmentHUKUK_YAZILIMIHY_C33_RELEASE22_CUTOVER_R27 (repo DISI; asagidaki yollar paket kokune goredir)
 KIMLIK    : PACKAGE-IDENTITY immutableBase.digest DBE6B8E5D8E18C85F2AA857944125FBDF277F1B8EEC39D3FAF9017C9D3E3516A (48 dosya; node + PowerShell bagimsiz ESIT)
 KIMLIK DOS: PACKAGE-IDENTITY.json sha256 56ACAC43DA0B38C2B2D43392EB16365E2E96FFEAF3623FB694F4C6E353352A54
 R26       : HY_C33_RELEASE21B1_CUTOVER_R26 DEGISTIRILMEDI — tarihsel/hazir; R26 icin muhur/authority/cutover YOK
@@ -270,22 +270,3 @@ Ayrinti #2614 §7.4.
 
 Bu paket incelemeye sunulur. Canli yayin icin ayri owner onayi: ratifikasyon ref'i + §7 Adim 1–4. Onay verilmezse canli sistem
 RELEASE21'de kalir; aday ve paketler degistirilmeden bekler (authority penceresi baslamadigi icin sure siniri yok).
-
-## Ek A — Ana yurutucu bagimsiz dogrulamasi (2026-09-11; salt-okuma)
-
-Ana yurutucu ayni owner kararini aldi; R27'yi OFFICE 33 urettigi icin **ikinci paket veya ikinci kayit URETMEDI** (tek yazici).
-Asagidaki olcumler R27 paketini ve bu belgedeki iddialari bagimsiz yoldan dogrular; paket dizinine yazma 0, canli yalniz okundu.
-Bu ekle birlikte satir 7'deki paket yolu duzeltildi (ilk surumde ters bolular dusmustu).
-
-| Kontrol | Yontem | Sonuc |
-|---|---|---|
-| Paket kimligi `DBE6B8E5…` | `PACKAGE-IDENTITY.json` listesinden VE disk taramasindan (ayni dislama kurallari) ayri ayri yeniden hesap | ikisi de ESIT · 48 dosya · eksik/fazla/degisen 0 · `PACKAGE-IDENTITY.json` sha `56ACAC43…` · muhur/durum dizini ve `MANIFEST.json` YOK (muhursuz) |
-| Fork dogrulugu | ayni R25 VERIFY_REPAIR kaynagi + ayni pinlerle BAGIMSIZ ikinci fork (paket DEGIL; gecici dizin) ile dosya dosya karsilastirma | 32 dosyanin 25'i BAYT-AYNI (tum nesil dosyalari, preflight, NC kosucusu, fiksturler) · 38 fark satiri yalniz §4'teki paket kimligi sikilastirmasi (P-04, V-03/V-04d, OWNER-COMMAND, NC-09d/e, OC-09b/c/d) ve etiket metinleri · S-04c/V-02l soy kapisi iki forkta da R25 ile AYNI |
-| S-06 / S-08b / S-08c | ana yurutucunun kendi kosucusu: paketin `tools/Seal-Package.ps1` metninden bloklar AYNEN (satir 204–215 ve 240–247), Step/Refuse kaydedici; cikti paket DISINDA | **CALISTIRILMIS KAPI: PASS / PASS / PASS** (canli host `1397C54C…`, API pid 50716, Web pid 22440). Muhur kosumu DEGILDIR; resmi Seal NOT_EXECUTED |
-| RELEASE21 geri donus koku | `HY_C33_RELEASE21_CANDIDATE` PowerShell dogrulayicisi (salt-okuma, 62 s) | P-031 **88.132 dosya defterle birebir** (uyusmaz 0, okunamayan 0) · P-041/042/043 · P-050…053 (candidateDigest `569DDCE4…` yeniden turetildi) · dusen 4 kapi: 3 git (SYSTEM sahipli kok, `dubious ownership`; `safe.directory` YAZILMADI) + P-040 canli `.env` |
-| Katman 1 paketleri | makbuz algoritmasiyla yeniden hesap | RELEASE22 `F0156AC1…` (makbuz `8D78B176…`) ve RELEASE21 `851C07DF…` ESIT |
-| Kapsam <-> paket | 11 runtime kaynak dosyasi: aday commit'teki git blob, release kokundeki dosya ve Katman 1 defteri; derlenmis dist dosyasi ve defter | kaynak 11/11 ESIT · dist 11/11 defterle ESIT (9 degisen, 1 yeni `office-write-role.policy.js`, `create-lawyer.dto.js` bayt-ayni) · defter sha = makbuz `ledgerHash` |
-| R26 | `PACKAGE-IDENTITY.json` listesinden kimlik yeniden hesabi + disk karsilastirmasi | `C319DE15…` ESIT, sapma 0 — R26 DEGISMEDI |
-
-Ekin olcum araclari ve ciktilari ana yurutucu oturumunun gecici calisma dizinindedir (repo ve paket disi). Ek, muhur/authority/cutover
-yetkisi DEGILDIR.
