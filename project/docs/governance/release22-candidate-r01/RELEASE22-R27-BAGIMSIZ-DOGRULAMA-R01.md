@@ -79,3 +79,10 @@ diskten okundu). `-Live` KOSULMADI; etkileri kaynaktan.
 
 **Satir 18 notu:** tablodaki `PACKAGE-IDENTITY.json` sha `56ACAC43…` #2616 anindaki degerdir. OP-01 duzeltmesiyle `24DC59DB…`
 oldu; kimlik digest'i degismedi (bayt kaniti bu ekte).
+
+**Durum (2026-09-11, sonra):** F1–F6 ve #2621 §6.1 duzeltmesi yazicinin takip PR'i #2623 ile main'de (squash `f3ddb4a2`, CI 9/9;
+birlesen icerik head `257deb35` ile ayni). Ana yurutucu #2623'u kaynakla yeniden dogruladi: DOGRU. Ek olarak iki belgedeki PowerShell
+bloklari hedef calisma ortami Windows PowerShell 5.1 ayristiricisiyla ayristirildi: yurutme paketi 5 blok ve cutover kaydi 5 blok, hata 0;
+elle kurtarma bloklari `& { ... }` tek ifade. KALAN: paket ICI `README.OWNER.md` §6 satir 89–91 (exit 1/2 "reseal"; satir 89'da
+`-Reseal -ResealReason` eksik) — yurutme paketi bunlari GECERSIZ sayar; duzeltme owner GO ile Adim 3'te, onay anlik goruntusunden ONCE
+(README kimlik tabaninda → digest degisir).
