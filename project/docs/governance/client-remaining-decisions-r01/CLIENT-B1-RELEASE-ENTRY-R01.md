@@ -13,6 +13,12 @@ derlemesiyle** yeniden koşuldu.
 veya restart istemez, İ9'u canlıda başlatmaz. **Yayın yürütücüsü OFFICE/C33'tür.** Sayaç
 **8/17**, hizmet kabulü **0/8 tam** — bu kayıt ikisini de değiştirmez.
 
+**Sonradan durum notu (2026-09-11):** R27/RELEASE22 canlıya geçti (`CUT-20260911-195709-35289e18`,
+`C33_RELEASE22_CUTOVER_APPLIED_AND_VERIFIED`) ve §8'deki İ9 ön koşulu kök `HY_W4_RELEASE22` +
+`BUILD_ID xJZ1G1TsbOnHoWUzMD8CQ` + `client.service.js` `01CA99AE…5143` üçlüsüyle bağımsız ölçüldü.
+Aşağıdaki "canlıda değil / canlı RELEASE21" ifadeleri **yazıldıkları ana** aittir. §5.5'in kapsamı
+ayrıca düzeltilmiştir.
+
 ---
 
 ## 1. Kimlikler
@@ -168,20 +174,31 @@ düzeltmez** ve düzeltmesi beklenmiyordu. Yetki kararı **doğrudur** (403, yaz
 yalnız **ret gövdesinin sözleşmesindedir**. Bu kayıt B-2'yi kapatmaz ve ürün yamasına
 geçilmemiştir.
 
-### 5.5 Ölçülen yan etki — prova ortamına özgü
+### 5.5 Ölçülen yan etki — prova ortamına özgü (KAPSAM DÜZELTİLDİ, 2026-09-11)
 
-Tam API disposable DB'ye bağlandığında **`GreetingService` zamanlayıcısı** DB'deki **tüm**
-tenant'ları dolaşıp "damgalandı" kaydı üretir. Ölçümler:
+**Düzeltme:** bu bölümün ilk hâli etkiyi "disposable DB ile sınırlı" diye yazıyordu; "yalnız
+kendi alanıma yazıldı" ifadesiyle birlikte okunduğunda **yanlış bir kapsam** veriyordu. Tam API
+**paylaşılan** disposable DB'ye bağlandığında **`GreetingService` zamanlayıcısı başka tenant'lara
+da yazdı.** Kapsam salt-okuma ile ölçüldü; **başka alanlarda geri alma yapılmadı**, kanıt korundu:
 
-- Derlemede bunu kapatan **desteklenen bir ortam anahtarı YOK** (cron ile ilgili yalnız
-  `CASE_TASK_ESCALATION_ENABLED` ve `ICRABOT_OUTBOX_CRON_ENABLED` var).
-- Aynı davranış **önceki provalarda da** oluşmuştur (B-1 provası günlüğünde 20 satır) — bu
-  koşuma özgü **değildir**.
-- `EMAIL_PROVIDER=mock` verildiği için **dışarı gönderim yoktur**; etki **disposable DB ile
-  sınırlıdır**, canlı DB'ye **hiç** bağlanılmamıştır.
+| Ölçüm | Değer |
+|---|---|
+| Yabancı alanlara tek yazma türü | `Office.lastGreetingRunAt` damgası |
+| Etkilenen kapsam | **36 ayrı tenant** (`ah-*` önekli önceki kabul alanları) · 41 `Office` satırının 36'sı |
+| Damgalanmayan | 5 satır (günlükte "ADMIN kullanıcı yok, damgalanmadı") |
+| Zaman penceresi | `2026-09-11 11:50:00.073 → .356` UTC — **283 ms**; DB'deki bütün damgalar bu pencerede → etki bu provanındır |
+| Gerçek tebrik üretimi | **YOK** — `SpecialDay` 0 · `GreetingQueue` 0 · `EMAIL_PROVIDER=mock` |
+| Provanın kendi alanı | `Office` kaydı yoktu → damgalanmadı |
+| Diğer bütün yazmalar | kendi alanında: `Task` 1 · `AuditLog` 2 (`CLIENT_UPDATE`) · `Client` 3 |
 
-Gizlenmeden kayda geçirilmiştir; **ürün kusuru olarak sınıflandırılmamıştır** (prova düzeneğinin
-bilinen sınırı).
+- Derlemede bu zamanlayıcıyı kapatan **desteklenen ortam anahtarı yok**; aynı davranış önceki
+  provalarda da oluşmuştur (B-1 provası günlüğünde 20 satır).
+- `EMAIL_PROVIDER=mock` verildiği için dışarı gönderim yoktur; canlı DB'ye **hiç** bağlanılmamıştır.
+- **Kural (owner talimatı):** tam API provaları bundan sonra **oturuma özel disposable DB**'de
+  koşulur. İ9 düzeneğinin bu kurala uyan doğrulaması
+  `client-live-acceptance-i9-r01/CLIENT-LIVE-ACCEPTANCE-I9-R01.md` §6'dadır.
+
+**Ürün kusuru olarak sınıflandırılmamıştır** (prova düzeneğinin bilinen sınırı).
 
 ### 5.6 Koşum sonrası temizlik ve canlı dokunulmazlık
 

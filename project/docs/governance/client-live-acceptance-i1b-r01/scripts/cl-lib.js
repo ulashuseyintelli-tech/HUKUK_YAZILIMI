@@ -64,8 +64,25 @@ function assertEnvironment() {
   const host = u.hostname; const port = u.port || '5432';
   const dbName = decodeURIComponent(u.pathname.replace(/^\//, '').split('?')[0]);
   if (!spec.hosts.includes(host)) throw new EnvironmentGateError(`DB host '${host}' loopback DEGIL — yazma baslamaz`);
-  if (!spec.ports.includes(port)) throw new EnvironmentGateError(`DB port '${port}' '${envName}' allowlist'inde DEGIL (${spec.ports.join(',')})`);
-  if (!spec.dbs.includes(dbName)) throw new EnvironmentGateError(`DB adi '${dbName}' '${envName}' allowlist'inde DEGIL (${spec.dbs.join(',')})`);
+  // OTURUMA OZEL DISPOSABLE DB (owner talimati 2026-09-11). Tam API provasi paylasilan
+  // `hukuk_fix1_test`'e baglaninca API'nin zamanlayicilari BASKA tenant'lara yazar (olculdu:
+  // GreetingService 36 yabanci tenant'in Office.lastGreetingRunAt alanini damgaladi). Bu yuzden
+  // disposable ortam `CL_SESSION_DB='<port>/<db>'` ile TEK ek hedef kabul eder:
+  //   · YALNIZ CL_ENVIRONMENT=disposable iken okunur — `live` allowlist'i ve GO kapisi DEGISMEZ;
+  //   · port 5432 OLAMAZ; db adi `hukuk_<ad>_test` bicimindedir;
+  //   · port ve db adi CIFT olarak eslesir (5439 + oturum db'si gibi karisim REDDEDILIR).
+  let sessionDb = false;
+  if (envName === 'disposable' && process.env.CL_SESSION_DB) {
+    const m = /^([0-9]{4,5})\/(hukuk_[a-z0-9_]+_test)$/.exec(process.env.CL_SESSION_DB);
+    if (!m || m[1] === '5432') {
+      throw new EnvironmentGateError(`CL_SESSION_DB='${process.env.CL_SESSION_DB}' gecersiz — '<port>/hukuk_<ad>_test' bekleniyor, 5432 YASAK`);
+    }
+    sessionDb = port === m[1] && dbName === m[2];
+  }
+  if (!sessionDb) {
+    if (!spec.ports.includes(port)) throw new EnvironmentGateError(`DB port '${port}' '${envName}' allowlist'inde DEGIL (${spec.ports.join(',')})`);
+    if (!spec.dbs.includes(dbName)) throw new EnvironmentGateError(`DB adi '${dbName}' '${envName}' allowlist'inde DEGIL (${spec.dbs.join(',')})`);
+  }
 
   let ownerGoRef = null;
   if (envName === 'live') {
@@ -77,7 +94,7 @@ function assertEnvironment() {
       throw new EnvironmentGateError('CL_ENVIRONMENT=live icin CL_OWNER_GO_REF (OWNER-GO-CLIENT-I1B|I8|I9-YYYYMMDD-Rnn) ZORUNLU — owner onayi olmadan canli yazma BASLAMAZ');
     }
   }
-  return { environment: envName, dbHost: host, dbPort: port, dbName, ownerGoRef };
+  return { environment: envName, dbHost: host, dbPort: port, dbName, ownerGoRef, sessionDb };
 }
 
 /** G-1 */

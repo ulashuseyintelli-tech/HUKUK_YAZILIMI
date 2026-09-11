@@ -233,20 +233,38 @@ const describe = (r) => {
     }
 
     // ── A-0: anonim YAZMA uclari → 401, kayit OLUSMAZ ──
+    // DUR KURALI (owner 2026-09-11): bir anonim uc 401 DISINDA yanit verirse, istek hatasi
+    // olusursa ya da kayit sayimi degisirse SONRAKI anonim istek GONDERILMEZ. Kalan uclar
+    // "CAGRILMADI" gerekcesiyle OLCULEMEDI kaydedilir (olcut sessizce DUSURULMEZ; sonuc
+    // BASARILI OLAMAZ). Amac: kimlik dogrulamasi bozuk bir ortamda is baslatan `run-all`
+    // ucuna GIDILMEMESI. Siralama bilerek run-all SONDA: once iki yan uc 401'i kanitlamalidir.
     const anonTargets = [
       { id: 'A0-1', url: `${base}/poa`, body: {}, label: 'POST /poa' },
       { id: 'A0-2', url: `${base}/address-discovery/client-info-request`, body: {}, label: 'POST /address-discovery/client-info-request' },
       { id: 'A0-3', url: `${base}/scheduler/run-all`, body: {}, label: 'POST /scheduler/run-all' },
     ];
+    let anonStop = null;
+    const anonCalls = [];
     for (const t of anonTargets) {
+      if (anonStop) {
+        unmeasured(t.id, `A-0 anonim ${t.label}`, `CAGRILMADI — ${anonStop}`);
+        continue;
+      }
       const before = await tenantCounts();
       const r = await L.httpJson('POST', t.url, { body: t.body }); // token YOK
+      anonCalls.push(t.id);
       const after = await tenantCounts();
-      if (r.indeterminate) unmeasured(t.id, `A-0 anonim ${t.label}`, r.reason);
-      else pass(t.id, `A-0 ANONIM ${t.label} 401 ile REDDEDILIR ve kayit OLUSMAZ`,
-        r.status === 401 && before.clients === after.clients && before.audits === after.audits,
+      if (r.indeterminate) {
+        unmeasured(t.id, `A-0 anonim ${t.label}`, r.reason);
+        anonStop = `${t.id} istek hatasi (${r.reason})`;
+        continue;
+      }
+      const ok = r.status === 401 && before.clients === after.clients && before.audits === after.audits;
+      pass(t.id, `A-0 ANONIM ${t.label} 401 ile REDDEDILIR ve kayit OLUSMAZ`, ok,
         `HTTP ${r.status} · client ${before.clients}->${after.clients} · audit ${before.audits}->${after.audits}`);
+      if (!ok) anonStop = r.status !== 401 ? `${t.id} HTTP ${r.status} (401 bekleniyordu)` : `${t.id} kayit sayimi degisti`;
     }
+    if (anonStop) console.log(`  >>> A-0 DURDU: ${anonStop} — sonraki anonim uclar GONDERILMEDI (cagrilan: ${anonCalls.join(',')})`);
 
     console.log(`\nI9 H1 KIMLIK KABULU: PASS ${results.pass} · FAIL ${results.fail} · OLCULEMEYEN ${results.unmeasured}`
       + `  (toplam ${results.results.length})`);
@@ -254,6 +272,7 @@ const describe = (r) => {
     console.log(JSON.stringify({
       record: 'CL-I9-IDENTITY', runId: st.runId, slug: st.slug, environment: env.environment,
       pass: results.pass, fail: results.fail, unmeasured: results.unmeasured,
+      anonCalls, anonStop,
       results: results.results, findings: results.findings, secretsPrinted: false,
     }, null, 1));
     process.exitCode = results.fail > 0 ? 1 : (results.unmeasured > 0 ? 3 : 0);
