@@ -155,3 +155,30 @@ Sureler (host stop-signal → baslatici STARTED; bu aralikta HTTP erisilebilirli
   15 dk tetigine kaldi (11 dk 17 sn bekleme).
   RELEASE22 baslaticisi ayni fonksiyonu tasir (R21 → R22 farki yalniz yollar) → ayni davranis RELEASE22'de de beklenir (CIKARIM; denenmedi).
 - Bu kayitla gorev, baslatici veya Windows ayari DEGISTIRILMEDI; iyilestirme owner karari.
+
+### Ek C.2 — Makbuz / journal / claim / isaretci icerik hash'leri ve baglar (owner GO madde 1; ek olcum, salt-okuma, 2026-09-11 ~18:10Z)
+
+Ek C yalniz makbuz sha'sini ve MANIFEST payloadDigest'ini tasiyordu (#2626 da yalniz bu ikisini tasir). Madde 1'in istedigi journal ve
+claim hash'leri repo kaydinda yoktu; Ek C'deki "her satir `prev` ozeti tasir" ifadesi de zincirin DOGRULANDIGINI soylemiyordu. Asagidaki
+degerleri OFFICE 33 olctu (oturumlar arasi olcum mesaji) ve ana yurutucu ayni dosyalardan bagimsiz olarak yeniden hesapladi: hepsi ESIT.
+
+| Dosya (paket ici) | sha256 | Bayt |
+|---|---|---|
+| `cutover-receipts/CUTOVER-CUT-20260911-195709-35289e18.json` | `E96E2DFEA030D2E7100E5BAAA28BA107CD687527B52772A5BA584E76FB106203` | 14.533 |
+| `journal/CUT-20260911-195709-35289e18.jsonl` | `72ABE6C142EDCA393E99BE5D4353FEFB18823652D01C3F4AFC398D582C7E1F31` | 2.584 |
+| `claims/CLAIM-203d5835b8254e1d8dfa89b15ca26319.json` | `59013A092BCEC908001029FDD284B684615210E8DFE828CB1E270469D7041433` | 335 |
+| `journal/NONCE-203d5835b8254e1d8dfa89b15ca26319.marker` | `AE75A17BF1247F69E21868BB9E0FF570399F458B31496AB300761617E091913B` | 29 (icerik = runId + LF) |
+| `authority/CUTOVER-AUTHORITY.json` | `109B0E5611FA06105D9678465AF46FB5E5C0198C571F4714F779485861453654` | 1.429 |
+| `pins/PINS.json` | `6691FFA573F263CFBF778F6718C52AC004E7C09DFC1F57093884A84907CA7150` | 14.858 |
+| `MANIFEST.json` | `FF48D9EF47909F28079EE566E6D885084B177F9472635A007F771197C7AFED3C` | 14.932 |
+
+- **Journal zinciri DOGRULANDI:** 13 satir; satir 1 `prev` bos; satir 2–13'te `prev` = sha256(onceki satirin UTF-8 baytlari, LF haric)
+  → 13/13; `runId` 13/13 esit; durumlar `T0_PREPARED` → … → `T7_COMMITTED` → `RECEIPT`.
+- **MANIFEST diskten yeniden hesaplandi** (`tools/Seal-Package.ps1:323-327` kurali): liste 57 = disk 57; EXTRA 0 · MISSING 0 · CHANGED 0
+  (sha256 + bayt); sira ordinal; payloadDigest yeniden hesap `C7918A0D…` = kayit. `authority/CUTOVER-AUTHORITY.json` MANIFEST'te
+  listeli, sha'si diskle esit.
+- **Baglar:** runId → makbuz = claim = isaretci icerigi = journal (13/13) = dosya adlari. nonce `203d5835b8254e1d8dfa89b15ca26319` →
+  authority = claim = claim/isaretci dosya adlari. authority: paket R27, ref `OWNER-RATIFICATION-C33-RELEASE22-CUTOVER-20260911-R01`,
+  tek kullanimlik, pencere 16:57:07Z–17:27:07Z, motor `52C9A220…` (claim'deki motor sha'si esit); claim 16:57:25Z (pencere icinde);
+  makbuz `claimConsumed=true`, authority `CONSUMED`, `COMMITTED`, 31/31.
+- FALLBACK makbuz 0; `cutover-receipts` 1 · `claims` 1 · `journal` 2 dosya. Paket yalniz OKUNDU; yeniden muhur ve tekrar kosum YOK.
