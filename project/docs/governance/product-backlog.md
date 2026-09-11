@@ -3887,3 +3887,10 @@ yurutucu bagimsiz dogrulamasi `release22-candidate-r01/RELEASE22-R27-BAGIMSIZ-DO
 calistirilmis kapi PASS; RELEASE21 koku 88.132 birebir; R26 degismedi) · SIRADAKI (her biri AYRI owner GO): ratifikasyon ref'i ->
 owner preflight -> `-Live` gercek primitifler -> onayli kimlik -> muhur -> cutover -> teknik kabul -> OFFICE/CLIENT hedefli kabul
 (CLIENT I9 dahil). Bu kayit muhur/authority/cutover yetkisi DEGILDIR.
+
+**RELEASE22 / R27 — TEK YURUTME PAKETI MAIN'DE / YURUTULMEDI (owner GO 2026-09-11 "R27 SON YURUTME HAZIRLIGI"):**
+`release22-candidate-r01/RELEASE22-R27-YURUTME-PAKETI-R01.md` (yazici OFFICE 33; #2619 `5334c8c6` + giris sayaci #2621 `96dff542`)
+· preflight OP-01 engeli (`PACKAGE-IDENTITY.json` `engineSha256`) yazici tarafindan giderildi, kimlik `DBE6B8E5…` degismedi
+· ana yurutucu bagimsiz dogrulamasi `RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md` Ek B — maddi bulgular: F1 motor bir kez kostuktan
+sonra (exit 1 dahil) R27 yeniden MUHURLENEMEZ, yeniden deneme yeni C33 paketi + yeni ratifikasyon ister; F2 "ayri adimlar" yolu
+OWNER-RUN kimlik kapilarini atlar (duzeltme yazicida) · muhur / authority / nonce / -Live / cutover / canli kabul YAZMASI YOK.

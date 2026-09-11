@@ -31,3 +31,51 @@ dizinlerinde R01..R26 kullanilmis, R27 yalniz bu paket; governance'taki tek "R27
 sahibinin (OFFICE 33) ayri takip PR'indadir. Paket icindeki inceleme belgesi ve paket kimligi bundan ETKILENMEDI.
 
 Olcum araclari ve ciktilari ana yurutucu oturumunun gecici calisma dizinindedir (repo ve paket disi).
+
+## Ek B — Tek yurutme paketi bagimsiz dogrulamasi (owner GO 2026-09-11 "R27 SON YURUTME HAZIRLIGI")
+
+```text
+KONU     : RELEASE22-R27-YURUTME-PAKETI-R01.md — #2619 5334c8c6 + #2621 96dff542 (yazici OFFICE 33)
+YURUTUCU : ana yurutucu, bagimsiz dogrulama. Ayni yola yazan #2618 CLOSED_SUPERSEDED (tek yazici); yazicinin dosyasina YAZILMADI
+YETKI    : bu ek muhur, -Live, authority/nonce, cutover veya canli kabul yetkisi DEGILDIR
+```
+
+Olcumler 2026-09-11, salt-okuma: R27 paket dizinine yazma 0; canliya HTTP / DB / surec temasi 0 (RELEASE21 dist dosyalari yalniz
+diskten okundu). `-Live` KOSULMADI; etkileri kaynaktan.
+
+| Kontrol | Yontem | Sonuc |
+|---|---|---|
+| OP-01 duzeltmesi | `tools/Invoke-OwnerPreflight.ps1:147-149` + `PACKAGE-IDENTITY.json` bayt karsilastirmasi | OP-01 `engineSha256 == motor sha` ister; alan var, deger `52C9A220…`. Tek `engineSha256` satiri cikarilinca sha tam `56ACAC43…` (satir 18'deki eski deger) → dosyadaki TEK degisiklik bu satir; yeni sha `24DC59DB…`. Pakette iki sha'ya da pin YOK |
+| Paket kimligi | `PACKAGE-IDENTITY.json` listesinden (kayitli sira ve ordinal) + disk taramasi | `DBE6B8E5…` ESIT · 48 dosya · disk sapmasi 0 · fazla 0 · durum dizinleri ve `MANIFEST.json` YOK (muhursuz) |
+| Preflight provasi (OFFICE 33; paket KOPYASINDA, yukseltilmemis) | kanit JSON'lari `HY_C33_RELEASE22_CUTOVER_R27.PREFLIGHT-PROVA-R01` (paket koku DISI) | ONCE OP-01 FAIL (27 PASS) → SONRA OP-01 PASS (28 PASS); kalan OP-00 / OP-05c FAIL + OP-08a / OP-09d / OP-09e N/M yukseltme kaynakli; OP-09j INFO |
+| Tam SHA'lar ve satir atiflari | disk + kaynak | yurutme paketi §1 SHA'lari diskle ESIT · `Test-RealPrimitives` 31-60 / 61-71 / 72-101 / 106 · Seal `:107-108` / `:135-137` / `:169-171` / `:248` · motor faz araliklari (P-01 `:398` … R-01 `:704`) DOGRU |
+| `-Live` etkisi | kaynak | canliya 4 HTTP; DB yazmasi 0 (400/404 kalici yazilmaz); restart 0; paket ici tek yazma `REAL-PRIMITIVES-RESULTS.json` (kimlik tabani ICI → digest degisir). Giris sayaci (#2621) ESIT; ek: sayac portal girisiyle de ortak (`portal.controller.ts:78`) |
+| Adim 5 isaretleri | RELEASE22 ve RELEASE21 dist dosyalarinda sayim | RELEASE22 3·3·3·1·2·5·1·1 · RELEASE21 0·yok·yok·0·0·3·0·0 → sekizi de ayirt edici |
+| Onayli kimlik algoritmasi | OWNER-RUN `:63-67` + R25 `APPROVED-IDENTITY-CC94722D.json` | `unsealedDigest` = her `yol:sha256` + `\n` (sonuncusu dahil); immutableBase = join (sonda `\n` yok) → ayni liste icin iki FARKLI sayi (R25: `CC94722D…` vs `6CFCF3D5…`) |
+| Kapsam karsilastirmasi | ana yurutucunun bagimsiz taslagi (#2618, kapandi) ile | geri donus baglari, Adim 6 kabul kapsami (CLIENT I9 / OFFICE), FD sonucu ve kalan kararlar ayni degerler; celiski yalniz asagidaki bulgular |
+| CI | GitHub | #2619 9/9 ve #2621 9/9 SUCCESS, ikisi de merge'den once tamam |
+
+**Bulgular** (yaziciya iletildi; duzeltme yazicinin takip PR'indadir):
+
+- **F1 (maddi) — motor bir kez kostuktan sonra R27 yeniden MUHURLENEMEZ.**
+  - Motor `Finish` (`:372-391`) her sonucta, exit 1 dahil, `cutover-receipts\CUTOVER-<RUNID>.json` yazar; dizinler `:507`'de,
+    P dusus kontrolunden (`:513`) once kurulur.
+  - Seal S-03 (`:162-165`) claim, NONCE marker ve makbuz sayisinin 0 olmasini ister ve `-Reseal` mantigindan ONCE kosar.
+  - OWNER-RUN (`:88-95`) authority varken her yeniden kosumda `-Reseal` gecer → yeniden kosum OR-05'te exit 91.
+  - Reseal yalniz motor HIC kosmadiysa mumkundur (verifier REJECTED, OWNER-COMMAND 90, OWNER-RUN 91).
+  - Exit 1'den sonra paket icindeki tek yol: ayni authority penceresi dolmadan OWNER-COMMAND'in dogrudan kosumu (claim ve marker
+    yok; P-17 yalniz marker'a bakar) — owner karari. Pencere dolduysa ya da exit 2/3/70 → yeni C33 paket numarasi + yeni ratifikasyon.
+  - Celisen yerler: yurutme paketi §2 ("exit 2 → -R02 + yeni muhur"), §4 cikis tablosu (exit 1 "pencere gecmisse reseal";
+    exit 2 "yeni ratifikasyon revizyonu + yeni muhur") ve §6.1 ("motor P-08 429 → adim tekrarlanir").
+- **F2 (maddi):** yurutme paketi §4 "ayri adimlarla" yolu OWNER-RUN'i atlar. OR-02 (preflight kaniti), OR-03a/03b (onayli kimlik
+  ve disk sapmasi) ve OR-04b (OWNER-COMMAND sha pini) yalniz OWNER-RUN'da vardir → onaydan muhure kadar olan sapma mekanik yakalanmaz.
+- **F3:** onayli `unsealedDigest` §1'deki digest'e esit CIKMAZ (algoritma farki; tabloda).
+- **F5:** `-Live` exit 2 (motor ayristirma `:17`, fonksiyon cikarimi `:23`, yerel sunucu `:35`) → sonuc dosyasi YAZILMAZ.
+- **F6:** elle kurtarma blogu (yurutme paketi §5.2; `RELEASE22-R27-CUTOVER-PAKETI-R01.md` §8) konsola satir satir yapistirilirsa
+  ust duzey `throw` sonraki satirlari durdurmaz → blok `& { $ErrorActionPreference='Stop'; ... }` ile tek ifade ya da sha pinli `.ps1`.
+- F4 (giris sayaci) #2621 ile pakete girdi; yalniz portal notu kaldi.
+- Bilgi: OWNER-RUN OR-06 authority ref'ini kendi verdigi `$RATIF` ile karsilastirir (oz-tutarlilik); bagimsiz ref kontrolu
+  OWNER-COMMAND `:54-55`'tir (dosya sha'si OR-04b ile pinli) ve mutasyondan once kosar.
+
+**Satir 18 notu:** tablodaki `PACKAGE-IDENTITY.json` sha `56ACAC43…` #2616 anindaki degerdir. OP-01 duzeltmesiyle `24DC59DB…`
+oldu; kimlik digest'i degismedi (bayt kaniti bu ekte).
