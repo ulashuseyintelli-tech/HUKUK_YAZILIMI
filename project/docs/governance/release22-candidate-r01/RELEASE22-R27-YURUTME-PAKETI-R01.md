@@ -8,6 +8,7 @@ YAPILMADI : owner preflight · Test-RealPrimitives -Live · kimlik/sablon doldur
 ROLLER    : paket yazicisi OFFICE 33 · koordinasyon ve bagimsiz dogrulama ana yurutucu · R26 DEGISMEZ
 YETKI     : bu belge muhur, canli primitive kosumu, cutover veya canli kabul yetkisi DEGILDIR
 KAYIT     : CLIENT sayaci 8/17 · hizmet kabulu 0/8 tam (degismedi)
+EK        : 2026-09-11 — §3.2 / §3.3 / §6.1 canli giris-deneme sayaci eklendi (bulgu: ana yurutucu #2618; kaynakta dogrulandi)
 ```
 
 Onceki kayitlar: `RELEASE22-ADAY-HAZIRLIK-R01.md` (#2614) · `RELEASE22-R27-CUTOVER-PAKETI-R01.md` (#2615/#2617) ·
@@ -84,6 +85,7 @@ yurutucu bagimsiz yeniden hesaplar. Digest disinda kalanlar (R25 kuraliyla ayni)
 | CANLI bolum (yalniz `-Live`) | `:72-101` | gorev modeli (API/Web/CutoverWriter), dinleyici + surec komut satiri, host surecleri **okunur**; 4 HTTP istegi: API `GET /` (404 beklenir), Web `GET /` (200), `POST /api/auth/smoke/login {}` (400), `GET /api/auth/capabilities` (200) |
 | Paket yazmasi | `:106` | `qualification/REAL-PRIMITIVES-RESULTS.json` **uzerine yazilir** — kimlik kapsaminda (§1) |
 | Restart / gorev degisikligi | — | **YOK** |
+| Surec-ici durum (canli API) | `smoke-auth.controller.ts` `@UseGuards(LoginRateLimitGuard)` · `guards/login-rate-limit.guard.ts:17-62` | smoke login POST'u guard'dan gecer (guard pipe'tan ONCE calisir): API surecinin **bellegindeki** giris-deneme sayaci `request.ip` icin **+1** (pencere 60 s, en fazla 10; 10'a ulasinca blok 5 dk, sonraki istek 429). Depo `/auth/login` ve davet uclariyla PAYLASILIR; API restartinda sifirlanir. DB/dosya yazmasi DEGIL. Butce §6.1 |
 | Canli DB yazmasi | canli RELEASE21 API kaynagi | **YOK**: `AllExceptionsFilter` yalniz **>=500**'u ErrorLog'a yazar (400/404 haric); `SmokeAuthorizationGuard` bearer yoksa no-op; `TenantLifecycleInterceptor` kullanici yoksa ve GET'te gecirir; `SmokeLoginDto` `{}` ile `ValidationPipe`'ta 400 (handler cagrilmaz); web uygulamasinda DB istemcisi yok. Beklenmedik 5xx olursa tek ErrorLog satiri yazilir |
 | Pins varsa | `:76-82` | muhurden sonra kosulursa gorev XML sha'si pins'e karsi da denetlenir; muhurden once yerlesik varsayilanlar |
 
@@ -94,8 +96,8 @@ esitligini ister → **Adim 2 muhurden once ZORUNLUDUR**. Seal `S-02` ayrica NC 
 
 - **Owner preflight** — yalniz `preflight\OWNER-PREFLIGHT-<utc>.json` + `.sha256` (paket ici, digest disi). Canli DB/HTTP/login 0; `.env` icerigi okunmaz; yukseltme zorunlu.
 - **Seal** — `pins/PINS.json`, `authority/CUTOVER-AUTHORITY.json` (nonce, 30 dk, tek kullanim), `MANIFEST.json`; hepsi en sonda, tum `S-*` gectikten sonra (`:314-330`).
-  Salt-okuma temaslar: `docker exec hukuk-postgres psql … SELECT` (DB snapshot) · Adim 2 ile ayni HTTP problari (`S-08d`) · gorev XML disa aktarimi.
-  Tek yan etki: kanonik repoda `git fetch origin` (`:189`), yalniz uzak-izleme ref'lerini gunceller. Herhangi bir `S-*` duserse `SEAL_REFUSED` + exit 1 ve hicbir sey yazilmaz.
+  Salt-okuma temaslar: `docker exec hukuk-postgres psql … SELECT` (DB snapshot) · Adim 2 ile ayni HTTP problari (`S-08d` `:248`; giris sayaci +1, §6.1) · gorev XML disa aktarimi.
+  Diger yan etki: kanonik repoda `git fetch origin` (`:189`), yalniz uzak-izleme ref'lerini gunceller. Herhangi bir `S-*` duserse `SEAL_REFUSED` + exit 1 ve hicbir sey yazilmaz.
   `authority` varsa `-Reseal -ResealReason` olmadan reddeder; onceki nonce claim edilmisse reseal YASAK (`:168-171`).
 - **Verifier** — yalniz `qualification/VERIFY-RESULTS.json` (digest disi); git salt-okuma.
 
@@ -279,6 +281,22 @@ Ardindan Adim 5 blogu **geri yon beklentileriyle** (kok `HY_W4_RELEASE21`, BUILD
 **~15–60 s** API+Web (emsaller R23 14,673 s · R24 13,716 s · R25 57,647 s; baskin bilesen start+probe). Ust sinir quiesce 90 s +
 start 240 s (ayri). Rollback suresi olculmemis. Web BUILD_ID degisir. Cutover penceresinde kabul/sentetik tenant kosumu YAPILMAZ
 (`V-01` DB snapshot farki rollback tetikler).
+
+### 6.1 Canli giris-deneme butcesi (loopback; kaynakta)
+
+| Adim | Hedef surec | smoke login POST | Kaynak |
+|---|---|---|---|
+| 2 `-Live` | RELEASE21 (canli) | 1 | `Test-RealPrimitives.ps1:99` |
+| 4 Seal `S-08d` | RELEASE21 | 1 | `Seal-Package.ps1:248` |
+| 4 motor `P-08` | RELEASE21 | 1 | `Invoke-C33Cutover.ps1:451` |
+| 4 motor `C-03` | RELEASE22 (yeni surec, taze bellek) | 1 | `Invoke-C33Cutover.ps1:608` |
+| 6 CLIENT I9 | RELEASE22 | 3 giris | paket §9, `i9-run.js` |
+
+- Sinir: surec basina, IP basina 60 s'de 10. Sira sinirin cok altinda kalir.
+- Ayni dakikada loopback'ten gelen baska giris denemeleri (or. elle `/auth/login`) ayni sayaca eklenir.
+- 429 alinirsa ilgili kapi duser: `-Live` LIVE-P08-smoke FAIL · Seal `S-08d` exit 1 · motor `P-08` `HARD_STOP_PREFLIGHT_NOT_APPLIED` (mutasyon 0). Restart YAPILMAZ; 5 dk beklenir ve adim tekrarlanir.
+- Adim 2 ile Adim 4 arasinda gereksiz `-Live` tekrarindan kacinilir.
+- Bulgu: ana yurutucu (#2618); bu belgede kaynakta yeniden dogrulandi.
 
 ## 7. FD kurtarma incelemesi — sonuc (onceden yetkilendirilen inceleme, #2614 §6)
 
