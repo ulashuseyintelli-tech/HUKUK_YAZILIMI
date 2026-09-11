@@ -10,6 +10,13 @@ YETKI     : bu belge muhur, canli primitive kosumu, cutover veya canli kabul yet
 KAYIT     : CLIENT sayaci 8/17 · hizmet kabulu 0/8 tam (degismedi)
 EK        : 2026-09-11 — §3.2 / §3.3 / §6.1 canli giris-deneme sayaci eklendi (bulgu: ana yurutucu #2618; kaynakta dogrulandi)
 DUZELTME  : 2026-09-11 — F1-F6 (ana yurutucu bagimsiz dogrulamasi; hepsi kaynakta yeniden dogrulandi): §2 · §3.2 · §3.3 · §4 Adim 2/3e/4 + cikis tablosu · §5.2 · §6.1 · §8
+GUNCEL    : 2026-09-11 — YURUTULDU. Adim 1-4 TAMAM; RELEASE22 CANLI. Kosum CUT-20260911-195709-35289e18 ·
+            C33_RELEASE22_CUTOVER_APPLIED_AND_VERIFIED · 31/31 · COMMITTED · rollback YOK · cikis=0 · makbuz sha256
+            E96E2DFEA030D2E7100E5BAAA28BA107CD687527B52772A5BA584E76FB106203 · kesinti T1->T5 39,467 s (journal'dan olculdu).
+            Onayli kimlik OR-03a 56AB80DABC4998E5621C909BE4421B8FB7E565A1A49DAA1578024E7B07E9EB9B (owner onayi); OWNER-RUN
+            C08ADFED… · OWNER-COMMAND 47C76A38…. Yukaridaki DURUM / YAPILMADI satirlari yurutme ONCESI tarihseldir.
+            Teknik kapanis: RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md Ek C (ana yurutucu). Adim 6 hedefli kabul (CLIENT I9 / OFFICE)
+            KOSULMADI — her biri AYRI owner GO. Paket muhurlu; nonce tuketildi (R27 yeniden muhurlenemez).
 ```
 
 Onceki kayitlar: `RELEASE22-ADAY-HAZIRLIK-R01.md` (#2614) · `RELEASE22-R27-CUTOVER-PAKETI-R01.md` (#2615/#2617) ·
