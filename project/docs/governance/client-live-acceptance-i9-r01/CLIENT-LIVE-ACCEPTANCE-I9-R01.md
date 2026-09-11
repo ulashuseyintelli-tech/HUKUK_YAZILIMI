@@ -1,6 +1,8 @@
-# CLIENT İ9 — H1 KİMLİK KABUL PAKETİ (R02 içeriği — düzeltilmiş düzenek, canlı GO'ya sunulur)
+# CLIENT İ9 — H1 KİMLİK KABUL PAKETİ (R02 içeriği — düzeltilmiş düzenek + canlı koşum kaydı)
 
-**Durum: CANLI GO'YA HAZIR — CANLI KOŞUM BAŞLAMADI.**
+**Durum: İ9 CANLI KABULÜ KAPANDI** — `OWNER-GO-CLIENT-I9-20260911-R01` · runId `d19ce2c7` ·
+**PASS 14 · FAIL 0 · ÖLÇÜLEMEYEN 0** · kapanış (3 kullanıcı erişim iptali) ve izolasyon doğrulandı ·
+yazmalar onaylı 11 satırlık envanterle birebir (§13).
 
 - R01'deki engel (**B-1**: A-8 → 404) ürün düzeltmesiyle kapandı (#2609) ve R27/RELEASE22 ile
   **canlıda** (§7).
@@ -10,7 +12,7 @@
 - Düzeltme, oturuma özel DB'de R27 derlemesiyle doğrulandı: **4 hata enjeksiyonu senaryosu +
   normal akış 14/14 — 5/5 DOĞRULANDI** (§6).
 
-Sayaç **8/17**, hizmet kabulü **0/8 tam** — bu paket ikisini de değiştirmez.
+Sayaç **9/17** (İ9 canlı kapanışıyla 8/17 → 9/17), hizmet kabulü **0/8 tam** — kendiliğinden değişmez.
 
 ---
 
@@ -378,15 +380,15 @@ usersDeactivated=0 · exit 0` (§6'da beş kez ölçüldü).
 | Ölçüt | Durum | Dayanak |
 |---|---|---|
 | `MUTATION_AUTHORITY` | **KARŞILANDI — canlı** | İ8 U-1 (`cl-acc-2ed1d6d0`) |
-| #2552 — create | KARŞILANDI (yerel, R27) | N-1 |
-| #2552 — değişen-değer | KARŞILANDI (yerel, R27) | N-2 |
-| #2552 — reaktivasyon (PUT + POST/dedup) | KARŞILANDI (yerel, R27) | N-3 · N-4 |
-| A-0 (üç uç) | KARŞILANDI (yerel, R27) + dur kuralı doğrulandı | A0-1/2/3 · §6.2 |
-| A-7 | KARŞILANDI (yerel, R27) | N-3/N-4 + P-1 pozitif |
-| A-8 | KARŞILANDI (yerel, R27) — **B-1 çözüldü** | A-8a 200 · A-8b |
+| #2552 — create | **KARŞILANDI — canlı** | N-1 · runId `d19ce2c7` (§13) |
+| #2552 — değişen-değer | **KARŞILANDI — canlı** | N-2 · `d19ce2c7` |
+| #2552 — reaktivasyon (PUT + POST/dedup) | **KARŞILANDI — canlı** | N-3 · N-4 · `d19ce2c7` |
+| A-0 (üç uç) | **KARŞILANDI — canlı** (+ dur kuralı yerelde doğrulandı) | ön yoklama + A0-1/2/3 · `d19ce2c7` · §6.2 |
+| A-7 | **KARŞILANDI — canlı** | N-3/N-4 + P-1 pozitif · `d19ce2c7` |
+| A-8 | **KARŞILANDI — canlı** (B-1 çözüldü) | A-8a 200 · A-8b · `d19ce2c7` |
 
-**İ9 kesin iştir ve canlı koşumla kapanır.** Teknik ve yayın bağımlılığı kalmadı; kalan tek şey
-**ayrı owner canlı GO'su**dur. Sayaç **8/17**, hizmet kabulü **0/8 tam** kalır.
+**İ9 KAPANDI** (canlı koşum ve kapanış doğrulandı, §13). Sayaç **9/17**; hizmet kabulü **0/8 tam**
+kendiliğinden değişmez.
 
 ---
 
@@ -394,5 +396,74 @@ usersDeactivated=0 · exit 0` (§6'da beş kez ölçüldü).
 
 Deploy · migration · servis restartı · canlı flag değişikliği · gerçek alıcıya gönderim ·
 `Office`/`Case` yazma · silme · gerçek tenant'ta **GET dışında** herhangi bir çağrı · kimlikli
-`run-all` · İ1b/İ8 alanlarının yeniden açılması · **ürün kodu değişikliği** · B-2 ürün yaması ·
-**İ10…İ15** · İ16/İ17.
+`run-all` · İ1b/İ8/İ9 alanlarının (`cl-acc-afce215b`, `cl-acc-2ed1d6d0`, `cl-acc-d19ce2c7`)
+yeniden açılması · **ürün kodu değişikliği** · B-2 ürün yaması · **İ10…İ15** · İ16/İ17 · OFFICE
+AK-2/AK-1a · başlatıcı dayanıklılık işi.
+
+---
+
+## 13. CANLI KOŞUM KAYDI — `OWNER-GO-CLIENT-I9-20260911-R01`
+
+**Onay:** owner GO `OWNER-GO-CLIENT-I9-20260911-R01` · paket R02 (#2629, merge
+`6c8ffeb57845159632e8ae9852b54cd02d505aec`). Onaylı yazma **yalnız** `cl-acc-<runId>` sentetik
+tenant'ında: 11 satırlık envanter, Client D'nin aktifleştirilmesi ve kapanış erişim iptalleri.
+Görev ve audit kanıtı korunur; görevin açık kalması kapsamdadır. Gerçek alıcıya ileti yok; paralel
+OFFICE kabulü, restart ve yayın yok. **Koşum tek kez yürütüldü.**
+
+### 13.1 Koşum öncesi kapılar — hepsi ilk yazmadan ÖNCE
+
+| Kapı | Ölçüm |
+|---|---|
+| R02 betikleri | çalışma kopyası `C:\Development\HY_WT\CL_I9LIVE` @ `6c8ffeb57845…` (temiz) · 9 dosyanın tam sha256'sı §4 tablosuyla **9/9 eşit** (tam liste rezervasyon kaydında) |
+| API | `:8080`'de **tek dinleyici süreç** — PID 46332 (`0.0.0.0:8080` + `[::]:8080`) · komut satırı `HY_W4_RELEASE22\project\apps\api\dist\apps\api\src\main.js` · 5432'ye 12 ESTABLISHED |
+| Web | `:3002` PID 47004 · `HY_W4_RELEASE22\project\apps\web\…\next start --port 3002` |
+| Aday / derleme | `HY_W4_RELEASE22` HEAD `137406701248858221d12be94a941f8837a2a245` · BUILD_ID `xJZ1G1TsbOnHoWUzMD8CQ` · sunulan manifest yeni **200** / eski **404** · `client.service.js` `01CA99AEC166362363135F79509DC88D9E60BD5D5A6CDCDAAD76E599978D5143` |
+| GO ref kullanılmamış | origin/main **0** · açık PR dalları **0** · durum kayıtları **0** · önceki İ9 canlı durum dosyası **0** |
+| Paralel kabul | bu makinede kabul/governance betiği çalıştıran süreç **0** |
+| runId + durum kaydı | **`d19ce2c7`** · `RUN-RESERVATION-d19ce2c7.json` ilk yazmadan önce diske yazıldı (sırsız) · çakışma yok: `cl-acc-d19ce2c7` mevcut değildi (salt-okuma transaction, `transaction_read_only=on`, `hukuk_db` @ 5432, birincil) |
+| Sakin pencere | 18:38 UTC: son 15 dk küresel audit **0** · son 24 s yeni tenant **0** · saat başı cron'larına 22 dk |
+| A-0 ön yoklaması | token yok, gövde `{}`, dur kuralı, `run-all` sonda: A0-1 **401** · A0-2 **401** · A0-3 **401** → koşum başlatıldı |
+
+### 13.2 Koşum — runId `d19ce2c7` · 2026-09-11 18:39:22Z → 18:39:23Z · çıkış 0
+
+| Kalem | Değer |
+|---|---|
+| Kurulum | **8/8 satır** · `cl-acc-d19ce2c7` · izolasyon tabanı 9 komşu tenant · client 21 · user 43 · `02a04f4d7aec410e` |
+| P-0e / P-0u / P-0x | 201 · 201 · user ve elevated aynı rolde (USER), ADMIN yolu kapalı |
+| N-1 … N-4 (#2552) | dördü de **400 · `reasonCode=CLIENT_IDENTITY_CHECKSUM_INVALID` · `offendingFields=["tckn"]`** · yazma 0, hedefler pasif kaldı |
+| L-1 | **403** · yazma 0 (gövdede stabil kod yok → bulgu = bilinen B-2) |
+| P-1 (A-7 pozitif) | **200** · Client D `isActive false→true` |
+| A-8a / A-8b | **200** · `isActive true→true`, `updatedAt` değişmedi, audit 1→2 |
+| A0-1 / A0-2 / A0-3 | **401** · client 3→3 · audit 2→2 · dur kuralı tetiklenmedi |
+| **Ölçümler** | **PASS 14 · FAIL 0 · ÖLÇÜLEMEYEN 0** · bulgu 1 |
+| Kapanış (`cl-09`) | `usersDeactivated 3 · stillActive 0 · tokenVersionBumped 3 · evidencePreserved true · caseCronExposureClosed true` |
+| Doğrulama | kapatma sonrası login **401** · `cl-09` tekrarı `alreadyClosed=true · usersDeactivated=0 · exit 0` |
+| İzolasyon | kurulum `02a04f4d7aec410e` = kapanış `02a04f4d7aec410e` · fark tenant 0 · client 0 · user 0 |
+| Sonuç | **PASS** · günlükte sır **0** |
+
+### 13.3 Bağımsız doğrulama — salt-okuma transaction, koşum sonrası
+
+| Ölçüm | Sonuç |
+|---|---|
+| `tenantId` kolonlu tablo taraması | **139 tablo** tarandı; satır yalnız `User` 3 · `Lawyer` 1 · `Client` 3 · `Task` 1 · `AuditLog` 2 → 10 + `Tenant` 1 = **11** = onaylı envanter, **birebir** |
+| Kullanıcılar | `viewer-` / `user-` / `elevated-d19ce2c7@cl-acceptance.invalid`: **üçü de `isActive=false`, `tokenVersion=1`** |
+| Müvekkiller | A aktif · B pasif (`10000000140`) · **D aktif** (`10000000146`, `contactFollowUpStatus=ACTIVE`) |
+| Görev | "Müvekkil iletişim bilgilerini tamamla" · **PENDING (açık)** · `OPERATIONAL_COMPLETENESS` · müvekkil D · atanan yok · `dueDate` 2026-09-14T18:39:22.928Z — korunuyor |
+| Audit | 2 × `CLIENT_UPDATE` (18:39:22.921Z · 18:39:22.978Z) — korunuyor |
+| Küresel toplamlar | tenant 9→10 · client 21→24 · user 43→46 — **yalnız sentetik yazmalar**; aynı pencerede küresel audit 2 = bu koşumunkiler |
+| Canlı servisler | `:8080` PID 46332 · `:3002` PID 47004 — **restart yok** |
+| Gerçek alıcı | Office yok · bütün adresler `.invalid` · görev atanansız · 139 tablo taramasında bu tenant'a ait bildirim/gönderim satırı **yok** |
+
+### 13.4 Kanıt (paket dışı, sırsız)
+
+`C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i9live\`
+— `RUN-RESERVATION-d19ce2c7.json` · `pre-d19ce2c7.json` · `a0-preprobe-d19ce2c7.json` ·
+`i9-run-d19ce2c7.log` · `i9-state-d19ce2c7.json` · `post-d19ce2c7.json`.
+
+### 13.5 Karar
+
+İ9 ölçütlerinin tamamı canlıda karşılandı (`MUTATION_AUTHORITY` İ8'de canlı; #2552 üç yol, A-0,
+A-7, A-8 bu koşumda) ve kapanış doğrulandı → **İ9 KAPANDI. CLIENT sayacı 8/17 → 9/17.**
+Hizmet kabulü **0/8 tam** — kendiliğinden değişmez. OFFICE AK-2/AK-1a ve başlatıcı dayanıklılık
+işi **açık kalır**. Belirsiz sonuç ve komşu tenant farkı olmadığı için uzlaştırma gerekmedi;
+tekrar ya da silme yapılmadı. `cl-acc-d19ce2c7` kapalıdır, kanıt olarak korunur ve yeniden açılmaz.
