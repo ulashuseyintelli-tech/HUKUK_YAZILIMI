@@ -6,13 +6,13 @@
 | Bağımsız inceleme ve sunum | ana yürütücü (tek çalıştırılabilir kabul paketi olarak) |
 | Dayanak | owner GO — "OFFICE RELEASE22 HEDEFLİ KABUL HAZIRLIĞI" (2026-09-11) |
 | Hedef sürüm | RELEASE22 (aday `13740670`), R27 cutover ile canlı |
-| Durum | **HAZIRLIK TAMAM · İZOLE DOĞRULAMA TAMAM · CANLI KOŞUM YOK** |
-| Main | #2632 @ `8efbe25b` |
+| Durum | **CANLI KABUL: PASS 31/31 · exit 0 · kapanış doğrulandı** — `OWNER-GO-OFFICE-AK-20260911-R01` · runId `e1293381` · ana yürütücü bağımsız doğruladı (§15) |
+| Main | #2632 @ `8efbe25b` (paket) · #2633 @ `4f55f20c` (inceleme notları) |
 | Bağımsız inceleme | ana yürütücü, head `a829ca7b`: **engelleyici bulgu yok**. İki isteğe bağlı not (n1: kanıt SHA'sının dosya adı · n2: exit 1'in wrapper istisnası anlamı) belge düzeltmesiyle işlendi; araç SHA'ları değişmedi |
 
-> **Bu belge ve içindeki prova sonuçları canlı PASS DEĞİLDİR.** Canlı koşum yalnız §1'deki iki ön koşul
-> birlikte sağlanınca yapılır. Bu paket canlıya hiçbir şey yazmadı. R27 mühürlü paketine dokunmadı.
-> Tüketilmiş A-07 fixture'ını kullanmadı.
+> **§1–§14 hazırlık metnidir ve değiştirilmedi.** Oradaki prova sonuçları canlı PASS değildir. Canlı
+> kabulün kaydı yalnız §15'tedir. Hazırlık aşaması canlıya hiçbir şey yazmadı, R27 mühürlü paketine
+> dokunmadı ve tüketilmiş A-07 fixture'ını kullanmadı.
 
 ---
 
@@ -416,3 +416,118 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $P -GoRef $GO
 - **Wrapper'ın kapı sonrası bölümü izole koşulmadı.** Bu bölüm ortam değişkenlerini atar, `node`'u çağırır ve sonucu özetler. İzole koşmak canlı `.env`'i okumayı gerektirir; ben okumadım. Çağırdığı runner provadaki runner'ın kendisidir. Canlı tarafta K-ENV'i ilk kez sınayan adım owner'ın `-PreflightOnly` adımıdır; o adım salt okumadır.
 - **Prova API'si dışarı istek yaptı.** Ürün cron'u TCMB döviz kuru için bir dış istek yaptı (gözlem). Prova DB'ye yazmadı: boşta pencerede 0 tablo yazıldı.
 - **Bu belge canlı PASS değildir.** Canlı kabul, owner'ın canlı GO'su ile tek koşum ve ana yürütücünün koşum sonrası bağımsız doğrulamasıyla kapanır.
+
+---
+
+## 15. CANLI KOŞUM KAYDI — OFFICE AK-2 + AK-1a canlı kabulü KAPANDI
+
+Yazan: OFFICE 33 (paket yazıcısı). Bağımsız doğrulama ana yürütücünündür ve kendi belgesindedir (§15.6). Bu bölüm o doğrulamayı yeniden yazmaz; yalnız atıf yapar.
+
+### 15.1 Yetki ve koşum
+
+| alan | değer |
+|---|---|
+| Yetki | owner GO "OFFICE AK CANLI KABUL VE İ9 KANITLARININ KORUNMASI" · Ref **`OWNER-GO-OFFICE-AK-20260911-R01`**. Bu ref artık **TÜKETİLDİ**; ikinci koşum için kullanılamaz |
+| Onaylı sürüm | 7 araç, giriş `ak-live.ps1` `A0C74CD9C927FC16FF24613168D77B76209465CEBB87A40B4A2F2E3234CB719C` |
+| Koşum öncesi koşullar | Ref kullanılmamıştı. Başka canlı kabul koşmuyordu: CLIENT İ10'un GO'su yoktu ve "hat boş" teyidini bekliyordu. Ö-1 (İ9 kapanışı) ana yürütücü tarafından canlı DB'den salt okuma ile doğrulanmıştı. Koşum öncesi ölçümleri OFFICE 33 ve ana yürütücü ayrı ayrı yaptı |
+| Koşan | owner, §12 komutuyla: önce `-PreflightOnly`, sonra tek kabul. Ön kontrol çıktısı bu kayıtta yok. Komut yapısı gereği kabul yalnız ön kontrol exit 0 verirse başlar |
+| Koşum penceresi (UTC) | `2026-09-11T21:13:28.937Z` → `2026-09-11T21:13:30.379Z` |
+| Hedef | API `127.0.0.1:8080` (RELEASE22, pid 46332) · DB `127.0.0.1:5432/hukuk_db` |
+| runId / tenant | **`e1293381`** / `off-ak-e1293381`. **Yeniden açılmaz**: kullanıcı erişimi kapalı, kanıt korunuyor |
+
+### 15.2 Sonuç dosyası
+
+OFFICE 33 bu dosyaları içerikten hash'ledi ve okudu.
+
+| dosya | bayt | SHA-256 |
+|---|---:|---|
+| `C:\Ops\hukuk\logs\office-ak-r01\ak-live-result-20260912-001328.json` | 10838 | `F884CB666FE72EE5804EE2BD5D9C90E63CECE4BD5B0B0B91FA7A62097166609B` |
+| `C:\Ops\hukuk\logs\office-ak-r01\ak-live-state-20260912-001328.json` | 1502 | `AA7D9DE306E49B01BE1E0DA4BB99B80116CAD049314B157BF3E9415B64E2B9D2` |
+
+Sonuç dosyasında okunanlar:
+- **Hüküm:** `verdict: PASS`, **31/31** ölçüt, FAIL 0, ÖLÇÜLEMEDİ 0, `runError: null`.
+- **Ortam:** `live` · `127.0.0.1:5432/hukuk_db` · API `127.0.0.1:8080` · goRef = yukarıdaki ref.
+- **Araçlar:** `tools` alanı 6/6 dondurulmuş SHA ile eşit (§10.1).
+- **Sır taraması:** 0.
+- **Ölçütler:** AK2-N1..N6 · C1 · P1 · P2 · R1 · R2 · AK1A-R1..R4 · R0 · W1..W9 · C1 · A1 · K-1 · K-2 · I-1 · I-3. Hepsi `ok`.
+
+### 15.3 Kapanış ve izolasyon (sonuç dosyasından)
+
+- **Kapanış (K-1):** `verified: true`.
+  - Kapanıştan önce aktif kullanıcı 4; 4'ü pasifleştirildi; aktif kalan 0.
+  - Aktif dava 0.
+  - Audit sayısı kapanıştan önce 5, sonra 5: `auditPreserved: true`.
+  - Tebrik kapalı (`greetingDisabled: true`).
+- **Dağıtılmış 4 JWT (K-2):** admin, partner, manager ve viewer, kapanıştan sonra **401**.
+- **I-1:** aktörlerin başka tenant'ta audit izi **0**.
+- **I-3:** 10 yabancı tenant · özet `80bd81056f010f2f` → `80bd81056f010f2f`, eşit.
+  - Sayılar: user 46 · lawyer 38 · office 4 · staffMember 12 · case 33 · client 24 · officeBankAccount 1.
+  - Yalnız sayı düzeyindedir (§14).
+
+### 15.4 Canlı tenant envanteri — ana yürütücü ölçümü
+
+Ölçüm canlı DB'de, tek salt-okunur transaction ile yapıldı (`transaction_read_only=on`, 21:17:26Z). Ana yürütücü, `tenantId` taşıyan 139 tabloyu taradı.
+
+| tablo | satır | §6 beklenen insert |
+|---|---:|---:|
+| Tenant | 1 | 1 |
+| Office | 1 (tebrik kapalı, `lastGreetingRunAt` null) | 1 |
+| User | 4 (dördü de `isActive=false`, `tokenVersion=1`) | 4 |
+| Lawyer | 9 (dokuzu da aktif; P1/P2 yeniden etkin; T `title="AK Kabul"`) | 9 |
+| AuditLog | 5 | 5 |
+| OfficeBankAccount · StaffMember · Case · Client | 0 | 0 |
+| **toplam** | **20** | **20** |
+
+**Audit kayıtları:**
+
+| action | varlık ← aktör |
+|---|---|
+| LAWYER_CREATE | C1 ← manager |
+| LAWYER_CREATE | P1 ← admin |
+| LAWYER_CREATE | P2 ← partner |
+| LAWYER_REACTIVATE (`privileged:true`) | P1 ← partner |
+| LAWYER_REACTIVATE (`privileged:true`) | P2 ← admin |
+
+**Güncellemeler ve süreçler:**
+- Güncellemeler §6'daki 7 güncellemeyle tutarlı. 4'ü User'da (kapanış), 3'ü Lawyer'da: P1/P2 `isActive` ve T `title`.
+- Ana yürütücü I-3'ü dondurulmuş `foreignFingerprint` ile yeniden hesapladı: `80bd81056f010f2f`, koşum öncesi = sonrası = ölçüm anı.
+- API ve Web PID'leri değişmedi.
+
+### 15.5 Kalıcı kanıt
+
+**Kaynaklar yerinde kalır:** `C:\Ops\hukuk\logs\office-ak-r01\`. Silinmez, buluta taşınmaz.
+
+**Kalıcı kopya:** `C:\Users\ulastelli\Documents\OFFICE-AK-EVIDENCE-20260912\`. Kopyayı ana yürütücü oluşturdu.
+
+| dosya | SHA-256 |
+|---|---|
+| `MANIFEST-SHA256.txt` | `5A7CA03BB01725D85879D228466970828D91F0DCDE05570A071B3E4E5521504E` |
+| `ak-live-result-20260912-001328.json` | `F884CB66…609B` (kaynak = kopya; OFFICE 33 doğruladı) |
+| `ak-live-state-20260912-001328.json` | `AA7D9DE3…B9D2` (kaynak = kopya; OFFICE 33 doğruladı) |
+| `ak-postrun-verify-e1293381.json` | `0E437E9AD49C90957D435267A50CA13AAAD9660AC22431FFEFB3AD91EDB1AC0D` (ana yürütücü) |
+| `ak-postrun-readonly.js` | `181A5018A6B0260245EC2B276E4700D405A79125CD7310D93BEE805A628332A1` (ana yürütücü) |
+| `ak-prerun-readonly.js` | `814A6119768F379C1E7722192724D8C865DCE2B87FD75CC605B7DBE0713F1A45` (ana yürütücü) |
+
+### 15.6 Bağımsız doğrulama kaydı
+
+Ana yürütücünün kaydı: `RELEASE22-R27-BAGIMSIZ-DOGRULAMA-R01.md` **Ek D** — PR #2636, main `dc86cf7c`.
+
+Karar kaydı (decision-log) ve ürün birikim listesi (product-backlog) satırları da ana yürütücünündür.
+
+### 15.7 Kapanan ve açık kalan
+
+**KAPANDI.** OFFICE AK-2 + AK-1a **canlı kabulü**. GO-COMPLETE koşulunun üç parçası da sağlandı: 31/31 PASS, exit 0 ve bağımsız kapanış doğrulaması.
+
+**Kendiliğinden kapanmayanlar:**
+
+| kalem | durum |
+|---|---|
+| AK-1a eki: VIEWER onay kararı | canlıda yalnız dist işareti var |
+| AK-1b / AK-1c | owner kararı |
+| Ayrıcalıksız pasif kaydın yeniden etkinleştirilmesi | owner kararı açık |
+| `/cases` ön kontrol yarışı | açık |
+| CLF-O0-01 / FD canlı senaryoları | açık |
+| `off-ak-e1293381`'deki 9 aktif avukat kaydı | pasifleştirme **owner kararı**; bu paketin dışında (§14) |
+| Diğer OFFICE ve CLIENT açık kalemleri | açık |
+
+**CLIENT İ10** bu koşumun kapanışını bekliyordu. Başlaması ana yürütücünün "hat boş" teyidine ve kendi GO'suna bağlıdır.
