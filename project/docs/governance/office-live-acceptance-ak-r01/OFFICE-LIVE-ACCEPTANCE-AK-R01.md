@@ -7,6 +7,8 @@
 | Dayanak | owner GO — "OFFICE RELEASE22 HEDEFLİ KABUL HAZIRLIĞI" (2026-09-11) |
 | Hedef sürüm | RELEASE22 (aday `13740670`), R27 cutover ile canlı |
 | Durum | **HAZIRLIK TAMAM · İZOLE DOĞRULAMA TAMAM · CANLI KOŞUM YOK** |
+| Main | #2632 @ `8efbe25b` |
+| Bağımsız inceleme | ana yürütücü, head `a829ca7b`: **engelleyici bulgu yok**. İki isteğe bağlı not (n1: kanıt SHA'sının dosya adı · n2: exit 1'in wrapper istisnası anlamı) belge düzeltmesiyle işlendi; araç SHA'ları değişmedi |
 
 > **Bu belge ve içindeki prova sonuçları canlı PASS DEĞİLDİR.** Canlı koşum yalnız §1'deki iki ön koşul
 > birlikte sağlanınca yapılır. Bu paket canlıya hiçbir şey yazmadı. R27 mühürlü paketine dokunmadı.
@@ -276,7 +278,7 @@ Prova API'si canlının koştuğu `HY_W4_RELEASE22` dist'inden başlatıldı. Bu
 
 | prova | derleme | runId | sonuç | kanıt SHA-256 |
 |---|---|---|---|---|
-| **A6** kabul + tüm-DB yazma envanteri | RELEASE22 | `41e7f47d` | **PASS 32/32** · exit 0 · kapanış doğrulandı · audit 5 korundu · I-3 1 yabancı tenant, eşit · boşta 0/210, koşum 5/210, §6 ile birebir | `581E5B61CB3AFB22EF7EABF1A463A212EA45E32F9A59A1EB798AEC43BECBBDCB` · envanter `A32C30F4F5B76832BC424C26E03A45A7AB7E97267267F9B09A563123A2ABD054` |
+| **A6** kabul + tüm-DB yazma envanteri | RELEASE22 | `41e7f47d` | **PASS 32/32** · exit 0 · kapanış doğrulandı · audit 5 korundu · I-3 1 yabancı tenant, eşit · boşta 0/210, koşum 5/210, §6 ile birebir | `provaA6-result.json` `581E5B61CB3AFB22EF7EABF1A463A212EA45E32F9A59A1EB798AEC43BECBBDCB` · `provaA6-write-inventory.txt` (tüm-DB pg_stat farkı) `A32C30F4F5B76832BC424C26E03A45A7AB7E97267267F9B09A563123A2ABD054` · `provaA6-inventory.json` (tenant satır envanteri) `2C6AFC7718641A307A713FEB98BC5F784E9D0633C3E8F78221E80EF3D679CB13` |
 | **B3** mutasyon kanıtı | **RELEASE21** (AK düzeltmeleri yok) | `2b6c028b` | **FAIL 20/32, beklenen** · kapanış doğrulandı | `5B73597E742F27C8B89ACD274C8F8DE82D20839E49D7BFD1D2C5B363AC6C8E8A` |
 | **D1** kesinti | RELEASE22 | `f1928684` | `AK_ABORT_AFTER=AK2-P1` → ÖLÇÜLEMEDİ, exit 2 · `finally` kapanışı doğrulandı · 4 JWT 401 · I-3: 4 yabancı tenant, eşit | `79961B3F8E5FABE88DA53D3A394D0AF5078D360305DDA49E5DFE04B401739668` |
 | **D2** bağımsız kurtarma | RELEASE22 | `9e03b205` | kapanış atlandı → 4 aktif · I-3: 5 yabancı tenant, eşit · kurtarma 1: 4 kapatıldı, doğrulandı · kurtarma 2: `alreadyClosed`, yazma 0 | `83A55CAEF75A4D727C576559BBE0D96291EB9C90D0BCBB6B8828B94EEB0D6E14` · kurtarma `6F778FD12184A30D57AF27C617A7E1F8A6426F31DEF497A1A6FD51B92A6478C0` |
@@ -361,7 +363,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $P -GoRef $GO
 | kod | anlam |
 |---|---|
 | 0 | PASS |
-| 1 | FAIL |
+| 1 | FAIL. **Ek anlam:** wrapper'da yakalanmamış istisna da 1 ile çıkar (ör. `DATABASE_URL` `[Uri]` ile ayrıştırılamaz). Bu durum yazmadan önce, ön kontrolde olur ve sonuç dosyası oluşmaz; ekrandaki PowerShell hata metninden ayırt edilir. Runner FAIL'i ise sonuç dosyası ve `HUKUM: FAIL` satırı taşır |
 | 2 | ÖLÇÜLEMEDİ, koşum hatası ya da wrapper kapısı |
 | 3 | KAPANIŞ DOĞRULANAMADI → kurtarma |
 | 4 | G-0 düştü; yazma yok |
