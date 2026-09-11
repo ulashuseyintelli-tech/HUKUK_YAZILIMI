@@ -193,7 +193,11 @@ Canlı `C:\Ops\hukuk\bin` dosyaları işlem öncesi ve sonrası aynı; yalnız o
 
 ### 4.5 KATMAN 2 (cutover paketi) ve mühür — ÜRETİLMEDİ (owner kapısı)
 
-R26 cutover paketi ve mühürü owner'ın **RatificationRef**'ine bağlı.
+KATMAN 2 = **R27** cutover paketi `HY_C33_RELEASE22_CUTOVER_R27`; paket ve mühürü owner'ın **RatificationRef**'ine bağlı.
+> **Düzeltme (2026-09-11, owner kararı "TEK YAYIN HATTI: RELEASE22"):** bu satırın ilk sürümü "R26 cutover paketi" diyordu — **bayattı**.
+> R26 numarası `HY_C33_RELEASE21B1_CUTOVER_R26`'da (yalnız B-1 adayı) kullanıldı; o paket tarihsel/hazır olarak korunur ve kullanılmaz.
+> Numara C33 envanterinden (R20..R26 dolu) R27 olarak belirlendi. Ratifikasyon revizyonu (`-Rnn`) paket numarası **değildir**.
+> Paket kaydı: `RELEASE22-R27-CUTOVER-PAKETI-R01.md`.
 - **Biçim:** `^OWNER-RATIFICATION-C33-RELEASE22-CUTOVER-[0-9]{8}-R[0-9]{2}(-…)?$`.
 - **Ek şart:** yeni, tek-kullanımlık authority ve nonce.
 
