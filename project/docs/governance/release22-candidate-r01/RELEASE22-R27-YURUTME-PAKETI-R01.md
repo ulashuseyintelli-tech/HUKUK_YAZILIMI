@@ -9,6 +9,7 @@ ROLLER    : paket yazicisi OFFICE 33 · koordinasyon ve bagimsiz dogrulama ana y
 YETKI     : bu belge muhur, canli primitive kosumu, cutover veya canli kabul yetkisi DEGILDIR
 KAYIT     : CLIENT sayaci 8/17 · hizmet kabulu 0/8 tam (degismedi)
 EK        : 2026-09-11 — §3.2 / §3.3 / §6.1 canli giris-deneme sayaci eklendi (bulgu: ana yurutucu #2618; kaynakta dogrulandi)
+DUZELTME  : 2026-09-11 — F1-F6 (ana yurutucu bagimsiz dogrulamasi; hepsi kaynakta yeniden dogrulandi): §2 · §3.2 · §3.3 · §4 Adim 2/3e/4 + cikis tablosu · §5.2 · §6.1 · §8
 ```
 
 Onceki kayitlar: `RELEASE22-ADAY-HAZIRLIK-R01.md` (#2614) · `RELEASE22-R27-CUTOVER-PAKETI-R01.md` (#2615/#2617) ·
@@ -57,7 +58,8 @@ yurutucu bagimsiz yeniden hesaplar. Digest disinda kalanlar (R25 kuraliyla ayni)
 - **Bicim gecerli:** Seal `S-00` (`Seal-Package.ps1:107`), motor `P-04` ve verifier desenine uyar; `FIXTURE` icermez (`:108`).
 - **R01 ratifikasyon REVIZYONUDUR, paket numarasi DEGILDIR.** Paket numarasi R27 pakette sabittir: motor P-04, OWNER-COMMAND
   ve verifier V-03, authority/pins/MANIFEST `package` alanini `HY_C33_RELEASE22_CUTOVER_R27`'ye esitler.
-- Desen tarihi saatle karsilastirmaz (yalniz bicim). Yeniden deneme gerekirse (exit 2) yeni revizyon (`-R02`) + yeni muhur gerekir.
+- Desen tarihi saatle karsilastirmaz (yalniz bicim). **Motor bir kez kostuktan sonra R27 yeniden muhurlenemez** (§4 cikis tablosu):
+  yeni deneme yeni C33 paket numarasi + yeni ratifikasyon ister; `-R02` revizyonu tek basina YETMEZ.
 - **Bu asamada authority/nonce ETKINLESTIRILMEDI** (R27'de `pins/`, `authority/`, `MANIFEST.json`, `claims/` yok — olculdu).
 
 ## 3. Kaynak incelemesi bulgulari
@@ -85,7 +87,7 @@ yurutucu bagimsiz yeniden hesaplar. Digest disinda kalanlar (R25 kuraliyla ayni)
 | CANLI bolum (yalniz `-Live`) | `:72-101` | gorev modeli (API/Web/CutoverWriter), dinleyici + surec komut satiri, host surecleri **okunur**; 4 HTTP istegi: API `GET /` (404 beklenir), Web `GET /` (200), `POST /api/auth/smoke/login {}` (400), `GET /api/auth/capabilities` (200) |
 | Paket yazmasi | `:106` | `qualification/REAL-PRIMITIVES-RESULTS.json` **uzerine yazilir** — kimlik kapsaminda (§1) |
 | Restart / gorev degisikligi | — | **YOK** |
-| Surec-ici durum (canli API) | `smoke-auth.controller.ts` `@UseGuards(LoginRateLimitGuard)` · `guards/login-rate-limit.guard.ts:17-62` | smoke login POST'u guard'dan gecer (guard pipe'tan ONCE calisir): API surecinin **bellegindeki** giris-deneme sayaci `request.ip` icin **+1** (pencere 60 s, en fazla 10; 10'a ulasinca blok 5 dk, sonraki istek 429). Depo `/auth/login` ve davet uclariyla PAYLASILIR; API restartinda sifirlanir. DB/dosya yazmasi DEGIL. Butce §6.1 |
+| Surec-ici durum (canli API) | `smoke-auth.controller.ts` `@UseGuards(LoginRateLimitGuard)` · `guards/login-rate-limit.guard.ts:17-62` | smoke login POST'u guard'dan gecer (guard pipe'tan ONCE calisir): API surecinin **bellegindeki** giris-deneme sayaci `request.ip` icin **+1** (pencere 60 s, en fazla 10; 10'a ulasinca blok 5 dk, sonraki istek 429). Depo `/auth/login` (`auth.controller.ts:34,45`), davet (`user-invite.controller.ts:58`) ve portal girisi (`portal.controller.ts:78`) ile PAYLASILIR; anahtar yalniz IP; API restartinda sifirlanir. DB/dosya yazmasi DEGIL. Butce §6.1 |
 | Canli DB yazmasi | canli RELEASE21 API kaynagi | **YOK**: `AllExceptionsFilter` yalniz **>=500**'u ErrorLog'a yazar (400/404 haric); `SmokeAuthorizationGuard` bearer yoksa no-op; `TenantLifecycleInterceptor` kullanici yoksa ve GET'te gecirir; `SmokeLoginDto` `{}` ile `ValidationPipe`'ta 400 (handler cagrilmaz); web uygulamasinda DB istemcisi yok. Beklenmedik 5xx olursa tek ErrorLog satiri yazilir |
 | Pins varsa | `:76-82` | muhurden sonra kosulursa gorev XML sha'si pins'e karsi da denetlenir; muhurden once yerlesik varsayilanlar |
 
@@ -99,6 +101,9 @@ esitligini ister → **Adim 2 muhurden once ZORUNLUDUR**. Seal `S-02` ayrica NC 
   Salt-okuma temaslar: `docker exec hukuk-postgres psql … SELECT` (DB snapshot) · Adim 2 ile ayni HTTP problari (`S-08d` `:248`; giris sayaci +1, §6.1) · gorev XML disa aktarimi.
   Diger yan etki: kanonik repoda `git fetch origin` (`:189`), yalniz uzak-izleme ref'lerini gunceller. Herhangi bir `S-*` duserse `SEAL_REFUSED` + exit 1 ve hicbir sey yazilmaz.
   `authority` varsa `-Reseal -ResealReason` olmadan reddeder; onceki nonce claim edilmisse reseal YASAK (`:168-171`).
+  **S-03 (`:162-165`)** pakette claim, NONCE marker veya `cutover-receipts` makbuzu varsa muhuru REDDEDER ve reseal mantigindan ONCE kosar.
+  Motor her cikista makbuz yazdigi icin (`Finish` `:373-391`; dizinler P-17'de `:507`, dusme kontrolu `:513`'ten ONCE olusur) motor bir kez
+  kostuktan sonra reseal MUMKUN DEGILDIR (F1).
 - **Verifier** — yalniz `qualification/VERIFY-RESULTS.json` (digest disi); git salt-okuma.
 
 ## 4. TEK YURUTME SIRASI
@@ -129,6 +134,8 @@ $R='C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27'; $p="$R\qualific
 - **Etki:** §3.2. Restart 0; canli DB yazmasi 0 (5xx olmazsa); `REAL-PRIMITIVES-RESULTS.json` yeniden yazilir.
 - **Basari:** `cikis=0` `REAL_PRIMITIVES_PASS (live=True)`; `total>=29`. CutoverWriter yukseltilmemis oturumda `NOT_MEASURED` kalabilir (Seal kabul eder; motor P-07 yukseltilmis olcer).
 - **Basarisizlik:** exit 1 `REAL_PRIMITIVES_FAIL` -> Seal `S-02b` reddeder; neden giderilir, yeniden kosulur (sonuc dosyasi uzerine yazilir).
+  **exit 2** — motor ayrisma hatasi (`:17`), fonksiyon cikarimi eksik (`:23`) ya da yerel test sunucusu acilamadi (`:35`): sonuc dosyasi
+  YAZILMAZ, onceki (canli olmayan) dosya kalir ve Seal `S-02b` onu `liveExecuted=false` diye reddeder; neden giderilir, yeniden kosulur (F5).
 
 ### Adim 3 — Kimlik dogrulama + calistiricilar (AYRI GO; yazici OFFICE 33, bagimsiz dogrulama ana yurutucu)
 
@@ -140,10 +147,11 @@ R25'te kullanilan izinli turetme deseni. Yazma YALNIZ R27 paketi icinde; product
 | 3b | OWNER-COMMAND sablonunda `__OWNER_RATIFICATION_REF__` -> ref; kok `OWNER-COMMAND.C33-CUTOVER.ps1` = sablonun bayt-kopyasi | sablon + kok | sablon digest ICI, kok disi |
 | 3c | `Test-OwnerCommandTemplate.ps1` yeniden: OC-10 artik ref'in 3a kaydini ister | `OWNER-COMMAND-TEMPLATE-RESULTS.json` | digest ICI |
 | 3d | Verifier (muhursuz): `PACKAGE_STATIC_VERIFIED_UNSEALED`, `V-05d` canli PASS | `VERIFY-RESULTS.json` | digest disi |
-| 3e | Onayli kimlik: Adim 2 + 3b + 3c sonrasi digest -> `docs/APPROVED-IDENTITY-<digest8>.json` (`unsealedDigest`); node + PS + ana yurutucu bagimsiz | 1 dosya | digest disi |
+| 3e | Onayli kimlik: Adim 2 + 3b + 3c sonrasi dosya listesi -> `docs/APPROVED-IDENTITY-<digest8>.json`. `unsealedDigest` **OR-03a algoritmasiyla** hesaplanir (OWNER-RUN sablonu `:65-67`: her `yol:sha256` girdisinin SONUNA satir sonu eklenir, sonuncusu dahil; degerler listede yazildigi gibi). PACKAGE-IDENTITY `immutableBase` ise satirlari ARADA birlestirir: **ayni liste icin bile iki sayi FARKLI cikar**; onayli digest §1 digest'iyle karsilastirilmaz (F3). node + PS + ana yurutucu bagimsiz | 1 dosya | digest disi |
 | 3f | OWNER-RUN sablonu: `RATIF`, `PREFLIGHT_EVIDENCE` yolu + sha (Adim 1), `APPROVED_DIGEST`/`LIST` (3e), `OWNER_COMMAND_SHA` (3b kok), kayit yollari; kok `OWNER-RUN.C33-RELEASE22.ps1` = bayt-kopya | sablon + kok | onay-SONRASI degisen (`POST_APPROVAL_CHANGED`) |
 
 - **Basarisizlik:** herhangi bir sha/digest uyusmazligi -> DUR; yer tutucu kalirsa OWNER-RUN `exit 90`.
+- `PACKAGE-IDENTITY.json` bu adimda yeniden uretilirse ust-seviye `engineSha256` alanini TASIMALIDIR (preflight OP-01, §3.1); yoksa preflight yeniden kosulursa exit 1.
 - Owner, Adim 4'ten once onayli digest'i ve iki calistiricinin sha'sini gorur.
 
 ### Adim 4 — Muhur -> dogrulayici -> cutover (tek owner komutu)
@@ -158,18 +166,10 @@ OWNER-RUN sha'si Adim 3f'te verilir; komut o sha kontrolu ile verilir. Zincir:
 3. **VERIFIER**: `PACKAGE_VERIFIED`.
 4. **OWNER-COMMAND** -> motor.
 
-**Ayri adimlarla** (owner muhur ile cutover'i ayri onaylamak isterse; ikisi ayni 30 dk pencere icinde):
-
-```powershell
-$R='C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27'; if ((Get-FileHash -Algorithm SHA256 -LiteralPath "$R\tools\Seal-Package.ps1").Hash -cne '87FD9774D705283CFE109D2FD41778A7A66452EE83897CA67B8FC0AA6FA89794') { Write-Host 'SEAL SHA UYUSMUYOR - DUR' } else { powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$R\tools\Seal-Package.ps1" -RatificationRef 'OWNER-RATIFICATION-C33-RELEASE22-CUTOVER-20260911-R01'; Write-Host ('cikis=' + $LASTEXITCODE) }
-```
-
-```powershell
-$R='C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27'; if ((Get-FileHash -Algorithm SHA256 -LiteralPath "$R\qualification\Verify-Package.node.js").Hash -cne 'C24439DDD35F8D076FAAAA33AAC97A0CCE4840827BCDF4CCA419243AD0342FCC') { Write-Host 'VERIFIER SHA UYUSMUYOR - DUR' } else { node "$R\qualification\Verify-Package.node.js" "$R"; Write-Host ('cikis=' + $LASTEXITCODE) }
-```
-
-Sonra `OWNER-COMMAND.C33-CUTOVER.ps1 -Confirm "C33-RELEASE22-CUTOVER-GO"` (sha'si 3b'de). Pencere dolarsa OWNER-RUN claim yoksa
-ELLE reseal yapar; otomatik reseal yoktur.
+**Ayri adim yolu KALDIRILDI (F2).** Seal -> Verifier -> OWNER-COMMAND'i elle ayri ayri kosmak `OR-02` (preflight kaniti), `OR-03a` / `OR-03b`
+(onayli kimlik digest'i ve disk sapmasi) ve `OR-04b` (OWNER-COMMAND sha pini) kapilarini ATLAR; bunlar YALNIZ OWNER-RUN'da kosar, Seal ve
+OWNER-COMMAND denetlemez. Owner onayindan muhura kadar olusan bir sapma o yolda mekanik olarak yakalanmaz. **Tek desteklenen yol yukaridaki
+OWNER-RUN komutudur.** Otomatik reseal yoktur.
 
 **Motor fazlarinin yazma / restart etkisi** (`engine/Invoke-C33Cutover.ps1`, kaynakta):
 
@@ -190,10 +190,15 @@ Motorun DB yazmasi **0** (verifier `V-04`: INSERT/UPDATE/DELETE/TRUNCATE/DROP, m
 | Kod | Anlam | Ne yapilir |
 |---|---|---|
 | **0** | `C33_RELEASE22_CUTOVER_APPLIED_AND_VERIFIED` | Adim 5 |
-| **1** | `HARD_STOP_PREFLIGHT_NOT_APPLIED` — mutasyon 0, claim TUKETILMEDI | neden giderilir; pencere gecmisse reseal |
-| **2** | `ROLLBACK_COMPLETE_OLD_RUNTIME_RESTORED` — RELEASE21 geri, nonce TUKETILDI | yeni deneme = yeni ratifikasyon revizyonu + yeni muhur |
-| **3** | `HARD_STOP_STATE_UNCERTAIN_MANUAL_RECOVERY_REQUIRED` | reseal YOK; §5.2 elle kurtarma + owner karari |
-| 70 · 90 · 91 | makbuz yazimi · OWNER-COMMAND durdu · OWNER-RUN durdu (motor calismadi) | nedene gore |
+| **1** | `HARD_STOP_PREFLIGHT_NOT_APPLIED` — mutasyon 0, claim/marker YOK; **makbuz YAZILDI** | **Reseal YOK**: S-03 makbuzu gorur; OWNER-RUN yeniden kosulursa OR-05'te exit 91. Tek paket-ici yol: ayni authority penceresi DOLMADAN neden giderilir ve **OWNER-COMMAND dogrudan** kosulur (P-17 `:509` yalniz marker'a bakar; OWNER-COMMAND claim/marker denetler `:63-64`) — owner karari. Pencere dolduysa: yeni C33 paket numarasi + yeni ratifikasyon (emsal R21 PREFLIGHT_FAILED -> R22) |
+| **2** | `ROLLBACK_COMPLETE_OLD_RUNTIME_RESTORED` — RELEASE21 geri, nonce TUKETILDI | yeni deneme = **yeni C33 paket numarasi + yeni ratifikasyon** (R27 yeniden muhurlenemez) |
+| **3** | `HARD_STOP_STATE_UNCERTAIN_MANUAL_RECOVERY_REQUIRED` | reseal YOK; §5.2 elle kurtarma + owner karari; yeni deneme yeni paket numarasi ister |
+| 70 | makbuz birincil yola yazilamadi — **motor KOSTU** (makbuz yedek yolda olabilir) | reseal YOK; makbuz/journal okunur; owner karari |
+| 90 · 91 | OWNER-COMMAND / OWNER-RUN durdu (verifier REJECTED, pencere dolmasi, yer tutucu vb.) — **motor calismadi** | neden giderilir; OWNER-RUN yeniden kosulur, authority varsa ve claim yoksa reseal yapar (S-03 gecer: makbuz yok) |
+
+> **Paket ici eski metinler bu tabloyla CELISIR ve gecersizdir:** `README.OWNER.md` §6 exit 1 / exit 2 satirlari (R25'ten miras) ve OWNER-COMMAND
+> sablonu `:61` mesaji ("OWNER-RUN yeniden kosulur, claim yoksa elle reseal" — yalniz motor HIC kosmadiysa dogru). Paket bu asamada
+> degistirilmedi; yurutmede BU tablo gecerlidir. README duzeltmesi owner GO ile Adim 3'te, onay anlik goruntusunden ONCE yapilabilir.
 
 ### Adim 5 — Teknik kabul (salt-okuma)
 
@@ -263,16 +268,23 @@ Geri gelen kusurlar: AK-2 · AK-1a · AK-1a eki · CLF-O0-01 · B-1. F-B01-03/F0
 Once makbuzdaki `rollback.detail` ve journal okunur. Yalniz bin + gorev katmani; sha ve ACL korumali:
 
 ```powershell
-$G='C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27\generations\R21'; $B='C:\Ops\hukuk\bin'
-$exp=[ordered]@{'hukuk-task-host.exe'='1397C54C46D4E9979A79C929959129D54954F8CE36B7CFB333ED88C2522F9F22';'start-api.ps1'='4ACA26CD6006B0D6B5D0B06166FE60AEA05973B2F668E642C667D914076496A1';'start-web.ps1'='DA62DD2D507537A8E1A6495E82D163D315A56DBE97189007411D803F2AB5D531'}
-foreach($f in $exp.Keys){ if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $G $f)).Hash -cne $exp[$f]){ throw "rollback kaynagi sapmis: $f" } }
-$sd=@{}; foreach($f in $exp.Keys){ $sd[$f]=(Get-Acl -LiteralPath (Join-Path $B $f)).Sddl }
-Stop-ScheduledTask -TaskName 'HukukPlatform-API'; Stop-ScheduledTask -TaskName 'HukukPlatform-Web'
-$t0=Get-Date; while((Get-NetTCPConnection -State Listen -LocalPort 8080,3002 -ErrorAction SilentlyContinue) -or (Get-Process -Name 'hukuk-task-host' -ErrorAction SilentlyContinue)){ if(((Get-Date)-$t0).TotalSeconds -gt 90){ throw 'surecler 90 s icinde durmadi - DUR' }; Start-Sleep -Milliseconds 500 }
-foreach($f in $exp.Keys){ $d=Join-Path $B $f; Copy-Item -LiteralPath (Join-Path $G $f) -Destination $d -Force; if((Get-FileHash -Algorithm SHA256 -LiteralPath $d).Hash -cne $exp[$f]){ throw "geri yazim dogrulanamadi: $f" }; $a=Get-Acl -LiteralPath $d; if($a.Sddl -cne $sd[$f]){ $a.SetSecurityDescriptorSddlForm($sd[$f]); Set-Acl -LiteralPath $d -AclObject $a } }
-Enable-ScheduledTask -TaskName 'HukukPlatform-API' | Out-Null; Enable-ScheduledTask -TaskName 'HukukPlatform-Web' | Out-Null
-Start-ScheduledTask -TaskName 'HukukPlatform-API'; Start-ScheduledTask -TaskName 'HukukPlatform-Web'
+& {
+    $ErrorActionPreference = 'Stop'
+    $G='C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27\generations\R21'; $B='C:\Ops\hukuk\bin'
+    $exp=[ordered]@{'hukuk-task-host.exe'='1397C54C46D4E9979A79C929959129D54954F8CE36B7CFB333ED88C2522F9F22';'start-api.ps1'='4ACA26CD6006B0D6B5D0B06166FE60AEA05973B2F668E642C667D914076496A1';'start-web.ps1'='DA62DD2D507537A8E1A6495E82D163D315A56DBE97189007411D803F2AB5D531'}
+    foreach($f in $exp.Keys){ if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $G $f)).Hash -cne $exp[$f]){ throw "rollback kaynagi sapmis: $f" } }
+    $sd=@{}; foreach($f in $exp.Keys){ $sd[$f]=(Get-Acl -LiteralPath (Join-Path $B $f)).Sddl }
+    Stop-ScheduledTask -TaskName 'HukukPlatform-API'; Stop-ScheduledTask -TaskName 'HukukPlatform-Web'
+    $t0=Get-Date; while((Get-NetTCPConnection -State Listen -LocalPort 8080,3002 -ErrorAction SilentlyContinue) -or (Get-Process -Name 'hukuk-task-host' -ErrorAction SilentlyContinue)){ if(((Get-Date)-$t0).TotalSeconds -gt 90){ throw 'surecler 90 s icinde durmadi - DUR' }; Start-Sleep -Milliseconds 500 }
+    foreach($f in $exp.Keys){ $d=Join-Path $B $f; Copy-Item -LiteralPath (Join-Path $G $f) -Destination $d -Force; if((Get-FileHash -Algorithm SHA256 -LiteralPath $d).Hash -cne $exp[$f]){ throw "geri yazim dogrulanamadi: $f" }; $a=Get-Acl -LiteralPath $d; if($a.Sddl -cne $sd[$f]){ $a.SetSecurityDescriptorSddlForm($sd[$f]); Set-Acl -LiteralPath $d -AclObject $a } }
+    Enable-ScheduledTask -TaskName 'HukukPlatform-API' | Out-Null; Enable-ScheduledTask -TaskName 'HukukPlatform-Web' | Out-Null
+    Start-ScheduledTask -TaskName 'HukukPlatform-API'; Start-ScheduledTask -TaskName 'HukukPlatform-Web'
+}
 ```
+
+> **Blok TEK ifadedir** (`& { ... }` + `$ErrorActionPreference = 'Stop'`): tamami BIR KEREDE yapistirilir. Herhangi bir `throw` ya da
+> cmdlet hatasi sonraki Stop / Copy / Set-Acl / Start satirlarini DURDURUR. Satir satir yapistirma YAPILMAZ (eski bicimde bir satirdaki
+> `throw` yalniz o satiri durduruyor, sonraki satirlar yine kosuyordu — F6, ana yurutucu bagimsiz dogrulamasi).
 
 Ardindan Adim 5 blogu **geri yon beklentileriyle** (kok `HY_W4_RELEASE21`, BUILD_ID `g91HUaBesekB-R2rRawQj`, bin = preimage) kosulur.
 
@@ -293,8 +305,12 @@ start 240 s (ayri). Rollback suresi olculmemis. Web BUILD_ID degisir. Cutover pe
 | 6 CLIENT I9 | RELEASE22 | 3 giris | paket §9, `i9-run.js` |
 
 - Sinir: surec basina, IP basina 60 s'de 10. Sira sinirin cok altinda kalir.
-- Ayni dakikada loopback'ten gelen baska giris denemeleri (or. elle `/auth/login`) ayni sayaca eklenir.
-- 429 alinirsa ilgili kapi duser: `-Live` LIVE-P08-smoke FAIL · Seal `S-08d` exit 1 · motor `P-08` `HARD_STOP_PREFLIGHT_NOT_APPLIED` (mutasyon 0). Restart YAPILMAZ; 5 dk beklenir ve adim tekrarlanir.
+- Ayni dakikada loopback'ten gelen baska giris denemeleri (elle `/auth/login`, portal girisi, davet kabulu) ayni sayaca eklenir. Anahtar yalniz
+  IP oldugundan tum loopback girisleri ayni butceyi paylasir (CIKARIM: kurulum yalniz loopback, V-01 LAN 0/5).
+- 429 alinirsa: `-Live` LIVE-P08-smoke FAIL ve Seal `S-08d` exit 1 — ikisinde de pakete durum yazilmaz; restart YAPILMAZ, 5 dk beklenir ve
+  adim tekrarlanir. Motor `P-08` 429 alirsa `HARD_STOP_PREFLIGHT_NOT_APPLIED` (mutasyon 0) ama **makbuz YAZILIR**: OWNER-RUN tekrari exit 91
+  verir; yalniz authority penceresi hala aciksa 5 dk sonra OWNER-COMMAND dogrudan kosulur (owner karari), pencere dolduysa yeni C33 paket
+  numarasi + yeni ratifikasyon (§4 cikis tablosu).
 - Adim 2 ile Adim 4 arasinda gereksiz `-Live` tekrarindan kacinilir.
 - Bulgu: ana yurutucu (#2618); bu belgede kaynakta yeniden dogrulandi.
 
@@ -330,7 +346,7 @@ start 240 s (ayri). Rollback suresi olculmemis. Web BUILD_ID degisir. Cutover pe
 | 2 | Adim 1 owner preflight kosumu | owner (yukseltilmis) |
 | 3 | Adim 2 `-Live` kosumu | owner GO |
 | 4 | Adim 3 onayli kimlik + calistiricilar | owner GO; yazici OFFICE 33, dogrulama ana yurutucu |
-| 5 | Adim 4 canli yayin (tek komut ya da muhur/cutover ayri) | owner |
+| 5 | Adim 4 canli yayin (tek OWNER-RUN komutu; ayri adim yolu yok) | owner |
 | 6 | CLIENT I9 canli kosumu | owner GO |
 | 7 | OFFICE AK-2 / AK-1a canli islevsel kabul (sentetik tenant) | owner GO (her biri) |
 

@@ -9,6 +9,7 @@ KIMLIK    : PACKAGE-IDENTITY immutableBase.digest DBE6B8E5D8E18C85F2AA857944125F
 KIMLIK DOS: PACKAGE-IDENTITY.json sha256 24DC59DBE03F44597FE6AFAA3891A74F931568FCFC6B9CBBC4FE4C8579F60E2F (2026-09-11 engineSha256 alani eklendi; onceki 56ACAC43… — digest DEGISMEDI; bkz. RELEASE22-R27-YURUTME-PAKETI-R01 §3.1)
 R26       : HY_C33_RELEASE21B1_CUTOVER_R26 DEGISTIRILMEDI — tarihsel/hazir; R26 icin muhur/authority/cutover YOK
 ONCEKI    : RELEASE22-ADAY-HAZIRLIK-R01 (#2614) — §4.5 bayat "R26" atfi bu PR ile duzeltildi
+DUZELTME  : 2026-09-11 — §7 cikis semantigi ve §8 elle kurtarma blogu (F1/F6); gecerli yurutme metni RELEASE22-R27-YURUTME-PAKETI-R01 §4 / §5.2
 ```
 
 Asagidaki bolumler, paket icindeki inceleme belgesinin (`docs/LIVE-APPROVAL-PACKAGE-R27.md`) metnidir; o dosyanin sha256 degeri
@@ -183,7 +184,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Development\HUKUK_YA
 
 Cikis: **0** `C33_RELEASE22_CUTOVER_APPLIED_AND_VERIFIED` · **1** `HARD_STOP_PREFLIGHT_NOT_APPLIED` (mutasyon 0) · **2**
 `ROLLBACK_COMPLETE_OLD_RUNTIME_RESTORED` (nonce tuketildi) · **3** `HARD_STOP_STATE_UNCERTAIN_MANUAL_RECOVERY_REQUIRED` ·
-70 makbuz · 90/91 calistirici durdu. Otomatik reseal / tekrar YOK (README §6).
+70 makbuz · 90/91 calistirici durdu. Otomatik reseal / tekrar YOK.
+**Duzeltme (2026-09-11, F1):** motor bir kez kostuktan sonra (exit 1/2/3/70) R27 yeniden muhurlenemez (Seal S-03 makbuzu gorur). Paket ici
+`README.OWNER.md` §6'nin exit 1/2 satirlari bu bakimdan HATALIDIR. Gecerli cikis semantigi: `RELEASE22-R27-YURUTME-PAKETI-R01.md` §4.
 
 ## 8. Geri donus komutlari
 
@@ -195,16 +198,23 @@ kaynak `generations/R21` sha-dogrulamali, atomik) -> RELEASE22 `.env` (sha esits
 yalniz bin + gorev katmani; sha ve ACL korumali):
 
 ```powershell
-$G='C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27\generations\R21'; $B='C:\Ops\hukuk\bin'
-$exp=[ordered]@{'hukuk-task-host.exe'='1397C54C46D4E9979A79C929959129D54954F8CE36B7CFB333ED88C2522F9F22';'start-api.ps1'='4ACA26CD6006B0D6B5D0B06166FE60AEA05973B2F668E642C667D914076496A1';'start-web.ps1'='DA62DD2D507537A8E1A6495E82D163D315A56DBE97189007411D803F2AB5D531'}
-foreach($f in $exp.Keys){ if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $G $f)).Hash -cne $exp[$f]){ throw "rollback kaynagi sapmis: $f" } }
-$sd=@{}; foreach($f in $exp.Keys){ $sd[$f]=(Get-Acl -LiteralPath (Join-Path $B $f)).Sddl }
-Stop-ScheduledTask -TaskName 'HukukPlatform-API'; Stop-ScheduledTask -TaskName 'HukukPlatform-Web'
-$t0=Get-Date; while((Get-NetTCPConnection -State Listen -LocalPort 8080,3002 -ErrorAction SilentlyContinue) -or (Get-Process -Name 'hukuk-task-host' -ErrorAction SilentlyContinue)){ if(((Get-Date)-$t0).TotalSeconds -gt 90){ throw 'surecler 90 s icinde durmadi - DUR' }; Start-Sleep -Milliseconds 500 }
-foreach($f in $exp.Keys){ $d=Join-Path $B $f; Copy-Item -LiteralPath (Join-Path $G $f) -Destination $d -Force; if((Get-FileHash -Algorithm SHA256 -LiteralPath $d).Hash -cne $exp[$f]){ throw "geri yazim dogrulanamadi: $f" }; $a=Get-Acl -LiteralPath $d; if($a.Sddl -cne $sd[$f]){ $a.SetSecurityDescriptorSddlForm($sd[$f]); Set-Acl -LiteralPath $d -AclObject $a } }
-Enable-ScheduledTask -TaskName 'HukukPlatform-API' | Out-Null; Enable-ScheduledTask -TaskName 'HukukPlatform-Web' | Out-Null
-Start-ScheduledTask -TaskName 'HukukPlatform-API'; Start-ScheduledTask -TaskName 'HukukPlatform-Web'
+& {
+    $ErrorActionPreference = 'Stop'
+    $G='C:\Development\HUKUK_YAZILIMI\HY_C33_RELEASE22_CUTOVER_R27\generations\R21'; $B='C:\Ops\hukuk\bin'
+    $exp=[ordered]@{'hukuk-task-host.exe'='1397C54C46D4E9979A79C929959129D54954F8CE36B7CFB333ED88C2522F9F22';'start-api.ps1'='4ACA26CD6006B0D6B5D0B06166FE60AEA05973B2F668E642C667D914076496A1';'start-web.ps1'='DA62DD2D507537A8E1A6495E82D163D315A56DBE97189007411D803F2AB5D531'}
+    foreach($f in $exp.Keys){ if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $G $f)).Hash -cne $exp[$f]){ throw "rollback kaynagi sapmis: $f" } }
+    $sd=@{}; foreach($f in $exp.Keys){ $sd[$f]=(Get-Acl -LiteralPath (Join-Path $B $f)).Sddl }
+    Stop-ScheduledTask -TaskName 'HukukPlatform-API'; Stop-ScheduledTask -TaskName 'HukukPlatform-Web'
+    $t0=Get-Date; while((Get-NetTCPConnection -State Listen -LocalPort 8080,3002 -ErrorAction SilentlyContinue) -or (Get-Process -Name 'hukuk-task-host' -ErrorAction SilentlyContinue)){ if(((Get-Date)-$t0).TotalSeconds -gt 90){ throw 'surecler 90 s icinde durmadi - DUR' }; Start-Sleep -Milliseconds 500 }
+    foreach($f in $exp.Keys){ $d=Join-Path $B $f; Copy-Item -LiteralPath (Join-Path $G $f) -Destination $d -Force; if((Get-FileHash -Algorithm SHA256 -LiteralPath $d).Hash -cne $exp[$f]){ throw "geri yazim dogrulanamadi: $f" }; $a=Get-Acl -LiteralPath $d; if($a.Sddl -cne $sd[$f]){ $a.SetSecurityDescriptorSddlForm($sd[$f]); Set-Acl -LiteralPath $d -AclObject $a } }
+    Enable-ScheduledTask -TaskName 'HukukPlatform-API' | Out-Null; Enable-ScheduledTask -TaskName 'HukukPlatform-Web' | Out-Null
+    Start-ScheduledTask -TaskName 'HukukPlatform-API'; Start-ScheduledTask -TaskName 'HukukPlatform-Web'
+}
 ```
+
+> **Blok TEK ifadedir** (`& { ... }` + `$ErrorActionPreference = 'Stop'`): tamami BIR KEREDE yapistirilir. Herhangi bir `throw` ya da
+> cmdlet hatasi sonraki Stop / Copy / Set-Acl / Start satirlarini DURDURUR. Satir satir yapistirma YAPILMAZ (eski bicimde bir satirdaki
+> `throw` yalniz o satiri durduruyor, sonraki satirlar yine kosuyordu — F6, ana yurutucu bagimsiz dogrulamasi).
 
 Ardindan §10 blogu **geri yon beklentileriyle** (kok `HY_W4_RELEASE21`, BUILD_ID `g91HUaBesekB-R2rRawQj`, bin = preimage) kosulur.
 
