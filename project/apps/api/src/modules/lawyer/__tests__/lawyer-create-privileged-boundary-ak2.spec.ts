@@ -455,8 +455,10 @@ describe('AK-2 — update davranışı DEĞİŞMEDİ', () => {
         update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...self, ...data })),
       },
       user: { findUnique: jest.fn().mockResolvedValue(actorUser) },
+      // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
+      $transaction: jest.fn(async (cb: any) => cb(prisma)),
     };
-    return { svc: new LawyerService(prisma, { log: jest.fn() } as any, {} as any), prisma };
+    return { svc: new LawyerService(prisma, { log: jest.fn(), logInTransaction: jest.fn().mockResolvedValue(undefined) } as any, {} as any), prisma };
   };
 
   it('update "alan varsa" kuralı korunur: delege lawyerRank=LAWYER (varsayılan değer) göndermek bile 403', async () => {

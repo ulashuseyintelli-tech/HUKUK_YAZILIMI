@@ -22,8 +22,10 @@ const build = (opts: { self?: Record<string, unknown>; actorUser?: unknown } = {
       update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...self, ...data })),
     },
     user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser ?? null) }, // actor PARTNER lookup
+    // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
+    $transaction: jest.fn(async (cb: any) => cb(prisma)),
   };
-  const audit: any = { log: jest.fn().mockResolvedValue(undefined) };
+  const audit: any = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
   // L1A: constructor 3. parametre (OfficeApprovalService) aldı; delegation testleri deactivate'e dokunmaz → boş mock yeter.
   const officeApproval: any = { isApproverEligible: jest.fn() };
   return { svc: new LawyerService(prisma, audit, officeApproval), prisma, audit };
@@ -44,8 +46,12 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
     expect(prisma.lawyer.update).toHaveBeenCalledTimes(1);
     expect(prisma.lawyer.update.mock.calls[0][0].data.canApproveOfficeActions).toBe(true);
     expect(prisma.user.findUnique).not.toHaveBeenCalled(); // ADMIN → lawyer-rank lookup gereksiz
-    expect(audit.log).toHaveBeenCalledTimes(1);
-    const a = audit.log.mock.calls[0][0];
+    // B11 (owner karari 2026-09-12): delegation audit'i guncellemeyle AYNI transaction'da (logInTransaction);
+    // hata-yutan transaction-disi `audit.log` kanali ARTIK KULLANILMAZ. Eylem ve metadata bicimi DEGISMEDI.
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+    expect(audit.logInTransaction.mock.calls[0][0]).toBe(prisma); // tx istemcisi (fikstur: tx = prisma)
+    expect(audit.log).not.toHaveBeenCalled();
+    const a = audit.logInTransaction.mock.calls[0][1];
     expect(a).toMatchObject({ action: "LAWYER_OFFICE_APPROVAL_DELEGATION_CHANGED", entityType: "LAWYER", entityId: LAWYER_ID, userId: "admin1" });
     expect(a.metadata.canApproveOfficeActions).toEqual({ from: false, to: true });
   });
@@ -54,7 +60,8 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
     const { svc, prisma, audit } = build({ self: { id: LAWYER_ID, name: "A", surname: "B", isActive: true, tenantId: TENANT, canApproveOfficeActions: true } });
     await svc.update(TENANT, LAWYER_ID, { canApproveOfficeActions: false }, ADMIN);
     expect(prisma.lawyer.update.mock.calls[0][0].data.canApproveOfficeActions).toBe(false);
-    expect(audit.log.mock.calls[0][0].metadata.canApproveOfficeActions).toEqual({ from: true, to: false });
+    expect(audit.logInTransaction.mock.calls[0][1].metadata.canApproveOfficeActions).toEqual({ from: true, to: false });
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
   // ── YETKİLİ: PARTNER ──
@@ -63,7 +70,8 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
     await svc.update(TENANT, LAWYER_ID, { canApproveOfficeActions: true }, PARTNER_ACTOR);
     expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
     expect(prisma.lawyer.update.mock.calls[0][0].data.canApproveOfficeActions).toBe(true);
-    expect(audit.log).toHaveBeenCalledTimes(1);
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
   // ── YETKİSİZ → 403, YAZILMAZ, AUDIT YOK ──
@@ -72,6 +80,7 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
     await expect(svc.update(TENANT, LAWYER_ID, { canApproveOfficeActions: true }, NONPARTNER_ACTOR)).rejects.toThrow(ForbiddenException);
     expect(prisma.lawyer.update).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
   it("staff/linksiz aktör (lawyer yok, role USER) → 403 (approver yönetemez)", async () => {
@@ -104,6 +113,7 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
     await svc.update(TENANT, LAWYER_ID, { canApproveOfficeActions: false, phone: "5551112233" }, NONPARTNER_ACTOR);
     expect(prisma.user.findUnique).not.toHaveBeenCalled(); // guard hiç çağrılmadı
     expect(audit.log).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
     expect(prisma.lawyer.update).toHaveBeenCalledTimes(1);
     expect("canApproveOfficeActions" in prisma.lawyer.update.mock.calls[0][0].data).toBe(false); // generic write'a girmedi
     expect(prisma.lawyer.update.mock.calls[0][0].data.phone).toBe("5551112233"); // diğer alan normal yazılır
@@ -114,6 +124,7 @@ describe("K1-4b LawyerService — office approval delegation (canApproveOfficeAc
     await svc.update(TENANT, LAWYER_ID, { phone: "5550001122" }, NONPARTNER_ACTOR);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
     expect(audit.log).not.toHaveBeenCalled();
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
     expect(prisma.lawyer.update).toHaveBeenCalledTimes(1);
   });
 });

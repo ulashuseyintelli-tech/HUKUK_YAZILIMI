@@ -31,7 +31,9 @@ const build = (isActive = true) => {
     },
     $transaction: jest.fn(),
   };
-  const audit = { log: jest.fn().mockResolvedValue(undefined) };
+  // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
+  prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(prisma));
+  const audit = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
   const service = new LawyerService(prisma as never, audit as never, {} as never);
   return { service, prisma, audit };
 };

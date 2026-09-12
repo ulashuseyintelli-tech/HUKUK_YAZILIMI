@@ -24,8 +24,10 @@ const build = (opts: { self?: Record<string, unknown>; actorUser?: unknown } = {
       update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...self, ...data })),
     },
     user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser ?? null) }, // actor PARTNER lookup
+    // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
+    $transaction: jest.fn(async (cb: any) => cb(prisma)),
   };
-  const audit: any = { log: jest.fn().mockResolvedValue(undefined) };
+  const audit: any = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
   return { svc: new LawyerService(prisma, audit), prisma, audit };
 };
 
