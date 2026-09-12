@@ -320,10 +320,12 @@ koşuldu — **WinPS 5.1 başarı:** `D3-0 TAMAM`, çıkış 0, dinleyici `127.0
 & { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-window-apply.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'ED64A751F75B0F0C3B1406759E92C2F20DAF29018CC893A5EB387391C822BBCF'){ throw 'T-AC SHA UYUSMUYOR - DUR' }; $env:T_MODE='live'; $env:T_GOREF='<OWNER-GO-CLIENT-I11-YYYYMMDD-Rnn>'; $env:T_ENV_PRE_SHA='7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'T-AC cikis=' + $LASTEXITCODE }
 ```
 
-**D3-4 — T-PENCERE-KAPA çağrısı** (aynı pin; yedek güveni ve pin denetimi betiğin içindedir):
+**D3-4 — T-PENCERE-KAPA çağrısı** (aynı pin; yedek güveni ve pin denetimi betiğin içindedir). `$rid` §9 çıktısındaki runId'dir
+(`crypto.randomBytes(4)` → 8 hex küçük harf, `i11-run.js:45`); doldurulmamış yer tutucu blokta DURUR — literal `<runId>` ile koşulan T-KAPA
+kanıtı bu koşuma bağlayamaz ve "Pozitif hedef kanıtı: YOK" verir (CLIENT notu). §9 runId üretmeden durduysa `$rid=''` yazılır:
 
 ```powershell
-& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-window-close.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '3F027B0DA7AA65F5F8C7A016F1EAD605706C2A4BDA2E703D4A6D4A199DA8BB2C'){ throw 'T-KAPA SHA UYUSMUYOR - DUR (§5.1)' }; $env:T_MODE='live'; $env:T_RUNID='<runId>'; $env:T_ENV_PRE_SHA='7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'T-KAPA cikis=' + $LASTEXITCODE }
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-window-close.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '3F027B0DA7AA65F5F8C7A016F1EAD605706C2A4BDA2E703D4A6D4A199DA8BB2C'){ throw 'T-KAPA SHA UYUSMUYOR - DUR (§5.1)' }; $rid='<runId>'; if($rid -and ($rid -cnotmatch '^[0-9a-f]{8}$')){ throw 'T_RUNID gecersiz ya da yer tutucu - DUR: §9 ciktisindaki 8 hex runId yazilir (§9 runId uretmediyse bos deger)' }; $env:T_MODE='live'; $env:T_RUNID=$rid; $env:T_ENV_PRE_SHA='7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'T-KAPA cikis=' + $LASTEXITCODE }
 ```
 
 **D3-S — Yalnız yakalayıcıyı durdur** (D3-1, K-T0'dan ÖNCE durduysa — canlı değişiklik yoktur, API yeniden başlatılmaz):
@@ -338,7 +340,7 @@ koşuldu — **WinPS 5.1 başarı:** `D3-0 TAMAM`, çıkış 0, dinleyici `127.0
 | D3-1 | **T-PENCERE-AÇ** `ED64A751…` (`pwsh -File`) | `T_MODE=live` · `T_GOREF=<İ11 ref>` · `T_ENV_PRE_SHA=7A7228B1…` | **T-PIN** · **K-ELEV** · K-T1..K-T3 yakalayıcı yalnız loopback, AUTH ilan yok · K-T4 API tek dinleyici · **K-T5 ayın 1'i 02:00–05:00 reddi** · **K-T0a** env sha = pin · yedek dizini yok · kayıt var · **K-T0** yeni korumalı `i11live` (kopyadan önce) + yedek + SDDL tabanı + taban dosyası + yakalayıcı kaydı korumalı · **K-T6 Web durur + `I11-WINDOW-BLOCK-8080/-3002`** · K-T7/K-T8 bayt düzeyinde TAM iki satır (`SMTP_HOST=127.0.0.1`, `SMTP_PORT=2526`), satır sonları/BOM/SDDL aynı · API restart (180 s) · `T-AC cikis=0` |
 | D3-2 | **İ11 §9 bloğu** `27E754A7…` — **TEK KEZ** (belgeden kopyalanır; yalnız üç değişken doldurulur; aynı pencereye yapıştırılır) | `$GoRef` = İ11 ref · `$SendGo` = aynı ref · `$SmtpAck = 'EVET'` | K-GO · K-WT · K-ARC (9 araç + 12 ürün hash) · K-PAR (noauth ve `smtp-sink.jsonl` dışlanır) · K-INTAKE · tek `node i11-run.js`; yazma yalnız `cl-acc-<runId>` (gönderim açık **28 satır**; başarısız gönderimde 21); kapanış koşum içinde |
 | D3-3 | **Kurtarma** (yalnız koşum kesilir/durum belirsizse; `CLIENT-LIVE-ACCEPTANCE-I11-R01.md` §11) | `CL_RUN_ID=<runId>` + §9'un `CL_*` değerleri | `i11-03-close-links.js` `87C16DB3…` → bağlantılar REVOKED · `cl-09-close-access.js` `01273998…` → 3 User pasif + Case CLOSED; tekrarı güvenli |
-| D3-4 | **T-PENCERE-KAPA** `3F027B0D…` (`pwsh -File`) — **K-T0 sonrası HER SONUÇTA** | `T_MODE=live` · `T_RUNID=<runId>` · `T_ENV_PRE_SHA=7A7228B1…` (T-AÇ ile aynı) | **T-PIN** · **K-ELEV** · K-T10b pozitif hedef kanıtı (kanıt dosyaları güvenilir değilse YOK) · **R-T1 yedek yalnız güvenilir ve sha = pin ise geri yazılır** (aksi hâlde yazılmaz) · R-T2 API restart (180 s) · R-T3 env = pin + özgün hedef · **R-T4a engel kaldır + R-T4b Web — HER DURUMDA** · **R-T5 yakalayıcı durdur — HER DURUMDA** · R-T6 sentetik alan dışı ileti → yeniden gönderim YOK · **R-T7 env SDDL = K-T0 tabanı** · hata varsa tüm adımlar denendikten sonra **sonda throw** (`T-KAPA cikis=1`, adım listesi) |
+| D3-4 | **T-PENCERE-KAPA** `3F027B0D…` (`pwsh -File`) — **K-T0 sonrası HER SONUÇTA** | `T_MODE=live` · `T_RUNID=<§9 runId, 8 hex>` (yer tutucu blokta durur) · `T_ENV_PRE_SHA=7A7228B1…` (T-AÇ ile aynı) | **T-PIN** · **K-ELEV** · K-T10b pozitif hedef kanıtı (kanıt dosyaları güvenilir değilse YOK) · **R-T1 yedek yalnız güvenilir ve sha = pin ise geri yazılır** (aksi hâlde yazılmaz) · R-T2 API restart (180 s) · R-T3 env = pin + özgün hedef · **R-T4a engel kaldır + R-T4b Web — HER DURUMDA** · **R-T5 yakalayıcı durdur — HER DURUMDA** · R-T6 sentetik alan dışı ileti → yeniden gönderim YOK · **R-T7 env SDDL = K-T0 tabanı** · hata varsa tüm adımlar denendikten sonra **sonda throw** (`T-KAPA cikis=1`, adım listesi) · **kabul için:** `Pozitif hedef kaniti: VAR` **ve** `PENCERE KAPANDI - tum adimlar basarili.` · `T-KAPA cikis=0` |
 | D3-S | yalnız yakalayıcı durdur | — | D3-1 T-PIN / K-ELEV / K-T1..K-T5 / K-T0a'da durduysa: `:2526 dinleyici=0` |
 | D3-5 | **Kapanış ölçütü** (salt-okuma; OFFICE) | D1-5 bloğunun iki `env` satırı | `env sha=7A7228B1…` VE `env sddl` = D1-5 taban çizgisi (R-T7 ile bağımsız aynı karşılaştırma); API/Web kökü RELEASE23; `I11-WINDOW-BLOCK` 0; `:2526` 0 |
 
@@ -365,6 +367,7 @@ koşuldu — **WinPS 5.1 başarı:** `D3-0 TAMAM`, çıkış 0, dinleyici `127.0
 | D3-4 T-KAPA sha uyuşmaz (kanonik ağaç değişmiş) | pencere açık | T-KAPA KOŞULMAZ; betik `59abb70b`'deki blob'dan sha doğrulamalı bayt-kopya ile koşulur — owner kararı; dondurma kuralı ihlali kayda yazılır |
 | D3-4 R-T1 "yedek dizini/dosyası güvenilir DEĞİL" ya da "pinli değere EŞİT DEĞİL" | env pencere değerinde kalır (SMTP loopback; yakalayıcı R-T5'te durur → dış gönderim yok); R-T4/R-T5 yine koşar, erişim geri açılır | sonda throw; owner'a DERHAL; **elle müdahale:** yedek başka kaynaktan doğrulanmadan canlı `.env`'e YAZILMAZ; doğrulanmış kaynak sha doğrulamalı `HY_W4_RELEASE22\project\apps\api\.env` (`7A7228B1…`) — owner kararı |
 | D3-4 sonda throw (diğer adımlar) | R-T4a/R-T4b/R-T5 yine denendi; listelenen adım(lar) başarısız | owner'a DERHAL; otomatik tekrar YOK; kurtarma = aynı D3-4 bloğunun tekrarı (idempotent, ölçüldü) |
+| D3-4 çıkış 0 fakat `Pozitif hedef kaniti: YOK` | pencere kapandı, env = pin | geri dönüş TAMAM; **İ11 A-5/A-6 kanıtı eksik → GO-COMPLETE DEĞİL**; owner'a (yeni İ11 penceresi ayrı karar; `cl-acc-<runId>` yeniden açılmaz) |
 | R-T7 veya D3-5 `env sddl` tabandan farklı | içerik bayt-eşit | owner'a bildirilir; otomatik ACL düzeltmesi YOK |
 | **D3 açıkken yayın geri dönüşü gerekirse** | — | **ÖNCE D3-4** (engel + Web her durumda geri açılır; env ön görüntüye), **SONRA** §5.3 |
 
@@ -440,7 +443,7 @@ Cutover penceresinde kabul/sentetik tenant koşumu YAPILMAZ (motor V-01 DB snaps
 > 6. **D3 (CLIENT yönetir; yükseltilmiş `pwsh` 7 penceresini owner sağlar ve blokları owner yapıştırarak koşar; tek yürütücü; karışık kabuk
 >    zinciri yok; D3 süresince kanonik ağaçta git işlemi yok):** D3-0 (`i11live` yok · yakalayıcı + kayıt · K-PAR ön-kontrolü **0**) → D3-1 T-AÇ
 >    (`T_ENV_PRE_SHA` pini) → D3-2 İ11 §9 (gönderim AÇIK) **TEK KEZ** → gerekirse D3-3 kurtarma (runId) → D3-4 T-KAPA (aynı pin) **K-T0 sonrası
->    her sonuçta** — K-T0 öncesi düşüşte yalnız D3-S → D3-5 kapanış ölçütü. Bakım penceresidir (Web durur, :8080/:3002 dışarıya kapalı); her
+>    her sonuçta**, `T_RUNID` = §9 runId — K-T0 öncesi düşüşte yalnız D3-S → D3-5 kapanış ölçütü. Bakım penceresidir (Web durur, :8080/:3002 dışarıya kapalı); her
 >    restart bütçesi 180 s; aşımda otomatik tekrar YOK.
 > 6a. **Owner kabulleri (bu GO ile):** (i) T-KAPA R-T4a/R-T4b için çalışma kanıtı kaynak + AST + R-T5 benzeşimidir, hiçbir modda koşulmamıştır;
 >    (ii) CLIENT R07 §6 kalan riski: yürütücü hesabıyla çalışan yükseltilmemiş süreçler güvenilir kümededir (yedek değişikliğini pin yakalar).
@@ -454,7 +457,8 @@ Cutover penceresinde kabul/sentetik tenant koşumu YAPILMAZ (motor V-01 DB snaps
 >    `CL_TOKENFIX` artığının silinmesi · RELEASE22 kökünde değişiklik · #2655 B11'in yayına alınması.
 >
 > **IF GO-COMPLETE:** RELEASE23 canlı (`C33_RELEASE23_CUTOVER_APPLIED_AND_VERIFIED` + D1-5 PASS) · İ11 üç gözlemle canlıda kapandı ·
-> D3-4 `tüm adımlar başarılı` + D3-5 PASS · CLIENT sayaç 10/17 → **11/17** · hizmet kabulü **0/8 tam** · `CL_TOKENFIX` ayrı açık kalem.
+> D3-4 `Pozitif hedef kaniti: VAR` + `tum adimlar basarili` (çıkış 0) + D3-5 PASS · CLIENT sayaç 10/17 → **11/17** · hizmet kabulü **0/8 tam** ·
+> `CL_TOKENFIX` ayrı açık kalem.
 
 ## 8. Açık kalemler (kapatılmış gösterilmez)
 
