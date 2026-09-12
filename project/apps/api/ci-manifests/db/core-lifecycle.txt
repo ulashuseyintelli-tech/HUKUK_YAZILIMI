@@ -91,3 +91,8 @@ src/modules/auth/smoke/__tests__/smoke-principal-lifecycle.db-gated.integration.
 # Iddialar: taraf/ofis/adres/audit satiri 0 kalir; reaktive edilmis avukat pasife DONER; basari
 # yolu ve bagimsiz create cagrilari KORUNUR. Yamasiz kodda bu spec'in iki testi DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-create-inline-party-atomicity.db-gated.integration.spec.ts
+
+# B11 — ayricalikli avukat guncellemesi + audit GERCEK commit/rollback (disposable PostgreSQL).
+# Hata enjeksiyonu audit satirini tx icine YAZIP sonra firlatir: avukat satiri ve yazilmis audit satiri
+# birlikte geri alinir. Yamasiz kodda 5 testin 4'u DUSER (RED kanitlandi); no-op iki durumda da gecer.
+src/modules/lawyer/__tests__/lawyer-privileged-update-audit-b11.db-gated.integration.spec.ts

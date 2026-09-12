@@ -74,6 +74,27 @@ export function withDisplayNames<T extends { name: string; surname: string; titl
   return lawyers.map(withDisplayName);
 }
 
+/** B11 — `LAWYER_PRIVILEGE_CHANGED` audit'ine giren alanlar (delegation KENDI kaydiyla izlenir, burada YOK). */
+type PrivilegedLawyerAuditField = "lawyerRank" | "defaultPermissions" | "permissionsLocked" | "canModifyOtherPermissions";
+
+/**
+ * B11 — `defaultPermissions` icin DEGISIKLIK TESPITI (depolamayi ETKILEMEZ). Anahtar sirasindan bagimsiz kanonik
+ * metin uretir. Nesne KURMAZ, yalniz metin birlestirir: JSON.parse ile gelen kendi `__proto__`/`constructor`
+ * anahtarlari prototip zincirine dokunmadan okunur. SQL NULL ve JSON null (her ikisi de JS `null`) esit sayilir.
+ */
+function canonicalJson(value: unknown): string {
+  if (value === null || value === undefined) return "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 @Injectable()
 export class LawyerService {
   // K1-4b: AuditService @Global (AuditModule) — ek import gerekmez; office-approval delegation değişimini loglar.
@@ -544,14 +565,32 @@ export class LawyerService {
       permissionsLocked !== undefined ||
       canModifyOtherPermissions !== undefined;
 
+    // B11 (owner karari 2026-09-12): ayricalikli alanlarin GERCEK degisimi audit gerektirir. Yetki kapisi
+    // DEGISMEDI (alan VARSA tetiklenir); audit ise yalniz deger GERCEKTEN degisince uretilir (no-op audit YOK).
+    // `existing` projeksiyonu (`toPublicLawyer`) yalniz credential alanlarini siler; bu dort alan kiyas icin mevcuttur.
+    const privilegedChangedFields: PrivilegedLawyerAuditField[] = [];
     if (wantsPrivilegedFieldChange) {
       await this.assertCanManagePrivilegedFields(actor, tenantId);
-      if (lawyerRank !== undefined) writeData.lawyerRank = lawyerRank;
+      if (lawyerRank !== undefined) {
+        writeData.lawyerRank = lawyerRank;
+        if (lawyerRank !== existing.lawyerRank) privilegedChangedFields.push("lawyerRank");
+      }
       // Preserve the former raw-null write's JSON null (not SQL NULL) semantics.
-      if (defaultPermissions !== undefined) writeData.defaultPermissions = defaultPermissions === null ? Prisma.JsonNull : defaultPermissions;
-      if (permissionsLocked !== undefined) writeData.permissionsLocked = permissionsLocked;
+      if (defaultPermissions !== undefined) {
+        writeData.defaultPermissions = defaultPermissions === null ? Prisma.JsonNull : defaultPermissions;
+        if (canonicalJson(defaultPermissions) !== canonicalJson(existing.defaultPermissions)) {
+          privilegedChangedFields.push("defaultPermissions");
+        }
+      }
+      if (permissionsLocked !== undefined) {
+        writeData.permissionsLocked = permissionsLocked;
+        if (permissionsLocked !== existing.permissionsLocked) privilegedChangedFields.push("permissionsLocked");
+      }
       if (canModifyOtherPermissions !== undefined) {
         writeData.canModifyOtherPermissions = canModifyOtherPermissions;
+        if (canModifyOtherPermissions !== existing.canModifyOtherPermissions) {
+          privilegedChangedFields.push("canModifyOtherPermissions");
+        }
       }
     }
 
@@ -569,22 +608,46 @@ export class LawyerService {
       };
     }
 
-    const lawyer = await this.prisma.lawyer.update({
-      where: { id },
-      data: writeData,
-    });
-
-    // K1-4b: delegation GERÇEKTEN değiştiyse olgusal AuditLog (entityType LAWYER; ham PII yok, yalnız from/to bool).
-    if (delegationChange) {
-      await this.audit.log({
-        tenantId,
-        action: "LAWYER_OFFICE_APPROVAL_DELEGATION_CHANGED",
-        entityType: "LAWYER",
-        entityId: id,
-        userId: actor?.userId, // truthful actor
-        metadata: { lawyerId: id, canApproveOfficeActions: delegationChange },
-      });
-    }
+    // B11 (owner karari 2026-09-12): ayricalikli bir alan ya da delegation GERCEKTEN degistiyse guncelleme ve audit
+    // AYNI transaction'da yazilir. `logInTransaction` hata YUTMAZ -> audit yazilamazsa guncelleme GERI ALINIR.
+    // (Eskiden delegation audit'i guncellemeden SONRA hata-yutan `audit.log()` ile yaziliyordu: audit dusse bile
+    // yetki degisikligi audit'siz kalici oluyordu.) Hicbir ayricalikli degisiklik yoksa yol DEGISMEDI: genel profil
+    // alanlari bu kapsamin disindadir ve transaction/audit uretmez.
+    const needsPrivilegeAudit = delegationChange !== null || privilegedChangedFields.length > 0;
+    const lawyer = needsPrivilegeAudit
+      ? await this.prisma.$transaction(async (tx) => {
+          const updated = await tx.lawyer.update({ where: { id }, data: writeData });
+          // K1-4b: delegation kaydi MEVCUT eylem ve MEVCUT metadata bicimiyle, TEK kez yazilir (ham PII yok, from/to bool).
+          if (delegationChange) {
+            await this.audit.logInTransaction(tx, {
+              tenantId,
+              action: "LAWYER_OFFICE_APPROVAL_DELEGATION_CHANGED",
+              entityType: "LAWYER",
+              entityId: id,
+              userId: actor?.userId, // truthful actor
+              metadata: { lawyerId: id, canApproveOfficeActions: delegationChange },
+            });
+          }
+          // B11: diger dort ayricalikli alan icin TEK kayit. `canApproveOfficeActions` BURAYA GIRMEZ — delegation
+          // yukaridaki kendi kaydiyla zaten izlenir; iki kayitta ayni alan tekrarlanmaz (mukerrer kayit YOK).
+          // Metadata yalniz DEGISEN ALAN ADLARIDIR: tam DTO, eski/yeni degerler ve hassas alanlar KOPYALANMAZ.
+          if (privilegedChangedFields.length > 0) {
+            await this.audit.logInTransaction(tx, {
+              tenantId,
+              action: "LAWYER_PRIVILEGE_CHANGED",
+              entityType: "LAWYER",
+              entityId: id,
+              userId: actor?.userId, // assertCanManagePrivilegedFields aktoru DOGRULADI (userId yoksa 403)
+              actorType: "USER",
+              metadata: { changedFields: [...privilegedChangedFields] },
+            });
+          }
+          return updated;
+        })
+      : await this.prisma.lawyer.update({
+          where: { id },
+          data: writeData,
+        });
 
     // P01: credential alanlari public yanittan CIKARILIR.
     return this.projectLawyerResponse(tenantId, withDisplayName(lawyer) as Record<string, unknown>, actor);

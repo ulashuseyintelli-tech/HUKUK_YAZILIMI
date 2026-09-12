@@ -3975,7 +3975,7 @@ ayri olcum ister. Onceki turda sozlu olarak "33 spec'ten 24'u" denmisti; olculen
 | B8 | Onceden tuketilmis FD taleplerinin kurtarilmasi | Canlida OLCULDU (2026-09-11, salt-okuma): tuketilmis/kilitli kayit 0 -> bugun canli etki 0. |
 | B9 | Yerel worktree kalintisi `C:\Development\HY_WT\AK2_LAWYER_CREATE` | Repo disi; iskelet (0 dosya) olarak duruyor. Kanitlanmis tasfiye recetesi hazir. |
 | B10 | Kontrol -> yazma penceresi: yetki kararindan SONRA, yazmadan ONCE yetki geri alinirsa yazma yine gecer | OLCULDU: 21/21 kapi kendi metodunda ilk yazmadan ONCE, ama HICBIR yolda yazma yetki DURUMUNA kosullu degil (CLIENT R1A kosullu-updateMany deseni bu kapilarda KULLANILMIYOR). Istismar GOSTERILMEDI; pencere tek istek icidir. Kapatma karari owner'in — AK-1a eki "rol KARAR ANINDA DB'den" emsali var. |
-| B11 | Avukat profil guncellemesi (`PUT`/`PATCH /lawyers/:id`) icin audit kapsami | A2'den dogdu. Bugun yalniz `canApproveOfficeActions` DEGISIMI audit'lenir; `title` dahil diger alanlar ve AYNI ADMIN/PARTNER kapisina tabi ayricalikli alanlar (`lawyerRank`, `permissionsLocked`, `canModifyOtherPermissions`, `defaultPermissions`) audit'SIZ. Kanonik kural YOK. Karar secenekleri ve dogrulama sarti A2 tablosunda. STAFF update ayni durumda (kapsam karari). |
+| B11 | Avukat profil guncellemesi (`PUT`/`PATCH /lawyers/:id`) icin audit kapsami | **POLITIKA KARARI VERILDI (owner 2026-09-12) ve UYGULANDI — main'de; CANLIDA DEGIL; RELEASE23 adayinda DEGIL** (asagida "B11 POLITIKA + UYGULAMA"). Kapsam yalniz bes AYRICALIKLI alan; genel profil alanlari (title vb.) ve STAFF update BILINCLI olarak KAPSAM DISI. |
 
 **C. CANLI KABUL BEKLEYEN** (kod MAIN'DE, canlida DEGIL ya da canlida yalnizca isaret duzeyinde olculdu)
 
@@ -4083,3 +4083,62 @@ urun kodu ve test DEGISMEDI):**
 | **SINIF** | **POLITIKA KARARI — kusur DEGIL** (kanonik kural sessiz). Kalem **B11**. | — |
 | **Onerilen dar degisiklik** (yalniz owner audit'i ZORUNLU sayarsa) | **Secenek 1 (en dar, en yuksek deger):** yalniz ayricalikli alan degisimi icin `LAWYER_PRIVILEGE_CHANGED` (alan adi + from/to; PII 0) — delegation ile ayni yetki riski. **Secenek 2:** tum basarili profil guncellemeleri icin `LAWYER_UPDATE`, yalniz DEGISEN ALAN ADLARI (S2/S3 degerleri YOK). Her iki secenekte `prisma.lawyer.update` + audit tek `$transaction` + `logInTransaction` (AK-2 deseni) — bu, delegation audit'inin hata-yutma boslugunu da kapatir. STAFF update ayni karara ayri kapsam olarak baglanir. | — |
 | **Gerekli dogrulama** (degisiklik yapilirsa) | (1) `lawyer-update-boundary.spec.ts` ve `office-update-boundary.db-gated` iddialarinin BILINCLI guncellenmesi · (2) basari -> tam bir audit, dogru aktor/tenant/hedef · (3) 400/403/409 -> audit 0 · (4) audit yazma hatasi -> guncelleme GERI ALINIR · (5) audit metadata'sinda ham TCKN/IBAN YOK · (6) mutasyon kaniti (audit cagrisi kaldirilinca test DUSER) · (7) db-gated gercek rollback · (8) CI manifest baglama ve CI logunda PASS. | — |
+
+**B11 POLITIKA + UYGULAMA (2026-09-12; owner GO "B11 / Ayricalikli avukat guncellemelerinde atomik audit"):**
+
+**Politika (owner karari):** `lawyerRank`, `permissionsLocked`, `canModifyOtherPermissions`, `defaultPermissions` ve
+`canApproveOfficeActions` alanlarinin GERCEK degisiklikleri audit gerektirir. Mevcut yetki kapilari korunur.
+Guncelleme ile audit AYNI transaction'dadir; audit yazilamazsa guncelleme GERI ALINIR. Delegation icin mukerrer
+kayit uretilmez. Genel profil alanlari kapsam disidir.
+
+**Uygulama (en kucuk yama, `apps/api/src/modules/lawyer/lawyer.service.ts` `update`):**
+- **Yetki kapilari DEGISMEDI:** dort ayricalikli alanin kapisi yine ALAN VARSA tetiklenir; delegation kapisi yine
+  DEGER DEGISINCE. Kapi kodu ve sirasi aynidir.
+- **Degisiklik tespiti:** her alan `existing` ile karsilastirilir (`toPublicLawyer` yalniz credential alanlarini
+  siler, bes alan mevcuttur). `defaultPermissions` anahtar sirasindan bagimsiz kanonik metinle karsilastirilir;
+  SQL NULL ve JSON null esittir; karsilastirici nesne KURMAZ (JSON.parse'tan gelen `__proto__`/`constructor`
+  anahtarlari prototip zincirine dokunmadan okunur). **Depolama DEGISMEDI** (mevcut gercek-DB boundary spec'i 81/81).
+- **Audit bicimi:** dort alanin gercek degisimi -> TEK `LAWYER_PRIVILEGE_CHANGED` { `tenantId`, `entityType:LAWYER`,
+  `entityId`, dogrulanmis `userId`, `actorType:USER`, `metadata.changedFields` = yalniz ALAN ADLARI }. Tam DTO,
+  eski/yeni degerler, `oldValues`/`newValues` ve hassas alanlar YAZILMAZ.
+- **Delegation tekilligi:** `canApproveOfficeActions` degisimi MEVCUT `LAWYER_OFFICE_APPROVAL_DELEGATION_CHANGED`
+  kaydiyla (ayni eylem, ayni metadata bicimi) TEK kez yazilir ve `changedFields` icine GIRMEZ. Ikisi birlikte
+  degisirse iki kayit olusur ama hicbir alan iki kayitta tekrarlanmaz.
+- **Atomiklik:** herhangi bir ayricalikli degisiklik varsa `lawyer.update` + audit(ler) tek `$transaction` icinde
+  `logInTransaction` ile yazilir. **Bilincli davranis degisikligi:** eskiden delegation audit'i guncellemeden SONRA
+  hata-yutan `audit.log()` ile yaziliyordu (audit duserse degisiklik audit'siz kalici oluyordu); artik audit
+  yazilamazsa guncelleme de geri alinir ve hata cagirana ulasir.
+- **No-op:** deger ayniysa degisiklik audit'i ve transaction YOK. Genel profil alanlari yolu DEGISMEDI (tx/audit yok).
+
+**Dogrulama:**
+
+| Kanit | Sonuc |
+|---|---|
+| YENI `lawyer-privileged-update-audit-b11.spec.ts` (gercek `LawyerService.update`) | **11/11 PASS** — yetkisiz yazma 0 · yetkili degisiklik tek kayit ayni tx · 4 alan birlikte tek kayit · PARTNER dogrulanmis aktor · no-op (anahtar sirasi farkli) · null denkligi · delegation tekilligi (yalniz + birlikte) · hassas veri disi · genel profil kapsam disi · audit hatasi yutulmaz |
+| Mutasyon kaniti (her biri geri alindi) | audit cagrisi kaldirildi **7/11 DUSER** · tx disi `audit.log`'a tasindi **7/11** · delegation `changedFields`'a eklendi (mukerrer) **1/11** (tam tekillik testi) · no-op tespiti kaldirildi **1/11** (tam no-op testi) |
+| YENI `lawyer-privileged-update-audit-b11.db-gated.integration.spec.ts` — disposable PostgreSQL (ayri konteyner/port; canli DB'ye dokunulmadi, sonra kaldirildi) | **5/5 PASS** — commit · **rollback: audit satiri tx icine YAZILIP sonra hata firlatildiginda avukat satiri VE audit satiri birlikte geri alinir** · delegation rollback · tekillik · no-op |
+| **RED kosusu** (ayni db-gated spec, YAMASIZ kod) | **4/5 DUSER** (commit'te kayit yok, iki rollback'te guncelleme kalici, tekillikte kayit yok); no-op iki durumda da gecer |
+| Guncellenen mevcut spec fiksturleri (iddia GEVSETILMEDI) | `lawyer-privileged-field-guard`, `lawyer-update-boundary`, `lawyer-create-privileged-boundary-ak2`: yalniz `$transaction` + `logInTransaction` mock'u (tx = ayni mock, mevcut iddialar aynen). `lawyer-office-approval-delegation`: kanal `audit.log` -> `logInTransaction` (owner politikasinin bilincli degisikligi) + yetkisiz yollarda "tx audit'i de yok" GUCLENDIRMESI |
+| Manifestler | `pure/office-auth-user` 103 suite / 2044 test PASS (Windows arg siniri nedeniyle yerelde iki yarim) · `db/core-lifecycle` 33 suite / 321 test PASS · `pure/architecture-guards` 47 / 997 PASS · lawyer modulu 13 suite PASS |
+| tsc | ayni worktree'de yama oncesi 530 = yama sonrasi 530; yamanin ekledigi hata 0 |
+
+**YAYIN BEKLEYEN KAPSAM — RELEASE23 ADAYI (mevcut kayitlardan ve git soyundan dogrulandi; ADAY DEGISTIRILMEDI):**
+
+Aday: release HEAD **`2740df3dd58c5e711a790cc21a5f69d6dbffb35d`** · web BUILD_ID `dOiGPj2M0Abls0kCibY4r` · kok
+`HY_W4_RELEASE23` (worktree HEAD kaydi `2740df3d...` ile birebir). Kaynak kayitlar: `client-live-acceptance-i11-r01/
+I11-ADAY-BAGLAMA-VE-DOGRULAMA-R04.md` (#2654 `98878222`) ve `CLIENT-LIVE-ACCEPTANCE-I11-R01.md` K-BLD satiri;
+teslim OFFICE 33 (C33/D1). Canli: RELEASE22 — API :8080 PID 46332 ve Web :3002 PID 47004 `HY_W4_RELEASE22`
+kokunden, HEAD `13740670...` (yerel surec bilgisi; canli API'ye cagri YAPILMADI).
+
+| Degisiklik | Hat | Squash | RELEASE23 adayinda | Canlida (RELEASE22) |
+|---|---|---|---|---|
+| #2641 — inline taraf sirasi + ofis tx | OFFICE | `b9fd97a1` | **EVET** (`git merge-base --is-ancestor`) | HAYIR |
+| #2645 — POST /cases dar atomiklik | OFFICE | `e65ff5de` | **EVET** | HAYIR |
+| #2643 — B-I11-3 intake token redaksiyonu | CLIENT | `d199c8dc` | **EVET** | HAYIR |
+| **B11 — ayricalikli guncelleme atomik audit (bu PR)** | OFFICE | bu PR'in squash'i | **HAYIR** — aday `2740df3d`'den SONRA; adaya girmesi yeni derleme ister | HAYIR |
+
+Adaydan sonra main'e giren OFFICE isleri #2649 (A4) ve #2651 (A5) yalniz test + CI manifestidir; calisma zamani
+kodunu degistirmez. **B11 bu nedenle RELEASE23 adayindan sonraki ILK calisma zamani OFFICE degisikligidir.**
+Bu kayit adayi, paketini veya baglamalarini DEGISTIRMEZ; deploy, cutover ve canli kabul BASLATILMADI. Baska bir
+worktree'de (`OFF_R23_REC`, main'de degil, izlenmeyen `release23-candidate-r01/`) aday kaydi hazirlandigi goruldu;
+kaynak olarak KULLANILMADI ve dokunulmadi.
