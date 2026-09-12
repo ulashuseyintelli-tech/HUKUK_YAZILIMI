@@ -240,9 +240,14 @@ makbuz `dbMutations 0`. Isaret yoksa ya da sayi farkliysa **DUR**: yama canlida 
   `smtp-sink` pencere yakalayicisini (`smtp-sink-noauth.js`) paralel kabul sanip DURUR; (E-2) T-PENCERE-KAPA R-T2/R-T3 `throw`'u R-T4
   (engel kurali kaldirma + Web baslatma) ONCESINDE — API kalkmazsa engel ve kapali Web kalir; (E-3) T betiklerinde yukseltme kapisi yok
   (`.env` runtime/kullanici icin yalniz FR; `New-NetFirewallRule` yukseltme ister). Ek: T-AC oncesi yakalayici baslatma on kosulu;
-  `ENV-PREIMAGE.env` yedegi korumasiz kalitsal ACL. Yukaridaki §9 `A16E4791…` / T-AC `508C5323…` / T-KAPA `5895CFC7…` hash'leri CLIENT
-  duzeltmesiyle GECERSIZLESECEK; D3 bu hash'lerle KOSULMAZ. D1 (bu paket) etkilenmez. Ayrinti ve R02 kosullari:
-  governance `release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R01.md` §0.
+  `ENV-PREIMAGE.env` yedegi korumasiz kalitsal ACL. Yukaridaki §9 `A16E4791…` / T-AC `508C5323…` / T-KAPA `5895CFC7…` hash'leri
+  GECERSIZ; D3 bu hash'lerle KOSULMAZ. D1 (bu paket) etkilenmez.
+  **GUNCEL (2026-09-13):** CLIENT #2657 @ `88b3d07a` (R05), #2660 @ `af79b50c` (R06, K-PAR kalintisi) ve #2662 @ `59abb70b` (R07, yedek
+  butunlugu + PS 5.1/7) ile duzeltti ve yeniden kanitladi; gecerli bloklar §9 `27E754A721749443F8B3F2F363B7676989FC115BB6B85E6E0982F62644FC6700`
+  · T-AC `ED64A751F75B0F0C3B1406759E92C2F20DAF29018CC893A5EB387391C822BBCF` · T-KAPA `3F027B0DA7AA65F5F8C7A016F1EAD605706C2A4BDA2E703D4A6D4A199DA8BB2C`
+  (OFFICE 33 main'de olctu; §9 gomulu bloktan yeniden hesaplandi). T bloklari zorunlu `T_ENV_PRE_SHA` pini ister = cutover sonrasi RELEASE23
+  `.env` sha (beklenen `7A7228B1…` = §10 `env sha` satiri). D3 yurutucusu YUKSELTILMIS Administrators (pwsh 7).
+  Guncel D3 komutlari ve GO taslagi: governance `release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R02.md`.
 - **main ≠ aday:** #2655 B11 @ `78f49dd3` (`lawyer.service.ts`) adaydan sonra main'de; RELEASE23'te YOK.
 
 ## 12. Acik kalemler ve kisitlar (kapatilmis gosterilmez)

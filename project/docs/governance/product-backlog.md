@@ -3942,6 +3942,7 @@ manifest `E53618ED…`); C33 R28 cutover paketi MUHURSUZ hazir; CLIENT I11 adaya
 Yukaridaki "RELEASE23 ACILMADI" cumlesi bu kayitla tarihseldir. Uc kalem hala CANLIDA DEGIL (deploy/restart/migration/.env 0).
 Tek canli karar paketi ve kosullu owner GO taslagi: `release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R01.md`.
 **DUZELTME (2026-09-13): D3 ENGELLI** — CLIENT uc engelleyici kusur buldu, OFFICE 33 kaynakta dogruladi (§9 K-PAR yakalayiciyi paralel kabul sanar; T-PENCERE-KAPA hata yolunda engel kuralini/kapali Web'i birakir; T betiklerinde yukseltme kapisi yok) + yedek `.env` ACL korumasiz. GO taslagi ASKIDA; CLIENT duzeltme + yeniden kanit sonrasi paket R02. D1 etkilenmez. main ≠ aday: #2655 B11 RELEASE23'te YOK. Ayrinti: paket §0.
+**GUNCEL (2026-09-13) — R02:** CLIENT D3 engelleyicilerini #2657 @ `88b3d07a` (R05), K-PAR kalintisini #2660 @ `af79b50c` (R06) ve yedek butunlugu + PS 5.1/7 sorununu #2662 @ `59abb70b` (R07) ile duzeltti; OFFICE 33 kaynakta dogruladi ve yeni hash'leri olctu (§9 `27E754A7…` · T-AC `ED64A751…` · T-KAPA `3F027B0D…`; pin `T_ENV_PRE_SHA` = `7A7228B1…`). Tek nihai paket **R02** (`release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R02.md`) R01'in yerine gecer; tek kosullu owner GO taslagi owner onayina sunulur. D3 yurutucusu yukseltilmis pencere (owner). Canli degisiklik YOK.
 
 **OFFICE ACIK IS LISTESI — TEK GUNCEL LISTE (2026-09-12; onceki dagınık "Ayri takip" maddelerinin yerini alir):**
 Kapanan ve bu listeden DUSURULEN kalemler: `POST /cases` on kontrol yarisi + genel istek atomikligi (#2641 `b9fd97a1`

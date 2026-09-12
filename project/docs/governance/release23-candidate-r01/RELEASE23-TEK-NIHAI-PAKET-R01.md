@@ -13,6 +13,8 @@ YAPILMADI   : ratifikasyon · owner preflight (yükseltilmiş) · -Live · onayl
               cutover · T-pencere · İ11 canlı koşumu
 DÜZELTME    : 2026-09-13 — §0 eklendi (CLIENT ölçümü + OFFICE 33 kaynak doğrulaması; ana yürütücü notu);
               R01 ilk metni (#2656 @ 506f1dd3) aşağıda korunur, §0 ile ÇELİŞEN yerde §0 geçerlidir
+YERİNE GEÇTİ: 2026-09-13 — RELEASE23-TEK-NIHAI-PAKET-R02.md (CLIENT R05 #2657 düzeltmeleri + yeni hash'ler);
+              bu belge TARİHSELDİR, canlı karar için KULLANILMAZ
 CANLI       : RELEASE22 — API :8080 PID 46332 · Web :3002 PID 47004 · bin = R22 preimage · RELEASE23 .env YOK
               (2026-09-12T21:05:42Z salt-okuma ölçüldü; DEĞİŞMEDİ)
 YETKİ SINIRI: bu belge canlı yürütme yetkisi DEĞİLDİR; §7 yalnız owner onayına sunulan taslaktır
