@@ -305,6 +305,14 @@ src/modules/portal/__tests__/portal-message-projection.spec.ts
 src/modules/portal/__tests__/portal-notification-projection.spec.ts
 src/modules/portal/__tests__/portal-poa-projection.spec.ts
 src/modules/portal/__tests__/portal-token-version-revocation.spec.ts
+
+#   A5 (owner GO 2026-09-12; A1 envanterinden dogdu) portal erisim yonetimi yetki kapisi —
+#     `createPortalUser` / `disablePortalUser` `assertCanManagePortalAccess` -> `isApproverEligible`
+#     kapisina tabidir, fakat YETKISIZ AKTORUN REDDEDILDIGI hicbir spec'te IDDIA EDILMEMISTI (mevcut
+#     portal spec'leri kapiyi `true` mock'lar). Bu spec yetkisiz aktorde Forbidden + YAZMA 0 (transaction
+#     hic acilmaz), aktorsuzde fail-closed ve yetkilide MEVCUT davranisi sabitler. SAF birim testi.
+#     Mutasyon kaniti: kapi kaldirilinca 7/7, yazmadan sonraya tasininca 6/7 DUSER.
+src/modules/portal/__tests__/portal-access-management-authority-a5.spec.ts
 #
 #   CODEX-CLIENT-X1 notification surface validation and characterization (SAF, DB-siz)
 #     CN-2 decorated DTO validation; CN-3/CN-4 provider error and URL-query secret
