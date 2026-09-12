@@ -224,3 +224,39 @@ degismedigi anlamina GELMEZ. JWT 401'i kosumun kendi olcumudur; token'lar saklan
 kabulu KAPANDI.** Kosum kaydi OFFICE 33 paket belgesinde (ayri PR). Diger OFFICE/CLIENT acik kalemleri kendiliginden KAPANMAZ:
 AK-1a eki ve CLF-O0-01'in FD senaryolari (canlida kosulmaz), AK-1b/1c, ayricaliksiz pasif avukatin yeniden etkinlesmesi, AK1A-C1
 audit'siz guncelleme gozlemi, B-2. CLIENT I10: hat bos; ayri canli GO olmadan baslamaz.
+
+## Ek E — CLIENT I10 canli kabul: ana yurutucu bagimsiz dogrulamasi (owner GO 2026-09-12; CLIENT ref `OWNER-GO-CLIENT-I10-20260912-R02`)
+
+```text
+KOSUM    : runId c9b07bcb · tenant cl-acc-c9b07bcb · paket client-live-acceptance-i10-r01 (#2634 @ 8d10b6e2)
+           CLIENT oturumu kostu 2026-09-12: runId rezervasyonu 08:08:46Z → bitis 08:08:48Z · PASS 10 · FAIL 0 · OLCULEMEYEN 0 · cikis 0
+OLCUM    : ana yurutucu, salt-okuma; canli DB tek transaction `SET TRANSACTION READ ONLY` (transaction_read_only=on,
+           127.0.0.1:5432/hukuk_db, 2026-09-12T08:10:46Z); DB adresi basilmadi; kabul TEKRARLANMADI, erisim yeniden ACILMADI
+YETKI    : bu ek kabul tekrari veya erisim acma yetkisi DEGILDIR
+```
+
+| Kontrol | Olculen | Sonuc |
+|---|---|---|
+| Yazma envanteri | 139 `tenantId` tablosu tarandi: User 3 · Lawyer 1 · Client 2 · ClientPowerOfAttorney 1 · AuditLog 1 + Tenant 1 = **9 ekleme** | paket §5.1 ile BIREBIR |
+| Kapanis | uc `User` `isActive=false`, `tokenVersion=1`; ucu de ayni satir surumunde (`xmin` 134251) | DOGRULANDI |
+| Guncellenmeyenler | `Lawyer` ve iki `Client` kurulum surumunde (`xmin` 134248); POA A-3 surumunde (`xmin` 134249) ve `createdAt` = `updatedAt` → A-2 ile A-4 satiri DEGISTIRMEDI | DOGRULANDI |
+| POA | 1 satir: ACTIVE · `isLimited=false` · `validUntil` yok · `filePath` / `fileSize` / `mimeType` BOS · muvekkil P | paket §5.1 ile ESIT |
+| Audit | tek satir `CLIENT_WORKSPACE_COMMAND` · `commandType=POA_CREATE` · `status=created` · aktor elevated; ret adimlari audit URETMEDI | ESIT |
+| Bagli tablolar | POA ve muvekkil kimliklerine bagli baska satir YOK (`PoaLawyer` 0 dahil); Office / Case / Task 0; aktorlerin baska tenant'ta audit izi 0 | ESIT |
+| Dosya ayagi | `C:\Ops\hukuk\data\uploads\poa` LISTELENDI: 0 oge, tenant dizini yok. Eski duzen adayi `…\apps\api\data\uploads\poa` yok; en yakin var olan ata `…\apps\api\data` listelendi (4 oge, yukleme dizini yok). `existsSync` kullanilmadi | DOSYA YAZILMADI |
+| Yetki retleri (kosum makbuzu) | A-1 403 `CLIENT_MUTATION_DENIED_VIEWER` (poa 0→0 · audit 0→0) · A-2 403 `CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND` (satir degismedi) · A-4 ayni kod ile 403 (dosya 0→0 · tenant dizini false→false) · A-3 201 · K9 dort capability `NO_VALID_POA` · P-K9 `canCollect` ALLOWED | DB durumu ile TUTARLI |
+| Izolasyon | kurulum = kapanis `0cc02914c5315d57` (tenant 11 · client 24 · user 50); ana yurutucu ayni dondurulmus `ah-lib.isolationFingerprint` ile 08:10:46Z'de yeniden hesapladi: `0cc02914c5315d57` | ESIT (yalniz sayi duzeyi) |
+| Kapanis makbuzu | `usersDeactivated 3` · `stillActive 0` · `tokenVersionBumped 3` · kapatma sonrasi login **401** · ikinci `cl-09` `alreadyClosed=true` / `usersDeactivated 0` / cikis 0 · `evidencePreserved true`; gunlukte sir 0 | ESIT |
+| Canli servisler | API :8080 pid 46332 · Web :3002 pid 47004 — restart yok | DEGISMEDI |
+
+**Kapsam siniri:** izolasyon ozeti komsu tenant basina `Client` + `User` SAYISIDIR; guncellemeleri ve diger tablolari kapsamaz.
+Esitligi butun veritabaninin degismedigi anlamina GELMEZ. Kapatma sonrasi 401 kosumun kendi olcumudur (parola saklanmaz);
+DB tarafinda mekanizma dogrulandi (pasif kullanici + artmis `tokenVersion`).
+
+**Kanit:** kosum kanitlari CLIENT oturumunun `i10live` dizininde (9 dosya); tam sha256'lari ana yurutucu olcumuyle
+`C:\Users\ulastelli\Documents\CLIENT-I10-EVIDENCE-20260912\SOURCE-HASHES-i10live.txt` icinde. Ana yurutucunun dogrulama betigi ve
+ciktisi ayni kalici dizinde; `MANIFEST-SHA256.txt` sha256 `ADE1664E875A9BDDD34C29257C54149490640F038DB9E8D5077FD2BAA734E62D`. Kosum kanitlarinin kalici kopyasi CLIENT hattinda baglanir.
+
+**Karar:** owner GO kosulu (kabul PASS + bagimsiz kapanis dogrulamasi) SAGLANDI → **CLIENT I10 canli kabulu KAPANDI; CLIENT sayaci
+9/17 → 10/17.** Hizmet kabulu **0/8 DEGISMEZ** (kendi olcutleri tamamlanmadi). OFFICE AK kapanisi korunur. I11 baslatilmaz;
+ayri owner GO ister.
