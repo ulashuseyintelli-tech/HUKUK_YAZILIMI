@@ -69,6 +69,14 @@ const build = (
     $transaction: jest.fn(async (fn: (tx: any) => Promise<unknown>) => {
       const staged: any[] = [];
       const tx = {
+        // AK-2 ARDIL: ofis al/oluştur adımı ARTIK bu transaction'ın İÇİNDE (eskiden tx dışındaydı;
+        // tx geri alınınca ofis satırı kalıcı oluyordu). Fikstür bu yüzden tx'te de office/tenant taşır.
+        // Yazma kanıtı `expectNoWrite`te $transaction'ın HİÇ çağrılmamasıyla kapanır.
+        office: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'O1' }),
+          create: jest.fn(),
+        },
+        tenant: { findUnique: jest.fn().mockResolvedValue({ id: TENANT, name: 'T' }) },
         lawyer: {
           create: jest.fn(async ({ data }: any) => {
             // Şema varsayılanları (LAWYER / false / false) — gönderilmeyen alan böyle yazılır.

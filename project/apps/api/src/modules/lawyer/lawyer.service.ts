@@ -330,23 +330,6 @@ export class LawyerService {
       );
     }
 
-    // Office'i al veya oluştur
-    let office = await this.prisma.office.findUnique({
-      where: { tenantId },
-    });
-
-    if (!office) {
-      const tenant = await this.prisma.tenant.findUnique({
-        where: { id: tenantId },
-      });
-      office = await this.prisma.office.create({
-        data: {
-          tenantId,
-          name: tenant?.name || "Hukuk Bürosu",
-        },
-      });
-    }
-
     // Sıralama için mevcut en yüksek sortOrder'ı bul
     const maxSort = await this.prisma.lawyer.aggregate({
       where: { tenantId },
@@ -366,7 +349,28 @@ export class LawyerService {
 
     // AK-2: avukat satırı ve LAWYER_CREATE audit'i AYNI transaction'da yazılır. logInTransaction
     // hata YUTMAZ → audit yazılamazsa transaction geri alınır, avukat kaydı kalıcılaşmaz.
+    // AK-2 ARDIL ("ofis oto-oluşturmanın transaction dışında kalması"): ofis kaydı da ARTIK bu
+    // transaction içinde alınır/oluşturulur. Eskiden tx DIŞINDA yaratılıyordu; avukat create'i ya da
+    // audit yazması düşünce avukat geri alınıyor, yeni açılmış ofis satırı KALICI oluyordu (hiçbir
+    // avukatı olmayan artık ofis kaydı). Artık tx geri alınırsa ofis de geri alınır.
     const lawyer = await this.prisma.$transaction(async (tx) => {
+      // Office'i al veya oluştur (tx içinde)
+      let office = await tx.office.findUnique({
+        where: { tenantId },
+      });
+
+      if (!office) {
+        const tenant = await tx.tenant.findUnique({
+          where: { id: tenantId },
+        });
+        office = await tx.office.create({
+          data: {
+            tenantId,
+            name: tenant?.name || "Hukuk Bürosu",
+          },
+        });
+      }
+
       const created = await tx.lawyer.create({
         data: {
           ...createData,

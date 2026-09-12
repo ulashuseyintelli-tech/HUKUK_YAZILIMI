@@ -177,14 +177,19 @@ describe('AK-1a — POST /cases: avukat yetki reddi İLK kalıcı yazmadan ÖNCE
     expect(prisma.lawyer.update).not.toHaveBeenCalled();
   });
 
-  it('USER + inline müvekkil + ayrıcalıksız yeni avukat → müvekkil ve avukat oluşur (izinli aktör, sıra aynı)', async () => {
+  // ARDIL (owner GO 2026-09-12 "OFFICE — KALAN İŞTEN DEVAM"; kayıtlı açık: `/cases` ön kontrol yarışı):
+  // SIRA DEĞİŞTİ — inline avukat create'i artık inline MÜVEKKİL yazmasından ÖNCE gelir. Gerekçe: adım 0
+  // ön kontrolü ile create arasında eşleşen kayıt ayrıcalıklı hale gelirse create yine 403 verir
+  // (fail-closed), ama ESKİ sırada o ana dek müvekkil YAZILMIŞ oluyordu → sahipsiz müvekkil satırı.
+  // AK-1a'nın "yetki reddi İLK kalıcı yazmadan ÖNCE" güvencesi DEĞİŞMEDİ (yukarıdaki 403 testleri aynen geçer).
+  it('USER + inline müvekkil + ayrıcalıksız yeni avukat → ikisi de oluşur; AVUKAT ÖNCE (yarış kapandı)', async () => {
     const ls = lawyerMock();
     const svc = buildCase(ls);
     const dto: any = { creditors: [INLINE_CREDITOR], lawyers: [{ name: 'Ayse', surname: 'Kaya' }] };
     await svc.resolveInlinePartiesBeforeTx(TENANT, dto, user);
     expect(svc.clientService.create).toHaveBeenCalledTimes(1);
     expect(ls.create).toHaveBeenCalledTimes(1);
-    expect(svc.clientService.create.mock.invocationCallOrder[0]).toBeLessThan(ls.create.mock.invocationCallOrder[0]);
+    expect(ls.create.mock.invocationCallOrder[0]).toBeLessThan(svc.clientService.create.mock.invocationCallOrder[0]);
     expect(dto.lawyers[0].id).toBe('l-new');
   });
 

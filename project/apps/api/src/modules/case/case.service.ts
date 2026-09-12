@@ -531,8 +531,8 @@ export class CaseService {
     // DEĞİLDİR — bu yol kullanıcı tarafından dolaylı tetiklenir. Actor bağlamı zorunlu.
     clientMutationActor: ClientMutationActorContext,
   ): Promise<void> {
-    // 0) AK-1a + AK-2 (owner GO 2026-09-10): avukat tarafının YETKİ reddi İLK kalıcı yazmadan — yani adım 1'de
-    //    inline müvekkil yazılmadan — ÖNCE verilir; önceden müvekkil yazılıp adım 2'de avukat 403'ü dönebiliyordu.
+    // 0) AK-1a + AK-2 (owner GO 2026-09-10): avukat tarafının YETKİ reddi İLK kalıcı yazmadan ÖNCE verilir
+    //    (fail-fast); önceden müvekkil yazılıp sonraki adımda avukat 403'ü dönebiliyordu.
     //    Transaction refactor'ı DEĞİLDİR: yalnız yetki kararı öne alınır, create kendi kontrollerini yine uygular.
     //    OFFICE yazması yoksa (yalnız mevcut avukat id'si) bu ön kontrol devreye girmez.
     const inlineLawyers = (dto.lawyers ?? []).filter((l) => !l.id && l.name && l.surname);
@@ -543,7 +543,31 @@ export class CaseService {
       }
     }
 
-    // 1) Müvekkil (creditor) — ClientService.create: identity (tckn/vkn) eşleşmesi → mevcut döndür
+    // 1) Avukat — LawyerService.create: bar/tckn VEYA isim eşleşmesi → mevcut döndür (reactivate). Throw etmez.
+    //    AK-1a ARDIL (`/cases` ön kontrol yarışı): avukat OLUŞTURMA adım 0'dan SONRA, müvekkil yazmasından ÖNCE
+    //    gelir. Gerekçe: adım 0 ile bu create arasında eşleşen kayıt ayrıcalıklı hale gelirse create yine 403
+    //    verir (fail-closed) — eski sırada o ana dek inline müvekkil YAZILMIŞ oluyordu ve istek yarıda kalıyordu.
+    //    Bu sıra, avukat yetki kararı KESİNLEŞMEDEN hiçbir müvekkil satırının yazılmamasını sağlar. Genel
+    //    transaction refactor'ı hâlâ YAPILMADI: adım 1 ile adım 2 arası hata kalıcı avukat satırı bırakabilir
+    //    (avukat kaydı kimlik/isim eşleşmesiyle tekilleştirilen dizin kaydıdır; müvekkil yazması D01 yetkisine
+    //    tabi CLIENT mutasyonudur — öncelik müvekkil tarafındadır).
+    if (dto.lawyers?.length) {
+      for (const l of dto.lawyers) {
+        if (l.id || !l.name || !l.surname) continue;
+        // AK-2: yetki aktörü GEÇİLMEZ — yanıt F01 projeksiyonuna girer ve yetkisiz aktörde `id`yi düşürür
+        // (inline bağ kopar). Dosyayı açan kullanıcı YALNIZ audit atfı olarak geçer; bu gövdede ayrıcalıklı
+        // alan yoktur, H2 tetiklenmez. Gövde, adım 0 ön kontrolüyle AYNI eşlemeden gelir.
+        const resolved: any = await this.lawyerService.create(
+          tenantId,
+          this.toInlineLawyerCreateData(l),
+          undefined,
+          { userId: clientMutationActor?.userId || undefined },
+        );
+        l.id = resolved.id;
+      }
+    }
+
+    // 2) Müvekkil (creditor) — ClientService.create: identity (tckn/vkn) eşleşmesi → mevcut döndür
     //    (reactivate dahil). Kimliksizde fuzzy YOK (Müvekkil=TCKN kontratı). Throw etmez.
     if (dto.creditors?.length) {
       for (const c of dto.creditors) {
@@ -564,23 +588,6 @@ export class CaseService {
           address: c.address,
         }, clientMutationActor);
         c.id = resolved.id;
-      }
-    }
-
-    // 2) Avukat — LawyerService.create: bar/tckn VEYA isim eşleşmesi → mevcut döndür (reactivate). Throw etmez.
-    if (dto.lawyers?.length) {
-      for (const l of dto.lawyers) {
-        if (l.id || !l.name || !l.surname) continue;
-        // AK-2: yetki aktörü GEÇİLMEZ — yanıt F01 projeksiyonuna girer ve yetkisiz aktörde `id`yi düşürür
-        // (inline bağ kopar). Dosyayı açan kullanıcı YALNIZ audit atfı olarak geçer; bu gövdede ayrıcalıklı
-        // alan yoktur, H2 tetiklenmez. Gövde, adım 0 ön kontrolüyle AYNI eşlemeden gelir.
-        const resolved: any = await this.lawyerService.create(
-          tenantId,
-          this.toInlineLawyerCreateData(l),
-          undefined,
-          { userId: clientMutationActor?.userId || undefined },
-        );
-        l.id = resolved.id;
       }
     }
 
