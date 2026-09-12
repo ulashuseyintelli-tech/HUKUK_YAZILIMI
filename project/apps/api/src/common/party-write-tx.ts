@@ -43,8 +43,15 @@ export interface PartyWriteTxContext {
  * Repo'da yerleşik `const source: any = tx ?? this.prisma` deseninin adlandırılmış hâlidir
  * (bkz. client-consent.service.ts, client-legal-hold.service.ts).
  */
-export function partyDb(prisma: unknown, ctx?: PartyWriteTxContext): any {
-  return (ctx?.tx ?? prisma) as any;
+export function partyDb(
+  prisma: Prisma.TransactionClient,
+  ctx?: PartyWriteTxContext,
+): Prisma.TransactionClient {
+  // TİPLİ döner (`any` DEĞİL): `any` üzerinden yapılan `findMany` çağrıları TypeChecker'da
+  // ÇÖZÜLEMEZ hâle gelir ve tenant enumeration envanteri statik guard'ında (C15-S1-MODIFIED PR-2)
+  // "çözülemeyen" kümesine düşer. `PrismaService extends PrismaClient` olduğu için servis client'ı
+  // `Prisma.TransactionClient`e atanabilir; model delege'leri her iki yolda da çözülür.
+  return ctx?.tx ?? prisma;
 }
 
 /**

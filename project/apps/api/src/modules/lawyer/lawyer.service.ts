@@ -603,7 +603,7 @@ export class LawyerService {
     messages: { noActor: string; unauthorized: string },
     // DAR ATOMİKLİK: ortak transaction içinde çağrıldığında yetki okuması da AYNI client'tan yapılır
     // (transaction sürerken ikinci bağlantı istenmez). Verilmezse servisin kendi prisma client'ı.
-    db: any = this.prisma,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
     if (!actor?.userId) {
       throw new ForbiddenException(messages.noActor);
@@ -704,7 +704,7 @@ export class LawyerService {
   private async assertCanAssignPrivilegedFieldsOnCreate(
     actor: LawyerUpdateActor | undefined,
     tenantId: string,
-    db: any = this.prisma,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
     return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
       noActor: "Yetki/rütbe alanlarıyla avukat oluşturma yetkisi yok (kimlik çözülemedi).",
@@ -747,7 +747,7 @@ export class LawyerService {
   private async assertCanReactivatePrivilegedLawyer(
     actor: LawyerUpdateActor | undefined,
     tenantId: string,
-    db: any = this.prisma,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
     return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
       noActor: "Ayrıcalıklı pasif avukatı yeniden etkinleştirme yetkisi yok (kimlik çözülemedi).",
@@ -763,13 +763,13 @@ export class LawyerService {
   private async findDuplicateLawyer(
     tenantId: string,
     data: { name: string; surname: string; barNumber?: string | null; tckn?: string | null },
-    db: any = this.prisma,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     const wantName = normalizePersonName(data.name, data.surname);
     const allLawyers = await db.lawyer.findMany({ where: { tenantId } });
     return (
       allLawyers.find(
-        (l: { name: string; surname: string; barNumber?: string | null; tckn?: string | null }) =>
+        (l) =>
           (data.barNumber && l.barNumber === data.barNumber) ||
           (data.tckn && l.tckn === data.tckn) ||
           (!!wantName && normalizePersonName(l.name, l.surname) === wantName),

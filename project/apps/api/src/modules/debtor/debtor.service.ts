@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util";
+import { Prisma } from "@prisma/client";
 import { partyDb, type PartyWriteTxContext } from "@/common/party-write-tx";
 // RFA-006: adres dedup (normalize + hash); tüm write yolları ortak helper kullanır.
 import { computeAddressHash, findOrCreateDebtorAddress } from "@/common/address-hash.util";
@@ -642,8 +643,8 @@ export class DebtorService {
       if (wantName) {
         const all = await db.debtor.findMany({ where: { tenantId }, select: { id: true, name: true } });
         const candidates = all
-          .filter((d: { id: string; name: string }) => normalizePersonName(d.name) === wantName)
-          .map((d: { id: string; name: string }) => ({ id: d.id, name: d.name }));
+          .filter((d) => normalizePersonName(d.name) === wantName)
+          .map((d) => ({ id: d.id, name: d.name }));
         if (candidates.length > 0) {
           throw new ConflictException({
             code: "SIMILAR_NAME_REVIEW",
@@ -1438,7 +1439,7 @@ export class DebtorService {
     dto: { type?: DebtorType; tckn?: string; vkn?: string; detsisNo?: string },
     excludeId?: string,
     // DAR ATOMİKLİK: ortak transaction içinde çağrıldığında dedup okuması da AYNI client'tan.
-    db: any = this.prisma,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     const conditions: any[] = [];
 

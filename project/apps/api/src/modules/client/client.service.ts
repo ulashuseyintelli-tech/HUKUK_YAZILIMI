@@ -5,6 +5,7 @@ import { OfficeApprovalService } from '../office-approval/office-approval.servic
 import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../automation/poa-expiry-delivery.service';
 import { NotificationDispatcherService, type DispatchResult } from '../client-notification/notification-dispatcher.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
+import { Prisma } from '@prisma/client';
 import { partyDb, runPartyWrite, type PartyWriteTxContext } from '../../common/party-write-tx';
 import {
   assertChangedIdentityChecksum,
@@ -607,7 +608,7 @@ export class ClientService {
     opts: { includeInactive?: boolean } = {},
     // DAR ATOMİKLİK: ortak transaction içinde çağrıldığında okuma AYNI client'tan yapılır — aksi hâlde
     // dış transaction'ın HENÜZ COMMIT EDİLMEMİŞ müvekkil satırı görülmez ve dönüş null olur.
-    db: any = this.prisma,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     return db.client.findFirst({
       where: { id, tenantId, ...(opts.includeInactive ? {} : { isActive: true }) },

@@ -81,14 +81,14 @@ describe('DAR ATOMİKLİK — satır içi taraflar dosya transaction\'ına katı
     await expect(svc.create('tenant-1', dto, 'user-1')).rejects.toThrow('CASE_CREATE_PATLADI');
 
     // Üç taraf servisi de AYNI transaction bağlamını aldı ve bağlamın client'ı dosya tx'i.
-    const lawyerCtx = lawyerService.create.mock.calls[0]![4] as any;
-    const clientCtx = clientService.create.mock.calls[0]![3] as any;
-    const debtorCtx = debtorService.create.mock.calls[0]![3] as any;
+    const lawyerCtx = (lawyerService.create.mock.calls[0] as unknown as any[])[4];
+    const clientCtx = (clientService.create.mock.calls[0] as unknown as any[])[3];
+    const debtorCtx = (debtorService.create.mock.calls[0] as unknown as any[])[3];
     expect(lawyerCtx?.tx).toBe(txClient);
     expect(clientCtx?.tx).toBe(txClient);
     expect(debtorCtx?.tx).toBe(txClient);
     // AK-2 ön kontrolü de aynı bağlamdan okur.
-    expect(lawyerService.assertCreateAuthorized.mock.calls[0]![3]).toBe(lawyerCtx);
+    expect((lawyerService.assertCreateAuthorized.mock.calls[0] as unknown as any[])[3]).toBe(lawyerCtx);
   });
 
   it('İÇ İÇE TRANSACTION YOK: prisma.$transaction dosya oluşturmada YALNIZ 1 kez açılır', async () => {
@@ -117,7 +117,7 @@ describe('DAR ATOMİKLİK — satır içi taraflar dosya transaction\'ına katı
       svc.create('tenant-1', { fileNumber: '2024/3', creditors: [{ ...INLINE_CREDITOR }] } as any, 'user-1'),
     ).rejects.toThrow('DUR');
 
-    const options = prisma.$transaction.mock.calls[0]![1] as any;
+    const options = (prisma.$transaction.mock.calls[0] as unknown as any[])[1];
     expect(options).toEqual({ maxWait: 15_000, timeout: 20_000 });
     // Süre sınırı bir DOĞRULUK çözümü değildir: atomikliği ortak transaction sağlar. Bu iddia
     // yalnız "varsayılan 5 sn sessizce miras alınmıyor" gerçeğini sabitler.

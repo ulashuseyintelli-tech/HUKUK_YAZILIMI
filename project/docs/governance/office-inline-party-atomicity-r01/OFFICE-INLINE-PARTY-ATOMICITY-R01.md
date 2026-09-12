@@ -145,6 +145,12 @@ davranışı yalnız hedeflenen yerde değiştiriyor.
     `actor` artık son parametre olmadığı için kalıp `\s*[,)]` ile biter. **Korunan şart aynı**: `actor` ZORUNLU
     (`actor?:` yasağı yerinde) ve **yeni iddia eklendi** — `txCtx?: PartyWriteTxContext` aktörden SONRA gelir ve opsiyoneldir.
   - `resolveInlinePartiesBeforeTx` → `resolveInlinePartiesInTx` yeniden adlandırması 19 dosyada 33 geçiş (mekanik).
+- **Tenant enumeration envanteri guard'ı (C15-S1-MODIFIED PR-2) — tavan YÜKSELTİLMEDİ.** İlk denemede
+  `partyDb()` `any` döndürüyordu; `any` üzerinden yapılan `findMany` çağrıları TypeChecker'da çözülemediği
+  için guard'ın "çözülemeyen çağrı" sayısı 213 → 219'a çıktı ve CI'da düştü. Doğru çözüm tavanı büyütmek
+  değil, çağrıları **çözülebilir kılmaktı**: `partyDb()` ve altı yardımcı imzası `Prisma.TransactionClient`
+  ile tiplendi (`PrismaService extends PrismaClient` olduğu için servis client'ı bu tipe atanabilir).
+  Guard yeniden **14/14 PASS**; envanter tavanı dokunulmadan korundu.
 
 ### 3.4 CI manifest bağlama
 
