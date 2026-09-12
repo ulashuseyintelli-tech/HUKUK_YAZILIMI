@@ -236,6 +236,15 @@ makbuz `dbMutations 0`. Isaret yoksa ya da sayi farkliysa **DUR**: yama canlida 
 - **Kapanis sonrasi artik (CLIENT kaydi):** T-PENCERE-AC'nin on goruntu yedegi `ENV-PREIMAGE.env` (canli `.env`'in bayt kopyasi) CLIENT
   oturum dizininde kalir; T-PENCERE-KAPA onu kaldirmaz (tekrar-acma kilidi olarak da calisir). Akibeti ayri karar kalemi; bu pakette silme YOK.
 
+- **★ DUZELTME 2026-09-13 — D3 ENGELLI:** CLIENT uc engelleyici kusur bildirdi, OFFICE 33 kaynakta dogruladi: (E-1) §9 K-PAR deseni
+  `smtp-sink` pencere yakalayicisini (`smtp-sink-noauth.js`) paralel kabul sanip DURUR; (E-2) T-PENCERE-KAPA R-T2/R-T3 `throw`'u R-T4
+  (engel kurali kaldirma + Web baslatma) ONCESINDE — API kalkmazsa engel ve kapali Web kalir; (E-3) T betiklerinde yukseltme kapisi yok
+  (`.env` runtime/kullanici icin yalniz FR; `New-NetFirewallRule` yukseltme ister). Ek: T-AC oncesi yakalayici baslatma on kosulu;
+  `ENV-PREIMAGE.env` yedegi korumasiz kalitsal ACL. Yukaridaki §9 `A16E4791…` / T-AC `508C5323…` / T-KAPA `5895CFC7…` hash'leri CLIENT
+  duzeltmesiyle GECERSIZLESECEK; D3 bu hash'lerle KOSULMAZ. D1 (bu paket) etkilenmez. Ayrinti ve R02 kosullari:
+  governance `release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R01.md` §0.
+- **main ≠ aday:** #2655 B11 @ `78f49dd3` (`lawyer.service.ts`) adaydan sonra main'de; RELEASE23'te YOK.
+
 ## 12. Acik kalemler ve kisitlar (kapatilmis gosterilmez)
 
 | Kalem | Durum |
