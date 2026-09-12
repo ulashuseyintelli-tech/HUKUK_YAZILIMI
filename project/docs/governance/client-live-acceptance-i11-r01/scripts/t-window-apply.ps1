@@ -28,13 +28,16 @@
   if ($Mode -eq 'live' -and $GoRef -cnotmatch '^OWNER-GO-CLIENT-I11-[0-9]{8}-R[0-9]{2}$') { throw "T-GO: ref bicimi gecersiz ('$GoRef')" }
   Write-Output "T-MOD: $Mode · env=$ENVF · port=$Port · yakalayici=127.0.0.1:$SinkPort"
 
-  # ---- K-T0: on goruntu yedegi - GERI DONUSUN TEK GIRDISI ----
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BAK) | Out-Null
-  if (Test-Path -LiteralPath $BAK) { throw "K-T0: '$BAK' zaten var - onceki pencere kapanmamis; once geri donusu dogrula" }
-  $preHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ENVF).Hash
-  Copy-Item -LiteralPath $ENVF -Destination $BAK
-  if ((Get-FileHash -Algorithm SHA256 -LiteralPath $BAK).Hash -ne $preHash) { throw 'K-T0: yedek hash degeri kaynakla esit DEGIL' }
-  Write-Output "K-T0: env on goruntu sha256 = $preHash"
+  # ---- K-ELEV (yalniz canli, ILK kapi): yukseltilmis Administrators olmadan HICBIR islem yapilmaz ----
+  # Olculdu: canli .env sahibi SYSTEM, DACL korumali, kullaniciya yalniz Read; firewall ve SYSTEM
+  # gorev/surec islemleri de yukseltme ister. Bu kapi yedek dahil HERHANGI bir yazmadan ONCE durur.
+  if ($Mode -eq 'live') {
+    $wp = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $wp.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+      throw 'K-ELEV: oturum YUKSELTILMIS Administrators DEGIL - canli .env/firewall/gorev islemleri yapilamaz; HICBIR degisiklik yapilmadi. Yukseltilmis kabukta yeniden calistirin.'
+    }
+    Write-Output 'K-ELEV: yukseltilmis Administrators oturumu'
+  }
 
   # ---- K-T1: yakalayici YALNIZ loopback ----
   $l = @(Get-NetTCPConnection -LocalPort $SinkPort -State Listen)
@@ -81,6 +84,32 @@
     if ($now.Day -eq 1 -and $now.Hour -ge 2 -and $now.Hour -le 4) { throw 'K-T5: aylik ekstre penceresi (ayin 1i 02:00-05:00) - baska zaman secin' }
     Write-Output "K-T5: sakin pencere ($($now.ToString('yyyy-MM-dd HH:mm')))"
   }
+
+  # ---- K-T0: on goruntu yedegi - GERI DONUSUN TEK GIRDISI ----
+  # Salt-okuma kapilari (K-T1..K-T5) GECTIKTEN SONRA alinir: onlar dusuyorsa geride yedek KALMAZ.
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BAK) | Out-Null
+  if (Test-Path -LiteralPath $BAK) { throw "K-T0: '$BAK' zaten var - onceki pencere kapanmamis; once geri donusu dogrula" }
+  $preHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ENVF).Hash
+  Copy-Item -LiteralPath $ENVF -Destination $BAK
+  if ((Get-FileHash -Algorithm SHA256 -LiteralPath $BAK).Hash -ne $preHash) { throw 'K-T0: yedek hash degeri kaynakla esit DEGIL' }
+  # YEDEK SIR TASIR (DATABASE_URL, SMTP parolasi): Copy-Item hedef dizinin KALITSAL ACL'ini verir ve
+  # olculdu ki bu ACL yabanci SID'lere degistirme hakki iceriyor. Yedege HEMEN korumali DACL uygulanir:
+  # yalniz SYSTEM + Administrators + yurutucu. Dogrulanamazsa DURUR.
+  $bacl = Get-Acl -LiteralPath $BAK
+  $bacl.SetAccessRuleProtection($true, $false)
+  foreach ($r in @($bacl.Access)) { $null = $bacl.RemoveAccessRule($r) }
+  $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  foreach ($who in @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators', $me)) {
+    $bacl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($who, 'FullControl', 'Allow')))
+  }
+  Set-Acl -LiteralPath $BAK -AclObject $bacl
+  $chk = Get-Acl -LiteralPath $BAK
+  $extra = @($chk.Access | Where-Object { $_.IsInherited -or ($_.IdentityReference.Value -notin @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators', $me)) })
+  if (-not $chk.AreAccessRulesProtected -or $extra.Count -ne 0) { throw "K-T0: yedek DACL korumaya alinamadi (kalitsal/yabanci kural $($extra.Count))" }
+  # Env SDDL TABANI: T-PENCERE-KAPA geri donusten sonra sahip + DACL'i buna karsi karsilastirir.
+  $sddl = (Get-Acl -LiteralPath $ENVF).Sddl
+  Set-Content -LiteralPath (Join-Path (Split-Path -Parent $BAK) 'ENV-SDDL-BASELINE.txt') -Value $sddl -Encoding UTF8
+  Write-Output "K-T0: env on goruntu sha256 = $preHash · yedek DACL KORUMALI (SYSTEM+Administrators+yurutucu) · env SDDL tabani kaydedildi"
 
   # ---- K-T6: KULLANICI GONDERIMLERINI ONLE (sayim DEGIL, ONLEME) ----
   if ($Mode -eq 'live') {
