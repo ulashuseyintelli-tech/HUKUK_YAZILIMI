@@ -3946,9 +3946,11 @@ kalintilari (kayit + dizin kaldirildi; kanonik `.bin` 12/30/27 ve `.pnpm` 1389 d
 
 | # | Kalem | Not |
 |---|---|---|
-| A1 | `isApproverEligible` kullanan DIGER domain kapilarinin envanteri (CLIENT / POA / borclu / portal / zamanlayici / ucret sozlesmesi / intake) | Bu kapilar rol ELEMEZ; envanter HIC cikarilmadi. Once olcum, sonra politika. |
+| A1 | `isApproverEligible` kullanan DIGER domain kapilarinin envanteri | **TAMAMLANDI 2026-09-12 — asagidaki "A1 ENVANTERI" tablosu.** Envanter kapandi; ondan DOGAN kalemler A4 · A5 · B10'dur. |
 | A2 | AK1A-C1 — audit'siz guncelleme gozleminin kok nedeni | Gozlem kayitli; kok neden olculmedi. |
 | A3 | Baslatici dayanikliligi | Reboot -> logon beklemesi + launcher `exit 23` UNCLASSIFIED 120 sn beklemeyi keser, PT15M'ye kalir (RELEASE22 Ek C.1). |
+| A4 | `case-fee-agreement` yetki kapisi iddiasi CI'DA KOSMUYOR | `case-fee-agreement.service.spec.ts` kapiyi GERCEKTEN dogruluyor ("capability fail -> Forbidden; transaction acilmaz", create + update) ama spec HICBIR CI manifestinde DEGIL -> iddia CI'da hic calismiyor. Duzeltme = manifest baglama. |
+| A5 | `portal.createPortalUser` / `disablePortalUser` kapisi icin yetki-reddi iddiasi HIC YOK | Portal spec'lerinin tamami `isApproverEligible` -> **true** mock'lar; yalniz "aktor yok" dali test edilir. Yetkisiz-aktor reddi hicbir spec'te (bagli ya da degil) iddia EDILMEMIS. |
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
@@ -3963,6 +3965,7 @@ kalintilari (kayit + dizin kaldirildi; kanonik `.bin` 12/30/27 ve `.pnpm` 1389 d
 | B7 | seed'in OFFICE disi uclarinin yalniz JwtAuthGuard ile korunmasi | OWN-13 D03; canlida seed modulu KAPALI. |
 | B8 | Onceden tuketilmis FD taleplerinin kurtarilmasi | Canlida OLCULDU (2026-09-11, salt-okuma): tuketilmis/kilitli kayit 0 -> bugun canli etki 0. |
 | B9 | Yerel worktree kalintisi `C:\Development\HY_WT\AK2_LAWYER_CREATE` | Repo disi; iskelet (0 dosya) olarak duruyor. Kanitlanmis tasfiye recetesi hazir. |
+| B10 | Kontrol -> yazma penceresi: yetki kararindan SONRA, yazmadan ONCE yetki geri alinirsa yazma yine gecer | OLCULDU: 21/21 kapi kendi metodunda ilk yazmadan ONCE, ama HICBIR yolda yazma yetki DURUMUNA kosullu degil (CLIENT R1A kosullu-updateMany deseni bu kapilarda KULLANILMIYOR). Istismar GOSTERILMEDI; pencere tek istek icidir. Kapatma karari owner'in — AK-1a eki "rol KARAR ANINDA DB'den" emsali var. |
 
 **C. CANLI KABUL BEKLEYEN** (kod MAIN'DE, canlida DEGIL ya da canlida yalnizca isaret duzeyinde olculdu)
 
@@ -3974,3 +3977,62 @@ kalintilari (kayit + dizin kaldirildi; kanonik `.bin` 12/30/27 ve `.pnpm` 1389 d
 
 Bu liste OFFICE hattinin **tek guncel** acik is kaydidir; yukaridaki tarihsel paragraflar DEGISTIRILMEDI
 (append-only). Yeni is bu listeden SECILIR; liste disi is acilmaz.
+
+**A1 ENVANTERI — `isApproverEligible` YETKI KAPILARI (2026-09-12; SALT OKUMA, canliya cagri ve yazma YOK):**
+
+**Yuklem (tek kaynak, `office-approval/office-approval.service.ts:476`):** aktif (`User.isActive`) **+** ayni tenant
+(`User.tenantId === tenantId`) **+** staff DEGIL (`User.staffMember` varsa fail-closed, Lawyer linki olsa bile) **+**
+linkli `Lawyer` **+** (`lawyerRank === 'PARTNER'` **veya** `canApproveOfficeActions === true`).
+**`UserRole` OKUNMAZ** ve **`officeId` parametresi YOKTUR** — ofis kapsami hicbir yolda uygulanmaz.
+
+| # | Domain | Giris ucu / is | Aktor kaynagi | Tenant / ofis bagi | Sinif | Kapi yeri | Rol (VIEWER) elemesi | CI kanidi |
+|---|---|---|---|---|---|---|---|---|
+| 1 | OFFICE | `GET /office-approvals/inbox` | `@CurrentUser` | tenant: auth · ofis: YOK | OKUMA | rota basi | HAYIR | `office-approval.controller.spec` (bagli) |
+| 2 | OFFICE | `GET /office-approvals/:id` | `@CurrentUser` | tenant: auth · ofis: YOK | OKUMA | rota basi (requester muaf) | HAYIR | ayni (bagli) |
+| 3 | OFFICE | onay KARARI (`resolveApproverEligible` varsayilan) | `@CurrentUser` | tenant: `req.tenantId` · ofis: YOK | KARAR | yazmadan once | **EVET** (AK-1a eki, ayri yuklem) | `office-approval-viewer-decision-boundary` (bagli) |
+| 4 | CLIENT | `ClientService.remove` / lifecycle | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | +4 / ilk yazma +6 | HAYIR | `client-mutation-authorization-own13` (bagli) |
+| 5 | CLIENT | `ClientService.update` (hassas alan) | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | +30 / +107 | **EVET** (`decideClientUpdate`) | bagli |
+| 6 | CLIENT | `ClientAddress` create/update/archive/restore | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | hepsi yazmadan once | **EVET** (`decideClientAddressMutation`) | `client-address-mutation-authorization-r2` (bagli) |
+| 7 | CLIENT | disclosure / legal-hold / special-category / DSR "elevated" | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | yazmadan once | HAYIR (rol yalniz ADMIN kisa yolu) | `client-dsar-disclosure-b02`, `-legal-hold-b03`, `-special-category-b04` (bagli) |
+| 8 | CLIENT | workspace komutlari (poa-reminder, template-notification, document-request, intake-link, intake-review) | `req.user` | tenant: `actorTenantId` (MISMATCH once) · ofis: YOK | KARAR | `execute()` ONCESI | **EVET** (`decideClientWorkspaceCommand`) | `client-workspace-command-authorization-r4` (bagli) |
+| 9 | CLIENT | intake-review kapisi | `req.user` | tenant: auth | KARAR | — | **kapi KASTEN `false`** (fail-closed; promotion yetkisi review'a sizmaz) | `client-intake-review-authority-wiring` (bagli) |
+| 10 | CLIENT | intake-promotion `promote` / `promoteAddress` / `promoteSoftField` | `req.user` | tenant: auth · ofis: YOK | KARAR | +8/+11/+11, ilk yazma +47/+48/+37 | HAYIR | `client-intake-promotion.service.spec` (bagli) |
+| 11 | CLIENT | intel-statement `supersede` / `revoke` | `req.user` | tenant: auth · ofis: YOK | KURTARMA/KARAR | +7 / +9, +7 / +14 | HAYIR | bagli spec var; ayrica UNWIRED `client-intel-statement.service.spec` |
+| 12 | CLIENT | `CaseFeeAgreement` create / update / terminate | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | +6/+7/+6, yazmadan once | HAYIR | **A4: tek iddia UNWIRED spec'te — CI'da KOSMUYOR** |
+| 13 | CLIENT | disposition `approve` | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | delege (yazma yok) | HAYIR | `disposition-posting.service.spec` (bagli) |
+| 14 | CLIENT | disposition `post` (finalize) | `@CurrentUser` | tenant: auth · ofis: YOK | **YURUTME** | +13 / ilk yazma +28 | HAYIR | ayni (bagli) + `f04-posting-reversal-race` (db-gated, bagli) |
+| 15 | CLIENT | portal `admin/create-user` · `admin/disable-user` | `req.user` (staff JWT) | tenant: auth · ofis: YOK | KARAR | +11/+10, ilk yazma +39/+13 | HAYIR | **A5: yetkisiz-aktor reddi HIC iddia edilmemis** |
+| 16 | POA | `DELETE /poa/:id` (revoke) | `req.user` | tenant: auth · ofis: YOK | KURTARMA/KARAR | +4 / ilk yazma +7 | HAYIR | `poa-mutation-authority-d4` (bagli); lifecycle iddiasi ayrica UNWIRED `poa-revoke-lifecycle`'da |
+| 17 | POA | `uploadFile` (workspace deps) | `req.user` | tenant: `actorTenantId` · ofis: YOK | KARAR | `execute()` oncesi | **EVET** (workspace sinifi) | `poa-upload-authority-r6` (bagli) |
+| 18 | DEBTOR | `DebtorService.delete` | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | +5 / ilk yazma +84 | HAYIR | bagli spec var |
+| 19 | DEBTOR | `removeCaseDebtor` | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | +15 / ilk yazma +17 | HAYIR | `case-debtor.service.spec` (bagli) |
+| 20 | OFFICE | `LawyerService.delete` (deactivate) | `@CurrentUser` | tenant: auth · ofis: YOK | KARAR | +4 / ilk yazma +59 | HAYIR | `lawyer-deactivate-lifecycle` (bagli) — "isApproverEligible=false -> 403, updateMany CAGRILMAZ" |
+| 21 | PLATFORM | `POST /scheduler/*` manuel tetik | `@CurrentUser` | tenant: **her zaman aktorun tenant'i** · ofis: YOK | **YURUTME** | +5, yazmadan once | **EVET** (`decideManualSchedulerRun`, F02 owner karari) | `scheduler-manual-run-policy` + db-gated (bagli) |
+| 22 | CLIENT | address-discovery / client-notification yetki adaptorleri | `req.user` | tenant: auth | KARAR | workspace sinifi | **EVET** | `*-authority-wiring` spec'leri (bagli) |
+
+**MEVCUT DAVRANIS vs KANONIK POLITIKA**
+
+- **Kanonik (2026-07-28, `decision-log.md` `CLIENT-P2-U03-TRACK-B-I03-APPROVAL-POLICY`, KARAR 1 + rol eslemesi):**
+  office approver = *aktif + ayni tenant + office approval capability + final financial approval authority*;
+  **"finansal onay yetkisi `UserRole` uzerinde tutulmaz"**, `SUPER_ADMIN` yoktur, linkli `Lawyer`'i olmayan (staff)
+  DISLANIR. -> Kapinin `UserRole`'u okumamasi bu kaynaga gore **TASARIM GEREGI**, kusur DEGIL.
+- **Kanonik (2026-09-10, AK-1a ve eki):** VIEWER, bagli avukati PARTNER/delege olsa bile OFFICE'e **YAZAMAZ** ve onay
+  **KARARI VEREMEZ**. -> Bu iki yuzeyde rol ELER.
+- **Kanonik (2026-09-06, F02 / I02-R3):** manuel scheduler tetigi icin **"ADMIN tek basina YETMEZ, VIEWER deny"**.
+  -> Kod bunu uyguluyor (dogrulandi).
+- **POLITIKA SESSIZ:** yukaridaki tablonun rol elemesi **HAYIR** olan 11 yolu icin (CLIENT lifecycle, elevated
+  disclosure/legal-hold/special-category/DSR, intake-promotion, intel-statement, fee agreement, disposition
+  approve/post, portal admin, debtor/case-debtor, lawyer deactivate) AK-1a daralmasinin uygulanip uygulanmayacagi
+  **hicbir kanonik kayitta yazmiyor**. Bu envanter **karar URETMEZ**; kalem **B4/B5** kapsaminin olculmus
+  genislemesidir, yeni is numarasi ACILMAMISTIR.
+
+**OLCULDU, BULGU YOK (kapinin kor olmadiginin kaniti):**
+21/21 kapi kendi metodunda **ilk yazmadan ONCE** · aktor kaynagi her yolda truthful auth baglami
+(`@CurrentUser` / `req.user`), **govdeden aktor alan yol 0** · staff fail-closed · linkli `Lawyer`'i olmayan
+kullanici fail-closed · capraz tenant fail-closed (`User.tenantId !== tenantId`) · yetki iptali her cagrida
+CANLI DB'den okunur, onbellege alinmaz · portal token'i staff `JwtAuthGuard`'ini **gecemez** (`validateUser`
+yalniz `prisma.user`'da cozer; PortalUser id'si eslesmeZ) — ancak `type:"portal"` iddiasi **kontrol EDILMIYOR**,
+ayrim id uzayina dayaniyor (auth katmani kalemi, A1 kapsami disi, kusur GOSTERILMEDI) ·
+`LawyerService.delete` ilk taramada "CI kaniti yok" gorundu, **dogrulandi: CI-bagli spec kapiyi test ediyor**
+(yanlis pozitif duzeltildi) · `scheduler` kapisinda `isApproverEligible` coarse VIEWER kontrolunden ONCE
+cagriliyor (gereksiz bir DB okumasi; guvenlik etkisi YOK, is kalemi ACILMADI).
