@@ -1,68 +1,50 @@
-# RELEASE23 + CLIENT İ11 — TEK NİHAİ KARAR PAKETİ (R01)
+# RELEASE23 + CLIENT İ11 — TEK NİHAİ KARAR PAKETİ (R02)
 
 ```text
-BELGE       : RELEASE23-TEK-NIHAI-PAKET-R01
+BELGE       : RELEASE23-TEK-NIHAI-PAKET-R02   (R01 #2656 ve §0 düzeltmesi #2658'in YERİNE GEÇER)
 YETKİ       : owner GO 2026-09-12 "DEVAM — ÖNCEDEN YETKİLENDİRİLMİŞ ADAY HAZIRLIĞINI TAMAMLA"
               (aday derlemesi + geri dönüş paketi; canlı cutover/restart/yapılandırma değişikliği YOK)
 TARAFLAR    : OFFICE 33 — C33/D1 (derleme · Katman 1 · R28 · bu belge ve GO taslağı)
-              CLIENT    — İ11/D2 (bağlama + aday doğrulaması: #2654 @ 98878222, I11-ADAY-BAGLAMA-VE-DOGRULAMA-R04)
-              ana yürütücü — hat koordinasyonu ve bağımsız doğrulama
-DURUM       : ADAY DERLENDİ · İ11 ADAY İKİLİSİNDE DOĞRULANDI · D1 HAZIR ·
-              ★ D3 ENGELLİ — 3 engelleyici kusur (§0); §7 GO TASLAĞI ASKIDA, owner'a SUNULMAZ
+              CLIENT    — İ11 (bağlama + aday doğrulaması #2654 R04 · D3 engelleyici düzeltmeleri #2657 @ 88b3d07a R05)
+              ana yürütücü — hat koordinasyonu; bağımsız doğrulama rolü §7 GO ile ATANIR
+DURUM       : ADAY DERLENDİ · İ11 ADAY İKİLİSİNDE DOĞRULANDI (R04 + R05) · D1 HAZIR · D3 DÜZELTİLDİ ·
+              TEK KOŞULLU GO TASLAĞI OWNER ONAYINA SUNULUR (§7)
 YAPILMADI   : ratifikasyon · owner preflight (yükseltilmiş) · -Live · onaylı kimlik · mühür/authority/nonce ·
-              cutover · T-pencere · İ11 canlı koşumu
-DÜZELTME    : 2026-09-13 — §0 eklendi (CLIENT ölçümü + OFFICE 33 kaynak doğrulaması; ana yürütücü notu);
-              R01 ilk metni (#2656 @ 506f1dd3) aşağıda korunur, §0 ile ÇELİŞEN yerde §0 geçerlidir
-YERİNE GEÇTİ: 2026-09-13 — RELEASE23-TEK-NIHAI-PAKET-R02.md (CLIENT R05 #2657 düzeltmeleri + yeni hash'ler);
-              bu belge TARİHSELDİR, canlı karar için KULLANILMAZ
-CANLI       : RELEASE22 — API :8080 PID 46332 · Web :3002 PID 47004 · bin = R22 preimage · RELEASE23 .env YOK
-              (2026-09-12T21:05:42Z salt-okuma ölçüldü; DEĞİŞMEDİ)
+              cutover · D3-0 yakalayıcı · T-pencere · İ11 canlı koşumu
+CANLI       : RELEASE22 — API :8080 PID 46332 · Web :3002 PID 47004 · bin = R22 preimage · RELEASE23 .env YOK ·
+              I11-WINDOW-BLOCK kuralı 0 · :2526 dinleyici 0 (2026-09-12T21:58:18Z salt-okuma ölçüldü; DEĞİŞMEDİ)
 YETKİ SINIRI: bu belge canlı yürütme yetkisi DEĞİLDİR; §7 yalnız owner onayına sunulan taslaktır
 KAYIT       : CLIENT sayaç 10/17 · hizmet kabulü 0/8 tam
 ```
 
 Ayrıntılı paket kaydı: `RELEASE23-R28-CUTOVER-PAKETI-R01.md` (diskteki
 `HY_C33_RELEASE23_CUTOVER_R28\docs\LIVE-APPROVAL-PACKAGE-R28.md` ile bayt-aynı; sha256
-`EDBA8DCC682933D6FE4132D6C825D2A4CB718E34DB58E7CA7FABB366F11554C2`). Bu belge onu tekrar etmez; **canlı karar için gereken her
-komutu ve tam hash'i tek yerde toplar.** Aşağıdaki PowerShell blokları o belgeden programatik olarak
-alınmıştır (bayt-aynı).
+`8F103B85CDDB328CFF2DAC1E3DDDB1CC6E3E93008C4F6FB9864A538CB2420BC5`). CLIENT kayıtları: `client-live-acceptance-i11-r01/I11-ADAY-BAGLAMA-VE-DOGRULAMA-R04.md`,
+`I11-D3-ENGELLEYICI-DUZELTMELER-R05.md`. Bu belge **canlı karar için gereken her komutu ve tam hash'i tek yerde toplar**;
+D1 PowerShell blokları R28 kaydından programatik olarak alınmıştır (bayt-aynı).
 
-## 0. DURUM DÜZELTMESİ (2026-09-13) — D3 ENGELLİ, GO TASLAĞI ASKIDA
+## 0. R01'den farklar (R02)
 
-#2656 merge edildikten sonra CLIENT, D3 teyidi yerine **üç engelleyici kusur** bildirdi (mesajlar çaprazlandı; CLIENT
-"#2656'yı mevcut T/§9 hash'leriyle birleştirmeyin" demişti). OFFICE 33 üçünü de **kaynakta yeniden doğruladı** (main @ `506f1dd3`):
+**D3 engelleyicileri kapandı.** R01 §0'daki üç kusur (#2658) CLIENT tarafından #2657 @ `88b3d07a` (R05) ile düzeltildi ve yalnız oturuma
+özel ortamda, aday ikilisinde yeniden kanıtlandı. OFFICE 33 düzeltmeleri **main'de kaynaktan okudu ve dosya sha'larını ölçtü**:
 
-| # | Kusur | OFFICE 33 kaynak doğrulaması | Etki | Düzeltme (CLIENT dosyalarında) |
-|---|---|---|---|---|
-| **E-1** | §9 K-PAR, pencere yakalayıcısını paralel kabul sanıp DURUR | `CLIENT-LIVE-ACCEPTANCE-I11-R01.md:566` deseni `…\|start-api-r22s\|smtp-sink`; `:567` yalnız `I11-KAPI-BLOK` imzasını dışlar. T-AÇ K-T1 `:2526` dinleyicisini şart koşar; yakalayıcı `node smtp-sink-noauth.js` ile çalışır → komut satırı desene uyar. CLIENT ölçümü: yakalayıcı açıkken 4 süreç eşleşti | D3-2 kabul koşumuna **hiç ulaşılmaz** (V-A `i11-run.js`'i doğrudan koştuğu için görünmedi) | K-PAR yalnız eski AUTH'lu `smtp-sink\.js`'i yakalar → **§9 hash değişir** |
-| **E-2** | T-KAPA hata yolunda önlemi kaldırmaz | `t-window-close.ps1:98` (R-T2 API bütçe aşımı) ve `:105`/`:108` (R-T3) `throw`, `:111-117` R-T4'ten (engel kuralı kaldırma + Web başlatma) ve `:130-135` R-T5'ten ÖNCE | API kalkmazsa `I11-WINDOW-BLOCK-8080/3002` **kalır**, Web **kapalı** kalır; §5.1 "önce T-KAPA, sonra C33 geri dönüş" satırı tam bu senaryoda kullanıcıları dışarıda bırakır | R-T4/R-T5 HER DURUMDA koşar, hatalar toplanıp sonda fırlatılır → **T-KAPA hash değişir** |
-| **E-3** | Yükseltme ön koşulu yok | İki T betiğinde `IsInRole`/Administrators kontrolü **0**; `t-window-apply.ps1:95` `New-NetFirewallRule` yükseltme ister. Canlı `.env` sınıfı `RUNTIME_CONFIG_FILE` (preflight provası OP-09h): runtime hesabı (= oturum kullanıcısı `…-1146`) yalnız FR; CLIENT SDDL ölçümü `O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;…-1146)` | Yükseltilmemiş oturumda T-AÇ `.env`'e yazamaz, kural ekleyemez | T-AÇ/T-KAPA canlı modda İLK kapı: yükseltilmiş Administrators; aksi hâlde hiçbir değişiklikten önce DUR → **iki T hash'i değişir** |
+| # | Düzeltme (R05) | OFFICE 33 bağımsız doğrulaması | CLIENT yeniden kanıtı |
+|---|---|---|---|
+| E-1 | §9 K-PAR deseni `smtp-sink` → `smtp-sink\.js`; `smtp-sink-noauth.js` dışlanır | fark okundu; **§9 gömülü blok sha'sı yeniden hesaplandı** = `9804FEF6…` (LF, sonda LF) | K-PAR sondası: noauth açıkken **0**, eski AUTH yakalayıcı açıkken **4** |
+| E-2 | T-KAPA'da her adım kendi `try/catch`'inde; R-T4a (engel kaldır) · R-T4b (Web) · R-T5 · R-T6 · R-T7 **her durumda** denenir; hatalar toplanıp **sonda** fırlatılır | `t-window-close.ps1` baştan sona okundu | hata yolu provası (başlatıcı kasıtlı bozuk): R-T2/R-T3 düştü, **R-T5 yine koştu** (`:2526` 0), R-T7 eşit, sonda 2 hatayla throw; kurtarma = aynı blok tekrarı, idempotent, tüm adımlar başarılı |
+| E-3 | T-AÇ ve T-KAPA canlı modda **K-ELEV** ilk kapı (yükseltilmiş Administrators değilse hiçbir değişiklikten önce durur) | kaynak okundu; kapı ilk değiştirici komuttan önce | izole sınama (yükseltilmemiş oturum): iki blok da ilk değiştirici komuttan önce DURDU; canlıya karşı koşulmadı |
+| E-4 | T-AÇ K-T0 salt-okuma kapılarından (K-T1..K-T5) SONRAYA alındı; yedeğe hemen **korumalı DACL** (SYSTEM + Administrators + yürütücü) + doğrulama; env **SDDL tabanı** kaydı → T-KAPA **R-T7** karşılaştırır, otomatik düzeltme yok | kaynak okundu | prova: yedek DACL yalnız 3 kural, kalıtsal 0; R-T7 eşit |
 
-**Ek bulgular (bu paketin D3 satırlarına işlenir):**
+**OFFICE 33 kalıntı bulgusu — ÖLÇÜLDÜ (fail-closed, önlemi D3-0'da):** yeni desen `smtp-sink\.js`, komut satırında
+`smtp-sink.jsonl` geçen süreçleri de eşleştirir (alt dizgi). Yerel test (port 2599, kendi scratchpad'im; başlatılan iki süreç de durduruldu):
+yakalayıcı **ortam değişkeni + `Start-Process node <betik>`** ile başlatılınca K-PAR **0**; **PowerShell sarmalayıcıyla** (log yolu komut
+satırında) başlatılınca K-PAR **1** → §9 durur. `cmd` sarmalayıcı ve log izleyici (`Get-Content -Wait …smtp-sink.jsonl`) de eşleşir.
+Önlem: D3-0 bloğu yakalayıcıyı ölçülen yöntemle başlatır ve §9'un desenini birebir kullanan **K-PAR ön-kontrolü** 0 değilse yakalayıcıyı
+durdurup D3-1'e geçmez (blok yerelde başarı ve düşüş yolunda koşuldu).
+Desenin `smtp-sink\.js\b` yapılması CLIENT'a önerildi (CLIENT kararı; değişirse §9 hash'i değişir → R03).
 
-- **(a) Çağrı sözleşmesi** doğru ama **eksik ön koşul**: T-AÇ'tan ÖNCE yakalayıcı
-  `SINK_PORT=2526 SINK_LOG=<CLIENT scratchpad>\i11s\runs\smtp-sink.jsonl node smtp-sink-noauth.js` ile başlatılır
-  (`smtp-sink-noauth.js:15-17` `SINK_LOG` zorunlu; T-AÇ/T-KAPA `$SinkLog` = aynı yol; farklı yol → K-T10b pozitif kanıt YOK).
-- **(b) D3-5 ölçütü** CLIENT tarafından kabul edildi. CLIENT karalama deneyi: korumalı DACL'lı hedefte `Set-Content` ve `Copy-Item -Force`
-  sonrası SDDL KORUNDU; **sahip (SYSTEM) korunumu yükseltilmemiş oturumda ÖLÇÜLEMEDİ** → D3-5 kalır. CLIENT ek olarak K-T0'da SDDL tabanını blok içinde kaydedecek.
-- **(c) `ENV-PREIMAGE.env` yedeği KORUMASIZ — sır açığı:** yedek `Copy-Item` ile CLIENT scratchpad'ine alınır ve dizinin kalıtsal ACL'ini
-  devralır. OFFICE 33 salt-okuma ölçümü (`…\894280b1-…\scratchpad`, korumasız, kalıtsal): SYSTEM/Administrators/kullanıcı FullControl'e
-  ek olarak **6 ek SID/grup Modify** (`CodexSandboxUsers` + 5 çözümlenmemiş SID). Canlı `.env` kopyası `DATABASE_URL` ve SMTP parolası taşır.
-  Düzeltme (CLIENT): yedek alındıktan hemen sonra korumalı DACL (SYSTEM + Administrators + yürütücü) + doğrulama. Silme owner kararı.
-- **(d) Geri dönüş sırası** ("D3 açıkken önce T-KAPA, sonra C33 elle geri dönüş") yalnız **E-2 düzeltmesinden SONRA** geçerlidir.
-- **main ≠ aday (ana yürütücü notu, OFFICE 33 doğruladı):** main'de adaydan sonra çalışma zamanı değişikliği var —
-  **#2655 B11 @ `78f49dd3`** (`project/apps/api/src/modules/lawyer/lawyer.service.ts`, ayrıcalıklı avukat güncellemesinde atomik audit);
-  `merge-base --is-ancestor 78f49dd3 2740df3d` = HAYIR. RELEASE23 bu değişikliği **İÇERMEZ**; sabit aday kararı gereği taşınmaz.
-- **K-KİMLİK / bağımsız doğrulama rolü:** ana yürütücü, akran talebiyle rol üstlenmeyeceğini, görevin **owner GO'suyla** atanması gerektiğini
-  bildirdi; §1 hash'lerini ölçmedi, doğrulama kaydı üretmedi. §7 taslağı bu rolü açıkça ATAMALIDIR (R02'de işlenir); o zamana kadar K-KİMLİK karşılanmış sayılmaz.
-
-**Sonuç:**
-- **D1 (C33 yayın) teknik olarak etkilenmez:** §1.1–§1.4 kimlikleri, D1 komutları ve §5.3 elle geri dönüş geçerlidir.
-- **D3 ENGELLİ:** §1.5'teki §9 `A16E4791…`, T-AÇ `508C5323…`, T-KAPA `5895CFC7…` hash'leri CLIENT düzeltmesiyle **geçersizleşecek**;
-  §4 D3 tablosu, §5.1'in D3 satırları ve §7 madde 5–6 bu hash'lerle **UYGULANMAZ**.
-- **§7 tek koşullu GO taslağı ASKIDA — owner'a sunulmaz.** CLIENT dört düzeltmeyi yapıp oturuma özel ortamda yeniden kanıtlayınca
-  (K-PAR sondası, T-KAPA hata yolu, yedek DACL, yükseltme kapısı izole sınaması, V-A tekrarı) yeni hash'ler + merge SHA'sı ile bu paketin
-  **R02**'si yazılır: D3 satırları, (a) yakalayıcı ön koşulu, D3 yürütücüsünün **yükseltilmiş Administrators** oturumu ve rol ataması GO'ya işlenir.
+**Diğer farklar:** main ≠ aday (#2655 B11 @ `78f49dd3`, RELEASE23'te yok) · ana yürütücünün bağımsız doğrulama/K-KİMLİK görevi §7'de
+owner GO ile atanır (akran talebiyle üstlenmedi; §1 ölçümü henüz yapılmadı) · D3 yürütücüsü yükseltilmiş pencere ve kimin sağladığı açık.
 
 ## 1. Kesin kimlikler (tam değer)
 
@@ -100,7 +82,7 @@ alınmıştır (bayt-aynı).
 | `tools\Seal-Package.ps1` | `650971A51F2CF592DA621EEAA92A2883F1580BB2A06A10573BC4ADB4B6DD588B` |
 | `qualification\Verify-Package.node.js` | `1260E1FF42CF9C3442D2C3005ACF821C7B81646ECC181878359AB9546883EABD` |
 | Şablon OWNER-COMMAND / OWNER-RUN | `894BB522AC26A36E5518CC831AB30F03623C30CC300BE30D44A25D80FD0A3D2D` / `A24C04FD573EDC46C79463DED5586EDD6E8ECABEFC6B15716C83FE4E0E13842D` |
-| `PACKAGE-IDENTITY.json` (bilgi; OP-01 `engineSha256` taşır) | `E2CD1F9F4DEC4048E78B6474A73FDF0EEC2B56AB0CAA2C53E6A02B46B5DCD652` — `preLiveListDigest` **ONAY ADAYI DEĞİL** |
+| `PACKAGE-IDENTITY.json` (bilgi; OP-01 `engineSha256` taşır) | `FC558DC4831B23D9B4039DAB60FDA08D0BEBEBF19E477B07314382E73EDDB1FD` — `preLiveListDigest` **ONAY ADAYI DEĞİL** |
 
 Durum (ölçüldü): `pins/`, `authority/`, `claims/`, `journal/`, `cutover-receipts/`, `preflight/`, `MANIFEST.json`,
 kök `OWNER-RUN`/`OWNER-COMMAND` **YOK**. R27 tüketildi, yeniden mühürlenemez.
@@ -115,13 +97,14 @@ kök `OWNER-RUN`/`OWNER-COMMAND` **YOK**. R27 tüketildi, yeniden mühürlenemez
 | bin preimage (= canlı; `generations\R22`) | host `E744A74BBD9053EB60E25459F3650E2CAF65FFCD72FF2A9B2E83ED41834D8706` · api `77B6FBCD82E9B98291E841E2A1AF9683EBD651AE8C27D31561CB94517640DB51` · web `1B7654F6A4219B41E7A742DDD0584F91EF91BDAA2DA1C2A7A16C34989110CE3D` |
 | bin postimage (ileri; `generations\R23`) | host `691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627` · api `CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3` · web `F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0` |
 
-### 1.5 CLIENT İ11 — adaya bağlanmış kimlikler (main @ `98878222`; dosya sha'ları OFFICE tarafından da ölçüldü)
+### 1.5 CLIENT İ11 — adaya bağlanmış kimlikler (main @ `88b3d07a`; dosya sha'ları OFFICE 33 tarafından ölçüldü)
 
 | | sha256 |
 |---|---|
-| İ11 §9 kabul bloğu (R23'e bağlı) | `A16E479155084F3B6F7D12D7A820E2BA0760411A18FB64D749FA0799C647D148` (CLIENT ölçümü) |
-| T-PENCERE-AÇ `scripts\t-window-apply.ps1` | `508C532372BA04E61677569123098A285F16388BBD5F52128DB09A1A1BFD86AB` |
-| T-PENCERE-KAPA `scripts\t-window-close.ps1` | `5895CFC7B7D400F44A50DCF81A462DED05C259E86FD5B8DFF00D3F0ECD82EB27` |
+| **İ11 §9 kabul bloğu** (R05; R23'e bağlı) | `9804FEF634E45B62F5FBC497A1A9BABB8870F4D179EF11127ABF1BE6BACF862B` — `CLIENT-LIVE-ACCEPTANCE-I11-R01.md` §9 gömülü bloktan OFFICE 33 yeniden hesapladı (LF, sonda LF) |
+| **T-PENCERE-AÇ** `scripts\t-window-apply.ps1` (R05) | `CA99E69E278D94C95FDBBBE6CA0C22B1E5C41662BD4EAEC0B79ACC4D957A74F4` |
+| **T-PENCERE-KAPA** `scripts\t-window-close.ps1` (R05) | `0A80982B7CE35B22D05A7EA08CBDBA9802746EDFB4EF7A8CEF61E8B47882AE05` |
+| GEÇERSİZ (R04) | §9 `A16E4791…` · T-AÇ `508C5323…` · T-KAPA `5895CFC7…` — **kullanılmaz** |
 | `i11-run.js` · `i11-01-setup.js` · `i11-02-intake.js` | `27821B463D2DDA5E1F180A79A677CEA13B2EAD15840D95F8218012A0E2632F4B` · `1317D727F08C81108D027C41B9B0DF9EF8E6B5C0C99979F76AEF30E3CA427DC4` · `7D8D492BC6CE4A2E2CD3CB77EEACAC01594D1DDD9D17F9F767D0625DDB251789` |
 | Kurtarma `i11-03-close-links.js` · `cl-09-close-access.js` | `87C16DB3E7A7521605C1E6F16563415949F871042BCF51617283B4A05D549740` · `012739987ED4176A114D6A33F18C76ACF2DB8614F7C954B453E04126A98862C4` |
 | `smtp-sink-noauth.js` | `99A5D681686BC3704151227AB45FC01EFC9F5F6E84DE7FE686A1157E9B558800` |
@@ -148,20 +131,25 @@ kök `OWNER-RUN`/`OWNER-COMMAND` **YOK**. R27 tüketildi, yeniden mühürlenemez
 
 | Kanıt | Sonuç |
 |---|---|
-| Bağlama B-0..B-5 | HEAD · BUILD_ID · manifest · ürün farkı 7 · `redactSecretPathSegments` MEVCUT · İ11'in 12 ürün hash'i RELEASE22 ile aynı — **hepsi eşit** |
-| **V-B** derlenmiş B-I11-3 | **PASS** — 503, ErrorLog 1 satır, ham token 0 (kanıt `7121CB3A5101692EC13057C5D54FD1AC734E5759C96C7280F8D782D3236DE951`); RELEASE22 negatif kontrol FAIL |
-| **V-A** birleşik dizi (runId `64245dc2`) | T-AÇ → İ11 → kapanış → T-KAPA: **PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0**; restart 7 s / 6 s; env bayt bayt geri (kanıt `C7E7B8E859003EDF4B42C8BF0DD125640B0B78F7329614F7D1305B3D93F1895F`) |
-| Nöbetçi (CLIENT) | aday kökü dosya 88.248 → 88.248, değişen 0 (kayıt `1AF16597659351D368D210B0FE6B92C265099EFE853E7D8F1902902274BC6D33`) |
+| Bağlama B-0..B-5 (R04) | HEAD · BUILD_ID · manifest · ürün farkı 7 · `redactSecretPathSegments` MEVCUT · İ11'in 12 ürün hash'i RELEASE22 ile aynı — **hepsi eşit** |
+| **V-B** derlenmiş B-I11-3 (R04) | **PASS** — 503, ErrorLog 1 satır, ham token 0 (kanıt `7121CB3A5101692EC13057C5D54FD1AC734E5759C96C7280F8D782D3236DE951`); RELEASE22 negatif kontrol FAIL |
+| **V-A** birleşik dizi (R04, runId `64245dc2`) | **PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0**; taşıma gövdesi A-5 token yok / A-6 token yalnız sağlayıcı metninde (kanıt `C7E7B8E859003EDF4B42C8BF0DD125640B0B78F7329614F7D1305B3D93F1895F`) |
+| **V-A tekrarı R05 blokları** (runId `51c11954`) | T-AÇ `CA99E69E…` (K-T1..K-T5 → K-T0 yedek korumalı DACL + SDDL tabanı, restart 6 s) → İ11 **PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0** → T-KAPA `0A80982B…` **hata yolu** (R-T5 yine koştu, sonda throw) → **kurtarma** (idempotent, API 6 s, R-T7 eşit, tüm adımlar başarılı) |
+| K-PAR sondası (R05) | noauth yakalayıcı açıkken **0** · eski AUTH yakalayıcı açıkken **4** |
+| K-ELEV izole sınama (R05) | yükseltilmemiş oturumda T-AÇ ve T-KAPA ilk değiştirici komuttan önce DURDU |
+| Nöbetçi (aday kökü) | R04 `1AF16597659351D368D210B0FE6B92C265099EFE853E7D8F1902902274BC6D33` · R05 `2A1062EAC54A2D5EBBCE2E7F583B4769E1654AF786420EBCCE0B88E5FCAFF7CB` — dosya 88.248 → 88.248, değişen 0 |
 
-**Önceki yordam provası (RELEASE22 dist) aday kanıtı SAYILMADI**; V-A/V-B aday ikilisinde yeniden koşuldu. Tamamlanmış
-testler (S · G · F · R · N3) gerekçeyle tekrarlanmadı (CLIENT R03 §3).
+**Önceki yordam provası (RELEASE22 dist) aday kanıtı SAYILMADI**; V-A/V-B aday ikilisinde koşuldu. Tamamlanmış testler
+(S · G · F · R · N3) gerekçeyle tekrarlanmadı (CLIENT R03 §3); taşıma gövdesi R05'te değişmeyen `i11-run.js`/yakalayıcı nedeniyle yeniden çıkarılmadı.
 
 ### 2.3 Bu kanıtların KANITLAMADIKLARI
 
-- Yükseltilmiş ölçümler: OP-00, **PRE-06 / OP-05c CutoverWriter**, OP-08a/09d/09e escrow/writer/broker ACL — yalnız Adım 1.
-- `-Live` canlı primitifler (Adım 2) ve mühür kapılarının tamamı (Adım 4 içinde).
+- Yükseltilmiş ölçümler: OP-00, **PRE-06 / OP-05c CutoverWriter**, OP-08a/09d/09e escrow/writer/broker ACL — yalnız D1-1.
+- `-Live` canlı primitifler (D1-2) ve mühür kapılarının tamamı (D1-4 içinde).
 - OFFICE #2641/#2645 davranışı **aday ikilisinde işlevsel olarak koşulmadı** (kanıt PR CI + disposable PG, kaynak üzerinde); aday bağı derlenmiş dosya sha'ları + işaretlerdir.
-- **C33 H-01 sertleştirmesi ile T-pencerenin `.env` üzerindeki etkileşimi** (§5.2) — V-A oturum `.env`'inde koştu.
+- T-KAPA **R-T4a/R-T4b** (engel kaldırma, Web başlatma) yalnız canlı modda koşar; **hata yolunda provada koşulmadı** (akış R-T5 ile aynı yapıda; R-T5'in koştuğu ölçüldü).
+- C33 H-01 `.env` ile T-pencere etkileşimi: korumalı DACL'lı karalama hedefinde DACL korundu (CLIENT); **sahip (SYSTEM) korunumu ölçülmedi** → canlıda R-T7 + D3-5.
+- D3-0 bloğu canlıda koşulmadı; blok yerelde (port/log/dizin değiştirilerek) iki yolda da koşuldu (§4 D3-0).
 - İ11 canlı gözlemleri — canlıda yalnız D3'te ölçülür.
 
 ## 3. D1 hazırlığı — canlı GO'dan ÖNCE bitenler ve GO İÇİNDE kalan mekanik adımlar
@@ -256,18 +244,62 @@ yolu + sha · canlı SHA/BUILD_ID · bu bloğun çıktısı · **`env sddl=` sat
 Bağlama main'de (#2654). Canlı dist'te `redactSecretPathSegments` satır 3 (D1-5 çıktısı) görülmeden ve §9 bloğunun K-API/K-BLD
 kapıları canlı RELEASE23'e karşı geçmeden D3 başlamaz. R23'e bağlı bloklar cutover ÖNCESİ canlıda koşulursa K-API/K-BLD'de durur (beklenen).
 
-### D3 — Canlı pencere (CLIENT, tek yürütücü)
+### D3 — Canlı pencere (CLIENT yönetir; YÜKSELTİLMİŞ yürütücü)
 
-> **★ ASKIDA (§0):** aşağıdaki tablo E-1/E-2/E-3 nedeniyle bu hash'lerle UYGULANMAZ. R02'de: D3-0 yakalayıcı başlatma
-> (`SINK_PORT=2526`, `SINK_LOG=<CLIENT scratchpad>\i11s\runs\smtp-sink.jsonl`), yükseltilmiş Administrators yürütücü ve yeni hash'ler.
+**Yürütücü:** D3 bloklarının tamamı **yükseltilmiş Administrators** Windows PowerShell penceresinde koşar (K-ELEV zorlar). Ajan oturumları
+yükseltilmemiştir (ölçüldü: preflight provası `elevated=False`; CLIENT E-3). Bu yüzden **yükseltilmiş pencereyi owner sağlar ve D3
+bloklarını owner koşar**; CLIENT sırayı yönetir, her çıktıyı doğrular ve sonraki bloğu verir. D3 blokları **aynı pencerede** koşar
+(D3-0'ın ortam değişkenleri ve §9'un `CL_*` değerleri sonraki adımlara taşınır). Aynı anda tek canlı yürütücü: D3 boyunca OFFICE canlıya dokunmaz.
 
-| Sıra | Komut (CLIENT kaynaklı; sha doğrulanmadan koşulmaz) | Girdi | Etki |
+Betik kaynağı (sha doğrulamalı): kanonik main — `C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\`.
+
+**D3-0 — Yakalayıcı + K-PAR ön-kontrolü** (OFFICE 33). Bu blok belgeden çıkarılıp YALNIZ betik dizini, log yolu ve port (2599)
+değiştirilerek yerelde WinPS 5.1 alt sürecinde **uçtan uca koşuldu**: başarı yolu `D3-0 TAMAM`, çıkış 0, dinleyici `127.0.0.1`, süreç
+komut satırı `node <…>\smtp-sink-noauth.js`; düşüş yolu (K-PAR ≥1) yakalayıcıyı durdurdu (dinleyici 0) ve fırlattı. **Canlıda koşulmadı.**
+**İşletim uyarısı (ölçüldü):** düşüş yolunu tetikleyen süreç, komut satırında desen belirteçlerini taşıyan araç kabuğuydu. D3 süresince
+komut satırında `smtp-sink.js` · `i11-run` · `cl-09` vb. geçen başka süreç (ör. `-Command` ile açılmış kabuk, ajan kabuk çağrısı, log
+izleyici) bulunmamalıdır; blokları owner yükseltilmiş pencereye **yapıştırarak** koşar (pencerenin komut satırı yalnız `powershell.exe`).
+
+```powershell
+& {
+$ErrorActionPreference='Stop'
+$SC='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts'
+$want=[ordered]@{'smtp-sink-noauth.js'='99A5D681686BC3704151227AB45FC01EFC9F5F6E84DE7FE686A1157E9B558800';'t-window-apply.ps1'='CA99E69E278D94C95FDBBBE6CA0C22B1E5C41662BD4EAEC0B79ACC4D957A74F4';'t-window-close.ps1'='0A80982B7CE35B22D05A7EA08CBDBA9802746EDFB4EF7A8CEF61E8B47882AE05'}
+foreach($f in $want.Keys){ if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $SC $f)).Hash -cne $want[$f]){ throw ('SHA UYUSMUYOR: ' + $f + ' - DUR') } }
+if(@(Get-NetTCPConnection -LocalPort 2526 -State Listen -ErrorAction SilentlyContinue).Count -ne 0){ throw ':2526 zaten dinleniyor - DUR' }
+$env:SINK_PORT='2526'; $env:SINK_LOG='C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i11s\runs\smtp-sink.jsonl'
+[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $env:SINK_LOG))
+[void](Start-Process -FilePath 'node' -ArgumentList ('"' + (Join-Path $SC 'smtp-sink-noauth.js') + '"') -WindowStyle Hidden -PassThru)
+$t0=Get-Date; while(@(Get-NetTCPConnection -LocalPort 2526 -State Listen -ErrorAction SilentlyContinue).Count -eq 0){ if(((Get-Date)-$t0).TotalSeconds -gt 15){ throw 'yakalayici 15 s icinde dinlemedi - DUR' }; Start-Sleep -Milliseconds 300 }
+$rx='ak-live|i11-run|i10-run|i9-run|i11-0|i10-0|i9-0|cl-09|ro-check|drive2?\.js|fault-proxy|start-api-r22s|smtp-sink\.js'
+$busy=@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and ($_.CommandLine -match $rx) -and ($_.ProcessId -ne $PID) })
+if($busy.Count -ne 0){
+  foreach($p in $busy){ 'K-PAR-ON: PID ' + $p.ProcessId + ' ' + $p.Name }
+  foreach($c in @(Get-NetTCPConnection -LocalPort 2526 -State Listen -ErrorAction SilentlyContinue)){ Stop-Process -Id ([int]$c.OwningProcess) -Force -ErrorAction SilentlyContinue }
+  throw 'K-PAR on-kontrolu: §9 DURACAK - yakalayici durduruldu, D3-1 BASLATILMAZ'
+}
+'D3-0 TAMAM: yakalayici 127.0.0.1:2526 dinliyor; K-PAR on-kontrolu 0'
+}
+```
+
+**D3-1 ve D3-4 çağrıları** (aynı yükseltilmiş pencerede; betik dosyası sha doğrulandıktan sonra `-File` ile):
+
+```powershell
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-window-apply.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'CA99E69E278D94C95FDBBBE6CA0C22B1E5C41662BD4EAEC0B79ACC4D957A74F4'){ throw 'T-AC SHA UYUSMUYOR - DUR' }; $env:T_MODE='live'; $env:T_GOREF='<OWNER-GO-CLIENT-I11-YYYYMMDD-Rnn>'; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f; 'T-AC cikis=' + $LASTEXITCODE }
+```
+
+```powershell
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-window-close.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '0A80982B7CE35B22D05A7EA08CBDBA9802746EDFB4EF7A8CEF61E8B47882AE05'){ throw 'T-KAPA SHA UYUSMUYOR - DUR' }; $env:T_MODE='live'; $env:T_RUNID='<runId>'; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f; 'T-KAPA cikis=' + $LASTEXITCODE }
+```
+
+| Sıra | Komut | Girdi | Etki / beklenen |
 |---|---|---|---|
-| D3-1 | **T-PENCERE-AÇ** `t-window-apply.ps1` `508C5323…` | `T_MODE=live`, `T_GOREF=<İ11 GO ref>` | K-T0 `.env` ön görüntü yedeği · K-T1..T3 yakalayıcı yalnız loopback, AUTH ilan yok · K-T4 API tek dinleyici · **K-T5 ayın 1'i 02:00–05:00 reddi** · **K-T6 Web durur + `I11-WINDOW-BLOCK-8080/-3002` gelen engeli** · `.env`'de TAM iki satır (`SMTP_HOST=127.0.0.1`, `SMTP_PORT=2526`) · API restart (bütçe 180 s) |
-| D3-2 | **İ11 §9 bloğu** `A16E4791…` — TEK KEZ | `$GoRef` = İ11 GO ref · `$SendGo` = aynı ref · `$SmtpAck = 'EVET'` | K-GO/K-WT/K-ARC (9 araç + 12 ürün hash) kapıları · tek `node i11-run.js` · yazma yalnız `cl-acc-<runId>` (gönderim açık **28 satır**; başarısız gönderimde 21) |
-| D3-3 | **Kapanış** (koşum sonucundan bağımsız; yalnız `CL_RUN_ID`) | `i11-03-close-links.js` `87C16DB3…` · `cl-09-close-access.js` `01273998…` | bağlantılar REVOKED · anonim yol 404 · 3 User pasif · Case CLOSED; tekrarı güvenli |
-| D3-4 | **T-PENCERE-KAPA** `t-window-close.ps1` `5895CFC7…` — **HER SONUÇTA** | `T_MODE=live`, `T_RUNID=<runId>` | K-T10b pozitif hedef kanıtı · `.env` ön görüntüye (sha birebir) · API restart (180 s) · engel kuralları kaldırılır + Web başlar · yakalayıcı durur · sentetik alan dışı ileti → otomatik yeniden gönderim YOK |
-| D3-5 | **Kapanış ölçütü (salt-okuma; OFFICE ekledi)** | D1-5 bloğunun iki `env` satırı | `env sha=7A7228B1…` VE `env sddl` = D1-5 taban çizgisi; API/Web kökü RELEASE23 |
+| D3-0 | yukarıdaki blok | — | yakalayıcı `127.0.0.1:2526` (komut satırında log yolu YOK) · K-PAR ön-kontrolü **0** → `D3-0 TAMAM` |
+| D3-1 | **T-PENCERE-AÇ** `CA99E69E…` | `T_MODE=live` · `T_GOREF=<İ11 ref>` | **K-ELEV** · K-T1..K-T3 yakalayıcı yalnız loopback, AUTH ilan yok · K-T4 API tek dinleyici · **K-T5 ayın 1'i 02:00–05:00 reddi** · **K-T0** yedek + korumalı DACL + env SDDL tabanı · **K-T6 Web durur + `I11-WINDOW-BLOCK-8080/-3002`** · `.env`'de TAM iki satır (`SMTP_HOST=127.0.0.1`, `SMTP_PORT=2526`) · API restart (180 s) · `T-AC cikis=0` |
+| D3-2 | **İ11 §9 bloğu** `9804FEF6…` — **TEK KEZ** (belgeden kopyalanır; yalnız üç değişken doldurulur; aynı pencereye yapıştırılır) | `$GoRef` = İ11 ref · `$SendGo` = aynı ref · `$SmtpAck = 'EVET'` | K-GO · K-WT · K-ARC (9 araç + 12 ürün hash) · K-PAR (noauth dışlanır) · K-INTAKE · tek `node i11-run.js`; yazma yalnız `cl-acc-<runId>` (gönderim açık **28 satır**; başarısız gönderimde 21); kapanış koşum içinde |
+| D3-3 | **Kurtarma** (yalnız koşum kesilir/durum belirsizse; `CLIENT-LIVE-ACCEPTANCE-I11-R01.md` §11) | `CL_RUN_ID=<runId>` + §9'un `CL_*` değerleri | `i11-03-close-links.js` `87C16DB3…` → bağlantılar REVOKED · `cl-09-close-access.js` `01273998…` → 3 User pasif + Case CLOSED; tekrarı güvenli |
+| D3-4 | **T-PENCERE-KAPA** `0A80982B…` — **HER SONUÇTA** | `T_MODE=live` · `T_RUNID=<runId>` | **K-ELEV** · K-T10b pozitif hedef kanıtı · R-T1 `.env` ön görüntüye (sha birebir, idempotent) · R-T2 API restart (180 s) · R-T3 özgün hedef · **R-T4a engel kaldır + R-T4b Web — HER DURUMDA** · **R-T5 yakalayıcı durdur — HER DURUMDA** · R-T6 sentetik alan dışı ileti → yeniden gönderim YOK · **R-T7 env SDDL = K-T0 tabanı** · hata varsa tüm adımlar denendikten sonra **sonda throw** (`T-KAPA cikis=1`, adım listesi) |
+| D3-5 | **Kapanış ölçütü** (salt-okuma; OFFICE) | D1-5 bloğunun iki `env` satırı | `env sha=7A7228B1…` VE `env sddl` = D1-5 taban çizgisi (R-T7 ile bağımsız aynı karşılaştırma); API/Web kökü RELEASE23; `I11-WINDOW-BLOCK` 0; `:2526` 0 |
 
 ## 5. Kapanış ve geri dönüş — TÜM sonuçlarda
 
@@ -284,21 +316,24 @@ kapıları canlı RELEASE23'e karşı geçmeden D3 başlamaz. R23'e bağlı blok
 | exit **70** (makbuz birincil yola yazılamadı; motor koştu) | makbuz/journal okunur | owner kararı; D3 başlamaz |
 | exit 0 fakat **D1-5 teknik kabul düşer** | RELEASE23 canlı, doğrulanmadı | D3 İPTAL; §5.3 elle geri dönüş + geri yön doğrulaması |
 | D2 kapısı düşer | RELEASE23 canlı ve teknik kabul geçmiş | D3 başlamaz (yazma 0); yayın kalır; İ11 açık |
-| D3-1 bir kapıda durur | K-T0 yedeği alınmış olabilir | D3-2 koşulmaz; **D3-4 yine koşulur** (idempotent) |
-| D3-2 başarısız / yarıda | sentetik tenant yazmaları | D3-3 yalnız runId ile → D3-4 |
-| D3-4 restart bütçesi aşımı | `.env` zaten ön görüntüde | owner'a DERHAL; otomatik tekrar YOK |
-| D3-5 `env sddl` taban çizgisinden farklı | içerik bayt-eşit | owner'a bildirilir; otomatik ACL düzeltmesi YOK |
-| **D3 açıkken yayın geri dönüşü gerekirse** | — | **ÖNCE D3-4** (env · engel · Web), **SONRA** §5.3 — **yalnız E-2 düzeltmesinden SONRA geçerli (§0)**; mevcut T-KAPA API kalkmazsa engel kurallarını ve kapalı Web'i BIRAKIR |
-
+| D3-0 düşer (sha · `:2526` dolu · 15 s dinleme yok · K-PAR ön-kontrolü ≥1) | canlı değişiklik 0 (K-PAR düşüşünde blok yakalayıcıyı durdurur) | D3-1 başlamaz; neden giderilir, D3-0 yeniden |
+| D3-1 K-ELEV / K-T1..K-T5'te durur | değişiklik 0 (K-T0 bu kapılardan SONRA) | D3-2 koşulmaz; yakalayıcı açıksa D3-4 (R-T5 durdurur; R-T0 "yedek yok" hatası beklenir, sonda throw) veya owner kararıyla `:2526` sahibi durdurulur |
+| D3-1 K-T0 sonrası durur (K-T6 · env yazımı · restart) | yedek + SDDL tabanı var; engel/Web/env kısmen değişmiş olabilir | D3-2 koşulmaz; **D3-4 HER DURUMDA** |
+| D3-2 başarısız / yarıda | sentetik tenant yazmaları | koşum içi kapanış doğrulanamadıysa D3-3 yalnız runId ile → D3-4 |
+| D3-4 sonda throw (`T-KAPA cikis=1`) | R-T4a/R-T4b/R-T5 yine denendi; listelenen adım(lar) başarısız | owner'a DERHAL; otomatik tekrar YOK; kurtarma = aynı D3-4 bloğunun tekrarı (idempotent, ölçüldü) |
+| R-T7 veya D3-5 `env sddl` tabandan farklı | içerik bayt-eşit | owner'a bildirilir; otomatik ACL düzeltmesi YOK |
+| **D3 açıkken yayın geri dönüşü gerekirse** | — | **ÖNCE D3-4** (engel + Web her durumda geri açılır; env ön görüntüye), **SONRA** §5.3 |
 Veri: migration yok. Koşum yazmaları **geri alınmaz**, kapatılır ve kanıt olarak kalır; `cl-acc-<runId>` yeniden açılmaz.
 Geri dönüş RELEASE23'ün üç düzeltmesini geri alır (#2641 · #2645 · #2643 B-I11-3 kusurları canlıya döner); AK-2/AK-1a/CLF-O0-01/B-1 RELEASE22'dedir.
 
-### 5.2 Etkileşim — ÖLÇÜLMEDİ, kapanış ölçütüne bağlandı
+### 5.2 Etkileşim — kısmen ölçüldü, blok içi + kapanış ölçütüne bağlandı
 
 Motor H-01 RELEASE23 `.env`'e `RUNTIME_CONFIG_FILE` uygular (korumalı DACL: SYSTEM FA · Administrators FA · runtime FR; sahip SYSTEM).
-Canlı RELEASE22 `.env` bugün aynı sınıfta (preflight provası OP-09h PASS). T-PENCERE-AÇ mevcut dosyaya `Set-Content` yazar
-(yönetici FA → yazabilir), T-PENCERE-KAPA `Copy-Item -Force` ile geri yazar ve ACL'e dokunmaz. İçerik bayt-eşit döner; **DACL ve
-sahibin korunduğu ölçülmedi** → D3-5.
+Canlı RELEASE22 `.env` bugün aynı sınıfta (preflight provası OP-09h PASS; CLIENT SDDL ölçümü `O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;…-1146)`).
+T-PENCERE-AÇ mevcut dosyaya `Set-Content` yazar (yükseltilmiş yönetici FA), T-PENCERE-KAPA `Copy-Item -Force` ile geri yazar.
+CLIENT karalama deneyi: korumalı DACL'lı hedefte her iki işlemden sonra **DACL korundu**; **sahip (SYSTEM) korunumu ölçülmedi**.
+Kapatma: T-AÇ K-T0 env SDDL tabanını (sahip + DACL) kaydeder, T-KAPA **R-T7** karşılaştırır; OFFICE **D3-5** aynı karşılaştırmayı D1-5
+taban çizgisine karşı bağımsız yapar. Farkta otomatik düzeltme yok. Yedek `ENV-PREIMAGE.env` artık korumalı DACL'lıdır (K-T0 doğrular).
 
 ### 5.3 Elle geri dönüş (yalnız bin + görev katmanı; sha ve ACL korumalı; tek parça `& { }`)
 
@@ -326,16 +361,11 @@ işaret satırları **0 · 0 · 0 · 0 · 0 · DOSYA YOK · 3 · 3 · 5 · 1** (
 |---|---|---|
 | D1 cutover (API+Web) | **~15–60 s** (emsaller 14,673 · 13,716 · 57,647 · **39,467 s**; nedeni ölçülmedi) | quiesce 90 s + start 240 s (ayrı); rollback süresi ölçülmemiş; Web BUILD_ID değişir (sekmeler bir kez yenilenebilir) |
 | Authority | SEAL'den itibaren 30 dk, tek kullanım | pencere dolarsa §5.1 exit 90/91 satırı |
-| D3 bakım penceresi | Web kapalı + :8080/:3002 dışarıya kapalı; API iki restart (aday provası 7 s / 6 s) | her restart 180 s; aşımda otomatik tekrar YOK; geçmiş süre garanti değildir (2026-09-11 logon beklemesi 35,5 dk) |
+| D3 bakım penceresi | Web kapalı + :8080/:3002 dışarıya kapalı; API iki restart (aday provası R04 7 s / 6 s · R05 6 s / 6 s) | her restart 180 s; aşımda otomatik tekrar YOK; geçmiş süre garanti değildir (2026-09-11 logon beklemesi 35,5 dk) |
 
 Cutover penceresinde kabul/sentetik tenant koşumu YAPILMAZ (motor V-01 DB snapshot eşitliği rollback tetikler).
 
 ## 7. TEK KOŞULLU OWNER GO TASLAĞI (owner onayına)
-
-> **★ ASKIDA — OWNER'A SUNULMAZ (§0).** Madde 1'deki İ11 §9 / T-AÇ / T-KAPA hash'leri geçersizleşecek; madde 5–6 E-1/E-2/E-3
-> düzeltmeleri olmadan uygulanamaz. R02 ayrıca şunları taşıyacak: D3 yürütücüsü **yükseltilmiş Administrators** oturum (kim sağlar: owner
-> veya owner'ın açtığı yükseltilmiş kabuk — açık yazılır) · D3-0 yakalayıcı ön koşulu · ana yürütücüye §1 bağımsız yeniden ölçüm ve
-> K-KİMLİK OR-03a bağımsız hesap görevinin **bu GO ile ATANMASI** · `ENV-PREIMAGE.env` korumalı DACL kapısı.
 
 > **GO — RELEASE23 CANLI YAYIN + CLIENT İ11 TAM CANLI KABUL (TEK KOŞULLU ONAY)**
 >
@@ -344,37 +374,41 @@ Cutover penceresinde kabul/sentetik tenant koşumu YAPILMAZ (motor V-01 DB snaps
 >
 > 1. **Sabit kimlikler:** kaynak `2740df3dd58c5e711a790cc21a5f69d6dbffb35d`, aday kökü `HY_W4_RELEASE23`, BUILD_ID
 >    `dOiGPj2M0Abls0kCibY4r`, manifest `E53618ED…61AD5`, paket `HY_C33_RELEASE23_CUTOVER_R28` (motor `2AE77043…A927`),
->    İ11 §9 `A16E4791…D148`, T-AÇ `508C5323…86AB`, T-KAPA `5895CFC7…EB27` — tam değerler bu belge §1. Başka SHA/kök/paket kullanılmaz;
->    herhangi bir sha uyuşmazlığında DUR.
-> 2. **D1 (OFFICE/C33):** D1-1 preflight `OWNER_PREFLIGHT_READY` → D1-2 `-Live` `REAL_PRIMITIVES_PASS` (live) → D1-3 3a–3f →
->    D1-4 tek OWNER-RUN komutu → D1-5 teknik kabul (§4 beklenenleri birebir). Her adım yalnız öncekinin beklenen sonucuyla başlar.
-> 3. **K-KİMLİK (bu GO'nun 3e onayı yalnız şu koşulla geçerlidir):** OR-03a digest'i OFFICE 33 ve ana yürütücü tarafından
->    **bağımsız** hesaplanır ve **eşittir**; onaylı liste ile `PACKAGE-IDENTITY.json` (§1.3 sha) listesi arasında dosya kümesi
->    AYNIDIR ve sha farkı YALNIZ `qualification/REAL-PRIMITIVES-RESULTS.json`, `fork/templates/OWNER-COMMAND.C33-CUTOVER.forked.ps1`,
->    `qualification/OWNER-COMMAND-TEMPLATE-RESULTS.json` dosyalarındadır (OWNER-RUN OR-03b kimlik dışı kuralları aynen). Aksi hâlde
->    DUR ve fark owner'a sunulur.
-> 4. **D2 kapısı (CLIENT):** canlı dist'te `redactSecretPathSegments` satır 3 ve §9 K-API/K-BLD canlı RELEASE23'e karşı geçer; aksi hâlde D3 başlamaz.
-> 5. **D3 (CLIENT, tek yürütücü):** T-AÇ → İ11 §9 (gönderim AÇIK) **TEK KEZ** → kapanış (runId) → T-KAPA **her sonuçta** →
->    D3-5 kapanış ölçütü. Bakım penceresidir (Web durur, :8080/:3002 dışarıya kapalı); restart bütçesi 180 s; aşımda otomatik tekrar YOK.
-> 6. **Kapanış/geri dönüş (§5.1 bu GO'nun parçasıdır):** exit 2/3 veya D1-5 düşerse D3 İPTAL ve RELEASE22'ye dönüş doğrulanır
->    (exit 3 / D1-5 düşüşünde §5.3 elle yol bu GO kapsamındadır); D3 açıkken geri dönüş gerekirse önce T-KAPA. exit 1 sonrası
->    OWNER-COMMAND'ın doğrudan koşulması ve exit 70 sonrası her adım **ayrı owner kararıdır**. Otomatik reseal/tekrar YOK;
->    tüketilen ref/nonce yeniden kullanılmaz.
-> 7. **Kapsam dışı:** migration · bayrak · ikinci API süreci · gerçek kişiye gönderim · başka tenant'a yazma · `ENV-PREIMAGE.env`
->    yedeğinin ve `CL_TOKENFIX` artığının silinmesi · RELEASE22 kökünde değişiklik.
+>    İ11 §9 `9804FEF6…862B`, T-AÇ `CA99E69E…74F4`, T-KAPA `0A80982B…AE05` — tam değerler bu belge §1. Başka SHA/kök/paket/blok
+>    kullanılmaz (R04 blokları `A16E4791…`/`508C5323…`/`5895CFC7…` GEÇERSİZ); herhangi bir sha uyuşmazlığında DUR.
+> 2. **Rol ataması:** bu GO ana yürütücüye (i) D1-1'den önce §1.3 R28 araçları ve §1.4 geri dönüş pinlerinin **bağımsız yeniden ölçümünü**,
+>    (ii) D1-3/3e'de OR-03a digest'inin **bağımsız hesabını** görev olarak ATAR. Sonuçlar kayda yazılmadan D1-4'e geçilmez.
+> 3. **D1 (OFFICE/C33; owner yükseltilmiş pencerede koşar):** D1-1 preflight `OWNER_PREFLIGHT_READY` → D1-2 `-Live`
+>    `REAL_PRIMITIVES_PASS` (live) → D1-3 3a–3f → D1-4 tek OWNER-RUN komutu → D1-5 teknik kabul (§4 beklenenleri birebir) ve devir makbuzu.
+>    Her adım yalnız öncekinin beklenen sonucuyla başlar.
+> 4. **K-KİMLİK (3e onayı yalnız şu koşulla geçerlidir):** OR-03a digest'i OFFICE 33 ve ana yürütücü tarafından bağımsız hesaplanır ve
+>    **eşittir**; onaylı liste ile `PACKAGE-IDENTITY.json` (§1.3 sha) listesi arasında dosya kümesi AYNIDIR ve sha farkı YALNIZ
+>    `qualification/REAL-PRIMITIVES-RESULTS.json`, `fork/templates/OWNER-COMMAND.C33-CUTOVER.forked.ps1`,
+>    `qualification/OWNER-COMMAND-TEMPLATE-RESULTS.json` dosyalarındadır (OWNER-RUN OR-03b kimlik dışı kuralları aynen). Aksi hâlde DUR ve fark owner'a sunulur.
+> 5. **D2 kapısı (CLIENT):** canlı dist'te `redactSecretPathSegments` satır 3 (D1-5) ve §9 K-API/K-BLD canlı RELEASE23'e karşı geçer; aksi hâlde D3 başlamaz.
+> 6. **D3 (CLIENT yönetir; yükseltilmiş pencereyi owner sağlar ve blokları owner koşar; tek yürütücü):** D3-0 (K-PAR ön-kontrolü **0**) →
+>    D3-1 T-AÇ → D3-2 İ11 §9 (gönderim AÇIK) **TEK KEZ** → gerekirse D3-3 kurtarma (runId) → D3-4 T-KAPA **her sonuçta** → D3-5 kapanış
+>    ölçütü. Bakım penceresidir (Web durur, :8080/:3002 dışarıya kapalı); her restart bütçesi 180 s; aşımda otomatik tekrar YOK.
+> 7. **Kapanış/geri dönüş (§5.1 bu GO'nun parçasıdır):** exit 2/3 veya D1-5 düşerse D3 İPTAL ve RELEASE22'ye dönüş doğrulanır
+>    (exit 3 / D1-5 düşüşünde §5.3 elle yol bu GO kapsamındadır); D3 açıkken geri dönüş gerekirse ÖNCE D3-4, SONRA §5.3. exit 1 sonrası
+>    OWNER-COMMAND'ın doğrudan koşulması, exit 70 sonrası her adım ve R-T7/D3-5 SDDL farkının düzeltilmesi **ayrı owner kararıdır**.
+>    Otomatik reseal/tekrar YOK; tüketilen ref/nonce yeniden kullanılmaz.
+> 8. **Kapsam dışı:** migration · bayrak · ikinci API süreci · gerçek kişiye gönderim · başka tenant'a yazma · `ENV-PREIMAGE.env`
+>    yedeğinin ve `CL_TOKENFIX` artığının silinmesi · RELEASE22 kökünde değişiklik · #2655 B11'in yayına alınması.
 >
 > **IF GO-COMPLETE:** RELEASE23 canlı (`C33_RELEASE23_CUTOVER_APPLIED_AND_VERIFIED` + D1-5 PASS) · İ11 üç gözlemle canlıda kapandı ·
-> D3-5 kapanış ölçütü PASS · CLIENT sayaç 10/17 → **11/17** · hizmet kabulü **0/8 tam** · `CL_TOKENFIX` ayrı açık kalem.
+> D3-4 `tüm adımlar başarılı` + D3-5 PASS · CLIENT sayaç 10/17 → **11/17** · hizmet kabulü **0/8 tam** · `CL_TOKENFIX` ayrı açık kalem.
 
 ## 8. Açık kalemler (kapatılmış gösterilmez)
 
 | Kalem | Durum |
 |---|---|
 | **`CL_TOKENFIX` disk artığı** (`C:\Development\HY_WT\CL_TOKENFIX`) | **AYRI AÇIK KALEM** (CLIENT) — git kaydı 0, yalnız disk; kancayı aşacak alternatif silme yolu denenmedi ve denenmeyecek; seçenek (a) owner siler (b) kancayı tetiklemeyen yola açık onay |
-| `ENV-PREIMAGE.env` (D3 sonrası CLIENT oturum dizininde canlı `.env` kopyası) | D3 sonrası akıbeti ayrı karar; T-AÇ'ın tekrar-açma kilidi olarak da çalışır. **§0 (c): mevcut blokta ACL KORUMASIZ (scratchpad kalıtsal ACL, 6 ek SID/grup Modify) — CLIENT düzeltmesi bekleniyor** |
-| **D3 engelleyicileri E-1 / E-2 / E-3** (§0) | AÇIK — CLIENT düzeltip oturuma özel ortamda yeniden kanıtlayacak; yeni hash + merge SHA → bu paketin R02'si |
-| main ≠ aday — #2655 B11 @ `78f49dd3` | RELEASE23'te YOK (sabit aday); canlıya çıkışı ayrı aday/ayrı karar |
-| Ana yürütücü rol ataması (§1 yeniden ölçüm + K-KİMLİK) | owner GO ile atanacak; akran talebiyle üstlenilmedi, ölçüm yapılmadı |
+| `ENV-PREIMAGE.env` (D3 sonrası CLIENT oturum dizininde canlı `.env` kopyası; sır taşır) | R05'te **korumalı DACL** (SYSTEM + Administrators + yürütücü, K-T0 doğrular); T-AÇ'ın tekrar-açma kilidi; **silme owner kararı** |
+| K-PAR `smtp-sink\.js` ↔ `smtp-sink.jsonl` alt dizgi eşleşmesi (§0, ölçüldü) | fail-closed; D3-0 başlatma yöntemi + ön-kontrolüyle önlendi; desen `smtp-sink\.js\b` önerisi CLIENT kararı (değişirse R03) |
+| T-KAPA R-T4a/R-T4b hata yolu | yalnız canlı modda koşar; provada sınanmadı (R-T5 aynı yapıda ölçüldü) |
+| main ≠ aday — #2655 B11 @ `78f49dd3` | RELEASE23'te YOK (sabit aday); yayını ayrı aday/ayrı karar |
+| Ana yürütücü doğrulama/K-KİMLİK görevi | §7 madde 2 ile owner GO'da atanır; şu ana dek akran talebiyle üstlenilmedi, ölçüm yok |
 | PRE-06 / OP-05c · OP-08a/09d/09e | yalnız D1-1 yükseltilmiş oturumda ölçülür; NOT_MEASURED PASS sayılmaz |
 | OFFICE AK paketi K-BLD pinleri | RELEASE22'ye bağlı (`lawyer.service.js` `427DB2F1…`); RELEASE23'te `29812F1C…` → paket DURUR (beklenen; AK kabulü KAPALI, yeniden koşulmaz) |
 | İ12 | başlatılmadı |
