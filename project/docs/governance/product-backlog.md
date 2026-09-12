@@ -3936,6 +3936,12 @@ Uc kalemin hicbiri icin deploy / restart / migration / bayrak / `.env` degisikli
 yazma OLMADI. **Siradaki yayin adayi acildiginda bu uc kalem birlikte tasinir; I11 canli kosumu ONCE biterse
 pinleri gecerli kalir, aksi halde I11 paketi yeni derlemeye YENIDEN pinlenir (owner karari).**
 
+**GUNCEL (2026-09-12) — RELEASE23 ADAYI DERLENDI, CANLIDA DEGIL:** owner GO "DEVAM — ONCEDEN YETKILENDIRILMIS ADAY HAZIRLIGINI
+TAMAMLA" ile sabit kaynak `2740df3d` (#2641 + #2643 + #2645) `HY_W4_RELEASE23` kokune derlendi (BUILD_ID `dOiGPj2M0Abls0kCibY4r`,
+manifest `E53618ED…`); C33 R28 cutover paketi MUHURSUZ hazir; CLIENT I11 adaya BAGLANDI ve aday ikilisinde dogrulandi (#2654).
+Yukaridaki "RELEASE23 ACILMADI" cumlesi bu kayitla tarihseldir. Uc kalem hala CANLIDA DEGIL (deploy/restart/migration/.env 0).
+Tek canli karar paketi ve kosullu owner GO taslagi: `release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R01.md`.
+
 **OFFICE ACIK IS LISTESI — TEK GUNCEL LISTE (2026-09-12; onceki dagınık "Ayri takip" maddelerinin yerini alir):**
 Kapanan ve bu listeden DUSURULEN kalemler: `POST /cases` on kontrol yarisi + genel istek atomikligi (#2641 `b9fd97a1`
 + #2645 `e65ff5de`) · ofis oto-olusturmanin transaction disinda kalmasi (#2641) · off-ak-e1293381'deki 9 avukatin
