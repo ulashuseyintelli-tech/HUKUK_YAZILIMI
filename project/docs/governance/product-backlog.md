@@ -3853,9 +3853,7 @@ sonrasi durumunu tek yerde izler. **Canli yayin ve kabul her kalem icin AYRI asa
 
 **Ayri takip (bu fazi ENGELLEMEZ; kapatilmis GOSTERILMEZ):** ayricaliksiz pasif avukatin create ile yeniden
 etkinlestirilmesi (CLIENT R1A "create yetkisi lifecycle yetkisini icermez" ilkesinin avukata uygulanmasi — owner
-karari) · AK-1a: `POST /cases` on kontrolu (VIEWER + AK-2 avukat reddi) yaris altinda BUTUN istek atomikligi
-SAGLAMAZ — on kontrol ile create arasinda kayit ayricalikli hale gelirse create yine 403 verir (fail-closed) ama
-inline muvekkil yazilmis olabilir; genel transaction refactor'i YAPILMADI · VIEWER'in onay YURUTME/KURTARMA
+karari) · VIEWER'in onay YURUTME/KURTARMA
 yollari rol elemez — payout finalize (`PayoutApprovalPolicy`), dagitim post (`isApproverEligible`), FD yayin
 (`isDisclosureApproverEligible`) ve FD kayitli karar kurtarma (gecmisteki bir VIEWER karari bildirime
 uygulanabilir); karar degil yurutme baglami, owner karari · okuma projeksiyonlari rol elemez: onay kutusu
@@ -3864,8 +3862,7 @@ goruntuleyiciye gosterir (`OfficeApprovalDecisionActions`) — bagli VIEWER dugm
 · `isApproverEligible`'i kullanan diger domain kapilari (CLIENT/POA/borclu/portal/zamanlayici/ucret
 sozlesmesi/intake vb.) rol elemez — bu kayitta envanterlenmedi · **onceden tuketilmis FD talepleri** (genel kutudan
 REVISION_REQUESTED / CANCELLED'a cekilmis): bagli surum FD yollariyla ilerlemez (`reconcileConsumedOfficeApproval` yalniz APPROVED kabul eder); canlida OLCULDU 2026-09-11 (salt-okuma, yazma 0): FD talebi 2/2 APPROVED, FD surumu 2/2 PUBLISHED, OFFICE_APPROVAL_PENDING surum 0 — tuketilmis/kilitli kayit 0; kurtarma / veri degisikligi AYRI owner karari · **FD kurtarma VIEWER politikasi** (kayitli karar kurtarma rol elemez; yukaridaki VIEWER yurutme/kurtarma maddesinin FD ayagi) AYRI ACIK — dar karar incelemesi ve politika onerisi `release22-candidate-r01/RELEASE22-ADAY-HAZIRLIK-R01.md` §6 (bugun canli etki 0; owner karari) · FD modulunun manifest disi bes spec'i #2610 `c78f0963` ile client-portal + domain-integration manifestlerine baglandi (baska oturum; bu kapanistan ONCE birlesti — owner'in 'kapanistan sonra' sira notu fiilen asildi)
-· `POST /cases`'te CASE duzeyinde VIEWER kontrolu olmamasi (CASE alani; bu kaydin kapsami disi) · create'in
-yeni kayit dalinda ofis otomatik olusturmanin transaction disinda kalmasi · seed'in OFFICE disi uclarinin yalniz
+· `POST /cases`'te CASE duzeyinde VIEWER kontrolu olmamasi (CASE alani; bu kaydin kapsami disi) · seed'in OFFICE disi uclarinin yalniz
 JwtAuthGuard ile korunmasi (OWN-13 D03; canlida seed modulu KAPALI) · yerel junction kalintisi
 `C:\Development\HY_WT\AK2_LAWYER_CREATE` (repo disi; ayri temizlik kaydi).
 
@@ -3923,3 +3920,57 @@ alanlari bos; tek audit POA_CREATE/created; PoaLawyer 0; POA kovasi listelendi 0
 sayi duzeyi, butun DB hakkinda hukum degil; A-2 ve A-4 retleri satiri degistirmedi, xmin ve updatedAt ile olculdu) · kanit
 `Documents\CLIENT-I10-EVIDENCE-20260912` · **CLIENT sayaci 9/17 → 10/17**; hizmet kabulu **0/8 DEGISMEDI** · I11 baslatilmadi
 (ayri owner GO); OFFICE AK kapanisi korunur.
+
+**YAYIN BEKLEYEN DEGISIKLIKLER — RELEASE22 CANLIDA / bu uc kalem MAIN'DE, CANLIDA DEGIL (2026-09-12):**
+RELEASE23 **ACILMADI** (owner karari 2026-09-12) ve CLIENT I11'in RELEASE22 pinlerine (release HEAD `13740670`,
+web BUILD_ID `xJZ1G1TsbOnHoWUzMD8CQ`, dist hash'leri) DOKUNULMADI. Asagidaki uc degisiklik AYRI kapsamlardir;
+ortak tek bir kabul adimi YOKTUR ve her biri icin canli yayin + kabul AYRI asamadir.
+
+| # | Squash | Hat | Kapsam (ayri) | Canli etki |
+|---|---|---|---|---|
+| #2641 | `b9fd97a1` | OFFICE | `POST /cases` inline taraf SIRASI: avukat create'i muvekkil yazmasindan ONCE (yetki reddinde sahipsiz muvekkil satiri olusmaz) + ofis oto-olusturma avukat satiri ve `LAWYER_CREATE` audit'i ile AYNI transaction'da. CI kapsam bosluğu: `case-create-rfa016-guard.spec.ts` hicbir manifeste bagli DEGILDI, baglandi. | YOK |
+| #2645 | `e65ff5de` | OFFICE | `POST /cases` DAR ATOMIKLIK: satir ici avukat / ofis / audit / muvekkil / iletisim-adres / borclu yazmalari dosya `$transaction`'ina KATILIR (`src/common/party-write-tx.ts`; `txCtx` yoksa bagimsiz servis cagrilari BIREBIR eski). Borclu/adres sahiplik guard'i tx DISINDA resolve'dan ONCEye alindi. Transaction sure sinirlari ACIK: `{maxWait:15_000, timeout:20_000}`. | YOK |
+| #2643 | `d199c8dc` | CLIENT | B-I11-3: public intake HAM TOKEN'i hata kaydina YAZILMAZ (`error-log.sanitize.ts`); rota sekli KORUNUR. OFFICE kapsaminda DEGILDIR; I11 hazirlik hattinin kalemidir. | YOK |
+
+Uc kalemin hicbiri icin deploy / restart / migration / bayrak / `.env` degisikligi YAPILMADI ve canli veritabanina
+yazma OLMADI. **Siradaki yayin adayi acildiginda bu uc kalem birlikte tasinir; I11 canli kosumu ONCE biterse
+pinleri gecerli kalir, aksi halde I11 paketi yeni derlemeye YENIDEN pinlenir (owner karari).**
+
+**OFFICE ACIK IS LISTESI — TEK GUNCEL LISTE (2026-09-12; onceki dagınık "Ayri takip" maddelerinin yerini alir):**
+Kapanan ve bu listeden DUSURULEN kalemler: `POST /cases` on kontrol yarisi + genel istek atomikligi (#2641 `b9fd97a1`
++ #2645 `e65ff5de`) · ofis oto-olusturmanin transaction disinda kalmasi (#2641) · off-ak-e1293381'deki 9 avukatin
+pasiflestirilmesi (owner karari 2026-09-12: KORUNUR, karar kalemi KAPALI) · OFFICE_ATOMICITY ve OFF_ATOM2 worktree
+kalintilari (kayit + dizin kaldirildi; kanonik `.bin` 12/30/27 ve `.pnpm` 1389 degismedi).
+
+**A. MUHENDISLIK ISI** (owner politika karari GEREKTIRMEZ; kod/olcum isi)
+
+| # | Kalem | Not |
+|---|---|---|
+| A1 | `isApproverEligible` kullanan DIGER domain kapilarinin envanteri (CLIENT / POA / borclu / portal / zamanlayici / ucret sozlesmesi / intake) | Bu kapilar rol ELEMEZ; envanter HIC cikarilmadi. Once olcum, sonra politika. |
+| A2 | AK1A-C1 — audit'siz guncelleme gozleminin kok nedeni | Gozlem kayitli; kok neden olculmedi. |
+| A3 | Baslatici dayanikliligi | Reboot -> logon beklemesi + launcher `exit 23` UNCLASSIFIED 120 sn beklemeyi keser, PT15M'ye kalir (RELEASE22 Ek C.1). |
+
+**B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
+
+| # | Kalem | Durum |
+|---|---|---|
+| B1 | AK-1b — cross-office kapsami | Plan §8.5 onerisi; kod DEGISMEDI. |
+| B2 | AK-1c — ADMIN kisa-yol sirasi | Plan §8.5; teyit bekler. |
+| B3 | Ayricaliksiz pasif avukatin create ile yeniden etkinlesmesi | CLIENT R1A "create yetkisi lifecycle yetkisini icermez" ilkesinin avukata uygulanmasi. Bugun IZINLI (audit'li). |
+| B4 | VIEWER'in onay YURUTME / KURTARMA yollari | payout finalize · dagitim post · FD yayin · FD kayitli karar kurtarma. Karar degil YURUTME baglami. |
+| B5 | Okuma projeksiyonlari + web karar dugmeleri (UX) | Bagli VIEWER dugmeyi GORUR, sunucu 403 verir. |
+| B6 | `POST /cases`'te CASE duzeyinde VIEWER kontrolu olmamasi | CASE alani; OFFICE kaydinin kapsami disi ama acik. |
+| B7 | seed'in OFFICE disi uclarinin yalniz JwtAuthGuard ile korunmasi | OWN-13 D03; canlida seed modulu KAPALI. |
+| B8 | Onceden tuketilmis FD taleplerinin kurtarilmasi | Canlida OLCULDU (2026-09-11, salt-okuma): tuketilmis/kilitli kayit 0 -> bugun canli etki 0. |
+| B9 | Yerel worktree kalintisi `C:\Development\HY_WT\AK2_LAWYER_CREATE` | Repo disi; iskelet (0 dosya) olarak duruyor. Kanitlanmis tasfiye recetesi hazir. |
+
+**C. CANLI KABUL BEKLEYEN** (kod MAIN'DE, canlida DEGIL ya da canlida yalnizca isaret duzeyinde olculdu)
+
+| # | Kalem | Durum |
+|---|---|---|
+| C1 | `POST /cases` create yolu atomikligi (#2641 + #2645) | Main'de; yayin ve islevsel canli kabul YAPILMADI. |
+| C2 | AK-1a eki — VIEWER onay karari siniri (#2606 `42d109fe`) | Canlida yalniz dist isareti olculdu; islevsel senaryo KOSULMADI. |
+| C3 | CLF-O0-01 / FD senaryolari (#2608 + #2612) | Canlida yalniz dist isareti; FD senaryolari canlida KOSULMAZ kaydi yerinde. |
+
+Bu liste OFFICE hattinin **tek guncel** acik is kaydidir; yukaridaki tarihsel paragraflar DEGISTIRILMEDI
+(append-only). Yeni is bu listeden SECILIR; liste disi is acilmaz.
