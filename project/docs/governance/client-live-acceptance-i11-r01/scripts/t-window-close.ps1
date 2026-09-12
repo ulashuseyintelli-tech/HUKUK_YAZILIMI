@@ -1,18 +1,27 @@
 & {
-  # T-PENCERE-KAPA — POZITIF HEDEF KANITI + geri donus. SONUC NE OLURSA OLSUN calistirilir.
-  # KOSUM VE STATE DOSYASINDAN BAGIMSIZDIR: tek girdisi env on goruntu yedegidir.
-  # T_MODE = 'live' | 'prova'.  T_RUNID verilirse pozitif kanit o kosuma baglanir.
+  # T-PENCERE-KAPA - POZITIF HEDEF KANITI + geri donus. SONUC NE OLURSA OLSUN calistirilir.
+  # KOSUM VE STATE DOSYASINDAN BAGIMSIZDIR: girdileri env on goruntu yedegi + pinli sha'dir.
+  # T_MODE        = 'live' | 'prova'.  T_RUNID verilirse pozitif kanit o kosuma baglanir.
+  # T_ENV_PRE_SHA = ZORUNLU; T-PENCERE-AC'a verilen AYNI deger. Yedek YALNIZ bu degere esitse geri yazilir.
+  # Bu dosya BILINCLI olarak yalniz ASCII'dir: Windows PowerShell 5.1 BOM'suz betigi ANSI okur.
   #
-  # HATA YOLU (R03 duzeltmesi): bir adimin basarisizligi SONRAKI adimlari ATLATMAZ.
+  # HATA YOLU (R05): bir adimin basarisizligi SONRAKI adimlari ATLATMAZ.
   # Onlem kaldirma (R-T4) ve yakalayici durdurma (R-T5) HER DURUMDA denenir; hatalar toplanir
   # ve blok SONDA throw eder. Gerekce: API kalkmadiginda (tam da yayin geri donusu gereken an)
   # engelleme kurallari ve durdurulmus Web kalirsa kullanicilar C33 geri donusunden sonra da
   # disarida kalir. Env geri yazilamamissa bile erisim geri acilir: SMTP loopback'te kalir ve
   # yakalayici durdurulur -> dis gonderim yine IMKANSIZ (guvenli yon).
+  #
+  # BUTUNLUK (R07): yedek, SDDL tabani, yakalayici kaydi ve taban dosyasi KULLANILMADAN ONCE sahip +
+  # DACL + reparse denetiminden gecer; yedek ayrica pinli sha256'ya esit olmalidir. Karalama zinciri
+  # yabanci SID'lere Modify / DeleteSubdirectoriesAndFiles verdigi icin (olculdu) dizin ya da dosya
+  # degistirilmisse geri yazma YAPILMAZ; kanit dosyasi guvenilmezse kanit YOK sayilir.
   $ErrorActionPreference = 'Stop'
   $selfMark = 'T-PENCERE-KAPA'
   $Mode = if ($env:T_MODE) { $env:T_MODE } else { 'live' }
   if ($Mode -notin @('live', 'prova')) { throw "T_MODE gecersiz ('$Mode')" }
+  $PinSha = if ($env:T_ENV_PRE_SHA) { $env:T_ENV_PRE_SHA.Trim().ToUpperInvariant() } else { '' }
+  if ($PinSha -notmatch '^[0-9A-F]{64}$') { throw 'T-PIN: T_ENV_PRE_SHA zorunlu (T-PENCERE-AC ile ayni 64 hex) - HICBIR degisiklik yapilmadi; degerle yeniden calistirin' }
 
   $SinkPort  = 2526
   $BudgetSec = 180
@@ -21,17 +30,18 @@
   $RunId     = $env:T_RUNID
 
   if ($Mode -eq 'live') {
-    $REL = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'
-    $ENVF = Join-Path $REL 'project\apps\api\.env'
-    $Port = 8080
-    $BAK = Join-Path $S 'i11live\ENV-PREIMAGE.env'
+    $REL    = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'
+    $ENVF   = Join-Path $REL 'project\apps\api\.env'
+    $Port   = 8080
+    $BakDir = Join-Path $S 'i11live'
   } else {
-    $ENVF = Join-Path $S 'i11s\twork\.env'
-    $Port = 8101
-    $BAK = Join-Path $S 'i11s\twork\ENV-PREIMAGE.env'
+    $ENVF   = Join-Path $S 'i11s\twork\.env'
+    $Port   = 8101
+    $BakDir = Join-Path $S 'i11s\twork\preimage'
   }
-  $BaseFile = Join-Path (Split-Path -Parent $BAK) 'SINK-BASELINE.txt'
-  $SddlFile = Join-Path (Split-Path -Parent $BAK) 'ENV-SDDL-BASELINE.txt'
+  $BAK      = Join-Path $BakDir 'ENV-PREIMAGE.env'
+  $BaseFile = Join-Path $BakDir 'SINK-BASELINE.txt'
+  $SddlFile = Join-Path $BakDir 'ENV-SDDL-BASELINE.txt'
 
   # ---- K-ELEV (yalniz canli, ILK kapi): yukseltilmis Administrators olmadan HICBIR islem yapilmaz ----
   # Olculdu: canli .env sahibi SYSTEM, DACL korumali, kullaniciya yalniz Read; firewall ve SYSTEM
@@ -44,25 +54,46 @@
     Write-Output 'K-ELEV: yukseltilmis Administrators oturumu'
   }
 
+  $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  $Trusted = @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators', $me)
+  function Get-TrustProblem([string]$path, [bool]$mustProtect) {
+    if (-not (Test-Path -LiteralPath $path)) { return "YOK ($path)" }
+    $item = Get-Item -LiteralPath $path -Force
+    $a = Get-Acl -LiteralPath $path
+    $bad = @()
+    if ((([int]$item.Attributes) -band 0x400) -ne 0) { $bad += 'reparse noktasi (baglanti/junction)' }
+    if ($Trusted -notcontains $a.Owner) { $bad += "sahip=$($a.Owner)" }
+    if ($mustProtect -and -not $a.AreAccessRulesProtected) { $bad += 'DACL korumasiz' }
+    $foreign = @($a.Access | Where-Object { $Trusted -notcontains $_.IdentityReference.Value })
+    if ($foreign.Count -ne 0) { $bad += "yabanci kural $($foreign.Count)" }
+    return ($bad -join '; ')
+  }
+  Write-Output "T-MOD: $Mode | env=$ENVF | port=$Port | yedek dizini=$BakDir | pin=$PinSha"
+
   $errs = @()
 
   # ---- K-T10b: POZITIF HEDEF KANITI - calisan API GERCEKTEN yerel yakalayiciya baglandi ----
   # Yapisal kontroller (baslangic zamani, :465 yoklugu) TEK BASINA yeterli SAYILMAZ.
   # Kanit: yakalayici kaydina, BU KOSUMUN kimligini tasiyan yeni ileti dustu.
+  # Kanit dosyalari guvenilir degilse (sahip/DACL degismis) kanit YOK sayilir ve bildirilir.
   $posProof = $false; $posDetail = 'olculemedi'
+  $evidenceTrusted = $false
   try {
-    if (Test-Path -LiteralPath $SinkLog) {
-      $base = if (Test-Path -LiteralPath $BaseFile) { [int](Get-Content -LiteralPath $BaseFile -TotalCount 1) } else { -1 }
+    $pLog = Get-TrustProblem $SinkLog $true
+    $pBase = Get-TrustProblem $BaseFile $false
+    $pDir = Get-TrustProblem $BakDir $true
+    if ($pLog -or $pBase -or $pDir) {
+      $posDetail = "kanit dosyasi guvenilir DEGIL (kayit: $(if ($pLog) { $pLog } else { 'tamam' }) | taban: $(if ($pBase) { $pBase } else { 'tamam' }) | dizin: $(if ($pDir) { $pDir } else { 'tamam' }))"
+      $errs += "K-T10b: $posDetail"
+    } else {
+      $evidenceTrusted = $true
+      $base = [int](Get-Content -LiteralPath $BaseFile -TotalCount 1)
       $all = @(Get-Content -LiteralPath $SinkLog)
-      if ($base -lt 0) {
-        $posDetail = 'TABAN DOSYASI YOK - artis olculemez'
-      } else {
-        $newLines = @($all | Select-Object -Skip $base)
-        $withRun = if ($RunId) { @($newLines | Where-Object { $_ -match [regex]::Escape($RunId) }) } else { $newLines }
-        if ($newLines.Count -gt 0 -and $withRun.Count -gt 0) { $posProof = $true }
-        $posDetail = "yeni ileti $($newLines.Count); bu kosuma ait $($withRun.Count)"
-      }
-    } else { $posDetail = 'yakalayici kaydi YOK' }
+      $newLines = @($all | Select-Object -Skip $base)
+      $withRun = if ($RunId) { @($newLines | Where-Object { $_ -match [regex]::Escape($RunId) }) } else { $newLines }
+      if ($newLines.Count -gt 0 -and $withRun.Count -gt 0) { $posProof = $true }
+      $posDetail = "yeni ileti $($newLines.Count); bu kosuma ait $($withRun.Count)"
+    }
   } catch { $posDetail = "olcum hatasi: $($_.Exception.Message)" }
   if ($posProof) {
     Write-Output "K-T10b POZITIF KANIT: calisan API yerel yakalayiciya BAGLANDI ve ileti teslim etti ($posDetail)"
@@ -70,19 +101,24 @@
     Write-Output "K-T10b POZITIF KANIT YOK ($posDetail) - hedef dogrulanamadi; geri donus YINE DE uygulanir"
   }
 
-  # ---- R-T0/R-T1: env on goruntuye donus (idempotent) ----
+  # ---- R-T0/R-T1: env on goruntuye donus (idempotent, PINLI) ----
   try {
-    if (-not (Test-Path -LiteralPath $BAK)) { throw "on goruntu yedegi YOK ($BAK) - elle mudahale gerekir" }
-    $bakHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $BAK).Hash
     $curHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ENVF).Hash
-    Write-Output "R-T0: yedek=$bakHash mevcut=$curHash"
-    if ($curHash -eq $bakHash) {
-      Write-Output 'R-T1: env ZATEN on goruntuyle AYNI (idempotent)'
+    if ($curHash -eq $PinSha) {
+      Write-Output "R-T0: mevcut env = pin ($PinSha)"
+      Write-Output 'R-T1: env ZATEN on goruntuyle AYNI (idempotent) - yedege dokunulmadi'
     } else {
+      $pDir = Get-TrustProblem $BakDir $true
+      if ($pDir) { throw "yedek dizini guvenilir DEGIL ($pDir) - GERI YAZILMADI; elle mudahale" }
+      $pBak = Get-TrustProblem $BAK $true
+      if ($pBak) { throw "yedek dosyasi guvenilir DEGIL ($pBak) - GERI YAZILMADI; elle mudahale" }
+      $bakHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $BAK).Hash
+      Write-Output "R-T0: pin=$PinSha yedek=$bakHash mevcut=$curHash"
+      if ($bakHash -ne $PinSha) { throw "yedek sha256 pinli degere ESIT DEGIL ($bakHash) - GERI YAZILMADI; elle mudahale" }
       Copy-Item -LiteralPath $BAK -Destination $ENVF -Force
       $after = (Get-FileHash -Algorithm SHA256 -LiteralPath $ENVF).Hash
-      if ($after -ne $bakHash) { throw "geri yazma DOGRULANAMADI ($after != $bakHash)" }
-      Write-Output 'R-T1: env on goruntuye geri yazildi - sha256 BIREBIR'
+      if ($after -ne $PinSha) { throw "geri yazma DOGRULANAMADI ($after != $PinSha)" }
+      Write-Output 'R-T1: env on goruntuye geri yazildi - sha256 = pin'
     }
   } catch { $errs += "R-T0/R-T1: $($_.Exception.Message)"; Write-Output "!!! R-T0/R-T1 BASARISIZ: $($_.Exception.Message) - SONRAKI ADIMLAR YINE DE DENENIYOR" }
 
@@ -109,9 +145,9 @@
     $tick = 0
     while ($sw.Elapsed.TotalSeconds -lt $BudgetSec) {
       $tick++
-      $p = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
-      Write-Output "  [bekleme $tick] $([int]$sw.Elapsed.TotalSeconds) sn · :$Port dinleyici=$(if ($p.Count) { $p -join ',' } else { 'YOK' })"
-      if ($p.Count -eq 1 -and [int]$p[0] -ne $oldPid) { $newPid = [int]$p[0]; break }
+      $lp = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
+      Write-Output "  [bekleme $tick] $([int]$sw.Elapsed.TotalSeconds) sn | :$Port dinleyici=$(if ($lp.Count) { $lp -join ',' } else { 'YOK' })"
+      if ($lp.Count -eq 1 -and [int]$lp[0] -ne $oldPid) { $newPid = [int]$lp[0]; break }
       Start-Sleep -Seconds 3
     }
     $sw.Stop()
@@ -125,13 +161,14 @@
     $proc = Get-Process -Id $newPid
     $envWrite = (Get-Item -LiteralPath $ENVF).LastWriteTime
     if ($proc.StartTime -le $envWrite) { throw 'API baslangici env yazimindan SONRA DEGIL' }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $ENVF).Hash -ne $PinSha) { throw 'env sha256 pinli degere ESIT DEGIL - geri donus TAMAMLANMADI' }
     $hostLine = @(Select-String -LiteralPath $ENVF -Pattern '^\s*SMTP_HOST\s*=')
     $hv = if ($hostLine.Count -eq 1) { (($hostLine[0].Line -replace '^\s*SMTP_HOST\s*=','').Trim()).Trim('"') } else { '(belirsiz)' }
     if ($hv -eq '127.0.0.1') { throw 'SMTP_HOST hala loopback - geri donus TAMAMLANMADI' }
-    Write-Output "R-T3: SMTP_HOST='$hv' - ozgun hedef geri geldi"
+    Write-Output "R-T3: env = pin | SMTP_HOST='$hv' - ozgun hedef geri geldi"
   } catch { $errs += "R-T3: $($_.Exception.Message)"; Write-Output "!!! R-T3 BASARISIZ: $($_.Exception.Message)" }
 
-  # ---- R-T4: ONLEMEYI KALDIR (yalniz canli) — HER DURUMDA denenir ----
+  # ---- R-T4: ONLEMEYI KALDIR (yalniz canli) - HER DURUMDA denenir ----
   if ($Mode -eq 'live') {
     try {
       $fw = @(Get-NetFirewallRule -DisplayName 'I11-WINDOW-BLOCK-*' -ErrorAction SilentlyContinue)
@@ -155,7 +192,7 @@
     } catch { $errs += "R-T4b: $($_.Exception.Message)"; Write-Output "!!! R-T4b BASARISIZ: $($_.Exception.Message)" }
   }
 
-  # ---- R-T5: yakalayiciyi durdur — HER DURUMDA denenir ----
+  # ---- R-T5: yakalayiciyi durdur - HER DURUMDA denenir ----
   try {
     $l = @(Get-NetTCPConnection -LocalPort $SinkPort -State Listen -ErrorAction SilentlyContinue)
     foreach ($c in $l) { Get-Process -Id ([int]$c.OwningProcess) -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }
@@ -168,22 +205,22 @@
   # ---- R-T6: BASKA TENANT ILETISI KONTROLU - otomatik yeniden gonderim YOK ----
   $foreign = 0
   try {
-    if ((Test-Path -LiteralPath $SinkLog) -and (Test-Path -LiteralPath $BaseFile)) {
-      $base = [int](Get-Content -LiteralPath $BaseFile -TotalCount 1)
-      # YALNIZ GERCEK ILETILER sayilir ('LISTEN' defter satirlarinda alici yoktur).
-      $newLines = @(Get-Content -LiteralPath $SinkLog | Select-Object -Skip $base | Where-Object { $_ -match '"raw"' })
-      $foreign = @($newLines | Where-Object { $_ -notmatch 'cl-acceptance\.invalid' }).Count
-    }
+    if (-not $evidenceTrusted) { throw 'yakalayici kaydi/taban guvenilir DEGIL (K-T10b) - alici denetimi yapilamadi' }
+    $base = [int](Get-Content -LiteralPath $BaseFile -TotalCount 1)
+    # YALNIZ GERCEK ILETILER sayilir ('LISTEN' defter satirlarinda alici yoktur).
+    $newLines = @(Get-Content -LiteralPath $SinkLog | Select-Object -Skip $base | Where-Object { $_ -match '"raw"' })
+    $foreign = @($newLines | Where-Object { $_ -notmatch 'cl-acceptance\.invalid' }).Count
     if ($foreign -ne 0) {
       Write-Output "R-T6: !!! SENTETIK ALAN DISI alici tasiyan ileti: $foreign - OTOMATIK YENIDEN GONDERIM YOK; owner a BILDIR"
     } else {
-      Write-Output 'R-T6: yakalanan iletilerin tamami sentetik alan (cl-acceptance.invalid)'
+      Write-Output "R-T6: yakalanan iletilerin tamami sentetik alan (cl-acceptance.invalid) - ileti $($newLines.Count)"
     }
   } catch { $errs += "R-T6: $($_.Exception.Message)"; Write-Output "!!! R-T6 BASARISIZ: $($_.Exception.Message)" }
 
-  # ---- R-T7: env ACL (SDDL) T-PENCERE-AC tabanina esit mi? — farkta OTOMATIK DUZELTME YOK ----
+  # ---- R-T7: env ACL (SDDL) T-PENCERE-AC tabanina esit mi? - farkta OTOMATIK DUZELTME YOK ----
   try {
-    if (-not (Test-Path -LiteralPath $SddlFile)) { throw "SDDL taban dosyasi YOK ($SddlFile)" }
+    $pSddl = Get-TrustProblem $SddlFile $false
+    if ($pSddl) { throw "SDDL taban dosyasi guvenilir DEGIL ($pSddl)" }
     $sddlBase = (Get-Content -LiteralPath $SddlFile -TotalCount 1).Trim()
     $sddlNow = (Get-Acl -LiteralPath $ENVF).Sddl
     if ($sddlNow -ne $sddlBase) { throw "env SDDL tabandan FARKLI (taban=$sddlBase simdi=$sddlNow) - otomatik duzeltme YOK" }
@@ -193,6 +230,7 @@
   Write-Output ''
   Write-Output "Pozitif hedef kaniti: $(if ($posProof) { 'VAR' } else { 'YOK' })"
   Write-Output 'NOT: Kabul kosumunun DB yazmalari GERI ALINMAZ; kapanisla (baglanti iptali + kullanici iptali + Case CLOSED) KAPATILIR ve kanit olarak KALIR.'
+  Write-Output "NOT: $BakDir SIR TASIR (korumali); silme owner kararidir."
   if ($errs.Count -ne 0) {
     Write-Output "PENCERE KAPANISI EKSIK - basarisiz adim: $($errs.Count)"
     foreach ($e in $errs) { Write-Output "  - $e" }
