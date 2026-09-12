@@ -399,7 +399,9 @@ describe('R2 — sözleşme sabitleri', () => {
 
   it('18. R1/R1A davranışı gerilemez: client create/update actor ZORUNLU + reactivate kapısı yerinde', () => {
     const src = read('client.service.ts');
-    expect(src).toMatch(/async create\([^)]*actor:\s*ClientMutationActorContext\s*\)/s);
+    // DAR ATOMİKLİK (owner GO 2026-09-12): `create`'e sondan opsiyonel `txCtx` eklendi; `actor`
+    // ZORUNLU kalmaya devam eder (aşağıdaki `actor?:` yasağı bunu sabitler).
+    expect(src).toMatch(/async create\([^)]*actor:\s*ClientMutationActorContext\s*[,)]/s);
     expect(src).toMatch(/async update\([^)]*actor:\s*ClientMutationActorContext\s*\)/s);
     expect(src).toContain('assertCanReactivateViaCreate');
     expect(src).not.toMatch(/async create\([^)]*actor\?:/s);

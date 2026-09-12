@@ -24,7 +24,7 @@ function setup(opts: { lawyerFound?: any; staffFound?: any } = {}) {
 
   // Kapsam DIŞI pre-tx adımları no-op (4b/4c/sorumlu-personel izolasyon deseni).
   (service as any).validateSubCategoryRules = () => {};
-  (service as any).resolveInlinePartiesBeforeTx = jest.fn(async () => {});
+  (service as any).resolveInlinePartiesInTx = jest.fn(async () => {});
   (service as any).validateDebtorOwnershipBeforeCreate = jest.fn(async () => {});
 
   (service as any).prisma = {

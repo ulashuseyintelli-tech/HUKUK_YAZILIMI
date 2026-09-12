@@ -373,7 +373,7 @@ describe('AK-2 — iç çağıranlar da aynı sınırdan geçer', () => {
     const caseSvc: any = Object.create(CaseService.prototype);
     caseSvc.lawyerService = h.svc;
     await expect(
-      caseSvc.resolveInlinePartiesBeforeTx(
+      caseSvc.resolveInlinePartiesInTx(
         TENANT,
         { lawyers: [{ name: 'Ayşe', surname: 'Kaya' }] },
         { userId: 'u-case', tenantId: TENANT, role: 'USER' },
@@ -387,7 +387,7 @@ describe('AK-2 — iç çağıranlar da aynı sınırdan geçer', () => {
     const caseSvc: any = Object.create(CaseService.prototype);
     caseSvc.lawyerService = h.svc;
     const dto: any = { lawyers: [{ name: 'Ayşe', surname: 'Kaya' }] };
-    await caseSvc.resolveInlinePartiesBeforeTx(TENANT, dto, { userId: 'u-case', tenantId: TENANT, role: 'USER' });
+    await caseSvc.resolveInlinePartiesInTx(TENANT, dto, { userId: 'u-case', tenantId: TENANT, role: 'USER' });
     expect(dto.lawyers[0].id).toBe('L-X');
     expect(h.store.get('L-X')!.isActive).toBe(true);
     expect(h.audit.logInTransaction.mock.calls[0][1]).toMatchObject({ userId: 'u-case', metadata: { privileged: false } });

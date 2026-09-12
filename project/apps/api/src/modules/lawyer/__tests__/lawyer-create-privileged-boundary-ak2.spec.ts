@@ -385,7 +385,7 @@ describe('AK-2 — atıf zinciri: iç çağıranlarda audit isteği yapan GERÇE
     const caseSvc: any = Object.create(CaseService.prototype);
     caseSvc.lawyerService = lawyerSvc;
     const dto: any = { lawyers: [{ name: 'Inline', surname: 'Avukat', barNumber: 'B-9' }] };
-    await caseSvc.resolveInlinePartiesBeforeTx(TENANT, dto, { userId: 'u-case', tenantId: TENANT, role: 'USER' });
+    await caseSvc.resolveInlinePartiesInTx(TENANT, dto, { userId: 'u-case', tenantId: TENANT, role: 'USER' });
     expect(committed).toHaveLength(1);
     expect(dto.lawyers[0].id).toBe(committed[0].id); // inline bağ korunur
     expect(f01.isF01ActorAuthorized).not.toHaveBeenCalled(); // projeksiyon aktörsüz → F01'e hiç gidilmez
@@ -396,7 +396,7 @@ describe('AK-2 — atıf zinciri: iç çağıranlarda audit isteği yapan GERÇE
     const { svc: lawyerSvc, audit } = build();
     const caseSvc: any = Object.create(CaseService.prototype);
     caseSvc.lawyerService = lawyerSvc;
-    await caseSvc.resolveInlinePartiesBeforeTx(TENANT, { lawyers: [{ name: 'X', surname: 'Y' }] }, { userId: '', tenantId: TENANT, role: 'USER' });
+    await caseSvc.resolveInlinePartiesInTx(TENANT, { lawyers: [{ name: 'X', surname: 'Y' }] }, { userId: '', tenantId: TENANT, role: 'USER' });
     expect(audit.logInTransaction.mock.calls[0][1]).toMatchObject({ actorType: 'SYSTEM' });
     expect(audit.logInTransaction.mock.calls[0][1].userId).toBeUndefined();
   });

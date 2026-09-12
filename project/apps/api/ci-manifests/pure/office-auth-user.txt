@@ -368,3 +368,16 @@ src/modules/office-approval/__tests__/domain-owned-approval-generic-decision-gua
 src/modules/case/__tests__/case-create-inline-order-ak1a-race.spec.ts
 src/modules/lawyer/__tests__/lawyer-create-office-autocreate-tx.spec.ts
 src/modules/case/__tests__/case-create-rfa016-guard.spec.ts
+
+# DAR ATOMIKLIK (owner GO 2026-09-12 "OFFICE DAR ATOMIKLIK YAMASI") — satir ici taraf yazmalari dosya
+#   transaction'ina KATILIR. Daha once her taraf servisi KENDI $transaction'ini acip BAGIMSIZ commit
+#   ediyordu; sonraki hata dosyayi geri alirken avukat/ofis/muvekkil/iletisim/adres/borclu/audit
+#   satirlarini KALICI birakiyordu (reaktivasyonda pasif kayit AKTIF kaliyordu).
+#   - case-create-inline-party-atomicity: ortak tx client'i, IC ICE TRANSACTION YOK, acik sure sinirlari,
+#     hata halinde commit-sonrasi islerin HIC calismamasi, bildirim/e-posta isinin tx DISINDA kalmasi.
+#   - party-write-tx-participation: uc taraf servisinin (A) txCtx verilince kendi tx'ini ACMAMASI ve
+#     (B) txCtx yokken BIREBIR eski davranisi (POST /lawyers|/clients|/debtors, seed) — geriye uyumluluk.
+#   GERCEK geri alma kaniti db/core-lifecycle icindeki db-gated spec'tedir; buradakiler yalnizca
+#   "hangi client ile yazildigini" kanitlar.
+src/modules/case/__tests__/case-create-inline-party-atomicity.spec.ts
+src/common/__tests__/party-write-tx-participation.spec.ts

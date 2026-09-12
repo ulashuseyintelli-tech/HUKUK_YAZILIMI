@@ -4,7 +4,7 @@
  * createCase, inline-yeni müvekkil/borçlu/avukat'ı tx ÖNCESİ guard'lı servislerle KALICI
  * resolve eder (RFA-016 "Tasarım A"). Mükerrer (tenantId+fileNumber) bir takip için Case tx
  * @@unique([tenantId, fileNumber]) ile P2002 fırlatır — fakat o ana dek taraflar çoktan
- * yaratılmış olur (orphan yan-etki). B4/D, resolveInlinePartiesBeforeTx'ten HEMEN ÖNCE
+ * yaratılmış olur (orphan yan-etki). B4/D, resolveInlinePartiesInTx'ten HEMEN ÖNCE
  * tenant-scoped bir findFirst ile mükerrerliği yakalar ve erken 409 döner.
  *
  * Bu testin ASIL DEĞERİ "409 döndü" değil; 409'dan ÖNCE hiçbir tarafın (clientService/
@@ -62,7 +62,7 @@ describe('B4/D — createCase fileNumber ön-benzersizlik kontrolü (orphan-önl
 
     await expect(svc.create('tenant-1', dto, 'user-1')).rejects.toBeInstanceOf(ConflictException);
 
-    // Ön-kontrol resolveInlinePartiesBeforeTx'ten ÖNCE durdurdu → taraf yaratımı HİÇ çağrılmadı
+    // Ön-kontrol resolveInlinePartiesInTx'ten ÖNCE durdurdu → taraf yaratımı HİÇ çağrılmadı
     expect(clientService.create).not.toHaveBeenCalled();
     expect(debtorService.create).not.toHaveBeenCalled();
     expect(lawyerService.create).not.toHaveBeenCalled();

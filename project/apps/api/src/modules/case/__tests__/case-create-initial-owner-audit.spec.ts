@@ -46,7 +46,7 @@ function setup() {
   // pre-tx adımları (bu testin kapsamı dışı) no-op → create() audit'e ulaşır
   (service as any).validateSubCategoryRules = () => {};
   (service as any).validateCaseFkOwnership = jest.fn(async () => {});
-  (service as any).resolveInlinePartiesBeforeTx = jest.fn(async () => {});
+  (service as any).resolveInlinePartiesInTx = jest.fn(async () => {});
   (service as any).validateDebtorOwnershipBeforeCreate = jest.fn(async () => {});
   // post-tx bağımlılıklar
   (service as any).auditService = { log: auditLog };

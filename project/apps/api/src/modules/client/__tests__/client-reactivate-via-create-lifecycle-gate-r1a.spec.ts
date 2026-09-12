@@ -220,7 +220,7 @@ describe('R1A — bütün create entrypoint-leri aynı kapıdan geçer', () => {
     };
     const ctx = buildClientMutationActor({ userId: 'u1', tenantId: 't1', role: 'USER' });
 
-    const body = await forbiddenBody(() => caseSvc.resolveInlinePartiesBeforeTx('t1', dto, ctx));
+    const body = await forbiddenBody(() => caseSvc.resolveInlinePartiesInTx('t1', dto, ctx));
 
     expect(body.code).toBe(CLIENT_MUTATION_REASON.LIFECYCLE_DENIED);
     expect(prisma.$transaction).not.toHaveBeenCalled();

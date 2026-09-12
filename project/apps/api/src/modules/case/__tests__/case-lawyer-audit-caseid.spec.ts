@@ -78,7 +78,7 @@ describe("WP-1d-2-pre — CASE_LAWYER audit metadata.caseId", () => {
     const { service, auditLog } = makeService();
     (service as any).validateSubCategoryRules = () => {};
     (service as any).validateCaseFkOwnership = jest.fn(async () => {});
-    (service as any).resolveInlinePartiesBeforeTx = jest.fn(async () => {});
+    (service as any).resolveInlinePartiesInTx = jest.fn(async () => {});
     (service as any).validateDebtorOwnershipBeforeCreate = jest.fn(async () => {});
     (service as any).clientInfoRequestService = { sendAutoRequestOnCaseCreate: jest.fn(() => Promise.resolve()) };
     (service as any).prisma = {
