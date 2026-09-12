@@ -240,3 +240,74 @@ Dizin: `C:\Users\ULASTE~1\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIM
 - `.env` icerigi okunmadi; ASCII disi deger riski olculmedi.
 - R02 incelemesi yalniz `1ce1cc54` icindir (fark `810624af` → `1ce1cc54` okundu).
 - Bu belge muhur, authority, cutover, T-pencere veya canli kosum yetkisi DEGILDIR.
+
+## Ek A — R07 (#2662) ve nihai R02 (#2659 @ b855f380) delta dogrulamasi (ayni owner GO; 2026-09-12T22:45Z–23:52Z)
+
+Bu ek, #2661 notlarindan sonra birlesen duzeltmeleri ayni yontemle (salt okuma; `.env` icerigi okunmadi) inceler. #2661 §0 ve
+§4'teki D3 ve R02 hukumleriyle celistigi yerde **bu ek gecerlidir**. CLIENT R07'yi iki head'de (b370c722 → 176a5c53) birlestirdi:
+`59abb70b`. OFFICE 33 R02'yi uc kez guncelledi (11a953da → ebe3e1e4 → 7b9ff7aa) ve birlestirdi: `b855f380` (icerik 7b9ff7aa ile
+bayt-esit). Ara head'lerde bulunan capraz paket celiskileri iki oturuma **BILGI** olarak iletildi (yetki veya talimat degil).
+
+### A.1 R07 — birlesen kaynak (main @ 59abb70b) — `ENV-PREIMAGE.env` olcutu KARSILANDI
+
+| Kontrol | Yontem | Sonuc |
+|---|---|---|
+| Hash / bicim | main blob sha256; bayt sayimi | T-AC `ED64A751F75B0F0C3B1406759E92C2F20DAF29018CC893A5EB387391C822BBCF` · T-KAPA `3F027B0DA7AA65F5F8C7A016F1EAD605706C2A4BDA2E703D4A6D4A199DA8BB2C` (ara surum T-AC `5AB1AF16…` GECERSIZ) · §9 `27E754A7…` ve `smtp-sink-noauth.js` `99A5D681…` DEGISMEDI · iki betik LF, ASCII disi bayt 0 |
+| Ayristirma | PS 7.6.5 ve WinPS 5.1 | iki betikte 0 hata |
+| Kapi sirasi | PowerShell AST | T-AC: T-PIN satir 37 < K-ELEV 43–49 < ilk etkili degistirici `New-Item` @133 · T-KAPA: T-PIN 24 < K-ELEV 49–55 < `Copy-Item` @118 · K-ELEV oncesi degistirici veya fonksiyon cagrisi 0 |
+| Kapi parcalari | yukseltilmemis oturumda, PS 7.6.5 ve 5.1 | pin'siz → T-PIN DURDU · K-ELEV DURDU |
+| T-KAPA hata yolu | AST | 9 adim (K-T10b · R-T0/R-T1 · R-T2 · R-T3 · R-T4a · R-T4b · R-T5 · R-T6 · R-T7) her biri kendi try/catch'inde, catch icinde throw 0, try disinda throw yalniz sondaki toplama, exit/return 0 |
+| Geri yazma butunlugu | kaynak (R-T0/R-T1) | once yedek dizini, sonra yedek dosyasi guven denetimi (sahip · korumali DACL · reparse · yabanci kural); ardindan yedek sha = pin; ancak bunlardan sonra `Copy-Item`. Aksi hâlde "GERI YAZILMADI; elle mudahale" |
+| Olusturma ani | kaynak (K-T0a/K-T0) | `i11live` onceden varsa K-T0a HICBIR degisiklik yapmadan durur; dizin olusturulur → `icacls` (SID ile, (OI)(CI)) korumali → guven + bosluk denetimi → kopya korumali ACE'lerle DOGAR → dosya guveni → sha = pin. `Set-TrustedAcl` idempotent (E9: `Set-Acl` korumali hedefte SeSecurityPrivilege istiyordu) |
+| Env degisimi | kaynak (K-T7/K-T8) | bayt oku → katı UTF-8 → yalniz iki satir, satir sonu ve BOM korunur → `WriteAllBytes` → bayt-bayt dogrulama + farkli satir tam 2 ve beklenen indeksler + SDDL ayni |
+| Prova kalintilari | Get-Acl + sha256 (icerik okunmadi) | `twork\preimage` korumali, 3 kural, kalitsal 0, yabanci 0, (OI)(CI) · `ENV-PREIMAGE.env` korumali, sha = prova pini `8ACF239A…` · SDDL/taban dosyalari yalniz 3 guvenilir kural (korumali dizinden) · `smtp-sink.jsonl` korumali, yabanci 0 |
+| Nihai bloklarla pencere donguleri | CLIENT dokumleri (`i11s\r07window`) | **A — WinPS 5.1** (`A1`/`A3`, blok sha `ED64A751…`/`3F027B0D…`): K-T0a pin esit · K-T0 korumali · K-T8 tam iki satir, BOM ve SDDL ayni · restart 6 sn · runId `51d2dcc4` PASS 11/0/0 · T-KAPA R-T1 = pin · R-T5 · R-T6 (2 ileti, sentetik) · R-T7 esit · "Pozitif hedef kaniti: VAR" · "tum adimlar basarili". **B — PS 7** (`B1`/`B3`): ayni; runId `95ee9ad2` PASS 11/0/0 |
+
+**Kalan:**
+- `scratchpad`/`i11s` ust zinciri hâlâ korumasiz (2 SID DELETE_CHILD). Bu SID'ler `i11live`'i yeniden adlandirip yerine baska dizin
+  koyabilir (ACL'den turetildi, denenmedi). Bu bir erisilebilirlik riskidir: butunluk pinle korunur, degistirilmis yedek geri
+  yazilmaz ve durum R02 §5.1'deki R-T1 "guvenilir DEGIL" satiriyla owner'a gider. R02 §2.3 nedeni ayrica yazmaz (bilgi notu).
+- Canlida sahip = `BUILTIN\Administrators` davranisi olculmedi.
+- Yurutucu hesabiyla calisan surecler guvenilir kumededir (R07 §6, R02 §7 m.6a(ii)).
+- **R-T4a/R-T4b hicbir modda kosmadi** (degismedi).
+
+### A.2 Capraz paket celiskileri — ara head'ler (CIKTI: nihai R02'de KAPANDI)
+
+| # | R02 @ 11a953da | R07 | Durum |
+|---|---|---|---|
+| 1 | D3-0 `i11live`'i korumali DACL ile ONCEDEN olusturuyordu | T-AC K-T0a dizin varsa DURUR | ebe3e1e4: on-kurulum KALDIRILDI; D3-0 yalniz "yok" denetler |
+| 2 | D3-1/D3-4 `T_ENV_PRE_SHA` gecmiyordu | iki betik zorunlu T-PIN | ebe3e1e4: ikisine de `7A7228B1…FDDC` |
+| 3 | T hash'leri R05 (`CA99E69E…`/`0A80982B…`) | R07 `ED64A751…`/`3F027B0D…` | ebe3e1e4: guncellendi |
+| 4 | D3 `pwsh 7` | R07 ilk sozlesmesi 5.1 penceresi | 176a5c53: CLIENT iki kabugu da olctu (dongu A/B); R02 `pwsh -File` = dongu B |
+
+### A.3 Nihai R02 — main @ b855f380
+
+| Kontrol | Yontem | Sonuc |
+|---|---|---|
+| D3-0 | bloktan birebir cikarma | `$want` 3 hash = main blob'lari · `$rx` = §9 `$rx` · `i11live` yalniz salt-okuma "yok" denetimi (olusturma 0) · yakalayici + kayit dosyasi beklenir |
+| D3-1 / D3-4 cagrilari | ayni | dosya pinleri = main · `T_ENV_PRE_SHA='7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'` (§1.4 R22 `.env` = D1-5 env sha) · `T_MODE='live'` · `T_GOREF` / `T_RUNID` · `pwsh -NoProfile -ExecutionPolicy Bypass -File` · cikis kodu yazdirilir |
+| D3-4 runId koruyucusu | kosul ifadesi ayrica calistirildi | `<runId>` · buyuk harf · 7 hex · metin → DURUR; 8 hex kucuk harf veya bos → GECER. `i11-run.js:45` runId'yi `randomBytes(4)` hex + kucuk harf uretir |
+| §1.5 | main blob + CLIENT yerel baglama kaniti | tum hash'ler R02'de mevcut; tam uzunlukta tek ek deger pin satiri |
+| §1 (S1e, 2026-09-12T23:51:50Z) | diskten yeniden olcum | **44/45 ESIT** · tek fark ters yonde `project/apps/api/.env` (P-040 beklenen) · `PACKAGE-IDENTITY.json` `EFD0EF2553ECB5DA285B13F950A26746A153A10DFAAB0FE349AFD715FFF8A1E5` = disk · `files[]` 50/50 · muhursuz, `approvedIdentity` null · R28 kaydi main = disk `FB99418F0CAC52E80250256FCFC56F9356FFD9F0E9B293C6F62D729138C346D0` |
+| §5.1 toparlanma | metin | D3-0 dususu (`i11live` var dahil) · D3-1 K-T0 oncesi durus → **D3-S** (yalniz yakalayici; API yeniden baslamaz, D3-4 kosmaz) · D3-4 pin'siz · D3-4 T-KAPA sha uyusmaz → `59abb70b` blob'undan sha dogrulamali kopya, owner karari + dondurma kurali · R-T1 "guvenilir DEGIL / pin ESIT DEGIL" → env pencere degerinde, erisim geri acilir, owner · SDDL farki · D3 acikken geri donus once D3-4 sonra §5.3 — DOGRU (#2661 §3 not 4a/4b KAPANDI) |
+| Durum ifadeleri | metin taramasi | "olcum yok / henuz yapilmadi / §7 GO ile ATANIR" kalintisi 0 · §7 m.2 rol bu yurutmede surer · §7 m.6a owner kabulleri: (i) R-T4a/R-T4b kanit eksigi, (ii) R07 §6 kalan riski; kabul edilmezse D3 baslamaz · §7 m.8 B11 kapsam disi |
+| D1 bagimliliklari · B11 | #2661 §3 ile karsilastirma | degismedi, DOGRU |
+| Canli (salt okuma, 23:52Z) | dinleyici / kural / dizin | :8080 PID 46332 · :3002 PID 47004 (RELEASE22) · `I11-WINDOW-BLOCK-*` 0 · :2526 0 · `i11live` YOK |
+
+### A.4 Guncel sonuc
+
+| GO maddesi | Sonuc |
+|---|---|
+| 1 — R28 araclari + geri donus pinleri | **ESIT** (S1e) |
+| 1 — OR-03a / K-KIMLIK | **BEKLEMEDE** — nihai 3e girdisi yok; hesaplanmadi |
+| 2 — K-PAR | **KARSILANDI** (R06) |
+| 2 — T-KAPA hata yolu | **Akis KARSILANDI** (R07'de yeniden dogrulandi); **R-T4a/R-T4b calisma kaniti YOK** → R02 §7 m.6a(i) owner kabulune bagli |
+| 2 — K-ELEV | **KARSILANDI** (R07'de T-PIN de ondan once) |
+| 2 — `ENV-PREIMAGE.env` ACL | **KARSILANDI (R07)** — olusturma ani korumali, geri yazma pin + guven denetimli; kalan ust zincir erisilebilirlik riski §5.1 R-T1 satiriyla karsilanir (A.1 "Kalan") |
+| 3 — R02 D1/D3 bagimliliklari · toparlanma · B11 | **DOGRU** — ara head celiskileri nihai metinde kapandi |
+| **R02 karar metni (main @ b855f380)** | **Owner incelemesine HAZIR.** Owner'in vermesi gereken kabuller §7 m.6a'dadir. #2661 §4'teki K1 (yedek butunlugu) R07 ile, K3 (kabuk) dongu A/B ile KAPANDI; K2, §7 m.6a(i) oldu |
+
+Ek kanit (ana yurutucu oturum dizini): `r28-verify-s1d-evidence.json` `CA931CB5BA2EFE5E087A5A52419EFD1D2DE32BB1934624F26767404D6F5CF544` ·
+`r28-verify-s1e-evidence.json` `F5AE6E2802F3892A73E5CD68E3C3A8009BC96B4D94CC7BFFDD048A8DD8A20DC1` · `r28-s3-kpar-r06.ps1` ·
+`r28-s4-r07-ast.ps1` · `r28-s4-r07-prova.ps1` · `r28-s5-rid-guard.ps1`. Bu ek de muhur, authority, cutover, T-pencere veya canli kosum
+yetkisi DEGILDIR.
