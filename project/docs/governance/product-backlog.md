@@ -3950,7 +3950,16 @@ kalintilari (kayit + dizin kaldirildi; kanonik `.bin` 12/30/27 ve `.pnpm` 1389 d
 | A2 | AK1A-C1 — audit'siz guncelleme gozleminin kok nedeni | Gozlem kayitli; kok neden olculmedi. |
 | A3 | Baslatici dayanikliligi | Reboot -> logon beklemesi + launcher `exit 23` UNCLASSIFIED 120 sn beklemeyi keser, PT15M'ye kalir (RELEASE22 Ek C.1). |
 | A4 | `case-fee-agreement` yetki kapisi iddiasi CI'DA KOSMUYOR | **TAMAMLANDI 2026-09-12 — `pure/client-portal` manifestine baglandi.** Spec SAF birim testidir (DB / Nest modulu / docker bagimliligi 0, olculdu); kardes client-settlement saf spec'leri (`disposition-posting.service`, `collection-reversal.service`) ayni manifestte. Urun kodu ve yetki politikasi DEGISMEDI, beklentiler ZAYIFLATILMADI. Kanit: spec tek basina 27/27 PASS · manifest 99 suite / 1515 test PASS · PR CI `pure/client-portal` adiminda spec adiyla PASS. |
-| A5 | `portal.createPortalUser` / `disablePortalUser` kapisi icin yetki-reddi iddiasi HIC YOK | Portal spec'lerinin tamami `isApproverEligible` -> **true** mock'lar; yalniz "aktor yok" dali test edilir. Yetkisiz-aktor reddi hicbir spec'te (bagli ya da degil) iddia EDILMEMIS. |
+| A5 | `portal.createPortalUser` / `disablePortalUser` kapisi icin yetki-reddi iddiasi HIC YOK | **TAMAMLANDI 2026-09-12 — `portal-access-management-authority-a5.spec.ts` (7 test) eklendi ve `pure/client-portal` manifestine baglandi.** Yetkisiz aktor -> `ForbiddenException` + **YAZMA 0** (transaction HIC acilmaz, portal kullanicisi / erisim bayragi / audit yazilmaz); aktorsuz -> fail-closed (yeterlilik DB'ye SORULMAZ); yetkilide MEVCUT davranis sabitlendi (ENABLE/DISABLE audit + tokenVersion). **Mutasyon kaniti:** kapi KALDIRILINCA 7/7 DUSER, yazmadan SONRAYA tasininca 6/7 DUSER (ikisi de geri alindi, urun kodu diff'i 0). Kanit: tekil 7/7 PASS · manifest 100 suite / 1522 test PASS · PR CI logunda spec adiyla PASS. |
+
+**GOZLEM — CI KAPSAMI HENUZ DOGRULANMADI (2026-09-12; is kalemi ACILMADI, toplu baglama YAPILMADI):**
+`src/modules/client-settlement/__tests__` altinda **32 spec** vardir; bunlarin **7'si** bir CI manifestine baglidir,
+**25'i DEGILDIR** (ornekler: `client-payout.service.spec.ts`, `collection-disposition.service.spec.ts`,
+`client-offset.service.spec.ts`, `client-accounting*.spec.ts`, `distribution-recommendation.service.spec.ts`).
+Bu sayim yalniz MANIFEST UYELIGIDIR: bu spec'lerin ne test ettigi, kapsamlarinin baska bagli spec'lerce
+karsilanip karsilanmadigi ve baglanmaya deger olup olmadiklari **INCELENMEDI**. A4/A5'te oldugu gibi her biri
+ayri olcum ister. Onceki turda sozlu olarak "33 spec'ten 24'u" denmisti; olculen dogru sayi **32 / 7 bagli /
+25 bagli degil**'dir (A4'un bagladigi `case-fee-agreement.service.spec.ts` bagli tarafa gecmistir).
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
