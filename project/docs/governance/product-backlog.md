@@ -3949,7 +3949,7 @@ kalintilari (kayit + dizin kaldirildi; kanonik `.bin` 12/30/27 ve `.pnpm` 1389 d
 | A1 | `isApproverEligible` kullanan DIGER domain kapilarinin envanteri | **TAMAMLANDI 2026-09-12 — asagidaki "A1 ENVANTERI" tablosu.** Envanter kapandi; ondan DOGAN kalemler A4 · A5 · B10'dur. |
 | A2 | AK1A-C1 — audit'siz guncelleme gozleminin kok nedeni | Gozlem kayitli; kok neden olculmedi. |
 | A3 | Baslatici dayanikliligi | Reboot -> logon beklemesi + launcher `exit 23` UNCLASSIFIED 120 sn beklemeyi keser, PT15M'ye kalir (RELEASE22 Ek C.1). |
-| A4 | `case-fee-agreement` yetki kapisi iddiasi CI'DA KOSMUYOR | `case-fee-agreement.service.spec.ts` kapiyi GERCEKTEN dogruluyor ("capability fail -> Forbidden; transaction acilmaz", create + update) ama spec HICBIR CI manifestinde DEGIL -> iddia CI'da hic calismiyor. Duzeltme = manifest baglama. |
+| A4 | `case-fee-agreement` yetki kapisi iddiasi CI'DA KOSMUYOR | **TAMAMLANDI 2026-09-12 — `pure/client-portal` manifestine baglandi.** Spec SAF birim testidir (DB / Nest modulu / docker bagimliligi 0, olculdu); kardes client-settlement saf spec'leri (`disposition-posting.service`, `collection-reversal.service`) ayni manifestte. Urun kodu ve yetki politikasi DEGISMEDI, beklentiler ZAYIFLATILMADI. Kanit: spec tek basina 27/27 PASS · manifest 99 suite / 1515 test PASS · PR CI `pure/client-portal` adiminda spec adiyla PASS. |
 | A5 | `portal.createPortalUser` / `disablePortalUser` kapisi icin yetki-reddi iddiasi HIC YOK | Portal spec'lerinin tamami `isApproverEligible` -> **true** mock'lar; yalniz "aktor yok" dali test edilir. Yetkisiz-aktor reddi hicbir spec'te (bagli ya da degil) iddia EDILMEMIS. |
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
@@ -4036,3 +4036,18 @@ ayrim id uzayina dayaniyor (auth katmani kalemi, A1 kapsami disi, kusur GOSTERIL
 `LawyerService.delete` ilk taramada "CI kaniti yok" gorundu, **dogrulandi: CI-bagli spec kapiyi test ediyor**
 (yanlis pozitif duzeltildi) · `scheduler` kapisinda `isApproverEligible` coarse VIEWER kontrolunden ONCE
 cagriliyor (gereksiz bir DB okumasi; guvenlik etkisi YOK, is kalemi ACILMADI).
+
+**A1 SAYI UZLASTIRMASI (owner sorusu 2026-09-12 — "22 yol / 21 kapi" farki):** iki sayi FARKLI BIRIMLERI
+sayar, aralarinda birebir esleme YOKTUR.
+- **22 = envanter tablosu SATIRI ("yol")** — domain x giris grubu. Satirlar iki yonde de toplar: bir satir
+  birden cok OPERASYONU kapsayabilir (ClientAddress satiri create/update/archive/restore = 4 operasyon;
+  fee agreement satiri create/update/terminate = 3) ve bir satir birden cok KAPI CAGRISI tasiyabilir
+  ("elevated" satiri disclosure + legal-hold + special-category + DSR = 4 ayri cagri).
+- **21 = kapinin ILK YAZMAYA gore konumu OLCULEBILEN public operasyon.** Konum ancak yazmanin BULUNDUGU
+  metotta olculebilir. Olculen 23 public operasyondan 2'si kendi govdesinde yazma YAPMAZ (disposition
+  `approve` ve scheduler `runManual` delege eder) -> 23 - 2 = **21**, ve **21/21**'inde kapi ilk yazmadan
+  ONCEDIR. Sifir kapi yazmadan sonra gelir.
+- Ucuncu bir sayi: **23 = gercek yetki kontrolu CAGRI YERI** (`isApproverEligible`'in 38 yorum-disi
+  gecisinden tanim, tip bildirimi/import ve fonksiyon-referansi adaptorleri cikarilinca kalan). Kapilarin
+  kendisi cogunlukla yazmasiz `assert*` yardimcilaridir; yazma CAGIRAN public operasyondadir — bu yuzden
+  konum olcumu kapi degil OPERASYON duzeyinde yapilir.
