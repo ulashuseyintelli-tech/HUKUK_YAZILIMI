@@ -145,6 +145,9 @@ const buildLawyerSvc = (rows: any[]) => {
       typeof fn === 'function'
         ? fn({
             // AK-2: create avukat satırını transaction içinde yazar → tx.lawyer.create dış mock'a bağlanır.
+            // AK-2 ARDIL: ofis al/oluştur adımı da ARTIK bu transaction'ın içinde (eskiden tx dışındaydı).
+            office: { findUnique: (args: any) => prisma.office.findUnique(args), create: jest.fn() },
+            tenant: { findUnique: jest.fn().mockResolvedValue({ id: 'T1', name: 'T' }) },
             lawyer: {
               updateMany: jest.fn().mockResolvedValue({ count: 1 }),
               create: (args: any) => prisma.lawyer.create(args),

@@ -358,3 +358,13 @@ src/modules/office-approval/__tests__/office-approval-viewer-decision-boundary.s
 #   409 DOMAIN_ACTION_REQUIRED, talep sahibi olmayan 403 (kimlik denetimi once); FD disi iptal degismedi. (A) http spec'i
 #   genel kutu rotalarini controller metadata'sindan KESFEDER: yeni bir yazma rotasi FD kapisi kanitlanmadan gecemez.
 src/modules/office-approval/__tests__/domain-owned-approval-generic-decision-guard.spec.ts
+# AK-1a / AK-2 ARDIL — OFFICE create yolu atomikligi (owner GO 2026-09-12 "OFFICE - KALAN ISTEN DEVAM")
+#   - case-create-inline-order-ak1a-race: `/cases` on kontrol yarisi -> inline avukat create'i inline
+#     MUVEKKIL yazmasindan ONCE; yetki reddi aninda yarim kayit (sahipsiz muvekkil) olusmaz.
+#   - lawyer-create-office-autocreate-tx: ofis oto-olusturma avukat satiri + LAWYER_CREATE audit ile AYNI
+#     transaction'da; tx geri alinirsa artik ofis satiri KALMAZ (cron kapsamina giren artik kayit uretilmez).
+#   - case-create-rfa016-guard: MEVCUT spec hicbir manifeste bagli DEGILDI (CI'da hic kosmuyordu); ayni
+#     fonksiyonun kardes guard'i oldugu icin bu blokla baglandi.
+src/modules/case/__tests__/case-create-inline-order-ak1a-race.spec.ts
+src/modules/lawyer/__tests__/lawyer-create-office-autocreate-tx.spec.ts
+src/modules/case/__tests__/case-create-rfa016-guard.spec.ts
