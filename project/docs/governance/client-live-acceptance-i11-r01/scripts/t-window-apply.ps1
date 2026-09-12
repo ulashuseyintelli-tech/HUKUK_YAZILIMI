@@ -15,11 +15,11 @@
   $BAK       = Join-Path $S 'i11live\ENV-PREIMAGE.env'
 
   if ($Mode -eq 'live') {
-    $REL  = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22'   # YAYIN SONRASI: yeni canli kok
+    $REL  = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'   # RELEASE23 (aday 2740df3d) canli kok
     $ENVF = Join-Path $REL 'project\apps\api\.env'
     $Port = 8080
   } else {
-    $REL  = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22'
+    $REL  = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'
     $ENVF = Join-Path $S 'i11s\twork\.env'
     $Port = 8101
     $BAK  = Join-Path $S 'i11s\twork\ENV-PREIMAGE.env'

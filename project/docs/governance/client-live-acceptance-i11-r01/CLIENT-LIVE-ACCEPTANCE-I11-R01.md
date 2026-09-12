@@ -385,7 +385,7 @@ sürece yalnız ortam değişkeni olarak geçer (parolayla aynı desen).
 |---|---|---|
 | **B-I11-1** | `PUBLIC_INTAKE_BASE_URL` canlıda **tanımsız** (.env 0 satır; Machine/User kapsamında da yok) → `buildUrl` göreli `/intake/<token>` üretir; müvekkil tıklanabilir adres **almaz** | **AÇIK — H5 kullanılabilirlik kusuru** (§6.6). İ11 ölçütünü bloke etmez, teslim metnine sınır olarak girer |
 | **B-I11-2** | promote reddi **stabil kod taşımıyor** (yalnız mesaj); inceleme reddinde `CLIENT_MUTATION_DENIED_INTAKE_REVIEW` var | AÇIK, bloke etmez |
-| **B-I11-3** | Public intake ucu **5xx** verdiğinde küresel hata filtresi istek yolunu olduğu gibi yazar → **ham intake token'ı `ErrorLog.endpoint` alanına düz metin** girer (ölçüldü: `/api/public/intake/<token>`). Ucun hız sınırı Redis'e bağlı ve **Redis arızasında fail-closed 503** verir; yani bir Redis kesintisi, müvekkil formu açmaya çalıştığında token'ı DB'ye düşürür. Controller yorumu token'ı loglamadığını söyler; sızıntı **filtre katmanındadır** | **MAIN'DE ONARILDI — CANLIDA DEĞİL.** PR #2643 @ `d199c8dc`: `redactSecretPathSegments` `redactPii`'nin ilk adımı yapıldı; hattın tüm alanlarında (DB `endpoint` · `message` · `stack` · `metadata.route` · konsol · FRONTEND yolu) değer maskelenir, **rota şekli korunur** (`/api/public/intake/:token`). Hedefli regresyon testi CI manifestinde (11/11; yama etkisi kaldırılınca 9'u düşer). Yan fayda: dedupe anahtarı artık token'a bağlı değil → ErrorLog satır patlaması da kapandı. **Canlı ikili hâlâ `13740670` — onarım canlıya YANSIMADI;** o yüzden **K-INTAKE kapısı KALIR** (kapı onarımın yerine geçmez, yalnız koşumu korur) |
+| **B-I11-3** | Public intake ucu **5xx** verdiğinde küresel hata filtresi istek yolunu olduğu gibi yazar → **ham intake token'ı `ErrorLog.endpoint` alanına düz metin** girer (ölçüldü: `/api/public/intake/<token>`). Ucun hız sınırı Redis'e bağlı ve **Redis arızasında fail-closed 503** verir; yani bir Redis kesintisi, müvekkil formu açmaya çalıştığında token'ı DB'ye düşürür. Controller yorumu token'ı loglamadığını söyler; sızıntı **filtre katmanındadır** | **MAIN'DE ONARILDI — CANLIDA DEĞİL.** PR #2643 @ `d199c8dc`: `redactSecretPathSegments` `redactPii`'nin ilk adımı yapıldı; hattın tüm alanlarında (DB `endpoint` · `message` · `stack` · `metadata.route` · konsol · FRONTEND yolu) değer maskelenir, **rota şekli korunur** (`/api/public/intake/:token`). Hedefli regresyon testi CI manifestinde (11/11; yama etkisi kaldırılınca 9'u düşer). Yan fayda: dedupe anahtarı artık token'a bağlı değil → ErrorLog satır patlaması da kapandı. **Canlı ikili hâlâ `13740670` — onarım canlıya YANSIMADI.** RELEASE23 adayında (`2740df3d`, BUILD_ID `dOiGPj2M0Abls0kCibY4r`) **derlenmiş ikilide kanıtlandı** (V-B PASS; onarımsız R22 ikilisinde negatif kontrol FAIL — `I11-ADAY-BAGLAMA-VE-DOGRULAMA-R04.md`); canlıya **cutover ile** geçer. **K-INTAKE kapısı KALIR** (kapı onarımın yerine geçmez, yalnız koşumu korur) |
 
 ---
 
@@ -397,7 +397,7 @@ sürece yalnız ortam değişkeni olarak geçer (parolayla aynı desen).
 | K-WT | temiz `origin/main` worktree; **tam SHA kaydedilir** ve `origin/main` ile eşit olmalı |
 | K-ARC | 9 araç + 12 ürün dosyası = **21 hash**, uyuşmazlık 0 (sayım 21 değilse KÖR) |
 | K-API | `:8080` tek dinleyici süreç + komut satırı RELEASE22 dist |
-| K-BLD | release HEAD `13740670…` · BUILD_ID `xJZ1G1TsbOnHoWUzMD8CQ` |
+| K-BLD | release HEAD `2740df3d…` · BUILD_ID `dOiGPj2M0Abls0kCibY4r` (RELEASE23 adayına bağlı — R04; cutover öncesi koşulursa **DURUR**) |
 | K-SMTP | canlı sağlayıcı yazdırılır; **gönderim kapsamı açık ve sağlayıcı `mock` değilse** ayrı owner onayı (`$SmtpAck='EVET'`) yoksa DURUR |
 | **K-INTAKE** | **rastgele** (geçersiz) token ile `GET /api/public/intake/<rastgele>` → **404** beklenir. 404 değilse koşuma girilmez (B-I11-3: sağlıksız uçta gerçek token DB'ye düşerdi) |
 | K-REF | ref kullanılmamış: `origin/main` + açık PR dalları + koşum kayıtları. **Tüketim** = ref'in `runId` ile aynı dosyada geçmesi; yalnız anma engellemez ama raporlanır (0 dosya tarandıysa KÖR) |
@@ -407,7 +407,7 @@ sürece yalnız ortam değişkeni olarak geçer (parolayla aynı desen).
 
 `$ErrorActionPreference='Stop'` + her yerli komuttan sonra `$LASTEXITCODE` denetimi → **ilk hatada
 blok durur, `node` çağrısına ULAŞILMAZ**. Blok dosyası sha256
-`7A10D817D8E306DF534C704D99196E44EA71CD591D12607D44706D89C56F62D0`; PowerShell 7 ve 5.1'de
+`A16E479155084F3B6F7D12D7A820E2BA0760411A18FB64D749FA0799C647D148`; PowerShell 7 ve 5.1'de
 ayrıştırma hatası 0; **9 kapı · 21 hash · 26 durdurucu · tek `node` çağrısı**. Aşağıdaki gömülü kopya
 hash'i verilen dosyayla **bayt bayt aynıdır**.
 
@@ -423,7 +423,7 @@ hash'i verilen dosyayla **bayt bayt aynıdır**.
   $SmtpAck = ''    # gonderim kapsami aciksa ve canli saglayici 'mock' DEGILSE owner onayi: 'EVET'
   $CANON   = 'C:\Development\HUKUK_YAZILIMI\project'
   $WT      = 'C:\Development\HY_WT\CL_I11LIVE'
-  $REL     = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22'
+  $REL     = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'
   $S       = 'C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i11live'
   $ENVF    = Join-Path $REL 'project\apps\api\.env'
   $ApiBase = 'http://127.0.0.1:8080/api'
@@ -480,21 +480,21 @@ hash'i verilen dosyayla **bayt bayt aynıdır**.
   if ($checked -ne 21) { throw "K-ARC: denetlenen dosya 21 degil ($checked) - KOR" }
   if ($bad -ne 0) { throw "K-ARC: hash uyusmazligi $bad" }
 
-  # ---- K-API: :8080 TEK dinleyici surec + komut satiri RELEASE22 dist ----
+  # ---- K-API: :8080 TEK dinleyici surec + komut satiri RELEASE23 dist ----
   $pids = @(Get-NetTCPConnection -LocalPort 8080 -State Listen | Select-Object -ExpandProperty OwningProcess -Unique)
   if ($pids.Count -ne 1) { throw "K-API: :8080 dinleyici surec sayisi $($pids.Count) (1 olmali)" }
   $apiPid = [int]$pids[0]
   $cl = (Get-CimInstance Win32_Process -Filter "ProcessId=$apiPid").CommandLine
-  if ($cl -notlike '*HY_W4_RELEASE22\project\apps\api\dist\apps\api\src\main.js*') { throw 'K-API: :8080 komut satiri RELEASE22 dist DEGIL' }
-  Write-Output "K-API: :8080 tek dinleyici PID $apiPid - komut satiri RELEASE22 dist"
+  if ($cl -notlike '*HY_W4_RELEASE23\project\apps\api\dist\apps\api\src\main.js*') { throw 'K-API: :8080 komut satiri RELEASE23 dist DEGIL' }
+  Write-Output "K-API: :8080 tek dinleyici PID $apiPid - komut satiri RELEASE23 dist"
 
   # ---- K-BLD: release HEAD + BUILD_ID ----
   $gitdir = ((Get-Content -LiteralPath (Join-Path $REL '.git') -TotalCount 1) -replace '^gitdir:\s*','').Trim()
   $head = (Get-Content -LiteralPath (Join-Path $gitdir 'HEAD') -TotalCount 1).Trim()
-  if ($head -ne '137406701248858221d12be94a941f8837a2a245') { throw "K-BLD: release HEAD beklenen degil ($head)" }
+  if ($head -ne '2740df3dd58c5e711a790cc21a5f69d6dbffb35d') { throw "K-BLD: release HEAD beklenen degil ($head)" }
   $buildId = (Get-Content -LiteralPath (Join-Path $REL 'project\apps\web\.next\BUILD_ID') -TotalCount 1).Trim()
-  if ($buildId -ne 'xJZ1G1TsbOnHoWUzMD8CQ') { throw "K-BLD: BUILD_ID beklenen degil ($buildId)" }
-  Write-Output "K-BLD: HEAD 13740670... - BUILD_ID $buildId"
+  if ($buildId -ne 'dOiGPj2M0Abls0kCibY4r') { throw "K-BLD: BUILD_ID beklenen degil ($buildId)" }
+  Write-Output "K-BLD: HEAD 2740df3d... - BUILD_ID $buildId"
 
   # ---- K-SMTP: canli saglayici GERCEK mi? A-5/A-6 gonderim kapsami aciksa AYRI onay sart ----
   $provLine = @(Select-String -LiteralPath $ENVF -Pattern '^\s*EMAIL_PROVIDER\s*=')
@@ -697,7 +697,7 @@ yerel yakalayıcıdır.
 
 ### 14.2 Kesin değişiklikler
 
-**Canlı `.env` (`HY_W4_RELEASE22\project\apps\api\.env`) — TAM İKİ SATIR:**
+**Canlı `.env` (cutover sonrası `HY_W4_RELEASE23\project\apps\api\.env`) — TAM İKİ SATIR:**
 
 | Anahtar | Önce | Sonra | Neden |
 |---|---|---|---|
