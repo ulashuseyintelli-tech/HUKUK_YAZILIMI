@@ -283,6 +283,7 @@ src/modules/error-log/__tests__/error-log.controller.spec.ts
 src/modules/error-log/__tests__/error-log.dedupe.service.spec.ts
 src/modules/error-log/__tests__/error-log.sanitize.spec.ts
 src/modules/error-log/__tests__/error-reporter.spec.ts
+src/modules/error-log/__tests__/public-intake-token-log-redaction.spec.ts
 src/modules/error-log/__tests__/resolve-error-log.dto.spec.ts
 src/modules/error-log/__tests__/server-log.builder.spec.ts
 src/modules/esign/__tests__/esign-h2a-containment.spec.ts
