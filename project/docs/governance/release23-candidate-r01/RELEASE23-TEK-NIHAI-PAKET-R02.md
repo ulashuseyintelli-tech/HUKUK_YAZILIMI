@@ -5,7 +5,8 @@ BELGE       : RELEASE23-TEK-NIHAI-PAKET-R02   (R01 #2656 ve §0 düzeltmesi #265
 YETKİ       : owner GO 2026-09-12 "DEVAM — ÖNCEDEN YETKİLENDİRİLMİŞ ADAY HAZIRLIĞINI TAMAMLA"
               (aday derlemesi + geri dönüş paketi; canlı cutover/restart/yapılandırma değişikliği YOK)
 TARAFLAR    : OFFICE 33 — C33/D1 (derleme · Katman 1 · R28 · bu belge ve GO taslağı)
-              CLIENT    — İ11 (bağlama + aday doğrulaması #2654 R04 · D3 engelleyici düzeltmeleri #2657 @ 88b3d07a R05)
+              CLIENT    — İ11 (bağlama + aday doğrulaması #2654 R04 · D3 engelleyici düzeltmeleri #2657 @ 88b3d07a R05 ·
+                          K-PAR kalıntı düzeltmesi #2660 @ af79b50c R06)
               ana yürütücü — hat koordinasyonu; bağımsız doğrulama rolü §7 GO ile ATANIR
 DURUM       : ADAY DERLENDİ · İ11 ADAY İKİLİSİNDE DOĞRULANDI (R04 + R05) · D1 HAZIR · D3 DÜZELTİLDİ ·
               TEK KOŞULLU GO TASLAĞI OWNER ONAYINA SUNULUR (§7)
@@ -19,7 +20,7 @@ KAYIT       : CLIENT sayaç 10/17 · hizmet kabulü 0/8 tam
 
 Ayrıntılı paket kaydı: `RELEASE23-R28-CUTOVER-PAKETI-R01.md` (diskteki
 `HY_C33_RELEASE23_CUTOVER_R28\docs\LIVE-APPROVAL-PACKAGE-R28.md` ile bayt-aynı; sha256
-`8F103B85CDDB328CFF2DAC1E3DDDB1CC6E3E93008C4F6FB9864A538CB2420BC5`). CLIENT kayıtları: `client-live-acceptance-i11-r01/I11-ADAY-BAGLAMA-VE-DOGRULAMA-R04.md`,
+`216D8147698B1A1D4D8EEB259FE04003BA88B5CD8C25013AB312518BCE2447AA`). CLIENT kayıtları: `client-live-acceptance-i11-r01/I11-ADAY-BAGLAMA-VE-DOGRULAMA-R04.md`,
 `I11-D3-ENGELLEYICI-DUZELTMELER-R05.md`. Bu belge **canlı karar için gereken her komutu ve tam hash'i tek yerde toplar**;
 D1 PowerShell blokları R28 kaydından programatik olarak alınmıştır (bayt-aynı).
 
@@ -30,18 +31,20 @@ D1 PowerShell blokları R28 kaydından programatik olarak alınmıştır (bayt-a
 
 | # | Düzeltme (R05) | OFFICE 33 bağımsız doğrulaması | CLIENT yeniden kanıtı |
 |---|---|---|---|
-| E-1 | §9 K-PAR deseni `smtp-sink` → `smtp-sink\.js`; `smtp-sink-noauth.js` dışlanır | fark okundu; **§9 gömülü blok sha'sı yeniden hesaplandı** = `9804FEF6…` (LF, sonda LF) | K-PAR sondası: noauth açıkken **0**, eski AUTH yakalayıcı açıkken **4** |
+| E-1 | §9 K-PAR deseni `smtp-sink` → `smtp-sink\.js` (R05) → **`smtp-sink\.js\b` (R06)**; `smtp-sink-noauth.js` ve kayıt `smtp-sink.jsonl` dışlanır | fark okundu; **§9 gömülü blok sha'sı yeniden hesaplandı**: R05 `9804FEF6…`, **R06 `27E754A7…`** (LF, sonda LF) | R05: noauth açıkken **0**, eski AUTH **4** · R06 gerçek süreçlerle: noauth **0** · log yolu taşıyan PS sarmalayıcı **0** · `Get-Content -Wait` izleyici **0** · eski AUTH **3** (PS 5.1 + PS 7) |
 | E-2 | T-KAPA'da her adım kendi `try/catch`'inde; R-T4a (engel kaldır) · R-T4b (Web) · R-T5 · R-T6 · R-T7 **her durumda** denenir; hatalar toplanıp **sonda** fırlatılır | `t-window-close.ps1` baştan sona okundu | hata yolu provası (başlatıcı kasıtlı bozuk): R-T2/R-T3 düştü, **R-T5 yine koştu** (`:2526` 0), R-T7 eşit, sonda 2 hatayla throw; kurtarma = aynı blok tekrarı, idempotent, tüm adımlar başarılı |
 | E-3 | T-AÇ ve T-KAPA canlı modda **K-ELEV** ilk kapı (yükseltilmiş Administrators değilse hiçbir değişiklikten önce durur) | kaynak okundu; kapı ilk değiştirici komuttan önce | izole sınama (yükseltilmemiş oturum): iki blok da ilk değiştirici komuttan önce DURDU; canlıya karşı koşulmadı |
 | E-4 | T-AÇ K-T0 salt-okuma kapılarından (K-T1..K-T5) SONRAYA alındı; yedeğe hemen **korumalı DACL** (SYSTEM + Administrators + yürütücü) + doğrulama; env **SDDL tabanı** kaydı → T-KAPA **R-T7** karşılaştırır, otomatik düzeltme yok | kaynak okundu | prova: yedek DACL yalnız 3 kural, kalıtsal 0; R-T7 eşit |
 
-**OFFICE 33 kalıntı bulgusu — ÖLÇÜLDÜ (fail-closed, önlemi D3-0'da):** yeni desen `smtp-sink\.js`, komut satırında
+**OFFICE 33 kalıntı bulgusu — ÖLÇÜLDÜ, CLIENT R06 ile KAPANDI:** R05 deseni `smtp-sink\.js`, komut satırında
 `smtp-sink.jsonl` geçen süreçleri de eşleştirir (alt dizgi). Yerel test (port 2599, kendi scratchpad'im; başlatılan iki süreç de durduruldu):
 yakalayıcı **ortam değişkeni + `Start-Process node <betik>`** ile başlatılınca K-PAR **0**; **PowerShell sarmalayıcıyla** (log yolu komut
 satırında) başlatılınca K-PAR **1** → §9 durur. `cmd` sarmalayıcı ve log izleyici (`Get-Content -Wait …smtp-sink.jsonl`) de eşleşir.
 Önlem: D3-0 bloğu yakalayıcıyı ölçülen yöntemle başlatır ve §9'un desenini birebir kullanan **K-PAR ön-kontrolü** 0 değilse yakalayıcıyı
 durdurup D3-1'e geçmez (blok yerelde başarı ve düşüş yolunda koşuldu).
-Desenin `smtp-sink\.js\b` yapılması CLIENT'a önerildi (CLIENT kararı; değişirse §9 hash'i değişir → R03).
+Önerilen `smtp-sink\.js\b` deseni CLIENT tarafından **R06 (#2660 @ `af79b50c`)** ile uygulandı ve gerçek süreçlerle kanıtlandı; §9 hash'i
+`27E754A7…` oldu, T betikleri değişmedi. D3-0 ön-kontrolü **R06 desenine** güncellendi ve yeniden koşuldu (§4 D3-0). Ön-kontrol, D3 süresince
+belirteç taşıyan başka süreç (ör. ajan kabuk çağrısı) kalmamasını ayrıca teyit ettiği için korunur.
 
 **Diğer farklar:** main ≠ aday (#2655 B11 @ `78f49dd3`, RELEASE23'te yok) · ana yürütücünün bağımsız doğrulama/K-KİMLİK görevi §7'de
 owner GO ile atanır (akran talebiyle üstlenmedi; §1 ölçümü henüz yapılmadı) · D3 yürütücüsü yükseltilmiş pencere ve kimin sağladığı açık.
@@ -82,7 +85,7 @@ owner GO ile atanır (akran talebiyle üstlenmedi; §1 ölçümü henüz yapılm
 | `tools\Seal-Package.ps1` | `650971A51F2CF592DA621EEAA92A2883F1580BB2A06A10573BC4ADB4B6DD588B` |
 | `qualification\Verify-Package.node.js` | `1260E1FF42CF9C3442D2C3005ACF821C7B81646ECC181878359AB9546883EABD` |
 | Şablon OWNER-COMMAND / OWNER-RUN | `894BB522AC26A36E5518CC831AB30F03623C30CC300BE30D44A25D80FD0A3D2D` / `A24C04FD573EDC46C79463DED5586EDD6E8ECABEFC6B15716C83FE4E0E13842D` |
-| `PACKAGE-IDENTITY.json` (bilgi; OP-01 `engineSha256` taşır) | `FC558DC4831B23D9B4039DAB60FDA08D0BEBEBF19E477B07314382E73EDDB1FD` — `preLiveListDigest` **ONAY ADAYI DEĞİL** |
+| `PACKAGE-IDENTITY.json` (bilgi; OP-01 `engineSha256` taşır) | `77889A6E04BC3BE480FAA147938222BDC1C92D43F907DE31FB72B5224B8A52BC` — `preLiveListDigest` **ONAY ADAYI DEĞİL** |
 
 Durum (ölçüldü): `pins/`, `authority/`, `claims/`, `journal/`, `cutover-receipts/`, `preflight/`, `MANIFEST.json`,
 kök `OWNER-RUN`/`OWNER-COMMAND` **YOK**. R27 tüketildi, yeniden mühürlenemez.
@@ -97,14 +100,14 @@ kök `OWNER-RUN`/`OWNER-COMMAND` **YOK**. R27 tüketildi, yeniden mühürlenemez
 | bin preimage (= canlı; `generations\R22`) | host `E744A74BBD9053EB60E25459F3650E2CAF65FFCD72FF2A9B2E83ED41834D8706` · api `77B6FBCD82E9B98291E841E2A1AF9683EBD651AE8C27D31561CB94517640DB51` · web `1B7654F6A4219B41E7A742DDD0584F91EF91BDAA2DA1C2A7A16C34989110CE3D` |
 | bin postimage (ileri; `generations\R23`) | host `691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627` · api `CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3` · web `F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0` |
 
-### 1.5 CLIENT İ11 — adaya bağlanmış kimlikler (main @ `88b3d07a`; dosya sha'ları OFFICE 33 tarafından ölçüldü)
+### 1.5 CLIENT İ11 — adaya bağlanmış kimlikler (main @ `af79b50c`; dosya sha'ları OFFICE 33 tarafından ölçüldü)
 
 | | sha256 |
 |---|---|
-| **İ11 §9 kabul bloğu** (R05; R23'e bağlı) | `9804FEF634E45B62F5FBC497A1A9BABB8870F4D179EF11127ABF1BE6BACF862B` — `CLIENT-LIVE-ACCEPTANCE-I11-R01.md` §9 gömülü bloktan OFFICE 33 yeniden hesapladı (LF, sonda LF) |
+| **İ11 §9 kabul bloğu** (R06; R23'e bağlı) | `27E754A721749443F8B3F2F363B7676989FC115BB6B85E6E0982F62644FC6700` — `CLIENT-LIVE-ACCEPTANCE-I11-R01.md` §9 gömülü bloktan OFFICE 33 yeniden hesapladı (LF, sonda LF) |
 | **T-PENCERE-AÇ** `scripts\t-window-apply.ps1` (R05) | `CA99E69E278D94C95FDBBBE6CA0C22B1E5C41662BD4EAEC0B79ACC4D957A74F4` |
 | **T-PENCERE-KAPA** `scripts\t-window-close.ps1` (R05) | `0A80982B7CE35B22D05A7EA08CBDBA9802746EDFB4EF7A8CEF61E8B47882AE05` |
-| GEÇERSİZ (R04) | §9 `A16E4791…` · T-AÇ `508C5323…` · T-KAPA `5895CFC7…` — **kullanılmaz** |
+| GEÇERSİZ | R04: §9 `A16E4791…` · T-AÇ `508C5323…` · T-KAPA `5895CFC7…` · R05: §9 `9804FEF6…` — **kullanılmaz** |
 | `i11-run.js` · `i11-01-setup.js` · `i11-02-intake.js` | `27821B463D2DDA5E1F180A79A677CEA13B2EAD15840D95F8218012A0E2632F4B` · `1317D727F08C81108D027C41B9B0DF9EF8E6B5C0C99979F76AEF30E3CA427DC4` · `7D8D492BC6CE4A2E2CD3CB77EEACAC01594D1DDD9D17F9F767D0625DDB251789` |
 | Kurtarma `i11-03-close-links.js` · `cl-09-close-access.js` | `87C16DB3E7A7521605C1E6F16563415949F871042BCF51617283B4A05D549740` · `012739987ED4176A114D6A33F18C76ACF2DB8614F7C954B453E04126A98862C4` |
 | `smtp-sink-noauth.js` | `99A5D681686BC3704151227AB45FC01EFC9F5F6E84DE7FE686A1157E9B558800` |
@@ -135,7 +138,7 @@ kök `OWNER-RUN`/`OWNER-COMMAND` **YOK**. R27 tüketildi, yeniden mühürlenemez
 | **V-B** derlenmiş B-I11-3 (R04) | **PASS** — 503, ErrorLog 1 satır, ham token 0 (kanıt `7121CB3A5101692EC13057C5D54FD1AC734E5759C96C7280F8D782D3236DE951`); RELEASE22 negatif kontrol FAIL |
 | **V-A** birleşik dizi (R04, runId `64245dc2`) | **PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0**; taşıma gövdesi A-5 token yok / A-6 token yalnız sağlayıcı metninde (kanıt `C7E7B8E859003EDF4B42C8BF0DD125640B0B78F7329614F7D1305B3D93F1895F`) |
 | **V-A tekrarı R05 blokları** (runId `51c11954`) | T-AÇ `CA99E69E…` (K-T1..K-T5 → K-T0 yedek korumalı DACL + SDDL tabanı, restart 6 s) → İ11 **PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0** → T-KAPA `0A80982B…` **hata yolu** (R-T5 yine koştu, sonda throw) → **kurtarma** (idempotent, API 6 s, R-T7 eşit, tüm adımlar başarılı) |
-| K-PAR sondası (R05) | noauth yakalayıcı açıkken **0** · eski AUTH yakalayıcı açıkken **4** |
+| K-PAR sondası (R05 → R06) | R05: noauth **0** · eski AUTH **4** · **R06** (bloktan birebir çıkarılan satırlar, gerçek süreçler, PS 5.1 + PS 7): noauth **0** · log yolu taşıyan sarmalayıcı **0** · izleyici **0** · eski AUTH **3** |
 | K-ELEV izole sınama (R05) | yükseltilmemiş oturumda T-AÇ ve T-KAPA ilk değiştirici komuttan önce DURDU |
 | Nöbetçi (aday kökü) | R04 `1AF16597659351D368D210B0FE6B92C265099EFE853E7D8F1902902274BC6D33` · R05 `2A1062EAC54A2D5EBBCE2E7F583B4769E1654AF786420EBCCE0B88E5FCAFF7CB` — dosya 88.248 → 88.248, değişen 0 |
 
@@ -255,7 +258,8 @@ Betik kaynağı (sha doğrulamalı): kanonik main — `C:\Development\HUKUK_YAZI
 
 **D3-0 — Yakalayıcı + K-PAR ön-kontrolü** (OFFICE 33). Bu blok belgeden çıkarılıp YALNIZ betik dizini, log yolu ve port (2599)
 değiştirilerek yerelde WinPS 5.1 alt sürecinde **uçtan uca koşuldu**: başarı yolu `D3-0 TAMAM`, çıkış 0, dinleyici `127.0.0.1`, süreç
-komut satırı `node <…>\smtp-sink-noauth.js`; düşüş yolu (K-PAR ≥1) yakalayıcıyı durdurdu (dinleyici 0) ve fırlattı. **Canlıda koşulmadı.**
+komut satırı `node <…>\smtp-sink-noauth.js`; düşüş yolu (K-PAR ≥1) yakalayıcıyı durdurdu (dinleyici 0) ve fırlattı. R06 desenine
+güncellenen blok başarı yolunda **yeniden koşuldu** (`D3-0 TAMAM`, çıkış 0, dinleyici `127.0.0.1`; sonra 0). **Canlıda koşulmadı.**
 **İşletim uyarısı (ölçüldü):** düşüş yolunu tetikleyen süreç, komut satırında desen belirteçlerini taşıyan araç kabuğuydu. D3 süresince
 komut satırında `smtp-sink.js` · `i11-run` · `cl-09` vb. geçen başka süreç (ör. `-Command` ile açılmış kabuk, ajan kabuk çağrısı, log
 izleyici) bulunmamalıdır; blokları owner yükseltilmiş pencereye **yapıştırarak** koşar (pencerenin komut satırı yalnız `powershell.exe`).
@@ -271,7 +275,7 @@ $env:SINK_PORT='2526'; $env:SINK_LOG='C:\Users\ulastelli\AppData\Local\Temp\clau
 [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $env:SINK_LOG))
 [void](Start-Process -FilePath 'node' -ArgumentList ('"' + (Join-Path $SC 'smtp-sink-noauth.js') + '"') -WindowStyle Hidden -PassThru)
 $t0=Get-Date; while(@(Get-NetTCPConnection -LocalPort 2526 -State Listen -ErrorAction SilentlyContinue).Count -eq 0){ if(((Get-Date)-$t0).TotalSeconds -gt 15){ throw 'yakalayici 15 s icinde dinlemedi - DUR' }; Start-Sleep -Milliseconds 300 }
-$rx='ak-live|i11-run|i10-run|i9-run|i11-0|i10-0|i9-0|cl-09|ro-check|drive2?\.js|fault-proxy|start-api-r22s|smtp-sink\.js'
+$rx='ak-live|i11-run|i10-run|i9-run|i11-0|i10-0|i9-0|cl-09|ro-check|drive2?\.js|fault-proxy|start-api-r22s|smtp-sink\.js\b'
 $busy=@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and ($_.CommandLine -match $rx) -and ($_.ProcessId -ne $PID) })
 if($busy.Count -ne 0){
   foreach($p in $busy){ 'K-PAR-ON: PID ' + $p.ProcessId + ' ' + $p.Name }
@@ -296,7 +300,7 @@ if($busy.Count -ne 0){
 |---|---|---|---|
 | D3-0 | yukarıdaki blok | — | yakalayıcı `127.0.0.1:2526` (komut satırında log yolu YOK) · K-PAR ön-kontrolü **0** → `D3-0 TAMAM` |
 | D3-1 | **T-PENCERE-AÇ** `CA99E69E…` | `T_MODE=live` · `T_GOREF=<İ11 ref>` | **K-ELEV** · K-T1..K-T3 yakalayıcı yalnız loopback, AUTH ilan yok · K-T4 API tek dinleyici · **K-T5 ayın 1'i 02:00–05:00 reddi** · **K-T0** yedek + korumalı DACL + env SDDL tabanı · **K-T6 Web durur + `I11-WINDOW-BLOCK-8080/-3002`** · `.env`'de TAM iki satır (`SMTP_HOST=127.0.0.1`, `SMTP_PORT=2526`) · API restart (180 s) · `T-AC cikis=0` |
-| D3-2 | **İ11 §9 bloğu** `9804FEF6…` — **TEK KEZ** (belgeden kopyalanır; yalnız üç değişken doldurulur; aynı pencereye yapıştırılır) | `$GoRef` = İ11 ref · `$SendGo` = aynı ref · `$SmtpAck = 'EVET'` | K-GO · K-WT · K-ARC (9 araç + 12 ürün hash) · K-PAR (noauth dışlanır) · K-INTAKE · tek `node i11-run.js`; yazma yalnız `cl-acc-<runId>` (gönderim açık **28 satır**; başarısız gönderimde 21); kapanış koşum içinde |
+| D3-2 | **İ11 §9 bloğu** `27E754A7…` — **TEK KEZ** (belgeden kopyalanır; yalnız üç değişken doldurulur; aynı pencereye yapıştırılır) | `$GoRef` = İ11 ref · `$SendGo` = aynı ref · `$SmtpAck = 'EVET'` | K-GO · K-WT · K-ARC (9 araç + 12 ürün hash) · K-PAR (noauth dışlanır) · K-INTAKE · tek `node i11-run.js`; yazma yalnız `cl-acc-<runId>` (gönderim açık **28 satır**; başarısız gönderimde 21); kapanış koşum içinde |
 | D3-3 | **Kurtarma** (yalnız koşum kesilir/durum belirsizse; `CLIENT-LIVE-ACCEPTANCE-I11-R01.md` §11) | `CL_RUN_ID=<runId>` + §9'un `CL_*` değerleri | `i11-03-close-links.js` `87C16DB3…` → bağlantılar REVOKED · `cl-09-close-access.js` `01273998…` → 3 User pasif + Case CLOSED; tekrarı güvenli |
 | D3-4 | **T-PENCERE-KAPA** `0A80982B…` — **HER SONUÇTA** | `T_MODE=live` · `T_RUNID=<runId>` | **K-ELEV** · K-T10b pozitif hedef kanıtı · R-T1 `.env` ön görüntüye (sha birebir, idempotent) · R-T2 API restart (180 s) · R-T3 özgün hedef · **R-T4a engel kaldır + R-T4b Web — HER DURUMDA** · **R-T5 yakalayıcı durdur — HER DURUMDA** · R-T6 sentetik alan dışı ileti → yeniden gönderim YOK · **R-T7 env SDDL = K-T0 tabanı** · hata varsa tüm adımlar denendikten sonra **sonda throw** (`T-KAPA cikis=1`, adım listesi) |
 | D3-5 | **Kapanış ölçütü** (salt-okuma; OFFICE) | D1-5 bloğunun iki `env` satırı | `env sha=7A7228B1…` VE `env sddl` = D1-5 taban çizgisi (R-T7 ile bağımsız aynı karşılaştırma); API/Web kökü RELEASE23; `I11-WINDOW-BLOCK` 0; `:2526` 0 |
@@ -374,8 +378,8 @@ Cutover penceresinde kabul/sentetik tenant koşumu YAPILMAZ (motor V-01 DB snaps
 >
 > 1. **Sabit kimlikler:** kaynak `2740df3dd58c5e711a790cc21a5f69d6dbffb35d`, aday kökü `HY_W4_RELEASE23`, BUILD_ID
 >    `dOiGPj2M0Abls0kCibY4r`, manifest `E53618ED…61AD5`, paket `HY_C33_RELEASE23_CUTOVER_R28` (motor `2AE77043…A927`),
->    İ11 §9 `9804FEF6…862B`, T-AÇ `CA99E69E…74F4`, T-KAPA `0A80982B…AE05` — tam değerler bu belge §1. Başka SHA/kök/paket/blok
->    kullanılmaz (R04 blokları `A16E4791…`/`508C5323…`/`5895CFC7…` GEÇERSİZ); herhangi bir sha uyuşmazlığında DUR.
+>    İ11 §9 `27E754A7…6700`, T-AÇ `CA99E69E…74F4`, T-KAPA `0A80982B…AE05` — tam değerler bu belge §1. Başka SHA/kök/paket/blok
+>    kullanılmaz (R04 `A16E4791…`/`508C5323…`/`5895CFC7…` ve R05 §9 `9804FEF6…` GEÇERSİZ); herhangi bir sha uyuşmazlığında DUR.
 > 2. **Rol ataması:** bu GO ana yürütücüye (i) D1-1'den önce §1.3 R28 araçları ve §1.4 geri dönüş pinlerinin **bağımsız yeniden ölçümünü**,
 >    (ii) D1-3/3e'de OR-03a digest'inin **bağımsız hesabını** görev olarak ATAR. Sonuçlar kayda yazılmadan D1-4'e geçilmez.
 > 3. **D1 (OFFICE/C33; owner yükseltilmiş pencerede koşar):** D1-1 preflight `OWNER_PREFLIGHT_READY` → D1-2 `-Live`
@@ -405,7 +409,6 @@ Cutover penceresinde kabul/sentetik tenant koşumu YAPILMAZ (motor V-01 DB snaps
 |---|---|
 | **`CL_TOKENFIX` disk artığı** (`C:\Development\HY_WT\CL_TOKENFIX`) | **AYRI AÇIK KALEM** (CLIENT) — git kaydı 0, yalnız disk; kancayı aşacak alternatif silme yolu denenmedi ve denenmeyecek; seçenek (a) owner siler (b) kancayı tetiklemeyen yola açık onay |
 | `ENV-PREIMAGE.env` (D3 sonrası CLIENT oturum dizininde canlı `.env` kopyası; sır taşır) | R05'te **korumalı DACL** (SYSTEM + Administrators + yürütücü, K-T0 doğrular); T-AÇ'ın tekrar-açma kilidi; **silme owner kararı** |
-| K-PAR `smtp-sink\.js` ↔ `smtp-sink.jsonl` alt dizgi eşleşmesi (§0, ölçüldü) | fail-closed; D3-0 başlatma yöntemi + ön-kontrolüyle önlendi; desen `smtp-sink\.js\b` önerisi CLIENT kararı (değişirse R03) |
 | T-KAPA R-T4a/R-T4b hata yolu | yalnız canlı modda koşar; provada sınanmadı (R-T5 aynı yapıda ölçüldü) |
 | main ≠ aday — #2655 B11 @ `78f49dd3` | RELEASE23'te YOK (sabit aday); yayını ayrı aday/ayrı karar |
 | Ana yürütücü doğrulama/K-KİMLİK görevi | §7 madde 2 ile owner GO'da atanır; şu ana dek akran talebiyle üstlenilmedi, ölçüm yok |
