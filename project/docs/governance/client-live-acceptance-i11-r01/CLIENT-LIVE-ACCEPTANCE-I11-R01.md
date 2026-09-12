@@ -385,7 +385,7 @@ sürece yalnız ortam değişkeni olarak geçer (parolayla aynı desen).
 |---|---|---|
 | **B-I11-1** | `PUBLIC_INTAKE_BASE_URL` canlıda **tanımsız** (.env 0 satır; Machine/User kapsamında da yok) → `buildUrl` göreli `/intake/<token>` üretir; müvekkil tıklanabilir adres **almaz** | **AÇIK — H5 kullanılabilirlik kusuru** (§6.6). İ11 ölçütünü bloke etmez, teslim metnine sınır olarak girer |
 | **B-I11-2** | promote reddi **stabil kod taşımıyor** (yalnız mesaj); inceleme reddinde `CLIENT_MUTATION_DENIED_INTAKE_REVIEW` var | AÇIK, bloke etmez |
-| **B-I11-3** | Public intake ucu **5xx** verdiğinde küresel hata filtresi istek yolunu olduğu gibi yazar → **ham intake token'ı `ErrorLog.endpoint` alanına düz metin** girer (ölçüldü: `/api/public/intake/<token>`). Ucun hız sınırı Redis'e bağlı ve **Redis arızasında fail-closed 503** verir; yani bir Redis kesintisi, müvekkil formu açmaya çalıştığında token'ı DB'ye düşürür. Controller yorumu token'ı loglamadığını söyler; sızıntı **filtre katmanındadır** | AÇIK. **Canlı blokta K-INTAKE kapısı** bu riski koşum için kapatır (rastgele token ile sağlık ölçümü; sağlıksızsa gerçek token hiç gönderilmez) |
+| **B-I11-3** | Public intake ucu **5xx** verdiğinde küresel hata filtresi istek yolunu olduğu gibi yazar → **ham intake token'ı `ErrorLog.endpoint` alanına düz metin** girer (ölçüldü: `/api/public/intake/<token>`). Ucun hız sınırı Redis'e bağlı ve **Redis arızasında fail-closed 503** verir; yani bir Redis kesintisi, müvekkil formu açmaya çalıştığında token'ı DB'ye düşürür. Controller yorumu token'ı loglamadığını söyler; sızıntı **filtre katmanındadır** | **MAIN'DE ONARILDI — CANLIDA DEĞİL.** PR #2643 @ `d199c8dc`: `redactSecretPathSegments` `redactPii`'nin ilk adımı yapıldı; hattın tüm alanlarında (DB `endpoint` · `message` · `stack` · `metadata.route` · konsol · FRONTEND yolu) değer maskelenir, **rota şekli korunur** (`/api/public/intake/:token`). Hedefli regresyon testi CI manifestinde (11/11; yama etkisi kaldırılınca 9'u düşer). Yan fayda: dedupe anahtarı artık token'a bağlı değil → ErrorLog satır patlaması da kapandı. **Canlı ikili hâlâ `13740670` — onarım canlıya YANSIMADI;** o yüzden **K-INTAKE kapısı KALIR** (kapı onarımın yerine geçmez, yalnız koşumu korur) |
 
 ---
 
@@ -613,7 +613,7 @@ Bu belge GO değildir. Canlı koşum için owner'ın yazılı kararı şunları 
 4. **Sınırlar:** gerçek kişiye gönderim yok · başka tenant'a yazma yok · **canlı DB'ye bağlı ikinci
    süreç yok** · restart, yayın, migration ve flag değişikliği yok · belirsiz sonuçta otomatik
    tekrar/silme yok.
-5. **Bilgi:** B-I11-1 (göreli intake URL) **açık H5 kusuru** olarak kalır; B-I11-3 için K-INTAKE kapısı
+5. **Bilgi:** B-I11-1 (göreli intake URL) **açık H5 kusuru** olarak kalır; B-I11-3 **main'de onarıldı (#2643 @ `d199c8dc`) ama canlıya geçmedi** → K-INTAKE kapısı
    koşum boyunca koruma sağlar ama **ürün tarafı açıktır**.
 
 ## 11. Hata / yarıda kesilme kurtarması ve kapatma
@@ -671,3 +671,99 @@ Deploy · migration · servis restartı · `.env`/flag değişikliği (sağlayı
 DB'ye bağlı ikinci API süreci** · gerçek kişiye gönderim · başka tenant'a yazma · silme · gerçek
 tenant'a çağrı · önceki alanlarda kullanıcı erişiminin veya intake bağlantısının yeniden açılması ·
 **ürün kodu değişikliği** · **A-9/A-10 ve İ12'nin diğer gözlemleri** · İ13…İ15 · İ16/İ5a · İ17.
+
+---
+
+## 14. TAM KABUL UYGULAMA PAKETİ — owner kararına (henüz UYGULANMADI)
+
+§6.4'teki seçeneklerden **A-5/A-6'nın taşıma gövdesini gerçekten gözleyen** ve R02'nin **test
+sağlayıcısı** şartını karşılayan tek uygulanabilir yöntem burada somutlaştırılmıştır. **Bu bölüm
+bir uygulama değil, karar metnidir; hiçbir canlı yapılandırma değiştirilmedi, restart/yayın
+yapılmadı.**
+
+### 14.1 Yöntem T — "gözlenebilir taşıma, dış çıkış yok"
+
+Canlı API süreci **aynı kalır**; yalnız **taşıma hedefi** loopback'e çevrilir. `EMAIL_PROVIDER`
+`smtp` olarak **değişmez** → canlıdaki `sendViaSmtp` kod yolu aynen çalışır, yalnız karşı taraf
+yerel yakalayıcıdır.
+
+| Owner ölçütü | Karşılanma | Dayanak |
+|---|---|---|
+| Gerçek SMTP çıkışı olmaması | ✔ `SMTP_HOST=127.0.0.1` → süreç dış relay'e **bağlanamaz** | `email-provider.service.ts` `sendViaSmtp` host'u ConfigService'ten alır |
+| İkinci cron yürütücüsü oluşmaması | ✔ Yeni süreç **yok**; mevcut tek API süreci yerinde yeniden başlatılır | §6.5'teki 33 cron sorunu doğmaz |
+| Geri dönüşün açık olması | ✔ İki anahtar; öncesi sha256 yedekli; geri alma aynı iki adım (§14.4) | — |
+| **A-0i kapısı bozulsa da dış gönderim engellenmeli** | ✔ Engel **süreç genelindedir**: yetki kapısı ne yaparsa yapsın taşıma hedefi loopback'tir; yetkisiz bir istek bile dışarı çıkamaz | kapı-üstü değil, taşıma-altı engel |
+| R02 "test sağlayıcısı" şartı | ✔ Yerel yakalayıcı = test sağlayıcısı; **taşıma gövdesi okunabilir** | §7.3'teki A-6 kanıtı aynı yöntemle üretildi |
+
+### 14.2 Kesin değişiklikler
+
+**Canlı `.env` (`HY_W4_RELEASE22\project\apps\api\.env`) — TAM İKİ SATIR:**
+
+| Anahtar | Önce | Sonra | Neden |
+|---|---|---|---|
+| `SMTP_HOST` | `srvc182.trwww.com` | `127.0.0.1` | dış çıkış imkânsız |
+| `SMTP_PORT` | `465` | `2526` | kaynakta `secure: SMTP_PORT === '465'` → düz SMTP; yakalayıcı portu |
+
+**DEĞİŞMEYENLER:** `EMAIL_PROVIDER` (=`smtp`) · `EMAIL_FROM` · `SMTP_USER` · `SMTP_PASS` ·
+`DATABASE_URL` · bayraklar · `PUBLIC_INTAKE_BASE_URL` (B-I11-1 açık kalır) · ürün kodu · dist.
+
+**Yakalayıcı koşulu — parola hiç iletilmez:** yakalayıcı EHLO yanıtında **AUTH ilan ETMEMELİDİR**.
+Ölçüldü: AUTH ilan edilmeyince nodemailer yalnız `EHLO · MAIL · RCPT · DATA` gönderir,
+**`AUTH` komutu hiç gitmez**, gövdede parola görünmez ve gönderim yine `250` alır. Böylece canlı
+`SMTP_PASS` **hiçbir yere — yerel sürece bile — iletilmez** ve iki anahtar daha değiştirmek
+gerekmez. Yakalayıcı yalnız `127.0.0.1`'e bağlanır, **hiçbir iletiyi dışarı göndermez** ve bir
+Nest/cron süreci **değildir**.
+
+### 14.3 Adımlar (sıralı; her adım ölçülür)
+
+| # | Adım | Ölçüt |
+|---|---|---|
+| T-0 | `.env`'in sha256'sı alınır, yedeği alınır | yedek hash = canlı hash |
+| T-1 | Yakalayıcı `127.0.0.1:2526` başlatılır (AUTH ilan etmeyen varyant) | port dinleniyor · dışarı bağlantı 0 |
+| T-2 | İki anahtar değiştirilir | yeni `.env` yalnız 2 satırda farklı (diff ölçülür) |
+| T-3 | API servisi durdurulur/başlatılır (mevcut launcher) | tek dinleyici · komut satırı RELEASE22 dist · **kesinti ölçülür** |
+| T-4 | **Dış çıkış yok kanıtı**: API sürecinin uzak uçları | `srvc182`/`:465` bağlantısı **0**; yalnız DB/Redis/yakalayıcı |
+| T-5 | §9 bloğu, `$SendGo` = GO ref, `$SmtpAck='EVET'` ile **TEK KEZ** | 9 kapı geçer; koşum kapsamı **TAM** |
+| T-6 | A-5/A-6 kanıtı yakalayıcı kaydından | A-5 iletisinde token **yok**; A-6'da **var** ve `sha256(token)=tokenHash`; kalıcı gövdeler URL'siz |
+| T-7 | Kapanış (§11) | bağlantılar REVOKED · anonim 404 · 3 kullanıcı pasif · Case CLOSED · izolasyon eşit |
+| T-8 | **GERİ DÖNÜŞ** (§14.4) — sonuç ne olursa olsun | `.env` hash'i yedekle **birebir** · API yeniden başlar · yakalayıcı durur |
+
+### 14.4 Geri dönüş (koşul aranmaz; başarısızlıkta da uygulanır)
+
+1. `.env` yedekten geri yazılır → **sha256 yedekle birebir eşit olmalı** (ölçülür).
+2. API servisi durdurulup başlatılır (aynı launcher) → tek dinleyici + dist komut satırı doğrulanır.
+3. Yakalayıcı süreci durdurulur; port 2526 boş.
+4. Yakalayıcı kaydı **yerel kanıt** olarak saklanır; **repoya girmez** (§14.6).
+
+Geri dönüş adımları koşumdan **bağımsız çalıştırılabilir**: değişiklik yalnız iki `.env` satırı
+olduğu için koşum yarıda kesilse bile geri alma tek başına yeterlidir.
+
+### 14.5 Hizmet kesintisi ihtimali — ÖLÇÜLEN
+
+| Kalem | Ölçüm |
+|---|---|
+| Restart kesintisi | RELEASE22 cutover'ında **39,467 s** (API **+** Web, journal'dan ölçüldü). Burada yalnız API yeniden başlar → bu değer **üst sınır**. İki restart (T-3 ve T-8) |
+| Risk senaryosu | 2026-09-11 kesintisinde reboot + logon beklemesi launcher'ı uzatmıştı (Ek C.1). Pencere **reboot içermez**; yine de başlatıcı doğrulaması T-3/T-8'de ölçülür |
+| Pencere boyunca giden e-posta | **Kaybolmaz, yakalanır.** Yakalayıcı gövdeyi kaydeder → geri dönüşten sonra elle yeniden gönderilebilir |
+| Gerçek posta çakışma olasılığı | **Ölçüldü (salt-okuma, 16 iletim tablosu):** son 30 günde **toplam 2 satır** (`ClientNotification` 1 · `ClientStatement` 1), son 24 saatte **0**; `ClientInfoRequest` **hiç yok**. Son 30 günde gönderim olan **saat dilimi sayısı 1/720** |
+| Zamanlanmış işler | Restart penceresinde tick'ler atlanır (mevcut davranış); ikinci yürütücü **yok** |
+
+### 14.6 Kanıt sınırı — ne kanıtlar, ne KANITLAMAZ
+
+**Kanıtlar:** canlı ikili, canlı DB ve canlı yapılandırma şekliyle, `client-info-request` yolunun
+**kalıcı gövdesi token/URL taşımaz** (A-5) ve **taşıma metni bağlantı taşır** (A-6) — R02'nin
+tanımladığı biçimde, **test sağlayıcısıyla**.
+
+**KANITLAMAZ:** gerçek relay'in davranışını (kabul/ret/timeout → İ12'nin konusu) · normal
+yapılandırmada iletinin gerçek alıcıya ulaştığını · B-I11-1 nedeniyle bağlantının tıklanabilir
+olduğunu (göreli URL kusuru **açık kalır**).
+
+**Token kullanımı:** A-6'nın ham token'ı yakalayıcı kaydına girer. O token **sentetik tenant'a**
+aittir ve kapanışta **REVOKED** edilir (§5.6) → koşum bittiğinde işlevsizdir. Kayıt yerel kanıt
+olarak saklanır, **repoya veya rapora yazılmaz**.
+
+### 14.7 Bu paket uygulanırsa
+
+İ11'in üç gözlemi de canlıda PASS olabilir → **İ11 kapanır**, sayaç **10/17 → 11/17**. Uygulanmazsa
+V1 geçerlidir: A-5/A-6 KAPSAM DIŞI kalır ve **İ11 kapanmaz**. Her iki hâlde de B-I11-1 açık H5
+kusuru olarak kayıtta durur.
