@@ -1,7 +1,8 @@
-# CLIENT İ10 — H3 VEKÂLET KABUL PAKETİ (R01 — düzenek + yerel doğrulama; canlı koşum YOK)
+# CLIENT İ10 — H3 VEKÂLET KABUL PAKETİ (R01 — düzenek, yerel doğrulama ve canlı koşum kaydı)
 
-**Durum: CANLI GO'YA HAZIR — canlı koşum YAPILMADI.** Bu belge owner onayı ya da kapsam kararı
-değildir. Canlı koşum ayrı, yazılı bir owner GO'su (`OWNER-GO-CLIENT-I10-<YYYYMMDD>-R<nn>`) ister (§10).
+**Durum: İ10 CANLI KABULÜ KAPANDI** — `OWNER-GO-CLIENT-I10-20260912-R02` · runId `c9b07bcb` ·
+**PASS 10 · FAIL 0 · ÖLÇÜLEMEYEN 0** · kapanış (üç kullanıcı erişim iptali) ve izolasyon doğrulandı ·
+yazmalar onaylı 9 satırlık envanterle birebir (§14).
 
 - Kapsam ve öncüller R02'den satır kaynaklı çıkarıldı (§1–§2). **İ4 ve İ5 İ10'un öncülü değildir.**
   Gerçek öncüllerin hepsi (İ3, İ7, İ8, İ9) kapalı.
@@ -12,7 +13,8 @@ değildir. Canlı koşum ayrı, yazılı bir owner GO'su (`OWNER-GO-CLIENT-I10-<
   (§7). Normal akış **PASS 10 · FAIL 0 · ÖLÇÜLEMEYEN 0**. 210 tablonun tamamında yazma farkı, 9
   satırlık envanterle birebir.
 
-Sayaç **9/17**, hizmet kabulü **0/8 tam**. Bu paket ikisini de değiştirmez.
+Sayaç **10/17** (İ10 canlı kapanışıyla 9/17 → 10/17), hizmet kabulü **0/8 tam** — kendiliğinden
+değişmez.
 
 ---
 
@@ -324,68 +326,179 @@ asıllar yerinde).
 | 7 | runId | yazmadan önce diske kaydedilir; `cl-acc-<runId>` mevcut olmamalı |
 | 8 | Koşucunun kendi ön kontrolleri | İ10 GO ref deseni · kütüphane yolları · iki kökün listelenebilirliği · G-0 (`127.0.0.1:5432/hukuk_db` + ref) |
 
-## 9. Kesin komut (canlı, owner GO'sundan SONRA)
+## 9. Kesin komut — KOŞULAN TEK SCRIPTBLOCK
 
-PowerShell 5.1 uyumludur. Çalışma yolu doğrulanmış **uzun yoldur** (8.3 kısa ad kullanılmaz).
-`CL_LOGIN_PASSWORD` **verilmez**, koşucu parolayı bellekte üretir. Bağlantı sırrı yazdırılmaz.
-
-**9.1 GO anında hazırlık — temiz çalışma kopyası ve kimlik**
-
-```powershell
-git -C 'C:\Development\HUKUK_YAZILIMI\project' fetch origin main
-git -C 'C:\Development\HUKUK_YAZILIMI\project' worktree add --detach 'C:\Development\HY_WT\CL_I10LIVE' origin/main
-$G = 'C:\Development\HY_WT\CL_I10LIVE\project\docs\governance'
-$want = @{
-  'client-live-acceptance-i10-r01\scripts\i10-run.js'            = '7849595E02B67B91AEB7D94478D73F7C8D91D638A56CD3694A836280AA4828BC'
-  'client-live-acceptance-i10-r01\scripts\i10-01-setup.js'       = '6FC3EC138298A149C737E9EF9F69A48CE368DD219B3C76745036E1148504B79B'
-  'client-live-acceptance-i10-r01\scripts\i10-02-poa.js'         = 'C9D847C60931B7707623D049A05674AC78707F9E689A5A4614A8050AAB302D29'
-  'client-live-acceptance-i1b-r01\scripts\cl-lib.js'             = 'C3948BB5A0CABCC426AEC1EF0123E5BF842349F1002B1E010FBD0B5556E16B46'
-  'client-live-acceptance-i1b-r01\scripts\cl-09-close-access.js' = '012739987ED4176A114D6A33F18C76ACF2DB8614F7C954B453E04126A98862C4'
-  'client-live-acceptance-i9-r01\scripts\i9-03-isolation.js'     = '0EA99FD0F37B6625A0DE92EA6B361E12C592A9EB84CD3EE85823F43F0F109B6A'
-  'client-acceptance-harness-r01\scripts\ah-lib.js'              = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
-  'f04-live-acceptance-r01\scripts\f04-lib.js'                   = '1D35429566BC0A0469F44ED028FEF829AF204A90C9A5565C6882EF99C6305CA8'
-}
-$D = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22\project\apps\api\dist\apps\api\src'
-$dist = @{
-  'modules\poa\poa.service.js'                              = '5E570480321F219968FB955AF8E8563FA2B385874F50156D8411BD4F1644FF8C'
-  'modules\poa\poa.controller.js'                           = 'E5445631B8E108C60CB9FC838BB2F253FD244F81588B6463E00DA167AC2D2EB5'
-  'modules\client\client-workspace-command-authority.js'    = 'D8373C726264631A214056135EBBE36BAA12BA3C91ECCD5F8E589E3F0940A9F6'
-  'modules\client\client-poa-capability.js'                 = '7843B71A5195BA702EAB67175F8AD61AE177D342FE082BC539057FB3CA50FD1D'
-  'modules\client\client-poa-capability.controller.js'      = '9DCE22FEDAEFD41DE0AAA447D6F640CD46EC9FD04F721C9E393EC2D6A2BB4DAA'
-  'common\storage\runtime-storage-paths.js'                 = '34903502B40782287C5EAD3445161511679351493CA601F53F90D4634F2A9615'
-}
-$bad = 0
-foreach ($k in $want.Keys) { if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $G $k)).Hash -ne $want[$k]) { $bad++; Write-Output "UYUSMAZ  $k" } }
-foreach ($k in $dist.Keys) { if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $D $k)).Hash -ne $dist[$k]) { $bad++; Write-Output "UYUSMAZ  dist\$k" } }
-Write-Output "hash uyusmazligi: $bad"   # 0 degilse DUR
-```
-
-**9.2 Koşum**
+Owner talimatıyla (2026-09-12) kapılar ve çağrı **tek scriptblock** içindedir: `$ErrorActionPreference
+= 'Stop'`, her yerli komuttan sonra `$LASTEXITCODE` denetimi ve `throw` — **ilk hatada blok durur,
+sonraki komut çalışmaz**. Aşağıdaki metin, §14'te kaydedilen koşumda **birebir** çalıştırılan bloktur;
+tek fark `$GoRef` alanına o koşumun ref'inin (`OWNER-GO-CLIENT-I10-20260912-R02`) yazılmış olmasıdır.
+Blok dosyası (paket dışı) sha256 `1E3ABD750A821B6251015E752E9FDAE876FF19AFD48E3C9F6F40C8143FC72A51`;
+PowerShell 7 ve 5.1'de ayrıştırma hatası 0.
 
 ```powershell
-$S = 'C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i10live'
-New-Item -ItemType Directory -Force -Path $S | Out-Null
-$env:CL_ENVIRONMENT     = 'live'
-$env:CL_OWNER_GO_REF    = '<OWNER-GO-CLIENT-I10-YYYYMMDD-Rnn>'
-$env:CL_DATABASE_URL    = ((Get-Content -LiteralPath 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22\project\apps\api\.env' | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1) -replace '^DATABASE_URL=','').Trim('"')
-$env:CL_API_BASE_URL    = 'http://127.0.0.1:8080/api'
-$env:CL_PRISMA_ROOT     = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE22/project/apps/api/node_modules/@prisma/client'
-$env:CL_BCRYPT_PATH     = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE22/project/apps/api/node_modules/bcrypt'
-$env:CL_POA_UPLOAD_ROOT = 'C:\Ops\hukuk\data\uploads\poa;C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22\project\apps\api\data\uploads\poa'
-Remove-Item Env:\CL_SESSION_DB -ErrorAction SilentlyContinue
-$env:CL_RUN_ID          = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
-Add-Content -LiteralPath "$S\RUNID-RESERVATION.txt" -Value "$(Get-Date -Format o) runId=$($env:CL_RUN_ID) go=$($env:CL_OWNER_GO_REF)"
-$env:CL_STATE_FILE      = "$S\i10-state-$($env:CL_RUN_ID).json"
-node 'C:\Development\HY_WT\CL_I10LIVE\project\docs\governance\client-live-acceptance-i10-r01\scripts\i10-run.js'
+& {
+  # I10-KAPI-BLOK — CLIENT I10 canli kabul: KAPILAR + TEK KOSUM, tek blok.
+  # Herhangi bir hata blogu durdurur; sonraki komut CALISMAZ.
+  $ErrorActionPreference = 'Stop'
+  $selfMark = 'I10-KAPI-BLOK'   # bu blogu calistiran surec kendini "paralel kabul" sanmasin
+
+  $GoRef  = 'OWNER-GO-CLIENT-I10-20260912-R02'
+  $CANON  = 'C:\Development\HUKUK_YAZILIMI\project'
+  $WT     = 'C:\Development\HY_WT\CL_I10LIVE'
+  $REL    = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22'
+  $S      = 'C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i10live'
+  $ENVF   = Join-Path $REL 'project\apps\api\.env'
+
+  # ---- K-GO: ref bicimi (buyuk/kucuk harfe DUYARLI) ----
+  if ($GoRef -cnotmatch '^OWNER-GO-CLIENT-I10-[0-9]{8}-R[0-9]{2}$') { throw "K-GO: ref bicimi gecersiz ('$GoRef')" }
+
+  # ---- K-WT: temiz calisma kopyasi (origin/main) ----
+  git -C $CANON fetch origin main
+  if ($LASTEXITCODE -ne 0) { throw 'K-WT: git fetch basarisiz' }
+  if (Test-Path -LiteralPath $WT) { throw "K-WT: '$WT' zaten var - once kaldir (git worktree remove)" }
+  git -C $CANON worktree add --detach $WT origin/main
+  if ($LASTEXITCODE -ne 0) { throw 'K-WT: git worktree add basarisiz' }
+  $wtHead = (git -C $WT rev-parse HEAD)
+  if ($LASTEXITCODE -ne 0) { throw 'K-WT: worktree HEAD okunamadi' }
+  $originMain = (git -C $CANON rev-parse origin/main)
+  if ($LASTEXITCODE -ne 0) { throw 'K-WT: origin/main okunamadi' }
+  if ($wtHead -ne $originMain) { throw "K-WT: hazirlik checkout SHA ($wtHead) origin/main ($originMain) ile ayni degil" }
+  Write-Output "K-WT: hazirlik checkout tam SHA = $wtHead (origin/main ile ayni)"
+  $G = Join-Path $WT 'project\docs\governance'
+  $D = Join-Path $REL 'project\apps\api\dist\apps\api\src'
+
+  # ---- K-ARC: 8 arac + 6 urun dosyasi tam SHA-256 ----
+  $want = [ordered]@{
+    'client-live-acceptance-i10-r01\scripts\i10-run.js'            = '7849595E02B67B91AEB7D94478D73F7C8D91D638A56CD3694A836280AA4828BC'
+    'client-live-acceptance-i10-r01\scripts\i10-01-setup.js'       = '6FC3EC138298A149C737E9EF9F69A48CE368DD219B3C76745036E1148504B79B'
+    'client-live-acceptance-i10-r01\scripts\i10-02-poa.js'         = 'C9D847C60931B7707623D049A05674AC78707F9E689A5A4614A8050AAB302D29'
+    'client-live-acceptance-i1b-r01\scripts\cl-lib.js'             = 'C3948BB5A0CABCC426AEC1EF0123E5BF842349F1002B1E010FBD0B5556E16B46'
+    'client-live-acceptance-i1b-r01\scripts\cl-09-close-access.js' = '012739987ED4176A114D6A33F18C76ACF2DB8614F7C954B453E04126A98862C4'
+    'client-live-acceptance-i9-r01\scripts\i9-03-isolation.js'     = '0EA99FD0F37B6625A0DE92EA6B361E12C592A9EB84CD3EE85823F43F0F109B6A'
+    'client-acceptance-harness-r01\scripts\ah-lib.js'              = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
+    'f04-live-acceptance-r01\scripts\f04-lib.js'                   = '1D35429566BC0A0469F44ED028FEF829AF204A90C9A5565C6882EF99C6305CA8'
+  }
+  $dist = [ordered]@{
+    'modules\poa\poa.service.js'                           = '5E570480321F219968FB955AF8E8563FA2B385874F50156D8411BD4F1644FF8C'
+    'modules\poa\poa.controller.js'                        = 'E5445631B8E108C60CB9FC838BB2F253FD244F81588B6463E00DA167AC2D2EB5'
+    'modules\client\client-workspace-command-authority.js' = 'D8373C726264631A214056135EBBE36BAA12BA3C91ECCD5F8E589E3F0940A9F6'
+    'modules\client\client-poa-capability.js'              = '7843B71A5195BA702EAB67175F8AD61AE177D342FE082BC539057FB3CA50FD1D'
+    'modules\client\client-poa-capability.controller.js'   = '9DCE22FEDAEFD41DE0AAA447D6F640CD46EC9FD04F721C9E393EC2D6A2BB4DAA'
+    'common\storage\runtime-storage-paths.js'              = '34903502B40782287C5EAD3445161511679351493CA601F53F90D4634F2A9615'
+  }
+  $bad = 0; $checked = 0
+  foreach ($k in $want.Keys) { $checked++; if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $G $k)).Hash -ne $want[$k]) { $bad++; Write-Output "UYUSMAZ  $k" } }
+  foreach ($k in $dist.Keys) { $checked++; if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $D $k)).Hash -ne $dist[$k]) { $bad++; Write-Output "UYUSMAZ  dist\$k" } }
+  Write-Output "K-ARC: denetlenen dosya $checked (8 arac + 6 urun) - uyusmazlik $bad"
+  if ($checked -ne 14) { throw "K-ARC: denetlenen dosya 14 degil ($checked) - KOR" }
+  if ($bad -ne 0) { throw "K-ARC: hash uyusmazligi $bad" }
+
+  # ---- K-API: :8080 TEK dinleyici surec + komut satiri RELEASE22 dist ----
+  $pids = @(Get-NetTCPConnection -LocalPort 8080 -State Listen | Select-Object -ExpandProperty OwningProcess -Unique)
+  if ($pids.Count -ne 1) { throw "K-API: :8080 dinleyici surec sayisi $($pids.Count) (1 olmali)" }
+  $apiPid = [int]$pids[0]
+  $cl = (Get-CimInstance Win32_Process -Filter "ProcessId=$apiPid").CommandLine
+  if ($cl -notlike '*HY_W4_RELEASE22\project\apps\api\dist\apps\api\src\main.js*') { throw 'K-API: :8080 komut satiri RELEASE22 dist DEGIL' }
+  Write-Output "K-API: :8080 tek dinleyici PID $apiPid - komut satiri RELEASE22 dist"
+
+  # ---- K-BLD: release HEAD + BUILD_ID ----
+  $gitdir = ((Get-Content -LiteralPath (Join-Path $REL '.git') -TotalCount 1) -replace '^gitdir:\s*','').Trim()
+  $head = (Get-Content -LiteralPath (Join-Path $gitdir 'HEAD') -TotalCount 1).Trim()
+  if ($head -ne '137406701248858221d12be94a941f8837a2a245') { throw "K-BLD: release HEAD beklenen degil ($head)" }
+  $buildId = (Get-Content -LiteralPath (Join-Path $REL 'project\apps\web\.next\BUILD_ID') -TotalCount 1).Trim()
+  if ($buildId -ne 'xJZ1G1TsbOnHoWUzMD8CQ') { throw "K-BLD: BUILD_ID beklenen degil ($buildId)" }
+  Write-Output "K-BLD: HEAD 13740670... - BUILD_ID $buildId"
+
+  # ---- K-ENV: depolama koku + POA bildirim bayragi ----
+  $dr = @(Select-String -LiteralPath $ENVF -Pattern '^\s*HUKUK_DATA_ROOT\s*=')
+  if ($dr.Count -ne 1) { throw "K-ENV: HUKUK_DATA_ROOT satiri $($dr.Count) (1 olmali)" }
+  $drVal = (($dr[0].Line -replace '^\s*HUKUK_DATA_ROOT\s*=','').Trim()).Trim('"')
+  if ($drVal -ne 'C:\Ops\hukuk\data') { throw "K-ENV: HUKUK_DATA_ROOT '$drVal' beklenen degil" }
+  $poaFlag = @(Select-String -LiteralPath $ENVF -Pattern '^\s*POA_EXPIRY_NOTIFICATION_ENABLED\s*=')
+  if ($poaFlag.Count -ne 0) { throw 'K-ENV: POA_EXPIRY_NOTIFICATION_ENABLED tanimli - kapsam disi' }
+  Write-Output 'K-ENV: HUKUK_DATA_ROOT dogru - POA bildirim bayragi tanimsiz'
+
+  # ---- K-REF: ref KULLANILMAMIS - (a) repo metni (b) MEVCUT KOSUM KAYITLARI ----
+  $used = 0
+  git -C $CANON grep -F -I -q -e $GoRef origin/main
+  if ($LASTEXITCODE -eq 0) { $used++ } elseif ($LASTEXITCODE -ne 1) { throw 'K-REF: origin/main aramasi calismadi' }
+  $openBranches = @(gh pr list --state open --json headRefName --jq '.[].headRefName')
+  if ($LASTEXITCODE -ne 0) { throw 'K-REF: acik PR listesi alinamadi' }
+  foreach ($b in $openBranches) {
+    git -C $CANON fetch origin $b
+    if ($LASTEXITCODE -ne 0) { throw "K-REF: '$b' dali alinamadi" }
+    git -C $CANON grep -F -I -q -e $GoRef FETCH_HEAD
+    if ($LASTEXITCODE -eq 0) { $used++ } elseif ($LASTEXITCODE -ne 1) { throw "K-REF: '$b' dalinda arama calismadi" }
+  }
+  $recRoots = @(
+    $S,
+    'C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i9live',
+    'C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i9s',
+    'C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i10s',
+    'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911'
+  )
+  $recScanned = 0
+  foreach ($d in $recRoots) {
+    if (Test-Path -LiteralPath $d) {
+      $files = @(Get-ChildItem -LiteralPath $d -Recurse -File -Force)
+      $recScanned += $files.Count
+      foreach ($f in $files) {
+        if (Select-String -LiteralPath $f.FullName -SimpleMatch -Pattern $GoRef -Quiet) { $used++; Write-Output "K-REF: ref KOSUM KAYDINDA: $($f.FullName)" }
+      }
+    }
+  }
+  Write-Output "K-REF: taranan kosum kaydi dosyasi $recScanned - acik PR dali $($openBranches.Count) - toplam isabet $used"
+  if ($recScanned -eq 0) { throw 'K-REF: kosum kaydi taramasi KOR (0 dosya) - ref kullanilmamisligi KANITLANAMADI' }
+  if ($used -ne 0) { throw "K-REF: ref KULLANILMIS ($used isabet) - tuketilmis ref yeniden kullanilamaz" }
+
+  # ---- K-PAR: paralel kabul kosumu yok (kendi blogu haric) ----
+  $rx = 'ak-live|i10-run|i9-run|i10-0|i9-0|cl-09|ro-check|drive2|fault-proxy|start-api-r22s'
+  $busy = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and ($_.CommandLine -match $rx) -and ($_.ProcessId -ne $PID) -and ($_.CommandLine -notlike "*$selfMark*") })
+  if ($busy.Count -ne 0) { foreach ($p in $busy) { Write-Output "K-PAR: PID $($p.ProcessId) $($p.Name)" }; throw "K-PAR: kabul/governance betigi calistiran surec $($busy.Count)" }
+  Write-Output 'K-PAR: kabul kosumu calistiran baska surec YOK'
+
+  # ---- K-FS: A-4 dosya ayaginin IKI kokunun listelenebilirligi ----
+  $roots = @('C:\Ops\hukuk\data\uploads\poa', (Join-Path $REL 'project\apps\api\data\uploads\poa'))
+  foreach ($r in $roots) {
+    if (Test-Path -LiteralPath $r) { $n = @(Get-ChildItem -LiteralPath $r -Force).Count; Write-Output "K-FS: '$r' listelendi (oge $n)" }
+    else {
+      $anc = Split-Path -Parent $r
+      while ($anc -and -not (Test-Path -LiteralPath $anc)) { $anc = Split-Path -Parent $anc }
+      if (-not $anc) { throw "K-FS: '$r' icin var olan ata bulunamadi" }
+      $n = @(Get-ChildItem -LiteralPath $anc -Force).Count
+      Write-Output "K-FS: '$r' YOK - ata '$anc' listelendi (oge $n)"
+    }
+  }
+
+  # ---- ORTAM + runId REZERVASYONU (ILK YAZMADAN ONCE) ----
+  New-Item -ItemType Directory -Force -Path $S | Out-Null
+  $env:CL_ENVIRONMENT     = 'live'
+  $env:CL_OWNER_GO_REF    = $GoRef
+  $env:CL_DATABASE_URL    = ((Get-Content -LiteralPath $ENVF | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1) -replace '^DATABASE_URL=','').Trim('"')
+  if (-not $env:CL_DATABASE_URL) { throw 'K-ENV: DATABASE_URL okunamadi' }
+  $env:CL_API_BASE_URL    = 'http://127.0.0.1:8080/api'
+  $env:CL_PRISMA_ROOT     = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE22/project/apps/api/node_modules/@prisma/client'
+  $env:CL_BCRYPT_PATH     = 'C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE22/project/apps/api/node_modules/bcrypt'
+  $env:CL_POA_UPLOAD_ROOT = 'C:\Ops\hukuk\data\uploads\poa;C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE22\project\apps\api\data\uploads\poa'
+  Remove-Item Env:\CL_SESSION_DB -ErrorAction SilentlyContinue
+  $env:CL_RUN_ID          = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+  Add-Content -LiteralPath (Join-Path $S 'RUNID-RESERVATION.txt') -Value "$(Get-Date -Format o) runId=$($env:CL_RUN_ID) go=$GoRef"
+  $env:CL_STATE_FILE      = Join-Path $S ("i10-state-" + $env:CL_RUN_ID + ".json")
+  Write-Output "HAZIR: runId=$($env:CL_RUN_ID) - durum dosyasi rezerve edildi (parola BASILMAZ, bellekte uretilir)"
+
+  # ---- TEK KOSUM ----
+  node (Join-Path $WT 'project\docs\governance\client-live-acceptance-i10-r01\scripts\i10-run.js')
+  $code = $LASTEXITCODE
+  Write-Output "i10-run cikis kodu: $code"
+  if ($code -ne 0) { throw "KOSUM BASARISIZ (exit $code) - kapanis makbuzunu oku; gerekirse yalniz runId ile kurtarma (paket §11)" }
+  Write-Output "SONUC: BASARILI - runId=$($env:CL_RUN_ID) - kapanis ve izolasyon makbuzda"
+}
 ```
 
-- **Kütüphane yolları** açıkça verilmelidir. Koşucu, verilmezse hiçbir yazma yapmadan durur. Bunlar
-  ölçüm kütüphanesidir, ölçülen ürün ikilisi değildir.
-- **DB hedefi:** G-0 `live` için yalnız `127.0.0.1:5432/hukuk_db`'yi kabul eder. `CL_SESSION_DB`
-  canlıda yok sayılır.
-- **Dosya kökleri:** ikisi de ön kontrolde listelenir. Biri listelenemezse koşum başlamaz.
-
----
+- **Kütüphane yolları** açıkça verilir; verilmezse koşucu hiçbir yazma yapmadan durur.
+- **DB hedefi:** G-0 `live` için yalnız `127.0.0.1:5432/hukuk_db`; `CL_SESSION_DB` canlıda yok sayılır.
+- **Dosya kökleri:** ikisi de ön kontrolde listelenir; biri listelenemezse koşum başlamaz.
+- **Parola** verilmez, koşucu bellekte üretir; hiçbir çıktıya yazılmaz.
 
 ## 10. Owner kararına sunulan kapsam
 
@@ -435,14 +548,14 @@ ve tenant yaşam döngüsüne dokunmaz.
 
 | Gözlem | Durum | Dayanak |
 |---|---|---|
-| A-1 VIEWER 403 · yazma 0 | **HAZIR — canlıda ölçülmedi** | §7 N |
-| A-2 elevated olmayan USER 403 · yazma 0 | **HAZIR — canlıda ölçülmedi** | §7 N |
-| A-3 yetkili 201 · kayıt oluşur | **HAZIR — canlıda ölçülmedi** | §7 N |
-| A-4 legacy upload 403 · dosya/DB yazımı 0 | **HAZIR — canlıda ölçülmedi** | §7 N · §6 |
-| K9 POA'sız capability etkisiz | **HAZIR — canlıda ölçülmedi** | §7 N |
+| A-1 VIEWER 403 · yazma 0 | **KARŞILANDI — canlı** | §14.2 · runId `c9b07bcb` |
+| A-2 elevated olmayan USER 403 · yazma 0 | **KARŞILANDI — canlı** | §14.2 · satır fotoğrafı değişmedi |
+| A-3 yetkili 201 · kayıt oluşur | **KARŞILANDI — canlı** | §14.2 · poa 0→1, audit 0→1 |
+| A-4 legacy upload 403 · dosya/DB yazımı 0 | **KARŞILANDI — canlı** | §14.2 · §14.3 (iki kökte dosya 0) |
+| K9 POA'sız capability etkisiz | **KARŞILANDI — canlı** | §14.2 · dört capability `NO_VALID_POA` |
 
-İ10, canlı koşumda beş gözlem PASS olur ve kapanış doğrulanırsa kapanır. O zaman sayaç 9/17 → 10/17
-olur. Şu an **9/17**; hizmet kabulü **0/8 tam**.
+**İ10 KAPANDI** (canlı koşum ve kapanış doğrulandı, §14). Sayaç **10/17**; hizmet kabulü **0/8 tam**
+kendiliğinden değişmez.
 
 ## 13. Kapsam DIŞI
 
@@ -451,6 +564,104 @@ Deploy · migration · servis restartı · canlı flag değişikliği · gerçek
 (`cl-acc-afce215b`, `cl-acc-2ed1d6d0`, `cl-acc-d19ce2c7`) kullanıcı erişiminin yeniden açılması ·
 **ürün kodu değişikliği** · B-2 ürün yaması · **İ11…İ15** · İ16/İ17 · OFFICE AK-2/AK-1a · başlatıcı
 dayanıklılık işi.
+
+---
+
+## 14. CANLI KOŞUM KAYDI — `OWNER-GO-CLIENT-I10-20260912-R02`
+
+**Onay:** owner GO `OWNER-GO-CLIENT-I10-20260912-R02` (2026-09-12) · paket #2634 @ `8d10b6e2`, kanıt
+yolu eki #2635 @ `f5f1ab3d`. **Tek yürütücü: CLIENT oturumu.** Onaylı yazma **yalnız**
+`cl-acc-<runId>` sentetik tenant'ında 9 satır ve kapanışta üç kullanıcının erişim iptali. Gerçek
+gönderim, başka tenant'a yazma, restart, yayın, migration ve flag değişikliği kapsam dışıdır.
+**Koşum tek kez yürütüldü.**
+
+### 14.1 Koşum öncesi kapılar — hepsi ilk yazmadan ÖNCE, tek scriptblock içinde (§9)
+
+| Kapı | Ölçüm |
+|---|---|
+| Hat | ana yürütücünün "HAT BOŞ" teyidi (ölçümü 2026-09-12T08:02:36Z): kabul/governance süreci 0 · prova portları boş · OFFICE AK hattı kapalı (#2636 @ `dc86cf7c` + #2637 @ `3f689fe7`) |
+| Sakin pencere | canlı DB salt-okuma: **son 15 dk audit 0** · saat başı cron'u 11:00'de geçmiş, sonraki 12:00 · 02:00 ve 09:00 uzak |
+| K-WT | hazırlık checkout `C:\Development\HY_WT\CL_I10LIVE` · **tam SHA `3f689fe756e2daec989a135206ec3ba69901c822`** = `origin/main` |
+| K-ARC | 8 araç + 6 ürün dosyası = **14 hash · uyuşmazlık 0** |
+| K-API | `:8080` **tek dinleyici süreç** PID 46332 · komut satırı `HY_W4_RELEASE22\…\dist\apps\api\src\main.js` |
+| K-BLD | canlı ürün kaynağı `137406701248858221d12be94a941f8837a2a245` · BUILD_ID `xJZ1G1TsbOnHoWUzMD8CQ` |
+| K-ENV | `HUKUK_DATA_ROOT=C:\Ops\hukuk\data` · `POA_EXPIRY_NOTIFICATION_ENABLED` tanımsız |
+| K-REF | ref kullanılmamış: `origin/main` 0 · açık PR dalı 0 · **473 koşum kaydı dosyası** tarandı, isabet 0 |
+| K-PAR | kabul/governance betiği çalıştıran başka süreç **0** (blok kendi imzasıyla kendini dışlar) |
+| K-FS | A-4'ün **iki kökü** de ölçülebilir: çalışan kök listelendi (öğe 0) · eski düzen adayı yok, atası listelendi |
+| Koşucunun ön kontrolü | İ10'a özgü GO ref deseni · kütüphane yolları · iki kökün listelenebilirliği · G-0 (`live` + ref) |
+
+**İlk deneme K-REF'te durdu (2026-09-12T08:05:09Z) — canlı koşuma geçilmedi.** Sebep tüketilmiş ref
+değildir: hazırlık kaydım (`i10live\PREP-20260912.json`) GO ref'ini düz metin taşıyordu ve K-REF onu
+isabet saydı. Salt-okuma ile doğrulandı: **canlıda yazma 0**, rezervasyon oluşmadı, ref tüketilmedi
+(`cl-acc-*` 3 · tenant 11 · client 24 · user 50 — taban ile aynı). Düzeltme kapıda değil kaynakta
+yapıldı: hazırlık kaydında ref maskelendi (`goRefMasked` + sha256 öneki); **kapılar değiştirilmedi**.
+Denemenin kurduğu worktree owner onayıyla kaldırıldı (GO otomatik kaldırmayı yasaklar) ve blok
+yenisini kurdu. Ders: gerçek biçimli ref'i test/hazırlık dosyasına düz metin yazma — o ref'i yakar.
+
+### 14.2 Koşum — runId `c9b07bcb` · 2026-09-12 08:08:47Z → 08:08:48Z · çıkış 0
+
+| Kalem | Değer |
+|---|---|
+| Kurulum | **7/7 satır** · `cl-acc-c9b07bcb` · izolasyon tabanı 11 komşu tenant · client 24 · user 50 · `0cc02914c5315d57` |
+| P-0v / P-0u / P-0e / P-0x | 201 · 201 · 201 · viewer=VIEWER, user ve elevated **aynı rolde** (USER), ADMIN yolu kapalı |
+| **A-1** | **403 · `CLIENT_MUTATION_DENIED_VIEWER`** · poa 0→0 · audit 0→0 |
+| **A-3** | **201** · poa 0→1 · audit 0→1 · `status=ACTIVE` · müvekkil P · `poaId=cmty3sqzh00462soklo7xa6nd` |
+| **A-2** | **403 · `CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND`** · satır fotoğrafı (`updatedAt` dahil) değişmedi · audit 1→1 |
+| **A-4** | **403 · `CLIENT_MUTATION_DENIED_WORKSPACE_COMMAND`** · tenant dizini yok→yok · dosya 0→0 (iki kök) · satır değişmedi · audit 1→1 |
+| **K9** | **200** · dört capability `false / NO_VALID_POA` · N'de düz bayraklar true×4 ve POA 0 |
+| P-K9 (ölçüm geçerliliği) | **200** · `canCollect true / ALLOWED`, dayanak A-3 POA'sı; diğer üçü kapalı |
+| **Ölçümler** | **PASS 10 · FAIL 0 · ÖLÇÜLEMEYEN 0** · bulgu 0 |
+| Yetkisiz denemeler | A-1, A-2, A-4 **üçü de gönderildi**, üçü de 403 aldı · **dur kuralı tetiklenmedi** · yetkisiz yazma 0 |
+| Kapanış (`cl-09`) | `usersDeactivated 3 · stillActive 0 · tokenVersionBumped 3 · evidencePreserved true · caseCronExposureClosed true` |
+| Doğrulama | kapatma sonrası login **401** · `cl-09` tekrarı `alreadyClosed=true · usersDeactivated=0 · exit 0` |
+| İzolasyon | kurulum `0cc02914c5315d57` = kapanış `0cc02914c5315d57` · fark tenant 0 · client 0 · user 0 |
+| Sonuç | **PASS** · parola bellekte üretildi, hiçbir çıktıya yazılmadı |
+
+### 14.3 Bağımsız doğrulama — salt-okuma transaction, koşum sonrası
+
+| Ölçüm | Sonuç |
+|---|---|
+| `tenantId` kolonlu tablo taraması | **139 tablo**; satır yalnız `User` 3 · `Lawyer` 1 · `Client` 2 · `ClientPowerOfAttorney` 1 · `AuditLog` 1 → 8 + `Tenant` 1 = **9** = onaylı envanter, **birebir** |
+| Kullanıcılar | `viewer-` / `user-` / `elevated-c9b07bcb@cl-acceptance.invalid`: **üçü de `isActive=false`, `tokenVersion=1`** |
+| Tenant | lifecycle **ACTIVE** — kapanış yaşam döngüsüne dokunmaz |
+| Müvekkiller | P ve N **aktif** · kimlik yok · iletişim takibi yok |
+| POA | **ACTIVE** · `isActive=true` · `isLimited=false` · `validUntil` yok · `scopeType=GENEL` · `notaryCity=I10` (A-2 değiştiremedi) · `filePath`/`fileSize`/`mimeType` **null** · `createdAt = updatedAt` |
+| Avukat bağı | `PoaLawyer` **0** |
+| Dosya | canlı kova `C:\Ops\hukuk\data\uploads\poa` **0 öğe**, tenant dizini yok · eski düzen adayı yok |
+| Task / Office / Case | **0 / 0 / 0** |
+| Cron seçilebilirliği | `updateExpiredPoas` 0 · süre bildirimi 0 · Office 0 · Case 0 · Task 0 → bu tenant'ı **hiçbir cron seçemez** |
+| Küresel toplamlar | tenant 11→12 · client 24→26 · user 50→53 · `cl-acc-*` 3→4 — **yalnız sentetik yazmalar** |
+| Canlı servisler | `:8080` PID 46332 · `:3002` PID 47004 — **restart yok** |
+| Gerçek alıcı | Office yok · bütün adresler `.invalid` · POA'nın avukat bağı yok · gönderim satırı yok |
+
+### 14.4 Kanıt (paket dışı, sırsız)
+
+Asıllar **yerinde**: `C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i10live\`
+— `PREP-20260912.json` · `pre-quiet-20260912T0802Z.json` · `i10-live-run-20260912.log` (K-REF'te duran
+ilk deneme) · `i10-live-run-20260912-2.log` (koşum) · `RUNID-RESERVATION.txt` ·
+`i10-state-c9b07bcb.json` · `post-c9b07bcb.json` · `post-poa-c9b07bcb.json` · `ro-poa.js`.
+
+Kalıcı yerel kopya: `C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i10live\` — **9 dosya ·
+23.646 bayt**; kopyadan önce sır taraması (canlı `.env`'in sır adlı değerleri birebir + 5 kalıp):
+**bulgu 0**; kaynak = kopya (tam SHA256), üzerine yazma yok, asıllar silinmedi. Manifest:
+`C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\MANIFEST-SHA256-i10live.txt`
+(sha256 `924E73E714D40A7C20282238ECCEEA5C4458C48D4F96E3472ECDB36B910CA00D`).
+
+### 14.5 Kapanıştan sonra kalan durum
+
+`cl-acc-c9b07bcb`: **kullanıcı erişimleri kapalı; tenant ACTIVE, POA ACTIVE, kanıt korunuyor.** Üç
+kullanıcı pasiftir, dağıtılmış JWT'ler `tokenVersion` ile geçersizdir; müvekkil P ve N aktif; POA ve
+audit satırı silinmez. Bu alanda kullanıcı erişimi **yeniden açılmaz**.
+
+### 14.6 Karar
+
+Beş gözlemin tamamı (**A-1 · A-2 · A-3 · A-4 · K9**) canlıda PASS; kapanış ve izolasyon doğrulandı;
+yazmalar onaylı 9 satırlık envanterle birebir; dosya yazımı ve gerçek gönderim 0 →
+**İ10 KAPANDI. CLIENT sayacı 9/17 → 10/17.** Hizmet kabulü **0/8 tam** — kendiliğinden değişmez.
+Belirsiz sonuç, komşu tenant farkı ve yetkisiz yazma olmadığı için uzlaştırma gerekmedi; tekrar ya da
+silme yapılmadı. **İ11 başlatılmadı.**
+
 
 ---
 
