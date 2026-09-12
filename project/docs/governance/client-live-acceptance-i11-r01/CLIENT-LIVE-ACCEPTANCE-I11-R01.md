@@ -401,13 +401,13 @@ sürece yalnız ortam değişkeni olarak geçer (parolayla aynı desen).
 | K-SMTP | canlı sağlayıcı yazdırılır; **gönderim kapsamı açık ve sağlayıcı `mock` değilse** ayrı owner onayı (`$SmtpAck='EVET'`) yoksa DURUR |
 | **K-INTAKE** | **rastgele** (geçersiz) token ile `GET /api/public/intake/<rastgele>` → **404** beklenir. 404 değilse koşuma girilmez (B-I11-3: sağlıksız uçta gerçek token DB'ye düşerdi) |
 | K-REF | ref kullanılmamış: `origin/main` + açık PR dalları + koşum kayıtları. **Tüketim** = ref'in `runId` ile aynı dosyada geçmesi; yalnız anma engellemez ama raporlanır (0 dosya tarandıysa KÖR) |
-| K-PAR | kabul/governance betiği çalıştıran başka süreç 0 (blok kendini imzasıyla dışlar) |
+| K-PAR | kabul/governance betiği çalıştıran başka süreç 0 (blok kendini imzasıyla dışlar). **Yöntem T penceresinin `smtp-sink-noauth.js`'i dışlanır**; AUTH ilan eden eski `smtp-sink.js` hâlâ durdurur (R05) |
 
 ## 9. Kesin komut — TEK SCRIPTBLOCK
 
 `$ErrorActionPreference='Stop'` + her yerli komuttan sonra `$LASTEXITCODE` denetimi → **ilk hatada
 blok durur, `node` çağrısına ULAŞILMAZ**. Blok dosyası sha256
-`A16E479155084F3B6F7D12D7A820E2BA0760411A18FB64D749FA0799C647D148`; PowerShell 7 ve 5.1'de
+`9804FEF634E45B62F5FBC497A1A9BABB8870F4D179EF11127ABF1BE6BACF862B`; PowerShell 7 ve 5.1'de
 ayrıştırma hatası 0; **9 kapı · 21 hash · 26 durdurucu · tek `node` çağrısı**. Aşağıdaki gömülü kopya
 hash'i verilen dosyayla **bayt bayt aynıdır**.
 
@@ -563,7 +563,10 @@ hash'i verilen dosyayla **bayt bayt aynıdır**.
   if ($used -ne 0) { throw "K-REF: ref KULLANILMIS ($used isabet) - tuketilmis ref yeniden kullanilamaz" }
 
   # ---- K-PAR: paralel kabul kosumu yok (kendi blogu haric) ----
-  $rx = 'ak-live|i11-run|i10-run|i9-run|i11-0|i10-0|i9-0|cl-09|ro-check|drive2?\.js|fault-proxy|start-api-r22s|smtp-sink'
+  # Yontem T penceresinde T-PENCERE-AC'in K-T1'i `smtp-sink-noauth.js`'in CALISMASINI sart kosar.
+  # Desen bu yuzden YALNIZ AUTH ilan eden eski `smtp-sink.js`'i yakalar; noauth yakalayici DISLANIR
+  # (olculdu: eski desen `smtp-sink` noauth sureci gorup §9'u DURDURUYORDU).
+  $rx = 'ak-live|i11-run|i10-run|i9-run|i11-0|i10-0|i9-0|cl-09|ro-check|drive2?\.js|fault-proxy|start-api-r22s|smtp-sink\.js'
   $busy = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and ($_.CommandLine -match $rx) -and ($_.ProcessId -ne $PID) -and ($_.CommandLine -notlike "*$selfMark*") })
   if ($busy.Count -ne 0) { foreach ($p in $busy) { Write-Output "K-PAR: PID $($p.ProcessId) $($p.Name)" }; throw "K-PAR: kabul/governance betigi calistiran surec $($busy.Count)" }
   Write-Output 'K-PAR: kabul kosumu calistiran baska surec YOK'
