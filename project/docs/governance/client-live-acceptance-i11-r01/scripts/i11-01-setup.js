@@ -65,7 +65,10 @@ const ABORT_AFTER = process.env.I11_ABORT_AFTER || null; // YALNIZ negatif kontr
 
     const passwordHash = await bcrypt.hash(password, 10); // transaction DIŞINDA
     // Intake ham token'i YALNIZ bellekte; DB'ye yalniz sha256 HASH'i yazilir (urunun kendi kurali).
-    const rawIntakeToken = crypto.randomBytes(24).toString('base64url');
+    // YURUTUCU VERDIYSE onun urettigi token kullanilir (CL_I11_INTAKE_TOKEN, yalniz ortam
+    // degiskeni — dosyaya/cikti'ya YAZILMAZ). Boylece i11-run anonim yol kapanisini ONCE/SONRA
+    // olcebilir; token yine hicbir kalici yere gitmez.
+    const rawIntakeToken = process.env.CL_I11_INTAKE_TOKEN || crypto.randomBytes(24).toString('base64url');
     const tokenHash = crypto.createHash('sha256').update(rawIntakeToken).digest('hex');
 
     const EXPECTED = 18;
