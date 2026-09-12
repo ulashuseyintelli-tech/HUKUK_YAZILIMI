@@ -355,6 +355,14 @@ src/modules/client-settlement/__tests__/client-financial-disclosure-command.spec
 src/modules/client-settlement/__tests__/disposition-posting.service.spec.ts
 src/modules/client-settlement/__tests__/collection-reversal.service.spec.ts
 
+#   A4 (owner GO 2026-09-12; A1 envanterinden dogdu) case-fee-agreement yetki kapisi — spec kapiyi
+#     GERCEKTEN dogruluyordu ("capability fail -> Forbidden; transaction acilmaz", create + update)
+#     ama HICBIR manifestte DEGILDI, yani iddia CI'da hic calismiyordu. Ayni sinif: yukaridaki D-10.
+#     Kapi yuklemi `OfficeApprovalService.isApproverEligible` (PARTNER veya canApproveOfficeActions).
+#     SAF birim testi: DB / Nest modulu / docker bagimliligi YOK (olculdu). Urun kodu ve yetki
+#     politikasi DEGISMEDI; beklentiler zayiflatilmadi.
+src/modules/client-settlement/__tests__/case-fee-agreement.service.spec.ts
+
 #   CODEX-CLIENT-X2-B05 dedicated Financial Disclosure approval/publication route adapter
 #     JWT tenant/actor scope, strict WRITE+PUBLICATION fail-closed gates, canonical approval
 #     and publication service sequencing, and no direct dispatch bypass (SAF, DB-siz).
