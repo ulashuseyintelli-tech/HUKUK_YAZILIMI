@@ -3941,6 +3941,7 @@ TAMAMLA" ile sabit kaynak `2740df3d` (#2641 + #2643 + #2645) `HY_W4_RELEASE23` k
 manifest `E53618ED…`); C33 R28 cutover paketi MUHURSUZ hazir; CLIENT I11 adaya BAGLANDI ve aday ikilisinde dogrulandi (#2654).
 Yukaridaki "RELEASE23 ACILMADI" cumlesi bu kayitla tarihseldir. Uc kalem hala CANLIDA DEGIL (deploy/restart/migration/.env 0).
 Tek canli karar paketi ve kosullu owner GO taslagi: `release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R01.md`.
+**DUZELTME (2026-09-13): D3 ENGELLI** — CLIENT uc engelleyici kusur buldu, OFFICE 33 kaynakta dogruladi (§9 K-PAR yakalayiciyi paralel kabul sanar; T-PENCERE-KAPA hata yolunda engel kuralini/kapali Web'i birakir; T betiklerinde yukseltme kapisi yok) + yedek `.env` ACL korumasiz. GO taslagi ASKIDA; CLIENT duzeltme + yeniden kanit sonrasi paket R02. D1 etkilenmez. main ≠ aday: #2655 B11 RELEASE23'te YOK. Ayrinti: paket §0.
 
 **OFFICE ACIK IS LISTESI — TEK GUNCEL LISTE (2026-09-12; onceki dagınık "Ayri takip" maddelerinin yerini alir):**
 Kapanan ve bu listeden DUSURULEN kalemler: `POST /cases` on kontrol yarisi + genel istek atomikligi (#2641 `b9fd97a1`
