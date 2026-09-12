@@ -33,13 +33,49 @@ export const ERROR_LOG_METADATA_WHITELIST = [
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
 /**
- * Serbest metinde PII'yi maskeler. Sıra önemli: email → IBAN → telefon → TCKN(11) → VKN(10).
+ * SIR TAŞIYAN YOL PARÇALARI — URL'in kendisi kimlik doğrulayan uçlar.
+ *
+ * NEDEN: `AllExceptionsFilter` hata kaydına `endpoint = req.url` yazar. Public intake yolunda
+ * kimlik BİLGİSİ URL'in içindedir (`/public/intake/<ham token>`) ve o token, hedef tenant'ta
+ * ANONİM YAZMA yetkisi verir (`ClientIntakePublicService.validateActiveLink` yalnız
+ * `status/expiresAt/useCount` bakar). Uç 5xx verdiğinde — örneğin hız sınırı Redis'e
+ * ulaşamadığında fail-closed 503 döndüğünde — ham token `ErrorLog` satırına DÜZ METİN
+ * yazılıyordu. Kaydı okuyabilen herkes müvekkil formunu açıp doldurabilirdi.
+ *
+ * TANILAMA KORUNUR: yalnız DEĞER maskelenir, rota ŞEKLİ (`/public/intake/:token`) kalır —
+ * hangi ucun hata verdiği kaydın kendisinden okunabilir.
+ *
+ * YAN FAYDA: `computeActiveDedupeKey` endpoint'i kullanır. Ham token'la her istek AYRI bir
+ * dedupe anahtarı üretiyor, yani her token için YENİ bir ErrorLog satırı açılıyordu; maskeleme
+ * bu satır patlamasını da kapatır.
+ */
+const SECRET_PATH_RULES: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /(\/public\/intake\/)[^/?#\s"']+/gi, replacement: "$1:token" },
+];
+
+/**
+ * URL benzeri metinlerde sır taşıyan yol parçalarını maskeler. Saf fonksiyon; metinde böyle bir
+ * yol yoksa girdiyi AYNEN döndürür.
+ */
+export function redactSecretPathSegments(text: string | null | undefined): string | undefined {
+  if (text === null || text === undefined) return undefined;
+  let s = String(text);
+  for (const rule of SECRET_PATH_RULES) s = s.replace(rule.pattern, rule.replacement);
+  return s;
+}
+
+/**
+ * Serbest metinde PII'yi maskeler. Sıra önemli: ÖNCE sır taşıyan yol parçaları (token URL'de
+ * olabilir), sonra email → IBAN → telefon → TCKN(11) → VKN(10).
  * Telefon, TCKN/VKN'den ÖNCE çalışır ki 11-haneli 05xxxxxxxxx numarası TCKN sanılmasın.
  * (?<!\d)…(?!\d) ile daha uzun rakam dizilerinin içine kısmi eşleşme engellenir.
+ *
+ * Bu fonksiyon hata kayıt hattındaki TÜM serbest metin alanlarından geçer (message · stack ·
+ * endpoint · metadata string'leri · konsol satırı), dolayısıyla yol maskesi de hepsini kapsar.
  */
 export function redactPii(text: string | null | undefined): string | undefined {
   if (text === null || text === undefined) return undefined;
-  let s = String(text);
+  let s = redactSecretPathSegments(text) as string;
   s = s.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, (m) => maskEmail(m));
   s = s.replace(/\bTR\d{24}\b/gi, (m) => maskIban(m));
   s = s.replace(/(?<!\d)(?:\+90|0)?5\d{9}(?!\d)/g, (m) => maskPhone(m));
