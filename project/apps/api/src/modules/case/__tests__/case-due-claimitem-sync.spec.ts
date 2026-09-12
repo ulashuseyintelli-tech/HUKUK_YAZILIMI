@@ -272,7 +272,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
 
       expect(createGuard).toBeGreaterThanOrEqual(0);
       expect(createGuard).toBeLessThan(createBody.indexOf('this.prisma.user.findFirst'));
-      expect(createGuard).toBeLessThan(createBody.indexOf('this.resolveInlinePartiesBeforeTx'));
+      expect(createGuard).toBeLessThan(createBody.indexOf('this.resolveInlinePartiesInTx'));
       expect(createGuard).toBeLessThan(createBody.indexOf('this.prisma.$transaction'));
       expect(createDueGuard).toBeGreaterThanOrEqual(0);
       expect(createDueGuard).toBeLessThan(createDueBody.indexOf('this.normalizeDueInterestForWrite'));

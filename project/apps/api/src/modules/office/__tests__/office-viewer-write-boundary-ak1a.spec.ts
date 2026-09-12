@@ -137,7 +137,7 @@ describe('AK-1a — POST /cases: avukat yetki reddi İLK kalıcı yazmadan ÖNCE
     const ls = lawyerMock();
     const svc = buildCase(ls);
     const dto: any = { lawyers: [{ name: 'Ayse', surname: 'Kaya' }] };
-    expect(await outcome(svc.resolveInlinePartiesBeforeTx(TENANT, dto, viewer))).toBe('OFFICE_WRITE_DENIED_VIEWER');
+    expect(await outcome(svc.resolveInlinePartiesInTx(TENANT, dto, viewer))).toBe('OFFICE_WRITE_DENIED_VIEWER');
     expect(ls.create).not.toHaveBeenCalled();
   });
 
@@ -145,7 +145,7 @@ describe('AK-1a — POST /cases: avukat yetki reddi İLK kalıcı yazmadan ÖNCE
     const ls = lawyerMock();
     const svc = buildCase(ls);
     const dto: any = { creditors: [INLINE_CREDITOR], lawyers: [{ name: 'Ayse', surname: 'Kaya' }] };
-    expect(await outcome(svc.resolveInlinePartiesBeforeTx(TENANT, dto, viewer))).toBe('OFFICE_WRITE_DENIED_VIEWER');
+    expect(await outcome(svc.resolveInlinePartiesInTx(TENANT, dto, viewer))).toBe('OFFICE_WRITE_DENIED_VIEWER');
     expect(svc.clientService.create).not.toHaveBeenCalled();
     expect(ls.create).not.toHaveBeenCalled();
   });
@@ -171,7 +171,7 @@ describe('AK-1a — POST /cases: avukat yetki reddi İLK kalıcı yazmadan ÖNCE
     const realLawyer = new LawyerService(prisma, { log: jest.fn(), logInTransaction: jest.fn() } as any, {} as any);
     const svc = buildCase(realLawyer);
     const dto: any = { creditors: [INLINE_CREDITOR], lawyers: [{ name: 'Ayse', surname: 'Kaya' }] };
-    await expect(svc.resolveInlinePartiesBeforeTx(TENANT, dto, user)).rejects.toThrow(ForbiddenException);
+    await expect(svc.resolveInlinePartiesInTx(TENANT, dto, user)).rejects.toThrow(ForbiddenException);
     expect(svc.clientService.create).not.toHaveBeenCalled(); // ilk kalıcı yazma YAPILMADI
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.lawyer.update).not.toHaveBeenCalled();
@@ -186,7 +186,7 @@ describe('AK-1a — POST /cases: avukat yetki reddi İLK kalıcı yazmadan ÖNCE
     const ls = lawyerMock();
     const svc = buildCase(ls);
     const dto: any = { creditors: [INLINE_CREDITOR], lawyers: [{ name: 'Ayse', surname: 'Kaya' }] };
-    await svc.resolveInlinePartiesBeforeTx(TENANT, dto, user);
+    await svc.resolveInlinePartiesInTx(TENANT, dto, user);
     expect(svc.clientService.create).toHaveBeenCalledTimes(1);
     expect(ls.create).toHaveBeenCalledTimes(1);
     expect(ls.create.mock.invocationCallOrder[0]).toBeLessThan(svc.clientService.create.mock.invocationCallOrder[0]);
@@ -196,7 +196,7 @@ describe('AK-1a — POST /cases: avukat yetki reddi İLK kalıcı yazmadan ÖNCE
   it('OFFICE yazması yoksa (yalnız mevcut avukat id) bu ön kontrol devreye GİRMEZ', async () => {
     const ls = lawyerMock();
     const svc = buildCase(ls);
-    await svc.resolveInlinePartiesBeforeTx(TENANT, { lawyers: [{ id: 'L-1' }] }, viewer);
+    await svc.resolveInlinePartiesInTx(TENANT, { lawyers: [{ id: 'L-1' }] }, viewer);
     expect(ls.create).not.toHaveBeenCalled();
     expect(ls.assertCreateAuthorized).not.toHaveBeenCalled();
   });

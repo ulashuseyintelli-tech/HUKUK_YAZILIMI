@@ -83,3 +83,11 @@ src/modules/tenant/__tests__/tenant-lifecycle-cron-scope.db-gated.integration.sp
 # principal'i REDDETMESI, revoke idempotence + generation, generation/expiry/isActive
 # uyusmazliklarinda fail-closed DENY.
 src/modules/auth/smoke/__tests__/smoke-principal-lifecycle.db-gated.integration.spec.ts
+
+# DAR ATOMIKLIK — GERCEK geri alma kaniti (owner GO 2026-09-12, madde 2).
+# Birim testleri yalniz "hangi client ile yazildigini" kanitlar; bir yazmanin gercekten GERI
+# ALINDIGINI ancak veritabani soyler. Hata `domainEventIngest.appendInTransaction` (tx adim 8.5)
+# uzerinden enjekte edilir: TUM taraf yazmalarindan SONRAKI gercek bir transaction-ici hata noktasi.
+# Iddialar: taraf/ofis/adres/audit satiri 0 kalir; reaktive edilmis avukat pasife DONER; basari
+# yolu ve bagimsiz create cagrilari KORUNUR. Yamasiz kodda bu spec'in iki testi DUSER (RED kanitlandi).
+src/modules/case/__tests__/case-create-inline-party-atomicity.db-gated.integration.spec.ts

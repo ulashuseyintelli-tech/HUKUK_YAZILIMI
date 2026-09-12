@@ -9,7 +9,7 @@
  *   mutasyonudur (OWN-13 I02-R1); bu yüzden öncelik müvekkil tarafındadır.
  *
  * BU SPEC'İN SABİTLEDİĞİ: avukat yetki kararı KESİNLEŞMEDEN (create dönmeden) hiçbir müvekkil
- *   satırı yazılmaz. Yani `resolveInlinePartiesBeforeTx`:
+ *   satırı yazılmaz. Yani `resolveInlinePartiesInTx`:
  *     - adım 0 ön kontrolünü İLK,
  *     - inline avukat create'ini müvekkilden ÖNCE çalıştırır,
  *     - avukat create'i 403 ile düşerse ClientService.create'i HİÇ çağırmaz.
@@ -30,7 +30,7 @@ function build(clientService: any, lawyerService: any, debtorService: any) {
 }
 
 async function resolve(svc: CaseService, dto: any, actor?: any) {
-  await (svc as any).resolveInlinePartiesBeforeTx('tenant-1', dto, actor);
+  await (svc as any).resolveInlinePartiesInTx('tenant-1', dto, actor);
 }
 
 const INLINE_LAWYER = { name: 'Ada', surname: 'Lovelace' };

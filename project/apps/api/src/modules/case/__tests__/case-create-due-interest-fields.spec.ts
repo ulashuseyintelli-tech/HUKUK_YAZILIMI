@@ -75,7 +75,7 @@ function setup() {
 
   (service as any).validateSubCategoryRules = jest.fn();
   (service as any).validateCaseFkOwnership = jest.fn();
-  (service as any).resolveInlinePartiesBeforeTx = jest.fn(async () => undefined);
+  (service as any).resolveInlinePartiesInTx = jest.fn(async () => undefined);
   (service as any).validateDebtorOwnershipBeforeCreate = jest.fn(async () => undefined);
   (service as any).createInstrumentsAndClaims = jest.fn(async () => 0);
   (service as any).assignCaseStaff = jest.fn(async () => ({

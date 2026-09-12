@@ -30,7 +30,7 @@ function setup() {
 
   (service as any).validateSubCategoryRules = () => {};
   (service as any).validateCaseFkOwnership = jest.fn(async () => {});
-  (service as any).resolveInlinePartiesBeforeTx = jest.fn(async () => {});
+  (service as any).resolveInlinePartiesInTx = jest.fn(async () => {});
   (service as any).validateDebtorOwnershipBeforeCreate = jest.fn(async () => {});
   (service as any).auditService = { log: auditLog };
   (service as any).clientInfoRequestService = { sendAutoRequestOnCaseCreate: jest.fn(() => Promise.resolve()) };

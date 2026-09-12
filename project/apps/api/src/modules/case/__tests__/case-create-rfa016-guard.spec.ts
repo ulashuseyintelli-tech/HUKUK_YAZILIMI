@@ -3,7 +3,7 @@
  *
  * Eskiden case.create içinde inline-yeni client/lawyer/debtor `tx.X.create` ile guard'sız
  * açılıyordu (Şükrü-deseninin dış-kapı hali). Tasarım A: taraflar tx ÖNCESİ guard'lı servislerle
- * resolve/create edilir. Bu test `resolveInlinePartiesBeforeTx`'in:
+ * resolve/create edilir. Bu test `resolveInlinePartiesInTx`'in:
  *  - inline-yeni taraf (id YOK) için guard'lı servisi ÇAĞIRDIĞINI,
  *  - mevcut id'li tarafa DOKUNMADIĞINI,
  *  - DebtorService DUPLICATE_IDENTITY fırlatınca mevcut kaydı REUSE ettiğini (yeni create YOK),
@@ -24,10 +24,10 @@ function build(clientService: any, lawyerService: any, debtorService: any) {
 }
 
 async function resolve(svc: CaseService, dto: any) {
-  await (svc as any).resolveInlinePartiesBeforeTx('tenant-1', dto);
+  await (svc as any).resolveInlinePartiesInTx('tenant-1', dto);
 }
 
-describe('RFA-016 resolveInlinePartiesBeforeTx — inline taraf guard bypass kapandı', () => {
+describe('RFA-016 resolveInlinePartiesInTx — inline taraf guard bypass kapandı', () => {
   it('inline-yeni müvekkil (id YOK) → ClientService.create çağrılır, identityNo type-e göre tckn map edilir, id atanır', async () => {
     const clientService = { create: jest.fn(async (_t: string, _data: any) => ({ id: 'client-new' })) };
     const svc = build(clientService, { create: jest.fn() }, { create: jest.fn() });

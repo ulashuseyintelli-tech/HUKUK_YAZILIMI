@@ -5,7 +5,7 @@
  * TÜM creditor id'leri (caseClient ortak alacaklılar dahil), courtId ve executionOfficeId. ValidationPipe
  * yalnız SHAPE doğrular; caller'ın doğrudan verdiği MEVCUT id'ler cross-tenant olabilir → persist sonrası
  * findOne FK-join'i (client/court/executionOffice: true) başka tenant'ın TAM kaydını döndürüyordu (sızıntı;
- * #246 update path ile aynı vektör). Fix: tx ÖNCESİ (resolveInlinePartiesBeforeTx'ten önce)
+ * #246 update path ile aynı vektör). Fix: tx ÖNCESİ (resolveInlinePartiesInTx'ten önce)
  * `validateCaseFkOwnership` reuse → cross-tenant/geçersiz → BadRequest, hiçbir taraf/dosya yaratılmaz.
  *
  * Test deseni (case-create-debtor-ownership ile aynı): mock prisma + guard tx'ten ÖNCE patladığından

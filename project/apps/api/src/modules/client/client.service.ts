@@ -5,6 +5,7 @@ import { OfficeApprovalService } from '../office-approval/office-approval.servic
 import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../automation/poa-expiry-delivery.service';
 import { NotificationDispatcherService, type DispatchResult } from '../client-notification/notification-dispatcher.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
+import { partyDb, runPartyWrite, type PartyWriteTxContext } from '../../common/party-write-tx';
 import {
   assertChangedIdentityChecksum,
   assertCreateIdentityChecksum,
@@ -600,8 +601,15 @@ export class ClientService {
   // DÖNDÜRMEZ → GET /clients/:id arşivlenmiş müvekkili göstermez (findAll ile tutarlı). İç çağıranlar
   // (create reactivate dönüşü, update dönüşü) mutasyon sonrası kaydı her durumda almak için
   // includeInactive:true geçer → mevcut davranış korunur. Tek dış çağıran = ClientController GET (default).
-  async findOne(id: string, tenantId: string, opts: { includeInactive?: boolean } = {}) {
-    return this.prisma.client.findFirst({
+  async findOne(
+    id: string,
+    tenantId: string,
+    opts: { includeInactive?: boolean } = {},
+    // DAR ATOMİKLİK: ortak transaction içinde çağrıldığında okuma AYNI client'tan yapılır — aksi hâlde
+    // dış transaction'ın HENÜZ COMMIT EDİLMEMİŞ müvekkil satırı görülmez ve dönüş null olur.
+    db: any = this.prisma,
+  ) {
+    return db.client.findFirst({
       where: { id, tenantId, ...(opts.includeInactive ? {} : { isActive: true }) },
       include: {
         contacts: true,
@@ -1464,13 +1472,23 @@ export class ClientService {
    * ama artık tek geçit orası değildir: `case.service` (POST /cases inline müvekkil) ve
    * `export-import` (POST /export-import/clients/import) yolları da bu kapıdan geçer.
    */
-  async create(tenantId: string, data: any, actor: ClientMutationActorContext) {
+  async create(
+    tenantId: string,
+    data: any,
+    actor: ClientMutationActorContext,
+    // DAR ATOMİKLİK (owner GO 2026-09-12): POST /cases satır içi müvekkili, dosya yazmalarıyla AYNI
+    // transaction'a katılır. VERİLMEZSE davranış BİREBİR eskisi gibidir (kendi $transaction'ı).
+    txCtx?: PartyWriteTxContext,
+  ) {
+    // Yazma yolundaki İLGİLİ okuma/yazmalar ortak transaction client'ından yapılır.
+    const db = partyDb(this.prisma, txCtx);
+
     // OWN-13 I02-R1: hiçbir sorgu/yazma yapılmadan ÖNCE — tenant eşitliği, sonra D01 kapısı.
     this.assertActorTenantMatches(tenantId, actor);
     this.assertCanCreateClient(actor);
     // C3-B01 (§13/5 K5.5): create anında rıza kaydı henüz VAR OLAMAZ → isteğe bağlı
     // iletişim bayrağını açık isteyen create RED (önce oluştur, sonra rıza kaydet).
-    await assertClientConsentGateForWrite(this.prisma, tenantId, null, data, null);
+    await assertClientConsentGateForWrite(db, tenantId, null, data, null);
     // Mevcut checksum, duplicate ve audit kapıları DEĞİŞMEDİ.
     // C1-B04 (FIND-C5): dedup probe artık `tckn || vkn` TEK değere çökmez. Her gönderilen
     // kimlik alanı KENDİ kolonu + identityNo (mixed-legacy kolon) üzerinden BAĞIMSIZ
@@ -1482,7 +1500,7 @@ export class ClientService {
     if (data.tckn) dedupConds.push({ tckn: data.tckn }, { identityNo: data.tckn });
     if (data.vkn) dedupConds.push({ vkn: data.vkn }, { identityNo: data.vkn });
     if (dedupConds.length > 0) {
-      const existing = await this.prisma.client.findFirst({
+      const existing = await db.client.findFirst({
         where: {
           tenantId,
           OR: dedupConds,
@@ -1503,7 +1521,9 @@ export class ClientService {
           assertReactivationIdentityChecksum(resolveEffectiveIdentity({}, existing));
           // C0-a: reaktivasyon mutation + audit AYNI transaction; CLIENT_CREATE'ten ayrı action.
           try {
-          await this.prisma.$transaction(async (tx) => {
+          // DAR ATOMİKLİK: ortak transaction verildiyse İKİNCİ $transaction AÇILMAZ → dosya oluşturma
+          // düşerse reaktivasyon da geri alınır (kayıt yeniden isActive:false olur).
+          await runPartyWrite(this.prisma, txCtx, async (tx) => {
             // TOCTOU: `existing` transaction DIŞINDA okundu. Yazma, yetkilendirdiğimiz DURUMA
             // (`isActive:false`) KOŞULLU yapılır + tenant predicate taşır. Kayıt bu arada
             // değiştiyse `count===0` olur ve HİÇBİR bayrak çevrilmez; yetkisiz bir aktörün
@@ -1544,7 +1564,7 @@ export class ClientService {
         // (persist EDİLMEZ, kontrat bozulmaz) → frontend "zaten kayıtlı / geri getirildi" bildirir.
         // includeInactive: dedup hedefi (reactivate edilmemiş duplicate) soft-deleted olabilir;
         // mutasyon-sonrası dönüş davranışı korunur (Task 4A findOne default-exclude'dan etkilenmez).
-        const result = await this.findOne(existing.id, tenantId, { includeInactive: true });
+        const result = await this.findOne(existing.id, tenantId, { includeInactive: true }, db);
         return { ...(result as any), _existingReturned: true, _reactivated: wasReactivated };
       }
     }
@@ -1572,7 +1592,7 @@ export class ClientService {
     // yarış penceresini kapatır; ihlal, probe'un bulduğu duplicate ile AYNI sözleşmeye çevrilir.
     let client: any;
     try {
-      client = await this.prisma.$transaction(async (tx) => {
+      client = await runPartyWrite(this.prisma, txCtx, async (tx) => {
       const createdClient = await tx.client.create({
       data: {
         tenantId,
@@ -1696,15 +1716,24 @@ export class ClientService {
       throw e;
     }
 
-    // PR-1: operasyonel iletişim eksiği görevini senkronla (YAN ETKİ → transaction DIŞINDA)
-    await this.syncContactFollowUpTaskSafe(tenantId, {
-      id: client.id,
-      phone: primaryPhone,
-      email: primaryEmail,
-      contactFollowUpStatus: null,
-    });
+    // PR-1: operasyonel iletişim eksiği görevini senkronla (YAN ETKİ → transaction DIŞINDA).
+    // DAR ATOMİKLİK: bu MEVCUT commit-sonrası iştir; transaction'a TAŞINMAZ (owner kısıtı). Ortak
+    // transaction altında ANINDA da çalıştırılmaz — dosya oluşturma geri alınırsa sahipsiz görev
+    // satırı kalırdı; dış transaction commit edildikten SONRA çalışsın diye kuyruğa alınır.
+    const syncContactFollowUp = () =>
+      this.syncContactFollowUpTaskSafe(tenantId, {
+        id: client.id,
+        phone: primaryPhone,
+        email: primaryEmail,
+        contactFollowUpStatus: null,
+      }).then(() => undefined);
+    if (txCtx) {
+      txCtx.afterCommit(syncContactFollowUp);
+    } else {
+      await syncContactFollowUp();
+    }
 
-    return this.findOne(client.id, tenantId, { includeInactive: true });
+    return this.findOne(client.id, tenantId, { includeInactive: true }, db);
   }
 
   /**

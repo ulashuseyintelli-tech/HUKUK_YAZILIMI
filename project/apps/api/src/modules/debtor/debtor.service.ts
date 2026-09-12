@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util";
+import { partyDb, type PartyWriteTxContext } from "@/common/party-write-tx";
 // RFA-006: adres dedup (normalize + hash); tüm write yolları ortak helper kullanır.
 import { computeAddressHash, findOrCreateDebtorAddress } from "@/common/address-hash.util";
 // Gate-4: TCKN/VKN format+checksum (tek-kaynak; OCR/import/Party Registry ile ortak helper).
@@ -609,12 +610,21 @@ export class DebtorService {
   /// - CaseService.create() → dosya-içi inline borçlu taraması (actor GEÇİLMEZ; case-flow henüz
   ///   actor taşımıyor — audit userId=undefined kalır, mevcut davranış, bu tur kapsamı DIŞI)
   /// </remarks>
-  async create(tenantId: string, dto: CreateDebtorDto, actor?: AuditActor) {
+  async create(
+    tenantId: string,
+    dto: CreateDebtorDto,
+    actor?: AuditActor,
+    // DAR ATOMİKLİK (owner GO 2026-09-12): POST /cases satır içi (legacy) borçlusu, dosya
+    // yazmalarıyla AYNI transaction'a katılır. VERİLMEZSE davranış BİREBİR eskisi gibidir.
+    txCtx?: PartyWriteTxContext,
+  ) {
+    const db = partyDb(this.prisma, txCtx);
+
     // Validate required fields based on type
     this.validateDebtorByType(dto);
 
     // Check for duplicates (KESİN kimlik: TCKN/VKN/DETSİS) → exact duplicate engellenir.
-    const duplicate = await this.checkDuplicateInternal(tenantId, dto);
+    const duplicate = await this.checkDuplicateInternal(tenantId, dto, undefined, db);
     if (duplicate) {
       throw new ConflictException({
         code: "DUPLICATE_IDENTITY",
@@ -630,10 +640,10 @@ export class DebtorService {
     if (!hasIdentity && !dto.forceCreate) {
       const wantName = normalizePersonName(this.computeNameAndIdentity(dto).name);
       if (wantName) {
-        const all = await this.prisma.debtor.findMany({ where: { tenantId }, select: { id: true, name: true } });
+        const all = await db.debtor.findMany({ where: { tenantId }, select: { id: true, name: true } });
         const candidates = all
-          .filter((d) => normalizePersonName(d.name) === wantName)
-          .map((d) => ({ id: d.id, name: d.name }));
+          .filter((d: { id: string; name: string }) => normalizePersonName(d.name) === wantName)
+          .map((d: { id: string; name: string }) => ({ id: d.id, name: d.name }));
         if (candidates.length > 0) {
           throw new ConflictException({
             code: "SIMILAR_NAME_REVIEW",
@@ -692,7 +702,7 @@ export class DebtorService {
     })();
 
     // Create debtor with addresses and estate heirs
-    const debtor = await this.prisma.debtor.create({
+    const debtor = await db.debtor.create({
       data: {
         tenantId,
         ...debtorData,
@@ -723,18 +733,31 @@ export class DebtorService {
     });
 
     // Task D1A: DEBTOR_CREATE audit (aktör YALNIZ auth context'ten; body/dto'dan türetilmez).
-    // create() transaction'a sarılı DEĞİL (mevcut davranış korunur) → standalone log().
-    await this.audit.log({
+    // create() KENDİ transaction'ına sarılı DEĞİL (mevcut davranış korunur) → standalone log().
+    // DAR ATOMİKLİK: ortak transaction verildiyse audit AYNI transaction'a yazılır (logInTransaction
+    // hata YUTMAZ → audit yazılamazsa borçlu satırı da geri alınır); aksi hâlde eski log() davranışı.
+    const debtorCreateAudit = {
       tenantId,
       action: 'DEBTOR_CREATE',
       entityType: 'DEBTOR',
       entityId: debtor.id,
       userId: actor?.userId,
       metadata: { fieldDiff: buildDebtorFieldDiff(null, debtor) },
-    });
+    } as const;
+    if (txCtx) {
+      await this.audit.logInTransaction(txCtx.tx, { ...debtorCreateAudit });
+    } else {
+      await this.audit.log({ ...debtorCreateAudit });
+    }
 
     // PR-D4c: completeness görevini senkronla (best-effort).
-    await this.syncDebtorTaskByIdSafe(tenantId, debtor.id);
+    // DAR ATOMİKLİK: MEVCUT commit-sonrası iş → transaction'a taşınmaz, dış transaction commit
+    // edildikten SONRA çalışsın diye kuyruğa alınır (rollback'te sahipsiz görev satırı kalmaz).
+    if (txCtx) {
+      txCtx.afterCommit(() => this.syncDebtorTaskByIdSafe(tenantId, debtor.id));
+    } else {
+      await this.syncDebtorTaskByIdSafe(tenantId, debtor.id);
+    }
 
     return debtor;
   }
@@ -1413,7 +1436,9 @@ export class DebtorService {
   private async checkDuplicateInternal(
     tenantId: string,
     dto: { type?: DebtorType; tckn?: string; vkn?: string; detsisNo?: string },
-    excludeId?: string
+    excludeId?: string,
+    // DAR ATOMİKLİK: ortak transaction içinde çağrıldığında dedup okuması da AYNI client'tan.
+    db: any = this.prisma,
   ) {
     const conditions: any[] = [];
 
@@ -1438,7 +1463,7 @@ export class DebtorService {
       where.id = { not: excludeId };
     }
 
-    return this.prisma.debtor.findFirst({
+    return db.debtor.findFirst({
       where,
       select: { id: true, name: true, type: true, identityNo: true },
     });

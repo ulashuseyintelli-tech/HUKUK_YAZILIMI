@@ -10,6 +10,7 @@ import { toPublicLawyer, toPublicLawyers } from "./lawyer-public-projection";
 import { projectF01Lawyer, F01ProjectionAccess } from "../office/office-f01-projection";
 import { UpdateLawyerDto, validateLawyerUpdateInput } from "./dto/update-lawyer.dto";
 import { LAWYER_CREATE_PERSIST_FIELDS } from "./dto/create-lawyer.dto";
+import { partyDb, runPartyWrite, type PartyWriteTxContext } from "@/common/party-write-tx";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 // H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
@@ -254,18 +255,26 @@ export class LawyerService {
     // AK-2: YALNIZ audit atfı (dosya içi / seed oluşturmada isteği yapan kullanıcı). Yetki (H2) ve
     // yanıt projeksiyonu bundan ETKİLENMEZ — ikisi de yalnız `actor` ile yapılır.
     attribution?: { userId?: string },
+    // DAR ATOMİKLİK (owner GO 2026-09-12): POST /cases satır içi avukatı, dosya yazmalarıyla AYNI
+    // transaction'a katılır. VERİLMEZSE davranış BİREBİR eskisi gibidir (kendi $transaction'ı).
+    txCtx?: PartyWriteTxContext,
   ) {
+    // Yazma yolundaki İLGİLİ OKUMALAR da ortak transaction'dan yapılır: aksi hâlde dış transaction'ın
+    // henüz commit edilmemiş satırı görülmez ve transaction sürerken havuzdan ikinci bağlantı istenir.
+    const db = partyDb(this.prisma, txCtx);
+
     // AK-2 (owner GO 2026-09-10): ayrıcalıklı DEĞERLE oluşturma, update'in H2 otorite kuralına
     // bağlıdır (ADMIN veya aktif + aynı tenant + bağlı PARTNER). Kontrol HER yazmadan ÖNCE yapılır:
     // mükerrer etkinleştirme ve ofis oluşturma da yazmadır; ret hâlinde hiçbiri gerçekleşmez ve
-    // ayrıcalıklı değer SESSİZCE düşürülmez.
+    // ayrıcalıklı değer SESSİZCE düşürülmez. Ortak transaction'da da AYNEN korunur (owner GO
+    // 2026-09-12: "yazma anındaki yetki ve ayrıcalıklı yeniden etkinleştirme denetimleri korunacak").
     if (this.isPrivilegedLawyerCreate(data)) {
-      await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId);
+      await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId, db);
     }
 
     // PR-AUDIT: duplicate guard — aynı baro no/TCKN VEYA aynı ad-soyad → yeni AÇMA, mevcut döndür.
     // (Eskiden guard yoktu → "Ulaş Hüseyin Telli" gibi mükerrer avukat açılıyordu → yetki/atama karışıklığı.)
-    const dup = await this.findDuplicateLawyer(tenantId, data);
+    const dup = await this.findDuplicateLawyer(tenantId, data, db);
     if (dup) {
       const wasInactive = (dup as any).isActive === false;
       let reactivated = false;
@@ -276,13 +285,15 @@ export class LawyerService {
         // yazmadan ÖNCE yapılır — yetkisiz istekte hiçbir yazma olmaz. Atıf yetki SAYILMAZ.
         const privileged = this.isPrivilegedLawyerRecord(dup);
         if (privileged) {
-          await this.assertCanReactivatePrivilegedLawyer(actor, tenantId);
+          await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
         }
         // CLIENT R1A deseni: `dup` transaction DIŞINDA okundu → yazma, yetki kararının verildiği DURUMA
         // (tenant + isActive:false + değerlendirilen ayrıcalık değerleri) koşullu. Kayıt bu arada
         // değiştiyse count 0 olur: ne bayrak çevrilir ne audit yazılır. logInTransaction hata YUTMAZ →
         // audit yazılamazsa yeniden etkinleştirme de geri alınır.
-        reactivated = await this.prisma.$transaction(async (tx) => {
+        // DAR ATOMİKLİK: ortak transaction verildiyse İKİNCİ bir $transaction AÇILMAZ (Prisma iç içe
+        // interactive transaction desteklemez) → yeniden etkinleştirme dosya oluşturma düşerse GERİ ALINIR.
+        reactivated = await runPartyWrite(this.prisma, txCtx, async (tx) => {
           const { count } = await tx.lawyer.updateMany({
             where: {
               id: dup.id,
@@ -320,7 +331,7 @@ export class LawyerService {
       // Eşzamanlı değişimde (count 0) yanıt kaydın GERÇEK durumunu gösterir; aksi hâlde kayıt aktiftir.
       const current =
         wasInactive && !reactivated
-          ? ((await this.prisma.lawyer.findFirst({ where: { id: dup.id, tenantId } })) ?? dup)
+          ? ((await db.lawyer.findFirst({ where: { id: dup.id, tenantId } })) ?? dup)
           : { ...(dup as any), isActive: true };
       // P01: duplicate/reactivate dali da ayni response boundary'den gecer.
       return this.projectLawyerResponse(
@@ -331,7 +342,7 @@ export class LawyerService {
     }
 
     // Sıralama için mevcut en yüksek sortOrder'ı bul
-    const maxSort = await this.prisma.lawyer.aggregate({
+    const maxSort = await db.lawyer.aggregate({
       where: { tenantId },
       _max: { sortOrder: true },
     });
@@ -353,7 +364,9 @@ export class LawyerService {
     // transaction içinde alınır/oluşturulur. Eskiden tx DIŞINDA yaratılıyordu; avukat create'i ya da
     // audit yazması düşünce avukat geri alınıyor, yeni açılmış ofis satırı KALICI oluyordu (hiçbir
     // avukatı olmayan artık ofis kaydı). Artık tx geri alınırsa ofis de geri alınır.
-    const lawyer = await this.prisma.$transaction(async (tx) => {
+    // DAR ATOMİKLİK (owner GO 2026-09-12): ortak transaction verildiyse ofis + avukat + audit
+    // satırları DOSYA yazmalarıyla aynı transaction'a katılır; dosya düşerse üçü de geri alınır.
+    const lawyer = await runPartyWrite(this.prisma, txCtx, async (tx) => {
       // Office'i al veya oluştur (tx içinde)
       let office = await tx.office.findUnique({
         where: { tenantId },
@@ -588,12 +601,15 @@ export class LawyerService {
     actor: LawyerUpdateActor | undefined,
     tenantId: string,
     messages: { noActor: string; unauthorized: string },
+    // DAR ATOMİKLİK: ortak transaction içinde çağrıldığında yetki okuması da AYNI client'tan yapılır
+    // (transaction sürerken ikinci bağlantı istenmez). Verilmezse servisin kendi prisma client'ı.
+    db: any = this.prisma,
   ): Promise<void> {
     if (!actor?.userId) {
       throw new ForbiddenException(messages.noActor);
     }
     if (actor.role === "ADMIN") return; // ADMIN kısa-yolu (lawyer zaten tenant-scoped findOne ile alındı)
-    const actorUser = await this.prisma.user.findUnique({
+    const actorUser = await db.user.findUnique({
       where: { id: actor.userId },
       select: { tenantId: true, isActive: true, lawyer: { select: { lawyerRank: true } } },
     });
@@ -688,12 +704,13 @@ export class LawyerService {
   private async assertCanAssignPrivilegedFieldsOnCreate(
     actor: LawyerUpdateActor | undefined,
     tenantId: string,
+    db: any = this.prisma,
   ): Promise<void> {
     return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
       noActor: "Yetki/rütbe alanlarıyla avukat oluşturma yetkisi yok (kimlik çözülemedi).",
       unauthorized:
         "PARTNER/MANAGER rütbesi, izin değiştirme ve izin kilidi yalnız PARTNER veya ADMIN tarafından atanabilir.",
-    });
+    }, db);
   }
 
   /**
@@ -730,12 +747,13 @@ export class LawyerService {
   private async assertCanReactivatePrivilegedLawyer(
     actor: LawyerUpdateActor | undefined,
     tenantId: string,
+    db: any = this.prisma,
   ): Promise<void> {
     return this.assertActorIsAdminOrLinkedPartner(actor, tenantId, {
       noActor: "Ayrıcalıklı pasif avukatı yeniden etkinleştirme yetkisi yok (kimlik çözülemedi).",
       unauthorized:
         "Eşleşen kayıt ayrıcalıklı (PARTNER/MANAGER, izin değiştirme, izin kilidi veya ofis onayı) pasif bir avukat; yeniden etkinleştirme yalnız PARTNER veya ADMIN tarafından yapılabilir.",
-    });
+    }, db);
   }
 
   /**
@@ -745,12 +763,13 @@ export class LawyerService {
   private async findDuplicateLawyer(
     tenantId: string,
     data: { name: string; surname: string; barNumber?: string | null; tckn?: string | null },
+    db: any = this.prisma,
   ) {
     const wantName = normalizePersonName(data.name, data.surname);
-    const allLawyers = await this.prisma.lawyer.findMany({ where: { tenantId } });
+    const allLawyers = await db.lawyer.findMany({ where: { tenantId } });
     return (
       allLawyers.find(
-        (l) =>
+        (l: { name: string; surname: string; barNumber?: string | null; tckn?: string | null }) =>
           (data.barNumber && l.barNumber === data.barNumber) ||
           (data.tckn && l.tckn === data.tckn) ||
           (!!wantName && normalizePersonName(l.name, l.surname) === wantName),
@@ -765,7 +784,7 @@ export class LawyerService {
    *
    * /// <remarks>
    * /// Çağrıldığı yerler:
-   * ///  - CaseService.resolveInlinePartiesBeforeTx() → POST /cases dosya içi avukat, inline müvekkil yazılmadan ÖNCE.
+   * ///  - CaseService.resolveInlinePartiesInTx() → POST /cases dosya içi avukat, inline müvekkil yazılmadan ÖNCE.
    * /// </remarks>
    */
   async assertCreateAuthorized(
@@ -780,13 +799,17 @@ export class LawyerService {
       canModifyOtherPermissions?: boolean;
     },
     actor?: LawyerUpdateActor,
+    // DAR ATOMİKLİK: ön kontrol ortak transaction içinde çağrıldığında yetki okumaları da AYNI
+    // client'tan yapılır (AK-1a/AK-2 kararı ile create AYNI snapshot üzerinde konuşur).
+    txCtx?: PartyWriteTxContext,
   ): Promise<void> {
+    const db = partyDb(this.prisma, txCtx);
     if (this.isPrivilegedLawyerCreate(data)) {
-      await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId);
+      await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId, db);
     }
-    const dup = await this.findDuplicateLawyer(tenantId, data);
+    const dup = await this.findDuplicateLawyer(tenantId, data, db);
     if (dup && dup.isActive === false && this.isPrivilegedLawyerRecord(dup)) {
-      await this.assertCanReactivatePrivilegedLawyer(actor, tenantId);
+      await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
     }
   }
 

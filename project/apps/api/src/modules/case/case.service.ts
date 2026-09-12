@@ -13,6 +13,11 @@ import {
   buildInstrumentPrincipalClaimItemData,
 } from "./ocr-instrument-to-case-instrument.mapper";
 import { randomUUID } from "crypto";
+import {
+  createPartyWriteTxContext,
+  runAfterCommitJobs,
+  type PartyWriteTxContext,
+} from "@/common/party-write-tx";
 import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
 import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
@@ -453,6 +458,32 @@ function mergeDueSyncMetadata(
   };
 }
 
+/**
+ * POST /cases dosya transaction'ının AÇIK süre sınırları (owner GO 2026-09-12).
+ *
+ * NEDEN AÇIK YAZILIYOR: Prisma varsayılanı `maxWait 2000 ms` / `timeout 5000 ms`'tir ve bu proje
+ * hiçbir yerde global `transactionOptions` tanımlamaz. Dar atomiklik yamasıyla satır içi taraf
+ * yazmaları (avukat + ofis + audit, müvekkil + iletişim/adres + audit, borçlu + audit) bu
+ * transaction'ın İÇİNE girdi: taraf başına ~5-9 ek gidiş-dönüş eklenir. Varsayılan 5 sn, çok
+ * taraflı bir "Yeni Takip" sihirbazında ulaşılabilir bir sınırdır ve aşıldığında transaction
+ * ROLLBACK olur — yani dosya hiç açılmaz.
+ *
+ * BU BİR DOĞRULUK ÇÖZÜMÜ DEĞİLDİR (owner kısıtı): atomikliği sağlayan şey ortak transaction'dır,
+ * süre sınırı değil. Süre sınırı yalnız MEŞRU bir işin sınırın altında kalmasını sağlar; yarış
+ * veya orphan sorununu çözmez. Değer, repodaki iki üretim örneğiyle AYNIDIR
+ * (`external-case-status-transition.service.ts`, `office-work-pool.mutation.service.ts`).
+ *
+ * KİLİT DAVRANIŞI: transaction süresi uzadıkça yazılan satırların satır kilitleri daha uzun tutulur.
+ * Burada kilitlenen satırlar YENİ yaratılanlar (Case/CaseClient/CaseLawyer/Due/Lawyer/Client/Debtor)
+ * ve reaktivasyonda mevcut taraf satırıdır; bunlar tek bir dosya açılışına özgüdür, sıcak paylaşımlı
+ * satır değildir. `Office` satırı tenant başına TEKtir: aynı tenant'ta iki dosya aynı anda ilk kez
+ * ofis yaratmaya çalışırsa biri diğerini bekler — bu yeni bir durum değil (ofis yazması AK-2 ardılı
+ * ile zaten transaction içindeydi), fakat bekleme artık dosya transaction'ı boyunca sürebilir.
+ * `maxWait` (havuzdan bağlantı bekleme) 15 sn, `timeout` (transaction ömrü) 20 sn seçildi: ölçülen
+ * gerçek süreyi (bkz. db-gated spec) büyük çarpanla aşar, ama sonsuz beklemeye de izin vermez.
+ */
+const CASE_CREATE_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 20_000 } as const;
+
 @Injectable()
 export class CaseService {
   private readonly logger = new Logger(CaseService.name);
@@ -514,22 +545,32 @@ export class CaseService {
 
   /**
    * RFA-016: case.create içindeki inline-yeni taraflar (id YOK) için guard'lı resolve/create.
-   * Transaction ÖNCESİ çağrılır (Tasarım A): guard mantığı tek-kaynak kalır (replike edilmez),
-   * exact/identity eşleşmesi mevcut kaydı reuse eder → silent duplicate önlenir. dto party'lerin
-   * `.id` alanı yerinde set edilir; tx içindeki döngüler artık yalnız id kullanır (tx.X.create YOK).
+   * Guard mantığı tek-kaynak kalır (replike edilmez), exact/identity eşleşmesi mevcut kaydı reuse
+   * eder → silent duplicate önlenir. dto party'lerin `.id` alanı yerinde set edilir; case tx'indeki
+   * döngüler artık yalnız id kullanır (tx.X.create YOK).
+   *
+   * DAR ATOMİKLİK (owner GO 2026-09-12) — eski adı `resolveInlinePartiesInTx`'ti ve gerçekten
+   * transaction ÖNCESİ çağrılıyordu: her servis KENDİ transaction'ını açıp bağımsız commit ediyordu,
+   * sonraki adımdaki hata (yetki reddi, borçlu/adres sahiplik reddi, `fileNumber` P2002, FK, domain
+   * event, tx timeout) dosyayı geri alırken taraf/ofis/adres/audit satırlarını KALICI bırakıyordu.
+   * Artık `txCtx` ile dosya transaction'ının İÇİNDEN çağrılır ve tüm taraf yazmaları aynı
+   * transaction'a katılır. `txCtx` VERİLMEDİĞİNDE (doğrudan çağıran testler) davranış eskisi gibidir:
+   * her servis kendi transaction'ını açar.
    *
    * <remarks>
    * Çağrıldığı yerler:
-   * - CaseService.create() → POST /cases (Yeni Takip sihirbazı: inline-yeni müvekkil/avukat/borçlu)
+   * - CaseService.create() → POST /cases (Yeni Takip sihirbazı: inline-yeni müvekkil/avukat/borçlu),
+   *   dosya `$transaction`'ının İLK adımı olarak.
    * </remarks>
    */
-  private async resolveInlinePartiesBeforeTx(
+  private async resolveInlinePartiesInTx(
     tenantId: string,
     dto: CreateCaseDto,
     // OWN-13 I02-R1: POST /cases içinden yapılan inline müvekkil oluşturma bir CLIENT
     // mutasyonudur ve D01 yetkisine tabidir. "Servis-içi çağrı" GÜVENİLİR çağrı DEMEK
     // DEĞİLDİR — bu yol kullanıcı tarafından dolaylı tetiklenir. Actor bağlamı zorunlu.
     clientMutationActor: ClientMutationActorContext,
+    txCtx?: PartyWriteTxContext,
   ): Promise<void> {
     // 0) AK-1a + AK-2 (owner GO 2026-09-10): avukat tarafının YETKİ reddi İLK kalıcı yazmadan ÖNCE verilir
     //    (fail-fast); önceden müvekkil yazılıp sonraki adımda avukat 403'ü dönebiliyordu.
@@ -539,7 +580,9 @@ export class CaseService {
     if (inlineLawyers.length > 0) {
       assertOfficeWriteRole(clientMutationActor?.role); // AK-1a: VIEWER OFFICE'e yazamaz
       for (const l of inlineLawyers) {
-        await this.lawyerService.assertCreateAuthorized(tenantId, this.toInlineLawyerCreateData(l)); // AK-2
+        // AK-2 — ortak transaction'da ön kontrol de AYNI client'tan okur: yetki kararı ile create
+        // aynı snapshot üzerinde konuşur (yarış penceresi daralır, ikinci bağlantı istenmez).
+        await this.lawyerService.assertCreateAuthorized(tenantId, this.toInlineLawyerCreateData(l), undefined, txCtx); // AK-2
       }
     }
 
@@ -562,6 +605,7 @@ export class CaseService {
           this.toInlineLawyerCreateData(l),
           undefined,
           { userId: clientMutationActor?.userId || undefined },
+          txCtx,
         );
         l.id = resolved.id;
       }
@@ -586,7 +630,7 @@ export class CaseService {
           phone: c.phone,
           email: c.email,
           address: c.address,
-        }, clientMutationActor);
+        }, clientMutationActor, txCtx);
         c.id = resolved.id;
       }
     }
@@ -614,14 +658,14 @@ export class CaseService {
           email: d.email,
         };
         try {
-          const resolved: any = await this.debtorService.create(tenantId, mapped);
+          const resolved: any = await this.debtorService.create(tenantId, mapped, undefined, txCtx);
           d.id = resolved.id;
         } catch (e: any) {
           const body = e?.response ?? e;
           if (body?.code === "DUPLICATE_IDENTITY" && body?.existingDebtor?.id) {
             d.id = body.existingDebtor.id; // kimlik eşleşmesi → mevcut reuse
           } else if (body?.code === "SIMILAR_NAME_REVIEW") {
-            const forced: any = await this.debtorService.create(tenantId, { ...mapped, forceCreate: true });
+            const forced: any = await this.debtorService.create(tenantId, { ...mapped, forceCreate: true }, undefined, txCtx);
             d.id = forced.id;
           } else {
             throw e;
@@ -1726,7 +1770,7 @@ export class CaseService {
 
     try {
       // B4/D: fileNumber ön-benzersizlik kontrolü — tx-öncesi taraf yaratımından
-      // (resolveInlinePartiesBeforeTx) HEMEN ÖNCE. Mükerrer dosya no'da Case tx zaten
+      // (resolveInlinePartiesInTx) HEMEN ÖNCE. Mükerrer dosya no'da Case tx zaten
       // aşağıdaki P2002 ile patlardı; fakat o ana dek inline-yeni müvekkil/borçlu/avukat
       // KALICI yaratılmış olurdu (orphan yan-etki). Erken 409 → hiç taraf yaratılmaz.
       // where TENANT-SCOPED: @@unique([tenantId, fileNumber]) constraint'i ile birebir.
@@ -1748,7 +1792,7 @@ export class CaseService {
       // bu büroya ait mi? ValidationPipe yalnız SHAPE doğrular; caller'ın doğrudan verdiği MEVCUT id'ler
       // cross-tenant olabilir → guard'sız persist (clientId + caseClient creditorIds + courtId +
       // executionOfficeId) + findOne FK-join'i (client/court/executionOffice: true) başka tenant'ın TAM
-      // kaydını döndürür (#246 update path ile AYNI sızıntı vektörü). tx ÖNCESİ (resolveInlinePartiesBeforeTx'ten
+      // kaydını döndürür (#246 update path ile AYNI sızıntı vektörü). tx ÖNCESİ (resolveInlinePartiesInTx'ten
       // ÖNCE) fail-fast: cross-tenant/geçersiz id'de hiçbir taraf/dosya yaratılmadan reddedilir.
       // Inline-YENİ müvekkiller (id YOK) burada ATLANIR; resolve içinde tenant-scoped ClientService.create
       // ile yaratıldıklarından zaten bu tenant'a aittir. caseClient TÜM creditor id'lerini persist ettiğinden
@@ -1763,12 +1807,29 @@ export class CaseService {
         executionOfficeId: dto.executionOfficeId,
       });
 
-      // RFA-016: inline-yeni taraflar (id YOK) tx ÖNCESİ guard'lı servislerle resolve edilir
-      // (Tasarım A). Böylece tx içinde duplicate guard bypass'lı tx.client/lawyer/debtor.create kalmaz.
-      await this.resolveInlinePartiesBeforeTx(tenantId, dto, clientMutationActor);
+      // DAR ATOMİKLİK (owner GO 2026-09-12): satır içi taraf yazmaları ARTIK dosya transaction'ının
+      // İÇİNDE. Commit-sonrası "best-effort" işler (görev senkronizasyonu) transaction'a TAŞINMAZ;
+      // `afterCommit` ile kuyruğa alınıp commit'ten SONRA çalıştırılır.
+      // Borçlu/adres SAHİPLİK guard'ı tx ÖNCESİ kalır (fail-fast, salt okuma): girdileri YALNIZ
+      // dto'dan gelen MEVCUT id'lerdir. `resolveInlinePartiesInTx` yalnız TENANT-KAPSAMLI dedup
+      // (`checkDuplicateInternal` → where:{tenantId,...}) ve tenant-scoped create ile id üretir, yani
+      // resolve SONRASI doğrulama yapmanın güvenlik katkısı yoktur. Guard'ı ÖNE almak ayrıca eski
+      // sıradaki orphan'ı da kapatır: cross-tenant borçlu 404'ü artık taraf satırları yaratılmadan verilir.
       await this.validateDebtorOwnershipBeforeCreate(tenantId, dto);
 
+      let deferredAfterCommit: Array<() => Promise<void>> = [];
+
       const result = await this.prisma.$transaction(async (tx) => {
+        const { ctx: partyTxCtx, deferred } = createPartyWriteTxContext(tx);
+        deferredAfterCommit = deferred; // DİZİ REFERANSI: kuyruğa sonradan eklenenler de görünür
+
+        // RFA-016: inline-yeni taraflar (id YOK) guard'lı servislerle resolve edilir (Tasarım A):
+        // guard mantığı replike edilmez, exact/identity eşleşmesi mevcut kaydı reuse eder. Böylece
+        // tx içinde duplicate guard bypass'lı tx.client/lawyer/debtor.create kalmaz.
+        // ADIM 0 (AK-1a VIEWER + AK-2 ayrıcalık) yetki reddi İLK kalıcı yazmadan ÖNCE verilir ve
+        // transaction'ın en başında olduğu için hiçbir satır yazılmaz (403 → boş rollback).
+        await this.resolveInlinePartiesInTx(tenantId, dto, clientMutationActor, partyTxCtx);
+
         // 1. Alacaklıları (Clients) hazırla - tüm creditors'ları kaydet
         const clientIds: string[] = [];
         let primaryClientId: string | undefined;
@@ -2175,7 +2236,15 @@ export class CaseService {
         });
 
         return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult, responsibleKeptId, responsibleDemotedIds };
-      });
+      }, CASE_CREATE_TRANSACTION_OPTIONS);
+
+      // DAR ATOMİKLİK: transaction COMMIT EDİLDİ → kuyruğa alınmış commit-sonrası (best-effort)
+      // işler şimdi çalışır. Hata dosyayı GERİ ALMAZ (commit oldu) ve kalan işleri durdurmaz.
+      await runAfterCommitJobs(deferredAfterCommit, (error) =>
+        this.logger.warn(
+          `Dosya oluşturma sonrası görev senkronizasyonu başarısız: ${(error as any)?.message ?? error}`,
+        ),
+      );
 
       // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
       // yol mevcut davranışı AYNEN korur → ek audit üretmez). Tx commit sonrası.

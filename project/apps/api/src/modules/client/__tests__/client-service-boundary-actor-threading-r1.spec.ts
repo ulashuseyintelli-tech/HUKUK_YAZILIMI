@@ -147,7 +147,7 @@ describe('R1 — CASE üzerinden dolaylı CLIENT mutasyonu', () => {
     const { caseSvc, dto, ctx, prisma } = buildCaseHarness('VIEWER');
 
     const body = await forbiddenBody(() =>
-      (caseSvc as any).resolveInlinePartiesBeforeTx('t1', dto, ctx),
+      (caseSvc as any).resolveInlinePartiesInTx('t1', dto, ctx),
     );
 
     expect(body.code).toBe(CLIENT_MUTATION_REASON.VIEWER_DENIED);
@@ -159,7 +159,7 @@ describe('R1 — CASE üzerinden dolaylı CLIENT mutasyonu', () => {
   it('4. CASE üzerinden USER inline müvekkil oluşturma → izin verilir (D01)', async () => {
     const { caseSvc, dto, ctx, prisma } = buildCaseHarness('USER');
 
-    await (caseSvc as any).resolveInlinePartiesBeforeTx('t1', dto, ctx);
+    await (caseSvc as any).resolveInlinePartiesInTx('t1', dto, ctx);
 
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(dto.creditors[0].id).toBeTruthy();
@@ -170,7 +170,7 @@ describe('R1 — CASE üzerinden dolaylı CLIENT mutasyonu', () => {
     const rolesizCtx = buildClientMutationActor({ userId: 'u1', tenantId: 't1', role: undefined });
 
     const body = await forbiddenBody(() =>
-      (caseSvc as any).resolveInlinePartiesBeforeTx('t1', dto, rolesizCtx),
+      (caseSvc as any).resolveInlinePartiesInTx('t1', dto, rolesizCtx),
     );
 
     expect(body.code).toBe(CLIENT_MUTATION_REASON.UNKNOWN_ROLE);
@@ -249,19 +249,29 @@ describe('R1 — opsiyonel bypass yolu YOK', () => {
   it('11. create/update imzaları actor parametresini OPSİYONEL almaz', () => {
     const src = read('modules/client/client.service.ts');
 
-    // `async create(tenantId: string, data: any, actor: ClientMutationActorContext)`
-    expect(src).toMatch(/async create\([^)]*actor:\s*ClientMutationActorContext\s*\)/s);
+    // `async create(tenantId, data, actor: ClientMutationActorContext, txCtx?)`
+    // DAR ATOMİKLİK (owner GO 2026-09-12): `create`'e SONA opsiyonel `txCtx` eklendi, bu yüzden
+    // `actor` artık son parametre DEĞİL → kalıp `\s*[,)]` ile biter. KORUNAN ŞART AYNI: `actor`
+    // ZORUNLU kalır (`actor?:` yasağı aşağıda) ve yeni parametre onun YERİNE geçemez.
+    expect(src).toMatch(/async create\([^)]*actor:\s*ClientMutationActorContext\s*[,)]/s);
+    // `update` imzası DEĞİŞMEDİ → orada hâlâ son parametre olmalı (gevşetilmez).
     expect(src).toMatch(/async update\([^)]*actor:\s*ClientMutationActorContext\s*\)/s);
     // Eski opsiyonel imza KALMAMALI.
     expect(src).not.toMatch(/async create\([^)]*actor\?:/s);
     expect(src).not.toMatch(/async update\([^)]*actor\?:/s);
+    // Yeni parametre YALNIZ transaction bağlamıdır ve OPSİYONELDİR; aktörden SONRA gelir.
+    expect(src).toMatch(/actor:\s*ClientMutationActorContext,[\s\S]*?txCtx\?:\s*PartyWriteTxContext,/);
   });
 
   it('11b. servis-içi çağıranlar actor bağlamı geçirir (undefined GEÇMEZ)', () => {
     const caseSrc = read('modules/case/case.service.ts');
     const importSrc = read('modules/export-import/export-import.service.ts');
 
-    expect(caseSrc).toMatch(/clientService\.create\([\s\S]*?\},\s*clientMutationActor\)/);
+    // DAR ATOMİKLİK: çağrıya sondan `txCtx` eklendi → aktör argümanından sonra `,` ya da `)` gelebilir.
+    // KORUNAN ŞART: case yolu GERÇEK aktör bağlamını geçirir (undefined DEĞİL).
+    // Kalıp çağrının BAŞINDAN başlar (`create(tenantId, {`) → tembel eşleşme dosyanın ilerisindeki
+    // başka bir çağrıya kayamaz; aktör argümanı GERÇEK bağlam olmalıdır.
+    expect(caseSrc).toMatch(/clientService\.create\(tenantId,\s*\{[\s\S]*?\},\s*clientMutationActor\s*[,)]/);
     expect(importSrc).toMatch(/clientService\.create\(tenantId,\s*data,\s*actor\)/);
     // Eski "actor yoksa undefined geç" deseni KALMAMALI.
     expect(importSrc).not.toContain('actorUserId ? { userId: actorUserId } : undefined');

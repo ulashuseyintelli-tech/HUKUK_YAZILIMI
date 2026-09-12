@@ -9,7 +9,7 @@ import { ForbiddenException } from "@nestjs/common";
  *
  * Tek yüklem, üç giriş sınıfı:
  *  - F01 yazma rotaları → `OfficeF01AuthorizationGuard` (POST/PUT/PATCH/DELETE) + `isF01WriteActorAuthorized`
- *  - POST /cases dosya içi avukat → `CaseService.resolveInlinePartiesBeforeTx` ön kontrolü (ilk yazmadan önce)
+ *  - POST /cases dosya içi avukat → `CaseService.resolveInlinePartiesInTx` ön kontrolü (ilk yazmadan önce)
  *  - seed OFFICE uçları → `SeedController` (lawyers / staff / office / bank-accounts / fix-lawyers)
  */
 export const OFFICE_WRITE_DENIED_VIEWER = "OFFICE_WRITE_DENIED_VIEWER";
