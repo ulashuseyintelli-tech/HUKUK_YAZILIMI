@@ -63,19 +63,15 @@
     if ($foreign.Count -ne 0) { $bad += "yabanci kural $($foreign.Count)" }
     return ($bad -join '; ')
   }
+  # Zaten guvenilirse YAZMA YOK (idempotent). Degilse icacls: Set-Acl, DACL'i zaten korumali bir hedefe
+  # (or. onceki pencerede korunmus yakalayici kaydi) 5.1 ve 7'de SeSecurityPrivilege ister ve DUSER (olculdu).
+  # icacls yabanci ACIK kurali silmez; cagiran Get-TrustProblem ile denetler ve DURUR (fail-closed).
   function Set-TrustedAcl([string]$path, [bool]$isDir) {
-    $a = Get-Acl -LiteralPath $path
-    $a.SetAccessRuleProtection($true, $false)
-    foreach ($r in @($a.Access)) { $null = $a.RemoveAccessRule($r) }
-    foreach ($who in $Trusted) {
-      if ($isDir) {
-        $rule = New-Object Security.AccessControl.FileSystemAccessRule($who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-      } else {
-        $rule = New-Object Security.AccessControl.FileSystemAccessRule($who, 'FullControl', 'Allow')
-      }
-      $a.AddAccessRule($rule)
-    }
-    Set-Acl -LiteralPath $path -AclObject $a
+    if (-not (Get-TrustProblem $path $true)) { return }
+    $inh = if ($isDir) { '(OI)(CI)' } else { '' }
+    $meSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $icOut = & icacls.exe $path /inheritance:r /grant:r "*S-1-5-18:${inh}F" "*S-1-5-32-544:${inh}F" "*${meSid}:${inh}F" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "icacls basarisiz (cikis $LASTEXITCODE): $($icOut -join ' ')" }
   }
 
   # ---- K-T1: yakalayici YALNIZ loopback ----
