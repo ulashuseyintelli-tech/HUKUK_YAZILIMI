@@ -1,0 +1,23 @@
+{
+  "runId": "4dec4f41",
+  "ps": "7.6.5",
+  "closeSha": "676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF",
+  "functionTextSha": "C12DAA72CBBCFA62992BA4A0DF59B3496AA1EA860D79FD316821D992DA6CABA7",
+  "names": [
+    "HYRT4S-4dec4f41-BLOCK-47100",
+    "HYRT4S-4dec4f41-BLOCK-47101"
+  ],
+  "task": "HYRT4S-4dec4f41-WEB",
+  "webPort": 47101,
+  "scenarioPass": 9,
+  "scenarioTotal": 9,
+  "fatal": null,
+  "leftovers": {
+    "rules": 0,
+    "namedRules": 0,
+    "tasks": 0,
+    "procs": 0
+  },
+  "liveEqual": true,
+  "verdict": "PASS"
+}
