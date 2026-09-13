@@ -42,6 +42,7 @@
   $BAK      = Join-Path $BakDir 'ENV-PREIMAGE.env'
   $BaseFile = Join-Path $BakDir 'SINK-BASELINE.txt'
   $SddlFile = Join-Path $BakDir 'ENV-SDDL-BASELINE.txt'
+  $FwRecord = Join-Path $BakDir 'FW-RULES.txt'
 
   # ---- K-ELEV (yalniz canli, ILK kapi): yukseltilmis Administrators olmadan HICBIR islem yapilmaz ----
   # Olculdu: canli .env sahibi SYSTEM, DACL korumali, kullaniciya yalniz Read; firewall ve SYSTEM
@@ -169,27 +170,86 @@
   } catch { $errs += "R-T3: $($_.Exception.Message)"; Write-Output "!!! R-T3 BASARISIZ: $($_.Exception.Message)" }
 
   # ---- R-T4: ONLEMEYI KALDIR (yalniz canli) - HER DURUMDA denenir ----
-  if ($Mode -eq 'live') {
+  # R-T4a/R-T4b TEK fonksiyondadir (R09). Canli, fonksiyonu canli FW-RULES.txt + gorev + port ile cagirir.
+  # Yukseltilmis canli-disi izole sinama (scripts/t-rt4-isolated-rehearsal.ps1) AYNI fonksiyon metnini bu
+  # dosyadan sha+AST ile alir ve YALNIZ izole kayit dosyasi/gorev/port ile cagirir; ayri kopya YOKTUR.
+  #
+  # KESIN KIMLIK (owner GO "SON DAR KOMUT DUZELTMESI"): R-T4a joker/toplu silme KULLANMAZ. Yalniz
+  # T-PENCERE-AC'in FW-RULES.txt'e yazdigi iki kesin ad kaldirilir. Dort ilke:
+  #  (1) kesin kimlik: her ad ayri; ozellik (DisplayName/Inbound/Block/LocalPort) uyusmazsa DOKUNULMAZ
+  #  (2) joker yok: hicbir '-DisplayName *' toplu sorgu/silme yok
+  #  (3) sorgu/erisim hatasi != yokluk: yalniz ObjectNotFound 'zaten yok' (basari); diger her hata BASARISIZ
+  #  (4) baska kurala dokunma: yalniz kayittaki adlar; kayit yok/guvenilmez/bozuksa R-T4a BASARISIZ, joker yedegi YOK
+  # R-T4b ve sonrasi, R-T4a dusse de her durumda denenir (cagiran ayri try/catch'lerde toplar).
+  function Invoke-WindowRecoveryRT4([string]$FwRecordFile, [string]$NamePattern, [string]$WebTask, [int]$WebPort, [int]$Budget, [System.Collections.Generic.List[string]]$ErrList) {
+    # ---- R-T4a: kesin-ad engel kurallarini kaldir. Kayit okuma/bicim BASARISIZLIGI R-T4a'yi durdurur
+    # (hangi adlara dokunulacagi bilinemez). Kayit gecerliyse HER AD KENDI try'inda denenir: birinin
+    # hatasi digerini ATLATMAZ; hatalar toplanir. Boylece 'baska kurala dokunma' + 'sorgu hatasi != yokluk'
+    # + 'zaten kaldirilmisi guvenle gec' hepsi saglanir.
+    # AD BUTUNLUGU (B2): her ad $NamePattern'e uymali ve addaki port (named capture 'port') kayit portuyla
+    # ESIT olmali; ayni ad iki kez olamaz. Boylece kurcalanmis bir kayit, deseni tutmayan ya da portu uymayan
+    # ILGISIZ bir kurali sildiremz. Desen cagirana ozgudur (canli: I11-WINDOW-BLOCK-<port>-<tag>).
+    $rt4aFail = $false
     try {
-      $fw = @(Get-NetFirewallRule -DisplayName 'I11-WINDOW-BLOCK-*' -ErrorAction SilentlyContinue)
-      foreach ($r in $fw) { Remove-NetFirewallRule -Name $r.Name }
-      $left = @(Get-NetFirewallRule -DisplayName 'I11-WINDOW-BLOCK-*' -ErrorAction SilentlyContinue)
-      if ($left.Count -ne 0) { throw "engelleme kurali kaldirilamadi ($($left.Count))" }
-      Write-Output "R-T4a: engelleme kurallari kaldirildi ($($fw.Count))"
-    } catch { $errs += "R-T4a: $($_.Exception.Message)"; Write-Output "!!! R-T4a BASARISIZ: $($_.Exception.Message)" }
+      $p = Get-TrustProblem $FwRecordFile $false
+      if ($p) { throw "firewall kayit dosyasi guvenilir DEGIL ($p) - joker yedegi YOK" }
+      $planned = @()
+      $seen = @{}
+      foreach ($line in @(Get-Content -LiteralPath $FwRecordFile)) {
+        $t = $line.Trim(); if (-not $t) { continue }
+        $parts = $t -split '\s+', 2
+        if ($parts.Count -ne 2 -or ($parts[0] -notmatch '^\d+$') -or (-not $parts[1])) { throw "kayit satiri bicimi bozuk ('$t')" }
+        $nm = $parts[1]; $pt = [int]$parts[0]
+        if ($nm -notmatch $NamePattern) { throw "ad deseni gecersiz ('$nm')" }
+        if ([int]$matches['port'] -ne $pt) { throw "addaki port kayit portuyla uyusmuyor ('$nm' vs $pt)" }
+        if ($seen.ContainsKey($nm)) { throw "kayitta tekrar eden ad ('$nm')" }
+        $seen[$nm] = $true
+        $planned += [pscustomobject]@{ Port = $pt; Name = $nm }
+      }
+      if ($planned.Count -eq 0) { throw 'kayit dosyasinda kesin ad YOK' }
+    } catch { $rt4aFail = $true; $ErrList.Add("R-T4a: $($_.Exception.Message)"); Write-Output "!!! R-T4a BASARISIZ: $($_.Exception.Message)"; $planned = @() }
+    if (-not $rt4aFail) {
+      $removed = 0; $absent = 0; $nameFails = @()
+      foreach ($r in $planned) {
+        try {
+          $found = $null
+          try { $found = Get-NetFirewallRule -Name $r.Name -ErrorAction Stop }
+          catch {
+            if ($_.CategoryInfo.Category -eq 'ObjectNotFound') { $absent++; Write-Output "R-T4a: '$($r.Name)' zaten YOK (dogrulanmis)"; continue }
+            throw "'$($r.Name)' sorgu/erisim hatasi ($($_.CategoryInfo.Category)) - yoklukla KARISTIRILMAZ: $($_.Exception.Message)"
+          }
+          $lp = ($found | Get-NetFirewallPortFilter).LocalPort
+          if (([string]$found.Direction -ne 'Inbound') -or ([string]$found.Action -ne 'Block') -or ($found.DisplayName -ne $r.Name) -or ([string]$lp -ne [string]$r.Port)) {
+            throw "'$($r.Name)' ozellikleri beklenenden farkli (yon=$($found.Direction) eylem=$($found.Action) port=$lp) - DOKUNULMADI"
+          }
+          Remove-NetFirewallRule -Name $r.Name -ErrorAction Stop
+          $after = $null
+          try { $after = Get-NetFirewallRule -Name $r.Name -ErrorAction Stop } catch { if ($_.CategoryInfo.Category -ne 'ObjectNotFound') { throw "'$($r.Name)' kaldirma sonrasi sorgu hatasi: $($_.Exception.Message)" } }
+          if ($after) { throw "'$($r.Name)' kaldirma sonrasi HALA VAR" }
+          $removed++
+        } catch { $nameFails += $_.Exception.Message; Write-Output "!!! R-T4a BASARISIZ: $($_.Exception.Message)" }
+      }
+      if ($nameFails.Count -ne 0) { $ErrList.Add("R-T4a: $($nameFails -join ' ; ')") }
+      else { Write-Output "R-T4a: kesin-ad engel kurallari - kaldirilan $removed, zaten yok $absent (joker YOK; baska kurala dokunulmadi)" }
+    }
     try {
-      Start-ScheduledTask -TaskName 'HukukPlatform-Web'
+      Start-ScheduledTask -TaskName $WebTask
       $webUp = 0
       $sw2 = [Diagnostics.Stopwatch]::StartNew()
-      while ($sw2.Elapsed.TotalSeconds -lt $BudgetSec) {
-        $w = @(Get-NetTCPConnection -LocalPort 3002 -State Listen -ErrorAction SilentlyContinue)
+      while ($sw2.Elapsed.TotalSeconds -lt $Budget) {
+        $w = @(Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue)
         if ($w.Count -ge 1) { $webUp = 1; break }
         Start-Sleep -Seconds 3
       }
       $sw2.Stop()
-      if ($webUp -ne 1) { throw "Web $BudgetSec sn icinde ayaga KALKMADI" }
+      if ($webUp -ne 1) { throw "Web $Budget sn icinde ayaga KALKMADI" }
       Write-Output "R-T4b: Web ayakta ($([int]$sw2.Elapsed.TotalSeconds) sn)"
-    } catch { $errs += "R-T4b: $($_.Exception.Message)"; Write-Output "!!! R-T4b BASARISIZ: $($_.Exception.Message)" }
+    } catch { $ErrList.Add("R-T4b: $($_.Exception.Message)"); Write-Output "!!! R-T4b BASARISIZ: $($_.Exception.Message)" }
+  }
+  if ($Mode -eq 'live') {
+    $rt4Err = New-Object 'System.Collections.Generic.List[string]'
+    Invoke-WindowRecoveryRT4 -FwRecordFile $FwRecord -NamePattern '^I11-WINDOW-BLOCK-(?<port>8080|3002)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$' -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget $BudgetSec -ErrList $rt4Err
+    foreach ($e in $rt4Err) { $errs += $e }
   }
 
   # ---- R-T5: yakalayiciyi durdur - HER DURUMDA denenir ----
