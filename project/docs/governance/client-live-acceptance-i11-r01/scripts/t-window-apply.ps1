@@ -32,6 +32,7 @@
   $BAK      = Join-Path $BakDir 'ENV-PREIMAGE.env'
   $SddlFile = Join-Path $BakDir 'ENV-SDDL-BASELINE.txt'
   $BaseFile = Join-Path $BakDir 'SINK-BASELINE.txt'
+  $FwRecord = Join-Path $BakDir 'FW-RULES.txt'
 
   if ($Mode -eq 'live' -and $GoRef -cnotmatch '^OWNER-GO-CLIENT-I11-[0-9]{8}-R[0-9]{2}$') { throw "T-GO: ref bicimi gecersiz ('$GoRef')" }
   if ($PinSha -notmatch '^[0-9A-F]{64}$') { throw 'T-PIN: T_ENV_PRE_SHA zorunlu (64 hex; beklenen env sha256) - HICBIR degisiklik yapilmadi' }
@@ -162,13 +163,26 @@
     Start-Sleep -Seconds 2
     $webStill = @(Get-NetTCPConnection -LocalPort 3002 -State Listen -ErrorAction SilentlyContinue)
     if ($webStill.Count -ne 0) { throw 'K-T6: Web hala dinliyor - kullanici yuzeyi kapanmadi' }
-    foreach ($pn in 8080, 3002) {
-      New-NetFirewallRule -DisplayName "I11-WINDOW-BLOCK-$pn" -Direction Inbound -Action Block `
-        -Protocol TCP -LocalPort $pn -Enabled True -Profile Any | Out-Null
+    # KESIN KIMLIK (R09): joker YOK. Pencereye ozel benzersiz iki ad; kurallar OLUSTURULMADAN ONCE korumali
+    # FW-RULES.txt'e yazilir (kismi olusturmada da iz kalir). T-PENCERE-KAPA yalniz bu iki adi kaldirir.
+    $WinTag = (Get-Date -Format 'yyyyMMddTHHmmssZ') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $fwPlan = @(8080, 3002 | ForEach-Object { [pscustomobject]@{ Port = [int]$_; Name = "I11-WINDOW-BLOCK-$_-$WinTag" } })
+    Set-Content -LiteralPath $FwRecord -Value @($fwPlan | ForEach-Object { "$($_.Port) $($_.Name)" }) -Encoding ASCII
+    $p = Get-TrustProblem $FwRecord $false
+    if ($p) { throw "K-T6: firewall kayit dosyasi guvenilir DEGIL ($p)" }
+    foreach ($r in $fwPlan) {
+      if (@(Get-NetFirewallRule -Name $r.Name -ErrorAction SilentlyContinue).Count -ne 0) { throw "K-T6: '$($r.Name)' adli kural zaten var - DUR" }
+      New-NetFirewallRule -Name $r.Name -DisplayName $r.Name -Direction Inbound -Action Block `
+        -Protocol TCP -LocalPort $r.Port -Enabled True -Profile Any -ErrorAction Stop | Out-Null
+      $chk = Get-NetFirewallRule -Name $r.Name -ErrorAction Stop
+      $lp = ($chk | Get-NetFirewallPortFilter).LocalPort
+      if (([string]$chk.Direction -ne 'Inbound') -or ([string]$chk.Action -ne 'Block') -or ($chk.DisplayName -ne $r.Name) -or ([string]$lp -ne [string]$r.Port)) {
+        throw "K-T6: '$($r.Name)' ozellikleri beklenenden farkli (yon=$($chk.Direction) eylem=$($chk.Action) port=$lp)"
+      }
     }
-    $fw = @(Get-NetFirewallRule -DisplayName 'I11-WINDOW-BLOCK-*' -ErrorAction SilentlyContinue)
-    if ($fw.Count -ne 2) { throw "K-T6: engelleme kurali sayisi $($fw.Count) (2 olmali)" }
-    Write-Output 'K-T6: ONLEME ETKIN - Web durduruldu + :8080/:3002 gelen baglanti ENGELLENDI (loopback etkilenmez)'
+    $mine = @($fwPlan | Where-Object { @(Get-NetFirewallRule -Name $_.Name -ErrorAction SilentlyContinue).Count -eq 1 })
+    if ($mine.Count -ne 2) { throw "K-T6: kesin-ad engel kurali sayisi $($mine.Count) (2 olmali)" }
+    Write-Output "K-T6: ONLEME ETKIN - Web durduruldu + kesin-ad engel kurallari ($($fwPlan.Name -join ', ')); joker YOK; loopback etkilenmez"
   } else {
     Write-Output 'K-T6: prova modu - onleme uygulanmaz (kullanici yuzeyi zaten yok)'
   }
