@@ -19,9 +19,9 @@ param(
 # dokunma) - S6 ozellik uyusmaz (dokunma) - S7 kayit dosyasi yok/guvenilmez. Sonda temizlik + artik + canli.
 # Bu dosya BILINCLI olarak yalniz ASCII'dir.
 $ErrorActionPreference = 'Stop'
-$CloseSha = 'A81544B8DEEFC9DA4B4271E5FEB3E8AB675469B5A2FB4030426FD7C4AE680EE0'
+$CloseSha = '676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF'
 $FnName = 'Invoke-WindowRecoveryRT4'
-$LiveCall = "Invoke-WindowRecoveryRT4 -FwRecordFile `$FwRecord -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget `$BudgetSec -ErrList `$rt4Err"
+$LiveCall = "Invoke-WindowRecoveryRT4 -FwRecordFile `$FwRecord -NamePattern '^I11-WINDOW-BLOCK-(?<port>8080|3002)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}`$' -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget `$BudgetSec -ErrList `$rt4Err"
 $Budget = 12
 $S = 'C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad'
 
@@ -141,7 +141,9 @@ function Scen([string]$Name, [scriptblock]$Setup, [scriptblock]$Expect) {
   $wBefore = @(Get-NetFirewallRule -Name $Witness -ErrorAction SilentlyContinue).Count
   $oBefore = @(Get-NetFirewallRule -Name $OtherName -ErrorAction SilentlyContinue).Count
   $el = New-Object 'System.Collections.Generic.List[string]'
-  $lines = @(Invoke-WindowRecoveryRT4 -FwRecordFile $Rec -WebTask $Task -WebPort $WebPort -Budget $Budget -ErrList $el)
+  $lines = @(Invoke-WindowRecoveryRT4 -FwRecordFile $Rec -NamePattern '^HYRT4S-[0-9a-f]{8}-BLOCK-(?<port>[0-9]+)$' -WebTask $Task -WebPort $WebPort -Budget $Budget -ErrList $el)
+  # A2: enjekte edilen script-kapsamli sahte cmdlet'leri POST olcumunden ONCE kaldir (yoksa Iso-RuleCount fatal)
+  foreach ($sf in 'Get-NetFirewallRule', 'Remove-NetFirewallRule') { if (Test-Path "Function:\$sf") { Remove-Item "Function:\$sf" -ErrorAction SilentlyContinue } }
   $post = [pscustomobject]@{ iso = Iso-RuleCount; web = (@(Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue).Count -ge 1); wit = @(Get-NetFirewallRule -Name $Witness -ErrorAction SilentlyContinue).Count; oth = @(Get-NetFirewallRule -Name $OtherName -ErrorAction SilentlyContinue).Count }
   $untouched = ($post.wit -eq $wBefore) -and ($post.oth -eq $oBefore)
   $ok = [bool](& $Expect $lines @($el) $post) -and $untouched
@@ -165,15 +167,13 @@ try {
 
   Scen 'S1 basari' { New-Rec $Names $free; foreach($i in 0..1){ New-IsoRule $Names[$i] $free[$i] }; Stop-TestWeb } { param($l,$e,$p) $e.Count -eq 0 -and ($l | ? { $_ -like 'R-T4a: kesin-ad*kaldirilan 2, zaten yok 0*' }) -and ($l | ? { $_ -like 'R-T4b: Web ayakta*' }) -and $p.iso -eq 0 -and $p.web }
   Scen 'S2a kismi hata (2. ad silinemez)' { New-Rec $Names $free; foreach($i in 0..1){ New-IsoRule $Names[$i] $free[$i] }; Stop-TestWeb; $script:RealRm=Get-Command Remove-NetFirewallRule; $script:rmN=0; function script:Remove-NetFirewallRule { param([string]$Name) $script:rmN++; if($script:rmN -eq 1){ throw 'ENJEKTE (sinama): kaldirma basarisiz' }; & $script:RealRm -Name $Name } } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like 'R-T4a: *ENJEKTE*') -and ($l | ? { $_ -like 'R-T4b: Web ayakta*' }) -and $p.iso -eq 1 -and $p.web }
-  Remove-Item Function:\Remove-NetFirewallRule; if((Get-Command Remove-NetFirewallRule).Definition -like '*ENJEKTE*'){ throw 'enjeksiyon kaldirilamadi' }
   Scen 'S3a tekrar (zaten yok guvenle gecilir)' { Stop-TestWeb } { param($l,$e,$p) $e.Count -eq 0 -and ($l | ? { $_ -like '*zaten YOK*' }) -and ($l | ? { $_ -like 'R-T4a: kesin-ad*kaldirilan 1, zaten yok 1*' }) -and $p.iso -eq 0 -and $p.web }
-  Scen 'S2b R-T4b hata' { New-Rec $Names $free; foreach($i in 0..1){ New-IsoRule $Names[$i] $free[$i] }; Set-Content -LiteralPath $Flag -Value 'x' -Encoding ASCII } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -eq "R-T4b: Web $Budget sn icinde ayaga KALKMADI") -and ($l | ? { $_ -like 'R-T4a: kesin-ad*kaldirilan 2*' }) -and $p.iso -eq 0 -and (-not $p.web) }
+  Scen 'S2b R-T4b hata' { New-Rec $Names $free; foreach($i in 0..1){ New-IsoRule $Names[$i] $free[$i] }; Stop-TestWeb; Set-Content -LiteralPath $Flag -Value 'x' -Encoding ASCII } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -eq "R-T4b: Web $Budget sn icinde ayaga KALKMADI") -and ($l | ? { $_ -like 'R-T4a: kesin-ad*kaldirilan 2*' }) -and $p.iso -eq 0 -and (-not $p.web) }
   Scen 'S3b tekrar (R-T4b toparlanma)' { [IO.File]::Delete($Flag) } { param($l,$e,$p) $e.Count -eq 0 -and ($l | ? { $_ -like 'R-T4a: kesin-ad*zaten yok 2*' }) -and ($l | ? { $_ -like 'R-T4b: Web ayakta*' }) -and $p.iso -eq 0 -and $p.web }
   Scen 'S4 idempotent' { Stop-TestWeb } { param($l,$e,$p) $e.Count -eq 0 -and ($l | ? { $_ -like 'R-T4a: kesin-ad*zaten yok 2*' }) -and $p.iso -eq 0 -and $p.web }
-  Scen 'S5 sorgu hatasi != yokluk' { New-Rec $Names $free; foreach($i in 0..1){ New-IsoRule $Names[$i] $free[$i] }; Stop-TestWeb; $script:RealGet=Get-Command Get-NetFirewallRule; function script:Get-NetFirewallRule { param([string]$Name,$DisplayName,$ErrorAction) if($Name -eq $Names[0]){ Write-Error -Message 'ENJEKTE: erisim' -Category PermissionDenied -ErrorAction Stop }; if($DisplayName){ & $script:RealGet -DisplayName $DisplayName -ErrorAction:$ErrorAction } else { & $script:RealGet -Name $Name -ErrorAction:$ErrorAction } } } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*sorgu/erisim hatasi*yoklukla KARISTIRILMAZ*') -and $p.iso -eq 2 }
-  Remove-Item Function:\Get-NetFirewallRule; if((Get-Command Get-NetFirewallRule).Definition -like '*ENJEKTE*'){ throw 'get enjeksiyon kaldirilamadi' }
+  Scen 'S5 sorgu hatasi != yokluk' { New-Rec $Names $free; foreach($i in 0..1){ New-IsoRule $Names[$i] $free[$i] }; Stop-TestWeb; $script:RealGet=Get-Command Get-NetFirewallRule; function script:Get-NetFirewallRule { param([string]$Name,$DisplayName,$ErrorAction) if($Name -eq $Names[0]){ Write-Error -Message 'ENJEKTE: erisim' -Category PermissionDenied -ErrorAction Stop }; if($DisplayName){ & $script:RealGet -DisplayName $DisplayName -ErrorAction:$ErrorAction } else { & $script:RealGet -Name $Name -ErrorAction:$ErrorAction } } } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*sorgu/erisim hatasi*yoklukla KARISTIRILMAZ*') -and $p.iso -eq 1 }
   Stop-TestWeb; Remove-IsoRules
-  Scen 'S6 ozellik uyusmaz (dokunma)' { New-Rec $Names $free; New-NetFirewallRule -Name $Names[0] -DisplayName $Names[0] -Direction Inbound -Action Block -Protocol TCP -LocalPort 47197 -Enabled True -Profile Any -ErrorAction Stop | Out-Null; New-IsoRule $Names[1] $free[1]; Stop-TestWeb } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*ozellikleri beklenenden farkli*DOKUNULMADI*') -and $p.iso -eq 2 }
+  Scen 'S6 ozellik uyusmaz (dokunma)' { New-Rec $Names $free; New-NetFirewallRule -Name $Names[0] -DisplayName $Names[0] -Direction Inbound -Action Block -Protocol TCP -LocalPort 47197 -Enabled True -Profile Any -ErrorAction Stop | Out-Null; New-IsoRule $Names[1] $free[1]; Stop-TestWeb } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*ozellikleri beklenenden farkli*DOKUNULMADI*') -and $p.iso -eq 1 }
   Stop-TestWeb; Remove-IsoRules
   Scen 'S7 kayit dosyasi yok' { if(Test-Path $RecDir){ Remove-Item $RecDir -Recurse -Force }; Stop-TestWeb } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*firewall kayit dosyasi guvenilir DEGIL*') -and ($l | ? { $_ -like 'R-T4b: Web ayakta*' }) -and $p.web }
 } catch { $fatal = $_.Exception.Message; Log "!!! KESILDI: $fatal" }

@@ -5,7 +5,7 @@
 $ErrorActionPreference = 'Stop'
 $SC = $PSScriptRoot
 $closePath = Join-Path $SC 't-window-close.ps1'
-$CloseSha = 'A81544B8DEEFC9DA4B4271E5FEB3E8AB675469B5A2FB4030426FD7C4AE680EE0'
+$CloseSha = '676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF'
 $h = (Get-FileHash -Algorithm SHA256 -LiteralPath $closePath).Hash
 if ($h -ne $CloseSha) { throw "sha uyusmuyor $h (beklenen $CloseSha)" }
 $tok = $null; $perr = $null
@@ -52,7 +52,7 @@ function Scen([string]$Name,[scriptblock]$Setup,[scriptblock]$Expect) {
   Seed; & $Setup
   $oBefore = $script:Other.Count
   $el = New-Object 'System.Collections.Generic.List[string]'
-  $lines = @(Invoke-WindowRecoveryRT4 -FwRecordFile $Rec -WebTask 'T' -WebPort 3002 -Budget 6 -ErrList $el)
+  $lines = @(Invoke-WindowRecoveryRT4 -FwRecordFile $Rec -NamePattern '^I11-WINDOW-BLOCK-(?<port>8080|3002)-\w+$' -WebTask 'T' -WebPort 3002 -Budget 6 -ErrList $el)
   $iso = @($Names | Where-Object { $script:Store.ContainsKey($_) }).Count
   $post = [pscustomobject]@{ iso=$iso; web=[bool]$script:WebListening; othTouched=($script:Other.Count -ne $oBefore) }
   $ok = ([bool](& $Expect $lines @($el) $post)) -and (-not $post.othTouched)
@@ -71,7 +71,8 @@ Scen 'S5 sorgu hatasi != yokluk (digeri yine kaldirilir)' { $script:QueryErrName
 Scen 'S6 ozellik uyusmaz (o ada dokunma, digeri kaldirilir)' { $script:Store[$Names[0]].Port = 12345 } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*ozellikleri beklenenden farkli*DOKUNULMADI*') -and $p.iso -eq 1 }
 Scen 'S7 kayit dosyasi yok/guvenilmez (joker yedegi YOK)' { $script:RecMissing=$true } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*firewall kayit dosyasi guvenilir DEGIL*') -and $p.iso -eq 2 -and ($l | ? { $_ -like 'R-T4b: Web ayakta*' }) }
 Scen 'S8 kayit bicimi bozuk' { Set-Content -LiteralPath $Rec -Value 'bozuk-satir-port-yok' -Encoding ASCII } { param($l,$e,$p) $e.Count -eq 1 -and ($e[0] -like '*bicimi bozuk*') -and $p.iso -eq 2 }
-
+Scen 'S9 ad deseni gecersiz (baska kurala dokunma)' { Set-Content -LiteralPath $Rec -Value @('8080 EVIL-RULE-8080', '3002 I11-WINDOW-BLOCK-3002-W') -Encoding ASCII } { param($l, $e, $p) $e.Count -eq 1 -and ($e[0] -like '*ad deseni gecersiz*') -and $p.iso -eq 2 }
+Scen 'S10 addaki port kayit portuyla uyusmuyor' { Set-Content -LiteralPath $Rec -Value @('8080 I11-WINDOW-BLOCK-3002-W', '3002 I11-WINDOW-BLOCK-3002-W') -Encoding ASCII } { param($l, $e, $p) $e.Count -eq 1 -and ($e[0] -like '*port kayit portuyla uyusmuyor*') -and $p.iso -eq 2 }
 Remove-Item -LiteralPath $Rec -ErrorAction SilentlyContinue
 $pass = @($results | Where-Object { $_ }).Count
 Write-Host ""

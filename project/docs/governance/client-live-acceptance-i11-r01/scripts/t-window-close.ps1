@@ -181,21 +181,30 @@
   #  (3) sorgu/erisim hatasi != yokluk: yalniz ObjectNotFound 'zaten yok' (basari); diger her hata BASARISIZ
   #  (4) baska kurala dokunma: yalniz kayittaki adlar; kayit yok/guvenilmez/bozuksa R-T4a BASARISIZ, joker yedegi YOK
   # R-T4b ve sonrasi, R-T4a dusse de her durumda denenir (cagiran ayri try/catch'lerde toplar).
-  function Invoke-WindowRecoveryRT4([string]$FwRecordFile, [string]$WebTask, [int]$WebPort, [int]$Budget, [System.Collections.Generic.List[string]]$ErrList) {
+  function Invoke-WindowRecoveryRT4([string]$FwRecordFile, [string]$NamePattern, [string]$WebTask, [int]$WebPort, [int]$Budget, [System.Collections.Generic.List[string]]$ErrList) {
     # ---- R-T4a: kesin-ad engel kurallarini kaldir. Kayit okuma/bicim BASARISIZLIGI R-T4a'yi durdurur
     # (hangi adlara dokunulacagi bilinemez). Kayit gecerliyse HER AD KENDI try'inda denenir: birinin
     # hatasi digerini ATLATMAZ; hatalar toplanir. Boylece 'baska kurala dokunma' + 'sorgu hatasi != yokluk'
     # + 'zaten kaldirilmisi guvenle gec' hepsi saglanir.
+    # AD BUTUNLUGU (B2): her ad $NamePattern'e uymali ve addaki port (named capture 'port') kayit portuyla
+    # ESIT olmali; ayni ad iki kez olamaz. Boylece kurcalanmis bir kayit, deseni tutmayan ya da portu uymayan
+    # ILGISIZ bir kurali sildiremz. Desen cagirana ozgudur (canli: I11-WINDOW-BLOCK-<port>-<tag>).
     $rt4aFail = $false
     try {
       $p = Get-TrustProblem $FwRecordFile $false
       if ($p) { throw "firewall kayit dosyasi guvenilir DEGIL ($p) - joker yedegi YOK" }
       $planned = @()
+      $seen = @{}
       foreach ($line in @(Get-Content -LiteralPath $FwRecordFile)) {
         $t = $line.Trim(); if (-not $t) { continue }
         $parts = $t -split '\s+', 2
         if ($parts.Count -ne 2 -or ($parts[0] -notmatch '^\d+$') -or (-not $parts[1])) { throw "kayit satiri bicimi bozuk ('$t')" }
-        $planned += [pscustomobject]@{ Port = [int]$parts[0]; Name = $parts[1] }
+        $nm = $parts[1]; $pt = [int]$parts[0]
+        if ($nm -notmatch $NamePattern) { throw "ad deseni gecersiz ('$nm')" }
+        if ([int]$matches['port'] -ne $pt) { throw "addaki port kayit portuyla uyusmuyor ('$nm' vs $pt)" }
+        if ($seen.ContainsKey($nm)) { throw "kayitta tekrar eden ad ('$nm')" }
+        $seen[$nm] = $true
+        $planned += [pscustomobject]@{ Port = $pt; Name = $nm }
       }
       if ($planned.Count -eq 0) { throw 'kayit dosyasinda kesin ad YOK' }
     } catch { $rt4aFail = $true; $ErrList.Add("R-T4a: $($_.Exception.Message)"); Write-Output "!!! R-T4a BASARISIZ: $($_.Exception.Message)"; $planned = @() }
@@ -239,7 +248,7 @@
   }
   if ($Mode -eq 'live') {
     $rt4Err = New-Object 'System.Collections.Generic.List[string]'
-    Invoke-WindowRecoveryRT4 -FwRecordFile $FwRecord -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget $BudgetSec -ErrList $rt4Err
+    Invoke-WindowRecoveryRT4 -FwRecordFile $FwRecord -NamePattern '^I11-WINDOW-BLOCK-(?<port>8080|3002)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$' -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget $BudgetSec -ErrList $rt4Err
     foreach ($e in $rt4Err) { $errs += $e }
   }
 

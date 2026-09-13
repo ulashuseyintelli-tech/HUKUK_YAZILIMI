@@ -152,7 +152,19 @@
   Set-TrustedAcl $SinkLog $false
   $p = Get-TrustProblem $SinkLog $true
   if ($p) { throw "K-T0: yakalayici kaydi guvenilir DEGIL ($p)" }
-  Write-Output "K-T0: yedek dizini + yedek + SDDL tabani + yakalayici kaydi KORUMALI (sahip ve DACL yalniz SYSTEM/Administrators/$me) | yedek sha256 = pin"
+  # FIREWALL KAYDI K-T0 ICINDE (B1): pencereye ozel kesin adlar + korumali FW-RULES.txt, kurallar
+  # OLUSTURULMADAN ve K-T6'dan ONCE yazilir. Boylece "K-T0 gecti => kayit VAR" olur; K-T6 web durdurma
+  # ile kural olusturma arasinda duserse bile T-PENCERE-KAPA kaydi bulur, kurallari ObjectNotFound (zaten
+  # yok) sayar ve kapanisi tamamlar. WinTag UTC (B3). Yalniz canli modda anlamli.
+  if ($Mode -eq 'live') {
+    $WinTag = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $fwPlan = @(8080, 3002 | ForEach-Object { [pscustomobject]@{ Port = [int]$_; Name = "I11-WINDOW-BLOCK-$_-$WinTag" } })
+    Set-Content -LiteralPath $FwRecord -Value @($fwPlan | ForEach-Object { "$($_.Port) $($_.Name)" }) -Encoding ASCII
+    $p = Get-TrustProblem $FwRecord $false
+    if ($p) { throw "K-T0: firewall kayit dosyasi guvenilir DEGIL ($p)" }
+    Write-Output "K-T0: firewall kesin adlari kayda yazildi ($($fwPlan.Name -join ', '))"
+  }
+  Write-Output "K-T0: yedek dizini + yedek + SDDL tabani + yakalayici kaydi + firewall kaydi KORUMALI (sahip ve DACL yalniz SYSTEM/Administrators/$me) | yedek sha256 = pin"
 
   # ---- K-T6: KULLANICI GONDERIMLERINI ONLE (sayim DEGIL, ONLEME) ----
   if ($Mode -eq 'live') {
@@ -163,13 +175,8 @@
     Start-Sleep -Seconds 2
     $webStill = @(Get-NetTCPConnection -LocalPort 3002 -State Listen -ErrorAction SilentlyContinue)
     if ($webStill.Count -ne 0) { throw 'K-T6: Web hala dinliyor - kullanici yuzeyi kapanmadi' }
-    # KESIN KIMLIK (R09): joker YOK. Pencereye ozel benzersiz iki ad; kurallar OLUSTURULMADAN ONCE korumali
-    # FW-RULES.txt'e yazilir (kismi olusturmada da iz kalir). T-PENCERE-KAPA yalniz bu iki adi kaldirir.
-    $WinTag = (Get-Date -Format 'yyyyMMddTHHmmssZ') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
-    $fwPlan = @(8080, 3002 | ForEach-Object { [pscustomobject]@{ Port = [int]$_; Name = "I11-WINDOW-BLOCK-$_-$WinTag" } })
-    Set-Content -LiteralPath $FwRecord -Value @($fwPlan | ForEach-Object { "$($_.Port) $($_.Name)" }) -Encoding ASCII
-    $p = Get-TrustProblem $FwRecord $false
-    if ($p) { throw "K-T6: firewall kayit dosyasi guvenilir DEGIL ($p)" }
+    # KESIN KIMLIK (R09): joker YOK. Kesin adlar ve korumali FW-RULES.txt K-T0'da YAZILDI (B1).
+    # K-T6 yalniz o plandan kurallari OLUSTURUR. T-PENCERE-KAPA yalniz bu iki adi kaldirir.
     foreach ($r in $fwPlan) {
       if (@(Get-NetFirewallRule -Name $r.Name -ErrorAction SilentlyContinue).Count -ne 0) { throw "K-T6: '$($r.Name)' adli kural zaten var - DUR" }
       New-NetFirewallRule -Name $r.Name -DisplayName $r.Name -Direction Inbound -Action Block `

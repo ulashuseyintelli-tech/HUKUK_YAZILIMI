@@ -24,10 +24,10 @@ R08 (#2665, KAPATILDI/CLOSED_SUPERSEDED) R-T4a'yı hâlâ **joker** ile yapıyor
 
 | Bileşen | Değişiklik |
 |---|---|
-| **T-AÇ K-T6** (live) | Pencereye özel benzersiz iki ad `I11-WINDOW-BLOCK-<8080\|3002>-<yyyyMMddTHHmmssZ>-<8hex>`. Adlar kurallar **oluşturulmadan ÖNCE** korumalı `i11live\FW-RULES.txt`'e yazılır (kısmi oluşturmada iz kalır). Aynı adlı kural varsa DUR. `New-NetFirewallRule -Name <ad>` + özellik doğrulama (DisplayName · Inbound · Block · LocalPort). Sayım kesin adlarla. |
-| **T-KAPA R-T4a** | `Invoke-WindowRecoveryRT4(-FwRecordFile ...)` tek fonksiyonu. Kayıt trust denetimi (`Get-TrustProblem`); yok/güvenilmez/bozuk → başarısız, joker yedeği yok. **Her kesin ad kendi try'ında**: `Get-NetFirewallRule -Name <ad> -ErrorAction Stop` → `ObjectNotFound`=ABSENT (başarı), diğer hata=başarısız; özellik uyuşmazsa DOKUNMA; `Remove -Name <ad> -ErrorAction Stop` + yeniden sorgu ABSENT. Bir adın hatası diğerini atlatmaz; hatalar toplanır. |
+| **T-AÇ K-T0/K-T6** (live) | Pencereye özel benzersiz iki ad `I11-WINDOW-BLOCK-<8080\|3002>-<yyyyMMddTHHmmssZ(UTC)>-<8hex>`. **B1:** adlar + korumalı `i11live\FW-RULES.txt` **K-T0'da** (kurallardan ve K-T6'dan önce) yazılır — böylece "K-T0 geçti ⇒ kayıt var". K-T6 yalnız plandan `New-NetFirewallRule -Name <ad>` oluşturur + özellik doğrular (DisplayName · Inbound · Block · LocalPort); aynı adlı kural varsa DUR. |
+| **T-KAPA R-T4a** | `Invoke-WindowRecoveryRT4(-FwRecordFile ...)` tek fonksiyonu. Kayıt trust denetimi (`Get-TrustProblem`); yok/güvenilmez/bozuk → başarısız, joker yedeği yok. **Her kesin ad kendi try'ında**: `Get-NetFirewallRule -Name <ad> -ErrorAction Stop` → `ObjectNotFound`=ABSENT (başarı), diğer hata=başarısız; özellik uyuşmazsa DOKUNMA; `Remove -Name <ad> -ErrorAction Stop` + yeniden sorgu ABSENT. Bir adın hatası diğerini atlatmaz; hatalar toplanır. **B2:** her ad `-NamePattern`'e uymalı, addaki port kayıt portuyla eşit, ad tekrarı yok — kurcalanmış kayıt ilgisiz kural sildiremez. |
 | **T-KAPA R-T4b/R-T5/R-T6/R-T7** | Değişmedi; R-T4a düşse de her biri kendi try'ında koşar (R05 hata yolu korunur). |
-| Canlı çağrı | `Invoke-WindowRecoveryRT4 -FwRecordFile $FwRecord -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget $BudgetSec -ErrList $rt4Err` |
+| Canlı çağrı | `Invoke-WindowRecoveryRT4 -FwRecordFile $FwRecord -NamePattern '^I11-WINDOW-BLOCK-(?<port>8080\|3002)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$' -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget $BudgetSec -ErrList $rt4Err` |
 
 Kasıtlı değişmeyenler: K-ELEV · T-PIN · K-T0/K-T0a yedek bütünlüğü · K-T7/K-T8 bayt düzeyinde env · §9 bloğu (`27E754A7…`) · yakalayıcı `smtp-sink-noauth.js`.
 
@@ -37,7 +37,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 
 ## 3. Kanıt — kesin-kimlik senaryo mantığı (bellek-içi, iki kabuk)
 
-`t-rt4-logic-harness.ps1` (sha `945EEEFF…`): üretim fonksiyonunu `t-window-close.ps1`'den (sha `A81544B8…`) AST ile alır; firewall/görev/port cmdlet'lerini ve `Get-TrustProblem`'i bellek-içi sahteler. **`Get-NetFirewallRule -DisplayName` her senaryoda YASAK** (joker denetimi). Her senaryoda "başka kural" tanıkları (aynı DisplayName'li farklı ad + ilgisiz) dokunulmamış doğrulanır.
+`t-rt4-logic-harness.ps1` (sha `998A127B…`): üretim fonksiyonunu `t-window-close.ps1`'den (sha `676C1542…`) AST ile alır; firewall/görev/port cmdlet'lerini ve `Get-TrustProblem`'i bellek-içi sahteler. **`Get-NetFirewallRule -DisplayName` her senaryoda YASAK** (joker denetimi). Her senaryoda "başka kural" tanıkları (aynı DisplayName'li farklı ad + ilgisiz) dokunulmamış doğrulanır.
 
 | Senaryo | Sonuç | Gözlem |
 |---|---|---|
@@ -50,18 +50,20 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 | S6 özellik uyuşmaz | PASS | o ada DOKUNULMADI (iso 1), diğer ad kaldırıldı |
 | S7 kayıt dosyası yok/güvenilmez | PASS | R-T4a başarısız, **joker yedeği YOK**, hiçbir kurala dokunulmadı, R-T4b koştu |
 | S8 kayıt biçimi bozuk | PASS | R-T4a başarısız, dokunma yok |
+| S9 ad deseni geçersiz (B2) | PASS | kayıttaki ad `-NamePattern`'e uymuyor → başarısız, dokunma yok |
+| S10 addaki port ≠ kayıt portu (B2) | PASS | port tutarsızlığı → başarısız, dokunma yok |
 
-**PASS 9/9**, PS 7.6.5 ve PS 5.1.26100. Dört ilke: kesin kimlik (S6) · joker yok (her senaryoda DisplayName sorgusu yasak) · sorgu hatası ≠ yokluk (S5) · başka kurala dokunma (tanıklar + S7).
+**PASS 11/11**, PS 7.6.5 ve PS 5.1.26100. Dört ilke: kesin kimlik (S6) · joker yok (her senaryoda DisplayName sorgusu yasak) · sorgu hatası ≠ yokluk (S5) · başka kurala dokunma (tanıklar + S7 + S9/S10 kayıt bütünlüğü).
 
 ## 4. Owner'a tek komut — R-T4a/R-T4b gerçek işlem izole prova (YÜKSELTİLMİŞ pwsh 7)
 
 **Yükseltilmiş PowerShell 7 (`pwsh`) penceresinde** yapıştırılır. Komut, betiği çalıştırmadan **önce sha doğrular** (kanonik ağaç `ulastelli` süreçlerine yazılabilir olduğundan — ana yürütücü Ek B ölçümü); uyuşmazsa hiçbir şey koşmaz.
 
 ```powershell
-& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '41356908278E05263B11D4F6D4DC655BFFF90F0105DF978219EFD81ED2681C32'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'RT4S cikis=' + $LASTEXITCODE }
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'B058D35B98A7676C2DB9D729FB1CE521732F24587B8A36DFB6B8C7A88F845D98'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'RT4S cikis=' + $LASTEXITCODE }
 ```
 
-- **Dış sha kapısı** betiğin kendisini doğrular (yukarıdaki komut). **İç kapılar** betiğin içinde: `t-window-close.ps1` `A81544B8…` sha + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
+- **Dış sha kapısı** betiğin kendisini doğrular (yukarıdaki komut). **İç kapılar** betiğin içinde: `t-window-close.ps1` `676C1542…` sha + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
 - **Dinleyici DOSYASIZ (ön inceleme bulgusu 2):** görev eylemi bir `.ps1` yolu çalıştırmaz; dinleyici kodu **`-EncodedCommand`** ile görev tanımına gömülür (yükseltilmiş `Register-ScheduledTask` kaydıyla korunur). Üst zincir korumalı `RT4S-<runId>`'yi yeniden adlandırsa bile görev, değiştirilmiş bir kod dosyası çalıştıramaz. `WEB-FAIL.flag` yalnızca veri dosyasıdır (kod değil).
 - **`$OutDir` sertleştirmesi (bulgu 1):** `-Force` YOK — önceden yerleştirilmiş yabancı sahipli dizin kabul edilmez (varsa DUR); oluşturulur → `Set-TrustedAcl` (SYSTEM+Administrators+yürütücü) → `Get-TrustProblem` boş → `Get-ChildItem` 0; aksi halde DUR. Log/JSON/`FW-RULES.txt` bu korumalı dizinde doğar.
 - **Tek okuma (bulgu 3):** `t-window-close.ps1` bir kez okunur; sha o metinden hesaplanır ve **aynı metin** `ParseInput` ile ayrıştırılır (hash-sonra-tekrar-oku aralığı kapatıldı).
@@ -74,11 +76,11 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 
 | Öğe | R08/R07 → R09 |
 |---|---|
-| T-PENCERE-AÇ `t-window-apply.ps1` | `ED64A751…` → **`B13114CAF66D7DC27B0A8C0AF7294E0ED92770CCD474DFCFBDD72D491B55736F`** (K-T6 kesin ad + FW-RULES.txt) |
-| T-PENCERE-KAPA `t-window-close.ps1` | R07 `3F027B0D…` / R08 `88BCEA01…` → **`A81544B8DEEFC9DA4B4271E5FEB3E8AB675469B5A2FB4030426FD7C4AE680EE0`** |
+| T-PENCERE-AÇ `t-window-apply.ps1` | `ED64A751…` → **`834DF587A312775CFD8AFEEFBDF9C1C8E36AE57E7420DE4F9D3FA1714044C8EC`** (K-T6 kesin ad + FW-RULES.txt) |
+| T-PENCERE-KAPA `t-window-close.ps1` | R07 `3F027B0D…` / R08 `88BCEA01…` → **`676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF`** |
 | İ11 §9 gömülü blok | **DEĞİŞMEDİ** `27E754A721749443F8B3F2F363B7676989FC115BB6B85E6E0982F62644FC6700` |
-| `t-rt4-isolated-rehearsal.ps1` | `41356908278E05263B11D4F6D4DC655BFFF90F0105DF978219EFD81ED2681C32` |
-| `t-rt4-logic-harness.ps1` | `945EEEFF942802FD62429C66AE5E09F93BF799E49791089E00F956A267306AE9` |
+| `t-rt4-isolated-rehearsal.ps1` | `B058D35B98A7676C2DB9D729FB1CE521732F24587B8A36DFB6B8C7A88F845D98` |
+| `t-rt4-logic-harness.ps1` | `998A127B0B59CFB1ACFE1D2D5BD5EDB83AFA749EAC750EC81BEC049DDFD4C731` |
 
 İki T betiği: yalnız ASCII, LF; PS 5.1.26100 + PS 7.6.5 ayrıştırma hatası 0.
 
@@ -88,12 +90,14 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 
 Betik sha'sı değiştiği için tam döngü **iki kabukta** koşuldu (ana yürütücü ön inceleme bulgusu 3: R02 D3 `pwsh -File` çağırır). R-T4a/R-T4b `live`-özel olduğundan prova onları çalıştırmaz; bu döngü paylaşılan adımların (K-T0/K-T8/R-T1/R-T2/R-T3/R-T5/R-T6/R-T7) gerilemediğini, R-T4a/R-T4b **fonksiyon mantığı** ise §3 harness'ıyla iki kabukta doğrular.
 
-| Kabuk | T-AÇ (`B13114CA…`) | İ11 §9 | T-KAPA (`A81544B8…`) |
-|---|---|---|---|
-| Windows PowerShell 5.1 (`-File`) | çıkış 0 · restart 6 sn | runId **9ff9ae83** PASS 11/0/0 TAM | K-T10b VAR · R-T1=pin · R-T2 6 sn · R-T3 özgün · `tum adimlar basarili` · çıkış 0 |
-| PowerShell 7 (`pwsh -File`) | çıkış 0 · restart 6 sn | runId **1437a700** PASS 11/0/0 TAM | aynı adımlar · çıkış 0 · env = pin |
+Tam döngü, **final sha'larda** iki kabukta koşuldu. R-T4a/R-T4b `live`-özel olduğundan prova onları çalıştırmaz; bu döngü paylaşılan adımların (K-T0 FW kaydı dahil / K-T8 / R-T1 / R-T2 / R-T3 / R-T5 / R-T6 / R-T7) gerilemediğini, R-T4a/R-T4b **fonksiyon mantığı** ise §3 harness'ıyla iki kabukta 11/11 doğrular.
 
-**Kanıt (scratchpad):** `t-rt4-logic-harness.ps1` çıktısı (9/9, iki kabuk); regresyon `i11s/r07window/R09REG-*`. Aday köküne yazma 0 (nöbetçi 88.248/13.600, değişen 0). Canlı: `.env` `7A7228B1…`, :8080 46332, :3002 47004, I11-WINDOW 0, HYRT4S artık 0, görevler Running.
+| Kabuk | T-AÇ (`834DF587…`) | İ11 §9 | T-KAPA (`676C1542…`) |
+|---|---|---|---|
+| Windows PowerShell 5.1 (`-File`) | çıkış 0 · K-T0 FW kaydı · restart 7 sn | runId **5b3e7c0b** PASS 11/0/0 TAM | K-T10b VAR · R-T1=pin · R-T2 7 sn · R-T3 özgün · `tum adimlar basarili` · çıkış 0 |
+| PowerShell 7 (`pwsh -File`) | çıkış 0 · K-T0 FW kaydı · restart 6 sn | runId **6a50e907** PASS 11/0/0 TAM | aynı adımlar · çıkış 0 · env = pin |
+
+**Kanıt (scratchpad):** `t-rt4-logic-harness.ps1` çıktısı (**11/11**, iki kabuk); regresyon `i11s/r07window/R09C-*` (5.1) ve `R09D-*` (pwsh 7). Aday köküne yazma 0 (nöbetçi 88.248/13.600, değişen 0). Canlı: `.env` `7A7228B1…`, :8080 46332, :3002 47004, I11-WINDOW 0, HYRT4S artık 0, görevler Running.
 
 ## 7. Devir (mevcut ortak pakete göre)
 
