@@ -69,7 +69,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 - **`$OutDir` sertleştirmesi (bulgu 1):** `-Force` YOK — önceden yerleştirilmiş yabancı sahipli dizin kabul edilmez (varsa DUR); oluşturulur → `Set-TrustedAcl` (SYSTEM+Administrators+yürütücü) → `Get-TrustProblem` boş → `Get-ChildItem` 0; aksi halde DUR. Log/JSON/`FW-RULES.txt` bu korumalı dizinde doğar.
 - **Tek okuma (bulgu 3):** `t-window-close.ps1` bir kez okunur; sha o metinden hesaplanır ve **aynı metin** `ParseInput` ile ayrıştırılır (hash-sonra-tekrar-oku aralığı kapatıldı).
 - **İzole hedefler:** `HYRT4S-<runId>-BLOCK-<port>` (I11-WINDOW-BLOCK-* ile çakışmaz), görev `HYRT4S-<runId>-WEB`, port 47100–47199. Kayıt `FW-RULES.txt` korumalı. **Dokunulmama tanıkları:** aynı DisplayName'li başka-ad kuralı + ilgisiz WITNESS kuralı; her senaryoda değişmediği doğrulanır.
-- **9 senaryo** gerçek firewall/görev/port ile (mantık harness'ın karşılığı): başarı · kısmi hata · tekrar (zaten yok) · idempotent · R-T4b hata · sorgu hatası≠yokluk · özellik uyuşmaz · kayıt yok · biçim bozuk.
+- **9 senaryo** gerçek firewall/görev/port ile: S1 başarı · S2a kısmi hata · S3a tekrar (zaten yok) · S2b R-T4b hata · S3b R-T4b toparlanma · S4 idempotent · S5 sorgu hatası≠yokluk · S6 özellik uyuşmaz · S7 kayıt yok. (Kayıt **biçim bozuk / ad deseni geçersiz / port uyuşmaz** yalnız §3 mantık harness'ındadır — S8/S9/S10; izole provada bu üç kayıt-bütünlüğü dalı ayrıca koşulmaz.)
 - Önce/sonra: canlı görev durumu + 8080/3002 PID + I11-WINDOW-BLOCK-* sayısı; sonda `ESIT` ve artık 0 doğrulanır. Çıktı sır içermez. PASS = 9/9 + artık 0 + canlı eşit, çıkış 0.
 - Owner çalıştırmazsa gerçek-firewall PASS açık kalır; §7 madde 6a(i) owner kabulü bu boşluğu kapatan alternatiftir.
 
