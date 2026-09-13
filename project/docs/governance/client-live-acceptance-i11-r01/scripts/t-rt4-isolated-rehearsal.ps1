@@ -143,7 +143,9 @@ function Scen([string]$Name, [scriptblock]$Setup, [scriptblock]$Expect) {
   $el = New-Object 'System.Collections.Generic.List[string]'
   $lines = @(Invoke-WindowRecoveryRT4 -FwRecordFile $Rec -NamePattern '^HYRT4S-[0-9a-f]{8}-BLOCK-(?<port>[0-9]+)$' -WebTask $Task -WebPort $WebPort -Budget $Budget -ErrList $el)
   # A2: enjekte edilen script-kapsamli sahte cmdlet'leri POST olcumunden ONCE kaldir (yoksa Iso-RuleCount fatal)
-  foreach ($sf in 'Get-NetFirewallRule', 'Remove-NetFirewallRule') { if (Test-Path "Function:\$sf") { Remove-Item "Function:\$sf" -ErrorAction SilentlyContinue } }
+  # YALNIZ enjekte edilen shadow'u kaldir: gercek NetSecurity fonksiyonu .Module='NetSecurity' tasir,
+  # enjekte shadow .Module bostur. Kosulsuz kaldirma gercek cmdlet'i sokerdi (ana yurutucu bulgusu, olculdu).
+  foreach ($sf in 'Get-NetFirewallRule', 'Remove-NetFirewallRule') { $fi = Get-Item "Function:\$sf" -ErrorAction SilentlyContinue; if ($fi -and -not $fi.Module) { Remove-Item "Function:\$sf" -ErrorAction SilentlyContinue } }
   $post = [pscustomobject]@{ iso = Iso-RuleCount; web = (@(Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue).Count -ge 1); wit = @(Get-NetFirewallRule -Name $Witness -ErrorAction SilentlyContinue).Count; oth = @(Get-NetFirewallRule -Name $OtherName -ErrorAction SilentlyContinue).Count }
   $untouched = ($post.wit -eq $wBefore) -and ($post.oth -eq $oBefore)
   $ok = [bool](& $Expect $lines @($el) $post) -and $untouched
@@ -179,8 +181,7 @@ try {
 } catch { $fatal = $_.Exception.Message; Log "!!! KESILDI: $fatal" }
 finally {
   Log ''; Log 'TEMIZLIK:'
-  if (Get-Command -Name Remove-NetFirewallRule | Where-Object { $_.CommandType -eq 'Function' }) { Remove-Item Function:\Remove-NetFirewallRule -ErrorAction SilentlyContinue }
-  if (Get-Command -Name Get-NetFirewallRule | Where-Object { $_.CommandType -eq 'Function' }) { Remove-Item Function:\Get-NetFirewallRule -ErrorAction SilentlyContinue }
+  foreach ($sf in 'Remove-NetFirewallRule', 'Get-NetFirewallRule') { $fi = Get-Item "Function:\$sf" -ErrorAction SilentlyContinue; if ($fi -and -not $fi.Module) { Remove-Item "Function:\$sf" -ErrorAction SilentlyContinue } }
   try { Stop-TestWeb } catch { Log "   web: $($_.Exception.Message)" }
   try { Remove-IsoRules } catch { Log "   iso kural: $($_.Exception.Message)" }
   foreach ($n in @($Witness, $OtherName)) { foreach ($r in @(Get-NetFirewallRule -Name $n -ErrorAction SilentlyContinue)) { Remove-NetFirewallRule -Name $r.Name } }

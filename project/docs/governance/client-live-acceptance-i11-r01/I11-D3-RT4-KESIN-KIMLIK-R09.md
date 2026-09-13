@@ -7,7 +7,7 @@ TETİK    : owner GO "RELEASE23 R02 / SON DAR KOMUT DÜZELTMESİ" (OFFICE 33 akt
 YETKİ    : aynı GO madde 1 (CLIENT, t-window-*.ps1 yazıcısı) + madde 3 pin/doğrulama yenileme
 ORTAM    : yalnız oturuma özel DB + Redis + yerel yakalayıcı + RELEASE23 aday dist; canlıya DOKUNULMADI
            (canlıda yalnız salt-okuma: .env sha, dinleyici/görev/kural sayımı)
-DURUM    : R-T4a kesin kimliğe bağlandı; senaryo mantığı 9/9 ÇALIŞTIRILARAK doğrulandı; refactored T-KAPA
+DURUM    : R-T4a kesin kimliğe bağlandı; senaryo mantığı 11/11 ÇALIŞTIRILARAK doğrulandı; refactored T-KAPA
            regresyonu PASS; GERÇEK FIREWALL izole provası owner'ın tek yükseltilmiş komutu · canlı kabul YAPILMADI
 ```
 
@@ -33,7 +33,7 @@ Kasıtlı değişmeyenler: K-ELEV · T-PIN · K-T0/K-T0a yedek bütünlüğü ·
 
 ## 2. Güven sınırı — ÖLÇÜLDÜ (değişmedi)
 
-CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellendi). R-T4a'nın **gerçek-firewall** PASS'i yalnız owner'ın yükseltilmiş penceresinde doğar (§4 tek komut). Bu oturumda kanıtlanan: senaryo mantığı (bellek-içi, 9/9) + refactored T-KAPA'nın paylaşılan adımlarının regresyonu (prova). Gerçek görev+port yolu (R-T4b) R08 dev koşumunda görülmüştü; R09'da R-T4b mantığı aynı, gerçek işlem owner komutunda.
+CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellendi). R-T4a'nın **gerçek-firewall** PASS'i yalnız owner'ın yükseltilmiş penceresinde doğar (§4 tek komut). Bu oturumda kanıtlanan: senaryo mantığı (bellek-içi, 11/11) + refactored T-KAPA'nın paylaşılan adımlarının regresyonu (prova). Gerçek görev+port yolu (R-T4b) R08 dev koşumunda görülmüştü; R09'da R-T4b mantığı aynı, gerçek işlem owner komutunda.
 
 ## 3. Kanıt — kesin-kimlik senaryo mantığı (bellek-içi, iki kabuk)
 
@@ -60,7 +60,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 **Yükseltilmiş PowerShell 7 (`pwsh`) penceresinde** yapıştırılır. Komut, betiği çalıştırmadan **önce sha doğrular** (kanonik ağaç `ulastelli` süreçlerine yazılabilir olduğundan — ana yürütücü Ek B ölçümü); uyuşmazsa hiçbir şey koşmaz.
 
 ```powershell
-& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'B058D35B98A7676C2DB9D729FB1CE521732F24587B8A36DFB6B8C7A88F845D98'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; $pw=(Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source; $global:LASTEXITCODE=-999; & $pw -NoProfile -ExecutionPolicy Bypass -File $f; $rc=$global:LASTEXITCODE; 'RT4S cikis=' + $rc; if($rc -ne 0){ throw "RT4S PASS DEGIL (cikis=$rc)" } }
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '2BB3D3E9F7414C234C8318DC4E387DB6F9612FDDC54F927EA908D5C54FF55E2C'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; $pw=(Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source; $global:LASTEXITCODE=-999; & $pw -NoProfile -ExecutionPolicy Bypass -File $f; $rc=$global:LASTEXITCODE; 'RT4S cikis=' + $rc; if($rc -ne 0){ throw "RT4S PASS DEGIL (cikis=$rc)" } }
 ```
 
 - **Dış sha kapısı** betiğin kendisini doğrular (yukarıdaki komut). **İç kapılar** betiğin içinde: `t-window-close.ps1` `676C1542…` sha + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
@@ -80,7 +80,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 | T-PENCERE-AÇ `t-window-apply.ps1` | `ED64A751…` → **`834DF587A312775CFD8AFEEFBDF9C1C8E36AE57E7420DE4F9D3FA1714044C8EC`** (K-T6 kesin ad + FW-RULES.txt) |
 | T-PENCERE-KAPA `t-window-close.ps1` | R07 `3F027B0D…` / R08 `88BCEA01…` → **`676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF`** |
 | İ11 §9 gömülü blok | **DEĞİŞMEDİ** `27E754A721749443F8B3F2F363B7676989FC115BB6B85E6E0982F62644FC6700` |
-| `t-rt4-isolated-rehearsal.ps1` | `B058D35B98A7676C2DB9D729FB1CE521732F24587B8A36DFB6B8C7A88F845D98` |
+| `t-rt4-isolated-rehearsal.ps1` | `2BB3D3E9F7414C234C8318DC4E387DB6F9612FDDC54F927EA908D5C54FF55E2C` |
 | `t-rt4-logic-harness.ps1` | `998A127B0B59CFB1ACFE1D2D5BD5EDB83AFA749EAC750EC81BEC049DDFD4C731` |
 
 İki T betiği: yalnız ASCII, LF; PS 5.1.26100 + PS 7.6.5 ayrıştırma hatası 0.
@@ -102,14 +102,14 @@ Tam döngü, **final sha'larda** iki kabukta koşuldu. R-T4a/R-T4b `live`-özel 
 
 ## 7. Devir (mevcut ortak pakete göre)
 
-- **CLIENT payı tamam:** R08 kapatıldı, R09 kesin-kimlik + izole prova + mantık 9/9 + regresyon; pinler yenilendi.
+- **CLIENT payı tamam:** R08 kapatıldı, R09 kesin-kimlik + izole prova + mantık 11/11 + regresyon; pinler yenilendi.
 - **OFFICE 33 (R02 yazıcısı):** §5'teki pin/ifade satırlarını günceller; madde 2 (D3-4 çağrı bloğu + §5.2) ve madde 3 (kapanış ölçütü) kendisinde.
 - **Owner:** §4 tek komutu yükseltilmiş pencerede koşarsa R-T4a gerçek-firewall PASS'i doğar; koşmazsa §7 madde 6a(i) kabulü geçerli.
 - **CLIENT kapanış kaydı (madde 3):** İ11 canlı kabulü yapıldığında D3 çıktıları ve yerel kanıt manifesti CLIENT kapanış kaydına bağlanır; CI/merge/senkron/temizlik sonrası sayaç 11/17. Bu belge o kaydın kanıt zincirini hazırlar.
 
 ## 8. Açık kalemler ve sınırlar
 
-- **R-T4a gerçek-firewall PASS:** yükseltilmiş owner komutu (§4) koşulana dek AÇIK. Mantık 9/9 + AST özdeşliği ile desteklenir.
+- **R-T4a gerçek-firewall PASS:** yükseltilmiş owner komutu (§4) koşulana dek AÇIK. Mantık 11/11 + AST özdeşliği ile desteklenir.
 - **`{}` artığı** (`C:\Development\HUKUK_YAZILIMI\project\{}`): önceki oturum yan etkisi, DOKUNULMADI, silme owner kararı.
 - **CL_TOKENFIX** disk artığı: ayrı açık kalem, DOKUNULMADI.
 - `i11live` / prova yedek dizinleri sır taşır (korumalı): silme owner kararı.
