@@ -16,6 +16,8 @@ CANLI       : RELEASE22 — API :8080 PID 46332 · Web :3002 PID 47004 · bin = 
               I11-WINDOW-BLOCK kuralı 0 · :2526 dinleyici 0 (2026-09-12T21:58:18Z salt-okuma ölçüldü; DEĞİŞMEDİ)
 YETKİ SINIRI: bu belge canlı yürütme yetkisi DEĞİLDİR; §7 yalnız owner onayına sunulan taslaktır
 KAYIT       : CLIENT sayaç 10/17 · hizmet kabulü 0/8 tam
+YERİNE GEÇTİ: 2026-09-13 — RELEASE23-TEK-NIHAI-PAKET-R03.md (CLIENT R09 #2666 @ dd42586c kesin kural kimliği + D3 çıkış kodu aktarımı +
+              İ11 kapanış ölçütü + Ek B güven sınırı; T-AÇ/T-KAPA hash'leri değişti); bu belge TARİHSELDİR, canlı karar için KULLANILMAZ
 ```
 
 Ayrıntılı paket kaydı: `RELEASE23-R28-CUTOVER-PAKETI-R01.md` (diskteki
