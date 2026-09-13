@@ -60,7 +60,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 **Yükseltilmiş PowerShell 7 (`pwsh`) penceresinde** yapıştırılır. Komut, betiği çalıştırmadan **önce sha doğrular** (kanonik ağaç `ulastelli` süreçlerine yazılabilir olduğundan — ana yürütücü Ek B ölçümü); uyuşmazsa hiçbir şey koşmaz.
 
 ```powershell
-& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '2BB3D3E9F7414C234C8318DC4E387DB6F9612FDDC54F927EA908D5C54FF55E2C'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; $pw=(Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source; $global:LASTEXITCODE=-999; & $pw -NoProfile -ExecutionPolicy Bypass -File $f; $rc=$global:LASTEXITCODE; 'RT4S cikis=' + $rc; if($rc -ne 0){ throw "RT4S PASS DEGIL (cikis=$rc)" } }
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'B643DF51D71BC4012453CCF746CD0ECC4550897701E54346D3DBF9718FBF5803'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; $pw=(Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source; $global:LASTEXITCODE=-999; & $pw -NoProfile -ExecutionPolicy Bypass -File $f; $rc=$global:LASTEXITCODE; 'RT4S cikis=' + $rc; if($rc -ne 0){ throw "RT4S PASS DEGIL (cikis=$rc)" } }
 ```
 
 - **Dış sha kapısı** betiğin kendisini doğrular (yukarıdaki komut). **İç kapılar** betiğin içinde: `t-window-close.ps1` `676C1542…` sha + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
@@ -68,6 +68,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 - **Dinleyici DOSYASIZ (ön inceleme bulgusu 2):** görev eylemi bir `.ps1` yolu çalıştırmaz; dinleyici kodu **`-EncodedCommand`** ile görev tanımına gömülür (yükseltilmiş `Register-ScheduledTask` kaydıyla korunur). Üst zincir korumalı `RT4S-<runId>`'yi yeniden adlandırsa bile görev, değiştirilmiş bir kod dosyası çalıştıramaz. `WEB-FAIL.flag` yalnızca veri dosyasıdır (kod değil).
 - **`$OutDir` sertleştirmesi (bulgu 1):** `-Force` YOK — önceden yerleştirilmiş yabancı sahipli dizin kabul edilmez (varsa DUR); oluşturulur → `Set-TrustedAcl` (SYSTEM+Administrators+yürütücü) → `Get-TrustProblem` boş → `Get-ChildItem` 0; aksi halde DUR. Log/JSON/`FW-RULES.txt` bu korumalı dizinde doğar.
 - **Tek okuma (bulgu 3):** `t-window-close.ps1` bir kez okunur; sha o metinden hesaplanır ve **aynı metin** `ParseInput` ile ayrıştırılır (hash-sonra-tekrar-oku aralığı kapatıldı).
+- **Enjeksiyon özyineleme-güvenli (R10):** S2a/S5 hata enjeksiyonu, gerçek cmdlet'i `& $FunctionInfo` ile değil **modül-nitelikli** (`NetSecurity\Remove-NetFirewallRule` / `NetSecurity\Get-NetFirewallRule`) çağırır. Modül-nitelikli çözümleme fonksiyon-kapsam gölgesine dönmez → özyineleme yok. İki kabukta ölçüldü: enjekte ad → `PermissionDenied`, yok ad → `ObjectNotFound`, yığın taşması yok.
 - **İzole hedefler:** `HYRT4S-<runId>-BLOCK-<port>` (I11-WINDOW-BLOCK-* ile çakışmaz), görev `HYRT4S-<runId>-WEB`, port 47100–47199. Kayıt `FW-RULES.txt` korumalı. **Dokunulmama tanıkları:** aynı DisplayName'li başka-ad kuralı + ilgisiz WITNESS kuralı; her senaryoda değişmediği doğrulanır.
 - **9 senaryo** gerçek firewall/görev/port ile: S1 başarı · S2a kısmi hata · S3a tekrar (zaten yok) · S2b R-T4b hata · S3b R-T4b toparlanma · S4 idempotent · S5 sorgu hatası≠yokluk · S6 özellik uyuşmaz · S7 kayıt yok. (Kayıt **biçim bozuk / ad deseni geçersiz / port uyuşmaz** yalnız §3 mantık harness'ındadır — S8/S9/S10; izole provada bu üç kayıt-bütünlüğü dalı ayrıca koşulmaz.)
 - Önce/sonra: canlı görev durumu + 8080/3002 PID + I11-WINDOW-BLOCK-* sayısı; sonda `ESIT` ve artık 0 doğrulanır. Çıktı sır içermez. PASS = 9/9 + artık 0 + canlı eşit, çıkış 0.
@@ -80,7 +81,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 | T-PENCERE-AÇ `t-window-apply.ps1` | `ED64A751…` → **`834DF587A312775CFD8AFEEFBDF9C1C8E36AE57E7420DE4F9D3FA1714044C8EC`** (K-T6 kesin ad + FW-RULES.txt) |
 | T-PENCERE-KAPA `t-window-close.ps1` | R07 `3F027B0D…` / R08 `88BCEA01…` → **`676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF`** |
 | İ11 §9 gömülü blok | **DEĞİŞMEDİ** `27E754A721749443F8B3F2F363B7676989FC115BB6B85E6E0982F62644FC6700` |
-| `t-rt4-isolated-rehearsal.ps1` | `2BB3D3E9F7414C234C8318DC4E387DB6F9612FDDC54F927EA908D5C54FF55E2C` |
+| `t-rt4-isolated-rehearsal.ps1` | `B643DF51D71BC4012453CCF746CD0ECC4550897701E54346D3DBF9718FBF5803` |
 | `t-rt4-logic-harness.ps1` | `998A127B0B59CFB1ACFE1D2D5BD5EDB83AFA749EAC750EC81BEC049DDFD4C731` |
 
 İki T betiği: yalnız ASCII, LF; PS 5.1.26100 + PS 7.6.5 ayrıştırma hatası 0.
