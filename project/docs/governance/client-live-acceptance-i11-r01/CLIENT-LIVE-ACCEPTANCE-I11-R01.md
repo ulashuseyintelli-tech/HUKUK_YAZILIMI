@@ -407,7 +407,7 @@ sürece yalnız ortam değişkeni olarak geçer (parolayla aynı desen).
 
 `$ErrorActionPreference='Stop'` + her yerli komuttan sonra `$LASTEXITCODE` denetimi → **ilk hatada
 blok durur, `node` çağrısına ULAŞILMAZ**. Blok dosyası sha256
-`27E754A721749443F8B3F2F363B7676989FC115BB6B85E6E0982F62644FC6700`; PowerShell 7 ve 5.1'de
+`338FA301B0274D84C9F060A55B84A4C1EA78973FE73843C0D6BE796C387D805A`; PowerShell 7 ve 5.1'de
 ayrıştırma hatası 0; **9 kapı · 21 hash · 26 durdurucu · tek `node` çağrısı**. Aşağıdaki gömülü kopya
 hash'i verilen dosyayla **bayt bayt aynıdır**.
 
@@ -526,7 +526,9 @@ hash'i verilen dosyayla **bayt bayt aynıdır**.
   $used = 0; $mentions = 0
   git -C $CANON grep -F -I -q -e $GoRef origin/main
   if ($LASTEXITCODE -eq 0) { $used++ } elseif ($LASTEXITCODE -ne 1) { throw 'K-REF: origin/main aramasi calismadi' }
-  $openBranches = @(gh pr list --state open --json headRefName --jq '.[].headRefName')
+  $ru = (git -C $CANON remote get-url origin); if ($LASTEXITCODE -ne 0) { throw 'K-REF: origin remote url alinamadi' }
+  if ($ru -match '[/:]([^/:]+/[^/]+?)(?:\.git)?/?\s*$') { $ghRepo = $Matches[1] } else { throw "K-REF: repo adi cozulemedi ($ru)" }
+  $openBranches = @(gh pr list -R $ghRepo --state open --json headRefName --jq '.[].headRefName')
   if ($LASTEXITCODE -ne 0) { throw 'K-REF: acik PR listesi alinamadi' }
   foreach ($b in $openBranches) {
     git -C $CANON fetch origin $b
