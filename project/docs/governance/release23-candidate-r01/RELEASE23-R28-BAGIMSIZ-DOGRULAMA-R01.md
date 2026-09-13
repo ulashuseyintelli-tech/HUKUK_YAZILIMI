@@ -488,3 +488,47 @@ Bu ek D1-1'in owner'a sunulması için §7 m2(i) ön koşulunu karşılar. **De�
 owner'dan birebir alınır (yeni referans türetilmez). **K-KİMLİK:** OR-03a digest'i 3e girdileri (canlı GO içinde) oluşunca OFFICE 33 ve
 ana yürütücü tarafından BAĞIMSIZ hesaplanır ve EŞİT bulunmadan D1-4 (OWNER-RUN) yoktur; bu ek onu karşılamaz. Bu ek mühür,
 authority/nonce, cutover veya canlı yürütme yetkisi DEĞİLDİR; yalnız D1-1 öncesi doğrulama gate'inin kaydıdır.
+
+## Ek E — RELEASE23 canlı yürütme (D1-4 cutover) bağımsız doğrulama zinciri + D3 sonucu (owner doğrudan GO 2026-09-13 "R03/R28 koşullu canlı yürütme")
+
+Owner canlı yürütme GO'sunu ana yürütücü + OFFICE 33 oturumlarına DOĞRUDAN verdi. Bu ek, ana yürütücünün canlı sıradaki **her kapıdaki
+bağımsız salt-okuma doğrulamasının** tek kaydıdır. **Sonuç: RELEASE23 cutover (D1) CANLI ve doğrulandı; CLIENT İ11 kabulü (D3-2) KOŞMADI →
+İ11 AÇIK, sayaç 10/17.** Ana yürütücü canlı yazma 0; `.env` içeriği okunmadı (yalnız sha + sddl). Kanıtlar `evidence/` altında.
+
+### E.1 D1 kapıları — bağımsız doğrulama (hepsi geçti)
+
+| Kapı | Sonuç | Kanıt |
+|---|---|---|
+| D1-0 ratifikasyon ref | `OWNER-RATIFICATION-C33-RELEASE23-CUTOVER-20260913-R01` biçim geçerli; tam ref origin ref'leri + R28 disk paketinde **0** (taze); mühürsüz | (Ek D öncesi ölçüm) |
+| §7 m2(i) yeniden ölçüm | §1.3 araçlar + PI `4A7B52DC` (50/50) + §1.4 pinler **21/21 EŞİT** | Ek D; `evidence/R28-M2I-PREFLIGHT-4dec4f41-onwards.json` |
+| D1-1 preflight | iki koşum `OWNER_PREFLIGHT_READY`, results **33 PASS / 1 INFO / 0 FAIL**, exitCode 0, mutation 0; OR-02 bağlısı `BA32673A` (ikinci, doğrudan 5.1); ilk `75D33F3B` kayıtta. İçerik uzlaştırma: iki JSON yalnız `runUtc`/`finishedUtc`'de farklı, 34/34 sonuç aynı | preflight/*.json (paket) |
+| D1-2 `-Live` | `REAL_PRIMITIVES_PASS`, liveExecuted=true, 31/31; RESULTS `5DDBC681…` (PI ile farkı izinli kümede) | paket |
+| 3a–3d | ratifikasyon kaydı `17E7BAFA` · OWNER-COMMAND şablon `324E3C2C` (5 alan) · OC-şablon PASS 16/16 · verifier UNSEALED failed 0 | paket |
+| **K-KİMLİK (3e)** | OR-03a bağımsız = `CF2739C5B86287F66B18CEBDDE7DEC96AA35CF6BCB99C7C2BDA39C0A6FC67B5E` **iki yoldan** (onaylı liste + LİSTEYE GÜVENMEDEN diskten türetme); 50/50 kümesi = PI; liste↔PI sha farkı TAM olarak izinli 3 dosya; liste ordinal. **EŞİT** | `evidence/K-KIMLIK-CF2739C5.txt` |
+| 3f | kök OWNER-RUN = forked şablon = `B126F9FE` (yer tutucu 0, 8 sabit, OR-03a/03b algoritma bloğu fill öncesiyle byte-aynı); kök OWNER-COMMAND `324E3C2C` | paket |
+
+### E.2 D1-4 OWNER-RUN cutover — mühürlü paket bağımsız doğrulama
+
+runId **`CUT-20260913-200554-ec45bc63`**, 31/31, cikis=0.
+- **Makbuz** `cutover-receipts/CUTOVER-CUT-20260913-200554-ec45bc63.json` sha `925A08038E8FF42157ED3DAF1EFF96B1E2D05B6AB8A061C1167A57E51C9089E6`: verdict **`C33_RELEASE23_CUTOVER_APPLIED_AND_VERIFIED`**, failedGates [], claimConsumed True, authority CONSUMED, phase COMMITTED, provisioningCalls 0, **dbMutations 0**, forceKills 0. **dbPre==dbPost** (`130|130|0|0|7660053627876716578|12|53|2` → snapshot eşit, rollback yok). secrets: generated False, valuesWritten 0, **envCopiedByteExact True**. rollback.performed False.
+- **Journal** `5B924226…` 13 kayıt: T0_PREPARED→H_MATERIALIZED→T1..T7_COMMITTED→RECEIPT; prev raw-sha zinciri TUTARLI; runId tekil.
+- **Nonce tekil:** authority `3BB51BFA…` = claim `E6B30443…` = marker `49C46736…` nonce `9adc4405…`; singleUse True, requiresElevation True, CONSUMED; authority.engineSha=motor, boundIdentities mainSha 2740df3d / candidateDigest EF8ED2AC / manifestDigest E53618ED; ownerRatificationRef `…20260913-R01`.
+- **MANIFEST** `40B04E80…` SEALED, 61 dosya, payloadDigest `A0A6D74D…`, motor 2AE77043. pins `E66EC55E…` aday 2740df3d.
+- 6 ek kanıt dosyası hash'i diskten ölçülüp OFFICE 33 ile birebir teyit edildi.
+
+### E.3 D1-5 teknik kabul — PASS (bağımsız)
+
+`evidence/D1-5-technical-acceptance.txt`: :8080/40544 + :3002/58920 kök **HY_W4_RELEASE23** (eski 46332/47004 yok) · bin = **postimage** (`691BC146`/`CC634BBF`/`F39F7A54`) · geri dönüş kaynağı `generations\R22` = preimage (hazır) · BUILD_ID `dOiGPj2M0Abls0kCibY4r` · **env sha `7A7228B1…`** (pin) · env sddl `O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;…-1146)` (D3-5 tabanı) · 10 derlenmiş işaret satırı beklenenle eşit. (HTTP GET'ler R03'ten OFFICE 33 koştu: buildManifest 200, api / 404.)
+
+### E.4 D2 (CLIENT) → D3 → D3-5
+
+- **D2 kapısı PASS** (CLIENT): canlı dist `redactSecretPathSegments` 3 · env sha = pin · K-API :8080 RELEASE23 dist · K-BLD 2740df3d/`dOiGPj2M0Abls0kCibY4r`. Değerler D1-5'te bağımsız doğruladıklarımla birebir.
+- **D3-2 İ11 kabulü KOŞMADI:** §9 K-REF kapısı owner penceresi cwd=`C:\Windows\System32` (git deposu değil) → `gh pr list` başarısız → `node i11-run.js`'den ÖNCE durdu. K-WT/K-ARC 21/21/K-API (RELEASE23)/K-BLD/K-SMTP/K-INTAKE geçmişti. **runId yok, DB yazımı yok, gönderim yok** (fail-closed). D3-4 T-KAPA `$rid=''` ile temiz kapandı (cikis 0); pozitif hedef kanıtı yok → başarıya çevrilmedi.
+- **D3-5 pencere kapanış — bağımsız salt-okuma PASS** (`evidence/D3-5-window-close.txt`): env sha `7A7228B1…` = pin · env sddl = taban · :8080/24668 + :3002/45404 kök **HY_W4_RELEASE23** · `I11-WINDOW-BLOCK-*` **0** · HYRT4S 0 · :2526 **0** · görevler Running. Pencere güvenli kapandı, kısmi durum yok.
+
+### E.5 Sonuç ve kalan
+
+- **RELEASE23 CANLI** (D1 cutover `APPLIED_AND_VERIFIED`, D1-5 PASS). Geri dönüş kaynağı `generations\R22` preimage hazır; §5.3 elle geri dönüş metni R03'te.
+- **CLIENT İ11 AÇIK — sayaç 10/17, hizmet kabulü 0/8 tam.** İ11 kabulü çalışmadı (§9 K-REF cwd); RELEASE23 canlı olması İ11'i kapatmaz (owner GO: "bir koşul eksikse İ11'i kapatma, 10/17 kalsın").
+- **Yeniden deneme AYRI owner GO'su ister** (auto-tekrar yok). CLIENT'ın bildirdiği ön koşullar: (a) dar §9 K-REF cwd-bağımsız (`-R`) düzeltmesi → §9 sha `27E754A7` değişir; (b) `CL_I11LIVE` worktree (K-WT oluşturdu) kaldırma; (c) `i11live` yedek dizini (sır taşır) — owner kararı.
+- Bu ek mühür/authority/nonce/cutover yetkisi DEĞİL; canlı yürütme owner + OFFICE 33 (D1) + CLIENT (D2/D3) tarafından yapıldı, ana yürütücü yalnız bağımsız salt-okuma doğrulayıcı ve hat koordinasyonu oldu (canlı yazma 0).

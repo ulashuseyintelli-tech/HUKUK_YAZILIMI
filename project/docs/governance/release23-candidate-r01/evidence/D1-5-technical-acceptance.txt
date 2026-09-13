@@ -1,0 +1,25 @@
+== servisler + kok ==
+  :8080 pid=40544 kok=HY_W4_RELEASE23 OK
+  :3002 pid=58920 kok=HY_W4_RELEASE23 OK
+== bin (postimage olmali) ==
+  bin hukuk-task-host.exe = POSTIMAGE OK
+  bin start-api.ps1 = POSTIMAGE OK
+  bin start-web.ps1 = POSTIMAGE OK
+== geri donus kaynagi (generations\R22 = preimage, hazir) ==
+  R22 hukuk-task-host.exe = PREIMAGE OK
+  R22 start-api.ps1 = PREIMAGE OK
+  R22 start-web.ps1 = PREIMAGE OK
+== BUILD_ID = dOiGPj2M0Abls0kCibY4r OK
+== env sha = 7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC PIN OK (7A7228B1)
+== env sddl (D3-5 tabani) = O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;S-1-5-21-3828948545-3622927028-3332160207-1146)
+== derlenmis isaretler (satir) ==
+  redactSecretPathSegments     modules\error-log\error-log.sanitize.js        satir=3 beklenen=3 OK
+  party-write-tx               modules\case\case.service.js                   satir=1 beklenen=1 OK
+  party-write-tx               modules\client\client.service.js               satir=1 beklenen=1 OK
+  party-write-tx               modules\debtor\debtor.service.js               satir=1 beklenen=1 OK
+  party-write-tx               modules\lawyer\lawyer.service.js               satir=1 beklenen=1 OK
+  createPartyWriteTxContext    common\party-write-tx.js                       satir=2 beklenen=2 OK
+  pureNoOpDetected             modules\client\client.service.js               satir=3 beklenen=3 OK
+  OFFICE_WRITE_DENIED_VIEWER   modules\office-approval\office-write-role.policy.js satir=3 beklenen=3 OK
+  assertGenericDecisionAllowed modules\office-approval\office-approval.service.js satir=5 beklenen=5 OK
+  LAWYER_REACTIVATE            modules\lawyer\lawyer.service.js               satir=1 beklenen=1 OK
