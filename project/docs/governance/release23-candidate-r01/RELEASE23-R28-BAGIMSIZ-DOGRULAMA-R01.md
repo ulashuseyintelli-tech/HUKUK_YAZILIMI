@@ -311,3 +311,97 @@ Ek kanit (ana yurutucu oturum dizini): `r28-verify-s1d-evidence.json` `CA931CB5B
 `r28-verify-s1e-evidence.json` `F5AE6E2802F3892A73E5CD68E3C3A8009BC96B4D94CC7BFFDD048A8DD8A20DC1` · `r28-s3-kpar-r06.ps1` ·
 `r28-s4-r07-ast.ps1` · `r28-s4-r07-prova.ps1` · `r28-s5-rid-guard.ps1`. Bu ek de muhur, authority, cutover, T-pencere veya canli kosum
 yetkisi DEGILDIR.
+
+## Ek B — `ENV-PREIMAGE.env` guven siniri: okuma/yazma yetkileri ve "guvenilir surecler" (owner GO "R02'nin kalan kurtarma kaniti ve guven siniri", madde 2)
+
+Kaynak: mevcut ACL kanitlari (#2661 §2.4, Ek A.1) ve eksik kalan kimlik bilgileri icin tek bir salt okuma olcumu
+(2026-09-13, `r28-s6-trust-evidence.json` `19CE9F496DAFDC432BCB5F4E1B62BC574FDE5AA6BA9A46F2C3AE014D41FD4C65`). Olcum yalniz
+guvenlik tanimlayicisi, token grubu, surec sahibi, gorev kimligi ve yerel grup uyeligini okudu. **`.env` ve yedek icerigi OKUNMADI**,
+bu ekte hicbir sir degeri yoktur. Canli yedek (`i11live`) henuz olusmadi; canli satirlar R07 @ `59abb70b` tasarimi ile R07 prova
+kalintisindan turetilmistir.
+
+### B.1 Olculen kimlik ve ACL gercekleri
+
+| Nesne / kimlik | Olculen |
+|---|---|
+| Canli `.env` (RELEASE22; RELEASE23 `.env` motor H-01 ile ayni sinifta kurulur, R02 §5.2) | sahip **SYSTEM**, DACL korumali: SYSTEM `FA` · Administrators `FA` · `TELLI\ulastelli` **yalniz okuma** (`0x120089`) — SDDL `O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;S-1-5-21-3828948545-3622927028-3332160207-1146)` |
+| Yedek dizini, `ENV-PREIMAGE.env`, yakalayici kaydi (R07 tasarimi; prova kalintisinda olculdu) | DACL korumali, acik 3 kural: SYSTEM `FA` · Administrators `FA` · yurutucu (`TELLI\ulastelli`) **`FA` (FullControl)**; dizinde (OI)(CI); yabanci kural 0. SDDL tabani ve taban dosyasi korumali degildir, yalniz dizinden ayni 3 kurali kalitir. Provada sahip `TELLI\ulastelli`; canlida yukseltilmis olusturmada sahip `BUILTIN\Administrators` olabilir (OLCULMEDI; T-KAPA ikisini de guvenilir sayar) |
+| Ust zincir (`scratchpad` → … → `Temp\claude`) | korumasiz; SYSTEM/Administrators/kullaniciya ek olarak 6 yabanci SID: 4× Modify (`CodexSandboxUsers` + 3 cozumlenmeyen), 2× Modify + DELETE_CHILD (cozumlenmeyen) |
+| Canli API / Web surecleri | `node.exe` 46332 / 47004 → `pwsh.exe` → `hukuk-task-host.exe`, hepsi **`TELLI\ulastelli`**; gorevler `HukukPlatform-API/Web`: UserId `ulastelli`, Interactive, **RunLevel Limited** (yukseltilmemis) |
+| Ajan oturumu token'i (ornek: bu oturum) | `TELLI\ulastelli`, yukseltilmemis, **Administrators = "Group used for deny only"**, butunluk Orta; ayricaliklar yalniz varsayilan (SeBackup/SeRestore YOK) |
+| Yerel `Administrators` uyeleri | `TELLI\Domain Admins` · `TELLI\ulastelli` · yerel `Administrator` · yerel `User` |
+| Yerel `Backup Operators` | uye YOK |
+| `CodexSandboxUsers` uyeleri | ayri yerel hesaplar `CodexSandboxOffline` ve `CodexSandboxOnline` (kullanici SID'i `ulastelli` DEGIL) |
+
+### B.2 Kim ne yapabilir (canli yedek tasarimi)
+
+| Kimlik sinifi | Canli `.env` | `ENV-PREIMAGE.env` / `i11live` | SDDL tabani, yakalayici kaydi |
+|---|---|---|---|
+| SYSTEM hizmetleri | okur + yazar | okur + yazar + siler | okur + yazar |
+| Yukseltilmis Administrators oturumlari (yerel Administrators uyeleri, `TELLI\Domain Admins` grubu dahil) | okur + yazar (+ SeBackup/SeRestore ile DACL'dan bagimsiz) | okur + yazar + siler | okur + yazar |
+| **`TELLI\ulastelli` ile calisan HER surec** (yukseltilmemis dahil): canli API/Web, gorev sarmalayicilari, ajan oturumlari ve alt surecleri (node/npm/python), tarayici, IDE | **yalniz okur** | **okur + yazar + siler + DACL degistirir** | okur + yazar |
+| Ayni kullanicinin yukseltilmemis admin token'i (Administrators deny-only) | kullanici ACE'si kadar: yalniz okur | kullanici ACE'si kadar: tam | tam |
+| `CodexSandboxOffline/Online` ve 5 cozumlenmeyen SID | erisim YOK | icerige erisim YOK; ust zincirdeki 2 DELETE_CHILD SID'i `i11live`'i yeniden adlandirip yerine baska dizin koyabilir (ACL'den turetildi, denenmedi) | erisim YOK (korumali dizin icinde) |
+| Everyone / Users / Authenticated Users / diger yerel kullanicilar | erisim YOK | erisim YOK | erisim YOK |
+
+"Guvenilir surecler" = token'inda SYSTEM, **etkin** Administrators veya `TELLI\ulastelli` kullanici SID'i bulunan her surec. Bu kume bir
+surec listesi degil, kimlik kumesidir. Bu makinedeki ornekleri:
+- canli API/Web zinciri (olculdu);
+- ajan oturumlari (bu oturum olculdu; CLIENT oturumunun olusturdugu prova dosyalarinin sahibi de `TELLI\ulastelli`);
+- yukseltilmis owner penceresi.
+
+Codex sandbox hesaplari bu kumenin **disindadir**.
+
+### B.3 Sir gizliligi (okuma) — ayri degerlendirme
+
+- **Kapsam genislemez.** Yedegi okuyabilen kume (SYSTEM · yukseltilmis admin · `ulastelli`), canli `.env`'i zaten okuyabilen kumeyle
+  AYNIDIR. Kullanici ACE'si canli `.env`'de de okuma verir, cunku API bu hesapla calisir. Yabanci SID'ler, Codex sandbox hesaplari ve
+  diger kullanicilar ikisini de okuyamaz.
+- **Olusturma penceresi kapali.** R07'de dizin kopyadan once korumali kurulur (Ek A.1), yedek kalitsal ACL ile hic var olmaz.
+- **Kalan gizlilik riski:**
+  - Yedek ikinci bir kalici sir kopyasidir; canli `.env` ileride degisse de eski degerleri tasir.
+  - `ulastelli` altinda calisan her arac (ajan oturumlari ve baslattiklari betikler dahil) onu okuyabilir; bu risk canli `.env` icin de
+    aynidir.
+  - Silinmesi R02 §8 geregi owner karari.
+- **Pin (`T_ENV_PRE_SHA`)** tum dosyanin sha256'sidir ve governance kayitlarinda zaten yayimlidir. Icerik okunmadigi icin dosyanin
+  tahmin edilebilirligi degerlendirilmedi.
+
+### B.4 Icerik butunlugu (yazma) — ayri degerlendirme
+
+- **Kapsam genisler.** Canli `.env`'e yalniz SYSTEM ve yukseltilmis admin yazabilir. Yedegi, taban dosyasini ve yakalayici kaydini ise
+  `ulastelli` ile calisan **yukseltilmemis** her surec degistirebilir, silebilir ve DACL'larini degistirebilir.
+- **Canli yapilandirmanin butunlugu korunur.** T-KAPA R-T1:
+  - dizin ve dosya guven denetimi (sahip · korumali DACL · yabanci kural · reparse),
+  - yedek sha = owner'in yapistirdigi pin (`7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC`, R02 main'den),
+  - aksi hâlde "GERI YAZILMADI; elle mudahale".
+  Degistirilmis ya da silinmis yedek canli `.env`'e **yazilmaz**. Sonuc bir erisilebilirlik kaybidir: otomatik geri yazma olmaz,
+  R02 §5.1 elle kurtarma satiri isler. Canli yapilandirma bozulmaz.
+- **Pin ve bloklarin kaynagi da guven sinirinin parcasidir** (Windows davranisindan turetildi, olculmedi):
+  - Yukseltilmemis bir surec yukseltilmis pencereye dogrudan girdi gonderemez (UIPI).
+  - Ancak owner'in kopyaladigi yerel belge (kanonik agac) ve pano `ulastelli` surecleri tarafindan degistirilebilir.
+  - Bu yuzden bloklar GitHub main'deki birlesmis metinden alinmali ve ilk satirlardaki sha/pin degerleri R02 §1 ile gozle
+    karsilastirilmalidir. Aksi hâlde hem pin hem beklenen betik sha'si birlikte degistirilmis bir blok calistirilabilir.
+- **Kanit butunlugu KISMEN korunur.**
+  - SDDL tabani degistirilirse R-T7 yaniltilabilir; D3-5, D1-5 devir makbuzundaki tabana karsi bagimsiz karsilastirir ve yakalar.
+  - Yakalayici kaydi ve taban dosyasi degistirilirse K-T10b "Pozitif hedef kaniti" ve R-T6 alici denetimi YANILTILABILIR. Bunlar
+    yabanci SID'lere karsi korunur; `ulastelli` ile calisan kotu niyetli ya da hatali bir surece karsi korunmaz. Bu, R02 §7 m.6a(ii)
+    kabulunun somut icerigidir.
+- **Yabanci SID'ler** yedegin icerigini degistiremez. `i11live` yerine konan dizin guven denetiminde reddedilir (sahip/DACL/reparse),
+  sonuc yine erisilebilirlik kaybidir.
+
+### B.5 Sonuc ve istege bagli sertlestirme (karar gerektirmez; owner isterse ayri is)
+
+| Soru | Cevap |
+|---|---|
+| Yedek siri daha fazla kimlige aciyor mu? | HAYIR — okuma kumesi canli `.env` ile ayni |
+| Yedek canli yapilandirmayi bozdurabilir mi? | HAYIR — pin + guven denetimi; kotu yedek geri yazilmaz. On kosul: owner bloklari birlesmis metinden alir ve pini gozle dogrular (B.4) |
+| "Guvenilir surecler" neyi yapabilir? | yedegi okuyabilir (canli `.env` gibi), yedegi ve kanit dosyalarini degistirebilir/silebilir. Sonuc: geri yazma reddi (erisilebilirlik) veya yaniltilmis kabul kaniti (K-T10b/R-T6) |
+| Kimler guvenilmez? | `CodexSandboxOffline/Online`, 5 cozumlenmeyen SID, diger yerel kullanicilar, Everyone/Users |
+
+Istege bagli iki secenek var; ikisi de betik degisikligi ister (yeni hash → R02 pinleri):
+- **(a)** Yedek dizininde yurutucu ACE'sini kaldirmak (yalniz SYSTEM + Administrators). Yukseltilmis pencere erisimini BA uzerinden
+  korur. Yukseltilmemis surecler yedegi okuyamaz ve degistiremez. Gizlilik kazanci sinirlidir, cunku canli `.env` yine okunur;
+  butunluk ve erisilebilirlik kazanci vardir.
+- **(b)** Yakalayici kaydinin ozetini T-AC/T-KAPA arasinda yukseltilmis bagimda tutmak.
+
+Pencere sonrasi `i11live` silme karari owner'dadir (R02 §8).
