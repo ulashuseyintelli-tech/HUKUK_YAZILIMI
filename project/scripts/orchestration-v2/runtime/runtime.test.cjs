@@ -28,8 +28,23 @@ const mergeready = require('../orchestrator/mergeready.cjs');
 const spawnMod = require('../executors/spawn.cjs');
 const stateMod = require('../orchestrator/state.cjs');
 
+// Yalniz BU kosumun olusturdugu exact temp dizinleri; basari ve hata sonunda temizlenir.
+// (governance-coordination.test.cjs processExitFixtureRoots ile ayni desen.)
+// Eski/baska Temp dizinlerine DOKUNMAZ; genel temizlik araci degildir.
+const runTempDirs = [];
+process.once('exit', () => {
+  for (const dir of runTempDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* temizlik hatasi test sonucunu etkilemez */
+    }
+  }
+});
 function tmp(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  runTempDirs.push(dir);
+  return dir;
 }
 
 const SPEC = {
