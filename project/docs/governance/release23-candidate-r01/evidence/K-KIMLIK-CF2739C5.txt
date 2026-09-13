@@ -1,0 +1,14 @@
+== OR-03a DIGEST ==
+  YOL1 (onayli liste):         CF2739C5B86287F66B18CEBDDE7DEC96AA35CF6BCB99C7C2BDA39C0A6FC67B5E ==CF2739C5 | liste sirasi ordinal: True
+  YOL2 (DISKTEN bagimsiz):     CF2739C5B86287F66B18CEBDDE7DEC96AA35CF6BCB99C7C2BDA39C0A6FC67B5E ==CF2739C5
+  ap.unsealedDigest alani:     CF2739C5B86287F66B18CEBDDE7DEC96AA35CF6BCB99C7C2BDA39C0A6FC67B5E ==CF2739C5
+  liste dosya sayisi: 50 | disk turetilen: 50 | PI: 50
+== KUME (onayli liste vs disk) ==
+  yalniz listede: 0 | yalniz diskte: 0
+  disk!=liste sha (POST_APPROVAL_CHANGED beklenir): 0
+== KUME/FARK (onayli liste vs PACKAGE-IDENTITY) ==
+  yalniz listede: 0 | yalniz PI'de: 0
+  sha farki: ['fork/templates/OWNER-COMMAND.C33-CUTOVER.forked.ps1', 'qualification/OWNER-COMMAND-TEMPLATE-RESULTS.json', 'qualification/REAL-PRIMITIVES-RESULTS.json']
+  sha farki == izinli 3 kume: True
+
+K-KIMLIK: ESIT
