@@ -169,27 +169,36 @@
   } catch { $errs += "R-T3: $($_.Exception.Message)"; Write-Output "!!! R-T3 BASARISIZ: $($_.Exception.Message)" }
 
   # ---- R-T4: ONLEMEYI KALDIR (yalniz canli) - HER DURUMDA denenir ----
-  if ($Mode -eq 'live') {
+  # R-T4a/R-T4b TEK fonksiyondadir (R08). Canli, fonksiyonu canli hedeflerle cagirir. Yukseltilmis canli-disi
+  # sinama (scripts/t-rt4-isolated-rehearsal.ps1) AYNI fonksiyon metnini bu dosyadan sha dogrulamali AST ile
+  # alir ve YALNIZ hedef adlariyla (kural deseni, gorev, port) cagirir; ayri kopya YOKTUR.
+  # Iki adim birbirinden bagimsiz denenir; hatalar $ErrList'e eklenir, cagiran sonda throw eder.
+  function Invoke-WindowRecoveryRT4([string]$FwPattern, [string]$WebTask, [int]$WebPort, [int]$Budget, [System.Collections.Generic.List[string]]$ErrList) {
     try {
-      $fw = @(Get-NetFirewallRule -DisplayName 'I11-WINDOW-BLOCK-*' -ErrorAction SilentlyContinue)
+      $fw = @(Get-NetFirewallRule -DisplayName $FwPattern -ErrorAction SilentlyContinue)
       foreach ($r in $fw) { Remove-NetFirewallRule -Name $r.Name }
-      $left = @(Get-NetFirewallRule -DisplayName 'I11-WINDOW-BLOCK-*' -ErrorAction SilentlyContinue)
+      $left = @(Get-NetFirewallRule -DisplayName $FwPattern -ErrorAction SilentlyContinue)
       if ($left.Count -ne 0) { throw "engelleme kurali kaldirilamadi ($($left.Count))" }
       Write-Output "R-T4a: engelleme kurallari kaldirildi ($($fw.Count))"
-    } catch { $errs += "R-T4a: $($_.Exception.Message)"; Write-Output "!!! R-T4a BASARISIZ: $($_.Exception.Message)" }
+    } catch { $ErrList.Add("R-T4a: $($_.Exception.Message)"); Write-Output "!!! R-T4a BASARISIZ: $($_.Exception.Message)" }
     try {
-      Start-ScheduledTask -TaskName 'HukukPlatform-Web'
+      Start-ScheduledTask -TaskName $WebTask
       $webUp = 0
       $sw2 = [Diagnostics.Stopwatch]::StartNew()
-      while ($sw2.Elapsed.TotalSeconds -lt $BudgetSec) {
-        $w = @(Get-NetTCPConnection -LocalPort 3002 -State Listen -ErrorAction SilentlyContinue)
+      while ($sw2.Elapsed.TotalSeconds -lt $Budget) {
+        $w = @(Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue)
         if ($w.Count -ge 1) { $webUp = 1; break }
         Start-Sleep -Seconds 3
       }
       $sw2.Stop()
-      if ($webUp -ne 1) { throw "Web $BudgetSec sn icinde ayaga KALKMADI" }
+      if ($webUp -ne 1) { throw "Web $Budget sn icinde ayaga KALKMADI" }
       Write-Output "R-T4b: Web ayakta ($([int]$sw2.Elapsed.TotalSeconds) sn)"
-    } catch { $errs += "R-T4b: $($_.Exception.Message)"; Write-Output "!!! R-T4b BASARISIZ: $($_.Exception.Message)" }
+    } catch { $ErrList.Add("R-T4b: $($_.Exception.Message)"); Write-Output "!!! R-T4b BASARISIZ: $($_.Exception.Message)" }
+  }
+  if ($Mode -eq 'live') {
+    $rt4Err = New-Object 'System.Collections.Generic.List[string]'
+    Invoke-WindowRecoveryRT4 -FwPattern 'I11-WINDOW-BLOCK-*' -WebTask 'HukukPlatform-Web' -WebPort 3002 -Budget $BudgetSec -ErrList $rt4Err
+    foreach ($e in $rt4Err) { $errs += $e }
   }
 
   # ---- R-T5: yakalayiciyi durdur - HER DURUMDA denenir ----
