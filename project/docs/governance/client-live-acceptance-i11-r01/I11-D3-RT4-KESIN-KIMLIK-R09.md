@@ -53,13 +53,16 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 
 **PASS 9/9**, PS 7.6.5 ve PS 5.1.26100. Dört ilke: kesin kimlik (S6) · joker yok (her senaryoda DisplayName sorgusu yasak) · sorgu hatası ≠ yokluk (S5) · başka kurala dokunma (tanıklar + S7).
 
-## 4. Owner'a tek komut — R-T4a/R-T4b gerçek işlem izole prova (YÜKSELTİLMİŞ)
+## 4. Owner'a tek komut — R-T4a/R-T4b gerçek işlem izole prova (YÜKSELTİLMİŞ pwsh 7)
+
+**Yükseltilmiş PowerShell 7 (`pwsh`) penceresinde** yapıştırılır. Komut, betiği çalıştırmadan **önce sha doğrular** (kanonik ağaç `ulastelli` süreçlerine yazılabilir olduğundan — ana yürütücü Ek B ölçümü); uyuşmazsa hiçbir şey koşmaz.
 
 ```powershell
-& { pwsh -NoProfile -ExecutionPolicy Bypass -File "C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1" }
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'CB4D89D9405EFAEB79818AAF68E3DF96ABB87E1FD8A48D00BC82CF80533FBCFE'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'RT4S cikis=' + $LASTEXITCODE }
 ```
 
-- **Betik sha:** `t-rt4-isolated-rehearsal.ps1` `CB4D89D9405EFAEB79818AAF68E3DF96ABB87E1FD8A48D00BC82CF80533FBCFE`; içinde `t-window-close.ps1` `A81544B8…` sha kapısı + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
+- **Dış sha kapısı** betiğin kendisini doğrular (yukarıdaki komut). **İç kapılar** betiğin içinde: `t-window-close.ps1` `A81544B8…` sha + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
+- **Yürütülen dosyaların ACL'i:** `$OutDir` (`i11s\rt4s\RT4S-<runId>`) **oluşturulur oluşturulmaz** `Set-TrustedAcl` ile korunur (SYSTEM + Administrators + yürütücü, `icacls /inheritance:r`); dinleyici `rt4s-listener.ps1`, `WEB-FAIL.flag`, log ve JSON bu korumalı dizinde doğar. Kayıt `FW-RULES.txt` de `New-Rec` içinde korunur. Böylece bir sandbox hesabı dinleyiciyi/kanıtı değiştiremez (ana yürütücü Ek B bulgusu giderildi).
 - **İzole hedefler:** `HYRT4S-<runId>-BLOCK-<port>` (I11-WINDOW-BLOCK-* ile çakışmaz), görev `HYRT4S-<runId>-WEB`, port 47100–47199. Kayıt `FW-RULES.txt` korumalı. **Dokunulmama tanıkları:** aynı DisplayName'li başka-ad kuralı + ilgisiz WITNESS kuralı; her senaryoda değişmediği doğrulanır.
 - **9 senaryo** gerçek firewall/görev/port ile (mantık harness'ın karşılığı): başarı · kısmi hata · tekrar (zaten yok) · idempotent · R-T4b hata · sorgu hatası≠yokluk · özellik uyuşmaz · kayıt yok · biçim bozuk.
 - Önce/sonra: canlı görev durumu + 8080/3002 PID + I11-WINDOW-BLOCK-* sayısı; sonda `ESIT` ve artık 0 doğrulanır. Çıktı sır içermez. PASS = 9/9 + artık 0 + canlı eşit, çıkış 0.
@@ -79,15 +82,14 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 
 **T-AÇ + T-KAPA değişikliğinin etki alanı — OFFICE 33 (R02 yazıcısı) yenilemeli:** `RELEASE23-TEK-NIHAI-PAKET-R02.md`'de D3-0 `$want` sözlüğü (t-window-apply **ve** t-window-close sha'ları), D3-1 T-AÇ pini, D3-4 T-KAPA sha kapısı ve tablo satırı, §1.5, §7 madde 1, §5.1 sha-uyuşmazlık satırı → yukarıdaki değerler. §9 pini değişmedi. D3-0 zaten `i11live` oluşturmaz; K-T6'nın kesin-ad + FW-RULES.txt üreteceğini D3-1 beklenen sonucuna eklemek yerinde olur.
 
-## 6. Regresyon — refactored T-KAPA tam pencere döngüsü (prova, PS 5.1)
+## 6. Regresyon — refactored T-KAPA tam pencere döngüsü (prova, İKİ KABUK)
 
-Betik sha'sı değiştiği için bir tam döngü koşuldu. R-T4a/R-T4b `live`-özel olduğundan prova onları çalıştırmaz; bu döngü paylaşılan adımların (K-T0/K-T8/R-T1/R-T2/R-T3/R-T5/R-T6/R-T7) gerilemediğini doğrular.
+Betik sha'sı değiştiği için tam döngü **iki kabukta** koşuldu (ana yürütücü ön inceleme bulgusu 3: R02 D3 `pwsh -File` çağırır). R-T4a/R-T4b `live`-özel olduğundan prova onları çalıştırmaz; bu döngü paylaşılan adımların (K-T0/K-T8/R-T1/R-T2/R-T3/R-T5/R-T6/R-T7) gerilemediğini, R-T4a/R-T4b **fonksiyon mantığı** ise §3 harness'ıyla iki kabukta doğrular.
 
-| Adım | Sonuç |
-|---|---|
-| T-AÇ (`B13114CA…`) | çıkış 0 · K-T0a/K-T0/K-T8 · restart 6 sn |
-| İ11 §9 (runId **9ff9ae83**) | **PASS 11/0/0, kapsam TAM** |
-| T-KAPA (`A81544B8…`) | K-T10b VAR · R-T1 geri yazıldı = pin · R-T2 6 sn · R-T3 özgün hedef · R-T5/R-T6/R-T7 · `PENCERE KAPANDI - tum adimlar basarili.` · çıkış 0 |
+| Kabuk | T-AÇ (`B13114CA…`) | İ11 §9 | T-KAPA (`A81544B8…`) |
+|---|---|---|---|
+| Windows PowerShell 5.1 (`-File`) | çıkış 0 · restart 6 sn | runId **9ff9ae83** PASS 11/0/0 TAM | K-T10b VAR · R-T1=pin · R-T2 6 sn · R-T3 özgün · `tum adimlar basarili` · çıkış 0 |
+| PowerShell 7 (`pwsh -File`) | çıkış 0 · restart 6 sn | runId **1437a700** PASS 11/0/0 TAM | aynı adımlar · çıkış 0 · env = pin |
 
 **Kanıt (scratchpad):** `t-rt4-logic-harness.ps1` çıktısı (9/9, iki kabuk); regresyon `i11s/r07window/R09REG-*`. Aday köküne yazma 0 (nöbetçi 88.248/13.600, değişen 0). Canlı: `.env` `7A7228B1…`, :8080 46332, :3002 47004, I11-WINDOW 0, HYRT4S artık 0, görevler Running.
 
