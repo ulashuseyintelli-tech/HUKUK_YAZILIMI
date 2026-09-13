@@ -1,0 +1,243 @@
+{
+    "runId":  "CUT-20260913-200554-ec45bc63",
+    "scope":  "RELEASE23_API_WEB_COORDINATED_CUTOVER_ONLY_RELEASE_LOCAL_ENV_NO_MATERIALIZATION",
+    "deviation":  "RELEASE23 CUTOVER: ONE_TIME / NON_PRECEDENTIAL / RELEASE_LOCAL_ENV_ONLY / NO_MATERIALIZATION",
+    "startedUtc":  "2026-09-13T17:05:54Z",
+    "claimConsumed":  true,
+    "authority":  "CONSUMED",
+    "phase":  "COMMITTED",
+    "verdict":  "C33_RELEASE23_CUTOVER_APPLIED_AND_VERIFIED",
+    "materialization":  {
+                            "started":  true,
+                            "completed":  true
+                        },
+    "cutover":  {
+                    "started":  true,
+                    "quiesced":  true,
+                    "hostReplaced":  true,
+                    "apiLauncherReplaced":  true,
+                    "webLauncherReplaced":  true,
+                    "apiStarted":  true,
+                    "webStarted":  true,
+                    "committed":  true
+                },
+    "rollback":  {
+                     "performed":  false,
+                     "reasons":  [
+
+                                 ],
+                     "complete":  false,
+                     "freshPrivateKey":  "NOT_APPLICABLE"
+                 },
+    "secrets":  {
+                    "generated":  false,
+                    "valuesWritten":  0,
+                    "envCopiedByteExact":  true
+                },
+    "provisioningCalls":  0,
+    "dbMutations":  0,
+    "forceKills":  0,
+    "processStarts":  6,
+    "dbPre":  "130|130|0|0|7660053627876716578|12|53|2",
+    "aclPreimage":  {
+                        "binSddl":  "O:SYG:DUD:PAI(A;OICI;0x1200a9;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;S-1-5-21-3828948545-3622927028-3332160207-1146)",
+                        "binOwner":  "S-1-5-18",
+                        "releaseRootSddl":  "O:S-1-5-21-3828948545-3622927028-3332160207-1146G:DUD:AI(A;OICIID;FA;;;BA)(A;OICIID;FA;;;SY)(A;OICIID;0x1200a9;;;BU)(A;ID;0x1301bf;;;AU)(A;OICIIOID;SDGXGWGR;;;AU)",
+                        "releaseRootOwner":  "S-1-5-21-3828948545-3622927028-3332160207-1146"
+                    },
+    "dbPost":  "130|130|0|0|7660053627876716578|12|53|2",
+    "gates":  [
+                  {
+                      "id":  "P-01",
+                      "name":  "oturum: YUKSELTILMIS Windows PowerShell 5.1 ConsoleHost",
+                      "ok":  true,
+                      "detail":  "ps=5.1.26100.9444 elevated=True"
+                  },
+                  {
+                      "id":  "P-02",
+                      "name":  "R28 paket butunlugu (MANIFEST + payloadDigest)",
+                      "ok":  true,
+                      "detail":  "dosya=61 sapma=0"
+                  },
+                  {
+                      "id":  "P-03",
+                      "name":  "motor hash \u003c-\u003e authority \u003c-\u003e pins bagi",
+                      "ok":  true,
+                      "detail":  "engine=2AE770435B769A21"
+                  },
+                  {
+                      "id":  "P-04",
+                      "name":  "authority: MANIFEST-bagli, paket kimligi exact (authority/pins/MANIFEST package == HY_C33_RELEASE23_CUTOVER_R28; ratifikasyon revizyonu paket numarasi DEGILDIR), kapsam exact, ratificationRef OWNER-SAGLANMIS (desen yalniz BICIM; authority == pins == owner-command -RatificationRef; motor uretmez), tek-kullanim, yukseltme, \u003c=30 dk pencere, suresi gecmemis, claim yok, kimlikler pins ile bagli (P-05 pins \u003c-\u003e canli)",
+                      "ok":  true,
+                      "detail":  "expiresUtc=2026-09-13T17:35:53Z pencere=30dk bagli=True claimVar=False refParam=MATCH"
+                  },
+                  {
+                      "id":  "P-05",
+                      "name":  "aday RELEASE23: makbuz sha pinli, kritik dosyalar ordinal defter + pin ile exact, web BUILD_ID pinli, ledger dosyasi sha pinli",
+                      "ok":  true,
+                      "detail":  "kritik=10/10 buildId=dOiGPj2M0Abls0kCibY4r"
+                  },
+                  {
+                      "id":  "P-05b",
+                      "name":  "release worktree HEAD (detached, .git gitdir isaretcisi uzerinden) == pins sourceCommit == motor literali 2740df3d (owner SABIT aday); drift/eksik = HARD_STOP_CANDIDATE_DRIFT",
+                      "ok":  true,
+                      "detail":  "wtHead=2740df3dd58c pin=2740df3dd58c"
+                  },
+                  {
+                      "id":  "P-06",
+                      "name":  "generation: forward host/API/Web launcher pinli; rollback kopyalari == CANLI bin preimage (byte-exact); pre!=post 3/3; host pinleri (SHA_PAPI/PWEB/MANIFEST) launcher shalarina bagli",
+                      "ok":  true,
+                      "detail":  "liveHost=E744A74BBD90 liveApi=77B6FBCD82E9 liveWeb=1B7654F6A421"
+                  },
+                  {
+                      "id":  "P-07",
+                      "name":  "gorevler: API/Web XML sha pinli, principal runtime SID, action host exe, Running; CutoverWriter MEVCUT ve REGISTERED_IDLE (PRE-06, yukseltilmis olcum: trigger 0, Running degil, LastRun yok, principal SYSTEM, action pinli pwsh, inbox 0 OLCULDU; gorunmez/olculemez = FAIL)",
+                      "ok":  true,
+                      "detail":  "api=Running web=Running writerVisible=True writerIdle=True inbox=0 apiPrincipal=SID_MATCH webPrincipal=SID_MATCH"
+                  },
+                  {
+                      "id":  "P-08",
+                      "name":  "runtime on-durum: API=RELEASE22 tek listener 404, Web=RELEASE22 200, smoke login kayitli (400), host sureci api+web",
+                      "ok":  true,
+                      "detail":  "api=OLD/404 web=OLD/200 smokeOld=400 host=2"
+                  },
+                  {
+                      "id":  "P-09",
+                      "name":  "DB: ledger 130|130|0|0, sysId, Tenant/User/SmokePrincipal sayimlari pinli; backup sha pinli",
+                      "ok":  true,
+                      "detail":  "db=130|130|0|0|7660053627876716578|12|53|2 backup=B7742A0C1F9D8CFE"
+                  },
+                  {
+                      "id":  "P-10",
+                      "name":  "bes port yalniz loopback, LAN 0/5",
+                      "ok":  true,
+                      "detail":  "loopback=True lanAcik=0"
+                  },
+                  {
+                      "id":  "P-11",
+                      "name":  "kok on-durumu: data/ocr-models/writer/broker-escrow MEVCUT (yeniden olusturulmaz); RELEASE22 .env MEVCUT (kaynak); RELEASE23 .env YOK; release koku mevcut, reparse degil; kokler release koku disinda",
+                      "ok":  true,
+                      "detail":  "C:\\Ops\\hukuk\\data=True C:\\Ops\\hukuk\\ocr-models=True C:\\Ops\\hukuk\\writer=True C:\\Ops\\hukuk\\broker\\c33-release17=True env18=True env19Absent=True"
+                  },
+                  {
+                      "id":  "P-12",
+                      "name":  "veri koku esdegerligi: 2 tarife + 2 OCR modeli â€” canli kok kopyasi sha == RELEASE23 kaynak == pin (yeniden seed/overwrite YOK)",
+                      "ok":  true,
+                      "detail":  "tariffs/2025.yaml=True tariffs/2026.yaml=True eng.traineddata=True tur.traineddata=True"
+                  },
+                  {
+                      "id":  "P-13",
+                      "name":  "RELEASE22 .env preimage (kaynak): sha pinli, 25 anahtar, 4 R22 anahtari MEVCUT, JWT_SECRET/DATABASE_URL mevcut (deger okunmaz)",
+                      "ok":  true,
+                      "detail":  "anahtar=25 yeni=4"
+                  },
+                  {
+                      "id":  "P-14",
+                      "name":  "pinned pwsh + klon manifest sha; node exe sha; eski C37 broker handle 4/4 mevcut (dokunulmaz); pwsh klon ACL protected",
+                      "ok":  true,
+                      "detail":  "pwsh=True node=True oldHandles=True pwshAclProtected=True"
+                  },
+                  {
+                      "id":  "P-15",
+                      "name":  "ACL preimage SDDL kaydedildi (bin, release koku); task hesabi host+launcher+bin uzerinde efektif RX (pre)",
+                      "ok":  true,
+                      "detail":  "binProtected=True relProtected=False"
+                  },
+                  {
+                      "id":  "P-16",
+                      "name":  "kod yuzeyi: yasak komut 0 (7 token: surec oldurme/ogeleri silme/DB restore/politika/expression/process-start), yasak literal 0 (8 token: prisma mutasyonu/rekursif/yikici DML/provision ucu), Register/Unregister-Task 0, keygen 0, secret uretimi 0, tek Replace-FileAtomic, seam pinli, ACL tablo pinli, parse 0",
+                      "ok":  true,
+                      "detail":  "yasakCmd=0 yasakLit=0 reg=0 unreg=0 keygen=0 secret=[REDACTED] repl=1 seam=841291BAE90E"
+                  },
+                  {
+                      "id":  "P-17",
+                      "name":  "journal/makbuz dizinleri hazir; bu nonce icin onceki journal yok",
+                      "ok":  true,
+                      "detail":  "journal=CUT-20260913-200554-ec45bc63.jsonl"
+                  },
+                  {
+                      "id":  "P-18",
+                      "name":  "writer control plane MEVCUT (inbox OLCULDU: istek 0); broker escrow MEVCUT (public key mevcut; private key okunmaz); RELEASE22 giris dosyalari dokunulmadan kalacak (rollback kaynagi)",
+                      "ok":  true,
+                      "detail":  "inbox=0"
+                  },
+                  {
+                      "id":  "B-01",
+                      "name":  "claim TUKETILDI (CreateNew)",
+                      "ok":  true,
+                      "detail":  "claim=CLAIM-9adc4405ebb2445c834b1eee144baabe.json"
+                  },
+                  {
+                      "id":  "H-01",
+                      "name":  "RELEASE23 .env: RELEASE22 baytlari AYNEN (kaynak sha pinli, CreateNew, hedef sha == kaynak), anahtar sayisi pinli, zorunlu anahtarlar var, YENI deger 0; ACL RUNTIME_CONFIG_FILE (runtime FR, yazma 0) + parent RUNTIME_CONFIG_PARENT; owner SYSTEM",
+                      "ok":  true,
+                      "detail":  "anahtar=25 aclFile=True aclParent=True"
+                  },
+                  {
+                      "id":  "H-02",
+                      "name":  "RELEASE23 release koku READ-ONLY (IMMUTABLE_RELEASE: protected, Authenticated Users ACE 0, runtime RX, OWNER RIGHTS RX devralinir); task hesabi entry dosyalarini okuyabilir, yazamaz (PRE-07)",
+                      "ok":  true,
+                      "detail":  "aclRel=True childInherited=True"
+                  },
+                  {
+                      "id":  "H-03",
+                      "name":  "canli kokler/bin ACL siniflari DOGRULANDI (yeniden uygulama YOK): bin=BIN_CONTROL data=MUTABLE_DATA ocr=OCR_MODELS writer=CONTROL_PLANE, owner SYSTEM; task hesabi bin/host/launcher efektif RX, host yazma 0",
+                      "ok":  true,
+                      "detail":  "bin=True data=True ocr=True writer=True rx=True"
+                  },
+                  {
+                      "id":  "H-04",
+                      "name":  "PRE-01 (RELEASE23 .env), PRE-06 (CutoverWriter REGISTERED_IDLE, P-07 yukseltilmis olcum), PRE-07 (release koku read-only) dogrulandi; PRE-08 launcher baglama cutover adiminda",
+                      "ok":  true,
+                      "detail":  "PRE-01=True PRE-06=True PRE-07=True PRE-08=STAGED(launcher swap C fazinda)"
+                  },
+                  {
+                      "id":  "C-01",
+                      "name":  "quiesce: API+Web gorevleri Disable+Stop; dinleyici 8080/3002 0, eski node/host sureci 0 (bounded, force-kill 0)",
+                      "ok":  true,
+                      "detail":  "attempts=2 elapsedMs=1323"
+                  },
+                  {
+                      "id":  "C-02",
+                      "name":  "atomik degisim: host + API launcher + Web launcher (preimage exact -\u003e File.Replace -\u003e postimage exact); task hesabi RX korundu",
+                      "ok":  true,
+                      "detail":  "host=True api=True web=True rx=True"
+                  },
+                  {
+                      "id":  "C-03",
+                      "name":  "API RELEASE23: tek listener + tek node + tek host (cron cift-instance 0); / 404; capabilities 200; smoke login kayitli (400); provision loopback bad-signature 403 (imza -\u003e public key AKTIF, fail-closed); provision LAN 403 (loopback zorunlu); DB snapshot degismedi (provisioning 0)",
+                      "ok":  true,
+                      "detail":  "up=True cap=200 login=400 provLoop=403 provLan=403 single=True dbSame=True"
+                  },
+                  {
+                      "id":  "C-04",
+                      "name":  "Web RELEASE23: tek listener/node; / 200; BUILD_ID pinli _buildManifest 200",
+                      "ok":  true,
+                      "detail":  "up=True buildManifest=200 single=True"
+                  },
+                  {
+                      "id":  "V-01",
+                      "name":  "bes port loopback, LAN 0/5; DB snapshot degismedi (ledger 129, sysId, Tenant/User/SmokePrincipal); backup degismedi",
+                      "ok":  true,
+                      "detail":  "db=130|130|0|0|7660053627876716578|12|53|2"
+                  },
+                  {
+                      "id":  "V-02",
+                      "name":  "gorevler: API/Web Running + XML degismedi; CutoverWriter REGISTERED_IDLE (trigger 0, Running degil, LastRun yok, inbox 0 olculdu); RELEASE22 .env ve RELEASE22 entry dosyalari degismedi (rollback kaynagi korunur)",
+                      "ok":  true,
+                      "detail":  "api=Running web=Running writer=Ready"
+                  },
+                  {
+                      "id":  "V-03",
+                      "name":  "PRE-01/06/07/08 yeniden dogrulandi (canli ACL siniflari degismedi, RELEASE23 .env, release koku read-only, bin BIN_CONTROL, launcher/host baglama = RELEASE23)",
+                      "ok":  true,
+                      "detail":  ""
+                  }
+              ],
+    "failedGates":  [
+
+                    ],
+    "pass":  31,
+    "total":  31,
+    "finishedUtc":  "2026-09-13T17:07:26Z"
+}

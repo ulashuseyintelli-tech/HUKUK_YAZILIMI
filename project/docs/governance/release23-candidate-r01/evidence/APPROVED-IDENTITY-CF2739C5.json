@@ -1,0 +1,371 @@
+{
+ "record": "HY_C33_RELEASE23_CUTOVER_R28.APPROVED-IDENTITY (DEGISMEZ PAKET TABANI)",
+ "ownerRatificationRef": "OWNER-RATIFICATION-C33-RELEASE23-CUTOVER-20260913-R01",
+ "ratificationDoc": {
+  "path": "docs/OWNER-RATIFICATION-C33-RELEASE23-CUTOVER-20260913-R01.md",
+  "sha256": "17E7BAFAC861DD6ACC242AD04FF899D0D6874B37B677FFFA8BE1C0009D4397D5"
+ },
+ "decisionText": {
+  "path": "project/docs/governance/release23-candidate-r01/RELEASE23-TEK-NIHAI-PAKET-R03.md",
+  "mainCommit": "413f82667a6bc1e3a7bfe3a5e37278f28ed55094",
+  "sha256": "AF56312F0BD9809C36A192213D8B09C145FAD856B14E2C76DBBD67E5339FCCA2"
+ },
+ "preparedUtc": "2026-09-13T16:48:11Z",
+ "approvalState": "OWNER_GO_CONDITIONAL_K_KIMLIK - owner GO 2026-09-13 (R03 par.7 m.4): bu digest icin onay YALNIZ K-KIMLIK kosuluyla gecerlidir: OR-03a OFFICE 33 ve ana yurutucu tarafindan BAGIMSIZ hesaplanip ESIT; dosya kumesi PACKAGE-IDENTITY 4A7B52DC ile AYNI; sha farki yalniz izinli 3 dosyada. Ana yurutucu hesabi bu dosyanin DISINDA kaydedilir; eslesmezse OWNER-RUN KOSULMAZ.",
+ "package": "HY_C33_RELEASE23_CUTOVER_R28",
+ "bindings": {
+  "forward": {
+   "release": "HY_W4_RELEASE23",
+   "sourceCommit": "2740df3dd58c5e711a790cc21a5f69d6dbffb35d",
+   "generation": "R23"
+  },
+  "rollback": {
+   "release": "HY_W4_RELEASE22",
+   "sourceCommit": "137406701248858221d12be94a941f8837a2a245",
+   "generation": "R22"
+  }
+ },
+ "engineSha256": "2AE770435B769A21CFF495BF2224A3385EE27A3DD2E5E6E538D6BB3218DFA927",
+ "ownerPreflight": {
+  "path": "preflight\\OWNER-PREFLIGHT-20260913-163708.json",
+  "sha256": "BA32673AEB128F27B08AB70FD8F27C297A67CD2DFAFBA31661D5769058929F62",
+  "note": "Adim 1 kosum 2 (dogrudan yukseltilmis WinPS 5.1). Kosum 1 preflight/OWNER-PREFLIGHT-20260913-152940.json 75D33F3B... kayitta kalir, BAGLANMAZ."
+ },
+ "step2RealPrimitives": {
+  "path": "qualification/REAL-PRIMITIVES-RESULTS.json",
+  "sha256": "5DDBC6818AA35E6BADE578ACA6B1694DA7B5A3137FD625C6450DDED3CDD55EE3",
+  "verdict": "REAL_PRIMITIVES_PASS",
+  "total": 31,
+  "failed": 0,
+  "liveExecuted": true,
+  "notMeasured": 0,
+  "runUtc": "2026-09-13T16:39:21Z"
+ },
+ "step3cOwnerCommandTemplate": {
+  "path": "qualification/OWNER-COMMAND-TEMPLATE-RESULTS.json",
+  "sha256": "05F7588647EBC9B14AA1BD6679C4B759D2CC8DBB72740BBBB2C9308EE1A089C4",
+  "verdict": "OWNER_COMMAND_TEMPLATE_PASS",
+  "pass": 16,
+  "total": 16,
+  "testedTemplateSha256": "324E3C2CEAAB0C9358633B9C1B7D5CCF96676309A0DD80FBAC153FA991D88A45"
+ },
+ "step3dVerifierUnsealed": {
+  "path": "qualification/VERIFY-RESULTS.json",
+  "sha256": "F885C0C4C533419329AADD1C36107D36CFEBA6092654BE164B11F7D5E61FC8DD",
+  "verdict": "PACKAGE_STATIC_VERIFIED_UNSEALED",
+  "failed": 0,
+  "notExecuted": 14,
+  "note": "EXCL_EXACT: listede DEGIL"
+ },
+ "ownerCommandRoot": {
+  "path": "OWNER-COMMAND.C33-CUTOVER.ps1",
+  "sha256": "324E3C2CEAAB0C9358633B9C1B7D5CCF96676309A0DD80FBAC153FA991D88A45",
+  "note": "POST_APPROVAL_ADDED: listede DEGIL; = fork/templates/OWNER-COMMAND.C33-CUTOVER.forked.ps1 bayt-kopyasi; sha OWNER-RUN OR-04b ile pinlenir (3f __OWNER_COMMAND_SHA__)"
+ },
+ "listRule": {
+  "source": "fork/templates/OWNER-RUN.C33-RELEASE23.forked.ps1 :35 POST_APPROVAL_CHANGED, :37 POST_APPROVAL_ADDED, :38 EXCL_EXACT, :53 EXCL_PREFIX, :75-80 EXTRA",
+  "exclExact": [
+   "PACKAGE-IDENTITY.json",
+   "MANIFEST.json",
+   "qualification/VERIFY-RESULTS.json"
+  ],
+  "exclPrefix": [
+   "claims/",
+   "journal/",
+   "cutover-receipts/",
+   "preflight/",
+   "pins/",
+   "authority/"
+  ],
+  "postApprovalAdded": [
+   "OWNER-COMMAND.C33-CUTOVER.ps1",
+   "OWNER-RUN.C33-RELEASE23.ps1",
+   "docs/OWNER-RATIFICATION-C33-RELEASE23-CUTOVER-20260913-R01.md",
+   "docs/APPROVED-IDENTITY-CF2739C5.json"
+  ],
+  "postApprovalChanged": [
+   "fork/templates/OWNER-RUN.C33-RELEASE23.forked.ps1"
+  ],
+  "postApprovalChangedNote": "OWNER-RUN sablonu 3f te doldurulur; bu listede DOLDURULMAMIS sha si ile yer alir ve OR-03b onu atlar (:70).",
+  "order": "ordinal (byte) artan path sirasi"
+ },
+ "algorithmNote": "unsealedDigest OWNER-RUN OR-03a (:64-66) ile AYNI algoritma: her path:sha256 girdisinden SONRA \\n, SONUNCUSU DAHIL, liste sirasiyla, UTF-8. PACKAGE-IDENTITY join(\\n) kullanir; ayni kume icin FARKLI sayi verir.",
+ "kKimlik": {
+  "packageIdentity": {
+   "path": "PACKAGE-IDENTITY.json",
+   "sha256": "4A7B52DC2A824519120DA70BF2BBDBF5BEBA7C5535319CD988465F65E003CA0D",
+   "fileCount": 50
+  },
+  "sameFileSet": true,
+  "onlyInList": [],
+  "onlyInPackageIdentity": [],
+  "shaDiffsVsPackageIdentity": [
+   "fork/templates/OWNER-COMMAND.C33-CUTOVER.forked.ps1",
+   "qualification/OWNER-COMMAND-TEMPLATE-RESULTS.json",
+   "qualification/REAL-PRIMITIVES-RESULTS.json"
+  ],
+  "allowedShaDiffs": [
+   "fork/templates/OWNER-COMMAND.C33-CUTOVER.forked.ps1",
+   "qualification/OWNER-COMMAND-TEMPLATE-RESULTS.json",
+   "qualification/REAL-PRIMITIVES-RESULTS.json"
+  ],
+  "diffsWithinAllowed": true,
+  "independentDigestRequired": "OFFICE 33 (node + PowerShell) ve ana yurutucu; hepsi ESIT olmadan OWNER-RUN KOSULMAZ"
+ },
+ "fileCount": 50,
+ "files": [
+  {
+   "path": "FORK-PROVENANCE.json",
+   "sha256": "0C6A645E17C6F1D82FD1B72F8B1907E79A31BF24952ADD94C0E6C051237D32F7",
+   "bytes": 13809
+  },
+  {
+   "path": "README.OWNER.md",
+   "sha256": "EEDC75863423CBA17485F79656D4E615CAC6090EFC7D951A8F555261CC0FE49C",
+   "bytes": 10870
+  },
+  {
+   "path": "docs/CUTOVER-TIMING.md",
+   "sha256": "69515B43064045D369FE6B428C9496B7A430C17C24795CE7E0732F47E4B63E82",
+   "bytes": 2897
+  },
+  {
+   "path": "docs/LIVE-APPROVAL-PACKAGE-R28.md",
+   "sha256": "8A718CC8B2B08E6A81299D664C900846E3B999E1B60EA8827DA635AF34008103",
+   "bytes": 26725
+  },
+  {
+   "path": "docs/ROLLBACK-PINS.md",
+   "sha256": "D43634E69E2796E651B4BE16F86231212FACC03378BCF766EC88CB951F3D1452",
+   "bytes": 6305
+  },
+  {
+   "path": "engine/Invoke-C33Cutover.ps1",
+   "sha256": "2AE770435B769A21CFF495BF2224A3385EE27A3DD2E5E6E538D6BB3218DFA927",
+   "bytes": 79084
+  },
+  {
+   "path": "evidence/GENERATION-COPY-PROVENANCE.json",
+   "sha256": "888D748E3C8960C481CC3BE3266D5B2D345D80508F6D90967DB405D8A85F4B2F",
+   "bytes": 4115
+  },
+  {
+   "path": "evidence/LAUNCHER-GENERATION.json",
+   "sha256": "52C05ED3B70CC40E50D92567612A822812034313A28CAA603402B8301AC7AA85",
+   "bytes": 2201
+  },
+  {
+   "path": "evidence/WEB-LAUNCHER-GENERATION.json",
+   "sha256": "E8A5D8824C8680F55CC83C7EC7C519B4E9CD64EDC1F92536C1138918204B0D33",
+   "bytes": 1025
+  },
+  {
+   "path": "evidence/seal-gates/seal-gates-s06-s08c.json",
+   "sha256": "F8A155B6EC4A227EC6CE4BEADEA384716C2463DCF90B7F34E0894875CAA8A0A5",
+   "bytes": 3940
+  },
+  {
+   "path": "evidence/seal-gates/seal-gates-s06-s08c.log",
+   "sha256": "E22734858179622DED52939F0C24646B35270B7DA488CF805BB964E4F6873B1F",
+   "bytes": 1862
+  },
+  {
+   "path": "evidence/seal-gates/seal-gates-s06-s08c.ps1",
+   "sha256": "B9B2CFF0593773A10F51F043147D78FC91D6D927EBB9049FD7BAACE208CB2AE3",
+   "bytes": 7881
+  },
+  {
+   "path": "fork/fork-r27-to-r28.js",
+   "sha256": "A5205725AF0D016FA6E7127092802DD4CD9396300CA0DA5FE5C83653573CE909",
+   "bytes": 30034
+  },
+  {
+   "path": "fork/produce-package-identity-r28.js",
+   "sha256": "9C4EBC119F69D9C4C86A8E4A638EAA866AC13C5FA18D6D2193B54563DE11E082",
+   "bytes": 5910
+  },
+  {
+   "path": "fork/stage-generations-r28.js",
+   "sha256": "2A442C77C9F64CA8E77F21CC70CBAD15699425A92943A70148575C8BAD2AD76E",
+   "bytes": 5346
+  },
+  {
+   "path": "fork/templates/OWNER-COMMAND.C33-CUTOVER.forked.ps1",
+   "sha256": "324E3C2CEAAB0C9358633B9C1B7D5CCF96676309A0DD80FBAC153FA991D88A45",
+   "bytes": 8489
+  },
+  {
+   "path": "fork/templates/OWNER-RUN.C33-RELEASE23.forked.ps1",
+   "sha256": "A24C04FD573EDC46C79463DED5586EDD6E8ECABEFC6B15716C83FE4E0E13842D",
+   "bytes": 12090
+  },
+  {
+   "path": "generations/R22/hukuk-task-host.exe",
+   "sha256": "E744A74BBD9053EB60E25459F3650E2CAF65FFCD72FF2A9B2E83ED41834D8706",
+   "bytes": 26112
+  },
+  {
+   "path": "generations/R22/start-api.ps1",
+   "sha256": "77B6FBCD82E9B98291E841E2A1AF9683EBD651AE8C27D31561CB94517640DB51",
+   "bytes": 26878
+  },
+  {
+   "path": "generations/R22/start-web.ps1",
+   "sha256": "1B7654F6A4219B41E7A742DDD0584F91EF91BDAA2DA1C2A7A16C34989110CE3D",
+   "bytes": 20155
+  },
+  {
+   "path": "generations/R23/HOST-GENERATION.json",
+   "sha256": "60256B8B1340DFBC43D7D407385DD53EF62EB0B9ABE45B5BF001E04765AA1DAC",
+   "bytes": 1514
+  },
+  {
+   "path": "generations/R23/PROFILE-ID.txt",
+   "sha256": "E148A15074E33F2C24786D4376360100E70C1806D226C4A4C8E72462373D4C54",
+   "bytes": 41
+  },
+  {
+   "path": "generations/R23/gen-build-manifest.json",
+   "sha256": "29FA103DBC1E2349CEA3142E7B5681CEE569AD9E054392D1A7985844FC96DB14",
+   "bytes": 1582
+  },
+  {
+   "path": "generations/R23/hukuk-task-host.exe",
+   "sha256": "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627",
+   "bytes": 26112
+  },
+  {
+   "path": "generations/R23/hukuk-task-host.gen.cs",
+   "sha256": "783113B4D99C2B597A218C917CAE4E61215C76CBD53673CD44078288088362F7",
+   "bytes": 31600
+  },
+  {
+   "path": "generations/R23/start-api.ps1",
+   "sha256": "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3",
+   "bytes": 26878
+  },
+  {
+   "path": "generations/R23/start-web.ps1",
+   "sha256": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0",
+   "bytes": 20155
+  },
+  {
+   "path": "qualification/C36-BINDING-RESULTS.json",
+   "sha256": "CC4FF8DD78E78485E0EE58976DE37978ACE68031A62F1B60B4603BAFA4B26606",
+   "bytes": 12866
+  },
+  {
+   "path": "qualification/NC-RESULTS.json",
+   "sha256": "3F7F569EF31BCFCB78ACDC0630407546C2DB0C1ED5589FD23395ED088362B4B4",
+   "bytes": 75481
+  },
+  {
+   "path": "qualification/OWNER-COMMAND-TEMPLATE-RESULTS.json",
+   "sha256": "05F7588647EBC9B14AA1BD6679C4B759D2CC8DBB72740BBBB2C9308EE1A089C4",
+   "bytes": 6865
+  },
+  {
+   "path": "qualification/PREFLIGHT-ENTRYPATH-RESULTS.json",
+   "sha256": "AFFCEFBFA8A7E70313913A1D1BFF1C07D802C5282754476451B7FEE3D48DC861",
+   "bytes": 7465
+  },
+  {
+   "path": "qualification/PREFLIGHT-FIXTURE-RESULTS.json",
+   "sha256": "EFDE1A6CF450C7072F96C50E4D92E4FE0AE0362E47D07CF0A4C93AFFB0312FF4",
+   "bytes": 7132
+  },
+  {
+   "path": "qualification/REAL-PRIMITIVES-RESULTS.json",
+   "sha256": "5DDBC6818AA35E6BADE578ACA6B1694DA7B5A3137FD625C6450DDED3CDD55EE3",
+   "bytes": 10992
+  },
+  {
+   "path": "qualification/Run-NegativeControls.ps1",
+   "sha256": "A4E8A906F76AE85CE4972B8A5269FA60E86CD02D0EF53EADF4F3907ACF7A7AD3",
+   "bytes": 46282
+  },
+  {
+   "path": "qualification/Test-C36ReceiptBinding.ps1",
+   "sha256": "54FC14FC9F55BA8DFE8F497B8338DB28D74BEFEAB0C99D1CA35B6399C3E77C28",
+   "bytes": 15457
+  },
+  {
+   "path": "qualification/Test-OwnerCommandTemplate.ps1",
+   "sha256": "6F26D79C3463204ED6E1552B1656F1C502F0B3AC38C4EC803B95353547BEB1C4",
+   "bytes": 14758
+  },
+  {
+   "path": "qualification/Test-OwnerPreflightEntryPath.ps1",
+   "sha256": "650D8D99B6DD6E9CF4B6389D43A80C89DE43264EE75DDD7BE293FF4183EDA866",
+   "bytes": 37375
+  },
+  {
+   "path": "qualification/Test-OwnerPreflightFixture.ps1",
+   "sha256": "EA637140F96D30A72D0A1F950B8741A5781E4310BA11F14FF914973333897DEC",
+   "bytes": 17822
+  },
+  {
+   "path": "qualification/Test-RealPrimitives.ps1",
+   "sha256": "5DCD12B31D2457DA5B8219E7A004426D0A7C1DB932DA754196B6A8D5E74179D2",
+   "bytes": 16755
+  },
+  {
+   "path": "qualification/Verify-Package.node.js",
+   "sha256": "1260E1FF42CF9C3442D2C3005ACF821C7B81646ECC181878359AB9546883EABD",
+   "bytes": 45722
+  },
+  {
+   "path": "qualification/canonical-dirty-exact-set.json",
+   "sha256": "35F528A5D71E33F5391ED9AA82C607C08B9D6485C8E4E1FF98BFC358ED38E833",
+   "bytes": 811
+  },
+  {
+   "path": "qualification/fixture-seam.ps1",
+   "sha256": "6330B6D79B122EF1B0E8B222C1B39DDEF1A98F899D067B9F85AF53871982641A",
+   "bytes": 22476
+  },
+  {
+   "path": "qualification/fixtures/Invoke-OwnerPreflight.tur2.ps1",
+   "sha256": "EC69085313C89F29DFCB20424AEB80828CAB9BD8CBE96A51E8999B8B924D20B2",
+   "bytes": 28917
+  },
+  {
+   "path": "qualification/fixtures/Invoke-OwnerPreflight.tur3.ps1",
+   "sha256": "68C2EFEF5B06CFF0C88FE26D676D1559FE05A17F0B45DE36B5CE57E474429891",
+   "bytes": 34547
+  },
+  {
+   "path": "qualification/fixtures/pwsh-file-manifest.json",
+   "sha256": "84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A",
+   "bytes": 144910
+  },
+  {
+   "path": "qualification/negative-controls.json",
+   "sha256": "3E1C50B513E72ACC105AE4EEA0C4FCBA4718B97FF2FE3374F44BDB2C3F80A5E6",
+   "bytes": 20960
+  },
+  {
+   "path": "qualification/preflight-fixture-seam.ps1",
+   "sha256": "791D24DA6B28A66BF303D6A63EF41DFD3EECDC8155D093236F4278E8840BE6A7",
+   "bytes": 4934
+  },
+  {
+   "path": "qualification/tools/Local-HttpTestServer.ps1",
+   "sha256": "2DFD20C4E1E7996908B77486945C0601C1303E10D5D2249D9EDD19B6F035C6FD",
+   "bytes": 5324
+  },
+  {
+   "path": "tools/Invoke-OwnerPreflight.ps1",
+   "sha256": "0E74F687BEAF55432879BE1E10D40DFB55A223CCED6119E6CC804AC1332E420C",
+   "bytes": 35766
+  },
+  {
+   "path": "tools/Seal-Package.ps1",
+   "sha256": "650971A51F2CF592DA621EEAA92A2883F1580BB2A06A10573BC4ADB4B6DD588B",
+   "bytes": 41261
+  }
+ ],
+ "unsealedDigest": "CF2739C5B86287F66B18CEBDDE7DEC96AA35CF6BCB99C7C2BDA39C0A6FC67B5E",
+ "packageIdentityJoinDigest": "23CF719257DC473E9750B46927C5B47274893CD16057158BBCEAA5A132A4EC4C",
+ "packageIdentityJoinDigestNote": "REFERANS: ayni dosya kumesinin join(\\n), sonda \\n YOK hesabi. OR-03a bunu OKUMAZ."
+}
