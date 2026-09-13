@@ -58,11 +58,13 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 **Yükseltilmiş PowerShell 7 (`pwsh`) penceresinde** yapıştırılır. Komut, betiği çalıştırmadan **önce sha doğrular** (kanonik ağaç `ulastelli` süreçlerine yazılabilir olduğundan — ana yürütücü Ek B ölçümü); uyuşmazsa hiçbir şey koşmaz.
 
 ```powershell
-& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'CB4D89D9405EFAEB79818AAF68E3DF96ABB87E1FD8A48D00BC82CF80533FBCFE'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'RT4S cikis=' + $LASTEXITCODE }
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '41356908278E05263B11D4F6D4DC655BFFF90F0105DF978219EFD81ED2681C32'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'RT4S cikis=' + $LASTEXITCODE }
 ```
 
 - **Dış sha kapısı** betiğin kendisini doğrular (yukarıdaki komut). **İç kapılar** betiğin içinde: `t-window-close.ps1` `A81544B8…` sha + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
-- **Yürütülen dosyaların ACL'i:** `$OutDir` (`i11s\rt4s\RT4S-<runId>`) **oluşturulur oluşturulmaz** `Set-TrustedAcl` ile korunur (SYSTEM + Administrators + yürütücü, `icacls /inheritance:r`); dinleyici `rt4s-listener.ps1`, `WEB-FAIL.flag`, log ve JSON bu korumalı dizinde doğar. Kayıt `FW-RULES.txt` de `New-Rec` içinde korunur. Böylece bir sandbox hesabı dinleyiciyi/kanıtı değiştiremez (ana yürütücü Ek B bulgusu giderildi).
+- **Dinleyici DOSYASIZ (ön inceleme bulgusu 2):** görev eylemi bir `.ps1` yolu çalıştırmaz; dinleyici kodu **`-EncodedCommand`** ile görev tanımına gömülür (yükseltilmiş `Register-ScheduledTask` kaydıyla korunur). Üst zincir korumalı `RT4S-<runId>`'yi yeniden adlandırsa bile görev, değiştirilmiş bir kod dosyası çalıştıramaz. `WEB-FAIL.flag` yalnızca veri dosyasıdır (kod değil).
+- **`$OutDir` sertleştirmesi (bulgu 1):** `-Force` YOK — önceden yerleştirilmiş yabancı sahipli dizin kabul edilmez (varsa DUR); oluşturulur → `Set-TrustedAcl` (SYSTEM+Administrators+yürütücü) → `Get-TrustProblem` boş → `Get-ChildItem` 0; aksi halde DUR. Log/JSON/`FW-RULES.txt` bu korumalı dizinde doğar.
+- **Tek okuma (bulgu 3):** `t-window-close.ps1` bir kez okunur; sha o metinden hesaplanır ve **aynı metin** `ParseInput` ile ayrıştırılır (hash-sonra-tekrar-oku aralığı kapatıldı).
 - **İzole hedefler:** `HYRT4S-<runId>-BLOCK-<port>` (I11-WINDOW-BLOCK-* ile çakışmaz), görev `HYRT4S-<runId>-WEB`, port 47100–47199. Kayıt `FW-RULES.txt` korumalı. **Dokunulmama tanıkları:** aynı DisplayName'li başka-ad kuralı + ilgisiz WITNESS kuralı; her senaryoda değişmediği doğrulanır.
 - **9 senaryo** gerçek firewall/görev/port ile (mantık harness'ın karşılığı): başarı · kısmi hata · tekrar (zaten yok) · idempotent · R-T4b hata · sorgu hatası≠yokluk · özellik uyuşmaz · kayıt yok · biçim bozuk.
 - Önce/sonra: canlı görev durumu + 8080/3002 PID + I11-WINDOW-BLOCK-* sayısı; sonda `ESIT` ve artık 0 doğrulanır. Çıktı sır içermez. PASS = 9/9 + artık 0 + canlı eşit, çıkış 0.
@@ -75,7 +77,7 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 | T-PENCERE-AÇ `t-window-apply.ps1` | `ED64A751…` → **`B13114CAF66D7DC27B0A8C0AF7294E0ED92770CCD474DFCFBDD72D491B55736F`** (K-T6 kesin ad + FW-RULES.txt) |
 | T-PENCERE-KAPA `t-window-close.ps1` | R07 `3F027B0D…` / R08 `88BCEA01…` → **`A81544B8DEEFC9DA4B4271E5FEB3E8AB675469B5A2FB4030426FD7C4AE680EE0`** |
 | İ11 §9 gömülü blok | **DEĞİŞMEDİ** `27E754A721749443F8B3F2F363B7676989FC115BB6B85E6E0982F62644FC6700` |
-| `t-rt4-isolated-rehearsal.ps1` | `CB4D89D9405EFAEB79818AAF68E3DF96ABB87E1FD8A48D00BC82CF80533FBCFE` |
+| `t-rt4-isolated-rehearsal.ps1` | `41356908278E05263B11D4F6D4DC655BFFF90F0105DF978219EFD81ED2681C32` |
 | `t-rt4-logic-harness.ps1` | `945EEEFF942802FD62429C66AE5E09F93BF799E49791089E00F956A267306AE9` |
 
 İki T betiği: yalnız ASCII, LF; PS 5.1.26100 + PS 7.6.5 ayrıştırma hatası 0.
@@ -106,4 +108,6 @@ Betik sha'sı değiştiği için tam döngü **iki kabukta** koşuldu (ana yür�
 - **`{}` artığı** (`C:\Development\HUKUK_YAZILIMI\project\{}`): önceki oturum yan etkisi, DOKUNULMADI, silme owner kararı.
 - **CL_TOKENFIX** disk artığı: ayrı açık kalem, DOKUNULMADI.
 - `i11live` / prova yedek dizinleri sır taşır (korumalı): silme owner kararı.
+- **Kayıt dosyası kalan riski (ön inceleme bulgusu 4):** güvenilir kümedeki (`ulastelli`, Ek B) bir süreç `FW-RULES.txt`'teki adları değiştirirse R-T4a yanlış adları "zaten yok" sayıp hatasız biter, gerçek `I11-WINDOW-BLOCK-*` engeli kalabilir. Bunu **OFFICE D3-5'in bağımsız salt-okuma `I11-WINDOW-BLOCK-*` sayımı** (0 olmalı) yakalar; ek çapa: T-AÇ K-T6 çıktısındaki kesin adlar owner konsolunda görünür. FW-RULES.txt korumalı olsa da güvenilir küme yazabilir — bu kabul edilen kalan risktir; D3-5 sayımı R02/R03'te korunmalı (OFFICE 33'e iletildi).
+- **Kapsam notu (bulgu 5):** T-AÇ K-T6'nın yeni kesin-ad oluşturma yolu `live`-özeldir, hiçbir provada koşmaz (prova K-T6 atlanır); mantık §3 harness'ında, gerçek işlem §4 owner komutunda ölçülür. Prova bütçesi 12 sn, üretim 180 sn (aynı kod yolu, `-Budget` parametresi).
 - İ12 başlatılmadı; İ11 canlı kabulü yapılmadı. Sayaç **10/17**, hizmet kabulü **0/8 tam**.

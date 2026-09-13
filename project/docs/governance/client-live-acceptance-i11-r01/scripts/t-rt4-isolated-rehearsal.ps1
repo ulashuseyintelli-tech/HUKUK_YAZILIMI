@@ -55,24 +55,33 @@ function Set-TrustedAcl([string]$path, [bool]$isDir) {
 
 $RunId = ([guid]::NewGuid().ToString('N')).Substring(0, 8)
 $OutDir = Join-Path $S "i11s\rt4s\RT4S-$RunId"
-New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+# OutDir KORUMASI (ana yurutucu bulgusu 1): -Force YOK (onceden yerlestirilmis, yabanci sahipli dizin/dosya
+# kabul edilmez). Olustur -> korumali DACL -> guven denetimi bos -> ici bos. Aksi halde DUR.
+if (Test-Path -LiteralPath $OutDir) { throw "OutDir zaten var ($OutDir) - onceden yerlestirilmis olabilir; DUR" }
+New-Item -ItemType Directory -Path $OutDir | Out-Null
 Set-TrustedAcl $OutDir $true
+$pOut = Get-TrustProblem $OutDir $true
+if ($pOut) { throw "OutDir guvenilir DEGIL ($pOut) - DUR" }
+if (@(Get-ChildItem -LiteralPath $OutDir -Force).Count -ne 0) { throw 'OutDir korumaya alinirken icine oge yerlestirilmis - DUR' }
 $LogFile = Join-Path $OutDir "RT4S-$RunId.log"
 function Log([string]$m) { Write-Host $m; Add-Content -LiteralPath $LogFile -Value $m -Encoding ASCII }
 Log "RT4S runId=$RunId | PS $($PSVersionTable.PSVersion) | yukseltilmis=True | KESIN KIMLIK | $(Get-Date -Format o)"
 
 # ---- URETIM KOD YOLU ----
 $closePath = Join-Path $ScriptDir 't-window-close.ps1'
-$h = (Get-FileHash -Algorithm SHA256 -LiteralPath $closePath).Hash
+# TEK OKUMA (ana yurutucu bulgusu 3): dosya BIR KEZ okunur; sha ayni metinden hesaplanir; ayni metin
+# ParseInput ile ayristirilir. Hash-sonra-tekrar-oku araligi kapatilir.
+$closeText = [IO.File]::ReadAllText($closePath)
+$h = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($closeText))).Replace('-', '')
 if ($h -ne $CloseSha) { throw "T-KAPA sha UYUSMUYOR ($h) - DUR" }
 $tok = $null; $perr = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile($closePath, [ref]$tok, [ref]$perr)
+$ast = [Management.Automation.Language.Parser]::ParseInput($closeText, [ref]$tok, [ref]$perr)
 if ($perr.Count -ne 0) { throw "T-KAPA ayristirma hatasi $($perr.Count) - DUR" }
 $fns = @($ast.FindAll({ param($n) ($n -is [Management.Automation.Language.FunctionDefinitionAst]) -and ($n.Name -eq $FnName) }, $true))
 if ($fns.Count -ne 1) { throw "T-KAPA icinde $FnName sayisi $($fns.Count) (1 olmali) - DUR" }
 $fnText = $fns[0].Extent.Text
 $fnSha = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($fnText))).Replace('-', '')
-if (-not ([IO.File]::ReadAllText($closePath)).Contains($LiveCall)) { throw 'T-KAPA canli cagri satiri birebir bulunamadi - DUR' }
+if (-not $closeText.Contains($LiveCall)) { throw 'T-KAPA canli cagri satiri birebir bulunamadi - DUR' }
 . ([scriptblock]::Create($fnText))
 Log "URETIM: t-window-close.ps1 sha=$h | $FnName AST ile alindi (satir $($fns[0].Extent.StartLineNumber)-$($fns[0].Extent.EndLineNumber), metin sha=$fnSha) | canli cagri satiri VAR"
 
@@ -90,14 +99,18 @@ $Rec = Join-Path $RecDir 'FW-RULES.txt'
 $BadRec = Join-Path $OutDir 'FW-RULES-bad.txt'
 Log "HEDEFLER: adlar $($Names -join ', ') (portlar $($free -join ', ')) | gorev '$Task' | web portu $WebPort | butce $Budget s"
 
-$Listener = Join-Path $OutDir 'rt4s-listener.ps1'
+# DINLEYICI DOSYASIZ (ana yurutucu bulgusu 2): gorev eylemi bir .ps1 YOLU calistirmaz; kod -EncodedCommand
+# ile gorev tanimina gomulur (yukseltilmis kayitla korunur). Boylece ust zincir yeniden adlandirsa da
+# gorev BASKA/degistirilmis bir kod dosyasi calistiramaz. Port/bayrak/sure encode aninda gomulur.
+# Bayrak yalniz VERI dosyasidir (kod degil); korumali OutDir'de durur, kurcalanirsa en fazla senaryo
+# sonucunu bozar, kod yurutmez.
 $Flag = Join-Path $OutDir 'WEB-FAIL.flag'
-Set-Content -LiteralPath $Listener -Encoding ASCII -Value @'
-param([int]$Port, [string]$FailFlag, [int]$Seconds)
-if (Test-Path -LiteralPath $FailFlag) { exit 7 }
-$l = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, $Port); $l.Start()
-$sw = [Diagnostics.Stopwatch]::StartNew(); while ($sw.Elapsed.TotalSeconds -lt $Seconds) { Start-Sleep -Milliseconds 500 }; $l.Stop()
-'@
+$listenerSrc = @"
+if (Test-Path -LiteralPath '$Flag') { exit 7 }
+`$l = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, $WebPort); `$l.Start()
+`$sw = [Diagnostics.Stopwatch]::StartNew(); while (`$sw.Elapsed.TotalSeconds -lt 900) { Start-Sleep -Milliseconds 500 }; `$l.Stop()
+"@
+$Enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($listenerSrc))
 
 function New-Rec([string[]]$names, [int[]]$ports) {
   if (Test-Path -LiteralPath $RecDir) { Remove-Item -LiteralPath $RecDir -Recurse -Force }
@@ -112,7 +125,7 @@ function New-IsoRule([string]$name, [int]$port) {
 function Iso-RuleCount { @($Names | Where-Object { @(Get-NetFirewallRule -Name $_ -ErrorAction SilentlyContinue).Count -eq 1 }).Count }
 function Stop-TestWeb {
   try { Stop-ScheduledTask -TaskName $Task -ErrorAction Stop } catch { }
-  foreach ($pr in @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Listener) })) { Stop-Process -Id ([int]$pr.ProcessId) -Force -ErrorAction SilentlyContinue }
+  foreach ($pr in @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Enc) })) { Stop-Process -Id ([int]$pr.ProcessId) -Force -ErrorAction SilentlyContinue }
   $sw = [Diagnostics.Stopwatch]::StartNew(); while ($sw.Elapsed.TotalSeconds -lt 30) { if (@(Get-NetTCPConnection -LocalPort $WebPort -State Listen -ErrorAction SilentlyContinue).Count -eq 0) { return }; Start-Sleep -Milliseconds 500 }
   throw "sinama web portu $WebPort 30 s icinde bosalmadi"
 }
@@ -144,7 +157,7 @@ $liveBefore = @{}; foreach ($t in 'HukukPlatform-API', 'HukukPlatform-Web') { $l
 Log "CANLI ONCE: $(($liveBefore.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' ')"
 $fatal = $null; $leftovers = $null
 try {
-  $act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Listener`" -Port $WebPort -FailFlag `"$Flag`" -Seconds 900"
+  $act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $Enc"
   Register-ScheduledTask -TaskName $Task -Action $act -Settings (New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 20)) -Description 'I11 R-T4 izole sinama (CLIENT R09) - canli DEGIL' | Out-Null
   New-NetFirewallRule -Name $Witness -DisplayName $Witness -Direction Inbound -Action Block -Protocol TCP -LocalPort 47198 -Enabled True -Profile Any -ErrorAction Stop | Out-Null
   New-NetFirewallRule -Name $OtherName -DisplayName $OtherDisplaySameAsFirst -Direction Inbound -Action Block -Protocol TCP -LocalPort 47199 -Enabled True -Profile Any -ErrorAction Stop | Out-Null
@@ -172,7 +185,7 @@ finally {
   try { Remove-IsoRules } catch { Log "   iso kural: $($_.Exception.Message)" }
   foreach ($n in @($Witness, $OtherName)) { foreach ($r in @(Get-NetFirewallRule -Name $n -ErrorAction SilentlyContinue)) { Remove-NetFirewallRule -Name $r.Name } }
   try { if (@(Get-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue).Count) { Unregister-ScheduledTask -TaskName $Task -Confirm:$false } } catch { Log "   gorev: $($_.Exception.Message)" }
-  $leftovers = [pscustomobject]@{ rules = @(Get-NetFirewallRule -DisplayName 'HYRT4S-*' -ErrorAction SilentlyContinue).Count; namedRules = @($Names + $Witness + $OtherName | Where-Object { @(Get-NetFirewallRule -Name $_ -ErrorAction SilentlyContinue).Count -ne 0 }).Count; tasks = @(Get-ScheduledTask -TaskName 'HYRT4S-*' -ErrorAction SilentlyContinue).Count; procs = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Listener) }).Count }
+  $leftovers = [pscustomobject]@{ rules = @(Get-NetFirewallRule -DisplayName 'HYRT4S-*' -ErrorAction SilentlyContinue).Count; namedRules = @($Names + $Witness + $OtherName | Where-Object { @(Get-NetFirewallRule -Name $_ -ErrorAction SilentlyContinue).Count -ne 0 }).Count; tasks = @(Get-ScheduledTask -TaskName 'HYRT4S-*' -ErrorAction SilentlyContinue).Count; procs = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Enc) }).Count }
   Log "ARTIK: HYRT4S-* kural=$($leftovers.rules) adli=$($leftovers.namedRules) gorev=$($leftovers.tasks) dinleyici=$($leftovers.procs)"
 }
 $liveAfter = @{}; foreach ($t in 'HukukPlatform-API', 'HukukPlatform-Web') { $liveAfter["$t"] = try { [string](Get-ScheduledTask -TaskName $t -ErrorAction Stop).State } catch { 'X' } }; foreach ($p in 8080, 3002) { $liveAfter["p$p"] = (@(Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique) | Sort-Object) -join ',' }; $liveAfter['iwb'] = @(Get-NetFirewallRule -DisplayName 'I11-WINDOW-BLOCK-*' -ErrorAction SilentlyContinue).Count
