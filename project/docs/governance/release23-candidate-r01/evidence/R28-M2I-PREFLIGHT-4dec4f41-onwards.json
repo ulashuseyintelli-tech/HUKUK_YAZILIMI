@@ -1,0 +1,152 @@
+{
+  "utc": "2026-09-13T14:20:55Z",
+  "rows": [
+    {
+      "sec": "1.3",
+      "item": "engine\\Invoke-C33Cutover.ps1",
+      "exp": "2AE770435B769A21CFF495BF2224A3385EE27A3DD2E5E6E538D6BB3218DFA927",
+      "meas": "2AE770435B769A21CFF495BF2224A3385EE27A3DD2E5E6E538D6BB3218DFA927",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "tools\\Invoke-OwnerPreflight.ps1",
+      "exp": "0E74F687BEAF55432879BE1E10D40DFB55A223CCED6119E6CC804AC1332E420C",
+      "meas": "0E74F687BEAF55432879BE1E10D40DFB55A223CCED6119E6CC804AC1332E420C",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "qualification\\Test-RealPrimitives.ps1",
+      "exp": "5DCD12B31D2457DA5B8219E7A004426D0A7C1DB932DA754196B6A8D5E74179D2",
+      "meas": "5DCD12B31D2457DA5B8219E7A004426D0A7C1DB932DA754196B6A8D5E74179D2",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "tools\\Seal-Package.ps1",
+      "exp": "650971A51F2CF592DA621EEAA92A2883F1580BB2A06A10573BC4ADB4B6DD588B",
+      "meas": "650971A51F2CF592DA621EEAA92A2883F1580BB2A06A10573BC4ADB4B6DD588B",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "qualification\\Verify-Package.node.js",
+      "exp": "1260E1FF42CF9C3442D2C3005ACF821C7B81646ECC181878359AB9546883EABD",
+      "meas": "1260E1FF42CF9C3442D2C3005ACF821C7B81646ECC181878359AB9546883EABD",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "fork\\templates\\OWNER-COMMAND.C33-CUTOVER.forked.ps1",
+      "exp": "894BB522AC26A36E5518CC831AB30F03623C30CC300BE30D44A25D80FD0A3D2D",
+      "meas": "894BB522AC26A36E5518CC831AB30F03623C30CC300BE30D44A25D80FD0A3D2D",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "fork\\templates\\OWNER-RUN.C33-RELEASE23.forked.ps1",
+      "exp": "A24C04FD573EDC46C79463DED5586EDD6E8ECABEFC6B15716C83FE4E0E13842D",
+      "meas": "A24C04FD573EDC46C79463DED5586EDD6E8ECABEFC6B15716C83FE4E0E13842D",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "PACKAGE-IDENTITY.json",
+      "exp": "4A7B52DC2A824519120DA70BF2BBDBF5BEBA7C5535319CD988465F65E003CA0D",
+      "meas": "4A7B52DC2A824519120DA70BF2BBDBF5BEBA7C5535319CD988465F65E003CA0D",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "PACKAGE-IDENTITY files[] disk-esit",
+      "exp": "50/50",
+      "meas": "50/50",
+      "ok": true
+    },
+    {
+      "sec": "1.3",
+      "item": "muhursuz: sealed=false + approvedIdentity=null",
+      "exp": "False|None",
+      "meas": "False|None",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R22 manifest (=manifestDigest)",
+      "exp": "26B31B6976BFB596D399F31EA2688BF79D67FEFF991838E8D3B528E14A911869",
+      "meas": "26B31B6976BFB596D399F31EA2688BF79D67FEFF991838E8D3B528E14A911869",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R22 .env sha (ICERIK OKUNMADI)",
+      "exp": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+      "meas": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "CANLI bin hukuk-task-host.exe = preimage",
+      "exp": "E744A74BBD9053EB60E25459F3650E2CAF65FFCD72FF2A9B2E83ED41834D8706",
+      "meas": "E744A74BBD9053EB60E25459F3650E2CAF65FFCD72FF2A9B2E83ED41834D8706",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R28 generations R22 hukuk-task-host.exe = preimage",
+      "exp": "E744A74BBD9053EB60E25459F3650E2CAF65FFCD72FF2A9B2E83ED41834D8706",
+      "meas": "E744A74BBD9053EB60E25459F3650E2CAF65FFCD72FF2A9B2E83ED41834D8706",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "CANLI bin start-api.ps1 = preimage",
+      "exp": "77B6FBCD82E9B98291E841E2A1AF9683EBD651AE8C27D31561CB94517640DB51",
+      "meas": "77B6FBCD82E9B98291E841E2A1AF9683EBD651AE8C27D31561CB94517640DB51",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R28 generations R22 start-api.ps1 = preimage",
+      "exp": "77B6FBCD82E9B98291E841E2A1AF9683EBD651AE8C27D31561CB94517640DB51",
+      "meas": "77B6FBCD82E9B98291E841E2A1AF9683EBD651AE8C27D31561CB94517640DB51",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "CANLI bin start-web.ps1 = preimage",
+      "exp": "1B7654F6A4219B41E7A742DDD0584F91EF91BDAA2DA1C2A7A16C34989110CE3D",
+      "meas": "1B7654F6A4219B41E7A742DDD0584F91EF91BDAA2DA1C2A7A16C34989110CE3D",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R28 generations R22 start-web.ps1 = preimage",
+      "exp": "1B7654F6A4219B41E7A742DDD0584F91EF91BDAA2DA1C2A7A16C34989110CE3D",
+      "meas": "1B7654F6A4219B41E7A742DDD0584F91EF91BDAA2DA1C2A7A16C34989110CE3D",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R28 generations R23 hukuk-task-host.exe = postimage",
+      "exp": "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627",
+      "meas": "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R28 generations R23 start-api.ps1 = postimage",
+      "exp": "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3",
+      "meas": "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3",
+      "ok": true
+    },
+    {
+      "sec": "1.4",
+      "item": "R28 generations R23 start-web.ps1 = postimage",
+      "exp": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0",
+      "meas": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0",
+      "ok": true
+    }
+  ]
+}

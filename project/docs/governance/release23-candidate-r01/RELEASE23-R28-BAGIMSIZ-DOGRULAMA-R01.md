@@ -455,3 +455,36 @@ kaynak silinmedi (owner kuralı):
 
 Bu ek mühür, authority/nonce, cutover, T-pencere veya canlı yürütme yetkisi DEĞİLDİR; yalnız D3-P kanıtının bağımsız doğrulaması ve
 kalıcı arşividir. Ölçüm 2026-09-13; kanıt zinciri `r28-s6`/`r28-s10` (Ek B) ile tutarlı.
+
+## Ek D — §7 madde 2(i): D1-1 öncesi §1.3/§1.4 yeniden ölçüm + hat boşluğu (owner doğrudan GO 2026-09-13 "R03/R28 koşullu canlı yürütme"; canlı GO içi)
+
+R03 §7 madde 2(i), ana yürütücüye D1-1'den hemen önce §1.3 R28 araçlarının ve §1.4 geri dönüş pinlerinin **yeniden ölçümünü** (kayda
+yazılmış) görev verir; §7 "Sonuçlar kayda yazılmadan D1-4'e geçilmez." Owner canlı yürütme GO'sunu 2026-09-13'te hem ana yürütücü hem
+OFFICE 33 oturumuna DOĞRUDAN verdi; bu ek o gate'in kaydıdır. **SALT OKUMA; `.env` içeriği okunmadı (yalnız sha256); canlı yazma 0.**
+
+### D.1 Yeniden ölçüm — 21/21 EŞİT (kanıt `r28-m2i-evidence.json` sha `74BF8584DE74B2509F5BDECF54707A83B40DFDBF5F77A32A4D73ADF5C55C7695`; bu ekte arşiv adı `evidence/R28-M2I-PREFLIGHT-4dec4f41-onwards.json`, içerik bayt-aynı)
+
+| Bölüm | Öğe | Sonuç |
+|---|---|---|
+| §1.3 | motor `2AE77043…A927` · owner preflight `0E74F687…420C` · Test-RealPrimitives `5DCD12B3…79D2` · Seal `650971A5…588B` · Verifier `1260E1FF…EABD` · OC şablon `894BB522…3D2D` · OR şablon `A24C04FD…842D` | 7/7 EŞİT |
+| §1.3 | `PACKAGE-IDENTITY.json` `4A7B52DC…CA0D` · files[] **50/50 disk-eşit** · sealed=false · approvedIdentity=null | EŞİT |
+| §1.4 | R22 manifest `26B31B69…1869` · R22 `.env` `7A7228B1…FDDC` (içerik okunmadı) | EŞİT |
+| §1.4 | canlı `C:\Ops\hukuk\bin` = `generations\R22` preimage (`E744A74B…` / `77B6FBCD…` / `1B7654F6…`) | 3+3 EŞİT |
+| §1.4 | `generations\R23` postimage (`691BC146…` / `CC634BBF…` / `F39F7A54…`) | 3 EŞİT |
+
+**TOPLAM 21/21 EŞİT, fark 0.** (Bu ek §1.4'ün ağır 88k kök yeniden-hash'ini tekrarlamaz; o Ek A/C öncesi S1e/S1f'te 88.178/88.178
+ölçüldü ve tek fark beklenen ters-yön `.env` P-040 idi. Bu gate araç + pin bütünlüğünü doğrular.)
+
+### D.2 Hat boşluğu — madde 2(ii)
+
+Ölçüm anında (salt okuma): canlı **RELEASE22 dokunulmamış** — :8080 PID 46332 kök `HY_W4_RELEASE22`, :3002 PID 47004 kök
+`HY_W4_RELEASE22`; `I11-WINDOW-BLOCK-*` 0; `HYRT4S-*` artığı 0 (D3-P temizliği); `:2526` dinleyici 0. **Ana yürütücü canlı yazması 0**
+(yalnız salt-okuma ölçüm + git governance PR'ları; hiçbir görev/firewall/`.env`/DB yazması yok). D1 boyunca CLIENT canlıya dokunmuyor
+(D2 hazır beklemede).
+
+### D.3 Sınır ve sonraki gate
+
+Bu ek D1-1'in owner'a sunulması için §7 m2(i) ön koşulunu karşılar. **Değişmeyen kısıtlar:** D1-0 ratifikasyon ref'i ve İ11 ref'i
+owner'dan birebir alınır (yeni referans türetilmez). **K-KİMLİK:** OR-03a digest'i 3e girdileri (canlı GO içinde) oluşunca OFFICE 33 ve
+ana yürütücü tarafından BAĞIMSIZ hesaplanır ve EŞİT bulunmadan D1-4 (OWNER-RUN) yoktur; bu ek onu karşılamaz. Bu ek mühür,
+authority/nonce, cutover veya canlı yürütme yetkisi DEĞİLDİR; yalnız D1-1 öncesi doğrulama gate'inin kaydıdır.
