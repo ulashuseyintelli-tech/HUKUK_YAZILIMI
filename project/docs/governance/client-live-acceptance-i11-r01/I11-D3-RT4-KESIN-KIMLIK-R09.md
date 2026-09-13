@@ -60,10 +60,11 @@ CLIENT oturumu **yükseltilmemiş** (`New-NetFirewallRule` → Erişim engellend
 **Yükseltilmiş PowerShell 7 (`pwsh`) penceresinde** yapıştırılır. Komut, betiği çalıştırmadan **önce sha doğrular** (kanonik ağaç `ulastelli` süreçlerine yazılabilir olduğundan — ana yürütücü Ek B ölçümü); uyuşmazsa hiçbir şey koşmaz.
 
 ```powershell
-& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'B058D35B98A7676C2DB9D729FB1CE521732F24587B8A36DFB6B8C7A88F845D98'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; pwsh -NoProfile -ExecutionPolicy Bypass -File $f; 'RT4S cikis=' + $LASTEXITCODE }
+& { $f='C:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-live-acceptance-i11-r01\scripts\t-rt4-isolated-rehearsal.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'B058D35B98A7676C2DB9D729FB1CE521732F24587B8A36DFB6B8C7A88F845D98'){ throw 'RT4S SHA UYUSMUYOR - DUR' }; $pw=(Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source; $global:LASTEXITCODE=-999; & $pw -NoProfile -ExecutionPolicy Bypass -File $f; $rc=$global:LASTEXITCODE; 'RT4S cikis=' + $rc; if($rc -ne 0){ throw "RT4S PASS DEGIL (cikis=$rc)" } }
 ```
 
 - **Dış sha kapısı** betiğin kendisini doğrular (yukarıdaki komut). **İç kapılar** betiğin içinde: `t-window-close.ps1` `676C1542…` sha + fonksiyon AST özdeşliği + canlı çağrı satırı denetimi.
+- **Çıkış kodu (A4):** `$global:LASTEXITCODE=-999` ön-değeri bayat değeri engeller; `pwsh` mutlak yolla çağrılır; `$rc ≠ 0` ise komut `throw` eder (PASS değilse owner'a görünür).
 - **Dinleyici DOSYASIZ (ön inceleme bulgusu 2):** görev eylemi bir `.ps1` yolu çalıştırmaz; dinleyici kodu **`-EncodedCommand`** ile görev tanımına gömülür (yükseltilmiş `Register-ScheduledTask` kaydıyla korunur). Üst zincir korumalı `RT4S-<runId>`'yi yeniden adlandırsa bile görev, değiştirilmiş bir kod dosyası çalıştıramaz. `WEB-FAIL.flag` yalnızca veri dosyasıdır (kod değil).
 - **`$OutDir` sertleştirmesi (bulgu 1):** `-Force` YOK — önceden yerleştirilmiş yabancı sahipli dizin kabul edilmez (varsa DUR); oluşturulur → `Set-TrustedAcl` (SYSTEM+Administrators+yürütücü) → `Get-TrustProblem` boş → `Get-ChildItem` 0; aksi halde DUR. Log/JSON/`FW-RULES.txt` bu korumalı dizinde doğar.
 - **Tek okuma (bulgu 3):** `t-window-close.ps1` bir kez okunur; sha o metinden hesaplanır ve **aynı metin** `ParseInput` ile ayrıştırılır (hash-sonra-tekrar-oku aralığı kapatıldı).
