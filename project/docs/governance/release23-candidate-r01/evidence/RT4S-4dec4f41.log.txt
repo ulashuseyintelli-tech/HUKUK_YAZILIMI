@@ -1,0 +1,70 @@
+RT4S runId=4dec4f41 | PS 7.6.5 | yukseltilmis=True | KESIN KIMLIK | 2026-09-13T16:45:01.1381037+03:00
+URETIM: t-window-close.ps1 sha=676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF | Invoke-WindowRecoveryRT4 AST ile alindi (satir 184-248, metin sha=C12DAA72CBBCFA62992BA4A0DF59B3496AA1EA860D79FD316821D992DA6CABA7) | canli cagri satiri VAR
+HEDEFLER: adlar HYRT4S-4dec4f41-BLOCK-47100, HYRT4S-4dec4f41-BLOCK-47101 (portlar 47100, 47101) | gorev 'HYRT4S-4dec4f41-WEB' | web portu 47101 | butce 12 s
+CANLI ONCE: HukukPlatform-API=Running HukukPlatform-Web=Running iwb=0 p3002=47004 p8080=46332
+KURULUM: gorev + tanik (HYRT4S-4dec4f41-WITNESS) + baska-pencere (HYRT4S-4dec4f41-OTHER-BLOCK-47100, DisplayName='HYRT4S-4dec4f41-BLOCK-47100')
+
+== S1 basari
+   > R-T4a: kesin-ad engel kurallari - kaldirilan 2, zaten yok 0 (joker YOK; baska kurala dokunulmadi)
+   > R-T4b: Web ayakta (3 sn)
+   hata(0):  | iso_kural=0 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S2a kismi hata (2. ad silinemez)
+   > !!! R-T4a BASARISIZ: ENJEKTE (sinama): kaldirma basarisiz
+   > R-T4b: Web ayakta (3 sn)
+   hata(1): R-T4a: ENJEKTE (sinama): kaldirma basarisiz | iso_kural=1 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S3a tekrar (zaten yok guvenle gecilir)
+   > R-T4a: 'HYRT4S-4dec4f41-BLOCK-47101' zaten YOK (dogrulanmis)
+   > R-T4a: kesin-ad engel kurallari - kaldirilan 1, zaten yok 1 (joker YOK; baska kurala dokunulmadi)
+   > R-T4b: Web ayakta (3 sn)
+   hata(0):  | iso_kural=0 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S2b R-T4b hata
+   > R-T4a: kesin-ad engel kurallari - kaldirilan 2, zaten yok 0 (joker YOK; baska kurala dokunulmadi)
+   > !!! R-T4b BASARISIZ: Web 12 sn icinde ayaga KALKMADI
+   hata(1): R-T4b: Web 12 sn icinde ayaga KALKMADI | iso_kural=0 web=False tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S3b tekrar (R-T4b toparlanma)
+   > R-T4a: 'HYRT4S-4dec4f41-BLOCK-47100' zaten YOK (dogrulanmis)
+   > R-T4a: 'HYRT4S-4dec4f41-BLOCK-47101' zaten YOK (dogrulanmis)
+   > R-T4a: kesin-ad engel kurallari - kaldirilan 0, zaten yok 2 (joker YOK; baska kurala dokunulmadi)
+   > R-T4b: Web ayakta (3 sn)
+   hata(0):  | iso_kural=0 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S4 idempotent
+   > R-T4a: 'HYRT4S-4dec4f41-BLOCK-47100' zaten YOK (dogrulanmis)
+   > R-T4a: 'HYRT4S-4dec4f41-BLOCK-47101' zaten YOK (dogrulanmis)
+   > R-T4a: kesin-ad engel kurallari - kaldirilan 0, zaten yok 2 (joker YOK; baska kurala dokunulmadi)
+   > R-T4b: Web ayakta (3 sn)
+   hata(0):  | iso_kural=0 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S5 sorgu hatasi != yokluk
+   > !!! R-T4a BASARISIZ: 'HYRT4S-4dec4f41-BLOCK-47100' sorgu/erisim hatasi (PermissionDenied) - yoklukla KARISTIRILMAZ: ENJEKTE: erisim
+   > R-T4b: Web ayakta (3 sn)
+   hata(1): R-T4a: 'HYRT4S-4dec4f41-BLOCK-47100' sorgu/erisim hatasi (PermissionDenied) - yoklukla KARISTIRILMAZ: ENJEKTE: erisim | iso_kural=1 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S6 ozellik uyusmaz (dokunma)
+   > !!! R-T4a BASARISIZ: 'HYRT4S-4dec4f41-BLOCK-47100' ozellikleri beklenenden farkli (yon=Inbound eylem=Block port=47197) - DOKUNULMADI
+   > R-T4b: Web ayakta (3 sn)
+   hata(1): R-T4a: 'HYRT4S-4dec4f41-BLOCK-47100' ozellikleri beklenenden farkli (yon=Inbound eylem=Block port=47197) - DOKUNULMADI | iso_kural=1 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+== S7 kayit dosyasi yok
+   > !!! R-T4a BASARISIZ: firewall kayit dosyasi guvenilir DEGIL (YOK (C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i11s\rt4s\RT4S-4dec4f41\rec\FW-RULES.txt)) - joker yedegi YOK
+   > R-T4b: Web ayakta (3 sn)
+   hata(1): R-T4a: firewall kayit dosyasi guvenilir DEGIL (YOK (C:\Users\ulastelli\AppData\Local\Temp\claude\C--Development-HUKUK-YAZILIMI-project\894280b1-443c-4406-86cd-b9e22aad3f7b\scratchpad\i11s\rt4s\RT4S-4dec4f41\rec\FW-RULES.txt)) - joker yedegi YOK | iso_kural=0 web=True tanik=1 diger=1 dokunulmadi=True
+   SONUC: PASS
+
+TEMIZLIK:
+ARTIK: HYRT4S-* kural=0 adli=0 gorev=0 dinleyici=0
+CANLI SONRA: HukukPlatform-API=Running HukukPlatform-Web=Running iwb=0 p3002=47004 p8080=46332 | ESIT=True
+
+SONUC: PASS | senaryo 9/9 | artik temiz=True | canli esit=True

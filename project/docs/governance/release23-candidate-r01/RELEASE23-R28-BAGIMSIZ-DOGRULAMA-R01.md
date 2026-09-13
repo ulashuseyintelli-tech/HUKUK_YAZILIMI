@@ -405,3 +405,53 @@ Istege bagli iki secenek var; ikisi de betik degisikligi ister (yeni hash → R0
 - **(b)** Yakalayici kaydinin ozetini T-AC/T-KAPA arasinda yukseltilmis bagimda tutmak.
 
 Pencere sonrasi `i11live` silme karari owner'dadir (R02 §8).
+
+## Ek C — D3-P izole R-T4 provası (owner koşumu) bağımsız doğrulaması ve kalıcı kanıt (owner GO 2026-09-13; runId 4dec4f41)
+
+Owner, R03 §4 (D3-P) hash-kontrollü tek komutunu **yükseltilmiş PowerShell 7** penceresinde çalıştırdı; runId **4dec4f41**. Ana yürütücü bu
+koşumu **yeniden çalıştırmadan**, yalnız kanıt dosyalarını içerikten hash'leyip okuyarak bağımsız doğruladı (owner GO madde 1). `.env`
+içeriği okunmadı; kanıt dosyaları sır içermez (yalnız kural/görev/port adları, PID, yol).
+
+### C.1 Kanıt bütünlüğü — içerikten hash (owner beklediği değerle EŞİT)
+
+| Dosya | sha256 (ölçülen) | owner beklentisi | sonuç |
+|---|---|---|---|
+| `RT4S-4dec4f41.log` | `A27D054953278E6542097A705303C10B6E3E36F5536D7D87D87B2CE1404C43CF` | `A27D0549…C43CF` | **EŞİT** |
+| `RT4S-4dec4f41.json` | `548258082703F2330A5EC7D488DFB5CCBF3EEF84C40EE0C10150B3C28CCC675F` | `54825808…C675F` | **EŞİT** |
+
+### C.2 İçerik doğrulaması
+
+| Kontrol | Ölçülen |
+|---|---|
+| Verdict | `PASS` · senaryo 9/9 · `fatal: null` |
+| Artık | `leftovers` rules 0 · namedRules 0 · tasks 0 · procs 0 (log "ARTIK: HYRT4S-* kural=0 adli=0 gorev=0 dinleyici=0") |
+| Canlı eşit | `liveEqual: true` — ÖNCE=SONRA: `HukukPlatform-API=Running Web=Running iwb=0 p3002=47004 p8080=46332` |
+| Yükseltilmiş | log "yukseltilmis=True"; gerçek `New/Remove-NetFirewallRule`, `Register/Start/Stop-ScheduledTask` işlemleri koştu (S6 gerçek özellik okuması `port=47197`, S5 gerçek `PermissionDenied` enjeksiyonu) |
+| 9 senaryo | S1 başarı · S2a kısmi hata (R-T4b yine koştu, iso_kural=1) · S3a tekrar (zaten yok) · S2b R-T4b hata · S3b toparlanma · S4 idempotent · S5 sorgu hatası≠yokluk · S6 özellik uyuşmaz (DOKUNULMADI) · S7 kayıt yok — hepsi PASS, tanık/başka-pencere kuralı "dokunulmadi=True" |
+| Üretim kod yolu | `closeSha=676C1542089C251F31318B4FC8D3884596831AB9EC8662BE0FFA822F90382DEF` = main T-KAPA; `functionTextSha=C12DAA72CBBCFA62992BA4A0DF59B3496AA1EA860D79FD316821D992DA6CABA7` — ana yürütücü main `t-window-close.ps1`'den `Invoke-WindowRecoveryRT4` metnini AST ile çıkarıp bağımsız türetti, **EŞİT**. Yani koşum gerçek üretim fonksiyonunu kullandı |
+
+**Özyineleme kapandı (Ek A/B'deki belirsizlik):** yükseltilmiş gerçek koşumda S2a/S5 enjeksiyonları "call depth overflow"
+ÜRETMEDİ (sahte-cmdlet artefaktıydı; R10 modül-nitelikli `NetSecurity\…` çağrısı + gerçek NetSecurity fonksiyonunun özyinelememesi).
+R-T4a gerçek firewall kaldırma ve R-T4b gerçek görev+port yolu gerçek işlemle geçti.
+
+### C.3 Kalıcı kanıt arşivi
+
+İki dosya kaynaktan (CLIENT oturum scratchpad'i `…\894280b1-…\scratchpad\i11s\rt4s\RT4S-4dec4f41\`) repo içinde kalıcı arşive kopyalandı;
+kaynak silinmedi (owner kuralı):
+
+| Arşiv yolu (repo) | sha256 | kaynak==hedef |
+|---|---|---|
+| `project/docs/governance/release23-candidate-r01/evidence/RT4S-4dec4f41.log.txt` (ad `.txt` eki repo `*.log` ignore'unu aşar; içerik bayt-aynı) | `A27D0549…C43CF` | EŞİT |
+| `project/docs/governance/release23-candidate-r01/evidence/RT4S-4dec4f41.json` | `54825808…C675F` | EŞİT |
+
+### C.4 6a(i) kapanışı — 6a(ii) açık
+
+- **§7 madde 6a(i) (R-T4a/R-T4b gerçek işlem kanıtı) KAPANDI:** artık kaynak+AST benzeşimi değil, owner'ın yükseltilmiş koşumunda
+  gerçek firewall/görev/port işlemleriyle 9/9 PASS + artık 0 + canlı eşit var (C.1–C.2). R03 §7 metnindeki "kabul VEYA D3-P" seçeneği
+  D3-P PASS lehine gerçekleşti.
+- **§7 madde 6a(ii) (güven sınırı: aynı yürütücü hesabındaki yükseltilmemiş süreçler güvenilir kümede) bu kayıtta AÇIK bırakıldı** —
+  bir owner kabul kalemidir; owner canlı GO'da (2026-09-13 "R03 / KOŞULLU CANLI YAYIN") bunu açıkça kabul etti; canlı yürütme kararının
+  parçasıdır, bu doğrulama kaydının kapatacağı bir teknik kalem değildir.
+
+Bu ek mühür, authority/nonce, cutover, T-pencere veya canlı yürütme yetkisi DEĞİLDİR; yalnız D3-P kanıtının bağımsız doğrulaması ve
+kalıcı arşividir. Ölçüm 2026-09-13; kanıt zinciri `r28-s6`/`r28-s10` (Ek B) ile tutarlı.
