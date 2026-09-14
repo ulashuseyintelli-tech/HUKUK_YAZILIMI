@@ -67,6 +67,26 @@ if (!STATE || !TRIGGER || !RESULT || !DIST) {
               const res = await self.runMonthlyDelivery(new Date(), tenantId ? { tenantId } : {});
               writeResult({ record: 'I12-CRON-DIRECT', mode: 'runMonthlyDelivery', scopeTenant: tenantId || null, result: res, ms: Date.now() - before });
               console.log('[i12-cron-hook] direct runMonthlyDelivery TAMAM');
+            } else if (cmd.startsWith('shortcron')) {
+              // (d) IZOLE ORTAMDA KISA TAKVIM: zamanlayici KENDILIGINDEN tetiklesin (fireOnTick DEGIL).
+              // Yeni bir CronJob KISA ifade ('*/2 * * * * *' = her 2 sn) ile SchedulerRegistry'ye eklenir;
+              // onTick urunun handleMonthlyCron'unu cagirir. Her OTONOM tetik sayilir + kaydedilir.
+              // 'cron' paketi APP node_modules'inda (hook repo scripts'ten --require ile yuklenir);
+              // app kokunden resolve et (DIST = .../api/dist/apps/api/src → api/node_modules).
+              const APP_NM = path.resolve(DIST, '..', '..', '..', '..', 'node_modules');
+              const { CronJob } = require(require.resolve('cron', { paths: [APP_NM] }));
+              let fires = 0; let lastResult = null; const name = 'i12-shortcron-' + Date.now();
+              const cj = new CronJob('*/2 * * * * *', async () => {
+                fires += 1;
+                try { lastResult = await self.runMonthlyDelivery(new Date(), {}); } catch (e) { lastResult = { error: e && e.message ? e.message : String(e) }; }
+                writeResult({ record: 'I12-CRON-SHORT', mode: 'scheduler-self-tick (2s cron)', accelerated: true, autonomousFires: fires, lastResult, note: 'KISA TAKVIM izole prova hizlandirmasi — canli takvim (0 3 1 * *) kaniti DEGILDIR' });
+              }, null, false);
+              self.scheduler.addCronJob(name, cj); cj.start();
+              console.log('[i12-cron-hook] shortcron kayitli (2s) — otonom tetik basladi');
+              // 9 sn sonra durdur (birkac otonom tetik olusur)
+              await new Promise((r) => setTimeout(r, 9000));
+              try { cj.stop(); self.scheduler.deleteCronJob(name); } catch (e) {}
+              console.log(`[i12-cron-hook] shortcron durdu — otonom tetik=${fires}`);
             } else if (cmd === 'fire') {
               // (c) GERCEK zamanlayici tetigi: SchedulerRegistry cron job'unu fireOnTick ile HIZLANDIR
               const job = self.scheduler.getCronJob(JOB_CLASS);

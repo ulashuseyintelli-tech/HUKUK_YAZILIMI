@@ -107,6 +107,24 @@ async function waitFor(fn, ms, step = 400) { const t0 = Date.now(); while (Date.
         fired.fired === true,
         `fired=${fired.fired} · accelerated=${fired.accelerated} · yontem=${fired.mode} · NOT: ${fired.note}`);
     }
+
+    // (d) KISA TAKVIM: zamanlayici KENDILIGINDEN (otonom) tetikler — fireOnTick DEGIL
+    // Onceki tetik islemi bitene kadar bekle (hook busy iken yazarsak watchFile kacirir).
+    await waitFor(async () => { try { return fs.readFileSync(TRIGGER, 'utf8').trim() === 'done' ? true : null; } catch (e) { return null; } }, 8000, 300);
+    try { fs.unlinkSync(RESULT); } catch (e) {}
+    await new Promise((r) => setTimeout(r, 500));
+    fs.writeFileSync(TRIGGER, `shortcron ${tenantId}`, 'utf8');
+    const shortR = await waitFor(async () => { const r = readJson(RESULT); return r && r.record === 'I12-CRON-SHORT' && r.autonomousFires >= 2 ? r : null; }, 20000, 700);
+    // teslim/dedupe: aylik teslim SENT bildirim + ayni donem tekrar (otonom tetikler ayni periodKey) → ek gonderim
+    const notif = await L.safeCount(() => prisma.clientNotification.count({ where: { tenantId, status: 'SENT' } }));
+    if (!shortR) { R.unmeasured('G7d-SELF', 'kisa takvim otonom tetik', 'otonom tetik >=2 gozlenmedi (zaman asimi)'); }
+    else {
+      const lr = shortR.lastResult || {};
+      const delivered = typeof lr.delivered === 'number' ? lr.delivered : null;
+      R.check('G7d-SELF', 'KISA TAKVIM (2s): zamanlayici KENDILIGINDEN >=2 kez tetikledi (fireOnTick DEGIL, otonom); her tetik runMonthlyDelivery kosar; ayni donem tekrarinda ek TESLIM yok',
+        shortR.autonomousFires >= 2 && lr && typeof lr.scanned === 'number' && lr.periodKey != null,
+        `otonom tetik=${shortR.autonomousFires} · son kosum scanned=${lr.scanned} generated=${lr.generated} delivered=${delivered} planned=${lr.planned} periodKey=${lr.periodKey} · SENT bildirim(tenant)=${notif.value} · NOT: ${shortR.note} · teslim ICERIGI (send>0/ledger markSent) donem-aktivitesi fikstürü ister — jest c3b04 + canli §7`);
+    }
   } catch (e) {
     console.error(`\nKOSUM DURDU: ${e && e.message ? e.message : e}`); process.exitCode = 1;
   } finally {

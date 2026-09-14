@@ -132,6 +132,33 @@ Kaynak salt-okuma; **canlı `HY_W4_RELEASE23` köküne, canlı DB'ye, canlı .en
 >   canlı kanıt) + gerçek zamanlayıcı: **canlı takvim `0 3 1 * *`** ya beklenir ya da owner onaylı hızlandırma açıkça
 >   ayrı kaydedilir (prova hızlandırması canlı takvim kanıtı sayılmaz).
 > - Ölçüm kuralları prova ile aynı (üç değerli verdict; UNMEASURED PASS olmaz; HTTP kodu tek başına yetmez).
+>
+> **7.3 · Somut yürütme (tek tutarlı paket):**
+> - **Betikler + hash:** ölçüm betikleri bu paketin `scripts/`'idir (`i12-gaps.js`·`i12-gaps2.js`·`i12-cron-hook.js`·
+>   `i12-cron-run.js`·`i12-allowlist.js`), İ3 düzeneği (`i3-lib`/`i3-start-api`/`i3-sink`/`i3-spy`/`i3-h5-intake`). Canlı
+>   GO'da her betiğin main'deki (`bdbdf770` ⊇) sha256'sı §D3-benzeri sha kapısıyla doğrulanır; **disposable kapıları
+>   (G-0, `ah-lib.assertDisposableEnvironment`) KALDIRILMAZ** — canlı yürütme İ11 Yöntem-T penceresi + owner'ın
+>   yükseltilmiş komutlarıyla yapılır, prova betikleri canlıya UYARLANMAZ (owner kuralı). Canlı ölçüm betiği ayrıca
+>   yazılırsa (canlı DB'ye salt-okuma + tek canlı API), sha'sı GO'da pinlenir.
+> - **Test sağlayıcısı + sayaç bağlama:** tek canlı API'nin SMTP'si pencerede `127.0.0.1:<sink>`e yönlendirilir
+>   (Yöntem-T). FD yolunda gerçek `dispatcher.send` `i3-spy` deseniyle (ürün kodu değişmez, `--require`) sayılır;
+>   bilgi-talebi yolunda sink `conn-*` sayımıyla. **İkinci bir canlı-DB API AÇILMAZ.**
+> - **Mock/allowlist (G5) canlı:** allowlist-DIŞI reddi **ayrı bir canlı-DB API ile DEĞİL**, pencerede tek API'nin
+>   sağlayıcı yapılandırmasını geçici olarak allowlist-dışı bir değere (`mock`/tanımsız) alıp **tek bir yayın denemesi**
+>   ile ölçülür (403 `PROVIDER_NOT_PRODUCTION`, send=0), sonra allowlist-içi (`smtp`) değere geri alınır (env pin +
+>   geri-alma). Alternatif: G5 provada kanıtlı olduğundan canlıda yalnız "etkin sağlayıcı allowlist-içi" doğrulaması.
+> - **Yazılacak kayıt envanteri (yalnız başarı yolları):** G3 `ClientFinancialDisclosureVersion.status=PUBLISHED` +
+>   `providerMessageId` + 2 `AuditLog` (`_SENT`,`_PUBLISHED`); RECLAIM aynı sürümde tek ek `_PUBLISHED`; G7 teslimde
+>   `ClientStatement` + teslim defteri `markSent` + `ClientNotification`. **Kayıt YAZILMAYAN:** G1/G2 (503), FD-RED/
+>   FD-TMO/HANG (SEND_FAILED, PUBLISHED yok), G4/CLAIM ikinci yol (guard), G5 (yayın yok).
+> - **Cron kapsamı:** aylık iş yalnız `CLIENT_STATEMENT_MONTHLY_DELIVERY==='true'` iken kaydolur; kapsam
+>   `ACTIVE_TENANT_WHERE` (canlı tenant'lar) — canlıda predicate + doğrudan `runMonthlyDelivery(now, {tenantId})`
+>   scope'lu çağrı ile kanıtlanır; **gerçek zamanlayıcı ya canlı takvim `0 3 1 * *` beklenir ya da owner onaylı
+>   hızlandırma AYRI kaydedilir** (prova `fireOnTick`/kısa-takvim hızlandırması canlı takvim kanıtı SAYILMAZ). Canlı
+>   scheduler'a kalıcı kısa-cron EKLENMEZ.
+> - **Bakım/kurtarma/kapanış:** pencere İ11 T-PENCERE-AÇ/KAPA deseniyle (env sha pin + geri-alma); açıkken geri dönüş
+>   gerekirse ÖNCE pencere kapanışı (SMTP özgün hedefe geri, sağlayıcı allowlist-içi), sonra §5.3. Kapanış: erişim
+>   sonlandırma (çıkıştan bağımsız) + izolasyon/geri-alma doğrulaması + kanıt SHA256 manifesti korumalı yerel arşive.
 
 ## 8. Hazırlık durumu (bu belge)
 
@@ -165,7 +192,28 @@ kanıtı DEĞİLDİR** — yalnız zamanlayıcının kayıtlı job'u gerçekten 
 **Ölçülemeyen / kapsam dışı bırakılan:** yok. Yedi gözlemin tamamı gerçek çıktıyla PASS. **Prova kanıtı ≠ canlı kabul
 kanıtı** — İ12 KAPANMADI; sayaç **11/17**, hizmet **0/8 tam**. Canlı kabul ayrı owner GO'su (§7) ister.
 
-**Scriptler (bu paket):** `scripts/i12-gaps.js` (G3/G4/G6/FD-RED/FD-TMO) · `scripts/i12-cron-hook.js` +
-`scripts/i12-cron-run.js` (G7) · `scripts/i12-allowlist.js` (G5). İ3 düzeneği (`i3-lib`/`i3-start-api`/`i3-sink`/
-`i3-spy`/`i3-h5-intake`) yeniden kullanıldı; RELEASE23'e env override ile yönlendirildi. Ref literali/`.env` değeri/sır
-scriptlerde YOK.
+**Scriptler (bu paket):** `scripts/i12-gaps.js` (G3/G4/G6/FD-RED/FD-TMO) · `scripts/i12-gaps2.js` (claim/reclaim/hang) ·
+`scripts/i12-cron-hook.js` + `scripts/i12-cron-run.js` (G7 a/b/c/d) · `scripts/i12-allowlist.js` (G5). İ3 düzeneği
+(`i3-lib`/`i3-start-api`/`i3-sink`/`i3-spy`/`i3-h5-intake`) yeniden kullanıldı; RELEASE23'e env override ile
+yönlendirildi. Ref literali/`.env` değeri/sır scriptlerde YOK.
+
+### 9.2 R02 — açık ölçüm tamamlamaları (gerçek çıktı; CANLI KABUL DEĞİL)
+
+| Ölçüm | Sonuç | Kanıt |
+|---|---|---|
+| **CLAIM** (gerçek dispatcher claim) | **PASS** | `i12-gaps2`: eşzamanlı iki `/publish` → biri **201 PUBLISHED**, diğeri **409 `DISCLOSURE_PUBLICATION_SEND_ALREADY_CLAIMED`** · gerçek `dispatcher.send` **TAM 1** (çift gönderim YOK) |
+| **RECLAIM** (reddi sonrası) | **PASS** | reddi (`SEND_FAILED`, send+1) → **`POST /retry-publication`** (`retrySend`: SEND_FAILED→SEND_PENDING) + sink kabul → **PUBLISHED** + providerMessageId (send+1). Reclaim ürünün kendi yolu; kör tekrar değil |
+| **HANG** (yanıtsız → timeout) | **PASS** | sink `hang` → **nodemailer greeting-timeout ~30 sn** (`30048ms` ölçüldü; kaynakta explicit timeout yok=default) → INDETERMINATE→`SEND_FAILED`; **ardından 20 sn bekleme + sink kabul** → gerçek send **delta 0** (gecikmeli/kör gönderim YOK), PUBLISHED değil, providerMessageId yok, kayıt yok |
+| **G7d** kısa-takvim OTONOM tetik | **PASS** | `i12-cron-run`: hook 2s cron (`*/2 * * * * *`) SchedulerRegistry'ye ekler → **zamanlayıcı KENDİLİĞİNDEN ≥2 kez tetikler** (fireOnTick DEĞİL); her tetik `runMonthlyDelivery` koşar; aynı dönem tekrarında ek TESLİM yok |
+
+**Cron teslim içeriği (send>0 · ledger `markSent`) NOTU:** disposable ortamda test client'ının **dönem aktivitesi yok**
+→ statement `SKIPPED_EMPTY_PERIOD` (0 line) → teslim/ledger markSent gözlenmedi. Bu, cron **wiring**'inin (predicate +
+doğrudan çağrı + otonom tetik) kanıtını etkilemez; teslim **içeriği** (send>0, ledger claim, aynı-dönem-dedupe) dönem-
+aktivitesi fikstürü ister ve repo jest testi `client-statement-monthly-c3b04.spec.ts` ile kanıtlıdır (B04-8/10/13/15) +
+canlı §7'de kanıtlanır. **PASS sayılmadı, kapsamdan da çıkarılmadı** (owner kuralı).
+
+**Kanıt arşivi (durable, synthetic — sır/ref/.env yok):** `…\Documents\CLIENT-EVIDENCE-20260911\i12-rehearsal-<ts>\`
+— `i12-gaps2-evidence.json` · `cron-predicate-state.json` · `cron-last-result.json` · `cron-run.log` + SHA256
+manifesti `MANIFEST-SHA256-i12-rehearsal.txt` (manifest sha `754F33BA…`). **R01 koşumlarının (i12-gaps/i12-allowlist/
+i3-run) ham logları prova ortamı ilk temizliğinde silindi**; verdict + gözlenen değerleri §9/§9.2 tablolarında korunur
+(kalıcı ham-log kopyası R01 için YOK — açıkça belirtilir; R02 + cron için durable kopya + manifest bağlandı).
