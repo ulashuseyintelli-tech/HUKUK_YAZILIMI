@@ -53,22 +53,22 @@ R-T7 env SDDL = T-AÇ tabanı · **`Pozitif hedef kaniti: VAR`** · **`PENCERE K
 CLIENT post-window salt-okuma kontrolü (bilgi): env sha=pin · SDDL=taban · I11-WINDOW-BLOCK 0 · :2526 0 ·
 :8080 PID 48668 RELEASE23 dist · :3002 PID 28952 Web.
 
-## 3. Kanıt bağı (yerel arşiv — repoya kopyalanmaz)
+## 3. Kanıt bağı (korumalı yerel arşiv — repoya kopyalanmaz)
 
-Kabul kanıtları GO ref literali ve `.env` değeri taşıdığından **repoya kopyalanmaz**; yerel arşive SHA256 ile bağlanır:
+Kabul kanıtları GO ref literali ve `.env` değeri taşıdığından **repoya kopyalanmaz**; korumalı yerel arşive SHA256 ile bağlanır.
 
-- Yerel SHA256 manifesti: `…\894280b1-…\scratchpad\i11live\EVIDENCE-MANIFEST-158675ab.txt` sha256
+- **Konum (owner kararı, 2026-09-14 yazılı):** arşiv `Documents\CLIENT-EVIDENCE-20260911\i11live-deneme2-20260914T101447Z-158675ab`
+  altına taşındı (aynı birimde yeniden adlandırma; eski `scratchpad\i11live` yolu YOK). Scratchpad'e geri taşınmaz, silinmez.
+- Yerel SHA256 manifesti: bu dizindeki `EVIDENCE-MANIFEST-158675ab.txt` sha256
   **`C55F1D23E692E39757F0FF0B451EC7F79439FB5F19D392C475F0A4E3867BBF8B`** — i11live 7 dosyanın (ENV-PREIMAGE `7A7228B1…` ·
   `i11-state-158675ab.json` · `RUNID-RESERVATION.txt` · FW-RULES · SINK/SDDL taban · `D3-EVIDENCE-158675ab.txt`) yol+sha'sını
   ve peer bağımsız-doğrulama kanıtlarını (`r28-m3-14` `EF712F40…`, `r28-d35-retry-158675ab` `2EAF3FDA…`) listeler.
-- **Konum güvenliği (dürüst durum):** `i11live` **sır taşır** ve dosya DACL'i korumalıdır (sahip BA · `PAI` · yalnız SY/BA/ulastelli FA);
-  SHA256 manifesti içerik kurcalamasını tespit edilebilir kılar. **ANCAK** arşiv hâlâ `%TEMP%\claude\…\scratchpad` altındadır ve
-  üst dizin zinciri yabancı-SID Modify/Delete ACE'leri taşır (ölçüldü; bkz. scratchpad ACL zinciri hazardı) — yani **dosya içeriği**
-  sha ile bağlı olsa da bir yabancı SID dizini **yeniden adlandırıp/taşıyıp yol bağını kırabilir**. Bu, 1. deneme yedeğinin
-  `Documents\CLIENT-EVIDENCE-20260911`'e taşınma gerekçesiyle aynı risktir.
-- **`i11live` (2. deneme) akıbeti = OWNER KARARI (beklemede):** korumalı bir konuma (ör. `Documents\CLIENT-EVIDENCE`, 1. deneme gibi
-  aynı birimde yeniden adlandırma) taşınması ÖNERİLİR; bu kayıt komut vermez, taşıma/silme owner'ındır. Taşıma yapılırsa manifest dizin
-  içinde durduğu için içerik ve sha değişmez, yalnız bu §3'teki yol güncellenir.
+- **Bütünlük + koruma doğrulaması (owner + OFFICE 33 bağımsız salt-okuma, 2026-09-14):** owner yükseltilmiş pencerede
+  OFFICE'in `918200F1…` normalize bloğunu koştu (`NORMALIZE PASS 8/8`); OFFICE bağımsız 26/26 PASS: **8/8 dosya sha256 = taşıma
+  öncesi değerler** (içerik korundu) · **8/8 ACL doğru** — dizin SDDL `O:BAG:DUD:PAI(SY FA)(BA FA)(…-1146 FA)`, 7 dosya kalıtımlı
+  `D:AI` {SY, BA, …-1146} FullControl, ENV-PREIMAGE açık PAI · **boş DACL 0 · yabancı SID 0** · üst dizin yeniden-adlandırma/silme
+  riski KAPALI (yabancı yalnız `…-1003` RX). Manifest 7/7 diskle eşit, ref literali 0.
+- **`i11live` (2. deneme) sır taşır, korunur; silinmez** (owner kararı) — §5 temizliğine dâhil DEĞİLDİR.
 - Sabit kimlikler: §9 pin `338FA301…` · `T_ENV_PRE_SHA` `7A7228B1…` · kanonik main ⊇ `ae7e1ae5` · canlı RELEASE23 `2740df3d`.
 
 ## 4. Kapanış sonrası durum ve açık kalemler
@@ -76,5 +76,6 @@ Kabul kanıtları GO ref literali ve `.env` değeri taşıdığından **repoya k
 - **İ11 KAPANDI** (K1–K4 PASS). **Sayaç 11/17.** Hizmet kabulü **0/8 tam** (değişmedi). RELEASE23 **canlı kalır**.
 - İ11 **yeniden koşulmayacak**; GO ref ve `cl-acc-<runId>` yeniden kullanılmaz/açılmaz. **İ12 bu kayıtla başlamaz.**
 - CLIENT temizlik kalemi: `CL_I11LIVE` worktree (koşumun K-WT'si; `5aa0f7b2`) — bu kayıt merge sonrası kaldırılır.
-- Owner kararı bekleyen: `i11live` (2. deneme) yedeğinin akıbeti; `CL_TOKENFIX` ve `{}` disk artıkları.
-- Ana yürütücü bağımsız-doğrulama Ek F'i ayrı closure PR olarak gelir (madde-3 + D3-5; ref literali yok).
+- `i11live` (2. deneme) akıbeti KARARA BAĞLANDI (owner 2026-09-14 yazılı): Documents korumalı arşivde KALIR, silinmez (§3).
+- Owner kararı bekleyen (bu kayıt kapsamı dışı): `CL_TOKENFIX` ve `{}` disk artıkları.
+- Ana yürütücü bağımsız-doğrulama Ek F'i ayrı closure PR (#2677) MERGED @ `7759f06d` (madde-3 + D3-5; ref literali yok).
