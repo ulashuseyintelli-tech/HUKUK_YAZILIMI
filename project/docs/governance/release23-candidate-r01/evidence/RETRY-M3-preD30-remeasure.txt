@@ -1,0 +1,31 @@
+== ง1.4 D3 kimlikleri (kanonik=main) ==
+[ESIT] ง9 gomulu blok (R11)
+[ESIT] I11 scripts\t-window-apply.ps1
+[ESIT] I11 scripts\t-window-close.ps1
+[ESIT] I11 scripts\smtp-sink-noauth.js
+[ESIT] I11 scripts\i11-run.js
+[ESIT] I11 scripts\i11-01-setup.js
+[ESIT] I11 scripts\i11-02-intake.js
+[ESIT] I11 scripts\i11-03-close-links.js
+[ESIT] I11 scripts\t-rt4-isolated-rehearsal.ps1
+[ESIT] I11 scripts\t-rt4-logic-harness.ps1
+[ESIT] cl-09-close-access.js
+TOPLAM ง1.4: 11/11
+env sha  : 7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC PIN OK
+env sddl : O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;S-1-5-21-3828948545-3622927028-3332160207-1146) TABAN OK
+  :8080 pid=24668 kok=HY_W4_RELEASE23
+  :3002 pid=45404 kok=HY_W4_RELEASE23
+I11-WINDOW-BLOCK-* : 0
+HYRT4S-* : 0
+:2526 dinleyici : 0
+  gorev HukukPlatform-API : Running
+  gorev HukukPlatform-Web : Running
+=== ยง1.1 bin postimage (canli) ===
+  bin start-api.ps1 = POSTIMAGE OK
+  bin hukuk-task-host.exe = POSTIMAGE OK
+  bin start-web.ps1 = POSTIMAGE OK
+=== geri donus kaynagi generations\R22 = preimage (hazir) ===
+  R22 start-api.ps1 = PREIMAGE OK
+  R22 hukuk-task-host.exe = PREIMAGE OK
+  R22 start-web.ps1 = PREIMAGE OK
+kanonik=main 5aa0f7b2 โ ae7e1ae5; yeni ref (2026-09-14) main gecis 0; ana yurutucu canli yazma 0
