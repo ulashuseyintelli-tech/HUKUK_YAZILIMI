@@ -8,6 +8,11 @@
 #               (B) manuel quoting KALDIRILDI -> ProcessStartInfo.ArgumentList;
 #               (C) lock v2: PID + process creation-time + nonce + exe/entry;
 #               silme yalniz nonce sahibince.
+# A3 delta    : DB probe exit 23 YALNIZ token tam olarak 'DB_ERROR_UNCLASSIFIED code=none'
+#               ise (acilista postgres ayaga kalkarken Prisma errorCode tasimayabilir)
+#               DbUnclassifiedRetryMax deneme VE DbUnclassifiedWindowSec sn ile sinirli,
+#               DbAttempts butcesi icinde yeniden denenir. Kodlu 23 (or. P1003) ve
+#               21/22/24/25 eskisi gibi HEMEN doner. Anahtarlar yoksa davranis R03 ile ayni.
 # Kodlama     : saf ASCII. Dot-source edildiginde main KOSMAZ.
 # Exit kodlari:
 #   0  = child-exit-0 / ALREADY_RUNNING / LAUNCHER_BUSY
@@ -15,7 +20,8 @@
 #   11 = NODE_BINARY_INVALID     12 = PORT_IDENTITY_CONFLICT
 #   13 = DB_IDENTITY_MISMATCH    14 = ENV_MISSING
 #   15 = CHILD_SPAWN_FAILED      16 = PORT_BIND_TIMEOUT   17 = WORKDIR_MISSING
-#   18 = HELPER_INVALID          19 = DB_AUTH_FAILED      23 = DB_PROBE_UNCLASSIFIED
+#   18 = HELPER_INVALID          19 = DB_AUTH_FAILED
+#   23 = DB_PROBE_UNCLASSIFIED (kodlu 23 hemen; kodsuz 23 sinirli yeniden deneme sonrasi)
 #   20 = CHILD_CLEANUP_FAILED (bind-timeout sonrasi exact-owned cocuk sonlandirilamadi)
 #   diger = child (node) exit kodu AYNEN aktarilir.
 # =============================================================================
@@ -45,6 +51,8 @@ function Get-HLApiDefaultConfig {
         HelperSha256   = 'AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9'
         DbAttempts     = 24
         DbPollSec      = 5
+        DbUnclassifiedRetryMax  = 12
+        DbUnclassifiedWindowSec = 90
         BindTimeoutSec = 180
         LogDir         = 'C:\Ops\hukuk\logs\api'
         LockPath       = 'C:\Ops\hukuk\logs\api\launch.lock'
@@ -342,9 +350,20 @@ function Invoke-HLDbProbe {
     return @{ Exit = [int]$r.ExitCode; Token = [string]$token }
 }
 
+function Test-HLDbTransientUnclassified {
+    # Gecici sayilan TEK durum: helper'in kodsuz siniflanamayan hatasi. Kodlu 23 kalici
+    # yapilandirma hatasi olabilir (or. P1003 veritabani yok) -> yeniden denenmez.
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Token)
+    return ($Token -ceq 'DB_ERROR_UNCLASSIFIED code=none')
+}
+
 function Wait-HLDbReady {
     # Donus: 'READY' | 'TIMEOUT' | 'AUTH' | 'IDENTITY' | 'ENV' | 'UNCLASSIFIED'
     param([Parameter(Mandatory)][hashtable]$Cfg)
+    $uMax = 0; $uWindow = 0
+    if ($Cfg.ContainsKey('DbUnclassifiedRetryMax')) { $uMax = [int]$Cfg.DbUnclassifiedRetryMax }
+    if ($Cfg.ContainsKey('DbUnclassifiedWindowSec')) { $uWindow = [int]$Cfg.DbUnclassifiedWindowSec }
+    $uCount = 0; $uFirst = $null; $last = 'TIMEOUT'
     for ($i = 1; $i -le $Cfg.DbAttempts; $i++) {
         $p = Invoke-HLDbProbe -Cfg $Cfg
         Write-HLLog -Cfg $Cfg -Message ("db probe {0}/{1}: exit={2} token={3}" -f $i, $Cfg.DbAttempts, $p.Exit, $p.Token) | Out-Null
@@ -354,11 +373,19 @@ function Wait-HLDbReady {
             22 { return 'IDENTITY' }
             24 { return 'ENV' }
             25 { return 'ENV' }
-            23 { return 'UNCLASSIFIED' }
+            23 {
+                if (-not (Test-HLDbTransientUnclassified -Token $p.Token)) { return 'UNCLASSIFIED' }
+                if ($null -eq $uFirst) { $uFirst = Get-Date }
+                $uCount++
+                if (($uCount -gt $uMax) -or (((Get-Date) - $uFirst).TotalSeconds -gt $uWindow)) { return 'UNCLASSIFIED' }
+                Write-HLLog -Cfg $Cfg -Message ("db probe unclassified code=none: bounded retry {0}/{1} (window {2}s)" -f $uCount, $uMax, $uWindow) | Out-Null
+                $last = 'UNCLASSIFIED'
+            }
+            default { $last = 'TIMEOUT' }
         }
         if ($i -lt $Cfg.DbAttempts) { Start-Sleep -Seconds $Cfg.DbPollSec }
     }
-    return 'TIMEOUT'
+    return $last
 }
 
 # --- bounded child-log rotation ------------------------------------------------
