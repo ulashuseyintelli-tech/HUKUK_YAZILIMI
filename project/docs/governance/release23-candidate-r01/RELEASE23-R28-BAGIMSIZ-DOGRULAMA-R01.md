@@ -532,3 +532,65 @@ runId **`CUT-20260913-200554-ec45bc63`**, 31/31, cikis=0.
 - **CLIENT İ11 AÇIK — sayaç 10/17, hizmet kabulü 0/8 tam.** İ11 kabulü çalışmadı (§9 K-REF cwd); RELEASE23 canlı olması İ11'i kapatmaz (owner GO: "bir koşul eksikse İ11'i kapatma, 10/17 kalsın").
 - **Yeniden deneme AYRI owner GO'su ister** (auto-tekrar yok). CLIENT'ın bildirdiği ön koşullar: (a) dar §9 K-REF cwd-bağımsız (`-R`) düzeltmesi → §9 sha `27E754A7` değişir; (b) `CL_I11LIVE` worktree (K-WT oluşturdu) kaldırma; (c) `i11live` yedek dizini (sır taşır) — owner kararı.
 - Bu ek mühür/authority/nonce/cutover yetkisi DEĞİL; canlı yürütme owner + OFFICE 33 (D1) + CLIENT (D2/D3) tarafından yapıldı, ana yürütücü yalnız bağımsız salt-okuma doğrulayıcı ve hat koordinasyonu oldu (canlı yazma 0).
+
+## Ek F — İ11 tam canlı kabul YENİDEN DENEMESİ: madde 3 + D3-5 bağımsız doğrulama (owner doğrudan GO 2026-09-14 "R04 §7 / İ11 tam canlı kabul yeniden denemesi")
+
+İlk denemede D3-2 §9 K-REF, owner penceresi cwd'si git-deposu-olmadığı için durmuştu (Ek E). CLIENT §9 K-REF'i cwd-bağımsız yaptı (#2674 R11,
+§9 `338FA301`). Owner yeni tarihli ref ile (seçenek a; ref literali **hiçbir repo dosyasına/belleğe/fikstüre yazılmaz** — owner talimatı;
+bu ekte yalnız `OWNER-GO-CLIENT-I11-<YYYYMMDD>-R<nn>` yer tutucusu) ve §7 6(ii)/Ek B `ulastelli`-yazma kalan riskini açıkça kabul ederek
+yeniden denemeye GO verdi. Bu ek, ana yürütücünün **madde 3 (D3-0 öncesi)** ve **D3-5 (pencere kapanışı)** bağımsız salt-okuma
+doğrulamalarının kaydıdır. **SONUÇ: İ11 retry başarılı; benim iki bağımsız gate'im PASS.** §5.4 kabul kaydı + sayaç 11/17 CLIENT'ın
+kapanış PR'ındadır (rol ayrımı). Ana yürütücü canlı yazma 0; `.env` içeriği okunmadı.
+
+### F.1 madde 3 — D3-0 öncesi yeniden ölçüm (R04 §7 m3) — PASS
+
+Kanıt `evidence/RETRY-M3-preD30-remeasure.txt`. Kanonik ağaç = origin/main `5aa0f7b2` ⊇ `ae7e1ae5` (#2674 R11), izlenen kirli 0.
+
+| Bölüm | Sonuç |
+|---|---|
+| §1.4 D3 kimlikleri | **11/11 EŞİT** — §9 R11 `338FA301…` · T-AÇ `834DF587…` · T-KAPA `676C1542…` · smtp-sink `99A5D681…` · i11-run/01/02/03 · rehearsal `B643DF51…` · harness `998A127B…` · cl-09 `01273998…` |
+| §1.1 canlı kimlik | kök **HY_W4_RELEASE23** (HEAD `2740df3d`) · bin postimage (`691BC146`/`CC634BBF`/`F39F7A54`) · BUILD_ID `dOiGPj2M0Abls0kCibY4r` · env sha `7A7228B1…` (pin) · env sddl `O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;…-1146)` (D3-5 tabanı) · :8080/:3002 RELEASE23 |
+| Geri dönüş kaynağı | `generations\R22` preimage 3/3 (hazır) |
+| Yeni ref tazeliği | yeni tarihli İ11 ref main'de **0 geçiş** (K-REF `origin/main` dalı açısından taze; literal dosyaya yazılmadı) |
+| Hat boşluğu | ana yürütücü canlı yazma 0; kanonik kirli 0 |
+
+### F.2 D3-2 İ11 kabul koşumu (CLIENT/owner; ana yürütücü YENİDEN KOŞMADI) — runId `158675ab`
+
+CLIENT'ın owner yükseltilmiş penceresinde koşup ilettiği sonuç (ana yürütücü canlı çağrı/DB'ye dokunmaz; bunlar CLIENT'ın §5.4 kabul
+kanıtıdır): §9 sha `338FA301` · K-ARC 21/21 · K-REF tüketim 0 / anma 0 · **PASS 11 · FAIL 0 · ÖLÇÜLEMEYEN 0 · kapsam TAM · exit 0** ·
+secretsPrinted=false · intake bağlantıları REVOKED (200→404) · login 401 · Case CLOSED · izolasyon `a58ddef5` eşit. D3-4 T-KAPA:
+**çıkış 0**, K-T10b **pozitif hedef kanıtı VAR** (2 sentetik ileti `cl-acceptance.invalid`) · env=pin · R-T4a 2 kesin-ad kural kaldırıldı
+(joker yok) · SDDL=taban.
+
+### F.3 D3-5 — pencere kapanışı bağımsız salt-okuma (R04 §7 m3; D3-4 çıkış 0 ön koşulu sağlandı) — PASS
+
+Kanıt `evidence/RETRY-D3-5-window-close-158675ab.txt`.
+
+| Kontrol | Ölçülen | Sonuç |
+|---|---|---|
+| env sha | `7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC` | = pin ✓ |
+| env sddl | `O:SYG:DUD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;S-1-5-21-3828948545-3622927028-3332160207-1146)` | = taban ✓ |
+| :8080 / :3002 | PID 48668 / 28952, ikisi de kök **HY_W4_RELEASE23** | RELEASE23 ✓ |
+| `I11-WINDOW-BLOCK-*` | 0 (DisplayName kesin ad da yok) | engel kalmadı ✓ |
+| HYRT4S-* · :2526 | 0 · 0 | temiz ✓ |
+| görevler | HukukPlatform-API / Web Running | ✓ |
+
+### F.4 Sonuç
+
+- **madde 3 PASS** (F.1) ve **D3-5 PASS** (F.3) — ana yürütücünün iki bağımsız salt-okuma gate'i geçti.
+- D3-4 T-KAPA çıkış 0 + pozitif hedef kanıtı (F.2) → D3-5'e geçiş ön koşulu sağlandı; §5.1 "çıkış 0 fakat pozitif kanıt YOK" dalı bu kez
+  gerçekleşmedi (kanıt VAR).
+- **İ11 tam canlı kabul kriteri (§5.4) bu retry'de sağlandı** (İ11 11/0/0/0 + erişim kapanışı + T-KAPA pozitif kanıt/çıkış 0 + D3-5 PASS).
+  **§5.4 kabul kaydı ve sayaç 10/17 → 11/17 CLIENT'ın kapanış PR'ındadır** (kabul CLIENT'ın; bu ek bağımsız doğrulamadır).
+- Ek B / §7 6(ii) `ulastelli`-yazma kalan riski owner tarafından bu retry için kabul edildi; bütünlük pinleri (env sha=pin, SDDL=taban)
+  korundu. **i11live sır yedekleri — İKİ ayrı deneme (bağımsız ölçüldü):** (1) 1. deneme yedeği `Documents\CLIENT-EVIDENCE-20260911\
+  i11live-deneme1-…-a60a9e0c` (Ek E sonrası owner talimatıyla taşındı; üst zincirdeki yabancı-SID yeniden adlandırma/silme riski kapandı);
+  (2) **retry (2. deneme) yedeği** D3-1 K-T0'da YENİDEN oluşturuldu, konum eski scratchpad yolu `…\894280b1-…\scratchpad\i11live`
+  (`ENV-PREIMAGE.env` sha=pin=`7A7228B1…` · `i11-state-158675ab.json` · `RUNID-RESERVATION.txt`; dizin **sahibi `BUILTIN\Administrators`,
+  korumalı, yabancı SID 0** — içerik korunuyor — 2026-09-14T08:56:36Z bağımsız ölçüldü). **Fark:** 2. deneme yedeği için yabancı-SID
+  yeniden adlandırma/silme riski **AÇIK** (1. denemenin aksine): üst dizin (scratchpad) **korumasız**, 6 yabancı SID Modify tutar, **2'si
+  DeleteChild** (`0x1301FF`) — dizinin içeriğine erişemezler ama `i11live` alt dizinini silebilir/yeniden adlandırabilir (ACL'den ölçüldü).
+  1. deneme (Documents) bunu kapatmıştı (üst dizinde yalnız 1 RX yabancı SID). Her ikisinde de `ulastelli`-yazma açıktır (owner kabul etti);
+  **konum ile taşıma/silme owner kararıdır.** `CL_I11LIVE` worktree'si retry'de yeniden oluştu (worktree=1; temizlik CLIENT).
+- Bu ek mühür/authority/nonce/cutover yetkisi DEĞİL; canlı yürütme owner + CLIENT (D3) tarafından yapıldı, ana yürütücü yalnız bağımsız
+  salt-okuma doğrulayıcı ve hat boşluğu teyidi (canlı yazma 0). Ref literali bu ekte YOKtur.
