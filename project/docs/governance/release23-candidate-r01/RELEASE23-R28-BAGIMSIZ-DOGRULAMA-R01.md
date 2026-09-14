@@ -583,7 +583,11 @@ Kanıt `evidence/RETRY-D3-5-window-close-158675ab.txt`.
 - **İ11 tam canlı kabul kriteri (§5.4) bu retry'de sağlandı** (İ11 11/0/0/0 + erişim kapanışı + T-KAPA pozitif kanıt/çıkış 0 + D3-5 PASS).
   **§5.4 kabul kaydı ve sayaç 10/17 → 11/17 CLIENT'ın kapanış PR'ındadır** (kabul CLIENT'ın; bu ek bağımsız doğrulamadır).
 - Ek B / §7 6(ii) `ulastelli`-yazma kalan riski owner tarafından bu retry için kabul edildi; bütünlük pinleri (env sha=pin, SDDL=taban)
-  korundu. i11live sır yedeği korumalı Documents konumunda (Ek E sonrası taşındı; yabancı-SID yeniden adlandırma/silme riski kapandı,
-  `ulastelli`-yazma açık — kabul edildi).
+  korundu. **i11live sır yedekleri — İKİ ayrı deneme (bağımsız ölçüldü):** (1) 1. deneme yedeği `Documents\CLIENT-EVIDENCE-20260911\
+  i11live-deneme1-…-a60a9e0c` (Ek E sonrası owner talimatıyla taşındı; üst zincirdeki yabancı-SID yeniden adlandırma/silme riski kapandı);
+  (2) **retry (2. deneme) yedeği** D3-1 K-T0'da YENİDEN oluşturuldu, konum eski scratchpad yolu `…\894280b1-…\scratchpad\i11live`
+  (`ENV-PREIMAGE.env` sha=pin=`7A7228B1…` · `i11-state-158675ab.json` · `RUNID-RESERVATION.txt`; dizin sahibi `BUILTIN\Administrators`,
+  korumalı — 2026-09-14T08:56:36Z bağımsız ölçüldü). Her ikisinde de `ulastelli`-yazma açıktır (owner kabul etti); **konum ile taşıma/silme
+  owner kararıdır.** `CL_I11LIVE` worktree'si retry'de yeniden oluştu (worktree=1; temizlik CLIENT).
 - Bu ek mühür/authority/nonce/cutover yetkisi DEĞİL; canlı yürütme owner + CLIENT (D3) tarafından yapıldı, ana yürütücü yalnız bağımsız
   salt-okuma doğrulayıcı ve hat boşluğu teyidi (canlı yazma 0). Ref literali bu ekte YOKtur.
