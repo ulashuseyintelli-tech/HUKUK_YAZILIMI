@@ -53,15 +53,22 @@ R-T7 env SDDL = T-AÇ tabanı · **`Pozitif hedef kaniti: VAR`** · **`PENCERE K
 CLIENT post-window salt-okuma kontrolü (bilgi): env sha=pin · SDDL=taban · I11-WINDOW-BLOCK 0 · :2526 0 ·
 :8080 PID 48668 RELEASE23 dist · :3002 PID 28952 Web.
 
-## 3. Kanıt bağı (korumalı yerel arşiv — repoya kopyalanmaz)
+## 3. Kanıt bağı (yerel arşiv — repoya kopyalanmaz)
 
-Kabul kanıtları GO ref literali ve `.env` değeri taşıdığından **repoya kopyalanmaz**; korumalı yerel arşive bağlanır:
+Kabul kanıtları GO ref literali ve `.env` değeri taşıdığından **repoya kopyalanmaz**; yerel arşive SHA256 ile bağlanır:
 
 - Yerel SHA256 manifesti: `…\894280b1-…\scratchpad\i11live\EVIDENCE-MANIFEST-158675ab.txt` sha256
   **`C55F1D23E692E39757F0FF0B451EC7F79439FB5F19D392C475F0A4E3867BBF8B`** — i11live 7 dosyanın (ENV-PREIMAGE `7A7228B1…` ·
   `i11-state-158675ab.json` · `RUNID-RESERVATION.txt` · FW-RULES · SINK/SDDL taban · `D3-EVIDENCE-158675ab.txt`) yol+sha'sını
   ve peer bağımsız-doğrulama kanıtlarını (`r28-m3-14` `EF712F40…`, `r28-d35-retry-158675ab` `2EAF3FDA…`) listeler.
-- `i11live` (2. deneme) **sır taşır, korumalıdır**; taşıma/silme **owner kararıdır** (bu kayıt komut vermez).
+- **Konum güvenliği (dürüst durum):** `i11live` **sır taşır** ve dosya DACL'i korumalıdır (sahip BA · `PAI` · yalnız SY/BA/ulastelli FA);
+  SHA256 manifesti içerik kurcalamasını tespit edilebilir kılar. **ANCAK** arşiv hâlâ `%TEMP%\claude\…\scratchpad` altındadır ve
+  üst dizin zinciri yabancı-SID Modify/Delete ACE'leri taşır (ölçüldü; bkz. scratchpad ACL zinciri hazardı) — yani **dosya içeriği**
+  sha ile bağlı olsa da bir yabancı SID dizini **yeniden adlandırıp/taşıyıp yol bağını kırabilir**. Bu, 1. deneme yedeğinin
+  `Documents\CLIENT-EVIDENCE-20260911`'e taşınma gerekçesiyle aynı risktir.
+- **`i11live` (2. deneme) akıbeti = OWNER KARARI (beklemede):** korumalı bir konuma (ör. `Documents\CLIENT-EVIDENCE`, 1. deneme gibi
+  aynı birimde yeniden adlandırma) taşınması ÖNERİLİR; bu kayıt komut vermez, taşıma/silme owner'ındır. Taşıma yapılırsa manifest dizin
+  içinde durduğu için içerik ve sha değişmez, yalnız bu §3'teki yol güncellenir.
 - Sabit kimlikler: §9 pin `338FA301…` · `T_ENV_PRE_SHA` `7A7228B1…` · kanonik main ⊇ `ae7e1ae5` · canlı RELEASE23 `2740df3d`.
 
 ## 4. Kapanış sonrası durum ve açık kalemler
