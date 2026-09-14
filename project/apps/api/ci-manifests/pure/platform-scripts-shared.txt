@@ -460,3 +460,8 @@ src/common/__tests__/closeout-authority-contract.spec.ts
 # kanitini tasir. Es: db-gated karsiligi YOK (ikisi de DB'ye dokunmaz).
 src/modules/calc-preview/chaos/__tests__/chaos.module.off-state.spec.ts
 src/modules/calc-preview/trace/__tests__/trace-retention.service.flag-gate.spec.ts
+
+# -- OFFICE-A3 API baslaticisi DB-hazir sinirli yeniden denemesi --
+# project/ops/runtime-launcher/start-api.ps1 gercek fonksiyonlarini pwsh ile izole gecici dizinde
+# kosar (sahte yardimci + sahte giris; canli dosya/gorev/.env/DB YOK). pwsh yoksa DUSER, atlanmaz.
+src/scripts/__tests__/ops-runtime-launcher-db-ready-retry.spec.ts
