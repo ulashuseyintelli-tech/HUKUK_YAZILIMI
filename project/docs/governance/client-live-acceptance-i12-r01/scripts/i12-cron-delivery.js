@@ -1,14 +1,19 @@
 /*
- * İ12 — G7 CRON TESLİM PROVASI · gerçek gönderim + teslim defteri (markSent) + aynı-dönem repeat-zero
- * İzole DB'de DOĞRU döneme (onceki ay) ait sentetik aktivite (POSTED CollectionDisposition + CLIENT_PAYABLE)
- * → statement line uretilir → aylik teslim GERCEKTEN gonderir. Kisa-takvim OTONOM tetik (2s cron):
- *   - ilk tetik: gercek SMTP gonderim (sink msg) + teslim defteri SENT (markSent) + bildirim
- *   - ayni donemde sonraki (otonom) tetikler: EK gonderim 0, mukerrer kayit 0 (ledger dedupe)
- * Cron kapsami: yabanci tenant (aktivitesiz) SKIPPED → yalniz hedef client teslim (scope prova).
- * Login/HTTP gerekmez (cron in-process; dosya-sinyali). Canli DB/gonderim/deploy YOK; sink loopback.
+ * İ12 — G7 CRON TESLİM + KAPSAM İZOLASYONU PROVASI (R04 · güçlendirilmiş)
+ * İzole DB'de İKİ tenant da TAM teslim-uygun kurulur (dönem aktivitesi + alıcı + şablon + Office SMTP):
+ *   - hedef tenant (T)  → alıcı deliv-target-<runId>@ah-harness.invalid
+ *   - yabancı tenant (F) → alıcı deliv-foreign-<runId>@ah-harness.invalid  (F de teslim almaya UYGUN)
+ * Tetik: HEDEF-TENANT-SCOPED  runMonthlyDelivery(now, { tenantId: T })  — hook 'direct <T>' yolu.
+ *   BOŞ-SCOPE (tüm tenant) KULLANILMAZ (owner kuralı: canlı kabulde all-tenant tetik yok).
+ * Ölçüm (KESİN sayı, hedef-dışı etki = FAIL):
+ *   1. tetik → T: sink=1 · ledger SENT=1 · bildirim SENT=1 ; F: sink=0 · ledger=0 · bildirim=0 ;
+ *      TOPLAM sink deltası = 1 (yalnız T; herhangi hedef-dışı mesaj → FAIL).
+ *   2. tetik (aynı dönem, tamamlanmış) → her yerde +0 (dedupe: ledger SENT→SKIP, bildirim dedupeKey).
+ * Statement dispatch SMTP'yi ENV'den DEĞİL Office DB satırından (getFullSmtpSettings) okur → her iki
+ * tenant için Office SMTP satırı sink'e yönlendirilir. Canlı DB/gönderim/deploy/scheduler YOK; sink loopback.
  */
 'use strict';
-const fs = require('fs'); const net = require('net'); const path = require('path'); const { spawn, execSync } = require('child_process');
+const fs = require('fs'); const path = require('path'); const { spawn, execSync } = require('child_process');
 const I3 = path.resolve(__dirname, '../../client-acceptance-runners-i3-r01/scripts');
 const L = require(path.join(I3, 'i3-lib'));
 const PORT = Number(process.env.I12_CRON_PORT || 8100);
@@ -19,43 +24,67 @@ const SMTP_PORT = Number(process.env.I3_SMTP_PORT || 2529); const CAPTURE = path
 function listenersOn(p) { try { const out = execSync(`netstat -ano -p tcp | findstr LISTENING | findstr :${p}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); return [...new Set(out.split(/\r?\n/).map((l) => l.trim().split(/\s+/).pop()).filter((x) => /^\d+$/.test(x)))]; } catch (e) { return []; } }
 function stopPort(p) { for (const pid of listenersOn(p)) { try { execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' }); } catch (e) {} } }
 function startSink() { return new Promise((res, rej) => { const c = spawn(process.execPath, [path.join(I3, 'i3-sink.js')], { env: { ...process.env, I3_SMTP_PORT: String(SMTP_PORT), I3_SMTP_CAPTURE: CAPTURE }, stdio: ['ignore', 'pipe', 'pipe'] }); let o = ''; const t = setTimeout(() => rej(new Error('sink')), 5000); c.stdout.on('data', (d) => { o += d; if (o.includes('I3-SMTP-SINK-READY')) { clearTimeout(t); res(c); } }); c.on('error', (e) => { clearTimeout(t); rej(e); }); }); }
-// Sink GLOBAL bir yakalama dizinidir; ayni disposable DB'de birikmis DIGER (onceki kosum) tenant'lar
-// da bos-scope taramada teslim alabilir. Bu kosumun GONDERIM sayimini YALNIZ bu run'in alicisina
-// (client-<runId>@...) kapsamla — mukerrer-gonderim iddiasi ancak bu alicidaki >1 mesajla dogar.
-const sinkMsgs = () => { try { return fs.readdirSync(CAPTURE).filter((f) => f.startsWith('msg-')).length; } catch (e) { return 0; } };
-const sinkMsgsForRun = (rid) => { try { let n = 0; for (const f of fs.readdirSync(CAPTURE)) { if (!f.startsWith('msg-')) continue; let c = ''; try { c = fs.readFileSync(path.join(CAPTURE, f), 'utf8'); } catch (e) { continue; } if (/^To:.*client-/m.test(c) && c.includes(rid)) n += 1; } return n; } catch (e) { return 0; } };
+// Sink GLOBAL bir yakalama dizinidir. Toplam mesaj + alıcıya göre (recipient substring) ayrı sayılır.
+const sinkTotal = () => { try { return fs.readdirSync(CAPTURE).filter((f) => f.startsWith('msg-')).length; } catch (e) { return 0; } };
+const sinkTo = (needle) => { try { let n = 0; for (const f of fs.readdirSync(CAPTURE)) { if (!f.startsWith('msg-')) continue; let c = ''; try { c = fs.readFileSync(path.join(CAPTURE, f), 'utf8'); } catch (e) { continue; } if (new RegExp('^To:[^\\n]*' + needle, 'm').test(c)) n += 1; } return n; } catch (e) { return 0; } };
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { return null; } };
-async function waitFor(fn, ms, step = 500) { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, step)); } return null; }
+async function waitFor(fn, ms, step = 400) { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await new Promise((r) => setTimeout(r, step)); } return null; }
+
+// Bir tenant'ı TAM teslim-uygun kılar: alıcı e-posta + caseClient ALACAKLI + önceki-ay POSTED
+// disposition (CLIENT_PAYABLE) + STATEMENT_READY şablonu + Office SMTP → sink.
+async function makeDeliverable(prisma, o) {
+  const { tenantId, clientId, caseId, caseClientId, requesterUserId, approverUserId, email, prevMonth, runId, tag } = o;
+  await prisma.client.update({ where: { id: clientId }, data: { email } });
+  await prisma.caseClient.update({ where: { id: caseClientId }, data: { role: 'ALACAKLI' } });
+  const col = await prisma.collection.create({ data: { tenantId, caseId, amount: '100.00', type: 'TAHSILAT', date: prevMonth, idempotencyKey: `i12d-col-${tag}-${runId}`, status: 'CONFIRMED' }, select: { id: true } });
+  const appr = await prisma.officeApprovalRequest.create({ data: { tenantId, actionCode: 'COLLECTION_DISPOSITION_POST', targetType: 'COLLECTION_DISPOSITION', targetRef: 'x', requesterUserId, approverUserId, status: 'APPROVED', decidedAt: prevMonth, savedIntent: {}, payloadHash: `i12d-${tag}-${runId}` }, select: { id: true } });
+  await prisma.collectionDisposition.create({ data: { tenantId, caseId, collectionId: col.id, beneficiaryScope: 'SINGLE_CASE_CLIENT', caseClientId, status: 'POSTED', postedAt: prevMonth, totalAmount: '100.00', currency: 'TRY', approvalRequestId: appr.id, approvedById: approverUserId, lines: { create: [{ type: 'CLIENT_PAYABLE', amount: '100.00', caseClientId }] } }, select: { id: true } });
+  await prisma.messageTemplate.create({ data: { tenantId, code: 'STATEMENT_READY', name: 'Ekstre Hazir', category: 'STATEMENT_READY', channel: 'EMAIL', subject: 'Aylik ekstreniz hazir', body: 'Sayin muvekkil, aylik ekstreniz hazir.', isActive: true } });
+  const officeSmtp = { name: `İ12 İzole Büro ${tag}`, smtpHost: '127.0.0.1', smtpPort: SMTP_PORT, smtpUser: `i12d-${tag}@ah.invalid`, smtpPass: 'x', smtpSecure: false, smtpFromName: 'İ12 Harness', smtpFromEmail: 'noreply@ah-harness.invalid' };
+  await prisma.office.upsert({ where: { tenantId }, update: officeSmtp, create: { tenantId, ...officeSmtp } });
+}
+
+// Hook 'direct <tenantId>' → runMonthlyDelivery(now,{tenantId}) TAMAMLANANA kadar (I12-CRON-DIRECT) bekler.
+async function scopedTrigger(tenantId) {
+  try { fs.unlinkSync(RESULT); } catch (e) {}
+  fs.writeFileSync(TRIGGER, `direct ${tenantId}`, 'utf8');
+  const r = await waitFor(async () => { const j = readJson(RESULT); return j && j.record === 'I12-CRON-DIRECT' ? j : null; }, 25000, 400);
+  await new Promise((res) => setTimeout(res, 1200)); // sink dosya yazımı + ledger commit için pay
+  return r;
+}
 
 (async () => {
   const envInfo = L.AH.assertDisposableEnvironment();
   const runId = (process.env.AH_RUN_ID || L.AH.newRunId()).toLowerCase();
   const password = `I12d!${require('crypto').randomBytes(16).toString('base64url')}`;
-  console.log(`İ12 G7 CRON TESLİM — runId=${runId} · db=${envInfo.dbHost}:${envInfo.dbPort}/${envInfo.dbName} · port=${PORT}`);
+  const TGT = `deliv-target-${runId}`; const FRN = `deliv-foreign-${runId}`;
+  console.log(`İ12 G7 CRON TESLİM + KAPSAM — runId=${runId} · db=${envInfo.dbHost}:${envInfo.dbPort}/${envInfo.dbName} · port=${PORT}`);
   if (!DIST_MAIN) throw new Error('I3_DIST_MAIN gerekli');
-  fs.mkdirSync(CAPTURE, { recursive: true }); try { fs.unlinkSync(STATE); } catch (e) {} try { fs.unlinkSync(RESULT); } catch (e) {} fs.writeFileSync(TRIGGER, '', 'utf8');
+  fs.mkdirSync(CAPTURE, { recursive: true });
+  // Sink msg/conn dosyaları süreç başına msg-0001'den numaralanır; PAYLAŞILAN dizinde önceki koşumu
+  // EZER → toplam-sink deltası yanıltıcı olur. Taze sayım için koşum başında capture TEMİZLENİR.
+  try { for (const f of fs.readdirSync(CAPTURE)) { if (/^(msg-|conn-)/.test(f)) fs.unlinkSync(path.join(CAPTURE, f)); } } catch (e) {}
+  try { fs.unlinkSync(STATE); } catch (e) {} try { fs.unlinkSync(RESULT); } catch (e) {} fs.writeFileSync(TRIGGER, '', 'utf8');
   const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH); const R = new L.Results();
+  const pwHash = await bcrypt.hash(password, 10);
   let apiChild = null; let sinkProc = null; let st = null;
   try {
-    st = await L.setupI3(prisma, bcrypt, runId, await bcrypt.hash(password, 10)); st.runId = runId;
-    // caseClient rolu ELIGIBLE (ALACAKLI) yapilir; client'a EMAIL zaten var (setupI3 email .invalid)
-    await prisma.caseClient.update({ where: { id: st.caseClientId }, data: { role: 'ALACAKLI' } });
-    // DOGRU DONEM (onceki ay) POSTED disposition + CLIENT_PAYABLE → statement line
+    st = await L.setupI3(prisma, bcrypt, runId, pwHash); st.runId = runId;
     const now = new Date(); const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15, 10, 0, 0));
-    const col = await prisma.collection.create({ data: { tenantId: st.tenantId, caseId: st.caseId, amount: '100.00', type: 'TAHSILAT', date: prevMonth, idempotencyKey: `i12d-col-${runId}`, status: 'CONFIRMED' }, select: { id: true } });
-    const appr = await prisma.officeApprovalRequest.create({ data: { tenantId: st.tenantId, actionCode: 'COLLECTION_DISPOSITION_POST', targetType: 'COLLECTION_DISPOSITION', targetRef: 'x', requesterUserId: st.actors.elev1.id, approverUserId: st.actors.elev2.id, status: 'APPROVED', decidedAt: prevMonth, savedIntent: {}, payloadHash: `i12d-${runId}` }, select: { id: true } });
-    await prisma.collectionDisposition.create({ data: { tenantId: st.tenantId, caseId: st.caseId, collectionId: col.id, beneficiaryScope: 'SINGLE_CASE_CLIENT', caseClientId: st.caseClientId, status: 'POSTED', postedAt: prevMonth, totalAmount: '100.00', currency: 'TRY', approvalRequestId: appr.id, approvedById: st.actors.elev2.id, lines: { create: [{ type: 'CLIENT_PAYABLE', amount: '100.00', caseClientId: st.caseClientId }] } }, select: { id: true } });
-    // Aylik teslim STATEMENT_READY MessageTemplate ister (per-tenant, isActive) — disposable DB'de seed
-    await prisma.messageTemplate.create({ data: { tenantId: st.tenantId, code: 'STATEMENT_READY', name: 'Ekstre Hazir', category: 'STATEMENT_READY', channel: 'EMAIL', subject: 'Aylik ekstreniz hazir', body: 'Sayin muvekkil, aylik ekstreniz hazir.', isActive: true } });
-    // GONDERIM SMTP AYARI: statement dispatch (client-notification.sendEmail) SMTP'yi ENV'den DEGIL,
-    // Office satirindan (getFullSmtpSettings) okur. Izole tenant icin sink'e (127.0.0.1:SMTP_PORT) yonlendir.
-    // smtpPass duz-metin: decryptCredential prefix 'enc:v1:' yoksa aynen doner (legacy geriye-uyum) — sifre gerektirmeyen sink kabul eder.
-    const officeSmtp = { name: 'İ12 İzole Büro', smtpHost: '127.0.0.1', smtpPort: SMTP_PORT, smtpUser: 'i12d@ah.invalid', smtpPass: 'x', smtpSecure: false, smtpFromName: 'İ12 Harness', smtpFromEmail: 'noreply@ah-harness.invalid' };
-    await prisma.office.upsert({ where: { tenantId: st.tenantId }, update: officeSmtp, create: { tenantId: st.tenantId, ...officeSmtp } });
-    console.log(`      fixture: tenant=${st.slug} client=${st.clientId.slice(-8)} POSTED disposition postedAt=${prevMonth.toISOString().slice(0, 10)} + STATEMENT_READY sablonu (yabanci tenant ${st.foreignSlug} aktivitesiz)`);
+
+    // HEDEF tenant (setupI3'ten hazır case/caseClient/actors)
+    await makeDeliverable(prisma, { tenantId: st.tenantId, clientId: st.clientId, caseId: st.caseId, caseClientId: st.caseClientId, requesterUserId: st.actors.elev1.id, approverUserId: st.actors.elev2.id, email: `${TGT}@ah-harness.invalid`, prevMonth, runId, tag: 'target' });
+
+    // YABANCI tenant — TAM teslim-uygun (aktivite + alıcı + şablon + Office SMTP). setupI3 yalnız
+    // foreignClient üretti; case/caseClient/onay kullanıcıları burada eklenir → F de teslim ALIR olurdu.
+    const fUser1 = await prisma.user.create({ data: { tenantId: st.foreignTenantId, email: `frn1-${runId}@ah-harness.invalid`, name: 'FRN1', surname: 'I3', passwordHash: pwHash, role: 'USER' }, select: { id: true } });
+    const fUser2 = await prisma.user.create({ data: { tenantId: st.foreignTenantId, email: `frn2-${runId}@ah-harness.invalid`, name: 'FRN2', surname: 'I3', passwordHash: pwHash, role: 'USER' }, select: { id: true } });
+    const fCase = await prisma.case.create({ data: { tenantId: st.foreignTenantId, fileNumber: `I3F-${runId}`, type: 'GENERAL_EXECUTION' }, select: { id: true } });
+    const fCaseClient = await prisma.caseClient.create({ data: { caseId: fCase.id, clientId: st.foreignClientId }, select: { id: true } });
+    await makeDeliverable(prisma, { tenantId: st.foreignTenantId, clientId: st.foreignClientId, caseId: fCase.id, caseClientId: fCaseClient.id, requesterUserId: fUser1.id, approverUserId: fUser2.id, email: `${FRN}@ah-harness.invalid`, prevMonth, runId, tag: 'foreign' });
+    console.log(`      fixture: HEDEF=${st.slug} (${TGT}) + YABANCI=${st.foreignSlug} (${FRN}) — İKİSİ de TAM teslim-uygun; postedAt=${prevMonth.toISOString().slice(0, 10)}`);
 
     sinkProc = await startSink(); stopPort(PORT);
-    // IZOLASYON: API'yi CANLI Redis (6379) DEGIL, izole 6390'a bagla + run'a ozel key prefix.
     const redisUrl = process.env.I12_REDIS_URL || 'redis://127.0.0.1:6390';
     const env = { ...process.env, DATABASE_URL: L.AH.requireEnv('AH_DATABASE_URL'), REDIS_URL: redisUrl, REDIS_KEY_PREFIX: `i12d:${runId}:`, PORT: String(PORT), NODE_ENV: 'development', JWT_SECRET: require('crypto').randomBytes(32).toString('hex'), CORS_ORIGIN: 'http://127.0.0.1:3999', EMAIL_PROVIDER: 'smtp', SMTP_HOST: '127.0.0.1', SMTP_PORT: String(SMTP_PORT), SMTP_USER: 'i12d@ah.invalid', SMTP_PASS: 'x', EMAIL_FROM: 'noreply@ah-harness.invalid', CLIENT_STATEMENT_MONTHLY_DELIVERY: 'true', I12_CRON_STATE: STATE, I12_CRON_TRIGGER: TRIGGER, I12_CRON_RESULT: RESULT, I3_DIST_ROOT: process.env.I3_DIST_ROOT };
     const out = fs.openSync(path.join(WORK, 'api.out.log'), 'a'); const err = fs.openSync(path.join(WORK, 'api.err.log'), 'a');
@@ -63,33 +92,44 @@ async function waitFor(fn, ms, step = 500) { const t0 = Date.now(); while (Date.
     if (!await waitFor(async () => (listenersOn(PORT).length ? true : null), 45000, 1000)) throw new Error('API dinlemedi');
     await waitFor(async () => readJson(STATE), 15000);
 
-    const ledgerSent = async () => (await L.safeCount(() => prisma.clientStatementDeliveryLedger.count({ where: { tenantId: st.tenantId, status: 'SENT' } }))).value;
-    const notifSent = async () => (await L.safeCount(() => prisma.clientNotification.count({ where: { tenantId: st.tenantId, status: 'SENT' } }))).value;
-    const foreignLedger = async () => (await L.safeCount(() => prisma.clientStatementDeliveryLedger.count({ where: { tenantId: st.foreignTenantId } }))).value;
+    const cnt = async (fn) => (await L.safeCount(fn)).value;
+    const tLed = () => cnt(() => prisma.clientStatementDeliveryLedger.count({ where: { tenantId: st.tenantId, status: 'SENT' } }));
+    const tNot = () => cnt(() => prisma.clientNotification.count({ where: { tenantId: st.tenantId, status: 'SENT' } }));
+    const fLedAll = () => cnt(() => prisma.clientStatementDeliveryLedger.count({ where: { tenantId: st.foreignTenantId } }));
+    const fNotAll = () => cnt(() => prisma.clientNotification.count({ where: { tenantId: st.foreignTenantId } }));
 
-    const msg0 = sinkMsgsForRun(runId); const led0 = await ledgerSent(); const nt0 = await notifSent();
-    // KISA TAKVIM OTONOM tetik (2s cron, ~4-5 otonom fire / 9 sn) — ayni donem tekrar dahil
-    fs.writeFileSync(TRIGGER, 'shortcron', 'utf8');
-    const sc = await waitFor(async () => { const r = readJson(RESULT); return r && r.record === 'I12-CRON-SHORT' && r.autonomousFires >= 2 ? r : null; }, 22000, 700);
-    await new Promise((r) => setTimeout(r, 1500));
-    const msg1 = sinkMsgsForRun(runId); const led1 = await ledgerSent(); const nt1 = await notifSent(); const fL = await foreignLedger();
+    const base = { tot: sinkTotal(), t: sinkTo(TGT), f: sinkTo(FRN), tLed: await tLed(), tNot: await tNot(), fLed: await fLedAll(), fNot: await fNotAll() };
 
-    if (!sc) { R.unmeasured('G7-DELIV', 'cron teslim', 'otonom tetik >=2 gozlenmedi'); }
+    // 1. TETİK — HEDEF-SCOPED
+    const r1 = await scopedTrigger(st.tenantId);
+    const a1 = { tot: sinkTotal(), t: sinkTo(TGT), f: sinkTo(FRN), tLed: await tLed(), tNot: await tNot(), fLed: await fLedAll(), fNot: await fNotAll() };
+    const d1 = { tot: a1.tot - base.tot, t: a1.t - base.t, f: a1.f - base.f, tLed: a1.tLed - base.tLed, tNot: a1.tNot - base.tNot, fLed: a1.fLed - base.fLed, fNot: a1.fNot - base.fNot };
+
+    if (!r1) { R.unmeasured('G7-DELIV-SCOPE', 'scoped teslim', 'direct tetik tamamlanmadı'); }
     else {
-      const fires = sc.autonomousFires; const sendD = msg1 - msg0; const ledD = led1 - led0; const ntD = nt1 - nt0;
-      // ILK tetik teslim + AYNI donem sonraki OTONOM tetiklerde EK gonderim/mukerrer kayit 0:
-      // fires>=2 iken send/ledger delta TAM 1 olmali (dedupe), scope: yabanci tenant ledger 0.
-      R.check('G7-DELIV', 'kisa-takvim OTONOM tetik: ilk tetikte GERCEK gonderim + teslim defteri SENT (markSent) + bildirim; ayni donem sonraki otonom tetiklerde EK gonderim 0 / mukerrer kayit 0; scope: yalniz hedef tenant',
-        fires >= 2 && sendD === 1 && ledD === 1 && ntD >= 1 && fL === 0,
-        `otonom tetik=${fires} · SMTP gonderim(sink msg) +${sendD} (ilk tetik 1, sonraki otonom tetikler +0) · teslim defteri SENT +${ledD} · bildirim SENT +${ntD} · YABANCI tenant ledger=${fL} (scope: 0) · son kosum delivered=${(sc.lastResult||{}).delivered}`);
+      // KESİN: hedef sink 1 · ledger SENT 1 · bildirim SENT 1 ; yabancı 0/0/0 ; TOPLAM sink deltası 1 (hedef-dışı=FAIL)
+      R.check('G7-DELIV-SCOPE', 'HEDEF-tenant-scoped runMonthlyDelivery: hedefe GERÇEK gönderim + ledger SENT(markSent) + bildirim SENT (KESİN 1); TAM teslim-uygun YABANCI tenant 0/0/0; TOPLAM sink deltası=hedef (hedef-dışı etki YOK)',
+        d1.t === 1 && d1.tLed === 1 && d1.tNot === 1 && d1.f === 0 && d1.fLed === 0 && d1.fNot === 0 && d1.tot === 1,
+        `HEDEF: sink+${d1.t} ledgerSENT+${d1.tLed} bildirimSENT+${d1.tNot} · YABANCI(tam-uygun): sink+${d1.f} ledger+${d1.fLed} bildirim+${d1.fNot} · TOPLAM sink+${d1.tot} (hedef=${d1.t}; fazlası hedef-dışı=FAIL) · delivered=${(r1.result||{}).delivered}`);
+    }
+
+    // 2. TETİK — aynı dönem, HEDEF-scoped, TAMAMLANMIŞ → her yerde +0
+    const r2 = await scopedTrigger(st.tenantId);
+    const a2 = { tot: sinkTotal(), t: sinkTo(TGT), f: sinkTo(FRN), tLed: await tLed(), tNot: await tNot(), fLed: await fLedAll(), fNot: await fNotAll() };
+    const d2 = { tot: a2.tot - a1.tot, t: a2.t - a1.t, f: a2.f - a1.f, tLed: a2.tLed - a1.tLed, tNot: a2.tNot - a1.tNot, fLed: a2.fLed - a1.fLed, fNot: a2.fNot - a1.fNot };
+    if (!r2) { R.unmeasured('G7-DEDUPE', 'ikinci scoped tetik', 'direct tetik tamamlanmadı'); }
+    else {
+      R.check('G7-DEDUPE', 'aynı dönem İKİNCİ (tamamlanmış) HEDEF-scoped tetik: EK gönderim 0 + mükerrer kayıt 0 (ledger SENT→SKIP already-sent, bildirim dedupeKey); yabancı yine 0',
+        d2.t === 0 && d2.tLed === 0 && d2.tNot === 0 && d2.f === 0 && d2.fLed === 0 && d2.fNot === 0 && d2.tot === 0,
+        `2. tetik deltalar → HEDEF: sink+${d2.t} ledgerSENT+${d2.tLed} bildirimSENT+${d2.tNot} · YABANCI: sink+${d2.f} ledger+${d2.fLed} · TOPLAM sink+${d2.tot} · delivered=${(r2.result||{}).delivered}`);
     }
   } catch (e) { console.error(`\nDURDU: ${e && e.message ? e.message : e}`); process.exitCode = 1; }
   finally {
     if (apiChild) stopPort(PORT);
     if (sinkProc && sinkProc.exitCode === null) sinkProc.kill();
-    if (st) { try { await prisma.user.updateMany({ where: { tenantId: st.tenantId }, data: { isActive: false, tokenVersion: { increment: 1 } } }); } catch (e) {} }
-    const s = R.summary('İ12 G7 CRON TESLİM');
-    console.log(JSON.stringify({ record: 'I12-CRON-DELIVERY', runId, tenant: st ? st.slug : null, pass: s.pass, fail: s.fail, unmeasured: s.unmeasured, results: R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })) }, null, 1));
+    if (st) { try { await prisma.user.updateMany({ where: { tenantId: st.tenantId }, data: { isActive: false, tokenVersion: { increment: 1 } } }); } catch (e) {} try { await prisma.user.updateMany({ where: { tenantId: st.foreignTenantId }, data: { isActive: false, tokenVersion: { increment: 1 } } }); } catch (e) {} }
+    const s = R.summary('İ12 G7 CRON TESLİM + KAPSAM');
+    console.log(JSON.stringify({ record: 'I12-CRON-DELIVERY', runId, tenant: st ? st.slug : null, foreign: st ? st.foreignSlug : null, pass: s.pass, fail: s.fail, unmeasured: s.unmeasured, results: R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })) }, null, 1));
     const EVID = process.env.I12_EVID_FILE; if (EVID) { try { fs.writeFileSync(EVID, JSON.stringify({ record: 'I12-CRON-DELIVERY', runId, results: R.rows }, null, 1), 'utf8'); } catch (e) {} }
     await prisma.$disconnect().catch(() => {});
     if (process.exitCode !== 1) process.exitCode = s.fail > 0 ? 2 : (s.unmeasured > 0 ? 3 : 0);
