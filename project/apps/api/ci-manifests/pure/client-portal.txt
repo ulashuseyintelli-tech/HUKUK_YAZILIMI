@@ -371,6 +371,14 @@ src/modules/client-settlement/__tests__/collection-reversal.service.spec.ts
 #     politikasi DEGISMEDI; beklentiler zayiflatilmadi.
 src/modules/client-settlement/__tests__/case-fee-agreement.service.spec.ts
 
+#   CLIENT-SETTLEMENT CI kapsam olcumu (#2683, 2026-09-15) ilk dar baglama — manuel payout iadesi kapanisi
+#     Spec vardi ama HICBIR manifestte degildi (ayni sinif: D-10 / A4). 11 test: office-admin olmayan aktor
+#     transaction'dan ONCE Forbidden · yanlis tenant not-found + yazma yok · CLOSED/CANCELLED yeniden
+#     kapatilamaz · update count 0 = conflict · audit hatasinda ayni transaction geri alinir · payout /
+#     allocation / collection / journal / legal ledger / statement kayitlarina dokunulmaz.
+#     SAF birim testi (mock, DB-siz). Urun kodu ve beklentiler DEGISMEDI.
+src/modules/client-settlement/__tests__/client-payout-manual-reversal.service.spec.ts
+
 #   CODEX-CLIENT-X2-B05 dedicated Financial Disclosure approval/publication route adapter
 #     JWT tenant/actor scope, strict WRITE+PUBLICATION fail-closed gates, canonical approval
 #     and publication service sequencing, and no direct dispatch bypass (SAF, DB-siz).
