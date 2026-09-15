@@ -3969,6 +3969,87 @@ karsilanip karsilanmadigi ve baglanmaya deger olup olmadiklari **INCELENMEDI**. 
 ayri olcum ister. Onceki turda sozlu olarak "33 spec'ten 24'u" denmisti; olculen dogru sayi **32 / 7 bagli /
 25 bagli degil**'dir (A4'un bagladigi `case-fee-agreement.service.spec.ts` bagli tarafa gecmistir).
 
+**OLCUM — CLIENT-SETTLEMENT CI KAPSAMI DOGRULANDI (2026-09-15; main `5e72476a`; salt olcum + tek spec izole kosum; baglama YAPILMADI):**
+Yukaridaki gozlemin yalniz manifest uyeligine dayanan sayisi bu kez TUM secim yollariyla ve CI loguyla eslestirildi.
+Sonuc sayica ayni cikti ama artik KANITLIDIR: **32 spec · CI'da kosuyor 7 · hicbir kosum yolunda yok 25 · belirsiz 0.**
+Envanter `src/modules/client-settlement/**` altindaki tum `*.spec.ts` dosyalaridir (hepsi `__tests__` icinde). `bank/*settlement*`
+spec'leri ayri modul oldugu icin bu olcume dahil DEGILDIR.
+
+Incelenen secim yollari:
+1. **Manifestler:** `apps/api/ci-manifests/{pure,db}/*.txt`, 8 dosya, 663 satir. client-settlement girdisi 7.
+2. **ci.yml'deki dogrudan Jest cagrilari:**
+   - iki `--testPathPattern` (`rich-interest-uyap-readiness…`, `collection/…collection-cancel-reversal…`)
+   - `--runTestsByPath` spec degiskenleri (uyap / policy-engine)
+   - client-settlement'i secen yol 0. `client-settlement|settlement` gecisi 0.
+3. **Aktif workflow'lar** (`gh workflow list --all`):
+   - CI
+   - GOV-COORD-V2 (`node --test scripts/orchestration-v2/*/*.test.cjs`, Jest degil)
+   - Dependency Graph, CodeQL
+   - Client Workspace Live Smoke Jest degil, Playwright.
+   - `project/.github/workflows/*` GitHub'da aktif DEGIL.
+4. **CI logu:** main CI run `34889583614` (success), Test Suite job `104128589149`.
+   - client-settlement icin `PASS` satiri tam 7, `FAIL` 0.
+   - `pure/client-portal` 100 suite / 1522 test PASS, `db/domain-integration` 65 suite / 687 test PASS (skip 0).
+   - DB-gated iki spec `TEST_DATABASE_URL` verilen adimda kosar.
+
+| # | Spec (`__tests__/`) | CI durumu | Kanit / yol | Altyapi sinifi |
+|---|---|---|---|---|
+| 1 | `case-fee-agreement.service.spec.ts` | KOSUYOR | `pure/client-portal` + log PASS | saf birim |
+| 2 | `client-financial-disclosure-command.spec.ts` | KOSUYOR | `pure/client-portal` + log PASS | saf birim |
+| 3 | `client-financial-disclosure-command.fail-closed.spec.ts` | KOSUYOR | `pure/client-portal` + log PASS | saf birim |
+| 4 | `collection-reversal.service.spec.ts` | KOSUYOR | `pure/client-portal` + log PASS | saf birim |
+| 5 | `disposition-posting.service.spec.ts` | KOSUYOR | `pure/client-portal` + log PASS | saf birim |
+| 6 | `client-financial-disclosure-command.db-gated.integration.spec.ts` | KOSUYOR | `db/domain-integration` + log PASS | DB-gated (`describeDb`) |
+| 7 | `f04-posting-reversal-race.db-gated.integration.spec.ts` | KOSUYOR | `db/domain-integration` + log PASS | DB-gated |
+| 8 | `accounting-ledger-dry-run.service.spec.ts` | YOK | manifest 0 · desen 0 · log 0 | saf birim (mock) |
+| 9 | `case-fee-agreement.controller.spec.ts` | YOK | ayni | saf birim (mock) |
+| 10 | `client-accounting-journal-movements-reader.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 11 | `client-accounting-journal-summary-reader.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 12 | `client-accounting-movements-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 13 | `client-accounting-summary-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 14 | `client-accounting-summary-shadow-report.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 15 | `client-accounting.controller.spec.ts` | YOK | ayni | saf birim (mock) |
+| 16 | `client-offset.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 17 | `client-payout-manual-reversal-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 18 | `client-payout-manual-reversal.controller.spec.ts` | YOK | ayni | saf birim (mock) |
+| 19 | `client-payout-manual-reversal.service.spec.ts` | YOK | ayni | saf birim (mock) — **ILK BAGLAMA ADAYI** |
+| 20 | `client-payout.controller.spec.ts` | YOK | ayni | saf birim (mock) |
+| 21 | `client-payout.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 22 | `client-settlement-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 23 | `collection-disposition.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 24 | `compute-expense-remaining.spec.ts` | YOK | ayni | saf birim (mock) |
+| 25 | `distribution-recommendation.service.spec.ts` | YOK | ayni | saf birim (mock) |
+| 26 | `finance-risk.engine.spec.ts` | YOK | ayni | saf birim (bagimliliksiz) |
+| 27 | `payment-received-stale-cancelled-guard.spec.ts` | YOK | ayni | saf birim (mock) |
+| 28 | `payment-reversed.registrar.spec.ts` | YOK | ayni | saf birim (mock) |
+| 29 | `case-fee-agreement.http-smoke.spec.ts` | YOK | ayni | surec-ici Nest HTTP (supertest + JWT/Passport, servisler mock; DB/dis servis yok) |
+| 30 | `distribution-recommendation.http-smoke.spec.ts` | YOK | ayni | surec-ici Nest HTTP (ayni) |
+| 31 | `client-payout-replay.db-gated.integration.spec.ts` | YOK | ayni | DB-gated (`describeDb`, gercek `PrismaClient`) |
+| 32 | `tm47d-happy-path-financial-qa.integration.spec.ts` | YOK | ayni | DB-gated (`describeDb`, gercek `PrismaClient` + seed) |
+
+CI disi 25 spec'in ayrimi: **saf birim 21 · surec-ici Nest HTTP smoke 2 · DB-gated 2.**
+Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina dayanir. Kosulmayan 24 spec'in bugun gecip gecmedigi
+**OLCULMEDI**.
+
+**Ilk dar baglama adayi (baglanmadi; ayri is):**
+- **Dosya:** `src/modules/client-settlement/__tests__/client-payout-manual-reversal.service.spec.ts`
+- **Hedef manifest:** `pure/client-portal`
+  - DB gerektirmez.
+  - Kardes `collection-reversal.service` / `disposition-posting.service` bu manifestte.
+- **Neden bu spec:**
+  - 239 satir / 11 test.
+  - Yetki: office-admin olmayan aktor transaction'dan ONCE `Forbidden`.
+  - Tenant yalitimi: yanlis tenant not-found ve yazma yok.
+  - Durum kapisi: CLOSED/CANCELLED yeniden kapatilamaz.
+  - Yaris: update count 0 = conflict.
+  - Audit hatasinda ayni transaction geri alinir.
+  - Payout / allocation / collection / journal / legal ledger / statement kayitlarina DOKUNULMADIGI dogrulanir.
+- **Tek basina kosum:**
+  - Izole worktree (`origin/main 5e72476a`, bagimsiz `pnpm install --frozen-lockfile` + `prisma generate`).
+  - `DATABASE_URL`/`TEST_DATABASE_URL` tanimsiz, `npx jest --ci --runInBand --runTestsByPath <spec>` → **1 suite / 11 test PASS, cikis 0**.
+  - Urun kodu ve test beklentileri DEGISMEDI.
+- Toplu baglama, urun/politika degisikligi ve canli DB bu olcumun KAPSAMI DISIDIR.
+
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
 | # | Kalem | Durum |
