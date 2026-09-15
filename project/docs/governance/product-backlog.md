@@ -4052,6 +4052,12 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 **BAGLAMA — ILK DAR BAGLAMA YAPILDI (2026-09-15; owner GO "CLIENT-PAYOUT MANUAL REVERSAL / CI MANIFEST BAGLAMA"):**
 - **Degismezlik kontrolu** (olcum `5e72476a` → baglama tabani `3fca7e61`): spec, `pure/client-portal.txt`, `client-settlement/**` kaynagi ve diger manifestlerde degisiklik 0. Spec baska manifestte degildi.
 - **Baglanan:** `src/modules/client-settlement/__tests__/client-payout-manual-reversal.service.spec.ts` → `apps/api/ci-manifests/pure/client-portal.txt`, client-settlement blogu (A4 girdisinin altina). Yeni manifest ACILMADI; urun kodu ve test beklentileri DEGISMEDI.
+- **CI kaniti (PR #2685, run `35011937119`, Test Suite job `104525788245`):**
+  - Log satiri `PASS src/modules/client-settlement/__tests__/client-payout-manual-reversal.service.spec.ts`.
+  - `pure/client-portal` **101 suite / 1533 test PASS** (main `3fca7e61`: 100 / 1522 → +1 suite / +11 test = spec'in 11 testi).
+  - client-settlement `PASS` satiri 7 → **8**, `FAIL` 0.
+  - `db/domain-integration` 65 / 687 degismedi.
+  - Yerel resmi runner (izole worktree, DB env yok) ayni sonucu verdi: 101 / 1533. Windows komut uzunlugu siniri asilmadi.
 - **GUNCEL SAYI:** **32 spec · CI'da 8 (pure/client-portal 6 + db/domain-integration 2) · CI disinda 24 · belirsiz 0.** CI disi 24: saf birim 20 · surec-ici Nest HTTP smoke 2 · DB-gated 2. Kalan 24'un baglanmasi bu isin KAPSAMI DISIDIR.
 - Toplu baglama, urun/politika degisikligi ve canli DB bu olcumun KAPSAMI DISIDIR.
 
