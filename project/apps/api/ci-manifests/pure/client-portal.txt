@@ -379,6 +379,34 @@ src/modules/client-settlement/__tests__/case-fee-agreement.service.spec.ts
 #     SAF birim testi (mock, DB-siz). Urun kodu ve beklentiler DEGISMEDI.
 src/modules/client-settlement/__tests__/client-payout-manual-reversal.service.spec.ts
 
+#   CLIENT-SETTLEMENT kalan SAF birim spec'leri (#2683 envanteri; owner GO 2026-09-15 "KALAN SAF BIRIM TESTLERININ CI BAGLAMASI")
+#     20 spec vardi ama HICBIR manifestte degildi (ayni sinif: D-10 / A4 / #2685). Hepsi mock'lu SAF birim:
+#     DB / Nest HTTP / dis servis yok (statik tarama + DB env tanimsiz ayri kosum: 20/20 spec, 290 test PASS).
+#     Kapsam: muhasebe okuma/ozet/golge rapor + defter dry-run, mahsup (offset), payout + manuel iade okuma/
+#     controller, uzlasma okuma, tahsilat dagitimi (disposition), masraf kalani, dagitim onerisi, finans risk
+#     motoru, odeme olay kayitcisi/guard. Urun kodu, mock ve beklentiler DEGISMEDI; skip EKLENMEDI.
+#     KAPSAM DISI (burada DEGIL): 2 Nest HTTP smoke + 2 DB-gated client-settlement spec'i.
+src/modules/client-settlement/__tests__/accounting-ledger-dry-run.service.spec.ts
+src/modules/client-settlement/__tests__/case-fee-agreement.controller.spec.ts
+src/modules/client-settlement/__tests__/client-accounting-journal-movements-reader.service.spec.ts
+src/modules/client-settlement/__tests__/client-accounting-journal-summary-reader.service.spec.ts
+src/modules/client-settlement/__tests__/client-accounting-movements-read.service.spec.ts
+src/modules/client-settlement/__tests__/client-accounting-summary-read.service.spec.ts
+src/modules/client-settlement/__tests__/client-accounting-summary-shadow-report.service.spec.ts
+src/modules/client-settlement/__tests__/client-accounting.controller.spec.ts
+src/modules/client-settlement/__tests__/client-offset.service.spec.ts
+src/modules/client-settlement/__tests__/client-payout-manual-reversal-read.service.spec.ts
+src/modules/client-settlement/__tests__/client-payout-manual-reversal.controller.spec.ts
+src/modules/client-settlement/__tests__/client-payout.controller.spec.ts
+src/modules/client-settlement/__tests__/client-payout.service.spec.ts
+src/modules/client-settlement/__tests__/client-settlement-read.service.spec.ts
+src/modules/client-settlement/__tests__/collection-disposition.service.spec.ts
+src/modules/client-settlement/__tests__/compute-expense-remaining.spec.ts
+src/modules/client-settlement/__tests__/distribution-recommendation.service.spec.ts
+src/modules/client-settlement/__tests__/finance-risk.engine.spec.ts
+src/modules/client-settlement/__tests__/payment-received-stale-cancelled-guard.spec.ts
+src/modules/client-settlement/__tests__/payment-reversed.registrar.spec.ts
+
 #   CODEX-CLIENT-X2-B05 dedicated Financial Disclosure approval/publication route adapter
 #     JWT tenant/actor scope, strict WRITE+PUBLICATION fail-closed gates, canonical approval
 #     and publication service sequencing, and no direct dispatch bypass (SAF, DB-siz).

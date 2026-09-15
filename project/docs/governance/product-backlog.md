@@ -4001,27 +4001,27 @@ Incelenen secim yollari:
 | 5 | `disposition-posting.service.spec.ts` | KOSUYOR | `pure/client-portal` + log PASS | saf birim |
 | 6 | `client-financial-disclosure-command.db-gated.integration.spec.ts` | KOSUYOR | `db/domain-integration` + log PASS | DB-gated (`describeDb`) |
 | 7 | `f04-posting-reversal-race.db-gated.integration.spec.ts` | KOSUYOR | `db/domain-integration` + log PASS | DB-gated |
-| 8 | `accounting-ledger-dry-run.service.spec.ts` | YOK | manifest 0 · desen 0 · log 0 | saf birim (mock) |
-| 9 | `case-fee-agreement.controller.spec.ts` | YOK | ayni | saf birim (mock) |
-| 10 | `client-accounting-journal-movements-reader.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 11 | `client-accounting-journal-summary-reader.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 12 | `client-accounting-movements-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 13 | `client-accounting-summary-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 14 | `client-accounting-summary-shadow-report.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 15 | `client-accounting.controller.spec.ts` | YOK | ayni | saf birim (mock) |
-| 16 | `client-offset.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 17 | `client-payout-manual-reversal-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 18 | `client-payout-manual-reversal.controller.spec.ts` | YOK | ayni | saf birim (mock) |
+| 8 | `accounting-ledger-dry-run.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: manifest 0 · desen 0 · log 0 · simdi `pure/client-portal` | saf birim (mock) |
+| 9 | `case-fee-agreement.controller.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 10 | `client-accounting-journal-movements-reader.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 11 | `client-accounting-journal-summary-reader.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 12 | `client-accounting-movements-read.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 13 | `client-accounting-summary-read.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 14 | `client-accounting-summary-shadow-report.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 15 | `client-accounting.controller.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 16 | `client-offset.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 17 | `client-payout-manual-reversal-read.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 18 | `client-payout-manual-reversal.controller.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
 | 19 | `client-payout-manual-reversal.service.spec.ts` | YOK → **KOSUYOR (2026-09-15 baglandi, asagida)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) — **ILK BAGLAMA** |
-| 20 | `client-payout.controller.spec.ts` | YOK | ayni | saf birim (mock) |
-| 21 | `client-payout.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 22 | `client-settlement-read.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 23 | `collection-disposition.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 24 | `compute-expense-remaining.spec.ts` | YOK | ayni | saf birim (mock) |
-| 25 | `distribution-recommendation.service.spec.ts` | YOK | ayni | saf birim (mock) |
-| 26 | `finance-risk.engine.spec.ts` | YOK | ayni | saf birim (bagimliliksiz) |
-| 27 | `payment-received-stale-cancelled-guard.spec.ts` | YOK | ayni | saf birim (mock) |
-| 28 | `payment-reversed.registrar.spec.ts` | YOK | ayni | saf birim (mock) |
+| 20 | `client-payout.controller.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 21 | `client-payout.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 22 | `client-settlement-read.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 23 | `collection-disposition.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 24 | `compute-expense-remaining.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 25 | `distribution-recommendation.service.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 26 | `finance-risk.engine.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (bagimliliksiz) |
+| 27 | `payment-received-stale-cancelled-guard.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
+| 28 | `payment-reversed.registrar.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
 | 29 | `case-fee-agreement.http-smoke.spec.ts` | YOK | ayni | surec-ici Nest HTTP (supertest + JWT/Passport, servisler mock; DB/dis servis yok) |
 | 30 | `distribution-recommendation.http-smoke.spec.ts` | YOK | ayni | surec-ici Nest HTTP (ayni) |
 | 31 | `client-payout-replay.db-gated.integration.spec.ts` | YOK | ayni | DB-gated (`describeDb`, gercek `PrismaClient`) |
@@ -4060,6 +4060,31 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
   - Yerel resmi runner (izole worktree, DB env yok) ayni sonucu verdi: 101 / 1533. Windows komut uzunlugu siniri asilmadi.
 - **GUNCEL SAYI:** **32 spec · CI'da 8 (pure/client-portal 6 + db/domain-integration 2) · CI disinda 24 · belirsiz 0.** CI disi 24: saf birim 20 · surec-ici Nest HTTP smoke 2 · DB-gated 2. Kalan 24'un baglanmasi bu isin KAPSAMI DISIDIR.
 - Toplu baglama, urun/politika degisikligi ve canli DB bu olcumun KAPSAMI DISIDIR.
+
+**BAGLAMA-2 — KALAN 20 SAF BIRIM SPEC CI'A BAGLANDI (2026-09-16; owner GO "KALAN SAF BIRIM TESTLERININ CI BAGLAMASI"):**
+- **Eslestirme (envanter yeniden cikarilmadi):** main `77eb9fa5`.
+  - Tablodaki 20 saf birim spec'in 20'si mevcut.
+  - Hicbiri bir manifestte, ci.yml'de veya `apps/api/scripts`'te gecmiyordu.
+  - `client-settlement/**` kaynaginda olcumden (`5e72476a`) beri degisiklik 0.
+- **Saflik:**
+  - Statik tarama: `new PrismaClient` / `describeDb` / DB env / Nest HTTP / supertest / dis servis istemcisi / net-http-child / skip-only 0. Dis bagimliliklar yalniz `@prisma/client` (tip / `Prisma.Decimal`), `@nestjs/common`, `fs`/`path`. `accounting-ledger-dry-run` kendi servis kaynagini okur.
+  - Calisma zamani: `TEST_DATABASE_URL` tanimsiz → `DATABASE_URL=''` fail-safe (gercek baglanti denemesi DUSERDI).
+- **Ayri ayri kosum** (izole worktree, bagimsiz `pnpm install --frozen-lockfile` + `prisma generate`; her spec ayri `jest --runTestsByPath --json`):
+  - **20/20 spec PASS · 290 test · fail 0 · pending 0 · todo 0.**
+  - Spec basina test: accounting-ledger-dry-run 27 · case-fee-agreement.controller 7 · client-accounting-journal-movements-reader 1 · client-accounting-journal-summary-reader 4 · client-accounting-movements-read 4 · client-accounting-summary-read 9 · client-accounting-summary-shadow-report 40 · client-accounting.controller 1 · client-offset.service 46 · client-payout-manual-reversal-read 6 · client-payout-manual-reversal.controller 3 · client-payout.controller 4 · client-payout.service 46 · client-settlement-read 42 · collection-disposition 10 · compute-expense-remaining 6 · distribution-recommendation.service 22 · finance-risk.engine 7 · payment-received-stale-cancelled-guard 2 · payment-reversed.registrar 3.
+  - **Basarisiz spec YOK** → acik listeye dusen yok.
+  - Urun kodu, mock, beklenti DEGISMEDI; skip EKLENMEDI.
+- **Baglama:** 20 spec `apps/api/ci-manifests/pure/client-portal.txt` client-settlement blogunda, #2685 girdisinin altinda.
+  - Yeni manifest / yeni Jest cagrisi YOK → CI-8 butcesi degismez.
+  - Manifest-ici mukerrer 0. Manifestler-arasi mukerrer 1 (`client-intake-promotion.service.spec.ts` hem client-portal hem platform-scripts-shared) main'de ONCEDEN VAR, bu isle ilgisiz, dokunulmadi.
+  - Sure: main Test Suite ~11 dk / sinir 20 dk; `pure/client-portal` adimi ~52 sn.
+- **Manifest kosumu:**
+  - Resmi runner (`run-ci-manifest.sh pure/client-portal`, 121 spec) Windows'ta `The command line is too long.` ile kosamadi (Volta shim ~8191 karakter; Linux CI'yi etkilemez).
+  - Kayitli guvenli yontemle (ayni filtre + `test -f` + ayni jest bayraklari, spec listesi stdin-runner ile argv disi) → **121 suite / 1823 test PASS** (onceki 101 / 1533 → +20 suite / +290 test).
+  - Eklenen 20'nin 20'sinin PASS satiri var; client-settlement PASS 6 → 26.
+- **GUNCEL SAYI (hedef tuttu):** **32 spec · CI'da 28 (pure/client-portal 26 + db/domain-integration 2) · CI disinda 4 · belirsiz 0.**
+  - CI disi 4 = `case-fee-agreement.http-smoke` + `distribution-recommendation.http-smoke` (surec-ici Nest HTTP) + `client-payout-replay.db-gated.integration` + `tm47d-happy-path-financial-qa.integration` (DB-gated). Bu 4'u bu isin KAPSAMI DISIDIR.
+  - PR CI log kaniti (eklenen spec'lerin PASS satirlari ve manifest toplamlari) PR govdesinde.
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
