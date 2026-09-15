@@ -1,21 +1,17 @@
 /*
- * İ12 — CANLI KABUL PENCERESİ: Office SMTP yönlendirme + rollback + kurtarma (İ11 T-PENCERE deseni)
+ * İ12 — PROVA (disposable) Office SMTP penceresi · SIR-KORUYUCU · rollback + kurtarma
  *
- * Statement (G7) teslim yolu SMTP'yi ENV'den DEĞİL, tenant'ın Office satırından okur
- * (getFullSmtpSettings / Büro Ayarları > E-posta). Bu betik YALNIZ verilen (sentetik hedef) tenant'ın
- * Office SMTP alanlarını loopback sink'e yönlendirir; başka HİÇBİR tenant'a dokunmaz; özgün değerleri
- * rollback dosyasına yazar (kurtarma ayrı giriş noktası — süreç yarıda ölürse `close` yeniden koşulur).
+ * Bu betik DISPOSABLE prova içindir: `assertDisposableEnvironment` (G-0) KALDIRILMAZ → yalnız disposable
+ * DB'de koşar. **CANLI DEĞİLDİR**; canlı için AYRI giriş noktası `i12-live-window.js` kullanılır (G-0 owner
+ * yetkisiyle "aşılmaz" — canlı yol ayrı betiktir). Bu betik, pencere mantığının izole ortamda doğrulanan
+ * referans uygulamasıdır ve `i12-live-window.js` ile AYNI sır-koruyucu davranışı taşır.
  *
- * Env-tabanlı yollar (G1/G2 + FD: email-provider.service) pencerede AYRI ele alınır: SMTP_HOST/PORT +
- * EMAIL_PROVIDER + i3-spy sayacı API'nin AÇILIŞ komutuyla verilir (bu betik ENV'e dokunmaz). Restart
- * bütçesi/komut sırası §7'de.
+ * SIR-KORUYUCU: statement teslim yolu (getFullSmtpSettings) SMTP'yi tenant Office satırından okur. Pencere
+ * YALNIZCA sırsız alanları — `smtpHost`, `smtpPort`, `smtpSecure` — sink'e çevirir; **`smtpUser`/`smtpPass`
+ * (SIR) OKUNMAZ, YAZILMAZ, ROLLBACK DOSYASINA KONMAZ**. Sink (i3-sink) EHLO'da AUTH ilan ETMEZ → nodemailer
+ * AUTH göndermez → gerçek kimlik bilgileri sink'e HİÇ iletilmez. Rollback yalnız {smtpHost,smtpPort,smtpSecure}.
  *
  * KULLANIM:  node i12-window.js <open|close|status> <tenantId>
- * ENV: AH_DATABASE_URL (G-0 disposable zorunlu) · I3_SMTP_PORT (sink) · I12_WINDOW_ROLLBACK (rollback yolu)
- *
- * GÜVENLİK: `assertDisposableEnvironment` (G-0) KALDIRILMAZ — betik yalnız disposable DB'de koşar.
- *   Canlı kullanımda owner'ın yükseltilmiş T-PENCERE komutuyla, canlı hedef sentetik tenant'a karşı,
- *   G-0 owner otoritesiyle çalıştırılır (bu repо kopyası canlıya UYARLANMAZ; sha GO'da pinlenir).
  */
 'use strict';
 const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -23,57 +19,73 @@ const I3 = path.resolve(__dirname, '../../client-acceptance-runners-i3-r01/scrip
 const L = require(path.join(I3, 'i3-lib'));
 const SMTP_PORT = Number(process.env.I3_SMTP_PORT || 2529);
 const ROLLBACK = process.env.I12_WINDOW_ROLLBACK || path.join(process.env.I12_WORK_DIR || process.cwd(), 'i12-window-rollback.json');
-const SMTP_FIELDS = ['smtpHost', 'smtpPort', 'smtpUser', 'smtpPass', 'smtpSecure', 'smtpFromName', 'smtpFromEmail'];
-const pick = (o) => o ? SMTP_FIELDS.reduce((a, k) => (a[k] = o[k] ?? null, a), {}) : null;
+// YALNIZ sırsız alanlar pencere kapsamındadır. smtpUser/smtpPass BİLEREK DIŞARIDA.
+const WINDOW_FIELDS = ['smtpHost', 'smtpPort', 'smtpSecure'];
+const pickWin = (o) => o ? WINDOW_FIELDS.reduce((a, k) => (a[k] = o[k] ?? null, a), {}) : null;
 const sha = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 16).toUpperCase();
 
-// Hedef DIŞINDAKİ tüm Office satırlarının SMTP alanlarının parmak izi — pencere işleminin
-// yalnız hedefi değiştirdiğini kanıtlar (hedef-dışı ayar değişimi = güvenlik ihlali).
+// Hedef DIŞINDAKİ Office satırlarının TÜM SMTP alanlarının (sırlar dahil) parmak izi — pencerenin başka
+// tenant'a dokunmadığını kanıtlar. Parmak izi sha256'dır (sır DEĞERİ ifşa olmaz), yalnız değişmezlik kanıtı.
 async function othersFingerprint(prisma, tenantId) {
   const rows = await prisma.office.findMany({ where: { NOT: { tenantId } }, select: { tenantId: true, smtpHost: true, smtpPort: true, smtpUser: true, smtpPass: true, smtpSecure: true, smtpFromName: true, smtpFromEmail: true }, orderBy: { tenantId: 'asc' } });
   return sha(JSON.stringify(rows));
 }
 
-(async () => {
-  const cmd = (process.argv[2] || '').toLowerCase();
-  const tenantId = process.argv[3];
-  if (!['open', 'close', 'status'].includes(cmd) || !tenantId) {
-    console.error('KULLANIM: node i12-window.js <open|close|status> <tenantId>'); process.exit(2);
+async function runWindow(prisma, cmd, tenantId, { assertDisposable = true } = {}) {
+  const current = await prisma.office.findUnique({ where: { tenantId } });
+  if (cmd === 'status') {
+    return { record: 'I12-WINDOW-STATUS', tenantId, windowFields: pickWin(current), hasRow: !!current };
   }
-  L.AH.assertDisposableEnvironment(); // G-0 — KALDIRILMAZ
-  const prisma = L.AH.loadPrisma();
-  try {
-    const current = await prisma.office.findUnique({ where: { tenantId } });
-    if (cmd === 'status') {
-      console.log(JSON.stringify({ record: 'I12-WINDOW-STATUS', tenantId, office: pick(current) }, null, 1));
-    } else if (cmd === 'open') {
-      const othersBefore = await othersFingerprint(prisma, tenantId);
-      // Özgün değeri (satır yoksa null) rollback'e yaz — kurtarma bundan yapılır.
-      fs.writeFileSync(ROLLBACK, JSON.stringify({ record: 'I12-WINDOW-ROLLBACK', tenantId, existed: !!current, original: pick(current), othersBefore, openedAt: new Date().toISOString() }, null, 1), 'utf8');
-      const sink = { name: current ? current.name : 'İ12 Pencere Bürosu', smtpHost: '127.0.0.1', smtpPort: SMTP_PORT, smtpUser: 'i12-window@ah.invalid', smtpPass: 'x', smtpSecure: false, smtpFromName: 'İ12 Window', smtpFromEmail: 'noreply@ah-harness.invalid' };
-      await prisma.office.upsert({ where: { tenantId }, update: sink, create: { tenantId, ...sink } });
-      const after = await prisma.office.findUnique({ where: { tenantId } });
-      const othersAfter = await othersFingerprint(prisma, tenantId);
-      const ok = after.smtpHost === '127.0.0.1' && after.smtpPort === SMTP_PORT && othersAfter === othersBefore;
-      console.log(JSON.stringify({ record: 'I12-WINDOW-OPEN', tenantId, target: pick(after), othersUnchanged: othersAfter === othersBefore, ok, rollback: ROLLBACK }, null, 1));
-      if (!ok) process.exit(1);
-    } else if (cmd === 'close') {
-      const rb = JSON.parse(fs.readFileSync(ROLLBACK, 'utf8'));
-      if (rb.tenantId !== tenantId) throw new Error(`rollback tenantId uyuşmuyor: ${rb.tenantId} != ${tenantId}`);
-      const othersBefore = await othersFingerprint(prisma, tenantId);
-      if (rb.existed) {
-        await prisma.office.update({ where: { tenantId }, data: rb.original });
-      } else {
-        // Pencere öncesi Office satırı YOKTU → oluşturulan satır silinir (özgün duruma dön).
-        await prisma.office.delete({ where: { tenantId } });
-      }
-      const after = await prisma.office.findUnique({ where: { tenantId } });
-      const othersAfter = await othersFingerprint(prisma, tenantId);
-      const restored = rb.existed ? (after && after.smtpHost === (rb.original.smtpHost ?? null)) : (after === null);
-      const ok = restored && othersAfter === othersBefore;
-      console.log(JSON.stringify({ record: 'I12-WINDOW-CLOSE', tenantId, restoredTo: rb.existed ? rb.original : null, deletedCreatedRow: !rb.existed, othersUnchanged: othersAfter === othersBefore, ok }, null, 1));
-      if (!ok) process.exit(1);
+  if (cmd === 'open') {
+    const othersBefore = await othersFingerprint(prisma, tenantId);
+    // Rollback YALNIZ sırsız alanları taşır (var mıydı + host/port/secure). SIR yazılmaz.
+    fs.writeFileSync(ROLLBACK, JSON.stringify({ record: 'I12-WINDOW-ROLLBACK', tenantId, existed: !!current, original: pickWin(current), othersBefore, openedAt: new Date().toISOString(), secretsPreserved: true }, null, 1), 'utf8');
+    if (current) {
+      // Mevcut satır: YALNIZ host/port/secure güncellenir; user/pass/from DOKUNULMAZ.
+      await prisma.office.update({ where: { tenantId }, data: { smtpHost: '127.0.0.1', smtpPort: SMTP_PORT, smtpSecure: false } });
+    } else {
+      // Satır yok: sırsız minimal satır oluşturulur (name zorunlu; user/pass NULL bırakılır).
+      await prisma.office.create({ data: { tenantId, name: 'İ12 Pencere Bürosu', smtpHost: '127.0.0.1', smtpPort: SMTP_PORT, smtpSecure: false } });
     }
-  } catch (e) { console.error(`DURDU: ${e && e.message ? e.message : e}`); process.exitCode = 1; }
-  finally { await prisma.$disconnect().catch(() => {}); }
-})();
+    const after = await prisma.office.findUnique({ where: { tenantId } });
+    const othersAfter = await othersFingerprint(prisma, tenantId);
+    // Sır-koruma doğrulaması: mevcut satırda user/pass DEĞİŞMEDİ.
+    const secretsUntouched = !current || (after.smtpUser === current.smtpUser && after.smtpPass === current.smtpPass);
+    const ok = after.smtpHost === '127.0.0.1' && after.smtpPort === SMTP_PORT && othersAfter === othersBefore && secretsUntouched;
+    return { record: 'I12-WINDOW-OPEN', tenantId, windowFields: pickWin(after), othersUnchanged: othersAfter === othersBefore, secretsUntouched, ok, rollback: ROLLBACK };
+  }
+  if (cmd === 'close') {
+    const rb = JSON.parse(fs.readFileSync(ROLLBACK, 'utf8'));
+    if (rb.tenantId !== tenantId) throw new Error(`rollback tenantId uyuşmuyor: ${rb.tenantId} != ${tenantId}`);
+    const before = await prisma.office.findUnique({ where: { tenantId } });
+    const othersBefore = await othersFingerprint(prisma, tenantId);
+    if (rb.existed) {
+      // YALNIZ sırsız alanlar geri yüklenir; user/pass zaten hiç değişmedi (dokunulmuyor).
+      await prisma.office.update({ where: { tenantId }, data: { smtpHost: rb.original.smtpHost, smtpPort: rb.original.smtpPort, smtpSecure: rb.original.smtpSecure } });
+    } else {
+      await prisma.office.delete({ where: { tenantId } });
+    }
+    const after = await prisma.office.findUnique({ where: { tenantId } });
+    const othersAfter = await othersFingerprint(prisma, tenantId);
+    const restored = rb.existed ? (after && after.smtpHost === (rb.original.smtpHost ?? null) && after.smtpPort === (rb.original.smtpPort ?? null)) : (after === null);
+    // Kurtarmada da sır korunur: user/pass close'dan önce/sonra AYNI (varsa).
+    const secretsUntouched = !rb.existed || !before || (after.smtpUser === before.smtpUser && after.smtpPass === before.smtpPass);
+    const ok = restored && othersAfter === othersBefore && secretsUntouched;
+    return { record: 'I12-WINDOW-CLOSE', tenantId, restoredWindowFields: rb.existed ? rb.original : null, deletedCreatedRow: !rb.existed, othersUnchanged: othersAfter === othersBefore, secretsUntouched, ok };
+  }
+  throw new Error(`bilinmeyen komut: ${cmd}`);
+}
+
+if (require.main === module) {
+  (async () => {
+    const cmd = (process.argv[2] || '').toLowerCase();
+    const tenantId = process.argv[3];
+    if (!['open', 'close', 'status'].includes(cmd) || !tenantId) { console.error('KULLANIM: node i12-window.js <open|close|status> <tenantId>'); process.exit(2); }
+    L.AH.assertDisposableEnvironment(); // G-0 — KALDIRILMAZ (bu betik yalnız disposable prova içindir)
+    const prisma = L.AH.loadPrisma();
+    try { const r = await runWindow(prisma, cmd, tenantId); console.log(JSON.stringify(r, null, 1)); if (r.ok === false) process.exitCode = 1; }
+    catch (e) { console.error(`DURDU: ${e && e.message ? e.message : e}`); process.exitCode = 1; }
+    finally { await prisma.$disconnect().catch(() => {}); }
+  })();
+}
+module.exports = { runWindow, WINDOW_FIELDS, othersFingerprint };
