@@ -134,26 +134,37 @@ TEK yerden gelmez; provada doğrulandı:
 >   sonunda özgün değere geri alınır (T-PENCERE-KAPA). Bu ayrım prova sırasında bulundu: yalnız env yönlendirmesi
 >   G7'de "E-posta ayarları yapılandırılmamış" → `DISPATCH_FAILED` verir.
 
-**7.3 · Betikler + tam yol + sha256 kapısı.** Ölçüm betikleri bu paketin `scripts/`'idir; canlı GO'da her betiğin
-main'deki (`b07bed98` ⊇, İ12 R03 dahil) sha256'sı §D3-benzeri sha kapısıyla doğrulanır (yalnız eşleşen sha koşar):
-> - `project/docs/governance/client-live-acceptance-i12-r01/scripts/i12-gaps.js` (G3/G4/G6/FD-RED/FD-TMO)
-> - `.../scripts/i12-gaps2.js` (CLAIM/RECLAIM/HANG)
-> - `.../scripts/i12-allowlist.js` (G5 gerçek negatif kontrol)
-> - `.../scripts/i12-cron-hook.js` + `.../scripts/i12-cron-run.js` (G7 predicate/direct/fireOnTick/kısa-takvim)
-> - `.../scripts/i12-cron-delivery.js` (G7-DELIV: gerçek gönderim + ledger `markSent` + aynı-dönem-dedupe)
-> - İ3 düzeneği: `project/docs/governance/client-acceptance-runners-i3-r01/scripts/{i3-lib,i3-start-api,i3-sink,i3-spy,i3-h5-intake}.js`
->   + `client-acceptance-harness-r01/scripts/ah-lib.js`
->
-> **Disposable kapıları KALDIRILMAZ.** Prova betikleri `ah-lib.assertDisposableEnvironment` (G-0: DB port
-> allowlist `{5439}`, DB adı `{hukuk_fix1_test}`, loopback) ile disposable ortamı zorunlu kılar. Canlı yürütme bu
-> betikleri **canlıya uyarlamaz**; canlı ölçüm ayrı bir salt-okuma betikle (canlı DB'ye yalnız SELECT + TEK canlı
-> API üzerinden HTTP) yapılırsa sha'sı GO'da pinlenir. **İkinci bir canlı-DB API AÇILMAZ** (owner kuralı).
+**7.3 · Betikler + tam yol + sha256 kapısı.** Canlı GO'da her betiğin main'deki sha256'sı §D3-benzeri sha kapısıyla
+doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` altındadır; SHA256 (İ12 R04 içeriği):
+
+| Betik (tam yol kökten) | Rol | SHA256 |
+|---|---|---|
+| `client-live-acceptance-i12-r01/scripts/i12-gaps.js` | G3/G4/G6/FD-RED/FD-TMO | `E6FE71228F78B5B80BB4771F0F164C9028F4816F00898D5280EDDA9226351154` |
+| `client-live-acceptance-i12-r01/scripts/i12-gaps2.js` | CLAIM/RECLAIM/HANG | `CFA0E9C084D7218D39406D1AE4329353C7EF0E6F8882A2E65D7B31DFAA630E21` |
+| `client-live-acceptance-i12-r01/scripts/i12-allowlist.js` | G5 gerçek negatif kontrol | `C7622F9091E23FC2063CA297844539E4E14880966631DC0047857169EAD3F007` |
+| `client-live-acceptance-i12-r01/scripts/i12-cron-hook.js` | G7 predicate/direct/fireOnTick/kısa-takvim | `632E569A2C1ACEAACE70FA2E2A3DD0BBD6F8874A045830A6AA517E5E409E06CB` |
+| `client-live-acceptance-i12-r01/scripts/i12-cron-run.js` | G7 a/b/c/d | `FF8766D260175999E6645537A79638EF1D54B30EEF404AC093E6A1E17C2AE534` |
+| `client-live-acceptance-i12-r01/scripts/i12-cron-delivery.js` | G7-DELIV-SCOPE + G7-DEDUPE | `29A569EC6A191346E65C5ECC20F94589902FD69062C7128B7E445D93FD7AEBD1` |
+| `client-live-acceptance-i12-r01/scripts/i12-window.js` | Office SMTP pencere aç/kapat/kurtarma | `E94BF4EE8CA1C469D8FBD2ADD190D0B2E86F4972E00B4F61F0ADB5BBFA5F8373` |
+| `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | düzenek | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
+| `client-acceptance-runners-i3-r01/scripts/i3-start-api.js` | düzenek | `72505F981EE167B1A664E5663DC675B2E6ACAB1CCCE84058231BA8BB0EECDFB5` |
+| `client-acceptance-runners-i3-r01/scripts/i3-sink.js` | loopback SMTP sink | `7D26418D3D7B1B3B7929041986C1A370B9253E79B3700470231CA5D56253E75C` |
+| `client-acceptance-runners-i3-r01/scripts/i3-spy.js` | gerçek dispatcher.send sayacı | `954C4B88AFB18322564FD29F71CE1D7B6EF4EEFF4DC6716EA7B6AB08AB1F36D0` |
+| `client-acceptance-runners-i3-r01/scripts/i3-h5-intake.js` | A-9/A-10 (G1/G2) | `D6D27F874C3D7409EC307F54B3BEBB4F9B8257270FE20F7E2DECD7DF6180F101` |
+| `client-acceptance-harness-r01/scripts/ah-lib.js` | G-0 + prisma/aktör altyapısı | `DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7` |
+
+> **Disposable kapıları KALDIRILMAZ.** Betikler `ah-lib.assertDisposableEnvironment` (G-0: DB port allowlist `{5439}`,
+> DB adı `{hukuk_fix1_test}`, loopback) ile disposable ortamı zorunlu kılar; sha256'lar bu G-0 KORUNARAK hesaplandı.
+> `i12-window.js` da G-0 taşır. Canlı yürütmede bu betikler **canlıya uyarlanmaz**; owner'ın yükseltilmiş T-PENCERE
+> komutu G-0 otoritesini sağlar (repo kopyası değişmez, sha GO'da doğrulanır). **İkinci bir canlı-DB API AÇILMAZ.**
 
 **7.4 · Sayaç bağlama (counter loading) + SMTP/mock anahtarı.** Tek canlı API'nin taşıması pencerede sink'e
 yönlendirildikten sonra: FD yolunda gerçek `dispatcher.send` `i3-spy` deseniyle (ürün kodu değişmez, `--require` ile
 `ClientFinancialDisclosureEmailDispatcher` sarmalanır) sayılır; bilgi-talebi yolunda sink `conn-*` (bağlantı) +
-`msg-*` (mesaj) dosya sayımıyla; G7 yolunda **run-scoped** sink `msg-*` (alıcı `client-<runId>@…`) + teslim defteri
-`SENT` sayımıyla. Sink modu dosyayla anahtarlanır (``→ACCEPTED, `reject`→550, `reset`→ECONNRESET, `hang`→greeting-timeout).
+`msg-*` (mesaj) dosya sayımıyla; G7 yolunda **hedef-scoped** çağrının teslimini alıcı-ayrık sink `msg-*` sayımı
+(hedef `deliv-target-<runId>` vs yabancı `deliv-foreign-<runId>`) + **TOPLAM sink** kontrolü (hedef-dışı=FAIL) +
+teslim defteri `SENT` sayımıyla ölçer. Sink modu dosyayla anahtarlanır (``→ACCEPTED, `reject`→550, `reset`→ECONNRESET,
+`hang`→greeting-timeout). **Sayaç yükleme/kaldırma restart'a bağlıdır** (i3-spy `--require` açılışta; §7.8).
 
 **7.5 · Her ölçütün canlı kanıtı.**
 > - **G1/G2:** canlı API'ye bilgi talebi; sink `reject`→`503 CLIENT_INFO_REQUEST_EMAIL_FAILED` (ClientInfoRequest
@@ -192,29 +203,60 @@ yönlendirildikten sonra: FD yolunda gerçek `dispatcher.send` `i3-spy` deseniyl
 > - **Hata — G7 dispatch başarısız:** `clientStatementDeliveryLedger` `markFailed` (UPDATE→FAILED, `attempts++`,
 >   `nextRetryAt`); `ClientNotification` FAILED. (MAX_ATTEMPTS=3; terminal denemede errorReporter.)
 
-**7.7 · Cron kapsam izolasyonu (provada doğrulanan yöntem).** Otonom tetik `runMonthlyDelivery(now, {})` = **boş-scope
-= tüm ACTIVE tenant taraması** (üretim davranışı). Kapsamın "yalnız hedefi seçtiği" prova yönteminde şöyle doğrulandı:
-hedef tenant'a doğru-dönem aktivitesi + Office SMTP verildi, **yabancı tenant aktivitesiz** bırakıldı → yabancı tenant
-`SKIPPED_NO_RECIPIENT`/`SKIPPED_EMPTY_PERIOD`, teslim defteri **0**; ölçüm ayrıca **run-scoped** (alıcı `client-<runId>`)
-yapılarak aynı disposable DB'de birikmiş diğer koşum tenant'larının teslimlerinden yalıtıldı. Canlıda scope'lu
-`runMonthlyDelivery(now, {tenantId})` doğrudan çağrısı da kullanılabilir (canlı kanıt); kalıcı kısa-cron EKLENMEZ.
+**7.7 · Cron kapsam izolasyonu — HEDEF-SCOPED yöntem (R04'te doğrulandı).** Üretimde aylık cron `runMonthlyDelivery(now, {})`
+= boş-scope = tüm ACTIVE tenant tarar. **Canlı KABULDE boş-scope/all-tenant tetik KULLANILMAZ** (gerçek müvekkillere
+gönderim riski). Bunun yerine yalnız sentetik hedef tenant'a **scope'lu** `runMonthlyDelivery(now, {tenantId: T})` çağrılır.
+Bu yöntemin hedef sınırını gerçekten uyguladığı R04 provasında (§9.4) **güçlü** biçimde doğrulandı: yabancı tenant da
+**TAM teslim-uygun** (dönem aktivitesi + alıcı + şablon + Office SMTP) kuruldu; hedef-scoped çağrıda yabancı tenant
+teslim **ALMADI** (sink+0/ledger+0/bildirim+0) ve **toplam sink deltası = hedef** (hedef-dışı hiçbir gönderim yok).
+Zayıf "yabancı aktivitesiz → SKIP" kanıtı YERİNE bu geçer. Canlı scheduler'a kalıcı kısa-cron EKLENMEZ.
 
-**7.8 · Restart bütçesi · geri-alma · kapanış.** Restart bütçesi = **0 zorunlu restart** (pencere env değişiklikleri
-API sürecini yeniden başlatmadan uygulanabilirse tercih edilir; sağlayıcı/SMTP env'i süreç başında okunuyorsa owner
-yükseltilmiş komutuyla **en çok 1** kontrollü restart, öncesi/sonrası sha pin ile kaydedilir — canlı sürüm `2740df3d`
-değişmez). **Geri-alma (rollback):** pencere açıkken geri dönüş gerekirse ÖNCE T-PENCERE-KAPA (env SMTP özgün hedefe,
-`EMAIL_PROVIDER`/sağlayıcı allowlist-içi, hedef tenant Office SMTP özgün değere), doğrulama, sonra §6 kapanışı.
-**Kapanış:** erişim sonlandırma (çıkıştan bağımsız `isActive=false`+`tokenVersion++`) + izolasyon/geri-alma
-doğrulaması + kanıt SHA256 manifesti korumalı yerel arşive. **IF GO-COMPLETE:** yedi gözlem PASS + kapanış → İ12
-KAPANIR, **sayaç 11/17 → 12/17**, hizmet **0/8 tam**.
+**7.8 · Restart bütçesi (yöntemden TÜRETİLDİ) · geri-alma · kapanış.** Hangi ayarın restart gerektirdiği kaynaktan
+belirlendi: **env SMTP (`SMTP_HOST/PORT`) ve `EMAIL_PROVIDER` süreç açılışında `ConfigService` ile okunur**
+(`email-provider.service.ts:47,89`) → çalışan sürecin bu değerleri ancak **restart** ile değişir; **i3-spy sayacı**
+`--require` ile açılışta yüklenir → restart gerektirir; **hedef tenant Office SMTP** ise her gönderimde DB'den okunur
+(`getFullSmtpSettings`) → **restart GEREKTİRMEZ**, `i12-window.js` ile DB'de değişir. Buna göre **restart bütçesi = 3**:
+> - **Restart-1 (env=smtp penceresi):** `EMAIL_PROVIDER=smtp` + `SMTP_HOST/PORT→sink` + `--require i3-spy`. G1/G2 (bilgi
+>   talebi), G3/G4/G6/FD-RED/FD-TMO/HANG (FD) + G7 (statement; hedef Office SMTP `i12-window open` ile sink'te) koşar.
+> - **Restart-2 (G5 allowlist-DIŞI penceresi):** `EMAIL_PROVIDER=<mock/tanımsız>` + `SMTP→sink` + `--require i3-spy`.
+>   Tek yayın denemesi → `403 PROVIDER_NOT_PRODUCTION`, send=0. (Sağlayıcı açılışta sabit olduğundan AYRI boot şart;
+>   **ikinci canlı-DB API açılmaz** — aynı tek API restart edilir.)
+> - **Restart-3 (kapanış/geri-alma):** özgün env (gerçek SMTP + özgün `EMAIL_PROVIDER`), `--require i3-spy` YOK.
+>
+> Her restart: **owner'ın yükseltilmiş komutu** (auth) + **süre bütçesi**. Ölçülen soğuk boot spawn→listen = **~2,3 sn**
+> (izole RELEASE23 dist); canlı kutuda graceful drain + LB health-check payıyla **restart başına ≤120 sn** operasyonel
+> bütçe, öncesi/sonrası env değeri sha pin'iyle kaydedilir. Canlı sürüm `2740df3d` DEĞİŞMEZ (yalnız env + restart).
+
+**Geri-alma (rollback) · kurtarma.** Hedef tenant Office SMTPّi `i12-window.js close <tenantId>` ile özgün değere
+döner (satır yoktuysa oluşturulan satır SİLİNİR); rollback dosyasından yapılır → **süreç yarıda ölse bile `close`
+yeniden koşulur** (ayrı giriş noktası; F04 dersi). Env geri-alma Restart-3'tür. `i12-window.js` YALNIZ hedef tenant'a
+dokunur; **başka tenant'ın Office ayarı değişmez** (izolede `othersUnchanged` parmak-iziyle 7/7 doğrulandı, §9.4).
+**Kapanış:** erişim sonlandırma (çıkıştan bağımsız `isActive=false`+`tokenVersion++`) + Office/env geri-alma doğrulaması
++ kanıt SHA256 manifesti korumalı yerel arşive. **IF GO-COMPLETE:** yedi gözlem PASS + kapanış → İ12 KAPANIR,
+**sayaç 11/17 → 12/17**, hizmet **0/8 tam**.
+
+**7.9 · Sıralı owner komutları (canlı kabul; her adım owner'ın yükseltilmiş kabuğunda — ajan canlıya dokunmaz).**
+Aşağıdaki sıra izole ortamda doğrulanan birleşik yordamdır; canlıda `<T>`=sentetik hedef tenant, env değerleri owner
+tarafından pinlenir. Ölçüm betikleri sha256 (§7.3) ile doğrulanır.
+> 1. **Pencere-aç (DB, hedef Office SMTP):** `node .../scripts/i12-window.js open <T>` → hedef Office SMTP sink'e; rollback dosyası yazılır; `othersUnchanged=true` doğrulanır.
+> 2. **Restart-1 (env=smtp + i3-spy):** owner API'yi `EMAIL_PROVIDER=smtp SMTP_HOST=127.0.0.1 SMTP_PORT=<sink>` + `NODE_OPTIONS=--require .../i3-spy.js` ile yeniden başlatır (≤120 sn; öncesi/sonrası env sha).
+> 3. **Ölç (env=smtp penceresi):** G1/G2 (`i3-h5-intake`/`i12-*`), G3/G4/G6/FD-RED/FD-TMO/HANG (`i12-gaps`/`i12-gaps2`), G7 hedef-scoped `runMonthlyDelivery(now,{tenantId:<T>})` (`i12-cron-delivery` deseni) — üç-değerli verdict.
+> 4. **Restart-2 (G5 allowlist-DIŞI):** owner `EMAIL_PROVIDER=<mock>` ile yeniden başlatır; **tek** yayın denemesi → `403`, send=0; sonra Restart-3'e geçilir.
+> 5. **Restart-3 (env geri-al):** owner özgün env ile yeniden başlatır (i3-spy YOK).
+> 6. **Pencere-kapat (DB geri-al):** `node .../scripts/i12-window.js close <T>` → hedef Office SMTP özgün değere; `othersUnchanged=true`.
+> 7. **Kapanış:** erişim sonlandırma + geri-alma doğrulaması + kanıt SHA256 manifesti korumalı arşive.
 
 ## 8. Hazırlık durumu (bu belge)
 
 - İ12 kapsam/bağımlılık/ölçüt kaynaklarıyla çıkarıldı (§1); mevcut ürün/test farkı belirlendi (§2); yeniden açma yok.
 - Düzenek İ3'ten yeniden kullanılır; yeni kollar (`i12-fd-outcome`, `i12-monthly`) + orkestratör tanımlı (§3).
 - **PROVA:** izole/geçici ortamda koşuldu; sonuçlar §9 (R01 yedi gözlem) + §9.2 (R02 claim/reclaim/hang) + §9.3 (R03
-  cron teslim içeriği). Ürün kusuru çıkmadı (yalnız bir **bayat yorum** ayrıldı, §2; ayrıca §7.2'de belgelenen iki
-  ayrı SMTP kaynağı — env vs Office DB — bir yapılandırma gerçeğidir, kusur değil).
+  cron teslim içeriği) + **§9.4 (R04 cron teslim + HEDEF-SCOPED kapsam izolasyonu, güçlendirilmiş; + `i12-window.js`
+  pencere/kurtarma betiği izolede 7/7)**. Ürün kusuru çıkmadı (yalnız bir **bayat yorum** ayrıldı, §2; ayrıca §7.2'de
+  belgelenen iki ayrı SMTP kaynağı — env vs Office DB — bir yapılandırma gerçeğidir, kusur değil).
+- **Canlı yürütme hazırlığı:** pencere aç/kapat/kurtarma betiği (`i12-window.js`) yazıldı + izolede doğrulandı; §7.3
+  tüm betiklerin **tam yol + SHA256**'sını, §7.8 **türetilen restart bütçesini (3) + per-restart süre/auth**, §7.9
+  **sıralı owner komutlarını** verir. Canlı yürütme yapılmadı — ayrı yazılı owner GO'su (§7) ister.
 
 ## 9. PROVA SONUÇLARI (izole/geçici ortam — CANLI KABUL DEĞİL)
 
@@ -283,20 +325,35 @@ hedef tenant caseClient rolü `ALACAKLI` (ELIGIBLE) + önceki aya (postedAt `202
 SMTP'yi DEĞİL Office DB satırını okur, §7.2). Tetik: `i12-cron-hook.js` kısa-takvim (`*/2 * * * * *`) → zamanlayıcı
 **kendiliğinden ≥2 kez** tetikler (fireOnTick DEĞİL). API izole 6390 Redis'e bağlandı (canlı 6379'dan AYRI).
 
+R03 teslim **içeriğinin çalıştığını** (gerçek gönderim + ledger `markSent` + bildirim + aynı-dönem-dedupe)
+kanıtladı; ancak scope izolasyonunu **boş-scope otonom tetik + aktivitesiz yabancı tenant** ile ölçtü — bu ZAYIF bir
+kanıttır (yabancı tenant zaten teslim ALMAZDI). **R04 (§9.4) bu hükmü DÜZELTİR ve YERİNE GEÇER.**
+
+**R03 durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-cron-delivery-<ts>\` (manifest sha `4CCC306F…`) —
+teslim içeriğinin çalıştığının ilk kanıtı; scope hükmü R04 ile güncellenmiştir.
+
+### 9.4 R04 — cron TESLİM + KAPSAM İZOLASYONU (güçlendirilmiş; hedef-scoped; CANLI KABUL DEĞİL)
+
+Owner (2026-09-15) scope hükmünü güçlendirmeyi istedi: yabancı tenant da **TAM teslim-uygun** olsun (dönem
+aktivitesi + alıcı + şablon + Office SMTP), tetik **hedef-tenant-scoped** olsun (boş-scope DEĞİL), toplam sink
+trafiği de kontrol edilsin, bildirim mükerrerliği **kesin sayı** ile ölçülsün. Fikstür: HEDEF (T) ve YABANCI (F)
+tenant'ların **İKİSİ de** ALACAKLI caseClient + önceki-ay POSTED disposition/CLIENT_PAYABLE + STATEMENT_READY şablonu +
+Office SMTP→sink + ayrık alıcı (`deliv-target-<runId>` / `deliv-foreign-<runId>`). Tetik: **`runMonthlyDelivery(now, {tenantId: T})`**
+(hook `direct <T>` yolu; boş-scope KULLANILMADI). API izole 6390 Redis'e bağlandı.
+
 | Ölçüm | Sonuç | Kanıt (gerçek çıktı) |
 |---|---|---|
-| **G7-DELIV** teslim içeriği + dedupe | **PASS** | `i12-cron-delivery.js`: otonom tetik=2 · **ilk tetikte gerçek gönderim** (loopback sink `msg`, alıcı `client-<runId>@ah-harness.invalid`) **+1** · **aynı dönem sonraki otonom tetiklerde ek gönderim +0** · teslim defteri `clientStatementDeliveryLedger` **SENT +1** (`markSent`) · `ClientNotification` **SENT +1** · **run-scoped** sink sayımı (mükerrer gönderim iddiası ancak bu alıcıda >1 mesajla doğardı — gözlenmedi) · **yabancı tenant teslim defteri = 0** (kapsam izolasyonu) · son (tekrar) tetik `delivered=0` (already-SENT → claim SKIP `ledger-claim-lost`) |
+| **G7-DELIV-SCOPE** hedef-scoped teslim + kapsam | **PASS** | `i12-cron-delivery.js` (runId 1803d2ae): HEDEF **sink +1 · ledger SENT +1 (`markSent`) · bildirim SENT +1** (KESİN) · **TAM teslim-uygun YABANCI tenant: sink +0 · ledger +0 · bildirim +0** · **TOPLAM sink deltası = 1** (= hedef; hedef-dışı mesaj YOK — fazlası FAIL olurdu) · `delivered=1` |
+| **G7-DEDUPE** aynı dönem 2. tamamlanmış tetik | **PASS** | ikinci **hedef-scoped** `direct <T>` (tamamlanmış): HEDEF sink +0 · ledger SENT +0 · bildirim SENT +0 · YABANCI +0 · TOPLAM sink +0 · `delivered=0` (ledger SENT→SKIP `already-sent`, bildirim `dedupeKey`) |
 
-**Kapsam izolasyonu (provada doğrulanan yöntem):** otonom tetik boş-scope (tüm ACTIVE tenant) tarar; yabancı tenant
-aktivitesiz → `SKIPPED_NO_RECIPIENT` (teslim defteri 0). Sink GLOBAL yakalama olduğundan aynı disposable DB'de
-birikmiş DİĞER koşum tenant'ları da teslim alabildiği için gönderim ölçümü **bu koşumun alıcısına** (`client-<runId>`)
-kapsamlandı — böylece "ilk tetik 1 / sonraki 0" iddiası kontaminasyondan yalıtıldı (bu, R03 sırasında bulunan bir
-ölçüm-izolasyonu inceliğidir; ürün kusuru değil).
+**Düzeltilen kapsam yöntemi:** kanıt artık "yabancı aktivitesiz → SKIP" zayıf hükmüne değil, **TAM teslim-uygun bir
+yabancı tenant'ın hedef-scoped çağrıda teslim ALMAMASINA** dayanır; toplam sink trafiği hedefe eşit (hedef-dışı sıfır).
+Canlı kabulde bu yüzden **boş-scope/all-tenant tetik kullanılmaz**; yalnız sentetik hedef tenant'a scope'lu çağrı (§7.5/7.7).
 
-**R03 durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-cron-delivery-<ts>\` — `i12-cron-delivery-evidence.json`
-(G7-DELIV PASS) · `cron-delivery-last-result.json` (son tetik `delivered=0`) · `cron-delivery-predicate-state.json`
-(enabled/registered, ifade `0 3 1 * *`) · `api-delivery-excerpt.log` (hook satırları) + SHA256 manifesti
-`MANIFEST-SHA256-i12-cron-delivery.txt` (manifest sha `4CCC306F…`). Sentetik; sır/ref/.env yok.
+**R04 durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-cron-scope-<ts>\` — `i12-cron-delivery-evidence.json`
+(G7-DELIV-SCOPE + G7-DEDUPE PASS) · `i12-window-verify.txt` (pencere betiği 7/7) · `cron-scope-last-result.json` ·
+`cron-scope-predicate-state.json` · `api-delivery-excerpt.log` + SHA256 manifesti `MANIFEST-SHA256-i12-cron-scope.txt`
+(manifest sha `49719D78…`). Sentetik; sır/ref/.env yok.
 
 **Kanıt arşivi (durable, synthetic — sır/ref/.env yok):** `…\Documents\CLIENT-EVIDENCE-20260911\i12-rehearsal-<ts>\`
 — `i12-gaps2-evidence.json` · `cron-predicate-state.json` · `cron-last-result.json` · `cron-run.log` + SHA256
