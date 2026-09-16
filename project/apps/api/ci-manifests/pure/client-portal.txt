@@ -407,6 +407,14 @@ src/modules/client-settlement/__tests__/finance-risk.engine.spec.ts
 src/modules/client-settlement/__tests__/payment-received-stale-cancelled-guard.spec.ts
 src/modules/client-settlement/__tests__/payment-reversed.registrar.spec.ts
 
+#   CLIENT-SETTLEMENT surec-ici Nest HTTP smoke spec'leri (#2683 envanteri; owner GO 2026-09-17 "2 HTTP SMOKE SPEC'IN CI BAGLAMASI")
+#     Nest HTTP seviyesinde (Test.createTestingModule + INestApplication + supertest + JWT/Passport),
+#     servisler + PrismaService mock; DB / dis servis / TEST_DATABASE_URL yok. Emsal: client-route-precedence.http-smoke (bu manifest).
+#     DB env tanimsiz ayri kosum: 2/2 spec, 12 test PASS (case-fee-agreement 7 + distribution-recommendation 5).
+#     Urun kodu, mock ve beklentiler DEGISMEDI; skip EKLENMEDI. KAPSAM DISI: 2 DB-gated client-settlement spec'i.
+src/modules/client-settlement/__tests__/case-fee-agreement.http-smoke.spec.ts
+src/modules/client-settlement/__tests__/distribution-recommendation.http-smoke.spec.ts
+
 #   CODEX-CLIENT-X2-B05 dedicated Financial Disclosure approval/publication route adapter
 #     JWT tenant/actor scope, strict WRITE+PUBLICATION fail-closed gates, canonical approval
 #     and publication service sequencing, and no direct dispatch bypass (SAF, DB-siz).

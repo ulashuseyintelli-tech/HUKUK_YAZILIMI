@@ -4022,8 +4022,8 @@ Incelenen secim yollari:
 | 26 | `finance-risk.engine.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (bagimliliksiz) |
 | 27 | `payment-received-stale-cancelled-guard.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
 | 28 | `payment-reversed.registrar.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
-| 29 | `case-fee-agreement.http-smoke.spec.ts` | YOK | ayni | surec-ici Nest HTTP (supertest + JWT/Passport, servisler mock; DB/dis servis yok) |
-| 30 | `distribution-recommendation.http-smoke.spec.ts` | YOK | ayni | surec-ici Nest HTTP (ayni) |
+| 29 | `case-fee-agreement.http-smoke.spec.ts` | YOK → **KOSUYOR (2026-09-17 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | surec-ici Nest HTTP (supertest + JWT/Passport, servisler mock; DB/dis servis yok) |
+| 30 | `distribution-recommendation.http-smoke.spec.ts` | YOK → **KOSUYOR (2026-09-17 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | surec-ici Nest HTTP (ayni) |
 | 31 | `client-payout-replay.db-gated.integration.spec.ts` | YOK | ayni | DB-gated (`describeDb`, gercek `PrismaClient`) |
 | 32 | `tm47d-happy-path-financial-qa.integration.spec.ts` | YOK | ayni | DB-gated (`describeDb`, gercek `PrismaClient` + seed) |
 
@@ -4085,6 +4085,17 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **GUNCEL SAYI (hedef tuttu):** **32 spec · CI'da 28 (pure/client-portal 26 + db/domain-integration 2) · CI disinda 4 · belirsiz 0.**
   - CI disi 4 = `case-fee-agreement.http-smoke` + `distribution-recommendation.http-smoke` (surec-ici Nest HTTP) + `client-payout-replay.db-gated.integration` + `tm47d-happy-path-financial-qa.integration` (DB-gated). Bu 4'u bu isin KAPSAMI DISIDIR.
   - PR CI log kaniti (eklenen spec'lerin PASS satirlari ve manifest toplamlari) PR govdesinde.
+
+**BAGLAMA-3 — 2 SUREC-ICI NEST HTTP SMOKE SPEC CI'A BAGLANDI (2026-09-17; owner GO "CLIENT-SETTLEMENT / 2 HTTP SMOKE SPEC'IN CI BAGLAMASI"):**
+- **Taban:** main `d93ac206` (#2687 `489dd9e3` atasi; client-settlement kaynagi ve `pure/client-portal.txt` #2687'den beri degismedi). Iki spec hicbir manifestte degildi.
+- **Sinif dogrulamasi:** surec-ici Nest HTTP smoke — `Test.createTestingModule` + `INestApplication` + `supertest`; JWT/Passport gercek, servisler + `PrismaService` mock (`useValue`); `case-fee-agreement.http-smoke` PrismaService'i hic import etmez. Gercek DB / dis servis / `describeDb` / `new PrismaClient` YOK. Emsal: `client/__tests__/client-route-precedence.http-smoke.spec.ts` zaten `pure/client-portal`'de (SAF, DB-siz Nest HTTP).
+- **Ayri ayri kosum** (izole worktree `d93ac206`, bagimsiz `pnpm install --frozen-lockfile` + `prisma generate`; DB env `DATABASE_URL`/`TEST_DATABASE_URL` TANIMSIZ; her spec ayri `jest --ci --runInBand --runTestsByPath`):
+  - **2/2 spec PASS · 12 test · fail 0 · pending 0 · todo 0** (`case-fee-agreement.http-smoke` 7 + `distribution-recommendation.http-smoke` 5).
+  - Urun kodu, mock, beklenti DEGISMEDI; skip EKLENMEDI.
+- **Baglama:** 2 spec `apps/api/ci-manifests/pure/client-portal.txt` client-settlement blogunda, 20 saf birim blogunun altinda. Yeni manifest / yeni Jest cagrisi / yeni DB altyapisi YOK.
+- **Manifest kosumu:** `pure/client-portal` **123 suite / 1835 test PASS** (onceki 121 / 1823 → +2 suite / +12 test); eklenen 2 spec'in PASS satiri var; client-settlement PASS 26 → 28. PR CI (Test Suite job) log kaniti PR govdesinde.
+- **GUNCEL SAYI (hedef tuttu):** **32 spec · CI'da 30 (pure/client-portal 28 + db/domain-integration 2) · CI disinda 2 · belirsiz 0.**
+  - CI disi 2 = `client-payout-replay.db-gated.integration` + `tm47d-happy-path-financial-qa.integration` (DB-gated). Bu 2'nin baglanmasi bu isin KAPSAMI DISIDIR (yeri `db/domain-integration`).
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
