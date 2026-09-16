@@ -151,6 +151,7 @@ doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` 
 | `client-live-acceptance-i12-r01/scripts/i12-live-window.js` | **AYRI CANLI** giriş noktası · SIR-KORUYUCU · canlı-güvenlik kapıları (`I12_LIVE_CONFIRM` + `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`) | `DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-preflight.js` | **CANLI PREFLIGHT** (salt-okuma) · `--phase pre` (GO-ref biçim+tüketim + DB host/port/ad + hedef slug; makbuz ARANMAZ) / `post` (+makbuz tenant/runId + API↔DB); eksik kimlikte YAZMA BAŞLAMAZ | `B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-setup.js` | **CANLI KURULUM** (sentetik hedef tenant + FD zinciri + statement aktivitesi + Office + makbuz) · canlı-güvenlik kapısı (confirm+GO-ref+DB+slug=türetilen); sır makbuza konmaz | `958BD993D7DE5C21260EA0665F433124D3C3CDB1B2810D0F31D3AAA5F8199B71` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-measure.js` | **CANLI ÖLÇÜM** (7 gözlem: G1/G2 info-request + G3/G4/G6/FD-RED/FD-TMO + G5 mock-reboot + G7 hedef-scoped) · FD sayaç ayrımı conn-*+DB (izolede i3-spy çapraz-doğrulama) · hedef-scoped · erişim kapanışı; canlı-güvenlik kapısı | `76826AB1A4A5117CCA790AE2D84DECA5D7206AB5A4562D0EEE5EC558109AFDE4` |
 | `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | düzenek | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
 | `client-acceptance-runners-i3-r01/scripts/i3-start-api.js` | düzenek | `72505F981EE167B1A664E5663DC675B2E6ACAB1CCCE84058231BA8BB0EECDFB5` |
 | `client-acceptance-runners-i3-r01/scripts/i3-sink.js` | loopback SMTP sink | `7D26418D3D7B1B3B7929041986C1A370B9253E79B3700470231CA5D56253E75C` |
@@ -312,12 +313,15 @@ Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
 Start-ScheduledTask -TaskName 'HukukPlatform-API'   # ≤120 sn: launcher DB-hazırlık retry'ını kapsar
 # Dinleyici + /api/auth/login 200/201 (verifyApiBoundToSameDatabase) doğrulanana kadar beklenir.
 
-# ——— 5) ÖLÇÜM (7 gözlem, tek canlı API, hedef-scoped) ———
-#   *** EKSİK — live-safe (non-G-0) 7-gözlem ÖLÇÜM harness'ı HENÜZ YAZILMADI. Disposable G-0 ölçüm betikleri
-#   (i12-gaps/gaps2/cron-delivery/allowlist) canlı komut SAYILMAZ. Gerekli: G1/G2 (bilgi talebi API + sink
-#   reject/reset), G3/G4/G6/FD-RED/FD-TMO/HANG (FD yayın API; gönderim kanıtı sink+DB), G5 (ayrı restart
-#   EMAIL_PROVIDER=mock → 403), G7 (hedef-scoped runMonthlyDelivery(now,{tenantId:$TenantId}); boş-scope YOK).
-#   Üç-değerli verdict; hedef-scoped. (owner'a bildirildi) ***
+# ——— 5) ÖLÇÜM (7 gözlem, tek canlı API, hedef-scoped) — GERÇEK KOMUT ———
+$env:I12_LIVE_CONFIRM='1'; $env:AH_RUN_ID=$RunId; $env:I12_EVID_FILE=(Join-Path $EvDir 'i12-live-measure-evidence.json')
+& $Node "$Sc\i12-live-measure.js"
+if ($LASTEXITCODE -ne 0) { throw "ÖLÇÜM: gözlem FAIL/UNMEASURED (exit $LASTEXITCODE) — kurtarma + kapanışa geç" }
+#   İçerik: G1/G2 (bilgi talebi red/belirsiz→503, kayıt yok, tek bağlantı) · G3/G6 (PUBLISHED+providerMessageId+
+#   SENT/PUBLISHED audit) · G4 (4xx state-guard, gönderim+0) · FD-RED/FD-TMO (SEND_FAILED, conn TEK=kör tekrar yok) ·
+#   G5 (mock-reboot → 403 PROVIDER_NOT_PRODUCTION, gönderim 0) · G7 (hedef-scoped teslim + aynı-dönem dedupe).
+#   FD SAYAÇ AYRIMI: gönderim-çağrısı≈conn-* · teslim=msg-* · çift/kör=conn>beklenen; izolede conn==i3-spy çapraz-doğrulandı.
+#   (İzole koşumda i12-live-measure kendi gated setup+izolasyon-ön-koşulu+7-gözlem+kapanışı yapar — §9.8 12/12.)
 
 # ——— 6) RESTART-3 (env geri-al): .env özgün değere geri (sha doğrulanır) + görev yeniden başlat ———
 Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
@@ -331,15 +335,17 @@ if ($LASTEXITCODE -ne 0) { throw "pencere-kapat başarısız (exit $LASTEXITCODE
 # ——— 8) ERİŞİM KAPANIŞI + kanıt arşivi (sentetik kullanıcı pasifleştirme + kanıt SHA256 manifesti korumalı arşive) ———
 ```
 
-**§7.9 EKSİK KALEM (owner'a somut bildirim — bu paket bu yüzden "eksiksiz" DEĞİL, İ12 HAZIR İLAN EDİLMEZ):**
-> - **ÖLÇÜM** (adım 5): live-safe (non-G-0) 7-gözlem canlı ölçüm harness'ı (`i12-live-measure`) HENÜZ YAZILMADI —
->   G1/G2 `runH5` (i3-h5-intake, export'lu) + G3/G4/G6/FD-RED/FD-TMO (i12-gaps FD mantığı, **conn-* + DB** sayımı;
->   canlıda i3-spy yok) + G5 (ayrı EMAIL_PROVIDER=mock restart) + G7 (hedef-scoped) kompozisyonu; i3-start-api boot ile
->   apiConfig/runtimeBinding. Sahte komut/disposable ad KULLANILMADI. **REAL + izolede doğrulanan** adımlar: SHA kapısı ·
->   PREFLIGHT-pre/post (`i12-live-preflight`, §9.7 9/9) · **KURULUM** (`i12-live-setup`, §9.7) · PENCERE-AÇ/KAPAT
->   (`i12-live-window` + hardened `i12-window`; §9.6 kurtarma 9/9 · zincir 4/4) · RESTART (`HukukPlatform-API` + `.env`).
-> **FD sayaç ayrımı (kanıtlanacak):** gönderim-çağrısı ≈ conn-* (sink bağlantısı), teslim = msg-*, çift/kör = conn-*>beklenen;
-> izolede i3-spy `dispatcherSend` ile conn-* ÇAPRAZ-DOĞRULANARAK conn-*'ın send-çağrısını sadık saydığı gösterilecek.
+**§7.9 — TÜM ADIMLAR GERÇEK + İZOLEDE DOĞRULANDI (sahte komut/disposable ad YOK):** SHA kapısı · PREFLIGHT-pre/post
+(`i12-live-preflight`, §9.7 9/9) · KURULUM (`i12-live-setup`, §9.7) · PENCERE-AÇ/KAPAT (`i12-live-window` + hardened
+`i12-window`; §9.6 kurtarma 9/9 · zincir 4/4) · RESTART (`HukukPlatform-API` görev + `.env` T-pencere) · **ÖLÇÜM
+(`i12-live-measure`, §9.8 12/12 = 7 gözlem + FD sayaç-ispatı + kapanış)**. **FD sayaç ayrımı KANITLANDI:** gönderim-çağrısı
+≈ conn-* · teslim = msg-* · çift/kör = conn-*>beklenen; izolede her FD gözleminde **conn-delta == i3-spy dispatcherSend-delta**
+(§9.8 FD-COUNT-XCHECK) → conn-*'ın send-çağrısını sadık saydığı ve çift/kör denemeyi ayırdığı gösterildi.
+
+> **NOT — CANLI KABUL BAŞLAMADI.** Betikler ve tam yürütme sırası izolede doğrulandı; **canlı yürütme yapılmadı**.
+> Canlı kabul ayrı yazılı owner GO'su + owner'ın yükseltilmiş komutuyla yapılır (§7.0). Disposable G-0 KALDIRILMAZ;
+> ölçüm harness'ı canlıda (non-G-0) kendi canlı-güvenlik kapısıyla (I12_LIVE_CONFIRM + GO ref) koşar, pinli launcher
+> DEĞİŞTİRİLMEZ (i3-spy yok → conn-*/msg-*/DB), 2. canlı-DB API açılmaz.
 
 **Not (teslim yolu sır çözme):** G7 teslimi `getFullSmtpSettings` ile `smtpPass`'i OKUR/ÇÖZER. `enc:v1:` şifreli
 değerler için canlı API sürecinde `CREDENTIAL_ENCRYPTION_KEY` **zaten vardır** (üretim). Pencere `smtpPass`'e
@@ -360,10 +366,12 @@ legacy düz-metin ile 4/4 birleşik zincir doğrulandı, §9.4).
   `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`; SIR-KORUYUCU) + prova
   `i12-window.js` (rollback sınıflandırma + kurtarma sağlamlığı, §9.6) + **canlı preflight** `i12-live-preflight.js`
   (`--phase pre/post`, §9.7) + **canlı kurulum** `i12-live-setup.js` (§9.7); **G-0 owner yetkisiyle AŞILMAZ** (§7.3).
-  §7.3 tam yol + SHA256; §7.9 gerçek PowerShell (SHA kapısı/preflight-pre/**kurulum**/preflight-post/pencere/restart-görev/kapanış).
-  **PAKET EKSİKSİZ DEĞİL — İ12 HAZIR İLAN EDİLMEZ:** §7.9 adım-5 **7-gözlem canlı ÖLÇÜM harness'ı** (`i12-live-measure`)
-  live-safe (non-G-0) olarak HENÜZ YAZILMADI (§9.7; disposable G-0 betikleri canlı komut sayılamaz). Canlı yürütme
-  yapılmadı — ayrı yazılı owner GO'su (§7) ister.
+  + **canlı ölçüm** `i12-live-measure.js` (7 gözlem, §9.8); §7.3 tam yol + SHA256; §7.9 gerçek PowerShell
+  (SHA kapısı/preflight-pre/kurulum/preflight-post/pencere/restart-görev/**ölçüm**/kurtarma/kapanış).
+  **PAKET EKSİKSİZ — TÜM ADIMLAR gerçek + izolede doğrulanmış betiklere bağlı** (§9.1–§9.8: R01 7 gözlem · R02
+  claim/reclaim/hang · R03 cron teslim · R04 hedef-scoped kapsam · R04b SIR-koruma · R04c gate/pencere · R04d
+  kurtarma 9/9 · R04e kurulum+preflight 9/9 · **R04f canlı ölçüm 12/12**). **CANLI YÜRÜTME YAPILMADI** — ayrı yazılı
+  owner GO'su (§7) + owner'ın yükseltilmiş komutuyla; disposable G-0 aşılmaz, pinli launcher değişmez, 2. canlı-DB API açılmaz.
 
 ## 9. PROVA SONUÇLARI (izole/geçici ortam — CANLI KABUL DEĞİL)
 
@@ -533,6 +541,38 @@ KULLANILMADI. Bu harness yazılıp izolede (FD conn-*==i3-spy çapraz-doğrulama
 
 **R04e durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04e-<ts>\` — `verify-setup-preflight.txt` (9/9)
 + SHA256 manifesti. İzole disposable (D: worktree; RELEASE23 dist/evidence C:'de); sır/ref/.env yok.
+
+### 9.8 R04f — CANLI ÖLÇÜM harness'ı (7 gözlem) + FD sayaç ayrımı ispatı — PAKET TAMAM (CANLI KABUL DEĞİL)
+
+Owner (2026-09-17) son parça: `i12-live-measure.js`. Kendi kendine yeten (gated setup + izolasyon ön koşulu +
+7 gözlem + G5 mock-reboot + kapanış), tek API'ye karşı, hedef-scoped; FD gönderim kanıtı **sink+DB** (i3-spy CANLIDA
+YOK), izolede i3-spy ile ÇAPRAZ-DOĞRULANIR. İzole koşum **PASS 12/12 · FAIL 0 · UNMEASURED 0** (RELEASE23 dist):
+
+| Gözlem | Sonuç | Kanıt (gerçek çıktı) |
+|---|---|---|
+| **H5-00-ISO** | PASS | loopback erişilir · LAN erişilmez · provider=smtp (çalışma-zamanı tanığı) — sonda dahil gönderim ancak bununla |
+| **G1 (A-9)** | PASS | HTTP 503 · `CLIENT_INFO_REQUEST_EMAIL_FAILED` · `ClientInfoRequest` +0 · conn +1 (tek) |
+| **G2 (A-10)** | PASS | HTTP 503 · `CLIENT_INFO_REQUEST_EMAIL_INDETERMINATE` · kayıt +0 · conn +1 (tek, kör tekrar YOK) |
+| **G3 (CANARY)** | PASS | HTTP 201 · PUBLISHED · providerMessageId VAR · SENT +1 · PUBLISHED +1 · conn +1 (spy send +1) |
+| **G6** | PASS | SENT +1 ≠ PUBLISHED +1 (iki AYRI aksiyon) |
+| **G4 (dedupe)** | PASS | HTTP 409 · `DISCLOSURE_PUBLICATION_STATUS_INVALID` · conn +0 · SENT/PUBLISHED +0 · durum PUBLISHED kalır |
+| **FD-RED** | PASS | HTTP 201 · durum SEND_FAILED · conn +1 (TEK) · spy send +1 · PUBLISHED audit +0 |
+| **FD-TMO** | PASS | HTTP 201 · durum SEND_FAILED · conn +1 (TEK, kör tekrar +2 DEĞİL) · spy send +1 |
+| **G7** | PASS | hedef-scoped: ilk tetik sink +1 · ledger SENT +1; ikinci tetik +0 (dedupe) |
+| **G5** | PASS | mock-reboot → HTTP 403 · `PROVIDER_NOT_PRODUCTION` · PUBLISHED değil · conn +0 |
+| **FD-COUNT-XCHECK** | PASS | G3/FD-RED/FD-TMO: **conn-delta == i3-spy send-delta** (conn-* send-çağrısını sadık sayar; çift/kör conn ile ayrılır) |
+| **I12-CLOSE** | PASS | erişim sonlandırıldı (aktif=0) |
+
+**FD sayaç ayrımı (owner kaygısı KAPANDI):** gönderim-çağrısı ≈ SMTP bağlantı denemesi (sink conn-*), teslim = msg-*,
+çift/kör = conn-* > beklenen. i3-spy CANLIDA olmadığından conn-* proxy; izolede **conn-delta == i3-spy dispatcherSend-delta**
+her FD gözleminde doğrulanarak conn-*'ın send-çağrısını sadık saydığı ve çift/kör denemeyi gerçekten ayırdığı KANITLANDI.
+Ölçülemeyen PASS sayılmadı (üç değerli).
+
+**PAKET DURUMU:** §7.9'un TÜM adımları artık gerçek + izolede doğrulanmış betiklere bağlı (preflight/kurulum/pencere/
+restart/**ölçüm**/kurtarma/kapanış). Prova bütünüyle tamam; **canlı yürütme YAPILMADI** (ayrı yazılı owner GO'su + §7).
+
+**R04f durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04f-<ts>\` — `i12-live-measure-evidence.json`
+(12/12) + `run.txt` + SHA256 manifesti. İzole disposable (D: worktree; RELEASE23 dist/evidence C:'de); sır/ref/.env yok.
 
 **Kanıt arşivi (durable, synthetic — sır/ref/.env yok):** `…\Documents\CLIENT-EVIDENCE-20260911\i12-rehearsal-<ts>\`
 — `i12-gaps2-evidence.json` · `cron-predicate-state.json` · `cron-last-result.json` · `cron-run.log` + SHA256
