@@ -149,7 +149,8 @@ doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` 
 | `client-live-acceptance-i12-r01/scripts/i12-cron-delivery.js` | G7-DELIV-SCOPE + G7-DEDUPE | `29A569EC6A191346E65C5ECC20F94589902FD69062C7128B7E445D93FD7AEBD1` |
 | `client-live-acceptance-i12-r01/scripts/i12-window.js` | PROVA (disposable/G-0) Office SMTP penceresi · SIR-KORUYUCU · rollback sınıflandırma (ABSENT/UNREADABLE/CORRUPT/MISMATCH; doğrulanmış-kapanış-yoksa-PASS-yok) · ikinci-open özgün-koruma · 3-alan close · ikinci-close güvenli | `DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-window.js` | **AYRI CANLI** giriş noktası · SIR-KORUYUCU · canlı-güvenlik kapıları (`I12_LIVE_CONFIRM` + `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`) | `DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9` |
-| `client-live-acceptance-i12-r01/scripts/i12-live-preflight.js` | **CANLI PREFLIGHT** (salt-okuma) · GO-ref biçim+tüketim · DB host/port/ad · kurulum makbuzu tenant/runId · API↔DB bağı; eksik kimlikte YAZMA BAŞLAMAZ | `62837688E97A98F7D465A5546548BD6CF9B0337FD18A4DD24D111F81A3D3036E` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-preflight.js` | **CANLI PREFLIGHT** (salt-okuma) · `--phase pre` (GO-ref biçim+tüketim + DB host/port/ad + hedef slug; makbuz ARANMAZ) / `post` (+makbuz tenant/runId + API↔DB); eksik kimlikte YAZMA BAŞLAMAZ | `B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-setup.js` | **CANLI KURULUM** (sentetik hedef tenant + FD zinciri + statement aktivitesi + Office + makbuz) · canlı-güvenlik kapısı (confirm+GO-ref+DB+slug=türetilen); sır makbuza konmaz | `958BD993D7DE5C21260EA0665F433124D3C3CDB1B2810D0F31D3AAA5F8199B71` |
 | `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | düzenek | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
 | `client-acceptance-runners-i3-r01/scripts/i3-start-api.js` | düzenek | `72505F981EE167B1A664E5663DC675B2E6ACAB1CCCE84058231BA8BB0EECDFB5` |
 | `client-acceptance-runners-i3-r01/scripts/i3-sink.js` | loopback SMTP sink | `7D26418D3D7B1B3B7929041986C1A370B9253E79B3700470231CA5D56253E75C` |
@@ -256,14 +257,16 @@ belirlenen canlı gerçekler: görev **`HukukPlatform-API`** (Running; `C:\Ops\h
 launcher `C:\Ops\hukuk\bin\start-api.ps1` sha256 `CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3`;
 app env `.env`'den (dotenv; `…HY_W4_RELEASE23\project\apps\api\.env`); API prefix `/api` (login `…/api/auth/login`).
 **i3-spy KULLANILMAZ** (pinli launcher NODE_OPTIONS enjekte etmez; FD gönderim kanıtı sink+DB). REAL adımlar izolede
-doğrulandı (§9.6: preflight 6/6 · kurtarma 9/9 · zincir 4/4). **KURULUM + ÖLÇÜM adımları EKSİK** (aşağıda somut).
+doğrulandı (§9.6: kurtarma 9/9 · preflight 6/6 · zincir 4/4; §9.7: kurulum+preflight-faz 9/9). **Yalnız ÖLÇÜM (adım 5)
+EKSİK** (aşağıda somut).
 
 ```powershell
 # ——— 0) SHA KAPISI (main checkout; canlıya YAZMAZ, salt betik doğrular) ———
 $Gov = 'D:\Development\HUKUK_YAZILIMI\project\project\docs\governance'   # owner: main checkout kökü
 $Sc  = Join-Path $Gov 'client-live-acceptance-i12-r01\scripts'
 $PIN = @{
-  "$Sc\i12-live-preflight.js" = '62837688E97A98F7D465A5546548BD6CF9B0337FD18A4DD24D111F81A3D3036E'
+  "$Sc\i12-live-preflight.js" = 'B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127'
+  "$Sc\i12-live-setup.js"     = '958BD993D7DE5C21260EA0665F433124D3C3CDB1B2810D0F31D3AAA5F8199B71'
   "$Sc\i12-live-window.js"    = 'DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9'
   "$Sc\i12-window.js"         = 'DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8'
 }
@@ -273,22 +276,28 @@ Write-Host "SHA kapısı GEÇTİ"
 # ——— OWNER PLACEHOLDER'LARI (owner doldurur; ham ref/DB URL/parola kanıta/repoya YAZILMAZ) ———
 $LiveDbUrl=$env:CLIENT_LIVE_DB_URL; $GoRef=$env:OWNER_GO_REF; $LoginPw=$env:CLIENT_LIVE_LOGIN_PW
 $ExpectApi='https://<canlı-api>/api'; $ExpDbHost='<host>'; $ExpDbPort='<port>'; $ExpDbName='<db>'
-$TenantId='<sentetik-hedef-tenant-id>'; $TenantSlug='<sentetik-hedef-tenant-slug>'; $RunId='<runId>'
+$RunId='<runId>'; $TenantSlug="ah-$RunId"    # sentetik slug türetilir; owner runId'i verir
 $SinkPort='2529'; $EvDir='C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-<ts>'
 $Receipt=Join-Path $EvDir 'i12-setup-receipt.json'; $Rollback=Join-Path $EvDir 'i12-live-window-rollback.json'; $Node='node'
-
-# ——— 1) KURULUM (sentetik hedef tenant + dönem aktivitesi + login user + makbuz) ———
-#   *** EKSİK — live-safe (non-G-0) `i12-live-setup.js` HENÜZ YAZILMADI. Disposable G-0 betikleri canlı komut
-#   OLAMAZ. Gerekli: canlı-güvenlik kapısı (I12_LIVE_CONFIRM + GO ref + beklenen DB + açık sentetik slug), yalnız
-#   sentetik tenant'a yazar, {runId,tenantId,tenantSlug,loginEmail} makbuzunu ($Receipt) üretir. (owner'a bildirildi) ***
-
-# ——— 2) PREFLIGHT (İLK YAZMADAN ÖNCE; salt-okuma; eksik kimlikte YAZMA BAŞLAMAZ) ———
+$Repo=(Resolve-Path (Join-Path $Gov '..\..')).Path
 $env:AH_DATABASE_URL=$LiveDbUrl; $env:AH_API_BASE_URL=$ExpectApi; $env:AH_LOGIN_PASSWORD=$LoginPw
-$env:I12_LIVE_GO_REF=$GoRef; $env:I12_REPO_DIR=(Resolve-Path (Join-Path $Gov '..\..')).Path
+
+# ——— 1a) PREFLIGHT --phase pre (KURULUM ÖNCESİ: GO/ref+tüketim+DB+hedef slug; makbuz ARANMAZ) ———
+$env:I12_LIVE_GO_REF=$GoRef; $env:I12_REPO_DIR=$Repo
 $env:I12_EXPECT_DB_HOST=$ExpDbHost; $env:I12_EXPECT_DB_PORT=$ExpDbPort; $env:I12_EXPECT_DB_NAME=$ExpDbName
 $env:I12_EXPECT_TENANT_SLUG=$TenantSlug; $env:I12_EXPECT_RUNID=$RunId; $env:I12_SETUP_RECEIPT=$Receipt
-& $Node "$Sc\i12-live-preflight.js"
-if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT REDDETTİ (exit $LASTEXITCODE) — kimlik eksik/uyuşmaz; YAZMA BAŞLAMAZ" }
+& $Node "$Sc\i12-live-preflight.js" pre
+if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT(pre) REDDETTİ (exit $LASTEXITCODE) — kimlik eksik; KURULUM BAŞLAMAZ" }
+
+# ——— 1b) KURULUM (yalnız koşuma ait sentetik tenant + FD zinciri + statement aktivitesi + Office + makbuz) ———
+$env:I12_LIVE_CONFIRM='1'; $env:I12_RUNID=$RunId; $env:I12_EXPECT_DB=$ExpDbName; $env:I12_LIVE_LOGIN_PW=$LoginPw
+& $Node "$Sc\i12-live-setup.js"
+if ($LASTEXITCODE -ne 0) { throw "KURULUM REDDEDİLDİ/başarısız (exit $LASTEXITCODE)" }
+
+# ——— 2) PREFLIGHT --phase post (PENCERE/ÖLÇÜM ÖNCESİ: makbuz tenant/runId + API↔DB; eksikse YAZMA BAŞLAMAZ) ———
+& $Node "$Sc\i12-live-preflight.js" post
+if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT(post) REDDETTİ (exit $LASTEXITCODE) — makbuz/API↔DB uyuşmaz; PENCERE BAŞLAMAZ" }
+$TenantId = (Get-Content $Receipt | ConvertFrom-Json).tenantId
 
 # ——— 3) PENCERE-AÇ (yalnız hedef tenant Office SMTP → sink; SIR-KORUYUCU; kapılar fail-closed) ———
 $env:I3_SMTP_PORT=$SinkPort; $env:I12_WINDOW_ROLLBACK=$Rollback
@@ -322,12 +331,15 @@ if ($LASTEXITCODE -ne 0) { throw "pencere-kapat başarısız (exit $LASTEXITCODE
 # ——— 8) ERİŞİM KAPANIŞI + kanıt arşivi (sentetik kullanıcı pasifleştirme + kanıt SHA256 manifesti korumalı arşive) ———
 ```
 
-**§7.9 EKSİK KALEMLER (owner'a somut bildirim — bu paket bu yüzden "eksiksiz" DEĞİL, İ12 HAZIR İLAN EDİLMEZ):**
-> - **KURULUM** (adım 1): live-safe (non-G-0) `i12-live-setup.js` YOK.
-> - **ÖLÇÜM** (adım 5): live-safe (non-G-0) 7-gözlem canlı ölçüm harness'ı YOK.
-> Bu iki adım için sahte komut/disposable ad KULLANILMADI; gerçek çalıştırılabilir komut YAZILMADI. **REAL + izolede
-> doğrulanan** adımlar: SHA kapısı · PREFLIGHT (`i12-live-preflight`, 6/6) · PENCERE-AÇ/KAPAT (`i12-live-window` +
-> hardened `i12-window`; kurtarma 9/9 · zincir 4/4) · RESTART (`HukukPlatform-API` görev + `.env` T-pencere).
+**§7.9 EKSİK KALEM (owner'a somut bildirim — bu paket bu yüzden "eksiksiz" DEĞİL, İ12 HAZIR İLAN EDİLMEZ):**
+> - **ÖLÇÜM** (adım 5): live-safe (non-G-0) 7-gözlem canlı ölçüm harness'ı (`i12-live-measure`) HENÜZ YAZILMADI —
+>   G1/G2 `runH5` (i3-h5-intake, export'lu) + G3/G4/G6/FD-RED/FD-TMO (i12-gaps FD mantığı, **conn-* + DB** sayımı;
+>   canlıda i3-spy yok) + G5 (ayrı EMAIL_PROVIDER=mock restart) + G7 (hedef-scoped) kompozisyonu; i3-start-api boot ile
+>   apiConfig/runtimeBinding. Sahte komut/disposable ad KULLANILMADI. **REAL + izolede doğrulanan** adımlar: SHA kapısı ·
+>   PREFLIGHT-pre/post (`i12-live-preflight`, §9.7 9/9) · **KURULUM** (`i12-live-setup`, §9.7) · PENCERE-AÇ/KAPAT
+>   (`i12-live-window` + hardened `i12-window`; §9.6 kurtarma 9/9 · zincir 4/4) · RESTART (`HukukPlatform-API` + `.env`).
+> **FD sayaç ayrımı (kanıtlanacak):** gönderim-çağrısı ≈ conn-* (sink bağlantısı), teslim = msg-*, çift/kör = conn-*>beklenen;
+> izolede i3-spy `dispatcherSend` ile conn-* ÇAPRAZ-DOĞRULANARAK conn-*'ın send-çağrısını sadık saydığı gösterilecek.
 
 **Not (teslim yolu sır çözme):** G7 teslimi `getFullSmtpSettings` ile `smtpPass`'i OKUR/ÇÖZER. `enc:v1:` şifreli
 değerler için canlı API sürecinde `CREDENTIAL_ENCRYPTION_KEY` **zaten vardır** (üretim). Pencere `smtpPass`'e
@@ -346,11 +358,12 @@ legacy düz-metin ile 4/4 birleşik zincir doğrulandı, §9.4).
   §2; ayrıca §7.2'de belgelenen iki ayrı SMTP kaynağı — env vs Office DB — bir yapılandırma gerçeğidir, kusur değil).
 - **Canlı yürütme hazırlığı:** **AYRI canlı giriş noktası** `i12-live-window.js` (kapılar: `I12_LIVE_CONFIRM` +
   `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`; SIR-KORUYUCU) + prova
-  `i12-window.js` (rollback sınıflandırma + kurtarma sağlamlığı, §9.6) + **canlı preflight** `i12-live-preflight.js`;
-  **G-0 owner yetkisiyle AŞILMAZ** (§7.3). §7.3 tam yol + SHA256; §7.8 restart bütçesi; §7.9 gerçek PowerShell
-  (SHA kapısı/preflight/pencere/restart-görev/kapanış). **PAKET EKSİKSİZ DEĞİL — İ12 HAZIR İLAN EDİLMEZ:** §7.9
-  KURULUM (`i12-live-setup.js`) ve 7-gözlem canlı ÖLÇÜM harness'ı live-safe (non-G-0) olarak HENÜZ YAZILMADI
-  (§9.6; disposable G-0 betikleri canlı komut sayılamaz). Canlı yürütme yapılmadı — ayrı yazılı owner GO'su (§7) ister.
+  `i12-window.js` (rollback sınıflandırma + kurtarma sağlamlığı, §9.6) + **canlı preflight** `i12-live-preflight.js`
+  (`--phase pre/post`, §9.7) + **canlı kurulum** `i12-live-setup.js` (§9.7); **G-0 owner yetkisiyle AŞILMAZ** (§7.3).
+  §7.3 tam yol + SHA256; §7.9 gerçek PowerShell (SHA kapısı/preflight-pre/**kurulum**/preflight-post/pencere/restart-görev/kapanış).
+  **PAKET EKSİKSİZ DEĞİL — İ12 HAZIR İLAN EDİLMEZ:** §7.9 adım-5 **7-gözlem canlı ÖLÇÜM harness'ı** (`i12-live-measure`)
+  live-safe (non-G-0) olarak HENÜZ YAZILMADI (§9.7; disposable G-0 betikleri canlı komut sayılamaz). Canlı yürütme
+  yapılmadı — ayrı yazılı owner GO'su (§7) ister.
 
 ## 9. PROVA SONUÇLARI (izole/geçici ortam — CANLI KABUL DEĞİL)
 
@@ -499,6 +512,27 @@ sahte komut/disposable ad KULLANILMADI. Paket bu iki betik yazılıp izolede do�
 **R04d durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04d-<ts>\` — `verify-recovery.txt` (9/9) ·
 `verify-preflight.txt` (6/6) · `verify-chain.txt` (4/4) + SHA256 manifesti. İzole disposable (D: worktree;
 RELEASE23 dist/evidence C:'de); sır/ref/.env yok.
+
+### 9.7 R04e — canlı KURULUM + preflight FAZ-AYRIMI + doğru kontrol sırası (CANLI KABUL DEĞİL)
+
+Owner (2026-09-17) kalan hazırlık: `i12-live-setup.js` + kontrollerin doğru sıraya bağlanması. Eklenen:
+> - **`i12-live-setup.js`** (YENİ, live-safe): setupI3 + setupDisclosureChain + statement aktivitesi + Office +
+>   makbuz; canlı-güvenlik kapısı (I12_LIVE_CONFIRM + GO ref + I12_EXPECT_DB=bağlı DB + I12_EXPECT_TENANT_SLUG=türetilen
+>   `ah-<runId>`); yalnız koşuma ait sentetik tenant'a yazar; **sır makbuza konmaz** (login parolası env).
+> - **preflight `--phase pre|post`**: **pre** = kurulum ÖNCESİ GO/ref+tüketim+DB+hedef slug (makbuz ARANMAZ →
+>   makbuzu isteyen kontrol ilk kurulum yazmasının ön koşulu değildir); **post** = pencere/ölçüm ÖNCESİ makbuz
+>   tenant/runId + API↔DB. Doğru sıra: **preflight pre → sentetik kurulum → makbuz → preflight post → pencere/ölçüm**.
+
+| Ölçüm | Sonuç | Kanıt (gerçek çıktı) |
+|---|---|---|
+| **Kurulum + preflight faz** (`verify-setup-preflight`) | **PASS 9/9** | setup gate: confirm YOK→exit3 · GO-ref YOK→exit3 · yanlış DB→exit4 · **slug≠türetilen→exit4** · gate-iyi→tenant+POSTED disp+şablon+office+**makbuz (runId+loginEmail, PAROLA YOK)** · **preflight pre**: ref+DB+slug PASS, **makbuz ARANMADI** · **preflight post**: makbuz+API↔DB PASS · pre yanlış-DB→exit5 |
+
+**AÇIK EKSİK (somut; İ12 HAZIR DEĞİL):** live-safe 7-gözlem **ÖLÇÜM** harness'ı (`i12-live-measure`) henüz yazılmadı
+(§7.9 adım 5; runH5+FD-conn/DB+G5+G7 kompozisyonu). Disposable G-0 betikleri canlı komut sayılamaz; sahte komut
+KULLANILMADI. Bu harness yazılıp izolede (FD conn-*==i3-spy çapraz-doğrulama dahil) 7/7 doğrulanana dek paket eksiksiz değildir.
+
+**R04e durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04e-<ts>\` — `verify-setup-preflight.txt` (9/9)
++ SHA256 manifesti. İzole disposable (D: worktree; RELEASE23 dist/evidence C:'de); sır/ref/.env yok.
 
 **Kanıt arşivi (durable, synthetic — sır/ref/.env yok):** `…\Documents\CLIENT-EVIDENCE-20260911\i12-rehearsal-<ts>\`
 — `i12-gaps2-evidence.json` · `cron-predicate-state.json` · `cron-last-result.json` · `cron-run.log` + SHA256
