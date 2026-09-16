@@ -27,6 +27,10 @@ const REF_RE = /^OWNER-GO-CLIENT-I12-\d{8}-R\d{2}$/;
 function dbId(u) { try { const p = new URL(u); return { host: p.hostname.toLowerCase(), port: Number(p.port || 5432), name: decodeURIComponent(p.pathname.replace(/^\//, '').split('/')[0]) }; } catch (e) { return null; } }
 
 (async () => {
+  // FAZ: pre = kurulum ÖNCESİ kimlik (GO/ref + DB + hedef slug); makbuz/API-bağı ARANMAZ (makbuz henüz yok).
+  //      post/all = pencere/ölçüm ÖNCESİ tam kimlik (+ makbuz tenant/runId + API↔DB). Varsayılan 'all'.
+  const phase = (process.env.I12_PREFLIGHT_PHASE || process.argv[2] || 'all').toLowerCase();
+  if (!['pre', 'post', 'all'].includes(phase)) { console.error(`bilinmeyen faz: ${phase} (pre|post|all)`); process.exit(2); }
   const checks = []; const add = (id, ok, detail) => checks.push({ id, ok: !!ok, detail });
   const ref = process.env.I12_LIVE_GO_REF || '';
   const repo = process.env.I12_REPO_DIR || process.cwd();
@@ -48,30 +52,37 @@ function dbId(u) { try { const p = new URL(u); return { host: p.hostname.toLower
     && id.port === Number(process.env.I12_EXPECT_DB_PORT) && id.name === process.env.I12_EXPECT_DB_NAME;
   add('DB_IDENTITY', dbOk, id ? `bağlı ${id.host}:${id.port}/${id.name} vs beklenen ${process.env.I12_EXPECT_DB_HOST}:${process.env.I12_EXPECT_DB_PORT}/${process.env.I12_EXPECT_DB_NAME}` : 'AH_DATABASE_URL çözülemedi');
 
-  // 3) KURULUM MAKBUZU → sentetik tenant/runId eşleşmesi (DB salt-okuma)
-  let receipt = null; try { receipt = JSON.parse(fs.readFileSync(process.env.I12_SETUP_RECEIPT || '', 'utf8')); } catch (e) {}
-  const prisma = L.AH.loadPrisma();
-  let receiptOk = false, rdetail = 'makbuz okunamadı';
-  if (receipt) {
-    const runOk = receipt.runId && receipt.runId === process.env.I12_EXPECT_RUNID;
-    const slugOk = receipt.tenantSlug && receipt.tenantSlug === process.env.I12_EXPECT_TENANT_SLUG;
-    let dbSlugOk = false;
-    try { const t = await prisma.tenant.findUnique({ where: { id: receipt.tenantId }, select: { slug: true } }); dbSlugOk = !!t && t.slug === receipt.tenantSlug; } catch (e) {}
-    receiptOk = runOk && slugOk && dbSlugOk;
-    rdetail = `runId ${runOk ? 'OK' : 'UYUŞMAZ'} · slug ${slugOk ? 'OK' : 'UYUŞMAZ'} · DB tenant→slug ${dbSlugOk ? 'OK' : 'UYUŞMAZ/YOK'}`;
+  // pre FAZI: hedef slug kimliği (makbuz DEĞİL) — I12_EXPECT_TENANT_SLUG verilmiş olmalı (kurulum bunu üretecek).
+  if (phase === 'pre') {
+    const es = process.env.I12_EXPECT_TENANT_SLUG || '';
+    add('EXPECTED_TARGET_SLUG', !!es, es ? `beklenen hedef slug=${es}` : 'I12_EXPECT_TENANT_SLUG boş');
   }
-  add('SETUP_RECEIPT_TENANT_RUNID', receiptOk, rdetail);
 
-  // 4) GERÇEK API↔DB BAĞI (login round-trip; SALT-OKUMA)
-  let bindOk = false, bdetail = 'AH_API_BASE_URL/AH_LOGIN_PASSWORD/makbuz eksik';
-  if (process.env.AH_API_BASE_URL && process.env.AH_LOGIN_PASSWORD && receipt && receipt.loginEmail) {
-    try { const r = await L.AH.verifyApiBoundToSameDatabase(prisma, process.env.AH_API_BASE_URL, receipt.loginEmail, process.env.AH_LOGIN_PASSWORD, receipt.tenantSlug); bindOk = !!r.bound; bdetail = r.reason; }
-    catch (e) { bdetail = 'bağ ölçümü HATASI: ' + (e && e.message ? e.message : e); }
+  const prisma = L.AH.loadPrisma();
+  // 3) + 4) yalnız post/all — makbuz kurulum ÇIKTISIDIR; pre'de ARANMAZ.
+  if (phase !== 'pre') {
+    let receipt = null; try { receipt = JSON.parse(fs.readFileSync(process.env.I12_SETUP_RECEIPT || '', 'utf8')); } catch (e) {}
+    let receiptOk = false, rdetail = 'makbuz okunamadı';
+    if (receipt) {
+      const runOk = receipt.runId && receipt.runId === process.env.I12_EXPECT_RUNID;
+      const slugOk = receipt.tenantSlug && receipt.tenantSlug === process.env.I12_EXPECT_TENANT_SLUG;
+      let dbSlugOk = false;
+      try { const t = await prisma.tenant.findUnique({ where: { id: receipt.tenantId }, select: { slug: true } }); dbSlugOk = !!t && t.slug === receipt.tenantSlug; } catch (e) {}
+      receiptOk = runOk && slugOk && dbSlugOk;
+      rdetail = `runId ${runOk ? 'OK' : 'UYUŞMAZ'} · slug ${slugOk ? 'OK' : 'UYUŞMAZ'} · DB tenant→slug ${dbSlugOk ? 'OK' : 'UYUŞMAZ/YOK'}`;
+    }
+    add('SETUP_RECEIPT_TENANT_RUNID', receiptOk, rdetail);
+
+    let bindOk = false, bdetail = 'AH_API_BASE_URL/AH_LOGIN_PASSWORD/makbuz eksik';
+    if (process.env.AH_API_BASE_URL && process.env.AH_LOGIN_PASSWORD && receipt && receipt.loginEmail) {
+      try { const r = await L.AH.verifyApiBoundToSameDatabase(prisma, process.env.AH_API_BASE_URL, receipt.loginEmail, process.env.AH_LOGIN_PASSWORD, receipt.tenantSlug); bindOk = !!r.bound; bdetail = r.reason; }
+      catch (e) { bdetail = 'bağ ölçümü HATASI: ' + (e && e.message ? e.message : e); }
+    }
+    add('API_DB_BINDING', bindOk, bdetail);
   }
-  add('API_DB_BINDING', bindOk, bdetail);
 
   await prisma.$disconnect().catch(() => {});
   const allOk = checks.every((c) => c.ok);
-  console.log(JSON.stringify({ record: 'I12-LIVE-PREFLIGHT', ok: allOk, goRefProvided: !!ref, checks }, null, 1));
-  if (!allOk) { console.error('PREFLIGHT REDDETTİ — eksik/uyuşmaz kimlik; YAZMA BAŞLAMAZ.'); process.exit(5); }
+  console.log(JSON.stringify({ record: 'I12-LIVE-PREFLIGHT', phase, ok: allOk, goRefProvided: !!ref, checks }, null, 1));
+  if (!allOk) { console.error(`PREFLIGHT (${phase}) REDDETTİ — eksik/uyuşmaz kimlik; YAZMA BAŞLAMAZ.`); process.exit(5); }
 })();
