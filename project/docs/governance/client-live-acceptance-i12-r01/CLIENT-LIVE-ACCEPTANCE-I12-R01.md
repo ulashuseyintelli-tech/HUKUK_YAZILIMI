@@ -147,8 +147,9 @@ doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` 
 | `client-live-acceptance-i12-r01/scripts/i12-cron-hook.js` | G7 predicate/direct/fireOnTick/kısa-takvim | `632E569A2C1ACEAACE70FA2E2A3DD0BBD6F8874A045830A6AA517E5E409E06CB` |
 | `client-live-acceptance-i12-r01/scripts/i12-cron-run.js` | G7 a/b/c/d | `FF8766D260175999E6645537A79638EF1D54B30EEF404AC093E6A1E17C2AE534` |
 | `client-live-acceptance-i12-r01/scripts/i12-cron-delivery.js` | G7-DELIV-SCOPE + G7-DEDUPE | `29A569EC6A191346E65C5ECC20F94589902FD69062C7128B7E445D93FD7AEBD1` |
-| `client-live-acceptance-i12-r01/scripts/i12-window.js` | PROVA (disposable/G-0) Office SMTP penceresi · SIR-KORUYUCU · ikinci-open özgün-koruma · 3-alan close · ikinci-close güvenli (`runWindow` tek kaynak) | `6574D4F1B65EE97D46E27FFDE8CC75926E009E4B3F376FE048541BCEF42DBBA8` |
+| `client-live-acceptance-i12-r01/scripts/i12-window.js` | PROVA (disposable/G-0) Office SMTP penceresi · SIR-KORUYUCU · rollback sınıflandırma (ABSENT/UNREADABLE/CORRUPT/MISMATCH; doğrulanmış-kapanış-yoksa-PASS-yok) · ikinci-open özgün-koruma · 3-alan close · ikinci-close güvenli | `DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-window.js` | **AYRI CANLI** giriş noktası · SIR-KORUYUCU · canlı-güvenlik kapıları (`I12_LIVE_CONFIRM` + `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`) | `DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-preflight.js` | **CANLI PREFLIGHT** (salt-okuma) · GO-ref biçim+tüketim · DB host/port/ad · kurulum makbuzu tenant/runId · API↔DB bağı; eksik kimlikte YAZMA BAŞLAMAZ | `62837688E97A98F7D465A5546548BD6CF9B0337FD18A4DD24D111F81A3D3036E` |
 | `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | düzenek | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
 | `client-acceptance-runners-i3-r01/scripts/i3-start-api.js` | düzenek | `72505F981EE167B1A664E5663DC675B2E6ACAB1CCCE84058231BA8BB0EECDFB5` |
 | `client-acceptance-runners-i3-r01/scripts/i3-sink.js` | loopback SMTP sink | `7D26418D3D7B1B3B7929041986C1A370B9253E79B3700470231CA5D56253E75C` |
@@ -250,74 +251,83 @@ reddi ile **20/20**, birleşik zincir **4/4** doğrulandı, §9.4).
 + kanıt SHA256 manifesti korumalı yerel arşive. **IF GO-COMPLETE:** yedi gözlem PASS + kapanış → İ12 KAPANIR,
 **sayaç 11/17 → 12/17**, hizmet **0/8 tam**.
 
-**7.9 · Sıralı owner komutları — GERÇEK PowerShell (canlı kabul; her adım owner'ın yükseltilmiş kabuğunda; ajan
-canlıya dokunmaz).** Placeholder değişkenleri owner doldurur (canlı DB URL, GO ref, sentetik hedef tenant id/slug,
-sink portu, i3-spy yolu). Her betik koşumdan ÖNCE §7.3 sha256'sıyla doğrulanır (eşleşmezse DUR). Bu blok izole
-ortamda birlikte doğrulandı (§9.4: pencere/kapı 20/20 + birleşik zincir 4/4).
+**7.9 · Canlı yürütme — GERÇEK PowerShell (owner'ın yükseltilmiş kabuğunda; ajan canlıya dokunmaz).** Salt-okuma
+belirlenen canlı gerçekler: görev **`HukukPlatform-API`** (Running; `C:\Ops\hukuk\bin\hukuk-task-host.exe api`);
+launcher `C:\Ops\hukuk\bin\start-api.ps1` sha256 `CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3`;
+app env `.env`'den (dotenv; `…HY_W4_RELEASE23\project\apps\api\.env`); API prefix `/api` (login `…/api/auth/login`).
+**i3-spy KULLANILMAZ** (pinli launcher NODE_OPTIONS enjekte etmez; FD gönderim kanıtı sink+DB). REAL adımlar izolede
+doğrulandı (§9.6: preflight 6/6 · kurtarma 9/9 · zincir 4/4). **KURULUM + ÖLÇÜM adımları EKSİK** (aşağıda somut).
 
 ```powershell
-# ——— 0) PIN'LER + SHA KAPISI (kök = main checkout'u; canlıya YAZMAZ, salt betik doğrular) ———
-$Gov   = 'C:\Development\HUKUK_YAZILIMI\<main-checkout>\project\docs\governance'   # owner: gerçek kök
-$Sc    = Join-Path $Gov 'client-live-acceptance-i12-r01\scripts'
-$I3    = Join-Path $Gov 'client-acceptance-runners-i3-r01\scripts'
+# ——— 0) SHA KAPISI (main checkout; canlıya YAZMAZ, salt betik doğrular) ———
+$Gov = 'D:\Development\HUKUK_YAZILIMI\project\project\docs\governance'   # owner: main checkout kökü
+$Sc  = Join-Path $Gov 'client-live-acceptance-i12-r01\scripts'
 $PIN = @{
-  "$Sc\i12-live-window.js"  = 'DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9'
-  "$Sc\i12-window.js"       = '6574D4F1B65EE97D46E27FFDE8CC75926E009E4B3F376FE048541BCEF42DBBA8'
-  "$Sc\i12-cron-delivery.js"= '29A569EC6A191346E65C5ECC20F94589902FD69062C7128B7E445D93FD7AEBD1'
-  "$Sc\i12-gaps.js"         = 'E6FE71228F78B5B80BB4771F0F164C9028F4816F00898D5280EDDA9226351154'
-  "$Sc\i12-gaps2.js"        = 'CFA0E9C084D7218D39406D1AE4329353C7EF0E6F8882A2E65D7B31DFAA630E21'
-  "$Sc\i12-allowlist.js"    = 'C7622F9091E23FC2063CA297844539E4E14880966631DC0047857169EAD3F007'
-  "$I3\i3-spy.js"           = '954C4B88AFB18322564FD29F71CE1D7B6EF4EEFF4DC6716EA7B6AB08AB1F36D0'
-  "$I3\i3-sink.js"          = '7D26418D3D7B1B3B7929041986C1A370B9253E79B3700470231CA5D56253E75C'
+  "$Sc\i12-live-preflight.js" = '62837688E97A98F7D465A5546548BD6CF9B0337FD18A4DD24D111F81A3D3036E'
+  "$Sc\i12-live-window.js"    = 'DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9'
+  "$Sc\i12-window.js"         = 'DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8'
 }
-foreach ($f in $PIN.Keys) {
-  $h = (Get-FileHash -Algorithm SHA256 $f).Hash
-  if ($h -ne $PIN[$f]) { throw "SHA UYUŞMADI: $f`n beklenen $($PIN[$f])`n bulunan  $h" }
-}
-Write-Host "SHA kapısı GEÇTİ ($($PIN.Count) betik)"
+foreach ($f in $PIN.Keys) { $h=(Get-FileHash -Algorithm SHA256 $f).Hash; if ($h -ne $PIN[$f]) { throw "SHA UYUŞMADI: $f (beklenen $($PIN[$f]) bulunan $h)" } }
+Write-Host "SHA kapısı GEÇTİ"
 
-# ——— OWNER PLACEHOLDER'LARI (owner doldurur; ref/DB URL kanıta/repoya yazılmaz) ———
-$LiveDbUrl   = $env:CLIENT_LIVE_DB_URL          # canlı client DB (salt Office SMTP alanı güncellenir)
-$GoRef       = $env:OWNER_GO_REF                # owner GO referansı (ham değer loglanmaz)
-$ExpectDb    = '<canlı-db-adı>'                 # beklenen DB adı (bağlantıyla eşleşmeli)
-$ExpectApi   = 'https://<canlı-api-tabanı>'     # beklenen API tabanı (API↔DB bağı ölçümde doğrulanır)
-$TenantId    = '<sentetik-hedef-tenant-id>'
-$TenantSlug  = '<sentetik-hedef-tenant-slug>'   # yanlış hedef reddi bu slug'a bağlıdır
-$SinkPort    = '2529'
-$Rollback    = 'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-<ts>\i12-live-window-rollback.json'
-$Node        = 'node'
+# ——— OWNER PLACEHOLDER'LARI (owner doldurur; ham ref/DB URL/parola kanıta/repoya YAZILMAZ) ———
+$LiveDbUrl=$env:CLIENT_LIVE_DB_URL; $GoRef=$env:OWNER_GO_REF; $LoginPw=$env:CLIENT_LIVE_LOGIN_PW
+$ExpectApi='https://<canlı-api>/api'; $ExpDbHost='<host>'; $ExpDbPort='<port>'; $ExpDbName='<db>'
+$TenantId='<sentetik-hedef-tenant-id>'; $TenantSlug='<sentetik-hedef-tenant-slug>'; $RunId='<runId>'
+$SinkPort='2529'; $EvDir='C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-<ts>'
+$Receipt=Join-Path $EvDir 'i12-setup-receipt.json'; $Rollback=Join-Path $EvDir 'i12-live-window-rollback.json'; $Node='node'
 
-# ——— 1) PREFLIGHT: API↔DB kimlik bağı (ikinci canlı-DB API AÇILMAZ; mevcut tek API doğrulanır) ———
-$env:AH_DATABASE_URL = $LiveDbUrl; $env:AH_API_BASE_URL = $ExpectApi
-# (ah-lib.verifyApiBoundToSameDatabase deseni: tek canlı API'nin beklenen DB'ye bağlı olduğu doğrulanır.)
+# ——— 1) KURULUM (sentetik hedef tenant + dönem aktivitesi + login user + makbuz) ———
+#   *** EKSİK — live-safe (non-G-0) `i12-live-setup.js` HENÜZ YAZILMADI. Disposable G-0 betikleri canlı komut
+#   OLAMAZ. Gerekli: canlı-güvenlik kapısı (I12_LIVE_CONFIRM + GO ref + beklenen DB + açık sentetik slug), yalnız
+#   sentetik tenant'a yazar, {runId,tenantId,tenantSlug,loginEmail} makbuzunu ($Receipt) üretir. (owner'a bildirildi) ***
 
-# ——— 2) PENCERE-AÇ (yalnız hedef tenant Office SMTP → sink; SIR-KORUYUCU; kapılar fail-closed) ———
-$env:I3_SMTP_PORT = $SinkPort; $env:I12_WINDOW_ROLLBACK = $Rollback
-$env:I12_LIVE_CONFIRM = '1'; $env:I12_LIVE_GO_REF = $GoRef
-$env:I12_EXPECT_DB = $ExpectDb; $env:I12_EXPECT_API = $ExpectApi; $env:I12_EXPECT_TENANT_SLUG = $TenantSlug
+# ——— 2) PREFLIGHT (İLK YAZMADAN ÖNCE; salt-okuma; eksik kimlikte YAZMA BAŞLAMAZ) ———
+$env:AH_DATABASE_URL=$LiveDbUrl; $env:AH_API_BASE_URL=$ExpectApi; $env:AH_LOGIN_PASSWORD=$LoginPw
+$env:I12_LIVE_GO_REF=$GoRef; $env:I12_REPO_DIR=(Resolve-Path (Join-Path $Gov '..\..')).Path
+$env:I12_EXPECT_DB_HOST=$ExpDbHost; $env:I12_EXPECT_DB_PORT=$ExpDbPort; $env:I12_EXPECT_DB_NAME=$ExpDbName
+$env:I12_EXPECT_TENANT_SLUG=$TenantSlug; $env:I12_EXPECT_RUNID=$RunId; $env:I12_SETUP_RECEIPT=$Receipt
+& $Node "$Sc\i12-live-preflight.js"
+if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT REDDETTİ (exit $LASTEXITCODE) — kimlik eksik/uyuşmaz; YAZMA BAŞLAMAZ" }
+
+# ——— 3) PENCERE-AÇ (yalnız hedef tenant Office SMTP → sink; SIR-KORUYUCU; kapılar fail-closed) ———
+$env:I3_SMTP_PORT=$SinkPort; $env:I12_WINDOW_ROLLBACK=$Rollback
+$env:I12_LIVE_CONFIRM='1'; $env:I12_EXPECT_DB=$ExpDbName; $env:I12_EXPECT_API=$ExpectApi
 & $Node "$Sc\i12-live-window.js" open $TenantId
-if ($LASTEXITCODE -ne 0) { throw "pencere-aç REDDEDİLDİ/başarısız (exit $LASTEXITCODE)" }   # 3=onay/GO, 4=DB/API/yanlış-hedef
+if ($LASTEXITCODE -ne 0) { throw "pencere-aç REDDEDİLDİ (exit $LASTEXITCODE; 3=onay/GO, 4=DB/API/yanlış-hedef)" }
 
-# ——— 3) RESTART-1 (env=smtp + i3-spy): owner mevcut TEK canlı API'yi bu env ile yeniden başlatır (≤120 sn) ———
-#   EMAIL_PROVIDER=smtp ; SMTP_HOST=127.0.0.1 ; SMTP_PORT=$SinkPort ; NODE_OPTIONS="--require $I3\i3-spy.js"
-#   Öncesi/sonrası env değerleri sha ile pinlenir. Canlı sürüm 2740df3d DEĞİŞMEZ.
+# ——— 4) RESTART-1 (env=smtp penceresi): .env T-pencere pin + görev yeniden başlat ———
+#   Owner .env'e T-pencere değerlerini pinler (EMAIL_PROVIDER=smtp; SMTP_HOST=127.0.0.1; SMTP_PORT=2529),
+#   öncesi .env'i sha ile yedekler. Sonra görev yeniden başlatılır (gerçek komut):
+Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
+Start-ScheduledTask -TaskName 'HukukPlatform-API'   # ≤120 sn: launcher DB-hazırlık retry'ını kapsar
+# Dinleyici + /api/auth/login 200/201 (verifyApiBoundToSameDatabase) doğrulanana kadar beklenir.
 
-# ——— 4) ÖLÇÜM (env=smtp penceresi): G1/G2 + G3/G4/G6 + FD-RED/FD-TMO/HANG + G7 (hedef-scoped) ———
-#   G7 teslim: runMonthlyDelivery(now,{tenantId:$TenantId}) — boş-scope KULLANILMAZ. Üç-değerli verdict.
-#   & $Node "$Sc\i12-gaps.js" ;  & $Node "$Sc\i12-gaps2.js" ;  (G7 için scoped tetik)  — her biri sha-kapılı.
+# ——— 5) ÖLÇÜM (7 gözlem, tek canlı API, hedef-scoped) ———
+#   *** EKSİK — live-safe (non-G-0) 7-gözlem ÖLÇÜM harness'ı HENÜZ YAZILMADI. Disposable G-0 ölçüm betikleri
+#   (i12-gaps/gaps2/cron-delivery/allowlist) canlı komut SAYILMAZ. Gerekli: G1/G2 (bilgi talebi API + sink
+#   reject/reset), G3/G4/G6/FD-RED/FD-TMO/HANG (FD yayın API; gönderim kanıtı sink+DB), G5 (ayrı restart
+#   EMAIL_PROVIDER=mock → 403), G7 (hedef-scoped runMonthlyDelivery(now,{tenantId:$TenantId}); boş-scope YOK).
+#   Üç-değerli verdict; hedef-scoped. (owner'a bildirildi) ***
 
-# ——— 5) RESTART-2 (G5 allowlist-DIŞI): owner EMAIL_PROVIDER=<mock/tanımsız> ile yeniden başlatır ———
-#   TEK yayın denemesi → 403 PROVIDER_NOT_PRODUCTION, gerçek send=0 (& $Node "$Sc\i12-allowlist.js" deseni).
+# ——— 6) RESTART-3 (env geri-al): .env özgün değere geri (sha doğrulanır) + görev yeniden başlat ———
+Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
+Start-ScheduledTask -TaskName 'HukukPlatform-API'
 
-# ——— 6) RESTART-3 (env geri-al): owner ÖZGÜN env ile yeniden başlatır (i3-spy YOK, gerçek SMTP) ———
-
-# ——— 7) PENCERE-KAPAT + KURTARMA (host/port/secure → özgün; 3-alan doğrulama; SIR dokunulmadı) ———
+# ——— 7) PENCERE-KAPAT + KURTARMA (host/port/secure → özgün; 3-alan doğrulama; SIR dokunulmadı; idempotent) ———
 & $Node "$Sc\i12-live-window.js" close $TenantId
 if ($LASTEXITCODE -ne 0) { throw "pencere-kapat başarısız (exit $LASTEXITCODE)" }
-#   Süreç yarıda öldüyse: aynı komut IDEMPOTENT (rollback'ten kurtarma). İkinci close GÜVENLİ sonuç verir.
+# Süreç yarıda öldüyse aynı komut IDEMPOTENT kurtarmadır (NO_ROLLBACK/CORRUPT/UNREADABLE/MISMATCH → fail-closed, yazma yok).
 
-# ——— 8) KAPANIŞ: erişim sonlandırma + geri-alma doğrulaması + kanıt SHA256 manifesti korumalı yerel arşive ———
+# ——— 8) ERİŞİM KAPANIŞI + kanıt arşivi (sentetik kullanıcı pasifleştirme + kanıt SHA256 manifesti korumalı arşive) ———
 ```
+
+**§7.9 EKSİK KALEMLER (owner'a somut bildirim — bu paket bu yüzden "eksiksiz" DEĞİL, İ12 HAZIR İLAN EDİLMEZ):**
+> - **KURULUM** (adım 1): live-safe (non-G-0) `i12-live-setup.js` YOK.
+> - **ÖLÇÜM** (adım 5): live-safe (non-G-0) 7-gözlem canlı ölçüm harness'ı YOK.
+> Bu iki adım için sahte komut/disposable ad KULLANILMADI; gerçek çalıştırılabilir komut YAZILMADI. **REAL + izolede
+> doğrulanan** adımlar: SHA kapısı · PREFLIGHT (`i12-live-preflight`, 6/6) · PENCERE-AÇ/KAPAT (`i12-live-window` +
+> hardened `i12-window`; kurtarma 9/9 · zincir 4/4) · RESTART (`HukukPlatform-API` görev + `.env` T-pencere).
 
 **Not (teslim yolu sır çözme):** G7 teslimi `getFullSmtpSettings` ile `smtpPass`'i OKUR/ÇÖZER. `enc:v1:` şifreli
 değerler için canlı API sürecinde `CREDENTIAL_ENCRYPTION_KEY` **zaten vardır** (üretim). Pencere `smtpPass`'e
@@ -336,9 +346,11 @@ legacy düz-metin ile 4/4 birleşik zincir doğrulandı, §9.4).
   §2; ayrıca §7.2'de belgelenen iki ayrı SMTP kaynağı — env vs Office DB — bir yapılandırma gerçeğidir, kusur değil).
 - **Canlı yürütme hazırlığı:** **AYRI canlı giriş noktası** `i12-live-window.js` (kapılar: `I12_LIVE_CONFIRM` +
   `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`; SIR-KORUYUCU) + prova
-  `i12-window.js`; **G-0 owner yetkisiyle AŞILMAZ** (§7.3). §7.3 tüm betiklerin **tam yol + SHA256**'sını, §7.8
-  **türetilen restart bütçesini (3) + per-restart süre/auth**, §7.9 **gerçek tam-yol+SHA kontrollü PowerShell
-  bloklarını** (kurulum/pencere/ölçüm/kurtarma/kapanış) verir. Canlı yürütme yapılmadı — ayrı yazılı owner GO'su (§7) ister.
+  `i12-window.js` (rollback sınıflandırma + kurtarma sağlamlığı, §9.6) + **canlı preflight** `i12-live-preflight.js`;
+  **G-0 owner yetkisiyle AŞILMAZ** (§7.3). §7.3 tam yol + SHA256; §7.8 restart bütçesi; §7.9 gerçek PowerShell
+  (SHA kapısı/preflight/pencere/restart-görev/kapanış). **PAKET EKSİKSİZ DEĞİL — İ12 HAZIR İLAN EDİLMEZ:** §7.9
+  KURULUM (`i12-live-setup.js`) ve 7-gözlem canlı ÖLÇÜM harness'ı live-safe (non-G-0) olarak HENÜZ YAZILMADI
+  (§9.6; disposable G-0 betikleri canlı komut sayılamaz). Canlı yürütme yapılmadı — ayrı yazılı owner GO'su (§7) ister.
 
 ## 9. PROVA SONUÇLARI (izole/geçici ortam — CANLI KABUL DEĞİL)
 
@@ -463,6 +475,30 @@ tam-yol+SHA kontrollü **PowerShell** bloklarını taşır (eski "..." / "şu de
 **R04c durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04c-<ts>\` — `verify-r04c.txt` (20/20) ·
 `verify-chain.txt` (4/4) + SHA256 manifesti. İzole disposable (D: worktree; RELEASE23 dist/evidence C:'de);
 sır/ref/.env yok.
+
+### 9.6 R04d — kurtarma sağlamlığı + canlı preflight + gerçek §7.9 + EKSİK bildirimi (CANLI KABUL DEĞİL)
+
+Owner (2026-09-17, D: worktree) üç somut eksik. Sonuç: kurtarma + preflight KAPATILDI ve izolede doğrulandı;
+§7.9 gerçek komutlara çevrildi; **KURULUM + ÖLÇÜM live-safe betikleri EKSİK olarak SOMUT bildirildi** → paket
+"eksiksiz" DEĞİL, İ12 HAZIR İLAN EDİLMEZ.
+
+| Ölçüm | Sonuç | Kanıt (gerçek çıktı) |
+|---|---|---|
+| **1 · Kurtarma sağlamlığı** (`verify-recovery`) | **PASS 9/9** | close: normal→verifiedClosed+3-alan · 2.close idempotent(alreadyClosed) · 2.open özgün-korundu · **NO_ROLLBACK→ok:false (PASS/alreadyClosed VERİLMEDİ)** · **CORRUPT→reddedildi, yazma yok, dosya korundu** · **UNREADABLE(dizin)→reddedildi** · **MISMATCH→Y yazılmadı, yedek A'da** · **open FOREIGN→A yedeği üzerine yazılmadı** · open CORRUPT→A değişmedi. Her hata durumu AYRI sınıflandı |
+| **2 · Canlı preflight** (`verify-preflight`) | **PASS 6/6** | tümü-iyi→PASS (4 kapı + ref: format+tüketim, DB host/port/ad, makbuz tenant/runId, API↔DB `/api` login) · yanlış DB adı→exit5 · yanlış DB portu→exit5 · tüketilmiş ref (repoda literal)→UNCONSUMED · bozuk ref biçimi→FORMAT · makbuz slug uyuşmazlığı→SETUP_RECEIPT. **Eksik kimlikte YAZMA BAŞLAMAZ** |
+| **3 · Tam zincir** (`verify-chain`, değişen pencere) | **PASS 4/4** | pencere-aç(sink,secretsUntouched) → pencere ile yönlendirilen Office üzerinden GERÇEK teslim (sink=1, ledger SENT+1) → pencere-kapat verifiedClosed+3-alan özgün → SIR değişmedi |
+
+**Canlı launcher (salt-okuma belirlendi):** görev `HukukPlatform-API` (Running); launcher `C:\Ops\hukuk\bin\start-api.ps1`
+sha `CC634BBF…`; env `.env`/dotenv; API prefix `/api`. Restart = `.env` T-pencere pin + `Stop/Start-ScheduledTask
+HukukPlatform-API`. **i3-spy canlıya enjekte EDİLMEZ** (pinli launcher NODE_OPTIONS geçirmez) → FD gönderim kanıtı sink+DB.
+
+**EKSİK (owner'a somut bildirim; HAZIR İLAN EDİLMEZ):** (a) `i12-live-setup.js` (live-safe kurulum + makbuz) YOK;
+(b) live-safe 7-gözlem canlı ÖLÇÜM harness'ı YOK. Disposable G-0 betikleri canlı komut sayılamaz; bu iki adım için
+sahte komut/disposable ad KULLANILMADI. Paket bu iki betik yazılıp izolede doğrulanana dek **eksiksiz değildir**.
+
+**R04d durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04d-<ts>\` — `verify-recovery.txt` (9/9) ·
+`verify-preflight.txt` (6/6) · `verify-chain.txt` (4/4) + SHA256 manifesti. İzole disposable (D: worktree;
+RELEASE23 dist/evidence C:'de); sır/ref/.env yok.
 
 **Kanıt arşivi (durable, synthetic — sır/ref/.env yok):** `…\Documents\CLIENT-EVIDENCE-20260911\i12-rehearsal-<ts>\`
 — `i12-gaps2-evidence.json` · `cron-predicate-state.json` · `cron-last-result.json` · `cron-run.log` + SHA256
