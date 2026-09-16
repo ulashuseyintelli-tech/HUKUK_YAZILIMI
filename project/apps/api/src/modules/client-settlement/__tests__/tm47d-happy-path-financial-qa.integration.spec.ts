@@ -6,6 +6,15 @@ import { AuditService } from '../../audit/audit.service';
 import { ClientStatementService } from '../../client-statement/client-statement.service';
 import { ClientOffsetService } from '../client-offset.service';
 import { ClientSettlementReadService } from '../client-settlement-read.service';
+import { CaseBalanceService } from '../../interest-engine/orchestration/case-balance.service';
+import { RateProviderService } from '../../interest-engine/rates/rate-provider.service';
+import { InterestEngineService } from '../../interest-engine/interest-engine.service';
+import { PolicyGateV2Service } from '../../interest-engine/policy-gate/policy-gate-v2.service';
+import { SegmentBuilderService } from '../../interest-engine/segments/segment-builder.service';
+import { AllocationEngineService } from '../../interest-engine/allocation/allocation-engine.service';
+import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-allocator.service';
+import { ClaimPriorityService } from '../../interest-engine/allocation/claim-priority.service';
+import { VersionPinningService } from '../../interest-engine/version/version-pinning.service';
 import {
   cleanupTm47dHappyPathFixture,
   seedTm47dHappyPathFixture,
@@ -63,6 +72,46 @@ async function statementLineTypes(prisma: PrismaClient, statementId: string): Pr
   return rows.map((row) => row.lineType);
 }
 
+// Yapisal kanit: bu fixture'da closingBalance'i para-hareketi (CASE_COLLECTION_PAYABLE)
+// belirler; EXPENSE_REQUESTED bilgi satiridir (debit/credit 0) ve ClientOffset bacaklarinin
+// toplami net 0'dir (client-statement.service.ts:704-778). Yalnizca beklenen sayiyi
+// degistirerek degil, closing = collection payable'i URETENIN bu oldugunu dogrular.
+async function expectExpenseInformationalAndOffsetNetZero(prisma: PrismaClient, statementId: string): Promise<void> {
+  const rows = await prisma.clientStatementLine.findMany({
+    where: { statementId },
+    select: { lineType: true, debit: true, credit: true },
+  });
+  const expenseRows = rows.filter((r) => r.lineType === 'EXPENSE_REQUESTED');
+  expect(expenseRows.length).toBeGreaterThan(0);
+  for (const exp of expenseRows) {
+    expect(exp.debit.toString()).toBe('0');
+    expect(exp.credit.toString()).toBe('0');
+  }
+  const offsetLegs = rows.filter((r) => r.lineType.startsWith('CLIENT_OFFSET'));
+  expect(offsetLegs.length).toBeGreaterThan(0);
+  const offsetNet = offsetLegs.reduce((sum, r) => sum.plus(r.credit).minus(r.debit), new Prisma.Decimal(0));
+  expect(offsetNet.toString()).toBe('0');
+}
+
+// ClientStatementService.loadAccruedInterest GERCEK CaseBalanceService.computeCaseBalance
+// yolunu kullanir (RECEIVABLE outstanding faiz projeksiyonu). Ayni disposable Prisma ile
+// gercek interest-engine zinciri kurulur (scenario-materializer.db-gated ile ayni desen).
+// reportRenderer/auditWriter read-only bakiye hesabinda kullanilmaz -> {} birakilir; bu
+// finansal sonucu SABITLEYEN/hesaplamayi atlayan mock DEGILDIR (policyGate/segmentBuilder/
+// allocationEngine/rateProvider/versionPinning GERCEK, hesaplama gercek zincirden gecer).
+function buildCaseBalanceService(prisma: PrismaClient): CaseBalanceService {
+  const engine = new InterestEngineService(
+    new PolicyGateV2Service(),
+    new SegmentBuilderService(),
+    new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService()),
+    {} as never,
+    {} as never,
+    new VersionPinningService(),
+    undefined,
+  );
+  return new CaseBalanceService(prisma as never, new RateProviderService(prisma as never), engine);
+}
+
 describeDb('TM47D-6 happy path financial QA', () => {
   let prisma: PrismaClient;
   let audit: AuditService;
@@ -83,6 +132,7 @@ describeDb('TM47D-6 happy path financial QA', () => {
       { dispatch: jest.fn().mockResolvedValue(undefined) } as any,
       { getOfficeIdentity: jest.fn().mockResolvedValue({ name: 'TM47D QA Office' }) } as any,
       audit,
+      buildCaseBalanceService(prisma),
     );
   });
 
@@ -154,7 +204,13 @@ describeDb('TM47D-6 happy path financial QA', () => {
         'CLIENT_OFFSET_EXPENSE_APPLIED',
       ]),
     );
-    expect(appliedStatement.closingBalance.toString()).toBe('400');
+    // closingBalance = para-hareketi toplami = CASE_COLLECTION_PAYABLE (1000). Bu fixture'da
+    // EXPENSE_REQUESTED bilgi satiridir (debit/credit 0) ve ClientOffset iki bacagi net 0'dir
+    // (client-statement.service.ts:704-778) -> ikisi de closing'i oynatmaz, closing collection
+    // payable'a esittir. ("closing her zaman brut" DEGIL; bu hareket kumesinin sonucu.) Musteri
+    // NET pozisyonu (400) ayri kavramdir ve yukaridaki previewOffset netBefore/netAfter=400'de korunur.
+    expect(appliedStatement.closingBalance.toString()).toBe('1000');
+    await expectExpenseInformationalAndOffsetNetZero(prisma, appliedStatement.id);
 
     const reverseResult = await offsetService.reverseOffset(fixture.tenantId, fixture.actorUserId, applyResult.offsetId, {
       reason: 'TM47D-6 happy path reverse QA kontrolu',
@@ -195,7 +251,10 @@ describeDb('TM47D-6 happy path financial QA', () => {
         'CLIENT_OFFSET_EXPENSE_REVERSED',
       ]),
     );
-    expect(regeneratedStatement.closingBalance.toString()).toBe('400');
+    // Reverse + supersede sonrasi da collection payable sabit 1000; APPLY + REVERSAL offset
+    // bacaklari net 0, EXPENSE_REQUESTED bilgi -> regenerated closing da 1000 (ayni para-hareketi formulu).
+    expect(regeneratedStatement.closingBalance.toString()).toBe('1000');
+    await expectExpenseInformationalAndOffsetNetZero(prisma, regeneratedStatement.id);
 
     const audits = await prisma.auditLog.findMany({
       where: {
