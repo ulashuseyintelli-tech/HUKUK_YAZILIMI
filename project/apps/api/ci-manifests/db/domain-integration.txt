@@ -212,6 +212,15 @@ src/modules/collection/__tests__/collection-semantic-idempotency.db-gated.integr
 #   sirasini bariyerlerle dogrular; kilitli Collection okumasi ve pre-post CAS regresyonu.
 src/modules/client-settlement/__tests__/f04-posting-reversal-race.db-gated.integration.spec.ts
 #
+#   CLIENT-SETTLEMENT kalan 2 DB-gated spec (owner GO 2026-09-17 "KALAN 2 DB-GATED SPEC / TM47D onarimi + 32/32"):
+#     describeDb + gercek PrismaClient + tm47d-happy-path-seed. tm47d test-kurulum onarimi:
+#     ClientStatementService'in 5. bagimliligi (gercek CaseBalanceService, interest-engine chain)
+#     eklendi; applied+regenerated closingBalance beklentisi para-hareketi sozlesmesine gore
+#     400->1000 duzeltildi (EXPENSE_REQUESTED bilgi debit/credit 0 + offset net-0 yapisal assert;
+#     NET 400 previewOffset'te korunur). Disposable DB'de 2/2 spec PASS; urun kodu/fixture DEGISMEDI.
+src/modules/client-settlement/__tests__/client-payout-replay.db-gated.integration.spec.ts
+src/modules/client-settlement/__tests__/tm47d-happy-path-financial-qa.integration.spec.ts
+#
 #   DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW)
 #     collection-cancel-reversal.db-gated.integration.spec.ts: already follows the
 #     .db-gated.integration.spec.ts suffix convention (describeWithDisposableDb),

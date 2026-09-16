@@ -4024,8 +4024,8 @@ Incelenen secim yollari:
 | 28 | `payment-reversed.registrar.spec.ts` | YOK → **KOSUYOR (2026-09-16 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | saf birim (mock) |
 | 29 | `case-fee-agreement.http-smoke.spec.ts` | YOK → **KOSUYOR (2026-09-17 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | surec-ici Nest HTTP (supertest + JWT/Passport, servisler mock; DB/dis servis yok) |
 | 30 | `distribution-recommendation.http-smoke.spec.ts` | YOK → **KOSUYOR (2026-09-17 baglandi)** | olcum aninda: ayni · simdi `pure/client-portal` | surec-ici Nest HTTP (ayni) |
-| 31 | `client-payout-replay.db-gated.integration.spec.ts` | YOK | ayni | DB-gated (`describeDb`, gercek `PrismaClient`) |
-| 32 | `tm47d-happy-path-financial-qa.integration.spec.ts` | YOK | ayni | DB-gated (`describeDb`, gercek `PrismaClient` + seed) |
+| 31 | `client-payout-replay.db-gated.integration.spec.ts` | YOK → **KOSUYOR (2026-09-17 baglandi)** | olcum aninda: ayni · simdi `db/domain-integration` | DB-gated (`describeDb`, gercek `PrismaClient`) |
+| 32 | `tm47d-happy-path-financial-qa.integration.spec.ts` | YOK → **KOSUYOR (2026-09-17 baglandi; test-kurulum onarimi)** | olcum aninda: ayni · simdi `db/domain-integration` | DB-gated (`describeDb`, gercek `PrismaClient` + seed) |
 
 CI disi 25 spec'in ayrimi: **saf birim 21 · surec-ici Nest HTTP smoke 2 · DB-gated 2.**
 Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina dayanir. Kosulmayan 24 spec'in bugun gecip gecmedigi
@@ -4096,6 +4096,16 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **Manifest kosumu:** `pure/client-portal` **123 suite / 1835 test PASS** (onceki 121 / 1823 → +2 suite / +12 test); eklenen 2 spec'in PASS satiri var; client-settlement PASS 26 → 28. PR CI (Test Suite job) log kaniti PR govdesinde.
 - **GUNCEL SAYI (hedef tuttu):** **32 spec · CI'da 30 (pure/client-portal 28 + db/domain-integration 2) · CI disinda 2 · belirsiz 0.**
   - CI disi 2 = `client-payout-replay.db-gated.integration` + `tm47d-happy-path-financial-qa.integration` (DB-gated). Bu 2'nin baglanmasi bu isin KAPSAMI DISIDIR (yeri `db/domain-integration`).
+
+**BAGLAMA-4 — KALAN 2 DB-GATED SPEC CI'A BAGLANDI + TM47D TEST-KURULUM ONARIMI (2026-09-17; owner GO zinciri "KALAN 2 DB-GATED SPEC" -> "TM47D 400/1000 kok neden" -> "TM47D beklenti duzeltmesi + 32/32"):**
+- **Uyum:** ikisi de `describeDb` + gercek `PrismaClient` + `tm47d-happy-path-seed`; `db/domain-integration` CI adimi `TEST_DATABASE_URL` + `prisma migrate deploy` saglar (ci.yml:118,158-161) -> atlanmaz.
+- **tm47d kok neden (tekrarlanabilir olcum, disposable DB):** spec `new ClientStatementService(...)`'e yalniz 4 arguman veriyordu; ctor 5 ister (5. `caseBalance: CaseBalanceService`, interest-engine/orchestration). Eksik DI -> `this.caseBalance` undefined -> `computeCaseBalance` TypeError (client-statement.service.ts:1157). Spec hic CI'da olmadigi icin drift fark edilmemis.
+- **DI onarimi (yalniz test-kurulumu):** gercek `CaseBalanceService` + ayni disposable Prisma, kanitli `scenario-materializer.db-gated` deseniyle (`buildCaseBalanceService`: policyGate/segmentBuilder/allocationEngine/rateProvider/versionPinning gercek; reportRenderer/auditWriter read-only bakiyede kullanilmaz -> `{}`; finansal sonucu sabitleyen/atlayan mock DEGIL). Urun kodu ve fixture DEGISMEDI.
+- **400/1000 kok neden:** closingBalance = para-hareketi = `CASE_COLLECTION_PAYABLE` brut **1000**; `EXPENSE_REQUESTED` bilgi satiri (debit/credit 0), `ClientOffset` iki bacak net 0 (client-statement.service.ts:704-778). computeCaseBalance her iki case icin `NO_BUCKETS`/`source:NONE` -> projekte faiz `null` -> faiz satiri yok, closing'e etki 0. Testin `.toBe('400')` (net = payable-expense) beklentisi BAYAT idi (spec throw ettigi icin hic dogrulanmamis). Duzeltme: applied + regenerated closingBalance 400 -> **1000** (bu fixture'in para-hareketi kumesi; "closing her zaman brut" genellemesi DEGIL). NET 400 `previewOffset` netBefore/netAfter=400'de KORUNUR; ayrica EXPENSE bilgi (debit/credit 0) + offset net-0 yapisal assert eklendi (yalnizca beklenen sayi degistirilmedi).
+- **Kosum (disposable DB, DB hedefi dogrulandi):** **2/2 spec PASS** (tm47d 2 test: ana zincir + non-admin authz; client-payout-replay 2 test); atlanmadi.
+- **TypeScript:** `ts-jest diagnostics:false` -> test kosumu tip kaniti DEGIL; acik `tsc --noEmit` (`type-check`) dosya+kod+mesaj karsilastirmasi: bu degisiklik **0 yeni hata** (baseline'daki tm47d `TS2554 Expected 5 arguments, but got 4` GIDERILDI; 529/292 baseline'a dokunulmadi).
+- **Baglama:** 2 spec `apps/api/ci-manifests/db/domain-integration.txt` (f04 altinda); yeni CI step / yeni Jest cagrisi YOK.
+- **GUNCEL SAYI (hedef tuttu):** **32 spec · CI'da 32 (pure/client-portal 28 + db/domain-integration 4) · CI disinda 0 · belirsiz 0.** 32/32 = CI'a bagli spec sayisidir; eksiksiz finansal dogruluk iddiasi DEGILDIR. PR CI log kaniti (iki spec PASS satiri + atlanmadi) PR govdesinde.
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
