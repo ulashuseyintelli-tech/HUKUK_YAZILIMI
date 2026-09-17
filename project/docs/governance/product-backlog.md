@@ -4174,7 +4174,7 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 | B8 | Onceden tuketilmis FD taleplerinin kurtarilmasi | Canlida OLCULDU (2026-09-11, salt-okuma): tuketilmis/kilitli kayit 0 -> bugun canli etki 0. |
 | B9 | Yerel worktree kalintisi `C:\Development\HY_WT\AK2_LAWYER_CREATE` | Repo disi; iskelet (0 dosya) olarak duruyor. Kanitlanmis tasfiye recetesi hazir. |
 | B10 | Kontrol -> yazma penceresi: yetki kararindan SONRA, yazmadan ONCE yetki geri alinirsa yazma yine gecer | OLCULDU: 21/21 kapi kendi metodunda ilk yazmadan ONCE, ama HICBIR yolda yazma yetki DURUMUNA kosullu degil (CLIENT R1A kosullu-updateMany deseni bu kapilarda KULLANILMIYOR). Istismar GOSTERILMEDI; pencere tek istek icidir. Kapatma karari owner'in — AK-1a eki "rol KARAR ANINDA DB'den" emsali var. |
-| B11 | Avukat profil guncellemesi (`PUT`/`PATCH /lawyers/:id`) icin audit kapsami | **POLITIKA KARARI VERILDI (owner 2026-09-12) ve UYGULANDI — main'de; CANLIDA DEGIL; RELEASE23 adayinda DEGIL** (asagida "B11 POLITIKA + UYGULAMA"). Kapsam yalniz bes AYRICALIKLI alan; genel profil alanlari (title vb.) ve STAFF update BILINCLI olarak KAPSAM DISI. |
+| B11 | Avukat profil guncellemesi (`PUT`/`PATCH /lawyers/:id`) icin audit kapsami | **CANLIDA 2026-09-18 — R24 TEKNIK YAYIN PASS** (owner GO; kayit `release24-r24-r01/R24-TEKNIK-YAYIN-KAYDI-R01.md`; kaynak `006c4dd2`, canli dist `87712E0E…5453`, geri donus yedegi `F84D680E…F44C`). Canli davranis: ayricalikli guncellemede audit yazilamazsa guncelleme GERI ALINIR ve hata cagirana ULASIR (owner §5.4 kabulu). Onceki hukum: **POLITIKA KARARI VERILDI (owner 2026-09-12) ve UYGULANDI — main'de; CANLIDA DEGIL; RELEASE23 adayinda DEGIL** (asagida "B11 POLITIKA + UYGULAMA"). Kapsam yalniz bes AYRICALIKLI alan; genel profil alanlari (title vb.) ve STAFF update BILINCLI olarak KAPSAM DISI. |
 
 **C. CANLI KABUL BEKLEYEN** (kod MAIN'DE, canlida DEGIL ya da canlida yalnizca isaret duzeyinde olculdu)
 
@@ -4183,6 +4183,7 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 | C1 | `POST /cases` create yolu atomikligi (#2641 + #2645) | Main'de; yayin ve islevsel canli kabul YAPILMADI. |
 | C2 | AK-1a eki — VIEWER onay karari siniri (#2606 `42d109fe`) | Canlida yalniz dist isareti olculdu; islevsel senaryo KOSULMADI. |
 | C3 | CLF-O0-01 / FD senaryolari (#2608 + #2612) | Canlida yalniz dist isareti; FD senaryolari canlida KOSULMAZ kaydi yerinde. |
+| C4 | R24 teknik yayin (#2697 G7 dar manuel aylik teslim ucu + #2655 B11) | **TEKNIK YAYIN PASS 2026-09-18** (kayit `release24-r24-r01/R24-TEKNIK-YAYIN-KAYDI-R01.md`; canli dist `87712E0E…5453`, boot log `Mapped {…run-now, POST}` 1/977, kimliksiz POST 401 — oncesi 404). **ISLEVSEL / YETKILI-ROL KABULU YAPILMADI:** 403 `SCHEDULER_MANUAL_RUN_DENIED_NOT_ELEVATED`, hedef-scoped teslim ve ayni-donem dedupe canlida DOGRULANMADI; elevated aktorle cagri GERCEK teslim tetikler. İ12 canli kabulu AYRI owner GO'suna baglidir; sayac 11/17 ve hizmet 0/8 bu yayinla ARTMADI. 401 tek basina kabul kaniti SAYILMAZ. |
 
 Bu liste OFFICE hattinin **tek guncel** acik is kaydidir; yukaridaki tarihsel paragraflar DEGISTIRILMEDI
 (append-only). Yeni is bu listeden SECILIR; liste disi is acilmaz.
