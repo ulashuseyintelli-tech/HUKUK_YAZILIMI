@@ -55,6 +55,19 @@ src/modules/collection/__tests__/collection-idempotency.spec.ts
 src/modules/collection/__tests__/collection-semantic-command.spec.ts
 src/modules/collection/__tests__/collection-semantic-idempotency.static.spec.ts
 src/modules/collection/__tests__/collection-update-safety.spec.ts
+#
+#   COLLECTION kalan DB-siz spec'leri (owner GO 2026-09-18 "OFFICE / COLLECTION CI PAKETI"):
+#     Modulde 19 spec var; 12 zaten bagliydi, 7 secim disiydi. Bunlarin 6'si DB-siz: describeDb /
+#     new PrismaClient / TEST_DATABASE_URL = 0 (Prisma importu TEK BASINA olcut SAYILMADI).
+#     collection-receipt-routing.static kendi kaynagini cwd-BAGIMSIZ okur
+#     (readFileSync(resolve(__dirname,'..','..',...))). DB env TANIMSIZ kosum: 6/6 spec, 52 test PASS;
+#     skip/todo 0. Urun/fixture/mock/beklenti DEGISMEDI; yeni job/Jest cagrisi YOK (CI-8 butcesi korunur).
+src/modules/collection/__tests__/collection-cancel-approval.spec.ts
+src/modules/collection/__tests__/collection-cancel-reversal.spec.ts
+src/modules/collection/__tests__/collection-receipt-command.spec.ts
+src/modules/collection/__tests__/collection-receipt-routing.static.spec.ts
+src/modules/collection/__tests__/get-collected-breakdown.spec.ts
+src/modules/collection/__tests__/tax-read-bucket.spec.ts
 src/modules/interest-engine/legal-application-plan/__tests__/legal-application-writer.spec.ts
 
 # DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW):

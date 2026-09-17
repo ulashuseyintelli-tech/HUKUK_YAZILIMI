@@ -208,6 +208,14 @@ src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-e2
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/collection/__tests__/collection-semantic-idempotency.db-gated.integration.spec.ts
 #
+#   COLLECTION kalan GERCEK-DB spec'i (owner GO 2026-09-18 "OFFICE / COLLECTION CI PAKETI"):
+#     receipt-object-scope-authorization.db-gated.integration -> resolveTestDatabaseUrl + gercek
+#     PrismaClient (DB kapili). Bu manifest adimi ci.yml'de TEST_DATABASE_URL saglar -> ATLANMAZ.
+#     Bu ise ait disposable DB'de migrate deploy + kosum: 1/1 spec, 4 test PASS (skip 0).
+#     NOT: test/test-db-env.ts guvenlik kapisi TEST_DATABASE_URL db ADININ test|gate|spec|ci|jest
+#     icermesini sart kosar; CI'daki hukuk_test bu kapiyi saglar. Urun/fixture/mock/beklenti DEGISMEDI.
+src/modules/collection/__tests__/receipt-object-scope-authorization.db-gated.integration.spec.ts
+#
 #   F04 (posting / cancellation / reversal race): gercek PostgreSQL uzerinde iki commit
 #   sirasini bariyerlerle dogrular; kilitli Collection okumasi ve pre-post CAS regresyonu.
 src/modules/client-settlement/__tests__/f04-posting-reversal-race.db-gated.integration.spec.ts
