@@ -193,3 +193,19 @@ src/modules/accounting-journal/__tests__/accounting-journal-trial-balance.servic
 src/modules/accounting-journal/__tests__/accounting-journal.builder.spec.ts
 src/modules/accounting-journal/__tests__/accounting-journal.writer.spec.ts
 src/modules/accounting-journal/__tests__/client-offset-journal-source.adapter.spec.ts
+#
+#   EXPENSE-REQUEST modulu (owner GO 2026-09-17 "OFFICE / API CI ENVANTERI + TEK MODULLUK BAGLAMA"):
+#     API envanterinde modulun 7 spec'inin TAMAMI secim disiydi (ne manifest ne ci.yml dogrudan cagrisi).
+#     Gercek bagimlilik ile siniflandi: 7'sinde de describeDb / new PrismaClient / TEST_DATABASE_URL = 0
+#     -> hepsi DB-siz; disposable DB gerekmedi. expense-request-controller-cpe surec-ici Nest HTTP smoke
+#     (supertest + INestApplication, servisler mock) -> yine DB-siz. Statik kaynak okuma yok (FS=0).
+#     Domain: masraf/finans -> bu manifest (expense offset'leri client-settlement ve collection ile bagli).
+#     DB env tanimsiz kosum: 7/7 spec, 127 test PASS; FAIL 0, skip/todo 0. Urun/fixture/mock/beklenti
+#     DEGISMEDI; skip/todo EKLENMEDI; yeni Jest cagrisi YOK (CI-8 bütce kapisi korunur).
+src/modules/expense-request/__tests__/expense-gate-faz1b.spec.ts
+src/modules/expense-request/__tests__/expense-notification-dispatcher-migration.spec.ts
+src/modules/expense-request/__tests__/expense-request-controller-cpe.spec.ts
+src/modules/expense-request/expense-calculator.spec.ts
+src/modules/expense-request/expense-payment-reversal-contract.service.spec.ts
+src/modules/expense-request/expense-payment-reversal-runtime.service.spec.ts
+src/modules/expense-request/expense-request.spec.ts
