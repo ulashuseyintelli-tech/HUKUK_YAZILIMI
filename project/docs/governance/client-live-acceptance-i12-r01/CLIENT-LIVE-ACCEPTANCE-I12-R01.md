@@ -150,8 +150,10 @@ doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` 
 | `client-live-acceptance-i12-r01/scripts/i12-window.js` | PROVA (disposable/G-0) Office SMTP penceresi · SIR-KORUYUCU · rollback sınıflandırma (ABSENT/UNREADABLE/CORRUPT/MISMATCH; doğrulanmış-kapanış-yoksa-PASS-yok) · ikinci-open özgün-koruma · 3-alan close · ikinci-close güvenli | `DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-window.js` | **AYRI CANLI** giriş noktası · SIR-KORUYUCU · canlı-güvenlik kapıları (`I12_LIVE_CONFIRM` + `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`) | `DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-preflight.js` | **CANLI PREFLIGHT** (salt-okuma) · `--phase pre` (GO-ref biçim+tüketim + DB host/port/ad + hedef slug; makbuz ARANMAZ) / `post` (+makbuz tenant/runId + API↔DB); eksik kimlikte YAZMA BAŞLAMAZ | `B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127` |
-| `client-live-acceptance-i12-r01/scripts/i12-live-setup.js` | **CANLI KURULUM** (sentetik hedef tenant + FD zinciri + statement aktivitesi + Office + makbuz) · canlı-güvenlik kapısı (confirm+GO-ref+DB+slug=türetilen); sır makbuza konmaz | `958BD993D7DE5C21260EA0665F433124D3C3CDB1B2810D0F31D3AAA5F8199B71` |
-| `client-live-acceptance-i12-r01/scripts/i12-live-measure.js` | **CANLI ÖLÇÜM** (7 gözlem: G1/G2 info-request + G3/G4/G6/FD-RED/FD-TMO + G5 mock-reboot + G7 hedef-scoped) · FD sayaç ayrımı conn-*+DB (izolede i3-spy çapraz-doğrulama) · hedef-scoped · erişim kapanışı; canlı-güvenlik kapısı | `76826AB1A4A5117CCA790AE2D84DECA5D7206AB5A4562D0EEE5EC558109AFDE4` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-setup.js` | **CANLI KURULUM** (sentetik hedef tenant + FD zinciri + statement aktivitesi + Office + makbuz; makbuz artık **aktör e-postalarını** taşır — online ölçüm bunları kullanır) · canlı-güvenlik kapısı (confirm+GO-ref+DB+slug=türetilen); sır makbuza konmaz | `7E1EDC9460CA9A40B261B4A4DA89652EC4E0826AA7EC9A88B6B96AF867FD1458` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-measure-online.js` | **CANLI ÖLÇÜM (ONLINE)** — §7.9 canlı dizisinde KOŞAN ölçüm. MEVCUT tek API'ye HTTP ile bağlanır (`I12_ONLINE_API_BASE`); makbuz tenant/runId/aktörlerini kullanır (setupI3 YOK); FD zinciri satırlarını yalnız makbuz tenant'ına yazar + HTTP yayınlar; owner'ın sink'ini mod dosyasıyla yönlendirir. **setupI3 / yeni API boot / spy·cron-hook enjeksiyonu / port-kill İÇERMEZ.** Sayaçlar AYRI: sendCall(conn) · delivery(msg, alıcı-scoped) · dbRecord — eşit delta HER DURUMDA denklik SAYILMAZ (FD-RED/TMO'da sendCall+1≠delivery+0). G1/G2/G3/G4/G6/FD-RED/FD-TMO canlı ölçülür; G5 yalnız `I12_G5_WINDOW=1` (ayrı allowlist-dışı restart pini) ile, aksi UNMEASURED; G7 canlı tetiklenemez (aşağı) → UNMEASURED+KARAR; erişim kapanışı finally'de; canlı-güvenlik kapısı | `4C44A78EA2D7E59D576645F3543A62F7E1862D7AC066C18067D5C0B7D2E571A6` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-recover.js` | **BAĞIMSIZ KURTARMA** — §7.9 PowerShell try/finally(trap) içinde HER SONUÇTA çağrılır. DB tarafı: Office SMTP rollback (`i12-window.runWindow(close)`, fail-closed) + erişim kapanışı (hedef+yabancı sentetik tenant, aktif==0); .env restore PowerShell'e delegedir. Yalnız `ah-` sentetik slug'a dokunur (assertOwnSlug); tenant TAHMİN ETMEZ; çıkış !=0 → escalate | `7733CF3B4CFDB022A088EAFB4762DD64C42B5F9AF7854C03EE69B806D1894905` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-measure.js` | **DISPOSABLE ÖLÇÜM PROVASI** (canlı DEĞİL; §7.9 canlı dizisinden ÇIKARILDI) — self-contained: kendi setupI3'ünü kurar, dist'i i3-spy+cron-hook ile boot eder, port-kill yapar, G7'yi cron-hook ile enjekte eder. **G-0 (assertDisposableEnvironment) EN BAŞTA** → canlı DB'de asla koşmaz. 12/12 kanıtı yalnız disposable davranışı belgeler; canlı ölçüm `i12-live-measure-online.js`'dir | `AB531AFBEEBF46285E9F2B5D576892CDAC677C3020850E38B90AA070ABC53F58` |
 | `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | düzenek | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
 | `client-acceptance-runners-i3-r01/scripts/i3-start-api.js` | düzenek | `72505F981EE167B1A664E5663DC675B2E6ACAB1CCCE84058231BA8BB0EECDFB5` |
 | `client-acceptance-runners-i3-r01/scripts/i3-sink.js` | loopback SMTP sink | `7D26418D3D7B1B3B7929041986C1A370B9253E79B3700470231CA5D56253E75C` |
@@ -160,8 +162,9 @@ doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` 
 | `client-acceptance-harness-r01/scripts/ah-lib.js` | G-0 + prisma/aktör altyapısı | `DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7` |
 
 > **Disposable kapıları KALDIRILMAZ ve owner yetkisiyle AŞILMAZ.** Prova/ölçüm betikleri (`i12-gaps`, `i12-gaps2`,
-> `i12-cron-*`, `i12-window.js`) `ah-lib.assertDisposableEnvironment` (G-0: DB port allowlist `{5439}`, DB adı
-> `{hukuk_fix1_test}`, loopback) taşır ve **YALNIZ disposable DB'de** koşar; **CANLIYA ASLA koşulmaz** ve G-0 owner
+> `i12-cron-*`, `i12-window.js`, **`i12-live-measure.js`** — disposable ölçüm provası) `ah-lib.assertDisposableEnvironment`
+> (G-0: DB port allowlist `{5439}`, DB adı `{hukuk_fix1_test}`, loopback) taşır ve **YALNIZ disposable DB'de** koşar;
+> **CANLIYA ASLA koşulmaz** ve G-0 owner
 > komutuyla "aşılmaz" — G-0'lı bir betiği canlıya yöneltmek geçersizdir (sha256'lar G-0 KORUNARAK hesaplandı).
 > **Canlı yürütme AYRI giriş noktalarıyla yapılır** (bkz. `i12-live-window.js`): bu betikler G-0 taşımaz ama kendi
 > **canlı-güvenlik kapılarını** taşır (fail-closed; open/close için, status salt-okuma): (1) `I12_LIVE_CONFIRM=1`
@@ -258,18 +261,22 @@ belirlenen canlı gerçekler: görev **`HukukPlatform-API`** (Running; `C:\Ops\h
 launcher `C:\Ops\hukuk\bin\start-api.ps1` sha256 `CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3`;
 app env `.env`'den (dotenv; `…HY_W4_RELEASE23\project\apps\api\.env`); API prefix `/api` (login `…/api/auth/login`).
 **i3-spy KULLANILMAZ** (pinli launcher NODE_OPTIONS enjekte etmez; FD gönderim kanıtı sink+DB). REAL adımlar izolede
-doğrulandı (§9.6: kurtarma 9/9 · preflight 6/6 · zincir 4/4; §9.7: kurulum+preflight-faz 9/9). **Yalnız ÖLÇÜM (adım 5)
-EKSİK** (aşağıda somut).
+doğrulandı (§9.6: kurtarma 9/9 · preflight 6/6 · zincir 4/4; §9.7: kurulum+preflight-faz 9/9; **§9.9: canlı-bağlı ONLINE
+ölçüm + bağımsız kurtarma — setup→online→recover tek API/tek makbuzla izolede uçtan uca**). Ölçüm artık `i12-live-measure`
+(disposable prova) DEĞİL, **`i12-live-measure-online`** ile MEVCUT tek API'ye bağlanarak yapılır (adım 5). G5/G7 canlı
+sınırları §7.10 + adım 5 notunda SOMUT bildirildi — paket bu sınırları örtmeden "eksiksiz" iddia ETMEZ.
 
 ```powershell
 # ——— 0) SHA KAPISI (main checkout; canlıya YAZMAZ, salt betik doğrular) ———
 $Gov = 'D:\Development\HUKUK_YAZILIMI\project\project\docs\governance'   # owner: main checkout kökü
 $Sc  = Join-Path $Gov 'client-live-acceptance-i12-r01\scripts'
 $PIN = @{
-  "$Sc\i12-live-preflight.js" = 'B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127'
-  "$Sc\i12-live-setup.js"     = '958BD993D7DE5C21260EA0665F433124D3C3CDB1B2810D0F31D3AAA5F8199B71'
-  "$Sc\i12-live-window.js"    = 'DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9'
-  "$Sc\i12-window.js"         = 'DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8'
+  "$Sc\i12-live-preflight.js"      = 'B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127'
+  "$Sc\i12-live-setup.js"          = '7E1EDC9460CA9A40B261B4A4DA89652EC4E0826AA7EC9A88B6B96AF867FD1458'
+  "$Sc\i12-live-window.js"         = 'DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9'
+  "$Sc\i12-window.js"              = 'DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8'
+  "$Sc\i12-live-measure-online.js" = '4C44A78EA2D7E59D576645F3543A62F7E1862D7AC066C18067D5C0B7D2E571A6'
+  "$Sc\i12-live-recover.js"        = '7733CF3B4CFDB022A088EAFB4762DD64C42B5F9AF7854C03EE69B806D1894905'
 }
 foreach ($f in $PIN.Keys) { $h=(Get-FileHash -Algorithm SHA256 $f).Hash; if ($h -ne $PIN[$f]) { throw "SHA UYUŞMADI: $f (beklenen $($PIN[$f]) bulunan $h)" } }
 Write-Host "SHA kapısı GEÇTİ"
@@ -306,41 +313,81 @@ $env:I12_LIVE_CONFIRM='1'; $env:I12_EXPECT_DB=$ExpDbName; $env:I12_EXPECT_API=$E
 & $Node "$Sc\i12-live-window.js" open $TenantId
 if ($LASTEXITCODE -ne 0) { throw "pencere-aç REDDEDİLDİ (exit $LASTEXITCODE; 3=onay/GO, 4=DB/API/yanlış-hedef)" }
 
-# ——— 4) RESTART-1 (env=smtp penceresi): .env T-pencere pin + görev yeniden başlat ———
-#   Owner .env'e T-pencere değerlerini pinler (EMAIL_PROVIDER=smtp; SMTP_HOST=127.0.0.1; SMTP_PORT=2529),
-#   öncesi .env'i sha ile yedekler. Sonra görev yeniden başlatılır (gerçek komut):
-Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
-Start-ScheduledTask -TaskName 'HukukPlatform-API'   # ≤120 sn: launcher DB-hazırlık retry'ını kapsar
-# Dinleyici + /api/auth/login 200/201 (verifyApiBoundToSameDatabase) doğrulanana kadar beklenir.
+# ——— 4-8) ÖLÇÜM PENCERESİ: try/finally — KURTARMA HER SONUÇTA (başarı/başarısızlık/çöküş) KOŞAR ———
+$EnvFile = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'
+$EnvBak  = Join-Path $EvDir '.env.pre-window.bak'
+$SinkCap = Join-Path $EvDir 'sink-capture'   # owner sink'i bu dizine yakalar (I3_SMTP_CAPTURE)
+try {
+  # ——— 4) RESTART-1 (env=smtp penceresi): .env yedekle + T-pencere pin + görev yeniden başlat ———
+  #   Owner .env'i sha ile YEDEKLER ($EnvBak) sonra T-pencere değerlerini pinler:
+  #   EMAIL_PROVIDER=smtp; SMTP_HOST=127.0.0.1; SMTP_PORT=$SinkPort  (Office SMTP satırı zaten adım-3 pencerede sink'te)
+  Copy-Item $EnvFile $EnvBak -Force        # geri-alma için birebir yedek (sha kaydı ile)
+  #   … owner .env'e T-pencere anahtarlarını yazar …
+  Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
+  Start-ScheduledTask -TaskName 'HukukPlatform-API'   # ≤120 sn: launcher DB-hazırlık retry'ını kapsar
+  # Dinleyici + /api/auth/login 200/201 (verifyApiBoundToSameDatabase) doğrulanana kadar SÜRE-SINIRLI beklenir.
 
-# ——— 5) ÖLÇÜM (7 gözlem, tek canlı API, hedef-scoped) — GERÇEK KOMUT ———
-$env:I12_LIVE_CONFIRM='1'; $env:AH_RUN_ID=$RunId; $env:I12_EVID_FILE=(Join-Path $EvDir 'i12-live-measure-evidence.json')
-& $Node "$Sc\i12-live-measure.js"
-if ($LASTEXITCODE -ne 0) { throw "ÖLÇÜM: gözlem FAIL/UNMEASURED (exit $LASTEXITCODE) — kurtarma + kapanışa geç" }
-#   İçerik: G1/G2 (bilgi talebi red/belirsiz→503, kayıt yok, tek bağlantı) · G3/G6 (PUBLISHED+providerMessageId+
-#   SENT/PUBLISHED audit) · G4 (4xx state-guard, gönderim+0) · FD-RED/FD-TMO (SEND_FAILED, conn TEK=kör tekrar yok) ·
-#   G5 (mock-reboot → 403 PROVIDER_NOT_PRODUCTION, gönderim 0) · G7 (hedef-scoped teslim + aynı-dönem dedupe).
-#   FD SAYAÇ AYRIMI: gönderim-çağrısı≈conn-* · teslim=msg-* · çift/kör=conn>beklenen; izolede conn==i3-spy çapraz-doğrulandı.
-#   (İzole koşumda i12-live-measure kendi gated setup+izolasyon-ön-koşulu+7-gözlem+kapanışı yapar — §9.8 12/12.)
+  # ——— 5) ÖLÇÜM (ONLINE) — MEVCUT tek API'ye bağlanır; setupI3/boot/hook/port-kill YOK — GERÇEK KOMUT ———
+  $env:I12_LIVE_CONFIRM='1'
+  $env:I12_ONLINE_API_BASE=$ExpectApi      # ZATEN ÇALIŞAN HukukPlatform-API — yeni API BOOT EDİLMEZ
+  $env:I12_SETUP_RECEIPT=$Receipt; $env:I12_SINK_CAPTURE=$SinkCap; $env:I12_SINK_PORT=$SinkPort
+  $env:I12_LIVE_LOGIN_PW=$LoginPw
+  $env:I12_EVID_FILE=(Join-Path $EvDir 'i12-live-measure-online-evidence.json')
+  & $Node "$Sc\i12-live-measure-online.js"
+  $MeasExit = $LASTEXITCODE   # 0=hepsi PASS · 2=FAIL · 3=UNMEASURED var (G5/G7 taban pencerede BEKLENEN)
+  #   Canlı ölçülen: G1/G2 (bilgi talebi red/belirsiz→503, ClientInfoRequest+0, sendCall(conn) TEK) · G3/G6
+  #   (PUBLISHED+providerMessageId+SENT/PUBLISHED audit; sendCall+1 & delivery(msg)+1) · G4 (4xx state-guard, hepsi +0) ·
+  #   FD-RED/FD-TMO (SEND_FAILED · sendCall(conn) TEK=+1 · delivery(msg)+0 — sendCall≠delivery AYRIMI).
+  #   SAYAÇLAR AYRI raporlanır (sendCall/delivery/dbRecord); eşit delta HER DURUMDA denklik SAYILMAZ. i3-spy CANLIDA YOK —
+  #   conn'un send-çağrısını sadık saydığının kesin kanıtı DISPOSABLE harness'tedir (§9.8 FD-COUNT-XCHECK), canlı bunu VARSAYMAZ.
+  #   G5: yalnız allowlist-dışı restart pini (I12_G5_WINDOW=1, ayrı pencere) ile; aksi UNMEASURED (PASS DEĞİL).
+  #   G7: MEVCUT API'de onaylı dar tetik YOK → UNMEASURED + KARAR (bkz. §7.10); ikinci API/hook AÇILMAZ.
+  if ($MeasExit -eq 2) { throw "ÖLÇÜM: en az bir gözlem FAIL (exit 2) — finally kurtarma+kapanışa geçer" }
 
-# ——— 6) RESTART-3 (env geri-al): .env özgün değere geri (sha doğrulanır) + görev yeniden başlat ———
-Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
-Start-ScheduledTask -TaskName 'HukukPlatform-API'
+  # ——— 6) RESTART-3 (env geri-al): .env yedekten geri (sha doğrulanır) + görev yeniden başlat ———
+  Copy-Item $EnvBak $EnvFile -Force
+  Stop-ScheduledTask  -TaskName 'HukukPlatform-API'
+  Start-ScheduledTask -TaskName 'HukukPlatform-API'
 
-# ——— 7) PENCERE-KAPAT + KURTARMA (host/port/secure → özgün; 3-alan doğrulama; SIR dokunulmadı; idempotent) ———
-& $Node "$Sc\i12-live-window.js" close $TenantId
-if ($LASTEXITCODE -ne 0) { throw "pencere-kapat başarısız (exit $LASTEXITCODE)" }
-# Süreç yarıda öldüyse aynı komut IDEMPOTENT kurtarmadır (NO_ROLLBACK/CORRUPT/UNREADABLE/MISMATCH → fail-closed, yazma yok).
-
-# ——— 8) ERİŞİM KAPANIŞI + kanıt arşivi (sentetik kullanıcı pasifleştirme + kanıt SHA256 manifesti korumalı arşive) ———
+  # ——— 7) PENCERE-KAPAT (Office host/port/secure → özgün; 3-alan doğrulama; SIR dokunulmadı) ———
+  & $Node "$Sc\i12-live-window.js" close $TenantId
+  if ($LASTEXITCODE -ne 0) { throw "pencere-kapat başarısız (exit $LASTEXITCODE) — finally BAĞIMSIZ kurtarma koşar" }
+}
+finally {
+  # ——— 8) KURTARMA + KAPANIŞ — HER SONUÇTA (throw'a bırakılmaz). BAĞIMSIZ giriş noktası. ———
+  #   (a) .env yedeği hâlâ duruyorsa geri-al + görev yeniden başlat (env kapanışı garanti):
+  if (Test-Path $EnvBak) { Copy-Item $EnvBak $EnvFile -Force; Stop-ScheduledTask -TaskName 'HukukPlatform-API'; Start-ScheduledTask -TaskName 'HukukPlatform-API' }
+  #   (b) BAĞIMSIZ KURTARMA: Office SMTP rollback (fail-closed) + erişim kapanışı (hedef+yabancı). Idempotent.
+  $env:I12_LIVE_CONFIRM='1'; $env:I12_WINDOW_ROLLBACK=$Rollback; $env:I12_SETUP_RECEIPT=$Receipt
+  & $Node "$Sc\i12-live-recover.js"
+  if ($LASTEXITCODE -ne 0) { throw "KURTARMA EKSİK (exit $LASTEXITCODE: 1=Office/erişim doğrulanmadı,2=hedef yok,4=ah-değil) — ESCALATE; İ12 KAPANMAZ" }
+  #   (c) kanıt SHA256 manifesti → korumalı yerel arşive.
+}
 ```
 
+**§7.10 · G7 CANLI TETİK — EKSİK DAR MEKANİZMA + GEREKLİ KARAR (owner'a).** Salt-okuma belirlenen mimari (RELEASE23
+dist): `client-statement.monthlyDelivery` işi (`runMonthlyDelivery(now, scope={})`) **`scope.tenantId`/`scope.clientId`
+DESTEKLER** ama **tek çağıranı** `handleMonthlyCron()` içindeki global `@Cron` (`CLIENT_STATEMENT_MONTHLY_CRON`,
+scope'suz → tüm aktif tenant'lar). Merkezî `SchedulerController` manuel-run uçları YALNIZ `run-all|payment-orders|nafaka|
+mts|uyap-retry` (`scheduler.service.ts:runManual` switch) — **`client-statement.monthlyDelivery` HİÇBİR HTTP/manuel uca
+bağlı DEĞİL**. Sonuç: **mevcut canlı API'de yalnız hedef tenant'a G7 teslimini tetikleyecek ONAYLI dar yol YOKTUR.**
+İkinci API açmak / cron-hook enjekte etmek **YASAK** (pinli launcher NODE_OPTIONS enjekte etmez; ikinci canlı-DB API yok).
+Bu yüzden `i12-live-measure-online` G7'yi UNMEASURED bırakır. **KARAR (owner):** (A) dar, kimlik-doğrulamalı in-API
+manuel tetik ucu eklensin — mevcut `runManual` desenini birebir izleyip `scope={tenantId: actor.tenantId}` ile
+(office-approval elevated authority) — bu **AYRI ürün değişikliği + kendi CI + ayrı GO** gerektirir; (B) G7 canlı
+ölçülmez, davranış kanıtı DISPOSABLE harness'te (§9.8 G7) kalır; (C) doğal cron penceresini beklemek — global/
+scope'suz olduğundan gerçek tenant'lara dokunur → **kontrollü kabul için UYGUN DEĞİL**. Ajan (A)'yı kendiliğinden
+uygulamaz; karar owner'ındır.
+
 **§7.9 — TÜM ADIMLAR GERÇEK + İZOLEDE DOĞRULANDI (sahte komut/disposable ad YOK):** SHA kapısı · PREFLIGHT-pre/post
-(`i12-live-preflight`, §9.7 9/9) · KURULUM (`i12-live-setup`, §9.7) · PENCERE-AÇ/KAPAT (`i12-live-window` + hardened
-`i12-window`; §9.6 kurtarma 9/9 · zincir 4/4) · RESTART (`HukukPlatform-API` görev + `.env` T-pencere) · **ÖLÇÜM
-(`i12-live-measure`, §9.8 12/12 = 7 gözlem + FD sayaç-ispatı + kapanış)**. **FD sayaç ayrımı KANITLANDI:** gönderim-çağrısı
-≈ conn-* · teslim = msg-* · çift/kör = conn-*>beklenen; izolede her FD gözleminde **conn-delta == i3-spy dispatcherSend-delta**
-(§9.8 FD-COUNT-XCHECK) → conn-*'ın send-çağrısını sadık saydığı ve çift/kör denemeyi ayırdığı gösterildi.
+(`i12-live-preflight`, §9.7 9/9) · KURULUM (`i12-live-setup`, §9.7/§9.9) · PENCERE-AÇ/KAPAT (`i12-live-window` + hardened
+`i12-window`; §9.6 kurtarma 9/9 · zincir 4/4) · RESTART (`HukukPlatform-API` görev + `.env` yedek/pin/geri-al) · **ÖLÇÜM
+(`i12-live-measure-online` — MEVCUT tek API'ye bağlı; §9.9: G1/G2/G3/G4/G6/FD-RED/FD-TMO PASS + ayrı sayaçlar; G5/G7
+UNMEASURED-somut)** · **KURTARMA (`i12-live-recover`, try/finally, §9.9: happy-path ok + fail-closed exit 4/2/1/3)**.
+**FD sayaç ayrımı — AYRI raporlanır:** sendCall(conn) · delivery(msg, alıcı-scoped) · dbRecord(audit/DB). Eşit delta
+HER DURUMDA denklik SAYILMAZ: FD-RED/FD-TMO'da **sendCall+1 ≠ delivery+0** (çağrı var, teslim yok) — ayrımın kanıtı.
+**i3-spy CANLIDA YOK**; conn'un send-çağrısını sadık saydığının kesin kanıtı DISPOSABLE harness'tedir (§9.8 FD-COUNT-XCHECK,
+her FD gözleminde conn-delta == i3-spy dispatcherSend-delta) — canlı ONLINE ölçüm bunu VARSAYMAZ, ayrı raporlar.
 
 > **NOT — CANLI KABUL BAŞLAMADI.** Betikler ve tam yürütme sırası izolede doğrulandı; **canlı yürütme yapılmadı**.
 > Canlı kabul ayrı yazılı owner GO'su + owner'ın yükseltilmiş komutuyla yapılır (§7.0). Disposable G-0 KALDIRILMAZ;
@@ -366,12 +413,19 @@ legacy düz-metin ile 4/4 birleşik zincir doğrulandı, §9.4).
   `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`; SIR-KORUYUCU) + prova
   `i12-window.js` (rollback sınıflandırma + kurtarma sağlamlığı, §9.6) + **canlı preflight** `i12-live-preflight.js`
   (`--phase pre/post`, §9.7) + **canlı kurulum** `i12-live-setup.js` (§9.7); **G-0 owner yetkisiyle AŞILMAZ** (§7.3).
-  + **canlı ölçüm** `i12-live-measure.js` (7 gözlem, §9.8); §7.3 tam yol + SHA256; §7.9 gerçek PowerShell
-  (SHA kapısı/preflight-pre/kurulum/preflight-post/pencere/restart-görev/**ölçüm**/kurtarma/kapanış).
-  **PAKET EKSİKSİZ — TÜM ADIMLAR gerçek + izolede doğrulanmış betiklere bağlı** (§9.1–§9.8: R01 7 gözlem · R02
-  claim/reclaim/hang · R03 cron teslim · R04 hedef-scoped kapsam · R04b SIR-koruma · R04c gate/pencere · R04d
-  kurtarma 9/9 · R04e kurulum+preflight 9/9 · **R04f canlı ölçüm 12/12**). **CANLI YÜRÜTME YAPILMADI** — ayrı yazılı
-  owner GO'su (§7) + owner'ın yükseltilmiş komutuyla; disposable G-0 aşılmaz, pinli launcher değişmez, 2. canlı-DB API açılmaz.
+  + **canlı ölçüm (ONLINE)** `i12-live-measure-online.js` — MEVCUT tek API'ye bağlanır (setupI3/boot/hook/port-kill YOK);
+  makbuz tenant/runId/aktörlerini kullanır; sayaçlar AYRI (sendCall/delivery/dbRecord) (§9.9). `i12-live-measure.js` ise
+  **DISPOSABLE prova** olarak yeniden sınıflandı (G-0 EN BAŞTA; §7.9 canlı dizisinden ÇIKARILDI). + **bağımsız kurtarma**
+  `i12-live-recover.js` (Office rollback + erişim kapanışı; §7.9 try/finally, HER SONUÇTA; §9.9). §7.3 tam yol + SHA256;
+  §7.9 gerçek PowerShell (SHA kapısı/preflight-pre/kurulum/preflight-post/pencere/restart-görev/**online-ölçüm**/kurtarma).
+  **PAKET DURUMU:** canlı-ölçülebilir gözlemler (G1/G2/G3/G4/G6/FD-RED/FD-TMO) mevcut API'ye bağlı ONLINE ölçümle uçtan
+  uca izolede doğrulandı (§9.9); **G5 yalnız ayrı allowlist-dışı restart pini ile ölçülür (aksi UNMEASURED), G7 ise
+  mevcut API'de onaylı dar tetik OLMADIĞINDAN canlı ölçülemez → owner KARARI gerekir (§7.10)**. Bu iki sınır SOMUT
+  bildirildiği için paket bunları örtmeden **"eksiksiz" iddia ETMEZ**; G5/G7 davranış kanıtı DISPOSABLE harness'te (§9.8)
+  korunur. Kanıt zinciri §9.1–§9.9 (R01 7 gözlem · R02 · R03 · R04 hedef-scoped · R04b SIR · R04c gate/pencere · R04d
+  kurtarma 9/9 · R04e kurulum+preflight 9/9 · R04f disposable ölçüm 12/12 · **R04g online-ölçüm + bağımsız kurtarma**).
+  **CANLI YÜRÜTME YAPILMADI** — ayrı yazılı owner GO'su (§7) + owner'ın yükseltilmiş komutuyla; disposable G-0 aşılmaz,
+  pinli launcher değişmez, 2. canlı-DB API açılmaz, cron-hook enjekte edilmez.
 
 ## 9. PROVA SONUÇLARI (izole/geçici ortam — CANLI KABUL DEĞİL)
 
@@ -542,11 +596,15 @@ KULLANILMADI. Bu harness yazılıp izolede (FD conn-*==i3-spy çapraz-doğrulama
 **R04e durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04e-<ts>\` — `verify-setup-preflight.txt` (9/9)
 + SHA256 manifesti. İzole disposable (D: worktree; RELEASE23 dist/evidence C:'de); sır/ref/.env yok.
 
-### 9.8 R04f — CANLI ÖLÇÜM harness'ı (7 gözlem) + FD sayaç ayrımı ispatı — PAKET TAMAM (CANLI KABUL DEĞİL)
+### 9.8 R04f — DISPOSABLE ÖLÇÜM PROVASI (7 gözlem) + FD sayaç ayrımı ispatı (CANLI DEĞİL)
 
-Owner (2026-09-17) son parça: `i12-live-measure.js`. Kendi kendine yeten (gated setup + izolasyon ön koşulu +
-7 gözlem + G5 mock-reboot + kapanış), tek API'ye karşı, hedef-scoped; FD gönderim kanıtı **sink+DB** (i3-spy CANLIDA
-YOK), izolede i3-spy ile ÇAPRAZ-DOĞRULANIR. İzole koşum **PASS 12/12 · FAIL 0 · UNMEASURED 0** (RELEASE23 dist):
+> **R04g SINIFLANDIRMA:** `i12-live-measure.js` DISPOSABLE provadır (self-contained: setupI3 + i3-spy/cron-hook boot +
+> port-kill + cron-hook G7 enjeksiyonu) — canlıda geçersizdir ve **§7.9 canlı dizisinden ÇIKARILDI** (G-0 EN BAŞTA).
+> Aşağıdaki 12/12 yalnız **disposable davranışı** belgeler (G5/G7 dahil). Canlı ölçüm §9.9 (`i12-live-measure-online`).
+
+Owner (2026-09-17) parça: `i12-live-measure.js`. Kendi kendine yeten (gated setup + izolasyon ön koşulu +
+7 gözlem + G5 mock-reboot + G7 cron-hook + kapanış), tek disposable API'ye karşı; FD gönderim kanıtı **sink+DB**,
+i3-spy ile ÇAPRAZ-DOĞRULANIR. İzole koşum **PASS 12/12 · FAIL 0 · UNMEASURED 0** (RELEASE23 dist):
 
 | Gözlem | Sonuç | Kanıt (gerçek çıktı) |
 |---|---|---|
@@ -568,11 +626,53 @@ YOK), izolede i3-spy ile ÇAPRAZ-DOĞRULANIR. İzole koşum **PASS 12/12 · FAIL
 her FD gözleminde doğrulanarak conn-*'ın send-çağrısını sadık saydığı ve çift/kör denemeyi gerçekten ayırdığı KANITLANDI.
 Ölçülemeyen PASS sayılmadı (üç değerli).
 
-**PAKET DURUMU:** §7.9'un TÜM adımları artık gerçek + izolede doğrulanmış betiklere bağlı (preflight/kurulum/pencere/
-restart/**ölçüm**/kurtarma/kapanış). Prova bütünüyle tamam; **canlı yürütme YAPILMADI** (ayrı yazılı owner GO'su + §7).
+**DURUM (R04g düzeltmesi):** Bu 12/12 disposable provanın davranış kanıtıdır — **canlı ölçüm DEĞİL**. Canlı yürütmede
+koşan ölçüm §9.9'daki `i12-live-measure-online`'dır; G5/G7'nin canlı sınırları §7.10 + §9.9'da somut. **canlı yürütme
+YAPILMADI** (ayrı yazılı owner GO'su + §7).
 
 **R04f durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04f-<ts>\` — `i12-live-measure-evidence.json`
 (12/12) + `run.txt` + SHA256 manifesti. İzole disposable (D: worktree; RELEASE23 dist/evidence C:'de); sır/ref/.env yok.
+
+### 9.9 R04g — CANLI-BAĞLI ONLINE ÖLÇÜM + BAĞIMSIZ KURTARMA (mevcut tek API; CANLI KABUL DEĞİL)
+
+Owner (2026-09-17): mevcut ölçüm betiği canlı yürütmeye uygunsuzdu (kendi setupI3'ünü kurar, yeni API boot eder,
+i3-spy/cron-hook enjekte eder, port-kill yapar). Düzeltme: (1) `i12-live-measure.js` DISPOSABLE prova ilan edildi +
+G-0 EN BAŞTA (canlı DB'de asla koşmaz) + §7.9 canlı çağrısından çıkarıldı; (2) **`i12-live-measure-online.js`** —
+MEVCUT tek API'ye HTTP ile bağlanan, makbuz tenant/runId/aktörlerini kullanan (setupI3 YOK; aktör kimlikleri makbuz
+e-postalarından DB okumasıyla çözülür), FD zincirini yalnız makbuz tenant'ına yazıp HTTP yayınlayan, owner sink'ini
+mod dosyasıyla yönlendiren ölçüm; **boot/hook/port-kill İÇERMEZ**; (3) **`i12-live-recover.js`** — §7.9 try/finally'de
+HER SONUÇTA koşan bağımsız kurtarma. İzole doğrulama: **tek disposable API bootlandı (i3-start-api) → i12-live-setup →
+i12-live-measure-online (AYNI çalışan API'ye bağlandı; ikinci boot/setup YOK) → i12-live-recover** — hepsi tek makbuzla:
+
+| Gözlem | Sonuç | Kanıt (gerçek çıktı, RELEASE23 dist) |
+|---|---|---|
+| **H5-00-ISO-ONLINE** | PASS | loopback sink erişilir · LAN sink erişilmez · API↔DB bağlı (login) — gönderim ancak bununla |
+| **G1 (A-9)** | PASS | HTTP 503 · `CLIENT_INFO_REQUEST_EMAIL_FAILED` · dbRecord(infoReq)+0 · sendCall(conn)+1 |
+| **G2 (A-10)** | PASS | HTTP 503 · `CLIENT_INFO_REQUEST_EMAIL_INDETERMINATE` · dbRecord+0 · sendCall(conn)+1 |
+| **G3 (CANARY)** | PASS | HTTP 201 · PUBLISHED · providerMessageId VAR · SENT+1/PUBLISHED+1 · delivery(msg)+1 · sendCall(conn)+1 |
+| **G6** | PASS | SENT+1 ≠ PUBLISHED+1 (iki AYRI aksiyon) |
+| **G4 (dedupe)** | PASS | HTTP 409 · `DISCLOSURE_PUBLICATION_STATUS_INVALID` · sendCall+0 · delivery+0 · SENT/PUBLISHED+0 · PUBLISHED kalır |
+| **FD-RED** | PASS | HTTP 201 · SEND_FAILED · **sendCall(conn)+1 ≠ delivery(msg)+0** · PUBLISHED dbRecord+0 |
+| **FD-TMO** | PASS | HTTP 201 · SEND_FAILED · **sendCall(conn)+1 ≠ delivery(msg)+0** (kör tekrar +2 DEĞİL) |
+| **G5** | UNMEASURED | bu pencerede sağlayıcı allowlist-içi (smtp→sink); allowlist-dışı ölçüm AYRI restart pini (`I12_G5_WINDOW`) gerektirir — DISPOSABLE'da ölçülü (§9.8). PASS sayılmadı. |
+| **G7-LIVE** | UNMEASURED | mevcut API'de onaylı dar tetik YOK (§7.10) → canlı tetiklenemez; 2. API/hook YASAK. Davranış kanıtı DISPOSABLE'da (§9.8 G7). **KARAR gerekir.** |
+| **I12-ACCESS-CLOSE** | PASS | measure finally: sentetik erişim sonlandırıldı (aktif=0) |
+
+**SAYAÇ AYRIMI (owner kaygısı):** sendCall(conn) · delivery(msg, alıcı-scoped) · dbRecord AYRI raporlandı. Ölçülen
+deltalar: G1/G2 `conn+1,msg+0,infoReq+0`; G3 `conn+1,msg+1,SENT+1,PUB+1`; G4 hepsi `+0`; FD-RED/FD-TMO `conn+1,msg+0`.
+**FD-RED/FD-TMO'da sendCall+1 ≠ delivery+0** → çağrının teslimden bağımsız sayıldığı, "eşit delta = denklik" varsayımının
+yapılmadığı KANITLANDI. i3-spy CANLIDA yok; conn'un send-çağrısını sadık saydığının kesin kanıtı DISPOSABLE'da (§9.8).
+
+**BAĞIMSIZ KURTARMA (`i12-live-recover`) — izole:** happy-path (rollback mevcut) → **ok:true, exit 0**: Office SMTP
+özgün değere geri (`smtp.example.invalid:587`, 3-alan doğrulandı) + erişim kapanışı (hedef+yabancı aktif=0); .env restore
+PowerShell'e delege. Fail-closed çıkışlar: yabancı (ah-değil) slug→**exit 4** · makbuz/tenant yok→**exit 2** · rollback
+ABSENT→Office ok:false→**exit 1** · confirm yok→**exit 3**. `assertOwnSlug` gerçek tenant'a dokunmayı engeller.
+**Reclassified disposable measure G-0:** non-loopback / allowlist-dışı port·ad DB → **yazma/boot ÖNCESİ RET** (exit 1).
+
+**PAKET DURUMU (dürüst):** canlı-ölçülebilir 7 gözlem (G1/G2/G3/G4/G6/FD-RED/FD-TMO) mevcut API'ye bağlı ONLINE ölçümle
+uçtan uca izolede PASS; kurtarma bağımsız + fail-closed. **G5 ayrı allowlist-dışı restart pini gerektirir; G7 mevcut
+API'de tetiklenemez → owner KARARI (§7.10).** Paket bu iki sınırı örtmez; G5/G7 davranışı DISPOSABLE'da (§9.8). CANLI
+YÜRÜTME YAPILMADI (ayrı yazılı owner GO'su + §7); 2. canlı-DB API açılmadı, pinli launcher değişmedi, cron-hook enjekte edilmedi.
 
 **Kanıt arşivi (durable, synthetic — sır/ref/.env yok):** `…\Documents\CLIENT-EVIDENCE-20260911\i12-rehearsal-<ts>\`
 — `i12-gaps2-evidence.json` · `cron-predicate-state.json` · `cron-last-result.json` · `cron-run.log` + SHA256

@@ -1,23 +1,32 @@
 /*
- * İ12 — CANLI ÖLÇÜM HARNESS'İ (7 gözlem) · AYRI GİRİŞ NOKTASI · hedef-scoped · sink+DB
+ * İ12 — DISPOSABLE ÖLÇÜM PROVASI (7 gözlem) · SELF-CONTAINED HARNESS · sink+spy+cron-hook
  *
- * Yedi gözlem tek koşumda, tek API'ye karşı, YALNIZ sentetik hedef tenant kapsamında:
- *   G1/G2  — bilgi talebi red/belirsiz (runH5, i3-h5-intake reuse)
+ * ⚠️ SINIFLANDIRMA (R04g): Bu betik DISPOSABLE PROVADIR — CANLIDA KOŞMAZ.
+ *   Kendi ortamını KENDİSİ kurar (setupI3), dist'i --require i3-spy + i12-cron-hook ile YENİDEN BOOT eder,
+ *   port üzerinden süreç ÖLDÜRÜR (taskkill) ve G7'yi cron-hook 'direct' ile ENJEKTE eder. Bunların HİÇBİRİ
+ *   pinli tek canlı API'ye (HukukPlatform-API) karşı geçerli/izinli DEĞİLDİR. Bu yüzden §7.9 CANLI dizisinden
+ *   ÇIKARILDI. Canlı ölçüm AYRI giriş noktasındadır: `i12-live-measure-online.js` (mevcut API'ye bağlanır;
+ *   setupI3/boot/hook/port-kill İÇERMEZ). Bu betiğin 12/12 kanıtı yalnız DISPOSABLE ortam davranışını belgeler.
+ *
+ * G-0 (assertDisposableEnvironment) EN BAŞTA çağrılır: AH_DATABASE_URL loopback + port∈{5439} + db∈{hukuk_fix1_test}
+ *   değilse HİÇBİR yazma/süreç-başlatma yapılmadan REDDEDER. Böylece bu prova betiği canlı DB'de asla koşamaz.
+ *
+ * Yedi gözlem tek koşumda, tek (disposable) API'ye karşı, YALNIZ sentetik hedef tenant kapsamında:
+ *   G1/G2  — bilgi talebi red/belirsiz
  *   G3/G6  — onaylı FD yayını: PUBLISHED + providerMessageId + SENT=1/PUBLISHED=1 audit (AYRI)
  *   G4     — aynı sürüm ikinci yayın: 4xx state-guard · gönderim +0 · audit +0
  *   FD-RED — sağlayıcı reddi (550): SEND_FAILED · gönderim TEK · audit +0
  *   FD-TMO — reset/timeout: SEND_FAILED · gönderim TEK (kör tekrar YOK)
  *   G5     — allowlist-DIŞI sağlayıcı (mock reboot): 403 PROVIDER_NOT_PRODUCTION · gönderim=0
- *   G7     — hedef-scoped runMonthlyDelivery: gerçek gönderim + ledger SENT + aynı-dönem dedupe
+ *   G7     — hedef-scoped runMonthlyDelivery (cron-hook ENJEKSİYON): gerçek gönderim + ledger SENT + dedupe
  *
- * FD SAYAÇ AYRIMI (i3-spy CANLIDA YOK): gönderim-çağrısı ≈ SMTP bağlantı denemesi (sink conn-*),
- * teslim = sink msg-*, çift/kör = conn-* > beklenen. İzolede i3-spy `dispatcherSend` sayacı VARSA conn-* ile
- * ÇAPRAZ-DOĞRULANIR (conn-delta == send-delta) → conn-*'ın send-çağrısını sadık saydığı kanıtlanır. Ölçülemeyen
- * PASS OLMAZ (üç değerli). Bu izole doğrulamada boot i3-spy'lı; canlıda conn/msg/DB (sink+DB) kullanılır (pinli launcher).
+ * FD SAYAÇ AYRIMI: gönderim-çağrısı ≈ SMTP bağlantı denemesi (sink conn-*), teslim = sink msg-*,
+ * çift/kör = conn-* > beklenen. Bu disposable provada i3-spy `dispatcherSend` sayacı conn-* ile ÇAPRAZ-DOĞRULANIR
+ * (conn-delta == send-delta) → conn-*'ın send-çağrısını sadık saydığı kanıtlanır. Ölçülemeyen PASS OLMAZ (üç değerli).
  *
- * KULLANIM (izole doğrulama): AH_DATABASE_URL(5439) AH_API_BASE_URL AH_PRISMA_ROOT AH_BCRYPT_PATH I3_DIST_MAIN
- *   I3_DIST_ROOT I3_SMTP_PORT I12_WORK_DIR I12_LIVE_CONFIRM=1 I12_LIVE_GO_REF=<ref> node i12-live-measure.js
- * G-0 taşımaz (canlı yol); kendi canlı-güvenlik kapısını taşır (confirm+GO ref). Sır makbuz/loga yazılmaz.
+ * KULLANIM (yalnız disposable): AH_DATABASE_URL(5439/hukuk_fix1_test) AH_API_BASE_URL AH_PRISMA_ROOT AH_BCRYPT_PATH
+ *   I3_DIST_MAIN I3_DIST_ROOT I3_SMTP_PORT I12_WORK_DIR I12_LIVE_CONFIRM=1 I12_LIVE_GO_REF=<ref> node i12-live-measure.js
+ * G-0 KALDIRILMAZ. Sır makbuz/loga yazılmaz.
  */
 'use strict';
 const fs = require('fs'); const path = require('path'); const crypto = require('crypto'); const net = require('net'); const os = require('os');
@@ -94,6 +103,8 @@ async function bringToPublishReady(ctx, tag) {
 const snap = async (prisma, vid) => { try { const v = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: vid }, select: { status: true, providerMessageId: true } }); return { v, error: null }; } catch (e) { return { v: null, error: String(e) }; } };
 
 (async () => {
+  // G-0 (KALDIRILMAZ): bu DISPOSABLE provadır — canlı DB'de/API'de asla koşmaz. Yazma/süreç-başlatmadan ÖNCE.
+  L.AH.assertDisposableEnvironment();
   if (process.env.I12_LIVE_CONFIRM !== '1') { console.error('REDDEDİLDİ: I12_LIVE_CONFIRM=1 gerekli.'); process.exit(3); }
   if (!(process.env.I12_LIVE_GO_REF && process.env.I12_LIVE_GO_REF.trim())) { console.error('REDDEDİLDİ: I12_LIVE_GO_REF DOLU olmalı.'); process.exit(3); }
   const runId = (process.env.AH_RUN_ID || L.AH.newRunId()).toLowerCase();
@@ -243,9 +254,9 @@ const snap = async (prisma, vid) => { try { const v = await prisma.clientFinanci
   finally {
     stopPort(PORT); if (sinkProc && sinkProc.exitCode === null) sinkProc.kill();
     if (st) { try { await prisma.user.updateMany({ where: { tenantId: st.tenantId }, data: { isActive: false, tokenVersion: { increment: 1 } } }); const active = (await prisma.user.findMany({ where: { tenantId: st.tenantId, isActive: true }, select: { id: true } })).length; R.check('I12-CLOSE', 'erişim sonlandırıldı', active === 0, `aktif=${active}`); } catch (e) {} }
-    const s = R.summary('İ12 CANLI ÖLÇÜM');
-    console.log(JSON.stringify({ record: 'I12-LIVE-MEASURE', runId, tenant: st ? st.slug : null, pass: s.pass, fail: s.fail, unmeasured: s.unmeasured, results: R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })) }, null, 1));
-    const EVID = process.env.I12_EVID_FILE; if (EVID) { try { fs.writeFileSync(EVID, JSON.stringify({ record: 'I12-LIVE-MEASURE', runId, results: R.rows }, null, 1), 'utf8'); } catch (e) {} }
+    const s = R.summary('İ12 DISPOSABLE ÖLÇÜM PROVASI');
+    console.log(JSON.stringify({ record: 'I12-DISPOSABLE-MEASURE', note: 'DISPOSABLE prova — canlı değil', runId, tenant: st ? st.slug : null, pass: s.pass, fail: s.fail, unmeasured: s.unmeasured, results: R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })) }, null, 1));
+    const EVID = process.env.I12_EVID_FILE; if (EVID) { try { fs.writeFileSync(EVID, JSON.stringify({ record: 'I12-DISPOSABLE-MEASURE', note: 'DISPOSABLE prova — canlı değil', runId, results: R.rows }, null, 1), 'utf8'); } catch (e) {} }
     await prisma.$disconnect().catch(() => {});
     if (process.exitCode !== 1) process.exitCode = s.fail > 0 ? 2 : (s.unmeasured > 0 ? 3 : 0);
   }
