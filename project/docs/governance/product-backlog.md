@@ -4107,6 +4107,14 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **Baglama:** 2 spec `apps/api/ci-manifests/db/domain-integration.txt` (f04 altinda); yeni CI step / yeni Jest cagrisi YOK.
 - **GUNCEL SAYI (hedef tuttu):** **32 spec · CI'da 32 (pure/client-portal 28 + db/domain-integration 4) · CI disinda 0 · belirsiz 0.** 32/32 = CI'a bagli spec sayisidir; eksiksiz finansal dogruluk iddiasi DEGILDIR. PR CI log kaniti (iki spec PASS satiri + atlanmadi) PR govdesinde.
 
+**ACCOUNTING-JOURNAL CI KAPSAMI — 4 HTTP SMOKE SPEC BAGLANDI (2026-09-17; owner GO "ACCOUNTING-JOURNAL / 4 HTTP SMOKE SPEC'IN CI BAGLAMASI"):**
+- **Baglam:** accounting-journal modulunun 18 spec'inin TAMAMI hicbir manifestte degildi (CI-disi modul). Bu is bunlardan 4 surec-ici Nest HTTP smoke spec'ini bagladi.
+- **Baglanan (hepsi DB-siz: Test.createTestingModule + INestApplication + supertest + JWT/Passport; servisler mock; PrismaService / describeDb / new PrismaClient / TEST_DATABASE_URL YOK):** `accounting-journal-financial-statement` · `-manual-adjustment` · `-reversal` · `-trial-balance` (`.http-smoke.spec.ts`).
+- **Manifest secimi (isimden DEGIL; domain + emsal):** finans/muhasebe domaini -> **`pure/claim-collection-finance`** (client-statement + interest-engine + collection + claim-item kardesleri burada; `pure/client-portal` DEGIL). DB-siz Nest HTTP smoke pure manifestte kanitli emsal (client-route-precedence / client-settlement http-smoke).
+- **Kosum (izole worktree d57c5635, DB env TANIMSIZ, ayri ayri):** **4/4 spec PASS · 42 test** (financial-statement 16 · manual-adjustment 8 · reversal 9 · trial-balance 9); atlanmadi. Urun kodu / mock / beklenti DEGISMEDI; skip EKLENMEDI.
+- **client-statement.service.spec.ts uzlastirmasi (onceki rapor oz-duzeltmesi):** hicbir manifestte DEGIL (dogru yol `apps/api/ci-manifests/` ile teyit; onceki `../ci-manifests/` grep yolu YANLISTI -> sahte-yokluk). 32/32 (client-settlement) ile celiski yok; farkli modul; closingBalance sozlesmesi CI'da wire edilen tm47d ile dogrulanir.
+- **GUNCEL SAYI:** accounting-journal CI'da **4 HTTP smoke** (`pure/claim-collection-finance`); modulun kalan 14 spec'i CI-disi (bu isin KAPSAMI DISI). PR CI log kaniti (4 spec PASS + atlanmadi) PR govdesinde.
+
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
 | # | Kalem | Durum |
