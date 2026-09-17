@@ -17,7 +17,7 @@ SIRALAMA  : yayın ordinali (RELEASE24 vb.), mühür ve cutover motoru OFFICE/C3
 | # | Kimlik | Değer | Ne kanıtlar |
 |---|---|---|---|
 | 1 | **KAYNAK SHA** (git commit) | `006c4dd2928f6c719669cc17b3b61f6ce3e2bc89` | dist'i üreten `apps/api/src` ağacı |
-| 2 | **PAKET DIGEST** (İ12 canlı betik seti) | `34222C149172C91DC9A153F07CA0F0B0EC3ED82357DFADBDD26939DE36DE3FE0` | kabul yordamının hangi betiklerle koşacağı |
+| 2 | **PAKET DIGEST** (İ12 canlı betik seti) | `4992D27F2B6F97F4A8C93A773F86816619A132A71213320B16CB83F251B5564B` | kabul yordamının hangi betiklerle koşacağı |
 | 3 | **DERLEME KİMLİĞİ** (dist tam ağaç) | `87712E0ED2CF71EE8268D81865C2388E030F52AF9AC7E29C56617AEDD0845453` · **3867 dosya** | yayına çıkacak ikili artefakt |
 
 **KAYNAK SHA neden `006c4dd2`?** Ürün değişikliği `#2697 @ 0ecd3d73` ile main'e girdi, ancak G7 ucunun spec'i
@@ -31,7 +31,7 @@ CI'da **ancak `#2699 @ 987f0c1e` ile koşmaya başladı** (§4). `006c4dd2`, `98
 |---|---|
 | `i12-live-cron-guard.js` | `3364686577C803E857BB0D5B188A62ED96DE73B0CDC100A83370FD50148CFFA5` |
 | `i12-live-identity.js` | `9516E462CFFD3B22FD253F556A7F1853C6F021B175075449BD7945CCEF36774F` |
-| `i12-live-measure-online.js` | `407591FE7AAD1D9E6F7B5313D3496E29156FC346148C7135A2A34CDA660CDB23` |
+| `i12-live-measure-online.js` | `CE41C911EEDB33D8AD0694E89DB82F9F354568E6110EDBF6ADFCE6C4105467BF` |
 | `i12-live-preflight.js` | `B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127` |
 | `i12-live-recover.js` | `D7BAFDEB5E040ABA3C8AC0360B5E174E4E89D432E265C510B4AEF421738CD06B` |
 | `i12-live-setup.js` | `7E1EDC9460CA9A40B261B4A4DA89652EC4E0826AA7EC9A88B6B96AF867FD1458` |
