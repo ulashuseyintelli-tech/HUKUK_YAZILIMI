@@ -46,6 +46,31 @@ const connCount = () => { try { return fs.readdirSync(CAPTURE).filter((f) => f.s
 const msgToCount = (n) => { try { let k = 0; for (const f of fs.readdirSync(CAPTURE)) { if (!f.startsWith('msg-')) continue; if (new RegExp('^To:[^\\n]*' + n, 'm').test(fs.readFileSync(path.join(CAPTURE, f), 'utf8'))) k++; } return k; } catch (e) { return null; } };
 /** delta: uçlardan biri okunamadıysa null (asla 0'a düşmez). */
 const d = (after, before) => (after == null || before == null) ? null : after - before;
+
+/**
+ * HEDEF-DIŞI MESAJ TARAMASI (owner kuralı: "hedef dışı mesaj FAIL").
+ * Yakalama dizinindeki TÜM `msg-*` dosyalarının `To:` başlıklarından HER adresi çıkarır ve
+ * betiklerdeki TAM adreslerden kurulan izin kümesiyle karşılaştırır. Beklenen alıcıları saymak
+ * YETMEZ — izin kümesi DIŞINDA tek bir mesaj bile varsa gönderim yanlış hedefe gitmiştir.
+ * Okunamazsa `null` döner → gözlem ÖLÇÜLEMEDİ (asla "temiz" sayılmaz).
+ * @returns {{total:number, offTarget:string[], addresses:string[]}|null}
+ */
+function scanOffTarget(dir, allowedSet) {
+  try {
+    let total = 0; const off = []; const seen = new Set();
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.startsWith('msg-')) continue;
+      total += 1;
+      const body = fs.readFileSync(path.join(dir, f), 'utf8');
+      const toLines = body.split(/\r?\n/).filter((l) => /^To:/i.test(l));
+      const addrs = [];
+      for (const l of toLines) for (const m of l.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g)) addrs.push(m[0].toLowerCase());
+      if (addrs.length === 0) off.push(`${f}:<To-YOK>`);           // alıcısı okunamayan mesaj da hedef-dışı sayılır
+      for (const a of addrs) { seen.add(a); if (!allowedSet.has(a)) off.push(`${f}:${a}`); }
+    }
+    return { total, offTarget: off, addresses: [...seen] };
+  } catch (e) { return null; }
+}
 const audit = async (prisma, tenantId, action) => (await L.safeCount(() => prisma.auditLog.count({ where: { tenantId, action } }))).value;
 const snap = async (prisma, vid) => { try { const v = await prisma.clientFinancialDisclosureVersion.findUniqueOrThrow({ where: { id: vid }, select: { status: true, providerMessageId: true } }); return { v, error: null }; } catch (e) { return { v: null, error: String(e) }; } };
 
@@ -80,7 +105,7 @@ async function bringToPublishReady(ctx, tag) {
   return { vid, url };
 }
 
-(async () => {
+async function main() {
   if (process.env.I12_LIVE_CONFIRM !== '1') { console.error('REDDEDİLDİ: I12_LIVE_CONFIRM=1 gerekli.'); process.exit(3); }
   if (!(process.env.I12_LIVE_GO_REF && process.env.I12_LIVE_GO_REF.trim())) { console.error('REDDEDİLDİ: I12_LIVE_GO_REF DOLU olmalı.'); process.exit(3); }
   if (!['smtp', 'mock', 'g7'].includes(PHASE)) { console.error(`REDDEDİLDİ: I12_PHASE '${PHASE}' geçersiz (smtp|mock|g7).`); process.exit(2); }
@@ -251,6 +276,21 @@ async function bringToPublishReady(ctx, tag) {
 
   } catch (e) { console.error(`\nÖLÇÜM DURDU: ${e && e.message ? e.message : e}`); process.exitCode = 1; }
   finally {
+    // ── HEDEF-DIŞI MESAJ KAPISI — HER SONUÇTA (hata/çöküş dahil) koşar. İzin kümesi betiklerdeki TAM adresler. ──
+    const ALLOWED = new Set([
+      `deliv-${runId}@ah-harness.invalid`,   // G7 / aylık ekstre teslimi (i12-live-setup: client.email)
+      `fd-${runId}@ah-harness.invalid`,      // FD yayını (approvedRecipientEmail)
+      `alici-${runId}@ah-harness.invalid`,   // G1/G2 bilgi talebi (emailTo)
+    ]);
+    const scan = scanOffTarget(CAPTURE, ALLOWED);
+    if (scan === null) {
+      R.unmeasured('I12-OFFTARGET', 'hedef-dışı mesaj taraması', 'yakalama dizini OKUNAMADI — "temiz" SAYILMAZ');
+    } else {
+      R.check('I12-OFFTARGET', 'sink\'teki TÜM mesajlar izin kümesindeki alıcılara: hedef-dışı mesaj YOK',
+        scan.offTarget.length === 0,
+        `toplam msg=${scan.total} · farklı alıcı=[${scan.addresses.join(', ')}] · hedef-dışı=${scan.offTarget.length}` +
+        (scan.offTarget.length ? ` → ${scan.offTarget.slice(0, 5).join(' | ')}` : ''));
+    }
     // ERİŞİM KAPANIŞI BURADA YAPILMAZ — nihai kapanış TÜM fazlardan sonra i12-live-recover.js ile.
     const s = R.summary(`İ12 CANLI ÖLÇÜM (ONLINE · FAZ=${PHASE})`);
     const out = { record: 'I12-LIVE-MEASURE-ONLINE', phase: PHASE, runId, tenant: st ? st.slug : null, apiBase: base, pass: s.pass, fail: s.fail, unmeasured: s.unmeasured, counters, accessClosure: 'DEFERRED_TO_i12-live-recover', results: R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })) };
@@ -259,4 +299,7 @@ async function bringToPublishReady(ctx, tag) {
     await prisma.$disconnect().catch(() => {});
     if (process.exitCode !== 1) process.exitCode = s.fail > 0 ? 2 : (s.unmeasured > 0 ? 3 : 0);
   }
-})();
+}
+
+if (require.main === module) { void main(); }
+module.exports = { scanOffTarget, main };
