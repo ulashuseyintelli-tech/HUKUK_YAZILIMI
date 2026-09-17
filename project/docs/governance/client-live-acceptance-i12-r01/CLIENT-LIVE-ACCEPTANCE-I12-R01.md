@@ -153,6 +153,8 @@ doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` 
 | `client-live-acceptance-i12-r01/scripts/i12-live-setup.js` | **CANLI KURULUM** (sentetik hedef tenant + FD zinciri + statement aktivitesi + Office + makbuz; makbuz artık **aktör e-postalarını** taşır — online ölçüm bunları kullanır) · canlı-güvenlik kapısı (confirm+GO-ref+DB+slug=türetilen); sır makbuza konmaz | `7E1EDC9460CA9A40B261B4A4DA89652EC4E0826AA7EC9A88B6B96AF867FD1458` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-measure-online.js` | **CANLI ÖLÇÜM (ONLINE · FAZLI)** — §7.9'da KOŞAN ölçüm. MEVCUT tek API'ye HTTP ile bağlanır (`I12_ONLINE_API_BASE`); makbuz tenant/runId/aktörlerini kullanır (setupI3 YOK); FD zincirini yalnız makbuz tenant'ına yazar + HTTP yayınlar. **setupI3 / yeni API boot / spy·cron-hook enjeksiyonu / port-kill İÇERMEZ.** `I12_PHASE`: `smtp` (G1·G2·G3·G6·G4·FD-RED·FD-TMO) · `mock` (G5) · `g7` (dar in-API manuel teslim + dedupe + YABANCI tenant +0) — hepsi AYNI makbuz ve AYNI tek API. **Erişim kapanışı BU BETİKTE YOK** (fazlar zincirlenebilsin diye `i12-live-recover`'a ertelenir). Sayaçlar AYRI: **smtpConnection(conn) — GERÇEK `dispatcher.send` çağrısı DEĞİLDİR ve öyle SUNULMAZ** · delivery(msg, alıcı-scoped) · dbRecord. Eşit delta HER DURUMDA denklik SAYILMAZ (FD-RED/TMO: conn+1 ≠ delivery+0). **OKUNAMAYAN SAYAÇ SIFIR SAYILMAZ** → `null` → ÖLÇÜLEMEDİ. Makbuz kimlik bağı DB'den doğrulanır; canlı-güvenlik kapısı | `407591FE7AAD1D9E6F7B5313D3496E29156FC346148C7135A2A34CDA660CDB23` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-recover.js` | **BAĞIMSIZ KURTARMA + NİHAİ KAPANIŞ** — §7.9 try/finally'de İLK YAZMADAN itibaren HER SONUÇTA çağrılır. **HER YAZMADAN ÖNCE** hedef+yabancı tenant ID↔slug↔runId bağı DB'den doğrulanır (`i12-live-identity`); bağ yoksa **hiçbir kullanıcıya/Office kaydına YAZILMAZ** (exit 4). Office SMTP rollback ve **nihai** erişim kapanışı AYRI try/catch'te — **biri diğerinin hatasıyla ATLANMAZ**; herhangi biri doğrulanmazsa exit 1 (HATA). Makbuz yazılmadan çökülmüşse hedef, yazmadan önce üretilen runId'den TÜRETİLEN slug ile aranır; bulunmazsa `nothingToRecover`. `.env` restore PowerShell'e delegedir | `D7BAFDEB5E040ABA3C8AC0360B5E174E4E89D432E265C510B4AEF421738CD06B` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-cron-guard.js` | **AYLIK CRON ÇAKIŞMA KORUMASI (salt-okuma)** — `CLIENT_STATEMENT_MONTHLY_CRON='0 3 1 * *'` @ `Europe/Istanbul` ateşlemesi pencereye düşüyorsa **REDDEDER (exit 5)**. Çakışmada sentetik tenant GLOBAL koşuda süpürülür ve **G7 aynı-dönem dedupe ölçümü GEÇERSİZ** olur. `I12_ENV_FILE` verilirse YALNIZ `CLIENT_STATEMENT_MONTHLY_DELIVERY` anahtarı okunur (dosyanın başka satırı okunmaz/yazdırılmaz) | `3364686577C803E857BB0D5B188A62ED96DE73B0CDC100A83370FD50148CFFA5` |
+| `client-live-acceptance-i12-r01/scripts/i12-cron-guard-prova.js` | cron koruması için **deterministik hedefli prova** (DB/API gerektirmez): sınır, ay sonu, yıl dönümü ve tz doğruluğu | `3B41C835F6E6601C2D74E1EC1B76D1115F0722A921C2B1C6F1572789AC7A5585` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-identity.js` | **KİMLİK BAĞI (salt-okuma, TEK KAYNAK)** — makbuz slug'ı runId'den türemiş mi (`ah-<runId>`), hedef/yabancı tenant DB'de var mı ve **id↔slug** eşleşiyor mu, her iki slug `ah-` sentetik önekli mi (assertOwnSlug). Hiçbir şey YAZMAZ; `{ok,reason}` döner — çağıran yanlış kimlikte SIFIR YAZMA ile durur | `9516E462CFFD3B22FD253F556A7F1853C6F021B175075449BD7945CCEF36774F` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-measure.js` | **DISPOSABLE ÖLÇÜM PROVASI** (canlı DEĞİL; §7.9 canlı dizisinden ÇIKARILDI) — self-contained: kendi setupI3'ünü kurar, dist'i i3-spy+cron-hook ile boot eder, port-kill yapar, G7'yi cron-hook ile enjekte eder. **G-0 (assertDisposableEnvironment) EN BAŞTA** → canlı DB'de asla koşmaz. 12/12 kanıtı yalnız disposable davranışı belgeler; canlı ölçüm `i12-live-measure-online.js`'dir | `AB531AFBEEBF46285E9F2B5D576892CDAC677C3020850E38B90AA070ABC53F58` |
 | `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | düzenek | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
@@ -279,6 +281,7 @@ $PIN = @{
   "$Sc\i12-live-measure-online.js" = '407591FE7AAD1D9E6F7B5313D3496E29156FC346148C7135A2A34CDA660CDB23'
   "$Sc\i12-live-recover.js"        = 'D7BAFDEB5E040ABA3C8AC0360B5E174E4E89D432E265C510B4AEF421738CD06B'
   "$Sc\i12-live-identity.js"       = '9516E462CFFD3B22FD253F556A7F1853C6F021B175075449BD7945CCEF36774F'
+  "$Sc\i12-live-cron-guard.js"     = '3364686577C803E857BB0D5B188A62ED96DE73B0CDC100A83370FD50148CFFA5'
 }
 foreach ($f in $PIN.Keys) { $h=(Get-FileHash -Algorithm SHA256 $f).Hash; if ($h -ne $PIN[$f]) { throw "SHA UYUŞMADI: $f (beklenen $($PIN[$f]) bulunan $h)" } }
 Write-Host "SHA kapısı GEÇTİ"
@@ -288,6 +291,8 @@ $LiveDbUrl=$env:CLIENT_LIVE_DB_URL; $GoRef=$env:OWNER_GO_REF; $LoginPw=$env:CLIE
 $ExpectApi='https://<canlı-api>/api'; $ExpDbHost='<host>'; $ExpDbPort='<port>'; $ExpDbName='<db>'
 $RunId='<runId>'; $TenantSlug="ah-$RunId"    # sentetik slug türetilir; owner runId'i verir
 $SinkPort='2529'; $EvDir='C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-<ts>'
+$EnvFile = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'
+$WindowMinutes = 120                      # pencere üst sınırı — cron çakışma koruması bunu kullanır
 $Receipt=Join-Path $EvDir 'i12-setup-receipt.json'; $Rollback=Join-Path $EvDir 'i12-live-window-rollback.json'; $Node='node'
 $Repo=(Resolve-Path (Join-Path $Gov '..\..')).Path
 $env:AH_DATABASE_URL=$LiveDbUrl; $env:AH_API_BASE_URL=$ExpectApi; $env:AH_LOGIN_PASSWORD=$LoginPw
@@ -328,8 +333,15 @@ $env:I12_EXPECT_TENANT_SLUG=$TenantSlug; $env:I12_EXPECT_RUNID=$RunId; $env:I12_
 & $Node "$Sc\i12-live-preflight.js" pre
 if ($LASTEXITCODE -ne 0) { throw "PREFLIGHT(pre) REDDETTİ (exit $LASTEXITCODE) — kimlik eksik; KURULUM BAŞLAMAZ" }
 
+# ——— 1a-2) AYLIK CRON ÇAKIŞMA KORUMASI (İLK YAZMADAN ÖNCE; salt-okuma) ———
+#   `CLIENT_STATEMENT_MONTHLY_DELIVERY=true` iken GLOBAL aylık cron ('0 3 1 * *' @ Europe/Istanbul) kayıtlıdır.
+#   Pencere bu ateşlemeyi kapsarsa sentetik tenant global koşuda süpürülür → G7 aynı-dönem dedupe ölçümü GEÇERSİZ.
+#   Çakışma varsa HİÇ BAŞLAMAYIZ (yazma yok, pencere yok) — owner pencereyi ateşlemeden sonraya kaydırır.
+$env:I12_WINDOW_MINUTES=$WindowMinutes; $env:I12_ENV_FILE=$EnvFile
+& $Node "$Sc\i12-live-cron-guard.js"
+if ($LASTEXITCODE -ne 0) { throw "CRON ÇAKIŞMASI (exit $LASTEXITCODE) — pencere aylık teslim ateşlemesini kapsıyor; KURULUM BAŞLAMAZ" }
+
 # ——— 1b…8) İLK YAZMADAN İTİBAREN try/finally: KURTARMA HER SONUÇTA KOŞAR (kurulum yarıda kalsa bile) ———
-$EnvFile = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'
 $EnvBak  = Join-Path $EvDir '.env.pre-window.bak'
 $SinkCap = Join-Path $EvDir 'sink-capture'      # sink bu dizine yakalar (I3_SMTP_CAPTURE ile başlatılır)
 $PhaseExit = @{}
@@ -785,3 +797,57 @@ Yalnız bu turun eksikleri ölçüldü; **önceki geçerli kanıtlar (G1/G2/G3/G
 **R04h durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r04h-<ts>\` — `evid-g7.json` · `evid-g5.json` ·
 `recover-midstep-failure.json` · `recover-final.json` · `zero-write-*.json` · `run-summary.txt` + SHA256 manifesti.
 İzole disposable; sır/GO-ref/.env yok. **CANLI YÜRÜTME YAPILMADI; yayım ayrı owner GO'suna bağlıdır.**
+
+### 9.11 R05 — KALAN KURTARMA RİSKLERİ + AYLIK CRON ÇAKIŞMA KORUMASI (izole; CANLI KABUL DEĞİL)
+
+Owner (2026-09-17) yalnız iki somut kalan riski istedi. Ölçülenler:
+
+#### (a) Kurulum makbuzu oluşmadan kesildiğinde runId üzerinden güvenli kurtarma — **KAPALI**
+Makbuz kurulumun EN SONUNDA yazılır; ondan önceki bir kesinti "tenant var, makbuz yok" bırakır.
+`i12-live-recover` bu durumda hedefi **yazmadan önce üretilen runId'den TÜREYEN slug** ile arar
+(`ah-<runId>`, salt-okuma, yalnız `ah-` öneki) ve kimlik bağını DB'den doğrular.
+
+| Senaryo | Sonuç |
+|---|---|
+| Makbuz SİLİNDİ, yalnız `I12_RECOVER_RUNID` verildi | **PASS** — slug `ah-r05540153` çözüldü · `identity.ok=true` · Office 3-alan özgüne döndü (`fieldsRestored=true`) · erişim hedef+yabancı `aktif=0` · **exit 0** |
+| Hiç yazma olmamış runId (`ah-hicyokr05` DB'de yok) | **PASS** — `nothingToRecover=true` · `wroteNothing=true` · çıktıda `officeRollback`/`access` anahtarı **YOK** · **exit 0** · DB tenant sayısı değişmedi |
+
+#### (b) §7.9'da API yeniden başlarken sentetik aktörlerin cron maruziyeti — **KORUMA EKLENDİ**
+**Ölçülen gerçek:** canlı `.env`'de `CLIENT_STATEMENT_MONTHLY_DELIVERY` **zaten `true`** → global aylık cron
+(`'0 3 1 * *'` @ `Europe/Istanbul`) canlıda **halihazırda kayıtlı**; İ12 bunu AÇMAZ, pini yalnız aynı değeri korur.
+
+**Abartılmayan risk sınırı (kaynaktan ölçüldü):** ekstre teslimi `office.service.getFullSmtpSettings` ile tenant'ın
+**KENDİ Office satırından** okunur ve **env'e geri düşüş YOKTUR**. Pencere yalnız HEDEF tenant'ın Office satırını
+sink'e alır. Dolayısıyla env pini (`SMTP_HOST`/`SMTP_PORT`) **gerçek tenant'ların ekstre postasını YAKALAMAZ** ve
+İ12 gerçek müvekkillere gönderim riski EKLEMEZ.
+
+**Gerçek ve İ12'ye özgü zarar — ÖLÇÜM BÜTÜNLÜĞÜ:** pencere ateşlemeyi kapsarsa sentetik hedef tenant GLOBAL
+koşuda süpürülür; aynı-dönem teslim/ledger TÜKENİR ve **G7'nin "ilk tetik +1 / ikinci tetik +0 (dedupe)" ölçümü
+GEÇERSİZ-YANILTICI** olur. Ayrıca pencere, İ12 ile ilgisiz bir üretim işiyle iç içe geçer (gözlemler atfedilemez).
+
+**Düzeltme:** `i12-live-cron-guard.js` — §7.9'da **İLK YAZMADAN ÖNCE** koşar; pencere ateşlemeyi kapsıyorsa
+**exit 5 ile REDDEDER** (kurulum başlamaz, yazma yok). Hedefli deterministik prova (`i12-cron-guard-prova.js`,
+DB/API gerektirmez) **8/8 PASS**:
+
+| Ölçüt | Sonuç |
+|---|---|
+| ay ortası / ateşlemeden önce biten pencere | PASS — çakışma yok |
+| **SINIR**: pencere TAM ateşleme anında biter | PASS — **çakışır** sayılır (fail-closed) |
+| pencere ateşlemeyi kapsar | PASS — çakışır |
+| ateşleme geçmiş, sonraki ay uzakta | PASS — çakışma yok |
+| yıl dönümü (1 Ocak 03:00 Istanbul) | PASS — çakışır |
+| ay sonu (28 Şubat → 1 Mart) | PASS — çakışma yok |
+| tz doğruluğu: ateşleme Istanbul yerelinde ayın 1'i 03:00 | PASS — `2026-8-1 3:00` |
+
+**Önceki geçerli kanıtlar (§9.9, §9.10) YENİDEN AÇILMADI.** CANLI YÜRÜTME YAPILMADI.
+
+#### Ayrı açık kalem — `G7_MANUAL` kalıntı dizini (yayın hazırlığını BLOKE ETMEZ)
+`git worktree remove` "Filename too long" ile düştü; git kaydı prune oldu, dizin diskte kaldı
+(`D:\Development\HY_WT\G7_MANUAL`: 333.877 dosya, 2.237'si `node_modules` dışı, 4.800 junction).
+Uzun-yol güvenli silme çağrısı araç kancasınca reddedildi (`Remove-Item on system path '/MIR' is blocked` —
+yanlış-pozitif; gerçek hedef worktree diziniydi). **Kural uygulandı: DURULDU, aynı işlem başka ifadeyle
+YÜRÜTÜLMEDİ.** Temizlik **owner kararıdır**.
+**Teknik kanıt — bloke etmez:** yayın adayı bu dizinden DEĞİL, kanonik ağaçtan (`5593b9bb`) üretildi;
+`prisma generate` + `nest build` **çıkış 0**, dist TAM AĞAÇ digest `87712E0E…5453` hesaplandı ve canlı ile
+fark ölçüldü (7 dosya). Dolayısıyla kalıntı, aday üretimini veya doğrulamasını engellemez; yalnız disk temizliği
+açık kalemidir.
