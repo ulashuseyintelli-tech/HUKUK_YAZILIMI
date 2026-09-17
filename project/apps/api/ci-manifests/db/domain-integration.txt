@@ -216,6 +216,15 @@ src/modules/collection/__tests__/collection-semantic-idempotency.db-gated.integr
 #     icermesini sart kosar; CI'daki hukuk_test bu kapiyi saglar. Urun/fixture/mock/beklenti DEGISMEDI.
 src/modules/collection/__tests__/receipt-object-scope-authorization.db-gated.integration.spec.ts
 #
+#   CLIENT-NOTIFICATION kalan GERCEK-DB spec'i (owner GO 2026-09-18 "OFFICE / CLIENT-NOTIFICATION
+#   CI PAKETI"): g4-claim-concurrency.db-gated.integration -> describeDb + `new PrismaClient()`;
+#     gercek PostgreSQL advisory-lock ile iki escalan claim/reclaim yarisini dogrular, tenant ve
+#     client satiri olusturur. KANIT: DB env TANIMSIZ kosumda 4 test SKIPPED -> pure manifeste
+#     konsaydi dosya duzeyinde PASS gorunup test duzeyinde SESSIZCE atlanirdi; bu yuzden DB
+#     manifestine girer (ci.yml bu adimda TEST_DATABASE_URL saglar). Bu ise ait disposable DB'de
+#     migrate deploy (130/130) + kosum: 1/1 spec, 4 test PASS, atlama 0.
+src/modules/client-notification/__tests__/g4-claim-concurrency.db-gated.integration.spec.ts
+#
 #   F04 (posting / cancellation / reversal race): gercek PostgreSQL uzerinde iki commit
 #   sirasini bariyerlerle dogrular; kilitli Collection okumasi ve pre-post CAS regresyonu.
 src/modules/client-settlement/__tests__/f04-posting-reversal-race.db-gated.integration.spec.ts
