@@ -324,6 +324,23 @@ src/modules/client-notification/__tests__/client-notification-authority-wiring.s
 src/modules/client-notification/__tests__/client-notification-overview-s2-omission.spec.ts
 src/modules/client-notification/client-notification-overview.spec.ts
 #
+#   CLIENT-NOTIFICATION kalan DB-siz spec'leri (owner GO 2026-09-18 "OFFICE / CLIENT-NOTIFICATION
+#   CI PAKETI"): modulde 16 spec; 9 bagliydi, 7 secim disiydi. Bunlarin 6'si DB-siz.
+#     Siniflandirma belirtece DEGIL, bagimliligin NASIL saglandigina dayanir:
+#       secret-redaction / send-outcome -> `jest.mock('nodemailer')`, gercek SMTP YOK.
+#       notification-dispatcher.service -> Nest TestingModule'a `{ provide: PrismaService,
+#         useValue: mockPrisma }`; gercek DB baglantisi YOK.
+#       expense-actual-intent-lifecycle / sms-test-balance / test-send -> yalniz servis birimi.
+#     Hicbirinde describeDb / new PrismaClient / TEST_DATABASE_URL / readFileSync / process.cwd YOK.
+#     DB env TANIMSIZ kosum: 6/6 spec, 53 test PASS; skip/todo 0.
+#     Urun/fixture/mock/beklenti DEGISMEDI; yeni job/Jest cagrisi YOK (CI-8 butcesi korunur).
+src/modules/client-notification/__tests__/expense-actual-intent-lifecycle.spec.ts
+src/modules/client-notification/__tests__/sms-test-balance.spec.ts
+src/modules/client-notification/client-notification-secret-redaction.spec.ts
+src/modules/client-notification/client-notification-send-outcome.spec.ts
+src/modules/client-notification/client-notification-test-send.spec.ts
+src/modules/client-notification/notification-dispatcher.service.spec.ts
+#
 #   CODEX-CLIENT-X3-B01 intake security invariant regression lock (SAF, DB-siz)
 #     256-bit raw token + sha256-only persistence; generic invalid response; link-derived
 #     tenant/case/client context; atomic use count; scope/honeypot/ipHash; public-only
