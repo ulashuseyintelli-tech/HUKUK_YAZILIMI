@@ -4131,6 +4131,21 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **Not:** `client-statement-monthly-delivery-manual.controller.spec.ts` CLIENT I12 G7 (#2697, MERGED `0ecd3d73`) ile main'e geldi ve wire edilmemisti; modul kapsami icin bu pakette baglandi (I12 PR'ina DOKUNULMADI). TM47D'deki 1000 sonucu bu fixture'lara UYGULANMADI.
 - **GUNCEL SAYI:** client-statement **12/12 CI'da** · CI disinda **0**. PR CI log kaniti (5 spec PASS + gercek test sayilari + skip/todo 0) PR govdesinde.
 
+**API CI ENVANTERI (olculen main SHA `006c4dd2`) + EXPENSE-REQUEST PAKETI (2026-09-17; owner GO "OFFICE / API CI ENVANTERI + TEK MODULLUK BAGLAMA"):**
+- **GERCEK SECIM ZINCIRI (kaynaktan dogrulandi; manifest-disi = otomatik CI-disi DEGIL):** `.github/workflows/ci.yml` -> `test-suite` job'i:
+  (A) **8 manifest** `bash apps/api/scripts/run-ci-manifest.sh <ad>`: `pure/{uyap-icrabot-tebligat, client-portal, office-auth-user, claim-collection-finance, platform-scripts-shared, architecture-guards}` + `db/{core-lifecycle, domain-integration}`;
+  (B) **ci.yml DOGRUDAN secimler**: 2 adet `--testPathPattern` (rich-interest-uyap-readiness.fixture*, collection-cancel-reversal.db-gated) + 12 adet inline `spec=`/`kvkk=` (uyap operation/attempt + operation-writer + cpe-decision-logger + kvkk-compliance) = **15 secim, bunlarin 9'u manifestte YOK**;
+  (C) `architectural-guardrails` job'i jest DEGIL gate script'leri kosar (`ci-1..ci-8`); **`ci-8-jest-invocation-budget-gate.sh` yeni Jest cagrisini bloklar** -> yeni job/invocation ACILMAZ, mevcut manifeste eklenir.
+- **ENVANTER (apps/api/src/**/*.spec.ts):** **toplam 1174** · manifest **710** · ci.yml dogrudan (manifest-disi) **9** · **secim disi 455**.
+- **Statik uyelik vs CI'da GERCEK PASS (ayri gosterim):** statik benzersiz uyelik **719**; son basarili main CI (`006c4dd2`, test-suite job) log'unda **721 PASS suite satiri**, FAIL 0 — fark manifestler-arasi **mukerrer listelenen** spec'lerden (ayni spec iki manifestte -> iki kosum).
+- **Kosullu/atlanan:** pure manifestlerde DB-kapili (sessiz skip) spec **0**. (`office-work-pool-writer.static-guard.spec.ts` grep'te yanlis-pozitifti: kaynak TARAYAN statik guard, `readFileSync/readdirSync` + source `toContain`; gercek DB kullanmaz.) **Henuz dogrulanamayan: 0** — her spec statik uyelik icin olculdu.
+- **SECILEN PAKET — `expense-request` (7/7):** secim nedeni: OFFICE kapsaminda, **baska yazicisi yok** (olcum aninda acik PR 0), **7 acik spec (<=10)**, modulun TAMAMI secim disiydi, domain masraf/finans (offset `expenseRequestId` ile client-settlement + collection'a bagli). Tam dosya listesi: `__tests__/expense-gate-faz1b`, `__tests__/expense-notification-dispatcher-migration`, `__tests__/expense-request-controller-cpe`, `expense-calculator`, `expense-payment-reversal-contract.service`, `expense-payment-reversal-runtime.service`, `expense-request`.
+  - **Siniflandirma:** 7'sinde de `describeDb`/`new PrismaClient`/`TEST_DATABASE_URL` = **0** -> hepsi DB-siz (disposable DB gerekmedi); `expense-request-controller-cpe` surec-ici Nest HTTP smoke (supertest+INestApplication, servisler mock) -> yine DB-siz; statik kaynak okuma yok (FS=0).
+  - **Kosum (izole worktree `006c4dd2`, DB env TANIMSIZ):** **7/7 spec PASS · 127 test** · FAIL 0 · skip/todo 0.
+  - **Baglama:** 7 spec `pure/claim-collection-finance.txt` (manifest 81 -> 88). Yeni Jest cagrisi/job YOK. Urun/fixture/mock/beklenti DEGISMEDI; skip/todo EKLENMEDI.
+- **KALAN ACIKLAR (bu paket sonrasi 455 -> 448; API BUTUNU KAPANMADI):** en buyukler `calc-preview` 182 · `case` 51 · `interest-engine` 45 · `debtor` 20 · `ocr` 19 · `summary-engine` 11 · `debtor-scoring` 9 · `balance-display-shadow-diff` 8 · `policy-engine` 8 · `src/scripts` 8 · `client-notification` 7 · `collection` 7 · `report` 6 · `src/tests` 6 · `src/common` 5 · (ve daha kucuk kalemler). **web ve diger alanlar taranmadi** -> "repo geneli" iddiasi YOK.
+- Tamamlanan moduller (bu envanterde 0 acik): `client-settlement` 32/32 · `accounting-journal` 18/18 · `client-statement` 12/12 · `expense-request` 7/7 (bu paket).
+
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
 | # | Kalem | Durum |
