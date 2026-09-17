@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/prisma/prisma.module';
 import { ClientNotificationModule } from '../client-notification/client-notification.module';
 import { OfficeModule } from '../office/office.module';
+// G7 (İ12): manuel aylık teslim ucunun yetki eşiği `OfficeApprovalService.isApproverEligible`
+// üzerinden ölçülür (scheduler manuel-run ile AYNI model). OfficeApprovalModule client-statement'e
+// bağımlı DEĞİLDİR → döngüsel bağımlılık oluşmaz.
+import { OfficeApprovalModule } from '../office-approval/office-approval.module';
 import { InterestEngineModule } from '../interest-engine/interest-engine.module';
 import { ClientStatementController } from './client-statement.controller';
 import { ClientStatementService } from './client-statement.service';
@@ -30,7 +34,7 @@ import { ClientStatementPrismaDeliveryLedgerAdapter } from './client-statement-p
  * için production'da hiçbir mail üretilmez/gönderilmez.
  */
 @Module({
-  imports: [PrismaModule, ClientNotificationModule, OfficeModule, InterestEngineModule],
+  imports: [PrismaModule, ClientNotificationModule, OfficeModule, OfficeApprovalModule, InterestEngineModule],
   controllers: [ClientStatementController],
   providers: [
     ClientStatementService,
