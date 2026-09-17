@@ -4120,7 +4120,16 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **Kosum (izole worktree `f8ab7318`, DB env TANIMSIZ, tek jest sureci):** **14/14 spec PASS · 159 test** · FAIL 0 · skip/todo 0 · exit 0. Disposable DB **GEREKMEDI** (hicbiri gercek DB istemiyor).
 - **Baglama:** 14 spec `apps/api/ci-manifests/pure/claim-collection-finance.txt` accounting-journal blogunda (4 http-smoke girdisinin altinda). Yeni workflow / job / Jest cagrisi / DB altyapisi **YOK**; manifest 62 -> 76 spec.
 - **GUNCEL SAYI:** accounting-journal **18/18 CI'da** (`pure/claim-collection-finance`: 4 http-smoke + 14 birim/sozlesme/statik) · CI disinda **0**. Urun kodu / fixture / mock / beklenti DEGISMEDI; skip/todo EKLENMEDI. PR CI log kaniti (14 spec PASS satiri + gercek test sayilari + atlanmadi) PR govdesinde.
-- **Kapsam disi (kayitta KORUNUR):** `client-statement.service.spec.ts` hicbir manifestte degil — acik CI boslugu olarak kayitli; bu pakete EKLENMEDI.
+- **Kapsam disi (o paket icin):** `client-statement.service.spec.ts` hicbir manifestte degildi — acik CI boslugu olarak kaydedilmisti; o pakete EKLENMEDI. **-> Asagidaki CLIENT-STATEMENT kaydiyla KAPATILDI.**
+
+**CLIENT-STATEMENT CI BOSLUGU KAPATILDI — 5 SPEC BAGLANDI, 12/12 (2026-09-17; owner GO "OFFICE / CLIENT-STATEMENT CI BOSLUGU"):**
+- **Envanter (main `5593b9bb`):** modulde **12 spec** (`__tests__/` + modul koku). **7 zaten bagliydi** (`pure/claim-collection-finance`: data-contract-c3b01, delivery-c3b03, delivery-ledger-c3b05, file-reference-c3b01, monthly-c3b04, notification-delivery-adapter, pdf-c3b02) -> yeniden kosum kapsamina ALINMADI. **5 CI-disiydi.**
+- **Siniflandirma (GERCEK bagimlilik; Prisma importu TEK BASINA olcut DEGIL — `Prisma.Decimal` calisma zamani kullanimi olabilir):** 5'inde de `describeDb` / `new PrismaClient` / `TEST_DATABASE_URL` / Nest HTTP = **0** -> **hepsi DB-siz**; disposable DB **GEREKMEDI**.
+  - Iki **statik** spec'in kaynak yolu **cwd-BAGIMSIZ** dogrulandi: `client-statement-content-acceptance-c1b04` -> `join(__dirname,'..','..','message-template','message-template.service.ts')`; `client-statement-expense-note-l10n` -> `require.resolve('../client-statement.service.ts')`.
+- **Kosum (izole worktree `5593b9bb`, DB env TANIMSIZ):** **5/5 spec PASS · 83 test** · FAIL 0 · skip/todo 0 · exit 0.
+- **Baglama:** 5 spec `pure/claim-collection-finance.txt` client-statement blogunda; manifest 76 -> 81. Yeni workflow / job / Jest cagrisi / DB altyapisi **YOK**. Urun kodu / fixture / mock / beklenti DEGISMEDI; skip/todo EKLENMEDI.
+- **Not:** `client-statement-monthly-delivery-manual.controller.spec.ts` CLIENT I12 G7 (#2697, MERGED `0ecd3d73`) ile main'e geldi ve wire edilmemisti; modul kapsami icin bu pakette baglandi (I12 PR'ina DOKUNULMADI). TM47D'deki 1000 sonucu bu fixture'lara UYGULANMADI.
+- **GUNCEL SAYI:** client-statement **12/12 CI'da** · CI disinda **0**. PR CI log kaniti (5 spec PASS + gercek test sayilari + skip/todo 0) PR govdesinde.
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 

@@ -146,6 +146,21 @@ src/modules/client-statement/__tests__/client-statement-delivery-ledger-c3b05.sp
 #     provider cagrisi YOK), token sozlesmesi ve idempotency devri.
 src/modules/client-statement/__tests__/client-statement-notification-delivery-adapter.spec.ts
 #
+#   CLIENT-STATEMENT CI boslugu kapatildi (owner GO 2026-09-17 "OFFICE / CLIENT-STATEMENT CI BOSLUGU"):
+#     Modulun 12 spec'inden 5'i hicbir manifestte degildi. Gercek bagimlilik ile siniflandi (Prisma
+#     importu TEK BASINA olcut DEGIL; Prisma.Decimal calisma zamani kullanimi olabilir): 5'inde de
+#     describeDb / new PrismaClient / TEST_DATABASE_URL / Nest HTTP = 0 -> hepsi DB-siz, disposable DB
+#     gerekmedi. Iki statik spec kaynagini cwd-BAGIMSIZ okur: content-acceptance-c1b04 ->
+#     join(__dirname,'..','..','message-template','message-template.service.ts'); expense-note-l10n ->
+#     require.resolve('../client-statement.service.ts'). DB env tanimsiz kosum: 5/5 spec, 83 test PASS;
+#     skip/todo yok. client-statement-monthly-delivery-manual.controller.spec.ts I12 G7 (#2697, MERGED)
+#     ile geldi ve wire edilmemisti; modul kapsami icin burada baglandi. Bununla client-statement 12/12.
+src/modules/client-statement/__tests__/client-statement-content-acceptance-c1b04.spec.ts
+src/modules/client-statement/__tests__/client-statement-expense-note-l10n.spec.ts
+src/modules/client-statement/__tests__/w4-cron-packaging-and-boot.spec.ts
+src/modules/client-statement/client-statement-monthly-delivery-manual.controller.spec.ts
+src/modules/client-statement/client-statement.service.spec.ts
+#
 #   ACCOUNTING-JOURNAL surec-ici Nest HTTP smoke spec'leri (owner GO 2026-09-17 "ACCOUNTING-JOURNAL / 4 HTTP SMOKE SPEC'IN CI BAGLAMASI"):
 #     accounting-journal modulunun 18 spec'inin tamami hicbir manifestte degildi; bu 4 HTTP smoke Nest
 #     seviyesinde (Test.createTestingModule + INestApplication + supertest + JWT/Passport; servisler mock,
