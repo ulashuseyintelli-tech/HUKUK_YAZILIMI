@@ -145,3 +145,15 @@ src/modules/client-statement/__tests__/client-statement-delivery-ledger-c3b05.sp
 #     CAD C3: teslim portunun mevcut bildirim zincirine baglanmasi (dispatcher adaptoru; dogrudan
 #     provider cagrisi YOK), token sozlesmesi ve idempotency devri.
 src/modules/client-statement/__tests__/client-statement-notification-delivery-adapter.spec.ts
+#
+#   ACCOUNTING-JOURNAL surec-ici Nest HTTP smoke spec'leri (owner GO 2026-09-17 "ACCOUNTING-JOURNAL / 4 HTTP SMOKE SPEC'IN CI BAGLAMASI"):
+#     accounting-journal modulunun 18 spec'inin tamami hicbir manifestte degildi; bu 4 HTTP smoke Nest
+#     seviyesinde (Test.createTestingModule + INestApplication + supertest + JWT/Passport; servisler mock,
+#     PrismaService YOK). Gercek DB / dis servis / describeDb / new PrismaClient / TEST_DATABASE_URL yok.
+#     Domain finans/muhasebe -> bu manifest (client-statement + interest-engine kardesleri burada; isimden
+#     client-portal DEGIL). DB env tanimsiz ayri kosum: 4/4 spec, 42 test PASS. Urun kodu/mock/beklenti
+#     DEGISMEDI; skip EKLENMEDI. (Modulun kalan 14 spec'i bu isin KAPSAMI DISIDIR.)
+src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.http-smoke.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-manual-adjustment.http-smoke.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-reversal.http-smoke.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-trial-balance.http-smoke.spec.ts
