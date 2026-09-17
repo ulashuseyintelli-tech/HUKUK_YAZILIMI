@@ -157,3 +157,24 @@ src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.
 src/modules/accounting-journal/__tests__/accounting-journal-manual-adjustment.http-smoke.spec.ts
 src/modules/accounting-journal/__tests__/accounting-journal-reversal.http-smoke.spec.ts
 src/modules/accounting-journal/__tests__/accounting-journal-trial-balance.http-smoke.spec.ts
+#
+#   ACCOUNTING-JOURNAL kalan birim/sozlesme/statik spec'leri (owner GO 2026-09-17 "KALAN 14 SPEC / 18/18"):
+#     Gercek bagimlilik ile siniflandi (dosya adiyla DEGIL): 14'unun tamami DB-siz. Prisma yalniz TIP
+#     importu (Prisma.Decimal); describeDb / new PrismaClient / TEST_DATABASE_URL / PrismaService YOK.
+#     2 statik-sozlesme spec (source.types, client-offset-journal-source.adapter) kendi kaynak .ts'ini
+#     __dirname ile okur (cwd bagimsiz -> her checkout'ta mevcut). DB env tanimsiz kosum: 14/14 spec,
+#     159 test PASS; skip yok. Bununla accounting-journal CI'da 18/18 (4 http-smoke + 14 birim/sozlesme/statik).
+src/modules/accounting-journal/__tests__/accounting-journal-cutover-readiness.controller.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-cutover-readiness.service.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.contract.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.projection.service.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-legal-shadow-compare.service.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-manual-adjustment.service.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-posting-mode.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-reversal.service.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-source.types.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-trial-balance.controller.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal-trial-balance.service.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal.builder.spec.ts
+src/modules/accounting-journal/__tests__/accounting-journal.writer.spec.ts
+src/modules/accounting-journal/__tests__/client-offset-journal-source.adapter.spec.ts

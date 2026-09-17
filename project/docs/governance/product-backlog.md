@@ -4113,7 +4113,14 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **Manifest secimi (isimden DEGIL; domain + emsal):** finans/muhasebe domaini -> **`pure/claim-collection-finance`** (client-statement + interest-engine + collection + claim-item kardesleri burada; `pure/client-portal` DEGIL). DB-siz Nest HTTP smoke pure manifestte kanitli emsal (client-route-precedence / client-settlement http-smoke).
 - **Kosum (izole worktree d57c5635, DB env TANIMSIZ, ayri ayri):** **4/4 spec PASS · 42 test** (financial-statement 16 · manual-adjustment 8 · reversal 9 · trial-balance 9); atlanmadi. Urun kodu / mock / beklenti DEGISMEDI; skip EKLENMEDI.
 - **client-statement.service.spec.ts uzlastirmasi (onceki rapor oz-duzeltmesi):** hicbir manifestte DEGIL (dogru yol `apps/api/ci-manifests/` ile teyit; onceki `../ci-manifests/` grep yolu YANLISTI -> sahte-yokluk). 32/32 (client-settlement) ile celiski yok; farkli modul; closingBalance sozlesmesi CI'da wire edilen tm47d ile dogrulanir.
-- **GUNCEL SAYI:** accounting-journal CI'da **4 HTTP smoke** (`pure/claim-collection-finance`); modulun kalan 14 spec'i CI-disi (bu isin KAPSAMI DISI). PR CI log kaniti (4 spec PASS + atlanmadi) PR govdesinde.
+- **GUNCEL SAYI (o paket):** accounting-journal CI'da **4 HTTP smoke** (`pure/claim-collection-finance`); modulun kalan 14 spec'i o isin KAPSAMI DISIYDI. PR CI log kaniti (4 spec PASS + atlanmadi) PR govdesinde.
+
+**ACCOUNTING-JOURNAL CI KAPSAMI TAMAMLANDI — KALAN 14 SPEC BAGLANDI, 18/18 (2026-09-17; owner GO "KALAN 14 SPEC'IN CI KAPSAMINI TAMAMLA"):**
+- **Siniflandirma (GERCEK bagimlilik; dosya adiyla DEGIL):** 14'unun **tamami DB-siz**. Bes spec'te `@prisma/client` yalniz **TIP** importudur (`Prisma.Decimal`) -> gercek DB DEGIL; `describeDb` / `new PrismaClient` / `TEST_DATABASE_URL` / `PrismaService` **0**. Iki spec **statik-sozlesme** (`accounting-journal-source.types`, `client-offset-journal-source.adapter`): kendi kaynak `.ts` dosyasini `readFileSync(join(__dirname, '..', ...))` ile okur -> **cwd bagimsiz** (calisma dizinine duyarli degil), kaynak her checkout'ta mevcut. Kalan 12 birim/controller/service spec'i tamamen mock'lu.
+- **Kosum (izole worktree `f8ab7318`, DB env TANIMSIZ, tek jest sureci):** **14/14 spec PASS · 159 test** · FAIL 0 · skip/todo 0 · exit 0. Disposable DB **GEREKMEDI** (hicbiri gercek DB istemiyor).
+- **Baglama:** 14 spec `apps/api/ci-manifests/pure/claim-collection-finance.txt` accounting-journal blogunda (4 http-smoke girdisinin altinda). Yeni workflow / job / Jest cagrisi / DB altyapisi **YOK**; manifest 62 -> 76 spec.
+- **GUNCEL SAYI:** accounting-journal **18/18 CI'da** (`pure/claim-collection-finance`: 4 http-smoke + 14 birim/sozlesme/statik) · CI disinda **0**. Urun kodu / fixture / mock / beklenti DEGISMEDI; skip/todo EKLENMEDI. PR CI log kaniti (14 spec PASS satiri + gercek test sayilari + atlanmadi) PR govdesinde.
+- **Kapsam disi (kayitta KORUNUR):** `client-statement.service.spec.ts` hicbir manifestte degil — acik CI boslugu olarak kayitli; bu pakete EKLENMEDI.
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
