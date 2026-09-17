@@ -47,7 +47,10 @@ function dbName(u) { try { return decodeURIComponent(new URL(u).pathname.replace
     // Office SMTP: gerçek-benzeri (pencere bunu sink'e alacak). Legacy düz-metin pass (canlıda gerçek enc:v1: + KEY olur).
     await prisma.office.upsert({ where: { tenantId: st.tenantId }, update: {}, create: { tenantId: st.tenantId, name: 'İ12 Canlı Sentetik Büro', smtpHost: 'smtp.example.invalid', smtpPort: 587, smtpUser: `office-${runId}@x.invalid`, smtpPass: 'i12-live-legacy-pass', smtpSecure: true, smtpFromName: 'İ12', smtpFromEmail: 'noreply@ah-harness.invalid' } });
 
-    const receipt = { record: 'I12-SETUP-RECEIPT', runId, tenantId: st.tenantId, tenantSlug: st.slug, foreignTenantId: st.foreignTenantId, caseId: st.caseId, caseClientId: st.caseClientId, clientId: st.clientId, loginEmail: st.actors.elev1.email, createdAt: new Date().toISOString() };
+    // Makbuz aktörleri: canlı ölçüm (i12-live-measure-online) BUNLARI kullanır — kendi setupI3'ünü KOŞMAZ.
+    // Yalnız e-posta taşınır (login parolası owner env'inde; makbuza SIR KONMAZ).
+    const actorEmails = {}; for (const t of ['elev1', 'elev2', 'elev3', 'reviewer', 'user']) actorEmails[t] = st.actors[t].email;
+    const receipt = { record: 'I12-SETUP-RECEIPT', runId, tenantId: st.tenantId, tenantSlug: st.slug, foreignTenantId: st.foreignTenantId, caseId: st.caseId, caseClientId: st.caseClientId, clientId: st.clientId, loginEmail: st.actors.elev1.email, actors: actorEmails, createdAt: new Date().toISOString() };
     fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 1), 'utf8');
     console.log(JSON.stringify({ record: 'I12-LIVE-SETUP', ok: true, runId, tenantId: st.tenantId, tenantSlug: st.slug, receipt: receiptPath }, null, 1));
   } catch (e) { console.error(`DURDU: ${e && e.message ? e.message : e}`); process.exitCode = 1; }
