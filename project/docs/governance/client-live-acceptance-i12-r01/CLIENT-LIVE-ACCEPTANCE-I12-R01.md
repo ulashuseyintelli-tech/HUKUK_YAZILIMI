@@ -851,3 +851,21 @@ YÜRÜTÜLMEDİ.** Temizlik **owner kararıdır**.
 `prisma generate` + `nest build` **çıkış 0**, dist TAM AĞAÇ digest `87712E0E…5453` hesaplandı ve canlı ile
 fark ölçüldü (7 dosya). Dolayısıyla kalıntı, aday üretimini veya doğrulamasını engellemez; yalnız disk temizliği
 açık kalemidir.
+
+### 9.12 R06 — YAYIN/GERİ ALMA SIRASI + B11 KARAR PAKETİ (CANLI YAYIN DEĞİL)
+
+Owner (2026-09-17) son iki açık: B11 gerekçesinin kanonik doğrulaması ve yayın/geri alma sırasının düzeltilmesi.
+Tam paket: **`I12-RELEASE-CANDIDATE-AND-ROLLBACK-R01.md`** (içerik R02). Bu turda kapatılanlar:
+
+| Açık | Kapanış |
+|---|---|
+| Yayın/geri alma **sırası** | aday doğrula → canlı kimlik + **yedek bütünlüğü** → **görevi durdur + sürecin GERÇEKTEN kapandığını doğrula** (`Wait-ApiStopped`: port dinleyici 0 + `hukuk-task-host.exe api` 0 + task State ≠ Running) → dosyaları değiştir → **tam ağaç digest doğrula** → başlat → süreli sağlık. **ÇALIŞAN API'nin dist'i DEĞİŞTİRİLMEZ**; geri alma AYNI sırayı izler |
+| **Üç ayrı kimlik** | KAYNAK SHA `006c4dd2…` · PAKET DIGEST `34222C14…3FE0` (8 canlı betik) · DERLEME KİMLİĞİ `87712E0E…5453` (3867 dosya) — ayrı ayrı belirtildi |
+| **Migration hükmü** | artık **içerik eşitliğine** dayanıyor: 131=131 dosya **ve** içerik digest `DD38F07D…C93D` her ikisinde AYNI; eklenen/silinen/değişen **0** |
+| **#2699 CI kaydı** | **#2697'nin CI'ında G7 spec'i KOŞMADI** (client-statement modülü manifest kovasında değildi). **#2699 @ `987f0c1e`** kapattı: run `35268331580` / job `105361013145`, kova `pure/claim-collection-finance`, `PASS …monthly-delivery-manual.controller.spec.ts` @ `20:06:28.350Z`. Bu yüzden KAYNAK SHA `006c4dd2` seçildi |
+| **Route varlığı kanıtı** | 401 **tek başına sayılmaz**. Ölçüldü: kimliksiz gerçek uç **401**, olmayan yol **404** → 401 tutarlı ama yetersiz. Kanıt: (1) aday dist'i boot edilip log'da **birebir** `[RouterExplorer] Mapped {/api/client-statements/monthly-delivery/run-now, POST} route` (977 route satırı), (2) kimliği doğrulanmış **elevated OLMAYAN** aktörle **403 `SCHEDULER_MANUAL_RUN_DENIED_NOT_ELEVATED`** — kapı `runMonthlyDelivery`'den ÖNCE çalışır, **gönderim YOK** |
+| **B11 gerekçesi** | kanonik kayıttan doğrulandı: **"POLITIKA KARARI — kusur DEGIL"**, owner GO 2026-09-12, #2655 MERGED `78f49dd3`. RELEASE23 dışı kalma nedeni **yalnız aday dondurulması** (*"aday `2740df3d`'den SONRA; adaya girmesi yeni derleme ister"*; *"canlıya çıkışı ayrı aday/ayrı karar"*). **Açık engel YOK.** Kabul edilmesi gereken tek kalem: audit yazılamazsa güncelleme **geri alınır** ve hata çağırana **ulaşır** (eskiden yutuluyordu). **Öneri: adayla yayınlansın — KARAR OWNER'IN** (ajan onaylamadı/çıkarmadı) |
+
+**R06 durable kanıt:** `…\Documents\CLIENT-EVIDENCE-20260911\i12-r06-<ts>\` — `route-registry-boot-log.txt` ·
+`unauth-401-vs-404-probe.txt` · `run-summary.txt` + SHA256 manifesti. Önceki geçerli kanıtlar (§9.9–§9.11 ve
+B11'in kendi test kanıtları) **YENİDEN AÇILMADI**. **CANLIYA YAYINLANMADI.**
