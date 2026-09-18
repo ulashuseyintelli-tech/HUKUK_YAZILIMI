@@ -5,7 +5,7 @@
 # YAPMAZ: .env değişikliği · görev durdurma/başlatma · firewall · gönderim (H2 gönderim yolu içermez) · ikinci API.
 # SIR   : DB URL canlı .env'den SÜREÇ İÇİNDE okunur, ekrana/dosyaya YAZILMAZ; GO ref yalnız süreç ortamında kalır.
 # HATA  : koşum yarıda kalırsa kapanış `finally`de zaten koşar; ek güvence: aynı pencerede
-#         `$env:I13_RECOVER_RUNID='<runId>'; node <scripts>\i13-live-recover.js` (kimlik bağı yoksa SIFIR yazma).
+#         `$env:I13_LIVE_CONFIRM='1'; $env:I13_LIVE_GO_REF='x'; $env:I13_RECOVER_RUNID='<runId>'; node <scripts>\i13-live-recover.js` (kimlik bağı yoksa SIFIR yazma).
 $ErrorActionPreference = 'Stop'
 $SelfTest = $false   # $true: tüm salt-okuma kapıları koşar; GO ref SORULMAZ, hiçbir şey YAZILMAZ
 
