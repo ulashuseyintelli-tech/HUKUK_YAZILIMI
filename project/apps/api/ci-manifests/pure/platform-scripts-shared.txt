@@ -840,3 +840,16 @@ src/modules/interest-engine/__tests__/interest-engine.module.wiring.spec.ts
 #   kapsam disi): worktree ici / proje kodu yazmasi 0, ag 0; tum yazmalar jest onbellegi (%TEMP%/jest).
 #   Kardes: allocate-payment-ledger-in-tx.spec ve 9 saf summary-engine spec'i bu manifestte.
 src/modules/summary-engine/__tests__/summary-engine.module.wiring.spec.ts
+
+# ── P03 TUKETICI MANIFESTI ONARIMI (owner GO 2026-09-18 "OFFICE / P03 TUKETICI MANIFESTI ONARIMI") ──
+#   Statik guard: backend+web uretim `collectedAmount` referanslari P03 tuketici manifestiyle
+#   (ALLOCATION_REPRESENTATIVE_CONSUMER_MANIFEST_V1) BIREBIR eslesmeli. Hata: manifestte 4 silinmis web
+#   dosyasi (case/case-summary-report.tsx #2355; dashboard/case-stat-cards.tsx, collection-target-tracker.tsx,
+#   collection-target.tsx #2347). Onarim URUN manifestinde yalniz bu 4 girdinin cikarilmasi; guard
+#   karsilastirmasi, diger girdiler, checksum algoritmasi ve beklentiler AYNEN.
+#   Uyumluluk: consumerManifestChecksum yalniz yeni kanit manifestine yazilir (CAPTURED_NOT_ACCEPTED,
+#   authority NONE); okuyan/karsilastiran yol, replay/launch yolu veya sabitlenmis deger YOK.
+#   Checksum 34d0b407…c9aef (33 girdi) -> 5f411a90…86d69 (29 girdi).
+#   DB env TANIMSIZ, --forceExit YOK, --detectOpenHandles: guard 2/2 + replay-adapter 12/12 PASS, acik handle 0.
+#   Kardes: allocation-representative-replay-adapter.spec ve saf summary-engine spec'leri bu manifestte.
+src/modules/summary-engine/__tests__/allocation-representative-replay.static-guard.spec.ts

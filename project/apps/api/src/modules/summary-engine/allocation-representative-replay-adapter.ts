@@ -234,33 +234,9 @@ export const ALLOCATION_REPRESENTATIVE_CONSUMER_MANIFEST_V1 = Object.freeze([
   }),
   Object.freeze({
     surface: 'WEB' as const,
-    path: 'apps/web/src/components/case/case-summary-report.tsx',
-    classification: 'DISPLAY_ONLY' as const,
-    access: 'READ' as const,
-  }),
-  Object.freeze({
-    surface: 'WEB' as const,
     path: 'apps/web/src/components/claim-item/ClaimItemPanel.tsx',
     classification: 'NEGATIVE_REFERENCE' as const,
     access: 'NEGATIVE_REFERENCE' as const,
-  }),
-  Object.freeze({
-    surface: 'WEB' as const,
-    path: 'apps/web/src/components/dashboard/case-stat-cards.tsx',
-    classification: 'DISPLAY_ONLY' as const,
-    access: 'READ' as const,
-  }),
-  Object.freeze({
-    surface: 'WEB' as const,
-    path: 'apps/web/src/components/dashboard/collection-target-tracker.tsx',
-    classification: 'OUTSIDE_CLAIM_ITEM_CACHE' as const,
-    access: 'NON_CLAIM_ITEM' as const,
-  }),
-  Object.freeze({
-    surface: 'WEB' as const,
-    path: 'apps/web/src/components/dashboard/collection-target.tsx',
-    classification: 'OUTSIDE_CLAIM_ITEM_CACHE' as const,
-    access: 'NON_CLAIM_ITEM' as const,
   }),
   Object.freeze({
     surface: 'WEB' as const,
