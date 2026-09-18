@@ -334,3 +334,22 @@ src/modules/client/__tests__/client-lifecycle-activation-race.db-gated.integrati
 # tasima cagrisi (SendGrid `fetch`) test katmaninda kontrollu basarisiz kilinir. Timeout/yanit
 # kaybi BELIRSIZ, HTTP yaniti alinan ret KESIN olarak siniflanir; ikisi de kalici SENT YAZMAZ.
 src/modules/address-discovery/__tests__/client-info-request-provider-outcome.db-gated.integration.spec.ts
+
+# ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
+#   DB kapili spec'ler: DB env TANIMSIZ kosumda suite TAMAMEN ATLANDI (describeDb/esdegeri) ->
+#   pure manifeste konsalardi sessiz skip olurdu; bu ise ait disposable PostgreSQL 16-alpine
+#   (DB adi test-db-env kapisina uygun, migrate deploy 130/130) uzerinde suite PASS, skip 0.
+#   Urun/fixture/mock/beklenti DEGISMEDI; skip/todo EKLENMEDI; yeni job/Jest cagrisi YOK.
+#   Bu manifeste eklenen 12 spec (modul: calc-preview 7, case-balance 1, debtor 1, summary-engine 2, src/scripts 1).
+src/modules/calc-preview/diagnostics/object-store/bundle-manifest/__tests__/bundle-manifest.integration.spec.ts
+src/modules/calc-preview/diagnostics/object-store/bundle-seal/__tests__/bundle-seal.integration.spec.ts
+src/modules/calc-preview/diagnostics/object-store/manifest-retry/audit/__tests__/manifest-admin-audit.service.spec.ts
+src/modules/calc-preview/diagnostics/object-store/manifest-retry/idempotency/__tests__/idempotency-gate.integration.spec.ts
+src/modules/calc-preview/diagnostics/playbook/__tests__/escalation-state.repository.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/fault/escalation-cas-fault.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/promote-request.store.spec.ts
+src/modules/case-balance/__tests__/expense-actual-posting.db-gated.integration.spec.ts
+src/modules/debtor/__tests__/debtor-cross-case-notification.integration.spec.ts
+src/modules/summary-engine/__tests__/allocation-evidence-qualification.db-gated.integration.spec.ts
+src/modules/summary-engine/__tests__/allocation-representative-replay.db-gated.integration.spec.ts
+src/scripts/__tests__/rcv-ws04-p03-allocation-replay-launch.db-gated.integration.spec.ts

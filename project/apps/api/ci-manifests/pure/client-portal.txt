@@ -468,3 +468,28 @@ src/modules/client-notification/__tests__/client-notification-attachment-threadi
 #     gölgelemediğini gerçek Nest HTTP seviyesinde doğrular; :id davranışı (found→200,
 #     unknown→404) korunur; ClientModule controller sırasında yapısal guard.
 src/modules/client/__tests__/client-route-precedence.http-smoke.spec.ts
+
+# ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
+#   apps/api secim disi spec'lerin toplu baglanmasi. Siniflandirma AMPIRIK: her spec DB env
+#   (DATABASE_URL/TEST_DATABASE_URL) TANIMSIZ kosuldu ve suite PASS + test duzeyinde skip/todo 0
+#   verdi (test/test-db-env.ts fail-closed oldugu icin bu, CI'daki pure adimla kaynak duzeyinde
+#   esdegerdir). Ek olarak her spec'in gercek/dolayli bagimliligi salt-okuma ile incelendi
+#   (mock/literal/useValue vs gercek PrismaService; statik kaynak yolu; ag/sunucu/dosya yazma).
+#   Kosumlardan sonra calisma agacinda takipli/takipsiz dosya degisikligi 0.
+#   Urun/fixture/mock/beklenti DEGISMEDI; skip/todo EKLENMEDI; yeni job/Jest cagrisi YOK.
+#   Gecemeyen / atlamali / altyapi isteyen spec'ler BAGLANMADI; product-backlog.md'de ayri kayit.
+#   Bu manifeste eklenen 14 spec (modul: address-discovery 1, client-approval 1, client-intake-link 1, client-intel-statement 1, export-import 3, notification 1, poa 2, portal 4).
+src/modules/address-discovery/client-info-request-ownership.spec.ts
+src/modules/client-approval/client-approval.service.spec.ts
+src/modules/client-intake-link/client-intake-link-delivery.schema.spec.ts
+src/modules/client-intel-statement/client-intel-statement.service.spec.ts
+src/modules/export-import/__tests__/debtor-export.spec.ts
+src/modules/export-import/__tests__/export-import.service.spec.ts
+src/modules/export-import/__tests__/rfa017-import-guard.spec.ts
+src/modules/notification/email-provider.service.spec.ts
+src/modules/poa/__tests__/poa-idempotent.spec.ts
+src/modules/poa/__tests__/poa-revoke-lifecycle.spec.ts
+src/modules/portal/__tests__/portal-admin-actor-id.spec.ts
+src/modules/portal/__tests__/portal-client-audit.spec.ts
+src/modules/portal/__tests__/portal-jwt-fail-closed.spec.ts
+src/modules/portal/__tests__/rfa013-portaluser-reactivate.spec.ts

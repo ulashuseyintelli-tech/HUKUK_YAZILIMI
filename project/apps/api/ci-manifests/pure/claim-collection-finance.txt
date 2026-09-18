@@ -222,3 +222,50 @@ src/modules/expense-request/expense-calculator.spec.ts
 src/modules/expense-request/expense-payment-reversal-contract.service.spec.ts
 src/modules/expense-request/expense-payment-reversal-runtime.service.spec.ts
 src/modules/expense-request/expense-request.spec.ts
+
+# ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
+#   apps/api secim disi spec'lerin toplu baglanmasi. Siniflandirma AMPIRIK: her spec DB env
+#   (DATABASE_URL/TEST_DATABASE_URL) TANIMSIZ kosuldu ve suite PASS + test duzeyinde skip/todo 0
+#   verdi (test/test-db-env.ts fail-closed oldugu icin bu, CI'daki pure adimla kaynak duzeyinde
+#   esdegerdir). Ek olarak her spec'in gercek/dolayli bagimliligi salt-okuma ile incelendi
+#   (mock/literal/useValue vs gercek PrismaService; statik kaynak yolu; ag/sunucu/dosya yazma).
+#   Kosumlardan sonra calisma agacinda takipli/takipsiz dosya degisikligi 0.
+#   Urun/fixture/mock/beklenti DEGISMEDI; skip/todo EKLENMEDI; yeni job/Jest cagrisi YOK.
+#   Gecemeyen / atlamali / altyapi isteyen spec'ler BAGLANMADI; product-backlog.md'de ayri kayit.
+#   Bu manifeste eklenen 36 spec (modul: case 33, fee-engine 1, hesap-ozeti-coverage 1, precautionary-order 1).
+src/modules/case/__tests__/build-sync-due-dto.spec.ts
+src/modules/case/__tests__/case-assignment-audit.spec.ts
+src/modules/case/__tests__/case-collection-delegation.spec.ts
+src/modules/case/__tests__/case-create-claim-items.spec.ts
+src/modules/case/__tests__/case-create-debtor-ownership.spec.ts
+src/modules/case/__tests__/case-create-due-interest-fields.spec.ts
+src/modules/case/__tests__/case-create-guard.spec.ts
+src/modules/case/__tests__/case-create-initial-owner-audit.spec.ts
+src/modules/case/__tests__/case-create-instruments.spec.ts
+src/modules/case/__tests__/case-create-path-audit-userid.spec.ts
+src/modules/case/__tests__/case-create-responsible-person.spec.ts
+src/modules/case/__tests__/case-create-sorumlu-personel.spec.ts
+src/modules/case/__tests__/case-create-staff.spec.ts
+src/modules/case/__tests__/case-delete-financial-guard.spec.ts
+src/modules/case/__tests__/case-due-claimitem-sync.spec.ts
+src/modules/case/__tests__/case-due-dto-interest-fields.spec.ts
+src/modules/case/__tests__/case-find-all-claim-total-zero.spec.ts
+src/modules/case/__tests__/case-flags-audit.spec.ts
+src/modules/case/__tests__/case-include-archived-filter.spec.ts
+src/modules/case/__tests__/case-lawyer-audit-caseid.spec.ts
+src/modules/case/__tests__/case-lawyer-iban-masking.spec.ts
+src/modules/case/__tests__/case-lawyer-staff-audit-userid.spec.ts
+src/modules/case/__tests__/case-legal-responsible-missing-filter.spec.ts
+src/modules/case/__tests__/case-mutation-audit-userid.spec.ts
+src/modules/case/__tests__/case-payment-preview.controller.spec.ts
+src/modules/case/__tests__/case-payment-preview.service.spec.ts
+src/modules/case/__tests__/case-status-side-gate.spec.ts
+src/modules/case/__tests__/case-type-mapping.spec.ts
+src/modules/case/__tests__/due-to-claim-item.mapper.spec.ts
+src/modules/case/__tests__/due-type-transition.policy.spec.ts
+src/modules/case/__tests__/ocr-instrument-to-case-instrument.mapper.spec.ts
+src/modules/case/backfill/__tests__/due-to-claimitem-backfill.core.spec.ts
+src/modules/case/inventory/__tests__/due-claimitem-inventory.core.spec.ts
+src/modules/fee-engine/__tests__/integration.spec.ts
+src/modules/hesap-ozeti-coverage/__tests__/component-coverage.analyzer.spec.ts
+src/modules/precautionary-order/__tests__/precautionary-cost-writer-routing.spec.ts

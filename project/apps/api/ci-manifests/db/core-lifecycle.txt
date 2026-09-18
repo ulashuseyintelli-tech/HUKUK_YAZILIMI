@@ -41,6 +41,16 @@ src/modules/reporting-line/__tests__/reporting-line-user-fk.db-gated.integration
 # Requires TEST_DATABASE_URL and must execute on the disposable PostgreSQL job.
 src/modules/auth/__tests__/auth-register-seed.integration.spec.ts
 
+# LOOKUP modulu — GERCEK-DB spec (owner GO 2026-09-18 "OFFICE / LOOKUP MODULU CI PAKETI"):
+#   lookup-seed.integration -> Test.createTestingModule({ providers: [PrismaService] }) —
+#   useValue YOK, yani GERCEK PrismaService; tenant + 5 lookup tablosuna upsert/reactivation
+#   yazar; describeDb kapisiyla korunur. Yukaridaki register/seed yasam dongusunun ayni
+#   seedLookupCatalog fonksiyonunu dogrudan test eder (auth.service -> seedLookupCatalog).
+#   Bu ise ait disposable PostgreSQL 16-alpine (DB adi test-db-env kapisina uygun) + migrate
+#   deploy 130/130: 1/1 spec, 4 test PASS, atlama 0; spec'in kendi temizligi calisti.
+#   Siniflandirma okumayla net oldugu icin ters kosum YAPILMADI.
+src/modules/lookup/__tests__/lookup-seed.integration.spec.ts
+
 # OFFICE-WR01-B02 ASAMA 3 — resolver paritesi (gercek Postgres).
 # Saf testlerin kanitlayamadigi bes seyi disposable DB de olcer: TIMESTAMP(3) sinir davranisi,
 # ORM duzeyinde tenant izolasyonu, bir cozumlemenin TAM 2 SELECT uretmesi (olculmus deger),
