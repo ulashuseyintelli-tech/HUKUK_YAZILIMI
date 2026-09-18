@@ -48,27 +48,42 @@ const msgToCount = (n) => { try { let k = 0; for (const f of fs.readdirSync(CAPT
 const d = (after, before) => (after == null || before == null) ? null : after - before;
 
 /**
- * HEDEF-DIŞI MESAJ TARAMASI (owner kuralı: "hedef dışı mesaj FAIL").
- * Yakalama dizinindeki TÜM `msg-*` dosyalarının `To:` başlıklarından HER adresi çıkarır ve
- * betiklerdeki TAM adreslerden kurulan izin kümesiyle karşılaştırır. Beklenen alıcıları saymak
- * YETMEZ — izin kümesi DIŞINDA tek bir mesaj bile varsa gönderim yanlış hedefe gitmiştir.
- * Okunamazsa `null` döner → gözlem ÖLÇÜLEMEDİ (asla "temiz" sayılmaz).
- * @returns {{total:number, offTarget:string[], addresses:string[]}|null}
+ * HEDEF-DIŞI MESAJ TARAMASI (owner kuralı: "hedef dışı mesaj FAIL") — ZARF + BAŞLIK.
+ *
+ * Başlık (`To:`) TEK BAŞINA YETMEZ: Bcc alıcısı yalnız SMTP ZARFINDA (`RCPT TO`) bulunur, başlıkta YOKTUR.
+ * Bu yüzden karşılaştırma ürünün GERÇEKTEN adreslediği tüm zarf alıcılarını kapsar:
+ *   • `msg-*`  : `X-I3-To:` = sink'in kaydettiği zarf alıcıları (ZORUNLU, boş olamaz) + `To:`/`Cc:` başlıkları.
+ *   • `conn-*` : `rcpt=` satırları = HER konuşmanın zarf alıcıları — DATA'ya ulaşmayan (reset) veya teslim
+ *                edilmeyen denemeler dahil. Kaydın `envelope=v1` işareti taşıması ZORUNLU; işaretsiz kayıt
+ *                (eski sink) zarf kanıtı taşımaz.
+ * Karar (üç değerli): izin dışı tek adres bile → `offTarget` (FAIL). Zarf kanıtı EKSİK/OKUNAMAZ →
+ * `evidenceGaps` (ÖLÇÜLEMEDİ — asla PASS). Dizin okunamazsa `null` (ÖLÇÜLEMEDİ).
+ * @returns {{msgs:number, conns:number, envelopeRecipients:number, headerRecipients:number,
+ *            offTarget:string[], evidenceGaps:string[], addresses:string[]}|null}
  */
 function scanOffTarget(dir, allowedSet) {
+  const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g;
+  const pick = (s) => { const o = []; for (const m of String(s).matchAll(EMAIL)) o.push(m[0].toLowerCase()); return o; };
   try {
-    let total = 0; const off = []; const seen = new Set();
+    let msgs = 0, conns = 0, envN = 0, hdrN = 0; const off = []; const gaps = []; const seen = new Set();
+    const judge = (where, a) => { seen.add(a); if (!allowedSet.has(a)) off.push(`${where}:${a}`); };
     for (const f of fs.readdirSync(dir)) {
-      if (!f.startsWith('msg-')) continue;
-      total += 1;
-      const body = fs.readFileSync(path.join(dir, f), 'utf8');
-      const toLines = body.split(/\r?\n/).filter((l) => /^To:/i.test(l));
-      const addrs = [];
-      for (const l of toLines) for (const m of l.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g)) addrs.push(m[0].toLowerCase());
-      if (addrs.length === 0) off.push(`${f}:<To-YOK>`);           // alıcısı okunamayan mesaj da hedef-dışı sayılır
-      for (const a of addrs) { seen.add(a); if (!allowedSet.has(a)) off.push(`${f}:${a}`); }
+      if (f.startsWith('msg-')) {
+        msgs += 1;
+        const lines = fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/);
+        const envLine = lines.find((l) => /^X-I3-To:/i.test(l));
+        const env = envLine ? pick(envLine.slice(envLine.indexOf(':') + 1)) : [];
+        if (env.length === 0) gaps.push(`${f}:<ZARF-YOK>`);               // teslim edilmiş mesajda zarf kanıtı ŞART
+        for (const a of env) { envN += 1; judge(`${f}[zarf]`, a); }
+        for (const l of lines.filter((x) => /^(To|Cc):/i.test(x))) for (const a of pick(l.slice(l.indexOf(':') + 1))) { hdrN += 1; judge(`${f}[baslik]`, a); }
+      } else if (f.startsWith('conn-')) {
+        conns += 1;
+        const lines = fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/);
+        if (!lines.includes('envelope=v1')) { gaps.push(`${f}:<ZARF-KAYDI-YOK(eski sink)>`); continue; }
+        for (const l of lines.filter((x) => x.startsWith('rcpt='))) for (const a of pick(l.slice(5))) { envN += 1; judge(`${f}[rcpt]`, a); }
+      }
     }
-    return { total, offTarget: off, addresses: [...seen] };
+    return { msgs, conns, envelopeRecipients: envN, headerRecipients: hdrN, offTarget: off, evidenceGaps: gaps, addresses: [...seen] };
   } catch (e) { return null; }
 }
 const audit = async (prisma, tenantId, action) => (await L.safeCount(() => prisma.auditLog.count({ where: { tenantId, action } }))).value;
@@ -166,6 +181,16 @@ async function main() {
         const connD = d(connA, connB), rowD = d(rowA, rowB);
         const rcode = (r.body && (r.body.code || r.body.reasonCode || (r.body.message && (r.body.message.code || r.body.message.reasonCode)))) || '';
         counters.push({ obs: id, smtpConnection_conn: connD, delivery_msg: 0, dbRecord_infoReq: rowD });
+        // ── ERKEN DURDURMA — HEDEF BAĞLAMA KANITI: canlı API'nin etkin SMTP hedefi betikten okunamaz. Fazın İLK
+        // gönderimi (G1) BİZİM sink'imizde bir bağlantı üretmelidir. Üretmezse (0 ya da okunamaz) API başka bir
+        // hedefe gönderiyor demektir ve SONRAKİ tüm gönderimler de oraya gider → faz BURADA durur; en kötü durum,
+        // yönlendirilemeyen `.invalid` adrese TEK deneme ile sınırlı kalır (G2/G3/FD gönderimleri hiç yapılmaz).
+        if (id === 'G1' && !(connD >= 1)) {
+          R.check('I12-SINK-BINDING', 'fazın ilk gönderimi BİZİM sink\'e ulaştı (API\'nin etkin SMTP hedefi = sink)', false,
+            `G1 sonrası sink bağlantı deltası=${connD} — API sink'e bağlanmadı; KALAN GÖNDERİMLER YAPILMADI`);
+          throw new Error('SINK BAĞLAMA KANITI YOK — API etkin SMTP hedefi sink değil; faz durduruldu (kalan gönderim 0)');
+        }
+        if (id === 'G1') R.check('I12-SINK-BINDING', 'fazın ilk gönderimi BİZİM sink\'e ulaştı (API\'nin etkin SMTP hedefi = sink)', true, `G1 sink bağlantı deltası=${connD}`);
         if (r.indeterminate || rowD === null || connD === null) { R.unmeasured(id, desc, r.indeterminateReason || 'sayaç OKUNAMADI (sıfır sayılmaz)'); continue; }
         R.check(id, `${desc}: HTTP 503 · ${code} · ClientInfoRequest YAZILMAZ (dbRecord+0) · TEK SMTP bağlantı denemesi (kör tekrar YOK)`,
           r.status === 503 && new RegExp(code).test(String(rcode)) && rowD === 0 && connD === 1,
@@ -284,12 +309,18 @@ async function main() {
     ]);
     const scan = scanOffTarget(CAPTURE, ALLOWED);
     if (scan === null) {
-      R.unmeasured('I12-OFFTARGET', 'hedef-dışı mesaj taraması', 'yakalama dizini OKUNAMADI — "temiz" SAYILMAZ');
+      R.unmeasured('I12-OFFTARGET', 'hedef-dışı mesaj taraması (zarf+başlık)', 'yakalama dizini OKUNAMADI — "temiz" SAYILMAZ');
     } else {
-      R.check('I12-OFFTARGET', 'sink\'teki TÜM mesajlar izin kümesindeki alıcılara: hedef-dışı mesaj YOK',
-        scan.offTarget.length === 0,
-        `toplam msg=${scan.total} · farklı alıcı=[${scan.addresses.join(', ')}] · hedef-dışı=${scan.offTarget.length}` +
-        (scan.offTarget.length ? ` → ${scan.offTarget.slice(0, 5).join(' | ')}` : ''));
+      const seenTxt = `bakılan msg=${scan.msgs} conn=${scan.conns} · zarf alıcısı=${scan.envelopeRecipients} başlık alıcısı=${scan.headerRecipients} · farklı adres=[${scan.addresses.join(', ')}]`;
+      if (scan.offTarget.length > 0) {
+        R.check('I12-OFFTARGET', 'TÜM zarf (RCPT TO) + başlık alıcıları izin kümesinde: hedef-dışı YOK', false,
+          `${seenTxt} · HEDEF-DIŞI=${scan.offTarget.length} → ${scan.offTarget.slice(0, 5).join(' | ')}`);
+      } else if (scan.evidenceGaps.length > 0) {
+        R.unmeasured('I12-OFFTARGET', 'hedef-dışı mesaj taraması (zarf+başlık)',
+          `ZARF KANITI EKSİK (${scan.evidenceGaps.length}) → ${scan.evidenceGaps.slice(0, 5).join(' | ')} — PASS SAYILMAZ · ${seenTxt}`);
+      } else {
+        R.check('I12-OFFTARGET', 'TÜM zarf (RCPT TO) + başlık alıcıları izin kümesinde: hedef-dışı YOK', true, seenTxt);
+      }
     }
     // ERİŞİM KAPANIŞI BURADA YAPILMAZ — nihai kapanış TÜM fazlardan sonra i12-live-recover.js ile.
     const s = R.summary(`İ12 CANLI ÖLÇÜM (ONLINE · FAZ=${PHASE})`);

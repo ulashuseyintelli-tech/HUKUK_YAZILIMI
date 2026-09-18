@@ -151,16 +151,16 @@ doğrulanır (yalnız eşleşen sha koşar). Tam yol `project/docs/governance/` 
 | `client-live-acceptance-i12-r01/scripts/i12-live-window.js` | **AYRI CANLI** giriş noktası · SIR-KORUYUCU · canlı-güvenlik kapıları (`I12_LIVE_CONFIRM` + `I12_LIVE_GO_REF` + `I12_EXPECT_DB`/`I12_EXPECT_API` + `I12_EXPECT_TENANT_SLUG`) | `DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-preflight.js` | **CANLI PREFLIGHT** (salt-okuma) · `--phase pre` (GO-ref biçim+tüketim + DB host/port/ad + hedef slug; makbuz ARANMAZ) / `post` (+makbuz tenant/runId + API↔DB); eksik kimlikte YAZMA BAŞLAMAZ | `B010D38AE1244561EE5AE089C2BDB590182F2BC231A2F24B3425C64609574127` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-setup.js` | **CANLI KURULUM** (sentetik hedef tenant + FD zinciri + statement aktivitesi + Office + makbuz; makbuz artık **aktör e-postalarını** taşır — online ölçüm bunları kullanır) · canlı-güvenlik kapısı (confirm+GO-ref+DB+slug=türetilen); sır makbuza konmaz | `7E1EDC9460CA9A40B261B4A4DA89652EC4E0826AA7EC9A88B6B96AF867FD1458` |
-| `client-live-acceptance-i12-r01/scripts/i12-live-measure-online.js` | **CANLI ÖLÇÜM (ONLINE · FAZLI)** — §7.9'da KOŞAN ölçüm. MEVCUT tek API'ye HTTP ile bağlanır (`I12_ONLINE_API_BASE`); makbuz tenant/runId/aktörlerini kullanır (setupI3 YOK); FD zincirini yalnız makbuz tenant'ına yazar + HTTP yayınlar. **setupI3 / yeni API boot / spy·cron-hook enjeksiyonu / port-kill İÇERMEZ.** `I12_PHASE`: `smtp` (G1·G2·G3·G6·G4·FD-RED·FD-TMO) · `mock` (G5) · `g7` (dar in-API manuel teslim + dedupe + YABANCI tenant +0) — hepsi AYNI makbuz ve AYNI tek API. **Erişim kapanışı BU BETİKTE YOK** (fazlar zincirlenebilsin diye `i12-live-recover`'a ertelenir). Sayaçlar AYRI: **smtpConnection(conn) — GERÇEK `dispatcher.send` çağrısı DEĞİLDİR ve öyle SUNULMAZ** · delivery(msg, alıcı-scoped) · dbRecord. Eşit delta HER DURUMDA denklik SAYILMAZ (FD-RED/TMO: conn+1 ≠ delivery+0). **OKUNAMAYAN SAYAÇ SIFIR SAYILMAZ** → `null` → ÖLÇÜLEMEDİ. **HEDEF-DIŞI MESAJ KAPISI (`I12-OFFTARGET`)**: her fazın sonunda (hata/çöküş dahil) sink'teki **TÜM** `msg-*` dosyalarının `To:` adresleri, betiklerdeki TAM adreslerden kurulu izin kümesiyle (`deliv-`/`fd-`/`alici-<runId>@ah-harness.invalid`) karşılaştırılır — izin kümesi dışında tek mesaj bile **FAIL**; `To:` okunamayan mesaj da hedef-dışı; dizin okunamazsa ÖLÇÜLEMEDİ (asla "temiz"). Makbuz kimlik bağı DB'den doğrulanır; canlı-güvenlik kapısı | `CE41C911EEDB33D8AD0694E89DB82F9F354568E6110EDBF6ADFCE6C4105467BF` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-measure-online.js` | **CANLI ÖLÇÜM (ONLINE · FAZLI)** — §7.9'da KOŞAN ölçüm. MEVCUT tek API'ye HTTP ile bağlanır (`I12_ONLINE_API_BASE`); makbuz tenant/runId/aktörlerini kullanır (setupI3 YOK); FD zincirini yalnız makbuz tenant'ına yazar + HTTP yayınlar. **setupI3 / yeni API boot / spy·cron-hook enjeksiyonu / port-kill İÇERMEZ.** `I12_PHASE`: `smtp` (G1·G2·G3·G6·G4·FD-RED·FD-TMO) · `mock` (G5) · `g7` (dar in-API manuel teslim + dedupe + YABANCI tenant +0) — hepsi AYNI makbuz ve AYNI tek API. **Erişim kapanışı BU BETİKTE YOK** (fazlar zincirlenebilsin diye `i12-live-recover`'a ertelenir). Sayaçlar AYRI: **smtpConnection(conn) — GERÇEK `dispatcher.send` çağrısı DEĞİLDİR ve öyle SUNULMAZ** · delivery(msg, alıcı-scoped) · dbRecord. Eşit delta HER DURUMDA denklik SAYILMAZ (FD-RED/TMO: conn+1 ≠ delivery+0). **OKUNAMAYAN SAYAÇ SIFIR SAYILMAZ** → `null` → ÖLÇÜLEMEDİ. **HEDEF-DIŞI MESAJ KAPISI (`I12-OFFTARGET`)**: her fazın sonunda (hata/çöküş dahil) ürünün adreslediği **TÜM ZARF alıcıları** (`msg-*` `X-I3-To:` + her `conn-*` `rcpt=`, DATA'ya ulaşmayan denemeler dahil) **ve** `To:`/`Cc:` başlıkları, betiklerdeki TAM adreslerden kurulu izin kümesiyle (`deliv-`/`fd-`/`alici-<runId>@ah-harness.invalid`) karşılaştırılır — izin kümesi dışında tek adres bile **FAIL** (Bcc yalnız zarfta olduğu için başlık TEK BAŞINA yetmez); zarf kanıtı eksik/okunamaz (işaretsiz eski sink kaydı, `X-I3-To`'suz teslim) → **ÖLÇÜLEMEDİ, asla PASS**; dizin okunamazsa ÖLÇÜLEMEDİ. Makbuz kimlik bağı DB'den doğrulanır; canlı-güvenlik kapısı | `4FA97FABD605A0F58FDEE0A53325121CBEB0C0B5BA34901644BB14B2E8039A4F` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-recover.js` | **BAĞIMSIZ KURTARMA + NİHAİ KAPANIŞ** — §7.9 try/finally'de İLK YAZMADAN itibaren HER SONUÇTA çağrılır. **HER YAZMADAN ÖNCE** hedef+yabancı tenant ID↔slug↔runId bağı DB'den doğrulanır (`i12-live-identity`); bağ yoksa **hiçbir kullanıcıya/Office kaydına YAZILMAZ** (exit 4). Office SMTP rollback ve **nihai** erişim kapanışı AYRI try/catch'te — **biri diğerinin hatasıyla ATLANMAZ**; herhangi biri doğrulanmazsa exit 1 (HATA). Makbuz yazılmadan çökülmüşse hedef, yazmadan önce üretilen runId'den TÜRETİLEN slug ile aranır; bulunmazsa `nothingToRecover`. `.env` restore PowerShell'e delegedir | `D7BAFDEB5E040ABA3C8AC0360B5E174E4E89D432E265C510B4AEF421738CD06B` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-cron-guard.js` | **AYLIK CRON ÇAKIŞMA KORUMASI (salt-okuma)** — `CLIENT_STATEMENT_MONTHLY_CRON='0 3 1 * *'` @ `Europe/Istanbul` ateşlemesi pencereye düşüyorsa **REDDEDER (exit 5)**. Çakışmada sentetik tenant GLOBAL koşuda süpürülür ve **G7 aynı-dönem dedupe ölçümü GEÇERSİZ** olur. `I12_ENV_FILE` verilirse YALNIZ `CLIENT_STATEMENT_MONTHLY_DELIVERY` anahtarı okunur (dosyanın başka satırı okunmaz/yazdırılmaz) | `3364686577C803E857BB0D5B188A62ED96DE73B0CDC100A83370FD50148CFFA5` |
 | `client-live-acceptance-i12-r01/scripts/i12-cron-guard-prova.js` | cron koruması için **deterministik hedefli prova** (DB/API gerektirmez): sınır, ay sonu, yıl dönümü ve tz doğruluğu | `3B41C835F6E6601C2D74E1EC1B76D1115F0722A921C2B1C6F1572789AC7A5585` |
-| `client-live-acceptance-i12-r01/scripts/i12-offtarget-prova.js` | **hedef-dışı mesaj kapısı** için deterministik hedefli prova — `scanOffTarget`'in GERÇEK fonksiyonunu ölçer (kopya mantık YOK): gerçek dış alıcı · `To:` yok · çok-alıcılı sızıntı · harf büyüklüğü · okunamayan dizin→ÖLÇÜLEMEDİ | `4FCD6A9175666B41B26C075FE1358D2BEF0869827A95779F5DB641B41B02F029` |
+| `client-live-acceptance-i12-r01/scripts/i12-offtarget-prova.js` | **hedef-dışı mesaj kapısı (ZARF+BAŞLIK)** için hedefli prova — GERÇEK `i3-sink` + GERÇEK SMTP konuşmaları (ham soket + ürünün nodemailer'ı) ile `scanOffTarget`'in GERÇEK fonksiyonunu ölçer (kopya mantık YOK): izinli `To:` + izin dışı Bcc/RCPT TO · nodemailer `bcc:` · `reset` denemesi · eski sink/zarfsız kayıt→ÖLÇÜLEMEDİ · sink dışarı aktarmaz. `I12_NODEMAILER_PATH` gerekir | `19D7E16D68AE7E34799B74D6B1694F795CB1D67BAC601A056BC367028D074926` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-identity.js` | **KİMLİK BAĞI (salt-okuma, TEK KAYNAK)** — makbuz slug'ı runId'den türemiş mi (`ah-<runId>`), hedef/yabancı tenant DB'de var mı ve **id↔slug** eşleşiyor mu, her iki slug `ah-` sentetik önekli mi (assertOwnSlug). Hiçbir şey YAZMAZ; `{ok,reason}` döner — çağıran yanlış kimlikte SIFIR YAZMA ile durur | `9516E462CFFD3B22FD253F556A7F1853C6F021B175075449BD7945CCEF36774F` |
 | `client-live-acceptance-i12-r01/scripts/i12-live-measure.js` | **DISPOSABLE ÖLÇÜM PROVASI** (canlı DEĞİL; §7.9 canlı dizisinden ÇIKARILDI) — self-contained: kendi setupI3'ünü kurar, dist'i i3-spy+cron-hook ile boot eder, port-kill yapar, G7'yi cron-hook ile enjekte eder. **G-0 (assertDisposableEnvironment) EN BAŞTA** → canlı DB'de asla koşmaz. 12/12 kanıtı yalnız disposable davranışı belgeler; canlı ölçüm `i12-live-measure-online.js`'dir | `AB531AFBEEBF46285E9F2B5D576892CDAC677C3020850E38B90AA070ABC53F58` |
 | `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | düzenek | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
 | `client-acceptance-runners-i3-r01/scripts/i3-start-api.js` | düzenek | `72505F981EE167B1A664E5663DC675B2E6ACAB1CCCE84058231BA8BB0EECDFB5` |
-| `client-acceptance-runners-i3-r01/scripts/i3-sink.js` | loopback SMTP sink | `7D26418D3D7B1B3B7929041986C1A370B9253E79B3700470231CA5D56253E75C` |
+| `client-acceptance-runners-i3-r01/scripts/i3-sink.js` | loopback SMTP sink — yalnız `127.0.0.1`'e bağlanır, **hiçbir baytı dışarı iletmez** (yalnız `net.createServer`; istemci/çıkış çağrısı YOK). Her konuşmada `conn-*` kaydına `envelope=v1` işareti ve **her `RCPT TO` için `rcpt=` satırı** yazar (DATA'ya ulaşmayan denemeler dahil); teslim edilen mesajda zarf `X-I3-To:` | `0E3884FBF3BEBE549FD0D8B29934F8D52F8E460682782FA086355AD4B5B3F7F1` |
 | `client-acceptance-runners-i3-r01/scripts/i3-spy.js` | gerçek dispatcher.send sayacı | `954C4B88AFB18322564FD29F71CE1D7B6EF4EEFF4DC6716EA7B6AB08AB1F36D0` |
 | `client-acceptance-runners-i3-r01/scripts/i3-h5-intake.js` | A-9/A-10 (G1/G2) | `D6D27F874C3D7409EC307F54B3BEBB4F9B8257270FE20F7E2DECD7DF6180F101` |
 | `client-acceptance-harness-r01/scripts/ah-lib.js` | G-0 + prisma/aktör altyapısı | `DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7` |
@@ -279,7 +279,7 @@ $PIN = @{
   "$Sc\i12-live-setup.js"          = '7E1EDC9460CA9A40B261B4A4DA89652EC4E0826AA7EC9A88B6B96AF867FD1458'
   "$Sc\i12-live-window.js"         = 'DDDB4CCA999D715AFA3F0A9AA8E409BB54854370BDAD20C190DB096014BFD1D9'
   "$Sc\i12-window.js"              = 'DB1E5A5A671EE2486D1DB0461FACC2A180E9EA04F310EC10AA531BF926DA08E8'
-  "$Sc\i12-live-measure-online.js" = 'CE41C911EEDB33D8AD0694E89DB82F9F354568E6110EDBF6ADFCE6C4105467BF'
+  "$Sc\i12-live-measure-online.js" = '4FA97FABD605A0F58FDEE0A53325121CBEB0C0B5BA34901644BB14B2E8039A4F'
   "$Sc\i12-live-recover.js"        = 'D7BAFDEB5E040ABA3C8AC0360B5E174E4E89D432E265C510B4AEF421738CD06B'
   "$Sc\i12-live-identity.js"       = '9516E462CFFD3B22FD253F556A7F1853C6F021B175075449BD7945CCEF36774F'
   "$Sc\i12-live-cron-guard.js"     = '3364686577C803E857BB0D5B188A62ED96DE73B0CDC100A83370FD50148CFFA5'
@@ -909,10 +909,85 @@ mevcut disposable prova kanıtı olarak KAYDA geçer, canlıda YENİDEN ÖLÇÜL
 **G1 · G2 · G3 · G6 · G4 · FD-RED · FD-TMO · G5 · G7 + `I12-OFFTARGET`**.
 
 **Pin güncellemesi:** `i12-live-measure-online.js` değiştiği için **PAKET DIGEST yenilendi**:
-`34222C14…3FE0` → **`4992D27F2B6F97F4A8C93A773F86816619A132A71213320B16CB83F251B5564B`**
+`34222C14…3FE0` → **`19DDF5FCAD12A1980B3DF8191A34231857C82FA93ABBFA35AC2E0585E3662189`**
 (canlı koşum bu yeni değerle doğrulanır; eski digest ile koşulmaz).
 
 **DURUM: CANLI KABUL HENÜZ KOŞULMADI.** Koşum anı kapıları PASS ölçüldü (canlı dist `87712E0E…5453` ·
 paket · cron çakışma yok · görev Running). Başlatma için owner'dan bekleyen girdiler §7.9'un
 OWNER PLACEHOLDER bloğundadır (GO ref · canlı DB URL · API base · DB host/port/ad) ve **yükseltilmiş adımları
 (`.env` pin + `Stop/Start-ScheduledTask`) owner bizzat koşar**. Sayaç **11/17**, hizmet **0/8** — DEĞİŞMEDİ.
+
+### 9.14 R08 — I12-OFFTARGET ZARF (RCPT TO) KAPSAMI · sink dışarı aktarım kanıtı (CANLI KABUL HENÜZ KOŞULMADI)
+
+**R07 kapısı EKSİKTİ — açıkça kayda geçer.** R07'deki `I12-OFFTARGET` yalnız `msg-*` dosyalarının **`To:` başlığını**
+okuyordu. Sink her `RCPT TO`'yu teslim edilen mesaja `X-I3-To:` satırı olarak yazar; `/^To:/` bu satıra **uymaz**.
+Sonuç: **Bcc alıcısı** (yalnız SMTP ZARFINDA bulunur, başlıkta YOKTUR) R07 kapısından **geçerdi**. Ayrıca `reset`
+modunda `RCPT TO` alınıp DATA'da bağlantı koparıldığında zarf **hiçbir yere kalıcılaşmıyordu**. R07'nin 6/6'sı
+**sentetik dosyalarla** ölçülmüştü; sentetik dosya yakalama katmanını hiç çalıştırmadığı için bu boşluğu
+**gösteremezdi**. (Ders: yakalama katmanındaki boşluk ancak GERÇEK protokol konuşmasıyla ortaya çıkar.)
+
+**Dar düzeltme:**
+- `i3-sink.js`: her konuşmanın `conn-*` kaydına `envelope=v1` işareti + **her `RCPT TO` için `rcpt=` satırı**
+  (DATA'ya ulaşmayan denemeler dahil). `conn-*` İÇERİĞİNİ okuyan başka kod YOK (tüm bağımlılar dosyaları ADIYLA sayar;
+  `I3-SMTP-SINK-READY` satırı değişmedi) → geriye uyumlu.
+- `scanOffTarget`: karşılaştırma artık **tüm zarf alıcıları** (`X-I3-To:` + `rcpt=`) **ve** `To:`/`Cc:` başlıkları.
+  Karar üç değerli: izin dışı tek adres → **FAIL**; zarf kanıtı eksik (işaretsiz eski sink kaydı, `X-I3-To`'suz
+  teslim) → **ÖLÇÜLEMEDİ, asla PASS**; dizin okunamaz → ÖLÇÜLEMEDİ. Tarayıcı baktığı msg/conn/zarf sayısını yazar.
+
+**Hedefli izole prova — `i12-offtarget-prova.js`, 8/8 PASS** (GERÇEK sink + GERÇEK SMTP konuşmaları; GERÇEK
+`scanOffTarget`; kopya mantık YOK; canlıya DOKUNULMADI):
+
+| # | Senaryo | Sonuç |
+|---|---|---|
+| E1 | izinli zarf + izinli başlık | PASS — temiz; bakılan msg=1 conn=1 zarf=2 başlık=1 |
+| **E2** | **izinli `To:` + izin DIŞI zarf alıcısı (Bcc)** | PASS — FAIL üretti; yakalama **yalnız `[rcpt]`/`[zarf]`**, `[baslik]` **YOK** |
+| **E3** | **nodemailer 7.0.11 (ürünün taşıması) `to:` izinli + `bcc:` dış** | PASS — sink İKİ alıcıyı da kabul etti; Bcc başlıkta **YOK**; kapı zarftan yakaladı |
+| E4 | `reset` modu (DATA'da kopan) + izin dışı RCPT | PASS — msg=0 ama `conn rcpt=` yakaladı |
+| E5 | `envelope=v1` işaretsiz conn (eski sink) | PASS — ÖLÇÜLEMEDİ (PASS değil) |
+| E6 | `X-I3-To`'suz teslim kaydı | PASS — ÖLÇÜLEMEDİ (başlık temiz olsa bile PASS değil) |
+| E7 | okunamayan dizin | PASS — `null` (ÖLÇÜLEMEDİ) |
+| **E8** | **sink dışarı aktarmaz** | PASS — dinleme yalnız `127.0.0.1`; teslim anında sink sürecinin **loopback-dışı uç bağlantısı 0** (Get-NetTCPConnection) |
+
+Statik: `i3-sink.js` yalnız `net`/`fs`/`path` yükler, yalnız `net.createServer` kullanır; `connect`/`createConnection`/
+`request`/`nodemailer`/`http(s)`/`tls`/`dgram`/`child_process` **YOK**; `HOST='127.0.0.1'` sabit.
+
+**E2/E3 R07 kapısıyla koşsaydı PASS verirdi** (başlıkta yalnız izinli adres var) — yani düzeltme olmadan canlıda bir
+Bcc sızıntısı kabul ölçütünden sessizce geçerdi.
+
+**CodeQL (ilk push):** prova'da veriden kurulan `RegExp` (yalnız `.` kaçışlanıyordu) **yüksek önemde** "eksik kaçışlama" uyarısı üretti; regex kurulmadan düz metin karşılaştırmasına çevrildi, prova yine 8/8.
+
+**Pin güncellemesi:** `i3-sink.js` `7D26418D…` → `0E3884FB…F7F1` · `i12-live-measure-online.js` → `76F94DC3…FC80` ·
+**PAKET DIGEST** `4992D27F…564B` → **`19DDF5FCAD12A1980B3DF8191A34231857C82FA93ABBFA35AC2E0585E3662189`**.
+Canlı koşum bu değerle doğrulanır. **CANLI KABUL HENÜZ KOŞULMADI**; sayaç 11/17, hizmet 0/8 değişmedi.
+
+#### 9.14-ek · SINK BAĞLAMA KANITI + ERKEN DURDURMA (gerçek gönderimden ÖNCE kapatılan boşluk)
+
+**Boşluk:** canlı API'nin *etkin* SMTP hedefi betikten okunamaz (sağlayıcı başlangıçta hedefini loglamaz). `.env`
+pini yalnız dotenv'in doldurduğu anahtarlarda etkilidir (dotenv mevcut süreç değişkenini EZMEZ). Önceki zincir, API'nin
+sink'e bağlandığını **ilk gönderimden önce pozitif olarak kanıtlamıyordu**; pin etkisiz olsaydı G1 yalnız FAIL yazılır ve
+**G2/G3/FD gönderimleri gerçek aktarıcıya gitmeye devam ederdi** (~7 deneme).
+
+**Statik kanıtlar (canlıda ölçüldü):** `.env`'de her ilgili anahtar **tek kez** (son-kazanır tuzağı yok) · Windows
+Machine/User ortamında `SMTP_*`/`EMAIL_*`/`CLIENT_*` değişkeni **YOK** (süreç önceliği yok) · pinli launcher SMTP/EMAIL
+ortamı **enjekte etmez** · ürün taşıması `secure: SMTP_PORT === '465'` (2529'da düz SMTP; `.env`'de TLS anahtarı YOK) ·
+FD bayrakları canlıda **zaten `true`** (pencere hiçbir özelliği AÇMAZ; pin yalnız `SMTP_HOST`/`SMTP_PORT`'u değiştirir).
+
+**Çalışma zamanı kanıtı — `I12-SINK-BINDING` + erken durdurma:** smtp fazının İLK gönderimi (G1, `.invalid` alıcı)
+BİZİM sink'imizde bağlantı üretmezse faz **orada durur** (exit 1) — en kötü durum yönlendirilemeyen adrese **tek** deneme.
+
+| İzole kanıt | Sonuç |
+|---|---|
+| **NEGATİF** — API kasıtlı olarak sink B'ye, ölçüm sink A'yı izliyor | exit **1** · `I12-SINK-BINDING` FAIL · "kalan gönderim 0" · sink B **yalnız G1**'i aldı (`rcpt=<alici-…@ah-harness.invalid>`), G2/G3/FD **HİÇ** gönderilmedi |
+| **POZİTİF** — API doğru sink'e; smtp → 65 sn → g7 | tüm gözlemler **PASS** · `I12-SINK-BINDING` PASS (delta=1) · G7 PASS (hedef 1/1, yabancı 0, dedupe 0) |
+| **Gerçek ürün postasında zarf** | zarf alıcıları **tam olarak** `{alici-, fd-, deliv-}<runId>@ah-harness.invalid` — FD/ekstre e-postalarında **gizli Bcc/Cc YOK** → izin kümesi kesin, canlıda yanlış-pozitif riski yok |
+
+**Canlı koşum betiklerinde bulunan iki yürütme hatası (canlıdan ÖNCE düzeltildi):** (1) sink'i `Start-Process
+-RedirectStandardOutput … | tr` ile başlatmak kalıtımla açılan boruyu çocukta tutar → kabuk **sonsuza dek bekler**
+(çözüm: PID dosyaya, powershell çıktısı dosyaya); (2) `node` bir **Volta shim**'idir → `Start-Process` PID'i dinleyen süreç
+DEĞİLDİR (çözüm: sink **dinleyen soket + 127.0.0.1 + komut satırı `i3-sink.js`** ile tanınır, her iki PID durdurulur).
+
+**Giriş sınırı:** smtp ve g7 fazları arasında restart yok → aynı dakikalık pencerede ~8 giriş; ürün sınırı 10/dk + 5 dk
+blok. Fazlar arasına **65 sn** bekleme konur; sağlık `/auth/login` ile **yoklanmaz** (launcher `STARTED` satırı + dinleyici
+PID eşleşmesi kullanılır).
+
+**Pin:** `i12-live-measure-online.js` → `4FA97FAB…9A4F` · **PAKET DIGEST → `19DDF5FCAD12A1980B3DF8191A34231857C82FA93ABBFA35AC2E0585E3662189`**.
