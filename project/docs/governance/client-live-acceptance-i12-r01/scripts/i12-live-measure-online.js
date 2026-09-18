@@ -181,6 +181,16 @@ async function main() {
         const connD = d(connA, connB), rowD = d(rowA, rowB);
         const rcode = (r.body && (r.body.code || r.body.reasonCode || (r.body.message && (r.body.message.code || r.body.message.reasonCode)))) || '';
         counters.push({ obs: id, smtpConnection_conn: connD, delivery_msg: 0, dbRecord_infoReq: rowD });
+        // ── ERKEN DURDURMA — HEDEF BAĞLAMA KANITI: canlı API'nin etkin SMTP hedefi betikten okunamaz. Fazın İLK
+        // gönderimi (G1) BİZİM sink'imizde bir bağlantı üretmelidir. Üretmezse (0 ya da okunamaz) API başka bir
+        // hedefe gönderiyor demektir ve SONRAKİ tüm gönderimler de oraya gider → faz BURADA durur; en kötü durum,
+        // yönlendirilemeyen `.invalid` adrese TEK deneme ile sınırlı kalır (G2/G3/FD gönderimleri hiç yapılmaz).
+        if (id === 'G1' && !(connD >= 1)) {
+          R.check('I12-SINK-BINDING', 'fazın ilk gönderimi BİZİM sink\'e ulaştı (API\'nin etkin SMTP hedefi = sink)', false,
+            `G1 sonrası sink bağlantı deltası=${connD} — API sink'e bağlanmadı; KALAN GÖNDERİMLER YAPILMADI`);
+          throw new Error('SINK BAĞLAMA KANITI YOK — API etkin SMTP hedefi sink değil; faz durduruldu (kalan gönderim 0)');
+        }
+        if (id === 'G1') R.check('I12-SINK-BINDING', 'fazın ilk gönderimi BİZİM sink\'e ulaştı (API\'nin etkin SMTP hedefi = sink)', true, `G1 sink bağlantı deltası=${connD}`);
         if (r.indeterminate || rowD === null || connD === null) { R.unmeasured(id, desc, r.indeterminateReason || 'sayaç OKUNAMADI (sıfır sayılmaz)'); continue; }
         R.check(id, `${desc}: HTTP 503 · ${code} · ClientInfoRequest YAZILMAZ (dbRecord+0) · TEK SMTP bağlantı denemesi (kör tekrar YOK)`,
           r.status === 503 && new RegExp(code).test(String(rcode)) && rowD === 0 && connD === 1,
