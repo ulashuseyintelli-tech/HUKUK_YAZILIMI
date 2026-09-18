@@ -109,7 +109,7 @@ Aşağıdaki metin canlı kabulün **tek tutarlı yürütme akışıdır** (yama
 ön koşullar → iki SMTP kaynağının pencere yönlendirmesi → betik/sha kapısı + sayaç bağlama → yedi gözlemin
 canlı kanıtı → kayıt (INSERT/UPDATE/audit) envanteri → cron kapsam izolasyonu → restart bütçesi → geri-alma/kapanış.
 
-**7.0 · Sabit kimlikler ve kapsam sınırı.** Canlı RELEASE23 `2740df3d…` (cutover CUT-20260913-200554-ec45bc63);
+**7.0 · Sabit kimlikler ve kapsam sınırı.** Canlı sürüm **R24**: kaynak `006c4dd2` → dist tam ağaç `87712E0E…5453` (3867 dosya; R24 kaydı #2704 @ `fe55fb41`; kök adı hâlâ `HY_W4_RELEASE23`). *(Düzeltme 2026-09-18 §9.15: önceki lafız "Canlı RELEASE23 `2740df3d…` (cutover CUT-20260913-200554-ec45bc63)" R24 yayınıyla BAYATLADI; `2740df3d` yalnız RELEASE23 kaynak/cutover bağlamıdır, hiçbir kapı onu pinlemez — canlı dist kapısı `87712E0E…5453`'tür.)*
 test sağlayıcı = loopback sink (`reject`/`reset`/`hang` mod dosyası); **gerçek alıcıya gönderim YOK** (alıcı
 `.invalid` + allowlist + izolasyon). **Kapsam dışı:** gerçek alıcıya gönderim · deploy/restart-tabanlı sürüm
 değişimi · canlı scheduler'a kalıcı iş ekleme · İ11'i yeniden koşma · **ürün kodu değişimi** · kapsam büyütme ·
@@ -247,7 +247,7 @@ belirlendi: **env SMTP (`SMTP_HOST/PORT`) ve `EMAIL_PROVIDER` süreç açılış
 >
 > Her restart: **owner'ın yükseltilmiş komutu** (auth) + **süre bütçesi**. Ölçülen soğuk boot spawn→listen = **~2,3 sn**
 > (izole RELEASE23 dist); canlı kutuda graceful drain + LB health-check payıyla **restart başına ≤120 sn** operasyonel
-> bütçe, öncesi/sonrası env değeri sha pin'iyle kaydedilir. Canlı sürüm `2740df3d` DEĞİŞMEZ (yalnız env + restart).
+> bütçe, öncesi/sonrası env değeri sha pin'iyle kaydedilir. Canlı sürüm (R24 dist `87712E0E…5453`) DEĞİŞMEZ (yalnız env + restart).
 
 **Geri-alma (rollback) · kurtarma · SIR-KORUMA.** Hedef tenant Office SMTP'si canlıda `I12_LIVE_CONFIRM=1 node
 i12-live-window.js close <tenantId>` ile özgün host/port/secure'a döner (satır yoktuysa oluşturulan satır SİLİNİR);
@@ -991,3 +991,113 @@ blok. Fazlar arasına **65 sn** bekleme konur; sağlık `/auth/login` ile **yokl
 PID eşleşmesi kullanılır).
 
 **Pin:** `i12-live-measure-online.js` → `4FA97FAB…9A4F` · **PAKET DIGEST → `19DDF5FCAD12A1980B3DF8191A34231857C82FA93ABBFA35AC2E0585E3662189`**.
+
+### 9.15 İ12 CANLI KABUL KOŞUMU — runId `92d04ef3` · 2026-09-18 · **KAPANIŞ PASS**
+
+**Yetki:** mevcut owner İ12 canlı GO'su. GO ref'i owner kendi makinesinde girdi. Değer yalnız erişim listesi kısıtlı (ACL'li) devir dosyasında tutuldu; bu belgeye, repoya ya da mesajlara YAZILMADI. Kanıt dizininde literal olarak geçtiği dosya sayısı **0**.
+Yükseltilmiş yetki gerektiren adımları (Blok 1–4) owner çalıştırdı; S1–S4'ü CLIENT koştu.
+
+**Paket:**
+- R08 (#2708 @ `1736a4e6`) · paket digest `19DDF5FC…2189`
+- canlı dist `87712E0E…5453` · launcher `CC634BBF…` · sink `0E3884FB…`
+
+**Eşzamanlı yürütücü:**
+- OFFICE 33, 2026-09-18'de açık ya da planlı bir canlı işlem olmadığını bildirdi. Pencere boyunca görevlere, `.env`'e ve firewall'a dokunmayacağını taahhüt etti. Bu bir meslektaş teyididir, yetki değildir.
+- CLIENT'in bağımsız ölçümü: i12/sink süreci 0 · pencere kuralı 0.
+
+**Pencere öncesi koşul — env-SMTP tüm süreç için geçerlidir.**
+Kaynak envanteri iki şey gösterdi:
+- env taşımasına (`EmailProviderService`) ulaşan **cron ya da otomatik iş YOK**;
+- gerçek kullanıcıların tetiklediği gönderimler için **susturma bayrağı YOK** (dosya açılışında otomatik bilgi talebi, public şifre sıfırlama, davet, FD yayını…).
+
+Bu yüzden önleme İ11 K-T6 mekanizmasıyla yapıldı:
+- Web görevi durduruldu ve **devre dışı** bırakıldı. Başlangıç durumu kaydedildi: `enabled=True`, `Running`, dinliyor.
+- İki kesin adlı inbound engel kuralı eklendi: `I12-WINDOW-BLOCK-{8080,3002}-92d04ef3`.
+- Yeniden başlatmadan sonra uzak bağlantı sayısı **0** ölçüldü.
+
+**Loopback teknik olarak ENGELLENMEZ.** Önleme, sunucudaki hiçbir oturumdan (owner dahil, yerel ya da RDP) uygulamanın kullanılmaması **koşuluna** dayandı. NOREALSEND ve OFFTARGET kontrolleri bir ihlali önlemez; yalnız **sonradan** tespit eder.
+
+| Adım | Kim | Sonuç |
+|---|---|---|
+| Blok 1 | owner | Kapılar geçti. `.env` yedeği alındı (ön-sha `7A7228B1…`). ACL'li devir dosyası oluştu. |
+| Tazelik | CLIENT | Devir dosyası ACL'i yalnız kullanıcı/SYSTEM/Administrators. `.env` = ön-sha. main senkron. Paket betikleri değişmemiş. API pid 34444. |
+| S1 | CLIENT | cron-guard 0 · preflight pre/post 0. Sink pid 51452 @ 127.0.0.1:2529. **Kurulum (ilk yazma):** tenant `ah-92d04ef3`. Pencere açma: `othersUnchanged` · `secretsUntouched` · `originalPreserved`. |
+| Blok 2 (önce DryRun) | owner | Web durdu ve devre dışı. 2 kural etkin. `.env` pinli (sha `42404597…`). API pid 43236. DB `127.0.0.1:5432/hukuk_db`. G7 route = 1. Uzak bağlantı 0. |
+| S2 | CLIENT | smtp **10/10 PASS** → 65 sn → g7 **4/4 PASS**. Arada restart YOK. |
+| Blok 3 | owner | Yalnız `EMAIL_PROVIDER=mock`. API pid 21672. Önlem sürüyor. |
+| S3 | CLIENT | mock **3/3 PASS**. |
+| Blok 4 | owner | `.env` = ön-sha `7A7228B1…`. SDDL tabanla EŞİT. API pid 42612. Yalnız bu koşumun 2 kuralı kaldırıldı. Web başlangıç durumuna döndü (etkin, 3002 dinliyor). |
+| S4 | CLIENT | Kurtarma exit 0: Office rollback ve nihai erişim kapanışı (hedef ve yabancı tenant'ta aktif kullanıcı 0). Sink durdu (2529 = 0). V1–V4 · NOREALSEND · GO ref tüketim kaydı (yalnız sha256) · manifest. |
+
+**Canlı ölçümler — 17/17 PASS · FAIL 0 · ÖLÇÜLEMEYEN 0**
+
+smtp fazı:
+- `H5-00-ISO-SMTP` · `I12-SINK-BINDING` (G1'de sink bağlantı deltası = 1).
+- **G1:** 503 `CLIENT_INFO_REQUEST_EMAIL_FAILED` · dbRecord +0 · smtpConn +1.
+- **G2:** 503 `…EMAIL_INDETERMINATE` · dbRecord +0 · smtpConn +1.
+- **G3:** 201 PUBLISHED, providerMessageId var · SENT +1 / PUBLISHED +1 · delivery +1.
+- **G6:** SENT ≠ PUBLISHED.
+- **G4:** 409 `DISCLOSURE_PUBLICATION_STATUS_INVALID` · sıfır delta.
+- **FD-RED / FD-TMO:** SEND_FAILED · smtpConn +1 · delivery +0.
+- `I12-OFFTARGET`: PASS.
+
+g7 fazı:
+- `H5-00-ISO-G7`.
+- **G7:** 201 · hedef tenant'ta delivery +1 ve ledger SENT +1 · YABANCI tenant'ta +0 · ikinci tetikte +0.
+- `G7-AUTH-REACH`: 201.
+- `I12-OFFTARGET`: PASS.
+
+mock fazı:
+- `H5-00-ISO-MOCK`.
+- **G5:** 403 `DISCLOSURE_PUBLICATION_PROVIDER_NOT_PRODUCTION` · durum `SEND_PENDING` · smtpConn +0.
+- `I12-OFFTARGET`: PASS.
+
+**Bağımsız kapanış doğrulaması — 10/10 PASS** (ayrı süreç, READ ONLY)
+- **V1:** üç fazda da zorunlu gözlem kimliklerinin hepsi PASS.
+- **V2 — nihai hedef dışı taraması** (TÜM sink yakalaması):
+  - msg 2 · conn 9 · zarf alıcısı 6 · başlık alıcısı 2.
+  - Adresler yalnız `alici-/fd-/deliv-92d04ef3@ah-harness.invalid`.
+  - Hedef dışı 0 · zarf kanıt boşluğu 0.
+- **V3:**
+  - Hedef tenant: aktif 0 / toplam 9.
+  - Yabancı tenant: aktif 0 / toplam 0. Bu tenant tasarım gereği kullanıcısızdır (`i3-lib.js` setup).
+  - Hedef Office'in 3 alanı rollback'teki özgün değerlere eşit.
+  - Diğer tenant'ların Office parmak izi önce ve şimdi aynı: `4E1C8669F6E7A5CA`.
+- **V4:** `.env` = ön-sha · Web ve kural durumu başlangıç kaydına uygun · SDDL eşit.
+
+**Doğrulayıcı kusuru (açık kayıt):**
+- Doğrulayıcının ilk koşumu iki kalemde ÖLÇÜLEMEYEN verdi. Neden ürün değil, doğrulayıcının kendi ölçütüydü:
+  - yabancı tenant için "toplam > 0" şartı aranmıştı;
+  - `othersBefore` sayı dizisi sanılmıştı, oysa bir parmak izidir.
+- Düzeltmeden sonra yalnız salt okuma yapan doğrulama yeniden koşuldu. Kurtarma ve gönderim tekrarlanmadı.
+- İlk sonuç `closure-verify-r1-verifier-defect.json` olarak saklandı.
+
+**I12-NOREALSEND — PASS · 12/12 ölçüldü · toplam 0** (pencere `19:34:57Z → 20:00:58Z`, READ ONLY)
+Sentetik olmayan tenant'larda şu env-yolu izleri arandı, hiçbiri bulunmadı:
+- `ClientInfoRequest` sent/reminder
+- `ClientNotification ADRES_TALEP`
+- `AddressAuditLog CLIENT_NOTIFICATION_SENT`
+- `ExpenseAuditLog REMINDER_SENT`
+- parola sıfırlama, davet ve FD gönderimi audit kayıtları · `INFO_REQUEST_*` komutları
+- FD `sendRequestedAt` / `providerAcceptedAt`
+- `UserInvite`, `PasswordResetToken`, portal sıfırlama
+
+Kontrolün kör olmadığı pencere öncesi taban ölçümüyle gösterildi: son 90 günde 49 iz.
+
+**Kör nokta:** B1–B3'ün BAŞARISIZ denemeleri DB'de iz bırakmaz. Bu nedenle bu kontrol, V2 sink taramasıyla BİRLİKTE okunmalıdır.
+
+**CLAIM / RECLAIM / HANG — CANLIDA ÖLÇÜLMEDİ.** Owner kararı "yalnız kaydet". Kanıtları §9.2'deki **disposable** koşumdur (`i12-gaps2`). Bu kanıtlar canlı sonuçlardan AYRI tutulur ve canlı kabul sayısına eklenmez.
+
+**Kanıt** (paket dışı, sır içermez)
+- Dizin: `Documents\CLIENT-EVIDENCE-20260911\i12-live-92d04ef3-20260918-222026\`
+- `SHA256-MANIFEST.txt`: 55 dosya, sha `D4007000A1F683B5E2585E455E6EB0F270F9ABA7BFF14A18DD6776A131A8B64B`
+- İçerik: faz kanıtları, closure-verify, norealsend, recover-final, owner-block1–4 kayıtları ve `chain/` altında koşulan blok ve betiklerin kopyaları.
+
+**Kalan durum:**
+- Sentetik tenant'lar `ah-92d04ef3` ve `ah-92d04ef3-x` KORUNUR (finansal ve audit kanıtı). Tüm kullanıcıları pasif.
+- Canlı `.env` = ön-sha · API :8080 pid 42612 · Web :3002 ayakta · pencere kuralı 0 · 2529 = 0.
+
+**Karar:** İ12 **KAPANDI**.
+- Yedi gözlem canlıda PASS; güvenli kapanış ve bağımsız doğrulama PASS.
+- Sayaç **14/18**.
+- **Hizmet kabulü (H6 dahil) DEĞİŞMEZ — 0/8.** Owner kabulü ayrıdır.
