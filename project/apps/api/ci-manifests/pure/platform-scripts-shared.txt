@@ -788,3 +788,29 @@ src/tests/ai-suggestions.spec.ts
 src/tests/automation.spec.ts
 src/tests/form-type.spec.ts
 src/tests/form-validation.spec.ts
+
+# ── PDF-POPPLER ONARIMI (owner GO 2026-09-18 "OFFICE / KALAN 24 SPEC — PDF-POPLER ONARIMI") ──
+#   Bu spec'ler Windows'ta geciyordu ama Linux CI'da baglanamazdi: import zincirleri
+#   ocr.service'in ust-seviye require('pdf-poppler')'ini yukluyor; pdf-poppler/index.js
+#   os.platform() darwin/win32 degilse YUKLENIRKEN process.exit(1) cagirip jest surecini
+#   (ve manifestin tamamini) olduruyordu. Onarim yalniz TEST ICINDE: CI'da kosan emsal
+#   (collection/__tests__/receipt-public-entrypoints-authorization.contract.spec.ts) deseninde
+#   hoisted jest.mock('pdf-poppler') — stub convert() FIRLATIR (sessiz basari yok).
+#   Test amaci korundu: hicbiri PDF->goruntu donusumunu dogrulamaz; tanilama kosumunda
+#   (pdf-poppler yerine sayacli stub, 11/11 dosyada yuklendigi pozitif kontrolle kanitli)
+#   convert() cagri sayisi 0. Windows 11/11 · 109/109 PASS; Linux simulasyonu 11/11 · 109/109
+#   PASS (mock'suz orijinal kopya ayni harness'ta FAIL). Urun/fixture/beklenti DEGISMEDI;
+#   skip/todo YOK; yeni job/Jest cagrisi YOK.
+#   Bu manifeste 9 spec — kardesler: ayni manifestteki 12 bagli ocr spec'i (debt-instrument-grouping,
+#   pdf-segmentation, page-candidate-extractor ...); case-responsibility-at-warn-only -> WP-4d serisi
+#   (report-warn-only, warn-only-audit.service); case-delete-hard-guard -> gercek
+#   PermissionHardGuardService (permission-hard-guard.service.spec).
+src/modules/ocr/__tests__/debt-instruments-derivation.spec.ts
+src/modules/ocr/__tests__/multi-instrument-wiring.spec.ts
+src/modules/ocr/__tests__/ocr-ai-json-parse.spec.ts
+src/modules/ocr/__tests__/ocr-controller-upload-limit.spec.ts
+src/modules/ocr/__tests__/poa-client-phone-guard.spec.ts
+src/modules/ocr/__tests__/poa-limited-guard.spec.ts
+src/tests/ocr.spec.ts
+src/modules/case/__tests__/case-responsibility-at-warn-only.spec.ts
+src/modules/case/__tests__/case-delete-hard-guard.spec.ts
