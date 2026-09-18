@@ -12,7 +12,7 @@ import type { AuditActor } from "../client/client.service";
 import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
 import * as bcrypt from "bcrypt";
 import { toCuratedAssetQuery } from "./asset-query-projection";
-import { isLoginableLifecycle } from "../tenant/tenant-lifecycle";
+import { ACTIVE_TENANT_LIFECYCLE, isLoginableLifecycle } from "../tenant/tenant-lifecycle";
 
 /**
  * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 +
@@ -407,8 +407,8 @@ export class PortalService {
     }
 
     // CLIENT-PSUS (owner kararı 2026-09-19): ACTIVE olmayan tenant'ın portal kullanıcısı GİRİŞ YAPAMAZ. Personel
-    // `login()` ile aynı yüklem ve aynı sıra: kontrol bcrypt'ten SONRA (lifecycle zamanlama üzerinden sızmaz) ve mesaj
-    // yanlış-parola dalıyla BİREBİR AYNI. Giriş sayacı/lastLoginAt YAZILMAZ.
+    // `login()` ile aynı yüklem ve aynı sıra: kontrol bcrypt'ten SONRA (personel tarafındaki gerekçeyle aynı kod sırası;
+    // süre eşitliği ölçülmüş bir güvence DEĞİLDİR) ve mesaj yanlış-parola dalıyla BİREBİR AYNI. Giriş sayacı/lastLoginAt YAZILMAZ.
     if (!isLoginableLifecycle(portalUser.client?.tenant?.lifecycle)) {
       throw new UnauthorizedException("Geçersiz e-posta veya şifre");
     }
@@ -673,10 +673,14 @@ export class PortalService {
     // findFirst+updateMany iki adıma bölünseydi atomik token-tüketim garantisi bozulurdu
     // (bkz. yukarıdaki tek-updateMany rationale) — bu nedenle bu olay için ayrıca
     // entity-attributed audit satırı YAZILMAZ (mevcut atomic-only tasarım korunur).
+    // CLIENT-PSUS: tenant ACTIVE değilse askıdan ÖNCE üretilmiş bir sıfırlama token'ı da KULLANILAMAZ. Yüklem aynı
+    // atomik `updateMany`'nin WHERE'ine eklenir (ayrı ön-okuma YOK → atomik tüketim korunur): eşleşme olmaz, parola
+    // değişmez, token TÜKETİLMEZ (askıda hiçbir yazma yok) ve cevap geçersiz/süresi dolmuş token ile AYNIDIR.
     const result = await this.prisma.clientPortalUser.updateMany({
       where: {
         resetToken: tokenHash,
         resetTokenExp: { gt: new Date() },
+        client: { tenant: { lifecycle: ACTIVE_TENANT_LIFECYCLE } },
       },
       data: {
         passwordHash,

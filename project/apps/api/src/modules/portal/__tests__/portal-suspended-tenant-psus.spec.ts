@@ -3,9 +3,11 @@
  *
  *  - PortalAuthGuard: tenant ACTIVE değilse önceden üretilmiş geçerli token bir SONRAKİ istekte reddedilir; mesaj
  *    diğer nedenlerle AYNI ("Geçersiz token"); lifecycle okunamazsa fail-closed. Guard DB'ye YAZMAZ.
- *  - login: ACTIVE olmayan tenant → yanlış-parola dalıyla BİREBİR AYNI mesaj; bcrypt karşılaştırması YİNE yapılır
- *    (zamanlama sızmaz); lastLoginAt/loginCount YAZILMAZ; token ÜRETİLMEZ.
+ *  - login: ACTIVE olmayan tenant → yanlış-parola dalıyla BİREBİR AYNI mesaj; bcrypt karşılaştırması YİNE çağrılır (kod
+ *    sırası — zamanlama eşitliği bu testlerle ÖLÇÜLMEZ); lastLoginAt/loginCount YAZILMAZ; token ÜRETİLMEZ.
  *  - şifre sıfırlama talebi: token üretilmez, e-posta gönderilmez; dış cevap bilinmeyen kullanıcıyla aynı.
+ *  - askıdan ÖNCE üretilmiş sıfırlama token'ı: kullanılamaz (atomik WHERE'de tenant ACTIVE), token tüketilmez, parola
+ *    değişmez; cevap geçersiz token ile aynı. NOT: bu birim testleri CEVAP EŞİTLİĞİNİ ölçer, ZAMANLAMA eşitliğini ÖLÇMEZ.
  *  - Yeniden etkinleştirme: kontrol TENANT düzeyindedir, ClientPortalUser'a dokunmaz → tenant ACTIVE'e dönünce
  *    AYRICA kapatılmış (isActive=false) portal kullanıcısı KENDİLİĞİNDEN AÇILMAZ.
  */
@@ -72,10 +74,28 @@ describe("CLIENT-PSUS — askıdaki tenant'ta portal erişimi kapalı", () => {
       const ok = await svc.login("a@x.com", "Sifre123").catch((e) => e.message);
       const wrong = await (await svcWith("ACTIVE")).svc.login("a@x.com", "YANLIS").catch((e) => e.message);
       expect(ok).toBe(wrong);
-      expect(spy).toHaveBeenCalled();                      // bcrypt maliyeti ödenir — zamanlama sızmaz
+      expect(spy).toHaveBeenCalled();                      // bcrypt yolu yine çağrılır (kod sırası; süre ÖLÇÜLMEZ)
       expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
       expect(jwt.sign).not.toHaveBeenCalled();
       spy.mockRestore();
+    });
+  });
+
+  describe("askıdan ÖNCE üretilmiş sıfırlama token'ının KULLANIMI", () => {
+    it("atomik updateMany WHERE'i tenant ACTIVE yüklemini içerir (ayrı ön-okuma YOK)", async () => {
+      const prisma: any = { clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn() } };
+      const svc = new PortalService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any);
+      await svc.resetPassword("raw", "YeniSifre123");
+      expect(prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
+      expect(prisma.clientPortalUser.updateMany.mock.calls[0][0].where.client).toEqual({ tenant: { lifecycle: "ACTIVE" } });
+    });
+    it("askıdaki tenant (eşleşme 0) → geçersiz/süresi dolmuş token ile AYNI 400; parola/token yazılmaz", async () => {
+      const prisma: any = { clientPortalUser: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) } };
+      const svc = new PortalService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any);
+      const suspended = await svc.resetPassword("raw", "YeniSifre123").catch((e) => e.message);
+      const invalid = await svc.resetPassword("baska", "YeniSifre123").catch((e) => e.message);
+      expect(suspended).toBe("Geçersiz veya süresi dolmuş token");
+      expect(suspended).toBe(invalid);
     });
   });
 
