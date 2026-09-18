@@ -313,6 +313,11 @@ src/modules/portal/__tests__/portal-token-version-revocation.spec.ts
 #     hic acilmaz), aktorsuzde fail-closed ve yetkilide MEVCUT davranisi sabitler. SAF birim testi.
 #     Mutasyon kaniti: kapi kaldirilinca 7/7, yazmadan sonraya tasininca 6/7 DUSER.
 src/modules/portal/__tests__/portal-access-management-authority-a5.spec.ts
+#   CLIENT-K1 (İ16 K-1, owner kararı 2026-09-19 (a)) portal caseId referans doğrulaması — üç uç (müvekkil belge yükleme ·
+#     müvekkil mesajı · büro mesajı) × yabancı tenant / aynı tenant başka müvekkil / bulunmayan / biçimsiz → AYNI 400 +
+#     yazma 0; geçerli ilişki → yazılır; aktör kapsamı (müvekkil showToClient, personel değil); reddedilen yüklemede
+#     diskteki dosya silinir. SAF birim testi.
+src/modules/portal/__tests__/portal-case-reference-k1.spec.ts
 #
 #   CODEX-CLIENT-X1 notification surface validation and characterization (SAF, DB-siz)
 #     CN-2 decorated DTO validation; CN-3/CN-4 provider error and URL-query secret

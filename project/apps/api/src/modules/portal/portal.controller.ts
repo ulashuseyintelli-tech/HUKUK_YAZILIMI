@@ -16,7 +16,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { diskStorage } from "multer";
-import { extname } from "path";
+import { extname, resolve, sep } from "path";
 import { existsSync, unlinkSync } from "fs";
 import {
   assertSafeSegment,
@@ -311,18 +311,37 @@ export class PortalController {
       throw new BadRequestException("Dosya yüklenmedi");
     }
 
-    return this.portalService.uploadDocument({
-      clientId: req.portalUser.clientId,
-      tenantId: req.portalUser.tenantId,
-      caseId: body.caseId,
-      type: body.type || "DIGER",
-      title: body.title || file.originalname,
-      description: body.description,
-      fileName: file.originalname,
-      filePath: file.path,
-      fileSize: file.size,
-      mimeType: file.mimetype,
-    });
+    try {
+      return await this.portalService.uploadDocument({
+        clientId: req.portalUser.clientId,
+        tenantId: req.portalUser.tenantId,
+        caseId: body.caseId,
+        type: body.type || "DIGER",
+        title: body.title || file.originalname,
+        description: body.description,
+        fileName: file.originalname,
+        filePath: file.path,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      });
+    } catch (err) {
+      // CLIENT-K1: kayıt reddedilirse (ör. geçersiz caseId) multer'ın bu istek için yazdığı dosya diskte sahipsiz
+      // kalmaz. Silmeden ÖNCE yol, indirme/silme uçlarıyla AYNI kapsama denetiminden geçer (principal tenant'ının
+      // PORTAL_DOCUMENTS kovası içinde olmalı; dışarıdaysa/reparse ise SİLİNMEZ). Hata aynen yeniden fırlatılır.
+      // Kova kökü DOĞRULANMIŞ aktörün tenant'ından (PortalAuthGuard → DB) gelir; istemci girdisinden değil.
+      // Yol normalize edilir ve kova önekiyle sınırlanır; ardından mevcut reparse/TOCTOU denetimi (assertContained)
+      // AYRICA uygulanır. Silme yalnız bu korumanın içinde yapılır.
+      try {
+        const storage = runtimeStoragePaths();
+        const bucketRoot = storage.resolveBucketDir("PORTAL_DOCUMENTS", req.portalUser.tenantId);
+        const candidate = resolve(file.path);
+        if (candidate.startsWith(bucketRoot + sep)) {
+          storage.assertContained("PORTAL_DOCUMENTS", candidate, req.portalUser.tenantId);
+          if (existsSync(candidate)) unlinkSync(candidate);
+        }
+      } catch { /* kapsam dışı yol ya da temizlik hatası asıl hatayı gizlemez */ }
+      throw err;
+    }
   }
 
   /**
