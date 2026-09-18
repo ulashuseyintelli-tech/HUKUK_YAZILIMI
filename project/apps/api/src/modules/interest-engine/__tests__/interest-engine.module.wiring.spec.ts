@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { InterestEngineModule } from '../interest-engine.module';
 import { TBK100AllocatorService } from '../allocation/tbk100-allocator.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { ErrorLogModule } from '../../error-log/error-log.module';
 
 /**
  * Regresyon: TBK100AllocatorService InterestEngineModule providers'da olup
@@ -12,7 +13,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 describe('InterestEngineModule wiring', () => {
   it('exports TBK100AllocatorService so importing modules can resolve it', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [InterestEngineModule],
+      imports: [InterestEngineModule, ErrorLogModule],
     })
       .overrideProvider(PrismaService)
       .useValue({})
@@ -20,5 +21,7 @@ describe('InterestEngineModule wiring', () => {
 
     const allocator = moduleRef.get(TBK100AllocatorService, { strict: false });
     expect(allocator).toBeInstanceOf(TBK100AllocatorService);
+
+    await moduleRef.close();
   });
 });

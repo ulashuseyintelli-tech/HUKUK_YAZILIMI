@@ -3,6 +3,7 @@ import { PrismaService } from "../../../prisma/prisma.service";
 import { CaseBalanceService } from "../../interest-engine/orchestration/case-balance.service";
 import { DebtorScoringModule } from "../debtor-scoring.module";
 import { DebtorScoringService } from "../debtor-scoring.service";
+import { ErrorLogModule } from "../../error-log/error-log.module";
 
 /**
  * DEBTOR-SCORING PR-2C — module registration smoke testi.
@@ -17,7 +18,7 @@ import { DebtorScoringService } from "../debtor-scoring.service";
 describe("DebtorScoringModule (PR-2C — DI wiring smoke test)", () => {
   it("modül derlenir ve DebtorScoringService çözülebilir", async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [DebtorScoringModule],
+      imports: [DebtorScoringModule, ErrorLogModule],
     })
       .overrideProvider(PrismaService)
       .useValue({})

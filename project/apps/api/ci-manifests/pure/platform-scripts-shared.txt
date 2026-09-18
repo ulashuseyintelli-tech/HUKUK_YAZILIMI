@@ -814,3 +814,17 @@ src/modules/ocr/__tests__/poa-limited-guard.spec.ts
 src/tests/ocr.spec.ts
 src/modules/case/__tests__/case-responsibility-at-warn-only.spec.ts
 src/modules/case/__tests__/case-delete-hard-guard.spec.ts
+
+# ── DI WIRING ONARIMI (owner GO 2026-09-18 "OFFICE / KALAN 13 SPEC — UC DI TESTININ ONARIMI") ──
+#   Bu iki spec UYGULAMA BILESIMINI dogrular (kendi yorumlari: 'gercek NestJS DI grafiginde',
+#   'importing modules can resolve it'). #2070 (2026-08-01) RateSyncService'e IntegrationErrorReporter
+#   enjekte etti; saglayici @Global ErrorLogModule YALNIZ AppModule'da (app.module.ts:213). Spec'ler
+#   2026-07'den beri CI disi oldugu icin sessizce kirildi. Onarim test ici: testing module imports'a
+#   ErrorLogModule (uretimdeki bilesimi yansitir); PrismaService override'i ve iddialar AYNEN;
+#   interest-engine spec'ine yalniz moduleRef.close() eklendi. ErrorLogModule saglayicilari yalniz
+#   DI kurucusu; retention @Cron'u yalniz init/bootstrap'ta kaydolur (testler yalniz compile()).
+#   DB env TANIMSIZ, --forceExit YOK, --detectOpenHandles: 2/2 PASS, acik handle 0.
+#   Kardes: 8 bagli debtor-scoring + 25 bagli saf interest-engine spec'i bu manifestte.
+#   NOT: summary-engine.module.wiring BAGLANMADI — ikinci global (StorageModule) de gerekiyor.
+src/modules/debtor-scoring/__tests__/debtor-scoring.module-registration.spec.ts
+src/modules/interest-engine/__tests__/interest-engine.module.wiring.spec.ts
