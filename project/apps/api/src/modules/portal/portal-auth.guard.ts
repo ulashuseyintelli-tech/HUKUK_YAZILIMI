@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../../prisma/prisma.service";
+import { isLoginableLifecycle } from "../tenant/tenant-lifecycle";
 
 interface PortalTokenPayload {
   sub: string;
@@ -50,7 +51,7 @@ export class PortalAuthGuard implements CanActivate {
           clientId: true,
           isActive: true,
           tokenVersion: true,
-          client: { select: { tenantId: true } },
+          client: { select: { tenantId: true, tenant: { select: { lifecycle: true } } } },
         },
       });
 
@@ -63,6 +64,15 @@ export class PortalAuthGuard implements CanActivate {
       }
 
       if (claimedVersion !== portalUser.tokenVersion) {
+        throw new UnauthorizedException("Geçersiz token");
+      }
+
+      // CLIENT-PSUS (owner kararı 2026-09-19): tenant ACTIVE değilse (QUIESCING/SUSPENDED/RETIRED/PROVISIONING)
+      // portal erişimi KAPALIDIR; önceden üretilmiş geçerli token bir SONRAKİ istekte reddedilir. Personel tarafındaki
+      // `validateUser` ile AYNI yüklem (`isLoginableLifecycle`) kullanılır; kontrol kullanıcı değil TENANT düzeyindedir,
+      // bu yüzden ClientPortalUser satırına YAZILMAZ — yeniden etkinleştirme, ayrıca kapatılmış kullanıcıyı açmaz.
+      // Ret nedeni diğerleriyle AYNI genel mesaja düşer (yaşam döngüsü yanıta yansımaz). Lifecycle okunamazsa fail-closed.
+      if (!isLoginableLifecycle(portalUser.client.tenant?.lifecycle)) {
         throw new UnauthorizedException("Geçersiz token");
       }
 

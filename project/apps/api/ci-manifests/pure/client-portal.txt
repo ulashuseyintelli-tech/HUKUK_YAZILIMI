@@ -318,6 +318,10 @@ src/modules/portal/__tests__/portal-access-management-authority-a5.spec.ts
 #     yazma 0; geçerli ilişki → yazılır; aktör kapsamı (müvekkil showToClient, personel değil); reddedilen yüklemede
 #     diskteki dosya silinir. SAF birim testi.
 src/modules/portal/__tests__/portal-case-reference-k1.spec.ts
+#   CLIENT-PSUS (owner kararı 2026-09-19) askıdaki tenant'ta portal erişimi kapalı — guard (mevcut token bir sonraki
+#     istekte 401, aynı mesaj, yazma yok, fail-closed) · login (yanlış parolayla aynı mesaj, bcrypt yine koşar, giriş
+#     kaydı/token yok) · şifre sıfırlama (token/e-posta yok) · yeniden etkinleştirme kapatılmış kullanıcıyı açmaz.
+src/modules/portal/__tests__/portal-suspended-tenant-psus.spec.ts
 #
 #   CODEX-CLIENT-X1 notification surface validation and characterization (SAF, DB-siz)
 #     CN-2 decorated DTO validation; CN-3/CN-4 provider error and URL-query secret
