@@ -29,7 +29,7 @@ const dbRow = (over: any = {}) => ({
   clientId: "C1",
   isActive: true,
   tokenVersion: 0,
-  client: { tenantId: "T1" },
+  client: { tenantId: "T1", tenant: { lifecycle: "ACTIVE" } },
   ...over,
 });
 
@@ -53,7 +53,7 @@ describe("PortalAuthGuard — CLIENT-P2-U02 DB-backed fail-closed doğrulama", (
     expect(request.portalUser).toEqual({ id: "PU1", sub: "PU1", clientId: "C1", tenantId: "T1", tokenVersion: 0 });
     expect(prisma.clientPortalUser.findUnique).toHaveBeenCalledWith({
       where: { id: "PU1" },
-      select: { id: true, clientId: true, isActive: true, tokenVersion: true, client: { select: { tenantId: true } } },
+      select: { id: true, clientId: true, isActive: true, tokenVersion: true, client: { select: { tenantId: true, tenant: { select: { lifecycle: true } } } } },
     });
   });
 
@@ -120,7 +120,7 @@ describe("PortalAuthGuard — CLIENT-P2-U02 DB-backed fail-closed doğrulama", (
   it("[9] payload.tenantId ≠ DB (client.tenantId) → DENY", async () => {
     const { guard } = buildGuard({
       verify: jest.fn().mockResolvedValue(payload({ tenantId: "OTHER-TENANT" })),
-      findUnique: jest.fn().mockResolvedValue(dbRow({ client: { tenantId: "T1" } })),
+      findUnique: jest.fn().mockResolvedValue(dbRow({ client: { tenantId: "T1", tenant: { lifecycle: "ACTIVE" } } })),
     });
     await expect(guard.canActivate(buildContext("tok").ctx)).rejects.toBeInstanceOf(UnauthorizedException);
   });

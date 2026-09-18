@@ -57,7 +57,7 @@ function buildService(over: any = {}) {
 
 describe('createResetToken', () => {
   it('[1] kullanıcı mevcut → hash DB\'ye yazılır, ham token DB\'ye YAZILMAZ, tek e-posta allowlisted URL ile gönderilir', async () => {
-    const { svc, prisma, emailProvider } = buildService({ foundUser: { id: 'PU1', email: 'a@x.com' } });
+    const { svc, prisma, emailProvider } = buildService({ foundUser: { id: 'PU1', email: 'a@x.com', client: { tenant: { lifecycle: 'ACTIVE' } } } });
 
     const res = await svc.createResetToken('a@x.com');
     expect(res).toEqual({ success: true });
@@ -87,7 +87,7 @@ describe('createResetToken', () => {
   });
 
   it('[1a] CLIENT-SEC-P01: reset linkinde `?token=` query parametresi YOK, token yalnız fragment\'ta', async () => {
-    const { svc, emailProvider } = buildService({ foundUser: { id: 'PU1', email: 'a@x.com' } });
+    const { svc, emailProvider } = buildService({ foundUser: { id: 'PU1', email: 'a@x.com', client: { tenant: { lifecycle: 'ACTIVE' } } } });
     await svc.createResetToken('a@x.com');
 
     const emailArg = emailProvider.send.mock.calls[0][0];
@@ -112,7 +112,7 @@ describe('createResetToken', () => {
     // yaptığı fragment-parse işlemi birebir tekrarlanır, (3) çıkarılan ham token
     // resetPassword()'a verilir ve backend'in beklediği hash ile eşleşir.
     const { svc, prisma, emailProvider } = buildService({
-      foundUser: { id: 'PU1', email: 'a@x.com' },
+      foundUser: { id: 'PU1', email: 'a@x.com', client: { tenant: { lifecycle: 'ACTIVE' } } },
       updateManyResult: { count: 1 },
     });
 
@@ -143,7 +143,7 @@ describe('createResetToken', () => {
 
   it('[3] e-posta sağlayıcısı {success:false} döner → yine {success:true}, dış cevap DEĞİŞMEZ', async () => {
     const { svc } = buildService({
-      foundUser: { id: 'PU1', email: 'a@x.com' },
+      foundUser: { id: 'PU1', email: 'a@x.com', client: { tenant: { lifecycle: 'ACTIVE' } } },
       emailProvider: { send: jest.fn().mockResolvedValue({ success: false, errorCode: 'SMTP_ERROR', provider: 'smtp' }) },
     });
     const res = await svc.createResetToken('a@x.com');
@@ -152,7 +152,7 @@ describe('createResetToken', () => {
 
   it('[3b] e-posta gönderimi THROW eder → yine {success:true}, throw dışa YANSIMAZ', async () => {
     const { svc } = buildService({
-      foundUser: { id: 'PU1', email: 'a@x.com' },
+      foundUser: { id: 'PU1', email: 'a@x.com', client: { tenant: { lifecycle: 'ACTIVE' } } },
       emailProvider: { send: jest.fn().mockRejectedValue(new Error('network down')) },
     });
     const res = await svc.createResetToken('a@x.com');

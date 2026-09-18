@@ -56,7 +56,7 @@ describe("PortalService — CLIENT-P2-U02 tokenVersion revocation trigger'ları"
         clientId: "C1",
         passwordHash: await bcrypt.hash("Sifre123", 10),
         tokenVersion: 7,
-        client: { id: "C1", displayName: "Ali", tenantId: "T1", type: "PERSON" },
+        client: { id: "C1", displayName: "Ali", tenantId: "T1", type: "PERSON", tenant: { lifecycle: "ACTIVE" } },
       },
     });
 
