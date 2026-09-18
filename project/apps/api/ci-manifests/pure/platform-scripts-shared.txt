@@ -374,6 +374,29 @@ src/modules/policy-engine/__tests__/cpe-tenant-scope-security.spec.ts
 src/modules/policy-engine/decorators/__tests__/cpe-required.guard.spec.ts
 src/scripts/__tests__/adr014-session-observation-facts.security.spec.ts
 
+# ── REPORT modulu (owner GO 2026-09-18 "OFFICE / REPORT MODULU CI PAKETI") ─────
+# Modulde 6 spec vardi ve TAMAMI secim disiydi (0/6 bagli). Hepsi DB-siz; siniflandirma
+# belirtece DEGIL, bagimliligin NASIL saglandigina dayanir:
+#   ReportService'e `prisma` EL YAPIMI nesne literali olarak verilir
+#     (ornek: `const prisma: any = { case: { findMany } }`); gercek DB baglantisi YOK.
+#   report-warn-only: `new WarnOnlyAuditService(audit as any)` + mock ReportService.
+#   Iceri aktarilan uretim dosyalarinda (report.service / report.controller /
+#     warn-only-audit.service) yukleme-ani yan etki YOK; PrismaService yalniz DI tipi.
+#   describeDb / new PrismaClient / TEST_DATABASE_URL / supertest / readFileSync /
+#     readdirSync / __dirname / process.cwd: 6'sinda da 0 -> statik kaynak okuma YOK.
+# Bu manifeste kondu cunku dogrudan kardesleri burada: warn-only-audit.service (ayni
+# WarnOnlyAuditService), template-engine-passive-policy (pasif politika ailesi),
+# validation-gate-authz-tenant (pre-haciz risk'in kullandigi gate). GH-04 BATCH A
+# gerekcesine DAHIL DEGILDIR; ayri blok olarak eklendi.
+# DB env TANIMSIZ kosum: 6/6 spec, 29 test PASS; skip/todo 0.
+# Urun/fixture/mock/beklenti DEGISMEDI; yeni job/Jest cagrisi YOK (CI-8 butcesi korunur).
+src/modules/report/__tests__/pre-haciz-risk-distribution.spec.ts
+src/modules/report/__tests__/report-passive-policy.spec.ts
+src/modules/report/__tests__/report-person-filter-g5a.spec.ts
+src/modules/report/__tests__/report-personel-real-person-g5b.spec.ts
+src/modules/report/__tests__/report-warn-only.spec.ts
+src/modules/report/__tests__/task-performance.spec.ts
+
 # ── GH-08: gate/jest ayrimi ────────────────────────────────────────────────
 # Bu spec'ler daha once ci.yml icinde, kendi grep-gate step'lerinin sonundaki
 # AYRI bir jest cagrisiyla kosuyordu. Gate mantigi (grep FORBIDDEN kontrolleri +
