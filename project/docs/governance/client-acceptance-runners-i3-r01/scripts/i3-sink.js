@@ -43,8 +43,10 @@ const server = net.createServer((sock) => {
   // ölçülür (reddedilen/yanıtsız denemeler de sayılır — yalnız yakalanan mesajlar değil).
   connSeq += 1;
   const mode = readMode();
-  fs.writeFileSync(path.join(DIR, `conn-${String(connSeq).padStart(4, '0')}.log`),
-    `mode=${mode}\nat=${new Date().toISOString()}\n`, 'utf8');
+  const connFile = path.join(DIR, `conn-${String(connSeq).padStart(4, '0')}.log`);
+  // `envelope=v1`: bu sürüm HER `RCPT TO`'yu aşağıda `rcpt=` satırı olarak kalıcılaştırır. İşaretsiz conn
+  // kaydı (eski sink) zarf kanıtı taşımaz — okuyucu onu "temiz" SAYMAMALI (İ12 I12-OFFTARGET).
+  fs.writeFileSync(connFile, `mode=${mode}\nat=${new Date().toISOString()}\nenvelope=v1\n`, 'utf8');
 
   let buf = '';
   let inData = false;
@@ -79,7 +81,11 @@ const server = net.createServer((sock) => {
         msg.from = line.slice(line.indexOf(':') + 1).trim();
         say('250 2.1.0 Ok');
       } else if (up.startsWith('RCPT TO')) {
-        msg.to.push(line.slice(line.indexOf(':') + 1).trim());
+        const rcpt = line.slice(line.indexOf(':') + 1).trim();
+        msg.to.push(rcpt);
+        // ZARF ALICISI HER KONUŞMADA kalıcı: DATA'ya hiç ulaşmayan (reset) veya teslim edilmeyen denemelerde de
+        // ürünün kime adreslediği görülebilsin. Bcc alıcısı yalnız burada (zarfta) bulunur, başlıkta YOKTUR.
+        fs.appendFileSync(connFile, `rcpt=${rcpt}\n`, 'utf8');
         say('250 2.1.5 Ok');
       } else if (up === 'DATA') {
         if (mode === 'reset') { sock.destroy(); return; } // ECONNRESET → INDETERMINATE
