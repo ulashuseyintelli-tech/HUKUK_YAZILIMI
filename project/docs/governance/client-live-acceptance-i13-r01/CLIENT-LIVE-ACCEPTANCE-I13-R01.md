@@ -99,7 +99,7 @@ Toplam: negatif kontroller **15/15 OK**. Koşum öncesi ve sonrası betik hash'l
 
 **Blok sırası:**
 1. main senkron ve temiz.
-2. Paket digest `8AD6EE11…48BD` · canlı dist `87712E0E…5453`.
+2. Paket digest `8AD6EE11…48BD` · canlı dist `EB3D854F…71FC` (R25; R24 `87712E0E…5453` üzerinde blok DURUR).
 3. Tek 8080 dinleyicisi · başka kabul süreci yok · açık pencere kuralı yok · launcher DB kimliği `127.0.0.1:5432/hukuk_db`.
 4. GO ref **yerel** girilir. Biçim ve tüketilmemişlik (`git grep` 0) kontrol edilir.
 5. runId üretilir. DB URL canlı `.env`'den süreç içinde okunur, yazdırılmaz.
@@ -114,3 +114,14 @@ Kanıt dizini: `Documents\CLIENT-EVIDENCE-20260911\i13-live-<runId>-<ts>`.
 - Kayıt PR'ı → CI → merge → post-merge CI SUCCESS.
 
 Aksi durumda İ13 açık kalır ve somut boşluk raporlanır. **Hizmet kabulü (H2) owner kabulü olmadan değişmez.**
+
+## R25 bağı (2026-09-19) — canlı dist pini değişti
+
+Owner bloğunun canlı dist kapısı **R25** artefaktına bağlandı: `EB3D854F708519FFB788B41C4FF2B716F8FAE3C65DDAFC2BFB718446B91171FC` (kaynak `ebbe1ae8cce04de5579944bbf6b7f46a0efe0412`, 3867 dosya). Paket digest değişmedi. Blok R24 dist (`87712E0E…5453`) üzerinde **DURUR**; bu kasıtlıdır, fail-closed davranış.
+
+- **Yürütme sırası:** R25 yayını (ayrı owner onayı; yükseltilmiş pencere) → İ13 → İ14 → İ15 → İ16. Her blok bir öncekinin kapanışından sonra ve kendi GO ref'iyle koşulur. Canlı pencereler çakışmaz.
+- **R25 disposable regresyonu (aday dist, API `:8113`, yalnız disposable DB):** İ13 13/13 PASS. Bunlar canlı kabul değildir.
+- **R24 → R25 farkı:** 10 dosya. 7'si portal dosyası (#2720 K-1, #2721 PSUS). 3'ü summary-engine replay adapter dosyası (#2716): yalnız statik manifest sabiti içerir, Nest modül grafiğinde yoktur. Migration farkı 0.
+- **Düzeltme notu (dış bağlantı):** Disposable provadaki API, TCMB kur servisine (`185.98.252.10:443`, ExchangeRateService, salt okuma) dışa bağlandı. Bu bir gönderim değildir. Önceki "API'nin tek uzak bağlantısı disposable DB" ölçümü yalnız o anın görüntüsüdür, sürekli bir garanti değildir.
+
+**Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**

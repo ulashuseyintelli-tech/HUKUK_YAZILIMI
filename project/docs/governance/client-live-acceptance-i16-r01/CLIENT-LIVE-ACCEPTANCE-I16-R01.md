@@ -119,7 +119,7 @@ Negatif kontroller 11/11 OK.
 - `scripts/i16-owner-live-block.ps1` **normal** PowerShell'de çalıştırılır.
 
 Blok sırası:
-1. Kapılar: main · paket digest · dist `87712E0E…5453` · tek API · açık pencere yok · DB kimliği.
+1. Kapılar: main · paket digest · dist `EB3D854F…71FC` (R25) · tek API · açık pencere yok · DB kimliği.
 2. GO ref yerel olarak girilir.
 3. `i16-live-run.js` koşar.
 4. GO tüketimi sha256 olarak kaydedilir ve manifest yazılır.
@@ -131,3 +131,16 @@ Blok sırası:
 - Kayıt PR'ı → CI → merge → post-merge CI SUCCESS.
 
 **Hizmet kabulü (H7) owner kabulü olmadan değişmez.**
+
+## R25 bağı (2026-09-19) — canlı dist pini değişti
+
+Owner bloğunun canlı dist kapısı **R25** artefaktına bağlandı: `EB3D854F708519FFB788B41C4FF2B716F8FAE3C65DDAFC2BFB718446B91171FC` (kaynak `ebbe1ae8cce04de5579944bbf6b7f46a0efe0412`, 3867 dosya). Paket digest değişmedi. Blok R24 dist (`87712E0E…5453`) üzerinde **DURUR**; bu kasıtlıdır, fail-closed davranış.
+
+- **Yürütme sırası:** R25 yayını (ayrı owner onayı; yükseltilmiş pencere) → İ13 → İ14 → İ15 → İ16. Her blok bir öncekinin kapanışından sonra ve kendi GO ref'iyle koşulur. Canlı pencereler çakışmaz.
+- **R25 disposable regresyonu (aday dist, API `:8113`, yalnız disposable DB):** İ16 12/12 + H7-05 dört neden PASS. Bunlar canlı kabul değildir.
+- **R24 → R25 farkı:** 10 dosya. 7'si portal dosyası (#2720 K-1, #2721 PSUS). 3'ü summary-engine replay adapter dosyası (#2716): yalnız statik manifest sabiti içerir, Nest modül grafiğinde yoktur. Migration farkı 0.
+- **Düzeltme notu (dış bağlantı):** Disposable provadaki API, TCMB kur servisine (`185.98.252.10:443`, ExchangeRateService, salt okuma) dışa bağlandı. Bu bir gönderim değildir. Önceki "API'nin tek uzak bağlantısı disposable DB" ölçümü yalnız o anın görüntüsüdür, sürekli bir garanti değildir.
+
+**İ16'ya özgü:** K-1 (#2720) ve CLIENT-PSUS (#2721) düzeltmeleri yalnız R25 artefaktında vardır. R25 disposable provada K-1 matrisi 12/12 (4 senaryo × 3 uç; geçersiz referansta ret cevabı özdeş, diske yazılan dosya 0, DB'ye yazılan geçersiz referans 0) ve PSUS 7/7 PASS. Bunlar **canlı kanıt değildir**; İ16, R25 canlıda doğrulanıp bu blok canlıda PASS verene kadar **kapanmaz**. Ret cevaplarının aynı olması zamanlama eşitliği anlamına gelmez; zamanlama ölçülmedi.
+
+**Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**
