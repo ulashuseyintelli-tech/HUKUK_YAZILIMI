@@ -162,3 +162,45 @@ src/common/storage/__tests__/write-surface-behaviour.spec.ts
 # production'da bos tarife koku = HARD FAIL. Tarife dosyasi mali hesaplamanin
 # TEK gercek kaynagidir; sessiz "tarife yok" kabul edilemez.
 src/modules/tariff/__tests__/tariff.service.external-storage.spec.ts
+
+# ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
+#   apps/api secim disi spec'lerin toplu baglanmasi. Siniflandirma AMPIRIK: her spec DB env
+#   (DATABASE_URL/TEST_DATABASE_URL) TANIMSIZ kosuldu ve suite PASS + test duzeyinde skip/todo 0
+#   verdi (test/test-db-env.ts fail-closed oldugu icin bu, CI'daki pure adimla kaynak duzeyinde
+#   esdegerdir). Ek olarak her spec'in gercek/dolayli bagimliligi salt-okuma ile incelendi
+#   (mock/literal/useValue vs gercek PrismaService; statik kaynak yolu; ag/sunucu/dosya yazma).
+#   Kosumlardan sonra calisma agacinda takipli/takipsiz dosya degisikligi 0.
+#   Urun/fixture/mock/beklenti DEGISMEDI; skip/todo EKLENMEDI; yeni job/Jest cagrisi YOK.
+#   Gecemeyen / atlamali / altyapi isteyen spec'ler BAGLANMADI; product-backlog.md'de ayri kayit.
+#   Bu manifeste eklenen 31 spec (modul: calc-preview 24, metrics-aggregator 4, metrics-registry 2, tariff 1).
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/matrices/m0-phase7-off.perf.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/matrices/m1-phase7-on.perf.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/matrices/m2-block-rate.perf.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/matrices/m3-snapshot-pressure.perf.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/matrices/m4-gc-pressure.perf.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/__tests__/load/perf/matrices/m5-drift-microbench.perf.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/drift-guard-integration.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-alerts-validation.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-canary-rollout.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-decision-snapshot.factory.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-degrade-allowlist.property.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-enforcement.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-interceptor.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-policy-resolver-types.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-policy-resolver.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-shadow-zero-enforcement.property.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-snapshot-immutability.property.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-staleness-fail-closed.property.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-telemetry.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/guard-tripwire-metrics.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/signal-window-engine.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/stage-1-decision-distribution.spec.ts
+src/modules/calc-preview/diagnostics/simulation-api/guards/__tests__/t0-runsheet-validation.spec.ts
+src/modules/calc-preview/sweep/integration-sweep.spec.ts
+src/modules/metrics-aggregator/__tests__/i0-snapshot-completeness.property.spec.ts
+src/modules/metrics-aggregator/__tests__/i0-snapshot.integration.spec.ts
+src/modules/metrics-aggregator/__tests__/metrics-aggregator.controller.spec.ts
+src/modules/metrics-aggregator/__tests__/metrics-exposition.property.spec.ts
+src/modules/metrics-registry/__tests__/http-metrics.middleware.spec.ts
+src/modules/metrics-registry/__tests__/http-metrics.property.spec.ts
+src/modules/tariff/__tests__/tariff.service.required-sections.spec.ts

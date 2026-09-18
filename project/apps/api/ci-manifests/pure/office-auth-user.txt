@@ -390,3 +390,48 @@ src/common/__tests__/party-write-tx-participation.spec.ts
 #   Mutasyon kaniti: audit kaldirilinca 7/11, tx disina tasininca 7/11, delegation mukerrer 1/11,
 #   no-op tespiti kaldirilinca 1/11 DUSER. Gercek rollback kaniti db/core-lifecycle'daki db-gated spec'te.
 src/modules/lawyer/__tests__/lawyer-privileged-update-audit-b11.spec.ts
+#
+# LOOKUP modulu — saf spec'ler (owner GO 2026-09-18 "OFFICE / LOOKUP MODULU CI PAKETI"):
+#   Modulde 4 spec vardi ve TAMAMI secim disiydi (0/4 bagli); 3'u DB-siz, 1'i gercek-DB
+#   (o spec db/core-lifecycle'a baglandi). Siniflandirma belirtece DEGIL, bagimliligin NASIL
+#   saglandigina dayanir:
+#     lookup-catalog.contract -> yalniz lookup-catalog SABITLERINI ice aktarir (saf veri).
+#     lookup-reactivate       -> new LookupService({ lookupTakipTuru: modelMock } as any).
+#     lookup-seed             -> seedLookupCatalog(db as any, ...) jest.fn nesnesiyle.
+#   Dolayli: lookup-catalog / lookup.service / lookup-seed dosyalarinda yukleme-ani yan etki
+#   YOK; lookup-seed'in @prisma/client importu `import type` (derlemede silinir). Statik kaynak
+#   okuma (readFileSync/readdirSync/__dirname/process.cwd) YOK.
+#   Bu manifeste kondu cunku lookup seed'in DOGRUDAN tuketicisi register akisidir
+#   (auth.service -> seedLookupCatalog(tx, tenant.id)) ve onun saf spec'i
+#   auth-register-seed.spec BURADADIR; DB karsiligi da db/core-lifecycle'dadir. Yukaridaki
+#   W0 AUTH/B11 bloklarinin gerekcesine DAHIL DEGILDIR; ayri blok.
+#   DB env TANIMSIZ kosum: 3/3 spec, 49 test PASS; skip/todo 0.
+#   Urun/fixture/mock/beklenti DEGISMEDI; yeni job/Jest cagrisi YOK (CI-8 butcesi korunur).
+src/modules/lookup/__tests__/lookup-catalog.contract.spec.ts
+src/modules/lookup/__tests__/lookup-reactivate.spec.ts
+src/modules/lookup/__tests__/lookup-seed.spec.ts
+
+# ── TOPLU CI KAPATMA (owner EK TALIMAT 2026-09-18 "TOPLU CI KAPATMA"; olculen main 1736a4e6) ──
+#   apps/api secim disi spec'lerin toplu baglanmasi. Siniflandirma AMPIRIK: her spec DB env
+#   (DATABASE_URL/TEST_DATABASE_URL) TANIMSIZ kosuldu ve suite PASS + test duzeyinde skip/todo 0
+#   verdi (test/test-db-env.ts fail-closed oldugu icin bu, CI'daki pure adimla kaynak duzeyinde
+#   esdegerdir). Ek olarak her spec'in gercek/dolayli bagimliligi salt-okuma ile incelendi
+#   (mock/literal/useValue vs gercek PrismaService; statik kaynak yolu; ag/sunucu/dosya yazma).
+#   Kosumlardan sonra calisma agacinda takipli/takipsiz dosya degisikligi 0.
+#   Urun/fixture/mock/beklenti DEGISMEDI; skip/todo EKLENMEDI; yeni job/Jest cagrisi YOK.
+#   Gecemeyen / atlamali / altyapi isteyen spec'ler BAGLANMADI; product-backlog.md'de ayri kayit.
+#   Bu manifeste eklenen 14 spec (modul: case 13, public-institution 1).
+src/modules/case/__tests__/case-create-filenumber-precheck.spec.ts
+src/modules/case/__tests__/case-no-owner-filter.spec.ts
+src/modules/case/__tests__/case-responsible-conflict-mapping.spec.ts
+src/modules/case/__tests__/case-responsible-drift.core.spec.ts
+src/modules/case/__tests__/case-responsible-invariant.spec.ts
+src/modules/case/__tests__/case-responsible-lawyer-invariant.spec.ts
+src/modules/case/__tests__/case-team-membership-eligibility.spec.ts
+src/modules/case/__tests__/case-update-staff.spec.ts
+src/modules/case/__tests__/legal-responsible-lawyer-change.service.spec.ts
+src/modules/case/__tests__/responsibility-history.service.spec.ts
+src/modules/case/__tests__/responsible-candidates.service.spec.ts
+src/modules/case/__tests__/temporal-responsibility-legal.service.spec.ts
+src/modules/case/__tests__/temporal-responsibility.service.spec.ts
+src/modules/public-institution/public-institution.service.spec.ts
