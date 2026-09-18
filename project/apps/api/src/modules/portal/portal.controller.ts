@@ -311,18 +311,25 @@ export class PortalController {
       throw new BadRequestException("Dosya yüklenmedi");
     }
 
-    return this.portalService.uploadDocument({
-      clientId: req.portalUser.clientId,
-      tenantId: req.portalUser.tenantId,
-      caseId: body.caseId,
-      type: body.type || "DIGER",
-      title: body.title || file.originalname,
-      description: body.description,
-      fileName: file.originalname,
-      filePath: file.path,
-      fileSize: file.size,
-      mimeType: file.mimetype,
-    });
+    try {
+      return await this.portalService.uploadDocument({
+        clientId: req.portalUser.clientId,
+        tenantId: req.portalUser.tenantId,
+        caseId: body.caseId,
+        type: body.type || "DIGER",
+        title: body.title || file.originalname,
+        description: body.description,
+        fileName: file.originalname,
+        filePath: file.path,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      });
+    } catch (err) {
+      // CLIENT-K1: kayıt reddedilirse (ör. geçersiz caseId) multer'ın bu istek için yazdığı dosya diskte
+      // sahipsiz kalmaz. Yalnız multer'ın verdiği bu isteğe ait yol silinir; hata aynen yeniden fırlatılır.
+      try { if (file.path && existsSync(file.path)) unlinkSync(file.path); } catch { /* temizlik hatası asıl hatayı gizlemez */ }
+      throw err;
+    }
   }
 
   /**

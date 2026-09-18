@@ -186,6 +186,23 @@ const PORTAL_NOTIFICATION_CLIENT_SELECT = Prisma.validator<Prisma.PortalNotifica
   createdAt: true,
 });
 
+/**
+ * CLIENT-K1 (İ16 K-1, owner kararı 2026-09-19 — seçenek (a)): portal nesnelerindeki `caseId` referansı
+ * sunucuda doğrulanır. Önceki davranış: gövdeden gelen `caseId` hiçbir kontrol olmadan PortalDocument /
+ * PortalMessage / PortalNotification satırına yazılıyordu (şemada FK yok) → müvekkil kendi kaydına başka
+ * müvekkilin ya da başka tenant'ın dosya id'sini bağlayabiliyordu (okuma/yazma sızıntısı yoktu; bütünlük boşluğu).
+ *
+ * POL-J §20.7: PORTAL = tenant + bağlı müvekkil + nesne ilişkisi · STAFF = tenant + nesne kapsamı + mevcut aktör
+ * uygunluğu. Kural aktör başına AYRI kurulur (getCaseDetail körlemesine kopyalanmaz):
+ *   - `client` (portal aktörü): dosya aynı tenant'ta, müvekkile bağlı (Case.clientId veya CaseClient) VE
+ *     müvekkile görünür (`showToClient`) olmalı — müvekkilin göremediği dosyayı işaretlemesi kapsam dışıdır.
+ *   - `office` (personel → müvekkil mesajı): dosya aynı tenant'ta ve mesajın hedef müvekkiline bağlı olmalı;
+ *     personelin mevcut yetki kapsamı (tenant'ın aktif kullanıcısı) DEĞİŞMEZ, görünürlük şartı eklenmez.
+ * Ret cevabı nesnenin VARLIĞINI SIZDIRMAZ: yabancı tenant · aynı tenant başka müvekkil · bulunmayan · biçimsiz
+ * id → hepsi AYNI 400 "Geçersiz dosya referansı". `caseId` verilmemişse (undefined/null/boş) davranış değişmez.
+ */
+export const PORTAL_CASE_REFERENCE_INVALID = "Geçersiz dosya referansı";
+
 @Injectable()
 export class PortalService {
   private readonly logger = new Logger(PortalService.name);
@@ -343,6 +360,28 @@ export class PortalService {
     return { success: true, portalUserId };
   }
 
+
+  /** CLIENT-K1: `caseId` referansını aktör kapsamına göre doğrular; geçerliyse id'yi, verilmemişse undefined döner. */
+  private async resolveCaseReference(
+    caseId: unknown,
+    scope: { actor: "client" | "office"; clientId: string; tenantId: string },
+  ): Promise<string | undefined> {
+    if (caseId === undefined || caseId === null || caseId === "") return undefined;
+    if (typeof caseId !== "string" || caseId.length > 64) {
+      throw new BadRequestException(PORTAL_CASE_REFERENCE_INVALID);
+    }
+    const found = await this.prisma.case.findFirst({
+      where: {
+        id: caseId,
+        tenantId: scope.tenantId,
+        ...(scope.actor === "client" ? { showToClient: true } : {}),
+        OR: [{ clientId: scope.clientId }, { caseClients: { some: { clientId: scope.clientId } } }],
+      },
+      select: { id: true },
+    });
+    if (!found) throw new BadRequestException(PORTAL_CASE_REFERENCE_INVALID);
+    return found.id;
+  }
 
   /**
    * Portal girişi
@@ -804,11 +843,12 @@ export class PortalService {
     fileSize: number;
     mimeType: string;
   }) {
+    const caseId = await this.resolveCaseReference(data.caseId, { actor: "client", clientId: data.clientId, tenantId: data.tenantId });
     const doc = await this.prisma.portalDocument.create({
       data: {
         clientId: data.clientId,
         tenantId: data.tenantId,
-        caseId: data.caseId,
+        caseId,
         type: data.type,
         title: data.title,
         description: data.description,
@@ -928,11 +968,12 @@ export class PortalService {
    * Mesaj gönder (müvekkil)
    */
   async sendMessageFromClient(clientId: string, tenantId: string, content: string, senderName: string, caseId?: string) {
+    const caseRef = await this.resolveCaseReference(caseId, { actor: "client", clientId, tenantId });
     const message = await this.prisma.portalMessage.create({
       data: {
         clientId,
         tenantId,
-        caseId,
+        caseId: caseRef,
         content,
         senderType: "CLIENT",
         senderId: clientId,
@@ -958,11 +999,12 @@ export class PortalService {
       throw new NotFoundException("Müvekkil bulunamadı");
     }
 
+    const caseRef = await this.resolveCaseReference(caseId, { actor: "office", clientId, tenantId });
     const message = await this.prisma.portalMessage.create({
       data: {
         clientId,
         tenantId,
-        caseId,
+        caseId: caseRef,
         content,
         senderType: "OFFICE",
         senderId: userId,
@@ -973,7 +1015,7 @@ export class PortalService {
     // Müvekkile bildirim gönder
     await this.createNotification({
       clientId,
-      caseId,
+      caseId: caseRef,
       type: "MESAJ",
       title: "Yeni Mesaj",
       message: `${userName} size bir mesaj gönderdi.`,

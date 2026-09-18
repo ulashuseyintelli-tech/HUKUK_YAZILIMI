@@ -49,6 +49,8 @@ const RAW_MESSAGE_ROW = {
 
 function buildService(over: any = {}) {
   const prisma = {
+    // CLIENT-K1: caseId referansı artık sunucuda doğrulanır; bu spec write-contract'ı ölçer → geçerli ilişki döner.
+    case: { findFirst: jest.fn(async ({ where }: any) => ({ id: where.id })) },
     portalMessage: {
       findMany: jest.fn().mockResolvedValue(over.findManyResult === undefined ? [BOUNDED_MESSAGE_ROW] : over.findManyResult),
       create: jest.fn().mockResolvedValue(over.createResult === undefined ? BOUNDED_MESSAGE_ROW : over.createResult),
