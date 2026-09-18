@@ -11,7 +11,7 @@
  * yüklemin yalnız şeklini değil ANLAMINI da ölçer (tenant, müvekkil ilişkisi, görünürlük).
  */
 import { BadRequestException } from "@nestjs/common";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, realpathSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, realpathSync, symlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { PortalService, PORTAL_CASE_REFERENCE_INVALID } from "../portal.service";
@@ -142,6 +142,23 @@ describe("CLIENT-K1 — portal caseId referansı aktör kapsamında doğrulanır
       const controller = new PortalController(reject(), {} as any);
       await expect(controller.uploadDocument(req, { path: p, originalname: "a.pdf", size: 1, mimetype: "application/pdf" } as any, { type: "DIGER", title: "t" })).rejects.toThrow(PORTAL_CASE_REFERENCE_INVALID);
       expect(existsSync(p)).toBe(true);
+    });
+    it("temizleme HATASI asıl ret hatasını MASKELEMEZ (silinemeyen hedef → yine asıl 400 döner)", async () => {
+      const d = join(root, "portal-documents", TL, "portal-dir.pdf"); mkdirSync(d, { recursive: true });   // dizin: unlinkSync hata verir
+      const controller = new PortalController(reject(), {} as any);
+      const err = await controller.uploadDocument(req, { path: d, originalname: "a.pdf", size: 1, mimetype: "application/pdf" } as any, { type: "DIGER", title: "t" }).catch((e: any) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.message).toBe(PORTAL_CASE_REFERENCE_INVALID);
+      expect(existsSync(d)).toBe(true);
+    });
+    it("reparse denetimi KORUNUR: kova içindeki junction üzerinden dışarıya işaret eden yol SİLİNMEZ", async () => {
+      const outside = realpathSync.native(mkdtempSync(join(tmpdir(), "k1-out-")));
+      const victim = join(outside, "portal-v.pdf"); writeFileSync(victim, "x");
+      const bucket = join(root, "portal-documents", TL); mkdirSync(bucket, { recursive: true });
+      const link = join(bucket, "jn"); symlinkSync(outside, link, "junction");
+      const controller = new PortalController(reject(), {} as any);
+      await expect(controller.uploadDocument(req, { path: join(link, "portal-v.pdf"), originalname: "a.pdf", size: 1, mimetype: "application/pdf" } as any, { type: "DIGER", title: "t" })).rejects.toThrow(PORTAL_CASE_REFERENCE_INVALID);
+      expect(existsSync(victim)).toBe(true);
     });
     it("başarılı yüklemede dosya KORUNUR", async () => {
       const p = inBucket("portal-2.pdf");

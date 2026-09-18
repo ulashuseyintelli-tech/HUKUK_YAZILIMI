@@ -16,7 +16,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { diskStorage } from "multer";
-import { extname } from "path";
+import { extname, resolve, sep } from "path";
 import { existsSync, unlinkSync } from "fs";
 import {
   assertSafeSegment,
@@ -328,9 +328,17 @@ export class PortalController {
       // CLIENT-K1: kayıt reddedilirse (ör. geçersiz caseId) multer'ın bu istek için yazdığı dosya diskte sahipsiz
       // kalmaz. Silmeden ÖNCE yol, indirme/silme uçlarıyla AYNI kapsama denetiminden geçer (principal tenant'ının
       // PORTAL_DOCUMENTS kovası içinde olmalı; dışarıdaysa/reparse ise SİLİNMEZ). Hata aynen yeniden fırlatılır.
+      // Kova kökü DOĞRULANMIŞ aktörün tenant'ından (PortalAuthGuard → DB) gelir; istemci girdisinden değil.
+      // Yol normalize edilir ve kova önekiyle sınırlanır; ardından mevcut reparse/TOCTOU denetimi (assertContained)
+      // AYRICA uygulanır. Silme yalnız bu korumanın içinde yapılır.
       try {
-        const target = runtimeStoragePaths().assertContained("PORTAL_DOCUMENTS", file.path, req.portalUser.tenantId);
-        if (existsSync(target)) unlinkSync(target);
+        const storage = runtimeStoragePaths();
+        const bucketRoot = storage.resolveBucketDir("PORTAL_DOCUMENTS", req.portalUser.tenantId);
+        const candidate = resolve(file.path);
+        if (candidate.startsWith(bucketRoot + sep)) {
+          storage.assertContained("PORTAL_DOCUMENTS", candidate, req.portalUser.tenantId);
+          if (existsSync(candidate)) unlinkSync(candidate);
+        }
       } catch { /* kapsam dışı yol ya da temizlik hatası asıl hatayı gizlemez */ }
       throw err;
     }
