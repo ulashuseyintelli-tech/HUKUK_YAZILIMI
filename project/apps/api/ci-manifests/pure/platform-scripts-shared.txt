@@ -828,3 +828,15 @@ src/modules/case/__tests__/case-delete-hard-guard.spec.ts
 #   NOT: summary-engine.module.wiring BAGLANMADI — ikinci global (StorageModule) de gerekiyor.
 src/modules/debtor-scoring/__tests__/debtor-scoring.module-registration.spec.ts
 src/modules/interest-engine/__tests__/interest-engine.module.wiring.spec.ts
+
+# ── SUMMARY-ENGINE DI ONARIMI (owner GO 2026-09-18 "OFFICE / SUMMARY-ENGINE DI ONARIMI") ──
+#   UYGULAMA BILESIMI testi (SummaryEngineModule -> InterestEngineModule zinciri TBK100Allocator'i
+#   teslim etmeli). Zincir FeeEngineModule -> TariffModule'a ulasir: GazetteWatcherService
+#   IntegrationErrorReporter'i (@Global ErrorLogModule, #2070), TariffService RuntimeStoragePaths'i
+#   (@Global StorageModule, #2502) ister; ikisi de YALNIZ AppModule'da. Onarim test ici: iki global
+#   testing module imports'a + moduleRef.close() finally icinde; PrismaService override'i ve iki iddia
+#   AYNEN. StorageModule dev/test dalinda kok=cwd; TARIFFS = <cwd>/src/config/tariffs (repoda takipli)
+#   -> bucketDir mkdirSync CAGIRMAZ; yalniz okuma. Gozlem (tek kosum, Node fs+net, native/cocuk surec
+#   kapsam disi): worktree ici / proje kodu yazmasi 0, ag 0; tum yazmalar jest onbellegi (%TEMP%/jest).
+#   Kardes: allocate-payment-ledger-in-tx.spec ve 9 saf summary-engine spec'i bu manifestte.
+src/modules/summary-engine/__tests__/summary-engine.module.wiring.spec.ts
