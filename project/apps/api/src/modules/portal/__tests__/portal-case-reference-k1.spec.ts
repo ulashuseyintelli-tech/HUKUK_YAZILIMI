@@ -11,7 +11,7 @@
  * yüklemin yalnız şeklini değil ANLAMINI da ölçer (tenant, müvekkil ilişkisi, görünürlük).
  */
 import { BadRequestException } from "@nestjs/common";
-import { mkdtempSync, writeFileSync, existsSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, realpathSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { PortalService, PORTAL_CASE_REFERENCE_INVALID } from "../portal.service";
@@ -119,23 +119,35 @@ describe("CLIENT-K1 — portal caseId referansı aktör kapsamında doğrulanır
     expect(prisma.case.findFirst).not.toHaveBeenCalled();
   });
 
-  it("controller: reddedilen yüklemede multer'ın yazdığı dosya diskten SİLİNİR ve hata aynen döner", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "k1-"));
-    const p = join(dir, "portal-1.pdf"); writeFileSync(p, "x");
-    const portalService: any = { uploadDocument: jest.fn().mockRejectedValue(new BadRequestException(PORTAL_CASE_REFERENCE_INVALID)) };
-    const controller = new PortalController(portalService, {} as any);
-    const req: any = { portalUser: { clientId: C, tenantId: T } };
-    const file: any = { path: p, originalname: "a.pdf", size: 1, mimetype: "application/pdf" };
-    await expect(controller.uploadDocument(req, file, { type: "DIGER", title: "t", caseId: "case-foreign-tenant" })).rejects.toThrow(PORTAL_CASE_REFERENCE_INVALID);
-    expect(existsSync(p)).toBe(false);
-  });
+  describe("controller: reddedilen yüklemede dosya temizliği (tenant kovası kapsama denetimiyle)", () => {
+    const TL = "tenant-a";   // ürün tenant segmentinde büyük/küçük harf belirsizliğini reddeder (gerçek id'ler cuid, küçük harf)
+    const OLD = process.env.HUKUK_DATA_ROOT;
+    let root: string;
+    // 8.3 kısa ad (ör. ULASTE~1) ürünün assertNoReparse korumasınca REDDEDİLİR → uzun gerçek yol kullanılır.
+    beforeEach(() => { root = realpathSync.native(mkdtempSync(join(tmpdir(), "k1-root-"))); process.env.HUKUK_DATA_ROOT = root; });
+    afterAll(() => { if (OLD === undefined) delete process.env.HUKUK_DATA_ROOT; else process.env.HUKUK_DATA_ROOT = OLD; });
+    const inBucket = (name: string) => { const d = join(root, "portal-documents", TL); mkdirSync(d, { recursive: true }); const p = join(d, name); writeFileSync(p, "x"); return p; };
+    const reject = () => ({ uploadDocument: jest.fn().mockRejectedValue(new BadRequestException(PORTAL_CASE_REFERENCE_INVALID)) } as any);
+    const req: any = { portalUser: { clientId: C, tenantId: TL } };
 
-  it("controller: başarılı yüklemede dosya KORUNUR", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "k1-"));
-    const p = join(dir, "portal-2.pdf"); writeFileSync(p, "x");
-    const portalService: any = { uploadDocument: jest.fn().mockResolvedValue({ id: "doc-1" }) };
-    const controller = new PortalController(portalService, {} as any);
-    await controller.uploadDocument({ portalUser: { clientId: C, tenantId: T } } as any, { path: p, originalname: "a.pdf", size: 1, mimetype: "application/pdf" } as any, { type: "DIGER", title: "t" });
-    expect(existsSync(p)).toBe(true);
+    it("kova İÇİNDEKİ dosya reddedilince SİLİNİR ve hata aynen döner", async () => {
+      const p = inBucket("portal-1.pdf");
+      const controller = new PortalController(reject(), {} as any);
+      await expect(controller.uploadDocument(req, { path: p, originalname: "a.pdf", size: 1, mimetype: "application/pdf" } as any, { type: "DIGER", title: "t", caseId: "case-foreign-tenant" })).rejects.toThrow(PORTAL_CASE_REFERENCE_INVALID);
+      expect(existsSync(p)).toBe(false);
+    });
+    it("kova DIŞINDAKİ yol (başka tenant kovası) SİLİNMEZ — kapsama denetimi; hata yine aynen döner", async () => {
+      const d = join(root, "portal-documents", "tenant-OTHER"); mkdirSync(d, { recursive: true });
+      const p = join(d, "portal-x.pdf"); writeFileSync(p, "x");
+      const controller = new PortalController(reject(), {} as any);
+      await expect(controller.uploadDocument(req, { path: p, originalname: "a.pdf", size: 1, mimetype: "application/pdf" } as any, { type: "DIGER", title: "t" })).rejects.toThrow(PORTAL_CASE_REFERENCE_INVALID);
+      expect(existsSync(p)).toBe(true);
+    });
+    it("başarılı yüklemede dosya KORUNUR", async () => {
+      const p = inBucket("portal-2.pdf");
+      const controller = new PortalController({ uploadDocument: jest.fn().mockResolvedValue({ id: "doc-1" }) } as any, {} as any);
+      await controller.uploadDocument(req, { path: p, originalname: "a.pdf", size: 1, mimetype: "application/pdf" } as any, { type: "DIGER", title: "t" });
+      expect(existsSync(p)).toBe(true);
+    });
   });
 });

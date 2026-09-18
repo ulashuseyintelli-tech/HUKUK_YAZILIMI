@@ -325,9 +325,13 @@ export class PortalController {
         mimeType: file.mimetype,
       });
     } catch (err) {
-      // CLIENT-K1: kayıt reddedilirse (ör. geçersiz caseId) multer'ın bu istek için yazdığı dosya diskte
-      // sahipsiz kalmaz. Yalnız multer'ın verdiği bu isteğe ait yol silinir; hata aynen yeniden fırlatılır.
-      try { if (file.path && existsSync(file.path)) unlinkSync(file.path); } catch { /* temizlik hatası asıl hatayı gizlemez */ }
+      // CLIENT-K1: kayıt reddedilirse (ör. geçersiz caseId) multer'ın bu istek için yazdığı dosya diskte sahipsiz
+      // kalmaz. Silmeden ÖNCE yol, indirme/silme uçlarıyla AYNI kapsama denetiminden geçer (principal tenant'ının
+      // PORTAL_DOCUMENTS kovası içinde olmalı; dışarıdaysa/reparse ise SİLİNMEZ). Hata aynen yeniden fırlatılır.
+      try {
+        const target = runtimeStoragePaths().assertContained("PORTAL_DOCUMENTS", file.path, req.portalUser.tenantId);
+        if (existsSync(target)) unlinkSync(target);
+      } catch { /* kapsam dışı yol ya da temizlik hatası asıl hatayı gizlemez */ }
       throw err;
     }
   }
