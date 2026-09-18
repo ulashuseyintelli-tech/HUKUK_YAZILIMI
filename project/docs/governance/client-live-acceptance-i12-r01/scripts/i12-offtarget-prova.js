@@ -115,7 +115,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       await wait(300); s3.kill();
       const r3 = scanOffTarget(d3, ALLOWED);
       const emlTxt = fs.readdirSync(d3).filter((f) => f.startsWith('msg-')).map((f) => fs.readFileSync(path.join(d3, f), 'utf8')).join('\n');
-      const bccInHeader = /^Bcc:/im.test(emlTxt.split('\n\n').slice(1).join('\n\n')) || new RegExp(`^(To|Cc):.*${OFF.replace(/\./g, '\\.')}`, 'im').test(emlTxt);
+      // Veriden regex KURULMAZ (CodeQL: eksik kaçışlama) — düz metin karşılaştırması. `X-I3-To:` (zarf) önek
+      // yüzünden bu filtreye GİRMEZ; yalnız gerçek başlık satırları (To/Cc/Bcc) incelenir.
+      const hdrLines = emlTxt.split(/\r?\n/).filter((l) => /^(To|Cc|Bcc):/i.test(l));
+      const bccInHeader = hdrLines.some((l) => /^Bcc:/i.test(l) || l.toLowerCase().includes(OFF));
       const hit = r3 && r3.offTarget.some((x) => x.includes(OFF) && /\[(zarf|rcpt)\]/.test(x));
       check('E3', 'nodemailer `bcc:` → Bcc BAŞLIKTA YOK, ZARFTA VAR; kapı ZARFTAN yakalar → FAIL',
         hit && !bccInHeader,
