@@ -106,3 +106,14 @@ src/modules/case/__tests__/case-create-inline-party-atomicity.db-gated.integrati
 # Hata enjeksiyonu audit satirini tx icine YAZIP sonra firlatir: avukat satiri ve yazilmis audit satiri
 # birlikte geri alinir. Yamasiz kodda 5 testin 4'u DUSER (RED kanitlandi); no-op iki durumda da gecer.
 src/modules/lawyer/__tests__/lawyer-privileged-update-audit-b11.db-gated.integration.spec.ts
+
+# ── K4 — DRIFT SPEC ONARIMI (owner GO 2026-09-19 "OFFICE / DB UCLUSU K1–K4 ONARIMI") ──
+#   runDriftRepair (#226, tek-seferlik onarim) APPLY/DRY-RUN yollarini gercek DB'de dogrular.
+#   #235 `case_lawyer_one_responsible_per_case` kismi unique indeksi MULTI drift'i DB'de imkansiz
+#   kildi: MULTI testi artik 2. sorumlunun P2002 (target ["caseId"]) ile reddedildigini, ilk kaydin
+#   korundugunu ve drift olusmadigini dogrular; MULTI planlama mantigi case-responsible-drift.core.spec
+#   (pure/office-auth-user) birim testinde. DRY-RUN ZERO drift ile kurulur; tenant'in tum CaseLawyer
+#   satirlari once/sonra birebir (negatif kontrol: APPLY'a cevrilince iddia KIRILIR). ZERO/OK AYNEN.
+#   Kisit KALDIRILMADI. Disposable DB: 4/4 PASS, --detectOpenHandles acik handle 0.
+#   Kardes: case-calculation-summary / case-create-inline-party-atomicity db-gated spec'leri.
+src/modules/case/__tests__/case-responsible-drift.integration.spec.ts
