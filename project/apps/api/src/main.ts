@@ -1,16 +1,15 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { AppModule } from "./app.module";
+import { applyTrustProxy } from "./common/trust-proxy.config";
 
 async function bootstrap() {
   // BOOT SAFLIĞI: API boot'u DB'ye YAZMAZ (seed/db push yok). Veri kurulumu artık
   // explicit komutla: `pnpm db:seed` (prisma/seed.ts) veya `pnpm db:bootstrap` (push+seed).
   const app = await NestFactory.create(AppModule);
 
-  // PF-005: Reverse proxy arkasında gerçek client IP'si için
-  // Değer 1 = tek hop (uygulama → nginx/ALB → client)
-  // Hop sayısı değişirse bu değer güncellenmelidir
-  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  // PF-005: Reverse proxy arkasında gerçek client IP'si için (tek hop; ayrıntı trust-proxy.config.ts)
+  applyTrustProxy(app);
 
   app.enableCors({
     origin: process.env.CORS_ORIGIN?.split(",") || ["http://localhost:3000"],
