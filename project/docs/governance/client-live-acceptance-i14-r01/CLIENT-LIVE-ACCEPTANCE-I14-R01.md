@@ -126,3 +126,65 @@ R25B **birleşik bir artefakttır**: tabanı canlı R24 dist'i (`87712E0E…5453
 - **Düzeltme notu (dış bağlantı):** Disposable provadaki API, TCMB kur servisine (`185.98.252.10:443`, ExchangeRateService, salt okuma) dışa bağlandı. Bu bir gönderim değildir. Önceki "API'nin tek uzak bağlantısı disposable DB" ölçümü yalnız o anın görüntüsüdür, sürekli bir garanti değildir.
 
 **Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**
+
+## 7. CANLI KOŞUM SONUCU — İ14 KAPANDI (2026-09-19)
+
+Owner, İ14 canlı kabul GO'sunu verdi ve bloğu kendisi koşturdu. Blok, normal PowerShell içinde ayrı bir
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File` sürecinde çalıştı; kalıcı execution policy değişikliği yapılmadı.
+Sarmalayıcı git/hash hatasında ve süreç çıkış kodunda durur. GO ref yerel kaldı.
+
+Owner çıktısı: **RUNID `e28c5c06` · koşum çıkışı 0**. Kanıt dizini:
+`C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i14-live-e28c5c06-20260919-234510`.
+
+**Bağlam (`owner-block.json`):**
+
+| Alan | Değer |
+|---|---|
+| Main | `36ddf14d1f1adcfabdc6755f70d63d6d1077c97f` |
+| Paket | `B24458E9…2FBF` |
+| Canlı dist | `1524EDC1…4D4E` (R25B) |
+| API pid | 36568 |
+| Başlangıç | 2026-09-19T20:45:10Z |
+
+**Koşum sonucu (`i14-evidence.json`): 14/14 PASS · FAIL 0 · ÖLÇÜLEMEYEN 0.**
+
+- **Geçen satırlar:** I14-00, H4-01…H4-05, H4-06a/b, H4-07a/b/c, H4-08, I14-CLOSE, I14-ISO.
+- **H4-08:** Canlıda yeniden koşulmadı. İ12 canlı kanıtına (runId `92d04ef3`) bağlandı. Kullanılan kanıt:
+  - G3 PASS: HTTP 201, PUBLISHED.
+  - G5 PASS: HTTP 403, `DISCLOSURE_PUBLICATION_PROVIDER_NOT_PRODUCTION`, SEND_PENDING.
+- **I14-CLOSE:** `closure.ok=true`. Hedef tenant'ta aktif kullanıcı 0 ve 1 case CLOSED; yabancı tenant'ta aktif kullanıcı 0. Giriş 401, eski token 401.
+- **I14-ISO:** `6c5bcb7a48daa79b`/17 önce ve sonra aynı.
+
+**CLIENT bağımsız kapanış doğrulaması: PASS (7/7).**
+
+- **Betik:** `i14-closure-verify.js`, sha256 `C476229277EE90EF66770993AE62834081E210643CD64B0318BD0DB43BDED4CA`.
+- **Çalışma biçimi:** İ13/İ14 kütüphanelerini kullanmaz. Ayrı süreçte ve READ ONLY transaction içinde çalışır.
+- **Çıktı:** `i14-closure-verify-e28c5c06.json`, sha256 `CD2F58324CDB9F76A13FEB8B536D42D44DE90BF9800FA81A592B9753C9633B20`.
+
+| Denetim | Sonuç |
+|---|---|
+| V1 kanıt | 14 zorunlu satırın hepsi PASS · runId eşit |
+| V2 manifest | 5 satır eşit · manifest dışı dosya 0 (`SHA256-MANIFEST.txt` `0D7C7CDF…DEC7`) |
+| V6 H4-08 → İ12 bağı | İ12 `SHA256-MANIFEST.txt` sha = kayıtlı pin `D4007000…B64B` · manifestteki `evidence-phase-smtp.json` ve `evidence-phase-mock.json` satırları dosyalarla eşit · runId `92d04ef3` · G3 PASS · G5 PASS · H4-08 satırı bağı beyan ediyor |
+| V3 erişim — hedef `ah-e28c5c06` | aktif/toplam kullanıcı 0/9 · ACTIVE case 0 · aktif portal kullanıcısı 0 |
+| V3 erişim — yabancı `ah-e28c5c06-x` | aktif/toplam kullanıcı 0/0 · ACTIVE case 0 · aktif portal kullanıcısı 0 |
+| V4 gerçek tenant izolasyonu | şimdi `6c5bcb7a48daa79b`/17 = koşum öncesi |
+| V5 GO ref | tüketim kaydı yalnız sha256 (`literalWritten=false`) · literal içeren dosya 0 |
+
+Doğrulayıcının ret yolları disposable ortamda ayrıca sınandı. Bozuk manifest ve GO ref literali, ikisi de FAIL verdi.
+
+**Kanıt dosyaları (sha256):**
+
+| Dosya | sha256 |
+|---|---|
+| `i14-evidence.json` | `759E53DFCF756E16EEFA3695C0065EF1D39986CAF5D714CD58E888440A151605` |
+| `i14-setup-receipt.json` | `C860B332C124D809F80C2A3F4FCB081562534FEA4F6EDAC5D24CDC7DB8A1633F` |
+| `i14-run.log` | `5D0ED81A458E26B61C78FCC5B0F4BE58A8E7AFDC4BE89BCCF451495B5F3F99C1` |
+| `goref-consumed.json` | `71A89C62178F63CFA76576780732539813E2E9F686AC517F9D1FF51CED90530B` |
+| `owner-block.json` | `58A24DD10DAF74F2D36E21FB3007FFC6E51B33D2CDE7CC73844AB6AFD2857014` |
+
+**Pencere.** Dört yürütücü açık teyit verdi. Disk oturumu, planlanan Docker/PostgreSQL kesintisinin başlamadığını ve pencere
+boyunca başlatılmayacağını teyit etti. `hukuk-postgres` pencere boyunca kesintisiz çalıştı. Canlı DB'ye başka erişim bildirilmedi.
+
+**Sonuç: İ14 KAPANDI.** Sayaç **16/18**. Hizmet kabulü (H4 dahil) owner kabulü olmadan değişmez: **0/8**. Kanıt satırları
+silinmez; sentetik tenant'lar kapalı kalır.
