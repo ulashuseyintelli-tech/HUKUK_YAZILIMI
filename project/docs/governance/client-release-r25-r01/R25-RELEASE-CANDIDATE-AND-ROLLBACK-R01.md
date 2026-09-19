@@ -152,6 +152,12 @@ Yayın PASS olursa sıradaki adımlar İ13 → İ14 → İ15 → İ16 owner blok
 
 - `27ca3400`, `20b70e21` ve `ebbe1ae8` SHA'larının her biri kendi main CI koşumunda **SUCCESS** olmalı. İptal edilen koşum
   SUCCESS sayılmaz; daha yeni bir main SUCCESS'i eski SHA'nın yerine geçmez.
+  **Durum (2026-09-19): TAMAM.** Koşumlar sessiz pencerede sırayla yapıldı:
+  - `27ca3400`: run 35392914984, 2. deneme
+  - `20b70e21`: run 35391532414, 3. deneme
+  - `ebbe1ae8`: run 35403503455, 2. deneme
+
+  Ayrıntı: İ12 kapanış eki #2724 (`338ecc52`).
 - Bu paket PR'ının CI'ı ve merge SHA'sındaki main CI'ı **SUCCESS** olmalı.
 - Aday worktree `HY_WT_R25` yayın tamamlanana kadar **silinmez**. Betik adayı bu yoldan okur.
 
