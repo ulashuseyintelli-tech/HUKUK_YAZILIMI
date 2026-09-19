@@ -116,7 +116,7 @@ Kanıt dizini `Documents\CLIENT-EVIDENCE-20260911\i15-f04-i5b-20260918T202635Z\`
 **Owner eylemi:**
 - Yeni GO ref: `OWNER-GO-CLIENT-I15-YYYYMMDD-RNN`.
 - `scripts/i15-owner-live-block.ps1` bloğunu **normal** PowerShell'de çalıştırın; yönetici gerekmez.
-- Blok şu kapıları doğrular: main, paket digest, dist `EB3D854F…71FC` (R25), tek API, açık pencere yok, DB kimliği. Ardından GO ref yerel girilir, koşum yapılır, GO ref tüketimi sha256 olarak kaydedilir ve manifest yazılır.
+- Blok şu kapıları doğrular: main, paket digest, dist `1524EDC1…4D4E` (R25B), tek API, açık pencere yok, DB kimliği. Ardından GO ref yerel girilir, koşum yapılır, GO ref tüketimi sha256 olarak kaydedilir ve manifest yazılır.
 
 **İ15 KAPANIŞ ÖLÇÜTÜ:**
 - KABUL-5 canlı koşumu **5/5 PASS**: FAIL 0, ÖLÇÜLEMEYEN 0.
@@ -126,13 +126,15 @@ Kanıt dizini `Documents\CLIENT-EVIDENCE-20260911\i15-f04-i5b-20260918T202635Z\`
 
 **Hizmet kabulü (H8) owner kabulü olmadan değişmez.**
 
-## R25 bağı (2026-09-19) — canlı dist pini değişti
+## R25 bağı (2026-09-19, R02) — canlı dist pini R25B'ye değişti
 
-Owner bloğunun canlı dist kapısı **R25** artefaktına bağlandı: `EB3D854F708519FFB788B41C4FF2B716F8FAE3C65DDAFC2BFB718446B91171FC` (kaynak `ebbe1ae8cce04de5579944bbf6b7f46a0efe0412`, 3867 dosya). Paket digest değişmedi. Blok R24 dist (`87712E0E…5453`) üzerinde **DURUR**; bu kasıtlıdır, fail-closed davranış.
+Owner kararıyla R25 yalnız onaylı K-1 (#2720) ve PSUS (#2721) portal düzeltmeleriyle sınırlandı. #2716'nın 3 replay adapter dosyası bu yayına **dahil değil**. Owner bloğunun canlı dist kapısı **R25B** artefaktına bağlandı: `1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E` (3867 dosya).
 
-- **Yürütme sırası:** R25 yayını (ayrı owner onayı; yükseltilmiş pencere) → İ13 → İ14 → İ15 → İ16. Her blok bir öncekinin kapanışından sonra ve kendi GO ref'iyle koşulur. Canlı pencereler çakışmaz.
-- **R25 disposable regresyonu (aday dist, API `:8113`, yalnız disposable DB):** İ15 KABUL-5 5/5 PASS. Bunlar canlı kabul değildir.
-- **R24 → R25 farkı:** 10 dosya. 7'si portal dosyası (#2720 K-1, #2721 PSUS). 3'ü summary-engine replay adapter dosyası (#2716): yalnız statik manifest sabiti içerir, Nest modül grafiğinde yoktur. Migration farkı 0.
+R25B **birleşik bir artefakttır**: tabanı canlı R24 dist'i (`87712E0E…5453`), üzerine yalnız 7 portal dosyası `ebbe1ae8` derlemesinden kopyalandı. Aynı digest, `ebbe1ae8` kaynağında yalnız adapter kaynağı `006c4dd2` hâline döndürülerek alınan bağımsız bir derlemeyle bit bit yeniden üretildi. Paket digest'i değişmedi. Blok R24 dist'inde ve 10 dosyalı R25 adayında (`EB3D854F…71FC`) **DURUR**; bu kasıtlıdır, fail-closed davranış.
+
+- **Yürütme sırası:** R25B yayını (ayrı owner onayı; yükseltilmiş pencere) → İ13 → İ14 → İ15 → İ16. Her blok bir öncekinin kapanışından sonra ve kendi GO ref'iyle koşulur.
+- **R25B disposable regresyonu (aday dist `dist-r25b`, API `:8113`, yalnız disposable DB):** İ15 KABUL-5 5/5 PASS. Bunlar canlı kabul değildir. 10 dosyalı R25 adayının sonuçları R25B'nin kanıtı SAYILMAZ; bu koşum yenidir.
+- **R24 → R25B farkı:** 7 portal dosyası. Eklenen 0, silinen 0, migration 0.
 - **Düzeltme notu (dış bağlantı):** Disposable provadaki API, TCMB kur servisine (`185.98.252.10:443`, ExchangeRateService, salt okuma) dışa bağlandı. Bu bir gönderim değildir. Önceki "API'nin tek uzak bağlantısı disposable DB" ölçümü yalnız o anın görüntüsüdür, sürekli bir garanti değildir.
 
 **Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**
