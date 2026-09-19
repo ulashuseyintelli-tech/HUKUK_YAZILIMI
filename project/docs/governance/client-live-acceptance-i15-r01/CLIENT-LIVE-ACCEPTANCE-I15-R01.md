@@ -60,9 +60,9 @@ F04 spec'inin bıraktığı disposable veride (12 dağıtım) tarama **ihlal 0**
 
 ### 2.3 SCAN-B3 bulgularının atfı (salt-okuma)
 Bu bulgular KABUL-B'nin tanımladığı **transaction içi yarım yazım** değildir:
-- **3 satır — gerçek tenant, `postedAt` 2026-06-29.** Canlıdaki ilk `COLLECTION_DISPOSITION_LINE` journal'ı **2026-08-07** tarihlidir. Bu satırlar journal mekanizmasından **önce** post edilmiş eski kayıtlardır.
+- **3 satır — GERÇEK tenant, `postedAt` 2026-06-29 (journal-öncesi eski kayıt; owner kararı: geriye dönük veri YAZILMAZ).** Canlıdaki ilk `COLLECTION_DISPOSITION_LINE` journal'ı **2026-08-07** tarihlidir. Bu satırlar journal mekanizmasından **önce** post edilmiş eski kayıtlardır.
   - **Ayrı bir veri bütünlüğü gözlemi olarak kaydedilir.** Kapsamı genişletmez (R02 §9); geriye dönük doldurma yapılıp yapılmayacağı owner kararıdır. **Hiçbir yazma yapılmadı.**
-- **1 satır — sentetik `ah-` tenant.** İ12 canlı kurulumunun G7 için doğrudan DB'ye yazdığı POSTED fixture'dır (`postedAt` 2026-08-15, `postedById` boş). Tenant kapalıdır.
+- **1 satır — İ12 SENTETİK FIXTURE (ayrı sınıf; gerçek veri DEĞİL).** Salt-okuma ölçüm (2026-09-19): tenant **`ah-92d04ef3`** = İ12 canlı kabulünün kendi hedef tenant'ı (oluşturulma 2026-09-18T19:21, İ12 S1 anı); tahsilat `idempotencyKey` **`i12live-col-…`** kurulum imzasını taşır; dağıtım `i12-live-setup.js` tarafından G7'nin "önceki ay POSTED aktivite" ön koşulu için **doğrudan DB'ye** yazıldı — `postedAt` tasarım gereği önceki aya (2026-08-15) geri alınmıştır, `postedById` boş, satır tipi `CLIENT_PAYABLE`. Ürün posting yolu kullanılmadığı için journal beklenmez; aktif kullanıcı **0**. Bu satır F04 tutarlılık değerlendirmesinin **dışında** sınıflandırılır.
 
 **Kanıt sınırı (lafız korunur):** "İhlal izi bulunmadı" sonucu **canlı eşzamanlılık ispatı DEĞİLDİR.** Tarama yalnız kalıcı sonuç durumunun tutarlı olduğunu gösterir. Yarışın canlıda hiç yaşanmamış olmasından ayırt edilemez.
 
