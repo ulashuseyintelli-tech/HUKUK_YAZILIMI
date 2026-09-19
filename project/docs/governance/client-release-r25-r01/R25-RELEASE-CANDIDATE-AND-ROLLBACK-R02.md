@@ -1,7 +1,7 @@
 # R25 — YAYIN ADAYI + GERİ ALMA PAKETİ (R02 · R25B: yalnız K-1 + PSUS portal düzeltmeleri)
 
-> **Durum: HAZIRLIK — CANLIYA YAYIMLANMADI.** Canlı yayın, owner'ın bu somut paketi onaylamasını bekler. Bu belge ve betikler
-> yayını başlatmaz.
+> **Durum: R25B TEKNİK YAYIN PASS — CANLIDA (2026-09-19 14:55Z).** Owner paket onayıyla koşturdu. Ayrıntılar §7'de.
+> Bu bir teknik yayındır; İ13–İ16 canlı kabul koşumları ayrı owner GO'ları ister.
 >
 > **R01'in yerini alır.** R01'deki 10 dosyalı aday (`EB3D854F…71FC`) owner kararıyla yayına **alınmayacak**. #2716'nın 3 replay
 > adapter dosyası bu yayına dahil değildir. R01 adayının digest'i ve test sonuçları R25B'nin kanıtı **sayılmaz**; aşağıdaki bütün
@@ -159,3 +159,65 @@ Yayın PASS olursa sıradaki adımlar İ13 → İ14 → İ15 → İ16 owner blok
 - İ16, R25B canlıda doğrulanıp owner bloğu canlıda PASS verene kadar kapanmaz.
 - Sayaç **14/18**; hizmet kabulü **0/8**. Bu paket ikisini de değiştirmez.
 - #2716'nın canlıya alınması ayrı bir karar ve ayrı bir aday gerektirir.
+
+## 7. TEKNİK YAYIN KAYDI (2026-09-19)
+
+Owner R25B paketini kimliğiyle onayladı: tam ağaç `1524EDC1…4D4E`; kapsam R24 üzerine yalnız 7 K-1/PSUS portal dosyası, #2716
+hariç. Yayın bloğunu owner yükseltilmiş pencerede kendisi çalıştırdı; sonuç **`YAYIN PASS`**.
+
+**Ön koşullar (yayın öncesi, taze ölçüm):**
+- Main `3cfb1b37` temizdi ve origin ile senkrondu; iki betiğin hash'i pinlerle eşitti.
+- `:8080` üzerinde tek dinleyici vardı (kökü `HY_W4_RELEASE23`); kabul ya da yayın süreci 0'dı.
+- `-SelfTest` PASS verdi: canlı taban R24 `87712E0E…`.
+- Dört yürütücü canlı yayın penceresi için AÇIK teyit verdi: Avukat personel analiz dosyası, OFFİCE 33, OFFİCE 33 - F04, Windows Disk Temizliği.
+- Makine aynı gün 10:16'da (yerel saat) yeniden açılmıştı; API zamanlanmış görevle normal şekilde başlamıştı.
+- Main'deki #2727 migration'ı (`20260919120000_sim_snapshot_restore_unique_indexes`) R25B kapsamında **değildir** ve uygulanmadı. Canlı migration digest'i değişmedi.
+
+**Yayın kanıtı:** `D:\Development\HUKUK_YAZILIMI\HY_R25_RELEASE_EVIDENCE\R25-RELEASE-20260919-145508Z.json`, sha256
+`12F5C7CF199DEAB064E5026B9B8CD12AC2DB3730E7A7846CA2C5E098E71A2239`. Değer owner'ın bildirdiği değerle birebir eşit.
+Kanıttaki ölçümler:
+- 7/7 dosya değiştirildi.
+- Sağlık: `:8080` pid 36568, `/api/auth/me` = 401.
+- Kimliksiz run-now = 401; kimliksiz portal/cases = 401.
+- Boot log `api-out.20260919-175548.log`: run-now `Mapped` 1, portal upload `Mapped` 1, toplam `Mapped` 977.
+- Kapsam: canlı digest, `.env`, başlatıcı ve görev eylemi aynı.
+
+**Geri dönüş yedeği (KORUNUR):** `D:\Development\HUKUK_YAZILIMI\HY_R25_RELEASE_EVIDENCE\rollback-dist-src-R24-20260919-145508Z`. Tam ağaç
+digest'i `87712E0E…5453`, 3867 dosya. Geri alma betiği bu yedekle kullanılabilir durumdadır. R24'ün kendi yedeği
+(`HY_R24_RELEASE_EVIDENCE\rollback-dist-src-R23-20260917-220435Z`) ve R24 kanıtı (`C92B8F5F…E9AD`) dokunulmadan korunuyor.
+
+**Bağımsız yayın sonrası doğrulama (salt okuma): 20/20 PASS**, 2026-09-19 14:59:55Z. Çıktı
+`HY_R25_RELEASE_EVIDENCE\R25B-POST-VERIFY-r2.txt`, sha256 `7C02A5D57A6DB429DA8D8487806C8192C98D2CFB485387549F12D96A019BB067`.
+
+Kullanılan betikler:
+- `D:\Development\HUKUK_YAZILIMI\HY_R25_RELEASE\r25b-post-verify.ps1`, sha256 `DAFD6C9A1BB9E34229F722B5DDC05967137A4182D3B78A544BFCFB4ECDA70744`
+- `r25b-tree-digest.py`, sha256 `E2DFB247FECAE57F25214A407B3399DA7609EF63ABB56C4B24B8095F1E08A2FE`
+
+Canlı tam ağaç digest'i, yayın betiğinden **ayrı** bir uygulamayla (Python, ordinal sıralama) hesaplandı: `1524EDC1…4D4E`,
+3867 dosya. Bu uygulama yayından önce canlıda (`87712E0E…`) ve adayda (`1524EDC1…`) doğru sonucu verdiği ölçülerek sınandı.
+
+| Kontrol | Sonuç |
+|---|---|
+| Canlı dist (Python) | `1524EDC1…4D4E` = R25B |
+| R24 yedeği (Python) | `87712E0E…5453` |
+| Aday `dist-r25b` ve yeniden üretim derlemesi `HY_WT_R25B` | ikisi de `1524EDC1…`; yayına kadar korundu, korunmaya devam ediyor |
+| Yedeğe göre değişen | tam olarak 7 portal dosyası |
+| `.env` sha / başlatıcı / görev eylemi / görev durumu | pin / pin / `hukuk-task-host.exe api` / Running |
+| Canlı migration digest'i | `DD38F07D…` (yayın öncesiyle aynı) |
+| API | tek dinleyici pid 36568 (kök RELEASE23); son başlatıcı çocuğu = dinleyici |
+| DB kimliği | `127.0.0.1:5432/hukuk_db` (son başlatıcı satırı) |
+| Uçlar | `/api/auth/me` 401 · run-now 401 · portal/cases 401 · boş gövdeli portal login 401 |
+| Kullanıcı yüzeyi (web `:3002`) | `/` 200 · `/portal/login` 200 |
+
+**Doğrulayıcı kusuru (kayıt).** İlk koşum yarıda kaldı. PowerShell değişken adlarında büyük/küçük harf ayırmadığı için `$live`
+değişkeni `$LIVE` yolunu ezdi. Kusurdan önce koşan ilk dört kontrolün dördü de PASS verdi. Yalnız değişken adı düzeltildi,
+hiçbir ölçüt değişmedi; salt okuma doğrulama yeniden koşuldu. İlk sürüm `r25b-post-verify.r1-case-collision.ps1` adıyla saklandı.
+
+**Devralınan ve bu yayında giderilmeyen sınır.** `allocation-representative-replay.static-guard` testi, R25B kaynağında
+**başarısızdır**. Manifest silinmiş 4 web dosyasını hâlâ listelemektedir; bu durum canlı R24'te de aynıydı. #2716 bu kusuru
+düzeltir, ancak owner kararıyla yayına dahil edilmedi. Bu nedenle "bütün testler PASS" denemez. Main kaynağında #2716 bulunur;
+canlı dist bu 3 adapter dosyasında main'den bilinçli olarak farklıdır. #2716'nın canlıya alınması ayrı bir karar gerektirir.
+
+**Kapsam sınırı.** Bu kayıt yalnız TEKNİK yayını kapatır. İ13 → İ14 → İ15 → İ16 canlı kabul koşumları her biri için ayrı owner
+GO'su gerektirir; yayın onayı bunların yerine geçmez. İ16, kendi canlı koşumu PASS verene kadar kapanmaz. Zamanlama eşitliği
+ölçülmedi; TOCTOU için "tamamen önlendi" denmez. **Sayaç 14/18, hizmet kabulü 0/8. DEĞİŞMEDİ.**
