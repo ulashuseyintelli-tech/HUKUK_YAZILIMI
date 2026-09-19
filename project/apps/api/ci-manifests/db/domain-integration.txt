@@ -353,3 +353,16 @@ src/modules/debtor/__tests__/debtor-cross-case-notification.integration.spec.ts
 src/modules/summary-engine/__tests__/allocation-evidence-qualification.db-gated.integration.spec.ts
 src/modules/summary-engine/__tests__/allocation-representative-replay.db-gated.integration.spec.ts
 src/scripts/__tests__/rcv-ws04-p03-allocation-replay-launch.db-gated.integration.spec.ts
+
+# ── K1+K2+K3 — SIMULATION SNAPSHOT INDEKSLERI (owner GO 2026-09-19 "OFFICE / DB UCLUSU K1–K4 ONARIMI") ──
+#   K1: 20260919120000_sim_snapshot_restore_unique_indexes squash'ta kaybolan iki unique indeksi
+#   (ux_sim_snap_one_baseline_per_incident, uq_sim_snap_idempotency) arsiv sozlesmesiyle geri getirir
+#   (CI'da `prisma migrate deploy` adimiyla uygulanir). K2: P2002 baseline dali olculen kolon hedefini
+#   (["tenant_id","incident_id"]) tanir; icerik/ilgisiz hedef baseline sayilmaz. K3: describe kapsami,
+#   SimulationRun ust satirlari (yalniz teste ait, FK sirali temizlik, skipDuplicates YOK), ayri
+#   snapshot gereken senaryolarda farkli calcHash, tenant izolasyonu SnapshotStoreService + gercek DB.
+#   Disposable DB: 42 + 7 PASS, acik handle 0. Negatif kontrol: K2 geri alininca 2 FAIL; indekssiz
+#   DB'de 4 FAIL (ikinci baseline + icerik/NULL-runId/eszamanli idempotensi).
+#   Kardes: calc-preview db spec'leri (bundle-manifest / idempotency-gate / promote-request.store).
+src/modules/calc-preview/diagnostics/persistence/__tests__/prisma-repositories.integration.spec.ts
+src/modules/calc-preview/diagnostics/persistence/__tests__/snapshot-idempotency.integration.spec.ts

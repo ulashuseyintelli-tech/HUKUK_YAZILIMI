@@ -202,7 +202,13 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
 
     // Case 3: Baseline unique constraint
     // Partial unique index on (tenant_id, incident_id) WHERE is_baseline = true
-    if (snapshot.isBaseline && (targetStr.includes('baseline') || targetStr === '')) {
+    // Olculdu (disposable PG16, Prisma 5): bu ham kismi indeks icin P2002 meta.target indeks ADI
+    // degil KOLON listesidir = ["tenant_id","incident_id"]. Yalniz TAM bu kolon kumesi baseline
+    // cakismasi sayilir; icerik indeksi (calc_hash iceren) ve ilgisiz unique hedefleri buraya DUSMEZ.
+    const isBaselineColumnTarget =
+      target.length === 2 &&
+      target.map((t) => t.toLowerCase()).sort().join(',') === 'incident_id,tenant_id';
+    if (snapshot.isBaseline && (targetStr.includes('baseline') || targetStr === '' || isBaselineColumnTarget)) {
       // Try to find existing baseline
       const existingBaseline = await this.prisma.simulationSnapshot.findFirst({
         where: {
