@@ -1,13 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 # CI-4: trust proxy ayari kontrolu
-# Spesifik pattern: set('trust proxy', 1) — sadece string match degil, tam cagri
+# Ayar tek yapilandirma noktasindadir (src/common/trust-proxy.config.ts: applyTrustProxy +
+# TRUST_PROXY_HOPS = 1); main.ts bootstrap'i listen oncesinde onu ayni app ile cagirir.
+# Denetim yorum/string'i sayMAYAN bagimliliksiz statik tarayici ile yapilir; once kendi
+# negatif durumlarini (self-test) dogrular. Ayrinti ve sinirlar: ci-4-trust-proxy-gate.cjs basligi.
 
-MATCH=$(grep -n "set('trust proxy'" apps/api/src/main.ts || true)
-
-if [ -z "$MATCH" ]; then
-  echo "CI-4 FAIL: main.ts'de set('trust proxy', ...) ayari bulunamadi"
-  exit 1
-fi
-echo "CI-4 PASS: trust proxy ayari mevcut"
-echo "$MATCH"
+node "$(dirname "$0")/ci-4-trust-proxy-gate.cjs"
