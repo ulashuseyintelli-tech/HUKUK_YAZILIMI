@@ -1,14 +1,14 @@
 param([Parameter(Mandatory = $true)][string]$BackupDir)
 $ErrorActionPreference = 'Stop'
 # =============================================================================
-# R25 GERI ALMA (R25 -> R24) - OWNER ELEVATED KOSUM. Saf ASCII.
-# Yedek tam agac digest 87712E0E... (R24) VE 10-dosya paket digest FFC15B32... dogrulanmadan GERI ALMA BASLAMAZ.
+# R25 GERI ALMA (R25B -> R24) - OWNER ELEVATED KOSUM. Saf ASCII.
+# Yedek tam agac digest 87712E0E... (R24) VE 7-dosya paket digest 848C693D... dogrulanmadan GERI ALMA BASLAMAZ.
 # migrate/DB/launcher/.env DOKUNULMAZ. -BackupDir = r25-release.ps1'in yazdigi rollback-dist-src-R24-<ts> dizini.
 # =============================================================================
 $LIVE_API = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api'
 $LIVE     = Join-Path $LIVE_API 'dist\apps\api\src'
 $EXP_LIVE = '87712E0ED2CF71EE8268D81865C2388E030F52AF9AC7E29C56617AEDD0845453'
-$EXP_BK_PKG = 'FFC15B32AA01CEFC7BB2FE09915A9BEF6EC3AC00149C8597DBEB7EEFAF4E5BC7'
+$EXP_BK_PKG = '848C693D00616F4421339EF5272DDF25400583496EDBB94E0D8837466A5EFD7E'
 $PORTAL_GET = '/api/portal/cases'
 $ENV_PIN  = '7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'
 $LAUNCHER = 'C:\Ops\hukuk\bin\start-api.ps1'
@@ -23,10 +23,7 @@ $FILES = @(
   'modules/portal/portal.controller.js.map',
   'modules/portal/portal.service.d.ts',
   'modules/portal/portal.service.js',
-  'modules/portal/portal.service.js.map',
-  'modules/summary-engine/allocation-representative-replay-adapter.d.ts',
-  'modules/summary-engine/allocation-representative-replay-adapter.js',
-  'modules/summary-engine/allocation-representative-replay-adapter.js.map')
+  'modules/portal/portal.service.js.map')
 $log = New-Object System.Collections.Generic.List[string]
 function Say([string]$m) { $line = ((Get-Date).ToUniversalTime().ToString('HH:mm:ss') + 'Z  ' + $m); Write-Host $line; $log.Add($line) }
 function Get-R25FileSha256([string]$p) { return (Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash }
@@ -78,7 +75,7 @@ Say ('yedek dosya=' + $bkMap.Count + ' digest=' + $bkDig + ' | taban esit=' + ($
 if ($bkDig -cne $EXP_LIVE) { throw 'KAPI: yedek bozuk - GERI ALMA BASLAMAZ' }
 $pm = [ordered]@{}; foreach ($rel in $FILES) { $pm[$rel] = $bkMap[$rel] }
 $bkPkg = Get-TreeDigest $pm
-Say ('yedek paket digest (10 dosya)=' + $bkPkg + ' | pin esit=' + ($bkPkg -ceq $EXP_BK_PKG))
+Say ('yedek paket digest (7 dosya)=' + $bkPkg + ' | pin esit=' + ($bkPkg -ceq $EXP_BK_PKG))
 if ($bkPkg -cne $EXP_BK_PKG) { throw 'KAPI: yedek paket digest pin degil - GERI ALMA BASLAMAZ' }
 if ((Get-R25FileSha256 $LAUNCHER) -cne $LAUNCH_PIN) { throw 'KAPI: pinli launcher farkli - DUR' }
 if ((Get-R25FileSha256 (Join-Path $LIVE_API '.env')) -cne $ENV_PIN) { throw 'KAPI: canli .env sha pin degil - DUR' }
@@ -86,7 +83,7 @@ Say '=== 2) DURDUR + KAPANDIGINI DOGRULA'
 Stop-ScheduledTask -TaskName $TASK
 if (-not (Wait-ApiStopped 90)) { throw 'KAPI: API kapanmadi - DOSYALARA DOKUNULMAZ, ESCALATE' }
 Say 'API kapandi'
-Say '=== 3) 10 DOSYAYI GERI DONDUR'
+Say '=== 3) 7 DOSYAYI GERI DONDUR'
 foreach ($rel in $FILES) {
   $src = Join-Path $BackupDir ($rel -replace '/', '\'); $dst = Join-Path $LIVE ($rel -replace '/', '\')
   Copy-Item -LiteralPath $src -Destination $dst -Force

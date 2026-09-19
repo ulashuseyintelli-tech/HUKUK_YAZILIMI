@@ -1,19 +1,19 @@
 param([switch]$SelfTest)
 $ErrorActionPreference = 'Stop'
 # =============================================================================
-# R25 YAYIN - OWNER ELEVATED KOSUM. Saf ASCII.
+# R25 YAYIN (R25B adayi: YALNIZ 7 portal dosyasi) - OWNER ELEVATED KOSUM. Saf ASCII.
 # -SelfTest : CANLIYA DOKUNMAZ (durdurma/takas/yazma YOK). Yalniz yardimci fonksiyonlari ve
 #             salt-okuma kimlik olcumlerini dogrular, sonra cikar. Yayin icin PARAMETRESIZ kosulur.
-# Aday EB3D854F... <- kaynak ebbe1ae8 ; canli taban (R24) 87712E0E... ; yalniz 10 dosya:
-#   7 portal (#2720 K-1 + #2721 PSUS) + 3 summary-engine replay adapter (#2716, ACIKCA BEYAN:
-#   yalniz statik manifest sabiti; Nest modul grafiginde YOK, yalniz scripts/ ve kendi kardesinden import).
+# Aday R25B 1524EDC1... = BIRLESIK ARTEFAKT: canli R24 dist 87712E0E... + YALNIZ 7 portal dosyasi
+#   (#2720 K-1 + #2721 PSUS; ebbe1ae8 derlemesi). #2716 replay adapter dosyalari DAHIL DEGIL (owner karari).
+#   Ayni digest, ebbe1ae8 + adapter kaynagi 006c4dd2 halinde bagimsiz derlemeyle bit-bit yeniden uretildi.
 # migrate deploy YOK (migration farki 0) ; pinli launcher DEGISMEZ ; .env OKUNMAZ (yalniz sha) ; DB yazimi YOK.
 # Basarisizlikta: dosyalara dokunulmadan DUR, ya da swap sonrasi otomatik GERI ALMA (bolum 7).
 # =============================================================================
 $LIVE_API = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api'
 $LIVE     = Join-Path $LIVE_API 'dist\apps\api\src'
-$CAND     = 'D:\Development\HUKUK_YAZILIMI\HY_WT_R25\project\apps\api\dist\apps\api\src'
-$EXP_CAND = 'EB3D854F708519FFB788B41C4FF2B716F8FAE3C65DDAFC2BFB718446B91171FC'
+$CAND     = 'D:\Development\HUKUK_YAZILIMI\HY_WT_R25\project\apps\api\dist-r25b\apps\api\src'
+$EXP_CAND = '1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E'
 $EXP_LIVE = '87712E0ED2CF71EE8268D81865C2388E030F52AF9AC7E29C56617AEDD0845453'
 $ENV_PIN  = '7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'
 $LAUNCHER = 'C:\Ops\hukuk\bin\start-api.ps1'
@@ -24,7 +24,7 @@ $TASK = 'HukukPlatform-API'
 $ROUTE = '/api/client-statements/monthly-delivery/run-now'
 $PORTAL_GET = '/api/portal/cases'
 $PORTAL_MAPPED = 'Mapped {/api/portal/documents/upload, POST} route'
-$EXP_PKG  = '02F0E5489AD689946DC8284338696E0A881FBC9517BE4D8FD583B34BA7E3D252'
+$EXP_PKG  = '4934A97C3E50197784A6469E54CB4A591672E3503A4C86FB6852D0FF97327D3A'
 $FILES = @(
   'modules/portal/portal-auth.guard.js',
   'modules/portal/portal-auth.guard.js.map',
@@ -32,10 +32,7 @@ $FILES = @(
   'modules/portal/portal.controller.js.map',
   'modules/portal/portal.service.d.ts',
   'modules/portal/portal.service.js',
-  'modules/portal/portal.service.js.map',
-  'modules/summary-engine/allocation-representative-replay-adapter.d.ts',
-  'modules/summary-engine/allocation-representative-replay-adapter.js',
-  'modules/summary-engine/allocation-representative-replay-adapter.js.map')
+  'modules/portal/portal.service.js.map')
 $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'
 $EVID_DIR = 'D:\Development\HUKUK_YAZILIMI\HY_R25_RELEASE_EVIDENCE'
 $BK = Join-Path $EVID_DIR ('rollback-dist-src-R24-' + $ts)
@@ -90,7 +87,7 @@ function Get-PackageDigest([string]$root) {
   return Get-TreeDigest $m
 }
 function Restore-FromBackup {
-  Say 'GERI ALMA: yedekten 10 dosya donduruluyor'
+  Say 'GERI ALMA: yedekten 7 dosya donduruluyor'
   foreach ($rel in $FILES) {
     $src = Join-Path $BK ($rel -replace '/', '\'); $dst = Join-Path $LIVE ($rel -replace '/', '\')
     Copy-Item -LiteralPath $src -Destination $dst -Force
@@ -128,7 +125,7 @@ if ($SelfTest) {
   Say ('Http yardimcisi: /api/auth/me=' + $me0 + ' | POST run-now=' + $rn0 + ' | GET portal/cases=' + $pg0)
   if ($me0 -ne 401) { $fails++ }
   $pk0 = Get-PackageDigest $CAND
-  Say ('paket digest (10 dosya, aday): ' + $pk0 + ' | pin esit=' + ($pk0 -ceq $EXP_PKG))
+  Say ('paket digest (7 dosya, aday): ' + $pk0 + ' | pin esit=' + ($pk0 -ceq $EXP_PKG))
   if ($pk0 -cne $EXP_PKG) { $fails++ }
   $needed = @('Say', 'Get-R25FileSha256', 'Get-Map', 'Get-TreeDigest', 'Get-ApiPids', 'Wait-ApiStopped', 'Http', 'Restore-FromBackup', 'Get-PackageDigest')
   $missing = @($needed | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) })
@@ -162,7 +159,7 @@ $candMap = Get-Map $CAND; $candDig = Get-TreeDigest $candMap
 Say ('aday dosya=' + $candMap.Count + ' digest=' + $candDig)
 if ($candDig -cne $EXP_CAND) { throw 'KAPI: aday digest beklenen degil - DUR' }
 $pkg = Get-PackageDigest $CAND
-Say ('paket digest (10 dosya)=' + $pkg)
+Say ('paket digest (7 dosya)=' + $pkg)
 if ($pkg -cne $EXP_PKG) { throw 'KAPI: paket digest pin degil - DUR' }
 
 Say '=== 2) CANLI KIMLIK + DOGRULANMIS YEDEK'
@@ -187,7 +184,7 @@ Stop-ScheduledTask -TaskName $TASK
 if (-not (Wait-ApiStopped 90)) { throw 'KAPI: API kapanmadi - DOSYALARA DOKUNULMAZ' }
 Say 'API kapandi (dinleyici 0, host api sureci 0, gorev Running degil)'
 
-Say '=== 4) 10 DOSYAYI DEGISTIR (migrate deploy YOK)'
+Say '=== 4) 7 DOSYAYI DEGISTIR (migrate deploy YOK)'
 $swapped = 0
 foreach ($rel in $FILES) {
   $src = Join-Path $CAND ($rel -replace '/', '\'); $dst = Join-Path $LIVE ($rel -replace '/', '\')
@@ -195,7 +192,7 @@ foreach ($rel in $FILES) {
   if ((Get-R25FileSha256 $dst) -cne $candMap[$rel]) { Say ('HATA: kopyalanan dosya sha uyusmuyor: ' + $rel); break }
   $swapped++
 }
-Say ('degistirilen dosya=' + $swapped + '/10')
+Say ('degistirilen dosya=' + $swapped + '/7')
 
 Say '=== 5) DURMUSKEN TAM AGAC DIGEST'
 $liveDig1 = Get-TreeDigest (Get-Map $LIVE)
@@ -260,7 +257,7 @@ Say ('=== SONUC: ' + $verdict)
 $evid = [ordered]@{
   record = 'R25-RELEASE-EXECUTION'; tsUtc = $ts; verdict = $verdict
   sourceSha = 'ebbe1ae8cce04de5579944bbf6b7f46a0efe0412'; candidateDigest = $EXP_CAND; liveBaselineDigest = $EXP_LIVE
-  packageDigest = $EXP_PKG; prs = @('#2720 K-1', '#2721 PSUS', '#2716 replay-adapter manifest (runtime modul grafiginde yok, acikca beyan)')
+  packageDigest = $EXP_PKG; candidate = 'R25B'; composite = 'R24 87712E0E + 7 portal dosyasi (ebbe1ae8)'; prs = @('#2720 K-1', '#2721 PSUS'); excluded = @('#2716 replay-adapter (owner karari)')
   backupPath = $BK; changedFiles = $FILES; migrationRun = $false; launcherChanged = $false; envRead = $false
   log = @($log)
 }

@@ -1,5 +1,7 @@
 # R25 — YAYIN ADAYI + GERİ ALMA PAKETİ (R01)
 
+> **YERİNİ ALDI → `R25-RELEASE-CANDIDATE-AND-ROLLBACK-R02.md` (R25B). Bu R01 adayı YAYINA ALINMAYACAK.** Owner kararı (2026-09-19): R25 yalnız K-1 ve PSUS portal düzeltmeleriyle sınırlandı. #2716'nın 3 replay adapter dosyası dahil değildir. Bu belgedeki aday digest'i (`EB3D854F…71FC`), paket digest'i ve test sonuçları R25B'nin kanıtı SAYILMAZ. Betik hash'leri (`095DFEEC…`, `FD42E866…`) `074dd4d0`'daki önceki sürüme aittir; güncel betikler R02'dedir. Kayıt değiştirilmeden tarihsel olarak korunur.
+
 > **Durum: HAZIRLIK — YAYINA HAZIR İLAN EDİLMEDİ.** Paket, §7'deki CI kapıları tamamlanana kadar "yayına hazır" sayılmaz.
 > Canlı yayın ayrıca **owner'ın bu somut paketi onaylamasını** bekler. Bu belge ve betikler yayını başlatmaz.
 
