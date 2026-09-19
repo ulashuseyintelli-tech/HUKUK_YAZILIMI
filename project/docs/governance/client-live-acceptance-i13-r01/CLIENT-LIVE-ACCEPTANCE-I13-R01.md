@@ -127,3 +127,62 @@ R25B **birleşik bir artefakttır**: tabanı canlı R24 dist'i (`87712E0E…5453
 - **Düzeltme notu (dış bağlantı):** Disposable provadaki API, TCMB kur servisine (`185.98.252.10:443`, ExchangeRateService, salt okuma) dışa bağlandı. Bu bir gönderim değildir. Önceki "API'nin tek uzak bağlantısı disposable DB" ölçümü yalnız o anın görüntüsüdür, sürekli bir garanti değildir.
 
 **Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**
+
+## 7. CANLI KOŞUM SONUCU — İ13 KAPANDI (2026-09-19)
+
+Owner İ13 canlı kabul GO'sunu verdi ve bloğu normal PowerShell'de kendisi koşturdu. GO ref yerel kaldı; literal hiçbir yere
+yazılmadı. Owner çıktısı: **RUNID `8811f395` · çıkış 0**. Kanıt dizini:
+`C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i13-live-8811f395-20260919-224001`.
+
+**Bağlam (`owner-block.json`).** Koşum aşağıdaki bağlamda yapıldı:
+
+| Alan | Değer |
+|---|---|
+| Main | `d78d610e7620919997b0240f77d9facfceac181c` |
+| Paket | `8AD6EE11…48BD` |
+| Canlı dist | `1524EDC1…4D4E` (R25B) |
+| API pid | 36568 |
+| Başlangıç | 2026-09-19T19:40:01Z |
+
+**Koşum sonucu (`i13-evidence.json`): 13/13 PASS · FAIL 0 · ÖLÇÜLEMEYEN 0.**
+- I13-00 ve H2-01…H2-10 geçti.
+- I13-CLOSE: `closure.ok=true`. Hedef tenant'ta aktif kullanıcı 0 ve 1 case CLOSED oldu; yabancı tenant'ta aktif kullanıcı 0. Giriş 401, eski token 401.
+- I13-ISO: izolasyon parmak izi önce ve sonra aynı, `f3e0eca6a4b54974` / 15 tenant.
+
+**CLIENT bağımsız kapanış doğrulaması: PASS (6/6).** Betik `i13-closure-verify.js`, sha256
+`24CD1E5141FD7C9429AF85CB70A4D1288942E4E47FBE857ECDC61093531553EE`. İ13 kütüphanesini kullanmaz; ayrı süreçte ve `hukuk_db`
+üzerinde READ ONLY transaction içinde çalışır. Koşum iki kez yapıldı:
+- r1: `786DA4B1…E924`
+- r2: `D259993E…4DD2` (owner çıktısından sonra, taze)
+
+| Denetim | Sonuç |
+|---|---|
+| V1 kanıt | 13 zorunlu satırın hepsi PASS · runId eşit |
+| V2 manifest | 5 satır, tamamı eşit · manifest dışı dosya 0 (`SHA256-MANIFEST.txt` `C87E2B22…2E7`) |
+| V3 erişim — hedef `ah-8811f395` | aktif/toplam kullanıcı 0/9 · ACTIVE case 0 · aktif portal kullanıcısı 0 |
+| V3 erişim — yabancı `ah-8811f395-x` | aktif/toplam kullanıcı 0/0 · ACTIVE case 0 · aktif portal kullanıcısı 0 |
+| V4 gerçek tenant izolasyonu | şimdi `f3e0eca6a4b54974`/15 = koşum öncesi |
+| V5 GO ref | tüketim kaydında yalnız sha256 (`literalWritten=false`) · literal içeren dosya 0 |
+
+Doğrulayıcının ret yolları disposable ortamda ayrıca sınandı: bozuk manifest ve GO ref literali, ikisi de FAIL verdi.
+
+**Kanıt dosyaları (sha256):**
+
+| Dosya | sha256 |
+|---|---|
+| `i13-evidence.json` | `61A6EFAD6680A3FC4B1CE035A4772997ADD976D9FDF9A601661A7F371A9264A9` |
+| `i13-setup-receipt.json` | `C8DEA6E75C6039CC927E25E7FC7A74EF98D48493C201EF04520FE8C6A0F00E72` |
+| `i13-run.log` | `FD8EC2EC7FF6661FA6D9BF8C391D63096EE330F7D7991825B252FC731986BF79` |
+| `goref-consumed.json` | `B7C84C0DCC3BBD9B6A2C7EC4566EFA1377EA14C5BD97C086539F6BF9F04C6B9B` |
+| `owner-block.json` | `4977D61E9E9C18A2573E02D535832CE772F7A12B5CF72BF4364F9D049CA3E766` |
+
+**Pencere.** Dört yürütücü canlı kabul penceresi için açık teyit verdi. Pencere içindeki iki olay kayda geçti:
+1. **Docker Desktop kendi kendine güncellendi.** 19:32Z'de 4.91'e güncellenip 19:33Z'de yeniden başladı. Canlı `hukuk-postgres`
+   konteyneri bu nedenle yaklaşık 19:34Z'de yeniden başladı; bunu hiçbir oturum yapmadı. API süreci yeniden başlamadı. Koşum bu
+   olaydan **sonra** (19:40:01–03Z) başladı ve bitti; DB yeniden başlaması koşumun içine düşmedi.
+2. **Salt-okuma yedek alındı.** "Windows Disk Temizliği" oturumu, owner'ın Docker taşıma talimatıyla 19:36Z'de canlı DB'den
+   salt-okuma bir `pg_dump` aldı (`default_transaction_read_only=on`, 0,7 sn). Yazma yapılmadı. Yedek koşumdan önce alındığı için
+   İ13 sentetik satırlarını içermez.
+
+**Sonuç: İ13 KAPANDI.** Sayaç **15/18**. Hizmet kabulü (H2 dahil) owner kabulü olmadan değişmez: **0/8**.
+Kanıt satırları silinmez; sentetik tenant'lar kapalı durumda kalır.
