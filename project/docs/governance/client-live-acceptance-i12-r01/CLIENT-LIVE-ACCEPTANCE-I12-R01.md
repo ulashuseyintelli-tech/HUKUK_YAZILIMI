@@ -1101,3 +1101,23 @@ Kontrolün kör olmadığı pencere öncesi taban ölçümüyle gösterildi: son
 - Yedi gözlem canlıda PASS; güvenli kapanış ve bağımsız doğrulama PASS.
 - Sayaç **14/18**.
 - **Hizmet kabulü (H6 dahil) DEĞİŞMEZ — 0/8.** Owner kabulü ayrıdır.
+
+#### 9.15-ek · Doğrulayıcı kusurları — ilk/son sonuç ve ölçütlerin GEVŞETİLMEDİĞİNİN kanıtı · kapanış kesinleşmesi (2026-09-19)
+
+İlk bağımsız doğrulama (`closure-verify-r1-verifier-defect.json`) **8 PASS · 2 ÖLÇÜLEMEYEN** verdi. Nedenleri üründe değil,
+doğrulayıcının iki ölçütündeydi. Düzeltmeden sonra **yalnız salt-okuma doğrulama** yeniden koşuldu; kurtarma, gönderim ya da
+canlı yazma tekrarlanmadı. Son sonuç (`closure-verify.json`): **10 PASS · 0 FAIL · 0 ÖLÇÜLEMEYEN**.
+
+| Denetim | İlk koşum (kusurlu ölçüt) | Düzeltilmiş ölçüt | Neden GEVŞEME DEĞİL |
+|---|---|---|---|
+| **V3-ACCESS-foreign** | `aktif=0` ama `toplam>0` şartı aranıyordu → kullanıcısız yabancı tenant'ta ÖLÇÜLEMEYEN | hedef için `toplam>0` korunur; yabancı tenant için **`toplam=0` TAM EŞİTLİK** beklenir, `aktif>0` ya da `toplam>0` → **FAIL** | Canlı kurulum yabancı tenant'ı **tasarım gereği kullanıcısız** üretir (`i3-lib.js` setupI3: yalnız Tenant + Client). Yeni ölçüt eskisinden **daha sıkıdır**: eskisi yabancı tenant'ta beklenmeyen bir kullanıcıyı PASS'a çevirebilirdi, yenisi FAIL verir. |
+| **V3-OFFICE-OTHERS** | `othersBefore`'un dizi olduğu varsayılmıştı; alan bir **parmak izi** dizesi olduğundan hiç karşılaştırılamadı → ÖLÇÜLEMEYEN | ürünün kendi `i12-window.othersFingerprint` işlevi aynı READ ONLY transaction içinde **yeniden hesaplanır** ve pencere-öncesi parmak iziyle birebir karşılaştırılır | Eski niyet yalnız **sayı** karşılaştırmasıydı; yeni ölçüt diğer tüm tenant'ların Office satırlarının `smtpHost/Port/User/Pass/Secure/FromName/FromEmail` alanlarının **tam özetini** karşılaştırır → sayı eşitken içerik değişimini de yakalar (**daha sıkı**). Ölçülen: önce = sonra = `4E1C8669F6E7A5CA`. |
+
+**Kapanış kesinleşmesi.** Kayıt PR'ı #2714 `20b70e21` olarak merge edildi. Bu SHA'nın main CI'ı iki kez **iptal edildi**: main'e art
+arda gelen push'lar, `cancel-in-progress` concurrency kuralı nedeniyle koşumu durdurdu. İptal SUCCESS sayılmaz. CI, başka oturumların
+koşumlarını iptal etmemek için main boştayken **sıralı** yeniden tetiklendi. SUCCESS sonucu decision-log satırında kayıtlıdır.
+**Planlanan sıradan sapma (kayıt):** plan "bekleyen merge SHA CI'ları → bu kapanış eki → #2720 → #2721" idi. #2720 bu ekten ÖNCE merge edildi: GitHub olay kaydı `merged` · aktör hesabı `ulashuseyintelli-tech` · 2026-09-18T22:27:39Z · GitHub App aracılığı YOK · squash commit `448345c1` (committer `GitHub`, imza doğrulanmış). **Başlatan kişi/oturum DOĞRULANAMADI:** hesap ortaktır (bu oturum ve diğer oturumlar da aynı hesabı kullanır) ve oturum transkriptlerinde `gh pr merge 2720` çağrısı bulunamadı; bu yüzden işlem owner'a ATFEDİLMEZ. Bu oturum #2720'yi merge ETMEDİ. Bu merge, başka bir oturumun main'de koşan CI'ını (`1726275f`, #2722) iptal etti; o oturum koşumu yeniden başlattı. `448345c1`'in kendi CI'ı **SUCCESS** (22:44Z). Sapma İ12 kanıtını etkilemez; #2721 buna göre `448345c1` üzerine rebase edildi (kod yamaları birebir, yalnız bağlam satırları değişti).
+**İkinci sapma (kayıt):** #2721 de bu ekten ÖNCE merge edildi: GitHub olay kaydı `merged` · aktör hesabı `ulashuseyintelli-tech` · 2026-09-18T22:53:43Z · GitHub App aracılığı YOK · squash commit `ebbe1ae8` · merge anındaki head `ceef9a23` (merge öncesi doğrulanan head ile aynı). **Başlatan kişi/oturum DOĞRULANAMADI:** hesap ortaktır; bu oturumun ve diğer oturumların transkriptlerinde #2721 için merge çağrısı bulunamadı (bu oturumun tek toplu merge döngüsü 20:41Z'de yalnız #2717–#2719'u kapsıyordu). İşlem owner'a ATFEDİLMEZ. Bu merge, main'de koşan `be28daed` yeniden koşumunu ve `ebbe1ae8`'in kendi ilk CI koşumunu `cancel-in-progress` ile iptal etti. Eksik SHA'lar (`27ca3400`, `20b70e21`, `ebbe1ae8`) diğer yürütücülerden alınan açık sessiz pencere teyidiyle sırayla yeniden koşuldu; en yeni main SUCCESS'i eski SHA'ların yerine SAYILMADI. Run kimlikleri decision-log satırındadır.
+
+İ12 **KAPANDI** · sayaç **14/18** (İ13–İ16 paketlerinin merge'ü bu işleri KAPATMAZ; her biri kendi canlı koşumuyla kapanır).
+**Hizmet kabulü 0/8.**
