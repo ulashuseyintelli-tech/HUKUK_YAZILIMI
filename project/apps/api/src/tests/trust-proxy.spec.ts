@@ -3,30 +3,43 @@
  *
  * INV-7: Reverse proxy arkasında req.ip gerçek client IP'sini döner.
  * Senaryolar: 0 hop (direkt), 1 hop (nginx), 2 hop (CDN+nginx)
+ *
+ * Uygulama, üretimle aynı HTTP platformu (@nestjs/platform-express) üzerinde küçük bir Nest
+ * uygulamasıdır; `trust proxy` ayarı üretimdeki TEK yapılandırma noktasından (`applyTrustProxy`,
+ * main.ts bootstrap'ının da çağırdığı fonksiyon) uygulanır. Bu test ayarın DAVRANIŞINI doğrular;
+ * main.ts'in fonksiyonu çağırdığı ayrıca (kaynak düzeyinde) doğrulanır.
  */
-import * as express from 'express';
-import * as http from 'http';
+import { Controller, Get, INestApplication, Module, Req } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import type { Request } from 'express';
+import { applyTrustProxy } from '../common/trust-proxy.config';
+
+@Controller()
+class IpProbeController {
+  @Get('ip')
+  ip(@Req() req: Request) {
+    return { ip: req.ip, ips: req.ips };
+  }
+}
+
+@Module({ controllers: [IpProbeController] })
+class TrustProxyTestModule {}
 
 describe('Trust Proxy Integration', () => {
-  let app: express.Express;
-  let server: http.Server;
+  let app: INestApplication;
   let baseUrl: string;
 
-  beforeAll((done) => {
-    app = express();
-    app.set('trust proxy', 1);
-    app.get('/ip', (req, res) => {
-      res.json({ ip: req.ip, ips: req.ips });
-    });
-    server = app.listen(0, () => {
-      const addr = server.address() as { port: number };
-      baseUrl = `http://127.0.0.1:${addr.port}`;
-      done();
-    });
+  beforeAll(async () => {
+    app = await NestFactory.create(TrustProxyTestModule, new ExpressAdapter(), { logger: false });
+    applyTrustProxy(app);
+    await app.listen(0, '127.0.0.1');
+    const addr = app.getHttpServer().address() as { port: number };
+    baseUrl = `http://127.0.0.1:${addr.port}`;
   });
 
-  afterAll((done) => {
-    server.close(done);
+  afterAll(async () => {
+    await app?.close();
   });
 
   it('0 hop (direkt): req.ip === remoteAddress (XFF yok)', async () => {

@@ -853,3 +853,14 @@ src/modules/summary-engine/__tests__/summary-engine.module.wiring.spec.ts
 #   DB env TANIMSIZ, --forceExit YOK, --detectOpenHandles: guard 2/2 + replay-adapter 12/12 PASS, acik handle 0.
 #   Kardes: allocation-representative-replay-adapter.spec ve saf summary-engine spec'leri bu manifestte.
 src/modules/summary-engine/__tests__/allocation-representative-replay.static-guard.spec.ts
+
+# ── TRUST-PROXY TEST ONARIMI (owner GO 2026-09-19 "OFFICE / TRUST-PROXY TEST ONARIMI") ──
+#   INV-7 / PF-005: reverse proxy arkasinda req.ip. Eski spec `import express` ile ciplak Express
+#   kuruyordu (pnpm izolasyonu: express api'nin dogrudan bagimliligi degil -> "Cannot find module")
+#   ve urunu degil kendi uygulamasini test ediyordu. Dar urun refactor'u: ayar tek noktaya
+#   (`src/common/trust-proxy.config.ts` applyTrustProxy, hop=1) cikarildi; main.ts ayni noktada onu
+#   cagirir. Spec: @nestjs/platform-express uzerinde kucuk Nest uygulamasi + test controller +
+#   ayni applyTrustProxy; uc senaryo ve beklentiler AYNEN; loopback, port 0, app.close().
+#   Negatif kontrol: ayar kaldirilinca 1-hop ve 2-hop FAIL (req.ip=127.0.0.1). express/lockfile DEGISMEDI.
+#   Kardes: src/tests/* saf spec'leri bu manifestte.
+src/tests/trust-proxy.spec.ts
