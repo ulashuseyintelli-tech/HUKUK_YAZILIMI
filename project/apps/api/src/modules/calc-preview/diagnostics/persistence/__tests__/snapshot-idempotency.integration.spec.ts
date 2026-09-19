@@ -47,16 +47,54 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
     await module.close();
   });
 
+  // Yalniz BU testin olusturdugu kayitlar, FK sirasiyla (snapshot -> run) temizlenir.
   afterEach(async () => {
-    await prisma.simulationSnapshot.deleteMany({
-      where: { tenantId: { startsWith: 'tenant-' } },
-    });
+    const tenantIds = [...ownTenantIds];
+    const runIds = [...ownRuns.keys()];
+    ownTenantIds.clear();
+    ownRuns.clear();
+    if (tenantIds.length > 0) {
+      await prisma.simulationSnapshot.deleteMany({ where: { tenantId: { in: tenantIds } } });
+    }
+    if (runIds.length > 0) {
+      await prisma.simulationRun.deleteMany({ where: { runId: { in: runIds } } });
+    }
   });
+
+  // simulation_snapshots.run_id -> simulation_runs.run_id FK'si: runId tasiyan girdinin ust
+  // SimulationRun satiri, snapshot ile AYNI tenant/incident'e ait olarak test kurulumunda
+  // olusturulur. skipDuplicates YOK: runId zaten varsa (bu teste ait degil) create HATA verir.
+  // Ayni runId icin es-zamanli cagrilar tek olusturma promise'ini paylasir.
+  const ownTenantIds = new Set<string>();
+  const ownRuns = new Map<string, Promise<unknown>>();
+  function ensureRun(input: SnapshotInput): Promise<unknown> {
+    const runId = input.runId as string;
+    let p = ownRuns.get(runId);
+    if (!p) {
+      p = prisma.simulationRun.create({
+        data: {
+          runId,
+          tenantId: input.tenantId,
+          incidentId: input.incidentId,
+          scenarioId: 'scenario-idempotency-spec',
+          seed: 1,
+          simulationVersion: '1.0.0',
+        },
+      });
+      ownRuns.set(runId, p);
+    }
+    return p;
+  }
+  async function insertWithRun(input: SnapshotInput) {
+    ownTenantIds.add(input.tenantId);
+    if (input.runId) await ensureRun(input);
+    return repository.insert(input);
+  }
 
   it('PK idempotency - returns existing when snapshotId exists', async () => {
     const input = createTestInput();
-    const first = await repository.insert(input);
-    const second = await repository.insert(input);
+    const first = await insertWithRun(input);
+    const second = await insertWithRun(input);
     expect(first.snapshotId).toBe(input.snapshotId);
     expect(second.snapshotId).toBe(input.snapshotId);
     const count = await prisma.simulationSnapshot.count({
@@ -69,8 +107,8 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
     const baseInput = createTestInput();
     const firstInput = { ...baseInput, snapshotId: randomUUID() };
     const secondInput = { ...baseInput, snapshotId: randomUUID() };
-    await repository.insert(firstInput);
-    const second = await repository.insert(secondInput);
+    await insertWithRun(firstInput);
+    const second = await insertWithRun(secondInput);
     expect(second.snapshotId).toBe(firstInput.snapshotId);
     const count = await prisma.simulationSnapshot.count({
       where: { tenantId: baseInput.tenantId, incidentId: baseInput.incidentId },
@@ -82,8 +120,8 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
     const baseInput = createTestInput();
     const firstInput = { ...baseInput, snapshotId: randomUUID(), calcHash: generateTestHash() };
     const secondInput = { ...baseInput, snapshotId: randomUUID(), calcHash: generateTestHash() };
-    await repository.insert(firstInput);
-    await repository.insert(secondInput);
+    await insertWithRun(firstInput);
+    await insertWithRun(secondInput);
     const count = await prisma.simulationSnapshot.count({
       where: { tenantId: baseInput.tenantId, incidentId: baseInput.incidentId },
     });
@@ -91,9 +129,12 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
   });
 
   it('allows same content for different tenants', async () => {
+    // runId global tekil bir SimulationRun'a FK'dir ve tek tenant'a aittir; iki tenant'in ayni
+    // run'a baglanmasi gecersiz iliski olur. Icerik anahtari runId=NULL (COALESCE sentinel) ile
+    // iki tenant'ta birebir aynidir; tenant ayrimi guvencesi korunur.
     const sharedContent = {
       incidentId: `incident-${randomUUID().substring(0, 8)}`,
-      runId: randomUUID(),
+      runId: undefined,
       calcHash: generateTestHash(),
       calcResult: { total: 1000 },
       calcResultNorm: { total: '1000' },
@@ -108,8 +149,8 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
       tenantId: `tenant-${randomUUID().substring(0, 8)}`,
       snapshotId: randomUUID(),
     });
-    const first = await repository.insert(tenant1Input);
-    const second = await repository.insert(tenant2Input);
+    const first = await insertWithRun(tenant1Input);
+    const second = await insertWithRun(tenant2Input);
     expect(first.snapshotId).not.toBe(second.snapshotId);
   });
 
@@ -117,8 +158,8 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
     const baseInput = createTestInput({ runId: undefined });
     const firstInput = { ...baseInput, snapshotId: randomUUID() };
     const secondInput = { ...baseInput, snapshotId: randomUUID() };
-    const first = await repository.insert(firstInput);
-    const second = await repository.insert(secondInput);
+    const first = await insertWithRun(firstInput);
+    const second = await insertWithRun(secondInput);
     expect(first.snapshotId).toBe(second.snapshotId);
     const count = await prisma.simulationSnapshot.count({
       where: { tenantId: baseInput.tenantId, incidentId: baseInput.incidentId, runId: null },
@@ -130,8 +171,8 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
     const baseInput = createTestInput();
     const withRunId = { ...baseInput, snapshotId: randomUUID() };
     const withoutRunId = { ...baseInput, snapshotId: randomUUID(), runId: undefined };
-    await repository.insert(withRunId);
-    await repository.insert(withoutRunId);
+    await insertWithRun(withRunId);
+    await insertWithRun(withoutRunId);
     const count = await prisma.simulationSnapshot.count({
       where: { tenantId: baseInput.tenantId, incidentId: baseInput.incidentId },
     });
@@ -145,7 +186,7 @@ describeDb('Snapshot Idempotency Integration Tests', () => {
       snapshotId: randomUUID(),
     }));
     const results = await Promise.all(
-      concurrentInputs.map(input => repository.insert(input))
+      concurrentInputs.map(input => insertWithRun(input))
     );
     const uniqueIds = new Set(results.map(r => r.snapshotId));
     expect(uniqueIds.size).toBe(1);

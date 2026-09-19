@@ -17,6 +17,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../../../../prisma/prisma.service';
 import { PrismaSimulationRunRepository } from '../prisma-simulation-run.repository';
 import { PrismaSnapshotRepository } from '../prisma-snapshot.repository';
+import { SnapshotStoreService } from '../snapshot-store.service';
 import {
   SimulationRunInput,
   SimulationRunStatus,
@@ -30,7 +31,9 @@ import {
   TenantMismatchError,
   EntityNotFoundError,
   RunNotCompletedError,
+  DatabaseUnavailableError,
 } from '../truth-layer-errors';
+import { Prisma } from '@prisma/client';
 import { describeDb } from '../../../../../../test/describe-db';
 
 // ============================================================================
@@ -388,15 +391,84 @@ describeDb('Phase 9B - Truth Layer Integration Tests', () => {
         const tenantId = 'tenant-test';
 
         // First baseline
-        const snap1 = createSnapshotInput({ incidentId, tenantId, isBaseline: true });
+        // Iki AYRI snapshot: farkli calcHash (ayni icerik uq_sim_snap_idempotency ile ilk satiri
+        // dondururdu; bu test icerik-idempotensini degil tek-baseline kuralini dogrular).
+        const snap1 = createSnapshotInput({ incidentId, tenantId, isBaseline: true, calcHash: 'sha256-test-hash-baseline-1' });
         createdSnapshotIds.push(snap1.snapshotId);
         await snapshotRepo.insert(snap1);
 
         // Second baseline - should fail
-        const snap2 = createSnapshotInput({ incidentId, tenantId, isBaseline: true });
+        const snap2 = createSnapshotInput({ incidentId, tenantId, isBaseline: true, calcHash: 'sha256-test-hash-baseline-2' });
         createdSnapshotIds.push(snap2.snapshotId);
 
         await expect(snapshotRepo.insert(snap2)).rejects.toThrow(BaselineAlreadyExistsError);
+      });
+    });
+
+    // K2: P2002 hedef siniflandirmasi. Hedefler disposable PG16'da OLCULDU (Prisma 5):
+    //   baseline kismi indeksi -> ["tenant_id","incident_id"]
+    //   icerik indeksi         -> ["tenant_id","incident_id","COALESCE(run_id","'__NO_RUN__'::text)","calc_hash"]
+    //   PK                     -> ["snapshot_id"]
+    // create() tek seferlik olculmus hatayla degistirilir; sonraki okuma sorgulari GERCEK DB'ye gider.
+    describe('insert() P2002 classification (K2)', () => {
+      const p2002 = (target: string[]) =>
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { modelName: 'SimulationSnapshot', target },
+        });
+      const failCreateOnce = (target: string[]) =>
+        jest.spyOn(prisma.simulationSnapshot, 'create').mockRejectedValueOnce(p2002(target));
+
+      afterEach(() => jest.restoreAllMocks());
+
+      it('baseline kolon hedefi + isBaseline -> BaselineAlreadyExistsError (mevcut baseline id ile)', async () => {
+        const incidentId = `incident-k2-a-${Date.now()}`;
+        const existing = createSnapshotInput({ incidentId, isBaseline: true, calcHash: 'k2-a-1' });
+        createdSnapshotIds.push(existing.snapshotId);
+        await snapshotRepo.insert(existing);
+        failCreateOnce(['tenant_id', 'incident_id']);
+        const attempt = createSnapshotInput({ incidentId, isBaseline: true, calcHash: 'k2-a-2' });
+        const err = await snapshotRepo.insert(attempt).then(() => null, (e: unknown) => e);
+        expect(err).toBeInstanceOf(BaselineAlreadyExistsError);
+        expect((err as BaselineAlreadyExistsError).existingSnapshotId).toBe(existing.snapshotId);
+      });
+
+      it('mevcut davranis korunur: indeks-adi hedefi ve bos hedef -> BaselineAlreadyExistsError', async () => {
+        for (const target of [['ux_sim_snap_one_baseline_per_incident'], []]) {
+          failCreateOnce(target);
+          const attempt = createSnapshotInput({ incidentId: `incident-k2-b-${Date.now()}`, isBaseline: true });
+          await expect(snapshotRepo.insert(attempt)).rejects.toThrow(BaselineAlreadyExistsError);
+        }
+      });
+
+      it('baseline kolon hedefi ama isBaseline=false -> baseline hatasi DEGIL', async () => {
+        failCreateOnce(['tenant_id', 'incident_id']);
+        const attempt = createSnapshotInput({ incidentId: `incident-k2-c-${Date.now()}`, isBaseline: false });
+        const err = await snapshotRepo.insert(attempt).then(() => null, (e: unknown) => e);
+        expect(err).not.toBeInstanceOf(BaselineAlreadyExistsError);
+        expect(err).toBeInstanceOf(DatabaseUnavailableError);
+      });
+
+      it('icerik idempotensi hedefi (isBaseline=true olsa da) -> mevcut satir doner, baseline hatasi DEGIL', async () => {
+        const incidentId = `incident-k2-d-${Date.now()}`;
+        const existing = createSnapshotInput({ incidentId, isBaseline: false, calcHash: 'k2-d-same' });
+        createdSnapshotIds.push(existing.snapshotId);
+        await snapshotRepo.insert(existing);
+        failCreateOnce(['tenant_id', 'incident_id', 'COALESCE(run_id', "'__NO_RUN__'::text)", 'calc_hash']);
+        const attempt = createSnapshotInput({ incidentId, isBaseline: true, calcHash: 'k2-d-same' });
+        const result = await snapshotRepo.insert(attempt);
+        expect(result.snapshotId).toBe(existing.snapshotId);
+      });
+
+      it('ilgisiz / fazla kolonlu unique hedefi + isBaseline -> baseline hatasi DEGIL', async () => {
+        for (const target of [['other_col'], ['tenant_id', 'incident_id', 'other_col'], ['tenant_id']]) {
+          failCreateOnce(target);
+          const attempt = createSnapshotInput({ incidentId: `incident-k2-e-${Date.now()}`, isBaseline: true });
+          const err = await snapshotRepo.insert(attempt).then(() => null, (e: unknown) => e);
+          expect(err).not.toBeInstanceOf(BaselineAlreadyExistsError);
+          expect(err).toBeInstanceOf(DatabaseUnavailableError);
+        }
       });
     });
 
@@ -433,8 +505,8 @@ describeDb('Phase 9B - Truth Layer Integration Tests', () => {
         createdSnapshotIds.push(snap1.snapshotId);
         await snapshotRepo.insert(snap1);
 
-        // Second snapshot (not baseline)
-        const snap2 = createSnapshotInput({ incidentId, tenantId, isBaseline: false });
+        // Second snapshot (not baseline) — AYRI snapshot olmali: farkli calcHash
+        const snap2 = createSnapshotInput({ incidentId, tenantId, isBaseline: false, calcHash: 'sha256-test-hash-second' });
         createdSnapshotIds.push(snap2.snapshotId);
         await snapshotRepo.insert(snap2);
 
@@ -578,16 +650,14 @@ describeDb('Phase 9B - Truth Layer Integration Tests', () => {
       });
     });
   });
-});
 
 
   // ==========================================================================
   // Phase 9B.6-LOCK: Tenant Isolation Behavior Tests
   // ==========================================================================
 
-  // NOT (footgun PR): bu blok ana describeDb'nin DIŞINDA (satır 581'deki `});` ana bloğu erken
-  // kapatıyor) → createdSnapshotIds/snapshotRepo scope'ta değil = pre-existing ReferenceError bug.
-  // Footgun kapsamında yalnız DB-gate ediliyor (default'ta skip). Yapısal düzeltme AYRI iş.
+  // K3(i) 2026-09-19: bu blok eskiden ana describeDb'nin DISINDAYDI (erken `});`) ve
+  // createdSnapshotIds/snapshotRepo kapsam disi kaldigi icin HIC calismiyordu; artik ana blogun icinde.
   describeDb('Tenant Isolation Behavior (Phase 9B.6-LOCK)', () => {
     /**
      * These tests verify BEHAVIOR, not SQL syntax.
@@ -621,20 +691,30 @@ describeDb('Phase 9B - Truth Layer Integration Tests', () => {
         createdSnapshotIds.push(snapB.snapshotId);
         await snapshotRepo.insert(snapB);
 
-        // Query as tenant A - should only see A's snapshot
-        const resultsA = await snapshotRepo.findByIncidentId(tenantA, sharedIncidentId);
+        // Tenant filtresi SnapshotStoreService'tedir (repository tasarim geregi tenant-agnostik);
+        // izolasyon uretimdeki katmanda, GERCEK repository + DB ile dogrulanir.
+        const store = new SnapshotStoreService(snapshotRepo);
+
+        // Repository katmani iki tenant'i birlikte dondurur -> izolasyonu saglayan Store filtresidir
+        const raw = await snapshotRepo.findByIncidentId(sharedIncidentId);
+        expect(raw.map((s) => s.snapshotId).sort()).toEqual([snapA.snapshotId, snapB.snapshotId].sort());
+
+        // Query as tenant A - should only see A's snapshot (pozitif) and NOT B's (negatif)
+        const resultsA = await store.findByIncidentId(tenantA, sharedIncidentId);
         expect(resultsA.length).toBe(1);
         expect(resultsA[0].snapshotId).toBe(snapA.snapshotId);
         expect(resultsA[0].tenantId).toBe(tenantA);
+        expect(resultsA.some((s) => s.snapshotId === snapB.snapshotId)).toBe(false);
 
         // Query as tenant B - should only see B's snapshot
-        const resultsB = await snapshotRepo.findByIncidentId(tenantB, sharedIncidentId);
+        const resultsB = await store.findByIncidentId(tenantB, sharedIncidentId);
         expect(resultsB.length).toBe(1);
         expect(resultsB[0].snapshotId).toBe(snapB.snapshotId);
         expect(resultsB[0].tenantId).toBe(tenantB);
+        expect(resultsB.some((s) => s.snapshotId === snapA.snapshotId)).toBe(false);
 
         // Query as non-existent tenant - should see nothing
-        const resultsC = await snapshotRepo.findByIncidentId('tenant-C-nonexistent', sharedIncidentId);
+        const resultsC = await store.findByIncidentId('tenant-C-nonexistent', sharedIncidentId);
         expect(resultsC.length).toBe(0);
       });
     });
@@ -730,14 +810,25 @@ describeDb('Phase 9B - Truth Layer Integration Tests', () => {
         createdSnapshotIds.push(snapB.snapshotId);
         await snapshotRepo.insert(snapB);
 
-        // Note: Repository-level applyLegalHold doesn't take tenantId
-        // The tenant verification happens at the Store/Service layer
-        // This test documents that the repository is tenant-agnostic
-        // and the Store layer MUST verify tenant before calling repository
+        // Repository-level applyLegalHold tenant almaz; tenant dogrulamasi Store katmanindadir.
+        const store = new SnapshotStoreService(snapshotRepo);
 
-        // Verify snapshot exists and belongs to tenant B
-        const snapshot = await snapshotRepo.findById(snapB.snapshotId);
-        expect(snapshot?.tenantId).toBe(tenantB);
+        // Negatif: tenant A, tenant B'nin snapshot'ina legal hold UYGULAYAMAZ; veri degismez
+        const denied = await store.applyLegalHold(tenantA, snapB.snapshotId);
+        expect(denied.success).toBe(false);
+        expect(denied.changed).toBe(false);
+        expect(denied.error).toBe('SNAPSHOT_NOT_FOUND');
+        const untouched = await snapshotRepo.findById(snapB.snapshotId);
+        expect(untouched?.tenantId).toBe(tenantB);
+        expect(untouched?.retentionPolicy).not.toBe('LEGAL_HOLD');
+
+        // Pozitif: sahibi tenant B uygular
+        const allowed = await store.applyLegalHold(tenantB, snapB.snapshotId);
+        expect(allowed.success).toBe(true);
+        expect(allowed.changed).toBe(true);
+        const held = await snapshotRepo.findById(snapB.snapshotId);
+        expect(held?.retentionPolicy).toBe('LEGAL_HOLD');
       });
     });
   });
+});
