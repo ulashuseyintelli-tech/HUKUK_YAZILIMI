@@ -1,7 +1,7 @@
 import { describeDb } from "../../../../test/describe-db";
 import { Test, TestingModule } from "@nestjs/testing";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CaseType, CaseStatus, CaseLawyerRole, LawyerRank } from "@prisma/client";
+import { CaseType, CaseStatus, CaseLawyerRole, LawyerRank, Prisma } from "@prisma/client";
 import { runDriftRepair } from "../case-responsible-drift.core";
 
 /**
@@ -9,10 +9,11 @@ import { runDriftRepair } from "../case-responsible-drift.core";
  *
  * Saf karar (planCaseDriftFix) unit'te kanıtlandı; burada `runDriftRepair --apply`'in GERÇEK
  * Prisma yazımı + atomik tek-$transaction'ı sentetik drift ile empirik doğrulanır:
- *   MULTI (2 sorumlu) → 1 koru (öncelik) + gerisi isResponsible=false & role=ASSIGNED
+ *   MULTI (2 sorumlu) → #235 kısmi unique indeksi ile DB'de KURULAMAZ: 2. sorumlu P2002 ile
+ *                       reddedilir, ilk kayıt korunur (planlama mantığı core.spec birim testinde)
  *   ZERO (0 sorumlu)  → öncelikli 1 promote
  *   OK   (1 sorumlu)  → DOKUNULMAZ
- *   DRY-RUN           → tespit eder ama DB'ye YAZMAZ
+ *   DRY-RUN (ZERO)    → tespit eder ama DB'ye YAZMAZ (önce/sonra satırlar birebir)
  *
  * describeDb gate'i: DATABASE_URL yoksa SKIP → CI'da kırmızı yapmaz (bkz test/describe-db.ts).
  */
@@ -84,28 +85,35 @@ describeDb("runDriftRepair --apply — sorumlu-avukat drift onarımı (canlı DB
 
   const applyOpts = { apply: true, tenantId, allTenants: false, confirmProd: false };
 
-  it("MULTI (2 sorumlu) → öncelikli 1 kalır, diğeri isResponsible=false + role=ASSIGNED, tam 1 sorumlu", async () => {
+  // MULTI (>1 sorumlu) drift'i #235 (`case_lawyer_one_responsible_per_case` kısmi unique indeksi)
+  // sonrasında DB'de KURULAMAZ. Bu test eski MULTI kurulumunun DB tarafından reddedildiğini ve ilk
+  // sorumlunun korunduğunu doğrular; MULTI planlama mantığı (öncelik → 1 koru, gerisi demote)
+  // case-responsible-drift.core.spec.ts birim testinde doğrulanmaya devam eder.
+  it("MULTI kurulumu (2. sorumlu) → unique kısıtla reddedilir, ilk sorumlu korunur, drift oluşmaz", async () => {
     const suffix = Date.now();
     const client = await seedBase(suffix);
     const partner = await mkLawyer("PARTNER", suffix, "partner");
     const lawyer = await mkLawyer("LAWYER", suffix, "lawyer");
     const c = await mkCase(client.id, suffix, "multi");
     const clPartner = await mkCaseLawyer(c.id, partner.id, true);
-    const clLawyer = await mkCaseLawyer(c.id, lawyer.id, true);
 
-    const report = await runDriftRepair(prisma as never, applyOpts, {});
-    expect(report.driftCases).toBe(1);
-    expect(report.multiResponsibleCases).toBe(1);
-    expect(report.appliedDemotes).toBe(1);
+    const err = await mkCaseLawyer(c.id, lawyer.id, true).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect((err as Prisma.PrismaClientKnownRequestError).code).toBe("P2002");
+    expect((err as Prisma.PrismaClientKnownRequestError).meta?.target).toEqual(["caseId"]);
 
     const rows = await prisma.caseLawyer.findMany({ where: { caseId: c.id } });
-    expect(rows.filter((r) => r.isResponsible)).toHaveLength(1);
-    const kept = rows.find((r) => r.isResponsible)!;
-    expect(kept.id).toBe(clPartner.id); // PARTNER > LAWYER → korunur
-    expect(kept.role).toBe("RESPONSIBLE");
-    const demoted = rows.find((r) => r.id === clLawyer.id)!;
-    expect(demoted.isResponsible).toBe(false);
-    expect(demoted.role).toBe("ASSIGNED");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(clPartner.id);
+    expect(rows[0].isResponsible).toBe(true);
+    expect(rows[0].role).toBe("RESPONSIBLE");
+
+    const report = await runDriftRepair(prisma as never, { ...applyOpts, apply: false }, {});
+    expect(report.driftCases).toBe(0);
+    expect(report.multiResponsibleCases).toBe(0);
   });
 
   it("ZERO (0 sorumlu, avukat var) → öncelikli 1 promote, tam 1 sorumlu", async () => {
@@ -149,21 +157,28 @@ describeDb("runDriftRepair --apply — sorumlu-avukat drift onarımı (canlı DB
     expect(rows.find((r) => r.isResponsible)!.id).toBe(clResp.id); // aynı sorumlu, değişmedi
   });
 
-  it("DRY-RUN → drift tespit edilir ama DB'ye YAZILMAZ", async () => {
+  it("DRY-RUN (ZERO drift) → drift tespit edilir ama DB'ye YAZILMAZ (önce/sonra birebir)", async () => {
     const suffix = Date.now() + 3;
     const client = await seedBase(suffix);
     const partner = await mkLawyer("PARTNER", suffix, "partner");
     const lawyer = await mkLawyer("LAWYER", suffix, "lawyer");
     const c = await mkCase(client.id, suffix, "dry");
-    await mkCaseLawyer(c.id, partner.id, true);
-    await mkCaseLawyer(c.id, lawyer.id, true);
+    await mkCaseLawyer(c.id, partner.id, false);
+    await mkCaseLawyer(c.id, lawyer.id, false);
+
+    const snapshot = () =>
+      prisma.caseLawyer.findMany({ where: { case: { tenantId } }, orderBy: { id: "asc" } });
+    const before = await snapshot();
 
     const report = await runDriftRepair(prisma as never, { ...applyOpts, apply: false }, {});
     expect(report.mode).toBe("DRY-RUN");
     expect(report.driftCases).toBe(1);
-    expect(report.appliedDemotes).toBe(0); // yazma yok
+    expect(report.zeroResponsibleCases).toBe(1);
+    expect(report.appliedPromotes).toBe(0); // yazma yok
+    expect(report.appliedDemotes).toBe(0);
 
-    const rows = await prisma.caseLawyer.findMany({ where: { caseId: c.id } });
-    expect(rows.filter((r) => r.isResponsible)).toHaveLength(2); // DEĞİŞMEDİ
+    const after = await snapshot();
+    expect(after).toEqual(before); // tenant'ın tüm CaseLawyer satırları (updatedAt dahil) DEĞİŞMEDİ
+    expect(after.filter((r) => r.caseId === c.id && r.isResponsible)).toHaveLength(0);
   });
 });
