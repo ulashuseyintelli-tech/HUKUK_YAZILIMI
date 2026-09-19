@@ -19,7 +19,7 @@ $LiveDist = Join-Path $Rel 'apps\api\dist\apps\api\src'
 $EvRoot   = 'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911'
 $Api      = 'http://127.0.0.1:8080/api'
 $ExpPackage  = 'E80EBD3C90849E1169D57E7F10A140FD341DEE09D785DE799FD20A8CDFF3C907'
-$ExpLiveDist = '87712E0ED2CF71EE8268D81865C2388E030F52AF9AC7E29C56617AEDD0845453'
+$ExpLiveDist = 'EB3D854F708519FFB788B41C4FF2B716F8FAE3C65DDAFC2BFB718446B91171FC'   # R25 (kaynak ebbe1ae8); R24 87712E0E ile koşmaz
 # Paket = İ13 betikleri + davranışı belirleyen yeniden kullanılan betikler (kaynaktan; değişirse DUR)
 $PkgFiles = @('client-live-acceptance-i15-r01\scripts\i15-kabul5-run.js', 'f04-live-acceptance-r01\scripts\f04-lib.js',
               'f04-live-acceptance-r01\scripts\f04-01-setup.js', 'f04-live-acceptance-r01\scripts\f04-09-close-access.js')

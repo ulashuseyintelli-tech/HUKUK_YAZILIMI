@@ -18,7 +18,7 @@ $LiveDist = Join-Path $Rel 'apps\api\dist\apps\api\src'
 $EvRoot   = 'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911'
 $Api      = 'http://127.0.0.1:8080/api'
 $ExpPackage  = '8AD6EE1166678E4D5B7417AA28BC48F661BCA610A3D01873826C1442E73648BD'
-$ExpLiveDist = '87712E0ED2CF71EE8268D81865C2388E030F52AF9AC7E29C56617AEDD0845453'
+$ExpLiveDist = 'EB3D854F708519FFB788B41C4FF2B716F8FAE3C65DDAFC2BFB718446B91171FC'   # R25 (kaynak ebbe1ae8); R24 87712E0E ile koşmaz
 # Paket = İ13 betikleri + davranışı belirleyen yeniden kullanılan betikler (kaynaktan; değişirse DUR)
 $PkgFiles = @('client-live-acceptance-i13-r01\scripts\i13-lib.js', 'client-live-acceptance-i13-r01\scripts\i13-live-run.js',
               'client-live-acceptance-i13-r01\scripts\i13-live-recover.js', 'client-acceptance-runners-i3-r01\scripts\i3-h2-address.js',

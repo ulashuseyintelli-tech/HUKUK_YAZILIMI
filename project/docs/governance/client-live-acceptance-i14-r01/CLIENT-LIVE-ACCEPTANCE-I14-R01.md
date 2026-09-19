@@ -105,7 +105,7 @@ Negatif kontroller **10/10 OK**.
 - `scripts/i14-owner-live-block.ps1` bloğunu normal PowerShell'de çalıştırmak. Yönetici gerekmez.
 
 **Bloğun işleyişi:**
-1. Kapıları doğrular: main senkron · paket digest `B24458E9…2FBF` · canlı dist `87712E0E…5453` · tek API · açık pencere yok · DB kimliği.
+1. Kapıları doğrular: main senkron · paket digest `B24458E9…2FBF` · canlı dist `EB3D854F…71FC` (R25) · tek API · açık pencere yok · DB kimliği.
 2. GO ref yerelde girilir.
 3. `i14-live-run.js` çalışır (`I14_I12_EVIDENCE_DIR` = İ12 kanıt dizini).
 4. GO ref tüketimi yalnız sha256 olarak kaydedilir ve manifest yazılır.
@@ -113,3 +113,14 @@ Negatif kontroller **10/10 OK**.
 **Kapanış ölçütü:** H4-01…H4-08 (H4-08 İ12 bağıyla) + I14-00/CLOSE/ISO **tamamı PASS**, FAIL 0, ÖLÇÜLEMEYEN 0. Ardından CLIENT bağımsız salt-okuma doğrulaması yapar ve kayıt PR'ı açılır.
 
 **Hizmet kabulü (H4) owner kabulü olmadan değişmez.**
+
+## R25 bağı (2026-09-19) — canlı dist pini değişti
+
+Owner bloğunun canlı dist kapısı **R25** artefaktına bağlandı: `EB3D854F708519FFB788B41C4FF2B716F8FAE3C65DDAFC2BFB718446B91171FC` (kaynak `ebbe1ae8cce04de5579944bbf6b7f46a0efe0412`, 3867 dosya). Paket digest değişmedi. Blok R24 dist (`87712E0E…5453`) üzerinde **DURUR**; bu kasıtlıdır, fail-closed davranış.
+
+- **Yürütme sırası:** R25 yayını (ayrı owner onayı; yükseltilmiş pencere) → İ13 → İ14 → İ15 → İ16. Her blok bir öncekinin kapanışından sonra ve kendi GO ref'iyle koşulur. Canlı pencereler çakışmaz.
+- **R25 disposable regresyonu (aday dist, API `:8113`, yalnız disposable DB):** İ14 14/14 PASS. Bunlar canlı kabul değildir.
+- **R24 → R25 farkı:** 10 dosya. 7'si portal dosyası (#2720 K-1, #2721 PSUS). 3'ü summary-engine replay adapter dosyası (#2716): yalnız statik manifest sabiti içerir, Nest modül grafiğinde yoktur. Migration farkı 0.
+- **Düzeltme notu (dış bağlantı):** Disposable provadaki API, TCMB kur servisine (`185.98.252.10:443`, ExchangeRateService, salt okuma) dışa bağlandı. Bu bir gönderim değildir. Önceki "API'nin tek uzak bağlantısı disposable DB" ölçümü yalnız o anın görüntüsüdür, sürekli bir garanti değildir.
+
+**Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**
