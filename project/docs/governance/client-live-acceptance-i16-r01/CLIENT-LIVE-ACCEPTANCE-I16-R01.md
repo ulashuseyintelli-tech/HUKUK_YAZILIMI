@@ -150,3 +150,85 @@ R25B **birleşik bir artefakttır**: tabanı canlı R24 dist'i (`87712E0E…5453
 Bunlar **canlı kanıt değildir**. İ16, R25B canlıda doğrulanıp bu blok canlıda PASS verene kadar **kapanmaz**. Ret cevaplarının aynı olması zamanlama eşitliği anlamına gelmez; zamanlama ölçülmedi.
 
 **Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**
+
+## 7. CANLI KOŞUM SONUCU — İ16 KAPANDI (2026-09-21)
+
+Owner İ16 canlı kabul GO'sunu verdi ve bloğu kendisi koşturdu. Blok ayrı bir
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File` sürecinde çalıştı; kalıcı execution policy değişikliği yapılmadı.
+GO ref yerel kaldı. Owner çıktısı: **RUNID `6b883b16` · koşum çıkışı 0**. Kanıt dizini:
+`C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i16-live-6b883b16-20260921-000229`.
+
+**Bağlam (`owner-block.json`):**
+
+| Alan | Değer |
+|---|---|
+| Main | `8327421f1635f066935e2bf0a1555bbc4f5a0f2c` |
+| Paket | `94069A31…3644` |
+| Canlı dist | `1524EDC1…4D4E` (R25B) |
+| API pid | 33248 |
+| Başlangıç | 2026-09-20T21:02:29Z |
+
+### 7.1 CANLI ölçütler — 12/12 PASS (FAIL 0 · ÖLÇÜLEMEYEN 0)
+
+| Ölçüt | Gözlem |
+|---|---|
+| I16-00 | Rol kurulumu: viewer VIEWER, user USER, elev1 USER (ADMIN yolu kapalı) |
+| H7-00 | Portal hesabı açma: USER 403 (portalUser 0→0, `hasPortalAccess` false→false) · elev1 201 · çakışma 409, başka müvekkilde hesap 0 |
+| H7-01 | Portal listeleri 200; yalnız kendi kayıtları görünür (başka ve yabancı müvekkil false) |
+| H7-02 | Başka ve yabancı müvekkil kaynaklarına doğrudan erişim: case 404/404, belge 404/404 |
+| H7-03 | Kimliksiz portal erişimi 401 |
+| H7-04 | Portal erişimini kapatma: USER 403 (değişim yok, audit 0→0) · elev1 201 (`isActive=false`, tokenVersion 0→1, audit 1) · eski token 401 · giriş 401 · belge korunur |
+| H7-05a | Ret cevabı biçimi: devre dışı hesap 401 "Geçersiz token" = eski sürüm token 401 "Geçersiz token"; eşit |
+| H7-06 | Onay akışı: kendi bekleyenleri 200 · yabancı onay 404 (durum PENDING→PENDING) · kendi ret 201 (REJECTED, inceleyen viewer) |
+| H7-07 | Mesajlaşma: kendi 201 · aynı tenant başka müvekkil 201 · yabancı gönder 404, oku 404 (satır 0→0) · liste yalnız kendi |
+| H7-08 | Büro tarafı okuma 200, mesaj 1, yalnız kendi müvekkili |
+| I16-CLOSE | `closure.ok=true` · hedef ve yabancı tenant'ta aktif kullanıcı 0, case CLOSED · aktif portal kullanıcısı 0 · personel girişi 401 · `/auth/me` 401 · portal girişi 401 |
+| I16-ISO | İzolasyon parmak izi `65fbbaf9bb5bb0ee`/21 önce ve sonra aynı |
+
+### 7.2 DISPOSABLE kanıtlar — canlı PASS DEĞİLDİR
+
+Aşağıdakiler yalnız disposable ortamda (`:5443` test DB, API `:8113`) ölçüldü. Canlı koşumda yeniden koşulmadılar ve
+canlı sonuç olarak sunulmazlar:
+
+| Kanıt | Kapsam | Sonuç | Neden canlıda koşulmadı |
+|---|---|---|---|
+| H7-05 dört neden provası (`i16-prova-h705.js`) | Devre dışı hesap, eski sürüm token, askıya alınmış tenant ve DB erişilemez durumunda ret cevabının aynı olması | PASS (disposable) | Tenant askıya alma ve DB'yi erişilemez kılma canlıda yapılamaz. Canlıda yalnız **H7-05a** ölçüldü (iki neden) |
+| K-1 matrisi | 4 senaryo × 3 uç; geçersiz `caseId` referansının yazılmaması, diske dosya bırakmaması, ret cevabının özdeş olması | 12/12 PASS (disposable) | Canlıda portal belge YÜKLEME yapılmaz; blok diske dosya bırakmaz |
+| CLIENT-PSUS probu | Askıya alınmış tenant'ta portal girişi, oturum, sıfırlama talebi ve token kullanımı | 7/7 PASS (disposable) | Canlı tenant askıya alınmaz |
+
+**K-1 yazma doğrulaması canlıda yapılmamıştır.** H7-02'deki 404 sonuçları **okuma kapsamı** kanıtıdır ve K-1'in yazma
+tarafındaki (`caseId` gövde referansının doğrulanması) kanıtının yerine geçmez. K-1'in canlı artefaktı R25B içindedir
+(`portal.controller.js`, `portal.service.js`); canlı davranış kanıtı disposable matristir.
+
+### 7.3 CLIENT bağımsız kapanış doğrulaması — PASS (6/6)
+
+Betik `i16-closure-verify.js`, sha256 `6C3C3763A06FCB6A6708141A2B83D3BE60DF17DF7A5DB2BFDCC84B844EDFA1F1`. Koşum
+betiklerini kullanmaz; ayrı süreçte ve `hukuk_db` üzerinde READ ONLY transaction içinde çalışır. Çıktı
+`i16-closure-verify-6b883b16.json`, sha256 `1BE3F1879860607852367900B8198A9D32D298F7C8A05F2A0F329A03478637A8`.
+
+| Denetim | Sonuç |
+|---|---|
+| V1 kanıt | 12 zorunlu satırın hepsi PASS · runId eşit · portal girişi 401, personel girişi 401, `/auth/me` 401 |
+| V2 manifest | 5 satır eşit · manifest dışı dosya 0 (`SHA256-MANIFEST.txt` `96918BA2…E71B`) |
+| V3 erişim — hedef `ah-6b883b16` | aktif/toplam kullanıcı 0/9 · ACTIVE case 0 · **aktif portal kullanıcısı 0** |
+| V3 erişim — yabancı `ah-6b883b16-x` | aktif/toplam kullanıcı 0/0 · ACTIVE case 0 · aktif portal kullanıcısı 0 |
+| V4 gerçek tenant izolasyonu | şimdi `65fbbaf9bb5bb0ee`/21 = koşum öncesi |
+| V5 GO ref | yalnız sha256 (`literalWritten=false`) · literal içeren dosya 0 |
+
+Doğrulayıcının ret yolu disposable ortamda ayrıca sınandı: GO ref literali eklenince V5 FAIL verdi.
+
+**Kanıt dosyaları (sha256):**
+
+| Dosya | sha256 |
+|---|---|
+| `i16-evidence.json` | `94277004312FCC18890A6AAB708ABA00F6AA0B504FE9ED52F9C01E28AAE23600` |
+| `i16-setup-receipt.json` | `74B118B02BBFB53922A8FAFA7954F715BB70FEBA1A1AAA903BBB7F718B057C60` |
+| `i16-run.log` | `DF7C3F2F1CCDE7D1355884D6E204328648E23BCBC6B9EF462A004318DAA8E4CB` |
+| `goref-consumed.json` | `7AC483CE5D4ACD98AD3385351425C8BC10D6D8761D6365A60D9C4A0A9E86DC88` |
+| `owner-block.json` | `8B5F4FB84A2CA2D1F5B60F411D113897AECBEC48DC2DC035DB9BB5E7FBDE01E4` |
+
+**Pencere.** Dört yürütücü açık teyit verdi. Pencere boyunca kesinti, Docker işlemi ve temizlik yapılmadı; canlı `:8080`
+tek dinleyici (pid 33248) ve DB kimliği `127.0.0.1:5432/hukuk_db` korundu.
+
+**Sonuç: İ16 KAPANDI.** Teknik sayaç **18/18**. Kanıt satırları silinmez; sentetik tenant'lar ve portal hesapları kapalı kalır.
+**Teknik tamamlanma hizmet kabulü değildir; hizmet kabulü 0/8 ve owner kararına bağlıdır.**
