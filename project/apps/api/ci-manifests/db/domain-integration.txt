@@ -366,3 +366,15 @@ src/scripts/__tests__/rcv-ws04-p03-allocation-replay-launch.db-gated.integration
 #   Kardes: calc-preview db spec'leri (bundle-manifest / idempotency-gate / promote-request.store).
 src/modules/calc-preview/diagnostics/persistence/__tests__/prisma-repositories.integration.spec.ts
 src/modules/calc-preview/diagnostics/persistence/__tests__/snapshot-idempotency.integration.spec.ts
+
+# ── MANIFEST-RETRY WORKER SAFETY (owner GO 2026-09-21 "OFFICE / WORKER-SAFETY GERCEK DB ENTEGRASYONU") ──
+#   Dosya vitest ile yazilmisti ve jest.config.js ACIKCA disliyordu -> HIC kosmadi; icindeki Prisma
+#   mock'u servisin bugunku SQL'inden (lease `$queryRaw ... RETURNING`) sessizce sapmisti.
+#   Guvence SQL seviyesinde: tek UPDATE icinde atomik artis + kosullu pause, `now()` ile DB saatine
+#   dayali lease, `RETURNING` ile yaris guvenligi. Bu yuzden DB'ye dokunan senaryolar GERCEK PostgreSQL
+#   uzerinde kosar (describeDb kapisi); yalniz metrics dar mock kalir. Senaryolar ve iddialar DEGISMEDI.
+#   Rekabet senaryosu iki BAGIMSIZ Prisma baglantisiyla ve Promise.all ile kontrollu yaris olarak kosar.
+#   `manifest_worker_state` tek satirli (id='singleton') ve kapsam anahtari yok; kurulum/temizlik satirin
+#   kendisini yonetir — src altinda bu tabloyu kullanan baska modul YOK, manifest --runInBand kosar.
+#   Kardes: calc-preview db spec'leri (bundle-manifest / idempotency-gate / persistence).
+src/modules/calc-preview/diagnostics/object-store/manifest-retry/__tests__/manifest-retry-worker-safety.integration.spec.ts
