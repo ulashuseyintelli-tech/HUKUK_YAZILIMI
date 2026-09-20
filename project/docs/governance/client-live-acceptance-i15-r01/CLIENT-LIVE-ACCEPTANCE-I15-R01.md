@@ -138,3 +138,79 @@ R25B **birleşik bir artefakttır**: tabanı canlı R24 dist'i (`87712E0E…5453
 - **Düzeltme notu (dış bağlantı):** Disposable provadaki API, TCMB kur servisine (`185.98.252.10:443`, ExchangeRateService, salt okuma) dışa bağlandı. Bu bir gönderim değildir. Önceki "API'nin tek uzak bağlantısı disposable DB" ölçümü yalnız o anın görüntüsüdür, sürekli bir garanti değildir.
 
 **Canlı yayın ve canlı koşum AYRI owner onayı ister; bu bölüm onları başlatmaz.**
+
+## 4. CANLI KOŞUM SONUCU — İ15 KAPANDI (2026-09-20)
+
+Owner İ15 canlı kabul GO'sunu verdi ve bloğu kendisi koşturdu. Blok ayrı bir
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File` sürecinde çalıştı; kalıcı execution policy değişikliği yapılmadı.
+GO ref yerel kaldı. Owner çıktısı: **RUNID `1b83637a` · koşum çıkışı 0**. Kanıt dizini:
+`C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911\i15-live-1b83637a-20260920-184902`.
+
+**Bağlam (`owner-block.json`):**
+
+| Alan | Değer |
+|---|---|
+| Main | `f19bd398f15e7c1e64f8bd3280c543abd644c9fa` |
+| Paket | `E80EBD3C…C907` |
+| Canlı dist | `1524EDC1…4D4E` (R25B) |
+| API pid | 33248 |
+| Başlangıç | 2026-09-20T15:49:02Z |
+
+**Koşum sonucu (`i15-kabul5-evidence.json`): 5/5 PASS · FAIL 0 · ÖLÇÜLEMEYEN 0 · `environment=live`.**
+İki sentetik tenant kuruldu: A `f04-acc-da1a0713`, B `f04-acc-78f68583`.
+
+| Ölçüt | Gözlem |
+|---|---|
+| K5-0 | B dağıtımı ön koşulda post edilmemiş: `DISTRIBUTION_APPROVED`, `postedAt` yok, journal/apps/ledger 0 |
+| K5-1 | A token'ı ile B dağıtımına post denemesi **HTTP 404** (`Dağıtım kaydı bulunamadı`). 5xx, 2xx ve başka 4xx PASS sayılmazdı |
+| K5-2 | B'de finansal ve audit iz oluşmadı: durum aynı, `postedAt` yok, journal 0→0, apps 0→0, ledger 0→0, audit 0→0 |
+| K5-CLOSE | A ve B kullanıcıları pasif, Case CLOSED, giriş 401, eski token 401. Finansal ve audit kanıt satırları korundu |
+| K5-ISO | Sentetik olmayan tenant'ların parmak izi `0a141b64440f950d` önce ve sonra aynı |
+
+**Kapsam sınırı — bu bir canlı yarış testi DEĞİLDİR.** Koşum, A aktörünün B'nin dağıtımına post edememesini ve iz
+bırakmamasını ölçer. Eşzamanlı çift post yarışı canlıda **koşulmadı**. İ5(b) kapsamındaki yarış kanıtı §1'deki **test**
+kanıtıdır; §2'deki canlı tarama ise **salt-okuma tutarlılık taramasıdır**. Bu ikisi ayrı kayıtlardır ve hiçbiri canlı yarış
+testi PASS'ı olarak sunulmaz.
+
+**CLIENT bağımsız kapanış doğrulaması: PASS (7/7).** Betik `i15-closure-verify.js`, sha256
+`46D96861ABA8EC1F3B68150008284411AF6ED6EE66918BE96B51143ECF63B84E`. Koşum betiklerini kullanmaz; ayrı süreçte ve `hukuk_db`
+üzerinde READ ONLY transaction içinde çalışır. Çıktı `i15-closure-verify-1b83637a.json`, sha256
+`DC777F21C4A3000A07DA85A44B83CC2DF6C2F70F21EB1C5F735B9AFD45CDC420`.
+
+| Denetim | Sonuç |
+|---|---|
+| V1 kanıt | 5 zorunlu satırın hepsi PASS · summary 5/0/0 · `environment=live` · crossPost 404 |
+| V2 manifest | 6 satır eşit · manifest dışı dosya 0 (`SHA256-MANIFEST.txt` `06039270…D297C`) |
+| V3 erişim — A `f04-acc-da1a0713` | aktif/toplam kullanıcı 0/1 · ACTIVE case 0 · aktif portal kullanıcısı 0 |
+| V3 erişim — B `f04-acc-78f68583` | aktif/toplam kullanıcı 0/1 · ACTIVE case 0 · aktif portal kullanıcısı 0 |
+| V4 B dağıtımı (canlı DB'den bağımsız ölçüm) | `DISTRIBUTION_APPROVED` · `postedAt` YOK · journal 0 · apply 0 · ledger 0 |
+| V5 GO ref | yalnız sha256 (`literalWritten=false`) · literal içeren dosya 0 · parola saklanmadı |
+| V6 sızıntı taraması | koşum penceresinde sentetik olmayan tenant'larda post edilen dağıtım 0 · yeni tenant 0 · yeni müvekkil 0 |
+
+Doğrulayıcının ret yolu ayrıca sınandı: kanıt dizinine GO ref literali eklenince V5 FAIL, V2 UNMEASURED verdi.
+
+**Kanıt dosyaları (sha256):**
+
+| Dosya | sha256 |
+|---|---|
+| `i15-kabul5-evidence.json` | `DF1DD00D3924B5E78285F3364225DA6A0AC8A9E55EDD2EA60BB4D1049BC93E8E` |
+| `f04-state-da1a0713.json` | `58B076809BD5EF07735F2116AC5BA8E25B9BCBD251D9169FEA2213C313D55D23` |
+| `f04-state-78f68583.json` | `F5CB3F5CCD81F2415F462694A1741F9AA1DC7F0FEEC46B899273A686D777F46D` |
+| `i15-run.log` | `46910AE3ABBC4F950666C9411D1FEA804F57A7EAECE9EB15920FA58BFEF308B1` |
+| `goref-consumed.json` | `7EF2BA16C5B137DC36A9CC50AE3C940DDF90FA52B6E1B193E040C2786FB8E369` |
+| `owner-block.json` | `D972A05F946605CBA3E04D070C213DBEAECDDFD9D17B37583290E4A349905797` |
+
+**Eski kayıtların sınıflandırması korunur.** §2'deki üç gerçek eski `COLLECTION_DISPOSITION_LINE` kaydı yalnız okundu;
+hiçbirine geriye dönük veri yazılmadı. Dördüncü kayıt İ12'nin sentetik fixture'ıdır (`ah-92d04ef3`, `i12live-col-`) ve ayrı
+sınıfta kalır.
+
+**Canlı ile main arasındaki bilinçli farklar (kayıt).** Canlı dist R25B'dir. Main'de olup canlıda olmayanlar: #2716 replay
+adapter dosyaları ve #2730 trust-proxy değişikliği (`apps/api/src/main.ts`). Bunların canlıya alınması ayrı bir aday ve ayrı
+bir karar gerektirir.
+
+**Pencere.** Dört yürütücü açık teyit verdi. Docker taşıma kesintisi koşumdan önce kapanmıştı; kesinti sonrası canlı durum
+salt-okuma olarak ölçüldü (20/20 PASS): dist `1524EDC1…`, `.env` ve başlatıcı pinleri, görev eylemi, migration tabanı, tek
+dinleyici, DB kimliği `hukuk_db`, uçlar 401, web 200.
+
+**Sonuç: İ15 KAPANDI.** Sayaç **17/18**. Hizmet kabulü (H8 dahil) owner kabulü olmadan değişmez: **0/8**. Kanıt satırları
+silinmez; sentetik tenant'lar kapalı kalır.
