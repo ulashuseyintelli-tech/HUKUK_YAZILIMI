@@ -6,9 +6,9 @@
   setupFiles: ['<rootDir>/../test/jest-db-setup.ts'],
   setupFilesAfterEnv: ['<rootDir>/../jest.setup.ts'],
   testRegex: '.*\\.spec\\.ts$',
-  // manifest-retry-worker-safety: vitest ile yazılmış (import from 'vitest'); vitest kurulu DEĞİL →
-  // jest'in çalıştırması anlamsız (module-not-found fail). jest'ten exclude (ayrı borç: vitest kur / jest'e çevir / sil).
-  testPathIgnorePatterns: ['/node_modules/', 'manifest-retry-worker-safety\\.integration\\.spec\\.ts$'],
+  // manifest-retry-worker-safety 2026-09-20'de Jest'e uyarlandi (vitest import'u kaldirildi) →
+  // dosyaya ozel dislama KALDIRILDI. Genel dislama (/node_modules/) korunur.
+  testPathIgnorePatterns: ['/node_modules/'],
   transform: {
     '^.+\\.(t|j)s$': ['ts-jest', { diagnostics: false }],
   },

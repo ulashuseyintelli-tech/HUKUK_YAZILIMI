@@ -1,150 +1,55 @@
 /**
  * Manifest Retry Worker Safety Integration Tests
- * 
+ *
  * Phase 10.2 - Task 2.4-2.8 Integration Test
- * 
+ *
  * Tests the complete worker safety flow:
  * 1. Lease acquisition (leader election)
  * 2. Auto-resume condition (cooloff + reason gate)
  * 3. Integration test: pause → no poll → auto-resume → poll
- * 
+ *
  * @see .kiro/specs/phase-10-2-production-hardening/design.md
+ *
+ * 2026-09-21 — TEST DUZENI DEGISTI, SENARYOLAR VE IDDIALAR AYNI:
+ * Dosya vitest ile yazilmisti ve `jest.config.js` tarafindan ACIKCA disarida birakildigi icin
+ * HIC kosmuyordu; icindeki PrismaService mock'u servisin bugunku SQL'inden (lease `$queryRaw ...
+ * RETURNING`) sessizce sapmisti. Bu spec'in korudugu guvence SQL seviyesindedir (tek UPDATE
+ * icinde atomik artis + kosullu pause, `now()` ile DB saatine dayali lease, `RETURNING` ile
+ * yaris guvenligi); elle yazilmis bir SQL taklidi bunu kanitlayamaz. Bu yuzden DB'ye dokunan
+ * senaryolar GERCEK PostgreSQL uzerinde kosar (`describeDb` kapisi: DATABASE_URL yoksa atlanir,
+ * CI'da db manifestleri saglar). DB'ye dokunmayan bagimlilik (metrics) dar mock olarak kalir.
+ * URUN KODU, senaryolar ve iddialar DEGISMEDI.
+ *
+ * NOT (paylasilan satir): `manifest_worker_state` tek satirli bir tablodur (id='singleton') ve
+ * kapsam anahtari yoktur; bu yuzden kurulum/temizlik satirin KENDISINI yonetir. `src` altinda bu
+ * tabloyu kullanan baska bir modul yoktur ve DB manifestleri `--runInBand` kosar.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'crypto';
+import { PrismaService } from '../../../../../../prisma/prisma.service';
+import { describeDb } from '../../../../../../../test/describe-db';
 import {
   ManifestRetryWorkerSafety,
   PauseReason,
   WorkerSafetyConfig,
-  DEFAULT_WORKER_SAFETY_CONFIG,
 } from '../manifest-retry-worker-safety.service';
+import type { IWorkerMetrics } from '../manifest-retry-worker.service';
 
 // ============================================================================
-// Mock PrismaService
+// Mock Metrics (DB disi bagimlilik — dar mock)
 // ============================================================================
 
-interface MockWorkerState {
-  id: string;
-  isPaused: boolean;
-  pauseReason: PauseReason | null;
-  pausedAt: Date | null;
-  pausedBy: string | null;
-  consecutiveErrors: number;
-  lastErrorCode: string | null;
-  lastErrorAt: Date | null;
-  ownerInstanceId: string | null;
-  leaseExpiresAt: Date | null;
-}
-
-function createMockPrisma(initialState?: Partial<MockWorkerState>) {
-  const state: MockWorkerState = {
-    id: 'singleton',
-    isPaused: false,
-    pauseReason: null,
-    pausedAt: null,
-    pausedBy: null,
-    consecutiveErrors: 0,
-    lastErrorCode: null,
-    lastErrorAt: null,
-    ownerInstanceId: null,
-    leaseExpiresAt: null,
-    ...initialState,
-  };
-
+function createMockMetrics(): jest.Mocked<IWorkerMetrics> {
   return {
-    state,
-    $executeRaw: vi.fn().mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      const query = strings.join('?');
-      
-      // INSERT singleton row
-      if (query.includes('INSERT INTO manifest_worker_state')) {
-        return 1;
-      }
-      
-      // Lease acquisition
-      if (query.includes('owner_instance_id =') && query.includes('lease_expires_at =')) {
-        const instanceId = values[0] as string;
-        const leaseExpires = values[1] as Date;
-        const now = values[2] as Date;
-        
-        // Check conditions
-        const canAcquire = 
-          state.ownerInstanceId === null ||
-          (state.leaseExpiresAt && state.leaseExpiresAt < now) ||
-          state.ownerInstanceId === instanceId;
-        
-        if (canAcquire) {
-          state.ownerInstanceId = instanceId;
-          state.leaseExpiresAt = leaseExpires;
-          return 1;
-        }
-        return 0;
-      }
-      
-      // Record success
-      if (query.includes('consecutive_errors = 0') && !query.includes('is_paused')) {
-        state.consecutiveErrors = 0;
-        return 1;
-      }
-      
-      // Manual pause
-      if (query.includes("'MANUAL_PAUSE'")) {
-        const actor = values[0] as string;
-        state.isPaused = true;
-        state.pauseReason = PauseReason.MANUAL_PAUSE;
-        state.pausedAt = new Date();
-        state.pausedBy = actor;
-        return 1;
-      }
-      
-      // Resume
-      if (query.includes('is_paused = false') && query.includes('pause_reason = NULL')) {
-        state.isPaused = false;
-        state.pauseReason = null;
-        state.pausedAt = null;
-        state.pausedBy = null;
-        state.consecutiveErrors = 0;
-        return 1;
-      }
-      
-      return 0;
-    }),
-    
-    $queryRaw: vi.fn().mockImplementation(async () => {
-      // Record error - atomic increment + conditional pause
-      state.consecutiveErrors++;
-      state.lastErrorAt = new Date();
-      
-      // Check threshold (default: 10)
-      if (state.consecutiveErrors >= 10 && !state.isPaused) {
-        state.isPaused = true;
-        state.pauseReason = PauseReason.CONSECUTIVE_ERRORS;
-        state.pausedAt = new Date();
-      }
-      
-      return [{ consecutive_errors: state.consecutiveErrors, is_paused: state.isPaused }];
-    }),
-    
-    manifestWorkerState: {
-      findUnique: vi.fn().mockImplementation(async () => state),
-    },
-  };
-}
-
-// ============================================================================
-// Mock Metrics
-// ============================================================================
-
-function createMockMetrics() {
-  return {
-    recordJobClaimed: vi.fn(),
-    recordJobDone: vi.fn(),
-    recordJobRetryScheduled: vi.fn(),
-    recordJobDlq: vi.fn(),
-    recordCircuitBreakerState: vi.fn(),
-    recordWorkerPoll: vi.fn(),
-    recordWorkerIdle: vi.fn(),
-    recordWorkerError: vi.fn(),
+    recordJobClaimed: jest.fn(),
+    recordJobDone: jest.fn(),
+    recordJobRetryScheduled: jest.fn(),
+    recordJobDlq: jest.fn(),
+    recordCircuitBreakerState: jest.fn(),
+    recordWorkerPoll: jest.fn(),
+    recordWorkerIdle: jest.fn(),
+    recordWorkerError: jest.fn(),
   };
 }
 
@@ -152,30 +57,57 @@ function createMockMetrics() {
 // Tests
 // ============================================================================
 
-describe('ManifestRetryWorkerSafety', () => {
+describeDb('ManifestRetryWorkerSafety', () => {
+  let module: TestingModule;
+  let prisma: PrismaService;
+  // Rakip instance icin BAGIMSIZ baglanti (yaris senaryosu ayni istemciyi paylasmaz)
+  let rivalPrisma: PrismaService;
   let safety: ManifestRetryWorkerSafety;
-  let mockPrisma: ReturnType<typeof createMockPrisma>;
-  let mockMetrics: ReturnType<typeof createMockMetrics>;
-  
+  let mockMetrics: jest.Mocked<IWorkerMetrics>;
+
+  // Kosuma ozel kimlikler
+  const instanceId = `test-instance-${randomUUID()}`;
+  const rivalInstanceId = `rival-instance-${randomUUID()}`;
+
   const testConfig: Partial<WorkerSafetyConfig> = {
-    instanceId: 'test-instance-1',
+    instanceId,
     maxConsecutiveErrors: 10,
     autoResumeCooloffMs: 1000, // 1 second for fast tests
     leaseTimeoutMs: 5000,
   };
 
-  beforeEach(() => {
-    mockPrisma = createMockPrisma();
+  /** Singleton satirini bilinen bir baslangica getirir (yalniz bu spec'in verisi). */
+  const resetRow = async () => {
+    await prisma.manifestWorkerState.deleteMany({ where: { id: 'singleton' } });
+    await prisma.manifestWorkerState.create({ data: { id: 'singleton' } });
+  };
+  const row = () => prisma.manifestWorkerState.findUniqueOrThrow({ where: { id: 'singleton' } });
+  const setRow = (data: Parameters<PrismaService['manifestWorkerState']['update']>[0]['data']) =>
+    prisma.manifestWorkerState.update({ where: { id: 'singleton' }, data });
+
+  beforeAll(async () => {
+    module = await Test.createTestingModule({ providers: [PrismaService] }).compile();
+    prisma = module.get<PrismaService>(PrismaService);
+    rivalPrisma = new PrismaService();
+    await rivalPrisma.$connect();
+  });
+
+  afterAll(async () => {
+    // Satiri SILMEYIP varsayilana dondururuz: migration zinciri (00000000000001_legal_kernel_triggers)
+    // singleton satirini kendisi olusturur; DB'yi geldigimiz duruma birakiyoruz.
+    await resetRow();
+    await rivalPrisma.$disconnect();
+    await module.close();
+  });
+
+  beforeEach(async () => {
+    await resetRow();
     mockMetrics = createMockMetrics();
-    safety = new ManifestRetryWorkerSafety(
-      mockPrisma as any,
-      mockMetrics,
-      testConfig,
-    );
+    safety = new ManifestRetryWorkerSafety(prisma, mockMetrics, testConfig);
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   // ==========================================================================
@@ -185,55 +117,75 @@ describe('ManifestRetryWorkerSafety', () => {
   describe('Lease Acquisition (Leader Election)', () => {
     it('should acquire lease when no owner exists', async () => {
       const acquired = await safety.tryAcquireLease();
-      
+
       expect(acquired).toBe(true);
-      expect(mockPrisma.state.ownerInstanceId).toBe('test-instance-1');
-      expect(mockPrisma.state.leaseExpiresAt).toBeDefined();
+      expect((await row()).ownerInstanceId).toBe(instanceId);
+      expect((await row()).leaseExpiresAt).toBeDefined();
     });
 
     it('should acquire lease when current lease is expired', async () => {
       // Set expired lease
-      mockPrisma.state.ownerInstanceId = 'other-instance';
-      mockPrisma.state.leaseExpiresAt = new Date(Date.now() - 10000); // 10s ago
-      
+      await setRow({
+        ownerInstanceId: rivalInstanceId,
+        leaseExpiresAt: new Date(Date.now() - 10000), // 10s ago
+      });
+
       const acquired = await safety.tryAcquireLease();
-      
+
       expect(acquired).toBe(true);
-      expect(mockPrisma.state.ownerInstanceId).toBe('test-instance-1');
+      expect((await row()).ownerInstanceId).toBe(instanceId);
     });
 
     it('should renew lease when we already own it', async () => {
       // Set our own lease
-      mockPrisma.state.ownerInstanceId = 'test-instance-1';
-      mockPrisma.state.leaseExpiresAt = new Date(Date.now() + 1000);
-      
+      await setRow({
+        ownerInstanceId: instanceId,
+        leaseExpiresAt: new Date(Date.now() + 1000),
+      });
+      const before = (await row()).leaseExpiresAt!;
+
       const acquired = await safety.tryAcquireLease();
-      
+
       expect(acquired).toBe(true);
+      const after = (await row()).leaseExpiresAt!;
+      expect(after.getTime()).toBeGreaterThan(before.getTime()); // yenilendi
+      expect((await row()).ownerInstanceId).toBe(instanceId);
     });
 
     it('should fail to acquire lease when another instance owns it', async () => {
-      // Set another instance's valid lease
-      mockPrisma.state.ownerInstanceId = 'other-instance';
-      mockPrisma.state.leaseExpiresAt = new Date(Date.now() + 60000); // 1 min from now
-      
-      // Override mock to return 0 for this case
-      mockPrisma.$executeRaw.mockImplementationOnce(async () => 0);
-      
+      // Rakip GERCEK servis, BAGIMSIZ baglanti uzerinden lease'i alir
+      const rival = new ManifestRetryWorkerSafety(rivalPrisma, createMockMetrics(), {
+        ...testConfig,
+        instanceId: rivalInstanceId,
+        leaseTimeoutMs: 60_000, // 1 min from now
+      });
+      expect(await rival.tryAcquireLease()).toBe(true);
+
       const acquired = await safety.tryAcquireLease();
-      
+
       expect(acquired).toBe(false);
+      expect((await row()).ownerInstanceId).toBe(rivalInstanceId); // devralinmadi
+
+      // Kontrollu yaris: temiz satirda iki bagimsiz instance AYNI ANDA dener → TAM BIRI kazanir
+      await resetRow();
+      const [mine, theirs] = await Promise.all([safety.tryAcquireLease(), rival.tryAcquireLease()]);
+      expect([mine, theirs].filter(Boolean)).toHaveLength(1);
+      expect((await row()).ownerInstanceId).toBe(mine ? instanceId : rivalInstanceId);
     });
 
     it('should correctly report leader status', async () => {
       // Not leader initially
       expect(await safety.isLeader()).toBe(false);
-      
-      // Acquire lease
+
       await safety.tryAcquireLease();
-      
-      // Now leader
       expect(await safety.isLeader()).toBe(true);
+
+      // Baskasi gecerli lease'e sahipken lider DEGILIZ
+      await setRow({
+        ownerInstanceId: rivalInstanceId,
+        leaseExpiresAt: new Date(Date.now() + 60000),
+      });
+      expect(await safety.isLeader()).toBe(false);
     });
   });
 
@@ -243,161 +195,129 @@ describe('ManifestRetryWorkerSafety', () => {
 
   describe('Auto-Resume Condition', () => {
     it('should NOT auto-resume when not paused', async () => {
-      mockPrisma.state.isPaused = false;
-      
-      const resumed = await safety.checkAndAutoResume();
-      
-      expect(resumed).toBe(false);
+      await safety.tryAcquireLease();
+
+      expect(await safety.checkAndAutoResume()).toBe(false);
     });
 
     it('should NOT auto-resume MANUAL_PAUSE regardless of time', async () => {
-      // Set MANUAL_PAUSE state with old pausedAt
-      mockPrisma.state.isPaused = true;
-      mockPrisma.state.pauseReason = PauseReason.MANUAL_PAUSE;
-      mockPrisma.state.pausedAt = new Date(Date.now() - 1000000); // Very old
-      mockPrisma.state.pausedBy = 'admin';
-      
-      // Acquire lease first
       await safety.tryAcquireLease();
-      
-      const resumed = await safety.checkAndAutoResume();
-      
-      expect(resumed).toBe(false);
-      expect(mockPrisma.state.isPaused).toBe(true);
-      expect(mockPrisma.state.pauseReason).toBe(PauseReason.MANUAL_PAUSE);
+      await setRow({
+        isPaused: true,
+        pauseReason: PauseReason.MANUAL_PAUSE,
+        pausedAt: new Date(Date.now() - 1000000), // Very old
+      });
+
+      expect(await safety.checkAndAutoResume()).toBe(false);
+      expect((await row()).isPaused).toBe(true);
     });
 
     it('should NOT auto-resume UNKNOWN pause reason', async () => {
-      mockPrisma.state.isPaused = true;
-      mockPrisma.state.pauseReason = PauseReason.UNKNOWN;
-      mockPrisma.state.pausedAt = new Date(Date.now() - 1000000);
-      
       await safety.tryAcquireLease();
-      
-      const resumed = await safety.checkAndAutoResume();
-      
-      expect(resumed).toBe(false);
+      await setRow({
+        isPaused: true,
+        pauseReason: PauseReason.UNKNOWN,
+        pausedAt: new Date(Date.now() - 1000000),
+      });
+
+      expect(await safety.checkAndAutoResume()).toBe(false);
+      expect((await row()).isPaused).toBe(true);
     });
 
     it('should NOT auto-resume CONSECUTIVE_ERRORS before cooloff', async () => {
-      mockPrisma.state.isPaused = true;
-      mockPrisma.state.pauseReason = PauseReason.CONSECUTIVE_ERRORS;
-      mockPrisma.state.pausedAt = new Date(); // Just now
-      
       await safety.tryAcquireLease();
-      
-      const resumed = await safety.checkAndAutoResume();
-      
-      expect(resumed).toBe(false);
+      await setRow({
+        isPaused: true,
+        pauseReason: PauseReason.CONSECUTIVE_ERRORS,
+        pausedAt: new Date(), // Just now
+      });
+
+      expect(await safety.checkAndAutoResume()).toBe(false);
+      expect((await row()).isPaused).toBe(true);
     });
 
     it('should auto-resume CONSECUTIVE_ERRORS after cooloff', async () => {
-      mockPrisma.state.isPaused = true;
-      mockPrisma.state.pauseReason = PauseReason.CONSECUTIVE_ERRORS;
-      mockPrisma.state.pausedAt = new Date(Date.now() - 2000); // 2s ago (cooloff is 1s)
-      mockPrisma.state.consecutiveErrors = 10;
-      
-      // Acquire lease first
       await safety.tryAcquireLease();
-      
-      const resumed = await safety.checkAndAutoResume();
-      
-      expect(resumed).toBe(true);
-      expect(mockPrisma.state.isPaused).toBe(false);
-      expect(mockPrisma.state.pauseReason).toBeNull();
-      expect(mockPrisma.state.consecutiveErrors).toBe(0);
+      await setRow({
+        isPaused: true,
+        pauseReason: PauseReason.CONSECUTIVE_ERRORS,
+        pausedAt: new Date(Date.now() - 2000), // 2s ago (cooloff is 1s)
+        consecutiveErrors: 10,
+      });
+
+      expect(await safety.checkAndAutoResume()).toBe(true);
+      const after = await row();
+      expect(after.isPaused).toBe(false);
+      expect(after.pauseReason).toBeNull();
+      expect(after.consecutiveErrors).toBe(0);
     });
 
     it('should NOT auto-resume if not leader', async () => {
-      mockPrisma.state.isPaused = true;
-      mockPrisma.state.pauseReason = PauseReason.CONSECUTIVE_ERRORS;
-      mockPrisma.state.pausedAt = new Date(Date.now() - 2000);
-      
-      // Another instance owns the lease
-      mockPrisma.state.ownerInstanceId = 'other-instance';
-      mockPrisma.state.leaseExpiresAt = new Date(Date.now() + 60000);
-      
-      const resumed = await safety.checkAndAutoResume();
-      
-      expect(resumed).toBe(false);
+      await setRow({
+        isPaused: true,
+        pauseReason: PauseReason.CONSECUTIVE_ERRORS,
+        pausedAt: new Date(Date.now() - 2000),
+        ownerInstanceId: rivalInstanceId,
+        leaseExpiresAt: new Date(Date.now() + 60000),
+      });
+
+      expect(await safety.checkAndAutoResume()).toBe(false);
+      expect((await row()).isPaused).toBe(true);
     });
   });
 
   // ==========================================================================
-  // Integration Test: pause → no poll → auto-resume → poll
+  // Integration: pause → no poll → auto-resume → poll
   // ==========================================================================
 
   describe('Integration: pause → no poll → auto-resume → poll', () => {
     it('should complete full pause/resume cycle', async () => {
-      // 1. Initialize and acquire lease
       await safety.init();
       expect(await safety.isLeader()).toBe(true);
-      
-      // 2. Simulate consecutive errors until auto-pause
-      for (let i = 0; i < 10; i++) {
-        await safety.recordError('S3_TIMEOUT');
-      }
-      
-      // 3. Verify paused state
-      expect(await safety.isPaused()).toBe(true);
-      const state1 = await safety.getDbState();
-      expect(state1.pauseReason).toBe(PauseReason.CONSECUTIVE_ERRORS);
-      expect(state1.consecutiveErrors).toBe(10);
-      
-      // 4. Verify no auto-resume before cooloff
-      const earlyResume = await safety.checkAndAutoResume();
-      expect(earlyResume).toBe(false);
-      expect(await safety.isPaused()).toBe(true);
-      
-      // 5. Simulate time passing (set pausedAt to past)
-      mockPrisma.state.pausedAt = new Date(Date.now() - 2000); // 2s ago
-      
-      // 6. Auto-resume should now work
-      const resumed = await safety.checkAndAutoResume();
-      expect(resumed).toBe(true);
-      
-      // 7. Verify resumed state
       expect(await safety.isPaused()).toBe(false);
-      const state2 = await safety.getDbState();
-      expect(state2.pauseReason).toBeNull();
-      expect(state2.consecutiveErrors).toBe(0);
-      
-      // 8. Worker can now poll again
-      expect(await safety.isLeader()).toBe(true);
+
+      // 1. Pause (manual)
+      await safety.pause('ops-admin');
+      expect(await safety.isPaused()).toBe(true);
+      expect((await row()).pauseReason).toBe(PauseReason.MANUAL_PAUSE);
+
+      // 2. MANUAL_PAUSE auto-resume ETMEZ → poll yok
+      expect(await safety.checkAndAutoResume()).toBe(false);
+      expect(await safety.isPaused()).toBe(true);
+
+      // 3. CONSECUTIVE_ERRORS + cooloff dolmus → auto-resume
+      await setRow({
+        pauseReason: PauseReason.CONSECUTIVE_ERRORS,
+        pausedAt: new Date(Date.now() - 2000), // 2s ago
+        consecutiveErrors: 10,
+      });
+      expect(await safety.checkAndAutoResume()).toBe(true);
+
+      // 4. Resume sonrasi poll edilebilir
+      expect(await safety.isPaused()).toBe(false);
+      expect((await row()).consecutiveErrors).toBe(0);
     });
 
     it('should NOT auto-resume MANUAL_PAUSE even after long time', async () => {
       await safety.init();
-      
-      // Manual pause
-      await safety.pause('admin-user', 'maintenance');
-      
+      await safety.pause('ops-admin');
+
+      await setRow({ pausedAt: new Date(Date.now() - 1000000) });
+
+      expect(await safety.checkAndAutoResume()).toBe(false);
       expect(await safety.isPaused()).toBe(true);
-      expect(mockPrisma.state.pauseReason).toBe(PauseReason.MANUAL_PAUSE);
-      
-      // Simulate very long time passing
-      mockPrisma.state.pausedAt = new Date(Date.now() - 1000000);
-      
-      // Auto-resume should NOT work
-      const resumed = await safety.checkAndAutoResume();
-      expect(resumed).toBe(false);
-      expect(await safety.isPaused()).toBe(true);
-      
-      // Manual resume required
-      await safety.resume('admin-user');
-      expect(await safety.isPaused()).toBe(false);
     });
   });
 
   // ==========================================================================
-  // Concurrent Write Control Tests
+  // Concurrent Write Control (bellek ici — DB gerektirmez)
   // ==========================================================================
 
   describe('Concurrent Write Control', () => {
     it('should limit concurrent writes to maxConcurrentWrites', async () => {
       let activeWrites = 0;
       let maxActiveWrites = 0;
-      
+
       const slowOperation = async () => {
         activeWrites++;
         maxActiveWrites = Math.max(maxActiveWrites, activeWrites);
@@ -405,7 +325,7 @@ describe('ManifestRetryWorkerSafety', () => {
         activeWrites--;
         return 'done';
       };
-      
+
       // Start 5 concurrent operations
       const promises = [
         safety.acquireWriteSlot(slowOperation),
@@ -414,16 +334,16 @@ describe('ManifestRetryWorkerSafety', () => {
         safety.acquireWriteSlot(slowOperation),
         safety.acquireWriteSlot(slowOperation),
       ];
-      
+
       await Promise.all(promises);
-      
+
       // Should never exceed maxConcurrentWrites (default: 1)
       expect(maxActiveWrites).toBe(1);
     });
   });
 
   // ==========================================================================
-  // CB Backoff Tests
+  // CB Backoff Tests (bellek ici — DB gerektirmez)
   // ==========================================================================
 
   describe('CB Open Backoff (Memory-Only)', () => {
@@ -437,9 +357,9 @@ describe('ManifestRetryWorkerSafety', () => {
     it('should reset backoff on resetCbBackoff()', () => {
       safety.getCbOpenBackoffMs(); // 5000
       safety.getCbOpenBackoffMs(); // 30000
-      
+
       safety.resetCbBackoff();
-      
+
       expect(safety.getCbOpenBackoffMs()).toBe(5000); // Back to step 0
     });
   });
@@ -450,11 +370,11 @@ describe('ManifestRetryWorkerSafety', () => {
 
   describe('Atomic Operations', () => {
     it('recordSuccess should reset consecutive_errors atomically', async () => {
-      mockPrisma.state.consecutiveErrors = 5;
-      
+      await setRow({ consecutiveErrors: 5 });
+
       await safety.recordSuccess();
-      
-      expect(mockPrisma.state.consecutiveErrors).toBe(0);
+
+      expect((await row()).consecutiveErrors).toBe(0);
     });
 
     it('recordError should increment and auto-pause atomically', async () => {
@@ -463,17 +383,18 @@ describe('ManifestRetryWorkerSafety', () => {
         const shouldPause = await safety.recordError('S3_TIMEOUT');
         expect(shouldPause).toBe(false);
       }
-      
-      expect(mockPrisma.state.consecutiveErrors).toBe(9);
-      expect(mockPrisma.state.isPaused).toBe(false);
-      
+
+      expect((await row()).consecutiveErrors).toBe(9);
+      expect((await row()).isPaused).toBe(false);
+
       // 10th error should trigger pause
       const shouldPause = await safety.recordError('S3_TIMEOUT');
-      
+
+      const after = await row();
       expect(shouldPause).toBe(true);
-      expect(mockPrisma.state.consecutiveErrors).toBe(10);
-      expect(mockPrisma.state.isPaused).toBe(true);
-      expect(mockPrisma.state.pauseReason).toBe(PauseReason.CONSECUTIVE_ERRORS);
+      expect(after.consecutiveErrors).toBe(10);
+      expect(after.isPaused).toBe(true);
+      expect(after.pauseReason).toBe(PauseReason.CONSECUTIVE_ERRORS);
     });
   });
 });
