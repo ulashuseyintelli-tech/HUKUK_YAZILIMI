@@ -322,3 +322,9 @@ src/modules/expense-block-reason/expense-block-reason.service.spec.ts
 src/modules/icrabot/__tests__/uimap-recorder-prototype-pollution.spec.ts
 src/modules/icrabot/domain-event-ingest/__tests__/aggregate-version-allocator.spec.ts
 src/modules/icrabot/domain-event-ingest/__tests__/domain-event-ingest.validation.spec.ts
+
+# ── PR-A4-2 SAF FIKSTUR SPEC'I (owner GO 2026-09-21, DB secicilerinin tasinmasi) ──
+#   `rich-interest-uyap-readiness.fixture.spec.ts` DB GEREKTIRMEZ (mock/saf); eski PR-A4-2 adimi
+#   onu DB'li kardesiyle ayni Jest surecinde kosuyordu. Saf oldugu icin bu pure manifeste alindi;
+#   DB'li kardesi db/domain-integration'a tasindi.
+src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.fixture.spec.ts

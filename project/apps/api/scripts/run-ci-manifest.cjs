@@ -43,6 +43,13 @@ if (unexpected.length) fail(`beklenmeyen bayrak: ${unexpected.join(' ')}`);
 const manifestPath = path.join(API_DIR, 'ci-manifests', `${name}.txt`);
 if (!fs.existsSync(manifestPath)) fail(`manifest bulunamadi: ${manifestPath}`);
 
+// db/* manifestleri GERCEK DB ister. Bos/eksik TEST_DATABASE_URL'de `describeDb` suite'leri
+// sessizce atlar ve manifest yesil gorunurdu; 2026-09-21'de tasinan dogrudan DB adimlarinin
+// "BLOCKED: TEST_DATABASE_URL is required" kapisi burada korunur (fail-closed).
+if (name.startsWith('db/') && !(process.env.TEST_DATABASE_URL || '').trim()) {
+  fail(`${name} icin TEST_DATABASE_URL zorunlu (db/* manifesti gercek DB ister)`);
+}
+
 const specs = fs
   .readFileSync(manifestPath, 'utf8')
   .split('\n')
