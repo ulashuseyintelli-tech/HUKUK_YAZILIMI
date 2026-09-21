@@ -1,0 +1,11 @@
+{
+ "C1-S": "AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2",
+ "C2-GP": "AuditLog+,OfficeApprovalRequest~",
+ "C2-DP": "AuditLog+,CollectionDisposition~,OfficeApprovalRequest~",
+ "C3-P0": "AccountingJournalEntry+x3,AccountingJournalLine+x6,AuditLog+,CollectionDispositionExpenseApplication+,CollectionDisposition~,OfficeApprovalRequest~",
+ "C3-P1": "ClientFinancialDisclosure+,ClientFinancialDisclosureLine+x2,ClientFinancialDisclosureVersion+",
+ "C3-A2": "ClientFinancialDisclosureVersion~,OfficeApprovalRequest+",
+ "C3-A3": "ClientFinancialDisclosureVersion~,OfficeApprovalRequest~",
+ "C3-A4": "ClientFinancialDisclosureVersion~",
+ "C3-A5": "ClientFinancialDisclosureVersion~"
+}
