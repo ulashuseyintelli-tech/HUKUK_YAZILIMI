@@ -8,7 +8,9 @@
 //
 // KRİTİK: RAW fetch kullanır (api client DEĞİL) → reporter/interceptor loop önlenir.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+import { resolveApiBaseUrl } from "./api-base-url";
+
+// Taban adres cagri aninda cozulur (alan adi derlemeye GOMULMEZ).
 const LOG_PATH = "/error-logs/log";
 
 const MESSAGE_MAX = 500;
@@ -139,7 +141,7 @@ export function reportClientError(input: ClientErrorReport): void {
       metadata: pickMetadata(input.metadata),
     };
 
-    void fetch(`${API_URL}/api${LOG_PATH}`, {
+    void fetch(`${resolveApiBaseUrl()}/api${LOG_PATH}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),

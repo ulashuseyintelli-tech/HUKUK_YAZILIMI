@@ -1,0 +1,55 @@
+# CLIENT DIŞ ERİŞİM — Caddy şablonu (ALTERNATİF yol; öneri tünel). CANLIYA UYGULANMADI.
+# Parametreler: PUBLIC_HOST (ortam değişkeni) · API 127.0.0.1:8080 · WEB 127.0.0.1:3002 (canlı portlar).
+# Kural: izin listesi dışındaki HER yol/yöntem 403 alır ve arka uca hiç gitmez.
+# İzin listesi paket §2.1 ile birebir; izole prova (edge-isolated-d2f6d24d) aynı sınırı ölçtü.
+
+{$PUBLIC_HOST} {
+	# Personel yönetim uçları portal ön ekinde olsa bile REDDEDİLİR (listenin en kritik satırı).
+	@deny path_regexp deny ^/api/portal/admin(/|$)
+	respond @deny 403
+
+	@web_get {
+		method GET
+		path_regexp web ^/(intake/[^/]+|portal(/(login|forgot-password|reset-password|cases|documents|financial-disclosures|messages|poas|profile))?|portal/cases/[^/]+|_next/.+|favicon\.ico)$
+	}
+	@api_get {
+		method GET
+		path_regexp aget ^/api/(public/intake/[^/]+|portal/(cases|cases/[^/]+|financial-disclosures|financial-disclosures/history|financial-disclosures/[^/]+|poas|notifications|notifications/unread-count|documents|documents/[^/]+/download|messages|messages/unread-count))$
+	}
+	@api_post {
+		method POST
+		path_regexp apost ^/api/(public/intake/[^/]+|portal/(login|forgot-password|reset-password|change-password|notifications/[^/]+/read|notifications/read-all|messages|messages/mark-read|documents/upload))$
+	}
+	@api_delete {
+		method DELETE
+		path_regexp adel ^/api/portal/documents/[^/]+$
+	}
+
+	# Yükleme sınırı: API 10 MB (portal.controller.ts); kenar biraz üstünde tutulur.
+	request_body @api_post {
+		max_size 11MB
+	}
+
+	handle @api_get {
+		reverse_proxy 127.0.0.1:8080 {
+			# İstemciden gelen X-Forwarded-For SİLİNİR, kenar kendi gördüğü adresi yazar.
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle @api_post {
+		reverse_proxy 127.0.0.1:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle @api_delete {
+		reverse_proxy 127.0.0.1:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle @web_get {
+		reverse_proxy 127.0.0.1:3002
+	}
+	handle {
+		respond 403
+	}
+}

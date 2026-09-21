@@ -79,20 +79,36 @@ describe("portalApiUrl — CLIENT-CONFIG-P01 configuration contract", () => {
     expect(resolvePortalApiBaseUrl()).toBe("http://localhost:8080");
   });
 
-  it("[10] PRODUCTION: env YOKSA sessiz localhost fallback ÜRETİLMEZ — fail-fast throw", () => {
+  // [10] BİLİNÇLİ SÖZLEŞME DEĞİŞİKLİĞİ (2026-09-21): canlı production derlemesinde env tanımsızdı ve
+  // bu fonksiyon TARAYICIDA her portal çağrısında (giriş dâhil) hata fırlatıyordu. Artık tarayıcıda env
+  // hiç verilmemişse AYNI ORIGIN (boş taban) döner. Korunan iddia: localhost'a HİÇBİR koşulda gidilmez.
+  it("[10a] PRODUCTION + TARAYICI: env YOKSA aynı origin (boş taban) — localhost ÜRETİLMEZ", () => {
+    setNodeEnv("production");
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "");
+    expect(typeof window).toBe("object");
+    expect(resolvePortalApiBaseUrl()).toBe("");
+    expect(portalApiUrl("/api/portal/login")).toBe("/api/portal/login");
+    expect(portalApiUrl("/api/portal/login")).not.toContain("localhost");
+  });
+
+  it("[10b] PRODUCTION + SUNUCU (window yok): env YOKSA eskisi gibi fail-fast throw", () => {
     setNodeEnv("production");
     vi.stubEnv("NEXT_PUBLIC_API_URL", "");
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    expect(() => resolvePortalApiBaseUrl()).toThrow(/NEXT_PUBLIC_API_URL/);
-    // Kritik negatif kanıt: hata mesajı bile localhost'u bir çözüm olarak sunmaz,
-    // ve hiçbir koşulda localhost DÖNMEZ.
+    const saved = globalThis.window;
+    // @ts-expect-error test: sunucu tarafı benzetimi
+    delete globalThis.window;
     try {
-      resolvePortalApiBaseUrl();
-    } catch (e) {
-      expect(String((e as Error).message)).not.toContain("http://localhost:8080");
+      expect(() => resolvePortalApiBaseUrl()).toThrow(/NEXT_PUBLIC_API_URL/);
+      try {
+        resolvePortalApiBaseUrl();
+      } catch (e) {
+        expect(String((e as Error).message)).not.toContain("http://localhost:8080");
+      }
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      globalThis.window = saved;
     }
-    expect(errSpy).toHaveBeenCalled();
   });
 
   it("[11] PRODUCTION: env tanımlıysa normal çalışır", () => {
