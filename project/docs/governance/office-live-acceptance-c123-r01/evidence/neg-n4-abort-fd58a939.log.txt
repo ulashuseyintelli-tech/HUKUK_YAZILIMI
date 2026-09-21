@@ -1,0 +1,42 @@
+KOSUM KIMLIGI (yazmadan ONCE kayda gecti): runId=fd58a939 tenant=off-c123-fd58a939 ortam=disposable
+ARTEFAKT BAGI (G-6): 8 dosya pinle ESIT
+KURTARMA (her kosulda): C123_RUN_ID=fd58a939 node c-99-close.js
+
+[S] kurulum — tek transaction (olcum plani: 145 tenantId'li + 37 bagli tablo; kapsam disi 27)
+      yabanci tenant sayi ozeti (I-3 temel): 3 tenant · 6d25b147f79e9a13
+
+[C1] POST /cases — basarili acilis (satir iliskileri + tek transaction)
+  OK   C1-S       ADMIN -> satir-ici alacakli + borclu ile dava acilisi 201
+             HTTP 201 · fark [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] beklenen [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] · dava 1 · muvekkil 1 · borclu 1 · bag caseClient=1 caseDebtor=1
+
+[C1] POST /cases — ISLEM ICI dogal hata: tum taraf yazmalarindan SONRA -> TAM GERI ALMA
+  OK   C1-R1      ADMIN -> ayni govde + var olmayan staffMemberId -> 400, dava/muvekkil/borclu 0 (geri alma)
+             HTTP 400 msg="Geçersiz veya başka tenant'a ait personel: c123-yok-fd58a939" · yazma 0 (goruntu ayni) · kalinti: dava 0 · muvekkil 0 · borclu 0
+
+[C1] POST /cases — ISLEM ONCESI ret (mukerrer dosya no) ve VIEWER siniri
+  OK   C1-R2      ADMIN -> C1-S ile ayni fileNumber -> 409, yazma 0
+             HTTP 409 msg="Bu dosya numarası (C1S-fd58a939) zaten kullanılıyor" · yazma 0 (goruntu ayni)
+  OK   C1-V1      VIEWER -> satir-ici alacakli ile dava acilisi -> 403, yazma 0
+             HTTP 403 code=CLIENT_MUTATION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü müvekkil kaydı oluşturamaz veya değiştiremez." · yazma 0 (goruntu ayni)
+
+[C2] genel kutu kararlari — VIEWER (bagli avukati PARTNER) -> 403 OFFICE_APPROVAL_DECISION_DENIED_VIEWER + yazma 0
+  OK   C2-G1      VIEWER approve (CHANGE_STATUS)
+             HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL
+  OK   C2-G2      VIEWER reject (CHANGE_STATUS)
+             HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL
+
+KOSUM HATASI (kapanis yine calisir): C123_ABORT_AFTER=C2-G2 — negatif kontrol
+
+[K] kapanis (runId ile) — erisim sonlandirilir, bekleyen talepler iptal, audit KORUNUR
+  OK   K-1        kapanis dogrulandi (aktif kullanici 0, aktif dava 0, bekleyen talep 0, audit korundu)
+             {"record":"OFFICE-C123-CLOSE","runId":"fd58a939","slug":"off-c123-fd58a939","found":true,"tenantId":"cmubqiu5a0001q0wxd5vythzr","activeUsersBefore":5,"usersDeactivated":5,"stillActiveUsers":0,"casesClosed":2,"activeCasesAfter":0,"pendingCancelled":6,"pendingAfter":0,"auditBefore":3,"auditAfter":3,"auditPreserved":true,"alreadyClosed":false,"greetingDisabled":true,"verified":true}
+  OK   K-2        dagitilmis 5 JWT kapanistan sonra 401
+             [{"actor":"admin","status":401,"indeterminate":false},{"actor":"viewer","status":401,"indeterminate":false},{"actor":"elev1","status":401,"indeterminate":false},{"actor":"elev2","status":401,"indeterminate":false},{"actor":"elev3","status":401,"indeterminate":false}]
+  OK   I-1        aktorlerin BASKA tenant'ta audit izi 0
+             sayi=0
+  OK   I-3        yabanci tenant sayi ozeti kurulum sonrasi = kapanis sonrasi
+             3 tenant · 6d25b147f79e9a13 -> 6d25b147f79e9a13 · {"user":11,"lawyer":8,"office":3,"case":4,"client":4,"debtor":2,"officeApprovalRequest":16,"collectionDisposition":4,"clientFinancialDisclosure":2}
+
+OFFICE C123 KABUL: 10/10 PASS · FAIL 0 · OLCULEMEDI 0
+
+HUKUM: OLCULEMEDI · PASS 10/10 · FAIL 0 · OLCULEMEDI 0 · kapanis DOGRULANDI · sonuc dosyasi D:/Development/HY_WT/C123_WORK/c123-result-n4.json

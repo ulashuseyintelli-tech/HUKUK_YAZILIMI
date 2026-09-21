@@ -1,0 +1,15 @@
+{
+ "record": "OFFICE-C123-DIST-PINS",
+ "measuredFrom": "C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE23/project/apps/api/dist/apps/api/src (canli R25B dist 1524EDC1…4D4E; salt okuma, 2026-09-21)",
+ "sourceNote": "Kaynak commitler #2641 b9fd97a1, #2645 e65ff5de, #2606 42d109fe, #2608 b335cc4a, #2612 13740670 — hepsi R25B kaynagi 4443600a ve R26 adayi 47fcf395 icin `git merge-base --is-ancestor` exit 0. Atalik tek basina derleme kaniti DEGILDIR; bag burada derlenmis dosya sha256 + isaret metniyle kurulur.",
+ "files": {
+  "common/party-write-tx.js": { "item": "C1 #2645", "marker": "runPartyWrite", "sha256": "9155D5380FA5A9408B5147ABFFD96C688A11153CD91C4047F16B771407732FD8" },
+  "modules/case/case.service.js": { "item": "C1 #2641/#2645", "marker": "party-write-tx", "sha256": "742C0D86B1984AA399D435DB570759E953CB1C7B046AD2FECBAB9653B5298786" },
+  "modules/client/client.service.js": { "item": "C1 #2645", "marker": "party-write-tx", "sha256": "22AED88D2AD392EEA9DFB2966EFA0AFBC2E6FCB64F3A102B4209831C24D76911" },
+  "modules/office-approval/office-write-role.policy.js": { "item": "C2 #2606", "marker": "OFFICE_APPROVAL_DECISION_DENIED_VIEWER", "sha256": "13119AF48D9B18A54D378839246C5E8F611376805A9DA963992947ED7183252E" },
+  "modules/client-financial-disclosure/client-financial-disclosure-approval-eligibility.js": { "item": "C2 #2606", "marker": "isDisclosureDecisionRoleDenied", "sha256": "ABBC6ED86EEAB0B6FC74A0E6D62ED29CEB93AD58797A5F2D57C0AB6FC9333388" },
+  "modules/client-financial-disclosure/client-financial-disclosure-approval.service.js": { "item": "C2 #2606 / C3", "marker": "isDisclosureDecisionRoleDenied", "sha256": "BD00659212D01E70B2A0ACB5741C8D2EC54EE2C4D733E3A64096831BE771C113" },
+  "modules/office-approval/office-approval-domain-ownership.js": { "item": "C3 #2608/#2612", "marker": "DOMAIN_ACTION_REQUIRED", "sha256": "2ABBFEA56889FF43DCD729B37D2F5957EA0D1F3DC659FA0501A8E552FC183729" },
+  "modules/office-approval/office-approval.service.js": { "item": "C2 #2606 / C3 #2608/#2612", "marker": "assertGenericDecisionAllowed", "sha256": "14F7842042DFBABEC300B7DF28716BF7879B849B5E3F89651329916C5820C7C7" }
+ }
+}

@@ -1,0 +1,234 @@
+{
+ "record": "OFFICE-C123-ACCEPTANCE-R01",
+ "package": "office-live-acceptance-c123-r01",
+ "environment": {
+  "environment": "disposable",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5456",
+  "dbName": "hukuk_office_c123_acc_test",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8113",
+  "goRef": null
+ },
+ "distBinding": {
+  "root": "C:/Development/HUKUK_YAZILIMI/HY_W4_RELEASE23/project/apps/api/dist/apps/api/src",
+  "ok": true,
+  "files": {
+   "common/party-write-tx.js": true,
+   "modules/case/case.service.js": true,
+   "modules/client/client.service.js": true,
+   "modules/office-approval/office-write-role.policy.js": true,
+   "modules/client-financial-disclosure/client-financial-disclosure-approval-eligibility.js": true,
+   "modules/client-financial-disclosure/client-financial-disclosure-approval.service.js": true,
+   "modules/office-approval/office-approval-domain-ownership.js": true,
+   "modules/office-approval/office-approval.service.js": true
+  }
+ },
+ "tools": {
+  "c-lib.js": "527C89E35B11F2D83A384333EB7237FAE9ED105A252E9D8EC4F94F5C31CA69DC",
+  "c-setup.js": "179381E2B37A7C22B486BCD5DE177DE487463358529B479B652750AC14CAB3F6",
+  "c-cases.js": "C67873D56D69A6FFC69D3A21015333A66CE49727788E592A782971EFB0E99532",
+  "c-99-close.js": "1A5B4C3A6B51E40B301B125403D4B10F4D610803F3399184C6917339798EE9BC",
+  "c-run.js": "6981B7F7A52E405DA53826DF0D67A5B0E1088AEF09604F035210F6AA24B51FD2",
+  "c-dist-pins.json": "FE747553041587579E88C67ADBD04488C2D6F4B2A10AD8DB869D5E536DD8C678",
+  "c-expect-shapes.json": "8E7FFD9C7DDD2FEC062D9A76DAE7291A1AB8151E2E6085A92370D0D3DBDACF0E",
+  "ow-lib.js": "612D20D1439DCAFEEB2C86AC867988133F26AE900D95F102571240D3A12F988A"
+ },
+ "runId": "fd58a939",
+ "slug": "off-c123-fd58a939",
+ "startedAt": "2026-09-21T21:05:56.857Z",
+ "stage": "bitti",
+ "recovery": "C123_RUN_ID=fd58a939 node c-99-close.js",
+ "note": "DISPOSABLE PROVA — canli kabul YERINE GECMEZ",
+ "setup": {
+  "tenantId": "cmubqiu5a0001q0wxd5vythzr",
+  "writtenRows": 27,
+  "scopePlan": {
+   "direct": 145,
+   "child": 37,
+   "unscoped": [
+    "Tenant",
+    "ServiceHistory",
+    "DocumentTemplate",
+    "FormType",
+    "FormSubType",
+    "PortalNotification",
+    "PublicInstitution",
+    "UyapUnit",
+    "InterestRate",
+    "IcrabotCaseFact",
+    "IcrabotCaseFlag",
+    "IcrabotFactAudit",
+    "IcrabotEngineRun",
+    "IcrabotRulePack",
+    "IcrabotRule",
+    "IcrabotRuleRevision",
+    "IcrabotQueueItem",
+    "IcrabotEmailLog",
+    "IcrabotSmsLog",
+    "IcrabotNotification",
+    "IcrabotUyapSubmission",
+    "IcrabotTask",
+    "AddressEvidenceRef",
+    "ManifestAdminAuditLog",
+    "ManifestWorkerState",
+    "PromoteRequest",
+    "EscalationStateRecord"
+   ]
+  }
+ },
+ "finishedAt": "2026-09-21T21:06:04.788Z",
+ "verdict": "OLCULEMEDI",
+ "pass": 10,
+ "fail": 0,
+ "unmeasured": 0,
+ "total": 10,
+ "runError": "C123_ABORT_AFTER=C2-G2 — negatif kontrol",
+ "results": [
+  {
+   "id": "C1-S",
+   "desc": "ADMIN -> satir-ici alacakli + borclu ile dava acilisi 201",
+   "ok": true,
+   "observed": "HTTP 201 · fark [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] beklenen [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] · dava 1 · muvekkil 1 · borclu 1 · bag caseClient=1 caseDebtor=1"
+  },
+  {
+   "id": "C1-R1",
+   "desc": "ADMIN -> ayni govde + var olmayan staffMemberId -> 400, dava/muvekkil/borclu 0 (geri alma)",
+   "ok": true,
+   "observed": "HTTP 400 msg=\"Geçersiz veya başka tenant'a ait personel: c123-yok-fd58a939\" · yazma 0 (goruntu ayni) · kalinti: dava 0 · muvekkil 0 · borclu 0"
+  },
+  {
+   "id": "C1-R2",
+   "desc": "ADMIN -> C1-S ile ayni fileNumber -> 409, yazma 0",
+   "ok": true,
+   "observed": "HTTP 409 msg=\"Bu dosya numarası (C1S-fd58a939) zaten kullanılıyor\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "C1-V1",
+   "desc": "VIEWER -> satir-ici alacakli ile dava acilisi -> 403, yazma 0",
+   "ok": true,
+   "observed": "HTTP 403 code=CLIENT_MUTATION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü müvekkil kaydı oluşturamaz veya değiştiremez.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "C2-G1",
+   "desc": "VIEWER approve (CHANGE_STATUS)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL"
+  },
+  {
+   "id": "C2-G2",
+   "desc": "VIEWER reject (CHANGE_STATUS)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL"
+  },
+  {
+   "id": "K-1",
+   "desc": "kapanis dogrulandi (aktif kullanici 0, aktif dava 0, bekleyen talep 0, audit korundu)",
+   "ok": true,
+   "observed": "{\"record\":\"OFFICE-C123-CLOSE\",\"runId\":\"fd58a939\",\"slug\":\"off-c123-fd58a939\",\"found\":true,\"tenantId\":\"cmubqiu5a0001q0wxd5vythzr\",\"activeUsersBefore\":5,\"usersDeactivated\":5,\"stillActiveUsers\":0,\"casesClosed\":2,\"activeCasesAfter\":0,\"pendingCancelled\":6,\"pendingAfter\":0,\"auditBefore\":3,\"auditAfter\":3,\"auditPreserved\":true,\"alreadyClosed\":false,\"greetingDisabled\":true,\"verified\":true}"
+  },
+  {
+   "id": "K-2",
+   "desc": "dagitilmis 5 JWT kapanistan sonra 401",
+   "ok": true,
+   "observed": "[{\"actor\":\"admin\",\"status\":401,\"indeterminate\":false},{\"actor\":\"viewer\",\"status\":401,\"indeterminate\":false},{\"actor\":\"elev1\",\"status\":401,\"indeterminate\":false},{\"actor\":\"elev2\",\"status\":401,\"indeterminate\":false},{\"actor\":\"elev3\",\"status\":401,\"indeterminate\":false}]"
+  },
+  {
+   "id": "I-1",
+   "desc": "aktorlerin BASKA tenant'ta audit izi 0",
+   "ok": true,
+   "observed": "sayi=0"
+  },
+  {
+   "id": "I-3",
+   "desc": "yabanci tenant sayi ozeti kurulum sonrasi = kapanis sonrasi",
+   "ok": true,
+   "observed": "3 tenant · 6d25b147f79e9a13 -> 6d25b147f79e9a13 · {\"user\":11,\"lawyer\":8,\"office\":3,\"case\":4,\"client\":4,\"debtor\":2,\"officeApprovalRequest\":16,\"collectionDisposition\":4,\"clientFinancialDisclosure\":2}"
+  }
+ ],
+ "measuredShapes": {
+  "C1-S": "AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2"
+ },
+ "close": {
+  "record": "OFFICE-C123-CLOSE",
+  "runId": "fd58a939",
+  "slug": "off-c123-fd58a939",
+  "found": true,
+  "tenantId": "cmubqiu5a0001q0wxd5vythzr",
+  "activeUsersBefore": 5,
+  "usersDeactivated": 5,
+  "stillActiveUsers": 0,
+  "casesClosed": 2,
+  "activeCasesAfter": 0,
+  "pendingCancelled": 6,
+  "pendingAfter": 0,
+  "auditBefore": 3,
+  "auditAfter": 3,
+  "auditPreserved": true,
+  "alreadyClosed": false,
+  "greetingDisabled": true,
+  "verified": true
+ },
+ "postClose": [
+  {
+   "actor": "admin",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "viewer",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "elev1",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "elev2",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "elev3",
+   "status": 401,
+   "indeterminate": false
+  }
+ ],
+ "isolation": {
+  "foreignBefore": {
+   "digest": "6d25b147f79e9a1391478827992c4844fcd40eee56cb07c62e865ba9bb050854",
+   "tenants": 3,
+   "totals": {
+    "user": 11,
+    "lawyer": 8,
+    "office": 3,
+    "case": 4,
+    "client": 4,
+    "debtor": 2,
+    "officeApprovalRequest": 16,
+    "collectionDisposition": 4,
+    "clientFinancialDisclosure": 2
+   },
+   "excludedOwn": 1
+  },
+  "foreignAuditByActors": 0,
+  "foreignAfter": {
+   "digest": "6d25b147f79e9a1391478827992c4844fcd40eee56cb07c62e865ba9bb050854",
+   "tenants": 3,
+   "totals": {
+    "user": 11,
+    "lawyer": 8,
+    "office": 3,
+    "case": 4,
+    "client": 4,
+    "debtor": 2,
+    "officeApprovalRequest": 16,
+    "collectionDisposition": 4,
+    "clientFinancialDisclosure": 2
+   },
+   "excludedOwn": 1
+  }
+ }
+}
