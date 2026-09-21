@@ -367,3 +367,45 @@ ortamdadır ve **canlı kabul sayılmaz**.
 `revoke-access` sırasındaki **kullanıcı satırı güncellemesi** (`isActive`, `tokenVersion`) erişim
 kapanışı kanıtı olarak kayıtlıydı ama **yazma envanterinde ayrı kalem sayılmamıştı**; §1.1 ve §10
 bu revizyonda düzeltildi.
+
+## KUSUR A ve B — SINIFLANDIRMA VE DOĞRULAMA (2026-09-21)
+
+### A. "Kilit ≤ 4 sn" — ÜRÜN GARANTİSİ DEĞİL, TEST BÜTÇESİDİR
+
+Kaynak ölçümü: `4000/5000/10000 ms` değerlerinin hiçbiri üründe yoktur; tamamı bu paketin A2 yarış
+betiğindedir (`f04-02-a2-race.js`). Üründe `apps/api/src` altında disposition post yolunda `lock_timeout`
+ya da `FOR UPDATE` **yoktur**.
+
+| Değer | Nerede | Neyi ölçer |
+|---|---|---|
+| `LOCK_BUDGET_MS` = 3500, tavan 4000 | `f04-02-a2-race.js:34` | Betiğin **kendi** gözlem + tutma bütçesi. `SET LOCAL lock_timeout` bu değere kurulur |
+| `LOCK_BUDGET_MS + DB_GUARD_SLACK_MS` = 5000 | `f04-02-a2-race.js:112-114` | `statement_timeout` ve `idle_in_transaction_session_timeout`: tek sorgu ve boşta bekleyen transaction sınırı |
+| A2-BUDGET FAIL eşiği 5000 | `f04-02-a2-race.js:185` | Ölçümün kendi kabul eşiği |
+| `+5000` ile 10000 | `f04-02-a2-race.js:164` | Prisma `$transaction` dış sınırı; betik asılı kalmasın diye |
+
+**Ürünün gerçek garantisi zaman değil, durum geçişidir.** `disposition-posting.service.ts` post işlemini
+`$transaction` içinde koşullu `updateMany` ile yapar: `where: { id, tenantId, status: 'DISTRIBUTION_APPROVED' }`.
+İkinci eşzamanlı post 0 satır günceller ve ilerleyemez (compare-and-set). Yani eşzamanlılık güvencesi
+**süre sınırına bağlı değildir**.
+
+**Karar:** Garanti silinmedi ve eşik gevşetilmedi. İfade doğru sınıfına konuldu: belgelerde "kilit ≤ 4 sn"
+yazıldığında bu **kabul betiğinin bütçesidir**, hizmet taahhüdü değildir. Hizmet taahhüdü olarak sunulacaksa
+ürüne bir sınır eklenmesi gerekir ve bu **ayrı bir yayın** ister.
+
+### B. Commit sonrası hatada hesabın açık kalması — GİDERİLDİ ve ÖLÇÜLDÜ
+
+Davranış `#2577` (`df1ff252`) ile düzeltilmişti: kapanış `finally` içinde **çıkış kodundan bağımsız** olarak
+`RUN_ID` ile aranır. Bu turda yalnız yanıltıcı bir ileti düzeltildi: kurulum hatası "atomik olduğu için kayıt
+KALMAZ" diyordu; oysa `f04-01-setup.js` EXPECTED kontrolü **commit sonrası** çalışır. İleti artık "kayıt KALMIŞ
+OLABİLİR; kapanış runId ile denenecek" der. Mantık değişmedi.
+
+**Disposable hata enjeksiyonu (2026-09-21, `:5443` test DB):**
+
+| Senaryo | Ölçülen |
+|---|---|
+| Commit **sonrası** hata enjekte edildi (`throw`, exit 1) | Kapanış denendi ve başardı: `ERISIM SONLANDIRILDI - finansal/audit kanit KORUNDU`. DB: aktif kullanıcı **0/1**, disposition satırı **korundu** |
+| Kapanış betiği bilerek düşürüldü (exit 9) | Koşucu **görünür hata** bastı (`!!! ERISIM KAPANISI EKSIK`), tekrar komutunu yazdı, çıkış **1**. Hesap açık kaldı: aktif **1/1** — yani başarısız kapanış gizlenmiyor |
+| Paketin **bağımsız kurtarması** (`f04-09-close-access.js`, enjeksiyonsuz) | `accessClosed=true`, `evidencePreserved=true`; DB: aktif **0/1** |
+
+Bağımsız kurtarma yolu korunmuştur: `F04_RUN_ID=<runId> node f04-09-close-access.js` her çıkış kodundan
+sonra güvenle tekrar çalıştırılabilir.
