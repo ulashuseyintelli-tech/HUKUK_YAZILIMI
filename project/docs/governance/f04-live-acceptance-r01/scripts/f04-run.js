@@ -66,7 +66,11 @@ function run(script, extraEnv = {}) {
       const rc = run('f04-00-recover-state.js', { F04_RUN_ID: RUN_ID });
       if (rc !== 0) throw new Error('durum kurtarilamadi — hesap kapatma yine de DENENECEK');
     } else if (setupCode !== 0) {
-      throw new Error(`kurulum basarisiz (exit ${setupCode}) — atomik oldugu icin kayit KALMAZ`);
+      // NOT (Kusur A/B kaydi): "atomik oldugu icin kayit KALMAZ" IDDIASI YANLISTI. `f04-01-setup.js`
+      // EXPECTED kontrolu COMMIT SONRASI calisir; commit sonrasi HERHANGI BIR hata da exit!=0 uretir ve
+      // kayitlar MEVCUT olabilir. Bu yuzden mesaj duzeltildi; kapanis zaten `finally` icinde runId ile
+      // KOSULSUZ denenir (asagi bkz.). Kapanis sonucu ayrica olculur, VARSAYILMAZ.
+      throw new Error(`kurulum basarisiz (exit ${setupCode}) — kayit KALMIS OLABILIR; kapanis runId ile denenecek`);
     }
 
     // ── 2) A2 ──
