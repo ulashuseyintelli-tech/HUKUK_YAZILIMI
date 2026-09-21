@@ -383,10 +383,13 @@ src/modules/calc-preview/diagnostics/object-store/manifest-retry/__tests__/manif
 #   Bu yedi spec ci.yml'de AYRI adimlarda, her biri kendi Jest surecinde kosuyordu (~13.6s sabit
 #   ts-jest bootstrap / process). Ayni ortam (TEST_DATABASE_URL) ve ayni bayraklarla
 #   (--ci --forceExit --runInBand --runTestsByPath) bu manifestte tek surecte kosarlar.
-#   Eski adimlarin kapilari KORUNUR: dosya varligi (runner `test -f`), "her spec TAM BIR KEZ kosar"
-#   (runner: kosan suite sayisi == manifest sayisi) ve db/* icin TEST_DATABASE_URL zorunlulugu
-#   (runner fail-closed). `collection-cancel-reversal.db-gated` ZATEN bu manifestteydi; ayri adimi
-#   ayni dosyayi IKINCI kez kosuyordu (cifte secim) ve kaldirildi.
+#   KADEMELI GECIS (owner onayi 2026-09-21): S1b = once bu manifest/runner degisikligi main'e girer;
+#   ci.yml'deki eski dogrudan adimlar GECICI olarak yerinde kalir → bu dosyalar kisa bir sure IKI
+#   KEZ kosar (kapsam kaybi YOK). S2 = eski adimlar ci.yml'den governance koordinasyon zinciriyle
+#   (CODEX_LOCAL) kaldirilir. Eski adimlarin kapilari runner'da KORUNUR: dosya varligi (`test -f`),
+#   "manifestteki her spec TAM BIR KEZ kosar" (kosan suite sayisi == manifest sayisi) ve db/* icin
+#   TEST_DATABASE_URL zorunlulugu (fail-closed). `collection-cancel-reversal.db-gated` ZATEN bu
+#   manifestteydi; "ADR-014 PR-1B" adimi ayni dosyayi ikinci kez kosuyor (S2'de kalkar).
 src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.fixture.db-gated.integration.spec.ts
 src/modules/uyap/__tests__/uyap-operation-attempt-schema.db-gated.integration.spec.ts
 src/modules/uyap/operation-writer/uyap-operation-writer.db-gated.integration.spec.ts
