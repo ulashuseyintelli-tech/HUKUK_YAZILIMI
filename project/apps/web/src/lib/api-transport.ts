@@ -19,13 +19,18 @@
  * Davranis kilidi: `src/__tests__/api-transport-own12a.test.ts`.
  */
 import { buildApiHttpError, readErrorBody } from './api-error';
+import { resolveApiBaseUrl } from './api-base-url';
 
-/** Taban URL — iki istemcide de AYNI kaynak ve AYNI varsayilan. */
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+/**
+ * Taban URL — iki istemcide de AYNI kaynak. Deger CAGRI ANINDA cozulur: `NEXT_PUBLIC_API_URL`
+ * verilmisse o, verilmemis ve tarayici yerel OLMAYAN bir host'taysa AYNI ORIGIN (bos dize),
+ * aksi halde `http://localhost:8080`. Bkz. `api-base-url.ts`.
+ */
+export const API_BASE_URL = resolveApiBaseUrl();
 
 /** `/api` onekli tam URL (iki istemcide de AYNI desen). */
 export function buildApiUrl(endpoint: string): string {
-  return `${API_BASE_URL}/api${endpoint}`;
+  return `${resolveApiBaseUrl()}/api${endpoint}`;
 }
 
 /**

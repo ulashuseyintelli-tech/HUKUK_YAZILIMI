@@ -6,6 +6,7 @@ import { buildApiHttpError, readErrorBody } from './api-error'; // OWN-12 ADIM A
 // OWN-12 ADIM A (Faz 2): ortak tasima katmani — URL/baslik/ok-kontrolu tek yerde.
 // `try` SINIRI burada KALIR: fetch ve ok-kontrolu bu istemcide AYNI try icindedir.
 import { API_BASE_URL, sendApiRequest, assertApiResponseOk, buildApiUrl } from './api-transport';
+import { resolveApiBaseUrl } from './api-base-url';
 import { reportClientError, shouldReportNetworkError } from "./error-reporter"; // PR-4: yalnız network-failure
 
 const API_URL = API_BASE_URL;
@@ -1696,7 +1697,7 @@ class ApiClient {
    * API URL'ini al (private helper)
    */
   private getApiUrl(): string {
-    return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    return resolveApiBaseUrl();
   }
 
   // ============================================

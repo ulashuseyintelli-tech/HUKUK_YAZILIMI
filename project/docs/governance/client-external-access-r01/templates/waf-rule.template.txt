@@ -1,0 +1,15 @@
+CLIENT DIŞ ERİŞİM — tünel yolu için YÖNTEM kısıtı (sağlayıcı güvenlik kuralı). CANLIYA UYGULANMADI.
+Eylem: ENGELLE. Parametre: <PUBLIC_HOST>. Tünel girişi (cloudflared-config.yml.template) yolu eşler;
+bu kural yöntemi eşler. Kural, aşağıdaki izinli (yöntem, yol) çiftlerinin HİÇBİRİNE uymayan isteği engeller.
+
+(http.host eq "<PUBLIC_HOST>") and not (
+  (http.request.method eq "GET" and http.request.uri.path matches "^/(intake/[^/]+|portal(/(login|forgot-password|reset-password|cases|documents|financial-disclosures|messages|poas|profile))?|portal/cases/[^/]+|_next/.+|favicon\\.ico)$")
+  or (http.request.method eq "GET" and http.request.uri.path matches "^/api/(public/intake/[^/]+|portal/(cases|cases/[^/]+|financial-disclosures|financial-disclosures/history|financial-disclosures/[^/]+|poas|notifications|notifications/unread-count|documents|documents/[^/]+/download|messages|messages/unread-count))$")
+  or (http.request.method eq "POST" and http.request.uri.path matches "^/api/(public/intake/[^/]+|portal/(login|forgot-password|reset-password|change-password|notifications/[^/]+/read|notifications/read-all|messages|messages/mark-read|documents/upload))$")
+  or (http.request.method eq "DELETE" and http.request.uri.path matches "^/api/portal/documents/[^/]+$")
+)
+
+Ek kural (ayrı, ENGELLE): http.request.uri.path matches "^/api/portal/admin(/|$)"
+
+Not: `matches` (düzenli ifade) işleci sağlayıcı planına bağlıdır. Plan desteklemiyorsa bu kural
+kurulamaz ve tünel yolu yöntem kısıtı olmadan YAYINLANMAZ — yerine Caddy yolu seçilir (owner kararı).

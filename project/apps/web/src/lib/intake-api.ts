@@ -8,7 +8,9 @@
  * Token URL path'inde taşınır ama app log'una/analytics'e YAZILMAZ (4.4 ops kuralı).
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+import { resolveApiBaseUrl } from "./api-base-url";
+
+// Taban adres cagri aninda cozulur (alan adi derlemeye GOMULMEZ).
 
 export interface IntakeFormSchema {
   title: string;
@@ -24,7 +26,7 @@ export interface IntakeFieldInput {
 
 /** Public uç — Authorization header EKLENMEZ. */
 async function publicFetch<T>(token: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_URL}/api/public/intake/${encodeURIComponent(token)}`, {
+  const res = await fetch(`${resolveApiBaseUrl()}/api/public/intake/${encodeURIComponent(token)}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     // Authorization YOK (public). Token'ı LOGLAMA.

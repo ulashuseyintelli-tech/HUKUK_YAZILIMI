@@ -31,7 +31,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // AUTH-01: /auth/account-recovery eklendi — girişsiz kullanıcı erişebilmeli.
-const PUBLIC_PATHS = ["/", "/auth/login", "/auth/register", "/auth/account-recovery"];
+// 2026-09-21: parola sıfırlama ve davet kabulü de girişsiz açılır — bağlantıdaki token (reset: #hash,
+// davet: ?query) /auth/login'e yönlendirmede kayboluyordu (izole next start ile ölçüldü).
+// Tam yol eşleşmesidir; girişliyken panele yönlendirme listesine BİLEREK eklenmedi.
+const PUBLIC_PATHS = [
+  "/",
+  "/auth/login",
+  "/auth/register",
+  "/auth/account-recovery",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+  "/auth/accept-invite",
+];
 // Girişli kullanıcı bu sayfalara düşerse panele yönlendirilir (pazarlama/login sayfasında kalmamalı).
 const REDIRECT_WHEN_AUTHENTICATED_PATHS = ["/", "/auth/login"];
 
@@ -52,7 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Bütün portal route'ları public OLMAZ: private /portal/* route'ları PortalLayout'un
     // kendi guard'ı korur (bkz. app/portal/layout.tsx).
     const isPortalDelegated = pathname.startsWith("/portal");
-    if (!loading && !user && !PUBLIC_PATHS.includes(pathname) && !isPortalDelegated) {
+    // H5 (2026-09-21): /intake/<token> müvekkil formudur; personel oturumu gerektirmez, erişimi
+    // bağlantı token'ı ve API tarafındaki doğrulama belirler. Yalnız "/intake/" öneki muaftır.
+    // Ölçülen kusur: girişsiz tarayıcıda form açılır açılmaz /auth/login'e yönlendiriliyordu.
+    const isIntakePublic = pathname.startsWith("/intake/");
+    if (!loading && !user && !PUBLIC_PATHS.includes(pathname) && !isPortalDelegated && !isIntakePublic) {
       router.push("/auth/login");
     }
   }, [loading, user, pathname, router]);

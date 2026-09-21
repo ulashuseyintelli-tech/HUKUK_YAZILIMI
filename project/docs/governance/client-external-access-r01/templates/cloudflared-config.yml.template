@@ -1,0 +1,26 @@
+# CLIENT DIŞ ERİŞİM — giden tünel şablonu (ÖNERİLEN yol). CANLIYA UYGULANMADI.
+# Parametreler: <TUNNEL_ID> · <CREDENTIALS_PATH> · <PUBLIC_HOST>. API 127.0.0.1:8080 · WEB 127.0.0.1:3002.
+#
+# DİKKAT — tünel girişi yalnız YOL eşler, YÖNTEM eşlemez. Yöntem kısıtı sağlayıcı tarafındaki
+# güvenlik kuralıyla (waf-rule.template.txt) verilir; ikisi BİRLİKTE uygulanmadan yayın yapılmaz.
+# Kurulumda doğrulanır: izin dışı yöntem (ör. DELETE /intake/x) kenarda reddediliyor mu.
+#
+# İstemci IP: sağlayıcı istemci adresini X-Forwarded-For'un SONUNA ekler; API `trust proxy=1`
+# ile en sağdaki değeri okur (#2730). Kurulumda sahte başlıkla ölçülür (paket §3 madde 2-3).
+
+tunnel: <TUNNEL_ID>
+credentials-file: <CREDENTIALS_PATH>
+
+ingress:
+  # Personel yönetim uçları — portal ön ekinde olsa bile REDDEDİLİR.
+  - hostname: <PUBLIC_HOST>
+    path: ^/api/portal/admin(/|$)
+    service: http_status:403
+  - hostname: <PUBLIC_HOST>
+    path: ^/api/(public/intake/[^/]+|portal/(login|forgot-password|reset-password|change-password|cases|cases/[^/]+|financial-disclosures|financial-disclosures/history|financial-disclosures/[^/]+|poas|notifications|notifications/unread-count|notifications/[^/]+/read|notifications/read-all|documents|documents/upload|documents/[^/]+|documents/[^/]+/download|messages|messages/unread-count|messages/mark-read))$
+    service: http://127.0.0.1:8080
+  - hostname: <PUBLIC_HOST>
+    path: ^/(intake/[^/]+|portal(/(login|forgot-password|reset-password|cases|documents|financial-disclosures|messages|poas|profile))?|portal/cases/[^/]+|_next/.+|favicon\.ico)$
+    service: http://127.0.0.1:3002
+  # Geri kalan her şey — personel sayfaları, /auth/*, /api/auth/*, diğer tüm uçlar.
+  - service: http_status:403

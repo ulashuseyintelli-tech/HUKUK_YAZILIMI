@@ -373,8 +373,8 @@ bu revizyonda düzeltildi.
 ### A. "Kilit ≤ 4 sn" — ÜRÜN GARANTİSİ DEĞİL, TEST BÜTÇESİDİR
 
 Kaynak ölçümü: `4000/5000/10000 ms` değerlerinin hiçbiri üründe yoktur; tamamı bu paketin A2 yarış
-betiğindedir (`f04-02-a2-race.js`). Üründe `apps/api/src` altında disposition post yolunda `lock_timeout`
-ya da `FOR UPDATE` **yoktur**.
+betiğindedir (`f04-02-a2-race.js`). Üründe disposition post yolunda **süre sınırı** (`lock_timeout`,
+`statement_timeout`) yoktur. Bu, üründe kilit olmadığı anlamına GELMEZ — bkz. aşağıdaki düzeltme.
 
 | Değer | Nerede | Neyi ölçer |
 |---|---|---|
@@ -383,10 +383,25 @@ ya da `FOR UPDATE` **yoktur**.
 | A2-BUDGET FAIL eşiği 5000 | `f04-02-a2-race.js:185` | Ölçümün kendi kabul eşiği |
 | `+5000` ile 10000 | `f04-02-a2-race.js:164` | Prisma `$transaction` dış sınırı; betik asılı kalmasın diye |
 
-**Ürünün gerçek garantisi zaman değil, durum geçişidir.** `disposition-posting.service.ts` post işlemini
-`$transaction` içinde koşullu `updateMany` ile yapar: `where: { id, tenantId, status: 'DISTRIBUTION_APPROVED' }`.
-İkinci eşzamanlı post 0 satır günceller ve ilerleyemez (compare-and-set). Yani eşzamanlılık güvencesi
-**süre sınırına bağlı değildir**.
+**DÜZELTME (2026-09-21, Codex denetimi):** Bu bölümün ilk sürümü ürünün eşzamanlılık mekanizmasını EKSİK
+anlatıyordu. `FOR UPDATE` aranmış ve bulunamadığı için "üründe kilit yok" izlenimi doğmuştu; oysa ürün
+**`FOR NO KEY UPDATE`** kullanır. Doğru açıklama üç katmanlıdır:
+
+1. **Transaction.** Post işlemi `disposition-posting.service.ts` içinde tek bir `$transaction` ile yürür.
+2. **Satır kilidi.** Karar, transaction içinde `SELECT ... FOR NO KEY UPDATE` ile kilitlenmiş GÜNCEL satır
+   üzerinde verilir (`assertCollectionConfirmedForUpdate`). `FOR UPDATE` yerine `FOR NO KEY UPDATE`
+   seçilmiştir: PostgreSQL'in foreign key doğrulaması için aldığı örtülü `KEY SHARE` kilidiyle
+   çakışmaz, böylece eşzamanlı allocation INSERT'i engellenmez. Gerekçe kaynakta yazılıdır.
+3. **Koşullu durum güncellemesi.** Aynı transaction içinde
+   `updateMany({ where: { id, tenantId, status: 'DISTRIBUTION_APPROVED' } })` çalışır; ikinci eşzamanlı
+   post 0 satır günceller ve ilerleyemez (compare-and-set).
+
+**Ürünün garantisi bu üç katmanın birleşimidir; bir SÜRE taahhüdü değildir.** Kilit bekleme süresi ürün
+tarafından sınırlandırılmaz; bekleme PostgreSQL'in kendi davranışına bırakılmıştır.
+
+**Owner kararına sunulan metin (uygulanmadı):** "Kabul betiğinin kilit bütçesi 3500 ms'dir (tavan 4000 ms).
+Ürün tarafında süre taahhüdü yoktur; eşzamanlılık güvencesi transaction + `SELECT ... FOR NO KEY UPDATE`
+satır kilidi + koşullu `updateMany` birleşimiyle sağlanır."
 
 **Karar:** Garanti silinmedi ve eşik gevşetilmedi. İfade doğru sınıfına konuldu: belgelerde "kilit ≤ 4 sn"
 yazıldığında bu **kabul betiğinin bütçesidir**, hizmet taahhüdü değildir. Hizmet taahhüdü olarak sunulacaksa
