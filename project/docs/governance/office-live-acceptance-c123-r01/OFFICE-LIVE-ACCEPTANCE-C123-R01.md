@@ -50,7 +50,7 @@
 
 ## 3. Senaryolar — 33 kontrol
 
-### 3.1 C1 — geri alma + artefakt bağı (7)
+### 3.1 C1 — geri alma + artefakt bağı (4)
 
 | id | aktör | istek | beklenen |
 |---|---|---|---|
@@ -61,7 +61,7 @@
 
 **Karma kanıt yöntemi (owner onayı YOK):** Canlıda hata enjeksiyonu yapılamaz. Geri alma, doğal bir geç hatayla (C1-R1) HTTP üzerinden ölçülür. "Bu davranışı gösteren kod canlıda çalışan koddur" iddiası ise G-6 dist pinleriyle (§8) kurulur. İki parça birlikte kanıttır. Tek başına hiçbiri yeterli değildir. Bu yöntemin yeterliliği **owner kararıdır (Ö-1)**.
 
-### 3.2 C2 — VIEWER ret matrisi + beklenmeyen yazma 0 (9 + 2 pozitif)
+### 3.2 C2 — VIEWER ret matrisi + beklenmeyen yazma 0 (7 ret + 2 pozitif)
 
 | id | aktör | istek | beklenen |
 |---|---|---|---|
@@ -74,7 +74,7 @@
 
 VIEWER'a kasıtlı olarak bağlı bir **PARTNER** avukat kaydı verildi. Böylece ret, avukat yetkisi eksikliğinden değil rol kuralından gelir.
 
-### 3.3 C3 — üç sentetik aktör, genel kutu retleri, izinli FD ilerleyişi (14)
+### 3.3 C3 — üç sentetik aktör, genel kutu retleri, izinli FD ilerleyişi (16)
 
 | id | aktör | istek | beklenen |
 |---|---|---|---|
