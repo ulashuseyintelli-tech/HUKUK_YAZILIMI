@@ -1,0 +1,14 @@
+# R02 betiklerinin (#2743 @ 731475f2) KENDI $LAUNCH_TUPLES + Get-LauncherTuple kodu, GERCEK dosya baytlariyla (izole kopya)
+# pre = canli C:\Ops\hukuk\bin kopyasi; post = P1-delivery/candidate + canli start-web; halfapi/halfhost = karisik
+## r26-release.ps1
+pre       P1-ONCESI
+post      P1-SONRASI
+halfapi   TANIMSIZ api=DDCCD091 host=691BC146 web=F39F7A54
+halfhost  TANIMSIZ api=CC634BBF host=27099BDF web=F39F7A54
+exit=0
+## r26-rollback.ps1
+pre       P1-ONCESI
+post      P1-SONRASI
+halfapi   TANIMSIZ api=DDCCD091 host=691BC146 web=F39F7A54
+halfhost  TANIMSIZ api=CC634BBF host=27099BDF web=F39F7A54
+exit=0

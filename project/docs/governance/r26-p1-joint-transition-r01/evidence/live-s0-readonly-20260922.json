@@ -1,0 +1,110 @@
+{
+    "record":  "R26-P1-STAGE-GATE",
+    "stage":  "S0",
+    "title":  "GECIS ONCESI (bugunku canli)",
+    "tuple":  "P1-ONCESI",
+    "app":  "R25B",
+    "expectRunning":  true,
+    "tsUtc":  "2026-09-21T21:37:39.8571928Z",
+    "verdict":  "PASS",
+    "scriptSha256":  "214465BBF85400B73BF7928036B1B3BF79D439249321A2C30C14C976A2155200",
+    "envContentRead":  false,
+    "checks":  [
+                   {
+                       "id":  "U-1 api baslatici",
+                       "ok":  true,
+                       "actual":  "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3",
+                       "expected":  "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3"
+                   },
+                   {
+                       "id":  "U-2 host exe",
+                       "ok":  true,
+                       "actual":  "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627",
+                       "expected":  "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627"
+                   },
+                   {
+                       "id":  "U-3 web baslatici",
+                       "ok":  true,
+                       "actual":  "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0",
+                       "expected":  "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0"
+                   },
+                   {
+                       "id":  "Y-1 db-readiness.js",
+                       "ok":  true,
+                       "actual":  "AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9",
+                       "expected":  "AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9"
+                   },
+                   {
+                       "id":  "Y-2 pwsh-file-manifest.json",
+                       "ok":  true,
+                       "actual":  "84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A",
+                       "expected":  "84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A"
+                   },
+                   {
+                       "id":  "Y-3 .env sha (icerik okunmaz)",
+                       "ok":  true,
+                       "actual":  "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+                       "expected":  "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC"
+                   },
+                   {
+                       "id":  "K-1 API dist digest (3867 dosya)",
+                       "ok":  true,
+                       "actual":  "1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E",
+                       "expected":  "1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E"
+                   },
+                   {
+                       "id":  "K-2 WEB .next digest (505 dosya; cache/ trace haric)",
+                       "ok":  true,
+                       "actual":  "F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1",
+                       "expected":  "F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1"
+                   },
+                   {
+                       "id":  "K-3 BUILD_ID",
+                       "ok":  true,
+                       "actual":  "dOiGPj2M0Abls0kCibY4r",
+                       "expected":  "dOiGPj2M0Abls0kCibY4r"
+                   },
+                   {
+                       "id":  "K-4 next.config.js",
+                       "ok":  true,
+                       "actual":  "4AD4915C0A741AF609CCD241DFE08EF2C76A17E2175E3BD1FB7AE925128EF750",
+                       "expected":  "4AD4915C0A741AF609CCD241DFE08EF2C76A17E2175E3BD1FB7AE925128EF750"
+                   },
+                   {
+                       "id":  "G-api gorev ETKIN (Disabled degil)",
+                       "ok":  true,
+                       "actual":  "Running/enabled=True",
+                       "expected":  "Ready|Running, enabled=True"
+                   },
+                   {
+                       "id":  "G-api eylem",
+                       "ok":  true,
+                       "actual":  "C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe api",
+                       "expected":  "C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe api"
+                   },
+                   {
+                       "id":  "L-api tek dinleyici :8080",
+                       "ok":  true,
+                       "actual":  "33248",
+                       "expected":  "tam 1 PID"
+                   },
+                   {
+                       "id":  "G-web gorev ETKIN (Disabled degil)",
+                       "ok":  true,
+                       "actual":  "Running/enabled=True",
+                       "expected":  "Ready|Running, enabled=True"
+                   },
+                   {
+                       "id":  "G-web eylem",
+                       "ok":  true,
+                       "actual":  "C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe web",
+                       "expected":  "C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe web"
+                   },
+                   {
+                       "id":  "L-web tek dinleyici :3002",
+                       "ok":  true,
+                       "actual":  "55380",
+                       "expected":  "tam 1 PID"
+                   }
+               ]
+}

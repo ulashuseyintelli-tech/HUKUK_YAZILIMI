@@ -1,0 +1,39 @@
+# r26p1-stage-gate.ps1 SelfTest — 2026-09-21T21:37:51Z — gate sha256 214465BBF85400B73BF7928036B1B3BF79D439249321A2C30C14C976A2155200
+## Windows PowerShell 5.1
+OK    ST-01 dogru asama (gorev adi harf duyarsiz)  beklenen=PASS olculen=PASS
+OK    ST-02 yalniz cache/ ve trace degisti -> haric  beklenen=PASS olculen=PASS
+OK    ST-03 .next icerigi degisti  beklenen=FAIL olculen=FAIL [K-2 WEB .next digest (2 dosya; cache/ trace haric)]
+OK    ST-04 BUILD_ID degisti  beklenen=FAIL olculen=FAIL [K-2 WEB .next digest (2 dosya; cache/ trace haric), K-3 BUILD_ID]
+OK    ST-05 yarim P1: yalniz start-api degisti  beklenen=FAIL olculen=FAIL [U-1 api baslatici]
+OK    ST-06 yarim P1: yalniz host degisti  beklenen=FAIL olculen=FAIL [U-2 host exe]
+OK    ST-07 P1 uygulanmis ama asama P1-ONCESI bekliyor  beklenen=FAIL olculen=FAIL [U-1 api baslatici, U-2 host exe]
+OK    ST-08 P1 uygulanmis ve asama P1-SONRASI bekliyor  beklenen=PASS olculen=PASS
+OK    ST-09 API dist degisti (asama R25B bekliyor)  beklenen=FAIL olculen=FAIL [K-1 API dist digest (2 dosya)]
+OK    ST-10 .env sha degisti  beklenen=FAIL olculen=FAIL [Y-3 .env sha (icerik okunmaz)]
+OK    ST-11 API gorevi Disabled (P1 yarida kaldi)  beklenen=FAIL olculen=FAIL [G-api gorev ETKIN (Disabled degil)]
+OK    ST-12 WEB gorev eylemi degisti  beklenen=FAIL olculen=FAIL [G-web eylem]
+OK    ST-13 gorev yok  beklenen=FAIL olculen=FAIL [G-web gorev var]
+OK    ST-14 ExpectRunning: dinleyici 0  beklenen=FAIL olculen=FAIL [L-api tek dinleyici :8080, L-web tek dinleyici :3002]
+OK    ST-15 ExpectRunning: iki dinleyici  beklenen=FAIL olculen=FAIL [L-api tek dinleyici :8080, L-web tek dinleyici :3002]
+OK    ST-16 tarif bilinen cevap D80ED0CA0798DE401E8B7A4DF7B39D1EF52E2DDC4691B10A02BA1C38C7C7ED0E
+SELFTEST: PASS | 16/16 | PS 5.1.26100.9444
+exit=0
+## PowerShell 7
+OK    ST-01 dogru asama (gorev adi harf duyarsiz)  beklenen=PASS olculen=PASS
+OK    ST-02 yalniz cache/ ve trace degisti -> haric  beklenen=PASS olculen=PASS
+OK    ST-03 .next icerigi degisti  beklenen=FAIL olculen=FAIL [K-2 WEB .next digest (2 dosya; cache/ trace haric)]
+OK    ST-04 BUILD_ID degisti  beklenen=FAIL olculen=FAIL [K-2 WEB .next digest (2 dosya; cache/ trace haric), K-3 BUILD_ID]
+OK    ST-05 yarim P1: yalniz start-api degisti  beklenen=FAIL olculen=FAIL [U-1 api baslatici]
+OK    ST-06 yarim P1: yalniz host degisti  beklenen=FAIL olculen=FAIL [U-2 host exe]
+OK    ST-07 P1 uygulanmis ama asama P1-ONCESI bekliyor  beklenen=FAIL olculen=FAIL [U-1 api baslatici, U-2 host exe]
+OK    ST-08 P1 uygulanmis ve asama P1-SONRASI bekliyor  beklenen=PASS olculen=PASS
+OK    ST-09 API dist degisti (asama R25B bekliyor)  beklenen=FAIL olculen=FAIL [K-1 API dist digest (2 dosya)]
+OK    ST-10 .env sha degisti  beklenen=FAIL olculen=FAIL [Y-3 .env sha (icerik okunmaz)]
+OK    ST-11 API gorevi Disabled (P1 yarida kaldi)  beklenen=FAIL olculen=FAIL [G-api gorev ETKIN (Disabled degil)]
+OK    ST-12 WEB gorev eylemi degisti  beklenen=FAIL olculen=FAIL [G-web eylem]
+OK    ST-13 gorev yok  beklenen=FAIL olculen=FAIL [G-web gorev var]
+OK    ST-14 ExpectRunning: dinleyici 0  beklenen=FAIL olculen=FAIL [L-api tek dinleyici :8080, L-web tek dinleyici :3002]
+OK    ST-15 ExpectRunning: iki dinleyici  beklenen=FAIL olculen=FAIL [L-api tek dinleyici :8080, L-web tek dinleyici :3002]
+OK    ST-16 tarif bilinen cevap D80ED0CA0798DE401E8B7A4DF7B39D1EF52E2DDC4691B10A02BA1C38C7C7ED0E
+SELFTEST: PASS | 16/16 | PS 7.6.6
+exit=0
