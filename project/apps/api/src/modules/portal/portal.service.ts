@@ -621,7 +621,17 @@ export class PortalService {
   }
 
   private resetPasswordUrl(rawToken: string): string {
-    const base = (this.config.get("WEB_BASE_URL") || this.config.get("APP_BASE_URL") || "")
+    // MÜVEKKİL YÜZEYİ PERSONEL YÜZEYİNDEN AYRILIR: portal bağlantıları `PUBLIC_PORTAL_BASE_URL`
+    // varsa ONU kullanır. Anahtar YOKSA davranış BİREBİR eskisi gibidir (`WEB_BASE_URL` → `APP_BASE_URL`).
+    // Gerekçe: portal müvekkilin kendi cihazından açılır; personel daveti ve personel parola
+    // sıfırlama ise iç adreste kalır ve `WEB_BASE_URL`'den beslenmeye devam eder (bu metot
+    // onları ETKİLEMEZ).
+    const base = (
+      this.config.get("PUBLIC_PORTAL_BASE_URL") ||
+      this.config.get("WEB_BASE_URL") ||
+      this.config.get("APP_BASE_URL") ||
+      ""
+    )
       .toString()
       .replace(/\/+$/, "");
     // CLIENT-SEC-P01: ham token URL FRAGMENT'ında (#) taşınır — query string DEĞİL.
