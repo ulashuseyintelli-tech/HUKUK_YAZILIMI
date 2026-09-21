@@ -63,6 +63,18 @@ export function resolvePortalApiBaseUrl(): string {
   const normalized = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
   if (normalized) return normalized;
 
+  // AYNI ORIGIN MODU (2026-09-21): production'da env yoksa ve kod TARAYICIDA çalışıyorsa taban
+  // BOŞ döner; istekler `/api/...` olarak sayfanın kendi origin'ine gider ve kenar katmanı `/api`
+  // yolunu API'ye yönlendirir. Bu SESSİZ localhost fallback'i DEĞİLDİR — localhost'a hiç gidilmez;
+  // yönlendirme yoksa istek görünür biçimde başarısız olur. Alan adı derlemeye gömülmez.
+  // Ölçülen gerekçe: canlı production derlemesinde env tanımsızdı ve bu fonksiyon her portal
+  // çağrısında hata fırlatıyordu (giriş dâhil).
+  // YALNIZ env HİÇ verilmemişse (undefined ya da tam boş dize). Verilmiş ama GEÇERSİZ bir değer
+  // (boşluk, `javascript:`, protokolsüz host) yapılandırma hatasıdır ve aşağıda eskisi gibi fail-fast eder.
+  const raw = process.env.NEXT_PUBLIC_API_URL;
+  const notConfigured = raw === undefined || raw === "";
+  if (isProduction() && notConfigured && typeof window !== "undefined") return "";
+
   if (isProduction()) {
     const error = new Error(
       "[CONFIG] NEXT_PUBLIC_API_URL production'da tanımlı ve geçerli bir http(s) URL olmalıdır. " +

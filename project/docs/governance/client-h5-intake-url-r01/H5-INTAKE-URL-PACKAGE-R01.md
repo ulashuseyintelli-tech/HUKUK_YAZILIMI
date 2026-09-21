@@ -16,6 +16,14 @@ return `${base}/intake/${rawToken}`;
 Değişken yoksa üretilen adres **göreli** olur (`/intake/<token>`) ve müvekkil tıklanabilir bir bağlantı almaz.
 Bu bir **yapılandırma** kusurudur; ürün kodu değişmez, yeni yayın gerekmez, migration gerekmez.
 
+> **DÜZELTME (2026-09-21, Codex final denetimi + izole tarayıcı provası):** Yukarıdaki cümle yalnız
+> **bağlantı metninin mutlaklaşması** için doğrudur. H5'in amacına — müvekkilin bağlantıyı açıp formu
+> göndermesine — **env değişikliği TEK BAŞINA YETMEZ**; yeni web derlemesi ve yeni yayın (R26) GEREKİR. Ölçülen iki
+> engel: (1) canlı web derlemesi API'yi `localhost:8080` olarak gömülü çağırır (19 geçiş); (2) personel oturum
+> katmanı `/intake/<token>` sayfasını muaf tutmadığı için girişsiz tarayıcı formdan `/auth/login`'e
+> yönlendirilir. Aşağıdaki "HTTP 200" ölçümü sunucu yanıtıdır; istemci tarafı yönlendirmeyi ÖLÇMEZ. Giderme ve
+> izole prova: `client-external-access-r01/CLIENT-EXTERNAL-ACCESS-PACKAGE-R01.md` §1.1, §10.
+
 ## 2. Kullanılacak değer — TAHMİN EDİLMEDİ, KAYITTAN DOĞRULANDI
 
 | Dayanak | Ölçüm |
