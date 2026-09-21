@@ -17,7 +17,8 @@
  *   DK-3 portal (localhost:3002)  : giriş denemesi API'ye ULAŞIR (401) ve hata iletisi görünür
  *   DK-4 portal (makine adı:3002) : aynı; istek AYNI ORIGIN /api/portal/login
  *   DK-5 personel girişi          : /auth/login açılır (regresyon yok)
- *   OBS  personel sıfırlama/davet : OFFICE-AUTH-01 gözlemi (R26 kapsamı DIŞI; yalnız kayıt)
+ *   DK-6 personel sıfırlama/davet : girişsiz AÇILIR, /auth/login'e gitmez (OFFICE-AUTH-01, #2740 R26'ya DAHİL)
+ * NOT: DK-3/DK-4 API'ye ULAŞMAYI (401) ölçer; BAŞARILI portal girişi AYRI ve ZORUNLU adımdır (r26-live-portal-login.js).
  */
 const fs = require('fs');
 const os = require('os');
@@ -100,16 +101,20 @@ const EMAIL = `r26-dar-kabul-${Date.now().toString(36)}@ah-harness.invalid`;
   add('DK-5', new URL(p5.url()).pathname === '/auth/login', `personel giriş sayfası son yol=${new URL(p5.url()).pathname}`);
   await p5.close();
 
-  const obs = {};
+  // DK-6 (OFFICE-AUTH-01, #2740 R26'ya DAHIL): personel sifre/davet sayfalari girissiz ACILIR, /auth/login'e gitmez.
+  // Sayfalar yalniz GET yapar (forma gonderim YOK) — canli veride degisiklik yok.
+  const staff = {};
   for (const sp of ['/auth/forgot-password', '/auth/reset-password#token=sentetik', '/auth/accept-invite?token=sentetik']) {
     const pg = await ctx.newPage();
+    const nav = [];
+    pg.on('framenavigated', (f) => { if (f === pg.mainFrame()) nav.push(new URL(f.url()).pathname); });
     await pg.goto(HOSTS.local + sp);
     await pg.waitForTimeout(5000);
-    obs[sp] = new URL(pg.url()).pathname;
+    staff[sp] = { final: new URL(pg.url()).pathname, toLogin: nav.some((p) => p.startsWith('/auth/login')) };
     await pg.close();
   }
-  rows.push({ id: 'OBS-OFFICE-AUTH-01', verdict: 'GOZLEM', obs: JSON.stringify(obs) });
-  console.log('GOZLEM OFFICE-AUTH-01', JSON.stringify(obs));
+  const staffOk = Object.entries(staff).every(([sp, v]) => v.final === sp.split(/[?#]/)[0] && !v.toLogin);
+  add('DK-6', staffOk, `personel sifre/davet sayfalari ${JSON.stringify(staff)}`);
 
   await browser.close();
   const fails = rows.filter((r) => r.verdict === 'FAIL').length;

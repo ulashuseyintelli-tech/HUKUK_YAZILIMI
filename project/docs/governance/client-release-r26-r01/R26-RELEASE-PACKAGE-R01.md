@@ -1,5 +1,12 @@
 # R26 — SOMUT YAYIN + GERİ DÖNÜŞ PAKETİ (R01) · API + WEB birlikte · iç ağ
 
+> **YERİNİ ALDI (2026-09-22): `R26-RELEASE-PACKAGE-R02.md`.** R02'nin R01'den farkları:
+> - #2740 dahil: aday `c7a154b3`, web `C17E7B13` / `5waeMoFG`.
+> - Betik hash'leri yeni; betikler P1 başlatıcı üçlüsünü tanıyor.
+> - Başarılı canlı portal girişi B2'nin zorunlu adımı.
+>
+> Bu belgedeki blok ve hash'ler **KULLANILMAZ**; tarihsel kayıttır.
+
 > **DURUM: HAZIR — CANLIYA UYGULANMADI.** Bu belge yayın onayı değildir. Canlı uygulama, owner bu somut paketi
 > kimliğiyle onayladıktan sonra başlar. **İnternet erişimi bu paketin KAPSAMI DIŞINDADIR**: kenar/tünel/DNS yok,
 > `.env` anahtarı yok, dış yayın yok. Teknik sayaç **18/18**, hizmet kabulü **0/8** — bu paket ikisini de değiştirmez.
