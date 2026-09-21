@@ -84,6 +84,23 @@ describe("AuthProvider — /portal/* delegation (CLIENT-P2-U01-R1)", () => {
     }
   );
 
+  // Personel davet kabulü ve parola kurtarma sayfaları girişsiz açılmalı (2026-09-21 ölçümü:
+  // izole next start'ta üçü de /auth/login'e yönlendiriyor, bağlantıdaki token kayboluyordu).
+  // Yükleme bitene kadar beklenir; yalnız waitFor(not…) ilk anda geçer ve kusuru yakalamaz.
+  it.each([["/auth/forgot-password"], ["/auth/reset-password"], ["/auth/accept-invite"]])(
+    "[personel kurtarma/davet] %s, staff token YOK → /auth/login'e YÖNLENDİRMEZ",
+    async (pathname) => {
+      currentPathname = pathname;
+      render(
+        <AuthProvider>
+          <div>child</div>
+        </AuthProvider>
+      );
+      await new Promise((r) => setTimeout(r, 50));
+      expect(pushMock).not.toHaveBeenCalledWith("/auth/login");
+    }
+  );
+
   it.each([["/"], ["/auth/login"], ["/auth/register"], ["/auth/account-recovery"]])(
     "[regresyon] mevcut PUBLIC_PATHS (%s) staff token olmadan HALA yönlendirmez",
     async (pathname) => {
