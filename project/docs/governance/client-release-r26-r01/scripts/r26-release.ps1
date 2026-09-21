@@ -4,11 +4,12 @@ $ErrorActionPreference = 'Stop'
 # R26 YAYIN - API + WEB BIRLIKTE - OWNER ELEVATED KOSUM. Saf ASCII.
 # -SelfTest : CANLIYA DOKUNMAZ (durdurma/takas/kopyalama/yazma YOK). Yardimci fonksiyonlari ve salt-okuma
 #             kimlik olcumlerini dogrular, sonra cikar. Yayin icin PARAMETRESIZ kosulur.
-# Aday kaynagi 47fcf395 (yerel dal release/r26-candidate) = 4443600a (R25B'yi bit-bit ureten kaynak)
-#   + #2739 web (12 dosya) + #2738 portal.service. DAHIL DEGIL: #2716 replay adapter, #2727 migration,
-#   #2730 (davranis-notr refactor; trust proxy=1 canlida ZATEN var), #2740 (OFFICE-AUTH-01; ayri karar).
+# Aday kaynagi c7a154b3 (dal release/r26-candidate) = 4443600a (R25B'yi bit-bit ureten kaynak)
+#   + #2739 web + #2738 portal.service + #2740 (799a7346, OFFICE-AUTH-01). DAHIL DEGIL: #2716 replay adapter,
+#   #2727 migration, #2730 (davranis-notr refactor; trust proxy=1 canlida ZATEN var).
 # API: BIRLESIK ARTEFAKT = canli R25B 1524EDC1 + YALNIZ 2 dosya (portal.service.js + .map).
-# WEB: .next TAM TAKAS (BUILD_ID dOiGPj2M -> dol1nkob) + next.config.js (fallback /api rewrite).
+# WEB: .next TAM TAKAS (BUILD_ID dOiGPj2M -> 5waeMoFG) + next.config.js (fallback /api rewrite).
+# BASLATICI: P1-ONCESI ya da P1-SONRASI uclusunden TAM BIRI olmali; betikler baslatici DEGISTIRMEZ.
 # migrate deploy YOK ; pinli launcher'lar DEGISMEZ ; .env OKUNMAZ (yalniz sha) ; DB yazimi YOK ; SILME YOK.
 # Basarisizlikta: dosyalara dokunulmadan DUR, ya da takas sonrasi otomatik GERI ALMA (API + WEB birlikte).
 # Internet erisimi bu paketin KAPSAMI DISINDA: kenar/tunel/DNS/.env anahtari YOK.
@@ -29,16 +30,21 @@ $CAND_WEB  = 'D:\Development\HUKUK_YAZILIMI\HY_WT_R26\project\apps\web'
 $CAND_NEXT = Join-Path $CAND_WEB '.next'
 $CAND_CFG  = Join-Path $CAND_WEB 'next.config.js'
 $EXP_WEB_LIVE = 'F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1'
-$EXP_WEB_CAND = '136881575BBFE1A243F2DB6DF1B72CD919E342E495C2C280040D1D4BD67619A4'
+$EXP_WEB_CAND = 'C17E7B132FB7DED65AD0788024AA478F0949AF0D5D9045E8F47779A31A615326'
 $BID_LIVE  = 'dOiGPj2M0Abls0kCibY4r'
-$BID_CAND  = 'dol1nkobfH4jQ8WC4w8yh'
+$BID_CAND  = '5waeMoFGGMTLAYmn9oJvW'
 $CFG_LIVE  = '4AD4915C0A741AF609CCD241DFE08EF2C76A17E2175E3BD1FB7AE925128EF750'
 $CFG_CAND  = 'C43DEB5A04F1529CE2D368204ED7D10B8DBC257327E0BC64A01F1D7CF3AC5B5C'
 $ENV_PIN   = '7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'
 $API_LAUNCHER = 'C:\Ops\hukuk\bin\start-api.ps1'
-$API_LAUNCH_PIN = 'CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3'
 $WEB_LAUNCHER = 'C:\Ops\hukuk\bin\start-web.ps1'
-$WEB_LAUNCH_PIN = 'F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0'
+$HOST_EXE = 'C:\Ops\hukuk\bin\hukuk-task-host.exe'
+# BASLATICI UCLUSU (api launcher, host exe, web launcher) - YALNIZ bu iki TANIMLI durum kabul edilir; yarim/baska durum = DUR.
+# P1-ONCESI = bugunku canli (R23 postimage). P1-SONRASI = OFFICE A3/P1 teslimi (#2681 ba037026; P1-delivery/R26-HANDOFF.md).
+# Uclu yayin/geri alma boyunca DEGISMEMELI (kapsam kapisi). Kanitta hangi uclu olculdugu yazilir.
+$LAUNCH_TUPLES = @(
+  @{ name = 'P1-ONCESI';  api = 'CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3'; host = '691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627'; web = 'F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0' },
+  @{ name = 'P1-SONRASI'; api = 'DDCCD09157E0AAF209AB38316A33815A0298FFACBC9006ED62F35F137F86219C'; host = '27099BDF66C83A44B3061D65AE2DAF24EADB523EE4F464179C2F53BB6C78DEAB'; web = 'F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0' })
 $API_PORT = 8080; $WEB_PORT = 3002
 $API_TASK = 'HukukPlatform-API'; $WEB_TASK = 'HukukPlatform-Web'
 $ROUTE = '/api/client-statements/monthly-delivery/run-now'
@@ -105,6 +111,11 @@ function Test-InheritOnly([string]$p) {
   $a = Get-Acl -LiteralPath $p
   return ((-not $a.AreAccessRulesProtected) -and (@($a.Access | Where-Object { -not $_.IsInherited }).Count -eq 0))
 }
+function Get-LauncherTuple {
+  $a = Get-R26FileSha256 $API_LAUNCHER; $h = Get-R26FileSha256 $HOST_EXE; $w = Get-R26FileSha256 $WEB_LAUNCHER
+  foreach ($t in $LAUNCH_TUPLES) { if ($a -ceq $t.api -and $h -ceq $t.host -and $w -ceq $t.web) { return $t.name } }
+  return ('TANIMSIZ api=' + $a.Substring(0, 8) + ' host=' + $h.Substring(0, 8) + ' web=' + $w.Substring(0, 8))
+}
 function Get-BuildId([string]$nextDir) { return (Get-Content -Raw -LiteralPath (Join-Path $nextDir 'BUILD_ID')).Trim() }
 function Restore-All {
   Say 'GERI ALMA: API 2 dosya + WEB .next + next.config.js yedekten'
@@ -148,10 +159,10 @@ if ($SelfTest) {
   $al = @('Get-R26FileSha256', 'Get-Map', 'Http', 'Say') | Where-Object { Get-Alias -Name $_ -ErrorAction SilentlyContinue }
   Say ('alias golgesi=' + $(if ($al) { 'VAR: ' + ($al -join ',') } else { 'YOK' }))
   if ($al) { $fails++ }
-  foreach ($pair in @(@($API_LAUNCHER, $API_LAUNCH_PIN, 'api launcher'), @($WEB_LAUNCHER, $WEB_LAUNCH_PIN, 'web launcher'))) {
-    $h = Get-R26FileSha256 $pair[0]; $ok = ($h -ceq (Get-FileHash -Algorithm SHA256 -LiteralPath $pair[0]).Hash) -and ($h -ceq $pair[1])
-    Say ($pair[2] + ': ' + $h.Substring(0, 16) + ' | pin esit=' + $ok); if (-not $ok) { $fails++ }
-  }
+  $hA = Get-R26FileSha256 $API_LAUNCHER; $okH = ($hA -ceq (Get-FileHash -Algorithm SHA256 -LiteralPath $API_LAUNCHER).Hash)
+  $tu = Get-LauncherTuple
+  Say ('hash yardimcisi Get-FileHash ile ayni=' + $okH + ' | baslatici uclusu=' + $tu + ' (kabul: P1-ONCESI | P1-SONRASI)')
+  if (-not $okH -or $tu.StartsWith('TANIMSIZ')) { $fails++ }
   try { $hE = Get-R26FileSha256 (Join-Path $LIVE_API '.env'); Say ('.env (yalniz sha): pin esit=' + ($hE -ceq $ENV_PIN)); if ($hE -cne $ENV_PIN) { $fails++ } }
   catch { Say ('.env sha OLCULEMEDI (yetki?): ' + $_.Exception.GetType().Name + ' - yayin kosumu yukseltilmis pencerede olcer'); }
   $cA = Get-TreeDigest (Get-Map $CAND); Say ('aday API digest=' + $cA + ' | pin esit=' + ($cA -ceq $EXP_CAND)); if ($cA -cne $EXP_CAND) { $fails++ }
@@ -171,7 +182,7 @@ if ($SelfTest) {
   Say ('dinleyici: :' + $API_PORT + '=' + ($apiP -join ',') + ' :' + $WEB_PORT + '=' + ($webP -join ','))
   if ($apiP.Count -ne 1 -or $webP.Count -ne 1) { $fails++ }
   $rc = Get-Command robocopy.exe -ErrorAction SilentlyContinue; Say ('robocopy=' + [bool]$rc); if (-not $rc) { $fails++ }
-  $needed = @('Say', 'Get-R26FileSha256', 'Get-Map', 'Get-TreeDigest', 'Get-Pids', 'Wait-Stopped', 'Http', 'Get-PackageDigest', 'Test-InheritOnly', 'Get-BuildId', 'Restore-All', 'Start-Both-And-Report')
+  $needed = @('Say', 'Get-R26FileSha256', 'Get-Map', 'Get-TreeDigest', 'Get-Pids', 'Wait-Stopped', 'Http', 'Get-PackageDigest', 'Test-InheritOnly', 'Get-LauncherTuple', 'Get-BuildId', 'Restore-All', 'Start-Both-And-Report')
   $missing = @($needed | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) })
   Say ('fonksiyon kumesi tam=' + ($missing.Count -eq 0) + $(if ($missing.Count) { ' eksik: ' + ($missing -join ',') } else { '' }))
   if ($missing.Count) { $fails++ }
@@ -184,8 +195,9 @@ Say '=== 0) ON KAPILAR'
 if (-not (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'KAPI: yukseltilmis pencere gerekli - DUR' }
 New-Item -ItemType Directory -Force -Path $EVID_DIR | Out-Null
 foreach ($p in @($BK_API, $BK_WEB, $STAGED, $PRE)) { if (Test-Path -LiteralPath $p) { throw ('KAPI: hedef zaten var: ' + $p + ' - DUR') } }
-if ((Get-R26FileSha256 $API_LAUNCHER) -cne $API_LAUNCH_PIN) { throw 'KAPI: pinli API launcher farkli - DUR' }
-if ((Get-R26FileSha256 $WEB_LAUNCHER) -cne $WEB_LAUNCH_PIN) { throw 'KAPI: pinli WEB launcher farkli - DUR' }
+$tuple0 = Get-LauncherTuple
+Say ('baslatici uclusu=' + $tuple0)
+if ($tuple0.StartsWith('TANIMSIZ')) { throw 'KAPI: baslatici/host uclusu tanimli iki durumdan biri degil (yarim P1?) - DUR' }
 $envSha0 = Get-R26FileSha256 (Join-Path $LIVE_API '.env')
 if ($envSha0 -cne $ENV_PIN) { throw 'KAPI: canli .env sha pin degil - DUR' }
 $actA0 = ((Get-ScheduledTask -TaskName $API_TASK).Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' ; '
@@ -194,7 +206,7 @@ $apiP0 = Get-Pids $API_PORT; $webP0 = Get-Pids $WEB_PORT
 Say ('API gorev action=' + $actA0 + ' pid=' + ($apiP0 -join ',') + ' | WEB gorev action=' + $actW0 + ' pid=' + ($webP0 -join ','))
 if ($apiP0.Count -ne 1 -or $webP0.Count -ne 1) { throw 'KAPI: :8080 ya da :3002 dinleyici sayisi 1 degil - DUR' }
 foreach ($pp in @($apiP0[0], $webP0[0])) { if ((Get-CimInstance Win32_Process -Filter ("ProcessId=" + $pp)).CommandLine -notmatch 'HY_W4_RELEASE23') { throw 'KAPI: canli surec RELEASE23 kokunden degil - DUR' } }
-$rogue = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -match 'i1[2-6]-live|i12-cron|i12-window|i15-kabul|smtp-sink|i3-sink|i3-spy|edge-proxy|r26-dar-kabul' })
+$rogue = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -match 'i1[2-6]-live|i12-cron|i12-window|i15-kabul|smtp-sink|i3-sink|i3-spy|edge-proxy|r26-dar-kabul|r26-live-portal|c-run\.js|c-setup\.js|c-99-close|c-start-api|P1-delivery|Preflight\.ps1' })
 Say ('test/prova sureci=' + $rogue.Count)
 if ($rogue.Count -ne 0) { throw 'KAPI: canli pencerede test/prova sureci var - DUR' }
 
@@ -305,8 +317,9 @@ if ($swapErr -or $liveDig1 -cne $EXP_CAND -or $webDig1 -cne $EXP_WEB_CAND -or $c
   $envSha1 = Get-R26FileSha256 (Join-Path $LIVE_API '.env')
   $actA1 = ((Get-ScheduledTask -TaskName $API_TASK).Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' ; '
   $actW1 = ((Get-ScheduledTask -TaskName $WEB_TASK).Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' ; '
-  $scopeOk = ($liveDig2 -ceq $EXP_CAND -and $webDig2 -ceq $EXP_WEB_CAND -and $envSha1 -ceq $envSha0 -and (Get-R26FileSha256 $API_LAUNCHER) -ceq $API_LAUNCH_PIN -and (Get-R26FileSha256 $WEB_LAUNCHER) -ceq $WEB_LAUNCH_PIN -and $actA1 -ceq $actA0 -and $actW1 -ceq $actW0)
-  Say ('kapsam: API digest=' + ($liveDig2 -ceq $EXP_CAND) + ' | WEB digest=' + ($webDig2 -ceq $EXP_WEB_CAND) + ' | .env degismedi=' + ($envSha1 -ceq $envSha0) + ' | launcher pinleri=' + (((Get-R26FileSha256 $API_LAUNCHER) -ceq $API_LAUNCH_PIN) -and ((Get-R26FileSha256 $WEB_LAUNCHER) -ceq $WEB_LAUNCH_PIN)) + ' | gorev action ayni=' + ($actA1 -ceq $actA0 -and $actW1 -ceq $actW0))
+  $tuple1 = Get-LauncherTuple
+  $scopeOk = ($liveDig2 -ceq $EXP_CAND -and $webDig2 -ceq $EXP_WEB_CAND -and $envSha1 -ceq $envSha0 -and $tuple1 -ceq $tuple0 -and $actA1 -ceq $actA0 -and $actW1 -ceq $actW0)
+  Say ('kapsam: API digest=' + ($liveDig2 -ceq $EXP_CAND) + ' | WEB digest=' + ($webDig2 -ceq $EXP_WEB_CAND) + ' | .env degismedi=' + ($envSha1 -ceq $envSha0) + ' | baslatici uclusu degismedi=' + ($tuple1 -ceq $tuple0) + ' (' + $tuple1 + ') | gorev action ayni=' + ($actA1 -ceq $actA0 -and $actW1 -ceq $actW0))
   if ($apiOk -and $webOk -and $scopeOk) { $verdict = 'YAYIN PASS' }
   else {
     Say 'KAPI: saglik/route/kapsam tutmadi -> GERI ALMA (API + WEB birlikte)'
@@ -319,8 +332,9 @@ if ($swapErr -or $liveDig1 -cne $EXP_CAND -or $webDig1 -cne $EXP_WEB_CAND -or $c
 Say ('=== SONUC: ' + $verdict)
 $evid = [ordered]@{
   record = 'R26-RELEASE-EXECUTION'; tsUtc = $ts; verdict = $verdict
-  sourceSha = '47fcf395902ff66561ea1beab0de7776233a7a31'; sourceBranch = 'release/r26-candidate'; baseSha = '4443600a (R25B kaynagi)'
-  prs = @('#2739 web ayni-origin + K-A + K-B', '#2738 PUBLIC_PORTAL_BASE_URL'); excluded = @('#2716 replay adapter', '#2727 migration', '#2730 davranis-notr refactor', '#2740 OFFICE-AUTH-01 (ayri karar)')
+  sourceSha = 'c7a154b3c0728fee7618ca65e54898ed02cc8b3b'; sourceBranch = 'release/r26-candidate'; baseSha = '4443600a (R25B kaynagi)'
+  prs = @('#2739 web ayni-origin + K-A + K-B', '#2738 PUBLIC_PORTAL_BASE_URL', '#2740 OFFICE-AUTH-01 (799a7346)'); excluded = @('#2716 replay adapter', '#2727 migration', '#2730 davranis-notr refactor')
+  launcherTuple = $tuple0
   api = [ordered]@{ liveBaseline = $EXP_LIVE; candidate = $EXP_CAND; changedFiles = $FILES; backup = $BK_API }
   web = [ordered]@{ liveBaseline = $EXP_WEB_LIVE; candidate = $EXP_WEB_CAND; buildIdBefore = $BID_LIVE; buildIdAfter = $BID_CAND; nextConfigBefore = $CFG_LIVE; nextConfigAfter = $CFG_CAND; backup = $BK_WEB; preDirInPlace = $PRE }
   migrationRun = $false; launcherChanged = $false; envRead = $false; deleted = 0

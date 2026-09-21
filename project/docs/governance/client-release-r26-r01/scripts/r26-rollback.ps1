@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 # -BackupApiDir = r26-release.ps1'in yazdigi rollback-api-src-R25B-<ts>
 # -BackupWebDir = r26-release.ps1'in yazdigi rollback-web-R25B-<ts> (icinde .next + next.config.js)
 # Yedeklerin kimligi (API 1524EDC1 + paket 9F58C985 ; WEB .next F064DC95 + BUILD_ID dOiGPj2M + cfg 4AD4915C)
-# dogrulanmadan GERI ALMA BASLAMAZ. migrate/DB/launcher/.env DOKUNULMAZ. SILME YOK: mevcut .next yeniden adlandirilir.
+# dogrulanmadan GERI ALMA BASLAMAZ. migrate/DB/launcher/.env DOKUNULMAZ. Baslatici uclusu P1-ONCESI ya da P1-SONRASI
+# olmali (R26 geri almasi P1'den SONRA da gecerli; P1'in kendi geri almasi yalniz host/launcher ciftini dondurur). SILME YOK: mevcut .next yeniden adlandirilir.
 # -SelfTest : durdurma/kopyalama/yazma YOK; yalniz yedek kimligi + pinler + yardimcilar.
 # =============================================================================
 $ROOT      = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'
@@ -25,9 +26,14 @@ $CFG_LIVE  = '4AD4915C0A741AF609CCD241DFE08EF2C76A17E2175E3BD1FB7AE925128EF750'
 $FILES = @('modules/portal/portal.service.js', 'modules/portal/portal.service.js.map')
 $ENV_PIN   = '7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'
 $API_LAUNCHER = 'C:\Ops\hukuk\bin\start-api.ps1'
-$API_LAUNCH_PIN = 'CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3'
 $WEB_LAUNCHER = 'C:\Ops\hukuk\bin\start-web.ps1'
-$WEB_LAUNCH_PIN = 'F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0'
+$HOST_EXE = 'C:\Ops\hukuk\bin\hukuk-task-host.exe'
+# BASLATICI UCLUSU (api launcher, host exe, web launcher) - YALNIZ bu iki TANIMLI durum kabul edilir; yarim/baska durum = DUR.
+# P1-ONCESI = bugunku canli (R23 postimage). P1-SONRASI = OFFICE A3/P1 teslimi (#2681 ba037026; P1-delivery/R26-HANDOFF.md).
+# Uclu yayin/geri alma boyunca DEGISMEMELI (kapsam kapisi). Kanitta hangi uclu olculdugu yazilir.
+$LAUNCH_TUPLES = @(
+  @{ name = 'P1-ONCESI';  api = 'CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3'; host = '691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627'; web = 'F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0' },
+  @{ name = 'P1-SONRASI'; api = 'DDCCD09157E0AAF209AB38316A33815A0298FFACBC9006ED62F35F137F86219C'; host = '27099BDF66C83A44B3061D65AE2DAF24EADB523EE4F464179C2F53BB6C78DEAB'; web = 'F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0' })
 $API_PORT = 8080; $WEB_PORT = 3002
 $API_TASK = 'HukukPlatform-API'; $WEB_TASK = 'HukukPlatform-Web'
 $ROUTE = '/api/client-statements/monthly-delivery/run-now'
@@ -75,6 +81,11 @@ function Http([string]$method, [string]$url, [int]$timeoutMs = 8000) {
     return -1
   } catch { return -2 }
 }
+function Get-LauncherTuple {
+  $a = Get-R26FileSha256 $API_LAUNCHER; $h = Get-R26FileSha256 $HOST_EXE; $w = Get-R26FileSha256 $WEB_LAUNCHER
+  foreach ($t in $LAUNCH_TUPLES) { if ($a -ceq $t.api -and $h -ceq $t.host -and $w -ceq $t.web) { return $t.name } }
+  return ('TANIMSIZ api=' + $a.Substring(0, 8) + ' host=' + $h.Substring(0, 8) + ' web=' + $w.Substring(0, 8))
+}
 function Get-BuildId([string]$nextDir) { return (Get-Content -Raw -LiteralPath (Join-Path $nextDir 'BUILD_ID')).Trim() }
 
 Say '=== 1) YEDEK BUTUNLUGU'
@@ -86,10 +97,11 @@ $bkNext = Join-Path $BackupWebDir '.next'; $bkCfg = Join-Path $BackupWebDir 'nex
 $bkW = Get-TreeDigest (Get-Map $bkNext -Web)
 Say ('API yedek digest esit=' + ($bkDig -ceq $EXP_LIVE) + ' paket esit=' + ($bkPkg -ceq $EXP_BK_PKG) + ' | WEB yedek digest esit=' + ($bkW -ceq $EXP_WEB_LIVE) + ' BUILD_ID=' + (Get-BuildId $bkNext) + ' cfg esit=' + ((Get-R26FileSha256 $bkCfg) -ceq $CFG_LIVE))
 $bkOk = ($bkDig -ceq $EXP_LIVE -and $bkPkg -ceq $EXP_BK_PKG -and $bkW -ceq $EXP_WEB_LIVE -and (Get-BuildId $bkNext) -ceq $BID_LIVE -and (Get-R26FileSha256 $bkCfg) -ceq $CFG_LIVE)
-$pinOk = ((Get-R26FileSha256 $API_LAUNCHER) -ceq $API_LAUNCH_PIN -and (Get-R26FileSha256 $WEB_LAUNCHER) -ceq $WEB_LAUNCH_PIN)
-Say ('launcher pinleri=' + $pinOk)
+$tuple0 = Get-LauncherTuple
+$pinOk = -not $tuple0.StartsWith('TANIMSIZ')
+Say ('baslatici uclusu=' + $tuple0 + ' | tanimli=' + $pinOk)
 if ($SelfTest) {
-  $needed = @('Say', 'Get-R26FileSha256', 'Get-Map', 'Get-TreeDigest', 'Get-Pids', 'Wait-Stopped', 'Http', 'Get-BuildId')
+  $needed = @('Say', 'Get-R26FileSha256', 'Get-Map', 'Get-TreeDigest', 'Get-Pids', 'Wait-Stopped', 'Http', 'Get-LauncherTuple', 'Get-BuildId')
   $missing = @($needed | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) })
   Say ('fonksiyon kumesi tam=' + ($missing.Count -eq 0) + ' | robocopy=' + [bool](Get-Command robocopy.exe -ErrorAction SilentlyContinue))
   $st = ($bkOk -and $pinOk -and $missing.Count -eq 0)
@@ -99,7 +111,7 @@ if ($SelfTest) {
 }
 if (-not (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'KAPI: yukseltilmis pencere gerekli - DUR' }
 if (-not $bkOk) { throw 'KAPI: yedek kimligi dogrulanamadi - GERI ALMA BASLAMAZ' }
-if (-not $pinOk) { throw 'KAPI: pinli launcher farkli - DUR' }
+if (-not $pinOk) { throw 'KAPI: baslatici/host uclusu tanimli iki durumdan biri degil - DUR' }
 if ((Get-R26FileSha256 (Join-Path $LIVE_API '.env')) -cne $ENV_PIN) { throw 'KAPI: canli .env sha pin degil - DUR' }
 
 Say '=== 2) WEB SONRA API DURDUR'
@@ -138,9 +150,11 @@ $deadline = (Get-Date).AddSeconds(180); $pl = -1; $wp = @()
 while ((Get-Date) -lt $deadline) { $wp = Get-Pids $WEB_PORT; if ($wp.Count -ge 1) { $pl = Http 'GET' ('http://127.0.0.1:' + $WEB_PORT + '/portal/login'); if ($pl -gt 0) { break } }; Start-Sleep -Seconds 3 }
 $bm = Http 'GET' ('http://127.0.0.1:' + $WEB_PORT + '/_next/static/' + $BID_LIVE + '/_buildManifest.js')
 Say ('API pid=' + ($hp -join ',') + ' /api/auth/me=' + $me + ' run-now=' + $unauth + ' portal/cases=' + $portalUnauth + ' | WEB pid=' + ($wp -join ',') + ' /portal/login=' + $pl + ' buildManifest(' + $BID_LIVE + ')=' + $bm)
-$ok = ($hp.Count -eq 1 -and $me -eq 401 -and $unauth -eq 401 -and $portalUnauth -eq 401 -and $wp.Count -eq 1 -and $pl -eq 200 -and $bm -eq 200 -and $idOk)
+$tuple1 = Get-LauncherTuple
+Say ('baslatici uclusu degismedi=' + ($tuple1 -ceq $tuple0) + ' (' + $tuple1 + ')')
+$ok = ($hp.Count -eq 1 -and $me -eq 401 -and $unauth -eq 401 -and $portalUnauth -eq 401 -and $wp.Count -eq 1 -and $pl -eq 200 -and $bm -eq 200 -and $idOk -and $tuple1 -ceq $tuple0)
 Say ('=== SONUC: ' + $(if ($ok) { 'ROLLBACK PASS' } else { 'ROLLBACK DOGRULANAMADI' }))
-$evid = [ordered]@{ record = 'R26-ROLLBACK-EXECUTION'; tsUtc = $ts; backupApiDir = $BackupApiDir; backupWebDir = $BackupWebDir; apiDigest = $d; webDigest = $w; verdict = $(if ($ok) { 'ROLLBACK PASS' } else { 'ROLLBACK DOGRULANAMADI' }); log = @($log) }
+$evid = [ordered]@{ record = 'R26-ROLLBACK-EXECUTION'; tsUtc = $ts; launcherTuple = $tuple0; backupApiDir = $BackupApiDir; backupWebDir = $BackupWebDir; apiDigest = $d; webDigest = $w; verdict = $(if ($ok) { 'ROLLBACK PASS' } else { 'ROLLBACK DOGRULANAMADI' }); log = @($log) }
 $f = Join-Path 'D:\Development\HUKUK_YAZILIMI\HY_R26_RELEASE_EVIDENCE' ('R26-ROLLBACK-' + $ts + '.json')
 New-Item -ItemType Directory -Force -Path (Split-Path $f) | Out-Null
 [IO.File]::WriteAllText($f, ($evid | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding($false)))
