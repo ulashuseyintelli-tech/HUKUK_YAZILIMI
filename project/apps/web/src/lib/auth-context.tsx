@@ -52,7 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Bütün portal route'ları public OLMAZ: private /portal/* route'ları PortalLayout'un
     // kendi guard'ı korur (bkz. app/portal/layout.tsx).
     const isPortalDelegated = pathname.startsWith("/portal");
-    if (!loading && !user && !PUBLIC_PATHS.includes(pathname) && !isPortalDelegated) {
+    // H5 (2026-09-21): /intake/<token> müvekkil formudur; personel oturumu gerektirmez, erişimi
+    // bağlantı token'ı ve API tarafındaki doğrulama belirler. Yalnız "/intake/" öneki muaftır.
+    // Ölçülen kusur: girişsiz tarayıcıda form açılır açılmaz /auth/login'e yönlendiriliyordu.
+    const isIntakePublic = pathname.startsWith("/intake/");
+    if (!loading && !user && !PUBLIC_PATHS.includes(pathname) && !isPortalDelegated && !isIntakePublic) {
       router.push("/auth/login");
     }
   }, [loading, user, pathname, router]);
