@@ -237,13 +237,13 @@ Ortam:
 | koşum | runId | sonuç | kanıt |
 |---|---|---|---|
 | prova-1 | — | PASS 33/33 | (günlük çalışma alanında) |
-| prova-2 | `61b38a80` | **PASS 33/33**, 27 satır, kapanış doğrulandı | `evidence/prova-2-61b38a80.{log,result.json}` |
+| prova-2 | `61b38a80` | **PASS 33/33**, 27 satır, kapanış doğrulandı | `evidence/prova-2-61b38a80.{log.txt,result.json}` |
 | prova-3 | `fc24ed36` | **PASS 33/33** (pinle birebir kopya dist üzerinden) | `evidence/prova-3-fc24ed36.result.json` |
-| N1 G-5 | — | 4/4 yasak uç istek yapılmadan reddedildi; izinli uç engellenmedi | `evidence/neg-n1-n3.log`, `evidence/neg-g5.js` |
-| N2' G-6 | — | tek dosyaya 4 bayt eklendi → exit 4, tenant sayısı değişmedi | `evidence/neg-n1-n3.log` |
+| N1 G-5 | — | 4/4 yasak uç istek yapılmadan reddedildi; izinli uç engellenmedi | `evidence/neg-n1-n3.log.txt`, `evidence/neg-g5.js` |
+| N2' G-6 | — | tek dosyaya 4 bayt eklendi → exit 4, tenant sayısı değişmedi | `evidence/neg-n1-n3.log.txt` |
 | N3 G-0 | — | `live` + jeton yok → exit 4 | aynı |
 | N3b G-0 | — | disposable + DB adı `hukuk_db` → exit 4 | aynı |
-| N4 abort | `fd58a939` | C2-G2 sonrası abort → **OLCULEMEDI** (PASS sayılmadı). Kapanış yine çalıştı; K/I 10/10 | `evidence/neg-n4-abort-fd58a939.{log,result.json}` |
+| N4 abort | `fd58a939` | C2-G2 sonrası abort → **OLCULEMEDI** (PASS sayılmadı). Kapanış yine çalıştı; K/I 10/10 | `evidence/neg-n4-abort-fd58a939.{log.txt,result.json}` |
 
 ---
 

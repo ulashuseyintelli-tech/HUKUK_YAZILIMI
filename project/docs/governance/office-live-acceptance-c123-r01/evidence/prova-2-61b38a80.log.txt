@@ -1,0 +1,104 @@
+KOSUM KIMLIGI (yazmadan ONCE kayda gecti): runId=61b38a80 tenant=off-c123-61b38a80 ortam=disposable
+ARTEFAKT BAGI (G-6): 8 dosya pinle ESIT
+KURTARMA (her kosulda): C123_RUN_ID=61b38a80 node c-99-close.js
+
+[S] kurulum — tek transaction (olcum plani: 145 tenantId'li + 37 bagli tablo; kapsam disi 27)
+      yabanci tenant sayi ozeti (I-3 temel): 2 tenant · 0430931cb09f7583
+
+[C1] POST /cases — basarili acilis (satir iliskileri + tek transaction)
+  OK   C1-S       ADMIN -> satir-ici alacakli + borclu ile dava acilisi 201
+             HTTP 201 · fark [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] beklenen [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] · dava 1 · muvekkil 1 · borclu 1 · bag caseClient=1 caseDebtor=1
+
+[C1] POST /cases — ISLEM ICI dogal hata: tum taraf yazmalarindan SONRA -> TAM GERI ALMA
+  OK   C1-R1      ADMIN -> ayni govde + var olmayan staffMemberId -> 400, dava/muvekkil/borclu 0 (geri alma)
+             HTTP 400 msg="Geçersiz veya başka tenant'a ait personel: c123-yok-61b38a80" · yazma 0 (goruntu ayni) · kalinti: dava 0 · muvekkil 0 · borclu 0
+
+[C1] POST /cases — ISLEM ONCESI ret (mukerrer dosya no) ve VIEWER siniri
+  OK   C1-R2      ADMIN -> C1-S ile ayni fileNumber -> 409, yazma 0
+             HTTP 409 msg="Bu dosya numarası (C1S-61b38a80) zaten kullanılıyor" · yazma 0 (goruntu ayni)
+  OK   C1-V1      VIEWER -> satir-ici alacakli ile dava acilisi -> 403, yazma 0
+             HTTP 403 code=CLIENT_MUTATION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü müvekkil kaydı oluşturamaz veya değiştiremez." · yazma 0 (goruntu ayni)
+
+[C2] genel kutu kararlari — VIEWER (bagli avukati PARTNER) -> 403 OFFICE_APPROVAL_DECISION_DENIED_VIEWER + yazma 0
+  OK   C2-G1      VIEWER approve (CHANGE_STATUS)
+             HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL
+  OK   C2-G2      VIEWER reject (CHANGE_STATUS)
+             HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL
+  OK   C2-G3      VIEWER request-revision (CHANGE_STATUS)
+             HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL
+  OK   C2-G4      VIEWER approve-with-changes (CHANGE_STATUS)
+             HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL
+  OK   C2-D1      VIEWER POST /collection-dispositions/:id/approve
+             HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg="Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz." · yazma 0 (goruntu ayni) · dispozisyon DISTRIBUTION_RECOMMENDED · talep PENDING_APPROVAL
+
+[C2] ayirt edicilik: ayni yollarda VIEWER-OLMAYAN uygun aktor karar verebilir (ret rol-ozel)
+  OK   C2-GP      elev3 (USER + delege) CHANGE_STATUS approve -> 201/200, talep APPROVED + audit
+             HTTP 201 · fark [AuditLog+,OfficeApprovalRequest~] beklenen [AuditLog+,OfficeApprovalRequest~] · talep APPROVED onaylayan=elev3
+  OK   C2-DP      elev1 (USER + PARTNER) dispozisyon approve -> APPROVED
+             HTTP 201 · fark [AuditLog+,CollectionDisposition~,OfficeApprovalRequest~] beklenen [AuditLog+,CollectionDisposition~,OfficeApprovalRequest~] · dispozisyon DISTRIBUTION_APPROVED · talep APPROVED
+
+[C3] FD zinciri girdisi: dispozisyon POSTED (urunun kendi ucu) -> DRAFT surum
+  OK   C3-P0      elev1 POST /collection-dispositions/:id/post -> POSTED
+             HTTP 201 · fark [AccountingJournalEntry+x3,AccountingJournalLine+x6,AuditLog+,CollectionDispositionExpenseApplication+,CollectionDisposition~,OfficeApprovalRequest~] beklenen [AccountingJournalEntry+x3,AccountingJournalLine+x6,AuditLog+,CollectionDispositionExpenseApplication+,CollectionDisposition~,OfficeApprovalRequest~] · dispozisyon POSTED
+  OK   C3-P1      elev1 POST /collection-dispositions/:id/financial-disclosure -> DRAFT surum
+             HTTP 201 · fark [ClientFinancialDisclosure+,ClientFinancialDisclosureLine+x2,ClientFinancialDisclosureVersion+] beklenen [ClientFinancialDisclosure+,ClientFinancialDisclosureLine+x2,ClientFinancialDisclosureVersion+] · surum 27sfr4ec DRAFT
+
+[C3] A (elev1) ofis onayi TALEP EDER -> OFFICE_APPROVAL_PENDING
+  OK   C3-A2      elev1 request-office-approval -> OFFICE_APPROVAL_PENDING + FD talebi
+             HTTP 201 · fark [ClientFinancialDisclosureVersion~,OfficeApprovalRequest+] beklenen [ClientFinancialDisclosureVersion~,OfficeApprovalRequest+] · surum OFFICE_APPROVAL_PENDING · talep CLIENT_FINANCIAL_DISCLOSURE_APPROVE PENDING_APPROVAL
+
+[C3] CLF-O0-01: FD talebi GENEL KUTUDAN karara/iptale kapali -> 409 DOMAIN_ACTION_REQUIRED + yazma 0
+  OK   C3-G1      elev2 (uygun) genel kutu approve
+             HTTP 409 code=DOMAIN_ACTION_REQUIRED msg="Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+  OK   C3-G2      elev2 genel kutu reject
+             HTTP 409 code=DOMAIN_ACTION_REQUIRED msg="Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+  OK   C3-G3      elev2 genel kutu approve-with-changes
+             HTTP 409 code=DOMAIN_ACTION_REQUIRED msg="Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+  OK   C3-G4      elev2 genel kutu request-revision (#2608)
+             HTTP 409 code=DOMAIN_ACTION_REQUIRED msg="Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+  OK   C3-G5      elev1 (talep SAHIBI) genel kutu cancel (#2612)
+             HTTP 409 code=DOMAIN_ACTION_REQUIRED msg="Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+  OK   C3-G6      elev2 (sahip DEGIL) genel kutu cancel -> 403 (sahiplik kontrolu once)
+             HTTP 403 msg="Yalnız talep sahibi iptal edebilir." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+
+[C2/C3] FD ofis onayi: VIEWER ve talep eden REDDEDILIR
+  OK   C2-F1      VIEWER complete-office-approval -> 403 DISCLOSURE_APPROVAL_NOT_ELIGIBLE
+             HTTP 403 code=DISCLOSURE_APPROVAL_NOT_ELIGIBLE msg="Actor is not eligible to approve a client financial disclosure." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+  OK   C3-N1      A (talep eden) complete-office-approval -> 403 DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN
+             HTTP 403 code=DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN msg="The requester of a disclosure may not approve any of its approval stages." · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING
+
+[C3] B (elev2, MANAGER) ofis onayini FD ALANINDAN tamamlar -> OFFICE_APPROVED
+  OK   C3-A3      elev2 complete-office-approval -> OFFICE_APPROVED (onaylayan B)
+             HTTP 201 · fark [ClientFinancialDisclosureVersion~,OfficeApprovalRequest~] beklenen [ClientFinancialDisclosureVersion~,OfficeApprovalRequest~] · surum OFFICE_APPROVED · onaylayan B · talep APPROVED
+
+[C3] icerik onayi talebi (alici e-postasi `.invalid`) -> CONTENT_APPROVAL_PENDING
+  OK   C3-A4      elev1 request-content-approval -> CONTENT_APPROVAL_PENDING
+             HTTP 201 · fark [ClientFinancialDisclosureVersion~] beklenen [ClientFinancialDisclosureVersion~] · surum CONTENT_APPROVAL_PENDING
+
+[C2/C3] FD icerik onayi: VIEWER, dort-goz ve talep eden REDDEDILIR
+  OK   C2-F2      VIEWER complete-content-approval -> 403 DISCLOSURE_APPROVAL_NOT_ELIGIBLE
+             HTTP 403 code=DISCLOSURE_APPROVAL_NOT_ELIGIBLE msg="Actor is not eligible to approve a client financial disclosure." · yazma 0 (goruntu ayni) · surum CONTENT_APPROVAL_PENDING
+  OK   C3-N2      B (ofis onaylayicisi) complete-content-approval -> 403 DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION
+             HTTP 403 code=DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION msg="Office approver and content approver must be two distinct actors." · yazma 0 (goruntu ayni) · surum CONTENT_APPROVAL_PENDING
+  OK   C3-N3      A (talep eden) complete-content-approval -> 403 DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN
+             HTTP 403 code=DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN msg="The requester of a disclosure may not approve any of its approval stages." · yazma 0 (goruntu ayni) · surum CONTENT_APPROVAL_PENDING
+
+[C3] C (elev3, delege) icerik onayini tamamlar -> CONTENT_APPROVED; ZINCIR BURADA DURUR (publish YOK)
+  OK   C3-A5      elev3 complete-content-approval -> CONTENT_APPROVED (onaylayan C)
+             HTTP 201 · fark [ClientFinancialDisclosureVersion~] beklenen [ClientFinancialDisclosureVersion~] · surum CONTENT_APPROVED · onaylayan C
+  OK   C3-X1      FD surumu gonderim durumuna GECMEDI (publish cagrilmadi; musteriye gonderim yok)
+             surum CONTENT_APPROVED
+
+[K] kapanis (runId ile) — erisim sonlandirilir, bekleyen talepler iptal, audit KORUNUR
+  OK   K-1        kapanis dogrulandi (aktif kullanici 0, aktif dava 0, bekleyen talep 0, audit korundu)
+             {"record":"OFFICE-C123-CLOSE","runId":"61b38a80","slug":"off-c123-61b38a80","found":true,"tenantId":"cmubqhrl90001ntl3bo4excqn","activeUsersBefore":5,"usersDeactivated":5,"stillActiveUsers":0,"casesClosed":2,"activeCasesAfter":0,"pendingCancelled":4,"pendingAfter":0,"auditBefore":6,"auditAfter":6,"auditPreserved":true,"alreadyClosed":false,"greetingDisabled":true,"verified":true}
+  OK   K-2        dagitilmis 5 JWT kapanistan sonra 401
+             [{"actor":"admin","status":401,"indeterminate":false},{"actor":"viewer","status":401,"indeterminate":false},{"actor":"elev1","status":401,"indeterminate":false},{"actor":"elev2","status":401,"indeterminate":false},{"actor":"elev3","status":401,"indeterminate":false}]
+  OK   I-1        aktorlerin BASKA tenant'ta audit izi 0
+             sayi=0
+  OK   I-3        yabanci tenant sayi ozeti kurulum sonrasi = kapanis sonrasi
+             2 tenant · 0430931cb09f7583 -> 0430931cb09f7583 · {"user":6,"lawyer":4,"office":2,"case":2,"client":2,"debtor":1,"officeApprovalRequest":8,"collectionDisposition":2,"clientFinancialDisclosure":1}
+
+OFFICE C123 KABUL: 33/33 PASS · FAIL 0 · OLCULEMEDI 0
+
+HUKUM: PASS · PASS 33/33 · FAIL 0 · OLCULEMEDI 0 · kapanis DOGRULANDI · sonuc dosyasi D:/Development/HY_WT/C123_WORK/c123-result.json

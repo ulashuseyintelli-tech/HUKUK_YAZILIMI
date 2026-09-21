@@ -1,0 +1,25 @@
+== N1 G-5
+{"forbiddenBlocked":"4/4","allowedRouteNotBlockedByG5":true}
+exit=0
+== N2 G-6 (sahte dist)
+OFFICE C123 KABUL: 33/33 PASS · FAIL 0 · OLCULEMEDI 0
+
+HUKUM: PASS · PASS 33/33 · FAIL 0 · OLCULEMEDI 0 · kapanis DOGRULANDI · sonuc dosyasi D:/Development/HY_WT/C123_WORK/n2.json
+exit=0
+== N3 G-0 (live ortam, token/GO yok)
+G-0 DURDU (yazma YOK): G-0: ortam 'live' ve C123_CONFIRM_LIVE jetonu YOK/yanlis — canliya yazma baslamaz
+exit=4
+== N3b G-0 (disposable ama yasak DB adı)
+G-0 DURDU (yazma YOK): G-0: DB adi 'hukuk_db' 'disposable' allowlist'inde yok
+exit=4
+tenant sayısı önce=4 sonra=5
+
+[exited with code 0]
+
+NOT: yukaridaki "N2 G-6 (sahte dist)" kosumu sahte dist'in pinle BIREBIR kopya oldugu icin G-6'yi GECTI ve
+tam prova olarak kostu (runId fc24ed36, PASS 33/33, yalniz disposable). Bu, gecerli bir 3. prova sayilir; G-6
+negatifi DEGILDIR. Gercek G-6 negatifi asagida (tek dosyaya 4 bayt eklenmis kopya):
+== N2' G-6 (office-approval.service.js + "\n//x")
+G-6 DURDU (yazma YOK): G-6: hedef dist artefakt bagi TUTMADI — {... "modules/office-approval/office-approval.service.js": match:false ...}
+exit=4
+tenant önce=5 sonra=5 · sonuc dosyasi YAZILMADI
