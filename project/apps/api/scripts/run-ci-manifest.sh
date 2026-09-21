@@ -21,6 +21,15 @@ set -euo pipefail
 #   - --passWithNoTests YOK                     -> sessiz gecis imkansiz
 #   - bos veya eksik manifest = FAIL            -> guard'in kendisi false-green
 #                                                  uretemez
+#
+# 2026-09-21 (Windows komut satiri siniri): spec listesi ARGV'ye yazildiginda
+# Windows'ta iki sinir vuruluyordu — `npx` cmd.exe shim'i ~8 kB (db/domain-integration
+# 84 dosya ≈ 8.0 kB'de "The syntax of the command is incorrect", Jest hic baslamiyor)
+# ve CreateProcess 32 kB (pure/platform-scripts-shared 482 dosya ≈ 38.5 kB).
+# Cozum: Jest, listeyi argv'ye yazmadan Node API'si (`jest.runCLI`) ile cagrilir.
+# Asagidaki kontroller ve `--runTestsByPath` secim semantigi AYNEN korunur; bayrak
+# runner'a gercekten gecirilir ve `run-ci-manifest.cjs` tarafindan zorunlu tutulur.
+# Test bolme/atlama, desen daraltma veya yeni bagimlilik YOK.
 
 NAME="${1:-}"
 if [ -z "$NAME" ]; then
@@ -55,5 +64,10 @@ for f in "${SPECS[@]}"; do
   fi
 done
 
-echo "CI-MANIFEST ${NAME}: ${#SPECS[@]} spec"
-exec npx jest --ci --forceExit --runInBand --runTestsByPath "${SPECS[@]}"
+RUNNER="${API_DIR}/scripts/run-ci-manifest.cjs"
+if [ ! -f "$RUNNER" ]; then
+  echo "CI-MANIFEST FAIL: runner bulunamadi: ${RUNNER}"
+  exit 1
+fi
+
+exec node "$RUNNER" "$NAME" --ci --forceExit --runInBand --runTestsByPath
