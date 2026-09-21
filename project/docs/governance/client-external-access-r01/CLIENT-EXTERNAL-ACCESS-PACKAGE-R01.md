@@ -107,9 +107,12 @@ peer `PUBLIC_INTAKE_TRUSTED_PROXY_IPS` **tam eşleşme** listesindeyse dikkate a
 | Peer allowlist'te, XFF var | XFF kullanıldı (amaçlanan davranış) |
 | Peer allowlist'te, XFF yok | peer |
 
-**#2730 (trust-proxy) bu topolojide GEREKLİDİR.** Peer allowlist'e eklendiğinde ürün `request.ip` değerini okur;
-`request.ip`'in XFF'i yansıtması Express'in trust-proxy ayarına bağlıdır. #2730 main'de, **canlıda değil**
-(`merge-base` ile ölçüldü). Yeni yayın adayı zaten gerekli olduğundan bu değişiklik de aynı adaya girer.
+~~**#2730 (trust-proxy) bu topolojide GEREKLİDİR … canlıda değil.**~~ **DÜZELTME (2026-09-21, R26 paketi):** Bu
+hüküm YANLIŞTI. `trust proxy=1` canlıda **zaten var**: canlı `main.js:8` `set('trust proxy', 1)`, kaynağı `006c4dd2`
+(R24). #2730 davranışı değiştirmeyen bir refactor; aynı ayarı `trust-proxy.config.ts`'e taşıdı ve CI kapısını
+güncelledi. Commit mesajında "hop ve başlangıç sırası değişmedi" yazıyor. **R26'ya ALINMADI.** Peer allowlist'e
+eklendiğinde ürün `request.ip`'i okur; `request.ip` en sağdaki XFF değerini (1 hop) yansıtır. Bu davranış canlıda
+bugün de geçerlidir.
 
 ## 5. Portal bağlantılarının personel bağlantılarından ayrılması
 
@@ -225,6 +228,12 @@ taklidinden **daha dardır** (provada portal okuma uçlarına POST/DELETE de ge�
 
 ## 11. R26 yayın / geri dönüş paketi — içerik ve kapılar
 
+> **GÜNCELLENDİ (2026-09-21):** Somut R26 paketi `client-release-r26-r01/R26-RELEASE-PACKAGE-R01.md` belgesindedir.
+> Aşağıdaki ilk taslağın farkları:
+> - Kaynak bu PR'ın merge SHA'sı değil, `47fcf395` = R25B kaynağı `4443600a` + yalnız #2739 web + #2738.
+> - Main'deki ilgisiz değişiklikler (#2716, #2727 migration, #2730) ALINMADI.
+> - API bir birleşik artefakt: canlı R25B + 2 dosya.
+
 | Bileşen | Kaynak | Not |
 |---|---|---|
 | Web | Bu PR'ın merge SHA'sı; `NEXT_PUBLIC_API_URL` tanımsız; `API_INTERNAL_URL` tanımsız (varsayılan 127.0.0.1:8080) | Tam `.next` + gerekli dosyalar; tam ağaç digest (Ordinal, relpath/NUL/UPPER sha/LF) |
@@ -261,7 +270,8 @@ Karşılanmış senaryolar yeniden koşulmaz.
    yoksa genel IP + yönlendirici erişimi (Caddy yolu).
 
 **Owner kararları:**
-4. R26 teknik yayını (K-A + K-B + aynı origin + #2730 + `PUBLIC_PORTAL_BASE_URL`) — GO / beklet.
+4. R26 teknik yayını (K-A + K-B + aynı origin + `PUBLIC_PORTAL_BASE_URL`; #2730 GEREKMEZ, bkz. §4 düzeltmesi) —
+   GO / beklet. Somut paket ve güncel tek liste: `client-release-r26-r01/R26-RELEASE-PACKAGE-R01.md` §9.
 5. Dış erişimin açılması (§9 adım 7) — alan adı geldikten ve kenar doğrulandıktan sonra ayrı GO.
 6. H8 "≤ 4 sn" kapsam cümlesinin değiştirilmesi — F04 paketindeki önerilen metin (uygulanmadı).
 7. A3 / C1 / C2 / C3 — §12'deki her satır için ayrı karar.
