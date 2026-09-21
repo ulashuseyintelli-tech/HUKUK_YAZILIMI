@@ -864,3 +864,9 @@ src/modules/summary-engine/__tests__/allocation-representative-replay.static-gua
 #   Negatif kontrol: ayar kaldirilinca 1-hop ve 2-hop FAIL (req.ip=127.0.0.1). express/lockfile DEGISMEDI.
 #   Kardes: src/tests/* saf spec'leri bu manifestte.
 src/tests/trust-proxy.spec.ts
+
+# ── P05C-P02 SAF KVKK SPEC'I (owner GO 2026-09-21, DB secicilerinin tasinmasi) ──
+#   `policy-engine/__tests__/kvkk-compliance.spec.ts` PrismaService'i MOCK'lar, DB gerektirmez;
+#   eski P05C-P02 adiminda DB'li link spec'iyle ayni surecte kosuyordu. Kardes policy-engine
+#   spec'leri bu manifestte.
+src/modules/policy-engine/__tests__/kvkk-compliance.spec.ts

@@ -378,3 +378,19 @@ src/modules/calc-preview/diagnostics/persistence/__tests__/snapshot-idempotency.
 #   kendisini yonetir — src altinda bu tabloyu kullanan baska modul YOK, manifest --runInBand kosar.
 #   Kardes: calc-preview db spec'leri (bundle-manifest / idempotency-gate / persistence).
 src/modules/calc-preview/diagnostics/object-store/manifest-retry/__tests__/manifest-retry-worker-safety.integration.spec.ts
+
+# ── DOGRUDAN DB SECICILERININ TASINMASI (owner GO 2026-09-21 "OFFICE / SEKIZ DB SECICISINI MEVCUT MANIFESTLERE TASIMA") ──
+#   Bu yedi spec ci.yml'de AYRI adimlarda, her biri kendi Jest surecinde kosuyordu (~13.6s sabit
+#   ts-jest bootstrap / process). Ayni ortam (TEST_DATABASE_URL) ve ayni bayraklarla
+#   (--ci --forceExit --runInBand --runTestsByPath) bu manifestte tek surecte kosarlar.
+#   Eski adimlarin kapilari KORUNUR: dosya varligi (runner `test -f`), "her spec TAM BIR KEZ kosar"
+#   (runner: kosan suite sayisi == manifest sayisi) ve db/* icin TEST_DATABASE_URL zorunlulugu
+#   (runner fail-closed). `collection-cancel-reversal.db-gated` ZATEN bu manifestteydi; ayri adimi
+#   ayni dosyayi IKINCI kez kosuyordu (cifte secim) ve kaldirildi.
+src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.fixture.db-gated.integration.spec.ts
+src/modules/uyap/__tests__/uyap-operation-attempt-schema.db-gated.integration.spec.ts
+src/modules/uyap/operation-writer/uyap-operation-writer.db-gated.integration.spec.ts
+src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.db-gated.integration.spec.ts
+src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.db-gated.integration.spec.ts
+src/modules/policy-engine/decision-logger/__tests__/cpe-decision-composite-key.db-gated.integration.spec.ts
+src/modules/policy-engine/decision-logger/__tests__/uyap-attempt-cpe-decision-link.db-gated.integration.spec.ts
