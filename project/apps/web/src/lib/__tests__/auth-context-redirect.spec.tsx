@@ -37,6 +37,20 @@ describe("AuthProvider — girişliyken public sayfa yönlendirmesi", () => {
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
   });
 
+  it.each([["/auth/forgot-password"], ["/auth/reset-password"], ["/auth/accept-invite"]])(
+    "[sınır] girişli kullanıcı %s üzerindeyken /dashboard'a YÖNLENDİRİLMEZ",
+    async (pathname) => {
+      mockPathname = pathname;
+      render(
+        <AuthProvider>
+          <div>child</div>
+        </AuthProvider>,
+      );
+      await new Promise((r) => setTimeout(r, 50));
+      expect(pushMock).not.toHaveBeenCalledWith("/dashboard");
+    },
+  );
+
   it("[2] girişli kullanıcı '/auth/login' üzerindeyken /dashboard'a yönlendirilir", async () => {
     mockPathname = "/auth/login";
     render(

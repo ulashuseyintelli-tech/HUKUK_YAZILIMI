@@ -31,7 +31,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // AUTH-01: /auth/account-recovery eklendi — girişsiz kullanıcı erişebilmeli.
-const PUBLIC_PATHS = ["/", "/auth/login", "/auth/register", "/auth/account-recovery"];
+// 2026-09-21: parola sıfırlama ve davet kabulü de girişsiz açılır — bağlantıdaki token (reset: #hash,
+// davet: ?query) /auth/login'e yönlendirmede kayboluyordu (izole next start ile ölçüldü).
+// Tam yol eşleşmesidir; girişliyken panele yönlendirme listesine BİLEREK eklenmedi.
+const PUBLIC_PATHS = [
+  "/",
+  "/auth/login",
+  "/auth/register",
+  "/auth/account-recovery",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+  "/auth/accept-invite",
+];
 // Girişli kullanıcı bu sayfalara düşerse panele yönlendirilir (pazarlama/login sayfasında kalmamalı).
 const REDIRECT_WHEN_AUTHENTICATED_PATHS = ["/", "/auth/login"];
 
