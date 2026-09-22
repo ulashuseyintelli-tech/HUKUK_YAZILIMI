@@ -399,9 +399,12 @@ anlatıyordu. `FOR UPDATE` aranmış ve bulunamadığı için "üründe kilit yo
 **Ürünün garantisi bu üç katmanın birleşimidir; bir SÜRE taahhüdü değildir.** Kilit bekleme süresi ürün
 tarafından sınırlandırılmaz; bekleme PostgreSQL'in kendi davranışına bırakılmıştır.
 
-**Owner kararına sunulan metin (uygulanmadı):** "Kabul betiğinin kilit bütçesi 3500 ms'dir (tavan 4000 ms).
+**H8 — OWNER ONAYLADI (2026-09-22). Kesin metin budur:** "Kabul betiğinin kilit bütçesi 3500 ms'dir (tavan 4000 ms).
 Ürün tarafında süre taahhüdü yoktur; eşzamanlılık güvencesi transaction + `SELECT ... FOR NO KEY UPDATE`
 satır kilidi + koşullu `updateMany` birleşimiyle sağlanır."
+
+Belgelerde "kilit ≤ 4 sn" ifadesi bundan sonra bu metinle birlikte okunur. Onay yalnız **ifadenin sınıflandırmasına**
+aittir: üründe süre sınırı eklenmedi, eşik gevşetilmedi, kod değişmedi.
 
 **Karar:** Garanti silinmedi ve eşik gevşetilmedi. İfade doğru sınıfına konuldu: belgelerde "kilit ≤ 4 sn"
 yazıldığında bu **kabul betiğinin bütçesidir**, hizmet taahhüdü değildir. Hizmet taahhüdü olarak sunulacaksa
