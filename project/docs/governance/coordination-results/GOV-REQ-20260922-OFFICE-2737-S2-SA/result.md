@@ -12,7 +12,7 @@ Evidence only; no semantic or execution authority.
   "status": "SUCCEEDED",
   "executionPrNumber": 2752,
   "executionMergeSha": "0b6af43d29655f6b12992302f7e3f8c07d886395",
-  "effectiveMainSha": "0b6af43d29655f6b12992302f7e3f8c07d886395",
+  "effectiveMainSha": "87b989ef22152897eb75ed00f05d5cd914f0beeb",
   "completedAt": "2026-09-22T15:38:59Z",
   "validationEvidence": [
     {
@@ -23,7 +23,7 @@ Evidence only; no semantic or execution authority.
     {
       "name": "execution-merge-in-main",
       "status": "PASS",
-      "evidenceSha": "0b6af43d29655f6b12992302f7e3f8c07d886395"
+      "evidenceSha": "87b989ef22152897eb75ed00f05d5cd914f0beeb"
     },
     {
       "name": "exact-operation-and-scope-validated",
