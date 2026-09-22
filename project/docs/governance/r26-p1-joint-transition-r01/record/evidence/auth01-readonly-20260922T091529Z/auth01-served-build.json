@@ -1,0 +1,43 @@
+{
+ "record": "OFFICE-AUTH01-SERVED-BUILD",
+ "tsUtc": "2026-09-22T09:16:26.500Z",
+ "base": "http://localhost:3002",
+ "expBuildId": "5waeMoFGGMTLAYmn9oJvW",
+ "pages": [
+  {
+   "path": "/auth/reset-password",
+   "status": 200,
+   "htmlHasBuildId": true,
+   "scripts": 11
+  },
+  {
+   "path": "/auth/accept-invite",
+   "status": 200,
+   "htmlHasBuildId": true,
+   "scripts": 11
+  },
+  {
+   "path": "/dashboard",
+   "status": 200,
+   "htmlHasBuildId": true,
+   "scripts": 14
+  }
+ ],
+ "servedScripts": 16,
+ "diskEqual": 16,
+ "diskDifferent": 0,
+ "diskMissing": 0,
+ "servedWithNewPublicPaths": 1,
+ "servedWithOldPublicPaths": 0,
+ "htmlContainsBuildId": true,
+ "detail": [
+  {
+   "src": "/_next/static/chunks/app/layout-fc334e5b2d3beae6.js",
+   "status": 200,
+   "state": "ESIT",
+   "hasNew": true,
+   "hasOld": false
+  }
+ ],
+ "verdict": "PASS"
+}

@@ -1,0 +1,22 @@
+{
+  "record": "OFFICE-AUTH01-LIVE-IDENTITY",
+  "phase": "post2",
+  "tsUtc": "2026-09-22T09:16:27.9093993Z",
+  "webNextDigest": "C17E7B132FB7DED65AD0788024AA478F0949AF0D5D9045E8F47779A31A615326",
+  "webNextFiles": 505,
+  "recipe": "relpath(/)+NUL+SHA256UPPER+LF, ordinal, sha256; cache/ + trace haric",
+  "webDigestEqualsR26": true,
+  "buildId": "5waeMoFGGMTLAYmn9oJvW",
+  "processes": {
+    "3002": {
+      "listeners": 1,
+      "pid": 58736,
+      "startUtc": "2026-09-22T07:33:42.6792274Z"
+    },
+    "8080": {
+      "listeners": 1,
+      "pid": 62900,
+      "startUtc": "2026-09-22T07:33:07.0388582Z"
+    }
+  }
+}

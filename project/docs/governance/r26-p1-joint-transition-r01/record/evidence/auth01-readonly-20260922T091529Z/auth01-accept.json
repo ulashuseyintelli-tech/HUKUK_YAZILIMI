@@ -1,0 +1,161 @@
+{
+ "record": "OFFICE-AUTH01-READONLY-LIVE-ACCEPT",
+ "runId": "c571fa35",
+ "tsUtc": "2026-09-22T09:15:51.181Z",
+ "base": "http://localhost:3002",
+ "browser": "msedge headless, kalici profil yok",
+ "markerNote": "sentetik isaretleyici; gercek token degil; ciktida maskeli",
+ "rows": [
+  {
+   "id": "A1",
+   "verdict": "PASS",
+   "obs": {
+    "baslangicCerez": 0,
+    "depolama": {
+     "lsKeys": [],
+     "ssKeys": [],
+     "authToken": false
+    },
+    "belgeDurumu": 200,
+    "sunucuHtmlKabukMainAside": false,
+    "gezinme": [
+     "/dashboard",
+     "/dashboard",
+     "/auth/login"
+    ],
+    "sonYol": "/auth/login",
+    "loginFormu": true,
+    "dashboardYolundaGozlem": {
+     "seenMain": false,
+     "seenAside": false,
+     "seenHeader": false,
+     "seenNav": false,
+     "maxTextLen": 0,
+     "samples": []
+    },
+    "apiIstekleri": [
+     {
+      "m": "GET",
+      "s": 200,
+      "p": "/api/auth/capabilities"
+     }
+    ],
+    "veriApi2xx": 0
+   }
+  },
+  {
+   "id": "A2",
+   "verdict": "PASS",
+   "obs": {
+    "url": "/auth/reset-password#token=<ISARETLEYICI>",
+    "gezinme": [
+     "/auth/reset-password",
+     "/auth/reset-password",
+     "/auth/reset-password"
+    ],
+    "loginYonlendi": false,
+    "durum": {
+     "path": "/auth/reset-password",
+     "hash": "",
+     "search": "",
+     "buttonDisabled": false,
+     "noTokenMsg": false,
+     "invalidMsg": false,
+     "pwInputs": 2
+    },
+    "formDurumundaToken": {
+     "form": true,
+     "found": true,
+     "where": "useState depth=4 hook=0"
+    },
+    "not": "hash URL'den bilincli silinir (history.replaceState); token form durumunda tutulur"
+   }
+  },
+  {
+   "id": "A2c",
+   "verdict": "PASS",
+   "obs": {
+    "url": "/auth/reset-password",
+    "gezinme": [
+     "/auth/reset-password",
+     "/auth/reset-password"
+    ],
+    "loginYonlendi": false,
+    "durum": {
+     "path": "/auth/reset-password",
+     "hash": "",
+     "search": "",
+     "buttonDisabled": true,
+     "noTokenMsg": true,
+     "invalidMsg": false,
+     "pwInputs": 2
+    },
+    "formDurumundaToken": null,
+    "not": "kontrol: token yok"
+   }
+  },
+  {
+   "id": "A3",
+   "verdict": "PASS",
+   "obs": {
+    "url": "/auth/accept-invite?token=<ISARETLEYICI>",
+    "gezinme": [
+     "/auth/accept-invite",
+     "/auth/accept-invite"
+    ],
+    "loginYonlendi": false,
+    "durum": {
+     "path": "/auth/accept-invite",
+     "tokenInUrl": "<ISARETLEYICI>",
+     "buttonDisabled": false,
+     "errorShown": false,
+     "pwInputs": 2,
+     "textHead": "Hesap davetiniz\n\nHesabınızı etkinleştirmek için bir parola belirleyin.\n\nParolayı"
+    },
+    "formDurumundaToken": {
+     "form": true,
+     "found": false,
+     "where": null
+    },
+    "not": "token useSearchParams ile okunur; dugme yalniz token varken etkin (kaynak: disabled={isLoading || !token})"
+   }
+  },
+  {
+   "id": "A3c",
+   "verdict": "PASS",
+   "obs": {
+    "url": "/auth/accept-invite",
+    "gezinme": [
+     "/auth/accept-invite",
+     "/auth/accept-invite"
+    ],
+    "loginYonlendi": false,
+    "durum": {
+     "path": "/auth/accept-invite",
+     "tokenInUrl": null,
+     "buttonDisabled": true,
+     "errorShown": false,
+     "pwInputs": 2,
+     "textHead": "Hesap davetiniz\n\nHesabınızı etkinleştirmek için bir parola belirleyin.\n\nParolayı"
+    },
+    "formDurumundaToken": null,
+    "not": "kontrol: token yok"
+   }
+  },
+  {
+   "id": "B",
+   "verdict": "FAIL",
+   "obs": {
+    "sunulanBuildId": [],
+    "beklenen": "5waeMoFGGMTLAYmn9oJvW"
+   }
+  }
+ ],
+ "apiCalls": [
+  "GET 200 localhost:8080/api/auth/capabilities"
+ ],
+ "blockedNonGet": 0,
+ "blocked": [],
+ "valid": true,
+ "sonuc": "PASS-OLMAYAN 1"
+}
