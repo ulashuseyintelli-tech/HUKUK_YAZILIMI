@@ -1,0 +1,7 @@
+# CANLI SALT OKUMA KIMLIK OKUMASI (2026-09-22, Pencere B oncesi; yalniz Win32_Process + dinleyici tablosu OKUNDU; HTTP YOK; gorev/dosya/servis DEGISMEDI)
+# Amac: R03 Get-HLServiceIdentity'nin kaynaktan turetilen zincir varsayiminin (dinleyici=node -> pwsh launcher -> host) calisan R26 agaciyla ortustugunu gostermek.
+api: EXACT | host->launcher->node zinciri dogrulandi | L62900|N62900@2026-09-22T10:33:07.0388580+03:00|P43324@2026-09-22T10:33:05.1018670+03:00|H50216@2026-09-22T10:32:59.7697150+03:00
+web: EXACT | host->launcher->node zinciri dogrulandi | L58736|N58736@2026-09-22T10:33:42.6792270+03:00|P30476@2026-09-22T10:33:41.7017750+03:00|H61948@2026-09-22T10:33:41.2934640+03:00
+api since=simdi (eski agac FOREIGN beklenir): FOREIGN | host bu baslatmadan ONCE olusmus (2026-09-22T10:32:59.7697150+03:00)
+# Bu okuma, ilk surumdeki bir hatayi da yakaladi: [datetime]::MinValue.AddSeconds(-2) tasma -> B8 her zaman UNKNOWN verirdi.
+# Duzeltme: since > MinValue ise zaman kontrolu. Yukaridaki satirlar DUZELTILMIS P0 ile alinmistir.

@@ -1,0 +1,39 @@
+# NEGATIF KONTROL R03: Get-HLServiceIdentity kopyada 'dinleyici varsa EXACT' (R02 anlami) yapildi. Beklenen: kimlik senaryolari FAIL.
+## FOREIGN_LISTENER
+    0,0s [B5] start:WEB
+   10,0s [B5] SONUC: OK
+## WRONG_HOST_PATH
+   40,0s [B5] start:WEB
+   50,0s [B5] SONUC: OK
+## WRONG_PARENT
+   40,0s [B5] start:WEB
+   50,0s [B5] SONUC: OK
+## WRONG_ENTRY
+   40,0s [B5] start:WEB
+   50,0s [B5] SONUC: OK
+## PID_REUSE
+   40,0s [B5] start:WEB
+   50,0s [B5] SONUC: OK
+## R1_FOREIGN
+  900,0s [B5] SONUC: THROW B5: API kapisi PASS degil (operasyonel butce asildi - durum belirsiz) - WEB BASLATILMADI; durdurma ok=True - R1 calistirin
+  940,0s [R1] start:WEB
+  940,0s [R1] SONUC: OK
+FAIL  FOREIGN_LISTENER dogru HTTP kodlu yabanci dinleyici KIMLIKTE reddedildi
+FAIL  FOREIGN_LISTENER WEB baslamadi, basari yazilmadi
+FAIL  FOREIGN_LISTENER yabanci dinleyici suruyor -> sessizlik yok -> acik hata
+FAIL  WRONG_HOST_PATH API reddi: launcher parent beklenen host degil
+FAIL  WRONG_HOST_PATH WEB baslamadi, basari yazilmadi
+FAIL  WRONG_HOST_PATH kendi agaci durduruldu -> R1 dogru agacla DOGRULANDI
+FAIL  WRONG_PARENT    API reddi: node parent beklenen launcher degil
+FAIL  WRONG_PARENT    WEB baslamadi, basari yazilmadi
+FAIL  WRONG_PARENT    kendi agaci durduruldu -> R1 dogru agacla DOGRULANDI
+FAIL  PID_REUSE       API reddi: olusturulma zamani sirasi bozuk
+FAIL  PID_REUSE       WEB baslamadi, basari yazilmadi
+FAIL  PID_REUSE       kendi agaci durduruldu -> R1 dogru agacla DOGRULANDI
+FAIL  WRONG_ENTRY     WEB yanlis entry reddedildi
+FAIL  WRONG_ENTRY     basari yazilmadi
+FAIL  WRONG_ENTRY     R1 DOGRULANDI
+FAIL  R1_FOREIGN      R1 WEB yabanci dinleyiciyi reddetti
+FAIL  R1_FOREIGN      R1 DOGRULANDI yazilmadi
+ASSERT: FAIL | 35/52 | PS 7.6.6
+assert exit=1

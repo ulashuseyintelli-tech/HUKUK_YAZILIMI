@@ -1,0 +1,9 @@
+# CANLI SALT OKUMA PROB (2026-09-22, Pencere B oncesi; gorev/dosya/servis DEGISMEDI)
+# Amac: sahte ortamin sinayamadigi iki gercek kod yolunu P0 tanimlariyla calistirmak.
+# Yontem: P0-tanimlar.ps1 metni pwsh 7'de nokta-kaynakli yuklendi; yalniz Get-HLCode (HTTP GET) ve Get-HLQuiet (surec/dinleyici/gorev OKUMA) cagrildi.
+Get-HLCode /api/auth/me=401 (401 beklenir) | /portal/login=200 (200 beklenir)
+Get-HLQuiet (canli calisirken, 0 OLMAMALI): total=10 dinleyici=2 surec=6 running=2 | 50216:hukuk-task-host.exe,43324:pwsh.exe,62900:node.exe,61948:hukuk-task-host.exe,30476:pwsh.exe,58736:node.exe
+P0 degiskenleri: API=900 WEB=300 STOP=180 b=[]
+# Yorum: gecise ait 6 surec (2 host, 2 Ops launcher pwsh, 2 node cocugu = R26 B1 pid 62900/58736) + 2 dinleyici + 2 Running gorev sayildi;
+# baska oturumlarin araclari (ornegin HY_W4_RELEASE23 node_modules kullanan dogrulayicilar) SAYILMADI.
+# Ek canli bulgu: host eslesme ifadesi '(^|\s)api(\s|$)' canli komut satiri '"C:\Ops\hukuk\bin\hukuk-task-host.exe" api' ile api=1, web=1.

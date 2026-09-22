@@ -1,0 +1,46 @@
+**********************
+Windows PowerShell döküm başlangıcı
+Başlangıç saati: 20260922153919
+Kullanıcı adı: TELLI\ulastelli
+RunAs Kullanıcısı: TELLI\ulastelli
+Yapılandırma adı: 
+Makine: ULASHUSEYINTELL (Microsoft Windows NT 10.0.26200.0)
+Konak uygulama: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.dll
+İşlem Kimliği: 49920
+PSVersion: 7.6.6
+PSEdition: Core
+GitCommitId: 7.6.6
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+P0 TAMAM | tanimlar yuklendi (yan etki yok) | API butce 900s, WEB 300s, durdurma 180s
+P1_READ_ONLY_PREFLIGHT_PASS (not execution authority; runtime state/window must be checked separately)
+B2 PASS | yedek=D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T123919272Z | sddl+xml yazildi | canliya henuz dokunulmadi
+PS C:\Windows\System32> "oturum: Get-R03Block=$([bool](Get-Command Get-R03Block -ErrorAction SilentlyContinue)) b=$b yonetici=$(Test-HLAdmin)"
+oturum: Get-R03Block=True b=D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T123919272Z yonetici=True
+PS C:\Windows\System32> . (Get-R03Block 'B3-durdur-kopyala.ps1'); . (Get-R03Block 'B4-muhur.ps1'); . (Get-R03Block 'B5-baslat.ps1')
+durdurma: ok=True dinleyici=0 surec=0 running=0
+B3 PASS | kurulu start-api=DDCCD091 host=27099BDF | web/readiness/manifest degismedi | ACL esit | gorevler DISABLED
+verify-seal api cikis=0
+verify-seal web cikis=0
+B4 PASS | api --verify-seal=0 | web --verify-seal=0 | servisler henuz BASLAMADI
+api: ok=True kod=401 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=35s butce=900s
+api kimlik imzasi: L50204|N50204@2026-09-22T15:49:54.7965450+03:00|P56996@2026-09-22T15:49:53.0500420+03:00|H67176@2026-09-22T15:49:52.6562560+03:00
+web: ok=True kod=200 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=6s butce=300s
+web kimlik imzasi: L52732|N52732@2026-09-22T15:50:29.0537600+03:00|P52836@2026-09-22T15:50:27.9771770+03:00|H65220@2026-09-22T15:50:27.5501440+03:00
+P1_READ_ONLY_PREFLIGHT_PASS (not execution authority; runtime state/window must be checked separately)
+B5 PASS | API 35s [L50204|N50204@2026-09-22T15:49:54.7965450+03:00|P56996@2026-09-22T15:49:53.0500420+03:00|H67176@2026-09-22T15:49:52.6562560+03:00] | WEB 6s [L52732|N52732@2026-09-22T15:50:29.0537600+03:00|P52836@2026-09-22T15:50:27.9771770+03:00|H65220@2026-09-22T15:50:27.5501440+03:00] | Preflight -Installed PASS
+PS C:\Windows\System32> . (Get-R03Block 'B8-kabul.ps1')
+on: api EXACT [L50204|N50204@2026-09-22T15:49:54.7965450+03:00|P56996@2026-09-22T15:49:53.0500420+03:00|H67176@2026-09-22T15:49:52.6562560+03:00] | web EXACT [L52732|N52732@2026-09-22T15:50:29.0537600+03:00|P52836@2026-09-22T15:50:27.9771770+03:00|H65220@2026-09-22T15:50:27.5501440+03:00]
+saglik: /api/auth/me=401 (401 beklenir) | /portal/login=200 (200 beklenir)
+ikinci baslatma sonrasi: api EXACT [L50204|N50204@2026-09-22T15:49:54.7965450+03:00|P56996@2026-09-22T15:49:53.0500420+03:00|H67176@2026-09-22T15:49:52.6562560+03:00] | web EXACT [L52732|N52732@2026-09-22T15:50:29.0537600+03:00|P52836@2026-09-22T15:50:27.9771770+03:00|H65220@2026-09-22T15:50:27.5501440+03:00]
+B8 PASS | saglik 401/200 | agac B5 imzasiyla birebir; ikinci baslatmada yeni agac yok | API log READY + tek child ve surelerin kaydi owner incelemesinde
+PS C:\Windows\System32> Stop-Transcript
+**********************
+Windows PowerShell döküm sonu
+Bitiş saati: 20260922162910
+**********************

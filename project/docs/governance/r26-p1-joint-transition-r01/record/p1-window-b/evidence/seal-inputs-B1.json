@@ -1,0 +1,33 @@
+{
+  "recordedUtc": "2026-09-22T12:35:51.8991828Z",
+  "closure": {
+    "count": 994,
+    "reparse": "NONE",
+    "manifestSha256": "84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A",
+    "result": "PASS",
+    "bytes": 286559809
+  },
+  "candidateChanged": false,
+  "fullCandidateProductionSeal": "NOT_EXECUTED: staged self path differs; exact installed candidate required",
+  "taskPrincipals": [
+    {
+      "userId": "ulastelli",
+      "name": "HukukPlatform-API",
+      "logonType": "Interactive",
+      "runLevel": "Limited"
+    },
+    {
+      "userId": "ulastelli",
+      "name": "HukukPlatform-WEB",
+      "logonType": "Interactive",
+      "runLevel": "Limited"
+    }
+  ],
+  "acl": {
+    "prohibitedWriteAceCount": 0,
+    "result": "PASS_FOR_INSPECTOR_SID",
+    "protected": true,
+    "inspectorSid": "S-1-5-21-3828948545-3622927028-3332160207-1146"
+  },
+  "kind": "READ_ONLY_INPUT_INSPECTION_NOT_FULL_SEAL"
+}

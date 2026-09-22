@@ -1,0 +1,49 @@
+durdurma: ok=True dinleyici=0 surec=0 running=0 
+verify-seal api cikis=0
+verify-seal web cikis=0
+api: ok=True kod=401 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=40s butce=900s
+api kimlik imzasi: L10003|N10003@2026-09-22T12:00:02.0000000+03:00|P10002@2026-09-22T12:00:01.0000000+03:00|H10001@2026-09-22T12:00:00.0000000+03:00
+web: ok=True kod=200 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=10s butce=300s
+web kimlik imzasi: L25003|N25003@2026-09-22T12:00:42.0000000+03:00|P25002@2026-09-22T12:00:41.0000000+03:00|H25001@2026-09-22T12:00:40.0000000+03:00
+    0,0s [P0] === P0-tanimlar
+    0,0s [P0] OUT: P0 TAMAM | tanimlar yuklendi (yan etki yok) | API butce 900s, WEB 300s, durdurma 180s
+    0,0s [P0] SONUC: OK
+    0,0s [B2] === B2-yedek
+    0,0s [B2] OUT: STUB PREFLIGHT (Installed=False) - sahte, salt sinama
+    0,0s [B2] mkdir:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\start-api.ps1
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\hukuk-task-host.exe
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\p1-manifest.json
+    0,0s [B2] OUT: B2 PASS | yedek=D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z | sddl+xml yazildi | canliya henuz dokunulmadi
+    0,0s [B2] SONUC: OK
+    0,0s [B3] === B3-durdur-kopyala
+    0,0s [B3] disable:WEB
+    0,0s [B3] disable:API
+    0,0s [B3] stop:WEB
+    0,0s [B3] stop:API
+    0,0s [B3] copy:C:\Ops\hukuk\bin\start-api.ps1
+    0,0s [B3] copy:C:\Ops\hukuk\bin\hukuk-task-host.exe
+    0,0s [B3] OUT: B3 PASS | kurulu start-api=DDCCD091 host=27099BDF | web/readiness/manifest degismedi | ACL esit | gorevler DISABLED
+    0,0s [B3] SONUC: OK
+    0,0s [B4] === B4-muhur
+    0,0s [B4] seal:api pair=27099BDF
+    0,0s [B4] seal:web pair=27099BDF
+    0,0s [B4] OUT: B4 PASS | api --verify-seal=0 | web --verify-seal=0 | servisler henuz BASLAMADI
+    0,0s [B4] SONUC: OK
+    0,0s [B5] === B5-baslat
+    0,0s [B5] enable:API
+    0,0s [B5] start:API
+   40,0s [B5] enable:WEB
+   40,0s [B5] start:WEB
+   50,0s [B5] OUT: STUB PREFLIGHT (Installed=True) - sahte, salt sinama
+   50,0s [B5] OUT: B5 PASS | API 40s [L10003|N10003@2026-09-22T12:00:02.0000000+03:00|P10002@2026-09-22T12:00:01.0000000+03:00|H10001@2026-09-22T12:00:00.0000000+03:00] | WEB 10s [L25003|N25003@2026-09-22T12:00:42.0000000+03:00|P25002@2026-09-22T12:00:41.0000000+03:00|H25001@2026-09-22T12:00:40.0000000+03:00] | Preflight -Installed PASS
+   50,0s [B5] SONUC: OK
+   50,0s [B8] === B8-kabul
+   50,0s [B8] OUT: on: api EXACT [L10003|N10003@2026-09-22T12:00:02.0000000+03:00|P10002@2026-09-22T12:00:01.0000000+03:00|H10001@2026-09-22T12:00:00.0000000+03:00] | web EXACT [L25003|N25003@2026-09-22T12:00:42.0000000+03:00|P25002@2026-09-22T12:00:41.0000000+03:00|H25001@2026-09-22T12:00:40.0000000+03:00]
+   50,0s [B8] OUT: saglik: /api/auth/me=401 (401 beklenir) | /portal/login=200 (200 beklenir)
+   50,0s [B8] start:API
+   50,0s [B8] start:WEB
+   70,0s [B8] OUT: ikinci baslatma sonrasi: api EXACT [L10003|N10003@2026-09-22T12:00:02.0000000+03:00|P10002@2026-09-22T12:00:01.0000000+03:00|H10001@2026-09-22T12:00:00.0000000+03:00] | web EXACT [L25003|N25003@2026-09-22T12:00:42.0000000+03:00|P25002@2026-09-22T12:00:41.0000000+03:00|H25001@2026-09-22T12:00:40.0000000+03:00]
+   70,0s [B8] OUT: B8 PASS | saglik 401/200 | agac B5 imzasiyla birebir; ikinci baslatmada yeni agac yok | API log READY + tek child ve surelerin kaydi owner incelemesinde
+   70,0s [B8] SONUC: OK
+FINAL: api=DDCCD091 host=27099BDF API(en=True,run=True) WEB(en=True,run=True)

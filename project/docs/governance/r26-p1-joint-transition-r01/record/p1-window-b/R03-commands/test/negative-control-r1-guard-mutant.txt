@@ -1,0 +1,7 @@
+# NEGATIF KONTROL (R02'den, R03 koduyla yeniden): R1 kopyasindan 'if(-not $ra.ok)' satiri SILINDI. Beklenen: dogrulayici FAIL.
+  900,0s [R1] start:API
+1.800,0s [R1] start:WEB
+1.810,0s [R1] SONUC: OK
+FAIL  R1_API_TIMEOUT  R1 API kapisi yok -> WEB BASLAMADI, DOGRULANDI yazilmadi
+ASSERT: FAIL | 51/52 | PS 7.6.6
+assert exit=1
