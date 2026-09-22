@@ -15,7 +15,7 @@
 | G-6 artefakt bağı | 8/8 dosya EŞİT (`distBinding.ok = true`) |
 | §12 araç SHA'ları | 9/9 EŞİT (koşum öncesi blok tarafından ve CLIENT tarafından ayrıca ölçüldü) |
 | Kanıt dizini | `Documents\CLIENT-EVIDENCE-20260911\c123-live-20260922-225840` |
-| GO ref | Yalnız sha256 olarak kayıtlı (`goref-consumed.json`, `literalWritten=false`). Literal repoya **kopyalanmadı**; `record/evidence/` kopyalarında maskelendi |
+| GO ref | `goref-consumed.json` içinde yalnız sha256 olarak kayıtlı. Oradaki `literalWritten=false` beyanı **yalnız o dosyayı** kapsar — paket kendi çıktılarına literali yazar, bkz. §11. Repoya yalnız maskelenmiş türevler kondu |
 
 ## 2. Owner kararları ve önkoşul — ayrı kayıt
 
@@ -79,8 +79,19 @@ olarak kayıtlıdır ve `c123-result.json` `verdict: PASS` ile tutarlıdır. Kus
 | `c123-state.json` | `64899B8F126942629C6283A77CB78AE9285067F6D0CD7077DBCC6B8DFCE4A640` |
 | `goref-consumed.json` | `A26E8017FAAA29F805DBBF347AF7D3F9452FCC4213D045056A4F9E7810148D53` |
 
-`record/evidence/` altındaki kopyalar **maskelenmiş** biçimdir (GO ref literali çıkarıldı, satır sonları normalize edildi);
-bayt-birebir kopyalar yalnız kanıt dizinindedir. `c123-run.log` repoya kopyalanmadı; sha256'sı yukarıdadır.
+`record/evidence/` altındaki kopyalar **türevdir** (GO ref literali maskelendi, satır sonları LF'e normalize edildi,
+BOM kaldırıldı); bu yüzden türev hash'leri kaynak hash'lerinden zorunlu olarak farklıdır. Ham kanıtlar repo dışındaki
+koşum dizininde **yerinde korunur**; hiçbiri değiştirilmedi veya silinmedi. `c123-run.log` repoya kopyalanmadı;
+sha256'sı yukarıdadır.
+
+| Katman | Nerede |
+|---|---|
+| Kaynak (bayt-birebir) hash'ler | Bu tablo (§8) |
+| Türev (repo kopyaları) hash'leri | `record/evidence/DERIVED-SHA256-MANIFEST.txt` |
+| Hangi alanın maskelendiği | `record/evidence/MASKING-NOTES.md` |
+
+Türev dosya adları kaynaktan ayrıldı: `c123-result.redacted.json`, `c123-state.redacted.json`,
+`SOURCE-SHA256-MANIFEST.copy.txt` (içindeki değerler **kaynak** dosyalara aittir).
 
 ## 9. Pencere ve roller
 
@@ -97,7 +108,7 @@ Doğrulayıcı: `Avukat personel analiz dosyası` (OFFICE a8d9121a), owner'ın o
 Sonuç: **PASS**.
 
 **(a) Dosya — CLIENT kanıtından doğrulandı**
-- 4/4 dosya `SHA256-MANIFEST.txt` ile birebir eşit, dizinde fazla dosya yok.
+- Kaynak dizindeki 4/4 dosya, koşumun ürettiği `SHA256-MANIFEST.txt` ile birebir eşit; dizinde fazla dosya yok.
 - `goref-consumed.json`: `exitCode 0`, `literalWritten=false`, main `c73048ba`.
 - `c123-result.json`: `verdict PASS 33/33`, fail 0, ölçülemeyen 0; `distBinding` 8/8 true; kapanış ve izolasyon
   alanları CLIENT'ın bildirdiği sayılarla eşit.
@@ -114,12 +125,44 @@ doğrulandı, yazma 0): 11/11 PASS**
   tutarlı; bu aktörlerin yabancı tenant'ta audit izi 0. Toplam tenant 28 (27 + 1 sentetik).
 - Kanıt: `HY_C123_OFFICE_VERIFY\c123-office-readonly-verify-87220c29.json` — tam sha256 CLIENT tarafından bağımsız
   ölçüldü: `64BA44F9B1C54F5671E2E72E4954DE03AB391FE33E2F02E6326FE3893F081DFF`; betik `c123verify.office.js`:
-  `19886A483D20FE12115C86A054F72E5617D43E363A2FBABB7196EA262B7577FC`. GO ref literali hiçbir dosyaya yazılmadı.
+  `19886A483D20FE12115C86A054F72E5617D43E363A2FBABB7196EA262B7577FC`. Doğrulayıcı kendi ürettiği hiçbir dosyaya GO ref literalini yazmadı (bu ifade doğrulayıcının dosyalarına özgüdür; paket çıktıları için §11).
 
 **Doğrulayıcının bulgusu — GO ref literali iki dosyadaydı:** `c123-result.json` yanında **`c123-state.json`** de
-`environment.goRef` alanında literali açık taşıyordu. Repodaki `record/evidence/` kopyalarında **her iki dosya da**
-maskelendi; maskeleme sonrası özyinelemeli tarama ile 4/4 dosya kontrol edildi ve sızıntı 0 ölçüldü. Bayt-birebir
-dosyalar yalnız repo dışındaki kanıt dizinindedir. Bu, paketin kendi çıktı biçiminden gelen bir eksiktir ve
-`office-live-acceptance-c123-r01` paketinin sonraki revizyonunda giderilmelidir (açık kalem).
+`environment.goRef` alanında literali açık taşıyordu. Repodaki `record/evidence/` türevlerinde **her iki dosya da**
+maskelendi; ayrıntı ve kapsam §11 ile `MASKING-NOTES.md` içindedir.
 
 **Kapsam notu:** C123 tek başına OFFICE finali sayılmaz; hizmet kabulü 0/8 ayrı owner kararı olarak durur.
+
+## 11. `literalWritten=false` beyanının kapsamı — paket geneli için GEÇERLİ DEĞİL
+
+`goref-consumed.json` dosyasını koşum bloğu (`c123-owner-block.ps1`, CLIENT) yazar ve `literalWritten: false` alanı
+**yalnız o dosyayı** anlatır: blok GO ref'i hiçbir yere literal olarak yazmaz, yalnız sha256'sını kaydeder.
+
+Paketin kendisi bunu kapsamaz. Kaynak ölçümü:
+- `c-lib.js:116` — ortam nesnesi `goRef` alanını **literal** taşır; bu nesne `c123-result.json` ve `c123-state.json`
+  dosyalarına yazılır.
+- `c-run.js:41` — `note` alanına `CANLI KOSUM · GO <literal>` yazar.
+
+Bu nedenle **"bu koşumda GO ref literali hiçbir dosyaya yazılmadı" denemez.** Doğru ifade: literal, repo dışındaki iki
+ham kanıt dosyasında bulunur; repoya yalnız maskelenmiş türevler konmuştur (§8, `MASKING-NOTES.md`). Paketin çıktı
+biçimindeki bu eksik, `office-live-acceptance-c123-r01` paketinin sonraki revizyonu için **açık kalemdir**.
+
+**Bir kerelik ifşa:** Bağımsız doğrulayıcı, dosya doğrulaması sırasında `c123-state.json` dosyasını doğrudan okurken
+literal değer bir kez kendi araç çıktısında göründü. Doğrulayıcı değeri tekrarlamadığını ve hiçbir dosyaya ya da
+belleğe yazmadığını bildirdi. Bu kayıt, geçmiş araç çıktısının silindiğini **iddia etmez**; yalnız ifşanın olduğunu,
+kapsamının tek bir okuma olduğunu ve değerin burada tekrarlanmadığını tespit eder.
+
+## 12. "R25B dist kökü" ifadesinin netleştirilmesi — dizin adı ≠ çalışan sürüm
+
+`c-dist-pins.json` içindeki `measuredFrom` alanı pinlerin **2026-09-21'de R25B dist'inden** ölçüldüğünü yazar; kök
+dizin adı `HY_W4_RELEASE23`'tür. Bu **tarihsel bir dizin adıdır** ve çalışan sürümü göstermez.
+
+| Kalem | Değer |
+|---|---|
+| Kök dizin (tarihsel ad) | `C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api` |
+| Bu koşum anında çalışan sürüm | **R26** — dist tam ağaç digest'i `A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0` (3867 dosya), CLIENT tarafından ölçüldü |
+| Pinlerin ölçüldüğü tarihsel sürüm | R25B — dist digest `1524EDC1…4D4E` |
+| Pin sonucu | G-6 artefakt bağı **8/8 EŞİT**: pinlenen sekiz derlenmiş dosya R25B'den R26'ya **değişmeden** geldi |
+
+Yani "R25B dist kökü" ifadesi yalnız pinlerin kökenini anlatır. Koşum R26 üzerinde yapılmıştır ve C1/C2/C3 kodunun
+canlı derlemede bulunduğu iddiası, bu koşum anında ölçülen 8/8 dosya eşitliğine dayanır.
