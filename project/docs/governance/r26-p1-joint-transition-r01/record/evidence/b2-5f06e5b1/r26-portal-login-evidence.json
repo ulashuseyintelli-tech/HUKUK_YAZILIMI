@@ -1,0 +1,78 @@
+{
+ "record": "R26-LIVE-PORTAL-LOGIN",
+ "runId": "5f06e5b1",
+ "apiBase": "http://127.0.0.1:8080/api",
+ "webBases": [
+  "http://localhost:3002",
+  "http://ulashuseyintelli:3002"
+ ],
+ "isolationBefore": {
+  "tenants": 23,
+  "digest": "6c5f151635614bfc"
+ },
+ "closure": {
+  "ok": true,
+  "tenants": [
+   {
+    "slug": "ah-5f06e5b1",
+    "activeUsers": 0,
+    "casesClosedNow": 1,
+    "activeCases": 0,
+    "ok": true
+   },
+   {
+    "slug": "ah-5f06e5b1-x",
+    "activeUsers": 0,
+    "casesClosedNow": 0,
+    "activeCases": 0,
+    "ok": true
+   }
+  ],
+  "portalActive": 0
+ },
+ "closureLogin": 401,
+ "closureMe": 401,
+ "closurePortalLogin": 401,
+ "isolationAfter": {
+  "tenants": 23,
+  "digest": "6c5f151635614bfc"
+ },
+ "fatal": null,
+ "pass": 6,
+ "fail": 0,
+ "unmeasured": 0,
+ "blocked": [],
+ "provaCut": [],
+ "results": [
+  {
+   "id": "PL-0",
+   "verdict": "PASS",
+   "observed": "create-user → 201"
+  },
+  {
+   "id": "PL-1",
+   "verdict": "PASS",
+   "observed": "giriş 201 @localhost:3002 · token=true · giriş sonrası=/portal · /api/portal/cases 200 @localhost:3002 · son sayfa=/portal/cases"
+  },
+  {
+   "id": "PL-2",
+   "verdict": "PASS",
+   "observed": "giriş 201 @ulashuseyintelli:3002 · token=true · giriş sonrası=/portal · /api/portal/cases 200 @ulashuseyintelli:3002 · son sayfa=/portal/cases"
+  },
+  {
+   "id": "PL-GUARD",
+   "verdict": "PASS",
+   "observed": "engellenen 0"
+  },
+  {
+   "id": "PL-CLOSE",
+   "verdict": "PASS",
+   "observed": "closure.ok=true staffLogin=401 me=401 portalLogin=401"
+  },
+  {
+   "id": "PL-ISO",
+   "verdict": "PASS",
+   "observed": "önce=6c5f151635614bfc/23 sonra=6c5f151635614bfc/23"
+  }
+ ]
+}

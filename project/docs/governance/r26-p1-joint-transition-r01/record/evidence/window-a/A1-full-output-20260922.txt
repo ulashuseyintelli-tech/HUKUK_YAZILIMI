@@ -1,0 +1,34 @@
+Captured from the single A1 execution tool output; no rerun.
+Execution token: ELEVATED=False. Overall process exit code: 0.
+
+23:04:22Z  === SELFTEST (canliya dokunmaz: durdurma/takas/kopyalama/yazma YOK)
+23:04:22Z  ad cozumleme: Get-R26FileSha256 -> Function | fonksiyon=True
+23:04:22Z  alias golgesi=YOK
+23:04:22Z  hash yardimcisi Get-FileHash ile ayni=True | baslatici uclusu=P1-ONCESI (kabul: P1-ONCESI | P1-SONRASI)
+23:04:22Z  .env (yalniz sha): pin esit=True
+23:04:24Z  aday API digest=A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0 | pin esit=True
+23:04:24Z  aday API paket (2 dosya)=D0AFE2E995675F9776A96304BE155962ACF8336D16500833A4E07BB8A28427FF | pin esit=True
+23:04:27Z  canli API digest=1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E | taban esit=True
+23:04:27Z  canli API paket (2 dosya)=9F58C98545056B59963111DE603223F8896C4EEB9E4543898BA7F9C561A2FB2F | pin esit=True
+23:04:28Z  aday WEB .next digest=C17E7B132FB7DED65AD0788024AA478F0949AF0D5D9045E8F47779A31A615326 | pin esit=True | BUILD_ID=5waeMoFGGMTLAYmn9oJvW | cfg pin esit=True
+23:04:28Z  canli WEB .next digest=F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1 | taban esit=True | BUILD_ID=dOiGPj2M0Abls0kCibY4r | cfg taban esit=True
+23:04:28Z  canli .next ACL yalniz kalitim=True
+23:04:28Z  Http: api /api/auth/me=401 | web /portal/login=200 | web /api/auth/me (bugun rewrite YOK, 404 beklenir)=404
+23:04:29Z  dinleyici: :8080=33248 :3002=55380
+23:04:29Z  robocopy=True
+23:04:29Z  fonksiyon kumesi tam=True
+23:04:29Z  === SELFTEST SONUC: PASS
+SelfTest cikis=0
+SELFTEST: paket=7142C952F2D55EB5 esit | playwright=VAR | node=C:\Program Files\Volta\node.exe | edge=VAR | main=3e61ffe8
+SELFTEST: canli API=1524EDC15C636B39 WEB=F064DC95CBCCA621 BUILD_ID=dOiGPj2M0Abls0kCibY4r | R26 canlida=False (yayin ONCESI False beklenir)
+SELFTEST: :8080=1 :3002=1 yabanci yurutucu=0 db kimligi hukuk_db=True
+SELFTEST PASS (yazma YOK, GO ref SORULMADI)
+
+CODEX/P1 TEYIT — task 01a07087-23bd-7e30-8100-fb455f1bfbf6:
+A1 completed. No ongoing command modifies live files/services or main in this
+session. A2 was not started. P1 remains on hold until PENCERE KAPANDI.
+A0 was not rerun. P1 candidates were not changed.
+Note: the authorized B2 SelfTest executes git fetch origin internally; this is
+not a main checkout update. No separate fetch/sync was run by P1.
+Delivery to OFFICE a8d9121a: NOT SENT; Claude session messaging tool unavailable
+in this Codex session. This file is the complete owner-forwardable output.

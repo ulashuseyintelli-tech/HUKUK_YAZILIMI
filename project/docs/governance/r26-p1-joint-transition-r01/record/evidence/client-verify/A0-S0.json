@@ -1,0 +1,102 @@
+{
+ "record": "R26-WINDOW-A-CLIENT-VERIFY",
+ "stage": "S0",
+ "expectTuple": "P1-ONCESI",
+ "expectApp": "R25B",
+ "tsUtc": "2026-09-21T22:57:16.182555Z",
+ "verdict": "PASS",
+ "failed": [],
+ "gate": {
+  "gateFileSha256": "AA6B9D9693095A86D90246F81441820E5FBC0915A4295388C1BF0D6480D44622",
+  "gateVerdict": "PASS",
+  "gateStage": "S0",
+  "gateScriptSha256": "214465BBF85400B73BF7928036B1B3BF79D439249321A2C30C14C976A2155200",
+  "stageMatch": true,
+  "scriptPinMatch": true,
+  "gateTuple": "P1-ONCESI",
+  "gateApp": "R25B",
+  "gateChecks": 16,
+  "gateFailed": []
+ },
+ "rows": [
+  {
+   "id": "B-1 start-api.ps1",
+   "ok": true,
+   "actual": "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3",
+   "expected": "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3"
+  },
+  {
+   "id": "B-2 hukuk-task-host.exe",
+   "ok": true,
+   "actual": "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627",
+   "expected": "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627"
+  },
+  {
+   "id": "B-3 start-web.ps1",
+   "ok": true,
+   "actual": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0",
+   "expected": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0"
+  },
+  {
+   "id": "B-sabit db-readiness.js",
+   "ok": true,
+   "actual": "AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9",
+   "expected": "AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9"
+  },
+  {
+   "id": "B-sabit pwsh-file-manifest.json",
+   "ok": true,
+   "actual": "84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A",
+   "expected": "84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A"
+  },
+  {
+   "id": "U-1 API dist",
+   "ok": true,
+   "actual": "1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E (3867 dosya)",
+   "expected": "1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E"
+  },
+  {
+   "id": "U-2 WEB .next",
+   "ok": true,
+   "actual": "F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1 (505 dosya)",
+   "expected": "F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1"
+  },
+  {
+   "id": "U-3 BUILD_ID",
+   "ok": true,
+   "actual": "dOiGPj2M0Abls0kCibY4r",
+   "expected": "dOiGPj2M0Abls0kCibY4r"
+  },
+  {
+   "id": "U-4 next.config.js",
+   "ok": true,
+   "actual": "4AD4915C0A741AF609CCD241DFE08EF2C76A17E2175E3BD1FB7AE925128EF750",
+   "expected": "4AD4915C0A741AF609CCD241DFE08EF2C76A17E2175E3BD1FB7AE925128EF750"
+  },
+  {
+   "id": "E-1 .env sha (icerik okunmadi)",
+   "ok": true,
+   "actual": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+   "expected": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC"
+  },
+  {
+   "id": "G-1 gorevler (etkin, Running)",
+   "ok": true,
+   "actual": [
+    "HukukPlatform-API|Running|C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe api",
+    "HukukPlatform-Web|Running|C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe web"
+   ],
+   "expected": "iki gorev etkin; eylem hukuk-task-host.exe api/web"
+  },
+  {
+   "id": "L-1 dinleyiciler (tek, kok RELEASE23)",
+   "ok": true,
+   "actual": [
+    "8080|1|True",
+    "3002|1|True"
+   ],
+   "expected": "8080 ve 3002 tek dinleyici, kok RELEASE23"
+  }
+ ],
+ "envContentRead": false
+}

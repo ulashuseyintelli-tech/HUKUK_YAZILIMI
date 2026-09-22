@@ -1,0 +1,44 @@
+{
+ "record": "R26-B2-CLOSURE-VERIFY",
+ "checks": [
+  {
+   "id": "V0-DAR-KABUL",
+   "verdict": "PASS",
+   "observed": "sonuc=PASS engellenen=0 satir=DK-1:PASS,DK-2:PASS,DK-3:PASS,DK-4:PASS,DK-5:PASS,DK-6:PASS"
+  },
+  {
+   "id": "V1-EVIDENCE",
+   "verdict": "PASS",
+   "observed": "portalLogin=401 staffLogin=401 me=401 satır=6 pass=6 fail=0 unmeasured=0 fatal=- PASS-olmayan=[] eksik=[] runId-eşit=true"
+  },
+  {
+   "id": "V2-MANIFEST",
+   "verdict": "PASS",
+   "observed": "satır=7 uyuşmayan=[] manifest-dışı=[]"
+  },
+  {
+   "id": "V5-GOREF",
+   "verdict": "PASS",
+   "observed": "literal içeren dosya=[] literalWritten=false sha-biçimi=true çıkış=0"
+  },
+  {
+   "id": "V3-ACCESS-target",
+   "verdict": "PASS",
+   "observed": "db=hukuk_db slug=ah-5f06e5b1 (beklenen ah-5f06e5b1) kullanıcı aktif/toplam=0/9 ACTIVE case=0 aktif portal=0"
+  },
+  {
+   "id": "V3-ACCESS-foreign",
+   "verdict": "PASS",
+   "observed": "db=hukuk_db slug=ah-5f06e5b1-x (beklenen ah-5f06e5b1-x) kullanıcı aktif/toplam=0/0 ACTIVE case=0 aktif portal=0"
+  },
+  {
+   "id": "V4-ISOLATION",
+   "verdict": "PASS",
+   "observed": "şimdi tenants=23 digest=6c5f151635614bfc · koşum-öncesi tenants=23 digest=6c5f151635614bfc (fark gerçek kullanımdan da olabilir → PASS sayılmaz, incelenir)"
+  }
+ ],
+ "verdict": "PASS",
+ "runId": "5f06e5b1",
+ "db": "hukuk_db",
+ "atUtc": "2026-09-22T08:19:03.634Z"
+}
