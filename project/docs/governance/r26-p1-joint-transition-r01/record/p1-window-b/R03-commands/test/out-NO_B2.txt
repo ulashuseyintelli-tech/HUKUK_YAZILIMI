@@ -1,0 +1,8 @@
+    0,0s [P0] === P0-tanimlar
+    0,0s [P0] OUT: P0 TAMAM | tanimlar yuklendi (yan etki yok) | API butce 900s, WEB 300s, durdurma 180s
+    0,0s [P0] SONUC: OK
+    0,0s [B3] === B3-durdur-kopyala
+    0,0s [B3] SONUC: THROW B3: dogrulanmis yedek ($b) yok - DURDURMA YAPILMADI - DUR
+    0,0s [R1] === R1-geri-yukle
+    0,0s [R1] SONUC: THROW R1: yedek ($b) yok - DUR, bildir
+FINAL: api=CC634BBF host=691BC146 API(en=True,run=True) WEB(en=True,run=True)

@@ -1,0 +1,39 @@
+# B8 LOG INCELEMESI (OFFICE a8d9121a, salt okuma; yeni baslatma YOK) - C:\Ops\hukuk\logs\{api,web}, 2026-09-22 15:49 (yerel, UTC+3) sonrasi
+## api\host-api.log
+2026-09-22 15:49:50.086 [host] stop-signal - exiting; job kill-on-close reaps child tree
+2026-09-22 15:49:52.674 [host] begin mode=api
+2026-09-22 15:49:52.676 [host] profile=PRF-1c343861-7177-4799-be95-0c1fb72dd212 generation=R23
+2026-09-22 15:49:52.684 [host] launcher pin ok DDCCD09157E0AAF209AB38316A33815A0298FFACBC9006ED62F35F137F86219C
+2026-09-22 15:49:53.041 [host] pwsh ACL ok + FULL CLOSURE ok 994/994 bytes=286559809 ms=354
+2026-09-22 15:49:53.043 [host] job kill-on-close armed (pre-spawn)
+2026-09-22 15:49:53.055 [host] child created SUSPENDED pid=56996
+2026-09-22 15:49:53.055 [host] child bound to job (verified in-job) BEFORE resume - atomic
+2026-09-22 15:49:53.056 [host] child resumed pid=56996
+## api\launcher.log
+2026-09-22 15:49:53.404 [api] launcher begin (R02)
+2026-09-22 15:49:54.310 [api] db identity ok host=127.0.0.1 port=5432 db=hukuk_db cred=True
+2026-09-22 15:49:54.773 [api] db probe 1/24: exit=0 token=[REDACTED]
+2026-09-22 15:49:54.783 [api] db ready (application-credential SELECT 1)
+2026-09-22 15:49:54.806 [api] child spawned pid=50204 entry=C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\dist\apps\api\src\main.js out=api-out.20260922-154954.log
+2026-09-22 15:49:54.813 [api] parent-watchdog armed (host pid=67176, poll)
+2026-09-22 15:50:25.907 [api] STARTED port=8080 pid=50204
+## web\host-web.log
+2026-09-22 15:49:50.085 [host] stop-signal - exiting; job kill-on-close reaps child tree
+2026-09-22 15:50:27.569 [host] begin mode=web
+2026-09-22 15:50:27.571 [host] profile=PRF-1c343861-7177-4799-be95-0c1fb72dd212 generation=R23
+2026-09-22 15:50:27.580 [host] launcher pin ok F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0
+2026-09-22 15:50:27.968 [host] pwsh ACL ok + FULL CLOSURE ok 994/994 bytes=286559809 ms=385
+2026-09-22 15:50:27.969 [host] job kill-on-close armed (pre-spawn)
+2026-09-22 15:50:27.980 [host] child created SUSPENDED pid=52836
+2026-09-22 15:50:27.981 [host] child bound to job (verified in-job) BEFORE resume - atomic
+2026-09-22 15:50:27.981 [host] child resumed pid=52836
+## web\launcher.log
+2026-09-22 15:50:28.213 [web] launcher begin (R02)
+2026-09-22 15:50:29.063 [web] child spawned pid=52732 entry=C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\web\node_modules\next\dist\bin\next out=web-out.20260922-155029.log
+2026-09-22 15:50:29.073 [web] parent-watchdog armed (host pid=65220, poll)
+2026-09-22 15:50:32.577 [web] STARTED port=3002 pid=52732
+## SONUC
+API: host begin 1, launcher pin DDCCD091 ok, closure 994/994 ok, child job-bound atomik; launcher begin 1, db probe 1/24 exit=0 (retry yok), TEK child pid=50204 (R23 entry), STARTED 8080; hata/pin/closure/bind/retry/conflict = 0.
+WEB: host begin 1, launcher pin F39F7A54 ok, closure 994/994 ok; launcher begin 1, TEK child pid=52732, STARTED 3002; hata = 0.
+B8 ikinci baslatma (15:5x): 15:50:32 sonrasi yeni launcher/host begin satiri YOK (IgnoreNew; B8 imza karsilastirmasiyla tutarli).
+Sureler: API host begin 15:49:52.674 -> STARTED 15:50:25.907 = ~33 s (B5 kapi olcumu 35 s). WEB host begin 15:50:27.569 -> STARTED 15:50:32.577 = ~5 s (B5 kapi olcumu 6 s). Eski agac stop-signal 15:49:50.085; API kesintisi ~36 s, WEB ~43 s. Bu olcumler yeni bir SLA DEGILDIR.

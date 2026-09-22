@@ -1,0 +1,12 @@
+P1 PENCERE B - ROL VE YURUTME KAYDI (OFFICE a8d9121a)
+2026-09-22 owner talimati: Pencere B'nin TEK uygulama yurutucusu OFFICE a8d9121a. Codex/P1 = inceleyici (R03 UYGUN, SHA256SUMS 8417DF3AD563A1C1192A6438D1D73D670CFF7B24EAA65D393C93A7AF9BC2FE73, 41/41). CLIENT 22a15dd1 = bagimsiz dogrulayici (B6/B7).
+Onceki "owner calistirir" tercihi owner tarafindan degistirildi.
+
+Ajan yurutme olcumu (12:3xZ): arac surecleri pwsh 7.6.6 / Windows PowerShell, kullanici TELLI\ulastelli, yonetici=False, zorunlu butunluk duzeyi Orta (S-1-16-8192).
+Sonuc:
+- B0 (owner kosmustu), B1 (ajan kosdu, PASS), B6, B7 normal yetki -> AJAN yurutur.
+- P0+B2..B5, B8 ve gerekirse R1: yonetici pwsh 7 + TEK surekli oturum gerektirir (B2 Test-HLAdmin kapisi; Disable/Stop-ScheduledTask; C:\Ops\hukuk\bin yazma; $b/$seal/$IDN degiskenleri). Ajan araci her cagrida yeni, yukseltilmemis surec acar ve oturum surekliligi yoktur -> bu adimlar icin owner'in YONETICI pwsh 7 penceresi acmasi gerekir. UAC atlatma/bypass YOK.
+- Owner yukseltilmis pencerede yalniz tek satirlik yukleyicileri calistirir; yukleyici onayli R03 blok dosyalarini SHA256SUMS'a karsi dogrular ve BAYT-OZDES iceriklerini nokta-kaynakli calistirir; cikti Start-Transcript ile bu dizine yazilir, ajan dogrudan okur (elle tasima yok).
+
+B0: gate-S1-B0.json C20B7568A5AE3681B802A49DBB4C2A4B634FD209DDA38CA95A0418E54EE3905D PASS 16/16
+B1: seal-inputs-B1.json 3968E292F6FB818EC2DC9D5B015FE9538EBC57976FD1A06CD2232656E933D53B + Preflight PASS + pinler esit

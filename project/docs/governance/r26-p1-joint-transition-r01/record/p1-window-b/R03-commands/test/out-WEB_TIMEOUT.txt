@@ -1,0 +1,66 @@
+durdurma: ok=True dinleyici=0 surec=0 running=0 
+verify-seal api cikis=0
+verify-seal web cikis=0
+api: ok=True kod=401 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=40s butce=900s
+api kimlik imzasi: L10003|N10003@2026-09-22T12:00:02.0000000+03:00|P10002@2026-09-22T12:00:01.0000000+03:00|H10001@2026-09-22T12:00:00.0000000+03:00
+web: ok=False kod=-1 kimlik=NONE (dinleyici yok) sure=300s butce=300s | OPERASYONEL BUTCE ASILDI - durum belirsiz (urun arizasi iddiasi DEGIL)
+durdurma: ok=True dinleyici=0 surec=0 running=0 
+durdurma: ok=True dinleyici=0 surec=0 running=0 
+verify-seal api cikis=0
+verify-seal web cikis=0
+api: ok=True kod=401 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=40s butce=900s
+api kimlik imzasi: L30003|N30003@2026-09-22T12:05:42.0000000+03:00|P30002@2026-09-22T12:05:41.0000000+03:00|H30001@2026-09-22T12:05:40.0000000+03:00
+web: ok=True kod=200 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=10s butce=300s
+web kimlik imzasi: L45003|N45003@2026-09-22T12:06:22.0000000+03:00|P45002@2026-09-22T12:06:21.0000000+03:00|H45001@2026-09-22T12:06:20.0000000+03:00
+    0,0s [P0] === P0-tanimlar
+    0,0s [P0] OUT: P0 TAMAM | tanimlar yuklendi (yan etki yok) | API butce 900s, WEB 300s, durdurma 180s
+    0,0s [P0] SONUC: OK
+    0,0s [B2] === B2-yedek
+    0,0s [B2] OUT: STUB PREFLIGHT (Installed=False) - sahte, salt sinama
+    0,0s [B2] mkdir:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\start-api.ps1
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\hukuk-task-host.exe
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\p1-manifest.json
+    0,0s [B2] OUT: B2 PASS | yedek=D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z | sddl+xml yazildi | canliya henuz dokunulmadi
+    0,0s [B2] SONUC: OK
+    0,0s [B3] === B3-durdur-kopyala
+    0,0s [B3] disable:WEB
+    0,0s [B3] disable:API
+    0,0s [B3] stop:WEB
+    0,0s [B3] stop:API
+    0,0s [B3] copy:C:\Ops\hukuk\bin\start-api.ps1
+    0,0s [B3] copy:C:\Ops\hukuk\bin\hukuk-task-host.exe
+    0,0s [B3] OUT: B3 PASS | kurulu start-api=DDCCD091 host=27099BDF | web/readiness/manifest degismedi | ACL esit | gorevler DISABLED
+    0,0s [B3] SONUC: OK
+    0,0s [B4] === B4-muhur
+    0,0s [B4] seal:api pair=27099BDF
+    0,0s [B4] seal:web pair=27099BDF
+    0,0s [B4] OUT: B4 PASS | api --verify-seal=0 | web --verify-seal=0 | servisler henuz BASLAMADI
+    0,0s [B4] SONUC: OK
+    0,0s [B5] === B5-baslat
+    0,0s [B5] enable:API
+    0,0s [B5] start:API
+   40,0s [B5] enable:WEB
+   40,0s [B5] start:WEB
+  340,0s [B5] disable:WEB
+  340,0s [B5] disable:API
+  340,0s [B5] stop:WEB
+  340,0s [B5] stop:API
+  340,0s [B5] SONUC: THROW B5: WEB kapisi PASS degil (operasyonel butce asildi - durum belirsiz) - BASARI YAZILMADI; durdurma ok=True - R1 calistirin
+  340,0s [R1] === R1-geri-yukle
+  340,0s [R1] disable:WEB
+  340,0s [R1] disable:API
+  340,0s [R1] stop:WEB
+  340,0s [R1] stop:API
+  340,0s [R1] copy:C:\Ops\hukuk\bin\start-api.ps1
+  340,0s [R1] copy:C:\Ops\hukuk\bin\hukuk-task-host.exe
+  340,0s [R1] seal:api pair=691BC146
+  340,0s [R1] seal:web pair=691BC146
+  340,0s [R1] enable:API
+  340,0s [R1] start:API
+  380,0s [R1] enable:WEB
+  380,0s [R1] start:WEB
+  390,0s [R1] gate -NoProfile -ExecutionPolicy Bypass -File D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\r26-p1-joint-transition-r01\scripts\r26p1-stage-gate.ps1 -Stage S1 -ExpectRunning -EvidencePath D:\Development\HUKUK_YAZILIMI\HY_P1_WINDOW_B_EVIDENCE\gate-S1-R1-120630.json
+  390,0s [R1] OUT: R1 DOGRULANDI | cift eski (CC634BBF/691BC146) + ACL | muhur 0/0 | API [L30003|N30003@2026-09-22T12:05:42.0000000+03:00|P30002@2026-09-22T12:05:41.0000000+03:00|H30001@2026-09-22T12:05:40.0000000+03:00] sonra WEB [L45003|N45003@2026-09-22T12:06:22.0000000+03:00|P45002@2026-09-22T12:06:21.0000000+03:00|H45001@2026-09-22T12:06:20.0000000+03:00] kimlik+saglik PASS | gorevler etkin | kapi S1 PASS
+  390,0s [R1] SONUC: OK
+FINAL: api=CC634BBF host=691BC146 API(en=True,run=True) WEB(en=True,run=True)

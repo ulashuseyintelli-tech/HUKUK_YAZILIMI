@@ -1,0 +1,26 @@
+durdurma: ok=False dinleyici=2 surec=6 running=2 51:hukuk-task-host.exe,52:pwsh.exe,53:node.exe,61:hukuk-task-host.exe,62:pwsh.exe,63:node.exe
+durdurma: ok=False dinleyici=2 surec=6 running=2 51:hukuk-task-host.exe,52:pwsh.exe,53:node.exe,61:hukuk-task-host.exe,62:pwsh.exe,63:node.exe
+    0,0s [P0] === P0-tanimlar
+    0,0s [P0] OUT: P0 TAMAM | tanimlar yuklendi (yan etki yok) | API butce 900s, WEB 300s, durdurma 180s
+    0,0s [P0] SONUC: OK
+    0,0s [B2] === B2-yedek
+    0,0s [B2] OUT: STUB PREFLIGHT (Installed=False) - sahte, salt sinama
+    0,0s [B2] mkdir:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\start-api.ps1
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\hukuk-task-host.exe
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\p1-manifest.json
+    0,0s [B2] OUT: B2 PASS | yedek=D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z | sddl+xml yazildi | canliya henuz dokunulmadi
+    0,0s [B2] SONUC: OK
+    0,0s [B3] === B3-durdur-kopyala
+    0,0s [B3] disable:WEB
+    0,0s [B3] disable:API
+    0,0s [B3] stop:WEB
+    0,0s [B3] stop:API
+  180,0s [B3] SONUC: THROW B3: SESSIZLIK DOGRULANAMADI (51:hukuk-task-host.exe,52:pwsh.exe,53:node.exe,61:hukuk-task-host.exe,62:pwsh.exe,63:node.exe) - KOPYALAMA YAPILMADI; gorevler DISABLED; surece dokunulmadi - DUR ve bildir (R1 CALISTIRMAYIN)
+  180,0s [R1] === R1-geri-yukle
+  180,0s [R1] disable:WEB
+  180,0s [R1] disable:API
+  180,0s [R1] stop:WEB
+  180,0s [R1] stop:API
+  360,0s [R1] SONUC: THROW R1: SESSIZLIK DOGRULANAMADI (51:hukuk-task-host.exe,52:pwsh.exe,53:node.exe,61:hukuk-task-host.exe,62:pwsh.exe,63:node.exe) - DOSYA KOPYALANMADI - ROLLBACK_NOT_VERIFIED, escalate
+FINAL: api=CC634BBF host=691BC146 API(en=False,run=True) WEB(en=False,run=True)

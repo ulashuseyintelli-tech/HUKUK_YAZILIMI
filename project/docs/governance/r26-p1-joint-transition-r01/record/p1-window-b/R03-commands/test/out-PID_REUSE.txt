@@ -1,0 +1,62 @@
+durdurma: ok=True dinleyici=0 surec=0 running=0 
+verify-seal api cikis=0
+verify-seal web cikis=0
+api: ok=False kod=-1 kimlik=FOREIGN (olusturulma zamani sirasi bozuk (PID yeniden kullanimi?)) sure=40s butce=900s | YABANCI DINLEYICI/AGAC - yabanci surece DOKUNULMAZ
+durdurma: ok=True dinleyici=0 surec=0 running=0 
+durdurma: ok=True dinleyici=0 surec=0 running=0 
+verify-seal api cikis=0
+verify-seal web cikis=0
+api: ok=True kod=401 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=40s butce=900s
+api kimlik imzasi: L20003|N20003@2026-09-22T12:00:42.0000000+03:00|P20002@2026-09-22T12:00:41.0000000+03:00|H20001@2026-09-22T12:00:40.0000000+03:00
+web: ok=True kod=200 kimlik=EXACT (host->launcher->node zinciri dogrulandi) sure=10s butce=300s
+web kimlik imzasi: L35003|N35003@2026-09-22T12:01:22.0000000+03:00|P35002@2026-09-22T12:01:21.0000000+03:00|H35001@2026-09-22T12:01:20.0000000+03:00
+    0,0s [P0] === P0-tanimlar
+    0,0s [P0] OUT: P0 TAMAM | tanimlar yuklendi (yan etki yok) | API butce 900s, WEB 300s, durdurma 180s
+    0,0s [P0] SONUC: OK
+    0,0s [B2] === B2-yedek
+    0,0s [B2] OUT: STUB PREFLIGHT (Installed=False) - sahte, salt sinama
+    0,0s [B2] mkdir:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\start-api.ps1
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\hukuk-task-host.exe
+    0,0s [B2] copy:D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z\p1-manifest.json
+    0,0s [B2] OUT: B2 PASS | yedek=D:\Development\HUKUK_YAZILIMI\P1-A3-APPLY-20260922T120000000Z | sddl+xml yazildi | canliya henuz dokunulmadi
+    0,0s [B2] SONUC: OK
+    0,0s [B3] === B3-durdur-kopyala
+    0,0s [B3] disable:WEB
+    0,0s [B3] disable:API
+    0,0s [B3] stop:WEB
+    0,0s [B3] stop:API
+    0,0s [B3] copy:C:\Ops\hukuk\bin\start-api.ps1
+    0,0s [B3] copy:C:\Ops\hukuk\bin\hukuk-task-host.exe
+    0,0s [B3] OUT: B3 PASS | kurulu start-api=DDCCD091 host=27099BDF | web/readiness/manifest degismedi | ACL esit | gorevler DISABLED
+    0,0s [B3] SONUC: OK
+    0,0s [B4] === B4-muhur
+    0,0s [B4] seal:api pair=27099BDF
+    0,0s [B4] seal:web pair=27099BDF
+    0,0s [B4] OUT: B4 PASS | api --verify-seal=0 | web --verify-seal=0 | servisler henuz BASLAMADI
+    0,0s [B4] SONUC: OK
+    0,0s [B5] === B5-baslat
+    0,0s [B5] enable:API
+    0,0s [B5] start:API
+   40,0s [B5] disable:WEB
+   40,0s [B5] disable:API
+   40,0s [B5] stop:WEB
+   40,0s [B5] stop:API
+   40,0s [B5] SONUC: THROW B5: API kapisi PASS degil (YABANCI dinleyici/agac: olusturulma zamani sirasi bozuk (PID yeniden kullanimi?)) - WEB BASLATILMADI; durdurma ok=True - R1 calistirin
+   40,0s [R1] === R1-geri-yukle
+   40,0s [R1] disable:WEB
+   40,0s [R1] disable:API
+   40,0s [R1] stop:WEB
+   40,0s [R1] stop:API
+   40,0s [R1] copy:C:\Ops\hukuk\bin\start-api.ps1
+   40,0s [R1] copy:C:\Ops\hukuk\bin\hukuk-task-host.exe
+   40,0s [R1] seal:api pair=691BC146
+   40,0s [R1] seal:web pair=691BC146
+   40,0s [R1] enable:API
+   40,0s [R1] start:API
+   80,0s [R1] enable:WEB
+   80,0s [R1] start:WEB
+   90,0s [R1] gate -NoProfile -ExecutionPolicy Bypass -File D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\r26-p1-joint-transition-r01\scripts\r26p1-stage-gate.ps1 -Stage S1 -ExpectRunning -EvidencePath D:\Development\HUKUK_YAZILIMI\HY_P1_WINDOW_B_EVIDENCE\gate-S1-R1-120130.json
+   90,0s [R1] OUT: R1 DOGRULANDI | cift eski (CC634BBF/691BC146) + ACL | muhur 0/0 | API [L20003|N20003@2026-09-22T12:00:42.0000000+03:00|P20002@2026-09-22T12:00:41.0000000+03:00|H20001@2026-09-22T12:00:40.0000000+03:00] sonra WEB [L35003|N35003@2026-09-22T12:01:22.0000000+03:00|P35002@2026-09-22T12:01:21.0000000+03:00|H35001@2026-09-22T12:01:20.0000000+03:00] kimlik+saglik PASS | gorevler etkin | kapi S1 PASS
+   90,0s [R1] SONUC: OK
+FINAL: api=CC634BBF host=691BC146 API(en=True,run=True) WEB(en=True,run=True)

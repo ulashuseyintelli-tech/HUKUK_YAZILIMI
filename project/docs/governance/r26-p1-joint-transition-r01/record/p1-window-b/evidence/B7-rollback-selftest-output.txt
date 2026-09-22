@@ -1,0 +1,6 @@
+12:51:59Z  === 1) YEDEK BUTUNLUGU
+12:52:31Z  API yedek digest esit=True paket esit=True | WEB yedek digest esit=True BUILD_ID=dOiGPj2M0Abls0kCibY4r cfg esit=True
+12:52:31Z  baslatici uclusu=P1-SONRASI | tanimli=True
+12:52:31Z  fonksiyon kumesi tam=True | robocopy=True
+12:52:31Z  === SELFTEST SONUC: PASS
+B7 cikis=0

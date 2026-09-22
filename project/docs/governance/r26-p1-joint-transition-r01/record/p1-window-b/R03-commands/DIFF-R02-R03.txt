@@ -1,0 +1,394 @@
+######## P0-tanimlar.ps1
+diff --git a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/P0-tanimlar.ps1 b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/P0-tanimlar.ps1
+index e21d9974..117e4b8e 100644
+--- a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/P0-tanimlar.ps1
++++ b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/P0-tanimlar.ps1
+@@ -15,7 +15,15 @@ $KEEP=@{ 'start-web.ps1'='F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2
+ #      Operasyonel butce 900 sn = faz payi + 125 sn host/zamanlayici payi. Asim = "durum belirsiz", urun arizasi DEGIL.
+ # WEB: bind 180 sn + 120 sn pay = 300 sn.  DURDURMA sessizligi: 180 sn.  verify-seal: 60 sn (runbook).
+ $API_WAIT_SEC=900; $WEB_WAIT_SEC=300; $STOP_WAIT_SEC=180; $SEAL_WAIT_MS=60000
+-$b=$null; $seal=$null; $B5_DONE=$false
++$b=$null; $seal=$null; $B5_DONE=$false; $IDN=@{}
++# --- R03: SERVIS AGACI KIMLIGI (kaynak: host gen.cs CreateProcessW(PwshPath) ; start-(api|web).ps1 New-HLChildProcess NodeExe EntryJs) ---
++$HOST_EXE='C:\Ops\hukuk\bin\hukuk-task-host.exe'
++$PWSH_EXE='C:\Ops\hukuk\pwsh\pwsh.exe'
++$NODE_EXE='C:\Users\ulastelli\AppData\Local\Volta\tools\image\node\24.18.0\node.exe'
++$SVC=@{
++  api=@{ task='HukukPlatform-API'; port=8080; launcher='C:\Ops\hukuk\bin\start-api.ps1'; entry='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\dist\apps\api\src\main.js'; args=''; url='http://127.0.0.1:8080/api/auth/me'; want=401 }
++  web=@{ task='HukukPlatform-WEB'; port=3002; launcher='C:\Ops\hukuk\bin\start-web.ps1'; entry='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\web\node_modules\next\dist\bin\next'; args='start --port 3002'; url='http://127.0.0.1:3002/portal/login'; want=200 }
++}
+ function Test-HLAdmin { (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
+ function Get-HLCode([string]$u){ try { [int](Invoke-WebRequest -Uri $u -TimeoutSec 8 -MaximumRedirection 0 -SkipHttpErrorCheck -UseBasicParsing -ErrorAction Stop).StatusCode } catch { -1 } }
+ # Yalniz BU gecisin surecleri: 8080/3002 dinleyicisi, api/web host'u, Ops launcher pwsh'i, API/WEB node cocugu, db-readiness probu.
+@@ -56,16 +64,54 @@ function Invoke-HLSeal {
+   }
+   $r2
+ }
+-function Start-HLService([string]$task,[int]$port,[string]$arg,[string]$url,[int]$want,[int]$budget){
+-  $t0=Get-Date
+-  Enable-ScheduledTask -TaskName $task | Out-Null
+-  Start-ScheduledTask -TaskName $task
+-  $code=-1; $lis=0; $deadline=(Get-Date).AddSeconds($budget)
+-  while((Get-Date) -lt $deadline){ $lis=@(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue).Count; if($lis -eq 1){ $code=Get-HLCode $url; if($code -eq $want){ break } }; Start-Sleep -Seconds 2 }
+-  $hosts=@(Get-CimInstance Win32_Process -Filter "Name='hukuk-task-host.exe'" | Where-Object { $_.CommandLine -match ('(^|\s)' + $arg + '(\s|$)') }).Count
+-  $sec=[int]((Get-Date)-$t0).TotalSeconds; $ok=($code -eq $want -and $lis -eq 1 -and $hosts -eq 1)
+-  $r3=[ordered]@{ ok=$ok; timedOut=(-not $ok -and $sec -ge $budget); code=$code; listeners=$lis; hosts=$hosts; sec=$sec }
+-  Write-Host ("{0}: ok={1} kod={2} dinleyici={3} host={4} sure={5}s butce={6}s{7}" -f $arg,$ok,$code,$lis,$hosts,$sec,$budget,$(if($r3.timedOut){' | OPERASYONEL BUTCE ASILDI - durum belirsiz (urun arizasi iddiasi DEGIL)'}else{''}))
++# Komut satiri -> belirtecler (tirnakli ya da tirnaksiz); yalniz karsilastirma icin, calistirilmaz.
++function Get-HLTokens([string]$cl){ @([regex]::Matches([string]$cl,'"([^"]*)"|(\S+)') | ForEach-Object { if($_.Groups[1].Success){ $_.Groups[1].Value } else { $_.Groups[2].Value } }) }
++function Get-HLProc([int]$procId){ if($procId -le 0){ return $null }; @(Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $procId) -ErrorAction SilentlyContinue) | Select-Object -First 1 }
++# Kimlik: EXACT | NONE (dinleyici yok) | FOREIGN (dinleyici/agac beklenen degil) | UNKNOWN (okunamadi).
++# Zincir: dinleyici OwningProcess = node (NODE_EXE + entry + args) -> parent pwsh (PWSH_EXE -File launcher) -> parent host (HOST_EXE + mod).
++# Olusturulma zamani: host <= pwsh <= node ve host >= $since (bu baslatmadan once olusmus agac = FOREIGN). Mod icin tek host.
++function Get-HLServiceIdentity([string]$mode,[datetime]$since){
++  $s=$SVC[$mode]; $r=[ordered]@{ state='UNKNOWN'; reason=''; sig='' }
++  try {
++    $owners=@(@(Get-NetTCPConnection -State Listen -LocalPort $s.port -ErrorAction SilentlyContinue) | ForEach-Object { [int]$_.OwningProcess } | Sort-Object -Unique)
++    if($owners.Count -eq 0){ $r.state='NONE'; $r.reason='dinleyici yok'; return $r }
++    if($owners.Count -gt 1){ $r.state='FOREIGN'; $r.reason="birden cok dinleyici sahibi: $($owners -join ',')"; return $r }
++    $n=Get-HLProc $owners[0]; if(-not $n){ $r.reason="dinleyici sureci okunamadi pid=$($owners[0])"; return $r }
++    $nt=Get-HLTokens $n.CommandLine
++    if(-not ([string]$n.ExecutablePath -ieq $NODE_EXE)){ $r.state='FOREIGN'; $r.reason="dinleyici exe beklenen degil: $($n.ExecutablePath) pid=$($n.ProcessId)"; return $r }
++    if($nt.Count -lt 2 -or -not ($nt[1] -ieq $s.entry) -or ((@($nt | Select-Object -Skip 2) -join ' ') -cne $s.args)){ $r.state='FOREIGN'; $r.reason="node entry/args beklenen degil pid=$($n.ProcessId)"; return $r }
++    $pw=Get-HLProc ([int]$n.ParentProcessId); if(-not $pw){ $r.reason="node parent okunamadi ppid=$($n.ParentProcessId)"; return $r }
++    $pt=Get-HLTokens $pw.CommandLine; $fi=[array]::IndexOf([string[]]$pt,'-File')
++    if(-not ([string]$pw.ExecutablePath -ieq $PWSH_EXE) -or $fi -lt 0 -or $fi+1 -ge $pt.Count -or -not ($pt[$fi+1] -ieq $s.launcher)){ $r.state='FOREIGN'; $r.reason="node parent beklenen launcher degil pid=$($pw.ProcessId) exe=$($pw.ExecutablePath)"; return $r }
++    $h=Get-HLProc ([int]$pw.ParentProcessId); if(-not $h){ $r.reason="launcher parent okunamadi ppid=$($pw.ParentProcessId)"; return $r }
++    $ht=Get-HLTokens $h.CommandLine
++    if(-not ([string]$h.ExecutablePath -ieq $HOST_EXE) -or $ht.Count -ne 2 -or $ht[1] -cne $mode){ $r.state='FOREIGN'; $r.reason="launcher parent beklenen host degil pid=$($h.ProcessId) exe=$($h.ExecutablePath)"; return $r }
++    if(-not ($h.CreationDate -le $pw.CreationDate -and $pw.CreationDate -le $n.CreationDate)){ $r.state='FOREIGN'; $r.reason='olusturulma zamani sirasi bozuk (PID yeniden kullanimi?)'; return $r }
++    if($since -gt [datetime]::MinValue -and $h.CreationDate -lt $since.AddSeconds(-2)){ $r.state='FOREIGN'; $r.reason="host bu baslatmadan ONCE olusmus ($($h.CreationDate.ToString('o')))"; return $r }
++    $hosts=@(Get-CimInstance Win32_Process -Filter "Name='hukuk-task-host.exe'" | Where-Object { $t=Get-HLTokens $_.CommandLine; $t.Count -ge 2 -and $t[1] -ceq $mode })
++    if($hosts.Count -ne 1 -or [int]$hosts[0].ProcessId -ne [int]$h.ProcessId){ $r.state='FOREIGN'; $r.reason="mod icin host sayisi $($hosts.Count) ya da farkli host"; return $r }
++    $r.state='EXACT'; $r.reason='host->launcher->node zinciri dogrulandi'
++    $r.sig=('L{0}|N{1}@{2}|P{3}@{4}|H{5}@{6}' -f $owners[0],$n.ProcessId,$n.CreationDate.ToString('o'),$pw.ProcessId,$pw.CreationDate.ToString('o'),$h.ProcessId,$h.CreationDate.ToString('o'))
++    return $r
++  } catch { $r.state='UNKNOWN'; $r.reason="kimlik okunamadi: $($_.Exception.Message)"; return $r }
++}
++# Saglik kabulu = kimlik EXACT (1) -> beklenen HTTP kodu -> kimlik EXACT (2) ve imza (1)=(2). FOREIGN gorulurse beklemeden durur.
++function Start-HLService([string]$mode,[int]$budget){
++  $s=$SVC[$mode]; $t0=Get-Date
++  Enable-ScheduledTask -TaskName $s.task | Out-Null
++  Start-ScheduledTask -TaskName $s.task
++  $code=-1; $id=$null; $id2=$null; $foreign=$false; $deadline=(Get-Date).AddSeconds($budget)
++  while((Get-Date) -lt $deadline){
++    $id=Get-HLServiceIdentity $mode $t0
++    if($id.state -eq 'FOREIGN'){ $foreign=$true; break }
++    if($id.state -eq 'EXACT'){ $code=Get-HLCode $s.url; if($code -eq $s.want){ $id2=Get-HLServiceIdentity $mode $t0; if($id2.state -eq 'FOREIGN'){ $foreign=$true; $id=$id2; break }; if($id2.state -eq 'EXACT' -and $id2.sig -ceq $id.sig){ break } } }
++    Start-Sleep -Seconds 2
++  }
++  $sec=[int]((Get-Date)-$t0).TotalSeconds
++  $ok=((-not $foreign) -and $null -ne $id2 -and $id2.state -eq 'EXACT' -and $id2.sig -ceq $id.sig -and $code -eq $s.want)
++  $r3=[ordered]@{ ok=$ok; foreign=$foreign; timedOut=(-not $ok -and -not $foreign -and $sec -ge $budget); code=$code; identity=$(if($ok){$id2}else{$id}); sec=$sec }
++  Write-Host ("{0}: ok={1} kod={2} kimlik={3} ({4}) sure={5}s butce={6}s{7}{8}" -f $mode,$ok,$code,$r3.identity.state,$r3.identity.reason,$sec,$budget,$(if($r3.timedOut){' | OPERASYONEL BUTCE ASILDI - durum belirsiz (urun arizasi iddiasi DEGIL)'}else{''}),$(if($foreign){' | YABANCI DINLEYICI/AGAC - yabanci surece DOKUNULMAZ'}else{''}))
++  if($ok){ Write-Host ("{0} kimlik imzasi: {1}" -f $mode,$id2.sig) }
+   $r3
+ }
+ 'P0 TAMAM | tanimlar yuklendi (yan etki yok) | API butce ' + $API_WAIT_SEC + 's, WEB ' + $WEB_WAIT_SEC + 's, durdurma ' + $STOP_WAIT_SEC + 's'
+######## B5-baslat.ps1
+diff --git a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/B5-baslat.ps1 b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/B5-baslat.ps1
+index c7566eb5..dceeb783 100644
+--- a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/B5-baslat.ps1
++++ b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/B5-baslat.ps1
+@@ -1,11 +1,14 @@
+ . {
+-# ===== B5 - API, sonra WEB; her biri kendi saglik/kimlik kapisini gecmeden sonraki yok =====
++# ===== B5 - API, sonra WEB; her biri KIMLIK (host->launcher->node) + saglik kapisini gecmeden sonraki yok =====
+ if(-not $seal -or $seal['api'] -ne 0 -or $seal['web'] -ne 0){ throw 'B5: B4 muhur PASS kaydi yok - SERVIS BASLATILMADI - DUR' }
+-$api=Start-HLService 'HukukPlatform-API' 8080 'api' 'http://127.0.0.1:8080/api/auth/me' 401 $API_WAIT_SEC
+-if(-not $api.ok){ $q=Stop-HLTransition $STOP_WAIT_SEC; throw ("B5: API kapisi PASS degil (" + $(if($api.timedOut){'operasyonel butce asildi - durum belirsiz'}else{'saglik/kimlik FAIL'}) + ") - WEB BASLATILMADI; durdurma ok=$($q.ok) - " + $(if($q.ok){'R1 calistirin'}else{'SESSIZLIK YOK: R1 CALISTIRMAYIN, bildir'})) }
+-$web=Start-HLService 'HukukPlatform-WEB' 3002 'web' 'http://127.0.0.1:3002/portal/login' 200 $WEB_WAIT_SEC
+-if(-not $web.ok){ $q=Stop-HLTransition $STOP_WAIT_SEC; throw ("B5: WEB kapisi PASS degil (" + $(if($web.timedOut){'operasyonel butce asildi - durum belirsiz'}else{'saglik/kimlik FAIL'}) + ") - BASARI YAZILMADI; durdurma ok=$($q.ok) - " + $(if($q.ok){'R1 calistirin'}else{'SESSIZLIK YOK: R1 CALISTIRMAYIN, bildir'})) }
++$IDN=@{}
++$api=Start-HLService 'api' $API_WAIT_SEC
++if(-not $api.ok){ $q=Stop-HLTransition $STOP_WAIT_SEC; throw ("B5: API kapisi PASS degil (" + $(if($api.foreign){'YABANCI dinleyici/agac: ' + $api.identity.reason}elseif($api.timedOut){'operasyonel butce asildi - durum belirsiz'}else{'kimlik/saglik FAIL: ' + $api.identity.reason}) + ") - WEB BASLATILMADI; durdurma ok=$($q.ok) - " + $(if($q.ok){'R1 calistirin'}else{'SESSIZLIK YOK: R1 CALISTIRMAYIN, bildir'})) }
++$IDN['api']=$api.identity
++$web=Start-HLService 'web' $WEB_WAIT_SEC
++if(-not $web.ok){ $q=Stop-HLTransition $STOP_WAIT_SEC; throw ("B5: WEB kapisi PASS degil (" + $(if($web.foreign){'YABANCI dinleyici/agac: ' + $web.identity.reason}elseif($web.timedOut){'operasyonel butce asildi - durum belirsiz'}else{'kimlik/saglik FAIL: ' + $web.identity.reason}) + ") - BASARI YAZILMADI; durdurma ok=$($q.ok) - " + $(if($q.ok){'R1 calistirin'}else{'SESSIZLIK YOK: R1 CALISTIRMAYIN, bildir'})) }
++$IDN['web']=$web.identity
+ & "$p\Preflight.ps1" -Installed
+ $B5_DONE=$true
+-"B5 PASS | API $($api.sec)s, WEB $($web.sec)s | Preflight -Installed PASS"
++"B5 PASS | API $($api.sec)s [$($IDN['api'].sig)] | WEB $($web.sec)s [$($IDN['web'].sig)] | Preflight -Installed PASS"
+ }
+######## R1-geri-yukle.ps1
+diff --git a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/R1-geri-yukle.ps1 b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/R1-geri-yukle.ps1
+index 2dd9917f..7b42c290 100644
+--- a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/R1-geri-yukle.ps1
++++ b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/R1-geri-yukle.ps1
+@@ -1,5 +1,5 @@
+ . {
+-# ===== R1 - P1 CIFT GERI YUKLEME (runbook par.4) =====
++# ===== R1 - P1 CIFT GERI YUKLEME (runbook par.4); servis kabulu KIMLIK (host->launcher->node) + saglik =====
+ if(-not $b -or -not (Test-Path -LiteralPath $b)){ throw 'R1: yedek ($b) yok - DUR, bildir' }
+ $q=Stop-HLTransition $STOP_WAIT_SEC
+ if(-not $q.ok){ throw "R1: SESSIZLIK DOGRULANAMADI ($($q.pids)) - DOSYA KOPYALANMADI - ROLLBACK_NOT_VERIFIED, escalate" }
+@@ -9,15 +9,15 @@ $bad=Test-HLPair $OLD
+ if($bad.Count){ $bad | ForEach-Object { Write-Host $_ }; throw 'R1: geri yuklenen cift/ACL dogrulanamadi - gorevler DISABLED - ROLLBACK_NOT_VERIFIED' }
+ $rs=Invoke-HLSeal
+ if($rs['api'] -ne 0 -or $rs['web'] -ne 0){ throw "R1: eski cift muhur api=$($rs['api']) web=$($rs['web']) - gorevler DISABLED - ROLLBACK_NOT_VERIFIED" }
+-$ra=Start-HLService 'HukukPlatform-API' 8080 'api' 'http://127.0.0.1:8080/api/auth/me' 401 $API_WAIT_SEC
+-if(-not $ra.ok){ $q2=Stop-HLTransition $STOP_WAIT_SEC; throw "R1: API kapisi PASS degil - WEB BASLATILMADI - durdurma ok=$($q2.ok) - ROLLBACK_NOT_VERIFIED" }
+-$rw=Start-HLService 'HukukPlatform-WEB' 3002 'web' 'http://127.0.0.1:3002/portal/login' 200 $WEB_WAIT_SEC
+-if(-not $rw.ok){ $q2=Stop-HLTransition $STOP_WAIT_SEC; throw "R1: WEB kapisi PASS degil - durdurma ok=$($q2.ok) - ROLLBACK_NOT_VERIFIED" }
++$ra=Start-HLService 'api' $API_WAIT_SEC
++if(-not $ra.ok){ $q2=Stop-HLTransition $STOP_WAIT_SEC; throw "R1: API kimlik/saglik kapisi PASS degil ($(if($ra.foreign){'YABANCI: '}else{''})$($ra.identity.reason)) - WEB BASLATILMADI - durdurma ok=$($q2.ok) - ROLLBACK_NOT_VERIFIED" }
++$rw=Start-HLService 'web' $WEB_WAIT_SEC
++if(-not $rw.ok){ $q2=Stop-HLTransition $STOP_WAIT_SEC; throw "R1: WEB kimlik/saglik kapisi PASS degil ($(if($rw.foreign){'YABANCI: '}else{''})$($rw.identity.reason)) - durdurma ok=$($q2.ok) - ROLLBACK_NOT_VERIFIED" }
+ $ts=@(Get-ScheduledTask -TaskName 'HukukPlatform-API','HukukPlatform-WEB' | Where-Object { -not $_.Settings.Enabled -or [string]$_.State -eq 'Disabled' }).Count
+ if($ts -ne 0){ throw 'R1: gorev durumu etkin degil - ROLLBACK_NOT_VERIFIED' }
+ if((Get-FileHash -Algorithm SHA256 -LiteralPath $GATE).Hash -cne $GATE_SHA){ throw 'R1: ASAMA KAPISI SHA UYUSMUYOR - ROLLBACK_NOT_VERIFIED' }
+ $global:LASTEXITCODE=-999
+ & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $GATE -Stage S1 -ExpectRunning -EvidencePath (Join-Path $E ('gate-S1-R1-' + (Get-Date).ToUniversalTime().ToString('HHmmss') + '.json'))
+ if($global:LASTEXITCODE -ne 0){ throw "R1: KAPI S1 PASS DEGIL (cikis $global:LASTEXITCODE) - ROLLBACK_NOT_VERIFIED" }
+-'R1 DOGRULANDI | cift eski (CC634BBF/691BC146) + ACL | muhur 0/0 | API sonra WEB saglik/kimlik PASS | gorevler etkin | kapi S1 PASS'
++"R1 DOGRULANDI | cift eski (CC634BBF/691BC146) + ACL | muhur 0/0 | API [$($ra.identity.sig)] sonra WEB [$($rw.identity.sig)] kimlik+saglik PASS | gorevler etkin | kapi S1 PASS"
+ }
+######## B8-kabul.ps1
+diff --git a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/B8-kabul.ps1 b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/B8-kabul.ps1
+index bb7082b9..a521dc42 100644
+--- a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/B8-kabul.ps1
++++ b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/B8-kabul.ps1
+@@ -1,19 +1,17 @@
+ . {
+-# ===== B8 - runbook par.3 saglik + TEK ORNEK (ayni yonetici pwsh 7 penceresi; B5 PASS sonrasi) =====
+-if(-not $B5_DONE){ throw 'B8: B5 PASS kaydi yok - DUR' }
+-function Get-HLTree([string]$arg,[int]$port){
+-  $h=@(Get-CimInstance Win32_Process -Filter "Name='hukuk-task-host.exe'" | Where-Object { $_.CommandLine -match ('(^|\s)' + $arg + '(\s|$)') })
+-  $l=@(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
+-  [ordered]@{ hosts=$h.Count; hostSig=(@($h | ForEach-Object { [string]$_.ProcessId + '@' + $_.CreationDate }) -join ','); listeners=$l.Count; listenerSig=(@($l | ForEach-Object { [string]$_.OwningProcess }) -join ',') }
+-}
+-$a0=Get-HLTree 'api' 8080; $w0=Get-HLTree 'web' 3002
+-$me=Get-HLCode 'http://127.0.0.1:8080/api/auth/me'; $pl=Get-HLCode 'http://127.0.0.1:3002/portal/login'
+-"saglik: /api/auth/me=$me (401 beklenir) | /portal/login=$pl (200 beklenir) | api host=$($a0.hosts) dinleyici=$($a0.listeners) | web host=$($w0.hosts) dinleyici=$($w0.listeners)"
+-if($me -ne 401 -or $pl -ne 200 -or $a0.hosts -ne 1 -or $a0.listeners -ne 1 -or $w0.hosts -ne 1 -or $w0.listeners -ne 1){ throw 'B8: SAGLIK/TEK ORNEK on kosulu FAIL - kabul VERILMEZ; R1 degerlendirilir' }
++# ===== B8 - runbook par.3 saglik + TEK ORNEK; baslangic kimligi = B5'te DOGRULANMIS agac ($IDN) =====
++if(-not $B5_DONE -or -not $IDN['api'] -or -not $IDN['web'] -or $IDN['api'].state -ne 'EXACT' -or $IDN['web'].state -ne 'EXACT'){ throw 'B8: B5 PASS ve dogrulanmis kimlik kaydi yok - DUR' }
++$any=[datetime]::MinValue
++$a0=Get-HLServiceIdentity 'api' $any; $w0=Get-HLServiceIdentity 'web' $any
++"on: api $($a0.state) [$($a0.sig)] | web $($w0.state) [$($w0.sig)]"
++if($a0.state -ne 'EXACT' -or $a0.sig -cne $IDN['api'].sig -or $w0.state -ne 'EXACT' -or $w0.sig -cne $IDN['web'].sig){ throw "B8: canli agac B5'te dogrulanan agac DEGIL (api: $($a0.reason) | web: $($w0.reason)) - kabul VERILMEZ" }
++$me=Get-HLCode $SVC['api'].url; $pl=Get-HLCode $SVC['web'].url
++"saglik: /api/auth/me=$me (401 beklenir) | /portal/login=$pl (200 beklenir)"
++if($me -ne 401 -or $pl -ne 200){ throw 'B8: SAGLIK FAIL - kabul VERILMEZ; R1 degerlendirilir' }
+ Start-ScheduledTask -TaskName 'HukukPlatform-API'; Start-ScheduledTask -TaskName 'HukukPlatform-WEB'
+ Start-Sleep -Seconds 20
+-$a1=Get-HLTree 'api' 8080; $w1=Get-HLTree 'web' 3002
+-"ikinci baslatma: api host $($a0.hostSig) -> $($a1.hostSig) | dinleyici $($a0.listenerSig) -> $($a1.listenerSig) | web host $($w0.hostSig) -> $($w1.hostSig) | dinleyici $($w0.listenerSig) -> $($w1.listenerSig)"
+-if($a1.hostSig -cne $a0.hostSig -or $a1.listenerSig -cne $a0.listenerSig -or $w1.hostSig -cne $w0.hostSig -or $w1.listenerSig -cne $w0.listenerSig){ throw 'B8: IKINCI BASLATMA yeni agac/dinleyici uretti - TEK ORNEK FAIL - kabul VERILMEZ' }
+-'B8 PASS | saglik 401/200 | tek ornek (ikinci baslatmada yeni agac yok) | API log READY + tek child ve surelerin kaydi owner incelemesinde'
++$a1=Get-HLServiceIdentity 'api' $any; $w1=Get-HLServiceIdentity 'web' $any
++"ikinci baslatma sonrasi: api $($a1.state) [$($a1.sig)] | web $($w1.state) [$($w1.sig)]"
++if($a1.state -ne 'EXACT' -or $a1.sig -cne $IDN['api'].sig -or $w1.state -ne 'EXACT' -or $w1.sig -cne $IDN['web'].sig){ throw "B8: IKINCI BASLATMA dogrulanan agaci degistirdi ya da yeni agac/dinleyici uretti (api: $($a1.reason) | web: $($w1.reason)) - TEK ORNEK FAIL - kabul VERILMEZ" }
++'B8 PASS | saglik 401/200 | agac B5 imzasiyla birebir; ikinci baslatmada yeni agac yok | API log READY + tek child ve surelerin kaydi owner incelemesinde'
+ }
+######## B2-yedek.ps1
+######## B3-durdur-kopyala.ps1
+######## B4-muhur.ps1
+######## B0-kapi-S1.ps1
+######## B1-preflight.ps1
+######## B6-kapi-S2.ps1
+######## B7-r26-geri-donus-selftest.ps1
+######## test/harness.ps1
+diff --git a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/test/harness.ps1 b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/test/harness.ps1
+index 8bc5ea81..d6122962 100644
+--- a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/test/harness.ps1
++++ b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/test/harness.ps1
+@@ -8,70 +8,97 @@ $OPSR='C:\Ops\hukuk\bin'; $CAND='D:\Development\HUKUK_YAZILIMI\HY_P1_A3_codex\P1
+ $STUB=Join-Path $PSScriptRoot 'stub-p1'
+ $OLDH=@{ 'start-api.ps1'='CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3'; 'hukuk-task-host.exe'='691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627' }
+ $NEWH=@{ 'start-api.ps1'='DDCCD09157E0AAF209AB38316A33815A0298FFACBC9006ED62F35F137F86219C'; 'hukuk-task-host.exe'='27099BDF66C83A44B3061D65AE2DAF24EADB523EE4F464179C2F53BB6C78DEAB' }
+-$S=@{ copyFail=$null; sealExit=@{api=0;web=0}; sealTimeout=@{api=$false;web=$false}; apiDelayNew=40; apiDelayOld=40; webDelay=10; unstoppable=$false; unstoppableAfter=$null; gateExit=0 }
++$HX=@{ copyFail=$null; sealExit=@{api=0;web=0}; sealTimeout=@{api=$false;web=$false}; apiDelayNew=40; apiDelayOld=40; webDelay=10; unstoppable=$false; unstoppableAfter=$null; gateExit=0 }
+ switch($Scenario){
+   'HAPPY'          { }
+-  'COPY_FAIL'      { $S.copyFail="$OPSR\hukuk-task-host.exe|B3" }
+-  'SEAL_FAIL'      { $S.sealExit=@{api=0;web=102} }
+-  'SEAL_TIMEOUT'   { $S.sealTimeout=@{api=$true;web=$false} }
+-  'API_TIMEOUT'    { $S.apiDelayNew=-1 }
+-  'WEB_TIMEOUT'    { $S.webDelayNew=-1 }
+-  'UNSTOPPABLE_B3' { $S.unstoppable=$true }
+-  'UNSTOPPABLE_B5' { $S.apiDelayNew=-1; $S.unstoppableAfter='B5' }
+-  'R1_API_TIMEOUT' { $S.apiDelayNew=-1; $S.apiDelayOld=-1 }
+-  'R1_WEB_TIMEOUT' { $S.apiDelayNew=-1; $S.webDelayR1=-1 }
+-  'R1_GATE_FAIL'   { $S.apiDelayNew=-1; $S.gateExit=1 }
++  'COPY_FAIL'      { $HX.copyFail="$OPSR\hukuk-task-host.exe|B3" }
++  'SEAL_FAIL'      { $HX.sealExit=@{api=0;web=102} }
++  'SEAL_TIMEOUT'   { $HX.sealTimeout=@{api=$true;web=$false} }
++  'API_TIMEOUT'    { $HX.apiDelayNew=-1 }
++  'WEB_TIMEOUT'    { $HX.webDelayNew=-1 }
++  'UNSTOPPABLE_B3' { $HX.unstoppable=$true }
++  'UNSTOPPABLE_B5' { $HX.apiDelayNew=-1; $HX.unstoppableAfter='B5' }
++  'R1_API_TIMEOUT' { $HX.apiDelayNew=-1; $HX.apiDelayOld=-1 }
++  'R1_WEB_TIMEOUT' { $HX.apiDelayNew=-1; $HX.webDelayR1=-1 }
++  'R1_GATE_FAIL'   { $HX.apiDelayNew=-1; $HX.gateExit=1 }
+   'NO_B2'          { }
++  'FOREIGN_LISTENER' { $HX.apiDelayNew=-1; $HX.foreign=@{ port=8080; from='B5'; exe='C:\Tools\other\node.exe'; code=401 } }
++  'WRONG_HOST_PATH'  { $HX.treeFault=@{ phase='B5'; mode='api'; kind='hostpath' } }
++  'WRONG_PARENT'     { $HX.treeFault=@{ phase='B5'; mode='api'; kind='parent' } }
++  'WRONG_ENTRY'      { $HX.treeFault=@{ phase='B5'; mode='web'; kind='entry' } }
++  'PID_REUSE'        { $HX.treeFault=@{ phase='B5'; mode='api'; kind='ctime' } }
++  'ID_FLAP'          { $HX.treeFault=@{ phase='B5'; mode='api'; kind='flap' } }
++  'R1_FOREIGN'       { $HX.apiDelayNew=-1; $HX.foreign=@{ port=3002; from='R1WEB'; exe='C:\Tools\other\node.exe'; code=200 } }
++  'B8_NEWTREE'       { $HX.b8Restart=$true }
+   default { throw "bilinmeyen senaryo $Scenario" }
+ }
+-$V=@{ clock=0.0; phase=''; files=@{}; acl=@{}; content=@{}; dirs=@{}; log=[Collections.Generic.List[string]]::new()
+-      tasks=@{ 'API'=@{ enabled=$true; running=$true; started=-1000.0 }; 'WEB'=@{ enabled=$true; running=$true; started=-1000.0 } }; stuck=@{ API=$false; WEB=$false } }
+-foreach($f in $OLDH.Keys){ $V.files["$OPSR\$f"]=$OLDH[$f]; $V.acl["$OPSR\$f"]="SDDL-$f" }
+-foreach($f in $NEWH.Keys){ $V.files["$CAND\$f"]=$NEWH[$f] }
+-$V.files["$OPSR\start-web.ps1"]='F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0'
+-$V.files["$OPSR\db-readiness.js"]='AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9'
+-$V.files["$OPSR\pwsh-file-manifest.json"]='84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A'
+-$V.files["$STUB\OWNER-RUNBOOK.md"]='5F07A30A23BF20EDD7F225333F5D3D6A55EE1C2246BBC2C1BE7F1D0B22B81118'
+-$V.files["$STUB\manifest.json"]='17CF1EEB99C5F1873E64DB291B89299B180781D45320ADB7775D9F1FFFDB845E'
+-foreach($f in $NEWH.Keys){ $V.files["$STUB\candidate\$f"]=$NEWH[$f] }
+-$V.files['D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\r26-p1-joint-transition-r01\scripts\r26p1-stage-gate.ps1']='214465BBF85400B73BF7928036B1B3BF79D439249321A2C30C14C976A2155200'
+-function L($m){ $V.log.Add(('{0,7:N1}s [{1}] {2}' -f $V.clock,$V.phase,$m)) }
++$HV=@{ clock=0.0; phase=''; files=@{}; acl=@{}; content=@{}; dirs=@{}; log=[Collections.Generic.List[string]]::new()
++      tasks=@{ 'API'=@{ enabled=$true; running=$true; started=-1000.0 }; 'WEB'=@{ enabled=$true; running=$true; started=-1000.0 } }; stuck=@{ API=$false; WEB=$false }; gen=0; flap=0; foreignOn=$false }
++$HV.tasks.API.pids=@{host=51;pwsh=52;node=53}; $HV.tasks.API.tphase='ONCE'; $HV.tasks.WEB.pids=@{host=61;pwsh=62;node=63}; $HV.tasks.WEB.tphase='ONCE'
++foreach($f in $OLDH.Keys){ $HV.files["$OPSR\$f"]=$OLDH[$f]; $HV.acl["$OPSR\$f"]="SDDL-$f" }
++foreach($f in $NEWH.Keys){ $HV.files["$CAND\$f"]=$NEWH[$f] }
++$HV.files["$OPSR\start-web.ps1"]='F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0'
++$HV.files["$OPSR\db-readiness.js"]='AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9'
++$HV.files["$OPSR\pwsh-file-manifest.json"]='84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A'
++$HV.files["$STUB\OWNER-RUNBOOK.md"]='5F07A30A23BF20EDD7F225333F5D3D6A55EE1C2246BBC2C1BE7F1D0B22B81118'
++$HV.files["$STUB\manifest.json"]='17CF1EEB99C5F1873E64DB291B89299B180781D45320ADB7775D9F1FFFDB845E'
++foreach($f in $NEWH.Keys){ $HV.files["$STUB\candidate\$f"]=$NEWH[$f] }
++$HV.files['D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\r26-p1-joint-transition-r01\scripts\r26p1-stage-gate.ps1']='214465BBF85400B73BF7928036B1B3BF79D439249321A2C30C14C976A2155200'
++function L($m){ $HV.log.Add(('{0,7:N1}s [{1}] {2}' -f $HV.clock,$HV.phase,$m)) }
+ function K($t){ if($t -match 'API'){'API'}elseif($t -match 'WEB|Web'){'WEB'}else{throw "gorev? $t"} }
+-function Get-ApiDelay { if($V.phase -like 'R1*' -and $V.files["$OPSR\start-api.ps1"] -eq $OLDH['start-api.ps1']){ $S.apiDelayOld } elseif($V.files["$OPSR\start-api.ps1"] -eq $NEWH['start-api.ps1']){ $S.apiDelayNew } else { $S.apiDelayOld } }
+-function Get-WebDelay { if($V.phase -like 'R1*' -and $S.ContainsKey('webDelayR1')){ $S.webDelayR1 } elseif($S.ContainsKey('webDelayNew') -and $V.files["$OPSR\hukuk-task-host.exe"] -eq $NEWH['hukuk-task-host.exe']){ $S.webDelayNew } else { $S.webDelay } }
+-function Test-Up($k){ $t=$V.tasks[$k]; if(-not $t.running){ return $false }; $d=if($k -eq 'API'){Get-ApiDelay}else{Get-WebDelay}; if($t.started -lt -500){ return $true }; ($d -ge 0 -and ($V.clock - $t.started) -ge $d) }
++function Get-ApiDelay { if($HV.phase -like 'R1*' -and $HV.files["$OPSR\start-api.ps1"] -eq $OLDH['start-api.ps1']){ $HX.apiDelayOld } elseif($HV.files["$OPSR\start-api.ps1"] -eq $NEWH['start-api.ps1']){ $HX.apiDelayNew } else { $HX.apiDelayOld } }
++function Get-WebDelay { if($HV.phase -like 'R1*' -and $HX.ContainsKey('webDelayR1')){ $HX.webDelayR1 } elseif($HX.ContainsKey('webDelayNew') -and $HV.files["$OPSR\hukuk-task-host.exe"] -eq $NEWH['hukuk-task-host.exe']){ $HX.webDelayNew } else { $HX.webDelay } }
++function Test-Up($k){ $t=$HV.tasks[$k]; if(-not $t.running){ return $false }; $d=if($k -eq 'API'){Get-ApiDelay}else{Get-WebDelay}; if($t.started -lt -500){ return $true }; ($d -ge 0 -and ($HV.clock - $t.started) -ge $d) }
+ # ---- golgeler ----
+-function Get-Date { [datetime]::new(2026,9,22,12,0,0,[DateTimeKind]::Utc).AddSeconds($V.clock) }
+-function Start-Sleep { [CmdletBinding()] param([int]$Seconds,[int]$Milliseconds) $V.clock += $Seconds + $Milliseconds/1000.0 }
+-function Disable-ScheduledTask { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; $V.tasks[$k].enabled=$false; L "disable:$k"; [pscustomobject]@{TaskName=$TaskName} }
+-function Enable-ScheduledTask  { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; $V.tasks[$k].enabled=$true;  L "enable:$k";  [pscustomobject]@{TaskName=$TaskName} }
+-function Stop-ScheduledTask    { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; L "stop:$k"; $stuck=$S.unstoppable -or ($S.unstoppableAfter -and $V.phase -eq $S.unstoppableAfter); if($stuck){ $V.stuck[$k]=$true } else { $V.tasks[$k].running=$false } }
+-function Start-ScheduledTask   { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; if(-not $V.tasks[$k].enabled){ throw "gorev disabled: $k" }; L "start:$k"; if(-not $V.tasks[$k].running){ $V.tasks[$k].running=$true; $V.tasks[$k].started=$V.clock } }
+-function Get-ScheduledTask     { [CmdletBinding()] param([string[]]$TaskName) foreach($n in $TaskName){ $k=K $n; $t=$V.tasks[$k]; $st= if($t.running -or $V.stuck[$k]){'Running'}elseif(-not $t.enabled){'Disabled'}else{'Ready'}; [pscustomobject]@{ TaskName=$n; State=$st; Settings=[pscustomobject]@{Enabled=$t.enabled} } } }
++function Get-Date { [datetime]::new(2026,9,22,12,0,0,[DateTimeKind]::Utc).AddSeconds($HV.clock) }
++function Start-Sleep { [CmdletBinding()] param([int]$Seconds,[int]$Milliseconds) $HV.clock += $Seconds + $Milliseconds/1000.0 }
++function Disable-ScheduledTask { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; $HV.tasks[$k].enabled=$false; L "disable:$k"; [pscustomobject]@{TaskName=$TaskName} }
++function Enable-ScheduledTask  { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; $HV.tasks[$k].enabled=$true;  L "enable:$k";  [pscustomobject]@{TaskName=$TaskName} }
++function Stop-ScheduledTask    { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; L "stop:$k"; $stuck=$HX.unstoppable -or ($HX.unstoppableAfter -and $HV.phase -eq $HX.unstoppableAfter); if($stuck){ $HV.stuck[$k]=$true } else { $HV.tasks[$k].running=$false } }
++function New-Tree($k){ $HV.gen++; $b0=10000*$HV.gen + $(if($k -eq 'API'){0}else{5000}); $HV.tasks[$k].pids=@{ host=$b0+1; pwsh=$b0+2; node=$b0+3 }; $HV.tasks[$k].tphase=$HV.phase }
++function Start-ScheduledTask   { [CmdletBinding()] param([string]$TaskName) $k=K $TaskName; if(-not $HV.tasks[$k].enabled){ throw "gorev disabled: $k" }; L "start:$k"; if($HX.foreign -and $HX.foreign.from -eq 'R1WEB' -and $HV.phase -eq 'R1' -and $k -eq 'WEB'){ $HV.foreignOn=$true; L 'YABANCI-DINLEYICI-BELIRDI:3002' }; if(-not $HV.tasks[$k].running){ $HV.tasks[$k].running=$true; $HV.tasks[$k].started=$HV.clock; New-Tree $k } elseif($HX.b8Restart -and $HV.phase -eq 'B8'){ $HV.tasks[$k].started=$HV.clock; New-Tree $k; L "YENI-AGAC:$k" } }
++function Get-ScheduledTask     { [CmdletBinding()] param([string[]]$TaskName) foreach($n in $TaskName){ $k=K $n; $t=$HV.tasks[$k]; $st= if($t.running -or $HV.stuck[$k]){'Running'}elseif(-not $t.enabled){'Disabled'}else{'Ready'}; [pscustomobject]@{ TaskName=$n; State=$st; Settings=[pscustomobject]@{Enabled=$t.enabled} } } }
+ function Export-ScheduledTask  { [CmdletBinding()] param([string]$TaskName) '<Task/>' }
+-function Get-NetTCPConnection  { [CmdletBinding()] param([string]$State,[int[]]$LocalPort) foreach($pt in $LocalPort){ $k= if($pt -eq 8080){'API'}else{'WEB'}; if((Test-Up $k) -or $V.stuck[$k]){ [pscustomobject]@{ LocalPort=$pt; OwningProcess=(1000+$pt) } } } }
++function Test-ForeignOn($pt){ $HX.foreign -and $HX.foreign.port -eq $pt -and ($HV.foreignOn -or $HV.phase -eq $HX.foreign.from) }
++function Get-NetTCPConnection  { [CmdletBinding()] param([string]$State,[int[]]$LocalPort) foreach($pt in $LocalPort){ $k= if($pt -eq 8080){'API'}else{'WEB'}
++    if((Test-Up $k) -or $HV.stuck[$k]){ [pscustomobject]@{ LocalPort=$pt; OwningProcess=$HV.tasks[$k].pids.node } }
++    if(Test-ForeignOn $pt){ $HV.foreignOn=$true; [pscustomobject]@{ LocalPort=$pt; OwningProcess=9001 } } } }
+ function Get-CimInstance { [CmdletBinding()] param([Parameter(Position=0)]$ClassName,[string]$Filter)
+-  foreach($k in 'API','WEB'){ if($V.tasks[$k].running -or $V.stuck[$k]){ $a=$k.ToLowerInvariant()
+-    [pscustomobject]@{ Name='hukuk-task-host.exe'; ProcessId=$(if($k -eq 'API'){501}else{502}); CreationDate='c'+$V.tasks[$k].started; CommandLine="C:\Ops\hukuk\bin\hukuk-task-host.exe $a" }
+-    [pscustomobject]@{ Name='pwsh.exe'; ProcessId=$(if($k -eq 'API'){601}else{602}); CreationDate='c'; CommandLine="C:\Ops\hukuk\pwsh\pwsh.exe -NoProfile -NonInteractive -File C:\Ops\hukuk\bin\start-$a.ps1" } } }
+-  [pscustomobject]@{ Name='node.exe'; ProcessId=999; CreationDate='x'; CommandLine='node C:\baska\arac.js HY_W4_RELEASE23\node_modules\@prisma' } }
+-function Get-FileHash { [CmdletBinding()] param([Parameter(Position=0)]$Path,$LiteralPath,$Algorithm) $x= if($LiteralPath){$LiteralPath}else{$Path}; if(-not $V.files.ContainsKey($x)){ throw "dosya yok: $x" }; [pscustomobject]@{ Hash=$V.files[$x] } }
+-function Get-Acl { [CmdletBinding()] param($LiteralPath) [pscustomobject]@{ Sddl=$V.acl[$LiteralPath] } }
++  $all=[Collections.Generic.List[object]]::new(); $base=[datetime]::new(2026,9,22,12,0,0,[DateTimeKind]::Local)
++  foreach($k in 'API','WEB'){ $t=$HV.tasks[$k]; if($t.running -or $HV.stuck[$k]){ $m=$(if($k -eq 'API'){'api'}else{'web'}); $pp=$t.pids; $c0=$base.AddSeconds($t.started)
++    $f=$(if($HX.treeFault -and $HX.treeFault.mode -eq $m -and $t.tphase -eq $HX.treeFault.phase){$HX.treeFault.kind}else{''})
++    $hExe=$(if($f -eq 'hostpath'){'C:\Temp\hukuk-task-host.exe'}else{'C:\Ops\hukuk\bin\hukuk-task-host.exe'})
++    $hC=$(if($f -eq 'ctime'){$c0.AddSeconds(100)}else{$c0})
++    $nPar=$(if($f -eq 'parent'){4000}else{$pp.pwsh})
++    $entry=$(if($m -eq 'api'){'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\dist\apps\api\src\main.js'}else{'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\web\node_modules\next\dist\bin\next start --port 3002'})
++    if($f -eq 'entry'){ $entry='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\web\node_modules\next\dist\bin\next dev --port 3002' }
++    $nC=$c0.AddSeconds(2); if($f -eq 'flap'){ $HV.flap++; $nC=$c0.AddSeconds(2+$HV.flap) }
++    $all.Add([pscustomobject]@{ Name='hukuk-task-host.exe'; ProcessId=$pp.host; ParentProcessId=700; ExecutablePath=$hExe; CreationDate=$hC; CommandLine="`"$hExe`" $m" })
++    $all.Add([pscustomobject]@{ Name='pwsh.exe'; ProcessId=$pp.pwsh; ParentProcessId=$pp.host; ExecutablePath='C:\Ops\hukuk\pwsh\pwsh.exe'; CreationDate=$c0.AddSeconds(1); CommandLine="`"C:\Ops\hukuk\pwsh\pwsh.exe`" -NoProfile -NonInteractive -File C:\Ops\hukuk\bin\start-$m.ps1" })
++    $all.Add([pscustomobject]@{ Name='node.exe'; ProcessId=$pp.node; ParentProcessId=$nPar; ExecutablePath='C:\Users\ulastelli\AppData\Local\Volta\tools\image\node\24.18.0\node.exe'; CreationDate=$nC; CommandLine="`"C:\Users\ulastelli\AppData\Local\Volta\tools\image\node\24.18.0\node.exe`" $entry" }) } }
++  $all.Add([pscustomobject]@{ Name='explorer.exe'; ProcessId=4000; ParentProcessId=1; ExecutablePath='C:\Windows\explorer.exe'; CreationDate=$base.AddSeconds(-9999); CommandLine='C:\Windows\explorer.exe' })
++  $all.Add([pscustomobject]@{ Name='node.exe'; ProcessId=999; ParentProcessId=4000; ExecutablePath='C:\Program Files\nodejs\node.exe'; CreationDate=$base; CommandLine='node C:\baska\arac.js HY_W4_RELEASE23\node_modules\@prisma' })
++  if($HV.foreignOn){ $all.Add([pscustomobject]@{ Name='node.exe'; ProcessId=9001; ParentProcessId=4000; ExecutablePath=$HX.foreign.exe; CreationDate=$base; CommandLine="`"$($HX.foreign.exe)`" server.js" }) }
++  if($Filter -match '^ProcessId=(\d+)$'){ $id=[int]$matches[1]; return @($all | Where-Object { $_.ProcessId -eq $id }) }
++  $names=@([regex]::Matches($Filter,"Name='([^']+)'") | ForEach-Object { $_.Groups[1].Value })
++  @($all | Where-Object { $names -contains $_.Name }) }
++function Get-FileHash { [CmdletBinding()] param([Parameter(Position=0)]$Path,$LiteralPath,$Algorithm) $x= if($LiteralPath){$LiteralPath}else{$Path}; if(-not $HV.files.ContainsKey($x)){ throw "dosya yok: $x" }; [pscustomobject]@{ Hash=$HV.files[$x] } }
++function Get-Acl { [CmdletBinding()] param($LiteralPath) [pscustomobject]@{ Sddl=$HV.acl[$LiteralPath] } }
+ function Copy-Item { [CmdletBinding()] param([Parameter(Position=0)]$Path,[Parameter(Position=1)]$Destination,$LiteralPath,[switch]$Force) $src= if($LiteralPath){$LiteralPath}else{$Path}
+-  if($S.copyFail){ $cf=$S.copyFail.Split('|'); if($Destination -eq $cf[0] -and $V.phase -eq $cf[1]){ L "copy-FAIL:$Destination"; throw "SAHTE KOPYALAMA HATASI $Destination" } }
+-  if(-not $V.files.ContainsKey($src)){ throw "kaynak yok $src" }; $V.files[$Destination]=$V.files[$src]; L "copy:$Destination" }
+-function Set-Content { [CmdletBinding()] param([Parameter(Position=0)]$Path,[Parameter(ValueFromPipeline)]$Value) process { $V.content[$Path]=[string]$Value } }
+-function Get-Content { [CmdletBinding()] param([Parameter(Position=0)]$Path,$LiteralPath,[switch]$Raw) $x= if($LiteralPath){$LiteralPath}else{$Path}; if($V.content.ContainsKey($x)){ $V.content[$x] + "`r`n" } else { throw "icerik yok $x" } }
+-function New-Item { [CmdletBinding()] param($ItemType,$Path) $V.dirs[$Path]=$true; L "mkdir:$Path"; [pscustomobject]@{FullName=$Path} }
+-function Test-Path { [CmdletBinding()] param($LiteralPath,[Parameter(Position=0)]$Path) $x= if($LiteralPath){$LiteralPath}else{$Path}; $V.dirs.ContainsKey($x) -or $V.files.ContainsKey($x) }
+-function Start-Process { [CmdletBinding()] param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru) $m=$ArgumentList[0]; L "seal:$m pair=$($V.files[$OPSR+'\hukuk-task-host.exe'].Substring(0,8))"
+-  $o=[pscustomobject]@{ Id=700; ExitCode=$(if($V.files["$OPSR\hukuk-task-host.exe"] -eq $NEWH['hukuk-task-host.exe']){$S.sealExit[$m]}else{0}); TO=$(if($V.files["$OPSR\hukuk-task-host.exe"] -eq $NEWH['hukuk-task-host.exe']){$S.sealTimeout[$m]}else{$false}) }
++  if($HX.copyFail){ $cf=$HX.copyFail.Split('|'); if($Destination -eq $cf[0] -and $HV.phase -eq $cf[1]){ L "copy-FAIL:$Destination"; throw "SAHTE KOPYALAMA HATASI $Destination" } }
++  if(-not $HV.files.ContainsKey($src)){ throw "kaynak yok $src" }; $HV.files[$Destination]=$HV.files[$src]; L "copy:$Destination" }
++function Set-Content { [CmdletBinding()] param([Parameter(Position=0)]$Path,[Parameter(ValueFromPipeline)]$Value) process { $HV.content[$Path]=[string]$Value } }
++function Get-Content { [CmdletBinding()] param([Parameter(Position=0)]$Path,$LiteralPath,[switch]$Raw) $x= if($LiteralPath){$LiteralPath}else{$Path}; if($HV.content.ContainsKey($x)){ $HV.content[$x] + "`r`n" } else { throw "icerik yok $x" } }
++function New-Item { [CmdletBinding()] param($ItemType,$Path) $HV.dirs[$Path]=$true; L "mkdir:$Path"; [pscustomobject]@{FullName=$Path} }
++function Test-Path { [CmdletBinding()] param($LiteralPath,[Parameter(Position=0)]$Path) $x= if($LiteralPath){$LiteralPath}else{$Path}; $HV.dirs.ContainsKey($x) -or $HV.files.ContainsKey($x) }
++function Start-Process { [CmdletBinding()] param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru) $m=$ArgumentList[0]; L "seal:$m pair=$($HV.files[$OPSR+'\hukuk-task-host.exe'].Substring(0,8))"
++  $o=[pscustomobject]@{ Id=700; ExitCode=$(if($HV.files["$OPSR\hukuk-task-host.exe"] -eq $NEWH['hukuk-task-host.exe']){$HX.sealExit[$m]}else{0}); TO=$(if($HV.files["$OPSR\hukuk-task-host.exe"] -eq $NEWH['hukuk-task-host.exe']){$HX.sealTimeout[$m]}else{$false}) }
+   $o | Add-Member ScriptMethod WaitForExit { param($ms) -not $this.TO }; $o | Add-Member ScriptMethod Refresh { }; $o }
+ function Invoke-WebRequest { [CmdletBinding()] param($Uri,$TimeoutSec,$MaximumRedirection,[switch]$SkipHttpErrorCheck,[switch]$UseBasicParsing)
+-  if($Uri -match ':8080/'){ if(Test-Up 'API'){ return [pscustomobject]@{StatusCode=401} } } else { if(Test-Up 'WEB'){ return [pscustomobject]@{StatusCode=200} } }; throw 'baglanti yok' }
+-function powershell.exe { $V.log.Add(('{0,7:N1}s [{1}] gate {2}' -f $V.clock,$V.phase,($args -join ' '))); $global:LASTEXITCODE=$S.gateExit }
++  if($Uri -match ':8080/'){ if(Test-Up 'API'){ return [pscustomobject]@{StatusCode=401} }; if(Test-ForeignOn 8080){ return [pscustomobject]@{StatusCode=$HX.foreign.code} } } else { if(Test-Up 'WEB'){ return [pscustomobject]@{StatusCode=200} }; if(Test-ForeignOn 3002){ return [pscustomobject]@{StatusCode=$HX.foreign.code} } }; throw 'baglanti yok' }
++function powershell.exe { $HV.log.Add(('{0,7:N1}s [{1}] gate {2}' -f $HV.clock,$HV.phase,($args -join ' '))); $global:LASTEXITCODE=$HX.gateExit }
+ # ---- akis: owner'in yapacagi gibi; blok hata verirse runbook dalina gecilir ----
+-function Run($name){ $V.phase=$name.Split('-')[0]; L "=== $name"; try { . ([scriptblock]::Create($T[$name])) | ForEach-Object { L "OUT: $_" }; L "SONUC: OK"; $true } catch { L "SONUC: THROW $($_.Exception.Message)"; $false } }
++function Run($name){ $HV.phase=$name.Split('-')[0]; L "=== $name"; try { . ([scriptblock]::Create($T[$name])) | ForEach-Object { L "OUT: $_" }; L "SONUC: OK"; $true } catch { L "SONUC: THROW $($_.Exception.Message)"; $false } }
+ $null=. Run 'P0-tanimlar'; function Test-HLAdmin { $true }; $p=$STUB
+ if($Scenario -eq 'NO_B2'){ $null=. Run 'B3-durdur-kopyala'; $null=. Run 'R1-geri-yukle' }
+ else {
+@@ -81,7 +108,7 @@ else {
+   if($ok){ $ok=. Run 'B5-baslat' }
+   if($ok){ $null=. Run 'B8-kabul' }
+   if(-not $ok){ $null=. Run 'R1-geri-yukle' }
+-  if($Scenario -eq 'SEAL_FAIL'){ $V.phase='B5x'; $null=. Run 'B5-baslat' }
++  if($Scenario -eq 'SEAL_FAIL'){ $HV.phase='B5x'; $null=. Run 'B5-baslat' }
+ }
+-$V.log | ForEach-Object { $_ }
+-"FINAL: api=$($V.files[$OPSR+'\start-api.ps1'].Substring(0,8)) host=$($V.files[$OPSR+'\hukuk-task-host.exe'].Substring(0,8)) API(en=$($V.tasks.API.enabled),run=$($V.tasks.API.running)) WEB(en=$($V.tasks.WEB.enabled),run=$($V.tasks.WEB.running))"
++$HV.log | ForEach-Object { $_ }
++"FINAL: api=$($HV.files[$OPSR+'\start-api.ps1'].Substring(0,8)) host=$($HV.files[$OPSR+'\hukuk-task-host.exe'].Substring(0,8)) API(en=$($HV.tasks.API.enabled),run=$($HV.tasks.API.running)) WEB(en=$($HV.tasks.WEB.enabled),run=$($HV.tasks.WEB.running))"
+######## test/assert.ps1
+diff --git a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/test/assert.ps1 b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/test/assert.ps1
+index 6d43fa16..07e0ae32 100644
+--- a/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R02/test/assert.ps1
++++ b/D:/Development/HUKUK_YAZILIMI/HY_P1_WINDOW_B_COMMANDS/R03/test/assert.ps1
+@@ -54,6 +54,32 @@ A 'R1_GATE_FAIL' ((Has $e 'R1' 'gate .*-Stage S1') -and -not (Has $e 'R1' 'DOGRU
+ # NO_B2
+ $e=Ev 'NO_B2'
+ A 'NO_B2' (-not (Has $e 'B3' 'stop:|disable:|copy:')) 'dogrulanmis yedek yok -> DURDURMA YOK'
++# ===== R03 kimlik senaryolari =====
++$e=Ev 'HAPPY'
++A 'HAPPY' (Has $e 'B5' 'OUT: B5 PASS \| API .*\[L\d+\|N\d+@.*\|P\d+@.*\|H\d+@.*\] \| WEB .*\[L\d+\|N') 'B5 PASS dogrulanmis agac imzasiyla (L|N|P|H)'
++A 'HAPPY' (Has $e 'B8' 'OUT: B8 PASS \| saglik 401/200 \| agac B5 imzasiyla birebir') 'B8 baslangic kimligi = B5 dogrulanmis agac'
++$e=Ev 'FOREIGN_LISTENER'
++A 'FOREIGN_LISTENER' (Has $e 'B5' 'YABANCI dinleyici/agac: dinleyici exe beklenen degil') 'dogru HTTP kodlu yabanci dinleyici KIMLIKTE reddedildi'
++A 'FOREIGN_LISTENER' (-not (Has $e 'B5' 'start:WEB|enable:WEB|OUT: B5 PASS')) 'WEB baslamadi, basari yazilmadi'
++A 'FOREIGN_LISTENER' (Has $e 'B5' 'SESSIZLIK YOK: R1 CALISTIRMAYIN') 'yabanci dinleyici suruyor -> sessizlik yok -> acik hata'
++A 'FOREIGN_LISTENER' (-not (Has $e 'R1' $cOps)) 'R1 kosulsa da dosya KOPYALANMADI'
++foreach($x in @(@('WRONG_HOST_PATH','B5','launcher parent beklenen host degil'),@('WRONG_PARENT','B5','node parent beklenen launcher degil'),@('PID_REUSE','B5','olusturulma zamani sirasi bozuk'))){
++  $e=Ev $x[0]
++  A $x[0] (Has $e 'B5' ('API kapisi PASS degil \(YABANCI dinleyici/agac: ' + $x[2])) ('API reddi: ' + $x[2])
++  A $x[0] (-not (Has $e 'B5' 'start:WEB|enable:WEB|OUT: B5 PASS')) 'WEB baslamadi, basari yazilmadi'
++  A $x[0] (Has $e 'R1' 'OUT: R1 DOGRULANDI') 'kendi agaci durduruldu -> R1 dogru agacla DOGRULANDI' }
++$e=Ev 'WRONG_ENTRY'
++A 'WRONG_ENTRY' (Has $e 'B5' 'WEB kapisi PASS degil \(YABANCI dinleyici/agac: node entry/args beklenen degil') 'WEB yanlis entry reddedildi'
++A 'WRONG_ENTRY' (-not (Has $e 'B5' 'OUT: B5 PASS')) 'basari yazilmadi'
++A 'WRONG_ENTRY' (Has $e 'R1' 'OUT: R1 DOGRULANDI') 'R1 DOGRULANDI'
++$e=Ev 'ID_FLAP'
++A 'ID_FLAP' (Has $e 'B5' 'API kapisi PASS degil \(operasyonel butce asildi') 'olcum sirasinda degisen kimlik hic PASS almadi'
++A 'ID_FLAP' (-not (Has $e 'B5' 'start:WEB|OUT: B5 PASS')) 'WEB baslamadi'
++$e=Ev 'R1_FOREIGN'
++A 'R1_FOREIGN' (Has $e 'R1' 'R1: WEB kimlik/saglik kapisi PASS degil \(YABANCI: ') 'R1 WEB yabanci dinleyiciyi reddetti'
++A 'R1_FOREIGN' (-not (Has $e 'R1' 'DOGRULANDI')) 'R1 DOGRULANDI yazilmadi'
++$e=Ev 'B8_NEWTREE'
++A 'B8_NEWTREE' ((Has $e 'B5' 'OUT: B5 PASS') -and (Has $e 'B8' 'IKINCI BASLATMA dogrulanan agaci degistirdi') -and -not (Has $e 'B8' 'OUT: B8 PASS')) 'ikinci baslatmada yeni agac -> B8 kabul VERMEDI'
+ $R | ForEach-Object { $_ }
+ "ASSERT: " + $(if($fail -eq 0){'PASS'}else{'FAIL'}) + " | " + ($R.Count-$fail) + "/" + $R.Count + " | PS " + $PSVersionTable.PSVersion
+ exit $(if($fail -eq 0){0}else{1})

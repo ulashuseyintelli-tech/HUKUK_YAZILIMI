@@ -1,0 +1,53 @@
+OK    HAPPY           durdurma sirasi WEB sonra API
+OK    HAPPY           kopyalama durdurmadan SONRA
+OK    HAPPY           iki muhur YENI cift uzerinde
+OK    HAPPY           API sonra WEB
+OK    HAPPY           B5 ve B8 PASS
+OK    COPY_FAIL       kopyalama hatasi enjekte edildi
+OK    COPY_FAIL       B3 icinde muhur/enable/start YOK
+OK    COPY_FAIL       B4/B5 calismadi
+OK    COPY_FAIL       R1 eski cift + muhur + API->WEB + S1 = DOGRULANDI
+OK    SEAL_FAIL       muhur basarisiz -> B4 icinde servis BASLAMADI
+OK    SEAL_FAIL       R1 dogrulandi
+OK    SEAL_TIMEOUT    muhur basarisiz -> B4 icinde servis BASLAMADI
+OK    SEAL_TIMEOUT    R1 dogrulandi
+OK    SEAL_FAIL       muhur basarisizken B5 elle kosulsa da servis BASLATMAZ
+OK    API_TIMEOUT     API butcesi dolunca WEB BASLAMADI
+OK    API_TIMEOUT     sure dolunca belgelenmis durdurma calisti
+OK    API_TIMEOUT     sure dolmasi URUN ARIZASI diye sunulmadi
+OK    API_TIMEOUT     R1 dogrulandi
+OK    WEB_TIMEOUT     WEB butcesi dolunca BASARI YAZILMADI
+OK    WEB_TIMEOUT     durdurma calisti
+OK    WEB_TIMEOUT     R1 dogrulandi
+OK    UNSTOPPABLE_B3  sessizlik yok -> OPS kopyalamasi YOK (B3 ve R1)
+OK    UNSTOPPABLE_B3  surece dokunulmadi
+OK    UNSTOPPABLE_B5  B5 durdurma dogrulanamadi -> acik hata
+OK    UNSTOPPABLE_B5  R1 yine de kosulsa: dosya KOPYALANMADI
+OK    R1_API_TIMEOUT  R1 API kapisi yok -> WEB BASLAMADI, DOGRULANDI yazilmadi
+OK    R1_WEB_TIMEOUT  R1 WEB kapisi yok -> DOGRULANDI yazilmadi
+OK    R1_GATE_FAIL    S1 kapisi FAIL -> DOGRULANDI yazilmadi
+OK    NO_B2           dogrulanmis yedek yok -> DURDURMA YOK
+OK    HAPPY           B5 PASS dogrulanmis agac imzasiyla (L|N|P|H)
+OK    HAPPY           B8 baslangic kimligi = B5 dogrulanmis agac
+OK    FOREIGN_LISTENER dogru HTTP kodlu yabanci dinleyici KIMLIKTE reddedildi
+OK    FOREIGN_LISTENER WEB baslamadi, basari yazilmadi
+OK    FOREIGN_LISTENER yabanci dinleyici suruyor -> sessizlik yok -> acik hata
+OK    FOREIGN_LISTENER R1 kosulsa da dosya KOPYALANMADI
+OK    WRONG_HOST_PATH API reddi: launcher parent beklenen host degil
+OK    WRONG_HOST_PATH WEB baslamadi, basari yazilmadi
+OK    WRONG_HOST_PATH kendi agaci durduruldu -> R1 dogru agacla DOGRULANDI
+OK    WRONG_PARENT    API reddi: node parent beklenen launcher degil
+OK    WRONG_PARENT    WEB baslamadi, basari yazilmadi
+OK    WRONG_PARENT    kendi agaci durduruldu -> R1 dogru agacla DOGRULANDI
+OK    PID_REUSE       API reddi: olusturulma zamani sirasi bozuk
+OK    PID_REUSE       WEB baslamadi, basari yazilmadi
+OK    PID_REUSE       kendi agaci durduruldu -> R1 dogru agacla DOGRULANDI
+OK    WRONG_ENTRY     WEB yanlis entry reddedildi
+OK    WRONG_ENTRY     basari yazilmadi
+OK    WRONG_ENTRY     R1 DOGRULANDI
+OK    ID_FLAP         olcum sirasinda degisen kimlik hic PASS almadi
+OK    ID_FLAP         WEB baslamadi
+OK    R1_FOREIGN      R1 WEB yabanci dinleyiciyi reddetti
+OK    R1_FOREIGN      R1 DOGRULANDI yazilmadi
+OK    B8_NEWTREE      ikinci baslatmada yeni agac -> B8 kabul VERMEDI
+ASSERT: PASS | 52/52 | PS 7.6.6
