@@ -38,7 +38,7 @@ const { closeByRunId } = require('./c-99-close');
     distBinding: { root: dist.root, ok: dist.ok, files: Object.fromEntries(Object.entries(dist.files).map(([k, v]) => [k, v.match])) },
     tools, runId, slug, startedAt: new Date().toISOString(), stage: 'kurulum-oncesi',
     recovery: `C123_RUN_ID=${runId} node c-99-close.js`,
-    note: disposable ? 'DISPOSABLE PROVA — canli kabul YERINE GECMEZ' : `CANLI KOSUM · GO ${env.goRef}`,
+    note: disposable ? 'DISPOSABLE PROVA — canli kabul YERINE GECMEZ' : `CANLI KOSUM · GO ref sha256 ${env.goRefSha256}`,
   };
   L.writeJsonNoSecrets(L.resultFile(), result);
   console.log(`KOSUM KIMLIGI (yazmadan ONCE kayda gecti): runId=${runId} tenant=${slug} ortam=${env.environment}`);

@@ -265,6 +265,16 @@ $env:C123_RESULT_FILE   = '<repo DIŞI>/c123-result.json'
 node project/docs/governance/office-live-acceptance-c123-r01/scripts/c-run.js
 ```
 
+**R02 bakımından sonra tercih edilen yol — `scripts/c-owner-block.ps1`.** Bu betik aynı ortamı kendisi kurar
+(GO ref `Read-Host` ile yerel girilir, DB URL canlı `.env`'den süreç içinde okunur, kanıt dizini ve manifest üretilir)
+ve **çıkış kodunu `exit $rc` ile aynen aktarır**. Yukarıdaki elle kurulum yalnız referans olarak kalır.
+
+```powershell
+& { $ErrorActionPreference='Stop'; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\office-live-acceptance-c123-r01\scripts\c-owner-block.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '07FA41D14DBA0166234C382BBB37126B025F2A4F506113B57A07E186D1855190'){ throw 'C123 BLOK SHA UYUSMUYOR - DUR' }; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f; 'C123 cikis=' + $LASTEXITCODE }
+```
+
+`-SelfTest` anahtarıyla çağrıldığında yazma yapmaz ve GO ref sormaz; yalnız kapıları ölçer.
+
 Ö-2 "FD canlıda koşulmaz" olarak kalırsa canlı koşum **yapılmaz**. Bu pakette C3'ü atlayan bir mod yoktur. Kısmi kapsam isteniyorsa paket revize edilir (R02) ve yeniden prova edilir.
 
 `c-start-api.js` yalnız prova içindir; **canlıda kullanılmaz**.
@@ -273,13 +283,22 @@ node project/docs/governance/office-live-acceptance-c123-r01/scripts/c-run.js
 
 ## 12. Araç SHA256
 
+> **R02 BAKIM DUZELTMESI (2026-09-23) — kabul sonucunu DEGISTIRMEZ.** 2026-09-22 canli kabulu (runId `87220c29`,
+> 33/33 PASS) yukaridaki **eski** `c-lib.js`/`c-run.js` sha256 degerleriyle kosuldu ve kaydi
+> `record/C123-LIVE-RECORD-R01.md` icindedir. Bakim iki kusuru giderir: (1) GO ref literalinin sonuc/durum
+> dosyalarina yazilmasi, (2) surec cikis kodunun cagiran kabuga aktarilmamasi. Canli kabul YENIDEN KOSULMADI;
+> yeni SHA'lar bundan SONRAKI kosumlar icindir.
+
+
 | dosya | sha256 |
 |---|---|
-| `scripts/c-lib.js` | `527C89E35B11F2D83A384333EB7237FAE9ED105A252E9D8EC4F94F5C31CA69DC` |
+| `scripts/c-lib.js` | `FAB3CCDB786031F20E01B09C546C501F8FE29BE383E07821B16FEC9035316502` (R02 bakim; kabul kosumu `527C89E3…69DC` ile yapildi) |
 | `scripts/c-setup.js` | `179381E2B37A7C22B486BCD5DE177DE487463358529B479B652750AC14CAB3F6` |
 | `scripts/c-cases.js` | `C67873D56D69A6FFC69D3A21015333A66CE49727788E592A782971EFB0E99532` |
 | `scripts/c-99-close.js` | `1A5B4C3A6B51E40B301B125403D4B10F4D610803F3399184C6917339798EE9BC` |
-| `scripts/c-run.js` | `6981B7F7A52E405DA53826DF0D67A5B0E1088AEF09604F035210F6AA24B51FD2` |
+| `scripts/c-run.js` | `FCEF66AF206928B03BB65318E8FEB33E3934013BD54B8B466DAA241A5BD2E054` (R02 bakim; kabul kosumu `6981B7F7…1FD2` ile yapildi) |
+| `scripts/c-owner-block.ps1` (R02 bakim, YENI) | `07FA41D14DBA0166234C382BBB37126B025F2A4F506113B57A07E186D1855190` |
+| `scripts/c-fix-verify.js` (R02 bakim dogrulamasi, YENI) | `52E424224A7C4B789C143B412C6CEDBAC5E2284D8B10242224D212476A9FC121` |
 | `scripts/c-start-api.js` | `D4012B54E6605EBDC8167B8253D4615D158DD781CCEE960EF214A09F906E9222` |
 | `scripts/c-dist-pins.json` | `FE747553041587579E88C67ADBD04488C2D6F4B2A10AD8DB869D5E536DD8C678` |
 | `scripts/c-expect-shapes.json` | `8E7FFD9C7DDD2FEC062D9A76DAE7291A1AB8151E2E6085A92370D0D3DBDACF0E` |

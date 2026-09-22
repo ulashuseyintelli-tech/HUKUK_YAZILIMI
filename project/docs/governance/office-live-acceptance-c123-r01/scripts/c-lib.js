@@ -50,6 +50,8 @@ const ENVIRONMENTS = {
 const LIVE_API_PORT = '8080';
 const LIVE_CONFIRM_TOKEN = 'YES-LIVE-OFFICE-ACCEPTANCE-C123';
 const GO_REF_RE = /^OWNER-GO-OFFICE-C123-\d{8}-R\d{2}$/;
+// Cikti dosyalarinda literal ARAMAK icin ankrajsiz desen (GO_REF_RE ankrajlidir, gomulu metni bulmaz).
+const GO_REF_ANY_RE = /OWNER-GO-OFFICE-C123-\d{8}-R\d{2}/;
 
 /** G-5: musteriye gonderim uretebilen uclar. Bu paketten HIC cagrilmaz. */
 const FORBIDDEN_ROUTE_RE = /\/(publish|retry-publication|reverse|supersede)(\/|\?|$)/;
@@ -84,7 +86,8 @@ function assertRunEnvironment() {
     }
     goRef = process.env.C123_OWNER_GO_REF || '';
     if (!GO_REF_RE.test(goRef)) {
-      throw new EnvironmentGateError(`G-0: C123_OWNER_GO_REF bicimi gecersiz ('${goRef}'; beklenen OWNER-GO-OFFICE-C123-YYYYMMDD-Rnn)`);
+      // Girilen deger YAZDIRILMAZ: yanlis girilen bir ref bile literaldir ve loga dusmemelidir.
+      throw new EnvironmentGateError('G-0: C123_OWNER_GO_REF bicimi gecersiz (beklenen OWNER-GO-OFFICE-C123-YYYYMMDD-Rnn)');
     }
   }
 
@@ -113,7 +116,11 @@ function assertRunEnvironment() {
   if (environment === 'live' && apiPort !== LIVE_API_PORT) {
     throw new EnvironmentGateError(`G-0: canli DB ile canli olmayan API portu (${apiPort}) hedeflenemez`);
   }
-  return { environment, dbHost, dbPort, dbName, apiHost: a.hostname, apiPort, goRef };
+  // GO ref LITERALI donulmez: cikti dosyalarina (sonuc/durum) sizmasin diye yalniz sha256'si tasinir.
+  // Literal yalniz bu fonksiyonun icinde, bicim kapisi icin kullanilir.
+  const goRefSha256 = goRef === null ? null
+    : crypto.createHash('sha256').update(goRef).digest('hex').toUpperCase();
+  return { environment, dbHost, dbPort, dbName, apiHost: a.hostname, apiPort, goRefSha256 };
 }
 
 /** G-6 — hedef dist'teki ayirt edici dosyalar pinle BIREBIR ayni ve isaret metni mevcut olmali. */
@@ -179,7 +186,13 @@ function slugFor(runId) {
 // ── durum / sonuc dosyalari (repo DISI; sir YOK) ────────────────────────────────
 function writeJsonNoSecrets(file, obj) {
   OW.assertNoSecrets(obj);
-  fs.writeFileSync(file, JSON.stringify(obj, null, 1) + '\n', 'utf8');
+  const text = JSON.stringify(obj, null, 1) + '\n';
+  // FAIL-CLOSED: GO ref literali hicbir cikti dosyasina yazilamaz (alan adi ne olursa olsun).
+  // 2026-09-22 C123 kosumunda literal `environment.goRef` ve `note` alanlarindan sonuc/durum
+  // dosyalarina sizmisti; kapi bu nedenle metin duzeyinde kurulur.
+  const leak = GO_REF_ANY_RE.test(text);
+  if (leak) throw new Error(`G-4 IHLALI: GO ref literali '${path.basename(file)}' dosyasina yazilamaz (deger YAZDIRILMAZ)`);
+  fs.writeFileSync(file, text, 'utf8');
 }
 function stateFile() { return process.env.C123_STATE_FILE || path.join(process.cwd(), 'c123-state.json'); }
 function resultFile() { return process.env.C123_RESULT_FILE || path.join(process.cwd(), 'c123-result.json'); }
