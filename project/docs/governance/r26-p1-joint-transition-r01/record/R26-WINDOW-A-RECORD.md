@@ -93,3 +93,16 @@ B2 kanıt dosyaları (`b2-5f06e5b1/`) `SHA256-MANIFEST.txt` ile birebir. `.log` 
 ## 5. A6 kapanışı
 
 Bu PR; eşleşen head, zorunlu kontrollerin tamamı SUCCESS ve main CI'ın **boşta ölçülmesi** koşuluyla squash edilir. Merge SHA'sı, main CI/CodeQL sonucu ve "PENCERE A KAPANDI" bildirimi PR açıklamasına ve oturum kapanış raporuna yazılır. Bu belge merge sonrası değiştirilmez.
+
+---
+
+## 6. Ek — merge sonrası takip (#2745 `b1ea4350` sonrasında)
+
+CLIENT'ın merge öncesi düzeltme isteği merge'den sonra ulaştı (kuyrukta kalmıştı). §1–§5 değiştirilmedi. İki düzeltme bu ekle yapılır:
+
+| # | düzeltme | değer |
+|---|---|---|
+| E-1 | **A5 sonrası canlı durum kanıtı eklendi.** CLIENT kendi doğrulayıcısıyla ölçtü: canlı hâlâ **S1**, PASS, 0 başarısız. A5'te gerçek geri dönüş yapılmadı | `client-verify/A5-S1.json` `B43D735663B5404EC1F4CBD1C368734ED63A5201B533760EF2C65CEBE54DAC69` |
+| E-2 | **Etiket:** §4'teki `client-verify/dryrun-S0-against-historical-gate.json` (`E640C6DA…CBCC1`), **tarihsel kapıya karşı yapılmış bir kuru koşudur. A0 kabulü DEĞİLDİR.** A0 kabulünün kanıtı `window-a/gate-S0-A0.json` ve CLIENT tarafında `client-verify/A0-S0.json`'dur | — |
+
+Merge sonrası doğrulama (#2745): main CI 35706571827, Push on main, GOV-COORD ve CodeQL Analyze ×3 SUCCESS. CLIENT bunu ayrıca bağımsız doğruladı. Pencere A yeniden açılmadı; canlıya dokunulmadı.
