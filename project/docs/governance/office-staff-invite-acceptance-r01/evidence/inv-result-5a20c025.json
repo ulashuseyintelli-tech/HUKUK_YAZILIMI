@@ -1,0 +1,93 @@
+{
+ "record": "OFFICE-INVITE-ACCEPTANCE-R01",
+ "environment": {
+  "environment": "disposable",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5443",
+  "dbName": "hukuk_i13_894280b1_test",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8115",
+  "goRefSha256": null
+ },
+ "runId": "5a20c025",
+ "slug": "inv-5a20c025",
+ "tenantId": "cmud7ugrt000110v2sxacj4gr",
+ "inviteId": "cmud7ugu40004a25mugqkv415",
+ "invitedUserId": "cmud7ugu20002a25mc0lrumz0",
+ "tokenSha256": "716AA83C65FCEE40303BF792049576DCD5AC2718B183268E688997E9377C861B",
+ "faultInjected": false,
+ "closure": {
+  "ok": true,
+  "found": true,
+  "activeBefore": 2,
+  "deactivated": 2,
+  "revokedInvites": 0,
+  "stillActive": 0,
+  "pendingLeft": 0,
+  "login": 401,
+  "me": 401
+ },
+ "isolationBefore": {
+  "tenants": 97,
+  "digest": "eb79122c7fd7b4ad"
+ },
+ "isolationAfter": {
+  "tenants": 97,
+  "digest": "eb79122c7fd7b4ad"
+ },
+ "results": [
+  {
+   "id": "D-1",
+   "desc": "ADMIN davet olusturur (tenant kapsamli, token DB'de yalniz hash)",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · inviteId=VAR · tokenHash=VAR · consumedAt=yok"
+  },
+  {
+   "id": "D-2",
+   "desc": "yerel yakalayicida TESLIM: mesaj dosyasi VAR, alici sentetik, kabul baglantisi VAR, token DB hash'i ile eslesiyor",
+   "verdict": "PASS",
+   "observed": "yakalanan=msg-0001.eml · kabul-baglantisi=VAR · token->DB hash eslesme=true"
+  },
+  {
+   "id": "D-3",
+   "desc": "gercek kabul ucu: hesap aktiflesir, parola yazilir, davet tuketilir",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · isActive=true · passwordHash=VAR · consumedAt=VAR"
+  },
+  {
+   "id": "D-4",
+   "desc": "davet edilen kullanici yeni parolasiyla giris yapar",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · token=alindi"
+  },
+  {
+   "id": "D-5",
+   "desc": "AYNI davet token'i tekrar kullanilamaz (tuketilmis) ve parola DEGISMEZ",
+   "verdict": "PASS",
+   "observed": "HTTP 400 · parola hash degismedi=true"
+  },
+  {
+   "id": "D-6",
+   "desc": "kullanilmamis davetler iptal edildi (bekleyen 0)",
+   "verdict": "PASS",
+   "observed": "API bekleyen=0 · DB kalan bekleyen=0"
+  },
+  {
+   "id": "D-7",
+   "desc": "erisim kapanisi: kullanicilar pasif, giris 401, eski token 401",
+   "verdict": "PASS",
+   "observed": "pasif=2 · aktif kalan=0 · giris=401 · eski token=401"
+  },
+  {
+   "id": "D-8",
+   "desc": "izolasyon: sentetik olmayan taraf DEGISMEDI",
+   "verdict": "PASS",
+   "observed": "once=eb79122c7fd7b4ad/97 sonra=eb79122c7fd7b4ad/97"
+  }
+ ],
+ "pass": 8,
+ "fail": 0,
+ "fatal": null,
+ "recovery": "INV_RUN_ID=5a20c025 node inv-99-close.js",
+ "finishedAt": "2026-09-22T21:58:39.595Z"
+}

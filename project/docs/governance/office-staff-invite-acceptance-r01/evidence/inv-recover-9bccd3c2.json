@@ -1,0 +1,24 @@
+{
+ "record": "OFFICE-INVITE-CLOSE",
+ "environment": {
+  "environment": "disposable",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5443",
+  "dbName": "hukuk_i13_894280b1_test",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8115",
+  "goRefSha256": null
+ },
+ "runId": "9bccd3c2",
+ "slug": "inv-9bccd3c2",
+ "ok": true,
+ "found": true,
+ "activeBefore": 0,
+ "deactivated": 0,
+ "revokedInvites": 0,
+ "stillActive": 0,
+ "pendingLeft": 0,
+ "login": null,
+ "me": null,
+ "atUtc": "2026-09-22T21:59:00.199Z"
+}
