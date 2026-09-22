@@ -1,0 +1,380 @@
+{
+ "record": "OFFICE-C123-ACCEPTANCE-R01",
+ "package": "office-live-acceptance-c123-r01",
+ "environment": {
+  "environment": "live",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5432",
+  "dbName": "hukuk_db",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8080",
+  "goRef": "[MASKELENDI — GO ref literali repoya yazilmaz; sha256 goref-consumed.json icinde]"
+ },
+ "distBinding": {
+  "root": "C:\\Development\\HUKUK_YAZILIMI\\HY_W4_RELEASE23\\project\\apps\\api\\dist\\apps\\api\\src",
+  "ok": true,
+  "files": {
+   "common/party-write-tx.js": true,
+   "modules/case/case.service.js": true,
+   "modules/client/client.service.js": true,
+   "modules/office-approval/office-write-role.policy.js": true,
+   "modules/client-financial-disclosure/client-financial-disclosure-approval-eligibility.js": true,
+   "modules/client-financial-disclosure/client-financial-disclosure-approval.service.js": true,
+   "modules/office-approval/office-approval-domain-ownership.js": true,
+   "modules/office-approval/office-approval.service.js": true
+  }
+ },
+ "tools": {
+  "c-lib.js": "527C89E35B11F2D83A384333EB7237FAE9ED105A252E9D8EC4F94F5C31CA69DC",
+  "c-setup.js": "179381E2B37A7C22B486BCD5DE177DE487463358529B479B652750AC14CAB3F6",
+  "c-cases.js": "C67873D56D69A6FFC69D3A21015333A66CE49727788E592A782971EFB0E99532",
+  "c-99-close.js": "1A5B4C3A6B51E40B301B125403D4B10F4D610803F3399184C6917339798EE9BC",
+  "c-run.js": "6981B7F7A52E405DA53826DF0D67A5B0E1088AEF09604F035210F6AA24B51FD2",
+  "c-dist-pins.json": "FE747553041587579E88C67ADBD04488C2D6F4B2A10AD8DB869D5E536DD8C678",
+  "c-expect-shapes.json": "8E7FFD9C7DDD2FEC062D9A76DAE7291A1AB8151E2E6085A92370D0D3DBDACF0E",
+  "ow-lib.js": "612D20D1439DCAFEEB2C86AC867988133F26AE900D95F102571240D3A12F988A"
+ },
+ "runId": "87220c29",
+ "slug": "off-c123-87220c29",
+ "startedAt": "2026-09-22T19:59:17.952Z",
+ "stage": "bitti",
+ "recovery": "C123_RUN_ID=87220c29 node c-99-close.js",
+ "note": "CANLI KOSUM — GO ref MASKELENDI (sha256 goref-consumed.json icinde)",
+ "setup": {
+  "tenantId": "cmud3kz8z0001x78s9yjinvxd",
+  "writtenRows": 27,
+  "scopePlan": {
+   "direct": 145,
+   "child": 37,
+   "unscoped": [
+    "Tenant",
+    "ServiceHistory",
+    "DocumentTemplate",
+    "FormType",
+    "FormSubType",
+    "PortalNotification",
+    "PublicInstitution",
+    "UyapUnit",
+    "InterestRate",
+    "IcrabotCaseFact",
+    "IcrabotCaseFlag",
+    "IcrabotFactAudit",
+    "IcrabotEngineRun",
+    "IcrabotRulePack",
+    "IcrabotRule",
+    "IcrabotRuleRevision",
+    "IcrabotQueueItem",
+    "IcrabotEmailLog",
+    "IcrabotSmsLog",
+    "IcrabotNotification",
+    "IcrabotUyapSubmission",
+    "IcrabotTask",
+    "AddressEvidenceRef",
+    "ManifestAdminAuditLog",
+    "ManifestWorkerState",
+    "PromoteRequest",
+    "EscalationStateRecord"
+   ]
+  }
+ },
+ "finishedAt": "2026-09-22T19:59:38.995Z",
+ "verdict": "PASS",
+ "pass": 33,
+ "fail": 0,
+ "unmeasured": 0,
+ "total": 33,
+ "runError": null,
+ "results": [
+  {
+   "id": "C1-S",
+   "desc": "ADMIN -> satir-ici alacakli + borclu ile dava acilisi 201",
+   "ok": true,
+   "observed": "HTTP 201 · fark [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] beklenen [AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2] · dava 1 · muvekkil 1 · borclu 1 · bag caseClient=1 caseDebtor=1"
+  },
+  {
+   "id": "C1-R1",
+   "desc": "ADMIN -> ayni govde + var olmayan staffMemberId -> 400, dava/muvekkil/borclu 0 (geri alma)",
+   "ok": true,
+   "observed": "HTTP 400 msg=\"Geçersiz veya başka tenant'a ait personel: c123-yok-87220c29\" · yazma 0 (goruntu ayni) · kalinti: dava 0 · muvekkil 0 · borclu 0"
+  },
+  {
+   "id": "C1-R2",
+   "desc": "ADMIN -> C1-S ile ayni fileNumber -> 409, yazma 0",
+   "ok": true,
+   "observed": "HTTP 409 msg=\"Bu dosya numarası (C1S-87220c29) zaten kullanılıyor\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "C1-V1",
+   "desc": "VIEWER -> satir-ici alacakli ile dava acilisi -> 403, yazma 0",
+   "ok": true,
+   "observed": "HTTP 403 code=CLIENT_MUTATION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü müvekkil kaydı oluşturamaz veya değiştiremez.\" · yazma 0 (goruntu ayni)"
+  },
+  {
+   "id": "C2-G1",
+   "desc": "VIEWER approve (CHANGE_STATUS)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL"
+  },
+  {
+   "id": "C2-G2",
+   "desc": "VIEWER reject (CHANGE_STATUS)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL"
+  },
+  {
+   "id": "C2-G3",
+   "desc": "VIEWER request-revision (CHANGE_STATUS)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL"
+  },
+  {
+   "id": "C2-G4",
+   "desc": "VIEWER approve-with-changes (CHANGE_STATUS)",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL"
+  },
+  {
+   "id": "C2-D1",
+   "desc": "VIEWER POST /collection-dispositions/:id/approve",
+   "ok": true,
+   "observed": "HTTP 403 code=OFFICE_APPROVAL_DECISION_DENIED_VIEWER msg=\"Görüntüleyici (VIEWER) rolü onay kararı veremez; bağlı avukatın rütbesi veya delegasyonu bu sınırı aşmaz.\" · yazma 0 (goruntu ayni) · dispozisyon DISTRIBUTION_RECOMMENDED · talep PENDING_APPROVAL"
+  },
+  {
+   "id": "C2-GP",
+   "desc": "elev3 (USER + delege) CHANGE_STATUS approve -> 201/200, talep APPROVED + audit",
+   "ok": true,
+   "observed": "HTTP 201 · fark [AuditLog+,OfficeApprovalRequest~] beklenen [AuditLog+,OfficeApprovalRequest~] · talep APPROVED onaylayan=elev3"
+  },
+  {
+   "id": "C2-DP",
+   "desc": "elev1 (USER + PARTNER) dispozisyon approve -> APPROVED",
+   "ok": true,
+   "observed": "HTTP 201 · fark [AuditLog+,CollectionDisposition~,OfficeApprovalRequest~] beklenen [AuditLog+,CollectionDisposition~,OfficeApprovalRequest~] · dispozisyon DISTRIBUTION_APPROVED · talep APPROVED"
+  },
+  {
+   "id": "C3-P0",
+   "desc": "elev1 POST /collection-dispositions/:id/post -> POSTED",
+   "ok": true,
+   "observed": "HTTP 201 · fark [AccountingJournalEntry+x3,AccountingJournalLine+x6,AuditLog+,CollectionDispositionExpenseApplication+,CollectionDisposition~,OfficeApprovalRequest~] beklenen [AccountingJournalEntry+x3,AccountingJournalLine+x6,AuditLog+,CollectionDispositionExpenseApplication+,CollectionDisposition~,OfficeApprovalRequest~] · dispozisyon POSTED"
+  },
+  {
+   "id": "C3-P1",
+   "desc": "elev1 POST /collection-dispositions/:id/financial-disclosure -> DRAFT surum",
+   "ok": true,
+   "observed": "HTTP 201 · fark [ClientFinancialDisclosure+,ClientFinancialDisclosureLine+x2,ClientFinancialDisclosureVersion+] beklenen [ClientFinancialDisclosure+,ClientFinancialDisclosureLine+x2,ClientFinancialDisclosureVersion+] · surum p1ao3jjs DRAFT"
+  },
+  {
+   "id": "C3-A2",
+   "desc": "elev1 request-office-approval -> OFFICE_APPROVAL_PENDING + FD talebi",
+   "ok": true,
+   "observed": "HTTP 201 · fark [ClientFinancialDisclosureVersion~,OfficeApprovalRequest+] beklenen [ClientFinancialDisclosureVersion~,OfficeApprovalRequest+] · surum OFFICE_APPROVAL_PENDING · talep CLIENT_FINANCIAL_DISCLOSURE_APPROVE PENDING_APPROVAL"
+  },
+  {
+   "id": "C3-G1",
+   "desc": "elev2 (uygun) genel kutu approve",
+   "ok": true,
+   "observed": "HTTP 409 code=DOMAIN_ACTION_REQUIRED msg=\"Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-G2",
+   "desc": "elev2 genel kutu reject",
+   "ok": true,
+   "observed": "HTTP 409 code=DOMAIN_ACTION_REQUIRED msg=\"Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-G3",
+   "desc": "elev2 genel kutu approve-with-changes",
+   "ok": true,
+   "observed": "HTTP 409 code=DOMAIN_ACTION_REQUIRED msg=\"Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-G4",
+   "desc": "elev2 genel kutu request-revision (#2608)",
+   "ok": true,
+   "observed": "HTTP 409 code=DOMAIN_ACTION_REQUIRED msg=\"Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-G5",
+   "desc": "elev1 (talep SAHIBI) genel kutu cancel (#2612)",
+   "ok": true,
+   "observed": "HTTP 409 code=DOMAIN_ACTION_REQUIRED msg=\"Bu onay kararı yalnız ilgili domain ekranından verilebilir; onay kutusundan karar verilemez.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-G6",
+   "desc": "elev2 (sahip DEGIL) genel kutu cancel -> 403 (sahiplik kontrolu once)",
+   "ok": true,
+   "observed": "HTTP 403 msg=\"Yalnız talep sahibi iptal edebilir.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C2-F1",
+   "desc": "VIEWER complete-office-approval -> 403 DISCLOSURE_APPROVAL_NOT_ELIGIBLE",
+   "ok": true,
+   "observed": "HTTP 403 code=DISCLOSURE_APPROVAL_NOT_ELIGIBLE msg=\"Actor is not eligible to approve a client financial disclosure.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-N1",
+   "desc": "A (talep eden) complete-office-approval -> 403 DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN",
+   "ok": true,
+   "observed": "HTTP 403 code=DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN msg=\"The requester of a disclosure may not approve any of its approval stages.\" · yazma 0 (goruntu ayni) · talep PENDING_APPROVAL · surum OFFICE_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-A3",
+   "desc": "elev2 complete-office-approval -> OFFICE_APPROVED (onaylayan B)",
+   "ok": true,
+   "observed": "HTTP 201 · fark [ClientFinancialDisclosureVersion~,OfficeApprovalRequest~] beklenen [ClientFinancialDisclosureVersion~,OfficeApprovalRequest~] · surum OFFICE_APPROVED · onaylayan B · talep APPROVED"
+  },
+  {
+   "id": "C3-A4",
+   "desc": "elev1 request-content-approval -> CONTENT_APPROVAL_PENDING",
+   "ok": true,
+   "observed": "HTTP 201 · fark [ClientFinancialDisclosureVersion~] beklenen [ClientFinancialDisclosureVersion~] · surum CONTENT_APPROVAL_PENDING"
+  },
+  {
+   "id": "C2-F2",
+   "desc": "VIEWER complete-content-approval -> 403 DISCLOSURE_APPROVAL_NOT_ELIGIBLE",
+   "ok": true,
+   "observed": "HTTP 403 code=DISCLOSURE_APPROVAL_NOT_ELIGIBLE msg=\"Actor is not eligible to approve a client financial disclosure.\" · yazma 0 (goruntu ayni) · surum CONTENT_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-N2",
+   "desc": "B (ofis onaylayicisi) complete-content-approval -> 403 DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION",
+   "ok": true,
+   "observed": "HTTP 403 code=DISCLOSURE_APPROVAL_FOUR_EYES_VIOLATION msg=\"Office approver and content approver must be two distinct actors.\" · yazma 0 (goruntu ayni) · surum CONTENT_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-N3",
+   "desc": "A (talep eden) complete-content-approval -> 403 DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN",
+   "ok": true,
+   "observed": "HTTP 403 code=DISCLOSURE_APPROVAL_SELF_APPROVAL_FORBIDDEN msg=\"The requester of a disclosure may not approve any of its approval stages.\" · yazma 0 (goruntu ayni) · surum CONTENT_APPROVAL_PENDING"
+  },
+  {
+   "id": "C3-A5",
+   "desc": "elev3 complete-content-approval -> CONTENT_APPROVED (onaylayan C)",
+   "ok": true,
+   "observed": "HTTP 201 · fark [ClientFinancialDisclosureVersion~] beklenen [ClientFinancialDisclosureVersion~] · surum CONTENT_APPROVED · onaylayan C"
+  },
+  {
+   "id": "C3-X1",
+   "desc": "FD surumu gonderim durumuna GECMEDI (publish cagrilmadi; musteriye gonderim yok)",
+   "ok": true,
+   "observed": "surum CONTENT_APPROVED"
+  },
+  {
+   "id": "K-1",
+   "desc": "kapanis dogrulandi (aktif kullanici 0, aktif dava 0, bekleyen talep 0, audit korundu)",
+   "ok": true,
+   "observed": "{\"record\":\"OFFICE-C123-CLOSE\",\"runId\":\"87220c29\",\"slug\":\"off-c123-87220c29\",\"found\":true,\"tenantId\":\"cmud3kz8z0001x78s9yjinvxd\",\"activeUsersBefore\":5,\"usersDeactivated\":5,\"stillActiveUsers\":0,\"casesClosed\":2,\"activeCasesAfter\":0,\"pendingCancelled\":4,\"pendingAfter\":0,\"auditBefore\":6,\"auditAfter\":6,\"auditPreserved\":true,\"alreadyClosed\":false,\"greetingDisabled\":true,\"verified\":true}"
+  },
+  {
+   "id": "K-2",
+   "desc": "dagitilmis 5 JWT kapanistan sonra 401",
+   "ok": true,
+   "observed": "[{\"actor\":\"admin\",\"status\":401,\"indeterminate\":false},{\"actor\":\"viewer\",\"status\":401,\"indeterminate\":false},{\"actor\":\"elev1\",\"status\":401,\"indeterminate\":false},{\"actor\":\"elev2\",\"status\":401,\"indeterminate\":false},{\"actor\":\"elev3\",\"status\":401,\"indeterminate\":false}]"
+  },
+  {
+   "id": "I-1",
+   "desc": "aktorlerin BASKA tenant'ta audit izi 0",
+   "ok": true,
+   "observed": "sayi=0"
+  },
+  {
+   "id": "I-3",
+   "desc": "yabanci tenant sayi ozeti kurulum sonrasi = kapanis sonrasi",
+   "ok": true,
+   "observed": "27 tenant · bd554246f1d0356c -> bd554246f1d0356c · {\"user\":112,\"lawyer\":69,\"office\":7,\"case\":44,\"client\":47,\"debtor\":32,\"officeApprovalRequest\":32,\"collectionDisposition\":19,\"clientFinancialDisclosure\":7}"
+  }
+ ],
+ "measuredShapes": {
+  "C1-S": "AccountingJournalEntry+,AccountingJournalLine+x2,AuditLog+x3,Case+,CaseClient+,CaseDebtor+,Client+,Debtor+,ExpenseAuditLog+,ExpenseRequest+,ExpenseRequestItem+x6,IcrabotOutboxAction+x2,IcrabotTimelineEntry+x2,Task+x2",
+  "C2-GP": "AuditLog+,OfficeApprovalRequest~",
+  "C2-DP": "AuditLog+,CollectionDisposition~,OfficeApprovalRequest~",
+  "C3-P0": "AccountingJournalEntry+x3,AccountingJournalLine+x6,AuditLog+,CollectionDispositionExpenseApplication+,CollectionDisposition~,OfficeApprovalRequest~",
+  "C3-P1": "ClientFinancialDisclosure+,ClientFinancialDisclosureLine+x2,ClientFinancialDisclosureVersion+",
+  "C3-A2": "ClientFinancialDisclosureVersion~,OfficeApprovalRequest+",
+  "C3-A3": "ClientFinancialDisclosureVersion~,OfficeApprovalRequest~",
+  "C3-A4": "ClientFinancialDisclosureVersion~",
+  "C3-A5": "ClientFinancialDisclosureVersion~"
+ },
+ "close": {
+  "record": "OFFICE-C123-CLOSE",
+  "runId": "87220c29",
+  "slug": "off-c123-87220c29",
+  "found": true,
+  "tenantId": "cmud3kz8z0001x78s9yjinvxd",
+  "activeUsersBefore": 5,
+  "usersDeactivated": 5,
+  "stillActiveUsers": 0,
+  "casesClosed": 2,
+  "activeCasesAfter": 0,
+  "pendingCancelled": 4,
+  "pendingAfter": 0,
+  "auditBefore": 6,
+  "auditAfter": 6,
+  "auditPreserved": true,
+  "alreadyClosed": false,
+  "greetingDisabled": true,
+  "verified": true
+ },
+ "postClose": [
+  {
+   "actor": "admin",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "viewer",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "elev1",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "elev2",
+   "status": 401,
+   "indeterminate": false
+  },
+  {
+   "actor": "elev3",
+   "status": 401,
+   "indeterminate": false
+  }
+ ],
+ "isolation": {
+  "foreignBefore": {
+   "digest": "bd554246f1d0356c117320dd1edb325fb90abe136ae78f30a69d45d11372a1a8",
+   "tenants": 27,
+   "totals": {
+    "user": 112,
+    "lawyer": 69,
+    "office": 7,
+    "case": 44,
+    "client": 47,
+    "debtor": 32,
+    "officeApprovalRequest": 32,
+    "collectionDisposition": 19,
+    "clientFinancialDisclosure": 7
+   },
+   "excludedOwn": 1
+  },
+  "foreignAuditByActors": 0,
+  "foreignAfter": {
+   "digest": "bd554246f1d0356c117320dd1edb325fb90abe136ae78f30a69d45d11372a1a8",
+   "tenants": 27,
+   "totals": {
+    "user": 112,
+    "lawyer": 69,
+    "office": 7,
+    "case": 44,
+    "client": 47,
+    "debtor": 32,
+    "officeApprovalRequest": 32,
+    "collectionDisposition": 19,
+    "clientFinancialDisclosure": 7
+   },
+   "excludedOwn": 1
+  }
+ }
+}

@@ -1,0 +1,89 @@
+{
+ "runId": "87220c29",
+ "slug": "off-c123-87220c29",
+ "tenantId": "cmud3kz8z0001x78s9yjinvxd",
+ "officeId": "cmud3kz920003x78spz2g77i5",
+ "caseId": "cmud3kza3000px78spjvt519a",
+ "clientId": "cmud3kz9y000nx78s58ce02lx",
+ "caseClientId": "cmud3kzaa000rx78sla6vleg0",
+ "clientEmail": "off-c123-87220c29-client@office-acceptance.invalid",
+ "actors": {
+  "admin": {
+   "id": "cmud3kz9h0005x78slkkv0ppn",
+   "email": "off-c123-87220c29-admin@office-acceptance.invalid"
+  },
+  "viewer": {
+   "id": "cmud3kz9k0007x78sjj21nn5h",
+   "email": "off-c123-87220c29-viewer@office-acceptance.invalid"
+  },
+  "elev1": {
+   "id": "cmud3kz9r000bx78s1unmahve",
+   "email": "off-c123-87220c29-elev1@office-acceptance.invalid"
+  },
+  "elev2": {
+   "id": "cmud3kz9t000fx78s4zrai2kk",
+   "email": "off-c123-87220c29-elev2@office-acceptance.invalid"
+  },
+  "elev3": {
+   "id": "cmud3kz9v000jx78subwqa91d",
+   "email": "off-c123-87220c29-elev3@office-acceptance.invalid"
+  }
+ },
+ "generic": {
+  "G1": "cmud3kzad000sx78sil3hu5jv",
+  "G2": "cmud3kzah000tx78s2iv3mfzh",
+  "G3": "cmud3kzaj000ux78seb9xkv2r",
+  "G4": "cmud3kzak000vx78sl2rdk0fo",
+  "GP": "cmud3kzal000wx78s8zrievf0"
+ },
+ "d1": {
+  "collectionId": "cmud3kzam000yx78s3993suk3",
+  "dispositionId": "cmud3kzay0012x78s8rl69c32",
+  "approvalRequestId": "cmud3kzax0011x78s4xa8x9rw"
+ },
+ "fd": {
+  "collectionId": "cmud3kzbb0016x78s82hq3deh",
+  "dispositionId": "cmud3kzbe001ax78s9qdkru4e",
+  "approvalRequestId": "cmud3kzbd0019x78sjlnarbhd"
+ },
+ "writtenRows": [
+  "Tenant",
+  "Office",
+  "User(ADMIN)",
+  "User(VIEWER)",
+  "Lawyer(PARTNER,VIEWER-bagli)",
+  "User(elev1)",
+  "Lawyer(PARTNER,elev1)",
+  "User(elev2)",
+  "Lawyer(MANAGER,elev2)",
+  "User(elev3)",
+  "Lawyer(delege,elev3)",
+  "Client",
+  "Case",
+  "CaseClient",
+  "OfficeApprovalRequest(G1)",
+  "OfficeApprovalRequest(G2)",
+  "OfficeApprovalRequest(G3)",
+  "OfficeApprovalRequest(G4)",
+  "OfficeApprovalRequest(GP)",
+  "Collection(D1)",
+  "ExpenseRequest(D1)",
+  "OfficeApprovalRequest(D1)",
+  "CollectionDisposition(D1)",
+  "Collection(FD)",
+  "ExpenseRequest(FD)",
+  "OfficeApprovalRequest(FD)",
+  "CollectionDisposition(FD)"
+ ],
+ "bystander": null,
+ "environment": {
+  "environment": "live",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5432",
+  "dbName": "hukuk_db",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8080",
+  "goRef": "[MASKELENDI]"
+ },
+ "createdAt": "2026-09-22T19:59:18.360Z"
+}
