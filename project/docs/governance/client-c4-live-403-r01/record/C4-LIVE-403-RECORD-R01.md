@@ -79,11 +79,15 @@ verdi (yazma, koşum, gönderim, yeniden başlatma ve kurtarma hariç). Sonuç: 
 - Tenant toplamı 27 = sentetik dışı 25 + 2 sentetik; koşumun izolasyon sayısı 25 ile tutarlı.
 - Doğrulayıcının kendi parmak izi (farklı tarif, koşum parmak iziyle kıyaslanamaz; gelecek koşumlar için taban):
   `d79143fdd9fdc56d`.
-- Kanıt: `HY_C4_OFFICE_VERIFY\c4-office-readonly-verify-1ffa7765.json` (`B3FFEC38…E6B7`) + betik `c4verify.office.js`
-  (`A287BE98…561D`). Sır yazılmadı.
+- Kanıt dosyası `HY_C4_OFFICE_VERIFY\c4-office-readonly-verify-1ffa7765.json`; **tam sha256 CLIENT tarafından
+  bağımsız ölçüldü ve bildirilen kısaltmayla uyuştu**:
+  `B3FFEC3819CD5CDF205F88564299974562B7FAE0452361C92962EA0EB3E1E6B7`.
+  Betik `c4verify.office.js`: `A287BE98309CE6667C0EBEF69CC6F6ADA72266371927D8F6FE5BA646F7E7561D`. Sır yazılmadı.
+  Sonuç dosyasının kopyası: `record/evidence/office-verify/c4-office-readonly-verify-1ffa7765.json` (11/11, `writes: 0`).
 
 **Doğrulayıcı kapsamı dışında kalan tek kontrol:** giriş ve eski token'ın 401 döndüğü ölçümü. Doğrulayıcıda kimlik
-bilgisi yoktur; bu kontrol yalnız koşum kanıtındadır (`closureLogin=401`, `closureMe=401`).
+bilgisi yoktur ve bu kontrolü **yapmamıştır**. Ölçüm **CLIENT'ın (koşum) kendi ölçümüdür**: `closureLogin=401`,
+`closureMe=401` (`c4-evidence.json`). OFFICE'in bağımsız kapsamına dâhil değildir.
 
 ## 7. OFFICE listesi eşlemesi
 
