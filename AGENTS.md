@@ -29,10 +29,6 @@ repository-local referans gecerliligi, `§N` bolum referansi, duplicate normatif
 branch prefix `<ajan>/<konu>`, instruction ile control-plane degisikliginin ayni PR'da
 karismasi.
 
-Canonical root'ta edit yasagi, isolated worktree zorunlulugu ve canonical equality
-bilerek makineye TASINMADI: bunlar PR artifact'indan dogrulanamaz, developer workstation
-policy'sidir ve §6'da metin olarak kalir.
-
 ## 1. Otorite Zinciri
 
 Iki ayri authority turu vardir ve biri digerinin yerine gecmez:
@@ -219,6 +215,10 @@ genisletmez ve terminal disposition degildir; allowlist genislemesi revision deg
 semantic outcome degisikligi yeni task veya owner karari, primary executor degisikligi
 explicit handoff ister. Handoff istisnalari, revision tetikleyicileri, supersededLayer ve
 terminal disposition sinifları: `project/docs/governance/process-rules.md`.
+
+Yetkili kapsamdaki yerel komutlari ajan kosar, cikis kodu ve kanitla dogrular; owner'a
+yalniz yetki/UAC engelinde en kucuk mudahale verilir. Yeni authority uretmez. Bkz.
+`project/docs/governance/process-rules.md`.
 
 ## 8. Governance Writer Coordination V1
 

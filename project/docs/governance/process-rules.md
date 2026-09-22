@@ -15,6 +15,7 @@ Bir hüküm doğrudan ajan davranışını veya authority sınırını belirliyo
 | Çalışma modları, `IF IMPLEMENT`, merge authority, scope expansion, backlog akışı | `AGENTS.md` §4 |
 | CI takip ve merge disiplini | `AGENTS.md` §5 |
 | Worktree izolasyonu (developer workstation policy) | `AGENTS.md` §6 |
+| Yerel komut yürütme (ajan koşar; owner'a yalnız en küçük yetki müdahalesi) | `AGENTS.md` §7 |
 | Uygulama kuralları ve ön analiz | `AGENTS.md` §9 |
 | Validation | `AGENTS.md` §10 |
 | Raporlama ve `Onay Bekleniyor` semantiği | `AGENTS.md` §13 |
@@ -270,6 +271,47 @@ Task'ın üreteceği hukuki sonuç değişti
   → supersededLayer: SEMANTIC_OUTCOME
   → yeni task / owner kararı; BLOCKED_OWNER_DECISION ile raporlanır
 ```
+
+## Yerel komut yürütme — uygulama rehberi
+
+Canonical hüküm `AGENTS.md` §7'dedir. Bu bölüm yalnız açıklama ve örnektir; yeni authority
+üretmez (owner genel çalışma kuralı, 2026-09-22).
+
+- **Kim koşar:**
+  - Yetkili görev kapsamındaki PowerShell ve yerel komutları ajan kendisi çalıştırır. Salt
+    okuma, tanılama, test, derleme, hash kontrolü ve kanıt üretimi buna dahildir.
+  - Görevin owner GO'su kapsıyorsa canlı durdurma/başlatma, dosya takası ve geri yükleme de
+    ajan tarafından yürütülür; insanca yürütme açıkça zorunlu tutulmuş olmamalıdır.
+  - Bir işlem yalnız PowerShell kullandığı ya da kanıt dosyası yazdığı için owner
+    müdahalesi gerektirmez. Aynı yetki tekrar istenmez.
+- **Önce doğrula:**
+  - repository;
+  - sahiplik;
+  - PowerShell sürümü;
+  - gerçek yetki seviyesi (yönetici mi, bütünlük düzeyi);
+  - gerekiyorsa oturum ve değişken sürekliliği.
+
+  Başarı çıktı metninden değil, çıkış kodu ve ilgili sonuç kanıtından ölçülür.
+- **Engel olursa:** yönetici erişimi, UAC, etkileşimli kimlik doğrulama ya da araç
+  politikası nedeniyle ilerlenemiyorsa:
+  - engellenen işlem ve engelin somut kaynağı söylenir;
+  - kısıt atlatılmaz;
+  - owner'a yalnız gereken en küçük müdahale verilir (örn. yükseltilmiş pencerede tek hash
+    doğrulamalı blok);
+  - müdahale tamamlanınca iş ajan tarafından yeniden devralınır.
+
+  Bir adımın engellenmesi kalan komutları owner'a devretme gerekçesi değildir.
+- **Sınırlar:** Bu kural yeni canlı yayın, migration, silme ya da kapsam dışı işlem yetkisi
+  değildir. Göreve özgü sınırlar, makine erişim kontrolleri ve bağlayıcı depo kuralları
+  korunur.
+- **Tekrar ve başarısızlık:**
+  - mevcut kanıt kullanılır; başarılı adımlar gerekçesiz tekrarlanmaz;
+  - başarısızlıkta bağımlı adıma geçilmez;
+  - başka oturumların süreç, worktree ve dosyalarına dokunulmaz;
+  - ortak pencerelerde tek yürütücü ve belirlenmiş bağımsız doğrulayıcı düzeni korunur.
+- **Kapanış:** Yetkili iş yalnız komut veya plan sunularak bırakılmaz. Doğrulama, CI, head'e
+  sabitli merge, main senkronu, merge sonrası kontroller ve ajanın kendi ortam temizliği
+  tamamlanır; kalıcı kanıt ve yedekler korunur.
 
 ## Waiting & Progress Policy
 
