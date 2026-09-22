@@ -1,0 +1,50 @@
+{
+ "record": "OFFICE-INVITE-ACCEPTANCE-R01",
+ "environment": {
+  "environment": "disposable",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5443",
+  "dbName": "hukuk_i13_894280b1_test",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8115",
+  "goRefSha256": null
+ },
+ "runId": "9bccd3c2",
+ "slug": "inv-9bccd3c2",
+ "tenantId": "cmud7ulf00001wp21wf26dv83",
+ "inviteId": "cmud7ulha000da25movhzg5vs",
+ "invitedUserId": "cmud7ulh9000ba25m6gmz3l1o",
+ "tokenSha256": "C75DCC32E72E8C9F894EBA19C67D552B95DCEF4AE0F9C7283935AA5C0AD49603",
+ "faultInjected": true,
+ "closure": null,
+ "isolationBefore": {
+  "tenants": 98,
+  "digest": "d393e5219cd372dc"
+ },
+ "isolationAfter": null,
+ "results": [
+  {
+   "id": "D-1",
+   "desc": "ADMIN davet olusturur (tenant kapsamli, token DB'de yalniz hash)",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · inviteId=VAR · tokenHash=VAR · consumedAt=yok"
+  },
+  {
+   "id": "D-2",
+   "desc": "yerel yakalayicida TESLIM: mesaj dosyasi VAR, alici sentetik, kabul baglantisi VAR, token DB hash'i ile eslesiyor",
+   "verdict": "PASS",
+   "observed": "yakalanan=msg-0002.eml · kabul-baglantisi=VAR · token->DB hash eslesme=true"
+  },
+  {
+   "id": "D-3",
+   "desc": "gercek kabul ucu: hesap aktiflesir, parola yazilir, davet tuketilir",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · isActive=true · passwordHash=VAR · consumedAt=VAR"
+  }
+ ],
+ "pass": 3,
+ "fail": 0,
+ "fatal": "HATA ENJEKSIYONU: kabul sonrasi kasitli durus — kapanis CALISMADI (kurtarma yolu sinaniyor)",
+ "recovery": "INV_RUN_ID=9bccd3c2 node inv-99-close.js",
+ "finishedAt": "2026-09-22T21:58:45.385Z"
+}
