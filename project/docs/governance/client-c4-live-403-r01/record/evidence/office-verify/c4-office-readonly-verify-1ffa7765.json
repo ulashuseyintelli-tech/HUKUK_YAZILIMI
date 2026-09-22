@@ -1,0 +1,67 @@
+{
+ "record": "C4-OFFICE-INDEPENDENT-READONLY-VERIFY",
+ "runId": "1ffa7765",
+ "db": "hukuk_db",
+ "writes": 0,
+ "checks": [
+  {
+   "id": "RO-MODE",
+   "ok": true,
+   "detail": "transaction_read_only=on"
+  },
+  {
+   "id": "TABLES",
+   "ok": true,
+   "detail": "ClientStatementDeliveryLedger · ClientNotification · ClientStatement"
+  },
+  {
+   "id": "TENANT-BAG",
+   "ok": true,
+   "detail": "ah-1ffa7765=cmucyhdii0001wci1c7myhwte · ah-1ffa7765-x=cmucyhdjy001bwci14y8sbrwj"
+  },
+  {
+   "id": "RECEIPT-ID-ESLESME",
+   "ok": true,
+   "detail": "makbuzdaki tenantId/foreignTenantId ile DB esit"
+  },
+  {
+   "id": "AKTIF-KULLANICI-0",
+   "ok": true,
+   "detail": "ah-1ffa7765: aktif 0/9"
+  },
+  {
+   "id": "ACIK-CASE-0",
+   "ok": true,
+   "detail": "ah-1ffa7765: CLOSED x1"
+  },
+  {
+   "id": "SENTETIK-SAYAC-0",
+   "ok": true,
+   "detail": "ledger 0 · bildirim 0 · ekstre 0"
+  },
+  {
+   "id": "GLOBAL-LEDGER-ESIT",
+   "ok": true,
+   "detail": "global ledger 2 (kanit: once 2 sonra 2)"
+  },
+  {
+   "id": "GLOBAL-BILDIRIM-ESIT",
+   "ok": true,
+   "detail": "global bildirim 7 (kanit: once 7 sonra 7)"
+  },
+  {
+   "id": "SENTETIK-DISI-TENANT",
+   "ok": true,
+   "detail": "sentetik disi 25 · toplam 27 (kanit: izolasyon 25 + 2 sentetik)"
+  },
+  {
+   "id": "SENTETIK-ERISIM-KAPALI",
+   "ok": true,
+   "detail": "aktif sentetik kullanici 0"
+  }
+ ],
+ "nonSyntheticFingerprintOffice": "d79143fdd9fdc56d",
+ "verdict": "PASS",
+ "pass": 11,
+ "total": 11
+}
