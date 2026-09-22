@@ -1,0 +1,85 @@
+{
+ "record": "C4-LIVE-403",
+ "runId": "1ffa7765",
+ "apiBase": "http://127.0.0.1:8080/api",
+ "isolationBefore": {
+  "tenants": 25,
+  "digest": "d64960e810e438c3"
+ },
+ "counts": {
+  "before": {
+   "ledger": 0,
+   "notification": 0,
+   "statement": 0,
+   "globalLedger": 2,
+   "globalNotification": 7
+  },
+  "after": {
+   "ledger": 0,
+   "notification": 0,
+   "statement": 0,
+   "globalLedger": 2,
+   "globalNotification": 7
+  }
+ },
+ "anonStatus": 401,
+ "status": 403,
+ "reasonCode": "SCHEDULER_MANUAL_RUN_DENIED_NOT_ELEVATED",
+ "provaElevatedStatus": null,
+ "closure": {
+  "ok": true,
+  "tenants": [
+   {
+    "slug": "ah-1ffa7765",
+    "activeUsers": 0,
+    "casesClosedNow": 1,
+    "activeCases": 0,
+    "ok": true
+   },
+   {
+    "slug": "ah-1ffa7765-x",
+    "activeUsers": 0,
+    "casesClosedNow": 0,
+    "activeCases": 0,
+    "ok": true
+   }
+  ]
+ },
+ "closureLogin": 401,
+ "closureMe": 401,
+ "isolationAfter": {
+  "tenants": 25,
+  "digest": "d64960e810e438c3"
+ },
+ "fatal": null,
+ "pass": 5,
+ "fail": 0,
+ "unmeasured": 0,
+ "results": [
+  {
+   "id": "C4-PRE",
+   "verdict": "PASS",
+   "observed": "rol=USER aktif=true staff=true lawyer=yok · isApproverEligible=false nedeni: staff fail-closed (satir 487) · smtpHost=yok · ekstre=0"
+  },
+  {
+   "id": "C4-403",
+   "verdict": "PASS",
+   "observed": "HTTP 403 · reasonCode=SCHEDULER_MANUAL_RUN_DENIED_NOT_ELEVATED · (bilgi: anonim HTTP 401)"
+  },
+  {
+   "id": "C4-ZERO",
+   "verdict": "PASS",
+   "observed": "tenant ledger 0→0 · bildirim 0→0 · ekstre 0→0 · global ledger 2→2 · (bilgi: global bildirim 7→7)"
+  },
+  {
+   "id": "C4-CLOSE",
+   "verdict": "PASS",
+   "observed": "closure.ok=true login=401 me=401"
+  },
+  {
+   "id": "C4-ISO",
+   "verdict": "PASS",
+   "observed": "önce=d64960e810e438c3/25 sonra=d64960e810e438c3/25"
+  }
+ ]
+}
