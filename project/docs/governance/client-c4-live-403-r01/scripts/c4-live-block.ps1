@@ -18,7 +18,7 @@ $EnvFile  = Join-Path $Rel 'apps\api\.env'
 $LiveDist = Join-Path $Rel 'apps\api\dist\apps\api\src'
 $EvRoot   = 'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911'
 $Api      = 'http://127.0.0.1:8080/api'
-$ExpPackage  = '09AE123298EDEA11C1CC4C4164EE4224B67D2DE8F95B6B5124BDDADFA21EAEAC'
+$ExpPackage  = '6D68848B8AD9ED6DEFD3D4DDD630931019A6F1F9A3E3517BC38457126F2AD4F0'
 $ExpLiveDist = 'A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0'   # R26 API (canli)
 $PkgFiles = @('client-c4-live-403-r01\scripts\c4-live-403.js', 'client-live-acceptance-i13-r01\scripts\i13-lib.js',
               'client-acceptance-runners-i3-r01\scripts\i3-lib.js', 'client-acceptance-harness-r01\scripts\ah-lib.js',
