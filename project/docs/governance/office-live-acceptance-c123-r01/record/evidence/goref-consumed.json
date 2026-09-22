@@ -1,0 +1,9 @@
+{
+    "record":  "C123-GOREF-CONSUMED",
+    "goRefSha256":  "3A616EA07E8A781F43A4E7ECE8725D0163A50F4CE6406877B9975E3CD5572F7C",
+    "literalWritten":  false,
+    "exitCode":  0,
+    "main":  "c73048baad9ea1b1408656eedfff4d551688be54",
+    "apiPid":  50204,
+    "atUtc":  "2026-09-22T19:59:39.0180796Z"
+}

@@ -1,0 +1,67 @@
+{
+ "record": "C123-OFFICE-INDEPENDENT-READONLY-VERIFY",
+ "runId": "87220c29",
+ "slug": "off-c123-87220c29",
+ "db": "hukuk_db",
+ "writes": 0,
+ "checks": [
+  {
+   "id": "RO-MODE",
+   "ok": true,
+   "detail": "transaction_read_only=on"
+  },
+  {
+   "id": "TENANT-BULUNDU",
+   "ok": true,
+   "detail": "off-c123-87220c29=cmud3kz8z0001x78s9yjinvxd"
+  },
+  {
+   "id": "AKTIF-KULLANICI-0",
+   "ok": true,
+   "detail": "toplam 5 · aktif 0 (kanit: 5→0, 5 pasiflestirildi)"
+  },
+  {
+   "id": "ACIK-CASE-0",
+   "ok": true,
+   "detail": "CLOSED x2"
+  },
+  {
+   "id": "BEKLEYEN-TALEP-0",
+   "ok": true,
+   "detail": "APPROVED x4 · CANCELLED x4"
+  },
+  {
+   "id": "AUDIT-KORUNDU",
+   "ok": true,
+   "detail": "audit satiri 6 (kanit: once 6 sonra 6)"
+  },
+  {
+   "id": "TOKEN-SINIRLAMA",
+   "ok": true,
+   "detail": "kullanici 5 · tokenVersion>0 5 (kanit: 5 aktorun tumu kapanistan sonra 401)"
+  },
+  {
+   "id": "KALICI-SATIRLAR-SILINMEMIS",
+   "ok": true,
+   "detail": "{\"muhasebeFisi\":4,\"masrafTalebi\":3,\"fdTaslak\":1,\"fdSurum\":1,\"outbox\":2}"
+  },
+  {
+   "id": "YABANCI-TENANT-SAYILARI",
+   "ok": true,
+   "detail": "{\"tenants\":27,\"user\":112,\"lawyer\":69,\"case\":44,\"client\":47} (kanit: once=sonra digest bd554246…, 27 tenant, user 112, lawyer 69, case 44, client 47)"
+  },
+  {
+   "id": "YABANCI-TENANTTA-AKTOR-AUDIT-0",
+   "ok": true,
+   "detail": "yabanci tenant'ta bu aktorlerin audit izi 0"
+  },
+  {
+   "id": "TOPLAM-TENANT",
+   "ok": true,
+   "detail": "toplam 28 (kanit: 27 yabanci + 1 sentetik = 28)"
+  }
+ ],
+ "verdict": "PASS",
+ "pass": 11,
+ "total": 11
+}
