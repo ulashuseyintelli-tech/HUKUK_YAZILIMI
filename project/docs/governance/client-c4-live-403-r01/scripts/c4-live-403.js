@@ -5,8 +5,10 @@
  * Anonim 401 bu ölçütü KARŞILAMAZ (yalnız bilgi olarak kaydedilir). İ12 hedef-teslim/dedupe kanıtı YENİDEN KOŞULMAZ.
  * Kalıp: İ16 / R26 B2 — mevcut tek canlı API; boot/env/restart YOK.
  *
- * AKTÖR: setupI3 `user` → rol USER (VIEWER değil) + StaffMember kaydı + PARTNER bağı YOK → `isApproverEligible` false.
- *        Koşum öncesi DB'den salt-okuma ile doğrulanır; tutmazsa ÖLÇÜM YAPILMAZ.
+ * AKTÖR: setupI3 `user` → rol USER (VIEWER değil), aktif, aynı tenant, StaffMember kaydı VAR, Lawyer bağı YOK.
+ *        Zincir: JWT geçer → tenantId var → isApproverEligible staff fail-closed ile false (satır 487) →
+ *        decideManualSchedulerRun: USER, VIEWER değil, elevatedAuthority=false → 403 NOT_ELEVATED.
+ *        PARTNER bağı GEREKMEZ (verilirse aktör elevated olur). Koşum öncesi yüklemin aynısıyla DB'den doğrulanır.
  * YAN ETKİ DÜZENİ (beklenmedik başarıya karşı):
  *   - Uç kapsamı HER ZAMAN aktörün tenant'ı (`scope={tenantId: req.user.tenantId}`; controller satır 48-54) → yalnız sentetik tenant.
  *   - Sentetik tenant'ta ClientStatement 0 ve Office SMTP host YOK (ön kapı) → teslim edilecek ekstre de kanal da yoktur.
@@ -63,11 +65,17 @@ const reasonOf = (r) => { const b = r && r.body; return b ? String(b.reasonCode 
       select: { role: true, isActive: true, tenantId: true, staffMember: { select: { id: true } }, lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } } } });
     const office = await prisma.office.findUnique({ where: { tenantId: st.tenantId }, select: { smtpHost: true } });
     const c0 = await counts(st.tenantId);
-    const lawyerElevated = !!(actor && actor.lawyer && (actor.lawyer.lawyerRank === 'PARTNER' || actor.lawyer.canApproveOfficeActions === true));
-    const preOk = actor && actor.role === 'USER' && actor.isActive && actor.tenantId === st.tenantId && !lawyerElevated
+    // `OfficeApprovalService.isApproverEligible` (office-approval.service.ts:476-490) ile BIREBIR ayni yuklem, ayni sira:
+    // aktif + ayni tenant -> staffMember varsa FAIL-CLOSED false (satir 487) -> Lawyer + (PARTNER | canApproveOfficeActions).
+    const eligibleClause = !actor || !actor.isActive || actor.tenantId !== st.tenantId ? 'aktif/tenant'
+      : actor.staffMember ? 'staff fail-closed (satir 487)'
+        : !actor.lawyer ? 'Lawyer bagi yok'
+          : (actor.lawyer.lawyerRank === 'PARTNER' || actor.lawyer.canApproveOfficeActions === true) ? 'ELEVATED' : 'Lawyer PARTNER/canApprove degil';
+    const eligible = eligibleClause === 'ELEVATED';
+    const preOk = actor && actor.role === 'USER' && actor.isActive && actor.tenantId === st.tenantId && !eligible
       && !(office && office.smtpHost) && c0.statement === 0;
-    R.check('C4-PRE', 'ön kapı: aktör USER (VIEWER değil) + elevated DEĞİL (PARTNER/canApprove yok) · sentetik tenantta SMTP host YOK ve ekstre 0',
-      !!preOk, `rol=${actor && actor.role} aktif=${actor && actor.isActive} staff=${!!(actor && actor.staffMember)} lawyer=${actor && actor.lawyer ? actor.lawyer.lawyerRank : 'yok'} · smtpHost=${office && office.smtpHost ? 'VAR' : 'yok'} · ekstre=${c0.statement}`);
+    R.check('C4-PRE', 'ön kapı: aktör USER (VIEWER değil), aktif, aynı tenant + isApproverEligible=false (yüklemin aynısı) · sentetik tenantta SMTP host YOK ve ekstre 0',
+      !!preOk, `rol=${actor && actor.role} aktif=${actor && actor.isActive} staff=${!!(actor && actor.staffMember)} lawyer=${actor && actor.lawyer ? actor.lawyer.lawyerRank : 'yok'} · isApproverEligible=false nedeni: ${eligibleClause} · smtpHost=${office && office.smtpHost ? 'VAR' : 'yok'} · ekstre=${c0.statement}`);
     if (!preOk) throw new Error('ön kapı tutmadı — ölçüm YAPILMADI');
 
     const lg = await L.AH.login(base, st.actors.user.email, pw, st.slug);
