@@ -1,0 +1,71 @@
+{
+    "record":  "R26-RELEASE-EXECUTION",
+    "tsUtc":  "20260922-073147Z",
+    "verdict":  "YAYIN PASS",
+    "sourceSha":  "c7a154b3c0728fee7618ca65e54898ed02cc8b3b",
+    "sourceBranch":  "release/r26-candidate",
+    "baseSha":  "4443600a (R25B kaynagi)",
+    "prs":  [
+                "#2739 web ayni-origin + K-A + K-B",
+                "#2738 PUBLIC_PORTAL_BASE_URL",
+                "#2740 OFFICE-AUTH-01 (799a7346)"
+            ],
+    "excluded":  [
+                     "#2716 replay adapter",
+                     "#2727 migration",
+                     "#2730 davranis-notr refactor"
+                 ],
+    "launcherTuple":  "P1-ONCESI",
+    "api":  {
+                "liveBaseline":  "1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E",
+                "candidate":  "A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0",
+                "changedFiles":  [
+                                     "modules/portal/portal.service.js",
+                                     "modules/portal/portal.service.js.map"
+                                 ],
+                "backup":  "D:\\Development\\HUKUK_YAZILIMI\\HY_R26_RELEASE_EVIDENCE\\rollback-api-src-R25B-20260922-073147Z"
+            },
+    "web":  {
+                "liveBaseline":  "F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1",
+                "candidate":  "C17E7B132FB7DED65AD0788024AA478F0949AF0D5D9045E8F47779A31A615326",
+                "buildIdBefore":  "dOiGPj2M0Abls0kCibY4r",
+                "buildIdAfter":  "5waeMoFGGMTLAYmn9oJvW",
+                "nextConfigBefore":  "4AD4915C0A741AF609CCD241DFE08EF2C76A17E2175E3BD1FB7AE925128EF750",
+                "nextConfigAfter":  "C43DEB5A04F1529CE2D368204ED7D10B8DBC257327E0BC64A01F1D7CF3AC5B5C",
+                "backup":  "D:\\Development\\HUKUK_YAZILIMI\\HY_R26_RELEASE_EVIDENCE\\rollback-web-R25B-20260922-073147Z",
+                "preDirInPlace":  "C:\\Development\\HUKUK_YAZILIMI\\HY_W4_RELEASE23\\project\\apps\\web\\.next.pre-r26-20260922-073147Z"
+            },
+    "migrationRun":  false,
+    "launcherChanged":  false,
+    "envRead":  false,
+    "deleted":  0,
+    "log":  [
+                "07:31:47Z  === 0) ON KAPILAR",
+                "07:31:47Z  baslatici uclusu=P1-ONCESI",
+                "07:31:48Z  API gorev action=C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe api pid=33248 | WEB gorev action=C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe web pid=55380",
+                "07:31:49Z  test/prova sureci=0",
+                "07:31:49Z  === 1) ADAY DOGRULAMA",
+                "07:32:07Z  aday API dosya=3867 digest=A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0",
+                "07:32:14Z  aday WEB .next digest=C17E7B132FB7DED65AD0788024AA478F0949AF0D5D9045E8F47779A31A615326 | BUILD_ID=5waeMoFGGMTLAYmn9oJvW",
+                "07:32:14Z  === 2) CANLI KIMLIK + DOGRULANMIS YEDEK + WEB HAZIRLIK KOPYASI (canli calisirken; takas YOK)",
+                "07:32:17Z  canli API dosya=3867 digest=1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E",
+                "07:32:17Z  API fark: eklenen=0 silinen=0 degisen=2",
+                "07:32:17Z  canli WEB .next digest=F064DC95CBCCA6218E8D5E84A89A6472F03AF54994E425E28A02B135956282F1 | BUILD_ID=dOiGPj2M0Abls0kCibY4r | cfg=4AD4915C0A741AF6",
+                "07:32:43Z  yedekler DOGRULANDI: API=D:\\Development\\HUKUK_YAZILIMI\\HY_R26_RELEASE_EVIDENCE\\rollback-api-src-R25B-20260922-073147Z | WEB=D:\\Development\\HUKUK_YAZILIMI\\HY_R26_RELEASE_EVIDENCE\\rollback-web-R25B-20260922-073147Z",
+                "07:32:49Z  WEB hazirlik kopyasi DOGRULANDI: C:\\Development\\HUKUK_YAZILIMI\\HY_W4_RELEASE23\\project\\apps\\web\\.next.r26-staged-20260922-073147Z (ACL yalniz kalitim)",
+                "07:32:49Z  === 3) WEB SONRA API DURDUR + KAPANDIGINI DOGRULA",
+                "07:32:56Z  WEB ve API kapandi (dinleyici 0, host sureci 0, gorev Running degil)",
+                "07:32:56Z  === 4) TAKAS (migrate deploy YOK, SILME YOK)",
+                "07:32:56Z  API 2/2 dosya degisti",
+                "07:32:56Z  WEB .next takas edildi (onceki: C:\\Development\\HUKUK_YAZILIMI\\HY_W4_RELEASE23\\project\\apps\\web\\.next.pre-r26-20260922-073147Z) + next.config.js",
+                "07:32:56Z  === 5) DURMUSKEN KIMLIK",
+                "07:32:59Z  API digest aday esit=True | WEB digest aday esit=True | cfg aday esit=True",
+                "07:32:59Z  === 6) API BASLAT + SURELI SAGLIK (\u003c=120 sn)",
+                "07:33:41Z  API: pid=62900 | /api/auth/me=401 | run-now=401 | portal/cases=401 | boot log=api-out.20260922-103307.log run-now Mapped=1 portal upload Mapped=1 toplam Mapped=977",
+                "07:33:41Z  === 7) WEB BASLAT + SURELI SAGLIK (\u003c=180 sn; launcher BindTimeout 180)",
+                "07:33:48Z  WEB: pid=58736 kok RELEASE23=True | /portal/login=200 | buildManifest(5waeMoFGGMTLAYmn9oJvW)=200 | /intake/x=200 | rewrite /api/auth/me=401 (401 beklenir)",
+                "07:33:48Z  === 8) KAPSAM",
+                "07:33:52Z  kapsam: API digest=True | WEB digest=True | .env degismedi=True | baslatici uclusu degismedi=True (P1-ONCESI) | gorev action ayni=True",
+                "07:33:52Z  === SONUC: YAYIN PASS"
+            ]
+}

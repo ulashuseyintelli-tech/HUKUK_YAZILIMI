@@ -1,0 +1,51 @@
+{
+ "record": "R26-DAR-KABUL",
+ "phase": "after",
+ "port": 3002,
+ "tsUtc": "2026-09-22T08:15:39.186Z",
+ "machine": "ulashuseyintelli",
+ "syntheticEmail": "r26-dar-kabul-mucef5r8@ah-harness.invalid",
+ "rows": [
+  {
+   "id": "DK-1",
+   "verdict": "PASS",
+   "obs": "son yol=/intake/r26-dar-kabul-gecersiz-baglanti · /auth/login'e yönlendi=false · intake API yanıtı=[404 localhost:8080] · metin=\"Bağlantı geçersiz Bu bilgi formu bağlantısı geçersiz veya süresi dolmuş. Lütfen büronuzla iletişime geçin.\""
+  },
+  {
+   "id": "DK-2",
+   "verdict": "PASS",
+   "obs": "son yol=/intake/r26-dar-kabul-gecersiz-baglanti · /auth/login'e yönlendi=false · intake API yanıtı=[404 ulashuseyintelli:3002] · metin=\"Bağlantı geçersiz Bu bilgi formu bağlantısı geçersiz veya süresi dolmuş. Lütfen büronuzla iletişime geçin.\""
+  },
+  {
+   "id": "DK-3",
+   "verdict": "PASS",
+   "obs": "login yanıtı=[401 localhost:3002] · sayfa hatası=0"
+  },
+  {
+   "id": "DK-4",
+   "verdict": "PASS",
+   "obs": "login yanıtı=[401 ulashuseyintelli:3002] · sayfa hatası=0"
+  },
+  {
+   "id": "DK-5",
+   "verdict": "PASS",
+   "obs": "personel giriş sayfası son yol=/auth/login"
+  },
+  {
+   "id": "DK-6",
+   "verdict": "PASS",
+   "obs": "personel sifre/davet sayfalari {\"/auth/forgot-password\":{\"final\":\"/auth/forgot-password\",\"toLogin\":false},\"/auth/reset-password#token=sentetik\":{\"final\":\"/auth/reset-password\",\"toLogin\":false},\"/auth/accept-invite?token=sentetik\":{\"final\":\"/auth/accept-invite\",\"toLogin\":false}}"
+  }
+ ],
+ "apiCalls": [
+  "GET localhost:8080/api/public/intake/r26-dar-kabul-gecersiz-baglanti",
+  "GET ulashuseyintelli:3002/api/public/intake/r26-dar-kabul-gecersiz-baglanti",
+  "POST localhost:3002/api/portal/login",
+  "POST ulashuseyintelli:3002/api/portal/login",
+  "GET localhost:8080/api/auth/capabilities"
+ ],
+ "blockedNonGet": 0,
+ "blocked": [],
+ "valid": true,
+ "sonuc": "PASS"
+}

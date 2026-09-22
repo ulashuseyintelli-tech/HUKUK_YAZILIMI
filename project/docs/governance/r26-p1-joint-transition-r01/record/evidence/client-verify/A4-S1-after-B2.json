@@ -1,0 +1,91 @@
+{
+ "record": "R26-WINDOW-A-CLIENT-VERIFY",
+ "stage": "S1",
+ "expectTuple": "P1-ONCESI",
+ "expectApp": "R26",
+ "tsUtc": "2026-09-22T08:19:07.293951Z",
+ "verdict": "PASS",
+ "failed": [],
+ "gate": null,
+ "rows": [
+  {
+   "id": "B-1 start-api.ps1",
+   "ok": true,
+   "actual": "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3",
+   "expected": "CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3"
+  },
+  {
+   "id": "B-2 hukuk-task-host.exe",
+   "ok": true,
+   "actual": "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627",
+   "expected": "691BC146C9123B1625B4AE733EFE615F8AFFB77FB0C95EBFDAE621A6AA171627"
+  },
+  {
+   "id": "B-3 start-web.ps1",
+   "ok": true,
+   "actual": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0",
+   "expected": "F39F7A54BC51972B94FD0CF13A08F4E1AB82822A528EDAD58FC8F2318C1F59E0"
+  },
+  {
+   "id": "B-sabit db-readiness.js",
+   "ok": null,
+   "actual": "AD18CBB621A2D58FD41B481C07A09D25726C150C2D9DA028C23B60986AD413A9",
+   "expected": "kapi JSON ile karsilastirilir"
+  },
+  {
+   "id": "B-sabit pwsh-file-manifest.json",
+   "ok": null,
+   "actual": "84E530B1A90F5A069C7C87B68B73948F574752650DB607DDFB29A959B9F0307A",
+   "expected": "kapi JSON ile karsilastirilir"
+  },
+  {
+   "id": "U-1 API dist",
+   "ok": true,
+   "actual": "A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0 (3867 dosya)",
+   "expected": "A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0"
+  },
+  {
+   "id": "U-2 WEB .next",
+   "ok": true,
+   "actual": "C17E7B132FB7DED65AD0788024AA478F0949AF0D5D9045E8F47779A31A615326 (505 dosya)",
+   "expected": "C17E7B132FB7DED65AD0788024AA478F0949AF0D5D9045E8F47779A31A615326"
+  },
+  {
+   "id": "U-3 BUILD_ID",
+   "ok": true,
+   "actual": "5waeMoFGGMTLAYmn9oJvW",
+   "expected": "5waeMoFGGMTLAYmn9oJvW"
+  },
+  {
+   "id": "U-4 next.config.js",
+   "ok": true,
+   "actual": "C43DEB5A04F1529CE2D368204ED7D10B8DBC257327E0BC64A01F1D7CF3AC5B5C",
+   "expected": "C43DEB5A04F1529CE2D368204ED7D10B8DBC257327E0BC64A01F1D7CF3AC5B5C"
+  },
+  {
+   "id": "E-1 .env sha (icerik okunmadi)",
+   "ok": true,
+   "actual": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+   "expected": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC"
+  },
+  {
+   "id": "G-1 gorevler (etkin, Running)",
+   "ok": true,
+   "actual": [
+    "HukukPlatform-API|Running|C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe api",
+    "HukukPlatform-Web|Running|C:\\Ops\\hukuk\\bin\\hukuk-task-host.exe web"
+   ],
+   "expected": "iki gorev etkin; eylem hukuk-task-host.exe api/web"
+  },
+  {
+   "id": "L-1 dinleyiciler (tek, kok RELEASE23)",
+   "ok": true,
+   "actual": [
+    "8080|1|True",
+    "3002|1|True"
+   ],
+   "expected": "8080 ve 3002 tek dinleyici, kok RELEASE23"
+  }
+ ],
+ "envContentRead": false
+}
