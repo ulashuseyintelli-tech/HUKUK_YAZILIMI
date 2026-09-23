@@ -1,13 +1,22 @@
 /*
- * OFFICE PERSONEL DAVETI — ERISIM KAPATMA / KURTARMA (YALNIZ runId ILE; durum dosyasi GEREKMEZ)
+ * OFFICE PERSONEL DAVETI — ERISIM KAPATMA / KURTARMA (MAKBUZA BAGLI)
  *
- * NE YAPAR (yalniz `inv-<runId>` tenant'inda):
+ * YETKI: yalniz "inv- onekli tenant" kosulu YETMEZ. Kurtarma, korunan kosum makbuzundaki
+ *   runId + slug + tenantId + adminUserId + invitedUserId + inviteId
+ * degerlerini DB ile BIREBIR karsilastirir. Biri tutmazsa HIC YAZMADAN durur (cikis 4).
+ * Boylece baska bir sentetik kosumun (ya da elle olusturulmus bir `inv-` tenant'inin) kayitlarina
+ * dokunulmaz.
+ *
+ * NE YAPAR (yalniz makbuzun isaret ettigi tenant'ta):
  *   1) aktif User satirlari: isActive=false + tokenVersion++   -> giris 401, dagitilmis JWT'ler gecersiz
  *   2) kullanilmamis UserInvite satirlari: revokedAt=now        -> bekleyen davet KALMAZ
- * NE YAPMAZ: silme yok; audit ve gecmis satirlar DEGISTIRILMEZ. Gercek hesaplara DOKUNMAZ (G-1/G-2).
+ * NE YAPMAZ: silme yok; audit ve gecmis satirlar DEGISTIRILMEZ.
  * TEKRAR GUVENLIDIR: ikinci kosum 0 satir gunceller ve yine ok:true doner.
  *
- * KULLANIM: INV_RUN_ID=<8 hex> node inv-99-close.js   (G-0 ortam degiskenleri gerekir)
+ * KULLANIM: INV_RECEIPT_FILE=<makbuz> node inv-99-close.js      (G-0 ortam degiskenleri gerekir)
+ *   INV_RUN_ID verilirse makbuzdaki runId ile AYNI olmalidir (fazladan kapi).
+ *
+ * CIKIS: 0 kapanis dogrulandi · 3 kapanis TAMAMLANMADI · 4 MAKBUZ/DB UYUSMAZLIGI (yazma YOK)
  */
 'use strict';
 const L = require('./inv-lib');
@@ -15,12 +24,28 @@ const { closeAccess } = require('./inv-run');
 
 (async () => {
   const env = L.assertRunEnvironment();
-  const runId = L.requireEnv('INV_RUN_ID');
-  if (!/^[0-9a-f]{8}$/.test(runId)) throw new L.GateError('INV_RUN_ID bicimi gecersiz (8 hex)');
+  const receiptFile = L.requireEnv('INV_RECEIPT_FILE');
+  const receipt = L.readReceipt(receiptFile);
+  if (process.env.INV_RUN_ID && process.env.INV_RUN_ID !== receipt.runId) {
+    console.error(`REDDEDILDI: INV_RUN_ID makbuzla uyusmuyor (${process.env.INV_RUN_ID} != ${receipt.runId}) — YAZMA YOK`);
+    process.exitCode = 4;
+    return;
+  }
   const prisma = L.loadPrisma();
   try {
-    const r = await closeAccess(prisma, runId, null);
-    const out = { record: 'OFFICE-INVITE-CLOSE', environment: env, runId, slug: `${L.TENANT_PREFIX}${runId}`, ...r, atUtc: new Date().toISOString() };
+    let matched;
+    try {
+      matched = await L.assertReceiptMatchesDb(prisma, receipt);
+    } catch (e) {
+      console.error(`REDDEDILDI: ${e.message}`);
+      process.exitCode = 4;
+      return;
+    }
+    const r = await closeAccess(prisma, receipt.runId, null);
+    const out = {
+      record: 'OFFICE-INVITE-CLOSE', environment: env, runId: receipt.runId, slug: matched.slug,
+      tenantId: matched.tenantId, receiptChecked: matched.checked, ...r, atUtc: new Date().toISOString(),
+    };
     const file = process.env.INV_RESULT_FILE;
     if (file) L.writeJsonNoSecrets(file, out, []);
     L.log(JSON.stringify(out, null, 1));

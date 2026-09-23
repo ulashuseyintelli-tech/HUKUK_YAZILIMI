@@ -52,8 +52,14 @@ async function main() {
   let isoBefore = null;
   let isoAfter = null;
   let invitedUserId = null;
+  let adminUserId = null;
   let inviteId = null;
   let faultInjected = false;
+  let receiptSha = null;
+  let captureScan = null;
+  let capturePurge = null;
+  const captureDir = L.requireEnv('INV_SINK_DIR');
+  const receiptFile = L.requireEnv('INV_RECEIPT_FILE');
 
   try {
     const clash = await prisma.tenant.findFirst({ where: { slug }, select: { id: true } });
@@ -71,6 +77,7 @@ async function main() {
       return { tenantId: tenant.id, adminId: admin.id };
     });
     tenantId = setup.tenantId;
+    adminUserId = setup.adminId;
     await L.assertOwnTenant(prisma, tenantId);
     L.log(`KOSUM KIMLIGI: runId=${runId} tenant=${slug} ortam=${env.environment}`);
     L.log(`KURTARMA (her kosulda): INV_RUN_ID=${runId} node inv-99-close.js`);
@@ -85,6 +92,13 @@ async function main() {
     inviteId = created.body && created.body.inviteId;
     const inviteRow = inviteId ? await prisma.userInvite.findUnique({ where: { id: inviteId }, select: { id: true, userId: true, tokenHash: true, consumedAt: true, revokedAt: true, tenantId: true } }) : null;
     invitedUserId = inviteRow && inviteRow.userId;
+    if (inviteId && invitedUserId) {
+      // MAKBUZ: kurtarma yetkisi bu dosyadaki kesin kimliklere baglidir (yalniz onek YETMEZ).
+      receiptSha = L.writeReceipt(receiptFile, {
+        runId, slug, tenantId, adminUserId, invitedUserId, inviteId,
+        inviteEmail, adminEmail, createdAt: new Date().toISOString(),
+      });
+    }
     check('D-1', 'ADMIN davet olusturur (tenant kapsamli, token DB\'de yalniz hash)',
       (created.status === 200 || created.status === 201) && !!inviteRow && inviteRow.tenantId === tenantId && !inviteRow.consumedAt,
       `HTTP ${created.status} · inviteId=${inviteId ? 'VAR' : 'YOK'} · tokenHash=${inviteRow && inviteRow.tokenHash ? 'VAR' : 'YOK'} · consumedAt=${inviteRow && inviteRow.consumedAt ? 'VAR' : 'yok'}`);
@@ -155,6 +169,12 @@ async function main() {
       try { closure = await closeAccess(prisma, runId, null); L.log(`kapanis (finally): ok=${closure.ok}`); }
       catch (e) { L.log(`kapanis DENENDI ve BASARISIZ: ${e.message} — kurtarma: INV_RUN_ID=${runId} node inv-99-close.js`); }
     }
+    // TESPIT (onleme DEGIL): pencerede yakalayiciya hedef disi alici dustu mu.
+    try { captureScan = L.scanCaptureRecipients(captureDir, [inviteEmail]); }
+    catch (e) { captureScan = { error: e.message, measured: false }; }
+    // Yakalama dosyalari HAM TOKEN tasir: kanit dizinine KONMAZ, kosum sonunda SILINIR ve silinme dogrulanir.
+    try { capturePurge = L.purgeCapture(captureDir); }
+    catch (e) { capturePurge = { error: e.message }; }
     const pass = RESULTS.filter((r) => r.verdict === 'PASS').length;
     const fail = RESULTS.filter((r) => r.verdict === 'FAIL').length;
     const out = {
@@ -162,6 +182,8 @@ async function main() {
       inviteId, invitedUserId,
       tokenSha256: rawToken ? L.sha256(rawToken) : null,
       faultInjected, closure, isolationBefore: isoBefore, isolationAfter: isoAfter,
+      adminUserId, receiptFile, receiptSha256: receiptSha,
+      captureScan, capturePurge,
       results: RESULTS, pass, fail, fatal,
       recovery: `INV_RUN_ID=${runId} node inv-99-close.js`,
       finishedAt: new Date().toISOString(),
