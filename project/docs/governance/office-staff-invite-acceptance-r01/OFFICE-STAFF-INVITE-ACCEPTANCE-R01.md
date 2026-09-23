@@ -197,7 +197,8 @@ düzeyindedir ve yalnız makbuzun işaret ettiği tenant'ta çalışır.
 | `scripts/inv-run.js` | `C96D367565FAB2C90758C6814DECD761543D012F335614A68D3E7A808AB7212F` |
 | `scripts/inv-99-close.js` | `67A6CE79DC43863887B9492FFF67C3D79FEF11448AE93933BEE0EE1519EB730F` |
 | `scripts/inv-sink.js` | `94F20B32497D7DADDCEE9970CD148494D3F1C0AAABFCC7B59EA4850ACF50F592` |
-| `scripts/inv-live-window.ps1` | `1F974644F3C8601C212AA2F4CED69240DB36C12EBBB3564E080F0D48459930E4` |
+| `scripts/inv-live-window.ps1` | `C9572CA81D46E047E9371DC89F9354730E1BB439E5361F6E17B47F221EB0C5CC` (R02 kök neden düzeltmesi) |
+| `scripts/inv-window-selftest.ps1` | `D161E48261AF2380FE63846E81AEDF368E5FB85D95C8CD464E6794950B8468CC` |
 | `scripts/inv-live-run.ps1` | `2EDB682F71AB4F80C85D39F45C6305434723FDB353FD2DF01093E162DC71EB2C` |
 | `scripts/inv-exit-capture-prova.ps1` | `9EC146C05A2C05EF01FE29B6C510A3E777A189FF75349B837BB643407854A366` |
 
@@ -216,6 +217,23 @@ Canlı koşumda her dosya çalıştırılmadan önce sha256'sı bu tabloyla kar�
 
 `-999` hiçbir yolda kalmaz; kalırsa bloklar **PASS saymaz** ve durur. `EAP=Stop` altında başlatılamama ayrıca
 `NativeCommandError` ile durur — sessiz geçiş yoktur.
+
+### 7.4 2026-09-23 yarım pencere — kök nedenler ve düzeltmeleri
+
+İlk canlı deneme, kabul koşumu **hiç başlamadan** yarıda kaldı ve kurtarma gerektirdi. Üç kök neden ve karşılıkları:
+
+| # | Kök neden | Belirti | Düzeltme |
+|---|---|---|---|
+| K1 | `Restart-ScheduledTask` bu sistemde **yok** | Açılış `.env` değiştirildikten sonra durdu | `Restart-TaskAndWait`: `Stop-ScheduledTask` → dinleyici 0 doğrulaması → `Start-ScheduledTask` → tek dinleyici doğrulaması |
+| K2 | Durum dosyası **ilk canlı değişiklikten sonra** yazılıyordu | Kapatma bloğu "durum dosyası YOK" diyerek çalışmadı; yarım pencere kurtarılamadı | `Save-WindowState` ile yedek alınır alınmaz yazılır ve her aşamada güncellenir: `yedek-alindi` → `web-durduruldu` → `engeller-kondu` → `env-degistirildi` → `acik` |
+| K3 | Yakalayıcı kimlik deseni **ters bölü** ile yazılmıştı; gerçek komut satırı ileri bölü | Süreç "bizim değil" sayıldı, kapatılamadı, kurtarma kapıda durdu | Desen ayırıcı-bağımsız; yalnız **güncel** dinleyici pid'i hedeflenir; bizim olmayan sürece dokunulmaz ve bu durumda yakalayıcı "kapandı" sayılmaz |
+
+`inv-window-selftest.ps1` bu üç yolu canlıya dokunmadan ölçer: **12/12 PASS** (K1 3, K2 4, K3 5 kontrol).
+Karar mantığı testi (`-DecisionSelfTest`) düzeltmeden sonra da **9/9 PASS**.
+
+Kurtarma kanıtı: `inv-recover-cont-20260923-213316.json` (yürütücü) ve `inv-recovery-verify-20260923.json`
+(CLIENT'ın canlıda yeniden ölçümü). Ortam dönüşü doğrulandı; **davet kabulü başlamadı** ve
+**gerçek SMTP üzerinden gönderim ölçülmedi**.
 
 ### 7.3 Kurtarma ile erişim açma ayrımı — ölçüldü
 
