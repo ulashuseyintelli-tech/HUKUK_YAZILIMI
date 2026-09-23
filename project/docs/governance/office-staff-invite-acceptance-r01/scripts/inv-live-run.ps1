@@ -79,9 +79,15 @@ $GoRef = $null
 
 if ($null -eq $rc) { Fail 'cikis kodu OKUNAMADI — sonuc BELIRSIZ, PASS SAYILMAZ' }
 if ($rc -eq -999)  { Fail 'cikis kodu -999 — sonuc BELIRSIZ, PASS SAYILMAZ' }
-Write-Host ('DAVET KOSUMU BITTI - cikis=' + $rc + ' (0 PASS · 1 FAIL · 2 DURDU · 5 hata enjeksiyonu)')
 Write-Host ('  sonuc : ' + $ResultFile)
 Write-Host ('  makbuz: ' + $ReceiptFile)
 Write-Host ('  log   : ' + $log)
-if ($rc -ne 0) { Write-Host '  PASS DEGIL - TEKRAR KOSMA; once kapatma/kurtarma blogunu calistirin' -ForegroundColor Yellow }
+if ($rc -eq 0) {
+  Write-Host ('DAVET KOSUMU: KABUL PASS (cikis=' + $rc + ') — siradaki adim kapatma blogudur') -ForegroundColor Green
+} else {
+  Write-Host ''
+  Write-Host ('KABUL PASS DEGIL (cikis=' + $rc + ') — YENIDEN KOSMA, KAPATMA/KURTARMA ADIMINA GEC') -ForegroundColor Red
+  Write-Host '  1 FAIL · 2 DURDU/olculemedi · 5 hata enjeksiyonu' -ForegroundColor Red
+  Write-Host '  Kapatma blogu kurtarmayi (makbuza bagli erisim kapatma, sink durdurma, .env geri yukleme) HER KOSULDA yurutur.' -ForegroundColor Red
+}
 exit $rc
