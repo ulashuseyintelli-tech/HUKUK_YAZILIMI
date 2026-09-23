@@ -1,4 +1,4 @@
-param([ValidateSet('open', 'close', 'status')][string]$Command = 'status', [string]$RunStateFile)
+param([ValidateSet('open', 'close', 'status')][string]$Command = 'status', [string]$RunStateFile, [string]$CaptureDir)
 $ErrorActionPreference = 'Stop'
 # =============================================================================
 # OFFICE PERSONEL DAVETI — CANLI PENCERE (YONETICI GEREKIR: gorev + guvenlik duvari)
@@ -69,6 +69,9 @@ if ($Command -eq 'open') {
   if ($sinkRemote.Count -gt 0) { Fail 'yakalayicinin loopback DISI baglantisi var — DUR' }
 
   $state = Get-Status
+  if (-not $CaptureDir) { $CaptureDir = Join-Path ([IO.Path]::GetDirectoryName($RunStateFile)) 'inv-capture' }
+  if (-not (Test-Path -LiteralPath $CaptureDir)) { Fail ('yakalama dizini YOK: ' + $CaptureDir) }
+  $state['captureDir'] = $CaptureDir
   $backup = $RunStateFile + '.env.bak'
   Copy-Item -LiteralPath $EnvFile -Destination $backup -Force
   $state['envBackup'] = $backup
@@ -120,6 +123,44 @@ if ($Command -eq 'open') {
 if ($Command -eq 'close') {
   if (-not (Test-Path -LiteralPath $RunStateFile)) { Fail 'durum dosyasi YOK — kapanis yapilamaz' }
   $state = Get-Content -Raw -LiteralPath $RunStateFile | ConvertFrom-Json
+
+  # ---- SIRA 1: SENTETIK ERISIM KAPANISI + HEDEF DISI KONTROL (kosum sonucundan) ----
+  # Kosum sonucu yoksa kapanis YINE yapilir (pencereyi acik birakmak daha risklidir) ama
+  # "kosum kapanisi dogrulandi" DENMEZ; durum kaydinda acikca isaretlenir.
+  $resultFile = $RunStateFile + '.result.json'
+  $runClosure = $null
+  if (Test-Path -LiteralPath $resultFile) {
+    $res = Get-Content -Raw -LiteralPath $resultFile | ConvertFrom-Json
+    $runClosure = [ordered]@{
+      pass = $res.pass; fail = $res.fail; fatal = $res.fatal
+      closureOk = $(if ($res.closure) { $res.closure.ok } else { $null })
+      stillActive = $(if ($res.closure) { $res.closure.stillActive } else { $null })
+      pendingLeft = $(if ($res.closure) { $res.closure.pendingLeft } else { $null })
+      offTarget = $(if ($res.captureScan) { @($res.captureScan.offTarget).Count } else { $null })
+      captureRemaining = $(if ($res.capturePurge) { $res.capturePurge.remaining } else { $null })
+    }
+    if ($runClosure.closureOk -ne $true) {
+      Fail 'KOSUM KAPANISI DOGRULANMADI (closure.ok != true) — once inv-99-close.js makbuzla calistirilir; ERISIM ACILMAZ'
+    }
+    if ($runClosure.offTarget -gt 0) {
+      Fail ('HEDEF DISI ALICI TESPIT EDILDI (' + $runClosure.offTarget + ') — owner bildirimi ZORUNLU; ERISIM ACILMAZ')
+    }
+    if ($runClosure.captureRemaining -gt 0) {
+      Fail ('yakalama dosyasi KALDI (' + $runClosure.captureRemaining + ') — sir temizligi TAMAMLANMADI; ERISIM ACILMAZ')
+    }
+  } else {
+    Write-Host 'UYARI: kosum sonucu dosyasi YOK — kosum kapanisi DOGRULANAMADI (kayda isaretlenir)' -ForegroundColor Yellow
+  }
+
+  # ---- SIRA 2: YAKALAYICI KAPANISI ----
+  $capture = $state.captureDir
+  if ((ListenerCount $SinkPort) -ne 0) { Fail ('yakalayici hala ' + $SinkPort + ' portunda dinliyor — once durdurun; ERISIM ACILMAZ') }
+  if ($capture -and (Test-Path -LiteralPath $capture)) {
+    $left = @(Get-ChildItem -LiteralPath $capture -File -ErrorAction SilentlyContinue).Count
+    if ($left -gt 0) { Fail ('yakalama dizininde ' + $left + ' dosya KALDI — ERISIM ACILMAZ') }
+  }
+
+  # ---- SIRA 3: .env GERI YUKLEME + HASH ----
   $backup = $state.envBackup
   if (-not (Test-Path -LiteralPath $backup)) { Fail '.env yedegi YOK — kapanis DURDU (owner mudahalesi)' }
   Copy-Item -LiteralPath $backup -Destination $EnvFile -Force
@@ -130,15 +171,24 @@ if ($Command -eq 'close') {
   }
   if ($restored -ne $state.envSha) { Fail ('.env GERI YAZILAMADI (sha ' + $restored + ' != ' + $state.envSha + ') — PENCERE ACIK KALIR') }
 
+  # ---- SIRA 4: API/DB KIMLIGI ----
   Restart-ScheduledTask -TaskName $ApiTask
   $deadline = (Get-Date).AddSeconds(60)
   while ((ListenerCount 8080) -ne 1 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
   if ((ListenerCount 8080) -ne 1) { Fail 'API 8080 dinleyicisi geri gelmedi — PENCERE ACIK KALIR' }
+  $me = $null
+  try { $me = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/api/auth/me' -UseBasicParsing -TimeoutSec 15 } catch { $me = $_.Exception.Response }
+  $meCode = $(if ($me -and $me.StatusCode) { [int]$me.StatusCode } else { $null })
+  if ($meCode -ne 401) { Fail ('API kimligi dogrulanamadi (/auth/me ' + $meCode + ' ; 401 bekleniyor) — PENCERE ACIK KALIR') }
+  $dbLine = @([IO.File]::ReadAllLines($EnvFile) | Where-Object { $_ -match '^\s*DATABASE_URL\s*=' })
+  if ($dbLine.Count -ne 1 -or $dbLine[0] -notmatch 'hukuk_db') { Fail 'DB kimligi beklenmedik — PENCERE ACIK KALIR' }
 
+  # ---- SIRA 5: YALNIZ BU KOSUMUN KURALLARI KALDIRILIR ----
   foreach ($r in @(Get-NetFirewallRule -DisplayName ($RuleTag + '*') -ErrorAction SilentlyContinue)) {
     Remove-NetFirewallRule -Name $r.Name
   }
 
+  # ---- SIRA 6: WEB baslangic durumuna dondurulur ----
   if ($state.webEnabled -eq $true) { Enable-ScheduledTask -TaskName $WebTask | Out-Null }
   if ($state.webTask -eq 'Running') {
     Start-ScheduledTask -TaskName $WebTask
@@ -150,7 +200,8 @@ if ($Command -eq 'close') {
   $ok = ($after.envSha -eq $state.envSha) -and ($after.rules -eq 0) -and
         ($after.webTask -eq $state.webTask) -and ($after.webEnabled -eq $state.webEnabled) -and
         ($after.listen8080 -eq 1) -and ($after.listen3002 -eq $state.listen3002)
-  [ordered]@{ record = 'INV-WINDOW-CLOSE'; before = $state; after = $after; restored = $ok } |
+  [ordered]@{ record = 'INV-WINDOW-CLOSE'; before = $state; after = $after; restored = $ok; runClosure = $runClosure;
+              runResultPresent = (Test-Path -LiteralPath $resultFile) } |
     ConvertTo-Json -Depth 6 | Set-Content -LiteralPath ($RunStateFile + '.close.json') -Encoding UTF8
   if (-not $ok) { Fail 'ORTAM GERI DONUSU DOGRULANMADI — kullanici erisimi ACILMAZ' }
   Remove-Item -LiteralPath $RunStateFile -Force

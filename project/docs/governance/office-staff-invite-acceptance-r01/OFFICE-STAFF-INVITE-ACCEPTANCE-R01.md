@@ -197,9 +197,31 @@ düzeyindedir ve yalnız makbuzun işaret ettiği tenant'ta çalışır.
 | `scripts/inv-run.js` | `C96D367565FAB2C90758C6814DECD761543D012F335614A68D3E7A808AB7212F` |
 | `scripts/inv-99-close.js` | `67A6CE79DC43863887B9492FFF67C3D79FEF11448AE93933BEE0EE1519EB730F` |
 | `scripts/inv-sink.js` | `94F20B32497D7DADDCEE9970CD148494D3F1C0AAABFCC7B59EA4850ACF50F592` |
-| `scripts/inv-live-window.ps1` | `A3B7B8020D7ADA9279E61E73FDD2C08ECE0689DA19ADB2A5F8C3FAC86DE18B0F` |
+| `scripts/inv-live-window.ps1` | `BCE2B623805918E731A0071779BA999FDD1E5F7D193DBD5B512116F5C6F706A8` |
+| `scripts/inv-live-run.ps1` | `DF81D2FAF2B9139E84E8C5F1E8E854B2A6A33F613ED99EA32D660719631EB317` |
+| `scripts/inv-exit-capture-prova.ps1` | `9EC146C05A2C05EF01FE29B6C510A3E777A189FF75349B837BB643407854A366` |
 
 Canlı koşumda her dosya çalıştırılmadan önce sha256'sı bu tabloyla karşılaştırılır; biri tutmazsa pencere açılmaz.
+
+### 7.1 Çıkış kodu yakalama — ölçüldü
+
+`inv-exit-capture-prova.ps1` owner bloklarındaki kalıbı canlıya dokunmadan ölçer:
+
+| Senaryo | Beklenen | Ölçülen |
+|---|---|---|
+| Çocuk süreç 0 | 0 | **0** |
+| Çocuk süreç 3 | 3 | **3** |
+| Çocuk süreç 5 | 5 | **5** |
+| Başlatılamama (dosya yok) | sıfır dışı | **-196608** (sıfır dışı) |
+
+`-999` hiçbir yolda kalmaz; kalırsa bloklar **PASS saymaz** ve durur. `EAP=Stop` altında başlatılamama ayrıca
+`NativeCommandError` ile durur — sessiz geçiş yoktur.
+
+### 7.2 GO ref nasıl giriliyor
+
+Koşum bloğu (`inv-live-run.ps1`) GO ref'i **`Read-Host` ile** ister. Ajan araçları etkileşimli olmadığı için
+koşumu owner çalıştırır. GO ref sohbete, komut satırı argümanına ve dosyaya **yazılmaz**; yalnız o sürecin
+belleğindedir, kayda sha256'sı girer ve blok GO ref'in repoda daha önce geçmediğini `git grep` ile doğrular.
 
 ## 8. Kalan owner kararları
 
