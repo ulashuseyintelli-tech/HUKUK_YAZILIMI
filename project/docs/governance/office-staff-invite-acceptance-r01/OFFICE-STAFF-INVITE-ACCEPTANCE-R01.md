@@ -197,9 +197,44 @@ düzeyindedir ve yalnız makbuzun işaret ettiği tenant'ta çalışır.
 | `scripts/inv-run.js` | `C96D367565FAB2C90758C6814DECD761543D012F335614A68D3E7A808AB7212F` |
 | `scripts/inv-99-close.js` | `67A6CE79DC43863887B9492FFF67C3D79FEF11448AE93933BEE0EE1519EB730F` |
 | `scripts/inv-sink.js` | `94F20B32497D7DADDCEE9970CD148494D3F1C0AAABFCC7B59EA4850ACF50F592` |
-| `scripts/inv-live-window.ps1` | `A3B7B8020D7ADA9279E61E73FDD2C08ECE0689DA19ADB2A5F8C3FAC86DE18B0F` |
+| `scripts/inv-live-window.ps1` | `1F974644F3C8601C212AA2F4CED69240DB36C12EBBB3564E080F0D48459930E4` |
+| `scripts/inv-live-run.ps1` | `2EDB682F71AB4F80C85D39F45C6305434723FDB353FD2DF01093E162DC71EB2C` |
+| `scripts/inv-exit-capture-prova.ps1` | `9EC146C05A2C05EF01FE29B6C510A3E777A189FF75349B837BB643407854A366` |
 
 Canlı koşumda her dosya çalıştırılmadan önce sha256'sı bu tabloyla karşılaştırılır; biri tutmazsa pencere açılmaz.
+
+### 7.1 Çıkış kodu yakalama — ölçüldü
+
+`inv-exit-capture-prova.ps1` owner bloklarındaki kalıbı canlıya dokunmadan ölçer:
+
+| Senaryo | Beklenen | Ölçülen |
+|---|---|---|
+| Çocuk süreç 0 | 0 | **0** |
+| Çocuk süreç 3 | 3 | **3** |
+| Çocuk süreç 5 | 5 | **5** |
+| Başlatılamama (dosya yok) | sıfır dışı | **-196608** (sıfır dışı) |
+
+`-999` hiçbir yolda kalmaz; kalırsa bloklar **PASS saymaz** ve durur. `EAP=Stop` altında başlatılamama ayrıca
+`NativeCommandError` ile durur — sessiz geçiş yoktur.
+
+### 7.3 Kurtarma ile erişim açma ayrımı — ölçüldü
+
+Kapanış bloğu **kurtarma adımlarını her koşulda yürütür**: makbuza bağlı erişim kapatma, yakalayıcı durdurma,
+yakalama temizliği, `.env` geri yükleme, API yeniden başlatma ve kimlik ölçümü. Kabul (`fail > 0`), izolasyon ya da
+hedef dışı tespiti bu adımları **engellemez**; yalnız sonucu başarısız yapar ve kayda geçer.
+
+**Kullanıcı erişimi** (firewall kurallarının kaldırılması ve Web'in geri getirilmesi) yalnız şu altı zorunlu dönüş
+kontrolünün hepsi geçerse açılır: sentetik erişim kapalı · yakalayıcı durdu · yakalama dizini boş · `.env` sha tabana
+eşit · API `/auth/me` 401 · DB kimliği `hukuk_db`. Biri tutmazsa kurallar ve Web **olduğu gibi kalır**, çıkış 3 olur.
+
+`-DecisionSelfTest` bu ayrımı canlıya dokunmadan ölçer: **9/9 PASS**. Kabul FAIL ve hedef dışı tespiti erişimi
+açmayı engellemedi; altı zorunlu kontrolden her biri tek tek engelledi.
+
+### 7.2 GO ref nasıl giriliyor
+
+Koşum bloğu (`inv-live-run.ps1`) GO ref'i **`Read-Host` ile** ister. Ajan araçları etkileşimli olmadığı için
+koşumu owner çalıştırır. GO ref sohbete, komut satırı argümanına ve dosyaya **yazılmaz**; yalnız o sürecin
+belleğindedir, kayda sha256'sı girer ve blok GO ref'in repoda daha önce geçmediğini `git grep` ile doğrular.
 
 ## 8. Kalan owner kararları
 
