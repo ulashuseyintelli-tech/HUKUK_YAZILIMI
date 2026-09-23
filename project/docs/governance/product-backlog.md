@@ -4356,6 +4356,7 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **Fazla satir 11 → 1:** CI run `35792192750` (main `9214597b`), Test Suite job `106963061893`: **1174 PASS satiri, 0 FAIL, benzersiz PASS 1173**. Tek fazlalik `client-intake-promotion.service.spec.ts` (manifestler-arasi mukerrer; bu iste DUZELTILMEDI, kayitli karar). S2'nin kaldirdigi 10 gecis-mukerreri dosyasi artik yok.
 - **S2 sonrasi Test Suite suresi (kapanis olcutunun son sarti):** **14 dk 22 sn** (22:24:23Z–22:38:45Z), 20 dk `timeout-minutes` butcesine **5 dk 38 sn** pay birakir. Onceki olcum (S1b sirasinda, gecis-mukerrerleriyle) 13 dk 29 sn idi; S2 sonrasi manifest buyumesi (91→91 db/domain-integration + digerleri sabit, yalniz gecici adimlar kalkti) suredeki degisimi acikliyor — ikisi de ayni 20 dk butcesinin cok altinda. **Sure riski KAPANDI**; yeniden acilma kosulu: butce %90'ina (18 dk) yaklasilmasi.
 - **Bu olcum main `9214597b`'ye aittir.** Yeni is ACILMADI; #2767'nin urettigi `office-open-items-classification-r01.md` (dort acik spec + ADR-014 + forceExit + sure riski tek tablosu) BU satirla birlikte okunur, tekrar uretilmedi.
+- **Bu paragrafi yazan PR (#2769) siniflandirmasi:** dokumantasyon/kanit isidir — kod degismedi, yeni CI kosusu yapilmadi; tek yeni olcum yukaridaki 14 dk 22 sn suresidir (mevcut GitHub Actions kaydindan salt okuma). **Sure riski ile S2 kapanisi ayri kavramlardir:** S2 KAPANDI (yapisal manifest degisikligi tek seferlik tamamlandi, `ci.yml` sha esitligiyle kanitli); sure riski butce esigi ise HER main kosusunda farkli cikabilecek surekli bir gozlem konusudur — 14:22 yalniz `35792192750` kosumuna aittir, gelecekteki kosumlarin suresini garanti etmez. Ayrinti ve duzeltmeler: `office-remaining-decisions-r01/OFFICE-REMAINING-DECISIONS-R01.md` §1.3.
 
 **HIZMET KABULU 0/8 — SEKIZ OLCUTUN KAPANIS-KAYDI ESLEMESI (2026-09-23; salt okuma, yeniden kosum YOK; kaynak: mevcut İ9-İ16 kapanis kayitlari + `CLIENT-ACCEPTANCE-CRITERIA-I2-R01.md` §9):**
 Hizmet kabulu, alttaki İ-kilometre tasinin CANLI KAPANISINDAN AYRI bir owner onay kapisidir ve kendiliginden degismez
@@ -4368,18 +4369,24 @@ Hizmet kabulu, alttaki İ-kilometre tasinin CANLI KAPANISINDAN AYRI bir owner on
 | H2 | Adres ve iletisim (H2-01…H2-10) | İ13 | runId `8811f395`; sayac 15/18; KAPANDI (decision-log 2026-09-19) | Yalniz owner hizmet-kabulu karari | Owner |
 | H3 | Vekalet | İ10 | runId `c9b07bcb`; KAPANDI (decision-log `CLIENT-I10-LIVE-R01`, 2026-09-12) | Yalniz owner hizmet-kabulu karari | Owner |
 | H4 | Talimat/beyan/riza/KVKK (H4-01…H4-08) | İ14 | runId `e28c5c06`; sayac 16/18; KAPANDI (decision-log 2026-09-19) | Yalniz owner hizmet-kabulu karari | Owner |
-| H5 | Bilgi/belge toplama (H5-01…H5-06) | İ11 | runId `158675ab`; sayac 11/17; KAPANDI (`10838ccb`, #2678) | **SOMUT EKSIK, CANLIDA DEGIL:** `PUBLIC_INTAKE_BASE_URL` canli `.env`'de tanimsiz, intake baglantisi goreli uretiliyor. Hazir paket `client-h5-intake-url-r01` (disposable prova 7 PASS/1 OLCULEMEYEN) CANLIYA UYGULANMADI (decision-log 2026-09-21). Canli `.env` degisikligi + dar kabul icin AYRI owner GO gerekir | Owner (env degisikligi) + yurutucu (dar kabul) |
+| H5 | Bilgi/belge toplama (H5-01…H5-06) | İ11 | runId `158675ab`; sayac 11/17; KAPANDI (`10838ccb`, #2678) | **SOMUT EKSIK, CANLIDA DEGIL:** `PUBLIC_INTAKE_BASE_URL` canli `.env`'de tanimsiz, intake baglantisi goreli uretiliyor. Hazir paket `client-h5-intake-url-r01` (disposable prova 7 PASS/1 OLCULEMEYEN) CANLIYA UYGULANMADI (decision-log 2026-09-21). Paket yaziminda "env tek basina yetmez, R26 web yayini da gerekir" (K-A/K-B) deniyordu — **bu on-kosul artik karsilandi**, R26 Pencere A'da canliya alindi (2026-09-22, `#2739` dahil). Kalan tek is: `.env` degeri + API restart + dar kabul; hazir tek karar paketi `office-remaining-decisions-r01/OFFICE-REMAINING-DECISIONS-R01.md` §2 | Owner (env degisikligi) + yurutucu (dar kabul) |
 | H6 | Gonderim | İ12 | runId `92d04ef3`; sayac 14/18; KAPANDI (#2724) | Yalniz owner hizmet-kabulu karari | Owner |
 | H7 | Portal (İ4=DAHIL, decision-log `CLIENT-I4-I5-OWNER-DECISIONS-R01` 2026-09-18) | İ16 | runId `6b883b16`; teknik sayac 18/18; KAPANDI (2026-09-21) | Yalniz owner hizmet-kabulu karari | Owner |
 | H8 | Muhasebe kayit kapanisi + kilit butcesi ifadesi | İ15 | runId `1b83637a`; sayac 17/18; KAPANDI (2026-09-20). Ifade duzeltmesi ayrica owner onayli (decision-log 2026-09-22, "H8 IFADESI OWNER ONAYI") | Yalniz owner hizmet-kabulu karari (metin kusuru zaten giderildi) | Owner |
 
-**Sonuc:** Sekiz hizmetin SEKIZI de kendi İ-kilometre tasinda canli kapanmis DURUMDA (teknik sayac 18/18 tamamdir).
-Alti hizmette (H1,H2,H3,H4,H6,H8) "gercekten eksik" tek sey owner'in ayri, acik hizmet-kabulu karari — yeniden olcum
-GEREKMEZ. **Yalniz H5'te CANLIDA GERCEK bir eksik var** (env degeri hic uygulanmadi); bu, hizmet-kabulu karariyla
-KAPANMAZ, ayri bir canli yazma GO'su ister. Dar kapsamli kabuller (C4, C123, AUTH-01, A3) hicbiri bu 0/8 sayacini
-DEGISTIRMEZ; her biri kendi dar ölçütüyle kapandi, daha genis hizmet kabulu YERINE SAYILMAZ.
+**Sonuc (2026-09-23 duzeltmesi):** Sekiz hizmetin SEKIZI de kendi İ-kilometre tasinda canli kapandi, ama sayaclar
+BIRBIRINDEN FARKLIDIR (H1/H3 sayi verilmedi, H2 15/18, H4 16/18, H5 11/17, H6 14/18, H7 18/18, H8 17/18) —
+onceki "teknik sayac 18/18 tamamdir" ifadesi yanlis genellemeydi, yalniz H7 icin dogrudur. **H5 disindaki YEDI
+hizmette** (H1,H2,H3,H4,H6,**H7**,H8 — onceki liste H7'yi atlamisti) "gercekten eksik" tek sey owner'in ayri,
+acik hizmet-kabulu karari — yeniden olcum GEREKMEZ; tek imzada onaylanabilir toplu metin
+`office-remaining-decisions-r01/OFFICE-REMAINING-DECISIONS-R01.md` §4'tedir. **Yalniz H5'te CANLIDA GERCEK bir
+eksik var** (env degeri hic uygulanmadi); bu, hizmet-kabulu karariyla KAPANMAZ, ayri bir canli yazma GO'su ister
+— hazir tek karar paketi ayni belgenin §2'sindedir. Dar kapsamli kabuller (C4, C123, AUTH-01, A3) hicbiri bu 0/8
+sayacini DEGISTIRMEZ; her biri kendi dar ölçütüyle kapandi, daha genis hizmet kabulu YERINE SAYILMAZ.
 
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
+
+> B1-B10'un HER BIRI icin somut secenekler (owner tek turda secebilir): `office-remaining-decisions-r01/OFFICE-REMAINING-DECISIONS-R01.md` §5. Ayni belgenin §6'si dort acik spec/ADR-014/forceExit'teki "teslimi engellemez" hukmunun bir owner karari mi yoksa belge yorumu/kanit yoklugu mu oldugunu ayirir (cevap: ikincisi).
 
 | # | Kalem | Durum |
 |---|---|---|
