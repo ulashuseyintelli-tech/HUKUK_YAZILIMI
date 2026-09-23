@@ -237,6 +237,80 @@ async function isolationFingerprint(prisma, ownTenantIds) {
   return { tenants: foreign.length, digest: sha256(rows.join('\n')).slice(0, 16).toLowerCase() };
 }
 
+/**
+ * KOSUM MAKBUZU — kurtarmanin yetkisi buna baglidir.
+ * Yalniz "inv- onekli tenant" kosulu YETMEZ: kurtarma, makbuzdaki runId + tenantId + kullanici/davet
+ * kimlikleriyle DB'yi karsilastirir; biri tutmazsa HIC YAZMADAN durur (baska sentetik kosuma dokunmaz).
+ */
+function writeReceipt(file, receipt) {
+  writeJsonNoSecrets(file, { record: 'OFFICE-INVITE-RECEIPT', ...receipt }, []);
+  return sha256(fs.readFileSync(file, 'utf8'));
+}
+
+function readReceipt(file) {
+  const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (r.record !== 'OFFICE-INVITE-RECEIPT') throw new GateError('G-2: makbuz kaydi bicimi taninmiyor', 'G-2');
+  for (const k of ['runId', 'slug', 'tenantId', 'adminUserId', 'invitedUserId', 'inviteId']) {
+    if (!r[k]) throw new GateError(`G-2: makbuzda '${k}' yok — kurtarma YETKISIZ`, 'G-2');
+  }
+  return r;
+}
+
+/** G-2b: makbuz ile DB birebir ortusmeli. Tutmazsa YAZMA YOK. */
+async function assertReceiptMatchesDb(prisma, receipt) {
+  const slug = `${TENANT_PREFIX}${receipt.runId}`;
+  if (receipt.slug !== slug) throw new GateError(`G-2b: makbuz slug'i runId ile tutarsiz (${receipt.slug}) — YAZMA YOK`, 'G-2b');
+  assertOwnSlug(slug);
+  const tenant = await prisma.tenant.findUnique({ where: { id: receipt.tenantId }, select: { id: true, slug: true } });
+  if (!tenant) throw new GateError('G-2b: makbuzdaki tenant DB icinde YOK — YAZMA YOK', 'G-2b');
+  if (tenant.slug !== slug) throw new GateError(`G-2b: tenant slug uyusmuyor (DB ${tenant.slug} != makbuz ${slug}) — YAZMA YOK`, 'G-2b');
+  const users = await prisma.user.findMany({ where: { id: { in: [receipt.adminUserId, receipt.invitedUserId] } }, select: { id: true, tenantId: true } });
+  if (users.length !== 2) throw new GateError('G-2b: makbuzdaki iki kullanicidan biri YOK — YAZMA YOK', 'G-2b');
+  for (const u of users) {
+    if (u.tenantId !== tenant.id) throw new GateError('G-2b: makbuz kullanicisi BASKA tenant icinde — YAZMA YOK', 'G-2b');
+  }
+  const invite = await prisma.userInvite.findUnique({ where: { id: receipt.inviteId }, select: { tenantId: true, userId: true } });
+  if (!invite) throw new GateError('G-2b: makbuzdaki davet kaydi YOK — YAZMA YOK', 'G-2b');
+  if (invite.tenantId !== tenant.id || invite.userId !== receipt.invitedUserId) {
+    throw new GateError('G-2b: davet kaydi makbuzla ortusmuyor — YAZMA YOK', 'G-2b');
+  }
+  return { slug, tenantId: tenant.id, checked: ['runId', 'slug', 'tenantId', 'adminUserId', 'invitedUserId', 'inviteId'] };
+}
+
+/**
+ * HEDEF-DISI ALICI TESPITI (onleme DEGIL, TESPIT).
+ * Yakalama dosyalarindaki zarf alicilari (`X-INV-Rcpt`) beklenen sentetik adresle karsilastirilir.
+ * Urunde alici allowlist'i YOKTUR; bu olcum yalnizca pencerede hedef disina mesaj cikip cikmadigini
+ * SONRADAN tespit eder.
+ */
+function scanCaptureRecipients(captureDir, expectedRecipients) {
+  const files = fs.existsSync(captureDir) ? fs.readdirSync(captureDir).filter((f) => f.endsWith('.eml')) : [];
+  const offTarget = [];
+  for (const f of files) {
+    const head = fs.readFileSync(path.join(captureDir, f), 'utf8').split(/\r?\n/).slice(0, 4).join('\n');
+    const m = head.match(/X-INV-Rcpt:\s*(.*)/);
+    const rcpts = m ? m[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
+    if (!rcpts.length) { offTarget.push({ file: f, reason: 'zarf alicisi OKUNAMADI (OLCULEMEDI)' }); continue; }
+    for (const r of rcpts) if (!expectedRecipients.includes(r)) offTarget.push({ file: f, recipient: r, reason: 'hedef DISI' });
+  }
+  return { files: files.length, offTarget, measured: files.length > 0 };
+}
+
+/**
+ * YAKALAMA TEMIZLIGI — yakalama dosyalari HAM TOKEN tasir; kanit dizinine KONMAZ.
+ * Kosum sonunda silinir ve silinme DOGRULANIR (kalan dosya sayisi raporlanir).
+ */
+function purgeCapture(captureDir) {
+  if (!fs.existsSync(captureDir)) return { purged: 0, remaining: 0, existed: false };
+  const files = fs.readdirSync(captureDir);
+  let purged = 0;
+  for (const f of files) {
+    try { fs.unlinkSync(path.join(captureDir, f)); purged += 1; } catch { /* kalan sayilir */ }
+  }
+  const remaining = fs.readdirSync(captureDir).length;
+  return { purged, remaining, existed: true };
+}
+
 function newRunId() { return crypto.randomBytes(4).toString('hex'); }
 function log(...a) { console.log(...a); }
 
@@ -244,5 +318,6 @@ module.exports = {
   TENANT_PREFIX, GateError, GO_REF_RE, RAW_TOKEN_RE,
   requireEnv, assertRunEnvironment, assertOwnSlug, assertOwnTenant, verifyApiBoundToSameDatabase,
   httpJson, login, readCapturedInvite, decodeQuotedPrintable, sha256, writeJsonNoSecrets,
+  writeReceipt, readReceipt, assertReceiptMatchesDb, scanCaptureRecipients, purgeCapture,
   loadPrisma, loadBcrypt, isolationFingerprint, newRunId, log,
 };

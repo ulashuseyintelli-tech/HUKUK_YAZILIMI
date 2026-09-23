@@ -24,7 +24,11 @@ Canlıda e-posta iki ayrı yoldan çıkar ve **pencere yalnız birini etkiler**:
 | `EmailProviderService` (env SMTP) | `.env` `EMAIL_PROVIDER`, `SMTP_*` | **EVET** — pencere boyunca çıkan posta yakalayıcıya düşer |
 | Tenant SMTP (nodemailer) | Büro ayarlarından, **DB'den her gönderimde** | **HAYIR** — greeting, eskalasyon, POA ve müvekkil bildirimleri normal çalışmayı sürdürür |
 
-**Pencere boyunca engellenmesi gereken env-SMTP yolları** (hepsi kullanıcı tetikli; otomatik iş yok):
+**Güvence duyuruya dayanmaz.** Pencere, uygulamayı fiilen erişilemez yapar: Web görevi durdurulur ve devre
+dışı bırakılır, 8080 ve 3002 için koşuma özel uzak erişim engeli konur. Aşağıdaki env-SMTP yolları bu yüzden
+uzaktan tetiklenemez; duyuru yalnız **ek** önlemdir.
+
+**Pencere boyunca kapatılan env-SMTP yolları** (hepsi kullanıcı tetikli; otomatik iş yok):
 
 | Uç | Servis | Pencere önlemi |
 |---|---|---|
@@ -62,51 +66,140 @@ ICRABOT outbox'un `send_email` işleyicisi dışarı göndermez, yalnız günlü
 | Hata enjeksiyonu (runId `9bccd3c2`) | Kabulden **hemen sonra** kasıtlı duruş; çıkış 5, kapanış çalışmadı (3 ölçüt PASS'ten sonra) | `677E852F81395D4CA62FEC1AF8BCED4946D06C0C2ECEBE000C47763B59DED518` |
 | Kurtarma (aynı runId, yalnız runId ile) | 2 kullanıcı pasifleştirildi, bekleyen davet 0, `ok: true`. **İkinci koşum 0 satır güncelledi** (tekrar güvenli) | `FE91BAA0D18CE380F06A4D03587190EE186A99672321EA53AC4FABE76B5A362C` |
 
-Ortam: disposable PostgreSQL (5443), aday API (8115, `LOGIN_INVITE_PROVISIONING_ENABLED=true`), loopback SMTP
-yakalayıcı (2526). Gerçek müvekkil verisi yok, gerçek alıcıya gönderim yok. **Bu prova canlı kabul değildir.**
+| Değişen mekanizmalarla tekrar (runId `33279eb4`, paketin kendi yakalayıcısı) | **8/8 PASS**; yakalama taraması 1 dosya, hedef dışı alıcı **0**; yakalama temizliği silinen 1, **kalan 0**; makbuz yazıldı | `FB862758BDE00E627051FDB542E71D2A3B3A0B93C67D1A3CDDD1A4E026A2EB4C` |
+| Makbuz kapısı (aynı ortam) | **5/5 PASS**: doğru makbuzla kurtarma çıkış 0 · yanlış `tenantId` çıkış 4 · `slug`/`runId` tutarsızlığı çıkış 4 · `INV_RUN_ID` çelişkisi çıkış 4 — hiçbirinde yazma yok; diğer `inv-` tenant'ları değişmedi | koşum çıktısı, aynı kanıt dizini |
 
-## 5. Sır kapıları
+Ortam: disposable PostgreSQL (5443), aday API (`LOGIN_INVITE_PROVISIONING_ENABLED=true`), loopback SMTP yakalayıcı.
+İlk iki koşum paylaşılan `i3-sink` ile (2526), üçüncü koşum paketin kendi `inv-sink.js`'i ile (2527) yapıldı.
+Gerçek müvekkil verisi yok, gerçek alıcıya gönderim yok. **Bu prova canlı kabul değildir.**
 
-- Ham davet token'ı ve parolalar **yalnız bellekte**; sonuç dosyalarına yalnız token'ın sha256'sı yazılır.
+## 5. Sır kapıları — ölçülen kapsamıyla
+
+- **Parolalar** yalnız süreç belleğinde üretilir ve hiçbir dosyaya yazılmaz.
+- **Ham davet token'ı bellekte ve geçici yakalama dosyasında bulunur**; kanıt dosyalarına yalnız sha256'sı yazılır.
+  Yakalama dosyalarının nerede durduğu, nasıl korunduğu ve ne zaman silindiği §6.3'tedir. "Hiçbir dosyaya
+  yazılmıyor" ifadesi **kullanılmaz**; doğru kapsam budur.
 - Çıktı yazıcısı metin düzeyinde **fail-closed**: GO ref literali, ham token biçimi ya da bilinen bir sır
   değerini taşıyan nesne yazılamaz (`inv-lib.js` `writeJsonNoSecrets`).
 - Kanıt dosyaları koşumdan sonra tarandı: 64 hanelik hash'ler dışında ham token biçiminde dizi **0**.
 
 ## 6. Canlı pencere tasarımı — uygulanmadı
 
-**Sıra (her adım ayrı ve ölçülür):**
+### 6.1 Erişim kapatma (İ12 kalıbının R26/P1 durumuna uyarlanması)
 
-1. **Pencere teyidi** — eş oturumlar canlıya yazma ve kabul/prova başlatmama teyidi verir; owner pencere boyunca
-   §2 tablosundaki uçların tetiklenmeyeceğini duyurur. Pencere hedefi **≤ 15 dakika**.
-2. **`.env` yedeği** — canlı `.env` kopyalanır, kopyanın ve özgün dosyanın sha256'ları kaydedilir.
-3. **Değişiklik** — yalnız `SMTP_HOST` ve `SMTP_PORT` loopback yakalayıcıya çevrilir. `EMAIL_PROVIDER` **değişmez**
-   (`smtp` kalır). Başka hiçbir anahtara dokunulmaz; değişiklik sonrası `.env` sha256'sı kaydedilir.
-4. **Yeniden başlatma** — API yeniden başlatılır (`.env` boot'ta okunur). Kimlik doğrulanır: dist digest değişmedi,
-   `:8080` tek dinleyici, `/auth/me` 401.
-5. **Koşum** — `inv-run.js`, `INV_ENVIRONMENT=live` ile bir kez; sentetik tenant `inv-<runId>`.
-6. **Kapanış** — koşum `finally` bloğunda kapatır; çıkış 5 ise `INV_RUN_ID=<runId> node inv-99-close.js`.
-7. **Geri dönüş** — `.env` yedekten geri yazılır, sha256'sı **taban değere eşit** olduğu doğrulanır, API yeniden
-   başlatılır, `/auth/me` 401 ve dist digest yeniden ölçülür.
-8. **Kullanıcı erişimi** — personel çalışmaya ancak 7. adım doğrulandıktan sonra döner.
+Canlı API ve Web birer zamanlanmış görevdir: `HukukPlatform-API` ve `HukukPlatform-Web` (ikisi de ölçüldü: Running).
+`inv-live-window.ps1 -Command open` sırayla şunları yapar:
 
-**Geri dönüş ölçütü:** `.env` sha256'sı taban pine eşit **ve** API kimliği doğrulanmış olmadan pencere kapanmış
-sayılmaz. Eşit değilse yedekten yeniden yazılır; ikinci kez tutmazsa owner'a bildirilir ve pencere açık bırakılır.
+1. **Başlangıç durumunu kaydeder:** iki görevin durumu ve etkinliği, 8080/3002/yakalayıcı dinleyici sayıları,
+   `.env` sha256'sı, mevcut kural sayısı. Bu kayıt `close` adımının ölçütüdür.
+2. **Web'i durdurur ve devre dışı bırakır;** 3002 dinleyicisi kapanana kadar bekler, gerekirse süreci kapatır.
+   3002 hâlâ dinliyorsa **durur** (pencere açılmaz).
+3. **Koşuma özel uzak erişim engeli** ekler: `HY-INVITE-WINDOW-8080` ve `HY-INVITE-WINDOW-3002` (gelen, TCP, Block).
+4. `.env` yedeğini alır ve yedeğin sha256'sının kaynakla **eşit** olduğunu doğrular.
+5. `.env` içinde **yalnız iki anahtarı** değiştirir (açık allowlist): `SMTP_HOST`, `SMTP_PORT`. İkisi de tam olarak
+   bir satırda bulunmazsa durur.
+6. API görevini yeniden başlatır ve 8080'de **tek** dinleyici dönene kadar bekler.
 
-**Canlıda kalıcı kalanlar:** sentetik tenant `inv-<runId>`, içindeki ADMIN ve davet edilen kullanıcı, `UserInvite`
-satırı ve audit satırları. Silme yapılmaz; erişim kapatılır (kullanıcılar pasif, `tokenVersion++`, bekleyen davet
-iptal). **Kabul edilmiş bir hesabı pasifleştiren bir API ucu üründe yoktur**; kapanış DB düzeyindedir ve yalnız
-`inv-` önekli tenant'ta çalışır (G-1/G-2).
+**Teknik sınır — açıkça:** Güvenlik duvarı kuralları **loopback trafiğini kapsamaz**. Sunucuda açık bir yerel
+oturum `http://localhost:3002` üzerinden uygulamayı kullanmayı sürdürebilir. Bu yüzden pencere, **yerel
+oturumların uygulamayı kullanmayacağı teyidi** alınmadan açılmaz. Ölçüm yalnız gereken yerel API yolunu kullanır:
+`127.0.0.1:8080/api/auth/*` (giriş, davet, kabul) ve `/auth/me`.
+
+### 6.2 Yakalayıcı
+
+`inv-sink.js` **yalnız 127.0.0.1**'de dinler ve hiçbir mesajı iletmez; dışarı bağlantı kurmaz (`open` adımı
+yakalayıcı sürecinin loopback dışı bağlantısı varsa durur).
+
+**Gerçek SMTP kimlik bilgileri yakalayıcıya gitmez — ölçüldü (2026-09-23, ürünün kullandığı nodemailer):**
+
+| Sunucu AUTH ilan ediyor mu | İstemci ne yaptı |
+|---|---|
+| Hayır | `AUTH` komutu **hiç gönderilmedi**; gönderim yine başarılı |
+| Evet | `AUTH PLAIN <base64>` gönderildi; kimlik bilgisi çözülebilir |
+
+`inv-sink.js` AUTH **ilan etmez** ve `AUTH` komutunu 503 ile reddeder; STARTTLS de ilan edilmez. Yakalayıcı komut
+satırlarını diske **yazmaz**; yalnız zarf özeti (`X-INV-From`, `X-INV-Rcpt`) ve mesaj gövdesi yazılır.
+`SMTP_USER`/`SMTP_PASS` **değiştirilmez**; değişiklik allowlist'i bu yüzden iki anahtarla sınırlı kalır.
+**Port 465 seçilemez:** ürün `secure` değerini `SMTP_PORT === '465'` ile türetir (`email-provider.service.ts:201`).
+
+### 6.3 Ham token, yakalama dosyaları ve saklama
+
+"Hiçbir dosyaya yazılmıyor" **doğru değildir** ve öyle sunulmaz. Doğrusu:
+
+| Nesne | Nerede bulunur | Nasıl korunur |
+|---|---|---|
+| Ham davet token'ı | **Geçici olarak** yakalama dosyasında (`inv-msg-*.eml`) ve koşum sürecinin belleğinde | Yakalama dizini kanıt dizini **değildir**, repo dışındadır; koşum sonunda **silinir** ve silinme doğrulanır (`purgeCapture`: silinen ve **kalan** dosya sayısı kayda geçer) |
+| Ham token'ın sha256'sı | Sonuç dosyasında | Kanıt olarak kalır; literal değil |
+| Parolalar | Yalnız süreç belleği | Hiçbir dosyaya yazılmaz; çıktı yazıcısı sır değerini taşıyan yazmayı reddeder |
+| SMTP kimlik bilgileri | Canlı `.env` (değiştirilmez) | Yakalayıcıya gönderilmez (§6.2 ölçümü) |
+
+Yakalama dizini koşum sahibinin kullanıcı profilinde, repo dışında tutulur ve koşum bitiminde boşaltılır.
+
+### 6.4 Sıra
+
+1. Pencere teyidi (eş oturumlar) **+ yerel oturumların uygulamayı kullanmayacağı teyidi**.
+2. Yakalayıcı başlatılır (loopback).
+3. `inv-live-window.ps1 -Command open` (yönetici).
+4. `inv-run.js` `INV_ENVIRONMENT=live` ile **bir kez**.
+5. Koşum kendi `finally` bloğunda kapatır; çıkış 5 ise `inv-99-close.js` **makbuzla** çalıştırılır.
+6. `inv-live-window.ps1 -Command close` (yönetici).
+7. Yakalayıcı durdurulur; yakalama dizininin boş olduğu doğrulanır.
+
+### 6.5 Kapanış ölçütü — başarıda da hatada da aynı
+
+`close` adımı şunların hepsini doğrulamadan **kullanıcı erişimini açmaz**:
+
+- `.env` sha256'sı **taban değere eşit** (eşit değilse yedekten ikinci kez yazar; yine tutmazsa pencere **açık kalır**),
+- API 8080'de tek dinleyici ve görev çalışıyor,
+- koşuma özel güvenlik duvarı kuralları **kaldırıldı** (kalan kural 0),
+- Web görevi **başlangıç durumunda** (etkin ve çalışıyor) ve 3002 dinliyor,
+- yakalayıcı portu kapalı, yakalama dizini boş,
+- sentetik erişim kapalı (kullanıcılar pasif, bekleyen davet 0).
+
+Sonuç `<durum dosyası>.close.json` içine yazılır (`before`, `after`, `restored`).
+
+### 6.6 Sonradan tespit — önleme değil
+
+- **Hedef dışı alıcı:** Koşum, yakalama dosyalarındaki zarf alıcılarını beklenen sentetik adresle karşılaştırır
+  (`scanCaptureRecipients`). Bu bir **tespittir**; üründe alıcı allowlist'i yoktur ve bu ölçüm hiçbir gönderimi
+  engellemez. Okunamayan zarf "ölçülemedi" sayılır, PASS değil.
+- **Gerçek tenant'ın env-SMTP gönderimi:** Pencere sırasında başka bir env-SMTP gönderimi olursa mesajı yine
+  yakalayıcı alır ve yakalama taramasında hedef dışı olarak görünür. Bu da **tespittir**; önleme erişim kapatmadan
+  gelir (§6.1).
+
+### 6.7 Kurtarmanın yetkisi — makbuza bağlı
+
+Kurtarma yalnız "`inv-` önekli tenant" koşuluna dayanmaz. `inv-run.js` kurulumdan sonra repo dışına bir **makbuz**
+yazar: `runId`, `slug`, `tenantId`, `adminUserId`, `invitedUserId`, `inviteId`. `inv-99-close.js` bu altı alanı DB ile
+karşılaştırır; biri tutmazsa **hiç yazmadan** çıkış 4 verir. Böylece başka bir sentetik koşumun kayıtlarına
+dokunulmaz. `INV_RUN_ID` verilirse makbuzdaki `runId` ile aynı olmalıdır.
+
+### 6.8 Canlıda kalıcı kalanlar
+
+Sentetik tenant `inv-<runId>`, ADMIN ve davet edilen kullanıcı, `UserInvite` satırı ve audit satırları **kalır**.
+Silme yapılmaz; erişim kapatılır. **Kabul edilmiş bir hesabı pasifleştiren API ucu üründe yoktur**; kapanış DB
+düzeyindedir ve yalnız makbuzun işaret ettiği tenant'ta çalışır.
+
+### 6.9 Tahmini kesinti
+
+| Adım | Süre | Etki |
+|---|---|---|
+| `open` (Web durdurma, kural, `.env`, API yeniden başlatma) | ~1,5–2 dk | Web **kapanır**; API ~35 sn yeniden başlar |
+| Koşum | ~15–30 sn | Yalnız sentetik tenant |
+| `close` (`.env` geri, API yeniden başlatma, kural kaldırma, Web başlatma) | ~2–3 dk | API ~35 sn; Web ayağa kalkana kadar ~30–90 sn |
+| **Toplam** | **~5–6 dk** | Web erişimi bu süre boyunca kapalı; uzak API erişimi de kapalı |
 
 ## 7. Araç SHA256
 
 | dosya | sha256 |
 |---|---|
-| `scripts/inv-lib.js` | `8898F2EDD9BDD6A76F68095925659F49359081BB15BD9CF437302CDBE1F4EF9C` |
-| `scripts/inv-run.js` | `1FBEC522C2760BE059274399580A66F7BA0BF1F046E06A182BA450812A81BE19` |
-| `scripts/inv-99-close.js` | `28651539ACFD3C850441962A9993FC600E400FFEEA0E93C5D1133E2E7D3B352E` |
+| `scripts/inv-lib.js` | `6395A2FDC76AC36FC8BAE8A48806405746A5F646671B8B7FA23A54DFC6CE50CC` |
+| `scripts/inv-run.js` | `C96D367565FAB2C90758C6814DECD761543D012F335614A68D3E7A808AB7212F` |
+| `scripts/inv-99-close.js` | `67A6CE79DC43863887B9492FFF67C3D79FEF11448AE93933BEE0EE1519EB730F` |
+| `scripts/inv-sink.js` | `94F20B32497D7DADDCEE9970CD148494D3F1C0AAABFCC7B59EA4850ACF50F592` |
+| `scripts/inv-live-window.ps1` | `A3B7B8020D7ADA9279E61E73FDD2C08ECE0689DA19ADB2A5F8C3FAC86DE18B0F` |
 
-Canlı uygulama ve geri dönüş blokları (`.env` yedeği, değişiklik, yeniden başlatma, koşum, geri yazma) **ayrı ve
-tam SHA256 kontrollü** olarak, owner onayından sonra sunulur. Bu paket canlı değişikliği başlatmaz.
+Canlı koşumda her dosya çalıştırılmadan önce sha256'sı bu tabloyla karşılaştırılır; biri tutmazsa pencere açılmaz.
 
 ## 8. Kalan owner kararları
 
