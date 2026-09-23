@@ -35,6 +35,26 @@ function Sha([string]$p) { (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash
 function Listeners([int]$port) { $r = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue); return $r }
 function ListenerCount([int]$port) { $r = Listeners $port; if ($null -eq $r) { return 0 } return @($r).Count }
 function TaskState([string]$n) { (Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue) }
+# KOK NEDEN (2026-09-23): `Restart-ScheduledTask` bu sistemde YOK; acilis .env degistirdikten SONRA
+# durum dosyasi yazilmadan durdu. Desteklenen komutlarla yeniden baslatma:
+function Restart-TaskAndWait([string]$task, [int]$port, [int]$stopSec = 45, [int]$startSec = 90) {
+  Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
+  $d = (Get-Date).AddSeconds($stopSec)
+  while (((ListenerCount $port) -gt 0) -and (Get-Date) -lt $d) { Start-Sleep -Milliseconds 500 }
+  if ((ListenerCount $port) -gt 0) { return @{ ok = $false; asama = 'durdurma'; port = $port } }
+  Start-ScheduledTask -TaskName $task
+  $d = (Get-Date).AddSeconds($startSec)
+  while (((ListenerCount $port) -ne 1) -and (Get-Date) -lt $d) { Start-Sleep -Milliseconds 500 }
+  if ((ListenerCount $port) -ne 1) { return @{ ok = $false; asama = 'baslatma'; port = $port } }
+  return @{ ok = $true; asama = 'tamam'; port = $port }
+}
+# Durum dosyasi ILK CANLI DEGISIKLIKTEN ONCE yazilir ve her asamada guncellenir:
+# boylece yarim kalan pencere kapatma bloguyla (kismi asamadan) kurtarilabilir.
+function Save-WindowState($state, [string]$file, [string]$stage) {
+  $state['asama'] = $stage
+  $state['guncellendiUtc'] = (Get-Date).ToUniversalTime().ToString('o')
+  $state | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $file -Encoding UTF8
+}
 
 function Get-Status {
   $api = TaskState $ApiTask; $web = TaskState $WebTask
@@ -127,6 +147,8 @@ if ($Command -eq 'open') {
   $state['envBackup'] = $backup
   $state['envBackupSha'] = Sha $backup
   if ($state['envBackupSha'] -ne $state['envSha']) { Fail '.env yedegi kaynakla ESIT DEGIL' }
+  # ILK CANLI DEGISIKLIKTEN ONCE kalici: yedek alindi, hicbir sey degismedi.
+  Save-WindowState $state $RunStateFile 'yedek-alindi'
 
   # Web: baslangic durumu kayitli; durdur + devre disi birak.
   if (TaskState $WebTask) {
@@ -141,11 +163,13 @@ if ($Command -eq 'open') {
     }
     if ((ListenerCount 3002) -gt 0) { Fail '3002 hala dinliyor — Web durdurulamadi' }
   }
+  Save-WindowState $state $RunStateFile 'web-durduruldu'
 
   # Uzak erisim: kosuma ozel ENGEL kurallari (loopback KAPSAM DISI — teknik sinir).
   foreach ($p in 8080, 3002) {
     New-NetFirewallRule -DisplayName ("$RuleTag-$p") -Direction Inbound -Action Block -Protocol TCP -LocalPort $p -Profile Any | Out-Null
   }
+  Save-WindowState $state $RunStateFile 'engeller-kondu'
 
   # .env: YALNIZ iki anahtar (acik allowlist).
   $lines = [IO.File]::ReadAllLines($EnvFile)
@@ -157,13 +181,12 @@ if ($Command -eq 'open') {
   if ($changed -ne 2) { Fail ('SMTP_HOST/SMTP_PORT satir sayisi beklenmedik: ' + $changed) }
   [IO.File]::WriteAllLines($EnvFile, $lines)
   $state['envWindowSha'] = Sha $EnvFile
+  Save-WindowState $state $RunStateFile 'env-degistirildi'
 
-  Restart-ScheduledTask -TaskName $ApiTask
-  $deadline = (Get-Date).AddSeconds(60)
-  while ((ListenerCount 8080) -ne 1 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-  if ((ListenerCount 8080) -ne 1) { Fail 'API 8080 dinleyicisi geri gelmedi' }
+  $r = Restart-TaskAndWait $ApiTask 8080
+  if (-not $r.ok) { Fail ('API yeniden baslatma ' + $r.asama + ' asamasinda basarisiz — durum dosyasi YAZILDI; kapatma blogu kurtarir') }
   $state['afterOpen'] = Get-Status
-  $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $RunStateFile -Encoding UTF8
+  Save-WindowState $state $RunStateFile 'acik'
   Write-Host 'PENCERE ACIK: Web DURDURULDU+DEVRE DISI · 8080/3002 uzak erisim ENGELLI · SMTP yakalayiciya yonlendirildi'
   Write-Host ('  taban .env sha : ' + $state['envSha'])
   Write-Host ('  pencere .env sha: ' + $state['envWindowSha'])
@@ -231,10 +254,21 @@ if ($Command -eq 'close') {
   }
 
   # ---- KURTARMA 2: YAKALAYICI DURDURMA ----
+  # KOK NEDEN (2026-09-23): kimlik deseni TERS BOLU idi, gercek komut satiri ILERI BOLU ->
+  # surec "bizim degil" sayildi ve kapatilamadi. Desen artik ayirici-BAGIMSIZ ve yalniz
+  # GUNCEL dinleyici pid'i hedeflenir (eski pid ya da tum node surecleri DEGIL).
+  $sinkPattern = 'office-staff-invite-acceptance-r01[\\/]scripts[\\/]inv-sink\.js'
   $sinkPids = @(Listeners $SinkPort | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)
-  foreach ($sp in $sinkPids) { Stop-Process -Id $sp -Force -ErrorAction SilentlyContinue }
+  $sinkForeign = @()
+  foreach ($sp in $sinkPids) {
+    $sproc = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $sp) -ErrorAction SilentlyContinue
+    if (-not $sproc) { continue }
+    if ($sproc.Name -ne 'node.exe' -or $sproc.CommandLine -notmatch $sinkPattern) { $sinkForeign += $sp; continue }
+    Stop-Process -Id $sp -Force -ErrorAction SilentlyContinue
+  }
+  if ($sinkForeign.Count -gt 0) { $notes += ('2527 portunda BIZIM OLMAYAN surec: ' + ($sinkForeign -join ',') + ' — dokunulmadi') }
   Start-Sleep -Milliseconds 700
-  $sinkStopped = ((ListenerCount $SinkPort) -eq 0)
+  $sinkStopped = (((ListenerCount $SinkPort) -eq 0) -and ($sinkForeign.Count -eq 0))
   if (-not $sinkStopped) { $notes += 'yakalayici DURDURULAMADI' }
 
   # ---- KURTARMA 3: YAKALAMA TEMIZLIGI (sir) ----
@@ -259,9 +293,8 @@ if ($Command -eq 'close') {
   } else { $notes += '.env yedegi YOK — geri yukleme YAPILAMADI' }
 
   # ---- KURTARMA 5: API YENIDEN BASLATMA + KIMLIK ----
-  Restart-ScheduledTask -TaskName $ApiTask -ErrorAction SilentlyContinue
-  $deadline = (Get-Date).AddSeconds(60)
-  while ((ListenerCount 8080) -ne 1 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+  $apiRestart = Restart-TaskAndWait $ApiTask 8080
+  if (-not $apiRestart.ok) { $notes += ('API yeniden baslatma ' + $apiRestart.asama + ' asamasinda basarisiz') }
   $meCode = $null
   try {
     $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/api/auth/me' -UseBasicParsing -TimeoutSec 15
