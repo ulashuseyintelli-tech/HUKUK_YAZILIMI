@@ -1,0 +1,12 @@
+{
+ "record": "OFFICE-INVITE-RECEIPT",
+ "runId": "aa89937b",
+ "slug": "inv-aa89937b",
+ "tenantId": "cmueivq2v0001xxwmp3jzbxik",
+ "adminUserId": "cmueivq2x0003xxwmyu3jhygj",
+ "invitedUserId": "cmueivq5v0002h1497j1htahi",
+ "inviteId": "cmueivq5x0004h149i9flcaol",
+ "inviteEmail": "inv-aa89937b-staff@office-acceptance.invalid",
+ "adminEmail": "inv-aa89937b-admin@office-acceptance.invalid",
+ "createdAt": "2026-09-23T19:55:20.018Z"
+}

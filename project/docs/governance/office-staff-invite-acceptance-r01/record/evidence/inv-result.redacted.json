@@ -1,0 +1,106 @@
+{
+ "record": "OFFICE-INVITE-ACCEPTANCE-R01",
+ "environment": {
+  "environment": "live",
+  "dbHost": "127.0.0.1",
+  "dbPort": "5432",
+  "dbName": "hukuk_db",
+  "apiHost": "127.0.0.1",
+  "apiPort": "8080",
+  "goRefSha256": "85866772611C6B4A9940ABC1C428820FEAE2F450A1C4E47FEA4EB2BD03B5EE4A"
+ },
+ "runId": "aa89937b",
+ "slug": "inv-aa89937b",
+ "tenantId": "cmueivq2v0001xxwmp3jzbxik",
+ "inviteId": "cmueivq5x0004h149i9flcaol",
+ "invitedUserId": "cmueivq5v0002h1497j1htahi",
+ "tokenSha256": "1F8253D35EEAC4B4E2429D349D56BF876544F12E1C30776CCF5179269E370554",
+ "faultInjected": false,
+ "closure": {
+  "ok": true,
+  "found": true,
+  "activeBefore": 2,
+  "deactivated": 2,
+  "revokedInvites": 0,
+  "stillActive": 0,
+  "pendingLeft": 0,
+  "login": 401,
+  "me": 401
+ },
+ "isolationBefore": {
+  "tenants": 28,
+  "digest": "3539a3d967030e3d"
+ },
+ "isolationAfter": {
+  "tenants": 28,
+  "digest": "3539a3d967030e3d"
+ },
+ "adminUserId": "cmueivq2x0003xxwmyu3jhygj",
+ "receiptFile": "C:\\Users\\ulastelli\\Documents\\CLIENT-EVIDENCE-20260911\\inv-window-state.json.receipt.json",
+ "receiptSha256": "3172908A6FC490E14742E9EBC2A86BE7AF2D9E31D9B3D93769B4CEE05D566FA8",
+ "captureScan": {
+  "files": 1,
+  "offTarget": [],
+  "measured": true
+ },
+ "capturePurge": {
+  "purged": 1,
+  "remaining": 0,
+  "existed": true
+ },
+ "results": [
+  {
+   "id": "D-1",
+   "desc": "ADMIN davet olusturur (tenant kapsamli, token DB'de yalniz hash)",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · inviteId=VAR · tokenHash=VAR · consumedAt=yok"
+  },
+  {
+   "id": "D-2",
+   "desc": "yerel yakalayicida TESLIM: mesaj dosyasi VAR, alici sentetik, kabul baglantisi VAR, token DB hash'i ile eslesiyor",
+   "verdict": "PASS",
+   "observed": "yakalanan=inv-msg-0001.eml · kabul-baglantisi=VAR · token->DB hash eslesme=true"
+  },
+  {
+   "id": "D-3",
+   "desc": "gercek kabul ucu: hesap aktiflesir, parola yazilir, davet tuketilir",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · isActive=true · passwordHash=VAR · consumedAt=VAR"
+  },
+  {
+   "id": "D-4",
+   "desc": "davet edilen kullanici yeni parolasiyla giris yapar",
+   "verdict": "PASS",
+   "observed": "HTTP 201 · token=alindi"
+  },
+  {
+   "id": "D-5",
+   "desc": "AYNI davet token'i tekrar kullanilamaz (tuketilmis) ve parola DEGISMEZ",
+   "verdict": "PASS",
+   "observed": "HTTP 400 · parola hash degismedi=true"
+  },
+  {
+   "id": "D-6",
+   "desc": "kullanilmamis davetler iptal edildi (bekleyen 0)",
+   "verdict": "PASS",
+   "observed": "API bekleyen=0 · DB kalan bekleyen=0"
+  },
+  {
+   "id": "D-7",
+   "desc": "erisim kapanisi: kullanicilar pasif, giris 401, eski token 401",
+   "verdict": "PASS",
+   "observed": "pasif=2 · aktif kalan=0 · giris=401 · eski token=401"
+  },
+  {
+   "id": "D-8",
+   "desc": "izolasyon: sentetik olmayan taraf DEGISMEDI",
+   "verdict": "PASS",
+   "observed": "once=3539a3d967030e3d/28 sonra=3539a3d967030e3d/28"
+  }
+ ],
+ "pass": 8,
+ "fail": 0,
+ "fatal": null,
+ "recovery": "INV_RUN_ID=aa89937b node inv-99-close.js",
+ "finishedAt": "2026-09-23T19:55:20.258Z"
+}
