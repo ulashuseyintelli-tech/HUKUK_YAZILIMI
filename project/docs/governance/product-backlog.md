@@ -4351,6 +4351,34 @@ Siniflama import / `describeDb` / `new PrismaClient` / supertest taramasina daya
 - **#2737 S2 TAMAMLANMADI:** main `ci.yml` sha256 = S1b tabani `382EC45E…`; hedef `E248BF02…` DEGIL; S1b (`06647f1f`) sonrasi `ci.yml` commit'i 0. Zincir CODEX_LOCAL ile BASLADI: #2751 SA request-only MERGED `6121c0e5` (merge SHA CI+GOV-COORD+Push SUCCESS); #2752 SA execution ACIK. Kapanis olcutu: `ci.yml` = hedef, merge SHA'da benzersiz PASS = secili ve fazla satir 11 -> 1 (yalniz intake-promotion), S2 sonrasi Test Suite suresi.
 - **Ayrica gozlem (yeni is ACILMADI):** S2 sonrasi `ci.yml`'de manifestte de bulunan **25 dogrudan yol** kalir (ADR-014 script ve UYAP writer spec'leri); Test Suite logunda mukerrer gorunmedikleri icin baska job'larda kosar — kasitli olup olmadigi BELIRSIZ.
 
+**#2737 S2 TAMAMLANDI + SURE RISKI KAPANDI (2026-09-23; salt okuma, yeni CI kosusu YOK; olculen main `9214597b97c2eb8f698d51f1677ead29b45c4dba` = #2768 merge):**
+- **S2 kapanis olcutu (yukaridaki 4351 satirinin ustlendigi ust bicimde) karsilandi:** `ci.yml` sha256 = hedef `E248BF0220EE5CA46255B99E7C072700616E55943E61A31DBC2A70E75C6922EC` (main agacindan olculdu, S1b tabani `382EC45E…` DEGIL). Zincir tamamlandi: #2751 SA request → #2752 SA execution `0bd793a0` → #2761 IMPLEMENTATION request → #2762 IMPLEMENTATION `001bee8e` → #2763 result `c73048ba`; tumu CODEX_LOCAL, merge owner-controlled (kanit: main log).
+- **Fazla satir 11 → 1:** CI run `35792192750` (main `9214597b`), Test Suite job `106963061893`: **1174 PASS satiri, 0 FAIL, benzersiz PASS 1173**. Tek fazlalik `client-intake-promotion.service.spec.ts` (manifestler-arasi mukerrer; bu iste DUZELTILMEDI, kayitli karar). S2'nin kaldirdigi 10 gecis-mukerreri dosyasi artik yok.
+- **S2 sonrasi Test Suite suresi (kapanis olcutunun son sarti):** **14 dk 22 sn** (22:24:23Z–22:38:45Z), 20 dk `timeout-minutes` butcesine **5 dk 38 sn** pay birakir. Onceki olcum (S1b sirasinda, gecis-mukerrerleriyle) 13 dk 29 sn idi; S2 sonrasi manifest buyumesi (91→91 db/domain-integration + digerleri sabit, yalniz gecici adimlar kalkti) suredeki degisimi acikliyor — ikisi de ayni 20 dk butcesinin cok altinda. **Sure riski KAPANDI**; yeniden acilma kosulu: butce %90'ina (18 dk) yaklasilmasi.
+- **Bu olcum main `9214597b`'ye aittir.** Yeni is ACILMADI; #2767'nin urettigi `office-open-items-classification-r01.md` (dort acik spec + ADR-014 + forceExit + sure riski tek tablosu) BU satirla birlikte okunur, tekrar uretilmedi.
+
+**HIZMET KABULU 0/8 — SEKIZ OLCUTUN KAPANIS-KAYDI ESLEMESI (2026-09-23; salt okuma, yeniden kosum YOK; kaynak: mevcut İ9-İ16 kapanis kayitlari + `CLIENT-ACCEPTANCE-CRITERIA-I2-R01.md` §9):**
+Hizmet kabulu, alttaki İ-kilometre tasinin CANLI KAPANISINDAN AYRI bir owner onay kapisidir ve kendiliginden degismez
+(her İ9-İ16 kapanis kaydinda tekrarlanan ifade). Asagidaki tabloda "mevcut kanit" o İ'nin KENDI canli kapanisidir;
+"gercekten eksik" ise SIRF olcum degil, cogu satirda YALNIZ owner'in acik hizmet-kabulu karari.
+
+| H | Hizmet | İ | Mevcut kanit (canli kapanis) | Gercekten eksik | Yurutucu |
+|---|---|---|---|---|---|
+| H1 | Kimlik (`MUTATION_AUTHORITY` + #2552) | İ9 | runId `d19ce2c7`; KAPANDI (`client-live-acceptance-i9-r01/…md:391`) | Yalniz owner hizmet-kabulu karari | Owner |
+| H2 | Adres ve iletisim (H2-01…H2-10) | İ13 | runId `8811f395`; sayac 15/18; KAPANDI (decision-log 2026-09-19) | Yalniz owner hizmet-kabulu karari | Owner |
+| H3 | Vekalet | İ10 | runId `c9b07bcb`; KAPANDI (decision-log `CLIENT-I10-LIVE-R01`, 2026-09-12) | Yalniz owner hizmet-kabulu karari | Owner |
+| H4 | Talimat/beyan/riza/KVKK (H4-01…H4-08) | İ14 | runId `e28c5c06`; sayac 16/18; KAPANDI (decision-log 2026-09-19) | Yalniz owner hizmet-kabulu karari | Owner |
+| H5 | Bilgi/belge toplama (H5-01…H5-06) | İ11 | runId `158675ab`; sayac 11/17; KAPANDI (`10838ccb`, #2678) | **SOMUT EKSIK, CANLIDA DEGIL:** `PUBLIC_INTAKE_BASE_URL` canli `.env`'de tanimsiz, intake baglantisi goreli uretiliyor. Hazir paket `client-h5-intake-url-r01` (disposable prova 7 PASS/1 OLCULEMEYEN) CANLIYA UYGULANMADI (decision-log 2026-09-21). Canli `.env` degisikligi + dar kabul icin AYRI owner GO gerekir | Owner (env degisikligi) + yurutucu (dar kabul) |
+| H6 | Gonderim | İ12 | runId `92d04ef3`; sayac 14/18; KAPANDI (#2724) | Yalniz owner hizmet-kabulu karari | Owner |
+| H7 | Portal (İ4=DAHIL, decision-log `CLIENT-I4-I5-OWNER-DECISIONS-R01` 2026-09-18) | İ16 | runId `6b883b16`; teknik sayac 18/18; KAPANDI (2026-09-21) | Yalniz owner hizmet-kabulu karari | Owner |
+| H8 | Muhasebe kayit kapanisi + kilit butcesi ifadesi | İ15 | runId `1b83637a`; sayac 17/18; KAPANDI (2026-09-20). Ifade duzeltmesi ayrica owner onayli (decision-log 2026-09-22, "H8 IFADESI OWNER ONAYI") | Yalniz owner hizmet-kabulu karari (metin kusuru zaten giderildi) | Owner |
+
+**Sonuc:** Sekiz hizmetin SEKIZI de kendi İ-kilometre tasinda canli kapanmis DURUMDA (teknik sayac 18/18 tamamdir).
+Alti hizmette (H1,H2,H3,H4,H6,H8) "gercekten eksik" tek sey owner'in ayri, acik hizmet-kabulu karari — yeniden olcum
+GEREKMEZ. **Yalniz H5'te CANLIDA GERCEK bir eksik var** (env degeri hic uygulanmadi); bu, hizmet-kabulu karariyla
+KAPANMAZ, ayri bir canli yazma GO'su ister. Dar kapsamli kabuller (C4, C123, AUTH-01, A3) hicbiri bu 0/8 sayacini
+DEGISTIRMEZ; her biri kendi dar ölçütüyle kapandi, daha genis hizmet kabulu YERINE SAYILMAZ.
+
 **B. OWNER POLITIKA KARARI BEKLEYEN** (karar verilmeden kod yazilmaz)
 
 | # | Kalem | Durum |
