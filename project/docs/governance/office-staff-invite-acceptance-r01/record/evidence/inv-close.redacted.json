@@ -1,0 +1,75 @@
+{
+ "record": "INV-WINDOW-CLOSE",
+ "before": {
+  "apiTask": "Running",
+  "apiEnabled": true,
+  "webTask": "Running",
+  "webEnabled": true,
+  "listen8080": 1,
+  "listen3002": 1,
+  "listenSink": 1,
+  "envSha": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+  "rules": 0,
+  "atUtc": "2026-09-23T19:47:52.3064885Z",
+  "captureDir": "C:\\Users\\ulastelli\\Documents\\CLIENT-EVIDENCE-20260911\\inv-capture",
+  "envBackup": "C:\\Users\\ulastelli\\Documents\\CLIENT-EVIDENCE-20260911\\inv-window-state.json.env.bak",
+  "envBackupSha": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+  "asama": "acik",
+  "guncellendiUtc": "2026-09-23T19:48:37.0907272Z",
+  "envWindowSha": "11AB68CB92422EC6531A4A217EB801C01898341BC1865A0647F06F7EC4A87C90",
+  "afterOpen": {
+   "apiTask": "Running",
+   "apiEnabled": true,
+   "webTask": "Disabled",
+   "webEnabled": false,
+   "listen8080": 1,
+   "listen3002": 0,
+   "listenSink": 1,
+   "envSha": "11AB68CB92422EC6531A4A217EB801C01898341BC1865A0647F06F7EC4A87C90",
+   "rules": 2,
+   "atUtc": "2026-09-23T19:48:37.0897306Z"
+  }
+ },
+ "after": {
+  "apiTask": "Running",
+  "apiEnabled": true,
+  "webTask": "Running",
+  "webEnabled": true,
+  "listen8080": 1,
+  "listen3002": 1,
+  "listenSink": 0,
+  "envSha": "7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC",
+  "rules": 0,
+  "atUtc": "2026-09-23T19:56:36.4952838Z"
+ },
+ "runClosure": {
+  "pass": 8,
+  "fail": 0,
+  "fatal": null,
+  "closureOk": true,
+  "offTarget": 0,
+  "captureRemaining": 0
+ },
+ "runResultPresent": true,
+ "recovery": {
+  "ran": false,
+  "reason": "kosum kapanisi zaten dogrulandi"
+ },
+ "decision": {
+  "mandatory": {
+   "accessClosed": true,
+   "sinkStopped": true,
+   "captureEmpty": true,
+   "envRestored": true,
+   "apiOk": true,
+   "dbOk": true
+  },
+  "openAccess": true,
+  "blockers": [],
+  "acceptanceOk": true,
+  "offTargetCount": 0
+ },
+ "webRestored": true,
+ "notes": [],
+ "restored": true
+}

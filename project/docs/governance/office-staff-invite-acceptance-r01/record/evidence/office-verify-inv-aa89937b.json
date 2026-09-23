@@ -1,0 +1,87 @@
+{
+ "record": "OFFICE-INVITE-INDEPENDENT-READONLY-VERIFY",
+ "runId": "aa89937b",
+ "slug": "inv-aa89937b",
+ "db": "hukuk_db",
+ "writes": 0,
+ "checks": [
+  {
+   "id": "RO-MODE",
+   "ok": true,
+   "detail": "transaction_read_only=on"
+  },
+  {
+   "id": "TENANT-BULUNDU",
+   "ok": true,
+   "detail": "inv-aa89937b=cmueivq2v0001xxwmp3jzbxik"
+  },
+  {
+   "id": "ADMIN-ID-ESLESME",
+   "ok": true,
+   "detail": "adminUserId tenant kapsaminda dogrulandi"
+  },
+  {
+   "id": "DAVETLI-ID-ESLESME",
+   "ok": true,
+   "detail": "invitedUserId tenant kapsaminda dogrulandi"
+  },
+  {
+   "id": "DAVET-ID-ESLESME",
+   "ok": true,
+   "detail": "inviteId tenant + userId kapsaminda dogrulandi"
+  },
+  {
+   "id": "DAVETLI-PASIF",
+   "ok": true,
+   "detail": "isActive=false"
+  },
+  {
+   "id": "TOKENVERSION-ARTTI",
+   "ok": true,
+   "detail": "tokenVersion=1"
+  },
+  {
+   "id": "PAROLA-YAZILDI",
+   "ok": true,
+   "detail": "passwordHash IS NOT NULL=true"
+  },
+  {
+   "id": "DAVET-TUKETILDI",
+   "ok": true,
+   "detail": "consumedAt=DOLU"
+  },
+  {
+   "id": "TOKENHASH-YALNIZ-HASH",
+   "ok": true,
+   "detail": "tokenHash uzunluk=64 (64 hex bekleniyor, ham token DEGIL)"
+  },
+  {
+   "id": "AKTIF-KULLANICI-0",
+   "ok": true,
+   "detail": "tenant icinde aktif kullanici 0"
+  },
+  {
+   "id": "BEKLEYEN-DAVET-0",
+   "ok": true,
+   "detail": "bekleyen (consumedAt ve revokedAt bos) davet 0"
+  },
+  {
+   "id": "TUM-DAVET-TOKENLARI-HASH",
+   "ok": true,
+   "detail": "tenant icindeki davet sayisi 1, hash-disi gorunen 0"
+  },
+  {
+   "id": "TOPLAM-TENANT-OLCULDU",
+   "ok": true,
+   "detail": "toplam 29, sentetik-olmayan (inv-/off-c123-/ah- haric) 15 (bagimsiz onceki-sonraki karsilastirmasi YOK — yalniz mevcut durum; CLIENT'in isolationBefore/After digest'i bu betikle yeniden hesaplanmadi)"
+  },
+  {
+   "id": "INV-TENANT-SAYISI",
+   "ok": true,
+   "detail": "inv- onekli tenant sayisi 1 (bilgi amacli)"
+  }
+ ],
+ "verdict": "PASS",
+ "pass": 15,
+ "total": 15
+}
