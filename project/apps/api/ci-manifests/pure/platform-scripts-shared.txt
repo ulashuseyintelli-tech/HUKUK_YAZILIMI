@@ -812,6 +812,7 @@ src/modules/ocr/__tests__/ocr-ai-json-parse.spec.ts
 src/modules/ocr/__tests__/ocr-controller-upload-limit.spec.ts
 src/modules/ocr/__tests__/poa-client-phone-guard.spec.ts
 src/modules/ocr/__tests__/poa-limited-guard.spec.ts
+src/modules/ocr/__tests__/poppler-page-renderer.spec.ts
 src/tests/ocr.spec.ts
 src/modules/case/__tests__/case-responsibility-at-warn-only.spec.ts
 src/modules/case/__tests__/case-delete-hard-guard.spec.ts
