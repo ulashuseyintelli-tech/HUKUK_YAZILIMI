@@ -5,6 +5,8 @@
  * Native poppler GERÇEK çağrısı YOK (mock renderImpl). Gerçek poppler = env-gated/skip.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   PopplerPdfPageRenderer,
   resolveRenderScale,
@@ -68,18 +70,67 @@ describe('PR-2b-1 PopplerPdfPageRenderer — graceful fallback (mock)', () => {
 });
 
 describe('PR-2b-1 — gerçek poppler entegrasyonu (env-gated)', () => {
-  // CI/Windows'ta poppler-utils (pdftoppm) genelde YOK → varsayılan SKIP.
-  // Elle çalıştırmak için: RUN_POPPLER_INTEGRATION=1 + ortamda poppler kurulu + fixture PDF.
+  // İzin verilen, bilinçli yerel SKIP: RUN_POPPLER_INTEGRATION!=='1' iken bu test
+  // ayrı raporlanır (Jest "skipped" sayacında görünür, PASS'e KARIŞMAZ). Windows/macOS'ta
+  // `pdf-poppler` npm paketi KENDİ poppler ikili dosyalarını taşır (node_modules/pdf-poppler/
+  // lib/{win,osx}/...) — sistem PATH'ine bağlı DEĞİLDİR; bu nedenle bu ortamlarda
+  // RUN_POPPLER_INTEGRATION=1 verildiğinde render gerçekten çalışması BEKLENİR.
+  // Linux'ta paket kendisi require anında process.exit(1) verir (ayrı, bilinen kalem —
+  // `product-backlog.md` PDF-POPPLER ONARIMI kaydı) — bu dosya o platformda hiç yüklenmez.
   const runIntegration = process.env.RUN_POPPLER_INTEGRATION === '1';
+  const fixturePath = path.join(__dirname, 'fixtures', 'minimal-single-page.pdf');
+
   (runIntegration ? it : it.skip)(
     'gerçek poppler ile 1-sayfalık PDF render eder (env-gated)',
     async () => {
-      // NOT: gerçek fixture PDF gerektirir; iskelet. Aktive edilince burada
-      // gerçek bir PDF buffer'ı render edilip imageRef beklenir.
-      // const r = new PopplerPdfPageRenderer();
-      // const out = await r.renderPage(realPdfBuffer, 1);
-      // expect(out).toBeTruthy();
-      expect(runIntegration).toBe(true);
+      // Fixture: 200x200pt KARE, tek sayfa, "Hukuk Test PDF" metniyle deterministik
+      // üretilmiş minimal geçerli PDF (bkz. fixtures/ dizini). Kare sayfa seçildi ki
+      // beklenen PNG boyutu basit olsun: uzun-kenar ölçeklemede (pdf-poppler `scale`)
+      // hem genişlik hem yükseklik TAM DEFAULT_RENDER_SCALE (2480) olmalı.
+      if (!fs.existsSync(fixturePath)) {
+        throw new Error(`Fixture PDF bulunamadı: ${fixturePath}`);
+      }
+      const pdfBuffer = fs.readFileSync(fixturePath);
+
+      // GERÇEK poppler — mock renderImpl YOK (default constructor -> defaultPopplerRender).
+      const renderer = new PopplerPdfPageRenderer();
+      const imageRef = await renderer.renderPage(pdfBuffer, 1);
+
+      if (imageRef === null) {
+        // Entegrasyon AÇIKÇA istendi (RUN_POPPLER_INTEGRATION=1). Burada renderPage'in
+        // kendi graceful-fallback'i (null dönüşü) KABUL EDİLEMEZ — sessiz PASS/SKIP
+        // yerine açık FAIL: binary eksik/bozuksa bunu gizlemeyiz.
+        throw new Error(
+          'RUN_POPPLER_INTEGRATION=1 ile açıkça istenen render null döndü ' +
+            '(poppler binary eksik veya bozuk olabilir) — sessiz kabul EDİLMEDİ, açık FAIL.',
+        );
+      }
+
+      let pngBuffer: Buffer;
+      try {
+        expect(typeof imageRef).toBe('string');
+        expect(fs.existsSync(imageRef)).toBe(true);
+
+        pngBuffer = fs.readFileSync(imageRef);
+        // Mock çıktısı DEĞİL, gerçek PNG imzası: gerçek poppler kabulünü kanıtlar.
+        expect(pngBuffer.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+        expect(pngBuffer.length).toBeGreaterThan(1000); // boş/bozuk PNG değil
+
+        // Anlamlı görüntü özelliği: fixture'ın kare 200x200pt sayfası + DEFAULT_RENDER_SCALE
+        // -> beklenen genişlik/yükseklik TAM 2480x2480 (yalnız "tanımlı" değil, fixture'dan
+        // türetilmiş kesin sayısal beklenti; körlemesine snapshot DEĞİL).
+        const width = pngBuffer.readUInt32BE(16);
+        const height = pngBuffer.readUInt32BE(20);
+        expect(width).toBe(DEFAULT_RENDER_SCALE);
+        expect(height).toBe(DEFAULT_RENDER_SCALE);
+      } finally {
+        // Geçici kaynak temizliği: poppler'ın ürettiği çıktı dizinini sil.
+        try {
+          fs.rmSync(path.dirname(imageRef), { recursive: true, force: true });
+        } catch {
+          /* yoksay */
+        }
+      }
     },
   );
 });
