@@ -13,10 +13,13 @@ $ErrorActionPreference = 'Stop'
 $LIVE_API   = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api'
 $ENVF       = Join-Path $LIVE_API '.env'
 $LIVE_DIST  = Join-Path $LIVE_API 'dist\apps\api\src'
-$EXP_DIST   = '1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E'
+# PIN TAZELENDI 2026-09-24: canli dist artik R26 (R25B `1524EDC1...4D4E` TARIHSEL; R26 Pencere A'da
+# canliya alindi). Eski pinle blok kapida DURURDU. Olculen canli deger:
+$EXP_DIST   = 'A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0'   # R26
 $ENV_PIN    = '7A7228B1143BE2A8406FAF4CA316064EB2E164AE23E160E1353121F64E0EFDDC'   # DEGISIKLIK ONCESI
 $LAUNCHER   = 'C:\Ops\hukuk\bin\start-api.ps1'
-$LAUNCH_PIN = 'CC634BBFE0BE8F4F06482EDB30FF1E687D36B08C075665E2EC160EA8082619B3'
+# PIN TAZELENDI 2026-09-24: P1 Pencere B'de canli baslatici degisti (P1-ONCESI `CC634BBF...19B3` TARIHSEL).
+$LAUNCH_PIN = 'DDCCD09157E0AAF209AB38316A33815A0298FFACBC9006ED62F35F137F86219C'   # P1-SONRASI
 $TASK = 'HukukPlatform-API'; $PORT = 8080; $KEY = 'PUBLIC_INTAKE_BASE_URL'; $SRC_KEY = 'WEB_BASE_URL'
 function Say([string]$m) { Write-Host ((Get-Date).ToUniversalTime().ToString('HH:mm:ss') + 'Z  ' + $m) }
 function Fail([string]$m) { throw "DUR: $m" }
@@ -79,8 +82,8 @@ if ($Rollback) {
 
 Say '=== 0) KAPILAR (salt okuma)'
 $dist = Get-TreeDigest $LIVE_DIST
-Say "canli dist=$dist | R25B esit=$($dist -ceq $EXP_DIST)"
-if ($dist -cne $EXP_DIST) { Fail 'canli dist R25B degil' }
+Say "canli dist=$dist | pin esit=$($dist -ceq $EXP_DIST)"
+if ($dist -cne $EXP_DIST) { Fail 'canli dist pinle uyusmuyor (beklenen R26)' }
 if ((Sha $LAUNCHER) -cne $LAUNCH_PIN) { Fail 'pinli baslatici farkli' }
 $envSha0 = Sha $ENVF
 Say ".env sha=$envSha0 | taban pin esit=$($envSha0 -ceq $ENV_PIN)"

@@ -37,7 +37,7 @@ Owner bloğu değeri dosyadan okur; betikte sabit bir adres yoktur ve değer hi�
 
 ## 3. Owner bloğu — `scripts/h5-owner-env-block.ps1` (yükseltilmiş pencere)
 
-- **Kapılar:** yükseltilmiş pencere · canlı dist `1524EDC1…4D4E` (R25B) · pinli başlatıcı · `.env` sha **değişiklik öncesi** pin `7A7228B1…` · `:8080` tek dinleyici · `PUBLIC_INTAKE_BASE_URL` **yok** · `WEB_BASE_URL` tek geçiş ve mutlak.
+- **Kapılar:** yükseltilmiş pencere · canlı dist `A8B17A38…53A0` (**R26**; pin 2026-09-24'te tazelendi, R25B `1524EDC1…4D4E` TARİHSEL) · pinli başlatıcı · `.env` sha **değişiklik öncesi** pin `7A7228B1…` · `:8080` tek dinleyici · `PUBLIC_INTAKE_BASE_URL` **yok** · `WEB_BASE_URL` tek geçiş ve mutlak.
 - **Yedek:** `.env` **aynı dizine** `.env.bak-H5URL-<ts>` olarak kopyalanır (ACL değişmez), sha'sı doğrulanır.
 - **Durdurma:** görev durdurulur; dinleyici 0, host süreci 0 ve görev `Running` değil olmadan dosyaya dokunulmaz.
 - **Değişiklik:** dosya sonuna **tek satır** eklenir. Doğrulama bayt düzeyindedir: önceki satırların tamamı birebir aynı, satır sayısı tam +1, eklenen anahtar sayısı 1. Tutmazsa yedekten **otomatik geri alınır**.
@@ -45,6 +45,30 @@ Owner bloğu değeri dosyadan okur; betikte sabit bir adres yoktur ve değer hi�
 - **Çıktı:** yeni `.env` sha'sı ve yedek yolu. **Değer yazdırılmaz.**
 - **Geri alma:** `-Rollback -BackupFile <yol>`; yedeğin sha'sı taban pin değilse geri alma **başlamaz**.
 - `-SelfTest`: yalnız kapıları koşar, hiçbir şey yazmaz. 2026-09-21 ölçümü: **PASS**.
+
+
+> **PİN TAZELEME (2026-09-24; salt okuma, canlı koşum YOK).** Paket 2026-09-21'de yazıldığında canlı sürüm
+> R25B ve başlatıcı P1-ÖNCESİ idi. O günden sonra R26 (Pencere A) ve P1 (Pencere B) canlıya alındı; bu yüzden
+> owner bloklarındaki üç pin **bayat** kalmıştı ve bloklar kapıda DURACAKTI:
+>
+> | Pin | Eski (bayat) | Yeni (ölçülen canlı) |
+> |---|---|---|
+> | `h5-owner-env-block.ps1` `$EXP_DIST` | `1524EDC1…4D4E` (R25B) | `A8B17A38…53A0` (R26) |
+> | `h5-owner-live-block.ps1` `$ExpLiveDist` | `1524EDC1…4D4E` (R25B) | `A8B17A38…53A0` (R26) |
+> | `h5-owner-env-block.ps1` `$LAUNCH_PIN` | `CC634BBF…19B3` (P1-ÖNCESİ) | `DDCCD091…219C` (P1-SONRASI) |
+>
+> Paket digest'i (`DAF86D1E…D63B`) **değişmedi** — ölçüldü, dört araç dosyası aynı. Yeni `scripts/h5-pin-selftest.ps1`
+> bu kusurun tekrarını yakalar: pinleri canlı ölçümle karşılaştırır ve ayrışma varsa FAIL verir. Koşum sonucu **5/5 PASS**.
+> Bu değişiklik yalnız sabit pin değerleridir; akış, ölçüt ve geri alma yolu **değişmedi** ve canlı `.env`'e
+> dokunulmadı.
+>
+> **Betik sha256 (tazeleme sonrası, çalıştırmadan önce karşılaştırılır):**
+>
+> | dosya | sha256 |
+> |---|---|
+> | `scripts/h5-owner-env-block.ps1` | `3226E4362339EE387C076BAB32443D18E12E2601CBC24CA54647DE5BB9982560` |
+> | `scripts/h5-owner-live-block.ps1` | `4AE7B680D17FC692A9C60277DD3239ABE97622542F7B93A7738A9D395662C5CA` |
+> | `scripts/h5-pin-selftest.ps1` | `D7073550F6C51DFBD37D017AAE4ECA2149C964122D1BF7E9FC4F5E6A0F00E43A` |
 
 ## 4. Dar canlı kabul — `scripts/h5-url-live-run.js` + `scripts/h5-owner-live-block.ps1`
 

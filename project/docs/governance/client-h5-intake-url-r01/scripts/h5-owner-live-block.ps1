@@ -18,7 +18,8 @@ $LiveDist = Join-Path $Rel 'apps\api\dist\apps\api\src'
 $EvRoot   = 'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911'
 $Api      = 'http://127.0.0.1:8080/api'
 $ExpPackage  = 'DAF86D1EDA5046791FE60FAC027725096F346B272F7DB2A87B755305ECEBD63B'
-$ExpLiveDist = '1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E'   # R25B
+# PIN TAZELENDI 2026-09-24: canli dist R26 (R25B TARIHSEL). Eski pinle blok kapida DURURDU.
+$ExpLiveDist = 'A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0'   # R26
 $PkgFiles = @('client-h5-intake-url-r01\scripts\h5-url-live-run.js',
               'client-live-acceptance-i13-r01\scripts\i13-lib.js',
               'client-acceptance-runners-i3-r01\scripts\i3-lib.js',
