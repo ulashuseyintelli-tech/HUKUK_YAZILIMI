@@ -1,26 +1,30 @@
 # CLIENT DIŞ ERİŞİM — giden tünel şablonu (ÖNERİLEN yol). CANLIYA UYGULANMADI.
-# Parametreler: <TUNNEL_ID> · <CREDENTIALS_PATH> · <PUBLIC_HOST>. API 127.0.0.1:8080 · WEB 127.0.0.1:3002.
+# Parametreler: <TUNNEL_ID> · <CREDENTIALS_PATH> · <PUBLIC_HOST>.
 #
-# DİKKAT — tünel girişi yalnız YOL eşler, YÖNTEM eşlemez. Yöntem kısıtı sağlayıcı tarafındaki
-# güvenlik kuralıyla (waf-rule.template.txt) verilir; ikisi BİRLİKTE uygulanmadan yayın yapılmaz.
-# Kurulumda doğrulanır: izin dışı yöntem (ör. DELETE /intake/x) kenarda reddediliyor mu.
+# TOPOLOJİ (R02): tünel → Caddy 127.0.0.1:8081 → Web 127.0.0.1:3002 / API 127.0.0.1:8080.
 #
-# İstemci IP: sağlayıcı istemci adresini X-Forwarded-For'un SONUNA ekler; API `trust proxy=1`
-# ile en sağdaki değeri okur (#2730). Kurulumda sahte başlıkla ölçülür (paket §3 madde 2-3).
+# NEDEN TEK GİRİŞ: tünel girişi yalnız YOL eşler, YÖNTEM eşlemez (cloudflared belgesi;
+# ingress kurallarının eşleşme alanları hostname ve path'tir). Yöntem kısıtı bu yüzden
+# kenarda tek yerde, Caddy'de verilir. R01'de bu dosya doğrudan 8080 ve 3002'ye iki ayrı
+# ingress kuralı taşıyordu: o kurallar yöntem kısıtsız bir alternatif geçiş oluşturuyordu.
+# Artık API ve Web burada HİÇ geçmez — tünelin ulaşabildiği tek hedef Caddy'dir.
+#
+# İstemci IP: sağlayıcı istemci adresini X-Forwarded-For'un SONUNA ekler; Caddy bu başlığı
+# SİLİP kendi gördüğü adresi yazar, API `trust proxy=1` ile en sağdaki değeri okur.
+# Kurulumda sahte başlıkla ölçülür (paket §3 madde 2-3).
+#
+# Yayından önce doğrulanır: Caddy çalışmıyorken tünel hiçbir şey sunamaz (502/1033),
+# yani kenar kararı atlanamaz.
 
 tunnel: <TUNNEL_ID>
 credentials-file: <CREDENTIALS_PATH>
 
 ingress:
-  # Personel yönetim uçları — portal ön ekinde olsa bile REDDEDİLİR.
+  # Yayınlanan tek host → tek arka uç: Caddy. Yol ve yöntem kararının tamamı Caddy'dedir.
   - hostname: <PUBLIC_HOST>
-    path: ^/api/portal/admin(/|$)
-    service: http_status:403
-  - hostname: <PUBLIC_HOST>
-    path: ^/api/(public/intake/[^/]+|portal/(login|forgot-password|reset-password|change-password|cases|cases/[^/]+|financial-disclosures|financial-disclosures/history|financial-disclosures/[^/]+|poas|notifications|notifications/unread-count|notifications/[^/]+/read|notifications/read-all|documents|documents/upload|documents/[^/]+|documents/[^/]+/download|messages|messages/unread-count|messages/mark-read))$
-    service: http://127.0.0.1:8080
-  - hostname: <PUBLIC_HOST>
-    path: ^/(intake/[^/]+|portal(/(login|forgot-password|reset-password|cases|documents|financial-disclosures|messages|poas|profile))?|portal/cases/[^/]+|_next/.+|favicon\.ico)$
-    service: http://127.0.0.1:3002
-  # Geri kalan her şey — personel sayfaları, /auth/*, /api/auth/*, diğer tüm uçlar.
-  - service: http_status:403
+    service: http://127.0.0.1:8081
+    originRequest:
+      # Caddy loopback'te düz HTTP dinler; TLS sağlayıcı kenarında sonlanır.
+      httpHostHeader: <PUBLIC_HOST>
+  # Zorunlu son kural: eşleşmeyen her hostname reddedilir.
+  - service: http_status:404
