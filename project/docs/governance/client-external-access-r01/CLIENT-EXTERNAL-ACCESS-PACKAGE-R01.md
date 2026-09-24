@@ -74,23 +74,45 @@ bekleyen belge onayı/reddi, büro mesaj listeleri) · `/api/` altındaki diğer
 `/api/portal/admin/*` uçları **personel** tarafıdır; müvekkil yüzeyiyle aynı ön ekte oldukları için kenar
 katmanında **ayrıca** reddedilmelidir. Bu, izin listesinin en kritik satırıdır.
 
-## 3. Sağlayıcı önerisi ve gerekçe
+## 3. Seçilen kenar yöntemi ve topoloji (R02 — 2026-09-24)
 
-**Öneri: giden tünel (ör. Cloudflare Tunnel).** Gerekçeler:
-- Gelen port açılmaz; yönlendirici ve genel IP bağımlılığı olmaz. Ölçüm: makinede kurulu ters vekil, tünel
-  istemcisi, IIS ve VPN **yok**; etki alanı `telli.local` internete yönlendirilemez.
-- TLS sağlayıcı tarafında sonlanır; sertifika yenileme işi kalmaz.
-- Yol ve yöntem kısıtı sağlayıcı yapılandırmasında tanımlanır.
+**Yöntem: giden tünel (Cloudflare Tunnel) + YALNIZ loopback'te dinleyen Caddy.**
 
-**Alternatif: yerel ters vekil (Caddy) + 443 yönlendirme.** Genel IP, yönlendirici erişimi ve DNS A kaydı ister.
-Kurulum daha fazla parça içerir.
+```
+internet → Cloudflare kenarı (form.tellihukuk.com)
+         → cloudflared (giden 7844; gelen port AÇILMAZ)
+         → Caddy 127.0.0.1:8081   ← yol VE yöntem kararının TAMAMI burada, varsayılan RET
+         → Web 127.0.0.1:3002 (sayfalar + /_next)  ·  API 127.0.0.1:8080 (global prefix "api")
+```
 
-**Her iki şekilde de doğrulanacaklar (kurulum sırasında, yayından önce):**
-1. Kenar katmanı **yöntem kısıtını** gerçekten uyguluyor mu: izin listesi dışındaki yöntem (ör. `/intake` üzerinde
-   `DELETE`) reddedilmeli.
-2. İstemci IP başlığını nasıl aktarıyor: `X-Forwarded-For` mu, sağlayıcıya özel başlık mı.
-3. Kenar katmanı, **istemciden gelen** `X-Forwarded-For` başlığını **silip kendi değerini mi yazıyor**. Silmiyorsa
-   sahte başlık zincire girer.
+**Tünel yalnız Caddy'ye ulaşır.** `cloudflared-config.yml.template` R01'de API ve Web'e iki ayrı ingress
+kuralı taşıyordu; bunlar yöntem kısıtı olmayan bir alternatif geçişti. R02'de tek ingress hedefi Caddy'dir,
+son kural `http_status:404`'tür. Caddy çalışmıyorken tünel hiçbir şey sunamaz — kenar kararı atlanamaz.
+
+**Yol dönüşümü YOKTUR.** API `main.ts:27` `setGlobalPrefix("api")` kullanır; `/api/portal/login` isteği
+API'ye aynen `/api/portal/login` olarak gider. Web sayfaları da yol değiştirmeden 3002'ye taşınır.
+
+**Neden yöntem kısıtı sağlayıcıda değil Caddy'de:** cloudflared belgesine göre ingress kuralları yalnız
+hostname ve path eşler, **HTTP yöntemi eşlemez**. Sağlayıcı WAF'ıyla yöntem kısıtı yazmak, paketin regex
+şablonundaki `matches` işlecini gerektirir; Cloudflare belgesi: *"Access to the `matches` operator requires a
+Cloudflare Business or Enterprise plan."* Aynı 18 (yöntem, yol) çifti ve varsayılan ret davranışı **Caddy'de
+eksiksiz** kurulabildiği için bu, ürünün zorunlu maliyeti değildir. `waf-rule.template.txt` ücretli planı olan
+kurulumlar için **ikinci katman** olarak pakette kalır; tek başına gerekli değildir.
+
+**Eşdeğerlik iddiası yoktur — ölçülen fark:** sağlayıcı WAF'ı isteği origin'e ulaşmadan keser; Caddy ise
+istek tünelden geçip sunucuya ulaştıktan sonra, Web/API'ye ulaşmadan keser. İzin listesi ve varsayılan ret
+aynıdır; **reddedilen trafiğin nerede tüketildiği** farklıdır.
+
+**Alternatif: yerel ters vekil + 443 yönlendirme.** Genel IP, yönlendirici erişimi ve DNS A kaydı ister.
+Ölçüm (2026-09-24): sunucuda yalnız özel IP `10.34.25.53/23`, 80/443 dinleyicisi yok, kurulu tünel/vekil/IIS
+yok; etki alanı `telli.local` internete yönlendirilemez. Bu yüzden tünel seçilmiştir.
+Sunucudan Cloudflare kenarına **TCP 7844 açık** ölçüldü (`region1/region2.v2.argotunnel.com`, 4/4 bağlantı).
+
+**Kurulum sırasında, yayından önce ayrıca doğrulanacaklar:**
+1. Sağlayıcının istemci IP'sini hangi başlıkla aktardığı.
+2. Caddy'nin istemciden gelen `X-Forwarded-For`'u silip kendi değerini yazdığı — izole provada ölçüldü (§10.1),
+   canlı zincirde tekrar ölçülür.
+3. Caddy durdurulduğunda tünelin hiçbir şey sunamadığı.
 
 ## 4. İstemci IP'si — üründeki davranış izole ortamda sınandı
 
@@ -222,6 +244,42 @@ OLMAYAN ad). Başsız gerçek tarayıcı (Edge/Chromium, Playwright). Gerçek m�
 **Bu prova canlı kabul DEĞİLDİR.** Hedef ağdan (mobil veri) gerçek alan adıyla koşu, gerçek kenar sağlayıcısının yöntem
 ve IP davranışı ve geri dönüşün beş kontrolü canlıda ayrıca ölçülür (§7, §8).
 
+### 10.1 Kenar şablonunun DAVRANIŞSAL provası — 2026-09-24, gerçek Caddy ile
+
+R01'de şablonların izin listesiyle uyumu **statik** karşılaştırmayla kaydedilmişti. R02'de şablon gerçek
+Caddy ile (docker `caddy:2-alpine`, digest `sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b`)
+çalıştırılıp iki sahte arka uca bağlandı. Canlı 8080/3002 **kullanılmadı**, canlı `.env` okunmadı, DNS/tünel/yayın
+işlemi yapılmadı. Koşucu: `scripts/edge-probe.ps1` → **PASS 8 / 8, çıkış 0**.
+
+| Kapı | Ölçüm | Sonuç |
+|---|---|---|
+| B-1 | Üretilen sunucu 443 dinlemiyor | `listen=:8081` |
+| B-2 | Otomatik HTTPS kapalı | `automatic_https={"disable":true}` |
+| A-1 | Admin RET rotası üretilen yapılandırmada var | sıra 0 |
+| A-2 | Admin RET, catch-all RET'ten **önce** | deny=0, catchAll=6 |
+| C-1 | 38 izinli çiftin her biri **doğru** arka uca 200 | WEB 14 · API 24 |
+| C-2 | 29 ret vektörü 403 ve arka uca **hiç** gitmedi | 29/29 |
+| C-3 | 18 kodlama/normalizasyon vektörü izin listesini aşmadı | 18/18, tamamı 403 |
+| C-4 | İstemcinin sahte `X-Forwarded-For`'u silindi | gönderilen `1.2.3.4, 5.6.7.8` → arka ucun gördüğü `172.17.0.1` |
+
+Kodlama vektörleri: `%61dmin`, `admin%2Fdocuments`, `documents/x%2F..%2Fadmin%2F…`, `cases/../admin`,
+`..%2Fadmin`, `//api/…`, `/./admin`, `/API/`, `/ADMIN/`, sondaki `/`, `;x=1`, `intake/../../auth/login`,
+`_next/../auth/login`, `_next/%2e%2e/auth/login`, `%00`, `%252e%252e`, `%c0%af`. **Tamamı 403.**
+
+**R01'de bulunan iki somut kusur (düzeltildi):**
+
+| # | Kusur | Ölçülen kanıt | Düzeltme |
+|---|---|---|---|
+| Ş-1 | Site adresi `{$PUBLIC_HOST}` olduğu için `caddy adapt` **`listen [":443"]`** ve automatic_https AÇIK üretiyordu: Caddy tüm arayüzlerde 443 açıp ACME denerdi | `adapt` JSON çıktısı | Site adresi `{$CADDY_LISTEN:127.0.0.1:8081}`; `auto_https off`, `admin off` |
+| Ş-2 | `respond @deny 403` site bloğunda serbestti; Caddy'nin varsayılan direktif sıralamasında `respond`, `handle`'dan **sonra** gelir → admin reddi fiilen erişilmezdi (catch-all 403 sonucu maskeliyordu) | `adapt` JSON'unda deny rotası **sıra 6**, catch-all **sıra 5** | Tüm karar tek `route { }` içinde, yazım sırasıyla |
+
+**Ş-2 mutasyon kanıtı:** allow regex'ine `admin/documents/pending` bilerek sızdırıldı ve tek vektör
+`GET /api/portal/admin/documents/pending` koşuldu. R01 kalıbıyla (deny serbest + `handle`'lar) **200, arka uç API**
+— yani admin reddi ölüydü. R02 kalıbıyla (tek `route`, deny ilk) **403**. Bugünkü izin listesinde bu sızıntı
+yoktur; mutasyon yalnız katmanın **etkili** olduğunu göstermek içindir.
+
+**Şablonun varlığı kanıt sayılmamıştır:** yukarıdaki satırların hepsi koşulmuş isteklerin ölçümüdür.
+
 Şablon izin listeleri (`templates/Caddyfile.template`, `cloudflared-config.yml.template`, `waf-rule.template.txt`)
 bilinen 18 izinli ve 13 reddedilmesi gereken (yöntem, yol) çiftine karşı sınandı: hata 0. Şablonlar provadaki kenar
 taklidinden **daha dardır** (provada portal okuma uçlarına POST/DELETE de geçiyordu; şablonda yalnız §2.1'deki yöntemler var).
@@ -264,10 +322,12 @@ Karşılanmış senaryolar yeniden koşulmaz.
 ## 13. Canlı yayından önce owner'dan tek listede istenenler
 
 **Eksik altyapı bilgileri (dış erişim için; R26 teknik yayını için GEREKMEZ):**
-1. **Kullanılacak alan adı** ve host adı (ör. `form.<alanadi>`).
-2. **DNS yönetimi** kimde, hangi panelde.
-3. **Yayın imkânı:** tünel/CDN hesabı var mı (öneri: giden tünel, §3; plan düzenli ifade yöntem kuralını desteklemeli);
-   yoksa genel IP + yönlendirici erişimi (Caddy yolu).
+1. ~~Kullanılacak alan adı~~ → **BELLİ: `tellihukuk.com`, yayınlanacak ad `form.tellihukuk.com`** (owner, 2026-09-24).
+2. ~~DNS yönetimi kimde~~ → **ÖLÇÜLDÜ: Turhost yetkili DNS** (§14). Geriye kalan: **bölgenin tam kayıt dökümü**
+   (AXFR reddedildi, otomatik tarama tam envanter sayılmaz) ve **kayıt firması** — NS değişikliği hangi panelden
+   yapılıyor.
+3. **Cloudflare hesabı var mı — BİLİNMİYOR.** Yöntem kısıtı için ücretli plan **gerekmez** (§3): yöntem kararı
+   Caddy'dedir, `matches` işleci kullanılmaz.
 
 **Owner kararları:**
 4. R26 teknik yayını (K-A + K-B + aynı origin + `PUBLIC_PORTAL_BASE_URL`; #2730 GEREKMEZ, bkz. §4 düzeltmesi) —
@@ -276,3 +336,86 @@ Karşılanmış senaryolar yeniden koşulmaz.
 6. H8 "≤ 4 sn" kapsam cümlesinin değiştirilmesi — F04 paketindeki önerilen metin (uygulanmadı).
 7. A3 / C1 / C2 / C3 — §12'deki her satır için ayrı karar.
 8. Hizmet kabulü (0/8) — teknik hazırlıktan ayrı; her hizmet için açık owner kabulü.
+
+## 14. DNS envanteri — yetkili sunuculardan ölçüldü (2026-09-24, salt okuma)
+
+Alan adı **`tellihukuk.com`**, yayınlanacak ad **`form.tellihukuk.com`** (bugün NXDOMAIN — hiçbir mevcut kaydı etkilemez).
+Ölçüm doğrudan yetkili sunucudan (`cpns1.turhost.com` = `37.230.110.110`) yapılmıştır; özyinelemeli çözücü
+yanıtı değil. **Turhost bugün gerçekten yetkili DNS'tir.**
+
+| Ad | Tip | Değer | TTL |
+|---|---|---|---|
+| `tellihukuk.com` | SOA | primary `cpns1.turhost.com`, sorumlu `csf.ofis.net`, seri `2026090101` | — |
+| `tellihukuk.com` | NS | `cpns1.turhost.com`, `cpns2.turhost.com` | 86400 |
+| `tellihukuk.com` | A | `94.199.205.185` | 14400 |
+| `tellihukuk.com` | MX | pref 0 → `tellihukuk.com` | 14400 |
+| `tellihukuk.com` | TXT | `v=spf1 include:_spf2.trwww.com include:_spf.trwww.com -all` | 14400 |
+| `tellihukuk.com` | TXT | `google-site-verification=kMggUMyhF1YBqF26puJDDYn2L9eZKmkiDgjYZH_h1QM` | 14400 |
+| `_dmarc` | TXT | `v=DMARC1; p=none;` | 14400 |
+| `default._domainkey` | TXT | DKIM1 / RSA açık anahtar (1 kayıt, tam değer panelden alınacak) | 14400 |
+| `www` | CNAME | `tellihukuk.com` | 14400 |
+| `mail` | CNAME | `tellihukuk.com` | 14400 |
+| `webmail` | A | `94.199.205.185` | 14400 |
+| `cpanel` | A | `94.199.205.185` | 14400 |
+| `autodiscover` | A | `94.199.205.185` | 14400 |
+| `autoconfig` | A | `94.199.205.185` | 14400 |
+| `ftp` | A | **`94.199.205.182`** (kökten farklı IP) | 14400 |
+| `tellihukuk.com` | CAA | **yok** | — |
+| `.com` bölgesinde `tellihukuk.com` | DS | **yok** → bölge **DNSSEC ile imzalı DEĞİL** | — |
+| `tellihukuk.com` | DNSKEY | yok | — |
+
+**Envanterin durumu: TAM DEĞİL.** Yetkili sunucu **AXFR (bölge aktarımı) isteğini reddetti**; bu yüzden yalnız
+adı bilinen kayıtlar sorgulanabildi. Sorgulanıp **bulunamayanlar**: `smtp`, `portal`, `app`, `vpn`,
+`mail._domainkey`, `dkim._domainkey`, `selector1/2._domainkey`, `google._domainkey`, `turhost._domainkey`.
+Bir kaydın bulunamaması yokluğunun kanıtı değildir — yalnız o adın sorgulanmış olduğunu gösterir.
+
+**Cloudflare'ın otomatik taraması tam envanter sayılmaz.** Cloudflare belgesi: *"the quick scan is not
+guaranteed to find all existing DNS records."* Tam döküm yalnız Turhost panelinden alınabilir.
+
+**Owner'dan istenen tek şey (§13 madde 2'nin yerine):** Turhost panelinden bölgenin **tam kayıt dökümü**
+(varsa zone export, yoksa tüm satırların görüntüsü) — ad, tip, değer, öncelik, TTL ile. Yukarıdaki tablo
+karşılaştırma tabanıdır; dökümde bu tabloda olmayan her satır **yeni bilgidir**.
+
+## 15. Geçiş ve geri dönüş planı — uygulanmadı, owner GO'su bekler
+
+**Zorunlu ücret: 0,00 USD.** Cloudflare Free ($0) + Zero Trust Free ($0) + Caddy (açık kaynak).
+DNS taşıması **gereklidir**: partial (CNAME) setup yalnız Business/Enterprise'dadır (200 USD/ay yıllık
+faturalı ya da 250 USD/ay aylık faturalı). Free planda tek yol full setup'tır, yani **nameserver'lar
+Cloudflare'a çevrilir ve Turhost yetkili DNS olmaktan çıkar.** "Mevcut DNS düzeni korunuyor" değildir;
+korunan şey **kayıtların içeriği**dir, otoritesi değil.
+
+**Cloudflare Access kullanılmıyor.** Zero Trust Free'nin 50 kullanıcı limiti, Access ile korunan uygulamalara
+kimlik doğrulayarak giren kullanıcıları sayar. Bu tasarımda müvekkiller ürünün kendi portal kimliğiyle girer;
+limit **müvekkil sayısı sınırı değildir ve tünel kapasitesiyle ilgisi yoktur**.
+
+### 15.1 İleri geçiş
+
+| # | Adım | Doğrulama | Geri dönüşü |
+|---|---|---|---|
+| 1 | Turhost'tan tam kayıt dökümü alınır; §14 tablosuyla karşılaştırılır | Dökümdeki her satır tabloda ya da "yeni" olarak işaretli | — (salt okuma) |
+| 2 | Turhost'ta kayıt TTL'leri 300 sn'ye indirilir (NS hariç) | Yetkili sunucudan TTL=300 okunur | TTL geri yükselt |
+| 3 | **En az 14400 sn (4 saat) beklenir** — eski TTL'in dünyadan düşmesi | Tekrar ölçüm | — |
+| 4 | Cloudflare'da bölge Free planda eklenir; otomatik tarama sonucu dökümle **satır satır** karşılaştırılır, eksikler elle girilir | Cloudflare'daki kayıt sayısı = döküm satır sayısı | Bölge silinir |
+| 5 | Proxy durumu ayarlanır: **yalnız `form.tellihukuk.com` proxy'li (turuncu)**; kök `A`, `www`, `mail`, `webmail`, `cpanel`, `autodiscover`, `autoconfig`, `ftp` **DNS-only (gri)** | Her satırın bulut durumu tek tek okunur | — |
+| 6 | Cloudflare NS'leri kayıt firmasında ayarlanır | Üst bölgeden NS sorgusu | **Bkz. 15.2** |
+| 7 | Yayılma süresince her kayıt eski ve yeni NS'lerden ayrı ayrı sorgulanır; posta akışı sınanır | §14 tablosunun her satırı için eski = yeni | 15.2 |
+| 8 | Tünel + Caddy kurulur; `form` CNAME'i tünele bağlanır | Caddy durdurulunca tünel hiçbir şey sunmaz | Tünel durdurulur, CNAME silinir |
+| 9 | `.env` anahtarları eklenir, API yeniden başlatılır (ayrı owner bloğu) | `.env` sha, dist digest | `.env` yedeği |
+| 10 | Dış erişim GO; §7 kabul zinciri D-1..D-9 | — | §8 beş kontrol |
+
+**Posta ve ana site neden bozulmaz:** MX ve TXT proxy'lenemez — Cloudflare belgesi: *"Only records used for IP
+address resolution — A, AAAA, and CNAME records — can be proxied… Other record types (such as MX or TXT) are
+always DNS-only."* Kök `A` ve posta adları **gri bulut** bırakıldığı için gerçek IP değişmez. Risk kayıt
+tipinden değil **eksik kopyalamadan** gelir; adım 1 ve 4 bunun için vardır.
+
+### 15.2 Geri dönüş
+
+- **Turhost bölgesi silinmez.** Kayıtlar panelde olduğu gibi kalır; geri dönüş = kayıt firmasında NS'i
+  `cpns1.turhost.com` / `cpns2.turhost.com` olarak geri almak.
+- NS kaydının TTL'i **86400 sn (24 saat)**; üst bölge TTL'i bizim kontrolümüzde değildir, bu yüzden geri
+  dönüş anında tamamlanmaz. Geçiş penceresi bu süre göz önünde tutularak seçilir.
+- **DNSSEC/DS sırası:** bölge bugün **imzasızdır** (ölçüm: `.com` içinde DS yok, DNSKEY yok). Bu nedenle ileri
+  geçişte DS kaldırma adımı **yoktur**. Cloudflare'da DNSSEC **kapalı bırakılır**. Eğer ileride açılırsa
+  geri dönüş sırası zorunlu olur: **önce** kayıt firmasında DS kaydı kaldırılır → DS TTL'i kadar beklenir →
+  **sonra** NS değiştirilir. Ters sırada bölge doğrulanamaz hale gelir ve alan adı tamamen çözülmez.
+- Tünel ve Caddy tarafı: §8'in beş kontrolü aynen uygulanır.

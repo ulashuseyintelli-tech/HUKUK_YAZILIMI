@@ -1,12 +1,32 @@
-# CLIENT DIŞ ERİŞİM — Caddy şablonu (ALTERNATİF yol; öneri tünel). CANLIYA UYGULANMADI.
-# Parametreler: PUBLIC_HOST (ortam değişkeni) · API 127.0.0.1:8080 · WEB 127.0.0.1:3002 (canlı portlar).
+# CLIENT DIŞ ERİŞİM — Caddy şablonu. CANLIYA UYGULANMADI.
+#
+# TOPOLOJİ (R02): tünel → Caddy (YALNIZ loopback) → Web 3002 / API 8080.
+# Tünel yalnız Caddy'ye ulaşır; cloudflared yapılandırmasında API/Web'e doğrudan
+# alternatif geçiş YOKTUR (bkz. cloudflared-config.yml.template).
+#
+# Parametreler (ortam değişkeni; varsayılanlar canlı topoloji):
+#   CADDY_LISTEN  varsayılan 127.0.0.1:8081   — tünelin bağlandığı tek giriş
+#   WEB_UPSTREAM  varsayılan 127.0.0.1:3002   — Next.js (sayfalar + /_next varlıkları)
+#   API_UPSTREAM  varsayılan 127.0.0.1:8080   — NestJS (global prefix "api"; YOL DÖNÜŞÜMÜ YOK)
+#
 # Kural: izin listesi dışındaki HER yol/yöntem 403 alır ve arka uca hiç gitmez.
-# İzin listesi paket §2.1 ile birebir; izole prova (edge-isolated-d2f6d24d) aynı sınırı ölçtü.
+# İzin listesi paket §2.1 ile birebir.
+#
+# R02'de düzeltilen iki ölçülmüş kusur (kanıt: paket §10.1):
+#   Ş-1  Site adresi `{$PUBLIC_HOST}` idi → `caddy adapt` çıktısı `listen [":443"]` ve
+#        automatic_https AÇIK üretiyordu: Caddy TÜM arayüzlerde 443 açıp ACME deniyordu.
+#        Tünel arkasında TLS sağlayıcıda sonlanır; Caddy yalnız loopback HTTP dinlemelidir.
+#   Ş-2  `respond @deny 403` site bloğunda serbest duruyordu; Caddy'nin varsayılan direktif
+#        sıralamasında `respond`, `handle`'dan SONRA gelir. Admin reddi fiilen ERİŞİLMEZDİ
+#        (catch-all 403 sonucu maskeliyordu). Artık tüm karar tek `route` içinde, yazım sırasıyla.
 
-{$PUBLIC_HOST} {
-	# Personel yönetim uçları portal ön ekinde olsa bile REDDEDİLİR (listenin en kritik satırı).
+{
+	admin off
+	auto_https off
+}
+
+{$CADDY_LISTEN:127.0.0.1:8081} {
 	@deny path_regexp deny ^/api/portal/admin(/|$)
-	respond @deny 403
 
 	@web_get {
 		method GET
@@ -25,31 +45,33 @@
 		path_regexp adel ^/api/portal/documents/[^/]+$
 	}
 
-	# Yükleme sınırı: API 10 MB (portal.controller.ts); kenar biraz üstünde tutulur.
-	request_body @api_post {
-		max_size 11MB
-	}
+	# Tek karar zinciri — sıra yazım sırasıdır (Ş-2).
+	route {
+		# 1) Personel yönetim uçları portal ön ekinde olsa bile REDDEDİLİR (listenin en kritik satırı).
+		respond @deny 403
 
-	handle @api_get {
-		reverse_proxy 127.0.0.1:8080 {
-			# İstemciden gelen X-Forwarded-For SİLİNİR, kenar kendi gördüğü adresi yazar.
+		# 2) Yükleme sınırı: API 10 MB (portal.controller.ts); kenar biraz üstünde tutulur.
+		request_body @api_post {
+			max_size 11MB
+		}
+
+		# 3) İzin listesi — API. İstemciden gelen X-Forwarded-For SİLİNİR, kenar kendi gördüğü adresi yazar.
+		reverse_proxy @api_get {$API_UPSTREAM:127.0.0.1:8080} {
 			header_up X-Forwarded-For {remote_host}
 		}
-	}
-	handle @api_post {
-		reverse_proxy 127.0.0.1:8080 {
+		reverse_proxy @api_post {$API_UPSTREAM:127.0.0.1:8080} {
 			header_up X-Forwarded-For {remote_host}
 		}
-	}
-	handle @api_delete {
-		reverse_proxy 127.0.0.1:8080 {
+		reverse_proxy @api_delete {$API_UPSTREAM:127.0.0.1:8080} {
 			header_up X-Forwarded-For {remote_host}
 		}
-	}
-	handle @web_get {
-		reverse_proxy 127.0.0.1:3002
-	}
-	handle {
+
+		# 4) İzin listesi — Web (sayfalar ve /_next varlıkları; bunlar olmadan sayfa çizilmez).
+		reverse_proxy @web_get {$WEB_UPSTREAM:127.0.0.1:3002} {
+			header_up X-Forwarded-For {remote_host}
+		}
+
+		# 5) VARSAYILAN RET — personel sayfaları, /auth/*, /api/auth/*, diğer tüm uçlar.
 		respond 403
 	}
 }
