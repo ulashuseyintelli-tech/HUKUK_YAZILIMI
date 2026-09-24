@@ -548,6 +548,7 @@ src/modules/calc-preview/diagnostics/evidence/__tests__/retention-policy.spec.ts
 src/modules/calc-preview/diagnostics/evidence/__tests__/snapshot-store.spec.ts
 src/modules/calc-preview/diagnostics/object-store/__tests__/evidence-bundle.feature-flag.spec.ts
 src/modules/calc-preview/diagnostics/object-store/__tests__/evidence-bundle.keyspace.spec.ts
+src/modules/calc-preview/diagnostics/object-store/__tests__/object-store.write-once.integration.spec.ts
 src/modules/calc-preview/diagnostics/object-store/__tests__/object-store.write-once.spec.ts
 src/modules/calc-preview/diagnostics/object-store/bundle-manifest/__tests__/bundle-manifest.canonical.spec.ts
 src/modules/calc-preview/diagnostics/object-store/bundle-manifest/__tests__/bundle-manifest.hasher.spec.ts
@@ -713,6 +714,7 @@ src/modules/interest-engine/__tests__/interest-engine.pr5-enforcement-date.spec.
 src/modules/interest-engine/__tests__/interest-engine.property.spec.ts
 src/modules/interest-engine/__tests__/kvkk-audit.spec.ts
 src/modules/interest-engine/__tests__/mese-comparison.spec.ts
+src/modules/interest-engine/__tests__/operational.spec.ts
 src/modules/interest-engine/__tests__/payment-allocation.characterization.spec.ts
 src/modules/interest-engine/__tests__/resolve-initial-policy.spec.ts
 src/modules/interest-engine/__tests__/scenario-support.static.spec.ts

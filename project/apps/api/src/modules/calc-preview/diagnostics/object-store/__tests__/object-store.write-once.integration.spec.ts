@@ -19,6 +19,12 @@
  * These tests verify that If-None-Match: * actually works with MinIO.
  */
 
+import {
+  S3Client,
+  CreateBucketCommand,
+  DeleteBucketCommand,
+  HeadBucketCommand,
+} from '@aws-sdk/client-s3';
 import { MinioObjectStoreClient, ObjectStoreConfig, ObjectAlreadyExistsError } from '../index';
 
 // Fail-closed: MINIO_TEST_ENDPOINT verilmedikçe hiçbir varsayılan host'a (localhost:9000 dahil)
@@ -67,9 +73,34 @@ describeIf('Object Store Write-Once Integration (MinIO)', () => {
     tlsInsecure: true,
   };
 
+  // Test kendi kovasını kurar (geçici/disposable MinIO'da kova hazır olmaz). Yalnız BU koşumun
+  // oluşturduğu kova afterAll'da silinir; önceden var olan bir kovaya dokunulmaz.
+  const admin = new S3Client({
+    endpoint: MINIO_TEST_ENDPOINT || 'http://unused.invalid',
+    region: 'us-east-1',
+    credentials: { accessKeyId: MINIO_ACCESS_KEY, secretAccessKey: MINIO_SECRET_KEY },
+    forcePathStyle: true,
+  });
+  let bucketCreatedByThisRun = false;
+
   beforeAll(async () => {
     await assertMinioReachable(MINIO_TEST_ENDPOINT);
+    try {
+      await admin.send(new HeadBucketCommand({ Bucket: MINIO_BUCKET }));
+    } catch {
+      await admin.send(new CreateBucketCommand({ Bucket: MINIO_BUCKET }));
+      bucketCreatedByThisRun = true;
+    }
     client = new MinioObjectStoreClient(testConfig);
+  });
+
+  afterAll(async () => {
+    if (bucketCreatedByThisRun) {
+      // Her test kendi nesnesini siliyor; kova boş olmalı. Boş değilse silme başarısız olur ve
+      // bu bir temizlik kusurunu görünür kılar.
+      await admin.send(new DeleteBucketCommand({ Bucket: MINIO_BUCKET }));
+    }
+    admin.destroy();
   });
 
   // Helper to generate unique keys
