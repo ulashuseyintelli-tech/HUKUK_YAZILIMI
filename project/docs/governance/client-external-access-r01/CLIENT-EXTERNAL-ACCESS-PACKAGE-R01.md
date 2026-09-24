@@ -376,32 +376,96 @@ Karşılanmış senaryolar yeniden koşulmaz.
 7. A3 / C1 / C2 / C3 — §12'deki her satır için ayrı karar.
 8. Hizmet kabulü (0/8) — teknik hazırlıktan ayrı; her hizmet için açık owner kabulü.
 
-## 14. DNS envanteri — yetkili sunuculardan ölçüldü (2026-09-24, salt okuma)
+## 14. DNS envanteri — TAM (owner paneli + yetkili sunucu, 2026-09-24)
 
-Alan adı **`tellihukuk.com`**, yayınlanacak ad **`form.tellihukuk.com`** (bugün NXDOMAIN — hiçbir mevcut kaydı etkilemez).
-Ölçüm doğrudan yetkili sunucudan (`cpns1.turhost.com` = `37.230.110.110`) yapılmıştır; özyinelemeli çözücü
-yanıtı değil. **Turhost bugün gerçekten yetkili DNS'tir.**
+Alan adı **`tellihukuk.com`**, yayınlanacak ad **`form.tellihukuk.com`** (bugün NXDOMAIN — hiçbir mevcut kaydı
+etkilemez).
 
-| Ad | Tip | Değer | TTL |
-|---|---|---|---|
-| `tellihukuk.com` | SOA | primary `cpns1.turhost.com`, sorumlu `csf.ofis.net`, seri `2026090101` | — |
-| `tellihukuk.com` | NS | `cpns1.turhost.com`, `cpns2.turhost.com` | 86400 |
-| `tellihukuk.com` | A | `94.199.205.185` | 14400 |
-| `tellihukuk.com` | MX | pref 0 → `tellihukuk.com` | 14400 |
-| `tellihukuk.com` | TXT | `v=spf1 include:_spf2.trwww.com include:_spf.trwww.com -all` | 14400 |
-| `tellihukuk.com` | TXT | `google-site-verification=kMggUMyhF1YBqF26puJDDYn2L9eZKmkiDgjYZH_h1QM` | 14400 |
-| `_dmarc` | TXT | `v=DMARC1; p=none;` | 14400 |
-| `default._domainkey` | TXT | DKIM1 / RSA açık anahtar (1 kayıt, tam değer panelden alınacak) | 14400 |
-| `www` | CNAME | `tellihukuk.com` | 14400 |
-| `mail` | CNAME | `tellihukuk.com` | 14400 |
-| `webmail` | A | `94.199.205.185` | 14400 |
-| `cpanel` | A | `94.199.205.185` | 14400 |
-| `autodiscover` | A | `94.199.205.185` | 14400 |
-| `autoconfig` | A | `94.199.205.185` | 14400 |
-| `ftp` | A | **`94.199.205.182`** (kökten farklı IP) | 14400 |
-| `tellihukuk.com` | CAA | **yok** | — |
-| `.com` bölgesinde `tellihukuk.com` | DS | **yok** → bölge **DNSSEC ile imzalı DEĞİL** | — |
-| `tellihukuk.com` | DNSKEY | yok | — |
+**İki kaynak birleştirildi:** owner'ın Turhost cPanel DNS Yönetimi ekranı (4 sayfa, **36 kayıt**) ad ve tip
+listesini verdi; her kaydın **tam değeri** yetkili sunucudan (`cpns1.turhost.com` = `37.230.110.110`) okundu.
+Uzlaştırma sonucu **36 = 36**, eksik yok. Koşucu: `scripts/dns-zone-reconcile.ps1`.
+
+**Owner dökümü zorunluydu — kanıt:** yalnız ad tahminiyle yapılan ilk tarama 10 ad bulmuştu; panel dökümü
+**17 ek ad** ortaya çıkardı. Bunların arasında `ofis` (**farklı IP ve farklı TTL**) ve beş `_acme-challenge`
+kaydı vardı; hiçbiri tahminle bulunamazdı.
+
+| # | Ad | Tip | Değer | TTL |
+|---|---|---|---|---|
+| 1 | `@` | A | `94.199.205.185` | 14400 |
+| 2 | `@` | MX | pref 0 → `tellihukuk.com` | 14400 |
+| 3 | `@` | TXT | `v=spf1 include:_spf2.trwww.com include:_spf.trwww.com -all` | 14400 |
+| 4 | `@` | TXT | `google-site-verification=kMggUMyhF1YBqF26puJDDYn2L9eZKmkiDgjYZH_h1QM` | 14400 |
+| 5 | `@` | NS | `cpns1.turhost.com` | 86400 |
+| 6 | `@` | NS | `cpns2.turhost.com` | 86400 |
+| 7 | `ftp` | A | `94.199.205.182` | 14400 |
+| 8 | `autodiscover` | A | `94.199.205.185` | 14400 |
+| 9 | `autoconfig` | A | `94.199.205.185` | 14400 |
+| 10 | `whm` | A | `94.199.205.185` | 14400 |
+| 11 | `webdisk` | A | `94.199.205.185` | 14400 |
+| 12 | `cpcalendars` | A | `94.199.205.185` | 14400 |
+| 13 | `cpcontacts` | A | `94.199.205.185` | 14400 |
+| 14 | `webmail` | A | `94.199.205.185` | 14400 |
+| 15 | `cpanel` | A | `94.199.205.185` | 14400 |
+| 16 | **`ofis`** | A | **`89.106.8.58`** | **3600** |
+| 17 | `mail` | CNAME | `tellihukuk.com` | 14400 |
+| 18 | `www` | CNAME | `tellihukuk.com` | 14400 |
+| 19 | `_caldav._tcp` | SRV | `0 0 2079 tellihukuk.com` | 14400 |
+| 20 | `_caldav._tcp` | TXT | `path=/` | 14400 |
+| 21 | `_carddav._tcp` | SRV | `0 0 2079 tellihukuk.com` | 14400 |
+| 22 | `_carddav._tcp` | TXT | `path=/` | 14400 |
+| 23 | `_caldavs._tcp` | SRV | `0 0 2080 tellihukuk.com` | 14400 |
+| 24 | `_caldavs._tcp` | TXT | `path=/` | 14400 |
+| 25 | `_carddavs._tcp` | SRV | `0 0 2080 tellihukuk.com` | 14400 |
+| 26 | `_carddavs._tcp` | TXT | `path=/` | 14400 |
+| 27 | `_autodiscover._tcp` | SRV | `0 0 443 srvc105.trwww.com` | 14400 |
+| 28 | `default._domainkey` | TXT | DKIM1/RSA — **411 karakterin tamamı ölçüldü**, sonu `…7dGE0s7gVg0rXuoiQIDAQAB;` | 14400 |
+| 29 | `_dmarc` | TXT | `v=DMARC1; p=none;` | 14400 |
+| 30 | `_cpanel-dcv-test-record` | TXT | `_cpanel-dcv-test-record=jvzff6IVeoUgBc2dftlOtF38OKou_x5G2OltQPswaEa9YQl0SNn43UDHLXLOBaMY` | 14400 |
+| 31 | `_acme-challenge` | TXT | `HrviS4xxX4i6Zu3mNlRNOh4gLAE5nNrQZQ0vFniUBS4` | 14400 |
+| 32 | `_acme-challenge.www` | TXT | `gqiUovnsaN8Ln-OirwGhpUgh_0F7KR1Q9e6SATWfZBE` | 14400 |
+| 33 | `_acme-challenge.mail` | TXT | `ine_s2xGtv7vfk_66t7BuQTAaVgmIl-HyAkZZEeAP3o` | 14400 |
+| 34 | `_acme-challenge.autodiscover` | TXT | `a2yVeoVqEkwwtsKuFrJfS6a50_q1uFwBjjhktfuGs4M` | 14400 |
+| 35 | `_acme-challenge.webdisk` | TXT | `YeRf3r45DJJb726lST-ObqKm68ELG4611CMrAJtR2gs` | 14400 |
+| 36 | `_acme-challenge.cpcontacts` | TXT | `1zx6EAvAeYBHhiAMhZcssoC-CASFmVHR9T_rFcVLr0A` | 14400 |
+
+`CAA` kaydı **yok** (ayrıca sorgulandı). Kanıt dizini: `Documents\CLIENT-EVIDENCE-20260911\dns-inventory-20260924\`.
+
+**Kesilmiş değer sorunu yaşanmadı:** panelde kısaltılmış görünen DKIM ve DCV kayıtlarının tam değerleri
+yetkili sunucudan okundu; owner'ın düzenleme ekranı açmasına gerek kalmadı.
+
+### 14.2 GEÇİŞİN MADDİ ENGELİ — wildcard sertifika DNS-01'e bağlı
+
+**Ölçüm (2026-09-24, salt okuma TLS el sıkışması):** `tellihukuk.com:443` sertifikası
+
+| Alan | Değer |
+|---|---|
+| Konu | **`CN=*.tellihukuk.com` — wildcard** |
+| Veren | `CN=YR1, O=Let's Encrypt` |
+| Geçerlilik | 2026-09-01 → **2026-11-30** (ölçüm günü kalan **67 gün**) |
+
+Let's Encrypt belgesi: DNS-01 için *"It also allows you to issue wildcard certificates."*; HTTP-01 için
+*"This challenge cannot be used to issue wildcard certificates."*
+
+**Sonuç:** bölgedeki altı `_acme-challenge` TXT kaydı süs değildir — wildcard sertifika **yalnız DNS-01 ile**
+yenilenebilir ve bu kayıtları **cPanel/AutoSSL kendisi yazar**. Nameserver'lar Cloudflare'a çevrildiğinde
+Turhost bölgesi artık yetkili olmaz; cPanel kaydı kendi bölgesine yazmaya devam eder ama **internet onu
+görmez** → **wildcard sertifika yenilenemez.** Yenileme penceresi tipik olarak bitişten ~30 gün önce, yani
+**2026-10-31 civarı** başlar.
+
+Bu, ana siteyi, `webmail`, `cpanel`, `whm`, `webdisk` ve posta istemcisi (`autodiscover`/`autoconfig`)
+yüzeylerini etkiler. **Geçiş bu kalem çözülmeden başlatılmamalıdır.**
+
+**Belgede bulunamadı:** cPanel AutoSSL'in harici DNS altında DCV'yi nasıl yürüttüğü kesin olarak
+belgelenmemiştir (cPanel SSL kılavuzu yalnız *"your cPanel & WHM nodes must be able to manage its
+authoritative DNS server"* kısıtını verir). Bu yüzden aşağıdaki seçenekler **owner kararıdır** ve hiçbiri
+bu çalışmada uygulanmamıştır:
+
+| Seçenek | Ne olur | Bedel / risk |
+|---|---|---|
+| **S-1** Turhost'a sorulur: AutoSSL harici DNS ile nasıl çalışır | Sağlayıcının kendi yanıtı bağlayıcı olur | Ücretsiz; tek adım, **ilk yapılacak budur** |
+| **S-2** AutoSSL wildcard yerine **ad ad HTTP-01**'e alınır | Kök `A` DNS-only kaldığı için HTTP-01 çalışır; wildcard kaybedilir, her alt alan sertifikaya tek tek girer | Turhost/cPanel tarafında ayar; yeni alt alan eklendiğinde kapsam elle genişletilir |
+| **S-3** Her yenilemede `_acme-challenge` kayıtları Cloudflare'a **elle** girilir | Çalışır ama her 60 günde tekrar eder | Sürdürülebilir değil; unutulursa sertifika düşer |
+| **S-4** Alan adı Cloudflare'a **taşınmaz**; partial (CNAME) setup | Turhost yetkili kalır, AutoSSL bozulmaz | **Business planı**: 200 USD/ay yıllık faturalı ya da 250 USD/ay aylık |
 
 ### 14.1 Kayıt firması ve delegasyon — RDAP'tan ölçüldü (2026-09-24)
 
@@ -451,7 +515,8 @@ limit **müvekkil sayısı sınırı değildir ve tünel kapasitesiyle ilgisi yo
 
 | # | Adım | Canlı mı | Doğrulama |
 |---|---|---|---|
-| 0 | Turhost'tan tam kayıt dökümü alınır; §14 tablosuyla karşılaştırılır | hayır | Dökümdeki her satır tabloda ya da "yeni" işaretli |
+| 0 | ~~Turhost'tan tam kayıt dökümü~~ **TAMAMLANDI** — 36/36 uzlaştırıldı (§14) | hayır | Eksik yok |
+| **0b** | **§14.2 ÖN KOŞULU: wildcard sertifika DCV kalemi çözülür** (S-1…S-4 arasında owner kararı) | hayır | Karar yazılı; S-2 seçilirse AutoSSL ayarı geçiş ÖNCESİ yapılır |
 | **—** | **OWNER ONAYI — geçiş penceresi ve plan** | — | Bu satırdan sonrası canlı etkilidir |
 | 1 | Cloudflare'da bölge Free planda eklenir; tarama sonucu dökümle **satır satır** karşılaştırılır, eksikler elle girilir. **NS değiştirilmez** → yayın yok | hayır (trafik hâlâ Turhost'tan) | Cloudflare'daki kayıt sayısı = döküm satır sayısı |
 | 2 | Proxy durumu ayarlanır: **yalnız `form` proxy'li**; diğerleri DNS-only | hayır | Her satırın bulut durumu tek tek okunur |
