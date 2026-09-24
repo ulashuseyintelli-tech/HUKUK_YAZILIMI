@@ -605,6 +605,7 @@ src/modules/calc-preview/diagnostics/playbook/__tests__/playbook-matcher.spec.ts
 src/modules/calc-preview/diagnostics/playbook/__tests__/playbook-validator.spec.ts
 src/modules/calc-preview/diagnostics/playbook/__tests__/playbook.authorization.spec.ts
 src/modules/calc-preview/diagnostics/playbook/__tests__/playbook.contract.spec.ts
+src/modules/calc-preview/diagnostics/playbook/__tests__/playbook.golden.spec.ts
 src/modules/calc-preview/diagnostics/playbook/__tests__/playbook.integration.spec.ts
 src/modules/calc-preview/diagnostics/playbook/__tests__/playbook.property.spec.ts
 src/modules/calc-preview/diagnostics/simulation-api/__tests__/evidence-bundle.controller.spec.ts
