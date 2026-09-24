@@ -9,7 +9,11 @@
  * 6 Golden Senaryo:
  * 1. SLO breach → evaluate → run DRY_RUN → notify → escalation
  * 2. LIVE run → lease → action → resolve → cleanup
- * 3. Human reject → rollback (TODO: Phase 8)
+ * 3. Human reject → rollback (revoke API üzerinden; "override_policy" Phase 8'te
+ *    hâlâ uygulanmadı — bkz. .kiro/specs/ops-playbook/tasks.md:403 — ama alttaki
+ *    gerçek "insan reddi → anında geri alma" mekanizması BUGÜN üretimde mevcut:
+ *    POST /leases/:id/revoke → PlaybookService.revokeLease → ActionLeaseManager
+ *    .revokeLease → executeRollback. Bu test o gerçek yolu sınar.)
  * 4. Pause TENANT → tenant isolation
  * 5. Idempotency-Key → duplicate prevention
  * 6. Loop guard → EXHAUSTED state
@@ -30,6 +34,8 @@ import { DiagnosticsIncidentService } from '../../diagnostics-incident.service';
 import { PlaybookYAMLValidator } from '../playbook-yaml-validator.service';
 import { Playbook, EscalationAction } from '../playbook.types';
 import { DiagnosticsIncident } from '../../diagnostics.types';
+import { CalcPreviewCircuitBreakerService } from '../../../circuit-breaker/calc-preview-circuit-breaker.service';
+import { VersionedCacheService } from '../../../cache/versioned-cache.service';
 
 describe('Playbook Golden Scenarios', () => {
   // Services
@@ -312,8 +318,114 @@ describe('Playbook Golden Scenarios', () => {
   // GOLDEN SCENARIO 3: Human Reject → Rollback (TODO: Phase 8)
   // ==========================================================================
   describe('Golden 3: Human Reject with Rollback Policy', () => {
-    it.todo('should trigger immediate rollback on human reject');
-    // TODO: Implement override_policy in Phase 8
+    // Bu describe kendi TestingModule'ünü kurar: ActionExecutor burada MOCK
+    // DEĞİL, gerçek — çünkü test gerçek execute → lease oluşturma → rollback
+    // zincirini sınıyor (üstteki describe'ın mock'u yalnız sabit bir başarı
+    // nesnesi döner, hiçbir gerçek state değişikliği yapmaz).
+    let g3Module: TestingModule;
+    let g3PlaybookService: PlaybookService;
+    let g3Registry: PlaybookRegistry;
+    let g3LeaseManager: ActionLeaseManager;
+    let g3IncidentService: DiagnosticsIncidentService;
+    let g3Executor: ActionExecutor;
+
+    beforeEach(async () => {
+      g3Module = await Test.createTestingModule({
+        providers: [
+          PlaybookYAMLValidator,
+          PlaybookRegistry,
+          PlaybookMatcher,
+          ActionPolicyGuard,
+          ActionLeaseManager,
+          PlaybookAuditService,
+          PlaybookMetricsService,
+          NotificationService,
+          EscalationService,
+          DiagnosticsIncidentService,
+          CalcPreviewCircuitBreakerService,
+          VersionedCacheService,
+          ActionExecutor, // gerçek uygulama — mock DEĞİL
+          PlaybookService,
+        ],
+      }).compile();
+
+      g3PlaybookService = g3Module.get(PlaybookService);
+      g3Registry = g3Module.get(PlaybookRegistry);
+      g3LeaseManager = g3Module.get(ActionLeaseManager);
+      g3IncidentService = g3Module.get(DiagnosticsIncidentService);
+      g3Executor = g3Module.get(ActionExecutor);
+
+      g3Registry.clear();
+      g3LeaseManager.clear();
+      g3IncidentService.clear();
+      g3PlaybookService.clear();
+      g3Executor.clearOverrides();
+
+      const registrationResult = g3Registry.registerPlaybook(testPlaybook);
+      if (!registrationResult.valid) {
+        throw new Error(`Playbook registration failed: ${JSON.stringify(registrationResult.errors)}`);
+      }
+    });
+
+    afterEach(async () => {
+      // Geçici kaynak temizliği: TTL/timeout/stale-serve/rate-limit override'ları
+      // ve lease durumu bu describe dışına sızmasın.
+      g3Executor.clearOverrides();
+      g3LeaseManager.clear();
+      // ActionLeaseManager/EscalationService onModuleInit'te setInterval başlatır;
+      // yalnız module.close() onModuleDestroy'u tetikleyip bu interval'ı temizler.
+      await g3Module.close();
+    });
+
+    it('should trigger immediate rollback on human reject', async () => {
+      const incident = createTestIncident({ id: 'inc-reject' });
+      g3IncidentService['incidents'].set(incident.id, incident);
+
+      // 1) LIVE koşum: extend_cache_ttl gerçekten çalışır ve bir lease oluşturur.
+      //    userId='admin' -> executor'da role='admin' olur, testPlaybook'un
+      //    safetyPolicy.allowedRoles=['system','admin'] listesine uyar.
+      const runResult = await g3PlaybookService.runPlaybook(testPlaybook.id, incident.id, {
+        mode: 'LIVE',
+        tenantId: incident.tenantId,
+        userId: 'admin',
+      });
+
+      expect(runResult.ok).toBe(true);
+      expect(runResult.mode).toBe('LIVE');
+
+      const autoActionResult = runResult.result!.actions.find((a) => a.actionType === 'auto_action');
+      expect(autoActionResult).toBeDefined();
+      expect(autoActionResult!.result).toBe('EXECUTED');
+      const leaseId = autoActionResult!.leaseId;
+      expect(leaseId).toBeDefined();
+
+      // Kritik alan: TTL çarpanı GERÇEKTEN uygulandı (yalnız "tanımlı" değil,
+      // fixture'daki multiplier=2 değeriyle birebir).
+      expect(g3Executor.getTTLMultiplier('rate-provider')).toBe(2);
+
+      const leaseBefore = g3LeaseManager.getLease(leaseId!);
+      expect(leaseBefore).toBeDefined();
+      expect(leaseBefore!.status).toBe('ACTIVE');
+
+      // 2) İnsan reddi: gerçek REST ucunun (POST /leases/:id/revoke) çağırdığı
+      //    aynı servis metodu — leaseManager'ı doğrudan çağırmak yerine.
+      const revokeResult = await g3PlaybookService.revokeLease(leaseId!, {
+        userId: 'human-operator',
+        tenantId: incident.tenantId,
+      });
+
+      // 3) Anında geri alma — gerçek durum değişikliği, mock'un kendi echo'su DEĞİL.
+      expect(revokeResult.ok).toBe(true);
+      expect(revokeResult.lease.status).toBe('REVOKED');
+      expect(revokeResult.auditId).toBeDefined();
+
+      // TTL çarpanı varsayılana (1.0) GERİ ALINDI — rollback'in gerçek etkisi.
+      expect(g3Executor.getTTLMultiplier('rate-provider')).toBe(1.0);
+
+      const leaseAfter = g3LeaseManager.getLease(leaseId!);
+      expect(leaseAfter).toBeDefined();
+      expect(leaseAfter!.status).toBe('REVOKED');
+    });
   });
 
   // ==========================================================================
