@@ -181,7 +181,11 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       expect(response.result).toBeDefined();
       expect(response.result!.totalInterest).toBeGreaterThan(0);
       expect(response.metrics).toBeDefined();
-      expect(response.metrics!.durationMs).toBeGreaterThan(0);
+      // `durationMs` = Date.now() farkı; bu senkron hesap bir saat tiki içinde bitebilir
+      // (Windows'ta Date.now() çözünürlüğü kaba olabilir) — meşru 0 değeri FAIL sayılmamalı.
+      // İzole ölçüm: bu satır tek başına 25 koşumda 18/25 FAIL verdi (>0 iddiasıyla),
+      // sıraya bağlı bir sızıntı DEĞİL — zamanlama çözünürlüğü kusuru. NaN/negatif hâlâ yakalanır.
+      expect(response.metrics!.durationMs).toBeGreaterThanOrEqual(0);
     });
 
     it('should return error for invalid request', async () => {
