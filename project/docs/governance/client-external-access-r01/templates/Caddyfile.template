@@ -16,6 +16,10 @@
 #   Ş-1  Site adresi `{$PUBLIC_HOST}` idi → `caddy adapt` çıktısı `listen [":443"]` ve
 #        automatic_https AÇIK üretiyordu: Caddy TÜM arayüzlerde 443 açıp ACME deniyordu.
 #        Tünel arkasında TLS sağlayıcıda sonlanır; Caddy yalnız loopback HTTP dinlemelidir.
+#   Ş-3  `header_up X-Forwarded-For {remote_host}` tünel topolojisinde Caddy'nin eş adresini,
+#        yani TÜNEL İSTEMCİSİNİN loopback adresini yazıyordu: bütün müvekkiller tek IP'de
+#        toplanır, public intake hız sınırı (IP penceresi) herkes için ortak sayaca düşerdi.
+#        Artık `CF-Connecting-IP` varsa o kullanılır; yoksa eş adrese düşülür.
 #   Ş-2  `respond @deny 403` site bloğunda serbest duruyordu; Caddy'nin varsayılan direktif
 #        sıralamasında `respond`, `handle`'dan SONRA gelir. Admin reddi fiilen ERİŞİLMEZDİ
 #        (catch-all 403 sonucu maskeliyordu). Artık tüm karar tek `route` içinde, yazım sırasıyla.
@@ -45,33 +49,44 @@
 		path_regexp adel ^/api/portal/documents/[^/]+$
 	}
 
+	# Tünelden gelen istekte GERÇEK istemci adresi `CF-Connecting-IP` başlığındadır.
+	# Sağlayıcı bu başlığı istemci göndermiş olsa bile KENDİ değeriyle ezer; Caddy'ye ise
+	# yalnız tünel istemcisi (loopback) bağlanır, dışarıdan doğrudan erişim yoktur.
+	@cfip header CF-Connecting-IP *
+
 	# Tek karar zinciri — sıra yazım sırasıdır (Ş-2).
 	route {
 		# 1) Personel yönetim uçları portal ön ekinde olsa bile REDDEDİLİR (listenin en kritik satırı).
 		respond @deny 403
 
-		# 2) Yükleme sınırı: API 10 MB (portal.controller.ts); kenar biraz üstünde tutulur.
+		# 2) İSTEMCİ ADRESİ (Ş-3). Varsayılan: Caddy'nin gördüğü eş adres. Tünel başlığı varsa
+		# gerçek istemci adresi. İstemcinin kendi gönderdiği X-Forwarded-For her durumda ATILIR:
+		# aşağıda `header_up` ile başlık TEK değere set edilir, eklenmez.
+		vars client_real_ip {remote_host}
+		vars @cfip client_real_ip {http.request.header.CF-Connecting-IP}
+
+		# 3) Yükleme sınırı: API 10 MB (portal.controller.ts); kenar biraz üstünde tutulur.
 		request_body @api_post {
 			max_size 11MB
 		}
 
-		# 3) İzin listesi — API. İstemciden gelen X-Forwarded-For SİLİNİR, kenar kendi gördüğü adresi yazar.
+		# 4) İzin listesi — API. İstemciden gelen X-Forwarded-For SİLİNİR; kenar tek değer yazar.
 		reverse_proxy @api_get {$API_UPSTREAM:127.0.0.1:8080} {
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {vars.client_real_ip}
 		}
 		reverse_proxy @api_post {$API_UPSTREAM:127.0.0.1:8080} {
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {vars.client_real_ip}
 		}
 		reverse_proxy @api_delete {$API_UPSTREAM:127.0.0.1:8080} {
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {vars.client_real_ip}
 		}
 
-		# 4) İzin listesi — Web (sayfalar ve /_next varlıkları; bunlar olmadan sayfa çizilmez).
+		# 5) İzin listesi — Web (sayfalar ve /_next varlıkları; bunlar olmadan sayfa çizilmez).
 		reverse_proxy @web_get {$WEB_UPSTREAM:127.0.0.1:3002} {
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {vars.client_real_ip}
 		}
 
-		# 5) VARSAYILAN RET — personel sayfaları, /auth/*, /api/auth/*, diğer tüm uçlar.
+		# 6) VARSAYILAN RET — personel sayfaları, /auth/*, /api/auth/*, diğer tüm uçlar.
 		respond 403
 	}
 }

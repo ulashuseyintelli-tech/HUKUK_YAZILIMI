@@ -136,6 +136,24 @@ güncelledi. Commit mesajında "hop ve başlangıç sırası değişmedi" yazıy
 eklendiğinde ürün `request.ip`'i okur; `request.ip` en sağdaki XFF değerini (1 hop) yansıtır. Bu davranış canlıda
 bugün de geçerlidir.
 
+### 4.1 Ş-3 — kenar, tünel topolojisinde YANLIŞ adresi yazıyordu (düzeltildi)
+
+R01 şablonu `header_up X-Forwarded-For {remote_host}` kullanıyordu. Tünel topolojisinde Caddy'nin
+gördüğü eş adres **tünel istemcisinin loopback adresidir**, müvekkilin adresi değil. Sonuç:
+
+- `resolvePublicIntakeClientIp` peer'i (Caddy) allowlist'te bulur, `request.ip`'i okur → o da tek sabit değer;
+- `PublicIntakeRateLimitGuard` anahtarı `sha256(ip)` olduğu için **bütün müvekkiller tek IP penceresine** düşer
+  (`PUBLIC_INTAKE_IP_RATE_LIMIT_MAX`, varsayılan 20/dakika **herkes için ortak** olurdu);
+- `sourceMeta.ipHash` bütün gönderimlerde aynı değeri taşırdı.
+
+**Düzeltme:** kenar, tünel sağlayıcısının eklediği `CF-Connecting-IP` başlığını kullanır; başlık yoksa eş
+adrese düşer. İstemcinin kendi gönderdiği `X-Forwarded-For` her durumda atılır (başlık `header_up` ile **tek
+değere set edilir**, eklenmez).
+
+**Ölçülmeyen sınır:** sağlayıcının, istemci göndermiş olsa bile `CF-Connecting-IP`'yi kendi değeriyle ezdiği
+sağlayıcı belgesine dayanır; bu provada ölçülmemiştir ve canlı zincirde ayrıca doğrulanacaktır (§3 madde 1).
+Caddy'ye dışarıdan doğrudan erişim yoktur: yalnız loopback dinler ve ona yalnız tünel istemcisi bağlanır.
+
 ## 5. Portal bağlantılarının personel bağlantılarından ayrılması
 
 `PUBLIC_PORTAL_BASE_URL` eklendi (bu PR): `portal.service.ts` sıfırlama bağlantısı önce bu anahtarı okur,
@@ -284,6 +302,27 @@ yoktur; mutasyon yalnız katmanın **etkili** olduğunu göstermek içindir.
 bilinen 18 izinli ve 13 reddedilmesi gereken (yöntem, yol) çiftine karşı sınandı: hata 0. Şablonlar provadaki kenar
 taklidinden **daha dardır** (provada portal okuma uçlarına POST/DELETE de geçiyordu; şablonda yalnız §2.1'deki yöntemler var).
 
+### 10.2 İstemci IP zinciri — ürünün GERÇEK parçalarıyla ölçüldü (2026-09-24)
+
+Koşucu `scripts/edge-client-ip-probe.ps1` → **PASS 7 / 7, çıkış 0**. API tarafı taklit değildir:
+`express 4.21.2` + `trust proxy = 1` (canlı `main.js` ile aynı ayar, canlı dist'te `trust proxy', 1)` ölçüldü)
++ **canlı dist'ten** derlenmiş `public-intake-client-ip.js` (yalnız okundu, sunucu açılmadı)
++ hız sınırı anahtarının birebir kendisi: `sha256(çözülen ip)`.
+
+| # | Ölçüt | Gözlem |
+|---|---|---|
+| I-1 | Tünel başlığı varsa ürün gerçek istemci adresini çözer | `CF-Connecting-IP: 203.0.113.9` → ürünün çözdüğü `203.0.113.9` |
+| I-2 | İstemcinin sahte `X-Forwarded-For`'u ürüne **ulaşmaz** | gönderilen `9.9.9.9, 8.8.8.8` → ürünün gördüğü `203.0.113.9` |
+| I-3 | Farklı müvekkiller **ayrı** hız sınırı sayacına düşer | `203.0.113.10`→`631f0814…` · `198.51.100.20`→`140cc81d…` |
+| I-4 | Aynı müvekkilin istekleri **aynı** sayaca düşer | hash eşit |
+| I-5 | Başlık listeye çevrilemez; ürün tek değer görür | `xff="203.0.113.9"` (tek öğe) |
+| I-6 | Tünel başlığı yoksa sahte değer kullanılmaz | gönderilen `9.9.9.9` atıldı, kenar kendi gördüğü adresi yazdı |
+| I-7 | Peer allowlist'te **değilse** ürün XFF'i yok sayar | `xff=7.7.7.7`, peer `127.0.0.1` → çözülen `127.0.0.1` |
+
+**Ş-3 mutasyon kanıtı:** şablonda `{vars.client_real_ip}` yerine R01'deki `{remote_host}` konulduğunda
+`203.0.113.10` ve `198.51.100.20` **aynı** sayaca (`346840d5…`, çözülen adres `172.17.0.1`) düştü.
+Düzeltilmiş şablonda ayrıştı. Kusur gerçektir ve giderilmiştir.
+
 ## 11. R26 yayın / geri dönüş paketi — içerik ve kapılar
 
 > **GÜNCELLENDİ (2026-09-21):** Somut R26 paketi `client-release-r26-r01/R26-RELEASE-PACKAGE-R01.md` belgesindedir.
@@ -364,6 +403,23 @@ yanıtı değil. **Turhost bugün gerçekten yetkili DNS'tir.**
 | `.com` bölgesinde `tellihukuk.com` | DS | **yok** → bölge **DNSSEC ile imzalı DEĞİL** | — |
 | `tellihukuk.com` | DNSKEY | yok | — |
 
+### 14.1 Kayıt firması ve delegasyon — RDAP'tan ölçüldü (2026-09-24)
+
+| Alan | Ölçülen değer |
+|---|---|
+| Kayıt firması (registrar) | **Çizgi Telekomünikasyon A.Ş.** (IANA 1534) |
+| Alan adı durumu | `clientTransferProhibited` (transfer kilidi; NS değişikliğini engellemez) |
+| Kayıt / bitiş | 2012-03-16 · **2028-03-16** |
+| Son değişiklik | 2026-02-14 |
+| DNSSEC | `delegationSigned: false` — üst bölgede imza yok (§14 DS ölçümüyle **tutarlı**) |
+| **Üst bölge (.com) delegasyonu** | **`CPNS1.TURDNS.COM`, `CPNS2.TURDNS.COM`** |
+
+**Dikkat — iki farklı NS adı aynı sunuculardır.** Üst bölge delegasyonu `*.turdns.com`, bölgenin kendi NS
+RRset'i `*.turhost.com` adlarını taşır; ikisi de **aynı IP'lere** çözülür (`37.230.110.110`, `37.230.111.111`)
+ve `cpns1.turdns.com` bölgeyi aynı SOA seri numarasıyla (`2026090101`) yetkili yanıtlar. Çözüm bozulmuyor,
+ancak **NS değişikliği üst bölge delegasyonunda yapılır**: owner kayıt firması panelinde bugünkü değeri
+`turdns.com` adlarıyla görecektir, `turhost.com` ile değil.
+
 **Envanterin durumu: TAM DEĞİL.** Yetkili sunucu **AXFR (bölge aktarımı) isteğini reddetti**; bu yüzden yalnız
 adı bilinen kayıtlar sorgulanabildi. Sorgulanıp **bulunamayanlar**: `smtp`, `portal`, `app`, `vpn`,
 `mail._domainkey`, `dkim._domainkey`, `selector1/2._domainkey`, `google._domainkey`, `turhost._domainkey`.
@@ -388,34 +444,76 @@ korunan şey **kayıtların içeriği**dir, otoritesi değil.
 kimlik doğrulayarak giren kullanıcıları sayar. Bu tasarımda müvekkiller ürünün kendi portal kimliğiyle girer;
 limit **müvekkil sayısı sınırı değildir ve tünel kapasitesiyle ilgisi yoktur**.
 
-### 15.1 İleri geçiş
+### 15.1 Sıra — owner onayı İLK CANLI DEĞİŞİKLİKTEN ÖNCE
 
-| # | Adım | Doğrulama | Geri dönüşü |
+**Hazırlık ve doğrulama bitti; bundan sonraki adımların bir kısmı canlıdır.** Plan, ilk canlı değişiklikten
+**önce** owner onayına sunulur. Onay verilmeden hiçbir canlı adım başlamaz.
+
+| # | Adım | Canlı mı | Doğrulama |
 |---|---|---|---|
-| 1 | Turhost'tan tam kayıt dökümü alınır; §14 tablosuyla karşılaştırılır | Dökümdeki her satır tabloda ya da "yeni" olarak işaretli | — (salt okuma) |
-| 2 | Turhost'ta kayıt TTL'leri 300 sn'ye indirilir (NS hariç) | Yetkili sunucudan TTL=300 okunur | TTL geri yükselt |
-| 3 | **En az 14400 sn (4 saat) beklenir** — eski TTL'in dünyadan düşmesi | Tekrar ölçüm | — |
-| 4 | Cloudflare'da bölge Free planda eklenir; otomatik tarama sonucu dökümle **satır satır** karşılaştırılır, eksikler elle girilir | Cloudflare'daki kayıt sayısı = döküm satır sayısı | Bölge silinir |
-| 5 | Proxy durumu ayarlanır: **yalnız `form.tellihukuk.com` proxy'li (turuncu)**; kök `A`, `www`, `mail`, `webmail`, `cpanel`, `autodiscover`, `autoconfig`, `ftp` **DNS-only (gri)** | Her satırın bulut durumu tek tek okunur | — |
-| 6 | Cloudflare NS'leri kayıt firmasında ayarlanır | Üst bölgeden NS sorgusu | **Bkz. 15.2** |
-| 7 | Yayılma süresince her kayıt eski ve yeni NS'lerden ayrı ayrı sorgulanır; posta akışı sınanır | §14 tablosunun her satırı için eski = yeni | 15.2 |
-| 8 | Tünel + Caddy kurulur; `form` CNAME'i tünele bağlanır | Caddy durdurulunca tünel hiçbir şey sunmaz | Tünel durdurulur, CNAME silinir |
-| 9 | `.env` anahtarları eklenir, API yeniden başlatılır (ayrı owner bloğu) | `.env` sha, dist digest | `.env` yedeği |
-| 10 | Dış erişim GO; §7 kabul zinciri D-1..D-9 | — | §8 beş kontrol |
+| 0 | Turhost'tan tam kayıt dökümü alınır; §14 tablosuyla karşılaştırılır | hayır | Dökümdeki her satır tabloda ya da "yeni" işaretli |
+| **—** | **OWNER ONAYI — geçiş penceresi ve plan** | — | Bu satırdan sonrası canlı etkilidir |
+| 1 | Cloudflare'da bölge Free planda eklenir; tarama sonucu dökümle **satır satır** karşılaştırılır, eksikler elle girilir. **NS değiştirilmez** → yayın yok | hayır (trafik hâlâ Turhost'tan) | Cloudflare'daki kayıt sayısı = döküm satır sayısı |
+| 2 | Proxy durumu ayarlanır: **yalnız `form` proxy'li**; diğerleri DNS-only | hayır | Her satırın bulut durumu tek tek okunur |
+| 3 | Turhost'ta **kayıt** TTL'leri 300 sn'ye indirilir | **evet** | Yetkili sunucudan TTL=300 okunur |
+| 4 | Eski kayıt TTL'i kadar (14400 sn) beklenir | — | Tekrar ölçüm |
+| 5 | Kayıt firmasında NS Cloudflare'a çevrilir | **evet** | Üst bölgeden delegasyon sorgusu |
+| 6 | Yayılma süresince **her iki** NS setinden ayrı ayrı sorgulanır; posta akışı sınanır | — | §14 tablosunun her satırı için eski = yeni |
+| 7 | Tünel + Caddy kurulur; `form` CNAME'i tünele bağlanır | **evet** | Caddy durdurulunca tünel hiçbir şey sunmaz |
+| 8 | `.env` anahtarları eklenir, API yeniden başlatılır (ayrı owner bloğu) | **evet** | `.env` sha, dist digest |
+| 9 | §7 kabul zinciri D-1..D-9 hedef ağdan koşulur | **evet** | Ölçütler |
+
+**İki ayrı onay vardır ve biri diğerinin yerine geçmez:** tablodaki **geçiş onayı** (DNS ve kenar kurulumu) ile §9 adım 7'deki **dış erişim GO'su** (tünelin gerçekten yayına alınması). Adım 7'ye kadar host dışarıdan çözülse bile tünel kapalıdır ve hiçbir şey yayınlanmaz.
+
+**TTL uyarısı — 4 saat tüm geçiş için yeterli DEĞİLDİR.** Adım 3'te indirilen TTL yalnız **bölge içi
+kayıtları** (A, MX, TXT…) etkiler. **NS delegasyonunun önbelleği ayrıdır:** üst bölgedeki delegasyon TTL'i
+ölçülen değerle **86400 sn**'dir ve TLD tarafındadır — bizim kontrolümüzde değildir, kayıt TTL'ini indirmek
+onu düşürmez. Ayrıca çözücülerin bir kısmı NS kayıtlarını kendi politikalarıyla daha uzun tutar. Bu nedenle
+adım 5'ten sonra **eski ve yeni yetkili sunucuların bir süre aynı anda yanıt vereceği** kabul edilir; her iki
+tarafta da kayıtlar **aynı** olduğu sürece bu süre kesintisizdir — **koşul, adım 1'deki satır satır eşitliğin
+gerçekten sağlanmış olmasıdır.**
 
 **Posta ve ana site neden bozulmaz:** MX ve TXT proxy'lenemez — Cloudflare belgesi: *"Only records used for IP
 address resolution — A, AAAA, and CNAME records — can be proxied… Other record types (such as MX or TXT) are
 always DNS-only."* Kök `A` ve posta adları **gri bulut** bırakıldığı için gerçek IP değişmez. Risk kayıt
-tipinden değil **eksik kopyalamadan** gelir; adım 1 ve 4 bunun için vardır.
+tipinden değil **eksik kopyalamadan** gelir; adım 0 ve 1 bunun için vardır.
 
-### 15.2 Geri dönüş
+### 15.2 Geri dönüş — anında DEĞİLDİR
 
-- **Turhost bölgesi silinmez.** Kayıtlar panelde olduğu gibi kalır; geri dönüş = kayıt firmasında NS'i
-  `cpns1.turhost.com` / `cpns2.turhost.com` olarak geri almak.
-- NS kaydının TTL'i **86400 sn (24 saat)**; üst bölge TTL'i bizim kontrolümüzde değildir, bu yüzden geri
-  dönüş anında tamamlanmaz. Geçiş penceresi bu süre göz önünde tutularak seçilir.
-- **DNSSEC/DS sırası:** bölge bugün **imzasızdır** (ölçüm: `.com` içinde DS yok, DNSKEY yok). Bu nedenle ileri
-  geçişte DS kaldırma adımı **yoktur**. Cloudflare'da DNSSEC **kapalı bırakılır**. Eğer ileride açılırsa
-  geri dönüş sırası zorunlu olur: **önce** kayıt firmasında DS kaydı kaldırılır → DS TTL'i kadar beklenir →
-  **sonra** NS değiştirilir. Ters sırada bölge doğrulanamaz hale gelir ve alan adı tamamen çözülmez.
+- **Turhost bölgesi silinmez.** Kayıtlar panelde olduğu gibi kalır; geri dönüşün ilk adımı kayıt firmasında
+  NS'i `cpns1.turdns.com` / `cpns2.turdns.com` olarak geri almaktır.
+- **Geri dönüş NS değişikliğiyle tamamlanmaz.** Üst bölge delegasyon TTL'i **86400 sn**'dir ve çözücüler eski
+  delegasyonu bu süre boyunca (bazıları daha uzun) kullanmaya devam eder. Bu süre boyunca trafiğin bir kısmı
+  **hâlâ Cloudflare'a gider**; bu nedenle geri dönüşte Cloudflare bölgesi **hemen silinmez**, kayıtlar orada da
+  doğru kalır. Bölge ancak eski delegasyonun yayıldığı ölçümle doğrulandıktan sonra kaldırılır.
+- Geri dönüş **ölçümle** kapanır: her iki NS setinden §14 tablosunun her satırı sorgulanır ve posta akışı
+  sınanır; "NS'i geri aldım" tek başına kanıt değildir.
+- **DNSSEC/DS sırası:** bölge bugün **imzasızdır** (ölçüm: `.com` içinde DS yok, DNSKEY yok, RDAP
+  `delegationSigned: false`). Bu nedenle ileri geçişte DS adımı **yoktur** ve Cloudflare'da DNSSEC **kapalı
+  bırakılır**. Eğer ileride açılırsa geri dönüş sırası zorunlu olur: **önce** kayıt firmasında DS kaydı
+  kaldırılır → DS TTL'i kadar beklenir → **sonra** NS değiştirilir. Ters sırada bölge doğrulanamaz hale gelir
+  ve alan adı **tamamen** çözülmez.
 - Tünel ve Caddy tarafı: §8'in beş kontrolü aynen uygulanır.
+
+## 16. Portal parola kurtarma — izin listesi ile ertelenmiş karar KARŞILAŞTIRMASI
+
+İzin listesinde `POST /api/portal/forgot-password` ve `POST /api/portal/reset-password` **vardır** (§2.1).
+Ertelenmiş parola kurtarma kararı ise **personel** yüzeyine aittir. İkisi ayrı uçlar, ayrı kod yollarıdır:
+
+| | Personel (OFFICE) | Portal (müvekkil) |
+|---|---|---|
+| Uç | `POST /api/auth/forgot-password`, `/api/auth/reset-password` | `POST /api/portal/forgot-password`, `/api/portal/reset-password` |
+| Kaynak | `auth/password-reset/password-reset.service.ts` | `portal/portal.controller.ts` → `portal.service.ts` |
+| Bayrak | **`OFFICE_PASSWORD_RECOVERY_ENABLED`; kod varsayılanı `false`** (`password-reset.service.ts:40`) | Bu bayrağı **okumaz** |
+| Yönetişim durumu | `LOCAL_CERTIFIED / PRODUCTION_UNCERTIFIED` + `DEFAULT_OFF / ENVIRONMENT_UNCERTIFIED` (`OFFICE-DELIVERY-MANIFEST.md` §12 · `office-spring-cleaning-reconciliation-r01/runtime-activation-reconciliation.md`) | Ayrı; bu paketin §5'i yalnız bağlantı tabanını (`PUBLIC_PORTAL_BASE_URL`) ayırdı |
+| Kenar izin listesi | **YOK — reddedilir** (`/api/auth/*`; prova RET vektörlerinde ölçüldü) | VAR |
+
+**Sonuçlar:**
+
+1. Kenar izin listesi personel parola kurtarmayı **açmaz**; tersine dışarıya **kapatır**. Ertelenmiş karar ve
+   `OFFICE_PASSWORD_RECOVERY_ENABLED` bayrağı bu çalışmada **değiştirilmemiştir**.
+2. Portal uçlarının izin listesinde olması, **hizmetin canlıda etkin ya da kabul edilmiş olduğu anlamına
+   gelmez.** Ölçülen durum: `PUBLIC_PORTAL_BASE_URL` canlıda tanımsızdır (H5 ile aynı sınıf), portal sıfırlama
+   akışı yalnız **izole provada** (§10, D-5) çalıştı, **hizmet kabulü 0/8**'dir ve bu paket onu değiştirmez.
+3. Kapalı bir özellik bu çalışma kapsamında **açılmamıştır**. Kenar yalnız hangi uçların dışarıdan
+   **erişilebilir** olacağını belirler; bir ucun etkin olup olmadığını ürün kodu ve `.env` belirler.
