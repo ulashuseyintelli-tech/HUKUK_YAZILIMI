@@ -73,6 +73,10 @@ const { runCLI } = require('jest');
 
 runCLI(
   {
+    // Optional CI evidence only; selection, required flags and exit gates remain unchanged.
+    ...(process.env.CI_MANIFEST_REPORT_PATH
+      ? { json: true, outputFile: process.env.CI_MANIFEST_REPORT_PATH }
+      : {}),
     ci: true,
     forceExit: true,
     runInBand: true,
