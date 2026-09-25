@@ -3,8 +3,14 @@
  *
  * Bu spec olmadan runner kökü (#1159, 2026-07-17) sessizce çürüdü: sonradan eklenen global
  * sağlayıcı bağımlılıkları yalnız AppModule'de kayıtlıydı ve runner hiç bağlam kuramadı.
- * Sağlayıcı override'ı YOK — gerçek modül grafiği derlenir. Ayrıca DI düzeldikten sonra ortaya
- * çıkan ikinci halka (kaçışsız `repeatable read` options'ı → bağlantı FATAL) kilitlenir.
+ * Kapsam — iki ayrı şey:
+ *  - Gerçek DI grafiği: Nest sağlayıcı/modül override'ı YOK; runner'ın kullandığı kök derlenir.
+ *    `compile()` yaşam döngüsü kancalarını ÇAĞIRMAZ → DB bağlantısı, zamanlayıcı, ağ YOK.
+ *  - Dış bağımlılık izolasyonu: `pdf-poppler` npm paketi modül düzeyinde MOCK'lanır (aşağıda).
+ *    Bu DI grafiğini değiştirmez (paketi require eden sınıflar yine gerçek sağlayıcıdır); yalnız paketin Linux'ta
+ *    yükleme anındaki process.exit(1)'ini engeller. Yani spec "tamamen mock'suz" DEĞİLDİR.
+ * Ayrıca DI düzeldikten sonra ortaya çıkan ikinci halka (kaçışsız `repeatable read` options'ı →
+ * bağlantı FATAL) kilitlenir.
  */
 
 // CaseModule -> case.controller -> ocr.service `pdf-poppler`'ı yükleme anında require eder;

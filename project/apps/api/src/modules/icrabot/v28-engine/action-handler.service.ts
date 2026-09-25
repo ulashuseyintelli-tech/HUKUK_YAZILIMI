@@ -24,7 +24,7 @@
  * - actions.<action_type>.last_status, last_action_id, last_result
  * - actions.last.success_at / fail_at timestamps
  */
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxService, OutboxFailureMarkResult } from './outbox.service';
 import { OutboxScope, outboxRowInScope, outboxScopeWhere } from './outbox-scope';
@@ -111,10 +111,11 @@ export interface LockInfo {
 }
 
 @Injectable()
-export class ActionHandlerService {
+export class ActionHandlerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(ActionHandlerService.name);
   private readonly handlers: Map<string, ActionHandler> = new Map();
   private readonly locks: Map<string, LockInfo> = new Map(); // In-memory lock (dev only)
+  private lockCleanupTimer?: ReturnType<typeof setInterval>;
   private readonly maxAttempts = getIcrabotOutboxMaxAttempts();
   private readonly retryBaseMs = getIcrabotOutboxRetryBaseMs();
 
@@ -125,6 +126,14 @@ export class ActionHandlerService {
     private readonly factStore: FactStoreService,
   ) {
     this.registerDefaultHandlers();
+  }
+
+  /**
+   * Lock temizleme aralığı constructor'da DEĞİL burada başlar: Nest bu kancayı yalnız tüm
+   * onModuleInit'ler başarılı olduktan sonra çağırır. Bootstrap yarıda düşerse (ör. DB'ye
+   * ulaşılamaz) bağlam çağırana hiç dönmez ve kapatılamaz; aralık o durumda hiç açılmamış olur.
+   */
+  onApplicationBootstrap(): void {
     this.startLockCleanupInterval();
   }
 
@@ -918,8 +927,21 @@ export class ActionHandlerService {
    * Lock cleanup interval başlatır
    */
   private startLockCleanupInterval(): void {
+    if (this.lockCleanupTimer) return;
     // Her 5 dakikada bir expired lock'ları temizle
-    setInterval(() => this.cleanupExpiredLocks(), 5 * 60 * 1000);
+    this.lockCleanupTimer = setInterval(() => this.cleanupExpiredLocks(), 5 * 60 * 1000);
+  }
+
+  /**
+   * Nest kapanışında (app.close()) lock temizleme aralığını durdurur. Aksi halde ref'li
+   * aralık event loop'u açık tutar ve bağlamı kapatılan süreç (ör. ADR-014 runner)
+   * kendiliğinden çıkamaz (izole gate DB'de ölçüldü).
+   */
+  onModuleDestroy(): void {
+    if (this.lockCleanupTimer) {
+      clearInterval(this.lockCleanupTimer);
+      this.lockCleanupTimer = undefined;
+    }
   }
 
   /**

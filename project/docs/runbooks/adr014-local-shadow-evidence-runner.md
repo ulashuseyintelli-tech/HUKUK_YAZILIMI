@@ -92,11 +92,12 @@ metadata'yı üretir. Bağlam kökü `src/scripts/adr014-shadow-evidence-runner.
 ErrorLog, MetricsRegistry). Kök bağlantısını `__tests__/adr014-shadow-evidence-runner.module.wiring.spec.ts`
 kilitler.
 
-**Bilinen açık — süreç kendiliğinden çıkmaz.** Kanıt yazılıp özet basıldıktan ve DB oturumları
-kapandıktan sonra süreç açık kalır (izole gate DB'de ölçüldü; JS düzeyinde görünen aktif kaynak
-yalnız stdout/stderr boruları). Kanıt çıktısı etkilenmez; `Kanıt yazıldı:` satırı ve
-`manifest.sha256` göründükten sonra süreç Ctrl+C ile kapatılır. Kök neden jest `--forceExit`
-açık-handle maddesiyle aynı sınıftadır ve ayrı tanı maddesidir; bu runbook onu çözmüş sayılmaz.
+**Doğal çıkış.** Başarı yolunda süreç kanıt yazıldıktan sonra kendiliğinden `0` ile çıkar; hata
+yolunda `1` ile çıkar. Önceden süreç çıkmıyordu: `icrabot` `ActionHandlerService` constructor'ı ref'li
+bir `setInterval` (lock temizleme, 5 dk) açıyor ve hiç kapatmıyordu (async_hooks ile yaratma yığını
+üzerinden tespit edildi). Aralık artık `onApplicationBootstrap`'ta açılır, `onModuleDestroy`'da
+(`app.close()`) kapanır; bootstrap yarıda düşerse hiç açılmaz. `process.exit` / zorla sonlandırma
+KULLANILMAZ.
 
 ---
 
@@ -118,6 +119,17 @@ Dört katman:
 > Not: PostgreSQL read-only transaction'ı geçici (TEMP) tablo yazımına izin verir; runner statik
 > guard'ı hiç TEMP yazımı yapmadığını da kanıtlar, dolayısıyla tek dayanak connection default'u
 > değildir.
+
+**Kapsam sınırı (izole gate DB'de ölçüldü, 2026-09-26):** katman 1 bir bağlantı *varsayılanıdır*,
+yazma *imkânsızlığı* değildir. Aynı URL ile: düz UPDATE ve `$transaction` içinde UPDATE REDDEDİLDİ;
+aynı transaction'da oturum `SET default_transaction_read_only = off` REDDEDİLDİ; `CREATE TEMP TABLE`
+REDDEDİLDİ; ancak **`SET TRANSACTION READ WRITE` + UPDATE İZİN VERİLDİ**. Katman 1 PrismaService'in
+havuzundaki her bağlantıya uygulanır (startup options); katman 2 yalnız sorguyu karşılayan tek havuz
+bağlantısını, tek anda ölçer. Katman 4 yalnız runner + core kaynağını tarar, bağlamdaki modül
+grafiğini TARAMAZ (2026-09-26 itibarıyla `apps/api/src` üretim kaynağında `READ WRITE` isteyen
+çağrı yok — yalnız bir güvenlik spec'inde yasak dize olarak geçiyor). `pg_stat_user_tables` yazma
+sayacının değişmemesi yazma olmadığını gösterir, yazmanın imkânsız olduğunu göstermez. Gerçek
+imkânsızlık yalnız SELECT yetkili bir DB rolüyle sağlanır; bu runbook onu sağlamaz.
 
 ---
 
