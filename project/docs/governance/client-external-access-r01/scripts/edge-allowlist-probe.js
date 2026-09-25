@@ -4,11 +4,14 @@
 const http = require('http');
 
 const EDGE_PORT = Number(process.argv[2] || 8085);
+// Host basligi: ozel ad, yardimci fallback origin adi ya da rastgele bir ad. Kenar karari Host'a
+// BAKMAMALI — ayni vektorler her Host'ta ayni sonucu vermelidir (paket §19.4).
+const HOST = process.argv[3] || 'form.tellihukuk.com';
 
 function req(method, path, extraHeaders) {
   return new Promise((resolve) => {
     const r = http.request(
-      { host: '127.0.0.1', port: EDGE_PORT, method, path, headers: Object.assign({ host: 'form.tellihukuk.com' }, extraHeaders || {}) },
+      { host: '127.0.0.1', port: EDGE_PORT, method, path, headers: Object.assign({ host: HOST }, extraHeaders || {}) },
       (res) => {
         let b = '';
         res.on('data', (c) => { b += c; });

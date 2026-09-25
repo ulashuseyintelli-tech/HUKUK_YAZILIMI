@@ -1,30 +1,42 @@
-# CLIENT DIŞ ERİŞİM — giden tünel şablonu (ÖNERİLEN yol). CANLIYA UYGULANMADI.
-# Parametreler: <TUNNEL_ID> · <CREDENTIALS_PATH> · <PUBLIC_HOST>.
+# CLIENT DIŞ ERİŞİM — giden tünel şablonu (SEÇİLEN YOL, R03). CANLIYA UYGULANMADI.
 #
-# TOPOLOJİ (R02): tünel → Caddy 127.0.0.1:8081 → Web 127.0.0.1:3002 / API 127.0.0.1:8080.
+# MİMARİ (paket §19): Cloudflare for SaaS özel adı + yardımcı bölge + adlandırılmış tünel.
+#   müvekkil → form.tellihukuk.com (Turhost'ta CNAME → yardımcı bölgedeki SaaS hedefi)
+#            → Cloudflare kenarı (özel ad sertifikası burada)
+#            → yardımcı bölgedeki FALLBACK ORIGIN (tünelin public hostname'i)
+#            → cloudflared (giden 7844; gelen port AÇILMAZ; 80/443 NAT'ına DOKUNULMAZ)
+#            → Caddy 127.0.0.1:8081 (tünel profili: 18 çift + varsayılan RET + CF-Connecting-IP)
+#            → Web 127.0.0.1:3002 / API 127.0.0.1:8080
 #
-# NEDEN TEK GİRİŞ: tünel girişi yalnız YOL eşler, YÖNTEM eşlemez (cloudflared belgesi;
-# ingress kurallarının eşleşme alanları hostname ve path'tir). Yöntem kısıtı bu yüzden
-# kenarda tek yerde, Caddy'de verilir. R01'de bu dosya doğrudan 8080 ve 3002'ye iki ayrı
-# ingress kuralı taşıyordu: o kurallar yöntem kısıtsız bir alternatif geçiş oluşturuyordu.
-# Artık API ve Web burada HİÇ geçmez — tünelin ulaşabildiği tek hedef Caddy'dir.
+# Resmî dayanak: Cloudflare Reference Architecture — "The fallback origin is a CNAME DNS record
+# that points to a public hostname exposed by Cloudflare Tunnel."
 #
-# İstemci IP: sağlayıcı istemci adresini X-Forwarded-For'un SONUNA ekler; Caddy bu başlığı
-# SİLİP kendi gördüğü adresi yazar, API `trust proxy=1` ile en sağdaki değeri okur.
-# Kurulumda sahte başlıkla ölçülür (paket §3 madde 2-3).
+# Parametreler:
+#   <TUNNEL_ID> · <CREDENTIALS_PATH>
+#   <PUBLIC_HOST>          müvekkilin gördüğü ad (form.tellihukuk.com)
+#   <FALLBACK_ORIGIN_HOST> yardımcı bölgedeki fallback origin adı (ör. origin.<yardımcı-alan>)
 #
-# Yayından önce doğrulanır: Caddy çalışmıyorken tünel hiçbir şey sunamaz (502/1033),
-# yani kenar kararı atlanamaz.
+# NEDEN İKİ HOSTNAME KURALI: özel ad trafiğinin tünele hangi Host başlığıyla ulaştığı rehberde
+# açıkça yazılmaz. Tasarım bundan BAĞIMSIZDIR: iki kural da AYNI ve TEK hedefe (Caddy) gider;
+# başka her Host 404 alır. Kenar kararı (yöntem + yol + admin reddi) Caddy'dedir, Host'a
+# bakmaz; bu yüzden yardımcı ad üzerinden gelen istek de AYNI 18 çifte takılır
+# (ölçüm: scripts/edge-probe.ps1 -HostHeader ... ve scripts/tunnel-ingress-probe.ps1).
+#
+# API ve Web burada HİÇ geçmez; tünelin ulaşabildiği tek hedef Caddy'dir.
 
 tunnel: <TUNNEL_ID>
 credentials-file: <CREDENTIALS_PATH>
 
 ingress:
-  # Yayınlanan tek host → tek arka uç: Caddy. Yol ve yöntem kararının tamamı Caddy'dedir.
+  # Yardımcı bölgedeki fallback origin — rehberdeki "public hostname exposed by Cloudflare Tunnel".
+  - hostname: <FALLBACK_ORIGIN_HOST>
+    service: http://127.0.0.1:8081
+    originRequest:
+      httpHostHeader: <PUBLIC_HOST>
+  # Özel ad Host başlığıyla gelirse de aynı hedef.
   - hostname: <PUBLIC_HOST>
     service: http://127.0.0.1:8081
     originRequest:
-      # Caddy loopback'te düz HTTP dinler; TLS sağlayıcı kenarında sonlanır.
       httpHostHeader: <PUBLIC_HOST>
   # Zorunlu son kural: eşleşmeyen her hostname reddedilir.
   - service: http_status:404

@@ -654,6 +654,8 @@ kaydı ve müvekkilin farklı bir alan adı görmesidir. Alt alanı tek başına
 
 ### 17.4 Öneri — Yol A
 
+> **R04 (2026-09-26): BU ÖNERİ GEÇERSİZDİR.** 80 ve 443 ofiste **zaten kullanımdadır** — pfSense 80 → `10.34.24.205:80` (Kolayofis), 443 → `10.34.24.205:443` (sayax). Yönlendirmeyi değiştirmek iki aktif hizmeti keser. Seçilen yol **§19**'dur. Aşağıdaki metin tarihsel kayıt olarak korunur.
+
 **En az değişiklik gerektiren ve mevcut hizmetlerin hiçbirini riske atmayan yol A'dır.** Gerekçe:
 
 1. Turhost DNS **korunur**; 36 kaydın hiçbiri taşınmaz, NS değişmez, MX/SPF/DKIM/DMARC'a dokunulmaz.
@@ -680,6 +682,8 @@ zorunlu hale gelir; o zaman **Yol C** (ayrı alan adı) Yol B'ye tercih edilmeli
 Caddy kurulmadı, sertifika talep edilmedi, hesap açılmadı.
 
 ## 18. Yol A — koşullu aday hazırlığı (2026-09-25)
+
+> **R04 (2026-09-26):** Yol A mevcut 80/443 üzerinden **uygulanmayacaktır** (§19.1). `reach-test.ps1` mevcut 80/443 üzerinden **başlatılmayacaktır** — o portlar Kolayofis ve sayax'a yönlendirilmiştir; açılış yerel kontrolü geçse bile dış test o hizmetlerin yolunu değiştirmeden anlamlı sonuç vermez.
 
 > **HÜKÜM SINIRI:** Bu bölüm "statik IP ve gelen erişim doğrulandı" demez. IP'nin statikliği
 > **owner beyanıdır**; gelen erişim **ölçülmemiştir**. Yol A **koşullu adaydır**.
@@ -888,3 +892,169 @@ olarak silinir; mevcut yönlendirmelere dokunulmaz. Sonra dış cihazdan aynı t
 
 **Bu bölümde yapılmayanlar:** DNS/NAT/güvenlik duvarı değişikliği, canlı kurulum, sertifika talebi, yayın,
 reach-test'in canlı koşumu — hiçbiri. H5 ve H1–H8 hizmet kabulü (**0/8**) değişmemiştir.
+
+## 19. SEÇİLEN YOL — Cloudflare for SaaS özel adı + yardımcı bölge + adlandırılmış tünel (R04, 2026-09-26)
+
+> **DURUM: HAZIRLIK.** Hesap açılmadı, alan adı alınmadı, DNS değiştirilmedi, tünel kurulmadı, `.env`
+> değişmedi, hiçbir hizmet yeniden başlatılmadı. `tellihukuk.com` yetkili DNS'i **Turhost'ta kalır**.
+
+### 19.1 Neden bu yol — ölçülen kısıtlar
+
+| Ölçüm (salt okuma) | Sonuç |
+|---|---|
+| pfSense yönlendirmeleri (owner ekranı) | 80 → `10.34.24.205:80` (Kolayofis), 443 → `10.34.24.205:443` (sayax) — **ikisi de aktif** |
+| Ağ zinciri (owner ekranı) | Zyxel LAN `192.168.0.1` → pfSense WAN `192.168.0.100`, LAN `10.34.24.254` → hukuk sunucusu `10.34.25.53` |
+| Zyxel yönlendirme/DMZ tabloları | Kayıt görünmüyor — **"dış erişim yok" kanıtı sayılmaz** |
+| `10.34.24.205` | Windows sunucu, **IIS 10.0 / ASP.NET**; 80, 443, 3389, 445 açık |
+| 443 sertifikası (SNI'siz) | `sayax.gelkaenerji.com.tr`, Let's Encrypt, 2026-07-14 → 2026-10-12 |
+| `sayax.gelkaenerji.com.tr` dış DNS | Ofisin çıkış adresine işaret ediyor — dış 443'ün bugün bu zincirden **geçtiğine dair güçlü dolaylı işaret** (ölçüm değil) |
+| Tünel çıkışı | Sunucudan Cloudflare kenarına TCP 7844 **açık** (§3) |
+
+Bu yol **mevcut 80/443 NAT kurallarına, Zyxel'e, pfSense'e ve `10.34.24.205`'e hiç dokunmaz**; tünel giden
+bağlantıdır. `tellihukuk.com` taşınmaz, NS değişmez, wildcard yenilemesi (§14.2) etkilenmez; müvekkil
+yine `form.tellihukuk.com` görür.
+
+### 19.2 Önceki rapordaki ifadelerin kanıt sınırına göre düzeltilmesi
+
+| Önceki ifade | Düzeltilmiş hali |
+|---|---|
+| "Ayrı portta sertifika **alınamaz**" | **Aşırıydı.** 80 ve 443 IIS'te olduğu için HTTP-01 ve TLS-ALPN-01 doğrulamaları Caddy'ye **ulaşamaz**; ancak **DNS-01** ile ayrı porttaki bir ad için sertifika alınabilir. Bu yol seçilmedi, çünkü müvekkil adresinde port gerektirir ve bazı kurumsal ağlar standart dışı portları engeller — "imkânsız" olduğu için değil. |
+| "Turhost API **zorunlu**" | **Yanlıştı.** DNS-01 için sağlayıcı API'si şart değildir: `_acme-challenge.<ad>` kaydı CNAME ile API'si olan başka bir bölgeye **delege edilebilir** ya da her yenilemede TXT **elle** girilebilir. |
+| "Araya ters vekil **kesinlikle yok**" | **Aşırıydı.** Ölçülen yalnız şudur: 443'te TLS, `10.34.24.205`'te **IIS tarafından** sonlanıyor ve pfSense TCP yönlendirmesi yapıyor. IIS'in arkasında ARR veya başka bir arka uç olup olmadığı **ölçülmedi** (sunucuya giriş yapılmadı). |
+| "Kesinti riski **sıfır**" | **Aşırıydı.** Doğru ifade: kurulum adımları mevcut hizmetlerin **yoluna dokunmaz** (80/443 NAT, pfSense, Zyxel, IIS değişmez), bu yüzden **beklenen doğrudan etki yoktur**. Ölçülmemiş dolaylı riskler §19.7'dedir. |
+| "Tünelin fallback origin olabildiği resmî belgede **açıkça yazmıyor**" | **Yanlıştı.** Cloudflare Reference Architecture açıkça yazar: *"The fallback origin is a CNAME DNS record that points to a public hostname exposed by Cloudflare Tunnel."* ([rehber](https://developers.cloudflare.com/reference-architecture/design-guides/extending-cloudflares-benefits-to-saas-providers-end-customers/)) |
+
+### 19.3 Resmî dayanak ve plan sınırı
+
+| Bileşen | Kaynak | Plan / ücret |
+|---|---|---|
+| Fallback origin = tünelin public hostname'i | Reference Architecture (yukarıda) | — |
+| Cloudflare for SaaS (özel ad) | [Plans](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/plans/) | **Free planda var**; 100 özel ad dahil, ek ad başına 0,10 USD (belge ifadesi) — bu kurulum **1** ad kullanır |
+| Müşteri alanının Cloudflare'da olması | [Kurulum](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/getting-started/) | **Gerekmez**; müşteri kendi DNS'inde CNAME ekler |
+| Adlandırılmış tünel | Zero Trust Free (§3) | 0,00 USD |
+| **Regional Services** | [Regional Services](https://developers.cloudflare.com/data-localization/regional-services/) | *"Regional Services is an Enterprise add-on."* — **bu kurulumda KULLANILMAZ** |
+
+**Not:** Rehberdeki fallback-origin cümlesi **"… with Regional Services"** başlıklı bölümde geçer. Regional
+Services Enterprise eklentisidir ve bu mimaride **yer almaz**; Free planda kullanılan yalnız Free bölge,
+Cloudflare for SaaS (100 ad içinde) ve adlandırılmış tüneldir. SaaS + tünel birleşiminin **Free planda**
+çalıştığı ayrı bir cümleyle belgelenmemiştir — kurulumun **ilk doğrulama adımıdır** (§19.5, K-1).
+
+### 19.4 Somut kurulum planı
+
+**DNS hedefleri**
+
+| Bölge | Ad | Tip | Hedef | Not |
+|---|---|---|---|---|
+| Yardımcı (Cloudflare) | `origin.<yardımcı>` | CNAME, **proxied** | `<TUNNEL_ID>.cfargotunnel.com` | Fallback origin = tünelin public hostname'i |
+| Yardımcı (Cloudflare) | `customers.<yardımcı>` | CNAME, **proxied** | `origin.<yardımcı>` | Müşteri CNAME hedefi (belgedeki `customers.saasprovider.com` kalıbı) |
+| **Turhost** (`tellihukuk.com`) | `form` | CNAME | `customers.<yardımcı>` | **Tek zorunlu Turhost değişikliği**; mevcut 36 kayda dokunulmaz |
+| Turhost *(yalnız ön-doğrulama seçilirse)* | `_cf-custom-hostname.form` | TXT | Cloudflare'ın verdiği değer | [Pre-validation](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/hostname-validation/pre-validation/) |
+| Turhost *(yalnız TXT/delege DCV seçilirse)* | `_acme-challenge.form` | TXT ya da CNAME | Cloudflare'ın verdiği değer | cPanel'in mevcut `_acme-challenge.*` kayıtlarıyla **ad çakışmaz** (`form` altında kayıt yok) |
+
+**Özel ad doğrulaması — önerilen: gerçek zamanlı sahiplik + HTTP DCV (yalnız bir CNAME).**
+Cloudflare belgesi: *"Real-time validation occurs automatically when your customer adds their DNS routing
+record."* ([real-time](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/hostname-validation/realtime-validation/)).
+Belge bu yöntemin *"may cause some downtime"* olabileceğini de yazar; `form` bugün **NXDOMAIN**'dir ve
+müvekkil trafiği yoktur, bu yüzden bu pencere kimseyi etkilemez. Sertifika için HTTP DCV kullanılabilir,
+çünkü `form` **wildcard değildir** (belge: *"Wildcard custom hostnames require TXT-based validation"*).
+Alternatif: iki TXT kaydıyla **ön-doğrulama** — sertifika CNAME'den önce aktif olur, bedeli Turhost'ta iki
+ek kayıttır.
+
+**TLS / Host eşlemesi**
+
+| Kesim | TLS | Host / SNI |
+|---|---|---|
+| Müvekkil → Cloudflare kenarı | TLS; sertifika Cloudflare'ın `form` için aldığı (HTTP DCV) | SNI ve Host = `form.tellihukuk.com` |
+| Kenar → tünel | Cloudflare tünel bağlantısı (giden 7844) | Özel ad trafiğinin tünele hangi Host ile ulaştığı rehberde **yazmaz** → tasarım bundan bağımsızdır (aşağıda) |
+| `cloudflared` → Caddy | Düz HTTP, `127.0.0.1:8081` | `httpHostHeader` = `form.tellihukuk.com` |
+| Caddy → Web / API | Düz HTTP, `127.0.0.1:3002` / `127.0.0.1:8080` | aynı |
+
+**Tünel ingress eşlemesi** (`templates/cloudflared-config.yml.template`, R03)
+
+| # | Eşleşme | Hedef |
+|---|---|---|
+| 0 | `hostname: <FALLBACK_ORIGIN_HOST>` | Caddy `127.0.0.1:8081` |
+| 1 | `hostname: <PUBLIC_HOST>` | Caddy `127.0.0.1:8081` |
+| 2 | diğer her şey | `http_status:404` |
+
+İki ad da **aynı ve tek** hedefe gider; API ve Web şablonda **hiç geçmez**. Yol ve yöntem kararı tünelde
+değil Caddy'dedir.
+
+### 19.5 Yardımcı ad üzerinden izin listesi aşılamaz — İZOLE ölçüm
+
+| Katman | Koşucu | Sonuç |
+|---|---|---|
+| Tünel eşleşmesi | `scripts/tunnel-ingress-probe.ps1` — resmî `cloudflared 2026.9.3` ile `ingress validate` + `ingress rule` (hesap/ağ gerekmez) | **PASS 5 / 5**: yapılandırma geçerli · özel ad ve fallback adı için **admin yolu dahil her yol yalnız Caddy'ye** · yardımcı apex, rastgele ad ve `tellihukuk.com`'un diğer adları **404** · şablonda 8080/3002 **yok** |
+| Caddy kararı | `scripts/edge-probe.ps1 -HostHeader <ad>` — tünel profili, üç Host: `form.tellihukuk.com`, `origin.yardimci.example`, `evil.example` | **Üçünde de PASS 8 / 8**: 38 izin · 29 ret · 18 kodlama · XFF · admin RET sırası — Caddy kararı **Host'tan bağımsız** |
+
+**Bu ölçümler canlı zincirin kanıtı DEĞİLDİR.** Önceki istemci-IP provası (7/7) ve bu tablo izoledir.
+Kurulumda ayrıca ölçülecekler:
+
+| # | Canlıda ölçülecek |
+|---|---|
+| K-1 | Özel ad trafiği fallback origin (tünel) üzerinden Caddy'ye ulaşıyor — SaaS + tünelin **Free planda** çalıştığının ölçümü |
+| K-2 | Özel ad trafiğinin tünele geldiği Host başlığı (tasarım bağımsız, ama kayda geçer) |
+| K-3 | `CF-Connecting-IP` gerçek istemci adresini taşıyor; istemcinin gönderdiği sahte başlık kenarda eziliyor |
+| K-4 | Dış ağdan: 18 çift çalışıyor, `/api/portal/admin/*` ve personel yüzeyi **403**, izin dışı yöntem **403** |
+| K-5 | `https://origin.<yardımcı>` ve `https://customers.<yardımcı>` doğrudan çağrıldığında da aynı sınır |
+
+**Ölçülen kurulum tuzağı:** `config.yml` PowerShell 5.1 ile hazırlanırken iki hata `cloudflared`'ı açılmaz
+kılar — `Set-Content -Encoding UTF8` **BOM** yazar ve `Get-Content` BOM'suz UTF-8 şablonu **Windows-1254**
+okuyup Türkçe harfleri C1 kontrol karakterine çevirir (`yaml: control characters are not allowed`).
+Şablon açıkça UTF-8 okunmalı, `config.yml` **BOM'suz** yazılmalıdır.
+
+### 19.6 Doğrulanmış maliyetler
+
+| Kalem | Kaynak | Ücret |
+|---|---|---|
+| Cloudflare Free bölge (yardımcı alan adı için) | Cloudflare planları (§3) | 0,00 USD |
+| Cloudflare for SaaS | Plans | 100 ada kadar **0,00 USD**; bu kurulum 1 ad |
+| Adlandırılmış tünel (Zero Trust Free) | Cloudflare planları (§3) | 0,00 USD — 50 kullanıcı sınırı **Access** kullanıcılarını sayar, bu kurulumda Access yok |
+| Regional Services | Regional Services | Enterprise eklentisi — **kullanılmaz** |
+| **Yardımcı alan adı** | — | Owner'ın **uygun ve kullanılmayan** bir alan adı varsa **0,00 USD**. Yoksa aşağıda |
+
+**Yeni alan adı gerekirse — Turhost fiyat tablosu** (`turhost.com/domain/com-domain/`, 2026-09-26 okundu):
+
+| Uzantı | Kayıt (ilk yıl) | Yenileme (yıllık) | İlk yıl + sonraki her yıl |
+|---|---|---|---|
+| `.com` | 2,90 USD (kampanya) | **21,99 USD** | 2,90 + her yıl 21,99 |
+| `.com.tr` | 1,49 USD | **14,99 USD** | 1,49 + her yıl 14,99 |
+
+Tabloda KDV'nin dahil olup olmadığı **belirtilmiyor**. Cloudflare Registrar için belge yalnız kayıt ve
+yenilemenin *"at cost"*, kâr payı olmadan faturalandığını söyler; somut `.com` fiyatı belgede **yoktur**
+(ölçülmedi). Yardımcı alan adı boş bir bölge olduğundan nameserver'larının Cloudflare'a verilmesi
+**`tellihukuk.com`'u etkilemez**.
+
+### 19.7 Kesinti riski
+
+| Kapsam | Değerlendirme |
+|---|---|
+| Kolayofis, sayax | Kurulum adımları 80/443 NAT, pfSense, Zyxel ve IIS'e **dokunmaz** → beklenen doğrudan etki yok |
+| `tellihukuk.com` sitesi, e-postası, wildcard sertifika | Yalnız **bir** yeni CNAME eklenir; mevcut 36 kayıt değişmez, NS değişmez |
+| Hukuk uygulaması (iç kullanıcılar) | `.env` değişikliği sonrası kontrollü API yeniden başlatmasında **kısa kesinti** |
+| **Ölçülmemiş dolaylı riskler** | Turhost panelinde yeni kayıt eklerken yanlış satıra dokunma (insan hatası) · cPanel AutoSSL'in `form` adını görmesi (`form` cPanel'de alt alan olarak tanımlı değilse işlemez — ölçülmedi) · pfSense'in giden 7844'ü ileride kısıtlaması · hukuk sunucusunda `cloudflared` + Caddy'nin ek kaynak kullanımı |
+
+### 19.8 Geri dönüş — ölçmeden kapanış YOK
+
+Sıra: önce dış erişim kesilir ve **dış ağdan** doğrulanır; sonra bu çalışmanın değişiklikleri geri alınır;
+en son ortam kimliği ölçülür.
+
+| # | Adım | Doğrulama |
+|---|---|---|
+| 1 | `cloudflared` servisi durdurulur | **Dış ağdan** (mobil veri) `https://form.tellihukuk.com` → uygulama yanıtı **gelmez** (Cloudflare hata sayfası beklenir). Bu ölçülmeden sonraki adıma geçilmez. |
+| 2 | Cloudflare'da özel ad silinir | Dış ağdan tekrar → uygulama yanıtı yok |
+| 3 | Turhost'ta `form` CNAME (ve varsa iki TXT) silinir | Yetkili sunucudan **NXDOMAIN**; çözücüler TTL süresince önbellekte tutabilir |
+| 4 | Caddy durdurulur | `127.0.0.1:8081` dinleyicisi 0 |
+| 5 | `.env` yedeği **hash doğrulamasıyla** geri yazılır | Yedeğin sha256'sı kurulum öncesi kaydedilen değere **eşit** olmalı; geri yazılan `.env`'in sha256'sı taban pine (`7A7228B1…FDDC`) **eşit** olmalı — eşit değilse DUR |
+| 6 | **Kontrollü** API yeniden başlatma | `Stop-ScheduledTask` → 8080 dinleyicisi **0** olana kadar bekle → `Start-ScheduledTask` → 8080'de **tam 1** dinleyici. `Restart-ScheduledTask` bu sunucuda **yoktur**. |
+| 7 | **Ortam kimliği ve sağlık** | API dist digest `A8B17A38…53A0` (3867 dosya) · web `.next` digest `C17E7B13…5326` (505 dosya) · `BUILD_ID` `5waeMoFGGMTLAYmn9oJvW` · başlatıcı `DDCCD091…219C` · `/api/auth/me` **401** · web `/` **200** · `HukukPlatform-API` ve `-Web` **Running/enabled** |
+| 8 | Kapanış hükmü | Yalnız 1–7'nin **hepsi ölçülüp geçince**. Yardımcı bölge ve tünel kaydı silinmez; kanıt olarak korunur. |
+
+### 19.9 Owner'dan gerçekten eksik olan
+
+1. **Uygun, kullanılmayan bir alan adınız var mı?** Varsa adı. Yoksa hangi uzantı (`.com` / `.com.tr`) ve
+   hangi kayıt firması (Turhost ya da Cloudflare Registrar).
+2. **Cloudflare hesabınız var mı?** (bilinmiyor)
+
+Bunlar dışında şablonlar, testler, DNS tablosu ve geri dönüş planı hazırdır. Kurulum ayrı owner GO'su
+ister; H5 ve H1–H8 hizmet kabulü (**0/8**) değişmemiştir.
