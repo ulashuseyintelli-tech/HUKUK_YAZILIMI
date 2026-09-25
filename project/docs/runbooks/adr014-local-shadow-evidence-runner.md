@@ -75,14 +75,28 @@ ENFORCEMENT_PRE_POST, FEE_PRESENT, HIGH_PAYMENT_COUNT, ZERO_INTEREST.
 
 ```bash
 cd project/apps/api
+pnpm exec nest build        # çıkış kodu 0 OLMALI
 ADR014_CANONICAL_SHA=$(git rev-parse HEAD) \
-  npx tsx src/scripts/adr014-local-shadow-evidence-runner.ts \
+  node dist/apps/api/src/scripts/adr014-local-shadow-evidence-runner.js \
     --input evidence/adr014/input/representative-cases.json \
     [--out evidence/adr014/run-<etiket>] \
     [--timeout-ms 30000]
 ```
 
 Girdi dosyası yoksa runner temiz çıkar (fabrikasyon yok).
+
+**`npx tsx` ile ÇALIŞTIRILMAZ.** esbuild decorator metadata (`emitDecoratorMetadata`) üretmez;
+Nest constructor bağımlılıklarını göremez ve bağlam kurulamaz (`DI_FAIL`). `nest build` (tsc)
+metadata'yı üretir. Bağlam kökü `src/scripts/adr014-shadow-evidence-runner.module.ts`'tir:
+`BalanceDisplayShadowDiffModule` + yalnız `AppModule`'ün sağladığı dört global (Config, Storage,
+ErrorLog, MetricsRegistry). Kök bağlantısını `__tests__/adr014-shadow-evidence-runner.module.wiring.spec.ts`
+kilitler.
+
+**Bilinen açık — süreç kendiliğinden çıkmaz.** Kanıt yazılıp özet basıldıktan ve DB oturumları
+kapandıktan sonra süreç açık kalır (izole gate DB'de ölçüldü; JS düzeyinde görünen aktif kaynak
+yalnız stdout/stderr boruları). Kanıt çıktısı etkilenmez; `Kanıt yazıldı:` satırı ve
+`manifest.sha256` göründükten sonra süreç Ctrl+C ile kapatılır. Kök neden jest `--forceExit`
+açık-handle maddesiyle aynı sınıftadır ve ayrı tanı maddesidir; bu runbook onu çözmüş sayılmaz.
 
 ---
 
@@ -91,8 +105,9 @@ Girdi dosyası yoksa runner temiz çıkar (fabrikasyon yok).
 Dört katman:
 
 1. **Bağlantı:** `DATABASE_URL`'e `-c default_transaction_read_only=on -c
-   default_transaction_isolation=repeatable read` options'ı eklenir → Postgres motoru her non-temp
-   write'ı reddeder.
+   default_transaction_isolation=repeatable\ read` options'ı eklenir → Postgres motoru her non-temp
+   write'ı reddeder. (`\ ` zorunlu: Postgres `options`'ı boşluktan böler; kaçışsız değer bağlantıyı
+   `invalid value for parameter "default_transaction_isolation": "repeatable"` ile reddeder.)
 2. **Fail-closed doğrulama:** bootstrap sonrası `SELECT current_setting('transaction_read_only')`
    `'on'` değilse runner HİÇBİR case çalıştırmadan durur.
 3. **Uygulama:** `compare()` zaten `mode: SHADOW_ONLY` / `primaryDisplayUnchanged: true`.
