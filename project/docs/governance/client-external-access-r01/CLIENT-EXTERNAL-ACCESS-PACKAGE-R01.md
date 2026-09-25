@@ -74,9 +74,13 @@ bekleyen belge onayı/reddi, büro mesaj listeleri) · `/api/` altındaki diğer
 `/api/portal/admin/*` uçları **personel** tarafıdır; müvekkil yüzeyiyle aynı ön ekte oldukları için kenar
 katmanında **ayrıca** reddedilmelidir. Bu, izin listesinin en kritik satırıdır.
 
-## 3. Seçilen kenar yöntemi ve topoloji (R02 — 2026-09-24)
+## 3. Kenar yöntemi ve topoloji (R03 — 2026-09-25)
 
-**Yöntem: giden tünel (Cloudflare Tunnel) + YALNIZ loopback'te dinleyen Caddy.**
+> **R03 DÜZELTMESİ:** R02'de tünel "seçilen yöntem" olarak yazılmıştı. Sonradan ölçüldü ki
+> **sunucunun sabit bir genel IP'si vardır** (§17) ve tünel **zorunlu değildir**. İki yol da aynı
+> Caddy kararını kullanır; fark yalnız trafiğin sunucuya **nasıl ulaştığıdır**. Yol seçimi §17'dedir.
+
+**Ortak omurga (her iki yolda aynı): YALNIZ loopback'te dinleyen Caddy.**
 
 ```
 internet → Cloudflare kenarı (form.tellihukuk.com)
@@ -172,6 +176,7 @@ sunucu makinesinde çözülür. Bu belgede ve kayıtlarda öyle geçmez.
 | Parametre | Örnek | Nerede kullanılır |
 |---|---|---|
 | `<PUBLIC_HOST>` | `form.ornek-alanadi.tld` | Tünel/vekil host adı |
+| `<OFIS_GENEL_IP>` | *(depo herkese açıktır; gerçek değer belgeye yazılmaz)* | Yol A'da `form` A kaydının hedefi ve yönlendirici NAT kuralı |
 | `PUBLIC_INTAKE_BASE_URL` | `https://<PUBLIC_HOST>` | Canlı `.env` (yeni) |
 | `PUBLIC_PORTAL_BASE_URL` | `https://<PUBLIC_HOST>` | Canlı `.env` (yeni; bu PR'ın eklediği anahtar) |
 | `NEXT_PUBLIC_API_URL` | **TANIMSIZ bırakılır** | Web derleme zamanı — aynı origin tasarımı (§1.2); alan adı gömülmez |
@@ -433,7 +438,7 @@ kaydı vardı; hiçbiri tahminle bulunamazdı.
 **Kesilmiş değer sorunu yaşanmadı:** panelde kısaltılmış görünen DKIM ve DCV kayıtlarının tam değerleri
 yetkili sunucudan okundu; owner'ın düzenleme ekranı açmasına gerek kalmadı.
 
-### 14.2 GEÇİŞİN MADDİ ENGELİ — wildcard sertifika DNS-01'e bağlı
+### 14.2 DNS TAŞIMASININ MADDİ ENGELİ — wildcard sertifika DNS-01'e bağlı (YALNIZ Yol B'de geçerli)
 
 **Ölçüm (2026-09-24, salt okuma TLS el sıkışması):** `tellihukuk.com:443` sertifikası
 
@@ -453,7 +458,19 @@ görmez** → **wildcard sertifika yenilenemez.** Yenileme penceresi tipik olara
 **2026-10-31 civarı** başlar.
 
 Bu, ana siteyi, `webmail`, `cpanel`, `whm`, `webdisk` ve posta istemcisi (`autodiscover`/`autoconfig`)
-yüzeylerini etkiler. **Geçiş bu kalem çözülmeden başlatılmamalıdır.**
+yüzeylerini etkiler. **DNS taşıması bu kalem çözülmeden başlatılmamalıdır.**
+
+**Sağlayıcı teyidi (Turhost, 2026-09-25):** *"yalnızca alan adının DNS hizmetini Cloudflare'a taşımak,
+mevcut Turhost SSL sertifikasının otomatik yenilemesinin devam edeceği anlamına gelmemektedir"*;
+*"Eğer mevcut yenileme sistemi Cloudflare DNS üzerinde DNS-01 doğrulamasını gerçekleştirebilecek şekilde
+çalışmıyorsa, wildcard sertifikanın otomatik yenilenmesi mümkün olmayacaktır."* Sağlayıcı ayrıca web ve
+e-posta hizmetlerinin Turhost'ta kalabileceğini, ancak kayıtların Cloudflare'da eksiksiz oluşturulup
+web/e-posta kayıtlarının **DNS Only** tanımlanması gerektiğini bildirmiştir — bu, §15.1 adım 1-2 ile
+birebir aynıdır.
+
+**ÖNEMLİ:** Bu engel **yalnız DNS taşımasını içeren Yol B** için geçerlidir. §17'deki **Yol A** DNS
+taşıması içermediği için bu engelle **hiç karşılaşmaz**: Turhost yetkili DNS kalır, wildcard sertifikanın
+DNS-01 yenilemesi bugünkü gibi çalışmaya devam eder.
 
 **Belgede bulunamadı:** cPanel AutoSSL'in harici DNS altında DCV'yi nasıl yürüttüğü kesin olarak
 belgelenmemiştir (cPanel SSL kılavuzu yalnız *"your cPanel & WHM nodes must be able to manage its
@@ -582,3 +599,82 @@ Ertelenmiş parola kurtarma kararı ise **personel** yüzeyine aittir. İkisi ay
    akışı yalnız **izole provada** (§10, D-5) çalıştı, **hizmet kabulü 0/8**'dir ve bu paket onu değiştirmez.
 3. Kapalı bir özellik bu çalışma kapsamında **açılmamıştır**. Kenar yalnız hangi uçların dışarıdan
    **erişilebilir** olacağını belirler; bir ucun etkin olup olmadığını ürün kodu ve `.env` belirler.
+
+## 17. Cloudflare zorunlu mu? — ölçülen cevap: HAYIR (2026-09-25)
+
+### 17.1 Dış erişimin GERÇEK teknik gereksinimleri
+
+Ürünün dışarıdan kullanılabilmesi için karşılanması gereken dört şey vardır. Hiçbiri belirli bir
+sağlayıcı adı içermez:
+
+| # | Gereksinim | Nasıl karşılanır |
+|---|---|---|
+| G-1 | İnternetten çözülen bir ad (`form.tellihukuk.com`) | Turhost'ta **tek** yeni kayıt. Mevcut 36 kayda dokunulmaz. |
+| G-2 | O ada gelen trafiğin ofis sunucusuna ulaşması | **Yol A:** genel IP + yönlendiricide port yönlendirme · **Yol B:** giden tünel |
+| G-3 | Geçerli TLS sertifikası | **Yol A:** Caddy'nin `form` için aldığı **tek adlı** sertifika (HTTP-01) · **Yol B:** sağlayıcı kenarında |
+| G-4 | Yol + yöntem izin listesi, varsayılan ret | **Her iki yolda da Caddy** — §10.1'de 86 vektörle ölçülmüş, hazır |
+
+**Cloudflare yalnız G-2'nin B varyantını ve G-3'ü sağlar.** G-1 ve G-4 ondan bağımsızdır; G-4 zaten
+Caddy'ye taşınmıştır (§3). Yani Cloudflare **bir zorunluluk değil, gelen port açmama kolaylığıdır.**
+
+### 17.2 Ölçüm: sunucunun sabit genel IP'si VAR
+
+| Ölçüm | Sonuç |
+|---|---|
+| Sunucunun dış çıkış IP'si | Sabit bir TR adresi *(değer belgeye yazılmaz — depo herkese açıktır)* |
+| Sahiplik (RDAP) | `TR-TURKNET-20081126`, `ALLOCATED PA`, ülke TR |
+| Ters DNS (PTR) | `…static.turk.net` — adlandırma **statik** tahsisi gösterir |
+| İç topoloji | Sunucu `10.34.25.53/23`, ağ geçidi `10.34.24.254` → NAT arkasında |
+| Bugünkü dinleyiciler | 80 ve 443'te dinleyici **yok**; kurulu ters vekil/tünel/IIS **yok** |
+
+R01'de "genel IP bağımlılığı" tünel lehine bir gerekçe olarak yazılmıştı; o gerekçe **bu ölçümle
+düşmüştür**. `ofis.tellihukuk.com` kaydının hedefi ise ofise ait değildir — RDAP'a göre **Litvanya**
+merkezli bir sağlayıcının aralığındadır; dış erişim için kullanılmaz.
+
+### 17.3 İki yol — değişiklik yüzeyi karşılaştırması
+
+| | **Yol A — doğrudan (EN DAR)** | **Yol B — Cloudflare Tunnel** |
+|---|---|---|
+| DNS | Turhost'ta **1 yeni A kaydı** (`form`) | **Tüm bölge Cloudflare'a taşınır** (36 kayıt yeniden kurulur), NS değişir |
+| Yetkili DNS | **Turhost'ta kalır** | Cloudflare'a geçer |
+| Wildcard sertifika (§14.2) | **Etkilenmez** — DNS-01 bugünkü gibi çalışır | **Kırılır**; önce çözülmeli |
+| `form` sertifikası | Caddy, **HTTP-01** ile tek adlı sertifika alır (wildcard değil → DNS-01 gerekmez) | Sağlayıcı kenarında |
+| Yönlendirici | 80 + 443 → iç sunucuya NAT kuralı **gerekir** | Gerekmez |
+| Gelen port | Açılır (saldırı yüzeyi artar; Caddy varsayılan-ret ile 18 çift dışında her şey 403) | Açılmaz |
+| DDoS emme | Yok | Sağlayıcı kenarında |
+| Zorunlu ücret | **0,00 USD** | 0,00 USD (Free) — ama §14.2 çözümü S-4 seçilirse 200-250 USD/ay |
+| Geri dönüş | `form` A kaydı silinir + NAT kuralı kaldırılır — **dakikalar** | NS geri alınır; delegasyon TTL 86400 → **anında değil** (§15.2) |
+| Kenar kararı (G-4) | Aynı Caddy | Aynı Caddy |
+
+**Ara yol C — ayrı alan adı:** `form.<yeni-alan-adı>` alınıp **yalnız o boş bölge** Cloudflare'a taşınır.
+`tellihukuk.com` hiç dokunulmaz, wildcard etkilenmez, tünel kullanılabilir. Bedeli yeni bir alan adı
+kaydı ve müvekkilin farklı bir alan adı görmesidir. Alt alanı tek başına Cloudflare'a delege etmek
+**mümkün değildir**: Cloudflare belgesine göre subdomain setup yalnız **Enterprise** planındadır
+(Free/Pro/Business: **No**).
+
+### 17.4 Öneri — Yol A
+
+**En az değişiklik gerektiren ve mevcut hizmetlerin hiçbirini riske atmayan yol A'dır.** Gerekçe:
+
+1. Turhost DNS **korunur**; 36 kaydın hiçbiri taşınmaz, NS değişmez, MX/SPF/DKIM/DMARC'a dokunulmaz.
+2. §14.2'deki **tek maddi engel ortadan kalkar** — wildcard yenilemesi bugünkü mekanizmayla sürer.
+3. `form` için gereken sertifika **wildcard değildir**, dolayısıyla DNS-01'e ihtiyaç duymaz; Caddy
+   HTTP-01 ile alır ve kendisi yeniler.
+4. Kenar kararı (18 çift + varsayılan ret + gerçek istemci IP'si) **zaten ölçülmüş ve hazırdır**;
+   Yol A'ya geçmek bu işin hiçbirini geçersiz kılmaz.
+5. Geri dönüş tek kayıt ve tek NAT kuralı ile **dakikalar içinde** tamamlanır.
+
+**Yol A'nın ölçülmemiş ön koşulları (owner/ISP bilgisi):**
+
+| # | Soru | Neden gerekli |
+|---|---|---|
+| Ö-A1 | Genel IP sözleşmeye göre **statik** mi? | PTR "static" diyor, ama tahsis taahhüdü sağlayıcı bilgisidir. Dinamikse DNS kaydı kayar. |
+| Ö-A2 | Sağlayıcı **gelen 80/443**'ü engelliyor mu? | Bazı KOBİ/ev planlarında kapalıdır. Kapalıysa Yol A uygulanamaz → Yol B veya C. |
+| Ö-A3 | Yönlendiriciye yönetim erişimi var mı? | NAT kuralı için gerekir. |
+
+Bu üçü olumluysa **Yol A uygulanabilir ve Cloudflare'a hiç ihtiyaç kalmaz.** Ö-A2 olumsuzsa tünel
+zorunlu hale gelir; o zaman **Yol C** (ayrı alan adı) Yol B'ye tercih edilmelidir, çünkü
+`tellihukuk.com` bölgesini ve wildcard sertifikayı hiç riske atmaz.
+
+**Bu bölümde hiçbir canlı değişiklik yapılmamıştır:** DNS kaydı eklenmedi, NAT kuralı yazılmadı,
+Caddy kurulmadı, sertifika talep edilmedi, hesap açılmadı.
