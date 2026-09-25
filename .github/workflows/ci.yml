@@ -23,7 +23,16 @@ jobs:
   architectural-guardrails:
     name: Architectural Guardrails
     runs-on: ubuntu-latest
+    # This existing required check must fail, including when a dependency is skipped/cancelled.
+    needs: [test-suite, windows-poppler]
+    if: ${{ always() }}
     steps:
+      - name: Require real integration jobs
+        working-directory: ${{ github.workspace }}
+        env:
+          LINUX_RESULT: ${{ needs.test-suite.result }}
+          WINDOWS_RESULT: ${{ needs.windows-poppler.result }}
+        run: test "$LINUX_RESULT" = success && test "$WINDOWS_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -75,6 +84,9 @@ jobs:
         run: bash apps/api/scripts/ci-8-jest-invocation-budget-gate.sh
 
   test-suite:
+    permissions:
+      contents: read
+      packages: read
     name: Test Suite
     runs-on: ubuntu-latest
     # GH-03: job seviyesinde timeout yoktu → GitHub default'u 360 dk. Konsolidasyon
@@ -143,9 +155,60 @@ jobs:
         working-directory: project
       # Spec listesi: project/apps/api/ci-manifests/pure/platform-scripts-shared.txt
       # (ci.yml control-plane; manifest dosyasi degil — spec eklemek binding istemez)
+      - name: Verify integration result checker
+        run: node --test scripts/verify-ci-integration.test.cjs
+      - name: Authenticate GHCR for test image pull
+        timeout-minutes: 1
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Start disposable MinIO
+        id: minio
+        timeout-minutes: 3
+        run: |
+          name="ci-minio-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          access="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          secret="$(openssl rand -hex 24)"
+          echo "::add-mask::$secret"
+          docker run -d --name "$name" --label "ci.run=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            -p 127.0.0.1::9000 -e MINIO_ROOT_USER="$access" -e MINIO_ROOT_PASSWORD="$secret" \
+            ghcr.io/ulashuseyintelli-tech/hukuk-yazilimi-ci-minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2 server /data
+          port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "9000/tcp") 0).HostPort}}' "$name")"
+          endpoint="http://127.0.0.1:$port"
+          for i in $(seq 1 30); do
+            if curl --fail --silent --connect-timeout 1 --max-time 2 "$endpoint/minio/health/ready" >/dev/null; then
+              printf 'endpoint=%s\naccess=%s\nsecret=%s\n' "$endpoint" "$access" "$secret" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MinIO readiness failed"; exit 1
       - name: pure/platform-scripts-shared
-        run: bash apps/api/scripts/run-ci-manifest.sh pure/platform-scripts-shared
+        env:
+          MINIO_TEST_ENDPOINT: ${{ steps.minio.outputs.endpoint }}
+          MINIO_TEST_ACCESS_KEY: ${{ steps.minio.outputs.access }}
+          MINIO_TEST_SECRET_KEY: ${{ steps.minio.outputs.secret }}
+          MINIO_TEST_BUCKET: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          CI_MANIFEST_REPORT_PATH: ${{ runner.temp }}/platform-results.json
+        run: |
+          test -n "$MINIO_TEST_ENDPOINT"
+          bash apps/api/scripts/run-ci-manifest.sh pure/platform-scripts-shared
+          node scripts/verify-ci-integration.cjs minio "$CI_MANIFEST_REPORT_PATH"
         working-directory: project
+      - name: Remove disposable MinIO
+        if: ${{ always() }}
+        timeout-minutes: 1
+        run: |
+          name="ci-minio-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          id="$(docker container ls -aq --filter "name=^/$name$")"
+          if [ -n "$id" ]; then
+            test "$(docker inspect --format '{{index .Config.Labels "ci.run"}}' "$name")" = "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker rm -f -v "$name"
+          fi
+      - name: Remove GHCR test login
+        if: ${{ always() }}
+        timeout-minutes: 1
+        run: docker logout ghcr.io
       # Spec listesi: project/apps/api/ci-manifests/db/core-lifecycle.txt
       # (ci.yml control-plane; manifest dosyasi degil — spec eklemek binding istemez)
       - name: db/core-lifecycle
@@ -420,6 +483,46 @@ jobs:
             echo "FORBIDDEN P05C-P04: raw Idempotency-Key log/persist edilemez"; exit 1
           fi
         working-directory: project/apps/api
+  windows-poppler:
+    name: Windows Poppler Integration
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 8.15.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: project/pnpm-lock.yaml
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prisma generate
+        run: pnpm --filter @hukuk/api exec prisma generate
+      - name: Verify bundled Windows Poppler binary
+        working-directory: project/apps/api
+        run: |
+          node -e "const p=require('pdf-poppler'),fs=require('fs'),path=require('path'),cp=require('child_process');if(process.platform!=='win32')throw Error('Windows required');const binary=path.join(p.path,'pdftocairo.exe');if(!fs.statSync(binary).isFile())throw Error('Missing binary');const r=cp.spawnSync(binary,['-v'],{encoding:'utf8',timeout:10000});console.log(binary);console.log(r.stdout,r.stderr);if(r.error||r.status!==0)process.exit(1);"
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled Poppler unavailable' }
+      - name: Real Windows renderer
+        working-directory: project/apps/api
+        env:
+          RUN_POPPLER_INTEGRATION: '1'
+          POPPLER_REPORT: ${{ runner.temp }}/poppler-results.json
+        run: |
+          pnpm exec jest --ci --runInBand --runTestsByPath src/modules/ocr/__tests__/poppler-page-renderer.spec.ts --verbose --json --outputFile "$env:POPPLER_REPORT"
+          if ($LASTEXITCODE -ne 0) { throw 'Renderer Jest failed' }
+          node ../../scripts/verify-ci-integration.cjs poppler "$env:POPPLER_REPORT"
+          if ($LASTEXITCODE -ne 0) { throw 'Real renderer acceptance failed' }
+
   web-tests:
     name: Web Tests (vitest)
     runs-on: ubuntu-latest
