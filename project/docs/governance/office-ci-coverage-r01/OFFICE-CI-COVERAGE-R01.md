@@ -122,3 +122,36 @@ kendine yetki vermiş olur. **Bu kısım açık bırakıldı.**
 Genel OFFICE kapanışı veya hizmet kabulü ilan edilmez. Tam disk temizliği ilan edilmez; önceki
 worktree disk artıkları (OBJSTORE, INTOP, PBGOLD, PBBIND, POPPLER) korunur. `ci.yml`, paylaşılan
 `hukuk-minio`, üretim verisi ve sistem kurulumlarına dokunulmadı. CLIENT işleri etkilenmedi.
+
+
+## 7. R02 — Gerçek CI entegrasyonu (2026-09-25)
+
+Bu ek §3–§4'teki uygulanmamış önerinin dar uygulama kaydıdır; tarihsel yerel
+kanıtları değiştirmez. Owner GO: CI'da gerçek MinIO + Windows Poppler; ayrı
+request/grant/execution/result zinciri OFFICE-CI-REAL altında izlenir.
+
+- Sekiz manifest ve dört spec'in dosya seçimi değişmez. Linux Test Suite içindeki
+  platform manifesti koşuma özel MinIO konteyneri, kova ve geçici kimlik bilgileri
+  alır. İmaj tam digest'e sabittir; readiness süreli ve başarısızlık terminaldir.
+  Cleanup always() ile yalnız koşum kimliği eşleşen konteyneri kaldırır; runner'ın
+  zorla sonlandırılması halinde son sınır GitHub-hosted geçici VM'nin imhasıdır.
+- Resmî manifest runner'ın isteğe bağlı JSON çıktısı seçim/bayrak/çıkış koşullarını
+  değiştirmez. Sonuç okuyucu exact object-store suite'ini ve yedi test adının her
+  birini PASS olarak arar; eksik/atlanan test veya yalnız toplam yeşil sonuç yetmez.
+- Windows Poppler Integration aynı Node 20, pnpm 8.15.0 ve frozen lockfile ile
+  pdf-poppler'ın kendi pdftocairo.exe dosyasını kullanır. Ek dağıtım yoktur.
+  Mevcut renderer spec'i RUN_POPPLER_INTEGRATION=1 ile çalışır; 13/13 ve gerçek
+  render adının PASS olması zorunludur. Linux'taki platforma bağlı atlama korunur.
+- Mevcut zorunlu Architectural Guardrails kontrolü iki işin sonucunu always()
+  altında denetler; failed/cancelled/skipped sonuçta FAIL verir. Branch protection
+  değiştirilmez veya gevşetilmez. Bedel: bu kontrol iki işin bitmesini bekler.
+  Linux'un 20 dakikalık sınırı korunur; Windows işi ayrı 20 dakika ile sınırlıdır.
+- Jest çağrı bütçesine yalnız bir Windows süreci eklenir (8 → 9; mevcut sınır 18).
+  Renderer, bağımlılık sürümleri, CLIENT canlı/DNS/H5 ve korunmuş disk artıkları
+  kapsam dışındadır.
+
+**Kabul kanıtı:** Bu yapılandırma kaydı tek başına CI PASS iddiası değildir.
+PR ve merge SHA'sına ait Linux yedi assertion, Windows gerçek render assertion,
+ayrı iş süreleri ve CI/CodeQL sonuçları immutable execution result ile kapanış
+kanıtında raporlanır. Yerel registry hatası hosted CI erişim sonucu sayılmaz.
+OFFICE genel finali veya H1–H8 hizmet kabulü üretilmez.
