@@ -779,36 +779,112 @@ bu nedenle kesinti asıl olarak adım 1-3 ile sağlanır, DNS kaydının silinme
 içinde kesin dönüş" ifadesi §17.3'ten **kaldırılmıştır**; doğru ifade: *sunucu ve yönlendirici tarafı
 hemen kesilir, ad çözümü önbellek süresince kalabilir.*
 
-### 18.5 Ölçülmemiş ön koşullar ve owner'dan gereken TEK işlem
+### 18.5 Erişim testi neyi ölçer, neyi ölçmez — R02 DÜZELTMESİ
 
-| # | Ölçülmemiş | Neden ölçülemedi |
+Bu bölümün önceki sürümündeki iki iddia **yanlıştı** ve geri çekilmiştir:
+
+| Geri çekilen iddia | Doğrusu |
+|---|---|
+| "Üç ölçülmemiş kalemi tek seferde kapatır" | Test **yalnız Ö-1'i** ölçer: dış istek belirtilen porttan sunucuya **ulaşıyor mu**. Ö-2 (yönlendirmenin hangi katmanda yapılacağı) ve Ö-3 (IP'nin statikliği) bu testle **kapanmaz**. |
+| "Log boşsa engelleyen katman belirlenir" | Boş kayıt yalnız **"istek sunucuya ulaşmadı"** der. Yönlendirme eksikliği, üst NAT, sağlayıcı filtresi ve mobil operatör **aynı sonucu** verir; test bunları **ayırt edemez**. |
+
+| # | Ölçülmemiş | Durum |
 |---|---|---|
-| Ö-1 | Gelen 80/443 dış ağdan sunucuya ulaşıyor mu | Sunucuda dinleyici ve NAT kuralı yok; içeriden ölçülemez |
-| Ö-2 | Port yönlendirmesi hangi katmanda yapılacak | Üç katmanlı zincir; `172.17.1.222` bu sunucudan yönetilemiyor |
-| Ö-3 | IP'nin statikliği | Owner beyanı var; abonelik taahhüdü sağlayıcı kaydıdır |
+| Ö-1 | Gelen 80/443 dış ağdan sunucuya ulaşıyor mu | **reach-test ölçer** — ama yalnız yönlendirme kurulduktan sonra anlamlıdır |
+| Ö-2 | Port yönlendirmesi hangi katmanda yapılacak | Ölçülmedi; §18.8'deki **tek yönlendirici ekranı** ile belirlenir |
+| Ö-3 | IP'nin statikliği | Owner beyanı; abonelik taahhüdü sağlayıcı kaydıdır |
 
-**Owner'dan gereken tek işlem: hazır erişilebilirlik testini onaylamak ve bir kez koşmak.**
-`scripts/reach-test.ps1` (sha256 `12629F51D43CF4DF55F2368D94865B1C3585103C1A0195241B7BAC9F96FEB41E`)
-üç ölçülmemiş kalemi **tek seferde** kapatır:
+**Yönlendirici yönetimi GERÇEK BAĞIMLILIKTIR.** Test ancak dış istek yönlendirici(ler) tarafından sunucuya
+iletilirse bilgi üretir; yönlendirme yoksa kaydın boş olacağı zaten bilinir ve test hiçbir şey öğretmez.
+Bu yüzden owner'dan **körlemesine NAT kuralı eklemesi istenmez** ve mevcut yönlendirme ile uzaktan yönetim
+ayarlarına **dokunulmaz**. Sıra: önce §18.8 ekranıyla doğru cihaz ve hedef belirlenir, sonra dar kural
+kurulur, **sonra** test koşulur.
 
-- `-Open -Ports 80,443` → güvenlik duvarı kuralı + **tek amaçlı** geçici dinleyici açar, rastgele bir
-  belirteç üretir. **TLS kurmaz, sertifika talep etmez, DNS kaydı oluşturmaz, ürüne ait hiçbir şey
-  yayınlamaz**; yalnız tek test yoluna yanıt verir, diğer her yola 404. Canlı 8080/3002'ye dokunmaz.
-- Owner mobil veriden test adresini çağırır. **Log boşsa** istek sunucuya hiç ulaşmamıştır (yönlendirme
-  eksik ya da üst katman engelliyor); **log doluysa** dış erişim çalışıyordur ve hangi porttan geldiği
-  satırda yazar — yani Ö-1 ve Ö-2 aynı anda ölçülür.
-- `-Close` → dinleyiciyi ve kuralı kaldırır, kalmadığını **ölçerek** doğrular; yönlendirmenin owner
-  tarafından kaldırılması gerektiğini ve sonrasında erişimin kesildiğinin doğrulanmasını hatırlatır.
-- `-Status` salt okumadır ve yönetici hakkı istemez.
+### 18.6 reach-test R02 — güvenlik düzeltmesi ve öz-test
 
-Bu betik **yönetici hakkı ister ve canlı değişiklik yapar** (güvenlik duvarı kuralı + geçici dinleyici);
-bu yüzden **owner GO'su olmadan koşulmamıştır ve bu çalışmada koşulmayacaktır**. Yönlendirici tarafındaki
-yönlendirmeyi betik yapamaz; onu owner ekler ve testten hemen sonra kaldırır.
+R01 kaynağı owner'ın dört koşuluna karşı incelendi; **dördü de tam karşılanmıyordu**:
 
-**Test sonucu olumluysa** Yol A uygulanabilir: Turhost'ta tek `form` kaydı + yönlendirme + Caddy
-doğrudan profili. **Log boş çıkarsa** engelin hangi katmanda olduğu owner'ın yönlendirici incelemesiyle
-belirlenir; çözülemezse §17.3'teki Yol C (ayrı alan adı) Yol B'ye tercih edilir — `tellihukuk.com`
-bölgesini ve wildcard sertifikayı hiç riske atmaz.
+| Koşul | R01 kaynağı | R02 |
+|---|---|---|
+| K-1 İlk değişiklikten önce durum + kurtarma bilgisi | Durum ilk kuraldan önce yazılıyordu, ama **kural adları ve süreç PID'leri hiç yazılmıyordu** (`Start-Process` `-PassThru` olmadan) | Başlangıç ölçümü + her kaynak için önce **niyet**, sonra **kimlik** (tam kural adı; PID + başlangıç zamanı) kalıcılaştırılır |
+| K-2 Kısmi hatada yalnız bu koşunun kaynakları | `try/catch` **yoktu**; ikinci kural hata verirse ilki açık kalıyordu; dinleyici başarısı doğrulanmıyordu | Herhangi bir adımda hata → **yalnız durum dosyasında kayıtlı** kaynaklar geri alınır |
+| K-3 Wildcard / toplu süreç yok | Kural silme `-DisplayName 'HY-REACH-TEST*'` (**wildcard**); süreç kapatma **tüm powershell/pwsh süreçlerini** komut satırı deseniyle tarıyordu | Kurallar `-Name` ile **tam adla** (runId gömülü); süreç yalnız **PID + başlangıç zamanı + komut satırında runId** üçü birden eşleşirse durdurulur |
+| K-4 Kurtarma hatası ayrıca kaydedilir, PASS yok | Silme hataları `SilentlyContinue` ile **yutuluyordu**; durum dosyası **temiz olmasa bile** yeniden adlandırılıyordu → kurtarma bilgisi kayboluyordu | Her geri alma adımının sonucu kaydedilir; biri bile başarısızsa durum `kurtarma-basarisiz`, **çıkış 3**, aktif işaretçi ve durum dosyası **korunur** |
 
-**Bu bölümde yapılmayanlar:** DNS/NAT/güvenlik duvarı değişikliği, canlı kurulum, sertifika talebi,
-yayın — hiçbiri. H5 ve H1–H8 hizmet kabulü (**0/8**) değişmemiştir.
+Ek düzeltmeler: dinleyici süresi artık **gerçekten** sınırlıdır (`-TimeoutMinutes`, R01'de yalnız mesajda
+geçiyordu); dış teste geçmeden önce her port **yerel olarak** doğrulanır (HTTP 200 + koşum kimlikli gövde
++ kayıt satırı).
+
+**Öz-testin yakaladığı, yeni kodda da bulunan kusurlar** (canlıda patlayacaktı):
+
+| # | Kusur | Sonucu |
+|---|---|---|
+| Y-1 | `powershell -File` ile `-Ports 80,443` dizisi tek dizeye dönüşüp virgül kayboluyordu (`18480,18443` → `1848018443`) | Owner bloğu `-File` kullandığı için **canlı açılış bozulurdu**. Port listesi artık dize olarak alınıp ayrılıyor ve doğrulanıyor. |
+| Y-2 | Dinleyici her turda **yeni** `GetContextAsync()` açıyordu | Gelen istek terk edilmiş göreve bağlanıyor, **yanıt hiç gitmiyordu** |
+| Y-3 | Geri alma sonucu iç içe dizi dönüyordu | Sonuç satırları birleşiyor, başarısızlık **sayılamıyordu** |
+| Y-4 | Dinleyici `Content-Type` göndermiyordu | PS 5.1 gövdeyi bayt dizisi döndürüyor, yerel kontrol **her zaman başarısız** oluyordu |
+| Y-5 | Boş dizi pipeline'dan `ConvertTo-Json`'a verilince boş dosya | Öz-test yolunda sahte kural kaydı bozuluyordu |
+
+**Öz-test — `scripts/reach-test-selftest.ps1`, PASS 27 / 27, çıkış 0.** Yönetici gerektirmez, canlıya
+dokunmaz. **Gerçek:** dinleyici süreçleri gerçekten başlatılır, gerçek yerel HTTP isteği alır, gerçek kayıt
+yazar ve gerçekten durdurulur; PID, başlangıç zamanı ve komut satırı gerçek işletim sistemi verisiyle
+ölçülür. **Sahte:** güvenlik duvarı kuralları geçici bir JSON kayıt defterine yazılır — gerçek
+`New/Remove-NetFirewallRule` davranışı burada **ölçülmez**; kaynakta `-Name` ile tam ad kullanıldığı statik
+kapıyla doğrulanır. **Ölçülmez:** `http://+:<port>/` önekinin yönetici URL-ACL davranışı (canlıya özgü).
+
+| Grup | Kapsanan | Sonuç |
+|---|---|---|
+| T0 | K-1: ilk kuraldan **önce** hata → durum dosyası, başlangıç ölçümü ve niyet kaydı mevcut | 3/3 |
+| T1 | Normal açılış + kapatma: 2 kural + 2 süreç kimliğiyle kayıtlı, yerel kontrol 2/2, kayıtta `YEREL` satırlar, kapatma temiz, durum+kayıt korundu | 5/5 |
+| T2–T4 | K-2: ikinci kuralda / ikinci dinleyiciden sonra / yerel kontrolde hata → yalnız oluşan kaynaklar geri alındı | 3/3 |
+| T5 | K-3: benzer komut satırlı **yabancı süreç** sağ kaldı; R01 adlı ve başka koşuya ait **kurallar korundu** | 3/3 |
+| T6 | K-3: kayıtlı PID başka bir sürece geçmişse o süreç **durdurulmadı** | 1/1 |
+| T7 | K-4: kapatmada kural silme hatası → çıkış 3, `kurtarma-basarisiz`, başarısız adımlar kayıtlı, işaretçi korundu; ikinci kapatma temizledi | 4/4 |
+| T8 | K-4: açılış hatası **ve** geri alma hatası → çıkış 3, PASS yok, kalan kurallar görünür; sonraki kapatma temizledi | 3/3 |
+| T9 | Aktif koşu varken ikinci açılış çıkış 4; mevcut koşunun süreçleri etkilenmedi | 1/1 |
+| S-1..S-4 | Statik: wildcard yok · süreç adıyla tarama yok · hata yutma yok · yeniden adlandırma yok | 4/4 |
+
+### 18.7 Port başına test protokolü
+
+| Port | Protokol | Dış cihazda yazılacak adres | Not |
+|---|---|---|---|
+| 80 | **Düz HTTP** | `http://<GENEL_IP>/hy-reach-<runId>` | |
+| 443 | **Düz HTTP — TLS YOK** | `http://<GENEL_IP>:443/hy-reach-<runId>` | Şema `http://`, port `:443` **açıkça** yazılır. `https://` **kullanılmaz**: TLS kurulmadığı için başarısız olur ve bu bir erişim sonucu **sayılmaz**. Tarayıcı güvenli bağlantıya geçmeyi önerirse reddedilir. |
+
+**Koşum kimliği:** her açılış rastgele bir `runId` üretir. Kimlik test yolunda, beklenen gövdede
+(`HY-REACH-OK <runId> port=<port>`) ve kayıt dosyasının adında bulunur; böylece dış istek bu koşunun
+sunucu kaydına **bağlanır**.
+
+**Önce yerel kontrol:** açılış, dış teste geçmeden her portu `127.0.0.1` üzerinden dener ve HTTP 200 +
+doğru gövde + yeni kayıt satırı görmezse **açılışı geri alır** (çıkış 1). Yani dış test başladığında
+dinleyici ve kayıt mekanizmasının çalıştığı ölçülmüştür.
+
+**Başarı tanımı (dar):** bir port için *dış cihazda beklenen gövde görüldü* **ve** *sunucu kaydında o
+porta ait `DIS` işaretli satır var*. Bu yalnız **"dış ağdan düz HTTP isteği bu porttan sunucuya ulaştı"**
+demektir. **TLS'in çalıştığı, sertifikanın alınabileceği veya H5 kabulü anlamına GELMEZ.**
+
+**443'e özgü sınır:** bazı mobil ağlar 443'teki düz HTTP'ye müdahale edebilir. 443'te `DIS` satırı yoksa
+bu, 443'te **TLS trafiğinin** ulaşmayacağını kanıtlamaz.
+
+### 18.8 Dar NAT değişikliği — bugünkü bilgiyle YAZILAMAZ; gereken tek yönlendirici ekranı
+
+Ölçülen zincir: sunucu → `10.34.24.254` → `192.168.0.1` → `172.17.1.222` → internet. Owner'ın beyan ettiği
+genel adresin **hangi cihazın WAN arayüzünde** olduğu bilinmiyor; dolayısıyla kuralın hangi cihaza ve hangi
+iç hedefe yazılacağı bugün **belirlenemez**.
+
+**Gereken tek ekran:** `192.168.0.1` yönetim arayüzünün **WAN / İnternet durum** sayfası — WAN IP adresi ve
+bağlantı tipi. Salt okumadır; hiçbir ayar değiştirilmez, uzaktan yönetim açılmaz. Bu cihaz seçildi çünkü
+zincirde yönetim arayüzü görünen (80/443 açık) **en dıştaki** cihazdır.
+
+| Ekranda görülen | Anlamı | Sonraki adım |
+|---|---|---|
+| WAN IP = owner'ın beyan ettiği genel adres | Genel adres bu cihazda; `10.34.24.254` ikinci bir NAT katmanıdır | **İki dar kural:** `192.168.0.1`'de TCP 80/443 → `10.34.24.254`'ün WAN adresi; `10.34.24.254`'te TCP 80/443 → `10.34.25.53`. İkinci hedef adres o ekranda ya da `192.168.0.1`'in bağlı cihaz listesinde görülür. |
+| WAN IP özel adres (ör. `172.17.x.x`) | Genel adres **owner'ın bu cihazında değil**; üst katman (`172.17.1.222` ya da sağlayıcı) | Yol A owner'ın mevcut erişimiyle **uygulanamaz**; sağlayıcı/bina yöneticisi gerekir. §17.3 Yol C değerlendirilir. |
+| Ekran açılamıyor (parola yok) | Yönetim erişimi yok | Yol A bu erişim sağlanana kadar **bekler**; körlemesine kural yazılmaz. |
+
+**Dar kuralın geri alınması** (kurulursa): kurulan kural(lar) **yalnız bu çalışmada eklenen satırlar**
+olarak silinir; mevcut yönlendirmelere dokunulmaz. Sonra dış cihazdan aynı test adresi tekrar denenir ve
+**yanıt gelmediği** doğrulanır (§18.4 sırası).
+
+**Bu bölümde yapılmayanlar:** DNS/NAT/güvenlik duvarı değişikliği, canlı kurulum, sertifika talebi, yayın,
+reach-test'in canlı koşumu — hiçbiri. H5 ve H1–H8 hizmet kabulü (**0/8**) değişmemiştir.
