@@ -1,6 +1,8 @@
 param(
   # Hangi profil sinanacak: 'Caddyfile.template' (tunel) veya 'Caddyfile.direct.template' (dogrudan).
-  [string]$TemplateName = 'Caddyfile.template'
+  [string]$TemplateName = 'Caddyfile.template',
+  # Istek Host basligi — yardimci fallback origin adi uzerinden de ayni sinirin gecerli oldugunu olcmek icin.
+  [string]$HostHeader = 'form.tellihukuk.com'
 )
 $ErrorActionPreference = 'Stop'
 # =============================================================================
@@ -125,7 +127,7 @@ try {
   } | Out-Null
   Start-Sleep -Seconds 3
 
-  $probeOut = Invoke-Native { & node $probe $edgePort 2>&1 } | Out-String
+  $probeOut = Invoke-Native { & node $probe $edgePort $HostHeader 2>&1 } | Out-String
   $probeRc = $LASTEXITCODE
   $pj = $null
   try { $pj = $probeOut | ConvertFrom-Json } catch { }
