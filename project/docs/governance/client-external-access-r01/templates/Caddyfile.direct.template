@@ -1,0 +1,101 @@
+# CLIENT DIŞ ERİŞİM — DOĞRUDAN MOD (Yol A) Caddy şablonu. CANLIYA UYGULANMADI.
+#
+# TOPOLOJİ: internet → yönlendirici NAT (443, gerekirse 80) → Caddy → Web 3002 / API 8080.
+# Tünel YOKTUR. Caddy'ye **doğrudan istemci** bağlanır; TLS burada sonlanır.
+#
+# ============================================================================================
+# NEDEN AYRI ŞABLON — `Caddyfile.template` (tünel modu) BU MODDA KULLANILAMAZ (kusur Ş-4)
+# --------------------------------------------------------------------------------------------
+# Tünel şablonu, istemci adresini `CF-Connecting-IP` başlığından okur. O şablonun geçerlilik
+# koşulu, kendi yorumunda da yazdığı gibi, "Caddy'ye yalnız tünel istemcisi bağlanır,
+# dışarıdan doğrudan erişim yoktur" varsayımıdır. DOĞRUDAN MODDA BU VARSAYIM DÜŞER:
+# istemci başlığı kendisi gönderebilir. O şablon doğrudan modda kullanılırsa saldırgan
+# her istekte farklı bir `CF-Connecting-IP` göndererek public intake IP hız sınırını
+# (`PUBLIC_INTAKE_IP_RATE_LIMIT_MAX`) tamamen ETKİSİZ kılar ve `sourceMeta.ipHash` kirlenir.
+#
+# Bu şablonda istemci adresi YALNIZ TCP eş adresinden (`{remote_host}`) alınır; istemcinin
+# gönderdiği `CF-Connecting-IP` ve `X-Forwarded-For` başlıkları arka uca İLETİLMEZ.
+# Ölçüm: `scripts/edge-direct-mode-probe.ps1`.
+# ============================================================================================
+#
+# Parametreler (ortam değişkeni):
+#   PUBLIC_HOST   zorunlu — yayınlanacak ad (ör. form.<alan-adı>); ACME sertifikası bu ada alınır
+#   WEB_UPSTREAM  varsayılan 127.0.0.1:3002
+#   API_UPSTREAM  varsayılan 127.0.0.1:8080
+#
+# SERTİFİKA: `PUBLIC_HOST` TEK ADLIDIR, wildcard DEĞİLDİR → DNS-01 gerekmez.
+#   - 80 ve 443 açıksa: Caddy HTTP-01 kullanır (varsayılan).
+#   - 80 KAPALI, 443 açıksa: aşağıdaki `tls` bloğundaki `disable_http_challenge` satırını açın;
+#     Caddy TLS-ALPN-01 ile 443 üzerinden doğrular. 80'e ihtiyaç kalmaz.
+#   Her iki durumda da Turhost'taki wildcard sertifikaya DOKUNULMAZ.
+
+{
+	# Doğrudan modda otomatik HTTPS AÇIK bırakılır (tünel şablonundaki `auto_https off` BURADA YOK).
+	admin off
+}
+
+{$PUBLIC_HOST} {
+	# 80 KAPALI ise bu bloğu açın (TLS-ALPN-01; 443 üzerinden doğrulama):
+	# tls {
+	# 	issuer acme {
+	# 		disable_http_challenge
+	# 	}
+	# }
+
+	@deny path_regexp deny ^/api/portal/admin(/|$)
+
+	@web_get {
+		method GET
+		path_regexp web ^/(intake/[^/]+|portal(/(login|forgot-password|reset-password|cases|documents|financial-disclosures|messages|poas|profile))?|portal/cases/[^/]+|_next/.+|favicon\.ico)$
+	}
+	@api_get {
+		method GET
+		path_regexp aget ^/api/(public/intake/[^/]+|portal/(cases|cases/[^/]+|financial-disclosures|financial-disclosures/history|financial-disclosures/[^/]+|poas|notifications|notifications/unread-count|documents|documents/[^/]+/download|messages|messages/unread-count))$
+	}
+	@api_post {
+		method POST
+		path_regexp apost ^/api/(public/intake/[^/]+|portal/(login|forgot-password|reset-password|change-password|notifications/[^/]+/read|notifications/read-all|messages|messages/mark-read|documents/upload))$
+	}
+	@api_delete {
+		method DELETE
+		path_regexp adel ^/api/portal/documents/[^/]+$
+	}
+
+	# Tek karar zinciri — sıra yazım sırasıdır.
+	route {
+		# 1) Personel yönetim uçları portal ön ekinde olsa bile REDDEDİLİR.
+		respond @deny 403
+
+		# 2) İSTEMCİ ADRESİ — YALNIZ TCP eş adresi. Hiçbir istek başlığına GÜVENİLMEZ (Ş-4).
+		vars client_real_ip {remote_host}
+
+		# 3) Yükleme sınırı: API 10 MB (portal.controller.ts); kenar biraz üstünde tutulur.
+		request_body @api_post {
+			max_size 11MB
+		}
+
+		# 4) İzin listesi — API. İstemcinin gönderdiği X-Forwarded-For ÜZERİNE YAZILIR,
+		# CF-Connecting-IP ise arka uca HİÇ İLETİLMEZ (tünel modu başlığı burada anlamsızdır).
+		reverse_proxy @api_get {$API_UPSTREAM:127.0.0.1:8080} {
+			header_up X-Forwarded-For {vars.client_real_ip}
+			header_up -CF-Connecting-IP
+		}
+		reverse_proxy @api_post {$API_UPSTREAM:127.0.0.1:8080} {
+			header_up X-Forwarded-For {vars.client_real_ip}
+			header_up -CF-Connecting-IP
+		}
+		reverse_proxy @api_delete {$API_UPSTREAM:127.0.0.1:8080} {
+			header_up X-Forwarded-For {vars.client_real_ip}
+			header_up -CF-Connecting-IP
+		}
+
+		# 5) İzin listesi — Web (sayfalar ve /_next varlıkları).
+		reverse_proxy @web_get {$WEB_UPSTREAM:127.0.0.1:3002} {
+			header_up X-Forwarded-For {vars.client_real_ip}
+			header_up -CF-Connecting-IP
+		}
+
+		# 6) VARSAYILAN RET — personel sayfaları, /auth/*, /api/auth/*, diğer tüm uçlar.
+		respond 403
+	}
+}

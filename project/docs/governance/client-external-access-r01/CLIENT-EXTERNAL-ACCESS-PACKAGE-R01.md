@@ -643,7 +643,7 @@ merkezli bir sağlayıcının aralığındadır; dış erişim için kullanılma
 | Gelen port | Açılır (saldırı yüzeyi artar; Caddy varsayılan-ret ile 18 çift dışında her şey 403) | Açılmaz |
 | DDoS emme | Yok | Sağlayıcı kenarında |
 | Zorunlu ücret | **0,00 USD** | 0,00 USD (Free) — ama §14.2 çözümü S-4 seçilirse 200-250 USD/ay |
-| Geri dönüş | `form` A kaydı silinir + NAT kuralı kaldırılır — **dakikalar** | NS geri alınır; delegasyon TTL 86400 → **anında değil** (§15.2) |
+| Geri dönüş | Caddy durdurulur + NAT kuralı kaldırılır → erişim hemen kesilir; `form` kaydı silinir, **ad çözümü TTL süresince önbellekte kalabilir** (sıra: §18.4) | NS geri alınır; delegasyon TTL 86400 → **anında değil** (§15.2) |
 | Kenar kararı (G-4) | Aynı Caddy | Aynı Caddy |
 
 **Ara yol C — ayrı alan adı:** `form.<yeni-alan-adı>` alınıp **yalnız o boş bölge** Cloudflare'a taşınır.
@@ -662,7 +662,7 @@ kaydı ve müvekkilin farklı bir alan adı görmesidir. Alt alanı tek başına
    HTTP-01 ile alır ve kendisi yeniler.
 4. Kenar kararı (18 çift + varsayılan ret + gerçek istemci IP'si) **zaten ölçülmüş ve hazırdır**;
    Yol A'ya geçmek bu işin hiçbirini geçersiz kılmaz.
-5. Geri dönüş tek kayıt ve tek NAT kuralı ile **dakikalar içinde** tamamlanır.
+5. Geri dönüş, sunucu ve yönlendirici tarafında **hemen** kesilir; ad çözümü TTL süresince önbellekte kalabilir (§18.4). Yönlendirme **tek bir cihazda olmayabilir** — ölçülen zincir üç katmanlıdır (§18.1).
 
 **Yol A'nın ölçülmemiş ön koşulları (owner/ISP bilgisi):**
 
@@ -678,3 +678,137 @@ zorunlu hale gelir; o zaman **Yol C** (ayrı alan adı) Yol B'ye tercih edilmeli
 
 **Bu bölümde hiçbir canlı değişiklik yapılmamıştır:** DNS kaydı eklenmedi, NAT kuralı yazılmadı,
 Caddy kurulmadı, sertifika talep edilmedi, hesap açılmadı.
+
+## 18. Yol A — koşullu aday hazırlığı (2026-09-25)
+
+> **HÜKÜM SINIRI:** Bu bölüm "statik IP ve gelen erişim doğrulandı" demez. IP'nin statikliği
+> **owner beyanıdır**; gelen erişim **ölçülmemiştir**. Yol A **koşullu adaydır**.
+
+### 18.1 Ağ katmanı — salt okuma ölçümü
+
+| Ölçüm | Sonuç |
+|---|---|
+| Sunucu arayüzü | `10.34.25.53/23`, ağ geçidi `10.34.24.254` |
+| İnternete giden hop zinciri | `10.34.24.254` → **`192.168.0.1`** → **`172.17.1.222`** → genel adresler |
+| Ağ geçidi `10.34.24.254` yönetim portları | 80 **açık**; 443/8080/8443 kapalı |
+| İkinci cihaz `192.168.0.1` | 80 ve 443 **açık** (yönetim arayüzü olabilir) |
+| Üçüncü cihaz `172.17.1.222` | 80/443/8080 **kapalı** — bu sunucudan yönetilemiyor |
+| Sunucuda 80/443 dinleyicisi | **YOK** |
+| Sunucu güvenlik duvarında 80/443 gelen kuralı | **YOK**; üç profil de etkin, varsayılan `NotConfigured` |
+| Dış çıkış adresi | Sabit bir TR adresi *(değer belgeye yazılmaz — depo herkese açıktır)* |
+
+**"Tek NAT kuralı" varsayımı düştü.** Sunucu ile internet arasında **en az üç** yönlendirme katmanı
+vardır. Port yönlendirmesi bunlardan hangisinde (veya kaçında) yapılacağı ölçülmemiştir; `172.17.1.222`
+bu sunucudan yönetilemediği için o katmana erişim owner'da olmayabilir. §17.4'teki "tek NAT kuralı"
+ifadesi bu ölçümle **daraltılmıştır**.
+
+**Çıkarım yapılmayanlar:** PTR'deki `static` ibaresi ve RDAP tahsis tipi **abonelik taahhüdü değildir**;
+IP'nin statikliği owner beyanı olarak kaydedilmiştir, ölçüm olarak değil. Üst NAT (CGNAT) bulunup
+bulunmadığı da **ölçülmemiştir** — hop zinciri özel adresler içerir, ancak hangi katmanın NAT yaptığı
+içeriden görülemez. `ofis.tellihukuk.com` kaydı **korunur**; kullanımı bilinmediği için dokunulmamıştır.
+
+### 18.2 Ş-4 — tünel şablonu doğrudan modda KULLANILAMAZ (kusur, düzeltildi)
+
+Tünel şablonu istemci adresini `CF-Connecting-IP` başlığından okur. Geçerlilik koşulu, kendi yorumunda
+yazdığı gibi, "Caddy'ye yalnız tünel istemcisi bağlanır" varsayımıdır. **Doğrudan modda bu varsayım
+düşer:** başlığı istemcinin kendisi gönderir.
+
+**Ölçülen sonuç (mutasyon):** tünel profili doğrudan modda çalıştırılıp iki farklı sahte
+`CF-Connecting-IP` gönderildiğinde hız sınırı sayacı **bölündü** — yani saldırgan her istekte farklı
+bir değer göndererek `PUBLIC_INTAKE_IP_RATE_LIMIT_MAX` sınırını tamamen etkisiz kılabilirdi.
+
+**Düzeltme:** ayrı profil `templates/Caddyfile.direct.template` — istemci adresi **yalnız TCP eş
+adresinden** alınır, istemcinin gönderdiği `CF-Connecting-IP` arka uca **iletilmez**, `X-Forwarded-For`
+üzerine yazılır.
+
+**Doğrudan mod negatif testi — `scripts/edge-direct-mode-probe.ps1`, PASS 7 / 7, çıkış 0.**
+API tarafı taklit değildir: `express` + `trust proxy = 1` + canlı dist'ten `resolvePublicIntakeClientIp`
++ hız sınırı anahtarının kendisi.
+
+| # | Ölçüt | Gözlem |
+|---|---|---|
+| D-0 | Başlıksız taban | Ürün eş adresi çözer |
+| D-1 | Sahte `CF-Connecting-IP` kimlik değiştiremez | Sayaç **değişmedi** |
+| D-2 | Sahte `X-Forwarded-For` kimlik değiştiremez | Ürünün gördüğü değer eş adres |
+| D-3 | Her istekte farklı sahte başlık sayacı **bölemez** | Üç farklı değer → sayaç **aynı** (kaçış yok) |
+| D-4 | `CF-Connecting-IP` arka uca iletilmez | Arka uçta **yok** |
+| D-5 | Arka uca giden `X-Forwarded-For` tek değer | Tek öğe |
+| M-1 | **Mutasyon:** tünel profili doğrudan modda | Sayaç **bölündü** — kusur gerçek |
+
+**İzin listesi ve yönlendirme regresyonu korundu:** `scripts/edge-probe.ps1 -TemplateName
+Caddyfile.direct.template` → **PASS 9 / 9** (38 izinli çift doğru arka uca, 29 ret, 18
+kodlama/normalizasyon, XFF, admin RET sırası). Tünel profili aynı koşucuda **PASS 8 / 8** ile
+regresyonsuz kaldı. Koşucunun B kapıları artık profile duyarlıdır: tünel profilinde "443 dinlemez +
+auto_https kapalı", doğrudan profilde "site adresi `{$PUBLIC_HOST}` + auto_https **açık** + istemci
+başlığına güvenmez".
+
+**Dinleyici karışıklığı önlendi:** tünelin loopback girişi (`127.0.0.1:8081`) ile doğrudan modun dış TLS
+dinleyicisi ayrı profillerdedir; tek şablonda ortam değişkeniyle karıştırılmaz.
+
+### 18.3 80 ve 443 ayrı değerlendirilir
+
+| Senaryo | Sertifika yolu | Not |
+|---|---|---|
+| 80 ve 443 açık | Caddy **HTTP-01** (varsayılan) | En basit |
+| **80 kapalı, 443 açık** | **TLS-ALPN-01** — şablondaki `tls { issuer acme { disable_http_challenge } }` bloğu açılır | 443 üzerinden doğrulanır; 80'e gerek yok |
+| 443 kapalı | Doğrudan mod uygulanamaz | Tünel ya da ayrı alan adı (§17.3) değerlendirilir |
+
+Her iki sertifika yolu da **tek adlı** sertifika üretir; wildcard olmadığı için DNS-01 gerekmez ve
+Turhost'taki wildcard yenilemesine **dokunmaz** (§14.2).
+
+**Bugünkü başarısız bir port yoklaması ISP engeli SAYILMAZ:** sunucuda dinleyici ve NAT kuralı yoktur,
+dolayısıyla bağlantının reddedilmesi beklenen davranıştır. Bu belirsizlik yalnız §18.5'teki testle kalkar.
+
+### 18.4 Geri dönüş — önce kes, sonra geri al
+
+Sıra bilinçlidir: **erişim önce kesilir ve kesildiği dış ağdan doğrulanır**, ancak ondan sonra bu
+çalışmanın DNS/NAT değişiklikleri geri alınır.
+
+| # | Adım | Doğrulama |
+|---|---|---|
+| 1 | Caddy servisi durdurulur | 443 dinleyicisi 0 |
+| 2 | **Dış ağdan** (mobil veri) `https://<PUBLIC_HOST>` çağrılır | Yanıt **gelmemeli** |
+| 3 | Yönlendirici(ler)de 80/443 yönlendirmesi kaldırılır | Owner ölçümü |
+| 4 | **Dış ağdan** genel adrese doğrudan tekrar denenir | Yanıt **gelmemeli** |
+| 5 | Sunucu güvenlik duvarındaki kurallar kaldırılır | Kural sayısı 0 |
+| 6 | Turhost'ta `form` kaydı silinir | Yetkili sunucudan **NXDOMAIN** ölçülür |
+| 7 | `.env` anahtarları yedekten geri yazılır, API yeniden başlatılır | `.env` sha, dist digest |
+
+**Süre taahhüdü verilmez.** Adım 6'dan sonra ad, TTL süresince çözücülerde **önbellekte kalabilir**;
+bu nedenle kesinti asıl olarak adım 1-3 ile sağlanır, DNS kaydının silinmesi tamamlayıcıdır. "Dakikalar
+içinde kesin dönüş" ifadesi §17.3'ten **kaldırılmıştır**; doğru ifade: *sunucu ve yönlendirici tarafı
+hemen kesilir, ad çözümü önbellek süresince kalabilir.*
+
+### 18.5 Ölçülmemiş ön koşullar ve owner'dan gereken TEK işlem
+
+| # | Ölçülmemiş | Neden ölçülemedi |
+|---|---|---|
+| Ö-1 | Gelen 80/443 dış ağdan sunucuya ulaşıyor mu | Sunucuda dinleyici ve NAT kuralı yok; içeriden ölçülemez |
+| Ö-2 | Port yönlendirmesi hangi katmanda yapılacak | Üç katmanlı zincir; `172.17.1.222` bu sunucudan yönetilemiyor |
+| Ö-3 | IP'nin statikliği | Owner beyanı var; abonelik taahhüdü sağlayıcı kaydıdır |
+
+**Owner'dan gereken tek işlem: hazır erişilebilirlik testini onaylamak ve bir kez koşmak.**
+`scripts/reach-test.ps1` (sha256 `12629F51D43CF4DF55F2368D94865B1C3585103C1A0195241B7BAC9F96FEB41E`)
+üç ölçülmemiş kalemi **tek seferde** kapatır:
+
+- `-Open -Ports 80,443` → güvenlik duvarı kuralı + **tek amaçlı** geçici dinleyici açar, rastgele bir
+  belirteç üretir. **TLS kurmaz, sertifika talep etmez, DNS kaydı oluşturmaz, ürüne ait hiçbir şey
+  yayınlamaz**; yalnız tek test yoluna yanıt verir, diğer her yola 404. Canlı 8080/3002'ye dokunmaz.
+- Owner mobil veriden test adresini çağırır. **Log boşsa** istek sunucuya hiç ulaşmamıştır (yönlendirme
+  eksik ya da üst katman engelliyor); **log doluysa** dış erişim çalışıyordur ve hangi porttan geldiği
+  satırda yazar — yani Ö-1 ve Ö-2 aynı anda ölçülür.
+- `-Close` → dinleyiciyi ve kuralı kaldırır, kalmadığını **ölçerek** doğrular; yönlendirmenin owner
+  tarafından kaldırılması gerektiğini ve sonrasında erişimin kesildiğinin doğrulanmasını hatırlatır.
+- `-Status` salt okumadır ve yönetici hakkı istemez.
+
+Bu betik **yönetici hakkı ister ve canlı değişiklik yapar** (güvenlik duvarı kuralı + geçici dinleyici);
+bu yüzden **owner GO'su olmadan koşulmamıştır ve bu çalışmada koşulmayacaktır**. Yönlendirici tarafındaki
+yönlendirmeyi betik yapamaz; onu owner ekler ve testten hemen sonra kaldırır.
+
+**Test sonucu olumluysa** Yol A uygulanabilir: Turhost'ta tek `form` kaydı + yönlendirme + Caddy
+doğrudan profili. **Log boş çıkarsa** engelin hangi katmanda olduğu owner'ın yönlendirici incelemesiyle
+belirlenir; çözülemezse §17.3'teki Yol C (ayrı alan adı) Yol B'ye tercih edilir — `tellihukuk.com`
+bölgesini ve wildcard sertifikayı hiç riske atmaz.
+
+**Bu bölümde yapılmayanlar:** DNS/NAT/güvenlik duvarı değişikliği, canlı kurulum, sertifika talebi,
+yayın — hiçbiri. H5 ve H1–H8 hizmet kabulü (**0/8**) değişmemiştir.

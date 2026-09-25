@@ -1,3 +1,7 @@
+param(
+  # Hangi profil sinanacak: 'Caddyfile.template' (tunel) veya 'Caddyfile.direct.template' (dogrudan).
+  [string]$TemplateName = 'Caddyfile.template'
+)
 $ErrorActionPreference = 'Stop'
 # =============================================================================
 # IZOLE KENAR PROVASI — CANLIYA DOKUNMAZ.
@@ -17,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 # CIKIS: 0 hepsi PASS · 1 en az bir FAIL · 2 olculemedi (docker/node yok)
 # =============================================================================
 $here     = $PSScriptRoot
-$template = Join-Path (Split-Path $here -Parent) 'templates\Caddyfile.template'
+$template = Join-Path (Split-Path $here -Parent) (Join-Path 'templates' $TemplateName)
 $backends = Join-Path $here 'edge-backends.js'
 $probe    = Join-Path $here 'edge-allowlist-probe.js'
 $image    = 'caddy:2-alpine'
@@ -53,7 +57,14 @@ function Check([string]$id, [string]$desc, [bool]$ok, [string]$gozlem) {
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hy-edge-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $tmp | Out-Null
-Copy-Item $template (Join-Path $tmp 'Caddyfile') -Force
+$src = Get-Content -Raw -LiteralPath $template
+if ($TemplateName -like '*direct*') {
+  # Dogrudan profil gercekte {$PUBLIC_HOST} adresinde 443 dinler ve ACME kullanir. Provada
+  # DIS AGA hicbir sertifika istegi gitmemesi icin adres porta cevrilir ve ACME kapatilir.
+  $src = $src -replace '(?m)^\{\$PUBLIC_HOST\}\s*\{', '{$CADDY_LISTEN::8081} {'
+  if ($src -notmatch 'auto_https off') { $src = $src -replace '(?m)^\{\r?\n', ('{' + [Environment]::NewLine + [char]9 + 'auto_https off' + [Environment]::NewLine) }
+}
+Set-Content -LiteralPath (Join-Path $tmp 'Caddyfile') -Value $src -Encoding UTF8
 
 $nodeProc = $null
 try {
@@ -66,8 +77,24 @@ try {
 
   $srv = $cfg.apps.http.servers.PSObject.Properties | Select-Object -First 1
   $listen = @($srv.Value.listen)
-  Check 'B-1' 'uretilen sunucu 443 DINLEMIYOR (tunel arkasinda ACME/443 olmaz)' (-not ($listen -contains ':443')) ('listen=' + ($listen -join ','))
-  Check 'B-2' 'otomatik HTTPS kapali (auto_https off)' ($null -ne $srv.Value.automatic_https -and $srv.Value.automatic_https.disable -eq $true) ('automatic_https=' + ($srv.Value.automatic_https | ConvertTo-Json -Compress))
+  # B kapilari PROFILE OZGUDUR:
+  #   tunel   : TLS saglayici kenarinda biter -> Caddy 443 dinlemez, auto_https KAPALI olmali.
+  #   dogrudan: TLS burada biter -> gercek kullanimda site adresi {$PUBLIC_HOST} ve ACME ACIK olmali.
+  #             Provada adres porta cevrildigi icin ACME calismaz ve DIS AGA istek GITMEZ;
+  #             bu yuzden dogrudan profilin beklentileri KAYNAK uzerinden olculur.
+  $tplSrc = Get-Content -Raw -LiteralPath $template
+  if ($TemplateName -like '*direct*') {
+    Check 'B-1' 'dogrudan profil site adresi {$PUBLIC_HOST} (ACME bu ada alinir)' ($tplSrc -match [regex]::Escape('{$PUBLIC_HOST} {')) 'site adresi kaynakta dogrulandi'
+    # YORUM satirlari elenir: sablon kendi aciklamasinda `auto_https off` ifadesini ANIYOR.
+    $etkinSatirlar = @(($tplSrc -split "`r?`n") | Where-Object { $_ -notmatch '^\s*#' })
+    $autoOff = @($etkinSatirlar | Where-Object { $_ -match 'auto_https\s+off' })
+    Check 'B-2' 'dogrudan profilde auto_https KAPATILMAMIS (sertifika gerekli)' ($autoOff.Count -eq 0) ('etkin satirlarda auto_https off sayisi=' + $autoOff.Count)
+    Check 'B-3' 'dogrudan profil istemci basligina GUVENMEZ (S-4)' (($tplSrc -notmatch 'vars @cfip') -and ($tplSrc -match 'header_up -CF-Connecting-IP')) 'CF basligi degiskene baglanmiyor ve arka uca iletilmiyor'
+  }
+  else {
+    Check 'B-1' 'uretilen sunucu 443 DINLEMIYOR (tunel arkasinda ACME/443 olmaz)' (-not ($listen -contains ':443')) ('listen=' + ($listen -join ','))
+    Check 'B-2' 'otomatik HTTPS kapali (auto_https off)' ($null -ne $srv.Value.automatic_https -and $srv.Value.automatic_https.disable -eq $true) ('automatic_https=' + ($srv.Value.automatic_https | ConvertTo-Json -Compress))
+  }
 
   # Rota sirasi: deny (admin) rotasi, catch-all RET rotasindan ONCE gelmeli.
   $flat = @()
