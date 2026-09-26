@@ -149,6 +149,7 @@ src/modules/icrabot/__tests__/icrabot-governance-guard.spec.ts
 # enterprise girdisi yoktu -> yuzey CI'da tamamen olculmuyordu.
 src/modules/icrabot/enterprise/__tests__/enterprise-approval-authorization.spec.ts
 src/modules/icrabot/__tests__/icrabot-queue-stats-tenant-scope.spec.ts
+src/modules/icrabot/v28-engine/__tests__/action-handler-lock-cleanup-lifecycle.spec.ts
 src/modules/icrabot/v28-engine/__tests__/action-handler-notification-truth.spec.ts
 src/modules/icrabot/v28-engine/__tests__/factstore-clear-tenant-scope-security.spec.ts
 src/modules/icrabot/v28-engine/__tests__/factstore-tenant-isolation-security.spec.ts

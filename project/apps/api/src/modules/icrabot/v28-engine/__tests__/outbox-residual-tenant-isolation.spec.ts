@@ -15,8 +15,8 @@ const T1: OutboxScope = { kind: 'tenant', tenantId: 't1' };
 const T2: OutboxScope = { kind: 'tenant', tenantId: 't2' };
 const PLATFORM: OutboxScope = { kind: 'platform' };
 
-// ActionHandlerService ctor'u lock-cleanup icin gercek setInterval acar; emsal
-// spec'lerdeki gibi fake timer kullanilir, aksi halde jest process'i kapanmaz.
+// Tarihsel: ActionHandlerService ctor'u eskiden lock-cleanup icin gercek setInterval aciyordu;
+// aralik artik yalniz onApplicationBootstrap'ta baslar. Fake timer savunma amacli korunur.
 beforeAll(() => jest.useFakeTimers());
 afterAll(() => jest.useRealTimers());
 

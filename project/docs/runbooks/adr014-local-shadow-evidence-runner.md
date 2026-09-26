@@ -75,14 +75,29 @@ ENFORCEMENT_PRE_POST, FEE_PRESENT, HIGH_PAYMENT_COUNT, ZERO_INTEREST.
 
 ```bash
 cd project/apps/api
+pnpm exec nest build        # çıkış kodu 0 OLMALI
 ADR014_CANONICAL_SHA=$(git rev-parse HEAD) \
-  npx tsx src/scripts/adr014-local-shadow-evidence-runner.ts \
+  node dist/apps/api/src/scripts/adr014-local-shadow-evidence-runner.js \
     --input evidence/adr014/input/representative-cases.json \
     [--out evidence/adr014/run-<etiket>] \
     [--timeout-ms 30000]
 ```
 
 Girdi dosyası yoksa runner temiz çıkar (fabrikasyon yok).
+
+**`npx tsx` ile ÇALIŞTIRILMAZ.** esbuild decorator metadata (`emitDecoratorMetadata`) üretmez;
+Nest constructor bağımlılıklarını göremez ve bağlam kurulamaz (`DI_FAIL`). `nest build` (tsc)
+metadata'yı üretir. Bağlam kökü `src/scripts/adr014-shadow-evidence-runner.module.ts`'tir:
+`BalanceDisplayShadowDiffModule` + yalnız `AppModule`'ün sağladığı dört global (Config, Storage,
+ErrorLog, MetricsRegistry). Kök bağlantısını `__tests__/adr014-shadow-evidence-runner.module.wiring.spec.ts`
+kilitler.
+
+**Doğal çıkış.** Başarı yolunda süreç kanıt yazıldıktan sonra kendiliğinden `0` ile çıkar; hata
+yolunda `1` ile çıkar. Önceden süreç çıkmıyordu: `icrabot` `ActionHandlerService` constructor'ı ref'li
+bir `setInterval` (lock temizleme, 5 dk) açıyor ve hiç kapatmıyordu (async_hooks ile yaratma yığını
+üzerinden tespit edildi). Aralık artık `onApplicationBootstrap`'ta açılır, `onModuleDestroy`'da
+(`app.close()`) kapanır; bootstrap yarıda düşerse hiç açılmaz. `process.exit` / zorla sonlandırma
+KULLANILMAZ.
 
 ---
 
@@ -91,8 +106,9 @@ Girdi dosyası yoksa runner temiz çıkar (fabrikasyon yok).
 Dört katman:
 
 1. **Bağlantı:** `DATABASE_URL`'e `-c default_transaction_read_only=on -c
-   default_transaction_isolation=repeatable read` options'ı eklenir → Postgres motoru her non-temp
-   write'ı reddeder.
+   default_transaction_isolation=repeatable\ read` options'ı eklenir → Postgres motoru her non-temp
+   write'ı reddeder. (`\ ` zorunlu: Postgres `options`'ı boşluktan böler; kaçışsız değer bağlantıyı
+   `invalid value for parameter "default_transaction_isolation": "repeatable"` ile reddeder.)
 2. **Fail-closed doğrulama:** bootstrap sonrası `SELECT current_setting('transaction_read_only')`
    `'on'` değilse runner HİÇBİR case çalıştırmadan durur.
 3. **Uygulama:** `compare()` zaten `mode: SHADOW_ONLY` / `primaryDisplayUnchanged: true`.
@@ -103,6 +119,17 @@ Dört katman:
 > Not: PostgreSQL read-only transaction'ı geçici (TEMP) tablo yazımına izin verir; runner statik
 > guard'ı hiç TEMP yazımı yapmadığını da kanıtlar, dolayısıyla tek dayanak connection default'u
 > değildir.
+
+**Kapsam sınırı (izole gate DB'de ölçüldü, 2026-09-26):** katman 1 bir bağlantı *varsayılanıdır*,
+yazma *imkânsızlığı* değildir. Aynı URL ile: düz UPDATE ve `$transaction` içinde UPDATE REDDEDİLDİ;
+aynı transaction'da oturum `SET default_transaction_read_only = off` REDDEDİLDİ; `CREATE TEMP TABLE`
+REDDEDİLDİ; ancak **`SET TRANSACTION READ WRITE` + UPDATE İZİN VERİLDİ**. Katman 1 PrismaService'in
+havuzundaki her bağlantıya uygulanır (startup options); katman 2 yalnız sorguyu karşılayan tek havuz
+bağlantısını, tek anda ölçer. Katman 4 yalnız runner + core kaynağını tarar, bağlamdaki modül
+grafiğini TARAMAZ (2026-09-26 itibarıyla `apps/api/src` üretim kaynağında `READ WRITE` isteyen
+çağrı yok — yalnız bir güvenlik spec'inde yasak dize olarak geçiyor). `pg_stat_user_tables` yazma
+sayacının değişmemesi yazma olmadığını gösterir, yazmanın imkânsız olduğunu göstermez. Gerçek
+imkânsızlık yalnız SELECT yetkili bir DB rolüyle sağlanır; bu runbook onu sağlamaz.
 
 ---
 
