@@ -2,7 +2,7 @@ param(
   # Hangi profil sinanacak: 'Caddyfile.template' (tunel) veya 'Caddyfile.direct.template' (dogrudan).
   [string]$TemplateName = 'Caddyfile.template',
   # Istek Host basligi — yardimci fallback origin adi uzerinden de ayni sinirin gecerli oldugunu olcmek icin.
-  [string]$HostHeader = 'form.tellihukuk.com'
+  [string]$HostHeader = 'bilgi.tellihukuk.com'
 )
 $ErrorActionPreference = 'Stop'
 # =============================================================================

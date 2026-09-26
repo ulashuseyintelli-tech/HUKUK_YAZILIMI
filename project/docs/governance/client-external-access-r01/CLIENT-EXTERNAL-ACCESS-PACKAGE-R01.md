@@ -3,6 +3,11 @@
 > **DURUM: HAZIRLIK — CANLIYA UYGULANMADI, YAYIN YAPILMADI.** Bu belge internete açma yetkisi değildir.
 > Alan adı ve sağlayıcı seçimi owner kararıdır; aşağıdaki her yer tutucu parametredir.
 > Teknik sayaç **18/18**, hizmet kabulü **0/8** — bu paket ikisini de değiştirmez.
+>
+> **R05 OWNER KARARI (2026-09-26):** Müvekkile açık web adresi **`https://bilgi.tellihukuk.com`**; önceki
+> `form.tellihukuk.com` önerisinin **yerine** geçer. Gönderen e-posta **`bilgi@tellihukuk.com`** olarak korunur.
+> Aktif plan bölümleri (§3, §6, §13, §14, §19) bu değerle güncellendi; §15, §17 ve §18'deki `form` örnekleri
+> **tarihsel kayıttır**. Çakışma ölçümü: §19.10. Bu karar hesap açma, alan adı satın alma veya yayın yetkisi değildir.
 
 ## 1. Ölçülen engel: canlı web derlemesi API'yi `localhost:8080` çağırıyor
 
@@ -83,7 +88,7 @@ katmanında **ayrıca** reddedilmelidir. Bu, izin listesinin en kritik satırıd
 **Ortak omurga (her iki yolda aynı): YALNIZ loopback'te dinleyen Caddy.**
 
 ```
-internet → Cloudflare kenarı (form.tellihukuk.com)
+internet → Cloudflare kenarı (bilgi.tellihukuk.com)
          → cloudflared (giden 7844; gelen port AÇILMAZ)
          → Caddy 127.0.0.1:8081   ← yol VE yöntem kararının TAMAMI burada, varsayılan RET
          → Web 127.0.0.1:3002 (sayfalar + /_next)  ·  API 127.0.0.1:8080 (global prefix "api")
@@ -366,7 +371,7 @@ Karşılanmış senaryolar yeniden koşulmaz.
 ## 13. Canlı yayından önce owner'dan tek listede istenenler
 
 **Eksik altyapı bilgileri (dış erişim için; R26 teknik yayını için GEREKMEZ):**
-1. ~~Kullanılacak alan adı~~ → **BELLİ: `tellihukuk.com`, yayınlanacak ad `form.tellihukuk.com`** (owner, 2026-09-24).
+1. ~~Kullanılacak alan adı~~ → **BELLİ: `tellihukuk.com`, yayınlanacak ad `bilgi.tellihukuk.com` (R05; önceki öneri `form`)** (owner, 2026-09-24).
 2. ~~DNS yönetimi kimde~~ → **ÖLÇÜLDÜ: Turhost yetkili DNS** (§14). Geriye kalan: **bölgenin tam kayıt dökümü**
    (AXFR reddedildi, otomatik tarama tam envanter sayılmaz) ve **kayıt firması** — NS değişikliği hangi panelden
    yapılıyor.
@@ -383,8 +388,8 @@ Karşılanmış senaryolar yeniden koşulmaz.
 
 ## 14. DNS envanteri — TAM (owner paneli + yetkili sunucu, 2026-09-24)
 
-Alan adı **`tellihukuk.com`**, yayınlanacak ad **`form.tellihukuk.com`** (bugün NXDOMAIN — hiçbir mevcut kaydı
-etkilemez).
+Alan adı **`tellihukuk.com`**, yayınlanacak ad **`bilgi.tellihukuk.com`** (R05; bugün NXDOMAIN — hiçbir mevcut kaydı
+etkilemez, §19.10).
 
 **İki kaynak birleştirildi:** owner'ın Turhost cPanel DNS Yönetimi ekranı (4 sayfa, **36 kayıt**) ad ve tip
 listesini verdi; her kaydın **tam değeri** yetkili sunucudan (`cpns1.turhost.com` = `37.230.110.110`) okundu.
@@ -893,7 +898,7 @@ olarak silinir; mevcut yönlendirmelere dokunulmaz. Sonra dış cihazdan aynı t
 **Bu bölümde yapılmayanlar:** DNS/NAT/güvenlik duvarı değişikliği, canlı kurulum, sertifika talebi, yayın,
 reach-test'in canlı koşumu — hiçbiri. H5 ve H1–H8 hizmet kabulü (**0/8**) değişmemiştir.
 
-## 19. SEÇİLEN YOL — Cloudflare for SaaS özel adı + yardımcı bölge + adlandırılmış tünel (R04, 2026-09-26)
+## 19. SEÇİLEN YOL — Cloudflare for SaaS özel adı + yardımcı bölge + adlandırılmış tünel (R04, R05 — 2026-09-26)
 
 > **DURUM: HAZIRLIK.** Hesap açılmadı, alan adı alınmadı, DNS değiştirilmedi, tünel kurulmadı, `.env`
 > değişmedi, hiçbir hizmet yeniden başlatılmadı. `tellihukuk.com` yetkili DNS'i **Turhost'ta kalır**.
@@ -912,7 +917,7 @@ reach-test'in canlı koşumu — hiçbiri. H5 ve H1–H8 hizmet kabulü (**0/8**
 
 Bu yol **mevcut 80/443 NAT kurallarına, Zyxel'e, pfSense'e ve `10.34.24.205`'e hiç dokunmaz**; tünel giden
 bağlantıdır. `tellihukuk.com` taşınmaz, NS değişmez, wildcard yenilemesi (§14.2) etkilenmez; müvekkil
-yine `form.tellihukuk.com` görür.
+yine `bilgi.tellihukuk.com` görür.
 
 ### 19.2 Önceki rapordaki ifadelerin kanıt sınırına göre düzeltilmesi
 
@@ -947,16 +952,16 @@ Cloudflare for SaaS (100 ad içinde) ve adlandırılmış tüneldir. SaaS + tün
 |---|---|---|---|---|
 | Yardımcı (Cloudflare) | `origin.<yardımcı>` | CNAME, **proxied** | `<TUNNEL_ID>.cfargotunnel.com` | Fallback origin = tünelin public hostname'i |
 | Yardımcı (Cloudflare) | `customers.<yardımcı>` | CNAME, **proxied** | `origin.<yardımcı>` | Müşteri CNAME hedefi (belgedeki `customers.saasprovider.com` kalıbı) |
-| **Turhost** (`tellihukuk.com`) | `form` | CNAME | `customers.<yardımcı>` | **Tek zorunlu Turhost değişikliği**; mevcut 36 kayda dokunulmaz |
-| Turhost *(yalnız ön-doğrulama seçilirse)* | `_cf-custom-hostname.form` | TXT | Cloudflare'ın verdiği değer | [Pre-validation](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/hostname-validation/pre-validation/) |
-| Turhost *(yalnız TXT/delege DCV seçilirse)* | `_acme-challenge.form` | TXT ya da CNAME | Cloudflare'ın verdiği değer | cPanel'in mevcut `_acme-challenge.*` kayıtlarıyla **ad çakışmaz** (`form` altında kayıt yok) |
+| **Turhost** (`tellihukuk.com`) | `bilgi` | CNAME | `customers.<yardımcı>` | **Tek zorunlu Turhost değişikliği**; mevcut 36 kayda dokunulmaz |
+| Turhost *(yalnız ön-doğrulama seçilirse)* | `_cf-custom-hostname.bilgi` | TXT | Cloudflare'ın verdiği değer | [Pre-validation](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/hostname-validation/pre-validation/) |
+| Turhost *(yalnız TXT/delege DCV seçilirse)* | `_acme-challenge.bilgi` | TXT ya da CNAME | Cloudflare'ın verdiği değer | cPanel'in mevcut `_acme-challenge.*` kayıtlarıyla **ad çakışmaz** (`bilgi` altında kayıt yok) |
 
 **Özel ad doğrulaması — önerilen: gerçek zamanlı sahiplik + HTTP DCV (yalnız bir CNAME).**
 Cloudflare belgesi: *"Real-time validation occurs automatically when your customer adds their DNS routing
 record."* ([real-time](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/hostname-validation/realtime-validation/)).
-Belge bu yöntemin *"may cause some downtime"* olabileceğini de yazar; `form` bugün **NXDOMAIN**'dir ve
+Belge bu yöntemin *"may cause some downtime"* olabileceğini de yazar; `bilgi` bugün **NXDOMAIN**'dir ve
 müvekkil trafiği yoktur, bu yüzden bu pencere kimseyi etkilemez. Sertifika için HTTP DCV kullanılabilir,
-çünkü `form` **wildcard değildir** (belge: *"Wildcard custom hostnames require TXT-based validation"*).
+çünkü `bilgi` **wildcard değildir** (belge: *"Wildcard custom hostnames require TXT-based validation"*).
 Alternatif: iki TXT kaydıyla **ön-doğrulama** — sertifika CNAME'den önce aktif olur, bedeli Turhost'ta iki
 ek kayıttır.
 
@@ -964,9 +969,9 @@ ek kayıttır.
 
 | Kesim | TLS | Host / SNI |
 |---|---|---|
-| Müvekkil → Cloudflare kenarı | TLS; sertifika Cloudflare'ın `form` için aldığı (HTTP DCV) | SNI ve Host = `form.tellihukuk.com` |
+| Müvekkil → Cloudflare kenarı | TLS; sertifika Cloudflare'ın `bilgi` için aldığı (HTTP DCV) | SNI ve Host = `bilgi.tellihukuk.com` |
 | Kenar → tünel | Cloudflare tünel bağlantısı (giden 7844) | Özel ad trafiğinin tünele hangi Host ile ulaştığı rehberde **yazmaz** → tasarım bundan bağımsızdır (aşağıda) |
-| `cloudflared` → Caddy | Düz HTTP, `127.0.0.1:8081` | `httpHostHeader` = `form.tellihukuk.com` |
+| `cloudflared` → Caddy | Düz HTTP, `127.0.0.1:8081` | `httpHostHeader` = `bilgi.tellihukuk.com` |
 | Caddy → Web / API | Düz HTTP, `127.0.0.1:3002` / `127.0.0.1:8080` | aynı |
 
 **Tünel ingress eşlemesi** (`templates/cloudflared-config.yml.template`, R03)
@@ -985,7 +990,7 @@ değil Caddy'dedir.
 | Katman | Koşucu | Sonuç |
 |---|---|---|
 | Tünel eşleşmesi | `scripts/tunnel-ingress-probe.ps1` — resmî `cloudflared 2026.9.3` ile `ingress validate` + `ingress rule` (hesap/ağ gerekmez) | **PASS 5 / 5**: yapılandırma geçerli · özel ad ve fallback adı için **admin yolu dahil her yol yalnız Caddy'ye** · yardımcı apex, rastgele ad ve `tellihukuk.com`'un diğer adları **404** · şablonda 8080/3002 **yok** |
-| Caddy kararı | `scripts/edge-probe.ps1 -HostHeader <ad>` — tünel profili, üç Host: `form.tellihukuk.com`, `origin.yardimci.example`, `evil.example` | **Üçünde de PASS 8 / 8**: 38 izin · 29 ret · 18 kodlama · XFF · admin RET sırası — Caddy kararı **Host'tan bağımsız** |
+| Caddy kararı | `scripts/edge-probe.ps1 -HostHeader <ad>` — tünel profili, üç Host: `bilgi.tellihukuk.com`, `origin.yardimci.example`, `evil.example` | **Üçünde de PASS 8 / 8**: 38 izin · 29 ret · 18 kodlama · XFF · admin RET sırası — Caddy kararı **Host'tan bağımsız** |
 
 **Bu ölçümler canlı zincirin kanıtı DEĞİLDİR.** Önceki istemci-IP provası (7/7) ve bu tablo izoledir.
 Kurulumda ayrıca ölçülecekler:
@@ -1032,7 +1037,7 @@ yenilemenin *"at cost"*, kâr payı olmadan faturalandığını söyler; somut `
 | Kolayofis, sayax | Kurulum adımları 80/443 NAT, pfSense, Zyxel ve IIS'e **dokunmaz** → beklenen doğrudan etki yok |
 | `tellihukuk.com` sitesi, e-postası, wildcard sertifika | Yalnız **bir** yeni CNAME eklenir; mevcut 36 kayıt değişmez, NS değişmez |
 | Hukuk uygulaması (iç kullanıcılar) | `.env` değişikliği sonrası kontrollü API yeniden başlatmasında **kısa kesinti** |
-| **Ölçülmemiş dolaylı riskler** | Turhost panelinde yeni kayıt eklerken yanlış satıra dokunma (insan hatası) · cPanel AutoSSL'in `form` adını görmesi (`form` cPanel'de alt alan olarak tanımlı değilse işlemez — ölçülmedi) · pfSense'in giden 7844'ü ileride kısıtlaması · hukuk sunucusunda `cloudflared` + Caddy'nin ek kaynak kullanımı |
+| **Ölçülmemiş dolaylı riskler** | Turhost panelinde yeni kayıt eklerken yanlış satıra dokunma (insan hatası) · cPanel AutoSSL'in `bilgi` adını görmesi (`bilgi` cPanel'de alt alan olarak tanımlı değilse işlemez — ölçülmedi) · pfSense'in giden 7844'ü ileride kısıtlaması · hukuk sunucusunda `cloudflared` + Caddy'nin ek kaynak kullanımı |
 
 ### 19.8 Geri dönüş — ölçmeden kapanış YOK
 
@@ -1041,9 +1046,9 @@ en son ortam kimliği ölçülür.
 
 | # | Adım | Doğrulama |
 |---|---|---|
-| 1 | `cloudflared` servisi durdurulur | **Dış ağdan** (mobil veri) `https://form.tellihukuk.com` → uygulama yanıtı **gelmez** (Cloudflare hata sayfası beklenir). Bu ölçülmeden sonraki adıma geçilmez. |
+| 1 | `cloudflared` servisi durdurulur | **Dış ağdan** (mobil veri) `https://bilgi.tellihukuk.com` → uygulama yanıtı **gelmez** (Cloudflare hata sayfası beklenir). Bu ölçülmeden sonraki adıma geçilmez. |
 | 2 | Cloudflare'da özel ad silinir | Dış ağdan tekrar → uygulama yanıtı yok |
-| 3 | Turhost'ta `form` CNAME (ve varsa iki TXT) silinir | Yetkili sunucudan **NXDOMAIN**; çözücüler TTL süresince önbellekte tutabilir |
+| 3 | Turhost'ta `bilgi` CNAME (ve varsa iki TXT) silinir | Yetkili sunucudan **NXDOMAIN**; çözücüler TTL süresince önbellekte tutabilir |
 | 4 | Caddy durdurulur | `127.0.0.1:8081` dinleyicisi 0 |
 | 5 | `.env` yedeği **hash doğrulamasıyla** geri yazılır | Yedeğin sha256'sı kurulum öncesi kaydedilen değere **eşit** olmalı; geri yazılan `.env`'in sha256'sı taban pine (`7A7228B1…FDDC`) **eşit** olmalı — eşit değilse DUR |
 | 6 | **Kontrollü** API yeniden başlatma | `Stop-ScheduledTask` → 8080 dinleyicisi **0** olana kadar bekle → `Start-ScheduledTask` → 8080'de **tam 1** dinleyici. `Restart-ScheduledTask` bu sunucuda **yoktur**. |
@@ -1054,7 +1059,53 @@ en son ortam kimliği ölçülür.
 
 1. **Uygun, kullanılmayan bir alan adınız var mı?** Varsa adı. Yoksa hangi uzantı (`.com` / `.com.tr`) ve
    hangi kayıt firması (Turhost ya da Cloudflare Registrar).
-2. **Cloudflare hesabınız var mı?** (bilinmiyor)
+2. ~~Cloudflare hesabınız var mı?~~ → **YOK** (owner, 2026-09-26). Kurulumun ilk adımı hesabın **owner
+   tarafından** açılmasıdır; ajan hesap açamaz ve parola giremez. Hesap açmak bu kararla yetkilendirilmiş
+   **değildir**.
 
 Bunlar dışında şablonlar, testler, DNS tablosu ve geri dönüş planı hazırdır. Kurulum ayrı owner GO'su
 ister; H5 ve H1–H8 hizmet kabulü (**0/8**) değişmemiştir.
+
+### 19.10 R05 — `bilgi.tellihukuk.com` çakışma ölçümü (2026-09-26, salt okuma)
+
+**Owner kararı:** müvekkile açık adres `https://bilgi.tellihukuk.com`; gönderen e-posta `bilgi@tellihukuk.com`
+korunur; Cloudflare hesabı **yoktur**.
+
+**DNS — yerel dilden bağımsız ölçüm** (Win32 hata kodu **9003** = NXDOMAIN; Türkçe sistemde ileti
+"DNS adı yok" olarak gelir, metin eşleştirmesi kullanılmadı):
+
+| Ad | cpns1 (yetkili) | cpns2 (yetkili) | 1.1.1.1 |
+|---|---|---|---|
+| `bilgi.tellihukuk.com` | NXDOMAIN | NXDOMAIN | NXDOMAIN |
+| `_acme-challenge.bilgi.tellihukuk.com` | NXDOMAIN | NXDOMAIN | NXDOMAIN |
+| `_cf-custom-hostname.bilgi.tellihukuk.com` | NXDOMAIN | NXDOMAIN | NXDOMAIN |
+| `www.bilgi.tellihukuk.com` | NXDOMAIN | NXDOMAIN | NXDOMAIN |
+| rastgele ad (joker kayıt denetimi) | NXDOMAIN | NXDOMAIN | NXDOMAIN |
+| **Pozitif kontrol** `webmail.tellihukuk.com` | **VAR** | — | — |
+
+Yetkili sunucuda `bilgi` için A, AAAA, CNAME, MX, TXT, SRV, NS **hiçbiri yok**. Bölgede **joker kayıt yoktur**.
+SOA seri numarası `2026090101` — §14 envanterinden (36 kayıt) bu yana bölge **değişmemiştir**; `bilgi` o
+envanterde de yoktu.
+
+**Kullanım — barındırma sunucusunda bu ada bağlı site var mı** (ana sitenin sunucusuna 80 portundan
+`Host` başlığıyla salt okuma istek):
+
+| Host başlığı | Yanıt |
+|---|---|
+| `bilgi.tellihukuk.com` | 200 · 163 bayt · gövde özeti `9278D16E…` |
+| rastgele, var olmayan ad | 200 · 163 bayt · gövde özeti `9278D16E…` — **birebir aynı** |
+| **Pozitif kontrol** `webmail.tellihukuk.com` | 200 · 39.901 bayt · "Webmail Login" — **farklı** |
+
+`bilgi` adı sunucunun **tanımsız ad** yanıtını alıyor; bu ada bağlı bir site **tanımlı değildir**. (cPanel
+yapılandırmasına giriş yapılmadı; sonuç HTTP davranışından çıkarılmıştır.)
+
+**E-posta ile çakışma yoktur — gerekçe:** `bilgi@tellihukuk.com` bir **posta kutusu adıdır**; teslimat
+`tellihukuk.com` alanının MX kaydıyla yapılır (§14: `MX 0 tellihukuk.com`). `bilgi.tellihukuk.com` ise ayrı bir
+**DNS adıdır**. Bu ada eklenecek tek CNAME; MX, SPF (`tellihukuk.com` TXT), DKIM (`default._domainkey`) ve
+DMARC (`_dmarc`) kayıtlarının **hiçbirinin adını paylaşmaz**. CNAME kuralı gereği aynı adda başka kayıt
+bulunmaması gerekir — ölçümle `bilgi` adında **hiç kayıt yoktur**. Uygulamanın `bilgi@tellihukuk.com`'dan
+gönderdiği e-postalardaki bağlantılar `https://bilgi.tellihukuk.com/...` olur; gönderen alanı değişmez.
+
+**Kurulumda üzerine yazılacak kayıt yoktur:** eklenecek adların (`bilgi`, ve seçilirse `_cf-custom-hostname.bilgi`,
+`_acme-challenge.bilgi`) hepsi bugün NXDOMAIN'dir. Kurulum anında bu ölçüm **yeniden** yapılır; o gün bir kayıt
+bulunursa **üzerine yazılmaz**, owner'a bildirilir.

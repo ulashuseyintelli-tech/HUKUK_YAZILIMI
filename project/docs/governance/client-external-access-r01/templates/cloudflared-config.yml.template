@@ -1,7 +1,7 @@
 # CLIENT DIŞ ERİŞİM — giden tünel şablonu (SEÇİLEN YOL, R03). CANLIYA UYGULANMADI.
 #
 # MİMARİ (paket §19): Cloudflare for SaaS özel adı + yardımcı bölge + adlandırılmış tünel.
-#   müvekkil → form.tellihukuk.com (Turhost'ta CNAME → yardımcı bölgedeki SaaS hedefi)
+#   müvekkil → bilgi.tellihukuk.com (Turhost'ta CNAME → yardımcı bölgedeki SaaS hedefi)
 #            → Cloudflare kenarı (özel ad sertifikası burada)
 #            → yardımcı bölgedeki FALLBACK ORIGIN (tünelin public hostname'i)
 #            → cloudflared (giden 7844; gelen port AÇILMAZ; 80/443 NAT'ına DOKUNULMAZ)
@@ -13,7 +13,7 @@
 #
 # Parametreler:
 #   <TUNNEL_ID> · <CREDENTIALS_PATH>
-#   <PUBLIC_HOST>          müvekkilin gördüğü ad (form.tellihukuk.com)
+#   <PUBLIC_HOST>          müvekkilin gördüğü ad (bilgi.tellihukuk.com)
 #   <FALLBACK_ORIGIN_HOST> yardımcı bölgedeki fallback origin adı (ör. origin.<yardımcı-alan>)
 #
 # NEDEN İKİ HOSTNAME KURALI: özel ad trafiğinin tünele hangi Host başlığıyla ulaştığı rehberde
