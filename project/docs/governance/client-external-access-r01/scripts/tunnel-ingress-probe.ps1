@@ -18,7 +18,7 @@
 # CIKIS: 0 hepsi PASS · 1 FAIL · 2 olculemedi
 # =============================================================================
 param(
-  [string]$PublicHost = 'form.tellihukuk.com',
+  [string]$PublicHost = 'bilgi.tellihukuk.com',
   [string]$FallbackHost = 'origin.yardimci.example'
 )
 $ErrorActionPreference = 'Stop'

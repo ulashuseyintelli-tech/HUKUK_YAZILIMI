@@ -6,7 +6,7 @@ const http = require('http');
 const EDGE_PORT = Number(process.argv[2] || 8085);
 // Host basligi: ozel ad, yardimci fallback origin adi ya da rastgele bir ad. Kenar karari Host'a
 // BAKMAMALI — ayni vektorler her Host'ta ayni sonucu vermelidir (paket §19.4).
-const HOST = process.argv[3] || 'form.tellihukuk.com';
+const HOST = process.argv[3] || 'bilgi.tellihukuk.com';
 
 function req(method, path, extraHeaders) {
   return new Promise((resolve) => {

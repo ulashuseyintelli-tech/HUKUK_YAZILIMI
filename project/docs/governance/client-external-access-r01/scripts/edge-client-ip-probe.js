@@ -33,7 +33,7 @@ function req(headers) {
   return new Promise((resolve) => {
     const r = http.request(
       { host: '127.0.0.1', port: EDGE_PORT, method: 'GET', path: '/api/public/intake/TKN123',
-        headers: Object.assign({ host: 'form.tellihukuk.com' }, headers) },
+        headers: Object.assign({ host: 'bilgi.tellihukuk.com' }, headers) },
       (res) => {
         let b = '';
         res.on('data', (c) => { b += c; });
