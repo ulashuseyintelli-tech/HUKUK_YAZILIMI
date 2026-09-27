@@ -29,7 +29,22 @@ const { scrub, addSecret, expectedOriginOf, DISPATCH_ENDPOINT_FORBIDDEN, exitCod
 const RECEIPT_RECORD = 'EXTACC-SETUP-RECEIPT';
 const GO_RE = /^OWNER-GO-CLIENT-EXTACC-\d{8}-R\d{2}$/;
 const num = (name, dflt) => { const n = Number(process.env[name]); return Number.isFinite(n) && n > 0 ? n : dflt; };
-const LOOPBACK_HASHES = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'unknown', ''].map((v) => crypto.createHash('sha256').update(v).digest('hex'));
+// CANLI SÜRELER SABİT (R01 inceleme düzeltmesi): bağlı DB `hukuk_db` ise ortamdan devralınan değerler YOK SAYILIR.
+// İzole testler (disposable DB) kısa süreleri ortamdan verebilir. H5 yardımcıları H5U_* değerlerini process.env'den
+// okuduğu için bunlar da koşum başında bu tablodan YAZILIR.
+const LIVE_PARAMS = Object.freeze({ EXA_LINK_TTL_MS: 30 * 60 * 1000, EXA_WAIT_MS: 25 * 60 * 1000, EXA_POLL_MS: 5000, EXA_CREATE_TIMEOUT_MS: 30000,
+  H5U_REVOKE_TIMEOUT_MS: 30000, H5U_LOCAL_TIMEOUT_MS: 15000, H5U_EXTERNAL_TIMEOUT_MS: 15000 });
+function effectiveParams(env) {
+  const live = dbName(env.AH_DATABASE_URL || '') === 'hukuk_db' || (env.EXA_EXPECT_DB || '') === 'hukuk_db';
+  const p = { live };
+  for (const k of Object.keys(LIVE_PARAMS)) {
+    const v = Number(env[k]);
+    p[k] = live ? LIVE_PARAMS[k] : (Number.isFinite(v) && v > 0 ? v : LIVE_PARAMS[k]);
+  }
+  return p;
+}
+function applyParams(env, p) { for (const k of ['H5U_REVOKE_TIMEOUT_MS', 'H5U_LOCAL_TIMEOUT_MS', 'H5U_EXTERNAL_TIMEOUT_MS']) env[k] = String(p[k]); }
+const LOOPBACK_HASHES =['127.0.0.1', '::1', '::ffff:127.0.0.1', 'unknown', ''].map((v) => crypto.createHash('sha256').update(v).digest('hex'));
 
 // ------------------------------------------------------------------ kapılar
 function commonGates(env) {
@@ -109,6 +124,7 @@ async function runMode() {
   const pw = process.env.EXA_LIVE_LOGIN_PW; const receiptPath = process.env.EXA_RECEIPT; const evid = process.env.EXA_EVID_FILE;
   if (!pw || !receiptPath || !evid) { console.error('REDDEDİLDİ: EXA_LIVE_LOGIN_PW + EXA_RECEIPT + EXA_EVID_FILE gerekli.'); process.exit(2); }
   addSecret(pw); addSecret(process.env.EXA_LIVE_GO_REF); addSecret(process.env.AH_DATABASE_URL);
+  const P = effectiveParams(process.env); applyParams(process.env, P);
 
   // Gösterim kanalı HİÇBİR yazmadan ÖNCE açılır: konsol yoksa koşum başlamaz (token başka kanala düşmesin).
   let con = null;
@@ -118,7 +134,7 @@ async function runMode() {
   const R = new L.Results();
   const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
   const marker = `EXTACC-${runId}`;
-  const out = { record: 'EXTACC-INTAKE-LIVE-RUN', revision: 'R01', runId, apiBase: base, expectedOrigin: origin, marker, calledEndpoints: [] };
+  const out = { record: 'EXTACC-INTAKE-LIVE-RUN', revision: 'R01', runId, apiBase: base, expectedOrigin: origin, marker, params: P, calledEndpoints: [] };
   const expect = { attempted: false, outcome: null, linkId: null };
   let receipt = null; let fatal = null; let session = null; let raw = null; let urlGateOk = false; let linkId = null;
   let before = null; let displayed = false; let rowSeen = false; let stopped = null;
@@ -141,12 +157,12 @@ async function runMode() {
     // GÖNDERİMSİZ oluşturma — 30 dk geçerli, tek kullanım (CreateClientWorkspaceIntakeLinkDto: scope · expiresAt · maxUses).
     const createPath = `${base}/clients/${st.clientId}/cases/${st.caseId}/intake-links`;
     if (DISPATCH_ENDPOINT_FORBIDDEN.some((re) => re.test(createPath))) throw new Error('gönderim yapan uç seçildi — DURDU');
-    const ttl = num('EXA_LINK_TTL_MS', 30 * 60 * 1000); const expiresAt = new Date(Date.now() + ttl).toISOString();
+    const ttl = P.EXA_LINK_TTL_MS; const expiresAt = new Date(Date.now() + ttl).toISOString();
     const attempted = Object.assign({}, receipt, { createAttemptedAt: new Date().toISOString() });
     try { writeJson(receiptPath, attempted); } catch (e) { out.receiptWriteError = errText(e, 160); throw new Error('oluşturma denemesi makbuza işlenemedi — istek GÖNDERİLMEDİ'); }
     receipt = attempted; out.receipt = receipt; expect.attempted = true; expect.outcome = 'uncertain';
     call('POST', createPath);
-    const cr = await L.AH.httpJson('POST', createPath, { token: session.token, body: { scope: ['ADDRESS'], expiresAt, maxUses: 1 }, timeoutMs: num('EXA_CREATE_TIMEOUT_MS', 30000) });
+    const cr = await L.AH.httpJson('POST', createPath, { token: session.token, body: { scope: ['ADDRESS'], expiresAt, maxUses: 1 }, timeoutMs: P.EXA_CREATE_TIMEOUT_MS });
     const d = (cr && cr.body && cr.body.data) || {};
     const url = typeof d.intakeUrl === 'string' ? d.intakeUrl : null;
     raw = typeof d.rawToken === 'string' ? d.rawToken : null; if (raw) addSecret(raw);
@@ -164,17 +180,22 @@ async function runMode() {
       R.check('E-01', 'gönderimsiz uçtan bağlantı üretildi (201 + link id)', true, 'HTTP 201');
       const l = await prisma.clientIntakeLink.findUnique({ where: { id: linkId }, select: { status: true, useCount: true, maxUses: true, expiresAt: true } });
       const skew = l && l.expiresAt ? Math.abs(l.expiresAt.getTime() - Date.parse(expiresAt)) : null;
-      R.check('E-02', 'DB: ACTIVE · useCount 0 · maxUses 1 · expiresAt istenen değer (±2 sn)', !!l && l.status === 'ACTIVE' && l.useCount === 0 && l.maxUses === 1 && skew !== null && skew <= 2000,
+      const e02ok = !!l && l.status === 'ACTIVE' && l.useCount === 0 && l.maxUses === 1 && skew !== null && skew <= 2000;
+      R.check('E-02', 'DB: ACTIVE · useCount 0 · maxUses 1 · expiresAt istenen değer (±2 sn)', e02ok,
         `durum=${l ? l.status : 'YOK'} useCount=${l ? l.useCount : '-'} maxUses=${l ? l.maxUses : '-'} expiresAt sapma ms=${skew}`);
+      // URL kapısı YALNIZ hesaplanır (istek yok): E-02 başarısız olsa da kapanışta iptal sonrası 404 ölçülebilsin.
       let parsed = null; try { parsed = new URL(url); } catch (e) { parsed = null; }
       urlGateOk = !!parsed && url === `${webBase}/intake/${raw}` && parsed.protocol === 'https:' && parsed.origin === origin && parsed.pathname === `/intake/${raw}` && !parsed.search && !parsed.hash && !url.includes('\\');
       R.check('E-URL', 'URL KAPISI: https + beklenen origin + /intake/<token>', urlGateOk, `origin eşit=${parsed ? parsed.origin === origin : false} · https=${parsed ? parsed.protocol === 'https:' : false}`);
-      if (!urlGateOk) stopped = 'URL kapısı geçmedi — adres GÖSTERİLMEDİ';
+      // E-02 DURDURMA KAPISIDIR: bağlantı beklenen biçimde değilse (ör. çok kullanımlık ya da süresiz) adres/QR
+      // GÖSTERİLMEZ, gönderim BEKLENMEZ; finally kapanışı bağlantıyı iptal eder.
+      if (!e02ok) stopped = 'E-02 başarısız — bağlantı beklenen biçimde değil; adres GÖSTERİLMEDİ, gönderim BEKLENMEDİ';
+      else if (!urlGateOk) stopped = 'URL kapısı geçmedi — adres GÖSTERİLMEDİ';
       else {
         call('GET', `${base}/public/intake/<token>`);
-        const loc = await boundedGet(`${base}/public/intake/${raw}`, num('H5U_LOCAL_TIMEOUT_MS', 15000));
+        const loc = await boundedGet(`${base}/public/intake/${raw}`, P.H5U_LOCAL_TIMEOUT_MS);
         call('GET', '<DIŞ>/api/public/intake/<token>');
-        const ext = await boundedGet(`${origin}/api/public/intake/${raw}`, num('H5U_EXTERNAL_TIMEOUT_MS', 15000));
+        const ext = await boundedGet(`${origin}/api/public/intake/${raw}`, P.H5U_EXTERNAL_TIMEOUT_MS);
         const why503 = (r) => (r.status === 503 ? 'HTTP 503 — neden UNKNOWN (bu koşumda ölçülmedi); koşum DURDU' : null);
         if (loc.status === 503 || ext.status === 503) {
           R.unmeasured('E-03L', 'gösterimden önce YEREL public GET 200', why503(loc) || `HTTP ${loc.status}`);
@@ -197,7 +218,7 @@ async function runMode() {
           'Telefonda: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR\'ı okutun ya da adresi açın.',
           'Adres alanına AYNEN şunu yazın ve BİR KEZ gönderin:', `    ${marker} sentetik adres`,
           '', ...qr.lines, '', url, '',
-          `Bekleme: en fazla ${Math.round(num('EXA_WAIT_MS', 25 * 60 * 1000) / 60000)} dk. Gönderim algılanınca ekran temizlenir.`,
+          `Bekleme: en fazla ${Math.round(P.EXA_WAIT_MS / 60000)} dk. Gönderim algılanınca ekran temizlenir.`,
         ]);
         out.qrModules = qr.modules;
       }
@@ -205,7 +226,7 @@ async function runMode() {
       R.check('E-DISP', 'adres yalnız yerel konsola gösterildi (kanıt/log dışı kanal)', true, g.display === 'conout' ? 'CONOUT$' : 'gösterimsiz izole test');
 
       // Owner telefonundan gönderir; betik YALNIZ OKUR.
-      const waitMs = num('EXA_WAIT_MS', 25 * 60 * 1000); const pollMs = num('EXA_POLL_MS', 5000); const t0 = Date.now();
+      const waitMs = P.EXA_WAIT_MS; const pollMs = P.EXA_POLL_MS; const t0 = Date.now();
       for (;;) {
         const n = await prisma.clientIntakeSubmission.count({ where: { intakeLinkId: linkId } });
         if (n > 0) { rowSeen = true; break; }
@@ -319,4 +340,4 @@ if (require.main === module) {
   else if (mode === 'recover') recoverMode();
   else { console.error(`REDDEDİLDİ: bilinmeyen EXA_MODE '${mode}'`); process.exit(1); }
 }
-module.exports = { commonGates, runGates, LOOPBACK_HASHES, RECEIPT_RECORD };
+module.exports = { commonGates, runGates, LOOPBACK_HASHES, RECEIPT_RECORD, LIVE_PARAMS, effectiveParams, applyParams };

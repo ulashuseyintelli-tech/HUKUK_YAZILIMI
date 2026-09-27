@@ -126,11 +126,11 @@ gerçek konsolda (adres gösterimiyle) ayrıca yapılmadı; gösterim modülü C
 ## 10. Dosyalar ve sha256
 
 Owner bloğunda pinli (koşumun yüklediği dosyalar + QR denemesi) — paket digest
-`EF95F7168FC4AEBF3BE6676C37EB6E064C2D9AEC80636B58C21D0503E923530C`:
+`BE1C0F6B2508A0909D0CB4B3EB48CD7500638AC172115E97007B0DD0FE89242E`:
 
 | dosya (`project/docs/governance/` altında) | sha256 |
 |---|---|
-| `client-extacc-intake-chain-r01/scripts/extacc-intake-live-run.js` | `E8E435383EC7FF5033946B2906C8BFA0A4BBAE0AE526E12F6E68D91FCE59CFFC` |
+| `client-extacc-intake-chain-r01/scripts/extacc-intake-live-run.js` | `3DD2270CDFBC9DBE6462075D2C0F122E8B6CC665F909B7BFABB22C3FB0A174A5` |
 | `client-extacc-intake-chain-r01/scripts/extacc-display.js` | `F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867` |
 | `client-extacc-intake-chain-r01/scripts/extacc-qr-test.js` | `61FBCEE86148DEA1B268A1B883F1690ED6F3D4BBD36EAEA29783F24D487B8B10` |
 | `client-extacc-intake-chain-r01/scripts/vendor/qrcode-generator-1.4.4/qrcode.js` | `18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780` |
@@ -144,9 +144,9 @@ Owner ve test araçları:
 
 | dosya | sha256 |
 |---|---|
-| `scripts/extacc-owner-live-block.ps1` | `E3AEE595D0BECCC12C5492E6D106132B22FECEF18CF8D433E4C12C0219C14353` |
-| `scripts/extacc-selftest.js` | `386A5E7D48C00429A23730DED61697C779C700BE544E10D992B63625143B3955` |
-| `scripts/extacc-owner-block-selftest.ps1` | `E8F5C11298B425FED4CB9EF4740ED99ECAD706C6E59FC11DD6F6FF3B74698090` |
+| `scripts/extacc-owner-live-block.ps1` | `55500625BFE10216563C0BE594E072156BABA275284FD8F5A312EEA35CF350FD` |
+| `scripts/extacc-selftest.js` | `71F9124CC2652ED7955CAD3F22EE96660C8BCDDC1A1338331FD0DADDE8EC405C` |
+| `scripts/extacc-owner-block-selftest.ps1` | `2F73B670E68D082F886ECB25EF1989D415F0B6FDA363EC3BA740919FBB9684B0` |
 | `scripts/extacc-console-selftest.ps1` | `FDCDCD2E6AE73A901A1AA58C92C0444961DB0129419CD6C6543A6CB1D7D37B57` |
 | `scripts/extacc-console-probe.js` | `589ECF357281FA5594F986AB43422A966B5E0C06FF76DC7D1135DAB09A0629BB` |
 | `scripts/vendor/qrcode-generator-1.4.4/package.json` | `7D8D2EE82626DF5FA88B21470AB43CBCB99E7AA50DC5757C73670BB7258B8714` |
@@ -161,3 +161,19 @@ genişletildi (davranış aynı); `h5-fake-api.js` gönderimsiz oluşturma gövd
 (`expiresAt`/`maxUses`), public POST ürün mantığıyla eklendi, iptal gecikmesi ve yanlış bağlantı test senaryoları;
 `h5-owner-live-block.ps1` yalnız pin satırı + paket digest (`48FF5E64…04D1`), blok sha `68DC7228C1A8BB560D23B1E9962365CD1171C178229EAE8C2137259A57839C55`.
 H5 canlı kabul kaydı (H5 belgesi §8) koşum anındaki `d72fdaa7` değerlerine dayanır ve değişmez.
+
+## 11. R01 inceleme düzeltmeleri (2026-09-27) — canlı koşum YOK
+
+| # | Bulgu | Düzeltme | Negatif test |
+|---|---|---|---|
+| 1 | E-02 durdurma kapısı değildi: bağımsız incelemede sahte bağımlılıklarla `maxUses=99`, `expiresAt=null` → E-02 FAIL ama adres **1 kez gösterildi** | E-02 başarısızsa adres/QR **gösterilmez**, gönderim **beklenmez**; URL kapısı yalnız hesaplanır (istek yok) ki kapanışta iptal sonrası 404 ölçülebilsin; `finally` kapanışı çalışır | **X16**: E-02 FAIL → gösterim 0, telefon 0, public GET yalnız iptalden SONRA, bağlantı REVOKED, kapanış PASS, çıkış 2. R01 betiğine karşı aynı test: gösterim **evet**, telefon 1, 61 sn bekleme → FAIL (bulgu yeniden üretildi) |
+| 2 | Canlı süreler pencereden devralınan `EXA_LINK_TTL_MS`, `EXA_WAIT_MS`, `EXA_POLL_MS`, `EXA_CREATE_TIMEOUT_MS`, `H5U_*_TIMEOUT_MS` ile değişebiliyordu | Koşum: bağlı DB `hukuk_db` ise (DB adı ya da beyan) süreler **sabit** — 30 dk geçerlilik, 25 dk bekleme, 5 sn yoklama, oluşturma 30 sn, iptal 30 sn, yerel/dış GET 15 sn; `H5U_*` değerleri koşum başında yazılır; etkin değerler kanıtta `params`. Owner bloğu: aynı değerleri `Set-RunEnv` içinde **açıkça** kurar; tablo eksikse koşum başlamaz; değişkenler başta ve sonda temizlenir. İzole testlerin kısa süreleri korunur | **P-1** / **P-2** (koşum), **T-8** (kaynakta doğrudan süre okuması yok), **L-1** (owner bloğu: devralınan `=1` değerleri node'a canlı değerlerle geçer), **L-2** (tablo eksik → node başlamaz) |
+| 3 | Preflight "geçti" diyebiliyordu; Caddy/Cloudflared yalnız bilgi amaçlı ölçülüyordu, 8081'in diğer arayüzleri denetlenmiyordu | `Get-ExternalChainState` 8081'deki **tüm** dinleyicileri ölçer; `Assert-ExternalChain` Preflight ve Run'da **zorunlu**: en az bir `127.0.0.1:8081` dinleyicisi, **başka arayüzde dinleyici yok**, dinleyici pid = HY-Caddy servis pid'i, servis Running, Cloudflared Running. Recover'da **uygulanmaz** (kapanış dış zincir olmadan da yapılabilmeli). Canlı salt okuma ölçümü: 8081 yalnız 127.0.0.1, pid = HY-Caddy servisi, Cloudflared Running | **Z-0…Z-5** (birim), **Z-6** (Run zincir yokken GO sorulmadan durur, defter/node yok), **Z-7** (Preflight'ta kapı "GEÇTİ"den önce), **Z-8** (Recover zincir bozukken de çıkış 0) |
+| 4 | QrTest owner "E" dışında yanıt verse de çıkış 0 veriyordu | Gösterim (makine) ve telefon okuması (owner beyanı) ayrı yazılır; yalnız büyük harf `E` → 0; `H` → 2; diğer/boş/küçük harf → 3; gösterim başarısızsa → DUR | **Q-E / Q-H / Q-? / Q-e / Q-boş / Q-G** |
+
+Owner bloğu mutantları (her biri ilgili testte yakalandı): QrTest her zaman 0 → Q-H/Q-?/Q-e/Q-boş FAIL · canlı süreler kurulmuyor → L-1 FAIL ·
+dış zincir kapısı kaldırıldı → Z-6/Z-7 FAIL.
+
+Sonuçlar (son dosyalar): `extacc-selftest.js` **32/32** · owner bloğu PS 5.1 **42/42**, PS 7.6 **42/42** · konsol **5/5** ·
+H5 regresyonu `h5-url-selftest.js` **47/47**, `h5-pin-selftest.ps1` **8/8**. `h5-fake-api.js`'e yalnız `linkOverride` test senaryosu eklendi.
+H5 canlı kabulü ve telefon D-8 testi tekrarlanmadı.

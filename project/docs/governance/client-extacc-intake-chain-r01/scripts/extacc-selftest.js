@@ -79,7 +79,7 @@ function runScenario(name, dir, sc, over, hooks = {}) {
     let log = ''; let fired = false; const phoneRes = [];
     const onData = async (c) => {
       log += c;
-      if (!fired && /E-DISP/.test(log) && hooks.onDisplay) {
+      if (!fired && /OK\s+E-DISP/.test(log) && hooks.onDisplay) { // yalnız GERÇEK gösterimde (PASS satırı)
         fired = true;
         const sec = await ctl('GET', '/__secrets'); const token = sec.rawTokens[sec.rawTokens.length - 1];
         const rc = fs.existsSync(receipt) ? JSON.parse(fs.readFileSync(receipt, 'utf8')) : null;
@@ -227,6 +227,19 @@ const D3 = ['E-10', 'E-11', 'E-12', 'E-13', 'E-14', 'E-15', 'E-16', 'E-17'];
     const x14 = await runScenario('x14-tls-off', dir, {}, { NODE_TLS_REJECT_UNAUTHORIZED: '0' });
     check('X14', 'TLS doğrulaması kapalıysa durur (1) ve yazmaz', x14.code === 1 && !x14.tenant, `çıkış=${x14.code}`);
 
+    // ---- X16 E-02 DURDURMA KAPISI (inceleme bulgusu): sunucu maxUses=99 ve expiresAt=null yazarsa → E-02 FAIL,
+    // adres GÖSTERİLMEZ, gönderim BEKLENMEZ, finally kapanışı bağlantıyı iptal eder.
+    const t16 = Date.now();
+    const x16 = await runScenario('x16-e02-gate', dir, { linkOverride: true }, { EXA_WAIT_MS: '60000' }, { onDisplay: async () => ({ displayedButShouldNot: true }) });
+    const el16 = Date.now() - t16;
+    const pubGets = x16.calls.map((c, i) => ({ c, i })).filter((x) => x.c.method === 'GET' && /\/public\/intake\//.test(x.c.path));
+    const revIdx = x16.calls.findIndex((c) => /\/revoke$/.test(c.path));
+    check('X16', 'E-02 FAIL (maxUses=99, expiresAt=null) → gösterim 0, bekleme yok, public GET yalnız iptalden SONRA, bağlantı REVOKED, kapanış tamam, çıkış 2',
+      x16.code === 2 && x16.v('E-02') === 'FAIL' && x16.ev && x16.ev.displayed === false && x16.v('E-DISP') !== 'PASS' && x16.phone.length === 0
+        && el16 < 45000 && revIdx >= 0 && pubGets.every((x) => x.i > revIdx) && x16.links.length === 1 && x16.links[0].status === 'REVOKED'
+        && x16.v('U-CLOSE') === 'PASS' && x16.v('U-REV-PUB-L') === 'PASS' && /E-02/.test(x16.ev.stopped || ''),
+      `çıkış=${x16.code} · E-02=${x16.v('E-02')} · gösterildi=${x16.ev && x16.ev.displayed} · telefon=${x16.phone.length} · süre=${Math.round(el16 / 1000)} sn · bağlantı=${x16.links.map((l) => `${l.status}/${l.maxUses}`)}`);
+
     // ---- X15 KONSOLSUZ KOŞUM: EXA_DISPLAY=conout ama konsol yok → HİÇBİR yazmadan çıkış 4 (adres başka kanala düşmez)
     const rid15 = hex8(); const pw15 = 'EXT!' + crypto.randomBytes(12).toString('base64url'); secretsSeen.add(pw15);
     const env15 = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
@@ -274,7 +287,25 @@ const D3 = ['E-10', 'E-11', 'E-12', 'E-13', 'E-14', 'E-15', 'E-16', 'E-17'];
       !!pinOf(w, 'ExpLiveDist') && pinOf(w, 'ExpLiveDist') === pinOf(h5w, 'ExpLiveDist') && pinOf(w, 'ExpEnvSha') === pinOf(h5w, 'ExpEnvSha'),
       `dist=${(pinOf(w, 'ExpLiveDist') || '').slice(0, 12)} env=${(pinOf(w, 'ExpEnvSha') || '').slice(0, 12)}`);
   } else check('T-1', 'owner bloğu mevcut', false, 'yok');
+  // ---- P: CANLI SÜRELER SABİT (inceleme bulgusu) — devralınan değişkenler canlı değerleri DEĞİŞTİREMEZ
+  const EX = require(RUN);
+  const inherited = { EXA_LINK_TTL_MS: '1', EXA_WAIT_MS: '1', EXA_POLL_MS: '1', EXA_CREATE_TIMEOUT_MS: '1', H5U_REVOKE_TIMEOUT_MS: '1', H5U_LOCAL_TIMEOUT_MS: '1', H5U_EXTERNAL_TIMEOUT_MS: '1' };
+  const liveEnv = Object.assign({ AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', EXA_EXPECT_DB: 'hukuk_db' }, inherited);
+  const hasP = typeof EX.effectiveParams === 'function' && typeof EX.applyParams === 'function' && !!EX.LIVE_PARAMS;
+  const pl = hasP ? EX.effectiveParams(liveEnv) : {}; if (hasP) EX.applyParams(liveEnv, pl);
+  const keys = hasP ? Object.keys(EX.LIVE_PARAMS) : ['YOK'];
+  check('P-1', 'canlı DB: devralınan 7 süre değişkeni (=1) YOK SAYILIR → 30 dk geçerlilik, 25 dk bekleme, 5 sn yoklama, belirlenmiş zaman aşımları',
+    hasP && pl.live === true && keys.every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.EXA_LINK_TTL_MS === 1800000 && pl.EXA_WAIT_MS === 1500000
+      && ['H5U_REVOKE_TIMEOUT_MS', 'H5U_LOCAL_TIMEOUT_MS', 'H5U_EXTERNAL_TIMEOUT_MS'].every((k) => liveEnv[k] === String(EX.LIVE_PARAMS[k])),
+    `live=${pl.live} · TTL=${pl.EXA_LINK_TTL_MS} · bekleme=${pl.EXA_WAIT_MS} · yoklama=${pl.EXA_POLL_MS} · H5U ortamı=${liveEnv.H5U_LOCAL_TIMEOUT_MS}/${liveEnv.H5U_EXTERNAL_TIMEOUT_MS}/${liveEnv.H5U_REVOKE_TIMEOUT_MS}`);
+  const liveByUrlOnly = hasP ? EX.effectiveParams(Object.assign({ AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', EXA_EXPECT_DB: 'baska' }, inherited)) : {};
+  const testEnv = !hasP ? {} : EX.effectiveParams(Object.assign({ AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5447/ah_h5_test', EXA_EXPECT_DB: 'ah_h5_test' }, inherited));
+  check('P-2', 'canlılık bağlı DB adından da belirlenir (beyan değişse bile); disposable DB kısa test sürelerini KORUR',
+    liveByUrlOnly.live === true && liveByUrlOnly.EXA_WAIT_MS === 1500000 && testEnv.live === false && testEnv.EXA_WAIT_MS === 1, `urlden=${liveByUrlOnly.live} · test=${testEnv.live}/${testEnv.EXA_WAIT_MS}`);
+
   const src = fs.readFileSync(path.join(HERE, 'extacc-intake-live-run.js'), 'utf8').split('\n').filter((l) => !/^\s*(\*|\/\/)/.test(l)).join('\n');
+  check('T-8', 'koşum süreleri YALNIZ effectiveParams üzerinden (ortamdan doğrudan süre okuması yok) ve runMode başında uygulanır',
+    !/num\('EXA_|num\('H5U_|process\.env\.(EXA_(LINK_TTL|WAIT|POLL|CREATE_TIMEOUT)|H5U_\w+_TIMEOUT)_?MS/.test(src) && /const P = effectiveParams\(process\.env\); applyParams\(process\.env, P\);/.test(src), 'kaynak taraması');
   check('T-6', 'koşum kaynağında public POST ve gönderim yapan uç çağrısı YOK', !/httpJson\('POST',\s*`\$\{[^`]*public\/intake/.test(src) && !/method:\s*'POST'/.test(src) && !/client-intake-links\/case\/\$\{/.test(src), 'kaynak taraması');
 
   console.log('');

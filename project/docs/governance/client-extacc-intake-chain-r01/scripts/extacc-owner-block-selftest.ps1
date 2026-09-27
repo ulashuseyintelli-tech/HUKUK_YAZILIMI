@@ -20,11 +20,15 @@ foreach ($f in $funcs) { . ([scriptblock]::Create($f.Extent.Text)) }
 $secAssign = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$SecretEnv' }, $false))
 if ($secAssign.Count -ne 1) { Write-Host 'OLCULEMEDI: $SecretEnv ataması bulunamadı'; exit 2 }
 . ([scriptblock]::Create($secAssign[0].Extent.Text))
-$need = 'Invoke-RunMode', 'Invoke-RecoverMode', 'Invoke-Node', 'Complete-NodeRc', 'Resolve-NodeExe', 'Assert-FreshEvidence', 'Set-RunEnv',
+$lpAssign = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$LiveParams' }, $false))
+if ($lpAssign.Count -ne 1) { Write-Host 'OLCULEMEDI: $LiveParams ataması bulunamadı'; exit 2 }
+. ([scriptblock]::Create($lpAssign[0].Extent.Text))
+$need = 'Invoke-RunMode', 'Invoke-RecoverMode', 'Invoke-QrTestMode', 'Assert-ExternalChain', 'Get-ExternalChainState', 'Invoke-Node', 'Complete-NodeRc', 'Resolve-NodeExe', 'Assert-FreshEvidence', 'Set-RunEnv',
         'Clear-SecretEnv', 'Read-GoRef', 'Read-Answer', 'Invoke-RepoGit', 'Assert-LocalConsole', 'Confirm-LiveDataProcessing', 'Write-OwnerDeclaration'
 $missing = @($need | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) })
 if ($missing.Count -gt 0) { Write-Host "OLCULEMEDI: wrapper fonksiyonu yok: $($missing -join ',')"; exit 2 }
 $script:RealAssertLocalConsole = ${function:Assert-LocalConsole}
+$src0 = [IO.File]::ReadAllText($wrapper)
 
 $T = Join-Path ([IO.Path]::GetTempPath()) ('extacc-ownerblock-test-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 foreach ($d in 'sc', 'ev', 'rel', 'repo', 'bogus', 'badcmd', 'empty') { New-Item -ItemType Directory -Path (Join-Path $T $d) | Out-Null }
@@ -37,10 +41,12 @@ $marker = Join-Path $T 'node-calls.txt'
 [IO.File]::WriteAllText((Join-Path $Sc 'extacc-intake-live-run.js'), @'
 const fs = require('fs');
 fs.appendFileSync(process.env.EXSTUB_MARKER, JSON.stringify({ mode: process.env.EXA_MODE || null, db: !!process.env.AH_DATABASE_URL,
-  go: !!process.env.EXA_LIVE_GO_REF, receipt: !!process.env.EXA_RECEIPT, display: process.env.EXA_DISPLAY || null }) + '\n');
+  go: !!process.env.EXA_LIVE_GO_REF, receipt: !!process.env.EXA_RECEIPT, display: process.env.EXA_DISPLAY || null,
+  params: ['EXA_LINK_TTL_MS', 'EXA_WAIT_MS', 'EXA_POLL_MS', 'EXA_CREATE_TIMEOUT_MS', 'H5U_REVOKE_TIMEOUT_MS', 'H5U_LOCAL_TIMEOUT_MS', 'H5U_EXTERNAL_TIMEOUT_MS'].map((k) => process.env[k] || null) }) + '\n');
 if (process.env.EXSTUB_WRITE_EVID === '1') fs.writeFileSync(process.env.EXA_EVID_FILE, JSON.stringify({ results: [{ id: 'E-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }] }));
 process.exit(Number(process.env.EXSTUB_RC || 0));
 '@)
+[IO.File]::WriteAllText((Join-Path $Sc 'extacc-qr-test.js'), "process.exit(Number(process.env.EXSTUB_QR_RC || 0));`n")
 $bogusNode = Join-Path $T 'bogus\node.exe'; [IO.File]::WriteAllText($bogusNode, 'bu dosya bir çalıştırılabilir dosya DEĞİLDİR')
 $goneNode  = Join-Path $T 'gone\node.exe'
 [IO.File]::WriteAllText((Join-Path $T 'badcmd\node.cmd'), "@echo merhaba`r`n@exit /b 0`r`n")
@@ -63,11 +69,12 @@ $script:PriorAtNode = $null
 function Set-RunEnv { & $script:RealSetRunEnv @args; Set-PriorZero; $script:PriorAtNode = $global:LASTEXITCODE }
 function Node-Calls { @(if (Test-Path -LiteralPath $marker) { Get-Content -LiteralPath $marker }) }
 $okAnswers = @('E', 'EVET', 'E', 'E', 'E', 'E', '21:30')   # pencere · onay · beyan x4 · saat
-function Invoke-Mode([string]$mode, [string]$nodeExe, [int]$stubRc, [bool]$writeEvid, [string]$receipt = '', [string[]]$answers = $okAnswers, [string]$waitVerdict = 'PASS') {
+$okChain = [pscustomobject]@{ loopbackCount = 1; otherAddresses = ''; loopbackPids = '4242'; caddyServiceState = 'Running'; caddyServicePid = 4242; cloudflaredStatus = 'Running' }
+function Invoke-Mode([string]$mode, [string]$nodeExe, [int]$stubRc, [bool]$writeEvid, [string]$receipt = '', [string[]]$answers = $okAnswers, [string]$waitVerdict = 'PASS', $chain = $okChain) {
   $env:EXSTUB_RC = [string]$stubRc; $env:EXSTUB_WRITE_EVID = $(if ($writeEvid) { '1' } else { '0' }); $env:EXSTUB_WAIT = $waitVerdict
   Set-Answers $answers
   $g = [ordered]@{ head = 'test'; pkg = 'test'; dist = 'test'; envSha = 'test'; apiPid = 0; baseHost = 'example.invalid'
-                   caddyLoopback = $false; cloudflaredRunning = $false; nodeExe = $nodeExe; nodeVersion = 'test' }
+                   caddyLoopback = $true; cloudflaredRunning = $true; chain = $chain; nodeExe = $nodeExe; nodeVersion = 'test' }
   $before = (Node-Calls).Count; $script:LastNodeRc = $null; $script:PriorAtNode = $null
   $ledgerBefore = if (Test-Path -LiteralPath $GoLedger) { @(Get-Content -LiteralPath $GoLedger).Count } else { 0 }
   Set-PriorZero
@@ -131,6 +138,8 @@ try {
   $rcpt = Join-Path $rd 'extacc-setup-receipt.json'
   '{"record":"EXTACC-SETUP-RECEIPT","runId":"0123abcd","tenantId":"t","tenantSlug":"ah-0123abcd","caseId":"c","clientId":"k","elevUserId":"u","elevEmail":"e@example.invalid"}' | Set-Content -LiteralPath $rcpt -Encoding ASCII
   $r = Invoke-Mode 'Recover' $real.Exe 0 $true $rcpt
+  $rz = Invoke-Mode 'Recover' $real.Exe 0 $true $rcpt $okAnswers 'PASS' ([pscustomobject]@{ loopbackCount = 0; otherAddresses = '0.0.0.0'; loopbackPids = ''; caddyServiceState = 'Stopped'; caddyServicePid = 0; cloudflaredStatus = 'Stopped' })
+  Check 'Z-8' 'Recover: dış zincir BOZUKKEN de kapanış yapılabilir (çıkış 0, node koştu)' ($rz.out -eq 0 -and $rz.nodeCalls -eq 1 -and -not $rz.threw) "rc=$($rz.out) · istisna=$($rz.threw)"
   Check 'V-1' 'Recover: node 0 + kanıt → 0; recover modu + makbuz; ortam temiz; defter DEĞİŞMEZ' ($r.out -eq 0 -and $r.nodeCalls -eq 1 -and $r.last.mode -eq 'recover' -and $r.last.receipt -and $r.secretsLeft -eq 0 -and $r.ledgerDelta -eq 0) "rc=$($r.out)"
   $r = Invoke-Mode 'Recover' $real.Exe 6 $true $rcpt
   Check 'V-2' 'Recover: 6 değişmeden' ($r.out -eq 6 -and $r.nodeCalls -eq 1) "rc=$($r.out)"
@@ -138,6 +147,45 @@ try {
   Check 'V-3' 'Recover: kanıt yok → 7' ($r.out -eq 7) "rc=$($r.out)"
   $r = Invoke-Mode 'Recover' $bogusNode 0 $true $rcpt
   Check 'V-4' 'Recover: önceki kod 0 iken node başlatılamaz → 91' ($r.out -eq 91 -and $r.nodeCalls -eq 0 -and $r.prior -eq 0) "rc=$($r.out)"
+
+  # ---- CANLI SÜRELER (inceleme bulgusu): pencereden devralınan değerler canlı süreleri DEĞİŞTİREMEZ
+  foreach ($k in 'EXA_LINK_TTL_MS', 'EXA_WAIT_MS', 'EXA_POLL_MS', 'EXA_CREATE_TIMEOUT_MS', 'H5U_REVOKE_TIMEOUT_MS', 'H5U_LOCAL_TIMEOUT_MS', 'H5U_EXTERNAL_TIMEOUT_MS') { Set-Item -Path "Env:$k" -Value '1' }
+  $script:goN = 70; $r = Invoke-Mode 'Run' $real.Exe 0 $true
+  $exp = @('1800000', '1500000', '5000', '30000', '30000', '15000', '15000')
+  $saved = $LiveParams; $LiveParams = $null; $script:goN = 72
+  $r2 = Invoke-Mode 'Run' $real.Exe 0 $true
+  $LiveParams = $saved
+  Check 'L-2' 'Run: canlı süre tablosu eksikse node BAŞLAMAZ (sessizce devralınan değerlerle koşmaz)' ($r2.threw -like 'EXTACC-DUR:*' -and $r2.threw -match 'süre tablosu' -and $r2.nodeCalls -eq 0) "mesaj=$($r2.threw)"
+  Check 'L-1' 'Run: devralınan 7 süre değişkeni (=1) node''a CANLI değerlerle geçer (30 dk / 25 dk / 5 sn / zaman aşımları) ve sonra temizlenir' (($r.last.params -join ',') -eq ($exp -join ',') -and $r.secretsLeft -eq 0) "node gördü=$($r.last.params -join ',') · kalan=$($r.secretsLeft)"
+
+  # ---- DIŞ ZİNCİR (inceleme bulgusu): doğrulanamazsa Preflight/Run DURUR; Recover engellenmez
+  $bad = @{
+    'Z-1 8081 loopback dinleyicisi yok'            = [pscustomobject]@{ loopbackCount = 0; otherAddresses = ''; loopbackPids = ''; caddyServiceState = 'Running'; caddyServicePid = 4242; cloudflaredStatus = 'Running' }
+    'Z-2 8081 başka arayüzde de dinliyor (0.0.0.0)' = [pscustomobject]@{ loopbackCount = 1; otherAddresses = '0.0.0.0'; loopbackPids = '4242'; caddyServiceState = 'Running'; caddyServicePid = 4242; cloudflaredStatus = 'Running' }
+    'Z-3 dinleyici HY-Caddy servisine ait değil'  = [pscustomobject]@{ loopbackCount = 1; otherAddresses = ''; loopbackPids = '999'; caddyServiceState = 'Running'; caddyServicePid = 4242; cloudflaredStatus = 'Running' }
+    'Z-4 HY-Caddy servisi yok'                     = [pscustomobject]@{ loopbackCount = 1; otherAddresses = ''; loopbackPids = '4242'; caddyServiceState = 'YOK'; caddyServicePid = 0; cloudflaredStatus = 'Running' }
+    'Z-5 Cloudflared durmuş'                       = [pscustomobject]@{ loopbackCount = 1; otherAddresses = ''; loopbackPids = '4242'; caddyServiceState = 'Running'; caddyServicePid = 4242; cloudflaredStatus = 'Stopped' }
+  }
+  foreach ($name in ($bad.Keys | Sort-Object)) {
+    $m = $null; try { Assert-ExternalChain $bad[$name] } catch { $m = $_.Exception.Message }
+    Check ($name.Substring(0, 3)) ("Assert-ExternalChain: " + $name.Substring(4) + ' → DUR') ($m -like 'EXTACC-DUR:*') "mesaj=$m"
+  }
+  $m = 'yok'; try { Assert-ExternalChain $okChain; $m = $null } catch { $m = $_.Exception.Message }
+  Check 'Z-0' 'Assert-ExternalChain: sağlıklı zincir (yalnız loopback, pid = servis, Cloudflared çalışıyor) geçer' ($null -eq $m) "mesaj=$m"
+  $script:goN = 71; $r = Invoke-Mode 'Run' $real.Exe 0 $true '' $okAnswers 'PASS' $bad['Z-5 Cloudflared durmuş']
+  Check 'Z-6' 'Run: dış zincir eksikse GO sorulmadan DURUR; defter yazılmaz; node çağrılmaz' ($r.threw -like 'EXTACC-DUR:*' -and $r.threw -match 'Cloudflared' -and $r.ledgerDelta -eq 0 -and $r.nodeCalls -eq 0) "mesaj=$($r.threw)"
+  $pre = $src0.Substring($src0.IndexOf('if ($Mode -eq ''Preflight'')'))
+  Check 'Z-7' 'Preflight: dış zincir kapısı "PREFLIGHT GEÇTİ" yazısından ÖNCE' ($pre.IndexOf('Assert-ExternalChain $g.chain') -ge 0 -and $pre.IndexOf('Assert-ExternalChain $g.chain') -lt $pre.IndexOf('PREFLIGHT GEÇTİ')) 'sıra'
+
+  # ---- QR DENEMESİ (inceleme bulgusu): yalnız açık "E" başarıdır; gösterim ile telefon okuması ayrı
+  $g0 = [ordered]@{ nodeExe = $real.Exe; chain = $okChain }
+  foreach ($case in @(@('E', 0), @('H', 2), @('?', 3), @('e', 3), @('', 3))) {
+    $env:EXSTUB_QR_RC = '0'; Set-Answers @($case[0])
+    $q = $null; $qt = $null; try { $q = Invoke-QrTestMode $g0 } catch { $qt = $_.Exception.Message }
+    Check ("Q-" + $(if ($case[0] -eq '') { 'boş' } else { $case[0] })) ("QrTest: yanıt [" + $case[0] + "] → çıkış " + $case[1]) ($q -eq $case[1] -and @($q).Count -eq 1) "dönen=$q · istisna=$qt"
+  }
+  $env:EXSTUB_QR_RC = '4'; Set-Answers @('E'); $qt = $null; $q = $null; try { $q = Invoke-QrTestMode $g0 } catch { $qt = $_.Exception.Message }
+  Check 'Q-G' 'QrTest: gösterim başarısızsa (qr 4) owner "E" dese de DURUR (sıfır dışı)' ($qt -like 'EXTACC-DUR:*' -and $null -eq $q) "istisna=$qt"
 
   # ---- statik
   $src = [IO.File]::ReadAllText($wrapper)
@@ -150,7 +198,7 @@ try {
   Check 'S-3' 'Run sırası: konsol → pencere teyidi → canlı veri onayı → GO → defter → node' ($iW -ge 0 -and $iW -lt $iK -and $iK -lt $iG -and $iG -lt $iL -and $iL -lt $iN) "konsol@$iW onay@$iK GO@$iG defter@$iL node@$iN"
 }
 finally {
-  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 

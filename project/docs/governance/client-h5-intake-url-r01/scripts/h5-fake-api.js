@@ -145,7 +145,9 @@ async function apiHandler(req, res) {
     if (!cc) return send(res, 404, { message: 'boundary' });
     const raw = crypto.randomBytes(32).toString('base64url'); secrets.rawTokens.push(raw);
     const writeLink = () => prisma.clientIntakeLink.create({
-      data: { tenantId: u.tenantId, caseId, clientId, tokenHash: crypto.createHash('sha256').update(raw).digest('hex'), status: 'ACTIVE', scope: body.scope, expiresAt: body.expiresAt ? new Date(body.expiresAt) : null, maxUses: body.maxUses ?? 1, createdById: u.id },
+      data: { tenantId: u.tenantId, caseId, clientId, tokenHash: crypto.createHash('sha256').update(raw).digest('hex'), status: 'ACTIVE', scope: body.scope,
+        // linkOverride: YALNIZ negatif test — isteği yok sayıp çok kullanımlık/süresiz bağlantı yazan hatalı sunucuyu taklit eder.
+        expiresAt: scenario.linkOverride ? null : (body.expiresAt ? new Date(body.expiresAt) : null), maxUses: scenario.linkOverride ? 99 : (body.maxUses ?? 1), createdById: u.id },
       select: PUBLIC_SELECT,
     });
     if (scenario.create === 'hold') { heldCreates.push(async () => { await writeLink(); }); return; } // kayıt SONRA, yanıt YOK

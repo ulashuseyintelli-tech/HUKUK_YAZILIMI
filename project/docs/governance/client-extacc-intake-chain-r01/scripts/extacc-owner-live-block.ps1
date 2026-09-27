@@ -33,7 +33,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = 'https://bilgi.tellihukuk.com'                                         # R05 owner kararı
 # Koşumun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-intake-chain-r01\scripts\extacc-intake-live-run.js'                  = 'E8E435383EC7FF5033946B2906C8BFA0A4BBAE0AE526E12F6E68D91FCE59CFFC'
+  'client-extacc-intake-chain-r01\scripts\extacc-intake-live-run.js'                  = '3DD2270CDFBC9DBE6462075D2C0F122E8B6CC665F909B7BFABB22C3FB0A174A5'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\extacc-qr-test.js'                          = '61FBCEE86148DEA1B268A1B883F1690ED6F3D4BBD36EAEA29783F24D487B8B10'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -43,10 +43,15 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'EF95F7168FC4AEBF3BE6676C37EB6E064C2D9AEC80636B58C21D0503E923530C'
+$ExpPackage = 'BE1C0F6B2508A0909D0CB4B3EB48CD7500638AC172115E97007B0DD0FE89242E'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'EXA_LIVE_CONFIRM', 'EXA_RECOVER_CONFIRM', 'EXA_LIVE_GO_REF',
                 'EXA_RUNID', 'EXA_MODE', 'EXA_EXPECT_DB', 'EXA_EXPECT_TENANT_SLUG', 'EXA_API_BASE', 'EXA_EXPECT_API',
-                'EXA_EXPECT_BASE_URL', 'EXA_LIVE_LOGIN_PW', 'EXA_RECEIPT', 'EXA_EVID_FILE', 'EXA_DISPLAY', 'EXA_QRTEST_URL')
+                'EXA_EXPECT_BASE_URL', 'EXA_LIVE_LOGIN_PW', 'EXA_RECEIPT', 'EXA_EVID_FILE', 'EXA_DISPLAY', 'EXA_QRTEST_URL',
+                'EXA_LINK_TTL_MS', 'EXA_WAIT_MS', 'EXA_POLL_MS', 'EXA_CREATE_TIMEOUT_MS',
+                'H5U_REVOKE_TIMEOUT_MS', 'H5U_LOCAL_TIMEOUT_MS', 'H5U_EXTERNAL_TIMEOUT_MS')
+# CANLI SÜRELER — açıkça kurulur; pencereden devralınan değerler başta ve sonda SİLİNİR (koşum da canlı DB'de bunları zorlar).
+$LiveParams = [ordered]@{ EXA_LINK_TTL_MS = '1800000'; EXA_WAIT_MS = '1500000'; EXA_POLL_MS = '5000'; EXA_CREATE_TIMEOUT_MS = '30000'
+                          H5U_REVOKE_TIMEOUT_MS = '30000'; H5U_LOCAL_TIMEOUT_MS = '15000'; H5U_EXTERNAL_TIMEOUT_MS = '15000' }
 $script:LastNodeRc = $null
 
 function Fail([string]$m) { Write-Host "DUR - $m" -ForegroundColor Red; throw "EXTACC-DUR: $m" }
@@ -120,11 +125,33 @@ function Invoke-ReadOnlyGates {
   $launcher = [IO.File]::ReadAllLines('C:\Ops\hukuk\logs\api\launcher.log') | Where-Object { $_ -match 'db identity ok' } | Select-Object -Last 1
   if ($launcher -notmatch 'host=127\.0\.0\.1 port=5432 db=hukuk_db') { Fail 'canlı API DB kimliği beklenmedik' }
   $node = Resolve-NodeExe
-  $caddy = @(Get-NetTCPConnection -State Listen -LocalPort 8081 -ErrorAction SilentlyContinue | Where-Object { $_.LocalAddress -eq '127.0.0.1' })
-  $cfd = @(Get-Service -Name 'Cloudflared' -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Running' })
+  $chain = Get-ExternalChainState
   return [ordered]@{ head = $head; pkg = $gotPkg; dist = $gotDist; distFiles = $n; envSha = $envSha; apiPid = $lis[0].OwningProcess
-                     baseHost = ([uri]$baseUrl).Authority; caddyLoopback = ($caddy.Count -eq 1); cloudflaredRunning = ($cfd.Count -eq 1)
+                     baseHost = ([uri]$baseUrl).Authority; chain = $chain
+                     caddyLoopback = ($chain.loopbackCount -ge 1 -and -not $chain.otherAddresses); cloudflaredRunning = ($chain.cloudflaredStatus -eq 'Running')
                      nodeExe = $node.Exe; nodeVersion = $node.Version }
+}
+# DIŞ ZİNCİR (salt okuma ölçüm): 8081'deki TÜM dinleyiciler (yalnız loopback olmalı), dinleyicinin HY-Caddy servisine
+# ait olması ve Cloudflared servisinin durumu.
+function Get-ExternalChainState {
+  $all = @(Get-NetTCPConnection -State Listen -LocalPort 8081 -ErrorAction SilentlyContinue)
+  $loop = @($all | Where-Object { $_.LocalAddress -eq '127.0.0.1' })
+  $other = @($all | Where-Object { $_.LocalAddress -ne '127.0.0.1' } | ForEach-Object { [string]$_.LocalAddress } | Sort-Object -Unique)
+  $svc = Get-CimInstance Win32_Service -Filter "Name='HY-Caddy'" -ErrorAction SilentlyContinue
+  $cfd = Get-Service -Name 'Cloudflared' -ErrorAction SilentlyContinue
+  return [pscustomobject]@{
+    loopbackCount = $loop.Count; otherAddresses = ($other -join ','); loopbackPids = (@($loop | ForEach-Object { [int]$_.OwningProcess } | Sort-Object -Unique) -join ',')
+    caddyServiceState = $(if ($svc) { [string]$svc.State } else { 'YOK' }); caddyServicePid = $(if ($svc) { [int]$svc.ProcessId } else { 0 })
+    cloudflaredStatus = $(if ($cfd) { [string]$cfd.Status } else { 'YOK' }) }
+}
+# Preflight ve Run için ZORUNLU kapı (Recover için değil: kapanış dış zincir olmadan da yapılabilmeli).
+function Assert-ExternalChain($s) {
+  if (-not $s) { Fail 'dış zincir ölçülemedi' }
+  if ([int]$s.loopbackCount -lt 1) { Fail 'Caddy 127.0.0.1:8081 dinleyicisi YOK' }
+  if ($s.otherAddresses) { Fail "8081 loopback DIŞINDA da dinliyor: $($s.otherAddresses)" }
+  if ($s.caddyServiceState -ne 'Running') { Fail "HY-Caddy servisi çalışmıyor ($($s.caddyServiceState))" }
+  if ([string]$s.loopbackPids -ne [string]$s.caddyServicePid) { Fail "8081 dinleyicisi HY-Caddy servisine ait değil (dinleyici pid=$($s.loopbackPids) servis pid=$($s.caddyServicePid))" }
+  if ($s.cloudflaredStatus -ne 'Running') { Fail "Cloudflared servisi çalışmıyor ($($s.cloudflaredStatus))" }
 }
 # Adres yalnız bu konsola çizilir: çıktısı yönlendirilmiş ya da konsol olmayan bir host reddedilir.
 function Assert-LocalConsole {
@@ -141,6 +168,8 @@ function Set-RunEnv([string]$runId, [string]$evDir) {
   $rb = New-Object byte[] 18; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rb)
   $env:EXA_LIVE_LOGIN_PW = 'EXA!' + [Convert]::ToBase64String($rb).TrimEnd('=').Replace('+', '-').Replace('/', '_'); $rb = $null
   $env:EXA_EVID_FILE = Join-Path $evDir 'extacc-evidence.json'
+  if (-not $LiveParams -or $LiveParams.Count -ne 7) { Fail 'canlı süre tablosu ($LiveParams) eksik — koşum başlamaz' }
+  foreach ($k in $LiveParams.Keys) { Set-Item -Path "Env:$k" -Value $LiveParams[$k] }   # canlı süreler AÇIKÇA
 }
 function Invoke-Node([string]$exe, [string]$script, [string]$logFile) {
   $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
@@ -199,6 +228,7 @@ function Write-OwnerDeclaration([string]$evDir, [string]$runId) {
 # ---------------------------------------------------------------- RUN
 function Invoke-RunMode($g) {
   $rc = 90
+  Assert-ExternalChain $g.chain
   Assert-LocalConsole
   $w = Read-Answer 'Bu pencere uygulamanın Terminal paneli ya da kayıt tutan bir oturum DEĞİL, bağımsız bir PowerShell penceresi mi? (E/H)'
   if ($w -cne 'E') { Fail 'bağımsız pencere teyit edilmedi — adres gösterilmeyecek' }
@@ -291,8 +321,12 @@ function Invoke-QrTestMode($g) {
   if ($rc -ne 0) { Fail "QR denemesi gösterilemedi (çıkış $rc)" }
   $a = Read-Answer 'Telefon QR''ı okudu ve portal GİRİŞ sayfası açıldı mı? (E/H) — giriş YAPMAYIN'
   Clear-OwnerScreen
-  Write-Host ("QR DENEMESİ: owner yanıtı={0} (E değilse canlı koşumdan önce CLIENT'a bildirin)" -f $a)
-  return 0
+  # İki AYRI sonuç: gösterim (makine) ve telefonun okuyabilmesi (owner beyanı). Yalnız açık "E" başarıdır.
+  $read = if ($a -ceq 'E') { 'OKUNDU' } elseif ($a -ceq 'H') { 'OKUNAMADI' } else { 'BELİRSİZ' }
+  $qrc = if ($read -eq 'OKUNDU') { 0 } elseif ($read -eq 'OKUNAMADI') { 2 } else { 3 }
+  Write-Host ("QR DENEMESİ: gösterim=BAŞARILI (makine) · telefon okuma={0} (owner beyanı: [{1}]) · çıkış={2}" -f $read, $a, $qrc) -ForegroundColor $(if ($qrc -eq 0) { 'Green' } else { 'Yellow' })
+  if ($qrc -ne 0) { Write-Host '  QR okunmadı ya da yanıt belirsiz: canlı koşumdan ÖNCE CLIENT''a bildirin.' -ForegroundColor Yellow }
+  return $qrc
 }
 
 # ================================================================ AKIŞ
@@ -303,9 +337,10 @@ try {
   $g = Invoke-ReadOnlyGates
 
   if ($Mode -eq 'Preflight') {
+    Assert-ExternalChain $g.chain
     Write-Host ('PREFLIGHT GEÇTİ (salt okuma; hiçbir şey yazılmadı) · main={0} · paket={1} · dist={2} ({3} dosya) · .env={4} · API pid={5} · base host={6} · node={7}' -f `
       $g.head.Substring(0, 8), $g.pkg.Substring(0, 16), $g.dist.Substring(0, 16), $g.distFiles, $g.envSha.Substring(0, 16), $g.apiPid, $g.baseHost, $g.nodeVersion) -ForegroundColor Green
-    Write-Host ('  dış zincir: Caddy 127.0.0.1:8081={0} · Cloudflared servisi={1}' -f $g.caddyLoopback, $g.cloudflaredRunning)
+    Write-Host ('  dış zincir DOĞRULANDI: 8081 yalnız 127.0.0.1 (dinleyici pid={0} = HY-Caddy servisi) · Cloudflared={1}' -f $g.chain.loopbackPids, $g.chain.cloudflaredStatus)
     $rc = 0
   }
   elseif ($Mode -eq 'QrTest') { $rc = Invoke-QrTestMode $g }
