@@ -2,7 +2,7 @@
 
 > **DURUM (R02, 2026-09-27): `.env` UYGULANDI (owner) · DAR CANLI KABUL KOŞULMADI.** Bu belge owner onayı
 > değildir. Kabul koşumu ayrı owner GO'su ister. H5 için PASS/CLOSED **yazılmamıştır**; hizmet kabulü **0/8**
-> kalır; teknik sayaç **18/18** değişmez. Güncel akış **§6 (R02)**'dedir; §2–§5 tarihsel kayıttır ve §4'teki
+> kalır; teknik sayaç **18/18** değişmez. Güncel akış **§6 (R02)** + düzeltmeler **§7 (R03)**'dedir; §2–§5 tarihsel kayıttır ve §4'teki
 > "gönderim yoktur" iddiası **YANLIŞTIR** (bkz. §6.1).
 
 ## 1. Kusur ve kapsam
@@ -245,7 +245,7 @@ testler kabul betiğinin davranışını gerçek DB durumlarına karşı ölçer
 
 Ürün kodu ve migration değişikliği **yoktur**.
 
-### 6.8 Dosya sha256 (R02)
+### 6.8 Dosya sha256 (R02) — GEÇERSİZ, bkz. §7.5
 
 Koşumun yüklediği dosyalar (owner bloğunda pinli):
 
@@ -268,3 +268,86 @@ Owner ve test araçları (çalıştırmadan önce karşılaştırılır):
 | `scripts/h5-url-selftest.js` | `1005D21FCAFDC80EDB6937014120CEECE6521E53B25711A7B76EDE70C432BC76` |
 | `scripts/h5-url-selftest-reqtree.js` | `2B0C43386A4C0A0943F0968188616F097EEB7B2F7FBC6197B2CC8C3BED3F9AB7` |
 | `scripts/h5-fake-api.js` | `4AECCF8A2EE3A754CC1166ACA017C7120A9CC79A5F33592EED2B93F8BFB589FF` |
+
+## 7. R03 (2026-09-27) — inceleme bulgularının düzeltmesi
+
+> **DURUM:** hazırlık. Canlı Run/Recover **başlatılmadı**. H5 / H1–H8 için PASS/CLOSED iddiası **yoktur**. `.env`,
+> servisler, DNS ve ürün kodu değişmedi. §6.8'deki R02 sha değerleri **geçersizdir**; güncel değerler §7.5'tedir.
+
+### 7.1 F-1 — Gecikmiş bağlantı oluşturma (`h5-url-live-run.js`)
+
+**Kusur (R02):** oluşturma isteği zaman aşımına uğradığında kapanış DB'de kayıt bulamazsa "iptal edilecek bağlantı yok"
+diye U-REV-DB PASS veriyordu. İstek sunucuda sürüyorsa kayıt kapanıştan **sonra** ACTIVE olarak oluşur ve public
+doğrulayıcı Case/kullanıcı durumuna bakmadığı için (ÜB-1) geçerli kalır. Ölçüldü: R02 betiği bu senaryoda çıkış **3**,
+U-REV-DB **PASS** verdi; kayıt ardından ACTIVE oluştu.
+
+**Düzeltme:** oluşturma sonucu sınıflandırılır — `confirmed` (201 + link id), `none` (4xx: sunucu kesin reddetti),
+`uncertain` (zaman aşımı, taşıma hatası, 5xx, eksik yanıt). `uncertain` iken iptal ancak kayıt DB'de **görülürse**
+kanıtlanmış sayılır; kayıt yoksa U-REV-DB FAIL, çıkış **6**, kurtarma gereksinimi korunur. `confirmed` iken yanıttaki
+link id DB'de tek kayıt olarak bulunmalıdır. **Bekleme eklenmedi**: bekleme işlemin tamamlandığının kanıtı değildir.
+Makbuz, oluşturma isteğinden **önce** `createAttemptedAt` ile, sonra (en iyi çaba) `createOutcome`/`createLinkId` ile
+güncellenir; Recover aynı kuralı makbuzdan uygular.
+
+### 7.2 F-2 — Makbuz ve sonuç kanıtı yazma hataları (`h5-url-live-run.js`)
+
+- Makbuz yazılamazsa (ya da oluşturma denemesi makbuza işlenemezse) oturum açma ve oluşturma isteği **gönderilmez**;
+  o ana kadar kurulan sentetik veri yine kapatılır; çıkış 1. Kimlikler sonuç kanıtının `receipt` alanındadır.
+  Makbuz diskte yoksa kurtarma talimatı bunu açıkça yazar.
+- Sonuç kanıtı yazılamazsa çıkış **0 olamaz → 7** (Run ve Recover). İptal (6) ve kapanış (5) hataları önceliğini korur.
+- Öncelik: **6 > 5 > 7 > 1 > 2 > 3 > 0**.
+
+### 7.3 F-3 — Gerçek node çağrısının çıkış kodu (`h5-owner-live-block.ps1`)
+
+- Kapılar node'u doğrular (`Resolve-NodeExe`): PATH'te **çalıştırılabilir dosya** olarak çözülür (fonksiyon/alias
+  gölgesi yok sayılır), `--version` çağrısı sentinel ile ölçülür, çıktı `vX.Y.Z` olmalıdır.
+- `Invoke-Node` node'u **dosya yoluyla** çağırır; çağrıdan önce `$global:LASTEXITCODE = -999`, hemen sonra yakalanır.
+  Başlatma istisnası, Int32 olmayan kod ya da kalan sentinel → **91**. Eski LASTEXITCODE başarı sayılmaz.
+- node 0 döndüyse sonuç kanıtı dosyası bulunmalıdır; yoksa **7** (`Complete-NodeRc`). Kanıt dosyası koşumdan önce
+  varsa blok durur (`Assert-FreshEvidence`; eski dosya silinmez). Recover kanıt dizini adına rastgele ek eklendi
+  (aynı saniyedeki iki Recover aynı dizini paylaşıyordu — öz-test V-3 bu kusuru yakaladı).
+- Run/Recover akışları fonksiyona alındı (`Invoke-RunMode`, `Invoke-RecoverMode`); akışın `catch` bloğu, node
+  koşmuş ve sıfır dışı dönmüşse o kodu korur, aksi halde 90.
+- `$PSNativeCommandUseErrorActionPreference = $false` (PS 7'de yerli sıfır dışı çıkış istisnaya dönmez).
+
+**Dürüst sınır:** R02 gövdesi (`& node …; return $LASTEXITCODE`) geçersiz ya da silinmiş bir node dosyasında istisna
+fırlatıyordu; akışın `catch` bloğu bu durumda 90 verirdi, 0 değil. Eski LASTEXITCODE'un başarı sayıldığı ölçülen durum,
+`node` adının uygulama yerine bir **fonksiyon/alias gölgesine** çözülmesidir: node hiç koşmaz, önceki kod döner
+(öz-test R-7: R02 gövdesiyle node çağrısı 0, dönen kod eski değer).
+
+### 7.4 Doğrulama (canlı DB/API/DNS/tünel ve canlı owner akışı KULLANILMADI)
+
+| Test | Sonuç | Kapsam |
+|---|---|---|
+| `h5-url-selftest.js` | **47/47** | 36 regresyon + T12 gecikmiş oluşturma (koşum 6, Recover-önce 6, serbest bırakma sonrası kayıt ACTIVE, Recover-sonra 0) · T13 makbuz yazılamıyor (login 0, oluşturma 0, kurulum kapatıldı, çıkış 1) · T14 kanıt yazılamıyor → 7 · T15 kanıt + iptal hatası → 6 · T16 Recover kanıt yazılamıyor → 7 |
+| `h5-owner-block-selftest.ps1` PS 5.1 | **27/27** | wrapper'ın GERÇEK fonksiyonları AST ile yüklenir; akış çalışmaz. Önceki kod 0 iken node başlatılamaz/dosya yok → Run ve Recover **91**; kodlar değişmeden taşınır; 0 + kanıt yok → 7; node doğrulaması; gölge `node`; GO tekrar kullanımı; ortam temizliği |
+| `h5-owner-block-selftest.ps1` PS 7.6 | **27/27** | aynı |
+| `h5-pin-selftest.ps1` | **8/8** | canlı pinler (salt okuma) |
+
+Negatif kontroller: T12–T16 R02 (main `f0c3f2b1`) betiğine karşı **39/47** (T12-a/b/c, T13-a/b, T14, T16 FAIL; S-1
+mutant adı nedeniyle). Owner bloğu testi, birebir R02 `Invoke-Node` gövdesiyle **19/27** (PS 5.1 ve PS 7; R-4, R-5,
+R-7, V-4, V-5, I-1, S-1, S-2 FAIL).
+
+### 7.5 Dosya sha256 (R03)
+
+Koşumun yüklediği dosyalar (owner bloğunda pinli):
+
+| dosya (`project/docs/governance/` altında) | sha256 |
+|---|---|
+| `client-h5-intake-url-r01/scripts/h5-url-live-run.js` | `E2D8B2E9236495CEF10F95A778EDFDC4B18EB9AAEC6090936DC847F6A271DA52` |
+| `client-live-acceptance-i13-r01/scripts/i13-lib.js` | `59BA7360F270AB66D0A892659A7569AFF1800D65B49415EF5FAD3B84DFEDD385` |
+| `client-live-acceptance-i12-r01/scripts/i12-live-identity.js` | `9516E462CFFD3B22FD253F556A7F1853C6F021B175075449BD7945CCEF36774F` |
+| `client-acceptance-runners-i3-r01/scripts/i3-lib.js` | `56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3` |
+| `client-acceptance-harness-r01/scripts/ah-lib.js` | `DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7` |
+| **paket digest** | `19EC0A315C42E5F1F5E8DB2398BDC53190179299A666D6F10422A6DE5E3F8B56` |
+
+Owner ve test araçları:
+
+| dosya | sha256 |
+|---|---|
+| `scripts/h5-owner-live-block.ps1` | `43DD4A943A16F882232C9C3F4205FAFC0557BF3CB356C1BF1893D8AEF9F11E30` |
+| `scripts/h5-owner-block-selftest.ps1` | `FCF6229C5A5A7B8037553193948F6C2989C0812B6F786AA9D349226CD9083A86` |
+| `scripts/h5-pin-selftest.ps1` | `5C46011E83E5CE10EB51250746630FC59300666B8D96531ABB85B025311FD423` |
+| `scripts/h5-url-selftest.js` | `FC2EA16A471C237F6394F79FA5A878184199C9445CECA402921D59DC4BF0ACF9` |
+| `scripts/h5-fake-api.js` | `79C908548629D6A8E9C8B798873AC8C3AB531679A15C12616032B1FBE304DA85` |
+| `scripts/h5-url-selftest-reqtree.js` | `2B0C43386A4C0A0943F0968188616F097EEB7B2F7FBC6197B2CC8C3BED3F9AB7` |
+| `scripts/h5-owner-env-block.ps1` (tarihsel) | `E0590FA51D0D5957396CDD49B1A561708E8A0FF3F1E7BE506100578E512A16E5` |
