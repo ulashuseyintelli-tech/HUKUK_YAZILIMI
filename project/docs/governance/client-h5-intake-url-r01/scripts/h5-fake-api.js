@@ -158,7 +158,11 @@ async function apiHandler(req, res) {
     const u = await authUser(req); if (!u) return send(res, 401, { message: 'Unauthorized' });
     if (scenario.revoke === 'fail') return send(res, 500, { message: 'Internal server error' });
     // Geç gönderim yarışı: iptal isteği kabul edildikten sonra DB okunmadan bekle; bu sırada public POST gelebilir.
-    if (scenario.revokeDelayMs) { revokeWaiting++; await new Promise((r) => setTimeout(r, Number(scenario.revokeDelayMs))); revokeWaiting--; }
+    // Süre SINIRLI (1..10000 ms); aralık dışı değer yok sayılır (kaynak tüketimi — CodeQL js/resource-exhaustion).
+    const delayMs = Number(scenario.revokeDelayMs);
+    if (Number.isInteger(delayMs) && delayMs >= 1 && delayMs <= 10000) {
+      revokeWaiting++; await new Promise((r) => setTimeout(r, Math.min(delayMs, 10000))); revokeWaiting--;
+    }
     const l = await prisma.clientIntakeLink.findFirst({ where: { id: m[1], tenantId: u.tenantId }, select: { id: true, status: true } });
     if (!l) return send(res, 404, { message: 'İntake linki bulunamadı' });
     if (l.status !== 'ACTIVE') return send(res, 400, { message: `Yalnız ACTIVE link iptal edilebilir (durum: ${l.status})` });
