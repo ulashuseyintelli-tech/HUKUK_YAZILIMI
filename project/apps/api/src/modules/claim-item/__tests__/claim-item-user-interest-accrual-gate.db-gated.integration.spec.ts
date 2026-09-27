@@ -285,6 +285,58 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
     expect(after.noInterestConfirmedAt).toBeNull();
   });
 
+  it('regresyon (owner 5-A): NO_INTEREST → ACCRUES aktif kayıtta faizsizlik beyanını null yapar; önceki beyan onay kaydından izlenir', async () => {
+    const priorAt = new Date('2026-02-01T00:00:00.000Z');
+    const f = await fixture('ni-accrues', {
+      interestTypeCode: null,
+      interestType: null,
+      interestAccrualStatus: 'NO_INTEREST',
+      noInterestReason: 'Önceki beyan',
+      noInterestConfirmedById: 'prior-actor',
+      noInterestConfirmedAt: priorAt,
+    });
+    const before = await prisma.claimItem.findUniqueOrThrow({ where: { id: f.claimItemId } });
+    const { approvalRequest, proposedPatch, currentSnapshot, after } = await requestAndApprove(f, {
+      ...ACCRUES_BODY,
+      interestTypeCode: 'LEGAL_3095',
+    });
+
+    // Saklanan niyet (kullanıcı + normalizasyon) — sunucu-türetimli zaman damgası yok.
+    expect(proposedPatch).toEqual({
+      ...ACCRUES_BODY,
+      interestTypeCode: 'LEGAL_3095',
+      interestType: 'YASAL',
+      interestRate: null,
+      noInterestReason: null,
+      noInterestConfirmedById: null,
+    });
+    // Senkronun uyguladığı aktif durum: ACCRUES ve üç faizsizlik alanı null.
+    expect(after.interestAccrualStatus).toBe('ACCRUES');
+    expect(after.interestTypeCode).toBe('LEGAL_3095');
+    expect(after.noInterestReason).toBeNull();
+    expect(after.noInterestConfirmedById).toBeNull();
+    expect(after.noInterestConfirmedAt).toBeNull();
+
+    // Tarihsel iz: uygulama denetim kaydı onay talebine bağlanır; talebin değişmez niyet snapshot'ı
+    // önceki beyanı tam değerleriyle taşır (stale-state hash kapısı snapshot == gerçek önceki durum garantisi).
+    const applied = await prisma.auditLog.findMany({
+      where: { tenantId: f.tenantId, entityId: f.claimItemId, action: 'CLAIM_ITEM_HIGH_IMPACT_UPDATE_APPLIED' },
+    });
+    expect(applied).toHaveLength(1);
+    expect((applied[0].metadata as any).approvalRequestId).toBe(approvalRequest.id);
+    expect((applied[0].oldValues as any).recordHash).toEqual(expect.any(String));
+    const history = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: approvalRequest.id } });
+    expect(history.payloadHash).toBe(approvalRequest.payloadHash);
+    expect((history.savedIntent as any).currentSnapshot).toEqual(currentSnapshot);
+    expect(currentSnapshot).toEqual(expect.objectContaining({
+      id: before.id,
+      interestAccrualStatus: 'NO_INTEREST',
+      noInterestReason: 'Önceki beyan',
+      noInterestConfirmedById: 'prior-actor',
+      noInterestConfirmedAt: priorAt.toISOString(),
+    }));
+  });
+
   it('başarı + onay senkronu: ACCRUES → UNKNOWN (tür bilinir; mevcut tür korunur)', async () => {
     const f = await fixture('unknown-typed', {
       interestAccrualStatus: 'ACCRUES',

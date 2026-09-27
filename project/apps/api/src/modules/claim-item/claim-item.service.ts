@@ -220,6 +220,14 @@ export class ClaimItemService {
       updateData.noInterestReason = null;
       updateData.noInterestConfirmedById = null;
       updateData.noInterestConfirmedAt = null;
+    } else if (normalizedPatch.interestAccrualStatus === 'ACCRUES' && this.hasNoInterestDeclaration(existing)) {
+      // Owner kararı 2026-09-28 (5-A): ACCRUES aktif kayıtta faizsizlik beyanı taşımaz; önceki beyan
+      // tarihsel onay kaydında korunur. Bu sistem yolunun onay/denetim kaydı yok: beyanı sessizce silmek
+      // veya ACCRUES yanında bırakmak yerine fail-closed reddedilir (geçiş onaylı kullanıcı yolundadır).
+      throw new ConflictException({
+        code: 'NO_INTEREST_DECLARATION_REQUIRES_APPROVED_TRANSITION',
+        message: 'Faizsizlik beyanı olan kalem yalnız onaylı kullanıcı yolundan ACCRUES yapılabilir.',
+      });
     }
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.referenceNo !== undefined) updateData.referenceNo = dto.referenceNo;
@@ -1194,7 +1202,7 @@ export class ClaimItemService {
   /**
    * `noInterestConfirmedAt` sunucu-türetimli zaman damgasıdır; kullanıcı niyeti veya kapı yükü değildir.
    * Onay senkronu (OfficeApprovalDomainSyncService.buildClaimItemUpdateData) bu değeri yamadan OKUMAZ:
-   * NO_INTEREST → onay anı, UNKNOWN → null olarak kendisi türetir. normalizeInterestPatch'in eklediği
+   * NO_INTEREST → onay anı, UNKNOWN/ACCRUES → null olarak kendisi türetir. normalizeInterestPatch'in eklediği
    * değer yamada kalınca kapının UPDATE alan süzgeci (CLAIM_ITEM_*_USER_FIELDS) UNSUPPORTED_UPDATE_FIELD
    * üretip her ACCRUES/UNKNOWN faiz yamasını reddettiriyordu.
    *
@@ -1212,6 +1220,10 @@ export class ClaimItemService {
     const intentPatch = { ...normalized };
     delete intentPatch.noInterestConfirmedAt;
     return intentPatch;
+  }
+
+  private hasNoInterestDeclaration(item: Record<string, any>): boolean {
+    return item.noInterestReason != null || item.noInterestConfirmedById != null || item.noInterestConfirmedAt != null;
   }
 
   private pickLowImpactUpdateData(patch: ClaimItemPatch): Record<string, unknown> {
