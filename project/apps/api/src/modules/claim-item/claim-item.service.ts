@@ -264,8 +264,9 @@ export class ClaimItemService {
     assertInvoiceClaimItemTypeTransitionAllowed(existing, dto.itemType);
     this.assertUpdateInvariants(existing, dto);
     const currentSnapshot = this.snapshotClaimItem(existing);
-    const proposedPatch = this.normalizePatchForIntent(
-      this.normalizeInterestPatch(patch, existing, actorUserId),
+    const proposedPatch = this.omitServerDerivedInterestFields(
+      patch,
+      this.normalizePatchForIntent(this.normalizeInterestPatch(patch, existing, actorUserId)),
     );
     const gateResult = await this.requireClaimItemWriterRouter().evaluateHuman({
       operation: 'UPDATE',
@@ -1188,6 +1189,29 @@ export class ClaimItemService {
       explicitNoInterest,
     );
     return result;
+  }
+
+  /**
+   * `noInterestConfirmedAt` sunucu-türetimli zaman damgasıdır; kullanıcı niyeti veya kapı yükü değildir.
+   * Onay senkronu (OfficeApprovalDomainSyncService.buildClaimItemUpdateData) bu değeri yamadan OKUMAZ:
+   * NO_INTEREST → onay anı, UNKNOWN → null olarak kendisi türetir. normalizeInterestPatch'in eklediği
+   * değer yamada kalınca kapının UPDATE alan süzgeci (CLAIM_ITEM_*_USER_FIELDS) UNSUPPORTED_UPDATE_FIELD
+   * üretip her ACCRUES/UNKNOWN faiz yamasını reddettiriyordu.
+   *
+   * Yalnız SUNUCUNUN eklediği alan ayrılır: kullanıcı yamasında (userPatch) bulunan alan asla sessizce
+   * silinmez; niyette kalır ve kapı onu UNSUPPORTED_UPDATE_FIELD ile reddeder (ret sözleşmesi korunur).
+   * Kapı politikası GENİŞLETİLMEZ.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemService.updateFromUser() → PUT /claim-items/:id ve SummaryEngineService.updateDemandedAmount().
+   * /// </remarks>
+   */
+  private omitServerDerivedInterestFields(userPatch: ClaimItemPatch, normalized: ClaimItemPatch): ClaimItemPatch {
+    if (Object.prototype.hasOwnProperty.call(userPatch, 'noInterestConfirmedAt')) return normalized;
+    const intentPatch = { ...normalized };
+    delete intentPatch.noInterestConfirmedAt;
+    return intentPatch;
   }
 
   private pickLowImpactUpdateData(patch: ClaimItemPatch): Record<string, unknown> {

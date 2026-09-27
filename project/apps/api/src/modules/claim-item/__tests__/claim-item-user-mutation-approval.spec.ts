@@ -3,7 +3,9 @@ import { OfficeApprovalStatus } from '@prisma/client';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import {
   CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+  CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS,
   CLAIM_ITEM_INTENT_VERSION,
+  CLAIM_ITEM_LOW_IMPACT_USER_FIELDS,
   CLAIM_ITEM_TARGET_TYPE,
 } from '../claim-item-approval.constants';
 import { ClaimItemController } from '../claim-item.controller';
@@ -381,6 +383,22 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
         }),
       }),
     }));
+  });
+
+  it.each([
+    ['ACCRUES', { interestTypeCode: 'LEGAL_3095', interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-01-15T00:00:00.000Z', interestStartDateProvenance: 'DOCUMENT_DUE_DATE' }],
+    ['UNKNOWN sifirlama', { interestAccrualStatus: 'UNKNOWN' }],
+  ])('%s faiz yamasi kapiya yalniz kullanici alan sozlugundeki alanlari tasir (noInterestConfirmedAt sunucu-turetimli)', async (_label, dto) => {
+    const { svc, officeApproval, writerRouter } = makeSvc();
+
+    await svc.updateFromUser('t1', 'requester-u', 'ci-1', dto as any);
+
+    const gatePayload = writerRouter.evaluateHuman.mock.calls[0][0].payload as Record<string, unknown>;
+    const userFields = [...CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS, ...CLAIM_ITEM_LOW_IMPACT_USER_FIELDS] as readonly string[];
+    expect(Object.keys(gatePayload).filter((field) => !userFields.includes(field))).toEqual([]);
+    expect(gatePayload).not.toHaveProperty('noInterestConfirmedAt');
+    const savedIntent = officeApproval.createPendingRequest.mock.calls[0][0].savedIntent;
+    expect(savedIntent.proposedPatch).toEqual(gatePayload);
   });
 
   it('FATURA PRINCIPAL -> TAX_KDV high-impact gecisini approval olusturmadan reddeder', async () => {
