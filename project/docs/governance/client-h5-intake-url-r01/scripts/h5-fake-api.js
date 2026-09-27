@@ -32,6 +32,7 @@ let calls = []; let extCalls = []; let foreignCalls = []; const secrets = { rawT
 // kabul betiği kapanış sorgularını yapıp çıktıktan SONRA yazılır (gecikmiş oluşturma). /__reset bu listeyi SİLMEZ.
 const heldCreates = [];
 let honeypotDrops = 0; let revokeWaiting = 0;
+const REVOKE_DELAY_MS = 3000; // geç gönderim yarışı testi için sabit bekleme
 const mask = (p) => p.replace(/\/intake\/[^/?]+/g, '/intake/<token>');
 
 function send(res, status, obj, headers) {
@@ -158,11 +159,8 @@ async function apiHandler(req, res) {
     const u = await authUser(req); if (!u) return send(res, 401, { message: 'Unauthorized' });
     if (scenario.revoke === 'fail') return send(res, 500, { message: 'Internal server error' });
     // Geç gönderim yarışı: iptal isteği kabul edildikten sonra DB okunmadan bekle; bu sırada public POST gelebilir.
-    // Süre SINIRLI (1..10000 ms); aralık dışı değer yok sayılır (kaynak tüketimi — CodeQL js/resource-exhaustion).
-    const delayMs = Number(scenario.revokeDelayMs);
-    if (Number.isInteger(delayMs) && delayMs >= 1 && delayMs <= 10000) {
-      revokeWaiting++; await new Promise((r) => setTimeout(r, Math.min(delayMs, 10000))); revokeWaiting--;
-    }
+    // Süre SABİT; istekten gelen değer süreyi belirlemez (kaynak tüketimi — CodeQL js/resource-exhaustion).
+    if (scenario.revokeDelay === true) { revokeWaiting++; await new Promise((r) => setTimeout(r, REVOKE_DELAY_MS)); revokeWaiting--; }
     const l = await prisma.clientIntakeLink.findFirst({ where: { id: m[1], tenantId: u.tenantId }, select: { id: true, status: true } });
     if (!l) return send(res, 404, { message: 'İntake linki bulunamadı' });
     if (l.status !== 'ACTIVE') return send(res, 400, { message: `Yalnız ACTIVE link iptal edilebilir (durum: ${l.status})` });

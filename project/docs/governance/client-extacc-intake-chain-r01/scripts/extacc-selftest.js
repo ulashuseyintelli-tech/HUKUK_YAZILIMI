@@ -171,7 +171,7 @@ const D3 = ['E-10', 'E-11', 'E-12', 'E-13', 'E-14', 'E-15', 'E-16', 'E-17'];
     check('X4', 'işaret metni yoksa E-13 FAIL, çıkış 2; kapanış yine tamam', x4.code === 2 && x4.v('E-13') === 'FAIL' && x4.v('E-D9') === 'PASS', `çıkış=${x4.code} · E-13=${x4.v('E-13')}`);
 
     // ---- X6 GEÇ GÖNDERİM YARIŞI: pencere doldu, iptal isteği sunucuda beklerken telefon gönderir → USED; iptal 400
-    const x6 = await runScenario('x6-late-race', dir, { revokeDelayMs: 3000 }, { EXA_WAIT_MS: '1500' }, {
+    const x6 = await runScenario('x6-late-race', dir, { revokeDelay: true }, { EXA_WAIT_MS: '1500' }, {
       onDisplay: async (tok, rc) => {
         for (let i = 0; i < 200; i++) { if ((await ctl('GET', '/__revoke-waiting')).waiting > 0) break; await sleep(50); }
         return phone(tok, `EXTACC-${rc.runId} sentetik adres`);
