@@ -1,7 +1,7 @@
 # H5-URL — B-I11-1 GİDERME PAKETİ (R01): `PUBLIC_INTAKE_BASE_URL` + dar canlı kabul
 
-> **DURUM (R02, 2026-09-27): `.env` UYGULANDI (owner) · DAR CANLI KABUL KOŞULMADI.** Bu belge owner onayı
-> değildir. Kabul koşumu ayrı owner GO'su ister. H5 için PASS/CLOSED **yazılmamıştır**; hizmet kabulü **0/8**
+> **DURUM (2026-09-27): H5-URL DAR CANLI KABUL KOŞULDU — runId `dda5d8c3`, çıkış 0, 13/13 PASS (§8).** Bu yalnız
+> H5-URL dar canlı kabulüdür; H5 hizmet kabulü ya da D-1…D-9 kapanışı DEĞİLDİR. Hizmet kabulü **0/8**
 > kalır; teknik sayaç **18/18** değişmez. Güncel akış **§6 (R02)** + düzeltmeler **§7 (R03)**'dedir; §2–§5 tarihsel kayıttır ve §4'teki
 > "gönderim yoktur" iddiası **YANLIŞTIR** (bkz. §6.1).
 
@@ -351,3 +351,88 @@ Owner ve test araçları:
 | `scripts/h5-fake-api.js` | `79C908548629D6A8E9C8B798873AC8C3AB531679A15C12616032B1FBE304DA85` |
 | `scripts/h5-url-selftest-reqtree.js` | `2B0C43386A4C0A0943F0968188616F097EEB7B2F7FBC6197B2CC8C3BED3F9AB7` |
 | `scripts/h5-owner-env-block.ps1` (tarihsel) | `E0590FA51D0D5957396CDD49B1A561708E8A0FF3F1E7BE506100578E512A16E5` |
+
+## 8. H5-URL DAR CANLI KABUL KAYDI (2026-09-27) — runId `dda5d8c3`
+
+> **Kapsam:** yalnız **H5-URL dar canlı kabul** koşumudur. Hizmet kabulü (H1–H8) **0/8** kalır ve bu kayıt onu
+> artırmaz; D-1…D-9 dış erişim kabul zincirinin (`client-external-access-r01` §7) hiçbir halkasını **kapatmaz** (§8.5).
+> Owner GO'su ile tek seferlik koşuldu; GO literali hiçbir dosyaya yazılmadı (yalnız sha256'sı yerel GO defterinde).
+
+### 8.1 Koşum kimliği
+
+| Alan | Değer |
+|---|---|
+| runId | `dda5d8c3` |
+| Paket revizyonu | R03 (`record=H5-URL-LIVE-RUN`, `revision=R03`) |
+| Koşum anındaki main | `d72fdaa7416a52f4a092fc405d526bd912cab9c7` |
+| Owner bloğu sha256 | `43DD4A943A16F882232C9C3F4205FAFC0557BF3CB356C1BF1893D8AEF9F11E30` |
+| Paket digest (kapıda ölçülen) | `19EC0A315C42E5F1F5E8DB2398BDC53190179299A666D6F10422A6DE5E3F8B56` |
+| Canlı dist / `.env` (kapıda ölçülen) | `A8B17A38…53A0` / `5C776BBE…908D` |
+| Çıkış kodu | **0** |
+| Ölçüt özeti | **13/13 PASS** · FAIL 0 · ÖLÇÜLEMEYEN 0 |
+| Kurtarma | gerekmedi (`recovery.gerekli=false`); Recover koşulmadı |
+
+### 8.2 Ölçütler
+
+| Ölçüt | Sonuç | Gözlem |
+|---|---|---|
+| U-00 | PASS | elev1 ADMIN değil; yetki PARTNER bağından |
+| U-01 | PASS | `intakeUrl` mutlak, `https`, host `bilgi.tellihukuk.com` |
+| U-02 | PASS | `intakeUrl` = `https://bilgi.tellihukuk.com/intake/<ham token>` |
+| U-URL | PASS | beklenen origin + `https` + `/intake/<token>` |
+| U-03a | PASS | DIŞ HTTPS sayfa 200 |
+| U-03b-L | PASS | YEREL API `/public/intake/<token>` 200 |
+| U-03b-D | PASS | DIŞ HTTPS API `/api/public/intake/<token>` 200 |
+| U-04 | PASS | okuma ucunda ham token yok |
+| U-REV-DB | PASS | bu koşumun tek bağlantısı ACTIVE → **REVOKED** (yetkili iptal ucu 201); oluşturma sonucu `confirmed` ve DB kaydıyla kanıtlı; yabancı sentetik tenantta bağlantı 0 |
+| U-REV-PUB-L | PASS | iptal sonrası YEREL public API aynı token için **404** |
+| U-REV-PUB-D | PASS | iptal sonrası DIŞ HTTPS public API aynı token için **404** |
+| U-CLOSE | PASS | iki sentetik tenantta aktif kullanıcı 0 (tokenVersion++); dosya **CLOSED** (1 dosya bu koşumda kapatıldı), aktif dosya 0 |
+| U-ISO | PASS | bkz. §8.3 |
+
+Bağlantı gönderimsiz uçtan üretildi (`POST /clients/:clientId/cases/:caseId/intake-links`, HTTP 201). Gönderim yapan
+uçlar çağrılmadı (`dispatchEndpointCalled=false`); **e-posta/SMS gönderimi ve public form POST'u yoktur**. Çağrılan uçlar:
+login · gönderimsiz oluşturma · dış sayfa GET · yerel ve dış public GET · okuma GET · iptal POST.
+
+### 8.3 İzolasyon — sınırı
+
+29 sentetik olmayan tenantta, tenant başına kullanıcı ve müvekkil kayıt sayıları önce/sonra aynı (özet `5a03064f8481ea4b`).
+
+Bu ölçüm **yalnız sayı dağılımıdır**. Hiç ekleme veya silme yapılmadığı (sayıyı koruyan ekleme+silme bu ölçümle
+ayırt edilemez), kayıt içeriklerinin ya da diğer tabloların değişmediği sonucu **çıkarılamaz**.
+
+### 8.4 Kanıt
+
+Kanıt yerel CLIENT kanıt kökünde, `h5url-live-dda5d8c3-20260927-200318` dizinindedir; repoya **konmadı** (ham kanıt
+kamuya açık repoda tutulmaz). Kanıt salt okuma incelendi, değiştirilmedi.
+
+| dosya | sha256 |
+|---|---|
+| `goref-consumed.json` | `294E2FDC05F762BC86D614A18D2D317170F67918E4E7D093BB85C210D947D4AD` |
+| `h5url-evidence.json` | `B294819AB40785AA8015BE41A9321F1E9BAC49FA2764135EDD5A55BCC5683F9F` |
+| `h5url-run.log` | `7958BAE3EDAD46372B010BCF898F22B486D9342C3B28DCB4A639B39E496BAEDD` |
+| `h5url-setup-receipt.json` | `DB1CBBA5B0262DB7F3142834A25FD1BE7E8F51BBE5E91A6D7680546B816527DD` |
+| `owner-block.json` | `AF47B6E68C583719C74F890A07C581A1AD7B713D39F3462EE6491139767721B3` |
+| `SHA256-MANIFEST.txt` | `67FFC6620F913F4C33536F9CE5401B8C9FF41C637E1B88CD3FD93CA35DD71772` |
+
+Manifest doğrulaması **5/5** eşit; manifestte olmayan ya da eksik dosya yok. Altı dosyada ham token, Authorization/
+Bearer, DB bağlantı dizesi, GO literali ve parola öneki taraması: eşleşme **0**. GO defteri tek satır ve tüketim
+kaydının sha256'sıyla eşit; `literalWritten=false`.
+
+### 8.5 D-1…D-9 eşleştirmesi (bu kayıt hiçbir halkayı KAPATMAZ)
+
+D-zinciri `client-external-access-r01` §7'de tanımlıdır ve **hedef ağdan (mobil veri)** koşulur. H5 koşumunun dış
+istekleri canlı sunucunun kendisinden, genel DNS üzerinden `bilgi.tellihukuk.com`'a gönderildi (HTTP durum kodu
+ölçümü; tarayıcı değil). §10'daki D-1…D-9 PASS tablosu **izole provadır**, canlı kanıt değildir.
+
+| Halka | Durum | Dayanak / eksik |
+|---|---|---|
+| D-1 intake bağlantısı dış cihazdan açılır | **kısmen kanıtlı** | U-03a dış HTTPS sayfa 200 ve U-03b-D dış API 200 gerçek genel host üzerinden. Eksik: dış cihaz/hedef ağ, tarayıcıda sayfanın açılıp formun görünmesi |
+| D-2 form gönderilir | **ölçülmedi** | public POST bilinçli olarak yapılmadı |
+| D-3 gönderim doğru büro/dosya/statüde | **ölçülmedi** | gönderim yok |
+| D-4 portal girişi dış cihazdan | **ölçülmedi** | — |
+| D-5 portal parola sıfırlama | **ölçülmedi** | — |
+| D-6 belge yükleme/indirme/silme | **ölçülmedi** | — |
+| D-7 mesaj gönderme/okuma | **ölçülmedi** | — |
+| D-8 personel yüzeyi dışarıdan kapalı | **ölçülmedi** | H5 personel yollarını denemez |
+| D-9 erişim kapanışı | **kısmen kanıtlı** | H5'in kendi sentetik kümesi için ölçütün üç parçası kanıtlı (kullanıcılar pasif, Case CLOSED, iptal sonrası dış public uç 404). Eksik: D-2…D-7 halkalarının oluşturacağı portal kullanıcısı, gönderim, belge ve mesaj kapanışı; hedef ağdan ölçüm |
