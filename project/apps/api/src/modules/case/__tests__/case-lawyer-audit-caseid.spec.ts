@@ -17,6 +17,8 @@ const CASE_ID = "case-1";
 const makeService = () => {
   const stub = {} as any;
   const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  // K2: yetki alanları F01 yönetim kuralı ister; bu testler audit/değişmez kuralı sınar → aktör F01 yetkili.
+  (service as any).officeApproval = { isF01WriteActorAuthorized: jest.fn(async () => true) };
   const auditLog = jest.fn(async () => undefined);
   (service as any).auditService = { log: auditLog };
   return { service, auditLog };
