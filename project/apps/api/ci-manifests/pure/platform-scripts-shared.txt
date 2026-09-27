@@ -782,6 +782,7 @@ src/modules/validation-gate/__tests__/pre-haciz-risk.spec.ts
 src/modules/validation-gate/__tests__/pre-haciz-scenarios.spec.ts
 src/scripts/__tests__/adr014-local-shadow-evidence-runner.static-purity.spec.ts
 src/scripts/__tests__/adr014-session-observation-facts.spec.ts
+src/scripts/__tests__/adr014-shadow-evidence-runner.module.wiring.spec.ts
 src/scripts/__tests__/adr014-shadow-evidence.core.spec.ts
 src/scripts/__tests__/apply-expense-approval-backfill-logic.spec.ts
 src/scripts/__tests__/g6-backfill-classifier.spec.ts

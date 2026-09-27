@@ -9,9 +9,9 @@
 import { ActionHandlerService } from '../action-handler.service';
 
 describe('CAN-P0-001: icrabot email/SMS notification truth', () => {
-  // ActionHandlerService constructor'ı startLockCleanupInterval() ile gerçek bir
-  // setInterval kurar (mevcut kod, bu patch'te değiştirilmedi); fake timer olmadan
-  // process event loop'u kapanmaz ve jest asılı kalır. outbox-tenancy.spec.ts'teki
+  // Tarihsel: ActionHandlerService constructor'ı eskiden gerçek bir setInterval kuruyordu;
+  // aralık artık yalnız onApplicationBootstrap'ta başlar (doğrudan `new` ile kurulan
+  // serviste hiç başlamaz). Fake timer savunma amaçlı korunur. outbox-tenancy.spec.ts'teki
   // pattern takip edilmiştir.
   beforeAll(() => jest.useFakeTimers());
   afterAll(() => jest.useRealTimers());

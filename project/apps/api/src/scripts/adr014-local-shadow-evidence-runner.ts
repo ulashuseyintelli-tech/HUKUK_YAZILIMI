@@ -25,10 +25,13 @@
  *  3) `compare()` zaten `mode: SHADOW_ONLY` / `primaryDisplayUnchanged: true` (yalnız read metotları).
  *  4) Kaynak statik guard ile mutation-yolu içermediği kilitlenir.
  *
- * Kullanım (project/apps/api altından):
+ * Kullanım (project/apps/api altından) — DERLENMİŞ çıktıdan çalıştırılır:
+ *   pnpm exec nest build
  *   ADR014_CANONICAL_SHA=$(git rev-parse HEAD) \
- *   npx tsx src/scripts/adr014-local-shadow-evidence-runner.ts \
+ *   node dist/apps/api/src/scripts/adr014-local-shadow-evidence-runner.js \
  *     --input evidence/adr014/input/representative-cases.json [--out <dir>] [--timeout-ms 30000]
+ * `npx tsx` KULLANILMAZ: esbuild decorator metadata üretmez; Nest constructor bağımlılıklarını
+ * göremez ve bağlam kurulamaz. `tsc` (nest build) metadata'yı üretir.
  *
  * Bu PR'ın merge'i, çalıştırma yetkisi VERMEZ ve PR-11'i AÇMAZ; gerçek koşum owner-local'dir ve
  * çıktısı ASLA commit edilmez (evidence dizini .gitignore ile korunur).
@@ -39,7 +42,7 @@
 import { NestFactory } from '@nestjs/core';
 import * as fs from 'fs';
 import * as path from 'path';
-import { BalanceDisplayShadowDiffModule } from '../modules/balance-display-shadow-diff/balance-display-shadow-diff.module';
+import { Adr014ShadowEvidenceRunnerModule } from './adr014-shadow-evidence-runner.module';
 import { BalanceDisplayShadowDiffService } from '../modules/balance-display-shadow-diff/balance-display-shadow-diff.service';
 import type {
   BalanceDisplayShadowDiffReport,
@@ -85,7 +88,9 @@ function parseArgs(argv: string[]): Args {
 // Read-only bağlantı kurulumu ve doğrulaması
 // ---------------------------------------------------------------------------
 
-const READ_ONLY_OPTIONS = '-c default_transaction_read_only=on -c default_transaction_isolation=repeatable read';
+// Postgres `options` değerini boşluktan böler; `repeatable read` içindeki boşluk `\ ` ile kaçırılmazsa
+// sunucu `repeatable` görür ve bağlantıyı FATAL ile reddeder (izole gate DB'de ölçüldü).
+const READ_ONLY_OPTIONS = '-c default_transaction_read_only=on -c default_transaction_isolation=repeatable\\ read';
 
 /** `DATABASE_URL`'e read-only + repeatable-read session options'ı ekler. Credential'a dokunmaz. */
 export function buildReadOnlyDatabaseUrl(raw: string): string {
@@ -263,7 +268,7 @@ async function main(): Promise<void> {
   // Read-only bağlantıyı bootstrap ÖNCESİ kur — PrismaService env'den okur.
   process.env.DATABASE_URL = buildReadOnlyDatabaseUrl(rawUrl);
 
-  const app = await NestFactory.createApplicationContext(BalanceDisplayShadowDiffModule, {
+  const app = await NestFactory.createApplicationContext(Adr014ShadowEvidenceRunnerModule, {
     logger: ['error', 'warn'],
   });
 

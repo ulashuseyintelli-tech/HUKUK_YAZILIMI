@@ -212,3 +212,106 @@ OLCULMEMISTIR. 'Etki olculmedi' ile 'etki yok' AYNI SEY DEGILDIR ve bu kayit iki
 | forceExit | "Resmi runner zaten `--forceExit` kullaniyor, CI etkilenmiyor" diye KABUL ET | Tam manifestte acik-handle taramasi ISTE (tek dosyada 0 cikmisti — genis tarama farkli sonuc verebilir) | Genis tani + kok neden GO'su ac |
 
 Bu belge hicbirini owner ADINA secmez veya erteleme/risk kabulu URETMEZ — yalniz secenekleri somutlastirir.
+
+## 7. DUZELTME VE TAMAMLAMA (2026-09-26; owner GO "ADR-014 onarimini tamamla ve karar paketindeki kanit bosluklarini gider")
+
+> Bu bolum §1.2, §4, §5 ve §6'yi kaynaklara geri donerek DUZELTIR. Hicbir sayac ilerletilmedi: hizmet kabulu
+> **0/8**; B1-B10'un HICBIRI icin owner karari bulunamadi (hepsi ACIK). Yeniden olcum yapilmadi.
+
+### 7.1 §1.2 ve §4'teki iki hata
+
+1. **"15/18, 16/18 ..." hizmetin kendi esigi DEGIL.** Bunlar CLIENT'in program capindaki TEKNIK SAYACIDIR: 18
+   İ-kilometre tasindan kacinin canli kapandigi (`decision-log.md` İ13 satiri: "sayac 15/18 (hizmet kabulu 0/8)";
+   İ12 satirinda sayac 14/18; İ16 ile 18/18). "Her hizmet kendi olculen esigiyle, farkli payda ile kapandi" ifadesi
+   YANLISTIR. Dogrusu: her hizmetin İ kapanisi **kendi olcut setinde FAIL 0, OLCULEMEYEN 0** ile gecti (asagida 7.2).
+2. **"Hicbir canli somut eksik RAPORLANMADI" (§4 giris) EKSIKTIR:** H7'de K-A (portal production'da API'ye
+   ulasamiyordu; R26 ile canlida giderildi, basarili canli portal girisi olculdu — `decision-log.md` 2026-09-21/22) ve
+   H8'de "kilit <= 4 sn" ifade kusuru + Kusur B (ifade 2026-09-22 owner onayiyla duzeltildi; Kusur B betikte giderildi)
+   RAPORLANMIS ve GIDERILMIS eksiklerdir. Dogru ifade: "bugun ACIK bilinen canli eksik yok; raporlanan eksikler giderildi".
+
+### 7.2 Yedi hizmet — olcut, gecen, kalan (mevcut kayitlardan; yeniden olcum YOK)
+
+| H | Ad | İ / runId | Kabul olcutu | Gecen | Kalan / canli olculmeyen | Kalan kabulu engeller mi (kayittaki hukum) |
+|---|---|---|---|---|---|---|
+| H1 | Kimlik | İ9 `d19ce2c7` | Bes gozlem PASS; gercek tenant'ta yalniz GET | 14 PASS, 7/7 olcut | Madde kalmadi. Acik bulgu B-2: lifecycle ret govdesinde stabil kod yok | Belge "ACIK, BLOKE ETMEZ, urun isi acilmaz" der — **belgenin hukmu, owner karari bulunamadi** |
+| H2 | Adres ve iletisim | İ13 `8811f395` | H2-01..H2-10 + I13-00/CLOSE/ISO | 13/13 | Madde kalmadi. H2-10 (iletisim kisileri icin ayri CRUD yok) KB-03(a) ONERISIYLE olculdu | **KB-03 icin owner karari bulunamadi** |
+| H3 | Vekalet | İ10 `c9b07bcb` | A-1..A-4 + K9; yetkisiz yazim 0 | 10/10, bulgu 0 | Yok (not: §4 metni H3 runId'sini vermiyordu — `c9b07bcb`) | — |
+| H4 | Talimat/beyan/riza/KVKK | İ14 `e28c5c06` | I14-00 + H4-01..H4-08 + CLOSE + ISO | 14/14 | H4-08 canlida yeniden kosulmadi, İ12 G3/G5'e baglandi; "gercek yayin olgusu" ayagi İ12'de yalniz test sink'iyle olculdu | **Kayitta gerekce YOK** |
+| H6 | Gonderim | İ12 `92d04ef3` | G1-G7 yedi gozlem | 17/17; bagimsiz 10/10; NOREALSEND 12/12 | CLAIM/RECLAIM/HANG yalniz disposable; loopback engellenmedi, KOSULA baglandi | Owner karari "yalniz kaydet" — kabulu engellemedigi KAYITLI |
+| H7 | Portal | İ16 `6b883b16` | I16-00 + H7-00..04 + H7-05a + H7-06..08 + CLOSE + ISO | 12/12 | H7-05b, K-1 matrisi, PSUS probu yalniz disposable ("canli PASS sayilmaz"); dis (HTTPS) erisim ACILMADI | **Kayitta gerekce YOK** |
+| H8 | Muhasebe kayit kapanisi | İ15 `1b83637a` | KABUL-5 PASS + kalan yedi icin secilen kanit yontemi kayitli ve uygulanmis | 5/5; yedi senaryo 10/10 (ayri PG) | Canli yaris testi DEGIL; KABUL-C dolayli kanit; 3 eski gercek kayit icin geriye donuk yazim YOK | Yontem owner kararina dayanir (`decision-log.md` 2026-09-18 CLIENT-I4-I5) |
+
+**Owner'in bakmasi gereken uc bosluk:** H4-08 gercek yayin ayagi, H7 canli olculmeyen H7-05b/K-1/PSUS ve dis erisim,
+H2-10/KB-03 — bu uc kalemde "kabulu engellemez" hukmu kayitta YOK; §4 onay metni bunlari ORTUK kabul ettirir.
+Onay metni kullanilacaksa bu uc kalem ya acikca "kabul disi/sonra" diye yazilmali ya da owner ayrica karar vermeli.
+
+### 7.3 B1-B3, B5, B7-B9 — kaynaklardan (hepsi ACIK, owner karari bulunamadi)
+
+- **B1 AK-1b (cross-office):** Plan §8.5 onerisi tek cumle: aktorun kendi `officeId`'si varsayilan kapsam olsun
+  (istisna/sira yok). Kod: `office-f01-authorization.guard.ts` `isF01ActorAuthorized(userId, tenantId)`'i
+  `targetOfficeId` OLMADAN cagirir → `office-approval.service.ts:535` cross-office kontrolu rota kapisinda HIC calismaz.
+  (a) secilirse hangi rotalarin kapsama girecegi kaynakta TANIMSIZ — once rota listesi gerekir. Etki: baska ofise bagli
+  PARTNER/MANAGER/delege avukat (cok ofisli tenant disinda pratik etki yok — hipotez).
+- **B2 AK-1c:** Cross-office kontrolu (`:535`) ADMIN kisa-yolundan (`:539`) ONCE; davranis karakterizasyon testiyle
+  kilitli. Kaynakta alternatif sira ONERILMEMIS; tek mantikli alternatif (ADMIN'i one almak) baska ofise bagli ADMIN'i
+  gecirir. Etki: yalniz baska ofise bagli avukat kaydi olan ADMIN.
+- **B3:** Tablodaki (b) "create'i devre disi birak" YANLIS ifade. R1A create'i kapatmaz; pasif kaydin create yoluyla
+  yeniden etkinlesmesini lifecycle yetkisine baglar. Kod: ayricalikli pasif kayit icin `assertCanReactivatePrivilegedLawyer`
+  var; **ayricaliksiz pasif kayit YETKI KONTROLU OLMADAN** kosullu `updateMany` + `LAWYER_REACTIVATE` audit ile etkinlesir
+  (`lawyer.service.ts:300-349`; eslesme ad-soyad/baro no/TCKN). Giris: `POST /lawyers`, `POST /cases` satir ici avukat, seed.
+- **B5:** (b) yalniz dugmeyi gizler; onay kutusu liste/detay gorunurlugu backend'de rol elemez. Web
+  `OfficeApprovalDecisionActions.tsx` dugmeleri talep sahibi olmayan herkese gosterir (FD talepleri haric).
+- **B7:** OWN-13 D01-D04 owner onayli (D03 = seed acikken en az JwtAuthGuard). Kalan risk ACIK. **"Canlida KAPALI"
+  iddiasinin OLCUMU bulunamadi**; kapi `seed-runtime-gate.ts` = `NODE_ENV=production` VEYA `CLIENT_SEED_ENDPOINTS_ENABLED`
+  bayragi. Canli NODE_ENV degeri kayitta okunmamis → kapalilik bir HIPOTEZ; salt-okuma olcumu gerekir.
+- **B8:** Olcum 2026-09-11 `hukuk_db` salt-okuma: bekleyen 0, talep 2/2 APPROVED (`RELEASE22-ADAY-HAZIRLIK-R01.md`).
+  Yeni aday #2608/#2612 ile yapisal olarak kapali; olcum R26/P1 ONCESI → guncelligi hipotez. (b) icin kaynakta kod onerisi YOK.
+- **B9:** "0 dosya" ve tasfiye recetesi yalniz yerel ajan bellegine dayanir (2026-09-10); repoda recete kaydi YOK. Olcum
+  16 gun once, C:→D: tasimalarindan ONCE → yolun guncelligi hipotez. Dosya sistemine dokunulmadi.
+
+### 7.4 B4, B6, B10 — gercek kapsam (kod yolu izlendi; "istismar gosterilmedi" guvenlik kaniti SAYILMADI)
+
+**Rol modeli:** VIEWER tenant duzeyinde giris rolu (`UserRole {ADMIN, USER, VIEWER}`, `User.role`); `req.user` her istekte
+DB'den okunur. Uygulama genelinde rol guard'i YOK; VIEWER yalniz OFFICE yazma guard'inda, onay KARAR metodlarinda,
+FD kararinda ve CLIENT politikalarinda elenir.
+
+- **B4 — VIEWER yurutme/kurtarma:** `isApproverEligible` (`office-approval.service.ts:476-490`) rol OKUMAZ: aktif + ayni
+  tenant + staff degil + bagli avukat PARTNER veya `canApproveOfficeActions`. Dolayisiyla **PARTNER/delege avukata bagli bir
+  VIEWER** su onayli kayitlari YURUTEBILIR (tek guard `JwtAuthGuard`): payout finalize (`clientPayout.create` + yevmiye),
+  dagitim post (`balanceLedger.create` + POSTED), FD publish/retry/reverse/supersede (e-posta), ve karari veren kisi sonradan
+  VIEWER'a dusurulmusse FD kayitli-karar kurtarma. Duz VIEWER (baglanti yok) bu kapilara TAKILIR. Ayni desende rol okumayan
+  baska yazma uclari: mahsup uygula/geri al, manuel ters kayit kapatma, ucret sozlesmesi, dagitim recommend/FD taslagi
+  (`isPrepareEligible` her avukata acik), masraf approve/finalize (CPE), payout request (finansal etki yok).
+  **En kucuk duzeltme:** tek ortak nokta YOK — `isApproverEligible`'a rol eklemek 23 cagri yerini (inbox gorunurlugu dahil)
+  degistirir = politika genislemesi. Dar yol: uc yurutme yuklemi — `PayoutApprovalPolicy.assertEligible`, FD
+  `isDisclosureApproverEligible` (+select'e `role`), dagitim post oncesi `assertApprovalDecisionRole`; ~4 dosya + test; emsal
+  `office-write-role.policy.ts`, `office-approval-viewer-decision-boundary.spec.ts`. Canlida VIEWER+PARTNER/delege eslesmesi
+  OLCULMEDI (etki buyuklugu hipotez).
+- **B6 — `POST /cases`:** rol yalniz satir ici YENI avukat (AK-1a, `case.service.ts:581-583`) ve satir ici yeni muvekkil (D01)
+  yollarinda okunur. **Mevcut muvekkil/avukat id'leriyle gelen VIEWER istegi dosya ACAR** (dogrulandi). Ayni acik:
+  `POST /cases/:caseId/debtors(/bulk)`, `/notes`, `/lawyers`, `/staff`, `/dues`, `/collections`, `PUT/PATCH /cases/:id`
+  (yalniz `DELETE /cases/:id` ve legal-responsible-lawyer rol okur). **En kucuk duzeltme:** `CaseService.create()` basinda
+  (userId kontrolunden sonra) rol reddi — tek cagiran, 1 dosya + test; CASE'e ozgu ret kodu (OFFICE kodunu yeniden kullanmak
+  anlam kaydirir). Alt uclarin ayni pakete girmesi ayri urun karari.
+- **B10 — kontrol→yazma yarisi:** 21/21 olcumu yalniz `isApproverEligible` cagri yerlerini sayar; **payout finalize
+  (`PayoutApprovalPolicy`) ve FD `assertEligibleActor` bu 21'in DISINDADIR.** `User.role`'u degistiren HTTP yolu yok; yetki
+  geri alma yollari `PUT/PATCH /lawyers/:id` (`canApproveOfficeActions=false` / rutbe) ve `DELETE /lawyers/:id`
+  (`User.isActive=false`). **Somut senaryo (dagitim post):** T0 `disposition-posting.service.ts:218` transaction DISINDA
+  `isApproverEligible` → true; T1 baska istek `PATCH /lawyers/:id {canApproveOfficeActions:false}` commit eder; T2 `:262`
+  transaction'i acilir, `balanceLedger.create` + POSTED — yetki YENIDEN OKUNMAZ, **yazma gecer**. Pencere 4-5 DB gidis-donusu.
+  Daha genis pencereler: payout finalize'da kontrol ile yazma arasinda `pg_advisory_xact_lock` beklemesi (sinirsiz);
+  FD publish'te kontrol tx icinde ama commit SONRASI dis e-posta cagrisi ve ardindan PUBLISHED gecisi YENIDEN KONTROLSUZ.
+  Tx icinde olmak da yetmez: READ COMMITTED + kilitsiz okuma. **Etki finansal:** yetkisi alinan kullanici zaten APPROVED
+  kaydi kesinlestirebilir (yeni onay URETEMEZ). **Duzeltme secenekleri:** CLIENT R1A kosullu-`updateMany` bu kapilara DOGRUDAN
+  UYMAZ (yetki baska tabloda); en az degisiklik: yetki okumasini tx icine alip `User`/`Lawyer` satirlarini `FOR SHARE` ile
+  kilitlemek (tek yardimci + 3 yurutme noktasi; emsal `disposition-posting.service.ts` `FOR NO KEY UPDATE`); alternatifler
+  serializable (retry gerekir) veya advisory lock (geri alma yollari da almali). Pencere sureleri OLCULMEDI.
+
+### 7.5 §6 guncellemesi
+
+- **ADR-014:** muhendislik tarafi #2809'da (merge'e bagli): DI koku (4 global), read-only options kacisi, ve surecin
+  dogal cikisi (`ActionHandlerService` ref'li `setInterval` → `onApplicationBootstrap`/`onModuleDestroy`). §6'daki ADR-014
+  satirinin (a)/(b)/(c) secimi merge sonrasi gecersizlesir. Uc sentetik `DISCREPANCY` runner kusuru degil (product-backlog
+  "ADR-014 RUNNER DI_FAIL ONARIMI" kaydi): canonical elle hesapla esit; farklar legacy tasarim eksigi + fikstur kaynakli.
+- **forceExit:** ACIK, owner karari bekler. Bu calismada genel jest/forceExit arastirmasi YAPILMADI; runner'da bulunan tutucu
+  (ActionHandlerService araligi) jest acik-handle'larinin nedeni OLDUGU iddia EDILMEZ (olculmedi).
