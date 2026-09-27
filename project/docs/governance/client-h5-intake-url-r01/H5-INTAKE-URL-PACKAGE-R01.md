@@ -436,3 +436,12 @@ istekleri canlı sunucunun kendisinden, genel DNS üzerinden `bilgi.tellihukuk.c
 | D-7 mesaj gönderme/okuma | **ölçülmedi** | — |
 | D-8 personel yüzeyi dışarıdan kapalı | **ölçülmedi** | H5 personel yollarını denemez |
 | D-9 erişim kapanışı | **kısmen kanıtlı** | H5'in kendi sentetik kümesi için ölçütün üç parçası kanıtlı (kullanıcılar pasif, Case CLOSED, iptal sonrası dış public uç 404). Eksik: D-2…D-7 halkalarının oluşturacağı portal kullanıcısı, gönderim, belge ve mesaj kapanışı; hedef ağdan ölçüm |
+
+## 9. Not — EXTACC R01 yeniden kullanımı (2026-09-27)
+
+`client-extacc-intake-chain-r01` bu paketin güvencelerini yeniden kullanır. Bu nedenle `scripts/h5-url-live-run.js` içinde
+**yalnız** `module.exports` genişletildi (davranış aynı; yeni sha256 `F2D0975DC9F9D148E4C889472FA11AE6A873A6BDF577C36657ED9BCB4FF9C359`),
+`scripts/h5-fake-api.js` test senaryolarıyla genişletildi ve `scripts/h5-owner-live-block.ps1` içinde yalnız bu dosyanın pini ile
+paket digest güncellendi (blok sha256 `68DC7228C1A8BB560D23B1E9962365CD1171C178229EAE8C2137259A57839C55`). §7.5 tablosu R03
+anının değerleridir. §8 canlı kabul kaydı koşum anındaki main `d72fdaa7` ve blok `43DD4A94…1E30` değerlerine dayanır; değişmez.
+Regresyon: `h5-url-selftest.js` 47/47 · owner bloğu öz-testi 27/27 (PS 5.1 + PS 7) · `h5-pin-selftest.ps1` 8/8.
