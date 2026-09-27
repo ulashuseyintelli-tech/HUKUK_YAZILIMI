@@ -3,7 +3,9 @@ import { OfficeApprovalStatus } from '@prisma/client';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import {
   CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+  CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS,
   CLAIM_ITEM_INTENT_VERSION,
+  CLAIM_ITEM_LOW_IMPACT_USER_FIELDS,
   CLAIM_ITEM_TARGET_TYPE,
 } from '../claim-item-approval.constants';
 import { ClaimItemController } from '../claim-item.controller';
@@ -383,6 +385,22 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
     }));
   });
 
+  it.each([
+    ['ACCRUES', { interestTypeCode: 'LEGAL_3095', interestAccrualStatus: 'ACCRUES', interestStartDate: '2026-01-15T00:00:00.000Z', interestStartDateProvenance: 'DOCUMENT_DUE_DATE' }],
+    ['UNKNOWN sifirlama', { interestAccrualStatus: 'UNKNOWN' }],
+  ])('%s faiz yamasi kapiya yalniz kullanici alan sozlugundeki alanlari tasir (noInterestConfirmedAt sunucu-turetimli)', async (_label, dto) => {
+    const { svc, officeApproval, writerRouter } = makeSvc();
+
+    await svc.updateFromUser('t1', 'requester-u', 'ci-1', dto as any);
+
+    const gatePayload = writerRouter.evaluateHuman.mock.calls[0][0].payload as Record<string, unknown>;
+    const userFields = [...CLAIM_ITEM_HIGH_IMPACT_USER_FIELDS, ...CLAIM_ITEM_LOW_IMPACT_USER_FIELDS] as readonly string[];
+    expect(Object.keys(gatePayload).filter((field) => !userFields.includes(field))).toEqual([]);
+    expect(gatePayload).not.toHaveProperty('noInterestConfirmedAt');
+    const savedIntent = officeApproval.createPendingRequest.mock.calls[0][0].savedIntent;
+    expect(savedIntent.proposedPatch).toEqual(gatePayload);
+  });
+
   it('FATURA PRINCIPAL -> TAX_KDV high-impact gecisini approval olusturmadan reddeder', async () => {
     const { svc, officeApproval } = makeSvc({
       item: { ...baseItem, sourceDocumentType: 'FATURA' },
@@ -534,6 +552,41 @@ describe('OWN-29-D ClaimItemService user mutation gate', () => {
       data: { demandedAmount: 1200, amount: 1200 },
     });
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('system/internal update yolu faizsizlik beyanli kalemi ACCRUES yaparken beyani sessizce silmez; fail-closed reddeder (5-A)', async () => {
+    const { svc, prisma } = makeSvc({
+      item: {
+        ...baseItem,
+        interestAccrualStatus: 'NO_INTEREST',
+        noInterestReason: 'Onceki beyan',
+        noInterestConfirmedById: 'prior-actor',
+        noInterestConfirmedAt: new Date('2026-02-01T00:00:00.000Z'),
+      },
+    });
+
+    await expect(svc.update('t1', 'ci-1', {
+      interestTypeCode: 'LEGAL_3095',
+      interestAccrualStatus: 'ACCRUES',
+      interestStartDate: '2026-01-15T00:00:00.000Z',
+      interestStartDateProvenance: 'DOCUMENT_DUE_DATE',
+    } as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.claimItem.update).not.toHaveBeenCalled();
+  });
+
+  it('system/internal update yolu beyansiz kalemi ACCRUES yapar; faizsizlik alanlari null kalir', async () => {
+    const { svc, prisma } = makeSvc();
+    prisma.claimItem.update.mockResolvedValue({ id: 'ci-1' });
+
+    await svc.update('t1', 'ci-1', {
+      interestTypeCode: 'LEGAL_3095',
+      interestAccrualStatus: 'ACCRUES',
+      interestStartDate: '2026-01-15T00:00:00.000Z',
+      interestStartDateProvenance: 'DOCUMENT_DUE_DATE',
+    } as any);
+    const data = prisma.claimItem.update.mock.calls[0][0].data;
+    expect(data).toEqual(expect.objectContaining({ interestAccrualStatus: 'ACCRUES', interestTypeCode: 'LEGAL_3095' }));
+    expect(data).not.toHaveProperty('noInterestConfirmedAt');
   });
 
   it('system/internal update yolu OTHER admission talebini write oncesi reddeder', async () => {

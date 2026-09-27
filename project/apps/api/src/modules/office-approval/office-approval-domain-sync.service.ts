@@ -706,7 +706,10 @@ export class OfficeApprovalDomainSyncService {
       data.noInterestReason = patch.noInterestReason;
       data.noInterestConfirmedById = patch.noInterestConfirmedById;
       data.noInterestConfirmedAt = new Date();
-    } else if (patch.interestAccrualStatus === 'UNKNOWN') {
+    } else if (patch.interestAccrualStatus === 'UNKNOWN' || patch.interestAccrualStatus === 'ACCRUES') {
+      // Owner kararı 2026-09-28 (5-A): ACCRUES'a geçişte aktif kayıt faizsizlik beyanı taşımaz. Önceki
+      // beyan bu talebin değişmez savedIntent.currentSnapshot'ında kalır (stale-state hash kapısı ile
+      // gerçek önceki durumla eşleşir); uygulama denetim kaydı approvalRequestId ile ona bağlanır.
       data.noInterestReason = null;
       data.noInterestConfirmedById = null;
       data.noInterestConfirmedAt = null;

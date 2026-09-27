@@ -608,6 +608,36 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     });
   });
 
+  it('executor ACCRUES gecisinde aktif kayittaki faizsizlik beyanini null yapar (owner 5-A)', async () => {
+    const svc = claimItemService();
+    const db = claimItemTx();
+    const request = claimItemReq({
+      proposedPatch: {
+        interestAccrualStatus: 'ACCRUES',
+        interestTypeCode: 'LEGAL_3095',
+        interestType: 'YASAL',
+        interestRate: null,
+        interestStartDate: '2026-01-15T00:00:00.000Z',
+        interestStartDateProvenance: 'DOCUMENT_DUE_DATE',
+        noInterestReason: null,
+        noInterestConfirmedById: null,
+      },
+    });
+
+    await svc.syncAfterDecision(db as any, request as any);
+
+    expect(db.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: expect.objectContaining({
+        interestAccrualStatus: 'ACCRUES',
+        interestTypeCode: 'LEGAL_3095',
+        noInterestReason: null,
+        noInterestConfirmedById: null,
+        noInterestConfirmedAt: null,
+      }),
+    });
+  });
+
   it.each([
     ['USER_COMMAND source', {}],
     ['caseId-as-source', { sourceId: 'case-1' }],
