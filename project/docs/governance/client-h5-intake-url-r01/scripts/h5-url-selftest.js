@@ -1,6 +1,6 @@
 'use strict';
 /*
- * H5-URL R02 ÖZ-TESTİ — CANLI DB'YE YAZMAZ. Disposable PostgreSQL + sahte API + gerçek TLS'li sahte dış sunucu.
+ * H5-URL ÖZ-TESTİ — CANLI DB'YE YAZMAZ. Disposable PostgreSQL + sahte API + gerçek TLS'li sahte dış sunucu.
  *
  * KULLANIM : node h5-url-selftest.js
  *   H5T_DB_URL (ya da %TEMP%\h5-test-pg.url) disposable DB'yi gösterir; loopback + port 5447 + db `ah_h5_test`
@@ -76,9 +76,9 @@ async function scenario(name, sc, over, dir) {
   return { runId, pw, code: r.code, log: r.log, ev, verdict, obs, tenant, links, activeUsers, activeCases, receipt, evid,
     calls: await ctl('GET', '/__calls'), ext: await ctl('GET', '/__ext'), foreign: await ctl('GET', '/__foreign') };
 }
-async function recover(prev, dir, name) {
+async function recover(prev, dir, name, evidOverride) {
   await ctl('POST', '/__reset'); await ctl('POST', '/__scenario', {});
-  const pw = 'H5R!' + crypto.randomBytes(12).toString('base64url'); const evid = path.join(dir, `${name}-evidence.json`);
+  const pw = 'H5R!' + crypto.randomBytes(12).toString('base64url'); const evid = evidOverride || path.join(dir, `${name}-evidence.json`);
   const r = await runScript({ AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
     H5U_MODE: 'recover', H5U_RECOVER_CONFIRM: '1', H5U_RUNID: prev.runId, H5U_EXPECT_DB: 'ah_h5_test', H5U_API_BASE: API, H5U_EXPECT_API: API,
     H5U_EXPECT_BASE_URL: EXT, H5U_LIVE_LOGIN_PW: pw, H5U_RECEIPT: prev.receipt, H5U_EVID_FILE: evid });
@@ -199,6 +199,49 @@ let DBURL; let trig = null;
     check('T8', 'dış sayfa 302: U-03a FAIL, yönlendirme İZLENMEDİ (hedef origin 0 istek)', t8.verdict('U-03a') === 'FAIL' && t8.foreign.length === 0 && /yönlendirme/.test(t8.obs('U-03a')),
       `U-03a="${t8.obs('U-03a')}" · hedef=${t8.foreign.length}`);
 
+    // ---- T12 GECİKMİŞ OLUŞTURMA (R03 F-1): kayıt, kabul betiğinin kapanış sorgularından SONRA oluşur
+    const t12 = await scenario('t12-delayed-create', { create: 'hold' }, {}, dir);
+    const t12rc = fs.existsSync(t12.receipt) ? JSON.parse(fs.readFileSync(t12.receipt, 'utf8')) : {};
+    check('T12-a', 'oluşturma belirsiz + DB\'de kayıt YOK: iptal DOĞRULANMADI sayılır (çıkış 6), boş sorgu PASS sayılmaz',
+      t12.code === 6 && t12.verdict('U-REV-DB') === 'FAIL' && /BELİRSİZ/.test(t12.obs('U-REV-DB')) && t12.links.length === 0,
+      `çıkış=${t12.code} · U-REV-DB=${t12.verdict('U-REV-DB')} · koşum sonu DB bağlantı=${t12.links.length}`);
+    check('T12-b', 'kurtarma gereksinimi korunur; kullanıcı/dosya kapanışı yine çalıştı; makbuzda oluşturma denemesi işaretli',
+      !!(t12.ev && t12.ev.recovery && t12.ev.recovery.gerekli) && t12.activeUsers === 0 && t12.activeCases === 0 && !!t12rc.createAttemptedAt && t12rc.createOutcome === 'uncertain',
+      `recovery=${t12.ev && t12.ev.recovery && t12.ev.recovery.gerekli} · aktif kullanıcı=${t12.activeUsers} · makbuz.createOutcome=${t12rc.createOutcome}`);
+    const r12a = await recover(t12, dir, 't12-recover-before-release');
+    check('T12-c', 'kayıt henüz yokken Recover da iptali KANITLANMIŞ saymaz (çıkış 6)', r12a.code === 6 && r12a.links.length === 0,
+      `çıkış=${r12a.code} · bağlantı=${r12a.links.length}`);
+    const rel = await ctl('POST', '/__release');
+    const t12late = await prisma.clientIntakeLink.findMany({ where: { tenantId: t12.tenant.id }, select: { status: true } });
+    check('T12-d', 'bekletilen istek serbest bırakıldı: kayıt kapanıştan SONRA ACTIVE olarak oluştu (senaryo gerçek)',
+      rel.released === 1 && t12late.length === 1 && t12late[0].status === 'ACTIVE', `serbest=${rel.released} · bağlantı=${JSON.stringify(t12late)}`);
+    const r12b = await recover(t12, dir, 't12-recover-after-release');
+    check('T12-e', 'geç oluşan kayıt Recover ile yetkili uçtan İPTAL edildi, çıkış 0', r12b.code === 0 && r12b.links.length === 1 && r12b.links[0].status === 'REVOKED' && r12b.activeUsers === 0,
+      `çıkış=${r12b.code} · bağlantı=${JSON.stringify(r12b.links)} · aktif kullanıcı=${r12b.activeUsers}`);
+
+    // ---- T13 MAKBUZ YAZILAMIYOR (R03 F-2): oturum/oluşturma YOK, kurulum yine kapatılır
+    const noDir = path.join(dir, 'yok-dizin', 'alt');
+    const t13 = await scenario('t13-receipt-write-fail', {}, { H5U_RECEIPT: path.join(noDir, 'receipt.json') }, dir);
+    const t13login = t13.calls.filter((c) => /\/auth\/login$/.test(c.path)).length; const t13create = t13.calls.filter((c) => /\/intake-links$/.test(c.path)).length;
+    check('T13-a', 'makbuz yazılamazsa oturum açma ve bağlantı oluşturma isteği GÖNDERİLMEZ, çıkış 0 değil (1)',
+      t13.code === 1 && t13login === 0 && t13create === 0 && t13.links.length === 0, `çıkış=${t13.code} · login=${t13login} · oluşturma=${t13create} · bağlantı=${t13.links.length}`);
+    check('T13-b', 'o ana kadar kurulan sentetik veri kapatıldı; kimlikler kanıtta, hata kayıtlı',
+      !!t13.tenant && t13.activeUsers === 0 && t13.activeCases === 0 && !!(t13.ev && t13.ev.receipt && t13.ev.receipt.tenantId) && !!(t13.ev && t13.ev.receiptWriteError),
+      `aktif kullanıcı=${t13.activeUsers} · aktif dosya=${t13.activeCases} · kanıtta makbuz=${!!(t13.ev && t13.ev.receipt)}`);
+
+    // ---- T14/T15/T16 SONUÇ KANITI YAZILAMIYOR (R03 F-2)
+    const t14 = await scenario('t14-evidence-write-fail', {}, { H5U_EVID_FILE: path.join(noDir, 'evidence.json') }, dir);
+    check('T14', 'Run: tüm ölçütler geçse de kanıt yazılamazsa çıkış 7 (0 DEĞİL); kapanış yine tamam',
+      t14.code === 7 && !t14.ev && t14.links.every((l) => l.status === 'REVOKED') && t14.activeUsers === 0 && /SONUÇ KANITI YAZILAMADI/.test(t14.log),
+      `çıkış=${t14.code} · bağlantı=${JSON.stringify(t14.links)} · aktif kullanıcı=${t14.activeUsers}`);
+    const t15 = await scenario('t15-evidence-and-revoke-fail', { revoke: 'fail' }, { H5U_EVID_FILE: path.join(noDir, 'evidence.json') }, dir);
+    check('T15-a', 'kanıt yazılamasa da iptal hatasının önceliği KORUNUR (çıkış 6, 7 değil)', t15.code === 6 && t15.links.length === 1 && t15.links[0].status === 'ACTIVE',
+      `çıkış=${t15.code} · bağlantı=${JSON.stringify(t15.links)}`);
+    const r15 = await recover(t15, dir, 't15-recover');
+    check('T15-b', 'kurtarma: bağlantı REVOKED, çıkış 0', r15.code === 0 && r15.links.every((l) => l.status === 'REVOKED'), `çıkış=${r15.code} · bağlantı=${JSON.stringify(r15.links)}`);
+    const r16 = await recover(t14, dir, 't16-recover-evidence-fail', path.join(noDir, 'recover-evidence.json'));
+    check('T16', 'Recover: kapanış doğrulansa da kanıt yazılamazsa çıkış 7 (0 DEĞİL)', r16.code === 7 && !r16.ev, `çıkış=${r16.code}`);
+
     // ---- T9/T10 KAPILAR — yazma yok
     const t9 = await scenario('t9-tls-off', {}, { NODE_TLS_REJECT_UNAUTHORIZED: '0' }, dir);
     check('T9', 'TLS doğrulaması kapalıysa DURUR (çıkış 1) ve DB\'ye HİÇ yazmaz', t9.code === 1 && !t9.tenant, `çıkış=${t9.code} · tenant=${t9.tenant ? 'OLUŞTU' : 'yok'}`);
@@ -242,7 +285,7 @@ let DBURL; let trig = null;
   console.log('');
   for (const r of rows) console.log(`${r.sonuc === 'PASS' ? 'PASS' : 'FAIL'}  ${r.id.padEnd(5)} ${r.aciklama}\n        ${r.gozlem}`);
   const fail = rows.filter((r) => r.sonuc === 'FAIL').length;
-  console.log(`\nH5-URL R02 ÖZ-TESTİ: PASS ${rows.length - fail} / ${rows.length}`);
+  console.log(`\nH5-URL ÖZ-TESTİ: PASS ${rows.length - fail} / ${rows.length}`);
   console.log(`  kanıt dizini: ${dir}`);
   console.log('  (disposable DB + sahte API + gerçek TLS; canlı DB/API/DNS/tünel KULLANILMADI)');
   process.exit(fail > 0 ? 1 : 0);

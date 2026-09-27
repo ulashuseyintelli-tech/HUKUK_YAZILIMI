@@ -24,7 +24,16 @@
  *          yazımı tek temizleyiciden geçer. Token yalnız sha256 + uzunluk olarak raporlanır.
  * MODLAR : H5U_MODE=run (varsayılan) · H5U_MODE=recover (yalnız kapanışı tamamlar; kabul ÖLÇÜTLERİ KOŞULMAZ).
  * ÇIKIŞ  : 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ (yazma yok)
- *          5 KULLANICI/DOSYA KAPANIŞI DOĞRULANMADI · 6 BAĞLANTI İPTALİ DOĞRULANMADI (en ağır)
+ *          7 SONUÇ KANITI YAZILAMADI · 5 KULLANICI/DOSYA KAPANIŞI DOĞRULANMADI · 6 BAĞLANTI İPTALİ DOĞRULANMADI
+ *          Öncelik: 6 > 5 > 7 > 1 > 2 > 3 > 0.
+ *
+ * R03 (inceleme düzeltmeleri, 2026-09-27):
+ *   F-1 Oluşturma sonucu BELİRSİZSE (zaman aşımı, 5xx, 201 ama link id yok) DB'de kayıt bulunamaması iptal kanıtı
+ *       DEĞİLDİR: istek sunucuda sürüyor olabilir ve kayıt kapanış sorgularından SONRA oluşabilir. Bu durumda
+ *       iptal DOĞRULANMADI sayılır (çıkış 6) ve kurtarma gereksinimi korunur. Bekleme eklenmez; bekleme kanıt değildir.
+ *       Makbuz, oluşturma isteğinden ÖNCE `createAttemptedAt` ile güncellenir; Recover aynı kuralı uygular.
+ *   F-2 Makbuz yazılamazsa (ya da oluşturma denemesi makbuza işlenemezse) oturum açma/oluşturma adımına GEÇİLMEZ;
+ *       o ana kadar kurulan sentetik veri yine kapatılır. Sonuç kanıtı yazılamazsa çıkış 0 OLAMAZ (7); 6 ve 5 korunur.
  */
 const fs = require('fs'); const crypto = require('crypto');
 const I13 = require('../../client-live-acceptance-i13-r01/scripts/i13-lib');
@@ -123,8 +132,10 @@ function judgeRevoked(R, id, desc, r) {
  * sentetik tenant/case/client üçlüsünde arar; oluşturma yanıtı alınamadıysa da (zaman aşımı) kayıt
  * OLUŞMUŞ OLABİLİR varsayımıyla buradan bulunur. Kimlik doğrulanmazsa HİÇBİR çağrı/yazma yapılmaz.
  */
-async function revokeOwnLinks(prisma, base, receipt, session) {
-  const res = { ok: false, identity: null, linksBefore: [], foreignTenantLinks: null, revokeCalls: [], linksAfter: [], note: null };
+async function revokeOwnLinks(prisma, base, receipt, session, expect) {
+  const exp = expect || { attempted: false, outcome: null, linkId: null };
+  const res = { ok: false, identity: null, linksBefore: [], foreignTenantLinks: null, revokeCalls: [], linksAfter: [], note: null,
+    createExpectation: { attempted: !!exp.attempted, outcome: exp.outcome || null, linkId: exp.linkId ? 'VAR' : 'YOK' }, createProof: null };
   const ident = await assertReceiptIdentity(prisma, receipt);
   res.identity = ident.ok ? 'OK' : ident.reason;
   if (!ident.ok) { res.note = 'kimlik bağı DOĞRULANMADI — hiçbir iptal/yazma yapılmadı'; return res; }
@@ -152,7 +163,21 @@ async function revokeOwnLinks(prisma, base, receipt, session) {
   const after = await prisma.clientIntakeLink.findMany({ where, select: sel });
   res.linksAfter = after.map((l) => ({ id: l.id, status: l.status }));
   const ownOk = after.every((l) => l.tenantId === receipt.tenantId && l.caseId === receipt.caseId && l.clientId === receipt.clientId);
-  res.ok = ownOk && after.every((l) => l.status !== 'ACTIVE') && res.foreignTenantLinks === 0;
+  // F-1: bu koşum TEK oluşturma isteği gönderir. Sonuç belirsizse kaydın VAR olduğu görülmeden iptal kanıtlanamaz:
+  // boş sorgu "hiç oluşmadı" demek değildir, istek sunucuda hâlâ sürüyor olabilir.
+  if (exp.outcome === 'confirmed') {
+    res.createProof = after.length === 1 && after[0].id === exp.linkId;
+    if (!res.createProof) res.note = `oluşturma yanıtındaki bağlantı DB'de tek kayıt olarak BULUNAMADI (kayıt sayısı=${after.length})`;
+  } else if (exp.attempted && exp.outcome !== 'none') {
+    res.createProof = after.length >= 1;
+    if (!res.createProof) {
+      res.note = 'oluşturma sonucu BELİRSİZ ve DB\'de kayıt YOK — istek sunucuda sürüyor olabilir, kayıt SONRADAN oluşabilir; '
+        + 'iptal DOĞRULANAMADI (bekleme kanıt değildir)';
+    }
+  } else {
+    res.createProof = true; // oluşturma denenmedi ya da sunucu kesin olarak reddetti (4xx)
+  }
+  res.ok = ownOk && after.every((l) => l.status !== 'ACTIVE') && res.foreignTenantLinks === 0 && res.createProof === true;
   return res;
 }
 
@@ -161,11 +186,24 @@ function recoveryAdvice(out, receiptPath) {
   if (!(out.linkRevoke && out.linkRevoke.ok)) need.push('BAĞLANTI İPTALİ doğrulanmadı — sentetik bağlantı AÇIK kalmış olabilir');
   if (!(out.closure && out.closure.ok)) need.push('KULLANICI/DOSYA KAPANIŞI doğrulanmadı');
   if (need.length === 0) return { gerekli: false };
+  let onDisk = false; try { onDisk = !!receiptPath && fs.existsSync(receiptPath); } catch (e) { onDisk = false; }
+  if (!onDisk) need.push('makbuz DİSKTE YOK — Recover koşulamaz; sentetik kimlikler bu kanıtın `receipt` alanındadır, elle kapanış gerekir');
   return {
-    gerekli: true, neden: need, makbuz: receiptPath || null,
+    gerekli: true, neden: need, makbuz: receiptPath || null, makbuzDiskte: onDisk,
     adim: 'Owner kurtarma bloğunu `-Mode Recover -ReceiptFile <makbuz>` ile BİR KEZ koşar. Kurtarma kabul ölçütlerini '
       + 'TEKRARLAMAZ; yalnız makbuz kimliği doğrulanmış sentetik tenantta bağlantıyı yetkili uçla iptal eder ve kapanışı tamamlar.',
   };
+}
+
+/** F-2: sonuç kanıtı yazılamazsa çıkış 0 OLAMAZ → 7. İptal (6) ve kapanış (5) hataları önceliğini KORUR. */
+function writeEvidenceOrDemote(file, out) {
+  try { writeJson(file, out); return out.exitCode; }
+  catch (e) {
+    console.error(`SONUÇ KANITI YAZILAMADI: ${errText(e, 160)}`);
+    if (out.exitCode === 6 || out.exitCode === 5) return out.exitCode;
+    console.error('  çıkış 7: kanıt olmadan sonuç doğrulanamaz; 0 VERİLMEZ');
+    return 7;
+  }
 }
 
 function exitCodeOf(out, s) {
@@ -178,7 +216,7 @@ function exitCodeOf(out, s) {
 }
 
 // ------------------------------------------------------------------ kapanış (her iki modda ortak)
-async function finalizeClosure(R, prisma, base, origin, receipt, session, raw, urlGateOk) {
+async function finalizeClosure(R, prisma, base, origin, receipt, session, raw, urlGateOk, expect) {
   const out = {};
   if (!receipt) {
     out.linkRevoke = { ok: true, nothingCreated: true, note: 'kurulum makbuzu yok — bu koşum tenant/bağlantı oluşturmadı' };
@@ -186,10 +224,11 @@ async function finalizeClosure(R, prisma, base, origin, receipt, session, raw, u
     return out;
   }
   // 1) ÖNCE bağlantı iptali (kullanıcılar henüz aktif; yetkili uç JWT ister)
-  try { out.linkRevoke = await revokeOwnLinks(prisma, base, receipt, session); }
+  try { out.linkRevoke = await revokeOwnLinks(prisma, base, receipt, session, expect); }
   catch (e) { out.linkRevoke = { ok: false, reason: `iptal adımı hata verdi: ${errText(e)}` }; }
-  R.check('U-REV-DB', 'bu koşuma ait TÜM bağlantılar DB\'de ACTIVE DEĞİL (iptal) ve yabancı tenantta bağlantı YOK', !!out.linkRevoke.ok,
-    `kimlik=${out.linkRevoke.identity || '-'} · önce=${JSON.stringify(out.linkRevoke.linksBefore || [])} · sonra=${JSON.stringify(out.linkRevoke.linksAfter || [])} · yabancı=${out.linkRevoke.foreignTenantLinks}`);
+  R.check('U-REV-DB', 'bu koşuma ait TÜM bağlantılar DB\'de ACTIVE DEĞİL (iptal), oluşturma sonucu kayıtla KANITLI ve yabancı tenantta bağlantı YOK', !!out.linkRevoke.ok,
+    `kimlik=${out.linkRevoke.identity || '-'} · önce=${JSON.stringify(out.linkRevoke.linksBefore || [])} · sonra=${JSON.stringify(out.linkRevoke.linksAfter || [])} · yabancı=${out.linkRevoke.foreignTenantLinks}`
+    + ` · oluşturma=${JSON.stringify(out.linkRevoke.createExpectation || null)} kanıt=${out.linkRevoke.createProof}${out.linkRevoke.note ? ` · NOT: ${out.linkRevoke.note}` : ''}`);
   // 2) public 404 — yalnız ham token biliniyorsa VE URL kapısı geçtiyse
   if (raw && urlGateOk) {
     const tmo = timeoutOf('H5U_LOCAL_TIMEOUT_MS', 15000);
@@ -221,8 +260,9 @@ async function runMode() {
 
   const R = new L.Results();
   const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
-  const out = { record: 'H5-URL-LIVE-RUN', revision: 'R02', runId, apiBase: base, expectedOrigin: origin, calledEndpoints: [] };
+  const out = { record: 'H5-URL-LIVE-RUN', revision: 'R03', runId, apiBase: base, expectedOrigin: origin, calledEndpoints: [] };
   let receipt = null; let fatal = null; let session = null; let raw = null; let urlGateOk = false;
+  const expect = { attempted: false, outcome: null, linkId: null };
   const call = (m, p) => out.calledEndpoints.push(`${m} ${p.replace(base, '<API>')}`);
   try {
     out.isolationBefore = await isolationFingerprint(prisma, []);
@@ -230,7 +270,12 @@ async function runMode() {
     receipt = { record: RECEIPT_RECORD, runId, tenantId: st.tenantId, tenantSlug: st.slug, foreignTenantId: st.foreignTenantId,
       clientId: st.clientId, foreignClientId: st.foreignClientId, caseId: st.caseId,
       elevUserId: st.actors.elev1.id, elevEmail: st.actors.elev1.email, createdAt: new Date().toISOString() };
-    try { writeJson(receiptPath, receipt); } catch (e) { out.receiptWriteError = String(e.message || e).slice(0, 160); }
+    out.receipt = receipt; // yalnız kimlikler; makbuz diske yazılamazsa elle kurtarma için kanıtta kalır
+    // F-2: makbuz diske yazılamazsa Recover mümkün olmaz — oluşturma adımına GEÇİLMEZ; finally kurulumu kapatır.
+    try { writeJson(receiptPath, receipt); } catch (e) {
+      out.receiptWriteError = errText(e, 160);
+      throw new Error('makbuz yazılamadı — oturum açma ve bağlantı oluşturma adımlarına GEÇİLMEDİ');
+    }
 
     call('POST', `${base}/auth/login`);
     session = await L.AH.login(base, st.actors.elev1.email, pw, st.slug);
@@ -242,6 +287,14 @@ async function runMode() {
     // GÖNDERİMSİZ bağlantı üretimi — createForClientWorkspace (dispatch YOK). clientId URL'de.
     const createPath = `${base}/clients/${st.clientId}/cases/${st.caseId}/intake-links`;
     if (DISPATCH_ENDPOINT_FORBIDDEN.some((re) => re.test(createPath))) throw new Error('gönderim yapan uç seçildi — DURDU');
+    // F-1: oluşturma denemesi istekten ÖNCE makbuza işlenir; işlenemezse istek GÖNDERİLMEZ.
+    const attempted = Object.assign({}, receipt, { createAttemptedAt: new Date().toISOString() });
+    try { writeJson(receiptPath, attempted); } catch (e) {
+      out.receiptWriteError = errText(e, 160);
+      throw new Error('oluşturma denemesi makbuza işlenemedi — bağlantı oluşturma isteği GÖNDERİLMEDİ');
+    }
+    receipt = attempted; out.receipt = receipt;
+    expect.attempted = true; expect.outcome = 'uncertain';
     call('POST', createPath);
     const cr = await L.AH.httpJson('POST', createPath, { token: session.token, body: { scope: ['ADDRESS'] }, timeoutMs: timeoutOf('H5U_CREATE_TIMEOUT_MS', 30000) });
     const d = (cr && cr.body && cr.body.data) || {};
@@ -249,7 +302,13 @@ async function runMode() {
     raw = typeof d.rawToken === 'string' ? d.rawToken : null;
     if (raw) addSecret(raw);
     const linkId = d.link && d.link.id ? d.link.id : null;
-    out.create = { status: cr.status, indeterminate: !!cr.indeterminate, hasUrl: !!url, hasRawToken: !!raw, linkId: linkId ? 'VAR' : 'YOK',
+    // Sonuç sınıfı: 201 + link id = kesin · 4xx = sunucu kesin reddetti · zaman aşımı/taşıma/5xx/eksik yanıt = BELİRSİZ.
+    expect.outcome = (!cr.indeterminate && cr.status === 201 && linkId) ? 'confirmed'
+      : (!cr.indeterminate && cr.status >= 400 && cr.status < 500) ? 'none' : 'uncertain';
+    expect.linkId = linkId;
+    try { writeJson(receiptPath, Object.assign({}, receipt, { createOutcome: expect.outcome, createLinkId: linkId })); receipt = Object.assign({}, receipt, { createOutcome: expect.outcome, createLinkId: linkId }); out.receipt = receipt; }
+    catch (e) { out.receiptOutcomeWriteError = errText(e, 160); } // en iyi çaba: Recover yazılamazsa BELİRSİZ kuralını uygular
+    out.create = { status: cr.status, indeterminate: !!cr.indeterminate, outcome: expect.outcome, hasUrl: !!url, hasRawToken: !!raw, linkId: linkId ? 'VAR' : 'YOK',
       rawTokenSha256: raw ? sha(raw) : null, rawTokenLength: raw ? raw.length : 0 };
     if (cr.indeterminate || cr.status !== 201 || !url || !raw) {
       const why = cr.indeterminate
@@ -296,7 +355,7 @@ async function runMode() {
   } catch (e) { fatal = String((e && e.message) || e); }
   finally {
     try {
-      const fin = await finalizeClosure(R, prisma, base, origin, receipt, session, raw, urlGateOk);
+      const fin = await finalizeClosure(R, prisma, base, origin, receipt, session, raw, urlGateOk, expect);
       if (receipt && receipt.tenantId) out.calledEndpoints.push('POST <API>/client-intake-links/<id>/revoke (kapanış, bağlantı başına)');
       Object.assign(out, fin);
     } catch (e) { out.linkRevoke = out.linkRevoke || { ok: false, reason: 'kapanış çerçevesi hata verdi' }; out.closure = out.closure || { ok: false, reason: String((e && e.message) || e).slice(0, 160) }; }
@@ -314,7 +373,7 @@ async function runMode() {
     out.recovery = recoveryAdvice(out, receipt ? receiptPath : null);
     if (out.recovery.gerekli) console.error(`KURTARMA GEREKLİ: ${out.recovery.neden.join(' · ')}\n  ${out.recovery.adim}\n  makbuz: ${out.recovery.makbuz}`);
     out.exitCode = exitCodeOf(out, s);
-    try { writeJson(evid, out); } catch (e) { console.error(`kanıt dosyası yazılamadı: ${String(e.message || e).slice(0, 160)}`); }
+    out.exitCode = writeEvidenceOrDemote(evid, out);
     await prisma.$disconnect().catch(() => {});
     process.exitCode = out.exitCode;
   }
@@ -335,8 +394,14 @@ async function recoverMode() {
 
   const R = new L.Results();
   const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
-  const out = { record: 'H5-URL-RECOVER', revision: 'R02', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış tamamlandı' };
+  const out = { record: 'H5-URL-RECOVER', revision: 'R03', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış tamamlandı' };
   let session = null;
+  // F-1: Run'ın oluşturma beklentisi makbuzdan. Deneme işaretli ve sonuç kesin 'none' değilse, kayıt görülmeden iptal
+  // kanıtlanmış SAYILMAZ (kayıt hâlâ oluşabilir).
+  const attemptedFlag = !!receipt.createAttemptedAt;
+  const expect = { attempted: attemptedFlag,
+    outcome: receipt.createOutcome || (attemptedFlag ? 'uncertain' : null), linkId: receipt.createLinkId || null };
+  out.createExpectationFromReceipt = { attempted: expect.attempted, outcome: expect.outcome };
   try {
     const ident = await assertReceiptIdentity(prisma, receipt);
     if (!ident.ok) { console.error(`REDDEDİLDİ: kimlik bağı doğrulanmadı (${ident.reason}) — HİÇBİR yazma yapılmadı`); await prisma.$disconnect().catch(() => {}); process.exit(4); }
@@ -353,14 +418,15 @@ async function recoverMode() {
       if (session && session.token) addSecret(session.token);
     }
   } catch (e) { out.fatal = String((e && e.message) || e).slice(0, 200); }
-  const fin = await finalizeClosure(R, prisma, base, null, receipt, session, null, false);
+  const fin = await finalizeClosure(R, prisma, base, null, receipt, session, null, false, expect);
   Object.assign(out, fin);
   const s = R.summary(`H5-URL KURTARMA (runId=${receipt.runId})`);
   out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed }));
   // Kurtarmada public 404 ÖLÇÜLEMEZ (ham token bilinmiyor); çıkış yalnız kapanış ölçümlerine bağlıdır.
   out.exitCode = !(out.linkRevoke && out.linkRevoke.ok) ? 6 : !(out.closure && out.closure.ok) ? 5 : out.fatal ? 1 : 0;
   out.recovery = recoveryAdvice(out, receiptPath);
-  try { writeJson(evid, out); } catch (e) { console.error('kanıt dosyası yazılamadı'); }
+  if (out.recovery.gerekli) console.error(`KURTARMA HÂLÂ GEREKLİ: ${out.recovery.neden.join(' · ')}`);
+  out.exitCode = writeEvidenceOrDemote(evid, out);
   await prisma.$disconnect().catch(() => {});
   process.exitCode = out.exitCode;
 }

@@ -28,6 +28,9 @@ const FOREIGN_ORIGIN = `https://localhost:${FOREIGN_PORT}`;
 
 let scenario = { create: 'normal', revoke: 'normal', public: 'normal', page: 'normal' };
 let calls = []; let extCalls = []; let foreignCalls = []; const secrets = { rawTokens: [], jwts: [] };
+// create=hold: istek kabul edilir ama kayıt YAZILMAZ ve yanıt VERİLMEZ; kayıt yalnız POST /__release ile, yani
+// kabul betiği kapanış sorgularını yapıp çıktıktan SONRA yazılır (gecikmiş oluşturma). /__reset bu listeyi SİLMEZ.
+const heldCreates = [];
 const mask = (p) => p.replace(/\/intake\/[^/?]+/g, '/intake/<token>');
 
 function send(res, status, obj, headers) {
@@ -65,6 +68,10 @@ async function apiHandler(req, res) {
     if (p === '/__ext') return send(res, 200, extCalls);
     if (p === '/__foreign') return send(res, 200, foreignCalls);
     if (p === '/__secrets') return send(res, 200, secrets);
+    if (req.method === 'POST' && p === '/__release') {
+      let n = 0; while (heldCreates.length) { await heldCreates.shift()(); n++; }
+      return send(res, 200, { released: n });
+    }
     return send(res, 404, {});
   }
   const body = (req.method === 'POST') ? await readBody(req) : {};
@@ -91,10 +98,12 @@ async function apiHandler(req, res) {
     const cc = await prisma.caseClient.findFirst({ where: { caseId, clientId, case: { tenantId: u.tenantId }, client: { tenantId: u.tenantId } }, select: { id: true } });
     if (!cc) return send(res, 404, { message: 'boundary' });
     const raw = crypto.randomBytes(32).toString('base64url'); secrets.rawTokens.push(raw);
-    const link = await prisma.clientIntakeLink.create({
+    const writeLink = () => prisma.clientIntakeLink.create({
       data: { tenantId: u.tenantId, caseId, clientId, tokenHash: crypto.createHash('sha256').update(raw).digest('hex'), status: 'ACTIVE', scope: body.scope, maxUses: 1, createdById: u.id },
       select: PUBLIC_SELECT,
     });
+    if (scenario.create === 'hold') { heldCreates.push(async () => { await writeLink(); }); return; } // kayıt SONRA, yanıt YOK
+    const link = await writeLink();
     if (scenario.create === 'timeout') return; // kayıt OLUŞTU, yanıt HİÇ gelmez
     const originForUrl = scenario.create === 'badurl' ? FOREIGN_ORIGIN : EXT_ORIGIN;
     return send(res, 201, { data: { link, rawToken: raw, intakeUrl: `${originForUrl}/intake/${raw}` } });
