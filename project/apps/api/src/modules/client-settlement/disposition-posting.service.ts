@@ -260,6 +260,10 @@ export class DispositionPostingService {
     );
 
     await this.prisma.$transaction(async (tx) => {
+      // B4+B10: YETKILI aktor kontrolu. Yukaridaki isApproverEligible yalniz UCUZ ERKEN-FAIL'dir; yetki
+      // iptaliyle serilesen, VIEWER'i reddeden karar burada, ILK finansal yazimdan ONCE verilir.
+      await this.officeApproval.assertApproverExecutionAuthorityInTx(tx, actor.userId!, tenantId);
+
       // F04: YETKILI tahsilat kontrolu. Collection satiri ILK finansal yazimdan ONCE kilitlenir
       // ve kilit transaction sonuna kadar tutulur (asagidaki metodun dokumantasyonuna bakiniz).
       await this.assertCollectionConfirmedForUpdate(tx, disp, tenantId);

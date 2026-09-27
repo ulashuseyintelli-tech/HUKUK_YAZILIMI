@@ -14,6 +14,7 @@ import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { PayoutApprovalPolicy } from '../office-approval/client-payout-approval.policy';
+import { lockAndAssertExecutionRole } from '../office-approval/office-approval-execution-authority';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
 import { ClientSettlementReadService } from './client-settlement-read.service';
@@ -160,8 +161,12 @@ export class ClientPayoutService {
    * explicit enforce edilir). PAYOUT-APPROVAL-1: yetkilendirmeyi sağlayan capacity, audit izinde
    * görünür olsun diye çağırana döndürülür (davranış değişmez, yalnız dönüş tipi void → Capacity).
    */
-  private async assertOfficeAdmin(actorUserId: string): Promise<Capacity> {
-    const user = await this.prisma.user.findUnique({
+  private async assertOfficeAdmin(
+    actorUserId: string,
+    // B10: yürütme transaction'ı kontrolü kilit ALTINDA, kendi client'ıyla yapar. Verilmezse eskisi gibi.
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<Capacity> {
+    const user = await db.user.findUnique({
       where: { id: actorUserId },
       include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
     });
@@ -183,7 +188,7 @@ export class ClientPayoutService {
   async create(tenantId: string, dto: CreateClientPayoutDto, actor?: { userId?: string }): Promise<CreatePayoutResult> {
     const userId = actor?.userId;
     if (!userId) throw new BadRequestException('actor (req.user.id) yok — payout kaydedilemez');
-    const authorizedCapacity = await this.assertOfficeAdmin(userId);
+    await this.assertOfficeAdmin(userId); // ucuz erken-fail; yetkili karar transaction içinde
     if (!dto?.idempotencyKey) throw new BadRequestException('idempotencyKey zorunlu');
     const amount = this.parseAmount(dto.amount);
     const currency = dto.currency || 'TRY';
@@ -191,7 +196,19 @@ export class ClientPayoutService {
     // caseClientId doğrulama (ortak read-service): tenant+case+role. clientId ile authz YOK.
     await this.readService.assertEligibleCaseClient(tenantId, dto.caseId, dto.caseClientId);
 
-    return this.runPayoutCreationTransaction(tenantId, dto, amount, currency, userId, authorizedCapacity, 'DIRECT_OFFICE_ADMIN_CAPABILITY');
+    return this.runPayoutCreationTransaction(
+      tenantId,
+      dto,
+      amount,
+      currency,
+      userId,
+      // B4+B10: kilit + VIEWER reddi + office-admin capacity'si kilit ALTINDA yeniden.
+      async (tx) => {
+        await lockAndAssertExecutionRole(tx, userId);
+        return this.assertOfficeAdmin(userId, tx);
+      },
+      'DIRECT_OFFICE_ADMIN_CAPABILITY',
+    );
   }
 
   /**
@@ -266,7 +283,8 @@ export class ClientPayoutService {
 
     // Defense-in-depth: generic approve() zaten PayoutApprovalPolicy ile geçmiş olmalı; finalize
     // AYRICA re-check eder (disposition'ın post()'ta isApproverEligible'ı yeniden çağırmasıyla AYNI desen).
-    const authorizedCapacity = await this.payoutApprovalPolicy.assertEligible(userId, tenantId);
+    // B10: bu erken kontrol UCUZ ERKEN-FAIL'dir; yetkili karar transaction içinde, kilit altında verilir.
+    await this.payoutApprovalPolicy.assertEligible(userId, tenantId);
     await this.readService.assertEligibleCaseClient(tenantId, dto.caseId, dto.caseClientId);
 
     const result = await this.runPayoutCreationTransaction(
@@ -275,7 +293,7 @@ export class ClientPayoutService {
       amount,
       currency,
       userId,
-      authorizedCapacity,
+      (tx) => this.payoutApprovalPolicy.assertExecutionEligibleInTx(tx, userId, tenantId),
       'OFFICE_APPROVAL_BINDING',
       approval.id,
     );
@@ -324,7 +342,9 @@ export class ClientPayoutService {
     amount: Prisma.Decimal,
     currency: string,
     userId: string,
-    authorizedCapacity: Capacity,
+    // B4+B10: yol-özel YETKİLİ aktör kontrolü; transaction başında, ilk yazmadan ÖNCE, aktör satırları
+    // kilitliyken çalışır ve yetkilendiren capacity'yi (audit izi) döndürür.
+    assertAuthorityInTx: (tx: Prisma.TransactionClient) => Promise<Capacity>,
     authorizationMode: string,
     approvalRequestId?: string,
   ): Promise<CreatePayoutResult> {
@@ -338,6 +358,8 @@ export class ClientPayoutService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const authorizedCapacity = await assertAuthorityInTx(tx);
+
         // Concurrency guard: advisory xact lock (scope tenant+case+caseClientId+currency) → aynı
         // alacaklı için eşzamanlı payout'lar SERIALIZE olur; outstanding lock altında tekrar hesaplanır.
         // CBND-5 (H2): payoutLockKey paylaşılan fonksiyon — ClientOffsetService payable leg için AYNI

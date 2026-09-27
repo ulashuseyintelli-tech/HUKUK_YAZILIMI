@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientPayoutService } from './client-payout.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
@@ -10,7 +11,7 @@ interface AuthRequest {
 }
 
 @Controller('client-payouts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientPayoutController {
   constructor(
     private readonly service: ClientPayoutService,

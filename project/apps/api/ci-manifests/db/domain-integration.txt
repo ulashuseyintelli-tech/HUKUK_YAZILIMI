@@ -228,6 +228,9 @@ src/modules/client-notification/__tests__/g4-claim-concurrency.db-gated.integrat
 #   F04 (posting / cancellation / reversal race): gercek PostgreSQL uzerinde iki commit
 #   sirasini bariyerlerle dogrular; kilitli Collection okumasi ve pre-post CAS regresyonu.
 src/modules/client-settlement/__tests__/f04-posting-reversal-race.db-gated.integration.spec.ts
+#   B10-EXECUTION-AUTHORITY-REVOCATION-RACE-R01: yurutme yetkisi (Lawyer->User FOR SHARE) ile gercek
+#     LawyerService.update/delete iptallerinin gercek PostgreSQL'de serilesmesi; kilitsiz mutasyon 3 testi kirar.
+src/modules/office-approval/__tests__/execution-authority-revocation-race.db-gated.integration.spec.ts
 #
 #   CLIENT-SETTLEMENT kalan 2 DB-gated spec (owner GO 2026-09-17 "KALAN 2 DB-GATED SPEC / TM47D onarimi + 32/32"):
 #     describeDb + gercek PrismaClient + tm47d-happy-path-seed. tm47d test-kurulum onarimi:

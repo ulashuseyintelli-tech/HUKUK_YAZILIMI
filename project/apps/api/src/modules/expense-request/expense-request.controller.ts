@@ -6,6 +6,7 @@ import { ExpenseNotificationService } from './expense-notification.service';
 import { ExpenseViewService } from './expense-view.service';
 import { ExpenseCalculatorService } from './expense-calculator.service';
 import { AuthGuard } from '@nestjs/passport';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ExpenseRequestStatus } from '@prisma/client';
 import { Request } from 'express';
 // CPE Integration - Phase 3
@@ -17,7 +18,7 @@ interface AuthRequest extends Request {
 }
 
 @Controller('expense-requests')
-@UseGuards(AuthGuard('jwt'), CpeRequiredGuard)
+@UseGuards(AuthGuard('jwt'), ViewerWriteDenyGuard, CpeRequiredGuard)
 export class ExpenseRequestController {
   constructor(
     private readonly service: ExpenseRequestService,
@@ -363,6 +364,7 @@ export class ExpenseRequestController {
    * POST /expense-requests/calculate-preview
    */
   @Post('calculate-preview')
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async calculatePreview(
     @Req() req: AuthRequest,
     @Body() body: { principalAmount: number; caseType?: string; stageCode?: string },
