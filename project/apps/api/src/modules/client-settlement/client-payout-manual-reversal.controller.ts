@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientPayoutManualReversalReadService } from './client-payout-manual-reversal-read.service';
 import { ClientPayoutManualReversalService } from './client-payout-manual-reversal.service';
 import { CloseClientPayoutManualReversalDto } from './dto/close-client-payout-manual-reversal.dto';
@@ -16,7 +17,7 @@ interface AuthRequest {
  * TM47D-5A endpoints are read-only operational projections.
  */
 @Controller('client-payout-manual-reversals')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientPayoutManualReversalController {
   constructor(
     private readonly service: ClientPayoutManualReversalService,

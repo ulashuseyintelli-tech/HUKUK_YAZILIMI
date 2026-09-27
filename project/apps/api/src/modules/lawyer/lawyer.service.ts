@@ -307,6 +307,10 @@ export class LawyerService {
         const privileged = this.isPrivilegedLawyerRecord(dup);
         if (privileged) {
           await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
+        } else {
+          // B3: ayrıcalıksız pasif kayıt da create ile SESSİZCE etkinleşmez — pasifleştirmeyle AYNI yaşam
+          // döngüsü kuralı (CLIENT R1A emsali: create yetkisi lifecycle yetkisini İÇERMEZ).
+          await this.assertCanReactivateLawyerViaCreate(actor?.userId, tenantId);
         }
         // CLIENT R1A deseni: `dup` transaction DIŞINDA okundu → yazma, yetki kararının verildiği DURUMA
         // (tenant + isActive:false + değerlendirilen ayrıcalık değerleri) koşullu. Kayıt bu arada
@@ -871,8 +875,34 @@ export class LawyerService {
       await this.assertCanAssignPrivilegedFieldsOnCreate(actor, tenantId, db);
     }
     const dup = await this.findDuplicateLawyer(tenantId, data, db);
-    if (dup && dup.isActive === false && this.isPrivilegedLawyerRecord(dup)) {
-      await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
+    if (dup && dup.isActive === false) {
+      if (this.isPrivilegedLawyerRecord(dup)) {
+        await this.assertCanReactivatePrivilegedLawyer(actor, tenantId, db);
+      } else {
+        await this.assertCanReactivateLawyerViaCreate(actor?.userId, tenantId); // B3
+      }
+    }
+  }
+
+  /**
+   * B3 (owner GO 2026-09-27) — AYRICALIKSIZ pasif avukatın create/dedup yoluyla yeniden etkinleşmesi.
+   * Eşik, pasifleştirmeyle (`assertCanManageLawyerLifecycle`, DELETE /lawyers/:id) AYNI yüklemdir:
+   * `officeApproval.isApproverEligible` (aktif + aynı tenant + personel olmayan + PARTNER veya delege).
+   * CLIENT `assertCanReactivateViaCreate` (OWN-13 I02-R1A) ile birebir desen: create yetkisi yaşam döngüsü
+   * yetkisini İÇERMEZ; `UserRole.ADMIN` tek başına yetmez. Ayrıcalıklı kayıt AK-2 kuralında kalır.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.create() → mükerrer dal, eşleşen kayıt pasif ve ayrıcalıksız (POST /lawyers, POST /cases
+   * ///    dosya içi avukat, seed) — HER yazmadan ÖNCE.
+   * ///  - LawyerService.assertCreateAuthorized() → POST /cases ön kontrolü.
+   * /// </remarks>
+   */
+  private async assertCanReactivateLawyerViaCreate(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Eşleşen kayıt pasif bir avukat; yeniden etkinleştirme pasifleştirme ile aynı yetkiyi ister (PARTNER veya yetkilendirilmiş avukat).",
+      );
     }
   }
 

@@ -70,6 +70,9 @@ const REQUESTER = 'u-req';
 const RECIPIENT = 'alici@example.test'; // TEST-ONLY; içerik onayı gönderim YAPMAZ
 const DENIED = 'OFFICE_APPROVAL_DECISION_DENIED_VIEWER';
 const FD_DENIED = 'DISCLOSURE_APPROVAL_NOT_ELIGIBLE';
+// B4/B6 (owner GO 2026-09-27): dağıtım ve FD controller'larındaki rota katmanı (ViewerWriteDenyGuard) VIEWER'ı
+// servis kapısından ÖNCE durdurur. Servis katmanı karar sınırı (DENIED / FD_DENIED) HTTP'siz spec'te sınanır.
+const ROUTE_DENIED = 'VIEWER_WRITE_DENIED';
 const WRITE_FLAG = 'CLIENT_FINANCIAL_DISCLOSURE_WRITE_ENABLED';
 
 type Role = 'ADMIN' | 'USER' | 'VIEWER';
@@ -234,6 +237,8 @@ const fakePrisma: any = {
       };
     }),
   },
+  // B1: F01 hedef ofisi verilmezse tenant'ın tek ofisi (Office.tenantId @unique) okunur.
+  office: { findUnique: jest.fn(async () => ({ id: 'office-A' })) },
   officeApprovalRequest: {
     findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
       db.requests.has(where.id) ? { ...db.requests.get(where.id) } : null,
@@ -269,6 +274,7 @@ const fakePrisma: any = {
     }),
   },
   $executeRaw: jest.fn(async () => 1), // pg_advisory_xact_lock
+  $queryRaw: jest.fn(async () => []), // B10: aktör satırı FOR SHARE kilidi
 };
 fakePrisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(fakePrisma));
 
@@ -659,11 +665,11 @@ describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
 
   describe('POST /collection-dispositions/:id/approve — dağıtım onayı OfficeApprovalService.approve üzerinden', () => {
     it.each(['viewer-partner', 'viewer-delegate'])(
-      `bağlı VIEWER %s → 403 ${DENIED}; onay talebi PENDING kalır, dağıtım/karar yazılmaz`,
+      `bağlı VIEWER %s → 403 ${ROUTE_DENIED} (rota katmanı); onay talebi PENDING kalır, dağıtım/karar yazılmaz`,
       async (actor) => {
         const res = await post('/collection-dispositions/disp-1/approve', actor, { note: 'uygun' });
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe(DENIED);
+        expect(res.body.code).toBe(ROUTE_DENIED);
         expectNoDecisionWrites('oar-disp');
         expect(fakePrisma.collectionDisposition.updateMany).not.toHaveBeenCalled();
       },
@@ -683,11 +689,11 @@ describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
     const path = `/client-financial-disclosures/${VERSION_OFFICE}/complete-office-approval`;
 
     it.each(['viewer-partner', 'viewer-manager', 'viewer-delegate'])(
-      `bağlı VIEWER %s → 403 ${FD_DENIED}; sürüm ve talep yazılmaz`,
+      `bağlı VIEWER %s → 403 ${ROUTE_DENIED} (rota katmanı); sürüm ve talep yazılmaz`,
       async (actor) => {
         const res = await post(path, actor, { approvalRequestId: FD_REQ_OFFICE });
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe(FD_DENIED);
+        expect(res.body.code).toBe(ROUTE_DENIED);
         expect(fakePrisma.clientFinancialDisclosureVersion.updateMany).not.toHaveBeenCalled();
         expect(fakePrisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
         expect(db.versions.get(VERSION_OFFICE)).toMatchObject({ status: 'OFFICE_APPROVAL_PENDING', officeApprovedById: null });
@@ -708,11 +714,11 @@ describe('VIEWER ONAY KARARI SINIRI — gerçek HTTP giriş yolları', () => {
     const path = `/client-financial-disclosures/${VERSION_CONTENT}/complete-content-approval`;
 
     it.each(['viewer-partner', 'viewer-manager', 'viewer-delegate'])(
-      `bağlı VIEWER %s → 403 ${FD_DENIED}; sürüm yazılmaz`,
+      `bağlı VIEWER %s → 403 ${ROUTE_DENIED} (rota katmanı); sürüm yazılmaz`,
       async (actor) => {
         const res = await post(path, actor, {});
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe(FD_DENIED);
+        expect(res.body.code).toBe(ROUTE_DENIED);
         expect(fakePrisma.clientFinancialDisclosureVersion.updateMany).not.toHaveBeenCalled();
         expect(db.versions.get(VERSION_CONTENT)).toMatchObject({ status: 'CONTENT_APPROVAL_PENDING', contentApprovedById: null });
       },

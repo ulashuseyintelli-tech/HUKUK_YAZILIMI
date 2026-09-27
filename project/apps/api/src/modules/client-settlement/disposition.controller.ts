@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Param, Query, Body, Request, UseGuards, Header } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionPostingService } from './disposition-posting.service';
 import { ClientFinancialDisclosureCommandService } from './client-financial-disclosure-command.service';
@@ -17,7 +18,7 @@ interface AuthRequest {
 }
 
 @Controller('collection-dispositions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class DispositionController {
   constructor(
     private readonly posting: DispositionPostingService,

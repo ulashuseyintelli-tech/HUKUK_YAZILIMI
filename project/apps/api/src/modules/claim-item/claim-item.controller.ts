@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ClaimItemService } from './claim-item.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import {
   CreateClaimItemDto,
@@ -21,7 +22,7 @@ import {
 } from './dto/claim-item.dto';
 
 @Controller('claim-items')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClaimItemController {
   constructor(private readonly service: ClaimItemService) {}
 
@@ -96,6 +97,7 @@ export class ClaimItemController {
    * Bu endpoint geriye uyumluluk için korunuyor.
    */
   @Post('calculate-interest')
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async calculateInterest(@Body() dto: CalculateInterestDto) {
     const data = await this.service.calculateInterest(dto);
     return { success: true, data, _deprecated: 'Use /api/interest-engine/calculate for accurate calculations' };
@@ -228,6 +230,7 @@ export class ClaimItemController {
 
   // Dosyayı kural motoru ile doğrula
   @Post('case/:caseId/validate')
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async validateCase(
     @CurrentUser('tenantId') tenantId: string,
     @Param('caseId') caseId: string,
@@ -251,6 +254,7 @@ export class ClaimItemController {
 
   // Çek tazminatı hesapla
   @Post('calculate-check-penalty')
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   async calculateCheckPenalty(
     @Body() body: { principalAmount: number; customRate?: number },
   ) {

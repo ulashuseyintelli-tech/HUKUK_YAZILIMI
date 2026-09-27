@@ -49,7 +49,11 @@ const dbUser = (role: string, lawyer: unknown, over: Record<string, unknown> = {
   ...over,
 });
 const approvalFor = (user: unknown) =>
-  new OfficeApprovalService({ user: { findUnique: jest.fn().mockResolvedValue(user) } } as any, { log: jest.fn() } as any);
+  new OfficeApprovalService(
+    // B1: F01 hedef ofisi verilmezse tenant'ın tek ofisi okunur.
+    { user: { findUnique: jest.fn().mockResolvedValue(user) }, office: { findUnique: jest.fn().mockResolvedValue({ id: OFFICE }) } } as any,
+    { log: jest.fn() } as any,
+  );
 
 const LINKED: Array<[string, unknown]> = [
   ['PARTNER', lawyerLink({ lawyerRank: 'PARTNER' })],
@@ -263,14 +267,16 @@ describe('AK-1a — seedAll VIEWER\'ı ZATEN reddeder (gerçek CLIENT toplu-işl
 });
 
 describe('AK-1a/AK-2 — LawyerService.assertCreateAuthorized: yazmasız ön kontrol', () => {
-  const build = (rows: any[]) => {
+  const build = (rows: any[], approverEligible = false) => {
     const prisma: any = {
       lawyer: { findMany: jest.fn(async () => rows), update: jest.fn(), create: jest.fn(), aggregate: jest.fn() },
       office: { findUnique: jest.fn(), create: jest.fn() },
       user: { findUnique: jest.fn(async () => null) },
       $transaction: jest.fn(),
     };
-    return { svc: new LawyerService(prisma, { log: jest.fn(), logInTransaction: jest.fn() } as any, {} as any), prisma };
+    // B3: ayrıcalıksız pasif eşleşme yaşam döngüsü yüklemini (isApproverEligible) sorar.
+    const officeApproval: any = { isApproverEligible: jest.fn(async () => approverEligible) };
+    return { svc: new LawyerService(prisma, { log: jest.fn(), logInTransaction: jest.fn() } as any, officeApproval), prisma, officeApproval };
   };
   const passive = (over: Record<string, unknown>) => ({
     id: 'L-X', tenantId: TENANT, name: 'Ayse', surname: 'Kaya', barNumber: null, tckn: null, isActive: false,
@@ -296,13 +302,24 @@ describe('AK-1a/AK-2 — LawyerService.assertCreateAuthorized: yazmasız ön kon
     noWrite(prisma);
   });
 
-  it('ayrıcalıksız pasif eşleşme / eşleşme yok → geçer; yazma YOK', async () => {
-    const a = build([passive({})]);
-    await expect((a.svc as any).assertCreateAuthorized(TENANT, DATA)).resolves.toBeUndefined();
-    noWrite(a.prisma);
+  it('eşleşme yok → geçer; yazma YOK', async () => {
     const b = build([]);
     await expect((b.svc as any).assertCreateAuthorized(TENANT, DATA)).resolves.toBeUndefined();
     noWrite(b.prisma);
+  });
+
+  it('B3: aktörsüz + ayrıcalıksız pasif eşleşme → 403 (yaşam döngüsü yetkisi gerekir); yazma YOK', async () => {
+    const a = build([passive({})], true);
+    await expect((a.svc as any).assertCreateAuthorized(TENANT, DATA)).rejects.toThrow(ForbiddenException);
+    expect(a.officeApproval.isApproverEligible).not.toHaveBeenCalled();
+    noWrite(a.prisma);
+  });
+
+  it('B3: yaşam döngüsü yetkili aktör + ayrıcalıksız pasif eşleşme → geçer; yazma YOK', async () => {
+    const a = build([passive({})], true);
+    await expect((a.svc as any).assertCreateAuthorized(TENANT, DATA, { userId: 'd1', role: 'USER' })).resolves.toBeUndefined();
+    expect(a.officeApproval.isApproverEligible).toHaveBeenCalledWith('d1', TENANT);
+    noWrite(a.prisma);
   });
 
   it('ADMIN aktörle pasif PARTNER eşleşmesi → geçer (H2); yazma YOK', async () => {

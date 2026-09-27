@@ -79,6 +79,7 @@ function buildService(opts: {
   const updateMany = jest.fn().mockResolvedValue({ count: opts.updateCount ?? 1 });
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([]), // B10: aktör satırı FOR SHARE kilidi
     clientFinancialDisclosureVersion: {
       findFirst: jest.fn().mockResolvedValue(baseVersion(opts.version ?? {})),
       updateMany,

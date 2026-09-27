@@ -17,6 +17,7 @@ import {
 import { CaseService } from "./case.service";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto } from "./dto/case.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { AllowViewerReadOnlyPost, ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
@@ -36,7 +37,7 @@ import {
 } from "../collection/receipt-object-scope-authorization.service";
 
 @Controller("cases")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CaseController {
   constructor(
     private caseService: CaseService,
@@ -291,6 +292,7 @@ export class CaseController {
    * POST /cases/suggest-type
    */
   @Post("suggest-type")
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (kaynaktan dogrulandi)
   suggestCaseType(@Body() body: { text: string }) {
     const result = this.ocrService.classifyDocument(body.text);
     return {

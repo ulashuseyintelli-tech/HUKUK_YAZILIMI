@@ -17,8 +17,9 @@
  *       AK-1a (owner GO 2026-09-10) KARARI: bu davranis OKUMA yukleminde KORUNUR (asagidaki
  *       dogrulamalar degismedi); YAZMA niyetinde VIEWER elenir — `isF01WriteActorAuthorized`,
  *       `office-viewer-write-boundary-ak1a*.spec.ts`.
- *   (2) `targetOfficeId` VERILMEZSE cross-office kontrolu HIC calismaz; baska ofise bagli
- *       PARTNER avukat, ofis belirtmeyen cagrilarda yetkili SAYILIR.
+ *   (2) [DEGISTI — B1, owner GO 2026-09-27] Eskiden `targetOfficeId` VERILMEZSE cross-office kontrolu
+ *       HIC calismiyordu. Artik hedef, tenant'in DB'deki TEK ofisidir (Office.tenantId @unique):
+ *       baska ofise bagli PARTNER, ofis belirtmeyen cagrilarda da REDDEDILIR.
  *   (3) Cross-office kontrolu ADMIN kisa-yolundan ONCE gelir: baska ofise bagli bir ADMIN,
  *       hedef ofis verildiginde REDDEDILIR.
  */
@@ -30,9 +31,13 @@ const OFFICE = 'office-1';
 const OTHER_OFFICE = 'office-2';
 const audit: any = { log: jest.fn() };
 
+// B1: tenant'in tek ofisi (Office.tenantId @unique) — hedef verilmezse cross-office kontrolunun kaynagi.
 const svc = (user: unknown) =>
   new OfficeApprovalService(
-    { user: { findUnique: jest.fn().mockResolvedValue(user) } } as any,
+    {
+      user: { findUnique: jest.fn().mockResolvedValue(user) },
+      office: { findUnique: jest.fn().mockResolvedValue({ id: OFFICE }) },
+    } as any,
     audit,
   );
 
@@ -109,13 +114,30 @@ describe('F01 matris — OKUMA yuklemi: rol dizesi ADMIN disinda ELEYICI DEGILDI
   });
 });
 
-describe('F01 matris — cross-office kontrolu YALNIZ targetOfficeId verilince calisir', () => {
-  it('baska ofise bagli PARTNER + hedef ofis VERILMEZ -> KABUL EDILIR (kontrol calismaz)', async () => {
+describe('F01 matris — cross-office kontrolu (B1: hedef verilmezse tenant ofisi)', () => {
+  it('B1: baska ofise bagli PARTNER + hedef ofis VERILMEZ -> REDDEDILIR (hedef = tenant ofisi, DB)', async () => {
     await expect(
       svc(
         actor({ lawyer: lawyer({ officeId: OTHER_OFFICE, lawyerRank: 'PARTNER' }) }),
       ).isF01ActorAuthorized('u', TENANT),
+    ).resolves.toBe(false);
+  });
+
+  it('B1: tenant ofisine bagli PARTNER + hedef ofis VERILMEZ -> KABUL EDILIR', async () => {
+    await expect(
+      svc(actor({ lawyer: lawyer({ lawyerRank: 'PARTNER' }) })).isF01ActorAuthorized('u', TENANT),
     ).resolves.toBe(true);
+  });
+
+  it('B1: tenant ofis kaydi YOKSA ofis bagli aktor -> REDDEDILIR (fail-closed; OFFICE_CONTEXT_UNRESOLVED emsali)', async () => {
+    const s = new OfficeApprovalService(
+      {
+        user: { findUnique: jest.fn().mockResolvedValue(actor({ lawyer: lawyer({ officeId: OTHER_OFFICE, lawyerRank: 'PARTNER' }) })) },
+        office: { findUnique: jest.fn().mockResolvedValue(null) },
+      } as any,
+      audit,
+    );
+    await expect(s.isF01ActorAuthorized('u', TENANT)).resolves.toBe(false);
   });
 
   it('baska ofise bagli ADMIN + hedef ofis VERILIR -> REDDEDILIR (ofis kontrolu ADMIN kisa-yolundan ONCE)', async () => {

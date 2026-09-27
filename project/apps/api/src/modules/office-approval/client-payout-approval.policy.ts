@@ -1,5 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { lockAndAssertExecutionRole } from './office-approval-execution-authority';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
 
 /**
@@ -29,8 +31,13 @@ export class PayoutApprovalPolicy {
    * Değilse 403 fırlatır; eligible ise yetkilendiren capacity'yi döner (audit izinde görünür olsun diye —
    * ClientPayoutService.assertOfficeAdmin() ile AYNI sözleşme).
    */
-  async assertEligible(userId: string, tenantId: string): Promise<Capacity> {
-    const user = await this.prisma.user.findUnique({
+  async assertEligible(
+    userId: string,
+    tenantId: string,
+    // B10: yürütme transaction'ı yüklemi kilit ALTINDA, kendi client'ıyla değerlendirir. Verilmezse eskisi gibi.
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<Capacity> {
+    const user = await db.user.findUnique({
       where: { id: userId },
       include: { lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } } },
     });
@@ -42,5 +49,20 @@ export class PayoutApprovalPolicy {
       );
     }
     return lw!.lawyerRank as Capacity;
+  }
+
+  /**
+   * B4 + B10 — payout KESİNLEŞTİRMENİN yetkili kontrolü: finalize transaction'ı içinde, ilk yazmadan ÖNCE.
+   * Aktör satırları kilitlenir (yetki iptaliyle serileşir), VIEWER reddedilir, bu politika kilit altında
+   * yeniden değerlendirilir. `isEligible` (generic approve/reject dispatcher'ı) DEĞİŞMEZ.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClientPayoutService.finalize() → POST /client-payouts/:id/finalize ($transaction başı).
+   * /// </remarks>
+   */
+  async assertExecutionEligibleInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<Capacity> {
+    await lockAndAssertExecutionRole(tx, userId);
+    return this.assertEligible(userId, tenantId, tx);
   }
 }
