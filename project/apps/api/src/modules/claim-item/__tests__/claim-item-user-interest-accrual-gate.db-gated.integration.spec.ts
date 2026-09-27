@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
+import { CanActivate, ExecutionContext, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { OfficeApprovalExecutionStatus, OfficeApprovalStatus, PrismaClient } from '@prisma/client';
@@ -33,10 +33,22 @@ const describeWithDisposableDb = TEST_DB_URL ? describe : describe.skip;
 /** main.ts global pipe'ı ile aynı seçenekler; aşağıdaki test kaynağın hâlâ bunu kullandığını doğrular. */
 const PRODUCTION_VALIDATION_OPTIONS = { whitelist: true, forbidNonWhitelisted: true, transform: true } as const;
 
-class HeaderIdentityGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
+/**
+ * Yalnız JWT imza doğrulamasının yerine geçer. Üretim sözleşmesi (JwtStrategy → AuthService.validateUser):
+ * req.user, DB'den okunan tam User satırıdır (role dahil) ve pasif kullanıcı reddedilir. Sonraki guard'lar
+ * (ör. ViewerWriteDenyGuard) override EDİLMEZ; gerçek rolü görür.
+ */
+class DbUserIdentityGuard implements CanActivate {
+  constructor(private readonly db: () => PrismaClient) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
-    req.user = { id: req.headers['x-test-user-id'], tenantId: req.headers['x-test-tenant-id'] };
+    const user = await this.db().user.findUnique({
+      where: { id: String(req.headers['x-test-user-id']) },
+      include: { tenant: true },
+    });
+    if (!user || !user.isActive) throw new UnauthorizedException();
+    req.user = user;
     return true;
   }
 }
@@ -59,7 +71,7 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }), ClaimItemModule],
     })
       .overrideGuard(JwtAuthGuard)
-      .useClass(HeaderIdentityGuard)
+      .useValue(new DbUserIdentityGuard(() => prisma))
       .compile();
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_OPTIONS));
@@ -84,7 +96,7 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
   type ItemSeed = Record<string, unknown>;
   type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-  async function fixture(label: string, itemSeed: ItemSeed = {}) {
+  async function fixture(label: string, itemSeed: ItemSeed = {}, requesterRole: 'USER' | 'VIEWER' = 'USER') {
     const suffix = randomUUID().slice(0, 8);
     const tenantId = `test-ci-nic-${label}-${suffix}`;
     tenantIds.add(tenantId);
@@ -92,7 +104,7 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
     const office = await prisma.office.create({ data: { tenantId, name: `CI NIC office ${label}` } });
 
     const requesterUser = await prisma.user.create({
-      data: { tenantId, email: `req-${suffix}@example.test`, name: 'Req', surname: 'Lawyer', role: 'USER' },
+      data: { tenantId, email: `req-${suffix}@example.test`, name: 'Req', surname: 'Lawyer', role: requesterRole },
     });
     const requesterLawyer = await prisma.lawyer.create({
       data: { tenantId, officeId: office.id, userId: requesterUser.id, name: 'Req', surname: 'Lawyer', lawyerRank: 'LAWYER' },
@@ -142,7 +154,6 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
     return request(app.getHttpServer())
       .put(`/claim-items/${f.claimItemId}`)
       .set('x-test-user-id', f.requesterUserId)
-      .set('x-test-tenant-id', f.tenantId)
       .send(body);
   }
 
@@ -229,6 +240,18 @@ describeWithDisposableDb('ClaimItem user interest accrual update — HTTP + gate
     });
     expect(gate).toEqual(expect.objectContaining({ outcome: 'DENIED', reasonCode: 'UNSUPPORTED_UPDATE_FIELD' }));
     expect(await prisma.officeApprovalRequest.count({ where: { tenantId: f.tenantId } })).toBe(0);
+  });
+
+  it('ret (#2818 birleşimi): aynı nesne yetkili VIEWER faiz PUT isteği VIEWER_WRITE_DENIED; talep oluşmaz, kalem değişmez', async () => {
+    const f = await fixture('viewer', {}, 'VIEWER');
+    const before = await prisma.claimItem.findUniqueOrThrow({ where: { id: f.claimItemId } });
+    const res = await put(f, ACCRUES_BODY);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'VIEWER_WRITE_DENIED' }));
+    expect(gateSpy).not.toHaveBeenCalled();
+    expect(await prisma.officeApprovalRequest.count({ where: { tenantId: f.tenantId } })).toBe(0);
+    await expectNothingChanged(f, before);
   });
 
   it('ret: nesne yetkisi olmayan aktörün faiz yaması 403; talep oluşmaz', async () => {
