@@ -242,3 +242,18 @@ yüzden "33 gerçek tenant" denemez. Ölçüm yalnız sayı dağılımıdır; ek
 | **D-9** erişim kapanışı | **kabul — yalnız bu intake koşumu** | makine: USED 1/1, ACTIVE yok, tek kullanım sonrası yerel/dış 404, kullanıcılar pasif, dosya CLOSED. **Portal, belge ve mesaj kapanışını kapsamaz** (D-4…D-7 ölçülmedi) |
 | D-4 … D-7 | **değişmedi — ölçülmedi** | — |
 | D-8 | **değişmedi — kısmen kanıtlı** (§9) | — |
+
+### 12.4 Sonradan yapılan işlem notu — saat (koşumlardan SONRA; ayrı not)
+
+> Bu alt bölüm §12.1–§12.3'ü **değiştirmez**. Geçmiş koşum zamanları (kanıtlardaki UTC damgaları, beyan saatleri, görüntü saati)
+> **geriye dönük değiştirilmedi ve yeniden hesaplanmadı.**
+
+Owner'ın paylaştığı çıktılar (CLIENT bu ölçümleri kendisi yapmadı ve çıktıları doğrudan görmedi):
+
+- Kabul koşumundan **sonra** PC'nin yaklaşık **257 saniye geride** olduğu ölçüldü.
+- Owner'ın belirttiği ofis sunucusunun **dış zaman kaynağı düzeltildi** (sunucu adı repoya yazılmadı).
+- Son PC ölçümünde internet kaynağıyla fark **0,13–0,39 ms**, eşitleme hatası **0**.
+
+PC saatinin koşum anındaki sapması **ölçülmedi**; ~257 sn değeri koşumdan sonraki ölçümdür ve koşum zamanlarına uygulanmaz.
+§12.2'deki 00:58 / 01:02 ayrımı ve "saat farkından süre çıkarılmaz" kuralı aynen geçerlidir. Kanıt kökündeki ayrı not
+sha256 `FC87FCAD09C0E61AB2E73EA195A6099F9FD36CEDDB268943B174894DBB4EF2B2` (orijinal kanıtlar değiştirilmedi).
