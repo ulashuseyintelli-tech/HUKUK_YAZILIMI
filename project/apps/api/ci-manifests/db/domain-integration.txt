@@ -246,6 +246,11 @@ src/modules/client-settlement/__tests__/tm47d-happy-path-financial-qa.integratio
 #     test behavior; unchanged and green (7 suites/tests, verified fresh on disposable
 #     Postgres 16 against origin/main before wiring).
 src/modules/collection/__tests__/collection-cancel-reversal.db-gated.integration.spec.ts
+#
+#   ADR014-REPRESENTATIVE-FIXTURES-R01: ayni is olayi legacy (Case.dues) ve canonical (G1 kopru ClaimItem)
+#     kaynakta; gercek CaseService.create + CollectionService.create/cancel; canonical bagimsiz elle
+#     aritmetige esit. Faiz teyidi ic yazici ile (kullanici yolu kusurlu, ayri kayit).
+src/modules/balance-display-shadow-diff/__tests__/adr014-representative-fixtures.db-gated.integration.spec.ts
 #   W3-F02-OUTBOX-CONSUMER-TENANT-OWNERSHIP-R01: outbox consumer'in caseId->tenant
 #   sahipligini merkezi dispatch() gate'inde dogruladigini GERCEK Postgres + iki
 #   GERCEK tenant/Case ile kanitlayan runtime representative matrix (A-G).
