@@ -92,12 +92,19 @@ metadata'yı üretir. Bağlam kökü `src/scripts/adr014-shadow-evidence-runner.
 ErrorLog, MetricsRegistry). Kök bağlantısını `__tests__/adr014-shadow-evidence-runner.module.wiring.spec.ts`
 kilitler.
 
-**Doğal çıkış.** Başarı yolunda süreç kanıt yazıldıktan sonra kendiliğinden `0` ile çıkar; hata
-yolunda `1` ile çıkar. Önceden süreç çıkmıyordu: `icrabot` `ActionHandlerService` constructor'ı ref'li
-bir `setInterval` (lock temizleme, 5 dk) açıyor ve hiç kapatmıyordu (async_hooks ile yaratma yığını
-üzerinden tespit edildi). Aralık artık `onApplicationBootstrap`'ta açılır, `onModuleDestroy`'da
-(`app.close()`) kapanır; bootstrap yarıda düşerse hiç açılmaz. `process.exit` / zorla sonlandırma
-KULLANILMAZ.
+**Çıkış davranışı — iki yol AYRI.**
+- **Başarı yolu = doğal çıkış:** kanıt yazıldıktan ve `app.close()` sonrası süreç event loop boşaldığı
+  için kendiliğinden `0` ile çıkar (izole gate DB'de preload'suz ölçüldü, ~1,2 sn). Bu yolda
+  `process.exit` çağrılmaz.
+- **Hata yolu = doğal çıkış DEĞİL:** runner'ın mevcut `main().catch` bloğu `process.exit(1)` çağırır;
+  çıkış kodu oradan gelir. Kaynak temizliği bundan AYRI ölçüldü: bağlam kurulduktan sonraki hatada
+  `$disconnect` + aralık kapatma çalışır ve çıkış anında aktif kaynak yoktur; bootstrap hatasında
+  (ör. DB'ye ulaşılamaz) aralık hiç açılmamıştır.
+
+Önceden başarı yolunda süreç çıkmıyordu: `icrabot` `ActionHandlerService` constructor'ı ref'li bir
+`setInterval` (lock temizleme, 5 dk) açıyor ve hiç kapatmıyordu (async_hooks ile yaratma yığını üzerinden
+tespit edildi). Aralık artık `onApplicationBootstrap`'ta açılır, `onModuleDestroy`'da (`app.close()`)
+kapanır. `--forceExit` / `unref` / zorla sonlandırma KULLANILMAZ.
 
 ---
 
