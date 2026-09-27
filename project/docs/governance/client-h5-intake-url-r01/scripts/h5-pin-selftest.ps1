@@ -58,6 +58,23 @@ $stale = @('1524EDC15C636B39507DD9520206E3065E6A353A531D82D4362DFE115FC04D4E', '
 $stillStale = @($stale | Where-Object { $_ -ceq $pinEnvDist -or $_ -ceq $pinLiveDist -or $_ -ceq $pinEnvLaunch })
 Check 'P-5' 'bilinen BAYAT pinler (R25B dist, P1-ONCESI baslatici) artik kullanilmiyor' ($stillStale.Count -eq 0) ('bayat pin sayisi=' + $stillStale.Count)
 
+# P-6..P-8 (R02): canli kabul blogunun .env pini, paket dosya pinleri ve tarihsel env blogunun reddi.
+$EnvFile = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'
+$pinEnv  = PinOf $liveBlk 'ExpEnvSha'
+$envNow  = if (Test-Path -LiteralPath $EnvFile) { Sha $EnvFile } else { 'YOK' }
+Check 'P-6' 'canli kabul blogundaki .env pini CANLI .env ile esit (deger okunmaz, yalniz sha)' ($pinEnv -ceq $envNow) ("pin=" + $(if ($pinEnv) { $pinEnv.Substring(0,16) } else { 'YOK' }) + " canli=" + $envNow.Substring(0, [Math]::Min(16, $envNow.Length)))
+$gov = (Resolve-Path (Join-Path $here '..\..')).Path
+$src = Get-Content -Raw -LiteralPath $liveBlk
+$pins = [regex]::Matches($src, "(?m)^\s*'([^']+\.js)'\s*=\s*'([0-9A-F]{64})'")
+$bad = @(); $pk = New-Object 'System.Collections.Generic.List[string]'
+foreach ($m in $pins) { $f = $m.Groups[1].Value; $p = Join-Path $gov $f; $h = if (Test-Path -LiteralPath $p) { Sha $p } else { 'YOK' }; if ($h -cne $m.Groups[2].Value) { $bad += $f }; [void]$pk.Add(($f -replace '\\', '/') + [char]0 + $h + "`n") }
+$pk.Sort([StringComparer]::Ordinal); $sb = New-Object Text.StringBuilder; foreach ($l in $pk) { [void]$sb.Append($l) }
+$pkgNow = ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($sb.ToString()))) -replace '-', '').ToUpperInvariant()
+$pinPkg = PinOf $liveBlk 'ExpPackage'
+Check 'P-7' 'paket dosya pinleri (5) ve paket digest dosyalarla esit' ($pins.Count -eq 5 -and $bad.Count -eq 0 -and $pinPkg -ceq $pkgNow) ('pin sayisi=' + $pins.Count + ' uyusmayan=' + ($bad -join ',') + ' digest esit=' + ($pinPkg -ceq $pkgNow))
+$envSrc = Get-Content -Raw -LiteralPath $envBlock
+Check 'P-8' 'tarihsel env blogu SelfTest disinda kosulmayi REDDEDER' ($envSrc -match 'if \(-not \$SelfTest\) \{[^}]*exit 90 \}') 'red satiri'
+
 $rows | Format-Table -AutoSize | Out-String | Write-Host
 $fail = @($rows | Where-Object { $_.sonuc -eq 'FAIL' }).Count
 Write-Host ('H5 PIN OZ-TESTI: PASS ' + ($rows.Count - $fail) + ' / ' + $rows.Count)

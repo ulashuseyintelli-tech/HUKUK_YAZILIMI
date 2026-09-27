@@ -1,5 +1,8 @@
 param([switch]$SelfTest, [switch]$Rollback, [string]$BackupFile)
 $ErrorActionPreference = 'Stop'
+# R02 (2026-09-27): BU BLOK TARIHSELDIR. Canli .env uc anahtarla owner tarafindan UYGULANDI (sha 5C776BBE...908D);
+# deger WEB_BASE_URL'den DEGIL, R05 owner kararindan (https://bilgi.tellihukuk.com) gelir. Tekrar kosulmaz.
+if (-not $SelfTest) { Write-Host 'DUR: h5-owner-env-block TARIHSEL - .env uygulamasi TEKRARLANMAZ (R02). Bkz. H5-INTAKE-URL-PACKAGE-R01.md R02.' -ForegroundColor Red; exit 90 }
 # ═══════════════ H5-URL · CANLI .env ANAHTAR EKLEME (B-I11-1) — OWNER ELEVATED KOSUM ═══════════════
 # YAPAR : kapilar (yukseltilmis pencere · dist digest · tek API · .env sha pini · anahtar YOK · WEB_BASE_URL
 #         MUTLAK) -> .env AYNI DIZINE yedeklenir (ACL degismez) -> TEK satir eklenir
