@@ -32,7 +32,8 @@
 2. Sentetik kurulum + makbuz → giriş → makbuza `createAttemptedAt` → **gönderimsiz** oluşturma (30 dk, tek kullanım).
 3. `E-02` DB'de ACTIVE / useCount 0 / maxUses 1 / expiresAt istenen değer; URL kapısı; yerel ve dış GET 200.
    503 ya da 200 dışı → adres **gösterilmez**, kapanışa geçilir.
-4. Adres + QR + işaret metni (`EXTACC-<runId> sentetik adres`) yalnız owner konsolunda.
+4. Adres + QR + işaret metni yalnız owner konsolunda. İşaret metni her koşumda farklıdır ve yalnız koşumun konsolda gösterdiği
+   satırdan birebir alınır; belgede kopyalanabilir örnek ya da yer tutucu VERİLMEZ (koşum `2a967ff1`'de yer tutucu yazılması E-13 FAIL'e yol açtı, §12.1).
 5. Owner telefonda (Wi-Fi kapalı, mobil veri, gizli sekme) açar, işaret metnini yazar, **bir kez** gönderir.
    Betik yalnız okur (varsayılan 25 dk, 5 sn aralık). Görülünce ya da süre dolunca ekran + kaydırma arabelleği temizlenir.
 6. Kapanış: R03 `finalizeClosure` (iptal ya da USED, yerel/dış public 404, kullanıcı/dosya kapanışı).
