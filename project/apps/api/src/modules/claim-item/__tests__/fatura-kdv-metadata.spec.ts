@@ -146,7 +146,21 @@ describe('VER-05 PR-1C invoice KDV write-path convergence', () => {
     expect(documentAdmission).not.toMatch(
       /default:[\s\S]*?ClaimItemType\.(PRINCIPAL|OTHER)/,
     );
-    expect(documentAdmission.indexOf("code: 'UNSUPPORTED_COMPONENT'"))
-      .toBeLessThan(documentAdmission.indexOf('createSystemClaimItem'));
+    // K3 (2026-09-28): kalem hazırlama `buildDocumentGeneratedItems`'a taşındı. Güvence aynı: desteklenmeyen
+    // bileşen reddi hazırlamada, sistem yazıcısında hazırlama İLK routed write'tan ÖNCE.
+    const builder = documentAdmission.slice(documentAdmission.indexOf('private buildDocumentGeneratedItems('));
+    expect(builder).toContain("code: 'UNSUPPORTED_COMPONENT'");
+    const systemWriter = documentAdmission.slice(0, documentAdmission.indexOf('async autoGenerateFromUser('));
+    expect(systemWriter.indexOf('this.buildDocumentGeneratedItems('))
+      .toBeGreaterThanOrEqual(0);
+    expect(systemWriter.indexOf('this.buildDocumentGeneratedItems('))
+      .toBeLessThan(systemWriter.indexOf('createSystemClaimItem'));
+    // K3: insan yolu HİÇ doğrudan yazmaz.
+    const humanPath = documentAdmission.slice(
+      documentAdmission.indexOf('async autoGenerateFromUser('),
+      documentAdmission.indexOf('private buildDocumentGeneratedItems('),
+    );
+    expect(humanPath).not.toContain('createSystemClaimItem');
+    expect(humanPath).toContain('assertHumanGeneratedCreatesAdmissible');
   });
 });

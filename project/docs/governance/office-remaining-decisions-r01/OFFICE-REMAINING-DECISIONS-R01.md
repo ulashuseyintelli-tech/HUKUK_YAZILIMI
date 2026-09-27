@@ -329,3 +329,20 @@ FD kararinda ve CLIENT politikalarinda elenir.
 | B4 | VIEWER: 12 controller'da rota katmani reddi + payout/dagitim/mahsup/FD yurutme ve kurtarmada tx ici ret | — |
 | B6 | `POST /cases` dahil dosya/borclu/alacak/tahsilat yazma uclari VIEWER'a kapali | K2: `PATCH /cases/:id/lawyers/:id` kontrolsuz `casePermissions` (USER hak yukseltme); K3: claim-item auto-generate / generate-from-rules insan kapisiz |
 | B10 | Mali yurutme tx'lerinde Lawyer→User FOR SHARE + kilit altinda yeniden degerlendirme; gercek PG yaris testi | K4: mali olmayan `isApproverEligible` kapilari, manuel ters kayit kapatma, StaffMember bagi serilestirilmedi |
+
+
+## 9. K1-K5 owner kararlari ve sonuclari (2026-09-28; owner GO "K2/K3 yetki bosluklarini ayri, izole bir takip PR'inda kapat")
+
+> Owner K1-K5'i kendi talimatiyla karara bagladi. Ayrinti, testler ve kanit hash'leri: `product-backlog.md`
+> "OFFICE YETKI SERTLESTIRME R02" + "K4" + "K5" kayitlari. #2818 (§8) ve ADR-014 kapanisi YENIDEN ACILMADI.
+> Canli uygulama, migration, toplu veri duzeltmesi ve hizmet kabulu kapsam disidir; hizmet kabul sayaci DEGISMEDI (0/8).
+
+| # | Owner karari | Sonuc |
+|---|---|---|
+| K1 | Pasif avukat dosya olusturmada otomatik etkinlestirilmez; once avukat yonetiminden etkinlestirilir; alternatif akis yok | Mevcut fail-closed ret KORUNDU (kod degisikligi yok) |
+| K2 | Dosya avukati/personel yetki verme F01 yonetim kuralina bagli; hedef DB'den; mali izin yetki dagitma izni degil | KAPANDI — `PATCH lawyers/staff` yetki alanlari + `POST lawyers` canSign F01'e bagli; HTTP+DB 22/22, mutasyonda 11 FAIL |
+| K3 | Insan auto-generate / generate-from-rules ClaimItem insan yazma politikasindan gecer; SYSTEM_ROUTE insan istegine yetki kazandirmaz | KAPANDI — iki uc insan kapisindan, yetkili → onay + olusum baglami, kalem yazilmaz; sistem yazicilari ayrik; HTTP+DB 16/16; yamasiz yetkisiz USER 201 ile yaziyordu |
+| K4 | Kalan yollarin onay/para/yetki etkisi; kilit refactor'u YOK | BULGU — oncelik 1: genel onay kararlari (tx disi kilitsiz yetki + ayni tx'te para etkisi); 2-4: avukat yetki verme, portal hesabi, ucret sozlesmesi; dar duzeltme kapsamlari kayitta. Uygulanmadi |
+| K5 | Canlida salt-okuma tutarlilik olcumu; kayit duzeltme yok | BULGU — `Lawyer.officeId` uyusmazligi 0; B1 kaybi 0; K2 sonrasi yetki verebilecek aktoru olmayan aktif tenant 0; gecmis oz-yetki 0; sistem rotasiyla uretilmis kalem 0 |
+
+Ek (kapsam disi, duzeltilmedi): `POST /claim-items/case/:caseId/add-interest` de insan kapisindan gecmez — ayri owner karari.

@@ -402,7 +402,22 @@ describe('RCV-CLAIM-FORM-P02-S01/S02-I01 Rule Engine formation admission', () =>
       /['"]POST_INTEREST_RULE['"]\s*:\s*['"]POST_INTEREST['"]/,
     );
     expect(method).toContain("code: 'UNSUPPORTED_COMPONENT'");
-    expect(method.indexOf('const preflightedItems = generatedItems.map'))
-      .toBeLessThan(method.indexOf('createSystemClaimItem'));
+    // K3 (2026-09-28): kalem hazırlama `buildRuleEngineGeneratedItems`'a taşındı. Güvence aynı: sistem
+    // yazıcısında hazırlama (preflight dahil) İLK routed write'tan ÖNCE tamamlanır.
+    const systemWriter = method.slice(0, method.indexOf('async generateFromRuleEngineForUser('));
+    expect(systemWriter.indexOf('this.buildRuleEngineGeneratedItems('))
+      .toBeGreaterThanOrEqual(0);
+    expect(systemWriter.indexOf('this.buildRuleEngineGeneratedItems('))
+      .toBeLessThan(systemWriter.indexOf('createSystemClaimItem'));
+    const builder = method.slice(method.indexOf('private async buildRuleEngineGeneratedItems('));
+    expect(builder.indexOf('const preflightedItems = generatedItems.map'))
+      .toBeLessThan(builder.indexOf('prepared.push('));
+    // K3: insan yolu HİÇ doğrudan yazmaz (insan yazma kapısı + onay/oluşum bağlamı).
+    const humanPath = method.slice(
+      method.indexOf('async generateFromRuleEngineForUser('),
+      method.indexOf('private async buildRuleEngineGeneratedItems('),
+    );
+    expect(humanPath).not.toContain('createSystemClaimItem');
+    expect(humanPath).toContain('assertHumanGeneratedCreatesAdmissible');
   });
 });

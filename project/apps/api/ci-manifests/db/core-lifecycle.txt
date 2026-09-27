@@ -118,3 +118,14 @@ src/modules/lawyer/__tests__/lawyer-privileged-update-audit-b11.db-gated.integra
 #   Kisit KALDIRILMADI. Disposable DB: 4/4 PASS, --detectOpenHandles acik handle 0.
 #   Kardes: case-calculation-summary / case-create-inline-party-atomicity db-gated spec'leri.
 src/modules/case/__tests__/case-responsible-drift.integration.spec.ts
+
+# K2/K3 — OFFICE yetki sertlestirme takip (owner GO 2026-09-28), GERCEK HTTP + disposable PostgreSQL.
+#   K2: dosya avukati/personel YETKI verme-degistirme uclari (PATCH lawyers/staff, POST lawyers canSign)
+#   F01 yonetim kuralina bagli; USER kendine/baskasina canEditFinance/imza/canEdit veremez, mali izin
+#   yetki dagitma izni sayilmaz, baska ofis/tenant yazmasiz reddedilir, yetkili kullanim + ClaimItem
+#   kapisinin uctan uca acilmasi. Yamasiz (kapi devre disi) 11 test DUSER (RED kanitlandi).
+#   K3: insan auto-generate / generate-from-rules uclari ClaimItem insan yazma kapisindan gecer;
+#   yetkisiz/VIEWER/baska tenant yazmasiz ret, yetkili -> FORMATION_CONTEXT_REQUIRED (kalem yazilmaz),
+#   sistem yazicilari ayrik calisir. Yamasiz: yetkisiz USER generate-from-rules 201 ile kalem YAZIYORDU.
+src/modules/case/__tests__/case-permission-grant-authz.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-item-human-generation-authz.db-gated.integration.spec.ts

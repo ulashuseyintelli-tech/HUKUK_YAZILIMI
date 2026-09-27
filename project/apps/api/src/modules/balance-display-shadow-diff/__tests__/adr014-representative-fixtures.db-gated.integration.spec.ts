@@ -7,12 +7,13 @@
  * Burada iş olayı ÜRETİM yollarıyla kurulur:
  *   - Dosya: gerçek `CaseService.create` (POST /cases) → `Due` + aynı transaction'da G1 köprüsüyle ClaimItem.
  *     Due yazma sınırı faiz işletimini ACCRUES YAZAMAZ (UNKNOWN'a çeker; üretim kuralı).
- *   - Faiz teyidi — KAPSAM SINIRI: üretimdeki kullanıcı yolu (`PATCH /claim-items/:id` → `updateFromUser`,
- *     K4 onay talebi) bugün ACCRUES teyidini HER ZAMAN reddeder: `normalizeInterestPatch` yamaya
- *     `noInterestConfirmedAt` ekler, yazma kapısının izinli alan listesinde bu alan yoktur →
- *     `UNSUPPORTED_UPDATE_FIELD` (ayrı kusur kaydı). Bu yüzden teyit, aynı normalize + doğrulama mantığını
- *     (provenance zorunluluğu dahil) uygulayan iç yazıcı `ClaimItemService.update` ile yapılır; yazma kapısı
- *     ve K4 dört-göz onayı bu adımda KOŞULMAZ.
+ *   - Faiz teyidi — KAPSAM SINIRI: teyit, aynı normalize + doğrulama mantığını (provenance zorunluluğu dahil)
+ *     uygulayan iç yazıcı `ClaimItemService.update` ile yapılır; yazma kapısı ve K4 dört-göz onayı bu adımda
+ *     KOŞULMAZ (bu fikstürün konusu legacy↔canonical karşılaştırmasıdır). Üretimdeki kullanıcı yolu
+ *     (`PUT /claim-items/:id` → `updateFromUser`, K4 onay talebi) bu fikstür yazıldığında ACCRUES teyidini
+ *     `UNSUPPORTED_UPDATE_FIELD` ile reddediyordu; #2819 (`912866c6`) ile düzeltildi — artık onay + senkronla
+ *     uygulanır. Kullanıcı yolu `claim-item/__tests__/claim-item-user-interest-accrual-gate.db-gated` spec'inde
+ *     gerçek HTTP + kapı + onay ile sınanır.
  *   - Ödeme: gerçek `CollectionService.create`; iptal: gerçek `CollectionService.cancel` (Collection →
  *     CANCELLED + REVERSAL ledger + yevmiye).
  * Dış yan etkiler izole edilir (DB dışı): müvekkil otomatik bilgi talebi ve açılış masraf seti.

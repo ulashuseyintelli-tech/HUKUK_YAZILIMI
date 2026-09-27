@@ -15,6 +15,8 @@ describe('CaseService.updateCaseStaff (PR-ASSIGN-3a)', () => {
   const stub = {} as any;
   // RFA-016: constructor 10 dep — hepsi stub; prisma + auditService test içinde override edilir.
   const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  // K2: yetki alanları F01 yönetim kuralı ister; bu testler audit/değişmez kuralı sınar → aktör F01 yetkili.
+  (service as any).officeApproval = { isF01WriteActorAuthorized: jest.fn(async () => true) };
 
   function setup(opts: { caseFound?: any; caseStaffFound?: any } = {}) {
     const update = jest.fn(async ({ data }: any) => ({
@@ -41,7 +43,8 @@ describe('CaseService.updateCaseStaff (PR-ASSIGN-3a)', () => {
     return { mockPrisma, update, auditLog };
   }
 
-  const call = (data: any) => (service as any).updateCaseStaff('tenant-1', 'case-1', 'cs-1', data);
+  // K2: yetki alanı değişikliği aktör ister (aktörsüz → fail-closed 403); F01 yetkili aktör kimliği.
+  const call = (data: any) => (service as any).updateCaseStaff('tenant-1', 'case-1', 'cs-1', data, 'u-f01');
 
   it('(a) roleOnCase + receiveNotifications güncellenir', async () => {
     const { update } = setup();
