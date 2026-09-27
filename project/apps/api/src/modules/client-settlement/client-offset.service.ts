@@ -15,6 +15,7 @@ import { ClientSettlementReadService } from './client-settlement-read.service';
 import { CreateClientOffsetDto, ReverseClientOffsetDto, PreviewClientOffsetDto } from './dto/client-offset.dto';
 import { clientOffsetLockKey } from './expense-remaining-lock';
 import { payoutLockKey } from './payout-lock';
+import { lockAndAssertExecutionRole } from '../office-approval/office-approval-execution-authority';
 
 const ZERO = new Prisma.Decimal(0);
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
@@ -147,8 +148,12 @@ export class ClientOffsetService {
    * resolve() observe-only/enforce-etmez olduğu için BURADA enforce edilir).
    */
   /** Canonical capacity okuması (Lawyer.lawyerRank ?? StaffMember.staffType ?? UNKNOWN). EffectivePermissionResolver ile aynı. */
-  private async readActorCapacity(actorUserId: string): Promise<Capacity> {
-    const user = await this.prisma.user.findUnique({
+  private async readActorCapacity(
+    actorUserId: string,
+    // B10: yürütme transaction'ı kilit ALTINDA kendi client'ıyla okur. Verilmezse eskisi gibi.
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<Capacity> {
+    const user = await db.user.findUnique({
       where: { id: actorUserId },
       include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
     });
@@ -159,16 +164,20 @@ export class ClientOffsetService {
    * C-2a: capability'nin read-only sonucu (canApply UX flag kaynağı). GÜVENLİK DEĞİL — gerçek enforcement
    * assertOfficeAdmin'de. canApply=true spoof'lansa bile createOffset/reverseOffset yine assertOfficeAdmin'den geçer.
    */
-  private async isActorOfficeAdmin(actorUserId: string): Promise<boolean> {
-    return isOfficeAdminCapacity(await this.readActorCapacity(actorUserId));
+  private async isActorOfficeAdmin(actorUserId: string, db: Prisma.TransactionClient = this.prisma): Promise<boolean> {
+    return isOfficeAdminCapacity(await this.readActorCapacity(actorUserId, db));
   }
 
   /**
    * C-1 v1 hard gate: actor PARTNER/MANAGER (office-admin) DEĞİLSE 403. apply+reverse+cross-case+same-case HEPSİ
    * bu gate'e tabi. resolve() observe-only/enforce-etmez olduğu için yetki BURADA explicit enforce edilir.
    */
-  private async assertOfficeAdmin(actorUserId: string, action: 'CLIENT_OFFSET_APPLY' | 'CLIENT_OFFSET_REVERSE'): Promise<void> {
-    if (!(await this.isActorOfficeAdmin(actorUserId))) {
+  private async assertOfficeAdmin(
+    actorUserId: string,
+    action: 'CLIENT_OFFSET_APPLY' | 'CLIENT_OFFSET_REVERSE',
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    if (!(await this.isActorOfficeAdmin(actorUserId, db))) {
       throw new ForbiddenException({
         code: 'CLIENT_OFFSET_FORBIDDEN',
         message: `Mahsup işlemi için PARTNER/MANAGER (office-admin) yetkisi gerekir (${action})`,
@@ -331,6 +340,9 @@ export class ClientOffsetService {
     const er = await this.validateLegs(this.prisma, tenantId, dto);
 
     const created = await this.prisma.$transaction(async (tx) => {
+      // B4+B10: yetkili kontrol (kilit + VIEWER reddi + office-admin) tx başında, ilk yazmadan ÖNCE.
+      await lockAndAssertExecutionRole(tx, actorUserId);
+      await this.assertOfficeAdmin(actorUserId, 'CLIENT_OFFSET_APPLY', tx);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.lockKey(tenantId, dto.clientId, dto.currency)}))`;
       // CBND-5 (H2): payable leg için AYRICA payout kilidi — ClientPayoutService.create() ile aynı
       // caseClientId'nin outstanding'ini tüketen eşzamanlı işlemleri serialize eder. Sıra SABİT (bu
@@ -450,6 +462,9 @@ export class ClientOffsetService {
     }
 
     const created = await this.prisma.$transaction(async (tx) => {
+      // B4+B10: yetkili kontrol (kilit + VIEWER reddi + office-admin) tx başında, ilk yazmadan ÖNCE.
+      await lockAndAssertExecutionRole(tx, actorUserId);
+      await this.assertOfficeAdmin(actorUserId, 'CLIENT_OFFSET_REVERSE', tx);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.lockKey(tenantId, original.clientId, original.currency)}))`;
       // CBND-5 (H2): REVERSAL da payable outstanding'i etkiler (credit +, computeOutstanding'e Σ REVERSAL
       // terimiyle girer) — createOffset ile AYNI disiplin: client-offset kilidinden SONRA payout kilidi.

@@ -152,20 +152,24 @@ describeWithDatabase('DAR ATOMİKLİK — gerçek DB üzerinde geri alma', () =>
     expect(after.cases).toBe(0);
   });
 
-  it('SONRAKİ HATA: yeniden etkinleştirilmiş avukat ÖNCEKİ durumuna (pasif) döner ve REACTIVATE audit\'i kalmaz', async () => {
+  // B3 (owner GO 2026-09-27): dosya içi yol avukat servisine AKTÖR taşımaz (AK-2: yalnız atıf). Ayrıcalıksız pasif
+  // eşleşmenin yeniden etkinleşmesi artık yaşam döngüsü yetkisi istediği için bu yoldan HİÇ gerçekleşmez (fail-closed;
+  // aynı yolda ayrıcalıklı eşleşme zaten AK-2 ile 403'tü). 2026-09-12'deki "yeniden etkinleştirilen kayıt geri alınır"
+  // güvencesi burada "yeniden etkinleştirme HİÇ yapılmaz, hiçbir satır kalmaz" olarak ölçülür. Aktörü bu yola taşımak
+  // owner kararıdır (karar paketi K1).
+  it('B3: dosya içi pasif eşleşme yeniden ETKİNLEŞMEZ (403); avukat pasif kalır, REACTIVATE audit\'i ve taraf yazması YOK', async () => {
     const office = await prisma.office.create({ data: { tenantId, name: 'Büro' } });
     const pasif = await prisma.lawyer.create({
       data: { tenantId, officeId: office.id, name: 'Ada', surname: 'Lovelace', isActive: false },
     });
     const before = await partyCounts(prisma, tenantId);
-    domainEventIngest.appendInTransaction.mockRejectedValueOnce(new Error('DOMAIN_EVENT_PATLADI'));
 
     await expect(
       caseService.create(tenantId, inlineDto('ATOM/2') as any, actorId, 'ADMIN'),
-    ).rejects.toThrow('DOMAIN_EVENT_PATLADI');
+    ).rejects.toThrow(/yeniden etkinleştirme/);
 
     const sonra = await prisma.lawyer.findUniqueOrThrow({ where: { id: pasif.id } });
-    expect(sonra.isActive).toBe(false); // reaktivasyon GERİ ALINDI
+    expect(sonra.isActive).toBe(false); // B3: reaktivasyon HİÇ yapılmadı
     expect(await prisma.auditLog.count({ where: { tenantId, action: 'LAWYER_REACTIVATE' } })).toBe(0);
     expect(await partyCounts(prisma, tenantId)).toEqual(before);
   });

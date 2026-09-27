@@ -10,8 +10,10 @@
  *
  * KURAL: yeniden etkinleşecek kaydın MEVCUT ayrıcalığı (PARTNER/MANAGER rütbesi, canModifyOtherPermissions,
  *   permissionsLocked, canApproveOfficeActions) varsa yalnız H2 otoritesi (ADMIN veya aktif + aynı tenant +
- *   bağlı PARTNER) yeniden etkinleştirebilir; aksi 403 ve HİÇBİR yazma yok. Ayrıcalıksız kaydın yeniden
- *   etkinleştirilmesi mevcut davranışla izinli kalır (artık audit'li).
+ *   bağlı PARTNER) yeniden etkinleştirebilir; aksi 403 ve HİÇBİR yazma yok.
+ * B3 (owner GO 2026-09-27): AYRICALIKSIZ pasif kaydın yeniden etkinleştirilmesi de artık serbest DEĞİL —
+ *   pasifleştirmeyle AYNI yaşam döngüsü yüklemi (`isApproverEligible`: PARTNER veya delege); CLIENT R1A emsali:
+ *   create yetkisi lifecycle yetkisini içermez, ADMIN tek başına yetmez, atıf yetki değildir.
  * YAZMA: CLIENT R1A deseni — yetki kararının verildiği DURUMA koşullu `updateMany` (tenant + isActive:false +
  *   değerlendirilen ayrıcalık değerleri) ve LAWYER_REACTIVATE audit'i AYNI transaction'da; count 0 → ne
  *   yazma ne audit. Bu dalda ofis oluşturma HİÇ çalışmaz; create'in YENİ kayıt dalındaki ofis otomatik
@@ -80,6 +82,8 @@ const UI_LAWYER_BODY = {
 const build = (opts: {
   rows: Row[];
   actorUser?: unknown;
+  /** B3: yaşam döngüsü yüklemi (`officeApproval.isApproverEligible`) sonucu. */
+  approverEligible?: boolean;
   auditFails?: boolean;
   beforeCas?: (store: Map<string, Row>) => void;
 }) => {
@@ -133,8 +137,9 @@ const build = (opts: {
     }),
   };
   // officeApproval'da F01 fonksiyonu YOK → yanıt toPublicLawyer'dan geçer (id korunur).
-  const svc = new LawyerService(prisma, audit, {} as any);
-  return { svc, prisma, audit, store, txs };
+  const officeApproval: any = { isApproverEligible: jest.fn(async () => opts.approverEligible === true) };
+  const svc = new LawyerService(prisma, audit, officeApproval);
+  return { svc, prisma, audit, store, txs, officeApproval };
 };
 
 /** Hiçbir yazma YAPILMADIĞINI kanıtlar (yeniden etkinleştirme, transaction, audit, ofis, yeni kayıt). */
@@ -302,10 +307,11 @@ describe('AK-2 — yetkili yeniden etkinleştirme: koşullu yazma + AYNI transac
   });
 });
 
-describe('AK-2 — ayrıcalıksız pasif kayıt: mevcut davranış korunur, artık aynı transaction\'da audit\'li', () => {
-  it('delege ayrıcalıksız pasif kaydı yeniden etkinleştirir; H2 kullanıcı sorgusu YAPILMAZ', async () => {
-    const h = build({ rows: [baseRow()], actorUser: delegateUser });
+describe('B3 — ayrıcalıksız pasif kayıt: pasifleştirme ile AYNI yaşam döngüsü yetkisi', () => {
+  it('yetkili delege (yaşam döngüsü yüklemi true) yeniden etkinleştirir; audit AYNI transaction; H2 sorgusu YOK', async () => {
+    const h = build({ rows: [baseRow()], actorUser: delegateUser, approverEligible: true });
     const res: any = await h.svc.create(TENANT, UI_LAWYER_BODY as never, DELEGATE_ACTOR);
+    expect(h.officeApproval.isApproverEligible).toHaveBeenCalledWith('d1', TENANT);
     expect(h.store.get('L-X')!.isActive).toBe(true);
     expect(res).toMatchObject({ id: 'L-X', _existingReturned: true, _reactivated: true });
     expect(h.prisma.user.findUnique).not.toHaveBeenCalled();
@@ -318,18 +324,32 @@ describe('AK-2 — ayrıcalıksız pasif kayıt: mevcut davranış korunur, art�
     });
   });
 
-  it('atıf: audit isteği yapan kullanıcıya bağlanır', async () => {
-    const h = build({ rows: [baseRow()] });
-    await h.svc.create(TENANT, UI_LAWYER_BODY as never, undefined, { userId: 'u-case' });
-    expect(h.audit.logInTransaction.mock.calls[0][1]).toMatchObject({ userId: 'u-case', actorType: 'USER' });
+  it('yaşam döngüsü yetkisi OLMAYAN kullanıcı → 403, hiçbir yazma yok', async () => {
+    const h = build({ rows: [baseRow()], actorUser: managerUser, approverEligible: false });
+    await expect(h.svc.create(TENANT, UI_LAWYER_BODY as never, MANAGER_ACTOR)).rejects.toThrow(/yeniden etkinleştirme/);
+    expectNoWrite(h, 'L-X');
   });
 
-  it('aktör ve atıf yok (iç sistem çağrısı) → actorType SYSTEM, userId YOK', async () => {
-    const h = build({ rows: [baseRow()] });
-    await h.svc.create(TENANT, UI_LAWYER_BODY as never);
-    const entry = h.audit.logInTransaction.mock.calls[0][1];
-    expect(entry.actorType).toBe('SYSTEM');
-    expect(entry.userId).toBeUndefined();
+  it('ADMIN tek başına YETMEZ (R1A emsali) → 403, hiçbir yazma yok', async () => {
+    const h = build({ rows: [baseRow()], approverEligible: false });
+    await expect(h.svc.create(TENANT, UI_LAWYER_BODY as never, ADMIN)).rejects.toThrow(ForbiddenException);
+    expect(h.officeApproval.isApproverEligible).toHaveBeenCalledWith('admin1', TENANT);
+    expectNoWrite(h, 'L-X');
+  });
+
+  it('atıf yetki DEĞİLDİR: aktör yok + atıf → 403, yüklem hiç sorulmaz, hiçbir yazma yok', async () => {
+    const h = build({ rows: [baseRow()], approverEligible: true });
+    await expect(
+      h.svc.create(TENANT, UI_LAWYER_BODY as never, undefined, { userId: 'u-case' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(h.officeApproval.isApproverEligible).not.toHaveBeenCalled();
+    expectNoWrite(h, 'L-X');
+  });
+
+  it('aktör ve atıf yok (iç sistem çağrısı) → 403, hiçbir yazma yok', async () => {
+    const h = build({ rows: [baseRow()], approverEligible: true });
+    await expect(h.svc.create(TENANT, UI_LAWYER_BODY as never)).rejects.toThrow(ForbiddenException);
+    expectNoWrite(h, 'L-X');
   });
 
   it('AKTİF mükerrer (ayrıcalıklı olsa bile): yazma, transaction ve audit YOK — mevcut kayıt döner', async () => {
@@ -347,6 +367,7 @@ describe('AK-2 — TOCTOU: yazma, yetki kararının verildiği DURUMA koşullu',
     const h = build({
       rows: [baseRow()],
       actorUser: delegateUser,
+      approverEligible: true,
       beforeCas: (s) => { s.get('L-X')!.isActive = true; },
     });
     const res: any = await h.svc.create(TENANT, UI_LAWYER_BODY as never, DELEGATE_ACTOR);
@@ -358,6 +379,7 @@ describe('AK-2 — TOCTOU: yazma, yetki kararının verildiği DURUMA koşullu',
     const h = build({
       rows: [baseRow()],
       actorUser: delegateUser,
+      approverEligible: true,
       beforeCas: (s) => { s.get('L-X')!.lawyerRank = 'PARTNER'; },
     });
     const res: any = await h.svc.create(TENANT, UI_LAWYER_BODY as never, DELEGATE_ACTOR);
@@ -382,15 +404,33 @@ describe('AK-2 — iç çağıranlar da aynı sınırdan geçer', () => {
     expectNoWrite(h, 'L-X');
   });
 
-  it('dosya içi avukat: ayrıcalıksız pasif eşleşme yeniden etkinleşir, bağ kurulur, audit dosyayı açana bağlanır', async () => {
-    const h = build({ rows: [baseRow()] });
+  it('B3 dosya içi avukat: yaşam döngüsü yetkisi olmayan aktör ayrıcalıksız pasif eşleşmeyi etkinleştiremez → 403', async () => {
+    const h = build({ rows: [baseRow()], approverEligible: false });
+    const caseSvc: any = Object.create(CaseService.prototype);
+    caseSvc.lawyerService = h.svc;
+    await expect(
+      caseSvc.resolveInlinePartiesInTx(
+        TENANT,
+        { lawyers: [{ name: 'Ayşe', surname: 'Kaya' }] },
+        { userId: 'u-case', tenantId: TENANT, role: 'USER' },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expectNoWrite(h, 'L-X');
+  });
+
+  it('B3 dosya içi avukat: yol avukat servisine AKTÖR taşımaz (yalnız atıf) → yaşam döngüsü yetkili kullanıcı da 403 (fail-closed)', async () => {
+    // AK-2 tasarımı: dosya içi yol `assertCreateAuthorized(..., actor=undefined)` ve `create(..., attribution)`
+    // çağırır; atıf yetki sayılmaz. B3 sonrası ayrıcalıksız pasif eşleşme de bu yoldan etkinleşemez — pasif
+    // avukat önce avukat yönetiminden (POST /lawyers, aktörlü) etkinleştirilir. Aktörü bu yola taşımak owner kararıdır.
+    const h = build({ rows: [baseRow()], approverEligible: true });
     const caseSvc: any = Object.create(CaseService.prototype);
     caseSvc.lawyerService = h.svc;
     const dto: any = { lawyers: [{ name: 'Ayşe', surname: 'Kaya' }] };
-    await caseSvc.resolveInlinePartiesInTx(TENANT, dto, { userId: 'u-case', tenantId: TENANT, role: 'USER' });
-    expect(dto.lawyers[0].id).toBe('L-X');
-    expect(h.store.get('L-X')!.isActive).toBe(true);
-    expect(h.audit.logInTransaction.mock.calls[0][1]).toMatchObject({ userId: 'u-case', metadata: { privileged: false } });
+    await expect(
+      caseSvc.resolveInlinePartiesInTx(TENANT, dto, { userId: 'u-case', tenantId: TENANT, role: 'USER' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(h.officeApproval.isApproverEligible).not.toHaveBeenCalled();
+    expectNoWrite(h, 'L-X');
   });
 
   it('seedLawyers: seed satırı pasif PARTNER\'la eşleşirse (baro no 12345) → 403, hiçbir yazma yok', async () => {

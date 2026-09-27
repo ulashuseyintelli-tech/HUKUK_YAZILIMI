@@ -47,6 +47,7 @@ import { ClientFinancialDisclosureApprovalPolicy } from './client-financial-disc
 import { isValidTckn } from '../../common/identity-validation.util';
 import { assertGenericDecisionAllowed } from './office-approval-domain-ownership';
 import { assertApprovalDecisionRole, isOfficeWriteDeniedForRole } from './office-write-role.policy';
+import { lockAndAssertExecutionRole } from './office-approval-execution-authority';
 
 export interface CreatePendingRequestInput {
   tenantId: string;
@@ -473,8 +474,13 @@ export class OfficeApprovalService {
    * ///  - OfficeApprovalService.assertApproverEligible() (karar metodları) · OfficeApprovalController (inbox eligibility + detail visibility).
    * /// </remarks>
    */
-  async isApproverEligible(userId: string, tenantId: string): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({
+  async isApproverEligible(
+    userId: string,
+    tenantId: string,
+    // B10: yürütme transaction'ı yüklemi kilit ALTINDA, kendi client'ıyla değerlendirir. Verilmezse eskisi gibi.
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<boolean> {
+    const user = await db.user.findUnique({
       where: { id: userId },
       include: {
         lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } },
@@ -487,6 +493,24 @@ export class OfficeApprovalService {
     if (user.staffMember) return false;
     const lw = user.lawyer;
     return !!lw && (lw.lawyerRank === 'PARTNER' || lw.canApproveOfficeActions === true);
+  }
+
+  /**
+   * B4 + B10 — `isApproverEligible` yüklemine bağlı MALİ YÜRÜTMENİN yetkili kontrolü: yürütme transaction'ı
+   * içinde, ilk mali yazmadan ÖNCE çağrılır. Aktör satırları kilitlenir (yetki iptaliyle serileşir), VIEWER
+   * reddedilir, yüklem kilit altında yeniden değerlendirilir. Transaction dışındaki erken kontrol UCUZ ERKEN-FAIL
+   * olarak kalır; YETKİLİ karar budur (F04 `assertCollectionConfirmedForUpdate` emsali).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - DispositionPostingService.post() → POST /collection-dispositions/:id/post ($transaction başı).
+   * /// </remarks>
+   */
+  async assertApproverExecutionAuthorityInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<void> {
+    await lockAndAssertExecutionRole(tx, userId);
+    if (!(await this.isApproverEligible(userId, tenantId, tx))) {
+      throw new ForbiddenException('Onay yetkisi yok (PARTNER veya yetkilendirilmiş avukat gerekir)');
+    }
   }
 
   /**
@@ -532,6 +556,16 @@ export class OfficeApprovalService {
     if (user.staffMember) return false;
 
     const linkedOfficeId = user.lawyer?.officeId ?? undefined;
+    // B1 (owner GO 2026-09-27): hedef ofis istemcinin beyanından DEĞİL, doğrulanan kaynaktan gelir. Çağıran
+    // vermezse (F01 guard'ı, liste projeksiyonları) hedef, tenant'ın DB'deki TEK ofisidir (Office.tenantId
+    // @unique; kontrollü yürütme servisindeki sunucu-tarafı çözümle aynı). Böylece cross-office kontrolü rota
+    // kapısında da çalışır; bağlı avukatının officeId'si tenant'ın ofisini göstermeyen aktör elenir.
+    // Tenant ofisi çözülemiyorsa bağ tenant'a ait bir ofisi göstermiyor demektir → fail-closed (kontrollü
+    // yürütmenin OFFICE_CONTEXT_UNRESOLVED emsali).
+    if (linkedOfficeId && !targetOfficeId) {
+      const tenantOfficeId = await this.resolveTenantOfficeId(tenantId);
+      if (!tenantOfficeId || tenantOfficeId !== linkedOfficeId) return false;
+    }
     if (targetOfficeId && linkedOfficeId && targetOfficeId !== linkedOfficeId) return false;
 
     // UserRole.ADMIN is the canonical super-admin mapping. No SUPER_ADMIN role
@@ -553,6 +587,12 @@ export class OfficeApprovalService {
    */
   async isF01WriteActorAuthorized(userId: string, tenantId: string, targetOfficeId?: string): Promise<boolean> {
     return this.isF01ActorAuthorized(userId, tenantId, targetOfficeId, { write: true });
+  }
+
+  /** B1 — tenant'ın tek ofisinin kimliği (Office.tenantId @unique); ofis yoksa undefined (kontrol uygulanamaz). */
+  private async resolveTenantOfficeId(tenantId: string): Promise<string | undefined> {
+    const office = await this.prisma.office.findUnique({ where: { tenantId }, select: { id: true } });
+    return office?.id;
   }
 
   /**

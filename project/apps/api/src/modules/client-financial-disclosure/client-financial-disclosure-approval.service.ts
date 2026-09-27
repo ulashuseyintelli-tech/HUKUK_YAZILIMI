@@ -477,6 +477,8 @@ export class ClientFinancialDisclosureApprovalService {
         }
 
         // Eligibility karar anındaki kayda değil, canonical kurala göre YENİDEN doğrulanır.
+        // B4: kayıtlı kararın kurtarılması da YÜRÜTMEDİR — kurtarma anında VIEWER olan aktör kurtaramaz.
+        await this.assertDecisionRoleAllowed(tx, request.approverUserId);
         await this.assertApproverEligible(tx, request.approverUserId, version.tenantId);
         await this.assertSnapshotFresh(tx, version);
 
@@ -795,12 +797,21 @@ export class ClientFinancialDisclosureApprovalService {
     }
   }
 
-  /** §41.3 canonical yeterlilik — saf predikat tek kaynaktır, burada kopyalanmaz. */
+  /**
+   * §41.3 canonical yeterlilik — saf predikat tek kaynaktır, burada kopyalanmaz.
+   *
+   * B10 (owner GO 2026-09-27): aktörün `Lawyer` ve `User` satırları ÖNCE `FOR SHARE` ile kilitlenir (sıra yetki
+   * iptali yollarıyla AYNI: Lawyer → User) → karar/kurtarma yazması, yetki iptaliyle serileşir. Kilit mantığı
+   * `office-approval-execution-authority.ts` ile aynıdır; dormant sınıf office-approval modülüne bağımlı olmasın
+   * diye yerel tutulur.
+   */
   private async assertApproverEligible(
     tx: Prisma.TransactionClient,
     userId: string,
     tenantId: string,
   ): Promise<void> {
+    await tx.$queryRaw`SELECT "id" FROM "Lawyer" WHERE "userId" = ${userId} FOR SHARE`;
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR SHARE`;
     const candidate = await tx.user.findUnique({
       where: { id: userId },
       select: DISCLOSURE_APPROVER_CANDIDATE_SELECT,

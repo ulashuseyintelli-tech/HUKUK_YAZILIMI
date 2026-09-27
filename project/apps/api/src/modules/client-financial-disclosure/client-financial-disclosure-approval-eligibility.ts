@@ -55,7 +55,9 @@ export const DISCLOSURE_APPROVER_CANDIDATE_SELECT = {
  * OFFICE tarafındaki `isOfficeWriteDeniedForRole` ile BİREBİR aynı kuraldır (parite testle kilitli:
  * office-approval-viewer-decision-boundary.spec.ts). Dormant servis office-approval modülüne bağımlı olmasın diye
  * burada tutulur (`CLIENT_FINANCIAL_DISCLOSURE_APPROVE_ACTION_CODE` sabitiyle aynı desen). Okuma (çalışma alanı
- * `approverEligible`), yayın ve kayıtlı kararın kurtarılması bu yüklemi KULLANMAZ.
+ * `approverEligible`) bu yüklemi KULLANMAZ. B4 (owner GO 2026-09-27): YÜRÜTME — yayın / yeniden deneme / geri
+ * alma / yerine koyma (`ClientFinancialDisclosurePublicationService.assertEligibleActor`) ve kayıtlı kararın
+ * kurtarılması — da bu yüklemle VIEWER'ı reddeder.
  */
 export function isDisclosureDecisionRoleDenied(role: unknown): boolean {
   return role === 'VIEWER';

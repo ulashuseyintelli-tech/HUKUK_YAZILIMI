@@ -315,3 +315,17 @@ FD kararinda ve CLIENT politikalarinda elenir.
   "ADR-014 RUNNER DI_FAIL ONARIMI" kaydi): canonical elle hesapla esit; farklar legacy tasarim eksigi + fikstur kaynakli.
 - **forceExit:** ACIK, owner karari bekler. Bu calismada genel jest/forceExit arastirmasi YAPILMADI; runner'da bulunan tutucu
   (ActionHandlerService araligi) jest acik-handle'larinin nedeni OLDUGU iddia EDILMEZ (olculmedi).
+
+## 8. B1 / B3 / B4 / B6 / B10 — muhendislik duzeltmesi (2026-09-27; owner GO "ayri, izole guvenlik duzeltmesi")
+
+> Owner bu GO ile B1, B3, B4, B6 ve B10 icin DUZELTME yonunu secti (§5 tablosundaki (b)/GO-FIX dogrultusu).
+> Ayrinti ve testler: `product-backlog.md` "OFFICE YETKI SERTLESTIRME R01" kaydi. B2, B5, B7, B8, B9 bu GO'nun
+> kapsaminda DEGILDIR ve §7.3'teki gibi ACIK kalir. Hizmet kabul sayaci DEGISMEDI (0/8).
+
+| # | Ne yapildi | Kalan karar |
+|---|---|---|
+| B1 | F01 hedef ofisi verilmezse tenant'in DB'deki tek ofisi; ofis yoksa fail-closed | K5: canlida tutarsiz `Lawyer.officeId` olculmedi |
+| B3 | Ayricaliksiz pasif avukatin create ile etkinlesmesi yasam dongusu yuklemine bagli (R1A emsali) | K1: dosya ici `POST /cases` yolu aktor tasimaz → bu yoldan etkinlesme kapandi (a) boyle / (b) aktor yalniz yasam dongusu icin tasinsin |
+| B4 | VIEWER: 12 controller'da rota katmani reddi + payout/dagitim/mahsup/FD yurutme ve kurtarmada tx ici ret | — |
+| B6 | `POST /cases` dahil dosya/borclu/alacak/tahsilat yazma uclari VIEWER'a kapali | K2: `PATCH /cases/:id/lawyers/:id` kontrolsuz `casePermissions` (USER hak yukseltme); K3: claim-item auto-generate / generate-from-rules insan kapisiz |
+| B10 | Mali yurutme tx'lerinde Lawyer→User FOR SHARE + kilit altinda yeniden degerlendirme; gercek PG yaris testi | K4: mali olmayan `isApproverEligible` kapilari, manuel ters kayit kapatma, StaffMember bagi serilestirilmedi |

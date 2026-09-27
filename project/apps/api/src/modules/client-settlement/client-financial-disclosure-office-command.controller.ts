@@ -1,5 +1,6 @@
 import { Controller, Param, Post, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import { ClientFinancialDisclosureOfficeService } from '../client-financial-disclosure/client-financial-disclosure-office-service';
 import { ClientFinancialDisclosureCommandService } from './client-financial-disclosure-command.service';
 
@@ -29,7 +30,7 @@ interface AuthRequest {
  *    mevcut `createFromDisposition` domain servisinden gelir; burada YENİDEN YAZILMAZ.
  */
 @Controller('client-financial-disclosures/office')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientFinancialDisclosureOfficeCommandController {
   constructor(
     private readonly office: ClientFinancialDisclosureOfficeService,

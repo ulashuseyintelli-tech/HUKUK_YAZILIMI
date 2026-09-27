@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ViewerWriteDenyGuard } from '../auth/guards/viewer-write-deny.guard';
 import {
   isDisclosurePublicationEnabled,
   isDisclosureWriteEnabled,
@@ -33,7 +34,7 @@ import {
  * provider allowlist ve conditional-update kuralları servislerin canonical uygulamasında kalır.
  */
 @Controller('client-financial-disclosures')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class ClientFinancialDisclosureController {
   constructor(
     private readonly approval: ClientFinancialDisclosureApprovalService,

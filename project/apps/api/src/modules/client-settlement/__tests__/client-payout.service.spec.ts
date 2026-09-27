@@ -51,6 +51,9 @@ function buildPrisma(opts: {
 } = {}) {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([]), // B10: aktör satırı FOR SHARE kilidi
+    // B10: yetki transaction içinde, kilit altında AYNI aktör fikstüründen yeniden okunur.
+    user: { findUnique: (...args: any[]) => (prisma.user.findUnique as any)(...args) },
     clientPayout: {
       findUnique: jest.fn().mockResolvedValue(opts.dupInTx ?? null),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: opts.paid ?? null } }),
@@ -739,5 +742,29 @@ describe('PAYOUT-APPROVAL-2 (Tasarım B) ClientPayoutService.finalize', () => {
       svc(second.prisma, officeApproval2).finalize('t1', 'oar-2', DTO({ amount: '700', idempotencyKey: 'k2' }), ACTOR),
     ).rejects.toThrow(/aşamaz/);
     expect(second.tx.clientPayout.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('B4 + B10 — payout yürütmesi transaction içinde, kilit altında yetkilendirilir', () => {
+  it('create: PARTNER avukata bağlı VIEWER → tx içinde 403 FINANCIAL_EXECUTION_DENIED_VIEWER; kilit alındı, hiçbir yazma YOK', async () => {
+    const { prisma, tx } = buildPrisma({
+      ...OUT_1000,
+      actorUser: { role: 'VIEWER', isActive: true, tenantId: 't1', lawyer: { lawyerRank: 'PARTNER', canApproveOfficeActions: false }, staffMember: null },
+    });
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'FINANCIAL_EXECUTION_DENIED_VIEWER' }),
+    });
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2); // Lawyer → User FOR SHARE
+    expect(tx.$executeRaw).not.toHaveBeenCalled(); // advisory lock bile alınmadı
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('create: yetkili aktörde kilit, advisory lock ve ilk yazmadan ÖNCE alınır', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+    await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+    const lockAt = (tx.$queryRaw as jest.Mock).mock.invocationCallOrder[0];
+    expect(lockAt).toBeLessThan((tx.$executeRaw as jest.Mock).mock.invocationCallOrder[0]);
+    expect(lockAt).toBeLessThan((tx.clientPayout.create as jest.Mock).mock.invocationCallOrder[0]);
   });
 });

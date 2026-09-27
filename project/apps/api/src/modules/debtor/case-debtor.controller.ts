@@ -11,12 +11,13 @@ import {
 import { CaseDebtorService } from "./case-debtor.service";
 import { AddDebtorToCaseDto, UpdateCaseDebtorDto } from "./dto/case-debtor.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { ViewerWriteDenyGuard } from "../auth/guards/viewer-write-deny.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
 export class CaseDebtorController {
   constructor(
     private caseDebtorService: CaseDebtorService,

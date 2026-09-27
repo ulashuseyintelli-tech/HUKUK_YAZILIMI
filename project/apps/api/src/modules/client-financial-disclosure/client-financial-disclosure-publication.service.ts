@@ -7,6 +7,7 @@ import { domainSeparatedHash } from './client-financial-disclosure-canonical';
 import {
   DISCLOSURE_APPROVER_CANDIDATE_SELECT,
   isDisclosureApproverEligible,
+  isDisclosureDecisionRoleDenied,
 } from './client-financial-disclosure-approval-eligibility';
 import { CLIENT_FINANCIAL_DISCLOSURE_NOTIFICATION_CONTENT_CONTRACT_VERSION } from './client-financial-disclosure-approval.contract';
 import { parseClientFinancialDisclosureRenderOutput } from './client-financial-disclosure-renderer.contract';
@@ -632,22 +633,33 @@ export class ClientFinancialDisclosurePublicationService {
     }
   }
 
-  /** §41.3 canonical yeterlilik — I03 ile AYNI saf predikat; ikinci kural ÜRETİLMEZ. */
+  /**
+   * §41.3 canonical yeterlilik — I03 ile AYNI saf predikat; ikinci kural ÜRETİLMEZ.
+   *
+   * B10 (owner GO 2026-09-27): aktörün `Lawyer` ve `User` satırları ÖNCE `FOR SHARE` ile kilitlenir (sıra, yetki
+   * iptali yollarıyla AYNI: Lawyer → User); yeterlilik kilit ALTINDA değerlendirilir ve iptalle serileşir. Kilit
+   * mantığı `office-approval-execution-authority.ts` ile aynıdır; bu dormant sınıf office-approval modülüne
+   * bağımlı olmasın diye burada yerel tutulur. B4: yürütme anında okunan rol VIEWER ise aktör uygun DEĞİLDİR.
+   * Yetkili karar gönderimden ÖNCEKİ talep transaction'ıdır; e-posta geri alınamadığı için PUBLISHED geçişi
+   * yeniden kontrol ETMEZ (gönderilmiş bildirimi yarım durumda bırakmamak için bilinçli).
+   */
   private async assertEligibleActor(
     tx: Prisma.TransactionClient,
     userId: string,
     tenantId: string,
   ): Promise<void> {
+    await tx.$queryRaw`SELECT "id" FROM "Lawyer" WHERE "userId" = ${userId} FOR SHARE`;
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR SHARE`;
     const candidate = await tx.user.findUnique({
       where: { id: userId },
-      select: DISCLOSURE_APPROVER_CANDIDATE_SELECT,
+      select: { ...DISCLOSURE_APPROVER_CANDIDATE_SELECT, role: true },
     });
     if (!candidate || candidate.tenantId !== tenantId) {
       throw new ClientFinancialDisclosurePublicationAuthorizationError(
         'DISCLOSURE_PUBLICATION_TENANT_MISMATCH',
       );
     }
-    if (!isDisclosureApproverEligible(candidate, tenantId)) {
+    if (isDisclosureDecisionRoleDenied(candidate.role) || !isDisclosureApproverEligible(candidate, tenantId)) {
       throw new ClientFinancialDisclosurePublicationAuthorizationError(
         'DISCLOSURE_PUBLICATION_NOT_ELIGIBLE',
       );

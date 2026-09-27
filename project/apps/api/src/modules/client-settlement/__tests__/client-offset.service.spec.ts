@@ -82,6 +82,7 @@ function makeDb(opts: any = {}) {
       findMany: jest.fn().mockResolvedValue(opts.auditRows ?? []),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([]), // B10: aktör satırı FOR SHARE kilidi
   };
   db.$transaction = jest.fn().mockImplementation(async (cb: any) => cb(db));
   return db;
@@ -758,5 +759,24 @@ describe('ClientOffsetController.detail', () => {
     await controller.detail({ user: { tenantId: 't1', id: 'u1' } }, 'off-1');
 
     expect(service.getOffsetDetail).toHaveBeenCalledWith('t1', 'off-1');
+  });
+});
+describe('B4 + B10 — mahsup yürütmesi transaction içinde, kilit altında yetkilendirilir', () => {
+  it('PARTNER avukata bağlı VIEWER → tx içinde 403 FINANCIAL_EXECUTION_DENIED_VIEWER; advisory kilit ve yazma YOK', async () => {
+    const db = makeDb({ user: { ...PARTNER, role: 'VIEWER' } });
+    await expect(svc(db).service.createOffset('t1', 'u1', CREATE({ amount: '400' }))).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'FINANCIAL_EXECUTION_DENIED_VIEWER' }),
+    });
+    expect(db.$queryRaw).toHaveBeenCalledTimes(2); // Lawyer → User FOR SHARE
+    expect(db.$executeRaw).not.toHaveBeenCalled();
+    expect(db.clientOffset.create).not.toHaveBeenCalled();
+  });
+
+  it('yetkili aktörde aktör kilidi advisory kilitten ve ilk yazmadan ÖNCE alınır', async () => {
+    const db = makeDb();
+    await svc(db).service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
+    const lockAt = (db.$queryRaw as jest.Mock).mock.invocationCallOrder[0];
+    expect(lockAt).toBeLessThan((db.$executeRaw as jest.Mock).mock.invocationCallOrder[0]);
+    expect(lockAt).toBeLessThan((db.clientOffset.create as jest.Mock).mock.invocationCallOrder[0]);
   });
 });
