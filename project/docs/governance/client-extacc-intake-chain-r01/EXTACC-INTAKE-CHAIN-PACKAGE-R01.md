@@ -1,6 +1,6 @@
 # EXTACC R01 — Dış erişim intake zinciri canlı kabul paketi (D-1 / D-2 / D-3 / D-9)
 
-> **DURUM: HAZIRLIK.** Canlı Run/Recover **başlatılmadı**. Bu belge canlı koşum GO'su değildir; GO biçimi
+> **DURUM (2026-09-28): İKİ CANLI KOŞUM — `2a967ff1` FAIL (korunur), `cff5c692` 22/22 PASS; intake kapsamı kaydı §12.** Önceki durum: HAZIRLIK; canlı Run/Recover başlatılmamıştı. Bu belge canlı koşum GO'su değildir; GO biçimi
 > `OWNER-GO-CLIENT-EXTACC-YYYYMMDD-RNN`. Hizmet kabulü H1–H8 **0/8** ve diğer kabul sayaçları **değişmez**.
 > D-halkaları `client-external-access-r01` §7'de tanımlıdır.
 
@@ -32,7 +32,8 @@
 2. Sentetik kurulum + makbuz → giriş → makbuza `createAttemptedAt` → **gönderimsiz** oluşturma (30 dk, tek kullanım).
 3. `E-02` DB'de ACTIVE / useCount 0 / maxUses 1 / expiresAt istenen değer; URL kapısı; yerel ve dış GET 200.
    503 ya da 200 dışı → adres **gösterilmez**, kapanışa geçilir.
-4. Adres + QR + işaret metni (`EXTACC-<runId> sentetik adres`) yalnız owner konsolunda.
+4. Adres + QR + işaret metni yalnız owner konsolunda. İşaret metni her koşumda farklıdır ve yalnız koşumun konsolda gösterdiği
+   satırdan birebir alınır; belgede kopyalanabilir örnek ya da yer tutucu VERİLMEZ (koşum `2a967ff1`'de yer tutucu yazılması E-13 FAIL'e yol açtı, §12.1).
 5. Owner telefonda (Wi-Fi kapalı, mobil veri, gizli sekme) açar, işaret metnini yazar, **bir kez** gönderir.
    Betik yalnız okur (varsayılan 25 dk, 5 sn aralık). Görülünce ya da süre dolunca ekran + kaydırma arabelleği temizlenir.
 6. Kapanış: R03 `finalizeClosure` (iptal ya da USED, yerel/dış public 404, kullanıcı/dosya kapanışı).
@@ -177,3 +178,67 @@ dış zincir kapısı kaldırıldı → Z-6/Z-7 FAIL.
 Sonuçlar (son dosyalar): `extacc-selftest.js` **32/32** · owner bloğu PS 5.1 **42/42**, PS 7.6 **42/42** · konsol **5/5** ·
 H5 regresyonu `h5-url-selftest.js` **47/47**, `h5-pin-selftest.ps1` **8/8**. `h5-fake-api.js`'e yalnız `linkOverride` test senaryosu eklendi.
 H5 canlı kabulü ve telefon D-8 testi tekrarlanmadı.
+
+## 12. Canlı kabul kayıtları (2026-09-28)
+
+> **Kapsam:** yalnız **EXTACC intake zinciri**. H1–H8 **0/8** kalır; D-4…D-8 durumu **değişmez** (D-8 kısmen kanıtlı, §9).
+> Ham kanıt, kimlikler, kullanıcı yolları ve sırlar repoya konmadı; kanıt yerel CLIENT kanıt kökündedir ve salt okuma
+> incelendi, değiştirilmedi.
+
+### 12.1 Koşum `2a967ff1` — FAIL (korunur)
+
+- Çıkış **2** · 21 PASS · 1 FAIL (**E-13**) · manifest 6/6 · manifest sha256 `FF1FE6295E2334F311F44F637F7AB131382D0D60F4CDF24C0F540A6C1695F9A4`.
+- **E-13 nedeni** (salt okuma inceleme; READ ONLY işlem; yalnız makbuzdaki tenant/bağlantı): kayıtlı adres değeri, belgelerde
+  yer tutucu olarak geçen şablon metinle birebir eşit (koşumun gerçek işaret metni yerine yer tutucu yazılmış). Sınıf:
+  **kullanıcı girdisi**; katkı eden etken: talimatta yer tutucunun yazılabilir biçimde verilmesi. Test kusuru değil (E-13 doğru
+  FAIL verdi); ürün kusuru değil (saklama düz metin; form yalnız `trim`; E-13 aynı alanı okur). Bulgu notu sha256
+  `8742A7F9BE7559E352FE6C3927CDD92E30885F09AF81558C003179049F64040A`.
+- **Owner düzeltmesi:** form telefonda gizli sekmede açılamadı; koşum ofis PC'sinde yapıldı. Orijinal beyandaki telefon/mobil veri
+  yanıtları **teyide muhtaç**; dış cihaz kabulü **PASS sayılmaz**. Not sha256 `AE355BE70E85DF2919DC5BC5505FFA11FC367D6520E99DE170CD95CA8B682423`.
+- Kapanış tamamdı (bağlantı USED 1/1, tek kullanım sonrası yerel/dış 404, kullanıcılar pasif, dosya CLOSED; Recover gerekmedi).
+
+### 12.2 Koşum `cff5c692` — PASS (intake kapsamı)
+
+| Alan | Değer |
+|---|---|
+| Çıkış / özet | **0** · **22/22 PASS** · FAIL 0 · ÖLÇÜLEMEYEN 0 |
+| Manifest | 6/6 eşit · sha256 `3CCF3415136FF674F79F8B1656DDB1FEE4360BA3DDC48C2C46F66F09C7A75563` |
+| Koşum anındaki main / paket | `1caf3adc` / `BE1C0F6B2508A0909D0CB4B3EB48CD7500638AC172115E97007B0DD0FE89242E` (owner bloğu `55500625…50FD`) |
+| Canlı süreler (kanıttaki `params`) | 30 dk geçerlilik · 25 dk bekleme · 5 sn yoklama · zaman aşımları sabit değerlerde |
+| Gönderim | gönderim yapan uç çağrılmadı; betik public POST yapmadı |
+| Kurtarma | gerekmedi |
+
+**Makine ölçümleri:** gönderimsiz bağlantı 201; DB'de ACTIVE / 0-1 kullanım / `expiresAt` istenen değer; URL kapısı; gösterimden önce
+yerel ve dış public GET 200; adres yalnız owner konsolunda; gönderim satırı ~180 sn içinde; **E-13 PASS** (tek ADDRESS alanı bu koşumun
+işaret metnini içerir); tek gönderim makbuzdaki tenant/dosya/müvekkile bağlı, `CLIENT_SUBMITTED`; bağlantı **USED 1/1**, ACTIVE
+bağlantı yok; kanonik `DebtorAddress` ve `ClientIntelStatement` önce/sonra aynı; bildirim/bilgi talebi/teslim kaydı 0;
+**tek kullanım sonrası erişim kapanışı**: yerel ve dış public **404**; sentetik kullanıcılar pasif, dosya **CLOSED**.
+E-17 yalnız dışlamadır: gönderimin IP özeti loopback/`unknown` değil — **mobil ağ kanıtı değildir**.
+
+**Owner beyanı (makine ölçümü DEĞİL):** telefonda form açıldı, Gönder'e bir kez basıldı, "Teşekkürler" görüldü, Wi-Fi kapalı ve
+mobil veri — hepsi `E`; beyan edilen gönderim saati **00:58**.
+
+**Paylaşılan telefon görüntüsü (makine ölçümü DEĞİL):** görüntüyü **ChatGPT doğrudan inceledi** ve teşekkür ekranını, **5G** simgesini
+ve **01:02** saatini gördüğünü bildirdi (owner'ın aktarımı). Görüntü **Claude tarafından doğrudan incelenmedi** ve kanıt dizinine
+alınmadı. Beyan edilen gönderim saati (00:58, ofis PC'de verildi) ile görüntü saati (01:02, telefon) **ayrı tutulur**. Owner açıklaması:
+**telefon ile PC saatleri farklı.** Bu yüzden iki saat arasındaki farktan gönderim ile ekran görüntüsü arasındaki süre **çıkarılmaz**;
+saatlerin farkı ve hangisinin doğru olduğu **ölçülmedi**; saat ayarlarına dokunulmadı. Notlar: owner kanıt notu sha256
+`12C2ED939982B57E354FD8D962B346FF3D3F8F25AE23BD104D872BFBEAD4986A` (içindeki "görüntü ~4 dk sonra" değerlendirmesi GEÇERSİZ; not
+değiştirilmedi) · saat notu sha256 `A713BDCAD17DA4962FE3061B474D657117B3CC2E6DDE5B0D43B988AE4C70667F`.
+
+**İzolasyon — yalnız ölçülen:** koşumdan önce ve sonra, **bu koşumun iki sentetik tenantı dışındaki** ve en az bir müvekkili ya da
+kullanıcısı olan **33 tenantın** tenant başına müvekkil ve kullanıcı **kayıt sayıları** aynı. Kod (`i13-lib.js`
+`isolationFingerprint`) yalnız bu koşumun tenantlarını dışlar; **önceki koşumların sentetik test tenantları bu 33'e dahildir**. Bu
+yüzden "33 gerçek tenant" denemez. Ölçüm yalnız sayı dağılımıdır; ekleme/silme yokluğu ya da içerik bütünlüğü çıkarılmaz.
+(Kanıttaki U-ISO etiketindeki "sentetik OLMAYAN" ifadesi bu nedenle kesin değildir; etiket düzeltmesi ayrı iştir.)
+
+### 12.3 D-halkaları — kabul kapsamı
+
+| Halka | Karar | Dayanak |
+|---|---|---|
+| **D-1** bağlantı dış cihazdan açılır | **kabul — intake kapsamı** | makine: dış adres zinciri GET 200, gönderim loopback dışından geldi · owner beyanı + ChatGPT'nin görüntü incelemesi: açılış telefonda, mobil veride. Cihaz/ağ kısmı makine ölçümü değildir |
+| **D-2** form gönderilir | **kabul — intake kapsamı** | makine: gerçek public POST ile tek gönderim yazıldı, işaret metni doğru (honeypot değil) · owner beyanı: telefondan tek basış |
+| **D-3** doğru büro/dosya/statü | **kabul** | makine: E-10…E-16 PASS |
+| **D-9** erişim kapanışı | **kabul — yalnız bu intake koşumu** | makine: USED 1/1, ACTIVE yok, tek kullanım sonrası yerel/dış 404, kullanıcılar pasif, dosya CLOSED. **Portal, belge ve mesaj kapanışını kapsamaz** (D-4…D-7 ölçülmedi) |
+| D-4 … D-7 | **değişmedi — ölçülmedi** | — |
+| D-8 | **değişmedi — kısmen kanıtlı** (§9) | — |
