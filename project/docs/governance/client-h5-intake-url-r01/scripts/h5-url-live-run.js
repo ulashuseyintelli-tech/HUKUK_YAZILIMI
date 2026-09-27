@@ -438,4 +438,7 @@ if (require.main === module) {
   else { console.error(`REDDEDİLDİ: bilinmeyen H5U_MODE '${mode}'`); process.exit(1); }
 }
 
-module.exports = { expectedOriginOf, scrub, addSecret, DISPATCH_ENDPOINT_FORBIDDEN, exitCodeOf };
+// EXTACC R01 (client-extacc-intake-chain-r01) aynı güvenceleri yeniden kullanır; yalnız dışa aktarım genişletildi,
+// davranış DEĞİŞMEDİ.
+module.exports = { expectedOriginOf, scrub, addSecret, DISPATCH_ENDPOINT_FORBIDDEN, exitCodeOf, errText, sha, writeJson,
+  timeoutOf, boundedGet, judgeValid, judgeRevoked, revokeOwnLinks, recoveryAdvice, writeEvidenceOrDemote, finalizeClosure };
