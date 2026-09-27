@@ -74,7 +74,10 @@ describe('ASSIGN-4b planResponsible (tam-1 sorumlu kararı, saf)', () => {
 const makeService = () => {
   const stub = {} as any;
   // CaseService constructor 10 dep — hepsi stub; prisma + auditService test içinde override.
-  return new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+  // K2: yetki alanları F01 yönetim kuralı ister; bu testler audit/değişmez kuralı sınar → aktör F01 yetkili.
+  (service as any).officeApproval = { isF01WriteActorAuthorized: jest.fn(async () => true) };
+  return service;
 };
 
 describe('WP-1d-5-7 CaseService.updateCaseLawyer (hukuki sorumlu ekseni kanonik-uç-only)', () => {

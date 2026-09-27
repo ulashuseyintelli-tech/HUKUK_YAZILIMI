@@ -88,7 +88,8 @@ export class ClaimItemController {
     @CurrentUser('id') actorUserId: string,
     @Body() dto: AutoGenerateClaimItemsDto,
   ) {
-    const data = await this.service.autoGenerateFromDocument(tenantId, actorUserId, dto);
+    // K3: insan isteği insan yazma politikasından geçer (sistem yazıcısı autoGenerateFromDocument DEĞİL).
+    const data = await this.service.autoGenerateFromUser(tenantId, actorUserId, dto);
     return { success: true, data };
   }
 
@@ -217,7 +218,8 @@ export class ClaimItemController {
       wizardData?: Record<string, any>;
     },
   ) {
-    const data = await this.service.generateFromRuleEngine(
+    // K3: insan isteği insan yazma politikasından geçer (sistem yazıcısı generateFromRuleEngine DEĞİL).
+    const data = await this.service.generateFromRuleEngineForUser(
       tenantId,
       actorUserId,
       caseId,

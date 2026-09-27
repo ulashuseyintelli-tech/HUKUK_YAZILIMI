@@ -20,6 +20,7 @@ import { CasePaymentPreviewService } from "./case-payment-preview.service";
 // WP-4d-1: warn-only diagnostic audit (PERMISSION_WOULD_DENY) için.
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 import { ClaimItemModule } from "../claim-item/claim-item.module";
+import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 
 @Module({
   imports: [
@@ -37,6 +38,8 @@ import { ClaimItemModule } from "../claim-item/claim-item.module";
     LawyerModule,
     DebtorModule,
     ClaimItemModule,
+    // K2: dosya avukatı/personel yetki verme kapısı (F01 yazma kuralı) — OfficeApprovalService.
+    OfficeApprovalModule,
   ],
   controllers: [CaseController, CasePaymentPreviewController],
   providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService],

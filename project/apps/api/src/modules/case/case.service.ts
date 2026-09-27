@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import { maskIban } from "@/common/pii-mask.util";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
@@ -509,7 +510,39 @@ export class CaseService {
     private canonicalCaseBalance?: CaseBalanceService,
     @Optional()
     private claimItemWriterRouter?: ClaimItemWriterRouterService,
+    // K2: dosya avukatı/personel YETKİ verme-değiştirme kapısı (F01 yazma kuralı). Yoksa fail-closed.
+    @Optional()
+    private officeApproval?: OfficeApprovalService,
   ) {}
+
+  /**
+   * K2 (owner kararı 2026-09-28) — dosya düzeyinde YETKİ verme/değiştirme (CaseLawyer.casePermissions,
+   * imza yetkisi; CaseStaff.canEdit/canApprove/canView) yalnız mevcut F01 yönetim kuralıyla yapılır:
+   * `isF01WriteActorAuthorized` (ADMIN veya aynı tenant + tenant ofisine bağlı, personel olmayan
+   * PARTNER/MANAGER/delege avukat; VIEWER elenir). Hedef ofis, tenant'ın DB'deki tek ofisidir (B1); hedef
+   * dosya/atama ayrıca aynı tenant'ta DB'den doğrulanır. Dosyadaki mali düzenleme izni (canEditFinance)
+   * yetki DAĞITMA izni SAYILMAZ. Kontrol her yazmadan ÖNCE yapılır; yetkisiz istekte hiçbir satır yazılmaz.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CaseService.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId (casePermissions/canSign/hasSignatureAuthority)
+   * ///  - CaseService.updateCaseStaff() → PATCH /cases/:id/staff/:caseStaffId (canEdit/canApprove/canView)
+   * ///  - CaseService.addCaseLawyer() → POST /cases/:id/lawyers (istemci canSign bildirirse)
+   * /// </remarks>
+   */
+  private async assertCanGrantCasePermissions(tenantId: string, actorUserId: string | undefined): Promise<void> {
+    const allowed =
+      !!actorUserId &&
+      !!this.officeApproval &&
+      (await this.officeApproval.isF01WriteActorAuthorized(actorUserId, tenantId));
+    if (!allowed) {
+      throw new ForbiddenException({
+        code: "CASE_PERMISSION_GRANT_FORBIDDEN",
+        message:
+          "Dosya yetkilerini verme/değiştirme yalnız ofis yönetim yetkisi (ADMIN veya PARTNER/MANAGER/yetkilendirilmiş avukat) ile yapılabilir.",
+      });
+    }
+  }
 
   private requireClaimItemWriterRouter(): ClaimItemWriterRouterService {
     if (!this.claimItemWriterRouter) {
@@ -3117,6 +3150,12 @@ export class CaseService {
     },
     userId: string,
   ) {
+    // K2: yetki alanlarına (casePermissions / imza yetkisi) dokunan istek F01 yönetim kuralı ister — İLK okumadan
+    // ve yazmadan ÖNCE. Yalnız rol/bildirim gibi yetki-dışı alanlar mevcut davranışta kalır.
+    if (data.casePermissions !== undefined || data.canSign !== undefined || data.hasSignatureAuthority !== undefined) {
+      await this.assertCanGrantCasePermissions(tenantId, userId);
+    }
+
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
@@ -3277,6 +3316,12 @@ export class CaseService {
     role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
     canSign?: boolean;
   }, userId: string) {
+    // K2: istemcinin bildirdiği imza yetkisi bir yetki VERMEDİR → F01 yönetim kuralı. Bildirilmezse sunucu
+    // varsayılanı (rütbe) uygulanır; atamanın kendisi mevcut davranışta kalır.
+    if (data.canSign !== undefined) {
+      await this.assertCanGrantCasePermissions(tenantId, userId);
+    }
+
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
@@ -3567,6 +3612,11 @@ export class CaseService {
     },
     userId: string,
   ) {
+    // K2: personel dosya yetkileri (canEdit/canApprove/canView) F01 yönetim kuralı ister — yazmadan ÖNCE.
+    if (data.canEdit !== undefined || data.canApprove !== undefined || data.canView !== undefined) {
+      await this.assertCanGrantCasePermissions(tenantId, userId);
+    }
+
     // Dosya bu tenant'a ait mi?
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
