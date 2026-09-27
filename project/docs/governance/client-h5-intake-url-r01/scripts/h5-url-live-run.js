@@ -1,99 +1,294 @@
 'use strict';
 /*
- * H5-URL — DAR CANLI KABUL: `PUBLIC_INTAKE_BASE_URL` girildikten sonra intake bağlantısının MUTLAK
- * adres üretmesi ve hedef sayfanın erişilebilir olması.
+ * H5-URL — DAR CANLI KABUL (R02): `PUBLIC_INTAKE_BASE_URL` ile üretilen intake bağlantısının MUTLAK, beklenen
+ * HTTPS origin'e ait ve yerelde + dış zincirde geçerli olması; ardından bağlantının İPTALİ ve erişim kapanışı.
  *
- * ÖLÇER  : U-00 ölçüm geçerliliği · U-01 mutlak URL biçimi · U-02 URL = <base>/intake/<ham token> ·
- *          U-03 hedef sayfa (web) erişilebilir · U-04 ham token yalnız oluşturma yanıtında (okuma ucunda YOK) ·
- *          U-CLOSE erişim kapanışı · U-ISO gerçek tenant izolasyonu değişmedi.
- * YAPMAZ : gerçek alıcıya gönderim YOK (yalnız BAĞIMSIZ bağlantı üretimi ucu; bildirim akışı çağrılmaz) ·
- *          ürün kodu değişmez · migration yok · ikinci API açılmaz.
- * SIR    : GO ref yalnız biçim olarak doğrulanır, yazdırılmaz. Ham token HİÇBİR çıktıya yazılmaz; yalnız
- *          sha256'sı ve uzunluğu raporlanır. Parola bellekte üretilir.
- * ÇIKIŞ  : 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 5 KAPANIŞ DOĞRULANMADI
+ * R02 DÜZELTMELERİ (kaynaktan doğrulandı, 2026-09-27):
+ *   K-1 R01 `POST /client-intake-links/case/:caseId` çağırıyordu. O uç `create()` → `notifyLink()` →
+ *       `dispatcher.dispatch()` zincirini koşar; yani GÖNDERİM yapar. R02 yalnız GÖNDERİMSİZ ucu çağırır:
+ *       `POST /clients/:clientId/cases/:caseId/intake-links` → `createForClientWorkspace()` (dispatch yok).
+ *       `create-and-deliver` ucu ÇAĞRILMAZ. `clientId` gövdede değil URL'dedir.
+ *   K-2 R01 kapanışı kullanıcıları pasifleştirip Case'i CLOSED yapıyordu, bağlantıyı İPTAL ETMİYORDU. Public
+ *       doğrulayıcı yalnız bağlantının status/expiresAt/useCount alanlarına bakar; Case ya da kullanıcı durumuna
+ *       bakmaz. R02 kapanışta önce yetkili uçla (`POST /client-intake-links/:id/revoke`) iptal eder, DB'de
+ *       REVOKED'u ve public 404'ü ölçer, SONRA kullanıcı/dosya kapanışını yapar.
+ *
+ * ÖLÇER  : U-00 ölçüm geçerliliği · U-01 mutlak URL · U-02 URL = <base>/intake/<ham token> · U-URL URL kapısı
+ *          (beklenen HTTPS origin + yol) · U-03a dış HTTPS sayfa · U-03b-L YEREL API · U-03b-D DIŞ HTTPS API ·
+ *          U-04 okuma ucunda ham token yok · U-REV-DB iptal (DB) · U-REV-PUB-L / -D iptal sonrası public 404 ·
+ *          U-CLOSE kullanıcı/dosya kapanışı · U-ISO sayım dağılımı.
+ * YAPMAZ : gönderim YOK · public SUBMIT (POST) YOK · yönlendirme İZLENMEZ · URL kapısı geçmeden token içeren
+ *          HİÇBİR adrese istek YOK · 503/zaman aşımı için neden TEŞHİS EDİLMEZ ve PASS SAYILMAZ · otomatik
+ *          kabul tekrarı YOK.
+ * SIR    : ham token, parola, Authorization/JWT, DB URL ve GO ref hiçbir çıktıya yazılmaz; konsol ve kanıt
+ *          yazımı tek temizleyiciden geçer. Token yalnız sha256 + uzunluk olarak raporlanır.
+ * MODLAR : H5U_MODE=run (varsayılan) · H5U_MODE=recover (yalnız kapanışı tamamlar; kabul ÖLÇÜTLERİ KOŞULMAZ).
+ * ÇIKIŞ  : 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ (yazma yok)
+ *          5 KULLANICI/DOSYA KAPANIŞI DOĞRULANMADI · 6 BAĞLANTI İPTALİ DOĞRULANMADI (en ağır)
  */
 const fs = require('fs'); const crypto = require('crypto');
 const I13 = require('../../client-live-acceptance-i13-r01/scripts/i13-lib');
+const { assertReceiptIdentity } = require('../../client-live-acceptance-i12-r01/scripts/i12-live-identity');
 const { L, isolationFingerprint, closeAccess, dbName } = I13;
 
-function gates(env) {
+// ------------------------------------------------------------------ sır temizleyici
+const SECRETS = new Set();
+function addSecret(s) { if (s !== undefined && s !== null && String(s).length >= 6) SECRETS.add(String(s)); }
+function scrub(v) {
+  let s = typeof v === 'string' ? v : (v instanceof Error ? String(v.message) : (() => { try { return JSON.stringify(v); } catch (e) { return String(v); } })());
+  for (const k of SECRETS) if (s.includes(k)) s = s.split(k).join('[GİZLİ]');
+  return s;
+}
+const _log = console.log.bind(console); const _err = console.error.bind(console);
+console.log = (...a) => _log(...a.map(scrub));
+console.error = (...a) => _err(...a.map(scrub));
+function writeJson(file, obj) { fs.writeFileSync(file, scrub(JSON.stringify(obj, null, 1)), 'utf8'); }
+
+/** Hata özeti: Prisma çok satırlı hata verir ve asıl DB nedeni SON satırdadır; ilk + son satır korunur. */
+function errText(e, n) {
+  const lines = String((e && e.message) || e).split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  const t = lines.length > 1 ? `${lines[0]} … ${lines[lines.length - 1]}` : (lines[0] || 'bilinmeyen hata');
+  return t.slice(0, n || 300);
+}
+const sha = (s) => crypto.createHash('sha256').update(String(s), 'utf8').digest('hex').toUpperCase();
+const RECEIPT_RECORD = 'H5-URL-SETUP-RECEIPT';
+const DISPATCH_ENDPOINT_FORBIDDEN = [/\/client-intake-links\/case\//, /\/create-and-deliver/];
+
+function expectedOriginOf(v) {
+  let u; try { u = new URL(String(v || '')); } catch (e) { return null; }
+  if (u.protocol !== 'https:' || u.username || u.password || u.search || u.hash) return null;
+  if (u.pathname !== '/' && u.pathname !== '') return null;
+  return u.origin;
+}
+
+function commonGates(env) {
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0') return { code: 1, why: 'NODE_TLS_REJECT_UNAUTHORIZED=0 — TLS doğrulaması kapalıyken koşulmaz' };
+  const bound = dbName(env.AH_DATABASE_URL || '');
+  if (!env.H5U_EXPECT_DB || env.H5U_EXPECT_DB !== bound) return { code: 4, why: `beklenen DB '${env.H5U_EXPECT_DB || ''}' != bağlı '${bound || ''}'` };
+  if (!env.H5U_API_BASE || env.H5U_API_BASE !== env.H5U_EXPECT_API) return { code: 4, why: 'API adresi beyanı eşleşmiyor' };
+  return null;
+}
+
+function runGates(env) {
+  const c = commonGates(env); if (c) return c;
   if (env.H5U_LIVE_CONFIRM !== '1') return { code: 3, why: 'H5U_LIVE_CONFIRM=1 gerekli' };
   if (!(env.H5U_LIVE_GO_REF && /^OWNER-GO-CLIENT-H5URL-\d{8}-R\d{2}$/.test(env.H5U_LIVE_GO_REF.trim()))) {
     return { code: 3, why: 'H5U_LIVE_GO_REF biçimi (OWNER-GO-CLIENT-H5URL-YYYYMMDD-RNN) gerekli' };
   }
   const runId = String(env.H5U_RUNID || '').toLowerCase();
   if (!/^[0-9a-f]{8}$/.test(runId)) return { code: 2, why: 'H5U_RUNID 8 hex olmalı' };
-  const bound = dbName(env.AH_DATABASE_URL || '');
-  if (!env.H5U_EXPECT_DB || env.H5U_EXPECT_DB !== bound) return { code: 4, why: `beklenen DB '${env.H5U_EXPECT_DB || ''}' != bağlı '${bound || ''}'` };
   if (env.H5U_EXPECT_TENANT_SLUG !== `${L.AH.TENANT_PREFIX}${runId}`) return { code: 4, why: 'hedef slug beyanı runId ile eşleşmiyor' };
-  if (!env.H5U_API_BASE || env.H5U_API_BASE !== env.H5U_EXPECT_API) return { code: 4, why: 'API adresi beyanı eşleşmiyor' };
-  if (!env.H5U_EXPECT_BASE_URL) return { code: 4, why: 'H5U_EXPECT_BASE_URL gerekli (owner bloğu .env değerinden verir)' };
-  return { code: 0, runId };
-}
-const sha = (s) => crypto.createHash('sha256').update(String(s), 'utf8').digest('hex').toUpperCase();
-async function httpStatus(url) {
-  try { const r = await fetch(url, { redirect: 'manual' }); return r.status; } catch (e) { return -1; }
+  const origin = expectedOriginOf(env.H5U_EXPECT_BASE_URL);
+  if (!origin) return { code: 4, why: 'H5U_EXPECT_BASE_URL https:// şemalı, yolsuz bir origin olmalı' };
+  return { code: 0, runId, origin };
 }
 
-(async () => {
-  const g = gates(process.env);
+function timeoutOf(name, dflt) { const n = Number(process.env[name]); return Number.isFinite(n) && n > 0 ? n : dflt; }
+
+/** Süre sınırlı GET; yönlendirme İZLENMEZ. Hata metni kaydedilmez (URL içerebilir) — yalnız sınıf + kod. */
+async function boundedGet(url, timeoutMs) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { method: 'GET', redirect: 'manual', signal: ctl.signal });
+    try { await r.arrayBuffer(); } catch (e) { /* gövde okunamadı: durum kodu yine geçerli */ }
+    return { status: r.status };
+  } catch (e) {
+    const timedOut = !!(e && e.name === 'AbortError');
+    const code = e && e.cause && e.cause.code ? String(e.cause.code) : null;
+    return { status: null, timedOut, error: timedOut ? `zaman aşımı (${timeoutMs} ms)` : `bağlantı hatası${code ? ` (${code})` : ''}` };
+  } finally { clearTimeout(t); }
+}
+
+/** Geçerlilik ölçümü sınıflandırması: 200 PASS · 503/429/zaman aşımı/bağlantı ÖLÇÜLEMEYEN · diğer FAIL. */
+function judgeValid(R, id, desc, r) {
+  if (r.status === 200) return R.check(id, desc, true, 'HTTP 200');
+  if (r.status === null) return R.unmeasured(id, desc, r.error);
+  if (r.status === 503) return R.unmeasured(id, desc, 'HTTP 503 — nedeni bu koşumda ÖLÇÜLMEDİ');
+  if (r.status === 429) return R.unmeasured(id, desc, 'HTTP 429 — hız sınırı; geçerlilik ÖLÇÜLEMEDİ');
+  if (r.status >= 300 && r.status < 400) return R.check(id, desc, false, `HTTP ${r.status} — yönlendirme döndü (İZLENMEDİ)`);
+  return R.check(id, desc, false, `HTTP ${r.status}`);
+}
+/** İptal sonrası ölçümü: 404 PASS · 200 FAIL (iptal etkisiz) · 503/429/zaman aşımı ÖLÇÜLEMEYEN · diğer FAIL. */
+function judgeRevoked(R, id, desc, r) {
+  if (r.status === 404) return { v: R.check(id, desc, true, 'HTTP 404'), live: false };
+  if (r.status === 200) return { v: R.check(id, desc, false, 'HTTP 200 — bağlantı iptale rağmen GEÇERLİ'), live: true };
+  if (r.status === null) return { v: R.unmeasured(id, desc, r.error), live: null };
+  if (r.status === 503) return { v: R.unmeasured(id, desc, 'HTTP 503 — nedeni bu koşumda ÖLÇÜLMEDİ'), live: null };
+  if (r.status === 429) return { v: R.unmeasured(id, desc, 'HTTP 429 — hız sınırı'), live: null };
+  return { v: R.check(id, desc, false, `HTTP ${r.status}`), live: null };
+}
+
+/**
+ * Bu koşuma ait bağlantıları YETKİLİ uçla iptal eder ve DB'de doğrular. Yalnız kimlik bağı doğrulanmış
+ * sentetik tenant/case/client üçlüsünde arar; oluşturma yanıtı alınamadıysa da (zaman aşımı) kayıt
+ * OLUŞMUŞ OLABİLİR varsayımıyla buradan bulunur. Kimlik doğrulanmazsa HİÇBİR çağrı/yazma yapılmaz.
+ */
+async function revokeOwnLinks(prisma, base, receipt, session) {
+  const res = { ok: false, identity: null, linksBefore: [], foreignTenantLinks: null, revokeCalls: [], linksAfter: [], note: null };
+  const ident = await assertReceiptIdentity(prisma, receipt);
+  res.identity = ident.ok ? 'OK' : ident.reason;
+  if (!ident.ok) { res.note = 'kimlik bağı DOĞRULANMADI — hiçbir iptal/yazma yapılmadı'; return res; }
+  const where = { tenantId: receipt.tenantId, caseId: receipt.caseId, clientId: receipt.clientId };
+  const sel = { id: true, status: true, tenantId: true, caseId: true, clientId: true };
+  const before = await prisma.clientIntakeLink.findMany({ where, select: sel });
+  res.linksBefore = before.map((l) => ({ id: l.id, status: l.status }));
+  res.foreignTenantLinks = receipt.foreignTenantId ? await prisma.clientIntakeLink.count({ where: { tenantId: receipt.foreignTenantId } }) : 0;
+  const tmo = timeoutOf('H5U_REVOKE_TIMEOUT_MS', 30000);
+  for (const l of before.filter((x) => x.status === 'ACTIVE')) {
+    const call = { id: l.id, attempts: [] };
+    if (!session || !session.token) { call.attempts.push('oturum YOK — yetkili uç çağrılamadı'); res.revokeCalls.push(call); continue; }
+    for (let i = 0; i < 2; i++) {
+      const r = await L.AH.httpJson('POST', `${base}/client-intake-links/${l.id}/revoke`, { token: session.token, timeoutMs: tmo });
+      call.attempts.push(r.indeterminate ? 'belirsiz (zaman aşımı/taşıma)' : `HTTP ${r.status}`);
+      if (!r.indeterminate && (r.status === 200 || r.status === 201)) break;
+      // Başarı gelmediyse sunucu işlemi yine de tamamlanmış olabilir: DB'den ÖLÇ, tahmin etme.
+      const now = await prisma.clientIntakeLink.findUnique({ where: { id: l.id }, select: { status: true } });
+      if (!now || now.status !== 'ACTIVE') { call.attempts.push(`DB durumu=${now ? now.status : 'YOK'}`); break; }
+      // 4xx istemci hatası tekrar edilmez; yalnız belirsiz/5xx için TEK tekrar.
+      if (!r.indeterminate && r.status < 500) break;
+    }
+    res.revokeCalls.push(call);
+  }
+  const after = await prisma.clientIntakeLink.findMany({ where, select: sel });
+  res.linksAfter = after.map((l) => ({ id: l.id, status: l.status }));
+  const ownOk = after.every((l) => l.tenantId === receipt.tenantId && l.caseId === receipt.caseId && l.clientId === receipt.clientId);
+  res.ok = ownOk && after.every((l) => l.status !== 'ACTIVE') && res.foreignTenantLinks === 0;
+  return res;
+}
+
+function recoveryAdvice(out, receiptPath) {
+  const need = [];
+  if (!(out.linkRevoke && out.linkRevoke.ok)) need.push('BAĞLANTI İPTALİ doğrulanmadı — sentetik bağlantı AÇIK kalmış olabilir');
+  if (!(out.closure && out.closure.ok)) need.push('KULLANICI/DOSYA KAPANIŞI doğrulanmadı');
+  if (need.length === 0) return { gerekli: false };
+  return {
+    gerekli: true, neden: need, makbuz: receiptPath || null,
+    adim: 'Owner kurtarma bloğunu `-Mode Recover -ReceiptFile <makbuz>` ile BİR KEZ koşar. Kurtarma kabul ölçütlerini '
+      + 'TEKRARLAMAZ; yalnız makbuz kimliği doğrulanmış sentetik tenantta bağlantıyı yetkili uçla iptal eder ve kapanışı tamamlar.',
+  };
+}
+
+function exitCodeOf(out, s) {
+  if (!(out.linkRevoke && out.linkRevoke.ok)) return 6;
+  if (!(out.closure && out.closure.ok)) return 5;
+  if (out.fatal) return 1;
+  if (s.fail > 0) return 2;
+  if (s.unmeasured > 0) return 3;
+  return 0;
+}
+
+// ------------------------------------------------------------------ kapanış (her iki modda ortak)
+async function finalizeClosure(R, prisma, base, origin, receipt, session, raw, urlGateOk) {
+  const out = {};
+  if (!receipt) {
+    out.linkRevoke = { ok: true, nothingCreated: true, note: 'kurulum makbuzu yok — bu koşum tenant/bağlantı oluşturmadı' };
+    out.closure = { ok: true, nothingToClose: true, wroteNothing: true };
+    return out;
+  }
+  // 1) ÖNCE bağlantı iptali (kullanıcılar henüz aktif; yetkili uç JWT ister)
+  try { out.linkRevoke = await revokeOwnLinks(prisma, base, receipt, session); }
+  catch (e) { out.linkRevoke = { ok: false, reason: `iptal adımı hata verdi: ${errText(e)}` }; }
+  R.check('U-REV-DB', 'bu koşuma ait TÜM bağlantılar DB\'de ACTIVE DEĞİL (iptal) ve yabancı tenantta bağlantı YOK', !!out.linkRevoke.ok,
+    `kimlik=${out.linkRevoke.identity || '-'} · önce=${JSON.stringify(out.linkRevoke.linksBefore || [])} · sonra=${JSON.stringify(out.linkRevoke.linksAfter || [])} · yabancı=${out.linkRevoke.foreignTenantLinks}`);
+  // 2) public 404 — yalnız ham token biliniyorsa VE URL kapısı geçtiyse
+  if (raw && urlGateOk) {
+    const tmo = timeoutOf('H5U_LOCAL_TIMEOUT_MS', 15000);
+    const tmoX = timeoutOf('H5U_EXTERNAL_TIMEOUT_MS', 15000);
+    const l = judgeRevoked(R, 'U-REV-PUB-L', 'iptal sonrası YEREL public API aynı token için 404', await boundedGet(`${base}/public/intake/${raw}`, tmo));
+    const d = judgeRevoked(R, 'U-REV-PUB-D', 'iptal sonrası DIŞ HTTPS public API aynı token için 404', await boundedGet(`${origin}/api/public/intake/${raw}`, tmoX));
+    if (l.live === true || d.live === true) { out.linkRevoke.ok = false; out.linkRevoke.note = 'public uç iptale rağmen 200 döndü'; }
+  } else {
+    const why = raw ? 'URL kapısı geçmedi — token içeren adrese istek GÖNDERİLMEDİ' : 'ham token bu koşumda alınmadı — public 404 ölçülemez (DB ölçümü geçerli)';
+    R.unmeasured('U-REV-PUB-L', 'iptal sonrası YEREL public API 404', why);
+    R.unmeasured('U-REV-PUB-D', 'iptal sonrası DIŞ HTTPS public API 404', why);
+  }
+  // 3) SONRA kullanıcı/dosya kapanışı — iptal başarısız olsa da ÇALIŞIR (hata yolunda da temizlik)
+  try { out.closure = await closeAccess(prisma, receipt); }
+  catch (e) { out.closure = { ok: false, reason: errText(e) }; }
+  R.check('U-CLOSE', 'kullanıcılar pasif (tokenVersion++) + Case CLOSED', !!(out.closure && out.closure.ok), JSON.stringify(out.closure || {}));
+  return out;
+}
+
+// ------------------------------------------------------------------ RUN
+async function runMode() {
+  const g = runGates(process.env);
   if (g.code !== 0) { console.error(`REDDEDİLDİ: ${g.why}`); process.exit(g.code); }
-  const runId = g.runId; const base = process.env.H5U_API_BASE; const webBase = process.env.H5U_EXPECT_BASE_URL.replace(/\/+$/, '');
+  const runId = g.runId; const origin = g.origin; const base = process.env.H5U_API_BASE;
+  const webBase = String(process.env.H5U_EXPECT_BASE_URL).replace(/\/+$/, '');
   const pw = process.env.H5U_LIVE_LOGIN_PW; const receiptPath = process.env.H5U_RECEIPT; const evid = process.env.H5U_EVID_FILE;
   if (!pw || !receiptPath || !evid) { console.error('REDDEDİLDİ: H5U_LIVE_LOGIN_PW + H5U_RECEIPT + H5U_EVID_FILE gerekli.'); process.exit(2); }
+  addSecret(pw); addSecret(process.env.H5U_LIVE_GO_REF); addSecret(process.env.AH_DATABASE_URL);
 
   const R = new L.Results();
   const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
-  const out = { record: 'H5-URL-LIVE-RUN', runId, apiBase: base, webBase };
-  let receipt = null; let fatal = null;
+  const out = { record: 'H5-URL-LIVE-RUN', revision: 'R02', runId, apiBase: base, expectedOrigin: origin, calledEndpoints: [] };
+  let receipt = null; let fatal = null; let session = null; let raw = null; let urlGateOk = false;
+  const call = (m, p) => out.calledEndpoints.push(`${m} ${p.replace(base, '<API>')}`);
   try {
     out.isolationBefore = await isolationFingerprint(prisma, []);
     const st = await L.setupI3(prisma, bcrypt, runId, await bcrypt.hash(pw, 10)); st.runId = runId;
-    receipt = { record: 'H5-URL-SETUP-RECEIPT', runId, tenantId: st.tenantId, tenantSlug: st.slug, foreignTenantId: st.foreignTenantId,
-      clientId: st.clientId, foreignClientId: st.foreignClientId, caseId: st.caseId, createdAt: new Date().toISOString() };
-    fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 1), 'utf8');
+    receipt = { record: RECEIPT_RECORD, runId, tenantId: st.tenantId, tenantSlug: st.slug, foreignTenantId: st.foreignTenantId,
+      clientId: st.clientId, foreignClientId: st.foreignClientId, caseId: st.caseId,
+      elevUserId: st.actors.elev1.id, elevEmail: st.actors.elev1.email, createdAt: new Date().toISOString() };
+    try { writeJson(receiptPath, receipt); } catch (e) { out.receiptWriteError = String(e.message || e).slice(0, 160); }
 
-    const elev = await L.AH.login(base, st.actors.elev1.email, pw, st.slug);
-    if (!elev.ok) throw new Error(`elev1 oturum açamadı (HTTP ${elev.status ?? 'belirsiz'})`);
+    call('POST', `${base}/auth/login`);
+    session = await L.AH.login(base, st.actors.elev1.email, pw, st.slug);
+    if (session && session.token) addSecret(session.token);
+    if (!session.ok) throw new Error(`elev1 oturum açamadı (HTTP ${session.status ?? 'belirsiz'})`);
     const sameRole = st.actors.user.role === st.actors.elev1.role && st.actors.user.role !== 'ADMIN';
-    R.check('U-00', 'ÖLÇÜM GEÇERLİ: elev1 ADMIN değil, yetki PARTNER bağından gelir', sameRole,
-      `user:${st.actors.user.role} elev1:${st.actors.elev1.role}`);
+    R.check('U-00', 'ÖLÇÜM GEÇERLİ: elev1 ADMIN değil, yetki PARTNER bağından gelir', sameRole, `user:${st.actors.user.role} elev1:${st.actors.elev1.role}`);
 
-    // BAĞIMSIZ bağlantı üretimi (gönderim YOK)
-    const cr = await L.AH.httpJson('POST', `${base}/client-intake-links/case/${st.caseId}`, {
-      token: elev.token, body: { clientId: st.clientId, scope: ['ADDRESS'] },
-    });
-    const d = ((cr && cr.body) && (cr.body.data || cr.body)) || {};
-    const url = d.intakeUrl || (d.link && d.link.intakeUrl) || null;
-    const raw = d.rawToken || d.token || (d.link && d.link.rawToken) || null;
-    const linkId = d.id || (d.link && d.link.id) || null;
-    out.create = { status: cr.status, hasUrl: !!url, hasRawToken: !!raw, linkId: linkId ? 'VAR' : 'YOK', rawTokenSha256: raw ? sha(raw) : null, rawTokenLength: raw ? String(raw).length : 0 };
-    if (cr.status !== 201 || !url || !raw) {
-      R.unmeasured('U-01', 'mutlak URL biçimi', `bağlantı üretilemedi (HTTP ${cr.status})`);
-      R.unmeasured('U-02', 'URL = base + /intake/<token>', 'bağlantı yok');
-      R.unmeasured('U-03', 'hedef sayfa erişilebilir', 'bağlantı yok');
-      R.unmeasured('U-04', 'ham token yalnız oluşturma yanıtında', 'bağlantı yok');
+    // GÖNDERİMSİZ bağlantı üretimi — createForClientWorkspace (dispatch YOK). clientId URL'de.
+    const createPath = `${base}/clients/${st.clientId}/cases/${st.caseId}/intake-links`;
+    if (DISPATCH_ENDPOINT_FORBIDDEN.some((re) => re.test(createPath))) throw new Error('gönderim yapan uç seçildi — DURDU');
+    call('POST', createPath);
+    const cr = await L.AH.httpJson('POST', createPath, { token: session.token, body: { scope: ['ADDRESS'] }, timeoutMs: timeoutOf('H5U_CREATE_TIMEOUT_MS', 30000) });
+    const d = (cr && cr.body && cr.body.data) || {};
+    const url = typeof d.intakeUrl === 'string' ? d.intakeUrl : null;
+    raw = typeof d.rawToken === 'string' ? d.rawToken : null;
+    if (raw) addSecret(raw);
+    const linkId = d.link && d.link.id ? d.link.id : null;
+    out.create = { status: cr.status, indeterminate: !!cr.indeterminate, hasUrl: !!url, hasRawToken: !!raw, linkId: linkId ? 'VAR' : 'YOK',
+      rawTokenSha256: raw ? sha(raw) : null, rawTokenLength: raw ? raw.length : 0 };
+    if (cr.indeterminate || cr.status !== 201 || !url || !raw) {
+      const why = cr.indeterminate
+        ? 'oluşturma yanıtı ALINAMADI (zaman aşımı/taşıma) — kayıt OLUŞMUŞ OLABİLİR; kapanışta sentetik kimliklerle araştırılır'
+        : `bağlantı üretilemedi (HTTP ${cr.status})`;
+      for (const [id, desc] of [['U-01', 'mutlak URL'], ['U-02', 'URL = base + /intake/<token>'], ['U-URL', 'URL kapısı'],
+        ['U-03a', 'DIŞ HTTPS sayfa'], ['U-03b-L', 'YEREL API geçerli'], ['U-03b-D', 'DIŞ HTTPS API geçerli'], ['U-04', 'okuma ucunda ham token yok']]) {
+        R.unmeasured(id, desc, why);
+      }
     } else {
-      const absolute = /^https?:\/\/[^/]+\//.test(url) && !url.includes('\\');
+      let parsed = null; try { parsed = new URL(url); } catch (e) { parsed = null; }
+      const absolute = !!parsed && /^https?:$/.test(parsed.protocol) && !!parsed.host && !url.includes('\\');
       R.check('U-01', 'intakeUrl MUTLAK (şema + host) ve ters bölü içermez', absolute,
-        `şema+host=${absolute} · host=${absolute ? new URL(url).host : 'YOK'} · uzunluk=${url.length}`);
+        `şema=${parsed ? parsed.protocol : 'YOK'} · host=${parsed ? parsed.host : 'YOK'} · uzunluk=${url.length}`);
       const expected = `${webBase}/intake/${raw}`;
       R.check('U-02', 'intakeUrl = <PUBLIC_INTAKE_BASE_URL>/intake/<ham token>', url === expected,
         `eşit=${url === expected} · beklenen ön ek=${webBase}/intake/ · token sha256=${sha(raw).slice(0, 16)}`);
-      const pageStatus = await httpStatus(url);
-      R.check('U-03a', 'hedef sayfa erişilebilir (web 200)', pageStatus === 200, `web=${pageStatus}`);
-      const apiValidate = await httpStatus(`${base}/public/intake/${raw}`);
-      if (apiValidate === 503) {
-        // Hız sınırı koruyucusu Redis'e ulaşamadığında FAIL-CLOSED 503 döner. Bu, bağlantının geçersiz
-        // olduğunu GÖSTERMEZ; ölçüm yapılamamıştır. PASS da FAIL de sayılmaz.
-        R.unmeasured('U-03b', 'bağlantı uçta GEÇERLİ (API 200)', 'api/public/intake=503 — hız sınırı fail-closed (Redis ulaşılamıyor); geçerlilik ÖLÇÜLEMEDİ');
+      urlGateOk = absolute && url === expected && parsed.protocol === 'https:' && parsed.origin === origin
+        && parsed.pathname === `/intake/${raw}` && !parsed.search && !parsed.hash;
+      R.check('U-URL', 'URL KAPISI: https + beklenen origin + /intake/<token> (geçmezse token içeren adrese istek YOK)', urlGateOk,
+        `origin eşit=${parsed ? parsed.origin === origin : false} · https=${parsed ? parsed.protocol === 'https:' : false} · yol=${parsed ? (parsed.pathname === `/intake/${raw}` ? 'doğru' : 'FARKLI') : 'YOK'}`);
+      if (!urlGateOk) {
+        for (const [id, desc] of [['U-03a', 'DIŞ HTTPS sayfa'], ['U-03b-L', 'YEREL API geçerli'], ['U-03b-D', 'DIŞ HTTPS API geçerli']]) {
+          R.unmeasured(id, desc, 'URL kapısı geçmedi — token içeren adrese istek GÖNDERİLMEDİ');
+        }
       } else {
-        R.check('U-03b', 'bağlantı uçta GEÇERLİ (API 200)', apiValidate === 200, `api/public/intake=${apiValidate}`);
+        const tmo = timeoutOf('H5U_LOCAL_TIMEOUT_MS', 15000); const tmoX = timeoutOf('H5U_EXTERNAL_TIMEOUT_MS', 15000);
+        call('GET', '<DIŞ>/intake/<token>');
+        judgeValid(R, 'U-03a', 'DIŞ HTTPS: müvekkile verilen adres (sayfa) 200', await boundedGet(url, tmoX));
+        call('GET', `${base}/public/intake/<token>`);
+        judgeValid(R, 'U-03b-L', 'YEREL: API /public/intake/<token> 200 (bağlantı geçerli)', await boundedGet(`${base}/public/intake/${raw}`, tmo));
+        call('GET', '<DIŞ>/api/public/intake/<token>');
+        judgeValid(R, 'U-03b-D', 'DIŞ HTTPS: /api/public/intake/<token> 200 (tünel + kenar zinciri)', await boundedGet(`${origin}/api/public/intake/${raw}`, tmoX));
       }
       if (!linkId) {
-        R.unmeasured('U-04', 'ham token yalnız oluşturma yanıtında', 'link id yanıtta yok');
+        R.unmeasured('U-04', 'okuma ucunda ham token yok', 'link id yanıtta yok');
       } else {
-        const rd = await L.AH.httpJson('GET', `${base}/client-intake-links/${linkId}`, { token: elev.token });
+        call('GET', `${base}/client-intake-links/<id>`);
+        const rd = await L.AH.httpJson('GET', `${base}/client-intake-links/${linkId}`, { token: session.token });
         const leaked = JSON.stringify(rd.body || {}).includes(raw);
         R.check('U-04', 'okuma ucunda HAM TOKEN yok', rd.status === 200 && !leaked, `okuma HTTP ${rd.status} · ham token görünüyor=${leaked}`);
       }
@@ -101,24 +296,80 @@ async function httpStatus(url) {
   } catch (e) { fatal = String((e && e.message) || e); }
   finally {
     try {
-      out.closure = receipt ? await closeAccess(prisma, receipt) : { ok: true, nothingToClose: true, wroteNothing: true };
-    } catch (e) { out.closure = { ok: false, reason: String((e && e.message) || e) }; }
-    const closeObs = JSON.stringify(out.closure || {});
-    if (!(out.closure && out.closure.ok)) R.check('U-CLOSE', 'nihai kapanış (DB)', false, closeObs);
-    else R.check('U-CLOSE', 'nihai kapanış: kullanıcılar pasif + Case CLOSED', true, closeObs);
+      const fin = await finalizeClosure(R, prisma, base, origin, receipt, session, raw, urlGateOk);
+      if (receipt && receipt.tenantId) out.calledEndpoints.push('POST <API>/client-intake-links/<id>/revoke (kapanış, bağlantı başına)');
+      Object.assign(out, fin);
+    } catch (e) { out.linkRevoke = out.linkRevoke || { ok: false, reason: 'kapanış çerçevesi hata verdi' }; out.closure = out.closure || { ok: false, reason: String((e && e.message) || e).slice(0, 160) }; }
+    out.dispatchEndpointCalled = out.calledEndpoints.some((c) => DISPATCH_ENDPOINT_FORBIDDEN.some((re) => re.test(c)));
     try {
       const after = receipt ? await isolationFingerprint(prisma, [receipt.tenantId, receipt.foreignTenantId]) : null;
-      out.isolationAfter = after;
-      const b = out.isolationBefore;
-      if (after && b) R.check('U-ISO', 'izolasyon: sentetik OLMAYAN tenant dağılımı DEĞİŞMEDİ', after.digest === b.digest,
-        `önce=${b.digest}/${b.tenants} sonra=${after.digest}/${after.tenants}`);
-      else R.unmeasured('U-ISO', 'izolasyon', 'ölçülemedi');
-    } catch (e) { R.unmeasured('U-ISO', 'izolasyon', `okunamadı: ${String(e.message || e).slice(0, 120)}`); }
-    const s = R.summary(`H5-URL DAR CANLI KABUL (runId=${runId})`);
+      out.isolationAfter = after; const b = out.isolationBefore;
+      if (after && b) R.check('U-ISO', 'sentetik OLMAYAN tenantların müvekkil/kullanıcı SAYI dağılımı değişmedi (tam veri bütünlüğü DEĞİLDİR)',
+        after.digest === b.digest, `önce=${b.digest}/${b.tenants} sonra=${after.digest}/${after.tenants}`);
+      else R.unmeasured('U-ISO', 'sayım dağılımı', 'ölçülemedi');
+    } catch (e) { R.unmeasured('U-ISO', 'sayım dağılımı', `okunamadı: ${String(e.message || e).slice(0, 120)}`); }
+    const s = R.summary(`H5-URL DAR CANLI KABUL R02 (runId=${runId})`);
     out.fatal = fatal; out.pass = s.pass; out.fail = s.fail; out.unmeasured = s.unmeasured;
     out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed }));
-    fs.writeFileSync(evid, JSON.stringify(out, null, 1), 'utf8');
+    out.recovery = recoveryAdvice(out, receipt ? receiptPath : null);
+    if (out.recovery.gerekli) console.error(`KURTARMA GEREKLİ: ${out.recovery.neden.join(' · ')}\n  ${out.recovery.adim}\n  makbuz: ${out.recovery.makbuz}`);
+    out.exitCode = exitCodeOf(out, s);
+    try { writeJson(evid, out); } catch (e) { console.error(`kanıt dosyası yazılamadı: ${String(e.message || e).slice(0, 160)}`); }
     await prisma.$disconnect().catch(() => {});
-    process.exitCode = !(out.closure && out.closure.ok) ? 5 : fatal ? 1 : s.fail > 0 ? 2 : s.unmeasured > 0 ? 3 : 0;
+    process.exitCode = out.exitCode;
   }
-})();
+}
+
+// ------------------------------------------------------------------ RECOVER — kabul ölçütleri KOŞULMAZ
+async function recoverMode() {
+  const c = commonGates(process.env);
+  if (c) { console.error(`REDDEDİLDİ: ${c.why}`); process.exit(c.code); }
+  if (process.env.H5U_RECOVER_CONFIRM !== '1') { console.error('REDDEDİLDİ: H5U_RECOVER_CONFIRM=1 gerekli'); process.exit(3); }
+  const base = process.env.H5U_API_BASE; const pw = process.env.H5U_LIVE_LOGIN_PW; const evid = process.env.H5U_EVID_FILE;
+  const receiptPath = process.env.H5U_RECEIPT;
+  if (!pw || !evid || !receiptPath) { console.error('REDDEDİLDİ: H5U_LIVE_LOGIN_PW + H5U_EVID_FILE + H5U_RECEIPT gerekli'); process.exit(2); }
+  addSecret(pw); addSecret(process.env.AH_DATABASE_URL);
+  let receipt; try { receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8')); } catch (e) { console.error('REDDEDİLDİ: makbuz okunamadı'); process.exit(4); }
+  if (!receipt || receipt.record !== RECEIPT_RECORD || !receipt.elevUserId || !receipt.elevEmail) { console.error('REDDEDİLDİ: makbuz biçimi/alanları eksik'); process.exit(4); }
+  if (process.env.H5U_RUNID && String(process.env.H5U_RUNID).toLowerCase() !== String(receipt.runId).toLowerCase()) { console.error('REDDEDİLDİ: runId makbuzla eşleşmiyor'); process.exit(4); }
+
+  const R = new L.Results();
+  const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
+  const out = { record: 'H5-URL-RECOVER', revision: 'R02', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış tamamlandı' };
+  let session = null;
+  try {
+    const ident = await assertReceiptIdentity(prisma, receipt);
+    if (!ident.ok) { console.error(`REDDEDİLDİ: kimlik bağı doğrulanmadı (${ident.reason}) — HİÇBİR yazma yapılmadı`); await prisma.$disconnect().catch(() => {}); process.exit(4); }
+    const active = await prisma.clientIntakeLink.count({ where: { tenantId: receipt.tenantId, caseId: receipt.caseId, clientId: receipt.clientId, status: 'ACTIVE' } });
+    out.activeLinksAtStart = active;
+    if (active > 0) {
+      // Yetkili iptal JWT ister; ilk koşumun parolası süreçle birlikte YOK oldu. Makbuzdaki sentetik kullanıcıya
+      // GEÇİCİ erişim verilir (yalnız kimliği doğrulanmış tenantta), sonra closeAccess bunu yeniden kapatır.
+      const elev = await prisma.user.findFirst({ where: { id: receipt.elevUserId, tenantId: receipt.tenantId, email: receipt.elevEmail }, select: { id: true } });
+      if (!elev) { console.error('REDDEDİLDİ: makbuzdaki kullanıcı sentetik tenantta bulunamadı — yazma yapılmadı'); await prisma.$disconnect().catch(() => {}); process.exit(4); }
+      await prisma.user.update({ where: { id: elev.id }, data: { passwordHash: await bcrypt.hash(pw, 10), isActive: true } });
+      out.temporaryAccess = 'makbuzdaki sentetik kullanıcıya geçici erişim verildi; kapanışta yeniden kapatıldı';
+      session = await L.AH.login(base, receipt.elevEmail, pw, receipt.tenantSlug);
+      if (session && session.token) addSecret(session.token);
+    }
+  } catch (e) { out.fatal = String((e && e.message) || e).slice(0, 200); }
+  const fin = await finalizeClosure(R, prisma, base, null, receipt, session, null, false);
+  Object.assign(out, fin);
+  const s = R.summary(`H5-URL KURTARMA (runId=${receipt.runId})`);
+  out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed }));
+  // Kurtarmada public 404 ÖLÇÜLEMEZ (ham token bilinmiyor); çıkış yalnız kapanış ölçümlerine bağlıdır.
+  out.exitCode = !(out.linkRevoke && out.linkRevoke.ok) ? 6 : !(out.closure && out.closure.ok) ? 5 : out.fatal ? 1 : 0;
+  out.recovery = recoveryAdvice(out, receiptPath);
+  try { writeJson(evid, out); } catch (e) { console.error('kanıt dosyası yazılamadı'); }
+  await prisma.$disconnect().catch(() => {});
+  process.exitCode = out.exitCode;
+}
+
+if (require.main === module) {
+  const mode = String(process.env.H5U_MODE || 'run').toLowerCase();
+  if (mode === 'run') runMode();
+  else if (mode === 'recover') recoverMode();
+  else { console.error(`REDDEDİLDİ: bilinmeyen H5U_MODE '${mode}'`); process.exit(1); }
+}
+
+module.exports = { expectedOriginOf, scrub, addSecret, DISPATCH_ENDPOINT_FORBIDDEN, exitCodeOf };
