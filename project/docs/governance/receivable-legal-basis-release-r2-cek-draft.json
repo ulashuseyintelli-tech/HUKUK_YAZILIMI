@@ -1,0 +1,101 @@
+{
+  "contentAuthority": {
+    "decisionPackId": "RCV-LB-R2-CEK-DECISION-PACK-DRAFT",
+    "decisionPackSha256": "77701ca7bcceb44ceb9001a4c0809da4fe21487d8f0654f42cf34ce8b7714603",
+    "decisionPackVersion": "1"
+  },
+  "effectiveAt": "2012-07-01T00:00:00.000Z",
+  "legalBases": [
+    {
+      "allowedComponentCategories": [
+        "PRINCIPAL"
+      ],
+      "effectiveFrom": "2012-07-01T00:00:00.000Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "INTEREST_DETERMINED_BY_SEPARATE_APPROVED_UPDATE"
+      },
+      "legalBasisCode": "TTK_CEK_BEDELI",
+      "legalBasisVersion": "1",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+        ]
+      },
+      "normativeReferenceDraft": "6102 s. TTK, ceke iliskin hukumler (m. 780 vd.) ve hamilin basvuru hakki - DOGRULANACAK",
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "CEK"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "CHECK_DISHONOUR_RECORD",
+          "CHECK_INSTRUMENT_RECORD"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "CHECK_PRINCIPAL"
+        ],
+        "registryChecksum": "603b5bdc0868a26c79a120241fd7a0e58e2ca419bd340394c48514da0c403971",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "3"
+      }
+    },
+    {
+      "allowedComponentCategories": [
+        "ANCILLARY"
+      ],
+      "calculation": {
+        "percentOfPrincipalBasisPoints": 1000,
+        "rounding": "HALF_UP_TO_CURRENCY_MINOR_UNIT"
+      },
+      "effectiveFrom": "2012-07-01T00:00:00.000Z",
+      "interestEligibility": {
+        "automaticInterest": false,
+        "formationProjection": "UNKNOWN",
+        "rule": "INTEREST_DETERMINED_BY_SEPARATE_APPROVED_UPDATE"
+      },
+      "legalBasisCode": "TTK_CEK_TAZMINATI",
+      "legalBasisVersion": "1",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "TAM"
+        ],
+        "implicitAllDebtors": "PROHIBITED",
+        "scopes": [
+          "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+        ]
+      },
+      "normativeReferenceDraft": "6102 s. TTK - odenmeyen cek bedelinin yuzde onu oraninda cek tazminati (basvuru kapsami hukmu) - MADDE NUMARASI DOGRULANACAK",
+      "sourceEvidenceCompatibility": {
+        "allowedSourceTypes": [
+          "CEK"
+        ],
+        "combinationRule": "ALL_ENTRY_REQUIREMENTS_AND_EXACT_SOURCE",
+        "requiredEvidenceTypes": [
+          "CHECK_DISHONOUR_RECORD",
+          "CHECK_INSTRUMENT_RECORD"
+        ]
+      },
+      "subtypeRegistryBinding": {
+        "allowedSubtypeCodes": [
+          "CHECK_PENALTY"
+        ],
+        "registryChecksum": "603b5bdc0868a26c79a120241fd7a0e58e2ca419bd340394c48514da0c403971",
+        "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+        "registryVersion": "3"
+      }
+    }
+  ],
+  "previousRelease": null,
+  "releaseId": "RCV-LB-R2-CEK",
+  "releaseVersion": "1",
+  "schemaVersion": "RECEIVABLE_LEGAL_BASIS_RELEASE_CEK_DRAFT_V1",
+  "supersedesReleaseIds": []
+}

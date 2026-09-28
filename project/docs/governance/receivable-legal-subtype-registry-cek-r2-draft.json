@@ -1,0 +1,175 @@
+{
+  "entries": [
+    {
+      "admissionRequirements": [
+        "EXACT_CASE_INSTRUMENT_RECORD_VERSION",
+        "CASE_INSTRUMENT_TYPE_CEK",
+        "CHECK_DISHONOUR_RECORD_PRESENT",
+        "NO_EXISTING_INSTRUMENT_PRINCIPAL_CLAIM_ITEM",
+        "EXPLICIT_LIABLE_DEBTOR_REFS",
+        "SERVER_DERIVED_AMOUNT_ONLY"
+      ],
+      "allowedFormationPaths": [
+        "HUMAN_AUTO_GENERATE_CASE_INSTRUMENT_FORMATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "CASE_INSTRUMENT_AMOUNT_EXACT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "INTEREST_POLICY_ONLY",
+        "rule": "CHECK_FACE_AMOUNT",
+        "sourceAmountDerivation": "CASE_INSTRUMENT_AMOUNT_EXACT"
+      },
+      "canonicalComponentCategory": "PRINCIPAL",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "CASE_INSTRUMENT_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "effectiveFrom": "2012-07-01T00:00:00.000Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "EXACT_CASE_INSTRUMENT_RECORD_VERSION_REVALIDATED",
+        "NO_EXISTING_INSTRUMENT_PRINCIPAL_CLAIM_ITEM",
+        "FOUR_EYES_OFFICE_APPROVAL"
+      ],
+      "forbiddenFormationPaths": [
+        "CLIENT_SUPPLIED_AMOUNT",
+        "SYSTEM_ROUTE_DIRECT_WRITE",
+        "SECOND_PRINCIPAL_FOR_SAME_INSTRUMENT"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "INTEREST_DETERMINED_BY_SEPARATE_APPROVED_UPDATE",
+        "requiresExactInterestPolicy": false,
+        "requiresExactRateAuthority": false
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TTK_CEK_BEDELI"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TTK_CEK_BEDELI"
+        ]
+      },
+      "legalCharacter": "KARSILIKSIZ_CEK_BEDELI_ALACAGI",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "requiredEvidenceTypes": [
+        "CHECK_DISHONOUR_RECORD",
+        "CHECK_INSTRUMENT_RECORD"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_CASE_INSTRUMENT_RECORD_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "CASE_INSTRUMENT_RECORD_FINGERPRINT",
+        "LEGAL_BASIS_RELEASE_ENTRY_CHECKSUM",
+        "LIABILITY_CONTEXT_HASH"
+      ],
+      "status": "DRAFT",
+      "subtypeCode": "CHECK_PRINCIPAL",
+      "subtypeVersion": 1
+    },
+    {
+      "admissionRequirements": [
+        "EXACT_CASE_INSTRUMENT_RECORD_VERSION",
+        "CASE_INSTRUMENT_TYPE_CEK",
+        "CHECK_DISHONOUR_RECORD_PRESENT",
+        "EXPLICIT_LIABLE_DEBTOR_REFS",
+        "SERVER_DERIVED_AMOUNT_ONLY"
+      ],
+      "allowedFormationPaths": [
+        "HUMAN_AUTO_GENERATE_CASE_INSTRUMENT_FORMATION"
+      ],
+      "amountSemantics": {
+        "fixedAtFormation": true,
+        "minorUnitRepresentation": "POSITIVE_INTEGER_STRING",
+        "roundingFallback": "PROHIBITED",
+        "semanticAuthority": "PERCENT_OF_CASE_INSTRUMENT_AMOUNT"
+      },
+      "calculationSemantics": {
+        "futureAccrual": "PROHIBITED",
+        "rule": "CHECK_PENALTY_10_PERCENT_ROUND_HALF_UP_MINOR_UNIT",
+        "sourceAmountDerivation": "CASE_INSTRUMENT_AMOUNT_EXACT"
+      },
+      "canonicalComponentCategory": "ANCILLARY",
+      "currencySemantics": {
+        "conversion": "PROHIBITED",
+        "currencyAuthority": "CASE_INSTRUMENT_CURRENCY",
+        "minorUnitAuthority": "ISO_CURRENCY_MINOR_UNIT"
+      },
+      "effectiveFrom": "2012-07-01T00:00:00.000Z",
+      "effectiveUntil": null,
+      "finalizationRequirements": [
+        "EXACT_CASE_INSTRUMENT_RECORD_VERSION_REVALIDATED",
+        "SERVER_RECOMPUTED_AMOUNT_EQUALS_INTENT",
+        "FOUR_EYES_OFFICE_APPROVAL"
+      ],
+      "forbiddenFormationPaths": [
+        "CLIENT_SUPPLIED_AMOUNT",
+        "CLIENT_SUPPLIED_RATE",
+        "SYSTEM_ROUTE_DIRECT_WRITE",
+        "SECOND_PENALTY_FOR_SAME_INSTRUMENT"
+      ],
+      "interestEligibility": {
+        "componentAccruesFurtherInterest": false,
+        "eligibilityRule": "INTEREST_DETERMINED_BY_SEPARATE_APPROVED_UPDATE",
+        "requiresExactInterestPolicy": false,
+        "requiresExactRateAuthority": false
+      },
+      "legalBasisBindings": {
+        "allowedLegalBasisCodes": [
+          "TTK_CEK_TAZMINATI"
+        ],
+        "bindingMode": "EXACTLY_ONE",
+        "requiredLegalBasisCodes": [
+          "TTK_CEK_TAZMINATI"
+        ]
+      },
+      "legalCharacter": "KARSILIKSIZ_CEK_TAZMINATI",
+      "liabilityCompatibility": {
+        "allowedLiabilityTypes": [
+          "TAM"
+        ],
+        "crossLiabilityUse": "PROHIBITED",
+        "scope": "EXACT_SAME_DEBTOR_AND_LIABILITY_RELATIONSHIP"
+      },
+      "requiredEvidenceTypes": [
+        "CHECK_DISHONOUR_RECORD",
+        "CHECK_INSTRUMENT_RECORD"
+      ],
+      "requiredSourceTypes": [
+        "EXACT_CASE_INSTRUMENT_RECORD_VERSION",
+        "EXACT_LEGAL_BASIS_RELEASE_ENTRY",
+        "EXACT_LIABILITY_CONTEXT"
+      ],
+      "snapshotRequirements": [
+        "CASE_INSTRUMENT_RECORD_FINGERPRINT",
+        "LEGAL_BASIS_RELEASE_ENTRY_CHECKSUM",
+        "LIABILITY_CONTEXT_HASH",
+        "PENALTY_CALCULATION_INPUTS"
+      ],
+      "status": "DRAFT",
+      "subtypeCode": "CHECK_PENALTY",
+      "subtypeVersion": 1
+    }
+  ],
+  "registryId": "RCV-CLAIM-LEGAL-SUBTYPE-REGISTRY",
+  "registryScope": "CEK_ONLY_DELTA_V2_ENTRIES_UNCHANGED_AND_NOT_REPEATED",
+  "registryStatus": "DRAFT_PENDING_OWNER_LEGAL_RATIFICATION",
+  "registryVersion": 3,
+  "runtimeStatus": "DORMANT",
+  "serializationAlgorithm": "RCV-LEGAL-SUBTYPE-REGISTRY-CANONICAL-JSON-V1"
+}

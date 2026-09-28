@@ -70,6 +70,8 @@
         "subtypeCode": {
           "enum": [
             "ADULT_CHILD_EDUCATION_MAINTENANCE",
+            "CHECK_PENALTY",
+            "CHECK_PRINCIPAL",
             "COMMERCIAL_COLLECTION_COST",
             "COMMERCIAL_DEFAULT_INTEREST",
             "CONTRACTUAL_DEFAULT_INTEREST",

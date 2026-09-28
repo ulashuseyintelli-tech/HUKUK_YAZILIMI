@@ -6,3 +6,8 @@
 # Keep rich-interest golden JSON fixtures byte-stable across development environments
 project/apps/api/src/modules/case/inventory/__tests__/fixtures/rich-interest-uyap/golden/*.json text eol=lf
 project/apps/api/src/modules/case/inventory/__tests__/fixtures/rich-interest-uyap/golden/*.ndjson text eol=lf
+
+# K3 RCV-LB-R2-CEK taslak hukuki icerik: checksum-pinli artefaktlar bayt-kararli kalir
+project/docs/governance/receivable-legal-subtype-registry-cek-r2-draft.json text eol=lf
+project/docs/governance/receivable-legal-basis-release-r2-cek-draft*.json text eol=lf
+project/docs/governance/receivable-cek-legal-basis-r2-decision-pack-draft.md text eol=lf
