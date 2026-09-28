@@ -231,6 +231,10 @@ src/modules/client-settlement/__tests__/f04-posting-reversal-race.db-gated.integ
 #   B10-EXECUTION-AUTHORITY-REVOCATION-RACE-R01: yurutme yetkisi (Lawyer->User FOR SHARE) ile gercek
 #     LawyerService.update/delete iptallerinin gercek PostgreSQL'de serilesmesi; kilitsiz mutasyon 3 testi kirar.
 src/modules/office-approval/__tests__/execution-authority-revocation-race.db-gated.integration.spec.ts
+#   K4-1-APPROVAL-DECISION-REVOCATION-RACE-R01 (owner GO 2026-09-28): genel onay kararlari (approve/reject/
+#     requestRevision/approveWithChanges) tx icinde Lawyer->User FOR SHARE + yol-ozel kural; gercek LawyerService
+#     update/delete iptalleriyle serilesme, domain senkronu hatasinda tam geri alma. Tx ici yetki kapatilinca 6 test kirilir.
+src/modules/office-approval/__tests__/approval-decision-revocation-race.db-gated.integration.spec.ts
 #
 #   CLIENT-SETTLEMENT kalan 2 DB-gated spec (owner GO 2026-09-17 "KALAN 2 DB-GATED SPEC / TM47D onarimi + 32/32"):
 #     describeDb + gercek PrismaClient + tm47d-happy-path-seed. tm47d test-kurulum onarimi:

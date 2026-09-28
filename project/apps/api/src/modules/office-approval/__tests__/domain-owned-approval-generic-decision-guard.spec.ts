@@ -118,6 +118,8 @@ function harness(requests: Row[]) {
     },
   };
   prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+  // K4-1: karar tx'i aktörün Lawyer → User satırlarını FOR SHARE kilitler (sahte: satır döndürmez).
+  prisma.$queryRaw = jest.fn(async () => []);
   const audit = { log: jest.fn(async (_entry: Record<string, unknown>) => undefined) };
   const domainSync = { syncAfterDecision: jest.fn(async (_tx: unknown, _updated: unknown) => undefined) };
   const svc = new OfficeApprovalService(prisma, audit as never, domainSync as never);
