@@ -639,10 +639,16 @@ export class PortalService {
     const resetToken = hashInviteToken(rawToken);
     const resetTokenExp = new Date(Date.now() + 3600000); // 1 saat
 
-    await this.prisma.clientPortalUser.update({
-      where: { id: portalUser.id },
+    // D5-SEC-R01: token YALNIZ hesap hâlâ aktifse yazılır (koşullu, atomik). Hesap okunduktan sonra eşzamanlı kapatma
+    // commit olduysa WHERE yeniden değerlendirilir → 0 satır: pasif hesaba token YAZILMAZ ve e-posta GÖNDERİLMEZ.
+    // Dış cevap aynı kalır (enumeration-safe). Talep önce yazılırsa kapatma aynı update'te token'ı siler.
+    const written = await this.prisma.clientPortalUser.updateMany({
+      where: { id: portalUser.id, isActive: true },
       data: { resetToken, resetTokenExp },
     });
+    if (written.count !== 1) {
+      return { success: true };
+    }
 
     await this.sendResetEmail(email, rawToken);
 

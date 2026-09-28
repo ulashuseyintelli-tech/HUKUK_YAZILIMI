@@ -213,6 +213,85 @@ describeDb("D5-SEC-R01 — portal sıfırlama: pasif hesap, kapatmada token ipta
     expect(await bcrypt.compare(NEW_PW, fin.passwordHash)).toBe(true);
   }, 60_000);
 
+  /** Token'sız aktif hesap (talep yolu için). */
+  async function activeUserNoToken(label: string) {
+    const ts = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const client = await prisma.client.create({ data: { tenantId, type: "PERSON", displayName: `${label} ${ts}`, hasPortalAccess: true } });
+    const pu = await prisma.clientPortalUser.create({
+      data: { clientId: client.id, email: `${label.toLowerCase()}+${ts}@d5-sec-r01.test`, passwordHash: await bcrypt.hash(OLD_PW, 4), isActive: true },
+    });
+    return { client, pu };
+  }
+  /** E-posta gönderimini yakalar (gerçek gönderim YOK); ham token bağlantının fragment'ından çıkarılır. */
+  function captureSends() {
+    const sends: string[] = [];
+    const spy = jest.spyOn(emailProvider, "send").mockImplementation(async (opts: any) => {
+      const m = /token=([A-Za-z0-9_-]+)/.exec(String(opts.text)); sends.push(m ? m[1] : "");
+      return { success: true, provider: "mock", messageId: "D5-SPY" } as any;
+    });
+    return { sends, restore: () => spy.mockRestore() };
+  }
+
+  it("[6a] BELİRLENİMCİ talep↔kapatma: talep aktif hesabı OKUDUKTAN sonra kapatma commit olur → pasif hesaba token YAZILMAZ, e-posta GÖNDERİLMEZ", async () => {
+    const { client, pu } = await activeUserNoToken("TalepA");
+    const audit = module.get<AuditService>(AuditService);
+    const orig = audit.logInTransaction.bind(audit);
+    let release!: () => void; const gate = new Promise<void>((r) => { release = r; });
+    const spy = jest.spyOn(audit, "logInTransaction").mockImplementation(async (tx: any, input: any) => { await gate; return orig(tx, input); });
+    const cap = captureSends();
+    let talepRes: any;
+    try {
+      const disableP = portal.disablePortalUser(client.id, tenantId, ACTOR);
+      for (let i = 0; i < 200 && spy.mock.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(spy).toHaveBeenCalled(); // kapatma satırı güncelledi, commit ETMEDİ (kilit tutuluyor)
+      const talepP = portal.createResetToken(pu.email); // okuma: son commit'li sürüm (aktif) → yazma kilitte bekler
+      await waitForLockWaiters(1);
+      release();
+      await disableP;
+      talepRes = await talepP;
+    } finally { spy.mockRestore(); release(); cap.restore(); }
+    // Ölçüm (iddialardan ÖNCE): e-posta gönderimi ve token geçerliliği AYRI kaydedilir.
+    const pre = await row(pu.id);
+    const usable = cap.sends[0] ? await portal.resetPassword(cap.sends[0], NEW_PW).then(() => true, () => false) : null;
+    // eslint-disable-next-line no-console
+    console.log(`[D5 talep↔kapatma 6a] e-posta=${cap.sends.length} · pasif hesapta token=${pre.resetToken !== null} · bağlantı kullanılabilir=${usable}`);
+    expect(talepRes).toEqual({ success: true }); // dış cevap değişmez (enumeration-safe)
+    const fin = await row(pu.id);
+    expect(fin.isActive).toBe(false);
+    expect(fin.resetToken).toBeNull();      // pasif hesaba token YAZILMADI
+    expect(fin.resetTokenExp).toBeNull();
+    expect(cap.sends.length).toBe(0);       // e-posta GÖNDERİLMEDİ
+  }, 60_000);
+
+  it("[6b] BELİRLENİMCİ talep önce sıraya girer, kapatma arkasında: token yazılır ve e-posta gider, sonra kapatma token'ı SİLER → bağlantı kullanılamaz", async () => {
+    const { client, pu } = await activeUserNoToken("TalepB");
+    const cap = captureSends();
+    let unlock!: () => void; const held = new Promise<void>((r) => { unlock = r; });
+    let locked!: () => void; const lockedP = new Promise<void>((r) => { locked = r; });
+    try {
+      const holder = prisma.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe(`SELECT id FROM "ClientPortalUser" WHERE id = $1 FOR UPDATE`, pu.id);
+        locked(); await held;
+      }, { timeout: 30_000 });
+      await lockedP;
+      const talepP = portal.createResetToken(pu.email);
+      await waitForLockWaiters(1);
+      const disableP = portal.disablePortalUser(client.id, tenantId, ACTOR);
+      await waitForLockWaiters(2);
+      unlock(); await holder;
+      expect(await talepP).toEqual({ success: true });
+      await disableP;
+    } finally { cap.restore(); unlock(); }
+    // E-posta ile token geçerliliği AYRI: e-posta gitti, token kapanışla öldü.
+    expect(cap.sends.length).toBe(1);
+    const fin = await row(pu.id);
+    expect(fin.isActive).toBe(false);
+    expect(fin.resetToken).toBeNull();
+    expect(fin.resetTokenExp).toBeNull();
+    await expect(portal.resetPassword(cap.sends[0], NEW_PW)).rejects.toBeInstanceOf(BadRequestException);
+    expect(await bcrypt.compare(OLD_PW, (await row(pu.id)).passwordHash)).toBe(true);
+  }, 60_000);
+
   it("[4] tek kullanım + tokenVersion güvencesi korunur (aktif hesap)", async () => {
     const { pu, raw } = await activeUserWithToken("TekKullanim");
     const v0 = (await row(pu.id)).tokenVersion;

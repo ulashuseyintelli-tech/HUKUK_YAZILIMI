@@ -101,11 +101,12 @@ describe("CLIENT-PSUS — askıdaki tenant'ta portal erişimi kapalı", () => {
 
   describe("şifre sıfırlama talebi", () => {
     it.each(NON_ACTIVE)("%s tenant → {success:true}, token ÜRETİLMEZ, e-posta GÖNDERİLMEZ", async (lc) => {
-      const prisma: any = { clientPortalUser: { findFirst: jest.fn().mockResolvedValue({ id: "PU1", email: "a@x.com", client: { tenant: { lifecycle: lc } } }), update: jest.fn() } };
+      const prisma: any = { clientPortalUser: { findFirst: jest.fn().mockResolvedValue({ id: "PU1", email: "a@x.com", client: { tenant: { lifecycle: lc } } }), update: jest.fn(), updateMany: jest.fn() } };
       const email: any = { send: jest.fn() };
       const svc = new PortalService(prisma, {} as any, {} as any, {} as any, { get: () => "https://x" } as any, email);
       await expect(svc.createResetToken("a@x.com")).resolves.toEqual({ success: true });
       expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
+      expect(prisma.clientPortalUser.updateMany).not.toHaveBeenCalled();
       expect(email.send).not.toHaveBeenCalled();
     });
   });
