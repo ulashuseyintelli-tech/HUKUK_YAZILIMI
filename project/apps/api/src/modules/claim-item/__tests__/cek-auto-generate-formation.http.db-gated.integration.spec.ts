@@ -100,7 +100,7 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
     }
     const requester = await actor('req', 'USER', 'LAWYER', { canEditFinance: true });
     const viewer = await actor('viewer', 'VIEWER', 'LAWYER', { canEditFinance: true });
-    const noauth = await actor('noauth', 'USER', 'LAWYER', { canViewFinance: true });
+    const financeViewer = await actor('viewonly', 'USER', 'LAWYER', { canViewFinance: true });
     const approver = await actor('appr', 'USER', 'PARTNER', null);
     const approver2 = await actor('appr2', 'USER', 'PARTNER', null);
     const viewerPartner = await actor('vpartner', 'VIEWER', 'PARTNER', null);
@@ -143,7 +143,7 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
       caseId: legalCase.id,
       requester,
       viewer,
-      noauth,
+      financeViewer,
       approver,
       approver2,
       viewerPartner,
@@ -310,7 +310,7 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
     it('VIEWER, yetkisiz avukat ve başka kiracı kullanıcı talep açamaz', async () => {
       const f = await fixture('deny');
       const other = await fixture('deny-other');
-      for (const userId of [f.viewer.userId, f.noauth.userId, other.requester.userId]) {
+      for (const userId of [f.viewer.userId, f.financeViewer.userId, other.requester.userId]) {
         const res = await post('/claim-items/auto-generate', userId, body(f));
         expect(res.status).toBe(403);
       }
