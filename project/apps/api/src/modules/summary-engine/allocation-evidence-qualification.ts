@@ -302,13 +302,13 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
   {
     path: 'src/modules/claim-item/formation-finalizer/transactional-claim-item-formation-finalizer.service.ts',
     classification: 'RECONCILED_CACHE',
-    access: 'DORMANT_WRITE',
+    access: 'WRITE',
     rationale:
-      'New ClaimItem zero-value cache initializer — DORMANT. Production call-site '
-      + 'yok (hicbir modul kaydetmiyor, inject etmiyor, cagirmiyor); `enabled` '
-      + 'varsayilani false; enabled degilken fail-closed (FINALIZER_DISABLED). '
-      + 'Bu ucu de guard tarafindan statik olarak dogrulanir; biri bozulursa guard '
-      + 'kirilir ve access degeri owner karariyla WRITE\'a tasinmalidir.',
+      'New ClaimItem zero-value cache initializer. K3 PR-3 (owner GO 2026-09-28 — dar CEK formation '
+      + 'akisi icin baglama yetkisi): DORMANT_WRITE -> WRITE. Tek production tuketicisi '
+      + 'CekAutoGenerateFormationService; yalniz OfficeApproval onay karari transaction\'inda ve yalniz '
+      + 'RECEIVABLE_CEK_AUTO_GENERATE_FORMATION_ENABLED=true iken (varsayilan KAPALI). Finalizer\'in kendi '
+      + '`enabled ?? false` + FINALIZER_DISABLED fail-closed korumasi degismez (guard dogrular).',
   },
   {
     path: 'src/modules/summary-engine/allocation-drift-baseline.ts',

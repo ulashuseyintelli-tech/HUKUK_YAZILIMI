@@ -47,6 +47,7 @@ import {
   type ClaimItemLifecycleRecord,
 } from './claim-item-lifecycle-contract';
 import { throwClaimItemFormationContextRequired } from './claim-item-formation-containment';
+import { CekAutoGenerateFormationService } from './formation-cek/cek-auto-generate-formation.service';
 import {
   CLAIM_ITEM_ADD_INTEREST_REMOVED_MESSAGE,
   CLAIM_ITEM_RECALCULATE_INTEREST_REMOVED_MESSAGE,
@@ -69,6 +70,7 @@ export class ClaimItemService {
     @Optional() private officeApproval?: OfficeApprovalService,
     @Optional() private claimItemWriterRouter?: ClaimItemWriterRouterService,
     @Optional() private domainEventIngest?: DomainEventIngestService,
+    @Optional() private cekFormation?: CekAutoGenerateFormationService,
   ) {}
 
   // ==================== CRUD İŞLEMLERİ ====================
@@ -413,6 +415,10 @@ export class ClaimItemService {
    * bağlamı gerektirdiği için doğrudan kalem YAZILMAZ — dört-göz gereksinimi korunur, çoklu üretimde kısmi
    * yazma oluşmaz. Sistem yazıcısı `autoGenerateFromDocument` değişmez.
    *
+   * K3 PR-3: belge türü CEK ve `RECEIVABLE_CEK_AUTO_GENERATE_FORMATION_ENABLED=true` iken istek
+   * CekAutoGenerateFormationService'e (formation talebi + ikinci avukat onayı) gider; diğer türler ve bayrak kapalıyken
+   * davranış aynıdır.
+   *
    * /// <remarks>
    * /// Çağrıldığı yerler:
    * ///  - ClaimItemController.autoGenerate() → POST /claim-items/auto-generate
@@ -423,6 +429,10 @@ export class ClaimItemService {
     actorUserId: string,
     dto: AutoGenerateClaimItemsDto,
   ): Promise<ClaimItemMutationResult> {
+    // K3 PR-3: çek için formation akışı YALNIZ bayrak açıkken (varsayılan kapalı → aşağıdaki mevcut davranış).
+    if (dto.documentType === DocumentSourceType.CEK && this.cekFormation?.isEnabled()) {
+      return this.cekFormation.request(tenantId, actorUserId, dto);
+    }
     const items = this.buildDocumentGeneratedItems(tenantId, dto).map((item) => ({
       ...item,
       ...claimItemCreationAmounts(item.amount),

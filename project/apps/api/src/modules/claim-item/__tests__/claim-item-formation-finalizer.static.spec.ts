@@ -50,7 +50,16 @@ describe('RCV-CLAIM-FORM-P02-S08-I03 dormant finalizer boundary', () => {
         fs.readFileSync(file, 'utf8').includes('TransactionalClaimItemFormationFinalizerService'),
       )
       .map((file) => path.relative(API_ROOT, file));
-    expect(importers).toEqual([]);
+    // K3 PR-3 (owner GO 2026-09-28): tek tüketici, varsayılan KAPALI bayrak arkasındaki çek formation akışı; finalizer
+    // yalnız onay kararı transaction'ı içinde (OfficeApproval domain senkronu) çağrılır, rota/sağlayıcı değildir.
+    expect(importers).toEqual([
+      path.normalize('src/modules/claim-item/formation-cek/cek-auto-generate-formation.service.ts'),
+    ]);
+    const consumer = fs.readFileSync(path.join(API_ROOT, importers[0]), 'utf8');
+    expect(consumer.match(/new TransactionalClaimItemFormationFinalizerService\(/g)).toHaveLength(1);
+    expect(consumer).toContain('finalizeApprovedBatchInTransaction(tx,');
+    expect(consumer).not.toMatch(/\.finalize\(/);
+    expect(consumer).toContain("if (!this.options.enabled) return;");
   });
 
   it('does not mutate the immutable intent or enable APPROVED_WITH_CHANGES', () => {

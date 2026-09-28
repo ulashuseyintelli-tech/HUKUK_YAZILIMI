@@ -53,12 +53,29 @@ import {
   type ClaimItemLifecycleRecord,
 } from '../claim-item/claim-item-lifecycle-contract';
 
+/**
+ * K3 AUTO-GENERATE FORMATION (PR-3) — çok kalemli formation onayının hedef türü. Değer
+ * `CLAIM_ITEM_FORMATION_BATCH_APPROVAL_TARGET_TYPE` (claim-item formation sözleşmesi) ile AYNIDIR; sözleşme modülünü
+ * buradan içe aktarmamak için yerel sabit (formation bileşenleri OfficeApproval'a bağımlılık yönünü tersine çevirmez).
+ */
+export const CLAIM_ITEM_FORMATION_BATCH_TARGET_TYPE = 'CLAIM_ITEM_FORMATION_BATCH' as const;
+
+/**
+ * Onaylanan toplu formation talebini karar transaction'ı İÇİNDE kesin kalemlere çeviren işleyici. Fırlatırsa karar
+ * dahil hiçbir yazma kalmaz (talep PENDING_APPROVAL'da kalır).
+ */
+export type ClaimItemFormationBatchApprovalHandler = (
+  tx: Prisma.TransactionClient,
+  req: OfficeApprovalRequest,
+) => Promise<void>;
+
 const COLLECTION_DISPOSITION_APPROVAL_ACTION = 'COLLECTION_DISPOSITION_POST';
 const COLLECTION_DISPOSITION_TARGET_TYPE = 'COLLECTION_DISPOSITION';
 
 @Injectable()
 export class OfficeApprovalDomainSyncService {
   private readonly claimItemSourceIntegrity = new ClaimItemSourceIntegrityGuard();
+  private claimItemFormationBatchHandler?: ClaimItemFormationBatchApprovalHandler;
 
   constructor(
     @Optional() private readonly domainEventIngestService?: DomainEventIngestService,
@@ -77,6 +94,9 @@ export class OfficeApprovalDomainSyncService {
    * /// </remarks>
    */
   async syncAfterDecision(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    if (this.isClaimItemFormationBatchApproval(req)) {
+      return this.syncClaimItemFormationBatch(tx, req);
+    }
     if (this.isCollectionDispositionPostApproval(req)) {
       return this.syncCollectionDisposition(tx, req);
     }
@@ -88,6 +108,57 @@ export class OfficeApprovalDomainSyncService {
     }
     if (this.isFinancialCaseCloseApproval(req)) {
       return this.syncFinancialCaseClose(tx, req);
+    }
+  }
+
+  /**
+   * K3 AUTO-GENERATE FORMATION (PR-3) — toplu formation işleyicisinin tek kaydı. İşleyici yalnız çalışma zamanı
+   * bayrağı açıkken kaydedilir; kayıt yoksa ONAY kapalı-hata verir (aşağıda), ret/revizyon/iptal yine no-op.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CekAutoGenerateFormationService.onModuleInit() → bayrak açıkken işleyici kaydı
+   * /// </remarks>
+   */
+  registerClaimItemFormationBatchHandler(handler: ClaimItemFormationBatchApprovalHandler): void {
+    if (this.claimItemFormationBatchHandler && this.claimItemFormationBatchHandler !== handler) {
+      throw new Error('ClaimItem formation batch approval handler is already registered');
+    }
+    this.claimItemFormationBatchHandler = handler;
+  }
+
+  private isClaimItemFormationBatchApproval(req: OfficeApprovalRequest): boolean {
+    return (
+      req.actionCode === CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE &&
+      req.targetType === CLAIM_ITEM_FORMATION_BATCH_TARGET_TYPE
+    );
+  }
+
+  /**
+   * Onay → kalemlerin TAMAMI karar transaction'ında oluşur (işleyici fırlatırsa karar da geri alınır). Ret, revizyon
+   * ve iptal kesin kalem OLUŞTURMAZ. Değiştirerek onay desteklenmez: onay içeriği değişmez formation niyetlerine
+   * bağlıdır.
+   */
+  private async syncClaimItemFormationBatch(tx: Prisma.TransactionClient, req: OfficeApprovalRequest): Promise<void> {
+    switch (req.status) {
+      case OfficeApprovalStatus.APPROVED:
+        if (!this.claimItemFormationBatchHandler) {
+          throw new ConflictException({
+            code: 'FORMATION_BATCH_HANDLER_UNAVAILABLE',
+            message: 'Alacak kalemi oluşum onayı bu ortamda uygulanamaz; talep onay bekler durumda kalır.',
+          });
+        }
+        return this.claimItemFormationBatchHandler(tx, req);
+      case OfficeApprovalStatus.REJECTED:
+      case OfficeApprovalStatus.REVISION_REQUESTED:
+      case OfficeApprovalStatus.CANCELLED:
+        return;
+      case OfficeApprovalStatus.APPROVED_WITH_CHANGES:
+        throw new BadRequestException(
+          'Alacak kalemi oluşum talebi değiştirilerek onaylanamaz; revizyon isteyin veya normal onaylayın.',
+        );
+      default:
+        return;
     }
   }
 

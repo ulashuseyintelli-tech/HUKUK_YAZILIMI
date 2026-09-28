@@ -53,8 +53,10 @@ describe('RCV-CLAIM-FORM-P02-S08-I02B dormancy and boundary guard', () => {
       .sort();
     expect(importers).toEqual([
       // K3 AUTO-GENERATE FORMATION (owner GO 2026-09-28): ÇEK kaynak/hukuki dayanak çözücüleri ve yetki adaptörü;
-      // varsayılan KAPALI akışın tüketicileridir (bağlama ayrı değişiklikte, bayrak arkasında).
+      // varsayılan KAPALI akışın tüketicileridir. PR-3: akışın kendisi (CekAutoGenerateFormationService) bayrak
+      // arkasında ClaimItemModule'e bağlıdır; modül formation-intent'i doğrudan içe aktarmaz.
       path.normalize('src/modules/claim-item/formation-cek/case-instrument-exact-record.resolver.ts'),
+      path.normalize('src/modules/claim-item/formation-cek/cek-auto-generate-formation.service.ts'),
       path.normalize('src/modules/claim-item/formation-cek/cek-legal-basis-release.resolver.ts'),
       path.normalize('src/modules/claim-item/formation-cek/claim-item-formation-authorization.adapter.ts'),
       path.normalize(
