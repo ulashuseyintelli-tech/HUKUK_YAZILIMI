@@ -48,6 +48,7 @@ src/modules/claim-item/__tests__/claim-item-formation-intent-admission.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-intent-dormancy.static.spec.ts
 src/modules/claim-item/__tests__/cek-legal-basis-release.resolver.spec.ts
 src/modules/claim-item/__tests__/cek-penalty.spec.ts
+src/modules/claim-item/__tests__/cek-auto-generate-formation.options.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-legal-basis-eligibility.spec.ts
 src/modules/claim-item/__tests__/legal-basis-projection-binding.contract.spec.ts
 src/modules/claim-item/__tests__/nafaka-legal-basis-release.static.spec.ts

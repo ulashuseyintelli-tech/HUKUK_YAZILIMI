@@ -283,6 +283,21 @@ export class AutoGenerateClaimItemsDto {
   @IsOptional()
   @IsNumber()
   checkPenaltyRate?: number; // Çek tazminatı oranı (%10 veya %20)
+
+  // K3 çek formation akışı (bayrak açıkken; aksi hâlde yok sayılmaz, uç FORMATION_CONTEXT_REQUIRED döner)
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
+
+  /** Çek kaydı (CaseInstrument) kimliği; verilmezse documentId çek kaydı kimliği sayılır. */
+  @IsOptional()
+  @IsString()
+  caseInstrumentId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  liableDebtorIds?: string[];
 }
 
 // Faiz Hesaplama DTO

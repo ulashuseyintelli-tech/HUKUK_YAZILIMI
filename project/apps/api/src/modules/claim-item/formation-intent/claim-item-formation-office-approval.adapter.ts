@@ -99,6 +99,11 @@ export interface PersistClaimItemFormationBatchInput {
    * satır yazılmaz.
    */
   readonly authorizeInTransaction?: (tx: Prisma.TransactionClient) => Promise<void>;
+  /**
+   * K3 PR-3 — onay kutusunda gösterilen, sunucuda üretilmiş okunur özet (OfficeApprovalRequest.reason). BAĞLAYICI
+   * DEĞİLDİR: onay içeriği değişmez formation niyetleri + payloadHash'tir; tekrar istekte uzlaştırmaya katılmaz.
+   */
+  readonly approvalReason?: string;
 }
 
 export interface ClaimItemFormationBatchAdmissionResult {
@@ -341,6 +346,22 @@ export class ClaimItemFormationOfficeApprovalAdapter {
     }
   }
 
+  /**
+   * K3 PR-3 — tekrarlanan isteğin, kaynak durumu (ör. onay sonrası oluşan kalemler) değişmiş olsa bile AYNI toplu
+   * talebi döndürebilmesi için salt okuma. Yazma YOK.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CekAutoGenerateFormationService.request() → tekrar isteğin ilk kontrolü
+   * /// </remarks>
+   */
+  async findBatch(
+    tenantId: string,
+    batchIdempotencyKey: string,
+  ): Promise<{ approval: OfficeApprovalRequest; intents: ClaimItemFormationIntent[] } | null> {
+    return this.findExistingBatch(this.prisma, tenantId, batchIdempotencyKey);
+  }
+
   private validateBatch(
     input: PersistClaimItemFormationBatchInput,
   ): LegalBasisProjectionBindingPersistenceEnvelopeV1[] {
@@ -349,7 +370,11 @@ export class ClaimItemFormationOfficeApprovalAdapter {
       !Array.isArray(items) ||
       items.length < 1 ||
       items.length > CLAIM_ITEM_FORMATION_BATCH_MAX_SIZE ||
-      !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(input.batchIdempotencyKey)
+      !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(input.batchIdempotencyKey) ||
+      (input.approvalReason !== undefined &&
+        (typeof input.approvalReason !== 'string' ||
+          input.approvalReason.length === 0 ||
+          input.approvalReason.length > 1000))
     ) {
       throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
     }
@@ -438,7 +463,7 @@ export class ClaimItemFormationOfficeApprovalAdapter {
         executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
         savedIntent: savedIntent as unknown as Prisma.JsonObject,
         payloadHash,
-        reason: null,
+        reason: input.approvalReason ?? null,
         idempotencyKey: this.batchApprovalIdempotencyKey(input.batchIdempotencyKey),
         expiresAt: first.expiresAt,
       },

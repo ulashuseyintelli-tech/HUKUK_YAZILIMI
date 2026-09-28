@@ -38,10 +38,27 @@ describe('WS04-P02 allocation evidence inventory guards', () => {
         .map((entry) => entry.path)
         .sort(),
     ).toEqual([
+      // K3 PR-3 (owner GO 2026-09-28): bayrak kapili CEK formation akisi; asagidaki test bayrak kapisini dogrular.
+      'src/modules/claim-item/formation-finalizer/transactional-claim-item-formation-finalizer.service.ts',
       'src/modules/collection/collection-cancel-executor.ts',
       'src/modules/precautionary-order/precautionary-order.service.ts',
       'src/modules/summary-engine/summary-engine.service.ts',
     ]);
+  });
+
+  it("K3 PR-3: WRITE'a tasinan formation finalizer varsayilan kapali ve fail-closed kalir", () => {
+    const finalizer = fs.readFileSync(
+      path.join(apiRoot, 'src/modules/claim-item/formation-finalizer/transactional-claim-item-formation-finalizer.service.ts'),
+      'utf8',
+    );
+    expect(finalizer).toMatch(/enabled\s*=\s*[^;]*\?\?\s*false/);
+    expect(finalizer).toMatch(/if\s*\(\s*!\s*this\.enabled\s*\)/);
+    const consumer = fs.readFileSync(
+      path.join(apiRoot, 'src/modules/claim-item/formation-cek/cek-auto-generate-formation.service.ts'),
+      'utf8',
+    );
+    expect(consumer).toContain("env[CEK_AUTO_GENERATE_FORMATION_ENABLED_ENV] === 'true'");
+    expect(consumer).toContain('if (!this.options.enabled) return;');
   });
 
   /**
@@ -58,9 +75,11 @@ describe('WS04-P02 allocation evidence inventory guards', () => {
       (entry) => (entry.access as string) === 'DORMANT_WRITE',
     );
 
-    // Vacuous pass koruması: sinif kullanimdan kalkarsa bu test bilincli olarak
-    // guncellenmelidir, sessizce yesil kalmamalidir.
-    expect(dormant.length).toBeGreaterThan(0);
+    // Vacuous pass koruması: dormant kume BILINCLI olarak listelenir; degisirse bu
+    // test bilincli olarak guncellenmelidir, sessizce yesil kalmamalidir.
+    // K3 PR-3 (owner GO 2026-09-28): tek kayit (formation finalizer) WRITE'a tasindi;
+    // yeni DORMANT_WRITE kaydi eklenirse asagidaki dongu onu otomatik dogrular.
+    expect(dormant.map((entry) => entry.path)).toEqual([]);
 
     const productionFiles = sourceFiles(path.join(apiRoot, 'src')).map((file) => ({
       rel: normalizeRelative(file),

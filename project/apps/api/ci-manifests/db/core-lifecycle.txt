@@ -22,6 +22,7 @@ src/modules/claim-item/__tests__/claim-formation-persistence-foundation.db-gated
 src/modules/claim-item/__tests__/claim-item-formation-finalizer.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-batch.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/cek-formation-resolvers.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/cek-auto-generate-formation.http.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-intent.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-lifecycle.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-source-integrity.db-gated.integration.spec.ts

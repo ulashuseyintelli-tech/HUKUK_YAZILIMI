@@ -760,3 +760,58 @@ describe('OWN-29-D OfficeApprovalDomainSyncService claim item high-impact', () =
     expect(db.claimItem.update).not.toHaveBeenCalled();
   });
 });
+
+describe('K3 PR-3 OfficeApprovalDomainSyncService claim item formation batch', () => {
+  const batchReq = (status: OfficeApprovalStatus) =>
+    req({
+      id: 'batch-appr-1',
+      actionCode: CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE,
+      targetType: 'CLAIM_ITEM_FORMATION_BATCH',
+      targetRef: 'batch-1',
+      status,
+    });
+
+  it('isleyici kayitli degilken ONAY fail-closed (FORMATION_BATCH_HANDLER_UNAVAILABLE); ret/revizyon/iptal no-op', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    await expect(svc.syncAfterDecision({} as any, batchReq(OfficeApprovalStatus.APPROVED) as any)).rejects.toMatchObject({
+      response: { code: 'FORMATION_BATCH_HANDLER_UNAVAILABLE' },
+    });
+    await expect(
+      svc.syncAfterDecision({} as any, batchReq(OfficeApprovalStatus.APPROVED) as any),
+    ).rejects.toBeInstanceOf(ConflictException);
+    for (const status of [
+      OfficeApprovalStatus.REJECTED,
+      OfficeApprovalStatus.REVISION_REQUESTED,
+      OfficeApprovalStatus.CANCELLED,
+    ]) {
+      await expect(svc.syncAfterDecision({} as any, batchReq(status) as any)).resolves.toBeUndefined();
+    }
+  });
+
+  it('kayitli isleyici yalniz ONAY icin ayni tx ile cagrilir; degistirerek onay reddedilir; ikinci farkli kayit reddedilir', async () => {
+    const svc = new OfficeApprovalDomainSyncService();
+    const handler = jest.fn().mockResolvedValue(undefined);
+    svc.registerClaimItemFormationBatchHandler(handler);
+    svc.registerClaimItemFormationBatchHandler(handler);
+    expect(() => svc.registerClaimItemFormationBatchHandler(jest.fn())).toThrow('already registered');
+
+    const txClient = { marker: 'tx' };
+    const approved = batchReq(OfficeApprovalStatus.APPROVED);
+    await svc.syncAfterDecision(txClient as any, approved as any);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(txClient, approved);
+
+    for (const status of [
+      OfficeApprovalStatus.REJECTED,
+      OfficeApprovalStatus.REVISION_REQUESTED,
+      OfficeApprovalStatus.CANCELLED,
+    ]) {
+      await svc.syncAfterDecision(txClient as any, batchReq(status) as any);
+    }
+    expect(handler).toHaveBeenCalledTimes(1);
+    await expect(
+      svc.syncAfterDecision(txClient as any, batchReq(OfficeApprovalStatus.APPROVED_WITH_CHANGES) as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});

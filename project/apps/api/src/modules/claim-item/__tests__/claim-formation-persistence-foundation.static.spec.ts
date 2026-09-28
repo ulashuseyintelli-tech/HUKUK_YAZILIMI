@@ -230,6 +230,8 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
       .sort();
 
     expect(offenders).toEqual([
+      // K3 PR-3: bayrak arkasındaki çek formation akışı — yalnız intent OKUR (kaynak kilidi / bekleyen talep).
+      path.normalize('src/modules/claim-item/formation-cek/cek-auto-generate-formation.service.ts'),
       path.normalize(
         'src/modules/claim-item/formation-finalizer/transactional-claim-item-formation-finalizer.service.ts',
       ),
@@ -241,9 +243,13 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
       ),
     ]);
 
-    const finalizer = fs.readFileSync(path.join(API_ROOT, offenders[0]), 'utf8');
-    const adapter = fs.readFileSync(path.join(API_ROOT, offenders[1]), 'utf8');
-    const uyapConsumer = fs.readFileSync(path.join(API_ROOT, offenders[2]), 'utf8');
+    const cekFlow = fs.readFileSync(path.join(API_ROOT, offenders[0]), 'utf8');
+    const finalizer = fs.readFileSync(path.join(API_ROOT, offenders[1]), 'utf8');
+    const adapter = fs.readFileSync(path.join(API_ROOT, offenders[2]), 'utf8');
+    const uyapConsumer = fs.readFileSync(path.join(API_ROOT, offenders[3]), 'utf8');
+    expect(cekFlow).toContain('claimItemFormationIntent.findMany');
+    expect(cekFlow).not.toMatch(/claimItemFormationIntent\.(?:create|update|updateMany|delete|deleteMany|upsert)/);
+    expect(cekFlow).not.toContain('claimFormationSnapshot');
     expect(adapter).toContain('claimItemFormationIntent.create');
     expect(adapter).not.toContain('claimFormationSnapshot.create');
     expect(finalizer).toContain('claimFormationSnapshot.create');
