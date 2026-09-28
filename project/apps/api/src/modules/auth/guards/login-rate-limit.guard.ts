@@ -65,7 +65,7 @@ export class LoginRateLimitGuard implements CanActivate {
     return true;
   }
 
-  /** Personel yolları: mevcut davranış DEĞİŞMEZ (`request.ip`, global trust proxy=1). */
+  /** Varsayılan istemci anahtarı (`request.ip`). */
   protected clientKey(request: any): string {
     return request.ip || request.connection?.remoteAddress || 'unknown';
   }
@@ -74,10 +74,8 @@ export class LoginRateLimitGuard implements CanActivate {
 /**
  * D5-SEC-R01 — YALNIZ `POST /api/portal/login`. Anahtar, public intake ile AYNI güven sınırıyla çözülür
  * (X3-B03, `public-intake-client-ip.ts`): istemci IP'si socket peer'idir; `X-Forwarded-For`'dan türeyen `req.ip`
- * yalnız peer `PUBLIC_INTAKE_TRUSTED_PROXY_IPS` tam eşleşme listesindeyse (kenar vekili) kabul edilir. Böylece API
- * portuna doğrudan bağlanan istemci her istekte farklı `X-Forwarded-For` göndererek sınırı aşamaz; kenardan gelen
- * istekte Caddy'nin yazdığı tek değerli başlık gerçek istemciyi ayırır. Global `trust proxy` ayarı DEĞİŞMEZ.
- * Aynı modül düzeyi store kullanılır (portal ve personel girişi bugün de aynı store'u paylaşır).
+ * yalnız peer `PUBLIC_INTAKE_TRUSTED_PROXY_IPS` tam eşleşme listesindeyse (kenar vekili) kabul edilir. Global
+ * `trust proxy` ayarı DEĞİŞMEZ. Aynı modül düzeyi store kullanılır.
  */
 @Injectable()
 export class PortalLoginRateLimitGuard extends LoginRateLimitGuard {

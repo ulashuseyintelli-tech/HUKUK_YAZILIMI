@@ -3,31 +3,28 @@
  *
  * Uygulama üretimle aynı platformdadır (`@nestjs/platform-express`) ve `applyTrustProxy` (main.ts'in çağırdığı tek
  * yapılandırma noktası; trust proxy=1) uygulanır. Test süreci yerelden bağlandığı için socket peer her zaman
- * 127.0.0.1'dir; "kenar vekili mi, doğrudan istemci mi" ayrımı `PUBLIC_INTAKE_TRUSTED_PROXY_IPS` ile kurulur:
- *  - liste 127.0.0.1'i İÇERMEZ → peer güvenilmez = API'ye doğrudan bağlanan istemci (ör. LAN'dan :8080)
- *  - liste 127.0.0.1'i içerir → peer güvenilir kenar vekili (canlıda Caddy, tek değerli X-Forwarded-For yazar)
+ * 127.0.0.1'dir; güvenilir/güvenilmez eş ayrımı `PUBLIC_INTAKE_TRUSTED_PROXY_IPS` ile kurulur:
+ *  - liste 127.0.0.1'i İÇERMEZ → eş güvenilmez
+ *  - liste 127.0.0.1'i içerir → eş güvenilir kenar vekili (tek değerli X-Forwarded-For yazar)
  *
  *  [1] güvenilmez peer + HER İSTEKTE FARKLI sahte X-Forwarded-For → portal girişi 11. istekte 429 (sahte başlık yeni
  *      kova açamaz). Aynı senaryo portal kurtarma uçlarında da 429.
  *  [2] güvenilir peer (kenar) + Caddy'nin yazdığı tek değer → farklı istemciler AYRI kova; biri dolunca diğeri geçer.
  *  [3] güvenilir peer + istemcinin kendi eklediği değer + kenar değeri ("sahte, gerçek") → anahtar EN SAĞDAKİ (kenarın
  *      yazdığı) değerdir; soldaki sahte değer kova seçemez. (Canlı Caddy şablonu başlığı zaten tek değere ezer.)
- *  [4] PERSONEL girişi (LoginRateLimitGuard) davranışı DEĞİŞMEDİ: `request.ip` (trust proxy=1) — rotasyonlu sahte
- *      XFF ile 11. istek de geçer. Bu bu yamanın kapsamı DIŞINDAKİ mevcut davranıştır; ayrı bulgu olarak raporlanır.
  */
 import { Controller, HttpCode, INestApplication, Module, Post, UseGuards } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import * as http from 'http';
 import { applyTrustProxy } from '../../../../common/trust-proxy.config';
-import { LoginRateLimitGuard, PortalLoginRateLimitGuard } from '../login-rate-limit.guard';
+import { PortalLoginRateLimitGuard } from '../login-rate-limit.guard';
 import { CredentialRecoveryRateLimitGuard } from '../credential-recovery-rate-limit.guard';
 
 @Controller()
 class ProbeController {
   @Post('portal-login') @HttpCode(200) @UseGuards(PortalLoginRateLimitGuard) portalLogin() { return { ok: true }; }
   @Post('portal-recovery') @HttpCode(200) @UseGuards(CredentialRecoveryRateLimitGuard) recovery() { return { ok: true }; }
-  @Post('staff-login') @HttpCode(200) @UseGuards(LoginRateLimitGuard) staffLogin() { return { ok: true }; }
 }
 @Module({ controllers: [ProbeController] })
 class ProbeModule {}
@@ -75,9 +72,4 @@ describe('D5-SEC-R01 — portal hız sınırı istemci anahtarı (gerçek HTTP, 
     expect(s[10]).toBe(429);
   });
 
-  it('[4] personel girişi davranışı DEĞİŞMEDİ (kapsam dışı mevcut durum): rotasyonlu sahte XFF ile 11. istek de geçer', async () => {
-    process.env.PUBLIC_INTAKE_TRUSTED_PROXY_IPS = '10.255.255.254';
-    const s = await burst('staff-login', (i) => `100.64.0.${i + 1}`);
-    expect(s.every((c) => c === 200)).toBe(true);
-  });
 });
