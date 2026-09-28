@@ -5,6 +5,7 @@ import { normalizePersonName } from "@/common/name-match.util";
 import { maskTckn, maskIban } from "@/common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
 import type { AuditActor } from "@/modules/client/client.service";
 import { toPublicLawyer, toPublicLawyers } from "./lawyer-public-projection";
 import { projectF01Lawyer, F01ProjectionAccess } from "../office/office-f01-projection";
@@ -620,6 +621,8 @@ export class LawyerService {
     const needsPrivilegeAudit = delegationChange !== null || privilegedChangedFields.length > 0;
     const lawyer = needsPrivilegeAudit
       ? await this.prisma.$transaction(async (tx) => {
+          // K4-2 (owner GO 2026-09-28): tx dışındaki kapı ucuz erken-fail; YETKİLİ karar burada, ilk yazmadan ÖNCE.
+          await this.assertPrivilegeAuthorityInTx(tx, actor, tenantId, delegationChange !== null, privilegedChangedFields.length > 0);
           const updated = await tx.lawyer.update({ where: { id }, data: writeData });
           // K1-4b: delegation kaydi MEVCUT eylem ve MEVCUT metadata bicimiyle, TEK kez yazilir (ham PII yok, from/to bool).
           if (delegationChange) {
@@ -655,6 +658,39 @@ export class LawyerService {
 
     // P01: credential alanlari public yanittan CIKARILIR.
     return this.projectLawyerResponse(tenantId, withDisplayName(lawyer) as Record<string, unknown>, actor);
+  }
+
+  /**
+   * K4-2 (owner GO 2026-09-28) — delegasyon (`canApproveOfficeActions`) ve rütbe/yetki alanı DEĞİŞİKLİĞİNİN yazma
+   * transaction'ı içindeki yetkili kontrolü. Aktörün `Lawyer` → `User` satırları `FOR SHARE` kilitlenir (iptal
+   * yollarıyla aynı sıra) ve AYNI kural (ADMIN VEYA aktif + aynı tenant + bağlı PARTNER) GÜNCEL satırdan yeniden
+   * değerlendirilir: ADMIN kısa yolu istek anındaki rol beyanıyla değil, kilitli satırdaki rol + aktiflik + tenant
+   * ile doğrulanır. Pasifleştirilmekte olan bir PARTNER/ADMIN'in eşzamanlı olarak kalıcı onaylayıcı ataması kapanır.
+   */
+  private async assertPrivilegeAuthorityInTx(
+    tx: Prisma.TransactionClient,
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+    delegationChanged: boolean,
+    privilegedFieldsChanged: boolean,
+  ): Promise<void> {
+    const message = delegationChanged
+      ? "Office approval delegation (canApproveOfficeActions) yalnızca ADMIN veya PARTNER tarafından değiştirilebilir"
+      : "Rütbe/yetki alanları (lawyerRank, defaultPermissions, permissionsLocked, canModifyOtherPermissions) yalnızca ADMIN veya PARTNER tarafından değiştirilebilir";
+    if (!actor?.userId || (!delegationChanged && !privilegedFieldsChanged)) {
+      throw new ForbiddenException(message);
+    }
+    await lockExecutionActorRows(tx, actor.userId);
+    const fresh = await tx.user.findUnique({
+      where: { id: actor.userId },
+      select: { role: true, tenantId: true, isActive: true, lawyer: { select: { lawyerRank: true } } },
+    });
+    const authorized =
+      !!fresh &&
+      fresh.isActive &&
+      fresh.tenantId === tenantId &&
+      (fresh.role === "ADMIN" || fresh.lawyer?.lawyerRank === "PARTNER");
+    if (!authorized) throw new ForbiddenException(message);
   }
 
   /**

@@ -52,7 +52,10 @@ function build(over: { eligible?: boolean; existingPortalUser?: any } = {}) {
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   const audit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
-  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(over.eligible ?? true) };
+  const officeApproval = {
+    isApproverEligible: jest.fn().mockResolvedValue(over.eligible ?? true),
+    isApproverEligibleInTx: jest.fn().mockResolvedValue(over.eligible ?? true), // K4-3: kilitli tx içi yetkili karar
+  };
   const svc = new PortalService(
     prisma as any,
     {} as any,

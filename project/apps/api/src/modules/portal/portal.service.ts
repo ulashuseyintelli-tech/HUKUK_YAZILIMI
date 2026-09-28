@@ -237,6 +237,23 @@ export class PortalService {
   }
 
   /**
+   * K4-3 (owner GO 2026-09-28) — portal erişimi açma/yeniden açma/kapatma yazısının transaction İÇİNDEKİ yetkili
+   * kontrolü: aktör satırları kilitli, AYNI yüklem (`isApproverEligible`). Portal hesabı kalıcı dış erişim ürettiği
+   * için yetkisi iptal edilmekte olan bir aktörün eşzamanlı hesap açması kalıcı olamaz. Tx dışı kontrol erken-fail.
+   */
+  private async assertCanManagePortalAccessInTx(
+    tx: Prisma.TransactionClient,
+    userId: string | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligibleInTx(tx, userId, tenantId))) {
+      throw new ForbiddenException(
+        "Portal erişimi yönetimi için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
+  }
+
+  /**
    * Portal kullanıcısı oluştur
    *
    * /// <remarks>
@@ -286,6 +303,7 @@ export class PortalService {
       // before/after diff snapshot'ı da tx içinde okunur (atomik boundary, race azaltır); audit
       // yazılamazsa rollback → audit'siz erişim açma kalmaz (C0-a deseni).
       await this.prisma.$transaction(async (tx) => {
+        await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
         const before = await tx.client.findUniqueOrThrow({
           where: { id: clientId },
           select: { id: true, hasPortalAccess: true, portalUserId: true },
@@ -326,6 +344,7 @@ export class PortalService {
 
     // C0 bypass fix: portalUser create + client erişim-bayrağı + audit AYNI transaction.
     const portalUserId = await this.prisma.$transaction(async (tx) => {
+      await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
       const before = await tx.client.findUniqueOrThrow({
         where: { id: clientId },
         select: { id: true, hasPortalAccess: true, portalUserId: true },
@@ -731,6 +750,7 @@ export class PortalService {
 
     // C0 bypass fix: portal kullanıcıları pasifle + client erişim-bayrağı kapat + audit AYNI transaction.
     await this.prisma.$transaction(async (tx) => {
+      await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
       const before = await tx.client.findUniqueOrThrow({
         where: { id: clientId },
         select: { id: true, hasPortalAccess: true, portalUserId: true },

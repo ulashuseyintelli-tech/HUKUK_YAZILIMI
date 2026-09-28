@@ -454,7 +454,13 @@ describe('AK-2 — update davranışı DEĞİŞMEDİ', () => {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...self, ...data })),
       },
-      user: { findUnique: jest.fn().mockResolvedValue(actorUser) },
+      // K4-2: tx içi yetkili kontrol ADMIN'i de kilitli güncel satırdan okur.
+      user: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          where.id === ADMIN.userId ? { role: 'ADMIN', tenantId: TENANT, isActive: true, lawyer: null } : actorUser,
+        ),
+      },
+      $queryRaw: jest.fn(async () => []), // K4-2: aktör Lawyer → User FOR SHARE kilidi
       // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
     };
