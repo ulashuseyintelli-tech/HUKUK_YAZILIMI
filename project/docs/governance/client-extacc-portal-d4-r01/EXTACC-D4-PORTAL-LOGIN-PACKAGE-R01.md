@@ -1,7 +1,7 @@
 # EXTACC D-4 R01 — Portal girişi dış cihazdan + portal erişim kapanışı (canlı kabul paketi)
 
-> **DURUM (2026-09-28): HAZIRLIK — R02 (§11) ve R03 (§12) inceleme düzeltmeleri uygulandı.** Canlı Run/Recover **başlatılmadı**; Preflight bu paket için **koşulmadı**. Bu belge canlı
-> koşum GO'su değildir; GO biçimi `OWNER-GO-CLIENT-EXTACC-D4-YYYYMMDD-RNN` (intake GO'su `OWNER-GO-CLIENT-EXTACC-…` kabul
+> **DURUM (2026-09-28): CANLI KOŞUM `e34b7e6d` — çıkış 0, 21/21 PASS; D-4 dar kapsamda KABUL (owner), kayıt §13.**
+> Önceki durum: hazırlık (R02 §11, R03 §12). D-4 Run/Recover **tekrarlanmaz**. Bu belge canlı koşum GO'su değildir; GO biçimi `OWNER-GO-CLIENT-EXTACC-D4-YYYYMMDD-RNN` (intake GO'su `OWNER-GO-CLIENT-EXTACC-…` kabul
 > **edilmez**). Hizmet kabulü H1–H8 **0/8**; D-5…D-8 durumu **değişmez**; D-1/D-2/D-3/D-9 kaydı EXTACC paketi §12'dedir.
 > D-halkaları `client-external-access-r01` §7'de tanımlıdır.
 
@@ -248,3 +248,75 @@ konsol **5/5**.
 | M-6 | personel oturumu yalnız başta açılır (bekleme sırasında açılamaz) | 40/42 | Y19 — hesap bulundu ama kapatılamadı, aktif kaldı; Recover çıkış 6 |
 
 (T-3 her mutantta yalnız dosya adı farkından düşer; mutant dosyaları silindi.)
+
+## 13. Canlı kabul kaydı — koşum `e34b7e6d` (2026-09-28)
+
+> **Kapsam:** yalnız **D-4** ve **bu portal koşumunun D-9 kapanışı**. H1–H8 **0/8** kalır; D-5…D-8 durumu **değişmez**.
+> Ham kanıt, kimlikler, giriş bilgileri ve kullanıcı yolları repoya konmadı; kanıt yerel CLIENT kanıt kökündedir, salt okuma
+> incelendi ve değiştirilmedi. Owner sonucu dar kapsamında kabul etti.
+
+| Alan | Değer |
+|---|---|
+| Çıkış / özet | **0** · **21/21 PASS** · FAIL 0 · ÖLÇÜLEMEYEN 0 · kurtarma gerekmedi · ürün bulgusu yok |
+| Manifest | 6/6 eşit · sha256 `B0C18DFDFD51D5007D42957F435B35F923FB6EC2DCAA277A06A6437EBEE0F293` |
+| Koşum anındaki main / paket / owner bloğu | `b4dbebfd` / `D019981C35DE3C7DBE449E775C9078723C661C7D89DD6008D57A61F86523C095` / `03EC0C00…1FFB` |
+| Canlı pinler | dist `A8B17A38…53A0` (3867 dosya) · `.env` `5C776BBE…908D` — Preflight ve Run'da eşit |
+| Canlı süreler (kanıttaki `params`) | 20 dk bekleme · 5 sn yoklama · 120 sn inceleme · 120 sn geç oluşma · zaman aşımları sabit |
+| GO | yalnız sha256 olarak tüketildi; literal hiçbir dosyada yok |
+| Sır taraması | kanıt dizininin tamamı (UTF-16 log çözülerek): geçici parola, personel parolası, JWT, Authorization, DB URL, GO literali yok |
+
+### 13.1 Makine ölçümleri
+
+**Giriş ve dosya listesi (D-4):** gönderimsiz portal hesabı `create-user` 201; DB'de aktif · erişim açık · e-posta doğru.
+Koşucu girişi yerel 201. Dosya listesi **yerel ve dış HTTPS 200**, tam olarak bu koşumun **tek** dosyası. Yanlış parola **yerel ve dış
+401**. Gösterim kapısının beş kontrolü PASS olduktan sonra giriş bilgisi yalnız yerel konsola gösterildi. Koşucu dışında **tek**
+başarılı portal girişi DB giriş sayacında görüldü (+1, gösterimden ~145 sn sonra).
+
+**Kapanış (D-9, yalnız bu portal koşumu):**
+
+| Kontrol | Yerel | Dış HTTPS |
+|---|---|---|
+| Kapanış sonrası **yeni giriş** (`P-C3L` / `P-C3D`) | 401 | 401 |
+| Kapanış sonrası **koşumda alınmış mevcut oturum**, korumalı uç (`P-C4L` / `P-C4D`) | 401 | 401 |
+
+DB: yetkili `disable-user` 201 · portal hesabı **pasif** · müvekkil portal erişimi **kapalı** · `tokenVersion` **0→1** (oturumların
+verildiği sürümden büyük) · HTTP ölçümlerinden sonra DB hâlâ kapalı. Personel: iki sentetik tenantta aktif kullanıcı 0; dosya
+**CLOSED**, aktif dosya 0.
+
+Koşum sonrası ek salt okuma (READ ONLY işlem, yalnız bu koşumun sentetik kayıtları; kapanıştan ~4 dk sonra): hesap pasif,
+erişim kapalı, giriş sayacı kapanıştaki değerde (kapanıştan sonra başarılı giriş yok), parola sıfırlama kaydı yok; audit'te
+erişim açma ve kapatma kayıtları. Owner, geçici parolanın sohbette paylaşıldığını bildirdi; ürün girişi yalnız aktif hesabı kabul
+eder ve eski oturumlar sürüm artışıyla geçersizdir. Parola değeri hiçbir kayda yazılmadı.
+
+### 13.2 Owner beyanı (makine ölçümü DEĞİL)
+
+Telefonda giriş sayfası açıldı · **bir** giriş denemesi · girişten sonra dosya listesi · listede **1** dosya, numarası konsoldakiyle
+aynı · telefon **mobil veride** · kapanış sonrası yenilemede **giriş ekranı**. Beyandan önce owner'a gösterilen kapanış metni
+"DOĞRULANDI" idi. Telefonun kendi oturumunun kapandığı koşucu tarafından ölçülmez: aynı hesabın aynı sürümdeki koşucu oturumu
+yerel ve dış 401 aldı; telefon tarafı owner beyanıdır.
+
+### 13.3 Paylaşılan görüntü (makine ölçümü DEĞİL)
+
+Görüntüyü **ChatGPT doğrudan inceledi** ve portal ana sayfasını, toplam **1** dosyayı ve `I3-e34b7e6d` numarasını gördüğünü
+bildirdi (owner'ın aktarımı). Görüntü **Claude tarafından doğrudan incelenmedi** ve kanıt dizinine alınmadı. Görüntü girişten
+sonraki listeyi gösterir; **kapanışın kanıtı değildir**.
+
+### 13.4 İzolasyon — yalnız ölçülen
+
+Koşumdan önce ve sonra, **bu koşumun iki sentetik tenantı dışındaki** ve en az bir müvekkili ya da kullanıcısı olan **35 tenantın**
+tenant başına müvekkil ve kullanıcı **kayıt sayıları** aynı. Önceki koşumların sentetik test tenantları bu 35'e dahildir. Ölçüm yalnız
+sayı dağılımıdır; ekleme/silme yokluğu ya da içerik bütünlüğü çıkarılmaz.
+
+### 13.5 Küçük bulgu (bu kayda dahil edilmedi)
+
+Koşum logu UTF-16LE yazıldı ve Türkçe karakterler kodlama zincirinde bozuldu (owner bloğundaki PowerShell 5.1 yönlendirmesi).
+Ölçüm etkilenmedi; sonuçlar kanıt JSON'unda temiz. Düzeltme ayrı iştir.
+
+### 13.6 D-halkaları
+
+| Halka | Karar | Dayanak |
+|---|---|---|
+| **D-4** portal girişi dış cihazdan | **kabul — dar kapsam** | makine: giriş, yerel/dış liste (tek doğru dosya), yanlış parola yerel/dış 401, koşucu dışı tek başarılı giriş · owner beyanı: telefon, mobil veri, tek giriş, tek doğru dosya |
+| **D-9** erişim kapanışı | **kabul — yalnız bu portal koşumu** | makine: DB kapalı + yeni giriş ve mevcut oturum yerel/dış 401 + personel/dosya kapanışı. Belge (D-6) ve mesaj (D-7) kapanışını kapsamaz |
+| D-5 … D-7 | **değişmedi — ölçülmedi** | — |
+| D-8 | **değişmedi — kısmen kanıtlı** | EXTACC paketi §9 |
