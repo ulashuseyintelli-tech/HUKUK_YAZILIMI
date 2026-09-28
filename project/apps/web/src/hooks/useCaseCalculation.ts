@@ -39,6 +39,22 @@ export interface MahsupDetay {
   kalanAnapara: number;
 }
 
+export interface CheckPenaltySummary {
+  tutar: number;
+  durum: 'KALEM_VAR' | 'ONAY_BEKLIYOR' | 'OLUSTURULMAMIS' | 'UYGULANMAZ';
+  mesaj: string | null;
+  kalemler: Array<{
+    claimItemId: string;
+    tutar: number;
+    tahsilEdilen: number;
+    kalan: number;
+    paraBirimi: string;
+    sorumluBorclular: Array<{ debtorId: string; ad: string }>;
+    sorumlulukBelirsiz: boolean;
+  }>;
+  tahmin: { durum: 'HESAPLANDI' | 'VERI_EKSIK'; tutar: number | null; aciklama: string } | null;
+}
+
 export interface CaseCalculationResult {
   // Temel bilgiler
   caseId: string;
@@ -48,7 +64,10 @@ export interface CaseCalculationResult {
   
   // Tutarlar
   asilAlacak: number;
+  /** K3-L: KESİN çek tazminatı = yalnız kesin CHECK_PENALTY kalemleri (kalem yoksa 0). */
   tazminat: number;
+  /** K3-L: kalem bazlı sorumlular + durum + ayrı (bakiyeye dahil olmayan) bilgi tahmini. */
+  tazminatDurumu?: CheckPenaltySummary;
   komisyon: number;
   takipOncesiFaiz: number;
   takipTutari: number;

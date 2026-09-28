@@ -24,7 +24,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, FaizSegment, MahsupDetay } from "@/hooks/useCaseCalculation";
+import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay } from "@/hooks/useCaseCalculation";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import {
   buildGuardedPrimaryCalculationResult,
@@ -253,7 +253,9 @@ export function HesapOzetiPanel({
         <Row label={kalemLabel} value={displayHesap.asilAlacak} />
         
         {/* Tazminat ve Komisyon (Çek için) */}
-        {displayHesap.tazminat > 0 && <Row label="Karşılıksız Çek Tazminatı (%10)" value={displayHesap.tazminat} />}
+        {/* K3-L: kesin tazminat YALNIZ kesin kalemden; sorumlular kalem kaydından (dosyanın tüm borçlularına yayılmaz). */}
+        {displayHesap.tazminat > 0 && <Row label="Karşılıksız Çek Tazminatı" value={displayHesap.tazminat} />}
+        <CheckPenaltyInfo summary={hesap?.tazminatDurumu} />
         {displayHesap.komisyon > 0 && <Row label="Komisyon" value={displayHesap.komisyon} />}
         
         {/* Takip Öncesi Faiz */}
@@ -397,6 +399,34 @@ export function HesapOzetiPanel({
 // ============================================================================
 // HELPER COMPONENTS
 // ============================================================================
+
+/**
+ * K3-L (owner kararı 2026-09-28) — çek tazminatı bilgi kutusu. Kalem varsa kalem bazlı sorumlu borçlular; kalem
+ * yoksa durum mesajı ve AYRI bilgi tahmini (hiçbir toplama/bakiyeye girmez).
+ */
+export function CheckPenaltyInfo({ summary }: { summary?: CheckPenaltySummary }) {
+  if (!summary || summary.durum === "UYGULANMAZ") return null;
+  return (
+    <div data-testid="check-penalty-info" className="my-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-900 space-y-0.5">
+      {summary.kalemler.map((kalem) => (
+        <div key={kalem.claimItemId} data-testid="check-penalty-item">
+          Tazminat {formatTL(kalem.tutar)} · kalan {formatTL(kalem.kalan)} ·{" "}
+          {kalem.sorumlulukBelirsiz
+            ? "sorumlu borçlular belirlenmemiş"
+            : `sorumlu: ${kalem.sorumluBorclular.map((b) => b.ad).join(", ")}`}
+        </div>
+      ))}
+      {summary.mesaj && <div data-testid="check-penalty-status">{summary.mesaj}</div>}
+      {summary.tahmin && (
+        <div data-testid="check-penalty-estimate" className="italic text-amber-800">
+          {summary.tahmin.durum === "HESAPLANDI" && summary.tahmin.tutar !== null
+            ? `Bilgi (borca dahil değil): tahmini tazminat ${formatTL(summary.tahmin.tutar)}. ${summary.tahmin.aciklama}`
+            : summary.tahmin.aciklama}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Row({ label, value, light, muted }: { label: string; value: number; light?: boolean; muted?: boolean }) {
   return (
