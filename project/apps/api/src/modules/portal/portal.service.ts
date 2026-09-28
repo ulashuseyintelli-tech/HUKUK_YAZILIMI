@@ -208,7 +208,7 @@ export const PORTAL_CASE_REFERENCE_INVALID = "Geçersiz dosya referansı";
 /**
  * D5-SEC-R01 — sıfırlama parola politikasının (en az 8 karakter, string; sıfırlama sayfasıyla aynı) servis düzeyindeki
  * karşılığı. HTTP'de DTO doğrular; bu kontrol servis doğrudan çağrıldığında da politikayı korur ve token'dan ÖNCE çalışır.
- * Yalnız resetPassword kullanır (change-password kapsam dışı — bkz. dto/portal-password.dto.ts).
+ * resetPassword ve changePassword (yeni parola) kullanır; login mevcut parolaya politika UYGULAMAZ.
  */
 function assertPortalPasswordPolicy(value: unknown): void {
   if (typeof value !== "string" || value.length < PORTAL_PASSWORD_MIN_LENGTH) {
@@ -562,6 +562,8 @@ export class PortalService {
    * Şifre değiştir
    */
   async changePassword(portalUserId: string, oldPassword: string, newPassword: string) {
+    // D5-SEC-R02: yeni parola sıfırlamayla AYNI politikaya tabi (DB okunmadan önce). Mevcut parola kontrol EDİLMEZ.
+    assertPortalPasswordPolicy(newPassword);
     const portalUser = await this.prisma.clientPortalUser.findUnique({
       where: { id: portalUserId },
       include: { client: { select: { tenantId: true } } },

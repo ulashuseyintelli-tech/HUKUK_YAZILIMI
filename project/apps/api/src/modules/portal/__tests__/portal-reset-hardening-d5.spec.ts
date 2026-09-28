@@ -5,15 +5,14 @@
  *      kısa/eksik/string olmayan parola ve eksik token REDDEDİLİR; fazladan alan reddedilir; geçerli gövde geçer.
  *  [2] Servis: politika dışı parola token TÜKETİLMEDEN reddedilir (bcrypt/updateMany çağrılmaz).
  *  [3] Servis: sıfırlama atomik WHERE'i isActive:true + tenant ACTIVE + süre + token hash içerir.
- *  [4] KAPSAM SINIRI: change-password DEĞİŞMEDİ (profil sayfası 6 karakter kabul eder; kural owner kararı) — 7 karakter
- *      yeni parola servis düzeyinde reddedilmez.
- *  [5] Controller: reset-password gövdesi DTO sınıfıdır (satır içi tip DEĞİL → pipe doğrular); change-password değişmedi.
+ *  [4] D5-SEC-R02: change-password de aynı kurala tabi (yeni parola) — 7 karakter servis düzeyinde DB'ye gitmeden reddedilir.
+ *  [5] Controller: reset-password ve change-password gövdeleri DTO sınıfıdır (satır içi tip DEĞİL → pipe doğrular).
  */
 import 'reflect-metadata';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { PortalService } from '../portal.service';
 import { PortalController } from '../portal.controller';
-import { PortalResetPasswordDto, PORTAL_PASSWORD_MIN_LENGTH } from '../dto/portal-password.dto';
+import { PortalChangePasswordDto, PortalResetPasswordDto, PORTAL_PASSWORD_MIN_LENGTH } from '../dto/portal-password.dto';
 
 // main.ts ile AYNI seçenekler.
 const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
@@ -34,6 +33,16 @@ describe('D5-SEC-R01 [1] DTO doğrulaması (global pipe seçenekleriyle)', () =>
   });
   it('reset-password geçerli gövde geçer (8 karakter sınırı dahil)', async () => {
     await expect(run(PortalResetPasswordDto, { token: 't'.repeat(43), password: '12345678' })).resolves.toBeInstanceOf(PortalResetPasswordDto);
+  });
+  it.each([
+    ['7 karakter yeni parola', { oldPassword: 'EskiSifre1', newPassword: '1234567' }],
+    ['eksik mevcut parola', { newPassword: 'YeniSifre12' }],
+    ['fazladan alan', { oldPassword: 'EskiSifre1', newPassword: 'YeniSifre12', tokenVersion: 0 }],
+  ])('D5-SEC-R02 change-password reddi: %s', async (_d, body) => {
+    await expect(run(PortalChangePasswordDto, body)).rejects.toBeInstanceOf(BadRequestException);
+  });
+  it('D5-SEC-R02 change-password: web profil sayfasının gövdesi (oldPassword + 8 karakter newPassword) geçer; eski parola uzunluğu SORULMAZ', async () => {
+    await expect(run(PortalChangePasswordDto, { oldPassword: 'eski6c', newPassword: '12345678' })).resolves.toBeInstanceOf(PortalChangePasswordDto);
   });
   it('kısa parolanın hata mesajı Türkçe ve politikayı söyler (web sayfası mesajı gösterir)', async () => {
     const e = await run(PortalResetPasswordDto, { token: 't'.repeat(43), password: '1234567' }).catch((x) => x);
@@ -84,16 +93,16 @@ describe('D5-SEC-R01 [2]-[4] servis', () => {
     expect(e1.message).toBe('Geçersiz veya süresi dolmuş token');
   });
 
-  it('[4] KAPSAM SINIRI: changePassword DEĞİŞMEDİ — 7 karakter yeni parola servis düzeyinde reddedilmez (kullanıcı arama yapılır)', async () => {
-    const { svc, prisma } = buildService({ portalUser: null });
-    const e = await svc.changePassword('PU', 'EskiSifre1', '1234567').catch((x) => x);
-    expect(e && e.constructor && e.constructor.name).toBe('NotFoundException'); // politika reddi DEĞİL
-    expect(prisma.clientPortalUser.findUnique).toHaveBeenCalledTimes(1);
+  it('[4] D5-SEC-R02: changePassword 7 karakter yeni parola → 400, DB okunmaz/yazılmaz', async () => {
+    const { svc, prisma } = buildService({ portalUser: { id: 'PU', passwordHash: 'x', client: { tenantId: 'T' } } });
+    await expect(svc.changePassword('PU', 'EskiSifre1', '1234567')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.clientPortalUser.findUnique).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
   });
 });
 
 describe('D5-SEC-R01 [5] controller gövde tipleri', () => {
   const types = (m: string) => Reflect.getMetadata('design:paramtypes', PortalController.prototype, m) as any[];
   it('resetPassword gövdesi PortalResetPasswordDto (Object DEĞİL)', () => expect(types('resetPassword')).toContain(PortalResetPasswordDto));
-  it('changePassword gövdesi DEĞİŞMEDİ (satır içi tip → Object; kapsam dışı)', () => expect(types('changePassword')).toContain(Object));
+  it('changePassword gövdesi PortalChangePasswordDto (Object DEĞİL)', () => expect(types('changePassword')).toContain(PortalChangePasswordDto));
 });

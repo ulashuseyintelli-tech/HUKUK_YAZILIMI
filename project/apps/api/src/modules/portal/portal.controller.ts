@@ -28,7 +28,7 @@ import { PortalAuthGuard } from "./portal-auth.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { PortalLoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
 import { CredentialRecoveryRateLimitGuard } from "../auth/guards/credential-recovery-rate-limit.guard";
-import { PortalResetPasswordDto } from "./dto/portal-password.dto";
+import { PortalChangePasswordDto, PortalResetPasswordDto } from "./dto/portal-password.dto";
 
 // Dosya yükleme ayarları
 //
@@ -189,7 +189,7 @@ export class PortalController {
   @UseGuards(PortalAuthGuard)
   async changePassword(
     @Request() req: any,
-    @Body() body: { oldPassword: string; newPassword: string }
+    @Body() body: PortalChangePasswordDto
   ) {
     return this.portalService.changePassword(req.portalUser.sub, body.oldPassword, body.newPassword);
   }

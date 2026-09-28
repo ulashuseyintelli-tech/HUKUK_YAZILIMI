@@ -7,8 +7,9 @@ import { IsNotEmpty, IsString, MinLength } from "class-validator";
  * (`auth.dto.ts`) ve davet (`user-invite.dto.ts`) aynı `@IsString() @MinLength(8)` kuralını API'de uygular. Önceden sıfırlama
  * gövdesi satır içi tip (`{ token; password }`) olduğu için global ValidationPipe metatype'ı `Object` görüp HİÇ doğrulamıyordu.
  *
- * KAPSAM DIŞI (owner kararı): portal PROFİL sayfası parola değiştirmede 6 karakter kabul eder; change-password'e burada
- * kural EKLENMEDİ (API'de 8 zorunlu kılmak mevcut sayfadaki 6–7 karakterlik değişiklikleri bozardı).
+ * D5-SEC-R02 (owner kararı 2026-09-28): portal PROFİL parola değiştirme de aynı kurala geçer (web profil sayfası 8'e
+ * çekildi; API `PortalChangePasswordDto` ile uygular). Kural yalnız YENİ parola belirlenirken uygulanır; mevcut parolalarla
+ * giriş etkilenmez, zorunlu değişiklik YOKTUR.
  */
 export const PORTAL_PASSWORD_MIN_LENGTH = 8;
 
@@ -20,4 +21,14 @@ export class PortalResetPasswordDto {
   @IsString({ message: `Şifre en az ${PORTAL_PASSWORD_MIN_LENGTH} karakter olmalıdır` })
   @MinLength(PORTAL_PASSWORD_MIN_LENGTH, { message: `Şifre en az ${PORTAL_PASSWORD_MIN_LENGTH} karakter olmalıdır` })
   password: string;
+}
+
+export class PortalChangePasswordDto {
+  @IsString({ message: "Mevcut şifre gerekli" })
+  @IsNotEmpty({ message: "Mevcut şifre gerekli" })
+  oldPassword: string;
+
+  @IsString({ message: `Yeni şifre en az ${PORTAL_PASSWORD_MIN_LENGTH} karakter olmalıdır` })
+  @MinLength(PORTAL_PASSWORD_MIN_LENGTH, { message: `Yeni şifre en az ${PORTAL_PASSWORD_MIN_LENGTH} karakter olmalıdır` })
+  newPassword: string;
 }
