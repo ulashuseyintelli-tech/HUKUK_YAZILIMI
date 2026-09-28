@@ -30,8 +30,10 @@ export default function PortalProfilePage() {
     setError("");
     setSuccess(false);
 
-    if (newPassword.length < 6) {
-      setError("Yeni şifre en az 6 karakter olmalıdır");
+    // D5-SEC-R02 (owner kararı 2026-09-28): portal profilinde de sıfırlamayla AYNI kural — en az 8 karakter.
+    // API de aynı kuralı uygular (PortalChangePasswordDto); mevcut parolalar için zorunlu değişiklik YOK.
+    if (newPassword.length < 8) {
+      setError("Yeni şifre en az 8 karakter olmalıdır");
       return;
     }
 
@@ -139,7 +141,7 @@ export default function PortalProfilePage() {
                 type={showNewPassword ? "text" : "password"}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="En az 6 karakter"
+                placeholder="En az 8 karakter"
                 className="w-full border rounded-lg px-3 py-2 pr-10"
                 required
               />

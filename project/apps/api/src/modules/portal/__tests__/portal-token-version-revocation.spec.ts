@@ -119,7 +119,8 @@ describe("PortalService — CLIENT-P2-U02 tokenVersion revocation trigger'ları"
 
   it("[5b] password change: kullanıcı bulunamadı → NotFoundException, update çağrılmaz", async () => {
     const { svc, prisma } = buildService({ findUniqueResult: null });
-    await expect(svc.changePassword("YOK", "x", "y")).rejects.toBeInstanceOf(NotFoundException);
+    // D5-SEC-R02: yeni parola politikaya uygun verilir (politika dışı parola DB'ye gitmeden 400 alır; ayrı spec).
+    await expect(svc.changePassword("YOK", "x", "YeniSifre456")).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
   });
 
