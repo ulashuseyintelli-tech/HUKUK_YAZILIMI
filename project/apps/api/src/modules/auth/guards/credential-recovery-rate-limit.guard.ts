@@ -1,4 +1,5 @@
 import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import { resolvePublicIntakeClientIp } from '../../client-intake-public/public-intake-client-ip';
 
 /**
  * Credential Recovery Rate Limit Guard
@@ -11,6 +12,10 @@ import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } 
  * PF-002; o guard /auth/login + /portal/login için module-scope ortak store kullanır).
  *
  * /portal/forgot-password ve /portal/reset-password endpoint'leri için.
+ *
+ * D5-SEC-R01: anahtar public intake ile AYNI güven sınırıyla çözülür (`resolvePublicIntakeClientIp`): socket peer;
+ * `X-Forwarded-For` kaynaklı `req.ip` yalnız peer `PUBLIC_INTAKE_TRUSTED_PROXY_IPS` listesindeyse. Bu guard yalnız
+ * portal uçlarında kullanılır; global `trust proxy` DEĞİŞMEZ.
  */
 
 interface RateLimitEntry {
@@ -37,7 +42,7 @@ setInterval(() => {
 export class CredentialRecoveryRateLimitGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
-    const ip = request.ip || request.connection?.remoteAddress || 'unknown';
+    const ip = resolvePublicIntakeClientIp(request);
     const now = Date.now();
 
     const entry = store.get(ip);

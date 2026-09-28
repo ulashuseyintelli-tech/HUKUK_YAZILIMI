@@ -323,6 +323,9 @@ src/modules/portal/__tests__/portal-case-reference-k1.spec.ts
 #     kaydı/token yok) · şifre sıfırlama (token/e-posta yok) · yeniden etkinleştirme kapatılmış kullanıcıyı açmaz.
 src/modules/portal/__tests__/portal-suspended-tenant-psus.spec.ts
 src/modules/portal/__tests__/portal-public-base-url.spec.ts
+#   D5-SEC-R01 portal parola sifirlama sertlestirmesi — API tarafi parola politikasi (DTO + servis; mevcut MinLength(8)),
+#     pasif hesapta sifirlama reddi (atomik WHERE isActive), controller govdeleri DTO (Object degil).
+src/modules/portal/__tests__/portal-reset-hardening-d5.spec.ts
 #
 #   CODEX-CLIENT-X1 notification surface validation and characterization (SAF, DB-siz)
 #     CN-2 decorated DTO validation; CN-3/CN-4 provider error and URL-query secret
