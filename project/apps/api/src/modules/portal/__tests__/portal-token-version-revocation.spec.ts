@@ -40,7 +40,10 @@ function buildService(over: any = {}) {
   };
   const jwtService: any = { sign: jest.fn().mockReturnValue("SIGNED.JWT.TOKEN") };
   const audit: any = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };
-  const officeApproval: any = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+  const officeApproval: any = {
+    isApproverEligible: jest.fn().mockResolvedValue(true),
+    isApproverEligibleInTx: jest.fn().mockResolvedValue(true), // K4-3: kilitli tx içi yetkili karar
+  };
   const config: any = { get: jest.fn() };
   const emailProvider: any = { send: jest.fn() };
   const svc = new PortalService(prisma, jwtService, audit, officeApproval, config, emailProvider);

@@ -544,6 +544,35 @@ export class CaseService {
     }
   }
 
+  /**
+   * K4-2 (owner GO 2026-09-28) — yetki alanı YAZISI, F01 yetkisinin kilitli yeniden değerlendirmesiyle AYNI
+   * transaction'da yapılır. `assertCanGrantCasePermissions` tx dışında ucuz erken-fail olarak kalır; yetkili karar
+   * budur. Yetki dağıtımı, sonrasında ClaimItem onayı gerekse bile yetki kapısını AÇTIĞI için bağımsız bir yetki
+   * değişikliğidir; iptal edilmiş bir aktörün son dağıtımı kalıcı olamaz. Yetki alanı yoksa yol DEĞİŞMEZ.
+   */
+  private async withCasePermissionGrantAuthority<T>(
+    tenantId: string,
+    actorUserId: string | undefined,
+    grantsPermission: boolean,
+    write: (db: Prisma.TransactionClient | PrismaService) => Promise<T>,
+  ): Promise<T> {
+    if (!grantsPermission) return write(this.prisma);
+    return this.prisma.$transaction(async (tx) => {
+      const allowed =
+        !!actorUserId &&
+        !!this.officeApproval &&
+        (await this.officeApproval.isF01WriteActorAuthorizedInTx(tx, actorUserId, tenantId));
+      if (!allowed) {
+        throw new ForbiddenException({
+          code: "CASE_PERMISSION_GRANT_FORBIDDEN",
+          message:
+            "Dosya yetkilerini verme/değiştirme yalnız ofis yönetim yetkisi (ADMIN veya PARTNER/MANAGER/yetkilendirilmiş avukat) ile yapılabilir.",
+        });
+      }
+      return write(tx);
+    });
+  }
+
   private requireClaimItemWriterRouter(): ClaimItemWriterRouterService {
     if (!this.claimItemWriterRouter) {
       throw new ConflictException("ClaimItem writer router kullanıma hazır değil");
@@ -3215,7 +3244,11 @@ export class CaseService {
     // WP-1d-5-7: bu uç artık sorumluluk eksenine DOKUNMAZ (guard üstte) → eski ASSIGN-4b tam-1
     // demote/promote mantığı GEREKMEZ. Sorumlu değişikliği yalnız kanonik LegalResponsibleLawyerService'tedir
     // (clear-before-set + changeType audit). Burada tek kayıt güncellemesi; P2002 → 409 defansif korunur.
-    const updated = await this.prisma.caseLawyer
+    // K4-2: yetki alanı varsa yazı kilitli F01 değerlendirmesiyle aynı tx'te.
+    const grantsLawyerPermission =
+      data.casePermissions !== undefined || data.canSign !== undefined || data.hasSignatureAuthority !== undefined;
+    const updated = await this.withCasePermissionGrantAuthority(tenantId, userId, grantsLawyerPermission, (db) =>
+      db.caseLawyer
       .update({
         where: { id: caseLawyerId },
         data: updateData,
@@ -3233,7 +3266,8 @@ export class CaseService {
       })
       .catch((e) => {
         throw this.toCaseLawyerConflict(e);
-      });
+      }),
+    );
 
     // Audit log
     await this.auditService.log({
@@ -3392,8 +3426,9 @@ export class CaseService {
 
     // Ekle. WP-1d-5-9: lifecycle ekleme artık mevcut sorumluyu DEMOTE ETMEZ (willBeResponsible yalnız
     // hasResponsible=false iken → demote edilecek kimse yok) → demote/$transaction gerekmez.
-    // P2002 → 409 dönüşümü defansif korunur.
-    const caseLawyer = await this.prisma.caseLawyer
+    // P2002 → 409 dönüşümü defansif korunur. K4-2: istemci canSign bildirdiyse yazı kilitli F01 değerlendirmesiyle aynı tx'te.
+    const caseLawyer = await this.withCasePermissionGrantAuthority(tenantId, userId, data.canSign !== undefined, (db) =>
+      db.caseLawyer
       .create({
         data: {
           caseId,
@@ -3416,7 +3451,8 @@ export class CaseService {
       })
       .catch((e) => {
         throw this.toCaseLawyerConflict(e);
-      });
+      }),
+    );
 
     // ASSIGN-4c: avukat eklemesi CASE_LAWYER CREATE olarak audit'lenir.
     await this.auditService.log({
@@ -3638,15 +3674,19 @@ export class CaseService {
     if (data.receiveNotifications !== undefined) updateData.receiveNotifications = data.receiveNotifications;
     if (data.notes !== undefined) updateData.notes = data.notes;
 
-    const updated = await this.prisma.caseStaff.update({
-      where: { id: caseStaffId },
-      data: updateData,
-      include: {
-        staffMember: {
-          select: { id: true, firstName: true, lastName: true, staffType: true },
+    // K4-2: personel yetki alanı varsa yazı kilitli F01 değerlendirmesiyle aynı tx'te.
+    const grantsStaffPermission = data.canEdit !== undefined || data.canApprove !== undefined || data.canView !== undefined;
+    const updated = await this.withCasePermissionGrantAuthority(tenantId, userId, grantsStaffPermission, (db) =>
+      db.caseStaff.update({
+        where: { id: caseStaffId },
+        data: updateData,
+        include: {
+          staffMember: {
+            select: { id: true, firstName: true, lastName: true, staffType: true },
+          },
         },
-      },
-    });
+      }),
+    );
 
     // Audit (ASSIGN-3a): personel rol/yetki güncellemesi (add/remove audit AYRI iş).
     await this.auditService.log({

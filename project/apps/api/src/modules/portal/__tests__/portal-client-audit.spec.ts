@@ -47,7 +47,10 @@ function build(over: any = {}) {
   if (over.audit) Object.assign(audit, over.audit);
   // Task 10-S: officeApproval eligible:true varsayılan (bu dosyanın odağı audit davranışı, capability
   // DEĞİL) — yalnız "actor yoksa" testi bilerek eligible kontrolüne HİÇ ULAŞMAZ (fail-closed önce).
-  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+  const officeApproval = {
+    isApproverEligible: jest.fn().mockResolvedValue(true),
+    isApproverEligibleInTx: jest.fn().mockResolvedValue(true), // K4-3: kilitli tx içi yetkili karar
+  };
   const svc = new PortalService(prisma as any, {} as any, audit as any, officeApproval as any, {} as any, {} as any);
   return { svc, prisma, tx, audit, officeApproval };
 }

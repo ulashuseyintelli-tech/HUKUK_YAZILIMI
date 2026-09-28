@@ -5,7 +5,10 @@ const TENANT = 't-1';
 const ACTOR = { userId: 'u-1' };
 
 function buildApproval(eligible = true) {
-  return { isApproverEligible: jest.fn().mockResolvedValue(eligible) } as any;
+  return {
+    isApproverEligible: jest.fn().mockResolvedValue(eligible),
+    isApproverEligibleInTx: jest.fn().mockResolvedValue(eligible), // K4-4: kilitli tx içi yetkili karar
+  } as any;
 }
 
 // A1A: audit mock — capability/lifecycle testleri etkilenmez, yalnız yeni audit-yazımı testleri kullanır.

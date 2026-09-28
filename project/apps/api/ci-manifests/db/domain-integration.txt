@@ -361,3 +361,8 @@ src/modules/debtor/__tests__/debtor-cross-case-notification.integration.spec.ts
 src/modules/summary-engine/__tests__/allocation-evidence-qualification.db-gated.integration.spec.ts
 src/modules/summary-engine/__tests__/allocation-representative-replay.db-gated.integration.spec.ts
 src/scripts/__tests__/rcv-ws04-p03-allocation-replay-launch.db-gated.integration.spec.ts
+
+#   K4-2..4-GRANT-AUTHORITY-REVOCATION-RACE-R01 (owner GO 2026-09-28): yetki verme / erisim acma yazilari
+#     (K2 dosya yetkisi, avukat delegasyonu/rutbe, portal hesabi, ucret sozlesmesi) tx icinde Lawyer->User FOR SHARE
+#     + guncel satirdan ayni kural; tx ici yetki kapatilinca 6 test kirilir.
+src/modules/office-approval/__tests__/grant-authority-revocation-race.db-gated.integration.spec.ts

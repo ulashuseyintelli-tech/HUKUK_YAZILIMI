@@ -71,6 +71,7 @@ export class CaseFeeAgreementService {
     const caseId = await this.resolveCaseId(input.caseClientId);
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.assertCanManageInTx(tx, actor.userId, tenantId); // K4-4: ilk yazmadan ÖNCE
       const existingActive = await tx.caseFeeAgreement.findFirst({
         where: { tenantId, caseClientId: input.caseClientId, status: FeeAgreementStatus.ACTIVE },
         select: { id: true },
@@ -140,6 +141,7 @@ export class CaseFeeAgreementService {
     const norm = this.validateFeeShape(input);
 
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.assertCanManageInTx(tx, actor.userId, tenantId); // K4-4: ilk yazmadan ÖNCE
       const current = await tx.caseFeeAgreement.findFirst({
         where: { id: agreementId, tenantId },
         select: {
@@ -229,6 +231,7 @@ export class CaseFeeAgreementService {
     await this.assertCanManage(actor.userId, tenantId);
 
     await this.prisma.$transaction(async (tx) => {
+      await this.assertCanManageInTx(tx, actor.userId, tenantId); // K4-4: ilk yazmadan ÖNCE
       // A1A: oldValues snapshot — tx üzerinden (transaction-tutarlı okuma). updateMany'nin
       // count-tabanlı ACTIVE/yok-ayrımına DOKUNMAZ (aynı where + aynı Conflict davranışı korunur;
       // bu yalnız audit zenginleştirmesi, bulunamazsa oldValues eksik kalır ama akış değişmez).
@@ -365,6 +368,19 @@ export class CaseFeeAgreementService {
   /** Mutasyon yetkisi: PARTNER / yetkilendirilmiş avukat (isApproverEligible). Değilse 403. */
   private async assertCanManage(userId: string, tenantId: string): Promise<void> {
     if (!(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        'Ücret sözleşmesi yönetimi için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir)',
+      );
+    }
+  }
+
+  /**
+   * K4-4 (owner GO 2026-09-28) — ücret sözleşmesi mutasyonunun (dağıtım tutarlarını belirler) transaction İÇİNDEKİ
+   * yetkili kontrolü: aktör satırları kilitli, AYNI yüklem (`isApproverEligible`). Tx dışındaki `assertCanManage`
+   * ucuz erken-fail olarak kalır; iptal edilmekte olan aktörün eşzamanlı sözleşme yazısı kalıcı olamaz.
+   */
+  private async assertCanManageInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<void> {
+    if (!(await this.officeApproval.isApproverEligibleInTx(tx, userId, tenantId))) {
       throw new ForbiddenException(
         'Ücret sözleşmesi yönetimi için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir)',
       );

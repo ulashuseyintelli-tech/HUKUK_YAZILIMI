@@ -23,7 +23,13 @@ const build = (opts: { self?: Record<string, unknown>; actorUser?: unknown } = {
       findMany: jest.fn().mockResolvedValue([]), // duplicate guard → eşleşme yok
       update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...self, ...data })),
     },
-    user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser ?? null) }, // actor PARTNER lookup
+    // actor PARTNER lookup. K4-2: tx içi yetkili kontrol ADMIN'i de kilitli güncel satırdan okur.
+    user: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.id === "admin1" ? { role: "ADMIN", tenantId: TENANT, isActive: true, lawyer: null } : (opts.actorUser ?? null),
+      ),
+    },
+    $queryRaw: jest.fn(async () => []), // K4-2: aktör Lawyer → User FOR SHARE kilidi
     // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
     $transaction: jest.fn(async (cb: any) => cb(prisma)),
   };
@@ -45,7 +51,7 @@ describe("H2 LawyerService — privileged field guard (lawyerRank/defaultPermiss
     await svc.update(TENANT, LAWYER_ID, { lawyerRank: "PARTNER" as never }, ADMIN);
     expect(prisma.lawyer.update).toHaveBeenCalledTimes(1);
     expect(prisma.lawyer.update.mock.calls[0][0].data.lawyerRank).toBe("PARTNER");
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1); // K4-2: yetkili kontrol yazma tx'inde kilitli GÜNCEL satırdan (ADMIN dahil); tx dışı kısa yol erken-fail
   });
 
   it("ADMIN dört alanı BİRLİKTE değiştirir → tek guard geçişiyle hepsi yazılır", async () => {
@@ -72,7 +78,7 @@ describe("H2 LawyerService — privileged field guard (lawyerRank/defaultPermiss
   it("linkli PARTNER avukat defaultPermissions değiştirebilir → yazılır", async () => {
     const { svc, prisma } = build({ actorUser: partnerUser });
     await svc.update(TENANT, LAWYER_ID, { defaultPermissions: { canSyncUYAP: true } }, PARTNER_ACTOR);
-    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(2); // K4-2: yetkili kontrol yazma tx'inde kilitli GÜNCEL satırdan (ADMIN dahil); tx dışı kısa yol erken-fail
     expect(prisma.lawyer.update.mock.calls[0][0].data.defaultPermissions).toEqual({ canSyncUYAP: true });
   });
 
