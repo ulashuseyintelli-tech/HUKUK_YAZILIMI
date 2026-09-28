@@ -130,7 +130,8 @@ describe("PortalService — CLIENT-P2-U02 tokenVersion revocation trigger'ları"
     await svc.disablePortalUser("c1", "T1", { userId: "u-admin" });
 
     const call = tx.clientPortalUser.updateMany.mock.calls[0][0];
-    expect(call.data).toEqual({ isActive: false, tokenVersion: { increment: 1 } });
+    // D5-SEC-R01: bekleyen sıfırlama token'ı da AYNI update'te geçersizleşir.
+    expect(call.data).toEqual({ isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null });
   });
 
   it("[7] reactivate: isActive=true + yeni şifre ile AYNI update içinde tokenVersion:{increment:1} (eski JWT dirilmez)", async () => {

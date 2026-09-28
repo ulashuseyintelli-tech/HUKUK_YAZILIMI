@@ -42,6 +42,7 @@ src/modules/auth/__tests__/auth-register-seed.spec.ts
 src/modules/auth/__tests__/auth-tenant-aware-login.spec.ts
 src/modules/auth/__tests__/auth-tokenversion-revocation.spec.ts
 src/modules/auth/guards/__tests__/credential-recovery-rate-limit.guard.spec.ts
+src/modules/auth/guards/__tests__/portal-rate-limit-edge-ip.spec.ts
 src/modules/auth/guards/__tests__/viewer-write-deny.guard.spec.ts
 src/modules/auth/invite/__tests__/user-invite.service.spec.ts
 src/modules/auth/password-reset/__tests__/password-reset.service.spec.ts

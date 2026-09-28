@@ -26,8 +26,9 @@ import { PortalService } from "./portal.service";
 import { ClientFinancialDisclosurePortalService } from "./client-financial-disclosure-portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { LoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
+import { PortalLoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
 import { CredentialRecoveryRateLimitGuard } from "../auth/guards/credential-recovery-rate-limit.guard";
+import { PortalResetPasswordDto } from "./dto/portal-password.dto";
 
 // Dosya yükleme ayarları
 //
@@ -75,7 +76,7 @@ export class PortalController {
    * POST /api/portal/login
    */
   @Post("login")
-  @UseGuards(LoginRateLimitGuard)
+  @UseGuards(PortalLoginRateLimitGuard)
   async login(@Body() body: { email: string; password: string }) {
     return this.portalService.login(body.email, body.password);
   }
@@ -96,7 +97,7 @@ export class PortalController {
    */
   @Post("reset-password")
   @UseGuards(CredentialRecoveryRateLimitGuard)
-  async resetPassword(@Body() body: { token: string; password: string }) {
+  async resetPassword(@Body() body: PortalResetPasswordDto) {
     return this.portalService.resetPassword(body.token, body.password);
   }
 
