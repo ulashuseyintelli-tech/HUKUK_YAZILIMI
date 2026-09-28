@@ -51,7 +51,7 @@ function sanitizeValue(field: string, value: unknown): unknown {
 export const CASE_DEBTOR_TRACKED_FIELDS = [
   'role', 'liabilityAmount', 'liabilityType', 'notificationMode', 'selectedAddressId',
   'prepareNotification', 'ilanenJustification', 'debtorLawyerId', 'debtorLawyerName',
-  'debtorLawyerBarNo', 'caseNote',
+  'debtorLawyerBarNo', 'caseNote', 'avalForDebtorId',
 ];
 
 export interface CaseDebtorFieldDiffEntry {

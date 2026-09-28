@@ -29,6 +29,12 @@ import { CaseInstrumentExactRecordResolverService, type CekRecordCalculationInpu
 import { CekLegalBasisReleaseResolverService } from './cek-legal-basis-release.resolver';
 import { computeCheckPenaltyMinor } from './cek-penalty';
 import { ClaimItemFormationAuthorizationAdapter } from './claim-item-formation-authorization.adapter';
+import {
+  isCekLiabilityStillValid,
+  splitCekLiability,
+  type CekCaseDebtorRoleRow,
+  type CekLiabilitySplit,
+} from './cek-liability-roles';
 
 export const CEK_AUTO_GENERATE_FORMATION_ENABLED_ENV = 'RECEIVABLE_CEK_AUTO_GENERATE_FORMATION_ENABLED';
 export const CEK_R2_DRAFT_LEGAL_CONTENT_ALLOWED_ENV = 'RECEIVABLE_CEK_R2_DRAFT_CONTENT_ALLOWED';
@@ -68,6 +74,8 @@ type CekFormationComponent = {
   readonly subtypeCode: 'CHECK_PRINCIPAL' | 'CHECK_PENALTY';
   readonly legalBasisCode: 'TTK_CEK_BEDELI' | 'TTK_CEK_TAZMINATI';
   readonly amountMinor: bigint;
+  /** K3-L: kalem bazlı sorumlu borçlular (bedel ve tazminat kümeleri FARKLI olabilir). */
+  readonly liableDebtorIds: readonly string[];
 };
 
 interface CekAutoGenerateCommand {
@@ -166,9 +174,10 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
       });
     }
     this.assertClientFiguresMatch(dto, cek);
-    await this.assertCaseDebtors(this.prisma, command.caseId, command.liableDebtorIds);
+    // K3-L: istemcinin listesi "takip edilen borçlular"dır; kalem kümeleri SUNUCUDA rollerden ayrılır.
+    const liability = splitCekLiability(await this.caseDebtorRoles(this.prisma, command.caseId), command.liableDebtorIds);
     await this.assertNoPendingFormation(tenantId, command.instrumentId);
-    const components = await this.components(tenantId, command, cek);
+    const components = await this.components(tenantId, command, cek, liability);
 
     const now = new Date(this.clock());
     const admission = new HumanClaimItemFormationAdmissionService(
@@ -201,7 +210,7 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
               minorUnit: cek.minorUnit,
             },
             effectiveAt: cek.bounceDate,
-            liabilityContext: { payload: { liabilityType: 'TAM', liableDebtorRefs: [...command.liableDebtorIds] } },
+            liabilityContext: { payload: { liabilityType: 'TAM', liableDebtorRefs: [...component.liableDebtorIds] } },
           },
           { sourceSlot: `CASE_INSTRUMENT:${component.itemType}` },
         ),
@@ -210,7 +219,7 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
     const result = await this.adapter.createBatchAtomic({
       batchIdempotencyKey: command.idempotencyKey,
       items: prepared,
-      approvalReason: this.approvalReason(cek, components, command.liableDebtorIds.length),
+      approvalReason: await this.approvalReason(tenantId, cek, components),
       authorizeInTransaction: (tx) =>
         this.authorization.assertAuthorizedInTransaction(tx, { tenantId, caseId: command.caseId, actorUserId }),
     });
@@ -259,12 +268,37 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
       tenantId: req.tenantId,
       approvalRequestId: req.id,
     });
+    // K3-L: kalem bazlı sorumluluk GÜNCEL ve KİLİTLİ rollerle yeniden doğrulanır (onay beklerken rol, lehine aval
+    // veya etkinlik değiştiyse eski içerik uygulanmaz; karar da geri alınır).
+    const roles = await this.caseDebtorRoles(tx, reference.caseId, true);
     const created = await tx.claimItem.findMany({
       where: { tenantId: req.tenantId, id: { in: formed.items.map((item) => item.claimItemId) } },
-      select: { liableDebtorIds: true },
+      select: { itemType: true, isAllDebtorsLiable: true, liableDebtorIds: true },
     });
-    const debtorIds = [...new Set(created.flatMap((item) => item.liableDebtorIds))];
-    await this.assertCaseDebtors(tx, reference.caseId, debtorIds, true);
+    for (const item of created) {
+      const itemType = item.itemType === ClaimItemType.PRINCIPAL || item.itemType === ClaimItemType.CHECK_PENALTY ? item.itemType : null;
+      if (!itemType || item.isAllDebtorsLiable || !isCekLiabilityStillValid(roles, itemType, item.liableDebtorIds)) {
+        throw new ConflictException({
+          code: 'LIABILITY_ROLE_CHANGED',
+          message: 'Onay beklerken sorumlu borçlunun dosyadaki rolü veya etkinliği değişti; talep yeniden oluşturulmalı.',
+        });
+      }
+    }
+  }
+
+  private async caseDebtorRoles(
+    db: Prisma.TransactionClient | PrismaService,
+    caseId: string,
+    lock = false,
+  ): Promise<CekCaseDebtorRoleRow[]> {
+    if (lock) {
+      return (db as Prisma.TransactionClient).$queryRaw<CekCaseDebtorRoleRow[]>`SELECT "debtorId", "role"::text AS "role", "avalForDebtorId", "lifecycleStatus"::text AS "lifecycleStatus" FROM "CaseDebtor" WHERE "caseId" = ${caseId} ORDER BY "id" FOR SHARE`;
+    }
+    return db.caseDebtor.findMany({
+      where: { caseId },
+      select: { debtorId: true, role: true, avalForDebtorId: true, lifecycleStatus: true },
+      orderBy: { id: 'asc' },
+    });
   }
 
   private readCommand(dto: AutoGenerateClaimItemsDto): CekAutoGenerateCommand {
@@ -312,29 +346,6 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
     }
   }
 
-  private async assertCaseDebtors(
-    db: Prisma.TransactionClient | PrismaService,
-    caseId: string,
-    debtorIds: readonly string[],
-    lock = false,
-  ): Promise<void> {
-    if (debtorIds.length === 0) {
-      throw new ConflictException({ code: 'LIABLE_DEBTORS_REQUIRED', message: 'Sorumlu borçlu bulunamadı.' });
-    }
-    const sorted = [...debtorIds].sort();
-    const rows = lock
-      ? await (db as Prisma.TransactionClient).$queryRaw<{ debtorId: string }[]>`SELECT "debtorId" FROM "CaseDebtor" WHERE "caseId" = ${caseId} AND "lifecycleStatus" = 'ACTIVE' AND "debtorId" IN (${Prisma.join(sorted)}) FOR SHARE`
-      : await db.caseDebtor.findMany({
-          where: { caseId, lifecycleStatus: 'ACTIVE', debtorId: { in: sorted } },
-          select: { debtorId: true },
-          distinct: ['debtorId'],
-        });
-    if (new Set(rows.map((row) => row.debtorId)).size !== sorted.length) {
-      const body = { code: 'LIABLE_DEBTOR_NOT_IN_CASE', message: 'Sorumlu borçlu bu dosyanın etkin borçlusu değil.' };
-      throw lock ? new ConflictException(body) : new BadRequestException(body);
-    }
-  }
-
   /** Aynı çek için onay bekleyen oluşum talebi varken ikinci talep açılmaz (kesin güvence finalizer + kaynak kilidi). */
   private async assertNoPendingFormation(tenantId: string, instrumentId: string): Promise<void> {
     const intents = await this.prisma.claimItemFormationIntent.findMany({
@@ -357,6 +368,7 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
     tenantId: string,
     command: CekAutoGenerateCommand,
     cek: CekRecordCalculationInputsV1,
+    liability: CekLiabilitySplit,
   ): Promise<CekFormationComponent[]> {
     const bound = await this.prisma.claimItem.findMany({
       where: {
@@ -382,6 +394,7 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
         subtypeCode: 'CHECK_PRINCIPAL',
         legalBasisCode: 'TTK_CEK_BEDELI',
         amountMinor: cek.amountMinor,
+        liableDebtorIds: liability.principalDebtorIds,
       });
     }
     components.push({
@@ -390,6 +403,7 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
       subtypeCode: 'CHECK_PENALTY',
       legalBasisCode: 'TTK_CEK_TAZMINATI',
       amountMinor: penaltyMinor,
+      liableDebtorIds: liability.penaltyDebtorIds,
     });
     return components;
   }
@@ -433,26 +447,34 @@ export class CekAutoGenerateFormationService implements OnModuleInit {
     };
   }
 
-  /** Onay kutusu için okunur özet (bağlayıcı değil; tutarlar sunucuda hesaplanmış değerlerdir). */
-  private approvalReason(
+  /**
+   * Onay kutusu için okunur özet (bağlayıcı değil; tutarlar ve kalem bazlı sorumlu borçlular sunucuda belirlenmiş
+   * değerlerdir). En fazla 1000 karakter (OfficeApprovalRequest.reason sınırı).
+   */
+  private async approvalReason(
+    tenantId: string,
     cek: CekRecordCalculationInputsV1,
     components: readonly CekFormationComponent[],
-    debtorCount: number,
-  ): string {
+  ): Promise<string> {
     const money = (minor: bigint) => {
       const digits = minor.toString().padStart(3, '0');
       return `${digits.slice(0, -2)}.${digits.slice(-2)} ${cek.currency}`;
     };
+    const ids = [...new Set(components.flatMap((component) => component.liableDebtorIds))];
+    const debtors = await this.prisma.debtor.findMany({ where: { tenantId, id: { in: ids } }, select: { id: true, name: true } });
+    const names = new Map(debtors.map((debtor) => [debtor.id, debtor.name]));
+    const liable = (component: CekFormationComponent) =>
+      component.liableDebtorIds.map((id) => names.get(id) ?? id).join(', ');
     const lines = components.map((component) =>
       component.itemType === 'PRINCIPAL'
-        ? `Çek bedeli ${money(component.amountMinor)}`
-        : `Çek tazminatı (%${SUPPORTED_CHECK_PENALTY_RATE_PERCENT}) ${money(component.amountMinor)}`,
+        ? `Çek bedeli ${money(component.amountMinor)} (sorumlu: ${liable(component)})`
+        : `Çek tazminatı (%${SUPPORTED_CHECK_PENALTY_RATE_PERCENT}) ${money(component.amountMinor)} (sorumlu: ${liable(component)})`,
     );
-    return (
+    const text =
       `Çek ${cek.serialNo} (tutar ${money(cek.amountMinor)}, karşılıksız ${String(cek.bounceDate).slice(0, 10)}) için ` +
-      `alacak kalemi oluşumu: ${lines.join('; ')}; sorumlu borçlu sayısı ${debtorCount}. ` +
-      'Taslak hukuki içerik (RCV-LB-R2-CEK) — owner hukuki onayı bekler.'
-    );
+      `alacak kalemi oluşumu: ${lines.join('; ')}. ` +
+      'Taslak hukuki içerik (RCV-LB-R2-CEK) — owner hukuki onayı bekler.';
+    return text.length <= 1000 ? text : `${text.slice(0, 997)}...`;
   }
 
   private badRequest(code: string, message: string): never {
