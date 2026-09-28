@@ -18,9 +18,9 @@ export class PayoutApprovalPolicy {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Bool predikat — THROW ETMEZ. office-approval'ın generic approve()/reject() dispatcher'ı bunu kullanır. */
-  async isEligible(userId: string, tenantId: string): Promise<boolean> {
+  async isEligible(userId: string, tenantId: string, db: Prisma.TransactionClient = this.prisma): Promise<boolean> {
     try {
-      await this.assertEligible(userId, tenantId);
+      await this.assertEligible(userId, tenantId, db);
       return true;
     } catch {
       return false;
