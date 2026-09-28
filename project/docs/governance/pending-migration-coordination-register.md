@@ -1867,8 +1867,8 @@ Merkezi ledger: `OFFICE-DELIVERY-MANIFEST.md` §15.4 (MIG-C36-APPLY = APPLIED).
 |---|---|
 | Migration | `20260928120000_claim_formation_batch_approval_position` |
 | Program / task | RECEIVABLE / K3 AUTO-GENERATE FORMATION PR-1 (owner GO 2026-09-28 "K3 alacak kalemi üretim ve onay akışını çalışır hale getir") |
-| İçerik | `ClaimItemFormationIntent` + `ClaimFormationSnapshot`: `approvalBatchPosition INT NOT NULL DEFAULT 0` + CHECK 0..7; `(tenantId, approvalRequestId)` UNIQUE → `(tenantId, approvalRequestId, approvalBatchPosition)` UNIQUE (her iki tablo); `validate_claim_formation_snapshot()` gövdesi önceki sürümle AYNI + konum karşılaştırması |
-| Gerekçe | Tek onay talebinin birden çok intent'i (aynı belgeden çek bedeli + tazminat) bağlayıp onayda hepsini tek transaction'da oluşturması; eski tekillik bir onay = bir kalem idi |
+| İçerik | `ClaimItemFormationIntent` + `ClaimFormationSnapshot`: `approvalBatchPosition INT NOT NULL DEFAULT 0` + CHECK 0..7; `(tenantId, approvalRequestId)` UNIQUE → `(tenantId, approvalRequestId, approvalBatchPosition)` UNIQUE (her iki tablo); `validate_claim_formation_snapshot()` gövdesi önceki sürümle AYNI + konum karşılaştırması; `claim_formation_intent_source_check` / `claim_formation_snapshot_source_check` → `sourceType IN ('CASE_DOCUMENT','CASE_INSTRUMENT')` (yalnız izin kümesi genişler) |
+| Gerekçe | Tek onay talebinin birden çok intent'i bağlayıp onayda hepsini tek transaction'da oluşturması (eski tekillik bir onay = bir kalem idi); owner kararı 2026-09-28 "çek kaydı kaynak + yalnız tazminat" gereği formation kaynağının sunucudaki çek kaydı (CaseInstrument) sürümü olabilmesi |
 | Existing migration mutation | NONE |
 | Default / backfill / data mutation | Yalnız kolon DEFAULT 0; backfill ve satır güncellemesi NONE (mevcut satırlar konum 0 ile yeni tekilliği zaten sağlar) |
 | Index / trigger | 2 UNIQUE index değişir (DROP + CREATE); snapshot doğrulama fonksiyonu `CREATE OR REPLACE` |

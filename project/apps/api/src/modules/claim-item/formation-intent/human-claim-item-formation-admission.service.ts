@@ -15,8 +15,8 @@ import {
   type HumanClaimItemFormationAdmissionContext,
 } from './claim-item-formation-intent.contract';
 import {
-  buildCaseDocumentSlotSourceIdentityHash,
   buildCaseDocumentSourceIdentityHash,
+  buildSlotSourceIdentityHash,
   buildClaimItemFormationIntentChecksum,
   canonicalFormationPayload,
   domainSeparatedFormationHash,
@@ -116,6 +116,7 @@ export class HumanClaimItemFormationAdmissionService {
     const source = await this.documentResolver.resolveExactVersion({
       tenantId: context.tenantId,
       caseId: command.caseId,
+      sourceType: command.source.sourceType,
       documentId: command.source.documentId,
       requestedVersionId: command.source.requestedVersionId,
     });
@@ -151,7 +152,11 @@ export class HumanClaimItemFormationAdmissionService {
     }
     const expiresAt = new Date(createdAt.getTime() + CLAIM_ITEM_FORMATION_EXPIRY_MS);
     const sourceSlot = options.sourceSlot ?? CLAIM_ITEM_FORMATION_SOURCE_SLOT;
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(sourceSlot)) {
+    if (
+      !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(sourceSlot) ||
+      // CASE_INSTRUMENT yalnız slot'lu kimlik (V2) ile; V1 belge kaynağına özgüdür.
+      (source.sourceType === 'CASE_INSTRUMENT' && options.sourceSlot === undefined)
+    ) {
       throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
     }
     const sourceIdentityVersion =
@@ -165,10 +170,11 @@ export class HumanClaimItemFormationAdmissionService {
             caseId: command.caseId,
             documentId: source.documentId,
           })
-        : buildCaseDocumentSlotSourceIdentityHash({
+        : buildSlotSourceIdentityHash({
             tenantId: context.tenantId,
             caseId: command.caseId,
-            documentId: source.documentId,
+            sourceType: source.sourceType,
+            sourceId: source.documentId,
             sourceSlot,
           });
 
@@ -206,10 +212,18 @@ export class HumanClaimItemFormationAdmissionService {
       caseId: command.caseId,
       actorUserId: context.actorUserId,
       idempotencyKey: command.idempotencyKey,
-      source: Object.freeze({
-        documentId: command.source.documentId,
-        requestedVersionId: command.source.requestedVersionId,
-      }),
+      // Belge kaynağında normalize girdi AYNEN (mevcut checksum'lar değişmez); çek kaydında kaynak türü de bağlanır.
+      source:
+        command.source.sourceType === 'CASE_DOCUMENT'
+          ? Object.freeze({
+              documentId: command.source.documentId,
+              requestedVersionId: command.source.requestedVersionId,
+            })
+          : Object.freeze({
+              sourceType: command.source.sourceType,
+              documentId: command.source.documentId,
+              requestedVersionId: command.source.requestedVersionId,
+            }),
       component: command.component,
       legalBasis: command.legalBasis,
       money: Object.freeze({
@@ -268,7 +282,7 @@ export class HumanClaimItemFormationAdmissionService {
       correlationId: context.correlationId,
       causationId: context.causationId ?? null,
       sourceIdentityVersion,
-      sourceType: 'CASE_DOCUMENT',
+      sourceType: source.sourceType,
       sourceId: source.documentId,
       sourceSlot,
       sourceIdentityHash,
@@ -318,13 +332,17 @@ export class HumanClaimItemFormationAdmissionService {
     source: ExactCaseDocumentSourceV1 | null,
     tenantId: string,
     caseId: string,
-    requested: { readonly documentId: string; readonly requestedVersionId: string },
+    requested: {
+      readonly sourceType: 'CASE_DOCUMENT' | 'CASE_INSTRUMENT';
+      readonly documentId: string;
+      readonly requestedVersionId: string;
+    },
   ): asserts source is ExactCaseDocumentSourceV1 {
     if (!source) throw new ClaimItemFormationAdmissionError('FORMATION_SOURCE_UNAVAILABLE');
     if (
       source.tenantId !== tenantId ||
       source.caseId !== caseId ||
-      source.sourceType !== 'CASE_DOCUMENT' ||
+      source.sourceType !== requested.sourceType ||
       source.documentId !== requested.documentId ||
       source.versionId !== requested.requestedVersionId ||
       !source.availableForFormation

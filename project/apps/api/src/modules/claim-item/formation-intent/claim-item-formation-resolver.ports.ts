@@ -73,14 +73,20 @@ export abstract class HumanClaimItemFormationAuthorizationPort {
 export interface ResolveExactCaseDocumentInput {
   readonly tenantId: string;
   readonly caseId: string;
+  /** K3: verilmezse CASE_DOCUMENT; CASE_INSTRUMENT'ta `documentId` çek kaydının kimliğidir. */
+  readonly sourceType?: 'CASE_DOCUMENT' | 'CASE_INSTRUMENT';
   readonly documentId: string;
   readonly requestedVersionId: string;
 }
 
+/**
+ * Kesin kaynak sürümü. K3 (owner kararı 2026-09-28): `sourceType` CASE_INSTRUMENT olduğunda `documentId` çek kaydının
+ * (CaseInstrument) kimliği, parmak izi alanları o kaydın değişmez sürümüdür.
+ */
 export interface ExactCaseDocumentSourceV1 {
   readonly tenantId: string;
   readonly caseId: string;
-  readonly sourceType: 'CASE_DOCUMENT';
+  readonly sourceType: 'CASE_DOCUMENT' | 'CASE_INSTRUMENT';
   readonly documentId: string;
   readonly versionId: string;
   readonly version: string;

@@ -13,6 +13,8 @@ export const CLAIM_ITEM_INGRESS_SOURCES = [
   'DUE',
   'CASE_INSTRUMENT',
   'CASE_DOCUMENT',
+  // K3 (owner kararı 2026-09-28): insan onaylı, çek kaydı (CaseInstrument) sürümünden formation.
+  'CASE_INSTRUMENT_FORMATION',
   'RULE_ENGINE',
   'DOCUMENT_GENERATOR',
   'PRECAUTIONARY_COST',
@@ -81,6 +83,14 @@ export const CLAIM_ITEM_INGRESS_MAPPING = Object.freeze({
   CASE_DOCUMENT: mappingEntry({
     canonicalSourceType: 'CASE_DOCUMENT',
     envelopeSourceType: 'USER_DOCUMENT',
+    actorType: 'HUMAN',
+    policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
+    writerRoute: null,
+    executionBoundary: 'OFFICE_APPROVAL_EXECUTOR',
+  }),
+  CASE_INSTRUMENT_FORMATION: mappingEntry({
+    canonicalSourceType: 'CASE_INSTRUMENT',
+    envelopeSourceType: 'USER_CASE_INSTRUMENT',
     actorType: 'HUMAN',
     policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
     writerRoute: null,
@@ -233,9 +243,9 @@ export function buildClaimItemSourceProvenanceV1(
     if (envelope.actor.type !== 'SYSTEM' || envelope.actor.system !== mapping.writerRoute) {
       fail(`ingress ${input.ingress} does not match its P03 writer route`);
     }
-  } else if (input.ingress === 'CASE_DOCUMENT') {
+  } else if (input.ingress === 'CASE_DOCUMENT' || input.ingress === 'CASE_INSTRUMENT_FORMATION') {
     if (envelope.actor.type !== 'HUMAN' || envelope.authority.approvalRequestId === undefined) {
-      fail('CASE_DOCUMENT requires HUMAN actor and OfficeApproval authority');
+      fail(`${input.ingress} requires HUMAN actor and OfficeApproval authority`);
     }
   } else if (
     input.ingress === 'BACKFILL' &&

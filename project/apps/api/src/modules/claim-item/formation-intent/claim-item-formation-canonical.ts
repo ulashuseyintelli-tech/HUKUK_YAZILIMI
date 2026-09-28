@@ -5,7 +5,9 @@ import {
   CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION,
   CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2,
   CLAIM_ITEM_FORMATION_SOURCE_SLOT,
+  CLAIM_ITEM_FORMATION_SOURCE_TYPES,
   type ClaimFormationJsonValue,
+  type ClaimItemFormationSourceType,
 } from './claim-item-formation-intent.contract';
 
 export interface CanonicalPayload<T extends ClaimFormationJsonValue> {
@@ -55,10 +57,11 @@ export function buildCaseDocumentSourceIdentityHash(input: {
  * taşır; böylece `claim_formation_snapshot_source_version_unique` ve kaynak kimliği tetikleyicisi bileşen başına
  * tek formation'ı zorlar. Alan etki ayrımı (`sourceIdentityVersion`) V1 ile çakışmayı imkânsız kılar.
  */
-export function buildCaseDocumentSlotSourceIdentityHash(input: {
+export function buildSlotSourceIdentityHash(input: {
   readonly tenantId: string;
   readonly caseId: string;
-  readonly documentId: string;
+  readonly sourceType: ClaimItemFormationSourceType;
+  readonly sourceId: string;
   readonly sourceSlot: string;
 }): string {
   return stableJsonHash({
@@ -66,8 +69,8 @@ export function buildCaseDocumentSlotSourceIdentityHash(input: {
     sourceIdentityVersion: CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2,
     tenantId: input.tenantId,
     caseId: input.caseId,
-    sourceType: 'CASE_DOCUMENT',
-    sourceId: input.documentId,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
     sourceSlot: input.sourceSlot,
   });
 }
@@ -79,12 +82,15 @@ export function buildCaseDocumentSlotSourceIdentityHash(input: {
 export function rebuildFormationSourceIdentityHash(input: {
   readonly tenantId: string;
   readonly caseId: string;
+  readonly sourceType: string;
   readonly sourceId: string;
   readonly sourceSlot: string;
   readonly sourceIdentityVersion: string;
 }): string | null {
+  if (!CLAIM_ITEM_FORMATION_SOURCE_TYPES.includes(input.sourceType as ClaimItemFormationSourceType)) return null;
   if (input.sourceIdentityVersion === CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION) {
-    if (input.sourceSlot !== CLAIM_ITEM_FORMATION_SOURCE_SLOT) return null;
+    // V1 yalnız belge kaynağı + sabit PRIMARY_EVIDENCE slot'u (değişmedi).
+    if (input.sourceType !== 'CASE_DOCUMENT' || input.sourceSlot !== CLAIM_ITEM_FORMATION_SOURCE_SLOT) return null;
     return buildCaseDocumentSourceIdentityHash({
       tenantId: input.tenantId,
       caseId: input.caseId,
@@ -92,10 +98,11 @@ export function rebuildFormationSourceIdentityHash(input: {
     });
   }
   if (input.sourceIdentityVersion === CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2) {
-    return buildCaseDocumentSlotSourceIdentityHash({
+    return buildSlotSourceIdentityHash({
       tenantId: input.tenantId,
       caseId: input.caseId,
-      documentId: input.sourceId,
+      sourceType: input.sourceType as ClaimItemFormationSourceType,
+      sourceId: input.sourceId,
       sourceSlot: input.sourceSlot,
     });
   }

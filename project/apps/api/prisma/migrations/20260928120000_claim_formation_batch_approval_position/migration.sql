@@ -4,6 +4,7 @@
 --
 -- Neden gerekli: (tenantId, approvalRequestId) intent ve snapshot'ta tekildi -> bir onay = bir kalem. Toplu atomik
 -- olusum icin konum (approvalBatchPosition) eklenir ve tekillik (tenantId, approvalRequestId, konum) olur.
+-- Ayrica kaynak turu CHECK'i CASE_INSTRUMENT'i de kabul eder (asagida).
 -- Geriye uyumlu: yeni kolon NOT NULL DEFAULT 0; mevcut satirlarin hepsi konum 0 ile eski tekilligi zaten sagladigi
 -- icin yeni tekillik ihlal edilmez; veri degismez, backfill yok. Tekli akis (konum 0) davranisi DEGISMEZ.
 -- Snapshot dogrulama tetikleyicisi konumu da intent ile birebir karsilastirir (asagida; govde onceki surumle AYNI,
@@ -18,6 +19,18 @@ CHECK ("approvalBatchPosition" BETWEEN 0 AND 7);
 ALTER TABLE "ClaimFormationSnapshot"
 ADD CONSTRAINT "claim_formation_snapshot_batch_position_check"
 CHECK ("approvalBatchPosition" BETWEEN 0 AND 7);
+
+-- Kaynak turu (owner karari 2026-09-28 "cek kaydi kaynak + yalniz tazminat"): formation kaynagi belge ya da
+-- sunucudaki cek kaydinin (CaseInstrument) degismez surumu olabilir. Yalniz izin kumesi genisler; mevcut satirlar
+-- ('CASE_DOCUMENT') gecerli kalir.
+ALTER TABLE "ClaimItemFormationIntent" DROP CONSTRAINT "claim_formation_intent_source_check";
+ALTER TABLE "ClaimItemFormationIntent"
+ADD CONSTRAINT "claim_formation_intent_source_check"
+CHECK ("sourceType" IN ('CASE_DOCUMENT', 'CASE_INSTRUMENT'));
+ALTER TABLE "ClaimFormationSnapshot" DROP CONSTRAINT "claim_formation_snapshot_source_check";
+ALTER TABLE "ClaimFormationSnapshot"
+ADD CONSTRAINT "claim_formation_snapshot_source_check"
+CHECK ("sourceType" IN ('CASE_DOCUMENT', 'CASE_INSTRUMENT'));
 
 DROP INDEX "ClaimItemFormationIntent_tenantId_approvalRequestId_key";
 CREATE UNIQUE INDEX "claim_formation_intent_approval_position_unique"

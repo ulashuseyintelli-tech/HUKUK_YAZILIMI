@@ -17,6 +17,13 @@ export const CLAIM_ITEM_FORMATION_SOURCE_SLOT = 'PRIMARY_EVIDENCE' as const;
  * tazminatı) üretildiğinde kaynak kimliği SLOT'u da içerir; V1 (sabit PRIMARY_EVIDENCE) değişmez ve geçerli kalır.
  */
 export const CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2 = 'ClaimItemSourceIdentityV2' as const;
+/**
+ * K3 (owner kararı 2026-09-28 "çek kaydı kaynak + yalnız tazminat"): formation kaynağı belge (CASE_DOCUMENT) ya da
+ * sunucudaki çek/senet kaydının değişmez sürümü (CASE_INSTRUMENT) olabilir. CASE_INSTRUMENT yalnız slot'lu kimlik
+ * (V2) ile kabul edilir.
+ */
+export const CLAIM_ITEM_FORMATION_SOURCE_TYPES = ['CASE_DOCUMENT', 'CASE_INSTRUMENT'] as const;
+export type ClaimItemFormationSourceType = (typeof CLAIM_ITEM_FORMATION_SOURCE_TYPES)[number];
 /** K3: tek OfficeApproval talebinin birden çok intent'i değişmez biçimde bağladığı toplu onay referansı. */
 export const CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_VERSION =
   'CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_V1' as const;
@@ -88,6 +95,8 @@ export interface HumanClaimItemFormationCommandV1 {
   readonly caseId: string;
   readonly idempotencyKey: string;
   readonly source: Readonly<{
+    /** Varsayılan CASE_DOCUMENT; CASE_INSTRUMENT'ta `documentId` çek kaydının (CaseInstrument) kimliğidir. */
+    sourceType: ClaimItemFormationSourceType;
     documentId: string;
     requestedVersionId: string;
   }>;
@@ -156,7 +165,7 @@ const TOP_LEVEL_KEYS = new Set([
   'effectiveAt',
   'liabilityContext',
 ]);
-const SOURCE_KEYS = new Set(['documentId', 'requestedVersionId']);
+const SOURCE_KEYS = new Set(['sourceType', 'documentId', 'requestedVersionId']);
 const COMPONENT_KEYS = new Set(['category', 'subtypeCode']);
 const LEGAL_BASIS_KEYS = new Set(['code', 'requestedVersion']);
 const MONEY_KEYS = new Set([
@@ -214,6 +223,7 @@ export function parseHumanClaimItemFormationCommand(
     caseId: requireOpaqueReference(record.caseId, 'FORMATION_CONTEXT_REQUIRED'),
     idempotencyKey: requireOpaqueReference(record.idempotencyKey, 'FORMATION_CONTEXT_REQUIRED'),
     source: Object.freeze({
+      sourceType: requireFormationSourceType(source.sourceType),
       documentId: requireOpaqueReference(source.documentId, 'FORMATION_CONTEXT_REQUIRED'),
       requestedVersionId: requireOpaqueReference(
         source.requestedVersionId,
@@ -291,6 +301,17 @@ function requireRecord(
 ): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail(code);
   return value as Record<string, unknown>;
+}
+
+function requireFormationSourceType(value: unknown): ClaimItemFormationSourceType {
+  if (value === undefined) return 'CASE_DOCUMENT';
+  if (
+    typeof value !== 'string' ||
+    !CLAIM_ITEM_FORMATION_SOURCE_TYPES.includes(value as ClaimItemFormationSourceType)
+  ) {
+    fail('FORMATION_CONTEXT_REQUIRED');
+  }
+  return value as ClaimItemFormationSourceType;
 }
 
 function assertExactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): void {

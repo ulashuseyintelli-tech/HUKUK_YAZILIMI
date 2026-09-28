@@ -172,16 +172,25 @@ describeWithDisposableDb('K3 toplu formation temeli (tek onay → çok kalem, at
     );
   }
 
-  async function prepareBatch(label: string, src: ExactCaseDocumentSourceV1, key = `k3-${label}-${randomUUID()}`) {
+  async function prepareBatch(
+    label: string,
+    src: ExactCaseDocumentSourceV1,
+    key = `k3-${label}-${randomUUID()}`,
+    kinds: readonly Component[] = ['PRINCIPAL', 'PENALTY'],
+  ) {
     const service = admission(src);
     const context = { tenantId, actorUserId: requesterUserId, correlationId: `k3-batch-${label}` };
+    const sourceRef =
+      src.sourceType === 'CASE_INSTRUMENT'
+        ? { sourceType: 'CASE_INSTRUMENT', documentId: src.documentId, requestedVersionId: src.versionId }
+        : { documentId: src.documentId, requestedVersionId: src.versionId };
     const component = async (kind: Component, amount: string) =>
       service.prepare(
         context,
         {
           caseId,
           idempotencyKey: `${key}:${kind}`,
-          source: { documentId: src.documentId, requestedVersionId: src.versionId },
+          source: sourceRef,
           component: {
             category: kind === 'PRINCIPAL' ? 'PRINCIPAL' : 'ANCILLARY',
             subtypeCode: kind === 'PRINCIPAL' ? 'INTERIM_MAINTENANCE' : 'DELAY_DAMAGE',
@@ -193,7 +202,9 @@ describeWithDisposableDb('K3 toplu formation temeli (tek onay → çok kalem, at
         },
         { sourceSlot: `CEK:${kind}` },
       );
-    return { key, items: [await component('PRINCIPAL', '1000000'), await component('PENALTY', '100000')] };
+    const items = [];
+    for (const kind of kinds) items.push(await component(kind, kind === 'PRINCIPAL' ? '1000000' : '100000'));
+    return { key, items };
   }
 
   async function approve(approvalRequestId: string) {
@@ -408,5 +419,121 @@ describeWithDisposableDb('K3 toplu formation temeli (tek onay → çok kalem, at
         snapshot.id,
       ),
     ).rejects.toThrow();
+  });
+
+  describe('çek kaydı kaynağı (CASE_INSTRUMENT, owner kararı 2026-09-28)', () => {
+    async function instrumentSource(label: string, withCanonicalPrincipal = false) {
+      const instrument = await prisma.caseInstrument.create({
+        data: {
+          tenantId,
+          caseId,
+          instrumentType: 'CEK',
+          serialNo: `K3-${label}`,
+          amount: 10000,
+          currency: 'TRY',
+          issueDate: new Date('2026-08-01T00:00:00.000Z'),
+          isBounced: true,
+          bounceDate: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      });
+      if (withCanonicalPrincipal) {
+        // POST /cases'in CASE_INSTRUMENT_GENERATOR ile ürettiği kanonik çek bedeli kalemini temsil eder.
+        await prisma.claimItem.create({
+          data: {
+            tenantId,
+            caseId,
+            itemType: 'PRINCIPAL',
+            originalAmount: 10000,
+            demandedAmount: 10000,
+            amount: 10000,
+            currency: 'TRY',
+            instrumentId: instrument.id,
+            liableDebtorIds: [],
+          },
+        });
+      }
+      const src: ExactCaseDocumentSourceV1 = {
+        tenantId,
+        caseId,
+        sourceType: 'CASE_INSTRUMENT',
+        documentId: instrument.id,
+        versionId: `civ:${label}`,
+        version: '1',
+        binaryContentHash: hash(`inst-binary-${label}`),
+        documentEnvelopeHash: hash(`inst-envelope-${label}`),
+        classificationHash: hash(`inst-classification-${label}`),
+        canonicalSourceFingerprint: hash(`inst-fingerprint-${label}`),
+        fingerprintAlgorithm: 'SHA-256',
+        fingerprintVersion: 'SyntheticInstrumentFingerprintV1',
+        fingerprintVerified: true,
+        documentType: 'CEK',
+        claimItemDocumentSourceType: 'CEK',
+        documentClassificationVersion: 'SyntheticClassificationV1',
+        lifecycleStatus: 'ACTIVE',
+        availabilityStatus: 'AVAILABLE',
+        availableForFormation: true,
+        evidenceClasses: ['SIGNED_CONTRACT'],
+        opaqueEvidenceRefs: [`case-instrument:${instrument.id}`],
+        resolutionContractVersion: 'SyntheticInstrumentResolutionV1',
+        resolutionHash: hash(`inst-resolution-${label}`),
+      };
+      return { instrument, src };
+    }
+
+    it('bedel + tazminat toplu onayla oluşur; kalemler çek kaydına (instrumentId) bağlı, belge alanı boş', async () => {
+      const { instrument, src } = await instrumentSource('both');
+      const batch = await prepareBatch('inst-both', src);
+      const { approval, intents } = await adapter.createBatchAtomic({ batchIdempotencyKey: batch.key, items: batch.items });
+      expect(intents.every((intent) => intent.sourceType === 'CASE_INSTRUMENT')).toBe(true);
+      await approve(approval.id);
+      await finalizeInTx(finalizer(src), approval.id);
+
+      const items = await prisma.claimItem.findMany({ where: { tenantId, instrumentId: instrument.id }, orderBy: { itemType: 'asc' } });
+      expect(items.map((item) => item.itemType).sort()).toEqual(['CHECK_PENALTY', 'PRINCIPAL']);
+      expect(items.every((item) => item.sourceDocumentId === null)).toBe(true);
+    });
+
+    it('yalnız tazminat: kanonik bedel kalemi varken tazminat eklenir, bedel iki kez sayılmaz', async () => {
+      const { instrument, src } = await instrumentSource('penalty-only', true);
+      const batch = await prepareBatch('inst-penalty', src, undefined, ['PENALTY']);
+      const { approval } = await adapter.createBatchAtomic({ batchIdempotencyKey: batch.key, items: batch.items });
+      await approve(approval.id);
+      await finalizeInTx(finalizer(src), approval.id);
+
+      const items = await prisma.claimItem.findMany({ where: { tenantId, instrumentId: instrument.id }, orderBy: { itemType: 'asc' } });
+      expect(items.map((item) => item.itemType).sort()).toEqual(['CHECK_PENALTY', 'PRINCIPAL']);
+    });
+
+    it('çift sayım koruması: kanonik bedel varken formation bedeli YAZILAMAZ ve toplu işlem tümüyle geri alınır', async () => {
+      const { instrument, src } = await instrumentSource('dup-principal', true);
+      const batch = await prepareBatch('inst-dup', src);
+      const { approval } = await adapter.createBatchAtomic({ batchIdempotencyKey: batch.key, items: batch.items });
+      await approve(approval.id);
+
+      await expect(finalizeInTx(finalizer(src), approval.id)).rejects.toThrow();
+      const items = await prisma.claimItem.findMany({ where: { tenantId, instrumentId: instrument.id } });
+      expect(items.map((item) => item.itemType)).toEqual(['PRINCIPAL']); // yalnız kanonik bedel; tazminat da yazılmadı
+      const after = await prisma.officeApprovalRequest.findUniqueOrThrow({ where: { id: approval.id } });
+      expect(after.executionStatus).toBe(OfficeApprovalExecutionStatus.NOT_RUN);
+    });
+
+    it('çek kaydı slot olmadan (V1 kimlik) kabul edilmez', async () => {
+      const { src } = await instrumentSource('no-slot');
+      await expect(
+        admission(src).prepare(
+          { tenantId, actorUserId: requesterUserId, correlationId: 'k3-no-slot' },
+          {
+            caseId,
+            idempotencyKey: `k3-no-slot-${randomUUID()}`,
+            source: { sourceType: 'CASE_INSTRUMENT', documentId: src.documentId, requestedVersionId: src.versionId },
+            component: { category: 'ANCILLARY', subtypeCode: 'DELAY_DAMAGE' },
+            legalBasis: { code: 'SYNTH_CHECK_PENALTY', requestedVersion: '1' },
+            money: { originalAmountMinor: '100000', demandedAmountMinor: '100000', currency: 'TRY', minorUnit: 2 },
+            effectiveAt: '2026-09-20T00:00:00.000Z',
+            liabilityContext: { payload: { liabilityType: 'TAM', liableDebtorRefs: ['debtor:opaque-1'] } },
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_FORMATION_CONTEXT' });
+    });
   });
 });

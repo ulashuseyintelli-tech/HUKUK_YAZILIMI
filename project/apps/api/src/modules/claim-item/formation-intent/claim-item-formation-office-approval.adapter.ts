@@ -42,7 +42,7 @@ export interface PersistClaimItemFormationIntentInput {
   readonly correlationId: string;
   readonly causationId: string | null;
   readonly sourceIdentityVersion: string;
-  readonly sourceType: 'CASE_DOCUMENT';
+  readonly sourceType: 'CASE_DOCUMENT' | 'CASE_INSTRUMENT';
   readonly sourceId: string;
   readonly sourceSlot: string;
   readonly sourceIdentityHash: string;

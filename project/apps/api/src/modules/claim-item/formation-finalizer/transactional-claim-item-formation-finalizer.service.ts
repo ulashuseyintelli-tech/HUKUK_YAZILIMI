@@ -226,7 +226,8 @@ export class TransactionalClaimItemFormationFinalizerService {
       occurredAt: formationAt.toISOString(),
       effectiveAt: intent.effectiveAt.toISOString(),
       source: {
-        sourceType: 'USER_DOCUMENT',
+        // K3: çek kaydı kaynağı ayrı ingress (CASE_INSTRUMENT_FORMATION) ile doğrulanır.
+        sourceType: intent.sourceType === 'CASE_INSTRUMENT' ? 'USER_CASE_INSTRUMENT' : 'USER_DOCUMENT',
         sourceId: intent.sourceId,
         evidenceRefs,
       },
@@ -243,16 +244,17 @@ export class TransactionalClaimItemFormationFinalizerService {
       id: claimItemId,
       ...this.buildClaimItemData(intent, source, legalBasis),
     };
-    const guardedData = await this.sourceIntegrity.prepareHumanDocumentCreate(
-      {
-        tenantId: intent.tenantId,
-        caseId: intent.caseId,
-        sourceSlot: intent.sourceSlot,
-        data: claimItemData,
-        envelope,
-      },
-      tx,
-    );
+    const guardInput = {
+      tenantId: intent.tenantId,
+      caseId: intent.caseId,
+      sourceSlot: intent.sourceSlot,
+      data: claimItemData,
+      envelope,
+    };
+    const guardedData =
+      intent.sourceType === 'CASE_INSTRUMENT'
+        ? await this.sourceIntegrity.prepareHumanInstrumentCreate(guardInput, tx)
+        : await this.sourceIntegrity.prepareHumanDocumentCreate(guardInput, tx);
     assertClaimItemCreateStatus(guardedData.status);
     const claimItemPayloadHash = stableJsonHash(this.jsonSafe(guardedData));
     const claimItem = await tx.claimItem.create({ data: guardedData as Prisma.ClaimItemUncheckedCreateInput });
@@ -562,7 +564,7 @@ export class TransactionalClaimItemFormationFinalizerService {
       intent.contractVersion !== CLAIM_ITEM_FORMATION_INTENT_CONTRACT_VERSION ||
       intent.normalizedInputContractVersion !== CLAIM_ITEM_FORMATION_NORMALIZED_INPUT_VERSION ||
       intent.canonicalSerializationVersion !== CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION ||
-      intent.sourceType !== 'CASE_DOCUMENT' ||
+      (intent.sourceType !== 'CASE_DOCUMENT' && intent.sourceType !== 'CASE_INSTRUMENT') ||
       intent.checksumAlgorithm !== 'SHA-256' ||
       intent.fingerprintAlgorithm !== 'SHA-256' ||
       checksum !== intent.intentChecksum ||
@@ -570,6 +572,7 @@ export class TransactionalClaimItemFormationFinalizerService {
       rebuildFormationSourceIdentityHash({
         tenantId: intent.tenantId,
         caseId: intent.caseId,
+        sourceType: intent.sourceType,
         sourceId: intent.sourceId,
         sourceSlot: intent.sourceSlot,
         sourceIdentityVersion: intent.sourceIdentityVersion,
@@ -658,6 +661,7 @@ export class TransactionalClaimItemFormationFinalizerService {
     const source = await this.documentResolver.resolveExactVersion({
       tenantId: intent.tenantId,
       caseId: intent.caseId,
+      sourceType: intent.sourceType as ExactCaseDocumentSourceV1['sourceType'],
       documentId: intent.sourceId,
       requestedVersionId: intent.sourceVersionId,
     });
@@ -665,7 +669,7 @@ export class TransactionalClaimItemFormationFinalizerService {
       !source ||
       source.tenantId !== intent.tenantId ||
       source.caseId !== intent.caseId ||
-      source.sourceType !== 'CASE_DOCUMENT' ||
+      source.sourceType !== intent.sourceType ||
       source.documentId !== intent.sourceId ||
       source.versionId !== intent.sourceVersionId ||
       source.version !== intent.sourceVersion ||
@@ -772,7 +776,10 @@ export class TransactionalClaimItemFormationFinalizerService {
       collectedAmount: new Prisma.Decimal(0),
       amount: demandedAmount,
       currency: intent.currency,
-      sourceDocumentId: intent.sourceId,
+      // K3: çek kaydı kaynağında kalem çek kaydına (instrumentId) bağlanır; belge kaynağında belgeye.
+      ...(intent.sourceType === 'CASE_INSTRUMENT'
+        ? { instrumentId: intent.sourceId }
+        : { sourceDocumentId: intent.sourceId }),
       sourceDocumentType: source.claimItemDocumentSourceType,
       interestType: projection.interestType,
       interestRate:
