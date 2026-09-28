@@ -4384,6 +4384,7 @@ export default function CaseDetailPage() {
           caseId={caseData.id}
           collection={editingCollection}
           onSuccess={refreshCollectionDependentViews}
+          debtors={caseData.debtors || []}
         />
       )}
 

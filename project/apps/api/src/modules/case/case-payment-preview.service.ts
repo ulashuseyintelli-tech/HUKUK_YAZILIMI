@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { CaseDebtorLifecycleStatus, ClaimItemStatus, Prisma } from "@prisma/client";
+import { hasRestrictedLiability, isItemLiableForDebtor } from "../claim-item/payer-liability-scope";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CaseBalanceService } from "../interest-engine/orchestration/case-balance.service";
 import {
@@ -114,13 +115,19 @@ export class CasePaymentPreviewService {
       blockingReasons.push("CASE_CLOSED_FOR_COLLECTION");
     }
 
-    const currentOutstandingAmount = await this.readCurrentOutstanding(
-      tenantId,
-      caseId,
-      currency,
-      asOfDate,
-      warnings,
-    );
+    // K3-L (owner kararı 2026-09-28): yalnız bazı borçlulara bağlı kalem varsa ödeyen borçlu zorunlu; kalan borç
+    // yalnız o borçlunun sorumlu olduğu kalemlerden (faiz hariç — borçlu bazlı kanonik bakiye ayrı iş).
+    const payerScope = await this.resolvePayerScope(tenantId, caseId, currency, input.caseDebtorId);
+    if (payerScope.status === "PAYER_REQUIRED") blockingReasons.push("PAYER_DEBTOR_REQUIRED");
+    if (payerScope.status === "PAYER_NOT_LIABLE") blockingReasons.push("PAYER_NOT_LIABLE_FOR_ANY_ITEM");
+    if (payerScope.status === "SCOPED") warnings.push("PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST");
+
+    const currentOutstandingAmount =
+      payerScope.status === "SCOPED"
+        ? payerScope.outstanding
+        : payerScope.status === "UNRESTRICTED"
+          ? await this.readCurrentOutstanding(tenantId, caseId, currency, asOfDate, warnings)
+          : new Prisma.Decimal(0);
 
     const paymentAmount = roundMoney(amount);
     const appliedAmount = roundMoney(minMoney(paymentAmount, currentOutstandingAmount));
@@ -165,6 +172,43 @@ export class CasePaymentPreviewService {
       },
       distributionPreview,
     };
+  }
+
+  /**
+   * K3-L — önizlemede ödeyen borçlu kapsamı. Kısıtlı kalem yoksa bugünkü davranış (UNRESTRICTED).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CasePaymentPreviewService.preview() → kalan borç ve kabul kararı
+   * /// </remarks>
+   */
+  private async resolvePayerScope(
+    tenantId: string,
+    caseId: string,
+    currency: string,
+    caseDebtorId?: string,
+  ): Promise<
+    | { status: "UNRESTRICTED" }
+    | { status: "PAYER_REQUIRED" }
+    | { status: "PAYER_NOT_LIABLE" }
+    | { status: "SCOPED"; outstanding: Prisma.Decimal }
+  > {
+    const items = await this.prisma.claimItem.findMany({
+      where: { tenantId, caseId, currency, status: ClaimItemStatus.ACTIVE },
+      select: { amount: true, demandedAmount: true, collectedAmount: true, isAllDebtorsLiable: true, liableDebtorIds: true },
+    });
+    if (!hasRestrictedLiability(items)) return { status: "UNRESTRICTED" };
+    const payer = caseDebtorId
+      ? await this.prisma.caseDebtor.findFirst({ where: { id: caseDebtorId, caseId }, select: { debtorId: true } })
+      : null;
+    if (!payer) return { status: "PAYER_REQUIRED" };
+    const scoped = items.filter((item) => isItemLiableForDebtor(item, payer.debtorId));
+    if (scoped.length === 0) return { status: "PAYER_NOT_LIABLE" };
+    const outstanding = scoped.reduce((sum, item) => {
+      const demanded = item.demandedAmount == null ? toDecimal(item.amount) : toDecimal(item.demandedAmount);
+      return sum.plus(maxMoney(ZERO, demanded.minus(toDecimal(item.collectedAmount))));
+    }, new Prisma.Decimal(0));
+    return { status: "SCOPED", outstanding: roundMoney(outstanding) };
   }
 
   private async assertCaseDebtorScope(

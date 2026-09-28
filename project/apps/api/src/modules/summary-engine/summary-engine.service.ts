@@ -16,6 +16,7 @@ import { AncillaryType } from '../interest-engine/types/domain.types';
 // G4a: sınıflandırma TEK OTORİTE (ikinci kopya yok). mapItemTypeToAncillary + masraf/fer'i kuralı buradan.
 import { mapItemTypeToAncillary as classifierMapAncillary, isCostItemType } from '../interest-engine/classification/claim-item-classifier';
 import { ClaimItemService } from '../claim-item/claim-item.service';
+import { scopeItemsToPayer } from '../claim-item/payer-liability-scope';
 import {
   assertWriteTimeAllocationComparison,
   buildAllocationComparisonContext,
@@ -582,6 +583,11 @@ export class SummaryEngineService implements OnModuleInit {
       commandId?: string;
       causationId?: string;
       producer?: string;
+      /**
+       * K3-L (owner kararı 2026-09-28): ödeyen borçlu (Debtor.id). Dosyada yalnız bazı borçlulara bağlı kalem varsa
+       * ZORUNLU ve mahsup yalnız bu borçlunun sorumlu olduğu kalemlere yapılır; yoksa yok sayılır.
+       */
+      payerDebtorId?: string | null;
     } = {},
   ): Promise<{
     allocated: boolean;
@@ -644,6 +650,10 @@ export class SummaryEngineService implements OnModuleInit {
       };
     }
 
+    // K3-L: ödeyen borçluya göre mahsup kapsamı (kısıtlı kalem yoksa girdi aynen; ödeyensiz kısıtlı dosya → 400,
+    // çağıranın transaction'ı geri alınır).
+    const payerScopedItems = scopeItemsToPayer(items, options.payerDebtorId);
+
     let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
     let diagnostics: LedgerAllocationDiagnostic[] = [];
     let excludedOutstanding = 0;
@@ -651,14 +661,14 @@ export class SummaryEngineService implements OnModuleInit {
       this.tbk100Allocator ? 'TBK100' : 'LEGACY';
     // TBK 100 Allocator varsa kullan (TEK KAYNAK). Sıra = allocator'ın mevcut hâli (PR-AO ayrı).
     if (this.tbk100Allocator) {
-      const computation = this.allocateWithTBK100(items, amount);
+      const computation = this.allocateWithTBK100(payerScopedItems, amount);
       allocations = computation.allocations;
       diagnostics = computation.diagnostics;
       excludedOutstanding = computation.excludedOutstanding;
     } else {
       // Legacy fallback (deprecated)
       this.logger.warn('⚠️ Using legacy allocation order. Inject TBK100AllocatorService for correct TBK 100.');
-      allocations = this.allocateLegacy(items, amount);
+      allocations = this.allocateLegacy(payerScopedItems, amount);
       diagnostics.push({
         code: 'LEGACY_ALLOCATOR_ACTIVE',
         reason: 'LEGACY_ALLOCATOR_FALLBACK',
