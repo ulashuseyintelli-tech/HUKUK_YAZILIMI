@@ -23,13 +23,17 @@ const build = (isActive = true) => {
       update: jest.fn().mockImplementation(async ({ data }) => ({ ...existing, ...data })),
     },
     user: {
-      findUnique: jest.fn().mockResolvedValue({
-        tenantId: TENANT, isActive: true, lawyer: { lawyerRank: 'MANAGER' },
-      }),
+      // K4-2: tx içi yetkili kontrol ADMIN'i de kilitli güncel satırdan okur.
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.id === ADMIN.userId
+          ? { role: 'ADMIN', tenantId: TENANT, isActive: true, lawyer: null }
+          : { tenantId: TENANT, isActive: true, lawyer: { lawyerRank: 'MANAGER' } },
+      ),
       update: jest.fn(),
       updateMany: jest.fn(),
     },
     $transaction: jest.fn(),
+    $queryRaw: jest.fn(async () => []), // K4-2: aktör Lawyer → User FOR SHARE kilidi
   };
   // B11: ayricalikli/delegation degisikligi artik $transaction icinde; tx = ayni mock (mevcut iddialar DEGISMEZ).
   prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(prisma));

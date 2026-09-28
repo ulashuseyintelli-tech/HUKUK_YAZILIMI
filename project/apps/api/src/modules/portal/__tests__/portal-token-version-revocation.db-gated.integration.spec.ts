@@ -51,7 +51,13 @@ describeDb("CLIENT-P2-U02 — portal tokenVersion revocation (integration)", () 
         AuditService,
         EmailProviderService,
         ConfigService,
-        { provide: OfficeApprovalService, useValue: { isApproverEligible: jest.fn().mockResolvedValue(true) } },
+        {
+          provide: OfficeApprovalService,
+          useValue: {
+            isApproverEligible: jest.fn().mockResolvedValue(true),
+            isApproverEligibleInTx: jest.fn().mockResolvedValue(true), // K4-3: kilitli tx içi yetkili karar
+          },
+        },
       ],
     }).compile();
     prisma = module.get<PrismaService>(PrismaService);

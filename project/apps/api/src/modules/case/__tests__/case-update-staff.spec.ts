@@ -16,7 +16,21 @@ describe('CaseService.updateCaseStaff (PR-ASSIGN-3a)', () => {
   // RFA-016: constructor 10 dep — hepsi stub; prisma + auditService test içinde override edilir.
   const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
   // K2: yetki alanları F01 yönetim kuralı ister; bu testler audit/değişmez kuralı sınar → aktör F01 yetkili.
-  (service as any).officeApproval = { isF01WriteActorAuthorized: jest.fn(async () => true) };
+  (service as any).officeApproval = {
+    isF01WriteActorAuthorized: jest.fn(async () => true),
+    isF01WriteActorAuthorizedInTx: jest.fn(async () => true), // K4-2: kilitli tx içi yetkili karar
+  };
+  // K4-2: yetki alanı yazısı kilitli F01 değerlendirmesiyle aynı tx'te → testin atadığı sahte prisma'da $transaction
+  // yoksa geçiş (tx = aynı sahte) eklenir; testin kendi $transaction davranışı varsa DOKUNULMAZ.
+  let fakePrisma: any;
+  Object.defineProperty(service, 'prisma', {
+    configurable: true,
+    get: () => fakePrisma,
+    set: (value: any) => {
+      fakePrisma = value;
+      if (value && typeof value === 'object' && !value.$transaction) value.$transaction = async (cb: any) => cb(value);
+    },
+  });
 
   function setup(opts: { caseFound?: any; caseStaffFound?: any } = {}) {
     const update = jest.fn(async ({ data }: any) => ({

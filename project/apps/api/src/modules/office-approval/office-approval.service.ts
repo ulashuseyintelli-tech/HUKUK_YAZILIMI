@@ -544,9 +544,11 @@ export class OfficeApprovalService {
     userId: string,
     tenantId: string,
     targetOfficeId?: string,
-    options?: { write?: boolean },
+    // K4-2..4: `db` verilirse yüklem o transaction istemcisiyle (aktör satırları kilitliyken) değerlendirilir.
+    options?: { write?: boolean; db?: Prisma.TransactionClient },
   ): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({
+    const db = options?.db ?? this.prisma;
+    const user = await db.user.findUnique({
       where: { id: userId },
       select: {
         role: true,
@@ -581,7 +583,7 @@ export class OfficeApprovalService {
     // Tenant ofisi çözülemiyorsa bağ tenant'a ait bir ofisi göstermiyor demektir → fail-closed (kontrollü
     // yürütmenin OFFICE_CONTEXT_UNRESOLVED emsali).
     if (linkedOfficeId && !targetOfficeId) {
-      const tenantOfficeId = await this.resolveTenantOfficeId(tenantId);
+      const tenantOfficeId = await this.resolveTenantOfficeId(tenantId, db);
       if (!tenantOfficeId || tenantOfficeId !== linkedOfficeId) return false;
     }
     if (targetOfficeId && linkedOfficeId && targetOfficeId !== linkedOfficeId) return false;
@@ -607,9 +609,39 @@ export class OfficeApprovalService {
     return this.isF01ActorAuthorized(userId, tenantId, targetOfficeId, { write: true });
   }
 
+  /**
+   * K4-2 (owner GO 2026-09-28) — F01 YAZMA yetkisinin yazma transaction'ı İÇİNDEKİ yetkili değerlendirmesi: aktörün
+   * `Lawyer` → `User` satırları `FOR SHARE` kilitlenir (iptal yollarıyla aynı sıra) ve AYNI yüklem (`write: true`)
+   * kilit altında, aynı tx istemcisiyle yeniden sorulur. İptal önce commit ettiyse → false; bu kilit önce alındıysa
+   * iptal (rütbe/delege/ofis değişikliği, pasifleştirme) yazma commit edene kadar bekler.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CaseService.withCasePermissionGrantAuthority() → PATCH /cases/:id/lawyers/:id, PATCH /cases/:id/staff/:id, POST /cases/:id/lawyers (yetki alanı varsa)
+   * /// </remarks>
+   */
+  async isF01WriteActorAuthorizedInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<boolean> {
+    await lockExecutionActorRows(tx, userId);
+    return this.isF01ActorAuthorized(userId, tenantId, undefined, { write: true, db: tx });
+  }
+
+  /**
+   * K4-3/K4-4 (owner GO 2026-09-28) — `isApproverEligible` yüklemine bağlı yetki VERME / erişim açma yazılarının
+   * (portal hesabı, dosya ücret sözleşmesi) transaction İÇİNDEKİ yetkili değerlendirmesi: kilit + AYNI yüklem.
+   * Mali yürütme kontrolü (`assertApproverExecutionAuthorityInTx`) DEĞİLDİR — VIEWER kodu/semantiği eklemez;
+   * yolların mevcut kuralı aynen korunur.
+   */
+  async isApproverEligibleInTx(tx: Prisma.TransactionClient, userId: string, tenantId: string): Promise<boolean> {
+    await lockExecutionActorRows(tx, userId);
+    return this.isApproverEligible(userId, tenantId, tx);
+  }
+
   /** B1 — tenant'ın tek ofisinin kimliği (Office.tenantId @unique); ofis yoksa undefined (kontrol uygulanamaz). */
-  private async resolveTenantOfficeId(tenantId: string): Promise<string | undefined> {
-    const office = await this.prisma.office.findUnique({ where: { tenantId }, select: { id: true } });
+  private async resolveTenantOfficeId(
+    tenantId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<string | undefined> {
+    const office = await db.office.findUnique({ where: { tenantId }, select: { id: true } });
     return office?.id;
   }
 

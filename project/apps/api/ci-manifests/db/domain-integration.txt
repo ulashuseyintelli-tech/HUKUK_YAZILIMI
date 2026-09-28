@@ -409,3 +409,7 @@ src/modules/uyap/operation-writer/uyap-cpe-decision-link-writer.db-gated.integra
 src/modules/uyap/operation-writer/uyap-operation-evidence.orchestrator.db-gated.integration.spec.ts
 src/modules/policy-engine/decision-logger/__tests__/cpe-decision-composite-key.db-gated.integration.spec.ts
 src/modules/policy-engine/decision-logger/__tests__/uyap-attempt-cpe-decision-link.db-gated.integration.spec.ts
+#   K4-2..4-GRANT-AUTHORITY-REVOCATION-RACE-R01 (owner GO 2026-09-28): yetki verme / erisim acma yazilari
+#     (K2 dosya yetkisi, avukat delegasyonu/rutbe, portal hesabi, ucret sozlesmesi) tx icinde Lawyer->User FOR SHARE
+#     + guncel satirdan ayni kural; tx ici yetki kapatilinca 6 test kirilir.
+src/modules/office-approval/__tests__/grant-authority-revocation-race.db-gated.integration.spec.ts
