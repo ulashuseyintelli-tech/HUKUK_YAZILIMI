@@ -231,6 +231,7 @@ src/modules/client-notification/__tests__/client-notification-template-tenant-sc
 src/modules/debtor/__tests__/debtor-finalization-cutover.spec.ts
 src/modules/debtor/__tests__/debtor-service-attempt-address-ownership.spec.ts
 src/modules/debtor/case-debtor-ownership.spec.ts
+src/modules/debtor/case-debtor-aval-beneficiary.spec.ts
 src/modules/debtor/case-debtor.service.spec.ts
 src/modules/debtor/debtor-identity-format.spec.ts
 src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts

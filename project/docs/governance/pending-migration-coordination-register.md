@@ -1875,3 +1875,19 @@ Merkezi ledger: `OFFICE-DELIVERY-MANIFEST.md` §15.4 (MIG-C36-APPLY = APPLIED).
 | Doğrulama | Disposable PostgreSQL 16: `migrate deploy` 132/132; `prisma migrate diff --from-migrations --to-schema-datamodel` → fark YOK |
 | Runtime activation | NONE — formation akışı varsayılan KAPALI bayrak arkasında (PR-3) |
 | Canlı / dev DB | **NOT APPLIED** — canlı uygulama ayrı owner GO + EXACT-ONE paketi ister (bu GO canlı migration'ı kapsamaz) |
+
+## K3-L — 20260929090000_case_debtor_aval_for (PENDING, 2026-09-29)
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260929090000_case_debtor_aval_for` |
+| Program / task | RECEIVABLE / K3-L çek tazminatı borçlu ayrımı Faz 0 (owner bulgusu + kararı 2026-09-28: tazminattan yalnız keşideci ve keşideci lehine aval veren sorumlu) |
+| İçerik | `CaseDebtor.avalForDebtorId TEXT NULL` (FK YOK; kullanım anında aynı dosyanın etkin borçlusu doğrulanır) + `case_debtor_aval_for_check` CHECK (`NULL` veya `role = 'AVAL'` ve kendisini göstermez), `NOT VALID` + `VALIDATE`; `lock_timeout 3s`, `statement_timeout 60s` |
+| Gerekçe | Aval veren lehine aval verdiği kişi gibi sorumludur; lehine bilgisi olmadan çek tazminatı sorumluluğu sınıflandırılamıyordu |
+| Existing migration mutation | NONE |
+| Default / backfill / data mutation | NONE — mevcut satırlar NULL kalır |
+| Index / trigger | NONE (yalnız CHECK) |
+| Doğrulama | Disposable PostgreSQL 16: `migrate deploy` 133/133; `prisma migrate diff --from-url --to-schema-datamodel` → fark YOK; CHECK ihlali (CIRANTA + lehine bilgi, kendi lehine aval) DB'de reddedilir (HTTP kabul testi) |
+| Sıra | Main'deki bekleyen `20260919120000_sim_snapshot_restore_unique_indexes` ve `20260928120000_claim_formation_batch_approval_position` ile AYNI yayın penceresinde, bu sırayla uygulanır (`prisma migrate deploy` hepsini sırayla uygular) |
+| Runtime activation | Kolon borçlu ekleme/güncelleme uçlarından yazılabilir; okuyan tek yol varsayılan KAPALI çek formation akışı |
+| Canlı / dev DB | **NOT APPLIED** — canlı uygulama ayrı owner GO + EXACT-ONE paketi ister |

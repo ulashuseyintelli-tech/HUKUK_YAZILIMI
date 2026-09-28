@@ -40,8 +40,17 @@ diyor. Taslak **ANCILLARY** seçer (asıl alacağa bağlı, bedelden türeyen fe
   - `CHECK_INSTRUMENT_RECORD`: çek kaydı mevcut (seri, tutar, para birimi, keşide tarihi).
   - `CHECK_DISHONOUR_RECORD`: karşılıksız işlemi (`isBounced = true` ve `bounceDate` dolu).
   - İki alt tür de **ikisini birlikte** ister.
-- **Sorumluluk:** `TAM`; borçlular istekte AÇIKÇA verilir ve dosyanın borçlusu olduğu sunucuda doğrulanır; örtük
-  "tüm borçlular" YASAK.
+- **Sorumluluk:** `TAM`; takip edilen borçlular istekte AÇIKÇA verilir; örtük "tüm borçlular" YASAK. Kalem bazlı
+  borçlu kümeleri SUNUCUDA, dosyadaki borçlu rollerinden ayrılır (K3-L, owner kararı 2026-09-28 — **avukat teyidi
+  bekler**):
+  - Çek bedeli (`CHECK_PRINCIPAL`): keşideci (`KESIDECI`), ciranta (`CIRANTA`), aval veren (`AVAL`).
+  - Çek tazminatı (`CHECK_PENALTY`): **yalnız keşideci ve keşideci lehine aval veren**. Ciranta ve ciranta lehine
+    aval veren tazminattan sorumlu değildir.
+  - Aval verenin kimin lehine aval verdiği dosyada kayıtlı olmalıdır (`CaseDebtor.avalForDebtorId`); kayıtlı değilse
+    talep reddedilir. Rolü çek borçlusu olmayan (`ASIL_BORCLU`, `LEHDAR`, `MUHATAP` …) borçlu reddedilir.
+  - Onay anında roller kilitli olarak yeniden doğrulanır; onay beklerken rol, lehine aval veya etkinlik değiştiyse
+    kalem oluşmaz.
+  - Kısmi aval (tutarla sınırlı aval) bu sürümde kalem düzeyinde sınırlanmaz — açık nokta.
 - **Tutar:**
   - Çek bedeli = çek kaydındaki tutar AYNEN.
   - Tazminat = çek bedelinin **%10'u**, kuruşa **yarıdan yukarı** yuvarlanır.

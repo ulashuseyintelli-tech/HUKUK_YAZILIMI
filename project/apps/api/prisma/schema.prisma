@@ -1798,6 +1798,10 @@ model CaseDebtor {
   role            DebtorRole     @default(ASIL_BORCLU)
   liabilityAmount Decimal?       @db.Decimal(15, 2)
   liabilityType   LiabilityType?
+  // K3-L (owner kararı 2026-09-28): aval veren, lehine aval verdiği borçlu (Debtor.id) gibi sorumludur. Yalnız
+  // role = AVAL iken dolu olabilir (DB CHECK case_debtor_aval_for_check). FK YOK: kullanıldığı anda aynı dosyanın
+  // borçlusu olduğu doğrulanır (ClaimItem.liableDebtorIds ile aynı kimlik uzayı).
+  avalForDebtorId String?
 
   // CaseDebtor relationship lifecycle
   lifecycleStatus        CaseDebtorLifecycleStatus @default(ACTIVE)
