@@ -102,14 +102,18 @@ function runScenario(name, dir, sc, over, hooks = {}) {
     });
   });
 }
-async function recover(prev, dir, name, sc, receiptOverride) {
+async function recover(prev, dir, name, sc, receiptOverride, envOver, during) {
   await ctl('POST', '/__reset'); await ctl('POST', '/__scenario', sc || {});
   const pw = 'D4R!' + crypto.randomBytes(12).toString('base64url'); const evid = path.join(dir, `${name}-evidence.json`); secretsSeen.add(pw);
   const env = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
     D4_MODE: 'recover', D4_RECOVER_CONFIRM: '1', D4_RUNID: prev.runId, D4_EXPECT_DB: 'ah_h5_test', D4_API_BASE: API, D4_EXPECT_API: API,
     D4_EXPECT_BASE_URL: EXT, D4_LIVE_LOGIN_PW: pw, D4_RECEIPT: receiptOverride || prev.receipt, D4_EVID_FILE: evid, D4_DISPLAY: 'none', D4_HTTP_TIMEOUT_MS: '5000', D4_CALL_TIMEOUT_MS: '5000',
-    D4_POLL_MS: '300', D4_LATE_CREATE_MS: '6000' });
-  const code = await new Promise((res) => { const c = spawn(process.execPath, [RUN], { env, stdio: ['ignore', 'pipe', 'pipe'] }); let l = ''; c.stdout.on('data', (d) => { l += d; }); c.stderr.on('data', (d) => { l += d; }); c.on('close', (x) => { fs.writeFileSync(path.join(dir, `${name}.log`), l, 'utf8'); res(x); }); });
+    D4_POLL_MS: '300', D4_LATE_CREATE_MS: '6000' }, envOver || {});
+  // `during`: Recover süreci ÇALIŞIRKEN paralel iş (ör. bekleyen hesap oluşturmayı serbest bırakmak)
+  const started = Date.now(); let duringRes = null;
+  const code = await new Promise((res) => { const c = spawn(process.execPath, [RUN], { env, stdio: ['ignore', 'pipe', 'pipe'] }); let l = ''; c.stdout.on('data', (d) => { l += d; }); c.stderr.on('data', (d) => { l += d; });
+    if (during) during().then((r) => { duringRes = Object.assign({ atMs: Date.now() - started }, r); }).catch((e) => { duringRes = { error: String(e) }; });
+    c.on('close', (x) => { fs.writeFileSync(path.join(dir, `${name}.log`), l, 'utf8'); res(x); }); });
   artifacts.push(path.join(dir, `${name}.log`), evid);
   const pu = await prisma.clientPortalUser.findUnique({ where: { clientId: prev.rc.clientId }, select: { isActive: true, tokenVersion: true } });
   const cl = await prisma.client.findUnique({ where: { id: prev.rc.clientId }, select: { hasPortalAccess: true } });
@@ -117,7 +121,7 @@ async function recover(prev, dir, name, sc, receiptOverride) {
   const sec = await ctl('GET', '/__secrets'); sec.jwts.concat(sec.portalJwts, sec.loginPasswords).forEach((x) => secretsSeen.add(x));
   const v = (id) => (ev && ev.results ? (ev.results.find((x) => x.id === id) || {}).verdict : null);
   const o = (id) => (ev && ev.results ? (ev.results.find((x) => x.id === id) || {}).observed || '' : '');
-  return { code, pu, cl, ev, v, o, calls: await ctl('GET', '/__calls'), activeUsers: await prisma.user.count({ where: { tenantId: prev.tenant.id, isActive: true } }) };
+  return { code, pu, cl, ev, v, o, duringRes, elapsedMs: Date.now() - started, calls: await ctl('GET', '/__calls'), activeUsers: await prisma.user.count({ where: { tenantId: prev.tenant.id, isActive: true } }) };
 }
 const phoneFlow = async (rc, pp) => phone(rc.portalEmail, pp);
 const CLOSE = ['P-C1', 'P-C2', 'P-C2V', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'P-C5', 'U-CLOSE', 'P-D9'];
@@ -281,6 +285,31 @@ const CLOSE = ['P-C1', 'P-C2', 'P-C2V', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'P-C
       r18.code === 3 && r18.calls.some((c) => c.path === '/api/portal/admin/disable-user') && r18.pu.isActive === false && r18.cl.hasPortalAccess === false && r18.v('P-C2V') === 'PASS'
         && /kapanıştan hemen önceki/.test(r18.o('P-C2V')) && r18.v('P-C3L') === 'PASS' && r18.activeUsers === 0,
       `çıkış=${r18.code} · hesap=${JSON.stringify(r18.pu)} · P-C2V=${r18.o('P-C2V')}`);
+
+
+    // ---- Y19 HESAP RECOVER BEKLERKEN OLUŞUR: koşum belirsiz (6); Recover başladığında hesap YOK, bekleme sırasında
+    // oluşur → Recover bulur, personel oturumunu O AN açar, yetkili uçla kapatır, personeli yeniden kapatır.
+    const y19 = await runScenario('y19-create-during-recover', dir, { create: 'hold' }, { D4_CALL_TIMEOUT_MS: '1500', D4_LATE_CREATE_MS: '1500' });
+    const rc19 = y19.rc || {};
+    const r19 = await recover(y19, dir, 'y19-recover', {}, null, { D4_LATE_CREATE_MS: '15000' }, async () => { await sleep(5000); return ctl('POST', '/__release'); });
+    check('Y19', 'Recover başında hesap YOK, bekleme sırasında oluştu → bulundu, personel oturumu o anda açıldı, disable çağrıldı, hesap pasif, personel yeniden pasif; mevcut oturum ÖLÇÜLEMEYEN → çıkış 3',
+      y19.code === 6 && rc19.createOutcome === 'uncertain' && r19.duringRes && r19.duringRes.released === 1 && /ilk sorguda YOKTU/.test(r19.o('P-C1'))
+        && r19.ev.createEvidence && r19.ev.createEvidence.uncertain === true && r19.calls.some((c) => c.path === '/api/auth/login') && r19.calls.some((c) => c.path === '/api/portal/admin/disable-user')
+        && /kapatma için açıldı/.test(r19.o('P-C1')) && r19.pu && r19.pu.isActive === false && r19.cl.hasPortalAccess === false && r19.activeUsers === 0 && r19.v('P-C3L') === 'PASS' && r19.code === 3,
+      `koşum=${y19.code} makbuz=${rc19.createOutcome} · serbest@${r19.duringRes && r19.duringRes.atMs} ms · Recover çıkış=${r19.code} · P-C1=${r19.o('P-C1').slice(0, 120)} · hesap=${JSON.stringify(r19.pu)} · personel aktif=${r19.activeUsers}`);
+
+    // ---- Y20 HESAP RECOVER BİTTİKTEN SONRA OLUŞUR: Recover süre dolduğunda kapanış PASS/0 VERMEMİŞ olmalı
+    const y20 = await runScenario('y20-create-after-recover', dir, { create: 'hold' }, { D4_CALL_TIMEOUT_MS: '1500', D4_LATE_CREATE_MS: '1500' });
+    const r20 = await recover(y20, dir, 'y20-recover', {}, null, { D4_LATE_CREATE_MS: '3000' });
+    const rel20 = await ctl('POST', '/__release');
+    const acct20 = y20.rc ? await prisma.clientPortalUser.findUnique({ where: { clientId: y20.rc.clientId }, select: { isActive: true } }) : null;
+    check('Y20-a', 'hesap Recover bitene kadar YOK: Recover P-C1 ÖLÇÜLEMEYEN, çıkış 6 (0 DEĞİL), recovery.gerekli, "geç oluşma"; sonra hesap AKTİF oluştu (Recover kapanış iddia ETMEMİŞTİ)',
+      r20.code === 6 && r20.code !== 0 && r20.v('P-C1') === 'UNMEASURED' && r20.v('P-D9') !== 'PASS' && r20.ev.recovery && r20.ev.recovery.gerekli === true
+        && /geç oluşma/.test(r20.ev.recovery.neden.join(' ')) && r20.ev.portalClose && r20.ev.portalClose.ok !== true && rel20.released === 1 && acct20 && acct20.isActive === true,
+      `Recover çıkış=${r20.code} · P-C1=${r20.o('P-C1').slice(0, 90)} · gerekli=${r20.ev.recovery && r20.ev.recovery.gerekli} · sonradan hesap aktif=${acct20 && acct20.isActive}`);
+    const r20b = await recover(y20, dir, 'y20b-recover', {});
+    check('Y20-b', 'ikinci Recover sonradan oluşan aktif hesabı kapatır (çıkış 3; mevcut oturum ölçülemez), personel pasif',
+      r20b.code === 3 && r20b.pu.isActive === false && r20b.cl.hasPortalAccess === false && r20b.activeUsers === 0, `çıkış=${r20b.code} · hesap=${JSON.stringify(r20b.pu)}`);
 
     // ---- S-1 SIR SIZINTISI — geçici portal parolası, personel parolası, JWT'ler, DB URL, GO
     let scanned = 0; const leaks = [];

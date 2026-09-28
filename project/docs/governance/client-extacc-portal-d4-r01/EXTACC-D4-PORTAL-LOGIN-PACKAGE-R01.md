@@ -1,6 +1,6 @@
 # EXTACC D-4 R01 — Portal girişi dış cihazdan + portal erişim kapanışı (canlı kabul paketi)
 
-> **DURUM (2026-09-28): HAZIRLIK — R02 inceleme düzeltmeleri uygulandı (§11).** Canlı Run/Recover **başlatılmadı**; Preflight bu paket için **koşulmadı**. Bu belge canlı
+> **DURUM (2026-09-28): HAZIRLIK — R02 (§11) ve R03 (§12) inceleme düzeltmeleri uygulandı.** Canlı Run/Recover **başlatılmadı**; Preflight bu paket için **koşulmadı**. Bu belge canlı
 > koşum GO'su değildir; GO biçimi `OWNER-GO-CLIENT-EXTACC-D4-YYYYMMDD-RNN` (intake GO'su `OWNER-GO-CLIENT-EXTACC-…` kabul
 > **edilmez**). Hizmet kabulü H1–H8 **0/8**; D-5…D-8 durumu **değişmez**; D-1/D-2/D-3/D-9 kaydı EXTACC paketi §12'dedir.
 > D-halkaları `client-external-access-r01` §7'de tanımlıdır.
@@ -85,6 +85,10 @@ blok bunu kırmızı **ürün bulgusu adayı** olarak gösterir.
 - **Belirsiz oluşturma.** create-user zaman aşımı ya da 5xx ise kapanış, hesap görünene kadar en çok **120 sn** (canlı sabit)
   bekler. Görünürse yetkili uçla kapatır (Y17). Görünmezse "hiç açılmadı, kapanış tamam" **demez**: `P-C1` ÖLÇÜLEMEYEN, çıkış **6**,
   kurtarma notu "geç oluşma dışlanamadı" (Y8, Y18-a). Koşumdan sonra oluşan aktif hesap Recover ile kapatılır (Y18-b).
+- **Recover da belirsizliği taşır (R03).** Run oluşturma sonucunu makbuza `createOutcome` (`ok` / `rejected` / `uncertain`) olarak
+  yazar. Makbuzda deneme var ve sonuç kesin (`ok`/`rejected`) değilse Recover sorgu anındaki yokluğu kapanış saymaz: hesap
+  görünene kadar bekler; görünürse personel oturumunu **o anda** açar ve kapatır (Y19); süre dolarsa `P-C1` ÖLÇÜLEMEYEN, çıkış **6**,
+  `recovery.gerekli=true` (Y20-a). Bekleme süresinin dolması tek başına kapanış kanıtı sayılmaz.
 
 ## 4. Ölçütler
 
@@ -166,11 +170,11 @@ gösterimiyle) ayrıca yapılmadı; gösterim modülü C-1…C-5 ile, konsolsuz 
 ## 9. Dosyalar ve sha256
 
 Owner bloğunda pinli (koşucunun yüklediği dosyalar + QR denemesi; `h5-url-selftest-reqtree.js` ile ölçüldü, T-3) — paket digest
-`E2B586CCB50F06414121EDBDE5B17CE326C50CB47A23352BE7A22A40FB68F25F`:
+`D019981C35DE3C7DBE449E775C9078723C661C7D89DD6008D57A61F86523C095`:
 
 | dosya (`project/docs/governance/` altında) | sha256 |
 |---|---|
-| `client-extacc-portal-d4-r01/scripts/d4-portal-live-run.js` | `6FE56240B16D59059C48F9155A50363755769D0A7FB527158077C5FCAD2F038B` |
+| `client-extacc-portal-d4-r01/scripts/d4-portal-live-run.js` | `4B28094DEA1E7F2E4DEF2253F0BE9EAA9F1B845884B6697D621141CD8D123222` |
 | `client-extacc-intake-chain-r01/scripts/extacc-display.js` | `F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867` |
 | `client-extacc-intake-chain-r01/scripts/extacc-qr-test.js` | `61FBCEE86148DEA1B268A1B883F1690ED6F3D4BBD36EAEA29783F24D487B8B10` |
 | `client-extacc-intake-chain-r01/scripts/vendor/qrcode-generator-1.4.4/qrcode.js` | `18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780` |
@@ -186,8 +190,8 @@ Owner ve test araçları:
 
 | dosya | sha256 |
 |---|---|
-| `scripts/d4-owner-live-block.ps1` | `B8A41E784657E36BE7E859A7D9E7E169929BA4AB4E510709288E2DD29BF4B8D2` |
-| `scripts/d4-selftest.js` | `28AFCF51B0AE007805CFD5E2246DEBDFE962BB08103F25046D2350942555E5CD` |
+| `scripts/d4-owner-live-block.ps1` | `03EC0C00E8534898F36D8210EBDEB92FB11EEEACBE53CF27A22C50E2AA831FFB` |
+| `scripts/d4-selftest.js` | `2BD1E5844926DA92979DFEA21F42269F4658D3C8E3D3AC9021F77F707FFB710A` |
 | `scripts/d4-owner-block-selftest.ps1` | `DED03B60E541D8F452AADED6E5A7F00B9C4E21474D3223F3421A7A8ED883AAA1` |
 | `scripts/d4-fake-portal-api.js` | `ABE8DD95B8925DFE80E14CC093209846F73071B18F6884D5C37947E45DD8CCE4` |
 
@@ -225,3 +229,22 @@ dosyaları koşumdan sonra silindi.
 - Recover koşumun portal oturumunu **saklamaz** (sır); bu yüzden Recover mevcut oturum reddini ölçemez ve bunu PASS saymaz.
 - Recover yeni giriş reddini yalnız **pasif** hesaba yazdığı rastgele ölçüm parolasıyla ölçer; parola hiçbir yere yazılmaz (S-1).
 - Geç oluşma penceresi (120 sn) bir üst sınırdır; pencereden sonra oluşan hesap koşumda kapanmış **sayılmaz** (çıkış 6) ve Recover gerekir.
+
+## 12. R03 inceleme düzeltmesi (2026-09-28) — canlı koşum YOK
+
+| Bulgu | Düzeltme | Kanıt |
+|---|---|---|
+| Recover, `createAttemptedAt` bulunan makbuzla çalışırken hesap sorgu anında yoksa belirsizliği `closePortal`'a aktarmıyordu; yokluk başarılı kapanış sayılıyor, Recover çıkış 0 ve `recovery.gerekli=false` üretiyordu | Run oluşturma sonucunu makbuza `createOutcome` olarak yazar. Recover `createUncertain = createAttemptedAt var ve createOutcome ∉ {ok, rejected}` hesaplar ve `closePortal`'a aktarır (kanıtta `createEvidence`). Süre dolarsa çıkış 6 + kurtarma notu. Kapatma gerekirse personel oturumu `sessionProvider` ile **bekleme sırasında da** açılır; `closeAccess` sonunda personeli yeniden kapatır | Y19 (hesap Recover beklerken oluşur → bulunur, kapatılır, personel yeniden pasif), Y20-a (hesap Recover bittikten sonra oluşur → Recover çıkış 6, PASS/0 yok), Y20-b (sonraki Recover kapatır) |
+
+Kapsam dar: yalnız `d4-portal-live-run.js` (makbuza sonuç yazımı, `closePortal` oturum sağlayıcısı, Recover belirsizliği) ve
+öz-test; ürün kodu değişmedi.
+
+**Sonuçlar:** `d4-selftest.js` **42/42** (sır taraması 112 değer, 68 dosya, sızıntı yok) · owner bloğu PS 5.1 **46/46** · PS 7 **46/46** ·
+konsol **5/5**.
+
+| Mutant | Geri getirilen davranış | Sonuç | Düşen · gözlem |
+|---|---|---|---|
+| M-5 | R02 Recover: belirsizlik `closePortal`'a aktarılmaz | 39/42 | Y19, Y20-a — **Recover çıkış 0, `recovery.gerekli=false`, hesap sonradan aktif** (inceleme bulgusunun birebir yeniden üretimi) |
+| M-6 | personel oturumu yalnız başta açılır (bekleme sırasında açılamaz) | 40/42 | Y19 — hesap bulundu ama kapatılamadı, aktif kaldı; Recover çıkış 6 |
+
+(T-3 her mutantta yalnız dosya adı farkından düşer; mutant dosyaları silindi.)

@@ -36,7 +36,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = 'https://bilgi.tellihukuk.com'                                         # R05 owner kararı
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d4-r01\scripts\d4-portal-live-run.js'                         = '6FE56240B16D59059C48F9155A50363755769D0A7FB527158077C5FCAD2F038B'
+  'client-extacc-portal-d4-r01\scripts\d4-portal-live-run.js'                         = '4B28094DEA1E7F2E4DEF2253F0BE9EAA9F1B845884B6697D621141CD8D123222'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\extacc-qr-test.js'                          = '61FBCEE86148DEA1B268A1B883F1690ED6F3D4BBD36EAEA29783F24D487B8B10'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -46,7 +46,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'E2B586CCB50F06414121EDBDE5B17CE326C50CB47A23352BE7A22A40FB68F25F'
+$ExpPackage = 'D019981C35DE3C7DBE449E775C9078723C661C7D89DD6008D57A61F86523C095'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D4_LIVE_CONFIRM', 'D4_RECOVER_CONFIRM', 'D4_LIVE_GO_REF',
                 'D4_RUNID', 'D4_MODE', 'D4_EXPECT_DB', 'D4_EXPECT_TENANT_SLUG', 'D4_API_BASE', 'D4_EXPECT_API',
                 'D4_EXPECT_BASE_URL', 'D4_LIVE_LOGIN_PW', 'D4_RECEIPT', 'D4_EVID_FILE', 'D4_DISPLAY', 'EXA_QRTEST_URL',

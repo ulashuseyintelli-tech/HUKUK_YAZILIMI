@@ -1,6 +1,6 @@
 'use strict';
 /*
- * EXTACC D-4 R01 (koşucu R02) — PORTAL GİRİŞİ CANLI KABULÜ (client-external-access-r01 §7 D-4) + portal erişim kapanışı.
+ * EXTACC D-4 R01 (koşucu R03) — PORTAL GİRİŞİ CANLI KABULÜ (client-external-access-r01 §7 D-4) + portal erişim kapanışı.
  *
  * AKIŞ   : kurulum + makbuz → personel (elev1) ile sentetik müvekkile portal hesabı (`POST /portal/admin/create-user`;
  *          gönderim YOK) → koşucu kendi portal oturumunu alır (yerel) → dosya listesi yerel + dış HTTPS = yalnız bu koşumun
@@ -80,8 +80,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  *   HTTP       = P-C3L/P-C3D yeni giriş · P-C4L/P-C4D mevcut oturum. ÖLÇÜLEMEYEN hiçbir koşulda PASS sayılmaz.
  * Sürüm (P-C2V) KENDİSİYLE karşılaştırılmaz: referans önce oturumların verildiği sürüm (`issuedVersion`, makbuzda korunur),
  * yoksa bu kapanışın hemen önceki sürümü (yalnız hesap bu çağrıda açıktıysa); ikisi de yoksa ÖLÇÜLEMEYEN.
- * opts: session · creds · credsForClosed(st) (Recover: pasif hesaba ölçüm parolası) · portalToken · sessionRequired ·
- *       issuedVersion · createUncertain (oluşturma isteği belirsiz → hesap görünene ya da süre dolana kadar beklenir).
+ * opts: session · sessionProvider() (Recover: kapatma gerekirse personel oturumunu O ANDA açar; geç oluşan hesap dahil) ·
+ *       creds · credsForClosed(st) (Recover: pasif hesaba ölçüm parolası) · portalToken · sessionRequired · issuedVersion ·
+ *       createUncertain (oluşturma belirsiz → hesap görünene ya da süre dolana kadar beklenir; süre dolması kapanış kanıtı DEĞİL).
  */
 async function closePortal(R, prisma, base, origin, receipt, P, opts) {
   const o = opts || {};
@@ -107,6 +108,9 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
   let disabledNow = false;
   if (st0.isActive || st0.hasPortalAccess) {
     for (let i = 0; i < 2; i++) {
+      if ((!o.session || !o.session.token) && o.sessionProvider) {
+        try { o.session = await o.sessionProvider(); res.disableCalls.push('personel oturumu kapatma için açıldı'); } catch (e) { res.disableCalls.push(`personel oturumu açılamadı: ${errText(e, 100)}`); }
+      }
       if (!o.session || !o.session.token) { res.disableCalls.push('personel oturumu YOK'); break; }
       const r = await L.AH.httpJson('POST', `${base}/portal/admin/disable-user`, { token: o.session.token, body: { clientId: receipt.clientId }, timeoutMs: P.D4_CALL_TIMEOUT_MS });
       res.disableCalls.push(r.indeterminate ? 'belirsiz' : `HTTP ${r.status}`);
@@ -215,7 +219,7 @@ async function runMode() {
   const portalPw = 'D4p!' + crypto.randomBytes(12).toString('base64url'); addSecret(portalPw);
   const portalEmail = `portal-d4-${runId}@ah-harness.invalid`;
   const fileNumber = `I3-${runId}`;
-  const out = { record: 'EXTACC-D4-PORTAL-LIVE-RUN', revision: 'R02', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [] };
+  const out = { record: 'EXTACC-D4-PORTAL-LIVE-RUN', revision: 'R03', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [] };
   const call = (m, p) => out.calledEndpoints.push(`${m} ${p.replace(base, '<API>').replace(origin, '<DIŞ>')}`);
   let receipt = null; let fatal = null; let session = null; let portalToken = null; let stopped = null; let displayed = false; let loginSeen = false; let baseline = null;
   let createOutcome = null; let issuedVersion = null;
@@ -240,6 +244,8 @@ async function runMode() {
     call('POST', `${base}/portal/admin/create-user`);
     const cu = await L.AH.httpJson('POST', `${base}/portal/admin/create-user`, { token: session.token, body: { clientId: st.clientId, email: portalEmail, password: portalPw }, timeoutMs: P.D4_CALL_TIMEOUT_MS });
     createOutcome = cu.indeterminate || cu.status >= 500 ? 'uncertain' : (cu.status >= 200 && cu.status < 300 ? 'ok' : 'rejected');
+    receipt.createOutcome = createOutcome; // yazılamazsa Recover denemeyi belirsiz sayar (createAttemptedAt var, sonuç yok)
+    try { writeJson(receiptPath, receipt); } catch (e) { out.receiptWriteError = errText(e, 160); }
     if (cu.indeterminate) R.unmeasured('P-01', 'sentetik müvekkile portal hesabı yetkili uçla açıldı (gönderim yok)', 'yanıt alınamadı — hesap SONRADAN oluşmuş olabilir (kapanış bekler)');
     else R.check('P-01', 'sentetik müvekkile portal hesabı yetkili uçla açıldı (gönderim yok)', cu.status >= 200 && cu.status < 300, `HTTP ${cu.status}${cu.status >= 500 ? ' — hesap oluşmuş olabilir (kapanış bekler)' : ''}`);
     const s1 = await portalState(prisma, st.clientId);
@@ -367,27 +373,39 @@ async function recoverMode() {
   if (!receipt || receipt.record !== RECEIPT_RECORD || !receipt.elevUserId || !receipt.elevEmail) { console.error('REDDEDİLDİ: makbuz biçimi/alanları eksik'); process.exit(4); }
   if (process.env.D4_RUNID && String(process.env.D4_RUNID).toLowerCase() !== String(receipt.runId).toLowerCase()) { console.error('REDDEDİLDİ: runId makbuzla eşleşmiyor'); process.exit(4); }
   const R = new L.Results(); const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
-  const out = { record: 'EXTACC-D4-RECOVER', revision: 'R02', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış' };
+  const out = { record: 'EXTACC-D4-RECOVER', revision: 'R03', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış' };
   let session = null; let before = null;
+  // Oluşturma belirsizliği makbuzdan taşınır: deneme var ve sonuç kesin (ok/rejected) değilse, sorgu anında hesabın YOKLUĞU
+  // bekleyen oluşturmanın tamamlanmayacağını kanıtlamaz → closePortal bekler; süre dolarsa kapanış DOĞRULANMAZ (çıkış 6).
+  const createUncertain = !!receipt.createAttemptedAt && receipt.createOutcome !== 'ok' && receipt.createOutcome !== 'rejected';
+  out.createEvidence = { attemptedAt: receipt.createAttemptedAt || null, outcome: receipt.createOutcome || null, uncertain: createUncertain };
+  const elevOf = () => prisma.user.findFirst({ where: { id: receipt.elevUserId, tenantId: receipt.tenantId, email: receipt.elevEmail }, select: { id: true } });
+  // Personel oturumu YALNIZ kapatma gerektiğinde açılır (başta ya da bekleme sırasında geç oluşan hesap için); closeAccess sonunda yeniden kapatır.
+  const openStaffSession = async () => {
+    if (session && session.token) return session;
+    const elev = await elevOf();
+    if (!elev) throw new Error('makbuzdaki kullanıcı sentetik tenantta yok');
+    await prisma.user.update({ where: { id: elev.id }, data: { passwordHash: await bcrypt.hash(pw, 10), isActive: true } });
+    out.temporaryAccess = 'makbuzdaki sentetik personele geçici erişim; kapanışta yeniden kapatıldı';
+    session = await L.AH.login(base, receipt.elevEmail, pw, receipt.tenantSlug);
+    if (session && session.token) addSecret(session.token);
+    return session;
+  };
   try {
     const ident = await assertReceiptIdentity(prisma, receipt);
     if (!ident.ok) { console.error(`REDDEDİLDİ: kimlik bağı doğrulanmadı (${ident.reason}) — HİÇBİR yazma yapılmadı`); await prisma.$disconnect().catch(() => {}); process.exit(4); }
     before = await portalState(prisma, receipt.clientId);
     if (before.exists && (before.isActive || before.hasPortalAccess)) {
-      const elev = await prisma.user.findFirst({ where: { id: receipt.elevUserId, tenantId: receipt.tenantId, email: receipt.elevEmail }, select: { id: true } });
-      if (!elev) { console.error('REDDEDİLDİ: makbuzdaki kullanıcı sentetik tenantta yok — yazma yapılmadı'); await prisma.$disconnect().catch(() => {}); process.exit(4); }
-      await prisma.user.update({ where: { id: elev.id }, data: { passwordHash: await bcrypt.hash(pw, 10), isActive: true } });
-      out.temporaryAccess = 'makbuzdaki sentetik personele geçici erişim; kapanışta yeniden kapatıldı';
-      session = await L.AH.login(base, receipt.elevEmail, pw, receipt.tenantSlug);
-      if (session && session.token) addSecret(session.token);
+      if (!(await elevOf())) { console.error('REDDEDİLDİ: makbuzdaki kullanıcı sentetik tenantta yok — yazma yapılmadı'); await prisma.$disconnect().catch(() => {}); process.exit(4); }
+      await openStaffSession();
     }
   } catch (e) { out.fatal = errText(e, 200); }
   const issued = Number.isInteger(receipt.portalIssuedTokenVersion) ? receipt.portalIssuedTokenVersion : null;
   out.versionEvidence = { issuedFromReceipt: issued, beforeRecover: before ? before.tokenVersion : null };
   try {
     out.portalClose = await closePortal(R, prisma, base, origin, receipt, P, {
-      session, issuedVersion: issued, sessionRequired: true,
-      absentNote: receipt.createAttemptedAt ? 'Recover anında portal hesabı YOK (koşumda oluşturma denendi; geç oluşma koşum kapanışında izlendi)' : 'portal hesabı yok; makbuzda oluşturma denemesi kaydı yok',
+      session, sessionProvider: openStaffSession, issuedVersion: issued, sessionRequired: true, createUncertain,
+      absentNote: receipt.createAttemptedAt ? `Recover anında portal hesabı YOK (oluşturma sonucu kesin: ${receipt.createOutcome})` : 'portal hesabı yok; makbuzda oluşturma denemesi kaydı yok',
       noSessionWhy: 'Recover: koşumun oturumu saklanmaz (sır) — mevcut oturum reddi Recover\'da ÖLÇÜLEMEZ; Run kanıtındaki P-C4 satırlarına bakın',
       // Yeni giriş reddini ölçmek için: YALNIZ zaten pasif hesaba rastgele ölçüm parolası yazılır; hesap açılmaz.
       credsForClosed: async (st) => {
