@@ -10,8 +10,10 @@ import { HttpException } from '@nestjs/common';
 import { CredentialRecoveryRateLimitGuard } from '../credential-recovery-rate-limit.guard';
 import { LoginRateLimitGuard } from '../login-rate-limit.guard';
 
+// D5-SEC-R01: kurtarma guard'ı anahtarı socket peer'den çözer (güvenilen kenar vekili değilse XFF yok sayılır);
+// bu yüzden test isteği peer adresini de taşır. LoginRateLimitGuard (personel) `request.ip` okumaya devam eder.
 function ctxFor(ip: string): any {
-  return { switchToHttp: () => ({ getRequest: () => ({ ip }) }) };
+  return { switchToHttp: () => ({ getRequest: () => ({ ip, socket: { remoteAddress: ip } }) }) };
 }
 
 describe('CredentialRecoveryRateLimitGuard', () => {

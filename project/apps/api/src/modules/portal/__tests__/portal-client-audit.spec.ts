@@ -152,7 +152,8 @@ describe('C0 bypass — disablePortalUser audit', () => {
     // tokenVersion artışı — mevcut JWT'ler anında geçersiz kılınır.
     expect(tx.clientPortalUser.updateMany).toHaveBeenCalledWith({
       where: { clientId: 'c1' },
-      data: { isActive: false, tokenVersion: { increment: 1 } },
+      // D5-SEC-R01: bekleyen sıfırlama token'ı da AYNI update'te geçersizleşir.
+      data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null },
     });
   });
 

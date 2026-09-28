@@ -265,6 +265,7 @@ src/modules/legal-deadline/__tests__/legal-deadline-snapshot-invariant.db-gated.
 src/modules/legal-deadline/__tests__/proceeding-classification.db-gated.integration.spec.ts
 src/modules/legal-deadline/__tests__/service-occurrence-deadline-calculation.db-gated.integration.spec.ts
 src/modules/legal-time-shadow/__tests__/legal-time-shadow.db-gated.integration.spec.ts
+src/modules/portal/__tests__/portal-reset-hardening-d5.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-reset-tenant-scope.db-gated.integration.spec.ts
 src/modules/portal/__tests__/portal-token-version-revocation.db-gated.integration.spec.ts
 src/modules/summary-engine/__tests__/allocation-drift-baseline.db-gated.integration.spec.ts

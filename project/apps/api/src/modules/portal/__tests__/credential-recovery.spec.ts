@@ -37,7 +37,9 @@ function buildService(over: any = {}) {
     clientPortalUser: {
       findFirst: jest.fn().mockResolvedValue(over.foundUser ?? null),
       update: jest.fn().mockResolvedValue({}),
-      updateMany: jest.fn().mockResolvedValue(over.updateManyResult ?? { count: 0 }),
+      // D5-SEC-R01: talep token'ı koşullu `updateMany` ile yazar (hesap hâlâ aktifse count 1); kullanıcı bulunduğunda
+      // varsayılan 1, aksi 0. Açık `updateManyResult` her iki çağrı (talep yazımı + tüketim) için geçerlidir.
+      updateMany: jest.fn().mockResolvedValue(over.updateManyResult ?? (over.foundUser ? { count: 1 } : { count: 0 })),
     },
   };
   const emailProvider = {
@@ -62,8 +64,11 @@ describe('createResetToken', () => {
     const res = await svc.createResetToken('a@x.com');
     expect(res).toEqual({ success: true });
 
-    expect(prisma.clientPortalUser.update).toHaveBeenCalledTimes(1);
-    const updateData = prisma.clientPortalUser.update.mock.calls[0][0].data;
+    expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.updateMany).toHaveBeenCalledTimes(1);
+    // D5-SEC-R01: yazım koşullu — yalnız hâlâ AKTİF hesaba.
+    expect(prisma.clientPortalUser.updateMany.mock.calls[0][0].where).toEqual({ id: 'PU1', isActive: true });
+    const updateData = prisma.clientPortalUser.updateMany.mock.calls[0][0].data;
     expect(updateData.resetToken).toMatch(/^[0-9a-f]{64}$/); // sha256 hex
     expect(updateData.resetTokenExp).toBeInstanceOf(Date);
 
@@ -117,7 +122,7 @@ describe('createResetToken', () => {
     });
 
     await svc.createResetToken('a@x.com');
-    const persistedHash = prisma.clientPortalUser.update.mock.calls[0][0].data.resetToken;
+    const persistedHash = prisma.clientPortalUser.updateMany.mock.calls[0][0].data.resetToken; // talep yazımı (1. çağrı)
 
     const url = new URL(String(emailProvider.send.mock.calls[0][0].text).match(/https?:\/\/\S+/)![0]);
     const tokenFromFragment = extractTokenFromFragment(url);
@@ -127,7 +132,7 @@ describe('createResetToken', () => {
     expect(res).toEqual({ success: true });
 
     // Backend'in aradığı hash, üretim anında DB'ye yazılan hash ile AYNI olmalı.
-    const consumeWhere = prisma.clientPortalUser.updateMany.mock.calls[0][0].where;
+    const consumeWhere = prisma.clientPortalUser.updateMany.mock.calls[1][0].where; // tüketim (2. çağrı)
     expect(consumeWhere.resetToken).toBe(persistedHash);
     expect(consumeWhere.resetTokenExp).toEqual({ gt: expect.any(Date) });
   });
@@ -138,6 +143,17 @@ describe('createResetToken', () => {
     const res = await svc.createResetToken('yok@x.com');
     expect(res).toEqual({ success: true });
     expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
+    expect(prisma.clientPortalUser.updateMany).not.toHaveBeenCalled();
+    expect(emailProvider.send).not.toHaveBeenCalled();
+  });
+
+  it('[2b] D5-SEC-R01: hesap okunduktan sonra kapatıldı (koşullu yazım 0 satır) → aynı cevap, e-posta YOK', async () => {
+    const { svc, prisma, emailProvider } = buildService({
+      foundUser: { id: 'PU1', email: 'a@x.com', client: { tenant: { lifecycle: 'ACTIVE' } } },
+      updateManyResult: { count: 0 },
+    });
+    await expect(svc.createResetToken('a@x.com')).resolves.toEqual({ success: true });
+    expect(prisma.clientPortalUser.updateMany).toHaveBeenCalledTimes(1);
     expect(emailProvider.send).not.toHaveBeenCalled();
   });
 

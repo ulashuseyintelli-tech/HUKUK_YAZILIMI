@@ -7,6 +7,7 @@ import { maskEmail } from "../../common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import { EmailProviderService } from "../notification/email-provider.service";
+import { PORTAL_PASSWORD_MIN_LENGTH } from "./dto/portal-password.dto";
 import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
 import type { AuditActor } from "../client/client.service";
 import { generateRawInviteToken, hashInviteToken } from "../auth/invite/user-invite-token.util";
@@ -203,6 +204,17 @@ const PORTAL_NOTIFICATION_CLIENT_SELECT = Prisma.validator<Prisma.PortalNotifica
  * id → hepsi AYNI 400 "Geçersiz dosya referansı". `caseId` verilmemişse (undefined/null/boş) davranış değişmez.
  */
 export const PORTAL_CASE_REFERENCE_INVALID = "Geçersiz dosya referansı";
+
+/**
+ * D5-SEC-R01 — sıfırlama parola politikasının (en az 8 karakter, string; sıfırlama sayfasıyla aynı) servis düzeyindeki
+ * karşılığı. HTTP'de DTO doğrular; bu kontrol servis doğrudan çağrıldığında da politikayı korur ve token'dan ÖNCE çalışır.
+ * Yalnız resetPassword kullanır (change-password kapsam dışı — bkz. dto/portal-password.dto.ts).
+ */
+function assertPortalPasswordPolicy(value: unknown): void {
+  if (typeof value !== "string" || value.length < PORTAL_PASSWORD_MIN_LENGTH) {
+    throw new BadRequestException(`Şifre en az ${PORTAL_PASSWORD_MIN_LENGTH} karakter olmalıdır`);
+  }
+}
 
 @Injectable()
 export class PortalService {
@@ -608,10 +620,16 @@ export class PortalService {
     const resetToken = hashInviteToken(rawToken);
     const resetTokenExp = new Date(Date.now() + 3600000); // 1 saat
 
-    await this.prisma.clientPortalUser.update({
-      where: { id: portalUser.id },
+    // D5-SEC-R01: token YALNIZ hesap hâlâ aktifse yazılır (koşullu, atomik). Hesap okunduktan sonra eşzamanlı kapatma
+    // commit olduysa WHERE yeniden değerlendirilir → 0 satır: pasif hesaba token YAZILMAZ ve e-posta GÖNDERİLMEZ.
+    // Dış cevap aynı kalır (enumeration-safe). Talep önce yazılırsa kapatma aynı update'te token'ı siler.
+    const written = await this.prisma.clientPortalUser.updateMany({
+      where: { id: portalUser.id, isActive: true },
       data: { resetToken, resetTokenExp },
     });
+    if (written.count !== 1) {
+      return { success: true };
+    }
 
     await this.sendResetEmail(email, rawToken);
 
@@ -675,6 +693,8 @@ export class PortalService {
    * race-safe `updateMany(...userId:null)` deseniyle aynı ilke.
    */
   async resetPassword(token: string, newPassword: string) {
+    // D5-SEC-R01: API tarafı parola politikası — token TÜKETİLMEDEN önce (geçersiz parola token'ı yakmaz).
+    assertPortalPasswordPolicy(newPassword);
     const tokenHash = hashInviteToken(token);
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
@@ -690,6 +710,9 @@ export class PortalService {
       where: {
         resetToken: tokenHash,
         resetTokenExp: { gt: new Date() },
+        // D5-SEC-R01: PASİF hesap sıfırlama token'ıyla parola DEĞİŞTİREMEZ. Yüklem aynı atomik WHERE'de (ayrı
+        // ön-okuma YOK): eşleşme 0 → geçersiz/süresi dolmuş token ile AYNI 400 (hesap durumu sızdırılmaz).
+        isActive: true,
         client: { tenant: { lifecycle: ACTIVE_TENANT_LIFECYCLE } },
       },
       data: {
@@ -739,7 +762,9 @@ export class PortalService {
       // guard'ın stale-version kontrolü da devre dışı bırakmayı bağımsız olarak kapsar.
       await tx.clientPortalUser.updateMany({
         where: { clientId },
-        data: { isActive: false, tokenVersion: { increment: 1 } },
+        // D5-SEC-R01: bekleyen sıfırlama token'ı AYNI update'te geçersizleştirilir — kapatılan hesaba
+        // kapatmadan önce gönderilmiş bağlantı artık tüketilemez (reset WHERE'i ayrıca isActive:true ister).
+        data: { isActive: false, tokenVersion: { increment: 1 }, resetToken: null, resetTokenExp: null },
       });
       const after = await tx.client.update({
         where: { id: clientId },

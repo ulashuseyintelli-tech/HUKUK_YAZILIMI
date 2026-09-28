@@ -452,3 +452,5 @@ src/modules/public-institution/public-institution.service.spec.ts
 #   responsibility-history.service.spec (ayni sorumluluk servislerinin controller uclari).
 src/modules/case/__tests__/case-responsibility-at.spec.ts
 src/modules/case/__tests__/responsibility-history.controller.spec.ts
+src/modules/auth/guards/__tests__/login-rate-limit-store-isolation.spec.ts
+src/modules/auth/guards/__tests__/portal-rate-limit-edge-ip.spec.ts
