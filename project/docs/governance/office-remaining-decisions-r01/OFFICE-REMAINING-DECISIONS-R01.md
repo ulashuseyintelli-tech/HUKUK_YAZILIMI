@@ -345,4 +345,12 @@ FD kararinda ve CLIENT politikalarinda elenir.
 | K4 | Kalan yollarin onay/para/yetki etkisi; kilit refactor'u YOK | BULGU — oncelik 1: genel onay kararlari (tx disi kilitsiz yetki + ayni tx'te para etkisi); 2-4: avukat yetki verme, portal hesabi, ucret sozlesmesi; dar duzeltme kapsamlari kayitta. Uygulanmadi |
 | K5 | Canlida salt-okuma tutarlilik olcumu; kayit duzeltme yok | BULGU — `Lawyer.officeId` uyusmazligi 0; B1 kaybi 0; K2 sonrasi yetki verebilecek aktoru olmayan aktif tenant 0; gecmis oz-yetki 0; sistem rotasiyla uretilmis kalem 0 |
 
-Ek (kapsam disi, duzeltilmedi): `POST /claim-items/case/:caseId/add-interest` de insan kapisindan gecmez — ayri owner karari.
+~~Ek (kapsam disi, duzeltilmedi): `POST /claim-items/case/:caseId/add-interest` de insan kapisindan gecmez — ayri owner karari.~~
+
+**GERI CEKILDI — 2026-09-28 (olcum main `194e9432`; owner GO secenek B):** yukaridaki ek bulgu yanlisti — bir yazma bypass'i
+veya guvenlik acigi YOKTU. `add-interest` ve `recalculate-interest` 2026-01-15'ten beri hicbir ClaimItem yazmiyor, duz `Error`
+ile 500 donuyor ve ErrorLog'a sunucu hatasi yaziyordu; web paneli uretimde `readOnly` oldugu icin bu uclara ulasilmiyordu.
+Yapilan is **hata sozlesmesi ve cagrisiz kod temizligidir**: iki uc guard siniri korunarak kontrollu 410
+`CLAIM_ITEM_ENDPOINT_REMOVED` doner (onay/olusum akisi izlenimi verilmez), cagrisiz dogrudan yazicilar
+(`addExpenseItem`/`addFeeItem`/`addAttorneyFeeItem`) kaldirildi. Ayrinti ve testler: `product-backlog.md` "OFFICE YETKI
+SERTLESTIRME R02" kaydindaki geri cekme notu. K1-K5 kararlari ve K4 bulgusu bu duzeltmeden ETKILENMEZ.

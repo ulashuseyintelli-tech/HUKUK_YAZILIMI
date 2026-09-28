@@ -115,7 +115,8 @@ export class ClaimItemController {
     return { success: true, data };
   }
 
-  // Dosyaya faiz kalemi ekle
+  // KALDIRILMIŞ işlev: faiz kalemi ekleme — 410 CLAIM_ITEM_ENDPOINT_REMOVED (yazma yok). Rota ve
+  // JwtAuthGuard/ViewerWriteDenyGuard sınırı korunur (owner GO 2026-09-28, seçenek B).
   @Post('case/:caseId/add-interest')
   async addInterest(
     @CurrentUser('tenantId') tenantId: string,
@@ -194,7 +195,8 @@ export class ClaimItemController {
     return { success: true, data };
   }
 
-  // Tüm faizleri yeniden hesapla
+  // KALDIRILMIŞ işlev: toplu faiz yeniden hesaplama — 410 CLAIM_ITEM_ENDPOINT_REMOVED (yazma yok).
+  // Rota ve guard sınırı korunur (owner GO 2026-09-28, seçenek B).
   @Post('case/:caseId/recalculate-interest')
   async recalculateInterest(
     @CurrentUser('tenantId') tenantId: string,

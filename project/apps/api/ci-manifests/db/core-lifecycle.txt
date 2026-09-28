@@ -129,3 +129,11 @@ src/modules/case/__tests__/case-responsible-drift.integration.spec.ts
 #   sistem yazicilari ayrik calisir. Yamasiz: yetkisiz USER generate-from-rules 201 ile kalem YAZIYORDU.
 src/modules/case/__tests__/case-permission-grant-authz.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-human-generation-authz.db-gated.integration.spec.ts
+
+# Kaldirilmis ClaimItem uclari hata sozlesmesi (owner GO 2026-09-28, secenek B), GERCEK HTTP + disposable PostgreSQL.
+#   add-interest / recalculate-interest -> kontrollu 410 CLAIM_ITEM_ENDPOINT_REMOVED (yazma yok; kapi sorulmaz);
+#   VIEWER 403 ve kimliksiz 401 410'dan ONCE; gercek AllExceptionsFilter ile 410 ErrorLog'a YAZILMAZ, ayni
+#   kablolamada duz Error (500) YAZILIR (pozitif kontrol). add-expense/add-fee/add-attorney-fee insan kapisi
+#   DEGISMEDI (yetkisiz 403, yetkili FORMATION_CONTEXT_REQUIRED, VIEWER 403). Guvenlik acigi kapatma DEGIL:
+#   iki uc 2026-01-15'ten beri hic yazmiyordu (duz Error -> 500 + ErrorLog gurultusu).
+src/modules/claim-item/__tests__/claim-item-removed-endpoints.db-gated.integration.spec.ts

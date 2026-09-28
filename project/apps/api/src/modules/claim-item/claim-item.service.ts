@@ -47,6 +47,11 @@ import {
   type ClaimItemLifecycleRecord,
 } from './claim-item-lifecycle-contract';
 import { throwClaimItemFormationContextRequired } from './claim-item-formation-containment';
+import {
+  CLAIM_ITEM_ADD_INTEREST_REMOVED_MESSAGE,
+  CLAIM_ITEM_RECALCULATE_INTEREST_REMOVED_MESSAGE,
+  throwClaimItemEndpointRemoved,
+} from './claim-item-removed-endpoints';
 
 export interface ClaimItemMutationResult {
   applied: boolean;
@@ -744,103 +749,37 @@ export class ClaimItemService {
 
   // ==================== TOPLU İŞLEMLER ====================
 
-  // Dosyaya faiz kalemi ekle (otomatik hesaplamalı)
+  // Kaldırılmış faiz kalemi ekleme işlevi
   /**
-   * @deprecated Faiz kalemi ekleme interest-engine üzerinden yapılmalı
-   * 
-   * Bu metod artık hesap YAPMAZ. Faiz kalemi eklemek için:
-   * 1. interest-engine.calculate() ile faiz hesaplayın
-   * 2. Sonucu claim-item olarak kaydedin
-   * 
-   * @throws Error - Her zaman hata fırlatır
+   * KALDIRILDI (2026-01-15, 51f704c9) — kontrollü 410 Gone + sabit kod (owner GO 2026-09-28, seçenek B).
+   * Dosyaya veya ClaimItem'a dokunmaz; onay/oluşum akışı YOKTUR. Faiz hesabı interest-engine üzerindedir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemController.addInterest() → POST /claim-items/case/:caseId/add-interest
+   * /// </remarks>
    */
   async addInterestItem(
     _tenantId: string,
     _caseId: string,
     _interestType: InterestType,
     _isPreInterest: boolean = true,
-  ) {
-    throw new Error(
-      '🚫 claim-item.addInterestItem() KALDIRILDI. ' +
-      'Faiz kalemi eklemek için interest-engine.calculate() kullanın, ' +
-      'sonucu claim-item olarak kaydedin. @see ARCHITECTURE.md'
-    );
+  ): Promise<never> {
+    throwClaimItemEndpointRemoved(CLAIM_ITEM_ADD_INTEREST_REMOVED_MESSAGE);
   }
 
-  // Masraf kalemi ekle
-  async addExpenseItem(
-    tenantId: string,
-    caseId: string,
-    amount: number,
-    description: string,
-    currency: string = 'TRY',
-  ) {
-    return (this.prisma as any).claimItem.create({
-      data: {
-        tenantId,
-        caseId,
-        itemType: 'EXPENSE',
-        ...claimItemCreationAmounts(amount),
-        currency,
-        description,
-        sortOrder: 30,
-      },
-    });
-  }
-
-  // Harç kalemi ekle
-  async addFeeItem(
-    tenantId: string,
-    caseId: string,
-    amount: number,
-    description: string,
-    currency: string = 'TRY',
-  ) {
-    return (this.prisma as any).claimItem.create({
-      data: {
-        tenantId,
-        caseId,
-        itemType: 'FEE',
-        ...claimItemCreationAmounts(amount),
-        currency,
-        description,
-        sortOrder: 40,
-      },
-    });
-  }
-
-  // Vekalet ücreti kalemi ekle
-  async addAttorneyFeeItem(
-    tenantId: string,
-    caseId: string,
-    amount: number,
-    description: string = 'Vekalet ücreti',
-    currency: string = 'TRY',
-  ) {
-    return (this.prisma as any).claimItem.create({
-      data: {
-        tenantId,
-        caseId,
-        itemType: 'ATTORNEY_FEE',
-        ...claimItemCreationAmounts(amount),
-        currency,
-        description,
-        sortOrder: 50,
-      },
-    });
-  }
-
-  // Tüm faizleri yeniden hesapla
+  // Kaldırılmış toplu faiz yeniden hesaplama işlevi
   /**
-   * @deprecated Faiz yeniden hesaplama interest-engine üzerinden yapılmalı
-   * @throws Error - Her zaman hata fırlatır
+   * KALDIRILDI (2026-01-15, 51f704c9) — kontrollü 410 Gone + sabit kod (owner GO 2026-09-28, seçenek B).
+   * Dosyaya veya ClaimItem'a dokunmaz. Faiz hesabı interest-engine üzerindedir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - ClaimItemController.recalculateInterest() → POST /claim-items/case/:caseId/recalculate-interest
+   * /// </remarks>
    */
-  async recalculateAllInterest(_tenantId: string, _caseId: string) {
-    throw new Error(
-      '🚫 claim-item.recalculateAllInterest() KALDIRILDI. ' +
-      'Faiz yeniden hesaplama için interest-engine.calculate() kullanın. ' +
-      '@see ARCHITECTURE.md'
-    );
+  async recalculateAllInterest(_tenantId: string, _caseId: string): Promise<never> {
+    throwClaimItemEndpointRemoved(CLAIM_ITEM_RECALCULATE_INTEREST_REMOVED_MESSAGE);
   }
 
   // ==================== CLAIM ENGINE ENTEGRASYONU ====================
