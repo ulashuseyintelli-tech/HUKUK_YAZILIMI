@@ -222,6 +222,14 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
     rationale: 'Confirmed Collection toplamından türetilir.',
   },
   {
+    path: 'src/modules/case/check-penalty-summary.ts',
+    classification: 'DISPLAY_ONLY',
+    access: 'READ',
+    rationale:
+      'K3-L Faz 1a (owner kararı 2026-09-28): hesap özeti çek tazminatı kaleminin tahsil edilen/kalan gösterimi; '
+      + 'yazma ve mahsup YOK.',
+  },
+  {
     path: 'src/modules/case/case-payment-preview.service.ts',
     classification: 'COMPATIBILITY',
     access: 'READ',

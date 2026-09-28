@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { buildCheckPenaltySummary, type CheckInstrumentRow, type CheckPenaltyItemRow } from "./check-penalty-summary";
+import { hasPendingCheckPenaltyFormation } from "../claim-item/formation-cek/check-penalty-formation-status";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import { maskIban } from "@/common/pii-mask.util";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
@@ -4324,6 +4326,12 @@ export class CaseService {
         collections: { where: { status: { not: 'CANCELLED' } } },
         debtors: { include: { debtor: true } },
         formType: true,
+        // K3-L: kesin çek tazminatı YALNIZ kalem kaydından; tahmin yalnız doğrulanmış çek kaydından.
+        claimItems: { where: { itemType: 'CHECK_PENALTY', status: { not: 'CANCELLED' } } },
+        caseInstruments: {
+          where: { instrumentType: 'CEK' },
+          select: { amount: true, currency: true, isBounced: true, bounceDate: true },
+        },
       },
     });
 
@@ -4355,7 +4363,24 @@ export class CaseService {
 
     // 4. Çek tazminatı ve komisyon
     const isCek = kalemTuru === 'CEK' || kalemTuru === 'CHECK';
-    const tazminat = isCek ? asilAlacak * 0.10 : 0;
+    // K3-L (owner kararı 2026-09-28): KESİN tazminat YALNIZ kesin CHECK_PENALTY kalemlerinden (tutar, kalan, kalem
+    // bazlı sorumlular kayıttan). Kalem yoksa "asıl alacak × %10" kesin borca EKLENMEZ; durum + ayrı bilgi tahmini.
+    const penaltyItems = ((caseData as any).claimItems ?? []) as CheckPenaltyItemRow[];
+    const checkInstruments = ((caseData as any).caseInstruments ?? []) as CheckInstrumentRow[];
+    const isCheckCase = isCek || caseData.type === 'CHECK' || checkInstruments.length > 0;
+    const tazminatDurumu = buildCheckPenaltySummary({
+      isCheckCase,
+      penaltyItems,
+      checkInstruments,
+      debtorNames: new Map(
+        (caseData.debtors ?? []).map((cd: any) => [cd.debtorId, String(cd.debtor?.name ?? cd.debtorId)] as [string, string]),
+      ),
+      pendingApproval:
+        isCheckCase && penaltyItems.length === 0
+          ? await hasPendingCheckPenaltyFormation(this.prisma, tenantId, caseId)
+          : false,
+    });
+    const tazminat = tazminatDurumu.tutar;
     const komisyon = isCek ? asilAlacak * 0.003 : 0;
 
     // 5. Takip tutarı
@@ -4418,6 +4443,7 @@ export class CaseService {
       
       asilAlacak,
       tazminat,
+      tazminatDurumu,
       komisyon,
       takipOncesiFaiz,
       takipTutari,

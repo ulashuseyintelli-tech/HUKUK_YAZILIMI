@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { CanActivate, ExecutionContext, INestApplication, Logger, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { OfficeApprovalExecutionStatus, OfficeApprovalStatus, PrismaClient } from '@prisma/client';
@@ -6,6 +6,8 @@ import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CaseService } from '../../case/case.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { ClaimItemModule } from '../claim-item.module';
 import { CEK_AUTO_GENERATE_FORMATION_OPTIONS } from '../formation-cek/cek-auto-generate-formation.service';
 
@@ -296,6 +298,50 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
       expect(decisions.map((d) => d.status).sort()).toEqual([201, 409]);
       expect(await itemsOf(f)).toHaveLength(2);
       expect(await snapshotsOf(f)).toBe(2);
+    });
+  });
+
+  describe('K3-L hesap özeti — kesin tazminat yalnız kalemden (owner kararı 2026-09-28)', () => {
+    /** Hesap özeti (GET /cases/:id/calculation-summary) servis yolu; kanonik bakiye servisi bu grafikte yok → UNAVAILABLE. */
+    const summaryOf = (f: Fixture) => {
+      const service = Object.assign(Object.create(CaseService.prototype), {
+        prisma: app.get(PrismaService, { strict: false }),
+        logger: new Logger('K3L-summary'),
+      }) as CaseService;
+      return service.getCalculationSummary(f.tenantId, f.caseId, '2026-09-28') as Promise<any>;
+    };
+
+    it('kalem yok → oluşturulmamış + ayrı tahmin; talep → onay bekliyor; onay → yalnız kalemden, sorumlu yalnız keşideci', async () => {
+      const f = await fixture('summary');
+      // Asıl alacak dolu (eski sabit "asıl alacak × %10" geri gelirse görünür olsun).
+      await prisma.case.update({ where: { id: f.caseId }, data: { principalAmount: 12345.67 } });
+
+      const before = await summaryOf(f);
+      expect(before.asilAlacak).toBe(12345.67);
+      expect(before.tazminat).toBe(0);
+      expect(before.tazminatDurumu).toMatchObject({ durum: 'OLUSTURULMAMIS', tutar: 0, kalemler: [] });
+      expect(before.tazminatDurumu.tahmin).toMatchObject({ durum: 'HESAPLANDI', tutar: 1234.57 });
+      // Tahmin kesin borca GİRMEZ.
+      expect(before.takipTutari).toBeCloseTo(before.asilAlacak + before.komisyon + before.takipOncesiFaiz, 2);
+
+      const requested = await requestFormation(f);
+      const pending = await summaryOf(f);
+      expect(pending.tazminat).toBe(0);
+      expect(pending.tazminatDurumu.durum).toBe('ONAY_BEKLIYOR');
+
+      expect((await post(`/office-approvals/${requested.approvalRequestId}/approve`, f.approver.userId, {})).status).toBe(201);
+      const after = await summaryOf(f);
+      expect(after.tazminat).toBe(1234.57);
+      expect(after.tazminatDurumu).toMatchObject({ durum: 'KALEM_VAR', tahmin: null, mesaj: null });
+      expect(after.tazminatDurumu.kalemler).toHaveLength(1);
+      expect(after.tazminatDurumu.kalemler[0]).toMatchObject({
+        tutar: 1234.57,
+        kalan: 1234.57,
+        sorumlulukBelirsiz: false,
+        sorumluBorclular: [{ debtorId: f.debtorId, ad: 'K3 kesideci summary' }],
+      });
+      // Mükerrer yok: kesin tazminat takip tutarına bir kez girer.
+      expect(after.takipTutari).toBeCloseTo(after.asilAlacak + 1234.57 + after.komisyon + after.takipOncesiFaiz, 2);
     });
   });
 

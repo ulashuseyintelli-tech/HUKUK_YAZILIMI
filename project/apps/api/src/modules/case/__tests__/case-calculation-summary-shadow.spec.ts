@@ -253,6 +253,8 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       'kalemTuru',
       'asilAlacak',
       'tazminat',
+      // K3-L (owner kararı 2026-09-28): eklemeli alan — kalem bazlı sorumlular + durum + ayrı bilgi tahmini.
+      'tazminatDurumu',
       'komisyon',
       'takipOncesiFaiz',
       'takipTutari',
