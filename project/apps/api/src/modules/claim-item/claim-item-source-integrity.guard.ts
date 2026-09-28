@@ -613,22 +613,16 @@ export class ClaimItemSourceIntegrityGuard {
         // canonical marker check, so multiplicity cannot be hidden by findFirst.
         return null;
       case 'CASE_INSTRUMENT_GENERATOR':
-        return database.claimItem.findFirst({
-          where: {
-            tenantId: context.tenantId,
-            caseId: context.caseId,
-            instrumentId: context.sourceId,
-          },
-          select: { id: true },
-        });
       case 'HUMAN_INSTRUMENT':
-        // Aynı çek + aynı kalem türü (kanonik POST /cases çek bedeli dahil) → mükerrer.
+        // Kanonik üretici: çeke bağlı herhangi bir kalem → mükerrer. İnsan formation'ı (K3): aynı çek + aynı kalem
+        // türü (kanonik POST /cases çek bedeli dahil) → mükerrer. Tek sorgu (tenant envanter kapısı çözülemeyen
+        // çağrı tavanı).
         return database.claimItem.findFirst({
           where: {
             tenantId: context.tenantId,
             caseId: context.caseId,
             instrumentId: context.sourceId,
-            itemType: data.itemType,
+            ...(context.authority === 'HUMAN_INSTRUMENT' ? { itemType: data.itemType } : {}),
           },
           select: { id: true },
         });
