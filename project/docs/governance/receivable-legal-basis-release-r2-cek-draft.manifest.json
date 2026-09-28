@@ -1,6 +1,6 @@
 {
   "contentRatification": {
-    "decisionPackSha256": "77701ca7bcceb44ceb9001a4c0809da4fe21487d8f0654f42cf34ce8b7714603",
+    "decisionPackSha256": "f2c5766b6d51481b9431aa95918bfe584a2a34423ec617a5b8d1519a01029af4",
     "status": "DRAFT_PENDING_OWNER_LEGAL_RATIFICATION"
   },
   "entryChecksums": [
@@ -16,7 +16,7 @@
     }
   ],
   "manifestSchemaVersion": "RECEIVABLE_LEGAL_BASIS_RELEASE_MANIFEST_V1",
-  "payloadChecksum": "27612c7efd55b5d3b84c7f6f976832250186b5ca8ed140d8ec662b0ed985d626",
+  "payloadChecksum": "d690c9ed5d1b98ba21d77852a73aa004b0826837c3d2dc6ab36c4369716b7b3b",
   "registryChecksum": "603b5bdc0868a26c79a120241fd7a0e58e2ca419bd340394c48514da0c403971",
   "releaseId": "RCV-LB-R2-CEK",
   "releaseVersion": "1",

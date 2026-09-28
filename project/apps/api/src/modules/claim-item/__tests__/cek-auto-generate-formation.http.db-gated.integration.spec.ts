@@ -104,8 +104,11 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
     const approver = await actor('appr', 'USER', 'PARTNER', null);
     const approver2 = await actor('appr2', 'USER', 'PARTNER', null);
     const viewerPartner = await actor('vpartner', 'VIEWER', 'PARTNER', null);
-    const debtor = await prisma.debtor.create({ data: { tenantId, type: 'COMPANY', name: `K3 borclu ${label}` } as never });
-    await prisma.caseDebtor.create({ data: { caseId: legalCase.id, debtorId: debtor.id } });
+    // K3-L: keşideci + yalnız ciranta (çek tazminatı yalnız keşideciye; owner kararı 2026-09-28).
+    const debtor = await prisma.debtor.create({ data: { tenantId, type: 'COMPANY', name: `K3 kesideci ${label}` } as never });
+    await prisma.caseDebtor.create({ data: { caseId: legalCase.id, debtorId: debtor.id, role: 'KESIDECI' } });
+    const ciranta = await prisma.debtor.create({ data: { tenantId, type: 'COMPANY', name: `K3 ciranta ${label}` } as never });
+    await prisma.caseDebtor.create({ data: { caseId: legalCase.id, debtorId: ciranta.id, role: 'CIRANTA' } });
     const strangerDebtor = await prisma.debtor.create({ data: { tenantId, type: 'COMPANY', name: `K3 yabanci ${label}` } as never });
     const bounced = opts.bounced ?? true;
     const instrument = await prisma.caseInstrument.create({
@@ -148,6 +151,7 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
       approver2,
       viewerPartner,
       debtorId: debtor.id,
+      cirantaId: ciranta.id,
       strangerDebtorId: strangerDebtor.id,
       instrumentId: instrument.id,
     };
@@ -159,7 +163,7 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
     documentId: f.instrumentId,
     documentType: 'CEK',
     idempotencyKey: `k3-cek-${randomUUID()}`,
-    liableDebtorIds: [f.debtorId],
+    liableDebtorIds: [f.debtorId, f.cirantaId],
     totalAmount: 12345.67,
     currency: 'TRY',
     checkPenaltyRate: 10,
@@ -205,7 +209,8 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
         .get(`/office-approvals/${requested.approvalRequestId}`)
         .set('x-test-user-id', f.approver.userId);
       expect(detail.status).toBe(200);
-      expect(detail.body.data.reason).toContain('Çek bedeli 12345.67 TRY; Çek tazminatı (%10) 1234.57 TRY');
+      expect(detail.body.data.reason).toContain('Çek bedeli 12345.67 TRY (sorumlu: ');
+      expect(detail.body.data.reason).toMatch(/Çek tazminatı \(%10\) 1234\.57 TRY \(sorumlu: K3 kesideci happy\)/);
 
       const approve = await post(`/office-approvals/${requested.approvalRequestId}/approve`, f.approver.userId, { note: 'uygun' });
       expect(approve.status).toBe(201);
@@ -221,9 +226,15 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
       for (const item of items) {
         expect(item.instrumentId).toBe(f.instrumentId);
         expect(item.sourceDocumentId).toBeNull();
-        expect(item.liableDebtorIds).toEqual([f.debtorId]);
+        expect(item.isAllDebtorsLiable).toBe(false);
         expect(item.currency).toBe('TRY');
       }
+      // K3-L: bedel ve tazminatın borçlu kümeleri FARKLI — tazminat yalnız keşideci.
+      const liable = Object.fromEntries(items.map((i) => [i.itemType, i.liableDebtorIds]));
+      expect(liable).toEqual({
+        PRINCIPAL: [f.debtorId, f.cirantaId].sort(),
+        CHECK_PENALTY: [f.debtorId],
+      });
       expect(await snapshotsOf(f)).toBe(2);
       const approval = await approvalOf(requested.approvalRequestId);
       expect(approval.status).toBe(OfficeApprovalStatus.APPROVED);
@@ -345,6 +356,51 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
       expect(await prisma.claimItemFormationIntent.count({ where: { tenantId: { in: [f.tenantId, notBounced.tenantId] } } })).toBe(0);
     });
 
+    it('K3-L: keşideci lehine aval veren tazminata girer, ciranta lehine aval veren girmez', async () => {
+      const f = await fixture('aval');
+      const aval1 = await prisma.debtor.create({ data: { tenantId: f.tenantId, type: 'INDIVIDUAL', name: 'Aval keşideci lehine' } as never });
+      const aval2 = await prisma.debtor.create({ data: { tenantId: f.tenantId, type: 'INDIVIDUAL', name: 'Aval ciranta lehine' } as never });
+      await prisma.caseDebtor.create({ data: { caseId: f.caseId, debtorId: aval1.id, role: 'AVAL', avalForDebtorId: f.debtorId } });
+      await prisma.caseDebtor.create({ data: { caseId: f.caseId, debtorId: aval2.id, role: 'AVAL', avalForDebtorId: f.cirantaId } });
+      const requested = await requestFormation(f, { liableDebtorIds: [f.debtorId, f.cirantaId, aval1.id, aval2.id] });
+      expect((await post(`/office-approvals/${requested.approvalRequestId}/approve`, f.approver.userId, {})).status).toBe(201);
+      const liable = Object.fromEntries((await itemsOf(f)).map((i) => [i.itemType, i.liableDebtorIds]));
+      expect(liable.PRINCIPAL).toEqual([f.debtorId, f.cirantaId, aval1.id, aval2.id].sort());
+      expect(liable.CHECK_PENALTY).toEqual([f.debtorId, aval1.id].sort());
+    });
+
+    it.each([
+      ['yalnız ciranta takip ediliyor (tazminattan sorumlu yok)', 'only-ciranta', 'CHECK_PENALTY_NO_LIABLE_DEBTOR'],
+      ['lehine bilgisi olmayan aval veren', 'aval-unknown', 'AVAL_BENEFICIARY_REQUIRED'],
+      ['çek borçlusu olmayan rol (ASIL_BORCLU)', 'asil-borclu', 'CHECK_DEBTOR_ROLE_REQUIRED'],
+    ])('K3-L: %s → 400 %s, yazma yok', async (_name, variant, code) => {
+      const f = await fixture(`k3l-${variant}`);
+      let liableDebtorIds = [f.debtorId, f.cirantaId];
+      if (variant === 'only-ciranta') liableDebtorIds = [f.cirantaId];
+      if (variant !== 'only-ciranta') {
+        const extra = await prisma.debtor.create({ data: { tenantId: f.tenantId, type: 'INDIVIDUAL', name: `K3L ${variant}` } as never });
+        await prisma.caseDebtor.create({
+          data: { caseId: f.caseId, debtorId: extra.id, role: variant === 'aval-unknown' ? 'AVAL' : 'ASIL_BORCLU' },
+        });
+        liableDebtorIds = [...liableDebtorIds, extra.id];
+      }
+      const res = await post('/claim-items/auto-generate', f.requester.userId, body(f, { liableDebtorIds }));
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(code);
+      expect(await prisma.claimItemFormationIntent.count({ where: { tenantId: f.tenantId } })).toBe(0);
+    });
+
+    it('K3-L: DB kısıtı — lehine aval bilgisi yalnız AVAL rolünde ve kendisini gösteremez', async () => {
+      const f = await fixture('aval-check');
+      await expect(
+        prisma.caseDebtor.updateMany({ where: { caseId: f.caseId, debtorId: f.cirantaId }, data: { avalForDebtorId: f.debtorId } }),
+      ).rejects.toThrow(/case_debtor_aval_for_check/);
+      const selfAval = await prisma.debtor.create({ data: { tenantId: f.tenantId, type: 'INDIVIDUAL', name: 'Kendi lehine' } as never });
+      await expect(
+        prisma.caseDebtor.create({ data: { caseId: f.caseId, debtorId: selfAval.id, role: 'AVAL', avalForDebtorId: selfAval.id } }),
+      ).rejects.toThrow(/case_debtor_aval_for_check/);
+    });
+
     it('aynı çek için onay bekleyen talep varken ikinci talep açılmaz', async () => {
       const f = await fixture('pending');
       await requestFormation(f);
@@ -386,7 +442,17 @@ describeWithDisposableDb('K3 ÇEK auto-generate formation (HTTP + ikinci avukat 
       await prisma.caseDebtor.updateMany({ where: { caseId: f.caseId, debtorId: f.debtorId }, data: { lifecycleStatus: 'PASSIVE' } });
       const res = await post(`/office-approvals/${requested.approvalRequestId}/approve`, f.approver.userId, {});
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('LIABLE_DEBTOR_NOT_IN_CASE');
+      expect(res.body.code).toBe('LIABILITY_ROLE_CHANGED');
+      await expectNothingFormed(f, requested.approvalRequestId);
+    });
+
+    it('K3-L: onay beklerken keşidecinin rolü değişirse (tazminat sorumluluğu düşer) hiçbir kalem oluşmaz', async () => {
+      const f = await fixture('role-changed');
+      const requested = await requestFormation(f);
+      await prisma.caseDebtor.updateMany({ where: { caseId: f.caseId, debtorId: f.debtorId }, data: { role: 'CIRANTA' } });
+      const res = await post(`/office-approvals/${requested.approvalRequestId}/approve`, f.approver.userId, {});
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('LIABILITY_ROLE_CHANGED');
       await expectNothingFormed(f, requested.approvalRequestId);
     });
 

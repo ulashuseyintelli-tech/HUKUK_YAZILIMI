@@ -129,6 +129,8 @@ export class CaseDebtorService {
     // Validate notification mode
     this.validateNotificationMode(dto.notificationMode, debtor.kepAddress, dto.ilanenJustification);
 
+    const avalForDebtorId = await this.resolveAvalBeneficiary(caseId, dto.debtorId, dto.role || "ASIL_BORCLU", dto.avalForDebtorId);
+
     // If no address selected, use primary address
     let selectedAddressId = dto.selectedAddressId;
     await this.assertSelectedAddressBelongsToDebtor(dto.debtorId, selectedAddressId);
@@ -142,6 +144,7 @@ export class CaseDebtorService {
         caseId,
         debtorId: dto.debtorId,
         role: dto.role || "ASIL_BORCLU",
+        avalForDebtorId,
         liabilityAmount: dto.liabilityAmount,
         liabilityType: dto.liabilityType,
         notificationMode: dto.notificationMode || "NORMAL",
@@ -216,9 +219,23 @@ export class CaseDebtorService {
 
     await this.assertSelectedAddressBelongsToDebtor(caseDebtor.debtorId, dto.selectedAddressId);
 
+    // K3-L: lehine aval bilgisi yalnız AVAL rolünde; rol AVAL'dan çıkarsa bilgi temizlenir (DB CHECK ile aynı kural).
+    const effectiveRole = dto.role ?? caseDebtor.role;
+    const data: Record<string, unknown> = { ...dto };
+    if (dto.avalForDebtorId !== undefined) {
+      data.avalForDebtorId = await this.resolveAvalBeneficiary(
+        caseDebtor.caseId,
+        caseDebtor.debtorId,
+        effectiveRole,
+        dto.avalForDebtorId,
+      );
+    } else if (effectiveRole !== "AVAL" && caseDebtor.avalForDebtorId) {
+      data.avalForDebtorId = null;
+    }
+
     const result = await this.prisma.caseDebtor.update({
       where: { id: caseDebtorId },
-      data: dto,
+      data,
       include: {
         debtor: { include: { debtorAddresses: true } },
         selectedAddress: true,
@@ -240,6 +257,43 @@ export class CaseDebtorService {
     }
 
     return result;
+  }
+
+  /**
+   * K3-L (owner kararı 2026-09-28) — aval veren, lehine aval verdiği borçlu gibi sorumludur (çek tazminatı yalnız
+   * keşideci ve keşideci lehine aval veren). Lehine aval bilgisi yalnız AVAL rolünde, kendisini göstermez ve aynı
+   * dosyanın ETKİN borçlusunu gösterir; aksi 400 (sessiz kabul YOK).
+   */
+  private async resolveAvalBeneficiary(
+    caseId: string,
+    debtorId: string,
+    role: string,
+    avalForDebtorId: string | null | undefined,
+  ): Promise<string | null> {
+    if (avalForDebtorId === undefined || avalForDebtorId === null) return null;
+    if (role !== "AVAL") {
+      throw new BadRequestException({
+        code: "AVAL_BENEFICIARY_ROLE_MISMATCH",
+        message: "Lehine aval bilgisi yalnız aval veren rolünde girilebilir.",
+      });
+    }
+    if (avalForDebtorId === debtorId) {
+      throw new BadRequestException({
+        code: "AVAL_BENEFICIARY_SELF",
+        message: "Aval veren kendi lehine aval veremez.",
+      });
+    }
+    const beneficiary = await this.prisma.caseDebtor.findFirst({
+      where: { caseId, debtorId: avalForDebtorId, lifecycleStatus: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!beneficiary) {
+      throw new BadRequestException({
+        code: "AVAL_BENEFICIARY_NOT_IN_CASE",
+        message: "Lehine aval verilen kişi bu dosyanın etkin borçlusu değil.",
+      });
+    }
+    return avalForDebtorId;
   }
 
   /**

@@ -46,6 +46,14 @@ export class AddDebtorToCaseDto {
   @IsOptional()
   role?: DebtorRole;
 
+  /**
+   * K3-L (owner kararı 2026-09-28): yalnız role = AVAL iken; aval verenin LEHİNE aval verdiği borçlunun Debtor.id'si
+   * (aynı dosyanın etkin borçlusu). Güncellemede null gönderilirse temizlenir.
+   */
+  @IsString()
+  @IsOptional()
+  avalForDebtorId?: string | null;
+
   @IsNumber()
   @IsOptional()
   liabilityAmount?: number;
@@ -91,6 +99,14 @@ export class UpdateCaseDebtorDto {
   @IsEnum(DebtorRole)
   @IsOptional()
   role?: DebtorRole;
+
+  /**
+   * K3-L (owner kararı 2026-09-28): yalnız role = AVAL iken; aval verenin LEHİNE aval verdiği borçlunun Debtor.id'si
+   * (aynı dosyanın etkin borçlusu). Güncellemede null gönderilirse temizlenir.
+   */
+  @IsString()
+  @IsOptional()
+  avalForDebtorId?: string | null;
 
   @IsNumber()
   @IsOptional()
