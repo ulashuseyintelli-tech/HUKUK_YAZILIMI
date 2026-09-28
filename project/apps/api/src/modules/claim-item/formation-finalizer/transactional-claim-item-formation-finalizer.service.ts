@@ -25,15 +25,18 @@ import { CLAIM_ITEM_HUMAN_WRITE_POLICY_REF } from '../claim-item-writer-routes';
 import {
   CLAIM_ITEM_FORMATION_APPROVAL_REF_VERSION,
   CLAIM_ITEM_FORMATION_APPROVAL_TARGET_TYPE,
+  CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_VERSION,
+  CLAIM_ITEM_FORMATION_BATCH_APPROVAL_TARGET_TYPE,
+  CLAIM_ITEM_FORMATION_BATCH_MAX_SIZE,
   CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION,
   CLAIM_ITEM_FORMATION_INTENT_CONTRACT_VERSION,
   CLAIM_ITEM_FORMATION_NORMALIZED_INPUT_VERSION,
-  CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION,
   type ClaimFormationJsonValue,
+  type ClaimItemFormationBatchApprovalRefV1,
 } from '../formation-intent/claim-item-formation-intent.contract';
 import {
-  buildCaseDocumentSourceIdentityHash,
   buildClaimItemFormationIntentChecksum,
+  rebuildFormationSourceIdentityHash,
   domainSeparatedFormationHash,
   isSha256Hex,
 } from '../formation-intent/claim-item-formation-canonical';
@@ -57,7 +60,9 @@ import {
 import { CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE } from '../claim-item-approval.constants';
 import {
   ClaimItemFormationFinalizationError,
+  type ClaimItemFormationBatchFinalizationResult,
   type ClaimItemFormationFinalizationResult,
+  type FinalizeApprovedClaimItemFormationBatchInput,
   type FinalizeClaimItemFormationInput,
 } from './claim-item-formation-finalizer.contract';
 
@@ -126,176 +131,13 @@ export class TransactionalClaimItemFormationFinalizerService {
           return this.reconcileCompleted(tx, intent, approval);
         }
 
-        const now = this.clock();
-        this.assertActive(intent, approval, now);
-        const source = await this.revalidateDocument(intent);
-        const legalBasis = await this.revalidateLegalBasis(
-          intent,
-          source,
-          projectionBinding,
-        );
-        const evidenceRefs = this.readEvidenceRefs(intent);
-        const formationAt = new Date(approval.decidedAt as Date);
-        const executionIdentity = domainSeparatedFormationHash(
-          'ClaimItemFormationExecutionV1',
-          {
-            tenantId: intent.tenantId,
-            formationIntentId: intent.id,
-            intentChecksum: intent.intentChecksum,
-          },
-        );
-        const claimItemId = `claim-formation:${executionIdentity}`;
-        const snapshotId = `claim-snapshot:${executionIdentity}`;
-        const commandId = `claim-command:${executionIdentity}`;
-        const baseEnvelope = buildCanonicalWriteEnvelopeV1({
-          tenantId: intent.tenantId,
-          caseId: intent.caseId,
-          target: { aggregateType: 'ClaimItem' as const, aggregateId: claimItemId },
-          actor: { type: 'HUMAN', userId: intent.requesterUserId },
-          correlationId: intent.correlationId,
-          causationId: intent.causationId ?? `office-approval:${approval.id}`,
-          idempotencyKey: `claim-formation-finalizer:${intent.id}`,
-          occurredAt: formationAt.toISOString(),
-          effectiveAt: intent.effectiveAt.toISOString(),
-          source: {
-            sourceType: 'USER_DOCUMENT',
-            sourceId: intent.sourceId,
-            evidenceRefs,
-          },
-          authority: {
-            policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
-            legalBasisRef: `${intent.legalBasisCode}:${intent.legalBasisVersion}`,
-            approvalRequestId: approval.id,
-          },
-          currency: intent.currency,
-        });
-        const envelope = Object.freeze({ ...baseEnvelope, commandId });
-
-        const claimItemData = {
-          id: claimItemId,
-          ...this.buildClaimItemData(intent, source, legalBasis),
-        };
-        const guardedData = await this.sourceIntegrity.prepareHumanDocumentCreate(
-          {
-            tenantId: intent.tenantId,
-            caseId: intent.caseId,
-            sourceSlot: intent.sourceSlot,
-            data: claimItemData,
-            envelope,
-          },
+        const { claimItemId, snapshotId } = await this.formIntentInTransaction(
           tx,
-        );
-        assertClaimItemCreateStatus(guardedData.status);
-        const claimItemPayloadHash = stableJsonHash(this.jsonSafe(guardedData));
-        const claimItem = await tx.claimItem.create({ data: guardedData as Prisma.ClaimItemUncheckedCreateInput });
-
-        const snapshotPayload = this.snapshotPayload(
           intent,
           approval,
-          source,
-          legalBasis,
-          claimItemId,
-          claimItemPayloadHash,
+          projectionBinding,
         );
-        const snapshotCanonicalPayload = canonicalJsonStringify(snapshotPayload);
-        const snapshotHash = domainSeparatedFormationHash(
-          SNAPSHOT_CONTRACT_VERSION,
-          snapshotPayload,
-        );
-        const admissionResult =
-          intent.interestEligibility === 'UNRESOLVED'
-            ? 'ALLOWED_WITH_POLICY_HOLD'
-            : 'ALLOWED';
-        const snapshot = await tx.claimFormationSnapshot.create({
-          data: {
-            id: snapshotId,
-            tenantId: intent.tenantId,
-            caseId: intent.caseId,
-            claimItemId: claimItem.id,
-            formationIntentId: intent.id,
-            approvalRequestId: approval.id,
-            snapshotContractVersion: SNAPSHOT_CONTRACT_VERSION,
-            snapshotSerializationVersion: CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION,
-            snapshotVersion: SNAPSHOT_VERSION,
-            supersedesSnapshotId: null,
-            intentChecksum: intent.intentChecksum,
-            approvalReferenceHash: intent.approvalReferenceHash,
-            normalizedInputChecksum: intent.normalizedInputChecksum,
-            snapshotCanonicalPayload,
-            snapshotHash,
-            sourceIdentityVersion: intent.sourceIdentityVersion,
-            sourceType: intent.sourceType,
-            sourceId: intent.sourceId,
-            sourceSlot: intent.sourceSlot,
-            sourceIdentityHash: intent.sourceIdentityHash,
-            sourceVersionId: intent.sourceVersionId,
-            sourceVersion: intent.sourceVersion,
-            canonicalSourceFingerprint: intent.canonicalSourceFingerprint,
-            fingerprintAlgorithm: intent.fingerprintAlgorithm,
-            fingerprintVersion: intent.fingerprintVersion,
-            sourceResolutionContractVersion: intent.sourceResolutionContractVersion,
-            sourceResolutionHash: intent.sourceResolutionHash,
-            componentCategory: intent.componentCategory,
-            componentSubtypeCode: intent.componentSubtypeCode,
-            componentSubtypeVersion: intent.componentSubtypeVersion,
-            componentSubtypeChecksum: intent.componentSubtypeChecksum,
-            legalBasisCode: intent.legalBasisCode,
-            legalBasisVersion: intent.legalBasisVersion,
-            legalBasisChecksum: intent.legalBasisChecksum,
-            legalBasisRegistryReleaseId: intent.legalBasisRegistryReleaseId,
-            legalBasisRegistryReleaseChecksum: intent.legalBasisRegistryReleaseChecksum,
-            legalBasisResolutionContractVersion: intent.legalBasisResolutionContractVersion,
-            legalBasisResolutionHash: intent.legalBasisResolutionHash,
-            legalBasisProjectionBindingContractVersion:
-              intent.legalBasisProjectionBindingContractVersion,
-            legalBasisProjectionBindingCanonicalPayload:
-              intent.legalBasisProjectionBindingCanonicalPayload,
-            legalBasisProjectionBindingChecksum:
-              intent.legalBasisProjectionBindingChecksum,
-            originalAmountMinor: intent.originalAmountMinor,
-            demandedAmountMinor: intent.demandedAmountMinor,
-            currency: intent.currency,
-            minorUnit: intent.minorUnit,
-            effectiveAt: intent.effectiveAt,
-            liabilityContextVersion: intent.liabilityContextVersion,
-            liabilityContextCanonicalPayload: intent.liabilityContextCanonicalPayload,
-            liabilityContextHash: intent.liabilityContextHash,
-            interestEligibility: intent.interestEligibility,
-            interestPolicyRef: intent.interestPolicyRef,
-            interestPolicyVersion: intent.interestPolicyVersion,
-            ruleRef: intent.ruleRef,
-            ruleVersion: intent.ruleVersion,
-            evidenceRefsContractVersion: intent.evidenceRefsContractVersion,
-            evidenceRefsCanonicalPayload: intent.evidenceRefsCanonicalPayload,
-            evidenceRefsHash: intent.evidenceRefsHash,
-            provenanceContractVersion: intent.provenanceContractVersion,
-            provenanceCanonicalPayload: intent.provenanceCanonicalPayload,
-            provenanceHash: intent.provenanceHash,
-            admissionResult,
-            claimItemPayloadHash,
-            requesterUserId: intent.requesterUserId,
-            approverUserId: approval.approverUserId as string,
-            approvalDecidedAt: approval.decidedAt as Date,
-            commandId: envelope.commandId,
-            correlationId: intent.correlationId,
-            causationId: intent.causationId,
-            formationAt,
-            createdAt: formationAt,
-          },
-        });
-
-        await appendClaimItemContinuity({
-          tx,
-          domainEventIngest: this.domainEventIngest,
-          envelope,
-          operation: 'CREATE',
-          before: null,
-          after: claimItem as unknown as ClaimItemLifecycleRecord,
-          auditAction: 'CLAIM_ITEM_FORMATION_FINALIZED',
-          auditUserId: approval.approverUserId as string,
-          auditSource: 'CLAIM_ITEM_FORMATION_INTENT',
-          approvalRequired: true,
-        });
+        const formationAt = new Date(approval.decidedAt as Date);
 
         const completion = await tx.officeApprovalRequest.updateMany({
           where: {
@@ -321,8 +163,8 @@ export class TransactionalClaimItemFormationFinalizerService {
             targetType: approval.targetType,
             targetRef: approval.targetRef,
             formationIntentId: intent.id,
-            claimItemId: claimItem.id,
-            snapshotId: snapshot.id,
+            claimItemId,
+            snapshotId,
             executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
           },
         });
@@ -330,8 +172,8 @@ export class TransactionalClaimItemFormationFinalizerService {
         return Object.freeze({
           formationIntentId: intent.id,
           approvalRequestId: approval.id,
-          claimItemId: claimItem.id,
-          snapshotId: snapshot.id,
+          claimItemId,
+          snapshotId,
           replayed: false,
         });
       },
@@ -340,6 +182,313 @@ export class TransactionalClaimItemFormationFinalizerService {
       // and return it, instead of failing with a serializable write conflict.
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     );
+  }
+
+  /**
+   * Tek intent'in kesin kaydı (ClaimItem + ClaimFormationSnapshot + süreklilik denetimi/olayı) — tekli ve toplu
+   * yolun ORTAK gövdesi. Çağıran: kilit + bütünlük + onay bağı doğrulandıktan sonra, AYNI transaction'da.
+   */
+  private async formIntentInTransaction(
+    tx: Prisma.TransactionClient,
+    intent: ClaimItemFormationIntent,
+    approval: OfficeApprovalRequest,
+    projectionBinding: LegalBasisProjectionBindingPersistenceEnvelopeV1,
+  ): Promise<{ readonly claimItemId: string; readonly snapshotId: string }> {
+    const now = this.clock();
+    this.assertActive(intent, approval, now);
+    const source = await this.revalidateDocument(intent);
+    const legalBasis = await this.revalidateLegalBasis(
+      intent,
+      source,
+      projectionBinding,
+    );
+    const evidenceRefs = this.readEvidenceRefs(intent);
+    const formationAt = new Date(approval.decidedAt as Date);
+    const executionIdentity = domainSeparatedFormationHash(
+      'ClaimItemFormationExecutionV1',
+      {
+        tenantId: intent.tenantId,
+        formationIntentId: intent.id,
+        intentChecksum: intent.intentChecksum,
+      },
+    );
+    const claimItemId = `claim-formation:${executionIdentity}`;
+    const snapshotId = `claim-snapshot:${executionIdentity}`;
+    const commandId = `claim-command:${executionIdentity}`;
+    const baseEnvelope = buildCanonicalWriteEnvelopeV1({
+      tenantId: intent.tenantId,
+      caseId: intent.caseId,
+      target: { aggregateType: 'ClaimItem' as const, aggregateId: claimItemId },
+      actor: { type: 'HUMAN', userId: intent.requesterUserId },
+      correlationId: intent.correlationId,
+      causationId: intent.causationId ?? `office-approval:${approval.id}`,
+      idempotencyKey: `claim-formation-finalizer:${intent.id}`,
+      occurredAt: formationAt.toISOString(),
+      effectiveAt: intent.effectiveAt.toISOString(),
+      source: {
+        // K3: çek kaydı kaynağı ayrı ingress (CASE_INSTRUMENT_FORMATION) ile doğrulanır.
+        sourceType: intent.sourceType === 'CASE_INSTRUMENT' ? 'USER_CASE_INSTRUMENT' : 'USER_DOCUMENT',
+        sourceId: intent.sourceId,
+        evidenceRefs,
+      },
+      authority: {
+        policyRef: CLAIM_ITEM_HUMAN_WRITE_POLICY_REF,
+        legalBasisRef: `${intent.legalBasisCode}:${intent.legalBasisVersion}`,
+        approvalRequestId: approval.id,
+      },
+      currency: intent.currency,
+    });
+    const envelope = Object.freeze({ ...baseEnvelope, commandId });
+
+    const claimItemData = {
+      id: claimItemId,
+      ...this.buildClaimItemData(intent, source, legalBasis),
+    };
+    const guardInput = {
+      tenantId: intent.tenantId,
+      caseId: intent.caseId,
+      sourceSlot: intent.sourceSlot,
+      data: claimItemData,
+      envelope,
+    };
+    const guardedData =
+      intent.sourceType === 'CASE_INSTRUMENT'
+        ? await this.sourceIntegrity.prepareHumanInstrumentCreate(guardInput, tx)
+        : await this.sourceIntegrity.prepareHumanDocumentCreate(guardInput, tx);
+    assertClaimItemCreateStatus(guardedData.status);
+    const claimItemPayloadHash = stableJsonHash(this.jsonSafe(guardedData));
+    const claimItem = await tx.claimItem.create({ data: guardedData as Prisma.ClaimItemUncheckedCreateInput });
+
+    const snapshotPayload = this.snapshotPayload(
+      intent,
+      approval,
+      source,
+      legalBasis,
+      claimItemId,
+      claimItemPayloadHash,
+    );
+    const snapshotCanonicalPayload = canonicalJsonStringify(snapshotPayload);
+    const snapshotHash = domainSeparatedFormationHash(
+      SNAPSHOT_CONTRACT_VERSION,
+      snapshotPayload,
+    );
+    const admissionResult =
+      intent.interestEligibility === 'UNRESOLVED'
+        ? 'ALLOWED_WITH_POLICY_HOLD'
+        : 'ALLOWED';
+    const snapshot = await tx.claimFormationSnapshot.create({
+      data: {
+        id: snapshotId,
+        tenantId: intent.tenantId,
+        caseId: intent.caseId,
+        claimItemId: claimItem.id,
+        formationIntentId: intent.id,
+        approvalRequestId: approval.id,
+        approvalBatchPosition: intent.approvalBatchPosition,
+        snapshotContractVersion: SNAPSHOT_CONTRACT_VERSION,
+        snapshotSerializationVersion: CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION,
+        snapshotVersion: SNAPSHOT_VERSION,
+        supersedesSnapshotId: null,
+        intentChecksum: intent.intentChecksum,
+        approvalReferenceHash: intent.approvalReferenceHash,
+        normalizedInputChecksum: intent.normalizedInputChecksum,
+        snapshotCanonicalPayload,
+        snapshotHash,
+        sourceIdentityVersion: intent.sourceIdentityVersion,
+        sourceType: intent.sourceType,
+        sourceId: intent.sourceId,
+        sourceSlot: intent.sourceSlot,
+        sourceIdentityHash: intent.sourceIdentityHash,
+        sourceVersionId: intent.sourceVersionId,
+        sourceVersion: intent.sourceVersion,
+        canonicalSourceFingerprint: intent.canonicalSourceFingerprint,
+        fingerprintAlgorithm: intent.fingerprintAlgorithm,
+        fingerprintVersion: intent.fingerprintVersion,
+        sourceResolutionContractVersion: intent.sourceResolutionContractVersion,
+        sourceResolutionHash: intent.sourceResolutionHash,
+        componentCategory: intent.componentCategory,
+        componentSubtypeCode: intent.componentSubtypeCode,
+        componentSubtypeVersion: intent.componentSubtypeVersion,
+        componentSubtypeChecksum: intent.componentSubtypeChecksum,
+        legalBasisCode: intent.legalBasisCode,
+        legalBasisVersion: intent.legalBasisVersion,
+        legalBasisChecksum: intent.legalBasisChecksum,
+        legalBasisRegistryReleaseId: intent.legalBasisRegistryReleaseId,
+        legalBasisRegistryReleaseChecksum: intent.legalBasisRegistryReleaseChecksum,
+        legalBasisResolutionContractVersion: intent.legalBasisResolutionContractVersion,
+        legalBasisResolutionHash: intent.legalBasisResolutionHash,
+        legalBasisProjectionBindingContractVersion:
+          intent.legalBasisProjectionBindingContractVersion,
+        legalBasisProjectionBindingCanonicalPayload:
+          intent.legalBasisProjectionBindingCanonicalPayload,
+        legalBasisProjectionBindingChecksum:
+          intent.legalBasisProjectionBindingChecksum,
+        originalAmountMinor: intent.originalAmountMinor,
+        demandedAmountMinor: intent.demandedAmountMinor,
+        currency: intent.currency,
+        minorUnit: intent.minorUnit,
+        effectiveAt: intent.effectiveAt,
+        liabilityContextVersion: intent.liabilityContextVersion,
+        liabilityContextCanonicalPayload: intent.liabilityContextCanonicalPayload,
+        liabilityContextHash: intent.liabilityContextHash,
+        interestEligibility: intent.interestEligibility,
+        interestPolicyRef: intent.interestPolicyRef,
+        interestPolicyVersion: intent.interestPolicyVersion,
+        ruleRef: intent.ruleRef,
+        ruleVersion: intent.ruleVersion,
+        evidenceRefsContractVersion: intent.evidenceRefsContractVersion,
+        evidenceRefsCanonicalPayload: intent.evidenceRefsCanonicalPayload,
+        evidenceRefsHash: intent.evidenceRefsHash,
+        provenanceContractVersion: intent.provenanceContractVersion,
+        provenanceCanonicalPayload: intent.provenanceCanonicalPayload,
+        provenanceHash: intent.provenanceHash,
+        admissionResult,
+        claimItemPayloadHash,
+        requesterUserId: intent.requesterUserId,
+        approverUserId: approval.approverUserId as string,
+        approvalDecidedAt: approval.decidedAt as Date,
+        commandId: envelope.commandId,
+        correlationId: intent.correlationId,
+        causationId: intent.causationId,
+        formationAt,
+        createdAt: formationAt,
+      },
+    });
+
+    await appendClaimItemContinuity({
+      tx,
+      domainEventIngest: this.domainEventIngest,
+      envelope,
+      operation: 'CREATE',
+      before: null,
+      after: claimItem as unknown as ClaimItemLifecycleRecord,
+      auditAction: 'CLAIM_ITEM_FORMATION_FINALIZED',
+      auditUserId: approval.approverUserId as string,
+      auditSource: 'CLAIM_ITEM_FORMATION_INTENT',
+      approvalRequired: true,
+    });
+    return { claimItemId: claimItem.id, snapshotId: snapshot.id };
+  }
+
+  /**
+   * K3 AUTO-GENERATE FORMATION (owner GO 2026-09-28) — TOPLU onayın kesin kaydı. OfficeApproval karar
+   * transaction'ının İÇİNDE (domain senkronu), onay APPROVED + NOT_RUN iken çağrılır: toplu referans ve her intent
+   * değişmez içerikle birebir doğrulanır, her intent tekli yolla AYNI kontrollerden (bütünlük, süre, kaynak ve hukuki
+   * dayanak yeniden doğrulaması, projeksiyon bağı) geçer ve kalemlerin TAMAMI aynı transaction'da oluşur. Herhangi
+   * bir hata tüm transaction'ı (karar dahil) geri alır — kısmi kalem kalmaz. Yürütme durumu yalnız hepsi yazıldıktan
+   * sonra SUCCEEDED olur.
+   */
+  async finalizeApprovedBatchInTransaction(
+    tx: Prisma.TransactionClient,
+    input: FinalizeApprovedClaimItemFormationBatchInput,
+  ): Promise<ClaimItemFormationBatchFinalizationResult> {
+    if (!this.enabled) this.fail('FINALIZER_DISABLED');
+    this.assertOpaque(input.tenantId);
+    this.assertOpaque(input.approvalRequestId);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`claim-formation-batch-finalizer:${input.tenantId}:${input.approvalRequestId}`}, 0))`;
+
+    const approval = await tx.officeApprovalRequest.findFirst({
+      where: { id: input.approvalRequestId, tenantId: input.tenantId },
+    });
+    if (!approval) this.fail('FORMATION_APPROVAL_MISMATCH');
+    const reference = this.assertBatchApprovalReference(approval);
+
+    const intents = (await tx.claimItemFormationIntent.findMany({
+      where: { tenantId: input.tenantId, approvalRequestId: approval.id },
+      include: { formationSnapshot: true },
+      orderBy: { approvalBatchPosition: 'asc' },
+    })) as IntentWithSnapshot[];
+    if (intents.length !== reference.items.length) this.fail('FORMATION_APPROVAL_MISMATCH');
+    if (intents.some((intent) => intent.formationSnapshot)) this.fail('FORMATION_EXECUTION_CONFLICT');
+
+    const formed: { formationIntentId: string; claimItemId: string; snapshotId: string }[] = [];
+    for (const [position, intent] of intents.entries()) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`claim-formation-finalizer:${intent.tenantId}:${intent.id}`}, 0))`;
+      const projectionBinding = this.assertIntentIntegrity(intent);
+      this.assertBatchIntentBinding(intent, approval, reference, position);
+      const result = await this.formIntentInTransaction(tx, intent, approval, projectionBinding);
+      formed.push({ formationIntentId: intent.id, ...result });
+    }
+
+    const formationAt = new Date(approval.decidedAt as Date);
+    const completion = await tx.officeApprovalRequest.updateMany({
+      where: {
+        id: approval.id,
+        tenantId: input.tenantId,
+        status: OfficeApprovalStatus.APPROVED,
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+      },
+      data: {
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+        executedAt: formationAt,
+      },
+    });
+    if (completion.count !== 1) this.fail('FORMATION_EXECUTION_CONFLICT');
+    await this.audit.logInTransaction(tx, {
+      tenantId: input.tenantId,
+      action: 'OFFICE_APPROVAL_EXECUTION_SUCCEEDED',
+      entityType: 'OFFICE_APPROVAL',
+      entityId: approval.id,
+      userId: approval.approverUserId as string,
+      correlationId: intents[0].correlationId,
+      metadata: {
+        targetType: approval.targetType,
+        targetRef: approval.targetRef,
+        formationIntentIds: formed.map((entry) => entry.formationIntentId),
+        claimItemIds: formed.map((entry) => entry.claimItemId),
+        snapshotIds: formed.map((entry) => entry.snapshotId),
+        executionStatus: OfficeApprovalExecutionStatus.SUCCEEDED,
+      },
+    });
+    return Object.freeze({ approvalRequestId: approval.id, items: Object.freeze(formed) });
+  }
+
+  private assertBatchApprovalReference(
+    approval: OfficeApprovalRequest,
+  ): ClaimItemFormationBatchApprovalRefV1 {
+    const reference = approval.savedIntent as unknown as ClaimItemFormationBatchApprovalRefV1 | null;
+    const items = reference?.items;
+    if (
+      approval.actionCode !== CLAIM_ITEM_HIGH_IMPACT_ACTION_CODE ||
+      approval.targetType !== CLAIM_ITEM_FORMATION_BATCH_APPROVAL_TARGET_TYPE ||
+      !reference ||
+      reference.version !== CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_VERSION ||
+      reference.tenantId !== approval.tenantId ||
+      typeof reference.caseId !== 'string' ||
+      approval.targetRef !== reference.batchId ||
+      !Array.isArray(items) ||
+      items.length < 1 ||
+      items.length > CLAIM_ITEM_FORMATION_BATCH_MAX_SIZE ||
+      items.some((item, position) => item?.position !== position) ||
+      stableJsonHash(approval.savedIntent) !== approval.payloadHash ||
+      approval.replacementSavedIntent !== null ||
+      approval.replacementPayloadHash !== null
+    ) {
+      this.fail('FORMATION_APPROVAL_MISMATCH');
+    }
+    return reference;
+  }
+
+  private assertBatchIntentBinding(
+    intent: ClaimItemFormationIntent,
+    approval: OfficeApprovalRequest,
+    reference: ClaimItemFormationBatchApprovalRefV1,
+    position: number,
+  ): void {
+    const item = reference.items[position];
+    if (
+      intent.approvalBatchPosition !== position ||
+      item.formationIntentId !== intent.id ||
+      item.intentChecksum !== intent.intentChecksum ||
+      item.sourceIdentityHash !== intent.sourceIdentityHash ||
+      intent.caseId !== reference.caseId ||
+      intent.approvalReferenceVersion !== CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_VERSION ||
+      intent.approvalReferenceHash !== approval.payloadHash ||
+      approval.requesterUserId !== intent.requesterUserId ||
+      approval.expiresAt?.getTime() !== intent.expiresAt.getTime()
+    ) {
+      this.fail('FORMATION_APPROVAL_MISMATCH');
+    }
   }
 
   private async reconcileCompleted(
@@ -415,15 +564,18 @@ export class TransactionalClaimItemFormationFinalizerService {
       intent.contractVersion !== CLAIM_ITEM_FORMATION_INTENT_CONTRACT_VERSION ||
       intent.normalizedInputContractVersion !== CLAIM_ITEM_FORMATION_NORMALIZED_INPUT_VERSION ||
       intent.canonicalSerializationVersion !== CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION ||
-      intent.sourceIdentityVersion !== CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION ||
-      intent.sourceType !== 'CASE_DOCUMENT' ||
+      (intent.sourceType !== 'CASE_DOCUMENT' && intent.sourceType !== 'CASE_INSTRUMENT') ||
       intent.checksumAlgorithm !== 'SHA-256' ||
       intent.fingerprintAlgorithm !== 'SHA-256' ||
       checksum !== intent.intentChecksum ||
-      buildCaseDocumentSourceIdentityHash({
+      // K3: V1 (sabit PRIMARY_EVIDENCE) veya V2 (slot'lu) — sürüm bilinmiyorsa null ≠ hash → bütünlük hatası.
+      rebuildFormationSourceIdentityHash({
         tenantId: intent.tenantId,
         caseId: intent.caseId,
-        documentId: intent.sourceId,
+        sourceType: intent.sourceType,
+        sourceId: intent.sourceId,
+        sourceSlot: intent.sourceSlot,
+        sourceIdentityVersion: intent.sourceIdentityVersion,
       }) !== intent.sourceIdentityHash ||
       !this.canonicalPayloadMatches(intent.liabilityContextCanonicalPayload, intent.liabilityContextHash) ||
       !this.canonicalPayloadMatches(intent.evidenceRefsCanonicalPayload, intent.evidenceRefsHash) ||
@@ -509,6 +661,7 @@ export class TransactionalClaimItemFormationFinalizerService {
     const source = await this.documentResolver.resolveExactVersion({
       tenantId: intent.tenantId,
       caseId: intent.caseId,
+      sourceType: intent.sourceType as ExactCaseDocumentSourceV1['sourceType'],
       documentId: intent.sourceId,
       requestedVersionId: intent.sourceVersionId,
     });
@@ -516,7 +669,7 @@ export class TransactionalClaimItemFormationFinalizerService {
       !source ||
       source.tenantId !== intent.tenantId ||
       source.caseId !== intent.caseId ||
-      source.sourceType !== 'CASE_DOCUMENT' ||
+      source.sourceType !== intent.sourceType ||
       source.documentId !== intent.sourceId ||
       source.versionId !== intent.sourceVersionId ||
       source.version !== intent.sourceVersion ||
@@ -623,7 +776,10 @@ export class TransactionalClaimItemFormationFinalizerService {
       collectedAmount: new Prisma.Decimal(0),
       amount: demandedAmount,
       currency: intent.currency,
-      sourceDocumentId: intent.sourceId,
+      // K3: çek kaydı kaynağında kalem çek kaydına (instrumentId) bağlanır; belge kaynağında belgeye.
+      ...(intent.sourceType === 'CASE_INSTRUMENT'
+        ? { instrumentId: intent.sourceId }
+        : { sourceDocumentId: intent.sourceId }),
       sourceDocumentType: source.claimItemDocumentSourceType,
       interestType: projection.interestType,
       interestRate:

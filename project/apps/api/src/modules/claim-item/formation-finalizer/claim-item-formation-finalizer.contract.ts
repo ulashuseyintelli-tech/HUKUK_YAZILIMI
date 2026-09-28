@@ -41,6 +41,21 @@ export interface ClaimItemFormationFinalizationResult {
   readonly replayed: boolean;
 }
 
+/** K3: toplu onayın kesin kaydı — OfficeApproval karar transaction'ı içinde çağrılır. */
+export interface FinalizeApprovedClaimItemFormationBatchInput {
+  readonly tenantId: string;
+  readonly approvalRequestId: string;
+}
+
+export interface ClaimItemFormationBatchFinalizationResult {
+  readonly approvalRequestId: string;
+  readonly items: readonly Readonly<{
+    formationIntentId: string;
+    claimItemId: string;
+    snapshotId: string;
+  }>[];
+}
+
 function finalizationMessage(code: ClaimItemFormationFinalizationErrorCode): string {
   const messages: Record<ClaimItemFormationFinalizationErrorCode, string> = {
     FINALIZER_DISABLED: 'Claim formation finalizer is disabled.',

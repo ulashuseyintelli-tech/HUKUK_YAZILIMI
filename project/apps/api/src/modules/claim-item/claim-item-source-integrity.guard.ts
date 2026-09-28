@@ -69,6 +69,9 @@ export interface ClaimItemHumanDocumentCreateInput {
   readonly sourceSlot?: string;
 }
 
+/** K3: insan onaylı çek kaydı formation'ı — `data.instrumentId` kaynak kaydıdır. */
+export type ClaimItemHumanInstrumentCreateInput = ClaimItemHumanDocumentCreateInput;
+
 export interface ClaimItemBackfillSourceCreateInput {
   readonly tenantId: string;
   readonly caseId: string;
@@ -81,6 +84,7 @@ export interface ClaimItemBackfillSourceCreateInput {
 type ClaimItemSourceAuthority =
   | ClaimItemSystemWriterRoute
   | 'HUMAN_DOCUMENT'
+  | 'HUMAN_INSTRUMENT'
   | 'DUE_BACKFILL';
 
 interface ClaimItemSourceContext {
@@ -225,6 +229,49 @@ export class ClaimItemSourceIntegrityGuard {
     );
   }
 
+  /**
+   * K3 (owner kararı 2026-09-28) — insan onaylı formation'ın çek kaydı (CaseInstrument) kaynağı. Aynı çek + aynı
+   * kalem türü için İKİNCİ kalem (POST /cases'in kanonik çek bedeli dahil) yazılamaz: kaynak kaydı kiracı/dosyada
+   * doğrulanır, kalem çek kaydına bağlanır ve `instrumentId + itemType` çakışması reddedilir.
+   */
+  async prepareHumanInstrumentCreate(
+    input: ClaimItemHumanInstrumentCreateInput,
+    database: any,
+  ): Promise<Record<string, unknown>> {
+    const instrumentId = input.data.instrumentId;
+    if (typeof instrumentId !== 'string' || instrumentId.length === 0) {
+      this.fail('SOURCE_PAYLOAD_MISMATCH', 'ClaimItem instrument source id is invalid.');
+    }
+    this.assertPayloadScope(input.tenantId, input.caseId, input.data);
+    const sourceSlot = this.normalizeSourceSlot(
+      input.sourceSlot ?? `CASE_INSTRUMENT:${String(input.data.itemType ?? 'UNSPECIFIED')}`,
+    );
+    const context = this.context({
+      authority: 'HUMAN_INSTRUMENT',
+      sourceType: 'USER_CASE_INSTRUMENT',
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      sourceId: instrumentId,
+      sourceSlot,
+    });
+    const provenance = buildClaimItemSourceProvenanceV1({
+      ingress: 'CASE_INSTRUMENT_FORMATION',
+      envelope: input.envelope,
+      sourceSlot,
+    });
+    this.assertProvenanceScope(context, provenance);
+    await this.lockCreate(context, input.data, provenance, database);
+    const sourceRecord = await this.validateSourceRecord(context, database);
+    this.assertSystemPayloadBinding(context, input.data, sourceRecord);
+    const payloadHash = this.payloadHash(input.data);
+    await this.assertCreateConflictFree(context, input.data, payloadHash, sourceRecord, database);
+    return this.withMarker(
+      input.data,
+      this.marker(context, payloadHash),
+      provenance,
+    );
+  }
+
   async assertSystemMutation(
     input: ClaimItemSystemSourceMutationInput,
     database: any,
@@ -358,7 +405,16 @@ export class ClaimItemSourceIntegrityGuard {
             sourceId: context.sourceId,
             itemType: data.itemType,
           })
-        : context.identityHash;
+        : context.authority === 'HUMAN_INSTRUMENT'
+          ? stableJsonHash({
+              version: 1,
+              sourceType: 'CASE_INSTRUMENT',
+              tenantId: context.tenantId,
+              caseId: context.caseId,
+              sourceId: context.sourceId,
+              itemType: data.itemType,
+            })
+          : context.identityHash;
     await this.lockIdentity(collisionHash, database);
   }
 
@@ -381,7 +437,8 @@ export class ClaimItemSourceIntegrityGuard {
         if (!due) this.sourceScopeMismatch();
         return {};
       }
-      case 'CASE_INSTRUMENT_GENERATOR': {
+      case 'CASE_INSTRUMENT_GENERATOR':
+      case 'HUMAN_INSTRUMENT': {
         const instrument = await database.caseInstrument.findFirst({
           where: {
             id: context.sourceId,
@@ -454,6 +511,7 @@ export class ClaimItemSourceIntegrityGuard {
         }
         return;
       case 'CASE_INSTRUMENT_GENERATOR':
+      case 'HUMAN_INSTRUMENT':
         if (data.instrumentId !== context.sourceId) this.payloadMismatch('instrument');
         return;
       case 'DOCUMENT_AUTO_GENERATOR':
@@ -555,11 +613,16 @@ export class ClaimItemSourceIntegrityGuard {
         // canonical marker check, so multiplicity cannot be hidden by findFirst.
         return null;
       case 'CASE_INSTRUMENT_GENERATOR':
+      case 'HUMAN_INSTRUMENT':
+        // Kanonik üretici: çeke bağlı herhangi bir kalem → mükerrer. İnsan formation'ı (K3): aynı çek + aynı kalem
+        // türü (kanonik POST /cases çek bedeli dahil) → mükerrer. Tek sorgu (tenant envanter kapısı çözülemeyen
+        // çağrı tavanı).
         return database.claimItem.findFirst({
           where: {
             tenantId: context.tenantId,
             caseId: context.caseId,
             instrumentId: context.sourceId,
+            ...(context.authority === 'HUMAN_INSTRUMENT' ? { itemType: data.itemType } : {}),
           },
           select: { id: true },
         });

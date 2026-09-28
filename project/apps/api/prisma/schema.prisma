@@ -6277,6 +6277,7 @@ model ClaimItemFormationIntent {
   canonicalSerializationVersion  String
 
   approvalRequestId        String
+  approvalBatchPosition    Int    @default(0) // K3: toplu onayda intent konumu (tekli = 0)
   approvalReferenceVersion String
   approvalReferenceHash    String
   requesterUserId          String
@@ -6343,7 +6344,8 @@ model ClaimItemFormationIntent {
   @@unique([tenantId, id])
   @@unique([tenantId, caseId, id])
   @@unique([tenantId, idempotencyKey])
-  @@unique([tenantId, approvalRequestId])
+  // K3 (owner GO 2026-09-28): tek onay talebi birden cok intent'i (toplu uretim) baglayabilir; konum ile tekil.
+  @@unique([tenantId, approvalRequestId, approvalBatchPosition], map: "claim_formation_intent_approval_position_unique")
   @@index([tenantId, caseId])
   @@index([tenantId, sourceIdentityHash])
   @@index([expiresAt])
@@ -6366,6 +6368,7 @@ model ClaimFormationSnapshot {
   formationIntent   ClaimItemFormationIntent @relation(fields: [tenantId, caseId, formationIntentId], references: [tenantId, caseId, id], onDelete: Restrict)
 
   approvalRequestId String
+  approvalBatchPosition    Int    @default(0) // K3: toplu onayda intent konumu (tekli = 0)
 
   snapshotContractVersion      String
   snapshotSerializationVersion String
@@ -6448,7 +6451,8 @@ model ClaimFormationSnapshot {
 
   @@unique([tenantId, id])
   @@unique([tenantId, caseId, formationIntentId])
-  @@unique([tenantId, approvalRequestId])
+  // K3 (owner GO 2026-09-28): tek onay talebi birden cok intent'i (toplu uretim) baglayabilir; konum ile tekil.
+  @@unique([tenantId, approvalRequestId, approvalBatchPosition], map: "claim_formation_snapshot_approval_position_unique")
   @@unique([tenantId, claimItemId, snapshotVersion])
   @@unique([tenantId, sourceIdentityHash, snapshotVersion], map: "claim_formation_snapshot_source_version_unique")
   @@unique([tenantId, supersedesSnapshotId])

@@ -4,6 +4,7 @@ import {
   CLAIM_ITEM_FORMATION_INTENT_CONTRACT_VERSION,
   CLAIM_ITEM_FORMATION_NORMALIZED_INPUT_VERSION,
   CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION,
+  CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2,
   CLAIM_ITEM_FORMATION_SOURCE_SLOT,
   ClaimItemFormationAdmissionError,
   parseHumanClaimItemFormationCommand,
@@ -15,6 +16,7 @@ import {
 } from './claim-item-formation-intent.contract';
 import {
   buildCaseDocumentSourceIdentityHash,
+  buildSlotSourceIdentityHash,
   buildClaimItemFormationIntentChecksum,
   canonicalFormationPayload,
   domainSeparatedFormationHash,
@@ -43,6 +45,14 @@ import {
   type ClaimItemFormationAdmissionResult,
   type PersistClaimItemFormationIntentInput,
 } from './claim-item-formation-office-approval.adapter';
+
+/**
+ * K3 (owner GO 2026-09-28): toplu üretimde her bileşen kendi kaynak slot'unu taşır (kaynak kimliği V2). Verilmezse
+ * tekli akış AYNEN: V1 + sabit PRIMARY_EVIDENCE.
+ */
+export interface HumanClaimItemFormationPrepareOptions {
+  readonly sourceSlot?: string;
+}
 
 export interface HumanClaimItemFormationAdmissionOptions {
   readonly enabled?: boolean;
@@ -73,6 +83,19 @@ export class HumanClaimItemFormationAdmissionService {
     context: HumanClaimItemFormationAdmissionContext,
     rawCommand: unknown,
   ): Promise<ClaimItemFormationAdmissionResult> {
+    return this.atomicWriter.createAtomic(await this.prepare(context, rawCommand));
+  }
+
+  /**
+   * K3 — admission doğrulamasının (yetki, komut, tam belge sürümü, hukuki dayanak, projeksiyon bağı, checksum'lar)
+   * YAZMASIZ kısmı. `admit()` bunu tek intent için, toplu üretim ise her bileşen için çağırıp sonucu tek
+   * transaction'da `createBatchAtomic` ile yazar. Davranış tekli akışta birebir aynıdır.
+   */
+  async prepare(
+    context: HumanClaimItemFormationAdmissionContext,
+    rawCommand: unknown,
+    options: HumanClaimItemFormationPrepareOptions = {},
+  ): Promise<PersistClaimItemFormationIntentInput> {
     if (!this.enabled) {
       throw new ClaimItemFormationAdmissionError('FORMATION_CONTEXT_REQUIRED');
     }
@@ -93,6 +116,7 @@ export class HumanClaimItemFormationAdmissionService {
     const source = await this.documentResolver.resolveExactVersion({
       tenantId: context.tenantId,
       caseId: command.caseId,
+      sourceType: command.source.sourceType,
       documentId: command.source.documentId,
       requestedVersionId: command.source.requestedVersionId,
     });
@@ -127,11 +151,32 @@ export class HumanClaimItemFormationAdmissionService {
       throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
     }
     const expiresAt = new Date(createdAt.getTime() + CLAIM_ITEM_FORMATION_EXPIRY_MS);
-    const sourceIdentityHash = buildCaseDocumentSourceIdentityHash({
-      tenantId: context.tenantId,
-      caseId: command.caseId,
-      documentId: source.documentId,
-    });
+    const sourceSlot = options.sourceSlot ?? CLAIM_ITEM_FORMATION_SOURCE_SLOT;
+    if (
+      !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(sourceSlot) ||
+      // CASE_INSTRUMENT yalnız slot'lu kimlik (V2) ile; V1 belge kaynağına özgüdür.
+      (source.sourceType === 'CASE_INSTRUMENT' && options.sourceSlot === undefined)
+    ) {
+      throw new ClaimItemFormationAdmissionError('INVALID_FORMATION_CONTEXT');
+    }
+    const sourceIdentityVersion =
+      options.sourceSlot === undefined
+        ? CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION
+        : CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2;
+    const sourceIdentityHash =
+      options.sourceSlot === undefined
+        ? buildCaseDocumentSourceIdentityHash({
+            tenantId: context.tenantId,
+            caseId: command.caseId,
+            documentId: source.documentId,
+          })
+        : buildSlotSourceIdentityHash({
+            tenantId: context.tenantId,
+            caseId: command.caseId,
+            sourceType: source.sourceType,
+            sourceId: source.documentId,
+            sourceSlot,
+          });
 
     const liability = canonicalFormationPayload(command.liabilityContext.payload);
     const evidence = canonicalFormationPayload(
@@ -167,10 +212,18 @@ export class HumanClaimItemFormationAdmissionService {
       caseId: command.caseId,
       actorUserId: context.actorUserId,
       idempotencyKey: command.idempotencyKey,
-      source: Object.freeze({
-        documentId: command.source.documentId,
-        requestedVersionId: command.source.requestedVersionId,
-      }),
+      // Belge kaynağında normalize girdi AYNEN (mevcut checksum'lar değişmez); çek kaydında kaynak türü de bağlanır.
+      source:
+        command.source.sourceType === 'CASE_DOCUMENT'
+          ? Object.freeze({
+              documentId: command.source.documentId,
+              requestedVersionId: command.source.requestedVersionId,
+            })
+          : Object.freeze({
+              sourceType: command.source.sourceType,
+              documentId: command.source.documentId,
+              requestedVersionId: command.source.requestedVersionId,
+            }),
       component: command.component,
       legalBasis: command.legalBasis,
       money: Object.freeze({
@@ -228,10 +281,10 @@ export class HumanClaimItemFormationAdmissionService {
       canonicalSerializationVersion: CLAIM_ITEM_FORMATION_CANONICAL_SERIALIZATION_VERSION,
       correlationId: context.correlationId,
       causationId: context.causationId ?? null,
-      sourceIdentityVersion: CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION,
-      sourceType: 'CASE_DOCUMENT',
+      sourceIdentityVersion,
+      sourceType: source.sourceType,
       sourceId: source.documentId,
-      sourceSlot: CLAIM_ITEM_FORMATION_SOURCE_SLOT,
+      sourceSlot,
       sourceIdentityHash,
       sourceVersionId: source.versionId,
       sourceVersion: source.version,
@@ -272,20 +325,24 @@ export class HumanClaimItemFormationAdmissionService {
       provenanceCanonicalPayload: provenance.canonicalPayload,
       provenanceHash: provenance.hash,
     };
-    return this.atomicWriter.createAtomic(persistence);
+    return persistence;
   }
 
   private assertSourceBinding(
     source: ExactCaseDocumentSourceV1 | null,
     tenantId: string,
     caseId: string,
-    requested: { readonly documentId: string; readonly requestedVersionId: string },
+    requested: {
+      readonly sourceType: 'CASE_DOCUMENT' | 'CASE_INSTRUMENT';
+      readonly documentId: string;
+      readonly requestedVersionId: string;
+    },
   ): asserts source is ExactCaseDocumentSourceV1 {
     if (!source) throw new ClaimItemFormationAdmissionError('FORMATION_SOURCE_UNAVAILABLE');
     if (
       source.tenantId !== tenantId ||
       source.caseId !== caseId ||
-      source.sourceType !== 'CASE_DOCUMENT' ||
+      source.sourceType !== requested.sourceType ||
       source.documentId !== requested.documentId ||
       source.versionId !== requested.requestedVersionId ||
       !source.availableForFormation

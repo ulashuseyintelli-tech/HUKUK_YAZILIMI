@@ -1860,3 +1860,18 @@ KANIT          makbuz migration-receipts/MIGRATION-MIG-20260905-001653-ea3e85bb.
 Pending migration kuyruğu bu kayıtla **0**'dır (129/129 uygulanmış). Bu kayıt yeni yetki ÜRETMEZ:
 smoke identity provisioning (C35 / C36 OPTION 1) ve C33 fresh release cutover ayrı owner yetkisi bekler.
 Merkezi ledger: `OFFICE-DELIVERY-MANIFEST.md` §15.4 (MIG-C36-APPLY = APPLIED).
+
+## K3 — 20260928120000_claim_formation_batch_approval_position (PENDING, 2026-09-28)
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260928120000_claim_formation_batch_approval_position` |
+| Program / task | RECEIVABLE / K3 AUTO-GENERATE FORMATION PR-1 (owner GO 2026-09-28 "K3 alacak kalemi üretim ve onay akışını çalışır hale getir") |
+| İçerik | `ClaimItemFormationIntent` + `ClaimFormationSnapshot`: `approvalBatchPosition INT NOT NULL DEFAULT 0` + CHECK 0..7; `(tenantId, approvalRequestId)` UNIQUE → `(tenantId, approvalRequestId, approvalBatchPosition)` UNIQUE (her iki tablo); `validate_claim_formation_snapshot()` gövdesi önceki sürümle AYNI + konum karşılaştırması; `claim_formation_intent_source_check` / `claim_formation_snapshot_source_check` → `sourceType IN ('CASE_DOCUMENT','CASE_INSTRUMENT')` (yalnız izin kümesi genişler) |
+| Gerekçe | Tek onay talebinin birden çok intent'i bağlayıp onayda hepsini tek transaction'da oluşturması (eski tekillik bir onay = bir kalem idi); owner kararı 2026-09-28 "çek kaydı kaynak + yalnız tazminat" gereği formation kaynağının sunucudaki çek kaydı (CaseInstrument) sürümü olabilmesi |
+| Existing migration mutation | NONE |
+| Default / backfill / data mutation | Yalnız kolon DEFAULT 0; backfill ve satır güncellemesi NONE (mevcut satırlar konum 0 ile yeni tekilliği zaten sağlar) |
+| Index / trigger | 2 UNIQUE index değişir (DROP + CREATE); snapshot doğrulama fonksiyonu `CREATE OR REPLACE` |
+| Doğrulama | Disposable PostgreSQL 16: `migrate deploy` 132/132; `prisma migrate diff --from-migrations --to-schema-datamodel` → fark YOK |
+| Runtime activation | NONE — formation akışı varsayılan KAPALI bayrak arkasında (PR-3) |
+| Canlı / dev DB | **NOT APPLIED** — canlı uygulama ayrı owner GO + EXACT-ONE paketi ister (bu GO canlı migration'ı kapsamaz) |

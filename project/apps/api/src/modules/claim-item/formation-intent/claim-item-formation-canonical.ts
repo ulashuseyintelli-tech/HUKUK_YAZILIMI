@@ -2,8 +2,12 @@ import { createHash } from 'node:crypto';
 import { canonicalJsonStringify, stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 import { CLAIM_ITEM_SOURCE_PROVENANCE_VERSION } from '../claim-item-source-provenance';
 import {
+  CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION,
+  CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2,
   CLAIM_ITEM_FORMATION_SOURCE_SLOT,
+  CLAIM_ITEM_FORMATION_SOURCE_TYPES,
   type ClaimFormationJsonValue,
+  type ClaimItemFormationSourceType,
 } from './claim-item-formation-intent.contract';
 
 export interface CanonicalPayload<T extends ClaimFormationJsonValue> {
@@ -46,6 +50,63 @@ export function buildCaseDocumentSourceIdentityHash(input: {
     sourceId: input.documentId,
     sourceSlot: CLAIM_ITEM_FORMATION_SOURCE_SLOT,
   });
+}
+
+/**
+ * K3 (owner GO 2026-09-28) — slot'lu kaynak kimliği (V2). Aynı belgeden üretilen farklı bileşenler farklı kimlik
+ * taşır; böylece `claim_formation_snapshot_source_version_unique` ve kaynak kimliği tetikleyicisi bileşen başına
+ * tek formation'ı zorlar. Alan etki ayrımı (`sourceIdentityVersion`) V1 ile çakışmayı imkânsız kılar.
+ */
+export function buildSlotSourceIdentityHash(input: {
+  readonly tenantId: string;
+  readonly caseId: string;
+  readonly sourceType: ClaimItemFormationSourceType;
+  readonly sourceId: string;
+  readonly sourceSlot: string;
+}): string {
+  return stableJsonHash({
+    version: CLAIM_ITEM_SOURCE_PROVENANCE_VERSION,
+    sourceIdentityVersion: CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2,
+    tenantId: input.tenantId,
+    caseId: input.caseId,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    sourceSlot: input.sourceSlot,
+  });
+}
+
+/**
+ * Kalıcı intent/snapshot satırının kaynak kimliğini sürümüne göre yeniden üretir. V1 yalnız sabit PRIMARY_EVIDENCE
+ * slot'uyla geçerlidir; bilinmeyen sürüm → null (çağıran bütünlük hatası verir).
+ */
+export function rebuildFormationSourceIdentityHash(input: {
+  readonly tenantId: string;
+  readonly caseId: string;
+  readonly sourceType: string;
+  readonly sourceId: string;
+  readonly sourceSlot: string;
+  readonly sourceIdentityVersion: string;
+}): string | null {
+  if (!CLAIM_ITEM_FORMATION_SOURCE_TYPES.includes(input.sourceType as ClaimItemFormationSourceType)) return null;
+  if (input.sourceIdentityVersion === CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION) {
+    // V1 yalnız belge kaynağı + sabit PRIMARY_EVIDENCE slot'u (değişmedi).
+    if (input.sourceType !== 'CASE_DOCUMENT' || input.sourceSlot !== CLAIM_ITEM_FORMATION_SOURCE_SLOT) return null;
+    return buildCaseDocumentSourceIdentityHash({
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      documentId: input.sourceId,
+    });
+  }
+  if (input.sourceIdentityVersion === CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2) {
+    return buildSlotSourceIdentityHash({
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      sourceType: input.sourceType as ClaimItemFormationSourceType,
+      sourceId: input.sourceId,
+      sourceSlot: input.sourceSlot,
+    });
+  }
+  return null;
 }
 
 export function isSha256Hex(value: unknown): value is string {

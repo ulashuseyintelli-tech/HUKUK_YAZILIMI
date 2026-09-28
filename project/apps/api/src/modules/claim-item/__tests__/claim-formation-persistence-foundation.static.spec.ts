@@ -104,12 +104,20 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
     expect(intent).toContain('references: [tenantId, id]');
     expect(intent).toContain('ClaimItemFormationIntentRequester');
     expect(intent).toContain('@@unique([tenantId, idempotencyKey])');
-    expect(intent).toContain('@@unique([tenantId, approvalRequestId])');
+    // K3 (owner GO 2026-09-28): tek onay talebi toplu formation'da birden çok intent bağlar; tek-seferlik tüketim
+    // artık (onay, konum) başına — tekli akış konum 0 ile aynı tekilliği korur.
+    expect(intent).toContain(
+      '@@unique([tenantId, approvalRequestId, approvalBatchPosition], map: "claim_formation_intent_approval_position_unique")',
+    );
+    expect(intent).not.toContain('@@unique([tenantId, approvalRequestId])');
     expect(snapshot).toContain('references: [tenantId, caseId, id]');
     expect(snapshot).toContain('ClaimFormationSnapshotRequester');
     expect(snapshot).toContain('ClaimFormationSnapshotApprover');
     expect(snapshot).toContain('@@unique([tenantId, caseId, formationIntentId])');
-    expect(snapshot).toContain('@@unique([tenantId, approvalRequestId])');
+    expect(snapshot).toContain(
+      '@@unique([tenantId, approvalRequestId, approvalBatchPosition], map: "claim_formation_snapshot_approval_position_unique")',
+    );
+    expect(snapshot).not.toContain('@@unique([tenantId, approvalRequestId])');
   });
 
   it('migration enforces exact checks, immutable records and stable source binding', () => {
