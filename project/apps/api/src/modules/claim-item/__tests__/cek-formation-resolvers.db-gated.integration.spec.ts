@@ -78,7 +78,7 @@ describeWithDisposableDb('K3 ÇEK formation çözücüleri (gerçek kapı + ger�
       return user.id;
     }
     const requester = await lawyer('req', { canEditFinance: true });
-    const unauthorized = await lawyer('noauth', { canViewFinance: true });
+    const financeViewer = await lawyer('viewonly', { canViewFinance: true });
     const approver = await lawyer('appr', null, 'PARTNER');
     const debtor = await prisma.debtor.create({ data: { tenantId, type: 'COMPANY', name: `K3 borclu ${label}` } as never });
     const instrument = await prisma.caseInstrument.create({
@@ -95,7 +95,7 @@ describeWithDisposableDb('K3 ÇEK formation çözücüleri (gerçek kapı + ger�
         bounceDate: BOUNCE_DATE,
       },
     });
-    return { tenantId, caseId: legalCase.id, requester, unauthorized, approver, debtorId: debtor.id, instrumentId: instrument.id };
+    return { tenantId, caseId: legalCase.id, requester, financeViewer, approver, debtorId: debtor.id, instrumentId: instrument.id };
   }
   type Seed = Awaited<ReturnType<typeof seed>>;
 
@@ -174,7 +174,7 @@ describeWithDisposableDb('K3 ÇEK formation çözücüleri (gerçek kapı + ger�
         authorization.assertAuthorized({ tenantId: s.tenantId, caseId: s.caseId, actorUserId: s.requester }),
       ).resolves.toBeUndefined();
       await expect(
-        authorization.assertAuthorized({ tenantId: s.tenantId, caseId: s.caseId, actorUserId: s.unauthorized }),
+        authorization.assertAuthorized({ tenantId: s.tenantId, caseId: s.caseId, actorUserId: s.financeViewer }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -270,15 +270,15 @@ describeWithDisposableDb('K3 ÇEK formation çözücüleri (gerçek kapı + ger�
     });
 
     it('yetkisiz avukat talep açamaz (yazma yok)', async () => {
-      const s = await seed('e2e-noauth');
+      const s = await seed('e2e-viewonly');
       const cek = await instruments.readCekRecord(s.tenantId, s.caseId, s.instrumentId);
       const source = instruments.project(cek!);
       await expect(
         admission().prepare(
-          { tenantId: s.tenantId, actorUserId: s.unauthorized, correlationId: 'k3-noauth' },
+          { tenantId: s.tenantId, actorUserId: s.financeViewer, correlationId: 'k3-viewonly' },
           {
             caseId: s.caseId,
-            idempotencyKey: `k3-noauth-${randomUUID()}`,
+            idempotencyKey: `k3-viewonly-${randomUUID()}`,
             source: { sourceType: 'CASE_INSTRUMENT', documentId: s.instrumentId, requestedVersionId: source.versionId },
             component: { category: 'ANCILLARY', subtypeCode: 'CHECK_PENALTY' },
             legalBasis: { code: 'TTK_CEK_TAZMINATI', requestedVersion: '1' },
