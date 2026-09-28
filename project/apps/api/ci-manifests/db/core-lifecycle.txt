@@ -20,6 +20,7 @@ src/modules/automation/__tests__/workflow-engine-remaining-tenant-boundaries.db-
 src/modules/case/__tests__/case-calculation-summary.compatibility.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-formation-persistence-foundation.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-finalizer.db-gated.integration.spec.ts
+src/modules/claim-item/__tests__/claim-item-formation-batch.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-formation-intent.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-lifecycle.db-gated.integration.spec.ts
 src/modules/claim-item/__tests__/claim-item-source-integrity.db-gated.integration.spec.ts

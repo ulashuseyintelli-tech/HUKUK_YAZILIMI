@@ -12,6 +12,17 @@ export const CLAIM_ITEM_FORMATION_APPROVAL_TARGET_TYPE =
 export const CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION =
   'ClaimItemSourceIdentityV1' as const;
 export const CLAIM_ITEM_FORMATION_SOURCE_SLOT = 'PRIMARY_EVIDENCE' as const;
+/**
+ * K3 AUTO-GENERATE FORMATION (owner GO 2026-09-28). Aynı belgeden birden çok bileşen (ör. çek bedeli + karşılıksız çek
+ * tazminatı) üretildiğinde kaynak kimliği SLOT'u da içerir; V1 (sabit PRIMARY_EVIDENCE) değişmez ve geçerli kalır.
+ */
+export const CLAIM_ITEM_FORMATION_SOURCE_IDENTITY_VERSION_V2 = 'ClaimItemSourceIdentityV2' as const;
+/** K3: tek OfficeApproval talebinin birden çok intent'i değişmez biçimde bağladığı toplu onay referansı. */
+export const CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_VERSION =
+  'CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_V1' as const;
+export const CLAIM_ITEM_FORMATION_BATCH_APPROVAL_TARGET_TYPE = 'CLAIM_ITEM_FORMATION_BATCH' as const;
+/** DB CHECK (approvalBatchPosition BETWEEN 0 AND 7) ile aynı sınır. */
+export const CLAIM_ITEM_FORMATION_BATCH_MAX_SIZE = 8;
 export const CLAIM_ITEM_FORMATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 export const CLAIM_ITEM_FORMATION_COMPONENT_CATEGORIES = [
@@ -105,6 +116,22 @@ export interface HumanClaimItemFormationAdmissionContext {
   readonly actorUserId: string;
   readonly correlationId: string;
   readonly causationId?: string;
+}
+
+export interface ClaimItemFormationBatchApprovalItemRefV1 {
+  readonly position: number;
+  readonly formationIntentId: string;
+  readonly intentChecksum: string;
+  readonly sourceIdentityHash: string;
+}
+
+/** K3: toplu onayın DEĞİŞMEZ içeriği; `payloadHash = stableJsonHash(bu nesne)` her intent'e bağlanır. */
+export interface ClaimItemFormationBatchApprovalRefV1 {
+  readonly version: typeof CLAIM_ITEM_FORMATION_BATCH_APPROVAL_REF_VERSION;
+  readonly tenantId: string;
+  readonly caseId: string;
+  readonly batchId: string;
+  readonly items: readonly ClaimItemFormationBatchApprovalItemRefV1[];
 }
 
 export interface ClaimItemFormationApprovalRefV1 {
