@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   DISCLOSURE_APPROVER_CANDIDATE_SELECT,
@@ -26,8 +27,13 @@ export class ClientFinancialDisclosureApprovalPolicy {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Bool predikat — THROW ETMEZ. `resolveApproverEligible()` dispatcher'ı bunu kullanır. */
-  async isEligible(userId: string, tenantId: string): Promise<boolean> {
-    const candidate = await this.prisma.user.findUnique({
+  async isEligible(
+    userId: string,
+    tenantId: string,
+    // Karar transaction'ı yüklemi aktör satırları kilitliyken kendi client'ıyla değerlendirir. Verilmezse eskisi gibi.
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<boolean> {
+    const candidate = await db.user.findUnique({
       where: { id: userId },
       select: DISCLOSURE_APPROVER_CANDIDATE_SELECT,
     });
