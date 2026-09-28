@@ -7,6 +7,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { PayerLiabilityScopeError, hasRestrictedLiability } from "../claim-item/payer-liability-scope";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import {
@@ -444,6 +445,30 @@ export class CollectionService {
   /// Çağrıldığı yerler:
   /// - CollectionService.create() → POST /collections ve tahsilat delegasyonları için CaseDebtor integrity guard
   /// </remarks>
+  /**
+   * K3-L — tahsilatı yapan borçlunun Debtor.id'si (kalem sorumluluğu Debtor.id ile tutulur). Yalnız dosyada bazı
+   * borçlulara bağlı ACTIVE kalem varken çözülür; o durumda borçlu bağlantısı yoksa 400 PAYER_DEBTOR_REQUIRED.
+   * Kısıtlı kalem yoksa ödeyen mahsubu etkilemez → ek sorgu YOK (davranış aynı).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CollectionService.create() → ledger dağıtımından ve tahsilat satırından ÖNCE
+   * </remarks>
+   */
+  private async resolvePayerDebtorIdInTx(
+    tx: Prisma.TransactionClient,
+    caseId: string,
+    caseDebtorId: string | null | undefined,
+    restrictedLiability: boolean,
+  ): Promise<string | null> {
+    if (!restrictedLiability) return null;
+    const payer = caseDebtorId
+      ? await tx.caseDebtor.findFirst({ where: { id: caseDebtorId, caseId }, select: { debtorId: true } })
+      : null;
+    if (!payer) throw new PayerLiabilityScopeError('PAYER_DEBTOR_REQUIRED');
+    return payer.debtorId;
+  }
+
   private async validateCaseDebtorForCollectionInTx(
     tx: any,
     tenantId: string,
@@ -619,11 +644,12 @@ export class CollectionService {
         SELECT pg_advisory_xact_lock(hashtextextended(${dto.caseId}, 0))
       `;
 
+      const activeAllocationItems = await tx.claimItem.findMany({
+        where: { tenantId, caseId: dto.caseId, status: 'ACTIVE' },
+        select: { currency: true, isAllDebtorsLiable: true },
+      });
       const allocationCurrencies = Array.from(
-        new Set((await tx.claimItem.findMany({
-          where: { tenantId, caseId: dto.caseId, status: 'ACTIVE' },
-          select: { currency: true },
-        })).map((claimItem) => String(claimItem.currency || 'TRY'))),
+        new Set(activeAllocationItems.map((claimItem) => String(claimItem.currency || 'TRY'))),
       ).sort();
       if (allocationCurrencies.some((claimCurrency) => claimCurrency !== caseCurrency)) {
         throw new BadRequestException({
@@ -637,6 +663,14 @@ export class CollectionService {
 
       // ── 2. Duplicate pre-check (external source) ────────────────────────
       await this.validateCaseDebtorForCollectionInTx(tx, tenantId, dto.caseId, dto.caseDebtorId);
+      // K3-L (owner kararı 2026-09-28): ödeyen borçlu Debtor.id'ye çözülür; kısıtlı kalemli dosyada ödeyensiz
+      // tahsilat HİÇBİR satır yazılmadan reddedilir (dağıtım da aynı kuralı uygular).
+      const payerDebtorId = await this.resolvePayerDebtorIdInTx(
+        tx,
+        dto.caseId,
+        dto.caseDebtorId,
+        hasRestrictedLiability(activeAllocationItems),
+      );
 
       if (dto.sourceType && EXTERNAL_SOURCES.has(dto.sourceType) && dto.sourceId) {
         const existing = await (tx as any).collection.findFirst({
@@ -764,6 +798,7 @@ export class CollectionService {
             commandId: trace.commandId,
             causationId: trace.causationId,
             producer: command.producer,
+            payerDebtorId,
           },
         );
         if (ledger.allocated && ledger.ledgerEntry) {
