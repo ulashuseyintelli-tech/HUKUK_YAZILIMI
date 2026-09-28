@@ -1,0 +1,26 @@
+{
+  "contentRatification": {
+    "decisionPackSha256": "77701ca7bcceb44ceb9001a4c0809da4fe21487d8f0654f42cf34ce8b7714603",
+    "status": "DRAFT_PENDING_OWNER_LEGAL_RATIFICATION"
+  },
+  "entryChecksums": [
+    {
+      "checksum": "a1a14484b2474839b73c8790c1fbd3a4d0d56fadd5f57a0ee42509cb597f5492",
+      "legalBasisCode": "TTK_CEK_BEDELI",
+      "legalBasisVersion": "1"
+    },
+    {
+      "checksum": "3ff590fdd4cf7fe69184edd1ccb6d7b55963d7212951832a7fda0793fa93c1b3",
+      "legalBasisCode": "TTK_CEK_TAZMINATI",
+      "legalBasisVersion": "1"
+    }
+  ],
+  "manifestSchemaVersion": "RECEIVABLE_LEGAL_BASIS_RELEASE_MANIFEST_V1",
+  "payloadChecksum": "27612c7efd55b5d3b84c7f6f976832250186b5ca8ed140d8ec662b0ed985d626",
+  "registryChecksum": "603b5bdc0868a26c79a120241fd7a0e58e2ca419bd340394c48514da0c403971",
+  "releaseId": "RCV-LB-R2-CEK",
+  "releaseVersion": "1",
+  "runtimeStatus": "DORMANT_DEFAULT_OFF",
+  "signatureStatus": "PENDING_NOT_EXECUTED",
+  "signatures": []
+}
