@@ -36,7 +36,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = 'https://bilgi.tellihukuk.com'                                         # R05 owner kararı
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d4-r01\scripts\d4-portal-live-run.js'                         = '5153630F5FB122EB89F9FE8274594B59843D99342A7D5AA5B1EAC76283221069'
+  'client-extacc-portal-d4-r01\scripts\d4-portal-live-run.js'                         = '6FE56240B16D59059C48F9155A50363755769D0A7FB527158077C5FCAD2F038B'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\extacc-qr-test.js'                          = '61FBCEE86148DEA1B268A1B883F1690ED6F3D4BBD36EAEA29783F24D487B8B10'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -46,13 +46,14 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'B69D1CFFC13E1CD956812D5F3A832C77BF4E955AC517F55F87D948B176CEBA8F'
+$ExpPackage = 'E2B586CCB50F06414121EDBDE5B17CE326C50CB47A23352BE7A22A40FB68F25F'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D4_LIVE_CONFIRM', 'D4_RECOVER_CONFIRM', 'D4_LIVE_GO_REF',
                 'D4_RUNID', 'D4_MODE', 'D4_EXPECT_DB', 'D4_EXPECT_TENANT_SLUG', 'D4_API_BASE', 'D4_EXPECT_API',
                 'D4_EXPECT_BASE_URL', 'D4_LIVE_LOGIN_PW', 'D4_RECEIPT', 'D4_EVID_FILE', 'D4_DISPLAY', 'EXA_QRTEST_URL',
-                'D4_WAIT_MS', 'D4_POLL_MS', 'D4_VIEW_MS', 'D4_HTTP_TIMEOUT_MS', 'D4_CALL_TIMEOUT_MS')
+                'D4_WAIT_MS', 'D4_POLL_MS', 'D4_VIEW_MS', 'D4_HTTP_TIMEOUT_MS', 'D4_CALL_TIMEOUT_MS', 'D4_LATE_CREATE_MS')
 # CANLI SÜRELER — açıkça kurulur; pencereden devralınan değerler başta ve sonda SİLİNİR (koşucu da canlı DB'de bunları zorlar).
-$LiveParams = [ordered]@{ D4_WAIT_MS = '1200000'; D4_POLL_MS = '5000'; D4_VIEW_MS = '120000'; D4_HTTP_TIMEOUT_MS = '15000'; D4_CALL_TIMEOUT_MS = '30000' }
+$LiveParams = [ordered]@{ D4_WAIT_MS = '1200000'; D4_POLL_MS = '5000'; D4_VIEW_MS = '120000'; D4_HTTP_TIMEOUT_MS = '15000'; D4_CALL_TIMEOUT_MS = '30000'
+                          D4_LATE_CREATE_MS = '120000' }
 $script:LastNodeRc = $null
 
 function Fail([string]$m) { Write-Host "DUR - $m" -ForegroundColor Red; throw "EXTACC-D4-DUR: $m" }
@@ -169,7 +170,7 @@ function Set-RunEnv([string]$runId, [string]$evDir) {
   $rb = New-Object byte[] 18; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rb)
   $env:D4_LIVE_LOGIN_PW = 'D4S!' + [Convert]::ToBase64String($rb).TrimEnd('=').Replace('+', '-').Replace('/', '_'); $rb = $null
   $env:D4_EVID_FILE = Join-Path $evDir 'd4-evidence.json'
-  if (-not $LiveParams -or $LiveParams.Count -ne 5) { Fail 'canlı süre tablosu ($LiveParams) eksik — koşum başlamaz' }
+  if (-not $LiveParams -or $LiveParams.Count -ne 6) { Fail 'canlı süre tablosu ($LiveParams) eksik — koşum başlamaz' }
   foreach ($k in $LiveParams.Keys) { Set-Item -Path "Env:$k" -Value $LiveParams[$k] }   # canlı süreler AÇIKÇA
 }
 function Invoke-Node([string]$exe, [string]$scriptPath, [string]$logFile) {
@@ -210,17 +211,36 @@ function Confirm-LiveDataProcessing {
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
   if ($a -cne 'EVET') { Fail 'canlı veri işleme onaylanmadı — koşum başlamadı' }
 }
-function Write-OwnerDeclaration([string]$evDir, [string]$runId) {
+# Kapanış durumu kanıttan okunur; metin KOŞULSUZ "kapatıldı" demez.
+function Get-ClosureStatus([string]$evidFile, [object]$rc) {
+  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null }
+  try {
+    $ev = Get-Content -Raw -LiteralPath $evidFile | ConvertFrom-Json
+    $d9 = ($ev.results | Where-Object { $_.id -eq 'P-D9' }).verdict
+    $st.waitVerdict = ($ev.results | Where-Object { $_.id -eq 'P-WAIT' }).verdict
+    $st.finding = $ev.productFinding
+    $st.verified = ($d9 -eq 'PASS')
+  } catch { $st.verified = $false }
+  $st.text = if ($st.verified) { 'Portal erişim kapanışı koşucu tarafından DOĞRULANDI (DB + yeni giriş + mevcut oturum reddi).' }
+             else { "Portal erişim kapanışı DOĞRULANAMADI (çıkış $rc) — telefondaki erişim açık kalmış olabilir; sonucu CLIENT'a bildirin." }
+  return [pscustomobject]$st
+}
+function Write-OwnerDeclaration([string]$evDir, [string]$runId, $closure) {
   Write-Host ''
-  Write-Host 'Koşum bitti ve portal erişimi kapatıldı. ŞİMDİ telefonda açık portal sayfasını YENİLEYİN, sonra yanıtlayın.' -ForegroundColor Cyan
-  Write-Host 'OWNER BEYANI (makine ölçümünden AYRI kaydedilir). E / H / ? ile yanıtlayın.' -ForegroundColor Cyan
+  $c = if ($closure -and $closure.verified) { 'Green' } else { 'Red' }
+  Write-Host ("Koşum bitti. {0}" -f $(if ($closure) { $closure.text } else { 'Portal erişim kapanışı DOĞRULANAMADI (kanıt okunamadı).' })) -ForegroundColor $c
+  Write-Host 'Şimdi telefonda açık portal sayfasını bir kez YENİLEYİN, sonra aşağıdaki soruları ekranda gördüğünüze göre yanıtlayın.' -ForegroundColor Cyan
+  Write-Host 'OWNER BEYANI (makine ölçümünden AYRI kaydedilir). Emin değilseniz ? yazın.' -ForegroundColor Cyan
   $d = [ordered]@{
     record = 'EXTACC-D4-OWNER-DECLARATION'; runId = $runId; not = 'owner beyanıdır; makine ölçümü değildir'
-    telefonGirisSayfasiAcildi   = (Read-Answer 'Telefonda portal giriş sayfası açıldı mı? (E/H/?)')
-    girisBirKezYapildi          = (Read-Answer 'Konsoldaki e-posta ve parolayla telefondan BİR KEZ giriş yaptınız mı? (E/H/?)')
-    listedeYalnizBeklenenDosya  = (Read-Answer 'Dosya listesinde YALNIZ konsolda yazan dosya numarası mı göründü? (E/H/?)')
-    wifiKapaliMobilVeri         = (Read-Answer 'Wi-Fi kapalı ve mobil veri açık mıydı? (E/H/?)')
-    yenilemedeOturumKapandi     = (Read-Answer 'Kapanıştan sonra yenileyince giriş sayfasına döndü / liste görünmedi mi? (E/H/?)')
+    closureShownToOwner = $(if ($closure) { $closure.text } else { 'kanıt okunamadı' })
+    telefonGirisSayfasiAcildi = (Read-Answer 'Telefonda portal giriş sayfası açıldı mı? (E/H/?)')
+    girisDenemeSayisi         = (Read-Answer 'Telefondan kaç kez giriş denediniz? (sayı ya da ?)')
+    girisSonrasiEkran         = (Read-Answer 'Girişten sonra ne gördünüz? (L = dosya listesi · G = yine giriş sayfası · D = başka/hata sayfası · ?)')
+    listedekiDosyaSayisi      = (Read-Answer 'Listede kaç dosya vardı? (sayı ya da ?)')
+    dosyaNumarasiKarsilastirma = (Read-Answer 'Listedeki dosya numarası konsolda yazan numarayla aynı mıydı? (E/H/?)')
+    telefonAgi                = (Read-Answer 'Telefon hangi ağdaydı? (M = mobil veri, Wi-Fi kapalı · W = Wi-Fi · ?)')
+    yenilemeSonrasiEkran      = (Read-Answer 'Yeniledikten sonra ne gördünüz? (L = dosya listesi · G = giriş sayfası · D = başka/hata sayfası · Y = yenilemedim · ?)')
     atUtc = (Get-Date).ToUniversalTime().ToString('o')
   }
   $d | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evDir 'owner-declaration.json') -Encoding UTF8
@@ -274,16 +294,17 @@ function Invoke-RunMode($g) {
                 atUtc = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvDir 'goref-consumed.json') -Encoding UTF8
     $GoRef = $null
   }
-  try { $decl = Write-OwnerDeclaration $EvDir $RunId } finally { Write-Manifest $EvDir }
-  $waitV = $null; $finding = $null
-  try { $ev = Get-Content -Raw -LiteralPath (Join-Path $EvDir 'd4-evidence.json') | ConvertFrom-Json; $waitV = ($ev.results | Where-Object { $_.id -eq 'P-WAIT' }).verdict; $finding = $ev.productFinding } catch { }
+  $closure = Get-ClosureStatus (Join-Path $EvDir 'd4-evidence.json') $rc
+  try { $decl = Write-OwnerDeclaration $EvDir $RunId $closure } finally { Write-Manifest $EvDir }
+  $waitV = $closure.waitVerdict; $finding = $closure.finding
   Write-Host "EXTACC D-4 KOŞUM BİTTİ - RUNID=$RunId · çıkış=$rc" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   Write-Host '  0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI · 6 PORTAL ERİŞİMİ KAPANDIĞI DOĞRULANMADI · 91 NODE BAŞLATILAMADI'
   if ($finding) { Write-Host "  $finding — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ. CLIENT'a bildirin." -ForegroundColor Red }
   if ($waitV -eq 'UNMEASURED' -and $decl) {
-    if ($decl.girisBirKezYapildi -ceq 'E') { Write-Host '  Koşucu başarılı giriş görmedi ama owner giriş yaptığını beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
+    if ($decl.girisSonrasiEkran -ceq 'L') { Write-Host '  Koşucu başarılı giriş görmedi ama owner dosya listesini gördüğünü beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
     else { Write-Host '  Başarılı telefon girişi görülmedi — ÖLÇÜLEMEYEN.' -ForegroundColor Yellow }
   }
+  if ($decl -and $decl.yenilemeSonrasiEkran -ceq 'L') { Write-Host '  Owner, kapanıştan sonra yenilemede dosya listesini gördüğünü beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
   if ($rc -eq 5 -or $rc -eq 6) { Write-Host '  KAPANIŞ DOĞRULANMADI: -Mode Recover -ReceiptFile <makbuz> (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow }
   Write-Host "  kanıt dizini: $EvDir"
   Write-Host '  Bu pencereyi ŞİMDİ kapatın (kaydırma arabelleği). GO ref, parola ve değer bildirmeyin.'
@@ -307,7 +328,8 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
     $rc = Complete-NodeRc $rc $evid
   }
   finally { Clear-SecretEnv; Write-Manifest $EvDir }
-  Write-Host "EXTACC D-4 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 kapanış doğrulandı · 5/6 hâlâ doğrulanmadı · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
+  Write-Host "EXTACC D-4 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 kapanış ve HTTP reddi doğrulandı · 3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ (ör. mevcut oturum; PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
+  if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
   Write-Host "  kanıt dizini: $EvDir"
   return $rc
 }

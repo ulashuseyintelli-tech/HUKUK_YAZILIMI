@@ -23,7 +23,7 @@ if ($secAssign.Count -ne 1) { Write-Host 'OLCULEMEDI: $SecretEnv ataması buluna
 $lpAssign = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$LiveParams' }, $false))
 if ($lpAssign.Count -ne 1) { Write-Host 'OLCULEMEDI: $LiveParams ataması bulunamadı'; exit 2 }
 . ([scriptblock]::Create($lpAssign[0].Extent.Text))
-$need = 'Invoke-RunMode', 'Invoke-RecoverMode', 'Invoke-QrTestMode', 'Assert-ExternalChain', 'Get-ExternalChainState', 'Invoke-Node', 'Complete-NodeRc', 'Resolve-NodeExe', 'Assert-FreshEvidence', 'Set-RunEnv',
+$need = 'Get-ClosureStatus', 'Invoke-RunMode', 'Invoke-RecoverMode', 'Invoke-QrTestMode', 'Assert-ExternalChain', 'Get-ExternalChainState', 'Invoke-Node', 'Complete-NodeRc', 'Resolve-NodeExe', 'Assert-FreshEvidence', 'Set-RunEnv',
         'Clear-SecretEnv', 'Read-GoRef', 'Read-Answer', 'Invoke-RepoGit', 'Assert-LocalConsole', 'Confirm-LiveDataProcessing', 'Write-OwnerDeclaration'
 $missing = @($need | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) })
 if ($missing.Count -gt 0) { Write-Host "OLCULEMEDI: wrapper fonksiyonu yok: $($missing -join ',')"; exit 2 }
@@ -42,8 +42,9 @@ $marker = Join-Path $T 'node-calls.txt'
 const fs = require('fs');
 fs.appendFileSync(process.env.EXSTUB_MARKER, JSON.stringify({ mode: process.env.D4_MODE || null, db: !!process.env.AH_DATABASE_URL,
   go: !!process.env.D4_LIVE_GO_REF, receipt: !!process.env.D4_RECEIPT, display: process.env.D4_DISPLAY || null, slug: process.env.D4_EXPECT_TENANT_SLUG || null,
-  params: ['D4_WAIT_MS', 'D4_POLL_MS', 'D4_VIEW_MS', 'D4_HTTP_TIMEOUT_MS', 'D4_CALL_TIMEOUT_MS'].map((k) => process.env[k] || null) }) + '\n');
-if (process.env.EXSTUB_WRITE_EVID === '1') fs.writeFileSync(process.env.D4_EVID_FILE, JSON.stringify({ productFinding: process.env.EXSTUB_FINDING || null, results: [{ id: 'P-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }] }));
+  params: ['D4_WAIT_MS', 'D4_POLL_MS', 'D4_VIEW_MS', 'D4_HTTP_TIMEOUT_MS', 'D4_CALL_TIMEOUT_MS', 'D4_LATE_CREATE_MS'].map((k) => process.env[k] || null) }) + '\n');
+if (process.env.EXSTUB_WRITE_EVID === '1') fs.writeFileSync(process.env.D4_EVID_FILE, JSON.stringify({ productFinding: process.env.EXSTUB_FINDING || null,
+  results: [{ id: 'P-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'P-D9', verdict: process.env.EXSTUB_D9 || 'PASS' }] }));
 process.exit(Number(process.env.EXSTUB_RC || 0));
 '@)
 [IO.File]::WriteAllText((Join-Path $QrSc 'extacc-qr-test.js'), "process.exit(Number(process.env.EXSTUB_QR_RC || 0));`n")
@@ -69,7 +70,7 @@ $script:RealSetRunEnv = ${function:Set-RunEnv}
 $script:PriorAtNode = $null
 function Set-RunEnv { & $script:RealSetRunEnv @args; Set-PriorZero; $script:PriorAtNode = $global:LASTEXITCODE }
 function Node-Calls { @(if (Test-Path -LiteralPath $marker) { Get-Content -LiteralPath $marker }) }
-$okAnswers = @('E', 'EVET', 'E', 'E', 'E', 'E', 'E')   # pencere · onay · beyan x5
+$okAnswers = @('E', 'EVET', 'E', '1', 'L', '1', 'E', 'M', 'G')   # pencere · onay · beyan x7
 $okChain = [pscustomobject]@{ loopbackCount = 1; otherAddresses = ''; loopbackPids = '4242'; caddyServiceState = 'Running'; caddyServicePid = 4242; cloudflaredStatus = 'Running' }
 function Invoke-Mode([string]$mode, [string]$nodeExe, [int]$stubRc, [bool]$writeEvid, [string]$receipt = '', [string[]]$answers = $okAnswers, [string]$waitVerdict = 'PASS', $chain = $okChain) {
   $env:EXSTUB_RC = [string]$stubRc; $env:EXSTUB_WRITE_EVID = $(if ($writeEvid) { '1' } else { '0' }); $env:EXSTUB_WAIT = $waitVerdict
@@ -119,7 +120,7 @@ try {
   $d = Last-EvDir; $decl = Get-Content -Raw -LiteralPath (Join-Path $d.FullName 'owner-declaration.json') | ConvertFrom-Json
   $man = Get-Content -LiteralPath (Join-Path $d.FullName 'SHA256-MANIFEST.txt')
   Check 'R-1' 'Run: node 0 + kanıt → 0; node run modunda, D4_DISPLAY=conout, slug ah-<runId>, gizli ortamla koştu; ortam temizlendi; defter +1' ($r.out -eq 0 -and $r.count -eq 1 -and $r.nodeCalls -eq 1 -and $r.last.mode -eq 'run' -and $r.last.display -eq 'conout' -and $r.last.slug -match '^ah-[0-9a-f]{8}$' -and $r.last.db -and $r.last.go -and $r.secretsLeft -eq 0 -and $r.ledgerDelta -eq 1 -and (Consumed-Rc) -eq 0) "rc=$($r.out) · display=$($r.last.display) · kalan gizli=$($r.secretsLeft)"
-  Check 'R-8' 'owner beyanı AYRI dosyada (makine ölçümü değil notu; 5 soru; kapanış sonrası yenileme dahil) ve manifestte' ($decl.record -eq 'EXTACC-D4-OWNER-DECLARATION' -and $decl.not -match 'beyan' -and $decl.yenilemedeOturumKapandi -eq 'E' -and $decl.listedeYalnizBeklenenDosya -eq 'E' -and (@($man | Where-Object { $_ -match 'owner-declaration\.json$' }).Count -eq 1)) "beyan=$($decl.telefonGirisSayfasiAcildi)/$($decl.girisBirKezYapildi)/$($decl.listedeYalnizBeklenenDosya)/$($decl.wifiKapaliMobilVeri)/$($decl.yenilemedeOturumKapandi)"
+  Check 'R-8' 'owner beyanı AYRI dosyada (makine ölçümü değil notu; 7 yönlendirmesiz soru; owner''a gösterilen kapanış metni kayıtlı) ve manifestte' ($decl.record -eq 'EXTACC-D4-OWNER-DECLARATION' -and $decl.not -match 'beyan' -and $decl.girisSonrasiEkran -eq 'L' -and $decl.yenilemeSonrasiEkran -eq 'G' -and $decl.telefonAgi -eq 'M' -and $decl.closureShownToOwner -match 'DOĞRULANDI' -and (@($man | Where-Object { $_ -match 'owner-declaration\.json$' }).Count -eq 1)) "beyan=$($decl.telefonGirisSayfasiAcildi)/$($decl.girisDenemeSayisi)/$($decl.girisSonrasiEkran)/$($decl.listedekiDosyaSayisi)/$($decl.dosyaNumarasiKarsilastirma)/$($decl.telefonAgi)/$($decl.yenilemeSonrasiEkran) · kapanış=$($decl.closureShownToOwner)"
   foreach ($c in 2, 3, 5, 6) {
     $r = Invoke-Mode 'Run' $real.Exe $c $true
     Check "R-2.$c" "Run: node $c → $c değişmeden (tek node çağrısı; otomatik tekrar/Recover yok)" ($r.out -eq $c -and $r.nodeCalls -eq 1 -and (Consumed-Rc) -eq $c) "rc=$($r.out) · node=$($r.nodeCalls)"
@@ -152,14 +153,27 @@ try {
   Check 'V-4' 'Recover: önceki kod 0 iken node başlatılamaz → 91' ($r.out -eq 91 -and $r.nodeCalls -eq 0 -and $r.prior -eq 0) "rc=$($r.out)"
 
   # ---- CANLI SÜRELER (inceleme bulgusu): pencereden devralınan değerler canlı süreleri DEĞİŞTİREMEZ
-  foreach ($k in 'D4_WAIT_MS', 'D4_POLL_MS', 'D4_VIEW_MS', 'D4_HTTP_TIMEOUT_MS', 'D4_CALL_TIMEOUT_MS') { Set-Item -Path "Env:$k" -Value '1' }
+  foreach ($k in 'D4_WAIT_MS', 'D4_POLL_MS', 'D4_VIEW_MS', 'D4_HTTP_TIMEOUT_MS', 'D4_CALL_TIMEOUT_MS', 'D4_LATE_CREATE_MS') { Set-Item -Path "Env:$k" -Value '1' }
   $script:goN = 70; $r = Invoke-Mode 'Run' $real.Exe 0 $true
-  $exp = @('1200000', '5000', '120000', '15000', '30000')
+  $exp = @('1200000', '5000', '120000', '15000', '30000', '120000')
   $saved = $LiveParams; $LiveParams = $null; $script:goN = 72
   $r2 = Invoke-Mode 'Run' $real.Exe 0 $true
   $LiveParams = $saved
   Check 'L-2' 'Run: canlı süre tablosu eksikse node BAŞLAMAZ (sessizce devralınan değerlerle koşmaz)' ($r2.threw -like 'EXTACC-D4-DUR:*' -and $r2.threw -match 'süre tablosu' -and $r2.nodeCalls -eq 0) "mesaj=$($r2.threw)"
-  Check 'L-1' 'Run: devralınan 5 süre değişkeni (=1) node''a CANLI değerlerle geçer (20 dk bekleme / 5 sn yoklama / 120 sn inceleme / zaman aşımları) ve sonra temizlenir' (($r.last.params -join ',') -eq ($exp -join ',') -and $r.secretsLeft -eq 0) "node gördü=$($r.last.params -join ',') · kalan=$($r.secretsLeft)"
+  Check 'L-1' 'Run: devralınan 6 süre değişkeni (=1) node''a CANLI değerlerle geçer (20 dk bekleme / 5 sn yoklama / 120 sn inceleme / zaman aşımları / 120 sn geç oluşma) ve sonra temizlenir' (($r.last.params -join ',') -eq ($exp -join ',') -and $r.secretsLeft -eq 0) "node gördü=$($r.last.params -join ',') · kalan=$($r.secretsLeft)"
+
+
+  # ---- OWNER METNİ (inceleme bulgusu 3): kapanış metni kanıta bağlı; koşulsuz "kapatıldı" yok; sorular yönlendirmesiz
+  $env:EXSTUB_D9 = 'FAIL'; $script:goN = 80; $r = Invoke-Mode 'Run' $real.Exe 6 $true; $env:EXSTUB_D9 = 'PASS'
+  $d = Last-EvDir; $declF = Get-Content -Raw -LiteralPath (Join-Path $d.FullName 'owner-declaration.json') | ConvertFrom-Json
+  Check 'O-1' 'P-D9 FAIL (çıkış 6): owner''a gösterilen metin "DOĞRULANAMADI", "DOĞRULANDI (" değil' ($r.out -eq 6 -and $declF.closureShownToOwner -match 'DOĞRULANAMADI' -and $declF.closureShownToOwner -notmatch 'DOĞRULANDI \(') "metin=$($declF.closureShownToOwner)"
+  $cs = Get-ClosureStatus (Join-Path $T 'yok\d4-evidence.json') 7
+  Check 'O-2' 'kanıt okunamazsa kapanış DOĞRULANAMADI sayılır' (-not $cs.verified -and $cs.text -match 'DOĞRULANAMADI') "metin=$($cs.text)"
+  $declBody = ($funcs | Where-Object { $_.Name -eq 'Write-OwnerDeclaration' }).Extent.Text
+  $leading = @('döndü mü', 'görünmedi mi', 'YALNIZ konsolda', 'oturumun kapandığını', 'kapatıldı')
+  $hits = @($leading | Where-Object { $declBody -match [regex]::Escape($_) })
+  $srcAll = [IO.File]::ReadAllText($wrapper)
+  Check 'O-3' 'owner beyanı soruları yönlendirmesiz (seçenekli); bloğun hiçbir yerinde koşulsuz "erişimi kapatıldı" yok' ($hits.Count -eq 0 -and $srcAll -notmatch 'erişimi kapatıldı' -and ([regex]::Matches($declBody, 'Read-Answer')).Count -eq 7) "yönlendiren=$($hits -join ',') · soru=$(([regex]::Matches($declBody, 'Read-Answer')).Count)"
 
   # ---- DIŞ ZİNCİR (inceleme bulgusu): doğrulanamazsa Preflight/Run DURUR; Recover engellenmez
   $bad = @{
@@ -201,7 +215,7 @@ try {
   Check 'S-3' 'Run sırası: konsol → pencere teyidi → canlı veri onayı → GO → defter → node' ($iW -ge 0 -and $iW -lt $iK -and $iK -lt $iG -and $iG -lt $iL -and $iL -lt $iN) "konsol@$iW onay@$iK GO@$iG defter@$iL node@$iN"
 }
 finally {
-  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 

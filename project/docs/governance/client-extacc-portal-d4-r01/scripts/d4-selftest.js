@@ -69,7 +69,7 @@ function runScenario(name, dir, sc, over, hooks = {}) {
       D4_MODE: 'run', D4_LIVE_CONFIRM: '1', D4_LIVE_GO_REF: go, D4_RUNID: runId, D4_EXPECT_DB: 'ah_h5_test',
       D4_EXPECT_TENANT_SLUG: `ah-${runId}`, D4_API_BASE: API, D4_EXPECT_API: API, D4_EXPECT_BASE_URL: EXT,
       D4_LIVE_LOGIN_PW: pw, D4_RECEIPT: receipt, D4_EVID_FILE: evid, D4_DISPLAY: 'none',
-      D4_WAIT_MS: '15000', D4_POLL_MS: '300', D4_VIEW_MS: '500', D4_HTTP_TIMEOUT_MS: '5000', D4_CALL_TIMEOUT_MS: '5000',
+      D4_WAIT_MS: '15000', D4_POLL_MS: '300', D4_VIEW_MS: '500', D4_HTTP_TIMEOUT_MS: '5000', D4_CALL_TIMEOUT_MS: '5000', D4_LATE_CREATE_MS: '6000',
     }, over || {});
     for (const k of ['NODE_OPTIONS', 'NODE_TLS_REJECT_UNAUTHORIZED']) if (!(over && k in over)) delete env[k];
     [pw, go, DBURL].forEach((s) => secretsSeen.add(s));
@@ -87,7 +87,7 @@ function runScenario(name, dir, sc, over, hooks = {}) {
     ch.stdout.on('data', onData); ch.stderr.on('data', onData);
     ch.on('close', async (code) => {
       fs.writeFileSync(path.join(dir, `${name}.log`), log, 'utf8'); artifacts.push(path.join(dir, `${name}.log`), receipt, evid);
-      const sec = await ctl('GET', '/__secrets'); sec.jwts.concat(sec.portalJwts, sec.portalPasswords).forEach((s) => secretsSeen.add(s));
+      const sec = await ctl('GET', '/__secrets'); sec.jwts.concat(sec.portalJwts, sec.portalPasswords, sec.loginPasswords).forEach((s) => secretsSeen.add(s));
       const ev = fs.existsSync(evid) ? JSON.parse(fs.readFileSync(evid, 'utf8')) : null;
       const v = (id) => (ev && ev.results ? (ev.results.find((x) => x.id === id) || {}).verdict : null);
       const o = (id) => (ev && ev.results ? (ev.results.find((x) => x.id === id) || {}).observed || '' : '');
@@ -102,21 +102,25 @@ function runScenario(name, dir, sc, over, hooks = {}) {
     });
   });
 }
-async function recover(prev, dir, name, sc) {
+async function recover(prev, dir, name, sc, receiptOverride) {
   await ctl('POST', '/__reset'); await ctl('POST', '/__scenario', sc || {});
   const pw = 'D4R!' + crypto.randomBytes(12).toString('base64url'); const evid = path.join(dir, `${name}-evidence.json`); secretsSeen.add(pw);
   const env = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
     D4_MODE: 'recover', D4_RECOVER_CONFIRM: '1', D4_RUNID: prev.runId, D4_EXPECT_DB: 'ah_h5_test', D4_API_BASE: API, D4_EXPECT_API: API,
-    D4_EXPECT_BASE_URL: EXT, D4_LIVE_LOGIN_PW: pw, D4_RECEIPT: prev.receipt, D4_EVID_FILE: evid, D4_DISPLAY: 'none', D4_HTTP_TIMEOUT_MS: '5000', D4_CALL_TIMEOUT_MS: '5000' });
+    D4_EXPECT_BASE_URL: EXT, D4_LIVE_LOGIN_PW: pw, D4_RECEIPT: receiptOverride || prev.receipt, D4_EVID_FILE: evid, D4_DISPLAY: 'none', D4_HTTP_TIMEOUT_MS: '5000', D4_CALL_TIMEOUT_MS: '5000',
+    D4_POLL_MS: '300', D4_LATE_CREATE_MS: '6000' });
   const code = await new Promise((res) => { const c = spawn(process.execPath, [RUN], { env, stdio: ['ignore', 'pipe', 'pipe'] }); let l = ''; c.stdout.on('data', (d) => { l += d; }); c.stderr.on('data', (d) => { l += d; }); c.on('close', (x) => { fs.writeFileSync(path.join(dir, `${name}.log`), l, 'utf8'); res(x); }); });
   artifacts.push(path.join(dir, `${name}.log`), evid);
   const pu = await prisma.clientPortalUser.findUnique({ where: { clientId: prev.rc.clientId }, select: { isActive: true, tokenVersion: true } });
   const cl = await prisma.client.findUnique({ where: { id: prev.rc.clientId }, select: { hasPortalAccess: true } });
   const ev = fs.existsSync(evid) ? JSON.parse(fs.readFileSync(evid, 'utf8')) : null;
-  return { code, pu, cl, ev, activeUsers: await prisma.user.count({ where: { tenantId: prev.tenant.id, isActive: true } }) };
+  const sec = await ctl('GET', '/__secrets'); sec.jwts.concat(sec.portalJwts, sec.loginPasswords).forEach((x) => secretsSeen.add(x));
+  const v = (id) => (ev && ev.results ? (ev.results.find((x) => x.id === id) || {}).verdict : null);
+  const o = (id) => (ev && ev.results ? (ev.results.find((x) => x.id === id) || {}).observed || '' : '');
+  return { code, pu, cl, ev, v, o, calls: await ctl('GET', '/__calls'), activeUsers: await prisma.user.count({ where: { tenantId: prev.tenant.id, isActive: true } }) };
 }
 const phoneFlow = async (rc, pp) => phone(rc.portalEmail, pp);
-const CLOSE = ['P-C1', 'P-C2', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'U-CLOSE', 'P-D9'];
+const CLOSE = ['P-C1', 'P-C2', 'P-C2V', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'P-C5', 'U-CLOSE', 'P-D9'];
 
 (async () => {
   DBURL = dbUrl();
@@ -169,9 +173,10 @@ const CLOSE = ['P-C1', 'P-C2', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'U-CLOSE', 'P
     check('Y4-a', 'disable-user 500: çıkış 6, portal hesabı AKTİF ölçüldü, P-C2 FAIL, kurtarma talimatı',
       y4.code === 6 && y4.pu && y4.pu.isActive === true && y4.v('P-C2') === 'FAIL' && y4.ev && y4.ev.recovery.gerekli, `çıkış=${y4.code} · aktif=${y4.pu && y4.pu.isActive}`);
     const r4 = await recover(y4, dir, 'y4-recover', {});
-    check('Y4-b', 'Recover: portal pasif, erişim kapalı, personel pasif, çıkış 0; kabul ölçütü koşulmadı',
-      r4.code === 0 && r4.pu.isActive === false && r4.cl.hasPortalAccess === false && r4.activeUsers === 0 && r4.ev && !r4.ev.results.some((r) => /^P-0|P-WAIT|P-DISP/.test(r.id)),
-      `çıkış=${r4.code} · portal=${JSON.stringify(r4.pu)} · kullanıcı=${r4.activeUsers}`);
+    check('Y4-b', 'Recover: portal pasif, erişim kapalı, sürüm arttı, yeni giriş 401; mevcut oturum ÖLÇÜLEMEYEN → çıkış 3 (0 DEĞİL); kabul ölçütü koşulmadı',
+      r4.code === 3 && r4.pu.isActive === false && r4.cl.hasPortalAccess === false && r4.activeUsers === 0 && r4.v('P-C2V') === 'PASS' && r4.v('P-C3L') === 'PASS' && r4.v('P-C3D') === 'PASS'
+        && r4.v('P-C4L') === 'UNMEASURED' && r4.v('P-C4D') === 'UNMEASURED' && r4.ev && !r4.ev.results.some((r) => /^P-0|P-WAIT|P-DISP/.test(r.id)),
+      `çıkış=${r4.code} · portal=${JSON.stringify(r4.pu)} · P-C2V=${r4.v('P-C2V')} P-C3L=${r4.v('P-C3L')} P-C4L=${r4.v('P-C4L')}`);
 
     // ---- Y5 disable ilk denemede 500 → tek yeniden deneme başarılı
     const y5 = await runScenario('y5-disable-once', dir, { disable: 'failOnce' }, { D4_WAIT_MS: '1500' });
@@ -191,8 +196,9 @@ const CLOSE = ['P-C1', 'P-C2', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'U-CLOSE', 'P
 
     // ---- Y8 create-user 500 → hesap yok, gösterim yok, çıkış 2
     const y8 = await runScenario('y8-create-fail', dir, { create: 'fail' }, {});
-    check('Y8', 'create-user 500: P-01 FAIL, gösterim yok, portal hesabı yok, personel kapanışı PASS, çıkış 2',
-      y8.code === 2 && y8.v('P-01') === 'FAIL' && y8.ev.displayed === false && !y8.pu && y8.v('U-CLOSE') === 'PASS', `çıkış=${y8.code}`);
+    check('Y8', 'create-user 500 (sonuç belirsiz): gösterim yok; hesap bekleme süresince görülmedi → "hiç açılmadı" DENMEZ, P-C1 ÖLÇÜLEMEYEN, çıkış 6, kurtarma notu',
+      y8.code === 6 && y8.v('P-01') === 'FAIL' && y8.ev.displayed === false && !y8.pu && y8.v('P-C1') === 'UNMEASURED' && /DIŞLANAMADI/.test(y8.o('P-C1'))
+        && y8.ev.recovery.gerekli && /geç oluşma/.test(y8.ev.recovery.neden.join(' ')) && y8.v('U-CLOSE') === 'PASS', `çıkış=${y8.code} · P-C1=${y8.o('P-C1').slice(0, 80)}`);
 
     // ---- Y9 MAKBUZ YAZILAMIYOR → hiçbir API çağrısı yok, çıkış 1
     const nod = path.join(dir, 'yok', 'alt');
@@ -224,6 +230,58 @@ const CLOSE = ['P-C1', 'P-C2', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'U-CLOSE', 'P
     check('Y13', 'konsolsuz süreçte D4_DISPLAY=conout: çıkış 4, "yerel konsol yok", DB yazma YOK, makbuz YOK',
       r13.code === 4 && /yerel konsol yok/.test(r13.log) && !t13 && !fs.existsSync(path.join(dir, 'y13-receipt.json')), `çıkış=${r13.code}`);
 
+
+    // ---- Y14 DB KAPANDI, DIŞ KONTROL BAŞARISIZ → Recover: sürüm KENDİSİYLE karşılaştırılmaz, ölçülmeyen HTTP PASS olmaz
+    const y14 = await runScenario('y14-db-closed-ext-fail', dir, {}, {}, { onDisplay: async (rc, pp) => { const r = await phone(rc.portalEmail, pp); await ctl('POST', '/__scenario', { ext: '503' }); return r; } });
+    const rc14 = y14.rc || {};
+    check('Y14-a', 'Run: DB kapandı (P-C2/P-C2V PASS) ama dış kontroller 503 → P-C3D/P-C4D ÖLÇÜLEMEYEN, P-D9 PASS DEĞİL, çıkış 6, kurtarma "DB kapalı ama HTTP reddi doğrulanmadı"',
+      y14.code === 6 && y14.v('P-C2') === 'PASS' && y14.v('P-C2V') === 'PASS' && y14.v('P-C3D') === 'UNMEASURED' && y14.v('P-C4D') === 'UNMEASURED' && y14.v('P-D9') === 'FAIL'
+        && y14.ev.portalClose.dbClosed === true && y14.ev.portalClose.httpVerified === false && /DB kapalı ama HTTP/.test(y14.ev.recovery.neden.join(' ')) && Number.isInteger(rc14.portalIssuedTokenVersion),
+      `çıkış=${y14.code} · P-C3D=${y14.v('P-C3D')} P-C4D=${y14.v('P-C4D')} · makbuz sürümü=${rc14.portalIssuedTokenVersion}`);
+    const tv14 = y14.pu ? y14.pu.tokenVersion : null;
+    const r14 = await recover(y14, dir, 'y14-recover', {});
+    check('Y14-b', 'Recover (zaten kapalı): disable ÇAĞRILMAZ, sürüm ARTMAZ ve makbuzdaki verilme sürümüyle karşılaştırılır (PASS), yeni giriş yerel/dış 401, hesap pasif kalır; mevcut oturum ÖLÇÜLEMEYEN → çıkış 3',
+      r14.code === 3 && !r14.calls.some((c) => c.path === '/api/portal/admin/disable-user') && r14.pu.tokenVersion === tv14 && r14.v('P-C2V') === 'PASS' && /verildiği sürüm=/.test(r14.o('P-C2V'))
+        && r14.v('P-C3L') === 'PASS' && r14.v('P-C3D') === 'PASS' && r14.v('P-C4L') === 'UNMEASURED' && r14.v('P-C5') === 'PASS' && r14.pu.isActive === false && r14.cl.hasPortalAccess === false
+        && r14.ev.versionEvidence && r14.ev.versionEvidence.issuedFromReceipt === rc14.portalIssuedTokenVersion,
+      `çıkış=${r14.code} · sürüm ${tv14}→${r14.pu.tokenVersion} · P-C2V=${r14.o('P-C2V')} · P-C4L=${r14.v('P-C4L')}`);
+    const noVer = path.join(dir, 'y14-receipt-surumsuz.json'); const rj = Object.assign({}, rc14); delete rj.portalIssuedTokenVersion; fs.writeFileSync(noVer, JSON.stringify(rj), 'utf8'); artifacts.push(noVer);
+    const r14b = await recover(y14, dir, 'y14b-recover-surumsuz', {}, noVer);
+    check('Y14-c', 'Recover, makbuzda verilme sürümü YOKSA ve hesap zaten kapalıysa: P-C2V ÖLÇÜLEMEYEN (kendisiyle karşılaştırmaz; FAIL/PASS değil), çıkış 3',
+      r14b.code === 3 && r14b.v('P-C2V') === 'UNMEASURED' && /kendisiyle karşılaştırılmaz/.test(r14b.o('P-C2V')) && r14b.v('P-C2') === 'PASS', `çıkış=${r14b.code} · P-C2V=${r14b.v('P-C2V')}`);
+
+    // ---- Y15 YANLIŞ PAROLA 201 (sunucu kusuru taklidi) → gösterim YOK, bekleme YOK, kapanış yine çalışır
+    const t15 = Date.now();
+    const y15 = await runScenario('y15-wrongpw-accepted', dir, { wrongPw: 'acceptAny' }, { D4_WAIT_MS: '60000' }, { onDisplay: async () => ({ displayedButShouldNot: true }) });
+    check('Y15', 'yanlış parola 201: P-05L/P-05D FAIL → QR/parola GÖSTERİLMEDİ, telefon BEKLENMEDİ; kapanış PASS; çıkış 2',
+      y15.code === 2 && y15.v('P-05L') === 'FAIL' && y15.v('P-05D') === 'FAIL' && y15.ev.displayed === false && y15.phone.length === 0 && y15.v('P-DISP') === 'UNMEASURED'
+        && /P-05L/.test(y15.ev.stopped || '') && Date.now() - t15 < 40000 && y15.v('P-D9') === 'PASS' && y15.pu && y15.pu.isActive === false,
+      `çıkış=${y15.code} · P-05L=${y15.o('P-05L')} · süre=${Math.round((Date.now() - t15) / 1000)} sn · durdu=${(y15.ev.stopped || '').slice(0, 60)}`);
+    // ---- Y16 DIŞ YANLIŞ-PAROLA ÖLÇÜLEMEDİ (dış giriş ucu 503) → gösterim YOK; kapanış dış satırı ÖLÇÜLEMEYEN → PASS değil
+    const y16 = await runScenario('y16-ext-login-503', dir, { extLogin: '503' }, { D4_WAIT_MS: '60000' }, { onDisplay: async () => ({ displayedButShouldNot: true }) });
+    check('Y16', 'dış yanlış parola ölçülemedi (503): P-05D ÖLÇÜLEMEYEN → gösterim YOK; DB kapandı ama P-C3D ÖLÇÜLEMEYEN → P-D9 PASS değil, çıkış 6',
+      y16.code === 6 && y16.v('P-05D') === 'UNMEASURED' && y16.ev.displayed === false && y16.phone.length === 0 && y16.v('P-C2') === 'PASS' && y16.v('P-C3D') === 'UNMEASURED' && y16.v('P-D9') === 'FAIL',
+      `çıkış=${y16.code} · P-05D=${y16.o('P-05D')} · P-C3D=${y16.v('P-C3D')}`);
+
+    // ---- Y17 GEÇ OLUŞAN HESAP (yanıt yok, kayıt 3 sn sonra): ilk sorguda YOK → kapanış bekler, görür ve KAPATIR
+    const y17 = await runScenario('y17-late-create', dir, { create: 'late' }, { D4_CALL_TIMEOUT_MS: '1500' });
+    check('Y17', 'create-user zaman aşımı + kayıt sonradan: P-01 ÖLÇÜLEMEYEN, ilk DB sorgusunda hesap YOK (P-02 FAIL), kapanış geç hesabı GÖRDÜ ve kapattı (DB pasif, yeni giriş 401)',
+      y17.v('P-01') === 'UNMEASURED' && y17.v('P-02') === 'FAIL' && /var=false/.test(y17.o('P-02')) && y17.v('P-C1') === 'PASS' && /GÖRÜLDÜ/.test(y17.o('P-C1'))
+        && y17.pu && y17.pu.isActive === false && y17.cl.hasPortalAccess === false && y17.v('P-C3L') === 'PASS' && y17.ev.displayed === false && y17.code !== 0,
+      `çıkış=${y17.code} · P-02=${y17.o('P-02')} · P-C1=${y17.o('P-C1').slice(0, 90)} · hesap=${JSON.stringify(y17.pu)}`);
+    // ---- Y18 KOŞUMDAN SONRA OLUŞAN HESAP: koşum kapanışı "tamam" DEMEZ (6); hesap sonra açılır; Recover kapatır
+    const y18 = await runScenario('y18-held-create', dir, { create: 'hold' }, { D4_CALL_TIMEOUT_MS: '1500' });
+    const rel = await ctl('POST', '/__release');
+    const leaked = y18.rc ? await prisma.clientPortalUser.findUnique({ where: { clientId: y18.rc.clientId }, select: { isActive: true } }) : null;
+    check('Y18-a', 'hesap koşum boyunca görünmedi: P-C1 ÖLÇÜLEMEYEN, çıkış 6, kurtarma "geç oluşma"; koşumdan sonra hesap AKTİF oluştu (koşum kapanış iddia ETMEDİ)',
+      y18.code === 6 && y18.v('P-C1') === 'UNMEASURED' && y18.ev.recovery.gerekli && /geç oluşma/.test(y18.ev.recovery.neden.join(' ')) && rel.released === 1 && leaked && leaked.isActive === true,
+      `çıkış=${y18.code} · serbest=${rel.released} · sonradan hesap aktif=${leaked && leaked.isActive}`);
+    const r18 = await recover(y18, dir, 'y18-recover', {});
+    check('Y18-b', 'Recover: geç oluşan AKTİF hesap yetkili uçla kapatıldı (disable çağrıldı), sürüm kapanış öncesinden büyük, yeni giriş 401; mevcut oturum ÖLÇÜLEMEYEN → çıkış 3',
+      r18.code === 3 && r18.calls.some((c) => c.path === '/api/portal/admin/disable-user') && r18.pu.isActive === false && r18.cl.hasPortalAccess === false && r18.v('P-C2V') === 'PASS'
+        && /kapanıştan hemen önceki/.test(r18.o('P-C2V')) && r18.v('P-C3L') === 'PASS' && r18.activeUsers === 0,
+      `çıkış=${r18.code} · hesap=${JSON.stringify(r18.pu)} · P-C2V=${r18.o('P-C2V')}`);
+
     // ---- S-1 SIR SIZINTISI — geçici portal parolası, personel parolası, JWT'ler, DB URL, GO
     let scanned = 0; const leaks = [];
     for (const f of artifacts) {
@@ -232,8 +290,9 @@ const CLOSE = ['P-C1', 'P-C2', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'U-CLOSE', 'P
       if (/authorization|bearer /i.test(t)) leaks.push(`${path.basename(f)}:Authorization`);
     }
     const portalPwCount = [...secretsSeen].filter((s) => /^D4p!/.test(String(s))).length;
-    check('S-1', 'geçici portal parolası · personel parolası · personel/portal JWT · DB URL · GO hiçbir log/makbuz/kanıtta YOK',
-      scanned > 25 && leaks.length === 0 && portalPwCount >= 5, `taranan=${scanned} · aranan=${secretsSeen.size} (portal parolası ${portalPwCount}) · sızıntı=${leaks.length ? leaks.join(',') : 'yok'}`);
+    const measurePwCount = [...secretsSeen].filter((s) => /^D4r!/.test(String(s))).length;
+    check('S-1', 'geçici portal parolası · Recover ölçüm parolası · personel parolası · personel/portal JWT · DB URL · GO hiçbir log/makbuz/kanıtta YOK',
+      scanned > 25 && leaks.length === 0 && portalPwCount >= 5 && measurePwCount >= 3, `taranan=${scanned} · aranan=${secretsSeen.size} (portal parolası ${portalPwCount} · Recover ölçüm parolası ${measurePwCount}) · sızıntı=${leaks.length ? leaks.join(',') : 'yok'}`);
   } finally { fake.kill(); await prisma.$disconnect().catch(() => {}); }
 
   // ---- STATİK
@@ -243,18 +302,18 @@ const CLOSE = ['P-C1', 'P-C2', 'P-C3L', 'P-C3D', 'P-C4L', 'P-C4D', 'U-CLOSE', 'P
   // İzinli kullanım biçimleri (satır başına biri): üretim+addSecret · create-user gövdesi · koşucu girişi gövdesi · yanlış parola
   // türetimi · konsol gösterim satırı · kapanışa kimlik bilgisi aktarımı. Başka her kullanım (log/kanıt/makbuz) FAIL.
   const ALLOWED_PW = [/const portalPw = 'D4p!' \+ crypto\.randomBytes\(12\)\.toString\('base64url'\); addSecret\(portalPw\);/, /\/portal\/admin\/create-user`, \{ token: session\.token, body: \{ clientId: st\.clientId, email: portalEmail, password: portalPw \}/,
-    /\/portal\/login`, \{ body: \{ email: portalEmail, password: portalPw \}/, /const wrong = portalPw \+ 'x';/, /`    Parola  : \$\{portalPw\}`/, /await closePortal\([^)]*\{ email: portalEmail, password: portalPw \}/];
+    /\/portal\/login`, \{ body: \{ email: portalEmail, password: portalPw \}/, /const wrong = portalPw \+ 'x';/, /`    Parola  : \$\{portalPw\}`/, /creds: createOutcome \? \{ email: portalEmail, password: portalPw \} : null/];
   const badPw = pwLines.filter((l) => !ALLOWED_PW.some((re) => re.test(l)) || /console\.|writeJson|receipt\s*=/.test(l));
   check('T-1', 'geçici parola yalnız: üretim+addSecret, create-user/giriş gövdeleri, yanlış parola türetimi, konsol gösterimi, kapanış kimlik bilgisi — log/kanıt/makbuz yazımında YOK',
     pwLines.length === 6 && badPw.length === 0 && /Parola  : \$\{portalPw\}/.test(src.slice(src.indexOf('DISPLAY.show'), src.indexOf('displayed = true'))),
     `satır=${pwLines.length} · izinsiz=${badPw.length}`);
   check('T-2', 'koşucu kaynağında gönderim yapabilecek portal uçları (forgot/reset/change-password, documents, messages) YOK',
     !EX.FORBIDDEN_PORTAL.some((re) => re.test(src.replace(/FORBIDDEN_PORTAL = \[[^\]]*\]/, ''))), 'kaynak taraması');
-  const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D4_EXPECT_DB: 'hukuk_db', D4_WAIT_MS: '1', D4_POLL_MS: '1', D4_VIEW_MS: '1', D4_HTTP_TIMEOUT_MS: '1', D4_CALL_TIMEOUT_MS: '1' };
+  const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D4_EXPECT_DB: 'hukuk_db', D4_WAIT_MS: '1', D4_POLL_MS: '1', D4_VIEW_MS: '1', D4_HTTP_TIMEOUT_MS: '1', D4_CALL_TIMEOUT_MS: '1', D4_LATE_CREATE_MS: '1' };
   const pl = EX.effectiveParams(liveEnv); const pu = EX.effectiveParams(Object.assign({}, liveEnv, { D4_EXPECT_DB: 'baska' }));
   const pt = EX.effectiveParams(Object.assign({}, liveEnv, { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5447/ah_h5_test', D4_EXPECT_DB: 'ah_h5_test' }));
-  check('P-1', 'canlı DB: devralınan süre değişkenleri YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 120 sn inceleme); URL\'den de canlı; test kısa süreleri korur',
-    pl.live && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D4_WAIT_MS === 1200000 && pl.D4_VIEW_MS === 120000 && pu.live && pu.D4_WAIT_MS === 1200000 && !pt.live && pt.D4_WAIT_MS === 1,
+  check('P-1', 'canlı DB: devralınan süre değişkenleri YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 120 sn inceleme, 120 sn geç oluşma bekleme); URL\'den de canlı; test kısa süreleri korur',
+    pl.live && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D4_WAIT_MS === 1200000 && pl.D4_VIEW_MS === 120000 && pl.D4_LATE_CREATE_MS === 120000 && pu.live && pu.D4_WAIT_MS === 1200000 && !pt.live && pt.D4_WAIT_MS === 1,
     `canlı=${pl.live}/${pl.D4_WAIT_MS}/${pl.D4_VIEW_MS} · url=${pu.live} · test=${pt.live}/${pt.D4_WAIT_MS}`);
   const g = EX.runGates({ D4_DISPLAY: 'none', D4_EXPECT_DB: 'x', AH_DATABASE_URL: 'postgresql://u:p@h:1/x', D4_API_BASE: 'a', D4_EXPECT_API: 'a', D4_EXPECT_BASE_URL: 'https://ornek.invalid', D4_LIVE_CONFIRM: '1', D4_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D4-20000101-R01', D4_RUNID: 'abcdef12', D4_EXPECT_TENANT_SLUG: 'ah-abcdef12' });
   check('P-2', 'kapılar: doğru D-4 GO + runId + slug kabul; origin yolsuz https', g.code === 0 && g.origin === 'https://ornek.invalid', `kod=${g.code}`);

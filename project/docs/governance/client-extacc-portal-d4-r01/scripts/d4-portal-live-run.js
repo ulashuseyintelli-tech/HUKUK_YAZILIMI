@@ -1,15 +1,17 @@
 'use strict';
 /*
- * EXTACC D-4 R01 — PORTAL GİRİŞİ CANLI KABULÜ (client-external-access-r01 §7 D-4) + portal erişim kapanışı.
+ * EXTACC D-4 R01 (koşucu R02) — PORTAL GİRİŞİ CANLI KABULÜ (client-external-access-r01 §7 D-4) + portal erişim kapanışı.
  *
  * AKIŞ   : kurulum + makbuz → personel (elev1) ile sentetik müvekkile portal hesabı (`POST /portal/admin/create-user`;
  *          gönderim YOK) → koşucu kendi portal oturumunu alır (yerel) → dosya listesi yerel + dış HTTPS = yalnız bu koşumun
- *          dosyası → yanlış parola yerel + dış 401 → giriş sayfasının QR'ı + e-posta + GEÇİCİ PAROLA yalnız owner konsolunda →
+ *          dosyası → yanlış parola yerel + dış 401 → [GÖSTERİM KAPISI: bu beş kontrol PASS değilse gösterim ve bekleme YOK] →
+ *          giriş sayfasının QR'ı + e-posta + GEÇİCİ PAROLA yalnız owner konsolunda →
  *          owner TELEFONDAN (mobil veri, gizli sekme) BİR KEZ giriş yapar ve listeyi görür → koşucu DB'den girişi SALT OKUMA
  *          algılar → kısa görüntüleme süresi → kapanış.
- * KAPANIŞ: yetkili uç `POST /portal/admin/disable-user` → DB (portal kullanıcısı pasif, tokenVersion arttı, müvekkil portal
- *          erişimi kapalı) → YENİ giriş yerel + dış 401 → koşumda alınmış MEVCUT oturumla korumalı uç yerel + dış 401 →
- *          personel/dosya kapanışı (closeAccess). Mevcut oturum reddedilmezse ÜRÜN BULGUSU yazılır ve kapanış PASS SAYILMAZ.
+ * KAPANIŞ: yetkili uç `POST /portal/admin/disable-user` → DB (pasif + erişim kapalı; sürüm oturumların verildiği sürümden
+ *          büyük) → YENİ giriş yerel + dış 401 → koşumda alınmış MEVCUT oturumla korumalı uç yerel + dış 401 → personel/dosya
+ *          kapanışı (closeAccess). DB ve HTTP ayrı değerlendirilir; ÖLÇÜLEMEYEN HTTP kontrolü PASS sayılmaz. Mevcut oturum
+ *          reddedilmezse ÜRÜN BULGUSU yazılır. Oluşturma isteği belirsizse hesap görünene kadar beklenir (geç oluşma).
  * YAPMAZ : e-posta/SMS (forgot/reset-password çağrılmaz) · belge/mesaj yazma · telefondan başka cihaza geçiş · 503 teşhisi.
  * SIR    : geçici portal parolası, personel parolası, token'lar, GO ve DB URL hiçbir log/kanıta yazılmaz (H5 temizleyici);
  *          parola yalnız konsola (extacc-display.js, CONOUT$) çizilir.
@@ -30,7 +32,8 @@ const GO_RE = /^OWNER-GO-CLIENT-EXTACC-D4-\d{8}-R\d{2}$/;
 const FORBIDDEN_PORTAL = [/\/portal\/forgot-password/, /\/portal\/reset-password/, /\/portal\/change-password/, /\/portal\/documents/, /\/portal\/messages/];
 
 // CANLI SÜRELER SABİT (bağlı DB `hukuk_db` ise ortam yok sayılır); izole testler kısaltabilir.
-const LIVE_PARAMS = Object.freeze({ D4_WAIT_MS: 20 * 60 * 1000, D4_POLL_MS: 5000, D4_VIEW_MS: 120000, D4_HTTP_TIMEOUT_MS: 15000, D4_CALL_TIMEOUT_MS: 30000 });
+const LIVE_PARAMS = Object.freeze({ D4_WAIT_MS: 20 * 60 * 1000, D4_POLL_MS: 5000, D4_VIEW_MS: 120000, D4_HTTP_TIMEOUT_MS: 15000, D4_CALL_TIMEOUT_MS: 30000,
+  D4_LATE_CREATE_MS: 120000 });
 function effectiveParams(env) {
   const live = dbName(env.AH_DATABASE_URL || '') === 'hukuk_db' || (env.D4_EXPECT_DB || '') === 'hukuk_db';
   const p = { live };
@@ -69,51 +72,80 @@ async function portalState(prisma, clientId) {
 }
 const caseListMatches = (body, caseId, fileNumber) => Array.isArray(body) && body.length === 1 && body[0] && body[0].id === caseId && body[0].fileNumber === fileNumber;
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * PORTAL ERİŞİM KAPANIŞI — yetkili uç + DB + yeni giriş + MEVCUT oturum. Kimlik bağı doğrulanmazsa yazma YOK.
- * `session` personel oturumu (disable için), `portalToken` koşumda alınmış portal oturumu (mevcut oturum ölçümü).
+ * PORTAL ERİŞİM KAPANIŞI (R02). Kimlik bağı doğrulanmazsa yazma YOK. DB kapanışı ile HTTP reddi AYRI değerlendirilir:
+ *   dbClosed   = P-C2 (pasif + erişim kapalı) PASS · P-C2V (sürüm) FAIL değil · P-C5 (HTTP ölçümlerinden sonra hâlâ kapalı) PASS
+ *   HTTP       = P-C3L/P-C3D yeni giriş · P-C4L/P-C4D mevcut oturum. ÖLÇÜLEMEYEN hiçbir koşulda PASS sayılmaz.
+ * Sürüm (P-C2V) KENDİSİYLE karşılaştırılmaz: referans önce oturumların verildiği sürüm (`issuedVersion`, makbuzda korunur),
+ * yoksa bu kapanışın hemen önceki sürümü (yalnız hesap bu çağrıda açıktıysa); ikisi de yoksa ÖLÇÜLEMEYEN.
+ * opts: session · creds · credsForClosed(st) (Recover: pasif hesaba ölçüm parolası) · portalToken · sessionRequired ·
+ *       issuedVersion · createUncertain (oluşturma isteği belirsiz → hesap görünene ya da süre dolana kadar beklenir).
  */
-async function closePortal(R, prisma, base, origin, receipt, session, creds, portalToken, P, before) {
-  const res = { ok: false, identity: null, disableCalls: [], productFinding: null };
+async function closePortal(R, prisma, base, origin, receipt, P, opts) {
+  const o = opts || {};
+  const res = { ok: false, dbClosed: false, httpVerified: false, httpFailed: false, identity: null, disableCalls: [], productFinding: null, lateCreate: null };
+  const v = (id) => (R.rows.find((r) => r.id === id) || {}).verdict;
   const ident = await assertReceiptIdentity(prisma, receipt);
   res.identity = ident.ok ? 'OK' : ident.reason;
   if (!ident.ok) { res.note = 'kimlik bağı DOĞRULANMADI — hiçbir yazma yapılmadı'; R.check('P-C1', 'portal erişimi yetkili uçla kapatıldı', false, res.note); return res; }
-  const st0 = await portalState(prisma, receipt.clientId);
+  let st0 = await portalState(prisma, receipt.clientId);
+  if (!st0.exists && o.createUncertain) {
+    // Belirsiz oluşturma: ilk sorguda hesabın görünmemesi "hiç açılmadı" DEĞİLDİR; sunucu kaydı sonradan yazabilir.
+    const t0 = Date.now();
+    while (!st0.exists && Date.now() - t0 < P.D4_LATE_CREATE_MS) { await sleep(P.D4_POLL_MS); st0 = await portalState(prisma, receipt.clientId); }
+    res.lateCreate = st0.exists ? `hesap ilk sorguda YOKTU, ~${Math.round((Date.now() - t0) / 1000)} sn sonra GÖRÜLDÜ (geç oluşma) — kapatılıyor`
+      : `hesap ${Math.round(P.D4_LATE_CREATE_MS / 1000)} sn boyunca görülmedi — geç oluşma DIŞLANAMADI`;
+  }
   res.before = st0;
-  if (!st0.exists) { res.ok = true; res.note = 'portal hesabı hiç açılmadı'; R.check('P-C1', 'portal erişimi yetkili uçla kapatıldı', true, res.note); return res; }
+  if (!st0.exists) {
+    if (o.createUncertain) { res.lateCreateRisk = true; R.unmeasured('P-C1', 'portal erişimi yetkili uçla kapatıldı', `${res.lateCreate}; kapanış DOĞRULANMADI`); return res; }
+    res.ok = true; res.dbClosed = true; res.note = o.absentNote || 'portal hesabı yok (oluşturma isteği gönderilmedi ya da kesin reddedildi)';
+    R.check('P-C1', 'portal erişimi yetkili uçla kapatıldı', true, res.note); return res;
+  }
+  let disabledNow = false;
   if (st0.isActive || st0.hasPortalAccess) {
     for (let i = 0; i < 2; i++) {
-      if (!session || !session.token) { res.disableCalls.push('personel oturumu YOK'); break; }
-      const r = await L.AH.httpJson('POST', `${base}/portal/admin/disable-user`, { token: session.token, body: { clientId: receipt.clientId }, timeoutMs: P.D4_CALL_TIMEOUT_MS });
+      if (!o.session || !o.session.token) { res.disableCalls.push('personel oturumu YOK'); break; }
+      const r = await L.AH.httpJson('POST', `${base}/portal/admin/disable-user`, { token: o.session.token, body: { clientId: receipt.clientId }, timeoutMs: P.D4_CALL_TIMEOUT_MS });
       res.disableCalls.push(r.indeterminate ? 'belirsiz' : `HTTP ${r.status}`);
-      if (!r.indeterminate && r.status >= 200 && r.status < 300) break;
+      if (!r.indeterminate && r.status >= 200 && r.status < 300) { disabledNow = true; break; }
       const now = await portalState(prisma, receipt.clientId);
-      if (!now.isActive && !now.hasPortalAccess) { res.disableCalls.push('DB: zaten kapalı'); break; }
+      if (!now.isActive && !now.hasPortalAccess) { res.disableCalls.push('DB: kapalı görüldü'); break; }
       if (!r.indeterminate && r.status < 500) break;
     }
-  }
+  } else res.disableCalls.push('çağrılmadı — hesap zaten pasif ve erişim kapalı');
   const st1 = await portalState(prisma, receipt.clientId); res.after = st1;
-  const dbOk = st1.isActive === false && st1.hasPortalAccess === false && typeof st1.tokenVersion === 'number' && typeof (before && before.tokenVersion) === 'number' && st1.tokenVersion > before.tokenVersion;
-  R.check('P-C1', 'portal erişimi YETKİLİ uçla kapatıldı (admin/disable-user)', res.disableCalls.some((x) => /^HTTP 2\d\d$/.test(x)) || (!st0.isActive && !st0.hasPortalAccess), `çağrılar=${JSON.stringify(res.disableCalls)}`);
-  R.check('P-C2', 'DB: portal kullanıcısı pasif · tokenVersion arttı · müvekkil portal erişimi kapalı', dbOk,
-    `isActive=${st1.isActive} tokenVersion ${before ? before.tokenVersion : '?'}→${st1.tokenVersion} hasPortalAccess=${st1.hasPortalAccess}`);
-  // YENİ giriş reddi (yerel + dış)
+  const flags = st1.isActive === false && st1.hasPortalAccess === false;
+  R.check('P-C1', 'portal erişimi YETKİLİ uçla kapatıldı (admin/disable-user) ya da zaten kapalıydı', disabledNow || (!st0.isActive && !st0.hasPortalAccess) || flags,
+    `çağrılar=${JSON.stringify(res.disableCalls)}${res.lateCreate ? ' · ' + res.lateCreate : ''}`);
+  R.check('P-C2', 'DB: portal kullanıcısı pasif · müvekkil portal erişimi kapalı', flags, `isActive=${st1.isActive} hasPortalAccess=${st1.hasPortalAccess}`);
+  const issued = Number.isInteger(o.issuedVersion) ? o.issuedVersion : null;
+  const openBefore = st0.isActive || st0.hasPortalAccess;
+  const ref = issued !== null ? { value: issued, source: 'oturumların verildiği sürüm' } : (openBefore ? { value: st0.tokenVersion, source: 'bu kapanıştan hemen önceki sürüm' } : null);
+  res.version = { before: st0.tokenVersion, after: st1.tokenVersion, issued, ref };
+  const vdesc = 'DB: tokenVersion, oturumların verildiği (ya da kapanış öncesi) sürümden BÜYÜK';
+  if (!ref) R.unmeasured('P-C2V', vdesc, `hesap zaten kapalıydı ve oturumların verildiği sürüm bilinmiyor — mevcut sürüm (${st1.tokenVersion}) kendisiyle karşılaştırılmaz`);
+  else R.check('P-C2V', vdesc, typeof st1.tokenVersion === 'number' && st1.tokenVersion > ref.value, `${ref.source}=${ref.value} → şimdiki=${st1.tokenVersion}`);
+
   const tmo = P.D4_HTTP_TIMEOUT_MS;
+  let creds = o.creds || null;
+  if (!creds && o.credsForClosed && flags) { try { creds = await o.credsForClosed(st1); res.measureCreds = 'pasif hesaba YALNIZ ölçüm için yeni rastgele parola yazıldı (hesap pasif kaldı)'; } catch (e) { res.measureCreds = `ölçüm parolası kurulamadı: ${errText(e, 120)}`; } }
   const nl = creds ? await L.AH.httpJson('POST', `${base}/portal/login`, { body: { email: creds.email, password: creds.password }, timeoutMs: tmo }) : null;
   const nd = creds ? await L.AH.httpJson('POST', `${origin}/api/portal/login`, { body: { email: creds.email, password: creds.password }, timeoutMs: tmo }) : null;
   const judge401 = (id, desc, r) => {
-    if (!r) return R.unmeasured(id, desc, 'kimlik bilgisi bu koşumda yok (Recover) — ölçülemez');
+    if (!r) return R.unmeasured(id, desc, `kimlik bilgisi yok${res.measureCreds ? ' (' + res.measureCreds + ')' : ''} — ölçülemez`);
     if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı (zaman aşımı/taşıma)');
     if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`);
-    return R.check(id, desc, r.status === 401, `HTTP ${r.status}`);
+    return R.check(id, desc, r.status === 401, `HTTP ${r.status}${res.measureCreds && !o.creds ? ' · ' + res.measureCreds : ''}`);
   };
   judge401('P-C3L', 'kapanış sonrası YENİ portal girişi YEREL 401', nl);
   judge401('P-C3D', 'kapanış sonrası YENİ portal girişi DIŞ HTTPS 401', nd);
-  // MEVCUT oturum reddi (yerel + dış): koşumda alınmış portal token'ı ile korumalı uç
-  const el = portalToken ? await L.AH.httpJson('GET', `${base}/portal/cases`, { token: portalToken, timeoutMs: tmo }) : null;
-  const ed = portalToken ? await L.AH.httpJson('GET', `${origin}/api/portal/cases`, { token: portalToken, timeoutMs: tmo }) : null;
+  const el = o.portalToken ? await L.AH.httpJson('GET', `${base}/portal/cases`, { token: o.portalToken, timeoutMs: tmo }) : null;
+  const ed = o.portalToken ? await L.AH.httpJson('GET', `${origin}/api/portal/cases`, { token: o.portalToken, timeoutMs: tmo }) : null;
   const judgeSession = (id, desc, r) => {
-    if (!r) return R.unmeasured(id, desc, 'koşumda portal oturumu alınmadı — mevcut oturum ölçülemez');
+    if (!r) return R.unmeasured(id, desc, o.noSessionWhy || 'koşumda portal oturumu alınmadı — mevcut oturum ölçülemez');
     if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı (zaman aşımı/taşıma)');
     if (r.status === 200) { res.productFinding = 'ÜRÜN BULGUSU: portal erişimi kapatıldıktan sonra MEVCUT oturum korumalı uca erişmeye devam ediyor'; return R.check(id, desc, false, 'HTTP 200 — MEVCUT OTURUM KAPANMADI (ürün bulgusu)'); }
     if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`);
@@ -121,9 +153,16 @@ async function closePortal(R, prisma, base, origin, receipt, session, creds, por
   };
   judgeSession('P-C4L', 'kapanış sonrası MEVCUT portal oturumu korumalı uçta YEREL 401', el);
   judgeSession('P-C4D', 'kapanış sonrası MEVCUT portal oturumu korumalı uçta DIŞ HTTPS 401', ed);
-  const v = (id) => (R.rows.find((r) => r.id === id) || {}).verdict;
-  res.ok = dbOk && ['P-C3L', 'P-C3D', 'P-C4L', 'P-C4D'].every((id) => v(id) === 'PASS' || (!creds && /P-C3/.test(id) && v(id) === 'UNMEASURED') || (!portalToken && /P-C4/.test(id) && v(id) === 'UNMEASURED'));
-  if (res.productFinding) res.ok = false;
+  const st2 = await portalState(prisma, receipt.clientId);
+  R.check('P-C5', 'HTTP ölçümlerinden SONRA DB hâlâ kapalı (pasif + erişim kapalı + sürüm geri gitmedi)',
+    st2.isActive === false && st2.hasPortalAccess === false && st2.tokenVersion === st1.tokenVersion, `isActive=${st2.isActive} hasPortalAccess=${st2.hasPortalAccess} sürüm=${st2.tokenVersion}`);
+  const httpIds = ['P-C3L', 'P-C3D', 'P-C4L', 'P-C4D'];
+  res.dbClosed = v('P-C2') === 'PASS' && v('P-C2V') !== 'FAIL' && v('P-C5') === 'PASS';
+  res.httpFailed = httpIds.some((id) => v(id) === 'FAIL');
+  res.httpVerified = httpIds.every((id) => v(id) === 'PASS');
+  res.httpUnmeasured = httpIds.filter((id) => v(id) === 'UNMEASURED');
+  const required = ['P-C3L', 'P-C3D'].concat(o.sessionRequired === false ? [] : ['P-C4L', 'P-C4D']);
+  res.ok = res.dbClosed && v('P-C2V') === 'PASS' && !res.httpFailed && required.every((id) => v(id) === 'PASS') && !res.productFinding;
   return res;
 }
 
@@ -135,9 +174,25 @@ function exitCodeOf(out, s) {
   if (s.unmeasured > 0) return 3;
   return 0;
 }
+/** Recover çıkışı: DB kapanmadı ya da HTTP reddi FAIL → 6 · personel → 5 · hata → 1 · ölçülemeyen varsa 3 (asla 0 değil) · 0. */
+function recoverExitCode(out, s) {
+  const pc = out.portalClose || {};
+  if (!pc.dbClosed || pc.httpFailed || pc.productFinding || pc.lateCreateRisk) return 6;
+  if (!(out.closure && out.closure.ok)) return 5;
+  if (out.fatal) return 1;
+  if (s.fail > 0) return 2;
+  if (s.unmeasured > 0) return 3;
+  return 0;
+}
 function recoveryAdvice(out, receiptPath) {
   const need = [];
-  if (!(out.portalClose && out.portalClose.ok)) need.push(out.portalClose && out.portalClose.productFinding ? 'PORTAL: mevcut oturum kapanmadı (ÜRÜN BULGUSU — Recover bunu düzeltemez; token 7 gün geçerli)' : 'PORTAL ERİŞİMİ kapandığı doğrulanmadı');
+  const pc = out.portalClose || {};
+  if (!pc.ok) {
+    if (pc.productFinding) need.push('PORTAL: mevcut oturum kapanmadı (ÜRÜN BULGUSU — Recover bunu düzeltemez; token 7 gün geçerli)');
+    else if (pc.lateCreateRisk) need.push('PORTAL: oluşturma isteği belirsiz ve hesap görülmedi — geç oluşma dışlanamadı; birkaç dakika sonra Recover BİR KEZ');
+    else if (pc.dbClosed) need.push(`PORTAL: DB kapalı ama HTTP reddi doğrulanmadı (ölçülemeyen: ${(pc.httpUnmeasured || []).join(',') || '-'})`);
+    else need.push('PORTAL ERİŞİMİ kapandığı doğrulanmadı');
+  }
   if (!(out.closure && out.closure.ok)) need.push('PERSONEL/DOSYA KAPANIŞI doğrulanmadı');
   if (!need.length) return { gerekli: false };
   let onDisk = false; try { onDisk = !!receiptPath && fs.existsSync(receiptPath); } catch (e) { onDisk = false; }
@@ -160,9 +215,10 @@ async function runMode() {
   const portalPw = 'D4p!' + crypto.randomBytes(12).toString('base64url'); addSecret(portalPw);
   const portalEmail = `portal-d4-${runId}@ah-harness.invalid`;
   const fileNumber = `I3-${runId}`;
-  const out = { record: 'EXTACC-D4-PORTAL-LIVE-RUN', revision: 'R01', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [] };
+  const out = { record: 'EXTACC-D4-PORTAL-LIVE-RUN', revision: 'R02', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [] };
   const call = (m, p) => out.calledEndpoints.push(`${m} ${p.replace(base, '<API>').replace(origin, '<DIŞ>')}`);
   let receipt = null; let fatal = null; let session = null; let portalToken = null; let stopped = null; let displayed = false; let loginSeen = false; let baseline = null;
+  let createOutcome = null; let issuedVersion = null;
   try {
     out.isolationBefore = await isolationFingerprint(prisma, []);
     const st = await L.setupI3(prisma, bcrypt, runId, await bcrypt.hash(pw, 10));
@@ -176,14 +232,25 @@ async function runMode() {
     if (!session.ok) throw new Error(`elev1 oturum açamadı (HTTP ${session.status ?? 'belirsiz'})`);
     R.check('P-00', 'ÖLÇÜM GEÇERLİ: elev1 ADMIN değil', st.actors.elev1.role !== 'ADMIN', `elev1:${st.actors.elev1.role}`);
 
-    // Portal hesabı — gönderim YOK (create-user yalnız kayıt + audit; kaynakta ve canlı dist'te doğrulandı)
+    // Portal hesabı — gönderim YOK (create-user yalnız kayıt + audit; kaynakta ve canlı dist'te doğrulandı).
+    // Deneme makbuza ÖNCE yazılır: yanıt gelmese de Recover hesabın açılmış olabileceğini bilir.
+    receipt.createAttemptedAt = new Date().toISOString();
+    try { writeJson(receiptPath, receipt); } catch (e) { out.receiptWriteError = errText(e, 160); delete receipt.createAttemptedAt; throw new Error('makbuza oluşturma denemesi yazılamadı — portal hesabı İSTENMEDİ'); }
+    createOutcome = 'attempted';
     call('POST', `${base}/portal/admin/create-user`);
     const cu = await L.AH.httpJson('POST', `${base}/portal/admin/create-user`, { token: session.token, body: { clientId: st.clientId, email: portalEmail, password: portalPw }, timeoutMs: P.D4_CALL_TIMEOUT_MS });
-    R.check('P-01', 'sentetik müvekkile portal hesabı yetkili uçla açıldı (gönderim yok)', !cu.indeterminate && cu.status >= 200 && cu.status < 300, cu.indeterminate ? 'yanıt alınamadı' : `HTTP ${cu.status}`);
+    createOutcome = cu.indeterminate || cu.status >= 500 ? 'uncertain' : (cu.status >= 200 && cu.status < 300 ? 'ok' : 'rejected');
+    if (cu.indeterminate) R.unmeasured('P-01', 'sentetik müvekkile portal hesabı yetkili uçla açıldı (gönderim yok)', 'yanıt alınamadı — hesap SONRADAN oluşmuş olabilir (kapanış bekler)');
+    else R.check('P-01', 'sentetik müvekkile portal hesabı yetkili uçla açıldı (gönderim yok)', cu.status >= 200 && cu.status < 300, `HTTP ${cu.status}${cu.status >= 500 ? ' — hesap oluşmuş olabilir (kapanış bekler)' : ''}`);
     const s1 = await portalState(prisma, st.clientId);
-    const p02 = s1.exists && s1.isActive === true && s1.hasPortalAccess === true && s1.email === portalEmail;
-    R.check('P-02', 'DB: portal hesabı aktif · müvekkil portal erişimi açık · e-posta doğru', p02, `aktif=${s1.isActive} erişim=${s1.hasPortalAccess} e-posta eşit=${s1.email === portalEmail}`);
+    const p02 = createOutcome === 'ok' && s1.exists && s1.isActive === true && s1.hasPortalAccess === true && s1.email === portalEmail;
+    R.check('P-02', 'DB: portal hesabı aktif · müvekkil portal erişimi açık · e-posta doğru', p02, `var=${s1.exists} aktif=${s1.isActive} erişim=${s1.hasPortalAccess} e-posta eşit=${s1.email === portalEmail}`);
     if (!p02) stopped = 'portal hesabı beklenen durumda değil — giriş bilgisi GÖSTERİLMEDİ';
+    else {
+      // Oturumların verileceği sürüm makbuzda korunur: Recover sürümü KENDİSİYLE değil bununla karşılaştırır.
+      issuedVersion = s1.tokenVersion; receipt.portalIssuedTokenVersion = s1.tokenVersion;
+      try { writeJson(receiptPath, receipt); } catch (e) { out.receiptWriteError = errText(e, 160); stopped = 'makbuza oturum sürümü yazılamadı — giriş bilgisi GÖSTERİLMEDİ'; }
+    }
 
     if (!stopped) {
       // Koşucunun KENDİ portal oturumu (kapanışta "mevcut oturum" ölçümü için)
@@ -210,7 +277,10 @@ async function runMode() {
       if (wd.indeterminate || wd.status === 503 || wd.status === 429) R.unmeasured('P-05D', 'yanlış parola DIŞ HTTPS 401', wd.indeterminate ? 'yanıt yok' : `HTTP ${wd.status} — neden UNKNOWN`);
       else R.check('P-05D', 'yanlış parola DIŞ HTTPS 401', wd.status === 401, `HTTP ${wd.status}`);
       const v = (id) => (R.rows.find((r) => r.id === id) || {}).verdict;
-      if (!stopped && !['P-03L', 'P-04L', 'P-04D'].every((id) => v(id) === 'PASS')) stopped = 'portal girişi/dosya listesi koşucu tarafında doğrulanmadı — giriş bilgisi GÖSTERİLMEDİ';
+      // GÖSTERİM KAPISI: giriş, liste (yerel+dış) ve yanlış parola (yerel+dış) PASS değilse QR/parola GÖSTERİLMEZ, telefon BEKLENMEZ.
+      const GATE = ['P-03L', 'P-04L', 'P-04D', 'P-05L', 'P-05D'];
+      out.displayGate = GATE.map((id) => `${id}=${v(id) || 'YOK'}`);
+      if (!stopped && !GATE.every((id) => v(id) === 'PASS')) stopped = `gösterim öncesi zorunlu kontroller PASS değil (${GATE.filter((id) => v(id) !== 'PASS').join(',')}) — giriş bilgisi GÖSTERİLMEDİ, telefon girişi BEKLENMEDİ`;
     }
 
     if (!stopped) {
@@ -220,10 +290,10 @@ async function runMode() {
         await DISPLAY.show(con, [
           '============ EXTACC D-4 — YALNIZ OWNER EKRANI (kayda ALINMAZ) ============',
           'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR portal giriş sayfasını açar.', '', ...qr.lines, '', `${origin}/portal/login`, '',
-          'Giriş bilgisi (yalnız bu koşum için; koşum sonunda devre dışı kalır):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '',
+          'Giriş bilgisi (yalnız bu koşum için; koşum sonunda devre dışı bırakma adımı çalışır, sonucu owner bloğu bildirir):', `    E-posta : ${portalEmail}`, `    Parola  : ${portalPw}`, '',
           `Girişten sonra dosya listesinde YALNIZ şu dosya numarası görünmeli: ${fileNumber}`,
-          `Girişi BİR KEZ yapın. Giriş algılanınca ${Math.round(P.D4_VIEW_MS / 1000)} sn inceleme süresi verilir; sonra erişim kapatılır ve ekran temizlenir.`,
-          'Kapanıştan sonra telefonda sayfayı YENİLEYİN; oturumun kapandığını görün (owner beyanında sorulur).',
+          `Girişi BİR KEZ yapın. Giriş algılanınca ${Math.round(P.D4_VIEW_MS / 1000)} sn inceleme süresi verilir; sonra ekran temizlenir ve kapatma adımı çalışır.`,
+          'Owner bloğu sorduğunda telefonda sayfayı YENİLEYİN ve ekranda gördüğünüzü yanıtlayın.',
           `Bekleme: en fazla ${Math.round(P.D4_WAIT_MS / 60000)} dk.`,
         ]);
       }
@@ -240,7 +310,7 @@ async function runMode() {
       if (loginSeen) {
         R.check('P-WAIT', 'koşucu dışında BAŞARILI portal girişi pencere içinde görüldü (DB loginCount)', out.phoneLogin.loginCountDelta >= 1,
           `artış=${out.phoneLogin.loginCountDelta} · ~${Math.round((Date.now() - t0) / 1000)} sn (cihaz/ağ = owner beyanı)`);
-        if (con) { try { await DISPLAY.show(con, ['', `Giriş algılandı. ${Math.round(P.D4_VIEW_MS / 1000)} sn sonra erişim kapatılacak; dosya listesini şimdi inceleyin.`]); } catch (e) { /* gösterim ikincil */ } }
+        if (con) { try { await DISPLAY.show(con, ['', `Giriş algılandı. ${Math.round(P.D4_VIEW_MS / 1000)} sn sonra kapatma adımı çalışacak; dosya listesini şimdi inceleyin.`]); } catch (e) { /* gösterim ikincil */ } }
         await new Promise((r) => setTimeout(r, P.D4_VIEW_MS));
       } else R.unmeasured('P-WAIT', 'başarılı portal girişi pencere içinde görüldü', 'giriş görülmedi — owner beyanı ile ayrılır (açılamadı / denenmedi / başarısız)');
     } else {
@@ -250,13 +320,17 @@ async function runMode() {
   finally {
     if (con) { try { await DISPLAY.clear(con); } catch (e) { out.displayClearError = errText(e, 120); } DISPLAY.close(con); }
     try {
-      out.portalClose = receipt ? await closePortal(R, prisma, base, origin, receipt, session, { email: portalEmail, password: portalPw }, portalToken, P, baseline || (await portalState(prisma, receipt.clientId).catch(() => null)))
+      out.portalClose = receipt ? await closePortal(R, prisma, base, origin, receipt, P, {
+        session, creds: createOutcome ? { email: portalEmail, password: portalPw } : null, portalToken, issuedVersion,
+        sessionRequired: !!portalToken || displayed, createUncertain: createOutcome === 'attempted' || createOutcome === 'uncertain',
+        noSessionWhy: displayed ? 'gösterim yapıldı ama koşucu oturumu yok — mevcut oturum ölçülemez' : 'koşumda portal oturumu alınmadı ve giriş bilgisi gösterilmedi — mevcut oturum ölçülemez' })
         : { ok: true, nothingCreated: true };
+      out.createOutcome = createOutcome;
     } catch (e) { out.portalClose = { ok: false, reason: errText(e, 200) }; }
     try { out.closure = receipt ? await closeAccess(prisma, receipt) : { ok: true, nothingToClose: true }; }
     catch (e) { out.closure = { ok: false, reason: errText(e, 200) }; }
     if (receipt) R.check('U-CLOSE', 'personel kullanıcıları pasif (tokenVersion++) + Case CLOSED', !!(out.closure && out.closure.ok), JSON.stringify(out.closure || {}));
-    if (receipt) R.check('P-D9', 'PORTAL erişim kapanışı birleşik: DB kapalı + yeni giriş yerel/dış 401 + MEVCUT oturum yerel/dış 401 + personel/dosya kapanışı',
+    if (receipt) R.check('P-D9', 'PORTAL erişim kapanışı birleşik: DB kapalı + gerekli HTTP reddi (yeni giriş yerel/dış 401 + MEVCUT oturum yerel/dış 401) ölçüldü + personel/dosya kapanışı',
       !!(out.portalClose && out.portalClose.ok) && !!(out.closure && out.closure.ok), `portal=${!!(out.portalClose && out.portalClose.ok)} personel=${!!(out.closure && out.closure.ok)}${out.portalClose && out.portalClose.productFinding ? ' · ' + out.portalClose.productFinding : ''}`);
     out.productFinding = out.portalClose ? out.portalClose.productFinding || null : null;
     out.forbiddenEndpointCalled = out.calledEndpoints.some((c) => FORBIDDEN_PORTAL.some((re) => re.test(c)));
@@ -293,7 +367,7 @@ async function recoverMode() {
   if (!receipt || receipt.record !== RECEIPT_RECORD || !receipt.elevUserId || !receipt.elevEmail) { console.error('REDDEDİLDİ: makbuz biçimi/alanları eksik'); process.exit(4); }
   if (process.env.D4_RUNID && String(process.env.D4_RUNID).toLowerCase() !== String(receipt.runId).toLowerCase()) { console.error('REDDEDİLDİ: runId makbuzla eşleşmiyor'); process.exit(4); }
   const R = new L.Results(); const prisma = L.AH.loadPrisma(); const bcrypt = require(process.env.AH_BCRYPT_PATH);
-  const out = { record: 'EXTACC-D4-RECOVER', revision: 'R01', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış' };
+  const out = { record: 'EXTACC-D4-RECOVER', revision: 'R02', runId: receipt.runId, note: 'kabul ölçütleri KOŞULMADI; yalnız kapanış' };
   let session = null; let before = null;
   try {
     const ident = await assertReceiptIdentity(prisma, receipt);
@@ -308,13 +382,28 @@ async function recoverMode() {
       if (session && session.token) addSecret(session.token);
     }
   } catch (e) { out.fatal = errText(e, 200); }
-  try { out.portalClose = await closePortal(R, prisma, base, origin, receipt, session, null, null, P, before); } catch (e) { out.portalClose = { ok: false, reason: errText(e, 200) }; }
+  const issued = Number.isInteger(receipt.portalIssuedTokenVersion) ? receipt.portalIssuedTokenVersion : null;
+  out.versionEvidence = { issuedFromReceipt: issued, beforeRecover: before ? before.tokenVersion : null };
+  try {
+    out.portalClose = await closePortal(R, prisma, base, origin, receipt, P, {
+      session, issuedVersion: issued, sessionRequired: true,
+      absentNote: receipt.createAttemptedAt ? 'Recover anında portal hesabı YOK (koşumda oluşturma denendi; geç oluşma koşum kapanışında izlendi)' : 'portal hesabı yok; makbuzda oluşturma denemesi kaydı yok',
+      noSessionWhy: 'Recover: koşumun oturumu saklanmaz (sır) — mevcut oturum reddi Recover\'da ÖLÇÜLEMEZ; Run kanıtındaki P-C4 satırlarına bakın',
+      // Yeni giriş reddini ölçmek için: YALNIZ zaten pasif hesaba rastgele ölçüm parolası yazılır; hesap açılmaz.
+      credsForClosed: async (st) => {
+        const tmp = 'D4r!' + crypto.randomBytes(12).toString('base64url'); addSecret(tmp);
+        const u = await prisma.clientPortalUser.updateMany({ where: { clientId: receipt.clientId, isActive: false }, data: { passwordHash: await bcrypt.hash(tmp, 10) } });
+        if (u.count !== 1) throw new Error(`pasif hesap sayısı ${u.count}`);
+        return { email: st.email, password: tmp };
+      } });
+  } catch (e) { out.portalClose = { ok: false, reason: errText(e, 200) }; }
   try { out.closure = await closeAccess(prisma, receipt); } catch (e) { out.closure = { ok: false, reason: errText(e, 200) }; }
   R.check('U-CLOSE', 'personel kullanıcıları pasif + Case CLOSED', !!(out.closure && out.closure.ok), JSON.stringify(out.closure || {}));
-  R.summary(`EXTACC D-4 KURTARMA (runId=${receipt.runId})`);
+  const s = R.summary(`EXTACC D-4 KURTARMA (runId=${receipt.runId})`);
   out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed }));
-  out.exitCode = !(out.portalClose && out.portalClose.ok) ? 6 : !(out.closure && out.closure.ok) ? 5 : out.fatal ? 1 : 0;
+  out.exitCode = recoverExitCode(out, s);
   out.recovery = recoveryAdvice(out, receiptPath);
+  if (out.recovery.gerekli && out.exitCode === 3) out.recovery.adim = 'Recover TEKRARLANMAZ: DB kapalı; Recover içinde ölçülemeyen satırlar (mevcut oturum) Run kanıtından değerlendirilir — CLIENT inceler.';
   out.exitCode = writeEvidenceOrDemote(evid, out);
   await prisma.$disconnect().catch(() => {});
   process.exitCode = out.exitCode;
@@ -326,5 +415,5 @@ if (require.main === module) {
   else if (mode === 'recover') recoverMode();
   else { console.error(`REDDEDİLDİ: bilinmeyen D4_MODE '${mode}'`); process.exit(1); }
 }
-module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN_PORTAL, RECEIPT_RECORD, caseListMatches };
+module.exports = { commonGates, runGates, LIVE_PARAMS, effectiveParams, FORBIDDEN_PORTAL, RECEIPT_RECORD, caseListMatches, recoverExitCode, exitCodeOf };
 void scrub;

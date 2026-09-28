@@ -9,9 +9,12 @@
  *             yetki kuralları (isApproverEligible, hız sınırı, tenant yaşam döngüsü) burada ÖLÇÜLMEZ.
  *
  * env: D4F_DB_URL, D4F_PRISMA_ROOT, D4F_BCRYPT, D4F_API_PORT, D4F_EXT_PORT, D4F_CERT, D4F_KEY
- * Kontrol uçları (yalnız 127.0.0.1): POST /__scenario · POST /__reset · GET /__calls · GET /__ext · GET /__secrets
- * Senaryolar: create normal|fail · disable normal|fail|failOnce · guard normal|stale (ÜRÜN KUSURU TAKLİDİ: portal
- *             oturumu DB'ye bakmadan kabul edilir) · ext normal|503 · cases normal|leak (başka müvekkilin dosyası da döner)
+ * Kontrol uçları (yalnız 127.0.0.1): POST /__scenario · POST /__reset · GET /__calls · GET /__ext · GET /__secrets ·
+ *                                   POST /__release (create=hold ile bekletilen hesap kayıtlarını ŞİMDİ yazar)
+ * Senaryolar: create normal|fail|late (yanıt YOK, kayıt sabit 3 sn sonra)|hold (yanıt YOK, kayıt yalnız /__release ile) ·
+ *             disable normal|fail|failOnce · guard normal|stale (ÜRÜN KUSURU TAKLİDİ: portal oturumu DB'ye bakmadan kabul
+ *             edilir) · ext normal|503 · extLogin normal|503 (yalnız dış giriş ucu) · wrongPw normal|acceptAny (KUSUR
+ *             TAKLİDİ: parola denetlenmez) · cases normal|leak (başka müvekkilin dosyası da döner)
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path');
 
@@ -22,9 +25,11 @@ const API_PORT = Number(process.env.D4F_API_PORT || 8197);
 const EXT_PORT = Number(process.env.D4F_EXT_PORT || 8455);
 const EXT_ORIGIN = `https://localhost:${EXT_PORT}`;
 
-const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', cases: 'normal' };
+const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal' };
+const LATE_CREATE_MS = 3000; // create=late: sabit gecikme (istekten gelen değer süreyi belirlemez)
+const heldCreates = [];       // create=hold: /__reset bu listeyi SİLMEZ
 let scenario = Object.assign({}, DEFAULT); let disableFailed = 0;
-let calls = []; let extCalls = []; const secrets = { jwts: [], portalJwts: [], portalPasswords: [] };
+let calls = []; let extCalls = []; const secrets = { jwts: [], portalJwts: [], portalPasswords: [], loginPasswords: [] };
 
 function send(res, status, obj) {
   const body = obj === undefined ? '' : (typeof obj === 'string' ? obj : JSON.stringify(obj));
@@ -51,8 +56,9 @@ async function portalUser(req) {
 }
 
 async function portalLogin(body) {
+  secrets.loginPasswords.push(String(body.password || '')); // YALNIZ TEST: sızıntı taraması için (Recover ölçüm parolası dahil)
   const u = await prisma.clientPortalUser.findFirst({ where: { email: String(body.email || ''), isActive: true }, select: { id: true, clientId: true, email: true, passwordHash: true, tokenVersion: true, client: { select: { tenantId: true, displayName: true } } } });
-  if (!u || !(await bcrypt.compare(String(body.password || ''), u.passwordHash))) return { status: 401, body: { message: 'Geçersiz e-posta veya şifre' } };
+  if (!u || (scenario.wrongPw !== 'acceptAny' && !(await bcrypt.compare(String(body.password || ''), u.passwordHash)))) return { status: 401, body: { message: 'Geçersiz e-posta veya şifre' } };
   await prisma.clientPortalUser.update({ where: { id: u.id }, data: { lastLoginAt: new Date(), loginCount: { increment: 1 } } });
   const token = 'pfake.' + Buffer.from(JSON.stringify({ sub: u.id, cid: u.clientId, tid: u.client.tenantId, tv: u.tokenVersion, type: 'portal' })).toString('base64url');
   secrets.portalJwts.push(token);
@@ -69,10 +75,11 @@ async function apiHandler(req, res) {
   const p = new URL(req.url, 'http://127.0.0.1').pathname;
   if (p.startsWith('/__')) {
     if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; return send(res, 200, scenario); }
-    if (req.method === 'POST' && p === '/__reset') { calls = []; extCalls = []; secrets.jwts = []; secrets.portalJwts = []; secrets.portalPasswords = []; return send(res, 200, { ok: true }); }
+    if (req.method === 'POST' && p === '/__reset') { calls = []; extCalls = []; secrets.jwts = []; secrets.portalJwts = []; secrets.portalPasswords = []; secrets.loginPasswords = []; return send(res, 200, { ok: true }); }
     if (p === '/__calls') return send(res, 200, calls);
     if (p === '/__ext') return send(res, 200, extCalls);
     if (p === '/__secrets') return send(res, 200, secrets);
+    if (req.method === 'POST' && p === '/__release') { let n = 0; while (heldCreates.length) { await heldCreates.shift()(); n++; } return send(res, 200, { released: n }); }
     return send(res, 404, {});
   }
   const body = req.method === 'POST' ? await readBody(req) : {};
@@ -98,10 +105,17 @@ async function apiHandler(req, res) {
     // YALNIZ TEST: 'telefon' taklidi geçici parolayı konsol yerine buradan alır (koşucu parolayı hiçbir kanala yazmaz).
     secrets.portalPasswords.push(String(body.password || ''));
     const passwordHash = await bcrypt.hash(String(body.password || ''), 10);
-    const pu = existing
-      ? await prisma.clientPortalUser.update({ where: { id: existing.id }, data: { isActive: true, email: body.email, passwordHash, tokenVersion: { increment: 1 } } })
-      : await prisma.clientPortalUser.create({ data: { clientId: body.clientId, email: body.email, passwordHash } });
-    await prisma.client.update({ where: { id: body.clientId }, data: { hasPortalAccess: true, portalUserId: pu.id } });
+    const write = async () => {
+      const pu = existing
+        ? await prisma.clientPortalUser.update({ where: { id: existing.id }, data: { isActive: true, email: body.email, passwordHash, tokenVersion: { increment: 1 } } })
+        : await prisma.clientPortalUser.create({ data: { clientId: body.clientId, email: body.email, passwordHash } });
+      await prisma.client.update({ where: { id: body.clientId }, data: { hasPortalAccess: true, portalUserId: pu.id } });
+      return pu;
+    };
+    // Belirsiz oluşturma: istek kabul edilir, yanıt VERİLMEZ; kayıt sonra yazılır (geç oluşma).
+    if (scenario.create === 'late') { setTimeout(() => { write().catch(() => {}); }, LATE_CREATE_MS); return; }
+    if (scenario.create === 'hold') { heldCreates.push(write); return; }
+    const pu = await write();
     return send(res, 201, { id: pu.id, email: pu.email, clientId: pu.clientId });
   }
   if (req.method === 'POST' && p === '/api/portal/admin/disable-user') {
@@ -125,7 +139,7 @@ async function extHandler(req, res) {
   const p = new URL(req.url, EXT_ORIGIN).pathname; extCalls.push({ method: req.method, path: p });
   if (scenario.ext === '503') return send(res, 503, 'unavailable');
   if (req.method === 'GET' && p === '/portal/login') return send(res, 200, '<!doctype html><title>portal</title>');
-  if (req.method === 'POST' && p === '/api/portal/login') { const r = await portalLogin(await readBody(req)); return send(res, r.status, r.body); }
+  if (req.method === 'POST' && p === '/api/portal/login') { if (scenario.extLogin === '503') return send(res, 503, 'unavailable'); const r = await portalLogin(await readBody(req)); return send(res, r.status, r.body); }
   if (req.method === 'GET' && p === '/api/portal/cases') { const r = await portalCases(req); return send(res, r.status, r.body); }
   return send(res, 403, 'forbidden');
 }
