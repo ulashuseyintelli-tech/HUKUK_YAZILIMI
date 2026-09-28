@@ -67,6 +67,23 @@ describe('buildClaimItemData (G1)', () => {
     expect(data.dueDate).toEqual(new Date('2026-01-01'));
   });
 
+  // Masraf/harç/vekâlet ücreti kalemlerinin üretim yazım yolu DUE_BRIDGE'dir (POST /cases, POST /cases/:id/dues).
+  // Kaldırılan çağrısız ClaimItemService.addExpenseItem/addFeeItem/addAttorneyFeeItem'in tutar sözleşmesi
+  // beklentisi (üç tutar eşit, sıfır korunur) burada doğrulanır.
+  it.each([
+    [DueType.EXPENSE, ClaimItemType.EXPENSE],
+    [DueType.HARC, ClaimItemType.FEE],
+    [DueType.VEKALET_UCRETI, ClaimItemType.ATTORNEY_FEE],
+  ])('fer\'i %s → %s: üç-tutar eşitlenir ve sıfır tutar korunur', (dueType, claimItemType) => {
+    const itemType = mapDueTypeToClaimItemType(dueType);
+    expect(itemType).toBe(claimItemType);
+    const data = buildClaimItemData('tenant-1', 'case-1', { type: dueType, description: 'Fer\'i', amount: 0, dueDate: '2026-01-01' }, itemType!);
+    expect(data.itemType).toBe(claimItemType);
+    expect(data.originalAmount).toBe(0);
+    expect(data.demandedAmount).toBe(0);
+    expect(data.amount).toBe(0);
+  });
+
   it('DB-backed faiz girdilerini ClaimItem alanlarina, interestAmount izini metadataya tasir', () => {
     const data = buildClaimItemData(
       'tenant-1',
