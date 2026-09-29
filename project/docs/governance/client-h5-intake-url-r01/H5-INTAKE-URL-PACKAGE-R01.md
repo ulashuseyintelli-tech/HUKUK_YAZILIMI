@@ -445,3 +445,12 @@ istekleri canlı sunucunun kendisinden, genel DNS üzerinden `bilgi.tellihukuk.c
 paket digest güncellendi (blok sha256 `68DC7228C1A8BB560D23B1E9962365CD1171C178229EAE8C2137259A57839C55`). §7.5 tablosu R03
 anının değerleridir. §8 canlı kabul kaydı koşum anındaki main `d72fdaa7` ve blok `43DD4A94…1E30` değerlerine dayanır; değişmez.
 Regresyon: `h5-url-selftest.js` 47/47 · owner bloğu öz-testi 27/27 (PS 5.1 + PS 7) · `h5-pin-selftest.ps1` 8/8.
+
+## R27 pin notu (2026-09-29; yayından SONRA geçerli)
+
+Canlı API dist'i R27 (`E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134`, D5-SEC) olduğunda aşağıdaki owner bloklarının `ExpLiveDist`/`EXP_DIST` pini R26 `A8B17A38…53A0`'dan R27'ye güncellendi (yalnız pin satırı + yorum). Önceki kabul kanıtları ve kayıtlar DEĞİŞTİRİLMEDİ; yukarıdaki blok sha'ları tarihsel (R26 dönemi) olarak geçerlidir. Bu güncelleme R27 yayınından ÖNCE merge edilirse bloklar canlı R26 ile Preflight'ta DUR verir (beklenen, güvenli taraf). Kaynak: `client-release-r27-r01` §9.
+
+| Blok | Eski sha (R26 dönemi) | Yeni sha (R27 pinli) |
+|---|---|---|
+| `h5-owner-env-block.ps1` | `E0590FA5…16E5` | `D0E2A1BBCBA1CD113A3744CB4E152585D6EB2B09EB51967E93102EADCDF412BF` |
+| `h5-owner-live-block.ps1` | `68DC7228…9C55` | `41C4DD800DF084CAB193EB6CDEB34DEB57883930518DB59ECF3AE786A5135963` |

@@ -31,7 +31,7 @@ $GoLedger = Join-Path $EvRoot 'extacc-d4-goref-ledger.txt'
 $Api      = 'http://127.0.0.1:8080/api'
 
 # ---- PİNLER (uyuşmazlık OTOMATİK KABUL EDİLMEZ; blok durur) ----
-$ExpLiveDist = 'A8B17A38327975C71DDAE82FE33D1E97CB8B339FB1E35D1828FCF8D0CEB053A0'   # R26 canlı dist
+$ExpLiveDist = 'E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134'   # R27 canli dist (D5-SEC; R26 A8B17A38 pin PR #2837 yayinindan SONRA guncellendi)
 $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D'   # canlı .env (H5 sonrası)
 $ExpBaseUrl  = 'https://bilgi.tellihukuk.com'                                         # R05 owner kararı
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
