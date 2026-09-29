@@ -800,4 +800,16 @@ export class CaseController {
     const calculationDate = date || new Date().toISOString().split('T')[0];
     return this.caseService.getCalculationSummary(tenantId, id, calculationDate);
   }
+
+  /**
+   * K3-L Faz 1c — borçlu bazlı bakiye (kalıcı defterden; işleyen faiz hariç).
+   * GET /cases/:id/debtor-balances — hesap özetiyle aynı kiracı kapsamı.
+   */
+  @Get(":id/debtor-balances")
+  async getDebtorLedgerBalances(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+  ) {
+    return this.caseService.getDebtorLedgerBalances(tenantId, id);
+  }
 }

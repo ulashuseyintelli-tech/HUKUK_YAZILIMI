@@ -4,6 +4,7 @@ import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { AuditService } from '../../audit/audit.service';
 import { CaseDebtorLifecycleGuardService } from '../../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import { CasePaymentPreviewService } from '../../case/case-payment-preview.service';
+import { CaseService } from '../../case/case.service';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
 import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-allocator.service';
 import { SummaryEngineService } from '../../summary-engine/summary-engine.service';
@@ -141,6 +142,21 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
     await pay(f, 12000, f.cirantaCd.id);
     expect(await collected(f)).toEqual({ PRINCIPAL: 10000, CHECK_PENALTY: 0 });
     expect(await prisma.collectionOverpayment.count({ where: { caseId: f.caseId, status: 'HELD' } })).toBe(0);
+  });
+
+  it('K3-L Faz 1c: borçlu bazlı bakiye kalıcı defterden — keşideci bedel + kendi tazminatı, ciranta yalnız bedel', async () => {
+    const f = await fixture('ledger-balance');
+    await pay(f, 500, f.cirantaCd.id);
+    await pay(f, 300, f.kesideciCd.id);
+    expect(await collected(f)).toEqual({ PRINCIPAL: 500, CHECK_PENALTY: 300 });
+
+    const caseService = Object.assign(Object.create(CaseService.prototype), { prisma }) as CaseService;
+    const result = await caseService.getDebtorLedgerBalances(f.tenantId, f.caseId);
+    expect(result).toMatchObject({ kaynak: 'KALICI_DEFTER', isleyenFaizDahil: false, sorumlusuBulunamayanKalemler: [] });
+    const byCaseDebtor = Object.fromEntries(result.borclular.map((b) => [b.caseDebtorId, b]));
+    expect(byCaseDebtor[f.kesideciCd.id].toplamlar).toEqual([{ paraBirimi: 'TRY', tutar: 11000, tahsilEdilen: 800, kalan: 10200 }]);
+    expect(byCaseDebtor[f.cirantaCd.id].toplamlar).toEqual([{ paraBirimi: 'TRY', tutar: 10000, tahsilEdilen: 500, kalan: 9500 }]);
+    expect(byCaseDebtor[f.cirantaCd.id].kalemler.map((l) => l.kalemTuru)).toEqual(['PRINCIPAL']);
   });
 
   it('önizleme: ödeyensiz → kabul edilmez; ciranta → yalnız bedel; keşideci → bedel + tazminat', async () => {
