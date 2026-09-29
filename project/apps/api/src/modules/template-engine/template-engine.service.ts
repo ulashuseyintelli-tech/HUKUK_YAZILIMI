@@ -10,11 +10,12 @@ import {
   isTemplateEligibleClaimItem,
   normalizeClientTemplateData,
   orderLawyersForSignature,
-  resolveProceedingKind,
-  resolveProceedingKindFromLabels,
+  resolveProceedingSelection,
+  resolveProceedingSelectionFromLabels,
   stripLawyerTitle,
   TAKIP_TALEBI_TEMPLATE_BY_KIND,
   type ProceedingKind,
+  type ProceedingSelection,
 } from './template-case-classification';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
@@ -141,8 +142,10 @@ export interface TemplateData {
     liableDebtorIds?: string[];
   }>;
   totals: { principal: number; interest: number; fees: number; total: number; currency: string };
-  // K3-L Faz 2: takip yolu (kanonik alanlardan çözülmüş) — şablon seçimi caseType/subCategory etiketine değil buna bakar
+  // K3-L Faz 2 (owner kararı 2026-09-30): takip yolu YALNIZ açıkça seçilmiş kayıttan; dosya/enstrüman türünden
+  // kambiyo VARSAYILMAZ. proceedingSelection: seçim + dayanağı + açık olup olmadığı + uyarılar.
   proceedingKind?: ProceedingKind;
+  proceedingSelection?: ProceedingSelection;
   // İstemci verisiyle üretilen önizleme (kayıt yok) — çıktı TASLAK olarak işaretlenir
   isDraft?: boolean;
   interestInfo: { type: 'YASAL' | 'TICARI' | 'CUSTOM'; rate?: number; description: string; variableRate: boolean };
@@ -191,6 +194,8 @@ export interface GeneratedDocument {
   content: string;
   format: 'text' | 'html';
   templateCode: string;
+  /** Şablonun hangi takip yolu seçimine dayandığı; explicit=false → açık seçim yok (ilamsız varsayıldı) */
+  selection?: ProceedingSelection;
 }
 
 // UDF (UYAP Document Format) yapısı
@@ -255,29 +260,33 @@ export class TemplateEngineService {
   }
 
   generateTakipTalebi(data: TemplateData): GeneratedDocument {
-    const templateCode = this.getTemplateCode(data);
+    const selection = this.resolveSelection(data);
+    const templateCode = this.getTemplateCode(selection);
     const template = this.templates.get(templateCode);
     if (!template) {
       this.logger.warn(`Sablon bulunamadi: ${templateCode}`);
-      return this.generateDefaultTakipTalebi(data);
+      return { ...this.generateDefaultTakipTalebi(data), selection };
     }
-    return { title: 'TAKIP TALEBI (ORNEK 1)', content: this.renderTemplate(template, data), format: 'text', templateCode };
+    return { title: 'TAKIP TALEBI (ORNEK 1)', content: this.renderTemplate(template, data), format: 'text', templateCode, selection };
   }
 
   generateOdemeEmri(data: TemplateData): GeneratedDocument {
-    // K3-L Faz 2: kambiyo (çek/senet) ödeme emri takip yolundan seçilir (Örnek 10: 10 gün, icra mahkemesi);
-    // ilamsız Örnek 7. Başlık şablon içeriğiyle tutarlı (kambiyo şablonu metninde "ORNEK NO: 10").
-    const isKambiyo = isKambiyoKind(this.resolveKind(data));
+    // K3-L Faz 2 (owner kararı 2026-09-30): kambiyo ödeme emri YALNIZ takip yolu AÇIKÇA kambiyo seçilmişse;
+    // dosya/enstrüman türünden kambiyo varsayılmaz (açık seçim yoksa ilamsız + selection.explicit=false).
+    // Başlık şablon içeriğiyle tutarlı (kambiyo şablonu metninde "ORNEK NO: 10").
+    const selection = this.resolveSelection(data);
+    const isKambiyo = isKambiyoKind(selection.kind);
     const templateCode = isKambiyo ? 'ORNEK_7_KAMBIYO' : 'ORNEK_7_ILAMSIZ';
     const template = this.templates.get(templateCode);
-    return { title: isKambiyo ? 'ODEME EMRI (ORNEK 10)' : 'ODEME EMRI (ORNEK 7)', content: this.renderTemplate(template, data), format: 'text', templateCode };
+    return { title: isKambiyo ? 'ODEME EMRI (ORNEK 10)' : 'ODEME EMRI (ORNEK 7)', content: this.renderTemplate(template, data), format: 'text', templateCode, selection };
   }
 
   generateIcraEmri(data: TemplateData): GeneratedDocument {
-    const isNafaka = this.resolveKind(data) === 'NAFAKA';
+    const selection = this.resolveSelection(data);
+    const isNafaka = selection.kind === 'NAFAKA';
     const templateCode = isNafaka ? 'ORNEK_5_NAFAKA' : 'ORNEK_4_ILAMLI';
     const template = this.templates.get(templateCode);
-    return { title: isNafaka ? 'ICRA EMRI (ORNEK 5)' : 'ICRA EMRI (ORNEK 4)', content: this.renderTemplate(template, data), format: 'text', templateCode };
+    return { title: isNafaka ? 'ICRA EMRI (ORNEK 5)' : 'ICRA EMRI (ORNEK 4)', content: this.renderTemplate(template, data), format: 'text', templateCode, selection };
   }
 
   generateHacizTutanagi(data: TemplateData): GeneratedDocument {
@@ -368,6 +377,7 @@ export class TemplateEngineService {
         // I07: resmi şablon çıktısı yapısal ClientAddress'i (varsa) OKUR. I01/I03 ile AYNI
         // sözleşme: yalnız isCurrent=true, isPrimary desc sıralı.
         caseClients: {
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           include: {
             client: {
               include: {
@@ -380,6 +390,8 @@ export class TemplateEngineService {
           },
         },
         formType: true,
+        // Kullanıcının "Takip Türü" seçimi (açık takip yolu kaynağı)
+        takipTuru: { select: { code: true } },
         // K3-L Faz 2: kararlı sıra (imzacı/ilk borçlu rastgele olmasın)
         lawyers: { include: { lawyer: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         debtors: {
@@ -396,7 +408,9 @@ export class TemplateEngineService {
           } 
         }, 
         dues: true,
-        claimItems: true,
+        // K3-L Faz 2: kararlı sıra. Durum filtresi KODDA uygulanır (isTemplateEligibleClaimItem): "dosyada hiç kalem
+        // yok" ile "kalem var ama hepsi iptal/feragat/tahsil" ayrımı için tüm kayıtlar okunur.
+        claimItems: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
       },
     });
     if (!caseRecord) throw new NotFoundException('Dosya bulunamadı');
@@ -405,9 +419,12 @@ export class TemplateEngineService {
     }
     
     // Alacak kalemleri - önce claimItems, yoksa dues, yoksa boş array
-    // K3-L Faz 2: sorgu filtresine ek olarak kod düzeyinde de yalnız uygun kalem (mock/eski çağıran güvenliği)
+    // K3-L Faz 2: yalnız ETKİN ve sanal olmayan kalem belgeye girer. Dosyada ClaimItem KAYDI varsa kaynak odur:
+    // hepsi iptal/feragat/tahsil edilmiş olsa bile eski Due kayıtlarına ya da principalAmount'a DÜŞÜLMEZ
+    // (iptal edilen alacak belgeye geri gelmesin). Due/principalAmount yalnız hiç ClaimItem yokken (eski dosya).
+    const hasClaimItemRecords = (caseRecord.claimItems?.length ?? 0) > 0;
     const eligibleClaimItems = (caseRecord.claimItems || []).filter((item: any) => isTemplateEligibleClaimItem(item));
-    const rawClaimItems = eligibleClaimItems.length > 0 ? eligibleClaimItems : (caseRecord.dues?.length > 0 ? caseRecord.dues : []);
+    const rawClaimItems = hasClaimItemRecords ? eligibleClaimItems : (caseRecord.dues?.length > 0 ? caseRecord.dues : []);
     const claimItems = rawClaimItems.map((item: any) => ({
       // G1: kaynak ClaimItem ise alan `itemType`, Due ise `type`. İkisini de tanı,
       // yoksa tüm kalemler PRINCIPAL'a yığılır (faiz/masraf 0 → yanlış belge).
@@ -427,7 +444,7 @@ export class TemplateEngineService {
     }));
     
     // Eğer alacak kalemi yoksa, principalAmount'tan oluştur
-    if (claimItems.length === 0 && caseRecord.principalAmount) {
+    if (!hasClaimItemRecords && claimItems.length === 0 && caseRecord.principalAmount) {
       claimItems.push({
         type: 'PRINCIPAL',
         description: 'Asıl Alacak',
@@ -440,11 +457,25 @@ export class TemplateEngineService {
     
     // K3-L Faz 2: listelenen HER kalem toplama girer (çek tazminatı, vekalet ücreti, vergiler dahil) → satırlar ile toplam tutar
     const totals = computeTemplateTotals(claimItems, caseRecord.currency || 'TRY');
-    const preKind = resolveProceedingKind(caseRecord, []);
+    // Seçilen form: ilişki yoksa Case.subType form kodundan (sihirbaz form kodunu subType'a yazar)
+    const selectedFormType =
+      caseRecord.formType ??
+      (caseRecord.subType
+        ? ((await this.prisma.formType?.findUnique?.({ where: { code: String(caseRecord.subType) } })) ?? null)
+        : null);
+    const classificationSource = {
+      type: caseRecord.type,
+      subCategory: caseRecord.subCategory,
+      subType: caseRecord.subType,
+      proceedingType: caseRecord.proceedingType,
+      takipTuruCode: caseRecord.takipTuru?.code ?? null,
+      formType: selectedFormType,
+    };
+    const preKind = resolveProceedingSelection(classificationSource, []).kind;
     
     // Kira bilgilerini çek
     let leaseInfo: TemplateData['leaseInfo'] = undefined;
-    if (preKind === 'KIRA') {
+    if (preKind === 'KIRA' || caseRecord.subCategory === 'KIRA') {
       const lease = await (this.prisma as any).caseLease.findFirst({ where: { caseId } });
       if (lease) {
         leaseInfo = {
@@ -460,7 +491,7 @@ export class TemplateEngineService {
     
     // İlam bilgilerini çek
     let courtInfo: TemplateData['courtInfo'] = undefined;
-    if (preKind === 'ILAMLI' || preKind === 'NAFAKA') {
+    if (preKind === 'ILAMLI' || preKind === 'NAFAKA' || caseRecord.subCategory === 'NAFAKA') {
       const judgment = await (this.prisma as any).caseJudgment.findFirst({ where: { caseId } });
       if (judgment) {
         courtInfo = {
@@ -475,7 +506,9 @@ export class TemplateEngineService {
     
     // Çek/Senet bilgilerini çek
     let instrumentInfos: TemplateInstrumentInfo[] = [];
-    if (isKambiyoKind(preKind) || caseRecord.proceedingType === 'CAMBIO') {
+    // Kambiyo senedi kayıtları (madde 8 metni) takip yolundan BAĞIMSIZ yüklenir: senet ilamsız takipte de
+    // "borcun sebebi"dir. Yükleme, takip yolu seçimi DEĞİLDİR.
+    if (isKambiyoKind(preKind) || ['CHECK', 'BOND'].includes(caseRecord.type) || ['CEK', 'SENET', 'KAMBIYO_CEK', 'KAMBIYO_SENET'].includes(caseRecord.subCategory)) {
       const instruments = await (this.prisma as any).caseInstrument.findMany({
         where: { caseId },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -599,7 +632,7 @@ export class TemplateEngineService {
       caseType: caseRecord.type || 'ILAMSIZ', 
       subCategory: caseRecord.subCategory || 'GENEL', 
       executionPath: caseRecord.executionPath || 'HACIZ',
-      proceedingKind: resolveProceedingKind(caseRecord, instrumentInfos.map((i) => String(i.type || ''))),
+      ...this.selectionFields(resolveProceedingSelection(classificationSource, instrumentInfos.map((i) => String(i.type || '')))),
       leaseInfo,
       courtInfo,
       instrumentInfo,
@@ -917,16 +950,42 @@ export class TemplateEngineService {
   }
 
   /**
-   * K3-L Faz 2: şablon = takip yolu + belge türü. Takip yolu kanonik alanlardan (getCaseData → proceedingKind) gelir;
-   * yalnız istemci verisinde (proceedingKind yok) eski etiketler çözülür. DB enum'larıyla uyuşmayan eski anahtar
-   * tablosu ('CEK', 'KAMBIYO_*') kaldırıldı — çek/senet dosyası artık ilamsız şablona DÜŞMEZ.
+   * K3-L Faz 2 (owner kararı 2026-09-30): şablon = AÇIKÇA SEÇİLMİŞ takip yolu + belge türü. Dosya kaydında seçim
+   * getCaseData()'da çözülür (proceedingSelection); istemci verisinde yalnız açık etiketler çözülür. Dosya türü /
+   * enstrüman / kalem türü tek başına kambiyo SEÇTİRMEZ; açık seçim yoksa ilamsız + explicit=false (uyarı loglanır).
    */
-  private resolveKind(data: Pick<TemplateData, 'caseType' | 'subCategory' | 'proceedingKind'>): ProceedingKind {
-    return data.proceedingKind ?? resolveProceedingKindFromLabels(data.caseType, data.subCategory);
+  private resolveSelection(
+    data: Pick<TemplateData, 'caseType' | 'subCategory' | 'proceedingKind' | 'proceedingSelection'>,
+  ): ProceedingSelection {
+    const selection =
+      data.proceedingSelection ??
+      (data.proceedingKind
+        ? { kind: data.proceedingKind, basis: 'CLIENT_LABEL' as const, explicit: true, warnings: [] }
+        : resolveProceedingSelectionFromLabels(data.caseType, data.subCategory));
+    if (!selection.explicit || selection.warnings.length > 0) {
+      this.logger.warn(
+        `[TemplateSelection] kind=${selection.kind} basis=${selection.basis} explicit=${selection.explicit} warnings=${selection.warnings.join(',')}`,
+      );
+    }
+    return selection;
   }
 
-  private getTemplateCode(data: Pick<TemplateData, 'caseType' | 'subCategory' | 'proceedingKind'>): string {
-    return TAKIP_TALEBI_TEMPLATE_BY_KIND[this.resolveKind(data)];
+  private selectionFields(selection: ProceedingSelection): { proceedingKind: ProceedingKind; proceedingSelection: ProceedingSelection } {
+    return { proceedingKind: selection.kind, proceedingSelection: selection };
+  }
+
+  private getTemplateCode(selection: ProceedingSelection): string {
+    const code = TAKIP_TALEBI_TEMPLATE_BY_KIND[selection.kind];
+    if (!code) {
+      // Takip yolu açıkça kambiyo ama belge türü (çek/senet) belirlenemedi → şablon TAHMİN EDİLMEZ
+      throw new BadRequestException({
+        code: 'BELGE_TURU_BELIRSIZ',
+        message:
+          'Kambiyo takip talebi için belge türü (çek / senet) belirlenemedi. Dosyaya kambiyo senedi kaydı ekleyin ya da takip türünü (Kambiyo - Çek / Kambiyo - Senet) seçin.',
+        warnings: selection.warnings,
+      });
+    }
+    return code;
   }
 
   private formatDate(dateStr: string): string {
@@ -3253,7 +3312,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     templateVersion: string = 'v1',
     tenantId?: string,
     actorUserId?: string,
-  ): Promise<{ buffer: Buffer; artifact?: any; fromCache: boolean }> {
+  ): Promise<{ buffer: Buffer; artifact?: any; fromCache: boolean; selection?: ProceedingSelection }> {
     // 1. Case verisini çek
     const caseData = await this.getCaseData(caseId, tenantId);
     
@@ -3323,10 +3382,10 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
       buffer,
       fileName: `${documentType}-${caseId}.${format.toLowerCase()}`,
       actorUserId,
-      proceedingKind: caseData.proceedingKind,
+      proceedingSelection: caseData.proceedingSelection,
     });
 
-    return { buffer, artifact, fromCache: false };
+    return { buffer, artifact, fromCache: false, selection: caseData.proceedingSelection };
   }
 
   private async recordDocumentArtifact(input: {
@@ -3339,7 +3398,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     buffer: Buffer;
     fileName: string;
     actorUserId?: string;
-    proceedingKind?: ProceedingKind;
+    proceedingSelection?: ProceedingSelection;
   }): Promise<any | undefined> {
     const contentHash = createHash('sha256').update(input.buffer).digest('hex');
     // Tipli erişim (tenant sayım envanteri çözümlesin); mock prisma'da model yoksa kayıt atlanır
@@ -3394,7 +3453,10 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
           dataHash: input.dataHash,
           contentHash,
           fileSize: input.buffer.length,
-          proceedingKind: input.proceedingKind ?? null,
+          // Şablonun dayandığı takip yolu seçimi (explicit=false → açık seçim yoktu, ilamsız varsayıldı)
+          takipYoluSecimi: input.proceedingSelection ?? null,
+          // Biçim gerçek örnek belge / UYAP şemasıyla doğrulanmadı; bu kayıt ÜRETİM kaydıdır, kabul kaydı DEĞİL
+          adliyeKabulu: 'DOGRULANMADI',
         },
       });
     }
@@ -3417,7 +3479,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
       caseType: data.caseType,
       subCategory: data.subCategory,
       executionPath: data.executionPath,
-      proceedingKind: data.proceedingKind ?? null,
+      proceedingSelection: data.proceedingSelection ?? null,
       interestInfo: data.interestInfo,
       instrumentInfos: data.instrumentInfos ?? null,
       courtInfo: data.courtInfo ?? null,

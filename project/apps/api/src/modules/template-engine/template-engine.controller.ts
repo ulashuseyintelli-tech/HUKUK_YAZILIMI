@@ -838,6 +838,11 @@ export class TemplateEngineController {
         tenantId,
         actorUserId,
       );
+      // K3-L Faz 2: şablonun dayandığı takip yolu seçimi sessiz bırakılmaz (yalnız ASCII kodlar)
+      if (result.selection) {
+        res.setHeader('X-Takip-Yolu-Secimi', `${result.selection.kind};basis=${result.selection.basis};explicit=${result.selection.explicit}`);
+        if (result.selection.warnings.length > 0) res.setHeader('X-Takip-Yolu-Uyari', result.selection.warnings.join(','));
+      }
       
       const mimeTypes: Record<string, string> = {
         DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
