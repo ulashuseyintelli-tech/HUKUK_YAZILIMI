@@ -5753,6 +5753,7 @@ export interface DebtorLedgerBalanceResultDTO {
     toplamlar: Array<{ paraBirimi: string; tutar: number; tahsilEdilen: number; kalan: number }>;
   }>;
   sorumlusuBulunamayanKalemler: DebtorLedgerItemLineDTO[];
+  mahsubuBekleyenTahsilatlar?: Array<{ collectionId: string; tutar: number; paraBirimi: string; sebep: string }>;
 }
 
 export interface PaymentPreviewRequestDTO {

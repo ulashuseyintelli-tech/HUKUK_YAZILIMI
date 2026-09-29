@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-// K3-L (owner kararı 2026-09-28): tahsilat yalnız ödeyen borçlunun sorumlu olduğu kalemlere mahsup edilir; kısıtlı
-// kalemli dosyada ödeyen seçimi zorunludur (sunucu PAYER_DEBTOR_REQUIRED). Modal seçimi önizleme ve kayda taşır.
+// K3-L (owner kararları 2026-09-28/29): tahsilat yalnız HESABINA ödeme yapılan borçlunun sorumlu olduğu kalemlere
+// mahsup edilir; borçlu belirsizse tahsilat kaydedilir ve mahsup bekletilir. Modal seçimi önizleme ve kayda taşır.
 
 const createCollection = vi.fn();
 const previewCasePayment = vi.fn();
@@ -24,7 +24,13 @@ const debtors = [
   { id: "cd-pasif", role: "AVAL", lifecycleStatus: "PASSIVE", debtor: { name: "Pasif Aval" } },
 ];
 
-describe("CollectionModal ödeyen borçlu (K3-L)", () => {
+describe("CollectionModal hesabına ödeme yapılan borçlu (K3-L)", () => {
+  it("etiket gönderen kişiyi değil hesabına ödeme yapılan borçluyu ister", () => {
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    expect(screen.getByLabelText("Hesabına ödeme yapılan borçlu")).toBeTruthy();
+    expect(screen.getByText(/Parayı gönderen kişi veya ileten icra dairesi değil/)).toBeTruthy();
+  });
+
   beforeEach(() => {
     createCollection.mockReset().mockResolvedValue({ id: "col-1" });
     previewCasePayment.mockReset();
@@ -46,12 +52,12 @@ describe("CollectionModal ödeyen borçlu (K3-L)", () => {
     expect(createCollection.mock.calls[0][1]).toMatchObject({ caseDebtorId: "cd-ciranta", amount: 500 });
   });
 
-  it("seçim yoksa caseDebtorId gönderilmez; sunucu reddi (ödeyen gerekli) önizlemede Türkçe gösterilir", async () => {
+  it("seçim yoksa caseDebtorId gönderilmez; mahsup bekletme uyarısı önizlemede Türkçe gösterilir", async () => {
     previewCasePayment.mockResolvedValue({
       nonPersistent: true,
       caseId: "case-1",
       input: { amount: 500, currency: "TRY", caseDebtorId: null },
-      acceptance: { wouldAccept: false, blockingReasons: ["PAYER_DEBTOR_REQUIRED"], warnings: [] },
+      acceptance: { wouldAccept: true, blockingReasons: [], warnings: ["ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED"] },
       balanceImpact: {
         currentOutstandingAmount: 0,
         paymentAmount: 500,
@@ -66,7 +72,7 @@ describe("CollectionModal ödeyen borçlu (K3-L)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
     await waitFor(() => expect(previewCasePayment).toHaveBeenCalledTimes(1));
     expect(previewCasePayment.mock.calls[0][1]).not.toHaveProperty("caseDebtorId");
-    expect(await screen.findByText(/ödeyen borçluyu seçin/)).toBeTruthy();
+    expect(await screen.findByText(/mahsup bekletilecek/)).toBeTruthy();
   });
 
   it("borçlu listesi yoksa seçim alanı gösterilmez (mevcut davranış)", () => {

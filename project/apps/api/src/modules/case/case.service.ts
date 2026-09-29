@@ -4540,7 +4540,22 @@ export class CaseService {
       },
     });
     if (!caseData) throw new NotFoundException("Dosya bulunamadı");
+    // K3-L: kaydedilmiş ama otomatik mahsubu bekletilen tahsilatlar (defter kaydı YOK) ayrıca gösterilir.
+    const holds = await this.prisma.collectionOverpayment.findMany({
+      where: { tenantId, caseId, status: "HELD", sourceLedgerEntryId: null },
+      select: { collectionId: true, remainingAmount: true, currency: true, metadata: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const heldCollections = holds
+      .filter((hold) => (hold.metadata as { kind?: string } | null)?.kind === "ALLOCATION_HELD")
+      .map((hold) => ({
+        collectionId: hold.collectionId,
+        amount: hold.remainingAmount,
+        currency: hold.currency,
+        holdReason: String((hold.metadata as { holdReason?: string } | null)?.holdReason ?? "UNKNOWN"),
+      }));
     return buildDebtorLedgerBalances({
+      heldCollections,
       caseDebtors: caseData.debtors.map((cd: any) => ({
         id: cd.id,
         debtorId: cd.debtorId,

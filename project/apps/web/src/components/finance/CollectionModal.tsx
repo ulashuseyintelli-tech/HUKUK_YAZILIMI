@@ -32,13 +32,15 @@ const PREVIEW_WARNING_LABELS: Record<string, string> = {
   CURRENT_BALANCE_SERVICE_UNAVAILABLE: "Bakiye servisi erişilebilir değil; önizleme yedek verilerle hesaplandı.",
   CLAIM_ITEM_READ_FALLBACK_USED: "Önizleme alacak kalemi okuma yedeğiyle hesaplandı.",
   PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST:
-    "Kalan borç yalnız seçilen borçlunun sorumlu olduğu kalemlerden hesaplandı (işleyen faiz hariç).",
+    "Kalan borç yalnız hesabına ödeme yapılan borçlunun sorumlu olduğu kalemlerden hesaplandı (işleyen faiz hariç).",
+  ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED:
+    "Tahsilat kaydedilecek; bu dosyada yalnız bazı borçlulara ait kalem olduğundan hangi borçlu hesabına ödendiği belirtilmeden mahsup bekletilecek.",
+  ALLOCATION_HELD_ON_BEHALF_DEBTOR_NOT_LIABLE:
+    "Tahsilat kaydedilecek; seçilen borçlunun sorumlu olduğu etkin kalem olmadığından mahsup bekletilecek.",
 };
 
 const PREVIEW_BLOCKING_LABELS: Record<string, string> = {
   CASE_CLOSED_FOR_COLLECTION: "Dosya tahsilata kapalı görünüyor.",
-  PAYER_DEBTOR_REQUIRED: "Bu dosyada yalnız bazı borçlulara ait alacak kalemi var; ödeyen borçluyu seçin.",
-  PAYER_NOT_LIABLE_FOR_ANY_ITEM: "Seçilen borçlunun sorumlu olduğu etkin alacak kalemi yok.",
 };
 
 function labelPreviewMessage(code: string, labels: Record<string, string>) {
@@ -53,7 +55,7 @@ function newIdempotencyKey(): string {
 }
 
 
-/** K3-L: tahsilatı yapan borçlu seçimi için dosya borçluları (CaseDebtor.id + ad + rol). */
+/** K3-L: HESABINA ödeme yapılan borçlu seçimi için dosya borçluları (CaseDebtor.id + ad + rol). */
 export interface CollectionModalDebtorOption {
   id: string;
   role?: string | null;
@@ -71,8 +73,9 @@ interface CollectionModalProps {
 }
 
 export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess, debtors = [] }: CollectionModalProps) {
-  // K3-L (owner kararı 2026-09-28): ödeme yalnız ödeyen borçlunun sorumlu olduğu kalemlere mahsup edilir; kısıtlı
-  // kalemli dosyada seçim ZORUNLU (sunucu PAYER_DEBTOR_REQUIRED ile reddeder).
+  // K3-L (owner kararı 2026-09-29): tahsilat yalnız HESABINA ödeme yapılan borçlunun sorumlu olduğu kalemlere mahsup
+  // edilir. Parayı gönderen kişi ve ileten icra dairesi bu seçimle aynı şey DEĞİLDİR. Seçim yoksa tahsilat yine
+  // kaydedilir; yalnız bazı borçlulara ait kalemi olan dosyada mahsup bekletilir.
   const payerOptions = debtors.filter((cd) => !cd.lifecycleStatus || cd.lifecycleStatus === "ACTIVE");
   const [payerCaseDebtorId, setPayerCaseDebtorId] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -371,7 +374,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
           {!collection?.id && payerOptions.length > 0 && (
             <div>
               <label htmlFor="collection-payer" className="block text-xs font-medium text-gray-700 mb-1">
-                Ödeyen borçlu
+                Hesabına ödeme yapılan borçlu
               </label>
               <select
                 id="collection-payer"
@@ -389,8 +392,9 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                 ))}
               </select>
               <p className="mt-1 text-[11px] text-gray-500">
-                Ödeme yalnız bu borçlunun sorumlu olduğu kalemlere mahsup edilir; bazı kalemleri yalnız belirli borçlulara
-                ait dosyalarda seçim zorunludur.
+                Parayı gönderen kişi veya ileten icra dairesi değil, borcuna sayılacak borçlu. Ödeme yalnız bu borçlunun
+                sorumlu olduğu kalemlere mahsup edilir; seçilmezse tahsilat kaydedilir, bazı kalemleri yalnız belirli
+                borçlulara ait dosyalarda mahsup bekletilir.
               </p>
             </div>
           )}
