@@ -123,11 +123,27 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
     expect(await collected(f)).toEqual({ PRINCIPAL: 500, CHECK_PENALTY: 1000 });
   });
 
-  it('kısıtlı kalemli dosyada ödeyensiz tahsilat 400 PAYER_DEBTOR_REQUIRED, hiçbir satır yazılmaz', async () => {
+  it('owner kararı 2026-09-29: borçlusu belirsiz tahsilat REDDEDİLMEZ — kaydedilir, mahsup bekletilir (HELD emanet)', async () => {
     const f = await fixture('no-payer');
-    await expect(pay(f, 500)).rejects.toMatchObject({ response: { code: 'PAYER_DEBTOR_REQUIRED' } });
-    expect(await prisma.collection.count({ where: { caseId: f.caseId } })).toBe(0);
+    const created = await pay(f, 500);
+    expect(created).toMatchObject({ status: 'CONFIRMED' });
+    expect(await prisma.collection.count({ where: { caseId: f.caseId } })).toBe(1);
     expect(await prisma.ledgerEntry.count({ where: { caseId: f.caseId } })).toBe(0);
+    expect(await prisma.collectionAllocation.count({ where: { collectionId: (created as any).id } })).toBe(0);
+    expect(await collected(f)).toEqual({ PRINCIPAL: 0, CHECK_PENALTY: 0 });
+    const hold = await prisma.collectionOverpayment.findUniqueOrThrow({ where: { collectionId: (created as any).id } });
+    expect(hold).toMatchObject({ status: 'HELD', sourceLedgerEntryId: null });
+    expect(Number(hold.remainingAmount)).toBe(500);
+    expect(hold.metadata).toMatchObject({ kind: 'ALLOCATION_HELD', holdReason: 'ON_BEHALF_DEBTOR_REQUIRED' });
+  });
+
+  it('hesabına ödeme yapılan borçlunun sorumlu kalemi yoksa da kaydedilir, mahsup bekletilir', async () => {
+    const f = await fixture('not-liable');
+    await prisma.claimItem.update({ where: { id: f.principal.id }, data: { status: 'CANCELLED' } });
+    const created = await pay(f, 300, f.cirantaCd.id);
+    expect(await prisma.ledgerEntry.count({ where: { caseId: f.caseId } })).toBe(0);
+    const hold = await prisma.collectionOverpayment.findUniqueOrThrow({ where: { collectionId: (created as any).id } });
+    expect(hold.metadata).toMatchObject({ kind: 'ALLOCATION_HELD', holdReason: 'ON_BEHALF_DEBTOR_NOT_LIABLE' });
     expect(await collected(f)).toEqual({ PRINCIPAL: 0, CHECK_PENALTY: 0 });
   });
 
@@ -157,13 +173,26 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
     expect(byCaseDebtor[f.kesideciCd.id].toplamlar).toEqual([{ paraBirimi: 'TRY', tutar: 11000, tahsilEdilen: 800, kalan: 10200 }]);
     expect(byCaseDebtor[f.cirantaCd.id].toplamlar).toEqual([{ paraBirimi: 'TRY', tutar: 10000, tahsilEdilen: 500, kalan: 9500 }]);
     expect(byCaseDebtor[f.cirantaCd.id].kalemler.map((l) => l.kalemTuru)).toEqual(['PRINCIPAL']);
+    expect(result.mahsubuBekleyenTahsilatlar).toEqual([]);
+
+    // Borçlusu belirsiz tahsilat kaydedilir; kimsenin kalanından düşülmez, ayrıca listelenir.
+    const held = await pay(f, 250);
+    const after = await caseService.getDebtorLedgerBalances(f.tenantId, f.caseId);
+    expect(after.mahsubuBekleyenTahsilatlar).toEqual([
+      { collectionId: (held as any).id, tutar: 250, paraBirimi: 'TRY', sebep: 'ON_BEHALF_DEBTOR_REQUIRED' },
+    ]);
+    const afterByCd = Object.fromEntries(after.borclular.map((b) => [b.caseDebtorId, b]));
+    expect(afterByCd[f.kesideciCd.id].toplamlar[0].kalan).toBe(10200);
+    expect(afterByCd[f.cirantaCd.id].toplamlar[0].kalan).toBe(9500);
   });
 
   it('önizleme: ödeyensiz → kabul edilmez; ciranta → yalnız bedel; keşideci → bedel + tazminat', async () => {
     const f = await fixture('preview');
     const preview = new CasePaymentPreviewService(prisma as any);
     const noPayer = await preview.preview({ tenantId: f.tenantId, caseId: f.caseId, input: { amount: 500 } as any });
-    expect(noPayer.acceptance).toMatchObject({ wouldAccept: false, blockingReasons: ['PAYER_DEBTOR_REQUIRED'] });
+    expect(noPayer.acceptance).toMatchObject({ wouldAccept: true, blockingReasons: [] });
+    expect(noPayer.acceptance.warnings).toContain('ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED');
+    expect(noPayer.balanceImpact.appliedAmount).toBe(0);
     const cirantaPreview = await preview.preview({ tenantId: f.tenantId, caseId: f.caseId, input: { amount: 500, caseDebtorId: f.cirantaCd.id } as any });
     expect(cirantaPreview.balanceImpact.currentOutstandingAmount).toBe(10000);
     expect(cirantaPreview.acceptance.warnings).toContain('PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST');

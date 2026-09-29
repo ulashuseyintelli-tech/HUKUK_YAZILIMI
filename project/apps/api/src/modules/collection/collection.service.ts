@@ -7,7 +7,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { PayerLiabilityScopeError, hasRestrictedLiability } from "../claim-item/payer-liability-scope";
+import { allocationHoldReason, type PayerLiabilityScopeErrorCode } from "../claim-item/payer-liability-scope";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import {
@@ -446,27 +446,71 @@ export class CollectionService {
   /// - CollectionService.create() → POST /collections ve tahsilat delegasyonları için CaseDebtor integrity guard
   /// </remarks>
   /**
-   * K3-L — tahsilatı yapan borçlunun Debtor.id'si (kalem sorumluluğu Debtor.id ile tutulur). Yalnız dosyada bazı
-   * borçlulara bağlı ACTIVE kalem varken çözülür; o durumda borçlu bağlantısı yoksa 400 PAYER_DEBTOR_REQUIRED.
-   * Kısıtlı kalem yoksa ödeyen mahsubu etkilemez → ek sorgu YOK (davranış aynı).
+   * K3-L — mahsup kapsamı: HESABINA ödeme yapılan borçlunun (Collection.caseDebtorId → Debtor.id) çözümü ve bekletme
+   * kararı. Kısıtlı kalem yoksa ek sorgu YOK, bekletme YOK (davranış aynı). Gönderen kişi ve icra dairesi bu kimliğe
+   * DÖNÜŞTÜRÜLMEZ.
    *
    * <remarks>
    * Cagrildigi yerler:
-   * - CollectionService.create() → ledger dağıtımından ve tahsilat satırından ÖNCE
+   * - CollectionService.create() → ledger dağıtımından ÖNCE
    * </remarks>
    */
-  private async resolvePayerDebtorIdInTx(
+  private async resolveAllocationScopeInTx(
     tx: Prisma.TransactionClient,
     caseId: string,
     caseDebtorId: string | null | undefined,
-    restrictedLiability: boolean,
-  ): Promise<string | null> {
-    if (!restrictedLiability) return null;
-    const payer = caseDebtorId
+    activeItems: ReadonlyArray<{ isAllDebtorsLiable: boolean; liableDebtorIds: string[] }>,
+  ): Promise<{ onBehalfDebtorId: string | null; holdReason: PayerLiabilityScopeErrorCode | null }> {
+    if (allocationHoldReason(activeItems, null) === null) return { onBehalfDebtorId: null, holdReason: null };
+    const onBehalf = caseDebtorId
       ? await tx.caseDebtor.findFirst({ where: { id: caseDebtorId, caseId }, select: { debtorId: true } })
       : null;
-    if (!payer) throw new PayerLiabilityScopeError('PAYER_DEBTOR_REQUIRED');
-    return payer.debtorId;
+    const onBehalfDebtorId = onBehalf?.debtorId ?? null;
+    return { onBehalfDebtorId, holdReason: allocationHoldReason(activeItems, onBehalfDebtorId) };
+  }
+
+  /**
+   * K3-L — mahsubu bekletilen tahsilat: mevcut `CollectionOverpayment` HELD kaydı (emanet) tutarın tamamını, kaynağı
+   * (`collectionId`) ve sebebi (`metadata.holdReason`) korur. Defter kaydı YOK (`sourceLedgerEntryId` null). İptal
+   * yolu HELD kaydı zaten REVERSED yapar. Tamamlama (hesabına ödeme yapılan borçlu girilince mahsup) ayrı iş.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CollectionService.create() → mahsup bekletme
+   * </remarks>
+   */
+  private async holdCollectionAllocationInTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      caseId: string;
+      collectionId: string;
+      amount: number;
+      currency: string;
+      userId?: string;
+      holdReason: PayerLiabilityScopeErrorCode;
+    },
+  ): Promise<string> {
+    const hold = await tx.collectionOverpayment.create({
+      data: {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        collectionId: input.collectionId,
+        sourceLedgerEntryId: null,
+        amount: input.amount,
+        remainingAmount: input.amount,
+        currency: input.currency,
+        status: 'HELD',
+        createdById: input.userId,
+        metadata: {
+          kind: 'ALLOCATION_HELD',
+          holdReason: input.holdReason,
+          collectionAmount: input.amount,
+          allocatedAmount: 0,
+        },
+      },
+    });
+    return hold.id;
   }
 
   private async validateCaseDebtorForCollectionInTx(
@@ -646,7 +690,7 @@ export class CollectionService {
 
       const activeAllocationItems = await tx.claimItem.findMany({
         where: { tenantId, caseId: dto.caseId, status: 'ACTIVE' },
-        select: { currency: true, isAllDebtorsLiable: true },
+        select: { currency: true, isAllDebtorsLiable: true, liableDebtorIds: true },
       });
       const allocationCurrencies = Array.from(
         new Set(activeAllocationItems.map((claimItem) => String(claimItem.currency || 'TRY'))),
@@ -663,13 +707,13 @@ export class CollectionService {
 
       // ── 2. Duplicate pre-check (external source) ────────────────────────
       await this.validateCaseDebtorForCollectionInTx(tx, tenantId, dto.caseId, dto.caseDebtorId);
-      // K3-L (owner kararı 2026-09-28): ödeyen borçlu Debtor.id'ye çözülür; kısıtlı kalemli dosyada ödeyensiz
-      // tahsilat HİÇBİR satır yazılmadan reddedilir (dağıtım da aynı kuralı uygular).
-      const payerDebtorId = await this.resolvePayerDebtorIdInTx(
+      // K3-L (owner kararı 2026-09-29): gerçekleşmiş tahsilat REDDEDİLMEZ. Hesabına ödeme yapılan borçlu (Debtor.id)
+      // belirsizse veya sorumlu olduğu kalem yoksa tahsilat kaydedilir, otomatik mahsup BEKLETİLİR.
+      const { onBehalfDebtorId, holdReason: allocationHold } = await this.resolveAllocationScopeInTx(
         tx,
         dto.caseId,
         dto.caseDebtorId,
-        hasRestrictedLiability(activeAllocationItems),
+        activeAllocationItems,
       );
 
       if (dto.sourceType && EXTERNAL_SOURCES.has(dto.sourceType) && dto.sourceId) {
@@ -782,7 +826,21 @@ export class CollectionService {
       // Aynı tx; case'te ACTIVE ClaimItem varsa LedgerEntry+LedgerAllocation üretilir
       // (P-0 allocator tek otorite; sıra düzeltmesi PR-AO). Kalem yoksa S5(i): ledger
       // yazılmaz, intake+event KORUNUR, diagnostic loglanır.
-      if (this.summaryEngine) {
+      if (allocationHold) {
+        // K3-L: mahsup BEKLETİLİR — defter yazılmaz; mevcut HELD kayıt (emanet) tutarı, kaynağı ve sebebi korur.
+        overpaymentId = await this.holdCollectionAllocationInTx(tx, {
+          tenantId,
+          caseId: dto.caseId,
+          collectionId: collection.id,
+          amount: dto.amount,
+          currency,
+          userId,
+          holdReason: allocationHold,
+        });
+        this.logger.warn(
+          `collection allocation held (case=${dto.caseId}, collection=${collection.id}, reason=${allocationHold})`,
+        );
+      } else if (this.summaryEngine) {
         const ledger = await this.summaryEngine.allocatePaymentToLedgerInTx(
           tx,
           tenantId,
@@ -798,7 +856,7 @@ export class CollectionService {
             commandId: trace.commandId,
             causationId: trace.causationId,
             producer: command.producer,
-            payerDebtorId,
+            onBehalfDebtorId,
           },
         );
         if (ledger.allocated && ledger.ledgerEntry) {
@@ -945,12 +1003,13 @@ export class CollectionService {
       // ── 6. Auto-allocate (CollectionAllocation = geçici compat/gölge, S2) ───
       //  ⚠ Çift-sayım YASAK: bu projeksiyon legal SoT DEĞİL; okuma yüzeyleri
       //  G3b'de ledger'a taşınacak. Şimdilik geriye-uyum için korunuyor.
-      if (dto.autoAllocate !== false) {
+      // K3-L: mahsup bekletilen tahsilatta gölge projeksiyon da YAZILMAZ (mahsup yapılmış gibi görünmesin).
+      if (dto.autoAllocate !== false && !allocationHold) {
         await this.autoAllocateInTx(tx, tenantId, collection.id, dto.amount);
       }
 
       // ── 7. Manual allocations (CollectionAllocation compat, S2) ─────────
-      if (dto.allocations && dto.allocations.length > 0) {
+      if (!allocationHold && dto.allocations && dto.allocations.length > 0) {
         for (const alloc of dto.allocations) {
           await (tx as any).collectionAllocation.create({
             data: {

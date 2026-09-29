@@ -584,10 +584,11 @@ export class SummaryEngineService implements OnModuleInit {
       causationId?: string;
       producer?: string;
       /**
-       * K3-L (owner kararı 2026-09-28): ödeyen borçlu (Debtor.id). Dosyada yalnız bazı borçlulara bağlı kalem varsa
-       * ZORUNLU ve mahsup yalnız bu borçlunun sorumlu olduğu kalemlere yapılır; yoksa yok sayılır.
+       * K3-L: HESABINA ödeme yapılan borçlu (Debtor.id; gönderen kişi DEĞİL). Dosyada yalnız bazı borçlulara bağlı
+       * kalem varsa mahsup yalnız bu borçlunun sorumlu olduğu kalemlere yapılır; belirsizse hata (çağıran — tahsilat
+       * yolu — mahsubu önceden bekletir, bu yol savunma katmanıdır).
        */
-      payerDebtorId?: string | null;
+      onBehalfDebtorId?: string | null;
     } = {},
   ): Promise<{
     allocated: boolean;
@@ -650,9 +651,8 @@ export class SummaryEngineService implements OnModuleInit {
       };
     }
 
-    // K3-L: ödeyen borçluya göre mahsup kapsamı (kısıtlı kalem yoksa girdi aynen; ödeyensiz kısıtlı dosya → 400,
-    // çağıranın transaction'ı geri alınır).
-    const payerScopedItems = scopeItemsToPayer(items, options.payerDebtorId);
+    // K3-L: hesabına ödeme yapılan borçluya göre mahsup kapsamı (kısıtlı kalem yoksa girdi aynen).
+    const payerScopedItems = scopeItemsToPayer(items, options.onBehalfDebtorId);
 
     let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
     let diagnostics: LedgerAllocationDiagnostic[] = [];

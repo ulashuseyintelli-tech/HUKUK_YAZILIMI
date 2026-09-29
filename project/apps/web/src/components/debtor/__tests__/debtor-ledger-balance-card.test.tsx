@@ -36,6 +36,7 @@ const result = {
     },
   ],
   sorumlusuBulunamayanKalemler: [],
+  mahsubuBekleyenTahsilatlar: [{ collectionId: "col-h", tutar: 250, paraBirimi: "TRY", sebep: "ON_BEHALF_DEBTOR_REQUIRED" }],
 };
 
 /** K3-L Faz 1c — borçlu detayında kalem bazlı borç (faiz hariç). */
@@ -55,5 +56,6 @@ describe("DebtorLedgerBalanceCard (K3-L)", () => {
     expect(screen.getByText(/yalnız bu borçlu grubuna ait/)).toBeTruthy();
     expect(screen.getByTestId("debtor-ledger-total").textContent).toContain("10.200,00 TRY");
     expect(screen.getByText(/işleyen faiz hariç/i)).toBeTruthy();
+    expect(screen.getByTestId("debtor-ledger-held").textContent).toContain("250,00 TRY");
   });
 });

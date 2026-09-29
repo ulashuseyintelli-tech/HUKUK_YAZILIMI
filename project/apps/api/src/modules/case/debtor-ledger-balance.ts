@@ -62,12 +62,21 @@ export interface DebtorLedgerBalance {
   readonly toplamlar: readonly DebtorLedgerCurrencyTotal[];
 }
 
+/** Kaydedilmiş ama otomatik mahsubu bekletilen tahsilat (kimse için kalandan DÜŞÜLMEMİŞTİR). */
+export interface DebtorLedgerHeldCollection {
+  readonly collectionId: string;
+  readonly tutar: number;
+  readonly paraBirimi: string;
+  readonly sebep: string;
+}
+
 export interface DebtorLedgerBalanceResult {
   readonly kaynak: 'KALICI_DEFTER';
   readonly isleyenFaizDahil: false;
   readonly not: string;
   readonly borclular: readonly DebtorLedgerBalance[];
   readonly sorumlusuBulunamayanKalemler: readonly DebtorLedgerItemLine[];
+  readonly mahsubuBekleyenTahsilatlar: readonly DebtorLedgerHeldCollection[];
 }
 
 const dec = (value: Prisma.Decimal | number | string | null): Prisma.Decimal =>
@@ -100,6 +109,12 @@ function line(item: DebtorLedgerItemRow): DebtorLedgerItemLine & { readonly raw:
 export function buildDebtorLedgerBalances(input: {
   readonly caseDebtors: readonly DebtorLedgerCaseDebtorRow[];
   readonly items: readonly DebtorLedgerItemRow[];
+  readonly heldCollections?: readonly {
+    readonly collectionId: string;
+    readonly amount: Prisma.Decimal | number | string;
+    readonly currency: string;
+    readonly holdReason: string;
+  }[];
 }): DebtorLedgerBalanceResult {
   const active = input.caseDebtors.filter((cd) => cd.lifecycleStatus === 'ACTIVE');
   const activeDebtorIds = new Set(active.map((cd) => cd.debtorId));
@@ -134,8 +149,15 @@ export function buildDebtorLedgerBalances(input: {
     isleyenFaizDahil: false,
     not:
       'Borçlu bazlı kalan, kalem tutarı ile kalıcı mahsup kaydından hesaplanır; işleyen faiz HARİÇTİR. Ortak kalemin ' +
-      'tahsil edilen kısmı o kalemden sorumlu tüm borçlular için düşer; borçlu kalanlarının toplamı dosya borcu değildir.',
+      'tahsil edilen kısmı o kalemden sorumlu tüm borçlular için düşer; borçlu kalanlarının toplamı dosya borcu değildir. ' +
+      'Mahsubu bekletilen tahsilatlar hiçbir borçlunun kalanından düşülmemiştir.',
     borclular,
     sorumlusuBulunamayanKalemler,
+    mahsubuBekleyenTahsilatlar: (input.heldCollections ?? []).map((held) => ({
+      collectionId: held.collectionId,
+      tutar: money(dec(held.amount)),
+      paraBirimi: held.currency,
+      sebep: held.holdReason,
+    })),
   };
 }

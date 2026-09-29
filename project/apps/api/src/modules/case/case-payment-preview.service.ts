@@ -118,21 +118,26 @@ export class CasePaymentPreviewService {
     // K3-L (owner kararı 2026-09-28): yalnız bazı borçlulara bağlı kalem varsa ödeyen borçlu zorunlu; kalan borç
     // yalnız o borçlunun sorumlu olduğu kalemlerden (faiz hariç — borçlu bazlı kanonik bakiye ayrı iş).
     const payerScope = await this.resolvePayerScope(tenantId, caseId, currency, input.caseDebtorId);
-    if (payerScope.status === "PAYER_REQUIRED") blockingReasons.push("PAYER_DEBTOR_REQUIRED");
-    if (payerScope.status === "PAYER_NOT_LIABLE") blockingReasons.push("PAYER_NOT_LIABLE_FOR_ANY_ITEM");
+    // K3-L (owner kararı 2026-09-29): tahsilat reddedilmez; hesabına ödeme yapılan borçlu belirsizse / sorumlu kalemi
+    // yoksa kayıt yapılır ve mahsup BEKLETİLİR → önizlemede uyarı, uygulanan tutar 0.
+    if (payerScope.status === "PAYER_REQUIRED") warnings.push("ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED");
+    if (payerScope.status === "PAYER_NOT_LIABLE") warnings.push("ALLOCATION_HELD_ON_BEHALF_DEBTOR_NOT_LIABLE");
     if (payerScope.status === "SCOPED") warnings.push("PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST");
+    const allocationHeld = payerScope.status === "PAYER_REQUIRED" || payerScope.status === "PAYER_NOT_LIABLE";
 
     const currentOutstandingAmount =
       payerScope.status === "SCOPED"
         ? payerScope.outstanding
-        : payerScope.status === "UNRESTRICTED"
-          ? await this.readCurrentOutstanding(tenantId, caseId, currency, asOfDate, warnings)
-          : new Prisma.Decimal(0);
+        : await this.readCurrentOutstanding(tenantId, caseId, currency, asOfDate, warnings);
 
     const paymentAmount = roundMoney(amount);
-    const appliedAmount = roundMoney(minMoney(paymentAmount, currentOutstandingAmount));
-    const overpaymentAmount = roundMoney(maxMoney(ZERO, paymentAmount.minus(currentOutstandingAmount)));
-    const projectedOutstandingAmount = roundMoney(maxMoney(ZERO, currentOutstandingAmount.minus(paymentAmount)));
+    const appliedAmount = allocationHeld ? ZERO : roundMoney(minMoney(paymentAmount, currentOutstandingAmount));
+    const overpaymentAmount = allocationHeld
+      ? ZERO
+      : roundMoney(maxMoney(ZERO, paymentAmount.minus(currentOutstandingAmount)));
+    const projectedOutstandingAmount = allocationHeld
+      ? currentOutstandingAmount
+      : roundMoney(maxMoney(ZERO, currentOutstandingAmount.minus(paymentAmount)));
     if (overpaymentAmount.greaterThan(0)) {
       warnings.push("PAYMENT_EXCEEDS_CURRENT_OUTSTANDING");
     }

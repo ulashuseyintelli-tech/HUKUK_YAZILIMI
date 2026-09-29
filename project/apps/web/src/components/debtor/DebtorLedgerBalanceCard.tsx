@@ -66,6 +66,13 @@ export function DebtorLedgerBalanceCard({ caseId, caseDebtorId }: { caseId: stri
               <span>{fmt(toplam.kalan, toplam.paraBirimi)}</span>
             </div>
           ))}
+          {(data?.mahsubuBekleyenTahsilatlar ?? []).length > 0 && (
+            <p data-testid="debtor-ledger-held" className="text-[10px] text-amber-800">
+              Mahsubu bekleyen tahsilat:{" "}
+              {(data?.mahsubuBekleyenTahsilatlar ?? []).map((held) => fmt(held.tutar, held.paraBirimi)).join(", ")} — hiçbir
+              borçlunun kalanından düşülmedi.
+            </p>
+          )}
           <p className="text-[10px] text-gray-500">{data?.not}</p>
         </>
       )}
