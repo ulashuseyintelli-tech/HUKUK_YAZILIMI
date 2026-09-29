@@ -2,6 +2,11 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException, 
 import { PrismaService } from "@/prisma/prisma.service";
 import { buildCheckPenaltySummary, type CheckInstrumentRow, type CheckPenaltyItemRow } from "./check-penalty-summary";
 import { hasPendingCheckPenaltyFormation } from "../claim-item/formation-cek/check-penalty-formation-status";
+import {
+  DEBTOR_LEDGER_BALANCE_ITEM_STATUSES,
+  buildDebtorLedgerBalances,
+  type DebtorLedgerItemRow,
+} from "./debtor-ledger-balance";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import { maskIban } from "@/common/pii-mask.util";
 import { CreateCaseDto, CreateDueDto, UpdateCaseDto, UpdateDueDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
@@ -4515,6 +4520,36 @@ export class CaseService {
       canonicalShadow,
       canonicalCompatibility,
     };
+  }
+
+  /**
+   * K3-L Faz 1c (owner kararı 2026-09-29 "önce defterden, faiz ayrı") — borçlu bazlı bakiye, kalıcı defterden.
+   * Her etkin dosya borçlusu için yalnız sorumlu olduğu kalemler; işleyen faiz HARİÇ. Salt okuma.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseController.getDebtorLedgerBalances() → GET /cases/:id/debtor-balances
+   * </remarks>
+   */
+  async getDebtorLedgerBalances(tenantId: string, caseId: string) {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      include: {
+        debtors: { include: { debtor: { select: { name: true } } } },
+        claimItems: { where: { status: { in: [...DEBTOR_LEDGER_BALANCE_ITEM_STATUSES] } }, orderBy: { sortOrder: "asc" } },
+      },
+    });
+    if (!caseData) throw new NotFoundException("Dosya bulunamadı");
+    return buildDebtorLedgerBalances({
+      caseDebtors: caseData.debtors.map((cd: any) => ({
+        id: cd.id,
+        debtorId: cd.debtorId,
+        role: String(cd.role),
+        lifecycleStatus: String(cd.lifecycleStatus),
+        name: String(cd.debtor?.name ?? cd.debtorId),
+      })),
+      items: caseData.claimItems as unknown as DebtorLedgerItemRow[],
+    });
   }
 
   /**

@@ -540,6 +540,11 @@ class ApiClient {
     return this.request<CaseDebtorsResponse>(`/debtors/case/${caseId}${query}`);
   }
 
+  /** K3-L Faz 1c — borçlu bazlı bakiye (kalıcı defterden; işleyen faiz hariç). */
+  async getCaseDebtorLedgerBalances(caseId: string) {
+    return this.request<DebtorLedgerBalanceResultDTO>(`/cases/${caseId}/debtor-balances`);
+  }
+
   async getCaseDebtorDetail(caseId: string, caseDebtorId: string) {
     return this.request<DebtorDetailDTO>(`/debtors/case/${caseId}/${caseDebtorId}`);
   }
@@ -5722,6 +5727,32 @@ export interface UpdateCaseFeeAgreementDTO {
   flatAmount?: string;
   percentageBps?: number;
   note?: string;
+}
+
+export interface DebtorLedgerItemLineDTO {
+  claimItemId: string;
+  kalemTuru: string;
+  aciklama: string | null;
+  paraBirimi: string;
+  tutar: number;
+  tahsilEdilen: number;
+  kalan: number;
+  ortak: boolean;
+}
+
+export interface DebtorLedgerBalanceResultDTO {
+  kaynak: "KALICI_DEFTER";
+  isleyenFaizDahil: false;
+  not: string;
+  borclular: Array<{
+    caseDebtorId: string;
+    debtorId: string;
+    ad: string;
+    rol: string;
+    kalemler: DebtorLedgerItemLineDTO[];
+    toplamlar: Array<{ paraBirimi: string; tutar: number; tahsilEdilen: number; kalan: number }>;
+  }>;
+  sorumlusuBulunamayanKalemler: DebtorLedgerItemLineDTO[];
 }
 
 export interface PaymentPreviewRequestDTO {

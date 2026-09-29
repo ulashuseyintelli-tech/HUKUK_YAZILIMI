@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { DebtorLedgerBalanceCard } from "./DebtorLedgerBalanceCard";
 import {
   X,
   User,
@@ -628,6 +629,7 @@ export function DebtorDetailDrawer({
               </div>
 
               <DebtorFinancialSummaryCard summary={debtor.financialSummary} />
+              <DebtorLedgerBalanceCard caseId={caseId} caseDebtorId={caseDebtorId} />
 
               {/* Service Status Section */}
               <div className="bg-gray-50 rounded-lg p-2 space-y-1">

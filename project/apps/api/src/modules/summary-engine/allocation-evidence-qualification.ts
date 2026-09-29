@@ -222,6 +222,14 @@ export const COLLECTED_AMOUNT_REFERENCE_MANIFEST_V1: ReadonlyArray<{
     rationale: 'Confirmed Collection toplamından türetilir.',
   },
   {
+    path: 'src/modules/case/debtor-ledger-balance.ts',
+    classification: 'DISPLAY_ONLY',
+    access: 'READ',
+    rationale:
+      'K3-L Faz 1c (owner kararı 2026-09-29): borçlu bazlı bakiye gösterimi — kalem tutarı ve kalıcı mahsuptan salt '
+      + 'okuma; yazma ve mahsup YOK.',
+  },
+  {
     path: 'src/modules/case/check-penalty-summary.ts',
     classification: 'DISPLAY_ONLY',
     access: 'READ',
