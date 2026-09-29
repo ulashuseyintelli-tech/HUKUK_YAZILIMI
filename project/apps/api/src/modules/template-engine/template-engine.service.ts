@@ -3342,7 +3342,8 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     proceedingKind?: ProceedingKind;
   }): Promise<any | undefined> {
     const contentHash = createHash('sha256').update(input.buffer).digest('hex');
-    const client = (this.prisma as any).documentArtifact;
+    // Tipli erişim (tenant sayım envanteri çözümlesin); mock prisma'da model yoksa kayıt atlanır
+    const client = this.prisma.documentArtifact;
     let artifact: any;
     if (client?.create && input.tenantId) {
       try {
