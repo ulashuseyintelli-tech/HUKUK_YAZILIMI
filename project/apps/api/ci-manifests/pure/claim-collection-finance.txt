@@ -60,6 +60,8 @@ src/modules/collection/__tests__/collection-ledger-forward.spec.ts
 src/modules/collection/__tests__/collection-confirmed-at-writer.spec.ts
 src/modules/collection/__tests__/collection-idempotency.spec.ts
 src/modules/collection/__tests__/collection-semantic-command.spec.ts
+# K3-L Faz 1e: class-validator'dan geçmeyen uçlar için kaynak kimliği giriş normalizasyonu
+src/modules/collection/__tests__/collection-source-identity.spec.ts
 src/modules/collection/__tests__/collection-semantic-idempotency.static.spec.ts
 src/modules/collection/__tests__/collection-update-safety.spec.ts
 #

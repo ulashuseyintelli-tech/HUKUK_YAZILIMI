@@ -5854,6 +5854,9 @@ export interface CreateCollectionDTO {
   bankName?: string;
   accountNo?: string;
   notes?: string;
+  // K3-L kaynak kimlikleri (borçlu kimliği DEĞİL): parayı gönderen / ödeyen adı; ileten icra dairesi.
+  payerName?: string;
+  forwardingOfficeName?: string;
   // PR-1: guarded-edge CONFIRM_REQUIRED retry'ında backend'e geri verilen onay token'ı.
   // İlk denemede undefined; zarf gelirse kullanıcı onayı sonrası TEK retry'da dolu gider.
   confirmationToken?: string;

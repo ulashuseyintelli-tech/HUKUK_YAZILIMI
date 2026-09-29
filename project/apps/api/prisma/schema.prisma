@@ -2844,7 +2844,7 @@ model Collection {
   tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   caseId       String
   case         Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  caseDebtorId String? // Hangi borçludan tahsil edildi
+  caseDebtorId String? // K3-L: HESABINA ÖDEME YAPILAN borçlu (borcuna sayılacak); gönderen/ileten DEĞİL
   // DBND-D5B: gercek FK (bkz. D5/D5A analiz+trial). onDelete=Restrict BILINCLI (SetNull/Cascade
   // DEGIL) — finansal kayit sessizce bag koparmasin/silinmesin; CaseDebtor bugun zaten hard-delete
   // edilmiyor (yalniz lifecycleStatus soft-delete), Restrict bunu DB seviyesinde de garanti eder.
@@ -2892,6 +2892,12 @@ model Collection {
   receiptNo   String? // Makbuz no
   bankName    String? // Banka adı
   accountNo   String? // Hesap no
+  // K3-L kaynak kimlikleri (owner GO 2026-09-29 §3) — üçü AYRI tutulur, birbirine dönüştürülmez:
+  //   payerName            = parayı GÖNDEREN / ödeyen (banka counterpartyName, alacak haczinde 3. kişi, manuel giriş)
+  //   forwardingOfficeName = İLETEN icra dairesi (alacak haczinde ExternalCase.externalOffice, manuel ICRA_DAIRESI kanalı)
+  //   caseDebtorId         = hesabına ödeme yapılan borçlu (yukarıda). Resmi mahsup dökümü için hiçbir kaynak alan taşımıyor.
+  payerName            String?
+  forwardingOfficeName String?
   notes       String?
 
   // Durum

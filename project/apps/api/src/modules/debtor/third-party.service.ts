@@ -812,6 +812,33 @@ export class ThirdPartyService {
     const collectionDate = dto.date
       ? new Date(dto.date)
       : existingReceipt?.date || startOfCurrentUtcDay();
+    // K3-L kaynak kimlikleri (üçü AYRI, birbirine dönüşmez): gönderen = ExternalCase.counterpartyName (3. kişi),
+    // ileten icra dairesi = ExternalCase.externalOffice, hesabına ödeme yapılan borçlu = ExternalCase.caseDebtorId
+    // (alacak haczi bu borçlunun alacağı üzerinde kurulur). Tekrar isteğinde alanlar KALICI kayıttan türetilir
+    // (alan taşımayan eski makbuzların parmak izi korunur); yalnız DOLU alan payload'a girer.
+    //
+    // Tekrar kimliği idempotency satırıyla AYNI kaynaktan okunur (durum filtresi YOK: iptal edilmiş eski makbuzun
+    // tekrarında da kalıcı değerler kullanılır → SEMANTIC_CONFLICT üretilmez).
+    const persistedReceipt = await this.prisma.collection.findFirst({
+      where: { tenantId, idempotencyKey: `external-case:${externalCaseId}:${receiptIdentity}` },
+      select: { caseDebtorId: true, payerName: true, forwardingOfficeName: true },
+    });
+    // PASİF dosya borçlusu: doğrulanmış tahsilat REDDEDİLMEZ (mevcut "late-result" kararı; tahsilat kapısı pasif
+    // borçluyu yeni operasyon hedefi olarak reddeder). Borçlu kimliği DTO'ya KONMAZ → tahsilat önceki davranışla
+    // kaydedilir (kısıtlı kalemli dosyada mahsup bekletilir); gönderen ve ileten yine yazılır.
+    const debtorIsPassive = externalCase.caseDebtor?.lifecycleStatus === 'PASSIVE';
+    const identity = persistedReceipt
+      ? persistedReceipt
+      : {
+          caseDebtorId: debtorIsPassive ? null : externalCase.caseDebtorId,
+          payerName: externalCase.counterpartyName,
+          forwardingOfficeName: externalCase.externalOffice,
+        };
+    const identityFields = {
+      ...(identity.caseDebtorId ? { caseDebtorId: String(identity.caseDebtorId) } : {}),
+      ...(identity.payerName ? { payerName: String(identity.payerName) } : {}),
+      ...(identity.forwardingOfficeName ? { forwardingOfficeName: String(identity.forwardingOfficeName) } : {}),
+    };
 
     await this.collectionService.create(
       tenantId,
@@ -826,6 +853,7 @@ export class ThirdPartyService {
         sourceType: CollectionSource.EXTERNAL_CASE,
         sourceId,
         description: `[Alacak Haczi] ${externalCase.externalOffice} ${externalCase.externalCaseNo} - ${externalCase.counterpartyName}${dto.notes ? ` - ${dto.notes}` : ''}`,
+        ...identityFields,
       },
       actorUserId,
       {

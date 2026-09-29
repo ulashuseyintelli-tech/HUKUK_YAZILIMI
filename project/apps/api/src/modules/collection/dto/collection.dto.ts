@@ -6,8 +6,7 @@ import {
   IsNumber,
   IsArray,
   ValidateNested,
-  Min,
-} from "class-validator";
+  Min, MaxLength } from 'class-validator';
 import { Type } from "class-transformer";
 
 // Tahsilat Türü
@@ -147,6 +146,17 @@ export class CreateCollectionDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // K3-L kaynak kimlikleri (borçlu kimliği DEĞİL): parayı gönderen / ödeyen adı ve ileten icra dairesi.
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  payerName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  forwardingOfficeName?: string;
 
   // Otomatik mahsup yapılsın mı?
   @IsOptional()

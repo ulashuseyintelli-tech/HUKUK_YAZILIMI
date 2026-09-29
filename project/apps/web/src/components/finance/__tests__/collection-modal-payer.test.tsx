@@ -79,4 +79,34 @@ describe("CollectionModal hesabına ödeme yapılan borçlu (K3-L)", () => {
     render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} />);
     expect(screen.queryByTestId("collection-payer-select")).toBeNull();
   });
+
+  it("K3-L Faz 1e: gönderen adı ve ileten icra dairesi kayda taşınır; kanal değişince gizlenen ileten değeri GÖNDERİLMEZ", async () => {
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "400" } });
+    fireEvent.change(screen.getByTestId("collection-payer-name"), { target: { value: "  Üçüncü Kişi Ltd. " } });
+    expect(screen.queryByTestId("collection-forwarding-office")).toBeNull();
+    const channel = screen.getByDisplayValue("Havale/EFT") as HTMLSelectElement;
+    fireEvent.change(channel, { target: { value: "ICRA_DAIRESI" } });
+    fireEvent.change(screen.getByTestId("collection-forwarding-office"), { target: { value: "Ankara 5. İcra Dairesi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ekle" }));
+    await waitFor(() => expect(createCollection).toHaveBeenCalledTimes(1));
+    expect(createCollection.mock.calls[0][1]).toMatchObject({
+      payerName: "Üçüncü Kişi Ltd.",
+      forwardingOfficeName: "Ankara 5. İcra Dairesi",
+    });
+  });
+
+  it("K3-L Faz 1e: kanal icra dairesinden bankaya çevrilince ileten alanı temizlenir ve gönderilmez", async () => {
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "400" } });
+    const channel = screen.getByDisplayValue("Havale/EFT") as HTMLSelectElement;
+    fireEvent.change(channel, { target: { value: "ICRA_DAIRESI" } });
+    fireEvent.change(screen.getByTestId("collection-forwarding-office"), { target: { value: "Ankara 5. İcra Dairesi" } });
+    fireEvent.change(channel, { target: { value: "BANKA" } });
+    expect(screen.queryByTestId("collection-forwarding-office")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ekle" }));
+    await waitFor(() => expect(createCollection).toHaveBeenCalledTimes(1));
+    expect(createCollection.mock.calls[0][1]).not.toHaveProperty("forwardingOfficeName");
+    expect(createCollection.mock.calls[0][1]).not.toHaveProperty("payerName");
+  });
 });

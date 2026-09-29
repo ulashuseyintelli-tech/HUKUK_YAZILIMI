@@ -21,6 +21,7 @@ function buildService(coll: any, overrides: any = {}) {
     externalOffice: 'X İcra Dairesi',
     counterpartyName: 'Y Ltd',
     notes: null,
+    caseDebtorId: 'cd1',
     caseDebtor: { case: { id: 'case1' } },
   };
   const prisma: any = {
@@ -84,6 +85,10 @@ describe('ThirdPartyService.addExternalCaseCollection canonical routing', () => 
         date: '2026-07-01T00:00:00.000Z',
         sourceType: 'EXTERNAL_CASE',
         sourceId: expect.stringMatching(/^ec1:[a-f0-9]{64}$/),
+        // K3-L kaynak kimlikleri: hesabına ödeme yapılan = dosya borçlusu; gönderen = 3. kişi; ileten = icra dairesi
+        caseDebtorId: 'cd1',
+        payerName: 'Y Ltd',
+        forwardingOfficeName: 'X İcra Dairesi',
       }),
       'user-1',
       expect.objectContaining({
@@ -217,4 +222,57 @@ describe('ThirdPartyService.addExternalCaseCollection canonical routing', () => 
     expect(coll.create).not.toHaveBeenCalled();
     expect(prisma.externalCase.update).not.toHaveBeenCalled();
   });
+
+  it('K3-L replay: alan taşımayan eski makbuzun tekrarında kimlik alanları KALICI kayıttan (yok) türetilir → payload anahtarsız', async () => {
+    const coll = { create: jest.fn(async () => ({ id: 'col1' })) };
+    const { svc } = buildService(coll, {
+      collection: {
+        findFirst: jest.fn(async () => ({ date: new Date('2026-07-01T00:00:00.000Z'), caseDebtorId: null, payerName: null, forwardingOfficeName: null })),
+        aggregate: jest.fn(async () => ({ _sum: { amount: 300 } })),
+      },
+    });
+    await svc.addExternalCaseCollection('t1', 'ec1', { amount: 300, date: '2026-07-01', notes: 'ilk ödeme' }, 'user-1', 'corr-1');
+    const payload = (coll.create.mock.calls[0] as unknown[])[1];
+    expect(payload).not.toHaveProperty('caseDebtorId');
+    expect(payload).not.toHaveProperty('payerName');
+    expect(payload).not.toHaveProperty('forwardingOfficeName');
+  });
+
+  it('K3-L replay: İPTAL EDİLMİŞ eski makbuzun tekrarında da kimlik idempotency satırından (durum filtresiz) okunur', async () => {
+    const coll = { create: jest.fn(async () => ({ id: 'col1' })) };
+    const findFirst = jest.fn(async (args: any) =>
+      args?.where?.idempotencyKey
+        ? { caseDebtorId: null, payerName: null, forwardingOfficeName: null } // iptal edilmiş eski kayıt (alan taşımıyor)
+        : null, // durum filtreli (iptal olmayan) arama: bulunamadı
+    );
+    const { svc } = buildService(coll, {
+      collection: { findFirst, aggregate: jest.fn(async () => ({ _sum: { amount: 300 } })) },
+    });
+    await svc.addExternalCaseCollection('t1', 'ec1', { amount: 300, date: '2026-07-01', notes: 'ilk ödeme' }, 'user-1', 'corr-1');
+    const identityLookup = findFirst.mock.calls.map((c) => (c as any[])[0]).find((a) => a?.where?.idempotencyKey);
+    expect(identityLookup.where).toEqual({ tenantId: 't1', idempotencyKey: expect.stringMatching(/^external-case:ec1:[a-f0-9]{64}$/) });
+    expect(identityLookup.where).not.toHaveProperty('status');
+    const payload = (coll.create.mock.calls[0] as unknown[])[1];
+    expect(payload).not.toHaveProperty('caseDebtorId');
+    expect(payload).not.toHaveProperty('payerName');
+  });
+
+  it('K3-L: PASİF dosya borçlusunda tahsilat REDDEDİLMEZ — borçlu kimliği gönderilmez, gönderen ve ileten yine yazılır', async () => {
+    const coll = { create: jest.fn(async () => ({ id: 'col1' })) };
+    const { svc } = buildService(coll, {
+      externalCase: {
+        findFirst: jest.fn(async () => ({
+          id: 'ec1', tenantId: 't1', receivedAmount: 0, claimAmount: 1000, claimCurrency: 'TRY', attachmentStatus: 'ACIK',
+          externalCaseNo: '2026/9', externalOffice: 'X İcra Dairesi', counterpartyName: 'Y Ltd', notes: null,
+          caseDebtorId: 'cd1',
+          caseDebtor: { lifecycleStatus: 'PASSIVE', case: { id: 'case1' } },
+        })),
+      },
+    });
+    await svc.addExternalCaseCollection('t1', 'ec1', { amount: 300, date: '2026-07-01' }, 'user-1', 'corr-1');
+    const payload = (coll.create.mock.calls[0] as unknown[])[1];
+    expect(payload).not.toHaveProperty('caseDebtorId');
+    expect(payload).toMatchObject({ payerName: 'Y Ltd', forwardingOfficeName: 'X İcra Dairesi', sourceType: 'EXTERNAL_CASE' });
+  });
+
 });

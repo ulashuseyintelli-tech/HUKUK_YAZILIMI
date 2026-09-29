@@ -666,6 +666,9 @@ export class CaseController {
       bankName?: string;
       accountNo?: string;
       notes?: string;
+      // K3-L Faz 1e: gönderen / ileten icra dairesi (borçlu kimliği DEĞİL)
+      payerName?: string;
+      forwardingOfficeName?: string;
       confirmationToken?: string;
     },
     @Req() req: any,

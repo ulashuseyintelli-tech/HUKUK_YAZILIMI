@@ -1186,6 +1186,9 @@ export class CollectionService {
           bankName: dto.bankName,
           accountNo: dto.accountNo,
           notes: dto.notes,
+          // K3-L kaynak kimlikleri (gönderen / ileten) — borçlu kimliğinden ayrı
+          payerName: dto.payerName,
+          forwardingOfficeName: dto.forwardingOfficeName,
           status: CollectionStatus.CONFIRMED,
           confirmedAt,
           idempotencyKey: dto.idempotencyKey,
@@ -1243,6 +1246,9 @@ export class CollectionService {
           description: dto.description,
           bankName: dto.bankName,
           receiptNo: dto.receiptNo,
+          // K3-L: gönderen ve ileten icra dairesi (forDebtorId = hesabına ödeme yapılan borçlu; ayrı kimlikler)
+          payerName: dto.payerName,
+          forwardingOfficeName: dto.forwardingOfficeName,
           collectionId: collection.id,
         },
       });

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { BankService } from './bank.service';
+import { normalizeOptionalCaseDebtorId } from '../collection/collection-source-identity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
@@ -126,13 +127,17 @@ export class BankController {
   async matchTransaction(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
-    @Body() body: { caseId: string; confirmationToken?: string },
+    // K3-L: caseDebtorId = hesabına ödeme yapılan borçlu (isteğe bağlı); gönderen banka hareketindeki counterpartyName'dir.
+    @Body() body: { caseId: string; caseDebtorId?: string; confirmationToken?: string },
     @CurrentUser('id') userId: string,
     @Req() req: any,
   ) {
     if (!this.receiptAuthorization) {
       throw new ServiceUnavailableException({ code: 'RECEIPT_AUTHORIZATION_BOUNDARY_UNAVAILABLE' });
     }
+    // Satır içi gövde tipi class-validator'dan geçmez: string olmayan değer 400; AYNI normalize değer hem onay
+    // jetonu bağlamasına hem servise verilir.
+    const caseDebtorId = normalizeOptionalCaseDebtorId(body?.caseDebtorId);
     const caseId = await this.receiptAuthorization.resolveBankCaseId({
       tenantId,
       transactionId: id,
@@ -143,12 +148,20 @@ export class BankController {
       actorUserId: userId,
       caseId,
       surface: RECEIPT_AUTHORIZATION_SURFACES.BANK_MATCH,
-      payload: { transactionId: id, caseId },
+      // Onay jetonu borçlu alanına da bağlanır; alan yoksa eski bağlama hash'i korunur.
+      payload: { transactionId: id, caseId, ...(caseDebtorId ? { caseDebtorId } : {}) },
       confirmationToken: body.confirmationToken,
     });
     if (authorization.kind === 'ENVELOPE') return authorization.envelope;
 
-    return this.bankService.matchTransaction(id, caseId, userId, tenantId, getRequestId(req));
+    return this.bankService.matchTransaction(
+      id,
+      caseId,
+      userId,
+      tenantId,
+      getRequestId(req),
+      caseDebtorId ? { caseDebtorId } : undefined,
+    );
   }
 
   /**
