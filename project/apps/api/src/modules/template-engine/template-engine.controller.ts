@@ -422,8 +422,7 @@ export class TemplateEngineController {
   @Post('takip-talebi/word')
   async downloadTakipTalebiWord(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
     try {
-      console.log('[TemplateEngine] Word oluşturuluyor:', dto.fileNumber);
-      console.log('[TemplateEngine] Gelen veri:', JSON.stringify(dto, null, 2));
+      // K3-L Faz 2: istek gövdesi (TCKN/VKN/IBAN/adres) LOGLANMAZ; çıktı sunucu tarafında TASLAK olarak işaretlenir
       const wordBuffer = await this.templateEngineService.generateTakipTalebiWord(dto as TemplateData);
       
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -826,6 +825,7 @@ export class TemplateEngineController {
     @Param('format') format: 'docx' | 'pdf' | 'xml',
     @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') actorUserId: string,
     @Res() res: Response
   ): Promise<void> {
     try {
@@ -836,6 +836,7 @@ export class TemplateEngineController {
         documentType,
         'v1',
         tenantId,
+        actorUserId,
       );
       
       const mimeTypes: Record<string, string> = {
