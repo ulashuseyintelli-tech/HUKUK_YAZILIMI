@@ -328,6 +328,10 @@ src/modules/template-engine/__tests__/template-engine-claim-item-guard.spec.ts
 src/modules/template-engine/__tests__/template-engine-endorsers-compat.spec.ts
 src/modules/template-engine/__tests__/template-engine-multi-instrument.spec.ts
 src/modules/template-engine/__tests__/template-engine-passive-policy.spec.ts
+# K3-L Faz 2 (owner GO 2026-09-29 §5): şablon seçimi takip yolu + belge türü, kalem filtresi/toplamlar, çok borçlu,
+# rol/unvan, DocumentArtifact + denetim, istemci önizlemesi TASLAK; controller PII-log statik guard'ı.
+src/modules/template-engine/__tests__/template-engine-proceeding-selection.spec.ts
+src/modules/template-engine/__tests__/template-engine-controller-no-pii-log.static.spec.ts
 src/modules/validation-gate/__tests__/validation-gate-authz-tenant.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-classifier.spec.ts
 src/scripts/__tests__/enforcement-action-backfill-profiler.report-hardening.spec.ts
