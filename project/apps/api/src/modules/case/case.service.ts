@@ -43,6 +43,7 @@ import { validateResponsibleSelection } from "./responsible-candidates.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
+import { normalizeSourceIdentityText } from "../collection/collection-source-identity";
 import { findActiveCollectionAllocationHolds } from "../collection/collection-allocation-hold";
 import type { ReceiptAuthorizationBasis } from "../collection/receipt-object-scope-authorization.service";
 import {
@@ -4113,10 +4114,16 @@ export class CaseService {
       bankName?: string;
       accountNo?: string;
       notes?: string;
+      payerName?: string;
+      forwardingOfficeName?: string;
     },
     userId?: string,
     correlationId?: string,
   ) {
+    // K3-L Faz 1e: bu uç class-validator'dan geçmez (satır içi gövde tipi) → kaynak kimliği metinleri elle doğrulanır;
+    // boşsa anahtar YAZILMAZ (parmak izi koşullu anahtar kuralı).
+    const payerName = normalizeSourceIdentityText(data.payerName, 'payerName');
+    const forwardingOfficeName = normalizeSourceIdentityText(data.forwardingOfficeName, 'forwardingOfficeName');
     // G3d: kanonik yola delege — closed/duplicate guard + PAYMENT_RECEIVED event +
     // G3a ledger + CollectionAllocation tek otoritede (collection.service.create).
     const args = [
@@ -4136,6 +4143,8 @@ export class CaseService {
         bankName: data.bankName,
         accountNo: data.accountNo,
         notes: data.notes,
+        ...(payerName ? { payerName } : {}),
+        ...(forwardingOfficeName ? { forwardingOfficeName } : {}),
       } as any,
       userId,
     ] as const;

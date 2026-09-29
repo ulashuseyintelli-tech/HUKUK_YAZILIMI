@@ -50,6 +50,24 @@ function expectCollectionRequiresReversal(error: any, fields?: string[]) {
 }
 
 describe('CaseService collection delegation (G3d)', () => {
+  it('K3-L Faz 1e: gönderen / ileten icra dairesi bu uçtan da taşınır (yalnız doluyken); geçersiz tip 400, yazma yok', async () => {
+    const coll = { create: jest.fn(async () => ({ id: 'col1' })), cancel: jest.fn() };
+    const svc = buildService(coll);
+    const base = { idempotencyKey: 'idem-ident-1', amount: 100, type: 'OTHER', channel: 'ICRA_DAIRESI', date: '2026-01-01' };
+    await svc.createCollection('t1', 'c1', { ...base, payerName: '  Üçüncü Kişi Ltd. ', forwardingOfficeName: 'Ankara 5. İcra Dairesi' } as any, 'u1');
+    expect((coll.create.mock.calls[0] as unknown[])[1]).toMatchObject({
+      payerName: 'Üçüncü Kişi Ltd.',
+      forwardingOfficeName: 'Ankara 5. İcra Dairesi',
+    });
+    await svc.createCollection('t1', 'c1', { ...base, payerName: '   ' } as any, 'u1');
+    expect((coll.create.mock.calls[1] as unknown[])[1]).not.toHaveProperty('payerName');
+    expect((coll.create.mock.calls[1] as unknown[])[1]).not.toHaveProperty('forwardingOfficeName');
+    await expect(svc.createCollection('t1', 'c1', { ...base, payerName: 42 } as any, 'u1')).rejects.toMatchObject({
+      response: { code: 'COLLECTION_SOURCE_IDENTITY_INVALID', field: 'payerName' },
+    });
+    expect(coll.create).toHaveBeenCalledTimes(2);
+  });
+
   it('T1: createCollection -> collectionService.create(tenantId, dto, userId)', async () => {
     const coll = { create: jest.fn(async () => ({ id: 'col1' })), cancel: jest.fn() };
     const svc = buildService(coll);

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { BankService } from './bank.service';
+import { normalizeOptionalCaseDebtorId } from '../collection/collection-source-identity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
@@ -134,6 +135,9 @@ export class BankController {
     if (!this.receiptAuthorization) {
       throw new ServiceUnavailableException({ code: 'RECEIPT_AUTHORIZATION_BOUNDARY_UNAVAILABLE' });
     }
+    // Satır içi gövde tipi class-validator'dan geçmez: string olmayan değer 400; AYNI normalize değer hem onay
+    // jetonu bağlamasına hem servise verilir.
+    const caseDebtorId = normalizeOptionalCaseDebtorId(body?.caseDebtorId);
     const caseId = await this.receiptAuthorization.resolveBankCaseId({
       tenantId,
       transactionId: id,
@@ -145,7 +149,7 @@ export class BankController {
       caseId,
       surface: RECEIPT_AUTHORIZATION_SURFACES.BANK_MATCH,
       // Onay jetonu borçlu alanına da bağlanır; alan yoksa eski bağlama hash'i korunur.
-      payload: { transactionId: id, caseId, ...(body.caseDebtorId ? { caseDebtorId: body.caseDebtorId } : {}) },
+      payload: { transactionId: id, caseId, ...(caseDebtorId ? { caseDebtorId } : {}) },
       confirmationToken: body.confirmationToken,
     });
     if (authorization.kind === 'ENVELOPE') return authorization.envelope;
@@ -156,7 +160,7 @@ export class BankController {
       userId,
       tenantId,
       getRequestId(req),
-      body.caseDebtorId ? { caseDebtorId: body.caseDebtorId } : undefined,
+      caseDebtorId ? { caseDebtorId } : undefined,
     );
   }
 

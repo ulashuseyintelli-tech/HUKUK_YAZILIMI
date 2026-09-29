@@ -72,6 +72,9 @@ interface CollectionModalProps {
   debtors?: CollectionModalDebtorOption[];
 }
 
+/** İleten icra dairesi yalnız icra dairesi / haciz kanalından gelen tahsilatta anlamlıdır. */
+const isForwardingOfficeChannel = (channel: string) => channel === "ICRA_DAIRESI" || channel === "HACIZ";
+
 export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess, debtors = [] }: CollectionModalProps) {
   // K3-L (owner kararı 2026-09-29): tahsilat yalnız HESABINA ödeme yapılan borçlunun sorumlu olduğu kalemlere mahsup
   // edilir. Parayı gönderen kişi ve ileten icra dairesi bu seçimle aynı şey DEĞİLDİR. Seçim yoksa tahsilat yine
@@ -220,7 +223,10 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
               confirmationToken: confirmation?.token,
               ...(payerCaseDebtorId ? { caseDebtorId: payerCaseDebtorId } : {}),
               ...(payerName.trim() ? { payerName: payerName.trim() } : {}),
-              ...(forwardingOfficeName.trim() ? { forwardingOfficeName: forwardingOfficeName.trim() } : {}),
+              // İleten icra dairesi yalnız ilgili kanalda gönderilir (gizli alanın eski değeri gitmesin)
+              ...(isForwardingOfficeChannel(form.channel) && forwardingOfficeName.trim()
+                ? { forwardingOfficeName: forwardingOfficeName.trim() }
+                : {}),
             }),
       );
 
@@ -425,7 +431,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 />
               </div>
-              {(form.channel === "ICRA_DAIRESI" || form.channel === "HACIZ") && (
+              {isForwardingOfficeChannel(form.channel) && (
                 <div>
                   <label htmlFor="collection-forwarding-office" className="block text-xs font-medium text-gray-700 mb-1">
                     İleten icra dairesi
@@ -450,7 +456,10 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
               <label className="block text-xs font-medium text-gray-700 mb-1">Kanal *</label>
               <select
                 value={form.channel}
-                onChange={(e) => setForm({ ...form, channel: e.target.value })}
+                onChange={(e) => {
+                  if (!isForwardingOfficeChannel(e.target.value)) setForwardingOfficeName("");
+                  setForm({ ...form, channel: e.target.value });
+                }}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
                 {COLLECTION_CHANNELS.map((c) => (
