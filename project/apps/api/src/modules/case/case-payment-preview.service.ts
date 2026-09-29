@@ -142,10 +142,22 @@ export class CasePaymentPreviewService {
       warnings.push("PAYMENT_EXCEEDS_CURRENT_OUTSTANDING");
     }
 
-    const distributionPreview = await this.buildDistributionPreview(
+    const baseDistributionPreview = await this.buildDistributionPreview(
       caseId,
       paymentAmount,
     );
+    // K3-L: mahsup bekletilecekse dağıtım önizlemesi ÜRETİLMEZ — para henüz hiçbir borçlu hesabına düşmedi;
+    // müvekkile dağıtılabilir tutar mahsup tamamlanınca belli olur.
+    const distributionPreview: PaymentPreviewResponseDto["distributionPreview"] = allocationHeld
+      ? {
+          source: baseDistributionPreview.source,
+          status: "BLOCKED",
+          totalAmount: baseDistributionPreview.totalAmount,
+          requiresClientSelection: false,
+          lines: [],
+        }
+      : baseDistributionPreview;
+    if (allocationHeld) warnings.push("DISTRIBUTION_DEFERRED_UNTIL_ALLOCATION_COMPLETED");
     if (distributionPreview.status === "MANUAL_REQUIRED") {
       warnings.push("NO_ELIGIBLE_CASE_CLIENT_FOR_DISTRIBUTION");
     }

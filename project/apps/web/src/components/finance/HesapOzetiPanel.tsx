@@ -354,6 +354,20 @@ export function HesapOzetiPanel({
           </div>
         )}
         
+        {/* K3-L: mahsubu bekleyen tahsilat — borçtan düşülmedi; sunucu değeri, istemci hesabı YOK */}
+        {Number(hesap?.mahsubuBekleyenTahsilat ?? 0) > 0 && (
+          <div
+            data-testid="hesap-mahsubu-bekleyen-tahsilat"
+            className="mt-2 flex justify-between rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900"
+          >
+            <span>
+              Mahsubu bekleyen tahsilat
+              <span className="ml-1 text-[10px] font-normal text-amber-700">(kalan borçtan düşülmedi)</span>
+            </span>
+            <span className="font-medium">{formatTL(Number(hesap?.mahsubuBekleyenTahsilat ?? 0))}</span>
+          </div>
+        )}
+
         {/* Tahsil Harcı Oranlarına Göre Son Borç */}
         <div className="pt-2 mt-2 border-t-2 border-gray-300">
           <p className="text-[10px] font-medium text-gray-500 mb-1">Tahsil Harcı Oranlarına Göre Son Borç</p>

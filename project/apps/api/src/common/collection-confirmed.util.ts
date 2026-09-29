@@ -39,3 +39,35 @@ export function sumConfirmedCollections<T extends CollectionStatusLike & { amoun
     0,
   );
 }
+
+/**
+ * K3-L — mahsubu BEKLETİLEN tahsilat (CollectionAllocationHold HELD). İlişki YÜKLENMEDİYSE false (çağıran
+ * `allocationHold: { select: { status: true } }` ile yüklemelidir).
+ *
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - AiService.buildSuggestionPrompt() / buildPredictionPrompt() / getRuleBasedPrediction()
+ * </remarks>
+ */
+export interface AllocationHoldAwareCollection extends CollectionStatusLike {
+  amount: unknown;
+  allocationHold?: { status?: string | null } | null;
+}
+
+export function isAllocationHeldCollection(collection: AllocationHoldAwareCollection | null | undefined): boolean {
+  return collection?.allocationHold?.status === 'HELD';
+}
+
+/** ONAYLI ve mahsubu bekletilmeyen tahsilat toplamı — borçtan düşülebilecek tek tahsilat toplamı. */
+export function sumAllocatedConfirmedCollections<T extends AllocationHoldAwareCollection>(
+  collections: readonly T[] | null | undefined,
+): number {
+  return sumConfirmedCollections((collections ?? []).filter((c) => !isAllocationHeldCollection(c)));
+}
+
+/** ONAYLI ama mahsubu BEKLETİLEN tahsilat toplamı — ayrı gösterilir, borçtan düşülmez. */
+export function sumAllocationHeldCollections<T extends AllocationHoldAwareCollection>(
+  collections: readonly T[] | null | undefined,
+): number {
+  return sumConfirmedCollections((collections ?? []).filter((c) => isAllocationHeldCollection(c)));
+}

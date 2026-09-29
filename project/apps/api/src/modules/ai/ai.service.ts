@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import OpenAI from 'openai';
 import { DecisionType } from '@prisma/client';
-import { sumConfirmedCollections } from '../../common/collection-confirmed.util';
+import { sumAllocatedConfirmedCollections, sumAllocationHeldCollections } from '../../common/collection-confirmed.util';
 
 export interface AiSuggestion {
   action: string;
@@ -81,7 +81,8 @@ export class AiService {
             },
           },
         },
-        collections: true,
+        // K3-L: mahsubu bekletilen tahsilat borçtan düşülmez → mahsup durumu birlikte okunur
+        collections: { include: { allocationHold: { select: { status: true } } } },
         enforcementActions: true,
         decisionLogs: {
           orderBy: { createdAt: 'desc' },
@@ -182,7 +183,8 @@ export class AiService {
   // Prompt oluştur - Öneri
   private buildSuggestionPrompt(caseData: any): string {
     const totalDebt = Number(caseData.principalAmount || 0);
-    const totalCollected = sumConfirmedCollections(caseData.collections);
+    const totalCollected = sumAllocatedConfirmedCollections(caseData.collections);
+    const allocationHeld = sumAllocationHeldCollections(caseData.collections);
     const remainingDebt = totalDebt - totalCollected;
     
     return `
@@ -192,6 +194,7 @@ export class AiService {
 - Mevcut Aşama: ${caseData.workflowStage}
 - Ana Para: ${totalDebt} TL
 - Tahsil Edilen: ${totalCollected} TL
+- Mahsubu Bekleyen Tahsilat (borçtan düşülmedi): ${allocationHeld} TL
 - Kalan Borç: ${remainingDebt} TL
 - Risk Skoru: ${caseData.riskScore || 'Hesaplanmadı'}
 - Otomatik Mod: ${caseData.isAutoMode ? 'Açık' : 'Kapalı'}
@@ -215,7 +218,7 @@ Bu dosya için en uygun 3 sonraki adımı öner.
   // Prompt oluştur - Tahmin
   private buildPredictionPrompt(caseData: any): string {
     const totalDebt = Number(caseData.principalAmount || 0);
-    const totalCollected = sumConfirmedCollections(caseData.collections);
+    const totalCollected = sumAllocatedConfirmedCollections(caseData.collections);
     const caseAge = Math.floor((Date.now() - new Date(caseData.createdAt).getTime()) / (1000 * 60 * 60 * 24));
     
     return `
@@ -309,7 +312,7 @@ Bu dosya için tahsilat olasılığını ve tahmini süreyi hesapla.
   // Kural bazlı tahmin (fallback)
   private getRuleBasedPrediction(caseData: any): AiPrediction {
     const totalDebt = Number(caseData.principalAmount || 0);
-    const totalCollected = sumConfirmedCollections(caseData.collections);
+    const totalCollected = sumAllocatedConfirmedCollections(caseData.collections);
     const hasAssets = caseData.debtors?.some((d: any) => d.debtor.assets?.length > 0);
     const riskScore = caseData.riskScore || 50;
 

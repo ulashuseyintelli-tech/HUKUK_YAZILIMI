@@ -291,7 +291,10 @@ export interface DebtorDetailDTO extends DebtorListItemDTO {
 }
 
 export interface DebtorFinancialSummaryDTO {
+  /** Onaylı ve mahsubu BEKLETİLMEYEN tahsilat */
   totalConfirmedCollected: number;
+  /** K3-L: onaylı ama mahsubu bekletilen tahsilat — hiçbir borçlu hesabına düşmedi; totalConfirmedCollected içinde DEĞİL */
+  totalAllocationHeldAmount: number;
   totalPendingAmount: number;
   totalCancelledAmount: number;
   totalRefundedAmount: number;
@@ -300,6 +303,7 @@ export interface DebtorFinancialSummaryDTO {
   currencyBreakdown: Array<{
     currency: string;
     confirmedCollected: number;
+    allocationHeldAmount: number;
     pendingAmount: number;
     cancelledAmount: number;
     refundedAmount: number;
@@ -2167,12 +2171,15 @@ export class DebtorService {
         currency: true,
         status: true,
         date: true,
+        // K3-L: mahsubu bekletilen tahsilat "onaylı tahsilat" toplamına girmez, ayrı gösterilir
+        allocationHold: { select: { status: true } },
       },
     });
 
     const byCurrency = new Map<string, DebtorFinancialSummaryDTO["currencyBreakdown"][number]>();
     const summary: DebtorFinancialSummaryDTO = {
       totalConfirmedCollected: 0,
+      totalAllocationHeldAmount: 0,
       totalPendingAmount: 0,
       totalCancelledAmount: 0,
       totalRefundedAmount: 0,
@@ -2180,9 +2187,19 @@ export class DebtorService {
       currencyBreakdown: [],
     };
 
-    const addByStatus = (bucket: DebtorFinancialSummaryDTO["currencyBreakdown"][number], status: string, amount: number) => {
+    const addByStatus = (
+      bucket: DebtorFinancialSummaryDTO["currencyBreakdown"][number],
+      status: string,
+      amount: number,
+      allocationHeld: boolean,
+    ) => {
       switch (status) {
         case "CONFIRMED":
+          if (allocationHeld) {
+            bucket.allocationHeldAmount += amount;
+            summary.totalAllocationHeldAmount += amount;
+            break;
+          }
           bucket.confirmedCollected += amount;
           summary.totalConfirmedCollected += amount;
           break;
@@ -2209,6 +2226,7 @@ export class DebtorService {
         bucket = {
           currency,
           confirmedCollected: 0,
+          allocationHeldAmount: 0,
           pendingAmount: 0,
           cancelledAmount: 0,
           refundedAmount: 0,
@@ -2218,7 +2236,7 @@ export class DebtorService {
       }
 
       bucket.collectionCount += 1;
-      addByStatus(bucket, String(collection.status), amount);
+      addByStatus(bucket, String(collection.status), amount, collection.allocationHold?.status === "HELD");
 
       const dateIso = collection.date?.toISOString?.();
       if (dateIso && (!bucket.lastCollectionDate || dateIso > bucket.lastCollectionDate)) {

@@ -229,6 +229,9 @@ export interface CoverCalculation {
   
   // Tahsilatlar
   totalCollected: number;
+  /** K3-L: mahsubu BEKLETİLEN tahsilat — borçtan düşülmedi, totalCollected içinde DEĞİL */
+  allocationHeldAmount: number;
+  allocationHeldCount: number;
   collectionDetails: {
     principal: number;
     interest: number;

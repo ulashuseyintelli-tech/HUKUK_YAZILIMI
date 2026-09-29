@@ -974,6 +974,15 @@ function DebtorFinancialSummaryCard({
             <FinancialMetric label="Iptal" value={formatFinancialAmount(summary?.totalCancelledAmount)} />
             <FinancialMetric label="Iade" value={formatFinancialAmount(summary?.totalRefundedAmount)} />
           </div>
+          {Number(summary?.totalAllocationHeldAmount ?? 0) > 0 && (
+            <div
+              data-testid="debtor-financial-allocation-held"
+              className="flex items-center justify-between rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900"
+            >
+              <span>Mahsubu bekleyen (borctan dusulmedi)</span>
+              <span className="font-medium">{formatFinancialAmount(summary?.totalAllocationHeldAmount)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-[11px] text-blue-800">
             <span>Son tahsilat</span>
             <span className="font-medium">{formatFinancialDate(summary?.lastCollectionDate)}</span>
@@ -988,6 +997,9 @@ function DebtorFinancialSummaryCard({
                   </div>
                   <div className="text-blue-700">
                     Onayli {formatFinancialAmount(bucket.confirmedCollected, bucket.currency)} / Bekleyen {formatFinancialAmount(bucket.pendingAmount, bucket.currency)} / Iptal {formatFinancialAmount(bucket.cancelledAmount, bucket.currency)} / Iade {formatFinancialAmount(bucket.refundedAmount, bucket.currency)}
+                    {Number(bucket.allocationHeldAmount ?? 0) > 0
+                      ? ` / Mahsubu bekleyen ${formatFinancialAmount(bucket.allocationHeldAmount, bucket.currency)}`
+                      : ""}
                   </div>
                 </div>
               ))}

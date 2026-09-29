@@ -3,6 +3,7 @@ import { Prisma, FeeAgreementType, FeeAgreementBase } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientOffsetService } from './client-offset.service';
 import { CaseFeeAgreementService } from './case-fee-agreement.service';
+import { assertNoActiveCollectionAllocationHold } from '../collection/collection-allocation-hold';
 import {
   GenerateDistributionRecommendationDto,
   DistributionRecommendation,
@@ -79,6 +80,7 @@ export class DistributionRecommendationService {
         beneficiaryScope: true,
         caseClientId: true,
         caseId: true,
+        collectionId: true,
       },
     });
     if (!disp) throw new NotFoundException('Dağıtım kaydı bulunamadı');
@@ -87,6 +89,9 @@ export class DistributionRecommendationService {
         `Öneri yalnız HELD_PENDING_DISTRIBUTION için üretilir (durum: ${disp.status})`,
       );
     }
+
+    // K3-L: mahsubu bekletilen tahsilat için dağıtım önerisi ÜRETİLMEZ (recommend/post ile aynı kapı, aynı kod).
+    await assertNoActiveCollectionAllocationHold(this.prisma, { tenantId, collectionId: disp.collectionId });
 
     const gross = new Prisma.Decimal(disp.totalAmount);
     const warnings: string[] = [];

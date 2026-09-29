@@ -149,7 +149,17 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
           </div>
           <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
             <Metric icon={Building2} accent="text-indigo-700" label="Borçlu Tahsilatı" value={M(s.caseScopedContext.debtorCollection)} />
-            <Metric icon={Wallet} accent="text-indigo-700" label="Dağıtım Bekleyen" value={M(s.caseScopedContext.pendingDistribution)} />
+            <Metric
+              icon={Wallet}
+              accent="text-indigo-700"
+              label="Dağıtım Bekleyen"
+              value={M(s.caseScopedContext.pendingDistribution)}
+              note={
+                Number(s.caseScopedContext.allocationHeld ?? 0) > 0
+                  ? `Bunun ${M(s.caseScopedContext.allocationHeld ?? '0')} tutarı mahsubu bekliyor — dağıtıma kapalı`
+                  : undefined
+              }
+            />
             <Metric icon={Landmark} accent="text-slate-800" label="Masraf/Avans Bakiyesi" value={M(s.caseScopedContext.advanceBalance)} />
           </div>
           {s.needsReview && (
@@ -219,7 +229,14 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
                   <td className="text-right">{diffMoney(r.expenseRequested, r.expensePaid, cur)}</td>
                   {/* B — dosya geneli (nötr renk) */}
                   <td className="text-right text-gray-500">{M(r.debtorCollection)}</td>
-                  <td className="text-right text-gray-500">{M(r.pendingDistribution)}</td>
+                  <td className="text-right text-gray-500">
+                    {M(r.pendingDistribution)}
+                    {Number(r.allocationHeld ?? 0) > 0 && (
+                      <div className="text-[10px] text-amber-700" title="Mahsubu bekleyen tahsilat dağıtıma kapalıdır">
+                        mahsubu bekleyen: {M(r.allocationHeld ?? '0')}
+                      </div>
+                    )}
+                  </td>
                   <td className="text-right text-gray-500">{M(r.advanceBalance)}</td>
                   <td>
                     {r.needsReview ? (

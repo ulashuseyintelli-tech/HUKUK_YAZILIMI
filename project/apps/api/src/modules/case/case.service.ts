@@ -44,7 +44,11 @@ import { ExpenseRequestService } from "../expense-request/expense-request.servic
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
 import { normalizeSourceIdentityText } from "../collection/collection-source-identity";
-import { findActiveCollectionAllocationHolds } from "../collection/collection-allocation-hold";
+import {
+  EXCLUDE_ALLOCATION_HELD_COLLECTIONS,
+  findActiveCollectionAllocationHolds,
+  readActiveAllocationHoldSummary,
+} from "../collection/collection-allocation-hold";
 import type { ReceiptAuthorizationBasis } from "../collection/receipt-object-scope-authorization.service";
 import {
   assertCollectionPublicUpdateAllowed,
@@ -1167,8 +1171,10 @@ export class CaseService {
         // Finansal özet hesapla
         const [collectionAgg, expenseAgg, claimAgg] = await Promise.all([
           // Tahsilat toplamı
+          // K3-L: yalnız ONAYLI ve mahsubu bekletilmeyen tahsilat "tahsil edilen" sayılır (iptal/iade/taslak ve
+          // mahsubu bekleyen tahsilat toplamı ve tahsilat oranını şişirmez).
           this.prisma.collection.aggregate({
-            where: { caseId: c.id },
+            where: { caseId: c.id, status: "CONFIRMED", ...EXCLUDE_ALLOCATION_HELD_COLLECTIONS },
             _sum: { amount: true },
           }),
           // Masraf toplamı (tüm masraf talepleri)
@@ -4008,6 +4014,8 @@ export class CaseService {
       orderBy: { date: "desc" },
       include: {
         case: { select: { id: true, fileNumber: true } },
+        // K3-L: mahsup durumu — liste "mahsubu bekliyor" işaretini buradan gösterir (toplama girmez)
+        allocationHold: { select: { status: true, holdReason: true } },
       },
     });
 
@@ -4304,10 +4312,13 @@ export class CaseService {
     });
     if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    const [dues, collections] = await Promise.all([
+    const [dues, confirmedCollections, allocationHold] = await Promise.all([
       this.prisma.due.findMany({ where: { caseId } }),
       this.prisma.collection.findMany({ where: { caseId, tenantId, status: "CONFIRMED" } }),
+      readActiveAllocationHoldSummary(this.prisma, tenantId, caseId),
     ]);
+    // K3-L: mahsubu bekletilen tahsilat bakiyeden DÜŞÜLMEZ; ayrı gösterilir.
+    const collections = confirmedCollections.filter((c) => !allocationHold.collectionIds.has(c.id));
 
     const totalDues = dues.reduce((sum, d) => sum + Number(d.amount), 0);
     const totalCollections = collections.reduce((sum, c) => sum + Number(c.amount), 0);
@@ -4341,6 +4352,7 @@ export class CaseService {
       currency: caseExists.currency || "TRY",
       totalDues,
       totalCollections,
+      mahsubuBekleyenTahsilat: allocationHold.amount,
       balance: totalDues - totalCollections,
       duesByType,
       collectionsByChannel,

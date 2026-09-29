@@ -78,10 +78,12 @@ describe("DBIND-P2 DebtorService financial binding", () => {
         currency: true,
         status: true,
         date: true,
+        allocationHold: { select: { status: true } },
       },
     });
     expect(result.financialSummary).toMatchObject({
       totalConfirmedCollected: 125.5,
+      totalAllocationHeldAmount: 0,
       totalPendingAmount: 10,
       totalCancelledAmount: 7,
       totalRefundedAmount: 2,
@@ -92,6 +94,7 @@ describe("DBIND-P2 DebtorService financial binding", () => {
       {
         currency: "TRY",
         confirmedCollected: 125.5,
+        allocationHeldAmount: 0,
         pendingAmount: 10,
         cancelledAmount: 0,
         refundedAmount: 0,
@@ -101,12 +104,35 @@ describe("DBIND-P2 DebtorService financial binding", () => {
       {
         currency: "USD",
         confirmedCollected: 0,
+        allocationHeldAmount: 0,
         pendingAmount: 0,
         cancelledAmount: 7,
         refundedAmount: 2,
         collectionCount: 2,
         lastCollectionDate: "2026-07-05T10:00:00.000Z",
       },
+    ]);
+  });
+
+  it("K3-L: mahsubu bekletilen tahsilat onayli toplama GIRMEZ, ayri alanda doner; tamamlanan / iptal edilen bekletme kendi durumuna gore sayilir", async () => {
+    const collections = [
+      { amount: 500, currency: "TRY", status: "CONFIRMED", date: new Date("2026-09-20T09:00:00Z"), allocationHold: null },
+      { amount: 1500, currency: "TRY", status: "CONFIRMED", date: new Date("2026-09-21T09:00:00Z"), allocationHold: { status: "HELD" } },
+      { amount: 700, currency: "TRY", status: "CONFIRMED", date: new Date("2026-09-22T09:00:00Z"), allocationHold: { status: "RELEASED" } },
+      { amount: 900, currency: "TRY", status: "CANCELLED", date: new Date("2026-09-23T09:00:00Z"), allocationHold: { status: "REVERSED" } },
+    ];
+    const { service } = makeService(makeCaseDebtor(), collections);
+
+    const result = await service.getCaseDebtorDetail("tenant-1", "case-1", "cd-1");
+
+    expect(result.financialSummary).toMatchObject({
+      totalConfirmedCollected: 1200,
+      totalAllocationHeldAmount: 1500,
+      totalCancelledAmount: 900,
+      collectionCount: 4,
+    });
+    expect(result.financialSummary?.currencyBreakdown).toEqual([
+      expect.objectContaining({ currency: "TRY", confirmedCollected: 1200, allocationHeldAmount: 1500, cancelledAmount: 900 }),
     ]);
   });
 
@@ -121,6 +147,7 @@ describe("DBIND-P2 DebtorService financial binding", () => {
       displayName: "Ali Borclu",
       financialSummary: {
         totalConfirmedCollected: 0,
+        totalAllocationHeldAmount: 0,
         totalPendingAmount: 0,
         totalCancelledAmount: 0,
         totalRefundedAmount: 0,

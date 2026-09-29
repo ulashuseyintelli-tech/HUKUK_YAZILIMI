@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { splitCollectionFinanceTotals } from "@/lib/collection-allocation-hold";
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -64,6 +65,8 @@ interface DispositionPostingLineInput {
 }
 
 interface DispositionPostingRecord {
+  /** K3-L: kaynağı mahsubu bekletilen tahsilat — dağıtım önerisi / belirleme kapalı */
+  allocationHeld?: boolean;
   id: string;
   collectionId: string;
   status: string;
@@ -142,6 +145,8 @@ interface FinanceItem {
   date: string;
   description?: string;
   status?: string;
+  /** K3-L: mahsubu bekletilen tahsilat — tahsilat toplamına girmez, ayrı gösterilir */
+  allocationHeld?: boolean;
   // Expense-specific fields
   paidAmount?: number;
   remainingAmount?: number;
@@ -1020,9 +1025,14 @@ export function OperationDeck({
               <div className="grid grid-cols-4 gap-3">
                 <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
                   <p className="text-[10px] text-emerald-600 uppercase tracking-wide">Tahsilat</p>
-                  <p className="text-lg font-bold text-emerald-700">
-                    {formatTL(financeItems.filter(f => f.type === "TAHSILAT").reduce((s, f) => s + f.amount, 0))}
+                  <p className="text-lg font-bold text-emerald-700" data-testid="finance-collection-total">
+                    {formatTL(splitCollectionFinanceTotals(financeItems).allocated)}
                   </p>
+                  {splitCollectionFinanceTotals(financeItems).heldCount > 0 && (
+                    <p className="text-[9px] text-amber-700" data-testid="finance-collection-held">
+                      Mahsubu bekleyen: {formatTL(splitCollectionFinanceTotals(financeItems).held)} (borçtan düşülmedi)
+                    </p>
+                  )}
                 </div>
                 <div className="p-3 rounded-lg bg-red-50 border border-red-200">
                   <p className="text-[10px] text-red-600 uppercase tracking-wide">Yapılan Masraf</p>
@@ -1110,12 +1120,17 @@ export function OperationDeck({
                           item.type === "TAHSILAT" ? "bg-emerald-500" : "bg-red-500"
                         }`} />
                         <span className="text-slate-700">{item.description || item.type}</span>
+                        {item.type === "TAHSILAT" && item.allocationHeld && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                            mahsubu bekliyor
+                          </span>
+                        )}
                       </div>
                       <div className="text-right">
                         <span className={`font-medium ${
-                          item.type === "TAHSILAT" ? "text-emerald-600" : "text-red-600"
+                          item.type === "TAHSILAT" ? (item.allocationHeld ? "text-amber-700" : "text-emerald-600") : "text-red-600"
                         }`}>
-                          {item.type === "TAHSILAT" ? "+" : "-"}{formatTL(item.amount)}
+                          {item.type === "TAHSILAT" ? (item.allocationHeld ? "" : "+") : "-"}{formatTL(item.amount)}
                         </span>
                         <p className="text-[10px] text-slate-400">{formatDate(item.date)}</p>
                       </div>
@@ -1560,6 +1575,18 @@ export function OperationDeck({
                       const amtOk = Number.isFinite(amt) && amt > 0;
                       const spin = busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />;
                       // S8-B FAZ-0 — HELD → öner; RECOMMENDED → onayla; APPROVED → kesinleştir; POSTED → dağıtıldı.
+                      if (st === "HELD_PENDING_DISTRIBUTION" && record.disposition?.allocationHeld) {
+                        return (
+                          <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="disposition-allocation-held">
+                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                              Mahsubu bekliyor — dağıtıma kapalı
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              Önce hesabına ödeme yapılan borçlu girilip mahsup tamamlanmalı.
+                            </span>
+                          </div>
+                        );
+                      }
                       if (st === "HELD_PENDING_DISTRIBUTION") {
                         return (
                           <div className="mt-2 flex flex-wrap gap-2">

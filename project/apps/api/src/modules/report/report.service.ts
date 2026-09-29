@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CollectionService } from "../collection/collection.service";
+import { readActiveAllocationHoldSummary } from "../collection/collection-allocation-hold";
 import { ValidationGateService } from "../validation-gate/validation-gate.service"; // D4e-8: pre-haciz risk teşhisi
 import { formatLawyer, formatStaff } from "../case/responsible-candidates.service"; // M2-G5b: tek-kaynak kişi display
 import {
@@ -666,6 +667,9 @@ export class ReportService {
       where: { tenantId, caseId, status: 'CONFIRMED' },
       include: { allocations: true },
     });
+    // K3-L: mahsubu bekletilen tahsilat borçtan DÜŞÜLMEZ ve "tahsil edilen" sayılmaz; ayrı gösterilir.
+    const allocationHold = await readActiveAllocationHoldSummary(this.prisma, tenantId, caseId);
+    const allocatedCollections = collections.filter((c: any) => !allocationHold.collectionIds.has(c.id));
 
     // Alacak kalemlerini hesapla
     const principalAmount = Number(caseData.principalAmount || 0);
@@ -680,7 +684,7 @@ export class ReportService {
     }
 
     // Tahsilat toplamları
-    const totalCollected = collections.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+    const totalCollected = allocatedCollections.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
     
     // Mahsup dağılımı
     // G3b: mahsup dağılımı kanonik kaynaktan (ledger-varsa-ledger / yoksa-CollectionAllocation;
@@ -736,10 +740,12 @@ export class ReportService {
       },
       collectionDetails: {
         totalCollected: Math.round(totalCollected * 100) / 100,
-        collectionCount: collections.length,
+        collectionCount: allocatedCollections.length,
         byType: allocatedByType,
-        lastCollectionDate: collections.length > 0 
-          ? collections.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.date?.toISOString()
+        allocationHeldAmount: allocationHold.amount,
+        allocationHeldCount: allocationHold.count,
+        lastCollectionDate: allocatedCollections.length > 0 
+          ? [...allocatedCollections].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.date?.toISOString()
           : undefined,
       },
       balance: {

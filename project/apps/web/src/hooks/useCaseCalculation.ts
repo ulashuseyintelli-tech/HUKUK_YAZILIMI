@@ -93,6 +93,8 @@ export interface CaseCalculationResult {
   toplamBorc: number;
   sonBorc: number;
   toplamTahsilat: number;
+  /** K3-L: mahsubu bekletilen tahsilat — toplamTahsilat / kalanBorc içinde DEĞİL (sunucu hesabı) */
+  mahsubuBekleyenTahsilat?: number;
   kalanBorc: number;
   kalanAnapara: number;
   

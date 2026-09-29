@@ -13,6 +13,7 @@ import {
   PAYMENT_ALLOCATION_COMPLETED_EVENT,
   createCollectionAllocationHoldInTx,
   paymentAllocationCompletedEventId,
+  readActiveAllocationHoldSummary,
 } from "./collection-allocation-hold";
 import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
 import {
@@ -1255,6 +1256,7 @@ export class CollectionService {
 
       const ledgerEntryIds: string[] = [];
       let overpaymentId: string | undefined;
+      let allocationHoldId: string | undefined;
       let heldOverpaymentAmount = 0;
       let ledgerAllocationCount = 0;
 
@@ -1263,8 +1265,8 @@ export class CollectionService {
       // (P-0 allocator tek otorite; sıra düzeltmesi PR-AO). Kalem yoksa S5(i): ledger
       // yazılmaz, intake+event KORUNUR, diagnostic loglanır.
       if (allocationHold) {
-        // K3-L: mahsup BEKLETİLİR — defter yazılmaz; mevcut HELD kayıt (emanet) tutarı, kaynağı ve sebebi korur.
-        overpaymentId = await this.holdCollectionAllocationInTx(tx, {
+        // K3-L: mahsup BEKLETİLİR — defter yazılmaz; bekletme kaydı (fazla ödeme DEĞİL) tutarı, kaynağı ve sebebi korur.
+        allocationHoldId = await this.holdCollectionAllocationInTx(tx, {
           tenantId,
           caseId: dto.caseId,
           collectionId: collection.id,
@@ -1382,6 +1384,7 @@ export class CollectionService {
           eventId: paymentEventId,
           outboxIdempotencyKey: `evt:${paymentEventId}`,
           overpaymentId,
+          allocationHoldId,
         },
       });
 
@@ -1994,10 +1997,13 @@ export class CollectionService {
         caseId,
         status: CollectionStatus.CONFIRMED,
       },
-      select: { amount: true },
+      select: { id: true, amount: true },
     });
+    // K3-L: mahsubu bekletilen tahsilat borçtan DÜŞÜLMEZ; kapak hesabında ayrı gösterilir.
+    const allocationHold = await readActiveAllocationHoldSummary(this.prisma, tenantId, caseId);
+    const allocatedCollections = collections.filter((c: any) => !allocationHold.collectionIds.has(c.id));
 
-    const totalCollected = collections.reduce(
+    const totalCollected = allocatedCollections.reduce(
       (sum: number, c: any) => sum + Number(c.amount),
       0,
     );
@@ -2030,6 +2036,8 @@ export class CollectionService {
       otherAmount,
       totalClaim,
       totalCollected,
+      allocationHeldAmount: allocationHold.amount,
+      allocationHeldCount: allocationHold.count,
       collectionDetails,
       remainingDebt,
       calculationDate: calcDate.toISOString(),
@@ -2110,8 +2118,22 @@ export class CollectionService {
     canClose: boolean;
     remainingDebt: number;
     message: string;
+    /** K3-L: mahsubu bekleyen tahsilat (varsa) — kapanış önerisi verilmez */
+    allocationHeldAmount?: number;
   }> {
     const cover = await this.calculateCover(tenantId, caseId);
+
+    // K3-L: mahsubu bekleyen tahsilat varken "kapatılabilir" denmez — para henüz hiçbir borçlu hesabına düşmedi.
+    if (cover.allocationHeldCount > 0) {
+      return {
+        canClose: false,
+        remainingDebt: cover.remainingDebt,
+        allocationHeldAmount: cover.allocationHeldAmount,
+        message:
+          `Mahsubu bekleyen tahsilat var (${cover.allocationHeldAmount.toLocaleString("tr-TR")} ${cover.principalCurrency}) — ` +
+          `borçtan düşülmedi. Kalan borç: ${cover.remainingDebt.toLocaleString("tr-TR")} ${cover.principalCurrency}`,
+      };
+    }
 
     if (cover.remainingDebt <= 0) {
       return {

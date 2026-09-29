@@ -109,4 +109,38 @@ describe("CollectionModal hesabına ödeme yapılan borçlu (K3-L)", () => {
     expect(createCollection.mock.calls[0][1]).not.toHaveProperty("forwardingOfficeName");
     expect(createCollection.mock.calls[0][1]).not.toHaveProperty("payerName");
   });
+
+  it("K3-L: mahsup bekletilecekse dağıtım önizlemesi satır GÖSTERMEZ; dağıtımın ertelendiği açıkça yazılır", async () => {
+    previewCasePayment.mockResolvedValue({
+      nonPersistent: true,
+      caseId: "case-1",
+      input: { amount: 1500, currency: "TRY", caseDebtorId: null },
+      acceptance: {
+        wouldAccept: true,
+        blockingReasons: [],
+        warnings: ["ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED", "DISTRIBUTION_DEFERRED_UNTIL_ALLOCATION_COMPLETED"],
+      },
+      balanceImpact: {
+        currentOutstandingAmount: 11000,
+        paymentAmount: 1500,
+        appliedAmount: 0,
+        overpaymentAmount: 0,
+        projectedOutstandingAmount: 11000,
+      },
+      distributionPreview: {
+        status: "BLOCKED",
+        source: "SINGLE_CASE_CLIENT",
+        totalAmount: 1500,
+        requiresClientSelection: false,
+        lines: [],
+      },
+    });
+    render(<CollectionModal isOpen onClose={vi.fn()} caseId="case-1" onSuccess={vi.fn()} debtors={debtors} />);
+    fireEvent.change(screen.getByPlaceholderText("0.00"), { target: { value: "1500" } });
+    fireEvent.click(screen.getByRole("button", { name: /Önizle/ }));
+    expect(await screen.findByTestId("collection-preview-distribution-blocked")).toBeTruthy();
+    expect(screen.getByText("Mahsup tamamlanmadan müvekkile dağıtım önerilmez.")).toBeTruthy();
+    expect(screen.queryByText("Dağıtım satırı oluşmadı.")).toBeNull();
+    expect(screen.queryByText(/alacaklı seçimi gerekir/)).toBeNull();
+  });
 });
