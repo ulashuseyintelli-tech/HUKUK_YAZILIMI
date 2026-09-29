@@ -3,6 +3,8 @@ import { createHash } from 'crypto';
 import { AuditService } from '../audit/audit.service';
 import {
   DRAFT_DOCUMENT_NOTICE,
+  DRAFT_EXCLUDED_PENALTY_NOTICE,
+  formatLawyerTitled,
   computeTemplateTotals,
   getClaimItemTypeLabel,
   getDebtorRoleLabelFromEnum,
@@ -12,7 +14,6 @@ import {
   orderLawyersForSignature,
   resolveProceedingSelection,
   resolveProceedingSelectionFromLabels,
-  stripLawyerTitle,
   TAKIP_TALEBI_TEMPLATE_BY_KIND,
   type ProceedingKind,
   type ProceedingSelection,
@@ -136,10 +137,6 @@ export interface TemplateData {
     interestType?: string; 
     interestAmount?: number;
     interestStartDate?: string;
-    // K3-L: kalem durumu ve borçlu sorumluluğu (belgeye yalnız ACTIVE girer; sorumluluk borçlu başına belge için)
-    status?: string;
-    isAllDebtorsLiable?: boolean;
-    liableDebtorIds?: string[];
   }>;
   totals: { principal: number; interest: number; fees: number; total: number; currency: string };
   // K3-L Faz 2 (owner kararı 2026-09-30): takip yolu YALNIZ açıkça seçilmiş kayıttan; dosya/enstrüman türünden
@@ -148,6 +145,8 @@ export interface TemplateData {
   proceedingSelection?: ProceedingSelection;
   // İstemci verisiyle üretilen önizleme (kayıt yok) — çıktı TASLAK olarak işaretlenir
   isDraft?: boolean;
+  // Taslağa alınmayan istemci satırları (kayıtlı kalem olmayan çek tazminatı) — yalnız not olarak belirtilir
+  draftExcludedItems?: Array<{ type: string; amount: number; currency: string; reason: string }>;
   interestInfo: { type: 'YASAL' | 'TICARI' | 'CUSTOM'; rate?: number; description: string; variableRate: boolean };
   caseType: string;
   subCategory: string;
@@ -407,10 +406,10 @@ export class TemplateEngineService {
             selectedAddress: true,
           } 
         }, 
-        dues: true,
+        dues: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         // K3-L Faz 2: kararlı sıra. Durum filtresi KODDA uygulanır (isTemplateEligibleClaimItem): "dosyada hiç kalem
-        // yok" ile "kalem var ama hepsi iptal/feragat/tahsil" ayrımı için tüm kayıtlar okunur.
-        claimItems: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+        // yok" ile "kalem var ama hepsi iptal/feragat" ayrımı için tüm kayıtlar okunur.
+        claimItems: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] },
       },
     });
     if (!caseRecord) throw new NotFoundException('Dosya bulunamadı');
@@ -419,8 +418,9 @@ export class TemplateEngineService {
     }
     
     // Alacak kalemleri - önce claimItems, yoksa dues, yoksa boş array
-    // K3-L Faz 2: yalnız ETKİN ve sanal olmayan kalem belgeye girer. Dosyada ClaimItem KAYDI varsa kaynak odur:
-    // hepsi iptal/feragat/tahsil edilmiş olsa bile eski Due kayıtlarına ya da principalAmount'a DÜŞÜLMEZ
+    // K3-L Faz 2: belgeye TALEP EDİLEN kalemler girer (iptal/feragat ve sanal hariç; tahsil edilmiş kalem talep
+    // tutarıyla kalır). Dosyada ClaimItem KAYDI varsa kaynak odur: hepsi elenmiş olsa bile eski Due kayıtlarına ya da
+    // principalAmount'a DÜŞÜLMEZ
     // (iptal edilen alacak belgeye geri gelmesin). Due/principalAmount yalnız hiç ClaimItem yokken (eski dosya).
     const hasClaimItemRecords = (caseRecord.claimItems?.length ?? 0) > 0;
     const eligibleClaimItems = (caseRecord.claimItems || []).filter((item: any) => isTemplateEligibleClaimItem(item));
@@ -431,11 +431,9 @@ export class TemplateEngineService {
       type: item.type || item.itemType || 'PRINCIPAL',
       description: item.description || getClaimItemTypeLabel(item.type || item.itemType || 'PRINCIPAL'),
       // Kanonik tutar demandedAmount (amount uyumluluk aynası); Due kaynağında yalnız amount
+      // İç (ofis) sorumluluk ve durum alanları DIŞ belge verisine TAŞINMAZ (UDF/XML ve hash'e sızmasın; borçlu
+      // sorumluluğundan borçlu başına farklı tutar üretilmez).
       amount: Number(item.demandedAmount ?? item.amount) || 0,
-      ...(item.status ? { status: String(item.status) } : {}),
-      ...(item.isAllDebtorsLiable !== undefined && item.isAllDebtorsLiable !== null
-        ? { isAllDebtorsLiable: Boolean(item.isAllDebtorsLiable), liableDebtorIds: Array.isArray(item.liableDebtorIds) ? [...item.liableDebtorIds] : [] }
-        : {}),
       currency: item.currency || 'TRY', 
       dueDate: item.dueDate?.toISOString().split('T')[0],
       interestType: item.interestType || 'YASAL',
@@ -469,6 +467,7 @@ export class TemplateEngineService {
       subType: caseRecord.subType,
       proceedingType: caseRecord.proceedingType,
       takipTuruCode: caseRecord.takipTuru?.code ?? null,
+      executionPath: caseRecord.executionPath ?? null,
       formType: selectedFormType,
     };
     const preKind = resolveProceedingSelection(classificationSource, []).kind;
@@ -581,9 +580,11 @@ export class TemplateEngineService {
           district: resolved.district || undefined,
         };
       }),
-      // K3-L Faz 2: unvan şablonda TEK kez eklenir ('Av.Av.' kusuru); imzacı (hasSignatureAuthority/isResponsible) önce
+      // K3-L Faz 2: veri önceki biçimi korur (`Av.Ad Soyad`; unvanı veriden bekleyen PDF/imza/UDF/XML tüketicileri
+      // değişmez). Unvanı KENDİSİ ekleyen yerler formatLawyerTitled ile tek unvan üretir ('Av.Av.' kusuru).
+      // İmzacı (hasSignatureAuthority / isResponsible) önce.
       lawyers: orderLawyersForSignature(caseRecord.lawyers || []).map((l: any) => ({
-        name: stripLawyerTitle(`${l.lawyer?.name || ''} ${l.lawyer?.surname || ''}`),
+        name: formatLawyerTitled(`${l.lawyer?.name || ''} ${l.lawyer?.surname || ''}`),
         barNumber: l.lawyer?.barNumber || '', 
         barCity: l.lawyer?.barCity || '', 
         address: l.lawyer?.address,
@@ -763,6 +764,8 @@ export class TemplateEngineService {
       content = content.replace(/\{\{creditor\.address\}\}/g, data.creditors[0].address || '');
     }
     if (data.lawyers.length > 0) {
+      // Şablon unvanı kendisi yazıyorsa ('Av.{{lawyer.name}}' / 'Av. {{lawyer.name}}') çift unvan üretilmez
+      content = content.replace(/Av\.( ?)\{\{lawyer\.name\}\}/g, (_m: string, sep: string) => formatLawyerTitled(data.lawyers[0].name, sep));
       content = content.replace(/\{\{lawyer\.name\}\}/g, data.lawyers[0].name);
       content = content.replace(/\{\{lawyer\.barNumber\}\}/g, data.lawyers[0].barNumber);
       content = content.replace(/\{\{lawyer\.barCity\}\}/g, data.lawyers[0].barCity);
@@ -889,6 +892,7 @@ export class TemplateEngineService {
       return data.lawyers.map((lawyer, index) => {
         let itemContent = template;
         itemContent = itemContent.replace(/\{\{@index\}\}/g, (index + 1).toString());
+        itemContent = itemContent.replace(/Av\.( ?)\{\{name\}\}/g, (_m: string, sep: string) => formatLawyerTitled(lawyer.name, sep));
         itemContent = itemContent.replace(/\{\{name\}\}/g, lawyer.name);
         itemContent = itemContent.replace(/\{\{barNumber\}\}/g, lawyer.barNumber || '');
         itemContent = itemContent.replace(/\{\{barCity\}\}/g, lawyer.barCity || '');
@@ -906,6 +910,7 @@ export class TemplateEngineService {
         itemContent = itemContent.replace(/\{\{name\}\}/g, debtor.name);
         itemContent = itemContent.replace(/\{\{identityNo\}\}/g, debtor.identityNo || '');
         itemContent = itemContent.replace(/\{\{taxNo\}\}/g, debtor.taxNo || '');
+        itemContent = itemContent.replace(/\{\{identityOrTaxNo\}\}/g, debtor.identityNo || debtor.taxNo || '');
         itemContent = itemContent.replace(/\{\{address\}\}/g, debtor.address || '');
         itemContent = itemContent.replace(/\{\{role\}\}/g, debtor.role || 'Borclu');
         // Conditional blocks
@@ -919,6 +924,12 @@ export class TemplateEngineService {
         } else {
           itemContent = itemContent.replace(/\{\{#if taxNo\}\}[\s\S]*?\{\{\/if\}\}/g, '');
         }
+        // Kimliği olmayan borçluda yalnız boşluktan oluşan satır bırakılmaz
+        itemContent = itemContent
+          .split('\n')
+          .filter((line: string, idx: number, all: string[]) => idx === 0 || idx === all.length - 1 || line.trim().length > 0)
+          .map((line: string) => line.replace(/\s+$/, ''))
+          .join('\n');
         return itemContent;
       }).join('\n');
     });
@@ -1112,7 +1123,7 @@ Telefon:{{lawyer.phone}} - Faks:{{lawyer.fax}}
 2-Borçlunun ve varsa kanuni temsilcisinin adı, soyadı ve yerleşim yerindeki adresi, alacaklı tarafından biliniyorsa vergi kimlik numarası:
 
 {{#each debtors}}
-{{name}}{{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}
+{{name}}{{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}{{#if taxNo}} (Vergi No:{{taxNo}}){{/if}}
 {{address}}
 {{/each}}
 
@@ -1174,7 +1185,7 @@ Telefon:{{lawyer.phone}} - Faks:{{lawyer.fax}}
 2-Borçlunun ve varsa kanuni temsilcisinin adı, soyadı ve yerleşim yerindeki adresi, alacaklı tarafından biliniyorsa vergi kimlik numarası:
 
 {{#each debtors}}
-{{name}} ({{role}}){{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}
+{{name}} ({{role}}){{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}{{#if taxNo}} (Vergi No:{{taxNo}}){{/if}}
 {{address}}
 {{/each}}
 
@@ -1238,7 +1249,7 @@ Telefon:{{lawyer.phone}} - Faks:{{lawyer.fax}}
 2-Borçlunun ve varsa kanuni temsilcisinin adı, soyadı ve yerleşim yerindeki adresi, alacaklı tarafından biliniyorsa vergi kimlik numarası:
 
 {{#each debtors}}
-{{name}} ({{role}}){{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}
+{{name}} ({{role}}){{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}{{#if taxNo}} (Vergi No:{{taxNo}}){{/if}}
 {{address}}
 {{/each}}
 
@@ -1302,7 +1313,7 @@ Telefon:{{lawyer.phone}} - Faks:{{lawyer.fax}}
 2-Borçlunun ve varsa kanuni temsilcisinin adı, soyadı ve yerleşim yerindeki adresi, alacaklı tarafından biliniyorsa vergi kimlik numarası:
 
 {{#each debtors}}
-{{name}}{{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}
+{{name}}{{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}{{#if taxNo}} (Vergi No:{{taxNo}}){{/if}}
 {{address}}
 {{/each}}
 
@@ -1438,7 +1449,7 @@ Telefon:{{lawyer.phone}} - Faks:{{lawyer.fax}}
 2-Borçlunun ve varsa kanuni temsilcisinin adı, soyadı ve yerleşim yerindeki adresi, alacaklı tarafından biliniyorsa vergi kimlik numarası:
 
 {{#each debtors}}
-{{name}}{{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}
+{{name}}{{#if identityNo}} (TC Kimlik No:{{identityNo}}){{/if}}{{#if taxNo}} (Vergi No:{{taxNo}}){{/if}}
 {{address}}
 {{/each}}
 
@@ -1507,7 +1518,7 @@ VEKILI          : Av. {{lawyer.name}}
 BORCLU          :
 {{#each debtors}}
   {{@index}}. {{name}} ({{role}})
-     {{#if identityNo}}T.C. Kimlik No: {{identityNo}}{{/if}}{{#if taxNo}}Vergi No: {{taxNo}}{{/if}}
+     {{#if identityNo}}T.C. Kimlik No: {{identityNo}}  {{/if}}{{#if taxNo}}Vergi No: {{taxNo}}{{/if}}
      Adres: {{address}}
 {{/each}}
 
@@ -1547,7 +1558,7 @@ VEKILI          : Av. {{lawyer.name}}
 BORCLU          :
 {{#each debtors}}
   {{@index}}. {{name}} ({{role}})
-     T.C./Vergi No: {{identityNo}}
+     T.C./Vergi No: {{identityOrTaxNo}}
      Adres: {{address}}
 {{/each}}
 
@@ -1590,7 +1601,7 @@ VEKILI          : Av. {{lawyer.name}}
 BORCLU          :
 {{#each debtors}}
   {{@index}}. {{name}} ({{role}})
-     {{#if identityNo}}T.C. Kimlik No: {{identityNo}}{{/if}}{{#if taxNo}}Vergi No: {{taxNo}}{{/if}}
+     {{#if identityNo}}T.C. Kimlik No: {{identityNo}}  {{/if}}{{#if taxNo}}Vergi No: {{taxNo}}{{/if}}
      Adres: {{address}}
 {{/each}}
 
@@ -1634,7 +1645,7 @@ VEKILI          : Av. {{lawyer.name}}
 BORCLU          :
 {{#each debtors}}
   {{@index}}. {{name}} ({{role}})
-     {{#if identityNo}}T.C. Kimlik No: {{identityNo}}{{/if}}{{#if taxNo}}Vergi No: {{taxNo}}{{/if}}
+     {{#if identityNo}}T.C. Kimlik No: {{identityNo}}  {{/if}}{{#if taxNo}}Vergi No: {{taxNo}}{{/if}}
      Adres: {{address}}
 {{/each}}
 
@@ -2181,6 +2192,9 @@ Borclu: ............................    Yediemin: ..............................
       content: [
         // K3-L Faz 2: istemci verisiyle üretilen önizleme TASLAK olarak işaretlenir
         ...(data.isDraft ? [{ text: DRAFT_DOCUMENT_NOTICE, bold: true, color: '#C00000', margin: [0, 0, 0, 6] as [number, number, number, number] }] : []),
+        ...(data.isDraft && (data.draftExcludedItems?.length ?? 0) > 0
+          ? [{ text: DRAFT_EXCLUDED_PENALTY_NOTICE, color: '#C00000', margin: [0, 0, 0, 6] as [number, number, number, number] }]
+          : []),
         // Başlık satırı
         {
           columns: [
@@ -2434,7 +2448,7 @@ Borclu: ............................    Yediemin: ..............................
     
     // Avukat bilgisi ekle - tam format
     if (lawyer.name) {
-      creditorText += `\n\nAv.${lawyer.name}`;
+      creditorText += `\n\n${formatLawyerTitled(lawyer.name)}`;
       // Avukat adresi
       if (lawyer.address) {
         creditorText += `\n${lawyer.address}`;
@@ -2618,6 +2632,9 @@ Borclu: ............................    Yediemin: ..............................
           // K3-L Faz 2: istemci verisiyle üretilen önizleme TASLAK olarak işaretlenir
           ...(data.isDraft
             ? [new Paragraph({ children: [new TextRun({ text: DRAFT_DOCUMENT_NOTICE, bold: true, color: 'C00000', size: 18, font: 'Courier New' })] })]
+            : []),
+          ...(data.isDraft && (data.draftExcludedItems?.length ?? 0) > 0
+            ? [new Paragraph({ children: [new TextRun({ text: DRAFT_EXCLUDED_PENALTY_NOTICE, color: 'C00000', size: 16, font: 'Courier New' })] })]
             : []),
           // Başlık satırı
           new Paragraph({
@@ -3033,7 +3050,7 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
       .replace('{{MAHKEME_ADI}}', `${caseData.executionOffice.city} ASLİYE HUKUK MAHKEMESİ'NE`)
       .replace(/{{DAVACI_ADI}}/g, davaci?.name || '[DAVACI ADI]')
       .replace('{{DAVACI_ADRES}}', davaci?.address || '[DAVACI ADRESİ]')
-      .replace(/{{VEKIL_ADI}}/g, vekil ? `Av. ${vekil.name}` : '[VEKİL ADI]')
+      .replace(/{{VEKIL_ADI}}/g, vekil ? formatLawyerTitled(vekil.name, ' ') : '[VEKİL ADI]')
       .replace('{{VEKIL_ADRES}}', vekil?.address || '[VEKİL ADRESİ]')
       .replace(/{{DAVALI_ADI}}/g, davali?.name || '[DAVALI ADI]')
       .replace('{{DAVALI_ADRES}}', davali?.address || '[DAVALI ADRESİ]')
@@ -3154,7 +3171,7 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
       .replace('{{MAHKEME_ADI}}', `${caseData.executionOffice.city} ASLİYE HUKUK MAHKEMESİ'NE`)
       .replace(/{{DAVACI_ADI}}/g, davaci?.name || '[DAVACI ADI]')
       .replace('{{DAVACI_ADRES}}', davaci?.address || '[DAVACI ADRESİ]')
-      .replace(/{{VEKIL_ADI}}/g, vekil ? `Av. ${vekil.name}` : '[VEKİL ADI]')
+      .replace(/{{VEKIL_ADI}}/g, vekil ? formatLawyerTitled(vekil.name, ' ') : '[VEKİL ADI]')
       .replace('{{VEKIL_ADRES}}', vekil?.address || '[VEKİL ADRESİ]')
       .replace(/{{DAVALI_1_ADI}}/g, davali1?.name || '[BORÇLU ADI]')
       .replace('{{DAVALI_1_ADRES}}', davali1?.address || '[BORÇLU ADRESİ]')
@@ -3268,7 +3285,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
       .replace('{{SAVCILIK_ADI}}', `${caseData.executionOffice.city} CUMHURİYET BAŞSAVCILIĞI'NA`)
       .replace(/{{SIKAYETCI_ADI}}/g, sikayetci?.name || '[ŞİKAYETÇİ ADI]')
       .replace('{{SIKAYETCI_ADRES}}', sikayetci?.address || '[ŞİKAYETÇİ ADRESİ]')
-      .replace(/{{VEKIL_ADI}}/g, vekil ? `Av. ${vekil.name}` : '[VEKİL ADI]')
+      .replace(/{{VEKIL_ADI}}/g, vekil ? formatLawyerTitled(vekil.name, ' ') : '[VEKİL ADI]')
       .replace('{{VEKIL_ADRES}}', vekil?.address || '[VEKİL ADRESİ]')
       .replace(/{{SUPHELI_ADI}}/g, supheli?.name || '[ŞÜPHELİ ADI]')
       .replace('{{SUPHELI_ADRES}}', supheli?.address || '[ŞÜPHELİ ADRESİ]')
@@ -3369,9 +3386,12 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
         throw new Error(`Desteklenmeyen format: ${format}`);
     }
     
-    // 5. K3-L Faz 2: üretim KAYDI — DocumentArtifact (değiştirilemez; aynı veri/şablon için tek satır) + denetim.
-    //    Dosya içeriği depolanmaz (filePath yok → önbellek bu satırdan belge DÖNDÜRMEZ); contentHash + dataHash ile
-    //    "hangi veriyle, hangi şablon sürümüyle üretildi" izlenir. Önceden üretilmiş kayıt asla güncellenmez.
+    // 5. K3-L Faz 2: ÜRETİM KAYDI (kabul kaydı DEĞİL) — DocumentArtifact + denetim. EN İYİ ÇABA: kayıt/denetim yazım
+    //    hatası üretimi engellemez (garanti değildir). Satır, bu anahtarla (dosya, tür, biçim, şablon sürümü, veri
+    //    hash'i) İLK üretimi temsil eder: contentHash / generatedAt / createdById ilk üretime aittir ve ASLA
+    //    güncellenmez; sonraki her üretimin contentHash'i DOCUMENT_GENERATED denetim kaydındadır. Dosya içeriği
+    //    depolanmaz (filePath yok): `READY` yalnız "üretildi" demektir — indirilebilir dosya ya da adliye/UYAP
+    //    kabulü ANLAMINA GELMEZ. Kayıt yalnız bu uçta tutulur; GET belge uçları kayıt yazmaz (backlog).
     const artifact = await this.recordDocumentArtifact({
       tenantId,
       caseId,
@@ -3409,6 +3429,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
         artifact =
           (await client.findFirst({
             where: {
+              tenantId: input.tenantId,
               caseId: input.caseId,
               documentType: input.documentType,
               format: input.format,
@@ -3433,15 +3454,31 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
             },
           }));
       } catch (err: any) {
-        // Yarış: aynı anahtar bir başkasınca yazıldı → mevcut kayıt geçerli; üretim engellenmez
-        if (err?.code !== 'P2002') this.logger.warn(`[DocumentGeneration] artifact kaydı yazılamadı: ${err?.message ?? err}`);
+        // Yarış: aynı anahtar bir başkasınca yazıldı → mevcut kayıt yeniden okunur; üretim engellenmez
+        if (err?.code === 'P2002') {
+          artifact = await client
+            .findFirst({
+              where: {
+                tenantId: input.tenantId,
+                caseId: input.caseId,
+                documentType: input.documentType,
+                format: input.format,
+                templateVersion: input.templateVersion,
+                dataHash: input.dataHash,
+              },
+            })
+            .catch(() => undefined);
+        } else {
+          this.logger.warn(`[DocumentGeneration] artifact kaydı yazılamadı: ${err?.message ?? err}`);
+        }
       }
     }
     if (input.tenantId) {
       await this.auditService.log({
         tenantId: input.tenantId,
         action: 'DOCUMENT_GENERATED',
-        entityType: 'DocumentArtifact',
+        // Kayıt satırı yoksa (yazılamadı / model yok) denetim hedefi dosyadır — kimlik türü ile tutarlı
+        entityType: artifact?.id ? 'DocumentArtifact' : 'Case',
         entityId: artifact?.id ?? input.caseId,
         userId: input.actorUserId,
         description: `Belge üretildi: ${input.documentType}/${input.format} (${input.templateVersion})`,
@@ -3470,6 +3507,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     const crypto = require('crypto');
     // K3-L Faz 2: render'a giren TÜM girdiler hash'e girer (eksik alan → bayat önbellek riski)
     const relevantData = {
+      fileNumber: (data as any).fileNumber ?? null,
       creditors: data.creditors,
       debtors: data.debtors,
       lawyers: data.lawyers,

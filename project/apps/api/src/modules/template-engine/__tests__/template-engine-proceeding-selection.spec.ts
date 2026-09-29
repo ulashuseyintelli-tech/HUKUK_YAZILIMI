@@ -9,6 +9,8 @@ import { BadRequestException } from '@nestjs/common';
 import { TemplateEngineService, type TemplateData } from '../template-engine.service';
 import {
   computeTemplateTotals,
+  formatLawyerTitled,
+  isTemplateEligibleClaimItem,
   normalizeClientTemplateData,
   resolveProceedingSelection,
   resolveProceedingSelectionFromLabels,
@@ -125,6 +127,20 @@ describe('takip yolu seçimi — yalnız AÇIK seçimden (owner kararı 2026-09-
     expect(resolveProceedingSelection({ takipTuruCode: 'IFLAS_KAMBIYO', type: 'CHECK' }, ['CEK']).kind).toBe('ILAMSIZ');
   });
 
+  it('haciz yolu DIŞINDA seçilmiş yol (iflas / rehin / ipotek, FORM_12): haciz kambiyo şablonu (Örnek 10) SEÇİLMEZ', () => {
+    expect(resolveProceedingSelection({ takipTuruCode: 'KAMBIYO_CEK', executionPath: 'IFLAS' }, ['CEK'])).toEqual({
+      kind: 'ILAMSIZ', basis: 'TAKIP_TURU', explicit: true, warnings: ['TAKIP_YOLU_ICIN_OZEL_SABLON_YOK'],
+    });
+    expect(
+      resolveProceedingSelection({ formType: { code: 'FORM_12', procedureType: 'KAMBIYO', isKambiyo: true }, type: 'CHECK' }, ['CEK']),
+    ).toMatchObject({ kind: 'ILAMSIZ', basis: 'FORM_TYPE', warnings: ['TAKIP_YOLU_ICIN_OZEL_SABLON_YOK'] });
+    expect(resolveProceedingSelection({ subType: 'FORM_12', formType: { procedureType: 'KAMBIYO', isKambiyo: true } }, ['SENET']).kind).toBe('ILAMSIZ');
+    expect(resolveProceedingSelection({ proceedingType: 'CAMBIO', executionPath: 'REHIN' }, []).kind).toBe('ILAMSIZ');
+    // haciz yolu: kambiyo seçimi korunur; nafaka / ilamlı seçimine yol dokunmaz
+    expect(resolveProceedingSelection({ takipTuruCode: 'KAMBIYO_CEK', executionPath: 'HACIZ' }, []).kind).toBe('KAMBIYO_CEK');
+    expect(resolveProceedingSelection({ takipTuruCode: 'ILAMLI', executionPath: 'IFLAS' }, []).kind).toBe('ILAMLI');
+  });
+
   it('istemci etiketleri: kalem/belge türü etiketi tek başına kambiyo seçtirmez; form kategorisi KAMBIYO seçtirir', () => {
     expect(resolveProceedingSelectionFromLabels('GENEL_ICRA', 'CEK')).toMatchObject({ kind: 'ILAMSIZ', explicit: true, basis: 'CLIENT_LABEL' });
     expect(resolveProceedingSelectionFromLabels('CHECK', 'CEK')).toMatchObject({ kind: 'ILAMSIZ', explicit: false, basis: 'NOT_SELECTED' });
@@ -217,10 +233,56 @@ describe('alacak kalemleri ve toplamlar', () => {
     });
     const data = await getCaseData();
     expect(data.claimItems.map((i) => [i.type, i.amount])).toEqual([['PRINCIPAL', 10000], ['CHECK_PENALTY', 1000], ['INTEREST', 500]]);
-    expect(data.claimItems[1]).toMatchObject({ description: 'Çek Tazminatı', isAllDebtorsLiable: false, liableDebtorIds: ['d-kesideci'] });
+    expect(data.claimItems[1]).toMatchObject({ description: 'Çek Tazminatı' });
+    // İç (ofis) sorumluluk / durum alanları DIŞ belge verisine taşınmaz (UDF/XML ve hash'e sızmaz)
+    for (const item of data.claimItems) {
+      expect(item).not.toHaveProperty('liableDebtorIds');
+      expect(item).not.toHaveProperty('isAllDebtorsLiable');
+      expect(item).not.toHaveProperty('status');
+    }
     expect(data.totals).toEqual({ principal: 10000, interest: 500, fees: 1000, total: 11500, currency: 'TRY' });
     const listed = data.claimItems.reduce((s, i) => s + i.amount, 0);
     expect(listed).toBe(data.totals.total);
+  });
+
+  it('talep edilen kalem: tahsil edilmiş (COLLECTED) kalem talep tutarıyla KALIR; iptal / feragat / sanal çıkar', async () => {
+    expect(isTemplateEligibleClaimItem({ status: 'ACTIVE' })).toBe(true);
+    expect(isTemplateEligibleClaimItem({ status: 'COLLECTED' })).toBe(true);
+    expect(isTemplateEligibleClaimItem({ status: 'CANCELLED' })).toBe(false);
+    expect(isTemplateEligibleClaimItem({ status: 'WAIVED' })).toBe(false);
+    expect(isTemplateEligibleClaimItem({ status: 'ACTIVE', isVirtual: true })).toBe(false);
+    expect(isTemplateEligibleClaimItem({})).toBe(true);
+    const { getCaseData } = buildService({
+      claimItems: [
+        { itemType: 'PRINCIPAL', amount: 0, demandedAmount: 10000, collectedAmount: 10000, status: 'COLLECTED', isVirtual: false },
+        { itemType: 'EXPENSE', amount: 250, demandedAmount: 250, status: 'WAIVED', isVirtual: false },
+      ],
+    });
+    const data = await getCaseData();
+    expect(data.claimItems.map((i) => [i.type, i.amount])).toEqual([['PRINCIPAL', 10000]]);
+    expect(data.totals.total).toBe(10000);
+  });
+
+  it('kalem, eski alacak ve taraf sorguları kararlı sırayla okunur (belge satır sırası ve veri hash\'i kararlı)', async () => {
+    const { prisma, getCaseData } = buildService();
+    await getCaseData();
+    const include = (prisma.case.findFirst.mock.calls[0] as any[])[0].include;
+    expect(include.claimItems).toEqual({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] });
+    expect(include.dues).toEqual({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+    expect(include.caseClients.orderBy).toEqual([{ createdAt: 'asc' }, { id: 'asc' }]);
+    expect(include.debtors.orderBy).toEqual([{ createdAt: 'asc' }, { id: 'asc' }]);
+    expect(include.lawyers.orderBy).toEqual([{ createdAt: 'asc' }, { id: 'asc' }]);
+    expect(include.takipTuru).toEqual({ select: { code: true } });
+  });
+
+  it('eski Due türleri (nafaka / kira / aidat) asıl alacak kovasına girer ve kendi etiketini alır', async () => {
+    const { getCaseData } = buildService({ subCategory: 'NAFAKA', dues: [{ type: 'NAFAKA', amount: 3000 }, { type: 'HARC', amount: 100 }] });
+    const data = await getCaseData();
+    expect(data.claimItems.map((i) => [i.type, i.description, i.amount])).toEqual([
+      ['NAFAKA', 'Nafaka', 3000],
+      ['HARC', 'Harç', 100],
+    ]);
+    expect(data.totals).toEqual({ principal: 3000, interest: 0, fees: 100, total: 3100, currency: 'TRY' });
   });
 
   it('borçlu sorumluluğu belgede borçlu başına FARKLI TUTAR üretmez: toplam dosya düzeyinde tektir', async () => {
@@ -288,8 +350,8 @@ describe('çok borçlu, rol etiketi, unvan', () => {
     });
     const data = await getCaseData();
     expect(data.debtors.map((d) => d.role)).toEqual(['Keşideci', 'Ciranta']);
-    // İmzacı önce; unvan veride yok (şablon tek kez ekler)
-    expect(data.lawyers.map((l) => l.name)).toEqual(['Ece Kaya', 'Deniz Yılmaz']);
+    // İmzacı önce; veri önceki biçimde (Av.Ad Soyad) ve kayıttaki unvan ikilenmez
+    expect(data.lawyers.map((l) => l.name)).toEqual(['Av.Ece Kaya', 'Av.Deniz Yılmaz']);
     const odeme = service.generateOdemeEmri(data).content;
     expect(odeme).toContain('1. Keşideci Ali (Keşideci)');
     expect(odeme).toContain('2. Ciranta Ayşe (Ciranta)');
@@ -301,11 +363,49 @@ describe('çok borçlu, rol etiketi, unvan', () => {
     expect(takip).not.toContain('Av. Av.');
   });
 
-  it('unvan soyma yalnız "Av." önekini soyar; "Avni" gibi adlara dokunmaz', () => {
+  it('unvan: yalnız ayrık "Av." / "Av " / "Avukat " soyulur; "Avni", "Avşar", "Ava" gibi adlara dokunulmaz; tek unvan üretilir', () => {
     expect(stripLawyerTitle('Av. Deniz Yılmaz')).toBe('Deniz Yılmaz');
     expect(stripLawyerTitle('av.Deniz Yılmaz')).toBe('Deniz Yılmaz');
+    expect(stripLawyerTitle('AV Deniz Yılmaz')).toBe('Deniz Yılmaz');
+    expect(stripLawyerTitle('Avukat Deniz Yılmaz')).toBe('Deniz Yılmaz');
     expect(stripLawyerTitle('Avni Kaya')).toBe('Avni Kaya');
-    expect(stripLawyerTitle('Avşar Demir')).toBe('Avşar Demir');
+    expect(stripLawyerTitle('AVŞAR Demir')).toBe('AVŞAR Demir');
+    expect(stripLawyerTitle('Ava Yıldız')).toBe('Ava Yıldız');
+    expect(formatLawyerTitled('Av.Deniz Yılmaz')).toBe('Av.Deniz Yılmaz');
+    expect(formatLawyerTitled('Deniz Yılmaz', ' ')).toBe('Av. Deniz Yılmaz');
+    expect(formatLawyerTitled('Avni Kaya')).toBe('Av.Avni Kaya');
+    expect(formatLawyerTitled('')).toBe('');
+  });
+
+  it('unvanı veriden bekleyen yerler (imza satırı) ve kendisi ekleyen yerler (vekil satırı) tek unvan basar', async () => {
+    const { service, getCaseData } = buildService({
+      lawyers: [{ hasSignatureAuthority: true, isResponsible: true, lawyer: { name: 'Avni', surname: 'Kaya' } }],
+    });
+    const data = await getCaseData();
+    const takip = service.generateTakipTalebi(data).content;
+    expect(takip).toContain('Av.Avni Kaya');
+    expect(takip).not.toMatch(/Av\.\s?Av\./);
+    const odeme = service.generateOdemeEmri(data).content;
+    expect(odeme).toContain('VEKILI          : Av. Avni Kaya');
+    expect(odeme).not.toMatch(/Av\.\s?Av\./);
+  });
+
+  it('kambiyo ödeme emri tüzel kişi borçlunun vergi numarasını basar; kimliksiz borçluda boş satır kalmaz', async () => {
+    const { service, getCaseData } = buildService({
+      takipTuru: { code: 'KAMBIYO_CEK' },
+      debtors: [
+        debtor('Keşideci A.Ş.', 'KESIDECI', { tckn: null, vkn: '9876543210', type: 'COMPANY' }),
+        debtor('Kimliksiz Ciranta', 'CIRANTA', { tckn: null }),
+      ],
+    });
+    const data = await getCaseData();
+    const odeme = service.generateOdemeEmri(data);
+    expect(odeme.templateCode).toBe('ORNEK_7_KAMBIYO');
+    expect(odeme.content).toContain('T.C./Vergi No: 9876543210');
+    const ilamsiz = buildService({ debtors: [debtor('Kimliksiz Borçlu', 'ASIL_BORCLU', { tckn: null })] });
+    const content = ilamsiz.service.generateOdemeEmri(await ilamsiz.getCaseData()).content;
+    const block = content.slice(content.indexOf('1. Kimliksiz Borçlu'), content.indexOf('ALACAGIN TUTARI'));
+    expect(block.split('\n').slice(1).filter((l) => l.trim().length === 0 && l.length > 0)).toEqual([]);
   });
 
   it('nafaka takip talebi ve nafaka icra emri de tüm borçluları yazar', async () => {
@@ -350,6 +450,10 @@ describe('üretim kaydı ve istemci önizlemesi', () => {
       }),
     }));
 
+    // Kayıt sorgusu kiracı kapsamlıdır
+    const recordLookup = artifact.findFirst.mock.calls.map((c) => (c as any[])[0]).find((a) => a?.where?.tenantId);
+    expect(recordLookup.where).toMatchObject({ tenantId: 't1', caseId: 'case-1', documentType: 'TAKIP_TALEBI', format: 'XML' });
+
     // Aynı veri/şablon: mevcut satır bulunur (önbellek satırı filePath taşımadığından belge yeniden üretilir ama
     // KAYIT güncellenmez/çoğaltılmaz); denetim yine yazılır
     artifact.findFirst.mockResolvedValue({ id: 'art-1' } as any);
@@ -358,7 +462,30 @@ describe('üretim kaydı ve istemci önizlemesi', () => {
     expect(audit.log).toHaveBeenCalledTimes(2);
   });
 
-  it('normalizeClientTemplateData: COMPENSATION→CHECK_PENALTY, toplamlar sunucuda kalemlerden, unvan soyulur, TASLAK; kalem türü CEK kambiyo seçtirmez', () => {
+  it('eşzamanlı üretim (P2002): mevcut kayıt yeniden okunur; kayıt yazılamazsa denetim hedefi dosyadır; belge yine döner', async () => {
+    const p2002 = Object.assign(new Error('unique'), { code: 'P2002' });
+    const raced = {
+      findFirst: jest.fn()
+        .mockResolvedValueOnce(null) // önbellek araması
+        .mockResolvedValueOnce(null) // kayıt araması
+        .mockResolvedValueOnce({ id: 'art-raced' }), // P2002 sonrası yeniden okuma
+      create: jest.fn(async () => { throw p2002; }),
+    };
+    const audit = { log: jest.fn(async () => undefined) };
+    const a = buildService({}, { artifact: raced, audit });
+    const first = await a.service.generateDocumentFromCase('case-1', 'XML', 'takip-talebi', 'v1', 't1', 'user-1');
+    expect(first.buffer.length).toBeGreaterThan(0);
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'DocumentArtifact', entityId: 'art-raced' }));
+
+    const failing = { findFirst: jest.fn(async () => null), create: jest.fn(async () => { throw new Error('db down'); }) };
+    const audit2 = { log: jest.fn(async () => undefined) };
+    const b = buildService({}, { artifact: failing, audit: audit2 });
+    const second = await b.service.generateDocumentFromCase('case-1', 'XML', 'takip-talebi', 'v1', 't1', 'user-1');
+    expect(second.buffer.length).toBeGreaterThan(0);
+    expect(audit2.log).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'Case', entityId: 'case-1' }));
+  });
+
+  it('normalizeClientTemplateData: istemcinin kör çek tazminatı belgeye ve toplama GİRMEZ; toplamlar sunucuda; TASLAK; kalem türü CEK kambiyo seçtirmez', () => {
     const input = {
       claimItems: [
         { type: 'PRINCIPAL', description: 'Çek bedeli', amount: 10000, currency: 'TRY' },
@@ -371,9 +498,12 @@ describe('üretim kaydı ve istemci önizlemesi', () => {
       subCategory: 'CEK',
     };
     const out = normalizeClientTemplateData(input as any);
-    expect(out.claimItems[1]).toMatchObject({ type: 'CHECK_PENALTY', description: 'Çek Tazminatı' });
-    expect(out.totals).toEqual({ principal: 10000, interest: 400, fees: 1000, total: 11400, currency: 'TRY' });
-    expect(out.lawyers[0].name).toBe('Deniz Yılmaz');
+    expect(out.claimItems.map((i: { type: string }) => i.type)).toEqual(['PRINCIPAL', 'INTEREST']);
+    expect(out.totals).toEqual({ principal: 10000, interest: 400, fees: 0, total: 10400, currency: 'TRY' });
+    expect(out.draftExcludedItems).toEqual([{ type: 'COMPENSATION', amount: 1000, currency: 'TRY', reason: 'NOT_A_RECORDED_CLAIM_ITEM' }]);
+    // Avukat adı veride değiştirilmez; unvan üretim yerinde tek kez eklenir
+    expect((out as any).lawyers[0].name).toBe('Av. Deniz Yılmaz');
+    expect(normalizeClientTemplateData({ ...input, claimItems: [{ type: 'COMMISSION', description: '', amount: 5, currency: 'TRY' }] } as any).claimItems[0]).toMatchObject({ type: 'OTHER' });
     expect(out.proceedingSelection).toMatchObject({ kind: 'ILAMSIZ', explicit: true, basis: 'CLIENT_LABEL' });
     expect(out.isDraft).toBe(true);
     expect(normalizeClientTemplateData({ ...input, caseType: 'KAMBIYO' } as any).proceedingKind).toBe('KAMBIYO_CEK');
@@ -394,9 +524,9 @@ describe('üretim kaydı ve istemci önizlemesi', () => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({
       isDraft: true,
       proceedingKind: 'KAMBIYO_CEK',
-      totals: { principal: 100, interest: 0, fees: 10, total: 110, currency: 'TRY' },
-      claimItems: [expect.objectContaining({ type: 'PRINCIPAL' }), expect.objectContaining({ type: 'CHECK_PENALTY', description: 'Çek Tazminatı' })],
-      lawyers: [{ name: 'Deniz Yılmaz' }],
+      totals: { principal: 100, interest: 0, fees: 0, total: 100, currency: 'TRY' },
+      claimItems: [expect.objectContaining({ type: 'PRINCIPAL' })],
+      draftExcludedItems: [expect.objectContaining({ type: 'COMPENSATION', amount: 10 })],
     }));
     spy.mockClear();
     await service.generateWordFromCase('case-1', 'takip-talebi', 't1');

@@ -58,7 +58,10 @@ export interface ProceedingClassificationSource {
   readonly proceedingType?: string | null;
   /** Case.takipTuru.code */
   readonly takipTuruCode?: string | null;
+  /** Case.executionPath (HACIZ / IFLAS / REHIN / IPOTEK / TAHLIYE) — alacaklının seçtiği takip yolu */
+  readonly executionPath?: string | null;
   readonly formType?: {
+    readonly code?: string | null;
     readonly procedureType?: string | null;
     readonly isKambiyo?: boolean | null;
     readonly isRental?: boolean | null;
@@ -170,6 +173,27 @@ function withNafaka(selection: ProceedingSelection, subCategory?: string | null)
   return selection;
 }
 
+/** Haciz yolu DIŞINDA seçilmiş yollar için (iflas / rehin / ipotek) ayrı şablon yoktur. */
+const NON_HACIZ_EXECUTION_PATHS = new Set(['IFLAS', 'REHIN', 'IPOTEK']);
+/** Haciz yolu olmayan form kodları (İflas Yoluyla Kambiyo Takibi vb.) */
+const NON_HACIZ_FORM_CODES = new Set(['FORM_12']);
+
+/**
+ * Alacaklının seçtiği takip yolu haciz DEĞİLSE (iflas / rehin / ipotek), haciz yoluna özgü kambiyo şablonu (Örnek 10)
+ * SEÇİLMEZ: bu yollar için ayrı şablon yok → önceki davranış (ilamsız şablon) + uyarı. Nafaka / ilamlı / kira seçimine
+ * dokunulmaz.
+ */
+function withExecutionPath(selection: ProceedingSelection, source: ProceedingClassificationSource): ProceedingSelection {
+  const path = String(source.executionPath ?? '').toUpperCase();
+  const formCode = String(source.formType?.code ?? source.subType ?? '').toUpperCase();
+  if (!NON_HACIZ_EXECUTION_PATHS.has(path) && !NON_HACIZ_FORM_CODES.has(formCode)) return selection;
+  if (!isKambiyoKind(selection.kind) && selection.kind !== 'ILAMSIZ') return selection;
+  const warnings = selection.warnings
+    .filter((w) => w !== 'KAMBIYO_BELGE_TURU_BELIRSIZ' && w !== 'KAMBIYO_BELGE_TURU_KARISIK')
+    .concat(selection.warnings.includes('TAKIP_YOLU_ICIN_OZEL_SABLON_YOK') ? [] : ['TAKIP_YOLU_ICIN_OZEL_SABLON_YOK']);
+  return { ...selection, kind: 'ILAMSIZ', warnings };
+}
+
 function notSelected(hasKambiyoDocument: boolean): ProceedingSelection {
   return {
     kind: 'ILAMSIZ',
@@ -194,7 +218,7 @@ export function resolveProceedingSelection(
   instrumentTypes: readonly string[] = [],
 ): ProceedingSelection {
   const documentLabels = [source.type];
-  const done = (selection: ProceedingSelection) => withNafaka(selection, source.subCategory);
+  const done = (selection: ProceedingSelection) => withExecutionPath(withNafaka(selection, source.subCategory), source);
 
   switch (String(source.proceedingType ?? '').toUpperCase()) {
     case 'CAMBIO':
@@ -249,7 +273,7 @@ export function resolveProceedingSelection(
 
   const hasKambiyoDocument =
     instrumentTypes.some((t) => documentKindOfInstrument(t) !== null) || source.type === 'CHECK' || source.type === 'BOND';
-  return notSelected(hasKambiyoDocument);
+  return withExecutionPath(notSelected(hasKambiyoDocument), source);
 }
 
 /**
@@ -298,9 +322,15 @@ export function isKambiyoKind(kind: ProceedingKind): boolean {
   return kind === 'KAMBIYO_CEK' || kind === 'KAMBIYO_SENET' || kind === 'KAMBIYO_BELGE_TURU_BELIRSIZ';
 }
 
-/** Belgeye giren kalem: ETKİN ve sanal olmayan (status/isVirtual taşımayan eski kaynak — Due — olduğu gibi kabul). */
+/**
+ * Belgeye giren kalem = TALEP EDİLEN alacak: iptal (CANCELLED) ve feragat (WAIVED) edilmiş ya da sanal kalem girmez.
+ * Tahsil edilmiş (COLLECTED) kalem talep edilen alacağın parçasıdır ve tutarı `demandedAmount` olarak KALIR — resmi
+ * belge "kalan bakiye" belgesi değildir. status/isVirtual taşımayan eski kaynak (Due) olduğu gibi kabul edilir.
+ */
+const EXCLUDED_CLAIM_ITEM_STATUSES = new Set(['CANCELLED', 'WAIVED']);
+
 export function isTemplateEligibleClaimItem(item: { status?: string | null; isVirtual?: boolean | null }): boolean {
-  if (item.status && String(item.status) !== 'ACTIVE') return false;
+  if (item.status && EXCLUDED_CLAIM_ITEM_STATUSES.has(String(item.status).toUpperCase())) return false;
   if (item.isVirtual === true) return false;
   return true;
 }
@@ -326,13 +356,24 @@ const CLAIM_ITEM_TYPE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   TAX_BSMV: 'BSMV',
   TAX_KKDF: 'KKDF',
   OTHER: 'Diğer Alacak',
+  // Due (eski kaynak) türleri
+  NAFAKA: 'Nafaka',
+  KIRA: 'Kira Alacağı',
+  AIDAT: 'Aidat',
+  PRIM: 'Prim',
+  VEKALET_UCRETI: 'Vekalet Ücreti',
+  HARC: 'Harç',
+  TAZMINAT: 'Tazminat',
+  CEZAI_SART: 'Cezai Şart',
+  KOMISYON: 'Komisyon',
 });
 
 export function getClaimItemTypeLabel(type: string): string {
   return CLAIM_ITEM_TYPE_LABELS[String(type).toUpperCase()] ?? 'Alacak Kalemi';
 }
 
-const PRINCIPAL_TYPES = new Set(['PRINCIPAL', 'ASIL_ALACAK', 'KIRA_ALACAGI']);
+// Asıl alacak niteliğindeki türler (ClaimItem + eski Due türleri)
+const PRINCIPAL_TYPES = new Set(['PRINCIPAL', 'ASIL_ALACAK', 'KIRA_ALACAGI', 'NAFAKA', 'KIRA', 'AIDAT', 'PRIM']);
 const INTEREST_TYPES = new Set(['INTEREST', 'ISLEMIS_FAIZ', 'PRE_INTEREST', 'POST_INTEREST']);
 
 export interface TemplateTotals {
@@ -399,9 +440,22 @@ export function getDebtorRoleLabelFromEnum(role?: string | null): string {
   return DEBTOR_ROLE_LABELS[String(role).toUpperCase()] ?? 'Borçlu';
 }
 
-/** 'Av.' / 'Av ' unvanını soyar; şablon ve Word/PDF üreticileri unvanı TEK kez kendileri ekler ('Av.Av.' biter). */
+/**
+ * Baştaki avukat unvanını soyar: 'Av.' / 'Av ' / 'Avukat ' (ardından nokta YA DA boşluk zorunlu → 'Avni', 'Avşar',
+ * 'Ava' gibi adlara dokunulmaz).
+ */
 export function stripLawyerTitle(name: string | null | undefined): string {
-  return String(name ?? '').replace(/^\s*av\.\s*/i, '').trim();
+  return String(name ?? '').replace(/^\s*(?:av\.\s*|av\s+|avukat\s+)/i, '').trim();
+}
+
+/**
+ * Unvanlı ad — TEK kez 'Av.' (veride unvan olsa da olmasa da). Veri modeli önceki biçimi korur (`Av.Ad Soyad`):
+ * unvanı veriden BEKLEYEN tüketiciler (PDF vekil satırı, imza satırları, UDF/XML, dilekçeler) değişmez; unvanı
+ * KENDİSİ ekleyen yerler (şablonlardaki `Av.{{lawyer.name}}`, Word) bu yardımcıyla çift unvan üretmez.
+ */
+export function formatLawyerTitled(name: string | null | undefined, separator = ''): string {
+  const bare = stripLawyerTitle(name);
+  return bare ? `Av.${separator}${bare}` : '';
 }
 
 /** İmzacı avukat önce: hasSignatureAuthority → isResponsible → kayıt sırası (kararlı). */
@@ -414,8 +468,6 @@ export function orderLawyersForSignature<T extends { hasSignatureAuthority?: boo
 
 /** İstemci belge önizlemesinin ClaimItemType dışı tipleri (web formu) → kanonik tip. */
 const CLIENT_CLAIM_TYPE_ALIASES: Readonly<Record<string, string>> = Object.freeze({
-  COMPENSATION: 'CHECK_PENALTY',
-  CEK_TAZMINATI: 'CHECK_PENALTY',
   COMMISSION: 'OTHER',
   KOMISYON: 'OTHER',
 });
@@ -426,12 +478,21 @@ export function normalizeClientClaimItemType(type: string): string {
 }
 
 export const DRAFT_DOCUMENT_NOTICE =
-  'TASLAK — onay bekliyor, gönderime hazır değil. Bu belge sunucu kaydına dayanmayan önizleme verisiyle üretildi; resmi belge dosya kaydından üretilir.';
+  'TASLAK — onay bekliyor, gönderime hazır değil. Bu belge dosya kaydına dayanmayan önizleme verisiyle üretildi.';
+
+export const DRAFT_EXCLUDED_PENALTY_NOTICE =
+  'Çek tazminatı bu taslakta yer almaz: kayıtlı alacak kalemi değildir (kesin kalem yalnız onayla oluşur).';
+
+/** İstemcinin gönderdiği, KAYITLI kalemden gelmeyen çek tazminatı satırı türleri (istemci hesabı) */
+const CLIENT_PENALTY_TYPES = new Set(['COMPENSATION', 'CEK_TAZMINATI', 'CHECK_PENALTY']);
 
 /**
- * İstemci verisiyle üretilen takip talebi (POST /template-engine/takip-talebi/*) için normalizasyon: tip takma
- * adları, avukat unvanı, toplamlar SUNUCUDA kalemlerden yeniden hesaplanır (istemci toplamı ezilir), takip yolu
- * yalnız AÇIK etiketten çözülür. Kayıt yazılmaz; çıktı TASLAK olarak işaretlenir.
+ * İstemci verisiyle üretilen takip talebi (POST /template-engine/takip-talebi/*) için normalizasyon:
+ *  - istemcinin kendi hesapladığı ÇEK TAZMİNATI satırı (kör "asıl alacak × %10") belgeye ve toplama GİRMEZ: kayıtlı
+ *    kalem değildir; `draftExcludedItems` içinde raporlanır ve taslakta not olarak belirtilir;
+ *  - toplamlar SUNUCUDA kalan kalemlerden yeniden hesaplanır (istemci toplamı ezilir);
+ *  - takip yolu yalnız AÇIK etiketten çözülür; avukat adı veride değiştirilmez (unvan üretim yerinde tek kez);
+ *  - kayıt yazılmaz; çıktı TASLAK olarak işaretlenir.
  *
  * /// <remarks>
  * /// Çağrıldığı yerler:
@@ -441,25 +502,36 @@ export const DRAFT_DOCUMENT_NOTICE =
 export function normalizeClientTemplateData<T extends {
   claimItems: Array<{ type: string; description: string; amount: number; currency: string }>;
   totals: TemplateTotals;
-  lawyers: Array<{ name: string }>;
   caseType: string;
   subCategory: string;
   proceedingKind?: ProceedingKind;
   proceedingSelection?: ProceedingSelection;
-}>(data: T): T & { proceedingKind: ProceedingKind; proceedingSelection: ProceedingSelection; isDraft: true } {
-  const claimItems = (data.claimItems ?? []).map((item) => {
+}>(data: T): T & {
+  proceedingKind: ProceedingKind;
+  proceedingSelection: ProceedingSelection;
+  isDraft: true;
+  draftExcludedItems: Array<{ type: string; amount: number; currency: string; reason: 'NOT_A_RECORDED_CLAIM_ITEM' }>;
+} {
+  const draftExcludedItems: Array<{ type: string; amount: number; currency: string; reason: 'NOT_A_RECORDED_CLAIM_ITEM' }> = [];
+  const claimItems: T['claimItems'] = [];
+  for (const item of data.claimItems ?? []) {
+    const rawType = String(item.type ?? '').toUpperCase();
+    if (CLIENT_PENALTY_TYPES.has(rawType)) {
+      draftExcludedItems.push({ type: rawType, amount: Number(item.amount) || 0, currency: item.currency, reason: 'NOT_A_RECORDED_CLAIM_ITEM' });
+      continue;
+    }
     const type = normalizeClientClaimItemType(item.type);
-    return { ...item, type, description: item.description || getClaimItemTypeLabel(type), amount: Number(item.amount) || 0 };
-  });
+    claimItems.push({ ...item, type, description: item.description || getClaimItemTypeLabel(type), amount: Number(item.amount) || 0 });
+  }
   const currency = data.totals?.currency || claimItems[0]?.currency || 'TRY';
   const proceedingSelection = data.proceedingSelection ?? resolveProceedingSelectionFromLabels(data.caseType, data.subCategory);
   return {
     ...data,
     claimItems,
     totals: computeTemplateTotals(claimItems, currency),
-    lawyers: (data.lawyers ?? []).map((l) => ({ ...l, name: stripLawyerTitle(l.name) })),
     proceedingSelection,
     proceedingKind: proceedingSelection.kind,
     isDraft: true,
+    draftExcludedItems,
   };
 }
