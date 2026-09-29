@@ -8,6 +8,8 @@ export const COLLECTION_AUDIT_ACTION = {
   CREATE: 'COLLECTION_CREATE',
   UPDATE: 'COLLECTION_UPDATE',
   VOID_EXECUTED: 'COLLECTION_VOID_EXECUTED',
+  /** K3-L: bekletilen mahsup tamamlandı (borçlu girildi, defter mahsubu yapıldı). */
+  ALLOCATION_COMPLETED: 'COLLECTION_ALLOCATION_COMPLETED',
 } as const;
 
 export type CollectionCommandProducer =
@@ -15,7 +17,8 @@ export type CollectionCommandProducer =
   | 'CASE_COLLECTION_COMPATIBILITY_API'
   | 'BANK_TRANSACTION_MATCH'
   | 'EXTERNAL_CASE_RECEIPT'
-  | 'COLLECTION_SERVICE_COMPATIBILITY';
+  | 'COLLECTION_SERVICE_COMPATIBILITY'
+  | 'COLLECTION_ALLOCATION_COMPLETION';
 
 export interface CollectionRequestContext {
   correlationId?: string;
@@ -47,6 +50,9 @@ export interface CollectionAuditEvidence {
   outboxIdempotencyKey?: string;
   overpaymentId?: string;
   approvalRequestId?: string;
+  /** K3-L: bekletme kaydı ve hesabına ödeme yapılan borçlu (CaseDebtor.id) — kimlik verisi DEĞİL, bağ. */
+  allocationHoldId?: string;
+  onBehalfCaseDebtorId?: string;
 }
 
 export function createCollectionMutationTrace(
@@ -108,6 +114,8 @@ export async function logCollectionMutationInTransaction(
     outboxIdempotencyKey: evidence.outboxIdempotencyKey,
     overpaymentId: evidence.overpaymentId,
     approvalRequestId: evidence.approvalRequestId,
+    allocationHoldId: evidence.allocationHoldId,
+    onBehalfCaseDebtorId: evidence.onBehalfCaseDebtorId,
   });
 
   await auditService.logInTransaction(tx, {
@@ -131,6 +139,8 @@ function collectionAuditDescription(
       return 'Collection metadata updated.';
     case COLLECTION_AUDIT_ACTION.VOID_EXECUTED:
       return 'Collection void executed.';
+    case COLLECTION_AUDIT_ACTION.ALLOCATION_COMPLETED:
+      return 'Collection held allocation completed.';
   }
 }
 

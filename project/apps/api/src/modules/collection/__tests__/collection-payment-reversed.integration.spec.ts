@@ -37,6 +37,8 @@ function buildHarness() {
 
   const prisma: any = {
     $executeRaw: jest.fn(async () => undefined),
+    // K3-L: iptal yürütücüsü tahsilat satırını FOR UPDATE ile yeniden okur (CONFIRMED şart)
+    $queryRaw: jest.fn(async () => [{ status: 'CONFIRMED' }]),
     $transaction: jest.fn(async (fn: any) => fn(prisma)),
     icrabotTimelineEntry: {
       findFirst: jest.fn(async (args?: any) => {
@@ -112,6 +114,9 @@ function buildHarness() {
     },
     claimItem: {
       updateMany: jest.fn(),
+    },
+    collectionAllocationHold: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
     },
     collectionOverpayment: {
       updateMany: jest.fn(async () => ({ count: 0 })),

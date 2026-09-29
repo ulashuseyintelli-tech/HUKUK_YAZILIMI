@@ -3,11 +3,22 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Logger,
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { allocationHoldReason, type PayerLiabilityScopeErrorCode } from "../claim-item/payer-liability-scope";
+import {
+  PAYMENT_ALLOCATION_COMPLETED_EVENT,
+  createCollectionAllocationHoldInTx,
+  paymentAllocationCompletedEventId,
+} from "./collection-allocation-hold";
+import { lockExecutionActorRows } from "../office-approval/office-approval-execution-authority";
+import {
+  ReceiptObjectScopeAuthorizationService,
+  type ReceiptAuthorizationBasis,
+} from "./receipt-object-scope-authorization.service";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import {
@@ -176,6 +187,8 @@ export class CollectionService {
     @Optional() private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
     @Optional() private readonly officeApproval?: OfficeApprovalService,
     @Optional() private readonly auditService: AuditService = new AuditService(prisma),
+    // K3-L: bekletilen mahsup tamamlamada yetkinin İŞLEM ANINDA (tx içi) yeniden doğrulanması.
+    @Optional() private readonly receiptAuthorization?: ReceiptObjectScopeAuthorizationService,
   ) {}
 
   /// <remarks>
@@ -470,9 +483,8 @@ export class CollectionService {
   }
 
   /**
-   * K3-L — mahsubu bekletilen tahsilat: mevcut `CollectionOverpayment` HELD kaydı (emanet) tutarın tamamını, kaynağı
-   * (`collectionId`) ve sebebi (`metadata.holdReason`) korur. Defter kaydı YOK (`sourceLedgerEntryId` null). İptal
-   * yolu HELD kaydı zaten REVERSED yapar. Tamamlama (hesabına ödeme yapılan borçlu girilince mahsup) ayrı iş.
+   * K3-L — mahsubu bekletilen tahsilat: ayrı `CollectionAllocationHold` kaydı (fazla ödeme DEĞİL). Tutar = tahsilatın
+   * tamamı, defter kaydı YOK. Tamamlama `completeHeldAllocation`, iptal yürütücüsü REVERSED yapar.
    *
    * <remarks>
    * Cagrildigi yerler:
@@ -491,26 +503,444 @@ export class CollectionService {
       holdReason: PayerLiabilityScopeErrorCode;
     },
   ): Promise<string> {
-    const hold = await tx.collectionOverpayment.create({
+    return createCollectionAllocationHoldInTx(tx, {
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      collectionId: input.collectionId,
+      amount: input.amount,
+      currency: input.currency,
+      holdReason: input.holdReason,
+      createdById: input.userId,
+    });
+  }
+
+  /**
+   * Defter mahsubu sonrası para birimi kontrolü ve fazla ödeme kararı — tahsilat KAYDI ile bekletilen mahsubun
+   * TAMAMLANMASI aynı kuralı paylaşır (create() ile birebir): fazla tutar engel yoksa CollectionOverpayment HELD +
+   * OVERPAYMENT_RECORDED; engel varsa (kısıtlı kaynak/kanal/borçlu, dışlanan borç, bağlam) yalnız OVERPAYMENT_BLOCKED
+   * tanı olayı. Kalan tutar hiçbir durumda sessizce kaybolmaz.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CollectionService.create() → ledger yazıldıktan sonra
+   * - CollectionService.completeHeldAllocation() → bekletilen mahsup tamamlanınca
+   * </remarks>
+   */
+  private async settleLedgerAllocationInTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      caseId: string;
+      collectionId: string;
+      collectionAmount: number;
+      currency: string;
+      caseCurrency: string;
+      restrictedPaymentSignal: boolean;
+      restrictedDetails: Record<string, unknown>;
+      paymentEventId: string;
+      userId?: string;
+      trace: CollectionMutationTrace;
+      ledger: Awaited<ReturnType<SummaryEngineService['allocatePaymentToLedgerInTx']>>;
+    },
+  ): Promise<{ ledgerAllocationCount: number; overpaymentId?: string; heldOverpaymentAmount: number; allocatedAmount: number }> {
+    const { ledger } = input;
+    if (!ledger.allocated || !ledger.ledgerEntry) {
+      return { ledgerAllocationCount: 0, heldOverpaymentAmount: 0, allocatedAmount: 0 };
+    }
+    const ledgerCurrency = String(ledger.ledgerEntry.currency || input.caseCurrency);
+    if (ledgerCurrency !== input.caseCurrency || ledgerCurrency !== input.currency) {
+      throw new BadRequestException({
+        code: 'COLLECTION_CURRENCY_MISMATCH',
+        message: 'Persisted ledger currency must match the collection and case currencies.',
+        collectionCurrency: input.currency,
+        caseCurrency: input.caseCurrency,
+        ledgerCurrency,
+      });
+    }
+    const ledgerAllocationCount = ledger.allocations?.length ?? 0;
+    const allocatedAmount = sumAmounts(ledger.allocations || []);
+    const overpaymentAmount = roundMoney(input.collectionAmount - allocatedAmount);
+    if (overpaymentAmount <= 0) {
+      return { ledgerAllocationCount, heldOverpaymentAmount: 0, allocatedAmount };
+    }
+
+    const blocks: OverpaymentBlock[] = [];
+    const excludedOutstanding = toFiniteAmount((ledger as any).excludedOutstanding);
+    if ((ledger as any).unsafeForOverpayment || excludedOutstanding > 0) {
+      blocks.push({
+        reason: 'EXCLUDED_OUTSTANDING',
+        message: 'Allocator excluded legitimate outstanding debt; overpayment cannot be trusted.',
+        details: { excludedOutstanding, diagnostics: (ledger as any).diagnostics || [] },
+      });
+    }
+    if (
+      (ledger.ledgerEntry.tenantId && ledger.ledgerEntry.tenantId !== input.tenantId) ||
+      (ledger.ledgerEntry.caseId && ledger.ledgerEntry.caseId !== input.caseId)
+    ) {
+      blocks.push({
+        reason: 'LEDGER_CONTEXT_MISMATCH',
+        message: 'Ledger entry tenant/case context does not match the collection.',
+        details: {
+          collectionTenantId: input.tenantId,
+          collectionCaseId: input.caseId,
+          ledgerTenantId: ledger.ledgerEntry.tenantId,
+          ledgerCaseId: ledger.ledgerEntry.caseId,
+        },
+      });
+    }
+    if (input.restrictedPaymentSignal) {
+      blocks.push({
+        reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
+        message: 'Payment may be restricted/earmarked, but PaymentDesignation is not implemented yet.',
+        details: input.restrictedDetails,
+      });
+    }
+
+    if (blocks.length > 0) {
+      this.logger.warn(
+        `overpayment blocked; allocation unsafe ` +
+          `(case=${input.caseId}, collection=${input.collectionId}, reasons=${blocks.map((b) => b.reason).join(',')})`,
+      );
+      await this.appendOverpaymentBlockedDiagnosticInTx(tx, {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        collectionId: input.collectionId,
+        paymentEventId: input.paymentEventId,
+        sourceLedgerEntryId: ledger.ledgerEntry.id,
+        collectionAmount: input.collectionAmount,
+        allocatedAmount,
+        attemptedOverpaymentAmount: overpaymentAmount,
+        currency: input.currency,
+        blocks,
+        trace: input.trace,
+      });
+      return { ledgerAllocationCount, heldOverpaymentAmount: 0, allocatedAmount };
+    }
+
+    const overpayment = await tx.collectionOverpayment.create({
       data: {
         tenantId: input.tenantId,
         caseId: input.caseId,
         collectionId: input.collectionId,
-        sourceLedgerEntryId: null,
-        amount: input.amount,
-        remainingAmount: input.amount,
+        sourceLedgerEntryId: ledger.ledgerEntry.id,
+        amount: overpaymentAmount,
+        remainingAmount: overpaymentAmount,
         currency: input.currency,
         status: 'HELD',
         createdById: input.userId,
-        metadata: {
-          kind: 'ALLOCATION_HELD',
-          holdReason: input.holdReason,
-          collectionAmount: input.amount,
-          allocatedAmount: 0,
-        },
+        metadata: { collectionAmount: input.collectionAmount, allocatedAmount },
       },
     });
-    return hold.id;
+    await this.domainEventIngestService.appendInTransaction(tx, {
+      header: {
+        eventId: randomUUID(),
+        aggregateType: 'Case',
+        aggregateId: input.caseId,
+        eventType: 'OVERPAYMENT_RECORDED',
+        occurredAt: new Date().toISOString(),
+        occurredAtConfidence: 'SYSTEM_VERIFIED',
+        actor: { type: 'SYSTEM', reason: 'COLLECTION_OVERPAYMENT_PROJECTION' },
+        causedBy: input.paymentEventId,
+        correlationId: input.trace.correlationId,
+        commandId: input.trace.commandId,
+        tenantId: input.tenantId,
+      },
+      payload: {
+        collectionId: input.collectionId,
+        sourceLedgerEntryId: ledger.ledgerEntry.id,
+        amount: overpaymentAmount,
+        remainingAmount: overpaymentAmount,
+        currency: input.currency,
+        collectionAmount: input.collectionAmount,
+        allocatedAmount,
+      },
+    });
+    return { ledgerAllocationCount, overpaymentId: overpayment.id, heldOverpaymentAmount: overpaymentAmount, allocatedAmount };
+  }
+
+  /**
+   * K3-L (owner GO 2026-09-29) — BEKLETİLEN MAHSUBUN TAMAMLANMASI: hesabına ödeme yapılan borçlu girilince aynı
+   * transaction'da defter mahsubu (TBK100, borçlunun sorumlu olduğu kalemler) ve bekletme kaydı HELD → RELEASED.
+   *
+   * Tekrar üretilmeyenler: Collection satırı, nakit girişi yevmiyesi, PAYMENT_RECEIVED olayı, müvekkil dağıtım taslağı,
+   * COLLECTION_CREATE denetimi (hepsi kayda bağlı). Tek kez üretilenler: LedgerEntry/LedgerAllocation (+kalem tahsil
+   * tutarı mutabakatı), fazla ödeme kararı (create ile aynı kural), PAYMENT_ALLOCATION_COMPLETED olayı (deterministik id),
+   * COLLECTION_ALLOCATION_COMPLETED denetimi.
+   *
+   * Yarış/tekrar koruması: aktör satır kilidi + yetkinin tx içi yeniden doğrulanması → COL-LOCK-001 → Collection FOR
+   * UPDATE (CONFIRMED şart) → bekletme FOR UPDATE (HELD şart; RELEASED + aynı borçlu = tekrar yanıtı, farklı borçlu =
+   * 409) → mevcut CONFIRMED PAYMENT defteri yoksa devam → koşullu updateMany (count=1) → DB'de
+   * LedgerEntry_collection_payment_key ve outbox evt:<deterministik id> tekillikleri son savunma hattı.
+   * `Collection.caseDebtorId` DEĞİŞTİRİLMEZ (yevmiye kaynak hash'i kayıt anındaki değere bağlı); borçlu bekletme
+   * kaydında, defter metadata'sında ve denetimde tutulur.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseService.completeCollectionAllocation() → POST /cases/:id/collections/:collectionId/allocation/complete
+   * </remarks>
+   */
+  async completeHeldAllocation(
+    tenantId: string,
+    input: { caseId: string; collectionId: string; caseDebtorId: string; authorizationBasis: ReceiptAuthorizationBasis },
+    actorUserId: string,
+    requestContext: CollectionRequestContext = {},
+  ) {
+    if (!actorUserId) throw new ForbiddenException({ code: 'RECEIPT_AUTHORIZATION_IDENTITY_REQUIRED' });
+    if (!input.caseDebtorId?.trim()) {
+      throw new BadRequestException({ code: 'ON_BEHALF_DEBTOR_REQUIRED', message: 'Hesabına ödeme yapılan borçlu zorunludur.' });
+    }
+    if (!this.summaryEngine) {
+      throw new ConflictException({ code: 'LEDGER_ALLOCATION_UNAVAILABLE', message: 'Mahsup motoru bu ortamda bağlı değil.' });
+    }
+    const trace = createCollectionMutationTrace(
+      requestContext.correlationId,
+      requestContext.causationId,
+      requestContext.producer ?? 'COLLECTION_ALLOCATION_COMPLETION',
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1) Yetki İŞLEM ANINDA: aktör satırları kilitli, profil + (üyelik dayanağında) dosya üyeliği yeniden okunur.
+      if (!this.receiptAuthorization) {
+        throw new ConflictException({ code: 'RECEIPT_AUTHORIZATION_BOUNDARY_UNAVAILABLE' });
+      }
+      await lockExecutionActorRows(tx, actorUserId);
+      await this.receiptAuthorization.assertStillAuthorizedInTx(tx, {
+        tenantId,
+        actorUserId,
+        caseId: input.caseId,
+        basis: input.authorizationBasis,
+      });
+
+      // 2) Dosya (tenant kapsamlı, kapalı değil) → COL-LOCK-001 → tahsilat satırı FOR UPDATE
+      const caseData = await tx.case.findFirst({
+        where: { id: input.caseId, tenantId },
+        select: { id: true, caseStatus: true, currency: true },
+      });
+      if (!caseData) throw new NotFoundException("Dosya bulunamadı");
+      if (CLOSED_STATUSES.includes(caseData.caseStatus)) {
+        throw new BadRequestException("Kapalı dosyada mahsup tamamlanamaz. Önce dosyayı yeniden açın (CASE_REOPENED).");
+      }
+      await tx.$executeRaw`
+        /* COL-LOCK-001: canonical allocation lock */
+        SELECT pg_advisory_xact_lock(hashtextextended(${input.caseId}, 0))
+      `;
+      const lockedCollection = await tx.$queryRaw<{ id: string; status: string; amount: string; currency: string; date: Date; description: string | null; receiptNo: string | null; sourceType: string | null; channel: string | null; caseDebtorId: string | null }[]>`
+        SELECT "id", "status", "amount"::text AS "amount", "currency", "date", "description", "receiptNo", "sourceType"::text AS "sourceType", "channel"::text AS "channel", "caseDebtorId"
+        FROM "Collection" WHERE "id" = ${input.collectionId} AND "tenantId" = ${tenantId} AND "caseId" = ${input.caseId} FOR UPDATE`;
+      const collection = lockedCollection[0];
+      if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+      if (collection.status !== CollectionStatus.CONFIRMED) {
+        throw new ConflictException({ code: 'COLLECTION_NOT_CONFIRMED', message: 'Yalnız onaylı (iptal edilmemiş) tahsilatın mahsubu tamamlanabilir.' });
+      }
+
+      // 3) Bekletme kaydı FOR UPDATE — tekrar / çakışma ayrımı
+      const holdRows = await tx.$queryRaw<{ id: string; status: string; amount: string; currency: string; holdReason: string; releasedOnBehalfCaseDebtorId: string | null; releasedLedgerEntryId: string | null }[]>`
+        SELECT "id", "status"::text AS "status", "amount"::text AS "amount", "currency", "holdReason"::text AS "holdReason", "releasedOnBehalfCaseDebtorId", "releasedLedgerEntryId"
+        FROM "CollectionAllocationHold" WHERE "collectionId" = ${input.collectionId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+      const hold = holdRows[0];
+      if (!hold) {
+        throw new ConflictException({ code: 'ALLOCATION_HOLD_NOT_FOUND', message: 'Bu tahsilat için bekletilen mahsup yok.' });
+      }
+      if (hold.status === 'RELEASED') {
+        if (hold.releasedOnBehalfCaseDebtorId === input.caseDebtorId) {
+          return this.completionReplayResult(tx, tenantId, input.collectionId, hold.id);
+        }
+        throw new ConflictException({ code: 'ALLOCATION_HOLD_ALREADY_RELEASED', message: 'Bekletilen mahsup başka bir borçlu için zaten tamamlandı.' });
+      }
+      if (hold.status !== 'HELD') {
+        throw new ConflictException({ code: 'ALLOCATION_HOLD_NOT_ACTIVE', message: 'Bekletme kaydı etkin değil (iptal edilmiş).' });
+      }
+      const existingLedger = await tx.ledgerEntry.findFirst({
+        where: { tenantId, caseId: input.caseId, collectionId: input.collectionId, entryType: 'PAYMENT', status: 'CONFIRMED' },
+        select: { id: true },
+      });
+      if (existingLedger) {
+        throw new ConflictException({ code: 'LEDGER_PAYMENT_ALREADY_EXISTS', message: 'Bu tahsilat için defter mahsubu zaten var.' });
+      }
+
+      // 4) Para birimi ve kalem kapsamı (create() ile aynı kurallar)
+      const currency = String(collection.currency || 'TRY');
+      const caseCurrency = String(caseData.currency || 'TRY');
+      if (currency !== caseCurrency || String(hold.currency || 'TRY') !== currency) {
+        throw new BadRequestException({ code: 'COLLECTION_CURRENCY_MISMATCH', message: 'Collection and case currencies must match.' });
+      }
+      const activeAllocationItems = await tx.claimItem.findMany({
+        where: { tenantId, caseId: input.caseId, status: 'ACTIVE' },
+        select: { currency: true, isAllDebtorsLiable: true, liableDebtorIds: true },
+      });
+      if (activeAllocationItems.some((item) => String(item.currency || 'TRY') !== caseCurrency)) {
+        throw new BadRequestException({ code: 'COLLECTION_CURRENCY_MISMATCH', message: 'Active allocation-input currencies must match the case currency.' });
+      }
+      await this.validateCaseDebtorForCollectionInTx(tx, tenantId, input.caseId, input.caseDebtorId);
+      const scope = await this.resolveAllocationScopeInTx(tx, input.caseId, input.caseDebtorId, activeAllocationItems);
+      if (activeAllocationItems.length === 0 || scope.holdReason) {
+        // Bilgi hâlâ yetersiz → bekletme AYNEN korunur, hiçbir yazma yok.
+        throw new ConflictException({
+          code: scope.holdReason ?? 'NO_ACTIVE_CLAIM_ITEMS',
+          message: 'Mahsup hâlâ tamamlanamıyor; bekletme korunur.',
+        });
+      }
+
+      // 5) Orijinal PAYMENT_RECEIVED olayı (causedBy) — tamamlama olayı ona bağlanır, yeniden yayınlanmaz.
+      const originalPaymentEvent = await tx.icrabotTimelineEntry.findFirst({
+        where: { tenantId, caseId: input.caseId, type: 'PAYMENT_RECEIVED', body: { path: ['payload', 'collectionId'], equals: input.collectionId } },
+        orderBy: { createdAt: 'asc' },
+        select: { body: true },
+      });
+      const originalBody = (originalPaymentEvent?.body ?? null) as { header?: { eventId?: string }; eventId?: string } | null;
+      const paymentEventId = String(originalBody?.header?.eventId ?? originalBody?.eventId ?? '');
+      if (!paymentEventId) {
+        throw new ConflictException({ code: 'PAYMENT_RECEIVED_EVENT_NOT_FOUND', message: 'Tahsilatın ödeme olayı bulunamadı.' });
+      }
+
+      // 6) Defter mahsubu — bekletilen tutarın tamamı, orijinal tahsilat tarihiyle
+      const holdAmount = toFiniteAmount(hold.amount);
+      const ledger = await this.summaryEngine!.allocatePaymentToLedgerInTx(tx, tenantId, input.caseId, holdAmount, {
+        entryDate: coerceDate(collection.date, new Date()),
+        description: collection.description ?? undefined,
+        referenceNo: collection.receiptNo ?? undefined,
+        sourceType: (collection.sourceType as CollectionSource | null) ?? undefined,
+        collectionId: input.collectionId,
+        correlationId: trace.correlationId,
+        commandId: trace.commandId,
+        causationId: trace.causationId,
+        producer: 'COLLECTION_ALLOCATION_COMPLETION',
+        onBehalfDebtorId: scope.onBehalfDebtorId,
+      });
+      if (!ledger.allocated || !ledger.ledgerEntry) {
+        throw new ConflictException({ code: ledger.reason ?? 'LEDGER_ALLOCATION_FAILED', message: 'Defter mahsubu yapılamadı; bekletme korunur.' });
+      }
+      await tx.ledgerEntry.update({
+        where: { id: ledger.ledgerEntry.id },
+        data: { metadata: { ...((ledger.ledgerEntry.metadata as Record<string, unknown> | null) ?? {}), allocationHoldId: hold.id, onBehalfCaseDebtorId: input.caseDebtorId } },
+      });
+      const settled = await this.settleLedgerAllocationInTx(tx, {
+        tenantId,
+        caseId: input.caseId,
+        collectionId: input.collectionId,
+        collectionAmount: holdAmount,
+        currency,
+        caseCurrency,
+        // create() ile aynı sinyal: hesabına ödeme yapılan borçlu belli → kısıtlı ödeme sinyali
+        restrictedPaymentSignal: hasUnsupportedRestrictedPaymentSignal({
+          caseDebtorId: input.caseDebtorId,
+          sourceType: (collection.sourceType as CollectionSource | null) ?? undefined,
+          channel: (collection.channel as CollectionChannel | null) ?? undefined,
+        } as CreateCollectionDto),
+        restrictedDetails: { caseDebtorId: input.caseDebtorId, sourceType: collection.sourceType, channel: collection.channel },
+        paymentEventId,
+        userId: actorUserId,
+        trace,
+        ledger,
+      });
+
+      // 7) Bekletme HELD → RELEASED (koşullu; count=1 değilse yarış)
+      const releasedAt = new Date();
+      const released = await tx.collectionAllocationHold.updateMany({
+        where: { id: hold.id, tenantId, status: 'HELD' },
+        data: {
+          status: 'RELEASED',
+          releasedLedgerEntryId: ledger.ledgerEntry.id,
+          releasedOnBehalfCaseDebtorId: input.caseDebtorId,
+          releasedAt,
+          releasedById: actorUserId,
+          metadata: {
+            collectionAmount: holdAmount,
+            allocatedAmount: settled.allocatedAmount,
+            overpaymentId: settled.overpaymentId ?? null,
+            heldOverpaymentAmount: settled.heldOverpaymentAmount,
+            commandId: trace.commandId,
+            correlationId: trace.correlationId,
+          },
+        },
+      });
+      if (released.count !== 1) {
+        throw new ConflictException({ code: 'ALLOCATION_HOLD_RACE', message: 'Bekletme eşzamanlı değişti; tamamlama uygulanmadı.' });
+      }
+
+      // 8) Olay (deterministik id → ikinci yayın outbox tekilliğine takılır) + denetim
+      const completedEventId = paymentAllocationCompletedEventId(tenantId, input.collectionId);
+      await this.domainEventIngestService.appendInTransaction(tx, {
+        header: {
+          eventId: completedEventId,
+          aggregateType: 'Case',
+          aggregateId: input.caseId,
+          eventType: PAYMENT_ALLOCATION_COMPLETED_EVENT,
+          occurredAt: releasedAt.toISOString(),
+          occurredAtConfidence: 'SYSTEM_VERIFIED',
+          actor: { type: 'HUMAN', userId: actorUserId },
+          causedBy: paymentEventId,
+          correlationId: trace.correlationId,
+          commandId: trace.commandId,
+          ...(trace.causationId ? { causationId: trace.causationId } : {}),
+          tenantId,
+        },
+        payload: {
+          tenantId,
+          caseId: input.caseId,
+          collectionId: input.collectionId,
+          allocationHoldId: hold.id,
+          onBehalfCaseDebtorId: input.caseDebtorId,
+          ledgerEntryId: ledger.ledgerEntry.id,
+          allocatedAmount: settled.allocatedAmount,
+          heldOverpaymentAmount: settled.heldOverpaymentAmount,
+          currency,
+          completedAt: releasedAt.toISOString(),
+        },
+      });
+      await logCollectionMutationInTransaction(this.auditService, tx, {
+        tenantId,
+        collectionId: input.collectionId,
+        action: COLLECTION_AUDIT_ACTION.ALLOCATION_COMPLETED,
+        trace,
+        evidence: {
+          caseId: input.caseId,
+          status: collection.status,
+          actor: { type: 'HUMAN', userId: actorUserId },
+          amount: String(holdAmount),
+          currency,
+          occurredAt: releasedAt.toISOString(),
+          ledgerEntryIds: [ledger.ledgerEntry.id],
+          ledgerAllocationCount: settled.ledgerAllocationCount,
+          eventId: completedEventId,
+          outboxIdempotencyKey: `evt:${completedEventId}`,
+          overpaymentId: settled.overpaymentId,
+          allocationHoldId: hold.id,
+          onBehalfCaseDebtorId: input.caseDebtorId,
+        },
+      });
+
+      return {
+        collectionId: input.collectionId,
+        allocationHoldId: hold.id,
+        status: 'RELEASED' as const,
+        replayed: false,
+        onBehalfCaseDebtorId: input.caseDebtorId,
+        ledgerEntryId: ledger.ledgerEntry.id,
+        allocatedAmount: settled.allocatedAmount,
+        heldOverpaymentAmount: settled.heldOverpaymentAmount,
+        ledgerAllocationCount: settled.ledgerAllocationCount,
+      };
+    });
+  }
+
+  private async completionReplayResult(tx: Prisma.TransactionClient, tenantId: string, collectionId: string, holdId: string) {
+    const hold = await tx.collectionAllocationHold.findFirstOrThrow({ where: { id: holdId, tenantId } });
+    const allocationCount = hold.releasedLedgerEntryId
+      ? await tx.ledgerAllocation.count({ where: { ledgerEntryId: hold.releasedLedgerEntryId } })
+      : 0;
+    const meta = (hold.metadata as Record<string, unknown> | null) ?? {};
+    return {
+      collectionId,
+      allocationHoldId: hold.id,
+      status: 'RELEASED' as const,
+      replayed: true,
+      onBehalfCaseDebtorId: hold.releasedOnBehalfCaseDebtorId,
+      ledgerEntryId: hold.releasedLedgerEntryId,
+      allocatedAmount: toFiniteAmount(meta.allocatedAmount),
+      heldOverpaymentAmount: toFiniteAmount(meta.heldOverpaymentAmount),
+      ledgerAllocationCount: allocationCount,
+    };
   }
 
   private async validateCaseDebtorForCollectionInTx(
@@ -860,132 +1290,24 @@ export class CollectionService {
           },
         );
         if (ledger.allocated && ledger.ledgerEntry) {
-          const ledgerCurrency = String(ledger.ledgerEntry.currency || caseCurrency);
-          if (ledgerCurrency !== caseCurrency || ledgerCurrency !== currency) {
-            throw new BadRequestException({
-              code: 'COLLECTION_CURRENCY_MISMATCH',
-              message: 'Persisted ledger currency must match the collection and case currencies.',
-              collectionCurrency: currency,
-              caseCurrency,
-              ledgerCurrency,
-            });
-          }
+          const settled = await this.settleLedgerAllocationInTx(tx, {
+            tenantId,
+            caseId: dto.caseId,
+            collectionId: collection.id,
+            collectionAmount: toFiniteAmount(dto.amount),
+            currency,
+            caseCurrency,
+            restrictedPaymentSignal: hasUnsupportedRestrictedPaymentSignal(dto),
+            restrictedDetails: { caseDebtorId: dto.caseDebtorId, sourceType: dto.sourceType, channel: dto.channel },
+            paymentEventId,
+            userId,
+            trace,
+            ledger,
+          });
           ledgerEntryIds.push(ledger.ledgerEntry.id);
-          ledgerAllocationCount = ledger.allocations?.length ?? 0;
-          const allocatedAmount = sumAmounts(ledger.allocations || []);
-          const overpaymentAmount = roundMoney(toFiniteAmount(dto.amount) - allocatedAmount);
-
-          if (overpaymentAmount > 0) {
-            const blocks: OverpaymentBlock[] = [];
-            const excludedOutstanding = toFiniteAmount((ledger as any).excludedOutstanding);
-            if ((ledger as any).unsafeForOverpayment || excludedOutstanding > 0) {
-              blocks.push({
-                reason: 'EXCLUDED_OUTSTANDING',
-                message: 'Allocator excluded legitimate outstanding debt; overpayment cannot be trusted.',
-                details: {
-                  excludedOutstanding,
-                  diagnostics: (ledger as any).diagnostics || [],
-                },
-              });
-            }
-
-            if (
-              (ledger.ledgerEntry.tenantId && ledger.ledgerEntry.tenantId !== tenantId) ||
-              (ledger.ledgerEntry.caseId && ledger.ledgerEntry.caseId !== dto.caseId)
-            ) {
-              blocks.push({
-                reason: 'LEDGER_CONTEXT_MISMATCH',
-                message: 'Ledger entry tenant/case context does not match the collection.',
-                details: {
-                  collectionTenantId: tenantId,
-                  collectionCaseId: dto.caseId,
-                  ledgerTenantId: ledger.ledgerEntry.tenantId,
-                  ledgerCaseId: ledger.ledgerEntry.caseId,
-                },
-              });
-            }
-
-            if (hasUnsupportedRestrictedPaymentSignal(dto)) {
-              blocks.push({
-                reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
-                message: 'Payment may be restricted/earmarked, but PaymentDesignation is not implemented yet.',
-                details: {
-                  caseDebtorId: dto.caseDebtorId,
-                  sourceType: dto.sourceType,
-                  channel: dto.channel,
-                },
-              });
-            }
-
-            if (blocks.length > 0) {
-              this.logger.warn(
-                `overpayment blocked; allocation unsafe ` +
-                  `(case=${dto.caseId}, collection=${collection.id}, reasons=${blocks.map((b) => b.reason).join(',')})`,
-              );
-              await this.appendOverpaymentBlockedDiagnosticInTx(tx, {
-                tenantId,
-                caseId: dto.caseId,
-                collectionId: collection.id,
-                paymentEventId,
-                sourceLedgerEntryId: ledger.ledgerEntry.id,
-                collectionAmount: toFiniteAmount(dto.amount),
-                allocatedAmount,
-                attemptedOverpaymentAmount: overpaymentAmount,
-                currency,
-                blocks,
-                trace,
-              });
-            } else {
-              const overpayment = await (tx as any).collectionOverpayment.create({
-                data: {
-                  tenantId,
-                  caseId: dto.caseId,
-                  collectionId: collection.id,
-                  sourceLedgerEntryId: ledger.ledgerEntry.id,
-                  amount: overpaymentAmount,
-                  remainingAmount: overpaymentAmount,
-                  currency,
-                  status: 'HELD',
-                  createdById: userId,
-                  metadata: {
-                    collectionAmount: toFiniteAmount(dto.amount),
-                    allocatedAmount,
-                  },
-                },
-              });
-              overpaymentId = overpayment.id;
-              heldOverpaymentAmount = overpaymentAmount;
-
-              const overpaymentEventId = randomUUID();
-              await this.domainEventIngestService.appendInTransaction(tx, {
-                header: {
-                  eventId: overpaymentEventId,
-                  aggregateType: 'Case',
-                  aggregateId: dto.caseId,
-                  eventType: 'OVERPAYMENT_RECORDED',
-                  occurredAt: new Date().toISOString(),
-                  occurredAtConfidence: 'SYSTEM_VERIFIED',
-                  actor: {
-                    type: 'SYSTEM',
-                    reason: 'COLLECTION_OVERPAYMENT_PROJECTION',
-                  },
-                  causedBy: paymentEventId,
-                  correlationId: trace.correlationId,
-                  commandId: trace.commandId,
-                  tenantId,
-                },
-                payload: {
-                  collectionId: collection.id,
-                  sourceLedgerEntryId: ledger.ledgerEntry.id,
-                  amount: overpaymentAmount,
-                  remainingAmount: overpaymentAmount,
-                  currency,
-                  collectionAmount: toFiniteAmount(dto.amount),
-                  allocatedAmount,
-                },
-              });
-            }
-          }
+          ledgerAllocationCount = settled.ledgerAllocationCount;
+          if (settled.overpaymentId) overpaymentId = settled.overpaymentId;
+          heldOverpaymentAmount = settled.heldOverpaymentAmount;
         }
         if (!ledger.allocated) {
           this.logger.warn(

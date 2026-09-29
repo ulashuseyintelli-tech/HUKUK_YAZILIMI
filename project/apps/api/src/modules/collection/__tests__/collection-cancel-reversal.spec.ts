@@ -59,6 +59,8 @@ function buildTx(opts: {
       })),
     },
     $executeRaw: jest.fn(async () => undefined),
+    // K3-L: iptal yürütücüsü tahsilat satırını FOR UPDATE ile yeniden okur (CONFIRMED şart)
+    $queryRaw: jest.fn(async () => [{ status: collection?.status ?? 'CONFIRMED' }]),
     icrabotTimelineEntry: {
       findFirst: jest.fn(async (args?: any) => {
         if (args?.where?.type !== 'PAYMENT_RECEIVED' || !paymentEvent) return null;
@@ -96,6 +98,9 @@ function buildTx(opts: {
     },
     collectionOverpayment: {
       updateMany: jest.fn(async () => ({ count: 1 })),
+    },
+    collectionAllocationHold: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
     },
   };
 }

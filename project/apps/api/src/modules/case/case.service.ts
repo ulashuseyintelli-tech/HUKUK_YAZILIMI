@@ -43,6 +43,8 @@ import { validateResponsibleSelection } from "./responsible-candidates.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
+import { findActiveCollectionAllocationHolds } from "../collection/collection-allocation-hold";
+import type { ReceiptAuthorizationBasis } from "../collection/receipt-object-scope-authorization.service";
 import {
   assertCollectionPublicUpdateAllowed,
   collectionDeleteDisabled,
@@ -4235,6 +4237,37 @@ export class CaseService {
       : this.collectionService.requestCancel(tenantId, collectionId, cancelDto, actorUserId, caseId);
   }
 
+  /**
+   * K3-L (owner GO 2026-09-29) — bekletilen mahsubun tamamlanması: hesabına ödeme yapılan borçlu girilir; mahsup ve
+   * bekletme durumu tek transaction'da (CollectionService.completeHeldAllocation). Yetki ön kararı controller'da
+   * (RECORD_COLLECTION L2 kapısı), yetkili karar transaction içinde yeniden verilir.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseController.completeCollectionAllocation() → POST /cases/:id/collections/:collectionId/allocation/complete
+   * </remarks>
+   */
+  async completeCollectionAllocation(
+    tenantId: string,
+    caseId: string,
+    collectionId: string,
+    input: { caseDebtorId: string; authorizationBasis: ReceiptAuthorizationBasis },
+    actorUserId: string,
+    correlationId?: string,
+  ) {
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, caseId, tenantId },
+      select: { id: true },
+    });
+    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+    return this.collectionService.completeHeldAllocation(
+      tenantId,
+      { caseId, collectionId, caseDebtorId: input.caseDebtorId, authorizationBasis: input.authorizationBasis },
+      actorUserId,
+      correlationId ? { correlationId } : {},
+    );
+  }
+
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - CaseController.deleteCollection() → DELETE /cases/:id/collections/:collectionId (dosya detayından fiziksel tahsilat silme isteği; TM3-S1 hard-delete kapalı)
@@ -4413,14 +4446,17 @@ export class CaseService {
       this.logger.warn(`Attorney fee calculation failed:`, error);
     }
 
-    // 9. Tahsilatlar
+    // 9. Tahsilatlar — K3-L: mahsubu bekletilen (borçlusu belirsiz) tahsilat borçtan DÜŞÜLMEZ, ayrı gösterilir.
+    const heldAllocations = await findActiveCollectionAllocationHolds(this.prisma, tenantId, caseId);
+    const heldCollectionIds = new Set(heldAllocations.map((hold) => hold.collectionId));
     const aktiveTahsilatlar = caseData.collections
-      .filter((c: any) => c.status !== 'CANCELLED')
+      .filter((c: any) => c.status !== 'CANCELLED' && !heldCollectionIds.has(c.id))
       .map((c: any) => ({
         tarih: c.date?.toISOString().split('T')[0] || hesapTarihi,
         tutar: Number(c.amount),
       }));
     const toplamTahsilat = aktiveTahsilatlar.reduce((sum: number, c: any) => sum + c.tutar, 0);
+    const mahsubuBekleyenTahsilat = heldAllocations.reduce((sum, hold) => sum + Number(hold.amount), 0);
 
     // 10. Toplamlar
     const toplamBorc = takipTutari + icraMasraflari + vekaletUcreti + takipSonrasiFaiz;
@@ -4470,6 +4506,8 @@ export class CaseService {
       toplamBorc,
       sonBorc,
       toplamTahsilat,
+      // K3-L: kaydedilmiş, mahsubu bekletilen tahsilat toplamı (kalanBorc'tan DÜŞÜLMEMİŞTİR; ayrı bilgi alanı)
+      mahsubuBekleyenTahsilat,
       kalanBorc,
       kalanAnapara: asilAlacak, // TBK m.100 sonrası hesaplanacak
       
@@ -4540,20 +4578,14 @@ export class CaseService {
       },
     });
     if (!caseData) throw new NotFoundException("Dosya bulunamadı");
-    // K3-L: kaydedilmiş ama otomatik mahsubu bekletilen tahsilatlar (defter kaydı YOK) ayrıca gösterilir.
-    const holds = await this.prisma.collectionOverpayment.findMany({
-      where: { tenantId, caseId, status: "HELD", sourceLedgerEntryId: null },
-      select: { collectionId: true, remainingAmount: true, currency: true, metadata: true },
-      orderBy: { createdAt: "asc" },
-    });
-    const heldCollections = holds
-      .filter((hold) => (hold.metadata as { kind?: string } | null)?.kind === "ALLOCATION_HELD")
-      .map((hold) => ({
-        collectionId: hold.collectionId,
-        amount: hold.remainingAmount,
-        currency: hold.currency,
-        holdReason: String((hold.metadata as { holdReason?: string } | null)?.holdReason ?? "UNKNOWN"),
-      }));
+    // K3-L: kaydedilmiş ama otomatik mahsubu bekletilen tahsilatlar (defter kaydı YOK; CollectionAllocationHold HELD)
+    // ayrıca gösterilir — fazla ödeme DEĞİLDİR.
+    const heldCollections = (await findActiveCollectionAllocationHolds(this.prisma, tenantId, caseId)).map((hold) => ({
+      collectionId: hold.collectionId,
+      amount: hold.amount,
+      currency: hold.currency,
+      holdReason: String(hold.holdReason),
+    }));
     return buildDebtorLedgerBalances({
       heldCollections,
       caseDebtors: caseData.debtors.map((cd: any) => ({

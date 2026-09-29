@@ -10,6 +10,11 @@ import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-
 import { SummaryEngineService } from '../../summary-engine/summary-engine.service';
 import { CollectionService } from '../collection.service';
 import { CollectionType, type CreateCollectionDto } from '../dto/collection.dto';
+import { executeCollectionCancelInTransaction } from '../collection-cancel-executor';
+import { createCollectionMutationTrace } from '../collection-audit';
+import { AccountingJournalWriterService } from '../../accounting-journal/accounting-journal.writer';
+import { paymentAllocationCompletedEventId } from '../collection-allocation-hold';
+import { ReceiptObjectScopeAuthorizationService } from '../receipt-object-scope-authorization.service';
 
 /**
  * K3-L Faz 1b (owner kararları 2026-09-28) — tahsilat yalnız ödeyen borçlunun sorumlu olduğu kalemlere mahsup edilir.
@@ -38,15 +43,22 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
     await prisma.$disconnect();
   });
 
+  const domainEvents = new DomainEventIngestService();
+  // Nakit girişi yevmiyesi gerçek yazıcıyla (iptal yürütücüsü orijinal RECORDED yevmiyeyi şart koşar).
+  const journalWriter = () => new AccountingJournalWriterService(prisma as any);
+  // Onay jetonu üretmeyen kapı: üyelik dayanağı yeterli (tx içi yeniden doğrulama yalnız prisma kullanır).
+  const receiptAuthorization = () =>
+    new ReceiptObjectScopeAuthorizationService(prisma as any, { isSecretConfigured: () => false } as any);
   const collections = () =>
     new CollectionService(
       prisma as any,
-      new DomainEventIngestService(),
+      domainEvents,
       new CaseDebtorLifecycleGuardService(prisma as any),
       engine,
-      undefined,
+      journalWriter(),
       undefined,
       new AuditService(prisma as any),
+      receiptAuthorization(),
     );
 
   async function fixture(label: string, penaltyRestricted = true) {
@@ -131,10 +143,11 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
     expect(await prisma.ledgerEntry.count({ where: { caseId: f.caseId } })).toBe(0);
     expect(await prisma.collectionAllocation.count({ where: { collectionId: (created as any).id } })).toBe(0);
     expect(await collected(f)).toEqual({ PRINCIPAL: 0, CHECK_PENALTY: 0 });
-    const hold = await prisma.collectionOverpayment.findUniqueOrThrow({ where: { collectionId: (created as any).id } });
-    expect(hold).toMatchObject({ status: 'HELD', sourceLedgerEntryId: null });
-    expect(Number(hold.remainingAmount)).toBe(500);
-    expect(hold.metadata).toMatchObject({ kind: 'ALLOCATION_HELD', holdReason: 'ON_BEHALF_DEBTOR_REQUIRED' });
+    // Bekletme AYRI tabloda; fazla ödeme (CollectionOverpayment) satırı YOK → iade/dağıtım konusu olamaz.
+    const hold = await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (created as any).id } });
+    expect(hold).toMatchObject({ status: 'HELD', holdReason: 'ON_BEHALF_DEBTOR_REQUIRED', releasedLedgerEntryId: null });
+    expect(Number(hold.amount)).toBe(500);
+    expect(await prisma.collectionOverpayment.count({ where: { caseId: f.caseId } })).toBe(0);
   });
 
   it('hesabına ödeme yapılan borçlunun sorumlu kalemi yoksa da kaydedilir, mahsup bekletilir', async () => {
@@ -142,8 +155,8 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
     await prisma.claimItem.update({ where: { id: f.principal.id }, data: { status: 'CANCELLED' } });
     const created = await pay(f, 300, f.cirantaCd.id);
     expect(await prisma.ledgerEntry.count({ where: { caseId: f.caseId } })).toBe(0);
-    const hold = await prisma.collectionOverpayment.findUniqueOrThrow({ where: { collectionId: (created as any).id } });
-    expect(hold.metadata).toMatchObject({ kind: 'ALLOCATION_HELD', holdReason: 'ON_BEHALF_DEBTOR_NOT_LIABLE' });
+    const hold = await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (created as any).id } });
+    expect(hold).toMatchObject({ status: 'HELD', holdReason: 'ON_BEHALF_DEBTOR_NOT_LIABLE' });
     expect(await collected(f)).toEqual({ PRINCIPAL: 0, CHECK_PENALTY: 0 });
   });
 
@@ -198,5 +211,189 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
     expect(cirantaPreview.acceptance.warnings).toContain('PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST');
     const kesideciPreview = await preview.preview({ tenantId: f.tenantId, caseId: f.caseId, input: { amount: 500, caseDebtorId: f.kesideciCd.id } as any });
     expect(kesideciPreview.balanceImpact.currentOutstandingAmount).toBe(11000);
+  });
+
+  /**
+   * K3-L (owner GO 2026-09-29) — BEKLETİLEN MAHSUBUN TAMAMLANMASI. Gerçek servis + disposable PostgreSQL:
+   * yetki tx içinde yeniden doğrulanır; tek transaction'da defter mahsubu + HELD→RELEASED; tekrar/yarış/iptal
+   * yarışlarında ikinci mahsup, ikinci tahsilat, ikinci ödeme olayı üretilmez; kalan tutar kaybolmaz.
+   */
+  describe('bekletilen mahsubun tamamlanması', () => {
+    async function actor(f: Fixture, member = true) {
+      const suffix = randomUUID().slice(0, 8);
+      const user = await prisma.user.create({
+        data: { tenantId: f.tenantId, email: `k3l-${suffix}@example.test`, name: 'Mahsup', surname: 'Aktörü' },
+      });
+      const lawyer = await prisma.lawyer.create({ data: { tenantId: f.tenantId, userId: user.id, name: 'Mahsup', surname: 'Aktörü' } });
+      if (member) await prisma.caseLawyer.create({ data: { caseId: f.caseId, lawyerId: lawyer.id } });
+      return { userId: user.id, lawyerId: lawyer.id };
+    }
+    const complete = (f: Fixture, collectionId: string, caseDebtorId: string, actorUserId: string) =>
+      collections().completeHeldAllocation(
+        f.tenantId,
+        { caseId: f.caseId, collectionId, caseDebtorId, authorizationBasis: 'MEMBERSHIP' },
+        actorUserId,
+      );
+    const counts = async (f: Fixture, collectionId: string) => ({
+      collections: await prisma.collection.count({ where: { caseId: f.caseId } }),
+      ledgerPayments: await prisma.ledgerEntry.count({ where: { collectionId, entryType: 'PAYMENT', status: 'CONFIRMED' } }),
+      paymentReceived: await prisma.icrabotTimelineEntry.count({
+        where: { tenantId: f.tenantId, caseId: f.caseId, type: 'PAYMENT_RECEIVED', body: { path: ['payload', 'collectionId'], equals: collectionId } },
+      }),
+      allocationCompleted: await prisma.icrabotTimelineEntry.count({
+        where: { tenantId: f.tenantId, caseId: f.caseId, type: 'PAYMENT_ALLOCATION_COMPLETED', body: { path: ['payload', 'collectionId'], equals: collectionId } },
+      }),
+      completionAudit: await prisma.auditLog.count({ where: { tenantId: f.tenantId, action: 'COLLECTION_ALLOCATION_COMPLETED', entityId: collectionId } }),
+    });
+
+    it('keşideci girilince aynı transaction\'da TBK100 mahsubu yapılır, bekletme RELEASED olur; tahsilat/ödeme olayı yeniden üretilmez', async () => {
+      const f = await fixture('complete');
+      const { userId } = await actor(f);
+      const held = await pay(f, 1500);
+      const before = await counts(f, (held as any).id);
+      expect(before).toMatchObject({ collections: 1, ledgerPayments: 0, paymentReceived: 1, allocationCompleted: 0 });
+
+      const result = await complete(f, (held as any).id, f.kesideciCd.id, userId);
+      expect(result).toMatchObject({ status: 'RELEASED', replayed: false, onBehalfCaseDebtorId: f.kesideciCd.id, allocatedAmount: 1500, heldOverpaymentAmount: 0 });
+      expect(await collected(f)).toEqual({ PRINCIPAL: 500, CHECK_PENALTY: 1000 });
+
+      const hold = await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (held as any).id } });
+      expect(hold).toMatchObject({ status: 'RELEASED', releasedOnBehalfCaseDebtorId: f.kesideciCd.id, releasedLedgerEntryId: result.ledgerEntryId, releasedById: userId });
+      const ledger = await prisma.ledgerEntry.findUniqueOrThrow({ where: { id: result.ledgerEntryId! } });
+      expect(ledger).toMatchObject({ entryType: 'PAYMENT', status: 'CONFIRMED', collectionId: (held as any).id });
+      expect(ledger.entryDate.toISOString()).toBe('2026-09-20T09:00:00.000Z');
+      expect(ledger.metadata).toMatchObject({ allocationHoldId: hold.id, onBehalfCaseDebtorId: f.kesideciCd.id });
+      // Collection.caseDebtorId DEĞİŞMEZ (yevmiye kaynak hash'i); borçlu bekletme kaydında + defter metadata'sında.
+      expect((await prisma.collection.findUniqueOrThrow({ where: { id: (held as any).id } })).caseDebtorId).toBeNull();
+
+      const after = await counts(f, (held as any).id);
+      expect(after).toEqual({ collections: 1, ledgerPayments: 1, paymentReceived: 1, allocationCompleted: 1, completionAudit: 1 });
+      const completedEvent = await prisma.icrabotTimelineEntry.findFirst({
+        where: { tenantId: f.tenantId, type: 'PAYMENT_ALLOCATION_COMPLETED' },
+        select: { body: true },
+      });
+      const body = completedEvent?.body as any;
+      expect(body.header.eventId).toBe(paymentAllocationCompletedEventId(f.tenantId, (held as any).id));
+      expect(body.header.actor).toMatchObject({ type: 'HUMAN', userId });
+      expect(body.header.causedBy).toBeTruthy();
+
+      // Borçlu bazlı bakiye ve hesap özeti: bekletme listesi boşalır; keşidecinin kalanı düşer.
+      const caseService = Object.assign(Object.create(CaseService.prototype), { prisma }) as CaseService;
+      const balances = await caseService.getDebtorLedgerBalances(f.tenantId, f.caseId);
+      expect(balances.mahsubuBekleyenTahsilatlar).toEqual([]);
+      const byCd = Object.fromEntries(balances.borclular.map((b) => [b.caseDebtorId, b]));
+      expect(byCd[f.kesideciCd.id].toplamlar[0].kalan).toBe(9500);
+      expect(byCd[f.cirantaCd.id].toplamlar[0].kalan).toBe(9500);
+    });
+
+    it('aynı borçluyla tekrar → replay (ikinci defter kaydı/olay yok); farklı borçluyla → 409', async () => {
+      const f = await fixture('replay');
+      const { userId } = await actor(f);
+      const held = await pay(f, 500);
+      const first = await complete(f, (held as any).id, f.cirantaCd.id, userId);
+      const again = await complete(f, (held as any).id, f.cirantaCd.id, userId);
+      expect(again).toMatchObject({ replayed: true, status: 'RELEASED', ledgerEntryId: first.ledgerEntryId, allocatedAmount: 500 });
+      await expect(complete(f, (held as any).id, f.kesideciCd.id, userId)).rejects.toMatchObject({
+        response: { code: 'ALLOCATION_HOLD_ALREADY_RELEASED' },
+      });
+      expect(await counts(f, (held as any).id)).toEqual({ collections: 1, ledgerPayments: 1, paymentReceived: 1, allocationCompleted: 1, completionAudit: 1 });
+      expect(await collected(f)).toEqual({ PRINCIPAL: 500, CHECK_PENALTY: 0 });
+    });
+
+    it('eşzamanlı iki tamamlama → tek defter kaydı, tek RELEASED; kaybeden tekrar yanıtı alır ya da 409 ile düşer', async () => {
+      const f = await fixture('race');
+      const { userId } = await actor(f);
+      const held = await pay(f, 700);
+      const outcomes = await Promise.allSettled([
+        complete(f, (held as any).id, f.kesideciCd.id, userId),
+        complete(f, (held as any).id, f.kesideciCd.id, userId),
+      ]);
+      const fulfilled = outcomes.filter((o) => o.status === 'fulfilled') as PromiseFulfilledResult<any>[];
+      expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+      expect(fulfilled.filter((o) => o.value.replayed === false)).toHaveLength(1);
+      for (const o of outcomes) {
+        if (o.status === 'rejected') expect((o.reason as any).status ?? (o.reason as any).getStatus?.()).toBe(409);
+      }
+      expect(await counts(f, (held as any).id)).toEqual({ collections: 1, ledgerPayments: 1, paymentReceived: 1, allocationCompleted: 1, completionAudit: 1 });
+      expect(await prisma.collectionAllocationHold.count({ where: { caseId: f.caseId, status: 'RELEASED' } })).toBe(1);
+      expect(await collected(f)).toEqual({ PRINCIPAL: 0, CHECK_PENALTY: 700 });
+    });
+
+    it('yetki işlem anında yeniden doğrulanır: dosya üyesi olmayan aktör tamamlayamaz; hiçbir yazma olmaz', async () => {
+      const f = await fixture('unauthorized');
+      const { userId } = await actor(f, false);
+      const held = await pay(f, 500);
+      await expect(complete(f, (held as any).id, f.kesideciCd.id, userId)).rejects.toMatchObject({
+        response: { code: 'RECEIPT_CASE_MEMBERSHIP_REVOKED' },
+      });
+      expect(await counts(f, (held as any).id)).toMatchObject({ ledgerPayments: 0, allocationCompleted: 0, completionAudit: 0 });
+      expect((await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (held as any).id } })).status).toBe('HELD');
+    });
+
+    it('borçlunun sorumlu kalemi hâlâ yoksa bekletme AYNEN korunur (409, yazma yok)', async () => {
+      const f = await fixture('still-held');
+      const { userId } = await actor(f);
+      await prisma.claimItem.update({ where: { id: f.principal.id }, data: { status: 'CANCELLED' } });
+      const held = await pay(f, 300, f.cirantaCd.id);
+      await expect(complete(f, (held as any).id, f.cirantaCd.id, userId)).rejects.toMatchObject({
+        response: { code: 'ON_BEHALF_DEBTOR_NOT_LIABLE' },
+      });
+      expect((await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (held as any).id } })).status).toBe('HELD');
+      expect(await counts(f, (held as any).id)).toMatchObject({ ledgerPayments: 0, allocationCompleted: 0 });
+    });
+
+    it('kalan tutar kaybolmaz: sorumlu kalemleri aşan bekletme mahsup edilir, fazlası create() ile aynı kuralla ENGEL tanısına yazılır', async () => {
+      const f = await fixture('remainder');
+      const { userId } = await actor(f);
+      const held = await pay(f, 12000);
+      const result = await complete(f, (held as any).id, f.cirantaCd.id, userId);
+      expect(result).toMatchObject({ allocatedAmount: 10000, heldOverpaymentAmount: 0 });
+      expect(await collected(f)).toEqual({ PRINCIPAL: 10000, CHECK_PENALTY: 0 });
+      // Borçlu belirtilmiş ödeme → kısıtlı ödeme sinyali → fazla ödeme emanete alınmaz, OVERPAYMENT_BLOCKED tanısı (2000 TL kayıt altında).
+      const blocked = await prisma.icrabotTimelineEntry.findFirst({
+        where: { tenantId: f.tenantId, caseId: f.caseId, type: 'OVERPAYMENT_BLOCKED' },
+        select: { body: true },
+      });
+      expect((blocked?.body as any)?.payload).toMatchObject({ collectionId: (held as any).id, attemptedOverpaymentAmount: 2000, allocatedAmount: 10000 });
+      expect(await prisma.collectionOverpayment.count({ where: { caseId: f.caseId } })).toBe(0);
+    });
+
+    it('iptal ↔ tamamlama: tamamlanmış tahsilat iptal edilince defter terslenir ve bekletme REVERSED olur; iptal edilmiş tahsilat tamamlanamaz', async () => {
+      const f = await fixture('cancel');
+      const { userId } = await actor(f);
+      const audit = new AuditService(prisma as any);
+      const cancel = (collectionId: string) =>
+        prisma.$transaction((tx) =>
+          executeCollectionCancelInTransaction(
+            tx,
+            { domainEventIngestService: domainEvents, journalWriter: journalWriter(), auditService: audit },
+            {
+              tenantId: f.tenantId,
+              id: collectionId,
+              dto: { cancelReason: 'k3l cancel race' },
+              actorUserId: userId,
+              expectedCaseId: f.caseId,
+              approvalRequestId: `approval-${randomUUID()}`,
+              trace: createCollectionMutationTrace(`corr-${randomUUID()}`, 'approval-k3l'),
+            },
+          ),
+        );
+
+      const completedThenCancelled = await pay(f, 400);
+      await complete(f, (completedThenCancelled as any).id, f.kesideciCd.id, userId);
+      expect(await collected(f)).toEqual({ PRINCIPAL: 0, CHECK_PENALTY: 400 });
+      await cancel((completedThenCancelled as any).id);
+      expect(await collected(f)).toEqual({ PRINCIPAL: 0, CHECK_PENALTY: 0 });
+      expect((await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (completedThenCancelled as any).id } })).status).toBe('REVERSED');
+      expect(await prisma.ledgerEntry.count({ where: { collectionId: (completedThenCancelled as any).id, entryType: 'REVERSAL' } })).toBe(1);
+
+      const cancelledThenCompleted = await pay(f, 250);
+      await cancel((cancelledThenCompleted as any).id);
+      await expect(complete(f, (cancelledThenCompleted as any).id, f.kesideciCd.id, userId)).rejects.toMatchObject({
+        response: { code: 'COLLECTION_NOT_CONFIRMED' },
+      });
+      expect((await prisma.collectionAllocationHold.findUniqueOrThrow({ where: { collectionId: (cancelledThenCompleted as any).id } })).status).toBe('REVERSED');
+      expect(await prisma.ledgerEntry.count({ where: { collectionId: (cancelledThenCompleted as any).id } })).toBe(0);
+    });
   });
 });

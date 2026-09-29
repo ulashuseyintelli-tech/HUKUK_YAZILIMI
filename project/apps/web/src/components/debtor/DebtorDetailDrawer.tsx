@@ -629,7 +629,7 @@ export function DebtorDetailDrawer({
               </div>
 
               <DebtorFinancialSummaryCard summary={debtor.financialSummary} />
-              <DebtorLedgerBalanceCard caseId={caseId} caseDebtorId={caseDebtorId} />
+              <DebtorLedgerBalanceCard caseId={caseId} caseDebtorId={caseDebtorId} onAllocationCompleted={onUpdate} />
 
               {/* Service Status Section */}
               <div className="bg-gray-50 rounded-lg p-2 space-y-1">

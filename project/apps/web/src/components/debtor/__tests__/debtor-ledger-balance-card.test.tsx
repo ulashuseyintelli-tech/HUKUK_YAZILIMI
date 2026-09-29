@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const getCaseDebtorLedgerBalances = vi.fn();
+const completeCollectionAllocation = vi.fn();
 vi.mock("@/lib/api", () => ({
-  api: { getCaseDebtorLedgerBalances: (...a: unknown[]) => getCaseDebtorLedgerBalances(...a) },
+  api: {
+    getCaseDebtorLedgerBalances: (...a: unknown[]) => getCaseDebtorLedgerBalances(...a),
+    completeCollectionAllocation: (...a: unknown[]) => completeCollectionAllocation(...a),
+  },
 }));
 
 import { DebtorLedgerBalanceCard } from "../DebtorLedgerBalanceCard";
@@ -41,7 +45,10 @@ const result = {
 
 /** K3-L Faz 1c — borçlu detayında kalem bazlı borç (faiz hariç). */
 describe("DebtorLedgerBalanceCard (K3-L)", () => {
-  beforeEach(() => getCaseDebtorLedgerBalances.mockReset().mockResolvedValue(result));
+  beforeEach(() => {
+    getCaseDebtorLedgerBalances.mockReset().mockResolvedValue(result);
+    completeCollectionAllocation.mockReset();
+  });
 
   it("ciranta yalnız ortak bedeli görür; keşideciye ait tazminat listelenmez", async () => {
     render(<DebtorLedgerBalanceCard caseId="case-1" caseDebtorId="cd-c" />);
@@ -57,5 +64,45 @@ describe("DebtorLedgerBalanceCard (K3-L)", () => {
     expect(screen.getByTestId("debtor-ledger-total").textContent).toContain("10.200,00 TRY");
     expect(screen.getByText(/işleyen faiz hariç/i)).toBeTruthy();
     expect(screen.getByTestId("debtor-ledger-held").textContent).toContain("250,00 TRY");
+  });
+
+  it("K3-L tamamlama: 'Bu borçlu hesabına mahsup et' AÇIK borçlu kimliğiyle sunucuya gider; sonuç sonrası bakiye yeniden okunur", async () => {
+    completeCollectionAllocation.mockResolvedValue({
+      collectionId: "col-h",
+      allocationHoldId: "hold-1",
+      status: "RELEASED",
+      replayed: false,
+      onBehalfCaseDebtorId: "cd-k",
+      ledgerEntryId: "le-1",
+      allocatedAmount: 250,
+      heldOverpaymentAmount: 0,
+      ledgerAllocationCount: 1,
+    });
+    render(<DebtorLedgerBalanceCard caseId="case-1" caseDebtorId="cd-k" />);
+    await waitFor(() => expect(screen.getByTestId("debtor-ledger-complete-hold")).toBeTruthy());
+    expect(getCaseDebtorLedgerBalances).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId("debtor-ledger-complete-hold"));
+    await waitFor(() => expect(completeCollectionAllocation).toHaveBeenCalledTimes(1));
+    expect(completeCollectionAllocation).toHaveBeenCalledWith("case-1", "col-h", { caseDebtorId: "cd-k", confirmationToken: undefined });
+    await waitFor(() => expect(screen.getByTestId("debtor-ledger-completion-message").textContent).toContain("Mahsup tamamlandı"));
+    expect(getCaseDebtorLedgerBalances).toHaveBeenCalledTimes(2);
+  });
+
+  it("K3-L tamamlama: tekrar (replayed) yanıtı 'yeni kayıt üretilmedi' olarak gösterilir", async () => {
+    completeCollectionAllocation.mockResolvedValue({
+      collectionId: "col-h",
+      allocationHoldId: "hold-1",
+      status: "RELEASED",
+      replayed: true,
+      onBehalfCaseDebtorId: "cd-k",
+      ledgerEntryId: "le-1",
+      allocatedAmount: 250,
+      heldOverpaymentAmount: 0,
+      ledgerAllocationCount: 1,
+    });
+    render(<DebtorLedgerBalanceCard caseId="case-1" caseDebtorId="cd-k" />);
+    await waitFor(() => expect(screen.getByTestId("debtor-ledger-complete-hold")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("debtor-ledger-complete-hold"));
+    await waitFor(() => expect(screen.getByTestId("debtor-ledger-completion-message").textContent).toContain("yeni kayıt üretilmedi"));
   });
 });

@@ -89,7 +89,7 @@ describe('RCV-P2-WS03-P03 ReceiptObjectScopeAuthorizationService', () => {
   it('allows an active tenant-scoped HUMAN who is a case member', async () => {
     const { service, tokens } = make();
 
-    await expect(service.authorize(baseInput)).resolves.toEqual({ kind: 'ALLOW' });
+    await expect(service.authorize(baseInput)).resolves.toEqual({ kind: 'ALLOW', basis: 'MEMBERSHIP' });
     expect(tokens.issue).not.toHaveBeenCalled();
     expect(tokens.consume).not.toHaveBeenCalled();
   });
@@ -126,7 +126,7 @@ describe('RCV-P2-WS03-P03 ReceiptObjectScopeAuthorizationService', () => {
 
     await expect(
       service.authorize({ ...baseInput, confirmationToken: 'token-1' }),
-    ).resolves.toEqual({ kind: 'ALLOW' });
+    ).resolves.toEqual({ kind: 'ALLOW', basis: 'CONFIRMATION' });
     expect(tokens.consume).toHaveBeenCalledWith(
       'token-1',
       expect.objectContaining({
