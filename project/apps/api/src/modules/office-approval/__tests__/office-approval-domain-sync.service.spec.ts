@@ -92,6 +92,12 @@ const collectionVoidTx = () => ({
     findMany: jest.fn().mockResolvedValue([]),
     updateMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
+  // K3-L: iptal yürütücüsü COL-LOCK-001 (advisory lock) + tahsilat satırını FOR UPDATE okur; bekletme kaydını kapatır
+  $executeRaw: jest.fn().mockResolvedValue(undefined),
+  $queryRaw: jest.fn().mockResolvedValue([{ status: 'CONFIRMED' }]),
+  collectionAllocationHold: {
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+  },
 });
 
 describe('DBIND-P1 OfficeApprovalDomainSyncService', () => {

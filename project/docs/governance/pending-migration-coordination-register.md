@@ -1891,3 +1891,19 @@ Merkezi ledger: `OFFICE-DELIVERY-MANIFEST.md` §15.4 (MIG-C36-APPLY = APPLIED).
 | Sıra | Main'deki bekleyen `20260919120000_sim_snapshot_restore_unique_indexes` ve `20260928120000_claim_formation_batch_approval_position` ile AYNI yayın penceresinde, bu sırayla uygulanır (`prisma migrate deploy` hepsini sırayla uygular) |
 | Runtime activation | Kolon borçlu ekleme/güncelleme uçlarından yazılabilir; okuyan tek yol varsayılan KAPALI çek formation akışı |
 | Canlı / dev DB | **NOT APPLIED** — canlı uygulama ayrı owner GO + EXACT-ONE paketi ister |
+
+## K3-L — 20260930090000_collection_allocation_hold (PENDING, 2026-09-29)
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260930090000_collection_allocation_hold` |
+| Program / task | RECEIVABLE / K3-L Faz 1d — bekletilen mahsubun tamamlanması (owner GO 2026-09-29 §2: "Sadece migration çıkarmamak için yanlış anlamda bir modeli zorlamayacaksın") |
+| İçerik | Yeni enum `AllocationHoldStatus` (HELD/RELEASED/REVERSED), `AllocationHoldReason` (ON_BEHALF_DEBTOR_REQUIRED/NOT_LIABLE); yeni tablo `CollectionAllocationHold` (tenantId/caseId/collectionId FK CASCADE, `collectionId` UNIQUE, `releasedLedgerEntryId` → LedgerEntry RESTRICT, `releasedOnBehalfCaseDebtorId` → CaseDebtor RESTRICT, 4 index, 4 CHECK: amount>0, RELEASED/REVERSED/HELD alan değişmezleri); veri taşıma `INSERT … SELECT` + `DELETE` (`CollectionOverpayment.metadata->>'kind'='ALLOCATION_HELD'` satırları — #2836 yazdı; hiçbiri defter kaydına bağlı değil, `sourceLedgerEntryId` NULL); `CollectionOverpayment` üzerine `collection_overpayment_not_allocation_hold_check` `NOT VALID` + `VALIDATE`; `lock_timeout 3s`, `statement_timeout 60s` |
+| Gerekçe | Bekletilen mahsup fazla ödeme DEĞİLDİR (iade/virman/müvekkile dağıtım konusu olamaz); `collectionId @unique` tamamlamada gerçek fazla ödemeye yer bırakmıyordu; RE_ALLOCATED iki anlam taşıyordu; kanonik bakiye zinciri HELD fazla ödemeyi emanet sayıyordu |
+| Existing migration mutation | NONE |
+| Default / backfill / data mutation | **VAR — dar:** yalnız `metadata->>'kind'='ALLOCATION_HELD'` fazla ödeme satırları yeni tabloya taşınır ve eski satır silinir (status REVERSED korunur, `holdReason` eşlenir, eski metadata `legacyMetadata` altında saklanır). Canlıda beklenen satır sayısı 0 (kısıtlı kalemli dosya yok; #2836 canlıda değil) — pencere öncesi SAYILIR: `SELECT count(*) FROM "CollectionOverpayment" WHERE metadata->>'kind'='ALLOCATION_HELD'` |
+| Index / trigger | 5 index (1 unique); trigger YOK |
+| Doğrulama | Disposable PostgreSQL 16 (k3l_gate_test): `migrate deploy` 134/134; 7 sentetik bekletme satırı taşındı, kaynak/hedef fark 0; 5 CHECK `convalidated=t`; `prisma migrate diff --from-migrations --to-schema-datamodel` (shadow DB) → "No difference detected"; CI `db/core-lifecycle` 452 + `db/domain-integration` 1025 geçti |
+| Sıra | Main'deki bekleyen `20260919120000_sim_snapshot_restore_unique_indexes`, `20260928120000_claim_formation_batch_approval_position`, `20260929090000_case_debtor_aval_for` ile AYNI yayın penceresinde, bu sırayla uygulanır |
+| Runtime activation | Yazan yollar: tahsilat kaydı bekletme dalı (create), tamamlama ucu `POST /cases/:id/collections/:collectionId/allocation/complete`, iptal yürütücüsü (REVERSED). Okuyanlar: borçlu bakiyesi, hesap özeti, kanonik bakiye fallback dışlaması, müvekkil dağıtım kapısı. Tablo yokken (migration uygulanmadan yeni kod canlıya çıkarsa) bekletme dalı ve okuyucular HATA verir → kod ve migration AYNI pencerede |
+| Canlı / dev DB | **NOT APPLIED** — canlı uygulama ayrı owner GO + EXACT-ONE paketi ister |

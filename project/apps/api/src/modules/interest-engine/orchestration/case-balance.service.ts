@@ -27,6 +27,7 @@ import type { RateEntry as ProviderRateEntry } from '../rates/rate-provider.serv
 import { InterestEngineService } from '../interest-engine.service';
 import { assembleClaimBuckets, ClaimItemInput } from '../assembler/claim-bucket-assembler';
 import type { AssemblerDiagnostic } from '../assembler/claim-bucket-assembler';
+import { findActiveCollectionAllocationHolds } from '../../collection/collection-allocation-hold';
 import { hasFatalPaymentMapDiagnostic, mapPayments, PaymentSource } from '../calc-prep/payment-mapper';
 import type { LedgerPaymentRow, CollectionRow, PaymentMapDiagnostic } from '../calc-prep/payment-mapper';
 import { groupByCurrency } from '../calc-prep/currency-grouper';
@@ -93,6 +94,15 @@ export interface CaseBalanceHeldOverpayment {
   status: string;
 }
 
+/** K3-L — mahsubu bekletilen tahsilat (defter kaydı yok; fazla ödeme DEĞİL; ödeme sayılmaz). */
+export interface CaseBalanceAllocationHold {
+  id: string;
+  collectionId: string;
+  amount: number;
+  currency: string;
+  holdReason: string;
+}
+
 export interface CaseBalanceBlockedOverpaymentReason {
   reason: string;
   message?: string;
@@ -131,6 +141,8 @@ export interface CaseBalanceResult {
     held: CaseBalanceHeldOverpayment[];
     blocked: CaseBalanceBlockedOverpaymentDiagnostic[];
   };
+  /** K3-L: aktif bekletmeler — Collection fallback'inden DIŞLANDI; bilgi amaçlı. */
+  allocationHolds?: CaseBalanceAllocationHold[];
 }
 
 /** Decimal|null → number|null (read boundary; money 15,2). */
@@ -241,7 +253,7 @@ export class CaseBalanceService {
     }
 
     // 2. READ-ONLY okumalar (tenant-scoped)
-    const [claimItems, ledgerRows, collections, heldOverpayments, blockedOverpayments] = await Promise.all([
+    const [claimItems, ledgerRows, allCollections, heldOverpayments, blockedOverpayments, activeAllocationHolds] = await Promise.all([
       this.prisma.claimItem.findMany({
         where: { caseId, tenantId, status: { not: ClaimItemStatus.CANCELLED } },
       }),
@@ -264,7 +276,12 @@ export class CaseBalanceService {
       this.prisma.collection.findMany({ where: { caseId, tenantId } }),
       this.readHeldOverpayments(tenantId, caseId),
       this.readBlockedOverpaymentDiagnostics(tenantId, caseId),
+      this.readActiveAllocationHolds(tenantId, caseId),
     ]);
+    // K3-L: mahsubu BEKLETİLEN tahsilat (defter kaydı yok) Collection fallback'ine girmez — girseydi ödeme sayılır,
+    // sonra tamamlanınca defterden bir kez daha düşerdi (çift sayım). Bekletme ayrı diagnostic olarak raporlanır.
+    const heldCollectionIds = new Set(activeAllocationHolds.map((hold) => hold.collectionId));
+    const collections = allCollections.filter((c) => !heldCollectionIds.has(c.id));
 
     // 3. Assemble (G4a)
     const itemInputs: ClaimItemInput[] = claimItems.map((ci) => ({
@@ -433,7 +450,31 @@ export class CaseBalanceService {
         perCurrency,
       },
       overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
+      allocationHolds: activeAllocationHolds,
     };
+  }
+
+  /**
+   * K3-L — aktif (HELD) bekletmeler; salt okuma. Test/mocks'ta model yoksa boş döner.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CaseBalanceService.computeCaseBalance() → Collection fallback dışlaması + rapor
+   * /// </remarks>
+   */
+  private async readActiveAllocationHolds(
+    tenantId: string,
+    caseId: string,
+  ): Promise<CaseBalanceAllocationHold[]> {
+    if (!this.prisma.collectionAllocationHold?.findMany) return [];
+    const rows = await findActiveCollectionAllocationHolds(this.prisma, tenantId, caseId);
+    return rows.map((row) => ({
+      id: String(row.id),
+      collectionId: String(row.collectionId),
+      amount: toNum(row.amount) ?? 0,
+      currency: String(row.currency || 'TRY'),
+      holdReason: String(row.holdReason),
+    }));
   }
 
   private async readHeldOverpayments(

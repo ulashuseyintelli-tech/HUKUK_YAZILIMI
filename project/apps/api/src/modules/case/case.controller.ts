@@ -756,6 +756,43 @@ export class CaseController {
   }
 
   /**
+   * K3-L — bekletilen mahsubu tamamla (hesabına ödeme yapılan borçlu girilir)
+   * POST /cases/:id/collections/:collectionId/allocation/complete
+   * Tahsilat kaydıyla AYNI RECORD_COLLECTION L2 kapısı (üye → ALLOW; üye değil → onay zarfı). Yetki, transaction
+   * içinde yeniden doğrulanır (ReceiptObjectScopeAuthorizationService.assertStillAuthorizedInTx).
+   */
+  @Post(":id/collections/:collectionId/allocation/complete")
+  async completeCollectionAllocation(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string,
+    @Param("collectionId") collectionId: string,
+    @Body() body: { caseDebtorId: string; confirmationToken?: string },
+    @Req() req: any,
+  ) {
+    const receiptAuthorization = this.requireReceiptAuthorization();
+    const { confirmationToken, ...completionInput } = body;
+    const authorization = await receiptAuthorization.authorize({
+      tenantId,
+      actorUserId: userId,
+      caseId: id,
+      surface: RECEIPT_AUTHORIZATION_SURFACES.COMPLETE_HELD_ALLOCATION,
+      payload: { caseId: id, collectionId, ...completionInput },
+      confirmationToken,
+    });
+    if (authorization.kind === 'ENVELOPE') return authorization.envelope;
+
+    return this.caseService.completeCollectionAllocation(
+      tenantId,
+      id,
+      collectionId,
+      { caseDebtorId: completionInput.caseDebtorId, authorizationBasis: authorization.basis },
+      userId,
+      getRequestId(req),
+    );
+  }
+
+  /**
    * Tahsilat sil
    * DELETE /cases/:id/collections/:collectionId
    */

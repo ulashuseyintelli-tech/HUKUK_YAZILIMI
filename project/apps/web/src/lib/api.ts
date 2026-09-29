@@ -545,6 +545,21 @@ class ApiClient {
     return this.request<DebtorLedgerBalanceResultDTO>(`/cases/${caseId}/debtor-balances`);
   }
 
+  /**
+   * K3-L — bekletilen mahsubu tamamla: hesabına ödeme yapılan borçlu girilir; sunucu aynı transaction'da mahsup
+   * eder ve bekletmeyi kapatır. Tahsilat kaydıyla AYNI yetki kapısı (zarf dönebilir → runGuarded ile çağrılır).
+   */
+  async completeCollectionAllocation(
+    caseId: string,
+    collectionId: string,
+    data: { caseDebtorId: string; confirmationToken?: string },
+  ) {
+    return this.request<CollectionAllocationCompletionDTO>(
+      `/cases/${caseId}/collections/${collectionId}/allocation/complete`,
+      { method: 'POST', body: JSON.stringify(data) },
+    );
+  }
+
   async getCaseDebtorDetail(caseId: string, caseDebtorId: string) {
     return this.request<DebtorDetailDTO>(`/debtors/case/${caseId}/${caseDebtorId}`);
   }
@@ -5754,6 +5769,19 @@ export interface DebtorLedgerBalanceResultDTO {
   }>;
   sorumlusuBulunamayanKalemler: DebtorLedgerItemLineDTO[];
   mahsubuBekleyenTahsilatlar?: Array<{ collectionId: string; tutar: number; paraBirimi: string; sebep: string }>;
+}
+
+/** K3-L — bekletilen mahsup tamamlama yanıtı (replayed=true: aynı borçluyla tekrar; yeni kayıt üretilmedi). */
+export interface CollectionAllocationCompletionDTO {
+  collectionId: string;
+  allocationHoldId: string;
+  status: 'RELEASED';
+  replayed: boolean;
+  onBehalfCaseDebtorId: string | null;
+  ledgerEntryId: string | null;
+  allocatedAmount: number;
+  heldOverpaymentAmount: number;
+  ledgerAllocationCount: number;
 }
 
 export interface PaymentPreviewRequestDTO {

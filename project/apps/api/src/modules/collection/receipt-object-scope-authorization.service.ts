@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { Prisma } from '@prisma/client';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import {
   ActionClass,
@@ -26,6 +27,8 @@ export const RECEIPT_AUTHORIZATION_SURFACES = {
   CASE_COLLECTIONS: 'POST /cases/:id/collections',
   BANK_MATCH: 'POST /bank/transactions/:id/match',
   EXTERNAL_CASE_COLLECTION: 'POST /external-cases/:id/collection',
+  /** K3-L: bekletilen mahsubun tamamlanması (mali işlem; tahsilat kaydıyla aynı L2 kapısı). */
+  COMPLETE_HELD_ALLOCATION: 'POST /cases/:id/collections/:collectionId/allocation/complete',
 } as const;
 
 export type ReceiptAuthorizationSurface =
@@ -40,8 +43,11 @@ export interface ReceiptAuthorizationInput {
   readonly confirmationToken?: string;
 }
 
+/** ALLOW dayanağı: dosya üyeliği ya da tüketilmiş onay jetonu — tx içi yeniden doğrulamada hangisinin şart olduğunu belirler. */
+export type ReceiptAuthorizationBasis = 'MEMBERSHIP' | 'CONFIRMATION';
+
 export type ReceiptAuthorizationResult =
-  | Readonly<{ kind: 'ALLOW' }>
+  | Readonly<{ kind: 'ALLOW'; basis: ReceiptAuthorizationBasis }>
   | Readonly<{ kind: 'ENVELOPE'; envelope: GuardedEdgeOutcomeEnvelope }>;
 
 type HumanReceiptProfile =
@@ -143,11 +149,11 @@ export class ReceiptObjectScopeAuthorizationService {
           code: `RECEIPT_CONFIRMATION_${consumed.result}`,
         });
       }
-      return Object.freeze({ kind: 'ALLOW' });
+      return Object.freeze({ kind: 'ALLOW', basis: 'CONFIRMATION' });
     }
 
     if (hasCaseMembership) {
-      return Object.freeze({ kind: 'ALLOW' });
+      return Object.freeze({ kind: 'ALLOW', basis: 'MEMBERSHIP' });
     }
 
     this.assertConfirmationTokenAvailable();
@@ -172,6 +178,33 @@ export class ReceiptObjectScopeAuthorizationService {
         },
       }),
     });
+  }
+
+  /**
+   * K3-L — YETKİNİN İŞLEM ANINDA yeniden doğrulanması (transaction içi, kilitli). `authorize()` ucuz erken-fail'dir;
+   * yetkili karar burada, ilk yazmadan önce ve çağıranın `lockExecutionActorRows` ile Lawyer→User satırlarını
+   * FOR SHARE kilitlemesinden SONRA verilir. Dayanak MEMBERSHIP ise dosya üyeliği satırı da FOR SHARE okunur
+   * (üyelik kaldırma hard delete ile çakışır → önce commit eden kazanır).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - CollectionService.completeHeldAllocation() → mahsup tamamlama transaction'ı
+   * /// </remarks>
+   */
+  async assertStillAuthorizedInTx(
+    tx: Prisma.TransactionClient,
+    input: { tenantId: string; actorUserId: string; caseId: string; basis: ReceiptAuthorizationBasis },
+  ): Promise<void> {
+    this.assertRecordCollectionL2Mapping();
+    const profile = await this.resolveHumanProfile(input.actorUserId, input.tenantId, tx);
+    if (input.basis !== 'MEMBERSHIP') return;
+    const rows =
+      profile.kind === 'LAWYER'
+        ? await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "CaseLawyer" WHERE "caseId" = ${input.caseId} AND "lawyerId" = ${profile.profileId} FOR SHARE`
+        : await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "CaseStaff" WHERE "caseId" = ${input.caseId} AND "staffMemberId" = ${profile.profileId} FOR SHARE`;
+    if (rows.length === 0) {
+      throw new ForbiddenException({ code: 'RECEIPT_CASE_MEMBERSHIP_REVOKED' });
+    }
   }
 
   private assertRecordCollectionL2Mapping(): void {
@@ -201,8 +234,9 @@ export class ReceiptObjectScopeAuthorizationService {
   private async resolveHumanProfile(
     actorUserId: string,
     tenantId: string,
+    db: Pick<Prisma.TransactionClient, 'user'> = this.prisma,
   ): Promise<HumanReceiptProfile> {
-    const user = await this.prisma.user.findUnique({
+    const user = await db.user.findUnique({
       where: { id: actorUserId },
       select: {
         tenantId: true,

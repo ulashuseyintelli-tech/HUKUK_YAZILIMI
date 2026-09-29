@@ -35,7 +35,7 @@ function buildApproval(opts: { eligible?: boolean; requestId?: string } = {}) {
 
 const DEFAULT_ELIGIBLE_USER = { isActive: true, tenantId: 't1', lawyer: { id: 'lw-1' }, staffMember: null };
 
-function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any; expenseRequest?: any; user?: any } = {}) {
+function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any; expenseRequest?: any; user?: any; allocationHold?: any } = {}) {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1), // ROLL-001: pg_advisory_xact_lock
     // F04: assertCollectionConfirmedForUpdate() -> SELECT ... FOR UPDATE (kilitli Collection okumasi).
@@ -80,6 +80,8 @@ function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; li
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     collection: { findFirst: jest.fn().mockResolvedValue(opts.col === undefined ? { status: 'CONFIRMED' } : opts.col) },
+    // K3-L: mahsubu bekletilen tahsilat (HELD) dağıtıma kapalı; varsayılan bekletme yok
+    collectionAllocationHold: { findFirst: jest.fn().mockResolvedValue(opts.allocationHold ?? null) },
     caseClient: { findMany: jest.fn().mockResolvedValue(opts.validCaseClients ?? [{ id: 'cc-A', clientId: 'client-A' }]) },
     collectionDispositionLine: { findMany: jest.fn().mockResolvedValue(opts.lines ?? []) },
     officeApprovalRequest: { findFirst: jest.fn().mockResolvedValue(opts.approval === undefined ? { status: 'APPROVED' } : opts.approval) },
@@ -95,6 +97,19 @@ const svc = (p: any, a?: any, r?: any, writer?: any) => new DispositionPostingSe
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ recommend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('DispositionPostingService.recommend', () => {
+  it('K3-L: mahsubu bekletilen tahsilat (CollectionAllocationHold HELD) önerilemez → 409 COLLECTION_ALLOCATION_HELD, yazma yok', async () => {
+    const { prisma, tx } = buildPrisma({ allocationHold: { id: 'hold-1', holdReason: 'ON_BEHALF_DEBTOR_REQUIRED' } });
+    const approval = buildApproval();
+    await expect(
+      svc(prisma, approval).recommend('t1', 'disp-1', { lines: [{ type: 'CLIENT_PROCEEDS', amount: 1000 }] } as any, { userId: 'u-prep' }),
+    ).rejects.toMatchObject({ response: { code: 'COLLECTION_ALLOCATION_HELD' } });
+    expect(prisma.collectionAllocationHold.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { collectionId: DISP_HELD.collectionId, status: 'HELD' } }),
+    );
+    expect(tx.collectionDispositionLine.create).not.toHaveBeenCalled();
+    expect(approval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
   it('SINGLE happy: sum==total → RECOMMENDED + lines + caseClientId inherit + P4 talebi (finansal etki YOK)', async () => {
     const { prisma, tx } = buildPrisma();
     const approval = buildApproval();

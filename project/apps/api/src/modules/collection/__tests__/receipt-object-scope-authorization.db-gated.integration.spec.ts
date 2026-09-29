@@ -115,7 +115,7 @@ describeWithDisposableDb('RCV-P2-WS03-P03 authorization no-write evidence - disp
     const fixture = await createFixture('allow', true);
     const service = new ReceiptObjectScopeAuthorizationService(prisma as any, tokens as any);
 
-    await expect(service.authorize(input(fixture))).resolves.toEqual({ kind: 'ALLOW' });
+    await expect(service.authorize(input(fixture))).resolves.toEqual({ kind: 'ALLOW', basis: 'MEMBERSHIP' });
     await expect(financialCounts(fixture.tenantId)).resolves.toEqual({
       collections: 0,
       ledgerEntries: 0,

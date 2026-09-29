@@ -743,6 +743,31 @@ export class DispositionPostingService {
     if (col.status !== 'CONFIRMED') {
       throw new BadRequestException(`Tahsilat ${col.status} — posting yasak (CONFIRMED değil)`);
     }
+    await this.assertNoActiveAllocationHold(disp);
+  }
+
+  /**
+   * K3-L — mahsubu BEKLETİLEN tahsilat (CollectionAllocationHold HELD) müvekkile dağıtılamaz/önerilemez: para hangi
+   * borçlunun hangi kalemine düştüğü belli olmadan dağıtım tutarı ve alacaklı payı hesaplanamaz. Bekletme
+   * tamamlanınca (RELEASED) kapı açılır. Model mock'ta yoksa (eski birim testleri) kapı devre dışı kalır.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - DispositionPostingService.assertCollectionConfirmed() → recommend()/post()
+   * /// </remarks>
+   */
+  private async assertNoActiveAllocationHold(disp: { collectionId: string }) {
+    if (!this.prisma.collectionAllocationHold?.findFirst) return;
+    const hold = await this.prisma.collectionAllocationHold.findFirst({
+      where: { collectionId: disp.collectionId, status: 'HELD' },
+      select: { id: true, holdReason: true },
+    });
+    if (hold) {
+      throw new ConflictException({
+        code: 'COLLECTION_ALLOCATION_HELD',
+        message: `Tahsilatın mahsubu bekletiliyor (${hold.holdReason}) — önce hesabına ödeme yapılan borçlu girilip mahsup tamamlanmalı`,
+      });
+    }
   }
 
   /** Line validasyonu + çözümleme (sum==totalAmount; pozitif; HELD yasak; caseClientId scope). */

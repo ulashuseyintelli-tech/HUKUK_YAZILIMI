@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { createHash } from "crypto";
+import { deterministicCollectionEventId, reverseCollectionAllocationHoldInTx } from "./collection-allocation-hold";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import {
   AccountingJournalWriterService,
@@ -84,6 +84,18 @@ export async function executeCollectionCancelInTransaction(
   }
   if (collection.status !== CollectionStatus.CONFIRMED) {
     throw new BadRequestException("Tahsilat iptal onayı yalnız confirmed/posted tahsilatlar için kullanılabilir");
+  }
+
+  // K3-L — iptal ↔ mahsup tamamlama yarışı: defter kaydını okumadan ÖNCE dosya kilidi (COL-LOCK-001) ve tahsilat
+  // satırı (FOR UPDATE). Tamamlama yolu ile AYNI sıra (dosya → satır) → kilitlenme yok; önce commit eden kazanır,
+  // diğeri güncel durumu görür (iptal edilmiş tahsilat tamamlanamaz; tamamlanmış tahsilatın defteri iptalde terslenir).
+  await tx.$executeRaw`
+    /* COL-LOCK-001: canonical allocation lock */
+    SELECT pg_advisory_xact_lock(hashtextextended(${collection.caseId}, 0))
+  `;
+  const lockedRows = await tx.$queryRaw<{ status: string }[]>`SELECT "status" FROM "Collection" WHERE "id" = ${collection.id} FOR UPDATE`;
+  if (lockedRows[0]?.status !== CollectionStatus.CONFIRMED) {
+    throw new ConflictException("Tahsilat eşzamanlı değişti; iptal uygulanmadı");
   }
 
   const originalPaymentEvent = await (tx.icrabotTimelineEntry as any).findFirst({
@@ -239,6 +251,13 @@ export async function executeCollectionCancelInTransaction(
       reversedAt: cancelledAt,
     },
   });
+  // K3-L: mahsubu bekletilen / tamamlanmış tahsilatın bekletme kaydı da kapanır (defter tersi yukarıda yazıldı).
+  await reverseCollectionAllocationHoldInTx(tx, {
+    tenantId,
+    caseId: collection.caseId,
+    collectionId: collection.id,
+    reversedAt: cancelledAt,
+  });
 
   const cancelJournalEntryId = await writeCollectionCancelJournal(
     tx,
@@ -309,22 +328,9 @@ export async function executeCollectionCancelInTransaction(
   return cancelledCollection;
 }
 
-function deterministicUuid(...parts: string[]): string {
-  const bytes = createHash("sha256").update(parts.join("\u001f")).digest();
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.subarray(0, 16).toString("hex");
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20, 32),
-  ].join("-");
-}
-
 function paymentReversedEventId(tenantId: string, collectionId: string): string {
-  return deterministicUuid(PAYMENT_REVERSED_EVENT_NAMESPACE, tenantId, collectionId);
+  // Aynı türetme korunur: sha256(namespace \u001f tenantId \u001f collectionId) → UUIDv5 biçimi.
+  return deterministicCollectionEventId(PAYMENT_REVERSED_EVENT_NAMESPACE, tenantId, collectionId);
 }
 
 function paymentReceivedEventNotFound(): ConflictException {

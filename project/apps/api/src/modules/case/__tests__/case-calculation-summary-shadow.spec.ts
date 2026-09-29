@@ -41,6 +41,10 @@ function makePrisma(overrides: Record<string, any> = {}) {
         ...overrides,
       }),
     },
+    // K3-L: mahsubu bekletilen tahsilat okuyucusu (varsayılan: bekletme yok)
+    collectionAllocationHold: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
 }
 
@@ -272,6 +276,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       'toplamBorc',
       'sonBorc',
       'toplamTahsilat',
+      'mahsubuBekleyenTahsilat',
       'kalanBorc',
       'kalanAnapara',
       'mahsupDetaylari',
