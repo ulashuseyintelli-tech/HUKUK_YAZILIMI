@@ -126,7 +126,8 @@ export class BankController {
   async matchTransaction(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
-    @Body() body: { caseId: string; confirmationToken?: string },
+    // K3-L: caseDebtorId = hesabına ödeme yapılan borçlu (isteğe bağlı); gönderen banka hareketindeki counterpartyName'dir.
+    @Body() body: { caseId: string; caseDebtorId?: string; confirmationToken?: string },
     @CurrentUser('id') userId: string,
     @Req() req: any,
   ) {
@@ -143,12 +144,20 @@ export class BankController {
       actorUserId: userId,
       caseId,
       surface: RECEIPT_AUTHORIZATION_SURFACES.BANK_MATCH,
-      payload: { transactionId: id, caseId },
+      // Onay jetonu borçlu alanına da bağlanır; alan yoksa eski bağlama hash'i korunur.
+      payload: { transactionId: id, caseId, ...(body.caseDebtorId ? { caseDebtorId: body.caseDebtorId } : {}) },
       confirmationToken: body.confirmationToken,
     });
     if (authorization.kind === 'ENVELOPE') return authorization.envelope;
 
-    return this.bankService.matchTransaction(id, caseId, userId, tenantId, getRequestId(req));
+    return this.bankService.matchTransaction(
+      id,
+      caseId,
+      userId,
+      tenantId,
+      getRequestId(req),
+      body.caseDebtorId ? { caseDebtorId: body.caseDebtorId } : undefined,
+    );
   }
 
   /**

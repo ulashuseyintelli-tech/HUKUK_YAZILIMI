@@ -88,6 +88,10 @@ export function buildCollectionSemanticCommandEvidence(input: {
       descriptionDigest: digestOptionalText('description', input.dto.description),
       notesDigest: digestOptionalText('notes', input.dto.notes),
       receiptNoDigest: digestOptionalText('receiptNo', input.dto.receiptNo),
+      // K3-L kaynak kimlikleri: anahtar YALNIZ doluyken yazılır → alan taşımayan eski kayıtların parmak izi ve
+      // canonical payload'ı birebir korunur (replay SEMANTIC_CONFLICT üretmez); sürüm artırılmaz.
+      ...conditionalDigest('payerName', input.dto.payerName),
+      ...conditionalDigest('forwardingOfficeName', input.dto.forwardingOfficeName),
     },
     provenance: {
       producer: input.producer,
@@ -316,6 +320,14 @@ function digestRequiredText(
     );
   }
   return digestNormalizedText(field, normalized);
+}
+
+function conditionalDigest(
+  field: 'payerName' | 'forwardingOfficeName',
+  value: string | undefined,
+): Record<string, string> {
+  const digest = digestOptionalText(field, value);
+  return digest ? { [`${field}Digest`]: digest } : {};
 }
 
 function digestOptionalText(

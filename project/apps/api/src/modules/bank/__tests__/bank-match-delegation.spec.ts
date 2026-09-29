@@ -61,6 +61,7 @@ function buildService(
         externalSettledAt: new Date('2026-01-03T10:00:00.000Z'),
         description: 'EFT',
         referenceNo: 'REF-1',
+        counterpartyName: 'Gönderen A.Ş.',
         isMatched: false,
       })),
       findMany: jest.fn(async () => []),
@@ -83,7 +84,12 @@ function buildService(
       update: jest.fn(async () => ({})),
       ...(overrides.bankIntegrationLog || {}),
     },
-    collection: { create: financialWrites.collection },
+    collection: {
+      create: financialWrites.collection,
+      // K3-L: replay dalı kimlik alanlarını KALICI Collection'dan okur (salt okuma)
+      findFirst: jest.fn(async () => ({ id: 'col1', caseDebtorId: null, payerName: null })),
+      ...(overrides.collection || {}),
+    },
     accountingJournalEntry: { create: financialWrites.accountingJournalEntry },
     icrabotTimelineEntry: { create: financialWrites.icrabotTimelineEntry },
     icrabotOutboxAction: { create: financialWrites.icrabotOutboxAction },
@@ -189,6 +195,56 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
     expect(coll.findById).not.toHaveBeenCalled();
     expect(prisma.bankSettlementEvidence.findUnique).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it('K3-L: gönderen adı payerName olarak taşınır (borçlu kimliğine dönüşmez); caseDebtorId yalnız istekte varsa ve ayrı', async () => {
+    const { svc, coll } = buildService(async () => ({ id: 'col1' }));
+    await svc.matchTransaction('tx1', 'c1', 'u1', 't1', undefined, { caseDebtorId: 'cd-kesideci' });
+    expect(coll.create).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ payerName: 'Gönderen A.Ş.', caseDebtorId: 'cd-kesideci', sourceId: 'tx1' }),
+      'u1',
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(coll.create.mock.calls[0][1]).not.toHaveProperty('forwardingOfficeName');
+  });
+
+  it('K3-L: borçlu verilmeyen eşleşmede caseDebtorId anahtarı hiç yazılmaz (eski parmak izi korunur)', async () => {
+    const { svc, coll } = buildService(async () => ({ id: 'col1' }));
+    await svc.matchTransaction('tx1', 'c1', 'u1', 't1');
+    expect(coll.create.mock.calls[0][1]).not.toHaveProperty('caseDebtorId');
+    expect(coll.create.mock.calls[0][1]).toMatchObject({ payerName: 'Gönderen A.Ş.' });
+  });
+
+  it('K3-L replay: kimlik alanları kalıcı Collection\'dan türetilir; farklı borçluyla tekrar 409 ve create YOK', async () => {
+    const matched = {
+      findFirst: jest.fn(async () => ({
+        id: 'tx1', tenantId: 't1', amount: 500, currency: 'TRY', transactionDate: new Date('2026-01-01'),
+        transactionType: 'INCOMING', isMatched: true, matchedCaseId: 'c1', matchedCollectionId: 'col1', counterpartyName: 'Gönderen A.Ş.',
+      })),
+    };
+    const legacy = buildService(undefined, { bankTransaction: matched });
+    await legacy.svc.matchTransaction('tx1', 'c1', 'u1', 't1');
+    expect(legacy.coll.create.mock.calls[0][1]).not.toHaveProperty('payerName');
+    expect(legacy.coll.create.mock.calls[0][1]).not.toHaveProperty('caseDebtorId');
+
+    const persistedIdentity = buildService(undefined, {
+      bankTransaction: matched,
+      collection: { findFirst: jest.fn(async () => ({ id: 'col1', caseDebtorId: 'cd-kesideci', payerName: 'Gönderen A.Ş.' })) },
+    });
+    await persistedIdentity.svc.matchTransaction('tx1', 'c1', 'u1', 't1', undefined, { caseDebtorId: 'cd-kesideci' });
+    expect(persistedIdentity.coll.create.mock.calls[0][1]).toMatchObject({ caseDebtorId: 'cd-kesideci', payerName: 'Gönderen A.Ş.' });
+
+    const conflict = buildService(undefined, {
+      bankTransaction: matched,
+      collection: { findFirst: jest.fn(async () => ({ id: 'col1', caseDebtorId: 'cd-kesideci', payerName: 'Gönderen A.Ş.' })) },
+    });
+    await expect(conflict.svc.matchTransaction('tx1', 'c1', 'u1', 't1', undefined, { caseDebtorId: 'cd-ciranta' })).rejects.toMatchObject({
+      response: { code: 'BANK_TRANSACTION_MATCH_DEBTOR_CONFLICT' },
+    });
+    expect(conflict.coll.create).not.toHaveBeenCalled();
+    expect(conflict.update).not.toHaveBeenCalled();
   });
 
   it('CAS projection kazanamazsa outer transaction fail-closed olur', async () => {

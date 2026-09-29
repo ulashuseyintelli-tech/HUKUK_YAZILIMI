@@ -516,6 +516,7 @@ export class BankService {
     userId: string,
     tenantId: string,
     correlationId?: string,
+    options?: { caseDebtorId?: string },
   ) {
     if (!caseId?.trim()) {
       throw new BadRequestException({ code: 'BANK_RECEIPT_CASE_REQUIRED' });
@@ -553,7 +554,11 @@ export class BankService {
           });
         }
 
-        const collectionArgs = [
+        // K3-L kaynak kimlikleri: gönderen = BankTransaction.counterpartyName (payerName; borçlu kimliğine
+        // DÖNÜŞTÜRÜLMEZ), hesabına ödeme yapılan borçlu = isteğe bağlı istek alanı (caseDebtorId). Kimlik alanları
+        // yalnız DOLUYKEN payload'a girer (parmak izi; alan taşımayan eski eşleşmelerin replay'i bozulmaz).
+        const requestedCaseDebtorId = options?.caseDebtorId?.trim() || undefined;
+        const buildCollectionArgs = (identity: { caseDebtorId?: string | null; payerName?: string | null }) => [
           tenantId,
           {
             caseId,
@@ -568,6 +573,8 @@ export class BankService {
             sourceId: transaction.id,
             description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
             receiptNo: transaction.referenceNo || undefined,
+            ...(identity.caseDebtorId ? { caseDebtorId: identity.caseDebtorId } : {}),
+            ...(identity.payerName ? { payerName: identity.payerName } : {}),
           } as any,
           userId,
         ] as const;
@@ -583,8 +590,20 @@ export class BankService {
             // Replay-before-settlement-guard davranışı korunur; ancak Task 09 ile
             // replay artık key-only/pointer-only değildir. Canonical command evidence
             // aynı transaction client üzerinden doğrulanır ve hiçbir yeni write üretmez.
+            // K3-L: tekrar isteğinde kimlik alanları KALICI Collection'dan türetilir (eski kayıt alan taşımaz →
+            // parmak izi aynı kalır). Tekrar isteğiyle borçlu DEĞİŞTİRİLEMEZ; bekletilen mahsup tamamlama ucu kullanılır.
+            const persisted = await tx.collection.findFirst({
+              where: { id: transaction.matchedCollectionId, tenantId },
+              select: { caseDebtorId: true, payerName: true },
+            });
+            if (requestedCaseDebtorId && persisted && persisted.caseDebtorId !== requestedCaseDebtorId) {
+              throw new ConflictException({
+                code: 'BANK_TRANSACTION_MATCH_DEBTOR_CONFLICT',
+                message: 'Banka hareketi zaten eşleşmiş; hesabına ödeme yapılan borçlu tekrar isteğinde değiştirilemez.',
+              });
+            }
             const collection = await this.collectionService.create(
-              ...collectionArgs,
+              ...buildCollectionArgs({ caseDebtorId: persisted?.caseDebtorId, payerName: persisted?.payerName }),
               collectionRequestContext,
               tx,
             );
@@ -686,7 +705,7 @@ export class BankService {
         // Bank match projection ve canonical Collection finansal zinciri ayni DB
         // transaction'inda commit/rollback olur. Nested transaction acilmaz.
         const collection = await this.collectionService.create(
-          ...collectionArgs,
+          ...buildCollectionArgs({ caseDebtorId: requestedCaseDebtorId, payerName: transaction.counterpartyName }),
           collectionRequestContext,
           tx,
         );

@@ -21,6 +21,7 @@ function buildService(coll: any, overrides: any = {}) {
     externalOffice: 'X İcra Dairesi',
     counterpartyName: 'Y Ltd',
     notes: null,
+    caseDebtorId: 'cd1',
     caseDebtor: { case: { id: 'case1' } },
   };
   const prisma: any = {
@@ -84,6 +85,10 @@ describe('ThirdPartyService.addExternalCaseCollection canonical routing', () => 
         date: '2026-07-01T00:00:00.000Z',
         sourceType: 'EXTERNAL_CASE',
         sourceId: expect.stringMatching(/^ec1:[a-f0-9]{64}$/),
+        // K3-L kaynak kimlikleri: hesabına ödeme yapılan = dosya borçlusu; gönderen = 3. kişi; ileten = icra dairesi
+        caseDebtorId: 'cd1',
+        payerName: 'Y Ltd',
+        forwardingOfficeName: 'X İcra Dairesi',
       }),
       'user-1',
       expect.objectContaining({
@@ -217,4 +222,20 @@ describe('ThirdPartyService.addExternalCaseCollection canonical routing', () => 
     expect(coll.create).not.toHaveBeenCalled();
     expect(prisma.externalCase.update).not.toHaveBeenCalled();
   });
+
+  it('K3-L replay: alan taşımayan eski makbuzun tekrarında kimlik alanları KALICI kayıttan (yok) türetilir → payload anahtarsız', async () => {
+    const coll = { create: jest.fn(async () => ({ id: 'col1' })) };
+    const { svc } = buildService(coll, {
+      collection: {
+        findFirst: jest.fn(async () => ({ date: new Date('2026-07-01T00:00:00.000Z'), caseDebtorId: null, payerName: null, forwardingOfficeName: null })),
+        aggregate: jest.fn(async () => ({ _sum: { amount: 300 } })),
+      },
+    });
+    await svc.addExternalCaseCollection('t1', 'ec1', { amount: 300, date: '2026-07-01', notes: 'ilk ödeme' }, 'user-1', 'corr-1');
+    const payload = (coll.create.mock.calls[0] as unknown[])[1];
+    expect(payload).not.toHaveProperty('caseDebtorId');
+    expect(payload).not.toHaveProperty('payerName');
+    expect(payload).not.toHaveProperty('forwardingOfficeName');
+  });
+
 });

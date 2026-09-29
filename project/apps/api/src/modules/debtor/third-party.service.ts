@@ -807,11 +807,23 @@ export class ThirdPartyService {
         sourceId,
         status: { not: CollectionStatus.CANCELLED },
       },
-      select: { date: true },
+      select: { date: true, caseDebtorId: true, payerName: true, forwardingOfficeName: true },
     });
     const collectionDate = dto.date
       ? new Date(dto.date)
       : existingReceipt?.date || startOfCurrentUtcDay();
+    // K3-L kaynak kimlikleri (üçü AYRI, birbirine dönüşmez): gönderen = ExternalCase.counterpartyName (3. kişi),
+    // ileten icra dairesi = ExternalCase.externalOffice, hesabına ödeme yapılan borçlu = ExternalCase.caseDebtorId
+    // (alacak haczi bu borçlunun alacağı üzerinde kurulur). Tekrar isteğinde alanlar KALICI kayıttan türetilir
+    // (alan taşımayan eski makbuzların parmak izi korunur); yalnız DOLU alan payload'a girer.
+    const identity = existingReceipt
+      ? existingReceipt
+      : { caseDebtorId: externalCase.caseDebtorId, payerName: externalCase.counterpartyName, forwardingOfficeName: externalCase.externalOffice };
+    const identityFields = {
+      ...(identity.caseDebtorId ? { caseDebtorId: String(identity.caseDebtorId) } : {}),
+      ...(identity.payerName ? { payerName: String(identity.payerName) } : {}),
+      ...(identity.forwardingOfficeName ? { forwardingOfficeName: String(identity.forwardingOfficeName) } : {}),
+    };
 
     await this.collectionService.create(
       tenantId,
@@ -826,6 +838,7 @@ export class ThirdPartyService {
         sourceType: CollectionSource.EXTERNAL_CASE,
         sourceId,
         description: `[Alacak Haczi] ${externalCase.externalOffice} ${externalCase.externalCaseNo} - ${externalCase.counterpartyName}${dto.notes ? ` - ${dto.notes}` : ''}`,
+        ...identityFields,
       },
       actorUserId,
       {

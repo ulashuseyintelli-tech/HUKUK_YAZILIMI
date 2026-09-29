@@ -396,4 +396,44 @@ describeWithDisposableDb('K3-L ödeyen borçluya göre tahsilat mahsubu (disposa
       expect(await prisma.ledgerEntry.count({ where: { collectionId: (cancelledThenCompleted as any).id } })).toBe(0);
     });
   });
+
+  /** K3-L kaynak kimlikleri (owner GO §3): gönderen / ileten / hesabına ödeme yapılan borçlu ayrı; tekrar güvenli. */
+  describe('kaynak kimlikleri', () => {
+    it('gönderen ve ileten icra dairesi kaydedilir, borçlu kimliğine dönüşmez; olay payload\'ında ayrı; aynı komut replay, farklı gönderen SEMANTIC_CONFLICT', async () => {
+      const f = await fixture('identities');
+      const dto = {
+        caseId: f.caseId,
+        idempotencyKey: `k3l-ident-${randomUUID()}`,
+        amount: 400,
+        currency: 'TRY',
+        type: CollectionType.OTHER,
+        channel: 'ICRA_DAIRESI',
+        date: '2026-09-21T09:00:00.000Z',
+        caseDebtorId: f.cirantaCd.id,
+        payerName: 'Üçüncü Kişi Ltd.',
+        forwardingOfficeName: 'Ankara 5. İcra Dairesi',
+      } as unknown as CreateCollectionDto;
+      const created = await collections().create(f.tenantId, dto, `actor-${f.tenantId}`);
+      const row = await prisma.collection.findUniqueOrThrow({ where: { id: (created as any).id } });
+      expect(row).toMatchObject({ caseDebtorId: f.cirantaCd.id, payerName: 'Üçüncü Kişi Ltd.', forwardingOfficeName: 'Ankara 5. İcra Dairesi' });
+      // Mahsup hesabına ödeme yapılan borçluya (ciranta → yalnız bedel); gönderen adı mahsubu etkilemez
+      expect(await collected(f)).toEqual({ PRINCIPAL: 400, CHECK_PENALTY: 0 });
+      const event = await prisma.icrabotTimelineEntry.findFirst({
+        where: { tenantId: f.tenantId, type: 'PAYMENT_RECEIVED', body: { path: ['payload', 'collectionId'], equals: (created as any).id } },
+        select: { body: true },
+      });
+      expect((event?.body as any)?.payload).toMatchObject({ forDebtorId: f.cirantaCd.id, payerName: 'Üçüncü Kişi Ltd.', forwardingOfficeName: 'Ankara 5. İcra Dairesi' });
+      expect(String(row.commandCanonicalPayload)).toContain('payerNameDigest');
+      expect(String(row.commandCanonicalPayload)).not.toContain('Üçüncü Kişi');
+
+      const replay = await collections().create(f.tenantId, dto, `actor-${f.tenantId}`);
+      expect((replay as any).id).toBe((created as any).id);
+      expect(await prisma.collection.count({ where: { caseId: f.caseId } })).toBe(1);
+      await expect(
+        collections().create(f.tenantId, { ...dto, payerName: 'Başka Gönderen' } as CreateCollectionDto, `actor-${f.tenantId}`),
+      ).rejects.toMatchObject({ response: expect.objectContaining({ code: expect.stringContaining('SEMANTIC_CONFLICT') }) });
+      expect(await prisma.collection.count({ where: { caseId: f.caseId } })).toBe(1);
+    });
+  });
+
 });

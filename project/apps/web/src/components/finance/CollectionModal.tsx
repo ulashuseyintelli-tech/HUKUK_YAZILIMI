@@ -78,6 +78,9 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
   // kaydedilir; yalnız bazı borçlulara ait kalemi olan dosyada mahsup bekletilir.
   const payerOptions = debtors.filter((cd) => !cd.lifecycleStatus || cd.lifecycleStatus === "ACTIVE");
   const [payerCaseDebtorId, setPayerCaseDebtorId] = useState<string>("");
+  // K3-L kaynak kimlikleri (borçlu kimliği DEĞİL): gönderen / ödeyen adı ve ileten icra dairesi.
+  const [payerName, setPayerName] = useState<string>("");
+  const [forwardingOfficeName, setForwardingOfficeName] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -126,7 +129,11 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
   }, [caseId, collection?.id, form.amount, form.date, form.currency, form.channel, payerCaseDebtorId, isOpen]);
 
   useEffect(() => {
-    if (isOpen) setPayerCaseDebtorId("");
+    if (isOpen) {
+      setPayerCaseDebtorId("");
+      setPayerName("");
+      setForwardingOfficeName("");
+    }
   }, [isOpen, collection?.id]);
 
   // P0-1: yeni tahsilat (create) modal açılışında taze idempotency key üret.
@@ -212,6 +219,8 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
               idempotencyKey: stableIdempotencyKey,
               confirmationToken: confirmation?.token,
               ...(payerCaseDebtorId ? { caseDebtorId: payerCaseDebtorId } : {}),
+              ...(payerName.trim() ? { payerName: payerName.trim() } : {}),
+              ...(forwardingOfficeName.trim() ? { forwardingOfficeName: forwardingOfficeName.trim() } : {}),
             }),
       );
 
@@ -396,6 +405,43 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                 sorumlu olduğu kalemlere mahsup edilir; seçilmezse tahsilat kaydedilir, bazı kalemleri yalnız belirli
                 borçlulara ait dosyalarda mahsup bekletilir.
               </p>
+            </div>
+          )}
+
+          {!collection?.id && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="collection-payer-name" className="block text-xs font-medium text-gray-700 mb-1">
+                  Gönderen / ödeyen adı
+                </label>
+                <input
+                  id="collection-payer-name"
+                  data-testid="collection-payer-name"
+                  type="text"
+                  maxLength={200}
+                  value={payerName}
+                  onChange={(e) => setPayerName(e.target.value)}
+                  placeholder="Parayı gönderen kişi/kurum (borçlu olmak zorunda değil)"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+              </div>
+              {(form.channel === "ICRA_DAIRESI" || form.channel === "HACIZ") && (
+                <div>
+                  <label htmlFor="collection-forwarding-office" className="block text-xs font-medium text-gray-700 mb-1">
+                    İleten icra dairesi
+                  </label>
+                  <input
+                    id="collection-forwarding-office"
+                    data-testid="collection-forwarding-office"
+                    type="text"
+                    maxLength={200}
+                    value={forwardingOfficeName}
+                    onChange={(e) => setForwardingOfficeName(e.target.value)}
+                    placeholder="Örn. Ankara 5. İcra Dairesi"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                </div>
+              )}
             </div>
           )}
 

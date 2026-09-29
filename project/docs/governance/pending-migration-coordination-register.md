@@ -1907,3 +1907,19 @@ Merkezi ledger: `OFFICE-DELIVERY-MANIFEST.md` §15.4 (MIG-C36-APPLY = APPLIED).
 | Sıra | Main'deki bekleyen `20260919120000_sim_snapshot_restore_unique_indexes`, `20260928120000_claim_formation_batch_approval_position`, `20260929090000_case_debtor_aval_for` ile AYNI yayın penceresinde, bu sırayla uygulanır |
 | Runtime activation | Yazan yollar: tahsilat kaydı bekletme dalı (create), tamamlama ucu `POST /cases/:id/collections/:collectionId/allocation/complete`, iptal yürütücüsü (REVERSED). Okuyanlar: borçlu bakiyesi, hesap özeti, kanonik bakiye fallback dışlaması, müvekkil dağıtım kapısı. Tablo yokken (migration uygulanmadan yeni kod canlıya çıkarsa) bekletme dalı ve okuyucular HATA verir → kod ve migration AYNI pencerede |
 | Canlı / dev DB | **NOT APPLIED** — canlı uygulama ayrı owner GO + EXACT-ONE paketi ister |
+
+## K3-L — 20260930100000_collection_source_identities (PENDING, 2026-09-29)
+
+| Alan | Değer |
+|---|---|
+| Migration | `20260930100000_collection_source_identities` |
+| Program / task | RECEIVABLE / K3-L Faz 1e — tahsilat kaynak kimlikleri (owner GO 2026-09-29 §3: gönderen / hesabına ödeme yapılan borçlu / ileten icra dairesi AYRI) |
+| İçerik | `Collection.payerName TEXT NULL`, `Collection.forwardingOfficeName TEXT NULL` (yalnız `ADD COLUMN`, varsayılan yok); `lock_timeout 3s`, `statement_timeout 60s` |
+| Gerekçe | Gönderen ve ileten kaynak satırında ya da serbest metinde kalıyordu; borçlu kimliğine dönüşmeden yapısal tutulması istendi. Resmi mahsup dökümü için kaynak alan bulunmadığından kolon açılmadı |
+| Existing migration mutation | NONE |
+| Default / backfill / data mutation | NONE — eski satırlar NULL kalır (banka/alacak haczi kaynağına `sourceId` ile ulaşılır) |
+| Index / trigger | NONE |
+| Doğrulama | Disposable PostgreSQL 16 (k3l_gate_test): `migrate deploy` 135/135; kolonlar satıra ve PAYMENT_RECEIVED payload'ına yazılır; aynı komut replay tek kayıt; farklı gönderen SEMANTIC_CONFLICT (gerçek servis) |
+| Sıra | Main'deki bekleyen `20260919120000_sim_snapshot_restore_unique_indexes`, `20260928120000_claim_formation_batch_approval_position`, `20260929090000_case_debtor_aval_for`, `20260930090000_collection_allocation_hold` ile AYNI yayın penceresinde, bu sırayla |
+| Runtime activation | Yazan yollar: tahsilat kaydı (manuel DTO alanları), banka eşleştirme (`counterpartyName`), alacak haczi makbuzu (`ExternalCase`). Kolon yokken yeni kod `collection.create` yazımında HATA verir → kod ve migration AYNI pencerede |
+| Canlı / dev DB | **NOT APPLIED** — canlı uygulama ayrı owner GO + EXACT-ONE paketi ister |

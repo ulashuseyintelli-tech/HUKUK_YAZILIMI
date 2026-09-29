@@ -307,4 +307,25 @@ describe('RCV-COL semantic replay decision', () => {
       }),
     );
   });
+
+  describe('K3-L kaynak kimlikleri (payerName / forwardingOfficeName)', () => {
+    it('alanlar yokken canonical payload anahtar taşımaz → eski kayıtların parmak izi birebir korunur', () => {
+      const evidence = build();
+      expect(evidence.commandCanonicalPayload).not.toContain('payerNameDigest');
+      expect(evidence.commandCanonicalPayload).not.toContain('forwardingOfficeNameDigest');
+      expect(build({ payerName: '', forwardingOfficeName: '   ' }).commandFingerprint).toBe(evidence.commandFingerprint);
+    });
+
+    it('alanlar doluyken yalnız digest yazılır (ham ad yok) ve parmak izi değişir; sürüm sabit', () => {
+      const base = build();
+      const withIdentity = build({ payerName: 'Gönderen A.Ş.', forwardingOfficeName: 'Ankara 5. İcra Dairesi' });
+      expect(withIdentity.commandCanonicalPayload).toContain('"payerNameDigest":"');
+      expect(withIdentity.commandCanonicalPayload).toContain('"forwardingOfficeNameDigest":"');
+      expect(withIdentity.commandCanonicalPayload).not.toContain('Gönderen A.Ş.');
+      expect(withIdentity.commandCanonicalPayload).not.toContain('Ankara 5.');
+      expect(withIdentity.commandFingerprint).not.toBe(base.commandFingerprint);
+      expect(withIdentity.fingerprintVersion).toBe(base.fingerprintVersion);
+    });
+  });
+
 });
