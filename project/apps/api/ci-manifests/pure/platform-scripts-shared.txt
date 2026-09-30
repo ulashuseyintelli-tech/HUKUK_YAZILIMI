@@ -737,6 +737,7 @@ src/modules/interest-engine/allocation/__tests__/tbk100-allocator.p0-order.spec.
 src/modules/interest-engine/assembler/__tests__/claim-bucket-assembler.spec.ts
 src/modules/interest-engine/calc-prep/__tests__/currency-grouper.spec.ts
 src/modules/interest-engine/calc-prep/__tests__/rate-requirements.spec.ts
+src/modules/interest-engine/calc-prep/__tests__/rate-coverage.spec.ts
 src/modules/interest-engine/classification/__tests__/claim-item-classifier.spec.ts
 src/modules/interest-engine/legal-application-plan/__tests__/apply-allocation-core.spec.ts
 src/modules/interest-engine/legal-application-plan/__tests__/canonical-snapshot-validator.spec.ts
@@ -749,6 +750,7 @@ src/modules/interest-engine/orchestration/__tests__/canonical-summary-rows.spec.
 src/modules/interest-engine/orchestration/__tests__/case-balance-display.spec.ts
 src/modules/interest-engine/orchestration/__tests__/case-balance-explainability.spec.ts
 src/modules/interest-engine/orchestration/__tests__/case-balance-fee-projection.spec.ts
+src/modules/interest-engine/orchestration/__tests__/case-balance-rate-coverage.spec.ts
 src/modules/interest-engine/orchestration/__tests__/case-balance-snapshot-readiness.spec.ts
 src/modules/interest-engine/segments/__tests__/day-count-calculator.characterization.spec.ts
 src/modules/interest-engine/segments/__tests__/interest-formula.characterization.spec.ts

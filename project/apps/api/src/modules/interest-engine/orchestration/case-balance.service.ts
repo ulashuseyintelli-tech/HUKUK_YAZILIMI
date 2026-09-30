@@ -33,6 +33,8 @@ import type { LedgerPaymentRow, CollectionRow, PaymentMapDiagnostic } from '../c
 import { classifyCurrency, groupByCurrency } from '../calc-prep/currency-grouper';
 import type { CurrencyGroupDiagnostic } from '../calc-prep/currency-grouper';
 import { deriveRateRequirements } from '../calc-prep/rate-requirements';
+import { findUncoveredRateBuckets } from '../calc-prep/rate-coverage';
+import type { UncoveredRateBucket } from '../calc-prep/rate-coverage';
 import { ClaimBucket, AncillaryType } from '../types/domain.types';
 import { mapPersistedInterestTypeCode } from '../mapping/interest-type-bridge';
 import { RateEntry, RateSourceType } from '../rates/rate-entry.entity';
@@ -65,7 +67,11 @@ export type CaseBalanceSkipReason =
   | 'NO_BUCKETS'
   | 'INVALID_CURRENCY'
   | 'ENGINE_ERROR'
-  /** K3-L D2-b1: bu para biriminde faiz ayarı çözülemeyen anapara var → motor çalıştırılmadı, kısmi bakiye yok. */
+  /**
+   * K3-L D2-b1: bu para biriminde faiz ayarı çözülemeyen anapara var → motor çalıştırılmadı, kısmi bakiye yok.
+   * K3-L TK-2: faiz dönemi kendi türündeki oran verisiyle kapsanmayan anapara da bu nedene düşer
+   * (reasonCode RATE_COVERAGE_MISSING).
+   */
   | 'INTEREST_UNRESOLVED'
   /** K3-L D2-b1: bu para biriminde açık faizsiz (NO_INTEREST) anapara var; kanonik motor henüz simüle etmiyor. */
   | 'NON_ACCRUING_NOT_SIMULATED';
@@ -459,6 +465,8 @@ export class CaseBalanceService {
     const now = new Date().toISOString();
     const currencyResults: CaseBalanceCurrencyResult[] = [];
     const perCurrency: CaseBalancePerCurrencyDiagnostic[] = [];
+    // K3-L TK-2: faiz dönemi kendi türündeki oranlarla kapsanmayan kovalar (faiz bilinmiyor; sıfır sayılmaz)
+    const rateUncovered: UncoveredRateBucket[] = [];
 
     for (const group of grouped.groups) {
       // ALC-AUTH-3B: gross (allocation-öncesi) PRINCIPAL toplamı — computeBalance sonucundan bağımsız,
@@ -500,6 +508,34 @@ export class CaseBalanceService {
 
       try {
         const rates = await this.gatherRates(tenantId, group.buckets, asOfDate);
+        // K3-L TK-2: oran verisi faiz dönemini gün gün kapsamıyorsa motor ÇALIŞTIRILMAZ — komşu/gelecek oran ya da
+        // sıfır faizle "kesin" toplam üretilmez. Bilinen anapara korunur (kapsanan kovalar grossPrincipal'da, kapsanmayanlar
+        // simüle edilmeyen anapara olarak); eksik dönem tanıda gösterilir. D2-b1 ile aynı sözleşme (ADR-014 RD01).
+        const uncovered = findUncoveredRateBuckets(group.buckets, rates, asOfDate);
+        if (uncovered.length > 0) {
+          const uncoveredIds = new Set(uncovered.map((bucket) => bucket.claimItemId));
+          rateUncovered.push(...uncovered);
+          for (const bucket of uncovered) {
+            perCurrency.push({
+              currency: group.currency,
+              code: 'RATE_COVERAGE_MISSING',
+              message:
+                `Oran verisi eksik: kalem ${bucket.claimItemId} (${bucket.interestType}) için ` +
+                bucket.gaps.map((gap) => (gap.from === gap.to ? gap.from : `${gap.from}–${gap.to}`)).join(', ') +
+                ' döneminde oran yok; faiz hesaplanmadı.',
+            });
+          }
+          currencyResults.push({
+            currency: group.currency,
+            result: null,
+            skippedReason: 'INTEREST_UNRESOLVED',
+            grossPrincipal: group.buckets
+              .filter((bucket) => !uncoveredIds.has(bucket.id))
+              .reduce((sum, bucket) => sum + bucket.amount, 0),
+            unsimulatedPrincipal: uncovered.reduce((sum, bucket) => sum + bucket.amount, 0),
+          });
+          continue;
+        }
         const request: CalculationRequest = {
           caseId,
           claimBuckets: group.buckets,
@@ -534,11 +570,22 @@ export class CaseBalanceService {
       });
     }
 
+    // K3-L TK-2: oran kapsaması eksik kovalar da faizi çözülemeyen anapara olarak taşınır (tek liste, kararlı sıra)
+    const unsimulated = [
+      ...asm.principalCarry,
+      ...rateUncovered.map((bucket) => ({
+        claimItemId: bucket.claimItemId,
+        amount: bucket.amount,
+        currency: bucket.currency,
+        kind: 'UNRESOLVED' as const,
+        reasonCode: 'RATE_COVERAGE_MISSING',
+      })),
+    ];
     const fatalCodes = [
       ...invalidCurrencyFatalCodes,
       ...(hasNoBuckets ? ['NO_BUCKETS'] : []),
-      ...(asm.principalCarry.some((item) => item.kind === 'UNRESOLVED') ? ['INTEREST_UNRESOLVED'] : []),
-      ...(asm.principalCarry.some((item) => item.kind === 'NON_ACCRUING') ? ['NON_ACCRUING_NOT_SIMULATED'] : []),
+      ...(unsimulated.some((item) => item.kind === 'UNRESOLVED') ? ['INTEREST_UNRESOLVED'] : []),
+      ...(unsimulated.some((item) => item.kind === 'NON_ACCRUING') ? ['NON_ACCRUING_NOT_SIMULATED'] : []),
     ];
 
     return {
@@ -564,7 +611,7 @@ export class CaseBalanceService {
       },
       overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
       allocationHolds: activeAllocationHolds,
-      ...(asm.principalCarry.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(asm.principalCarry) } : {}),
+      ...(unsimulated.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(unsimulated) } : {}),
     };
   }
 
