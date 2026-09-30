@@ -155,3 +155,12 @@ src/modules/case/__tests__/case-create-instrument-admission.http.db-gated.integr
 #   kambiyo SECTIRMEZ; baska buroya ait / olmayan lookup -> 400 ve tenant'ta HICBIR satir yok; siniflandirmasiz
 #   acilis etkilenmez. Guncel main servis koduyla 5 testin 4'u DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-create-classification.http.db-gated.integration.spec.ts
+
+# K3 karari A (owner GO 2026-09-30) — dosya acilisinda avukat atamasina YONETIMCE acikca belirlenmis varsayilan yetkinin
+#   anlik kopyasi, GERCEK HTTP + disposable PostgreSQL; yetki YALNIZ gercek yonetim yoluyla (PUT /lawyers/:id, ADMIN/PARTNER
+#   kapisi + LAWYER_PRIVILEGE_CHANGED) verilir, DB tetikleyicisi YOK. Yetkili avukatin acilis K3 talebi ikinci avukat
+#   onayina girer (kesin tazminat yok); varsayilansiz / mali izni false / kaynagi dogrulanmamis (yalniz olusturmada
+#   doldurulmus) -> ret; avukat kendi varsayilanini degistiremez; VIEWER ve baska buro ret (baska buro avukati tx oncesi
+#   400, kismi yazim yok); anlik kopya sonraki varsayilan degisikliginden etkilenmez; dosya bazli geri alma sonraki talebi
+#   engeller; kararlar denetimde. Guncel main servis koduyla 8 testin 6'si DUSER (RED kanitlandi).
+src/modules/case/__tests__/case-open-default-permissions.http.db-gated.integration.spec.ts
