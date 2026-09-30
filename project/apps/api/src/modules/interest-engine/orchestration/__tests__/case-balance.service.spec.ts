@@ -589,7 +589,11 @@ describe('CaseBalanceService (G4c-1)', () => {
         expect.objectContaining({ code: 'INTEREST_BASE', sourceCodes: ['NON_ACCRUING_NOT_SIMULATED', 'NO_INTEREST_DECLARED'] }),
       ]);
       expect(view.currencies).toEqual([
-        expect.objectContaining({ currency: 'TRY', skipped: true, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', unsimulatedPrincipal: 5000 }),
+        expect.objectContaining({
+          currency: 'TRY', skipped: true, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', unsimulatedPrincipal: 5000,
+          // faiz ve kalan BİLİNMİYOR → null (0 değil)
+          interest: null, claimRemaining: null, preEnforcementInterest: null, postEnforcementInterest: null,
+        }),
       ]);
       const blocker = view.diagnostics.find((d) => d.code === 'NON_ACCRUING_NOT_SIMULATED');
       expect(blocker).toMatchObject({
@@ -603,8 +607,16 @@ describe('CaseBalanceService (G4c-1)', () => {
       expect(view.unsafeSources).toEqual(
         expect.arrayContaining([expect.objectContaining({ code: 'NON_ACCRUING_NOT_SIMULATED', source: 'CaseBalanceResult.unsimulatedPrincipals' })]),
       );
-      // uydurma toplam yok
+      // uydurma toplam yok; faiz kovası "0" GÖSTERİLMEZ (faiz bilinmiyor)
       expect(view.totals.outstandingAmount).toBeNull();
+      expect(view.buckets.find((b) => b.code === 'ACCRUED_INTEREST')).toEqual({
+        code: 'ACCRUED_INTEREST',
+        currency: 'TRY',
+        amount: null,
+        displayable: false,
+        source: 'UNAVAILABLE',
+        diagnosticCodes: ['NON_ACCRUING_NOT_SIMULATED'],
+      });
       expect(view.diagnostics.map((d) => d.code)).not.toContain('CASE_BALANCE_UNAVAILABLE');
     });
 
@@ -632,7 +644,11 @@ describe('CaseBalanceService (G4c-1)', () => {
         { currency: 'TRY', result: null, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', grossPrincipal: 10000, unsimulatedPrincipal: 5000 },
       ]);
       expect(computeBalanceSpy).not.toHaveBeenCalled();
-      expect(display(res).status).toBe('UNAVAILABLE');
+      const view = display(res);
+      expect(view.status).toBe('UNAVAILABLE');
+      // eskiden kısmi gerçek faiz vardı; şimdi faiz kovası da satır faizi de "0" DEĞİL, bilinmiyor
+      expect(view.buckets.find((b) => b.code === 'ACCRUED_INTEREST')).toMatchObject({ amount: null, displayable: false });
+      expect(view.currencies[0]).toMatchObject({ interest: null, claimRemaining: null, grossPrincipal: 10000, unsimulatedPrincipal: 5000 });
     });
 
     it('çok para birimi: yalnız etkilenen para birimi durur; diğeri normal hesaplanır', async () => {
@@ -687,6 +703,29 @@ describe('CaseBalanceService (G4c-1)', () => {
         expect.objectContaining({ code: 'CURRENCY_UNSUPPORTED', currency: 'XYZ', sourceId: 'p-ni' }),
       ]);
       expect(display(res).readiness.blockers.map((b) => b.code)).toEqual(['INTEREST_BASE', 'CURRENCY_INTEGRITY']);
+    });
+
+    it('ters kayıt engelinde de taşınan anaparanın engeli eksiksiz (fatal + INTEREST_BASE)', async () => {
+      const tenantId = 't1';
+      const caseId = 'case1';
+      const { service } = setup({
+        claimItems: [noInterest()],
+        ledger: [
+          {
+            id: 'P1', tenantId, caseId, entryType: 'PAYMENT', status: 'CONFIRMED', amount: 1000,
+            currency: 'TRY', entryDate: new Date('2025-03-01'), effectiveDate: null, sourceType: 'COLLECTION', reversesLedgerEntryId: null,
+          },
+          {
+            id: 'R1', tenantId, caseId, entryType: 'REVERSAL', status: 'CONFIRMED', amount: -999,
+            currency: 'TRY', entryDate: new Date('2025-03-02'), effectiveDate: null, sourceType: 'COLLECTION_CANCEL', reversesLedgerEntryId: 'P1',
+          },
+        ],
+      });
+      const res = await service.computeCaseBalance(tenantId, caseId, '2025-06-01');
+
+      expect(res.diagnostics.fatal.map((f) => f.code)).toEqual(['REVERSAL_INTEGRITY_INVALID', 'NON_ACCRUING_NOT_SIMULATED']);
+      expect(res.unsimulatedPrincipals).toHaveLength(1);
+      expect(display(res).readiness.blockers.map((b) => b.code)).toEqual(['REVERSAL_INTEGRITY', 'INTEREST_BASE']);
     });
 
     it('taşınan anapara yoksa sonuç şekli değişmez (alan eklenmez)', async () => {

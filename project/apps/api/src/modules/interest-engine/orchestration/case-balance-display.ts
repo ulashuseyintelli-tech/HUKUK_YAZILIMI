@@ -35,14 +35,17 @@ export interface CaseBalanceDisplayCurrency {
   grossPrincipal: number;
   /** Allocation-sonrasi principal; finalDebtStates yoksa null, turetilmis fallback yoktur. */
   remainingPrincipal: number | null;
-  /** BRÜT işlemiş faiz (totalInterest; ödeme tahsisinden bağımsız). */
-  interest: number;
+  /**
+   * BRÜT işlemiş faiz (totalInterest; ödeme tahsisinden bağımsız). K3-L D2-b1: simüle edilmeyen anaparalı satırda
+   * (INTEREST_UNRESOLVED / NON_ACCRUING_NOT_SIMULATED) null — faiz BİLİNMİYOR, 0 gösterilmez.
+   */
+  interest: number | null;
   /** Takip oncesi brut faiz; hesaplama sonucu yoksa null. */
   preEnforcementInterest: number | null;
   /** Takip sonrasi brut faiz; hesaplama sonucu yoksa null. */
   postEnforcementInterest: number | null;
-  /** NET kalan alacak (anapara+faiz, ödeme tahsisi sonrası, claim-only) = totalDue. */
-  claimRemaining: number;
+  /** NET kalan alacak (anapara+faiz, ödeme tahsisi sonrası, claim-only) = totalDue. K3-L D2-b1: aynı satırlarda null. */
+  claimRemaining: number | null;
   /** Best-effort tahsilat: ödeme-bazında dedup Σ allocations.paymentAmount (ödeme yoksa 0). */
   collected: number;
   /** Bu currency grubu hesaplanmadıysa (0-bucket / engine error). */
@@ -657,6 +660,8 @@ function buildBuckets(
     principalAuthorityAvailable: boolean;
     principalDiagnosticCodes?: BalanceDisplayDiagnosticCode[];
     heldOverpayment: number | null;
+    /** K3-L D2-b1: simüle edilmeyen anapara varsa faiz BİLİNMİYOR — kova 0 gösterilmez (null + neden). */
+    interestUnknownCodes?: BalanceDisplayDiagnosticCode[];
   },
 ): BalanceDisplayBucket[] {
   const currencyIsSafe = currency !== 'MULTI' && currency !== 'UNKNOWN';
@@ -674,14 +679,23 @@ function buildBuckets(
       source: 'CASE_LEVEL_PROJECTION',
       ...(currencyDiagnostic ? { diagnosticCodes: currencyDiagnostic } : {}),
     },
-    {
-      code: 'ACCRUED_INTEREST',
-      currency,
-      amount: maybeAmount(totals.interest),
-      displayable: currencyIsSafe,
-      source: 'COMPUTE_BALANCE_GROSS',
-      ...(currencyDiagnostic ? { diagnosticCodes: currencyDiagnostic } : {}),
-    },
+    totals.interestUnknownCodes && totals.interestUnknownCodes.length > 0
+      ? {
+        code: 'ACCRUED_INTEREST',
+        currency,
+        amount: null,
+        displayable: false,
+        source: 'UNAVAILABLE',
+        diagnosticCodes: [...totals.interestUnknownCodes, ...(currencyDiagnostic ?? [])],
+      }
+      : {
+        code: 'ACCRUED_INTEREST',
+        currency,
+        amount: maybeAmount(totals.interest),
+        displayable: currencyIsSafe,
+        source: 'COMPUTE_BALANCE_GROSS',
+        ...(currencyDiagnostic ? { diagnosticCodes: currencyDiagnostic } : {}),
+      },
     {
       code: 'ATTORNEY_FEE',
       currency,
@@ -739,23 +753,27 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     .some((diagnostic) => diagnostic.code === 'REVERSAL_CURRENCY_MISMATCH');
   const status: 'OK' | 'UNAVAILABLE' = readiness.blockers.length > 0 ? 'UNAVAILABLE' : 'OK';
 
-  const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => ({
+  const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => {
+    const principalNotSimulated =
+      cr.skippedReason === 'INTEREST_UNRESOLVED' || cr.skippedReason === 'NON_ACCRUING_NOT_SIMULATED';
+    return {
     currency: cr.currency,
     grossPrincipal: round2(cr.grossPrincipal),
     remainingPrincipal: remainingPrincipalForCurrency(cr.result, cr.currency),
-    interest: round2(cr.result?.totalInterest ?? 0),
+    interest: principalNotSimulated ? null : round2(cr.result?.totalInterest ?? 0),
     preEnforcementInterest: cr.result == null
       ? null
       : round2(cr.result.preEnforcementInterest ?? 0),
     postEnforcementInterest: cr.result == null
       ? null
       : round2(cr.result.postEnforcementInterest ?? 0),
-    claimRemaining: round2(cr.result?.totalDue ?? 0),
+    claimRemaining: principalNotSimulated ? null : round2(cr.result?.totalDue ?? 0),
     collected: round2(sumCollected(cr.result?.allocations)),
     skipped: cr.result == null,
     skippedReason: cr.skippedReason ?? null,
     ...(cr.unsimulatedPrincipal ? { unsimulatedPrincipal: round2(cr.unsimulatedPrincipal) } : {}),
-  }));
+    };
+  });
 
   const displayCurrency = inferDisplayCurrency(balance);
   const singleCurrency = status === 'OK' && isSupportedCurrency(displayCurrency);
@@ -763,8 +781,9 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const ancillaries = round2(sumRecord(balance.projections?.ancillaries));
   const attorneyFee = round2(valueOfRecord(balance.projections?.ancillaries, AncillaryType.VEKALET_UCRETI));
   const otherAncillary = round2(ancillaries - attorneyFee);
-  const interest = round2(currencies.reduce((sum, c) => sum + c.interest, 0));
-  const claimRemaining = round2(currencies.reduce((sum, c) => sum + c.claimRemaining, 0));
+  // null (bilinmeyen) satırlar toplamı 0 ile SIFIRLAMAZ: bu durumda durum UNAVAILABLE, üst toplamlar ve faiz kovası null
+  const interest = round2(currencies.reduce((sum, c) => sum + (c.interest ?? 0), 0));
+  const claimRemaining = round2(currencies.reduce((sum, c) => sum + (c.claimRemaining ?? 0), 0));
   const collected = round2(currencies.reduce((sum, c) => sum + c.collected, 0));
   // ALC-AUTH-3B: gross (allocation-öncesi) PRINCIPAL toplamı — ClaimItem verisine bağımlı (bkz. tip yorumu).
   const grossPrincipal = round2(
@@ -837,6 +856,10 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
         ? ['FINAL_DEBT_STATES_CURRENCY_MISMATCH']
         : undefined,
       heldOverpayment: singleCurrency ? heldOverpayment : null,
+      interestUnknownCodes: ([
+        ...((balance.unsimulatedPrincipals ?? []).some((p) => p.kind === 'UNRESOLVED') ? ['INTEREST_UNRESOLVED'] : []),
+        ...((balance.unsimulatedPrincipals ?? []).some((p) => p.kind === 'NON_ACCRUING') ? ['NON_ACCRUING_NOT_SIMULATED'] : []),
+      ] as BalanceDisplayDiagnosticCode[]),
     }),
     totals,
     diagnostics,

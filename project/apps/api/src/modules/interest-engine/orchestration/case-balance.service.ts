@@ -393,7 +393,12 @@ export class CaseBalanceService {
           globalBlockerCodes: [fatalCode],
         }),
         diagnostics: {
-          fatal: [{ code: fatalCode, caseId }],
+          // K3-L D2-b1: ters kayıt engelinde de taşınan anaparanın engeli eksiksiz raporlanır (readiness INTEREST_BASE)
+          fatal: [
+            { code: fatalCode, caseId },
+            ...(asm.principalCarry.some((item) => item.kind === 'UNRESOLVED') ? [{ code: 'INTEREST_UNRESOLVED', caseId }] : []),
+            ...(asm.principalCarry.some((item) => item.kind === 'NON_ACCRUING') ? [{ code: 'NON_ACCRUING_NOT_SIMULATED', caseId }] : []),
+          ],
           assembler: asm.diagnostics,
           payments: pay.diagnostics,
           currency: [],
