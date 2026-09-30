@@ -101,6 +101,22 @@ describeWithDisposableDb('K3-L bekletilen tahsilat okuyucuları — D1/D2 (dispo
     const suffix = randomUUID().slice(0, 8);
     const tenantId = `test-k3l-d1-${label}-${suffix}`;
     await prisma.tenant.create({ data: { id: tenantId, name: `K3L D1 ${label}`, slug: tenantId } });
+    if (options.accruingPrincipal) {
+      // K3-L TK-2: faiz işleyen YASAL (LEGAL_3095) kalem oran verisi olmadan artık "faiz bilinmiyor" (INTEREST_UNRESOLVED)
+      // sayılır — önceden oran yokken faiz sessizce 0'dı. Bu test bekletme davranışını sınar; oran açıkça tohumlanır.
+      await prisma.office.create({ data: { id: tenantId, tenantId, name: `K3L D1 ${label}` } as never });
+      await prisma.rateSchedule.create({
+        data: {
+          tenantId,
+          interestType: 'LEGAL_3095',
+          validFrom: new Date('2020-01-01'),
+          validTo: null,
+          annualRate: 0.24,
+          source: 'MANUAL',
+          versionHash: `k3l-d1-${suffix}`,
+        },
+      });
+    }
     const client = await prisma.client.create({ data: { tenantId, displayName: 'Alacaklı', type: 'COMPANY' } as never });
     const legalCase = await prisma.case.create({
       data: {
@@ -434,8 +450,8 @@ describeWithDisposableDb('K3-L bekletilen tahsilat okuyucuları — D1/D2 (dispo
     await complete(f, heldId, f.kesideciCd.id);
     const done = await totalDue();
     expect(done.holds).toEqual([]);
-    // Düşüş = bekletilen 1.500,00 (bir kez). Ortamda faiz oranı tanımlıysa ödeme tarihinden hesap tarihine kadar
-    // işlemeyen faiz farkı kadar (en çok birkaç lira) büyüyebilir; iki kat düşüm (3.000,00) ASLA olamaz.
+    // Düşüş = bekletilen 1.500,00 (bir kez) + ödeme tarihinden hesap tarihine kadar işlemeyen faiz farkı
+    // (tohumlanan %24 oranla ~9,86); iki kat düşüm (3.000,00) ASLA olamaz.
     const reductionMinor = baseline.totalDue - done.totalDue;
     expect(reductionMinor).toBeGreaterThanOrEqual(150000);
     expect(reductionMinor).toBeLessThan(155000);

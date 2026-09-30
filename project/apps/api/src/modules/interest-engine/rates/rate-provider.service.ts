@@ -148,9 +148,11 @@ export class RateProviderService {
         tenantId: options.tenantId,
         interestType: options.interestType,
         validFrom: { lte: new Date(options.endDate) },
+        // K3-L TK-2: validTo DAHİLDİR (RateScheduleService.addRate önceki oranı yeni başlangıçtan bir gün önce kapatır);
+        // başlangıç günü biten oran da o günü kapsar → gte (gt başlangıç gününü oransız bırakıyordu).
         OR: [
           { validTo: null },
-          { validTo: { gt: new Date(options.startDate) } },
+          { validTo: { gte: new Date(options.startDate) } },
         ],
       },
       orderBy: { validFrom: 'asc' },
@@ -184,8 +186,8 @@ export class RateProviderService {
       const rateStart = rate.validFrom;
       const rateEnd = rate.validTo || '9999-12-31';
 
-      // Rate period must overlap with query period
-      return rateStart < options.endDate && rateEnd > options.startDate;
+      // Rate period must overlap with query period (K3-L TK-2: validTo dahil → başlangıç günü biten oran da kapsar)
+      return rateStart < options.endDate && rateEnd >= options.startDate;
     });
 
     // Sort by validFrom

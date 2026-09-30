@@ -94,6 +94,11 @@ export class SegmentBuilderService {
       );
     }
 
+    // K3-L TK-1: değişken oranlı kova YALNIZ kendi faiz türündeki oranı kullanır. Oran listesi aynı dosyadaki başka
+    // türlerin oranlarını (ör. sabit oranlı kalemin sentetik CONTRACT oranı) da taşır; türe göre süzülmezse başka
+    // kalemin oranı bu kalemin dönemine uygulanır ve segment sınırı olarak da araya girer.
+    const ownTypeRates = rates.filter((rate) => rate.interestType === claimBucket.interestType);
+
     // Generate timeline
     const timelineOptions: TimelineOptions = {
       enforcementDate: options.enforcementDate,
@@ -101,7 +106,7 @@ export class SegmentBuilderService {
       sameDayPaymentRule: options.sameDayPaymentRule,
     };
 
-    const timeline = generateTimeline(startDate, endDate, rates, timelineOptions);
+    const timeline = generateTimeline(startDate, endDate, ownTypeRates, timelineOptions);
     const segmentPairs = getTimelineSegments(timeline);
 
     // Build segments
@@ -109,7 +114,7 @@ export class SegmentBuilderService {
     const segmentInterests: number[] = [];
 
     for (const [periodStart, periodEnd] of segmentPairs) {
-      const rate = findRateForDate(periodStart, rates);
+      const rate = findRateForDate(periodStart, ownTypeRates);
       if (!rate) continue;
 
       const days = calculateDays(periodStart, periodEnd);
