@@ -1,0 +1,737 @@
+{
+ "K1_current": {
+  "status": "UNAVAILABLE",
+  "fatal": [
+   "INTEREST_UNRESOLVED"
+  ],
+  "skipped": [
+   "INTEREST_UNRESOLVED"
+  ],
+  "totalDue": null,
+  "totalInterest": null,
+  "finalStates": [],
+  "perBucketInterest": {},
+  "policyWarnings": [],
+  "allocations": [],
+  "unsimulated": [
+   {
+    "claimItemId": "B",
+    "currency": "TRY",
+    "amount": 5000,
+    "kind": "UNRESOLVED",
+    "reasonCode": "MISSING_INTEREST_CONFIG",
+    "accruedInterest": null
+   }
+  ],
+  "totals": {
+   "totalDebtAmount": null,
+   "totalPaidAmount": null,
+   "outstandingAmount": null,
+   "heldOverpaymentAmount": null,
+   "allocatedPaidAmount": null,
+   "grossReceivedAmount": null
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K1_alt_Aonly": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 12720,
+  "totalInterest": 2720,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 10000,
+    "accruedInterest": 2720
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [],
+  "allocations": [],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 12720,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 12720,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K2_current": {
+  "status": "UNAVAILABLE",
+  "fatal": [
+   "NON_ACCRUING_NOT_SIMULATED"
+  ],
+  "skipped": [
+   "NON_ACCRUING_NOT_SIMULATED"
+  ],
+  "totalDue": null,
+  "totalInterest": null,
+  "finalStates": [],
+  "perBucketInterest": {},
+  "policyWarnings": [],
+  "allocations": [],
+  "unsimulated": [
+   {
+    "claimItemId": "N",
+    "currency": "TRY",
+    "amount": 5000,
+    "kind": "NON_ACCRUING",
+    "reasonCode": "NO_INTEREST_DECLARED",
+    "accruedInterest": null
+   }
+  ],
+  "totals": {
+   "totalDebtAmount": null,
+   "totalPaidAmount": null,
+   "outstandingAmount": null,
+   "heldOverpaymentAmount": null,
+   "allocatedPaidAmount": null,
+   "grossReceivedAmount": null
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K2_alt_Afirst": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 5567.67,
+  "totalInterest": 1567.67,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 4590,
+    "accruedInterest": 977.67
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "A",
+    "a": [
+     "INTEREST:590"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "A",
+    "a": [
+     "PRINCIPAL:5410"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 11567.67,
+   "totalPaidAmount": 6000,
+   "outstandingAmount": 5567.67,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 6000,
+   "grossReceivedAmount": 6000
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K2_alt_Nfirst": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 11632.67,
+  "totalInterest": 2632.67,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 9590,
+    "accruedInterest": 2042.67
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "A",
+    "a": [
+     "INTEREST:590"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "A",
+    "a": [
+     "PRINCIPAL:410"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 12632.67,
+   "totalPaidAmount": 1000,
+   "outstandingAmount": 11632.67,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 1000,
+   "grossReceivedAmount": 1000
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K4_current": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 1000,
+  "totalInterest": 100,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 1000,
+    "accruedInterest": 0
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "A",
+    "a": [
+     "INTEREST:100"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 1100,
+   "totalPaidAmount": 100,
+   "outstandingAmount": 1000,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 100,
+   "grossReceivedAmount": 100
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K4_alt_filtered": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 1100,
+  "totalInterest": 100,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 1000,
+    "accruedInterest": 100
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [],
+  "allocations": [],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 1100,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 1100,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K6_current": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 9860.6,
+  "totalInterest": 860.6,
+  "finalStates": [
+   {
+    "id": "P1",
+    "principal": 9400,
+    "accruedInterest": 460.6
+   }
+  ],
+  "perBucketInterest": {
+   "P1": null
+  },
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "P1",
+    "a": [
+     "INTEREST:400"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "P1",
+    "a": [
+     "PRINCIPAL:600"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 10860.6,
+   "totalPaidAmount": 1000,
+   "outstandingAmount": 9860.6,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 1000,
+   "grossReceivedAmount": 1000
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K7a_current": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 10197,
+  "totalInterest": 1197,
+  "finalStates": [
+   {
+    "id": "P",
+    "principal": 9900,
+    "accruedInterest": 297
+   }
+  ],
+  "perBucketInterest": {
+   "P": null
+  },
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "P",
+    "a": [
+     "INTEREST:900"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "P",
+    "a": [
+     "PRINCIPAL:100"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 11197,
+   "totalPaidAmount": 1000,
+   "outstandingAmount": 10197,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 1000,
+   "grossReceivedAmount": 1000
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K7b_current": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 9682,
+  "totalInterest": 682,
+  "finalStates": [
+   {
+    "id": "P",
+    "principal": 9400,
+    "accruedInterest": 282
+   }
+  ],
+  "perBucketInterest": {
+   "P": null
+  },
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "P",
+    "a": [
+     "INTEREST:400"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "P",
+    "a": [
+     "PRINCIPAL:600"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 10682,
+   "totalPaidAmount": 1000,
+   "outstandingAmount": 9682,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 1000,
+   "grossReceivedAmount": 1000
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K8_current": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 6898.16,
+  "totalInterest": 1898.16,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 0,
+    "accruedInterest": 0
+   },
+   {
+    "id": "B",
+    "principal": 6520,
+    "accruedInterest": 378.16
+   }
+  ],
+  "perBucketInterest": {
+   "A": null,
+   "B": null
+  },
+  "policyWarnings": [
+   "E_RATE_OVERLAP"
+  ],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "A",
+    "a": [
+     "INTEREST:900"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "B",
+    "a": [
+     "INTEREST:620"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "A",
+    "a": [
+     "PRINCIPAL:10000"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "B",
+    "a": [
+     "PRINCIPAL:3480"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 21898.16,
+   "totalPaidAmount": 15000,
+   "outstandingAmount": 6898.16,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 15000,
+   "grossReceivedAmount": 15000
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K9_G1": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 1121,
+  "totalInterest": 121,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 1000,
+    "accruedInterest": 121
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [
+   "E_RATE_GAP"
+  ],
+  "allocations": [],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 1121,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 1121,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K9_G2": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 1100,
+  "totalInterest": 100,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 1000,
+    "accruedInterest": 100
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [
+   "E_RATE_GAP"
+  ],
+  "allocations": [],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 1100,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 1100,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K9_G3_norates": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 1000,
+  "totalInterest": 0,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 1000,
+    "accruedInterest": 0
+   }
+  ],
+  "perBucketInterest": {},
+  "policyWarnings": [
+   "E_RATE_GAP"
+  ],
+  "allocations": [],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 1000,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 1000,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K9b_mixed": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 2180,
+  "totalInterest": 180,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 1000,
+    "accruedInterest": 121
+   },
+   {
+    "id": "B",
+    "principal": 1000,
+    "accruedInterest": 59
+   }
+  ],
+  "perBucketInterest": {
+   "A": null,
+   "B": null
+  },
+  "policyWarnings": [
+   "E_RATE_OVERLAP"
+  ],
+  "allocations": [],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 2180,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 2180,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K9b_Aonly": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 1180,
+  "totalInterest": 180,
+  "finalStates": [
+   {
+    "id": "A",
+    "principal": 1000,
+    "accruedInterest": 180
+   }
+  ],
+  "perBucketInterest": {
+   "A": null
+  },
+  "policyWarnings": [],
+  "allocations": [],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 1180,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 1180,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "K3a_current": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 9373,
+  "totalInterest": 573,
+  "finalStates": [
+   {
+    "id": "P1",
+    "principal": 9100,
+    "accruedInterest": 273
+   }
+  ],
+  "perBucketInterest": {
+   "P1": null
+  },
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "p1",
+    "to": "P1",
+    "a": [
+     "INTEREST:300"
+    ]
+   },
+   {
+    "p": "p1",
+    "to": "P1",
+    "a": [
+     "PRINCIPAL:900"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 12073,
+   "totalPaidAmount": 1200,
+   "outstandingAmount": 10873,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 1200,
+   "grossReceivedAmount": 1200
+  },
+  "costs": 500,
+  "ancillaries": 1000
+ },
+ "K5a_current": {
+  "status": "OK",
+  "fatal": [],
+  "skipped": [
+   null
+  ],
+  "totalDue": 0,
+  "totalInterest": 0,
+  "finalStates": [
+   {
+    "id": "P1",
+    "principal": 0,
+    "accruedInterest": 0
+   }
+  ],
+  "perBucketInterest": {},
+  "policyWarnings": [],
+  "allocations": [
+   {
+    "p": "c1",
+    "to": "P1",
+    "a": [
+     "PRINCIPAL:1000"
+    ]
+   }
+  ],
+  "unsimulated": null,
+  "totals": {
+   "totalDebtAmount": 1000,
+   "totalPaidAmount": 1200,
+   "outstandingAmount": 0,
+   "heldOverpaymentAmount": 200,
+   "allocatedPaidAmount": 1200,
+   "grossReceivedAmount": 1400
+  },
+  "costs": 0,
+  "ancillaries": 0
+ }
+}
