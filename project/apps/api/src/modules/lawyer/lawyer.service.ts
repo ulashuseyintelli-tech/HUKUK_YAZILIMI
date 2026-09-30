@@ -12,6 +12,7 @@ import { projectF01Lawyer, F01ProjectionAccess } from "../office/office-f01-proj
 import { UpdateLawyerDto, validateLawyerUpdateInput } from "./dto/update-lawyer.dto";
 import { LAWYER_CREATE_PERSIST_FIELDS } from "./dto/create-lawyer.dto";
 import { partyDb, runPartyWrite, type PartyWriteTxContext } from "@/common/party-write-tx";
+import { canonicalJson, defaultPermissionsFingerprint } from "./lawyer-default-permissions-fingerprint";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 // H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
@@ -77,24 +78,6 @@ export function withDisplayNames<T extends { name: string; surname: string; titl
 
 /** B11 — `LAWYER_PRIVILEGE_CHANGED` audit'ine giren alanlar (delegation KENDI kaydiyla izlenir, burada YOK). */
 type PrivilegedLawyerAuditField = "lawyerRank" | "defaultPermissions" | "permissionsLocked" | "canModifyOtherPermissions";
-
-/**
- * B11 — `defaultPermissions` icin DEGISIKLIK TESPITI (depolamayi ETKILEMEZ). Anahtar sirasindan bagimsiz kanonik
- * metin uretir. Nesne KURMAZ, yalniz metin birlestirir: JSON.parse ile gelen kendi `__proto__`/`constructor`
- * anahtarlari prototip zincirine dokunmadan okunur. SQL NULL ve JSON null (her ikisi de JS `null`) esit sayilir.
- */
-function canonicalJson(value: unknown): string {
-  if (value === null || value === undefined) return "null";
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 @Injectable()
 export class LawyerService {
@@ -646,7 +629,14 @@ export class LawyerService {
               entityId: id,
               userId: actor?.userId, // assertCanManagePrivilegedFields aktoru DOGRULADI (userId yoksa 403)
               actorType: "USER",
-              metadata: { changedFields: [...privilegedChangedFields] },
+              // K3-A kanit bagi (owner GO 2026-09-30): defaultPermissions degistiyse yazilan degerin PARMAK IZI (deger
+              // KOPYALANMAZ). Dosya acilisi varsayilani yalniz en son kayittaki iz GUNCEL degerle eslesirse uygular.
+              metadata: privilegedChangedFields.includes("defaultPermissions")
+                ? {
+                    changedFields: [...privilegedChangedFields],
+                    defaultPermissionsFingerprint: defaultPermissionsFingerprint(defaultPermissions),
+                  }
+                : { changedFields: [...privilegedChangedFields] },
             });
           }
           return updated;

@@ -3,8 +3,9 @@
  *
  * K3 talebi, `POST /claim-items` ile AYNI insan ClaimItem yazma kapısından geçer (K2/K3, owner kararı 2026-09-28):
  * dosyada mali düzenleme nesne yetkisi (`CaseLawyer.casePermissions.canEditFinance` ya da personel `canSeeFinance` +
- * `canEdit`) yoksa talep reddedilir. Dosya açılışında avukat ataması yetkisiz oluşturulduğu için (yetkiyi yalnız ofis
- * yönetimi verir) bu ret BEKLENEN bir durumdur; kapı burada ATLANMAZ, yalnız neden açıkça söylenir.
+ * `canEdit`) yoksa talep reddedilir. Dosya açılışında avukat atamasına yalnız ofis yönetimince AÇIKÇA belirlenmiş
+ * varsayılan yetki kopyalanır (K3 kararı A, owner GO 2026-09-30; bkz. case-lawyer-default-permissions.ts); böyle bir
+ * varsayılan yoksa ya da mali izni false ise bu ret BEKLENEN bir durumdur; kapı burada ATLANMAZ, yalnız neden söylenir.
  *
  * Ham ret metni (`ClaimItem write denied: <REASON>`) iç ayrıntıdır; kullanıcıya kararlı bir kod + Türkçe açıklama
  * döner. Tanınmayan hata kodu/mesajı olduğu gibi korunur (bilgi kaybı yok).
