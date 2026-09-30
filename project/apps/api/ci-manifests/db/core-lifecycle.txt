@@ -148,3 +148,10 @@ src/modules/claim-item/__tests__/claim-item-removed-endpoints.db-gated.integrati
 #   PRINCIPAL; retten sonra yeniden gonderim tekil; evraksiz acilis etkilenmez; K3 (#2843): red talep uretmez,
 #   basarili acilista K3 sonucu tekil. Guncel main servis koduyla 11 testin 7'si DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-create-instrument-admission.http.db-gated.integration.spec.ts
+
+# Dosya acilisinda takip siniflandirmasi (#2847 bulgusu) — GERCEK HTTP + disposable PostgreSQL. POST /cases
+#   takipTuruId/asamaId/riskId/durumEtiketiId/mahiyetTipiId/mahiyetKodu satira yazilir; kayitli takip turu + evrak
+#   turu GET belge uclarinda dogru sablona ulasir (Ornek 1 kambiyo cek / Ornek 10; yazma yok); cek kaydi tek basina
+#   kambiyo SECTIRMEZ; baska buroya ait / olmayan lookup -> 400 ve tenant'ta HICBIR satir yok; siniflandirmasiz
+#   acilis etkilenmez. Guncel main servis koduyla 5 testin 4'u DUSER (RED kanitlandi).
+src/modules/case/__tests__/case-create-classification.http.db-gated.integration.spec.ts

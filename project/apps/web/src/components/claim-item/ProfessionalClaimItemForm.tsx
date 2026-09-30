@@ -491,6 +491,7 @@ interface Props {
 import { interestEngineApi, InterestTypeCode as EngineInterestTypeCode, InterestPreviewResponse } from '@/lib/api/interest-engine';
 import { feeEngineApi, FeePreviewResponse } from '@/lib/api/fee-engine';
 import { assertNoMockInProduction } from '@/lib/config/feature-flags';
+import { CASE_FORM_SELECTION_REQUIRED_FOR_DOCUMENT_MESSAGE } from '@/lib/case-wizard-form-selection';
 
 /**
  * Backend API'den faiz preview hesaplama (TEK KAYNAK)
@@ -2321,6 +2322,11 @@ export function ProfessionalClaimItemForm({
                   <button
                     type="button"
                     onClick={async () => {
+                      // Takip formu seçilmeden taslak belge üretilmez (önceden sessizce 'ILAMSIZ' gönderiliyordu)
+                      if (!_caseType) {
+                        alert(CASE_FORM_SELECTION_REQUIRED_FOR_DOCUMENT_MESSAGE);
+                        return;
+                      }
                       try {
                         const token = localStorage.getItem("token");
                         if (!token) {
@@ -2469,7 +2475,7 @@ export function ProfessionalClaimItemForm({
                             description: `YILLIK %${faizOrani.toFixed(2).replace('.', ',')} (${faizTuru === 'TICARI' ? 'TİCARİ' : 'YASAL'}) değişen oranlarda`,
                             variableRate: true,
                           },
-                          caseType: _caseType || 'ILAMSIZ',
+                          caseType: _caseType,
                           subCategory: kalem.kalemTuru || 'GENEL',
                           executionPath: 'HACIZ',
                           // Tazminat girdisi belgedeki asıl alacak satırıyla AYNI tutardan (bayat hesap özetiyle tutarsızlık olmasın)
@@ -2512,6 +2518,11 @@ export function ProfessionalClaimItemForm({
                   <button
                     type="button"
                     onClick={async () => {
+                      // Takip formu seçilmeden taslak belge üretilmez (önceden sessizce 'ILAMSIZ' gönderiliyordu)
+                      if (!_caseType) {
+                        alert(CASE_FORM_SELECTION_REQUIRED_FOR_DOCUMENT_MESSAGE);
+                        return;
+                      }
                       try {
                         const token = localStorage.getItem("token");
                         if (!token) {
@@ -2581,7 +2592,7 @@ export function ProfessionalClaimItemForm({
                             description: 'Değişen oranlarda faiz',
                             variableRate: true,
                           },
-                          caseType: _caseType || 'ILAMSIZ',
+                          caseType: _caseType,
                           subCategory: kalem.kalemTuru || 'GENEL',
                           executionPath: 'HACIZ',
                           ...(kalem.kalemTuru === 'CEK' ? { cekFormationPreview: buildCekPreviewRequest(kalem, caseDebtors) } : {}),
@@ -2621,6 +2632,11 @@ export function ProfessionalClaimItemForm({
                   <button
                     type="button"
                     onClick={async () => {
+                      // Takip formu seçilmeden taslak belge üretilmez (önceden sessizce 'ILAMSIZ' gönderiliyordu)
+                      if (!_caseType) {
+                        alert(CASE_FORM_SELECTION_REQUIRED_FOR_DOCUMENT_MESSAGE);
+                        return;
+                      }
                       try {
                         const token = localStorage.getItem("token");
                         if (!token) {
@@ -2690,7 +2706,7 @@ export function ProfessionalClaimItemForm({
                             description: 'Değişen oranlarda faiz',
                             variableRate: true,
                           },
-                          caseType: _caseType || 'ILAMSIZ',
+                          caseType: _caseType,
                           subCategory: kalem.kalemTuru || 'GENEL',
                           executionPath: 'HACIZ',
                         };
