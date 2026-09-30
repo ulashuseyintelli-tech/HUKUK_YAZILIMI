@@ -39,7 +39,7 @@ export interface CurrencyGroupResult {
   diagnostics: CurrencyGroupDiagnostic[];
 }
 
-function classifyCurrency(currency: unknown): {
+export function classifyCurrency(currency: unknown): {
   currency: string;
   blockedReason?: CurrencyGroupBlockerCode;
 } {

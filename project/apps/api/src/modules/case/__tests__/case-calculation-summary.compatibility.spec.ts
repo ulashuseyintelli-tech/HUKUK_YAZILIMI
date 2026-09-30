@@ -338,6 +338,26 @@ describe('ADR-014 PR-10 case calculation-summary compatibility adapter', () => {
     }));
   });
 
+  it('K3-L D2-b1: simule edilmeyen anapara uyumluluk satirinda tasinir; faiz/kalan bilinmiyor (null), adapter fail-closed', () => {
+    const { adapter } = adapt(makeBalance({
+      currencyResults: [
+        { currency: 'TRY', result: null, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', grossPrincipal: 0, unsimulatedPrincipal: 5000 },
+      ],
+      diagnostics: { fatal: [{ code: 'NON_ACCRUING_NOT_SIMULATED', caseId: 'case-1' }], assembler: [], payments: [], currency: [], perCurrency: [] },
+      unsimulatedPrincipals: [
+        { claimItemId: 'p-ni', currency: 'TRY', amount: 5000, kind: 'NON_ACCRUING', reasonCode: 'NO_INTEREST_DECLARED', accruedInterest: null },
+      ],
+    }));
+
+    expect(adapter.status).toBe('BLOCKED');
+    expect(adapter.canonical?.currencyResults).toEqual([
+      expect.objectContaining({
+        currency: 'TRY', status: 'UNAVAILABLE', grossPrincipal: 0, unsimulatedPrincipal: 5000,
+        totalInterest: null, claimRemaining: null, skippedReason: 'NON_ACCRUING_NOT_SIMULATED',
+      }),
+    ]);
+  });
+
   it('trace ve non-official snapshot additive kalir ve authority uretmez', () => {
     const { display, adapter } = adapt(makeBalance());
 

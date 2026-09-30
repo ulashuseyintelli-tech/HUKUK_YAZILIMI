@@ -30,7 +30,7 @@ import type { AssemblerDiagnostic } from '../assembler/claim-bucket-assembler';
 import { findActiveCollectionAllocationHolds } from '../../collection/collection-allocation-hold';
 import { hasFatalPaymentMapDiagnostic, mapPayments, PaymentSource } from '../calc-prep/payment-mapper';
 import type { LedgerPaymentRow, CollectionRow, PaymentMapDiagnostic } from '../calc-prep/payment-mapper';
-import { groupByCurrency } from '../calc-prep/currency-grouper';
+import { classifyCurrency, groupByCurrency } from '../calc-prep/currency-grouper';
 import type { CurrencyGroupDiagnostic } from '../calc-prep/currency-grouper';
 import { deriveRateRequirements } from '../calc-prep/rate-requirements';
 import { ClaimBucket, AncillaryType } from '../types/domain.types';
@@ -61,7 +61,14 @@ const DEFAULT_OPTIONS: CalculationOptions = {
   claimPriorityRule: ClaimPriorityRule.OLDEST_DUE_FIRST,
 };
 
-export type CaseBalanceSkipReason = 'NO_BUCKETS' | 'INVALID_CURRENCY' | 'ENGINE_ERROR';
+export type CaseBalanceSkipReason =
+  | 'NO_BUCKETS'
+  | 'INVALID_CURRENCY'
+  | 'ENGINE_ERROR'
+  /** K3-L D2-b1: bu para biriminde faiz ayarı çözülemeyen anapara var → motor çalıştırılmadı, kısmi bakiye yok. */
+  | 'INTEREST_UNRESOLVED'
+  /** K3-L D2-b1: bu para biriminde açık faizsiz (NO_INTEREST) anapara var; kanonik motor henüz simüle etmiyor. */
+  | 'NON_ACCRUING_NOT_SIMULATED';
 
 export interface CaseBalanceCurrencyResult {
   currency: string;
@@ -76,6 +83,24 @@ export interface CaseBalanceCurrencyResult {
    * `finalDebtStates.principal` (KALAN/net anapara) ile KARIŞTIRILMAMALI.
    */
   grossPrincipal: number;
+  /**
+   * K3-L D2-b1: bu para biriminde motora GİRMEYEN (simüle edilmeyen) anapara toplamı — açık faizsiz ya da faiz
+   * ayarı çözülemeyen kalemler. Yalnız > 0 iken yazılır; `grossPrincipal`'a EKLENMEZ (o alan kova toplamıdır).
+   */
+  unsimulatedPrincipal?: number;
+}
+
+/**
+ * K3-L D2-b1: kovası üretilemeyen anapara kalemi. `accruedInterest: null` = faiz BİLİNMİYOR / hesaplanmadı —
+ * sıfır faiz SAYILMAZ (açık faizsizlik beyanında da motor bu PR'da simüle etmez).
+ */
+export interface CaseBalanceUnsimulatedPrincipal {
+  claimItemId: string;
+  currency: string;
+  amount: number;
+  kind: 'NON_ACCRUING' | 'UNRESOLVED';
+  reasonCode: string;
+  accruedInterest: null;
 }
 
 export interface CaseBalancePerCurrencyDiagnostic {
@@ -143,6 +168,24 @@ export interface CaseBalanceResult {
   };
   /** K3-L: aktif bekletmeler — Collection fallback'inden DIŞLANDI; bilgi amaçlı. */
   allocationHolds?: CaseBalanceAllocationHold[];
+  /** K3-L D2-b1: motora girmeyen anapara kalemleri (yalnız dolu iken yazılır). */
+  unsimulatedPrincipals?: CaseBalanceUnsimulatedPrincipal[];
+}
+
+/** K3-L D2-b1: taşınan anapara → sonuç kaydı (kararlı sıra; faiz bilinmiyor = null, sıfır DEĞİL). */
+function toUnsimulatedPrincipals(
+  carry: ReadonlyArray<{ claimItemId: string; amount: number; currency: string; kind: 'NON_ACCRUING' | 'UNRESOLVED'; reasonCode: string }>,
+): CaseBalanceUnsimulatedPrincipal[] {
+  return carry
+    .map((item) => ({
+      claimItemId: item.claimItemId,
+      currency: classifyCurrency(item.currency).currency,
+      amount: item.amount,
+      kind: item.kind,
+      reasonCode: item.reasonCode,
+      accruedInterest: null,
+    }))
+    .sort((a, b) => a.currency.localeCompare(b.currency) || a.claimItemId.localeCompare(b.claimItemId));
 }
 
 /** Decimal|null → number|null (read boundary; money 15,2). */
@@ -350,23 +393,64 @@ export class CaseBalanceService {
           globalBlockerCodes: [fatalCode],
         }),
         diagnostics: {
-          fatal: [{ code: fatalCode, caseId }],
+          // K3-L D2-b1: ters kayıt engelinde de taşınan anaparanın engeli eksiksiz raporlanır (readiness INTEREST_BASE)
+          fatal: [
+            { code: fatalCode, caseId },
+            ...(asm.principalCarry.some((item) => item.kind === 'UNRESOLVED') ? [{ code: 'INTEREST_UNRESOLVED', caseId }] : []),
+            ...(asm.principalCarry.some((item) => item.kind === 'NON_ACCRUING') ? [{ code: 'NON_ACCRUING_NOT_SIMULATED', caseId }] : []),
+          ],
           assembler: asm.diagnostics,
           payments: pay.diagnostics,
           currency: [],
           perCurrency: [],
         },
         overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
+        ...(asm.principalCarry.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(asm.principalCarry) } : {}),
       };
     }
 
     // 5. Currency gruplama (G4b-1)
     const grouped = groupByCurrency(asm.buckets, pay.payments);
+
+    // K3-L D2-b1: kovası üretilemeyen anapara (açık faizsiz / faizi çözülemeyen) para birimi bazında taşınır. O para
+    // biriminde motor ÇALIŞTIRILMAZ (kısmi totalDue ya da "sıfır faiz" varsayımı yok); satır + fatal + tanı üretilir.
+    const carryByCurrency = new Map<string, { blockedReason?: string; items: typeof asm.principalCarry }>();
+    const carryCurrencyDiagnostics: CurrencyGroupDiagnostic[] = [];
+    for (const carry of asm.principalCarry) {
+      const classified = classifyCurrency(carry.currency);
+      const entry = carryByCurrency.get(classified.currency) ?? {
+        ...(classified.blockedReason ? { blockedReason: classified.blockedReason } : {}),
+        items: [],
+      };
+      entry.items.push(carry);
+      carryByCurrency.set(classified.currency, entry);
+      if (classified.blockedReason) {
+        carryCurrencyDiagnostics.push({
+          code: classified.blockedReason,
+          currency: classified.currency,
+          source: 'CLAIM_BUCKET',
+          sourceId: carry.claimItemId,
+          detail: `claimItemId=${carry.claimItemId};principalNotSimulated`,
+        });
+      }
+    }
+    const carrySkipReason = (items: typeof asm.principalCarry): CaseBalanceSkipReason =>
+      items.some((item) => item.kind === 'UNRESOLVED') ? 'INTEREST_UNRESOLVED' : 'NON_ACCRUING_NOT_SIMULATED';
+    const carryTotal = (items: typeof asm.principalCarry): number => items.reduce((sum, item) => sum + item.amount, 0);
+    // Taşınan anaparası olan para biriminde "ödeme var, kova yok" bir para birimi uyuşmazlığı DEĞİLDİR (ödeme o para
+    // biriminin simüle edilmeyen anaparasına aittir); gerçek neden yukarıdaki açık engeldir.
+    const currencyDiagnostics = [
+      ...grouped.diagnostics.filter(
+        (diagnostic) => !(diagnostic.code === 'CURRENCY_MISMATCH' && carryByCurrency.has(diagnostic.currency)),
+      ),
+      ...carryCurrencyDiagnostics,
+    ];
+
     const hasNoBuckets = grouped.groups.some(
-      (group) => group.blockedReason == null && group.buckets.length === 0,
+      (group) => group.blockedReason == null && group.buckets.length === 0 && !carryByCurrency.has(group.currency),
     );
     const invalidCurrencyFatalCodes = [...new Set(
-      grouped.diagnostics
+      currencyDiagnostics
         .map((diagnostic) => diagnostic.code)
         .filter((code) => code === 'CURRENCY_MISSING' || code === 'CURRENCY_UNSUPPORTED'),
     )].sort();
@@ -383,12 +467,26 @@ export class CaseBalanceService {
 
       // ADR-014 PR-6: eksik veya domain-dışı currency hiçbir hesaplama hattına girmez.
       // Raw currency kanıtı grup + diagnostic üzerinde korunur; normalizasyon/conversion yapılmaz.
+      const carried = carryByCurrency.get(group.currency)?.items ?? [];
       if (group.blockedReason) {
         currencyResults.push({
           currency: group.currency,
           result: null,
           skippedReason: 'INVALID_CURRENCY',
           grossPrincipal,
+          ...(carried.length > 0 ? { unsimulatedPrincipal: carryTotal(carried) } : {}),
+        });
+        continue;
+      }
+
+      // K3-L D2-b1: bu para biriminde simüle edilemeyen anapara var → motor çalıştırılmaz (kısmi bakiye yok)
+      if (carried.length > 0) {
+        currencyResults.push({
+          currency: group.currency,
+          result: null,
+          skippedReason: carrySkipReason(carried),
+          grossPrincipal,
+          unsimulatedPrincipal: carryTotal(carried),
         });
         continue;
       }
@@ -423,9 +521,24 @@ export class CaseBalanceService {
       }
     }
 
+    // K3-L D2-b1: kovası ve ödemesi olmayan (grubu hiç oluşmayan) para birimindeki taşınan anapara da satır olarak görünür
+    const groupedCurrencies = new Set(grouped.groups.map((group) => group.currency));
+    for (const [currency, entry] of [...carryByCurrency.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      if (groupedCurrencies.has(currency)) continue;
+      currencyResults.push({
+        currency,
+        result: null,
+        skippedReason: entry.blockedReason ? 'INVALID_CURRENCY' : carrySkipReason(entry.items),
+        grossPrincipal: 0,
+        unsimulatedPrincipal: carryTotal(entry.items),
+      });
+    }
+
     const fatalCodes = [
       ...invalidCurrencyFatalCodes,
       ...(hasNoBuckets ? ['NO_BUCKETS'] : []),
+      ...(asm.principalCarry.some((item) => item.kind === 'UNRESOLVED') ? ['INTEREST_UNRESOLVED'] : []),
+      ...(asm.principalCarry.some((item) => item.kind === 'NON_ACCRUING') ? ['NON_ACCRUING_NOT_SIMULATED'] : []),
     ];
 
     return {
@@ -446,11 +559,12 @@ export class CaseBalanceService {
         fatal: fatalCodes.map((code) => ({ code, caseId })),
         assembler: asm.diagnostics,
         payments: pay.diagnostics,
-        currency: grouped.diagnostics,
+        currency: currencyDiagnostics,
         perCurrency,
       },
       overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
       allocationHolds: activeAllocationHolds,
+      ...(asm.principalCarry.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(asm.principalCarry) } : {}),
     };
   }
 

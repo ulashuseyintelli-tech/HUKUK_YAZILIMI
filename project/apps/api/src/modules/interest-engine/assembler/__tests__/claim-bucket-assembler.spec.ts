@@ -17,6 +17,79 @@ function item(p: Partial<ClaimItemInput> & { id: string; itemType: string }): Cl
   };
 }
 
+describe('K3-L D2-b1: kovası üretilmeyen principal principalCarry ile taşınır (sessiz düşme yok)', () => {
+  it('açık NO_INTEREST → NON_ACCRUING; faiz türü alanı taşınmaz; kova ve tanılar DEĞİŞMEZ', () => {
+    const res = assembleClaimBuckets([
+      item({ id: 'p1', itemType: 'PRINCIPAL', amount: 5000, demandedAmount: 4000, interestAccrualStatus: 'NO_INTEREST' }),
+    ]);
+    expect(res.buckets).toEqual([]);
+    expect(res.diagnostics).toEqual([]);
+    expect(res.principalCarry).toEqual([
+      { claimItemId: 'p1', amount: 4000, currency: 'TRY', kind: 'NON_ACCRUING', reasonCode: 'NO_INTEREST_DECLARED' },
+    ]);
+    expect(JSON.stringify(res.principalCarry)).not.toContain('interestType');
+  });
+
+  it.each([
+    ['MISSING_INTEREST_CONFIG', item({ id: 'p1', itemType: 'PRINCIPAL' }), undefined],
+    ['MISSING_START_DATE', item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'YASAL' }), undefined],
+    ['FIXED_RATE_REQUIRED', item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'SABIT', interestStartDate: '2025-01-01' }), undefined],
+    ['UNSUPPORTED_INTEREST_TYPE', item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'UYDURMA_TUR', interestStartDate: '2025-01-01' }), undefined],
+    [
+      'MISSING_START_DATE_SOURCE_VALUE',
+      item({ id: 'p1', itemType: 'PRINCIPAL', interestType: 'YASAL', interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' }),
+      undefined,
+    ],
+    [
+      'NO_INTEREST_AUTHORITY_CONFLICT',
+      item({ id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'NO_INTEREST', interestType: 'YASAL', interestStartDate: '2025-01-01' }),
+      undefined,
+    ],
+  ])('çözülemeyen faiz (%s) → UNRESOLVED, neden = terminal tanı', (code, principalItem, caseInterest) => {
+    const res = assembleClaimBuckets([principalItem], caseInterest);
+    expect(res.buckets).toEqual([]);
+    expect(res.diagnostics.map((d) => d.code)).toContain(code);
+    expect(res.principalCarry).toEqual([
+      { claimItemId: 'p1', amount: 1000, currency: 'TRY', kind: 'UNRESOLVED', reasonCode: code },
+    ]);
+  });
+
+  it('belirsiz faiz ayarı (çok anapara + tek faiz kalemi) → her iki anapara UNRESOLVED/AMBIGUOUS', () => {
+    const res = assembleClaimBuckets([
+      item({ id: 'p1', itemType: 'PRINCIPAL' }),
+      item({ id: 'p2', itemType: 'PRINCIPAL' }),
+      item({ id: 'i1', itemType: 'INTEREST', interestType: 'YASAL', interestStartDate: '2025-01-01' }),
+    ]);
+    expect(res.principalCarry.map((c) => [c.claimItemId, c.kind, c.reasonCode])).toEqual([
+      ['p1', 'UNRESOLVED', 'AMBIGUOUS_INTEREST_CONFIG'],
+      ['p2', 'UNRESOLVED', 'AMBIGUOUS_INTEREST_CONFIG'],
+    ]);
+  });
+
+  it('kovası üretilen, iptal/feragat edilen, sıfır tutarlı ya da anapara dışı kalem taşınmaz', () => {
+    const res = assembleClaimBuckets([
+      item({ id: 'ok', itemType: 'PRINCIPAL', interestType: 'YASAL', interestStartDate: '2025-01-01' }),
+      item({ id: 'w', itemType: 'PRINCIPAL', status: 'WAIVED', interestAccrualStatus: 'NO_INTEREST' }),
+      item({ id: 'c', itemType: 'PRINCIPAL', status: 'CANCELLED', interestAccrualStatus: 'NO_INTEREST' }),
+      item({ id: 'z', itemType: 'PRINCIPAL', amount: 0, interestAccrualStatus: 'NO_INTEREST' }),
+      item({ id: 'f', itemType: 'FEE', interestAccrualStatus: 'NO_INTEREST' }),
+    ]);
+    expect(res.buckets.map((b) => b.id)).toEqual(['ok']);
+    expect(res.principalCarry).toEqual([]);
+  });
+
+  it('ayna uyarısı (INTEREST_TYPE_MIRROR_DRIFT) terminal değildir: kova üretilir, taşınmaz', () => {
+    const res = assembleClaimBuckets([
+      item({
+        id: 'p1', itemType: 'PRINCIPAL', interestTypeCode: InterestTypeCode.LEGAL_3095, interestType: 'TICARI',
+        interestStartDate: '2025-01-01',
+      }),
+    ]);
+    expect(res.buckets).toHaveLength(1);
+    expect(res.principalCarry).toEqual([]);
+  });
+});
+
 describe('claim-bucket-assembler (G4a)', () => {
   describe('Q1/Q3 PRINCIPAL → bucket', () => {
     it('principal kendi konfigi ile → 1 bucket; amount=demandedAmount, collected düşülmez', () => {

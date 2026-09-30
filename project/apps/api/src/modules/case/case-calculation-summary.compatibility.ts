@@ -77,6 +77,8 @@ export interface CompatibilityCurrencyResult {
   allocatedPayment: number | null;
   skippedReason: string | null;
   interestReconciled: boolean | null;
+  /** K3-L D2-b1: bu para biriminde motora girmeyen anapara (yalnız > 0 iken yazılır; grossPrincipal'a eklenmez). */
+  unsimulatedPrincipal?: number;
 }
 
 export interface CaseCalculationSummaryCompatibilityDiagnostic {
@@ -272,6 +274,7 @@ function buildCurrencyResults(display: CaseBalanceDisplay): CompatibilityCurrenc
       interestReconciled: totalInterest == null || pre == null || post == null
         ? null
         : toCents(pre) + toCents(post) === toCents(totalInterest),
+      ...(entry.unsimulatedPrincipal ? { unsimulatedPrincipal: entry.unsimulatedPrincipal } : {}),
     };
   });
 }
