@@ -401,7 +401,13 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   };
 
   const removeCaseDebtor = (index: number) => {
-    onDebtorsChange(selectedDebtors.filter((_, i) => i !== index));
+    // K3-L Faz 2b: çıkarılan borçluyu gösteren "lehine aval" seçimleri de temizlenir (bayat seçim askıda kalmaz)
+    const removedId = selectedDebtors[index]?.debtorId;
+    onDebtorsChange(
+      selectedDebtors
+        .filter((_, i) => i !== index)
+        .map((cd) => (removedId && cd.avalForDebtorId === removedId ? { ...cd, avalForDebtorId: undefined } : cd)),
+    );
   };
 
 
@@ -1223,6 +1229,12 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
                   onUpdate={(updates: Partial<CaseDebtor>) => updateCaseDebtor(index, updates)}
                   onRemove={() => removeCaseDebtor(index)}
                   onEdit={(debtor) => openEditDebtorModal(debtor)}
+                  avalCandidates={selectedDebtors
+                    .filter((other) => other.debtorId !== caseDebtor.debtorId)
+                    .map((other) => ({
+                      debtorId: other.debtorId,
+                      name: other.debtor?.name || other.debtorId,
+                    }))}
                 />
               ))}
             </div>

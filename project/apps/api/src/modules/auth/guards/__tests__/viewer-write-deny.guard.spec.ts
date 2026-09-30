@@ -4,7 +4,7 @@
  * (1) Davranış: VIEWER yazma fiilinde 403 VIEWER_WRITE_DENIED; okuma fiilleri ve işaretli okuma-POST'ları geçer;
  *     ADMIN/USER etkilenmez; yöntemi bilinmeyen fiil yazma sayılır (fail-closed).
  * (2) Bağlama: guard, envanterdeki 12 controller'ın SINIF düzeyi guard listesinde JWT guard'ından SONRA durur;
- *     `@AllowViewerReadOnlyPost()` YALNIZ kaynaktan yazma yapmadığı doğrulanmış altı handler'dadır. Yeni bir
+ *     `@AllowViewerReadOnlyPost()` YALNIZ kaynaktan yazma yapmadığı doğrulanmış yedi handler'dadır. Yeni bir
  *     okuma-POST işareti eklenirse bu spec kırılır (bilinçli gözden geçirme zorunlu).
  */
 jest.mock('pdf-poppler', () => ({
@@ -89,6 +89,8 @@ const EXPECTED_READ_ONLY_POSTS = [
   'CaseController.suggestCaseType',
   'ClaimItemController.calculateCheckPenalty',
   'ClaimItemController.calculateInterest',
+  // K3-L Faz 2b: saf hesap (previewCekFormation) — DB okuması/yazması, kayıt ve onay YOK
+  'ClaimItemController.previewCekFormation',
   'ClaimItemController.validateCase',
   'ClientOffsetController.preview',
   'ExpenseRequestController.calculatePreview',
@@ -104,7 +106,7 @@ describe('ViewerWriteDenyGuard — bağlama kilidi', () => {
     expect([JwtAuthGuard, AuthGuard('jwt')]).toContain(guards[0]);
   });
 
-  it('okuma-POST işareti YALNIZ doğrulanmış altı handler\'da', () => {
+  it('okuma-POST işareti YALNIZ doğrulanmış yedi handler\'da', () => {
     const marked: string[] = [];
     for (const [name, ctrl] of CONTROLLERS) {
       for (const key of Object.getOwnPropertyNames(ctrl.prototype)) {

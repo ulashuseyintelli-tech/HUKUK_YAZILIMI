@@ -483,6 +483,20 @@ export const DRAFT_DOCUMENT_NOTICE =
 export const DRAFT_EXCLUDED_PENALTY_NOTICE =
   'Çek tazminatı bu taslakta yer almaz: kayıtlı alacak kalemi değildir (kesin kalem yalnız onayla oluşur).';
 
+export const DRAFT_SERVER_PENALTY_NOTICE =
+  'Çek tazminatı sunucu hesabıyla TASLAK olarak gösterilmiştir: kayıtlı alacak kalemi değildir (kesin kalem yalnız onayla oluşur).';
+
+export const DRAFT_SERVER_PENALTY_LINE_LABEL = 'Çek Tazminatı (TASLAK — onay bekliyor)';
+
+/**
+ * Sunucunun TASLAK çek tazminatı hesabı (previewCekFormation sonucu) — istemci belge önizlemesine girdi.
+ *  - HESAPLANDI: tutar sunucuda, karşılıksız çek kayıtları ve borçlu rollerinden hesaplandı.
+ *  - VERI_EKSIK: girdi eksik → tutar ÜRETİLMEZ (kör "asıl alacak × %10" yok); sebep taslakta not olarak yazılır.
+ */
+export type ServerDraftPenalty =
+  | { status: 'HESAPLANDI'; amount: number; currency: string; previewHash: string }
+  | { status: 'VERI_EKSIK'; reason: string; previewHash: string };
+
 /** İstemcinin gönderdiği, KAYITLI kalemden gelmeyen çek tazminatı satırı türleri (istemci hesabı) */
 const CLIENT_PENALTY_TYPES = new Set(['COMPENSATION', 'CEK_TAZMINATI', 'CHECK_PENALTY']);
 
@@ -492,6 +506,8 @@ const CLIENT_PENALTY_TYPES = new Set(['COMPENSATION', 'CEK_TAZMINATI', 'CHECK_PE
  *    kalem değildir; `draftExcludedItems` içinde raporlanır ve taslakta not olarak belirtilir;
  *  - toplamlar SUNUCUDA kalan kalemlerden yeniden hesaplanır (istemci toplamı ezilir);
  *  - takip yolu yalnız AÇIK etiketten çözülür; avukat adı veride değiştirilmez (unvan üretim yerinde tek kez);
+ *  - K3-L Faz 2b: SUNUCU taslak hesabı verildiyse (`serverDraftPenalty`) çek tazminatı satırı O tutarla, açıkça
+ *    "TASLAK — onay bekliyor" etiketiyle eklenir ve toplama girer; istemcinin kendi satırı yine kullanılmaz;
  *  - kayıt yazılmaz; çıktı TASLAK olarak işaretlenir.
  *
  * /// <remarks>
@@ -506,11 +522,16 @@ export function normalizeClientTemplateData<T extends {
   subCategory: string;
   proceedingKind?: ProceedingKind;
   proceedingSelection?: ProceedingSelection;
-}>(data: T): T & {
+}>(
+  data: T,
+  serverDraftPenalty?: ServerDraftPenalty | null,
+): T & {
   proceedingKind: ProceedingKind;
   proceedingSelection: ProceedingSelection;
   isDraft: true;
   draftExcludedItems: Array<{ type: string; amount: number; currency: string; reason: 'NOT_A_RECORDED_CLAIM_ITEM' }>;
+  draftComputedItems: Array<{ type: 'CHECK_PENALTY'; amount: number; currency: string; source: 'SERVER_PREVIEW'; previewHash: string }>;
+  draftPenaltyNotice?: string;
 } {
   const draftExcludedItems: Array<{ type: string; amount: number; currency: string; reason: 'NOT_A_RECORDED_CLAIM_ITEM' }> = [];
   const claimItems: T['claimItems'] = [];
@@ -524,6 +545,29 @@ export function normalizeClientTemplateData<T extends {
     claimItems.push({ ...item, type, description: item.description || getClaimItemTypeLabel(type), amount: Number(item.amount) || 0 });
   }
   const currency = data.totals?.currency || claimItems[0]?.currency || 'TRY';
+  const draftComputedItems: Array<{ type: 'CHECK_PENALTY'; amount: number; currency: string; source: 'SERVER_PREVIEW'; previewHash: string }> = [];
+  let draftPenaltyNotice: string | undefined;
+  if (serverDraftPenalty?.status === 'HESAPLANDI' && serverDraftPenalty.amount > 0) {
+    // Sunucu hesabı: satır açıkça TASLAK etiketlidir; kesin kalem (ClaimItem) DEĞİLDİR
+    claimItems.push({
+      type: 'CHECK_PENALTY',
+      description: DRAFT_SERVER_PENALTY_LINE_LABEL,
+      amount: serverDraftPenalty.amount,
+      currency: serverDraftPenalty.currency,
+    } as T['claimItems'][number]);
+    draftComputedItems.push({
+      type: 'CHECK_PENALTY',
+      amount: serverDraftPenalty.amount,
+      currency: serverDraftPenalty.currency,
+      source: 'SERVER_PREVIEW',
+      previewHash: serverDraftPenalty.previewHash,
+    });
+    draftPenaltyNotice = DRAFT_SERVER_PENALTY_NOTICE;
+  } else if (serverDraftPenalty?.status === 'VERI_EKSIK') {
+    draftPenaltyNotice = `Çek tazminatı bu taslakta yer almaz: ${serverDraftPenalty.reason}`;
+  } else if (draftExcludedItems.length > 0) {
+    draftPenaltyNotice = DRAFT_EXCLUDED_PENALTY_NOTICE;
+  }
   const proceedingSelection = data.proceedingSelection ?? resolveProceedingSelectionFromLabels(data.caseType, data.subCategory);
   return {
     ...data,
@@ -533,5 +577,7 @@ export function normalizeClientTemplateData<T extends {
     proceedingKind: proceedingSelection.kind,
     isDraft: true,
     draftExcludedItems,
+    draftComputedItems,
+    ...(draftPenaltyNotice ? { draftPenaltyNotice } : {}),
   };
 }

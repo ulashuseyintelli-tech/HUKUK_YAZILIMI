@@ -173,6 +173,8 @@ export interface CaseDebtor {
   debtorId: string;
   debtor?: Debtor;
   role: DebtorRole;
+  // K3-L Faz 2b: aval verenin LEHİNE aval verdiği dosya borçlusu (Debtor.id); yalnız rol AVAL iken
+  avalForDebtorId?: string;
   liabilityAmount?: number;
   liabilityType?: string;
   notificationMode: NotificationMode;

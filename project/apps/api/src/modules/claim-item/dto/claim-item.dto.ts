@@ -6,7 +6,9 @@ import {
   IsBoolean,
   IsDateString,
   IsArray,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { InterestTypeCode } from '@prisma/client';
 
 // Alacak Kalemi Türü
@@ -360,4 +362,50 @@ export interface InterestCalculationResult {
   days: number;
   calculatedInterest: number;
   currency: string;
+}
+
+// K3-L Faz 2b — TASLAK çek tazminatı önizlemesi (salt hesap; yazma/onay YOK)
+export class CekFormationPreviewInstrumentDto {
+  @IsNumber()
+  amount: number;
+
+  @IsString()
+  currency: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isBounced?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  bounceDate?: string;
+}
+
+export class CekFormationPreviewDebtorDto {
+  // Dosya henüz yokken istemcinin borçlu kimliği (Debtor.id kullanılır → açılıştaki sunucu hash'iyle aynı girdi)
+  @IsString()
+  tempId: string;
+
+  @IsString()
+  role: string;
+
+  @IsOptional()
+  @IsString()
+  avalForTempId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  pursued?: boolean;
+}
+
+export class CekFormationPreviewDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CekFormationPreviewInstrumentDto)
+  instruments: CekFormationPreviewInstrumentDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CekFormationPreviewDebtorDto)
+  debtors: CekFormationPreviewDebtorDto[];
 }

@@ -50,9 +50,11 @@ interface SelectedDebtorCardProps {
   onUpdate: (updates: Partial<CaseDebtor>) => void;
   onRemove: () => void;
   onEdit?: (debtor: Debtor) => void;
+  /** K3-L Faz 2b: lehine aval verilebilecek DİĞER dosya borçluları (rol AVAL iken seçim sunulur) */
+  avalCandidates?: Array<{ debtorId: string; name: string }>;
 }
 
-export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit }: SelectedDebtorCardProps) {
+export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit, avalCandidates = [] }: SelectedDebtorCardProps) {
   const [showDetails, setShowDetails] = useState(false);
   const { debtor } = caseDebtor;
   
@@ -152,11 +154,37 @@ export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit }: S
           <label className="block text-xs font-medium mb-1">Rol</label>
           <select
             value={caseDebtor.role}
-            onChange={(e) => onUpdate({ role: e.target.value as DebtorRole })}
+            onChange={(e) => {
+              const role = e.target.value as DebtorRole;
+              // Rol AVAL'dan çıkınca lehine aval bilgisi temizlenir (yalnız AVAL rolünde anlamlıdır)
+              onUpdate(role === DebtorRole.AVAL ? { role } : { role, avalForDebtorId: undefined });
+            }}
             className="w-full border rounded px-2 py-1.5 text-xs"
           >
             {Object.entries(DebtorRoleLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+          {caseDebtor.role === DebtorRole.AVAL && (
+            <div className="mt-1">
+              <label htmlFor={`aval-for-${caseDebtor.debtorId}`} className="block text-[11px] font-medium mb-0.5">
+                Lehine aval verilen
+              </label>
+              <select
+                id={`aval-for-${caseDebtor.debtorId}`}
+                data-testid="aval-for-select"
+                value={caseDebtor.avalForDebtorId || ""}
+                onChange={(e) => onUpdate({ avalForDebtorId: e.target.value || undefined })}
+                className="w-full border rounded px-2 py-1.5 text-xs"
+              >
+                <option value="">Belirtilmedi</option>
+                {avalCandidates.map((cand) => (
+                  <option key={cand.debtorId} value={cand.debtorId}>{cand.name}</option>
+                ))}
+              </select>
+              <p className="mt-0.5 text-[10px] text-gray-500">
+                Aval veren, lehine aval verdiği kişi gibi sorumludur. Belirtilmezse çek tazminatı sorumluluğu sınıflandırılamaz.
+              </p>
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium mb-1 flex items-center gap-1">
