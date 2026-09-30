@@ -33,6 +33,8 @@ import type { LedgerPaymentRow, CollectionRow, PaymentMapDiagnostic } from '../c
 import { classifyCurrency, groupByCurrency } from '../calc-prep/currency-grouper';
 import type { CurrencyGroupDiagnostic } from '../calc-prep/currency-grouper';
 import { deriveRateRequirements } from '../calc-prep/rate-requirements';
+import { findUncoveredRateBuckets } from '../calc-prep/rate-coverage';
+import type { UncoveredRateBucket } from '../calc-prep/rate-coverage';
 import { ClaimBucket, AncillaryType } from '../types/domain.types';
 import { mapPersistedInterestTypeCode } from '../mapping/interest-type-bridge';
 import { RateEntry, RateSourceType } from '../rates/rate-entry.entity';
@@ -65,7 +67,11 @@ export type CaseBalanceSkipReason =
   | 'NO_BUCKETS'
   | 'INVALID_CURRENCY'
   | 'ENGINE_ERROR'
-  /** K3-L D2-b1: bu para biriminde faiz ayarı çözülemeyen anapara var → motor çalıştırılmadı, kısmi bakiye yok. */
+  /**
+   * K3-L D2-b1: bu para biriminde faiz ayarı çözülemeyen anapara var → motor çalıştırılmadı, kısmi bakiye yok.
+   * K3-L TK-2: faiz dönemi kendi türündeki oran verisiyle kapsanmayan anapara da bu nedene düşer
+   * (reasonCode RATE_COVERAGE_MISSING).
+   */
   | 'INTEREST_UNRESOLVED'
   /** K3-L D2-b1: bu para biriminde açık faizsiz (NO_INTEREST) anapara var; kanonik motor henüz simüle etmiyor. */
   | 'NON_ACCRUING_NOT_SIMULATED';
@@ -119,6 +125,18 @@ export interface CaseBalanceHeldOverpayment {
   status: string;
 }
 
+/**
+ * K3-L TK-3: hesap tarihinden SONRA tarihli (ters kayıt netleşmesinden sonraki) ödeme — bu tarihin bakiyesine GİRMEDİ.
+ * Kayıt değişmez; yalnız bu hesaptan çıkarılır ve bilgi olarak raporlanır.
+ */
+export interface CaseBalancePaymentAfterAsOf {
+  id: string;
+  date: string;
+  amount: number;
+  currency: string;
+  source?: string;
+}
+
 /** K3-L — mahsubu bekletilen tahsilat (defter kaydı yok; fazla ödeme DEĞİL; ödeme sayılmaz). */
 export interface CaseBalanceAllocationHold {
   id: string;
@@ -170,6 +188,8 @@ export interface CaseBalanceResult {
   allocationHolds?: CaseBalanceAllocationHold[];
   /** K3-L D2-b1: motora girmeyen anapara kalemleri (yalnız dolu iken yazılır). */
   unsimulatedPrincipals?: CaseBalanceUnsimulatedPrincipal[];
+  /** K3-L TK-3: hesap tarihinden sonra tarihli ödemeler — bu bakiyeye girmedi (yalnız dolu iken yazılır). */
+  paymentsAfterAsOf?: CaseBalancePaymentAfterAsOf[];
 }
 
 /** K3-L D2-b1: taşınan anapara → sonuç kaydı (kararlı sıra; faiz bilinmiyor = null, sıfır DEĞİL). */
@@ -409,8 +429,24 @@ export class CaseBalanceService {
       };
     }
 
+    // K3-L TK-3: hesap tarihinden SONRAKİ ödeme bu tarihin bakiyesine girmez. Önceden motor faizi hesap tarihinde
+    // keserken sonraki ödemeyi yine anaparadan düşüyordu (bakiye hiçbir tarihteki gerçek duruma karşılık gelmiyordu).
+    // Filtre, ters kayıt netleşmesinden (mapPayments; ADR-014 MUST-6) SONRAKİ net ödeme listesine uygulanır; kayıt
+    // değişmez, çıkarılan ödemeler ayrı bilgi olarak raporlanır.
+    const paymentsInScope = pay.payments.filter((payment) => payment.date <= asOfDate);
+    const paymentsAfterAsOf: CaseBalancePaymentAfterAsOf[] = pay.payments
+      .filter((payment) => payment.date > asOfDate)
+      .map((payment) => ({
+        id: payment.id,
+        date: payment.date,
+        amount: payment.amount,
+        currency: payment.currency,
+        ...(payment.source != null ? { source: payment.source } : {}),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+
     // 5. Currency gruplama (G4b-1)
-    const grouped = groupByCurrency(asm.buckets, pay.payments);
+    const grouped = groupByCurrency(asm.buckets, paymentsInScope);
 
     // K3-L D2-b1: kovası üretilemeyen anapara (açık faizsiz / faizi çözülemeyen) para birimi bazında taşınır. O para
     // biriminde motor ÇALIŞTIRILMAZ (kısmi totalDue ya da "sıfır faiz" varsayımı yok); satır + fatal + tanı üretilir.
@@ -459,6 +495,8 @@ export class CaseBalanceService {
     const now = new Date().toISOString();
     const currencyResults: CaseBalanceCurrencyResult[] = [];
     const perCurrency: CaseBalancePerCurrencyDiagnostic[] = [];
+    // K3-L TK-2: faiz dönemi kendi türündeki oranlarla kapsanmayan kovalar (faiz bilinmiyor; sıfır sayılmaz)
+    const rateUncovered: UncoveredRateBucket[] = [];
 
     for (const group of grouped.groups) {
       // ALC-AUTH-3B: gross (allocation-öncesi) PRINCIPAL toplamı — computeBalance sonucundan bağımsız,
@@ -500,6 +538,34 @@ export class CaseBalanceService {
 
       try {
         const rates = await this.gatherRates(tenantId, group.buckets, asOfDate);
+        // K3-L TK-2: oran verisi faiz dönemini gün gün kapsamıyorsa motor ÇALIŞTIRILMAZ — komşu/gelecek oran ya da
+        // sıfır faizle "kesin" toplam üretilmez. Bilinen anapara korunur (kapsanan kovalar grossPrincipal'da, kapsanmayanlar
+        // simüle edilmeyen anapara olarak); eksik dönem tanıda gösterilir. D2-b1 ile aynı sözleşme (ADR-014 RD01).
+        const uncovered = findUncoveredRateBuckets(group.buckets, rates, asOfDate);
+        if (uncovered.length > 0) {
+          const uncoveredIds = new Set(uncovered.map((bucket) => bucket.claimItemId));
+          rateUncovered.push(...uncovered);
+          for (const bucket of uncovered) {
+            perCurrency.push({
+              currency: group.currency,
+              code: 'RATE_COVERAGE_MISSING',
+              message:
+                `Oran verisi eksik: kalem ${bucket.claimItemId} (${bucket.interestType}) için ` +
+                bucket.gaps.map((gap) => (gap.from === gap.to ? gap.from : `${gap.from}–${gap.to}`)).join(', ') +
+                ' döneminde oran yok; faiz hesaplanmadı.',
+            });
+          }
+          currencyResults.push({
+            currency: group.currency,
+            result: null,
+            skippedReason: 'INTEREST_UNRESOLVED',
+            grossPrincipal: group.buckets
+              .filter((bucket) => !uncoveredIds.has(bucket.id))
+              .reduce((sum, bucket) => sum + bucket.amount, 0),
+            unsimulatedPrincipal: uncovered.reduce((sum, bucket) => sum + bucket.amount, 0),
+          });
+          continue;
+        }
         const request: CalculationRequest = {
           caseId,
           claimBuckets: group.buckets,
@@ -534,11 +600,22 @@ export class CaseBalanceService {
       });
     }
 
+    // K3-L TK-2: oran kapsaması eksik kovalar da faizi çözülemeyen anapara olarak taşınır (tek liste, kararlı sıra)
+    const unsimulated = [
+      ...asm.principalCarry,
+      ...rateUncovered.map((bucket) => ({
+        claimItemId: bucket.claimItemId,
+        amount: bucket.amount,
+        currency: bucket.currency,
+        kind: 'UNRESOLVED' as const,
+        reasonCode: 'RATE_COVERAGE_MISSING',
+      })),
+    ];
     const fatalCodes = [
       ...invalidCurrencyFatalCodes,
       ...(hasNoBuckets ? ['NO_BUCKETS'] : []),
-      ...(asm.principalCarry.some((item) => item.kind === 'UNRESOLVED') ? ['INTEREST_UNRESOLVED'] : []),
-      ...(asm.principalCarry.some((item) => item.kind === 'NON_ACCRUING') ? ['NON_ACCRUING_NOT_SIMULATED'] : []),
+      ...(unsimulated.some((item) => item.kind === 'UNRESOLVED') ? ['INTEREST_UNRESOLVED'] : []),
+      ...(unsimulated.some((item) => item.kind === 'NON_ACCRUING') ? ['NON_ACCRUING_NOT_SIMULATED'] : []),
     ];
 
     return {
@@ -564,7 +641,8 @@ export class CaseBalanceService {
       },
       overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
       allocationHolds: activeAllocationHolds,
-      ...(asm.principalCarry.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(asm.principalCarry) } : {}),
+      ...(unsimulated.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(unsimulated) } : {}),
+      ...(paymentsAfterAsOf.length > 0 ? { paymentsAfterAsOf } : {}),
     };
   }
 
