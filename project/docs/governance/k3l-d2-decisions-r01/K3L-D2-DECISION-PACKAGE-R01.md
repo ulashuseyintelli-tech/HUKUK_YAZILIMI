@@ -4,6 +4,7 @@
 - **Dayanak:** owner GO 2026-09-30 "#2846 kapanışı ve kalan işlerin somutlaştırılması", madde 2 ve 4.
 - **Kaynak kod:** origin/main `626362b8` (D2-b1 #2846 dahil).
 - **Kapsam dışı (bu pakette yapılmadı):** hesap politikası değişikliği, canlı DB erişimi, geçmiş kayıt düzeltmesi, bayrak açma.
+- **R02 (01.10.2026):** `K3L-D2-DECISION-PACKAGE-R02.md` bu paketi üç gruba indirir (KP-6 önceki kararla — ADR-014 MUST-3/I-15 — çözülen gruba geçti; KP-1 owner yönüyle birlikte karar grubunda kalır; KP-7 pilot etiketine daraldı), TK-1…TK-4 düzeltmelerini (#2859 MERGED `d4f2b9fc`, #2860 MERGED `2507f73c`) ve 3095 md. 1 kayıt düzeltmesini (yürürlük 31/7/2026) taşır. Bu dosya kanıt ve ayrıntı kaydı olarak yerinde kalır.
 
 ## 0. Yöntem ve kanıt sınırı
 
@@ -27,7 +28,7 @@ Yalnız kaynaklarda karara bağlanmamış ve teknik düzeltmeyle çözülemeyen 
 | # | Karar | Seçenekler | Öneri | Sınıf | Bağımlılık |
 |---|---|---|---|---|---|
 | **KP-1** | **Birden çok anapara arasında mahsup sırası** (K-8, K-2). İki yolda tek, sürümlü kural. | (A) kanonik: faiz başlangıcı · (B) `sortOrder` · (C) vade artan + deterministik ikincil anahtar, vadesiz kalemde engel · (D) owner R2 dizisi (ALC-P1-3) | **D.** ALC-P1-3 dizisi TBK 101–102 ile örtüşüyor (§4); iki yolda tek sürümlü politika olur. Owner'dan beklenen teyitler aşağıda. | HUKUKİ KURAL (TBK 101–102) + owner teyidi | K-2-EK hizalaması; PaymentDesignation (ALC-P1-1); K-3 |
-| **KP-2** | **Dosya faiz türü kullanıcı seçmeden varsayılan "YASAL" olabiliyor** (K-6a). Belge ve kanonik hesap bu değeri farklı yorumluyor. | (A) varsayılan YASAL meşru (bugün) · (B) hesap sürer + "dosya faiz türü teyitsiz" uyarısı; yeni dosyada açık seçim zorunlu · (C) seçim kaynağı olmayan tür çözülemeyen sayılır | Hukuki doğrulama bitene kadar **kural değiştirilmez**. Sonra **B**. Ayrıca oran tablosunun 3095 md. 1'in 16/7/2026 değişikliğine uygunluğu doğrulanmalı. | HUKUKİ KURAL (TBK 120; 3095 md. 1–2) + ürün | K-6, K-9 |
+| **KP-2** | **Dosya faiz türü kullanıcı seçmeden varsayılan "YASAL" olabiliyor** (K-6a). Belge ve kanonik hesap bu değeri farklı yorumluyor. | (A) varsayılan YASAL meşru (bugün) · (B) hesap sürer + "dosya faiz türü teyitsiz" uyarısı; yeni dosyada açık seçim zorunlu · (C) seçim kaynağı olmayan tür çözülemeyen sayılır | Hukuki doğrulama bitene kadar **kural değiştirilmez**. Sonra **B**. Ayrıca oran tablosunun 3095 md. 1 değişikliğine (7589 md. 10; kabul 16/7/2026, **yürürlük 31/7/2026** — R02 §5) uygunluğu doğrulanmalı. | HUKUKİ KURAL (TBK 120; 3095 md. 1–2) + ürün | K-6, K-9 |
 | **KP-3** | **Takip talebinde istenmiş işlemiş faiz kayıtlarının (eski INTEREST / PRE / POST) kanonik temsili** (K-7). | (A) bugünkü dışlama · (B) dışlama + görünür tanı · (C) ADR-014 hedefi: sabit ACCRUED_INTEREST kovası; göç ve envanter | Kısa vade **B** (teknik; TK-7). Hedef **C**. Owner kararı eski kayıtların envanter ve göç biçimi için gerekir. | Ürün / yönetişim (anlam karara bağlı) | KP-1, K-5c |
 | **KP-4** | **Sorumluluğu kaydedilmemiş çek tazminatı** simülasyonda nasıl ele alınır (K-3b). Varsayılan `isAllDebtorsLiable=true`. | (i) tüm borçlular · (ii) dışarıda + tanı · (iii) ödemesiz dosyada brüt kesin + etiket; ödemeli dosyada engel | **(iii)** | Ürün (sorumlu kişi owner kararıyla belirli) | TK-6 |
 | **KP-5** | **Tarihi kaydedilmemiş masraf** geriye dönük mahsup edilir mi (K-3c) | (i) kayıt anı (`createdAt`) masraf tarihi sayılır · (ii) ödemeli dosyada engel + tanı · (iii) masraf doğum tarihi alanı (şema) | Kısa vade **(ii)**, kalıcı çözüm **(iii)**. `createdAt` hukuki tarih sayılmamalı. | İlke karara bağlı (ADR-014 tarih ilkesi); veri modeli kararı | TK-6 |
@@ -134,7 +135,7 @@ Her biri ayrı, dar bir düzeltme PR'ı önerisidir. Önerilen sıra tablodaki s
   - UYAP XML hattı UNKNOWN kalemde faiz elemanı üretmeyi reddediyor (fail-closed).
 - **Hukuki dayanak** (resmî metin):
   - **TBK md. 120/1:** temerrüt faizi oranı sözleşmede kararlaştırılmamışsa faiz borcunun doğduğu tarihte yürürlükteki mevzuata göre belirlenir.
-  - **3095 md. 1** (16/7/2026 tarihli 7589 s.K. md. 10 ile değişik): kanuni faiz, TCMB'nin önceki yıl 31 Aralık kısa vadeli reeskont oranının %80'i. Yıl ortasındaki reeskont oranı beş puan veya daha fazla farklıysa ikinci yarıda 30 Haziran oranının %80'i geçerli.
+  - **3095 md. 1** (7589 s.K. md. 10 ile değişik; kabul 16/7/2026, RG 31/7/2026-33326, **yürürlük 31/7/2026** — R02 §5 düzeltmesi): kanuni faiz, TCMB'nin önceki yılın 31 Aralık günü kısa vadeli kredi işlemlerinde uyguladığı reeskont oranının %80'i. 30 Haziran oranı önceki yılın 31 Aralık oranından beş puan veya daha çok farklıysa yılın ikinci yarısında 30 Haziran oranının %80'i geçerli. 7589 bu değişiklik için yeni geçiş hükmü eklemedi; 3095'in mevcut Geçici Madde 1–2'sinin uygulanması hukuki yorum ister.
   - **3095 md. 2:** temerrüt faizi; ticari işlerde avans faizi istenebilir.
 - **Karar gereken:**
   - Seçim kaynağı olmayan "YASAL" hukuken "oran kararlaştırılmamış → mevzuat faizi" anlamında kullanılabilir mi, yoksa kullanıcı seçimi mi zorunlu?

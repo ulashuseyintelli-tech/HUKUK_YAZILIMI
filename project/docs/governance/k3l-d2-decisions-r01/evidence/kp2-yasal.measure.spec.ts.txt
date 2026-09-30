@@ -1,0 +1,37 @@
+// K3-L R02 KP-2 — GEÇİCİ ölçüm (COMMIT EDİLMEZ): varsayılan YASAL dosya türü, UNKNOWN kalem, seed biçimi oran (%24 açık uçlu).
+import { writeFileSync } from 'node:fs';
+import { CaseBalanceService } from '../modules/interest-engine/orchestration/case-balance.service';
+import { toCaseBalanceDisplay } from '../modules/interest-engine/orchestration/case-balance-display';
+import { InterestEngineService } from '../modules/interest-engine/interest-engine.service';
+import { PolicyGateV2Service } from '../modules/interest-engine/policy-gate/policy-gate-v2.service';
+import { SegmentBuilderService } from '../modules/interest-engine/segments/segment-builder.service';
+import { AllocationEngineService } from '../modules/interest-engine/allocation/allocation-engine.service';
+import { TBK100AllocatorService } from '../modules/interest-engine/allocation/tbk100-allocator.service';
+import { ClaimPriorityService } from '../modules/interest-engine/allocation/claim-priority.service';
+import { VersionPinningService } from '../modules/interest-engine/version/version-pinning.service';
+import { InterestTypeCode } from '../modules/interest-engine/types/domain.types';
+const out = process.env.KP_MEASURE_OUT ?? '';
+const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
+(out ? it : it.skip)('KP-2 YASAL', async () => {
+  const prisma = {
+    case: { findFirst: async () => ({ interestType: 'YASAL', interestStartDate: null, caseDate: d('2026-01-15') }) },
+    claimItem: { findMany: async () => [{ id: 'P1', itemType: 'PRINCIPAL', currency: 'TRY', status: 'ACTIVE', metadata: null,
+      interestType: null, interestTypeCode: null, interestRate: null, interestStartDate: d('2026-01-01'),
+      interestAccrualStatus: 'UNKNOWN', interestStartDateProvenance: null, amount: 10000, demandedAmount: 10000 }] },
+    ledgerEntry: { findMany: async () => [] },
+    collection: { findMany: async () => [{ id: 'p1', status: 'CONFIRMED', cancelledAt: null, amount: 1000, currency: 'TRY', date: d('2026-02-10'), sourceType: 'BANKA', channel: null }] },
+    collectionOverpayment: { findMany: async () => [] },
+    icrabotTimelineEntry: { findMany: async () => [] },
+  };
+  const rates = [{ id: 's2', interestType: InterestTypeCode.LEGAL_3095, validFrom: '2024-06-01', validTo: null, annualRate: 0.24, sourceId: 's2', sourceName: 'SEED', publishedAt: '2025-01-01T00:00:00Z', currency: 'TRY' }];
+  const svc = new CaseBalanceService(prisma as never, { getRatesForPeriod: async () => rates } as never, new InterestEngineService(
+    new PolicyGateV2Service(), new SegmentBuilderService(), new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService()),
+    {} as never, { record: () => undefined, clearAll: () => undefined } as never, new VersionPinningService()));
+  const bal = await svc.computeCaseBalance('t', 'c', '2026-03-31');
+  const disp = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance: bal, generatedAt: '2026-10-01T00:00:00.000Z' });
+  const r = bal.currencyResults[0]?.result;
+  writeFileSync(out, JSON.stringify({ status: disp.status, totalDue: r?.totalDue, totalInterest: r?.totalInterest,
+    interestType: r?.interestType, segments: (r?.segments ?? []).map((s: any) => ({ from: s.periodStart, to: s.periodEnd, rate: s.rate, principal: s.principal, i: s.segmentInterest })),
+    assembler: bal.diagnostics.assembler }, null, 1), 'utf8');
+  expect(true).toBe(true);
+});

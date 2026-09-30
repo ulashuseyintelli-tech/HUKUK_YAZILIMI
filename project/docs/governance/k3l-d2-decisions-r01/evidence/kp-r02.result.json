@@ -1,0 +1,95 @@
+{
+ "KP11_A_today_2026-09-30": {
+  "status": "OK",
+  "totalDue": 1172,
+  "totalInterest": 272,
+  "applied": 100,
+  "afterAsOf": null,
+  "totals": {
+   "totalDebtAmount": 1272,
+   "totalPaidAmount": 100,
+   "outstandingAmount": 1172,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 100,
+   "grossReceivedAmount": 100
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "KP11_B_lastPayment_2026-05-01": {
+  "status": "OK",
+  "totalDue": 1020,
+  "totalInterest": 120,
+  "applied": 100,
+  "afterAsOf": null,
+  "totals": {
+   "totalDebtAmount": 1120,
+   "totalPaidAmount": 100,
+   "outstandingAmount": 1020,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 100,
+   "grossReceivedAmount": 100
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "KP11_C_chosen_2026-04-11": {
+  "status": "OK",
+  "totalDue": 1100,
+  "totalInterest": 100,
+  "applied": 0,
+  "afterAsOf": [
+   {
+    "id": "p1",
+    "date": "2026-05-01",
+    "amount": 100,
+    "currency": "TRY",
+    "source": "BANKA"
+   }
+  ],
+  "totals": {
+   "totalDebtAmount": 1100,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 1100,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "KP7": {
+  "status": "OK",
+  "totalDue": 0,
+  "totalInterest": 0,
+  "applied": 1000,
+  "afterAsOf": null,
+  "totals": {
+   "totalDebtAmount": 1000,
+   "totalPaidAmount": 1200,
+   "outstandingAmount": 0,
+   "heldOverpaymentAmount": 200,
+   "allocatedPaidAmount": 1200,
+   "grossReceivedAmount": 1200
+  },
+  "costs": 0,
+  "ancillaries": 0
+ },
+ "KP4_noPayment": {
+  "status": "OK",
+  "totalDue": 10600,
+  "totalInterest": 600,
+  "applied": 0,
+  "afterAsOf": null,
+  "totals": {
+   "totalDebtAmount": 11600,
+   "totalPaidAmount": 0,
+   "outstandingAmount": 11600,
+   "heldOverpaymentAmount": 0,
+   "allocatedPaidAmount": 0,
+   "grossReceivedAmount": 0
+  },
+  "costs": 0,
+  "ancillaries": 1000
+ }
+}
