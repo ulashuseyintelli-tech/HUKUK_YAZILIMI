@@ -125,6 +125,18 @@ export interface CaseBalanceHeldOverpayment {
   status: string;
 }
 
+/**
+ * K3-L TK-3: hesap tarihinden SONRA tarihli (ters kayıt netleşmesinden sonraki) ödeme — bu tarihin bakiyesine GİRMEDİ.
+ * Kayıt değişmez; yalnız bu hesaptan çıkarılır ve bilgi olarak raporlanır.
+ */
+export interface CaseBalancePaymentAfterAsOf {
+  id: string;
+  date: string;
+  amount: number;
+  currency: string;
+  source?: string;
+}
+
 /** K3-L — mahsubu bekletilen tahsilat (defter kaydı yok; fazla ödeme DEĞİL; ödeme sayılmaz). */
 export interface CaseBalanceAllocationHold {
   id: string;
@@ -176,6 +188,8 @@ export interface CaseBalanceResult {
   allocationHolds?: CaseBalanceAllocationHold[];
   /** K3-L D2-b1: motora girmeyen anapara kalemleri (yalnız dolu iken yazılır). */
   unsimulatedPrincipals?: CaseBalanceUnsimulatedPrincipal[];
+  /** K3-L TK-3: hesap tarihinden sonra tarihli ödemeler — bu bakiyeye girmedi (yalnız dolu iken yazılır). */
+  paymentsAfterAsOf?: CaseBalancePaymentAfterAsOf[];
 }
 
 /** K3-L D2-b1: taşınan anapara → sonuç kaydı (kararlı sıra; faiz bilinmiyor = null, sıfır DEĞİL). */
@@ -415,8 +429,24 @@ export class CaseBalanceService {
       };
     }
 
+    // K3-L TK-3: hesap tarihinden SONRAKİ ödeme bu tarihin bakiyesine girmez. Önceden motor faizi hesap tarihinde
+    // keserken sonraki ödemeyi yine anaparadan düşüyordu (bakiye hiçbir tarihteki gerçek duruma karşılık gelmiyordu).
+    // Filtre, ters kayıt netleşmesinden (mapPayments; ADR-014 MUST-6) SONRAKİ net ödeme listesine uygulanır; kayıt
+    // değişmez, çıkarılan ödemeler ayrı bilgi olarak raporlanır.
+    const paymentsInScope = pay.payments.filter((payment) => payment.date <= asOfDate);
+    const paymentsAfterAsOf: CaseBalancePaymentAfterAsOf[] = pay.payments
+      .filter((payment) => payment.date > asOfDate)
+      .map((payment) => ({
+        id: payment.id,
+        date: payment.date,
+        amount: payment.amount,
+        currency: payment.currency,
+        ...(payment.source != null ? { source: payment.source } : {}),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+
     // 5. Currency gruplama (G4b-1)
-    const grouped = groupByCurrency(asm.buckets, pay.payments);
+    const grouped = groupByCurrency(asm.buckets, paymentsInScope);
 
     // K3-L D2-b1: kovası üretilemeyen anapara (açık faizsiz / faizi çözülemeyen) para birimi bazında taşınır. O para
     // biriminde motor ÇALIŞTIRILMAZ (kısmi totalDue ya da "sıfır faiz" varsayımı yok); satır + fatal + tanı üretilir.
@@ -612,6 +642,7 @@ export class CaseBalanceService {
       overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
       allocationHolds: activeAllocationHolds,
       ...(unsimulated.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(unsimulated) } : {}),
+      ...(paymentsAfterAsOf.length > 0 ? { paymentsAfterAsOf } : {}),
     };
   }
 

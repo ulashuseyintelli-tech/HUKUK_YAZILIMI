@@ -97,7 +97,9 @@ export type BalanceDisplayDiagnosticCode =
   | 'NAFAKA_PRINCIPAL_DISPLAY_RISK'
   | 'MULTI_CURRENCY_DISPLAY_UNSAFE'
   | 'INTEREST_UNRESOLVED'
-  | 'NON_ACCRUING_NOT_SIMULATED';
+  | 'NON_ACCRUING_NOT_SIMULATED'
+  /** K3-L TK-3: hesap tarihinden sonra tarihli ödemeler bu bakiyeye girmedi (bilgi; kayıt değişmedi). */
+  | 'PAYMENTS_AFTER_AS_OF_EXCLUDED';
 
 export interface BalanceDisplayBucket {
   code: BalanceDisplayBucketCode;
@@ -153,6 +155,8 @@ export interface BalanceDisplayTotals {
    * ALC-AUTH-1B: allocatedPaidAmount + heldOverpaymentAmount — dosyaya GERÇEKTEN gelen
    * toplam para (avukatın "dosyaya X TL geldi" dediği rakam). Currency güvenli değilse
    * (MULTI/UNKNOWN) veya bileşenlerden biri null'sa null döner (uydurma toplam yok).
+   * K3-L TK-4: `allocatedPaidAmount` tahsilatın yüz değerini taşıdığı için, held kalanı ait olduğu
+   * tahsilat zaten sayılmışsa İKİNCİ KEZ eklenmez; hesap tarihinden sonraki tahsilatın held'i girmez.
    */
   grossReceivedAmount: number | null;
 }
@@ -266,6 +270,17 @@ function sumCollected(allocations: { paymentId: string; paymentAmount: number }[
     }
   }
   return total;
+}
+
+/**
+ * K3-L TK-4: bekletilen fazla ödeme (HELD) kaydı bu ödeme kimliklerinden birinin tahsilatına mı ait? Defter kaynağında
+ * ödeme kimliği = LedgerEntry.id (held.sourceLedgerEntryId), tahsilat yedeğinde = Collection.id (held.collectionId).
+ */
+function heldBelongsToAny(
+  row: { collectionId: string; sourceLedgerEntryId: string | null },
+  paymentIds: ReadonlySet<string>,
+): boolean {
+  return paymentIds.has(row.collectionId) || (row.sourceLedgerEntryId != null && paymentIds.has(row.sourceLedgerEntryId));
 }
 
 function inferDisplayCurrency(balance: CaseBalanceResult): string {
@@ -444,6 +459,31 @@ function buildDiagnostics(
           amount: round2(row.amount),
           reasonCode: row.reasonCode,
           accruedInterest: null,
+        })),
+      },
+    });
+  }
+
+  // K3-L TK-3: hesap tarihinden sonraki ödemeler hesaptan çıkarıldı — görünür bilgi (engel DEĞİL; kayıt değişmedi)
+  const paymentsAfterAsOf = balance.paymentsAfterAsOf ?? [];
+  if (paymentsAfterAsOf.length > 0) {
+    const amountByCurrency: Record<string, number> = {};
+    for (const payment of paymentsAfterAsOf) {
+      amountByCurrency[payment.currency] = round2((amountByCurrency[payment.currency] ?? 0) + payment.amount);
+    }
+    diagnostics.push({
+      code: 'PAYMENTS_AFTER_AS_OF_EXCLUDED',
+      severity: 'INFO',
+      message: 'Hesap tarihinden sonra tarihli odemeler bu tarihin bakiyesine dahil edilmedi; odeme kayitlari degismedi.',
+      details: {
+        asOfDate: balance.asOfDate,
+        count: paymentsAfterAsOf.length,
+        amountByCurrency,
+        observations: paymentsAfterAsOf.map((payment) => ({
+          paymentId: payment.id,
+          date: payment.date,
+          amount: round2(payment.amount),
+          currency: payment.currency,
         })),
       },
     });
@@ -797,6 +837,19 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const heldOverpayment = round2(
     (balance.overpayments?.held ?? []).reduce((sum, row) => sum + (row.remainingAmount ?? 0), 0),
   );
+  // K3-L TK-4: `collected` tahsis alan ödemelerin YÜZ değeridir; kısmi fazla ödemede bekletilen kalan o yüz değerin
+  // İÇİNDEDİR (defter PAYMENT kaydı tahsilatın tam tutarıyla yazılır). Brüt tahsilatta aynı para ikinci kez sayılmasın:
+  // HELD kalanı yalnız ait olduğu tahsilat `collected`'e girmemişse eklenir. Hesap tarihinden sonraki tahsilata ait
+  // HELD bu tarihin brüt tahsilatına girmez (TK-3). `heldOverpaymentAmount` ve `totalPaidAmount` DEĞİŞMEZ (KP-7 etiketi ayrı karar).
+  const countedReceiptIds = new Set(
+    (balance.currencyResults ?? []).flatMap((cr) => (cr.result?.allocations ?? []).map((step) => step.paymentId)),
+  );
+  const afterAsOfReceiptIds = new Set((balance.paymentsAfterAsOf ?? []).map((payment) => payment.id));
+  const heldOutsideCountedReceipts = round2(
+    (balance.overpayments?.held ?? [])
+      .filter((row) => !heldBelongsToAny(row, countedReceiptIds) && !heldBelongsToAny(row, afterAsOfReceiptIds))
+      .reduce((sum, row) => sum + (row.remainingAmount ?? 0), 0),
+  );
   const blockedOverpayment = round2(
     (balance.overpayments?.blocked ?? []).reduce((sum, row) => sum + (row.attemptedOverpaymentAmount ?? 0), 0),
   );
@@ -817,8 +870,9 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     ...(blockedOverpayment > 0 ? { blockedOverpaymentAmount: singleCurrency ? blockedOverpayment : null } : {}),
     // ALC-AUTH-1B: totalPaidAmount ile aynı değer, açık isimle tekrarlanır (bkz. tip yorumu).
     allocatedPaidAmount: singleCurrency ? collected : null,
-    // ALC-AUTH-1B: dosyaya gerçekten gelen toplam para = allocated + held overpayment.
-    grossReceivedAmount: singleCurrency ? round2(collected + heldOverpayment) : null,
+    // ALC-AUTH-1B: dosyaya gerçekten gelen toplam para = tahsilat + ait olduğu tahsilata henüz sayılmamış held kalan
+    // (K3-L TK-4: aynı tahsilatın held kısmı iki kez sayılmaz).
+    grossReceivedAmount: singleCurrency ? round2(collected + heldOutsideCountedReceipts) : null,
   };
   const unavailableReason = status === 'UNAVAILABLE'
     ? fatal[0]?.code
