@@ -1,4 +1,5 @@
 import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
+import type { CekFormationPreviewRequest, CekFormationPreviewResult } from "./check-penalty-formation";
 import { createIdempotencyKey } from "./idempotency-key";
 import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
 import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
@@ -538,6 +539,18 @@ class ApiClient {
   async getCaseDebtors(caseId: string, options?: { includePassive?: boolean }) {
     const query = options?.includePassive ? "?includePassive=true" : "";
     return this.request<CaseDebtorsResponse>(`/debtors/case/${caseId}${query}`);
+  }
+
+  /**
+   * K3-L Faz 2b — TASLAK çek tazminatı önizlemesi (sunucu hesabı; yazma/onay YOK). Dosya henüz açılmamışken
+   * sihirbazda kullanılır; kesin kalem yalnız K3 onayıyla oluşur.
+   */
+  async previewCekFormation(payload: CekFormationPreviewRequest) {
+    const res = await this.request<{ success: boolean; data: CekFormationPreviewResult }>(
+      `/claim-items/cek-formation/preview`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+    return res.data;
   }
 
   /** K3-L Faz 1c — borçlu bazlı bakiye (kalıcı defterden; işleyen faiz hariç). */

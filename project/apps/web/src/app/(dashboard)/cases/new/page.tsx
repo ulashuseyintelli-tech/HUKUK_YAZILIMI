@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
@@ -37,6 +37,22 @@ import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { DebtorStep } from "@/components/debtor";
 import { selectedInstrumentsToPayload, routeClaimRawsForManualInstruments, CaseInstrumentPayload } from "@/components/debtor/ocr-instrument";
 import { FEATURE_FLAGS } from "@/lib/config/feature-flags";
+import {
+  buildCheckPenaltyFormationPayload,
+  CHECK_PENALTY_DRAFT_NOTICE,
+  describeCheckPenaltyFormationOutcome,
+  isCheckPenaltyFormationAvailable,
+  CHECK_PENALTY_FORMATION_UNAVAILABLE_NOTICE,
+  CHECK_PENALTY_FORMATION_INCOMPLETE_NOTICE,
+  CHECK_PENALTY_FORMATION_NOT_SENT_NOTICE,
+  buildCaseOpenCekPreviewRequest,
+  previewRequestKey,
+  sanitizeAvalTargets,
+  type CekFormationPreviewResult,
+  type ShownCekFormationPreview,
+  hasBouncedCheckItem,
+  newCheckPenaltyFormationKey,
+} from "@/lib/check-penalty-formation";
 import { CaseDebtor } from "@/types/debtor";
 import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
@@ -397,6 +413,9 @@ export default function NewCasePage() {
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null = yeni kalem ekleme
   const [claimEditorKey, setClaimEditorKey] = useState(0); // editör formunu reset/yükle için remount anahtarı
   const [claimFormBuffer, setClaimFormBuffer] = useState<any | null>(null); // editördeki güncel (henüz eklenmemiş) kalem
+  // K3-L Faz 2b: çek tazminatı K3 onay talebi — yalnız kullanıcının AÇIK seçimiyle; anahtar taslakta saklanır (kararlı)
+  const [checkPenaltyFormationRequested, setCheckPenaltyFormationRequested] = useState(false);
+  const [checkPenaltyFormationKey, setCheckPenaltyFormationKey] = useState<string>(() => newCheckPenaltyFormationKey());
   const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], durumEtiketi: [], mahiyetTipi: [] });
   const [lookupsLoadFailed, setLookupsLoadFailed] = useState(false); // PR-D: /lookups fetch hatası → açık uyarı banner'ı (boş veriden ayrı)
   
@@ -405,6 +424,86 @@ export default function NewCasePage() {
   
   // Masraf mail onay modalı
   const [showExpenseConfirmModal, setShowExpenseConfirmModal] = useState(false);
+  // K3-L Faz 2b: masraf penceresi yolunda DOĞRULANAN dues/çek kaydı birebir gönderilir. Pencere yolu eskiden `dues`
+  // durumunu kullanıyordu; manuel kambiyo kaydı kapalıyken kaydedilen taslak açıkken gönderilince çek bedeli hem
+  // due hem çek kaydı olarak iki kez yazılıyordu (ölçüldü: aynı çek için iki PRINCIPAL kalem).
+  const pendingSubmissionRef = useRef<{ dues: DueItem[]; manualInstruments: CaseInstrumentPayload[] } | null>(null);
+
+  // K3-L Faz 2b (inceleme r2): talep YALNIZ kullanıcıya GÖSTERİLEN birleşik önizlemeyle (açılışta oluşacak TÜM çek
+  // kayıtları + gönderilecek borçlular) açılır. Seçim, seçildiği andaki önizleme hash'ine bağlıdır; önizleme değişirse
+  // (çek/borçlu/rol/lehine aval değişimi) seçim düşer, kullanıcı yeniden onaylar.
+  const [shownCekPreview, setShownCekPreview] = useState<
+    (ShownCekFormationPreview & { aciklama: string; tazminat: CekFormationPreviewResult["tazminat"] }) | null
+  >(null);
+  const [checkedCekPreviewHash, setCheckedCekPreviewHash] = useState<string | null>(null);
+  const submitCaseDebtors = useMemo(
+    () => sanitizeAvalTargets(sanitizeCaseDebtorsForSubmit(caseDebtors, existingDebtors.length > 0 ? (existingDebtors as any) : undefined)),
+    [caseDebtors, existingDebtors],
+  );
+  const caseOpenInstruments = useMemo<CaseInstrumentPayload[]>(() => {
+    if (!FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS) return instruments;
+    try {
+      return [...instruments, ...claimItemsToManualInstruments(claimDraftItems, true)];
+    } catch {
+      return instruments;
+    }
+  }, [instruments, claimDraftItems]);
+  const cekFormationAvailable = isCheckPenaltyFormationAvailable({ instrumentsToCreate: caseOpenInstruments });
+  const caseOpenCekPreviewRequest = useMemo(
+    () => (cekFormationAvailable ? buildCaseOpenCekPreviewRequest(caseOpenInstruments, submitCaseDebtors) : null),
+    [cekFormationAvailable, caseOpenInstruments, submitCaseDebtors],
+  );
+  const caseOpenCekPreviewKey = previewRequestKey(caseOpenCekPreviewRequest);
+  useEffect(() => {
+    if (!caseOpenCekPreviewRequest || !caseOpenCekPreviewKey) {
+      setShownCekPreview(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.previewCekFormation(caseOpenCekPreviewRequest);
+        if (!cancelled) {
+          setShownCekPreview({
+            requestKey: caseOpenCekPreviewKey,
+            durum: result.durum,
+            previewHash: result.previewHash,
+            aciklama: result.aciklama,
+            tazminat: result.tazminat,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setShownCekPreview({
+            requestKey: caseOpenCekPreviewKey,
+            durum: "HATA",
+            previewHash: "",
+            aciklama: "Taslak tazminat önizlemesi alınamadı (sunucuya ulaşılamadı).",
+            tazminat: null,
+          });
+        }
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [caseOpenCekPreviewKey, caseOpenCekPreviewRequest]);
+  const cekPreviewCurrent =
+    !!shownCekPreview && !!caseOpenCekPreviewKey && shownCekPreview.requestKey === caseOpenCekPreviewKey;
+  // Seçenek kalkınca ya da gösterilen önizleme seçildiği andakinden farklılaşınca seçim DÜŞER (askıda kalmaz)
+  useEffect(() => {
+    if (!checkPenaltyFormationRequested) return;
+    if (!cekFormationAvailable || (shownCekPreview && shownCekPreview.previewHash !== checkedCekPreviewHash)) {
+      setCheckPenaltyFormationRequested(false);
+    }
+  }, [cekFormationAvailable, shownCekPreview, checkedCekPreviewHash, checkPenaltyFormationRequested]);
+  const claimFormCaseDebtors = useMemo(
+    () => caseDebtors.map((cd) => ({ debtorId: cd.debtorId, role: cd.role, avalForDebtorId: cd.avalForDebtorId })),
+    [caseDebtors],
+  );
+  // Kararlı referans: her render'da yeni fonksiyon, formun hesap döngüsünü (ve önizleme isteklerini) sonsuz tetikliyordu
+  const handleClaimFormItemsChange = useCallback((items: any[]) => setClaimFormBuffer(items[0] ?? null), []);
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const [checkingPoa, setCheckingPoa] = useState(false);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string; role?: string; isActive?: boolean; }[]>([]);
@@ -445,6 +544,8 @@ export default function NewCasePage() {
       }
       if (savedState.creditors?.length > 0) setCreditors(savedState.creditors);
       if (savedState.caseDebtors?.length > 0) setCaseDebtors(savedState.caseDebtors);
+      if (typeof savedState.checkPenaltyFormationRequested === "boolean") setCheckPenaltyFormationRequested(savedState.checkPenaltyFormationRequested);
+      if (typeof savedState.checkPenaltyFormationKey === "string" && savedState.checkPenaltyFormationKey) setCheckPenaltyFormationKey(savedState.checkPenaltyFormationKey);
       if (savedState.selectedStaff?.length > 0) setSelectedStaff(savedState.selectedStaff);
       if (savedState.dues?.length > 0) setDues(savedState.dues);
       // PR-2a + eski-draft guard: claimDraftItems varsa onu kullan; yoksa ama dues varsa
@@ -489,10 +590,12 @@ export default function NewCasePage() {
       documentSource,
       showWizard,
       showDocumentSelector,
+      checkPenaltyFormationRequested,
+      checkPenaltyFormationKey,
     };
     
     saveCaseWizardDraftState(stateToSave, { tenantId: wizardTenantId, userId: wizardUserId });
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
   useEffect(() => {
@@ -1307,7 +1410,9 @@ export default function NewCasePage() {
     }
     // Eski-draft güvenliği: claimDraftItems boş ama dues doluysa (PR-2a öncesi draft / hydrate
     // edilmemiş durum) mevcut dues'u kullan — eski draft SESSİZCE boş gönderilmesin.
-    if (effDues.length === 0 && dues.length > 0) {
+    // Yalnız kalem listesi GERÇEKTEN boşken (PR-2a öncesi taslak). Kalemler çek kaydına yönlendiği için dues boş
+    // kaldıysa eski `dues` durumuna DÜŞÜLMEZ (düşülseydi aynı çek iki kez yazılırdı).
+    if (effDues.length === 0 && effClaimItems.length === 0 && dues.length > 0) {
       effDues = dues;
     }
     // Pre-submit validasyon
@@ -1338,6 +1443,7 @@ export default function NewCasePage() {
     // Müvekkil seçilmişse masraf mail modalını göster
     const hasClient = creditors.some(c => c.name);
     if (hasClient) {
+      pendingSubmissionRef.current = { dues: effDues, manualInstruments };
       setShowExpenseConfirmModal(true);
     } else {
       // Müvekkil yoksa direkt oluştur
@@ -1352,12 +1458,25 @@ export default function NewCasePage() {
     
     // Backend'e gönderilecek subCategory değerini hesapla
     const backendSubCategory = mapSubCategoryToBackend(caseData.subCategory);
-    const sanitizedCaseDebtors = sanitizeCaseDebtorsForSubmit(
+    // Lehine aval hedefi yalnız rol AVAL + hedef istekte varken gönderilir (bayat seçim gitmez)
+    const sanitizedCaseDebtors = sanitizeAvalTargets(sanitizeCaseDebtorsForSubmit(
       caseDebtors,
       existingDebtors.length > 0 ? existingDebtors as any : undefined
-    );
-    
+    ));
+
     try {
+      // (try içinde: manuel kambiyo doğrulama hatası eskisi gibi catch'te gösterilir)
+      const instrumentsToSubmit: CaseInstrumentPayload[] = FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS
+        ? [...instruments, ...(manualInstrumentsToSubmit ?? claimItemsToManualInstruments(claimDraftItems, true))]
+        : instruments;
+      // Talep yalnız seçildiği andaki önizleme hâlâ gösteriliyorsa VE girdisi gönderilen çek/borçlu girdisiyle aynıysa gider
+      const checkPenaltyFormation = buildCheckPenaltyFormationPayload({
+        requested: checkPenaltyFormationRequested,
+        idempotencyKey: checkPenaltyFormationKey,
+        caseDebtors: sanitizedCaseDebtors,
+        shownPreview: shownCekPreview && shownCekPreview.previewHash === checkedCekPreviewHash ? shownCekPreview : null,
+        currentRequestKey: previewRequestKey(buildCaseOpenCekPreviewRequest(instrumentsToSubmit, sanitizedCaseDebtors)),
+      });
       const response = await api.createCase({
         fileNumber: caseData.fileNumber, executionFileNumber: caseData.executionFileNumber || undefined,
         type: mapCategoryToCaseType(selectedForm?.category), subType: selectedSubForm?.code || selectedForm?.code,
@@ -1405,6 +1524,7 @@ export default function NewCasePage() {
         caseDebtors: sanitizedCaseDebtors.map(cd => ({
           debtorId: cd.debtorId,
           role: cd.role,
+          ...(cd.avalForDebtorId ? { avalForDebtorId: cd.avalForDebtorId } : {}),
           liabilityAmount: cd.liabilityAmount,
           liabilityType: cd.liabilityType,
           notificationMode: cd.notificationMode,
@@ -1418,14 +1538,18 @@ export default function NewCasePage() {
         dues: buildCreateCaseDuesPayload(duesToSubmit ?? dues),
         // PR-2b-2: OCR instruments[] (source yok=OCR) + manuel kambiyo (source:MANUAL). Flag OFF → yalnız OCR (PR-2a).
         // Modal yolunda manualInstrumentsToSubmit gelmez → claimDraftItems state'ten türetilir (oturmuş).
-        instruments: FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS
-          ? [...instruments, ...(manualInstrumentsToSubmit ?? claimItemsToManualInstruments(claimDraftItems, true))]
-          : instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[])
+        instruments: instrumentsToSubmit, // PR-N4b/PR-2b-2: OCR + (bayrak açıkken) manuel kambiyo (CaseInstrumentInputDto[])
         // M2-A3b: gerçek kişi Dosya Sorumlusu create payload'ında — ayrı PATCH YOK (tek atomik istek).
         // Backend A3a tx-İÇİNDE validate+yazar → geçersizse dosya HİÇ oluşmaz (orphan imkânsız);
         // create başarısızsa aşağıdaki catch setError gösterir.
         ...(responsiblePerson ? buildAssignBody(responsiblePerson) : {}),
+        // K3-L Faz 2b: çek tazminatı K3 onay talebi — yalnız açık seçim + GÖSTERİLEN güncel önizlemeyle
+        ...(checkPenaltyFormation ? { checkPenaltyFormation } : {}),
       });
+      const formationMessage = checkPenaltyFormationRequested && !checkPenaltyFormation
+        ? CHECK_PENALTY_FORMATION_NOT_SENT_NOTICE
+        : describeCheckPenaltyFormationOutcome(response?.checkPenaltyFormation);
+      if (formationMessage) alert(formationMessage);
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });
@@ -2151,6 +2275,50 @@ export default function NewCasePage() {
                 )}
               </div>
             )}
+            {hasBouncedCheckItem(claimDraftItems.map((ci) => ci.raw)) && !cekFormationAvailable && (
+              <p
+                data-testid="check-penalty-formation-unavailable"
+                className="rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-700"
+              >
+                {FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS ? CHECK_PENALTY_FORMATION_INCOMPLETE_NOTICE : CHECK_PENALTY_FORMATION_UNAVAILABLE_NOTICE}
+              </p>
+            )}
+            {cekFormationAvailable && (
+              <label
+                data-testid="check-penalty-formation-option"
+                className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"
+              >
+                <input
+                  type="checkbox"
+                  data-testid="check-penalty-formation-checkbox"
+                  className="mt-0.5"
+                  checked={checkPenaltyFormationRequested}
+                  disabled={!cekPreviewCurrent || shownCekPreview?.durum !== "HESAPLANDI"}
+                  onChange={(e) => {
+                    setCheckedCekPreviewHash(e.target.checked ? shownCekPreview?.previewHash ?? null : null);
+                    setCheckPenaltyFormationRequested(e.target.checked);
+                  }}
+                />
+                <span>
+                  <span className="font-medium">Karşılıksız çek tazminatı için onay talebi aç</span>
+                  <span className="block text-[11px] font-medium" data-testid="check-penalty-formation-preview">
+                    {!cekPreviewCurrent
+                      ? "Taslak tazminat sunucuda hesaplanıyor…"
+                      : shownCekPreview?.durum === "HESAPLANDI" && shownCekPreview.tazminat
+                        ? `Sunucu taslak tutarı: ${shownCekPreview.tazminat.tutar.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${shownCekPreview.tazminat.paraBirimi} — sorumlu: ${shownCekPreview.tazminat.sorumluTempIds
+                            .map((id) => submitCaseDebtors.find((cd) => cd.debtorId === id)?.debtor?.name || id)
+                            .join(", ")}`
+                        : shownCekPreview?.aciklama}
+                  </span>
+                  <span className="block text-[11px]">
+                    {CHECK_PENALTY_DRAFT_NOTICE}. Tazminat sunucuda hesaplanır; dosya açıldıktan sonra ikinci avukat onayına
+                    gider ve kalem yalnız onayla oluşur. Talep, dosyada mali düzenleme yetkiniz varsa açılır (dosya
+                    yetkileri ofis yönetimince verilir); açılamazsa nedeni gösterilir ve dosya yine oluşturulur. Bu iç onay,
+                    icra dairesine / UYAP'a gönderim değildir.
+                  </span>
+                </span>
+              </label>
+            )}
             <ProfessionalClaimItemForm
               key={claimEditorKey}
               initialItems={editingItemIndex !== null && claimDraftItems[editingItemIndex] ? [claimDraftItems[editingItemIndex].raw] : undefined}
@@ -2161,6 +2329,7 @@ export default function NewCasePage() {
               mahiyetKodu={caseData.mahiyetKodu}
               documentSource={documentSource}
               borcluSayisi={caseDebtors.length || 1}
+              caseDebtors={claimFormCaseDebtors}
               fileNumber={caseData.fileNumber}
               takipTarihi={caseData.startDate}
               executionOffice={executionOffices.find(o => o.id === caseData.executionOfficeId) ? {
@@ -2189,7 +2358,7 @@ export default function NewCasePage() {
                   role: cd.role,
                 };
               })}
-              onItemsChange={(items) => setClaimFormBuffer(items[0] ?? null)}
+              onItemsChange={handleClaimFormItemsChange}
             />
             <div className="flex items-center justify-end gap-2">
               {editingItemIndex !== null && (
@@ -2326,7 +2495,7 @@ export default function NewCasePage() {
               <div className="flex flex-col gap-2">
                 <button
                   type="button"
-                  onClick={() => doCreateCase(true)}
+                  onClick={() => doCreateCase(true, pendingSubmissionRef.current?.dues, pendingSubmissionRef.current?.manualInstruments)}
                   disabled={loading}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 font-medium"
                 >
@@ -2337,7 +2506,7 @@ export default function NewCasePage() {
                 
                 <button
                   type="button"
-                  onClick={() => doCreateCase(false)}
+                  onClick={() => doCreateCase(false, pendingSubmissionRef.current?.dues, pendingSubmissionRef.current?.manualInstruments)}
                   disabled={loading}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                 >

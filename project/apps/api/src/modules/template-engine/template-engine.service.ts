@@ -17,7 +17,9 @@ import {
   TAKIP_TALEBI_TEMPLATE_BY_KIND,
   type ProceedingKind,
   type ProceedingSelection,
+  type ServerDraftPenalty,
 } from './template-case-classification';
+import { previewCekFormation, type CekFormationPreviewInput } from '../claim-item/formation-cek/cek-formation-preview';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
 import { resolveClientAddress } from '../client/client-address-resolver';
@@ -147,6 +149,11 @@ export interface TemplateData {
   isDraft?: boolean;
   // Taslağa alınmayan istemci satırları (kayıtlı kalem olmayan çek tazminatı) — yalnız not olarak belirtilir
   draftExcludedItems?: Array<{ type: string; amount: number; currency: string; reason: string }>;
+  // K3-L Faz 2b: taslak çek tazminatı SUNUCUDA hesaplanır. İstemci yalnız GİRDİYİ (çekler + borçlu rolleri) gönderir;
+  // tutar göndermez. Yalnız istemci önizleme yolunda (takip-talebi/word|pdf) kullanılır; kayıt yazılmaz.
+  cekFormationPreview?: CekFormationPreviewInput;
+  draftComputedItems?: Array<{ type: string; amount: number; currency: string; source: string; previewHash: string }>;
+  draftPenaltyNotice?: string;
   interestInfo: { type: 'YASAL' | 'TICARI' | 'CUSTOM'; rate?: number; description: string; variableRate: boolean };
   caseType: string;
   subCategory: string;
@@ -1739,7 +1746,36 @@ Borclu: ............................    Yediemin: ..............................
    */
   async generateTakipTalebiPdf(data: TemplateData): Promise<Buffer> {
     // K3-L Faz 2: istemci verisi → normalize (tip takma adları, unvan, toplamlar sunucuda) + TASLAK işareti
-    return this.generateTakipTalebiPdfFormatted(normalizeClientTemplateData(data) as TemplateData);
+    return this.generateTakipTalebiPdfFormatted(this.normalizeClientDraft(data));
+  }
+
+  /**
+   * İstemci önizleme verisi → TASLAK belge verisi. Çek tazminatı istemciden ALINMAZ; girdi verildiyse sunucuda
+   * (previewCekFormation: kuruş kesinliği, yalnız karşılıksız çekler, yalnız keşideci + keşideci lehine aval) hesaplanır.
+   * Önizleme girdisi belge verisine TAŞINMAZ. Yazma yok, onay yok; kesin kalemin yerine geçmez.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - TemplateEngineService.generateTakipTalebiPdf() / generateTakipTalebiWord() (istemci yolu)
+   * /// </remarks>
+   */
+  private normalizeClientDraft(data: TemplateData): TemplateData {
+    const { cekFormationPreview, ...rest } = data;
+    return normalizeClientTemplateData(rest, this.resolveServerDraftPenalty(cekFormationPreview)) as TemplateData;
+  }
+
+  private resolveServerDraftPenalty(input?: CekFormationPreviewInput): ServerDraftPenalty | null {
+    if (!input) return null;
+    const preview = previewCekFormation({ instruments: input.instruments ?? [], debtors: input.debtors ?? [] });
+    if (preview.durum === 'HESAPLANDI' && preview.tazminat) {
+      return {
+        status: 'HESAPLANDI',
+        amount: preview.tazminat.tutar,
+        currency: preview.tazminat.paraBirimi,
+        previewHash: preview.previewHash,
+      };
+    }
+    return { status: 'VERI_EKSIK', reason: preview.aciklama, previewHash: preview.previewHash };
   }
 
   /**
@@ -1747,7 +1783,7 @@ Borclu: ............................    Yediemin: ..............................
    */
   async generateTakipTalebiWord(data: TemplateData): Promise<Buffer> {
     // K3-L Faz 2: istemci verisi → normalize (tip takma adları, unvan, toplamlar sunucuda) + TASLAK işareti
-    return this.generateTakipTalebiWordFormatted(normalizeClientTemplateData(data) as TemplateData);
+    return this.generateTakipTalebiWordFormatted(this.normalizeClientDraft(data));
   }
 
   /**
@@ -2192,8 +2228,8 @@ Borclu: ............................    Yediemin: ..............................
       content: [
         // K3-L Faz 2: istemci verisiyle üretilen önizleme TASLAK olarak işaretlenir
         ...(data.isDraft ? [{ text: DRAFT_DOCUMENT_NOTICE, bold: true, color: '#C00000', margin: [0, 0, 0, 6] as [number, number, number, number] }] : []),
-        ...(data.isDraft && (data.draftExcludedItems?.length ?? 0) > 0
-          ? [{ text: DRAFT_EXCLUDED_PENALTY_NOTICE, color: '#C00000', margin: [0, 0, 0, 6] as [number, number, number, number] }]
+        ...(data.isDraft && (data.draftPenaltyNotice || (data.draftExcludedItems?.length ?? 0) > 0)
+          ? [{ text: data.draftPenaltyNotice ?? DRAFT_EXCLUDED_PENALTY_NOTICE, color: '#C00000', margin: [0, 0, 0, 6] as [number, number, number, number] }]
           : []),
         // Başlık satırı
         {
@@ -2633,8 +2669,8 @@ Borclu: ............................    Yediemin: ..............................
           ...(data.isDraft
             ? [new Paragraph({ children: [new TextRun({ text: DRAFT_DOCUMENT_NOTICE, bold: true, color: 'C00000', size: 18, font: 'Courier New' })] })]
             : []),
-          ...(data.isDraft && (data.draftExcludedItems?.length ?? 0) > 0
-            ? [new Paragraph({ children: [new TextRun({ text: DRAFT_EXCLUDED_PENALTY_NOTICE, color: 'C00000', size: 16, font: 'Courier New' })] })]
+          ...(data.isDraft && (data.draftPenaltyNotice || (data.draftExcludedItems?.length ?? 0) > 0)
+            ? [new Paragraph({ children: [new TextRun({ text: data.draftPenaltyNotice ?? DRAFT_EXCLUDED_PENALTY_NOTICE, color: 'C00000', size: 16, font: 'Courier New' })] })]
             : []),
           // Başlık satırı
           new Paragraph({

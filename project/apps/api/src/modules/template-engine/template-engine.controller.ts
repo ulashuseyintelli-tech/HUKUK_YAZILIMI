@@ -5,6 +5,7 @@ import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument } from './template-engine.service';
+import { CekFormationPreviewDto } from '../claim-item/dto/claim-item.dto';
 
 // Nested DTO'lar
 class ExecutionOfficeDto {
@@ -250,6 +251,13 @@ export class GenerateTakipTalebiDto {
   @ValidateNested()
   @Type(() => SourceDocumentDto)
   sourceDocument?: SourceDocumentDto;
+
+  // K3-L Faz 2b: taslak çek tazminatı için GİRDİ (çekler + borçlu rolleri). Tutar istemciden ALINMAZ; sunucuda hesaplanır.
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => CekFormationPreviewDto)
+  cekFormationPreview?: CekFormationPreviewDto;
 }
 
 @Controller('template-engine')

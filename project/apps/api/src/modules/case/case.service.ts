@@ -2,6 +2,14 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException, 
 import { PrismaService } from "@/prisma/prisma.service";
 import { buildCheckPenaltySummary, type CheckInstrumentRow, type CheckPenaltyItemRow } from "./check-penalty-summary";
 import { hasPendingCheckPenaltyFormation } from "../claim-item/formation-cek/check-penalty-formation-status";
+import { CekAutoGenerateFormationService } from "../claim-item/formation-cek/cek-auto-generate-formation.service";
+import {
+  CEK_FORMATION_PREVIEW_DRAFT_NOTICE,
+  previewCekFormation,
+  type CekFormationPreviewResult,
+} from "../claim-item/formation-cek/cek-formation-preview";
+import { assertAvalBeneficiariesConsistent } from "./case-debtor-aval-consistency";
+import { describeCheckPenaltyFormationRejection } from "./check-penalty-formation-rejection";
 import {
   DEBTOR_LEDGER_BALANCE_ITEM_STATUSES,
   buildDebtorLedgerBalances,
@@ -499,6 +507,37 @@ function mergeDueSyncMetadata(
  */
 const CASE_CREATE_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 20_000 } as const;
 
+/** K3-L Faz 2b: POST /cases içinde oluşturulan çek kaydı (commit sonrası K3 talebi girdisi). */
+export interface CreatedCekInstrumentRef {
+  readonly id: string;
+  readonly amount: number;
+  readonly currency: string;
+  readonly isBounced: boolean;
+  readonly bounceDate: string | null;
+}
+
+export interface CheckPenaltyFormationResult {
+  readonly instrumentId: string;
+  readonly status: 'REQUESTED' | 'REPLAYED' | 'REJECTED' | 'SKIPPED';
+  readonly approvalRequestId?: string;
+  readonly approvalStatus?: string;
+  readonly errorCode?: string;
+  readonly message?: string;
+}
+
+export interface CheckPenaltyFormationOutcome {
+  readonly requested: true;
+  /** Tazminat TASLAKTIR: kesin kalem yalnız K3 onayıyla oluşur; iç onay dosyalama değildir */
+  readonly taslak: true;
+  readonly uyari: string;
+  readonly serverPreviewHash: string | null;
+  readonly clientPreviewHash: string | null;
+  readonly tazminat: unknown;
+  readonly results: readonly CheckPenaltyFormationResult[];
+  readonly skippedReason?: string;
+  readonly message?: string;
+}
+
 @Injectable()
 export class CaseService {
   private readonly logger = new Logger(CaseService.name);
@@ -527,6 +566,9 @@ export class CaseService {
     // K2: dosya avukatı/personel YETKİ verme-değiştirme kapısı (F01 yazma kuralı). Yoksa fail-closed.
     @Optional()
     private officeApproval?: OfficeApprovalService,
+    // K3-L Faz 2b: dosya açılışında (commit sonrası) çek tazminatı K3 onay talebi. Yoksa talep açılmaz, yanıtta raporlanır.
+    @Optional()
+    private cekFormation?: CekAutoGenerateFormationService,
   ) {}
 
   /**
@@ -1626,6 +1668,145 @@ export class CaseService {
    * @remarks Çağrıldığı yerler:
    * - CaseService.create() → POST /cases (instrument işleme kapısı; AS1 kapsam sınırı).
    */
+  /**
+   * K3-L Faz 2b (owner GO 2026-09-29 §4) — dosya açılışında kullanıcının AÇIK seçimiyle çek tazminatı K3 onay talebi.
+   *
+   * - Yalnız `dto.checkPenaltyFormation.requested === true` iken; aksi hâlde hiçbir şey yapılmaz (undefined).
+   * - MEVCUT onay politikası: CekAutoGenerateFormationService.request → ikinci avukat onayı; kesin kalem yalnız onayla.
+   *   K3 bayrakları kapalıysa talep servisi reddeder; red YUTULMAZ, yanıtta REJECTED olarak raporlanır.
+   * - Sunucu hesabı: taslak önizleme KALICI kayıtla yeniden hesaplanır. Veri eksikse (karşılıksız işareti/tarihi,
+   *   rol, lehine aval, çok çekte keşideci belirsizliği) talep AÇILMAZ — kör "asıl alacak × %10" yok. İstemcinin
+   *   GÖSTERDİĞİ önizlemenin hash'i ZORUNLUDUR (yoksa PREVIEW_REQUIRED); sunucununkiyle uyuşmuyorsa (girdi değişmiş)
+   *   talep AÇILMAZ (PREVIEW_INPUT_CHANGED).
+   * - Açılmayan (atlanan) talep de REDDEDİLEN talep gibi yanıtta VE denetimde raporlanır
+   *   (CASE_OPEN_CHECK_PENALTY_FORMATION_SKIPPED); dosya açılışı geri alınmaz.
+   * - Tekrar: çek başına idempotencyKey `${key}:${instrumentId}` → aynı istek ikinci talep/kayıt üretmez (REPLAYED).
+   * - Onaydan sonra girdi değişirse eski onay kesin kaleme DÖNÜŞMEZ (talep servisi: kaynak sürümü + rol yeniden
+   *   doğrulaması; FORMATION_SOURCE_MISMATCH / LIABILITY_ROLE_CHANGED).
+   * - İç onay, mahkemeye / UYAP'a dosyalama DEĞİLDİR.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - CaseService.create() → POST /cases (transaction commit edildikten sonra)
+   * </remarks>
+   */
+  private async requestCheckPenaltyFormationAfterCommit(
+    tenantId: string,
+    userId: string | undefined,
+    dto: CreateCaseDto,
+    caseId: string,
+    cekInstruments: readonly CreatedCekInstrumentRef[],
+  ): Promise<CheckPenaltyFormationOutcome | undefined> {
+    const req = dto.checkPenaltyFormation;
+    if (!req?.requested) return undefined;
+    const caseDebtors = dto.caseDebtors ?? [];
+    // Aynı kişinin birden çok rolü olabilir → takip listesi TEKRARSIZ (talep servisi tekrarı reddeder)
+    const pursued = [...new Set(req.pursuedDebtorIds?.length ? req.pursuedDebtorIds : caseDebtors.map((d) => d.debtorId))];
+    let serverPreview: CekFormationPreviewResult | null = null;
+    let previewFailure: string | null = null;
+    try {
+      serverPreview = previewCekFormation({
+        instruments: cekInstruments.map((i) => ({ amount: String(i.amount), currency: i.currency, isBounced: i.isBounced, bounceDate: i.bounceDate })),
+        debtors: caseDebtors.map((d) => ({
+          tempId: d.debtorId,
+          role: d.role || 'ASIL_BORCLU',
+          avalForTempId: d.avalForDebtorId?.trim() || null,
+          pursued: pursued.includes(d.debtorId),
+        })),
+      });
+    } catch (err) {
+      previewFailure = (err as Error)?.message ?? String(err);
+    }
+    const base = {
+      requested: true as const,
+      taslak: true as const,
+      uyari: CEK_FORMATION_PREVIEW_DRAFT_NOTICE,
+      serverPreviewHash: serverPreview?.previewHash ?? null,
+      clientPreviewHash: req.previewHash ?? null,
+      tazminat: serverPreview?.tazminat ?? null,
+    };
+    const auditOutcome = async (outcome: CheckPenaltyFormationOutcome) => {
+      if (!userId) return; // aktör yoksa aktörlü denetim yazılamaz; sonuç yine yanıtta
+      await this.auditService
+        .log({
+          tenantId,
+          action: outcome.skippedReason ? 'CASE_OPEN_CHECK_PENALTY_FORMATION_SKIPPED' : 'CASE_OPEN_CHECK_PENALTY_FORMATION_REQUESTED',
+          entityType: 'Case',
+          entityId: caseId,
+          userId,
+          description: outcome.skippedReason
+            ? 'Dosya açılışında çek tazminatı K3 onay talebi AÇILMADI'
+            : 'Dosya açılışında çek tazminatı K3 onay talebi',
+          metadata: {
+            previewHash: base.serverPreviewHash,
+            clientPreviewHash: base.clientPreviewHash,
+            pursuedDebtorIds: pursued,
+            ...(outcome.skippedReason ? { skippedReason: outcome.skippedReason } : {}),
+            results: outcome.results,
+          },
+        } as any)
+        .catch((err: any) => this.logger.warn(`K3 talep denetim kaydı yazılamadı: ${err?.message ?? err}`));
+    };
+    const skip = async (skippedReason: string, message: string): Promise<CheckPenaltyFormationOutcome> => {
+      this.logger.warn(`K3 çek tazminatı talebi açılmadı (case=${caseId}): ${skippedReason}`);
+      const outcome: CheckPenaltyFormationOutcome = { ...base, results: [], skippedReason, message };
+      await auditOutcome(outcome);
+      return outcome;
+    };
+    if (!userId) return skip('ACTOR_REQUIRED', 'Talep için oturum sahibi kullanıcı gerekir.');
+    if (!this.cekFormation) return skip('FORMATION_SERVICE_UNAVAILABLE', 'Çek oluşum talebi servisi bu ortamda bağlı değil.');
+    if (!req.idempotencyKey) return skip('FORMATION_IDEMPOTENCY_KEY_REQUIRED', 'Talep için idempotencyKey gerekir.');
+    if (cekInstruments.length === 0) return skip('CHECK_RECORD_REQUIRED', 'Bu istekte oluşturulmuş çek kaydı yok.');
+    if (!serverPreview) {
+      this.logger.error(`K3 taslak önizleme hesaplanamadı (case=${caseId}): ${previewFailure}`);
+      return skip('PREVIEW_FAILED', 'Taslak tazminat hesaplanamadı; talep açılmadı.');
+    }
+    if (serverPreview.durum !== 'HESAPLANDI') {
+      return skip(serverPreview.kod ?? 'VERI_EKSIK', serverPreview.aciklama);
+    }
+    // K6: talep YALNIZ kullanıcıya gösterilen önizlemeyle açılır — hash yoksa gösterilmemiş girdiyle talep açılmaz
+    if (!req.previewHash) {
+      return skip('PREVIEW_REQUIRED', 'Talep, gösterilen taslak önizlemenin kimliği (previewHash) olmadan açılmaz.');
+    }
+    if (req.previewHash !== serverPreview.previewHash) {
+      return skip('PREVIEW_INPUT_CHANGED', 'Gösterilen taslak önizleme ile kaydedilen girdiler uyuşmuyor; talep açılmadı.');
+    }
+
+    const results: CheckPenaltyFormationResult[] = [];
+    for (const instrument of cekInstruments) {
+      if (!instrument.isBounced || instrument.bounceDate === null) {
+        results.push({ instrumentId: instrument.id, status: 'SKIPPED', errorCode: 'CHECK_NOT_DISHONOURED', message: 'Çek karşılıksız işaretli değil.' });
+        continue;
+      }
+      try {
+        const formation = await this.cekFormation.request(tenantId, userId, {
+          caseId,
+          documentId: instrument.id,
+          caseInstrumentId: instrument.id,
+          documentType: DocumentSourceType.CEK,
+          idempotencyKey: `${req.idempotencyKey}:${instrument.id}`,
+          liableDebtorIds: pursued,
+          totalAmount: instrument.amount,
+          currency: instrument.currency,
+        } as any);
+        results.push({
+          instrumentId: instrument.id,
+          status: formation.data.replayed ? 'REPLAYED' : 'REQUESTED',
+          approvalRequestId: formation.approvalRequestId,
+          approvalStatus: formation.data.approvalStatus,
+        });
+      } catch (error) {
+        // Mevcut yetki/onay kapıları ATLANMAZ; ret nedeni kullanıcıya kararlı kod + Türkçe açıklamayla raporlanır
+        const { errorCode, message } = describeCheckPenaltyFormationRejection(error);
+        this.logger.warn(`K3 çek tazminatı talebi reddedildi (case=${caseId}, instrument=${instrument.id}): ${errorCode}`);
+        results.push({ instrumentId: instrument.id, status: 'REJECTED', errorCode, message });
+      }
+    }
+    // Önizleme ↔ talep ↔ onay bağı denetim kaydında (hash + onay talebi kimlikleri)
+    const outcome: CheckPenaltyFormationOutcome = { ...base, results };
+    await auditOutcome(outcome);
+    return outcome;
+  }
   private multiInstrumentEnabled(): boolean {
     return process.env.OCR_MULTI_INSTRUMENT === "true";
   }
@@ -1661,6 +1842,7 @@ export class CaseService {
     ocrEnabled: boolean,
     initiatedByUserId: string,
     manualEnabled = false,
+    createdCekInstruments?: CreatedCekInstrumentRef[],
   ): Promise<number> {
     if (instruments.length === 0) return 0;
     let totalPrincipal = 0;
@@ -1674,6 +1856,15 @@ export class CaseService {
       const created = await tx.caseInstrument.create({
         data: buildCaseInstrumentData(tenantId, caseId, input, instrumentType),
       });
+      if (created.instrumentType === 'CEK') {
+        createdCekInstruments?.push({
+          id: created.id,
+          amount: input.amount,
+          currency: String(input.currency),
+          isBounced: created.isBounced === true,
+          bounceDate: created.bounceDate ? new Date(created.bounceDate).toISOString().slice(0, 10) : null,
+        });
+      }
       const claimItemData = buildInstrumentPrincipalClaimItemData(
         tenantId,
         caseId,
@@ -1895,6 +2086,11 @@ export class CaseService {
       // sıradaki orphan'ı da kapatır: cross-tenant borçlu 404'ü artık taraf satırları yaratılmadan verilir.
       await this.validateDebtorOwnershipBeforeCreate(tenantId, dto);
 
+      // K3-L Faz 2b: lehine aval bilgisi tutarlılığı — hiçbir yazmadan ÖNCE hızlı red
+      assertAvalBeneficiariesConsistent(dto.caseDebtors ?? []);
+      // Bu istekte oluşturulan ÇEK kayıtları (commit sonrası K3 talebi için)
+      const createdCekInstruments: CreatedCekInstrumentRef[] = [];
+
       let deferredAfterCommit: Array<() => Promise<void>> = [];
 
       const result = await this.prisma.$transaction(async (tx) => {
@@ -2080,6 +2276,8 @@ export class CaseService {
                 caseId: newCase.id,
                 debtorId: caseDebtorDto.debtorId,
                 role: (caseDebtorDto.role as any) || "ASIL_BORCLU",
+                // K3-L Faz 2b: lehine aval (yalnız AVAL rolünde; tutarlılık tx öncesi doğrulandı)
+                avalForDebtorId: caseDebtorDto.avalForDebtorId?.trim() || null,
                 liabilityAmount: caseDebtorDto.liabilityAmount,
                 liabilityType: caseDebtorDto.liabilityType,
                 notificationMode: (caseDebtorDto.notificationMode as any) || "NORMAL",
@@ -2182,6 +2380,7 @@ export class CaseService {
           this.multiInstrumentEnabled(),
           userId,
           this.manualCaseInstrumentsEnabled(),
+          createdCekInstruments,
         );
 
         // Ana para toplamı = dues PRINCIPAL + instrument PRINCIPAL → case.principalAmount (G5 @deprecated).
@@ -2324,6 +2523,35 @@ export class CaseService {
         ),
       );
 
+      // K3-L Faz 2b: kullanıcının AÇIK seçimiyle çek tazminatı K3 onay talebi — commit SONRASI (talep servisi çek
+      // kaydını ve rolleri commit edilmiş veriden okur). Hata dosyayı geri almaz; sonuç yanıtta raporlanır.
+      let checkPenaltyFormation: CheckPenaltyFormationOutcome | undefined;
+      try {
+        checkPenaltyFormation = await this.requestCheckPenaltyFormationAfterCommit(
+          tenantId,
+          userId,
+          dto,
+          result.case?.id ?? '',
+          createdCekInstruments,
+        );
+      } catch (formationError) {
+        // Dosya commit edildi: K3 adımındaki beklenmeyen hata dosya yanıtını BOZMAZ, açıkça raporlanır
+        this.logger.error(`K3 çek tazminatı adımı beklenmeyen hata (case=${result.case?.id}): ${(formationError as Error)?.message ?? formationError}`);
+        checkPenaltyFormation = dto.checkPenaltyFormation?.requested
+          ? {
+              requested: true,
+              taslak: true,
+              uyari: CEK_FORMATION_PREVIEW_DRAFT_NOTICE,
+              serverPreviewHash: null,
+              clientPreviewHash: dto.checkPenaltyFormation.previewHash ?? null,
+              tazminat: null,
+              results: [],
+              skippedReason: 'FORMATION_REQUEST_FAILED',
+              message: 'Çek tazminatı onay talebi beklenmeyen bir hata nedeniyle açılmadı; dosya oluşturuldu.',
+            }
+          : undefined;
+      }
+
       // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
       // yol mevcut davranışı AYNEN korur → ek audit üretmez). Tx commit sonrası.
       if (result.staffResult.selectionProvided) {
@@ -2444,6 +2672,7 @@ export class CaseService {
       return {
         ...result.case,
         poaWarnings: poaWarnings.length > 0 ? poaWarnings : undefined,
+        ...(checkPenaltyFormation ? { checkPenaltyFormation } : {}),
       };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {

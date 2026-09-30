@@ -7,6 +7,8 @@ import {
   IsArray,
   ValidateNested,
   IsBoolean,
+  Matches,
+  ValidateIf,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { DocumentSourceType, InterestAccrualStatus, InterestTypeCode } from "@prisma/client";
@@ -179,6 +181,12 @@ export class CaseDebtorDto {
   @IsString()
   @IsOptional()
   caseNote?: string;
+
+  // K3-L Faz 2b: aval verenin LEHİNE aval verdiği dosya borçlusu (Debtor.id). Yalnız rol AVAL iken; aynı istekteki
+  // başka bir borçluyu göstermelidir (assertAvalBeneficiariesConsistent + DB CHECK case_debtor_aval_for_check).
+  @IsString()
+  @IsOptional()
+  avalForDebtorId?: string;
 }
 
 export enum ExecutionPath {
@@ -533,6 +541,17 @@ export class CaseInstrumentInputDto {
   @IsEnum(CaseInstrumentSource)
   @IsOptional()
   source?: CaseInstrumentSource;
+
+  // K3-L Faz 2b: çekin karşılıksız çıktığı bilgisi (yalnız CEK). Verilmezse şema varsayılanı (false / null) kalır;
+  // çek tazminatı K3 talebi bu iki alan olmadan AÇILMAZ (CHECK_NOT_DISHONOURED).
+  @IsBoolean()
+  @IsOptional()
+  isBounced?: boolean;
+
+  // Karşılıksız işareti TARİHSİZ kabul edilmez: sessizce düşürülmek yerine 400 (fail-closed)
+  @ValidateIf((o) => o.isBounced === true || o.bounceDate !== undefined)
+  @IsDateString()
+  bounceDate?: string;
 }
 
 // ASSIGN-2a: yeni takipte seçilen personel girişi. staffMemberId zorunlu; roleOnCase opsiyonel
@@ -544,6 +563,33 @@ export class CaseStaffInputDto {
   @IsString()
   @IsOptional()
   roleOnCase?: string;
+}
+
+/**
+ * K3-L Faz 2b (owner GO 2026-09-29 §4) — dosya açılışında KULLANICININ AÇIK SEÇİMİYLE çek tazminatı K3 onay talebi.
+ * requested=false / alan yok → hiçbir talep açılmaz (varsayılan). Talep commit SONRASI mevcut K3 akışıyla açılır
+ * (ikinci avukat onayı); kesin kalem yalnız onayla oluşur. İç onay, mahkemeye/UYAP'a dosyalama DEĞİLDİR.
+ */
+export class CheckPenaltyFormationRequestDto {
+  @IsBoolean()
+  requested: boolean;
+
+  // İstemcide KARARLI üretilir (taslakta saklanır); çek başına `${idempotencyKey}:${instrumentId}` olarak kullanılır
+  @ValidateIf((o) => o.requested === true)
+  @IsString()
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,79}$/)
+  idempotencyKey?: string;
+
+  // Takip edilen borçlular (Debtor.id). Verilmezse dosyanın tüm borçluları; kalem kümeleri SUNUCUDA rollerden ayrılır
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  pursuedDebtorIds?: string[];
+
+  // Sihirbazda gösterilen taslak önizlemenin hash'i; sunucu kalıcı kayıtla yeniden hesaplar, farklıysa talep AÇILMAZ
+  @IsString()
+  @IsOptional()
+  previewHash?: string;
 }
 
 export class CreateCaseDto {
@@ -710,6 +756,12 @@ export class CreateCaseDto {
   @Type(() => CaseInstrumentInputDto)
   @IsOptional()
   instruments?: CaseInstrumentInputDto[];
+
+  // K3-L Faz 2b: çek tazminatı K3 onay talebi — yalnız kullanıcının AÇIK seçimiyle
+  @ValidateNested()
+  @Type(() => CheckPenaltyFormationRequestDto)
+  @IsOptional()
+  checkPenaltyFormation?: CheckPenaltyFormationRequestDto;
 
   // OCR / Belge Tarama Bilgileri
   @IsString()

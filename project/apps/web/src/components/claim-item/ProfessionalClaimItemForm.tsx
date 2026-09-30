@@ -16,6 +16,7 @@ import {
   Info,
 } from "lucide-react";
 import { api, TemplateData } from "@/lib/api";
+import { buildCekPreviewRequest, CHECK_PENALTY_DRAFT_NOTICE, type CheckPenaltyPreviewDebtor } from "@/lib/check-penalty-formation";
 import { LimitationBanner, LimitationStatus } from "@/components/limitation/LimitationWarningModal";
 import { 
   resolveInterestType, 
@@ -376,7 +377,12 @@ interface AlacakKalemi {
     hesapNo: string;
     bankaVeSube: string;
     cekiImzalayanlar: string;
+    // K3-L Faz 2b: çek karşılıksız çıktı mı + tarihi (çek tazminatı yalnız bu bilgiyle hesaplanır)
+    karsiliksiz?: boolean;
+    karsiliksizTarihi?: string;
   };
+  // K3-L Faz 2b: sunucudan alınan TASLAK tazminat önizlemesi (hash açılışta talebe bağlanır)
+  cekTazminatOnizleme?: { durum: string; previewHash: string; tutar: number | null; aciklama: string } | null;
   // Senet bilgileri
   senetBilgileri?: {
     duzenlemeYeri: string;
@@ -458,6 +464,8 @@ interface Props {
   creditors?: Array<{ type: 'INDIVIDUAL' | 'COMPANY'; name: string; identityNo?: string; taxNo?: string; address?: string }>;
   lawyers?: Array<{ name: string; barNumber: string; barCity: string; address?: string }>;
   debtors?: Array<{ type: 'INDIVIDUAL' | 'COMPANY'; name: string; identityNo?: string; taxNo?: string; address?: string; role?: string }>;
+  /** K3-L Faz 2b: dosya borçluları (rol + lehine aval) — çek tazminatı taslak önizlemesinde sorumlu kümesi için */
+  caseDebtors?: CheckPenaltyPreviewDebtor[];
 }
 
 // ============================================================================
@@ -659,6 +667,7 @@ export function ProfessionalClaimItemForm({
   lawyers = [],
   debtors = [],
   mahiyetKodu,
+  caseDebtors = [],
 }: Props) {
   
   const getDefaultKalemTuru = () => {
@@ -820,6 +829,15 @@ export function ProfessionalClaimItemForm({
   // Mantık: Vade tarihi değiştiğinde ibraz tarihini de vade tarihine eşitle
   // (Kullanıcı daha sonra manuel olarak değiştirebilir)
   const prevVadeTarihiRef = useRef(kalem.vadeTarihi);
+  const calcGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
+  const previewCacheRef = useRef(new Map<string, Awaited<ReturnType<typeof api.previewCekFormation>>>());
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (kalem.kalemTuru === "CEK" && kalem.cekBilgileri && kalem.vadeTarihi) {
       const vadeTarihi = kalem.vadeTarihi;
@@ -875,6 +893,8 @@ export function ProfessionalClaimItemForm({
 
   // Hesap özetini hesapla - ASYNC (Backend API kullanır)
   const hesapla = useCallback(async () => {
+    // Eski (sökülmüş editöre ya da yeni girdiye ait) hesap sonucu bildirilmez: aynı kalem listeye iki kez girmesin
+    const generation = ++calcGenerationRef.current;
     console.log('[ProfessionalClaimItemForm] hesapla() başladı');
     const validation = checkZorunluAlanlar();
     console.log('[ProfessionalClaimItemForm] Zorunlu alan kontrolü:', validation);
@@ -894,10 +914,38 @@ export function ProfessionalClaimItemForm({
     const yanAlacakToplam = 0;
 
     // 3. Çek Tazminatı
+    // K3-L Faz 2b: tazminat İSTEMCİDE hesaplanmaz (kör "tutar × %10" yok). Tutar sunucudan TASLAK olarak gelir;
+    // karşılıksız işareti/tarihi ya da borçlu rolleri eksikse tutar üretilmez. Kesin kalem yalnız K3 onayıyla oluşur.
     let tazminat = 0;
+    let cekTazminatOnizleme: AlacakKalemi["cekTazminatOnizleme"] = null;
     if (config.tazminatOrani > 0) {
-      tazminat = kalem.bakiyeTutar * config.tazminatOrani;
-      satirlar.push({ key: "tazminat", label: "Karşılıksız Çek Tazminatı (%10)", tutar: tazminat });
+      try {
+        // Aynı girdi için tekrar istek yok (önizleme saf hesaptır; hesap döngüsünde istek akışı olmasın)
+        const previewRequest = buildCekPreviewRequest(kalem, caseDebtors);
+        const previewKey = JSON.stringify(previewRequest);
+        const cached = previewCacheRef.current.get(previewKey);
+        const preview = cached ?? (await api.previewCekFormation(previewRequest));
+        if (!cached) previewCacheRef.current.set(previewKey, preview);
+        cekTazminatOnizleme = {
+          durum: preview.durum,
+          previewHash: preview.previewHash,
+          tutar: preview.tazminat?.tutar ?? null,
+          aciklama: preview.aciklama,
+        };
+        if (preview.durum === "HESAPLANDI" && preview.tazminat) {
+          tazminat = preview.tazminat.tutar;
+          satirlar.push({
+            key: "tazminat",
+            label: `Karşılıksız Çek Tazminatı (%10) — ${CHECK_PENALTY_DRAFT_NOTICE} (takip tutarına dahil değil)`,
+            tutar: tazminat,
+            color: "amber",
+          });
+        } else {
+          satirlar.push({ key: "tazminat_eksik", label: `Çek Tazminatı — ${preview.aciklama}`, tutar: 0, color: "red" });
+        }
+      } catch {
+        satirlar.push({ key: "tazminat_eksik", label: "Çek Tazminatı — hesaplanamadı (sunucuya ulaşılamadı)", tutar: 0, color: "red" });
+      }
     }
 
     // 4. Komisyon
@@ -943,8 +991,10 @@ export function ProfessionalClaimItemForm({
       satirlar.push({ key: "takip_oncesi_faiz", label: "Takip Öncesi Faiz", tutar: takipOncesiFaiz });
     }
 
-    // 6. Takip Tutarı (asıl alacak + yan alacaklar + tazminat + komisyon + faiz)
-    const takipTutari = kalem.bakiyeTutar + yanAlacakToplam + tazminat + komisyon + takipOncesiFaiz;
+    // 6. Takip Tutarı (asıl alacak + yan alacaklar + komisyon + faiz). K3-L Faz 2b: taslak çek tazminatı DAHİL DEĞİL —
+    // onaylanmamış tutar gönderime hazır toplamlara (takip tutarı, masraf matrahı, son borç, XML toplamı) girmez; yalnız
+    // yukarıdaki TASLAK satırında görünür. Kesin kalem K3 onayıyla oluşunca dosya hesabına girer.
+    const takipTutari = kalem.bakiyeTutar + yanAlacakToplam + komisyon + takipOncesiFaiz;
     satirlar.push({ key: "takip_tutari", label: "Takip Tutarı", tutar: takipTutari, bold: true, color: "blue" });
 
     // 7. İcra Masrafları - BACKEND API KULLANIMI
@@ -1056,11 +1106,12 @@ export function ProfessionalClaimItemForm({
     setHesapOzeti(satirlar);
     setIsCalculated(true);
 
+    if (!mountedRef.current || generation !== calcGenerationRef.current) return;
     if (onItemsChange) {
       // PR-i3: ilamYanAlacaklar artık emit EDİLMEZ (nested emekli; standalone fer'i kalemler).
-      onItemsChange([{ ...kalem, hesapOzeti: satirlar }]);
+      onItemsChange([{ ...kalem, hesapOzeti: satirlar, cekTazminatOnizleme }]);
     }
-  }, [kalem, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih]);
+  }, [kalem, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih, caseDebtors]);
 
   // OTOMATİK HESAPLAMA - değişiklik olduğunda 500ms sonra hesapla
   useEffect(() => {
@@ -1083,7 +1134,7 @@ export function ProfessionalClaimItemForm({
     }, 500);
     
     return () => clearTimeout(timer);
-  }, [kalem.bakiyeTutar, kalem.vadeTarihi, kalem.takipOncesiFaiz, kalem.takipSonrasiFaiz, kalem.kalemTuru, hesapTarihi, kalem.cekBilgileri?.cekSeriNo, kalem.cekBilgileri?.bankaVeSube, kalem.cekBilgileri?.ibrazTarihi, faizBaslangicTercih, hesapla]);
+  }, [kalem.bakiyeTutar, kalem.vadeTarihi, kalem.takipOncesiFaiz, kalem.takipSonrasiFaiz, kalem.kalemTuru, hesapTarihi, kalem.cekBilgileri?.cekSeriNo, kalem.cekBilgileri?.bankaVeSube, kalem.cekBilgileri?.ibrazTarihi, kalem.cekBilgileri?.karsiliksiz, kalem.cekBilgileri?.karsiliksizTarihi, faizBaslangicTercih, hesapla]);
 
   // ZAMANAŞIMI KONTROLÜ - vade tarihi değiştiğinde kontrol et
   useEffect(() => {
@@ -1593,6 +1644,42 @@ export function ProfessionalClaimItemForm({
                   className="w-full border rounded px-1.5 py-0.5 text-xs bg-yellow-50"
                 />
               </div>
+              <div className="col-span-2 flex items-end">
+                <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-700">
+                  <input
+                    type="checkbox"
+                    data-testid="cek-karsiliksiz"
+                    checked={kalem.cekBilgileri.karsiliksiz === true}
+                    onChange={(e) => setKalem(prev => ({
+                      ...prev,
+                      cekBilgileri: {
+                        ...prev.cekBilgileri!,
+                        karsiliksiz: e.target.checked,
+                        karsiliksizTarihi: e.target.checked ? prev.cekBilgileri?.karsiliksizTarihi : undefined,
+                      },
+                    }))}
+                  />
+                  Çek karşılıksız çıktı
+                </label>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-[10px] text-gray-500 mb-0.5">Karşılıksız Tarihi</label>
+                <input
+                  type="date"
+                  data-testid="cek-karsiliksiz-tarihi"
+                  disabled={kalem.cekBilgileri.karsiliksiz !== true}
+                  value={kalem.cekBilgileri.karsiliksizTarihi || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    cekBilgileri: { ...prev.cekBilgileri!, karsiliksizTarihi: e.target.value || undefined }
+                  }))}
+                  className="w-full border rounded px-1.5 py-0.5 text-xs disabled:bg-gray-50"
+                />
+              </div>
+              <p className="col-span-4 text-[10px] text-gray-500">
+                Çek tazminatı yalnız karşılıksız işareti ve tarihi girildiğinde sunucuda taslak olarak hesaplanır; kesin
+                kalem onaydan sonra oluşur.
+              </p>
             </div>
           </div>
         )}
@@ -2324,17 +2411,8 @@ export function ProfessionalClaimItemForm({
                           });
                         }
                         
-                        // Çek tazminatı (%10) - sadece çek için
-                        const tazminat = hesapOzeti.find(h => h.key === 'tazminat');
-                        if (tazminat && tazminat.tutar > 0 && kalem.kalemTuru === 'CEK') {
-                          claimItems.push({
-                            type: 'COMPENSATION',
-                            description: 'Karşılıksız Çek Tazminatı alacağı',
-                            amount: tazminat.tutar,
-                            currency: kalem.currency || 'TRY',
-                            dueDate: kalem.vadeTarihi,
-                          });
-                        }
+                        // K3-L Faz 2b: çek tazminatı satırı istemciden GÖNDERİLMEZ. Sunucu, aşağıdaki `cekFormationPreview`
+                        // girdisinden (çek + borçlu rolleri) tutarı kendisi hesaplar ve belgede TASLAK olarak gösterir.
                         
                         // Komisyon - çek ve senet için
                         const komisyon = hesapOzeti.find(h => h.key === 'komisyon');
@@ -2381,7 +2459,7 @@ export function ProfessionalClaimItemForm({
                           totals: {
                             principal: asilAlacak?.tutar || kalem.bakiyeTutar || 0,
                             interest: takipOncesiFaiz?.tutar || 0,
-                            fees: (tazminat?.tutar || 0) + (komisyon?.tutar || 0),
+                            fees: komisyon?.tutar || 0,
                             total: totalAmount,
                             currency: kalem.currency || 'TRY',
                           },
@@ -2394,9 +2472,11 @@ export function ProfessionalClaimItemForm({
                           caseType: _caseType || 'ILAMSIZ',
                           subCategory: kalem.kalemTuru || 'GENEL',
                           executionPath: 'HACIZ',
+                          // Tazminat girdisi belgedeki asıl alacak satırıyla AYNI tutardan (bayat hesap özetiyle tutarsızlık olmasın)
+                          ...(kalem.kalemTuru === 'CEK'
+                            ? { cekFormationPreview: buildCekPreviewRequest({ ...kalem, bakiyeTutar: asilAlacak?.tutar || kalem.bakiyeTutar || 0 }, caseDebtors) }
+                            : {}),
                         };
-                        
-                        console.log('[Word] İstek gönderiliyor:', templateData);
                         
                         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/word`, {
                           method: 'POST',
@@ -2504,9 +2584,8 @@ export function ProfessionalClaimItemForm({
                           caseType: _caseType || 'ILAMSIZ',
                           subCategory: kalem.kalemTuru || 'GENEL',
                           executionPath: 'HACIZ',
+                          ...(kalem.kalemTuru === 'CEK' ? { cekFormationPreview: buildCekPreviewRequest(kalem, caseDebtors) } : {}),
                         };
-                        
-                        console.log('[PDF] İstek gönderiliyor:', templateData);
                         
                         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/pdf`, {
                           method: 'POST',
@@ -2616,7 +2695,6 @@ export function ProfessionalClaimItemForm({
                           executionPath: 'HACIZ',
                         };
                         
-                        console.log('[XML] İstek gönderiliyor:', templateData);
                         
                         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/xml`, {
                           method: 'POST',
