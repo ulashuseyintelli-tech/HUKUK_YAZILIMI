@@ -141,3 +141,10 @@ src/modules/claim-item/__tests__/claim-item-human-generation-authz.db-gated.inte
 #   DEGISMEDI (yetkisiz 403, yetkili FORMATION_CONTEXT_REQUIRED, VIEWER 403). Guvenlik acigi kapatma DEGIL:
 #   iki uc 2026-01-15'ten beri hic yazmiyordu (duz Error -> 500 + ErrorLog gurultusu).
 src/modules/claim-item/__tests__/claim-item-removed-endpoints.db-gated.integration.spec.ts
+
+# Evrak kabul kapisi (MANUAL + OCR) — GERCEK HTTP + disposable PostgreSQL. Kapali kaynak / islenemeyen TEK kayit
+#   -> 400 kararli kod (AllExceptionsFilter govdesi) ve tenant'ta dosya / evrak / ClaimItem / Due / taraf / K3 onay
+#   talebi 0; bayrak kapandiktan sonra gonderilen OCR taslagi; karisik atomik red; bayraklar acikken evrak + dogru
+#   PRINCIPAL; retten sonra yeniden gonderim tekil; evraksiz acilis etkilenmez; K3 (#2843): red talep uretmez,
+#   basarili acilista K3 sonucu tekil. Guncel main servis koduyla 11 testin 7'si DUSER (RED kanitlandi).
+src/modules/case/__tests__/case-create-instrument-admission.http.db-gated.integration.spec.ts

@@ -25,6 +25,7 @@ import { interestWriteData, normalizeInterestWriteIntent } from "../claim-item/i
 import { assertGenericDueTypeTransition } from "./due-type-transition.policy";
 import {
   resolveCaseInstrumentType,
+  caseInstrumentRejectionReason,
   buildCaseInstrumentData,
   buildInstrumentPrincipalClaimItemData,
 } from "./ocr-instrument-to-case-instrument.mapper";
@@ -641,6 +642,68 @@ export class CaseService {
       throw new BadRequestException({
         code: "UNSUPPORTED_COMPONENT",
         message: "Due component is not supported for new ClaimItem formation.",
+      });
+    }
+  }
+
+  /**
+   * Dosya açılışı evrak kabul kapısı (fail-closed) — MANUAL ve OCR kaynakları.
+   * Web evrak kaydını dues[]'a koymadan instruments[]'a taşır (manuel çek/senet; çoklu OCR evrakı).
+   * Bu yüzden tek bir kaydın ATLANMASI, bedelin ne CaseInstrument ne PRINCIPAL ClaimItem ne Due
+   * olarak yazılması (eksik anapara) demektir. Kural: TEK kayıt bile işlenemiyorsa TÜM açılış reddedilir.
+   *  1) Kaynak bayrağı kapalı: MANUAL → `MANUAL_CASE_INSTRUMENTS`, OCR / kaynak tanımsız →
+   *     `OCR_MULTI_INSTRUMENT`. Kod: MANUAL_CASE_INSTRUMENTS_DISABLED · OCR_CASE_INSTRUMENTS_DISABLED ·
+   *     ikisi birden CASE_INSTRUMENT_SOURCES_DISABLED (sayılar: yalnız reddedilen kayıtlar).
+   *  2) Kayıt CaseInstrument'a dönüştürülemiyor (FATURA/DIGER veya zorunlu alan eksik) →
+   *     CASE_INSTRUMENT_UNPROCESSABLE (kayıt sırası + gerekçe).
+   * Kaynak yeniden sınıflandırılmaz, bayrak aşılmaz. Evraksız istek (instruments boş) etkilenmez.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (tx ve sorgu ÖNCESİ; dosya/taraf/evrak/kalem/K3 talebi hiç oluşmaz)
+   * - CaseService.createInstrumentsAndClaims() → tx içi savunma katmanı (hata tx'i geri alır)
+   */
+  private assertCaseInstrumentAdmission(
+    instruments: ReadonlyArray<CaseInstrumentInputDto>,
+    enabled: { ocr: boolean; manual: boolean },
+  ): void {
+    if (instruments.length === 0) return;
+    const sourceOf = (input: CaseInstrumentInputDto): "MANUAL" | "OCR" =>
+      input?.source === CaseInstrumentSource.MANUAL ? "MANUAL" : "OCR";
+
+    const manualBlocked = enabled.manual ? 0 : instruments.filter((i) => sourceOf(i) === "MANUAL").length;
+    const ocrBlocked = enabled.ocr ? 0 : instruments.filter((i) => sourceOf(i) === "OCR").length;
+    if (manualBlocked > 0 || ocrBlocked > 0) {
+      const both = manualBlocked > 0 && ocrBlocked > 0;
+      const code = both
+        ? "CASE_INSTRUMENT_SOURCES_DISABLED"
+        : manualBlocked > 0
+          ? "MANUAL_CASE_INSTRUMENTS_DISABLED"
+          : "OCR_CASE_INSTRUMENTS_DISABLED";
+      const detail = both
+        ? `Manuel çek/senet ve taranan (OCR) evrak kaydı bu sunucuda kapalı. ${manualBlocked} manuel ve ${ocrBlocked} taranan evrak`
+        : manualBlocked > 0
+          ? `Manuel çek/senet kaydı bu sunucuda kapalı (MANUAL_CASE_INSTRUMENTS). ${manualBlocked} çek/senet kalemi`
+          : `Taranan (OCR) evrak kaydı bu sunucuda kapalı (OCR_MULTI_INSTRUMENT). ${ocrBlocked} taranan evrak`;
+      throw new BadRequestException({
+        code,
+        message: `${detail} dosyaya yazılamayacağı için takip oluşturulmadı.`,
+        disabledSources: [...(manualBlocked > 0 ? ["MANUAL"] : []), ...(ocrBlocked > 0 ? ["OCR"] : [])],
+        manualInstrumentCount: manualBlocked,
+        ocrInstrumentCount: ocrBlocked,
+      });
+    }
+
+    const unprocessable = instruments.flatMap((input, index) => {
+      const reason = caseInstrumentRejectionReason(input);
+      return reason === null ? [] : [{ index, source: sourceOf(input), type: input.type, reason }];
+    });
+    if (unprocessable.length > 0) {
+      throw new BadRequestException({
+        code: "CASE_INSTRUMENT_UNPROCESSABLE",
+        message:
+          `${unprocessable.length} evrak kaydı dosyaya işlenemiyor (kambiyo senedi değil veya zorunlu alan eksik); ` +
+          `evrak ve anapara kaybolmasın diye takip oluşturulmadı.`,
+        items: unprocessable,
       });
     }
   }
@@ -1661,14 +1724,6 @@ export class CaseService {
   }
 
   /**
-   * PR-N3-wire: çoklu-enstrüman pipeline AÇIK mı (env flag; varsayılan KAPALI).
-   * ocr.service.isMultiInstrumentEnabled ile AYNI anahtar/semantik (ConfigModule .env'i
-   * process.env'e yükler). KAPALIYKEN createCase legacy BİREBİR (instruments[] yok sayılır).
-   *
-   * @remarks Çağrıldığı yerler:
-   * - CaseService.create() → POST /cases (instrument işleme kapısı; AS1 kapsam sınırı).
-   */
-  /**
    * K3-L Faz 2b (owner GO 2026-09-29 §4) — dosya açılışında kullanıcının AÇIK seçimiyle çek tazminatı K3 onay talebi.
    *
    * - Yalnız `dto.checkPenaltyFormation.requested === true` iken; aksi hâlde hiçbir şey yapılmaz (undefined).
@@ -1807,6 +1862,16 @@ export class CaseService {
     await auditOutcome(outcome);
     return outcome;
   }
+
+  /**
+   * PR-N3-wire: çoklu-enstrüman pipeline AÇIK mı (env flag; varsayılan KAPALI).
+   * ocr.service.isMultiInstrumentEnabled ile AYNI anahtar/semantik (ConfigModule .env'i
+   * process.env'e yükler). KAPALIYKEN OCR kaynaklı evrak içeren POST /cases reddedilir
+   * (OCR_CASE_INSTRUMENTS_DISABLED); evraksız açılış etkilenmez.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → assertCaseInstrumentAdmission (tx öncesi kabul kapısı) + createInstrumentsAndClaims.
+   */
   private multiInstrumentEnabled(): boolean {
     return process.env.OCR_MULTI_INSTRUMENT === "true";
   }
@@ -1814,7 +1879,8 @@ export class CaseService {
   /**
    * PR-2b-1: manuel case instrument girişi AÇIK mı (env flag; varsayılan KAPALI).
    * OCR_MULTI_INSTRUMENT'ten BAĞIMSIZ — manuel kambiyo, OCR pipeline'ı açılmadan geçebilir (O-1).
-   * @remarks Çağrıldığı yer: CaseService.create() → createInstrumentsAndClaims per-source MANUAL gate.
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → assertCaseInstrumentAdmission (tx öncesi kabul kapısı) + createInstrumentsAndClaims.
    */
   private manualCaseInstrumentsEnabled(): boolean {
     return process.env.MANUAL_CASE_INSTRUMENTS === "true";
@@ -1826,10 +1892,9 @@ export class CaseService {
    * (parasal yansıma, instrumentId BAĞ). Toplam instrument PRINCIPAL tutarını döndürür
    * (caller principalAmount'a ekler).
    *
-   * INVARIANT (resolveCaseInstrumentType): kambiyo-değil (FATURA/DIGER) / documentNo boş /
-   * amount≤0 / currency yok / issueDate yok → ATLA (sessiz create YOK).
-   * K1: PRINCIPAL YALNIZ buradan; dues[]'da tekrarlanmaz → çift-sayım yok.
-   * Flag KAPALI veya instruments boş → hiçbir şey üretmez, 0 döner (legacy).
+   * K1: PRINCIPAL YALNIZ buradan; dues[]'da tekrarlanmaz → çift-sayım yok. instruments boş → 0 döner.
+   * SESSİZ ATLAMA YOK: kaynak bayrağı kapalı veya işlenemeyen (FATURA/DIGER, zorunlu alan eksik) TEK
+   * kayıt bile varsa kabul kapısı (assertCaseInstrumentAdmission) hiçbir kayıt yazılmadan reddeder.
    *
    * @remarks Çağrıldığı yerler:
    * - CaseService.create() → POST /cases (dues/ClaimItem sonrası 6c adımı; flag-gated AS1).
@@ -1845,14 +1910,16 @@ export class CaseService {
     createdCekInstruments?: CreatedCekInstrumentRef[],
   ): Promise<number> {
     if (instruments.length === 0) return 0;
+    // Savunma katmanı: create() bu kapıyı tx ÖNCESİ zaten uygular; hiçbir kayıt yazılmadan reddeder.
+    // PR-2b-1 per-source gate (source yok → OCR; OCR/MANUAL bayrakları BAĞIMSIZ) artık atlamaz, reddeder.
+    this.assertCaseInstrumentAdmission(instruments, { ocr: ocrEnabled, manual: manualEnabled });
     let totalPrincipal = 0;
     for (const input of instruments) {
-      // PR-2b-1: per-source gate. source yok → OCR (geri uyum). OCR/MANUAL flag'leri BAĞIMSIZ;
-      // kapalı kaynak güvenle ATLANIR (karışık payload → yalnız açık-kaynak alt kümesi işlenir).
-      const isManual = input.source === CaseInstrumentSource.MANUAL;
-      if (isManual ? !manualEnabled : !ocrEnabled) continue;
       const instrumentType = resolveCaseInstrumentType(input);
-      if (instrumentType === null) continue; // kambiyo değil / eksik → sessiz create YOK
+      if (instrumentType === null) {
+        // Kabul kapısından geçen kayıtta imkânsız; olursa tx geri alınır (sessiz atlama YOK).
+        throw new Error("INVARIANT: kabul kapısından geçen evrak kaydı CaseInstrument'a dönüştürülemedi");
+      }
       const created = await tx.caseInstrument.create({
         data: buildCaseInstrumentData(tenantId, caseId, input, instrumentType),
       });
@@ -1997,6 +2064,12 @@ export class CaseService {
     // transaction başlamadan önce doğrula. Legacy DueType.OTHER kayıtlarının read/update/
     // lifecycle yüzeyleri korunur; yalnız yeni formation admission fail-closed'dur.
     this.assertDueCreationAdmission(dto.dues ?? []);
+    // Evrak kabulü (MANUAL + OCR): kaynağı kapalı ya da işlenemeyen TEK kayıt bile varsa → 400; dosya,
+    // taraf, evrak, alacak kalemi ve (commit-sonrası) K3 talebi hiç oluşmaz. Evraksız açılış etkilenmez.
+    this.assertCaseInstrumentAdmission(dto.instruments ?? [], {
+      ocr: this.multiInstrumentEnabled(),
+      manual: this.manualCaseInstrumentsEnabled(),
+    });
 
     // B.5: Başlangıç statüsü validasyonu
     if (dto.caseStatus && !isInitialStatus(dto.caseStatus as LegalCaseStatus)) {

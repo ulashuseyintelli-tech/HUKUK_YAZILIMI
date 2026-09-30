@@ -51,25 +51,48 @@ export function mapOcrInstrumentTypeToCaseInstrumentType(
   return OCR_TO_CASE_INSTRUMENT[type];
 }
 
+/** CaseInstrument'a dönüştürülemeyen evrak kaydının kararlı gerekçesi (dosya açılışı kabul reddinde raporlanır). */
+export type CaseInstrumentRejectionReason =
+  | 'NOT_KAMBIYO'
+  | 'DOCUMENT_NO_MISSING'
+  | 'AMOUNT_NOT_POSITIVE'
+  | 'CURRENCY_MISSING'
+  | 'ISSUE_DATE_MISSING';
+
 /**
  * INVARIANT GUARD (Ulaş): CaseInstrument SESSİZ create YOK. Üretilebilmesi için:
  *   type kambiyo (CEK/SENET/POLICE) · documentNo (→serialNo) · amount (>0) · currency · issueDate.
- * Biri eksikse `null` → çağıran CaseInstrument ÜRETMEZ (kambiyo-dışı/eksik = atla, sessiz create yok).
- * DTO validation da boundary'de reddeder (çift kemer); bu saf guard tx-wiring + unit içindir.
+ * Biri eksikse gerekçe döner; `null` = kayıt işlenebilir. TEK KURAL KAYNAĞI: resolveCaseInstrumentType
+ * aynı fonksiyonu kullanır (ret gerekçesi ile üretim kararı ayrışamaz).
  *
  * Çağrıldığı yerler:
- * - (N3-wire) CaseService.create() → her instrument için: null→atla, değilse buildCaseInstrumentData.
+ * - resolveCaseInstrumentType() (aynı dosya)
+ * - CaseService.assertCaseInstrumentAdmission() → POST /cases tx öncesi kabul kapısı (işlenemeyen kayıt → 400)
+ */
+export function caseInstrumentRejectionReason(
+  input: CaseInstrumentInputDto,
+): CaseInstrumentRejectionReason | null {
+  if (mapOcrInstrumentTypeToCaseInstrumentType(input.type) === null) return 'NOT_KAMBIYO'; // FATURA/DIGER
+  if (!input.documentNo || input.documentNo.trim() === '') return 'DOCUMENT_NO_MISSING'; // serialNo şart
+  if (input.amount == null || input.amount <= 0) return 'AMOUNT_NOT_POSITIVE'; // amount şart (>0)
+  if (!input.currency) return 'CURRENCY_MISSING'; // currency şart (sessiz TRY yok)
+  if (!input.issueDate) return 'ISSUE_DATE_MISSING'; // issueDate şart (şema-zorunlu)
+  return null;
+}
+
+/**
+ * Kambiyo türü (CEK/SENET/POLICE) ya da `null` (işlenemez; gerekçe: caseInstrumentRejectionReason).
+ * DTO validation da boundary'de reddeder (çift kemer). Dosya açılışı `null` kaydı ATLAMAZ: kabul kapısı
+ * (CaseService.assertCaseInstrumentAdmission) tüm isteği tx öncesi reddeder.
+ *
+ * Çağrıldığı yerler:
+ * - CaseService.createInstrumentsAndClaims() → her instrument için tür (kapıdan geçmiş kayıt).
  */
 export function resolveCaseInstrumentType(
   input: CaseInstrumentInputDto,
 ): InstrumentType | null {
-  const mapped = mapOcrInstrumentTypeToCaseInstrumentType(input.type);
-  if (mapped === null) return null; // FATURA/DIGER → kambiyo değil
-  if (!input.documentNo || input.documentNo.trim() === '') return null; // serialNo şart
-  if (input.amount == null || input.amount <= 0) return null; // amount şart (>0)
-  if (!input.currency) return null; // currency şart (sessiz TRY yok)
-  if (!input.issueDate) return null; // issueDate şart (şema-zorunlu)
-  return mapped;
+  if (caseInstrumentRejectionReason(input) !== null) return null;
+  return mapOcrInstrumentTypeToCaseInstrumentType(input.type);
 }
 
 /**

@@ -10,6 +10,7 @@ import { InstrumentType, ClaimItemType } from '@prisma/client';
 import {
   mapOcrInstrumentTypeToCaseInstrumentType,
   resolveCaseInstrumentType,
+  caseInstrumentRejectionReason,
   buildCaseInstrumentData,
   buildEndorsersJson,
   buildInstrumentPrincipalClaimItemData,
@@ -77,6 +78,36 @@ describe('resolveCaseInstrumentType — INVARIANT (eksikse sessiz create yok)', 
 
   it('issueDate eksik → null (şema-zorunlu)', () => {
     expect(resolveCaseInstrumentType(input({ issueDate: undefined }))).toBeNull();
+  });
+});
+
+describe('caseInstrumentRejectionReason — dosya açılışı kabul reddinin gerekçesi (tek kural kaynağı)', () => {
+  it.each([
+    ['tam kambiyo', {}, null],
+    ['FATURA', { type: OcrInstrumentInputType.FATURA }, 'NOT_KAMBIYO'],
+    ['DIGER', { type: OcrInstrumentInputType.DIGER }, 'NOT_KAMBIYO'],
+    ['documentNo boşluk', { documentNo: '   ' }, 'DOCUMENT_NO_MISSING'],
+    ['amount 0', { amount: 0 }, 'AMOUNT_NOT_POSITIVE'],
+    ['amount negatif', { amount: -1 }, 'AMOUNT_NOT_POSITIVE'],
+    ['currency yok', { currency: undefined }, 'CURRENCY_MISSING'],
+    ['issueDate yok', { issueDate: undefined }, 'ISSUE_DATE_MISSING'],
+  ])('%s → %s', (_l, over, reason) => {
+    expect(caseInstrumentRejectionReason(input(over as any))).toBe(reason);
+  });
+
+  it('gerekçe ile üretim kararı AYRIŞAMAZ: gerekçe null ⇔ resolveCaseInstrumentType null değil', () => {
+    const variants: Partial<CaseInstrumentInputDto>[] = [
+      {},
+      ...Object.values(OcrInstrumentInputType).map((type) => ({ type })),
+      { documentNo: '' },
+      { amount: 0 },
+      { currency: undefined },
+      { issueDate: undefined },
+    ];
+    for (const v of variants) {
+      const i = input(v as any);
+      expect(caseInstrumentRejectionReason(i) === null).toBe(resolveCaseInstrumentType(i) !== null);
+    }
   });
 });
 

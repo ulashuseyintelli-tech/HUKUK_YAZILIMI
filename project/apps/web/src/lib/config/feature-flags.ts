@@ -100,7 +100,8 @@ export const FEATURE_FLAGS = {
    * PR-2b-2: Manuel kambiyo (CEK/SENET) → CaseInstrument instruments[] yolu.
    *
    * ⚠️ Backend MANUAL_CASE_INSTRUMENTS ile BİRLİKTE açılmalı. Yalnız frontend açık + backend kapalı
-   * = kambiyo kalem kaybı (frontend dues'tan çıkarır, backend instrument'ı yok sayar).
+   * → frontend kambiyoyu dues'tan çıkarır; backend sessizce atlamaz, POST /cases'i
+   * MANUAL_CASE_INSTRUMENTS_DISABLED (400) ile reddeder: dosya açılmaz, kalem kaybı olmaz.
    * Varsayılan KAPALI → PR-2a davranışı korunur (kambiyo → dues[]).
    */
   MANUAL_CASE_INSTRUMENTS: process.env.NEXT_PUBLIC_MANUAL_CASE_INSTRUMENTS === 'true',
