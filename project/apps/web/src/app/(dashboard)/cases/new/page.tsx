@@ -35,7 +35,13 @@ import { DocumentSourceSelector, DocumentSourceType, ClassificationResult, PoaSc
 import { WizardResultCard } from "@/components/case/WizardResultCard";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { DebtorStep } from "@/components/debtor";
-import { selectedInstrumentsToPayload, routeClaimRawsForManualInstruments, CaseInstrumentPayload } from "@/components/debtor/ocr-instrument";
+import { selectedInstrumentsToPayload, routeClaimRawsForManualInstruments, CaseInstrumentPayload, INSTRUMENT_TYPE_LABELS } from "@/components/debtor/ocr-instrument";
+import {
+  aggregateOcrInstruments,
+  findOcrDuplicateOfClaimRaw,
+  ocrDuplicateMessage,
+  ocrInstrumentsOf,
+} from "@/lib/wizard-ocr-instruments";
 import { FEATURE_FLAGS } from "@/lib/config/feature-flags";
 import {
   buildCheckPenaltyFormationPayload,
@@ -1311,6 +1317,12 @@ export default function NewCasePage() {
       }
       throw classificationError;
     }
+    // K3-L: evrak taramasından zaten eklenmiş evrak elle ikinci kez eklenmez (iki anapara kaydı oluşurdu)
+    const ocrDuplicate = findOcrDuplicateOfClaimRaw(claimFormBuffer, instruments);
+    if (ocrDuplicate) {
+      setError(ocrDuplicateMessage(ocrDuplicate));
+      return;
+    }
     setError("");
     // PR-2a eski-draft guard: düzenlenen kalem artık birebir-legacy passthrough değildir;
     // __legacyDue'yu temizle ki edit, form değerlerinden yeniden türetilsin (sessiz no-op olmasın).
@@ -1480,6 +1492,15 @@ export default function NewCasePage() {
     let effClaimItems = claimDraftItems;
     let effDues: DueItem[];
     let manualInstruments: CaseInstrumentPayload[];
+    // K3-L: taramadan gelen evrakla AYNI evrak elle de listedeyse (ör. eski taslak) açılış yapılmaz — iki anapara kaydı
+    const pendingRaw = editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0 ? claimFormBuffer : null;
+    for (const raw of [...claimDraftItems.map((ci) => ci.raw), ...(pendingRaw ? [pendingRaw] : [])]) {
+      const ocrDuplicate = findOcrDuplicateOfClaimRaw(raw, instruments);
+      if (ocrDuplicate) {
+        setError(ocrDuplicateMessage(ocrDuplicate));
+        return;
+      }
+    }
     try {
       if (editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0) {
         effClaimItems = [...claimDraftItems, { id: genClaimDraftItemId(), raw: claimFormBuffer }];
@@ -1659,6 +1680,9 @@ export default function NewCasePage() {
 
   const filteredForms = filterFormsByCategory(categoryFilter === "ALL" ? null : categoryFilter);
   const listedClaimItemAggregates = aggregateListedClaimItems(claimDraftItems, caseData.currency);
+  // K3-L: taramadan gelen kambiyo kayıtları — kaynak `instruments` durumu; kalem listesi toplamından AYRI gösterilir
+  const ocrInstruments = ocrInstrumentsOf(instruments);
+  const ocrInstrumentAggregates = aggregateOcrInstruments(instruments);
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
@@ -2342,6 +2366,46 @@ export default function NewCasePage() {
           // min-h-[600px] düz <div> olduğundan kalemler ekliyken içerik (taslak belge düğmeleri dahil) footer altında
           // KESİLİYOR, kaydırılamıyordu. Artık bu alan kendi içinde kayar; footer altta görünür kalır.
           <div data-testid="wizard-claims-step-scroll" className="flex-1 min-h-0 overflow-y-auto space-y-3">
+            {ocrInstruments.length > 0 && (
+              <div className="border rounded-lg p-3 bg-emerald-50/40" data-testid="wizard-ocr-instruments">
+                <h3 className="text-sm font-semibold mb-1">Evrak Taramasından Gelen Kayıtlar ({ocrInstruments.length})</h3>
+                <p className="text-[11px] text-slate-600 mb-2">
+                  Dosya açılışında her biri evrak kaydı ve tek anapara kalemi olarak oluşur; aşağıdaki alacak kalemlerine ayrıca
+                  eklemeyin. Değiştirmek için borçlular adımındaki evrak taramasını kullanın.
+                </p>
+                <ul className="space-y-1">
+                  {ocrInstruments.map((ins, i) => (
+                    <li
+                      key={`${ins.type}-${ins.documentNo}-${i}`}
+                      className="rounded border px-2 py-1.5 text-sm bg-white"
+                      data-testid="wizard-ocr-instrument-row"
+                    >
+                      <span className="font-medium">{INSTRUMENT_TYPE_LABELS[ins.type] ?? "Evrak"}</span>
+                      {ins.documentNo ? ` ${ins.documentNo}` : ""}
+                      {` — ${Number(ins.amount).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ins.currency || "TRY"}`}
+                      {ins.issueDate ? ` · ${ins.issueDate}` : ""}
+                      {ins.bankName ? ` · ${ins.bankName}` : ""}
+                      <span className="ml-2 text-[11px] text-emerald-700">Kaynak: evrak tarama</span>
+                    </li>
+                  ))}
+                </ul>
+                {ocrInstrumentAggregates.length > 0 && (
+                  <div className="mt-3 border-t border-emerald-200 pt-3">
+                    <p className="text-xs font-medium text-emerald-800">Evrak Taramasından Gelen Kayıtlar Toplamı</p>
+                    <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1" data-testid="wizard-ocr-instruments-aggregate">
+                      {ocrInstrumentAggregates.map((aggregate) => (
+                        <div key={aggregate.currency} className="flex items-baseline gap-1 text-sm">
+                          <dt className="font-medium text-emerald-700">{aggregate.currency}</dt>
+                          <dd className="font-semibold text-emerald-950">
+                            {aggregate.amount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                )}
+              </div>
+            )}
             {claimDraftItems.length > 0 && (
               <div className="border rounded-lg p-3 bg-blue-50/40">
                 <h3 className="text-sm font-semibold mb-2">Eklenen Alacak Kalemleri ({claimDraftItems.length})</h3>
