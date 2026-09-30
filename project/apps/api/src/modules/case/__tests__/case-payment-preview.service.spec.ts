@@ -392,6 +392,33 @@ describe("CasePaymentPreviewService", () => {
       expect(result.acceptance.warnings).not.toContain("CLAIM_ITEM_READ_FALLBACK_USED");
     });
 
+    it("D2-b1 ile birlikte: TRY faizsiz anapara simüle edilmeyince USD sonucu TRY borcu sayılmaz", async () => {
+      const prisma = makePrisma({
+        claimItem: {
+          ...modelWithCount(1),
+          findMany: jest.fn(async () => [{ demandedAmount: 5000, amount: 5000, collectedAmount: 0 }]),
+        },
+      });
+      // CaseBalanceService'in b1 çıktısı: TRY satırı taşınan anaparalı (sonuç yok), USD normal hesaplandı
+      const balance = {
+        computeCaseBalance: jest.fn(async () => ({
+          currencyResults: [
+            { currency: "TRY", result: null, skippedReason: "NON_ACCRUING_NOT_SIMULATED", grossPrincipal: 0, unsimulatedPrincipal: 5000 },
+            { currency: "USD", result: { totalDue: 2000 }, grossPrincipal: 2000 },
+          ],
+        })),
+      };
+      const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+      const result = await service.preview({ tenantId: "tenant-1", caseId: "case-1", input: { amount: 100, currency: "TRY" } });
+
+      expect(result.balanceImpact.currentOutstandingAmount).toBe(5000);
+      expect(result.balanceImpact.currentOutstandingAmount).not.toBe(2000);
+      expect(result.acceptance.warnings).toEqual(
+        expect.arrayContaining(["CURRENT_BALANCE_CURRENCY_NOT_COMPUTED", "CLAIM_ITEM_READ_FALLBACK_USED"]),
+      );
+    });
+
     it("hiçbir para biriminde sonuç yoksa (ör. faizsiz anapara, kova yok) para birimi uyarısı eklenmez", async () => {
       const prisma = trySameCurrencyItems();
       const balance = { computeCaseBalance: jest.fn(async () => ({ currencyResults: [] })) };
