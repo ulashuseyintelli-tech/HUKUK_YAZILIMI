@@ -40,10 +40,17 @@ function send(res, status, obj, extraHeaders) {
 }
 function readRaw(req) { return new Promise((ok) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => ok(Buffer.concat(c))); }); }
 async function readBody(req) { const b = await readRaw(req); try { return b.length ? JSON.parse(b.toString('utf8')) : {}; } catch (e) { return { __invalid: true }; } }
+/** Content-Type başlığından boundary değeri — düzenli ifade YOK (doğrusal tarama; ReDoS riski yok). Tırnaklı/tırnaksız; en çok 200 karakter. */
+function boundaryOf(contentType) {
+  const s = String(contentType || ''); const i = s.toLowerCase().indexOf('boundary='); if (i === -1) return null;
+  let v = s.slice(i + 'boundary='.length); const semi = v.indexOf(';'); if (semi !== -1) v = v.slice(0, semi); v = v.trim();
+  if (v.startsWith('"')) { const e = v.indexOf('"', 1); if (e === -1) return null; v = v.slice(1, e); }
+  return v.length > 0 && v.length <= 200 ? v : null;
+}
 /** Basit multipart/form-data ayrıştırıcı: boundary ile böler; alanlar metin, dosya ikili (Buffer). */
 function parseMultipart(buf, contentType) {
-  const m = /boundary=("?)([^";]+)\1/.exec(String(contentType || '')); if (!m) return null;
-  const delim = Buffer.from(`--${m[2]}`); const fields = {}; let file = null; let pos = buf.indexOf(delim);
+  const b = boundaryOf(contentType); if (!b) return null;
+  const delim = Buffer.from(`--${b}`); const fields = {}; let file = null; let pos = buf.indexOf(delim);
   while (pos !== -1) {
     const next = buf.indexOf(delim, pos + delim.length); if (next === -1) break;
     let part = buf.subarray(pos + delim.length, next); if (part.subarray(0, 2).toString() === '\r\n') part = part.subarray(2);
