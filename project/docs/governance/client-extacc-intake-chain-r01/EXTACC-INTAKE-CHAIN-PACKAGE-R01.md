@@ -257,3 +257,12 @@ Owner'ın paylaştığı çıktılar (CLIENT bu ölçümleri kendisi yapmadı ve
 PC saatinin koşum anındaki sapması **ölçülmedi**; ~257 sn değeri koşumdan sonraki ölçümdür ve koşum zamanlarına uygulanmaz.
 §12.2'deki 00:58 / 01:02 ayrımı ve "saat farkından süre çıkarılmaz" kuralı aynen geçerlidir. Kanıt kökündeki ayrı not
 sha256 `FC87FCAD09C0E61AB2E73EA195A6099F9FD36CEDDB268943B174894DBB4EF2B2` (orijinal kanıtlar değiştirilmedi).
+
+## R27 pin notu (2026-09-29; yayından SONRA geçerli)
+
+Canlı API dist'i R27 (`E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134`, D5-SEC) olduğunda aşağıdaki owner bloklarının `ExpLiveDist`/`EXP_DIST` pini R26 `A8B17A38…53A0`'dan R27'ye güncellendi (yalnız pin satırı + yorum). Önceki kabul kanıtları ve kayıtlar DEĞİŞTİRİLMEDİ; yukarıdaki blok sha'ları tarihsel (R26 dönemi) olarak geçerlidir. Bu güncelleme R27 yayınından ÖNCE merge edilirse bloklar canlı R26 ile Preflight'ta DUR verir (beklenen, güvenli taraf). Kaynak: `client-release-r27-r01` §9.
+
+| Blok | Eski sha (R26 dönemi) | Yeni sha (R27 pinli) |
+|---|---|---|
+| `extacc-owner-live-block.ps1` | `55500625…50FD` | `AFB28E81DA88042DFB2695E848BC06EA4E5E9BDEE670929F9096E22615A676D7` |
+| `h5-owner-live-block.ps1` | `68DC7228…9C55` | `41C4DD800DF084CAB193EB6CDEB34DEB57883930518DB59ECF3AE786A5135963` |

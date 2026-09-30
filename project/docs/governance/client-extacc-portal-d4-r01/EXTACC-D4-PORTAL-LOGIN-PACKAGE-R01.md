@@ -320,3 +320,11 @@ Koşum logu UTF-16LE yazıldı ve Türkçe karakterler kodlama zincirinde bozuld
 | **D-9** erişim kapanışı | **kabul — yalnız bu portal koşumu** | makine: DB kapalı + yeni giriş ve mevcut oturum yerel/dış 401 + personel/dosya kapanışı. Belge (D-6) ve mesaj (D-7) kapanışını kapsamaz |
 | D-5 … D-7 | **değişmedi — ölçülmedi** | — |
 | D-8 | **değişmedi — kısmen kanıtlı** | EXTACC paketi §9 |
+
+## R27 pin notu (2026-09-29; yayından SONRA geçerli)
+
+Canlı API dist'i R27 (`E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134`, D5-SEC) olduğunda aşağıdaki owner bloklarının `ExpLiveDist`/`EXP_DIST` pini R26 `A8B17A38…53A0`'dan R27'ye güncellendi (yalnız pin satırı + yorum). Önceki kabul kanıtları ve kayıtlar DEĞİŞTİRİLMEDİ; yukarıdaki blok sha'ları tarihsel (R26 dönemi) olarak geçerlidir. Bu güncelleme R27 yayınından ÖNCE merge edilirse bloklar canlı R26 ile Preflight'ta DUR verir (beklenen, güvenli taraf). Kaynak: `client-release-r27-r01` §9.
+
+| Blok | Eski sha (R26 dönemi) | Yeni sha (R27 pinli) |
+|---|---|---|
+| `d4-owner-live-block.ps1` | `03EC0C00…1FFB` | `4B7CC9F60A3157FFF335333F2CB7EBCA6E52F8C369042EBEF7FD67E4438F2CB2` |
