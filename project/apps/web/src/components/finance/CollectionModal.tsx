@@ -29,6 +29,8 @@ const PREVIEW_WARNING_LABELS: Record<string, string> = {
   CLIENT_SELECTION_REQUIRED_FOR_DISTRIBUTION: "Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.",
   NO_ELIGIBLE_CASE_CLIENT_FOR_DISTRIBUTION: "Dağıtım için uygun alacaklı bulunamadı; manuel takip gerekir.",
   CURRENT_BALANCE_UNAVAILABLE: "Güncel bakiye okunamadı; önizleme yedek verilerle hesaplandı.",
+  CURRENT_BALANCE_CURRENCY_NOT_COMPUTED:
+    "Güncel bakiye bu para biriminde hesaplanamadı; başka para biriminin tutarı kullanılmadı.",
   CURRENT_BALANCE_SERVICE_UNAVAILABLE: "Bakiye servisi erişilebilir değil; önizleme yedek verilerle hesaplandı.",
   CLAIM_ITEM_READ_FALLBACK_USED: "Önizleme alacak kalemi okuma yedeğiyle hesaplandı.",
   PAYER_SCOPED_OUTSTANDING_EXCLUDES_INTEREST:
