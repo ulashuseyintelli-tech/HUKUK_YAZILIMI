@@ -37,6 +37,8 @@ const PREVIEW_WARNING_LABELS: Record<string, string> = {
     "Tahsilat kaydedilecek; bu dosyada yalnız bazı borçlulara ait kalem olduğundan hangi borçlu hesabına ödendiği belirtilmeden mahsup bekletilecek.",
   ALLOCATION_HELD_ON_BEHALF_DEBTOR_NOT_LIABLE:
     "Tahsilat kaydedilecek; seçilen borçlunun sorumlu olduğu etkin kalem olmadığından mahsup bekletilecek.",
+  DISTRIBUTION_DEFERRED_UNTIL_ALLOCATION_COMPLETED:
+    "Mahsup tamamlanmadan müvekkile dağıtım önerilmez.",
 };
 
 const PREVIEW_BLOCKING_LABELS: Record<string, string> = {
@@ -541,7 +543,12 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
 
               <div className="rounded bg-white px-2 py-1">
                 <p className="font-medium">Dağıtım önizlemesi</p>
-                {previewResult.distributionPreview.requiresClientSelection ? (
+                {previewResult.distributionPreview.status === "BLOCKED" ? (
+                  <p className="mt-1 text-amber-800" data-testid="collection-preview-distribution-blocked">
+                    Mahsup bekletileceği için dağıtım önerilmez; hesabına ödeme yapılan borçlu girilip mahsup
+                    tamamlandıktan sonra dağıtım yapılabilir.
+                  </p>
+                ) : previewResult.distributionPreview.requiresClientSelection ? (
                   <p className="mt-1 text-amber-800">Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.</p>
                 ) : previewResult.distributionPreview.status === "MANUAL_REQUIRED" ? (
                   <p className="mt-1 text-amber-800">Dağıtım için manuel takip gerekir.</p>

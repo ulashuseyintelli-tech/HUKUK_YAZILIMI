@@ -33,6 +33,9 @@ interface CaseDebtReportData {
     collectionCount: number;
     byType: Record<string, number>;
     lastCollectionDate?: string;
+    /** K3-L: mahsubu bekletilen tahsilat — totalCollected / remainingDebt içinde DEĞİL */
+    allocationHeldAmount?: number;
+    allocationHeldCount?: number;
   };
   balance: {
     remainingDebt: number;
@@ -241,6 +244,18 @@ export function CaseDebtReport() {
                   <span>Tahsilat Sayısı</span>
                   <span>{report.collectionDetails.collectionCount}</span>
                 </div>
+                {Number(report.collectionDetails.allocationHeldAmount ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm text-amber-800" data-testid="case-debt-allocation-held">
+                    <span>
+                      Mahsubu bekleyen tahsilat
+                      {report.collectionDetails.allocationHeldCount ? ` (${report.collectionDetails.allocationHeldCount})` : ""}
+                      {" — borçtan düşülmedi"}
+                    </span>
+                    <span className="font-medium">
+                      {formatCurrency(Number(report.collectionDetails.allocationHeldAmount), report.claimDetails.currency)}
+                    </span>
+                  </div>
+                )}
                 {report.collectionDetails.lastCollectionDate && (
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>Son Tahsilat</span>

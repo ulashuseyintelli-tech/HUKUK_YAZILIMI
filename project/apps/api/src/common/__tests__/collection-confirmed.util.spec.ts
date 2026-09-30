@@ -3,6 +3,7 @@ import {
   isConfirmedCollection,
   sumConfirmedCollections,
 } from "../collection-confirmed.util";
+import { isAllocationHeldCollection, sumAllocatedConfirmedCollections, sumAllocationHeldCollections } from '../collection-confirmed.util';
 
 /**
  * COLLECTION-STATUS-FILTER-HOTFIX — helper birim testleri.
@@ -70,5 +71,31 @@ describe("collection-confirmed.util", () => {
       expect(sumConfirmedCollections([])).toBe(0);
       expect(sumConfirmedCollections(null)).toBe(0);
     });
+  });
+});
+
+describe('K3-L — mahsubu bekletilen tahsilat (allocationHold HELD)', () => {
+  const rows = [
+    { amount: 100, status: 'CONFIRMED' },
+    { amount: 40, status: 'CONFIRMED', allocationHold: { status: 'HELD' } },
+    { amount: 25, status: 'CONFIRMED', allocationHold: { status: 'RELEASED' } },
+    { amount: 10, status: 'CONFIRMED', allocationHold: null },
+    { amount: 999, status: 'CANCELLED', allocationHold: { status: 'HELD' } },
+  ];
+
+  it('isAllocationHeldCollection yalnız HELD için true; ilişki yüklenmediyse false', () => {
+    expect(rows.map((r) => isAllocationHeldCollection(r))).toEqual([false, true, false, false, true]);
+    expect(isAllocationHeldCollection(null)).toBe(false);
+  });
+
+  it('mahsup edilmiş toplam bekletileni DIŞLAR; bekletilen toplam yalnız ONAYLI + HELD', () => {
+    expect(sumAllocatedConfirmedCollections(rows)).toBe(135);
+    expect(sumAllocationHeldCollections(rows)).toBe(40);
+    expect(sumAllocatedConfirmedCollections(null)).toBe(0);
+  });
+
+  it('aynı para iki toplamda birden SAYILMAZ (mahsup edilen + bekleyen = onaylı toplam)', () => {
+    const confirmedTotal = rows.filter((r) => r.status === 'CONFIRMED').reduce((s, r) => s + r.amount, 0);
+    expect(sumAllocatedConfirmedCollections(rows) + sumAllocationHeldCollections(rows)).toBe(confirmedTotal);
   });
 });

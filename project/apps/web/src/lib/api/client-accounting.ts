@@ -126,6 +126,9 @@ export interface ClientCaseBreakdownItem {
   // B — dosya geneli / paylaşılan bağlam (müvekkile atfedilmez)
   debtorCollection: string;
   pendingDistribution: string;
+  /** K3-L — mahsubu bekletilen tahsilat (dağıtıma kapalı; pendingDistribution içinde). */
+  allocationHeld?: string;
+  pendingDistributionExcludingHeld?: string;
   advanceBalance: string;
   needsReview: boolean;
 }
@@ -145,6 +148,9 @@ export interface ClientAccountingSummary {
   caseScopedContext: {
     debtorCollection: string;
     pendingDistribution: string;
+    /** K3-L — mahsubu bekletilen tahsilat (dağıtıma kapalı; pendingDistribution içinde). */
+    allocationHeld?: string;
+    pendingDistributionExcludingHeld?: string;
     advanceBalance: string;
   };
   needsReview: boolean;

@@ -209,6 +209,49 @@ describe("PR-L7b passive CaseDebtor UI safety", () => {
     expect(section).toHaveAttribute("data-create-debtor-id", "debtor-1");
   });
 
+  it("K3-L: mahsubu bekleyen tahsilat onayli toplamdan AYRI satirda gosterilir; yoksa satir cikmaz", async () => {
+    apiMock.getCaseDebtorDetail.mockResolvedValue({
+      ...baseDebtor,
+      financialSummary: {
+        totalConfirmedCollected: 500,
+        totalAllocationHeldAmount: 1500,
+        totalPendingAmount: 0,
+        totalCancelledAmount: 0,
+        totalRefundedAmount: 0,
+        collectionCount: 2,
+        lastCollectionDate: "2026-09-20T09:00:00.000Z",
+        currencyBreakdown: [
+          {
+            currency: "TRY",
+            confirmedCollected: 500,
+            allocationHeldAmount: 1500,
+            pendingAmount: 0,
+            cancelledAmount: 0,
+            refundedAmount: 0,
+            collectionCount: 2,
+            lastCollectionDate: "2026-09-20T09:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    render(
+      <DebtorDetailDrawer
+        isOpen
+        onClose={vi.fn()}
+        caseId="case-1"
+        caseDebtorId="case-debtor-1"
+      />
+    );
+
+    const section = await screen.findByLabelText("Borclu finans ozeti");
+    const held = within(section).getByTestId("debtor-financial-allocation-held");
+    expect(held.textContent).toContain("Mahsubu bekleyen (borctan dusulmedi)");
+    expect(held.textContent).toContain("1.500,00 TRY");
+    expect(within(section).getByText("500,00 TRY")).toBeInTheDocument();
+    expect(within(section).queryByText("2.000,00 TRY")).toBeNull();
+  });
+
   it("renders debtor financial summary from backend financialSummary", async () => {
     apiMock.getCaseDebtorDetail.mockResolvedValue({
       ...baseDebtor,
@@ -254,6 +297,7 @@ describe("PR-L7b passive CaseDebtor UI safety", () => {
     const section = await screen.findByLabelText("Borclu finans ozeti");
 
     expect(within(section).getByText("Tahsilat Ozeti")).toBeInTheDocument();
+    expect(within(section).queryByTestId("debtor-financial-allocation-held")).toBeNull();
     expect(within(section).getByText("5 kayit")).toBeInTheDocument();
     expect(within(section).getByText("Onayli tahsilat")).toBeInTheDocument();
     expect(within(section).getByText("125,50 TRY")).toBeInTheDocument();

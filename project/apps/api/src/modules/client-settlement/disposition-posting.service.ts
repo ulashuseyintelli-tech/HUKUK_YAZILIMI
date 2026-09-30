@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { Prisma, CollectionDispositionLineType, OfficeApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertNoActiveCollectionAllocationHold } from '../collection/collection-allocation-hold';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import {
   AccountingJournalWriterService,
@@ -757,17 +758,7 @@ export class DispositionPostingService {
    * /// </remarks>
    */
   private async assertNoActiveAllocationHold(disp: { collectionId: string }) {
-    if (!this.prisma.collectionAllocationHold?.findFirst) return;
-    const hold = await this.prisma.collectionAllocationHold.findFirst({
-      where: { collectionId: disp.collectionId, status: 'HELD' },
-      select: { id: true, holdReason: true },
-    });
-    if (hold) {
-      throw new ConflictException({
-        code: 'COLLECTION_ALLOCATION_HELD',
-        message: `Tahsilatın mahsubu bekletiliyor (${hold.holdReason}) — önce hesabına ödeme yapılan borçlu girilip mahsup tamamlanmalı`,
-      });
-    }
+    await assertNoActiveCollectionAllocationHold(this.prisma, { collectionId: disp.collectionId });
   }
 
   /** Line validasyonu + çözümleme (sum==totalAmount; pozitif; HELD yasak; caseClientId scope). */

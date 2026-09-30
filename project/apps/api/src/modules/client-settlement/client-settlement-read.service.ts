@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { readActiveAllocationHoldSummary } from '../collection/collection-allocation-hold';
 
 const ZERO = new Prisma.Decimal(0);
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
@@ -46,6 +47,10 @@ export interface ClientCaseBreakdownItem {
   // B — dosya geneli / paylaşılan bağlam (caseId scope — müvekkile atfedilmez)
   debtorCollection: string;
   pendingDistribution: string;
+  /** K3-L — mahsubu BEKLETİLEN tahsilat: dağıtıma KAPALI (pendingDistribution içinde, ayrı gösterilir). */
+  allocationHeld: string;
+  /** K3-L — pendingDistribution − allocationHeld: mahsubu tamamlanmış, dağıtım bekleyen tutar. */
+  pendingDistributionExcludingHeld: string;
   advanceBalance: string;
   /** pendingDistribution < 0 → veri tutarsızlığı (sessiz sıfırlama YOK; kontrol gerekli). */
   needsReview: boolean;
@@ -75,6 +80,8 @@ export interface ClientAccountingSummary {
   caseScopedContext: {
     debtorCollection: string; // Σ CONFIRMED Collection (distinct caseId)
     pendingDistribution: string; // Σ (CONFIRMED Collection − POSTED disposition)
+    allocationHeld: string; // Σ mahsubu BEKLETİLEN tahsilat (dağıtıma kapalı; pendingDistribution içinde)
+    pendingDistributionExcludingHeld: string; // pendingDistribution − allocationHeld
     advanceBalance: string; // Σ CaseBalance.balance
   };
   /** Herhangi bir dosyada pendingDistribution negatif → kontrol gerekli. */
@@ -407,9 +414,10 @@ export class ClientSettlementReadService {
     }
 
     // B grubu — DISTINCT caseId scope (dosya geneli; müvekkile atfedilmez)
-    const bByCase = new Map<string, { debtorCollection: Prisma.Decimal; pendingDist: Prisma.Decimal; advance: Prisma.Decimal; needsReview: boolean }>();
+    const bByCase = new Map<string, { debtorCollection: Prisma.Decimal; pendingDist: Prisma.Decimal; allocationHeld: Prisma.Decimal; advance: Prisma.Decimal; needsReview: boolean }>();
     let totalDebtorCollection = ZERO;
     let totalPendingDist = ZERO;
+    let totalAllocationHeld = ZERO;
     let totalAdvance = ZERO;
     let anyNeedsReview = false;
     for (const caseId of distinctCaseIds) {
@@ -423,14 +431,19 @@ export class ClientSettlementReadService {
         where: { tenantId, caseId, currency, status: 'POSTED' },
       });
       const postedDisp = dispAgg._sum.totalAmount ?? ZERO;
+      // pendingDistribution TANIMI DEĞİŞMEZ (gölge rapor karşılaştırması aynı formülü kullanır). K3-L: mahsubu
+      // bekletilen tahsilat dağıtıma kapalıdır → AYRI alan; "dağıtılabilir bekleyen" = pendingDist − allocationHeld.
+      const heldSummary = await readActiveAllocationHoldSummary(this.prisma, tenantId, caseId, currency);
+      const allocationHeld = new Prisma.Decimal(heldSummary.amount);
       const pendingDist = debtorCollection.minus(postedDisp);
       const needsReview = pendingDist.lt(ZERO); // negatif → tutarsızlık; sessiz sıfırlama YOK
       if (needsReview) anyNeedsReview = true;
       const bal = await this.prisma.caseBalance.findFirst({ where: { tenantId, caseId }, select: { balance: true } });
       const advance = bal?.balance ?? ZERO;
-      bByCase.set(caseId, { debtorCollection, pendingDist, advance, needsReview });
+      bByCase.set(caseId, { debtorCollection, pendingDist, allocationHeld, advance, needsReview });
       totalDebtorCollection = totalDebtorCollection.plus(debtorCollection);
       totalPendingDist = totalPendingDist.plus(pendingDist);
+      totalAllocationHeld = totalAllocationHeld.plus(allocationHeld);
       totalAdvance = totalAdvance.plus(advance);
     }
 
@@ -485,7 +498,7 @@ export class ClientSettlementReadService {
     }
     const caseBreakdown: ClientCaseBreakdownItem[] = distinctCaseIds.map((caseId) => {
       const a = aByCase.get(caseId) ?? { payableNet: ZERO, paid: ZERO };
-      const b = bByCase.get(caseId) ?? { debtorCollection: ZERO, pendingDist: ZERO, advance: ZERO, needsReview: false };
+      const b = bByCase.get(caseId) ?? { debtorCollection: ZERO, pendingDist: ZERO, allocationHeld: ZERO, advance: ZERO, needsReview: false };
       const e = expByCase.get(caseId) ?? { requested: ZERO, paid: ZERO };
       const m = caseMeta.get(caseId) ?? { caseNumber: '', executionFileNumber: null, role: '' };
       return {
@@ -501,6 +514,8 @@ export class ClientSettlementReadService {
         offsetExpenseApplied: (offExpenseByCase.get(caseId) ?? ZERO).toString(),
         debtorCollection: b.debtorCollection.toString(),
         pendingDistribution: b.pendingDist.toString(),
+        allocationHeld: b.allocationHeld.toString(),
+        pendingDistributionExcludingHeld: b.pendingDist.minus(b.allocationHeld).toString(),
         advanceBalance: b.advance.toString(),
         needsReview: b.needsReview,
       };
@@ -521,6 +536,8 @@ export class ClientSettlementReadService {
       caseScopedContext: {
         debtorCollection: totalDebtorCollection.toString(),
         pendingDistribution: totalPendingDist.toString(),
+        allocationHeld: totalAllocationHeld.toString(),
+        pendingDistributionExcludingHeld: totalPendingDist.minus(totalAllocationHeld).toString(),
         advanceBalance: totalAdvance.toString(),
       },
       needsReview: anyNeedsReview,

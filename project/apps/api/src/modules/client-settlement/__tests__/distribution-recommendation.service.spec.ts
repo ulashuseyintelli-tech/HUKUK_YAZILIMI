@@ -1,4 +1,4 @@
-import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { DistributionRecommendationService } from '../distribution-recommendation.service';
 import type { DistributionRecommendation } from '../dto/distribution-recommendation.dto';
 
@@ -13,6 +13,7 @@ function defaultDisp(extra: Record<string, unknown> = {}) {
     beneficiaryScope: 'SINGLE_CASE_CLIENT',
     caseClientId: 'cc-1',
     caseId: 'case-1',
+    collectionId: 'col-1',
     ...extra,
   };
 }
@@ -24,6 +25,8 @@ function makeService(
     caseClient?: unknown;
     /** FAZ-2: getActiveForCaseClient dönüşü. Omit -> null (mevcut davranış; agreement yok). */
     feeAgreement?: unknown;
+    /** K3-L: tahsilatın aktif (HELD) mahsup bekletmesi. Omit -> null (bekletme yok). */
+    allocationHold?: unknown;
   } = {},
 ) {
   const prisma = {
@@ -53,6 +56,9 @@ function makeService(
     },
     caseClient: {
       findFirst: jest.fn().mockResolvedValue(overrides.caseClient ?? { client: { id: 'client-1' } }),
+    },
+    collectionAllocationHold: {
+      findFirst: jest.fn().mockResolvedValue(overrides.allocationHold ?? null),
     },
   };
   const offset = {
@@ -175,7 +181,12 @@ describe('DistributionRecommendationService (S8-B FAZ-1a)', () => {
         beneficiaryScope: true,
         caseClientId: true,
         caseId: true,
+        collectionId: true,
       },
+    });
+    expect(prisma.collectionAllocationHold.findFirst).toHaveBeenCalledWith({
+      where: { collectionId: 'col-1', status: 'HELD', tenantId: 't1' },
+      select: { id: true, holdReason: true },
     });
     expect(prisma.caseClient.findFirst).toHaveBeenCalledWith({
       where: { id: 'cc-1', client: { tenantId: 't1' } },
@@ -183,6 +194,25 @@ describe('DistributionRecommendationService (S8-B FAZ-1a)', () => {
     });
     expect(offset.getEligibility).toHaveBeenCalledWith('t1', 'u-1', 'client-1', 'TRY');
     expectNoWriteDelegation(prisma);
+  });
+
+  it('K3-L: mahsubu BEKLETİLEN tahsilat için öneri ÜRETİLMEZ → 409 COLLECTION_ALLOCATION_HELD; ücret/masraf okunmaz, yazma yok', async () => {
+    const { svc, prisma, offset, feeAgreements } = makeService({
+      allocationHold: { id: 'hold-1', holdReason: 'ON_BEHALF_DEBTOR_REQUIRED' },
+    });
+    const attempt = svc.generate('t1', 'disp-1', {}, ACTOR);
+    await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+    await expect(attempt).rejects.toMatchObject({ response: { code: 'COLLECTION_ALLOCATION_HELD' } });
+    expect(feeAgreements.getActiveForCaseClient).not.toHaveBeenCalled();
+    expect(offset.getEligibility).not.toHaveBeenCalled();
+    expect(prisma.caseClient.findFirst).not.toHaveBeenCalled();
+    expectNoWriteDelegation(prisma);
+  });
+
+  it('K3-L: durum kapısı bekletme kapısından ÖNCE — HELD_PENDING_DISTRIBUTION olmayan kayıtta bekletme okunmaz', async () => {
+    const { svc, prisma } = makeService({ disp: defaultDisp({ status: 'POSTED' }) });
+    await expect(svc.generate('t1', 'disp-1', {}, ACTOR)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.collectionAllocationHold.findFirst).not.toHaveBeenCalled();
   });
 
   it('0<fee<gross -> [FEE, PAYABLE] sum==gross, faithful decimal, fee is not client-attributed', async () => {

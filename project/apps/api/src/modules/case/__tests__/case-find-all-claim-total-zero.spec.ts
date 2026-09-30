@@ -63,4 +63,33 @@ describe('CaseService.findAll ClaimItem total authority', () => {
 
     expect(result.data[0].totalClaim).toBe(1000);
   });
+
+  it('K3-L: tahsilat toplamı yalnız ONAYLI ve mahsubu bekletilmeyen tahsilattan (iptal/iade/taslak ve bekletilen hariç)', async () => {
+    const prisma: any = {
+      case: {
+        findMany: jest.fn().mockResolvedValue([caseRecord()]),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      collection: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 500 } }) },
+      expenseRequest: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: null, paidAmount: null } }),
+      },
+      claimItem: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { demandedAmount: 1000 }, _count: 1 }),
+      },
+    };
+    const service = new CaseService(prisma, stub, stub, stub, stub, stub, stub, stub, stub, stub);
+
+    const result = await service.findAll('t1');
+
+    expect(result.data[0].totalCollected).toBe(500);
+    expect(prisma.collection.aggregate).toHaveBeenCalledWith({
+      where: {
+        caseId: 'case-1',
+        status: 'CONFIRMED',
+        NOT: { allocationHold: { is: { status: 'HELD' } } },
+      },
+      _sum: { amount: true },
+    });
+  });
 });

@@ -19,7 +19,7 @@ describe('AiService — collection status filtresi', () => {
     } as any;
   }
 
-  function makeCaseData(collections: Array<{ amount: number; status: string }>) {
+  function makeCaseData(collections: Array<{ amount: number; status: string; allocationHold?: { status: string } | null }>) {
     return {
       id: 'case-1',
       fileNumber: '2026/1',
@@ -88,5 +88,62 @@ describe('AiService — collection status filtresi', () => {
     ) as string;
     expect(withConfirmed).toContain('- Tahsil Edilen: 25000 TL');
     expect(withConfirmed).toContain('- Tahsilat Oranı: 25.0%');
+  });
+
+  it('K3-L PROMPT (öneri): mahsubu BEKLETİLEN tahsilat borçtan düşülmez, ayrı satırda yazılır', () => {
+    const svc = new AiService(makePrisma(null), makeConfig());
+    const caseData = makeCaseData([
+      { amount: 25000, status: 'CONFIRMED' },
+      { amount: 15000, status: 'CONFIRMED', allocationHold: { status: 'HELD' } },
+      // tamamlanmış (RELEASED) ve iptal edilmiş (REVERSED) bekletme: tahsilat kendi durumuna göre sayılır
+      { amount: 5000, status: 'CONFIRMED', allocationHold: { status: 'RELEASED' } },
+      { amount: 7000, status: 'CANCELLED', allocationHold: { status: 'REVERSED' } },
+    ]);
+
+    const prompt = (svc as any).buildSuggestionPrompt(caseData) as string;
+
+    expect(prompt).toContain('- Tahsil Edilen: 30000 TL');
+    expect(prompt).toContain('- Mahsubu Bekleyen Tahsilat (borçtan düşülmedi): 15000 TL');
+    expect(prompt).toContain('- Kalan Borç: 70000 TL');
+  });
+
+  it('K3-L (fallback tahmin): yalnız mahsubu bekleyen tahsilat varsa "borçlu ödüyor" sinyali üretilmez', async () => {
+    const svc = new AiService(
+      makePrisma(makeCaseData([{ amount: 30000, status: 'CONFIRMED', allocationHold: { status: 'HELD' } }])),
+      makeConfig(),
+    );
+
+    const prediction = await svc.getPrediction('tenant-A', 'case-1');
+
+    expect(prediction.collectionProbability).toBe(50);
+  });
+
+  it('K3-L: tahsilatlar mahsup durumuyla birlikte okunur (allocationHold.status)', async () => {
+    const prisma = makePrisma(makeCaseData([]));
+    const svc = new AiService(prisma, makeConfig());
+
+    await svc.getPrediction('tenant-A', 'case-1');
+
+    expect(prisma.case.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          collections: { include: { allocationHold: { select: { status: true } } } },
+        }),
+      }),
+    );
+  });
+
+  it('K3-L PROMPT (tahmin): tahsilat oranı mahsubu bekletilen tahsilatı İÇERMEZ', () => {
+    const svc = new AiService(makePrisma(null), makeConfig());
+    const caseData = makeCaseData([
+      { amount: 25000, status: 'CONFIRMED' },
+      { amount: 15000, status: 'CONFIRMED', allocationHold: { status: 'HELD' } },
+    ]);
+
+    const prompt = (svc as any).buildPredictionPrompt(caseData) as string;
+
+    expect(prompt).toContain('- Tahsil Edilen: 25000 TL');
+    expect(prompt).toContain('- Tahsilat Oranı: 25.0%');
+    expect(prompt).not.toContain('40000');
   });
 });

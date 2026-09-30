@@ -208,6 +208,8 @@ src/modules/client-financial-disclosure/__tests__/client-financial-disclosure-e2
 src/modules/collection/__tests__/collection-payment-received.integration.spec.ts
 src/modules/collection/__tests__/collection-semantic-idempotency.db-gated.integration.spec.ts
 src/modules/collection/__tests__/collection-payer-liability-scope.db-gated.integration.spec.ts
+# K3-L D1/D2: bekletilen tahsilat hiçbir okuyucuda borçtan düşmez; tamamlanınca aynı para bir kez sayılır
+src/modules/collection/__tests__/collection-allocation-hold-readers.db-gated.integration.spec.ts
 #
 #   COLLECTION kalan GERCEK-DB spec'i (owner GO 2026-09-18 "OFFICE / COLLECTION CI PAKETI"):
 #     receipt-object-scope-authorization.db-gated.integration -> resolveTestDatabaseUrl + gercek

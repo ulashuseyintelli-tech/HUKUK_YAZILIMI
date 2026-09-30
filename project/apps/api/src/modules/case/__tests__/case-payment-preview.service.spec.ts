@@ -367,4 +367,70 @@ describe("CasePaymentPreviewService", () => {
     });
     expectNoFinancialMutations(prisma);
   });
+
+  it("K3-L: mahsup bekletilecekse dagitim onizlemesi URETILMEZ (BLOCKED, satir yok) ve bakiye etkisi sifir", async () => {
+    const prisma = makePrisma({
+      claimItem: {
+        ...modelWithCount(1),
+        // yalniz kesideciye bagli tazminat kalemi → hesabina odeme yapilan borclu zorunlu
+        findMany: jest.fn(async () => [
+          { amount: 10000, demandedAmount: 10000, collectedAmount: 0, isAllDebtorsLiable: true, liableDebtorIds: [] },
+          { amount: 1000, demandedAmount: 1000, collectedAmount: 0, isAllDebtorsLiable: false, liableDebtorIds: ["debtor-kesideci"] },
+        ]),
+      },
+    });
+    const service = new CasePaymentPreviewService(prisma as any, makeBalance(11000) as any);
+
+    const result = await service.preview({
+      tenantId: "tenant-1",
+      caseId: "case-1",
+      input: { amount: 1500, currency: "TRY" },
+    });
+
+    expect(result.acceptance.wouldAccept).toBe(true);
+    expect(result.acceptance.warnings).toContain("ALLOCATION_HELD_ON_BEHALF_DEBTOR_REQUIRED");
+    expect(result.acceptance.warnings).toContain("DISTRIBUTION_DEFERRED_UNTIL_ALLOCATION_COMPLETED");
+    expect(result.balanceImpact).toMatchObject({
+      appliedAmount: 0,
+      overpaymentAmount: 0,
+      currentOutstandingAmount: 11000,
+      projectedOutstandingAmount: 11000,
+    });
+    expect(result.distributionPreview).toEqual({
+      source: "SINGLE_CASE_CLIENT",
+      status: "BLOCKED",
+      totalAmount: 1500,
+      requiresClientSelection: false,
+      lines: [],
+    });
+    expectNoFinancialMutations(prisma);
+  });
+
+  it("K3-L: coklu alacaklida da bekletme varken muvekkil secimi ISTENMEZ (dagitim ertelenir)", async () => {
+    const prisma = makePrisma({
+      claimItem: {
+        ...modelWithCount(1),
+        findMany: jest.fn(async () => [
+          { amount: 1000, demandedAmount: 1000, collectedAmount: 0, isAllDebtorsLiable: false, liableDebtorIds: ["debtor-kesideci"] },
+        ]),
+      },
+      caseClient: {
+        ...modelWithCount(2),
+        findMany: jest.fn(async () => [
+          { id: "cc-1", role: "ALACAKLI", client: { displayName: "A", firstName: null, lastName: null, companyName: null } },
+          { id: "cc-2", role: "ORTAK_ALACAKLI", client: { displayName: "B", firstName: null, lastName: null, companyName: null } },
+        ]),
+      },
+    });
+    const service = new CasePaymentPreviewService(prisma as any, makeBalance(1000) as any);
+
+    const result = await service.preview({
+      tenantId: "tenant-1",
+      caseId: "case-1",
+      input: { amount: 300, currency: "TRY" },
+    });
+
+    expect(result.distributionPreview).toMatchObject({ status: "BLOCKED", requiresClientSelection: false, lines: [] });
+    expect(result.acceptance.warnings).not.toContain("CLIENT_SELECTION_REQUIRED_FOR_DISTRIBUTION");
+  });
 });

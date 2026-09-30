@@ -5251,6 +5251,8 @@ export const LegalPriorityLabels: Record<LegalPriority, string> = {
 
 export interface DebtorFinancialSummaryDTO {
   totalConfirmedCollected: number;
+  /** K3-L: onaylı ama mahsubu bekletilen tahsilat — totalConfirmedCollected içinde DEĞİL */
+  totalAllocationHeldAmount?: number;
   totalPendingAmount: number;
   totalCancelledAmount: number;
   totalRefundedAmount: number;
@@ -5259,6 +5261,7 @@ export interface DebtorFinancialSummaryDTO {
   currencyBreakdown: Array<{
     currency: string;
     confirmedCollected: number;
+    allocationHeldAmount?: number;
     pendingAmount: number;
     cancelledAmount: number;
     refundedAmount: number;

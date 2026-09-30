@@ -141,6 +141,9 @@ export interface CaseDebtReportResult {
     collectionCount: number;
     byType: Record<string, number>;
     lastCollectionDate?: string;
+    /** K3-L: mahsubu BEKLETİLEN tahsilat — borçtan düşülmedi, totalCollected / collectionCount içinde DEĞİL */
+    allocationHeldAmount: number;
+    allocationHeldCount: number;
   };
   balance: {
     remainingDebt: number;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { isAllocationHeldCollection } from "@/lib/collection-allocation-hold";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -1305,6 +1306,9 @@ export default function CaseDetailPage() {
       const sourceCollection = collectionById.get(disposition.collectionId);
       const status = String(disposition.status || "").toUpperCase();
       const hasManualReversal = Boolean(disposition.manualReversalRequiredAt);
+      // K3-L: mahsubu bekletilen tahsilatın dağıtım taslağı dağıtıma KAPALIDIR (sunucu kapısı 409 döner)
+      const allocationHeld =
+        status === "HELD_PENDING_DISTRIBUTION" && isAllocationHeldCollection(sourceCollection as any);
       let recordType = "DAGITIM_BEKLIYOR";
 
       if (status === "POSTED") {
@@ -1318,7 +1322,9 @@ export default function CaseDetailPage() {
       ));
       const statusLabel = hasManualReversal
         ? "Manuel takip gerekli"
-        : statusLabels[status] || status || "Dağıtım/mutabakat kaydı";
+        : allocationHeld
+          ? "Mahsubu bekliyor — dağıtıma kapalı"
+          : statusLabels[status] || status || "Dağıtım/mutabakat kaydı";
       const description = [
         sourceCollection?.description || "Tahsilat",
         `Durum: ${statusLabel}`,
@@ -1341,6 +1347,7 @@ export default function CaseDetailPage() {
           beneficiaryScope: disposition.beneficiaryScope || "",
           caseClientId: disposition.caseClientId ?? null,
           manualReversalRequiredAt: disposition.manualReversalRequiredAt ?? null,
+          allocationHeld,
         },
       };
     });
@@ -3030,11 +3037,15 @@ export default function CaseDetailPage() {
                           const cancelled = isCancelledCollection(col);
                           const draft = isDraftCollection(col);
                           const posted = isPostedCollection(col);
+                          // K3-L: mahsubu bekletilen tahsilat kaydedildi ama borçtan düşülmedi → "tahsil edildi" gibi gösterilmez
+                          const allocationHeld = !cancelled && isAllocationHeldCollection(col);
                           const statusLabel = cancelled
                             ? 'İptal edildi'
                             : posted
                               ? 'Dağıtım kesinleşti'
-                              : status === 'CONFIRMED'
+                              : allocationHeld
+                                ? 'Mahsubu bekliyor (borçtan düşülmedi)'
+                                : status === 'CONFIRMED'
                                 ? 'Onaylandı'
                                 : status === 'PENDING'
                                   ? 'Hazırlık'
@@ -3053,7 +3064,10 @@ export default function CaseDetailPage() {
                                 {typeLabels[col.type] || col.type}
                               </span>
                               <span className="text-[9px] text-gray-400">{colDate}</span>
-                              <span className={`text-[9px] ${cancelled ? "text-red-500" : posted ? "text-amber-600" : "text-gray-400"}`}>
+                              <span
+                                data-testid={allocationHeld ? "collection-row-allocation-held" : undefined}
+                                className={`text-[9px] ${cancelled ? "text-red-500" : posted ? "text-amber-600" : allocationHeld ? "text-amber-700 font-medium" : "text-gray-400"}`}
+                              >
                                 {statusLabel}
                               </span>
                               {cancelled && (cancelledDate || col.cancelReason) && (
@@ -3064,7 +3078,9 @@ export default function CaseDetailPage() {
                               )}
                             </div>
                             <div className="flex items-center gap-1">
-                              <span className="font-medium text-green-700 flex-shrink-0">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                              <span className={`font-medium flex-shrink-0 ${allocationHeld ? "text-amber-700" : "text-green-700"}`}>
+                                {allocationHeld ? "" : "+"}{Number(col.amount || 0).toLocaleString('tr-TR')} ₺
+                              </span>
                               {draft ? (
                                 <button
                                   type="button"
@@ -3275,6 +3291,8 @@ export default function CaseDetailPage() {
                     amount: Number(c.amount || 0),
                     date: c.date || c.createdAt,
                     description: c.description || 'Tahsilat',
+                    // K3-L: mahsubu bekletilen tahsilat toplamda AYRI gösterilir (borçtan düşülmedi)
+                    allocationHeld: isAllocationHeldCollection(c),
                   })),
                   // Masraf talepleri (expense three-view'dan)
                   ...expenseThreeViewData.map((item) => ({
