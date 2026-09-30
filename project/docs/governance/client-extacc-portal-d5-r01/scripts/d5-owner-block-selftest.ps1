@@ -10,6 +10,9 @@
 #          public portal adresi sahte .env'den bloğun GERÇEK kapı satırlarıyla çözülür (literal yok); owner adresi eşleşmezse DUR;
 #          Preflight'tan erişilebilen fonksiyon kapanışında soru/yazma komutu olmadığı AST ile ölçülür. Tüm adresler sentetik (.invalid).
 # ÇIKTI  : bu öz-testin ve test edilen blok fonksiyonlarının tüm Write-Host çıktısı yerel kullanıcı adından arındırılarak yazılır (Hide-LocalUser; M-1).
+# R04    : G-1..G-4 — blokta "hiçbir … dosya/log/kanıt … yazılmaz" türü mutlak iddia yok (yorumlar dahil); owner'a gösterilen onay metni
+#          koşucu kanıtı / canlı DB / canlı API uygulama günlüğü / sağlayıcı (ölçülmedi) ayrımını yapar; tek form gönderimi hedeftir,
+#          tekrar gönderim ek e-posta üretebilir; Run çıkış 5/6 Recover yetkisi DEĞİLDİR (Recover ayrı owner onayı, blok başlatmaz).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d5-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -440,6 +443,38 @@ try {
   $whCmd = Get-Command Write-Host
   $nameLeak = @($script:MaskNames | Where-Object { $capT -match [regex]::Escape([string]$_) })
   Check 'M-1' 'çıktı maskesi: Write-Host bu öz-testte maskeleyen fonksiyondur (blok fonksiyonlarının çıktısı dahil); sentetik kullanıcı yolu, boru hattı girdisi ve gerçek profil/geçici dizin yolu yazılırken kullanıcı adı ÇIKMAZ; metnin geri kalanı korunur; Fail istisna mesajı (karar girdisi) DEĞİŞMEZ' ($whCmd.CommandType -eq 'Function' -and $capS -notmatch 'birkullanici' -and $capS -notmatch 'bir\.kullanici2' -and $capS -match 'kanıt dizini: C:\\Users\\<kullanıcı>\\AppData\\Local\\Temp\\d5-x' -and $capP -notmatch 'birkullanici' -and $capP -match 'boru: C:\\Users\\<kullanıcı>\\x' -and $capT -match 'kanıt dizini' -and $capT -notmatch '(?i)\\Users\\(?!<kullanıcı>)' -and $nameLeak.Count -eq 0 -and $capF -like 'EXTACC-D5-DUR:*' -and $capF -match 'birkullanici') "Write-Host türü=$($whCmd.CommandType) · sentetik ad çıktıda=$($capS -match 'birkullanici') · boru ad çıktıda=$($capP -match 'birkullanici') · profil adı çıktıda=$($nameLeak.Count) · maskelenen ad sayısı=$($script:MaskNames.Count) · maskesiz \Users\ parçası=$(([regex]::Matches($capT, '(?i)\\Users\\(?!<kullanıcı>)')).Count) · satır=$(@($capT -split "`n").Count)"
+
+  # ---- R04 (2026-09-30) ONAY METNİ VE RECOVER YETKİSİ: alıcı adresinin kaldığı yerler AYRI yazılır (koşucu kanıtı · canlı DB · canlı API
+  #      uygulama günlüğü · sağlayıcı ölçülmedi); "hiçbir … dosyaya/log'a/kanıta yazılmaz" türü MUTLAK iddia yok; tek form gönderimi hedeftir,
+  #      tekrar gönderim ek e-posta üretebilir; Run çıkış 5/6 Recover yetkisi DEĞİLDİR. Ölçüm hem kaynakta (yorumlar dahil) hem owner'a
+  #      GÖSTERİLEN metinde (Write-Host yakalaması, maskeleme sonrası) yapılır. Eski blok baytlarına karşı FAIL verdiği ayrıca ölçülür.
+  $absRe = '(?i)h[iİı]çb[iİı]r[^\r\n]{0,40}(dosya|log|günlü|kanıt|rapor)[^\r\n]{0,40}(yazılmaz|yazmaz|YAZILMAZ|YAZMAZ)'
+  $absPos = @('adres yalnız DB''de durur; hiçbir kanıt/rapor/log dosyasına yazılmaz', 'Hiçbir dosyaya/kanıta yazılmaz.', 'GO ref ve token''lar hiçbir dosyaya yazılmaz', 'alıcı HİÇBİR log dosyasına YAZILMAZ')
+  $absNeg = @('alıcı/GO sorulmaz, hiçbir şey yazılmaz', 'blok ve koşucu kendi kanıt/log dosyalarına YAZMAZ')
+  $absPosMiss = @($absPos | Where-Object { $_ -notmatch $absRe }); $absNegHit = @($absNeg | Where-Object { $_ -match $absRe })
+  $srcLines = @($src0 -split "`n"); $absHits = @($srcLines | Where-Object { $_ -match $absRe })
+  Check 'G-1' 'kaynakta (yorumlar DAHİL) "hiçbir … dosya/log/günlük/kanıt/rapor … yazılmaz" türü MUTLAK iddia YOK; desen kör değil: 4 bilinen mutlak cümleyi yakalar, kapsamı adlandırılmış "blok ve koşucu … YAZMAZ" ve ilgisiz "hiçbir şey yazılmaz" cümlelerini yakalamaz' ($absHits.Count -eq 0 -and $srcLines.Count -gt 400 -and $absPosMiss.Count -eq 0 -and $absNegHit.Count -eq 0) "taranan satır=$($srcLines.Count) · mutlak iddia=$($absHits.Count)$(if ($absHits.Count) { ' [' + (($absHits | ForEach-Object { $_.Trim().Substring(0, [Math]::Min(70, $_.Trim().Length)) }) -join ' | ') + ']' }) · desen pozitif kaçırılan=$($absPosMiss.Count)/$($absPos.Count) · negatif yanlış=$($absNegHit.Count)/$($absNeg.Count)"
+  Set-Answers @('EVET'); $g2err = $null; $consentTxt = Get-HostText { try { Confirm-LiveDataProcessing } catch { $script:g2err = $_.Exception.Message } }; $g2err = $script:g2err
+  $need2 = @('Koşucu kanıtları', 'İÇERMEZ', 'Canlı DB:', 'Canlı API uygulama günlüğü', 'MASKESİZ', 'kaynaktan', 'EZİLMEZ', 'sağlayıcısının kendi kayıtları', 'ÖLÇÜLMEDİ', 'saklama süresi bilinmiyor', 'SEC-MAIL-LOG-01', 'silmez')
+  $miss2 = @($need2 | Where-Object { $consentTxt -cnotmatch [regex]::Escape($_) })
+  $old2 = @(@('içerebilir', 'maskelenmiş API günlük satırları', 'hiçbir kanıt/rapor/log') | Where-Object { $consentTxt -match [regex]::Escape($_) })
+  $g2K = $consentTxt.IndexOf('Koşucu kanıtları'); $g2D = $consentTxt.IndexOf('Canlı DB:'); $g2A = $consentTxt.IndexOf('Canlı API uygulama günlüğü'); $g2P = $consentTxt.IndexOf('sağlayıcısının kendi kayıtları')
+  Check 'G-2' 'owner''a GÖSTERİLEN canlı veri onayı metni alıcı adresinin yerlerini AYRI satırlarda yazar: koşucu kanıtları İÇERMEZ → canlı DB (sentetik hesap) → canlı API uygulama günlüğü MASKESİZ (kaynaktan doğrulandı; kapanışta EZİLMEZ; blok silmez) → sağlayıcı kayıtları ÖLÇÜLMEDİ (içerik/saklama bilinmiyor); eski "içerebilir" / "maskelenmiş API günlük satırları" / mutlak iddia YOK; EVET ile istisna yok' ($null -eq $g2err -and $miss2.Count -eq 0 -and $old2.Count -eq 0 -and $consentTxt -notmatch $absRe -and $g2K -ge 0 -and $g2K -lt $g2D -and $g2D -lt $g2A -and $g2A -lt $g2P) "eksik=$($miss2 -join ',') · eski ifade=$($old2 -join ',') · sıra koşucu@$g2K DB@$g2D API@$g2A sağlayıcı@$g2P · istisna=$g2err · satır=$(@($consentTxt -split "`n").Count)"
+  Set-Answers @('GÖNDER'); $script:g3err = $null; $sendTxt = Get-HostText { try { Confirm-SingleSend } catch { $script:g3err = $_.Exception.Message } }
+  $need3s = @('BİR KEZ', 'Hedef tek form gönderimidir', 'GARANTİ EDİLMEZ', 'tekrar gönderirseniz', 'EK bir e-posta'); $need3c = @('Hedef TEK gönderimdir', 'BİR KEZ', 'GARANTİ EDİLMEZ', 'tekrar', 'EK bir e-posta')
+  $miss3 = @(@($need3s | Where-Object { $sendTxt -cnotmatch [regex]::Escape($_) } | ForEach-Object { "gönderim:$_" }) + @($need3c | Where-Object { $consentTxt -cnotmatch [regex]::Escape($_) } | ForEach-Object { "onay:$_" }))
+  Check 'G-3' 'tek gönderim metni: hedef TEK form gönderimidir, kodla GARANTİ EDİLMEZ, formu tekrar göndermek EK e-posta üretebilir — hem canlı veri onayında hem gönderim onayında owner''a gösterilir; GÖNDER ile istisna yok' ($null -eq $script:g3err -and $miss3.Count -eq 0) "eksik=$($miss3 -join ',') · istisna=$($script:g3err)"
+  $script:goN = 60; $g4 = [ordered]@{}
+  foreach ($c in 5, 6, 0) { $g4Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe $c $true }; $g4["$c"] = [pscustomobject]@{ txt = $g4Txt; r = $script:capR } }   # $t KULLANILMAZ: PowerShell adları harf duyarsız, $T geçici dizindir
+  $need4 = @('Recover YETKİSİ DEĞİLDİR', 'Recover BAŞLATMAZ', 'kendi kapanış adımlarını koşucu İÇİNDE', 'kanıtı inceleyin', 'ÖNERİDİR', 'AYRI owner onayıyla')
+  $bad4 = @()
+  foreach ($k in '5', '6') { $x = $g4[$k]; $miss4 = @($need4 | Where-Object { $x.txt -cnotmatch [regex]::Escape($_) })
+    if (-not ($x.r.out -eq [int]$k -and $x.r.nodeCalls -eq 1 -and $x.r.last.mode -eq 'run' -and $miss4.Count -eq 0 -and $x.txt -notmatch 'KAPANIŞ DOĞRULANMADI: -Mode Recover')) { $bad4 += "çıkış ${k}: rc=$($x.r.out) node=$($x.r.nodeCalls) mod=$($x.r.last.mode) eksik=$($miss4 -join ',')" } }
+  $zeroRec = ($g4['0'].r.out -eq 0 -and $g4['0'].txt -notmatch 'Recover')
+  $runTxt = ($funcs | Where-Object { $_.Name -eq 'Invoke-RunMode' }).Extent.Text
+  $scrubLine = @($runTxt -split "`n" | Where-Object { $_ -match 'EZİLEMEDİ' })
+  $scrubOk = ($scrubLine.Count -eq 1 -and $scrubLine[0] -cmatch 'AYRI owner onayıyla' -and $scrubLine[0] -cmatch 'otomatik DEĞİL')
+  Check 'G-4' 'Recover yetkisi: Run çıkış 5/6''da owner''a gösterilen metin Run''ın kendi kapanış adımlarını (koşucu içinde) Recover''dan AYIRIR, çıkış kodunun Recover YETKİSİ olmadığını ve bloğun Recover BAŞLATMADIĞINI söyler, önce kanıt incelemesini ister, Recover''ı yalnız AYRI owner onayıyla ÖNERİR; blok tek node çağrısı yapar (mod run; recover çağrısı 0); çıkış 0''da Recover metni yok; ezme hatası satırı da AYRI owner onayı + otomatik değil der' ($bad4.Count -eq 0 -and $zeroRec -and $scrubOk) "hata=$($bad4 -join ' | ') · çıkış 0 Recover metni yok=$zeroRec · ezme satırı=$scrubOk"
 }
 catch {
   # Beklenmeyen istisna öz-testi SESSİZCE kesmez: FAIL satırı olarak kaydedilir (kalan ölçütler koşulmadı → sonuç PASS olamaz).
