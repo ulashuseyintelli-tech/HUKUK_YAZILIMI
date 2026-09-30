@@ -1,0 +1,113 @@
+// K3-L karar paketi — GEÇİCİ sayısal doğrulama (COMMIT EDİLMEZ). Gerçek motor + CaseBalanceService, sahte prisma/oran sağlayıcı.
+import { writeFileSync } from 'node:fs';
+import { CaseBalanceService } from '../modules/interest-engine/orchestration/case-balance.service';
+import { toCaseBalanceDisplay } from '../modules/interest-engine/orchestration/case-balance-display';
+import { InterestEngineService } from '../modules/interest-engine/interest-engine.service';
+import { PolicyGateV2Service } from '../modules/interest-engine/policy-gate/policy-gate-v2.service';
+import { SegmentBuilderService } from '../modules/interest-engine/segments/segment-builder.service';
+import { AllocationEngineService } from '../modules/interest-engine/allocation/allocation-engine.service';
+import { TBK100AllocatorService } from '../modules/interest-engine/allocation/tbk100-allocator.service';
+import { ClaimPriorityService } from '../modules/interest-engine/allocation/claim-priority.service';
+import { VersionPinningService } from '../modules/interest-engine/version/version-pinning.service';
+import { InterestTypeCode } from '../modules/interest-engine/types/domain.types';
+import { RateSourceType } from '../modules/interest-engine/rates/rate-entry.entity';
+
+const out = process.env.DP_MEASURE_OUT ?? '';
+
+function engine() {
+  return new InterestEngineService(
+    new PolicyGateV2Service(), new SegmentBuilderService(),
+    new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService()),
+    {} as never, { record: () => undefined, clearAll: () => undefined } as never, new VersionPinningService(), undefined,
+  );
+}
+const d = (s: string | null | undefined) => (s ? new Date(`${s}T00:00:00.000Z`) : null);
+const item = (p: Record<string, unknown>) => ({
+  itemType: 'PRINCIPAL', currency: 'TRY', status: 'ACTIVE', metadata: null, interestType: null, interestTypeCode: null,
+  interestRate: null, interestStartDate: null, interestAccrualStatus: null, interestStartDateProvenance: null, ...p,
+  demandedAmount: p.amount, interestStartDate: d(p.start as string),
+});
+const col = (id: string, amount: number, date: string) => ({ id, status: 'CONFIRMED', cancelledAt: null, amount, currency: 'TRY', date: d(date), sourceType: 'BANKA', channel: null });
+const legal = (from: string, to: string | null, rate: number, id = from) => ({
+  id: `L-${id}`, interestType: InterestTypeCode.LEGAL_3095, validFrom: from, validTo: to, annualRate: rate,
+  source: RateSourceType.TCMB, versionHash: 'h', createdAt: '2025-01-01T00:00:00Z',
+});
+
+async function run(caseRow: any, items: any[], collections: any[], rates: any[], asOf: string, overpayments: any[] = []) {
+  const prisma: any = {
+    case: { findFirst: async () => caseRow },
+    claimItem: { findMany: async () => items },
+    ledgerEntry: { findMany: async () => [] },
+    collection: { findMany: async () => collections },
+    collectionOverpayment: { findMany: async () => overpayments },
+    icrabotTimelineEntry: { findMany: async () => [] },
+  };
+  const svc = new CaseBalanceService(prisma, { getRatesForPeriod: async () => rates } as never, engine());
+  const bal = await svc.computeCaseBalance('t', 'c', asOf);
+  const disp = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance: bal, generatedAt: '2026-09-30T00:00:00.000Z' });
+  const r = bal.currencyResults[0]?.result ?? null;
+  return {
+    status: disp.status, fatal: bal.diagnostics.fatal.map((f) => f.code), skipped: bal.currencyResults.map((c) => c.skippedReason ?? null),
+    totalDue: r?.totalDue ?? null, totalInterest: r?.totalInterest ?? null,
+    finalStates: (r?.finalDebtStates ?? []).map((s: any) => ({ id: s.claimId, principal: s.principal, accruedInterest: s.accruedInterest })),
+    perBucketInterest: (r?.segments ?? []).reduce((acc: any, s: any) => { acc[s.claimBucketId] = Math.round(((acc[s.claimBucketId] ?? 0) + s.interestAmount) * 100) / 100; return acc; }, {}),
+    policyWarnings: (r?.policyWarnings ?? []).map((w: any) => w.code ?? w),
+    allocations: (r?.allocations ?? []).map((a: any) => ({ p: a.paymentId, to: a.claimBucketId, a: (a.allocations ?? []).map((x: any) => `${x.category ?? x.type}:${x.amountAllocated}`) })),
+    unsimulated: bal.unsimulatedPrincipals ?? null,
+    totals: disp.totals, costs: disp.costs, ancillaries: disp.ancillaries,
+  };
+}
+
+const NOCASE = { interestType: null, interestStartDate: null, caseDate: null };
+const sabit = (id: string, amount: number, start: string, rate = 36.5, extra: Record<string, unknown> = {}) =>
+  item({ id, amount, start, interestType: 'SABIT', interestRate: rate, interestAccrualStatus: 'ACCRUES', ...extra });
+
+(out ? it : it.skip)('karar paketi senaryoları', async () => {
+  const res: Record<string, unknown> = {};
+  // K-1 karma: A faizli + B faiz ayarı yok (UNKNOWN)
+  res['K1_current'] = await run(NOCASE, [sabit('A', 10000, '2026-01-01'), item({ id: 'B', amount: 5000, interestAccrualStatus: 'UNKNOWN' })], [], [], '2026-09-30');
+  res['K1_alt_Aonly'] = await run(NOCASE, [sabit('A', 10000, '2026-01-01')], [], [], '2026-09-30');
+  // K-2 faizsiz anapara + ödeme 6.000 (03-01)
+  res['K2_current'] = await run(NOCASE, [sabit('A', 10000, '2026-01-01'), item({ id: 'N', amount: 5000, interestAccrualStatus: 'NO_INTEREST' })], [col('p1', 6000, '2026-03-01')], [], '2026-09-30');
+  res['K2_alt_Afirst'] = await run(NOCASE, [sabit('A', 10000, '2026-01-01')], [col('p1', 6000, '2026-03-01')], [], '2026-09-30'); // + N 5.000 dokunulmadan
+  res['K2_alt_Nfirst'] = await run(NOCASE, [sabit('A', 10000, '2026-01-01')], [col('p1', 1000, '2026-03-01')], [], '2026-09-30'); // 590 faiz + N 5.000 + A 410
+  // K-4 hesap tarihinden sonraki ödeme
+  res['K4_current'] = await run(NOCASE, [sabit('A', 1000, '2026-01-01')], [col('p1', 100, '2026-05-01')], [], '2026-04-11');
+  res['K4_alt_filtered'] = await run(NOCASE, [sabit('A', 1000, '2026-01-01')], [], [], '2026-04-11');
+  // K-6 UNKNOWN kalem, dosya düzeyi SABIT
+  res['K6_current'] = await run({ interestType: 'SABIT', interestStartDate: null, caseDate: d('2026-01-15') },
+    [item({ id: 'P1', amount: 10000, start: '2026-01-01', interestRate: 36.5, interestAccrualStatus: 'UNKNOWN' })], [col('p1', 1000, '2026-02-10')], [], '2026-03-31');
+  // K-7 talep edilmiş INTEREST kalemi
+  res['K7a_current'] = await run({ ...NOCASE, caseDate: d('2026-01-20') },
+    [sabit('P', 10000, '2025-12-01'), item({ id: 'I', itemType: 'INTEREST', amount: 500 })], [col('p1', 1000, '2026-03-01')], [], '2026-03-31');
+  res['K7b_current'] = await run({ ...NOCASE, caseDate: d('2026-01-20') },
+    [sabit('P', 10000, null as unknown as string, 36.5, { interestStartDateProvenance: 'ENFORCEMENT_PROCEEDING_DATE' }), item({ id: 'I', itemType: 'INTEREST', amount: 500 })],
+    [col('p1', 1000, '2026-03-01')], [], '2026-03-31');
+  // K-8 anapara sırası
+  res['K8_current'] = await run({ ...NOCASE, caseDate: d('2026-03-15') },
+    [sabit('A', 10000, '2026-01-01', 36.5, { sortOrder: 1 }), sabit('B', 10000, '2026-03-01', 73, { sortOrder: 0 })], [col('p1', 15000, '2026-04-01')], [], '2026-04-30');
+  // K-9 oran boşluğu (SENTETİK oranlar)
+  const gapRates = [legal('2026-01-01', '2026-01-31', 0.365, 'r1'), legal('2026-03-01', null, 0.73, 'r2')];
+  res['K9_G1'] = await run(NOCASE, [item({ id: 'A', amount: 1000, start: '2026-01-01', interestType: 'YASAL', interestAccrualStatus: 'ACCRUES' })], [], gapRates, '2026-04-01');
+  res['K9_G2'] = await run(NOCASE, [item({ id: 'A', amount: 1000, start: '2026-02-10', interestType: 'YASAL', interestAccrualStatus: 'ACCRUES' })], [], gapRates, '2026-04-01');
+  res['K9_G3_norates'] = await run(NOCASE, [item({ id: 'A', amount: 1000, start: '2026-01-01', interestType: 'YASAL', interestAccrualStatus: 'ACCRUES' })], [], [], '2026-04-01');
+  // K-9b sabit oranlı kalemin sentetik oranı değişken oranlı kalemi etkiliyor mu
+  const legal73 = [legal('2025-12-01', null, 0.73, 'l73')];
+  res['K9b_mixed'] = await run(NOCASE, [
+    item({ id: 'A', amount: 1000, start: '2026-01-01', interestType: 'YASAL', interestAccrualStatus: 'ACCRUES' }),
+    sabit('B', 1000, '2026-02-01'),
+  ], [], legal73, '2026-04-01');
+  res['K9b_Aonly'] = await run(NOCASE, [item({ id: 'A', amount: 1000, start: '2026-01-01', interestType: 'YASAL', interestAccrualStatus: 'ACCRUES' })], [], legal73, '2026-04-01');
+  // K-3a masraf + çek tazminatı + ödeme 1.200 (01-31)
+  res['K3a_current'] = await run(NOCASE, [
+    sabit('P1', 10000, '2026-01-01'),
+    item({ id: 'E1', itemType: 'EXPENSE', amount: 500, interestAccrualStatus: 'NO_INTEREST' }),
+    item({ id: 'CP1', itemType: 'CHECK_PENALTY', amount: 1000, interestAccrualStatus: 'NO_INTEREST' }),
+  ], [col('p1', 1200, '2026-01-31')], [], '2026-03-02');
+  // K-5a kısmi fazla ödeme: 1.000 anapara, 1.200 tahsilat (01-01), kalıcı HELD 200
+  res['K5a_current'] = await run(NOCASE, [sabit('P1', 1000, '2026-01-01')], [col('c1', 1200, '2026-01-01')], [], '2026-01-31', [
+    { id: 'op1', collectionId: 'c1', sourceLedgerEntryId: null, amount: 200, remainingAmount: 200, currency: 'TRY', status: 'HELD' },
+  ]);
+  writeFileSync(out, JSON.stringify(res, null, 1), 'utf8');
+  expect(Object.keys(res).length).toBeGreaterThan(0);
+});
