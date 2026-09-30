@@ -1735,7 +1735,9 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
 
           {/* Varsayılan Yetkiler */}
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="font-semibold text-blue-800 mb-2">🔐 Varsayılan Yetkiler (Yeni dosyalara otomatik uygulanır)</p>
+            <p className="font-semibold text-blue-800 mb-1">🔐 Varsayılan Yetkiler</p>
+            {/* K3-A: yalnız yönetimin (ADMIN/Ortak) avukat kartında KAYDETTİĞİ değer dosya açılışında anlık kopya olarak uygulanır */}
+            <p data-testid="default-permissions-rule" className="text-xs text-blue-700 mb-2">Yeni açılan dosyalara, yönetimin (ADMIN kullanıcı veya Ortak avukat) bu avukat kartında kaydettiği değerler o anki hâliyle kopyalanır; sonraki değişiklik açılmış dosyaları değiştirmez. Yeni avukat oluştururken önceden doldurulan değerler uygulanmaz.</p>
             <div className="grid grid-cols-4 gap-2">
               <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
                 <input type="checkbox" checked={form.defaultPermissions.canEditCase} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canEditCase: e.target.checked}})} />

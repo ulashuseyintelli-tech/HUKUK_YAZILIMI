@@ -81,6 +81,7 @@ import {
   shouldEnableGuardedPrimaryDisplayPilot,
 } from "@/lib/guarded-primary-display";
 import { getInterestReadDisplayLabel } from "@/lib/interest-type-resolver";
+import { caseLawyerPermissionsForDisplay } from "@/lib/case-lawyer-permissions";
 
 // ============================================
 // TİPLER
@@ -269,6 +270,8 @@ interface SelectedLawyer {
     canEditParties?: boolean;
     receivesNotifications?: boolean;
   };
+  /** false: dosyada hiç yetki tanımlı değil — sunucu tüm dosya işlemlerini yetkisiz sayar */
+  permissionsDefined?: boolean;
 }
 
 // ============================================
@@ -1879,51 +1882,12 @@ export default function CaseDetailPage() {
 
   // Avukat satırına tıklama
   const handleLawyerClick = (le: NonNullable<CaseDetail['lawyers']>[0]) => {
-    // Öncelik sırası: 1) casePermissions (dosyaya özel), 2) lawyer.defaultPermissions (büro ayarları), 3) varsayılan true
-    const storedCasePermissions = le.casePermissions || le.permissions;
-    const lawyerDefaultPermissions = le.lawyer.defaultPermissions;
-    const hasCasePermissions = storedCasePermissions && Object.keys(storedCasePermissions).length > 0;
-    const hasLawyerDefaults = lawyerDefaultPermissions && Object.keys(lawyerDefaultPermissions).length > 0;
-    
-    // Yetkileri belirle
-    let permissions: typeof lawyerPermissions;
-    if (hasCasePermissions) {
-      // Dosyaya özel yetkiler var
-      permissions = {
-        canEditCase: storedCasePermissions?.canEditCase || false,
-        canGenerateDocs: storedCasePermissions?.canGenerateDocs || false,
-        canSyncUYAP: storedCasePermissions?.canSyncUYAP || false,
-        canViewFinance: storedCasePermissions?.canViewFinance || false,
-        canEditFinance: storedCasePermissions?.canEditFinance || false,
-        canChangeStatus: storedCasePermissions?.canChangeStatus || false,
-        canEditParties: storedCasePermissions?.canEditParties || false,
-        receivesNotifications: le.receiveNotifications ?? (le.permissions as any)?.receivesNotifications ?? true,
-      };
-    } else if (hasLawyerDefaults) {
-      // Büro ayarlarındaki varsayılan yetkiler
-      permissions = {
-        canEditCase: lawyerDefaultPermissions?.canEditCase ?? true,
-        canGenerateDocs: lawyerDefaultPermissions?.canGenerateDocs ?? true,
-        canSyncUYAP: lawyerDefaultPermissions?.canSyncUYAP ?? true,
-        canViewFinance: lawyerDefaultPermissions?.canViewFinance ?? true,
-        canEditFinance: lawyerDefaultPermissions?.canEditFinance ?? true,
-        canChangeStatus: lawyerDefaultPermissions?.canChangeStatus ?? true,
-        canEditParties: lawyerDefaultPermissions?.canEditParties ?? true,
-        receivesNotifications: le.receiveNotifications ?? true,
-      };
-    } else {
-      // Hiçbir yetki tanımlı değil - varsayılan olarak tümü açık
-      permissions = {
-        canEditCase: true,
-        canGenerateDocs: true,
-        canSyncUYAP: true,
-        canViewFinance: true,
-        canEditFinance: true,
-        canChangeStatus: true,
-        canEditParties: true,
-        receivesNotifications: true,
-      };
-    }
+    // Sunucu kararıyla AYNI: yalnız dosyadaki casePermissions; anahtar true değilse izin yok. Büro varsayılanı / "tümü
+    // açık" DÜŞÜŞÜ YOK (önceden bu gösterim kaydedilince sessizce tüm yetkileri veriyordu). Bkz. lib/case-lawyer-permissions.
+    const { permissions, defined: permissionsDefined } = caseLawyerPermissionsForDisplay(
+      le.casePermissions || le.permissions,
+      le.receiveNotifications ?? (le.permissions as any)?.receivesNotifications,
+    );
     
     // role alanını oku (API'den role olarak geliyor)
     const caseRole = le.role || le.caseRole || 'ASSIGNED';
@@ -1944,6 +1908,7 @@ export default function CaseDetailPage() {
       caseRole: caseRole,
       lawyerRank: le.lawyer.lawyerRank,
       permissions: permissions,
+      permissionsDefined,
     });
     setLawyerPermissions(permissions);
     setLawyerProfile({
@@ -3565,6 +3530,12 @@ export default function CaseDetailPage() {
                 {/* Yetkiler */}
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-2">Yetkiler</label>
+                  {selectedLawyer.permissionsDefined === false && (
+                    <p data-testid="case-lawyer-permissions-undefined" className="mb-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+                      Bu dosyada yetki tanımlı değil: sunucu bu avukatın dosya işlemlerini (mali düzenleme dahil) yetkisiz sayar.
+                      Yetkileri ofis yönetimi verir.
+                    </p>
+                  )}
                   <div className="space-y-2 bg-gray-50 rounded-lg p-3">
                     {[
                       { key: 'canEditCase', label: 'Dosyayı düzenleme', icon: Edit },

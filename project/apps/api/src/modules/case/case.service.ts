@@ -83,6 +83,11 @@ import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
 import { ClaimItemWriterRouterService } from "../claim-item/claim-item-writer-router.service";
 import { ClaimItemSourceIntegrityException } from "../claim-item/claim-item-source-integrity.guard";
+import {
+  CASE_OPEN_LAWYER_PERMISSIONS_AUDIT_ACTION,
+  MANAGEMENT_DEFAULT_PERMISSIONS_AUDIT_ACTION,
+  decideCaseOpenDefaultPermissions,
+} from "./case-lawyer-default-permissions";
 
 // ASSIGN-4b sorumlu-avukat invariant'ının SAF karar fonksiyonları
 // (pickResponsibleFallbackIndex / resolveResponsiblePromotion / planResponsible)
@@ -1101,6 +1106,97 @@ export class CaseService {
     if (results.some(r => r === false)) {
       throw new BadRequestException('Geçersiz lookup ID: Belirtilen değer bu büroya ait değil');
     }
+  }
+
+  /**
+   * K3-A — istemcinin POST /cases gövdesinde verdiği MEVCUT avukat id'lerinin bu büroya ait olduğunu doğrular (tx öncesi,
+   * salt okuma). Başka büroya ait ya da var olmayan id → 400; hiçbir satır yazılmaz. Aktiflik burada REDDEDİLMEZ (mevcut
+   * davranış); pasif avukata varsayılan yetki uygulanmaz (applyManagementDefaultPermissionsInTx).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (tx öncesi)
+   */
+  private async assertExistingLawyersInTenant(
+    tenantId: string,
+    lawyers: CreateCaseDto['lawyers'],
+  ): Promise<void> {
+    const ids = [...new Set((lawyers ?? []).map((l) => l.id).filter((id): id is string => !!id))];
+    if (ids.length === 0) return;
+    const found = await this.prisma.lawyer.findMany({ where: { id: { in: ids }, tenantId }, select: { id: true } });
+    if (found.length !== ids.length) {
+      throw new BadRequestException({
+        code: 'CASE_LAWYER_NOT_IN_TENANT',
+        message: 'Geçersiz avukat: Belirtilen avukat bu büroya ait değil; takip oluşturulmadı.',
+      });
+    }
+  }
+
+  /**
+   * K3-A (owner GO 2026-09-30, seçenek A) — dosya açılışındaki avukat atamalarına, ofis yönetimince AÇIKÇA belirlenmiş
+   * `Lawyer.defaultPermissions`'ın ANLIK kopyası (CaseLawyer.casePermissions, permissionSource=DEFAULT) yazılır.
+   * Dayanak kuralı ve kopya kuralları: `case-lawyer-default-permissions.ts`. Sonraki varsayılan değişikliği bu dosyayı
+   * DEĞİŞTİRMEZ; dosya bazlı değiştirme/geri alma mevcut K2 kapısıyla (PATCH /cases/:id/lawyers/:caseLawyerId) sürer.
+   * Tüm kararlar (uygulanan izinler, dayanak denetim kaydı, uygulanmama nedeni) aynı tx'te TEK denetim kaydına yazılır.
+   * Kesin tazminat / onay ÜRETMEZ; mali işlem kapıları (ClaimItem yazma kapısı, K3 ikinci avukat onayı) değişmez.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (tx içinde, avukat atamalarından sonra)
+   */
+  private async applyManagementDefaultPermissionsInTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    assignments: { caseLawyerId: string; lawyerId: string }[],
+    userId: string,
+  ): Promise<void> {
+    if (assignments.length === 0) return;
+    const lawyerIds = [...new Set(assignments.map((a) => a.lawyerId))];
+    const lawyers = await tx.lawyer.findMany({
+      where: { id: { in: lawyerIds }, tenantId },
+      select: { id: true, isActive: true, defaultPermissions: true },
+    });
+    const lawyerById = new Map(lawyers.map((l) => [l.id, l]));
+    const basisRows = await tx.auditLog.findMany({
+      where: {
+        tenantId,
+        action: MANAGEMENT_DEFAULT_PERMISSIONS_AUDIT_ACTION,
+        entityType: 'LAWYER',
+        entityId: { in: lawyerIds },
+        metadata: { path: ['changedFields'], array_contains: ['defaultPermissions'] },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, entityId: true },
+    });
+    const basisByLawyer = new Map<string, string>();
+    for (const row of basisRows) {
+      if (row.entityId && !basisByLawyer.has(row.entityId)) basisByLawyer.set(row.entityId, row.id);
+    }
+
+    const decisions = [];
+    for (const assignment of assignments) {
+      const decision = decideCaseOpenDefaultPermissions({
+        lawyer: lawyerById.get(assignment.lawyerId) ?? null,
+        managementBasisAuditLogId: basisByLawyer.get(assignment.lawyerId) ?? null,
+      });
+      if (decision.outcome === 'APPLIED') {
+        await tx.caseLawyer.update({
+          where: { id: assignment.caseLawyerId },
+          data: { casePermissions: decision.permissions, permissionSource: 'DEFAULT' },
+        });
+      }
+      decisions.push({ caseLawyerId: assignment.caseLawyerId, lawyerId: assignment.lawyerId, ...decision });
+    }
+
+    await this.auditService.logInTransaction(tx, {
+      tenantId,
+      action: CASE_OPEN_LAWYER_PERMISSIONS_AUDIT_ACTION,
+      entityType: 'CASE',
+      entityId: caseId,
+      userId,
+      actorType: 'USER',
+      metadata: { assignments: decisions },
+      description: `Dosya açılışında ${decisions.filter((d) => d.outcome === 'APPLIED').length}/${decisions.length} avukat atamasına yönetimce belirlenmiş varsayılan yetki uygulandı`,
+    });
   }
 
   /**
@@ -2165,6 +2261,10 @@ export class CaseService {
         courtId: dto.courtId,
         executionOfficeId: dto.executionOfficeId,
       });
+      // K3-A: istemcinin verdiği MEVCUT avukat id'leri bu büroya ait mi? Döngü avukat satırını tenant filtresiz okuyordu
+      // → başka büronun avukatı dosyaya atanabiliyordu (ÖNCEDEN VAR). tx ÖNCESİ: reddedilen istekte hiçbir yazma olmaz.
+      // Satır içi yeni avukatlar (id YOK) tx içinde tenant-kapsamlı LawyerService ile çözülür → burada atlanır.
+      await this.assertExistingLawyersInTenant(tenantId, dto.lawyers);
 
       // DAR ATOMİKLİK (owner GO 2026-09-12): satır içi taraf yazmaları ARTIK dosya transaction'ının
       // İÇİNDE. Commit-sonrası "best-effort" işler (görev senkronizasyonu) transaction'a TAŞINMAZ;
@@ -2309,6 +2409,8 @@ export class CaseService {
         // 4. Avukatları - mevcut veya yeni
         // B5/D: oluşturulan CaseLawyer'ları izle (post-loop "≥1 sorumlu" invariant'ı için).
         const createdCaseLawyers: { id: string; lawyerRank: string | null; isResponsible: boolean }[] = [];
+        // K3-A: açılışta oluşan her avukat ataması (varsayılan yetki anlık kopyası için)
+        const openingLawyerAssignments: { caseLawyerId: string; lawyerId: string }[] = [];
         if (dto.lawyers && dto.lawyers.length > 0) {
           for (const lawyerDto of dto.lawyers) {
             let lawyerId: string;
@@ -2363,6 +2465,7 @@ export class CaseService {
               },
             });
             createdCaseLawyers.push({ id: createdLawyer.id, lawyerRank, isResponsible: caseRole === 'RESPONSIBLE' });
+            openingLawyerAssignments.push({ caseLawyerId: createdLawyer.id, lawyerId });
           }
         }
 
@@ -2514,7 +2617,12 @@ export class CaseService {
             },
           });
           createdCaseLawyers.push({ id: createdIntern.id, lawyerRank: lawyer.lawyerRank, isResponsible: false });
+          openingLawyerAssignments.push({ caseLawyerId: createdIntern.id, lawyerId: lawyer.id });
         }
+
+        // K3-A (owner GO 2026-09-30): yönetimce açıkça belirlenmiş varsayılan yetkilerin ANLIK kopyası + denetim
+        // (aynı tx; denetim yazılamazsa dosya da oluşmaz). Kesin tazminat/onay DEĞİL — yalnız dosya yetkisi.
+        await this.applyManagementDefaultPermissionsInTx(tx, tenantId, newCase.id, openingLawyerAssignments, userId);
 
         // B5/D + ASSIGN-4b: "TAM OLARAK 1 sorumlu avukat" invariant'ı. Loop artık HİÇBİR satırı
         // isResponsible=true yazmaz (index-safety) → bu noktada DB'de sorumlu sayısı 0; niyet

@@ -295,3 +295,7 @@ src/modules/case/__tests__/case-create-instrument-admission.spec.ts
 #   id'leri batchUpdate ile AYNI tenant kuraliyla (validateLookupIds) tx ONCESI dogrulanir; gecersizde transaction hic
 #   baslamaz; alanlar ISTEGE BAGLI (verilmezse sorgu/yazma yok; turetme yok). Guncel main servis koduyla 9 testin 6'si DUSER.
 src/modules/case/__tests__/case-create-classification.spec.ts
+
+# K3 karari A: acilista yonetim varsayilan yetkisinin anlik kopyasi — saf karar (bilinen boolean anahtarlar, acik false
+#   korunur, gecerli anahtar yoksa yetki yok, yonetim denetim dayanagi yoksa uygulanmaz, pasif / buro disi avukat).
+src/modules/case/__tests__/case-lawyer-default-permissions.spec.ts
