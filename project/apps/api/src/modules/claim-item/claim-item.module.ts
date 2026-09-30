@@ -24,6 +24,7 @@ import {
     { provide: CEK_AUTO_GENERATE_FORMATION_OPTIONS, useFactory: () => cekAutoGenerateFormationOptionsFromEnv() },
     CekAutoGenerateFormationService,
   ],
-  exports: [ClaimItemService, ClaimItemWriteGateService, ClaimItemWriterRouterService],
+  // K3-L Faz 2b: CaseService dosya açılışında (commit sonrası) çek tazminatı K3 talebini bu servisle açar
+  exports: [ClaimItemService, ClaimItemWriteGateService, ClaimItemWriterRouterService, CekAutoGenerateFormationService],
 })
 export class ClaimItemModule {}

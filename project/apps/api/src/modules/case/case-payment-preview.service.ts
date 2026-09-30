@@ -262,7 +262,7 @@ export class CasePaymentPreviewService {
     if (this.caseBalanceService) {
       try {
         const balance = await this.caseBalanceService.computeCaseBalance(tenantId, caseId, asOfDate);
-        const fromBalance = this.extractOutstandingFromBalance(balance, currency);
+        const fromBalance = this.extractOutstandingFromBalance(balance, currency, warnings);
         if (fromBalance !== null) return fromBalance;
         warnings.push("CURRENT_BALANCE_UNAVAILABLE");
       } catch {
@@ -276,13 +276,23 @@ export class CasePaymentPreviewService {
     return this.readClaimItemOutstandingFallback(tenantId, caseId, currency);
   }
 
-  private extractOutstandingFromBalance(balance: unknown, currency: string): Prisma.Decimal | null {
+  private extractOutstandingFromBalance(
+    balance: unknown,
+    currency: string,
+    warnings: string[],
+  ): Prisma.Decimal | null {
     const currencyResults = (balance as { currencyResults?: CurrencyResultLike[] })?.currencyResults;
     if (!Array.isArray(currencyResults)) return null;
 
+    // K3-L D2-P0: yalnız önizlenen para biriminin kanonik sonucu kullanılır. Bu para biriminde sonuç yoksa başka para
+    // biriminin borcu bu para biriminin borcu SAYILMAZ (önceden ilk sonuçlu para birimine düşülüyordu); aynı para
+    // birimindeki kalem okuma yedeğine geçilir ve bu açıkça uyarılır.
     const exact = currencyResults.find((row) => row.currency === currency && row.result);
-    const candidate = exact || currencyResults.find((row) => row.result);
-    const totalDue = candidate?.result?.totalDue;
+    if (!exact) {
+      if (currencyResults.some((row) => row.result)) warnings.push("CURRENT_BALANCE_CURRENCY_NOT_COMPUTED");
+      return null;
+    }
+    const totalDue = exact.result?.totalDue;
     if (totalDue === undefined || totalDue === null) return null;
 
     try {

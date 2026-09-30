@@ -253,6 +253,10 @@ src/modules/case/__tests__/case-create-due-interest-fields.spec.ts
 src/modules/case/__tests__/case-create-guard.spec.ts
 src/modules/case/__tests__/case-create-initial-owner-audit.spec.ts
 src/modules/case/__tests__/case-create-instruments.spec.ts
+# K3-L Faz 2b (owner GO 2026-09-29 §4): dosya açılışında açık seçimle çek tazminatı K3 talebi (commit sonrası),
+# lehine aval tutarlılığı, çek kaydına karşılıksız bilgisi; sunucu hesaplı TASLAK önizleme (saf fonksiyon).
+src/modules/case/__tests__/case-create-check-penalty-formation.spec.ts
+src/modules/claim-item/__tests__/cek-formation-preview.spec.ts
 src/modules/case/__tests__/case-create-path-audit-userid.spec.ts
 src/modules/case/__tests__/case-create-responsible-person.spec.ts
 src/modules/case/__tests__/case-create-sorumlu-personel.spec.ts

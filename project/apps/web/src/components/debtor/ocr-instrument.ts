@@ -148,6 +148,9 @@ export interface CaseInstrumentPayload {
   // SINIR: PAYEE node YOK · sıra YOK (A1-d HOLD) · aval YOK · backend aday-only (CaseDebtor YARATMAZ).
   endorsementNames?: string[];
   source?: "OCR" | "MANUAL"; // PR-2b-2: provenance (backend CaseInstrumentInputDto.source aynası; yok=OCR)
+  // K3-L Faz 2b: çekin karşılıksız çıktığı bilgisi (yalnız CEK; tarihsiz işaret gönderilmez)
+  isBounced?: boolean;
+  bounceDate?: string;
 }
 
 // ── BUG-X: Çek tip-farkındalı tarih modeli (saf helper'lar) ──
@@ -277,6 +280,8 @@ export function claimDraftItemToManualInstrumentPayload(raw: any): CaseInstrumen
       bankName,
       branchName,
       source: "MANUAL",
+      // K3-L Faz 2b: karşılıksız işareti yalnız tarihiyle birlikte gönderilir
+      ...(cek.karsiliksiz === true && cek.karsiliksizTarihi ? { isBounced: true, bounceDate: cek.karsiliksizTarihi } : {}),
     };
     return isManualPayloadComplete(payload) ? payload : null;
   }

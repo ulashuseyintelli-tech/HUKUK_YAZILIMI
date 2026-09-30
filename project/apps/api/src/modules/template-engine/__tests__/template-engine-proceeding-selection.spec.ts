@@ -533,4 +533,73 @@ describe('üretim kaydı ve istemci önizlemesi', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect((spy.mock.calls[0] as any[])[0]).not.toHaveProperty('isDraft');
   });
+
+  describe('K3-L Faz 2b — taslak belgede SUNUCU hesaplı çek tazminatı', () => {
+    const clientBase = {
+      fileNumber: '2026/1', filingDate: '2026-01-01', executionOffice: { name: 'Ankara', city: 'Ankara' },
+      creditors: [{ type: 'INDIVIDUAL', name: 'Alacaklı', address: 'Adres' }], lawyers: [{ name: 'Av. Deniz Yılmaz' }],
+      debtors: [{ type: 'INDIVIDUAL', name: 'Borçlu', address: 'A' }],
+      claimItems: [
+        { type: 'PRINCIPAL', description: 'Çek bedeli', amount: 10000.1, currency: 'TRY' },
+        // istemcinin kendi hesabı (kör %10) — KULLANILMAZ
+        { type: 'COMPENSATION', description: '', amount: 9999, currency: 'TRY' },
+      ],
+      totals: { principal: 1, interest: 0, fees: 1, total: 2, currency: 'TRY' },
+      interestInfo: { type: 'YASAL', description: '', variableRate: true }, caseType: 'KAMBIYO', subCategory: 'CEK', executionPath: 'HACIZ',
+    };
+    const previewInput = {
+      instruments: [{ amount: 10000.1, currency: 'TRY', isBounced: true, bounceDate: '2026-09-01' }],
+      debtors: [{ tempId: 'd-kesideci', role: 'KESIDECI' }, { tempId: 'd-ciranta', role: 'CIRANTA' }],
+    };
+
+    it('tutar sunucuda hesaplanır: satır TASLAK etiketli, toplam sunucu tutarını içerir; istemci satırı kullanılmaz', async () => {
+      const { service } = buildService();
+      const spy = jest.spyOn(service as any, 'generateTakipTalebiWordFormatted').mockResolvedValue(Buffer.from('docx'));
+      await service.generateTakipTalebiWord({ ...clientBase, cekFormationPreview: previewInput } as unknown as TemplateData);
+      const data = (spy.mock.calls[0] as any[])[0];
+      expect(data.claimItems).toEqual([
+        expect.objectContaining({ type: 'PRINCIPAL', amount: 10000.1 }),
+        { type: 'CHECK_PENALTY', description: 'Çek Tazminatı (TASLAK — onay bekliyor)', amount: 1000.01, currency: 'TRY' },
+      ]);
+      expect(data.totals).toEqual({ principal: 10000.1, interest: 0, fees: 1000.01, total: 11000.11, currency: 'TRY' });
+      expect(data.draftExcludedItems).toEqual([expect.objectContaining({ type: 'COMPENSATION', amount: 9999 })]);
+      expect(data.draftComputedItems).toEqual([
+        { type: 'CHECK_PENALTY', amount: 1000.01, currency: 'TRY', source: 'SERVER_PREVIEW', previewHash: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      ]);
+      expect(data.draftPenaltyNotice).toContain('sunucu hesabıyla TASLAK');
+      expect(data.isDraft).toBe(true);
+      // önizleme girdisi belge verisine taşınmaz
+      expect(data).not.toHaveProperty('cekFormationPreview');
+    });
+
+    it('girdi eksikse (karşılıksız işareti yok) tutar ÜRETİLMEZ — kör %10 yok; sebep taslak notunda', async () => {
+      const { service } = buildService();
+      const spy = jest.spyOn(service as any, 'generateTakipTalebiPdfFormatted').mockResolvedValue(Buffer.from('pdf'));
+      await service.generateTakipTalebiPdf({
+        ...clientBase,
+        cekFormationPreview: { ...previewInput, instruments: [{ amount: 10000.1, currency: 'TRY' }] },
+      } as unknown as TemplateData);
+      const data = (spy.mock.calls[0] as any[])[0];
+      expect(data.claimItems.map((i: { type: string }) => i.type)).toEqual(['PRINCIPAL']);
+      expect(data.totals).toEqual({ principal: 10000.1, interest: 0, fees: 0, total: 10000.1, currency: 'TRY' });
+      expect(data.draftComputedItems).toEqual([]);
+      expect(data.draftPenaltyNotice).toMatch(/^Çek tazminatı bu taslakta yer almaz: /);
+    });
+
+    it('önizleme girdisi yoksa önceki davranış: istemci satırı dışlanır, tazminat satırı yok', () => {
+      const out = normalizeClientTemplateData(clientBase as any);
+      expect(out.claimItems.map((i: { type: string }) => i.type)).toEqual(['PRINCIPAL']);
+      expect(out.draftComputedItems).toEqual([]);
+      expect(out.draftPenaltyNotice).toContain('kayıtlı alacak kalemi değildir');
+    });
+
+    it('takip yolu seçimi tazminat hesabından ETKİLENMEZ: açık seçim yoksa kambiyo seçilmez', () => {
+      const out = normalizeClientTemplateData(
+        { ...clientBase, caseType: 'GENEL_ICRA' } as any,
+        { status: 'HESAPLANDI', amount: 1000.01, currency: 'TRY', previewHash: 'a'.repeat(64) },
+      );
+      expect(out.proceedingSelection.kind).not.toBe('KAMBIYO_CEK');
+      expect(out.claimItems.map((i: { type: string }) => i.type)).toEqual(['PRINCIPAL', 'CHECK_PENALTY']);
+    });
+  });
 });

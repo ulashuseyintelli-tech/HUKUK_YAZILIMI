@@ -140,6 +140,25 @@ export function buildEndorsersJson(
  * Çağrıldığı yerler:
  * - (N3-wire) CaseService.create() → POST /cases (createCase tx içinde tx.caseInstrument.create).
  */
+/**
+ * Çek karşılıksız alanları. CEK değilse ya da alan verilmediyse hiçbir şey yazılmaz (şema varsayılanı). isBounced=true
+ * iken geçerli bounceDate yoksa alanlar YAZILMAZ (yarım bilgiyle tazminat hesabına zemin bırakılmaz; K3 talebi
+ * CHECK_NOT_DISHONOURED ile reddedilir).
+ *
+ * Çağrıldığı yerler:
+ * - buildCaseInstrumentData() → CaseService.create() (POST /cases)
+ */
+export function resolveBounceFields(
+  input: Pick<CaseInstrumentInputDto, 'isBounced' | 'bounceDate'>,
+  isCek: boolean,
+): { isBounced?: boolean; bounceDate?: Date | null } {
+  if (!isCek || input.isBounced === undefined) return {};
+  if (input.isBounced !== true) return { isBounced: false, bounceDate: null };
+  const date = input.bounceDate ? new Date(input.bounceDate) : null;
+  if (!date || Number.isNaN(date.getTime())) return {};
+  return { isBounced: true, bounceDate: date };
+}
+
 export function buildCaseInstrumentData(
   tenantId: string,
   caseId: string,
@@ -163,6 +182,9 @@ export function buildCaseInstrumentData(
     bankBranch: input.branchName ?? null,
     drawerName: input.drawerName ?? null,
     payeeName: input.payeeName ?? null,
+    // K3-L Faz 2b: karşılıksız bilgisi yalnız ÇEK için ve yalnız açıkça verildiyse yazılır (tarihsiz işaret kabul
+    // edilmez: isBounced=true ise bounceDate zorunlu — resolveBounceFields).
+    ...resolveBounceFields(input, isCek),
     ...(endorsers ? { endorsers: endorsers as unknown as Prisma.InputJsonValue } : {}),
   };
 }

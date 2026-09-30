@@ -317,6 +317,94 @@ describe("CasePaymentPreviewService", () => {
     expectNoFinancialMutations(prisma);
   });
 
+  describe("K3-L D2-P0: kanonik sonuç yalnız önizlenen para biriminden", () => {
+    const trySameCurrencyItems = () =>
+      makePrisma({
+        claimItem: {
+          ...modelWithCount(1),
+          findMany: jest.fn(async () => [{ demandedAmount: 800, amount: 800, collectedAmount: 0 }]),
+        },
+      });
+
+    it("TRY sonucu yokken USD sonucunun borcu TRY borcu SAYILMAZ; aynı para birimi yedeği + açık uyarı", async () => {
+      const prisma = trySameCurrencyItems();
+      const balance = {
+        computeCaseBalance: jest.fn(async () => ({
+          currencyResults: [
+            { currency: "TRY", result: null },
+            { currency: "USD", result: { totalDue: 99999 } },
+          ],
+        })),
+      };
+      const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+      const result = await service.preview({
+        tenantId: "tenant-1",
+        caseId: "case-1",
+        input: { amount: 100, currency: "TRY" },
+      });
+
+      // önceki davranış: currentOutstandingAmount = 99999 (USD); yeni: TRY kalem okuma yedeği = 800
+      expect(result.balanceImpact.currentOutstandingAmount).toBe(800);
+      expect(result.balanceImpact.currentOutstandingAmount).not.toBe(99999);
+      expect(result.acceptance.warnings).toEqual(
+        expect.arrayContaining([
+          "CURRENT_BALANCE_CURRENCY_NOT_COMPUTED",
+          "CURRENT_BALANCE_UNAVAILABLE",
+          "CLAIM_ITEM_READ_FALLBACK_USED",
+        ]),
+      );
+      expect(prisma.claimItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ currency: "TRY" }) }),
+      );
+      expectNoFinancialMutations(prisma);
+    });
+
+    it("para birimi satırı hiç yoksa da başka para birimine düşülmez", async () => {
+      const prisma = trySameCurrencyItems();
+      const balance = {
+        computeCaseBalance: jest.fn(async () => ({ currencyResults: [{ currency: "EUR", result: { totalDue: 5 } }] })),
+      };
+      const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+      const result = await service.preview({ tenantId: "tenant-1", caseId: "case-1", input: { amount: 100 } });
+
+      expect(result.balanceImpact.currentOutstandingAmount).toBe(800);
+      expect(result.acceptance.warnings).toContain("CURRENT_BALANCE_CURRENCY_NOT_COMPUTED");
+    });
+
+    it("kendi para birimi sonucu varsa diğer para birimleri yok sayılır, uyarı üretilmez", async () => {
+      const prisma = trySameCurrencyItems();
+      const balance = {
+        computeCaseBalance: jest.fn(async () => ({
+          currencyResults: [
+            { currency: "USD", result: { totalDue: 99999 } },
+            { currency: "TRY", result: { totalDue: 1500 } },
+          ],
+        })),
+      };
+      const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+      const result = await service.preview({ tenantId: "tenant-1", caseId: "case-1", input: { amount: 100, currency: "TRY" } });
+
+      expect(result.balanceImpact.currentOutstandingAmount).toBe(1500);
+      expect(result.acceptance.warnings).not.toContain("CURRENT_BALANCE_CURRENCY_NOT_COMPUTED");
+      expect(result.acceptance.warnings).not.toContain("CLAIM_ITEM_READ_FALLBACK_USED");
+    });
+
+    it("hiçbir para biriminde sonuç yoksa (ör. faizsiz anapara, kova yok) para birimi uyarısı eklenmez", async () => {
+      const prisma = trySameCurrencyItems();
+      const balance = { computeCaseBalance: jest.fn(async () => ({ currencyResults: [] })) };
+      const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+      const result = await service.preview({ tenantId: "tenant-1", caseId: "case-1", input: { amount: 100 } });
+
+      expect(result.balanceImpact.currentOutstandingAmount).toBe(800);
+      expect(result.acceptance.warnings).not.toContain("CURRENT_BALANCE_CURRENCY_NOT_COMPUTED");
+      expect(result.acceptance.warnings).toContain("CLAIM_ITEM_READ_FALLBACK_USED");
+    });
+  });
+
   it("closed collection case status returns blocking acceptance without writes", async () => {
     const prisma = makePrisma({
       case: {

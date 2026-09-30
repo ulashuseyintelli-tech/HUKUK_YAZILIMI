@@ -18,8 +18,10 @@ import {
   UpdateClaimItemDto,
   AutoGenerateClaimItemsDto,
   CalculateInterestDto,
+  CekFormationPreviewDto,
   InterestType,
 } from './dto/claim-item.dto';
+import { previewCekFormation } from './formation-cek/cek-formation-preview';
 
 @Controller('claim-items')
 @UseGuards(JwtAuthGuard, ViewerWriteDenyGuard)
@@ -104,6 +106,17 @@ export class ClaimItemController {
     return { success: true, data, _deprecated: 'Use /api/interest-engine/calculate for accurate calculations' };
   }
 
+  /**
+   * K3-L Faz 2b — TASLAK çek tazminatı önizlemesi (sihirbaz; dosya henüz yok). SALT HESAP: veritabanına erişmez,
+   * hiçbir kayıt/onay üretmez. Çıktı "Taslak — onay bekliyor, gönderime hazır değil" olarak işaretlidir; kesin kalem
+   * yalnız K3 onayıyla oluşur. Girdi eksikse tutar üretilmez (VERI_EKSIK).
+   * POST /claim-items/cek-formation/preview
+   */
+  @Post('cek-formation/preview')
+  @AllowViewerReadOnlyPost() // okuma/hesap: yazma YAPMAZ (saf fonksiyon; kaynaktan dogrulandi)
+  previewCekFormation(@Body() dto: CekFormationPreviewDto) {
+    return { success: true, data: previewCekFormation(dto) };
+  }
   // Dosyanın alacak özetini getir
   @Get('case/:caseId/summary')
   async getClaimSummary(
