@@ -131,6 +131,19 @@ describe('dosya no — elle girilen numara ezilmez', () => {
   });
 });
 
+describe('Adım 6 yerleşimi — içerik kendi alanında kayar', () => {
+  it('Alacak Kalemleri adımı kaydırılabilir alan içindedir (sabit min-h-[600px] ile footer altında kesilmez)', async () => {
+    // jsdom yerleşim hesaplamaz: bu yalnız sınıf sözleşmesini korur. Gerçek erişim (fare tekerleği + koordinattan tıklama,
+    // Tab → Enter) tarayıcıda 1440x1000 ve 1366x768'de ölçüldü.
+    routeApi([]);
+    seedDraft({ currentStep: 5, caseData: {}, formSelection: FORM_7 });
+    render(<NewCasePage />);
+    const area = await screen.findByTestId('wizard-claims-step-scroll', undefined, { timeout: 5000 });
+    expect(area.className.split(/\s+/)).toEqual(expect.arrayContaining(['flex-1', 'min-h-0', 'overflow-y-auto']));
+    expect(area.className).not.toContain('min-h-[600px]');
+  });
+});
+
 describe('Dosya Sorumlusu — taslakta saklanır, güncel adaya göre doğrulanır', () => {
   it('güncel adaysa KORUNUR ve taslakta kalır', async () => {
     routeApi([{ type: 'LAWYER', id: 'l1', displayName: 'Av. Bir', subtitle: '' }]);
