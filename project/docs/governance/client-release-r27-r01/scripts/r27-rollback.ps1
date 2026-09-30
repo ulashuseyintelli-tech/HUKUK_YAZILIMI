@@ -117,9 +117,18 @@ function Get-TaskState([string]$task) {
   if ($TEST) { $s = Get-SimState; $r = $(if ($task -eq $API_TASK) { [bool]$s.apiRunning } else { [bool]$s.webRunning }); if ($r) { return 'Running' } else { return 'Ready' } }
   return [string](Get-ScheduledTask -TaskName $task).State
 }
+# Test-EmptyQueryError: r27-release.ps1 ile AYNI tanim (R03). Get-NetTCPConnection 'eslesme yok' = ObjectNotFound + FQID 'CmdletizationQuery_NotFound*'
+#   = BASARILI BOS sonuc; baska her hata OKUMA HATASIDIR ve firlatilir (durdurma dogrulanmaz -> dosyaya dokunulmaz).
+function Test-EmptyQueryError($er) {
+  if ($null -eq $er -or $null -eq $er.CategoryInfo) { return $false }
+  return ($er.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::ObjectNotFound -and ([string]$er.FullyQualifiedErrorId) -like 'CmdletizationQuery_NotFound*')
+}
 function Get-Pids([int]$port) {
   if ($TEST) { $s = Get-SimState; if ($port -eq $API_PORT) { if ([bool]$s.apiRunning) { return @([int]$s.apiPid) } else { return @() } } else { if ([bool]$s.webRunning) { return @([int]$s.webPid) } else { return @() } } }
-  return @((Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue).OwningProcess | Sort-Object -Unique)
+  $c = @()
+  try { $c = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction Stop) }
+  catch { if (-not (Test-EmptyQueryError $_)) { throw }; $c = @() }
+  return @($c | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)
 }
 function Invoke-StopTask([string]$task) {
   if ($TEST) { $s = Get-SimState; $s.stopCalls = [int]$s.stopCalls + 1; if ($task -eq $API_TASK) { $s.apiRunning = $false } else { $s.webRunning = $false }; Add-SimEvent $s ('stop ' + $task + ' (rollback)'); Set-SimState $s; return }
@@ -133,8 +142,9 @@ function Wait-Stopped([string]$task, [int]$port, [string]$hostArg, [int]$Timeout
   if ($TEST) { return ((Get-Pids $port).Count -eq 0 -and (Get-TaskState $task) -ne 'Running') }
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
   while ((Get-Date) -lt $deadline) {
-    $listen = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
-    $procs = @(Get-CimInstance Win32_Process -Filter "Name='hukuk-task-host.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match ('(^|\s)' + $hostArg + '(\s|$)') })
+    # R03: okuma hatasi 'kapandi' SAYILMAZ - Get-Pids yalniz 'eslesme yok'u bos sayar, CIM hatasi firlatilir -> 2-durdur-* HATA -> 21 (dosyaya dokunulmaz)
+    $listen = @(Get-Pids $port)
+    $procs = @(Get-CimInstance Win32_Process -Filter "Name='hukuk-task-host.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match ('(^|\s)' + $hostArg + '(\s|$)') })
     if ($listen.Count -eq 0 -and $procs.Count -eq 0 -and (Get-ScheduledTask -TaskName $task).State -ne 'Running') { return $true }
     Start-Sleep -Seconds 2
   }

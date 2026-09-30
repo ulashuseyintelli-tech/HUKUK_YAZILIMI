@@ -18,6 +18,8 @@ $ErrorActionPreference = 'Stop'
 #   6-kapsam | 7-kanit ; geri alma: R-durdur | R-geri-yukle | R-dogrula | R-baslat ; takas ONCESI durdurma hatasi: 2-toparla
 # DURDURMA (2-durdur-* ve R-durdur): her servis AYRI denenir ve AYRI kaydedilir (Invoke-StopOne: komut / bekleme / son OLCULEN durum);
 #   bir servisin istisnasi digerinin girisimini ya da kaydini ENGELLEMEZ. 'Durdu' = komut istisnasiz + Wait-Stopped true + olculen KAPALI.
+# OLCUM (Measure-Svc; Wait-Stopped da bunu kullanir): 'eslesme yok' BASARILI BOS sonuctur; dinleyici/CIM/gorev OKUMA HATASI OLCULEMEDI'dir,
+#   asla KAPALI/sifir sayim degildir -> OLCULEMEDI servise Start verilmez, takas/geri yukleme baslamaz.
 # TAKAS ONCESI DURDURMA HATASI (2-toparla, Invoke-StopRecovery): dosyalara dokunulmaz (paket/BUILD_ID/cfg OLCULUR); her servis olculur,
 #   YALNIZ KAPALI olculen servis baslatilir (CALISIYOR/KARISIK/OLCULEMEDI olana Start VERILMEZ); 'ayakta' yalniz saglik kumesiyle
 #   (Test-OldSvcHealth = B3 6-kapsam kumesi) soylenir - Start komutu verilmis olmasi ayakta demek DEGILDIR.
@@ -47,6 +49,7 @@ $ErrorActionPreference = 'Stop'
 #   -Fault (yalniz TestRoot ile): api-copy-interrupt | web-swap-fail | identity-read-error | identity-read-persistent
 #                                 | service-start-fail | restore-hash-mismatch | stop-fail
 #                                 | stop-web-throw | stop-api-throw | stop-recovery-start-throw | rollback-stop-fail | rollback-start-throw
+#                                 | stop-measure-unreadable | rollback-measure-unreadable
 #   (identity-read-error: 4-kimlik okumasi TEK SEFER firlatir (gecici istisna) -> geri alma dogrulanir -> 10.
 #    identity-read-persistent: 4-kimlik VE R-dogrula okumalari (agac/paket/web digest) HER SEFER firlatir (kalici okuma
 #    hatasi) -> verify 'OKUNAMADI' -> servis baslatilmaz -> 11.
@@ -60,7 +63,11 @@ $ErrorActionPreference = 'Stop'
 #    rollback-stop-fail: aday API+WEB baslar, WEB sagligi tutmaz -> geri alma R-durdur'da WEB durdurma komutu istisna (WEB calisir),
 #      API durdurma yine DENENIR -> 12; dosyalara DOKUNULMAZ (canli = aday).
 #    rollback-start-throw: 4-kimlik gecici istisna -> geri alindi + dogrulandi -> R-baslat'ta API baslatma komutu istisna; WEB yine
-#      baslatilir ve olculur -> 13 (dosyalar taban; API KAPALI olculur).)
+#      baslatilir ve olculur -> 13 (dosyalar taban; API KAPALI olculur).
+#    stop-measure-unreadable: WEB durdurma istegi etkili ama :3002 dinleyici OKUMASI hata verir -> WEB OLCULEMEDI (KAPALI SAYILMAZ) -> 2-durdur-web
+#      durdurma dogrulanmadi -> takas YOK, WEB'e Start YOK -> 22.
+#    rollback-measure-unreadable: rollback-stop-fail gibi aday WEB sagligi tutmaz; R-durdur'da WEB durdurma istegi etkili ama okuma hata verir
+#      -> WEB OLCULEMEDI -> geri yukleme YOK -> 12 (canli = aday).)
 # YOL BUTCESI KAPISI (1-yedek): WinPS 5.1 Get-ChildItem/Get-FileHash MAX_PATH (260) uzerindeki yollari OKUYAMAZ. Yedek/hazirlik/
 #   karantina koklerinin uzunlugu + agactaki en uzun goreli yol >= 260 ise DUR (20); marjlar kanitta (health.pathBudget).
 # SAHTE-SUREC KAPISI: komut satiri desene ($ROGUE_TOKENS; kulturden bagimsiz, harf duyarsiz; U+0130/U+0131/U+212A katlanir) eslesen HER
@@ -77,7 +84,7 @@ $ErrorActionPreference = 'Stop'
 #   ON KOSUL: yayin penceresinde ajan oturumu/harness/inceleme KOSMAZ; B0/B1 blogu etkilesimli pencereye YAPISTIRILARAK baslatilir.
 # =============================================================================
 $FAULTS = @('api-copy-interrupt', 'web-swap-fail', 'identity-read-error', 'identity-read-persistent', 'service-start-fail', 'restore-hash-mismatch', 'stop-fail',
-  'stop-web-throw', 'stop-api-throw', 'stop-recovery-start-throw', 'rollback-stop-fail', 'rollback-start-throw')
+  'stop-web-throw', 'stop-api-throw', 'stop-recovery-start-throw', 'rollback-stop-fail', 'rollback-start-throw', 'stop-measure-unreadable', 'rollback-measure-unreadable')
 $LIVE_ROOT_CANON = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'
 $TEST = ($TestRoot -ne '')
 if ($Fault -ne '' -and $FAULTS -notcontains $Fault) { Write-Host ('KAPI: bilinmeyen -Fault: ' + $Fault + ' - DUR'); exit 20 }
@@ -147,7 +154,7 @@ $script:STAGES = New-Object System.Collections.Generic.List[string]
 $script:SERVICES_STOPPED = $false; $script:API_STARTED = $false; $script:WEB_STARTED = $false
 $script:ROLLBACK = $null; $script:RESTORE_STEPS = $null; $script:VERIFY = $null; $script:RECOVERY = $null
 $script:STOPS = [ordered]@{}; $script:STOP_RECOVERY = $null   # 2-durdur-* servis bazinda kayit ; 2-toparla sonucu
-$script:FAULT_IDENTITY_FIRED = $false; $script:FAULT_LOG = New-Object System.Collections.Generic.List[string]; $script:NOT_ELEVATED = $false
+$script:FAULT_IDENTITY_FIRED = $false; $script:SIM_WEB_READ_ERROR = $false; $script:FAULT_LOG = New-Object System.Collections.Generic.List[string]; $script:NOT_ELEVATED = $false
 $script:tuple0 = ''; $script:envSha0 = ''; $script:actA0 = ''; $script:actW0 = ''; $script:candMap = $null; $script:health = [ordered]@{}
 function Say([string]$m) { $line = ((Get-Date).ToUniversalTime().ToString('HH:mm:ss') + 'Z  ' + $m); Write-Host $line; $log.Add($line) }
 function Set-Stage([string]$s) { $script:STAGE = $s; $script:STAGES.Add(((Get-Date).ToUniversalTime().ToString('HH:mm:ss') + 'Z ' + $s)); Say ('=== ASAMA ' + $s) }
@@ -500,9 +507,20 @@ function Test-RogueClassifier {
           (-not [bool]$r8.selfSeen) -and (Get-RogueGateError $r8) -match 'guvenilir degil' -and $r9.count -eq 2 -and (Get-RogueGateError $r9) -match 'izleme dahil 2 eslesme')
   return ($ok1 -and $ok2 -and $ok3 -and $ok4 -and $ok5)
 }
+# Test-EmptyQueryError: Get-NetTCPConnection eslesme yoksa ObjectNotFound (FQID 'CmdletizationQuery_NotFound*') yazar = BASARILI BOS sonuc.
+#   Yalniz bu iki kosulun IKISI birden tutarsa 'bos' sayilir; yetki/CIM saglayici/zaman asimi vb. her baska hata OKUMA HATASIDIR (firlatilir ->
+#   Measure-Svc OLCULEMEDI). Olcum hatasi 'dinleyici yok' kanitina DONUSMEZ. Cagiranlar: Get-Pids.
+function Test-EmptyQueryError($er) {
+  if ($null -eq $er -or $null -eq $er.CategoryInfo) { return $false }
+  return ($er.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::ObjectNotFound -and ([string]$er.FullyQualifiedErrorId) -like 'CmdletizationQuery_NotFound*')
+}
 function Get-Pids([int]$port) {
+  if ($TEST) { if ($port -eq $WEB_PORT -and $script:SIM_WEB_READ_ERROR) { throw (New-Object System.UnauthorizedAccessException ('SIM: :' + $port + ' dinleyici listesi okunamadi (enjekte)')) } }
   if ($TEST) { $s = Get-SimState; if ($port -eq $API_PORT) { if ([bool]$s.apiRunning) { return @([int]$s.apiPid) } else { return @() } } else { if ([bool]$s.webRunning) { return @([int]$s.webPid) } else { return @() } } }
-  return @((Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue).OwningProcess | Sort-Object -Unique)
+  $c = @()
+  try { $c = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction Stop) }
+  catch { if (-not (Test-EmptyQueryError $_)) { throw }; $c = @() }   # yalniz 'eslesme yok' bos sayilir; diger hata yukari (OLCULEMEDI)
+  return @($c | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)
 }
 function Invoke-StopTask([string]$task) {
   if ($TEST) {
@@ -511,6 +529,8 @@ function Invoke-StopTask([string]$task) {
     if ($Fault -eq 'stop-web-throw' -and $task -eq $WEB_TASK) { $s.webRunning = $false; Add-SimEvent $s ('stop ' + $task + ': FAULT stop-web-throw -> WEB KAPANDI, komut istisna (enjekte)'); Set-SimState $s; $script:FAULT_LOG.Add('stop: web kapandi + komut istisnasi'); throw 'FAULT stop-web-throw: Stop-ScheduledTask istisnasi (enjekte; WEB kapandi)' }
     if (($Fault -eq 'stop-api-throw' -or $Fault -eq 'stop-recovery-start-throw') -and $task -eq $API_TASK) { Add-SimEvent $s ('stop ' + $task + ': FAULT ' + $Fault + ' -> API KAPANMADI, komut istisna (enjekte)'); Set-SimState $s; $script:FAULT_LOG.Add('stop: api komut istisnasi (api calisiyor)'); throw ('FAULT ' + $Fault + ': Stop-ScheduledTask istisnasi (enjekte; API calismaya devam ediyor)') }
     if ($Fault -eq 'rollback-stop-fail' -and $task -eq $WEB_TASK -and $script:STAGE -eq 'R-durdur') { Add-SimEvent $s ('stop ' + $task + ': FAULT rollback-stop-fail -> aday WEB KAPANMADI, komut istisna (enjekte)'); Set-SimState $s; $script:FAULT_LOG.Add('R-durdur: web komut istisnasi (aday web calisiyor)'); throw 'FAULT rollback-stop-fail: geri almada Stop-ScheduledTask istisnasi (enjekte; aday WEB calisiyor)' }
+    # okuma hatasi enjeksiyonu: WEB durdurma istegi ETKILI (WEB kapanir) ama bundan sonra :3002 dinleyici okumasi hata verir (durum OLCULEMEZ)
+    if ($task -eq $WEB_TASK -and ($Fault -eq 'stop-measure-unreadable' -or ($Fault -eq 'rollback-measure-unreadable' -and $script:STAGE -eq 'R-durdur'))) { $script:SIM_WEB_READ_ERROR = $true; $script:FAULT_LOG.Add('olcum: web dinleyici okumasi hata (stop sonrasi)') }
     if ($task -eq $API_TASK) { $s.apiRunning = $false }
     elseif ($Fault -eq 'stop-fail') { $script:FAULT_LOG.Add('stop: web kapanmadi'); Add-SimEvent $s ('stop ' + $task + ': FAULT stop-fail -> WEB KAPANMADI (enjekte)') }
     else { $s.webRunning = $false }
@@ -538,16 +558,12 @@ function Invoke-StartTask([string]$task) {
   }
   Start-ScheduledTask -TaskName $task | Out-Null   # cikti nesnesi cagiranin donus degerine karismasin (Start-Both-And-Report)
 }
+# Wait-Stopped: Measure-Svc ile AYNI olcut - yalniz KAPALI OLCULURSE true. OLCULEMEDI (okuma hatasi) / KARISIK / CALISIYOR beklenir; sure
+#   dolarsa false. Olcum hatasi 'kapandi' SAYILMAZ (durdurma dogrulanmaz -> takas/geri yukleme baslamaz). $task/$port cagiran uyumlulugu icin
+#   korunur; olcum $hostArg (= 'api'|'web') uzerinden Measure-Svc'dedir. Cagiranlar: Invoke-StopOne, Invoke-StopRecovery.
 function Wait-Stopped([string]$task, [int]$port, [string]$hostArg, [int]$TimeoutSec = 90) {
-  if ($TEST) { return ((Get-Pids $port).Count -eq 0 -and (Get-TaskState $task) -ne 'Running') }
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
-  while ((Get-Date) -lt $deadline) {
-    $listen = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
-    $procs = Get-HostProcCount $hostArg
-    $state = (Get-ScheduledTask -TaskName $task).State
-    if ($listen.Count -eq 0 -and $procs -eq 0 -and $state -ne 'Running') { return $true }
-    Start-Sleep -Seconds 2
-  }
+  do { $m = Measure-Svc $hostArg; if ($m.state -eq 'KAPALI') { return $true }; if ($TEST) { break }; Start-Sleep -Seconds 2 } while ((Get-Date) -lt $deadline)
   return $false
 }
 function Http([string]$method, [string]$url, [int]$timeoutMs = 8000) {
@@ -556,7 +572,7 @@ function Http([string]$method, [string]$url, [int]$timeoutMs = 8000) {
     if ($u.Port -eq $API_PORT) { if (-not [bool]$s.apiRunning) { return -1 }; return 401 }
     if ($u.Port -eq $WEB_PORT) {
       if (-not [bool]$s.webRunning) { return -1 }
-      if ($path -eq '/portal/login') { if ($Fault -eq 'rollback-stop-fail' -and (Test-CandidateMarkerPresent)) { return 500 }; return 200 }
+      if ($path -eq '/portal/login') { if (($Fault -eq 'rollback-stop-fail' -or $Fault -eq 'rollback-measure-unreadable') -and (Test-CandidateMarkerPresent)) { return 500 }; return 200 }
       if ($path -like '/_next/static/*/_buildManifest.js') { $bid = $path.Split('/')[3]; $cur = $(try { Get-BuildId $LIVE_NEXT } catch { '' }); if ($bid -ceq $cur) { return 200 } else { return 404 } }
       if ($path -like '/intake/*') { return 200 }
       if ($path -like '/api/*') { if ([bool]$s.apiRunning) { return 401 } else { return 502 } }
@@ -601,10 +617,11 @@ function Get-FileState {
   }
 }
 # ---------------------------------------------------------------- SERVIS OLCUMU / DURDURMA / TOPARLAMA (ortak)
-# Get-HostProcCount: 'hukuk-task-host.exe <api|web>' surec sayisi (Wait-Stopped ve Measure-Svc AYNI olcut). TEST: simulatorde host = dinleyici.
+# Get-HostProcCount: 'hukuk-task-host.exe <api|web>' surec sayisi (Measure-Svc; Wait-Stopped Measure-Svc uzerinden). TEST: simulatorde host = dinleyici.
 function Get-HostProcCount([string]$hostArg) {
   if ($TEST) { return @(Get-Pids $(if ($hostArg -eq 'api') { $API_PORT } else { $WEB_PORT })).Count }
-  return @(Get-CimInstance Win32_Process -Filter "Name='hukuk-task-host.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match ('(^|\s)' + $hostArg + '(\s|$)') }).Count
+  # eslesmeyen -Filter BOS doner (hata degil); CIM/yetki/saglayici hatasi FIRLATILIR -> Measure-Svc OLCULEMEDI (sifir sayim DEGIL)
+  return @(Get-CimInstance Win32_Process -Filter "Name='hukuk-task-host.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match ('(^|\s)' + $hostArg + '(\s|$)') }).Count
 }
 # Measure-Svc: son OLCULEN servis durumu - KAPALI (gorev Running degil + dinleyici 0 + host 0; Wait-Stopped ile ayni) | CALISIYOR (gorev
 #   Running + tek dinleyici + host) | KARISIK (diger her bilesim) | OLCULEMEDI (istisna; mesaj kayitta). FIRLATMAZ.
@@ -676,7 +693,7 @@ function Get-SvcActionLines($meas) {
   return $l
 }
 # Invoke-StopRecovery (2-toparla): durdurma TAKAS ONCESI basarisiz (2-durdur-*). Dosyalara DOKUNULMADI - paket/BUILD_ID/cfg OLCULUR.
-#   Her servis AYRI: olc (KARISIK ise durmakta olabilir -> Wait-Stopped 30 sn + yeniden olc) -> YALNIZ KAPALI ise Start -> saglik OLCULUR.
+#   Her servis AYRI: olc (KARISIK/OLCULEMEDI ise Wait-Stopped <=30 sn + yeniden olc) -> YALNIZ KAPALI ise Start -> saglik OLCULUR.
 #   21 yalniz: iki servis saglik PASS + uclu degismedi + dosyalar taban OLCULDU. Aksi halde 22 + KURTARMA. On atama 22 (beklenmeyen istisnada
 #   da 21 iddiasi yok). Cagiran: yayin akisi (ic catch sonrasi, asama 2-durdur-*).
 function Invoke-StopRecovery {
@@ -695,7 +712,9 @@ function Invoke-StopRecovery {
     $r = [ordered]@{ before = $null; action = 'BELIRSIZ'; startError = $null; health = $null; after = $null }
     $rc[$svc] = $r
     $m = Measure-Svc $svc
-    if ($m.state -eq 'KARISIK') { try { [void](Wait-Stopped $task $port $svc 30) } catch { }; $m = Measure-Svc $svc }
+    # KARISIK (durmakta olabilir) ya da OLCULEMEDI (gecici okuma hatasi olabilir): olcume dayali bekleme (<=30 sn) + yeniden olc; hala
+    # KAPALI degilse Start VERILMEZ (olcum hatasi 'kapali' sayilmaz)
+    if ($m.state -eq 'KARISIK' -or $m.state -eq 'OLCULEMEDI') { try { [void](Wait-Stopped $task $port $svc 30) } catch { }; $m = Measure-Svc $svc }
     $r.before = $m
     if ($m.state -eq 'KAPALI') { try { Invoke-StartTask $task; $r.action = 'BASLATMA KOMUTU VERILDI' } catch { $r.action = 'BASLATMA ISTISNASI'; $r.startError = $_.Exception.Message } }
     elseif ($m.state -eq 'CALISIYOR') { $r.action = 'START VERILMEDI (calisiyor olculdu)' }
@@ -873,7 +892,7 @@ function Invoke-Rollback([string]$reason) {
     $notStopped = @($script:ROLLBACK.stops.Keys | Where-Object { -not $script:ROLLBACK.stops[$_].stopped })
     $script:ROLLBACK.stoppedBeforeRestore = ($notStopped.Count -eq 0)
     if ($notStopped.Count -gt 0) {
-      Say ('UYARI: surec kapanmadi (' + ($notStopped -join ',') + '), dosyalara dokunulmadi -> ROLLBACK-ENGELLENDI')
+      Say ('UYARI: durdurma DOGRULANAMADI (' + ($notStopped -join ',') + ': kapanmadi ya da olculemedi), dosyalara dokunulmadi -> ROLLBACK-ENGELLENDI')
       $script:RESTORE_STEPS = [ordered]@{ 'durdur' = ('BASARISIZ (' + ((@($script:ROLLBACK.stops.Keys) | ForEach-Object { $_ + '=' + $(if ($script:ROLLBACK.stops[$_].stopped) { 'DURDU' } else { 'DURDURULAMADI' }) }) -join ' ') + ')'); 'api-eklenen-karantina' = 'KALAN'; 'api-degisen-yedekten' = 'KALAN'; 'web-next-geri' = 'KALAN'; 'web-cfg-geri' = 'KALAN' }
       $script:VERDICT = 'ROLLBACK-ENGELLENDI'; $script:EXIT = 12; $script:RECOVERY = Get-RecoveryText $script:VERDICT; return
     }
@@ -974,6 +993,11 @@ if ($SelfTest) {
   # BILGI (sayaca bagli degil): durdurma/toparlama kararlarinin kullandigi servis olcumu canlida ne okuyor (beklenen CALISIYOR; KARISIK ise
   # gorev durumu/host sayimi kanitta gorunur - toparlama 'ayakta' kararini yine saglik kumesiyle verir)
   Say ('servis olcumu (bilgi): api=' + (Measure-Svc 'api').text + ' | web=' + (Measure-Svc 'web').text)
+  # BOS-SONUC yolu (canli, salt okuma; SAYACA BAGLI): dinlenmeyen port 1 ve eslesmeyen host argumani 0 dondurmeli. Burada hata = B1'de kapanan
+  # servis OLCULEMEDI kalir (durdurma dogrulanmaz, toparlama Start vermez) -> yayin baslatilmaz.
+  $eP = $(try { [string]@(Get-Pids 1).Count } catch { 'HATA ' + $_.Exception.GetType().Name + ' ' + $_.FullyQualifiedErrorId })
+  $eH = $(try { [string](Get-HostProcCount 'olmayan-host-argumani') } catch { 'HATA ' + $_.Exception.GetType().Name })
+  Say ('bos-sonuc olcumu: dinlenmeyen :1 dinleyici=' + $eP + ' | eslesmeyen host=' + $eH + ' (beklenen 0/0; okuma hatasi FAIL)'); if ($eP -ne '0' -or $eH -ne '0') { $fails++ }
   $rc = Get-Command robocopy.exe -ErrorAction SilentlyContinue; Say ('robocopy=' + [bool]$rc); if (-not $rc) { $fails++ }
   $ge = Invoke-RogueGate; if ($ge) { Say ('  ' + $ge); $fails++ }
   $rcOk = Test-RogueClassifier; Say ('sahte-surec siniflandirici + dislama + oge adi + kapi (sentetik listeler)=' + $rcOk); if (-not $rcOk) { $fails++ }
@@ -982,7 +1006,7 @@ if ($SelfTest) {
   Say ('yol butcesi (<260): ' + (($pbSelf.items.Keys | ForEach-Object { $_ + '=' + $pbSelf.items[$_].total + ' (marj ' + $pbSelf.items[$_].margin + ')' }) -join ' | ') + ' -> ok=' + $pbSelf.ok); if (-not $pbSelf.ok) { $fails++ }
   $rbOk = (Test-Path -LiteralPath $ROLLBACK_SCRIPT -PathType Leaf); Say ('B3 geri alma betigi yaninda=' + $rbOk + ' (' + $ROLLBACK_SCRIPT + ')'); if (-not $rbOk) { $fails++ }
   $needed = @('Say', 'Set-Stage', 'Get-R26FileSha256', 'Get-Map', 'Get-TreeDigest', 'Get-Pids', 'Wait-Stopped', 'Http', 'Get-PackageDigest', 'Test-InheritOnly', 'Get-LauncherTuple', 'Get-BuildId', 'Restore-All', 'Test-RestoredIdentity', 'Start-Both-And-Report', 'Invoke-Rollback', 'Write-EvidenceProtected', 'Get-RecoveryText', 'Invoke-StopTask', 'Invoke-StartTask', 'Test-Elevated', 'Get-TaskAction', 'Get-ProcCommandLine', 'Get-RogueCount', 'ConvertTo-RogueFolded', 'Get-RogueMatchInfo', 'Test-RogueMatch', 'Get-RogueClass', 'Get-RogueItemName', 'Get-RogueReport', 'Get-ProcList', 'Get-LiveRogueReport', 'Get-RogueGateError', 'Write-RogueReport', 'Invoke-RogueGate', 'Test-RogueClassifier', 'Invoke-FaultPoint', 'Get-MaxRelLen', 'Test-PathBudget',
-              'Get-HostProcCount', 'Measure-Svc', 'Invoke-StopOne', 'Test-OldSvcHealth', 'Get-SvcActionLines', 'Invoke-StopRecovery')
+              'Get-HostProcCount', 'Measure-Svc', 'Invoke-StopOne', 'Test-OldSvcHealth', 'Get-SvcActionLines', 'Invoke-StopRecovery', 'Test-EmptyQueryError')
   $missing = @($needed | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) })
   Say ('fonksiyon kumesi tam=' + ($missing.Count -eq 0) + $(if ($missing.Count) { ' eksik: ' + ($missing -join ',') } else { '' }))
   if ($missing.Count) { $fails++ }

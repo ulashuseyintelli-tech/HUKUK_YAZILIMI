@@ -5,8 +5,9 @@ param(
   [string]$ScriptDir = '',
   [string[]]$Scenarios = @('happy-path', 'rollback-script', 'api-copy-interrupt', 'web-swap-fail', 'identity-read-error', 'identity-read-persistent', 'service-start-fail', 'restore-hash-mismatch', 'stop-fail',
                           'stop-web-throw', 'stop-api-throw', 'stop-recovery-start-throw', 'rollback-stop-fail', 'rollback-start-throw',
+                          'stop-measure-unreadable', 'rollback-measure-unreadable',
                           'gate-fault-live-mode', 'gate-testroot-under-live', 'gate-sim-missing', 'gate-evidence-fallback', 'gate-rollback-backup-missing',
-                          'gate-rogue-process', 'gate-rogue-viewer-only', 'gate-rogue-classifier', 'gate-rogue-wiring'))
+                          'gate-rogue-process', 'gate-rogue-viewer-only', 'gate-rogue-classifier', 'gate-rogue-wiring', 'gate-svc-measure'))
 $ErrorActionPreference = 'Stop'
 # =============================================================================
 # R27 HATA PROVASI HARNESS'I - CANLIYA DOKUNMAZ. Saf ASCII.
@@ -32,6 +33,12 @@ $ErrorActionPreference = 'Stop'
 #     yalniz WEB'e Start; B3 YOK) ; rollback-stop-fail 12 (aday WEB sagligi tutmaz -> R-durdur'da WEB istisna, API yine durdurulur;
 #     dosyalara DOKUNULMAZ, canli = aday) ; rollback-start-throw 13 (dogrulama sonrasi API baslatma istisnasi; WEB yine baslar; dosyalar taban)
 #   Her birinde konsolda olculmemis 'yeniden baslatildi' iddiasi YOK; saglik sonucu simulator durumuyla esit.
+#   OLCUM HATASI (R03-b): stop-measure-unreadable 22 (WEB durdurma etkili ama :3002 okumasi hata -> OLCULEMEDI, KAPALI SAYILMAZ; takas YOK,
+#     WEB'e Start YOK) ; rollback-measure-unreadable 12 (R-durdur'da ayni okuma hatasi -> geri yukleme YOK, canli = aday)
+#   gate-svc-measure (SUREC KOSMAZ): yayin + B3 betiklerinin CANLI dal olcum fonksiyonlari (Get-Pids, Get-HostProcCount, Measure-Svc,
+#     Wait-Stopped) sahte Get-NetTCPConnection / Get-CimInstance / Get-ScheduledTask ile: gercek bos (ObjectNotFound) -> 0 / KAPALI;
+#     TCP okuma hatasi ve CIM okuma hatasi -> OLCULEMEDI / Wait-Stopped false / B3 Wait-Stopped firlatir; eski SilentlyContinue bicimi
+#     ayni girdide KAPALI verir (testin ayirt ediciliginin kaniti).
 # KAPI SENARYOLARI (ucuz; TestRoot sifirlamasi yok):
 #   gate-fault-live-mode        release.ps1 -Fault (TestRoot YOK) -> 20 daha ilk satirda; canli dosya/kanit dizinine DOKUNMAZ
 #   gate-testroot-under-live    release/rollback -TestRoot canli kok ALTINDA -> 20 (Test-Path'ten once)
@@ -89,6 +96,11 @@ $EXPECT = @{
   'stop-recovery-start-throw' = @{ exit = 22; verdict = 'DURDURMA-BASARISIZ-TOPARLANAMADI'; api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true; webUp = $false; recovery = $true; failedAt = '2-durdur-api'
                                   stopCalls = 2; startCalls = 1; failSvc = 'API'; apiAction = 'START VERILMEDI (calisiyor olculdu)'; webAction = 'BASLATMA ISTISNASI'; faultMark = 'start: web komut istisnasi (toparlama)' }
   'rollback-stop-fail'       = @{ exit = 12; verdict = 'ROLLBACK-ENGELLENDI';    api = $EXP_CAND; web = $EXP_WEB_CAND; bid = $BID_CAND; addedPresent = $true;  apiUp = $false; webUp = $true;  recovery = $true;  failedAt = '5-baslat-web' }
+  'stop-measure-unreadable'  = @{ exit = 22; verdict = 'DURDURMA-BASARISIZ-TOPARLANAMADI'; api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true; webUp = $false; recovery = $true; failedAt = '2-durdur-web'
+                                  stopCalls = 1; startCalls = 0; failSvc = 'WEB'; apiAction = 'START VERILMEDI (calisiyor olculdu)'; webAction = 'START VERILMEDI (durum OLCULEMEDI)'; faultMark = 'olcum: web dinleyici okumasi hata'
+                                  webMeasured = 'OLCULEMEDI'; recStartWeb = $false; webUnreadable = $true }
+  'rollback-measure-unreadable' = @{ exit = 12; verdict = 'ROLLBACK-ENGELLENDI';  api = $EXP_CAND; web = $EXP_WEB_CAND; bid = $BID_CAND; addedPresent = $true;  apiUp = $false; webUp = $false; recovery = $true; failedAt = '5-baslat-web'
+                                  rbWebCommand = 'TAMAM'; rbWebState = 'OLCULEMEDI'; faultMark = 'olcum: web dinleyici okumasi hata' }
   'rollback-start-throw'     = @{ exit = 13; verdict = 'ROLLBACK-OK-ESKI-BASLAMADI'; api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $false; webUp = $true; recovery = $true;  failedAt = '4-kimlik' }
   'gate-fault-live-mode'        = @{ gate = $true }
   'gate-testroot-under-live'    = @{ gate = $true }
@@ -99,6 +111,7 @@ $EXPECT = @{
   'gate-rogue-viewer-only'      = @{ gate = $true }
   'gate-rogue-classifier'       = @{ gate = $true; noProcess = $true }
   'gate-rogue-wiring'           = @{ gate = $true; noProcess = $true }
+  'gate-svc-measure'            = @{ gate = $true; noProcess = $true }
 }
 $PristineDir = (Get-Item -LiteralPath $PristineDir).FullName; $CandApps = (Get-Item -LiteralPath $CandApps).FullName
 $ProvaRoot = [IO.Path]::GetFullPath($ProvaRoot).TrimEnd('\')
@@ -650,6 +663,60 @@ foreach ($sc in $Scenarios) {
           Assert $asserts 'mutasyonlardan sonra siniflandirici yeniden TRUE (durum geri yuklendi)' ([bool](Test-RogueClassifier)) ''
           Assert $asserts 'canli kanit dizinine dosya eklenmedi' ((Get-DirFileCount $LIVE_EVID_DIR) -eq $liveEvidBefore) ('once=' + $liveEvidBefore)
         }
+        'gate-svc-measure' {
+          # SUREC KOSMAZ: yayin (R03-b) + B3 betiklerinin CANLI dal olcum fonksiyonlari AST ile yuklenir; Get-NetTCPConnection / Get-CimInstance /
+          # Get-ScheduledTask / Start-Sleep SAHTE gelismis fonksiyonlarla golgelenir (gercek sistem cagrilmaz). Olculen: 'eslesme yok' (ObjectNotFound +
+          # CmdletizationQuery_NotFound) BASARILI BOS; TCP yetki hatasi, ObjectNotFound kategorili ama baska kimlikli hata ve CIM hatasi OKUMA HATASI
+          # -> OLCULEMEDI / Wait-Stopped false (B3: firlatir). Duyarlilik: eski SilentlyContinue bicimi ayni girdide KAPALI verir.
+          $ld = { param($file, [string[]]$names)
+            $tk = $null; $pe = $null; $a = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tk, [ref]$pe); $o = [ordered]@{}
+            foreach ($n in $names) { $d = @($a.EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $n }); if ($d.Count -ne 1) { throw ('tanim adedi ' + $d.Count + ': ' + $n) }; $o[$n] = $d[0].Extent.Text }
+            return $o }
+          $relF = & $ld $RELEASE @('Test-EmptyQueryError', 'Get-Pids', 'Get-HostProcCount', 'Get-TaskState', 'Measure-Svc', 'Wait-Stopped')
+          $rbF = & $ld $ROLLBACK @('Test-EmptyQueryError', 'Get-Pids', 'Wait-Stopped')
+          $TEST = $false; $API_TASK = 'HukukPlatform-API'; $WEB_TASK = 'HukukPlatform-Web'; $API_PORT = 8080; $WEB_PORT = 3002
+          $script:MOCK = @{ tcp = 'empty'; cim = 'empty'; task = 'Ready' }
+          function Get-NetTCPConnection { [CmdletBinding()] param([string]$State, [int]$LocalPort)
+            $mk = { param($ex, $id, $cat) New-Object System.Management.Automation.ErrorRecord($ex, $id, $cat, $LocalPort) }
+            switch ($script:MOCK.tcp) {
+              'empty'  { $PSCmdlet.WriteError((& $mk (New-Object System.Exception ('No MSFT_NetTCPConnection objects found with property LocalPort equal to ' + $LocalPort + '.')) 'CmdletizationQuery_NotFound_LocalPort' ([System.Management.Automation.ErrorCategory]::ObjectNotFound))) }
+              'denied' { $PSCmdlet.WriteError((& $mk (New-Object System.UnauthorizedAccessException 'Access denied (sahte)') 'HRESULT 0x80041003' ([System.Management.Automation.ErrorCategory]::PermissionDenied))) }
+              'nf-other' { $PSCmdlet.WriteError((& $mk (New-Object System.Exception 'provider not found (sahte)') 'ProviderLoadFailure' ([System.Management.Automation.ErrorCategory]::ObjectNotFound))) }
+              'one'    { return [pscustomobject]@{ OwningProcess = 4343; LocalPort = $LocalPort } } } }
+          function Get-CimInstance { [CmdletBinding()] param([Parameter(Position = 0)][string]$ClassName, [string]$Filter)
+            switch ($script:MOCK.cim) {
+              'empty'  { return }
+              'denied' { $PSCmdlet.WriteError((New-Object System.Management.Automation.ErrorRecord((New-Object System.UnauthorizedAccessException 'Access denied (sahte CIM)'), 'HRESULT 0x80041003,Get-CimInstance', ([System.Management.Automation.ErrorCategory]::PermissionDenied), $ClassName))) }
+              'one'    { return [pscustomobject]@{ Name = 'hukuk-task-host.exe'; CommandLine = 'C:\Ops\hukuk\bin\hukuk-task-host.exe web' } } } }
+          function Get-ScheduledTask { [CmdletBinding()] param([string]$TaskName) return [pscustomobject]@{ TaskName = $TaskName; State = $script:MOCK.task } }
+          function Start-Sleep { param([int]$Seconds) }
+          foreach ($k in $relF.Keys) { . ([scriptblock]::Create($relF[$k])) }
+          $case = { param($tcp, $cim, $task) $script:MOCK = @{ tcp = $tcp; cim = $cim; task = $task }
+            $pids = $(try { [string]@(Get-Pids $WEB_PORT).Count } catch { 'THROW' })
+            $hc = $(try { [string](Get-HostProcCount 'web') } catch { 'THROW' })
+            $m = Measure-Svc 'web'; $w = [bool](Wait-Stopped $WEB_TASK $WEB_PORT 'web' 0)
+            return [ordered]@{ pids = $pids; host = $hc; state = [string]$m.state; err = [string]$m.error; wait = $w } }
+          $c1 = & $case 'empty' 'empty' 'Ready'; $c2 = & $case 'denied' 'empty' 'Ready'; $c3 = & $case 'empty' 'denied' 'Ready'
+          $c4 = & $case 'nf-other' 'empty' 'Ready'; $c5 = & $case 'one' 'one' 'Running'
+          Assert $asserts 'yayin: GERCEK BOS (ObjectNotFound + CmdletizationQuery_NotFound, CIM bos) -> dinleyici 0, host 0, KAPALI, Wait-Stopped true' ($c1.pids -ceq '0' -and $c1.host -ceq '0' -and $c1.state -ceq 'KAPALI' -and $c1.wait) (($c1.Values | ForEach-Object { [string]$_ }) -join ' / ')
+          Assert $asserts 'yayin: TCP OKUMA HATASI (yetki) -> Get-Pids firlatir, OLCULEMEDI (hata kayitta), Wait-Stopped false (KAPALI SAYILMAZ)' ($c2.pids -ceq 'THROW' -and $c2.state -ceq 'OLCULEMEDI' -and $c2.err -ne '' -and -not $c2.wait) (($c2.Values | ForEach-Object { [string]$_ }) -join ' / ')
+          Assert $asserts 'yayin: CIM OKUMA HATASI -> Get-HostProcCount firlatir, OLCULEMEDI, Wait-Stopped false' ($c3.host -ceq 'THROW' -and $c3.pids -ceq '0' -and $c3.state -ceq 'OLCULEMEDI' -and $c3.err -ne '' -and -not $c3.wait) (($c3.Values | ForEach-Object { [string]$_ }) -join ' / ')
+          Assert $asserts 'yayin: ObjectNotFound kategorili AMA baska kimlikli hata BOS SAYILMAZ -> OLCULEMEDI' ($c4.pids -ceq 'THROW' -and $c4.state -ceq 'OLCULEMEDI' -and -not $c4.wait) (($c4.Values | ForEach-Object { [string]$_ }) -join ' / ')
+          Assert $asserts 'yayin: calisan servis (tek dinleyici + host + Running) -> CALISIYOR, Wait-Stopped false' ($c5.pids -ceq '1' -and $c5.host -ceq '1' -and $c5.state -ceq 'CALISIYOR' -and -not $c5.wait) (($c5.Values | ForEach-Object { [string]$_ }) -join ' / ')
+          # duyarlilik: R03 oncesi bicim (SilentlyContinue) ayni TCP/CIM hatasinda KAPALI + Wait true uretir -> bu test farki OLCER
+          . ([scriptblock]::Create('function Get-Pids([int]$port) { return @((Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue).OwningProcess | Sort-Object -Unique) }'))
+          . ([scriptblock]::Create('function Get-HostProcCount([string]$hostArg) { return @(Get-CimInstance Win32_Process -Filter "Name=''hukuk-task-host.exe''" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match (''(^|\s)'' + $hostArg + ''(\s|$)'') }).Count }'))
+          $o2 = & $case 'denied' 'empty' 'Ready'; $o3 = & $case 'empty' 'denied' 'Ready'
+          Assert $asserts 'duyarlilik: eski SilentlyContinue bicimi ayni TCP ve CIM hatasinda KAPALI + Wait-Stopped true verir (testin ayirt ediciligi)' ($o2.state -ceq 'KAPALI' -and $o2.wait -and $o3.state -ceq 'KAPALI' -and $o3.wait) ('tcp=' + $o2.state + '/' + $o2.wait + ' cim=' + $o3.state + '/' + $o3.wait)
+          # B3 (r27-rollback.ps1) ayni kok neden: okuma hatasi Wait-Stopped'i true yapmaz, firlatir (2-durdur HATA -> 21, dosyaya dokunulmaz)
+          foreach ($k in $rbF.Keys) { . ([scriptblock]::Create($rbF[$k])) }
+          $b3 = { param($tcp, $cim, $task) $script:MOCK = @{ tcp = $tcp; cim = $cim; task = $task }; $(try { [string][bool](Wait-Stopped $WEB_TASK $WEB_PORT 'web' 1) } catch { 'THROW' }) }
+          $b1 = & $b3 'empty' 'empty' 'Ready'; $b2 = & $b3 'denied' 'empty' 'Ready'; $b3c = & $b3 'empty' 'denied' 'Ready'; $b4 = & $b3 'one' 'one' 'Running'
+          $script:MOCK = @{ tcp = 'empty'; cim = 'empty'; task = 'Ready' }; $bp = $(try { [string]@(Get-Pids $WEB_PORT).Count } catch { 'THROW' })
+          Assert $asserts 'B3: gercek bos -> Wait-Stopped true; TCP okuma hatasi -> FIRLATIR; CIM okuma hatasi -> FIRLATIR; calisan -> false' ($b1 -ceq 'True' -and $b2 -ceq 'THROW' -and $b3c -ceq 'THROW' -and $b4 -ceq 'False' -and $bp -ceq '0') ('bos=' + $b1 + ' tcp=' + $b2 + ' cim=' + $b3c + ' calisan=' + $b4 + ' Get-Pids(bos)=' + $bp)
+          foreach ($f in @('Get-NetTCPConnection', 'Get-CimInstance', 'Get-ScheduledTask', 'Start-Sleep', 'Get-Pids', 'Get-HostProcCount', 'Get-TaskState', 'Measure-Svc', 'Wait-Stopped', 'Test-EmptyQueryError')) { Remove-Item -LiteralPath ('function:\' + $f) -ErrorAction SilentlyContinue }
+          $TEST = $null
+        }
         'gate-rogue-wiring' {
           # SUREC KOSMAZ. (1) STATIK: kapi zinciri BUTUNLUGU (Get-GateIntegrity: 15 fonksiyonun ve ROGUE_* atamalarinin tam metni, SelfTest
           # blogu, akisin 0-kapilar kesiti, fonksiyon kumesi, dinamik tanim/golge yasagi, mod degiskeni envanteri, AST cagri konumlari) pinle
@@ -667,10 +734,10 @@ foreach ($sc in $Scenarios) {
           $gi = Get-GateIntegrity $RELEASE
           $EXPI = [ordered]@{
             'parseErrors' = '0'
-            'functionsTotal' = '52'
-            'functionsTop' = '52'
+            'functionsTotal' = '53'
+            'functionsTop' = '53'
             'functionsDuplicate' = ''
-            'functionNamesSha' = '70B6973CA740DE0C1730EF769526040D82B6893160C94C1938897AB8381F8CE6'
+            'functionNamesSha' = '401C0482CF90C020FAC166C564B25BE90AE46A4A31099E8B6FCB550AF40785EB'
             'fn:Say' = 'FE49505CF9B83BF88F2A9EA2700AB41F0BCC650BB7C6D726F5FF7BEC7C63EE81'
             'fn:Get-SimState' = 'EF43A7BFEC648E5D534C33666D151A95B55E5C4498216C5F2A6A1EB0E1A691F0'
             'fn:ConvertTo-RogueFolded' = '427D6E02B0548E2B444F160D0C4D457E1D09C3EA73DB2C068A15A21B75144E90'
@@ -691,7 +758,7 @@ foreach ($sc in $Scenarios) {
             'rogueAssignSha' = 'F039A6D72C59B2581CF92AF1AFEBDA216D205AC0A2A1B310A2D3624C406046E5'
             'selfPathAssign' = '[string]$PSCommandPath'
             'selfTestBlocks' = '1'
-            'selfTestSha' = '730C1CA03AA014B8EDCF652545F7EA903E203489941EDA4A3F21F950F4B580F9'
+            'selfTestSha' = '4C08A1E239352684200E8B83D918563378859B9D55404A46E371A21B59C2BBFB'
             'selfFailsAssign' = '$fails = 0'
             'selfFailsUnary' = 'PostfixPlusPlus'
             'selfClassifierLink' = '1'
@@ -706,7 +773,7 @@ foreach ($sc in $Scenarios) {
             'geAssignAll' = '2'
             'dynamicUse' = 'tercih:PSCommandPath@<ust>,tercih:PSDefaultParameterValues@Get-ProcList'
             'exitSites' = '<ust>=8'
-            'modeVarInventory' = '<ust>:FAULT=7;<ust>:SIM_STATE=3;<ust>:TEST=15;<ust>:TESTROOT=15;Get-HostProcCount:TEST=1;Get-LauncherTuple:TEST=1;Get-LiveRogueReport:TEST=2;Get-Pids:TEST=1;Get-ProcCommandLine:TEST=1;Get-ProcList:TEST=1;Get-RecoveryText:TEST=1;Get-RecoveryText:TESTROOT=1;Get-ServiceState:TEST=1;Get-SimState:SIM_STATE=1;Get-TaskAction:TEST=1;Get-TaskState:TEST=1;Http:FAULT=1;Http:TEST=1;Invoke-FaultPoint:FAULT=8;Invoke-FaultPoint:TEST=1;Invoke-StartTask:FAULT=5;Invoke-StartTask:TEST=1;Invoke-StopTask:FAULT=7;Invoke-StopTask:TEST=1;Set-SimState:SIM_STATE=1;Test-Elevated:TEST=1;Test-InheritOnly:TEST=1;Test-OldSvcHealth:TEST=1;Wait-Stopped:TEST=1;Write-EvidenceProtected:DIZGI:FAULT=1;Write-EvidenceProtected:DIZGI:TESTROOT=1;Write-EvidenceProtected:FAULT=1;Write-EvidenceProtected:TEST=3;Write-EvidenceProtected:TESTROOT=1'
+            'modeVarInventory' = '<ust>:FAULT=7;<ust>:SIM_STATE=3;<ust>:TEST=15;<ust>:TESTROOT=15;Get-HostProcCount:TEST=1;Get-LauncherTuple:TEST=1;Get-LiveRogueReport:TEST=2;Get-Pids:TEST=2;Get-ProcCommandLine:TEST=1;Get-ProcList:TEST=1;Get-RecoveryText:TEST=1;Get-RecoveryText:TESTROOT=1;Get-ServiceState:TEST=1;Get-SimState:SIM_STATE=1;Get-TaskAction:TEST=1;Get-TaskState:TEST=1;Http:FAULT=2;Http:TEST=1;Invoke-FaultPoint:FAULT=8;Invoke-FaultPoint:TEST=1;Invoke-StartTask:FAULT=5;Invoke-StartTask:TEST=1;Invoke-StopTask:FAULT=9;Invoke-StopTask:TEST=1;Set-SimState:SIM_STATE=1;Test-Elevated:TEST=1;Test-InheritOnly:TEST=1;Test-OldSvcHealth:TEST=1;Wait-Stopped:TEST=1;Write-EvidenceProtected:DIZGI:FAULT=1;Write-EvidenceProtected:DIZGI:TESTROOT=1;Write-EvidenceProtected:FAULT=1;Write-EvidenceProtected:TEST=3;Write-EvidenceProtected:TESTROOT=1'
           }
           $iBad = New-Object System.Collections.Generic.List[string]
           foreach ($k in $EXPI.Keys) { if ([string]$gi[$k] -cne [string]$EXPI[$k]) { $v = [string]$gi[$k]; $iBad.Add($k + ' -> ' + $(if ($v.Length -gt 48) { $v.Substring(0, 48) + '...' } else { $v })) } }
@@ -951,7 +1018,12 @@ foreach ($sc in $Scenarios) {
           Assert $asserts ('toparlama eylemleri: api=' + $exp.apiAction + ' | web=' + $exp.webAction) ([string]$rcv.api.action -ceq $exp.apiAction -and [string]$rcv.web.action -ceq $exp.webAction) ('api=' + $rcv.api.action + ' | web=' + $rcv.web.action)
           Assert $asserts 'toparlama: servis bazinda saglik sonucu gercek simulator durumuyla ESIT (Start komutu ayakta sayilmaz)' ([bool]$rcv.api.health.ok -eq [bool]$stNow.apiRunning -and [bool]$rcv.web.health.ok -eq [bool]$stNow.webRunning) ('api saglik=' + $rcv.api.health.ok + '/sim ' + $stNow.apiRunning + ' web saglik=' + $rcv.web.health.ok + '/sim ' + $stNow.webRunning)
           Assert $asserts ('toparlama.ok=' + ($exp.exit -eq 21) + ' (verdict/cikis ile tutarli)') ([bool]$rcv.ok -eq ($exp.exit -eq 21)) ('ok=' + $rcv.ok)
-          Assert $asserts 'kanit serviceState: son olcum simulatorle ESIT (api/web)' (([string]$ev.serviceState.api.state -ceq $(if ([bool]$stNow.apiRunning) { 'CALISIYOR' } else { 'KAPALI' })) -and ([string]$ev.serviceState.web.state -ceq $(if ([bool]$stNow.webRunning) { 'CALISIYOR' } else { 'KAPALI' }))) ('api=' + $ev.serviceState.api.state + ' web=' + $ev.serviceState.web.state)
+          $expWebSt = $(if ($exp.webMeasured) { $exp.webMeasured } elseif ([bool]$stNow.webRunning) { 'CALISIYOR' } else { 'KAPALI' })
+          Assert $asserts ('kanit serviceState: son olcum simulatorle ESIT (api/web; web=' + $expWebSt + ')') (([string]$ev.serviceState.api.state -ceq $(if ([bool]$stNow.apiRunning) { 'CALISIYOR' } else { 'KAPALI' })) -and ([string]$ev.serviceState.web.state -ceq $expWebSt)) ('api=' + $ev.serviceState.api.state + ' web=' + $ev.serviceState.web.state)
+          if ($exp.webUnreadable) {
+            Assert $asserts 'olcum hatasi KAPALI SAYILMADI: WEB komut TAMAM + bekleme false + olculen OLCULEMEDI (hata metni kayitta) -> DURDURULAMADI' ([string]$sw.command -ceq 'TAMAM' -and $sw.waitStopped -eq $false -and [string]$sw.measured.state -ceq 'OLCULEMEDI' -and [string]$sw.measured.error -ne '' -and -not [bool]$sw.stopped) ([string]$sw.text)
+            Assert $asserts 'toparlama: WEB once OLCULEMEDI -> Start YOK; simulatorde WEB gercekte kapali (olcumsuz basari iddiasi yok)' ([string]$rcv.web.before.state -ceq 'OLCULEMEDI' -and -not [bool]$rcv.web.health.ok -and -not [bool]$stNow.webRunning) ('once=' + $rcv.web.before.state + ' saglik=' + $rcv.web.health.ok)
+          }
           Assert $asserts 'konsol: olculmemis yeniden baslatma iddiasi YOK' ($r.out -notmatch 'yeniden baslatildi') ''
           Assert $asserts ('stdout: ' + $exp.verdict + ' sonucu ve cikis ' + $exp.exit) ($r.out -match ('=== SONUC: ' + [regex]::Escape($exp.verdict) + ' \(cikis ' + $exp.exit + '\)')) ''
           if ($exp.exit -eq 21) {
@@ -960,19 +1032,24 @@ foreach ($sc in $Scenarios) {
             $recT = (@($ev.recovery) -join "`n")
             Assert $asserts 'stdout: TOPARLAMA TAMAMLANAMADI + KURTARMA satirlari; TOPARLAMA PASS iddiasi YOK' ($r.out -match 'TOPARLAMA TAMAMLANAMADI' -and $r.out -match '(?m)^KURTARMA: ' -and $r.out -notmatch 'TOPARLAMA PASS') ''
             Assert $asserts 'kurtarma: DOSYA TAKASI BASLAMADI; B3 GEREKMEZ (r27-rollback.ps1 komutu YOK)' ($recT -match 'DOSYA TAKASI BASLAMADI' -and $recT -notmatch 'r27-rollback\.ps1') ''
-            Assert $asserts 'kurtarma: YALNIZ KAPALI olculen WEB icin Start; calisan API icin Start YOK' ($recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-Web') -and -not $recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-API')) ''
+            if ($exp.recStartWeb -eq $false) {
+              Assert $asserts 'kurtarma: OLCULEMEDI WEB icin Start YOK, once olcum talimati; calisan API icin Start YOK' (-not $recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-Web') -and -not $recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-API') -and $recT -match 'KARISIK/OLCULEMEDI olan servis\(ler\) \[web:HukukPlatform-Web\]') ''
+            } else {
+              Assert $asserts 'kurtarma: YALNIZ KAPALI olculen WEB icin Start; calisan API icin Start YOK' ($recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-Web') -and -not $recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-API')) ''
+            }
             Assert $asserts 'kurtarma: servis bazinda durum satirlari (API/WEB)' ($recT -match '(?m)^\s+API: durdurma=' -and $recT -match '(?m)^\s+WEB: durdurma=') ''
           }
         } elseif ($exp.exit -eq 12) {
           # otomatik geri donuste durdurma basarisiz: kapanmamis surec uzerinde geri yukleme YOK; servis bazinda durum + kalan adimlar
           $rb = $ev.rollback; $sw = $rb.stops.web; $sa = $rb.stops.api
-          Assert $asserts 'R-durdur: WEB komut ISTISNA + olculen CALISIYOR (durdurulamadi)' ($null -ne $sw -and [string]$sw.command -ceq 'ISTISNA' -and -not [bool]$sw.stopped -and [string]$sw.measured.state -ceq 'CALISIYOR') $(if ($sw) { $sw.text } else { 'YOK' })
+          $rbCmd = $(if ($exp.rbWebCommand) { $exp.rbWebCommand } else { 'ISTISNA' }); $rbSt = $(if ($exp.rbWebState) { $exp.rbWebState } else { 'CALISIYOR' }); $rbMark = $(if ($exp.faultMark) { $exp.faultMark } else { 'R-durdur: web komut istisnasi' })
+          Assert $asserts ('R-durdur: WEB komut ' + $rbCmd + ' + olculen ' + $rbSt + ' (durdurulamadi; olcum hatasi KAPALI sayilmaz)') ($null -ne $sw -and [string]$sw.command -ceq $rbCmd -and -not [bool]$sw.stopped -and [string]$sw.measured.state -ceq $rbSt) $(if ($sw) { $sw.text } else { 'YOK' })
           Assert $asserts 'R-durdur: WEB istisnasina ragmen API durdurma DENENDI ve AYRI kayitli (DURDU, olculen KAPALI)' ($null -ne $sa -and [string]$sa.command -ceq 'TAMAM' -and [bool]$sa.stopped -and [string]$sa.measured.state -ceq 'KAPALI') $(if ($sa) { $sa.text } else { 'YOK' })
           Assert $asserts 'geri yukleme YOK: stoppedBeforeRestore=false, verify yok, servicesStarted=false' (($rb.stoppedBeforeRestore -eq $false) -and $null -eq $ev.verify -and -not [bool]$rb.servicesStarted) ''
           Assert $asserts 'restoreSteps: durdur BASARISIZ + dosya adimlarinin hepsi KALAN' (([string]$ev.restoreSteps.durdur).StartsWith('BASARISIZ') -and @($ev.restoreSteps.PSObject.Properties | Where-Object { $_.Name -ne 'durdur' -and [string]$_.Value -cne 'KALAN' }).Count -eq 0) (($ev.restoreSteps.PSObject.Properties | ForEach-Object { $_.Name + '=' + $_.Value }) -join ' ; ')
           $recT = (@($ev.recovery) -join "`n")
-          Assert $asserts 'kurtarma: servis bazinda satirlar + YALNIZ durdurulamayan WEB icin elle durdurma (duran API icin yok) + B3 tam yollarla' ($recT -match 'GERI ALMADA DURDURMA BASARISIZ' -and $recT -match '(?m)^\s+WEB: komut=ISTISNA' -and $recT -match '(?m)^\s+API: komut=TAMAM' -and $recT.Contains('Stop-ScheduledTask -TaskName HukukPlatform-Web') -and -not $recT.Contains('Stop-ScheduledTask -TaskName HukukPlatform-API') -and $recT -match 'r27-rollback\.ps1' -and $recT -match '-BackupApiDir') ''
-          Assert $asserts 'faultLog: R-durdur web komut istisnasi' ((($ev.testMode.faultLog) -join ' ; ').Contains('R-durdur: web komut istisnasi')) (($ev.testMode.faultLog) -join ' ; ')
+          Assert $asserts 'kurtarma: servis bazinda satirlar + YALNIZ durdurulamayan WEB icin elle durdurma (duran API icin yok) + B3 tam yollarla' ($recT -match 'GERI ALMADA DURDURMA BASARISIZ' -and $recT -match ('(?m)^\s+WEB: komut=' + $rbCmd) -and $recT -match '(?m)^\s+API: komut=TAMAM' -and $recT.Contains('Stop-ScheduledTask -TaskName HukukPlatform-Web') -and -not $recT.Contains('Stop-ScheduledTask -TaskName HukukPlatform-API') -and $recT -match 'r27-rollback\.ps1' -and $recT -match '-BackupApiDir') ''
+          Assert $asserts ('faultLog: ' + $rbMark) ((($ev.testMode.faultLog) -join ' ; ').Contains($rbMark)) (($ev.testMode.faultLog) -join ' ; ')
           Assert $asserts 'stdout: KURTARMA satiri + SONUC 12' ($r.out -match '(?m)^KURTARMA: ' -and $r.out -match '=== SONUC: ROLLBACK-ENGELLENDI \(cikis 12\)') ''
         } elseif ($exp.exit -eq 13) {
           # eski kimlik DOGRULANDIKTAN sonra baslatma istisnasi: dosya durumu (verify) ile servis durumu (postStart) ayri
