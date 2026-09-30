@@ -111,6 +111,30 @@ function simpleScenario(id: string, tenantSetup: 'SINGLE' | 'TWO_TENANT_ISOLATIO
   });
 }
 
+/** Koşucunun seedLegalRate'i ile aynı: kiracı bürosu + 2020-01-01'den açık uçlu LEGAL_3095 oranı (temizlikte silinir). */
+async function seedLegalRateForScenario(
+  prisma: PrismaClient,
+  tenantId: string,
+  rows: Array<{ validFrom: string; validTo: string | null; annualRate: number }> = [
+    { validFrom: '2020-01-01', validTo: null, annualRate: 0.24 },
+  ],
+): Promise<void> {
+  await prisma.office.create({ data: { id: tenantId, tenantId, name: `W0.3 Diagnostic Office (${tenantId})` } });
+  for (const [index, row] of rows.entries()) {
+    await prisma.rateSchedule.create({
+      data: {
+        tenantId,
+        interestType: 'LEGAL_3095',
+        validFrom: new Date(row.validFrom),
+        validTo: row.validTo ? new Date(row.validTo) : null,
+        annualRate: row.annualRate,
+        source: 'MANUAL',
+        versionHash: `w03-diagnostic-seed-${index}`,
+      },
+    });
+  }
+}
+
 describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
   jest.setTimeout(60_000);
   let prisma: PrismaClient;
@@ -497,6 +521,10 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
     const def = simpleScenario('pr7-fee-projection', 'TWO_TENANT_ISOLATION');
     const refs = await materializeScenario(prisma, def);
     allRefs.push(refs);
+    // K3-L TK-2: LEGAL_3095 kalemi oran verisi olmadan artık "faiz bilinmiyor" (INTEREST_UNRESOLVED) olur; bu test ücret
+    // projeksiyonunu sınar, bu yüzden koşucunun (seedLegalRate) tohumladığı oran burada da kurulur. Önceden oran yokken
+    // faiz sessizce 0 sayılıyordu.
+    await seedLegalRateForScenario(prisma, refs.tenantId);
     const service = new CaseBalanceService(
       prisma as never,
       new RateProviderService(prisma as never),
@@ -573,6 +601,41 @@ describeIf('W0.3 Diagnostic Dual Mode — DB-gated', () => {
       totalProjectedAmount: null,
     });
     expect(crossTenant.diagnostics.fatal).toEqual([{ code: 'CASE_NOT_FOUND', caseId: refs.caseId }]);
+  });
+
+  it('K3-L TK-2 (gerçek DB + RateProviderService): oran yoksa faiz bilinmiyor; validTo DAHİL oran başlangıç gününü kapsar', async () => {
+    const def = simpleScenario('k3l-tk2-rate-coverage');
+    const refs = await materializeScenario(prisma, def);
+    allRefs.push(refs);
+    const compute = () =>
+      new CaseBalanceService(prisma as never, new RateProviderService(prisma as never), buildEngine())
+        .computeCaseBalance(refs.tenantId, refs.caseId, def.domainInput.asOfDate);
+
+    // 1) Oran satırı yok → sessiz 0 faiz "OK" DEĞİL: anapara taşınır, faiz null, UNAVAILABLE
+    const noRate = await compute();
+    expect(noRate.currencyResults).toEqual([
+      expect.objectContaining({ currency: 'TRY', result: null, skippedReason: 'INTEREST_UNRESOLVED', unsimulatedPrincipal: 10_000 }),
+    ]);
+    expect(noRate.unsimulatedPrincipals).toEqual([
+      expect.objectContaining({ amount: 10_000, kind: 'UNRESOLVED', reasonCode: 'RATE_COVERAGE_MISSING', accruedInterest: null }),
+    ]);
+    expect(noRate.diagnostics.perCurrency.map((d) => d.code)).toEqual(['RATE_COVERAGE_MISSING']);
+    const noRateDisplay = toCaseBalanceDisplay({ tenantId: refs.tenantId, caseId: refs.caseId, balance: noRate });
+    expect(noRateDisplay.status).toBe('UNAVAILABLE');
+    expect(noRateDisplay.currencies[0]).toMatchObject({ interest: null, claimRemaining: null });
+
+    // 2) Faiz başlangıcı (CLAIM_START) bir oranın son günü: validTo DAHİL → o gün kapsanır, sonraki gün yeni oran başlar.
+    //    Sağlayıcı sorgusu validTo'yu dahil saymasaydı (gt) ilk gün oransız kalır ve sonuç yine UNAVAILABLE olurdu.
+    await seedLegalRateForScenario(prisma, refs.tenantId, [
+      { validFrom: '2026-01-01', validTo: CLAIM_START, annualRate: 0.24 },
+      { validFrom: '2026-06-02', validTo: null, annualRate: 0.24 },
+    ]);
+    const covered = await compute();
+    expect(covered.unsimulatedPrincipals).toBeUndefined();
+    expect(covered.diagnostics.fatal).toEqual([]);
+    expect(covered.currencyResults[0].result).not.toBeNull();
+    expect(covered.currencyResults[0].result!.totalInterest).toBeGreaterThan(0);
+    expect(toCaseBalanceDisplay({ tenantId: refs.tenantId, caseId: refs.caseId, balance: covered }).status).toBe('OK');
   });
 
   it('D2: karşılaştırıcı dürüstlüğü — bilinçli yanlış expected match=false üretir', async () => {

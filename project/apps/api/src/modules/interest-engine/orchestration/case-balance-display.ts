@@ -418,7 +418,8 @@ function buildDiagnostics(
     [
       'INTEREST_UNRESOLVED',
       'UNRESOLVED',
-      'Faiz ayari cozulemeyen anapara var; faizi sifir SAYILMADI ve bu para biriminde kismi bakiye uretilmedi.',
+      // K3-L TK-2: oran verisi faiz donemini kapsamayan anapara da bu tanıya düşer (reasonCode RATE_COVERAGE_MISSING)
+      'Faiz ayari veya oran verisi cozulemeyen anapara var; faizi sifir SAYILMADI ve bu para biriminde kismi bakiye uretilmedi.',
     ],
     [
       'NON_ACCRUING_NOT_SIMULATED',
