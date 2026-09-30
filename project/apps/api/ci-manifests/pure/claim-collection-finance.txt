@@ -290,3 +290,8 @@ src/modules/precautionary-order/__tests__/precautionary-cost-writer-routing.spec
 #   red tx ve tum DB sorgularindan ONCE (dosya/taraf hic olusmaz). Evraksiz acilis etkilenmez. Guncel main servis
 #   koduyla admission+instruments 27 testin 16'si DUSER (RED kanitlandi); kalan 11 pozitif/negatif kontrol.
 src/modules/case/__tests__/case-create-instrument-admission.spec.ts
+
+# Dosya acilisinda takip siniflandirmasi (#2847 bulgusu): CaseService.create() siniflandirma alanlarini yazar; lookup
+#   id'leri batchUpdate ile AYNI tenant kuraliyla (validateLookupIds) tx ONCESI dogrulanir; gecersizde transaction hic
+#   baslamaz; alanlar ISTEGE BAGLI (verilmezse sorgu/yazma yok; turetme yok). Guncel main servis koduyla 9 testin 6'si DUSER.
+src/modules/case/__tests__/case-create-classification.spec.ts

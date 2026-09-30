@@ -1040,6 +1040,10 @@ export class CaseService {
   /**
    * Lookup ID'lerinin doğru tenant'a ait olduğunu kontrol et
    * Güvenlik: Başka tenant'ın lookup değerlerinin kullanılmasını engeller
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (dosya açılışında sınıflandırma alanları, tx ve tüm yazmalardan ÖNCE)
+   * - CaseService.batchUpdate() → POST /cases/batch-update
    */
   private async validateLookupIds(
     tenantId: string,
@@ -2110,6 +2114,19 @@ export class CaseService {
       { allowNone: true }
     );
 
+    // Sınıflandırma (takip türü / aşama / risk / durum etiketi / mahiyet): DTO bu alanları kabul ediyor ama
+    // create() önceden YAZMIYORDU → sihirbazda seçilen takip türü sessizce kayboluyor, belge üretimi açık seçimi
+    // bulamıyordu. Alanlar İSTEĞE BAĞLI kalır (sözleşme değişmez); verilen id batchUpdate ile AYNI tenant kuralıyla
+    // doğrulanır. tx ÖNCESİ (fail-fast): geçersiz/başka büroya ait id'de istek bütün olarak 400 → dosya, taraf,
+    // evrak, alacak kalemi hiç oluşmaz.
+    await this.validateLookupIds(tenantId, {
+      takipTuruId: dto.takipTuruId,
+      asamaId: dto.asamaId,
+      riskId: dto.riskId,
+      durumEtiketiId: dto.durumEtiketiId,
+      mahiyetTipiId: dto.mahiyetTipiId,
+    });
+
     try {
       // B4/D: fileNumber ön-benzersizlik kontrolü — tx-öncesi taraf yaratımından
       // (resolveInlinePartiesInTx) HEMEN ÖNCE. Mükerrer dosya no'da Case tx zaten
@@ -2265,6 +2282,14 @@ export class CaseService {
             // WP-1b: dosyayı oluşturan kullanıcı (creator attribution). userId yukarıda zorunlu;
             // eski null kayıtlar için backfill YOK (ayrı/yok). Operasyon owner'dan AYRI kavram.
             createdById: userId,
+            // Sınıflandırma — tx öncesi validateLookupIds ile tenant-doğrulandı; verilmeyen alan NULL kalır
+            // (türetme/varsayılan YOK). mahiyetKodu lookup değildir (UYAP/büro kısa kodu) → olduğu gibi.
+            takipTuruId: dto.takipTuruId || undefined,
+            asamaId: dto.asamaId || undefined,
+            riskId: dto.riskId || undefined,
+            durumEtiketiId: dto.durumEtiketiId || undefined,
+            mahiyetTipiId: dto.mahiyetTipiId || undefined,
+            mahiyetKodu: dto.mahiyetKodu || undefined,
           },
         });
 

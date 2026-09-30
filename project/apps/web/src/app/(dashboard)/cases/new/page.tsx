@@ -64,6 +64,11 @@ import {
   sanitizeCaseDebtorsForSubmit,
   saveCaseWizardDraftState,
 } from "@/lib/case-wizard-draft";
+import {
+  CASE_FORM_SELECTION_MISSING_MESSAGE,
+  restoreCaseWizardFormSelection,
+  serializeCaseWizardFormSelection,
+} from "@/lib/case-wizard-form-selection";
 import { usePreSubmitValidation } from "@/hooks/useValidation";
 import { ValidationError } from "@/lib/api";
 import { useLimitationCheck, LimitationCheckResult } from "@/hooks/useLimitationCheck";
@@ -372,6 +377,9 @@ export default function NewCasePage() {
   const [recommendedForm, setRecommendedForm] = useState<FormMetadata | null>(null);
   const [selectedForm, setSelectedForm] = useState<FormMetadata | null>(null);
   const [selectedSubForm, setSelectedSubForm] = useState<SubFormMetadata | null>(null);
+  // Takip formu bilinmeden (eski taslak / katalogda olmayan kod / adım atlama) dosya oluşturulmaz ve belge üretilmez;
+  // seçim bu pencereden tamamlanır — adım, takip türü ve diğer taslak verileri DEĞİŞMEZ.
+  const [showFormSelectionPicker, setShowFormSelectionPicker] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<FormCategory | "ALL">("ALL");
   const [detailModalForm, setDetailModalForm] = useState<FormMetadata | null>(null);
   const [existingLawyers, setExistingLawyers] = useState<any[]>([]);
@@ -565,6 +573,14 @@ export default function NewCasePage() {
       if (savedState.documentSource) setDocumentSource(savedState.documentSource);
       if (savedState.showWizard !== undefined) setShowWizard(savedState.showWizard);
       if (savedState.showDocumentSelector !== undefined) setShowDocumentSelector(savedState.showDocumentSelector);
+      // Takip formu (form + alt form) kayıtlı koddan AYNEN; bilinemiyorsa tahmin/varsayılan YOK (eksik seçim bandı)
+      const restoredForm = restoreCaseWizardFormSelection(savedState, formMetadata);
+      if (restoredForm.status === "RESTORED") {
+        setSelectedForm(restoredForm.form);
+        setSelectedSubForm(restoredForm.subForm);
+      } else if (restoredForm.status === "MISSING") {
+        console.warn(`[taslak] takip formu geri yüklenemedi (${restoredForm.reason}) — gönderimden önce seçim istenecek`);
+      }
     }
     setDraftLoaded(true);
   }, [authLoading, wizardTenantId, wizardUserId]);
@@ -592,10 +608,12 @@ export default function NewCasePage() {
       showDocumentSelector,
       checkPenaltyFormationRequested,
       checkPenaltyFormationKey,
+      // Seçilen takip formu (yalnız kodlar) — yeniden açılışta aynen yüklenir
+      formSelection: serializeCaseWizardFormSelection(selectedForm, selectedSubForm),
     };
-    
+
     saveCaseWizardDraftState(stateToSave, { tenantId: wizardTenantId, userId: wizardUserId });
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, selectedForm, selectedSubForm, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
   useEffect(() => {
@@ -1380,8 +1398,14 @@ export default function NewCasePage() {
 
   // Takip oluştur butonuna basınca - önce validasyon, sonra modal
   const handleSubmitClick = () => {
-    setError(""); 
-    
+    setError("");
+    // Takip formu bilinmiyorsa dosya türü/alt türü TAHMİN EDİLMEZ (önceden sessizce GENERAL_EXECUTION) → seçim istenir
+    if (!selectedForm) {
+      setError(CASE_FORM_SELECTION_MISSING_MESSAGE);
+      setShowFormSelectionPicker(true);
+      return;
+    }
+
     // Backend'e gönderilecek subCategory değerini hesapla
     const backendSubCategory = mapSubCategoryToBackend(caseData.subCategory);
 
@@ -1454,6 +1478,12 @@ export default function NewCasePage() {
   // Gerçek takip oluşturma fonksiyonu
   const doCreateCase = async (sendExpenseEmail: boolean, duesToSubmit?: DueItem[], manualInstrumentsToSubmit?: CaseInstrumentPayload[]) => {
     setShowExpenseConfirmModal(false);
+    if (!selectedForm) {
+      // Savunma: hiçbir yol form bilinmeden istek göndermez (mapCategoryToCaseType varsayılanına düşülmez)
+      setError(CASE_FORM_SELECTION_MISSING_MESSAGE);
+      setShowFormSelectionPicker(true);
+      return;
+    }
     setLoading(true);
     
     // Backend'e gönderilecek subCategory değerini hesapla
@@ -1660,6 +1690,14 @@ export default function NewCasePage() {
 
       <div className="flex-1 bg-white rounded-lg border p-2 overflow-hidden flex flex-col min-h-0">
         {error && <div className="mb-2 p-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs">{error}</div>}
+        {draftLoaded && currentStep >= 1 && !selectedForm && (
+          <div role="status" data-testid="form-selection-missing" className="mb-2 p-2 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg text-xs flex flex-wrap items-center justify-between gap-2">
+            <span>{CASE_FORM_SELECTION_MISSING_MESSAGE}</span>
+            <button type="button" onClick={() => setShowFormSelectionPicker(true)} className="px-2 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium">
+              Takip türünü seç
+            </button>
+          </div>
+        )}
 
         {currentStep === 0 && (
           // PR-1 layout fix: step-0 kendi içinde scroll'lansın. Ebeveyn (flex-1 ... overflow-hidden
@@ -2442,7 +2480,39 @@ export default function NewCasePage() {
       </div>
 
       {detailModalForm && <FormDetailModal form={detailModalForm} isOpen={!!detailModalForm} onClose={() => setDetailModalForm(null)} onSelect={() => { handleFormSelect(detailModalForm); setDetailModalForm(null); }} />}
-      
+
+      {/* Eksik takip formu seçimi: YALNIZ form/alt form atanır — adım, takip türü/mahiyet ve diğer taslak verileri değişmez */}
+      {showFormSelectionPicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-label="Takip türü seçimi">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="p-4 border-b">
+              <h3 className="font-semibold text-gray-900">Takip türünü (form) seçin</h3>
+              <p className="text-xs text-gray-600 mt-1">
+                Dosya türü ve alt türü bu seçimden belirlenir; tahmin edilmez. Girdiğiniz diğer bilgiler korunur.
+                {caseData.takipTuruId && (
+                  <> Kayıtlı takip türü: <strong>{lookups.takipTuru.find(t => t.id === caseData.takipTuruId)?.name ?? "—"}</strong> (değişmez; gerekirse &quot;Takip Bilgileri&quot; adımından değiştirin).</>
+                )}
+              </p>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-3">
+              {formMetadata.map(form => (
+                <FormCard
+                  key={form.code}
+                  form={form}
+                  isSelected={false}
+                  onSelect={(f, sub) => { setSelectedForm(f); setSelectedSubForm(sub || null); setError(""); setShowFormSelectionPicker(false); }}
+                  // Detay modalının "Seç"i handleFormSelect ile takip türünü yeniden atar ve adımı değiştirir → burada kapalı
+                  onInfoClick={() => undefined}
+                />
+              ))}
+            </div>
+            <div className="p-3 border-t flex justify-end">
+              <button type="button" onClick={() => setShowFormSelectionPicker(false)} className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50">Kapat</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Yeni Müvekkil Modal */}
       {showNewClientModal && (
         <NewClientModal
