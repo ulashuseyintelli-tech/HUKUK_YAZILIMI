@@ -3,6 +3,7 @@ param(
   [string]$CandApps = 'D:\Development\HUKUK_YAZILIMI\HY_WT_R27\project\apps',
   [string]$ProvaRoot = 'D:\Development\HUKUK_YAZILIMI\HY_R27_FAULT_PROVA',
   [string]$ScriptDir = '',
+  [string]$ChildShell = 'powershell.exe',   # yayin/geri alma betiklerini kosan kabuk: 'powershell.exe' (WinPS 5.1, varsayilan) | 'pwsh.exe' (PowerShell 7)
   [string[]]$Scenarios = @('happy-path', 'rollback-script', 'api-copy-interrupt', 'web-swap-fail', 'identity-read-error', 'identity-read-persistent', 'service-start-fail', 'restore-hash-mismatch', 'stop-fail',
                           'stop-web-throw', 'stop-api-throw', 'stop-recovery-start-throw', 'rollback-stop-fail', 'rollback-start-throw',
                           'stop-measure-unreadable', 'rollback-measure-unreadable',
@@ -190,7 +191,7 @@ function Get-LiveDigests {
 function Run-Script([string]$file, [string[]]$argList, [string]$outFile) {
   $global:LASTEXITCODE = -999
   $psi = New-Object Diagnostics.ProcessStartInfo
-  $psi.FileName = 'powershell.exe'; $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+  $psi.FileName = $ChildShell; $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
   $psi.Arguments = ('-NoProfile -ExecutionPolicy Bypass -File "' + $file + '" ' + ($argList -join ' '))
   $p = [Diagnostics.Process]::Start($psi)
   $errTask = $p.StandardError.ReadToEndAsync()
@@ -307,7 +308,7 @@ function Get-GateIntegrity([string]$file) {
 # ---- /Get-GateIntegrity
 
 # ---------------------------------------------------------------- 0) PRISTINE / ADAY KIMLIGI + YOL BUTCESI
-Say ('HARNESS baslangic: ProvaRoot=' + $ProvaRoot + ' | Pristine=' + $PristineDir + ' | Cand=' + $CandApps + ' | scripts=' + $ScriptDir + ' | run=' + $RUN_TS)
+Say ('HARNESS baslangic: ProvaRoot=' + $ProvaRoot + ' | Pristine=' + $PristineDir + ' | Cand=' + $CandApps + ' | scripts=' + $ScriptDir + ' | cocuk kabuk=' + $ChildShell + ' | run=' + $RUN_TS)
 foreach ($f in @($RELEASE, $ROLLBACK, $PSCommandPath)) {
   $tok = $null; $perr = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$tok, [ref]$perr)
   if ($perr.Count -ne 0) { Write-Host ('HARNESS: parse hatasi ' + $f + ' (' + $perr.Count + ')'); exit 1 }
@@ -1116,7 +1117,7 @@ $allPass = (@($results | Where-Object { $_.result -ne 'PASS' }).Count -eq 0) -an
 $summary = [ordered]@{
   record = 'R27-FAULT-PROVA-SUMMARY'; tsUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); runTs = $RUN_TS; result = $(if ($allPass) { 'PASS' } else { 'FAIL' })
   scenariosRun = $results.Count; scenariosPass = @($results | Where-Object { $_.result -eq 'PASS' }).Count
-  scripts = [ordered]@{ release = $RELEASE; releaseSha256 = (Sha $RELEASE); rollback = $ROLLBACK; rollbackSha256 = (Sha $ROLLBACK); harness = $PSCommandPath; harnessSha256 = (Sha $PSCommandPath) }
+  childShell = $ChildShell; scripts = [ordered]@{ release = $RELEASE; releaseSha256 = (Sha $RELEASE); rollback = $ROLLBACK; rollbackSha256 = (Sha $ROLLBACK); harness = $PSCommandPath; harnessSha256 = (Sha $PSCommandPath) }
   pristine = [ordered]@{ dir = $PristineDir; api = $pApi; web = $pWeb; cfg = $pCfg }; candidate = [ordered]@{ dir = $CandApps; api = $cApi; web = $cWeb; cfg = $cCfg }
   pathBudget = [ordered]@{ limit = 260; maxRelApi = $maxRelApi; maxRelWeb = $maxRelWeb; items = $budget; ok = $budgetOk }
   testRoot = $TESTROOT; runEvidenceDir = $RUN_EVID; gateRoot = $GATE_ROOT; liveTouched = $false

@@ -257,7 +257,7 @@ düzeltmesi yapıldı (okuma hatası artık "kapandı" sayılmaz); çıkış kod
 |---|---|
 | `r27-release.ps1` | `0A1570F0556904E7AD2463FFB97D0DA6E2D15CD14DAA797311F3F3FC05573E94` |
 | `r27-rollback.ps1` | `DAEB5DEB4F7027B7275A7E17F20D0076337FFD9905854DF53A144186BCF26F3A` |
-| `r27-fault-prova.ps1` (harness; canlıya dokunmaz) | `EC6A0E5C9663163088E5044D7140A0C5B15FAB6DAE55516ADFB5ECB09336267C` |
+| `r27-fault-prova.ps1` (harness; canlıya dokunmaz) | `6C9A2EF0DFB008B25ECA5484BBF40DDB4C828142FD3DF7198739D32703D77DAF` |
 | `r27-dar-kabul.js` | `F077A8E40462F2F47A98AC27575F2D5EDBF2BB0C16328732CFF454324C09A4A6` |
 
 Betik dizini (merge sonrası kanonik): `D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\`.
@@ -405,7 +405,7 @@ Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini öl�
 | # | İş | Bağımlılık | Durum |
 |---|---|---|---|
 | W1 | Bu paket PR'ı (#2837; docs + betikler) merge | owner onayı (2026-09-30, sohbet: "plana göre merge edilebiliyorsa merge et") + son head'de CI/CodeQL yeşil + `main` CI boş | koşullar sağlanınca ajan merge eder (`--match-head-commit`); sonuç kanıt paketindeki `PR-HEADS-AND-ORDER.json`'da |
-| W0 | R03/R03-b dar düzeltme PR'ı (durdurma/geri dönüş hata yolları + ölçüm hatası ≠ kapalı + D-8 katman ipucu + koşullu SEC kararı) | **(a)** gerçek taban kopyası + aday dist ile harness son baytlarla **26/26**, WinPS 5.1 **ve** pwsh 7 · **(b)** yeni yayın sha'sıyla canlı salt-okuma SelfTest (A/B/C; yeni boş-sonuç ölçümü dahil) · **(c)** owner incelemesi + merge · **(d)** SEC-PORTAL-ADMIN-MSG-01 önkoşulları: **P-1** canlı etkili kenar yapılandırması, **P-2** API erişim sınırı (salt okuma; ayrıntı kısıtlı kayıtta) | taslak PR; bu turda merge edilmez; (a)(b)(d) owner makinesinde |
+| W0 | R03/R03-b dar düzeltme PR'ı (durdurma/geri dönüş hata yolları + ölçüm hatası ≠ kapalı + D-8 katman ipucu + koşullu SEC kararı) | **(a)** gerçek taban kopyası + aday dist ile harness son baytlarla **26/26**, iki kez: `-ChildShell powershell.exe` (WinPS 5.1, varsayılan) **ve** `-ChildShell pwsh.exe` (PowerShell 7) · **(b)** yeni yayın sha'sıyla canlı salt-okuma SelfTest (A/B/C; yeni boş-sonuç ölçümü dahil) · **(c)** owner incelemesi + merge · **(d)** SEC-PORTAL-ADMIN-MSG-01 önkoşulları: **P-1** canlı etkili kenar yapılandırması, **P-2** API erişim sınırı (salt okuma; ayrıntı kısıtlı kayıtta) | taslak PR; bu turda merge edilmez; (a)(b)(d) owner makinesinde |
 | W2 | R27 yayını B0→B2 | W0 + W1 + owner GO Y1 | bekliyor |
 | W3 | Pin güncelleme PR'ı (#2838) | W2 (canlı dist R27) | taslak; merge yalnız B1 + B2 PASS **sonrası** (öncesinde eski paketlerin Preflight'ları canlı R26'da DUR verir) |
 | W4 | D-5 canlı kabul | W2, W3 + §10 D-5 kararları + GO | paket hazır (koşucu öz-testi 41/41 · QR 23/23 · blok 90/90 ×2 kabuk) |
