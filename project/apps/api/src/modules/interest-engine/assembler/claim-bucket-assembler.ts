@@ -11,6 +11,9 @@
  *        diagnostic). Otomatik tahmin YOK; silent default YOK.
  *  - Gb: startDate çözülemezse diagnostic (issueDate/dueDate fallback YOK).
  *  - Gc: faiz konfig çözülemeyen principal → diagnostic + bucket ÜRETME (faizsiz bucket yok).
+ *    K3-L D2-b1: kovası üretilmeyen principal (açık NO_INTEREST ya da çözülemeyen faiz) SESSİZCE düşmez —
+ *    `principalCarry` ile orkestrasyona taşınır; motor simüle ETMEZ, orkestrasyon o para biriminde kısmi
+ *    bakiye üretmez ve açık engel raporlar. Bucket ve diagnostic çıktıları DEĞİŞMEZ.
  *  - E-G2b: interestRate(%) → percentToRate → fixedRate(0-1), yalnız requiresFixedRate(code) ise.
  *
  * SAF FONKSİYON: DB/prisma yok, tenant okuma yok (çağıran tek-tenant/tek-case ACTIVE kalemleri verir).
@@ -95,6 +98,18 @@ export interface AssemblerDiagnostic {
   detail?: string;
 }
 
+/**
+ * K3-L D2-b1: kovası üretilemeyen PRINCIPAL kalem. `NON_ACCRUING` = açık faizsizlik beyanı (NO_INTEREST, çelişkisiz);
+ * `UNRESOLVED` = faiz ayarı çözülemedi (terminal tanı kodu). Faiz türü alanı TAŞINMAZ; tutar = demandedAmount ?? amount.
+ */
+export interface PrincipalCarryItem {
+  claimItemId: string;
+  amount: number;
+  currency: string;
+  kind: 'NON_ACCRUING' | 'UNRESOLVED';
+  reasonCode: 'NO_INTEREST_DECLARED' | AssemblerDiagnosticCode;
+}
+
 export interface ClaimBucketAssemblyResult {
   buckets: ClaimBucket[];
   costs: Partial<Record<AncillaryType, number>>;
@@ -107,6 +122,8 @@ export interface ClaimBucketAssemblyResult {
   projectionItems: ClaimItemProjectionSource[];
   excluded: { interestItemIds: string[] };
   diagnostics: AssemblerDiagnostic[];
+  /** K3-L D2-b1: kovası üretilmeyen principal kalemler (sessiz düşme yok). */
+  principalCarry: PrincipalCarryItem[];
 }
 
 export interface ClaimItemProjectionSource {
@@ -126,6 +143,38 @@ interface ResolvedInterestConfig {
 }
 
 const ASSEMBLE_EXCLUDED_STATUSES: ReadonlySet<string> = new Set(['CANCELLED', 'WAIVED']);
+
+/** Principal kovasını ENGELLEYEN (terminal) tanı kodları; INTEREST_TYPE_MIRROR_DRIFT gibi uyarılar hariç. */
+const TERMINAL_PRINCIPAL_CODES: ReadonlySet<AssemblerDiagnosticCode> = new Set<AssemblerDiagnosticCode>([
+  'MISSING_INTEREST_CONFIG',
+  'AMBIGUOUS_INTEREST_CONFIG',
+  'MISSING_START_DATE',
+  'MISSING_START_DATE_SOURCE_VALUE',
+  'FIXED_RATE_REQUIRED',
+  'UNSUPPORTED_INTEREST_TYPE',
+  'NO_INTEREST_AUTHORITY_CONFLICT',
+]);
+
+/** K3-L D2-b1: kovası üretilmeyen principal → taşınan kayıt (bu kalem için basılan tanılardan). */
+function principalCarryFor(
+  item: ClaimItemInput,
+  base: number,
+  emitted: AssemblerDiagnostic[],
+): PrincipalCarryItem {
+  const terminal = emitted.filter((d) => d.claimItemId === item.id && TERMINAL_PRINCIPAL_CODES.has(d.code));
+  const conflict = terminal.find((d) => d.code === 'NO_INTEREST_AUTHORITY_CONFLICT');
+  if (item.interestAccrualStatus === 'NO_INTEREST' && !conflict) {
+    return { claimItemId: item.id, amount: base, currency: item.currency, kind: 'NON_ACCRUING', reasonCode: 'NO_INTEREST_DECLARED' };
+  }
+  return {
+    claimItemId: item.id,
+    amount: base,
+    currency: item.currency,
+    kind: 'UNRESOLVED',
+    // Çelişkili faizsizlik beyanı bilinen sıfır SAYILMAZ; diğer yollarda son terminal tanı (her null dönüş bir tane basar)
+    reasonCode: conflict?.code ?? terminal[terminal.length - 1]?.code ?? 'MISSING_INTEREST_CONFIG',
+  };
+}
 
 /** demandedAmount ?? amount (Q3). collectedAmount HİÇ kullanılmaz. */
 function baseAmount(item: ClaimItemInput): number {
@@ -171,6 +220,7 @@ export function assembleClaimBuckets(
   const projectionItems: ClaimItemProjectionSource[] = [];
   const excludedInterestIds: string[] = [];
   const buckets: ClaimBucket[] = [];
+  const principalCarry: PrincipalCarryItem[] = [];
 
   // Status CANCELLED/WAIVED hariç (artık talep edilmeyen alacak); gerisi (ACTIVE/COLLECTED) işlenir.
   const active = items.filter((i) => !ASSEMBLE_EXCLUDED_STATUSES.has(i.status));
@@ -270,13 +320,19 @@ export function assembleClaimBuckets(
     }
 
     // cls.category === 'PRINCIPAL' → bucket üret.
+    const diagnosticsBefore = diagnostics.length;
     const bucket = buildPrincipalBucket(
       item,
       base,
       { principalsCount: principals.length, distinctInterestConfigs, caseInterest },
       diagnostics,
     );
-    if (bucket) buckets.push(bucket);
+    if (bucket) {
+      buckets.push(bucket);
+    } else {
+      // K3-L D2-b1: kova yok ama anapara KAYBOLMAZ — orkestrasyona görünür taşınır
+      principalCarry.push(principalCarryFor(item, base, diagnostics.slice(diagnosticsBefore)));
+    }
   }
 
   return {
@@ -286,6 +342,7 @@ export function assembleClaimBuckets(
     projectionItems,
     excluded: { interestItemIds: excludedInterestIds },
     diagnostics,
+    principalCarry,
   };
 }
 

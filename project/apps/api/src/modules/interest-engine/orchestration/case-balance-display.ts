@@ -48,6 +48,8 @@ export interface CaseBalanceDisplayCurrency {
   /** Bu currency grubu hesaplanmadıysa (0-bucket / engine error). */
   skipped: boolean;
   skippedReason: string | null;
+  /** K3-L D2-b1: bu para biriminde motora girmeyen anapara (açık faizsiz / faizi çözülemeyen); yalnız > 0 iken. */
+  unsimulatedPrincipal?: number;
 }
 
 export type BalanceDisplayAuthority =
@@ -90,7 +92,9 @@ export type BalanceDisplayDiagnosticCode =
   | 'OVERPAYMENT_BLOCKED'
   | 'RESTRICTED_PAYMENT_DISPLAY_UNSAFE'
   | 'NAFAKA_PRINCIPAL_DISPLAY_RISK'
-  | 'MULTI_CURRENCY_DISPLAY_UNSAFE';
+  | 'MULTI_CURRENCY_DISPLAY_UNSAFE'
+  | 'INTEREST_UNRESOLVED'
+  | 'NON_ACCRUING_NOT_SIMULATED';
 
 export interface BalanceDisplayBucket {
   code: BalanceDisplayBucketCode;
@@ -405,12 +409,50 @@ function buildDiagnostics(
     });
   }
 
+  // K3-L D2-b1: simüle edilmeyen anapara açıkça, kalem kalem gösterilir (faiz bilinmiyor = null; sıfır sayılmaz)
+  const unsimulated = balance.unsimulatedPrincipals ?? [];
+  for (const [code, kind, message] of [
+    [
+      'INTEREST_UNRESOLVED',
+      'UNRESOLVED',
+      'Faiz ayari cozulemeyen anapara var; faizi sifir SAYILMADI ve bu para biriminde kismi bakiye uretilmedi.',
+    ],
+    [
+      'NON_ACCRUING_NOT_SIMULATED',
+      'NON_ACCRUING',
+      'Faizsiz (NO_INTEREST) anapara kanonik hesapta henuz simule edilmiyor; bu para biriminde kismi bakiye uretilmedi.',
+    ],
+  ] as const) {
+    const rows = unsimulated.filter((principal) => principal.kind === kind);
+    if (rows.length === 0) continue;
+    const amountByCurrency: Record<string, number> = {};
+    for (const row of rows) amountByCurrency[row.currency] = round2((amountByCurrency[row.currency] ?? 0) + row.amount);
+    diagnostics.push({
+      code,
+      severity: 'BLOCKER',
+      message,
+      details: {
+        currencies: Object.keys(amountByCurrency).sort(),
+        amountByCurrency,
+        observations: rows.map((row) => ({
+          claimItemId: row.claimItemId,
+          currency: row.currency,
+          amount: round2(row.amount),
+          reasonCode: row.reasonCode,
+          accruedInterest: null,
+        })),
+      },
+    });
+  }
+
   const unclassifiedFatalCodes = [...fatalCodes]
     .filter((code) => ![
       'REVERSAL_INTEGRITY_INVALID',
       'NO_BUCKETS',
       'CURRENCY_MISSING',
       'CURRENCY_UNSUPPORTED',
+      'INTEREST_UNRESOLVED',
+      'NON_ACCRUING_NOT_SIMULATED',
     ].includes(code))
     .sort();
   if (unclassifiedFatalCodes.length > 0) {
@@ -539,6 +581,14 @@ function buildUnsafeSources(diagnostics: BalanceDisplayDiagnostic[]): BalanceDis
         ? 'CaseBalanceResult.diagnostics.payments'
         : 'CaseBalanceResult.diagnostics.currency',
       reason: 'Currency integrity blocker nedeniyle conversion, aggregation veya primary display authority uretilmez.',
+    });
+  }
+  for (const code of ['INTEREST_UNRESOLVED', 'NON_ACCRUING_NOT_SIMULATED'] as const) {
+    if (!diagnostics.some((diagnostic) => diagnostic.code === code)) continue;
+    sources.push({
+      code,
+      source: 'CaseBalanceResult.unsimulatedPrincipals',
+      reason: 'Motora girmeyen anapara nedeniyle bu para biriminde bakiye, snapshot ve primary display authority uretilmez.',
     });
   }
   for (const code of [
@@ -704,6 +754,7 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
     collected: round2(sumCollected(cr.result?.allocations)),
     skipped: cr.result == null,
     skippedReason: cr.skippedReason ?? null,
+    ...(cr.unsimulatedPrincipal ? { unsimulatedPrincipal: round2(cr.unsimulatedPrincipal) } : {}),
   }));
 
   const displayCurrency = inferDisplayCurrency(balance);

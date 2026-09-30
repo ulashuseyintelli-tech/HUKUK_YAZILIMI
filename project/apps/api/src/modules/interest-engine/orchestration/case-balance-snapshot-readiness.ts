@@ -51,7 +51,11 @@ const RECOGNIZED_FATAL_CODES = new Set([
   'NO_BUCKETS',
   'CURRENCY_MISSING',
   'CURRENCY_UNSUPPORTED',
+  'INTEREST_UNRESOLVED',
+  'NON_ACCRUING_NOT_SIMULATED',
 ]);
+/** K3-L D2-b1: simüle edilmeyen anapara — mevcut INTEREST_BASE sınıfına bağlanır (yeni sınıf açılmaz). */
+const PRINCIPAL_NOT_SIMULATED_CODES = new Set(['INTEREST_UNRESOLVED', 'NON_ACCRUING_NOT_SIMULATED']);
 
 const uniqueSorted = (values: string[]): string[] => [...new Set(values)].sort();
 
@@ -102,15 +106,22 @@ export function buildCaseBalanceSnapshotReadiness(balance: CaseBalanceResult): C
     });
   }
 
+  const principalNotSimulated =
+    fatalCodes.some((code) => PRINCIPAL_NOT_SIMULATED_CODES.has(code)) ||
+    skippedReasons.some((code) => PRINCIPAL_NOT_SIMULATED_CODES.has(code));
   const interestBaseSourceCodes = uniqueSorted([
-    ...skippedReasons.filter((code) => code === 'ENGINE_ERROR'),
+    ...skippedReasons.filter((code) => code === 'ENGINE_ERROR' || PRINCIPAL_NOT_SIMULATED_CODES.has(code)),
+    ...fatalCodes.filter((code) => PRINCIPAL_NOT_SIMULATED_CODES.has(code)),
     ...perCurrencyCodes,
+    ...(balance.unsimulatedPrincipals ?? []).map((principal) => principal.reasonCode),
   ]);
-  if (skippedReasons.includes('ENGINE_ERROR')) {
+  if (skippedReasons.includes('ENGINE_ERROR') || principalNotSimulated) {
     blockers.push({
       code: 'INTEREST_BASE',
       sourceCodes: interestBaseSourceCodes.length > 0 ? interestBaseSourceCodes : ['ENGINE_ERROR'],
-      message: 'Interest-base hesaplama sonucu uretilemedi; bos veya sifir basari fallback uygulanmaz.',
+      message: principalNotSimulated
+        ? 'Anaparanin faiz tabani cozulemedi veya faizsiz anapara simule edilmedi; kismi ya da sifir faizli bakiye uretilmez.'
+        : 'Interest-base hesaplama sonucu uretilemedi; bos veya sifir basari fallback uygulanmaz.',
     });
   }
 

@@ -16,6 +16,7 @@ import { SegmentReporterService } from '../../reporter/segment-reporter.service'
 import { AuditWriterService } from '../../audit/audit-writer.service';
 import { VersionPinningService } from '../../version/version-pinning.service';
 import { InterestTypeCode } from '../../types/domain.types';
+import { toCaseBalanceDisplay } from '../case-balance-display';
 import { RateSourceType } from '../../rates/rate-entry.entity';
 
 function realEngine(): InterestEngineService {
@@ -542,15 +543,168 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(computeBalanceSpy).not.toHaveBeenCalled();
   });
 
-  it('assembler diagnostic: faiz konfigsiz principal → MISSING_INTEREST_CONFIG, bucket yok', async () => {
-    const { service } = setup({
+  it('assembler diagnostic: faiz konfigsiz principal → MISSING_INTEREST_CONFIG, bucket yok; anapara GÖRÜNÜR taşınır (K3-L D2-b1)', async () => {
+    const { service, computeBalanceSpy } = setup({
       caseRow: { interestType: null, interestStartDate: null },
       claimItems: [principal({ interestType: null, interestStartDate: null })],
       collections: [],
     });
     const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
     expect(res.diagnostics.assembler.map((d) => d.code)).toContain('MISSING_INTEREST_CONFIG');
-    expect(res.currencyResults).toHaveLength(0);
+    // Eski davranış: currencyResults [] (anapara sessizce kayboluyordu). Yeni: satır + fatal + kalem kaydı.
+    expect(res.currencyResults).toEqual([
+      { currency: 'TRY', result: null, skippedReason: 'INTEREST_UNRESOLVED', grossPrincipal: 0, unsimulatedPrincipal: 10000 },
+    ]);
+    expect(res.diagnostics.fatal).toEqual([{ code: 'INTEREST_UNRESOLVED', caseId: 'case1' }]);
+    expect(res.unsimulatedPrincipals).toEqual([
+      { claimItemId: 'p1', currency: 'TRY', amount: 10000, kind: 'UNRESOLVED', reasonCode: 'MISSING_INTEREST_CONFIG', accruedInterest: null },
+    ]);
+    expect(computeBalanceSpy).not.toHaveBeenCalled();
+  });
+
+  describe('K3-L D2-b1: faizsiz / faizi çözülemeyen anapara sessizce düşmez, kısmi bakiye üretilmez', () => {
+    const noInterest = (p: Record<string, unknown> = {}) =>
+      principal({ id: 'p-ni', demandedAmount: 5000, amount: 5000, interestType: null, interestStartDate: null, interestAccrualStatus: 'NO_INTEREST', ...p });
+    const display = (res: Awaited<ReturnType<CaseBalanceService['computeCaseBalance']>>) =>
+      toCaseBalanceDisplay({ tenantId: 't1', caseId: 'case1', balance: res, generatedAt: '2025-06-01T00:00:00.000Z' });
+
+    it('yalnız faizsiz anapara, ödeme yok: eskiden hiç satır yok + görünüm OK → artık satır + açık engel', async () => {
+      const { service, computeBalanceSpy, rateProvider } = setup({ claimItems: [noInterest()], rates: legalRate() });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.currencyResults).toEqual([
+        { currency: 'TRY', result: null, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', grossPrincipal: 0, unsimulatedPrincipal: 5000 },
+      ]);
+      expect(res.diagnostics.fatal).toEqual([{ code: 'NON_ACCRUING_NOT_SIMULATED', caseId: 'case1' }]);
+      expect(res.unsimulatedPrincipals).toEqual([
+        { claimItemId: 'p-ni', currency: 'TRY', amount: 5000, kind: 'NON_ACCRUING', reasonCode: 'NO_INTEREST_DECLARED', accruedInterest: null },
+      ]);
+      expect(computeBalanceSpy).not.toHaveBeenCalled();
+      expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled();
+
+      const view = display(res);
+      expect(view.status).toBe('UNAVAILABLE');
+      expect(view.unavailableReason).toBe('NON_ACCRUING_NOT_SIMULATED');
+      expect(view.readiness.blockers).toEqual([
+        expect.objectContaining({ code: 'INTEREST_BASE', sourceCodes: ['NON_ACCRUING_NOT_SIMULATED', 'NO_INTEREST_DECLARED'] }),
+      ]);
+      expect(view.currencies).toEqual([
+        expect.objectContaining({ currency: 'TRY', skipped: true, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', unsimulatedPrincipal: 5000 }),
+      ]);
+      const blocker = view.diagnostics.find((d) => d.code === 'NON_ACCRUING_NOT_SIMULATED');
+      expect(blocker).toMatchObject({
+        severity: 'BLOCKER',
+        details: {
+          currencies: ['TRY'],
+          amountByCurrency: { TRY: 5000 },
+          observations: [{ claimItemId: 'p-ni', currency: 'TRY', amount: 5000, reasonCode: 'NO_INTEREST_DECLARED', accruedInterest: null }],
+        },
+      });
+      expect(view.unsafeSources).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'NON_ACCRUING_NOT_SIMULATED', source: 'CaseBalanceResult.unsimulatedPrincipals' })]),
+      );
+      // uydurma toplam yok
+      expect(view.totals.outstandingAmount).toBeNull();
+      expect(view.diagnostics.map((d) => d.code)).not.toContain('CASE_BALANCE_UNAVAILABLE');
+    });
+
+    it('faizsiz anapara + ödeme: eskiden NO_BUCKETS + CURRENCY_MISMATCH → artık gerçek neden, sahte para birimi uyuşmazlığı yok', async () => {
+      const { service, computeBalanceSpy } = setup({ claimItems: [noInterest()], collections: [collection({ amount: 1000 })] });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.currencyResults).toEqual([
+        { currency: 'TRY', result: null, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', grossPrincipal: 0, unsimulatedPrincipal: 5000 },
+      ]);
+      expect(res.diagnostics.fatal.map((f) => f.code)).toEqual(['NON_ACCRUING_NOT_SIMULATED']);
+      expect(res.diagnostics.currency).toEqual([]);
+      expect(computeBalanceSpy).not.toHaveBeenCalled();
+      const view = display(res);
+      expect(view.readiness.blockers.map((b) => b.code)).toEqual(['INTEREST_BASE']);
+      expect(view.diagnostics.map((d) => d.code)).not.toContain('NO_BUCKETS');
+      expect(view.diagnostics.map((d) => d.code)).not.toContain('CURRENCY_MISMATCH');
+    });
+
+    it('karma (faiz işleyen + faizsiz anapara): eskiden eksik totalDue ile OK → artık o para biriminde kısmi bakiye YOK', async () => {
+      const { service, computeBalanceSpy } = setup({ claimItems: [principal(), noInterest()], rates: legalRate() });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.currencyResults).toEqual([
+        { currency: 'TRY', result: null, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', grossPrincipal: 10000, unsimulatedPrincipal: 5000 },
+      ]);
+      expect(computeBalanceSpy).not.toHaveBeenCalled();
+      expect(display(res).status).toBe('UNAVAILABLE');
+    });
+
+    it('çok para birimi: yalnız etkilenen para birimi durur; diğeri normal hesaplanır', async () => {
+      const { service, computeBalanceSpy } = setup({
+        claimItems: [principal({ id: 'p-usd', currency: 'USD' }), noInterest()],
+        rates: legalRate(),
+      });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      const usd = res.currencyResults.find((r) => r.currency === 'USD');
+      const tryRow = res.currencyResults.find((r) => r.currency === 'TRY');
+      expect(usd?.result).not.toBeNull();
+      expect(usd?.unsimulatedPrincipal).toBeUndefined();
+      expect(tryRow).toEqual({ currency: 'TRY', result: null, skippedReason: 'NON_ACCRUING_NOT_SIMULATED', grossPrincipal: 0, unsimulatedPrincipal: 5000 });
+      expect(computeBalanceSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('aynı para biriminde çözülemeyen + faizsiz: çözülemeyen öncelikli; iki fatal de raporlanır', async () => {
+      const { service } = setup({
+        caseRow: { interestType: null, interestStartDate: null },
+        claimItems: [principal({ id: 'p-un', interestType: null, interestStartDate: null }), noInterest()],
+      });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.currencyResults).toEqual([
+        { currency: 'TRY', result: null, skippedReason: 'INTEREST_UNRESOLVED', grossPrincipal: 0, unsimulatedPrincipal: 15000 },
+      ]);
+      expect(res.diagnostics.fatal.map((f) => f.code)).toEqual(['INTEREST_UNRESOLVED', 'NON_ACCRUING_NOT_SIMULATED']);
+      const codes = display(res).diagnostics.filter((d) => d.severity === 'BLOCKER').map((d) => d.code);
+      expect(codes).toEqual(expect.arrayContaining(['INTEREST_UNRESOLVED', 'NON_ACCRUING_NOT_SIMULATED']));
+    });
+
+    it('çelişkili faizsizlik beyanı (NO_INTEREST + faiz türü) bilinen sıfır SAYILMAZ → çözülemeyen', async () => {
+      const { service } = setup({ claimItems: [noInterest({ interestType: 'YASAL' })] });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.unsimulatedPrincipals).toEqual([
+        expect.objectContaining({ claimItemId: 'p-ni', kind: 'UNRESOLVED', reasonCode: 'NO_INTEREST_AUTHORITY_CONFLICT', accruedInterest: null }),
+      ]);
+      expect(res.currencyResults[0].skippedReason).toBe('INTEREST_UNRESOLVED');
+    });
+
+    it('desteklenmeyen para biriminde taşınan anapara: para birimi engeli + anapara engeli birlikte', async () => {
+      const { service } = setup({ claimItems: [noInterest({ currency: 'XYZ' })] });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.currencyResults).toEqual([
+        { currency: 'XYZ', result: null, skippedReason: 'INVALID_CURRENCY', grossPrincipal: 0, unsimulatedPrincipal: 5000 },
+      ]);
+      expect(res.diagnostics.fatal.map((f) => f.code)).toEqual(['CURRENCY_UNSUPPORTED', 'NON_ACCRUING_NOT_SIMULATED']);
+      expect(res.diagnostics.currency).toEqual([
+        expect.objectContaining({ code: 'CURRENCY_UNSUPPORTED', currency: 'XYZ', sourceId: 'p-ni' }),
+      ]);
+      expect(display(res).readiness.blockers.map((b) => b.code)).toEqual(['INTEREST_BASE', 'CURRENCY_INTEGRITY']);
+    });
+
+    it('taşınan anapara yoksa sonuç şekli değişmez (alan eklenmez)', async () => {
+      const { service } = setup({ claimItems: [principal()], collections: [collection()], rates: legalRate() });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res).not.toHaveProperty('unsimulatedPrincipals');
+      expect(res.currencyResults[0]).not.toHaveProperty('unsimulatedPrincipal');
+      expect(res.diagnostics.fatal).toEqual([]);
+    });
+
+    it('iptal / feragat edilen faizsiz anapara taşınmaz', async () => {
+      const { service } = setup({ claimItems: [noInterest({ status: 'WAIVED' })] });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.currencyResults).toEqual([]);
+      expect(res).not.toHaveProperty('unsimulatedPrincipals');
+    });
   });
 
   it('CANCELLED ClaimItem computeCaseBalance hesabına dahil edilmez', async () => {
