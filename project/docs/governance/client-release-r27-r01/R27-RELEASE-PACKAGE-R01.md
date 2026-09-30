@@ -1,4 +1,4 @@
-# R27 — YAYIN PAKETİ (R02 revizyonu; dosya adı korunur) · D-5 güvenlik düzeltmeleri · API + WEB · canlı taban + dar aday
+# R27 — YAYIN PAKETİ (R03 revizyonu; dosya adı korunur) · D-5 güvenlik düzeltmeleri · API + WEB · canlı taban + dar aday
 
 > **DURUM: HAZIR — CANLIYA UYGULANMADI.** Yayın, migration, gerçek e-posta gönderimi ve canlı kabul koşumları bu paketle
 > **yetkilendirilmez**; her biri için ayrı owner GO gerekir (§10). Bu belge inceleme paketidir; "hazırlık tamamlandı" demek
@@ -8,6 +8,16 @@
 > **R02 (2026-09-30):** canlı SelfTest FAIL-1'in başarısız ölçütü **sahte-süreç sayımıydı**; eşleşen sürecin kimliği o koşumda kaydedilmediği için **kök neden belirlenemedi**.
 > Kapı GEVŞETİLMEDİ, teşhis edilebilir yapıldı; son baytlarla temiz pencerede PASS ölçüldü (§6) · public belgeye eklenen güvenlik satırı çıkarıldı, kayıt kısıtlı kayıtta AÇIK (§1.4) ·
 > D-5 QR betiği + owner bloğu, D-6/D-7 paketleri, H1–H8 kalemleri · tek kanıt paketi (§13). Aday kimliği (`1b758d29`) DEĞİŞMEDİ; kapsam **B** (owner kararı, §10).
+> **R03 (2026-09-30, dar düzeltme):** `r27-release.ps1` durdurma/geri dönüş hata yolları — `2-durdur-*` istisnasında satır içi yeniden
+> başlatma atlanıyor ve koşulsuz "servisler yeniden başlatıldı" (21) yazılıyordu. Artık her servis ayrı denenir ve ölçülür, yalnız KAPALI ölçülen
+> servis başlatılır, "ayakta" yalnız sağlık kümesiyle söylenir (21 = ölçülerek ayakta; yeni **22** = toparlanamadı); 12/13 yollarında servis bazında
+> kayıt (§6). D-8 sondası: `Server`/sağlayıcı başlıkları katman **ipucudur**, kesin katman `unknown`. SEC-PORTAL-ADMIN-MSG-01 kısıtlı değerlendirmesi
+> tamamlandı (§1.4). Aday (`1b758d29`), kapsam **B** ve migration 0 DEĞİŞMEDİ. Linux izole provası yapıldı; gerçek taban kopyasıyla WinPS 5.1 harness'ı
+> ve yeni sha ile canlı salt-okuma SelfTest A/B/C bu turda **koşulmadı** (§6 R03, §8 W0).
+> **R03-b (2026-09-30):** servis ölçümünde dinleyici/CIM **okuma hatası** artık sıfır sayım ("kapalı") sayılmıyor → `OLCULEMEDI`; yalnız
+> "eşleşme yok" başarılı boş sonuçtur. `Wait-Stopped` ve toparlama aynı ölçümü kullanır; ölçülemeyen servise Start verilmez, takas/geri yükleme
+> başlamaz. Aynı kök neden **B3** (`r27-rollback.ps1`) `Wait-Stopped`'unda da vardı ve aynı dar düzeltme uygulandı (B3 sha değişti). SEC-PORTAL-ADMIN-MSG-01
+> kararı **koşullu** hale getirildi (§1.4, §8 W0-d).
 
 ## 1. Tek durum envanteri
 
@@ -62,7 +72,7 @@ türetimsiz "N ölçüt" ifadesi kullanılmaz). Sayaç (x/y) CLIENT programını
 | SEC-STAFF-XFF-01 | **AÇIK** — owner-yerel kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | D-5 sayaç ayrımı (#2832) bu bulguyu **kapatmaz**. Bu yayın için engelleyici **değil** (gerekçe kısıtlı kayıtta). Kapanış ayrı iş: ek ölçüm + ayrı yama |
 | SEC-API-BIND-01 | AÇIK — kısıtlı kayıt | Yayın kapsamı dışı; yayın değiştirmez |
 | SEC-MAIL-LOG-01 | AÇIK — kısıtlı kayıt | D-5 canlı koşumunda alıcı adresi sağlayıcı günlüğüne düşebilir; owner onay metnine yazıldı |
-| SEC-PORTAL-ADMIN-MSG-01 | **AÇIK** — kısıtlı kayıt (2026-09-29, D-7 paketi kaynak ölçümü); ayrıntı public repoya YAZILMAZ | D-7'de yalnız personel yanıtını **üreten** adımları (D7-3/3N/3U/3G/3F/3B; yerel API) ilgilendirir; D-7 kabul ölçütlerini ve bu yayını **engellemez** (aday bu uçları değiştirmez — kaynak diff'i ile ölçüldü). Kayıt açılması **giderildi demek değildir**; ürün değişikliği ayrı iş + owner kararı (§10 K-11) |
+| SEC-PORTAL-ADMIN-MSG-01 | **AÇIK** — kısıtlı kayıt (2026-09-29; R03-b kısıtlı değerlendirmesi 2026-09-30, aday `1b758d29` kaynağı); ayrıntı public repoya YAZILMAZ | Kısıtlı değerlendirme alt konuları **ayrı** tutar (ayrıntı kısıtlı kayıtta) ve roller, tenant sınırı, kenar erişimi ve D-7 ilişkisini yanıtlar. Kaynakta tenant aşımı yolu bulunmadı; D-7 personel aktörü ADMIN olmayan kanonik yükseltilmiş kullanıcıdır (`P7-00`) ve kaydın rol bazlı yazma alt konusundan **yararlanmaz**. **Kaynak incelemesi canlı kenar koruması kanıtı DEĞİLDİR**; personel giriş ucunun kenarda kapalı olması mevcut personel oturumlarının durumunu göstermez; D-8'in token'sız 403 ölçümü ret katmanını kanıtlamaz. **Karar: KOŞULLU** — iki canlı salt-okuma önkoşulu (**P-1** etkili kenar yapılandırması, **P-2** API erişim sınırı; §8 W0-d) doğrulanmadan "yayın için engel değil" denmez; biri tutmaz ya da ölçülemezse karar owner'a döner. Aday bu uçları değiştirmez (destekleyici olgu, gerekçe değil). Kayıt açılması **giderildi demek değildir**; yetki politikası bu pakette uygulanmaz — ayrı ürün düzeltmesi + owner kararı (§10 K-11; "yalnız ADMIN" seçilirse D-7 personel aktörü yeniden doğrulanır) |
 | ClaimItem ACCRUES kullanıcı yolu (OFFICE authz notu) | AÇIK, ayrı iş | Adayda yok |
 | #2830 eski PR gövdesi / commit `02276b68` geçmişi | owner kararı bekliyor (§10) | — |
 
@@ -174,13 +184,29 @@ ve yeni kapı ona göre **gevşek değildir** (§13 inceleme ölçümleri); roll
 
 **R26'da olmayan hata yönetimi (bu turda eklendi, harness ile ölçüldü):**
 - **Aşama takibi:** `$script:STAGE` (`0-kapilar | 1-yedek | 2-durdur-web | 2-durdur-api | 3-takas-api | 3-takas-web | 4-kimlik | 5-baslat-api |
-  5-baslat-web | 6-kapsam | 7-kanit`; geri alma `R-durdur | R-geri-yukle | R-dogrula | R-baslat`); kanıt JSON'unda `stage` (kanıt yazımından
+  5-baslat-web | 6-kapsam | 7-kanit`; geri alma `R-durdur | R-geri-yukle | R-dogrula | R-baslat`; takas öncesi durdurma hatasında `2-toparla`); kanıt JSON'unda `stage` (kanıt yazımından
   önceki son aşama), `failedAt`, `stages[]`.
 - **Servisler durdurulduktan sonra her hata yolu** (takas/rename, kimlik okuma, servis başlatma, kapsam) → `Restore-All` (eklenenler karantinaya,
   değişenler yedekten, `.next` + cfg geri) → **geri yüklenen kimlik doğrulanır** (API ağaç == `A8B17A38`, 16 dosyalık paket == `B7FE81DB`,
   eklenen 6 dosya yok/karantinada, WEB `.next` == `C17E7B13`, BUILD_ID == `5waeMoFG`, cfg == `C43DEB5A`) → **yalnız PASS ise** eski servisler
   başlatılır ve B3 ile aynı sağlık kümesi ölçülür (dinleyici ==1, `/api/auth/me`/run-now/portal-cases 401, `/portal/login` 200,
   buildManifest(BID_LIVE) 200, süreç kökü RELEASE23, üçlü değişmedi). API sağlık tutmazsa **WEB adayla hiç başlatılmaz** (`failedAt=5-baslat-api`).
+- **Durdurma ve başlatma hataları (R03):** her servis **ayrı** denenir ve ayrı kaydedilir (`Invoke-StopOne`: komut sonucu, bekleme sonucu, son ölçülen
+  durum `KAPALI | CALISIYOR | KARISIK | OLCULEMEDI`); bir servisin istisnası diğerinin girişimini ya da kaydını engellemez. "Durdu" = komut istisnasız +
+  bekleme PASS + ölçülen KAPALI. **Takas öncesi** (`2-durdur-*`) başarısızlıkta dosyalara dokunulmaz ve bu **ölçülür** (paket/BUILD_ID/cfg taban);
+  `2-toparla`: her servis ölçülür, **yalnız KAPALI** ölçülen başlatılır (çalışan servise Start verilmez), sonra B3 sağlık kümesi ölçülür → iki servis
+  PASS + üçlü değişmedi + dosyalar taban ise **21**, aksi halde **22** + servis bazında `KURTARMA:` satırları (B3 gerekmez). Kanıt: `stops`,
+  `stopRecovery`, `serviceState` (servis bazında). **Geri alma `R-durdur`** aynı fonksiyonla: WEB istisnası API durdurma girişimini atlatmaz; biri
+  kapanmazsa dosya geri yüklemesi yapılmaz (12; `rollback.stops`; `KURTARMA:` yalnız durdurulamayan servisi elle durdurmayı söyler, sonra B3).
+  **Doğrulama sonrası başlatma** (`R-baslat`): servis bazında; bir servisin başlatma istisnası diğerini engellemez; "ayakta" yalnız sağlık kümesiyle
+  (13; `rollback.postStart.{api,web}`; dosya durumu `verify`'de ayrı; `KURTARMA:` yalnız KAPALI ölçülen servise Start, B3 gerekmez). Canlı
+  `Stop-/Start-ScheduledTask` çıktısı bastırılır (fonksiyon dönüş değerine karışmaz; simülatör bunu ölçemez).
+- **Ölçüm hatası ≠ kapalı (R03-b):** `Get-Pids` yalnız `Get-NetTCPConnection`'ın "eşleşme yok" sonucunu (ObjectNotFound + `CmdletizationQuery_NotFound*`)
+  boş sayar; yetki/CIM sağlayıcı/zaman aşımı gibi her başka hata ve `Get-HostProcCount`'taki CIM hatası **fırlatılır** → `Measure-Svc` `OLCULEMEDI`.
+  `Wait-Stopped` artık doğrudan sorgu yapmaz, `Measure-Svc` ile yalnız **KAPALI ölçülürse** true döner; toparlama KARIŞIK/OLCULEMEDI servisi ≤30 sn
+  yeniden ölçer, KAPALI olmazsa Start vermez. Sonuç: okuma hatasında durdurma doğrulanmaz → takas (2-durdur) ya da geri yükleme (R-durdur) başlamaz
+  (22 / 12). B3 aynı kuralla: okuma hatası `2-durdur-*`'da HATA → 21 (dosyaya dokunulmaz). SelfTest canlı **boş-sonuç yolunu** ölçer (dinlenmeyen
+  port ve eşleşmeyen host argümanı 0 dönmeli; okuma hatası FAIL) — B1'de kapanan servisin "ölçülemedi" kalıp açılmaması riskine karşı ön kapı.
 - **Kanıt yazımı `finally` içinde ve korumalı:** `HY_R27_RELEASE_EVIDENCE` yazılamazsa `%TEMP%\r27-evidence-fallback` + konsol; yükseltilmemiş
   (yanlışlıkla/parametresiz) koşum canlı kanıt dizinine **dosya bırakmaz** (yalnız `%TEMP%` fallback). Geri alma betiğinde yedek bütünlüğü ölçümü
   de korumalıdır (yedek dizini yok/okunamıyor → kanıt JSON yazılır, çıkış 20; kanıtsız çıkış yok).
@@ -189,9 +215,11 @@ ve yeni kapı ona göre **gevşek değildir** (§13 inceleme ölçümleri); roll
   (SelfTest 2026-09-29): `backupApi` 215 (marj 45) · `backupWebNext` 181 (79) · `stagedNext` 184 (76) · `preNext` 181 (79); `failedNext` 184 ·
   `rollbackFailedNext` 191 (dize hesabı). Harness aynı kapıyı ProvaRoot için koşar (uzun kökte 3 = ÖLÇÜLEMEDİ; inceleme bu tuzağı 262 > 260 ile ölçmüştü).
 - **İzole test modu** `-TestRoot <dizin> [-Fault <ad>]`: tüm canlı yollar TestRoot altına bağlanır; yükseltme/görev/dinleyici/Http/boot-log/üçlü/
-  ACL/sahte-süreç **simülatör** (`sim\state.json`). TestRoot canlı kökün altında/eşitse DUR; canlı modda `-Fault` DUR. 7 fault:
+  ACL/sahte-süreç **simülatör** (`sim\state.json`). TestRoot canlı kökün altında/eşitse DUR; canlı modda `-Fault` DUR. 14 fault:
   `api-copy-interrupt | web-swap-fail | identity-read-error (geçici, tek sefer) | identity-read-persistent (kalıcı: R-doğrula da okuyamaz) |
-  service-start-fail | restore-hash-mismatch | stop-fail (WEB kapanmaz → 21, dosyalara dokunulmaz)`. Rollback betiğinde de `-TestRoot`; doğrulamadan başlatma yok.
+  service-start-fail | restore-hash-mismatch | stop-fail (WEB kapanmaz → 21, Start verilmez) | stop-web-throw (→ 21) | stop-api-throw (→ 21) |
+  stop-recovery-start-throw (→ 22) | rollback-stop-fail (→ 12) | rollback-start-throw (→ 13) | stop-measure-unreadable (→ 22) |
+  rollback-measure-unreadable (→ 12)`. Rollback betiğinde de `-TestRoot`; doğrulamadan başlatma yok.
 - **Simülatörün ölçmediği:** `.next` ACL kalıtımı, **canlı süreç listesi okuması** (`Win32_Process`), gerçek görev/Http gecikmeleri — bunlar yalnız canlı SelfTest/B0/B1'de
   ölçülür. Sahte-süreç **kararı** ise test modunda sentetik süreç listesiyle (`sim rogueProcs`) ve enjekte sağlayıcıyla ölçülür (aşağıdaki dört `gate-rogue-*` senaryosu).
 
@@ -202,26 +230,41 @@ ve yeni kapı ona göre **gevşek değildir** (§13 inceleme ölçümleri); roll
 | 0 | `YAYIN PASS` | aday canlıda, sağlık + kapsam tuttu | B2 |
 | 10 | `ROLLBACK` | otomatik geri alındı, kimlik doğrulandı, eski servisler ayakta (B3 sağlık kümesi) | kanıt `rollback.reason`/`failedAt` okunur; yayın yok |
 | 11 | `ROLLBACK-DOGRULANAMADI` | dosyalar geri yüklendi ama kimlik doğrulanamadı → **servis başlatılmadı**; `verify.mismatches` + B3 talimatı kanıtta | `KURTARMA:` satırları → B3 |
-| 12 | `ROLLBACK-ENGELLENDI` | geri alma sırasında durdurma/dosya işlemi başarısız → kalan adımlar kanıtta; servis başlatılmadı (durdurma başarısızsa aday servisler **hâlâ çalışıyor olabilir** — kurtarma metni ayrıdır) | `KURTARMA:` → önce durdurma, sonra B3 |
-| 13 | `ROLLBACK-OK-ESKI-BASLAMADI` | geri alındı + doğrulandı ama eski servisler gelmedi/sağlık tutmadı | ESCALATE (dosya işlemi gerekmez) |
+| 12 | `ROLLBACK-ENGELLENDI` | geri alma sırasında durdurma/dosya işlemi başarısız → servis başlatılmadı. Durdurma başarısızsa ya da **ölçülemezse** dosyalara **dokunulmaz** (canlı = aday) ve servis bazında durum `rollback.stops`'tadır (kapanmayan aday servis **çalışıyor olabilir**); dosya işlemi başarısızsa kalan adımlar `restoreSteps`'te | `KURTARMA:` → önce yalnız durdurulamayan servisi elle durdur, sonra B3 |
+| 13 | `ROLLBACK-OK-ESKI-BASLAMADI` | geri alındı + doğrulandı (`verify.ok`) ama eski servis(ler) sağlık kümesiyle ayakta değil (başlatma istisnası dahil; servis bazında `rollback.postStart`) | `KURTARMA:` yalnız KAPALI ölçülen servise Start + sağlık; dosya işlemi ve B3 gerekmez; tutmazsa ESCALATE |
 | 20 | `KAPIDA-DURDU` | ön kapı/aday/yedek/yol bütçesi aşamasında durdu; dosyalara dokunulmadı; servisler durdurulmadı | neden kanıtta |
-| 21 | `DURDURMA-BASARISIZ` | WEB/API kapanmadı; dosyalara dokunulmadı; servisler yeniden başlatıldı | ESCALATE |
+| 21 | `DURDURMA-BASARISIZ` | WEB/API durdurulamadı; dosya takası başlamadı (ölçüldü); toparlama PASS — API ve WEB sağlık kümesiyle **ölçülerek** ayakta (Start yalnız KAPALI ölçülene) | neden kanıtta (`stops.<servis>`); giderilmeden yayın yeniden denenmez |
+| 22 | `DURDURMA-BASARISIZ-TOPARLANAMADI` | durdurulamadı; dosya takası başlamadı; en az bir servis sağlık kümesiyle ayakta değil ya da ölçülemedi (yeniden başlatma istisnası dahil) | `KURTARMA:` servis bazında (yalnız KAPALI → Start; KARIŞIK/ölçülemeyen → önce ölç, sürece elle dokunma); B3 gerekmez |
 | 1 | — | yalnız `-SelfTest` FAIL | B0 durur |
 
-`r27-rollback.ps1`: 0 `ROLLBACK PASS` · 11 · 12 · 13 · 20 (yetki/yedek kimliği/yedek okunamadı/üçlü/.env) · 21 · 1 (SelfTest FAIL) — aynı anlamlar.
+**Çıkış kodu eşlemesi — otomatik geri dönüş (`r27-release.ps1`) ≠ bağımsız B3 (`r27-rollback.ps1`):** aynı sayı iki betikte aynı olayı anlatmaz;
+kanıt JSON'undaki `record` alanı (`R27-RELEASE-EXECUTION` / `R27-ROLLBACK-EXECUTION`) hangi betiğin yazdığını söyler. B3'te R03-b'de **yalnız** ölçüm
+düzeltmesi yapıldı (okuma hatası artık "kapandı" sayılmaz); çıkış kodları ve akış değişmedi.
+
+| Kod | `r27-release.ps1` (B1; otomatik geri alma dahil) | `r27-rollback.ps1` (B3; elle geri dönüş) |
+|---|---|---|
+| 0 | `YAYIN PASS` (aday canlıda) | `ROLLBACK PASS` (taban canlıda, eski servisler ayakta, üçlü değişmedi) |
+| 10 | `ROLLBACK`: otomatik geri alındı + doğrulandı + eski servisler ölçülerek ayakta | kullanılmaz |
+| 11 | otomatik geri almada geri yüklenen kimlik doğrulanamadı → servis başlatılmadı → `KURTARMA:` → B3 | B3 geri yüklemesinden sonra kimlik doğrulanamadı → servis başlatılmadı → ESCALATE |
+| 12 | otomatik geri almada durdurma (dosyaya dokunulmaz) ya da dosya işlemi başarısız → `KURTARMA:` → B3 | B3 dosya geri yüklemesi yarım kaldı → servis başlatılmadı → ESCALATE |
+| 13 | otomatik geri alındı + doğrulandı, eski servis(ler) sağlıkla ayakta değil → yalnız KAPALI olana Start | B3 geri aldı + doğruladı, eski servis/kapsam tutmadı → ESCALATE |
+| 20 | kapı/aday/yedek/yol bütçesi; canlıya dokunulmadı; servisler durdurulmadı | yetki/yedek kimliği/yedek okunamadı/üçlü/.env; canlıya dokunulmadı |
+| 21 | durdurulamadı, takas başlamadı, toparlama **ölçülerek** PASS | durdurulamadı ya da durum **okunamadı** (R03-b), dosyalara dokunulmadı; **otomatik toparlama YOK** (servis durumu kanıtta `serviceState`) → ESCALATE |
+| 22 | durdurulamadı, takas başlamadı, toparlama tamamlanamadı → `KURTARMA:` (servis bazında) | kullanılmaz |
+| 1 | yalnız `-SelfTest` FAIL | yalnız `-SelfTest` FAIL |
 
 | Betik | sha256 |
 |---|---|
-| `r27-release.ps1` | `EEC582C125FB6308A839E435A072E5449B5E619CA0BBE08F17B9564CF3197961` |
-| `r27-rollback.ps1` | `7843A3EBD4FA4E7E46104A382B239910ADCD58C794B1DEB4BBB1161296A37B28` |
-| `r27-fault-prova.ps1` (harness; canlıya dokunmaz) | `D66F253626EBC1F60C905E0FE41A093100843DA015A1A79CBC9F897A2FF53B80` |
+| `r27-release.ps1` | `0A1570F0556904E7AD2463FFB97D0DA6E2D15CD14DAA797311F3F3FC05573E94` |
+| `r27-rollback.ps1` | `DAEB5DEB4F7027B7275A7E17F20D0076337FFD9905854DF53A144186BCF26F3A` |
+| `r27-fault-prova.ps1` (harness; canlıya dokunmaz) | `6C9A2EF0DFB008B25ECA5484BBF40DDB4C828142FD3DF7198739D32703D77DAF` |
 | `r27-dar-kabul.js` | `F077A8E40462F2F47A98AC27575F2D5EDBF2BB0C16328732CFF454324C09A4A6` |
 
 Betik dizini (merge sonrası kanonik): `D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\`.
 
 **B0 — SelfTest + yayın öncesi taban ölçümü (normal pencere; salt okuma; DK-7 tek POST, yazma yok):**
 ```powershell
-& { $ErrorActionPreference='Stop'; $d='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts'; $f="$d\r27-release.ps1"; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'EEC582C125FB6308A839E435A072E5449B5E619CA0BBE08F17B9564CF3197961'){ throw 'R27 YAYIN BETIGI SHA UYUSMUYOR - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -SelfTest; $rc=$global:LASTEXITCODE; 'SelfTest cikis=' + $rc; if($rc -ne 0){ throw 'SelfTest PASS degil - YAYIN BASLATILMAZ' }; $k="$d\r27-dar-kabul.js"; if((Get-FileHash -Algorithm SHA256 -LiteralPath $k).Hash -cne 'F077A8E40462F2F47A98AC27575F2D5EDBF2BB0C16328732CFF454324C09A4A6'){ throw 'DAR KABUL SHA UYUSMUYOR - DUR' }; $o="D:\Development\HUKUK_YAZILIMI\HY_R27_RELEASE_EVIDENCE"; New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $k before "$o\dar-kabul-before-$((Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))Z.json"; 'before cikis=' + $LASTEXITCODE; if($LASTEXITCODE -ne 0){ throw 'taban olcumu R26 davranisini gostermedi - DUR' } }
+& { $ErrorActionPreference='Stop'; $d='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts'; $f="$d\r27-release.ps1"; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '0A1570F0556904E7AD2463FFB97D0DA6E2D15CD14DAA797311F3F3FC05573E94'){ throw 'R27 YAYIN BETIGI SHA UYUSMUYOR - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -SelfTest; $rc=$global:LASTEXITCODE; 'SelfTest cikis=' + $rc; if($rc -ne 0){ throw 'SelfTest PASS degil - YAYIN BASLATILMAZ' }; $k="$d\r27-dar-kabul.js"; if((Get-FileHash -Algorithm SHA256 -LiteralPath $k).Hash -cne 'F077A8E40462F2F47A98AC27575F2D5EDBF2BB0C16328732CFF454324C09A4A6'){ throw 'DAR KABUL SHA UYUSMUYOR - DUR' }; $o="D:\Development\HUKUK_YAZILIMI\HY_R27_RELEASE_EVIDENCE"; New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $k before "$o\dar-kabul-before-$((Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))Z.json"; 'before cikis=' + $LASTEXITCODE; if($LASTEXITCODE -ne 0){ throw 'taban olcumu R26 davranisini gostermedi - DUR' } }
 ```
 Durma koşulu: SelfTest FAIL (kimlik/pin/üçlü/.env/dinleyici/sahte-süreç/yol bütçesi) ya da `before` ≠ 0 (canlı R26 değil ya da API/WEB ayakta değil).
 SelfTest'in sahte-süreç ölçümü 0 değilse çıktı eşleşen süreçleri sınıfıyla listeler; listedeki süreçler (**izleme pencereleri dahil**) kapatılır ve
@@ -234,7 +277,7 @@ geçmez. Yükseltilmiş pencerede komut satırı okunamayan yorumlayıcı/kabuk 
 
 **B1 — Yayın (YÜKSELTİLMİŞ pencere; B0 PASS sonrası):**
 ```powershell
-& { $ErrorActionPreference='Stop'; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\r27-release.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'EEC582C125FB6308A839E435A072E5449B5E619CA0BBE08F17B9564CF3197961'){ throw 'R27 YAYIN BETIGI SHA UYUSMUYOR - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f; $rc=$global:LASTEXITCODE; 'YAYIN cikis=' + $rc; if($rc -ne 0){ throw ('YAYIN PASS DEGIL (cikis ' + $rc + ') - KANIT JSON verdict/failedAt/recovery okunur: 10 ROLLBACK = otomatik geri alindi, eski servisler ayakta ; 11 ROLLBACK-DOGRULANAMADI / 12 ROLLBACK-ENGELLENDI = servis BASLATILMADI -> KURTARMA satirlari -> B3 ; 13 ROLLBACK-OK-ESKI-BASLAMADI = ESCALATE ; 20 KAPIDA-DURDU / 21 DURDURMA-BASARISIZ = dosyalara dokunulmadi') } }
+& { $ErrorActionPreference='Stop'; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\r27-release.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '0A1570F0556904E7AD2463FFB97D0DA6E2D15CD14DAA797311F3F3FC05573E94'){ throw 'R27 YAYIN BETIGI SHA UYUSMUYOR - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f; $rc=$global:LASTEXITCODE; 'YAYIN cikis=' + $rc; if($rc -ne 0){ throw ('YAYIN PASS DEGIL (cikis ' + $rc + ') - KANIT JSON verdict/failedAt/recovery okunur: 10 ROLLBACK = otomatik geri alindi, eski servisler ayakta ; 11 ROLLBACK-DOGRULANAMADI / 12 ROLLBACK-ENGELLENDI = servis BASLATILMADI -> KURTARMA satirlari -> B3 ; 13 ROLLBACK-OK-ESKI-BASLAMADI = dosyalar dogrulandi, KURTARMA: yalniz KAPALI servise Start ; 20 KAPIDA-DURDU = dosyalara dokunulmadi ; 21 DURDURMA-BASARISIZ = takas baslamadi, servisler olculerek ayakta ; 22 DURDURMA-BASARISIZ-TOPARLANAMADI = takas baslamadi, KURTARMA satirlari (servis bazinda; B3 gerekmez)') } }
 ```
 Sıra ve beklenen kesinti: doğrulanmış yedekler (canlı çalışırken; yol bütçesi kapısı burada) → WEB durur → API durur → API 16 dosya yazılır
 (6 için dizin oluşturulur), `.next` yeniden adlandırılarak takas → durmuşken kimlik kontrolü (`E28A6863` / `B2DEE365` / BUILD_ID / cfg) →
@@ -258,7 +301,7 @@ bozuldu (owner gözlemi) ; D-5 Preflight'ta dist pini eşleşmiyor (yayın kimli
 
 **B3 — Elle geri dönüş (YÜKSELTİLMİŞ; yalnız gerekirse; `<api.backup>`/`<web.backup>` B1 kanıt JSON'undan, TAM yol):**
 ```powershell
-& { $ErrorActionPreference='Stop'; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\r27-rollback.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '7843A3EBD4FA4E7E46104A382B239910ADCD58C794B1DEB4BBB1161296A37B28'){ throw 'R27 GERI ALMA BETIGI SHA UYUSMUYOR - DUR' }; $api='<api.backup>'; $web='<web.backup>'; if($api -like '<*' -or $web -like '<*'){ throw 'yer tutucu doldurulmadi - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web -SelfTest; if($global:LASTEXITCODE -ne 0){ throw 'yedek kimligi dogrulanamadi - GERI ALMA BASLAMAZ' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web; $rc=$global:LASTEXITCODE; 'GERI ALMA cikis=' + $rc; if($rc -ne 0){ throw 'ROLLBACK DOGRULANAMADI - ESCALATE' } }
+& { $ErrorActionPreference='Stop'; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\r27-rollback.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'DAEB5DEB4F7027B7275A7E17F20D0076337FFD9905854DF53A144186BCF26F3A'){ throw 'R27 GERI ALMA BETIGI SHA UYUSMUYOR - DUR' }; $api='<api.backup>'; $web='<web.backup>'; if($api -like '<*' -or $web -like '<*'){ throw 'yer tutucu doldurulmadi - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web -SelfTest; if($global:LASTEXITCODE -ne 0){ throw 'yedek kimligi dogrulanamadi - GERI ALMA BASLAMAZ' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web; $rc=$global:LASTEXITCODE; 'GERI ALMA cikis=' + $rc; if($rc -ne 0){ throw 'ROLLBACK DOGRULANAMADI - ESCALATE' } }
 ```
 
 **Hata provası harness'ı — senaryo sonuçları** (koşum `run-20260930-065942Z`, WinPS 5.1, canlıya dokunmadan; özet `fault-prova-summary.json` sha256
@@ -291,6 +334,39 @@ her işlevsel senaryo TestRoot `robocopy /MIR` ile sıfırlandı (yalnız prova 
 Önceki koşumlar (7/7, 13/13, 14/14, 16/16, önceki baytlarla 17/17 ve inceleyicinin uzun kökte aldığı FAIL) **tarihsel kayıt** olarak korunur; bu tablo
 yalnız son baytları kanıtlar.
 
+**R03 hata provası (2026-09-30; Linux izole provası — yukarıdaki R02 tablosunun yerine GEÇMEZ):** bu turun ortamı bulut Linux konteyneriydi;
+gerçek canlı taban kopyası (`A8B17A38`, 3867 dosya), aday dist (`HY_WT_R27`), `robocopy` ve WinPS 5.1 **yoktu**. Bu yüzden harness **pwsh 7.4.6 / Linux** ile,
+**sentetik** taban/aday ağaçlarıyla (47 dosya; digest'ler yayın betiğinin kendi `Get-Map`/`Get-TreeDigest`/`Get-PackageDigest` fonksiyonlarıyla hesaplandı) ve
+betik kopyalarında **yalnız 64-hex pin literalleri** sentetik değerlerle değiştirilerek koşuldu (kopya ↔ gerçek dosya: 64-hex maskelendiğinde bayt bayt eşit,
+üç betik için ölçüldü); `robocopy.exe` / `powershell.exe` yerine koşum-yerel kabuk sarmalayıcıları. Kapı zinciri bütünlük pinleri Linux pwsh'ta HEAD baytlarında
+41/41 birebir üretildi (yani burada hesaplanan pinler Windows'taki ölçümle aynı yöntemdir); yeni baytlarda yalnız fonksiyon kümesi (46 → 52), SelfTest bloğu
+ve mod envanteri değişti — 15 kapı fonksiyonu, `ROGUE_*` atamaları, 0-kapılar kesiti, çağrı konumları ve `exit` konumları **değişmedi**.
+
+| Senaryo | Beklenen → ölçülen | `failedAt` / `stage` | Dosya (TestRoot) | Simülatör servis | Kurtarma | Assert |
+|---|---|---|---|---|---|---|
+| stop-fail | 21 → 21 `DURDURMA-BASARISIZ` | `2-durdur-web` / `2-toparla` | taban; takas başlamadı (paket/BUILD_ID/cfg ölçüldü) | API+WEB ayakta; **Start verilmedi** (WEB çalışıyor ölçüldü; 1 durdurma, 0 başlatma) | yok | 32 |
+| stop-web-throw | 21 → 21 | `2-durdur-web` / `2-toparla` | taban | WEB komut istisnası + KAPALI ölçüldü → başlatıldı → sağlık PASS; API hiç durdurulmadı (1/1) | yok | 32 |
+| stop-api-throw | 21 → 21 | `2-durdur-api` / `2-toparla` | taban | WEB durdu; API komut istisnası, çalışıyor → Start yok; WEB başlatıldı → ikisi sağlık PASS (2/1) | yok | 32 |
+| stop-recovery-start-throw | 22 → 22 `DURDURMA-BASARISIZ-TOPARLANAMADI` | `2-durdur-api` / `2-toparla` | taban | API ayakta; WEB başlatma istisnası → **WEB KAPALI** (2/1) | **var**: yalnız WEB'e Start; B3 yok | 35 |
+| rollback-stop-fail | 12 → 12 `ROLLBACK-ENGELLENDI` | `5-baslat-web` / `R-durdur` | **aday** (`E28A6863`-karşılığı; 6 eklenen VAR); karantina YOK — geri yükleme yapılmadı | aday WEB çalışıyor (komut istisnası); API **yine denendi** ve durdu (4/2) | **var**: yalnız WEB elle durdur + B3 | 26 |
+| rollback-start-throw | 13 → 13 `ROLLBACK-OK-ESKI-BASLAMADI` | `4-kimlik` / `R-baslat` | taban; `verify.ok`; karantina var | API başlatma istisnası → KAPALI; WEB **yine başlatıldı** → sağlık PASS (2/2) | **var**: yalnız API'ye Start; B3 yok | 27 |
+
+Tam koşu (23 senaryo) Linux'ta **20/23** (499 assert): 18 işlevsel + 5 kapı senaryosu PASS. Düşen 3 kapı senaryosu (`gate-testroot-under-live`: `C:` sürücüsü yok;
+`gate-rogue-classifier`: Windows yol anlamlı güvenilir-dizin mutasyonu; `gate-rogue-wiring` canlı dal: `WindowsPrincipal` yok) HEAD baytlarıyla aynı ortamda
+**aynı assert'lerle** düşüyor (HEAD: 15/18; düşen assert kümeleri birebir eşit) → platform farkıdır, bu değişikliğin sonucu değildir; bu üç senaryo yalnız Windows'ta
+ölçülür. **Negatif kontrol (tek mutant):** eski koşulsuz `21` + "servisler yeniden başlatıldı" satırı geri getirildiğinde stop senaryolarının **4/4**'ü FAIL
+(35 assert); `stop-web-throw`/`stop-api-throw`'da "simülatör WEB AYAKTA: FAIL (webRunning=False)" + "ölçülmemiş yeniden başlatma iddiası" — raporlanan hata
+birebir yakalanır. **Bu turda koşulmayan (açık):** gerçek taban kopyası + aday dist ile **WinPS 5.1** harness'ı (23 senaryo) ve yayın betiğinin yeni sha'sıyla canlı
+salt-okuma SelfTest A/B/C kontrolleri (§8 W0; owner makinesinde).
+
+**R03-b ek provası (aynı Linux yöntemi, son baytlar):** `stop-measure-unreadable` 22 → 22 (WEB durdurma etkili ama `:3002` okuması hata →
+`OLCULEMEDI`; takas yok, WEB'e Start yok, 1 durdurma/0 başlatma; `KURTARMA:` önce ölçüm, Start yok) · `rollback-measure-unreadable` 12 → 12 (R-durdur'da aynı okuma
+hatası → geri yükleme yok, karantina yok, canlı = aday) · `gate-svc-measure` (süreç koşmaz; yayın + B3 canlı dal ölçüm fonksiyonları sahte cmdlet'lerle): gerçek
+boş → 0/KAPALI/Wait true; TCP yetki hatası, ObjectNotFound kategorili ama başka kimlikli hata ve CIM hatası → `OLCULEMEDI`/Wait false; B3 `Wait-Stopped`
+okuma hatasında fırlatır; **duyarlılık:** eski `SilentlyContinue` biçimi aynı girdilerde KAPALI + Wait true verir. Tam koşu **23/26**; düşen 3 kapı senaryosu
+yine HEAD ile aynı assert'ler (Windows'a özgü). Canlı `Get-NetTCPConnection`'ın "eşleşme yok" hata kimliği burada sahte cmdlet'le taklit edildi; gerçek
+davranış SelfTest'in boş-sonuç ölçümüyle (W0-b) doğrulanır.
+
 **Canlı salt-okuma SelfTest kayıtları (kronolojik; FAIL kayıtları korunur):**
 
 | Zaman (UTC) | Betik sha | Sonuç | Başarısız ölçüt | Not |
@@ -309,8 +385,8 @@ yalnız son baytları kanıtlar.
 **görünür** kılar. Bundan sonraki her FAIL'de listelenen satırlar kanıta alınır. A/B/C kontrol betiği kanıt paketindedir (§13) ve yayın betiğinin sha'sı
 her değiştiğinde yeniden koşulur. `r27-dar-kabul.js` sahte R26/R27 ile 7/7 (değişmedi).
 **Sınanmayan:** yükseltilmiş gerçek koşum ve **yükseltilmiş pencerede sahte-süreç taraması** (yalnız canlı B1'de mümkün); B2 `before` canlıda koşulmadı
-(B0'ın parçası); harness'ta senaryosu olmayan yollar: geri alma sırasında (R-durdur) durdurma başarısızlığı (12) ve doğrulama sonrası
-`Start-ScheduledTask` istisnası (13 ön-ataması) — kod yolu vardır, ölçülmedi. (21/`DURDURMA-BASARISIZ` artık `stop-fail` senaryosuyla ölçülür.)
+(B0'ın parçası). Geri alma sırasında (R-durdur) durdurma başarısızlığı (12) ve doğrulama sonrası başlatma istisnası (13) R03'te `rollback-stop-fail` /
+`rollback-start-throw` senaryolarıyla **Linux izole provasında** ölçüldü; aynı senaryoların gerçek taban + WinPS 5.1 koşumu §8 W0'dadır.
 Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini ölçmez. Canlı süreç listesi okuması harness'ta ölçülmez; yalnız canlı SelfTest
 (A/B/C kontrolleri, B0, B1) ölçer.
 
@@ -329,7 +405,8 @@ Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini öl�
 | # | İş | Bağımlılık | Durum |
 |---|---|---|---|
 | W1 | Bu paket PR'ı (#2837; docs + betikler) merge | owner onayı (2026-09-30, sohbet: "plana göre merge edilebiliyorsa merge et") + son head'de CI/CodeQL yeşil + `main` CI boş | koşullar sağlanınca ajan merge eder (`--match-head-commit`); sonuç kanıt paketindeki `PR-HEADS-AND-ORDER.json`'da |
-| W2 | R27 yayını B0→B2 | W1 + owner GO Y1 | bekliyor |
+| W0 | R03/R03-b dar düzeltme PR'ı (durdurma/geri dönüş hata yolları + ölçüm hatası ≠ kapalı + D-8 katman ipucu + koşullu SEC kararı) | **(a)** gerçek taban kopyası + aday dist ile harness son baytlarla **26/26**, iki kez: `-ChildShell powershell.exe` (WinPS 5.1, varsayılan) **ve** `-ChildShell pwsh.exe` (PowerShell 7) · **(b)** yeni yayın sha'sıyla canlı salt-okuma SelfTest (A/B/C; yeni boş-sonuç ölçümü dahil) · **(c)** owner incelemesi + merge · **(d)** SEC-PORTAL-ADMIN-MSG-01 önkoşulları: **P-1** canlı etkili kenar yapılandırması, **P-2** API erişim sınırı (salt okuma; ayrıntı kısıtlı kayıtta) | taslak PR; bu turda merge edilmez; (a)(b)(d) owner makinesinde |
+| W2 | R27 yayını B0→B2 | W0 + W1 + owner GO Y1 | bekliyor |
 | W3 | Pin güncelleme PR'ı (#2838) | W2 (canlı dist R27) | taslak; merge yalnız B1 + B2 PASS **sonrası** (öncesinde eski paketlerin Preflight'ları canlı R26'da DUR verir) |
 | W4 | D-5 canlı kabul | W2, W3 + §10 D-5 kararları + GO | paket hazır (koşucu öz-testi 41/41 · QR 23/23 · blok 90/90 ×2 kabuk) |
 | W5 | D-8 makine sondası + telefon | W2 (R26'da da koşabilir) | sonda hazır (öz-test 15/15) |
@@ -362,7 +439,7 @@ Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini öl�
 | K-6 | K3/OFFICE kapsamı ve 3 migration'ın yayın zamanı | R27 sonrası ayrı aday | R27 sonrası | hayır |
 | K-7 | D-6 belge onay/ret akışının canlı kabulü (koşucu `approve/reject` uçlarını bilinçli çağırmaz) | ayrı paket iste / D-6 kapsamıyla yetin | D-6 GO'sundan önce | hayır |
 | K-8 | D-7 sonrası sentetik tenantta kalan mesaj/bildirim satırları | "saklandı" kaydıyla kabul (önerilen; ürün silme ucu yok) / elle DB silme (önerilmez) | D-7 GO'sundan önce | D-7 kapanış ifadesi için evet |
-| K-11 | SEC-PORTAL-ADMIN-MSG-01 ürün düzeltmesi | yetki kuralını belirle + ayrı yama / ertele | herhangi bir zaman | hayır (yayın ve D-7 için) |
+| K-11 | SEC-PORTAL-ADMIN-MSG-01 ürün düzeltmesi (alt konular ayrı; kısıtlı kayıt) | yetki kuralını belirle + ayrı yama / ertele | herhangi bir zaman | kural seçimi yayını engellemez; **ancak** P-1/P-2 (§8 W0-d) doğrulanmadan yayın kararı verilmez |
 | K-12 | Hizmet kabulü imza metni ön koşulları: B-2 (H1), KB-03 / H2-10 (H2), H4-08 gerçek yayın ayağı (H4), H7-05b · K-1 · PSUS (H7) | her kalem: "kabul dışı / sonraki iş" ya da ayrı karar | hizmet kabulü imzasından önce | hizmet kabulü için evet |
 | K-13 | H5 ayrı hizmet-kabulü satırı (B-I11-2 hükmü) | hüküm ver | H5 hizmet kabulünden önce | H5 hizmet kabulü için evet |
 | K-14 | Sahte-süreç deseninin **eski paket** koşucu adlarına genişletilmesi (R25–R26 yayın/geri alma/kabul, H5 sahte-API/owner/pin, İ1x owner blokları, İ3 koşucu/başlatıcı, C4 canlı, T-pencere adları) | genişlet (ayrı küçük değişiklik + envanter testi + yeniden inceleme) / mevcut kapsamla yetin (taban sürümle **aynı** sınır; B0/B1 ön koşulu "pencerede başka koşum yok") | Y1'den önce | hayır (kapı tabandan gevşek değil; genişletme bu talimatın "yalnız yanlış pozitifi düzelt" kapsamını aşar) |
@@ -378,7 +455,7 @@ not olarak yerinde durur (silinmesi istenirse owner yapar). H1–H8 kalemlerinin
 |---|---|---|
 | PR merge (#2837) | owner onayı + main CI/CodeQL SUCCESS merge SHA'sında; `gh run list --branch main` boşken merge | CI FAIL / başka merge koşuyor / onay yok |
 | B0 | SelfTest PASS (WinPS 5.1), `before` çıkış 0; ön koşul: makinede ajan oturumu/harness/öz-test/inceleme koşmuyor, blok etkileşimli pencereye yapıştırıldı | herhangi bir kapı; sahte-süreç listesi boş değil (izleme dahil); tarama kendi sürecini göremedi |
-| B1 | `YAYIN PASS`; API `E28A6863`, WEB `B2DEE365`/`W2UQpBPD` | 10/11/12/13/20/21 (§6 tablo); 11/12 → B3 |
+| B1 | `YAYIN PASS`; API `E28A6863`, WEB `B2DEE365`/`W2UQpBPD` | 10/11/12/13/20/21/22 (§6 tablo + eşleme); 11/12 → B3; 13/22 → servis bazında `KURTARMA:` (B3 gerekmez) |
 | B2 | çıkış 0 (DK-1…DK-8) | DK-7 FAIL → davranış gelmedi → B3 değerlendirilir |
 | Pin PR (#2838) | D-4/EXTACC/H5/C4 Preflight'ları R27 dist ile PASS | pin uyuşmazlığı |
 | D-5 | Run çıkış 0 + owner beyanı; tek kullanım yalnız makine gözlemi PASS **ve** owner beyanı "formu gönderdim, reddedildi" ise doğrulanmış sayılır | 3 = ölçülemeyen (kabul değil); 5/6 → Recover; ürün bulgusu |
@@ -395,11 +472,14 @@ Bu revizyon commit edildiğinde #2837 head SHA'sı değişir; güncel head SHA'l
 - `HY_WT_R27`, `HY_WT_R26`, disposable veritabanı konteynerleri, hata provası kökleri ve checkpoint dizini **silinmez**.
 - Sahte API'ler ürünün kendisi değildir; ürünün hız sınırı, gönderim, kova/ACL ve yetki davranışı yalnız canlıda ölçülür.
 - D-5'te e-posta **teslimi** ölçülmez: token üretimi, SMTP kabulü ve posta kutusuna teslim ayrı olaylardır; yalnız owner beyanı vardır.
-- D-8'de katman, doğrudan ilişkilendirilebilir sunucu kanıtı yoksa **UNKNOWN**'dur; boş 403 gövdesi katmanı kanıtlamaz.
+- D-8'de `Server`/sağlayıcı başlıkları ve gövde imzası katman **ipucudur** (`layerHint`); sondada kesin katman kanıtı yoktur, `layer` = **UNKNOWN**; bu
+  ret ölçümünü başarısız saydırmaz. Boş 403 gövdesi ipucu da değildir. Ham request-target korunur (öz-testte kenarın gördüğü yolla birebir).
 
 ## 13. R02 kanıt paketi, inceleme turları ve açık kalan bulgular
 
-**Kanıt dizini (yerel, repo dışı):** `Documents\CLIENT-EVIDENCE-20260911\r27-package-r02-20260929\` (kullanıcı profiline göreli).
+**Kanıt dizini (yerel, repo dışı):** `Documents\CLIENT-EVIDENCE-20260911\r27-package-r02-20260929\` (kullanıcı profiline göreli). **R02 arşivi
+(`R27-R02-INCELEME-PAKETI-20260930.zip`) ve tarihsel FAIL kayıtları R03'te DEĞİŞMEDİ.** R03 için ayrıca yalnız son dosyaları, dar diff'i ve Linux izole
+sonuçlarını içeren **küçük inceleme ZIP'i** üretildi (ad + sha256 teslim raporunda; kısıtlı değerlendirme metni ZIP'e **girmez**).
 
 | Alt dizin | İçerik |
 |---|---|
