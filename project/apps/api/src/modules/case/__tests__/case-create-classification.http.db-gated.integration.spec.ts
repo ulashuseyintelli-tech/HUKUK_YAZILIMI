@@ -292,6 +292,41 @@ describeWithDisposableDb('Dosya açılışı takip sınıflandırması — POST 
     expect(await prisma.case.count({ where: { tenantId: other.tenantId } })).toBe(0);
   });
 
+  it('BELGE TÜRÜ ÇELİŞKİSİ (belgelenmiş, olgusal): çek alt formu + Kambiyo - Senet takip türü → 400; tenant\'ta HİÇBİR satır yok; düzeltilmiş istek 201', async () => {
+    process.env.MANUAL_CASE_INSTRUMENTS = 'true';
+    const f = await fixture('kind-conflict');
+    const empty = await tenantRowCounts(f.tenantId);
+    for (const [subType, takipTuruId] of [
+      ['FORM_10_CEK', f.lookups.kambiyoSenet],
+      ['FORM_10_BONO', f.lookups.kambiyoCek],
+      ['FORM_10_POLICE', f.lookups.kambiyoCek],
+    ] as const) {
+      const res = await postCase(f.userId, { ...kambiyoCekBody(f), subType, takipTuruId });
+      expect({ subType, status: res.status }).toEqual({ subType, status: 400 });
+      expect(res.body.code).toBe('CASE_CLASSIFICATION_DOCUMENT_KIND_CONFLICT');
+      expect(res.body.message).toEqual(expect.stringContaining('takip oluşturulmadı'));
+      expect(await tenantRowCounts(f.tenantId)).toEqual(empty);
+    }
+    const ok = await postCase(f.userId, { ...kambiyoCekBody(f), subType: 'FORM_10_CEK', takipTuruId: f.lookups.kambiyoCek });
+    expect(ok.status).toBe(201);
+  });
+
+  it('HUKUKİ TERCİH DENETLENMEZ: çek alt formu + ilamsız genel haciz ve alt formsuz FORM_10 + Kambiyo - Senet kabul edilir', async () => {
+    process.env.MANUAL_CASE_INSTRUMENTS = 'true';
+    const f = await fixture('kind-allowed');
+    const a = await postCase(f.userId, {
+      ...kambiyoCekBody(f),
+      subType: 'FORM_10_CEK',
+      takipTuruId: f.lookups.ilamsizGenel,
+      mahiyetTipiId: f.lookups.mahiyetPara,
+      mahiyetKodu: 'PARA',
+    });
+    expect(a.status).toBe(201);
+    const g = await fixture('kind-allowed-2');
+    const b = await postCase(g.userId, { ...kambiyoCekBody(g), subType: 'FORM_10', takipTuruId: g.lookups.kambiyoSenet });
+    expect(b.status).toBe(201);
+  });
+
   it('EVRAKSIZ, yalnız Due ile ilamsız açılış (mevcut desteklenen akış) etkilenmez; sınıflandırma yazılır', async () => {
     const f = await fixture('plain');
     const res = await postCase(f.userId, {

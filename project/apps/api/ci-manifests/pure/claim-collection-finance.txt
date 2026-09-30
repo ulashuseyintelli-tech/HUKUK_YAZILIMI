@@ -299,3 +299,8 @@ src/modules/case/__tests__/case-create-classification.spec.ts
 # K3 karari A: acilista yonetim varsayilan yetkisinin anlik kopyasi — saf karar (bilinen boolean anahtarlar, acik false
 #   korunur, gecerli anahtar yoksa yetki yok, yonetim denetim dayanagi yoksa uygulanmaz, pasif / buro disi avukat).
 src/modules/case/__tests__/case-lawyer-default-permissions.spec.ts
+
+# Dosya acilisinda belgelenmis olgusal siniflandirma celiskisi: kambiyo alt formu (FORM_10_CEK / _BONO / _POLICE) ile kambiyo
+#   takip turunun belge turu (cek <-> senet) celisirse tx oncesi 400 CASE_CLASSIFICATION_DOCUMENT_KIND_CONFLICT; hukuki
+#   tercih (cek formu + ilamsiz genel haciz) ve alt formsuz FORM_10 DENETLENMEZ.
+src/modules/case/__tests__/case-classification-consistency.spec.ts

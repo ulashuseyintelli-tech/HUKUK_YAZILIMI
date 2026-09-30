@@ -2328,8 +2328,8 @@ export function ProfessionalClaimItemForm({
                         return;
                       }
                       try {
-                        const token = localStorage.getItem("token");
-                        if (!token) {
+                        // Ortak kimlik doğrulama: "Beni hatırla" açık (localStorage) ve kapalı (sessionStorage) oturum
+                        if (!api.getToken()) {
                           alert('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
                           return;
                         }
@@ -2484,21 +2484,7 @@ export function ProfessionalClaimItemForm({
                             : {}),
                         };
                         
-                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/word`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                          body: JSON.stringify(templateData),
-                        });
-                        
-                        console.log('[Word] Response status:', response.status);
-                        
-                        if (!response.ok) {
-                          const errorText = await response.text();
-                          console.error('[Word] Hata:', errorText);
-                          throw new Error(`Word oluşturulamadı: ${response.status} - ${errorText}`);
-                        }
-                        
-                        const blob = await response.blob();
+                        const blob = await api.downloadTakipTalebiWord(templateData);
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
@@ -2524,8 +2510,8 @@ export function ProfessionalClaimItemForm({
                         return;
                       }
                       try {
-                        const token = localStorage.getItem("token");
-                        if (!token) {
+                        // Ortak kimlik doğrulama: "Beni hatırla" açık (localStorage) ve kapalı (sessionStorage) oturum
+                        if (!api.getToken()) {
                           alert('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
                           return;
                         }
@@ -2598,21 +2584,7 @@ export function ProfessionalClaimItemForm({
                           ...(kalem.kalemTuru === 'CEK' ? { cekFormationPreview: buildCekPreviewRequest(kalem, caseDebtors) } : {}),
                         };
                         
-                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/pdf`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                          body: JSON.stringify(templateData),
-                        });
-                        
-                        console.log('[PDF] Response status:', response.status);
-                        
-                        if (!response.ok) {
-                          const errorText = await response.text();
-                          console.error('[PDF] Hata:', errorText);
-                          throw new Error(`PDF oluşturulamadı: ${response.status} - ${errorText}`);
-                        }
-                        
-                        const blob = await response.blob();
+                        const blob = await api.downloadTakipTalebiPdf(templateData);
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
@@ -2638,8 +2610,8 @@ export function ProfessionalClaimItemForm({
                         return;
                       }
                       try {
-                        const token = localStorage.getItem("token");
-                        if (!token) {
+                        // Ortak kimlik doğrulama: "Beni hatırla" açık (localStorage) ve kapalı (sessionStorage) oturum
+                        if (!api.getToken()) {
                           alert('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
                           return;
                         }
@@ -2712,21 +2684,7 @@ export function ProfessionalClaimItemForm({
                         };
                         
                         
-                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/xml`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                          body: JSON.stringify(templateData),
-                        });
-                        
-                        console.log('[XML] Response status:', response.status);
-                        
-                        if (!response.ok) {
-                          const errorText = await response.text();
-                          console.error('[XML] Hata:', errorText);
-                          throw new Error(`XML oluşturulamadı: ${response.status} - ${errorText}`);
-                        }
-                        
-                        const blob = await response.blob();
+                        const blob = await api.downloadTakipTalebiXml(templateData);
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;

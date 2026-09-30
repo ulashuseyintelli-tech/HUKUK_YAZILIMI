@@ -88,6 +88,7 @@ import {
   MANAGEMENT_DEFAULT_PERMISSIONS_AUDIT_ACTION,
   decideCaseOpenDefaultPermissions,
 } from "./case-lawyer-default-permissions";
+import { findClassificationDocumentKindConflict, kambiyoDocumentKindOfSubForm } from "./case-classification-consistency";
 
 // ASSIGN-4b sorumlu-avukat invariant'ının SAF karar fonksiyonları
 // (pickResponsibleFallbackIndex / resolveResponsiblePromotion / planResponsible)
@@ -1200,6 +1201,24 @@ export class CaseService {
   }
 
   /**
+   * Dosya açılışında YALNIZ belgelenmiş olgusal sınıflandırma çelişkisini reddeder (kambiyo alt formu ↔ kambiyo takip türü
+   * belge türü). Kural ve bilinçli olarak denetlenmeyen kombinasyonlar: `case-classification-consistency.ts`. Takip türü
+   * kodu yalnız alt form kambiyo ise okunur (lookup id'si bu noktada validateLookupIds ile tenant-doğrulanmıştır).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (tx öncesi, validateLookupIds'ten sonra)
+   */
+  private async assertClassificationConsistent(tenantId: string, dto: CreateCaseDto): Promise<void> {
+    if (!dto.takipTuruId || !kambiyoDocumentKindOfSubForm(dto.subType)) return;
+    const takipTuru = await this.prisma.lookupTakipTuru.findFirst({
+      where: { id: dto.takipTuruId, tenantId },
+      select: { code: true },
+    });
+    const conflict = findClassificationDocumentKindConflict({ subType: dto.subType, takipTuruCode: takipTuru?.code });
+    if (conflict) throw new BadRequestException(conflict);
+  }
+
+  /**
    * CASE-UPDATE-FK-TENANT: Case'e bağlanan tenant-scoped FK'lerin (Client/Court/ExecutionOffice)
    * bu tenant'a ait olduğunu doğrular. `validateLookupIds` yalnız lookup tablolarını kapsar; bu
    * üç FK dışarıda kalıyordu → tekil update()/patchFlags() cross-tenant id'yi guard'sız persist
@@ -2222,6 +2241,8 @@ export class CaseService {
       durumEtiketiId: dto.durumEtiketiId,
       mahiyetTipiId: dto.mahiyetTipiId,
     });
+    // Belgelenmiş olgusal çelişki: kambiyo alt formu ile kambiyo takip türünün belge türü (çek ↔ senet) — tx ÖNCESİ 400
+    await this.assertClassificationConsistent(tenantId, dto);
 
     try {
       // B4/D: fileNumber ön-benzersizlik kontrolü — tx-öncesi taraf yaratımından
