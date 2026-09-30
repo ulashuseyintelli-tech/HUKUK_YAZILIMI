@@ -1,3 +1,5 @@
+import { defaultPermissionsFingerprint } from '../lawyer/lawyer-default-permissions-fingerprint';
+
 /**
  * K3 kararı (owner GO 2026-09-30, seçenek A) — dosya açılışında avukat atamasına, OFİS YÖNETİMİNCE AÇIKÇA belirlenmiş
  * `Lawyer.defaultPermissions` değerlerinin ANLIK KOPYASI yazılır.
@@ -8,9 +10,15 @@
  *  - GÜNCELLEME (`LawyerService.update`) alanı yalnız ADMIN veya aynı tenant'ta aktif, bağlı PARTNER'a açar (transaction
  *    içinde güncel satırdan yeniden doğrulanır) ve değer gerçekten değişince AYNI transaction'da `LAWYER_PRIVILEGE_CHANGED`
  *    denetimini (`changedFields` ∋ `defaultPermissions`) yazar.
- *  - Oluşturmadan sonra tek yazıcı güncelleme yolu olduğundan, böyle bir denetim kaydının VARLIĞI mevcut değerin
- *    yönetimce yazıldığını gösterir. Kayıt yoksa (ör. yalnız oluşturmada doldurulmuş, B11 öncesi denetimsiz değişiklik)
- *    varsayılan UYGULANMAZ.
+ *  - Kaydın VARLIĞI yetmez (owner GO 2026-09-30, kanıt bağı): yönetim kaydı yazılan değerin parmak izini taşır
+ *    (`defaultPermissionsFingerprint`) ve yalnız AYNI tenant + AYNI avukat için EN SON yönetim kaydının izi GÜNCEL
+ *    değerle eşleşirse varsayılan uygulanır. Eski bir yönetim işlemi, sonradan başka yoldan (denetimsiz yazma, veri
+ *    düzeltmesi, geri yükleme) yazılmış değere yetki KAZANDIRMAZ; ilgisiz alan kaydı (`changedFields` ∌
+ *    `defaultPermissions`) dayanak değildir. İz taşımayan eski kayıt doğrulanamaz → UYGULANMAZ; yönetimin değeri mevcut
+ *    yetkili yoldan yeniden kaydetmesi gerekir. Kayıt yoksa (ör. yalnız oluşturmada doldurulmuş) da UYGULANMAZ.
+ *  - Oluşturma yeni kimlik üretir (`id` gövdeden yazılamaz, fiziksel silme yok) → başka kaydın kanıtını devralamaz.
+ *    Mükerrer kaydın yeniden etkinleştirilmesi değeri DEĞİŞTİRMEZ (onaylayıcı yetkisi ister); yönetimin son kararı geçerli
+ *    kalır.
  *
  * Kopya kuralları: yalnız bilinen izin anahtarları ve yalnız boolean değerler; açık `false` KORUNUR; eksik anahtar izin
  * VERMEZ (sunucu kapısı `=== true` arar); geçerli anahtar yoksa hiç yetki yazılmaz ("tümü açık" varsayımı YOK).
@@ -39,7 +47,12 @@ export type DefaultPermissionOutcome =
   | { readonly outcome: 'APPLIED'; readonly permissions: CaseLawyerPermissionSnapshot; readonly basisAuditLogId: string }
   | {
       readonly outcome: 'NOT_APPLIED';
-      readonly reason: 'LAWYER_NOT_IN_TENANT' | 'LAWYER_INACTIVE' | 'NO_DEFAULTS' | 'SOURCE_NOT_MANAGEMENT_VERIFIED';
+      readonly reason:
+        | 'LAWYER_NOT_IN_TENANT'
+        | 'LAWYER_INACTIVE'
+        | 'NO_DEFAULTS'
+        | 'SOURCE_NOT_MANAGEMENT_VERIFIED'
+        | 'SOURCE_VALUE_MISMATCH';
     };
 
 /**
@@ -72,13 +85,20 @@ export function snapshotLawyerDefaultPermissions(defaults: unknown): CaseLawyerP
  */
 export function decideCaseOpenDefaultPermissions(input: {
   readonly lawyer: { readonly isActive: boolean; readonly defaultPermissions: unknown } | null;
-  /** Yönetim güncellemesinin denetim kaydı (LAWYER_PRIVILEGE_CHANGED, changedFields ∋ defaultPermissions); yoksa null */
-  readonly managementBasisAuditLogId: string | null;
+  /**
+   * Aynı tenant + aynı avukat için EN SON yönetim kaydı (LAWYER_PRIVILEGE_CHANGED, changedFields ∋ defaultPermissions)
+   * ve metadata'sındaki parmak izi (eski kayıtta yok → null); kayıt yoksa null
+   */
+  readonly managementBasis: { readonly auditLogId: string; readonly fingerprint: string | null } | null;
 }): DefaultPermissionOutcome {
   if (!input.lawyer) return { outcome: 'NOT_APPLIED', reason: 'LAWYER_NOT_IN_TENANT' };
   if (!input.lawyer.isActive) return { outcome: 'NOT_APPLIED', reason: 'LAWYER_INACTIVE' };
   const permissions = snapshotLawyerDefaultPermissions(input.lawyer.defaultPermissions);
   if (!permissions) return { outcome: 'NOT_APPLIED', reason: 'NO_DEFAULTS' };
-  if (!input.managementBasisAuditLogId) return { outcome: 'NOT_APPLIED', reason: 'SOURCE_NOT_MANAGEMENT_VERIFIED' };
-  return { outcome: 'APPLIED', permissions, basisAuditLogId: input.managementBasisAuditLogId };
+  if (!input.managementBasis) return { outcome: 'NOT_APPLIED', reason: 'SOURCE_NOT_MANAGEMENT_VERIFIED' };
+  // Kanıt bağı: yönetimin EN SON yazdığı değer ≠ güncel değer (ya da iz yok) → başka yoldan yazılmış/doğrulanamaz
+  if (input.managementBasis.fingerprint !== defaultPermissionsFingerprint(input.lawyer.defaultPermissions)) {
+    return { outcome: 'NOT_APPLIED', reason: 'SOURCE_VALUE_MISMATCH' };
+  }
+  return { outcome: 'APPLIED', permissions, basisAuditLogId: input.managementBasis.auditLogId };
 }

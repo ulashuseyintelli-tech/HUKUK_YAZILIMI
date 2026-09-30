@@ -1166,18 +1166,21 @@ export class CaseService {
         metadata: { path: ['changedFields'], array_contains: ['defaultPermissions'] },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { id: true, entityId: true },
+      select: { id: true, entityId: true, metadata: true },
     });
-    const basisByLawyer = new Map<string, string>();
+    // Avukat başına YALNIZ en son yönetim kaydı dayanaktır (daha eski kayıt, sonradan yazılmış değeri onaylamaz)
+    const basisByLawyer = new Map<string, { auditLogId: string; fingerprint: string | null }>();
     for (const row of basisRows) {
-      if (row.entityId && !basisByLawyer.has(row.entityId)) basisByLawyer.set(row.entityId, row.id);
+      if (!row.entityId || basisByLawyer.has(row.entityId)) continue;
+      const fingerprint = (row.metadata as { defaultPermissionsFingerprint?: unknown } | null)?.defaultPermissionsFingerprint;
+      basisByLawyer.set(row.entityId, { auditLogId: row.id, fingerprint: typeof fingerprint === 'string' ? fingerprint : null });
     }
 
     const decisions = [];
     for (const assignment of assignments) {
       const decision = decideCaseOpenDefaultPermissions({
         lawyer: lawyerById.get(assignment.lawyerId) ?? null,
-        managementBasisAuditLogId: basisByLawyer.get(assignment.lawyerId) ?? null,
+        managementBasis: basisByLawyer.get(assignment.lawyerId) ?? null,
       });
       if (decision.outcome === 'APPLIED') {
         await tx.caseLawyer.update({

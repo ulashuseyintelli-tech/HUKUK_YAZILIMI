@@ -23,6 +23,7 @@
 
 import { ForbiddenException } from '@nestjs/common';
 import { LawyerService } from '../lawyer.service';
+import { defaultPermissionsFingerprint } from '../lawyer-default-permissions-fingerprint';
 
 const TENANT = 'tenant-b11';
 const LAWYER_ID = 'lawyer-b11';
@@ -178,6 +179,17 @@ describe('B11 — no-op: değişiklik audit\'i YOK', () => {
     const degisim = build({ existing: { defaultPermissions: null } });
     await degisim.svc.update(TENANT, LAWYER_ID, { defaultPermissions: { canEditCase: true } } as never, ADMIN);
     expect(byAction(degisim.audit, 'LAWYER_PRIVILEGE_CHANGED')[0].metadata.changedFields).toEqual(['defaultPermissions']);
+  });
+
+  it('K3-A kanıt bağı: defaultPermissions değişince kayıt DEĞERİ değil, yazılan değerin parmak izini taşır', async () => {
+    const h = build();
+    await h.svc.update(TENANT, LAWYER_ID, { defaultPermissions: { canEditFinance: true } } as never, ADMIN);
+    const [girdi] = byAction(h.audit, 'LAWYER_PRIVILEGE_CHANGED');
+    expect(girdi.metadata).toEqual({
+      changedFields: ['defaultPermissions'],
+      defaultPermissionsFingerprint: defaultPermissionsFingerprint({ canEditFinance: true }),
+    });
+    expect(JSON.stringify(girdi.metadata)).not.toContain('canEditFinance');
   });
 });
 

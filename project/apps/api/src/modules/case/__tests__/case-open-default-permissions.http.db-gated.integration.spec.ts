@@ -32,6 +32,10 @@ import { CaseModule } from '../case.module';
  * başka büro avukatıyla açılış tx öncesi 400 ve kısmi yazım YOK; anlık kopya sonraki varsayılan değişikliğinden
  * etkilenmez; dosya bazlı geri alma (PATCH /cases/:id/lawyers/:caseLawyerId) sonraki K3 talebini engeller; her karar
  * CASE_OPEN_LAWYER_DEFAULT_PERMISSIONS denetiminde izlenir.
+ *
+ * KANIT BAĞI (owner GO 2026-09-30): dayanak, AYNI tenant + AYNI avukat için EN SON yönetim kaydının parmak izinin GÜNCEL
+ * değerle eşleşmesidir. Aşağıdaki doğrudan DB yazmaları yetki VERMEK için değil, denetimsiz/uygulama dışı bir yazmanın
+ * (veri düzeltmesi, geri yükleme, eski B11 kaydı) yetki KAZANDIRAMADIĞINI göstermek içindir (negatif senaryo).
  */
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -205,6 +209,10 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
       where: { tenantId: o.tenantId, action: 'LAWYER_PRIVILEGE_CHANGED', entityId: o.opener.lawyerId },
     });
     expect(basis.userId).toBe(o.partner.userId);
+    expect(basis.metadata).toEqual({
+      changedFields: ['defaultPermissions'],
+      defaultPermissionsFingerprint: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    });
 
     const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'granted'));
     expect(res.status).toBe(201);
@@ -383,6 +391,79 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
     expect((await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id, lawyerId: intern.id } })).casePermissions).toBeNull();
     expect(((await openingAudit(o.tenantId, res.body.id))?.metadata as any).assignments).toEqual([
       expect.objectContaining({ lawyerId: intern.id, outcome: 'NOT_APPLIED', reason: 'LAWYER_INACTIVE' }),
+    ]);
+  });
+  it('KANIT BAĞI: yönetim bir küme kaydettikten SONRA denetimsiz yoldan yazılmış değer yönetim onaylı SAYILMAZ (SOURCE_VALUE_MISMATCH); aynı değeri no-op kaydetmek onay üretmez', async () => {
+    const o = await office('drift');
+    const managed = { canEditCase: true, canViewFinance: true, canEditFinance: false };
+    await managementSetsDefaults(o, o.opener.lawyerId, managed);
+    // Uygulama dışı / denetimsiz yazma (ör. veri düzeltmesi): mali izni açar — denetim kaydı YOK
+    await prisma.lawyer.update({ where: { id: o.opener.lawyerId }, data: { defaultPermissions: FINANCE_GRANT } });
+
+    const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'drift'));
+    expect(res.status).toBe(201);
+    expect((await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id } })).casePermissions).toBeNull();
+    expect(res.body.checkPenaltyFormation?.results).toEqual([
+      expect.objectContaining({ status: 'REJECTED', errorCode: 'CASE_FINANCE_PERMISSION_REQUIRED' }),
+    ]);
+    expect(await prisma.officeApprovalRequest.count({ where: { tenantId: o.tenantId } })).toBe(0);
+    expect(await prisma.claimItem.count({ where: { tenantId: o.tenantId, itemType: 'CHECK_PENALTY' } })).toBe(0);
+    expect(((await openingAudit(o.tenantId, res.body.id))?.metadata as any).assignments).toEqual([
+      expect.objectContaining({ outcome: 'NOT_APPLIED', reason: 'SOURCE_VALUE_MISMATCH' }),
+    ]);
+
+    // Yönetim güncel (denetimsiz yazılmış) değeri AYNEN gönderirse B11 no-op → yeni kayıt YOK → yine uygulanmaz
+    const auditsBefore = await prisma.auditLog.count({ where: { tenantId: o.tenantId, action: 'LAWYER_PRIVILEGE_CHANGED' } });
+    await managementSetsDefaults(o, o.opener.lawyerId, FINANCE_GRANT);
+    expect(await prisma.auditLog.count({ where: { tenantId: o.tenantId, action: 'LAWYER_PRIVILEGE_CHANGED' } })).toBe(auditsBefore);
+    const again = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'drift2'));
+    expect(again.status).toBe(201);
+    expect((await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: again.body.id } })).casePermissions).toBeNull();
+  });
+
+  it('KANIT BAĞI: ESKİ yönetim kararı (sonradan yönetimce değiştirilmiş) ve İLGİSİZ alan kaydı, sonradan geri yazılmış değere dayanak OLMAZ', async () => {
+    const o = await office('stale');
+    await managementSetsDefaults(o, o.opener.lawyerId, FINANCE_GRANT); // eski karar (bu değerle eşleşen iz)
+    await managementSetsDefaults(o, o.opener.lawyerId, { ...FINANCE_GRANT, canEditFinance: false }); // güncel karar
+    const rank = await as(o.partner.userId).put(`/lawyers/${o.opener.lawyerId}`, { lawyerRank: 'AUTHORIZED' }); // ilgisiz alan
+    expect(rank.status).toBe(200);
+    // Denetimsiz yoldan eski kararın değeri geri yazılır
+    await prisma.lawyer.update({ where: { id: o.opener.lawyerId }, data: { defaultPermissions: FINANCE_GRANT } });
+
+    const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'stale'));
+    expect(res.status).toBe(201);
+    expect((await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id } })).casePermissions).toBeNull();
+    expect(res.body.checkPenaltyFormation?.results).toEqual([
+      expect.objectContaining({ status: 'REJECTED', errorCode: 'CASE_FINANCE_PERMISSION_REQUIRED' }),
+    ]);
+    expect(((await openingAudit(o.tenantId, res.body.id))?.metadata as any).assignments).toEqual([
+      expect.objectContaining({ outcome: 'NOT_APPLIED', reason: 'SOURCE_VALUE_MISMATCH' }),
+    ]);
+  });
+
+  it('KANIT BAĞI: parmak izi taşımayan ESKİ (B11 biçimli) yönetim kaydı doğrulanamaz → yetki KAPALI', async () => {
+    const o = await office('legacy');
+    // Bu değişiklikten önceki B11 kaydı biçimi: yalnız alan adı (geçmiş veri benzetimi; yetki vermek için DEĞİL)
+    await prisma.lawyer.update({ where: { id: o.opener.lawyerId }, data: { defaultPermissions: FINANCE_GRANT } });
+    await prisma.auditLog.create({
+      data: {
+        tenantId: o.tenantId,
+        action: 'LAWYER_PRIVILEGE_CHANGED',
+        entityType: 'LAWYER',
+        entityId: o.opener.lawyerId,
+        userId: o.partner.userId,
+        actorType: 'USER',
+        metadata: { changedFields: ['defaultPermissions'] },
+      },
+    });
+    const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'legacy'));
+    expect(res.status).toBe(201);
+    expect((await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id } })).casePermissions).toBeNull();
+    expect(res.body.checkPenaltyFormation?.results).toEqual([
+      expect.objectContaining({ status: 'REJECTED', errorCode: 'CASE_FINANCE_PERMISSION_REQUIRED' }),
+    ]);
+    expect(((await openingAudit(o.tenantId, res.body.id))?.metadata as any).assignments).toEqual([
+      expect.objectContaining({ outcome: 'NOT_APPLIED', reason: 'SOURCE_VALUE_MISMATCH' }),
     ]);
   });
 });
