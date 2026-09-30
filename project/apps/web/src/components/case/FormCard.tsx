@@ -47,7 +47,9 @@ export function FormCard({ form, isSelected, isRecommended, onSelect, onInfoClic
       )}
       
       <button
+        type="button"
         onClick={handleClick}
+        aria-expanded={hasSubForms ? showSubForms : undefined}
         className={`w-full p-4 border-2 rounded-lg text-left transition-all ${
           isSelected
             ? "border-primary bg-primary/5 shadow-sm"
@@ -71,17 +73,9 @@ export function FormCard({ form, isSelected, isRecommended, onSelect, onInfoClic
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onInfoClick(form);
-              }}
-              className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-full transition-colors"
-              title="Detaylı bilgi"
-            >
-              <Info className="h-4 w-4" />
-            </button>
-            
+            {/* Bilgi düğmesinin yerleşimdeki yeri (gerçek düğme seçim düğmesinden sonra, kardeş olarak bu noktaya konumlanır) */}
+            <span aria-hidden="true" className="block h-7 w-7" data-testid="form-card-info-slot" />
+
             {hasSubForms && (
               <div className="text-gray-400">
                 {showSubForms ? (
@@ -101,6 +95,20 @@ export function FormCard({ form, isSelected, isRecommended, onSelect, onInfoClic
             </span>
           </div>
         )}
+      </button>
+
+      {/* "Detaylı bilgi" düğmesi seçim düğmesinin İÇİNDE değil KARDEŞİDİR (iç içe <button> geçersiz HTML, hydration
+          uyarısı). Seçim düğmesindeki aynı boyutlu yer tutucunun tam üstüne konumlanır: görünüm ve sekme sırası
+          (önce kart, sonra bilgi — bu yüzden DOM'da seçim düğmesinden SONRA) değişmez. Konum = kenarlık 2px + p-4 16px; alt kategori oku varsa +20px ok +8px boşluk. */}
+      <button
+        type="button"
+        onClick={() => onInfoClick(form)}
+        className={`absolute top-[18px] ${hasSubForms ? "right-[46px]" : "right-[18px]"} z-[1] p-1.5 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-full transition-colors`}
+        title="Detaylı bilgi"
+        aria-label={`${form.title} — detaylı bilgi`}
+        data-testid="form-card-info"
+      >
+        <Info className="h-4 w-4" />
       </button>
 
       {/* Alt formlar */}
