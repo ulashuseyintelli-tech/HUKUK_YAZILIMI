@@ -2338,7 +2338,10 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 5 && (
-          <div className="min-h-[600px] space-y-3">
+          // Adım 0 ile aynı yerleşim kuralı: ebeveyn sabit yükseklikli ve overflow-hidden. Önceden bu sarmalayıcı
+          // min-h-[600px] düz <div> olduğundan kalemler ekliyken içerik (taslak belge düğmeleri dahil) footer altında
+          // KESİLİYOR, kaydırılamıyordu. Artık bu alan kendi içinde kayar; footer altta görünür kalır.
+          <div data-testid="wizard-claims-step-scroll" className="flex-1 min-h-0 overflow-y-auto space-y-3">
             {claimDraftItems.length > 0 && (
               <div className="border rounded-lg p-3 bg-blue-50/40">
                 <h3 className="text-sm font-semibold mb-2">Eklenen Alacak Kalemleri ({claimDraftItems.length})</h3>
