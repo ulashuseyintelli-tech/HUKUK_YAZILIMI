@@ -4,6 +4,7 @@ param(
   [string]$ProvaRoot = 'D:\Development\HUKUK_YAZILIMI\HY_R27_FAULT_PROVA',
   [string]$ScriptDir = '',
   [string[]]$Scenarios = @('happy-path', 'rollback-script', 'api-copy-interrupt', 'web-swap-fail', 'identity-read-error', 'identity-read-persistent', 'service-start-fail', 'restore-hash-mismatch', 'stop-fail',
+                          'stop-web-throw', 'stop-api-throw', 'stop-recovery-start-throw', 'rollback-stop-fail', 'rollback-start-throw',
                           'gate-fault-live-mode', 'gate-testroot-under-live', 'gate-sim-missing', 'gate-evidence-fallback', 'gate-rollback-backup-missing',
                           'gate-rogue-process', 'gate-rogue-viewer-only', 'gate-rogue-classifier', 'gate-rogue-wiring'))
 $ErrorActionPreference = 'Stop'
@@ -23,7 +24,14 @@ $ErrorActionPreference = 'Stop'
 #   web-swap-fail 10/ROLLBACK (3-takas-web) ; identity-read-error 10/ROLLBACK (4-kimlik; GECICI tek seferlik istisna) ;
 #   identity-read-persistent 11/ROLLBACK-DOGRULANAMADI (4-kimlik; KALICI okuma hatasi, verify OKUNAMADI, servis baslatilmaz) ;
 #   service-start-fail 10/ROLLBACK (5-baslat-api) ; restore-hash-mismatch 11/ROLLBACK-DOGRULANAMADI (5-baslat-api) ;
-#   stop-fail 21/DURDURMA-BASARISIZ (2-durdur-web; WEB kapanmadi -> yeniden baslatildi; dosyalara DOKUNULMADI, API durdurulmadi)
+#   stop-fail 21/DURDURMA-BASARISIZ (2-durdur-web; WEB kapanmadi -> CALISIYOR olculdu, Start VERILMEDI, saglik PASS; dosyalara DOKUNULMADI, API durdurulmadi)
+# DURDURMA/GERI DONUS ISTISNA SENARYOLARI (dosya digest + simulator servis durumu + cikis kodu + kanit/konsol ifadesi BIRLIKTE):
+#   stop-web-throw 21 (WEB komutu WEB'i kapatir ama istisna; WEB KAPALI olculur -> baslatilir -> saglik PASS) ;
+#   stop-api-throw 21 (WEB durdu, API komutu istisna, API calisiyor -> API'ye Start YOK, WEB baslatilir) ;
+#   stop-recovery-start-throw 22/DURDURMA-BASARISIZ-TOPARLANAMADI (stop-api-throw + WEB baslatma istisnasi -> WEB KAPALI kalir; KURTARMA
+#     yalniz WEB'e Start; B3 YOK) ; rollback-stop-fail 12 (aday WEB sagligi tutmaz -> R-durdur'da WEB istisna, API yine durdurulur;
+#     dosyalara DOKUNULMAZ, canli = aday) ; rollback-start-throw 13 (dogrulama sonrasi API baslatma istisnasi; WEB yine baslar; dosyalar taban)
+#   Her birinde konsolda olculmemis 'yeniden baslatildi' iddiasi YOK; saglik sonucu simulator durumuyla esit.
 # KAPI SENARYOLARI (ucuz; TestRoot sifirlamasi yok):
 #   gate-fault-live-mode        release.ps1 -Fault (TestRoot YOK) -> 20 daha ilk satirda; canli dosya/kanit dizinine DOKUNMAZ
 #   gate-testroot-under-live    release/rollback -TestRoot canli kok ALTINDA -> 20 (Test-Path'ten once)
@@ -72,7 +80,16 @@ $EXPECT = @{
   'identity-read-persistent' = @{ exit = 11; verdict = 'ROLLBACK-DOGRULANAMADI'; api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $false; webUp = $false; recovery = $true;  failedAt = '4-kimlik'; unreadable = $true }
   'service-start-fail'       = @{ exit = 10; verdict = 'ROLLBACK';               api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true;  webUp = $true;  recovery = $false; failedAt = '5-baslat-api' }
   'restore-hash-mismatch'    = @{ exit = 11; verdict = 'ROLLBACK-DOGRULANAMADI'; api = 'NOT:' + $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $false; webUp = $false; recovery = $true; failedAt = '5-baslat-api' }
-  'stop-fail'                = @{ exit = 21; verdict = 'DURDURMA-BASARISIZ';     api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true;  webUp = $true;  recovery = $false; failedAt = '2-durdur-web' }
+  'stop-fail'                = @{ exit = 21; verdict = 'DURDURMA-BASARISIZ';     api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true;  webUp = $true;  recovery = $false; failedAt = '2-durdur-web'
+                                  stopCalls = 1; startCalls = 0; failSvc = 'WEB'; apiAction = 'START VERILMEDI (calisiyor olculdu)'; webAction = 'START VERILMEDI (calisiyor olculdu)'; faultMark = 'stop: web kapanmadi' }
+  'stop-web-throw'           = @{ exit = 21; verdict = 'DURDURMA-BASARISIZ';     api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true;  webUp = $true;  recovery = $false; failedAt = '2-durdur-web'
+                                  stopCalls = 1; startCalls = 1; failSvc = 'WEB'; apiAction = 'START VERILMEDI (calisiyor olculdu)'; webAction = 'BASLATMA KOMUTU VERILDI'; faultMark = 'stop: web kapandi + komut istisnasi' }
+  'stop-api-throw'           = @{ exit = 21; verdict = 'DURDURMA-BASARISIZ';     api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true;  webUp = $true;  recovery = $false; failedAt = '2-durdur-api'
+                                  stopCalls = 2; startCalls = 1; failSvc = 'API'; apiAction = 'START VERILMEDI (calisiyor olculdu)'; webAction = 'BASLATMA KOMUTU VERILDI'; faultMark = 'stop: api komut istisnasi' }
+  'stop-recovery-start-throw' = @{ exit = 22; verdict = 'DURDURMA-BASARISIZ-TOPARLANAMADI'; api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $true; webUp = $false; recovery = $true; failedAt = '2-durdur-api'
+                                  stopCalls = 2; startCalls = 1; failSvc = 'API'; apiAction = 'START VERILMEDI (calisiyor olculdu)'; webAction = 'BASLATMA ISTISNASI'; faultMark = 'start: web komut istisnasi (toparlama)' }
+  'rollback-stop-fail'       = @{ exit = 12; verdict = 'ROLLBACK-ENGELLENDI';    api = $EXP_CAND; web = $EXP_WEB_CAND; bid = $BID_CAND; addedPresent = $true;  apiUp = $false; webUp = $true;  recovery = $true;  failedAt = '5-baslat-web' }
+  'rollback-start-throw'     = @{ exit = 13; verdict = 'ROLLBACK-OK-ESKI-BASLAMADI'; api = $EXP_LIVE; web = $EXP_WEB_LIVE; bid = $BID_LIVE; addedPresent = $false; apiUp = $false; webUp = $true; recovery = $true;  failedAt = '4-kimlik' }
   'gate-fault-live-mode'        = @{ gate = $true }
   'gate-testroot-under-live'    = @{ gate = $true }
   'gate-sim-missing'            = @{ gate = $true }
@@ -650,10 +667,10 @@ foreach ($sc in $Scenarios) {
           $gi = Get-GateIntegrity $RELEASE
           $EXPI = [ordered]@{
             'parseErrors' = '0'
-            'functionsTotal' = '46'
-            'functionsTop' = '46'
+            'functionsTotal' = '52'
+            'functionsTop' = '52'
             'functionsDuplicate' = ''
-            'functionNamesSha' = '85289200B7B7E8A9600EA2395BD2282737F65A009624C17D4572310BE1E725ED'
+            'functionNamesSha' = '70B6973CA740DE0C1730EF769526040D82B6893160C94C1938897AB8381F8CE6'
             'fn:Say' = 'FE49505CF9B83BF88F2A9EA2700AB41F0BCC650BB7C6D726F5FF7BEC7C63EE81'
             'fn:Get-SimState' = 'EF43A7BFEC648E5D534C33666D151A95B55E5C4498216C5F2A6A1EB0E1A691F0'
             'fn:ConvertTo-RogueFolded' = '427D6E02B0548E2B444F160D0C4D457E1D09C3EA73DB2C068A15A21B75144E90'
@@ -674,7 +691,7 @@ foreach ($sc in $Scenarios) {
             'rogueAssignSha' = 'F039A6D72C59B2581CF92AF1AFEBDA216D205AC0A2A1B310A2D3624C406046E5'
             'selfPathAssign' = '[string]$PSCommandPath'
             'selfTestBlocks' = '1'
-            'selfTestSha' = '2A0A2542FF726ED5F3EC9BD5C7C5EF0C130F5DBB8227017566DB42FA2EDB9681'
+            'selfTestSha' = '730C1CA03AA014B8EDCF652545F7EA903E203489941EDA4A3F21F950F4B580F9'
             'selfFailsAssign' = '$fails = 0'
             'selfFailsUnary' = 'PostfixPlusPlus'
             'selfClassifierLink' = '1'
@@ -689,7 +706,7 @@ foreach ($sc in $Scenarios) {
             'geAssignAll' = '2'
             'dynamicUse' = 'tercih:PSCommandPath@<ust>,tercih:PSDefaultParameterValues@Get-ProcList'
             'exitSites' = '<ust>=8'
-            'modeVarInventory' = '<ust>:FAULT=7;<ust>:SIM_STATE=3;<ust>:TEST=15;<ust>:TESTROOT=15;Get-LauncherTuple:TEST=1;Get-LiveRogueReport:TEST=2;Get-Pids:TEST=1;Get-ProcCommandLine:TEST=1;Get-ProcList:TEST=1;Get-RecoveryText:TEST=1;Get-RecoveryText:TESTROOT=1;Get-ServiceState:TEST=1;Get-SimState:SIM_STATE=1;Get-TaskAction:TEST=1;Get-TaskState:TEST=1;Http:TEST=1;Invoke-FaultPoint:FAULT=7;Invoke-FaultPoint:TEST=1;Invoke-StartTask:FAULT=3;Invoke-StartTask:TEST=1;Invoke-StopTask:FAULT=1;Invoke-StopTask:TEST=1;Set-SimState:SIM_STATE=1;Start-Both-And-Report:TEST=2;Test-Elevated:TEST=1;Test-InheritOnly:TEST=1;Wait-Stopped:TEST=1;Write-EvidenceProtected:DIZGI:FAULT=1;Write-EvidenceProtected:DIZGI:TESTROOT=1;Write-EvidenceProtected:FAULT=1;Write-EvidenceProtected:TEST=3;Write-EvidenceProtected:TESTROOT=1'
+            'modeVarInventory' = '<ust>:FAULT=7;<ust>:SIM_STATE=3;<ust>:TEST=15;<ust>:TESTROOT=15;Get-HostProcCount:TEST=1;Get-LauncherTuple:TEST=1;Get-LiveRogueReport:TEST=2;Get-Pids:TEST=1;Get-ProcCommandLine:TEST=1;Get-ProcList:TEST=1;Get-RecoveryText:TEST=1;Get-RecoveryText:TESTROOT=1;Get-ServiceState:TEST=1;Get-SimState:SIM_STATE=1;Get-TaskAction:TEST=1;Get-TaskState:TEST=1;Http:FAULT=1;Http:TEST=1;Invoke-FaultPoint:FAULT=8;Invoke-FaultPoint:TEST=1;Invoke-StartTask:FAULT=5;Invoke-StartTask:TEST=1;Invoke-StopTask:FAULT=7;Invoke-StopTask:TEST=1;Set-SimState:SIM_STATE=1;Test-Elevated:TEST=1;Test-InheritOnly:TEST=1;Test-OldSvcHealth:TEST=1;Wait-Stopped:TEST=1;Write-EvidenceProtected:DIZGI:FAULT=1;Write-EvidenceProtected:DIZGI:TESTROOT=1;Write-EvidenceProtected:FAULT=1;Write-EvidenceProtected:TEST=3;Write-EvidenceProtected:TESTROOT=1'
           }
           $iBad = New-Object System.Collections.Generic.List[string]
           foreach ($k in $EXPI.Keys) { if ([string]$gi[$k] -cne [string]$EXPI[$k]) { $v = [string]$gi[$k]; $iBad.Add($k + ' -> ' + $(if ($v.Length -gt 48) { $v.Substring(0, 48) + '...' } else { $v })) } }
@@ -784,7 +801,11 @@ foreach ($sc in $Scenarios) {
           if ($calls.Count -eq 2 -and $selfIf.Count -eq 1) {
             $sb = $selfIf[0].Extent; $c1 = $calls[0].Extent.StartOffset; $c2 = $calls[1].Extent.StartOffset
             $stage0 = $src.IndexOf("Set-Stage '0-kapilar'", $sb.EndOffset); $cand0 = $src.IndexOf("Say '--- 1) ADAY DOGRULAMA'", $sb.EndOffset)
-            $stop0 = $src.IndexOf('Invoke-StopTask', $sb.EndOffset)
+            # ilk durdurma: SelfTest blogundan SONRA, fonksiyon govdesi DISINDAKI ilk Invoke-StopTask / Invoke-StopOne komutu (AST; akis
+            # durdurmayi Invoke-StopOne 'web' ile yapar - metin aramasi fonksiyon tanimlarina ya da yoruma takilabilirdi)
+            $inFn = { param($n) $e = $n.Parent; while ($null -ne $e) { if ($e -is [System.Management.Automation.Language.FunctionDefinitionAst]) { return $true }; $e = $e.Parent }; return $false }
+            $stopCmds = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and @('Invoke-StopTask', 'Invoke-StopOne') -contains $n.GetCommandName() }, $true) | Where-Object { $_.Extent.StartOffset -gt $sb.EndOffset -and -not (& $inFn $_) } | Sort-Object { $_.Extent.StartOffset })
+            $stop0 = $(if ($stopCmds.Count -ge 1) { $stopCmds[0].Extent.StartOffset } else { -1 })
             Assert $asserts 'ilk cagri SelfTest blogunun ICINDE' ($c1 -gt $sb.StartOffset -and $c1 -lt $sb.EndOffset) ''
             Assert $asserts 'ikinci cagri yayin akisinda: 0-kapilar asamasindan SONRA, ADAY DOGRULAMA ve ilk durdurmadan ONCE' ($stage0 -gt 0 -and $cand0 -gt 0 -and $stop0 -gt 0 -and $c2 -gt $stage0 -and $c2 -lt $cand0 -and $c2 -lt $stop0) ('stage0=' + $stage0 + ' cagri=' + $c2 + ' aday=' + $cand0 + ' durdur=' + $stop0)
             $selfText = $sb.Text
@@ -896,7 +917,7 @@ foreach ($sc in $Scenarios) {
         else { Assert $asserts 'failedAt bos' ([string]$ev.failedAt -eq '') ('olculen ' + $ev.failedAt) }
         Assert $asserts 'stage alani 7-kanit DEGIL (son gercek asama)' ([string]$ev.stage -cne '7-kanit' -and [string]$ev.stage -ne '') ('stage=' + $ev.stage)
         Assert $asserts 'stages listesi dolu' (@($ev.stages).Count -ge 2) ('adet=' + @($ev.stages).Count)
-        if ($exp.recovery) {
+        if ($exp.exit -eq 11) {
           Assert $asserts 'kurtarma talimati var (B3 komutu + tam yollar)' ($null -ne $ev.recovery -and (($ev.recovery -join ' ') -match 'r27-rollback\.ps1' ) -and (($ev.recovery -join ' ') -match '-BackupApiDir')) (($ev.recovery -join ' | ').Substring(0, [Math]::Min(160, ($ev.recovery -join ' | ').Length)))
           Assert $asserts 'verify.mismatches dolu' (@($ev.verify.mismatches).Count -ge 1) (($ev.verify.mismatches -join ' ; '))
           Assert $asserts 'rollback.servicesStarted=false' (-not [bool]$ev.rollback.servicesStarted) ('servicesStarted=' + $ev.rollback.servicesStarted)
@@ -909,15 +930,61 @@ foreach ($sc in $Scenarios) {
         } elseif ($exp.exit -eq 10) {
           Assert $asserts 'verify.ok=true (geri yuklenen kimlik dogrulandi)' ([bool]$ev.verify.ok) ('mismatches=' + @($ev.verify.mismatches).Count)
           Assert $asserts 'rollback.servicesStarted=true (yalniz dogrulama sonrasi)' ([bool]$ev.rollback.servicesStarted) ''
-          Assert $asserts 'rollback.postStart.ok=true (B3 saglik kumesi: pid==1, 401x3, buildManifest, kok, uclu)' ([bool]$ev.rollback.postStart.ok) ('authMe=' + $ev.rollback.postStart.apiAuthMe + ' runNow=' + $ev.rollback.postStart.runNow + ' bm=' + $ev.rollback.postStart.buildManifest + ' tuple=' + $ev.rollback.postStart.tupleUnchanged)
+          Assert $asserts 'rollback.postStart.ok=true (B3 saglik kumesi: pid==1, 401x3, buildManifest, kok, uclu)' ([bool]$ev.rollback.postStart.ok -and [bool]$ev.rollback.postStart.api.health.ok -and [bool]$ev.rollback.postStart.web.health.ok) ('api=' + $ev.rollback.postStart.api.health.text + ' web=' + $ev.rollback.postStart.web.health.text + ' tuple=' + $ev.rollback.postStart.tupleUnchanged)
           Assert $asserts 'restoreSteps hepsi TAMAM' (@($ev.restoreSteps.PSObject.Properties | Where-Object { -not ([string]$_.Value).StartsWith('TAMAM') }).Count -eq 0) (($ev.restoreSteps.PSObject.Properties | ForEach-Object { $_.Name + '=' + $_.Value }) -join ' ; ')
           if ($sc -eq 'service-start-fail' -or $sc -eq 'identity-read-error') { }
-        } elseif ($exp.exit -eq 21) {
-          Assert $asserts 'rollback yok, restoreSteps yok (dosyalara dokunulmadi)' ($null -eq $ev.rollback -and $null -eq $ev.restoreSteps) ''
-          Assert $asserts 'error: WEB kapanmadi + yeniden baslatildi' ([string]$ev.error -match 'WEB kapanmadi') ([string]$ev.error)
+        } elseif ($exp.exit -eq 21 -or $exp.exit -eq 22) {
+          # takas ONCESI durdurma hatasi: dosya + gercek simulator servis durumu + cikis kodu + kanit/konsol ifadesi BIRLIKTE
+          $stNow = Get-Content -Raw -LiteralPath $T_STATE | ConvertFrom-Json
+          Assert $asserts 'rollback yok, restoreSteps yok (dosya takasi BASLAMADI)' ($null -eq $ev.rollback -and $null -eq $ev.restoreSteps) ''
+          Assert $asserts ('error: ' + $exp.failSvc + ' durdurulamadi + DOSYA TAKASI BASLAMADI') ([string]$ev.error -match ($exp.failSvc + ' durdurulamadi') -and [string]$ev.error -match 'DOSYA TAKASI BASLAMADI') ([string]$ev.error)
           Assert $asserts 'aday API/WEB sagligi olculmedi (health.api / health.web yok)' ($null -eq $ev.health.api -and $null -eq $ev.health.web) ''
-          Assert $asserts 'faultLog: stop-fail kaydi' ((($ev.testMode.faultLog) -join ' ; ') -match 'stop: web kapanmadi') (($ev.testMode.faultLog) -join ' ; ')
-          Assert $asserts 'stdout: DURDURMA-BASARISIZ sonucu ve cikis 21' ($r.out -match '=== SONUC: DURDURMA-BASARISIZ \(cikis 21\)') ''
+          Assert $asserts ('faultLog: ' + $exp.faultMark) ((($ev.testMode.faultLog) -join ' ; ').Contains($exp.faultMark)) (($ev.testMode.faultLog) -join ' ; ')
+          $sw = $ev.stops.web; $sa = $ev.stops.api
+          if ($exp.failSvc -eq 'WEB') {
+            Assert $asserts 'stops: WEB durdurulamadi kaydi; API durdurma DENENMEDI (kayit yok)' ($null -ne $sw -and -not [bool]$sw.stopped -and $null -eq $sa) ('web=' + $(if ($sw) { $sw.text } else { 'YOK' }) + ' | api=' + $(if ($sa) { $sa.text } else { 'YOK' }))
+          } else {
+            Assert $asserts 'stops: WEB DURDU (olculen KAPALI) ve API durdurulamadi (komut ISTISNA, olculen CALISIYOR) AYRI kayitli' ($null -ne $sw -and [bool]$sw.stopped -and [string]$sw.measured.state -ceq 'KAPALI' -and $null -ne $sa -and -not [bool]$sa.stopped -and [string]$sa.command -ceq 'ISTISNA' -and [string]$sa.measured.state -ceq 'CALISIYOR') ('web=' + $(if ($sw) { $sw.text } else { 'YOK' }) + ' | api=' + $(if ($sa) { $sa.text } else { 'YOK' }))
+          }
+          $rcv = $ev.stopRecovery
+          Assert $asserts 'toparlama: canli dosya kimligi OLCULDU ve taban (paket/BUILD_ID/cfg)' ($null -ne $rcv -and [bool]$rcv.filesOk -and [bool]$rcv.files.pkg -and [bool]$rcv.files.buildId -and [bool]$rcv.files.cfg) ''
+          Assert $asserts ('toparlama eylemleri: api=' + $exp.apiAction + ' | web=' + $exp.webAction) ([string]$rcv.api.action -ceq $exp.apiAction -and [string]$rcv.web.action -ceq $exp.webAction) ('api=' + $rcv.api.action + ' | web=' + $rcv.web.action)
+          Assert $asserts 'toparlama: servis bazinda saglik sonucu gercek simulator durumuyla ESIT (Start komutu ayakta sayilmaz)' ([bool]$rcv.api.health.ok -eq [bool]$stNow.apiRunning -and [bool]$rcv.web.health.ok -eq [bool]$stNow.webRunning) ('api saglik=' + $rcv.api.health.ok + '/sim ' + $stNow.apiRunning + ' web saglik=' + $rcv.web.health.ok + '/sim ' + $stNow.webRunning)
+          Assert $asserts ('toparlama.ok=' + ($exp.exit -eq 21) + ' (verdict/cikis ile tutarli)') ([bool]$rcv.ok -eq ($exp.exit -eq 21)) ('ok=' + $rcv.ok)
+          Assert $asserts 'kanit serviceState: son olcum simulatorle ESIT (api/web)' (([string]$ev.serviceState.api.state -ceq $(if ([bool]$stNow.apiRunning) { 'CALISIYOR' } else { 'KAPALI' })) -and ([string]$ev.serviceState.web.state -ceq $(if ([bool]$stNow.webRunning) { 'CALISIYOR' } else { 'KAPALI' }))) ('api=' + $ev.serviceState.api.state + ' web=' + $ev.serviceState.web.state)
+          Assert $asserts 'konsol: olculmemis yeniden baslatma iddiasi YOK' ($r.out -notmatch 'yeniden baslatildi') ''
+          Assert $asserts ('stdout: ' + $exp.verdict + ' sonucu ve cikis ' + $exp.exit) ($r.out -match ('=== SONUC: ' + [regex]::Escape($exp.verdict) + ' \(cikis ' + $exp.exit + '\)')) ''
+          if ($exp.exit -eq 21) {
+            Assert $asserts 'stdout: TOPARLAMA PASS; kurtarma talimati YOK (gerekmez)' ($r.out -match 'TOPARLAMA PASS' -and $null -eq $ev.recovery -and $r.out -notmatch '(?m)^KURTARMA: ') ''
+          } else {
+            $recT = (@($ev.recovery) -join "`n")
+            Assert $asserts 'stdout: TOPARLAMA TAMAMLANAMADI + KURTARMA satirlari; TOPARLAMA PASS iddiasi YOK' ($r.out -match 'TOPARLAMA TAMAMLANAMADI' -and $r.out -match '(?m)^KURTARMA: ' -and $r.out -notmatch 'TOPARLAMA PASS') ''
+            Assert $asserts 'kurtarma: DOSYA TAKASI BASLAMADI; B3 GEREKMEZ (r27-rollback.ps1 komutu YOK)' ($recT -match 'DOSYA TAKASI BASLAMADI' -and $recT -notmatch 'r27-rollback\.ps1') ''
+            Assert $asserts 'kurtarma: YALNIZ KAPALI olculen WEB icin Start; calisan API icin Start YOK' ($recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-Web') -and -not $recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-API')) ''
+            Assert $asserts 'kurtarma: servis bazinda durum satirlari (API/WEB)' ($recT -match '(?m)^\s+API: durdurma=' -and $recT -match '(?m)^\s+WEB: durdurma=') ''
+          }
+        } elseif ($exp.exit -eq 12) {
+          # otomatik geri donuste durdurma basarisiz: kapanmamis surec uzerinde geri yukleme YOK; servis bazinda durum + kalan adimlar
+          $rb = $ev.rollback; $sw = $rb.stops.web; $sa = $rb.stops.api
+          Assert $asserts 'R-durdur: WEB komut ISTISNA + olculen CALISIYOR (durdurulamadi)' ($null -ne $sw -and [string]$sw.command -ceq 'ISTISNA' -and -not [bool]$sw.stopped -and [string]$sw.measured.state -ceq 'CALISIYOR') $(if ($sw) { $sw.text } else { 'YOK' })
+          Assert $asserts 'R-durdur: WEB istisnasina ragmen API durdurma DENENDI ve AYRI kayitli (DURDU, olculen KAPALI)' ($null -ne $sa -and [string]$sa.command -ceq 'TAMAM' -and [bool]$sa.stopped -and [string]$sa.measured.state -ceq 'KAPALI') $(if ($sa) { $sa.text } else { 'YOK' })
+          Assert $asserts 'geri yukleme YOK: stoppedBeforeRestore=false, verify yok, servicesStarted=false' (($rb.stoppedBeforeRestore -eq $false) -and $null -eq $ev.verify -and -not [bool]$rb.servicesStarted) ''
+          Assert $asserts 'restoreSteps: durdur BASARISIZ + dosya adimlarinin hepsi KALAN' (([string]$ev.restoreSteps.durdur).StartsWith('BASARISIZ') -and @($ev.restoreSteps.PSObject.Properties | Where-Object { $_.Name -ne 'durdur' -and [string]$_.Value -cne 'KALAN' }).Count -eq 0) (($ev.restoreSteps.PSObject.Properties | ForEach-Object { $_.Name + '=' + $_.Value }) -join ' ; ')
+          $recT = (@($ev.recovery) -join "`n")
+          Assert $asserts 'kurtarma: servis bazinda satirlar + YALNIZ durdurulamayan WEB icin elle durdurma (duran API icin yok) + B3 tam yollarla' ($recT -match 'GERI ALMADA DURDURMA BASARISIZ' -and $recT -match '(?m)^\s+WEB: komut=ISTISNA' -and $recT -match '(?m)^\s+API: komut=TAMAM' -and $recT.Contains('Stop-ScheduledTask -TaskName HukukPlatform-Web') -and -not $recT.Contains('Stop-ScheduledTask -TaskName HukukPlatform-API') -and $recT -match 'r27-rollback\.ps1' -and $recT -match '-BackupApiDir') ''
+          Assert $asserts 'faultLog: R-durdur web komut istisnasi' ((($ev.testMode.faultLog) -join ' ; ').Contains('R-durdur: web komut istisnasi')) (($ev.testMode.faultLog) -join ' ; ')
+          Assert $asserts 'stdout: KURTARMA satiri + SONUC 12' ($r.out -match '(?m)^KURTARMA: ' -and $r.out -match '=== SONUC: ROLLBACK-ENGELLENDI \(cikis 12\)') ''
+        } elseif ($exp.exit -eq 13) {
+          # eski kimlik DOGRULANDIKTAN sonra baslatma istisnasi: dosya durumu (verify) ile servis durumu (postStart) ayri
+          $ps = $ev.rollback.postStart
+          Assert $asserts 'dosyalar DOGRULANDI (verify.ok) + restoreSteps hepsi TAMAM' ([bool]$ev.verify.ok -and @($ev.restoreSteps.PSObject.Properties | Where-Object { -not ([string]$_.Value).StartsWith('TAMAM') }).Count -eq 0) ''
+          Assert $asserts 'servicesStarted=true (baslatma GIRISIMI) ama postStart.ok=false (olcumle ayakta degil)' ([bool]$ev.rollback.servicesStarted -and $null -ne $ps -and -not [bool]$ps.ok) ''
+          Assert $asserts 'postStart.api: komut ISTISNA + saglik FAIL + olculen KAPALI' ([string]$ps.api.startCommand -ceq 'ISTISNA' -and -not [bool]$ps.api.health.ok -and [string]$ps.api.measured.state -ceq 'KAPALI') ([string]$ps.api.health.text)
+          Assert $asserts 'postStart.web: API istisnasina ragmen BASLATILDI + saglik PASS + olculen CALISIYOR' ([string]$ps.web.startCommand -ceq 'TAMAM' -and [bool]$ps.web.health.ok -and [string]$ps.web.measured.state -ceq 'CALISIYOR') ([string]$ps.web.health.text)
+          $recT = (@($ev.recovery) -join "`n")
+          Assert $asserts 'kurtarma: dosyalar dogrulandi (B3 YOK); YALNIZ KAPALI API icin Start; calisan WEB icin Start YOK' ($recT -match 'DOSYALAR TABAN kimliginde DOGRULANDI' -and $recT -notmatch 'r27-rollback\.ps1' -and $recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-API') -and -not $recT.Contains('Start-ScheduledTask -TaskName HukukPlatform-Web')) ''
+          Assert $asserts 'faultLog: R-baslat api komut istisnasi' ((($ev.testMode.faultLog) -join ' ; ').Contains('R-baslat: api komut istisnasi')) (($ev.testMode.faultLog) -join ' ; ')
+          Assert $asserts 'stdout: KURTARMA + SONUC 13; AYAKTA iddiasi YOK' ($r.out -match '(?m)^KURTARMA: ' -and $r.out -match '=== SONUC: ROLLBACK-OK-ESKI-BASLAMADI \(cikis 13\)' -and $r.out -notmatch 'AYAKTA \(olculdu\)') ''
         } elseif ($sc -eq 'rollback-script') {
           Assert $asserts 'verify.ok=true' ([bool]$ev.verify.ok) ('mismatches=' + @($ev.verify.mismatches).Count)
           Assert $asserts 'restoreSteps hepsi TAMAM' (@($ev.restoreSteps.PSObject.Properties | Where-Object { -not ([string]$_.Value).StartsWith('TAMAM') }).Count -eq 0) ''
@@ -943,8 +1010,10 @@ foreach ($sc in $Scenarios) {
       if ($exp.exit -ne 0) {
         $q = @(Get-ChildItem -LiteralPath $T_EVID -Directory -Filter 'added-quarantine-*' -ErrorAction SilentlyContinue)
         $qFiles = 0; foreach ($qd in $q) { $qFiles += @(Get-ChildItem -LiteralPath $qd.FullName -Recurse -File -Force).Count }
-        if ($exp.exit -eq 21) { Assert $asserts 'karantina dizini YOK (dosyalara dokunulmadi); simulator: 2 durdurma istegi DEGIL 1 (API durdurulmadi), 1 baslatma (WEB yeniden)' ($q.Count -eq 0 -and [int]$st.stopCalls -eq 1 -and [int]$st.startCalls -eq 1) ('karantina=' + $q.Count + ' stop=' + $st.stopCalls + ' start=' + $st.startCalls) }
+        if ($exp.exit -eq 21 -or $exp.exit -eq 22) { Assert $asserts ('karantina dizini YOK (dosyalara dokunulmadi); simulator: ' + $exp.stopCalls + ' durdurma + ' + $exp.startCalls + ' baslatma istegi (yalniz KAPALI olculene Start)') ($q.Count -eq 0 -and [int]$st.stopCalls -eq $exp.stopCalls -and [int]$st.startCalls -eq $exp.startCalls) ('karantina=' + $q.Count + ' stop=' + $st.stopCalls + ' start=' + $st.startCalls) }
+        elseif ($exp.exit -eq 12) { Assert $asserts 'karantina dizini YOK (kapanmamis surec uzerinde geri yukleme yapilmadi); simulator: 4 durdurma (2-durdur x2 + R-durdur x2) + 2 baslatma (aday)' ($q.Count -eq 0 -and [int]$st.stopCalls -eq 4 -and [int]$st.startCalls -eq 2) ('karantina=' + $q.Count + ' stop=' + $st.stopCalls + ' start=' + $st.startCalls) }
         else { Assert $asserts 'karantina dizini var; silme yok' ($q.Count -ge 1) ('dizin=' + $q.Count + ' dosya=' + $qFiles) }
+        if ($exp.exit -eq 13) { Assert $asserts 'simulator: 2 durdurma + 2 baslatma istegi (R-baslat: API istisna + WEB)' ([int]$st.stopCalls -eq 2 -and [int]$st.startCalls -eq 2) ('stop=' + $st.stopCalls + ' start=' + $st.startCalls) }
       }
       $leftover = @(Get-ChildItem -LiteralPath $T_LIVE_WEB -Directory -Force | Where-Object { $_.Name -ne '.next' })
       Say ('  live\web kalinti dizinleri (silme yok): ' + $(if ($leftover.Count) { ($leftover.Name -join ', ') } else { '(yok)' }))

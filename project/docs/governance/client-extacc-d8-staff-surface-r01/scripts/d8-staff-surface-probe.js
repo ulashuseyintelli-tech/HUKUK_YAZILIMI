@@ -7,10 +7,12 @@
  *            Pozitif kontroller izinli yolların UYGULAMA katmanına ulaştığını gösterir (401 = guard'a ulaştı; 200 = sayfa).
  * KATMAN   : her 403 için `hints` AYRI alanlarda kaydedilir: bodyEmpty · providerSignature (gövde imzası, bool) ·
  *            edgeHeaderPresent (kenar başlığı varlığı) · serverHeaderValue (yalnız değer adı: 'Caddy' / 'cloudflare' / '') ·
- *            cfMitigatedPresent. `layer` YALNIZ Server başlığı katmanı DOĞRUDAN adlandırıyorsa set edilir:
- *              'Caddy' → 'caddy' · sağlayıcı imzası + sağlayıcı Server başlığı → 'edge-provider' · aksi 'unknown'.
- *            BOŞ 403 GÖVDESİ TEK BAŞINA 'caddy' DEMEZ (kenar sağlayıcı Server başlığını yeniden yazabilir; boş gövde başka
- *            katmanlardan da gelebilir). 'unknown' = ret VAR, katman ÖLÇÜLEMEDİ. Başlık değerleri kanıta yazılmaz (yalnız ad/varlık).
+ *            cfMitigatedPresent. Server / sağlayıcı başlıkları ve gövde imzası reddin hangi katmanda üretildiğinin KESİN KANITI
+ *            DEĞİLDİR (başlık yol boyunca yeniden yazılabilir; kenar şablonu `respond 403` ayırt edici işaret taşımaz) → yalnız
+ *            İPUCU olarak `layerHint`'e yazılır: Server 'Caddy' → 'caddy' · sağlayıcı imzası + sağlayıcı Server → 'edge-provider' ·
+ *            aksi null. `layer` (kesin katman) bu sondada kesin kanıt kaynağı olmadığı için 403'te DAİMA 'unknown'dır.
+ *            'unknown' = ret VAR, katman KESİN BELİRLENEMEDİ; ret ölçümünü (ok / çıkış) BAŞARISIZ SAYDIRMAZ.
+ *            BOŞ 403 GÖVDESİ TEK BAŞINA ipucu da üretmez. Başlık değerleri kanıta yazılmaz (yalnız ad/varlık).
  * HAM YOL  : istek `https.request({host, port, path, method, servername})` ile atılır; `path` vektördeki HAM dizedir
  *            ('/api/portal/./admin/...', '%2F', '?x=1' normalize EDİLMEZ). Öz-test kenarın gördüğü yolu birebir doğrular.
  * İSTEK LİSTESİ VE YAN ETKİ (KİMLİK BİLGİSİ GÖNDERİLMEZ):
@@ -145,18 +147,21 @@ function hintsOf(r) {
   return { bodyEmpty: body.trim() === '', providerSignature: /cloudflare|error code:\s*10\d\d|cf-error/i.test(body),
     edgeHeaderPresent: !!h['cf-ray'], serverHeaderValue: serverName(h), cfMitigatedPresent: !!h['cf-mitigated'] };
 }
-/** Katman YALNIZ Server başlığı doğrudan adlandırıyorsa set edilir; aksi 'unknown' (= ölçülemedi, "ret yok" değil). */
-function layerOf(r, hints) {
+/** Kesin katman: bu sondada kesin kanıt kaynağı YOK → 403'te daima 'unknown' (= ret VAR, katman kesin belirlenemedi; "ret yok" değil).
+ *  Başlıklar buraya GİRMEZ; ok/çıkış bu alana bakmaz. */
+function layerOf(r) { return r.status === 403 ? 'unknown' : null; }
+/** Katman İPUCU (kesin değil): Server 'Caddy' → 'caddy' · sağlayıcı gövde imzası + sağlayıcı Server → 'edge-provider' · aksi null. */
+function layerHintOf(r, hints) {
   if (r.status !== 403) return null;
   const s = hints.serverHeaderValue.toLowerCase();
   if (s === 'caddy') return 'caddy';
   if (hints.providerSignature && s === 'cloudflare') return 'edge-provider';
-  return 'unknown';
+  return null;
 }
 const row = (grp, name, method, path, r, expect, ifPassed) => {
-  const hints = r.status !== 0 ? hintsOf(r) : null; // ölçülen her yanıt için ipuçları; katman yalnız 403'te türetilir
-  return { group: grp, name, method, path, status: r.status, ok: r.status !== 0 && expect.includes(r.status), layer: hints ? layerOf(r, hints) : null,
-    hints, ifPassed: grp === 'deny' ? ifPassed : null, sent: r.sent, error: r.error || null };
+  const hints = r.status !== 0 ? hintsOf(r) : null; // ölçülen her yanıt için ipuçları; katman/ipucu yalnız 403'te
+  return { group: grp, name, method, path, status: r.status, ok: r.status !== 0 && expect.includes(r.status), layer: layerOf(r),
+    layerHint: hints ? layerHintOf(r, hints) : null, hints, ifPassed: grp === 'deny' ? ifPassed : null, sent: r.sent, error: r.error || null };
 };
 
 (async () => {
@@ -172,6 +177,7 @@ const row = (grp, name, method, path, r, expect, ifPassed) => {
   for (const [name, method, path, exp] of ALLOW) rows.push(row('allow', name, method, path, await req(method, path), exp, null));
   const unmeasured = rows.filter((x) => x.status === 0); const findings = rows.filter((x) => x.status !== 0 && !x.ok);
   const denyLayers = rows.filter((x) => x.group === 'deny' && x.status === 403).reduce((m, x) => { m[x.layer] = (m[x.layer] || 0) + 1; return m; }, {});
+  const denyLayerHints = rows.filter((x) => x.group === 'deny' && x.status === 403).reduce((m, x) => { const k = x.layerHint || 'none'; m[k] = (m[k] || 0) + 1; return m; }, {});
   // Uygulama-kaynaklı 403 şüphesi: 403 + gövde DOLU + sağlayıcı imzası YOK (kenar `respond 403` boş gövdelidir). PASS düşürmez; kayda not.
   const suspectAppOrigin403 = rows.filter((x) => x.status === 403 && x.hints && !x.hints.bodyEmpty && !x.hints.providerSignature).length;
   // ÖLÇÜM (istek döngüsünden türetilir): kimlik başlığı gönderilen istek sayısı; '' veya '{}' dışı gövdeli istek sayısı; gövde dağılımı.
@@ -179,13 +185,13 @@ const row = (grp, name, method, path, r, expect, ifPassed) => {
   const measured = { requestCount: rows.length, credentialHeaderRequests: rows.filter((x) => x.sent.headerNames.some((h) => CREDENTIAL_HEADERS.test(h))).length,
     nonEmptyBodyRequests: bodies.other || 0, bodies };
   const out = { record: 'EXTACC-D8-STAFF-SURFACE-PROBE', revision: 'R01', originHost: ORIGIN_URL.host, startedAt: t0, finishedAt: new Date().toISOString(),
-    deny: DENY.length, allow: ALLOW.length, denyLayers, suspectAppOrigin403, findings: findings.map((x) => `${x.group} ${x.method} ${x.path} → HTTP ${x.status}`), unmeasured: unmeasured.length, rows,
+    deny: DENY.length, allow: ALLOW.length, denyLayers, denyLayerHints, suspectAppOrigin403, findings: findings.map((x) => `${x.group} ${x.method} ${x.path} → HTTP ${x.status}`), unmeasured: unmeasured.length, rows,
     design: { credentialsSent: false, writesAttempted: false, note: 'betik TASARIM BEYANI (ölçüm değil): vektör listesinde kimlik bilgisi ve yazma verisi yoktur; ölçüm `measured` alanındadır' },
     measured,
-    note: 'layer yalnız Server başlığı katmanı doğrudan adlandırıyorsa set edilir (Caddy→caddy; sağlayıcı imzası+sağlayıcı Server→edge-provider); "unknown" ret olmadığı anlamına gelmez, katmanın ölçülemediği anlamına gelir. Boş 403 gövdesi tek başına katman kanıtı DEĞİLDİR (hints.bodyEmpty ayrı alandadır). suspectAppOrigin403 = 403 + dolu gövde + sağlayıcı imzası yok (uygulama-kaynaklı 403 şüphesi; PASS düşürmez). Ret listesindeki POST/PUT/PATCH gövdesi boş JSON, DELETE gövdesizdir; hiçbirinde kimlik bilgisi yoktur (measured.credentialHeaderRequests). Kenar geçirirse olası sonuç rows[].ifPassed alanındadır. Owner telefon beyanı ayrı dosyadadır.' };
+    note: 'layer = KESİN katman; bu sondada kesin kanıt kaynağı yok → 403 satırlarında daima "unknown" (ret VAR, katman kesin belirlenemedi; ret ölçümünü başarısız saydırmaz). Server/sağlayıcı başlıkları ve gövde imzası yalnız İPUCUDUR: layerHint (Caddy→caddy; sağlayıcı imzası+sağlayıcı Server→edge-provider; aksi null) ve denyLayerHints dağılımı. Boş 403 gövdesi tek başına ipucu da DEĞİLDİR (hints.bodyEmpty ayrı alandadır). suspectAppOrigin403 = 403 + dolu gövde + sağlayıcı imzası yok (uygulama-kaynaklı 403 şüphesi; PASS düşürmez). Ret listesindeki POST/PUT/PATCH gövdesi boş JSON, DELETE gövdesizdir; hiçbirinde kimlik bilgisi yoktur (measured.credentialHeaderRequests). Kenar geçirirse olası sonuç rows[].ifPassed alanındadır. Owner telefon beyanı ayrı dosyadadır.' };
   out.exitCode = findings.length ? 2 : (unmeasured.length ? 3 : 0);
   try { fs.writeFileSync(OUT, JSON.stringify(out, null, 1)); } catch (e) { console.error('KANIT YAZILAMADI'); process.exit(7); }
-  for (const x of rows) console.log(`${x.ok ? 'OK  ' : (x.status === 0 ? '????' : 'FAIL')} ${x.group.padEnd(5)} ${x.method.padEnd(6)} ${x.path.padEnd(45)} ${x.status}${x.layer ? ' ' + x.layer : ''}`);
-  console.log(`\nD-8 SONDA: ret ${DENY.length} (403 olmayan ${findings.filter((x) => x.group === 'deny').length}) · pozitif ${ALLOW.length} (beklenmeyen ${findings.filter((x) => x.group === 'allow').length}) · ölçülemeyen ${unmeasured.length} · katmanlar ${JSON.stringify(denyLayers)} · uygulama-403 şüphesi ${suspectAppOrigin403} · kimlik başlığı ${measured.credentialHeaderRequests}/${measured.requestCount} · dolu gövde ${measured.nonEmptyBodyRequests} · çıkış ${out.exitCode}`);
+  for (const x of rows) console.log(`${x.ok ? 'OK  ' : (x.status === 0 ? '????' : 'FAIL')} ${x.group.padEnd(5)} ${x.method.padEnd(6)} ${x.path.padEnd(45)} ${x.status}${x.layer ? ' katman=' + x.layer : ''}${x.layerHint ? ' (ipucu: ' + x.layerHint + ')' : ''}`);
+  console.log(`\nD-8 SONDA: ret ${DENY.length} (403 olmayan ${findings.filter((x) => x.group === 'deny').length}) · pozitif ${ALLOW.length} (beklenmeyen ${findings.filter((x) => x.group === 'allow').length}) · ölçülemeyen ${unmeasured.length} · katman (kesin) ${JSON.stringify(denyLayers)} · katman ipucu (kesin değil) ${JSON.stringify(denyLayerHints)} · uygulama-403 şüphesi ${suspectAppOrigin403} · kimlik başlığı ${measured.credentialHeaderRequests}/${measured.requestCount} · dolu gövde ${measured.nonEmptyBodyRequests} · çıkış ${out.exitCode}`);
   process.exit(out.exitCode);
 })();

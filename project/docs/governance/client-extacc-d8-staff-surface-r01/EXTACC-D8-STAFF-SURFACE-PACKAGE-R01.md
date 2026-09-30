@@ -13,6 +13,10 @@
 > YAZILDI; model adları `PortalMessage`/`PortalNotification`; D7-4 kaynak 400; D6-1 makine yüklemesi; D6-6 zorunlu bekleyen liste — "ölçüldü"
 > notlarıyla) · §6 birleşik D-9 bileşen→ölçüt tablosu + "saklanan kayıt silinmiş gibi raporlanmaz" / Recover kuralları. Sonda ve öz-test
 > DEĞİŞMEDİ (§7 pinleri aynı); canlı sonda yine çalıştırılmadı.
+> **R27-R03 düzeltmesi (2026-09-30):** `Server`/sağlayıcı başlıkları ve gövde imzası reddin katmanının **kesin kanıtı sayılmaz** — yalnız
+> İPUCU olarak `layerHint`/`denyLayerHints`'e yazılır; sondada kesin katman kanıt kaynağı olmadığından 403 satırlarında `layer` daima `unknown`.
+> `unknown` ret ölçümünü (satır `ok`, çıkış kodu) **başarısız saydırmaz**. Ham request-target korunur (değişmedi). Öz-test yeni anlama göre
+> güncellendi: **15/15**; eski (başlıktan katman türeten) sonda yeni öz-testte **9/15** (negatif kontrol). Canlı sonda yine çalıştırılmadı.
 
 ## 1. D-8 makine sondası (`scripts/d8-staff-surface-probe.js`)
 
@@ -40,12 +44,12 @@ dizedir (`/api/portal/./admin/...`, `%2F`, `?x=1` normalize edilmez). Öz-test S
 doğrular; URL-string ile istek atan kopya bu testte düşer (mutasyon provası: `./` normalize edilir, 3/4 ham örnek).
 
 **Katman:** her 403 için ipuçları AYRI alanlarda kaydedilir — `hints { bodyEmpty, providerSignature (gövde imzası, bool),
-edgeHeaderPresent, serverHeaderValue (yalnız ürün adı: 'Caddy' / 'cloudflare' / ''), cfMitigatedPresent }`. `layer` YALNIZ
-`Server` başlığı katmanı doğrudan adlandırıyorsa set edilir: `'Caddy' → caddy`; sağlayıcı imzası **ve** sağlayıcı `Server`
-başlığı → `edge-provider`; aksi **`unknown`**. **Boş 403 gövdesi tek başına `caddy` demez** (sağlayıcı kenarı `Server` başlığını
-yeniden yazabilir; boş gövde başka katmanlardan da gelebilir). `unknown` = **ret VAR, katman ÖLÇÜLEMEDİ** ("ret yok" değil).
-Canlı topolojide sağlayıcı arkasındaki Caddy 403'ü büyük olasılıkla `unknown` çıkar (öz-test S3-c bu durumu taklit eder);
-bu bir kusur değil, dışarıdan katmanın adlandırılamamasıdır. Başlık DEĞERLERİ kanıta yazılmaz (yalnız ad/varlık).
+edgeHeaderPresent, serverHeaderValue (yalnız ürün adı: 'Caddy' / 'cloudflare' / ''), cfMitigatedPresent }`. `Server`/sağlayıcı başlıkları ve
+gövde imzası reddin hangi katmanda üretildiğinin **kesin kanıtı değildir** (başlık yol boyunca yeniden yazılabilir; kenar şablonunun `respond 403`'ü
+ayırt edici bir işaret taşımaz). Bu yüzden başlıktan türetilen değer yalnız **İPUCU**dur: `layerHint` = `'Caddy' → caddy`; sağlayıcı imzası **ve**
+sağlayıcı `Server` başlığı → `edge-provider`; aksi `null` (dağılım `denyLayerHints`). **Kesin katman** `layer` bu sondada kesin kanıt kaynağı
+olmadığı için 403 satırlarında daima **`unknown`**'dur: `unknown` = **ret VAR, katman KESİN BELİRLENEMEDİ** ("ret yok" değil) ve ret ölçümünü
+(`ok`, çıkış kodu) başarısız saydırmaz. Boş 403 gövdesi tek başına ipucu da üretmez. Başlık DEĞERLERİ kanıta yazılmaz (yalnız ad/varlık).
 
 **Uygulama-kaynaklı 403 şüphesi (`suspectAppOrigin403`):** ret vektöründe `ok` yalnız `status === 403` ile belirlenir; kenar reddi
 ile uygulama-kaynaklı 403 (ForbiddenException, dolu JSON gövde) `ok` alanında ayrılmaz. Sonda `403 + gövde DOLU + sağlayıcı imzası
@@ -78,15 +82,16 @@ Beklenen: her ret vektörü **kenar 403** (uygulamaya ulaşmaz → yan etki yok)
 | **Pozitifler** `GET /api/portal/cases|documents|messages`, `POST messages {}`, `DELETE documents/:id`, `POST change-password {}` | token yok | 401 | — (`PortalAuthGuard` token yokken durur; yazma yok) |
 
 Öz-test (`d8-selftest.js`, sahte kenar = şablonun 4 regex'i + admin reddi, gerçek TLS; kenar gördüğü ham `req.url`'i, kimlik
-başlığı varlığını ve gövde uzunluğunu `/__seen` ile verir): S1 sağlıklı (`Server: Caddy`) 0/caddy · **S1-p ham yol birebir (46/46
+başlığı varlığını ve gövde uzunluğunu `/__seen` ile verir): S1 sağlıklı (`Server: Caddy`) 0 · katman `unknown` + ipucu `caddy` · **S1-p ham yol birebir (46/46
 satır, `./` `%2F` `?x=1` `ADMIN` 4/4)** · **S1-c kimlik/gövde ölçümü** (kenar hiçbir istekte kimlik başlığı görmedi; gövde 0 veya 2;
 `measured` kenarla uyumlu, `bodies.emptyJson` = POST/PUT/PATCH sayısı, `bodies.empty` = GET/DELETE sayısı; `design` ayrı) ·
 S2 bozuk kenar 2 (**bulgu = `/api/auth/me` + 6 düz admin yolu = 7**; kodlama varyantları `ADMIN`/`./`/`%2F` sahte kenarda 403 kalır;
-`ifPassed` dolu) · S3 sağlayıcı reddi `edge-provider` (hints dolu) · **S3-b boş gövde, Server yok → `unknown`** · **S3-c boş gövde,
-`Server: cloudflare`, imza yok → `unknown`** · **S3-d dolu JSON gövdeli 403 + `Server: Caddy` → çıkış 0 ama `suspectAppOrigin403` =
+`ifPassed` dolu) · S3 sağlayıcı reddi → çıkış 0, `unknown` + ipucu `edge-provider` (hints dolu) · **S3-b boş gövde, Server yok → `unknown`, ipucu yok** ·
+**S3-c boş gövde, `Server: cloudflare`, imza yok → `unknown`, ipucu yok** · **S3-d dolu JSON gövdeli 403 + `Server: Caddy` → çıkış 0, `unknown` + ipucu `caddy`, `suspectAppOrigin403` =
 ret sayısı (S1'de 0)** · S4 kenar kapalı 3 · S5 kapılar 4/4/7 · S6 telefon listesi · T-1 pozitif liste statik · T-2 statik (seçenek
 nesnesi, `ifPassed`, "boş gövde" adlandırma, kimlik/yazma bayrakları yalnız `design`+`measured` — kanıt kökünde sabit literal yok,
-`layerOf` boş gövdeye bakmaz) — **15/15 PASS** (2026-09-29; kanıt `HY_R27_AGENT_EVIDENCE\extacc-d8-r01-is3-fix\d8-selftest-fix-run2.log`;
+`layerOf` başlık/ipucu/gövde okumaz) — **15/15 PASS** (R03, 2026-09-30, Linux node 22; eski sonda ile negatif kontrol 9/15: S1, S3, S3-b, S3-c, S3-d, T-2 FAIL.
+Önceki anlamla 15/15: 2026-09-29; kanıt `HY_R27_AGENT_EVIDENCE\extacc-d8-r01-is3-fix\d8-selftest-fix-run2.log`;
 mutasyon provaları: URL-string kopya 11/13 [`extacc-d8-r01-is3\d8-selftest-mutation-urlstring.log`, önceki tur], DELETE'e `{}` yazan
 kopya 8/15 [`d8-selftest-mutation-delete-body.log`], kanıt köküne sabit `credentialsSent:false` yazan kopya 13/15
 [`d8-selftest-mutation-root-literal.log`]). Önceki tur kanıtı (13/13) `extacc-d8-r01-is3\` altında korunur.
@@ -96,7 +101,7 @@ penceresinde. Dış origin **yer tutucu değildir**: blok onu mevcut doğrulanm�
 okuma, D-5/D-6/D-7 bloklarıyla aynı kaynak) okur ve https/yolsuz origin biçim kapısından geçirir; kanıt kökü kullanıcı profiline görelidir
 (public belgeye canlı alan adı ve kullanıcı yolu yazılmaz):
 ```powershell
-& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne '6400223249707CCCA4FDEF4BCF8F63868466C29F052133F70F36C78CA121C16E'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --origin $ExpBaseUrl --out "$o\d8-probe.json" --phone-list; 'D8 cikis=' + $LASTEXITCODE }
+& { $ErrorActionPreference='Stop'; $e='C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project\apps\api\.env'; $l=@([IO.File]::ReadAllLines($e) | Where-Object { $_ -match '^\s*PUBLIC_PORTAL_BASE_URL\s*=' }); if($l.Count -ne 1){ throw 'PUBLIC_PORTAL_BASE_URL satiri 1 degil - DUR' }; $ExpBaseUrl=($l[0] -replace '^\s*PUBLIC_PORTAL_BASE_URL\s*=\s*','').Trim().Trim('"').Trim("'"); if($ExpBaseUrl -cnotmatch '^https://[A-Za-z0-9.-]+(:\d+)?$'){ throw 'PUBLIC_PORTAL_BASE_URL https/yolsuz origin degil - DUR' }; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-extacc-d8-staff-surface-r01\scripts\d8-staff-surface-probe.js'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'D5FA37D1EAC77793F3CD1D2438B496B16B7BABEFB5E804E77D863F41A954579B'){ throw 'D8 SONDA SHA UYUSMUYOR - DUR' }; $o=Join-Path $env:USERPROFILE ('Documents\CLIENT-EVIDENCE-20260911\extacc-d8-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + 'Z'); New-Item -ItemType Directory -Force -Path $o | Out-Null; & node $f --origin $ExpBaseUrl --out "$o\d8-probe.json" --phone-list; 'D8 cikis=' + $LASTEXITCODE }
 ```
 
 ## 2. D-8 telefon adımı (owner beyanı; makine ölçümü değildir)
@@ -107,9 +112,9 @@ Beyan `owner-declaration-d8.json` olarak ayrı dosyaya elle yazılır (sonda yaz
 
 ## 3. D-8 kapanış tanımı
 
-D-8 PASS = sonda çıkış 0 **ve** telefon beyanı 5/5 E. Katman `unknown` ise PASS düşmez; kayıt "katman ölçülemedi" notu ve
-`hints` dağılımını (bodyEmpty / serverHeaderValue / edgeHeaderPresent sayıları) taşır — `unknown` ret olmadığı anlamına gelmez,
-katmanın dışarıdan adlandırılamadığı anlamına gelir. `edge-provider`/`caddy`/`unknown` dağılımı kayda yazılır. Bulgu (403 dışı)
+D-8 PASS = sonda çıkış 0 **ve** telefon beyanı 5/5 E. Katman `unknown` ise PASS düşmez; kayıt "katman kesin belirlenemedi" notu,
+`denyLayerHints` (ipucu: `caddy`/`edge-provider`/`none`) ve `hints` dağılımını (bodyEmpty / serverHeaderValue / edgeHeaderPresent sayıları) taşır —
+`unknown` ret olmadığı anlamına gelmez, katmanın kesin kanıtla adlandırılamadığı anlamına gelir; ipucu kesin katman diye raporlanmaz. Bulgu (403 dışı)
 → kısıtlı kayda alınır; public PR'a yol/yöntem ayrıntısı yazılmaz. `POST /api/auth/login` kenarı geçerse personel giriş sayacı
 +1 yan etkisi de kayda yazılır (tek istek; blok üretmez; uygulama semantiğinde başarısız giriş denemesi sayılır — kimlik bilgisi
 gönderilmemiş olsa da). `suspectAppOrigin403 > 0` ise PASS düşmez; "uygulama-kaynaklı 403 şüphesi: N" notu kayda yazılır.
@@ -176,6 +181,6 @@ Kurallar:
 
 ## 7. Pinler
 
-`d8-staff-surface-probe.js` `6400223249707CCCA4FDEF4BCF8F63868466C29F052133F70F36C78CA121C16E` · `d8-selftest.js` `A311CF009038494DD0CEC93EC283B79CA41E8C5EA20C848D446FED0D91828205`.
-(Önceki pinler: R01 ilk `DD6448A5…` / `E50EAE0C…`; birinci tur düzeltme `51B78C3B…` / `F9E9BD65…` [13/13] — ikinci tur inceleme
-düzeltmeleriyle 2026-09-29 değişti; öz-test 15/15.)
+`d8-staff-surface-probe.js` `D5FA37D1EAC77793F3CD1D2438B496B16B7BABEFB5E804E77D863F41A954579B` · `d8-selftest.js` `AD7B0759F7AE99BDCB27ABD5F8B869C2F6E68B0B10289A0E86548BF4315E4AB7`.
+(Önceki pinler: R01 ilk `DD6448A5…` / `E50EAE0C…`; birinci tur düzeltme `51B78C3B…` / `F9E9BD65…` [13/13]; ikinci tur `6400223…` / `A311CF00…`
+[15/15] — R27-R03'te katman ipucu düzeltmesiyle 2026-09-30 değişti; öz-test 15/15.)
