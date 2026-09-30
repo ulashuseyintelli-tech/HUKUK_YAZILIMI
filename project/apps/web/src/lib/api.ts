@@ -1399,11 +1399,19 @@ class ApiClient {
   }
 
   /**
-   * Takip Talebi PDF indir
+   * Takip talebi taslak belgesi (PDF / Word / XML) — ortak kimlik doğrulama (`getToken`: "Beni hatırla" açıkken
+   * localStorage, kapalıyken sessionStorage) ve kanonik hata sözleşmesi (sunucu mesajı + `code` KORUNUR; ör.
+   * `BELGE_TURU_BELIRSIZ`). Sihirbaz düğmeleri önceden yalnız localStorage'a bakıyor, oturum saklanmadığında
+   * "Oturum süresi dolmuş" diyordu.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - downloadTakipTalebiPdf / downloadTakipTalebiWord / downloadTakipTalebiXml
+   * /// </remarks>
    */
-  async downloadTakipTalebiPdf(data: TemplateData): Promise<Blob> {
+  private async postTemplateBlob(path: string, data: unknown, fallbackMessage: string): Promise<Blob> {
     const token = this.getToken();
-    const response = await fetch(`${this.getApiUrl()}/api/template-engine/takip-talebi/pdf`, {
+    const response = await fetch(`${this.getApiUrl()}/api/template-engine/${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1411,25 +1419,32 @@ class ApiClient {
       },
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error("PDF indirme hatası");
+    if (!response.ok) throw buildApiHttpError(await readErrorBody(response), response.status, fallbackMessage);
     return response.blob();
   }
 
   /**
-   * Takip Talebi Word indir
+   * Takip Talebi PDF indir
+   * /// <remarks>Çağrıldığı yerler: ProfessionalClaimItemForm (sihirbaz taslak belge düğmeleri)</remarks>
    */
-  async downloadTakipTalebiWord(data: TemplateData): Promise<Blob> {
-    const token = this.getToken();
-    const response = await fetch(`${this.getApiUrl()}/api/template-engine/takip-talebi/word`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error("Word indirme hatası");
-    return response.blob();
+  async downloadTakipTalebiPdf(data: TemplateData | Record<string, unknown>): Promise<Blob> {
+    return this.postTemplateBlob("takip-talebi/pdf", data, "PDF indirme hatası");
+  }
+
+  /**
+   * Takip Talebi Word indir
+   * /// <remarks>Çağrıldığı yerler: ProfessionalClaimItemForm (sihirbaz taslak belge düğmeleri)</remarks>
+   */
+  async downloadTakipTalebiWord(data: TemplateData | Record<string, unknown>): Promise<Blob> {
+    return this.postTemplateBlob("takip-talebi/word", data, "Word indirme hatası");
+  }
+
+  /**
+   * Takip Talebi UYAP XML indir (istemci verisiyle taslak)
+   * /// <remarks>Çağrıldığı yerler: ProfessionalClaimItemForm (sihirbaz taslak belge düğmeleri)</remarks>
+   */
+  async downloadTakipTalebiXml(data: TemplateData | Record<string, unknown>): Promise<Blob> {
+    return this.postTemplateBlob("takip-talebi/xml", data, "XML indirme hatası");
   }
 
   /**

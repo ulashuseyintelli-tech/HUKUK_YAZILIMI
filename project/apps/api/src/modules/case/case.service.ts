@@ -83,6 +83,7 @@ import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
 import { ClaimItemWriterRouterService } from "../claim-item/claim-item-writer-router.service";
 import { ClaimItemSourceIntegrityException } from "../claim-item/claim-item-source-integrity.guard";
+import { findClassificationDocumentKindConflict, kambiyoDocumentKindOfSubForm } from "./case-classification-consistency";
 
 // ASSIGN-4b sorumlu-avukat invariant'ının SAF karar fonksiyonları
 // (pickResponsibleFallbackIndex / resolveResponsiblePromotion / planResponsible)
@@ -1101,6 +1102,24 @@ export class CaseService {
     if (results.some(r => r === false)) {
       throw new BadRequestException('Geçersiz lookup ID: Belirtilen değer bu büroya ait değil');
     }
+  }
+
+  /**
+   * Dosya açılışında YALNIZ belgelenmiş olgusal sınıflandırma çelişkisini reddeder (kambiyo alt formu ↔ kambiyo takip türü
+   * belge türü). Kural ve bilinçli olarak denetlenmeyen kombinasyonlar: `case-classification-consistency.ts`. Takip türü
+   * kodu yalnız alt form kambiyo ise okunur (lookup id'si bu noktada validateLookupIds ile tenant-doğrulanmıştır).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (tx öncesi, validateLookupIds'ten sonra)
+   */
+  private async assertClassificationConsistent(tenantId: string, dto: CreateCaseDto): Promise<void> {
+    if (!dto.takipTuruId || !kambiyoDocumentKindOfSubForm(dto.subType)) return;
+    const takipTuru = await this.prisma.lookupTakipTuru.findFirst({
+      where: { id: dto.takipTuruId, tenantId },
+      select: { code: true },
+    });
+    const conflict = findClassificationDocumentKindConflict({ subType: dto.subType, takipTuruCode: takipTuru?.code });
+    if (conflict) throw new BadRequestException(conflict);
   }
 
   /**
@@ -2126,6 +2145,8 @@ export class CaseService {
       durumEtiketiId: dto.durumEtiketiId,
       mahiyetTipiId: dto.mahiyetTipiId,
     });
+    // Belgelenmiş olgusal çelişki: kambiyo alt formu ile kambiyo takip türünün belge türü (çek ↔ senet) — tx ÖNCESİ 400
+    await this.assertClassificationConsistent(tenantId, dto);
 
     try {
       // B4/D: fileNumber ön-benzersizlik kontrolü — tx-öncesi taraf yaratımından
