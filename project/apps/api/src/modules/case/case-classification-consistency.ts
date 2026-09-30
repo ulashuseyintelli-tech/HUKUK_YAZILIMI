@@ -42,6 +42,7 @@ export function kambiyoDocumentKindOfSubForm(subType: string | null | undefined)
  * /// <remarks>
  * /// Çağrıldığı yerler:
  * ///  - CaseService.assertClassificationConsistent() → POST /cases (tx öncesi)
+ * ///  - CaseService.update() → PUT /cases/:id (alt form kambiyo formuna değişirken; takip türü = mevcut kayıt)
  * /// </remarks>
  */
 export function findClassificationDocumentKindConflict(input: {
@@ -56,5 +57,40 @@ export function findClassificationDocumentKindConflict(input: {
     message:
       `Seçilen form ${KIND_LABEL[formKind]} takibi, takip türü ise ${KIND_LABEL[takipKind]} takibi; belge türü çelişiyor. ` +
       'Form ya da takip türünü düzeltin; takip oluşturulmadı.',
+  };
+}
+
+/**
+ * Verilen takip türüyle belge türü ÇELİŞEN kambiyo alt formları (takip türü kambiyo değilse boş — hukuki tercih
+ * denetlenmez). Aynı eşleme tablosundan türetilir; yeni kural EKLEMEZ.
+ *
+ * /// <remarks>
+ * /// Çağrıldığı yerler:
+ * ///  - CaseService.batchUpdate() → POST /cases/batch-update (takip türü değişirken hedef dosyaların alt formu)
+ * /// </remarks>
+ */
+export function kambiyoSubFormsConflictingWith(takipTuruCode: string | null | undefined): string[] {
+  const takipKind = DOCUMENT_KIND_BY_TAKIP_TURU[String(takipTuruCode ?? '')] ?? null;
+  if (!takipKind) return [];
+  return Object.entries(DOCUMENT_KIND_BY_KAMBIYO_SUB_FORM)
+    .filter(([, kind]) => kind !== takipKind)
+    .map(([subForm]) => subForm)
+    .sort();
+}
+
+/** Toplu takip türü değişikliğinde çelişen dosyalar için kararlı kod + Türkçe açıklama. */
+export function batchClassificationDocumentKindConflict(
+  takipTuruCode: string,
+  conflicts: ReadonlyArray<{ caseId: string; fileNumber: string | null; subType: string | null }>,
+): { code: 'CASE_CLASSIFICATION_DOCUMENT_KIND_CONFLICT'; message: string; conflicts: typeof conflicts } {
+  const takipKind = DOCUMENT_KIND_BY_TAKIP_TURU[takipTuruCode];
+  const shown = conflicts.slice(0, 10).map((c) => c.fileNumber ?? c.caseId).join(', ');
+  return {
+    code: 'CASE_CLASSIFICATION_DOCUMENT_KIND_CONFLICT',
+    message:
+      `Seçilen takip türü ${takipKind ? KIND_LABEL[takipKind] : ''} takibi; ${conflicts.length} dosyanın formu farklı belge ` +
+      `türünde (${shown}${conflicts.length > 10 ? ', …' : ''}). Bu dosyaların formunu ya da takip türünü düzeltin; ` +
+      'hiçbir dosya güncellenmedi.',
+    conflicts,
   };
 }

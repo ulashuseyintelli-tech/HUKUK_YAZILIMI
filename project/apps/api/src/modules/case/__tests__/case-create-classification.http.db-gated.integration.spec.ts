@@ -344,4 +344,67 @@ describeWithDisposableDb('Dosya açılışı takip sınıflandırması — POST 
     expect(row).toMatchObject({ type: 'GENERAL_EXECUTION', subType: 'FORM_7', takipTuruId: f.lookups.ilamsizGenel, mahiyetKodu: 'PARA' });
     expect(await prisma.claimItem.count({ where: { tenantId: f.tenantId, itemType: 'PRINCIPAL' } })).toBe(1);
   });
+  // ─── K3-L (owner GO 2026-09-30 madde 3): güncelleme yollarında aynı belge türü sözleşmesi ───
+  const putCase = (userId: string, id: string, payload: object) =>
+    request(app.getHttpServer()).put(`/cases/${id}`).set('x-test-user-id', userId).send(payload);
+  const batchUpdate = (userId: string, payload: object) =>
+    request(app.getHttpServer()).post('/cases/batch-update').set('x-test-user-id', userId).send(payload);
+
+  async function openKambiyoCase(f: Fixture, fileNumber: string, takipTuruId: string) {
+    process.env.MANUAL_CASE_INSTRUMENTS = 'true';
+    const res = await postCase(f.userId, {
+      ...kambiyoCekBody(f),
+      fileNumber,
+      takipTuruId,
+      lawyers: [{ name: 'Ada', surname: 'Vekil', barNumber: `BR-${fileNumber}` }],
+      instruments: [manualCek(`CK-${fileNumber}`)],
+    });
+    expect(res.status).toBe(201);
+    return prisma.case.findFirstOrThrow({ where: { tenantId: f.tenantId, fileNumber } });
+  }
+
+  it('PUT /cases/:id: alt formu mevcut takip türüyle çelişen kambiyo formuna değiştirmek → 400, satır DEĞİŞMEZ; uyumlu değişiklik ve ilgisiz güncelleme geçer', async () => {
+    const f = await fixture('put-kind');
+    const row = await openKambiyoCase(f, `${f.fileNumber}-A`, f.lookups.kambiyoCek);
+
+    const bad = await putCase(f.userId, row.id, { subType: 'FORM_10_BONO' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe('CASE_CLASSIFICATION_DOCUMENT_KIND_CONFLICT');
+    expect((await prisma.case.findUniqueOrThrow({ where: { id: row.id } })).subType).toBe('FORM_10');
+
+    const good = await putCase(f.userId, row.id, { subType: 'FORM_10_CEK' });
+    expect(good.status).toBe(200);
+    expect((await prisma.case.findUniqueOrThrow({ where: { id: row.id } })).subType).toBe('FORM_10_CEK');
+
+    // Önceden (bu kural yokken) çelişkili kalmış kayıt: alt forma dokunmayan güncelleme ENGELLENMEZ
+    await prisma.case.update({ where: { id: row.id }, data: { subType: 'FORM_10_POLICE' } });
+    const unrelated = await putCase(f.userId, row.id, { notes: 'ilgisiz güncelleme' });
+    expect(unrelated.status).toBe(200);
+    expect(await prisma.case.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ notes: 'ilgisiz güncelleme', subType: 'FORM_10_POLICE' });
+  });
+
+  it('POST /cases/batch-update: takip türünü çelişen belge türüne çevirmek → 400 + çelişen dosyalar; HİÇBİR dosya güncellenmez; uyumlu değişiklik alt formu boş dosyalar dahil hepsini günceller', async () => {
+    const f = await fixture('batch-kind');
+    const cekCase = await openKambiyoCase(f, `${f.fileNumber}-C`, f.lookups.kambiyoCek);
+    await prisma.case.update({ where: { id: cekCase.id }, data: { subType: 'FORM_10_CEK' } });
+    const plainCase = await openKambiyoCase(f, `${f.fileNumber}-P`, f.lookups.kambiyoCek);
+    await prisma.case.update({ where: { id: plainCase.id }, data: { subType: null } });
+
+    const bad = await batchUpdate(f.userId, { caseIds: [cekCase.id, plainCase.id], updates: { takipTuruId: f.lookups.kambiyoSenet } });
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe('CASE_CLASSIFICATION_DOCUMENT_KIND_CONFLICT');
+    expect(bad.body.conflicts).toEqual([{ caseId: cekCase.id, fileNumber: cekCase.fileNumber, subType: 'FORM_10_CEK' }]);
+    const afterBad = await prisma.case.findMany({ where: { id: { in: [cekCase.id, plainCase.id] } }, select: { takipTuruId: true } });
+    expect(afterBad.map((r) => r.takipTuruId)).toEqual([f.lookups.kambiyoCek, f.lookups.kambiyoCek]);
+
+    // Hukuki tercih denetlenmez; uyumlu kambiyo türü alt formu BOŞ dosyayı da günceller (SQL NOT IN + NULL tuzağı)
+    const legal = await batchUpdate(f.userId, { caseIds: [cekCase.id, plainCase.id], updates: { takipTuruId: f.lookups.ilamsizGenel } });
+    expect(legal.status).toBe(201);
+    expect(legal.body.data.updatedCount).toBe(2);
+    const back = await batchUpdate(f.userId, { caseIds: [cekCase.id, plainCase.id], updates: { takipTuruId: f.lookups.kambiyoCek } });
+    expect(back.status).toBe(201);
+    expect(back.body.data.updatedCount).toBe(2);
+    const afterBack = await prisma.case.findMany({ where: { id: { in: [cekCase.id, plainCase.id] } }, select: { takipTuruId: true } });
+    expect(afterBack.map((r) => r.takipTuruId)).toEqual([f.lookups.kambiyoCek, f.lookups.kambiyoCek]);
+  });
 });

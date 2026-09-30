@@ -88,7 +88,12 @@ import {
   MANAGEMENT_DEFAULT_PERMISSIONS_AUDIT_ACTION,
   decideCaseOpenDefaultPermissions,
 } from "./case-lawyer-default-permissions";
-import { findClassificationDocumentKindConflict, kambiyoDocumentKindOfSubForm } from "./case-classification-consistency";
+import {
+  batchClassificationDocumentKindConflict,
+  findClassificationDocumentKindConflict,
+  kambiyoDocumentKindOfSubForm,
+  kambiyoSubFormsConflictingWith,
+} from "./case-classification-consistency";
 
 // ASSIGN-4b sorumlu-avukat invariant'ının SAF karar fonksiyonları
 // (pickResponsibleFallbackIndex / resolveResponsiblePromotion / planResponsible)
@@ -2984,10 +2989,42 @@ export class CaseService {
     // PUT'ta bloklar) → burada doğrulanmaz; o yol patchFlags()'te ele alınır.
     await this.validateCaseFkOwnership(tenantId, { courtId: data.courtId });
 
-    const updated = await this.prisma.case.update({
-      where: { id },
-      data,
-    });
+    // K3-L (owner GO 2026-09-30 madde 3): oluşturmadaki belge türü sözleşmesi güncellemede de geçerli. Yalnız alt form
+    // bir KAMBİYO formuna DEĞİŞİYORSA sonuç durum denetlenir — takip türü bu uçta gönderilemez, mevcut kayıttan alınır.
+    // Alt forma dokunmayan ilgisiz güncellemeler (kayıt önceden çelişkili olsa bile) engellenmez.
+    const currentSubType = (existing as any)?.subType ?? null;
+    const currentTakipTuruId: string | null = (existing as any)?.takipTuruId ?? null;
+    const subTypeChanges = data.subType !== undefined && data.subType !== currentSubType;
+    const guardClassification = subTypeChanges && !!currentTakipTuruId && !!kambiyoDocumentKindOfSubForm(data.subType);
+    if (guardClassification) {
+      const takipTuru = await this.prisma.lookupTakipTuru.findFirst({
+        where: { id: currentTakipTuruId!, tenantId },
+        select: { code: true },
+      });
+      const conflict = findClassificationDocumentKindConflict({ subType: data.subType, takipTuruCode: takipTuru?.code });
+      if (conflict) throw new BadRequestException(conflict);
+    }
+
+    let updated;
+    if (guardClassification) {
+      // Denetimden sonra takip türü (eşzamanlı toplu güncelleme) değiştiyse çelişki sızmasın: koşullu yazma
+      const written = await this.prisma.case.updateMany({
+        where: { id, tenantId, takipTuruId: currentTakipTuruId },
+        data,
+      });
+      if (written.count !== 1) {
+        throw new ConflictException({
+          code: 'CASE_CLASSIFICATION_CHANGED_CONCURRENTLY',
+          message: 'Dosyanın takip türü bu sırada değişti; sayfayı yenileyip yeniden deneyin. Güncelleme yapılmadı.',
+        });
+      }
+      updated = await this.prisma.case.findFirst({ where: { id, tenantId } });
+    } else {
+      updated = await this.prisma.case.update({
+        where: { id },
+        data,
+      });
+    }
 
     // Audit log
     await this.auditService.log({
@@ -2997,7 +3034,7 @@ export class CaseService {
       entityId: id,
       userId, // WP-1c-2: user-driven CASE update → actor zorunlu
       newValues: data,
-      description: `Takip güncellendi: ${updated.fileNumber}`,
+      description: `Takip güncellendi: ${updated?.fileNumber}`,
     });
 
     return updated;
@@ -3275,20 +3312,69 @@ export class CaseService {
       }
     }
 
+    const batchData = {
+      ...(updates.riskId !== undefined && { riskId: updates.riskId }),
+      ...(updates.durumEtiketiId !== undefined && { durumEtiketiId: updates.durumEtiketiId }),
+      ...(updates.sorumluPersonelId !== undefined && { sorumluPersonelId: updates.sorumluPersonelId }),
+      ...(updates.takipTuruId !== undefined && { takipTuruId: updates.takipTuruId }),
+      ...(updates.mahiyetTipiId !== undefined && { mahiyetTipiId: updates.mahiyetTipiId }),
+    };
+
+    // K3-L (owner GO 2026-09-30 madde 3): takip türü KAMBİYO türüne değişiyorsa hedef dosyaların MEVCUT alt formuyla
+    // belge türü çelişkisi (oluşturmadaki sözleşme) denetlenir; tek çelişki bile varsa HİÇBİR dosya güncellenmez.
+    // Kambiyo dışı takip türü (hukuki tercih) ve takip türüne dokunmayan toplu güncellemeler denetlenmez.
+    let conflictingSubForms: string[] = [];
+    if (updates.takipTuruId) {
+      const takipTuru = await this.prisma.lookupTakipTuru.findFirst({
+        where: { id: updates.takipTuruId, tenantId },
+        select: { code: true },
+      });
+      conflictingSubForms = kambiyoSubFormsConflictingWith(takipTuru?.code);
+      if (conflictingSubForms.length > 0) {
+        const conflicts = await this.prisma.case.findMany({
+          where: { id: { in: caseIds }, tenantId, subType: { in: conflictingSubForms } },
+          select: { id: true, fileNumber: true, subType: true },
+          orderBy: { fileNumber: 'asc' },
+        });
+        if (conflicts.length > 0) {
+          throw new BadRequestException(
+            batchClassificationDocumentKindConflict(
+              takipTuru!.code,
+              conflicts.map((c) => ({ caseId: c.id, fileNumber: c.fileNumber, subType: c.subType })),
+            ),
+          );
+        }
+      }
+    }
+
     // Sadece bu tenant'a ait dosyaları güncelle
-    const result = await this.prisma.case.updateMany({
-      where: {
-        id: { in: caseIds },
-        tenantId,
-      },
-      data: {
-        ...(updates.riskId !== undefined && { riskId: updates.riskId }),
-        ...(updates.durumEtiketiId !== undefined && { durumEtiketiId: updates.durumEtiketiId }),
-        ...(updates.sorumluPersonelId !== undefined && { sorumluPersonelId: updates.sorumluPersonelId }),
-        ...(updates.takipTuruId !== undefined && { takipTuruId: updates.takipTuruId }),
-        ...(updates.mahiyetTipiId !== undefined && { mahiyetTipiId: updates.mahiyetTipiId }),
-      },
-    });
+    const result = conflictingSubForms.length > 0
+      // Denetimden sonra bir dosyanın alt formu çelişkili hâle geldiyse (eşzamanlı güncelleme) kısmi yazım olmaz
+      ? await this.prisma.$transaction(async (tx) => {
+        const expected = await tx.case.count({ where: { id: { in: caseIds }, tenantId } });
+        const written = await tx.case.updateMany({
+          where: {
+            id: { in: caseIds },
+            tenantId,
+            OR: [{ subType: null }, { subType: { notIn: conflictingSubForms } }],
+          },
+          data: batchData,
+        });
+        if (written.count !== expected) {
+          throw new ConflictException({
+            code: 'CASE_CLASSIFICATION_CHANGED_CONCURRENTLY',
+            message: 'Seçili dosyalardan birinin formu bu sırada değişti; hiçbir dosya güncellenmedi. Yeniden deneyin.',
+          });
+        }
+        return written;
+      })
+      : await this.prisma.case.updateMany({
+        where: {
+          id: { in: caseIds },
+          tenantId,
+        },
+        data: batchData,
+      });
 
     // ASSIGN-4c: toplu güncellemeyi tek özet CASE UPDATE olarak audit'le (dosya-başına audit YOK).
     await this.auditService.log({
