@@ -285,8 +285,8 @@ src/modules/fee-engine/__tests__/integration.spec.ts
 src/modules/hesap-ozeti-coverage/__tests__/component-coverage.analyzer.spec.ts
 src/modules/precautionary-order/__tests__/precautionary-cost-writer-routing.spec.ts
 
-# MANUAL kambiyo kabul kapisi (fail-closed): API MANUAL_CASE_INSTRUMENTS kapaliyken POST /cases
-#   `source: MANUAL` kayitla 400 MANUAL_CASE_INSTRUMENTS_DISABLED doner; red tx ve tum DB sorgularindan
-#   ONCE (dosya/taraf hic olusmaz). OCR kaynagi DEGISMEDI. Yamasiz kodda 4 test DUSER (RED kanitlandi);
-#   case-create-instruments.spec.ts'teki sessiz-atlama beklentileri reddetme olarak guncellendi (3 test).
-src/modules/case/__tests__/case-create-manual-instruments-admission.spec.ts
+# Evrak kabul kapisi (fail-closed, MANUAL + OCR): POST /cases'te kaynagi kapali (MANUAL_CASE_INSTRUMENTS /
+#   OCR_MULTI_INSTRUMENT) ya da islenemeyen (FATURA/DIGER, zorunlu alan eksik) TEK evrak kaydi -> 400 kararli kod;
+#   red tx ve tum DB sorgularindan ONCE (dosya/taraf hic olusmaz). Evraksiz acilis etkilenmez. Guncel main servis
+#   koduyla admission+instruments 27 testin 16'si DUSER (RED kanitlandi); kalan 11 pozitif/negatif kontrol.
+src/modules/case/__tests__/case-create-instrument-admission.spec.ts

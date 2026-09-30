@@ -1,3 +1,5 @@
+import { INSTRUMENT_TYPE_LABELS, type InstrumentType } from '@/components/debtor/ocr-instrument';
+
 export interface CreateCaseDueInput {
   type: string;
   description?: string;
@@ -107,29 +109,81 @@ export function formatCaseDueValidationError(error: unknown): string | null {
 }
 
 /**
- * API kararlı kodu: sunucuda `MANUAL_CASE_INSTRUMENTS` kapalıyken `source: MANUAL` çek/senet kaydı
- * taşıyan POST /cases reddedilir (dosya HİÇ oluşmaz). Web bayrağı açıkken bu kalemler dues[]'tan
- * çıkarıldığı için API eskiden sessizce atlıyor, dosya çek/senet bedeli olmadan açılıyordu.
+ * POST /cases evrak kabul reddi — API kararlı kodları (dosya HİÇ oluşmaz). Web evrak kaydını dues[]'a
+ * koymadan instruments[]'a taşır (manuel çek/senet `source: MANUAL`; çoklu OCR evrakı); API eskiden
+ * kapalı kaynaktaki ya da işlenemeyen kaydı sessizce atlıyor, dosya evrak/anapara olmadan açılıyordu.
  */
 export const MANUAL_CASE_INSTRUMENTS_DISABLED = 'MANUAL_CASE_INSTRUMENTS_DISABLED';
+export const OCR_CASE_INSTRUMENTS_DISABLED = 'OCR_CASE_INSTRUMENTS_DISABLED';
+export const CASE_INSTRUMENT_SOURCES_DISABLED = 'CASE_INSTRUMENT_SOURCES_DISABLED';
+export const CASE_INSTRUMENT_UNPROCESSABLE = 'CASE_INSTRUMENT_UNPROCESSABLE';
+
+const INSTRUMENT_REJECTION_REASON_LABELS: Record<string, string> = {
+  NOT_KAMBIYO: 'kambiyo senedi (çek/senet/poliçe) değil',
+  DOCUMENT_NO_MISSING: 'belge/seri numarası eksik',
+  AMOUNT_NOT_POSITIVE: 'tutar sıfır veya negatif',
+  CURRENCY_MISSING: 'para birimi eksik',
+  ISSUE_DATE_MISSING: 'düzenleme/keşide tarihi eksik',
+};
+
+const positiveInt = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+
+const ADMISSION_STOPPED = 'dosyaya yazılamayacağı için işlem durduruldu (anapara eksik kalmasın diye).';
+const CONTACT_ADMIN = 'lütfen sistem yöneticinize başvurun.';
 
 /**
- * POST /cases kabul reddini (kararlı `body.code`) kullanıcıya okunur mesaja çevirir; tanınmayan
- * hata → null (çağıran mevcut biçimleyicilere düşer). Sunucu metnine değil KODA bağlıdır.
+ * POST /cases evrak kabul reddini (kararlı `body.code`) kaynak türüne uygun okunur Türkçe mesaja çevirir;
+ * tanınmayan hata → null (çağıran mevcut biçimleyicilere düşer). Sunucu metnine değil KODA bağlıdır.
+ * Kaynak (MANUAL/OCR) yeniden sınıflandırılmaz; taslak ve tarama sonucu çağıran tarafından korunur.
  */
 export function formatCaseCreateAdmissionError(error: unknown): string | null {
-  const body = (error as { body?: { code?: unknown; manualInstrumentCount?: unknown } } | null)?.body;
-  if (!body || body.code !== MANUAL_CASE_INSTRUMENTS_DISABLED) return null;
-  const count = body.manualInstrumentCount;
-  const items =
-    typeof count === 'number' && Number.isInteger(count) && count > 0
-      ? `${count} çek/senet kalemi`
-      : 'Çek/senet kalemleri';
-  return (
-    'Takip oluşturulmadı: manuel çek/senet kaydı sunucuda kapalı. ' +
-    `${items} dosyaya yazılamayacağı için işlem durduruldu (anapara eksik kalmasın diye). ` +
-    'Girdiğiniz bilgiler silinmedi; lütfen sistem yöneticinize başvurun.'
-  );
+  const body = (error as { body?: Record<string, unknown> } | null)?.body;
+  if (!body || typeof body !== 'object') return null;
+  const manual = positiveInt(body.manualInstrumentCount);
+  const ocr = positiveInt(body.ocrInstrumentCount);
+
+  switch (body.code) {
+    case MANUAL_CASE_INSTRUMENTS_DISABLED:
+      return (
+        'Takip oluşturulmadı: manuel çek/senet kaydı sunucuda kapalı. ' +
+        `${manual ? `${manual} çek/senet kalemi` : 'Çek/senet kalemleri'} ${ADMISSION_STOPPED} ` +
+        `Girdiğiniz bilgiler silinmedi; ${CONTACT_ADMIN}`
+      );
+    case OCR_CASE_INSTRUMENTS_DISABLED:
+      return (
+        'Takip oluşturulmadı: taranan (OCR) evrak kaydı sunucuda kapalı. ' +
+        `${ocr ? `${ocr} taranan evrak` : 'Taranan evraklar'} ${ADMISSION_STOPPED} ` +
+        `Girdiğiniz bilgiler ve tarama sonucu silinmedi; ${CONTACT_ADMIN}`
+      );
+    case CASE_INSTRUMENT_SOURCES_DISABLED:
+      return (
+        'Takip oluşturulmadı: manuel çek/senet ve taranan (OCR) evrak kaydı sunucuda kapalı. ' +
+        `${manual && ocr ? `${manual} manuel ve ${ocr} taranan evrak` : 'Evraklar'} ${ADMISSION_STOPPED} ` +
+        `Girdiğiniz bilgiler ve tarama sonucu silinmedi; ${CONTACT_ADMIN}`
+      );
+    case CASE_INSTRUMENT_UNPROCESSABLE: {
+      const items = (Array.isArray(body.items) ? body.items : []).filter(
+        (i): i is { index: number; type?: string; reason?: string } =>
+          !!i && typeof i === 'object' && Number.isInteger((i as { index?: unknown }).index),
+      );
+      const detail = items
+        .slice(0, 5)
+        .map((i) => {
+          const label = INSTRUMENT_TYPE_LABELS[i.type as InstrumentType] ?? 'Belge';
+          return `${i.index + 1}. evrak (${label}): ${INSTRUMENT_REJECTION_REASON_LABELS[i.reason ?? ''] ?? 'işlenemiyor'}`;
+        })
+        .join('; ');
+      return (
+        `Takip oluşturulmadı: ${items.length > 0 ? `${items.length} evrak kaydı` : 'Bazı evrak kayıtları'} dosyaya işlenemiyor` +
+        `${detail ? ` — ${detail}` : ''}. Anapara eksik kalmasın diye işlem durduruldu. ` +
+        'Kambiyo senedi olmayan belgeler (fatura vb.) evrak olarak değil alacak kalemi olarak girilmelidir; ' +
+        'diğer bilgileriniz silinmedi.'
+      );
+    }
+    default:
+      return null;
+  }
 }
 
 /** G2b — OCR debtInfo (FATURA) için Due'ya gidecek belge/KDV alanları (SAF). */

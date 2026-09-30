@@ -1556,7 +1556,8 @@ export default function NewCasePage() {
       // Yeni takip oluşturuldu - belgeler sekmesine yönlendir
       router.push(`/cases/${response.id}?tab=documents`);
     } catch (err: any) {
-      // Kabul reddi (ör. MANUAL_CASE_INSTRUMENTS_DISABLED) koda göre okunur mesaja çevrilir; taslak temizlenmez.
+      // Evrak kabul reddi (MANUAL/OCR kaynağı kapalı, işlenemeyen evrak) koda göre kaynağa uygun mesaja çevrilir.
+      // Taslak (localStorage) ve tarama sonucu (instruments) TEMİZLENMEZ; kaynak değiştirilmez → yeniden giriş yok.
       setError(formatCaseCreateAdmissionError(err) || formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
     } finally { setLoading(false); }
   };
