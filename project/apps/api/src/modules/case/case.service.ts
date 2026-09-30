@@ -603,6 +603,35 @@ export class CaseService {
     }
   }
 
+  /**
+   * MANUAL kambiyo kabul kapısı (fail-closed). `MANUAL_CASE_INSTRUMENTS` kapalıyken
+   * `source: MANUAL` kayıt taşıyan istek SESSİZCE atlanmaz, kararlı kodla reddedilir: web bu
+   * kalemleri dues[]'tan çıkarıp instruments[]'a taşır; atlama, çek/senet bedelinin ne
+   * CaseInstrument ne PRINCIPAL ClaimItem ne de Due olarak yazılması (eksik anapara) demektir.
+   * OCR kaynağı (source yok / OCR) bu kapının kapsamı DIŞINDADIR; mevcut davranış korunur.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (tx ve sorgu ÖNCESİ; dosya/taraf hiç oluşmaz)
+   * - CaseService.createInstrumentsAndClaims() → tx içi savunma katmanı (hata tx'i geri alır)
+   */
+  private assertManualInstrumentAdmission(
+    instruments: ReadonlyArray<Pick<CaseInstrumentInputDto, "source">>,
+    manualEnabled: boolean,
+  ): void {
+    if (manualEnabled) return;
+    const manualCount = instruments.filter(
+      (input) => input?.source === CaseInstrumentSource.MANUAL,
+    ).length;
+    if (manualCount === 0) return;
+    throw new BadRequestException({
+      code: "MANUAL_CASE_INSTRUMENTS_DISABLED",
+      message:
+        `Manuel çek/senet kaydı bu sunucuda kapalı (MANUAL_CASE_INSTRUMENTS). ` +
+        `${manualCount} çek/senet kalemi dosyaya yazılamayacağı için takip oluşturulmadı.`,
+      manualInstrumentCount: manualCount,
+    });
+  }
+
   private assertDuePatchAdmission(current: DueType, requested?: DueType): void {
     if (requested === undefined) return;
     if (
@@ -1633,7 +1662,9 @@ export class CaseService {
   /**
    * PR-2b-1: manuel case instrument girişi AÇIK mı (env flag; varsayılan KAPALI).
    * OCR_MULTI_INSTRUMENT'ten BAĞIMSIZ — manuel kambiyo, OCR pipeline'ı açılmadan geçebilir (O-1).
-   * @remarks Çağrıldığı yer: CaseService.create() → createInstrumentsAndClaims per-source MANUAL gate.
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → assertManualInstrumentAdmission (tx öncesi MANUAL kabul kapısı)
+   * - CaseService.create() → createInstrumentsAndClaims per-source MANUAL gate.
    */
   private manualCaseInstrumentsEnabled(): boolean {
     return process.env.MANUAL_CASE_INSTRUMENTS === "true";
@@ -1648,7 +1679,8 @@ export class CaseService {
    * INVARIANT (resolveCaseInstrumentType): kambiyo-değil (FATURA/DIGER) / documentNo boş /
    * amount≤0 / currency yok / issueDate yok → ATLA (sessiz create YOK).
    * K1: PRINCIPAL YALNIZ buradan; dues[]'da tekrarlanmaz → çift-sayım yok.
-   * Flag KAPALI veya instruments boş → hiçbir şey üretmez, 0 döner (legacy).
+   * instruments boş → hiçbir şey üretmez, 0 döner. OCR flag KAPALI → OCR kayıtları atlanır (legacy).
+   * MANUAL flag KAPALI + MANUAL kayıt → MANUAL_CASE_INSTRUMENTS_DISABLED (sessiz atlama YOK).
    *
    * @remarks Çağrıldığı yerler:
    * - CaseService.create() → POST /cases (dues/ClaimItem sonrası 6c adımı; flag-gated AS1).
@@ -1663,12 +1695,14 @@ export class CaseService {
     manualEnabled = false,
   ): Promise<number> {
     if (instruments.length === 0) return 0;
+    // Savunma katmanı: create() bu kapıyı tx ÖNCESİ zaten uygular; hiçbir kayıt yazılmadan reddeder.
+    this.assertManualInstrumentAdmission(instruments, manualEnabled);
     let totalPrincipal = 0;
     for (const input of instruments) {
-      // PR-2b-1: per-source gate. source yok → OCR (geri uyum). OCR/MANUAL flag'leri BAĞIMSIZ;
-      // kapalı kaynak güvenle ATLANIR (karışık payload → yalnız açık-kaynak alt kümesi işlenir).
+      // PR-2b-1: per-source gate. source yok → OCR (geri uyum). OCR/MANUAL flag'leri BAĞIMSIZ.
+      // OCR kapalı → OCR kaydı atlanır (mevcut davranış). MANUAL kapalıysa buraya ulaşılmaz (yukarıda red).
       const isManual = input.source === CaseInstrumentSource.MANUAL;
-      if (isManual ? !manualEnabled : !ocrEnabled) continue;
+      if (!isManual && !ocrEnabled) continue;
       const instrumentType = resolveCaseInstrumentType(input);
       if (instrumentType === null) continue; // kambiyo değil / eksik → sessiz create YOK
       const created = await tx.caseInstrument.create({
@@ -1806,6 +1840,8 @@ export class CaseService {
     // transaction başlamadan önce doğrula. Legacy DueType.OTHER kayıtlarının read/update/
     // lifecycle yüzeyleri korunur; yalnız yeni formation admission fail-closed'dur.
     this.assertDueCreationAdmission(dto.dues ?? []);
+    // MANUAL kambiyo kabulü: bayrak kapalıyken MANUAL kayıt sessizce atlanmaz → 400, dosya hiç oluşmaz.
+    this.assertManualInstrumentAdmission(dto.instruments ?? [], this.manualCaseInstrumentsEnabled());
 
     // B.5: Başlangıç statüsü validasyonu
     if (dto.caseStatus && !isInitialStatus(dto.caseStatus as LegalCaseStatus)) {

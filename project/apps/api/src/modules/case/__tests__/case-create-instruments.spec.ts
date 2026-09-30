@@ -144,12 +144,17 @@ describe('CaseService.createInstrumentsAndClaims (N3-wire)', () => {
     expect(total).toBe(0);
   });
 
-  it('source=MANUAL + MANUAL_CASE_INSTRUMENTS kapalı → ATLANIR (ocr açık olsa bile)', async () => {
+  // Fail-closed: MANUAL kalem web'de dues[]'tan çıkarıldığı için sessiz atlama = eksik anapara.
+  it('source=MANUAL + MANUAL_CASE_INSTRUMENTS kapalı → REDDEDİLİR (kararlı kod), hiçbir kayıt yazılmaz (ocr açık olsa bile)', async () => {
     const { tx, instruments, claims } = mockTx();
-    const total = await call(tx, [cek({ source: CaseInstrumentSource.MANUAL })], true, false);
+    await expect(call(tx, [cek({ source: CaseInstrumentSource.MANUAL })], true, false)).rejects.toMatchObject({
+      status: 400,
+      response: { code: 'MANUAL_CASE_INSTRUMENTS_DISABLED', manualInstrumentCount: 1 },
+    });
     expect(instruments).toHaveLength(0);
     expect(claims).toHaveLength(0);
-    expect(total).toBe(0);
+    expect(tx.caseInstrument.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.create).not.toHaveBeenCalled();
   });
 
   it('source=MANUAL + MANUAL_CASE_INSTRUMENTS açık → ÜRETİLİR (OCR flag KAPALI olsa bile = O-1)', async () => {
@@ -168,21 +173,22 @@ describe('CaseService.createInstrumentsAndClaims (N3-wire)', () => {
     expect(total).toBe(750);
   });
 
-  it('karışık OCR+MANUAL → yalnız AÇIK kaynak alt kümesi işlenir', async () => {
-    const a = mockTx(); // ocr açık, manual kapalı → yalnız OCR
-    const totalA = await call(
-      a.tx,
-      [
-        cek({ source: CaseInstrumentSource.OCR, documentNo: 'O-1', amount: 100 }),
-        cek({ source: CaseInstrumentSource.MANUAL, documentNo: 'M-1', amount: 200 }),
-      ],
-      true, false,
-    );
-    expect(a.instruments).toHaveLength(1);
-    expect(a.instruments[0].serialNo).toBe('O-1');
-    expect(totalA).toBe(100);
+  it('karışık OCR+MANUAL: manual kapalı → TÜM istek reddedilir (önce yazılan OCR da YOK); ocr kapalı → yalnız MANUAL', async () => {
+    const a = mockTx(); // ocr açık, manual kapalı → MANUAL kalem sessizce düşmez; hiçbir kayıt yazılmaz
+    await expect(
+      call(
+        a.tx,
+        [
+          cek({ source: CaseInstrumentSource.OCR, documentNo: 'O-1', amount: 100 }),
+          cek({ source: CaseInstrumentSource.MANUAL, documentNo: 'M-1', amount: 200 }),
+        ],
+        true, false,
+      ),
+    ).rejects.toMatchObject({ response: { code: 'MANUAL_CASE_INSTRUMENTS_DISABLED', manualInstrumentCount: 1 } });
+    expect(a.instruments).toHaveLength(0); // kapı döngüden ÖNCE: OCR kaydı da yazılmadı
+    expect(a.claims).toHaveLength(0);
 
-    const b = mockTx(); // ocr kapalı, manual açık → yalnız MANUAL
+    const b = mockTx(); // ocr kapalı, manual açık → yalnız MANUAL (OCR atlaması = mevcut davranış)
     const totalB = await call(
       b.tx,
       [
@@ -196,16 +202,30 @@ describe('CaseService.createInstrumentsAndClaims (N3-wire)', () => {
     expect(totalB).toBe(200);
   });
 
-  it('her iki flag kapalı → hiçbir şey (legacy; karışık payload dahil)', async () => {
+  it('her iki flag kapalı + yalnız OCR/tanımsız kaynak → hiçbir şey (legacy OCR atlaması KORUNUR)', async () => {
     const { tx, instruments, claims } = mockTx();
-    const total = await call(
-      tx,
-      [cek({ source: CaseInstrumentSource.OCR }), cek({ source: CaseInstrumentSource.MANUAL }), cek()],
-      false, false,
-    );
+    const total = await call(tx, [cek({ source: CaseInstrumentSource.OCR }), cek()], false, false);
     expect(instruments).toHaveLength(0);
     expect(claims).toHaveLength(0);
     expect(total).toBe(0);
+  });
+
+  it('her iki flag kapalı + karışık payload içinde MANUAL → REDDEDİLİR (MANUAL sayısı raporlanır)', async () => {
+    const { tx, instruments, claims } = mockTx();
+    await expect(
+      call(
+        tx,
+        [
+          cek({ source: CaseInstrumentSource.OCR }),
+          cek({ source: CaseInstrumentSource.MANUAL, documentNo: 'M-1' }),
+          cek({ source: CaseInstrumentSource.MANUAL, documentNo: 'M-2' }),
+          cek(),
+        ],
+        false, false,
+      ),
+    ).rejects.toMatchObject({ response: { code: 'MANUAL_CASE_INSTRUMENTS_DISABLED', manualInstrumentCount: 2 } });
+    expect(instruments).toHaveLength(0);
+    expect(claims).toHaveLength(0);
   });
 
   it('çift-sayım yok: MANUAL instrument başına TAM 1 CaseInstrument + 1 PRINCIPAL ClaimItem (Due dokunulmaz)', async () => {

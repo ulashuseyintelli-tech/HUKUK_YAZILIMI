@@ -106,6 +106,32 @@ export function formatCaseDueValidationError(error: unknown): string | null {
   return null;
 }
 
+/**
+ * API kararlı kodu: sunucuda `MANUAL_CASE_INSTRUMENTS` kapalıyken `source: MANUAL` çek/senet kaydı
+ * taşıyan POST /cases reddedilir (dosya HİÇ oluşmaz). Web bayrağı açıkken bu kalemler dues[]'tan
+ * çıkarıldığı için API eskiden sessizce atlıyor, dosya çek/senet bedeli olmadan açılıyordu.
+ */
+export const MANUAL_CASE_INSTRUMENTS_DISABLED = 'MANUAL_CASE_INSTRUMENTS_DISABLED';
+
+/**
+ * POST /cases kabul reddini (kararlı `body.code`) kullanıcıya okunur mesaja çevirir; tanınmayan
+ * hata → null (çağıran mevcut biçimleyicilere düşer). Sunucu metnine değil KODA bağlıdır.
+ */
+export function formatCaseCreateAdmissionError(error: unknown): string | null {
+  const body = (error as { body?: { code?: unknown; manualInstrumentCount?: unknown } } | null)?.body;
+  if (!body || body.code !== MANUAL_CASE_INSTRUMENTS_DISABLED) return null;
+  const count = body.manualInstrumentCount;
+  const items =
+    typeof count === 'number' && Number.isInteger(count) && count > 0
+      ? `${count} çek/senet kalemi`
+      : 'Çek/senet kalemleri';
+  return (
+    'Takip oluşturulmadı: manuel çek/senet kaydı sunucuda kapalı. ' +
+    `${items} dosyaya yazılamayacağı için işlem durduruldu (anapara eksik kalmasın diye). ` +
+    'Girdiğiniz bilgiler silinmedi; lütfen sistem yöneticinize başvurun.'
+  );
+}
+
 /** G2b — OCR debtInfo (FATURA) için Due'ya gidecek belge/KDV alanları (SAF). */
 export interface FaturaDueFields {
   sourceDocumentNo?: string;

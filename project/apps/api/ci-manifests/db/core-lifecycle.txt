@@ -140,3 +140,10 @@ src/modules/claim-item/__tests__/claim-item-human-generation-authz.db-gated.inte
 #   DEGISMEDI (yetkisiz 403, yetkili FORMATION_CONTEXT_REQUIRED, VIEWER 403). Guvenlik acigi kapatma DEGIL:
 #   iki uc 2026-01-15'ten beri hic yazmiyordu (duz Error -> 500 + ErrorLog gurultusu).
 src/modules/claim-item/__tests__/claim-item-removed-endpoints.db-gated.integration.spec.ts
+
+# MANUAL kambiyo kabul kapisi — GERCEK HTTP + disposable PostgreSQL. Bayrak kapaliyken MANUAL cekli
+#   POST /cases -> 400 MANUAL_CASE_INSTRUMENTS_DISABLED (AllExceptionsFilter govdesi) ve tenant'ta dosya /
+#   CaseInstrument / ClaimItem / Due / taraf / audit satiri 0. Pozitif kontrol: ayni istek bayrak acikken
+#   CaseInstrument + bagli PRINCIPAL ClaimItem yazar. OCR atlamasi DEGISMEDI (ayri karar). Yamasiz kodda
+#   2 test DUSER (bayrak kapaliyken 201 — dosya cek bedeli olmadan aciliyordu; RED kanitlandi).
+src/modules/case/__tests__/case-create-manual-instruments-disabled.http.db-gated.integration.spec.ts

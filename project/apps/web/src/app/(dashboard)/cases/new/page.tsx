@@ -8,7 +8,7 @@ import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { runMutation } from "@/lib/mutation-outcome";
 import { toActionErrorMessage } from "@/lib/action-error";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError, formatCaseCreateAdmissionError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
 import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields, poaCreateFailureMessage } from "@/lib/poa-ux";
@@ -1432,7 +1432,8 @@ export default function NewCasePage() {
       // Yeni takip oluşturuldu - belgeler sekmesine yönlendir
       router.push(`/cases/${response.id}?tab=documents`);
     } catch (err: any) {
-      setError(formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
+      // Kabul reddi (ör. MANUAL_CASE_INSTRUMENTS_DISABLED) koda göre okunur mesaja çevrilir; taslak temizlenmez.
+      setError(formatCaseCreateAdmissionError(err) || formatCaseDueValidationError(err) || err.message || "Takip oluşturulurken bir hata oluştu");
     } finally { setLoading(false); }
   };
 
