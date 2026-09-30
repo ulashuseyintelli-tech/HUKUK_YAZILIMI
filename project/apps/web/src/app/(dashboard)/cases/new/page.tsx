@@ -69,6 +69,12 @@ import {
   restoreCaseWizardFormSelection,
   serializeCaseWizardFormSelection,
 } from "@/lib/case-wizard-form-selection";
+import {
+  consumeNewStartParam,
+  isResponsibleStillCandidate,
+  resolveFileNumberOnReopen,
+  restoreResponsibleSelection,
+} from "@/lib/case-wizard-reopen";
 import { usePreSubmitValidation } from "@/hooks/useValidation";
 import { ValidationError } from "@/lib/api";
 import { useLimitationCheck, LimitationCheckResult } from "@/hooks/useLimitationCheck";
@@ -518,6 +524,13 @@ export default function NewCasePage() {
   // M2-G3c: Dosya Sorumlusu = gerçek kişi (Lawyer/StaffMember) seçimi. Zorunlu; create sonrası PATCH ile yazılır.
   const [responsiblePerson, setResponsiblePerson] = useState<ResponsibleSelection | null>(null);
   const [draftLoaded, setDraftLoaded] = useState(false);
+  // Son otomatik dosya no önerisi: taslaktaki değer buna eşitse kullanıcı değiştirmemiştir (yeniden açılışta tazelenir);
+  // farklıysa elle girilmiştir ve EZİLMEZ. undefined = bu alanı taşımayan eski taslak. Bkz. lib/case-wizard-reopen.
+  const draftAutoFileNumberRef = useRef<string | null | undefined>(undefined);
+  const draftFileNumberRef = useRef<string>("");
+  const [autoFileNumber, setAutoFileNumber] = useState<string | null>(null);
+  // Taslaktan geri yüklenen dosya sorumlusu güncel aday listesinde doğrulanana kadar işaretli
+  const [responsibleNeedsCheck, setResponsibleNeedsCheck] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   // WSMR-A4l: dogrulanamayan kaynaklar ISIMLE gorunur; bos havuz "kayit yok"
   // olarak yorumlanamaz. Yeni denemede bayat hata TEMIZLENIR.
@@ -529,12 +542,13 @@ export default function NewCasePage() {
     if (authLoading) return;
 
     const draftScope = { tenantId: wizardTenantId, userId: wizardUserId };
-    const urlParams = new URLSearchParams(window.location.search);
-    const isNewStart = urlParams.get('new') === 'true';
+    const { isNewStart, remainingSearch } = consumeNewStartParam(window.location.search);
     
     if (isNewStart) {
-      // Yeni başlangıç - taslağı temizle ve sıfırdan başla
+      // Yeni başlangıç - taslağı temizle ve sıfırdan başla. Talep BİR KEZ işlenir: parametre adresten kaldırılır, böylece
+      // sonraki F5 kullanıcının bu arada girdiği taslağı SİLMEZ (menüden yeniden "Yeni Takip" yine yeni başlangıçtır).
       clearCaseWizardDraftState(draftScope);
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${remainingSearch}${window.location.hash}`);
       setDraftLoaded(true);
       return;
     }
@@ -554,6 +568,18 @@ export default function NewCasePage() {
       if (savedState.caseDebtors?.length > 0) setCaseDebtors(savedState.caseDebtors);
       if (typeof savedState.checkPenaltyFormationRequested === "boolean") setCheckPenaltyFormationRequested(savedState.checkPenaltyFormationRequested);
       if (typeof savedState.checkPenaltyFormationKey === "string" && savedState.checkPenaltyFormationKey) setCheckPenaltyFormationKey(savedState.checkPenaltyFormationKey);
+      // K3 seçimi, seçildiği andaki önizleme özetine bağlıdır: girdiler değişmediyse aynı özet yeniden hesaplanır ve seçim
+      // KORUNUR; değiştiyse mevcut kural seçimi düşürür.
+      if (typeof savedState.checkedCekPreviewHash === "string" && savedState.checkedCekPreviewHash) setCheckedCekPreviewHash(savedState.checkedCekPreviewHash);
+      const restoredResponsible = restoreResponsibleSelection(savedState.responsiblePerson);
+      if (restoredResponsible) {
+        setResponsiblePerson(restoredResponsible);
+        setResponsibleNeedsCheck(true);
+      }
+      draftFileNumberRef.current = typeof savedState.caseData?.fileNumber === "string" ? savedState.caseData.fileNumber : "";
+      draftAutoFileNumberRef.current = "autoFileNumber" in savedState
+        ? (typeof savedState.autoFileNumber === "string" ? savedState.autoFileNumber : null)
+        : undefined;
       if (savedState.selectedStaff?.length > 0) setSelectedStaff(savedState.selectedStaff);
       if (savedState.dues?.length > 0) setDues(savedState.dues);
       // PR-2a + eski-draft guard: claimDraftItems varsa onu kullan; yoksa ama dues varsa
@@ -608,12 +634,17 @@ export default function NewCasePage() {
       showDocumentSelector,
       checkPenaltyFormationRequested,
       checkPenaltyFormationKey,
+      checkedCekPreviewHash,
       // Seçilen takip formu (yalnız kodlar) — yeniden açılışta aynen yüklenir
       formSelection: serializeCaseWizardFormSelection(selectedForm, selectedSubForm),
+      // Dosya sorumlusu (tip + kimlik; geri yüklemede güncel aday listesinde doğrulanır)
+      responsiblePerson,
+      // Son otomatik dosya no önerisi (elle girilen numarayı ayırt etmek için)
+      autoFileNumber,
     };
 
     saveCaseWizardDraftState(stateToSave, { tenantId: wizardTenantId, userId: wizardUserId });
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, selectedForm, selectedSubForm, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, checkedCekPreviewHash, selectedForm, selectedSubForm, responsiblePerson, autoFileNumber, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
   useEffect(() => {
@@ -630,6 +661,30 @@ export default function NewCasePage() {
     }
   }, [draftLoaded, user?.id]);
   
+  // Taslaktan geri yüklenen Dosya Sorumlusu: güncel aday listesinde (aynı büro, aktif, sorumlu olabilir) yoksa seçim
+  // DÜŞER ve kullanıcıya söylenir. Liste okunamazsa seçim korunur; sunucu gönderimde ayrıca doğrular (400, dosya oluşmaz).
+  useEffect(() => {
+    if (!draftLoaded || !responsibleNeedsCheck || !responsiblePerson) return;
+    let active = true;
+    const restored = responsiblePerson;
+    api
+      .get<{ data: { type: string; id: string }[] }>("/cases/responsible-candidates")
+      .then((res) => {
+        if (!active) return;
+        if (!isResponsibleStillCandidate(restored, res?.data?.data)) {
+          setResponsiblePerson((current) => (current === restored ? null : current));
+          setError("Taslaktaki dosya operasyon sorumlusu artık seçilebilir değil (pasif veya uygun değil); lütfen yeniden seçin.");
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setResponsibleNeedsCheck(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [draftLoaded, responsibleNeedsCheck, responsiblePerson]);
+
   // Varsayılan il ayarını uygula
   useEffect(() => {
     if (settingsLoaded && settings.defaultCity && !selectedCity) {
@@ -874,7 +929,17 @@ export default function NewCasePage() {
       }
       try {
         const nextFileNumber = await api.getNextFileNumber();
-        if (nextFileNumber) setCaseData(prev => ({ ...prev, fileNumber: nextFileNumber }));
+        if (nextFileNumber) {
+          // Elle girilmiş dosya no EZİLMEZ; otomatik öneri tazelenir (öneri numara ayırmaz, benzersizlik açılışta 409)
+          const resolved = resolveFileNumberOnReopen({
+            draftFileNumber: draftFileNumberRef.current,
+            draftAutoFileNumber: draftAutoFileNumberRef.current,
+            suggestion: nextFileNumber,
+          });
+          setAutoFileNumber(resolved.autoFileNumber);
+          // Kullanıcı bu arada numarayı değiştirdiyse (taslak değerinden farklı) ona da dokunulmaz
+          setCaseData(prev => ((prev.fileNumber ?? "") === draftFileNumberRef.current ? { ...prev, fileNumber: resolved.fileNumber } : prev));
+        }
       } catch {
         // WSMR-A4l: sira numarasi alinamadiysa UYDURULMAZ ve sessiz de kalmaz.
         // Alan bos kalir (kullanici elle girebilir) ve eksiklik bandinda gorunur.
