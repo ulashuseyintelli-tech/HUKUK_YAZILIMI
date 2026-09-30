@@ -1,0 +1,69 @@
+// K3-L karar paketi R02 — GEÇİCİ sayısal ölçüm (COMMIT EDİLMEZ). Gerçek motor + CaseBalanceService + display, sahte prisma.
+import { writeFileSync } from 'node:fs';
+import { CaseBalanceService } from '../modules/interest-engine/orchestration/case-balance.service';
+import { toCaseBalanceDisplay } from '../modules/interest-engine/orchestration/case-balance-display';
+import { InterestEngineService } from '../modules/interest-engine/interest-engine.service';
+import { PolicyGateV2Service } from '../modules/interest-engine/policy-gate/policy-gate-v2.service';
+import { SegmentBuilderService } from '../modules/interest-engine/segments/segment-builder.service';
+import { AllocationEngineService } from '../modules/interest-engine/allocation/allocation-engine.service';
+import { TBK100AllocatorService } from '../modules/interest-engine/allocation/tbk100-allocator.service';
+import { ClaimPriorityService } from '../modules/interest-engine/allocation/claim-priority.service';
+import { VersionPinningService } from '../modules/interest-engine/version/version-pinning.service';
+
+const out = process.env.KP_MEASURE_OUT ?? '';
+const engine = () => new InterestEngineService(
+  new PolicyGateV2Service(), new SegmentBuilderService(),
+  new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService()),
+  {} as never, { record: () => undefined, clearAll: () => undefined } as never, new VersionPinningService(),
+);
+const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
+const item = (p: Record<string, unknown>) => ({
+  itemType: 'PRINCIPAL', currency: 'TRY', status: 'ACTIVE', metadata: null, interestType: null, interestTypeCode: null,
+  interestRate: null, interestStartDate: null, interestAccrualStatus: null, interestStartDateProvenance: null, ...p,
+  demandedAmount: p.amount,
+});
+const sabit = (id: string, amount: number, start: string) =>
+  item({ id, amount, interestType: 'SABIT', interestRate: 36.5, interestStartDate: d(start), interestAccrualStatus: 'ACCRUES' });
+const col = (id: string, amount: number, date: string) => ({ id, status: 'CONFIRMED', cancelledAt: null, amount, currency: 'TRY', date: d(date), sourceType: 'BANKA', channel: null });
+
+async function run(items: unknown[], collections: unknown[], asOf: string, overpayments: unknown[] = []) {
+  const prisma = {
+    case: { findFirst: async () => ({ interestType: null, interestStartDate: null, caseDate: null }) },
+    claimItem: { findMany: async () => items },
+    ledgerEntry: { findMany: async () => [] },
+    collection: { findMany: async () => collections },
+    collectionOverpayment: { findMany: async () => overpayments },
+    icrabotTimelineEntry: { findMany: async () => [] },
+  };
+  const svc = new CaseBalanceService(prisma as never, { getRatesForPeriod: async () => [] } as never, engine());
+  const bal = await svc.computeCaseBalance('t', 'c', asOf);
+  const disp = toCaseBalanceDisplay({ tenantId: 't', caseId: 'c', balance: bal, generatedAt: '2026-10-01T00:00:00.000Z' });
+  const r = bal.currencyResults[0]?.result ?? null;
+  const applied = Math.round((r?.allocations ?? []).reduce((s: number, st: any) =>
+    s + (st.allocations ?? []).reduce((a: number, x: any) => a + (x.amountAllocated ?? 0), 0), 0) * 100) / 100;
+  return {
+    status: disp.status, totalDue: r?.totalDue ?? null, totalInterest: r?.totalInterest ?? null, applied,
+    afterAsOf: bal.paymentsAfterAsOf ?? null, totals: disp.totals, costs: disp.costs, ancillaries: disp.ancillaries,
+  };
+}
+
+(out ? it : it.skip)('KP R02 ölçümleri', async () => {
+  const res: Record<string, unknown> = {};
+  // KP-11: aynı dosya, üç hesap tarihi seçeneği
+  const k11 = [sabit('A', 1000, '2026-01-01')];
+  const p = [col('p1', 100, '2026-05-01')];
+  res['KP11_A_today_2026-09-30'] = await run(k11, p, '2026-09-30');
+  res['KP11_B_lastPayment_2026-05-01'] = await run(k11, p, '2026-05-01');
+  res['KP11_C_chosen_2026-04-11'] = await run(k11, p, '2026-04-11');
+  // KP-7: 1.000 anapara, 1.200 tahsilat 01.01, HELD 200
+  res['KP7'] = await run([sabit('P1', 1000, '2026-01-01')], [col('c1', 1200, '2026-01-01')], '2026-01-31', [
+    { id: 'op1', collectionId: 'c1', sourceLedgerEntryId: null, amount: 200, remainingAmount: 200, currency: 'TRY', status: 'HELD' },
+  ]);
+  // KP-4: çek 10.000 (%36,5, 01.01) + çek tazminatı 1.000 (sorumluluk kaydı yok), ödemesiz, hesap tarihi 02.03
+  res['KP4_noPayment'] = await run([
+    sabit('P1', 10000, '2026-01-01'),
+    item({ id: 'CP1', itemType: 'CHECK_PENALTY', amount: 1000, interestAccrualStatus: 'NO_INTEREST' }),
+  ], [], '2026-03-02');
+  writeFileSync(out, JSON.stringify(res, null, 1), 'utf8');
+  expect(Object.keys(res).length).toBeGreaterThan(0);
+});
