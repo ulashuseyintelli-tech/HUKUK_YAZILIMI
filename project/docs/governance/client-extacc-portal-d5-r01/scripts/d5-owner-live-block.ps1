@@ -1,17 +1,24 @@
 ﻿# ═══════════ EXTACC D-5 R01 PORTAL PAROLA SIFIRLAMA + PORTAL ERİŞİM KAPANIŞI - OWNER BLOĞU (normal PowerShell; YÖNETİCİ GEREKMEZ) ═══════════
 # MODLAR
-#   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 D5-SEC pini); GO/alıcı sorulmaz; hiçbir dosya/ortam/DB yazılmaz; node çağrılmaz.
-#   -Mode QrTest     Canlı veri YOK: "şifremi unuttum" sayfasının QR'ı yerel konsolda gösterilir; owner telefonla okutur.
-#   -Mode Run        TEK SEFERLİK canlı koşum: kapılar → bağımsız pencere teyidi → canlı veri işleme onayı → ALICI ADRESİ (iki kez, yalnız
-#                    bu konsolda; hiçbir dosyaya yazılmaz) → TEK GERÇEK E-POSTA GÖNDERİM ONAYI → kapanışta adres ezme kararı → GO (yerel)
+#   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 D5-SEC pini); GO/alıcı sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu
+#                    (d5-portal-reset-live-run.js) çağrılmaz — yalnız `node --version` ile sürüm çözülür (Resolve-NodeExe). Kapılardaki
+#                    `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir; tüm modlarda aynı).
+#   -Mode QrTest     Canlı veri YOK: "şifremi unuttum" sayfasının (/portal/forgot-password) QR'ı d5-qr-test.js ile yerel konsolda gösterilir;
+#                    owner önce R05 adresini konsola yazar (canlı .env ile birebir eşleşmeli), sonra telefonla okutur. HTTP isteği yapılmaz.
+#                    QR betiğinin çıktısı geçici dizindeki extacc-d5-qrtest.log dosyasına yönlendirilir (adres içermez); başka dosya yazılmaz.
+#   -Mode Run        TEK SEFERLİK canlı koşum: kapılar → bağımsız pencere teyidi → R05 adres teyidi → canlı veri işleme onayı → ALICI ADRESİ (iki kez, yalnız
+#                    bu konsolda; hiçbir dosyaya yazılmaz) → TEK GERÇEK E-POSTA GÖNDERİM DENEMESİ ONAYI (plan=1; SMTP kabulü ve
+#                    posta kutusuna teslim ÖLÇÜLMEZ, yalnız owner beyanı) → kapanışta adres ezme kararı → GO (yerel)
 #                    → GO defteri (yalnız sha256, koşumdan ÖNCE) → koşum (1. konsol: QR + adres; 2. konsol: YENİ PAROLA) → ekran temizliği
-#                    → owner beyanı (ayrı dosya) → kanıt manifesti.
+#                    → owner beyanı (ayrı dosya) → birleşik karar (d5-combined-verdict.json: makine gözlemi + beyan AYRI alanlarda) → manifest.
 #   -Mode Recover    Yalnız kapanış (portal + token iptali + personel/dosya); `-ReceiptFile` zorunlu; GO/alıcı sorulmaz; kabul ölçütleri koşulmaz.
 # ÖN KOŞUL: canlı API dist'i R27 (D5-SEC-R01/R02/R03) olmalı — R26 (A8B17A38) ile Preflight/Run DURUR (kapatma token'ı temizlemez).
-# YAPMAZ : koşucu e-posta GÖNDERMEZ (talep owner telefonundan; ürün gönderir) · reset/change-password/belge/mesaj uçları çağrılmaz ·
+# YAPMAZ : koşucu e-posta GÖNDERMEZ (talep owner telefonundan; ürün gönderim dener, kabul/teslim ölçülmez) · reset/change-password/belge/mesaj uçları çağrılmaz ·
 #          .env/görev/Caddy/tünel/DNS değişikliği · yeniden başlatma · otomatik tekrar · otomatik Recover.
 # SIR    : DB URL, personel parolası, ALICI ADRESİ, YENİ PAROLA, GO ref ve token'lar hiçbir dosyaya yazılmaz. Yeni parola yalnız bu konsol
 #          penceresine çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi kapatın.
+# TOPOLOJİ: public portal adresi canlı .env'den okunur (biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü
+#          $env:USERPROFILE'a görelidir (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Preflight adres SORMAZ.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
 param(
   [ValidateSet('Preflight', 'QrTest', 'Run', 'Recover')] [string]$Mode = 'Preflight',
@@ -23,23 +30,22 @@ $PSNativeCommandUseErrorActionPreference = $false
 $Repo     = 'D:\Development\HUKUK_YAZILIMI\project'
 $Gov      = Join-Path $Repo 'project\docs\governance'
 $Sc       = Join-Path $Gov 'client-extacc-portal-d5-r01\scripts'
-$QrSc     = Join-Path $Gov 'client-extacc-intake-chain-r01\scripts'
 $Rel      = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23\project'
 $EnvFile  = Join-Path $Rel 'apps\api\.env'
 $LiveDist = Join-Path $Rel 'apps\api\dist\apps\api\src'
-$EvRoot   = 'C:\Users\ulastelli\Documents\CLIENT-EVIDENCE-20260911'
+$EvRoot   = Join-Path $env:USERPROFILE 'Documents\CLIENT-EVIDENCE-20260911'   # kanıt kökü kullanıcı profiline göreli (public belgeye yerel kullanıcı yolu yazılmaz)
 $GoLedger = Join-Path $EvRoot 'extacc-d5-goref-ledger.txt'
 $Api      = 'http://127.0.0.1:8080/api'
 
 # ---- PİNLER (uyuşmazlık OTOMATİK KABUL EDİLMEZ; blok durur) ----
 $ExpLiveDist = 'E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134'   # R27 ADAY dist (D5-SEC ŞART); R26 canlı A8B17A38 ile DURUR
 $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D'   # canlı .env (H5 sonrası)
-$ExpBaseUrl  = 'https://bilgi.tellihukuk.com'                                         # R05 owner kararı (PUBLIC_PORTAL_BASE_URL)
-# Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
+$ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
+# Koşucunun YÜKLEDİĞİ tüm governance dosyaları + D-5 QR denemesi ve onun yüklediği dosyalar (iki require ağacı da ölçüldü; d5-selftest T-3).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d5-r01\scripts\d5-portal-reset-live-run.js'                   = 'D9E95BB247F74E8E9966F63C88593339E193BD5679927D7F860C8090FEDC75A1'
+  'client-extacc-portal-d5-r01\scripts\d5-portal-reset-live-run.js'                   = '924617FFFBD613220A37322960A1E4CAC678D7BE1BB27121022928A4B9676094'
+  'client-extacc-portal-d5-r01\scripts\d5-qr-test.js'                                 = '248929D081290EDFEEBA41E7371EF3A3814163DBBEB7B24D2C921B74695AE0A5'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
-  'client-extacc-intake-chain-r01\scripts\extacc-qr-test.js'                          = '61FBCEE86148DEA1B268A1B883F1690ED6F3D4BBD36EAEA29783F24D487B8B10'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
   'client-h5-intake-url-r01\scripts\h5-url-live-run.js'                               = 'F2D0975DC9F9D148E4C889472FA11AE6A873A6BDF577C36657ED9BCB4FF9C359'
   'client-live-acceptance-i13-r01\scripts\i13-lib.js'                                 = '59BA7360F270AB66D0A892659A7569AFF1800D65B49415EF5FAD3B84DFEDD385'
@@ -47,10 +53,10 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'E2B80ED084E210CC5BCB1CB44C1D688A9E65074355CE4D2E5F9F7DD4F245A16B'
+$ExpPackage = 'E24FBDD3A4A7E7D6E5BCE3AFCEAF8A1E3F72ED6ACC35CDAA23E56478C9C5C852'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D5_LIVE_CONFIRM', 'D5_RECOVER_CONFIRM', 'D5_LIVE_GO_REF',
                 'D5_RUNID', 'D5_MODE', 'D5_EXPECT_DB', 'D5_EXPECT_TENANT_SLUG', 'D5_API_BASE', 'D5_EXPECT_API',
-                'D5_EXPECT_BASE_URL', 'D5_LIVE_LOGIN_PW', 'D5_RECEIPT', 'D5_EVID_FILE', 'D5_DISPLAY', 'EXA_QRTEST_URL',
+                'D5_EXPECT_BASE_URL', 'D5_LIVE_LOGIN_PW', 'D5_RECEIPT', 'D5_EVID_FILE', 'D5_DISPLAY', 'D5_QRTEST_URL', 'EXA_QRTEST_URL',
                 'D5_RECIPIENT_EMAIL', 'D5_SEND_CONFIRM', 'D5_SCRUB_RECIPIENT', 'D5_TEST_DISPLAY_SINK',
                 'D5_WAIT_MS', 'D5_POLL_MS', 'D5_VIEW_MS', 'D5_HTTP_TIMEOUT_MS', 'D5_CALL_TIMEOUT_MS', 'D5_LATE_CREATE_MS', 'D5_TOKEN_TTL_MS')
 # CANLI SÜRELER — açıkça kurulur; pencereden devralınan değerler başta ve sonda SİLİNİR (koşucu da canlı DB'de bunları zorlar).
@@ -72,6 +78,17 @@ function EnvValue([string]$key) {
   return $hits[0]
 }
 function Clear-SecretEnv { foreach ($k in $SecretEnv) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue } }
+# R05 public portal adresi (inceleme: canlı host literali public repoya yazılmaz). Biçim kapısı: https:// + yalnız alan adı (yol/port/sorgu/IP/localhost YOK).
+function Assert-PortalBaseUrl([string]$u) {
+  if ($u -notmatch '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$' -or $u -match '^https://\d+(\.\d+)+$') { Fail 'PUBLIC_PORTAL_BASE_URL biçimi https://<alan adı> olmalı (yol/port/sorgu/IP/localhost KABUL EDİLMEZ) — sıfırlama bağlantısı ve QR bu adresle üretilir' }
+  return $u
+}
+# R05 kontrolü: owner adresi konsola yazar; canlı .env değeriyle (kapılarda okunan) birebir eşleşmezse DUR (alıcı/GO sorulmaz, hiçbir şey yazılmaz).
+function Confirm-PortalBaseUrlR05 {
+  if (-not $ExpBaseUrl) { Fail 'public portal adresi çözülmedi (salt okuma kapıları koşmadı) — koşum başlamaz' }
+  $a = [string](Read-Answer 'R05 kararındaki public portal adresini yazın (https://... ; canlı .env PUBLIC_PORTAL_BASE_URL ile BİREBİR eşleşmeli)')
+  if ($a.Trim().TrimEnd('/').ToLowerInvariant() -cne $ExpBaseUrl.ToLowerInvariant()) { Fail 'owner''ın yazdığı R05 adresi canlı .env PUBLIC_PORTAL_BASE_URL ile eşleşmiyor — koşum başlamadı' }
+}
 function Read-GoRef { return (Read-Host 'EXTACC D-5 canlı GO ref (OWNER-GO-CLIENT-EXTACC-D5-YYYYMMDD-RNN)') }
 function Read-Answer([string]$q) { return (Read-Host $q) }
 function Clear-OwnerScreen { try { [Console]::Clear() } catch { }; try { [Console]::Write([char]27 + '[3J') } catch { } }
@@ -120,13 +137,13 @@ function Invoke-ReadOnlyGates {
   if ($gotDist -ne $ExpLiveDist) { Fail "CANLI DIST uyuşmuyor (D-5 için R27/D5-SEC dist ŞART; R26 ise önce yayın): $gotDist ($n dosya)" }
   $envSha = Sha $EnvFile
   if ($envSha -ne $ExpEnvSha) { Fail "CANLI .env pini uyuşmuyor: $envSha" }
-  $baseUrl = EnvValue 'PUBLIC_PORTAL_BASE_URL'
-  if ($baseUrl -cne $ExpBaseUrl) { Fail 'PUBLIC_PORTAL_BASE_URL beklenen owner kararıyla (R05) eşleşmiyor — sıfırlama bağlantısı bu adresle üretilir' }
+  $baseUrl = Assert-PortalBaseUrl (EnvValue 'PUBLIC_PORTAL_BASE_URL')
+  $script:ExpBaseUrl = $baseUrl   # R05 eşleşmesi Run/QrTest'te owner girdisiyle ölçülür (Confirm-PortalBaseUrlR05); QR ve sıfırlama bağlantısı ölçümü bu adresle yapılır
   $mailProv = EnvValue 'EMAIL_PROVIDER'
   if ($mailProv -cne 'smtp') { Fail "EMAIL_PROVIDER=$mailProv — gerçek gönderim sağlayıcısı (smtp) değil; D-5 ölçülemez" }
   $lis = @(Get-NetTCPConnection -State Listen -LocalPort 8080 -ErrorAction SilentlyContinue)
   if ($lis.Count -ne 1) { Fail "8080 dinleyici sayısı $($lis.Count) (1 bekleniyor)" }
-  $foreign = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'i1\d-|i3-sink|i3-start-api|f04-|h5-url-|extacc-|d4-portal-|d5-portal-' })
+  $foreign = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'i1\d-|i3-sink|i3-start-api|f04-|h5-url-|extacc-|d4-portal-|d5-portal-|d6-portal-|d7-portal-|d8-staff-' })
   if ($foreign.Count -gt 0) { Fail "başka kabul süreci çalışıyor: $($foreign.ProcessId -join ',')" }
   $launcher = [IO.File]::ReadAllLines('C:\Ops\hukuk\logs\api\launcher.log') | Where-Object { $_ -match 'db identity ok' } | Select-Object -Last 1
   if ($launcher -notmatch 'host=127\.0\.0\.1 port=5432 db=hukuk_db') { Fail 'canlı API DB kimliği beklenmedik' }
@@ -166,6 +183,7 @@ function Set-RunEnv([string]$runId, [string]$evDir) {
   $env:AH_PRISMA_ROOT = Join-Path $Rel 'node_modules\.pnpm\@prisma+client@5.22.0_prisma@5.22.0\node_modules\@prisma\client'
   $env:AH_BCRYPT_PATH = Join-Path $Rel 'node_modules\.pnpm\bcrypt@5.1.1\node_modules\bcrypt'
   $env:D5_RUNID = $runId; $env:D5_EXPECT_DB = 'hukuk_db'; $env:D5_API_BASE = $Api; $env:D5_EXPECT_API = $Api
+  if (-not $ExpBaseUrl) { Fail 'public portal adresi çözülmedi — koşum başlamaz' }
   $env:D5_EXPECT_BASE_URL = $ExpBaseUrl
   $rb = New-Object byte[] 18; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rb)
   $env:D5_LIVE_LOGIN_PW = 'D5S!' + [Convert]::ToBase64String($rb).TrimEnd('=').Replace('+', '-').Replace('/', '_'); $rb = $null
@@ -205,7 +223,8 @@ function Confirm-LiveDataProcessing {
   Write-Host '  Canlı DB''de YALNIZ yeni bir sentetik tenantta yazılacak: sentetik kullanıcılar, müvekkil, dosya, borçlu ve sentetik müvekkile'
   Write-Host '  ait BİR portal hesabı. Bu hesabın e-posta adresi, birazdan gireceğiniz GERÇEK alıcı adresidir (adres yalnız DB''deki bu sentetik'
   Write-Host '  hesapta durur; hiçbir kanıt/rapor/log dosyasına yazılmaz). Telefonunuzdan "şifremi unuttum" talebi gönderdiğinizde ürün bu adrese'
-  Write-Host '  TEK bir gerçek e-posta GÖNDERİR (sıfırlama bağlantısı). Sıfırlama, girişler ve kapanış portal hesabında sürüm/sayaç günceller;'
+  Write-Host '  TEK bir gerçek sıfırlama e-postası göndermeyi DENER (plan: 1; SMTP kabulü ve posta kutusuna teslim ÖLÇÜLMEZ — yalnız beyanınız).'
+  Write-Host '  Sıfırlama, girişler ve kapanış portal hesabında sürüm/sayaç günceller;'
   Write-Host '  audit ve maskelenmiş API günlük satırları oluşur; e-posta sağlayıcısının günlüğü alıcıyı içerebilir (SEC-MAIL-LOG-01, ayrı kayıt).'
   Write-Host '  Kapanış: portal hesabı pasif + sıfırlama token''ı iptal + sürüm artırılır, erişim kapalı, personel pasif, dosya CLOSED.'
   Write-Host '  Gerçek müvekkil verisine ve bildirimlere dokunulmaz. Kapanışta alıcı adresi sentetik hesapta .invalid ile EZİLEBİLİR (kararınız sorulur).'
@@ -223,9 +242,10 @@ function Read-Recipient {
 }
 function Confirm-SingleSend {
   Write-Host ''
-  Write-Host 'GERÇEK E-POSTA GÖNDERİMİ: talebi telefonunuzdan gönderdiğinizde ürün girdiğiniz adrese BİR sıfırlama e-postası yollar. Koşucu ayrıca' -ForegroundColor Yellow
-  Write-Host 'gönderimsiz bir kontrol talebi (.invalid adres, e-posta ÇIKMAZ) yapar. Bu koşumda planlanan gerçek gönderim sayısı: 1.' -ForegroundColor Yellow
-  $a = Read-Answer 'Tek gerçek gönderimi onaylıyor musunuz? Onay için büyük harfle GÖNDER yazın'
+  Write-Host 'GERÇEK E-POSTA GÖNDERİM DENEMESİ: talebi telefonunuzdan gönderdiğinizde ürün girdiğiniz adrese BİR sıfırlama e-postası göndermeyi DENER.' -ForegroundColor Yellow
+  Write-Host 'Koşucu SMTP kabulünü ve posta kutusuna teslimi ÖLÇMEZ (yalnız DB''de token üretimini görür); e-postanın gelip gelmediği beyanda sorulur. Koşucu' -ForegroundColor Yellow
+  Write-Host 'ayrıca gönderimsiz bir kontrol talebi (.invalid adres, e-posta ÇIKMAZ) yapar. Bu koşumda PLANLANAN gerçek gönderim sayısı: 1 (plan; kanıt değil).' -ForegroundColor Yellow
+  $a = Read-Answer 'Tek gerçek gönderim denemesini onaylıyor musunuz? Onay için büyük harfle GÖNDER yazın'
   if ($a -cne 'GÖNDER') { Fail 'e-posta gönderimi onaylanmadı — koşum başlamadı' }
 }
 function Read-ScrubDecision {
@@ -233,19 +253,26 @@ function Read-ScrubDecision {
   if ($a -ceq 'E') { return '1' } elseif ($a -ceq 'H') { return '0' }
   Fail 'ezme kararı E ya da H olmalı'
 }
-# Kapanış durumu kanıttan okunur; metin KOŞULSUZ "kapatıldı" demez.
+# Kapanış durumu kanıttan okunur; metin KOŞULSUZ "kapatıldı" demez. Mevcut-oturum reddi yalnız kanıtta gerekli sayıldıysa
+# (portalClose.sessionRequired = S1 · portalClose.s0Required = S0) iddia edilir; ikisi de yoksa "ÖLÇÜLMEDİ" yazılır (P5-D9 yine PASS olabilir).
 function Get-ClosureStatus([string]$evidFile, [object]$rc) {
-  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; tokenVerdict = $null; scrubVerdict = $null }
+  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; tokenVerdict = $null; scrubVerdict = $null; obsVerdict = $null; sessionRequired = $null; s0Required = $null }
   try {
     $ev = Get-Content -Raw -LiteralPath $evidFile | ConvertFrom-Json
     $d9 = ($ev.results | Where-Object { $_.id -eq 'P5-D9' }).verdict
     $st.waitVerdict = ($ev.results | Where-Object { $_.id -eq 'P5-WAIT' }).verdict
+    $st.obsVerdict = ($ev.results | Where-Object { $_.id -eq 'P5-SINGLE-USE-OBS' }).verdict
     $st.tokenVerdict = ($ev.results | Where-Object { $_.id -eq 'P5-C-TOKEN' }).verdict
     $st.scrubVerdict = ($ev.results | Where-Object { $_.id -eq 'P5-SCRUB' }).verdict
     $st.finding = $ev.productFinding
+    if ($ev.portalClose) { $st.sessionRequired = ($ev.portalClose.sessionRequired -eq $true); $st.s0Required = ($ev.portalClose.s0Required -eq $true) }
     $st.verified = ($d9 -eq 'PASS')
   } catch { $st.verified = $false }
-  $st.text = if ($st.verified) { 'Portal erişim kapanışı koşucu tarafından DOĞRULANDI (DB + sıfırlama token''ı iptal + yeni giriş + mevcut oturum reddi).' }
+  $sess = if ($st.sessionRequired -and $st.s0Required) { 'mevcut oturum reddi (S1 ve S0)' }
+          elseif ($st.sessionRequired) { 'mevcut oturum reddi (S1)' }
+          elseif ($st.s0Required) { 'mevcut oturum reddi (yalnız S0; S1 alınmadı)' }
+          else { 'mevcut oturum reddi ÖLÇÜLMEDİ (S0/S1 oturumu yok)' }
+  $st.text = if ($st.verified) { "Portal erişim kapanışı koşucu tarafından DOĞRULANDI (DB + sıfırlama token'ı iptal + yeni giriş reddi + $sess)." }
              else { "Portal erişim kapanışı DOĞRULANAMADI (çıkış $rc) — e-postadaki bağlantı ya da telefondaki erişim açık kalmış olabilir; sonucu CLIENT'a bildirin." }
   return [pscustomobject]$st
 }
@@ -264,13 +291,40 @@ function Write-OwnerDeclaration([string]$evDir, [string]$runId, $closure) {
     yeniParolaKabulEdildi     = (Read-Answer 'Konsoldaki yeni parola kabul edildi mi? (E/H/?)')
     girisSonrasiEkran         = (Read-Answer 'Yeni parolayla girişten sonra ne gördünüz? (L = dosya listesi · G = yine giriş sayfası · D = başka/hata sayfası · ?)')
     listedekiDosyaSayisi      = (Read-Answer 'Listede kaç dosya vardı? (sayı ya da ?)')
-    ikinciBaglantiDenemesi    = (Read-Answer 'Aynı bağlantıyı ikinci kez açıp denediğinizde ne oldu? (H = hata/geçersiz · S = form yeniden kabul etti · Y = denemedim · ?)')
+    ikinciBaglantiDenemesi    = (Read-Answer 'Aynı bağlantıyı ikinci kez denediğinizde ne oldu? (H = aynı bağlantıyla formu GÖNDERDİM, hata/geçersiz gördüm · A = bağlantıyı açtım ama göndermedim · S = form yeniden kabul etti (parola değişti) · Y = denemedim · ?)')
     telefonAgi                = (Read-Answer 'Telefon hangi ağdaydı? (M = mobil veri, Wi-Fi kapalı · W = Wi-Fi · ?)')
     yenilemeSonrasiEkran      = (Read-Answer 'Yeniledikten sonra ne gördünüz? (L = dosya listesi · G = giriş sayfası · D = başka/hata sayfası · Y = yenilemedim · ?)')
     atUtc = (Get-Date).ToUniversalTime().ToString('o')
   }
   $d | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evDir 'owner-declaration.json') -Encoding UTF8
   return $d
+}
+# BİRLEŞİK KARAR: makine gözlemi (P5-SINGLE-USE-OBS) ve owner beyanı (ikinciBaglantiDenemesi) AYRI alanlarda kalır; karar yalnız açık kuralla üretilir.
+# Tek kullanım: (OBS PASS ve H) → DOĞRULANDI · (OBS FAIL ve H) → DOĞRULANMADI · A/Y/? → ÖLÇÜLEMEYEN · S → ÜRÜN BULGUSU ADAYI (PASS değil).
+# E-posta teslimi: koşucu ÖLÇMEZ (token üretimi ≠ SMTP kabulü ≠ teslim); yalnız owner beyanı (epostaGeldi) raporlanır.
+function Write-CombinedVerdict([string]$evDir, [string]$runId, $closure, $decl) {
+  $obs = if ($closure -and $closure.obsVerdict) { [string]$closure.obsVerdict } else { $null }
+  $ans = if ($decl -and $null -ne $decl.ikinciBaglantiDenemesi) { [string]$decl.ikinciBaglantiDenemesi } else { '?' }
+  $su = if ($ans -ceq 'S') { 'ÜRÜN BULGUSU ADAYI' }
+        elseif ($ans -ceq 'H') { if ($obs -eq 'PASS') { 'DOĞRULANDI' } elseif ($obs -eq 'FAIL') { 'DOĞRULANMADI' } else { 'ÖLÇÜLEMEYEN' } }
+        else { 'ÖLÇÜLEMEYEN' }
+  $mail = if ($decl -and $null -ne $decl.epostaGeldi) { [string]$decl.epostaGeldi } else { '?' }
+  $md = if ($mail -ceq 'E') { 'OWNER BEYANI: GELDİ (makine ölçümü yok)' } elseif ($mail -ceq 'H') { 'OWNER BEYANI: GELMEDİ (makine ölçümü yok)' } else { 'ÖLÇÜLEMEYEN' }
+  $v = [ordered]@{
+    record = 'EXTACC-D5-COMBINED-VERDICT'; runId = $runId
+    not = 'makine ölçümü ve owner beyanı AYRI alanlardadır; birleşik karar yalnız bu iki alanın açık kuralla birleşimidir'
+    singleUse = [ordered]@{
+      machine = [ordered]@{ id = 'P5-SINGLE-USE-OBS'; verdict = $obs; anlam = 'gözlem aralığında parola hash''i/sürüm/token değişmedi — ikinci denemenin yapıldığını/reddedildiğini KANITLAMAZ' }
+      owner   = [ordered]@{ field = 'ikinciBaglantiDenemesi'; answer = $ans; secenekler = 'H = aynı bağlantıyla formu GÖNDERDİM, hata/geçersiz gördüm · A = bağlantıyı açtım ama göndermedim · S = form yeniden kabul etti (parola değişti) · Y = denemedim · ?' }
+      rule    = '(OBS PASS ve H) → DOĞRULANDI · (OBS FAIL ve H) → DOĞRULANMADI · A/Y/? → ÖLÇÜLEMEYEN · S → ÜRÜN BULGUSU ADAYI (PASS değil)'
+      verdict = $su }
+    emailDelivery = [ordered]@{
+      machine = [ordered]@{ measured = $false; anlam = 'token üretimi ≠ SMTP kabulü ≠ posta kutusuna teslim; ürün gönderim dener, koşucu kabul/teslimi ÖLÇMEZ' }
+      owner   = [ordered]@{ field = 'epostaGeldi'; answer = $mail }
+      verdict = $md }
+    atUtc = (Get-Date).ToUniversalTime().ToString('o') }
+  $v | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evDir 'd5-combined-verdict.json') -Encoding UTF8
+  return $v
 }
 
 # ---------------------------------------------------------------- RUN
@@ -280,6 +334,7 @@ function Invoke-RunMode($g) {
   Assert-LocalConsole
   $w = Read-Answer 'Bu pencere uygulamanın Terminal paneli ya da kayıt tutan bir oturum DEĞİL, bağımsız bir PowerShell penceresi mi? (E/H)'
   if ($w -cne 'E') { Fail 'bağımsız pencere teyit edilmedi — yeni parola gösterilmeyecek' }
+  Confirm-PortalBaseUrlR05
   Confirm-LiveDataProcessing
   $Recipient = Read-Recipient
   Confirm-SingleSend
@@ -304,7 +359,9 @@ function Invoke-RunMode($g) {
   [ordered]@{ record = 'EXTACC-D5-OWNER-BLOCK'; revision = 'R01'; mode = 'Run'; runId = $RunId; main = $g.head; packageDigest = $g.pkg; liveDist = $g.dist
               envSha = $g.envSha; apiPid = $g.apiPid; baseUrlHost = $g.baseHost; emailProvider = $g.emailProvider; caddyLoopback = $g.caddyLoopback; cloudflaredRunning = $g.cloudflaredRunning
               nodeExe = $g.nodeExe; nodeVersion = $g.nodeVersion; liveDataProcessingConfirmed = $true; standaloneWindowConfirmed = $true
-              recipientProvided = $true; recipientWritten = $false; singleSendConfirmed = $true; plannedRealSends = 1; scrubRequested = ($Scrub -eq '1')
+              recipientProvided = $true; recipientWritten = $false; singleSendConfirmed = $true; plannedRealSends = 1
+              plannedRealSendsNote = 'PLAN (owner onayı) — gerçekleşen gönderim/SMTP kabulü/teslim KANITI DEĞİL; koşucu e-posta teslimini ölçmez (emailDeliveryMeasured=false), yalnız owner beyanı'
+              scrubRequested = ($Scrub -eq '1')
               startedUtc = (Get-Date).ToUniversalTime().ToString('o') } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvDir 'owner-block.json') -Encoding UTF8
   $decl = $null
@@ -326,7 +383,8 @@ function Invoke-RunMode($g) {
     $GoRef = $null; $Recipient = $null
   }
   $closure = Get-ClosureStatus (Join-Path $EvDir 'd5-evidence.json') $rc
-  try { $decl = Write-OwnerDeclaration $EvDir $RunId $closure } finally { Write-Manifest $EvDir }
+  $cv = $null
+  try { $decl = Write-OwnerDeclaration $EvDir $RunId $closure; $cv = Write-CombinedVerdict $EvDir $RunId $closure $decl } finally { Write-Manifest $EvDir }
   $waitV = $closure.waitVerdict; $finding = $closure.finding
   Write-Host "EXTACC D-5 KOŞUM BİTTİ - RUNID=$RunId · çıkış=$rc" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   Write-Host '  0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/ADRES REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI · 6 PORTAL ERİŞİMİ KAPANDIĞI DOĞRULANMADI · 91 NODE BAŞLATILAMADI'
@@ -336,7 +394,12 @@ function Invoke-RunMode($g) {
     if ($decl.girisSonrasiEkran -ceq 'L') { Write-Host '  Koşucu yeni parolayla başarılı giriş görmedi ama owner dosya listesini gördüğünü beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
     else { Write-Host '  Yeni parolayla başarılı telefon girişi görülmedi — ÖLÇÜLEMEYEN.' -ForegroundColor Yellow }
   }
-  if ($decl -and $decl.ikinciBaglantiDenemesi -ceq 'S') { Write-Host '  Owner, aynı bağlantının ikinci kez kabul edildiğini beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
+  if ($cv) {
+    $suc = if ($cv.singleUse.verdict -eq 'DOĞRULANDI') { 'Green' } elseif ($cv.singleUse.verdict -eq 'ÖLÇÜLEMEYEN') { 'Yellow' } else { 'Red' }
+    Write-Host ("  TEK KULLANIM (birleşik): {0} — makine gözlemi P5-SINGLE-USE-OBS={1} (ikinci denemeyi kanıtlamaz) · owner beyanı=[{2}]" -f $cv.singleUse.verdict, $cv.singleUse.machine.verdict, $cv.singleUse.owner.answer) -ForegroundColor $suc
+    if ($cv.singleUse.verdict -eq 'ÜRÜN BULGUSU ADAYI') { Write-Host '  Owner, aynı bağlantının ikinci kez kabul edildiğini beyan etti — ÜRÜN BULGUSU ADAYI (PASS değil); CLIENT inceler.' -ForegroundColor Red }
+    Write-Host ("  E-POSTA TESLİMİ: {0} — koşucu SMTP kabulünü/teslimi ölçmez; plannedRealSends=1 bir PLANDIR, kanıt değildir." -f $cv.emailDelivery.verdict) -ForegroundColor Cyan
+  }
   if ($decl -and $decl.yenilemeSonrasiEkran -ceq 'L') { Write-Host '  Owner, kapanıştan sonra yenilemede dosya listesini gördüğünü beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
   if ($closure.scrubVerdict -and $closure.scrubVerdict -ne 'PASS') { Write-Host '  Alıcı adresi sentetik hesapta EZİLEMEDİ — Recover ile tekrar denenebilir.' -ForegroundColor Yellow }
   if ($rc -eq 5 -or $rc -eq 6) { Write-Host '  KAPANIŞ DOĞRULANMADI: -Mode Recover -ReceiptFile <makbuz> (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow }
@@ -372,10 +435,13 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
 # ---------------------------------------------------------------- QR DENEMESİ (canlı veri YOK)
 function Invoke-QrTestMode($g) {
   Assert-LocalConsole
+  Confirm-PortalBaseUrlR05
   $rc = 90
   try {
-    $env:EXA_QRTEST_URL = "$ExpBaseUrl/portal/forgot-password"
-    $rc = Invoke-Node $g.nodeExe (Join-Path $QrSc 'extacc-qr-test.js') ([IO.Path]::Combine([IO.Path]::GetTempPath(), 'extacc-d5-qrtest.log'))
+    # d5-qr-test.js: yol TAM /portal/forgot-password ve origin = beklenen origin değilse konsol açılmadan çıkış 4 (intake zincirinin QR betiği yalnız /portal/login kabul eder; burada kullanılmaz).
+    $env:D5_EXPECT_BASE_URL = $ExpBaseUrl
+    $env:D5_QRTEST_URL = "$ExpBaseUrl/portal/forgot-password"
+    $rc = Invoke-Node $g.nodeExe (Join-Path $Sc 'd5-qr-test.js') ([IO.Path]::Combine([IO.Path]::GetTempPath(), 'extacc-d5-qrtest.log'))
   } finally { Clear-SecretEnv }
   if ($rc -ne 0) { Fail "QR denemesi gösterilemedi (çıkış $rc)" }
   $a = Read-Answer 'Telefon QR''ı okudu ve "şifremi unuttum" sayfası açıldı mı? (E/H) — formu GÖNDERMEYİN'
@@ -396,7 +462,7 @@ try {
 
   if ($Mode -eq 'Preflight') {
     Assert-ExternalChain $g.chain
-    Write-Host ('PREFLIGHT GEÇTİ (salt okuma; hiçbir şey yazılmadı) · main={0} · paket={1} · dist={2} ({3} dosya; R27/D5-SEC) · .env={4} · API pid={5} · portal base host={6} · e-posta sağlayıcısı={7} · node={8}' -f `
+    Write-Host ('PREFLIGHT GEÇTİ (salt okuma; kanıt/DB/ortam/canlı dosya yazılmadı) · main={0} · paket={1} · dist={2} ({3} dosya; R27/D5-SEC) · .env={4} · API pid={5} · portal base host={6} · e-posta sağlayıcısı={7} · node={8}' -f `
       $g.head.Substring(0, 8), $g.pkg.Substring(0, 16), $g.dist.Substring(0, 16), $g.distFiles, $g.envSha.Substring(0, 16), $g.apiPid, $g.baseHost, $g.emailProvider, $g.nodeVersion) -ForegroundColor Green
     Write-Host ('  dış zincir DOĞRULANDI: 8081 yalnız 127.0.0.1 (dinleyici pid={0} = HY-Caddy servisi) · Cloudflared={1}' -f $g.chain.loopbackPids, $g.chain.cloudflaredStatus)
     $rc = 0

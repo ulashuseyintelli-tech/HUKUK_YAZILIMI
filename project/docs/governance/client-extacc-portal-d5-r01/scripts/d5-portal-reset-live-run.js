@@ -5,16 +5,21 @@
  * AKIŞ   : ADRES KAPISI (alıcı adresi hiçbir mevcut portal hesabına bağlı değil; yazma YOK) → kurulum + makbuz (alıcı adresi
  *          makbuza/kanıta YAZILMAZ) → personel ile sentetik müvekkile portal hesabı (alıcı adresi + koşucu üretimi ilk parola;
  *          gönderim yok) → koşucu oturumu S0 → [1. konsol] QR /portal/forgot-password + adres → owner TELEFONDAN bir talep
- *          gönderir → koşucu DB'de token'ı görür (P5-TOKEN-ISSUED; bu anda GERÇEK e-posta gitmiştir) → koşucu bilinmeyen
+ *          gönderir → koşucu DB'de token'ı görür (P5-TOKEN-ISSUED: token üretimi ≠ SMTP kabulü ≠ posta kutusuna teslim; ürün
+ *          gönderim DENER, kabul/teslim ÖLÇÜLMEZ — yalnız owner beyanı "e-posta geldi mi") → koşucu bilinmeyen
  *          `.invalid` adresle gönderimsiz kontrol talebi → [2. konsol] YENİ PAROLA (yalnız konsol) → owner e-postadaki
  *          bağlantıyı telefonda açar, yeni parolayı girer, BİR KEZ giriş yapar → koşucu: token tüketildi + tokenVersion arttı
  *          (P5-CONSUMED), telefon girişi (P5-WAIT), S1 (yeni parola) 201 + liste yerel/dış 200, S0 ve eski parola 401,
- *          tek kullanım (parola özeti/sürüm sabit) → kapanış.
- * KAPANIŞ: disable-user → DB pasif + erişim kapalı + resetToken/Exp NULL (P5-C-TOKEN) + sürüm S1'inkinden büyük → yeni parola
- *          girişi yerel/dış 401 → S1 korumalı uçta yerel/dış 401 → personel/dosya kapanışı → (owner kararı) alıcı adresi
- *          sentetik hesapta `.invalid` ile ezilir. E-postayı silmek kapanış DEĞİLDİR; kanıt P5-C-TOKEN'dır.
+ *          tek-kullanım GÖZLEMİ (P5-SINGLE-USE-OBS: gözlem aralığında parola özeti/sürüm/token değişmedi — ikinci denemenin
+ *          yapıldığını/reddedildiğini KANITLAMAZ; canlı tek-kullanım kabulü owner beyanıyla owner bloğunda birleştirilir) → kapanış.
+ * KAPANIŞ: disable-user → DB pasif + erişim kapalı + resetToken/Exp NULL (P5-C-TOKEN) + sürüm S1'inkinden büyük → BİLİNEN GEÇERLİ
+ *          parolayla (sıfırlama tamamlandıysa yeni parola, yoksa ilk parola; adaylar mevcut hash ile bcrypt.compare ile DOĞRULANIR,
+ *          eşleşen yoksa P5-C3 ÖLÇÜLEMEYEN — yanlış parolayla alınan 401 kapanış kanıtı DEĞİLDİR) giriş yerel/dış 401 →
+ *          S1 korumalı uçta yerel/dış 401 (S1 yoksa ölçülemeyen) → S0 mevcutsa S0 korumalı uçta yerel/dış 401 (P5-C4L-S0/P5-C4D-S0)
+ *          → personel/dosya kapanışı → (owner kararı) alıcı adresi sentetik hesapta `.invalid` ile ezilir.
+ *          E-postayı silmek kapanış DEĞİLDİR; kanıt P5-C-TOKEN'dır.
  * ÖN KOŞUL: canlı dist D5-SEC-R01 içermeli (kapanış token temizler; reset isActive kapılı). Owner bloğu dist pinini doğrular.
- * YAPMAZ : e-postayı koşucu GÖNDERMEZ (talep owner telefonundan; ürün gönderir) · reset-password/change-password çağırmaz ·
+ * YAPMAZ : e-postayı koşucu GÖNDERMEZ (talep owner telefonundan; ürün gönderim dener, kabul/teslim ölçülmez) · reset-password/change-password çağırmaz ·
  *          alıcı adresini/parolaları/token'ları/GO'yu hiçbir log-kanıta yazmaz · 503 teşhisi.
  * ÇIKIŞ  : 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF/ADRES REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA ·
  *          6 PORTAL ERİŞİMİ KAPANDIĞI DOĞRULANMADI (öncelik 6 > 5 > 7 > 1 > 2 > 3 > 0).
@@ -69,7 +74,20 @@ async function portalState(prisma, clientId, expectEmail) {
   return { exists: !!u, emailMatches: u ? (expectEmail ? u.email.toLowerCase() === String(expectEmail).toLowerCase() : null) : null, emailIsScrubbed: u ? /\.invalid$/i.test(u.email) : null,
     isActive: u ? u.isActive : null, tokenVersion: u ? u.tokenVersion : null, loginCount: u ? u.loginCount : null, lastLoginAt: u && u.lastLoginAt ? u.lastLoginAt.toISOString() : null,
     pwDigest: u ? crypto.createHash('sha256').update(u.passwordHash).digest('hex').slice(0, 16) : null, // parola özeti DEĞİL: hash'in özeti (değişim tespiti)
-    hasResetToken: u ? u.resetToken !== null : null, resetTokenExp: u && u.resetTokenExp ? u.resetTokenExp.toISOString() : null, hasPortalAccess: c ? c.hasPortalAccess : null, _email: u ? u.email : null };
+    hasResetToken: u ? u.resetToken !== null : null, resetTokenExp: u && u.resetTokenExp ? u.resetTokenExp.toISOString() : null, hasPortalAccess: c ? c.hasPortalAccess : null, _email: u ? u.email : null,
+    _pwHash: u ? u.passwordHash : null }; // yalnız kapanışta bcrypt.compare için; kanıta yazılmadan silinir
+}
+const stripPrivate = (st) => { if (st) { delete st._email; delete st._pwHash; } };
+/** Kapanış kimlik bilgisi: aday parolalar (bilinen sırayla) mevcut hash ile bcrypt.compare ile doğrulanır; eşleşen yoksa null. */
+async function pickKnownCreds(bcrypt, candidates, pwHash) {
+  const tried = [];
+  for (const c of candidates || []) {
+    if (!c || !c.password) continue;
+    let ok = false; try { ok = !!(pwHash && bcrypt && (await bcrypt.compare(c.password, pwHash))); } catch (e) { ok = false; }
+    tried.push(`${c.label}:${ok ? 'EŞLEŞTİ' : 'eşleşmedi'}`);
+    if (ok) return { creds: { email: c.email, password: c.password }, source: c.label, tried };
+  }
+  return { creds: null, source: null, tried };
 }
 const caseListMatches = (body, caseId, fileNumber) => Array.isArray(body) && body.length === 1 && body[0] && body[0].id === caseId && body[0].fileNumber === fileNumber;
 
@@ -121,22 +139,39 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
   const vdesc = 'DB: tokenVersion, S1 oturumunun verildiği (ya da kapanış öncesi) sürümden BÜYÜK';
   if (!ref) R.unmeasured('P5-C2V', vdesc, `hesap zaten kapalıydı ve verilme sürümü bilinmiyor — mevcut sürüm (${st1.tokenVersion}) kendisiyle karşılaştırılmaz`);
   else R.check('P5-C2V', vdesc, typeof st1.tokenVersion === 'number' && st1.tokenVersion > ref.value, `${ref.source}=${ref.value} → şimdiki=${st1.tokenVersion}`);
-  const tmo = P.D5_HTTP_TIMEOUT_MS; let creds = o.creds || null;
+  const tmo = P.D5_HTTP_TIMEOUT_MS; let creds = null; let noCredsWhy = 'kimlik bilgisi yok — ölçülemez';
+  // Kapanış girişi YALNIZ BİLİNEN GEÇERLİ parolayla ölçülür: adaylar (sıfırlama tamamlandıysa yeni parola, hesap 'ok' açıldıysa ilk parola)
+  // kapanış sonrası mevcut hash ile bcrypt.compare ile doğrulanır. Eşleşen yoksa P5-C3 ÖLÇÜLEMEYEN (yanlış parolayla 401 kapanış kanıtı DEĞİLDİR).
+  if (o.credsCandidates && o.credsCandidates.length) {
+    const pick = await pickKnownCreds(o.bcrypt, o.credsCandidates, st1._pwHash); res.closeCreds = { source: pick.source, verifiedAgainstHash: !!pick.creds, tried: pick.tried };
+    creds = pick.creds; if (!creds) noCredsWhy = `bilinen geçerli parola YOK — adaylar mevcut hash ile eşleşmedi (${pick.tried.join(', ') || 'aday yok'})`;
+  } else if (o.noCredsWhy) { noCredsWhy = o.noCredsWhy; res.closeCreds = { source: null, verifiedAgainstHash: false, tried: [] }; }
   if (!creds && o.credsForClosed && flags) { try { creds = await o.credsForClosed(st1); res.measureCreds = 'pasif hesaba YALNIZ ölçüm için yeni rastgele parola yazıldı (hesap pasif kaldı)'; } catch (e) { res.measureCreds = `ölçüm parolası kurulamadı: ${errText(e, 120)}`; } }
   const nl = creds ? await L.AH.httpJson('POST', `${base}/portal/login`, { body: { email: creds.email, password: creds.password }, timeoutMs: tmo }) : null;
   const nd = creds ? await L.AH.httpJson('POST', `${origin}/api/portal/login`, { body: { email: creds.email, password: creds.password }, timeoutMs: tmo }) : null;
-  const judge401 = (id, desc, r) => { if (!r) return R.unmeasured(id, desc, 'kimlik bilgisi yok — ölçülemez'); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı'); if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, `HTTP ${r.status}`); };
-  judge401('P5-C3L', 'kapanış sonrası YENİ portal girişi (yeni parola) YEREL 401', nl); judge401('P5-C3D', 'kapanış sonrası YENİ portal girişi (yeni parola) DIŞ HTTPS 401', nd);
+  const judge401 = (id, desc, r) => { if (!r) return R.unmeasured(id, desc, noCredsWhy); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı'); if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, `HTTP ${r.status} (parola=${(res.closeCreds && res.closeCreds.source) || 'ölçüm parolası'})`); };
+  judge401('P5-C3L', 'kapanış sonrası portal girişi (BİLİNEN GEÇERLİ parola) YEREL 401', nl); judge401('P5-C3D', 'kapanış sonrası portal girişi (BİLİNEN GEÇERLİ parola) DIŞ HTTPS 401', nd);
   const el = o.portalToken ? await L.AH.httpJson('GET', `${base}/portal/cases`, { token: o.portalToken, timeoutMs: tmo }) : null;
   const ed = o.portalToken ? await L.AH.httpJson('GET', `${origin}/api/portal/cases`, { token: o.portalToken, timeoutMs: tmo }) : null;
-  const judgeSession = (id, desc, r) => { if (!r) return R.unmeasured(id, desc, o.noSessionWhy || 'koşumda S1 oturumu alınmadı — ölçülemez'); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı'); if (r.status === 200) { res.productFinding = 'ÜRÜN BULGUSU: portal erişimi kapatıldıktan sonra sıfırlama SONRASI oturum korumalı uca erişmeye devam ediyor'; return R.check(id, desc, false, 'HTTP 200 — S1 OTURUMU KAPANMADI (ürün bulgusu)'); } if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, `HTTP ${r.status}`); };
-  judgeSession('P5-C4L', 'kapanış sonrası S1 (sıfırlama SONRASI) oturumu korumalı uçta YEREL 401', el); judgeSession('P5-C4D', 'kapanış sonrası S1 oturumu korumalı uçta DIŞ HTTPS 401', ed);
+  const judgeSession = (id, desc, r, label, why) => { if (!r) return R.unmeasured(id, desc, why); if (r.indeterminate) return R.unmeasured(id, desc, 'yanıt alınamadı'); if (r.status === 200) { const f = `ÜRÜN BULGUSU: portal erişimi kapatıldıktan sonra ${label} oturumu korumalı uca erişmeye devam ediyor`; res.productFinding = res.productFinding ? `${res.productFinding} · ${f}` : f; return R.check(id, desc, false, `HTTP 200 — ${label} OTURUMU KAPANMADI (ürün bulgusu)`); } if (r.status === 503 || r.status === 429) return R.unmeasured(id, desc, `HTTP ${r.status} — neden UNKNOWN`); return R.check(id, desc, r.status === 401, `HTTP ${r.status}`); };
+  const s1Why = o.noSessionWhy || 'koşumda S1 oturumu alınmadı — ölçülemez';
+  judgeSession('P5-C4L', 'kapanış sonrası S1 (sıfırlama SONRASI) oturumu korumalı uçta YEREL 401', el, 'S1', s1Why); judgeSession('P5-C4D', 'kapanış sonrası S1 oturumu korumalı uçta DIŞ HTTPS 401', ed, 'S1', s1Why);
+  // S0 (sıfırlama ÖNCESİ, ilk parola oturumu) yalnız Run'da mevcuttur; varsa reddi AYRI satırlarda ölçülür. S1 yoksa mevcut-oturum reddi S0 ile ölçülür.
+  const s0Rows = 's0Token' in o;
+  if (s0Rows) {
+    const el0 = o.s0Token ? await L.AH.httpJson('GET', `${base}/portal/cases`, { token: o.s0Token, timeoutMs: tmo }) : null;
+    const ed0 = o.s0Token ? await L.AH.httpJson('GET', `${origin}/api/portal/cases`, { token: o.s0Token, timeoutMs: tmo }) : null;
+    const s0Why = o.s0Why || 'S0 oturumu alınmadı — ölçülemez';
+    judgeSession('P5-C4L-S0', 'kapanış sonrası S0 (sıfırlama ÖNCESİ) oturumu korumalı uçta YEREL 401', el0, 'S0', s0Why); judgeSession('P5-C4D-S0', 'kapanış sonrası S0 oturumu korumalı uçta DIŞ HTTPS 401', ed0, 'S0', s0Why);
+  }
   const st2 = await portalState(prisma, receipt.clientId, o.recipient);
   R.check('P5-C5', 'HTTP ölçümlerinden SONRA DB hâlâ kapalı (pasif + erişim kapalı + token yok + sürüm geri gitmedi)', st2.isActive === false && st2.hasPortalAccess === false && st2.hasResetToken === false && st2.tokenVersion === st1.tokenVersion, `isActive=${st2.isActive} token=${st2.hasResetToken} sürüm=${st2.tokenVersion}`);
-  const httpIds = ['P5-C3L', 'P5-C3D', 'P5-C4L', 'P5-C4D'];
+  const httpIds = ['P5-C3L', 'P5-C3D', 'P5-C4L', 'P5-C4D'].concat(s0Rows ? ['P5-C4L-S0', 'P5-C4D-S0'] : []);
   res.dbClosed = v('P5-C2') === 'PASS' && v('P5-C-TOKEN') === 'PASS' && v('P5-C2V') !== 'FAIL' && v('P5-C5') === 'PASS';
   res.httpFailed = httpIds.some((id) => v(id) === 'FAIL'); res.httpVerified = httpIds.every((id) => v(id) === 'PASS'); res.httpUnmeasured = httpIds.filter((id) => v(id) === 'UNMEASURED');
-  const required = ['P5-C3L', 'P5-C3D'].concat(o.sessionRequired === false ? [] : ['P5-C4L', 'P5-C4D']);
+  // Gerekli satırlar: yeni giriş reddi her zaman; S1 reddi S1 alındıysa; S0 reddi S0 alındıysa (S1 yoksa mevcut-oturum reddi S0 ile sağlanır).
+  const required = ['P5-C3L', 'P5-C3D'].concat(o.sessionRequired === false ? [] : ['P5-C4L', 'P5-C4D']).concat(s0Rows && o.s0Token ? ['P5-C4L-S0', 'P5-C4D-S0'] : []);
+  res.required = required; res.sessionRequired = o.sessionRequired !== false; res.s0Required = !!(s0Rows && o.s0Token);
   res.ok = res.dbClosed && v('P5-C2V') === 'PASS' && !res.httpFailed && required.every((id) => v(id) === 'PASS') && !res.productFinding;
   return res;
 }
@@ -174,9 +209,10 @@ async function runMode() {
   const initialPw = 'D5i!' + crypto.randomBytes(12).toString('base64url'); addSecret(initialPw); // hiç gösterilmez; sıfırlamayla değişecek
   const newPw = 'D5n!' + crypto.randomBytes(12).toString('base64url'); addSecret(newPw);          // yalnız 2. konsolda
   const fileNumber = `I3-${runId}`;
-  const out = { record: 'EXTACC-D5-PORTAL-RESET-LIVE-RUN', revision: 'R01', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [], recipient: '[GİZLİ — kanıta yazılmaz]' };
+  const out = { record: 'EXTACC-D5-PORTAL-RESET-LIVE-RUN', revision: 'R01', runId, apiBase: base, expectedOrigin: origin, params: P, calledEndpoints: [], recipient: '[GİZLİ — kanıta yazılmaz]',
+    emailDeliveryMeasured: false, emailDeliveryNote: 'token üretimi ≠ SMTP kabulü ≠ posta kutusuna teslim; ürün gönderim dener, kabul/teslim koşucu tarafından ÖLÇÜLMEZ — yalnız owner beyanı (e-posta geldi mi)' };
   const call = (m, p) => out.calledEndpoints.push(`${m} ${p.replace(base, '<API>').replace(origin, '<DIŞ>')}`);
-  let receipt = null; let fatal = null; let session = null; let s0 = null; let s1 = null; let stopped = null; let displayed = false; let createOutcome = null; let issuedVersion = null;
+  let receipt = null; let fatal = null; let session = null; let s0 = null; let s1 = null; let stopped = null; let displayed = false; let createOutcome = null; let issuedVersion = null; let consumed = false;
   try {
     // ADRES KAPISI — hiçbir yazmadan önce
     const gate = await recipientGate(prisma, recipient); out.recipientGate = { portalMatches: gate.portalMatches, staffMatches: gate.staffMatches };
@@ -215,16 +251,16 @@ async function runMode() {
       const v = (id) => (R.rows.find((r) => r.id === id) || {}).verdict;
       if (!stopped && !['P5-03L', 'P5-04D'].every((id) => v(id) === 'PASS')) stopped = 'gösterim öncesi kontroller PASS değil — konsol GÖSTERİLMEDİ, e-posta talebi BEKLENMEDİ';
     }
-    // ---- 1. KONSOL: talep (GERÇEK e-posta ürün tarafından gönderilecek)
+    // ---- 1. KONSOL: talep (ürün gerçek e-posta göndermeyi DENER; kabul/teslim koşucu ölçümü değildir)
     let tokenSeen = false; let baseline = null;
     if (!stopped) {
       baseline = await portalState(prisma, st.clientId, recipient);
-      { const qr = DISPLAY.renderQr(`${origin}/portal/forgot-password`); await showOwner(['============ EXTACC D-5 (1/2) — YALNIZ OWNER EKRANI ============', 'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR "şifremi unuttum" sayfasını açar.', '', ...qr.lines, '', `${origin}/portal/forgot-password`, '', 'Bu adrese giriş için kullanacağınız e-posta adresi (aynı yazın):', `    ${recipient}`, '', 'Formu BİR KEZ gönderin. Bu adımda ürün gerçek bir e-posta GÖNDERİR (tek gönderim).', `Bekleme: en fazla ${Math.round(P.D5_WAIT_MS / 60000)} dk.`]); }
+      { const qr = DISPLAY.renderQr(`${origin}/portal/forgot-password`); await showOwner(['============ EXTACC D-5 (1/2) — YALNIZ OWNER EKRANI ============', 'TELEFON: Wi-Fi KAPALI, mobil veri AÇIK, gizli sekme. QR "şifremi unuttum" sayfasını açar.', '', ...qr.lines, '', `${origin}/portal/forgot-password`, '', 'Bu adrese giriş için kullanacağınız e-posta adresi (aynı yazın):', `    ${recipient}`, '', 'Formu BİR KEZ gönderin. Bu adımda ürün gerçek bir e-posta göndermeyi DENER (plan: 1); kabul/teslim ölçülmez, e-postanın gelip gelmediği beyanda sorulur.', `Bekleme: en fazla ${Math.round(P.D5_WAIT_MS / 60000)} dk.`]); }
       displayed = true; R.check('P5-DISP1', 'talep sayfası + adres yalnız yerel konsola gösterildi', true, g.display === 'conout' ? 'CONOUT$' : 'gösterimsiz izole test');
       const t0 = Date.now();
       for (;;) { const s = await portalState(prisma, st.clientId, recipient); if (s.hasResetToken) { tokenSeen = true; out.tokenIssued = { atMs: Date.now() - t0, expIso: s.resetTokenExp }; break; } if (Date.now() - t0 >= P.D5_WAIT_MS) break; await sleep(P.D5_POLL_MS); }
       if (tokenSeen) { const exp = Date.parse(out.tokenIssued.expIso); const ttlOk = Math.abs(exp - Date.now() - P.D5_TOKEN_TTL_MS) < 5 * 60000;
-        R.check('P5-TOKEN-ISSUED', 'talep sonrası DB\'de sıfırlama token\'ı (sha256) + süre ≈ 1 saat — bu anda ürün e-postayı göndermiştir (gönderim koşucu ölçümü DEĞİL)', ttlOk, `~${Math.round(out.tokenIssued.atMs / 1000)} sn · süre farkı ${Math.round((exp - Date.now()) / 60000)} dk`); }
+        R.check('P5-TOKEN-ISSUED', 'talep sonrası DB\'de sıfırlama token\'ı (sha256) + süre ≈ 1 saat — token üretimi ≠ SMTP kabulü ≠ posta kutusuna teslim; ürün gönderim dener, kabul/teslim ÖLÇÜLMEZ (yalnız owner beyanı: e-posta geldi mi)', ttlOk, `~${Math.round(out.tokenIssued.atMs / 1000)} sn · süre farkı ${Math.round((exp - Date.now()) / 60000)} dk · gönderim/teslim ölçülmedi`); }
       else { R.unmeasured('P5-TOKEN-ISSUED', 'talep sonrası token', 'pencere içinde token görülmedi (talep gönderilmedi / hesap bulunamadı / gönderim başarısız — DB\'den ayrılamaz)'); stopped = 'talep görülmedi — 2. konsol GÖSTERİLMEDİ'; }
       // Bilinmeyen adres (gönderimsiz): dış cevap aynı; bu koşumun tenant'ında değişiklik yok; audit sayısı ayrı; hız sınırı sayacı artar (raporlanır)
       call('POST', `${base}/portal/forgot-password (bilinmeyen .invalid adres)`);
@@ -233,9 +269,9 @@ async function runMode() {
       R.check('P5-UNKNOWN', 'bilinmeyen adrese talep: aynı başarı cevabı; bu koşumun hesabında token durumu değişmedi; audit sayısı AYRI raporlandı; hız sınırı sayacı +1 (süreç içi)', !unk.indeterminate && unk.status < 300 && after.hasResetToken === tokenSeen, `HTTP ${unk.status} · audit ${audit0}→${audit1} · token=${after.hasResetToken}`);
     }
     // ---- 2. KONSOL: yeni parola
-    let consumed = false; let phoneLogin = false;
+    let phoneLogin = false;
     if (!stopped) {
-      await showOwner(['', '============ EXTACC D-5 (2/2) — YENİ PAROLA (yalnız bu ekran) ============', 'Telefonda gelen e-postadaki bağlantıyı açın ve YENİ parola olarak şunu girin:', `    ${newPw}`, '', `Sonra bu parolayla BİR KEZ giriş yapın; listede YALNIZ ${fileNumber} görünmeli.`, 'Ardından AYNI bağlantıyı ikinci kez açıp deneyin (hata beklenir) — beyanda sorulur.']);
+      await showOwner(['', '============ EXTACC D-5 (2/2) — YENİ PAROLA (yalnız bu ekran) ============', 'Telefonda gelen e-postadaki bağlantıyı açın ve YENİ parola olarak şunu girin:', `    ${newPw}`, '', `Sonra bu parolayla BİR KEZ giriş yapın; listede YALNIZ ${fileNumber} görünmeli.`, 'Ardından AYNI bağlantıyı ikinci kez açıp formu GÖNDERİN (hata/geçersiz beklenir) — koşucu bunu ölçemez; beyanda sorulur (H/A/S/Y).']);
       R.check('P5-DISP2', 'yeni parola yalnız yerel konsola gösterildi', true, 'CONOUT$/none');
       const t1 = Date.now(); let s = null;
       // Sıfırlamanın TAMAMLANMASI parola hash'inin değişmesiyle görülür; token/sürüm sonuçları AYRI yargılanır (kusur ölçülemeyen değil FAIL olur).
@@ -255,14 +291,19 @@ async function runMode() {
         const op = await L.AH.httpJson('POST', `${origin}/api/portal/login`, { body: { email: recipient, password: initialPw }, timeoutMs: P.D5_HTTP_TIMEOUT_MS });
         R.check('P5-OLDPW', 'eski parola ile giriş dış 401', op.status === 401, `HTTP ${op.status}`);
         await sleep(P.D5_VIEW_MS); const z = await portalState(prisma, st.clientId, recipient);
-        R.check('P5-SINGLE-USE', 'inceleme süresi boyunca parola hash\'i ve sürüm DEĞİŞMEDİ (aynı bağlantı ikinci kez işe yaramadı)', z.pwDigest === s.pwDigest && z.tokenVersion === s.tokenVersion && z.hasResetToken === false, `hash aynı=${z.pwDigest === s.pwDigest} sürüm=${z.tokenVersion}`);
-      } else { for (const [id, d] of [['P5-CONSUMED', 'sıfırlama tamamlandı'], ['P5-WAIT', 'telefon girişi'], ['P5-S1-OPEN', 'S1'], ['P5-SINGLE-USE', 'tek kullanım']]) R.unmeasured(id, d, 'sıfırlama pencere içinde tamamlanmadı — token kapanışta iptal edilecek (P5-C-TOKEN)'); }
-    } else { for (const [id, d] of [['P5-DISP2', 'yeni parola gösterimi'], ['P5-CONSUMED', 'sıfırlama'], ['P5-WAIT', 'telefon girişi'], ['P5-S1-OPEN', 'S1'], ['P5-SINGLE-USE', 'tek kullanım']]) R.unmeasured(id, d, stopped); }
+        // GÖZLEM: yalnız "gözlem aralığında hash/sürüm/token değişmedi". İkinci denemenin yapıldığını ya da reddedildiğini KANITLAMAZ;
+        // canlı tek-kullanım kabulü owner beyanı (H/A/S/Y) ile owner bloğunda birleştirilir (d5-combined-verdict.json).
+        R.check('P5-SINGLE-USE-OBS', `gözlem aralığında (${Math.round(P.D5_VIEW_MS / 1000)} sn) parola hash'i, sürüm ve token DEĞİŞMEDİ — ikinci denemenin yapıldığını/reddedildiğini KANITLAMAZ (owner beyanıyla birleştirilir)`, z.pwDigest === s.pwDigest && z.tokenVersion === s.tokenVersion && z.hasResetToken === false, `gözlem: hash aynı=${z.pwDigest === s.pwDigest} sürüm=${z.tokenVersion} token=${z.hasResetToken} · ikinci deneme ölçülmedi`);
+      } else { for (const [id, d] of [['P5-CONSUMED', 'sıfırlama tamamlandı'], ['P5-WAIT', 'telefon girişi'], ['P5-S1-OPEN', 'S1'], ['P5-SINGLE-USE-OBS', 'tek kullanım gözlemi']]) R.unmeasured(id, d, 'sıfırlama pencere içinde tamamlanmadı — token kapanışta iptal edilecek (P5-C-TOKEN)'); }
+    } else { for (const [id, d] of [['P5-DISP2', 'yeni parola gösterimi'], ['P5-CONSUMED', 'sıfırlama'], ['P5-WAIT', 'telefon girişi'], ['P5-S1-OPEN', 'S1'], ['P5-SINGLE-USE-OBS', 'tek kullanım gözlemi']]) R.unmeasured(id, d, stopped); }
   } catch (e) { fatal = errText(e, 300); }
   finally {
     if (con) { try { await DISPLAY.clear(con); } catch (e) { out.displayClearError = errText(e, 120); } DISPLAY.close(con); }
-    try { out.portalClose = receipt ? await closePortal(R, prisma, base, origin, receipt, P, { session, creds: createOutcome ? { email: recipient, password: newPw } : null, portalToken: s1, issuedVersion, recipient,
-      sessionRequired: !!s1, createUncertain: createOutcome === 'attempted' || createOutcome === 'uncertain', noSessionWhy: 'S1 oturumu alınmadı (sıfırlama tamamlanmadı) — sıfırlama sonrası oturum ölçülemez' }) : { ok: true, nothingCreated: true }; } catch (e) { out.portalClose = { ok: false, reason: errText(e, 200) }; }
+    // Kapanış kimlik bilgisi: sıfırlama tamamlandıysa yeni parola, hesap 'ok' açıldıysa ilk parola (her aday mevcut hash ile doğrulanır); ikisi de bilinmiyorsa P5-C3 ÖLÇÜLEMEYEN.
+    const credsCandidates = [].concat(consumed ? [{ label: 'yeni parola', email: recipient, password: newPw }] : []).concat(createOutcome === 'ok' ? [{ label: 'ilk parola', email: recipient, password: initialPw }] : []);
+    try { out.portalClose = receipt ? await closePortal(R, prisma, base, origin, receipt, P, { session, bcrypt, credsCandidates, noCredsWhy: `bilinen geçerli parola YOK (sıfırlama tamamlandı=${consumed}, oluşturma=${createOutcome}) — ölçülemez`,
+      portalToken: s1, issuedVersion, recipient, sessionRequired: !!s1, s0Token: s0, s0Why: 'S0 oturumu alınmadı — ölçülemez',
+      createUncertain: createOutcome === 'attempted' || createOutcome === 'uncertain', noSessionWhy: 'S1 oturumu alınmadı (sıfırlama tamamlanmadı) — sıfırlama sonrası oturum ölçülemez; mevcut-oturum reddi S0 ile ölçülür' }) : { ok: true, nothingCreated: true }; } catch (e) { out.portalClose = { ok: false, reason: errText(e, 200) }; }
     try { out.closure = receipt ? await closeAccess(prisma, receipt) : { ok: true, nothingToClose: true }; } catch (e) { out.closure = { ok: false, reason: errText(e, 200) }; }
     if (receipt) R.check('U-CLOSE', 'personel kullanıcıları pasif (tokenVersion++) + Case CLOSED', !!(out.closure && out.closure.ok), JSON.stringify(out.closure || {}));
     out.scrubRequested = process.env.D5_SCRUB_RECIPIENT === '1';
@@ -271,7 +312,7 @@ async function runMode() {
     out.productFinding = out.portalClose ? out.portalClose.productFinding || null : null; out.forbiddenEndpointCalled = out.calledEndpoints.some((c) => FORBIDDEN.some((re) => re.test(c)));
     try { const after = receipt ? await isolationFingerprint(prisma, [receipt.tenantId, receipt.foreignTenantId]) : null; out.isolationAfter = after; const b = out.isolationBefore;
       if (after && b) R.check('U-ISO', 'bu koşumun iki sentetik tenantı DIŞINDAKİ tenantlarda kullanıcı/müvekkil SAYILARI önce/sonra aynı (yalnız sayı)', after.digest === b.digest, `önce=${b.digest}/${b.tenants} sonra=${after.digest}/${after.tenants}`); else R.unmeasured('U-ISO', 'sayım dağılımı', 'ölçülemedi'); } catch (e) { R.unmeasured('U-ISO', 'sayım dağılımı', `okunamadı: ${errText(e, 120)}`); }
-    if (out.portalClose && out.portalClose.before) { delete out.portalClose.before._email; } if (out.portalClose && out.portalClose.after) { delete out.portalClose.after._email; }
+    if (out.portalClose) { stripPrivate(out.portalClose.before); stripPrivate(out.portalClose.after); }
     const s = R.summary(`EXTACC D-5 PORTAL SIFIRLAMA (runId=${runId})`);
     out.fatal = fatal; out.stopped = stopped; out.displayed = displayed; out.createOutcome = createOutcome; out.pass = s.pass; out.fail = s.fail; out.unmeasured = s.unmeasured;
     out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed })); out.recovery = recoveryAdvice(out, receipt ? receiptPath : null);
@@ -308,7 +349,7 @@ async function recoverMode() {
   R.check('U-CLOSE', 'personel kullanıcıları pasif + Case CLOSED', !!(out.closure && out.closure.ok), JSON.stringify(out.closure || {}));
   out.scrubRequested = process.env.D5_SCRUB_RECIPIENT === '1';
   if (out.scrubRequested) { try { out.scrubDone = (await scrubRecipient(prisma, receipt, receipt.runId)) && (await portalState(prisma, receipt.clientId)).emailIsScrubbed === true; } catch (e) { out.scrubDone = false; } R.check('P5-SCRUB', 'alıcı adresi .invalid ile ezildi (owner kararı)', !!out.scrubDone, `yapıldı=${!!out.scrubDone}`); }
-  if (out.portalClose && out.portalClose.before) delete out.portalClose.before._email; if (out.portalClose && out.portalClose.after) delete out.portalClose.after._email;
+  if (out.portalClose) { stripPrivate(out.portalClose.before); stripPrivate(out.portalClose.after); }
   const s = R.summary(`EXTACC D-5 KURTARMA (runId=${receipt.runId})`); out.results = R.rows.map((r) => ({ id: r.id, verdict: r.verdict, observed: r.observed }));
   out.exitCode = recoverExitCode(out, s); out.recovery = recoveryAdvice(out, receiptPath);
   if (out.recovery.gerekli && out.exitCode === 3) out.recovery.adim = 'Recover TEKRARLANMAZ: DB kapalı; ölçülemeyen satırlar Run kanıtıyla değerlendirilir.';
