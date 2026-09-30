@@ -1,6 +1,6 @@
 # R27 — YAYIN PAKETİ (R03 revizyonu; dosya adı korunur) · D-5 güvenlik düzeltmeleri · API + WEB · canlı taban + dar aday
 
-> **DURUM: HAZIR — CANLIYA UYGULANMADI.** Yayın, migration, gerçek e-posta gönderimi ve canlı kabul koşumları bu paketle
+> **DURUM: R27 CANLIDA (2026-09-30)** — owner B0 PASS · B1 `YAYIN PASS` · B2 8/8; kayıt `record/R27-LIVE-RECORD-R01.md`. Aşağıdaki "CANLIYA UYGULANMADI" ifadeleri yayın ÖNCESİ revizyon notlarıdır. Migration, gerçek e-posta gönderimi ve canlı kabul koşumları bu paketle
 > **yetkilendirilmez**; her biri için ayrı owner GO gerekir (§10). Bu belge inceleme paketidir; "hazırlık tamamlandı" demek
 > canlı güvenlik düzeltmesi ya da H1–H8 hizmet kabulü tamamlandı demek DEĞİLDİR.
 > Yetki ayrımı: **(Y1) yayın** = B1 · **(Y2) migration** = bu adayda YOK (A/C seçilirse ayrı GO) · **(Y3) e-posta** = D-5 Run'da
@@ -72,7 +72,7 @@ türetimsiz "N ölçüt" ifadesi kullanılmaz). Sayaç (x/y) CLIENT programını
 | SEC-STAFF-XFF-01 | **AÇIK** — owner-yerel kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | D-5 sayaç ayrımı (#2832) bu bulguyu **kapatmaz**. Bu yayın için engelleyici **değil** (gerekçe kısıtlı kayıtta). Kapanış ayrı iş: ek ölçüm + ayrı yama |
 | SEC-API-BIND-01 | AÇIK — kısıtlı kayıt | Yayın kapsamı dışı; yayın değiştirmez |
 | SEC-MAIL-LOG-01 | AÇIK — kısıtlı kayıt | D-5 canlı koşumunda alıcı adresi sağlayıcı günlüğüne düşebilir; owner onay metnine yazıldı |
-| SEC-PORTAL-ADMIN-MSG-01 | **AÇIK** — kısıtlı kayıt (2026-09-29; R03-b kısıtlı değerlendirmesi 2026-09-30, aday `1b758d29` kaynağı); ayrıntı public repoya YAZILMAZ | Kısıtlı değerlendirme alt konuları **ayrı** tutar (ayrıntı kısıtlı kayıtta) ve roller, tenant sınırı, kenar erişimi ve D-7 ilişkisini yanıtlar. Kaynakta tenant aşımı yolu bulunmadı; D-7 personel aktörü ADMIN olmayan kanonik yükseltilmiş kullanıcıdır (`P7-00`) ve kaydın rol bazlı yazma alt konusundan **yararlanmaz**. **Kaynak incelemesi canlı kenar koruması kanıtı DEĞİLDİR**; personel giriş ucunun kenarda kapalı olması mevcut personel oturumlarının durumunu göstermez; D-8'in token'sız 403 ölçümü ret katmanını kanıtlamaz. **Karar: KOŞULLU** — iki canlı salt-okuma önkoşulu (**P-1** etkili kenar yapılandırması, **P-2** API erişim sınırı; §8 W0-d) doğrulanmadan "yayın için engel değil" denmez; biri tutmaz ya da ölçülemezse karar owner'a döner. Aday bu uçları değiştirmez (destekleyici olgu, gerekçe değil). Kayıt açılması **giderildi demek değildir**; yetki politikası bu pakette uygulanmaz — ayrı ürün düzeltmesi + owner kararı (§10 K-11; "yalnız ADMIN" seçilirse D-7 personel aktörü yeniden doğrulanır) |
+| SEC-PORTAL-ADMIN-MSG-01 | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | **Karar özeti:** owner koşullu risk kabulüyle R27 yayınlandı (2026-09-30); önkoşul ölçümleri ve gerekçe kısıtlı kayıtta. Kayıt **giderilmedi**; ürün düzeltmesi ayrı iş + owner kararı (§10 K-11) |
 | ClaimItem ACCRUES kullanıcı yolu (OFFICE authz notu) | AÇIK, ayrı iş | Adayda yok |
 | #2830 eski PR gövdesi / commit `02276b68` geçmişi | owner kararı bekliyor (§10) | — |
 
@@ -404,10 +404,10 @@ Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini öl�
 
 | # | İş | Bağımlılık | Durum |
 |---|---|---|---|
-| W1 | Bu paket PR'ı (#2837; docs + betikler) merge | owner onayı (2026-09-30, sohbet: "plana göre merge edilebiliyorsa merge et") + son head'de CI/CodeQL yeşil + `main` CI boş | koşullar sağlanınca ajan merge eder (`--match-head-commit`); sonuç kanıt paketindeki `PR-HEADS-AND-ORDER.json`'da |
-| W0 | R03/R03-b dar düzeltme PR'ı (durdurma/geri dönüş hata yolları + ölçüm hatası ≠ kapalı + D-8 katman ipucu + koşullu SEC kararı) | **(a)** gerçek taban kopyası + aday dist ile harness son baytlarla **26/26**, iki kez: `-ChildShell powershell.exe` (WinPS 5.1, varsayılan) **ve** `-ChildShell pwsh.exe` (PowerShell 7) · **(b)** yeni yayın sha'sıyla canlı salt-okuma SelfTest (A/B/C; yeni boş-sonuç ölçümü dahil) · **(c)** owner incelemesi + merge · **(d)** SEC-PORTAL-ADMIN-MSG-01 önkoşulları: **P-1** canlı etkili kenar yapılandırması, **P-2** API erişim sınırı (salt okuma; ayrıntı kısıtlı kayıtta) | taslak PR; bu turda merge edilmez; (a)(b)(d) owner makinesinde |
-| W2 | R27 yayını B0→B2 | W0 + W1 + owner GO Y1 | bekliyor |
-| W3 | Pin güncelleme PR'ı (#2838) | W2 (canlı dist R27) | taslak; merge yalnız B1 + B2 PASS **sonrası** (öncesinde eski paketlerin Preflight'ları canlı R26'da DUR verir) |
+| W1 | Bu paket PR'ı (#2837; docs + betikler) merge | owner onayı + CI/CodeQL yeşil + `main` CI boş | **TAMAM** — `429a0f5b` |
+| W0 | R03/R03-b dar düzeltme PR'ı (#2849) | (a) harness 26/26 iki kabuk · (b) canlı salt-okuma SelfTest · (c) owner incelemesi + merge · (d) kısıtlı önkoşullar | **TAMAM** — (a) WinPS 5.1 26/26 + PS7 26/26 (ilk V1 kaydı FAIL korunur; birleşik inceleme) · (b) V2 PASS (A/B negatif kontrolleri koşulmadı) · (c) MERGED `32927399` · (d) kısıtlı kayıtta; ayrıntı `record/R27-LIVE-RECORD-R01.md` §3 |
+| W2 | R27 yayını B0→B2 | W0 + W1 + owner GO Y1 | **TAMAM** — B0 PASS · B1 `YAYIN PASS` 18:03:46Z · B2 8/8 (`record/R27-LIVE-RECORD-R01.md`) |
+| W3 | Pin güncelleme PR'ı (#2838) | W2 (canlı dist R27) | **TAMAM** — MERGED `59620165` (B1 + B2 PASS sonrası) |
 | W4 | D-5 canlı kabul | W2, W3 + §10 D-5 kararları + GO | paket hazır (koşucu öz-testi 41/41 · QR 23/23 · blok 90/90 ×2 kabuk) |
 | W5 | D-8 makine sondası + telefon | W2 (R26'da da koşabilir) | sonda hazır (öz-test 15/15) |
 | W6 | D-6 / D-7 canlı koşumu | W2 + ayrı GO'lar | paketler hazır (D-6 51/51 · blok 64/64; D-7 41/41 · blok 58/58) |
@@ -439,7 +439,7 @@ Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini öl�
 | K-6 | K3/OFFICE kapsamı ve 3 migration'ın yayın zamanı | R27 sonrası ayrı aday | R27 sonrası | hayır |
 | K-7 | D-6 belge onay/ret akışının canlı kabulü (koşucu `approve/reject` uçlarını bilinçli çağırmaz) | ayrı paket iste / D-6 kapsamıyla yetin | D-6 GO'sundan önce | hayır |
 | K-8 | D-7 sonrası sentetik tenantta kalan mesaj/bildirim satırları | "saklandı" kaydıyla kabul (önerilen; ürün silme ucu yok) / elle DB silme (önerilmez) | D-7 GO'sundan önce | D-7 kapanış ifadesi için evet |
-| K-11 | SEC-PORTAL-ADMIN-MSG-01 ürün düzeltmesi (alt konular ayrı; kısıtlı kayıt) | yetki kuralını belirle + ayrı yama / ertele | herhangi bir zaman | kural seçimi yayını engellemez; **ancak** P-1/P-2 (§8 W0-d) doğrulanmadan yayın kararı verilmez |
+| K-11 | SEC-PORTAL-ADMIN-MSG-01 ürün düzeltmesi (kısıtlı kayıt) | yetki kuralını belirle + ayrı yama / ertele | herhangi bir zaman | yayın için hayır (owner koşullu risk kabulü, 2026-09-30); kayıt açık kalır |
 | K-12 | Hizmet kabulü imza metni ön koşulları: B-2 (H1), KB-03 / H2-10 (H2), H4-08 gerçek yayın ayağı (H4), H7-05b · K-1 · PSUS (H7) | her kalem: "kabul dışı / sonraki iş" ya da ayrı karar | hizmet kabulü imzasından önce | hizmet kabulü için evet |
 | K-13 | H5 ayrı hizmet-kabulü satırı (B-I11-2 hükmü) | hüküm ver | H5 hizmet kabulünden önce | H5 hizmet kabulü için evet |
 | K-14 | Sahte-süreç deseninin **eski paket** koşucu adlarına genişletilmesi (R25–R26 yayın/geri alma/kabul, H5 sahte-API/owner/pin, İ1x owner blokları, İ3 koşucu/başlatıcı, C4 canlı, T-pencere adları) | genişlet (ayrı küçük değişiklik + envanter testi + yeniden inceleme) / mevcut kapsamla yetin (taban sürümle **aynı** sınır; B0/B1 ön koşulu "pencerede başka koşum yok") | Y1'den önce | hayır (kapı tabandan gevşek değil; genişletme bu talimatın "yalnız yanlış pozitifi düzelt" kapsamını aşar) |
