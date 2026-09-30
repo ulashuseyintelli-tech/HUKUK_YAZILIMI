@@ -4,7 +4,7 @@
 - **Dayanak:** owner GO 2026-09-30 "#2846 kapanışı ve kalan işlerin somutlaştırılması", madde 2 ve 4.
 - **Kaynak kod:** origin/main `626362b8` (D2-b1 #2846 dahil).
 - **Kapsam dışı (bu pakette yapılmadı):** hesap politikası değişikliği, canlı DB erişimi, geçmiş kayıt düzeltmesi, bayrak açma.
-- **R02 (01.10.2026):** `K3L-D2-DECISION-PACKAGE-R02.md` bu paketi üç gruba indirir (KP-6 önceki kararla — ADR-014 MUST-3/I-15 — çözülen gruba geçti; KP-1 owner yönüyle birlikte karar grubunda kalır; KP-7 pilot etiketine daraldı), TK-1…TK-4 düzeltme PR'larını (#2859, #2860) ve 3095 md. 1 kayıt düzeltmesini (yürürlük 31/7/2026) taşır. Bu dosya kanıt ve ayrıntı kaydı olarak yerinde kalır.
+- **R02 (01.10.2026):** `K3L-D2-DECISION-PACKAGE-R02.md` bu paketi üç gruba indirir (KP-6 önceki kararla — ADR-014 MUST-3/I-15 — çözülen gruba geçti; KP-1 owner yönüyle birlikte karar grubunda kalır; KP-7 pilot etiketine daraldı), TK-1…TK-4 düzeltmelerini (#2859 MERGED `d4f2b9fc`, #2860 MERGED `2507f73c`) ve 3095 md. 1 kayıt düzeltmesini (yürürlük 31/7/2026) taşır. Bu dosya kanıt ve ayrıntı kaydı olarak yerinde kalır.
 
 ## 0. Yöntem ve kanıt sınırı
 

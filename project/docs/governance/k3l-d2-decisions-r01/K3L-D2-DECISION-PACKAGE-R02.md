@@ -26,10 +26,10 @@
 | KP-9 | Kanıtsız varsayılan yetkinin onayı | **3** | Ürün / yetki (R01 §6.2). |
 | KP-10 | Geçmiş dosya etki sayımı için erişim | **3** | Erişim GO'su (R01 §5; ek sorgular §6). |
 | KP-11 | Hesap tarihi varsayılanı | **3** | Ürün (COL/OD-02). |
-| TK-1 | Oran türe göre süzülmüyordu | **2** | **Düzeltme PR #2859** |
-| TK-2 | Eksik oran → sessiz 0 / komşu oran, "OK" | **2** | **Düzeltme PR #2859.** Hedef davranış ADR-014 MUST-7 ("missing required rate" → fail closed) ve RD01. |
-| TK-3 | Hesap tarihinden sonraki ödeme bakiyeden düşüyordu | **2** | **Düzeltme PR #2860** |
-| TK-4 | Brüt tahsilatta bekletilen kısım iki kez | **2** | **Düzeltme PR #2860** |
+| TK-1 | Oran türe göre süzülmüyordu | **2** | **MERGED `d4f2b9fc`** (#2859, 01.10.2026 01:50 TSİ) |
+| TK-2 | Eksik oran → sessiz 0 / komşu oran, "OK" | **2** | **MERGED `d4f2b9fc`** (#2859, 01.10.2026 01:50 TSİ). Hedef davranış ADR-014 MUST-7 ("missing required rate" → fail closed) ve RD01. |
+| TK-3 | Hesap tarihinden sonraki ödeme bakiyeden düşüyordu | **2** | **MERGED `2507f73c`** (#2860, 01.10.2026 02:14 TSİ) |
+| TK-4 | Brüt tahsilatta bekletilen kısım iki kez | **2** | **MERGED `2507f73c`** (#2860, 01.10.2026 02:14 TSİ) |
 | TK-5 | `totalPaidAmount`/`allocatedPaidAmount` tahsis edileni değil yüz değeri taşıyor | **2 (KP-7 ile birlikte)** | Hedef anlam ALC-AUTH-1B'de karara bağlı. Ancak pilot etiketi bu alanı gösterdiği için değer değişikliği etiketi doğrudan değiştirir; KP-7 kararıyla birlikte uygulanır. |
 | TK-6 | Masraf/fer'i kanonik mahsup simülasyonunda yok | **2 + 3** | Hedef karara bağlı (MUST-3/I-15, doc-27; KP-6 = grup 1). Uygulama yalnız KP-4 ve KP-5 seçimlerini bekler. |
 | TK-7 | İstenmiş faiz sessizce dışlanıyor | **2 + 3** | Görünür tanı (engelsiz) teknik: grup 2. Engel kuralı (dönem çakışması) KP-3: grup 3. |
@@ -52,10 +52,10 @@
 
 | # | Önce (sentetik) | Sonra | PR |
 |---|---|---|---|
-| TK-1 | YASAL kalem A (%73) + SABIT kalem B (%36,5): A faizi 121,00, toplam 2.180 "OK" | A 180,00, toplam 2.239 "OK" | #2859 |
-| TK-2 | Oran boşluğu → 121,00 veya 100,00 "OK"; oran yok → 0 faiz "OK" | Anapara görünür, faiz `null`, durum UNAVAILABLE, gerekçe kodu `RATE_COVERAGE_MISSING`, eksik dönem tanıda | #2859 |
-| TK-3 | Hesap tarihi 11.04, ödeme 01.05: 1.000 | 1.100; ödeme "hesap tarihinden sonra" bilgisinde (`PAYMENTS_AFTER_AS_OF_EXCLUDED`) | #2860 |
-| TK-4 | 1.200 tahsilat, HELD 200: brüt 1.400 | 1.200 | #2860 |
+| TK-1 | YASAL kalem A (%73) + SABIT kalem B (%36,5): A faizi 121,00, toplam 2.180 "OK" | A 180,00, toplam 2.239 "OK" | #2859 `d4f2b9fc` |
+| TK-2 | Oran boşluğu → 121,00 veya 100,00 "OK"; oran yok → 0 faiz "OK" | Anapara görünür, faiz `null`, durum UNAVAILABLE, gerekçe kodu `RATE_COVERAGE_MISSING`, eksik dönem tanıda | #2859 `d4f2b9fc` |
+| TK-3 | Hesap tarihi 11.04, ödeme 01.05: 1.000 | 1.100; ödeme "hesap tarihinden sonra" bilgisinde (`PAYMENTS_AFTER_AS_OF_EXCLUDED`) | #2860 `2507f73c` |
+| TK-4 | 1.200 tahsilat, HELD 200: brüt 1.400 | 1.200 | #2860 `2507f73c` |
 
 **Korunan işleyiş (GO madde 4):**
 - Tahsilat, borçlu ve sorumluluk kaydı değişmez ve reddedilmez; kanonik yol salt okuma.
@@ -308,4 +308,4 @@ Taslak ayrı bir ajanla çürütülmeye çalışıldı: yeniden hesap, kaynak ve
 - "Takip tarihi alanı yok" ifadesi "kalem düzeyinde yok" yapıldı.
 - 3095 geçiş ifadesi düzeltildi; SHA-256 değerleri eklendi.
 - SQL-5 ve SQL-6'ya sınır notları eklendi.
-- Açık PR'lar "düzeltme PR'ı" olarak yazıldı.
+- Açık PR'lar önce "düzeltme PR'ı" olarak yazıldı; merge sonrası MERGED SHA'larıyla güncellendi (#2859 `d4f2b9fc`, #2860 `2507f73c`).
