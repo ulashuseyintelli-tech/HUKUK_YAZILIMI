@@ -4,6 +4,7 @@
 - **Dayanak:** owner GO "K3-L teknik hesap kusurları ve kararların tamamlanması", madde 2–5.
 - **İlişki:** R01 (`K3L-D2-DECISION-PACKAGE-R01.md`) kanıt ve ayrıntı kaydı olarak yerinde kalır. R02 sınıflamayı üç gruba indirir, teknik düzeltmeleri kaydeder ve 3095 kaydını düzeltir.
 - **Bağımsız inceleme:** R02 taslağı ayrı bir ajanla çürütülmeye çalışıldı; bulgular işlendi (§8).
+- **R03 (01.10.2026):** `K3L-D2-DECISION-PACKAGE-R03.md` bu paketten sonra kapananları (TK-5, TK-7 görünürlük, TK-9, TK-10, TK-11; KP-2, KP-3 ilk aşama, KP-7, KP-8, KP-9 durum gösterimi, KP-11), TK-6 / TK-12 / TK-13'ün durumunu ve owner cevabı gereken kalan soruları taşır. Bu dosyadaki "uygulanmadı" ifadeleri o tarihten önceki durumu anlatır.
 - **Bu belge KP seçeneklerinin toplu kabulü DEĞİLDİR.** "Öneri" sütunu owner kararını bekler.
 - **Kapsam dışı:** canlı yayın, bayrak açma, canlı DB erişimi, geçmiş kayıt düzeltmesi, UYAP gönderimi, hizmet kabulü.
 
