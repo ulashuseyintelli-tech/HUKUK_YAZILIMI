@@ -146,7 +146,16 @@ function fixture(index: number, description: string, input: FixtureInput): RichI
   const assemblerDiagnostics: string[] = [];
   if (accrual === 'NO_INTEREST') {
     authoritySource = 'NO_INTEREST'; authority = 'NO_INTEREST'; outcome = 'NO_BUCKET';
-    if (rich || legacy) assemblerDiagnostics.push('NO_INTEREST_AUTHORITY_CONFLICT');
+    // K3-L TK-9: assembler çelişki tanımı yazma sözleşmesiyle (validateInterestAccrualState) hizalı — tür/kod yanında
+    // oran, başlangıç tarihi ve provenance da çelişki (envanterin NO_INTEREST_CONFLICT sınıfıyla aynı alan kümesi).
+    const claimProvenance = input.interestStartDateProvenance === undefined
+      ? 'MANUAL_LAWYER_CONFIRMED' : input.interestStartDateProvenance;
+    if (rich || legacy || rate !== null || start || claimProvenance) assemblerDiagnostics.push('NO_INTEREST_AUTHORITY_CONFLICT');
+    // K3-L TK-9 (PR-A0 A2): anapara faizsizlik beyanının gerekçe/onaylayan/zaman denetimi eksikse çözülemeyen
+    const audit = input.noInterestAudit;
+    if ((input.itemType ?? 'PRINCIPAL') === 'PRINCIPAL' && !(audit?.reason && audit.confirmedById && audit.confirmedAt)) {
+      assemblerDiagnostics.push('NO_INTEREST_AUDIT_INCOMPLETE');
+    }
   } else if (rich) {
     authoritySource = 'CLAIMITEM_RICH'; authority = rich;
     if (legacy && MIRROR[rich] !== legacy) assemblerDiagnostics.push('INTEREST_TYPE_MIRROR_DRIFT');
