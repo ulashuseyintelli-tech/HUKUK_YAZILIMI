@@ -3,7 +3,7 @@ import type {
   BalanceDisplayShadowDiffReport,
   ShadowBucketDiff,
 } from '@/lib/api/balance-shadow-diff';
-import type { CaseCalculationResult } from '@/hooks/useCaseCalculation';
+import type { CaseCalculationResult, TahsilatGosterimi } from '@/hooks/useCaseCalculation';
 
 type SearchParamsLike = Pick<URLSearchParams, 'get'>;
 
@@ -14,6 +14,11 @@ export type GuardedPrimaryDisplaySource =
 
 export interface GuardedPrimaryDisplayPolicy {
   featureFlagEnabled?: boolean;
+  /**
+   * K3-L KP-7: birlestirilecek legacy ozetin hesap tarihi. Verilirse rapor ayni tarihli degilse (ya da tarih
+   * dogrulanamiyorsa) kanonik deger legacy ozetle BIRLESTIRILMEZ — farkli tarih kapsami mutabik gosterilmez.
+   */
+  legacyAsOfDate?: string;
   scenarioSupported?: boolean;
   paymentDesignationRequired?: boolean;
   unsupportedPeriodicObligation?: boolean;
@@ -32,16 +37,21 @@ interface CanonicalPrimaryAmounts {
   principalAmount: number;
   totalDebtAmount: number;
   outstandingAmount: number;
+  /** K3-L TK-5: borca uygulanan (borca fiilen tahsis edilen). "Toplam tahsilat" DEGIL. */
   totalPaidAmount: number;
   interestAmount: number;
+  /** K3-L KP-7: Toplam tahsilat / Borca uygulanan / Dagitim bekleyen (sunucu degerleri). */
+  tahsilatGosterimi: TahsilatGosterimi;
 }
 
 type CanonicalDisplayedAmountField =
   | 'totalPaidAmount'
+  | 'grossReceivedAmount'
   | 'interestAmount';
 
 const CANONICAL_DISPLAYED_AMOUNT_FIELDS: readonly CanonicalDisplayedAmountField[] = [
   'totalPaidAmount',
+  'grossReceivedAmount',
   'interestAmount',
 ];
 
@@ -86,7 +96,8 @@ export type GuardedSummaryRuntimeBoundaryRowId =
   | 'faizSegmentleri'
   | 'takipTarihi'
   | 'kalemTuru'
-  | 'mahsupDetayPanelContext';
+  | 'mahsupDetayPanelContext'
+  | 'tahsilatGosterimi';
 
 export interface GuardedSummaryRuntimeBoundaryDecision {
   rowId: GuardedSummaryRuntimeBoundaryRowId;
@@ -121,6 +132,8 @@ const GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS: readonly GuardedSummar
   'toplamTahsilat',
   'kalanBorc',
   'kalanAnapara',
+  // K3-L KP-7: Toplam tahsilat / Borca uygulanan / Dagitim bekleyen blogu yalniz kanonik pilotta uretilir
+  'tahsilatGosterimi',
 ];
 
 // ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsaminda daraltildi -- canonical cost/attorneyFee
@@ -258,6 +271,38 @@ export function getGuardedPrimaryDisplayDate(searchParams: SearchParamsLike): st
   return searchParams.get('guardedPrimaryDate') ?? undefined;
 }
 
+const toCents = (value: number): number => Math.round((value + Number.EPSILON) * 100);
+
+/**
+ * K3-L KP-7: kanonik tahsilat blogu yalniz tutarliysa kullanilir — ayni para birimi, raporla ayni hesap tarihi,
+ * ust toplamlarla birebir (Toplam tahsilat = grossReceivedAmount, Borca uygulanan = totalPaidAmount) ve
+ * Toplam = Borca uygulanan + Dagitim bekleyen. Aksi halde null (istemci duzeltme/hesap YAPMAZ).
+ */
+export function canonicalReceipts(report: BalanceDisplayShadowDiffReport): TahsilatGosterimi | null {
+  const canonical = report.totals.canonical;
+  const receipts = canonical?.receipts;
+  if (!canonical || !receipts || !report.asOfDate) return null;
+  if (receipts.asOfDate !== report.asOfDate || receipts.currency !== canonical.currency) return null;
+  const { receivedAmount, appliedToDebtAmount, notAppliedAmount, allocationHeldAmount, afterAsOfExcludedAmount } = receipts;
+  const amounts: unknown[] = [receivedAmount, appliedToDebtAmount, notAppliedAmount, allocationHeldAmount, afterAsOfExcludedAmount];
+  if (!amounts.every(isFiniteNumber)) return null;
+  const applied = appliedToDebtAmount as number;
+  const notApplied = notAppliedAmount as number;
+  if (!isFiniteNumber(canonical.grossReceivedAmount) || toCents(canonical.grossReceivedAmount) !== toCents(receivedAmount)) return null;
+  if (!isFiniteNumber(canonical.totalPaidAmount) || toCents(canonical.totalPaidAmount) !== toCents(applied)) return null;
+  if (toCents(receivedAmount) !== toCents(applied) + toCents(notApplied)) return null;
+  return {
+    hesapTarihi: receipts.asOfDate,
+    paraBirimi: receipts.currency,
+    toplamTahsilat: receivedAmount,
+    borcaUygulanan: applied,
+    dagitimBekleyen: notApplied,
+    mahsubuBekleyen: allocationHeldAmount,
+    hesapTarihindenSonra: afterAsOfExcludedAmount,
+    masrafFeriUyarisi: report.sources.canonicalBalanceDisplay.diagnostics.includes('UNAPPLIED_MAY_BELONG_TO_COSTS'),
+  };
+}
+
 export function canonicalPrimaryAmounts(
   report: BalanceDisplayShadowDiffReport,
 ): CanonicalPrimaryAmounts | null {
@@ -276,6 +321,9 @@ export function canonicalPrimaryAmounts(
   if (!isFiniteNumber(outstandingAmount)) return null;
   if (!isFiniteNumber(totalPaidAmount)) return null;
   if (!isFiniteNumber(interestAmount)) return null;
+  // K3-L KP-7: "Toplam tahsilat" yalniz tutarli tahsilat blogundan gosterilir
+  const tahsilatGosterimi = canonicalReceipts(report);
+  if (!tahsilatGosterimi) return null;
 
   return {
     principalAmount: principal.canonicalAmount,
@@ -283,6 +331,7 @@ export function canonicalPrimaryAmounts(
     outstandingAmount,
     totalPaidAmount,
     interestAmount,
+    tahsilatGosterimi,
   };
 }
 
@@ -334,6 +383,13 @@ export function evaluateGuardedPrimaryDisplayPilot(
     reasonCodes.push(...report.cutoverReadiness.blockers);
   }
 
+  // K3-L KP-7: farkli tarih kapsamindaki rakamlar mutabik gibi gosterilmez — rapor, birlestirilecek legacy ozetle
+  // ayni hesap tarihinde degilse (ya da tarih dogrulanamiyorsa) legacy'ye dusulur.
+  if (policy.legacyAsOfDate !== undefined) {
+    if (!report.asOfDate) reasonCodes.push('AS_OF_DATE_UNVERIFIED');
+    else if (report.asOfDate !== policy.legacyAsOfDate) reasonCodes.push('AS_OF_DATE_MISMATCH');
+  }
+
   // Render-veri-mevcudiyeti kontrolü — "güvenli mi" değil "gösterecek veri var mı" sorusu,
   // domain-safety'den ayrı, frontend'de kalması gereken bir kaygı.
   const displayedAmountFailures = invalidDisplayedCanonicalAmountFields(report);
@@ -341,6 +397,10 @@ export function evaluateGuardedPrimaryDisplayPilot(
     reasonCodes.push('CANONICAL_PRINCIPAL_UNAVAILABLE');
     if (displayedAmountFailures.length > 0) {
       reasonCodes.push('CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE');
+    }
+    // K3-L KP-7: tahsilat blogu yok/tutarsiz → "Toplam tahsilat" kanonikten gosterilemez
+    if (!canonicalReceipts(report)) {
+      reasonCodes.push('CANONICAL_RECEIPTS_UNAVAILABLE');
     }
   }
 
@@ -419,6 +479,10 @@ const UNSUPPORTED_SCENARIO_REASON_CODES = new Set([
 const DATA_UNAVAILABLE_REASON_CODES = new Set([
   'CANONICAL_PRINCIPAL_UNAVAILABLE',
   'CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE',
+  // K3-L KP-7: tahsilat blogu yok ya da rapor bu hesap tarihine ait degil
+  'CANONICAL_RECEIPTS_UNAVAILABLE',
+  'AS_OF_DATE_MISMATCH',
+  'AS_OF_DATE_UNVERIFIED',
   'FINAL_DEBT_STATES_MISSING',
   // HesapOzetiPanel bu ikisini normalde loading/error kisa-devresiyle ayrica ele alir; burada
   // yalniz getGuardedPrimaryAuthorityCopy()'yi o kisa-devreyi atlayarak dogrudan cagiran olasi
@@ -456,6 +520,8 @@ export function buildGuardedPrimaryCalculationResult(
   // ALC-AUTH-4A-IMPL: PARTIAL_CANONICAL_LEGACY_TOTALS de (CANONICAL_PRIMARY_CANDIDATE gibi)
   // bir sonuc uretir -- yalniz LEGACY_CALCULATION_SUMMARY icin null donulur.
   if (decision.primarySource === 'LEGACY_CALCULATION_SUMMARY') return null;
+  // K3-L KP-7 (savunma): rapor bu legacy ozetin hesap tarihine ait degilse birlestirme yapilmaz
+  if (report.asOfDate !== legacy.hesapTarihi) return null;
 
   const amounts = canonicalPrimaryAmounts(report);
   if (!amounts) return null;
@@ -481,7 +547,9 @@ export function buildGuardedPrimaryCalculationResult(
           sonBorc: amounts.outstandingAmount,
           kalanBorc: amounts.outstandingAmount,
         }),
-    toplamTahsilat: amounts.totalPaidAmount,
+    // K3-L KP-7: "Toplam tahsilat" = dosyaya fiilen giren (borca uygulanan ve dagitim bekleyen ayri satirlar)
+    toplamTahsilat: amounts.tahsilatGosterimi.toplamTahsilat,
+    tahsilatGosterimi: amounts.tahsilatGosterimi,
     kalanAnapara: amounts.principalAmount,
   };
 }

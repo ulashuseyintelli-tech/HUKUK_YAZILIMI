@@ -38,7 +38,9 @@ export function isCostItemType(itemType: string): boolean {
   return COST_ITEM_TYPES.has(itemType);
 }
 
-const INTEREST_ITEM_TYPES: ReadonlySet<string> = new Set(['INTEREST', 'PRE_INTEREST', 'POST_INTEREST']);
+/** INTEREST kategorisindeki kalem türleri (K3-L KP-3: legacy hesap özeti de bu listeyle okur — ikinci kopya yok). */
+export const INTEREST_CLAIM_ITEM_TYPES = ['INTEREST', 'PRE_INTEREST', 'POST_INTEREST'] as const;
+const INTEREST_ITEM_TYPES: ReadonlySet<string> = new Set(INTEREST_CLAIM_ITEM_TYPES);
 const TAX_ITEM_TYPES: ReadonlySet<string> = new Set(['TAX_KDV', 'TAX_BSMV', 'TAX_KKDF']);
 
 export type ClaimItemCategory = 'PRINCIPAL' | 'INTEREST' | 'COST' | 'ANCILLARY' | 'TAX' | 'UNKNOWN';

@@ -99,7 +99,14 @@ export type BalanceDisplayDiagnosticCode =
   | 'INTEREST_UNRESOLVED'
   | 'NON_ACCRUING_NOT_SIMULATED'
   /** K3-L TK-3: hesap tarihinden sonra tarihli ödemeler bu bakiyeye girmedi (bilgi; kayıt değişmedi). */
-  | 'PAYMENTS_AFTER_AS_OF_EXCLUDED';
+  | 'PAYMENTS_AFTER_AS_OF_EXCLUDED'
+  /** K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz kaydı var ve mevcut hesaba DAHİL EDİLMEDİ (toplama eklenmedi). */
+  | 'CLAIMED_INTEREST_NOT_INCLUDED'
+  /**
+   * K3-L KP-7: borca uygulanmayan ödeme var ve dosyada masraf/fer'i var — kanonik mahsup masraf ve fer'iyi henüz
+   * içermediği için (TK-6) bu tutarın bir kısmı kurala göre masraf/fer'iye ait olabilir.
+   */
+  | 'UNAPPLIED_MAY_BELONG_TO_COSTS';
 
 export interface BalanceDisplayBucket {
   code: BalanceDisplayBucketCode;
@@ -133,8 +140,10 @@ export interface BalanceDisplayTotals {
    * gelen toplam para" DEĞİLDİR. Borç tamamen kapandıktan sonra gelen bir ödeme hiçbir
    * kategoriye tahsis edilemediği için burada GÖRÜNMEZ — o tutar `heldOverpaymentAmount`'ta
    * ayrıca yer alır (bkz. `allocatedPaidAmount`/`grossReceivedAmount`, aynı anlam açık
-   * isimle tekrarlanır). Geriye dönük uyumluluk için DEĞERİ değişmedi, yalnız isim/anlam
-   * belirsizliği bu yorum + yeni alanlarla giderildi.
+   * isimle tekrarlanır).
+   * K3-L TK-5 (owner KP-7, 2026-10-01): DEĞER bu tanıma getirildi = Σ allocations[].allocations[].amountAllocated
+   * (önceden tahsis adımı olan ödemelerin YÜZ değeriydi; kısmi fazla ödemede bekletilen kalan da sayılıyordu).
+   * Anlam DEĞİŞMEDİ; değer anlamla hizalandı. "Toplam tahsilat" bu alan DEĞİL → `grossReceivedAmount` / `receipts`.
    */
   totalPaidAmount: number | null;
   outstandingAmount: number | null;
@@ -149,16 +158,62 @@ export interface BalanceDisplayTotals {
    * ALC-AUTH-1B: `totalPaidAmount` ile AYNI değer, yalnız isim belirsizliğini gidermek
    * için eklendi — "borca fiilen tahsis edilen tutar." `totalPaidAmount` geriye dönük
    * uyumluluk için korunuyor; yeni tüketiciler bu alanı tercih etmeli.
+   * K3-L TK-5: değer = `receipts.appliedToDebtAmount` (bkz. `totalPaidAmount`).
    */
   allocatedPaidAmount: number | null;
   /**
-   * ALC-AUTH-1B: allocatedPaidAmount + heldOverpaymentAmount — dosyaya GERÇEKTEN gelen
-   * toplam para (avukatın "dosyaya X TL geldi" dediği rakam). Currency güvenli değilse
-   * (MULTI/UNKNOWN) veya bileşenlerden biri null'sa null döner (uydurma toplam yok).
-   * K3-L TK-4: `allocatedPaidAmount` tahsilatın yüz değerini taşıdığı için, held kalanı ait olduğu
-   * tahsilat zaten sayılmışsa İKİNCİ KEZ eklenmez; hesap tarihinden sonraki tahsilatın held'i girmez.
+   * ALC-AUTH-1B: dosyaya GERÇEKTEN gelen toplam para (avukatın "dosyaya X TL geldi" dediği rakam).
+   * Currency güvenli değilse (MULTI/UNKNOWN) veya bileşenlerden biri null'sa null döner (uydurma toplam yok).
+   * K3-L KP-7 (owner kararı 2026-10-01): "Toplam tahsilat" = bu alan = `receipts.receivedAmount` — hesap tarihine kadar
+   * (tarihi ≤ asOfDate), ters kayıt netleşmesinden (ADR-014 MUST-6) sonraki ödemelerin yüz değeri + mahsubu bekletilen
+   * tahsilat (K3-L D1: borçtan DÜŞÜLMEZ, ayrı satırdır). REC-ALLOC-008: = Σ uygulanan + bekletilen kalan. Fazla ödeme
+   * kalanı ödemenin yüz değerinin İÇİNDEDİR, ikinci kez eklenmez (TK-4).
    */
   grossReceivedAmount: number | null;
+}
+
+/**
+ * K3-L KP-7 (owner kararı 2026-10-01) — tahsilat gösterimi; hesap tarihi kapsamlı, tek para birimli.
+ * UI etiketleri: "Toplam tahsilat" = receivedAmount · "Borca uygulanan" = appliedToDebtAmount ·
+ * "Dağıtım bekleyen" = notAppliedAmount. Aynı para iki kez sayılmaz: receivedAmount = appliedToDebtAmount + notAppliedAmount.
+ * "Dağıtım bekleyen" burada BORCA UYGULANMAMIŞ tutardır; müvekkil dağıtımı (client-settlement pendingDistribution)
+ * DEĞİLDİR. Resmî (kalıcı) mahsup kaydı bu blokta yeniden yazılmaz; borca uygulanan kanonik simülasyondur.
+ */
+export interface BalanceDisplayReceipts {
+  currency: string;
+  /** Tarih kapsamı: tarihi ≤ asOfDate olan net ödemeler ve mahsubu bekletilen tahsilatlar. */
+  asOfDate: string;
+  scope: 'ON_OR_BEFORE_AS_OF_DATE';
+  /** Toplam tahsilat: dosyaya fiilen giren, ters kayıtla netleşmiş para = paymentAmount + allocationHeldAmount. */
+  receivedAmount: number;
+  /** Toplam tahsilatın ödeme kısmı (defter ya da tahsilat kaydının yüz değeri). */
+  paymentAmount: number;
+  /** K3-L D1: mahsubu bekletilen tahsilat — borçtan düşülmez, dağıtıma kapalı; ayrı satır olarak gösterilir. */
+  allocationHeldAmount: number;
+  /** Borca uygulanan: kanonik TBK 100 simülasyonunda borca tahsis edilen (Σ amountAllocated); sonuç yoksa null. */
+  appliedToDebtAmount: number | null;
+  /** Ödemenin borca uygulanmayan kısmı = paymentAmount − appliedToDebtAmount; uygulanan bilinmiyorsa null. */
+  unappliedPaymentAmount: number | null;
+  /** Dağıtım bekleyen = allocationHeldAmount + unappliedPaymentAmount; uygulanan bilinmiyorsa null. */
+  notAppliedAmount: number | null;
+  /** Hesap tarihinden sonra tarihli olduğu için bu toplamlara girmeyen ödeme + bekletilen tahsilat (kayıt değişmedi). */
+  afterAsOfExcludedAmount: number;
+  /** Masraf ve fer'i kanonik mahsupta henüz yok (TK-6): borca uygulanan yalnız anapara + faiz kovalarına tahsistir. */
+  appliedScope: 'PRINCIPAL_AND_INTEREST_ONLY';
+  /** appliedToDebtAmount null ise neden (ör. INTEREST_UNRESOLVED, ENGINE_ERROR, NO_BUCKETS). */
+  appliedUnavailableReason?: string;
+}
+
+/**
+ * K3-L KP-3 / TK-7 (owner kararı 2026-10-01, ilk aşama): talep edilmiş işlemiş faiz kaydı — varlığı, tutarı ve mevcut
+ * hesaba DAHİL EDİLMEDİĞİ açıkça gösterilir. Hiçbir toplama eklenmez (aynı faiz talepte ve yeniden hesapta iki kez
+ * toplanmaz); muhasebeleştirme (ayrı faiz kovası) ayrı tasarım/karardır.
+ */
+export interface BalanceDisplayClaimedInterest {
+  includedInCalculation: false;
+  reasonCode: 'CLAIMED_INTEREST_EXCLUDED_FROM_CANONICAL';
+  amountByCurrency: Record<string, number>;
+  items: Array<{ claimItemId: string; itemType: string; amount: number; currency: string }>;
 }
 
 export interface BalanceDisplayDiagnostic {
@@ -212,6 +267,15 @@ export interface CaseBalanceDisplay {
   currencies: CaseBalanceDisplayCurrency[];
   buckets: BalanceDisplayBucket[];
   totals: BalanceDisplayTotals;
+  /**
+   * K3-L KP-7: tahsilat gösterimi (Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen). Durum UNAVAILABLE iken de
+   * bilinen tutarlar görünür kalır; ters kayıt bütünlüğü bozuksa, para birimi tekil/destekli değilse ya da sıfır/negatif
+   * ödeme varsa null (`receiptsUnavailableReason`).
+   */
+  receipts: BalanceDisplayReceipts | null;
+  receiptsUnavailableReason?: string;
+  /** K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz kaydı (yalnız varsa yazılır; hesaba dahil DEĞİL). */
+  claimedInterest?: BalanceDisplayClaimedInterest;
   diagnostics: BalanceDisplayDiagnostic[];
   unsafeSources?: BalanceDisplayUnsafeSource[];
   provenance: BalanceDisplayProvenance;
@@ -256,7 +320,116 @@ const DISPLAY_NOTES: string[] = [
   'Standalone kalan-anapara satırı yalnız CalculationResult.finalDebtStates varsa gösterilir; yoksa uydurma principal yoktur.',
   "costs/ancillaries CASE-level projeksiyon; currency-split DEĞİL.",
   'collected = best-effort (ödeme-bazında dedup Σ allocations.paymentAmount).',
+  'receipts: Toplam tahsilat = Borca uygulanan + Dağıtım bekleyen; hesap tarihine kadar; Dağıtım bekleyen = borca uygulanmamış tutar (müvekkil dağıtımı DEĞİL).',
 ];
+
+const toCents = (n: number): number => Math.round((n + Number.EPSILON) * 100);
+const fromCents = (cents: number): number => cents / 100;
+
+/**
+ * K3-L KP-7: tahsilat bloğu (saf). Toplam tahsilat = kapsam içi net ödemeler (ters kayıt netleşmesi sonrası, tarihi ≤
+ * asOfDate) + kapsam içi mahsubu bekletilen tahsilat. Borca uygulanan = o para biriminin kanonik sonucundaki
+ * Σ amountAllocated. Kuruş tamsayısıyla toplanır → receivedAmount = appliedToDebtAmount + notAppliedAmount TAM eşittir.
+ * Fail-closed: netleşme bütünlüğü bozuk, sıfır/negatif ödeme, tekil olmayan ya da desteklenmeyen para birimi,
+ * tarihi bilinmeyen bekletme → null + neden. Uygulanan bilinmiyorsa (motor çalışmadı) yalnız uygulanan/dağıtım null.
+ */
+function buildReceipts(
+  balance: CaseBalanceResult,
+  displayCurrency: string,
+): { receipts: BalanceDisplayReceipts | null; unavailableReason?: string } {
+  const fatalCodes = new Set((balance.diagnostics?.fatal ?? []).map((diagnostic) => diagnostic.code));
+  for (const code of ['CASE_NOT_FOUND', 'REVERSAL_INTEGRITY_INVALID']) {
+    if (fatalCodes.has(code)) return { receipts: null, unavailableReason: code };
+  }
+  if ((balance.diagnostics?.payments ?? []).some((diagnostic) => diagnostic.code === 'ZERO_OR_NEGATIVE_PAYMENT')) {
+    return { receipts: null, unavailableReason: 'ZERO_OR_NEGATIVE_PAYMENT' };
+  }
+  // Ödeme kümesi açıkça taşınmadıysa tahsis adımlarından TÜRETİLMEZ: tahsis almayan ödeme (borç kapandıktan sonra gelen)
+  // görünmez kalırdı (TK-4 dersi).
+  if (balance.paymentsInScope === undefined) return { receipts: null, unavailableReason: 'PAYMENT_SCOPE_UNAVAILABLE' };
+  const asOfDate = balance.asOfDate;
+  const inScope = balance.paymentsInScope;
+  const afterAsOf = balance.paymentsAfterAsOf ?? [];
+  const holds = balance.allocationHolds ?? [];
+  if (holds.some((hold) => hold.collectionDate == null)) {
+    return { receipts: null, unavailableReason: 'ALLOCATION_HOLD_DATE_UNKNOWN' };
+  }
+
+  const currencies = new Set<string>([
+    ...inScope.map((payment) => payment.currency),
+    ...afterAsOf.map((payment) => payment.currency),
+    ...holds.map((hold) => hold.currency),
+  ]);
+  if (currencies.size > 1) return { receipts: null, unavailableReason: 'MULTI_CURRENCY' };
+  const currency = currencies.size === 1 ? [...currencies][0] : displayCurrency;
+  if (!isSupportedCurrency(currency)) {
+    return {
+      receipts: null,
+      unavailableReason: currency === 'MULTI' ? 'MULTI_CURRENCY' : currency === 'UNKNOWN' ? 'CURRENCY_UNKNOWN' : 'CURRENCY_UNSUPPORTED',
+    };
+  }
+
+  const holdInScope = (hold: { collectionDate?: string | null }): boolean => (hold.collectionDate as string) <= asOfDate;
+  const paymentCents = inScope.reduce((sum, payment) => sum + toCents(payment.amount), 0);
+  const heldCents = holds.filter(holdInScope).reduce((sum, hold) => sum + toCents(hold.amount), 0);
+  const afterAsOfCents = afterAsOf.reduce((sum, payment) => sum + toCents(payment.amount), 0)
+    + holds.filter((hold) => !holdInScope(hold)).reduce((sum, hold) => sum + toCents(hold.amount), 0);
+
+  let appliedCents: number | null = 0;
+  let appliedUnavailableReason: string | undefined;
+  if (paymentCents > 0) {
+    const row = (balance.currencyResults ?? []).find((result) => result.currency === currency);
+    if (row?.result == null) {
+      appliedCents = null;
+      appliedUnavailableReason = row?.skippedReason ?? 'NO_CALCULATION_RESULT';
+    } else {
+      appliedCents = (row.result.allocations ?? []).reduce(
+        (sum, step) => sum + (step.allocations ?? []).reduce((inner, category) => inner + toCents(category.amountAllocated), 0),
+        0,
+      );
+      if (appliedCents > paymentCents) {
+        appliedCents = null;
+        appliedUnavailableReason = 'APPLIED_EXCEEDS_PAYMENTS';
+      }
+    }
+  }
+  const unappliedCents = appliedCents == null ? null : paymentCents - appliedCents;
+  return {
+    receipts: {
+      currency,
+      asOfDate,
+      scope: 'ON_OR_BEFORE_AS_OF_DATE',
+      receivedAmount: fromCents(paymentCents + heldCents),
+      paymentAmount: fromCents(paymentCents),
+      allocationHeldAmount: fromCents(heldCents),
+      appliedToDebtAmount: appliedCents == null ? null : fromCents(appliedCents),
+      unappliedPaymentAmount: unappliedCents == null ? null : fromCents(unappliedCents),
+      notAppliedAmount: unappliedCents == null ? null : fromCents(heldCents + unappliedCents),
+      afterAsOfExcludedAmount: fromCents(afterAsOfCents),
+      appliedScope: 'PRINCIPAL_AND_INTEREST_ONLY',
+      ...(appliedUnavailableReason ? { appliedUnavailableReason } : {}),
+    },
+  };
+}
+
+/** K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz bloğu (yalnız kayıt varsa). */
+function buildClaimedInterest(balance: CaseBalanceResult): BalanceDisplayClaimedInterest | undefined {
+  const items = balance.claimedInterestItems ?? [];
+  if (items.length === 0) return undefined;
+  const amountByCurrency: Record<string, number> = {};
+  for (const item of items) amountByCurrency[item.currency] = round2((amountByCurrency[item.currency] ?? 0) + item.amount);
+  return {
+    includedInCalculation: false,
+    reasonCode: 'CLAIMED_INTEREST_EXCLUDED_FROM_CANONICAL',
+    amountByCurrency,
+    items: items.map((item) => ({
+      claimItemId: item.claimItemId,
+      itemType: item.itemType,
+      amount: round2(item.amount),
+      currency: item.currency,
+    })),
+  };
+}
 
 /** Ödeme-bazında (paymentId) dedup edilmiş toplam tahsilat. allocations yoksa 0. */
 function sumCollected(allocations: { paymentId: string; paymentAmount: number }[] | undefined): number {
@@ -270,17 +443,6 @@ function sumCollected(allocations: { paymentId: string; paymentAmount: number }[
     }
   }
   return total;
-}
-
-/**
- * K3-L TK-4: bekletilen fazla ödeme (HELD) kaydı bu ödeme kimliklerinden birinin tahsilatına mı ait? Defter kaynağında
- * ödeme kimliği = LedgerEntry.id (held.sourceLedgerEntryId), tahsilat yedeğinde = Collection.id (held.collectionId).
- */
-function heldBelongsToAny(
-  row: { collectionId: string; sourceLedgerEntryId: string | null },
-  paymentIds: ReadonlySet<string>,
-): boolean {
-  return paymentIds.has(row.collectionId) || (row.sourceLedgerEntryId != null && paymentIds.has(row.sourceLedgerEntryId));
 }
 
 function inferDisplayCurrency(balance: CaseBalanceResult): string {
@@ -827,7 +989,6 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   // null (bilinmeyen) satırlar toplamı 0 ile SIFIRLAMAZ: bu durumda durum UNAVAILABLE, üst toplamlar ve faiz kovası null
   const interest = round2(currencies.reduce((sum, c) => sum + (c.interest ?? 0), 0));
   const claimRemaining = round2(currencies.reduce((sum, c) => sum + (c.claimRemaining ?? 0), 0));
-  const collected = round2(currencies.reduce((sum, c) => sum + c.collected, 0));
   // ALC-AUTH-3B: gross (allocation-öncesi) PRINCIPAL toplamı — ClaimItem verisine bağımlı (bkz. tip yorumu).
   const grossPrincipal = round2(
     (balance.currencyResults ?? []).reduce((sum, cr) => sum + (cr.grossPrincipal ?? 0), 0),
@@ -839,42 +1000,55 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const heldOverpayment = round2(
     (balance.overpayments?.held ?? []).reduce((sum, row) => sum + (row.remainingAmount ?? 0), 0),
   );
-  // K3-L TK-4: `collected` tahsis alan ödemelerin YÜZ değeridir; kısmi fazla ödemede bekletilen kalan o yüz değerin
-  // İÇİNDEDİR (defter PAYMENT kaydı tahsilatın tam tutarıyla yazılır). Brüt tahsilatta aynı para ikinci kez sayılmasın:
-  // HELD kalanı yalnız ait olduğu tahsilat `collected`'e girmemişse eklenir. Hesap tarihinden sonraki tahsilata ait
-  // HELD bu tarihin brüt tahsilatına girmez (TK-3). `heldOverpaymentAmount` ve `totalPaidAmount` DEĞİŞMEZ (KP-7 etiketi ayrı karar).
-  const countedReceiptIds = new Set(
-    (balance.currencyResults ?? []).flatMap((cr) => (cr.result?.allocations ?? []).map((step) => step.paymentId)),
-  );
-  const afterAsOfReceiptIds = new Set((balance.paymentsAfterAsOf ?? []).map((payment) => payment.id));
-  const heldOutsideCountedReceipts = round2(
-    (balance.overpayments?.held ?? [])
-      .filter((row) => !heldBelongsToAny(row, countedReceiptIds) && !heldBelongsToAny(row, afterAsOfReceiptIds))
-      .reduce((sum, row) => sum + (row.remainingAmount ?? 0), 0),
-  );
   const blockedOverpayment = round2(
     (balance.overpayments?.blocked ?? []).reduce((sum, row) => sum + (row.attemptedOverpaymentAmount ?? 0), 0),
   );
+  // K3-L KP-7: tahsilat bloğu — hesap tarihi kapsamlı; durum UNAVAILABLE iken de bilinen tutarlar görünür
+  const { receipts, unavailableReason: receiptsUnavailableReason } = buildReceipts(balance, displayCurrency);
+  const claimedInterest = buildClaimedInterest(balance);
   const diagnostics = buildDiagnostics(balance, displayCurrency, blockedOverpayment, noBucketCurrencies, {
     present: finalDebtStatesPresent,
     currencyMismatch: finalDebtStatesCurrencyMismatch,
   });
+  if (claimedInterest) {
+    diagnostics.push({
+      code: 'CLAIMED_INTEREST_NOT_INCLUDED',
+      severity: 'WARNING',
+      message: 'Dosyada talep edilmis islemis faiz kaydi var; mevcut hesaba DAHIL EDILMEDI (hicbir toplama eklenmedi). Tutar ayri gosterilir.',
+      details: {
+        count: claimedInterest.items.length,
+        amountByCurrency: claimedInterest.amountByCurrency,
+        observations: claimedInterest.items,
+      },
+    });
+  }
+  if (receipts?.unappliedPaymentAmount != null && receipts.unappliedPaymentAmount > 0 && costs + ancillaries > 0) {
+    diagnostics.push({
+      code: 'UNAPPLIED_MAY_BELONG_TO_COSTS',
+      severity: 'WARNING',
+      message: "Borca uygulanmayan odeme var ve dosyada masraf/fer'i var; kanonik mahsup masraf ve fer'iyi henuz icermedigi icin bu tutarin bir kismi kurala gore masraf/fer'iye ait olabilir.",
+      details: { unappliedPaymentAmount: receipts.unappliedPaymentAmount, costs, ancillaries },
+    });
+  }
   const unsafeSources = buildUnsafeSources(diagnostics);
 
   const outstandingAmount = singleCurrency ? round2(claimRemaining + costs + ancillaries) : null;
   // ALC-AUTH-3B: gross toplam borç = gross anapara + gross faiz + masraf + fer'i (hepsi ödeme-öncesi/bağımsız).
   const totalDebtAmount = singleCurrency ? round2(grossPrincipal + interest + costs + ancillaries) : null;
+  // K3-L TK-5 / KP-7: üst toplamlar tahsilat bloğuyla AYNI kaynaktan (UI = API = rapor, ADR-014 I-10). Para birimi
+  // tekil/güvenli değilse ya da blok farklı para biriminde/yoksa null (uydurma toplam yok).
+  const receiptsForTotals = singleCurrency && receipts != null && receipts.currency === displayCurrency ? receipts : null;
   const totals: BalanceDisplayTotals = {
     totalDebtAmount,
-    totalPaidAmount: singleCurrency ? collected : null,
+    // K3-L TK-5: borca fiilen tahsis edilen (önceden tahsis adımı olan ödemelerin yüz değeri)
+    totalPaidAmount: receiptsForTotals?.appliedToDebtAmount ?? null,
     outstandingAmount,
     heldOverpaymentAmount: singleCurrency ? heldOverpayment : null,
     ...(blockedOverpayment > 0 ? { blockedOverpaymentAmount: singleCurrency ? blockedOverpayment : null } : {}),
     // ALC-AUTH-1B: totalPaidAmount ile aynı değer, açık isimle tekrarlanır (bkz. tip yorumu).
-    allocatedPaidAmount: singleCurrency ? collected : null,
-    // ALC-AUTH-1B: dosyaya gerçekten gelen toplam para = tahsilat + ait olduğu tahsilata henüz sayılmamış held kalan
-    // (K3-L TK-4: aynı tahsilatın held kısmı iki kez sayılmaz).
-    grossReceivedAmount: singleCurrency ? round2(collected + heldOutsideCountedReceipts) : null,
+    allocatedPaidAmount: receiptsForTotals?.appliedToDebtAmount ?? null,
+    // K3-L KP-7: "Toplam tahsilat" — dosyaya fiilen giren, netleşmiş para (fazla ödeme kalanı yüz değerin içinde)
+    grossReceivedAmount: receiptsForTotals?.receivedAmount ?? null,
   };
   const unavailableReason = status === 'UNAVAILABLE'
     ? fatal[0]?.code
@@ -919,6 +1093,9 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
       ] as BalanceDisplayDiagnosticCode[]),
     }),
     totals,
+    receipts,
+    ...(receiptsUnavailableReason ? { receiptsUnavailableReason } : {}),
+    ...(claimedInterest ? { claimedInterest } : {}),
     diagnostics,
     ...(unsafeSources ? { unsafeSources } : {}),
     provenance: {

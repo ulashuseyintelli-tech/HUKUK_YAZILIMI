@@ -68,11 +68,22 @@ function canonicalBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalan
           engineVersion: 'engine-v1',
           totalDue: 900,
           totalInterest: 25,
-          allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+          // K3-L TK-5: borca uygulanan = Σ amountAllocated → adım kategori tahsisini taşır (motor çıktısı şekli)
+          allocations: [{
+            paymentId: 'pay-1',
+            paymentDate: '2026-06-01',
+            paymentAmount: 100,
+            allocations: [{ category: 'PRINCIPAL', label: 'Anapara', amountBefore: 1000, amountAllocated: 100, amountAfter: 900 }],
+            remainingPayment: 0,
+            newPrincipal: 900,
+            claimBucketId: 'claim-1',
+          }],
           segments: [{ id: 'seg-1' }],
         } as any,
       },
     ],
+    // K3-L KP-7: servis motora giren ödeme kümesini her zaman taşır
+    paymentsInScope: [{ id: 'pay-1', date: '2026-06-01', amount: 100, currency: 'TRY' }],
     projections: {
       costs: { [AncillaryType.HARC]: 50 },
       ancillaries: { [AncillaryType.VEKALET_UCRETI]: 150 },
@@ -1240,5 +1251,22 @@ describe('BalanceDisplayShadowDiffService', () => {
         severity: 'RED',
       }),
     ]));
+  });
+});
+
+describe('K3-L KP-7: gölge rapor hesap tarihini ve tahsilat bloğunu taşır', () => {
+  it('rapor asOfDate = istenen tarih; canonical receipts aynı tarih kapsamında', async () => {
+    const { service } = makeService();
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.asOfDate).toBe('2026-06-24');
+    expect(report.totals.canonical?.receipts).toMatchObject({
+      asOfDate: '2026-06-24',
+      receivedAmount: 100,
+      appliedToDebtAmount: 100,
+      notAppliedAmount: 0,
+    });
+    expect(report.totals.canonical).toMatchObject({ grossReceivedAmount: 100, totalPaidAmount: 100 });
   });
 });

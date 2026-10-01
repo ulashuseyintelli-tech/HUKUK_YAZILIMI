@@ -24,7 +24,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay } from "@/hooks/useCaseCalculation";
+import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, TahsilatGosterimi, TalepEdilenIslemisFaiz } from "@/hooks/useCaseCalculation";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import {
   buildGuardedPrimaryCalculationResult,
@@ -164,8 +164,9 @@ export function HesapOzetiPanel({
     );
   }
 
+  // K3-L KP-7: kanonik rapor yalnız AYNI hesap tarihli legacy özetle birleştirilir (farklı tarih kapsamı mutabık gösterilmez)
   const guardedPrimaryDecision = guardedPrimaryPilotEnabled
-    ? evaluateGuardedPrimaryDisplayPilot(guardedPrimaryReport, { featureFlagEnabled: true })
+    ? evaluateGuardedPrimaryDisplayPilot(guardedPrimaryReport, { featureFlagEnabled: true, legacyAsOfDate: hesap.hesapTarihi })
     : null;
   const guardedPrimaryHesap = guardedPrimaryDecision && guardedPrimaryReport
     ? buildGuardedPrimaryCalculationResult(hesap, guardedPrimaryReport, guardedPrimaryDecision)
@@ -260,6 +261,9 @@ export function HesapOzetiPanel({
         
         {/* Takip Öncesi Faiz */}
         {displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} />}
+
+        {/* K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz — varlığı ve tutarı açık; hesaba DAHİL EDİLMEDİ (sunucu değeri) */}
+        <ClaimedInterestInfo info={hesap?.talepEdilenIslemisFaiz} />
         
         {/* TAKİP TUTARI */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-300 bg-blue-50 rounded">
@@ -323,13 +327,39 @@ export function HesapOzetiPanel({
           <span className="font-bold text-xl text-green-700">{formatTL(displayHesap.sonBorc)}</span>
         </div>
         
-        {/* Tahsilat Düşümü ve Kalan Borç */}
-        {displayHesap.toplamTahsilat > 0 && (
+        {/* K3-L KP-7: kanonik pilotta Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen (hesap tarihi kapsamlı) */}
+        {displayHesap.tahsilatGosterimi
+          && (displayHesap.tahsilatGosterimi.toplamTahsilat > 0 || displayHesap.tahsilatGosterimi.hesapTarihindenSonra > 0) && (
+          <TahsilatGosterimiPanel
+            gosterim={displayHesap.tahsilatGosterimi}
+            kalanBorc={displayHesap.kalanBorc}
+            partial={guardedPrimaryPartial}
+          >
+            {/* TBK m.100 Mahsup Detayları (legacy diagnostic; mevcut davranış korunur) */}
+            {displayHesap.mahsupDetaylari && displayHesap.mahsupDetaylari.length > 0 && (
+              <MahsupDetayPanel
+                mahsupDetaylari={displayHesap.mahsupDetaylari}
+                asilAlacak={displayHesap.asilAlacak}
+                kalanAnapara={displayHesap.kalanAnapara}
+              />
+            )}
+          </TahsilatGosterimiPanel>
+        )}
+
+        {/* Tahsilat Düşümü ve Kalan Borç (legacy) */}
+        {!displayHesap.tahsilatGosterimi && displayHesap.toplamTahsilat > 0 && (
           <div className="pt-2 mt-2 border-t border-gray-200">
             <div className="flex justify-between py-1">
               <span className="text-gray-600">Tahsilat Düşümü</span>
               <span className="text-red-600 font-medium">- {formatTL(displayHesap.toplamTahsilat)}</span>
             </div>
+            {/* K3-L KP-7: tarih kapsamı açık — bu satır tarih süzgeçsizdir; hesap tarihinden sonraki kısım ayrıca yazılır */}
+            {Number(hesap?.hesapTarihindenSonrakiTahsilat ?? 0) > 0 && (
+              <div data-testid="hesap-tahsilat-tarih-kapsami" className="pb-1 text-[10px] text-amber-700">
+                Bu tutarın {formatTL(Number(hesap?.hesapTarihindenSonrakiTahsilat ?? 0))} kadarı hesap tarihinden
+                ({formatDate(displayHesap.hesapTarihi)}) sonra tarihli tahsilattır.
+              </div>
+            )}
             
             {/* TBK m.100 Mahsup Detayları */}
             {displayHesap.mahsupDetaylari && displayHesap.mahsupDetaylari.length > 0 && (
@@ -354,8 +384,9 @@ export function HesapOzetiPanel({
           </div>
         )}
         
-        {/* K3-L: mahsubu bekleyen tahsilat — borçtan düşülmedi; sunucu değeri, istemci hesabı YOK */}
-        {Number(hesap?.mahsubuBekleyenTahsilat ?? 0) > 0 && (
+        {/* K3-L: mahsubu bekleyen tahsilat — borçtan düşülmedi; sunucu değeri, istemci hesabı YOK.
+            K3-L KP-7: kanonik tahsilat gösterimi varken bekletme orada (hesap tarihi kapsamlı) gösterilir; iki kapsam yan yana konmaz. */}
+        {!displayHesap.tahsilatGosterimi && Number(hesap?.mahsubuBekleyenTahsilat ?? 0) > 0 && (
           <div
             data-testid="hesap-mahsubu-bekleyen-tahsilat"
             className="mt-2 flex justify-between rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900"
@@ -438,6 +469,99 @@ export function CheckPenaltyInfo({ summary }: { summary?: CheckPenaltySummary })
             : summary.tahmin.aciklama}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * K3-L KP-3 / TK-7 (owner kararı 2026-10-01) — talep edilmiş işlemiş faiz: kaydın varlığı, tutarı ve mevcut hesaba DAHİL
+ * EDİLMEDİĞİ açıkça yazılır (genel uyarı içinde kaybolmaz). Hiçbir toplama eklenmez; tutarlar sunucudan.
+ */
+export function ClaimedInterestInfo({ info }: { info?: TalepEdilenIslemisFaiz | null }) {
+  if (!info || info.kalemler.length === 0) return null;
+  const toplamlar = Object.entries(info.toplamParaBirimiBazinda).sort(([a], [b]) => a.localeCompare(b));
+  return (
+    <div data-testid="claimed-interest-info" className="my-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
+      <div className="flex justify-between">
+        <span>Talep edilmiş işlemiş faiz ({info.kalemler.length} kayıt)</span>
+        <span data-testid="claimed-interest-amount">
+          {toplamlar.map(([paraBirimi, tutar]) => (paraBirimi === "TRY" ? formatTL(tutar) : `${tutar.toFixed(2)} ${paraBirimi}`)).join(" + ")}
+        </span>
+      </div>
+      <div data-testid="claimed-interest-status" className="italic text-amber-800">
+        Bu tutar mevcut hesaba dahil edilmedi; toplam borca eklenmedi.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * K3-L KP-7 (owner kararı 2026-10-01) — kanonik pilotta tahsilat gösterimi: Toplam tahsilat = dosyaya fiilen giren netleşmiş
+ * para; Borca uygulanan ve Dağıtım bekleyen ayrı satır; aynı para iki kez sayılmaz (Toplam = Uygulanan + Bekleyen, sunucu
+ * doğrular). Kullanılan hesap tarihi açıkça yazılır. Tüm değerler sunucudan; istemci hesabı YOK.
+ */
+export function TahsilatGosterimiPanel({
+  gosterim,
+  kalanBorc,
+  partial,
+  children,
+}: {
+  gosterim: TahsilatGosterimi;
+  kalanBorc: number;
+  partial?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div data-testid="tahsilat-gosterimi" className="pt-2 mt-2 border-t border-gray-200">
+      <p data-testid="tahsilat-gosterimi-kapsam" className="text-[10px] text-gray-500 mb-0.5">
+        Tahsilat — hesap tarihine ({formatDate(gosterim.hesapTarihi)}) kadar
+      </p>
+      <div className="flex justify-between py-0.5">
+        <span className="text-gray-600">Toplam tahsilat</span>
+        <span data-testid="tahsilat-toplam" className="font-medium">{formatTL(gosterim.toplamTahsilat)}</span>
+      </div>
+      <div className="flex justify-between py-0.5">
+        <span className="text-gray-600">Borca uygulanan</span>
+        <span data-testid="tahsilat-borca-uygulanan" className="text-red-600 font-medium">- {formatTL(gosterim.borcaUygulanan)}</span>
+      </div>
+      <div className="flex justify-between py-0.5">
+        <span className="text-gray-600">
+          Dağıtım bekleyen
+          <span className="ml-1 text-[10px] font-normal text-gray-400">(borca uygulanmadı)</span>
+        </span>
+        <span data-testid="tahsilat-dagitim-bekleyen" className="font-medium">{formatTL(gosterim.dagitimBekleyen)}</span>
+      </div>
+      {gosterim.mahsubuBekleyen > 0 && (
+        <div data-testid="tahsilat-mahsubu-bekleyen" className="flex justify-between pl-2 py-0.5 text-amber-800">
+          <span>
+            Mahsubu bekleyen tahsilat
+            <span className="ml-1 text-[10px] font-normal text-amber-700">(borçtan düşülmedi, dağıtıma kapalı)</span>
+          </span>
+          <span>{formatTL(gosterim.mahsubuBekleyen)}</span>
+        </div>
+      )}
+      {children}
+      {gosterim.masrafFeriUyarisi && (
+        <div data-testid="tahsilat-masraf-feri-uyarisi" className="py-0.5 text-[10px] text-amber-700">
+          Dosyada masraf/fer&apos;i var; bu hesap henüz masraf ve fer&apos;iyi mahsuba almadığı için borca uygulanmayan tutarın bir kısmı masraf/fer&apos;iye ait olabilir.
+        </div>
+      )}
+      {gosterim.hesapTarihindenSonra > 0 && (
+        <div data-testid="tahsilat-tarih-sonrasi" className="py-0.5 text-[10px] text-gray-500">
+          Hesap tarihinden sonra tarihli {formatTL(gosterim.hesapTarihindenSonra)} bu toplamlara dahil edilmedi.
+        </div>
+      )}
+      <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-orange-300 bg-orange-50 rounded">
+        <span className="font-bold text-orange-900">
+          KALAN BORÇ
+          {partial && (
+            <span data-testid="guarded-primary-partial-label-kalan-borc" className="ml-1 font-normal text-[9px] text-orange-700">
+              (mevcut hesaplama)
+            </span>
+          )}
+        </span>
+        <span className="font-bold text-orange-700">{formatTL(kalanBorc)}</span>
+      </div>
     </div>
   );
 }
