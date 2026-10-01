@@ -255,6 +255,8 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       'hesapTarihi',
       'takipTarihi',
       'kalemTuru',
+      // K3-L KP-2 (owner kararı 2026-10-01): eklemeli — dosya faiz türü ve kaynağı
+      'dosyaFaizTuru',
       'asilAlacak',
       'tazminat',
       // K3-L (owner kararı 2026-09-28): eklemeli alan — kalem bazlı sorumlular + durum + ayrı bilgi tahmini.
@@ -608,5 +610,38 @@ describe('K3-L KP-7 / KP-3: legacy hesap özeti — tarih kapsamı ve talep edil
     const result = await service.getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
     expect(result.talepEdilenIslemisFaiz).toBeNull();
     expect(result.hesapTarihindenSonrakiTahsilat).toBe(0);
+  });
+});
+
+describe('K3-L KP-2: legacy hesap özeti — dosya faiz türü ve kaynağı (eklemeli bilgi; tür değiştirilmez)', () => {
+  it('eski dosya (kaynak kaydı yok) + YASAL → uyarı: doğrulanamadı; tür aynen', async () => {
+    const service = makeService(makePrisma({ interestType: 'YASAL', metadata: null }), makeCanonical());
+    const result = await service.getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+
+    expect(result.dosyaFaizTuru).toMatchObject({ tur: 'YASAL', kaynak: 'DOGRULANAMADI' });
+    expect(result.dosyaFaizTuru.uyari).toContain('kaynağı doğrulanamadı');
+  });
+
+  it('açılışta seçilmemiş (sistem varsayılanı) → uyarı: kesin tercih sayılmaz', async () => {
+    const service = makeService(
+      makePrisma({ interestType: 'YASAL', metadata: { interestTypeSource: 'SYSTEM_DEFAULT' } }),
+      makeCanonical(),
+    );
+    const result = await service.getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+
+    expect(result.dosyaFaizTuru).toMatchObject({ tur: 'YASAL', kaynak: 'SISTEM_VARSAYILANI' });
+    expect(result.dosyaFaizTuru.uyari).toContain('Kesin tercih sayılmaz');
+  });
+
+  it('açıkça seçilmiş YASAL ya da YASAL dışı tür → uyarı yok', async () => {
+    const explicit = await makeService(
+      makePrisma({ interestType: 'YASAL', metadata: { interestTypeSource: 'REQUEST_EXPLICIT' } }),
+      makeCanonical(),
+    ).getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+    const ticari = await makeService(makePrisma({ interestType: 'TICARI', metadata: null }), makeCanonical())
+      .getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+
+    expect(explicit.dosyaFaizTuru).toEqual({ tur: 'YASAL', kaynak: 'ACIK_SECIM', uyari: null });
+    expect(ticari.dosyaFaizTuru).toEqual({ tur: 'TICARI', kaynak: 'DOGRULANAMADI', uyari: null });
   });
 });

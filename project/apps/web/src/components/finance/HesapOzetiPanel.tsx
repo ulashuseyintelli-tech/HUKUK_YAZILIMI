@@ -210,6 +210,13 @@ export function HesapOzetiPanel({
         </div>
       </div>
       
+      {/* K3-L KP-2: kaynağı doğrulanamayan dosya faiz türü (eski varsayılan olabilir) — uyarı; tür değiştirilmedi */}
+      {hesap?.dosyaFaizTuru?.uyari && (
+        <div data-testid="hesap-dosya-faiz-turu-uyari" className="px-3 py-1 text-[10px] text-amber-800 bg-amber-50 border-b border-amber-200 flex-shrink-0">
+          {hesap.dosyaFaizTuru.uyari}
+        </div>
+      )}
+
       {/* Tarih bilgisi */}
       <div className="px-3 py-1 text-[10px] text-gray-400 border-b flex-shrink-0">
         Takip: {formatDate(displayHesap.takipTarihi)} → Hesap: {formatDate(displayHesap.hesapTarihi)}
