@@ -85,6 +85,7 @@ import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
 import { ClaimItemWriterRouterService } from "../claim-item/claim-item-writer-router.service";
 import { ClaimItemSourceIntegrityException } from "../claim-item/claim-item-source-integrity.guard";
+import { turkeyToday } from "../../common/turkey-calendar";
 import { caseInterestTypeSourceForCreate, isUnconfirmedDefaultLegalInterest, readCaseInterestTypeSource } from "../../common/case-interest-type-source";
 import {
   CASE_OPEN_LAWYER_PERMISSIONS_AUDIT_ACTION,
@@ -4973,7 +4974,8 @@ export class CaseService {
       throw new NotFoundException('Dosya bulunamadı');
     }
 
-    const takipTarihi = caseData.caseDate?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0];
+    // K3-L KP-11: dosyada takip tarihi yoksa gösterim yedeği Türkiye takvimine göre bugün (UTC günü değil)
+    const takipTarihi = caseData.caseDate?.toISOString().split('T')[0] || turkeyToday();
     const hesapTarihi = calculationDate;
 
     // 2. Asıl alacak ve kalem türü belirleme

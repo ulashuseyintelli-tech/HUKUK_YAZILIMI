@@ -31,6 +31,7 @@ import { ChangeLegalResponsibleLawyerDto } from "./dto/legal-responsible-lawyer.
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { getRequestId } from "../../common/request-id.middleware";
+import { turkeyToday } from "../../common/turkey-calendar";
 import {
   RECEIPT_AUTHORIZATION_SURFACES,
   ReceiptObjectScopeAuthorizationService,
@@ -837,7 +838,8 @@ export class CaseController {
     @Param("id") id: string,
     @Query("date") date?: string
   ) {
-    const calculationDate = date || new Date().toISOString().split('T')[0];
+    // K3-L KP-11: varsayılan hesap tarihi Türkiye takvimine göre bugün (UTC günü değil)
+    const calculationDate = date || turkeyToday();
     return this.caseService.getCalculationSummary(tenantId, id, calculationDate);
   }
 

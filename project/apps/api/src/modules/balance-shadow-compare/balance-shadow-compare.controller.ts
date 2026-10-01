@@ -7,6 +7,7 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { BalanceShadowCompareService, BalanceShadowCompareResult } from './balance-shadow-compare.service';
+import { turkeyToday } from '../../common/turkey-calendar';
 
 @Controller('balance-compare')
 export class BalanceShadowCompareController {
@@ -27,7 +28,8 @@ export class BalanceShadowCompareController {
     @Param('caseId') caseId: string,
     @Query('asOfDate') asOfDate?: string,
   ): Promise<BalanceShadowCompareResult> {
-    const date = asOfDate ?? new Date().toISOString().slice(0, 10);
+    // K3-L KP-11: varsayılan hesap tarihi Türkiye takvimine göre bugün
+    const date = asOfDate ?? turkeyToday();
     return this.compareService.compare(tenantId, caseId, date);
   }
 }

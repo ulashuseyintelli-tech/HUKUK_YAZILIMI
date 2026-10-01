@@ -28,13 +28,16 @@ describe('BalanceShadowCompareController (G4c-3)', () => {
     expect(res).toBe(fakeResult);
   });
 
-  it('asOfDate yoksa → bugün (YYYY-MM-DD)', async () => {
-    const compare = jest.fn().mockResolvedValue(fakeResult);
-    const controller = makeController(compare);
-    const today = new Date().toISOString().slice(0, 10);
-    await controller.getShadowCompare('t1', 'c1', undefined);
-    expect(compare.mock.calls[0][2]).toBe(today);
-    expect(compare.mock.calls[0][2]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  it('asOfDate yoksa → Türkiye takvimine göre bugün (K3-L KP-11; TSİ 00:00 anında UTC günü değil)', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-30T21:00:00.000Z') });
+    try {
+      const compare = jest.fn().mockResolvedValue(fakeResult);
+      const controller = makeController(compare);
+      await controller.getShadowCompare('t1', 'c1', undefined);
+      expect(compare.mock.calls[0][2]).toBe('2026-10-01');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('tenantId auth-context argümanından forward edilir', async () => {

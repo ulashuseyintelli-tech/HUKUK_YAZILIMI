@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { FileText, Calculator, Loader2, Download, Search } from "lucide-react";
+import { turkeyToday } from "@/lib/turkey-calendar";
 
 interface CaseDebtReportData {
   caseInfo: {
@@ -51,9 +52,8 @@ interface CaseDebtReportData {
 
 export function CaseDebtReport() {
   const [caseId, setCaseId] = useState("");
-  const [calculationDate, setCalculationDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  // K3-L KP-11: varsayılan hesap tarihi Türkiye takvimine göre bugün
+  const [calculationDate, setCalculationDate] = useState(() => turkeyToday());
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<CaseDebtReportData | null>(null);
   const [error, setError] = useState("");

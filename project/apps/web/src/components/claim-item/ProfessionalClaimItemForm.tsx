@@ -466,6 +466,13 @@ interface Props {
   debtors?: Array<{ type: 'INDIVIDUAL' | 'COMPANY'; name: string; identityNo?: string; taxNo?: string; address?: string; role?: string }>;
   /** K3-L Faz 2b: dosya borçluları (rol + lehine aval) — çek tazminatı taslak önizlemesinde sorumlu kümesi için */
   caseDebtors?: CheckPenaltyPreviewDebtor[];
+  /**
+   * K3-L KP-11: hesap tarihi dışarıdan (sihirbaz taslağından) yönetilir. Verilirse form bu değeri kullanır ve
+   * değişikliği `onHesapTarihiChange` ile bildirir; yeniden açılışta tarih bugüne taşınmaz. Verilmezse varsayılan
+   * Türkiye takvimine göre bugün.
+   */
+  hesapTarihi?: string;
+  onHesapTarihiChange?: (value: string) => void;
 }
 
 // ============================================================================
@@ -492,6 +499,7 @@ import { interestEngineApi, InterestTypeCode as EngineInterestTypeCode, Interest
 import { feeEngineApi, FeePreviewResponse } from '@/lib/api/fee-engine';
 import { assertNoMockInProduction } from '@/lib/config/feature-flags';
 import { CASE_FORM_SELECTION_REQUIRED_FOR_DOCUMENT_MESSAGE } from '@/lib/case-wizard-form-selection';
+import { turkeyToday } from "@/lib/turkey-calendar";
 
 /**
  * Backend API'den faiz preview hesaplama (TEK KAYNAK)
@@ -622,7 +630,8 @@ const YASAL_FAIZ_ORANLARI: Array<{ validFrom: string; rate: number }> = [];
 
 const createEmptyKalem = (kalemTuru: string, currency = "TRY"): AlacakKalemi => {
   const config = TAKIP_TIPI_CONFIG[kalemTuru] || TAKIP_TIPI_CONFIG.ASIL_ALACAK;
-  const today = new Date().toISOString().split("T")[0];
+  // K3-L KP-11: varsayılan günler Türkiye takvimine göre (UTC günü değil)
+  const today = turkeyToday();
   return {
     id: `kalem_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
     kalemTuru,
@@ -660,7 +669,7 @@ export function ProfessionalClaimItemForm({
   onItemsChange,
   onPrecautionaryChange,
   initialItems,
-  takipTarihi = new Date().toISOString().split("T")[0],
+  takipTarihi = turkeyToday(),
   borcluSayisi = 1,
   fileNumber = "",
   executionOffice,
@@ -669,6 +678,8 @@ export function ProfessionalClaimItemForm({
   debtors = [],
   mahiyetKodu,
   caseDebtors = [],
+  hesapTarihi: hesapTarihiProp,
+  onHesapTarihiChange,
 }: Props) {
   
   const getDefaultKalemTuru = () => {
@@ -732,7 +743,17 @@ export function ProfessionalClaimItemForm({
   );
   const [hesapOzeti, setHesapOzeti] = useState<HesapOzetiSatir[]>([]);
   const [isCalculated, setIsCalculated] = useState(false);
-  const [hesapTarihi, setHesapTarihi] = useState<string>(new Date().toISOString().split("T")[0]);
+  // K3-L KP-11: hesap tarihi sihirbaz tarafından verilirse o kullanılır (taslakta saklanır, yeniden açılışta korunur);
+  // verilmezse yeni hesapta Türkiye takvimine göre bugün.
+  const [localHesapTarihi, setLocalHesapTarihi] = useState<string>(() => hesapTarihiProp ?? turkeyToday());
+  const hesapTarihi = hesapTarihiProp ?? localHesapTarihi;
+  const setHesapTarihi = useCallback(
+    (value: string) => {
+      setLocalHesapTarihi(value);
+      onHesapTarihiChange?.(value);
+    },
+    [onHesapTarihiChange],
+  );
 
   // Faiz Dökümü Preview State
   const [faizDokumuVisible, setFaizDokumuVisible] = useState(false);

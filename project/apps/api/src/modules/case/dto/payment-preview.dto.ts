@@ -35,6 +35,12 @@ export type PaymentPreviewDistributionStatus =
 export interface PaymentPreviewResponseDto {
   nonPersistent: true;
   caseId: string;
+  /**
+   * K3-L KP-11: kalan borcun hesaplandığı hesap tarihi (YYYY-MM-DD). Ödeme tarihi verildiyse o gün; verilmediyse
+   * Türkiye takvimine göre bugün (`asOfDateSource`).
+   */
+  asOfDate: string;
+  asOfDateSource: "PAYMENT_DATE" | "TURKEY_TODAY_DEFAULT";
   input: {
     amount: number;
     paymentDate?: string;

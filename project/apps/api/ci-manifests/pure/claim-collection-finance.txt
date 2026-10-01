@@ -275,6 +275,7 @@ src/modules/case/__tests__/case-legal-responsible-missing-filter.spec.ts
 src/modules/case/__tests__/case-mutation-audit-userid.spec.ts
 src/modules/case/__tests__/case-payment-preview.controller.spec.ts
 src/modules/case/__tests__/case-payment-preview.service.spec.ts
+src/modules/case/__tests__/calculation-date-default.kp11.spec.ts
 src/modules/case/__tests__/case-interest-type-source.kp2.spec.ts
 src/modules/case/__tests__/case-status-side-gate.spec.ts
 src/modules/case/__tests__/case-type-mapping.spec.ts
