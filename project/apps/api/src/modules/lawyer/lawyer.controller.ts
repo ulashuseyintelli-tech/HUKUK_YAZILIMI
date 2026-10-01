@@ -53,6 +53,13 @@ export class LawyerController {
       : this.lawyerService.findDefaults(tenantId);
   }
 
+  // K3-L KP-9: varsayılan dosya yetkisinin durumu (salt okuma). Statik yol `:id` rotasından ÖNCE tanımlıdır.
+  @Get("default-permissions/status")
+  @UseGuards(OfficeF01AuthorizationGuard)
+  getDefaultPermissionsStatus(@CurrentUser("tenantId") tenantId: string) {
+    return this.lawyerService.getDefaultPermissionsStatus(tenantId);
+  }
+
   // Tek avukat getir
   @Get(":id")
   @UseGuards(OfficeF01AuthorizationGuard)

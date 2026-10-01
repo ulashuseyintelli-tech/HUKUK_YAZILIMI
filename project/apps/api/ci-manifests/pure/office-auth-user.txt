@@ -394,6 +394,7 @@ src/common/__tests__/party-write-tx-participation.spec.ts
 #   Mutasyon kaniti: audit kaldirilinca 7/11, tx disina tasininca 7/11, delegation mukerrer 1/11,
 #   no-op tespiti kaldirilinca 1/11 DUSER. Gercek rollback kaniti db/core-lifecycle'daki db-gated spec'te.
 src/modules/lawyer/__tests__/lawyer-privileged-update-audit-b11.spec.ts
+src/modules/lawyer/__tests__/lawyer-default-permissions-status.kp9.spec.ts
 #
 # LOOKUP modulu — saf spec'ler (owner GO 2026-09-18 "OFFICE / LOOKUP MODULU CI PAKETI"):
 #   Modulde 4 spec vardi ve TAMAMI secim disiydi (0/4 bagli); 3'u DB-siz, 1'i gercek-DB

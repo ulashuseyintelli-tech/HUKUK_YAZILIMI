@@ -113,6 +113,7 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
 
   const http = () => request(app.getHttpServer());
   const as = (userId: string) => ({
+    get: (path: string) => http().get(path).set('x-test-user-id', userId),
     post: (path: string, body: object) => http().post(path).set('x-test-user-id', userId).send(body),
     put: (path: string, body: object) => http().put(path).set('x-test-user-id', userId).send(body),
     patch: (path: string, body: object) => http().patch(path).set('x-test-user-id', userId).send(body),
@@ -151,6 +152,16 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
   async function managementSetsDefaults(o: Office, lawyerId: string, defaults: Record<string, boolean> | null) {
     const res = await as(o.partner.userId).put(`/lawyers/${lawyerId}`, { defaultPermissions: defaults });
     expect(res.status).toBe(200);
+  }
+
+  /**
+   * K3-L KP-9: yönetimin avukat kartında gördüğü durum (GET /lawyers/default-permissions/status). Aşağıdaki her
+   * senaryoda dosya açılışından ÖNCE okunur ve açılış denetimindeki kararla AYNI olduğu iddia edilir (parite).
+   */
+  async function statusOf(o: Office, lawyerId: string) {
+    const res = await as(o.partner.userId).get('/lawyers/default-permissions/status');
+    expect(res.status).toBe(200);
+    return (res.body as Array<Record<string, unknown>>).find((row) => row.lawyerId === lawyerId);
   }
 
   const amount = 12_345.67;
@@ -214,6 +225,14 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
       defaultPermissionsFingerprint: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     });
 
+    expect(await statusOf(o, o.opener.lawyerId)).toEqual({
+      lawyerId: o.opener.lawyerId,
+      appliesAtCaseOpen: true,
+      reason: null,
+      storedPermissions: FINANCE_GRANT,
+      managementRecordedAt: basis.createdAt.toISOString(),
+    });
+
     const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'granted'));
     expect(res.status).toBe(201);
     const caseId = res.body.id as string;
@@ -268,6 +287,13 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
 
   it('VARSAYILANI OLMAYAN avukat: yetki yazılmaz ("tümü açık" YOK); K3 talebi CASE_FINANCE_PERMISSION_REQUIRED ile reddedilir; denetimde NO_DEFAULTS', async () => {
     const o = await office('nodefault');
+    expect(await statusOf(o, o.opener.lawyerId)).toEqual({
+      lawyerId: o.opener.lawyerId,
+      appliesAtCaseOpen: false,
+      reason: 'NO_DEFAULTS',
+      storedPermissions: null,
+      managementRecordedAt: null,
+    });
     const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'nodefault'));
     expect(res.status).toBe(201);
     const assignment = await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id, lawyerId: o.opener.lawyerId } });
@@ -285,6 +311,7 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
     const o = await office('false');
     const defaults = { canEditCase: true, canViewFinance: true, canEditFinance: false };
     await managementSetsDefaults(o, o.opener.lawyerId, defaults);
+    expect(await statusOf(o, o.opener.lawyerId)).toMatchObject({ appliesAtCaseOpen: true, reason: null, storedPermissions: defaults });
     const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'false'));
     expect(res.status).toBe(201);
     const assignment = await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id, lawyerId: o.opener.lawyerId } });
@@ -309,6 +336,14 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
     expect(created.status).toBe(201);
     const newLawyerId = created.body.id as string;
     expect((await prisma.lawyer.findUniqueOrThrow({ where: { id: newLawyerId } })).defaultPermissions).toEqual(FINANCE_GRANT);
+
+    expect(await statusOf(o, newLawyerId)).toEqual({
+      lawyerId: newLawyerId,
+      appliesAtCaseOpen: false,
+      reason: 'SOURCE_NOT_MANAGEMENT_VERIFIED',
+      storedPermissions: FINANCE_GRANT,
+      managementRecordedAt: null,
+    });
 
     const payload = await caseOpenPayload(o, o.opener.lawyerId, 'createonly');
     const res = await as(o.opener.userId).post('/cases', {
@@ -381,6 +416,11 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
     });
     await managementSetsDefaults(o, intern.id, FINANCE_GRANT);
     await prisma.lawyer.update({ where: { id: intern.id }, data: { isActive: false } });
+    expect(await statusOf(o, intern.id)).toMatchObject({
+      appliesAtCaseOpen: false,
+      reason: 'LAWYER_INACTIVE',
+      storedPermissions: FINANCE_GRANT,
+    });
     const payload = await caseOpenPayload(o, o.opener.lawyerId, 'inactive');
     const res = await as(o.admin.userId).post('/cases', {
       ...payload,
@@ -399,6 +439,10 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
     await managementSetsDefaults(o, o.opener.lawyerId, managed);
     // Uygulama dışı / denetimsiz yazma (ör. veri düzeltmesi): mali izni açar — denetim kaydı YOK
     await prisma.lawyer.update({ where: { id: o.opener.lawyerId }, data: { defaultPermissions: FINANCE_GRANT } });
+
+    const driftStatus = await statusOf(o, o.opener.lawyerId);
+    expect(driftStatus).toMatchObject({ appliesAtCaseOpen: false, reason: 'SOURCE_VALUE_MISMATCH', storedPermissions: FINANCE_GRANT });
+    expect(driftStatus?.managementRecordedAt).toEqual(expect.any(String));
 
     const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'drift'));
     expect(res.status).toBe(201);
@@ -430,6 +474,8 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
     // Denetimsiz yoldan eski kararın değeri geri yazılır
     await prisma.lawyer.update({ where: { id: o.opener.lawyerId }, data: { defaultPermissions: FINANCE_GRANT } });
 
+    expect(await statusOf(o, o.opener.lawyerId)).toMatchObject({ appliesAtCaseOpen: false, reason: 'SOURCE_VALUE_MISMATCH' });
+
     const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'stale'));
     expect(res.status).toBe(201);
     expect((await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id } })).casePermissions).toBeNull();
@@ -456,6 +502,7 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
         metadata: { changedFields: ['defaultPermissions'] },
       },
     });
+    expect(await statusOf(o, o.opener.lawyerId)).toMatchObject({ appliesAtCaseOpen: false, reason: 'SOURCE_VALUE_MISMATCH' });
     const res = await as(o.opener.userId).post('/cases', await caseOpenPayload(o, o.opener.lawyerId, 'legacy'));
     expect(res.status).toBe(201);
     expect((await prisma.caseLawyer.findFirstOrThrow({ where: { caseId: res.body.id } })).casePermissions).toBeNull();
@@ -465,5 +512,43 @@ describeWithDisposableDb('K3-A dosya açılışında yönetim varsayılan yetkis
     expect(((await openingAudit(o.tenantId, res.body.id))?.metadata as any).assignments).toEqual([
       expect.objectContaining({ outcome: 'NOT_APPLIED', reason: 'SOURCE_VALUE_MISMATCH' }),
     ]);
+  });
+
+  it('KP-9 DURUM UCU: yalnız yönetim kitlesi okur (ADMIN ve bağlı PARTNER 200; avukat ve VIEWER 403); başka büronun avukatı görünmez; okuma satır ya da denetim kaydı YAZMAZ', async () => {
+    const a = await office('status-a');
+    const b = await office('status-b');
+    await managementSetsDefaults(b, b.opener.lawyerId, FINANCE_GRANT);
+    const snapshot = async () => ({
+      audits: await prisma.auditLog.count({ where: { tenantId: { in: [a.tenantId, b.tenantId] } } }),
+      lawyers: await prisma.lawyer.findMany({
+        where: { tenantId: { in: [a.tenantId, b.tenantId] } },
+        orderBy: { id: 'asc' },
+        select: { id: true, defaultPermissions: true, updatedAt: true },
+      }),
+    });
+    const before = await snapshot();
+    const ownLawyerIds = (await prisma.lawyer.findMany({ where: { tenantId: a.tenantId }, select: { id: true } })).map((l) => l.id).sort();
+    expect(ownLawyerIds.length).toBeGreaterThan(0); // bakıldığının kanıtı
+
+    for (const userId of [a.admin.userId, a.partner.userId]) {
+      const res = await as(userId).get('/lawyers/default-permissions/status');
+      expect(res.status).toBe(200);
+      const rows = res.body as Array<{ lawyerId: string; appliesAtCaseOpen: boolean }>;
+      expect(rows.map((row) => row.lawyerId).sort()).toEqual(ownLawyerIds);
+      expect(rows.some((row) => row.lawyerId === b.opener.lawyerId)).toBe(false);
+      // A bürosunda kimsenin yönetim kaydı yok → B'deki yetkilendirme A'ya sızmaz
+      expect(rows.every((row) => row.appliesAtCaseOpen === false)).toBe(true);
+    }
+    for (const userId of [a.opener.userId, a.viewer.userId]) {
+      const res = await as(userId).get('/lawyers/default-permissions/status');
+      expect({ userId, status: res.status }).toEqual({ userId, status: 403 });
+    }
+    // B bürosunun yönetimi kendi avukatını yetkili görür
+    const own = await as(b.partner.userId).get('/lawyers/default-permissions/status');
+    expect((own.body as Array<{ lawyerId: string; appliesAtCaseOpen: boolean }>).find((row) => row.lawyerId === b.opener.lawyerId)).toMatchObject({
+      appliesAtCaseOpen: true,
+    });
+
+    expect(await snapshot()).toEqual(before);
   });
 });

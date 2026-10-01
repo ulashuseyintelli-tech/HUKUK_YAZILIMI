@@ -89,9 +89,9 @@ import { turkeyToday } from "../../common/turkey-calendar";
 import { caseInterestTypeSourceForCreate, isUnconfirmedDefaultLegalInterest, readCaseInterestTypeSource } from "../../common/case-interest-type-source";
 import {
   CASE_OPEN_LAWYER_PERMISSIONS_AUDIT_ACTION,
-  MANAGEMENT_DEFAULT_PERMISSIONS_AUDIT_ACTION,
   decideCaseOpenDefaultPermissions,
 } from "./case-lawyer-default-permissions";
+import { loadDefaultPermissionManagementBasis } from "../lawyer/lawyer-default-permissions-status";
 import {
   batchClassificationDocumentKindConflict,
   findClassificationDocumentKindConflict,
@@ -1188,24 +1188,9 @@ export class CaseService {
       select: { id: true, isActive: true, defaultPermissions: true },
     });
     const lawyerById = new Map(lawyers.map((l) => [l.id, l]));
-    const basisRows = await tx.auditLog.findMany({
-      where: {
-        tenantId,
-        action: MANAGEMENT_DEFAULT_PERMISSIONS_AUDIT_ACTION,
-        entityType: 'LAWYER',
-        entityId: { in: lawyerIds },
-        metadata: { path: ['changedFields'], array_contains: ['defaultPermissions'] },
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { id: true, entityId: true, metadata: true },
-    });
-    // Avukat başına YALNIZ en son yönetim kaydı dayanaktır (daha eski kayıt, sonradan yazılmış değeri onaylamaz)
-    const basisByLawyer = new Map<string, { auditLogId: string; fingerprint: string | null }>();
-    for (const row of basisRows) {
-      if (!row.entityId || basisByLawyer.has(row.entityId)) continue;
-      const fingerprint = (row.metadata as { defaultPermissionsFingerprint?: unknown } | null)?.defaultPermissionsFingerprint;
-      basisByLawyer.set(row.entityId, { auditLogId: row.id, fingerprint: typeof fingerprint === 'string' ? fingerprint : null });
-    }
+    // Avukat başına YALNIZ en son yönetim kaydı dayanaktır (daha eski kayıt, sonradan yazılmış değeri onaylamaz).
+    // Sorgu, avukat kartındaki durum gösterimiyle ORTAKTIR (KP-9): gösterilen durum ile açılış kararı ayrışamaz.
+    const basisByLawyer = await loadDefaultPermissionManagementBasis(tx, tenantId, lawyerIds);
 
     const decisions = [];
     for (const assignment of assignments) {
