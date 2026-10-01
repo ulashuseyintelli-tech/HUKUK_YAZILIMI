@@ -1,4 +1,5 @@
 import type { CanonicalSummaryShadowStatusRow } from '../interest-engine/orchestration/canonical-summary-rows';
+import type { BalanceDisplayReceipts } from '../interest-engine/orchestration/case-balance-display';
 
 export type ShadowDiffClassification =
   | 'EXACT_MATCH'
@@ -71,7 +72,9 @@ export interface ShadowTotals {
   /**
    * ALC-AUTH-1A/1B (2026-07-04): canonical tarafında bu, yalnız BORCA FİİLEN TAHSİS
    * EDİLMİŞ tutardır — "dosyaya gelen toplam para" değildir. Bkz. `allocatedPaidAmount`
-   * (aynı değer, açık isim) ve `grossReceivedAmount` (allocated + heldOverpaymentAmount).
+   * (aynı değer, açık isim) ve `grossReceivedAmount` (Toplam tahsilat).
+   * K3-L TK-5: canonical değeri = Σ amountAllocated (önceden tahsis adımı olan ödemelerin yüz değeri).
+   * Legacy tarafında `toplamTahsilat` (tarih süzgeçsiz kayıtlı tahsilat) — iki taraf aynı ölçü DEĞİL.
    */
   totalPaidAmount: number | null;
   outstandingAmount: number | null;
@@ -81,8 +84,13 @@ export interface ShadowTotals {
   heldOverpaymentAmount?: number | null;
   /** ALC-AUTH-1B: totalPaidAmount ile aynı değer, açık isimle tekrarlanır (yalnız canonical). */
   allocatedPaidAmount?: number | null;
-  /** ALC-AUTH-1B: allocatedPaidAmount + heldOverpaymentAmount (yalnız canonical). */
+  /**
+   * K3-L KP-7 (yalnız canonical): "Toplam tahsilat" — hesap tarihine kadar dosyaya fiilen giren, ters kayıtla netleşmiş
+   * para (mahsubu bekletilen dahil) = `receipts.receivedAmount`.
+   */
   grossReceivedAmount?: number | null;
+  /** K3-L KP-7 (yalnız canonical): Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen bloğu. */
+  receipts?: BalanceDisplayReceipts | null;
   raw: Record<string, number | null>;
 }
 
@@ -110,6 +118,11 @@ export interface BalanceDisplayShadowDiffReport {
   tenantId: string;
   caseId: string;
   currency: string | null;
+  /**
+   * K3-L KP-7: legacy ve canonical tarafın BİRLİKTE hesaplandığı hesap tarihi. Tüketici bu raporu yalnız aynı
+   * tarihli bir özetle birleştirebilir (farklı tarih kapsamı mutabık gösterilmez).
+   */
+  asOfDate: string;
   generatedAt: string;
   sourceVersion: string;
   mode: 'SHADOW_ONLY';

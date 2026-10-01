@@ -64,6 +64,8 @@ function makeDisplay(overrides: Partial<CaseBalanceDisplay> = {}): CaseBalanceDi
     currencies: [makeCurrency()],
     buckets: [],
     totals: { ...NULL_TOTALS },
+    // K3-L KP-7: görünüm sözleşmesi tahsilat bloğunu her zaman taşır (bu karşılaştırıcı onu okumaz)
+    receipts: null,
     diagnostics: [],
     provenance: {
       computeBalanceUsed: true,

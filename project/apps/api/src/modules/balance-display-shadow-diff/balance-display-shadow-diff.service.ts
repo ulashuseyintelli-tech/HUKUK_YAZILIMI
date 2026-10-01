@@ -292,6 +292,7 @@ function buildCanonicalTotals(display: CaseBalanceDisplay | undefined): ShadowTo
     heldOverpaymentAmount: display.totals.heldOverpaymentAmount,
     allocatedPaidAmount: display.totals.allocatedPaidAmount,
     grossReceivedAmount: display.totals.grossReceivedAmount,
+    receipts: display.receipts ?? null,
     raw: {
       totalDebtAmount: display.totals.totalDebtAmount,
       totalPaidAmount: display.totals.totalPaidAmount,
@@ -896,6 +897,7 @@ export class BalanceDisplayShadowDiffService {
       tenantId,
       caseId,
       currency: display?.currency ?? legacyTotals?.currency ?? null,
+      asOfDate,
       generatedAt,
       sourceVersion: display?.sourceVersion ?? 'balance-display:unavailable',
       mode: 'SHADOW_ONLY',

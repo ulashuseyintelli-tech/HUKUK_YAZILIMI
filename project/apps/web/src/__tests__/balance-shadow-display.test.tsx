@@ -87,6 +87,24 @@ const legacyCalculationSummary = {
   tahsilOranlari: [],
 };
 
+// K3-L KP-7: canonical rapor tahsilat blogunu ve hesap tarihini tasir (sunucu sozlesmesi: Toplam = Uygulanan + Bekleyen).
+// Mevcut testlerin amaci degismez; pilot "Toplam tahsilat"i yalniz bu tutarli bloktan gosterdigi icin fikstur tasir.
+function receiptsFor(applied: number, unapplied = 0, held = 0, asOfDate = "2026-06-24") {
+  return {
+    currency: "TRY",
+    asOfDate,
+    scope: "ON_OR_BEFORE_AS_OF_DATE" as const,
+    receivedAmount: applied + unapplied + held,
+    paymentAmount: applied + unapplied,
+    allocationHeldAmount: held,
+    appliedToDebtAmount: applied,
+    unappliedPaymentAmount: unapplied,
+    notAppliedAmount: unapplied + held,
+    afterAsOfExcludedAmount: 0,
+    appliedScope: "PRINCIPAL_AND_INTEREST_ONLY" as const,
+  };
+}
+
 function makeReport(
   overrides: Partial<BalanceDisplayShadowDiffReport> = {},
 ): BalanceDisplayShadowDiffReport {
@@ -94,6 +112,7 @@ function makeReport(
     tenantId: "tenant-1",
     caseId: "case-1",
     currency: "TRY",
+    asOfDate: "2026-06-24",
     generatedAt: "2026-06-24T10:00:00.000Z",
     sourceVersion: "balance-display-shadow-diff-v1",
     mode: "SHADOW_ONLY",
@@ -139,6 +158,8 @@ function makeReport(
         interestAmount: 0,
         costsAmount: 0,
         attorneyFeeAmount: 0,
+        grossReceivedAmount: 0,
+        receipts: receiptsFor(0),
         raw: {},
       },
       diffs: [
@@ -238,6 +259,8 @@ function makeEligibleGuardedPrimaryReport(): BalanceDisplayShadowDiffReport {
         interestAmount: 0,
         costsAmount: 0,
         attorneyFeeAmount: 0,
+        grossReceivedAmount: 0,
+        receipts: receiptsFor(0),
         raw: {},
       },
       diffs: [],
@@ -351,6 +374,9 @@ function makeMixedAuthorityCanonicalReport(): BalanceDisplayShadowDiffReport {
   report.totals.canonical!.totalDebtAmount = 20002;
   report.totals.canonical!.outstandingAmount = 30003;
   report.totals.canonical!.totalPaidAmount = 4004;
+  // K3-L KP-7: Toplam tahsilat 4.404 = borca uygulanan 4.004 + dagitim bekleyen 400 (100 mahsubu bekleyen + 300 uygulanmayan)
+  report.totals.canonical!.grossReceivedAmount = 4404;
+  report.totals.canonical!.receipts = receiptsFor(4004, 300, 100);
   report.totals.canonical!.interestAmount = 505;
   report.totals.canonical!.costsAmount = 606;
   report.totals.canonical!.attorneyFeeAmount = 707;
@@ -448,6 +474,9 @@ describe("guarded primary display pilot gate", () => {
     report.totals.canonical!.totalDebtAmount = -50;
     report.totals.canonical!.outstandingAmount = -50;
     report.totals.canonical!.totalPaidAmount = -50;
+    // K3-L KP-7: tahsilat blogu ust toplamla tutarli tasinir (guard isaret/alan denetimi yapmaz; amac degismedi)
+    report.totals.canonical!.grossReceivedAmount = -50;
+    report.totals.canonical!.receipts = receiptsFor(-50);
     report.totals.canonical!.interestAmount = -50;
     report.totals.canonical!.costsAmount = -50;
     report.totals.canonical!.attorneyFeeAmount = -50;
@@ -474,10 +503,21 @@ describe("guarded primary display pilot gate", () => {
       takipSonrasiFaiz: 505,
       toplamBorc: 20002,
       sonBorc: 30003,
-      toplamTahsilat: 4004,
+      // K3-L KP-7 (owner karari): "Toplam tahsilat" = dosyaya fiilen giren (4.404); borca uygulanan (4.004) ayri satir
+      toplamTahsilat: 4404,
       kalanBorc: 30003,
       kalanAnapara: 10001,
     }));
+    expect(guardedResult!.tahsilatGosterimi).toEqual({
+      hesapTarihi: "2026-06-24",
+      paraBirimi: "TRY",
+      toplamTahsilat: 4404,
+      borcaUygulanan: 4004,
+      dagitimBekleyen: 400,
+      mahsubuBekleyen: 100,
+      hesapTarihindenSonra: 0,
+      masrafFeriUyarisi: false,
+    });
     // ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsami disinda -- legacy (tarife formulu)
     // degerleri korunur, canonical (606/707) DEGIL.
     expect(guardedResult).toEqual(expect.objectContaining({
@@ -505,6 +545,12 @@ describe("guarded primary display pilot gate", () => {
     ["totalPaidAmount", "0"],
     ["totalPaidAmount", Number.NaN],
     ["totalPaidAmount", Number.POSITIVE_INFINITY],
+    // K3-L KP-7: "Toplam tahsilat" alani da gosterilen tutardir
+    ["grossReceivedAmount", undefined],
+    ["grossReceivedAmount", null],
+    ["grossReceivedAmount", "0"],
+    ["grossReceivedAmount", Number.NaN],
+    ["grossReceivedAmount", Number.POSITIVE_INFINITY],
     ["interestAmount", undefined],
     ["interestAmount", null],
     ["interestAmount", "0"],
@@ -595,7 +641,8 @@ describe("guarded primary display pilot gate", () => {
     expect(guardedResult!.asilAlacak).toBe(report.bucketDiffs[0].canonicalAmount);
     expect(guardedResult!.takipTutari).toBe(report.bucketDiffs[0].canonicalAmount);
     expect(guardedResult!.takipSonrasiFaiz).toBe(report.totals.canonical!.interestAmount);
-    expect(guardedResult!.toplamTahsilat).toBe(report.totals.canonical!.totalPaidAmount);
+    // K3-L KP-7: Toplam tahsilat = grossReceivedAmount (dosyaya giren); totalPaidAmount borca uygulanandir (TK-5)
+    expect(guardedResult!.toplamTahsilat).toBe(report.totals.canonical!.grossReceivedAmount);
     expect(guardedResult!.kalanAnapara).toBe(report.bucketDiffs[0].canonicalAmount);
   });
 
@@ -933,6 +980,8 @@ describe("guarded summary runtime boundary plan", () => {
     "toplamTahsilat",
     "kalanBorc",
     "kalanAnapara",
+    // K3-L KP-7: Toplam tahsilat / Borca uygulanan / Dagitim bekleyen blogu yalniz kanonik pilotta uretilir
+    "tahsilatGosterimi",
   ];
 
   // ALC-AUTH-1A: icraMasraflari/vekaletUcreti B1 kapsami disinda -- backend contract required
@@ -1458,6 +1507,9 @@ describe("BalanceShadowDiffPanel", () => {
     // yansimiyordu -- bu test o boslugu (sifir render-seviyesi kapsam) kapatiyor.
     const report = makeEligibleGuardedPrimaryReport();
     report.totals.canonical!.totalPaidAmount = 100; // KALAN BORC blogunu render ettirmek icin
+    // K3-L KP-7: tahsilat blogu ust toplamla tutarli (pilot "Toplam tahsilat"i yalniz tutarli bloktan gosterir)
+    report.totals.canonical!.grossReceivedAmount = 100;
+    report.totals.canonical!.receipts = receiptsFor(100);
     report.totals.diffs = [
       {
         code: "COSTS_DELTA",

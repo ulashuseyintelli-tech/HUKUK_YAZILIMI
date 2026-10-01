@@ -94,8 +94,18 @@ export interface CaseCalculationResult {
   toplamBorc: number;
   sonBorc: number;
   toplamTahsilat: number;
+  /** K3-L KP-7: toplamTahsilat (tarih süzgeçsiz) içindeki hesap tarihinden SONRA tarihli kısım — sunucu hesabı, bilgi */
+  hesapTarihindenSonrakiTahsilat?: number;
+  hesapTarihindenSonrakiTahsilatAdedi?: number;
   /** K3-L: mahsubu bekletilen tahsilat — toplamTahsilat / kalanBorc içinde DEĞİL (sunucu hesabı) */
   mahsubuBekleyenTahsilat?: number;
+  /** K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz — hesaba DAHİL DEĞİL (kayıt yoksa null) */
+  talepEdilenIslemisFaiz?: TalepEdilenIslemisFaiz | null;
+  /**
+   * K3-L KP-7: yalnız kanonik pilot (guarded primary) doldurur — Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen,
+   * hesap tarihi kapsamlı. Legacy yanıtta YOK (legacy panel "Tahsilat Düşümü" satırını gösterir).
+   */
+  tahsilatGosterimi?: TahsilatGosterimi;
   kalanBorc: number;
   kalanAnapara: number;
   
@@ -112,6 +122,29 @@ export interface CaseCalculationResult {
     label: string;
     tutar: number;
   }>;
+}
+
+/** K3-L KP-3 / TK-7 — talep edilmiş işlemiş faiz (sunucu: claimedInterestAmount kuralı; hesaba dahil DEĞİL). */
+export interface TalepEdilenIslemisFaiz {
+  hesabaDahil: false;
+  gerekce: 'TALEP_EDILEN_ISLEMIS_FAIZ_HESAPLAMAYA_DAHIL_DEGIL';
+  toplamParaBirimiBazinda: Record<string, number>;
+  kalemler: Array<{ claimItemId: string; kalemTuru: string; paraBirimi: string; tutar: number }>;
+}
+
+/** K3-L KP-7 — kanonik tahsilat gösterimi (sunucu değerleri; istemci hesabı YOK). */
+export interface TahsilatGosterimi {
+  hesapTarihi: string;
+  paraBirimi: string;
+  toplamTahsilat: number;
+  borcaUygulanan: number;
+  dagitimBekleyen: number;
+  /** K3-L D1: mahsubu bekletilen (borçtan düşülmedi) — dağıtım bekleyenin parçası */
+  mahsubuBekleyen: number;
+  /** Hesap tarihinden sonra tarihli; bu toplamlara girmedi */
+  hesapTarihindenSonra: number;
+  /** Masraf/fer'i kanonik mahsupta yokken borca uygulanmayan ödeme var (bir kısmı masraf/fer'iye ait olabilir) */
+  masrafFeriUyarisi: boolean;
 }
 
 export interface UseCaseCalculationOptions {

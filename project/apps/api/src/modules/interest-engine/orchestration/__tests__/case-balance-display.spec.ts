@@ -12,6 +12,19 @@ function currencyResult(currency: string, result: any, skippedReason: string | n
   return { currency, result, skippedReason: skippedReason ?? undefined };
 }
 
+/** Motor tahsis adımı (AllocationStepSchema şekli): ödemeden `allocated` kadarı anaparaya. */
+function allocStep(paymentId: string, paymentAmount: number, allocated: number) {
+  return {
+    paymentId,
+    paymentDate: '2026-06-01',
+    paymentAmount,
+    allocations: [{ category: 'PRINCIPAL', label: 'Anapara', amountBefore: allocated, amountAllocated: allocated, amountAfter: 0 }],
+    remainingPayment: paymentAmount - allocated,
+    newPrincipal: 0,
+    claimBucketId: 'b1',
+  };
+}
+
 describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
   it('OK tek-currency: faiz/claimRemaining/collected/costs/ancillaries doğru map + round2', () => {
     const balance = makeBalance({
@@ -50,12 +63,15 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
           result: {
             totalInterest: 150,
             totalDue: 1200,
-            allocations: [{ paymentId: 'p1', paymentAmount: 300 }],
+            // K3-L TK-5: borca uygulanan = Σ amountAllocated → adım kategori tahsisini taşır (servis çıktısıyla aynı şekil)
+            allocations: [allocStep('p1', 300, 300)],
             engineVersion: 'engine-v1',
             segments: [{ id: 's1' }],
           },
         },
       ] as any,
+      // K3-L KP-7: servis kapsam içi ödeme kümesini her zaman taşır (yoksa tahsilat bloğu üretilmez)
+      paymentsInScope: [{ id: 'p1', date: '2026-06-01', amount: 300, currency: 'TRY' }],
       projections: {
         costs: { HARC: 75, TEBLIGAT_MASRAFI: 25 },
         ancillaries: { VEKALET_UCRETI: 200, DIGER: 40 },
@@ -598,14 +614,21 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
           totalInterest: 0,
           totalDue: 0,
           allocations: [
-            { paymentId: 'p1', paymentAmount: 20000 },
-            { paymentId: 'p2', paymentAmount: 100000 },
-            { paymentId: 'p3', paymentAmount: 100000 },
+            allocStep('p1', 20000, 20000),
+            allocStep('p2', 100000, 100000),
+            allocStep('p3', 100000, 100000),
             // p4 (100.000) BİLEREK yok — borç kapandıktan sonra geldiği için hiç
             // allocation step üretmedi (ALC-AUTH-1A'da koddan doğrulandı).
           ],
         }),
       ] as any,
+      // K3-L KP-7: motora giren ödeme kümesi (p4 dahil — tahsis adımı olmasa da dosyaya girdi)
+      paymentsInScope: [
+        { id: 'p1', date: '2026-01-10', amount: 20000, currency: 'TRY' },
+        { id: 'p2', date: '2026-02-10', amount: 100000, currency: 'TRY' },
+        { id: 'p3', date: '2026-03-10', amount: 100000, currency: 'TRY' },
+        { id: 'p4', date: '2026-04-10', amount: 100000, currency: 'TRY' },
+      ],
       overpayments: {
         held: [
           { id: 'op1', collectionId: 'col-p4', currency: 'TRY', amount: 100000, remainingAmount: 100000, status: 'HELD' },

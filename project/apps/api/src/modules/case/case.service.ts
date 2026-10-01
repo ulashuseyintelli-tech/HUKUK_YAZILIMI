@@ -42,6 +42,8 @@ import { InterestEngineService } from "../interest-engine/interest-engine.servic
 import { CaseBalanceService } from "../interest-engine/orchestration/case-balance.service";
 import type { CaseBalanceResult } from "../interest-engine/orchestration/case-balance.service";
 import { toCaseBalanceDisplay } from "../interest-engine/orchestration/case-balance-display";
+import { claimedInterestAmount } from "../interest-engine/assembler/claim-bucket-assembler";
+import { INTEREST_CLAIM_ITEM_TYPES } from "../interest-engine/classification/claim-item-classifier";
 import {
   buildCaseCalculationSummaryCompatibilityAdapter,
   buildUnavailableCaseCalculationSummaryCompatibilityAdapter,
@@ -4932,7 +4934,10 @@ export class CaseService {
         debtors: { include: { debtor: true } },
         formType: true,
         // K3-L: kesin çek tazminatı YALNIZ kalem kaydından; tahmin yalnız doğrulanmış çek kaydından.
-        claimItems: { where: { itemType: 'CHECK_PENALTY', status: { not: 'CANCELLED' } } },
+        // K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz kalemleri aynı okumayla gelir (aşağıda türe göre ayrılır).
+        claimItems: {
+          where: { itemType: { in: ['CHECK_PENALTY', ...INTEREST_CLAIM_ITEM_TYPES] }, status: { not: 'CANCELLED' } },
+        },
         caseInstruments: {
           where: { instrumentType: 'CEK' },
           select: { amount: true, currency: true, isBounced: true, bounceDate: true },
@@ -4971,7 +4976,8 @@ export class CaseService {
     const isCek = kalemTuru === 'CEK' || kalemTuru === 'CHECK';
     // K3-L (owner kararı 2026-09-28): KESİN tazminat YALNIZ kesin CHECK_PENALTY kalemlerinden (tutar, kalan, kalem
     // bazlı sorumlular kayıttan). Kalem yoksa "asıl alacak × %10" kesin borca EKLENMEZ; durum + ayrı bilgi tahmini.
-    const penaltyItems = ((caseData as any).claimItems ?? []) as CheckPenaltyItemRow[];
+    const penaltyItems = (((caseData as any).claimItems ?? []) as Array<CheckPenaltyItemRow & { itemType?: string }>)
+      .filter((item) => item.itemType === 'CHECK_PENALTY') as CheckPenaltyItemRow[];
     const checkInstruments = ((caseData as any).caseInstruments ?? []) as CheckInstrumentRow[];
     const isCheckCase = isCek || caseData.type === 'CHECK' || checkInstruments.length > 0;
     const tazminatDurumu = buildCheckPenaltySummary({
@@ -5025,6 +5031,40 @@ export class CaseService {
       }));
     const toplamTahsilat = aktiveTahsilatlar.reduce((sum: number, c: any) => sum + c.tutar, 0);
     const mahsubuBekleyenTahsilat = heldAllocations.reduce((sum, hold) => sum + Number(hold.amount), 0);
+    // K3-L KP-7: tarih kapsamı açık — `toplamTahsilat` (dolayısıyla kalanBorc) tarih süzgeçsizdir; hesap tarihinden SONRA
+    // tarihli kayıtlı tahsilat ayrı bilgi olarak yazılır. Değerler DEĞİŞMEDİ; farklı tarih kapsamı mutabık gösterilmez.
+    const sonrakiTahsilatlar = aktiveTahsilatlar.filter((c: any) => c.tarih > hesapTarihi);
+    const hesapTarihindenSonrakiTahsilat =
+      Math.round(sonrakiTahsilatlar.reduce((sum: number, c: any) => sum + c.tutar, 0) * 100) / 100;
+
+    // K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz — varlığı, tutarı ve hesaba DAHİL EDİLMEDİĞİ açıkça yazılır. Legacy
+    // faiz satırları bu tutarı içermez ve hiçbir toplama eklenmez (aynı faiz iki kez sayılmaz). Kural kanonik bakiye ile
+    // ortak: claimedInterestAmount (ADR-014 I-10).
+    const talepEdilenFaizKalemleri = (((caseData as any).claimItems ?? []) as any[])
+      .map((item) => ({
+        claimItemId: String(item.id),
+        kalemTuru: String(item.itemType),
+        paraBirimi: String(item.currency || caseData.currency || "TRY"),
+        tutar: claimedInterestAmount({
+          itemType: String(item.itemType),
+          status: String(item.status),
+          amount: Number(item.amount ?? 0),
+          demandedAmount: item.demandedAmount == null ? null : Number(item.demandedAmount),
+        }),
+      }))
+      .filter((item): item is { claimItemId: string; kalemTuru: string; paraBirimi: string; tutar: number } => item.tutar != null)
+      .sort((a, b) => a.paraBirimi.localeCompare(b.paraBirimi) || a.claimItemId.localeCompare(b.claimItemId));
+    const talepEdilenIslemisFaiz = talepEdilenFaizKalemleri.length === 0
+      ? null
+      : {
+        hesabaDahil: false as const,
+        gerekce: 'TALEP_EDILEN_ISLEMIS_FAIZ_HESAPLAMAYA_DAHIL_DEGIL' as const,
+        toplamParaBirimiBazinda: talepEdilenFaizKalemleri.reduce<Record<string, number>>((acc, item) => {
+          acc[item.paraBirimi] = Math.round(((acc[item.paraBirimi] ?? 0) + item.tutar) * 100) / 100;
+          return acc;
+        }, {}),
+        kalemler: talepEdilenFaizKalemleri,
+      };
 
     // 10. Toplamlar
     const toplamBorc = takipTutari + icraMasraflari + vekaletUcreti + takipSonrasiFaiz;
@@ -5074,8 +5114,13 @@ export class CaseService {
       toplamBorc,
       sonBorc,
       toplamTahsilat,
+      // K3-L KP-7: toplamTahsilat içindeki hesap tarihinden SONRA tarihli kısım (bilgi; borç hesabı değişmedi)
+      hesapTarihindenSonrakiTahsilat,
+      hesapTarihindenSonrakiTahsilatAdedi: sonrakiTahsilatlar.length,
       // K3-L: kaydedilmiş, mahsubu bekletilen tahsilat toplamı (kalanBorc'tan DÜŞÜLMEMİŞTİR; ayrı bilgi alanı)
       mahsubuBekleyenTahsilat,
+      // K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz (hesaba DAHİL DEĞİL; kayıt yoksa null)
+      talepEdilenIslemisFaiz,
       kalanBorc,
       kalanAnapara: asilAlacak, // TBK m.100 sonrası hesaplanacak
       

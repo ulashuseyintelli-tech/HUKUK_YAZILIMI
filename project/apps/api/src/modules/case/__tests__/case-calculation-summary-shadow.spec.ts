@@ -276,7 +276,12 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       'toplamBorc',
       'sonBorc',
       'toplamTahsilat',
+      // K3-L KP-7 (owner kararı 2026-10-01): eklemeli bilgi — toplamTahsilat içindeki hesap tarihinden sonraki kısım
+      'hesapTarihindenSonrakiTahsilat',
+      'hesapTarihindenSonrakiTahsilatAdedi',
       'mahsubuBekleyenTahsilat',
+      // K3-L KP-3 / TK-7: eklemeli — talep edilmiş işlemiş faiz (hesaba dahil DEĞİL; kayıt yoksa null)
+      'talepEdilenIslemisFaiz',
       'kalanBorc',
       'kalanAnapara',
       'mahsupDetaylari',
@@ -551,5 +556,57 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
       matchStatus: 'CURRENCY_MISMATCH',
     });
+  });
+});
+
+describe('K3-L KP-7 / KP-3: legacy hesap özeti — tarih kapsamı ve talep edilmiş işlemiş faiz (eklemeli bilgi)', () => {
+  it('hesap tarihinden sonraki kayıtlı tahsilat ayrıca yazılır; toplamTahsilat ve kalanBorc DEĞİŞMEZ', async () => {
+    const prisma = makePrisma({
+      collections: [
+        { id: 'c1', status: 'CONFIRMED', amount: 300, date: new Date('2026-06-01T00:00:00.000Z') },
+        { id: 'c2', status: 'CONFIRMED', amount: 120, date: new Date('2026-07-05T00:00:00.000Z') },
+      ],
+    });
+    const service = makeService(prisma, makeCanonical());
+
+    const result = await service.getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+
+    // Legacy değerleri aynen (tarih süzgeçsiz): 300 + 120
+    expect(result.toplamTahsilat).toBe(420);
+    expect(result.kalanBorc).toBeCloseTo(result.sonBorc - 420, 2);
+    // Yeni bilgi: 120'si hesap tarihinden (21.06) sonra
+    expect(result.hesapTarihindenSonrakiTahsilat).toBe(120);
+    expect(result.hesapTarihindenSonrakiTahsilatAdedi).toBe(1);
+  });
+
+  it('talep edilmiş işlemiş faiz görünür, hesaba dahil değil; faiz kalemi tazminat SAYILMAZ (ortak okuma ayrımı)', async () => {
+    const prisma = makePrisma({
+      claimItems: [
+        { id: 'i1', itemType: 'PRE_INTEREST', status: 'ACTIVE', amount: 500, demandedAmount: null, currency: 'TRY' },
+        { id: 'i0', itemType: 'INTEREST', status: 'ACTIVE', amount: 0, demandedAmount: null, currency: 'TRY' },
+        { id: 'i9', itemType: 'POST_INTEREST', status: 'WAIVED', amount: 90, demandedAmount: 90, currency: 'TRY' },
+      ],
+    });
+    const service = makeService(prisma, makeCanonical());
+
+    const result = await service.getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+
+    expect(result.talepEdilenIslemisFaiz).toEqual({
+      hesabaDahil: false,
+      gerekce: 'TALEP_EDILEN_ISLEMIS_FAIZ_HESAPLAMAYA_DAHIL_DEGIL',
+      toplamParaBirimiBazinda: { TRY: 500 },
+      kalemler: [{ claimItemId: 'i1', kalemTuru: 'PRE_INTEREST', paraBirimi: 'TRY', tutar: 500 }],
+    });
+    // Hiçbir toplama eklenmedi; faiz kalemleri kesin tazminat olarak okunmadı
+    expect(result.tazminat).toBe(0);
+    expect(result.takipOncesiFaiz).toBe(0);
+    expect(result.takipTutari).toBe(result.asilAlacak + result.tazminat + result.komisyon);
+  });
+
+  it('talep edilmiş faiz kaydı yoksa alan null', async () => {
+    const service = makeService(makePrisma(), makeCanonical());
+    const result = await service.getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+    expect(result.talepEdilenIslemisFaiz).toBeNull();
+    expect(result.hesapTarihindenSonrakiTahsilat).toBe(0);
   });
 });
