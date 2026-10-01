@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { recordCurrencyCode } from "@/lib/record-currency-display";
 
 const DUE_TYPES = [
   { value: "PRINCIPAL", label: "Ana Para (Asıl Alacak)" },
@@ -37,15 +38,22 @@ const INTEREST_TYPES = [
   { value: "OZEL", label: "Özel Oran (Sözleşme)" },
 ];
 
+/** Para birimi seçim alanında sabit duran seçenekler */
+const LISTED_CURRENCIES = ["TRY", "USD", "EUR", "GBP"];
+
 interface DueModalProps {
   isOpen: boolean;
   onClose: () => void;
   caseId: string;
   due?: any; // Edit mode
   onSuccess: () => void;
+  /** Dosyanın para birimi: YENİ kalemde seçimin varsayılanı (kilit değil; düzenlemede kaydın kendi değeri geçerlidir) */
+  defaultCurrency?: string | null;
 }
 
-export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalProps) {
+export function DueModal({ isOpen, onClose, caseId, due, onSuccess, defaultCurrency }: DueModalProps) {
+  // Alan boşsa şema varsayılanı (TRY) — dosya para birimi verilmeyen çağrı önceki gibi davranır
+  const newDueCurrency = recordCurrencyCode(defaultCurrency);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({
@@ -53,10 +61,15 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
     description: "",
     amount: "",
     dueDate: new Date().toISOString().split("T")[0],
-    currency: "TRY",
+    currency: newDueCurrency,
     interestType: "YASAL", // Default: Yasal Faiz
   });
   const availableDueTypes = dueTypeOptionsForMode(due?.type);
+  // Dosyanın / kaydın para birimi sabit listede yoksa (ör. CHF) seçim alanına eklenir: alan ilk seçeneği gösterirken
+  // form başka bir para birimi göndermesin, kullanıcı dosya para birimine geri dönebilsin.
+  const unlistedCurrencies = Array.from(new Set([newDueCurrency, due?.currency, form.currency])).filter(
+    (code): code is string => typeof code === "string" && code !== "" && !LISTED_CURRENCIES.includes(code),
+  );
 
   useEffect(() => {
     if (due) {
@@ -74,11 +87,11 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
         description: "",
         amount: "",
         dueDate: new Date().toISOString().split("T")[0],
-        currency: "TRY",
+        currency: newDueCurrency,
         interestType: "YASAL",
       });
     }
-  }, [due, isOpen]);
+  }, [due, isOpen, newDueCurrency]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,6 +220,9 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
                 <option value="USD">$ USD</option>
                 <option value="EUR">€ EUR</option>
                 <option value="GBP">£ GBP</option>
+                {unlistedCurrencies.map((code) => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
               </select>
             </div>
           </div>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { splitCollectionFinanceTotals } from "@/lib/collection-allocation-hold";
+import { collectionFinanceTotalCurrencies, splitCollectionFinanceTotals } from "@/lib/collection-allocation-hold";
+import { recordCurrencySuffix } from "@/lib/record-currency-display";
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -147,6 +148,8 @@ interface FinanceItem {
   status?: string;
   /** K3-L: mahsubu bekletilen tahsilat — tahsilat toplamına girmez, ayrı gösterilir */
   allocationHeld?: boolean;
+  /** Tahsilat kaydının kendi para birimi (yalnız TAHSILAT; masraf tutarları TL tarifesindendir) */
+  currency?: string | null;
   // Expense-specific fields
   paidAmount?: number;
   remainingAmount?: number;
@@ -213,6 +216,8 @@ interface OperationDeckProps {
   onTerminateFeeAgreement?: (agreementId: string) => Promise<CaseFeeAgreementSummary>;
   tasks?: Task[];
   financeItems?: FinanceItem[];
+  /** Dosyanın para birimi — tahsilat yokken "Tahsilat" kartındaki 0 tutarının etiketi */
+  caseCurrency?: string | null;
   uyapQueries?: UyapQuery[];
   relatedCases?: RelatedCase[];
   clientBalance?: number;
@@ -250,6 +255,11 @@ const panels = [
 const formatDate = (d: string) => d ? new Date(d).toLocaleDateString("tr-TR") : "-";
 const formatDateTime = (d: string) => d ? new Date(d).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-";
 const formatTL = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 0 }) + " ₺";
+// Tahsilat tutarı kaydın KENDİ para birimiyle yazılır (çevirme yok); TRY'de formatTL ile birebir aynı metni üretir.
+const formatCollectionAmount = (n: number, currency?: string | null) =>
+  n.toLocaleString("tr-TR", { minimumFractionDigits: 0 }) + recordCurrencySuffix(currency);
+const MIXED_COLLECTION_CURRENCY_REASON =
+  "Tahsilatlar birden fazla para biriminde; tutarlar çevrilmez ve tek toplamda birleştirilmez.";
 const distributionBucketOptions: Array<{ type: DispositionPostingLineType; label: string; description: string }> = [
   { type: "CLIENT_PAYABLE", label: "Müvekkile Ödenecek", description: "Müvekkil payı" },
   { type: "CLIENT_EXPENSE_REIMBURSEMENT", label: "Müvekkil Masraf İadesi", description: "Müvekkile iade edilecek masraf" },
@@ -362,6 +372,7 @@ export function OperationDeck({
   onTerminateFeeAgreement,
   tasks = [],
   financeItems = [],
+  caseCurrency,
   uyapQueries = [],
   relatedCases = [],
   clientBalance = 0,
@@ -810,6 +821,13 @@ export function OperationDeck({
   const pendingQueries = uyapQueries.filter(q => q.status === "BEKLIYOR").length;
   const pendingRequests = muvekkilTalepleri.filter(r => r.status === "BEKLIYOR").length;
 
+  // Finans kartı: tahsilat toplamları ve para birimleri. Para birimi null ise o toplam birden fazla para birimindedir
+  // ve YAZILMAZ (REC-ALLOC-008: farklı para birimleri tek sayıda toplanmaz, tutar çevrilmez).
+  const collectionTotals = splitCollectionFinanceTotals(financeItems);
+  const collectionTotalCurrencies = collectionFinanceTotalCurrencies(financeItems, caseCurrency);
+  const collectionTotalsMixed =
+    !collectionTotalCurrencies.allocated || (collectionTotals.heldCount > 0 && !collectionTotalCurrencies.held);
+
   // Group tasks by category
   const nextMove = tasks.find(t => t.category === "SONRAKI_HAMLE" && t.status === "BEKLIYOR");
   const timeBoundTasks = tasks.filter(t => t.category === "SURE_BAGLI" && t.status === "BEKLIYOR");
@@ -1023,16 +1041,33 @@ export function OperationDeck({
             <div className="p-4 space-y-4">
               {/* Özet Kartları */}
               <div className="grid grid-cols-4 gap-3">
-                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
-                  <p className="text-[10px] text-emerald-600 uppercase tracking-wide">Tahsilat</p>
-                  <p className="text-lg font-bold text-emerald-700" data-testid="finance-collection-total">
-                    {formatTL(splitCollectionFinanceTotals(financeItems).allocated)}
+                {/* Tahsilat kaydın kendi para birimiyle yazılır; karma tahsilatta toplam yerine nedeni yazılır */}
+                <div
+                  className="p-3 rounded-lg bg-emerald-50 border border-emerald-200"
+                  title={collectionTotalsMixed ? MIXED_COLLECTION_CURRENCY_REASON : undefined}
+                >
+                  <p className="text-[10px] text-emerald-600 uppercase tracking-wide">
+                    Tahsilat
+                    {!collectionTotalCurrencies.allocated && <span className="normal-case"> (farklı para birimleri)</span>}
                   </p>
-                  {splitCollectionFinanceTotals(financeItems).heldCount > 0 && (
-                    <p className="text-[9px] text-amber-700" data-testid="finance-collection-held">
-                      Mahsubu bekleyen: {formatTL(splitCollectionFinanceTotals(financeItems).held)} (borçtan düşülmedi)
+                  {collectionTotalCurrencies.allocated ? (
+                    <p className="text-lg font-bold text-emerald-700" data-testid="finance-collection-total">
+                      {formatCollectionAmount(collectionTotals.allocated, collectionTotalCurrencies.allocated)}
+                    </p>
+                  ) : (
+                    <p className="text-lg font-bold text-slate-500" data-testid="finance-collection-total-unavailable">
+                      gösterilemez
                     </p>
                   )}
+                  {collectionTotals.heldCount > 0 && (collectionTotalCurrencies.held ? (
+                    <p className="text-[9px] text-amber-700" data-testid="finance-collection-held">
+                      Mahsubu bekleyen: {formatCollectionAmount(collectionTotals.held, collectionTotalCurrencies.held)} (borçtan düşülmedi)
+                    </p>
+                  ) : (
+                    <p className="text-[9px] text-amber-700" data-testid="finance-collection-held">
+                      Mahsubu bekleyen (farklı para birimleri): gösterilemez (borçtan düşülmedi)
+                    </p>
+                  ))}
                 </div>
                 <div className="p-3 rounded-lg bg-red-50 border border-red-200">
                   <p className="text-[10px] text-red-600 uppercase tracking-wide">Yapılan Masraf</p>
@@ -1130,7 +1165,7 @@ export function OperationDeck({
                         <span className={`font-medium ${
                           item.type === "TAHSILAT" ? (item.allocationHeld ? "text-amber-700" : "text-emerald-600") : "text-red-600"
                         }`}>
-                          {item.type === "TAHSILAT" ? (item.allocationHeld ? "" : "+") : "-"}{formatTL(item.amount)}
+                          {item.type === "TAHSILAT" ? (item.allocationHeld ? "" : "+") : "-"}{item.type === "TAHSILAT" ? formatCollectionAmount(item.amount, item.currency) : formatTL(item.amount)}
                         </span>
                         <p className="text-[10px] text-slate-400">{formatDate(item.date)}</p>
                       </div>
@@ -1560,11 +1595,12 @@ export function OperationDeck({
                       </span>
                     </div>
                     <p className="text-sm text-slate-700">{record.description}</p>
+                    {/* Dağıtım kaydı tutarı kaydın kendi para birimiyle yazılır; dağıtım bilgisi taşımayan kayıt TL'dir */}
                     {record.amount && (
                       <p className={`text-sm font-semibold mt-1 ${
                         record.type === "ODEME_ALINDI" ? "text-emerald-600" : "text-slate-700"
                       }`}>
-                        {record.type === "ODEME_ALINDI" ? "+" : ""}{record.amount.toLocaleString("tr-TR")} ₺
+                        {record.type === "ODEME_ALINDI" ? "+" : ""}{record.amount.toLocaleString("tr-TR")}{recordCurrencySuffix(record.disposition?.currency)}
                       </p>
                     )}
                     {(() => {
