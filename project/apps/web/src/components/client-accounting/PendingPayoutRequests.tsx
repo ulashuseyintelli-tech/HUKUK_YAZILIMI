@@ -107,6 +107,9 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
       queryClient.invalidateQueries({ queryKey: ['client-accounting-outstanding'] });
       queryClient.invalidateQueries({ queryKey: ['client-accounting-payouts'] });
       queryClient.invalidateQueries({ queryKey: ['client-statement'] });
+      // Muhasebe Defteri (FinancialStatementPanel) ödemeyi günlükten okur; kesinleştirme yeni günlük satırı
+      // yazdığı için panel de yenilenir — yoksa "Müvekkile Borç (Net)" güncel, panel kapanışı eski kalır.
+      queryClient.invalidateQueries({ queryKey: ['financial-statement'] });
       queryClient.invalidateQueries({ queryKey: ['client-payout-approval-requests'] });
       queryClient.invalidateQueries({ queryKey: ['client-payout-approval-request-details'] });
     },
