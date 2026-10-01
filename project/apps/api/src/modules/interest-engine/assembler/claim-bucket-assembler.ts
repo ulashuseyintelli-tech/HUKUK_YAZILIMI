@@ -55,6 +55,19 @@ export interface ClaimItemInput {
   interestAccrualStatus?: string | null;
   /** Yalnız ACCRUES ise anlamlı; ENFORCEMENT_PROCEEDING_DATE ise Case.caseDate mekanik fallback'i tetikler. */
   interestStartDateProvenance?: string | null;
+  /**
+   * K3-L TK-9: açık faizsizlik (NO_INTEREST) denetim alanları — PR-A0 A2: actor/reason/time audit zorunlu.
+   * Anaparada üçünden biri eksikse beyan bilinen sıfır SAYILMAZ (çözülemeyen). undefined = girdi taşımıyor (eksik sayılır).
+   */
+  noInterestReason?: string | null;
+  noInterestConfirmedById?: string | null;
+  /** ISO zaman damgası. */
+  noInterestConfirmedAt?: string | null;
+  /**
+   * K3-L TK-10: güncel oluşum kaydı ALLOWED_WITH_POLICY_HOLD (RECEIVABLE-GOVERNANCE 23.7.8). Kalemin KENDİ faiz otoritesi
+   * yoksa (ayrı onaylı güncelleme gelmemişse) dosya/kademe yedeklerinden faiz BAĞLANMAZ; faizsiz de sayılmaz → çözülemeyen.
+   */
+  interestPolicyHold?: boolean;
   status: string;
   metadata?: Record<string, unknown> | null;
 }
@@ -90,7 +103,11 @@ export type AssemblerDiagnosticCode =
   /** TBK100 Interest Accrual Contract v1: provenance=ENFORCEMENT_PROCEEDING_DATE ama Case.caseDate de
    *  yok — kaynak değeri hiç mevcut değil (genel MISSING_START_DATE'ten ayrı: burada AÇIK bir kaynak
    *  seçilmiş, yalnız o kaynağın kendisi boş). */
-  | 'MISSING_START_DATE_SOURCE_VALUE';
+  | 'MISSING_START_DATE_SOURCE_VALUE'
+  /** K3-L TK-9: anapara NO_INTEREST beyanının gerekçe/onaylayan/zaman denetimi eksik (PR-A0 A2) → çözülemeyen. */
+  | 'NO_INTEREST_AUDIT_INCOMPLETE'
+  /** K3-L TK-10: politika bekletmeli oluşum kalemi, kendi faiz otoritesi yok (23.7.8) → çözülemeyen. */
+  | 'INTEREST_POLICY_HOLD';
 
 export interface AssemblerDiagnostic {
   code: AssemblerDiagnosticCode;
@@ -153,6 +170,8 @@ const TERMINAL_PRINCIPAL_CODES: ReadonlySet<AssemblerDiagnosticCode> = new Set<A
   'FIXED_RATE_REQUIRED',
   'UNSUPPORTED_INTEREST_TYPE',
   'NO_INTEREST_AUTHORITY_CONFLICT',
+  'NO_INTEREST_AUDIT_INCOMPLETE',
+  'INTEREST_POLICY_HOLD',
 ]);
 
 /** K3-L D2-b1: kovası üretilmeyen principal → taşınan kayıt (bu kalem için basılan tanılardan). */
@@ -162,8 +181,11 @@ function principalCarryFor(
   emitted: AssemblerDiagnostic[],
 ): PrincipalCarryItem {
   const terminal = emitted.filter((d) => d.claimItemId === item.id && TERMINAL_PRINCIPAL_CODES.has(d.code));
-  const conflict = terminal.find((d) => d.code === 'NO_INTEREST_AUTHORITY_CONFLICT');
-  if (item.interestAccrualStatus === 'NO_INTEREST' && !conflict) {
+  // K3-L TK-9: çelişkili YA DA denetimi eksik faizsizlik beyanı bilinen sıfır SAYILMAZ (PR-A0 A2, PR-A5)
+  const invalidDeclaration =
+    terminal.find((d) => d.code === 'NO_INTEREST_AUTHORITY_CONFLICT') ??
+    terminal.find((d) => d.code === 'NO_INTEREST_AUDIT_INCOMPLETE');
+  if (item.interestAccrualStatus === 'NO_INTEREST' && !invalidDeclaration) {
     return { claimItemId: item.id, amount: base, currency: item.currency, kind: 'NON_ACCRUING', reasonCode: 'NO_INTEREST_DECLARED' };
   }
   return {
@@ -171,9 +193,21 @@ function principalCarryFor(
     amount: base,
     currency: item.currency,
     kind: 'UNRESOLVED',
-    // Çelişkili faizsizlik beyanı bilinen sıfır SAYILMAZ; diğer yollarda son terminal tanı (her null dönüş bir tane basar)
-    reasonCode: conflict?.code ?? terminal[terminal.length - 1]?.code ?? 'MISSING_INTEREST_CONFIG',
+    // Geçersiz faizsizlik beyanı önce; diğer yollarda son terminal tanı (her null dönüş bir tane basar)
+    reasonCode: invalidDeclaration?.code ?? terminal[terminal.length - 1]?.code ?? 'MISSING_INTEREST_CONFIG',
   };
+}
+
+/**
+ * K3-L TK-9: anapara NO_INTEREST beyanında eksik denetim alanları (PR-A0 A2: actor/reason/time). Boş dizi = tam.
+ * Yalnız anapara için uygulanır; mekanik itemType varsayımı (masraf/fer'i) anaparada yoktur.
+ */
+function missingNoInterestAudit(item: ClaimItemInput): string[] {
+  return [
+    !item.noInterestReason || item.noInterestReason.trim() === '' ? 'noInterestReason' : null,
+    !item.noInterestConfirmedById ? 'noInterestConfirmedById' : null,
+    !item.noInterestConfirmedAt ? 'noInterestConfirmedAt' : null,
+  ].filter((field): field is string => field != null);
 }
 
 /** demandedAmount ?? amount (Q3). collectedAmount HİÇ kullanılmaz. */
@@ -186,7 +220,11 @@ function hasOwnInterestAuthority(item: ClaimItemInput): boolean {
   return item.interestTypeCode != null || (item.interestType != null && item.interestType !== '');
 }
 
-/** Explicit NO_INTEREST bütün principal/config resolution yollarını bastırır. */
+/**
+ * Explicit NO_INTEREST bütün principal/config resolution yollarını bastırır.
+ * K3-L TK-9: çelişki tanımı yazma sözleşmesiyle (TBK100 Interest Accrual Contract v1, owner-locked 2026-07-03,
+ * `validateInterestAccrualState`) hizalıdır — NO_INTEREST iken faiz türü/kodu/oranı/başlangıç tarihi/provenance boş olmalı.
+ */
 function suppressExplicitNoInterest(
   item: ClaimItemInput,
   diagnostics: AssemblerDiagnostic[],
@@ -195,6 +233,11 @@ function suppressExplicitNoInterest(
   const conflictingFields = [
     item.interestTypeCode != null ? 'interestTypeCode' : null,
     item.interestType != null && item.interestType !== '' ? 'interestType' : null,
+    item.interestRate != null ? 'interestRate' : null,
+    item.interestStartDate != null && item.interestStartDate !== '' ? 'interestStartDate' : null,
+    item.interestStartDateProvenance != null && item.interestStartDateProvenance !== ''
+      ? 'interestStartDateProvenance'
+      : null,
   ].filter((field): field is string => field != null);
   if (conflictingFields.length > 0) {
     diagnostics.push({
@@ -388,7 +431,22 @@ function buildPrincipalBucket(
   diagnostics: AssemblerDiagnostic[],
 ): ClaimBucket | null {
   // PR-A3 precedence: explicit NO_INTEREST bütün type fallback'lerinden önce gelir.
-  if (suppressExplicitNoInterest(item, diagnostics)) return null;
+  if (suppressExplicitNoInterest(item, diagnostics)) {
+    // K3-L TK-9: denetimi eksik beyan bilinen sıfır sayılmaz (PR-A0 A2) — çözülemeyen olarak taşınır
+    const missing = missingNoInterestAudit(item);
+    if (missing.length > 0) {
+      diagnostics.push({ code: 'NO_INTEREST_AUDIT_INCOMPLETE', claimItemId: item.id, detail: `missing=${missing.join(',')}` });
+    }
+    return null;
+  }
+
+  // K3-L TK-10: politika bekletmeli oluşum kalemi kendi faiz otoritesi olmadan dosya/kademe yedeklerinden faiz ALMAZ
+  // (23.7.8: InterestPolicy bağlanamaz, faiz hesaplanamaz; faizsiz de sayılmaz). Kalemin kendi onaylı faiz ayarı
+  // (ayrı onaylı güncelleme) gelmişse normal çözülür.
+  if (item.interestPolicyHold && !hasOwnInterestAuthority(item)) {
+    diagnostics.push({ code: 'INTEREST_POLICY_HOLD', claimItemId: item.id, detail: 'admissionResult=ALLOWED_WITH_POLICY_HOLD' });
+    return null;
+  }
 
   // Q2 FAİZ ÇÖZÜM ZİNCİRİ
   const resolved = resolveInterestConfig(item, ctx, diagnostics);

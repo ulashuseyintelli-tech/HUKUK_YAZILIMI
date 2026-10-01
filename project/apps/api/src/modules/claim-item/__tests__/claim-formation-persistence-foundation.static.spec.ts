@@ -240,6 +240,9 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
       path.normalize(
         'src/modules/claim-item/formation-intent/claim-item-formation-office-approval.adapter.ts',
       ),
+      // K3-L TK-10 (owner GO 2026-10-01 K3L-D2-REMAINING-R03 §2; RECEIVABLE-GOVERNANCE 23.7.8): kanonik bakiye için
+      // güncel oluşum kaydının politika bekletmesini yalnız OKUR (findMany; yazma yok, intent okumaz).
+      path.normalize('src/modules/interest-engine/orchestration/claim-formation-policy-hold.reader.ts'),
       path.normalize(
         'src/modules/uyap/legal-basis/uyap-m01-legal-basis-consumer.service.ts',
       ),
@@ -249,7 +252,12 @@ describe('RCV-CLAIM-FORM-P02-S08-I02A persistence foundation — static contract
     const penaltyStatus = fs.readFileSync(path.join(API_ROOT, offenders[1]), 'utf8');
     const finalizer = fs.readFileSync(path.join(API_ROOT, offenders[2]), 'utf8');
     const adapter = fs.readFileSync(path.join(API_ROOT, offenders[3]), 'utf8');
-    const uyapConsumer = fs.readFileSync(path.join(API_ROOT, offenders[4]), 'utf8');
+    const policyHoldReader = fs.readFileSync(path.join(API_ROOT, offenders[4]), 'utf8');
+    const uyapConsumer = fs.readFileSync(path.join(API_ROOT, offenders[5]), 'utf8');
+    expect(policyHoldReader).toContain('claimFormationSnapshot');
+    expect(policyHoldReader).toContain('findMany');
+    expect(policyHoldReader).not.toMatch(/\.(?:create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/);
+    expect(policyHoldReader).not.toContain('claimItemFormationIntent');
     expect(penaltyStatus).toContain('claimItemFormationIntent.findMany');
     expect(penaltyStatus).not.toMatch(/claimItemFormationIntent\.(?:create|update|updateMany|delete|deleteMany|upsert)/);
     expect(penaltyStatus).not.toContain('claimFormationSnapshot');

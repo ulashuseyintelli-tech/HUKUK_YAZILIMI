@@ -28,6 +28,7 @@ import { InterestEngineService } from '../interest-engine.service';
 import { assembleClaimBuckets, ClaimItemInput } from '../assembler/claim-bucket-assembler';
 import type { AssemblerDiagnostic } from '../assembler/claim-bucket-assembler';
 import { findActiveCollectionAllocationHolds } from '../../collection/collection-allocation-hold';
+import { readPolicyHoldClaimItemIds } from './claim-formation-policy-hold.reader';
 import { hasFatalPaymentMapDiagnostic, mapPayments, PaymentSource } from '../calc-prep/payment-mapper';
 import type { LedgerPaymentRow, CollectionRow, PaymentMapDiagnostic } from '../calc-prep/payment-mapper';
 import { classifyCurrency, groupByCurrency } from '../calc-prep/currency-grouper';
@@ -316,7 +317,15 @@ export class CaseBalanceService {
     }
 
     // 2. READ-ONLY okumalar (tenant-scoped)
-    const [claimItems, ledgerRows, allCollections, heldOverpayments, blockedOverpayments, activeAllocationHolds] = await Promise.all([
+    const [
+      claimItems,
+      ledgerRows,
+      allCollections,
+      heldOverpayments,
+      blockedOverpayments,
+      activeAllocationHolds,
+      policyHoldClaimItemIds,
+    ] = await Promise.all([
       this.prisma.claimItem.findMany({
         where: { caseId, tenantId, status: { not: ClaimItemStatus.CANCELLED } },
       }),
@@ -340,6 +349,8 @@ export class CaseBalanceService {
       this.readHeldOverpayments(tenantId, caseId),
       this.readBlockedOverpaymentDiagnostics(tenantId, caseId),
       this.readActiveAllocationHolds(tenantId, caseId),
+      // K3-L TK-10: güncel oluşum kaydı politika bekletmeli kalemler (23.7.8) — salt okuma
+      readPolicyHoldClaimItemIds(this.prisma, tenantId, caseId),
     ]);
     // K3-L: mahsubu BEKLETİLEN tahsilat (defter kaydı yok) Collection fallback'ine girmez — girseydi ödeme sayılır,
     // sonra tamamlanınca defterden bir kez daha düşerdi (çift sayım). Bekletme ayrı diagnostic olarak raporlanır.
@@ -360,6 +371,12 @@ export class CaseBalanceService {
       interestStartDate: toISO(ci.interestStartDate),
       interestAccrualStatus: ci.interestAccrualStatus ?? null,
       interestStartDateProvenance: ci.interestStartDateProvenance ?? null,
+      // K3-L TK-9: faizsizlik beyanı denetim alanları (PR-A0 A2) — satır zaten okunuyor, ek sorgu yok
+      noInterestReason: ci.noInterestReason ?? null,
+      noInterestConfirmedById: ci.noInterestConfirmedById ?? null,
+      noInterestConfirmedAt: ci.noInterestConfirmedAt ? new Date(ci.noInterestConfirmedAt).toISOString() : null,
+      // K3-L TK-10
+      interestPolicyHold: policyHoldClaimItemIds.has(ci.id),
       status: ci.status,
       metadata: (ci.metadata as Record<string, unknown> | null) ?? null,
     }));

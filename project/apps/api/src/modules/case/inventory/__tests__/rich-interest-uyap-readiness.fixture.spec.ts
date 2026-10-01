@@ -118,6 +118,10 @@ describe('PR-A4-2 calculation authority evidence', () => {
       interestStartDate: claim.interestStartDate,
       interestAccrualStatus: claim.interestAccrualStatus,
       interestStartDateProvenance: claim.interestStartDateProvenance,
+      // K3-L TK-9: fikstürdeki faizsizlik denetimi assembler'a da verilir (PR-A0 A2)
+      noInterestReason: claim.noInterestAudit?.reason ?? null,
+      noInterestConfirmedById: claim.noInterestAudit?.confirmedById ?? null,
+      noInterestConfirmedAt: claim.noInterestAudit?.confirmedAt ?? null,
       status: claim.status,
     }], {
       interestType: entry.caseInput.legacyInterestType,

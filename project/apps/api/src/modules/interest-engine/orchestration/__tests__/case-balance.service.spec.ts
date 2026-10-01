@@ -41,6 +41,7 @@ interface MockPrisma {
   collectionOverpayment: { findMany: jest.Mock };
   icrabotTimelineEntry: { findMany: jest.Mock };
   due: { findMany: jest.Mock };
+  claimFormationSnapshot: { findMany: jest.Mock };
 }
 
 function setup(opts: {
@@ -56,6 +57,8 @@ function setup(opts: {
   blockedOverpaymentEvents?: unknown[];
   dues?: unknown[];
   rates?: unknown[];
+  /** K3-L TK-10: güncel politika bekletmeli oluşum kayıtları ({claimItemId}) */
+  policyHoldSnapshots?: unknown[];
 }) {
   const claimItems = opts.claimItems ?? [];
   const prisma: MockPrisma = {
@@ -79,6 +82,7 @@ function setup(opts: {
     collectionOverpayment: { findMany: jest.fn().mockResolvedValue(opts.overpayments ?? []) },
     icrabotTimelineEntry: { findMany: jest.fn().mockResolvedValue(opts.blockedOverpaymentEvents ?? []) },
     due: { findMany: jest.fn().mockResolvedValue(opts.dues ?? []) },
+    claimFormationSnapshot: { findMany: jest.fn().mockResolvedValue(opts.policyHoldSnapshots ?? []) },
   };
   const rateProvider = { getRatesForPeriod: jest.fn().mockResolvedValue(opts.rates ?? []) };
   const engine = realEngine();
@@ -563,8 +567,13 @@ describe('CaseBalanceService (G4c-1)', () => {
   });
 
   describe('K3-L D2-b1: faizsiz / faizi çözülemeyen anapara sessizce düşmez, kısmi bakiye üretilmez', () => {
+    // K3-L TK-9: geçerli açık faizsizlik beyanı PR-A0 A2 denetimini (gerekçe/onaylayan/zaman) taşır
     const noInterest = (p: Record<string, unknown> = {}) =>
-      principal({ id: 'p-ni', demandedAmount: 5000, amount: 5000, interestType: null, interestStartDate: null, interestAccrualStatus: 'NO_INTEREST', ...p });
+      principal({
+        id: 'p-ni', demandedAmount: 5000, amount: 5000, interestType: null, interestStartDate: null, interestAccrualStatus: 'NO_INTEREST',
+        noInterestReason: 'Sözleşmede faiz kararlaştırılmadı', noInterestConfirmedById: 'user-1',
+        noInterestConfirmedAt: new Date('2025-01-05T09:00:00.000Z'), ...p,
+      });
     const display = (res: Awaited<ReturnType<CaseBalanceService['computeCaseBalance']>>) =>
       toCaseBalanceDisplay({ tenantId: 't1', caseId: 'case1', balance: res, generatedAt: '2025-06-01T00:00:00.000Z' });
 
@@ -743,6 +752,50 @@ describe('CaseBalanceService (G4c-1)', () => {
 
       expect(res.currencyResults).toEqual([]);
       expect(res).not.toHaveProperty('unsimulatedPrincipals');
+    });
+
+    it('K3-L TK-9: denetimi eksik faizsizlik beyanı NON_ACCRUING değil INTEREST_UNRESOLVED olur (PR-A0 A2)', async () => {
+      const { service } = setup({ claimItems: [noInterest({ noInterestConfirmedAt: null })], rates: legalRate() });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+      expect(res.currencyResults).toEqual([
+        { currency: 'TRY', result: null, skippedReason: 'INTEREST_UNRESOLVED', grossPrincipal: 0, unsimulatedPrincipal: 5000 },
+      ]);
+      expect(res.diagnostics.fatal).toEqual([{ code: 'INTEREST_UNRESOLVED', caseId: 'case1' }]);
+      expect(res.unsimulatedPrincipals).toEqual([
+        { claimItemId: 'p-ni', currency: 'TRY', amount: 5000, kind: 'UNRESOLVED', reasonCode: 'NO_INTEREST_AUDIT_INCOMPLETE', accruedInterest: null },
+      ]);
+      const view = display(res);
+      expect(view.status).toBe('UNAVAILABLE');
+      expect(view.readiness.blockers).toEqual([
+        expect.objectContaining({ code: 'INTEREST_BASE', sourceCodes: expect.arrayContaining(['NO_INTEREST_AUDIT_INCOMPLETE']) }),
+      ]);
+    });
+
+    it('K3-L TK-10: güncel oluşum kaydı politika bekletmeli kalem dosya düzeyi faiz ALMAZ → INTEREST_UNRESOLVED', async () => {
+      const held = principal({ id: 'p-hold', interestType: null, interestStartDate: null, interestAccrualStatus: 'UNKNOWN' });
+      const caseRow = { interestType: 'YASAL', interestStartDate: new Date('2025-01-01'), caseDate: null };
+
+      const before = setup({ caseRow, claimItems: [held], rates: legalRate() });
+      const free = await before.service.computeCaseBalance('t1', 'case1', '2025-06-01');
+      // Bekletmesiz: dosya düzeyi YASAL ile kova (bugünkü davranış)
+      expect(free.currencyResults[0].result).not.toBeNull();
+
+      const { service, prisma } = setup({
+        caseRow, claimItems: [held], rates: legalRate(), policyHoldSnapshots: [{ claimItemId: 'p-hold' }],
+      });
+      const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+      expect(prisma.claimFormationSnapshot.findMany).toHaveBeenCalledWith({
+        where: { tenantId: 't1', caseId: 'case1', admissionResult: 'ALLOWED_WITH_POLICY_HOLD', supersededBySnapshot: { is: null } },
+        select: { claimItemId: true },
+      });
+      expect(res.currencyResults).toEqual([
+        { currency: 'TRY', result: null, skippedReason: 'INTEREST_UNRESOLVED', grossPrincipal: 0, unsimulatedPrincipal: 10000 },
+      ]);
+      expect(res.unsimulatedPrincipals).toEqual([
+        { claimItemId: 'p-hold', currency: 'TRY', amount: 10000, kind: 'UNRESOLVED', reasonCode: 'INTEREST_POLICY_HOLD', accruedInterest: null },
+      ]);
+      expect(display(res).status).toBe('UNAVAILABLE');
     });
   });
 

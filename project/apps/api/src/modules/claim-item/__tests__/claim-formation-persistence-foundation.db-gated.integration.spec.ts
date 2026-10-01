@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
+import { readPolicyHoldClaimItemIds } from '../../interest-engine/orchestration/claim-formation-policy-hold.reader';
+import { CaseBalanceService } from '../../interest-engine/orchestration/case-balance.service';
+import { InterestEngineService } from '../../interest-engine/interest-engine.service';
+import { PolicyGateV2Service } from '../../interest-engine/policy-gate/policy-gate-v2.service';
+import { SegmentBuilderService } from '../../interest-engine/segments/segment-builder.service';
+import { AllocationEngineService } from '../../interest-engine/allocation/allocation-engine.service';
+import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-allocator.service';
+import { ClaimPriorityService } from '../../interest-engine/allocation/claim-priority.service';
+import { VersionPinningService } from '../../interest-engine/version/version-pinning.service';
+import { InterestTypeCode } from '../../interest-engine/types/domain.types';
 
 const TEST_DB_URL = resolveTestDatabaseUrl(process.env);
 if (process.env.CI && !TEST_DB_URL) {
@@ -499,5 +509,119 @@ describeWithDisposableDb('RCV-CLAIM-FORM-P02-S08-I02A — disposable PostgreSQL 
     await expect(
       prisma.$executeRawUnsafe(`DELETE FROM "ClaimFormationSnapshot" WHERE "id" = '${snapshot.id}'`),
     ).rejects.toThrow(/immutable_violation/);
+  });
+
+  // ── K3-L TK-10 (owner GO 2026-10-01 K3L-D2-REMAINING-R03 §2; RECEIVABLE-GOVERNANCE 23.7.8) ─────────────────────
+  describe('K3-L TK-10: politika bekletmeli oluşum kaydı okuyucusu (gerçek PostgreSQL)', () => {
+    const holdIntent = (label: string, overrides: Partial<SqlRow> = {}) =>
+      intentRow(label, { interestEligibility: 'UNRESOLVED', ...overrides });
+    const nextVersionOf = (label: string, first: SqlRow, overrides: Partial<SqlRow> = {}) =>
+      intentRow(label, {
+        sourceIdentityVersion: first.sourceIdentityVersion,
+        sourceType: first.sourceType,
+        sourceId: first.sourceId,
+        sourceSlot: first.sourceSlot,
+        sourceIdentityHash: first.sourceIdentityHash,
+        sourceVersionId: `document-version-${label}-v2`,
+        sourceVersion: '2',
+        canonicalSourceFingerprint: hash(`document-bytes-${label}-v2`),
+        ...overrides,
+      });
+
+    it('yalnız GÜNCEL (halefi olmayan) bekletmeli kaydın kalemini döndürür; kiracı/dosya kapsamlı', async () => {
+      const heldItem = await createClaimItem();
+      const heldIntent = holdIntent('tk10-held');
+      await insert('ClaimItemFormationIntent', heldIntent);
+      await insert('ClaimFormationSnapshot', snapshotRow('tk10-held', heldIntent, heldItem));
+
+      const allowedItem = await createClaimItem();
+      const allowedIntent = intentRow('tk10-allowed');
+      await insert('ClaimItemFormationIntent', allowedIntent);
+      await insert('ClaimFormationSnapshot', snapshotRow('tk10-allowed', allowedIntent, allowedItem));
+
+      // Bekletme sonraki sürümde kalktı (ALLOWED halef) → bekletmeli SAYILMAZ
+      const releasedItem = await createClaimItem();
+      const releasedFirstIntent = holdIntent('tk10-released');
+      await insert('ClaimItemFormationIntent', releasedFirstIntent);
+      const releasedFirst = snapshotRow('tk10-released', releasedFirstIntent, releasedItem);
+      await insert('ClaimFormationSnapshot', releasedFirst);
+      const releasedSecondIntent = nextVersionOf('tk10-released-b', releasedFirstIntent, { interestEligibility: 'NO_INTEREST' });
+      await insert('ClaimItemFormationIntent', releasedSecondIntent);
+      await insert(
+        'ClaimFormationSnapshot',
+        snapshotRow('tk10-released-b', releasedSecondIntent, releasedItem, { snapshotVersion: 2, supersedesSnapshotId: releasedFirst.id }),
+      );
+
+      // Sonraki sürüm bekletmeli → bekletmeli SAYILIR
+      const laterHoldItem = await createClaimItem();
+      const laterFirstIntent = intentRow('tk10-later');
+      await insert('ClaimItemFormationIntent', laterFirstIntent);
+      const laterFirst = snapshotRow('tk10-later', laterFirstIntent, laterHoldItem);
+      await insert('ClaimFormationSnapshot', laterFirst);
+      const laterSecondIntent = nextVersionOf('tk10-later-b', laterFirstIntent, { interestEligibility: 'UNRESOLVED' });
+      await insert('ClaimItemFormationIntent', laterSecondIntent);
+      await insert(
+        'ClaimFormationSnapshot',
+        snapshotRow('tk10-later-b', laterSecondIntent, laterHoldItem, { snapshotVersion: 2, supersedesSnapshotId: laterFirst.id }),
+      );
+
+      const ids = await readPolicyHoldClaimItemIds(prisma, tenantA, caseA);
+      expect(ids.has(heldItem)).toBe(true);
+      expect(ids.has(laterHoldItem)).toBe(true);
+      expect(ids.has(allowedItem)).toBe(false);
+      expect(ids.has(releasedItem)).toBe(false);
+      // Başka kiracının dosyası bu kalemleri görmez
+      expect((await readPolicyHoldClaimItemIds(prisma, tenantB, caseB)).has(heldItem)).toBe(false);
+    });
+
+    it('kanonik bakiye: bekletmeli kalem dosya düzeyi YASAL faizi ALMAZ → INTEREST_UNRESOLVED / INTEREST_POLICY_HOLD', async () => {
+      const suffix = randomUUID().slice(0, 8);
+      const legalCase = await prisma.case.create({
+        data: {
+          tenantId: tenantA,
+          fileNumber: `I02A-TK10-${suffix}`,
+          type: 'GENERAL_EXECUTION',
+          interestType: 'YASAL',
+          interestStartDate: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      });
+      const freeItem = await createClaimItem(tenantA, legalCase.id);
+      const balanceService = new CaseBalanceService(
+        prisma as never,
+        {
+          getRatesForPeriod: async () => [
+            {
+              id: 'tk10-legal', interestType: InterestTypeCode.LEGAL_3095, annualRate: 0.24, validFrom: '2020-01-01',
+              validTo: null, sourceId: 'tk10', sourceName: 'TEST', publishedAt: '2020-01-01T00:00:00.000Z', currency: 'TRY',
+            },
+          ],
+        } as never,
+        new InterestEngineService(
+          new PolicyGateV2Service(),
+          new SegmentBuilderService(),
+          new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService()),
+          {} as never,
+          { record: () => undefined, clearAll: () => undefined } as never,
+          new VersionPinningService(),
+        ),
+      );
+
+      // Bekletme kaydı yokken: dosya düzeyi YASAL ile hesaplanır (bugünkü davranış)
+      const before = await balanceService.computeCaseBalance(tenantA, legalCase.id, '2026-06-01');
+      expect(before.currencyResults[0].result).not.toBeNull();
+
+      const intent = holdIntent('tk10-e2e', { caseId: legalCase.id });
+      await insert('ClaimItemFormationIntent', intent);
+      await insert('ClaimFormationSnapshot', snapshotRow('tk10-e2e', intent, freeItem));
+
+      const after = await balanceService.computeCaseBalance(tenantA, legalCase.id, '2026-06-01');
+      expect(after.currencyResults).toEqual([
+        expect.objectContaining({ currency: 'TRY', result: null, skippedReason: 'INTEREST_UNRESOLVED', unsimulatedPrincipal: 80 }),
+      ]);
+      expect(after.unsimulatedPrincipals).toEqual([
+        expect.objectContaining({ claimItemId: freeItem, kind: 'UNRESOLVED', reasonCode: 'INTEREST_POLICY_HOLD', accruedInterest: null }),
+      ]);
+      expect(after.diagnostics.fatal.map((f) => f.code)).toEqual(['INTEREST_UNRESOLVED']);
+    });
   });
 });
