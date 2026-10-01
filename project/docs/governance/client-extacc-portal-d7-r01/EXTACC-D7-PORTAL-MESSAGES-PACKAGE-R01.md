@@ -193,7 +193,8 @@ status dosyaları: komut, çıkış kodu, koşum öncesi/sonrası sha256), `nega
 Test edilen baytlar: blok `8B3B22C0…25AE`, blok öz-testi `1BB152D8…7B21` (tam değerler §7; her log ve status dosyası koşum öncesi/sonrası sha256
 taşır). Bu turda değişen yalnız blok METNİ (yorum + konsol çıktısı; istem metinleri ve kod değişmedi), blok öz-testi (yalnız yeni metni ölçen G-5 ve
 G-6 + başlık yorumu) ve bu belgedir. Koşucu, sahte API, QR betiği, `d7-selftest.js` ve pinli 9 dosya değişmedi. Canlı DB, canlı API, canlı yayın
-dizini ve canlı günlükler kullanılmadı; owner bloğu, koşucu ya da sonda **çalıştırılmadı** (öz-test bloğun yalnız fonksiyonlarını AST ile yükler).
+dizini ve canlı günlükler kullanılmadı; owner bloğu, koşucu ya da sonda **canlıya karşı çalıştırılmadı** (blok öz-testi bloğun yalnız
+fonksiyonlarını AST ile yükler; `d7-selftest.js` ayna kopyası koşucuyu yalnız tek kullanımlık test veritabanı ve sahte API'ye karşı başlatır).
 
 | Test | Sonuç (son baytlar) |
 |---|---|
@@ -319,6 +320,13 @@ Koşucunun kanıt metni (pinli, değişmedi) Recover kanıtında da kurtarma ön
   kapatma ucu hesabı silmez; API kaynağında hesabı doğrudan silen bir çağrı bulunmadı; şema düzeyinde zincirleme silme incelenmedi). Blok
   öz-testindeki Recover çıkış 0 senaryoları (V-1, Z-8, G-3, G-6) koşucunun yerine konan taklit betikle üretilir; koşucunun Recover mantığını
   ölçmez. Blok metnindeki açıklama bu turda değiştirilmedi.
+- **"DOĞRULANDI" satırının sınırı (R02 bağımsız ölçüm; kaynaktan okundu, koşumla üretilmedi).** Run sonunda gösterilen "Portal erişim
+  kapanışı … DOĞRULANDI (DB + yeni giriş + mevcut oturum mesaj ucunda reddi)" metni sabittir ve P7-D9 PASS olduğunda yazılır. Koşucuda
+  P7-D9, bu parçaların bir kısmı ölçülmeden de PASS olabilir: portal hesabı hiç oluşmadıysa kapanış C2…C5 satırlarını üretmeden tamam
+  sayılır; koşucunun portal oturumu yoksa mevcut oturum reddi (P7-C4) gerekli sayılmaz. Bu iki durumda satır ölçülmemiş parçayı
+  doğrulanmış gibi gösterir; hangi parçaların gerçekten ölçüldüğü kanıttaki ölçüt satırlarından (P7-C2…P7-C5) okunur. Metin R01'den
+  beri aynıdır; düzeltmesi blok mantığına dokunur (D-6 R02'de beyanlı istisnayla yapıldı) ve bu revizyonda **yapılmadı** — sıradaki
+  blok revizyonunun işidir.
 - **Run kapanışında personel oturumu yenilenmez (R02 inceleme, D7-E11 a; kaynaktan okundu, canlıda ölçülmedi).** Run'ın kapanış çağrısı
   (`POST /portal/admin/disable-user`) koşumun başında alınan personel (elev1) token'ını kullanır; Run'da oturumu yenileyen bir yol yoktur
   (yeniden oturum açma yalnız Recover'da vardır — §8.1 adım 1). Token kapanış anında geçersizse yetkili uç isteği 4xx ile reddeder
@@ -414,7 +422,7 @@ başlatmaz; kapsamsız mutlak ifade kullanılmaz; metin yalnız ölçüleni iddi
 | D7-E5 — rozetin neyi saydığı yazılmamıştı | belgelendi | §9 "Rozet = bildirim sayacı"; §5 adım 5; beyan istemi "zil simgesindeki rozet (okunmamış BİLDİRİM sayacı; mesaj sayacı değildir)" |
 | D7-E6 — "sentetik tenant CLOSED" ifadesi tenant yaşam döngüsünün değiştiği izlenimini veriyordu | düzeltildi (blok metni + belge) | blok onay metni ve kalıntı satırı notu: "dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ"; §3 notu, §8. Koşucunun kanıt metni pinlidir, **değişmedi** (aynı ifadeyi üretmeye devam eder; §3 notu anlamını sabitler) |
 | D7-E7 — canlı veri onay metni §8 kayıt listesiyle eşleşmiyordu | düzeltildi | onay metnindeki kalemler §8'de de geçer; §8 ek ayrıntı taşır (ikinci sentetik müvekkil ve `-s` dosyası, ürünün kendi yazdıkları, API günlüğü satırları, U-ISO sınırı); "Gerçek müvekkil verisine dokunulmaz" mutlak ifadesi kaldırıldı; öz-test G-2 kalemleri hem gösterilen metinde hem §8'de ölçer |
-| D7-E8 — öz-test atıfları eski baytlara bağlıydı | düzeltildi | §6 başına "hangi baytlar" notu; §6.2 son baytların koşumu; §7 pinler |
+| D7-E8 — öz-test atıfları eski baytlara bağlıydı | düzeltildi | §6 başına "hangi baytlar" notu; §6.3 son baytların koşumu (§6.2 = R02 ilk tur); §7 pinler |
 | D7-E9 — U-ISO'nun neyi ölçmediği yazılmamıştı | belgelendi | §9 "U-ISO sınırı"; blok onay metninde "yalnız SAYI; içerik karşılaştırılmaz" |
 | D7-E10 — Recover'ın kapı bağımlılıkları ve web derlemesinin ölçülmediği yazılmamıştı | belgelendi | §9 "Recover'ın kapı bağımlılıkları", "Web derlemesi ölçülmez"; §10 K-4 atfı |
 | Bayat satır — "D-5 bloğunun QrTest'i çıkış 4" | düzeltildi | §10: D-5 R03 ile giderildiği yazıldı |
