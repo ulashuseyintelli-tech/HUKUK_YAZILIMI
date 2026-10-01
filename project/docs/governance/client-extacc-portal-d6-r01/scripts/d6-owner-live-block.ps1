@@ -7,11 +7,24 @@
 #                    koşucu silmesi; 2. konsol: "liste boş olmalı") → ekran temizliği → owner beyanı (ayrı dosya) → kanıt manifesti.
 #   -Mode Recover    Yalnız kapanış (portal + belge kalıntısı + yabancı satır + personel/dosya); `-ReceiptFile` zorunlu; GO sorulmaz; kabul ölçütleri
 #                    koşulmaz. Kalan belge satırları için owner kararı sorulur (Prisma ile satır silme; DOSYA SİLİNMEZ, listelenir).
+#                    Run'ın koşucu İÇİNDEKİ kendi kapanış adımlarından AYRI bir işlemdir: otomatik DEĞİLDİR; Run çıkış 5/6 Recover yetkisi
+#                    DEĞİLDİR — önce kanıt incelenir, açık kalan kaynaklar bildirilir, Recover yalnız AYRI owner onayıyla, BİR KEZ başlatılır.
+#                    Bu blok Recover'ı kendiliğinden başlatmaz; Recover çıkış 6'dan sonraki yeni bir Recover da YENİ ve AYRI owner onayı ister.
 # YAN ETKİ: belge uçları yalnız PortalDocument satırı + disk dosyası + API log satırı; bildirim/e-posta/outbox/audit/event YOK (kaynak: HY_WT_R27).
+#          Yükleme günlük satırı dosya ADINI maskesiz yazar (koşucu: sentetik ad; telefon yüklemesi: owner'ın seçtiği dosyanın adı). Ürün
+#          DELETE'i yalnız dosyayı siler: kapanıştan sonra sentetik tenantın BOŞ kova dizini diskte kalır (saklandı; kaynaktan, canlıda ölçülmedi).
 # YAPMAZ : forgot/reset/change-password, mesaj, belge onay/ret uçları çağrılmaz · koşucu dosya SİLMEZ (yalnız ürün DELETE'i) ·
 #          .env/görev/Caddy/tünel/DNS değişikliği · yeniden başlatma · otomatik tekrar · otomatik Recover.
-# SIR    : DB URL, personel parolası, GEÇİCİ PORTAL PAROLASI, GO ref ve token'lar hiçbir dosyaya yazılmaz. Parola yalnız bu konsol penceresine
-#          çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi kapatın.
+# SIR    : DB URL, personel parolası, GEÇİCİ PORTAL PAROLASI, GO ref ve token'ları bu blok ve koşucu KENDİ kanıt/log dosyalarına YAZMAZ.
+#          KAPSAM (ölçülen): blok → kanıt dizinindeki owner-block.json, goref-consumed.json, owner-declaration.json, SHA256-MANIFEST.txt ve GO
+#          defteri (GO'nun yalnız sha256'sı): GO literali, DB URL ve geçici portal parolası YOK — blok öz-testi R-9 + G-1 (geçici node ile).
+#          Koşucu → d6-evidence.json, d6-setup-receipt.json ve çıktısının yönlendirildiği d6-run.log / d6-recover.log: parolalar, oturum
+#          token'ı, DB URL ve GO YOK — koşucu öz-testi S-1 (sahte API'ye karşı). KAPSAM DIŞI (ÖLÇÜLMEDİ): canlı API uygulama günlüğü,
+#          işletim sistemi / terminal kayıtları ve owner'ın beyan sorularına kendi yazdığı yanıt metni.
+#          Parola yalnız bu konsol penceresine çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi kapatın.
+# R02    : (2026-10-01) yalnız METİN değişti (yorum · owner'a gösterilen çıktı · kapanış metninin kanıttan kurulması); kapılar, sıra, pinler,
+#          koşucu çağrısı ve çıkış kodları DEĞİŞMEDİ. owner-block.json'daki `revision = 'R01'` alanı da DEĞİŞTİRİLMEDİ (mantık eşitliği);
+#          bloğun metin revizyonu bu dosyanın sha256'sı ile ayırt edilir (paket belgesi §6).
 # TOPOLOJİ: public portal adresi canlı .env'den okunur ve owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü $env:USERPROFILE'a görelidir
 #          (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Canlı kök ($Rel) tek yerde tanımlıdır.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -234,8 +247,15 @@ function Confirm-LiveDataProcessing {
   Write-Host '  yükleme için MASKESİZ bir API günlük satırı (sentetik dosya adı d6-<koşum kimliği>.pdf + sentetik müvekkil id; kişisel veri yok) oluşur.'
   Write-Host '  Kapanış: koşucu kendi belgesini ÜRÜN DELETE''i ile siler (satır + dosya), yabancı sentetik'
   Write-Host '  satırı Prisma ile temizler (raporlanır), portal hesabı pasif + sürüm artırılır, erişim kapalı, personel pasif, dosya CLOSED.'
-  Write-Host '  Telefondan yükleme OPSİYONELDİR; yaparsanız koşucu silme adımından önce onu telefondan silmenizi bekler; silinmezse "belge kaldı" ile'
-  Write-Host '  çıkış 6 verilir (Recover''da owner kararı). Gerçek müvekkil verisine ve bildirimlere dokunulmaz.'
+  Write-Host '  Kapanıştan sonra sentetik tenantın BOŞ kova dizini (portal-documents/<sentetik tenant>/) diskte KALIR: ürün DELETE''i yalnız dosyayı'
+  Write-Host '  siler; koşucu ve bu blok dizin, audit kaydı ve API günlük satırı silmez — saklandı (dizin: kaynaktan; canlıda ölçülmedi).'
+  Write-Host '  Telefondan yükleme OPSİYONELDİR. Yaparsanız: (1) seçtiğiniz dosyanın ADI canlı API günlüğüne MASKESİZ yazılır (dosya adı + sentetik'
+  Write-Host '  müvekkil id; kaynaktan doğrulandı); bu satır kapanışta silinmez ve bu blok günlükleri değiştirmez — adında ve içeriğinde kişisel'
+  Write-Host '  veri OLMAYAN bir dosya seçin. (2) Dosyanın kendisi canlı belge kovasına (portal-documents/<sentetik tenant>/) yazılır; koşucu kendi'
+  Write-Host '  silme adımından önce onu telefondan silmenizi bekler (en çok 5 dk). Telefondan silerseniz ürün satırı ve dosyayı siler; silmezseniz'
+  Write-Host '  satır ve dosya kovada KALIR (koşucu dosya silmez) ve koşucu "belge kaldı" ile çıkış 6 verir.'
+  Write-Host '  Çıkış 5/6 Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ: kalan satırlar için karar, kanıt incelendikten sonra yalnız AYRI owner'
+  Write-Host '  onayıyla başlatılacak bir Recover''da sorulur. Koşucu yalnız bu koşumun sentetik tenantlarına yazar ve bildirim üreten uçları çağırmaz.'
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
   if ($a -cne 'EVET') { Fail 'canlı veri işleme onaylanmadı — koşum başlamadı' }
 }
@@ -257,7 +277,19 @@ function Get-ClosureStatus([string]$evidFile, [object]$rc) {
     $st.finding = $ev.productFinding
     $st.verified = ($d9 -eq 'PASS')
   } catch { $st.verified = $false }
-  $st.text = if ($st.verified) { 'Portal kapanışı koşucu tarafından DOĞRULANDI (DB + yeni giriş + mevcut oturum reddi + belge kalıntısı yok + yabancı satır temiz).' }
+  # R02: DOĞRULANDI metni parça İDDİA ETMEZ — her parça kanıttaki ölçüt verdict'lerinden kurulur. Gruptaki TÜM ölçütler PASS ise "PASS";
+  # biri FAIL ise "FAIL"; aksi halde (satır yok / UNMEASURED) "ÖLÇÜLMEDİ". Birleşik P6-D9 PASS iken de DB/HTTP ret ölçütleri koşulmamış
+  # olabilir: portal hesabı hiç açılmadıysa (P6-C2..C5 satırı yok) ya da koşucunun portal oturumu yoksa (P6-C4 UNMEASURED).
+  # "Mevcut oturum" koşucunun KENDİ portal oturumudur (P6-C4L/D); telefondaki oturumu koşucu ölçmez (owner beyanı).
+  $st.text = if ($st.verified) {
+               $parts = foreach ($p in @(@('DB kapalı + sürüm arttı [P6-C2/C2V/C5]', 'P6-C2', 'P6-C2V', 'P6-C5'), @('yeni giriş reddi, yerel + dış [P6-C3L/D]', 'P6-C3L', 'P6-C3D'),
+                                         @('mevcut oturum reddi, koşucunun kendi portal oturumu, yerel + dış [P6-C4L/D]', 'P6-C4L', 'P6-C4D'), @('belge kalıntısı yok [P6-C-DOC]', 'P6-C-DOC'),
+                                         @('yabancı satır temiz [P6-FOREIGN-CLEAN]', 'P6-FOREIGN-CLEAN'), @('personel/dosya kapanışı [U-CLOSE]', 'U-CLOSE'))) {
+                 $vs = @($p | Select-Object -Skip 1 | ForEach-Object { $id = $_; $hit = @($ev.results | Where-Object { $_.id -eq $id }); if ($hit.Count -eq 1) { [string]$hit[0].verdict } else { '' } })
+                 '{0}: {1}' -f $p[0], $(if (@($vs | Where-Object { $_ -ne 'PASS' }).Count -eq 0) { 'PASS' } elseif (@($vs | Where-Object { $_ -eq 'FAIL' }).Count -gt 0) { 'FAIL' } else { 'ÖLÇÜLMEDİ' })
+               }
+               'Portal kapanışı: koşucunun birleşik ölçütü P6-D9 PASS — DOĞRULANDI yalnız aşağıda PASS yazan parçalar içindir (kanıttan): ' + ($parts -join ' · ') + '. Telefondaki oturumun reddini koşucu ÖLÇMEZ (yenileme sorusu beyandır).'
+             }
              else { "Portal kapanışı DOĞRULANAMADI (çıkış $rc) — telefondaki erişim açık kalmış ya da sentetik belge kalmış olabilir; sonucu CLIENT'a bildirin." }
   return [pscustomobject]$st
 }
@@ -341,7 +373,7 @@ function Invoke-RunMode($g) {
   Write-Host '  0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI · 6 PORTAL KAPANIŞI (erişim/belge kalıntısı) DOĞRULANMADI · 91 NODE BAŞLATILAMADI'
   if ($finding) { Write-Host "  $finding — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ. CLIENT'a bildirin." -ForegroundColor Red }
   if ($closure.uploadVerdict -ne 'PASS') { Write-Host '  Koşucunun kendi yüklemesi (makine ölçümü) PASS değil — D6-1 kanıt satırına bakın.' -ForegroundColor Yellow }
-  if ($closure.docVerdict -ne 'PASS') { Write-Host '  BELGE KALINTISI: sentetik belge satırı/dosyası kalmış olabilir — Recover''da owner kararı sorulur; dosya elle silinir.' -ForegroundColor Red }
+  if ($closure.docVerdict -ne 'PASS') { Write-Host '  BELGE KALINTISI: sentetik belge satırı/dosyası kalmış olabilir (P6-C-DOC PASS değil). Bu blok Recover BAŞLATMAZ ve dosya silmez: kalan satırlar için karar yalnız kanıt incelendikten sonra AYRI owner onayıyla başlatılacak bir Recover''da sorulur (otomatik DEĞİL); diskte kalan dosyayı OWNER elle siler.' -ForegroundColor Red }
   if ($closure.phoneDocVerdict -eq 'FAIL') { Write-Host '  Telefondan yüklenen belge koşucu beklerken silinmedi — kalıntı olarak ölçüldü.' -ForegroundColor Yellow }
   if ($waitV -eq 'UNMEASURED' -and $decl) {
     if ($decl.girisSonrasiEkran -ceq 'B') { Write-Host '  Koşucu başarılı telefon girişi görmedi ama owner belge listesini gördüğünü beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
@@ -350,7 +382,11 @@ function Invoke-RunMode($g) {
   if ($decl -and $decl.indirmeSonucu -ceq 'F') { Write-Host '  Owner, indirilen belgede FARKLI içerik gördüğünü beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
   if ($decl -and $decl.silmeSonrasiListe -ceq 'V') { Write-Host '  Owner, koşucu silmesinden sonra listede hâlâ belge gördüğünü beyan etti — İNCELEME GEREKİR.' -ForegroundColor Yellow }
   if ($decl -and $decl.yenilemeSonrasiEkran -ceq 'B') { Write-Host '  Owner, kapanıştan sonra yenilemede belge listesini gördüğünü beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
-  if ($rc -eq 5 -or $rc -eq 6) { Write-Host '  KAPANIŞ DOĞRULANMADI: -Mode Recover -ReceiptFile <makbuz> (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow }
+  if ($rc -eq 5 -or $rc -eq 6) {
+    Write-Host '  KAPANIŞ DOĞRULANMADI: Run kendi kapanış adımlarını koşucu İÇİNDE denedi; bu çıkış kodu Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ.' -ForegroundColor Yellow
+    Write-Host '  Önce kanıtı inceleyin (d6-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
+    Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+  }
   Write-Host "  kanıt dizini: $EvDir"
   Write-Host '  Bu pencereyi ŞİMDİ kapatın (kaydırma arabelleği). GO ref ve parola bildirmeyin.'
   return $rc
@@ -376,7 +412,10 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   finally { Clear-SecretEnv; Write-Manifest $EvDir }
   Write-Host "EXTACC D-6 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 = portal hesabı hiç açılmamıştı + kalıntı yok (HTTP reddi ÖLÇÜLMEDİ) · 3 = DB kapalı + yeni giriş reddi; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ (Run kanıtındaki P6-C4 satırlarına bakın; PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı ya da belge kalıntısı doğrulanmadı/ölçülemedi · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
-  if ($rc -eq 6) { Write-Host '  Kanıttaki P6-C-DOC satırına bakın: diskte kalan dosya listelendiyse OWNER elle siler ve Recover BİR KEZ daha koşulur; "dosya erişimi ÖLÇÜLEMEDİ" ise önce belge kovasının okunabilirliği düzeltilir.' -ForegroundColor Yellow }
+  if ($rc -eq 6) {
+    Write-Host '  Kanıttaki P6-C-DOC satırına bakın: diskte kalan dosya listelendiyse OWNER elle siler; "dosya erişimi ÖLÇÜLEMEDİ" ise önce belge kovasının okunabilirliği düzeltilir.' -ForegroundColor Yellow
+    Write-Host '  Bu çıkış kodu yeni bir Recover YETKİSİ DEĞİLDİR ve bu blok Recover''ı yeniden BAŞLATMAZ: sonraki Recover (kanıttaki adım bir ÖNERİDİR) yalnız bu kanıt incelendikten sonra, YENİ ve AYRI bir owner onayıyla, BİR KEZ başlatılır.' -ForegroundColor Yellow
+  }
   Write-Host "  kanıt dizini: $EvDir"
   return $rc
 }
