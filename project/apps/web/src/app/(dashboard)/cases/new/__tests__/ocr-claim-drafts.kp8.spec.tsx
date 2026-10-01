@@ -448,5 +448,7 @@ describe('K3-L KP-8: aynı fatura ikinci anapara oluşturmaz', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(readDraft().ocrClaimDrafts ?? []).toEqual([]);
     expect(readDraft().claimDraftItems).toHaveLength(1);
+    // Tarama, listede zaten bulunan fatura için ikinci bir anapara da YAZMAZ
+    expect(readDraft().dues ?? []).toEqual([]);
   });
 });
