@@ -9,7 +9,8 @@
 #                    koşulmaz. Kalan belge satırları için owner kararı sorulur (Prisma ile satır silme; DOSYA SİLİNMEZ, listelenir).
 #                    Run'ın koşucu İÇİNDEKİ kendi kapanış adımlarından AYRI bir işlemdir: otomatik DEĞİLDİR; Run çıkış 5/6 Recover yetkisi
 #                    DEĞİLDİR — önce kanıt incelenir, açık kalan kaynaklar bildirilir, Recover yalnız AYRI owner onayıyla, BİR KEZ başlatılır.
-#                    Bu blok Recover'ı kendiliğinden başlatmaz; Recover çıkış 6'dan sonraki yeni bir Recover da YENİ ve AYRI owner onayı ister.
+#                    Bu blok Recover'ı kendiliğinden başlatmaz. Recover çıkış 6 yeni bir Recover için yetki DEĞİLDİR; İKİNCİ bir Recover bu
+#                    paketle TANIMLI DEĞİLDİR, owner kararı gerektirir.
 # YAN ETKİ: belge uçları yalnız PortalDocument satırı + disk dosyası + API log satırı; bildirim/e-posta/outbox/audit/event YOK (kaynak: HY_WT_R27).
 #          Yükleme günlük satırı dosya ADINI maskesiz yazar (koşucu: sentetik ad; telefon yüklemesi: owner'ın seçtiği dosyanın adı). Ürün
 #          DELETE'i yalnız dosyayı siler: kapanıştan sonra sentetik tenantın BOŞ kova dizini diskte kalır (saklandı; kaynaktan, canlıda ölçülmedi).
@@ -24,7 +25,10 @@
 #          Parola yalnız bu konsol penceresine çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi kapatın.
 # R02    : (2026-10-01) yalnız METİN değişti (yorum · owner'a gösterilen çıktı · kapanış metninin kanıttan kurulması); kapılar, sıra, pinler,
 #          koşucu çağrısı ve çıkış kodları DEĞİŞMEDİ. owner-block.json'daki `revision = 'R01'` alanı da DEĞİŞTİRİLMEDİ (mantık eşitliği);
-#          bloğun metin revizyonu bu dosyanın sha256'sı ile ayırt edilir (paket belgesi §6).
+#          bloğun metin revizyonu bu dosyanın sha256'sı ile ayırt edilir (paket belgesi §6); owner koşumdan ÖNCE bu dosyanın sha256'sını kaydeder.
+#          R02 inceleme düzeltmeleri (ikinci tur; yine yalnız METİN): onay metninde kapsam + kova dizini tek adla, kapanış satırı ("bu satırın
+#          devamında" + satır rengi notu), ikinci Recover ifadesi. Kod, yorum / Write-Host / istem metni dışında TEK yerde farklıdır: kapanış
+#          metnindeki bir dize sabiti (owner'a gösterilen ve beyan dosyasına yazılan metin; ölçüm paket belgesi §9).
 # TOPOLOJİ: public portal adresi canlı .env'den okunur ve owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü $env:USERPROFILE'a görelidir
 #          (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Canlı kök ($Rel) tek yerde tanımlıdır.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -240,9 +244,9 @@ function Write-Manifest([string]$evDir) {
 function Confirm-LiveDataProcessing {
   Write-Host ''
   Write-Host 'CANLI VERİ İŞLEME — onayınız gerekiyor:' -ForegroundColor Yellow
-  Write-Host '  Canlı DB''de YALNIZ yeni bir sentetik tenantta yazılacak: sentetik kullanıcılar, müvekkil, dosya, borçlu, sentetik müvekkile ait'
-  Write-Host '  BİR portal hesabı (.invalid adres; e-posta ÇIKMAZ), koşucunun yüklediği BİR sentetik PDF (≤ 50 KB, içinde yalnız koşum kimliği) için'
-  Write-Host '  bir PortalDocument satırı + canlı belge kovasında (PORTAL_DOCUMENTS/<sentetik tenant>/) bir dosya, ve yabancı sentetik müvekkil için'
+  Write-Host '  Canlı DB''de bu koşumun İKİ yeni sentetik tenantında (hedef + yabancı) yazılacak: sentetik kullanıcılar, müvekkil, dosya, borçlu, sentetik'
+  Write-Host '  müvekkile ait BİR portal hesabı (.invalid adres; e-posta ÇIKMAZ), koşucunun yüklediği BİR sentetik PDF (≤ 50 KB, içinde yalnız koşum kimliği) için'
+  Write-Host '  bir PortalDocument satırı + canlı belge kovasında (portal-documents/<sentetik tenant>/) bir dosya, ve yabancı sentetik müvekkil için'
   Write-Host '  dosyasız bir sentetik satır (kapsam dışı 404 ölçümü). Belge uçları bildirim/e-posta/audit yazmaz; portal hesabı aç/kapa audit yazar;'
   Write-Host '  yükleme için MASKESİZ bir API günlük satırı (sentetik dosya adı d6-<koşum kimliği>.pdf + sentetik müvekkil id; kişisel veri yok) oluşur.'
   Write-Host '  Kapanış: koşucu kendi belgesini ÜRÜN DELETE''i ile siler (satır + dosya), yabancı sentetik'
@@ -255,7 +259,9 @@ function Confirm-LiveDataProcessing {
   Write-Host '  silme adımından önce onu telefondan silmenizi bekler (en çok 5 dk). Telefondan silerseniz ürün satırı ve dosyayı siler; silmezseniz'
   Write-Host '  satır ve dosya kovada KALIR (koşucu dosya silmez) ve koşucu "belge kaldı" ile çıkış 6 verir.'
   Write-Host '  Çıkış 5/6 Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ: kalan satırlar için karar, kanıt incelendikten sonra yalnız AYRI owner'
-  Write-Host '  onayıyla başlatılacak bir Recover''da sorulur. Koşucu yalnız bu koşumun sentetik tenantlarına yazar ve bildirim üreten uçları çağırmaz.'
+  Write-Host '  onayıyla başlatılacak bir Recover''da sorulur.'
+  Write-Host '  Kapsam: koşucu canlı DB''de yalnız bu koşumun iki sentetik tenantına yazar (kaynaktan okundu; koşumda U-ISO yalnız diğer tenantlardaki'
+  Write-Host '  kullanıcı/müvekkil SAYILARINI ölçer) ve bildirim üreten uçları çağırmaz (statik ölçüt: koşucu öz-testi T-1).'
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
   if ($a -cne 'EVET') { Fail 'canlı veri işleme onaylanmadı — koşum başlamadı' }
 }
@@ -281,6 +287,7 @@ function Get-ClosureStatus([string]$evidFile, [object]$rc) {
   # biri FAIL ise "FAIL"; aksi halde (satır yok / UNMEASURED) "ÖLÇÜLMEDİ". Birleşik P6-D9 PASS iken de DB/HTTP ret ölçütleri koşulmamış
   # olabilir: portal hesabı hiç açılmadıysa (P6-C2..C5 satırı yok) ya da koşucunun portal oturumu yoksa (P6-C4 UNMEASURED).
   # "Mevcut oturum" koşucunun KENDİ portal oturumudur (P6-C4L/D); telefondaki oturumu koşucu ölçmez (owner beyanı).
+  # R02 ikinci tur: parçalar ayrı satırlarda DEĞİL, aynı satırın devamındadır → metin "bu satırın devamında" der (tek değişen dize sabiti).
   $st.text = if ($st.verified) {
                $parts = foreach ($p in @(@('DB kapalı + sürüm arttı [P6-C2/C2V/C5]', 'P6-C2', 'P6-C2V', 'P6-C5'), @('yeni giriş reddi, yerel + dış [P6-C3L/D]', 'P6-C3L', 'P6-C3D'),
                                          @('mevcut oturum reddi, koşucunun kendi portal oturumu, yerel + dış [P6-C4L/D]', 'P6-C4L', 'P6-C4D'), @('belge kalıntısı yok [P6-C-DOC]', 'P6-C-DOC'),
@@ -288,7 +295,7 @@ function Get-ClosureStatus([string]$evidFile, [object]$rc) {
                  $vs = @($p | Select-Object -Skip 1 | ForEach-Object { $id = $_; $hit = @($ev.results | Where-Object { $_.id -eq $id }); if ($hit.Count -eq 1) { [string]$hit[0].verdict } else { '' } })
                  '{0}: {1}' -f $p[0], $(if (@($vs | Where-Object { $_ -ne 'PASS' }).Count -eq 0) { 'PASS' } elseif (@($vs | Where-Object { $_ -eq 'FAIL' }).Count -gt 0) { 'FAIL' } else { 'ÖLÇÜLMEDİ' })
                }
-               'Portal kapanışı: koşucunun birleşik ölçütü P6-D9 PASS — DOĞRULANDI yalnız aşağıda PASS yazan parçalar içindir (kanıttan): ' + ($parts -join ' · ') + '. Telefondaki oturumun reddini koşucu ÖLÇMEZ (yenileme sorusu beyandır).'
+               'Portal kapanışı: koşucunun birleşik ölçütü P6-D9 PASS — DOĞRULANDI yalnız bu satırın devamında PASS yazan parçalar içindir (kanıttan): ' + ($parts -join ' · ') + '. Telefondaki oturumun reddini koşucu ÖLÇMEZ (yenileme sorusu beyandır).'
              }
              else { "Portal kapanışı DOĞRULANAMADI (çıkış $rc) — telefondaki erişim açık kalmış ya da sentetik belge kalmış olabilir; sonucu CLIENT'a bildirin." }
   return [pscustomobject]$st
@@ -296,7 +303,9 @@ function Get-ClosureStatus([string]$evidFile, [object]$rc) {
 function Write-OwnerDeclaration([string]$evDir, [string]$runId, $closure) {
   Write-Host ''
   $c = if ($closure -and $closure.verified) { 'Green' } else { 'Red' }
+  # Satır rengi yalnız $closure.verified (= P6-D9 PASS) değerine bağlıdır; parçaların ayrı sonucu (PASS / FAIL / ÖLÇÜLMEDİ) rengi DEĞİŞTİRMEZ.
   Write-Host ("Koşum bitti. {0}" -f $(if ($closure) { $closure.text } else { 'Portal kapanışı DOĞRULANAMADI (kanıt okunamadı).' })) -ForegroundColor $c
+  Write-Host '  Not: satır rengi yalnız birleşik ölçütü (P6-D9) gösterir (yeşil = P6-D9 PASS; kırmızı = PASS değil ya da kanıt okunamadı); parçaların ayrı sonucu satırın metnindedir.'
   Write-Host 'Şimdi telefonda açık portal sayfasını bir kez YENİLEYİN, sonra aşağıdaki soruları ekranda gördüğünüze göre yanıtlayın.' -ForegroundColor Cyan
   Write-Host 'OWNER BEYANI (makine ölçümünden AYRI kaydedilir; makine ölçümü koşucunun kendi yüklemesidir). Emin değilseniz ? yazın. Parola YAZMAYIN.' -ForegroundColor Cyan
   $d = [ordered]@{
@@ -413,8 +422,8 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   Write-Host "EXTACC D-6 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 = portal hesabı hiç açılmamıştı + kalıntı yok (HTTP reddi ÖLÇÜLMEDİ) · 3 = DB kapalı + yeni giriş reddi; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ (Run kanıtındaki P6-C4 satırlarına bakın; PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı ya da belge kalıntısı doğrulanmadı/ölçülemedi · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
   if ($rc -eq 6) {
-    Write-Host '  Kanıttaki P6-C-DOC satırına bakın: diskte kalan dosya listelendiyse OWNER elle siler; "dosya erişimi ÖLÇÜLEMEDİ" ise önce belge kovasının okunabilirliği düzeltilir.' -ForegroundColor Yellow
-    Write-Host '  Bu çıkış kodu yeni bir Recover YETKİSİ DEĞİLDİR ve bu blok Recover''ı yeniden BAŞLATMAZ: sonraki Recover (kanıttaki adım bir ÖNERİDİR) yalnız bu kanıt incelendikten sonra, YENİ ve AYRI bir owner onayıyla, BİR KEZ başlatılır.' -ForegroundColor Yellow
+    Write-Host '  Kanıttaki P6-C-DOC satırına bakın: diskte kalan dosya listelendiyse OWNER elle siler; "dosya erişimi ÖLÇÜLEMEDİ" ise belge kovasının okunabilirliğini owner düzeltir.' -ForegroundColor Yellow
+    Write-Host '  Bu çıkış kodu yeni bir Recover için YETKİ DEĞİLDİR ve bu blok Recover''ı yeniden BAŞLATMAZ. İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir (kanıttaki kurtarma adımı metni bir ÖNERİDİR, yetki değildir). Kanıtı inceleyin ve sonucu CLIENT''a bildirin.' -ForegroundColor Yellow
   }
   Write-Host "  kanıt dizini: $EvDir"
   return $rc

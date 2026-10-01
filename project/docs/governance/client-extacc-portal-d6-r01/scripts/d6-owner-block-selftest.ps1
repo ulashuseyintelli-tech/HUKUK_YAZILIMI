@@ -11,6 +11,11 @@
 #          (G-2); Recover çıkış 6 yeni bir Recover yetkisi değildir (G-3); Run çıkış 5/6 metni Run'ın kendi kapanışını Recover'dan ayırır,
 #          blok tek node çağrısı yapar, çıkış 0'da koşum sonu metninde Recover yok (G-4); kapanış "DOĞRULANDI" metni kanıttaki ölçüt
 #          verdict'lerinden kurulur — PASS olmayan parça "ÖLÇÜLMEDİ" / "FAIL" yazılır (O-6..O-8). Eski blok baytlarında bu 7 test FAIL verir.
+# R02 ikinci tur (inceleme düzeltmeleri; yalnız yeni METNİ ölçen kalemler): G-3 yeniden yazıldı — Recover çıkış 6 metni İKİNCİ bir Recover
+#          için yol TANIMLAMAZ ("bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir"; "YENİ ve AYRI onayla / sonraki Recover / BİR KEZ" yok);
+#          G-5 onay metni kapsamı (iki sentetik tenant: kaynaktan + U-ISO yalnız sayı; bildirim: statik ölçüt T-1) ve kova dizini TEK adla
+#          (portal-documents/<sentetik tenant>/); O-9 kapanış satırı "bu satırın devamında" + parçalar aynı satırda + satır rengi notu.
+#          R02 ilk tur blok baytlarında (5AEF3893…) G-3, G-5, O-9 FAIL verir (negatif kontrol).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d6-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -291,9 +296,21 @@ try {
 
   $g3Txt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 6 $true $rcpt @('H') }; $g3 = $script:capR
   $g3zTxt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 0 $true $rcpt @('H') }; $g3z = $script:capR
-  $need3 = @('yeni bir Recover YETKİSİ DEĞİLDİR', 'yeniden BAŞLATMAZ', 'ÖNERİDİR', 'kanıt incelendikten sonra', 'YENİ ve AYRI bir owner onayıyla', 'BİR KEZ', 'OWNER elle siler', 'okunabilirliği')
+  # R02 ikinci tur (owner kuralı): İKİNCİ bir Recover TANIMLI DEĞİLDİR — metin "yeni onayla tekrar edilebilir" türü bir YOL tanımlamaz.
+  $need3 = @('yeni bir Recover için YETKİ DEĞİLDİR', 'yeniden BAŞLATMAZ', 'İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR', 'owner kararı gerektirir', 'ÖNERİDİR', 'Kanıtı inceleyin', 'OWNER elle siler', 'okunabilirliğini owner düzeltir')
   $miss3 = @($need3 | Where-Object { $g3Txt -cnotmatch [regex]::Escape($_) })
-  Check 'G-3' 'Recover çıkış 6: owner''a gösterilen metin bu çıkış kodunun yeni bir Recover YETKİSİ olmadığını ve bloğun Recover''ı yeniden BAŞLATMADIĞINI söyler; sonraki Recover yalnız kanıt incelendikten sonra YENİ ve AYRI owner onayıyla, BİR KEZ (kanıttaki adım ÖNERİDİR); eski "Recover BİR KEZ daha koşulur" talimatı YOK; blok tek node çağrısı yapar (mod recover); Recover çıkış 0''da yetki metni yok' ($g3.out -eq 6 -and $g3.nodeCalls -eq 1 -and $g3.last.mode -eq 'recover' -and $miss3.Count -eq 0 -and $g3Txt -notmatch 'Recover BİR KEZ daha koşulur' -and $g3z.out -eq 0 -and $g3z.nodeCalls -eq 1 -and $g3zTxt -match 'KURTARMA BİTTİ' -and $g3zTxt -notmatch 'YETKİSİ') "rc=$($g3.out) node=$($g3.nodeCalls) mod=$($g3.last.mode) eksik=$($miss3 -join ',') · çıkış 0: rc=$($g3z.out) node=$($g3z.nodeCalls)"
+  $path3List = @('YENİ ve AYRI', 'yeni ve ayrı', 'sonraki Recover', 'BİR KEZ', 'bir kez', 'Recover BİR KEZ daha koşulur', 'tekrar edilebilir', 'yeniden başlatılabilir', 'önce belge kovasının')
+  $path3 = @($path3List | Where-Object { $g3Txt -cmatch [regex]::Escape($_) })
+  $src3 = @(@('YENİ ve AYRI', 'sonraki Recover') | Where-Object { $src0 -cmatch [regex]::Escape($_) })   # kaynakta (yorumlar DAHİL) ikinci Recover yolu yok
+  $hdr3 = ($hdrTxt -cmatch 'İKİNCİ bir Recover bu' -and $hdrTxt -cmatch 'paketle TANIMLI DEĞİLDİR, owner kararı gerektirir')
+  Check 'G-3' 'Recover çıkış 6: owner''a gösterilen metin bu çıkış kodunun yeni bir Recover için YETKİ olmadığını ve bloğun Recover''ı yeniden BAŞLATMADIĞINI söyler; İKİNCİ bir Recover için YOL TANIMLAMAZ ("bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir"; "YENİ ve AYRI onayla / sonraki Recover / BİR KEZ / tekrar edilebilir" YOK — gösterilen metinde ve kaynakta, yorumlar dahil); kanıttaki adım ÖNERİDİR; blok başlığı aynı kuralı yazar; blok tek node çağrısı yapar (mod recover); Recover çıkış 0''da yetki / ikinci Recover metni yok' ($g3.out -eq 6 -and $g3.nodeCalls -eq 1 -and $g3.last.mode -eq 'recover' -and $miss3.Count -eq 0 -and $path3.Count -eq 0 -and $src3.Count -eq 0 -and $hdr3 -and $g3z.out -eq 0 -and $g3z.nodeCalls -eq 1 -and $g3zTxt -match 'KURTARMA BİTTİ' -and $g3zTxt -cnotmatch 'YETKİ' -and $g3zTxt -cnotmatch 'TANIMLI') "rc=$($g3.out) node=$($g3.nodeCalls) mod=$($g3.last.mode) eksik=$($miss3 -join ',') · yol tanımlayan ifade=$($path3 -join ',') · kaynakta=$($src3 -join ',') · başlık=$hdr3 · çıkış 0: rc=$($g3z.out) node=$($g3z.nodeCalls)"
+
+  # R02 ikinci tur: onay metni kapsamı (V-2) ve kova dizini tek adla (V-3). $consentTxt G-2'de yakalanan GÖSTERİLEN metindir.
+  $need5 = @('İKİ yeni sentetik tenantında (hedef + yabancı)', 'Kapsam: koşucu canlı DB''de yalnız bu koşumun iki sentetik tenantına yazar (kaynaktan okundu; koşumda U-ISO yalnız diğer tenantlardaki', 'kullanıcı/müvekkil SAYILARINI ölçer) ve bildirim üreten uçları çağırmaz (statik ölçüt: koşucu öz-testi T-1).')
+  $miss5 = @($need5 | Where-Object { $consentTxt -cnotmatch [regex]::Escape($_) })
+  $old5 = @(@('Koşucu yalnız bu koşumun sentetik tenantlarına yazar ve bildirim üreten uçları çağırmaz.', 'YALNIZ yeni bir sentetik tenantta', 'PORTAL_DOCUMENTS') | Where-Object { $consentTxt -cmatch [regex]::Escape($_) })
+  $bucket5 = @([regex]::Matches($consentTxt, '\(([^()\s]+)/<sentetik tenant>/\)') | ForEach-Object { $_.Groups[1].Value })
+  Check 'G-5' 'owner''a GÖSTERİLEN canlı veri onayı metni (ikinci tur): "yalnız … tenantına yazar" iddiası KAPSAMIYLA yazılır (iki sentetik tenant; kaynaktan okundu; koşumda U-ISO yalnız diğer tenantlardaki kullanıcı/müvekkil SAYILARINI ölçer) ve "bildirim üreten uçları çağırmaz" ölçüm türüyle (statik ölçüt: koşucu öz-testi T-1); eski kapsamsız cümle ve "YALNIZ yeni bir sentetik tenantta" YOK; kova dizini metinde TEK adla geçer (portal-documents/<sentetik tenant>/ ×3; PORTAL_DOCUMENTS gösterilen metinde ve kaynakta YOK)' ($miss5.Count -eq 0 -and $old5.Count -eq 0 -and $bucket5.Count -eq 3 -and @($bucket5 | Sort-Object -Unique).Count -eq 1 -and $bucket5[0] -ceq 'portal-documents' -and $src0 -cnotmatch 'PORTAL_DOCUMENTS') "eksik=$($miss5.Count)/$($need5.Count) · eski ifade=$($old5 -join ',') · kova adları=$($bucket5 -join ',') · kaynakta PORTAL_DOCUMENTS=$($src0 -cmatch 'PORTAL_DOCUMENTS')"
 
   $script:goN = 60; $g4 = [ordered]@{}; $g4Before = @(Node-Calls).Count
   foreach ($c in 5, 6, 0) {
@@ -341,6 +358,16 @@ try {
   $cs8a = Get-ClosureStatus (New-ClosureEvid 'nosession' $v8a) 0; $cs8b = Get-ClosureStatus (New-ClosureEvid 'c2v' $v8b) 0
   $cs8c = Get-ClosureStatus (New-ClosureEvid 'fail' $v8c) 0; $cs8d = Get-ClosureStatus (New-ClosureEvid 'd9fail' $v8d) 6
   Check 'O-8' 'parça verdict''i kanıttan: koşucu oturumu yoksa (P6-C4L/D UNMEASURED) yalnız mevcut oturum reddi "ÖLÇÜLMEDİ"; gruptaki tek ölçüt PASS değilse (P6-C2V UNMEASURED) grup "ÖLÇÜLMEDİ"; gruptaki bir ölçüt FAIL ise "FAIL" (PASS/ÖLÇÜLMEDİ diye yumuşatılmaz); P6-D9 FAIL ise metin DOĞRULANAMADI ve parça listesi YOK' ((Get-Parts $cs8a.text) -eq 'PASS/PASS/ÖLÇÜLMEDİ/PASS/PASS/PASS' -and (Get-Parts $cs8b.text) -eq 'ÖLÇÜLMEDİ/PASS/PASS/PASS/PASS/PASS' -and (Get-Parts $cs8c.text) -eq 'PASS/FAIL/ÖLÇÜLMEDİ/PASS/PASS/PASS' -and -not $cs8d.verified -and $cs8d.text -match 'DOĞRULANAMADI' -and (Get-Parts $cs8d.text) -eq 'YOK/YOK/YOK/YOK/YOK/YOK') "oturumsuz=$(Get-Parts $cs8a.text) · C2V=$(Get-Parts $cs8b.text) · FAIL=$(Get-Parts $cs8c.text) · D9 FAIL=$(Get-Parts $cs8d.text)"
+
+  # R02 ikinci tur (V-4): parçalar ayrı satırlarda değil, "Koşum bitti." satırının DEVAMINDADIR → metin "bu satırın devamında" der ("aşağıda" değil);
+  # satır rengi yalnız birleşik ölçütü (P6-D9) gösterir — not owner'a ayrı satırda yazılır. Renk mantığı (tek `$c` ataması) statik olarak ölçülür.
+  $o9Lines = @($o6Txt -split "`n"); $o9Main = @($o9Lines | Where-Object { $_ -cmatch '^Koşum bitti\.' })
+  $noteRe = [regex]::Escape('satır rengi yalnız birleşik ölçütü (P6-D9) gösterir')
+  $o9Note = @($o9Lines | Where-Object { $_ -cmatch $noteRe })
+  $env:EXSTUB_D9 = 'FAIL'; $env:EXSTUB_DOC = 'FAIL'; $script:goN = 90; $o9fTxt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }; $o9f = $script:capR; $env:EXSTUB_D9 = 'PASS'; $env:EXSTUB_DOC = 'PASS'
+  $o9fMain = @($o9fTxt -split "`n" | Where-Object { $_ -cmatch '^Koşum bitti\.' }); $o9fNote = @($o9fTxt -split "`n" | Where-Object { $_ -cmatch $noteRe })
+  $o9Color = ([regex]::Matches($declBody, '-ForegroundColor \$c\b')).Count -eq 1 -and $declBody.Contains('$c = if ($closure -and $closure.verified) { ''Green'' } else { ''Red'' }')
+  Check 'O-9' 'kapanış satırı (ikinci tur): DOĞRULANDI metni "bu satırın devamında PASS yazan parçalar" der ("aşağıda PASS yazan" gösterilen metinde ve kaynakta YOK); altı parça gerçekten "Koşum bitti." satırının İÇİNDEDİR (tek satır); "satır rengi yalnız birleşik ölçütü (P6-D9) gösterir" notu P6-D9 PASS ve FAIL koşumlarında owner''a gösterilir; renk mantığı değişmedi (tek `-ForegroundColor $c`, `$c` yalnız $closure.verified''a bağlı)' ($cs6.text -cmatch 'DOĞRULANDI yalnız bu satırın devamında PASS yazan parçalar içindir' -and $cs6.text -cnotmatch 'aşağıda PASS yazan' -and $src0 -cnotmatch 'aşağıda PASS yazan' -and $o9Main.Count -eq 1 -and (Get-Parts $o9Main[0]) -eq 'PASS/PASS/PASS/PASS/PASS/PASS' -and $o9Main[0].Contains($shown6) -and $o9Note.Count -eq 1 -and $o9f.out -eq 6 -and $o9fMain.Count -eq 1 -and $o9fMain[0] -cmatch 'DOĞRULANAMADI' -and $o9fNote.Count -eq 1 -and $o9Color) "PASS koşumu: satır=$($o9Main.Count) parçalar=$(if ($o9Main.Count -eq 1) { Get-Parts $o9Main[0] } else { 'YOK' }) not=$($o9Note.Count) · FAIL koşumu: rc=$($o9f.out) satır=$($o9fMain.Count) not=$($o9fNote.Count) · renk mantığı aynı=$o9Color"
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
