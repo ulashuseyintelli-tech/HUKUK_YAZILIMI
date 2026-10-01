@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 # -SelfTest : durdurma/kopyalama/yazma YOK; yalniz yedek kimligi + pinler + yardimcilar.
 # -----------------------------------------------------------------------------
 # ASAMALAR ($script:STAGE; kanit JSON'unda stage/failedAt/stages):
-#   0-kapilar | 1-yedek-butunluk | 2-durdur-web | 2-durdur-api | 3-geri-yukle-api | 3-geri-yukle-web | 4-kimlik | 5-baslat-api
+#   0-kapilar | 1-yedek-butunluk | 2-durdur-web | 2-durdur-api | 2-durdur-dogrula (R03-d) | 3-geri-yukle-api | 3-geri-yukle-web | 4-kimlik | 5-baslat-api
 #   5-baslat-web | 6-kapsam | 7-kanit
 # GERI YUKLENEN KIMLIK (4-kimlik) DOGRULANMADAN SERVIS BASLATILMAZ: API agac == EXP_LIVE, 16 dosyalik paket == EXP_BK_PKG,
 #   eklenen 6 dosya YOK/karantinada, WEB .next == EXP_WEB_LIVE, BUILD_ID == BID_LIVE, cfg == CFG_LIVE.
@@ -27,10 +27,12 @@ $ErrorActionPreference = 'Stop'
 #   11  ROLLBACK-DOGRULANAMADI     dosyalar geri yuklendi ama kimlik dogrulanamadi -> servis BASLATILMADI (uyusmayanlar kanitta; ESCALATE)
 #   12  ROLLBACK-ENGELLENDI        geri yukleme sirasinda dosya islemi basarisiz -> kalan adimlar kanitta; servis BASLATILMADI (ESCALATE)
 #   13  ROLLBACK-OK-ESKI-BASLAMADI dosyalar TABAN kimliginde DOGRULANDI ama en az bir servis OLCUMLE ayakta degil / olculemedi ya da
-#                                 kapsam (uclu) tutmadi. Iki servisin baslatma girisimi AYRI yapilir (birinin istisnasi ya da okuma hatasi
-#                                 digerini ATLATMAZ); KURTARMA satirlari servis basina OLCULEN duruma gore yazilir (dosya islemi gerekmez)
+#                                 kapsam (uclu) tutmadi ya da takas bitiminde bir servis KAPALI olculemedi (takas sirasinda baska bir
+#                                 tetikle baslamis olabilir - R03-d). Iki servisin baslatma girisimi AYRI yapilir (birinin istisnasi ya da okuma
+#                                 hatasi digerini ATLATMAZ); KURTARMA satirlari servis basina OLCULEN duruma gore yazilir (dosya islemi gerekmez)
 #   20  KAPIDA-DURDU               kapi (yetki/yedek kimligi/uclu/.env) - canli dosyalara DOKUNULMADI; servisler durdurulmadi
-#   21  DURDURMA-BASARISIZ         WEB/API kapanmadi ya da kapandigi OLCULEMEDI - canli dosyalara DOKUNULMADI; toparlama OLCULDU: bu kosumda
+#   21  DURDURMA-BASARISIZ         WEB/API kapanmadi ya da kapandigi OLCULEMEDI ya da (R03-d) takastan hemen once KAPALI olculmedi - canli
+#                                 dosyalara DOKUNULMADI; toparlama OLCULDU: bu kosumda
 #                                 durdurulup KAPALI olculen servis yeniden baslatildi ve iki servis saglik kumesiyle AYAKTA olculdu (ESCALATE)
 #   22  DURDURMA-BASARISIZ-TOPARLANAMADI  ayni durum, ama toparlama sonrasi en az bir servis ayakta degil ya da OLCULEMEDI -> KURTARMA satirlari
 #    1  SelfTest FAIL (yalniz -SelfTest)
@@ -47,15 +49,30 @@ $ErrorActionPreference = 'Stop'
 #   b3-api-down-before (API kosum oncesi KAPALI + WEB okuma hatasi -> API'ye Start YOK) | b3-toparla-web-crash (toparlamada baslatilan
 #   WEB son olcumden once duser -> 22) | b3-web-down-before (WEB kosum oncesi KAPALI, API kapanmaz -> WEB'e otomatik Start YOK) |
 #   b3-web-unhealthy (WEB calisiyor ama saglik yok -> 13; KURTARMA surece elle dokunma, ESCALATE) | b3-web-late-stop (WEB durdurma penceresinden SONRA kapanir -> bu kosumun durdurmasi sayilir, yeniden baslatilir -> 21) |
-#   b3-final-read-transient (son olcumde TEK okuma hatasi -> kisa yeniden olcum, karari degistirmez -> 0).
-# KARAR KURALI (R03-c): 0/13 ve 21/22 karari, tum adimlardan SONRA iki servisin tek atista yeniden olculmesine dayanir; 'bu kosumda
-#   durduruldu' yalniz durdurmadan ONCE CALISIYOR/KARISIK olculup sonra KAPALI olculen servis icindir.
+#   b3-final-read-transient (son olcumde TEK okuma hatasi -> kisa yeniden olcum, karari degistirmez -> 0) |
+#   (R03-d) b3-before-read-transient (2-durdur-web kosum oncesi olcumunde TEK okuma hatasi + API kapanmaz -> oturmus olcum CALISIYOR, WEB
+#   yeniden baslatilir -> 21) | b3-trigger-before-swap (API durdurma beklemesinde zamanlanmis tetik WEB'i yeniden baslatir -> takas oncesi
+#   olcum KAPALI degil, dosyalara DOKUNULMAZ -> 21) | b3-trigger-during-swap (takas sirasinda tetik WEB'i baslatir -> takas sonu olcumu
+#   KAPALI degil -> 13, 'tamamlandi' YOK) | b3-tuple-changed (6-kapsam'da uclu degisir -> 13) | b3-unexpected-after-kimlik (kimlik
+#   dogrulandiktan sonra beklenmeyen hata -> 13, olcume dayali metin) | b3-web-down-toparla-unreadable (WEB kosum oncesi KAPALI, API
+#   kapanmaz, toparlama karari OLCULEMEDI, son olcum KAPALI -> 22; KURTARMA Start'i OWNER KARARI notuyla) | b3-gate-read-persistent
+#   (takas oncesi yeniden olcumde WEB KALICI okuma hatasi -> OLCULEMEDI KAPALI sayilmaz, dosyalara dokunulmaz -> 21) | b3-swapend-read-persistent
+#   (takas sonu olcumunde WEB KALICI okuma hatasi -> 0 verilmez -> 13) | b3-trigger-before-swap-api (tetik API'yi baslatir -> 21) |
+#   b3-tuple-unreadable (6-kapsam'da uclu okunamaz -> 13, Kapsam OKUNAMADI) | b3-swap-trigger-kimlik-fail (takas sirasinda tetik + kimlik FAIL
+#   -> 11; KURTARMA'da takas sonu satiri Start ONERMEZ). b3-unexpected-after-kimlik hatasi WEB Start'tan ONCE enjekte edilir.
+# KARAR KURALI (R03-c/R03-d): 0/13 ve 21/22 karari, tum adimlardan SONRA iki servisin yeniden olculmesine dayanir; 'bu kosumda
+#   durduruldu' yalniz durdurmadan ONCE (oturmus olcumle) CALISIYOR/KARISIK olculup sonra KAPALI olculen servis icindir. Kosum oncesi
+#   durumu oturmus olcumle de OLCULEMEDI kalan servise durdurma komutu VERILMEZ (durumu bilinmeyen servis durdurulmaz -> 21/22).
+#   Takas YALNIZ takastan hemen once iki servis yeniden KAPALI olculurse baslar; takas bitiminde KAPALI olculmeyen servis 0'i engeller.
+#   Sinir: toparlama karar olcumunden SONRA kapanan servis yeniden baslatilmaz (durust 22 + KURTARMA Start adimi).
 # =============================================================================
 $LIVE_ROOT_CANON = 'C:\Development\HUKUK_YAZILIMI\HY_W4_RELEASE23'
 $TEST = ($TestRoot -ne '')
 $FAULTS = @('b3-read-transient', 'b3-read-persistent', 'b3-api-start-throw', 'b3-web-start-throw', 'b3-stop-api-fail', 'b3-stop-read-persistent',
             'b3-toparla-read-transient', 'b3-api-crash-after', 'b3-web-stopthrow-api-fail', 'b3-stop-recovery-start-throw', 'b3-api-down-before',
-            'b3-toparla-web-crash', 'b3-web-down-before', 'b3-web-unhealthy', 'b3-web-late-stop', 'b3-final-read-transient')
+            'b3-toparla-web-crash', 'b3-web-down-before', 'b3-web-unhealthy', 'b3-web-late-stop', 'b3-final-read-transient',
+            'b3-before-read-transient', 'b3-trigger-before-swap', 'b3-trigger-during-swap', 'b3-tuple-changed', 'b3-unexpected-after-kimlik',
+            'b3-web-down-toparla-unreadable', 'b3-gate-read-persistent', 'b3-swapend-read-persistent', 'b3-trigger-before-swap-api', 'b3-tuple-unreadable', 'b3-swap-trigger-kimlik-fail')
 if ($Fault -ne '' -and -not $TEST) { Write-Host 'KAPI: -Fault yalniz -TestRoot ile kullanilir (canli modda hata enjeksiyonu YOK) - DUR'; exit 20 }
 if ($Fault -ne '' -and $FAULTS -notcontains $Fault) { Write-Host ('KAPI: bilinmeyen -Fault: ' + $Fault + ' - DUR'); exit 20 }
 if ($TEST) {
@@ -104,6 +121,7 @@ $script:STAGES = New-Object System.Collections.Generic.List[string]
 $script:SERVICES_STOPPED = $false; $script:RESTORE_STEPS = $null; $script:VERIFY = $null; $script:RECOVERY = $null; $script:health = [ordered]@{}
 $script:tuple0 = ''; $script:bkMap = $null
 $script:STOPS = [ordered]@{}; $script:STOP_RECOVERY = $null; $script:FAULT_LOG = New-Object System.Collections.Generic.List[string]; $script:FAULT_FIRED = 0
+$script:PRE_SWAP = $null; $script:SWAP_END = $null
 function Say([string]$m) { $line = ((Get-Date).ToUniversalTime().ToString('HH:mm:ss') + 'Z  ' + $m); Write-Host $line; $log.Add($line) }
 function Set-Stage([string]$s) { $script:STAGE = $s; $script:STAGES.Add(((Get-Date).ToUniversalTime().ToString('HH:mm:ss') + 'Z ' + $s)); Say ('=== ASAMA ' + $s) }
 function Get-R26FileSha256([string]$p) { return (Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash }
@@ -159,6 +177,10 @@ function Get-ReadFault([int]$port) {
     'b3-api-down-before'      { $hit = ($port -eq $WEB_PORT -and @('2-durdur-web', '2-toparla', '2-toparla-son') -contains $st) }
     'b3-toparla-read-transient' { $hit = ($st -eq '2-toparla' -and $port -eq $WEB_PORT -and $script:FAULT_FIRED -eq 0) }
     'b3-final-read-transient' { $hit = ($st -eq '6-kapsam' -and $port -eq $API_PORT -and $script:FAULT_FIRED -eq 0) }
+    'b3-before-read-transient' { $hit = ($st -eq '2-durdur-web' -and $port -eq $WEB_PORT -and $script:FAULT_FIRED -eq 0) }
+    'b3-web-down-toparla-unreadable' { $hit = ($st -eq '2-toparla' -and $port -eq $WEB_PORT) }
+    'b3-gate-read-persistent' { $hit = ($st -eq '2-durdur-dogrula' -and $port -eq $WEB_PORT) }
+    'b3-swapend-read-persistent' { $hit = ($st -eq '3-geri-yukle-web' -and $port -eq $WEB_PORT) }
   }
   if (-not $hit) { return $null }
   $script:FAULT_FIRED = [int]$script:FAULT_FIRED + 1; Add-FaultLog ($st + ': dinleyici okuma hatasi (port ' + $port + ')')
@@ -190,7 +212,8 @@ function Invoke-StopTask([string]$task) {
   if ($TEST) {
     $s = Get-SimState; $s.stopCalls = [int]$s.stopCalls + 1
     if ($Fault -eq 'b3-web-late-stop' -and $task -eq $WEB_TASK -and $script:STAGE -eq '2-durdur-web') { Add-FaultLog '2-durdur-web: WEB bekleme penceresinde kapanmiyor'; Add-SimEvent $s ('stop ' + $task + ' (rollback) -> GEC (fault)'); Set-SimState $s; return }
-    if (@('b3-stop-api-fail', 'b3-toparla-read-transient', 'b3-web-stopthrow-api-fail', 'b3-stop-recovery-start-throw', 'b3-toparla-web-crash', 'b3-web-down-before') -contains $Fault -and $task -eq $API_TASK -and $script:STAGE -eq '2-durdur-api') { Add-FaultLog '2-durdur-api: API kapanmiyor'; Add-SimEvent $s ('stop ' + $task + ' (rollback) -> KAPANMADI (fault)'); Set-SimState $s; return }
+    if (@('b3-stop-api-fail', 'b3-toparla-read-transient', 'b3-web-stopthrow-api-fail', 'b3-stop-recovery-start-throw', 'b3-toparla-web-crash', 'b3-web-down-before',
+          'b3-before-read-transient', 'b3-web-down-toparla-unreadable') -contains $Fault -and $task -eq $API_TASK -and $script:STAGE -eq '2-durdur-api') { Add-FaultLog '2-durdur-api: API kapanmiyor'; Add-SimEvent $s ('stop ' + $task + ' (rollback) -> KAPANMADI (fault)'); Set-SimState $s; return }
     if ($task -eq $API_TASK) { $s.apiRunning = $false } else { $s.webRunning = $false }; Add-SimEvent $s ('stop ' + $task + ' (rollback)'); Set-SimState $s
     if ($Fault -eq 'b3-web-stopthrow-api-fail' -and $task -eq $WEB_TASK -and $script:STAGE -eq '2-durdur-web') { Add-FaultLog '2-durdur-web: HukukPlatform-Web durdurma istisnasi (etkili)'; throw ('FAULT ' + $Fault + ': Stop-ScheduledTask istisnasi (enjekte; servis yine de durdu)') }
     return
@@ -306,7 +329,11 @@ function Http([string]$method, [string]$url, [int]$timeoutMs = 8000) {
   } catch { return -2 }
 }
 function Get-LauncherTuple {
-  if ($TEST) { return [string](Get-SimState).launcherTuple }
+  if ($TEST) {
+    if ($Fault -eq 'b3-tuple-unreadable' -and $script:STAGE -eq '6-kapsam') { Add-FaultLog '6-kapsam: baslatici uclusu okunamadi (sim)'; throw 'FAULT b3-tuple-unreadable: uclu okuma hatasi (enjekte)' }
+    if ($Fault -eq 'b3-tuple-changed' -and $script:STAGE -eq '6-kapsam') { Add-FaultLog '6-kapsam: baslatici uclusu degisti (sim)'; return 'TANIMSIZ api=00000000 host=00000000 web=00000000' }
+    return [string](Get-SimState).launcherTuple
+  }
   $a = Get-R26FileSha256 $API_LAUNCHER; $h = Get-R26FileSha256 $HOST_EXE; $w = Get-R26FileSha256 $WEB_LAUNCHER
   foreach ($t in $LAUNCH_TUPLES) { if ($a -ceq $t.api -and $h -ceq $t.host -and $w -ceq $t.web) { return $t.name } }
   return ('TANIMSIZ api=' + $a.Substring(0, 8) + ' host=' + $h.Substring(0, 8) + ' web=' + $w.Substring(0, 8))
@@ -321,15 +348,26 @@ function Get-ServiceState {
 # ---------------------------------------------------------------- DURDURMA + TOPARLAMA (R03-c; yalniz OLCULEN sonuca gore konusur)
 # Invoke-B3Stop: durdurmadan ONCE olcum alinir (kosum oncesi durum). ranBefore = ONCE CALISIYOR/KARISIK olculdu; bu kosum durdurmayi
 #   DENEDI (komut verildi ya da istisna verdi). Toparlama 'bu kosumda durduruldu' kararini ranBefore + toparlamadaki KAPALI olcumune dayandirir
-#   (durma bekleme penceresinden SONRA gerceklesse de; komut istisnasindan bagimsiz). Once KAPALI ya da OLCULEMEDI olan servis otomatik baslatilmaz.
+#   (durma bekleme penceresinden SONRA gerceklesse de; komut istisnasindan bagimsiz). TOPARLAMADA once KAPALI ya da OLCULEMEDI olan servis otomatik baslatilmaz.
+#   R03-d: kosum oncesi olcum de OTURMUS olcumdur (Get-SettledMeasure; KAPALI/CALISIYOR okununca biter, aksi halde 30 sn yeniden olcer -
+#   KAPALI/CALISIYOR'dan once gelen tek gecici okuma hatasi kosum oncesi durumu 'bilinmiyor' yapmaz; pencerenin SON okumasi hata ise
+#   sonuc OLCULEMEDI'dir - guvenli yon). Oturmus olcum OLCULEMEDI ise durumu bilinmeyen servise durdurma komutu VERILMEZ (stopped=false ->
+#   2-durdur kapisi -> toparlama). 'Kosum oncesi KAPALI servise otomatik Start yok' kurali TOPARLAMA icindir (dosyalara dokunulmadi);
+#   basarili geri yukleme sonrasi 5-baslat iki R26 servisini de baslatir (tasarim: geri donusun amaci R26'yi ayaga kaldirmaktir).
 function Invoke-B3Stop([string]$svc) {
-  $s = [ordered]@{ before = (Get-SvcMeasure $svc); ranBefore = $false; command = $null; commandError = $null; wait = $null; stopped = $false; stoppedByThisRun = $false; text = $null }
+  $b = Get-SettledMeasure $svc 30
+  $s = [ordered]@{ before = $b.last; beforeAttempts = $b.attempts; beforeReadErrors = $b.readErrors; ranBefore = $false; command = $null; commandError = $null; wait = $null; stopped = $false; stoppedByThisRun = $false; text = $null }
   $s.ranBefore = (@('CALISIYOR', 'KARISIK') -contains [string]$s.before.state)
-  try { Invoke-StopTask (Get-SvcTask $svc); $s.command = 'VERILDI' } catch { $s.command = 'ISTISNA'; $s.commandError = $_.Exception.GetType().Name + ': ' + $_.Exception.Message }
-  $s.wait = Wait-Stopped (Get-SvcTask $svc) (Get-SvcPort $svc) $svc $(if ($s.command -eq 'VERILDI') { 90 } else { 0 })
+  if ([string]$s.before.state -eq 'OLCULEMEDI') {
+    $s.command = 'VERILMEDI (kosum oncesi durum OLCULEMEDI)'
+    $s.wait = [ordered]@{ stopped = $false; state = 'OLCULEMEDI'; attempts = 0; readErrors = 0; last = $s.before }
+  } else {
+    try { Invoke-StopTask (Get-SvcTask $svc); $s.command = 'VERILDI' } catch { $s.command = 'ISTISNA'; $s.commandError = $_.Exception.GetType().Name + ': ' + $_.Exception.Message }
+    $s.wait = Wait-Stopped (Get-SvcTask $svc) (Get-SvcPort $svc) $svc $(if ($s.command -eq 'VERILDI') { 90 } else { 0 })
+  }
   $s.stopped = [bool]$s.wait.stopped
   $s.stoppedByThisRun = ($s.stopped -and $s.ranBefore)
-  $s.text = 'once=' + $s.before.state + ' komut=' + $s.command + $(if ($s.commandError) { ' (' + $s.commandError + ')' } else { '' }) + ' durdu=' + $s.stopped + ' olculen=' + $s.wait.last.text
+  $s.text = 'once=' + $s.before.state + $(if ([int]$s.beforeReadErrors -gt 0) { ' (once olcumde okuma hatasi ' + $s.beforeReadErrors + '/' + $s.beforeAttempts + ')' } else { '' }) + ' komut=' + $s.command + $(if ($s.commandError) { ' (' + $s.commandError + ')' } else { '' }) + ' durdu=' + $s.stopped + ' olculen=' + $s.wait.last.text
   Say ($svc.ToUpperInvariant() + ' durdurma: ' + $s.text)
   return $s
 }
@@ -355,7 +393,8 @@ function Invoke-B3StopRecovery {
         try { Invoke-StartTask (Get-SvcTask $svc); $s.action = 'BASLATMA KOMUTU VERILDI' } catch { $s.action = 'BASLATMA ISTISNASI'; $s.startError = $_.Exception.GetType().Name + ': ' + $_.Exception.Message }
         $s.wait = Wait-SvcHealthy $svc $(if ($s.action -eq 'BASLATMA KOMUTU VERILDI') { $(if ($svc -eq 'api') { 120 } else { 180 }) } else { 15 }) $true $curBid
       } elseif ($ds -eq 'KAPALI') {
-        $s.action = 'KAPALI - bu kosumda durdurulmadi (' + $(if ($null -eq $st) { 'durdurma denenmedi' } elseif ([string]$st.before.state -eq 'OLCULEMEDI') { 'kosum oncesi durum OLCULEMEDI (bilinmiyor)' } else { 'kosum oncesi durum ' + [string]$st.before.state }) + '; baslatma OWNER KARARI) - baslatma komutu VERILMEDI'
+        # metin OLCULENE dayanir: 'bu kosum durdurmadi' yalniz durdurma hic denenmediyse; aksi halde kosum oncesi olculen durum + komut yazilir
+        $s.action = 'KAPALI - ' + $(if ($null -eq $st) { 'bu kosum DURDURMADI (durdurma denenmedi' } else { 'kosum oncesi CALISIYOR olculmedi (kosum oncesi durum ' + [string]$st.before.state + '; durdurma komutu=' + [string]$st.command }) + '; baslatma OWNER KARARI) - baslatma komutu VERILMEDI'
       } elseif ($ds -eq 'OLCULEMEDI') {
         $s.action = 'OLCULEMEDI - baslatma komutu VERILMEDI'
       } else {
@@ -384,7 +423,7 @@ function Get-B3SvcLine([string]$svc, $s) {
 #   ya da 'OLCULEMEDI: <hata>' (Start VERME). Dinleyici satiri B3 ile ayni birimi sayar (benzersiz OwningProcess).
 function Get-B3MeasureLines([string]$svc) {
   $p = Get-SvcPort $svc; $t = Get-SvcTask $svc
-  $probe = $(if ($svc -eq 'api') { 'curl.exe -s -o NUL --max-time 10 -w "%{http_code}" http://127.0.0.1:' + $p + '/api/auth/me   # saglikli: 401 ; 000 = baglanti yok' } else { 'curl.exe -s -o NUL --max-time 10 -w "%{http_code}" http://127.0.0.1:' + $p + '/portal/login   # saglikli: 200 ; 000 = baglanti yok' })
+  $probe = $(if ($svc -eq 'api') { 'curl.exe -s -o NUL --max-time 10 -w "%{http_code}" http://127.0.0.1:' + $p + '/api/auth/me   # saglikli: 401 ; 000 = baglanti yok (tek uc; B3 AYAKTA kumesi daha genis - kanit JSON)' } else { 'curl.exe -s -o NUL --max-time 10 -w "%{http_code}" http://127.0.0.1:' + $p + '/portal/login   # saglikli: 200 ; 000 = baglanti yok (tek uc; B3 AYAKTA kumesi buildManifest de ister - kanit JSON)' })
   return @(
     ('   try { @(Get-NetTCPConnection -State Listen -LocalPort ' + $p + ' -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique).Count } catch { if ($_.FullyQualifiedErrorId -like ''CmdletizationQuery_NotFound*'') { 0 } else { ''OLCULEMEDI: '' + $_.Exception.Message } }   # dinleyici PID; saglikli: 1'),
     ('   try { $h = @(Get-CimInstance Win32_Process -Filter "Name=''hukuk-task-host.exe''" -ErrorAction Stop); if (@($h | Where-Object { -not $_.CommandLine }).Count) { ''OLCULEMEDI: komut satiri okunamadi'' } else { @($h | Where-Object { $_.CommandLine -match ''(^|\s)' + $svc + '(\s|$)'' }).Count } } catch { ''OLCULEMEDI: '' + $_.Exception.Message }   # host; saglikli: 1'),
@@ -393,12 +432,13 @@ function Get-B3MeasureLines([string]$svc) {
 }
 # Get-B3SvcSteps: AYAKTA olmayan servis icin OLCULEN duruma gore adim. KAPALI -> Start (+ olcum); OLCULEMEDI -> once olc (Start yalniz
 #   gorev Running degil + dinleyici 0 + host 0 ise); CALISIYOR/KARISIK ama saglik yok -> surece elle DOKUNMA, olc, ESCALATE (owner karari).
+#   $preNote (R03-d): bu kosumun durdurmadigi servis icin 'baslatma OWNER KARARI' notu - KAPALI ve OLCULEMEDI adimlarinin ikisine de eklenir.
 function Get-B3SvcSteps([string]$svc, $h, [string]$preNote = '') {
   $t = Get-SvcTask $svc; $n = $svc.ToUpperInvariant()
   if ($null -eq $h) { $h = [ordered]@{ state = 'OLCULEMEDI' } }
   if ($h.state -eq 'AYAKTA') { return @() }
   $ml = Get-B3MeasureLines $svc
-  if ($h.state -eq 'OLCULEMEDI') { return @(('YUKSELTILMIS: ' + $n + ' durumu OLCULEMEDI - Start VERMEDEN once olcun (asagidaki satirlar tek tek); Start YALNIZ gorev Running DEGIL + dinleyici 0 + host 0 ise: Start-ScheduledTask -TaskName ' + $t + ' ; herhangi bir satir OLCULEMEDI yazarsa Start VERME, ESCALATE.')) + $ml }
+  if ($h.state -eq 'OLCULEMEDI') { return @(('YUKSELTILMIS: ' + $n + ' durumu OLCULEMEDI - Start VERMEDEN once olcun (asagidaki satirlar tek tek); Start YALNIZ gorev Running DEGIL + dinleyici 0 + host 0 ise' + $(if ($preNote) { ' ve ' + $preNote } else { '' }) + ': Start-ScheduledTask -TaskName ' + $t + ' ; herhangi bir satir OLCULEMEDI yazarsa Start VERME, ESCALATE.')) + $ml }
   $ms = $(if ($h.measured) { [string]$h.measured.state } else { 'BILINMIYOR' })
   if ($ms -eq 'KAPALI') { return @(('YUKSELTILMIS: ' + $(if ($preNote) { $preNote + ' - ' } else { '' }) + 'Start-ScheduledTask -TaskName ' + $t + ' ; ardindan olcun (asagidaki satirlar):')) + $ml }
   return @(('YUKSELTILMIS: ' + $n + ' ' + $ms + ' ama saglik tutmadi - surece elle DOKUNMA (Stop/Start yok); olcun (asagidaki satirlar) ve ESCALATE (owner karari).')) + $ml
@@ -409,12 +449,37 @@ function Get-B3StopRecoveryText($r) {
   $i = 1
   foreach ($svc in @('api', 'web')) {
     $x = $(if ($r) { $r[$svc] } else { $null })
-    $pre = $(if ($x -and [string]$x.action -like 'KAPALI - bu kosumda durdurulmadi*') { $st2 = $script:STOPS[$svc]; $svc.ToUpperInvariant() + ' bu kosumda DURDURULMADI (' + $(if ($null -eq $st2) { 'durdurma denenmedi' } else { 'kosum oncesi durum ' + [string]$st2.before.state }) + '; simdi KAPALI): baslatma OWNER KARARI' } else { '' })
+    # R03-d: not eylem metnine degil OLCUME baglidir - 'bu kosumda durduruldu' (stoppedByThisRun) OLCULMEYEN her servis icin Start adimi
+    #   'OWNER KARARI' notunu tasir (toparlama karari OLCULEMEDI/istisna olsa da).
+    $st2 = $script:STOPS[$svc]
+    $pre = $(if (-not ($x -and [bool]$x.stoppedByThisRun)) { $svc.ToUpperInvariant() + ' ' + $(if ($null -eq $st2) { 'bu kosum DURDURMADI (durdurma denenmedi)' } else { 'kosum oncesi CALISIYOR olculmedi (kosum oncesi durum ' + [string]$st2.before.state + '; durdurma komutu=' + [string]$st2.command + ')' }) + ': baslatma OWNER KARARI' } else { '' })
     $steps = @(Get-B3SvcSteps $svc $(if ($x) { $x.after } else { $null }) $pre)
     for ($k = 0; $k -lt $steps.Count; $k++) { if ($k -eq 0) { $lines += ($i.ToString() + ') ' + $steps[$k]); $i++ } else { $lines += $steps[$k] } }
   }
-  $lines += ($i.ToString() + ') Durdurma sorunu (kanit stops) giderilmeden B3 YENIDEN KOSULMAZ; ESCALATE.')
+  $lines += ($i.ToString() + ') ' + $(if ($script:FAILED_AT -eq '2-durdur-dogrula') { 'Takas oncesi yeniden olcum sorunu (kanit preSwap + error; zamanlanmis tetik olasi)' } else { 'Durdurma sorunu (kanit stops)' }) + ' giderilmeden B3 YENIDEN KOSULMAZ; ESCALATE.')
   return $lines
+}
+# Get-B3SwapEndLines (R03-d): takas bitiminde KAPALI olculmeyen servis icin KURTARMA adimi (13 ve 11/12 metinlerinde ortak). 13'te dosyalar
+#   TABAN dogrulandi: yeniden baslatma OWNER KARARIDIR ve sirali adimlar halinde yazilir (yapistirilacak komut satiri DEGIL): once Stop, olcum
+#   satirlari KAPALI gosterene kadar beklenir, ANCAK sonra Start (IgnoreNew: calisan gorevdeki Start sessizce yok sayilir).
+#   -NoStart (11/12): dosya kimligi DOGRULANMADI -> Start ONERILMEZ (kimlik dogrulanmadan baslatma YOK); yalniz olcum + owner karariyla durdurma.
+function Get-B3SwapEndLines($se, [int]$start, [switch]$NoStart) {
+  $out = @(); $i = $start
+  if ($null -eq $se -or [bool]$se.ok) { return $out }
+  foreach ($svc in @('api', 'web')) {
+    $st = [string]$se[$svc]
+    if ($st -like 'KAPALI*') { continue }
+    $t = Get-SvcTask $svc
+    if ($NoStart) {
+      $out += ($i.ToString() + ') YUKSELTILMIS: ' + $svc.ToUpperInvariant() + ' takas bitiminde KAPALI olculmedi (' + $st + ') - takas sirasinda baska bir tetikle baslamis olabilir; dosya kimligi DOGRULANMADI, calisan surec eski/karisik dosya yuklemis olabilir. Olcun (asagidaki satirlar); OWNER KARARI; ESCALATE.')
+      $out += ('   owner karariyla yalniz durdurma: Stop-ScheduledTask -TaskName ' + $t + ' ; Start VERME (kimlik dogrulanmadan baslatma YOK).')
+    } else {
+      $out += ($i.ToString() + ') YUKSELTILMIS: ' + $svc.ToUpperInvariant() + ' takas bitiminde KAPALI olculmedi (' + $st + ') - takas sirasinda baska bir tetikle baslamis olabilir; calisan surec bu kosumun TABAN dosyalarla baslattigi surec SAYILMAZ. Surece elle dokunmadan once olcun (asagidaki satirlar); yeniden baslatma OWNER KARARI; ESCALATE.')
+      $out += ('   owner karariyla yeniden baslatma (sirali adimlar): (a) Stop-ScheduledTask -TaskName ' + $t + ' (b) olcum satirlari gorev Running DEGIL + dinleyici 0 + host 0 gosterene kadar bekleyin (c) ANCAK sonra Start-ScheduledTask -TaskName ' + $t + ' ve yeniden olcun.')
+    }
+    $out += @(Get-B3MeasureLines $svc); $i++
+  }
+  return $out
 }
 function Get-StartRecoveryText($h) {
   $lines = @('VERDICT ROLLBACK-OK-ESKI-BASLAMADI - dosyalar TABAN kimliginde DOGRULANDI (4-kimlik PASS; dosya islemi GEREKMEZ, B3 YENIDEN KOSULMAZ); servis durumu OLCUME gore (son olcum):')
@@ -424,10 +489,13 @@ function Get-StartRecoveryText($h) {
   }
   $i = 1; $down = $false
   foreach ($svc in @('api', 'web')) {
+    if ($h.swapEnd -and -not [bool]$h.swapEnd.ok -and ([string]$h.swapEnd[$svc]) -notlike 'KAPALI*') { if ($h[$svc] -and [string]$h[$svc].state -ne 'AYAKTA') { $down = $true }; continue }   # takas sonu satiri (asagida) bu servisi kapsar
     $steps = @(Get-B3SvcSteps $svc $h[$svc]); if ($steps.Count) { $down = $true }
     for ($k = 0; $k -lt $steps.Count; $k++) { if ($k -eq 0) { $lines += ($i.ToString() + ') ' + $steps[$k]); $i++ } else { $lines += $steps[$k] } }
   }
-  if (-not [bool]$h.tupleUnchanged) { $lines += ($i.ToString() + ') Kapsam: baslatici uclusu ' + $(if ([string]$h.tuple -like 'OLCULMEDI*') { 'OLCULMEDI' } else { '1-yedek-butunluk sonrasi DEGISTI ya da okunamadi' }) + ' (' + [string]$h.tuple + ') - ESCALATE.'); $i++ }
+  if (-not [bool]$h.tupleUnchanged) { $lines += ($i.ToString() + ') Kapsam: baslatici uclusu ' + $(if ([string]$h.tuple -like 'OLCULMEDI*') { 'OLCULMEDI' } elseif ([string]$h.tuple -like 'OLCULEMEDI*') { 'OKUNAMADI' } else { '1-yedek-butunluk sonrasi DEGISTI' }) + ' (' + [string]$h.tuple + ') - ESCALATE.'); $i++ }
+  # R03-d: takas bitiminde KAPALI olculmeyen servis takas sirasinda baska bir tetikle baslamis olabilir (eski/karisik dosya yuklemis olabilir)
+  $sw = @(Get-B3SwapEndLines $h.swapEnd $i); if ($sw.Count) { $lines += $sw; $i = $i + @($sw | Where-Object { $_ -match '^\d+\) ' }).Count }
   if ($down) { $lines += ($i.ToString() + ') Gelmezse ESCALATE: gorev/launcher/log incelemesi; sonra salt okuma olcumu (yukaridaki olcum satirlari).') }
   return $lines
 }
@@ -463,12 +531,16 @@ function Test-RestoredIdentity {
   return $v
 }
 # Get-RecoveryText: YALNIZ 11/12 (servis BASLATILMADI - kimlik dogrulanmadan baslatma yok). 13 metni Get-StartRecoveryText'tir (olcume dayali).
+#   R03-d: takas bitiminde KAPALI olculmeyen (takas sirasinda baska tetikle baslamis olabilecek) servis bu metinde de ayri satirla yazilir.
 function Get-RecoveryText([string]$verdict) {
-  return @(
-    ('VERDICT ' + $verdict + ' - SERVISLER BASLATILMADI (kimlik dogrulanmadan baslatma YOK). ESCALATE.'),
+  $l = @(
+    ('VERDICT ' + $verdict + ' - bu kosum SERVIS BASLATMADI (kimlik dogrulanmadan baslatma YOK). ESCALATE.'),
     ('   Yedekler: API=' + $BackupApiDir + ' | WEB=' + $BackupWebDir),
     ('   Aday .next yeniden adlandirildi: ' + $FAILED_NEXT + ' (varsa) ; eklenen dosya karantinasi: ' + $QUAR + ' (silme yok)'),
     '   Kanit JSON verify.mismatches + restoreSteps ile owner karari; canli dosyalara elle dokunma; betik yeniden kosulabilir (idempotent: karantina/yeniden adlandirma ts ile ayrisir).')
+  $sw = @(Get-B3SwapEndLines $script:SWAP_END 1 -NoStart)
+  if ($sw.Count) { $l += '   Takas bitiminde servis durumu (kanit swapEnd; takas yarida kaldiysa olculmedi - kanit serviceState):'; $l += $sw }
+  return $l
 }
 function Write-EvidenceProtected {
   $lastStage = $script:STAGE   # kanit asamasindan ONCEKI son asama ('stage' alani; '7-kanit' degil)
@@ -479,7 +551,7 @@ function Write-EvidenceProtected {
     testMode = [ordered]@{ enabled = $TEST; testRoot = $(if ($TEST) { $TestRoot } else { $null }); fault = $(if ($Fault) { $Fault } else { $null }); faultLog = @($script:FAULT_LOG); simulated = @('elevation', 'tasks', 'listeners', 'http', 'launcher-tuple') }
     quarantineDir = $QUAR; failedNextDir = $FAILED_NEXT; launcherTuple = $script:tuple0; backupApiDir = $BackupApiDir; backupWebDir = $BackupWebDir
     expected = [ordered]@{ apiTree = $EXP_LIVE; pkg = $EXP_BK_PKG; webTree = $EXP_WEB_LIVE; buildId = $BID_LIVE; cfg = $CFG_LIVE }
-    stops = $script:STOPS; stopRecovery = $script:STOP_RECOVERY
+    stops = $script:STOPS; stopRecovery = $script:STOP_RECOVERY; preSwap = $script:PRE_SWAP; swapEnd = $script:SWAP_END
     restoreSteps = $script:RESTORE_STEPS; verify = $script:VERIFY; health = $script:health; recovery = $script:RECOVERY
     serviceState = $(try { Get-ServiceState } catch { @{ error = $_.Exception.Message } })
     log = @($log)
@@ -521,7 +593,7 @@ try {
 } catch { $bkErr = $_.Exception.Message; Say ('KAPI: yedek butunlugu OLCULEMEDI: ' + $bkErr) }
 if ($SelfTest) {
   $needed = @('Say', 'Set-Stage', 'Get-R26FileSha256', 'Get-Map', 'Get-TreeDigest', 'Get-PackageDigest', 'Get-Pids', 'Wait-Stopped', 'Http', 'Get-LauncherTuple', 'Get-BuildId', 'Test-RestoredIdentity', 'Write-EvidenceProtected', 'Get-RecoveryText', 'Invoke-StopTask', 'Invoke-StartTask', 'Test-Elevated',
-              'Get-HostCount', 'Get-SvcMeasure', 'Get-SettledMeasure', 'Wait-SvcHealthy', 'Invoke-B3Stop', 'Invoke-B3StopRecovery', 'Get-B3SvcLine', 'Get-B3MeasureLines', 'Get-B3SvcSteps', 'Get-B3StopRecoveryText', 'Get-StartRecoveryText', 'Get-ServiceState')
+              'Get-HostCount', 'Get-SvcMeasure', 'Get-SettledMeasure', 'Wait-SvcHealthy', 'Invoke-B3Stop', 'Invoke-B3StopRecovery', 'Get-B3SvcLine', 'Get-B3MeasureLines', 'Get-B3SvcSteps', 'Get-B3StopRecoveryText', 'Get-StartRecoveryText', 'Get-ServiceState', 'Get-B3SwapEndLines')
   $missing = @($needed | Where-Object { -not (Get-Command $_ -CommandType Function -ErrorAction SilentlyContinue) })
   Say ('fonksiyon kumesi tam=' + ($missing.Count -eq 0) + ' | robocopy=' + [bool](Get-Command robocopy.exe -ErrorAction SilentlyContinue))
   $st = ($null -eq $bkErr -and $bkOk -and $pinOk -and $missing.Count -eq 0)
@@ -536,7 +608,7 @@ try {
     Set-Stage '0-kapilar'
     if ($TEST) { Say ('TEST MODU: TestRoot=' + $TestRoot + ' | canli yollara BAGLANMADI'); if (-not (Test-Path -LiteralPath $SIM_STATE -PathType Leaf)) { throw ('KAPI: simulator durumu yok: ' + $SIM_STATE + ' - DUR') } }
     if ($TEST -and $Fault -eq 'b3-api-down-before') { $s0 = Get-SimState; $s0.apiRunning = $false; Set-SimState $s0; Add-FaultLog '0-kapilar: API kosum oncesi KAPALI (sim)' }
-    if ($TEST -and $Fault -eq 'b3-web-down-before') { $s0 = Get-SimState; $s0.webRunning = $false; Set-SimState $s0; Add-FaultLog '0-kapilar: WEB kosum oncesi KAPALI (sim)' }
+    if ($TEST -and @('b3-web-down-before', 'b3-web-down-toparla-unreadable') -contains $Fault) { $s0 = Get-SimState; $s0.webRunning = $false; Set-SimState $s0; Add-FaultLog '0-kapilar: WEB kosum oncesi KAPALI (sim)' }
     if (-not (Test-Elevated)) { throw 'KAPI: yukseltilmis pencere gerekli - DUR' }
     Set-Stage '1-yedek-butunluk'
     if ($bkErr) { throw ('KAPI: yedek butunlugu olculemedi - GERI ALMA BASLAMAZ: ' + $bkErr) }
@@ -547,11 +619,19 @@ try {
 
     Set-Stage '2-durdur-web'
     $script:STOPS['web'] = Invoke-B3Stop 'web'
-    if (-not $script:STOPS['web'].stopped) { throw ('KAPI: WEB durdurulamadi ya da kapandigi OLCULEMEDI (' + $script:STOPS['web'].wait.state + ') - DOSYALARA DOKUNULMADI; toparlama olculecek') }
+    if (-not $script:STOPS['web'].stopped) { throw ('KAPI: WEB durdurulamadi ya da kapandigi OLCULEMEDI (' + $script:STOPS['web'].wait.state + '; komut=' + $script:STOPS['web'].command + ') - DOSYALARA DOKUNULMADI; toparlama olculecek') }
     Set-Stage '2-durdur-api'
     $script:STOPS['api'] = Invoke-B3Stop 'api'
-    if (-not $script:STOPS['api'].stopped) { throw ('KAPI: API durdurulamadi ya da kapandigi OLCULEMEDI (' + $script:STOPS['api'].wait.state + ') - DOSYALARA DOKUNULMADI; WEB durdurma: ' + $script:STOPS['web'].text + '; toparlama olculecek') }
-    Say 'WEB ve API kapandi (olculdu: KAPALI)'
+    if (-not $script:STOPS['api'].stopped) { throw ('KAPI: API durdurulamadi ya da kapandigi OLCULEMEDI (' + $script:STOPS['api'].wait.state + '; komut=' + $script:STOPS['api'].command + ') - DOSYALARA DOKUNULMADI; WEB durdurma: ' + $script:STOPS['web'].text + '; toparlama olculecek') }
+    # R03-d: takastan HEMEN ONCE iki servis yeniden olculur - gorevlerin zamanlanmis tekrar tetigi (API durdurma beklemesi sirasinda) WEB'i
+    #   yeniden baslatmis olabilir. KAPALI olculmeyen servis varsa dosyalara DOKUNULMAZ -> 2-durdur toparlamasi (21/22).
+    Set-Stage '2-durdur-dogrula'
+    if ($TEST -and $Fault -eq 'b3-trigger-before-swap-api') { $s0 = Get-SimState; $s0.apiRunning = $true; Add-SimEvent $s0 'tetik: HukukPlatform-API zamanlanmis tekrarla yeniden basladi (sim)'; Set-SimState $s0; Add-FaultLog '2-durdur-dogrula: API zamanlanmis tetikle yeniden basladi (sim)' }
+    if ($TEST -and $Fault -eq 'b3-trigger-before-swap') { $s0 = Get-SimState; $s0.webRunning = $true; Add-SimEvent $s0 'tetik: HukukPlatform-Web zamanlanmis tekrarla yeniden basladi (sim)'; Set-SimState $s0; Add-FaultLog '2-durdur-dogrula: WEB zamanlanmis tetikle yeniden basladi (sim)' }
+    $script:PRE_SWAP = [ordered]@{ api = (Get-SettledMeasure 'api' 15); web = (Get-SettledMeasure 'web' 15) }
+    Say ('takas oncesi yeniden olcum: API ' + $script:PRE_SWAP.api.last.text + ' | WEB ' + $script:PRE_SWAP.web.last.text)
+    foreach ($svc in @('web', 'api')) { if ([string]$script:PRE_SWAP[$svc].state -ne 'KAPALI') { throw ('KAPI: ' + $svc.ToUpperInvariant() + ' takastan hemen once KAPALI olculmedi (' + $script:PRE_SWAP[$svc].last.text + ') - DOSYALARA DOKUNULMADI; toparlama olculecek') } }
+    Say 'WEB ve API kapandi (olculdu: KAPALI; takastan hemen once yeniden olculdu)'
     $script:SERVICES_STOPPED = $true
 
     Set-Stage '3-geri-yukle-api'
@@ -584,6 +664,13 @@ try {
     $steps['web-cfg-geri'] = 'BASLADI'
     Copy-Item -LiteralPath $bkCfg -Destination $LIVE_CFG -Force
     $steps['web-cfg-geri'] = 'TAMAM'
+    # R03-d: takas BITTIKTEN hemen sonra iki servis olculur. KAPALI olculmeyen servis takas sirasinda baska bir tetikle baslamis olabilir
+    #   (eski/karisik dosya yuklemis olabilir) -> 0 verilmez (13 + KURTARMA). Bundan sonraki baslatmalar dosyalar TABAN iken olur.
+    if ($TEST -and $Fault -eq 'b3-swap-trigger-kimlik-fail') { Add-Content -LiteralPath (Join-Path $LIVE 'modules\auth\guards\credential-recovery-rate-limit.guard.js') -Value '// sim: kimlik bozuldu'; Add-FaultLog '3-geri-yukle-web: API dosyasi bozuldu (sim)' }
+    if ($TEST -and @('b3-trigger-during-swap', 'b3-swap-trigger-kimlik-fail') -contains $Fault) { $s0 = Get-SimState; $s0.webRunning = $true; Add-SimEvent $s0 'tetik: HukukPlatform-Web takas sirasinda basladi (sim)'; Set-SimState $s0; Add-FaultLog '3-geri-yukle-web: WEB takas sirasinda tetikle basladi (sim)' }
+    $se = [ordered]@{ api = (Get-SettledMeasure 'api' 15); web = (Get-SettledMeasure 'web' 15) }
+    $script:SWAP_END = [ordered]@{ ok = ([string]$se.api.state -eq 'KAPALI' -and [string]$se.web.state -eq 'KAPALI'); api = [string]$se.api.last.text; web = [string]$se.web.last.text }
+    Say ('takas sonu olcum: API ' + $script:SWAP_END.api + ' | WEB ' + $script:SWAP_END.web + ' | iki servis KAPALI=' + $script:SWAP_END.ok)
 
     Set-Stage '4-kimlik'
     $v = Test-RestoredIdentity; $script:VERIFY = $v
@@ -597,6 +684,7 @@ try {
     # istisna baslatmanin OLMADIGINI kanitlamaz: istisnada da kisa (15 sn) yeniden olcum; Start tekrar VERILMEZ
     $ha = Wait-SvcHealthy 'api' $(if ($sa.api -eq 'VERILDI') { 120 } else { 15 }) $true
     Set-Stage '5-baslat-web'
+    if ($TEST -and $Fault -eq 'b3-unexpected-after-kimlik') { Add-FaultLog '5-baslat-web: beklenmeyen hata (sim)'; throw ('FAULT ' + $Fault + ': beklenmeyen hata (enjekte; WEB baslatma komutundan ONCE)') }
     try { Invoke-StartTask $WEB_TASK; $sa.web = 'VERILDI' } catch { $sa.web = 'ISTISNA: ' + $_.Exception.Message; Say ('HATA [5-baslat-web]: WEB baslatma komutu istisna: ' + $_.Exception.Message) }
     $hw = Wait-SvcHealthy 'web' $(if ($sa.web -eq 'VERILDI') { 180 } else { 15 }) $true
     Say ('baslatma sonrasi: API komut=' + $sa.api + ' -> ' + $ha.text + ' | WEB komut=' + $sa.web + ' -> ' + $hw.text)
@@ -605,13 +693,14 @@ try {
     $fa = Wait-SvcHealthy 'api' 15 $true; $fw = Wait-SvcHealthy 'web' 15 $true   # kisa sureli yeniden olcum: tek gecici okuma hatasi karari degistirmez
     $tuple1 = $(try { Get-LauncherTuple } catch { 'OLCULEMEDI: ' + $_.Exception.Message })
     $tupleOk = ($tuple1 -ceq $script:tuple0)
-    Say ('son olcum: API ' + $fa.text + ' | WEB ' + $fw.text + ' | baslatici uclusu degismedi=' + $tupleOk + ' (' + $tuple1 + ')')
-    $ok = ($fa.state -eq 'AYAKTA' -and $fw.state -eq 'AYAKTA' -and $tupleOk)
-    $script:health = [ordered]@{ ok = $ok; startAttempts = $sa; api = $fa; web = $fw; postStart = [ordered]@{ api = $ha; web = $hw }; tupleUnchanged = $tupleOk; tuple = $tuple1 }
-    if ($ok) { $script:VERDICT = 'ROLLBACK PASS'; $script:EXIT = 0; Say 'GERI DONUS TAMAMLANDI (son olcum: dosyalar TABAN + API ve WEB AYAKTA + uclu degismedi)' }
+    $swapOk = ($null -ne $script:SWAP_END -and [bool]$script:SWAP_END.ok)
+    Say ('son olcum: API ' + $fa.text + ' | WEB ' + $fw.text + ' | baslatici uclusu degismedi=' + $tupleOk + ' (' + $tuple1 + ') | takas sonu iki servis KAPALI=' + $swapOk)
+    $ok = ($fa.state -eq 'AYAKTA' -and $fw.state -eq 'AYAKTA' -and $tupleOk -and $swapOk)
+    $script:health = [ordered]@{ ok = $ok; startAttempts = $sa; api = $fa; web = $fw; postStart = [ordered]@{ api = $ha; web = $hw }; tupleUnchanged = $tupleOk; tuple = $tuple1; swapEnd = $script:SWAP_END }
+    if ($ok) { $script:VERDICT = 'ROLLBACK PASS'; $script:EXIT = 0; Say 'GERI DONUS TAMAMLANDI (son olcum: dosyalar TABAN + API ve WEB AYAKTA + uclu degismedi; takastan hemen once ve takas bitiminde iki servis KAPALI olculdu)' }
     else {
       $script:VERDICT = 'ROLLBACK-OK-ESKI-BASLAMADI'; $script:EXIT = 13; $script:RECOVERY = Get-StartRecoveryText $script:health
-      Say ('GERI DONUS TAMAMLANMADI: dosyalar TABAN dogrulandi; son olcum API=' + $fa.state + ' WEB=' + $fw.state + ' ; uclu degismedi=' + $tupleOk + ' (KURTARMA satirlari)')
+      Say ('GERI DONUS TAMAMLANMADI: dosyalar TABAN dogrulandi; son olcum API=' + $fa.state + ' WEB=' + $fw.state + ' ; uclu degismedi=' + $tupleOk + ' ; takas sonu KAPALI=' + $swapOk + ' (KURTARMA satirlari)')
     }
   } catch {
     if ($_.Exception.Message -ne 'KIMLIK-FAIL') {
@@ -623,7 +712,8 @@ try {
           $rec = $null; try { $rec = Invoke-B3StopRecovery } catch { Say ('toparlama istisnasi: ' + $_.Exception.Message); $rec = $script:STOP_RECOVERY; if ($rec) { $rec.ok = $false } }
           $script:STOP_RECOVERY = $rec
           $sum = ((@('api', 'web') | ForEach-Object { Get-B3SvcLine $_ $(if ($rec) { $rec[$_] } else { $null }) }) -join ' ; ')
-          if ($null -ne $rec -and [bool]$rec.ok) { $script:VERDICT = 'DURDURMA-BASARISIZ'; $script:EXIT = 21; Say ('canli dosyalara DOKUNULMADI; TOPARLAMA OLCULDU (iki servis AYAKTA): ' + $sum); Say 'GERI DONUS YAPILMADI (canli dosyalar B3 oncesiyle ayni) - ESCALATE: durdurma nedeni kanitta (stops)' }
+          $why = $(if ($script:FAILED_AT -eq '2-durdur-dogrula') { 'neden kanitta (preSwap + error): takastan hemen once bir servis KAPALI olculmedi (zamanlanmis/oturum tetigi olasi)' } else { 'durdurma nedeni kanitta (stops)' })
+          if ($null -ne $rec -and [bool]$rec.ok) { $script:VERDICT = 'DURDURMA-BASARISIZ'; $script:EXIT = 21; Say ('canli dosyalara DOKUNULMADI; TOPARLAMA OLCULDU (iki servis AYAKTA): ' + $sum); Say ('GERI DONUS YAPILMADI (canli dosyalar B3 oncesiyle ayni) - ESCALATE: ' + $why) }
           else { $script:VERDICT = 'DURDURMA-BASARISIZ-TOPARLANAMADI'; $script:EXIT = 22; $script:RECOVERY = Get-B3StopRecoveryText $rec; Say ('canli dosyalara DOKUNULMADI; TOPARLAMA TAMAMLANAMADI: ' + $sum) }
         } else { $script:VERDICT = 'KAPIDA-DURDU'; $script:EXIT = 20; Say 'canli dosyalara DOKUNULMADI' }
       } elseif ($script:STAGE -like '3-*' -or $script:STAGE -eq '4-kimlik') {
@@ -633,8 +723,8 @@ try {
       } else {
         # kimlik DOGRULANDIKTAN sonra BEKLENMEYEN hata: metin olcume dayanir (baslatildi iddiasi yok); servisler simdi olculur
         $script:VERDICT = 'ROLLBACK-OK-ESKI-BASLAMADI'; $script:EXIT = 13
-        $hx = [ordered]@{ ok = $false; startAttempts = $(if ($sa) { $sa } else { [ordered]@{ api = 'BILINMIYOR (beklenmeyen hata)'; web = 'BILINMIYOR (beklenmeyen hata)' } }); api = $null; web = $null; tupleUnchanged = $false; tuple = 'OLCULMEDI (beklenmeyen hata)' }
-        foreach ($svc in @('api', 'web')) { try { $hx[$svc] = Wait-SvcHealthy $svc 0 $false } catch { $hx[$svc] = [ordered]@{ state = 'OLCULEMEDI'; text = 'OLCULEMEDI (' + $_.Exception.Message + ')'; measured = $null } } }
+        $hx = [ordered]@{ ok = $false; startAttempts = $(if ($sa) { $sa } else { [ordered]@{ api = 'BILINMIYOR (beklenmeyen hata)'; web = 'BILINMIYOR (beklenmeyen hata)' } }); api = $null; web = $null; tupleUnchanged = $false; tuple = 'OLCULMEDI (beklenmeyen hata)'; swapEnd = $script:SWAP_END }
+        foreach ($svc in @('api', 'web')) { try { $hx[$svc] = Wait-SvcHealthy $svc 15 $true } catch { $hx[$svc] = [ordered]@{ state = 'OLCULEMEDI'; text = 'OLCULEMEDI (' + $_.Exception.Message + ')'; measured = $null } } }   # R03-d: kisa sureli yeniden olcum (tek okuma hatasi karari degistirmez)
         $script:health = $hx; $script:RECOVERY = Get-StartRecoveryText $hx
         Say ('GERI DONUS TAMAMLANMADI (beklenmeyen hata sonrasi olcum): API=' + [string]$hx.api.state + ' WEB=' + [string]$hx.web.state + ' (KURTARMA satirlari)')
       }
