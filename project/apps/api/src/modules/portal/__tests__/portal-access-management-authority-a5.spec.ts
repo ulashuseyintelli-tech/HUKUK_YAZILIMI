@@ -50,6 +50,8 @@ function build(over: { eligible?: boolean; existingPortalUser?: any } = {}) {
       findUnique: jest.fn().mockResolvedValue(over.existingPortalUser ?? null),
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
+    // D5-DIAG-R01: hesap açma çakışma kapısının biçim farkı sorgusu; bu dosyada başka müvekkilde aynı adres yok.
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   const audit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
   const officeApproval = {
@@ -110,6 +112,7 @@ describe('A5 — createPortalUser yetki kapısı', () => {
 
     expect(h.prisma.clientPortalUser.findFirst).not.toHaveBeenCalled();
     expect(h.prisma.clientPortalUser.findUnique).not.toHaveBeenCalled();
+    expect(h.prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
   it('YETKİLİ aktör → mevcut davranış korunur (portal kullanıcısı + erişim bayrağı + ENABLE audit)', async () => {

@@ -37,6 +37,8 @@ function buildService(over: any = {}) {
     },
     client: { findFirst: jest.fn().mockResolvedValue(over.clientFindFirstResult ?? null) },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
+    // D5-DIAG-R01: hesap açma çakışma kapısının biçim farkı sorgusu; bu dosyada başka müvekkilde aynı adres yok.
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   const jwtService: any = { sign: jest.fn().mockReturnValue("SIGNED.JWT.TOKEN") };
   const audit: any = { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) };

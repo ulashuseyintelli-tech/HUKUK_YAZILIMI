@@ -15,6 +15,27 @@ import * as bcrypt from "bcrypt";
 import { toCuratedAssetQuery } from "./asset-query-projection";
 import { ACTIVE_TENANT_LIFECYCLE, isLoginableLifecycle } from "../tenant/tenant-lifecycle";
 
+/** D5-DIAG-R01 — biçim farkıyla eşleşmede getirilecek en çok aday; sınır dolarsa sonuç belirsiz sayılır (kapalı yön). */
+export const PORTAL_EMAIL_CANDIDATE_LIMIT = 5;
+
+/**
+ * D5-DIAG-R01 — `String.prototype.trim` ile AYNI boşluk kümesi (ECMAScript WhiteSpace + LineTerminator). Kayıtlı adres
+ * veritabanında bu kümeyle kırpılır; yazılan adres uygulamada `trim()` ile — iki taraf aynı kümeyi kullanır.
+ */
+export const PORTAL_EMAIL_TRIM_CHARS = String.fromCharCode(
+  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0xa0, 0x1680,
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
+  0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
+);
+
+/**
+ * D5-DIAG-R01 — portal e-posta adresinin karşılaştırma biçimi: baştaki/sondaki boşluk atılır, YALNIZ ASCII harfler
+ * küçültülür (ASCII dışı benzer harfler eşit sayılmaz). Kayıtlı adresin biçimi değiştirilmez; yalnız karşılaştırılır.
+ */
+export function foldPortalEmail(value: string): string {
+  return value.trim().replace(/[A-Z]/g, (ch) => ch.toLowerCase());
+}
+
 /**
  * CLIENT-P2-U03-I01 + CLIENT-P2-U03-TRACK-A-I01 + CLIENT-P2-U03-TRACK-A-I02 +
  * CLIENT-P2-U03-TRACK-A-I03 + CLIENT-P2-U03-TRACK-B-U00: getCaseDetail() client-facing
@@ -276,6 +297,11 @@ export class PortalService {
    * /// </remarks>
    */
   async createPortalUser(clientId: string, email: string, password: string, tenantId: string, actor?: AuditActor) {
+    // D5-DIAG-R01: girdi doğrulaması — alanlar metin değilse ya da e-posta boşsa istek 400 ile reddedilir.
+    if (typeof clientId !== "string" || typeof email !== "string" || typeof password !== "string" || !foldPortalEmail(email)) {
+      throw new BadRequestException("Müvekkil, e-posta ve şifre alanları gerekli");
+    }
+
     // Müvekkil kontrolü
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, tenantId },
@@ -294,6 +320,13 @@ export class PortalService {
       where: { email, isActive: true, clientId: { not: clientId } },
     });
     if (emailDup) {
+      throw new ConflictException("Bu e-posta başka bir aktif portal kullanıcısında kayıtlı");
+    }
+    // D5-DIAG-R01: giriş ve sıfırlama adresi biçim farkıyla (harf/boşluk) da çözdüğü için çakışma kapısı AYNI
+    // karşılaştırmayı kullanır — biçim farkıyla aynı adres başka bir müvekkilin AKTİF hesabında varsa 409. Kayıtlı
+    // adresin biçimi DEĞİŞTİRİLMEZ (kırpma/küçültme yok). Kapı transaction dışındadır (birebir kontrolle aynı sınır).
+    const sameAddress = await this.findActivePortalUsersByFoldedEmail(email, clientId);
+    if (sameAddress.users.length > 0 || sameAddress.truncated) {
       throw new ConflictException("Bu e-posta başka bir aktif portal kullanıcısında kayıtlı");
     }
 
@@ -416,17 +449,69 @@ export class PortalService {
   }
 
   /**
+   * D5-DIAG-R01 — adresi BİÇİM FARKIYLA (baştaki/sondaki boşluk, ASCII harf büyüklüğü) aynı olan AKTİF portal hesapları.
+   * İki taraf aynı biçimle karşılaştırılır: kayıtlı adres veritabanında `PORTAL_EMAIL_TRIM_CHARS` ile kırpılır ve "C"
+   * harmanlamasıyla küçültülür (yalnız ASCII; veritabanının yerel ayarına bağlı değildir), yazılan adres `foldPortalEmail`
+   * ile. Dönen satırlar uygulama tarafında aynı kuralla bir kez daha süzülür. `excludeClientId` verilirse o müvekkilin
+   * hesabı sayılmaz. `truncated`: aday sınırı doldu — çağıran sonucu belirsiz sayar (kapalı yön).
+   * Ön koşul: sunucu kodlaması UTF8 (kırpma kümesi sorguya parametre olarak gider; DB-kapılı spec ölçer).
+   */
+  private async findActivePortalUsersByFoldedEmail(
+    email: string,
+    excludeClientId?: string,
+  ): Promise<{ users: Array<{ id: string; email: string }>; truncated: boolean }> {
+    const folded = foldPortalEmail(email);
+    if (!folded) return { users: [], truncated: false };
+    const otherClientOnly = excludeClientId === undefined ? Prisma.empty : Prisma.sql`AND "clientId" <> ${excludeClientId}`;
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; email: string }>>(Prisma.sql`
+      SELECT "id", "email"
+      FROM "ClientPortalUser"
+      WHERE "isActive" = true
+        AND lower(btrim("email", ${PORTAL_EMAIL_TRIM_CHARS}) COLLATE "C") = ${folded}
+        ${otherClientOnly}
+      LIMIT ${PORTAL_EMAIL_CANDIDATE_LIMIT}`);
+    return {
+      users: rows.filter((row) => foldPortalEmail(row.email) === folded),
+      truncated: rows.length >= PORTAL_EMAIL_CANDIDATE_LIMIT,
+    };
+  }
+
+  /**
+   * D5-DIAG-R01 — biçim farkıyla yazılmış adresin aktif portal hesabına çözülmesi. YALNIZ birebir eşleşme bulunamadığında
+   * çağrılır. Kapalı yön: tam olarak BİR aktif hesap varsa onun id'si döner; yoksa `id: null`; birden çok hesap varsa ya da
+   * aday sınırı dolduysa `ambiguous: true` — eşleşme yok sayılır. `createPortalUser` çakışma kapısı aynı karşılaştırmayı
+   * kullanır; ikisi birlikte değiştirilir.
+   */
+  private async resolveActivePortalUserByFoldedEmail(email: string): Promise<{ id: string | null; ambiguous: boolean }> {
+    const { users, truncated } = await this.findActivePortalUsersByFoldedEmail(email);
+    if (truncated || users.length > 1) return { id: null, ambiguous: true };
+    return { id: users.length === 1 ? users[0].id : null, ambiguous: false };
+  }
+
+  /**
    * Portal girişi
    */
   async login(email: string, password: string) {
-    const portalUser = await this.prisma.clientPortalUser.findFirst({
-      where: { email, isActive: true },
-      include: {
-        client: {
-          select: { id: true, displayName: true, tenantId: true, type: true, tenant: { select: { lifecycle: true } } },
-        },
+    // D5-DIAG-R01: girdi doğrulaması — e-posta ve parola metin değilse eşleşme yok sayılır (bilinmeyen hesapla aynı ret).
+    if (typeof email !== "string" || typeof password !== "string") {
+      throw new UnauthorizedException("Geçersiz e-posta veya şifre");
+    }
+    const include = {
+      client: {
+        select: { id: true, displayName: true, tenantId: true, type: true, tenant: { select: { lifecycle: true } } },
       },
+    };
+    let portalUser = await this.prisma.clientPortalUser.findFirst({
+      where: { email, isActive: true },
+      include,
     });
+    if (!portalUser) {
+      // D5-DIAG-R01: birebir eşleşme yoksa biçim farkı (harf/boşluk) tek aktif hesaba çözülüyorsa o hesap kullanılır.
+      const resolved = await this.resolveActivePortalUserByFoldedEmail(email);
+      if (resolved.id) {
+        portalUser = await this.prisma.clientPortalUser.findFirst({ where: { id: resolved.id, isActive: true }, include });
+      }
+    }
 
     if (!portalUser) {
       throw new UnauthorizedException("Geçersiz e-posta veya şifre");
@@ -464,7 +549,7 @@ export class PortalService {
 
     const token = this.jwtService.sign(payload);
 
-    this.logger.log(`Portal girişi: ${maskEmail(email)}`);
+    this.logger.log(`Portal girişi: ${maskEmail(portalUser.email)}`);
 
     return {
       token,
@@ -625,14 +710,41 @@ export class PortalService {
    * gönderim sonucu bu dış cevabı ASLA değiştirmez.
    */
   async createResetToken(email: string) {
-    const portalUser = await this.prisma.clientPortalUser.findFirst({
+    // D5-DIAG-R01: girdi doğrulaması — e-posta metin değilse eşleşme yok sayılır. Dış cevap AYNI kalır.
+    if (typeof email !== "string") {
+      this.logger.log("Şifre sıfırlama talebi: e-posta alanı metin değil — token üretilmedi, e-posta gönderilmedi");
+      return { success: true };
+    }
+    const include = { client: { select: { tenant: { select: { lifecycle: true } } } } };
+    let portalUser = await this.prisma.clientPortalUser.findFirst({
       where: { email, isActive: true },
-      include: { client: { select: { tenant: { select: { lifecycle: true } } } } },
+      include,
     });
+    let ambiguous = false;
+    if (!portalUser) {
+      // D5-DIAG-R01: birebir eşleşme yoksa biçim farkı (harf/boşluk) tek aktif hesaba çözülüyorsa o hesap kullanılır.
+      const resolved = await this.resolveActivePortalUserByFoldedEmail(email);
+      ambiguous = resolved.ambiguous;
+      if (resolved.id) {
+        portalUser = await this.prisma.clientPortalUser.findFirst({ where: { id: resolved.id, isActive: true }, include });
+      }
+    }
+
+    // D5-DIAG-R01: sessiz dalların hangisine düşüldüğü iç günlükte AYIRT EDİLİR (adres, token ve URL yazılmaz).
+    // Dış cevap bütün dallarda bilinmeyen kullanıcıyla AYNIDIR (enumeration-safe).
+    if (!portalUser) {
+      this.logger.log(
+        ambiguous
+          ? "Şifre sıfırlama talebi: adres biçim farkıyla birden çok aktif portal hesabıyla eşleşiyor (belirsiz) — token üretilmedi, e-posta gönderilmedi"
+          : "Şifre sıfırlama talebi: eşleşen aktif portal hesabı yok — token üretilmedi, e-posta gönderilmedi"
+      );
+      return { success: true };
+    }
 
     // CLIENT-PSUS: ACTIVE olmayan tenant'ta sıfırlama token'ı ÜRETİLMEZ ve e-posta GÖNDERİLMEZ (erişim kapalı);
     // dış cevap bilinmeyen kullanıcıyla AYNI kalır (enumeration-safe).
-    if (!portalUser || !isLoginableLifecycle((portalUser as any).client?.tenant?.lifecycle)) {
+    if (!isLoginableLifecycle((portalUser as any).client?.tenant?.lifecycle)) {
+      this.logger.log("Şifre sıfırlama talebi: hesabın tenant'ı erişime kapalı — token üretilmedi, e-posta gönderilmedi");
       // Güvenlik için hata verme (enumeration-safe)
       return { success: true };
     }
@@ -649,12 +761,14 @@ export class PortalService {
       data: { resetToken, resetTokenExp },
     });
     if (written.count !== 1) {
+      this.logger.log("Şifre sıfırlama talebi: hesap talep sırasında kapandı — token yazılmadı, e-posta gönderilmedi");
       return { success: true };
     }
 
-    await this.sendResetEmail(email, rawToken);
+    // D5-DIAG-R01: e-posta İSTEKTE yazılan metne değil hesabın KAYITLI adresine gönderilir (biçim farkıyla eşleşmede de).
+    await this.sendResetEmail(portalUser.email, rawToken);
 
-    this.logger.log(`Şifre sıfırlama token'ı oluşturuldu: ${maskEmail(email)}`);
+    this.logger.log(`Şifre sıfırlama token'ı oluşturuldu: ${maskEmail(portalUser.email)}`);
 
     return { success: true };
   }

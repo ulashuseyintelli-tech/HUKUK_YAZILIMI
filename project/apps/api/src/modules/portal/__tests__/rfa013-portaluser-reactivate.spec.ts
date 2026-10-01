@@ -33,6 +33,8 @@ function build(over: any = {}) {
       ...over.clientPortalUser,
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
+    // D5-DIAG-R01: hesap açma çakışma kapısının biçim farkı sorgusu; bu dosyada başka müvekkilde aynı adres yok.
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   if (over.client) Object.assign(prisma.client, over.client);
   const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
