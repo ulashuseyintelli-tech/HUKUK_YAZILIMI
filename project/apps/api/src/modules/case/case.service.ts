@@ -2561,6 +2561,9 @@ export class CaseService {
                 description: dueDto.description,
                 amount: dueDto.amount,
                 dueDate: new Date(dueDto.dueDate),
+                // Kalem para birimi = DOSYA para birimi (DueDto açılışta kalem bazında para birimi taşımaz). Yazılmazsa şema
+                // varsayılanı (TRY) devreye girer: dövizli dosyanın kalemi ve ondan türeyen ClaimItem TRY damgalanırdı.
+                currency: newCase.currency,
                 ...normalizedInterest.persisted,
                 interestStartDate: dueDto.interestStartDate ? new Date(dueDto.interestStartDate) : undefined,
                 interestEndDate: dueDto.interestEndDate ? new Date(dueDto.interestEndDate) : undefined,
@@ -4330,7 +4333,8 @@ export class CaseService {
           description: data.description,
           amount: data.amount,
           dueDate: new Date(data.dueDate),
-          currency: data.currency || "TRY",
+          // Para birimi açıkça verilmediyse DOSYA para birimi (sabit TRY değil); açıkça verilen değer aynen korunur.
+          currency: data.currency || caseExists.currency,
           ...normalizedInterest.persisted,
           interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
           interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
