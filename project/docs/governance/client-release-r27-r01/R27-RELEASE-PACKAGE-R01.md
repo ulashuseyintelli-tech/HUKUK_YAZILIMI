@@ -18,6 +18,19 @@
 > "eşleşme yok" başarılı boş sonuçtur. `Wait-Stopped` ve toparlama aynı ölçümü kullanır; ölçülemeyen servise Start verilmez, takas/geri yükleme
 > başlamaz. Aynı kök neden **B3** (`r27-rollback.ps1`) `Wait-Stopped`'unda da vardı ve aynı dar düzeltme uygulandı (B3 sha değişti). SEC-PORTAL-ADMIN-MSG-01
 > kararı **koşullu** hale getirildi (§1.4, §8 W0-d).
+> **R03-c (2026-09-30, canlı R27 sonrası; yalnız B3 `r27-rollback.ps1` + harness):** bağımsız incelemede doğrulanan B3 kusurları giderildi —
+> B3H-1 (dinleyici okuma hatası `5-baslat` döngüsünü keserek WEB'i başlatmadan 13'e düşürüyordu), B3H-2 (13 kurtarma metni ölçümsüz
+> "başlatıldı"), B3H-3 (durdurma hatasında WEB kapalı kalıyor, kurtarma satırı yok, servis durumu tek hatada kayboluyordu). Okuma hatası artık süreli
+> yeniden ölçülür, sonunda **OLCULEMEDI** olur (KAPALI/AYAKTA sayılmaz); iki servisin başlatma girişimi ayrıdır; 13/21/22 metinleri yalnız ölçüme
+> dayanır; B3'e yeni **22**. Test modu hata enjeksiyonu (`-Fault`, yalnız `-TestRoot`) + 16 B3 senaryosu (R03-d düzeltmesi: bu notta önce yanlışlıkla "6" yazıyordu). `r27-release.ps1` DEĞİŞMEDİ. Canlı rollback koşulmadı.
+> **R03-d (2026-10-01; R03-c son baytlarının bağımsız incelemesi; yalnız B3 + harness):** iki major kusur doğrulandı ve giderildi —
+> (1) koşum öncesi ölçüm tek atıştı: tek geçici okuma hatası, bu koşumun durdurduğu WEB'in toparlamada yeniden başlatılmamasına ve ölçümle
+> çelişen "DURDURULMADI" metnine yol açıyordu → koşum öncesi ölçüm artık oturmuş ölçüm; durumu yine ölçülemeyen servise durdurma komutu
+> verilmez. (2) Görevlerin 15 dakikalık zamanlanmış tekrar tetiği (tabandan beri var; canlı görev tanımı salt okuma ölçüldü) WEB'i API
+> durdurma beklemesinde ya da takas sırasında yeniden başlatabilir ve B3 bu durumda 0 "TAMAMLANDI" verebiliyordu → takastan hemen önce iki
+> servis yeniden KAPALI ölçülmeden (OLCULEMEDI dahil) dosyalara dokunulmaz (21/22); takas bitiminde KAPALI ölçülmeyen servis 0'ı engeller (13 + owner kararlı
+> KURTARMA). KURTARMA "OWNER KARARI" notu eylem metnine değil ölçüme bağlandı; ölçüm satırı yokluğu ve iki test edilmemiş 13 dalı artık
+> senaryoyla ölçülür. `r27-release.ps1` DEĞİŞMEDİ. Canlı rollback koşulmadı.
 
 ## 1. Tek durum envanteri
 
@@ -71,7 +84,7 @@ türetimsiz "N ölçüt" ifadesi kullanılmaz). Sayaç (x/y) CLIENT programını
 |---|---|---|
 | SEC-STAFF-XFF-01 | **AÇIK** — owner-yerel kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | D-5 sayaç ayrımı (#2832) bu bulguyu **kapatmaz**. Bu yayın için engelleyici **değil** (gerekçe kısıtlı kayıtta). Kapanış ayrı iş: ek ölçüm + ayrı yama |
 | SEC-API-BIND-01 | AÇIK — kısıtlı kayıt | Yayın kapsamı dışı; yayın değiştirmez |
-| SEC-MAIL-LOG-01 | AÇIK — kısıtlı kayıt | D-5 canlı koşumunda alıcı adresi sağlayıcı günlüğüne düşebilir; owner onay metnine yazıldı |
+| SEC-MAIL-LOG-01 | AÇIK — kısıtlı kayıt | D-5 canlı koşumunda alıcı adresi canlı API uygulama günlüğüne (kaynaktan doğrulandı) ve sağlayıcı kayıtlarına (ölçülmedi) düşebilir; ayrım D-5 onay metninde (R04); ayrıntı kısıtlı kayıtta |
 | SEC-PORTAL-ADMIN-MSG-01 | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | **Karar özeti:** owner koşullu risk kabulüyle R27 yayınlandı (2026-09-30); önkoşul ölçümleri ve gerekçe kısıtlı kayıtta. Kayıt **giderilmedi**; ürün düzeltmesi ayrı iş + owner kararı (§10 K-11) |
 | ClaimItem ACCRUES kullanıcı yolu (OFFICE authz notu) | AÇIK, ayrı iş | Adayda yok |
 | #2830 eski PR gövdesi / commit `02276b68` geçmişi | owner kararı bekliyor (§10) | — |
@@ -80,7 +93,7 @@ türetimsiz "N ölçüt" ifadesi kullanılmaz). Sayaç (x/y) CLIENT programını
 
 | Bileşen | Hazır? | Not |
 |---|---|---|
-| `r27-release.ps1` / `r27-rollback.ps1` / `r27-fault-prova.ps1` | Evet — hata provası harness'ı **18/18 PASS** (9 işlevsel + 9 kapı senaryosu, 344 assert; izole `-TestRoot` + simülatör) · canlı salt-okuma SelfTest **PASS** (yayın + geri alma; son baytlar) · sahte-süreç canlı kontrolleri A/B/C ölçüldü | §6 |
+| `r27-release.ps1` / `r27-rollback.ps1` / `r27-fault-prova.ps1` | Evet — **R03-d (B3): harness 53 senaryo, son baytlarla §6 "R03-d" bölümü** · R03-c: 42 senaryo (§6 "R03-c") · R02 tarihsel: hata provası harness'ı **18/18 PASS** (9 işlevsel + 9 kapı senaryosu, 344 assert; izole `-TestRoot` + simülatör) · canlı salt-okuma SelfTest **PASS** (yayın + geri alma; son baytlar) · sahte-süreç canlı kontrolleri A/B/C ölçüldü | §6 |
 | `r27-dar-kabul.js` (B2, HTTP salt okuma) | Evet (öz-test 7/7) | DK-7 R26/R27 ayırt edici |
 | D-5 koşucu + sahte API + öz-test + QR betiği + owner bloğu + blok öz-testi | Evet (koşucu öz-testi 41/41 · QR öz-testi 23/23 · blok öz-testi 90/90 ×2 kabuk) | canlı dist pini **R27**; QR `/portal/forgot-password` (yanlış yol reddedilir); dış origin canlı `.env` + owner R05 teyidi |
 | D-8 sondası + öz-test | Evet (15/15) | canlıda koşulmadı; katman kanıt yoksa UNKNOWN |
@@ -205,7 +218,7 @@ ve yeni kapı ona göre **gevşek değildir** (§13 inceleme ölçümleri); roll
   boş sayar; yetki/CIM sağlayıcı/zaman aşımı gibi her başka hata ve `Get-HostProcCount`'taki CIM hatası **fırlatılır** → `Measure-Svc` `OLCULEMEDI`.
   `Wait-Stopped` artık doğrudan sorgu yapmaz, `Measure-Svc` ile yalnız **KAPALI ölçülürse** true döner; toparlama KARIŞIK/OLCULEMEDI servisi ≤30 sn
   yeniden ölçer, KAPALI olmazsa Start vermez. Sonuç: okuma hatasında durdurma doğrulanmaz → takas (2-durdur) ya da geri yükleme (R-durdur) başlamaz
-  (22 / 12). B3 aynı kuralla: okuma hatası `2-durdur-*`'da HATA → 21 (dosyaya dokunulmaz). SelfTest canlı **boş-sonuç yolunu** ölçer (dinlenmeyen
+  (22 / 12). B3 aynı kuralla (R03-c): `2-durdur-*`'da okuma hatası süreli yeniden ölçülür, sonunda OLCULEMEDI → durdurulmuş sayılmaz, dosyaya dokunulmaz → B3 toparlaması (21/22). SelfTest canlı **boş-sonuç yolunu** ölçer (dinlenmeyen
   port ve eşleşmeyen host argümanı 0 dönmeli; okuma hatası FAIL) — B1'de kapanan servisin "ölçülemedi" kalıp açılmaması riskine karşı ön kapı.
 - **Kanıt yazımı `finally` içinde ve korumalı:** `HY_R27_RELEASE_EVIDENCE` yazılamazsa `%TEMP%\r27-evidence-fallback` + konsol; yükseltilmemiş
   (yanlışlıkla/parametresiz) koşum canlı kanıt dizinine **dosya bırakmaz** (yalnız `%TEMP%` fallback). Geri alma betiğinde yedek bütünlüğü ölçümü
@@ -238,8 +251,10 @@ ve yeni kapı ona göre **gevşek değildir** (§13 inceleme ölçümleri); roll
 | 1 | — | yalnız `-SelfTest` FAIL | B0 durur |
 
 **Çıkış kodu eşlemesi — otomatik geri dönüş (`r27-release.ps1`) ≠ bağımsız B3 (`r27-rollback.ps1`):** aynı sayı iki betikte aynı olayı anlatmaz;
-kanıt JSON'undaki `record` alanı (`R27-RELEASE-EXECUTION` / `R27-ROLLBACK-EXECUTION`) hangi betiğin yazdığını söyler. B3'te R03-b'de **yalnız** ölçüm
-düzeltmesi yapıldı (okuma hatası artık "kapandı" sayılmaz); çıkış kodları ve akış değişmedi.
+kanıt JSON'undaki `record` alanı (`R27-RELEASE-EXECUTION` / `R27-ROLLBACK-EXECUTION`) hangi betiğin yazdığını söyler. **R03-c'de B3 akışı değişti:**
+okuma hatası süreli yeniden ölçülür (sonunda OLCULEMEDI); API/WEB başlatma girişimleri ayrıdır (birinin istisnası/okuma hatası diğerini atlatmaz);
+durdurma hatasında bu koşumda durdurulup KAPALI ölçülen servis yeniden başlatılır ve ölçülür (21/22); 13/21/22 metinleri servis başına ölçülen duruma dayanır. **R03-d:** koşum öncesi ölçüm oturmuş ölçümdür (durumu ölçülemeyen servis durdurulmaz); takas yalnız takastan hemen önce iki servis yeniden
+KAPALI ölçülürse başlar, aksi hâlde dosyalara dokunulmaz (21/22); takas bitiminde KAPALI ölçülmeyen servis varsa 0 verilmez (13).
 
 | Kod | `r27-release.ps1` (B1; otomatik geri alma dahil) | `r27-rollback.ps1` (B3; elle geri dönüş) |
 |---|---|---|
@@ -247,17 +262,17 @@ düzeltmesi yapıldı (okuma hatası artık "kapandı" sayılmaz); çıkış kod
 | 10 | `ROLLBACK`: otomatik geri alındı + doğrulandı + eski servisler ölçülerek ayakta | kullanılmaz |
 | 11 | otomatik geri almada geri yüklenen kimlik doğrulanamadı → servis başlatılmadı → `KURTARMA:` → B3 | B3 geri yüklemesinden sonra kimlik doğrulanamadı → servis başlatılmadı → ESCALATE |
 | 12 | otomatik geri almada durdurma (dosyaya dokunulmaz) ya da dosya işlemi başarısız → `KURTARMA:` → B3 | B3 dosya geri yüklemesi yarım kaldı → servis başlatılmadı → ESCALATE |
-| 13 | otomatik geri alındı + doğrulandı, eski servis(ler) sağlıkla ayakta değil → yalnız KAPALI olana Start | B3 geri aldı + doğruladı, eski servis/kapsam tutmadı → ESCALATE |
+| 13 | otomatik geri alındı + doğrulandı, eski servis(ler) sağlıkla ayakta değil → yalnız KAPALI olana Start | B3 geri aldı + **doğruladı**; en az bir servis ölçümle ayakta değil / OLCULEMEDI, üçlü değişti ya da (R03-d) takas bitiminde bir servis KAPALI ölçülmedi → `KURTARMA:` servis başına (KAPALI → Start; OLCULEMEDI → önce ölç; CALISIYOR/KARIŞIK ama sağlıksız → sürece dokunma, ESCALATE; takas sırasında başlamış olabilecek servis → yeniden başlatma OWNER KARARI); B3 yeniden koşulmaz |
 | 20 | kapı/aday/yedek/yol bütçesi; canlıya dokunulmadı; servisler durdurulmadı | yetki/yedek kimliği/yedek okunamadı/üçlü/.env; canlıya dokunulmadı |
-| 21 | durdurulamadı, takas başlamadı, toparlama **ölçülerek** PASS | durdurulamadı ya da durum **okunamadı** (R03-b), dosyalara dokunulmadı; **otomatik toparlama YOK** (servis durumu kanıtta `serviceState`) → ESCALATE |
-| 22 | durdurulamadı, takas başlamadı, toparlama tamamlanamadı → `KURTARMA:` (servis bazında) | kullanılmaz |
+| 21 | durdurulamadı, takas başlamadı, toparlama **ölçülerek** PASS | durdurulamadı ya da kapandığı **OLCULEMEDI** ya da (R03-d) takastan hemen önceki yeniden ölçümde bir servis KAPALI değil (zamanlanmış tetik); dosyalara dokunulmadı (**geri dönüş yapılmadı**); toparlama (R03-c) **ölçülerek** PASS — koşum öncesi çalışan ve bu koşumun durdurduğu (koşum öncesi oturmuş ölçümle; şimdi KAPALI; geç durma, toparlama karar ölçümünden önce gerçekleştiyse) servis yeniden başlatıldı, iki servis son ölçümde sağlık kümesiyle ayakta (canlı `.next` kendi BUILD_ID'siyle) → ESCALATE (durdurma nedeni) |
+| 22 | durdurulamadı, takas başlamadı, toparlama tamamlanamadı → `KURTARMA:` (servis bazında) | (R03-c) durdurulamadı; dosyalara dokunulmadı; toparlama sonrası en az bir servis ayakta değil / OLCULEMEDI → `KURTARMA:` servis başına; B3 yeniden koşulmaz |
 | 1 | yalnız `-SelfTest` FAIL | yalnız `-SelfTest` FAIL |
 
 | Betik | sha256 |
 |---|---|
 | `r27-release.ps1` | `0A1570F0556904E7AD2463FFB97D0DA6E2D15CD14DAA797311F3F3FC05573E94` |
-| `r27-rollback.ps1` | `DAEB5DEB4F7027B7275A7E17F20D0076337FFD9905854DF53A144186BCF26F3A` |
-| `r27-fault-prova.ps1` (harness; canlıya dokunmaz) | `6C9A2EF0DFB008B25ECA5484BBF40DDB4C828142FD3DF7198739D32703D77DAF` |
+| `r27-rollback.ps1` | `A249B4DFD1FEF0BAC9090A8F532A51DE1F92C81AED5AAB5377B387CDD6589353` (R03-d; önceki `F6231D94…` R03-c, `DAEB5DEB…`) |
+| `r27-fault-prova.ps1` (harness; canlıya dokunmaz) | `063B8D6F1467F1E35FFC7AE9A3B4AD663F4B60CCF1255F64CC704D0B536214BC` (R03-d; önceki `05790FAC…` R03-c, `6C9A2EF0…`) |
 | `r27-dar-kabul.js` | `F077A8E40462F2F47A98AC27575F2D5EDBF2BB0C16328732CFF454324C09A4A6` |
 
 Betik dizini (merge sonrası kanonik): `D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\`.
@@ -301,8 +316,139 @@ bozuldu (owner gözlemi) ; D-5 Preflight'ta dist pini eşleşmiyor (yayın kimli
 
 **B3 — Elle geri dönüş (YÜKSELTİLMİŞ; yalnız gerekirse; `<api.backup>`/`<web.backup>` B1 kanıt JSON'undan, TAM yol):**
 ```powershell
-& { $ErrorActionPreference='Stop'; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\r27-rollback.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'DAEB5DEB4F7027B7275A7E17F20D0076337FFD9905854DF53A144186BCF26F3A'){ throw 'R27 GERI ALMA BETIGI SHA UYUSMUYOR - DUR' }; $api='<api.backup>'; $web='<web.backup>'; if($api -like '<*' -or $web -like '<*'){ throw 'yer tutucu doldurulmadi - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web -SelfTest; if($global:LASTEXITCODE -ne 0){ throw 'yedek kimligi dogrulanamadi - GERI ALMA BASLAMAZ' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web; $rc=$global:LASTEXITCODE; 'GERI ALMA cikis=' + $rc; if($rc -ne 0){ throw 'ROLLBACK DOGRULANAMADI - ESCALATE' } }
+& { $ErrorActionPreference='Stop'; $f='D:\Development\HUKUK_YAZILIMI\project\project\docs\governance\client-release-r27-r01\scripts\r27-rollback.ps1'; if((Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash -cne 'A249B4DFD1FEF0BAC9090A8F532A51DE1F92C81AED5AAB5377B387CDD6589353'){ throw 'R27 GERI ALMA BETIGI SHA UYUSMUYOR - DUR' }; $api='<api.backup>'; $web='<web.backup>'; if($api -like '<*' -or $web -like '<*'){ throw 'yer tutucu doldurulmadi - DUR' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web -SelfTest; if($global:LASTEXITCODE -ne 0){ throw 'yedek kimligi dogrulanamadi - GERI ALMA BASLAMAZ' }; $global:LASTEXITCODE=-999; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $f -BackupApiDir $api -BackupWebDir $web; $rc=$global:LASTEXITCODE; 'GERI ALMA cikis=' + $rc; if($rc -ne 0){ throw ('GERI ALMA PASS DEGIL (cikis ' + $rc + ') - KURTARMA satirlari okunur: 11/12 = servis BASLATILMADI, ESCALATE ; 13 = dosyalar TABAN dogrulandi, servis basina olculen durum + adim (B3 yeniden kosulmaz) ; 20 = dosyalara dokunulmadi ; 21 = durdurulamadi ya da takastan hemen once KAPALI olculmedi, dosyalara dokunulmadi, servisler olculerek ayakta, ESCALATE ; 22 = durdurulamadi, dosyalara dokunulmadi, KURTARMA satirlari (servis basina)') } }
 ```
+
+**R03-c — B3 (`r27-rollback.ps1`) dar düzeltmesi ve kanıtı (2026-09-30/10-01; R27 canlıdayken; canlı geri dönüş, servis durdurma/başlatma ve artefakt takası YAPILMADI).**
+
+Giderilen doğrulanmış kusurlar (bağımsız inceleme, izole kopyalarda üretildi):
+
+- **B3H-1:** Dinleyici okuma hatası `5-baslat` yoklamasını kesiyor, WEB'i başlatmadan 13 veriyordu. Artık okuma hatası süreli yeniden ölçülüyor. API'nin istisnası ya da okuma hatası WEB'in başlatma girişimini atlatmıyor.
+- **B3H-2:** 13 kurtarma metni ölçümsüz "başlatıldı" diyordu. Artık servis başına son ölçüm ve komut sonucu yazılıyor.
+- **B3H-3:** Durdurma hatasında WEB kapalı kalıyordu. Artık toparlama yapılıyor:
+  - Yalnız koşum öncesi çalışan ve bu koşumun durdurduğu servis (geç durma dahil) yeniden başlatılıyor ve ölçülüyor.
+  - Koşum öncesi kapalı ya da durumu bilinmeyen servise otomatik Start verilmiyor.
+  - Sonuç 21 ya da 22 (yeni). Servis durumu kanıtta alan alan kaydediliyor.
+- **İlk düzeltme turunun inceleme bulguları da giderildi:**
+  - Toparlama kararı artık tek okuma hatasına dayanmıyor.
+  - 0/13/21/22 kararları tüm adımlardan sonraki son ölçüme dayanıyor.
+  - BUILD_ID okunamazsa sonuç `OLCULEMEDI`.
+  - KURTARMA ölçüm satırları tek tek yapıştırılıp çalıştırılabiliyor (WinPS 5.1 ve PS 7). Okuma hatası "0" gibi görünmüyor; çıktı `OLCULEMEDI: …` olarak yazılıyor. Dinleyici satırı B3 ile aynı birimi, benzersiz PID'i sayıyor.
+  - Çalışan ama sağlıksız servis için elle Stop/Start önerilmiyor; öneri ESCALATE.
+
+`r27-release.ps1` (B1, otomatik geri dönüş) **değişmedi** (`0A1570F0…`).
+
+| B3 senaryosu (`-Fault`, yalnız `-TestRoot`) | Beklenen → ölçülen | Ne kanıtlanır |
+|---|---|---|
+| b3-read-transient | 0 → 0 | Geçici dinleyici okuma hatası yeniden ölçülür; WEB yine başlar |
+| b3-read-persistent | 13 → 13 | Kalıcı okuma hatası: iki servis de başlatma girişimi alır; sonuç `OLCULEMEDI`; KURTARMA "önce ölçün" |
+| b3-api-start-throw / b3-web-start-throw | 13 → 13 | Bir servisin Start istisnası diğerini atlatmaz; KURTARMA yalnız kapalı servise Start |
+| b3-api-crash-after | 13 → 13 | WEB başlarken API düşer; karar son ölçüme dayanır (eski "ayakta" ölçümüne değil) |
+| b3-final-read-transient | 0 → 0 | Son ölçümde tek okuma hatası kısa yeniden ölçümle giderilir |
+| b3-web-unhealthy | 13 → 13 | Çalışan ama sağlıksız WEB: elle dokunma yok, ESCALATE |
+| b3-stop-api-fail / b3-web-stopthrow-api-fail / b3-toparla-read-transient / b3-web-late-stop | 21 → 21 | Bu koşumun durdurduğu WEB (istisnalı, geç duran ya da tek okuma hatalı) yeniden başlatılır ve ölçülerek ayakta; dosyalara dokunulmaz; "geri dönüş yapılmadı" |
+| b3-stop-read-persistent / b3-api-down-before / b3-web-down-before / b3-toparla-web-crash / b3-stop-recovery-start-throw | 22 → 22 | Okunamayan ya da koşum öncesi kapalı servise otomatik Start yok. Başlatılıp düşen WEB için "yeniden başlatıldı" denmez. KURTARMA servis başına |
+| gate-svc-measure (B3 canlı dal, sıralı sahte ölçüm) | — | `Wait-Stopped` / `Wait-SvcHealthy` / oturmuş ölçüm okuma hatasında gerçekten yeniden ölçer. Komut satırı okunamayan host 0 sayılmaz |
+| gate-fault-live-mode (B3) | 20 → 20 | `-Fault` canlı modda ilk satırlarda reddedilir |
+
+**Son baytlarla sonuçlar:**
+- Tam harness, WinPS 5.1 çocuk kabuğu: **42/42 PASS**, 1082 assert (16 B3 senaryosu 504 assert). Özet `6DD1AA30DD43910830210D91B3EED7DD2FE4C5F08798D66C63135019E4E0ACD9`.
+- B3 alt kümesi, PowerShell 7 çocuk kabuğu: **21/21 PASS**, 558 assert. Özet `366646F88AB9FC89E001A9573B84A4441B4F08F1D87CAD8A810EBA0B47C81E49`.
+- Yeni B3'ün salt-okuma `-SelfTest`'i, B1'in bıraktığı gerçek yedeklerle: WinPS 5.1 ve PS 7'de **PASS**. Yedek kimliği ve üçlü `P1-SONRASI` doğrulandı; yazma yok.
+
+**Negatif kontrol:** 10 mutantın **10'u yakalandı**. Her biri kendi hedef senaryosunda koştu ve gerçek assert FAIL'i verdi. Mutantlar:
+- ölçümden bağımsız "yeniden başlatıldı" metni;
+- final yerine eski bekleme ölçümü;
+- koşum öncesi durum kuralının kaldırılması;
+- operatör komutunda `-ErrorAction Stop` yokluğu;
+- sağlıksız servise Stop+Start önerisi;
+- geç durmanın sayılmaması;
+- son ölçümün tek atış olması;
+- kararın eski ölçümle verilmesi;
+- toparlama kararının tek ölçümle verilmesi;
+- okuma hatasının beklemeyi kesmesi.
+
+Kanıt yerel ajan kanıt dizininde (`HY_R27_AGENT_EVIDENCE\b3-fix\`).
+
+**İnceleme turları (korunur):**
+- İlk düzeltme bağımsız incelemede üç mantık kusuru ve KURTARMA komutlarında üç kusur verdi.
+- Yeniden doğrulama bir gerilemeyi (geç duran servisin yeniden başlatılmaması) ve dört test boşluğunu buldu.
+- Hepsi giderildi ve yukarıdaki son koşumlarla ölçüldü.
+
+**Sınırlar:**
+- Simülatör gerçek görev ve Http gecikmelerini ölçmez.
+- Canlı `Get-NetTCPConnection`'ın "eşleşme yok" kimliği yalnız sahte cmdlet'le ve betiklerin kendi FQID kuralıyla sınandı.
+- Canlı B3 akışı koşulmadı (yalnız salt-okuma SelfTest).
+
+
+**R03-d — R03-c son baytlarının bağımsız incelemesi ve dar düzeltme (2026-10-01; R27 canlıdayken; canlı geri dönüş, servis durdurma/başlatma ve artefakt takası YAPILMADI).**
+
+R03-c son baytları (`F6231D94…`) 5 mercekli bağımsız incelemeden geçti. Her major bulgu ayrı bir doğrulayıcı tarafından çürütülmeye çalışıldı ve izole kopyada yeniden üretildi. Doğrulanan iki major kusur ve küçük bulgular giderildi; düzeltilmiş fark ikinci kez bağımsız incelendi (doğrulanmış blocker/major yok), o turun minor/nit bulguları da giderildi. Bu ikinci düzeltmenin kontrolü bir major daha buldu (yeni eklenen 11/12 metni, kimliği doğrulanmamış dosyalarla Start öneriyordu) ve giderildi: 11/12'de takas sonu satırı yalnız ölçüm + owner kararıyla durdurma der, Start önermez.
+
+- **F1 (major; R03-c'de eklenen toparlamaya ait):** Koşum öncesi ölçüm tek atıştı. Tek geçici okuma hatası, çalışan ve bu koşumun durdurduğu WEB'i "durdurulmadı" sayıyordu. Toparlamada WEB başlatılmıyor (21 yerine 22), KURTARMA metni ölçümle çelişiyordu.
+  - Artık koşum öncesi ölçüm oturmuş ölçümdür.
+  - Durumu oturmuş ölçümle de OLCULEMEDI kalan servise **durdurma komutu verilmez**: durumu bilinmeyen servis durdurulmaz → 21/22, dosyalara dokunulmaz.
+  - R03-c bölümündeki "toparlama kararı artık tek okuma hatasına dayanmıyor" ifadesi koşum öncesi ölçüm için eksikti; bu düzeltmeyle tamamlandı.
+- **LS-1 (major; tabandan beri var, R03-c getirmedi):** Görevlerin 15 dakikalık zamanlanmış tekrar tetiği (canlı görev tanımı salt okuma ölçüldü) WEB'i API durdurma beklemesinde ya da takas sırasında yeniden başlatabilir. B3 bu durumda takası çalışan servisin altında yapıp 0 "GERİ DÖNÜŞ TAMAMLANDI" verebiliyordu. Artık:
+  - takastan hemen önce iki servis yeniden ölçülür (`2-durdur-dogrula`); KAPALI ölçülmeyen varsa (OLCULEMEDI dahil) dosyalara dokunulmaz → toparlama (21/22);
+  - takas bitiminde iki servis yeniden ölçülür; KAPALI ölçülmeyen servis varsa (OLCULEMEDI dahil) 0 verilmez → 13 + KURTARMA. 11/12 metninde de satır vardır ama orada dosya kimliği doğrulanmadığı için Start önerilmez.
+  - KURTARMA satırı: "takas sırasında başlamış olabilir; yeniden başlatma OWNER KARARI". Yeniden başlatma ayrı adımlardır: önce Stop, ölçüm satırları KAPALI gösterene kadar bekleme, ancak sonra Start.
+  - Kalıcı çözüm (görevleri durdurma süresince devre dışı bırakmak) kalıcı yapılandırma değişikliğidir; **owner kararı, bu işin kapsamı dışında**.
+  - **Operatör notu:** B3'ü görev tetik dakikalarından (:00 / :15 / :30 / :45) uzak başlatın. Tetiğe denk gelen koşum güvenli biter (21 ya da 13), ama geri dönüş tamamlanmaz.
+- **Minor/nit (kontrol turları):**
+  - KURTARMA "OWNER KARARI" notu eylem metnine değil ölçüme bağlandı; OLCULEMEDI adımında da var.
+  - KURTARMA ölçüm satırlarının yokluğu artık yakalanıyor: incelenen her servis için dört ölçüm türü (dinleyici/host/görev/HTTP) ayrı ayrı assert edilir.
+  - 13'ün test edilmemiş dalları (üçlü değişti, üçlü okunamadı, kimlik sonrası beklenmeyen hata) senaryoya bağlandı. Beklenmeyen hata dalı artık tek atış değil, kısa süreli yeniden ölçer.
+  - Metinler ölçülenle hizalandı: 0 mesajı yalnız ölçülen iki noktayı yazar; durdurma kapısı metni verilen komutu yazar; takas öncesi kapıdan düşen 21/22 nedeni `preSwap` olarak gösterilir; 11/12 metni "bu koşum servis başlatmadı" der.
+  - "Koşum öncesi KAPALI servise otomatik Start yok" kuralı **toparlama** içindir. Başarılı geri yüklemeden sonra 5-baslat iki R26 servisini de başlatır (tasarım).
+  - Diğer düzeltmeler: başlıktaki senaryo sayısı (6 → 16), 13 eşleme satırına ESCALATE dalı, okunamayan üçlü için "OKUNAMADI", operatör HTTP sondasının tek uç olduğu notu, harness yorumu, R27 risk tablosundaki SEC-MAIL-LOG-01 satırı (D-5 R04 ayrımıyla hizalandı).
+
+| B3 senaryosu (R03-d; `-Fault`, yalnız `-TestRoot`) | Beklenen → ölçülen | Ne kanıtlanır |
+|---|---|---|
+| b3-before-read-transient | 21 → 21 | Koşum öncesi ölçümde tek okuma hatası oturmuş ölçümle giderilir; bu koşumun durdurduğu WEB yeniden başlatılır |
+| b3-stop-read-persistent / b3-api-down-before | 22 → 22 | Koşum öncesi durumu ölçülemeyen WEB'e durdurma komutu verilmez (stop=0; WEB çalışır kalır); OLCULEMEDI adımı OWNER KARARI notunu taşır |
+| b3-trigger-before-swap / b3-trigger-before-swap-api | 21 → 21 | API durdurma beklemesinde tetik WEB'i ya da API'yi başlatır → takas öncesi yeniden ölçüm, dosyalara dokunulmaz; bu koşumun durdurduğu diğer servis yeniden başlatılır |
+| b3-gate-read-persistent | 21 → 21 | Takas öncesi yeniden ölçümde OLCULEMEDI KAPALI sayılmaz; dosyalara dokunulmaz |
+| b3-trigger-during-swap / b3-swapend-read-persistent | 13 → 13 | Takas sırasında başlayan ya da takas sonunda ölçülemeyen WEB → 0 verilmez; "TAMAMLANDI" yok; KURTARMA owner kararlı |
+| b3-tuple-changed / b3-tuple-unreadable | 13 → 13 | Üçlü değişti / okunamadı → KURTARMA Kapsam satırı (DEĞİŞTİ / OKUNAMADI) |
+| b3-unexpected-after-kimlik | 13 → 13 | Kimlik sonrası beklenmeyen hata (WEB başlatılmadan) → ölçüme dayalı metin; WEB KAPALI ölçülür, Start adımı; başarı iddiası yok |
+| b3-swap-trigger-kimlik-fail | 11 → 11 | Takas sırasında tetik + kimlik FAIL → servis başlatılmaz; KURTARMA takas sonu satırı yalnız ölçüm + owner kararıyla durdurma, Start önermez |
+| b3-web-down-toparla-unreadable | 22 → 22 | Koşum öncesi KAPALI WEB; toparlama kararı OLCULEMEDI, son ölçüm KAPALI → Start adımı OWNER KARARI notuyla |
+| b3-web-down-before | 22 → 22 | Eylem metni ölçülene dayanır ("koşum öncesi CALISIYOR ölçülmedi; durdurma komutu=VERILDI") |
+
+**Son baytlarla sonuçlar (B3 `A249B4DF…`, harness `063B8D6F…`, B1 `0A1570F0…` değişmedi):**
+- Tam harness, WinPS 5.1 çocuk kabuğu (tek başına koşu): **53/53 PASS**, 1473 assert (27 B3 senaryosu 895 assert). Özet `E120F55AB38432E1F8C3FE0C2C78DF5FEEF5EEBC5A91509FF2E558342592BC96`.
+- İlk tam koşu (korunur; üç koşu + mutantlar + inceleme paralelken): **52/53** — `b3-gate-read-persistent` çocuk süreçte yedek özeti alınırken `OutOfMemoryException` aldı. Betik kapıda durdu (çıkış 20, dosyalara dokunulmadı); test ortamı kaynaklı, betik kusuru değil. Özet `9B3F5BC439DD53DBC74F52EAB77CECB898252E6E7EDA1263DDCF4BF909049320`.
+- B3 alt kümesi, PowerShell 7 çocuk kabuğu: **32/32 PASS**, 949 assert. Özet `0488B15F6AFF0DCEAD774E869FC6E9E9D2C303602A1057244ED5333A9A11640A`.
+- Yeni B3'ün salt-okuma `-SelfTest`'i gerçek yedeklerle: WinPS 5.1 ve PS 7'de **PASS**. Kanıt dizini dosya sayısı önce/sonra aynı (yazma yok).
+- Ara bayt kanıtı korunur: ilk R03-d baytları (`6CCB7971…`) 48/48 (WinPS 5.1), 27/27 (PS 7), 19/19 mutant; ikinci tur baytları (`9825DCC3…`) hedefli 8/8 — o turun tam koşusu, kontrolün bulduğu major yüzünden yarıda durduruldu ve son baytlarla yeniden koşuldu.
+
+**Negatif kontrol:** 27 mutantın **27'si yakalandı**; her biri kendi hedef senaryosunda koştu ve gerçek assert FAIL'i verdi (rc=2). R03-c'nin 10 mutantı son baytlara göre yeniden üretildi; 17 yeni mutant R03-d kurallarını bozar:
+- koşum öncesi ölçümün tek atış olması; durumu bilinmeyen servise durdurma verilmesi;
+- takas öncesi kapının uygulanmaması, OLCULEMEDI'yi KAPALI sayması ya da API dalını atlaması;
+- takas sonu ölçümünün kararı etkilememesi ya da OLCULEMEDI'yi KAPALI sayması;
+- OWNER KARARI notunun eylem metnine bağlanması ya da OLCULEMEDI adımından düşmesi;
+- KAPALI adımında ölçüm satırlarının olmaması; üçlü değişiminin kararı etkilememesi; okunamayan üçlünün "DEĞİŞTİ" yazılması;
+- beklenmeyen hata dalında başarı metni ya da ölçümsüz AYAKTA;
+- 11/12 metninin Start önermesi; 21 nedeninin takas öncesi ölçümü göstermemesi; owner yeniden başlatma sırasının bozulması.
+
+**Yeniden inceleme:** R03-d farkı üç tur bağımsız kontrol edildi (her turda major iddiaları ayrı doğrulayıcıyla çürütülmeye çalışıldı):
+- Tur 1 (3 mercek): doğrulanmış blocker/major yok; minor/nit'ler giderildi.
+- Tur 2: 1 major doğrulandı (11/12 metni kimliği doğrulanmamış dosyalarla Start öneriyordu) ve giderildi.
+- Tur 3: doğrulanmış blocker/major yok. Açık kalan minor'lar Sınırlar'dadır.
+
+Kanıt yerel ajan kanıt dizininde (`HY_R27_AGENT_EVIDENCE\b3-fix-r03d\`; R03-c kanıtı `b3-fix\` değiştirilmeden durur).
+
+**Sınırlar:**
+- Simülatör gerçek zamanlanmış görev ve HTTP gecikmelerini ölçmez; tetik davranışı simülatörde enjekte edilir.
+- Toparlama karar ölçümünden SONRA kapanan servis yeniden başlatılmaz (dürüst 22 + KURTARMA Start adımı).
+- Oturmuş koşum öncesi ölçümün son okuması hataya denk gelirse sonuç OLCULEMEDI olur ve servis durdurulmaz (güvenli yön; 21/22).
+- Takas bitiminden sonra ama başlatmadan önce tetiklenen servis (dosyalar zaten TABAN) 13'e düşmez; takas sırasında başlayan servis 13'e düşer (güvenli yön).
+- 13'te "takas sonu KAPALI ölçülmedi + son ölçümde servis ayakta değil" hücresi uçtan uca senaryosuzdur; KURTARMA metni fonksiyon düzeyinde (1666 girdi bileşimi, WinPS 5.1 + PS 7) doğru bulundu.
+- 12'de takas yarıda kalırsa KURTARMA servis durumunu yazmaz; kanıt JSON `serviceState` alanına bakılır.
+- 13 takas sonu satırı servisin son ölçüm durumunu tekrar etmez; son ölçüm aynı metnin servis satırındadır.
+- Canlı B3 akışı koşulmadı (yalnız salt-okuma SelfTest).
+
 
 **Hata provası harness'ı — senaryo sonuçları** (koşum `run-20260930-065942Z`, WinPS 5.1, canlıya dokunmadan; özet `fault-prova-summary.json` sha256
 `A8F0C957ECA9B64E79D04A87D87C258D223E4087A2AC663AEA3395316DFA5DB2`; kalıcı kanıt §13). Pristine taban kopyası `A8B17A38`/`C17E7B13`, aday `HY_WT_R27` `E28A6863`/`B2DEE365` harness başında pinlerle doğrulandı;
