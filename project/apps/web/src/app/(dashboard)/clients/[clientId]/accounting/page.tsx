@@ -13,6 +13,8 @@
  *      4) Masraf/Avans Bakiyesi = CaseBalance/BalanceLedger — payout defteri DEĞİL
  *      5) Borçlu Tahsilatı = dosyaya borçludan gelen tahsilat — otomatik müvekkile borç DEĞİL
  *  - Finansal scope: proceeds/payout = caseClientId; masraf = seçili clientId; avans/tahsilat = dosya.
+ *  - Para birimi: proceeds/payout/borçlu tahsilatı dosyanın kayıtlı para birimiyle (backend `cases`); masraf TL;
+ *    avans bakiyesi kendi para birimiyle. Tutar çevrilmez, farklı para birimleri toplanmaz.
  *  - Ekstre (ClientStatement) üret/yenile bu sayfada YOK (ayrı mutation gate = Faz 7-E).
  */
 
@@ -35,6 +37,11 @@ import { AccountingTable } from '@/components/client-accounting/AccountingTable'
 import { FinancialStatementPanel } from '@/components/client-accounting/FinancialStatementPanel';
 
 const PAGE_SIZE = 20;
+/**
+ * Masraf talepleri TL tarifesinden yazılır (ExpenseRequest para birimi TRY; özet ucu para birimi döndürmez).
+ * Dosyanın para birimiyle biçimlenmez: dövizli dosyada TL masraf dövizmiş gibi görünmesin.
+ */
+const EXPENSE_CURRENCY = 'TRY';
 
 export default function ClientAccountingPage() {
   const params = useParams();
@@ -225,8 +232,8 @@ export default function ClientAccountingPage() {
           loading={expenseQ.isLoading}
           error={expenseQ.isError}
           fetching={expenseQ.isFetching}
-          value={expenseQ.data ? formatMoneyString(String(expenseQ.data.totalRequested), currency) : null}
-          sub={expenseQ.data ? `Ödenmemiş: ${formatMoneyString(String(expenseQ.data.totalPending), currency)}` : undefined}
+          value={expenseQ.data ? formatMoneyString(String(expenseQ.data.totalRequested), EXPENSE_CURRENCY) : null}
+          sub={expenseQ.data ? `Ödenmemiş: ${formatMoneyString(String(expenseQ.data.totalPending), EXPENSE_CURRENCY)}` : undefined}
           note="Müvekkilden istenen masraf/avans tutarı. Müvekkile borç değildir."
         />
 
@@ -239,7 +246,7 @@ export default function ClientAccountingPage() {
           loading={expenseQ.isLoading}
           error={expenseQ.isError}
           fetching={expenseQ.isFetching}
-          value={expenseQ.data ? formatMoneyString(String(expenseQ.data.totalPaid), currency) : null}
+          value={expenseQ.data ? formatMoneyString(String(expenseQ.data.totalPaid), EXPENSE_CURRENCY) : null}
           note="Müvekkilin ödediği masraf/avans tutarı."
         />
 
