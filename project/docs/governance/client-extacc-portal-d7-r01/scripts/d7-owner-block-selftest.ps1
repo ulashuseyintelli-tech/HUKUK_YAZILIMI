@@ -6,9 +6,16 @@
 #          Read-Answer (kuyruktan yanıt), Invoke-RepoGit (git grep "bulunmadı"), Assert-LocalConsole (test sürecinin çıktısı
 #          yönlendirildiği için no-op; GERÇEK hali ayrıca K-1'de ölçülür), Clear-OwnerScreen (no-op).
 #          Node GERÇEKTİR: PATH'teki node + geçici betik ya da BAŞLATILAMAYAN dosya.
+# R02    : G-1..G-4 (D-5 R04 kalıbı) — G-1 blok kaynağında (yorumlar dahil) "hiçbir … dosya/log/kanıt … yazılmaz" türü kapsamsız mutlak iddia yok;
+#          G-2 owner'a GÖSTERİLEN canlı veri onayı metni paket belgesi §8 kayıt listesiyle aynı kalemleri taşır, "dosyalar CLOSED + personel pasif +
+#          portal pasif; tenant yaşam döngüsü değişmez" der, kaynaktan okunan ile ölçüleni ayırır; G-3 Recover başlarken canlı yazma kümesi ve yetki
+#          kuralı GÖSTERİLİR (yeni soru yok; tek node çağrısı; defter değişmez); G-4 Run çıkış 5/6 metni Run'ın kendi kapanışını Recover'dan ayırır,
+#          "Recover yetkisi değildir / blok başlatmaz / önce kanıt / AYRI owner onayı" der; çıkış 0'da Recover metni yok; tek node çağrısı.
+#          Ölçüm owner'a GÖSTERİLEN metinde yapılır (Write-Host yakalaması). Beklenmeyen istisna sessizce kesmez: X-0 FAIL satırı.
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d7-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
+$startedUtc = (Get-Date).ToUniversalTime().ToString('o')
 $here    = $PSScriptRoot
 $wrapper = Join-Path $here 'd7-owner-live-block.ps1'
 
@@ -242,6 +249,66 @@ try {
   $gates = ($funcs | Where-Object { $_.Name -eq 'Invoke-ReadOnlyGates' }).Extent.Text; $qrB = ($funcs | Where-Object { $_.Name -eq 'Invoke-QrTestMode' }).Extent.Text
   $iR05 = $run.IndexOf('Confirm-PortalBaseUrlR05'); $iConf = $run.IndexOf('Confirm-LiveDataProcessing')
   Check 'S-5' 'topoloji literali yok: $ExpBaseUrl https:// literali DEĞİL (.env''den, biçim kapısıyla); kanıt kökü $env:USERPROFILE''a göreli; "C:\Users\" yok; R05 onayı Run''da canlı veri onayından ÖNCE ve QrTest''te' ($src -notmatch "\`\$ExpBaseUrl\s*=\s*'https://" -and $src -notmatch 'C:\\Users\\' -and $src -match '\$EvRoot\s*=\s*Join-Path \$env:USERPROFILE' -and $gates -match '\$script:ExpBaseUrl\s*=\s*\$baseUrl' -and $gates -match 'Assert-PortalBaseUrl \(EnvValue ''PUBLIC_PORTAL_BASE_URL''\)' -and $iR05 -ge 0 -and $iR05 -lt $iConf -and $qrB -match 'Confirm-PortalBaseUrlR05') "R05@$iR05 onay@$iConf"
+
+  # ---- R02 (2026-10-01) OWNER METNİ VE RECOVER YETKİSİ (D-5 R04 G-1..G-4 eşdeğeri). Ölçüm hem kaynakta (yorumlar dahil) hem owner'a
+  #      GÖSTERİLEN metinde (Write-Host yakalaması) yapılır. Eski blok baytlarına karşı tam olarak G-1..G-4 FAIL verdiği ayrıca ölçülür.
+  #      Değişken adı notu: PowerShell adları harf duyarsızdır; $T geçici dizindir — bu bölümde $t KULLANILMAZ.
+  function Get-HostText([scriptblock]$b) { return ((@(& $b 6>&1) | ForEach-Object { [string]$_ }) -join "`n") }
+  $absRe = '(?i)h[iİı]çb[iİı]r[^\r\n]{0,40}(dosya|log|günlü|kanıt|rapor)[^\r\n]{0,40}(yazılmaz|yazmaz|YAZILMAZ|YAZMAZ)'
+  $absPos = @('GO ref ve token''lar hiçbir dosyaya yazılmaz', 'Hiçbir dosyaya/kanıta yazılmaz.', 'parola HİÇBİR log dosyasına YAZILMAZ', 'içerik hiçbir kanıt/rapor/log dosyasına yazılmaz')
+  $absNeg = @('GO sorulmaz, hiçbir şey yazılmaz', 'bu blok ve koşucu kendi kanıt/log dosyalarına YAZMAZ')
+  $absPosMiss = @($absPos | Where-Object { $_ -notmatch $absRe }); $absNegHit = @($absNeg | Where-Object { $_ -match $absRe })
+  $srcLines = @($src0 -split "`n"); $absHits = @($srcLines | Where-Object { $_ -match $absRe })
+  Check 'G-1' 'kaynakta (yorumlar DAHİL) "hiçbir … dosya/log/günlük/kanıt/rapor … yazılmaz" türü KAPSAMSIZ MUTLAK iddia YOK; desen kör değil: 4 bilinen mutlak cümleyi yakalar, kapsamı adlandırılmış "blok ve koşucu … YAZMAZ" ve ilgisiz "hiçbir şey yazılmaz" cümlelerini yakalamaz' ($absHits.Count -eq 0 -and $srcLines.Count -gt 300 -and $absPosMiss.Count -eq 0 -and $absNegHit.Count -eq 0) "taranan satır=$($srcLines.Count) · mutlak iddia=$($absHits.Count)$(if ($absHits.Count) { ' [' + (($absHits | ForEach-Object { $_.Trim().Substring(0, [Math]::Min(70, $_.Trim().Length)) }) -join ' | ') + ']' }) · desen pozitif kaçırılan=$($absPosMiss.Count)/$($absPos.Count) · negatif yanlış=$($absNegHit.Count)/$($absNeg.Count)"
+
+  Set-Answers @('EVET'); $script:g2err = $null
+  $consentTxt = Get-HostText { try { Confirm-LiveDataProcessing } catch { $script:g2err = $_.Exception.Message } }
+  $need2 = @('İKİ yeni sentetik tenant', 'ah-<runId>-x', 'hedef tenantta iki dosya', 'yabancı tenantta bir dosya', 'BİR portal hesabı', 'PortalMessage', 'PortalNotification',
+             'Ürünün kendi yazdıkları (kaynaktan okundu)', 'audit satırları', 'giriş sayacı', 'uygulama günlüğünde', 'bu blokla ÖLÇÜLMEZ', 'dosyalar CLOSED', 'personel pasif',
+             'Tenant yaşam döngüsü DEĞİŞMEZ', 'dosyalar CLOSED + personel pasif + portal pasif', 'SİLİNMEZ', 'U-ISO', 'SAYISI', 'içerik karşılaştırılmaz')
+  $miss2 = @($need2 | Where-Object { $consentTxt -cnotmatch [regex]::Escape($_) })
+  $old2 = @(@('Gerçek müvekkil verisine dokunulmaz', 'YALNIZ yeni bir sentetik tenantta', 'hiçbir adrese', '"saklandı: n satır (sentetik tenant CLOSED)"') | Where-Object { $consentTxt -match [regex]::Escape($_) })
+  $g2W = $consentTxt.IndexOf('İKİ yeni sentetik tenant'); $g2P = $consentTxt.IndexOf('Ürünün kendi yazdıkları'); $g2C = $consentTxt.IndexOf('Kapanış:'); $g2I = $consentTxt.IndexOf('U-ISO')
+  # Belge eşleşmesi: onay metnindeki kalemler paket belgesi §8 ("canlıda oluşacak kayıtlar") içinde de geçer (belge yoksa/okunamazsa FAIL — boş doğrulama yok).
+  $pkgDoc = Join-Path (Split-Path -Parent $here) 'EXTACC-D7-PORTAL-MESSAGES-PACKAGE-R01.md'
+  $both2 = @('ah-<runId>-x', 'PortalMessage', 'PortalNotification', 'audit', 'giriş sayacı', 'uygulama günlüğü', 'dosyalar CLOSED', 'personel pasif', 'yaşam döngüsü', 'U-ISO')
+  $sec8 = ''; $docErr = $null
+  try {
+    $docTxt = [IO.File]::ReadAllText($pkgDoc); $i8 = $docTxt.IndexOf("`n## 8."); $i9 = $docTxt.IndexOf("`n## 9.")
+    if ($i8 -ge 0 -and $i9 -gt $i8) { $sec8 = $docTxt.Substring($i8, $i9 - $i8) } else { $docErr = 'belgede §8 bulunamadı' }
+  } catch { $docErr = 'belge okunamadı' }
+  $missDoc = @($both2 | Where-Object { $sec8 -cnotmatch [regex]::Escape($_) }); $missBlk = @($both2 | Where-Object { $consentTxt -cnotmatch [regex]::Escape($_) })
+  Check 'G-2' 'owner''a GÖSTERİLEN canlı veri onayı metni: koşucunun yazdığı kayıtlar (iki sentetik tenant) → ürünün kendi yazdıkları (kaynaktan okundu; API günlüğü içeriği ÖLÇÜLMEZ) → kapanış ("dosyalar CLOSED + personel pasif + portal pasif"; tenant yaşam döngüsü DEĞİŞMEZ) → diğer tenantlar için ölçülen yalnız U-ISO (SAYI) sırasıyla yazılır; eski "Gerçek müvekkil verisine dokunulmaz" / tek başına "(sentetik tenant CLOSED)" / kapsamsız mutlak iddia YOK; kalemler paket belgesi §8 listesinde de geçer; EVET ile istisna yok' ($null -eq $script:g2err -and $miss2.Count -eq 0 -and $old2.Count -eq 0 -and $consentTxt -notmatch $absRe -and $g2W -ge 0 -and $g2W -lt $g2P -and $g2P -lt $g2C -and $g2C -lt $g2I -and $null -eq $docErr -and $sec8.Length -gt 200 -and $missDoc.Count -eq 0 -and $missBlk.Count -eq 0) "eksik=$($miss2 -join ',') · eski ifade=$($old2 -join ',') · sıra koşucu@$g2W ürün@$g2P kapanış@$g2C U-ISO@$g2I · belge §8 uzunluk=$($sec8.Length) hata=$docErr · belgede eksik=$($missDoc -join ',') · metinde eksik=$($missBlk -join ',') · istisna=$($script:g2err) · satır=$(@($consentTxt -split "`n").Count)"
+
+  $recFn = $funcs | Where-Object { $_.Name -eq 'Invoke-RecoverMode' } | Select-Object -First 1
+  $recAsk = @($recFn.Body.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and (@('Read-Answer', 'Read-Host', 'Read-GoRef', 'Confirm-LiveDataProcessing', 'Confirm-PortalBaseUrlR05') -contains $n.GetCommandName()) }, $true))
+  $recNode = @($recFn.Body.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-Node' }, $true))
+  $recSrc = $recFn.Extent.Text; $iInfo = $recSrc.IndexOf('RECOVER BAŞLIYOR'); $iRecNode = $recSrc.IndexOf('Invoke-Node')
+  $g3Txt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 0 $true $rcpt @('S1', 'S2') }; $g3r = $script:capR; $g3Left = $script:Answers.Count
+  $need3 = @('RECOVER BAŞLIYOR', 'AYRI bir CANLI YAZMA', 'AYRI owner onayıyla', 'Recover yetkisi DEĞİLDİR', 'SORMAZ ve ÖLÇMEZ', 'kodla ZORLANMAZ', 'koşucu kaynağından okundu; canlıda koşulmadı',
+             'GEÇİCİ olarak yeniden aktifleştirilir', 'parola özeti yeniden yazılır', 'admin/disable-user', 'kapatma audit satırı', 'YALNIZ ölçüm için yeni rastgele parola özeti',
+             'closeAccess', 'açık dosyalar CLOSED', 'personel AKTİF kalmış', 'Tenant kaydı değiştirilmez', 'SİLİNMEZ', 'recover-* kanıt dizini', 'GO defteri değişmez', 'U-ISO ölçmez',
+             'yeni bir Recover için yetki DEĞİLDİR')
+  $miss3 = @($need3 | Where-Object { $g3Txt -cnotmatch [regex]::Escape($_) })
+  $g3B = $g3Txt.IndexOf('RECOVER BAŞLIYOR'); $g3E = $g3Txt.IndexOf('KURTARMA BİTTİ')
+  Check 'G-3' 'Recover başlarken owner''a GÖSTERİLEN bilgi metni: Run''ın kendi kapanışından AYRI bir canlı yazma işlemi; AYRI owner onayı (blok SORMAZ/ÖLÇMEZ); "BİR KEZ" kodla ZORLANMAZ; canlı yazma kümesi (sentetik personelin geçici yeniden aktifleştirilmesi + parola özeti, yetkili uçla kapatma + audit satırı, pasif portal hesabına ölçüm parolası özeti, personel/dosya kapanışı, kanıt dizini) — metin node çağrısından ÖNCE; yeni soru YOK (AST: soru komutu 0; kuyruktaki yanıt tüketilmedi); tek node çağrısı (mod recover); GO defteri değişmez; bitiş metni çıkış kodunun yeni bir Recover yetkisi olmadığını söyler' ($g3r.out -eq 0 -and $null -eq $g3r.threw -and $g3r.nodeCalls -eq 1 -and $g3r.last.mode -eq 'recover' -and $g3r.ledgerDelta -eq 0 -and $g3Left -eq 2 -and $recAsk.Count -eq 0 -and $recNode.Count -eq 1 -and $miss3.Count -eq 0 -and $iInfo -ge 0 -and $iInfo -lt $iRecNode -and $g3B -ge 0 -and $g3B -lt $g3E -and $g3Txt -notmatch $absRe) "rc=$($g3r.out) · node=$($g3r.nodeCalls) mod=$($g3r.last.mode) · defter+=$($g3r.ledgerDelta) · tüketilmeyen yanıt=$g3Left/2 · soru komutu (AST)=$($recAsk.Count) · Invoke-Node (AST)=$($recNode.Count) · eksik=$($miss3 -join ',') · bilgi@$iInfo node@$iRecNode · gösterim başlangıç@$g3B bitiş@$g3E · istisna=$($g3r.threw)"
+
+  $script:goN = 90; $g4 = [ordered]@{}
+  foreach ($c in 5, 6, 0) { $g4Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe $c $true }; $g4["$c"] = [pscustomobject]@{ txt = $g4Txt; r = $script:capR } }
+  $need4 = @('Recover YETKİSİ DEĞİLDİR', 'Recover BAŞLATMAZ', 'kendi kapanış adımlarını koşucu İÇİNDE', 'kanıtı inceleyin', 'ÖNERİDİR', 'AYRI owner onayıyla', 'BİR KEZ', 'CANLI YAZMA', 'kodla ZORLANMAZ')
+  $bad4 = @()
+  foreach ($k in '5', '6') { $x = $g4[$k]; $miss4 = @($need4 | Where-Object { $x.txt -cnotmatch [regex]::Escape($_) })
+    if (-not ($x.r.out -eq [int]$k -and $x.r.nodeCalls -eq 1 -and $x.r.last.mode -eq 'run' -and $miss4.Count -eq 0 -and $x.txt -notmatch 'KAPANIŞ DOĞRULANMADI: -Mode Recover')) { $bad4 += "çıkış ${k}: rc=$($x.r.out) node=$($x.r.nodeCalls) mod=$($x.r.last.mode) eksik=$($miss4 -join ',')" } }
+  $zeroRec = ($g4['0'].r.out -eq 0 -and $g4['0'].r.nodeCalls -eq 1 -and $g4['0'].txt.Length -gt 200 -and $g4['0'].txt -notmatch 'Recover')
+  $runFn = $funcs | Where-Object { $_.Name -eq 'Invoke-RunMode' } | Select-Object -First 1
+  $runNode = @($runFn.Body.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-Node' }, $true))
+  $recCalls = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-RecoverMode' }, $true))
+  $recInFn = @($recCalls | Where-Object { $o = $_.Extent.StartOffset; @($funcs | Where-Object { $o -ge $_.Extent.StartOffset -and $o -lt $_.Extent.EndOffset }).Count -gt 0 })
+  Check 'G-4' 'Recover yetkisi: Run çıkış 5/6''da owner''a GÖSTERİLEN metin Run''ın kendi kapanış adımlarını (koşucu içinde) Recover''dan AYIRIR, çıkış kodunun Recover YETKİSİ olmadığını ve bloğun Recover BAŞLATMADIĞINI söyler, önce kanıt incelemesini ister, Recover''ı yalnız AYRI owner onayıyla, BİR KEZ ÖNERİR ve Recover''ın ayrı bir CANLI YAZMA olduğunu / "BİR KEZ"in kodla zorlanmadığını yazar; blok tek node çağrısı yapar (mod run; recover çağrısı 0); çıkış 0''da Recover metni yok; AST: Invoke-RunMode içinde tek Invoke-Node, Invoke-RecoverMode yalnız akıştaki mod dalında (fonksiyon içinden çağrı 0)' ($bad4.Count -eq 0 -and $zeroRec -and $runNode.Count -eq 1 -and $recCalls.Count -eq 1 -and $recInFn.Count -eq 0) "hata=$($bad4 -join ' | ') · çıkış 0 Recover metni yok=$zeroRec (metin $($g4['0'].txt.Length) karakter) · Run içi Invoke-Node (AST)=$($runNode.Count) · Invoke-RecoverMode çağrısı (AST)=$($recCalls.Count), fonksiyon içinde=$($recInFn.Count)"
+}
+catch {
+  # Beklenmeyen istisna öz-testi SESSİZCE kesmez: FAIL satırı olarak kaydedilir (kalan ölçütler koşulmadı → sonuç PASS olamaz).
+  Check 'X-0' 'öz-test beklenmeyen istisna ile yarıda kesildi — kalan ölçütler KOŞULMADI' $false ("istisna=" + $_.Exception.Message + ' · satır=' + $_.InvocationInfo.ScriptLineNumber)
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
@@ -249,8 +316,13 @@ finally {
 }
 
 $rows | Format-Table -AutoSize -Wrap | Out-String -Width 240 | Write-Host
+# Gözlem dökümü (R02): tablo genişliği gözlem sütununu düşürebildiği için ölçülen değerler ayrıca yazılır (kullanıcı profili yolu maskelenir).
+Write-Host 'GÖZLEMLER (her ölçütün ölçülen değeri):'
+foreach ($r in $rows) { Write-Host ("  {0,-4} {1,-10} {2}" -f $r.sonuc, $r.id, (([string]$r.gozlem) -replace '([A-Za-z]:\\Users\\)[^\\]+', '$1<kullanıcı>')) }
+Write-Host ''
 $fail = @($rows | Where-Object { $_.sonuc -eq 'FAIL' }).Count
 Write-Host ("EXTACC D-7 OWNER BLOĞU ÖZ-TESTİ [{0}]: PASS {1} / {2}" -f $ps, ($rows.Count - $fail), $rows.Count)
-Write-Host "  geçici dizin: $T  (canlı kapılar, canlı .env, canlı DB ve GO KULLANILMADI)"
+Write-Host ("  test edilen blok: d7-owner-live-block.ps1 sha256={0} · koşum başlangıcı (UTC)={1}" -f (Sha $wrapper), $startedUtc)   # log tek başına hangi sürümün koşulduğunu söyler
+Write-Host ("  geçici dizin: {0}  (canlı kapılar, canlı .env, canlı DB ve GO KULLANILMADI)" -f ($T -replace '^([A-Za-z]:\\Users\\)[^\\]+', '$1<kullanıcı>'))
 if ($fail -gt 0) { exit 1 }
 exit 0

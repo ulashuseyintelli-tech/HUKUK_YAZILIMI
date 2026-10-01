@@ -1,4 +1,6 @@
 ﻿# ═══════════ EXTACC D-7 R01 PORTAL MESAJ AKIŞI + PORTAL ERİŞİM KAPANIŞI - OWNER BLOĞU (normal PowerShell; YÖNETİCİ GEREKMEZ) ═══════════
+# R02 (2026-10-01): YALNIZ METİN (yorumlar, konsol çıktısı, istem metinleri) — kod/akış/pinler DEĞİŞMEDİ; kayıt alanı `revision` 'R01' kalır.
+#          Run çıkış 5/6 Recover yetkisi değildir; Recover'ın canlı yazma kümesi gösterilir; beyan seçenekleri ana sayfa/özeti hata sayfasından ayırır.
 # MODLAR
 #   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 pini); GO sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu çağrılmaz (yalnız `node --version`). Kapılardaki `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir).
 #   -Mode QrTest     Canlı veri YOK: portal MESAJ sayfasının QR'ı yerel konsolda gösterilir (d7-qr-test.js); owner telefonla okutur.
@@ -6,14 +8,24 @@
 #                    (yalnız sha256, koşumdan ÖNCE) → koşum (mesaj ölçümleri; konsol: QR + giriş bilgisi) → ekran temizliği →
 #                    owner beyanı (ayrı dosya) → kanıt manifesti.
 #   -Mode Recover    Yalnız kapanış (portal + personel/dosya; mesaj satırları SİLİNMEZ); `-ReceiptFile` zorunlu; GO sorulmaz; kabul ölçütleri koşulmaz.
+#                    Run'ın koşucu İÇİNDEKİ kendi kapanış adımlarından AYRI bir işlemdir: otomatik DEĞİLDİR; Run çıkış 5/6 Recover yetkisi
+#                    DEĞİLDİR — önce kanıt incelenir, açık kalan kaynaklar bildirilir, Recover yalnız AYRI owner onayıyla, BİR KEZ başlatılır.
+#                    "BİR KEZ" kodla ZORLANMAZ: blok ve koşucu ikinci bir Recover'ı engellemez (GO sorulmaz, defter tutulmaz); kural owner disiplinidir.
+#                    Recover CANLIYA YAZAR (koşucu kaynağından okundu; canlıda koşulmadı): portal hâlâ açıksa makbuzdaki sentetik personel GEÇİCİ
+#                    olarak yeniden aktifleştirilir ve parola özeti yeniden yazılır → yetkili uçla kapatma (portal pasif + sürüm artışı + kapatma
+#                    audit satırı); portal DB'de kapalı durumdaysa (bu kapatmayla ya da önceden) pasif portal hesabına YALNIZ ölçüm için yeni
+#                    rastgele parola özeti yazılır; ardından personel/dosya kapanışı (iki sentetik tenantın kullanıcıları pasif + sürüm artışı,
+#                    açık dosyalar CLOSED). Tenant kaydı değişmez. Aynı liste Recover başlarken konsolda gösterilir (yalnız bilgi; soru yok).
 # ÖN KOŞUL: canlı API dist'i R27 olmalı (D-5 ile aynı pin). Salt okuma kapıları (paket pinleri, dist pini, .env pini) TÜM MODLARDA
 #          (Preflight/QrTest/Run/RECOVER dahil) mod dalından ÖNCE koşar: R26 (A8B17A38) ya da başka bir dist ile blok her modda DURUR.
 #          Run 5/6 ile bittikten sonra canlı dist değişirse (ör. geri dönüş) Recover bu bloktan ÇALIŞMAZ → CLIENT kararı (belge §9/§10).
 # YAPMAZ : e-posta/SMS (mesaj akışı kaynakta gönderim üretmez; koşucu forgot/reset/change-password ve belge uçlarını çağırmaz) ·
-#          dış admin uçları (D7-5 = D-8 kapsamı) · mesaj/bildirim silme · .env/görev/Caddy/tünel/DNS değişikliği · otomatik tekrar/Recover.
-# SIR    : DB URL, personel parolası, geçici portal parolası, GO ref ve token'lar hiçbir dosyaya yazılmaz. Giriş bilgisi yalnız bu konsol
-#          penceresine çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi kapatın. Telefondan gönderilen mesajın
-#          içeriği kanıta yazılmaz (yalnız sayı).
+#          dış admin uçları (D7-5 = D-8 kapsamı) · mesaj/bildirim silme · .env/görev/Caddy/tünel/DNS değişikliği · otomatik tekrar · otomatik Recover.
+# SIR    : DB URL, personel parolası, geçici portal parolası, GO ref ve token'ları bu blok ve koşucu kendi kanıt/log dosyalarına YAZMAZ
+#          (GO için deftere yalnız sha256; öz-test ortamında ölçülen: blok R-9 GO/personel parolası, koşucu S-1 parolalar/token/DB URL/GO).
+#          AYRIM: parola ÖZETLERİ (hash) canlı DB'de sentetik hesaplarda durur; canlı API'nin kendi uygulama günlüğünün içeriği bu blokla
+#          ÖLÇÜLMEZ. Giriş bilgisi yalnız bu konsol penceresine çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi
+#          kapatın. Telefondan gönderilen mesajın içeriği koşucu kanıtına yazılmaz (yalnız sayı); mesaj satırının kendisi canlı DB'de KALIR.
 # TOPOLOJİ: public portal adresi canlı .env'den okunur ve owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü $env:USERPROFILE'a görelidir
 #          (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Canlı kök ($Rel) tek yerde tanımlıdır.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -79,7 +91,7 @@ function Assert-PortalBaseUrl([string]$u) {
   if ($u -notmatch '^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$' -or $u -match '^https://\d+(\.\d+)+$') { Fail 'PUBLIC_PORTAL_BASE_URL biçimi https://<alan adı> olmalı (yol/port/sorgu/IP/localhost KABUL EDİLMEZ) — dış ölçüm ve QR bu adresle yapılır' }
   return $u
 }
-# R05 kontrolü: owner adresi konsola yazar; canlı .env değeriyle (kapılarda okunan) birebir eşleşmezse DUR (GO sorulmaz, hiçbir şey yazılmaz).
+# R05 kontrolü: owner adresi konsola yazar; canlı .env değeriyle (kapılarda okunan) birebir eşleşmezse DUR (GO sorulmaz; GO defteri yazılmaz, koşucu çağrılmaz — öz-test K-6; QrTest'te QR gösterilmez — Q-R05).
 function Confirm-PortalBaseUrlR05 {
   if (-not $ExpBaseUrl) { Fail 'public portal adresi çözülmedi (salt okuma kapıları koşmadı) — koşum başlamaz' }
   $a = [string](Read-Answer 'R05 kararındaki public portal adresini yazın (https://... ; canlı .env PUBLIC_PORTAL_BASE_URL ile BİREBİR eşleşmeli)')
@@ -210,16 +222,22 @@ function Write-Manifest([string]$evDir) {
   Get-ChildItem -LiteralPath $evDir -File | Where-Object Name -ne 'SHA256-MANIFEST.txt' | Sort-Object Name |
     ForEach-Object { "$(Sha $_.FullName)  $($_.Name)" } | Set-Content -LiteralPath (Join-Path $evDir 'SHA256-MANIFEST.txt') -Encoding ASCII
 }
-# Canlı veri işleme — Run'dan ÖNCE açıkça sunulur; "EVET" yazılmazsa GO sorulmaz ve hiçbir şey yazılmaz.
+# Canlı veri işleme — Run'dan ÖNCE açıkça sunulur; "EVET" yazılmazsa GO sorulmaz, GO defteri yazılmaz ve koşucu çağrılmaz (öz-test K-3).
+# Metin paket belgesi §8'deki "canlıda oluşacak kayıtlar" listesiyle AYNI kalemleri taşır (öz-test G-2); kaynaktan okunan ile ölçülen ayrı yazılır.
 function Confirm-LiveDataProcessing {
   Write-Host ''
   Write-Host 'CANLI VERİ İŞLEME — onayınız gerekiyor:' -ForegroundColor Yellow
-  Write-Host '  Canlı DB''de YALNIZ yeni bir sentetik tenantta (ve ona bağlı sentetik yabancı tenantta) yazılacak: sentetik kullanıcılar, müvekkil,'
-  Write-Host '  dosya, borçlu, yabancı tenantta bir dosya, sentetik müvekkile BİR portal hesabı (.invalid adres; e-posta YOK), PortalMessage satırları'
-  Write-Host '  (koşucu: müvekkil ×2 + personel ×2; telefondan gönderirseniz +1) ve PortalNotification satırları (personel yanıtı başına 1).'
-  Write-Host '  Kaynak doğrulaması: mesaj akışı hiçbir adrese e-posta/SMS üretmez; audit yalnız portal erişimi açma/kapatma için yazılır.'
-  Write-Host '  Kapanış: portal hesabı pasif + sürüm artırılır, erişim kapalı, personel pasif, dosya CLOSED. MESAJ ve BİLDİRİM SATIRLARI SİLİNMEZ'
-  Write-Host '  (ürünte silme ucu yok); kanıtta "saklandı: n satır (sentetik tenant CLOSED)" olarak raporlanır. Gerçek müvekkil verisine dokunulmaz.'
+  Write-Host '  Koşucu canlı DB''de bu koşum için İKİ yeni sentetik tenant açar (ah-<runId> ve yabancı ah-<runId>-x) ve şu kayıtları yazar:'
+  Write-Host '  sentetik personel kullanıcıları (profil ve yetki kayıtlarıyla), sentetik müvekkiller (hedef tenantta iki, yabancı tenantta bir),'
+  Write-Host '  hedef tenantta iki dosya + bir borçlu, yabancı tenantta bir dosya, sentetik müvekkile BİR portal hesabı (.invalid adres; e-posta YOK),'
+  Write-Host '  PortalMessage satırları (koşucu: müvekkil ×2 + personel ×2; telefondan gönderirseniz +1) ve PortalNotification satırları (personel yanıtı başına 1).'
+  Write-Host '  Ürünün kendi yazdıkları (kaynaktan okundu): portal erişimi açma/kapatma audit satırları, portal giriş sayacı / son giriş zamanı ve canlı API'
+  Write-Host '  uygulama günlüğünde portal hesabı / portal girişi / mesaj gönderimi satırları (maskeli sentetik adres ya da müvekkil kimliği ile).'
+  Write-Host '  Kaynaktan okundu: mesaj akışı e-posta/SMS üretmez. API günlüğünün tam içeriği bu blokla ÖLÇÜLMEZ.'
+  Write-Host '  Kapanış: portal hesabı pasif + sürüm artırılır, erişim kapalı, personel pasif, dosyalar CLOSED. Tenant yaşam döngüsü DEĞİŞMEZ'
+  Write-Host '  (tenant kaydı kapatılmaz; koşucunun kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif).'
+  Write-Host '  MESAJ ve BİLDİRİM SATIRLARI SİLİNMEZ (ürünte silme ucu yok); kanıtta "saklandı: n satır" olarak raporlanır.'
+  Write-Host '  Diğer tenantlar için ölçülen yalnız U-ISO''dur: tenant başına kullanıcı ve müvekkil SAYISI önce/sonra aynı (içerik karşılaştırılmaz).'
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
   if ($a -cne 'EVET') { Fail 'canlı veri işleme onaylanmadı — koşum başlamadı' }
 }
@@ -250,13 +268,13 @@ function Write-OwnerDeclaration([string]$evDir, [string]$runId, $closure) {
     record = 'EXTACC-D7-OWNER-DECLARATION'; runId = $runId; not = 'owner beyanıdır; makine ölçümü değildir'
     closureShownToOwner = $(if ($closure) { $closure.text } else { 'kanıt okunamadı' })
     telefonGirisSayfasiAcildi = (Read-Answer 'QR/adres ile telefonda portal giriş sayfası açıldı mı? (E/H/?)')
-    girisSonrasiEkran         = (Read-Answer 'Girişten sonra ne gördünüz? (M = mesaj sayfası · G = yine giriş sayfası · D = başka/hata sayfası · ?)')
-    listedekiMesajSayisi      = (Read-Answer 'Mesaj sayfasında ilk açılışta kaç mesaj vardı? (sayı ya da ?)')
+    girisSonrasiEkran         = (Read-Answer 'Girişten sonra ne gördünüz? (M = portal açıldı: ana sayfa/özet ya da Mesajlar sekmesindeki mesaj sayfası · G = yine giriş sayfası · D = hata sayfası ya da portal dışı başka sayfa · ?)')
+    listedekiMesajSayisi      = (Read-Answer 'Mesajlar sekmesine geçtiğinizde mesaj sayfasında ilk açılışta kaç mesaj vardı? (sayı ya da ?)')
     telefondanMesajGonderildi = (Read-Answer 'Telefondan mesaj gönderdiniz mi? (E/H — isteğe bağlı adım)')
-    ikinciYanitGoruldu        = (Read-Answer 'Girişten sonra gelen İKİNCİ personel yanıtını sayfada gördünüz mü? (E/H/?)')
-    okunmamisSayaci           = (Read-Answer 'Rozet/okunmamış sayacı ne gösterdi? (sayı · Y = görmedim · ?)')
+    ikinciYanitGoruldu        = (Read-Answer 'Girişten sonra gelen İKİNCİ personel yanıtını mesaj sayfasında gördünüz mü? (E/H/?)')
+    okunmamisSayaci           = (Read-Answer 'Zil simgesindeki rozet (okunmamış BİLDİRİM sayacı; mesaj sayacı değildir) ne gösterdi? (sayı · Y = görmedim · ?)')
     telefonAgi                = (Read-Answer 'Telefon hangi ağdaydı? (M = mobil veri, Wi-Fi kapalı · W = Wi-Fi · ?)')
-    yenilemeSonrasiEkran      = (Read-Answer 'Yeniledikten sonra ne gördünüz? (M = mesaj sayfası · G = giriş sayfası · D = başka/hata sayfası · Y = yenilemedim · ?)')
+    yenilemeSonrasiEkran      = (Read-Answer 'Yeniledikten sonra ne gördünüz? (M = portal içeriği hâlâ açık: mesaj sayfası ya da ana sayfa/özet · G = giriş sayfası · D = hata sayfası ya da portal dışı başka sayfa · Y = yenilemedim · ?)')
     atUtc = (Get-Date).ToUniversalTime().ToString('o')
   }
   $d | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evDir 'owner-declaration.json') -Encoding UTF8
@@ -318,14 +336,23 @@ function Invoke-RunMode($g) {
   Write-Host "EXTACC D-7 KOŞUM BİTTİ - RUNID=$RunId · çıkış=$rc" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   Write-Host '  0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI · 6 PORTAL ERİŞİMİ KAPANDIĞI DOĞRULANMADI · 91 NODE BAŞLATILAMADI'
   if ($finding) { Write-Host "  $finding — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ. CLIENT'a bildirin." -ForegroundColor Red }
-  if ($closure.keptText) { Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan } else { Write-Host '  Mesaj kalıntısı ÖLÇÜLEMEDİ (kanıt satırı yok) — satırlar silinmiş DEĞİLDİR; CLIENT inceler.' -ForegroundColor Yellow }
+  if ($closure.keptText) {
+    Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
+    Write-Host '  (kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
+  } else { Write-Host '  Mesaj kalıntısı ÖLÇÜLEMEDİ (kanıt satırı yok) — satırlar silinmiş DEĞİLDİR; CLIENT inceler.' -ForegroundColor Yellow }
   if ($waitV -eq 'UNMEASURED' -and $decl) {
-    if ($decl.girisSonrasiEkran -ceq 'M') { Write-Host '  Koşucu telefon girişi görmedi ama owner mesaj sayfasını gördüğünü beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
+    if ($decl.girisSonrasiEkran -ceq 'M') { Write-Host '  Koşucu telefon girişi görmedi ama owner girişten sonra portalın açıldığını (ana sayfa/mesaj sayfası) beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
     else { Write-Host '  Telefondan başarılı giriş görülmedi — ÖLÇÜLEMEYEN.' -ForegroundColor Yellow }
   }
-  if ($decl -and $closure.reply2Verdict -eq 'PASS' -and $decl.ikinciYanitGoruldu -ceq 'H') { Write-Host '  Koşucu 2. personel yanıtını yazdı ama owner sayfada görmediğini beyan etti — İNCELEME GEREKİR (görüntüleme/yenileme).' -ForegroundColor Yellow }
-  if ($decl -and $decl.yenilemeSonrasiEkran -ceq 'M') { Write-Host '  Owner, kapanıştan sonra yenilemede mesaj sayfasını gördüğünü beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
-  if ($rc -eq 5 -or $rc -eq 6) { Write-Host '  KAPANIŞ DOĞRULANMADI: -Mode Recover -ReceiptFile <makbuz> (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow }
+  if ($decl -and $closure.reply2Verdict -eq 'PASS' -and $decl.ikinciYanitGoruldu -ceq 'H') { Write-Host '  Koşucu 2. personel yanıtını yazdı ama owner mesaj sayfasında görmediğini beyan etti — İNCELEME GEREKİR (görüntüleme/yenileme).' -ForegroundColor Yellow }
+  if ($decl -and $decl.yenilemeSonrasiEkran -ceq 'M') { Write-Host '  Owner, kapanıştan sonra yenilemede portal içeriğinin (mesaj sayfası/ana sayfa) hâlâ açık olduğunu beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
+  if ($rc -eq 5 -or $rc -eq 6) {
+    Write-Host '  KAPANIŞ DOĞRULANMADI: Run kendi kapanış adımlarını koşucu İÇİNDE denedi; bu çıkış kodu Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ.' -ForegroundColor Yellow
+    Write-Host '  Önce kanıtı inceleyin (d7-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
+    Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+    Write-Host '  Recover ayrı bir CANLI YAZMA işlemidir (sentetik personeli geçici yeniden aktifleştirme + parola özeti, pasif portal hesabına ölçüm parolası özeti,' -ForegroundColor Yellow
+    Write-Host '  kapatma audit satırı, personel/dosya kapanışı); "BİR KEZ" kuralı kodla ZORLANMAZ — ayrıntı paket belgesi §8.1.' -ForegroundColor Yellow
+  }
   Write-Host "  kanıt dizini: $EvDir"
   Write-Host '  Bu pencereyi ŞİMDİ kapatın (kaydırma arabelleği). GO ref ve parola bildirmeyin. Mesaj satırları kanıt olarak DB''de KALIR.'
   return $rc
@@ -337,6 +364,23 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   if (-not $receiptPath -or -not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) { Fail 'Recover için -ReceiptFile <makbuz yolu> gerekli' }
   $rcpt = Get-Content -Raw -Encoding UTF8 -LiteralPath $receiptPath | ConvertFrom-Json
   if ($rcpt.record -ne 'EXTACC-D7-SETUP-RECEIPT' -or $rcpt.runId -notmatch '^[0-9a-f]{8}$') { Fail 'makbuz biçimi tanınmadı' }
+  # Bilgi metni (yalnız gösterim; soru/akış YOK): Recover'ın canlı yazma kümesi ve yetki kuralı. Blok owner onayını ve "BİR KEZ" kuralını ÖLÇMEZ.
+  Write-Host ''
+  Write-Host "EXTACC D-7 RECOVER BAŞLIYOR (runId=$($rcpt.runId)) — yalnız kapanış; Run'ın koşucu içindeki kendi kapanış adımlarından AYRI bir CANLI YAZMA işlemidir." -ForegroundColor Yellow
+  Write-Host '  Bu Recover, Run kanıtı incelendikten sonra AYRI owner onayıyla başlatılmış olmalıdır; Run çıkış 5/6 tek başına Recover yetkisi DEĞİLDİR.' -ForegroundColor Yellow
+  Write-Host '  Blok bu onayı SORMAZ ve ÖLÇMEZ; "BİR KEZ" kuralı kodla ZORLANMAZ (blok ve koşucu ikinci bir Recover''ı engellemez).' -ForegroundColor Yellow
+  Write-Host '  Recover canlıya şunları YAZAR (koşucu kaynağından okundu; canlıda koşulmadı):'
+  Write-Host '   1) Portal hâlâ açıksa: makbuzdaki sentetik personel GEÇİCİ olarak yeniden aktifleştirilir ve parola özeti yeniden yazılır; o personelle yerel'
+  Write-Host '      API''de oturum açılır ve yetkili uç çağrılır (admin/disable-user, en çok 2 deneme): portal hesabı pasif + sürüm artışı, müvekkil portal'
+  Write-Host '      erişimi kapalı, kapatma audit satırı (aktör: sentetik personel).'
+  Write-Host '   2) Portal DB''de kapalı durumdaysa (1. adımla ya da önceden): pasif portal hesabına YALNIZ ölçüm için yeni rastgele parola özeti yazılır'
+  Write-Host '      (hesap pasif kalır); bu parolayla yerel ve dış adresten giriş DENENİR (401 beklenir).'
+  Write-Host '   3) Personel/dosya kapanışı (closeAccess): iki sentetik tenantın TÜM kullanıcıları pasif + sürüm artışı (her Recover''da yeniden artar),'
+  Write-Host '      açık dosyalar CLOSED. 1. adımda aktifleştirilen personel burada yeniden pasifleştirilir; bu adım doğrulanmazsa personel AKTİF kalmış'
+  Write-Host '      olabilir (çıkış 5; portal da doğrulanmadıysa 6). Tenant kaydı değiştirilmez; mesaj ve bildirim satırları SİLİNMEZ.'
+  Write-Host '   4) Makbuzun yanında yeni bir recover-* kanıt dizini (d7-evidence.json, d7-recover.log, SHA256-MANIFEST.txt). GO defteri değişmez.'
+  Write-Host '  Recover U-ISO ölçmez; portal hesabı varken mevcut oturum reddi Recover''da ÖLÇÜLEMEZ (bu durumda en iyi çıkış 3).'
+  Write-Host '  Kimlik bağı doğrulanmazsa koşucu canlı DB''ye yazmadan durur (çıkış 4).'
   $EvDir = Join-Path (Split-Path -Parent $receiptPath) ("recover-{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), [Guid]::NewGuid().ToString('N').Substring(0, 6))
   New-Item -ItemType Directory -Force -Path $EvDir | Out-Null
   try {
@@ -350,8 +394,12 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   finally { Clear-SecretEnv; Write-Manifest $EvDir }
   $closure = Get-ClosureStatus (Join-Path $EvDir 'd7-evidence.json') $rc
   Write-Host "EXTACC D-7 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 kapanış + HTTP reddi doğrulandı · 3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ (PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
-  if ($closure.keptText) { Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan }
+  if ($closure.keptText) {
+    Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
+    Write-Host '  (kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
+  }
   if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
+  Write-Host '  Bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR: Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT''a bildirilir, tekrar ancak AYRI owner onayıyla.' -ForegroundColor Yellow
   Write-Host "  kanıt dizini: $EvDir"
   return $rc
 }
