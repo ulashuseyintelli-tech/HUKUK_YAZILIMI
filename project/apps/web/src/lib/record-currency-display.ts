@@ -5,7 +5,12 @@
  * çevrilmez. Buradaki yardımcılar yalnız ekranda zaten listelenen kayıtların etiketini ve "tek toplam yazılabilir mi"
  * ayrımını verir; kur, çevirme ya da hukuki hesap YOKTUR. Sayı biçimi çağıranda kalır.
  *
- * Kullanıldığı yer: dosya detayı sayfası "Alacak Kalemleri" / "Ödemeler" bloğu (`app/(dashboard)/cases/[id]/page.tsx`).
+ * Kullanıldığı yer:
+ * - dosya detayı sayfası "Alacak Kalemleri" / "Ödemeler" bloğu (`app/(dashboard)/cases/[id]/page.tsx`)
+ * - OperationDeck "Finans" (tahsilat tutarı / toplamı) ve "Dağıtım & Mutabakat" (dağıtım kaydı tutarı) sekmeleri
+ *   (`components/case-detail/OperationDeck.tsx`, `lib/collection-allocation-hold.ts`)
+ * - yeni alacak kalemi / yeni ödeme formunun dosya para birimi varsayılanı (`components/finance/DueModal.tsx`,
+ *   `components/finance/CollectionModal.tsx`)
  */
 
 /** Para birimi alanı boş gelen kayıt için şema varsayılanı (Due.currency / Collection.currency / Case.currency). */
