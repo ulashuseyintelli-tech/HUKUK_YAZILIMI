@@ -7,9 +7,15 @@
  * "tamamlandi" mesajiyla donuyordu.
  *
  * Bariyer: `prisma.case.findMany` GERCEK delegesi spy'lanir; hedef sorgu GERCEK sonucunu
- * dondurmeden once (guard zaten alinmisken) serbest birakilana kadar bekler. Sabit sleep YOK;
- * "guard alindi" kaniti `isJobCurrentlyRunning` ile, "ikinci cagri bekliyor mu" kaniti tek
- * event-loop yield'i sonrasi settle bayragiyla olculur.
+ * dondurmeden once (guard zaten alinmisken) serbest birakilana kadar bekler. Sabit sleep YOK.
+ * Kanitlar:
+ *  - "guard alindi": `isJobCurrentlyRunning` + bariyer vurusu.
+ *  - "ikinci cagri guard'a ulasti": cron girisi guard'a SENKRON girer (REG-1/REG-3). Manuel giris ise
+ *    once yetki kontrolunun GERCEK DB turunu atar (REG-2); bu yuzden bariyer, manuelin guard'a GIRDIGI
+ *    gozlenmeden birakilmaz — aksi halde global is once bitebilir, manuel bos guard bulur ve cakisma
+ *    hic kurulmamis olur.
+ *  - "ikinci cagri bekliyor (atlanmadi, paralel de kosmuyor)": settle OLMADI + kendi nafaka sorgusunu
+ *    BASLATMADI (`barrier.queried`); oncul bitince sorgunun GERCEKTEN basladigi ayrica dogrulanir.
  */
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
@@ -21,6 +27,7 @@ import { randomUUID } from 'node:crypto';
 
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
 import { PrismaService } from '../../../prisma/prisma.service';
+import * as overlapGuard from '../../../common/scheduler-overlap-guard';
 import { isJobCurrentlyRunning, resetOverlapGuardStateForTests } from '../../../common/scheduler-overlap-guard';
 import { AuditService } from '../../audit/audit.service';
 import { AuthService } from '../../auth/auth.service';
@@ -149,11 +156,15 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
    * Bariyer: `select(where)` ile eslesen ILK nafaka sorgusu, GERCEK sonucunu aldiktan sonra
    * `release` cagrilana kadar donmez. Guard bu noktada zaten tutuluyor (findMany fn icinde).
    * `fail` verilirse hedef sorgu gercek sonuc yerine REDDEDER (hata yolu).
+   * `queried(sel)`: bariyer kuruluyken `sel(where)` ile eslesen bir nafaka sorgusu BASLADI mi?
+   * Job govdesinin guard'i aldiktan sonraki ilk isi bu sorgudur ve kayit sorgu CAGRILDIGI anda
+   * (senkron) dusulur; "ikinci cagri sorgusunu baslatmadi" = guard onu oncul bitene kadar BEKLETIYOR.
    */
   function armBarrier(select: (where: FindManyArgs['where']) => boolean, opts: { fail?: Error } = {}) {
     let release: () => void = () => undefined;
     const held = new Promise<void>((r) => { release = r; });
     let hit = false;
+    const nafakaWheres: FindManyArgs['where'][] = [];
     const delegate = prisma.case;
     const original = delegate.findMany.bind(delegate);
     // Cast: Prisma delegesinin PrismaPromise donus tipi ile jest mockImplementation imzasi uyusmaz;
@@ -162,6 +173,7 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
       const a = (args ?? {}) as FindManyArgs;
       seenWheres.push(a.where);
       const isNafaka = a.where?.subCategory === 'NAFAKA';
+      if (isNafaka) nafakaWheres.push(a.where);
       if (isNafaka && !hit && select(a.where)) {
         hit = true;
         if (opts.fail) { await held; throw opts.fail; }
@@ -171,7 +183,8 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
       }
       return original(args as never);
     }) as never);
-    return { release, spy, wasHit: () => hit };
+    const queried = (sel: (where: FindManyArgs['where']) => boolean) => nafakaWheres.some(sel);
+    return { release, spy, wasHit: () => hit, queried };
   }
 
   const actor = (s: Side) => ({ userId: s.partner.id, tenantId: s.tenantId, role: 'USER' } as never);
@@ -179,6 +192,7 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
   it('REG-1: manuel A guard\'i tutarken gelen GLOBAL cron tick\'i KAYBOLMAZ — bekler, A bitince B\'yi isler; cift etki yok', async () => {
     const A = await seedSide('a'); const B = await seedSide('b');
     const barrier = armBarrier((w) => w?.tenantId === A.tenantId); // manuel A'nin sorgusu
+    const globalStarted = () => barrier.queried((w) => w?.tenantId === undefined); // global (kapsamsiz) sorgu BASLADI mi
     try {
       const manual = scheduler.runManual('nafaka', actor(A));
       await waitUntil(() => barrier.wasHit() && isJobCurrentlyRunning(JOB), 'manuel A guard altinda bariyerde');
@@ -186,6 +200,7 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
       let globalSettledWhileManualHeld = false;
       const global = scheduler.processNafakaPeriods().then((r) => { globalSettledWhileManualHeld = true; return r; }); // cron girisi, kapsamsiz
       await yieldOnce(); await yieldOnce();
+      expect(globalStarted()).toBe(false);      // kendi sorgusunu BASLATMADI → manuel ile paralel kosmuyor, sirasini BEKLIYOR
       expect(await dueCount(B.caseId)).toBe(0); // manuel tutarken B'ye henuz dokunulmadi (her iki kodda)
       const settledWhileHeld = globalSettledWhileManualHeld; // bariyer ACIKKEN ornekle (sonra her zaman true olur)
 
@@ -200,6 +215,7 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
       expect(settledWhileHeld).toBe(false);
       expect((manualRes as { outcome?: string }).outcome).toBe('RAN');
       expect(globalRes).toBe('RAN_AFTER_WAIT'); // global is ATLANMADI, sirasi gelince calisti
+      expect(globalStarted()).toBe(true);       // ... ve o zaman GERCEKTEN sorguladi (yukaridaki "baslatmadi" olcumu kor degil)
     } finally { barrier.spy.mockRestore(); }
 
     expect(await logCount(A.caseId)).toBe(1);   // ayni donem icin CIFT etki YOK (global A'yi tekrar yazmadi)
@@ -210,20 +226,33 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
   it('REG-2 (ters sira): GLOBAL guard\'i tutarken gelen manuel A ATLANMAZ ve "tamamlandi" diye yalan soylemez — bekler, sonra idempotent calisir', async () => {
     const A = await seedSide('a'); const B = await seedSide('b');
     const barrier = armBarrier((w) => w?.tenantId === undefined); // global (kapsamsiz) sorgu
+    const manualStarted = () => barrier.queried((w) => w?.tenantId === A.tenantId); // manuel A'nin sorgusu BASLADI mi
+    // Guard'a GIRIS gozlemi — call-through: GERCEK guard aynen calisir, davranis degismez.
+    const guardEntry = jest.spyOn(overlapGuard, 'runWithOverlapGuard');
+    const jobGuardEntries = () => guardEntry.mock.calls.filter(([jobId]) => jobId === JOB).length;
     try {
       const global = scheduler.processNafakaPeriods();
       await waitUntil(() => barrier.wasHit() && isJobCurrentlyRunning(JOB), 'global guard altinda bariyerde');
 
       let manualSettled = false;
       const manual = scheduler.runManual('nafaka', actor(A)).then((r) => { manualSettled = true; return r; });
-      await yieldOnce(); await yieldOnce();
-      expect(manualSettled).toBe(false); // duzeltme oncesi: aninda "tamamlandi" (SKIPPED gizli)
+      let manualErr: unknown = null; manual.catch((e) => { manualErr = e; });
+      // Manuel cagri guard'a cron girisi gibi SENKRON girmez: once yetki kontrolunun GERCEK DB turunu
+      // atar (isApproverEligible). Bariyer o tur bitmeden birakilirsa global is once biter, manuel BOS
+      // guard bulur ve DOGRU olarak 'RAN' doner — cakisma hic kurulmamis olur (yavas CI'da gorulen
+      // kirmizi). Bu yuzden bariyer, manuelin guard'a girdigi GOZLENMEDEN birakilmaz. Guard sirayi
+      // ilk await'ten once SENKRON aldigindan (ACTIVE_RUNS), giris gozlendiyse cagri kuyruga GIRMISTIR.
+      await waitUntil(() => jobGuardEntries() === 2, 'manuel A guard\'a girdi (global tutarken)',
+        () => `guardGirisi=${jobGuardEntries()} manualSettled=${manualSettled} manualErr=${String((manualErr as Error)?.message ?? manualErr)}`);
+      expect(manualSettled).toBe(false);   // guard'a girdi ama DONMEDI; duzeltme oncesi: aninda "tamamlandi" (SKIPPED gizli)
+      expect(manualStarted()).toBe(false); // kendi sorgusunu da BASLATMADI → global ile paralel kosmuyor, sirasini BEKLIYOR
 
       barrier.release();
       const [globalRes, manualRes] = await Promise.all([global, manual]);
       expect(globalRes).toBe('RAN');
       expect((manualRes as { outcome?: string }).outcome).toBe('RAN_AFTER_WAIT'); // atlanan is "tamamlandi" DEGIL
-    } finally { barrier.spy.mockRestore(); }
+      expect(manualStarted()).toBe(true);  // sirasi gelince GERCEKTEN sorguladi (yukaridaki "baslatmadi" olcumu kor degil)
+    } finally { barrier.spy.mockRestore(); guardEntry.mockRestore(); }
 
     expect(await dueCount(A.caseId)).toBe(1); // global yazdi; manuel A sonra kostu ama TEKRAR YAZMADI
     expect(await dueCount(B.caseId)).toBe(1);
@@ -234,17 +263,20 @@ describeWithDatabase('F02: manual/global cron overlap — real guard, real Postg
   it('REG-3 (hata yolu): oncul manuel calisma HATA ile biterse bekleyen global yine calisir; kuyruk/guard temiz kalir', async () => {
     const A = await seedSide('a'); const B = await seedSide('b');
     const barrier = armBarrier((w) => w?.tenantId === A.tenantId, { fail: new Error('simule DB hatasi') });
+    const globalStarted = () => barrier.queried((w) => w?.tenantId === undefined); // global (kapsamsiz) sorgu BASLADI mi
     try {
       const manual = scheduler.runManual('nafaka', actor(A));
       let manualErr: unknown = null; manual.catch((e) => { manualErr = e; });
       await waitUntil(() => barrier.wasHit() && isJobCurrentlyRunning(JOB), 'manuel A guard altinda (hata enjekte)',
         () => `hit=${barrier.wasHit()} running=${isJobCurrentlyRunning(JOB)} manualErr=${String((manualErr as Error)?.message ?? manualErr)}`);
       const global = scheduler.processNafakaPeriods();
+      expect(globalStarted()).toBe(false); // global KUYRUKTA: oncul bitmeden kendi sorgusunu baslatmadi (paralel degil)
       barrier.release();
       const [manualRes, globalRes] = await Promise.all([manual, global]);
       // Job kendi hatasini raporlar (reportCronError) ve guard'i serbest birakir; bekleyen SIRASINI ALIR.
       expect((manualRes as { outcome?: string }).outcome).toBe('RAN');
       expect(globalRes).toBe('RAN_AFTER_WAIT');
+      expect(globalStarted()).toBe(true);  // ... ve oncul bitince GERCEKTEN sorguladi
     } finally { barrier.spy.mockRestore(); }
 
     expect(errorReports.length).toBeGreaterThanOrEqual(1); // hata GORUNUR, yutulmadi
