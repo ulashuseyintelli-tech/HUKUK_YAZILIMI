@@ -412,7 +412,10 @@ export default function NewCasePage() {
     caseStatus: "DERDEST", hasArticle4Request: false,
     subCategory: "GENEL" as "GENEL" | "NAFAKA" | "DOVIZ" | "CEK" | "SENET" | "FATURA" | "KIRA",
     currency: "TRY" as "TRY" | "USD" | "EUR" | "GBP" | "CHF",
-    interestType: "YASAL", interestDescription: "",
+    // K3-L KP-2 (owner kararı 2026-10-01): yeni dosyada faiz türü KULLANICI seçmeden atanmaz (sessiz YASAL yok). Belge/akış
+    // önerisi ayrı tutulur; kullanıcı seçimi `interestTypeSelected` ile işaretlenir (taslakta ayırt edilir).
+    interestType: "" as "" | "YASAL" | "TICARI" | "SABIT", interestDescription: "",
+    interestTypeSuggestion: "" as "" | "YASAL" | "TICARI" | "SABIT", interestTypeSelected: false,
     nafakaStartDate: "", monthlyNafakaAmount: "",
     exchangeDate: "", exchangeRateType: "ODEME_TARIHI" as "TAKIP_TARIHI" | "ODEME_TARIHI",
     // Yeni lookup alanları
@@ -609,7 +612,16 @@ export default function NewCasePage() {
         setClaimDraftItems(hydrateClaimDraftItemsFromDues(savedState.dues));
       }
       if (savedState.instruments?.length > 0) setInstruments(savedState.instruments); // PR-N4b/S4: taslaktan kambiyo evrakları
-      if (savedState.caseData) setCaseData(prev => ({ ...prev, ...savedState.caseData }));
+      if (savedState.caseData) {
+        const restoredCaseData = { ...savedState.caseData };
+        // K3-L KP-2: kullanıcı seçimi işaretli olmayan (eski) taslaktaki faiz türü varsayılan olabilir — seçim sayılmaz,
+        // öneri olarak gösterilir; kullanıcı yeniden seçer.
+        if (restoredCaseData.interestTypeSelected !== true && restoredCaseData.interestType) {
+          restoredCaseData.interestTypeSuggestion = restoredCaseData.interestTypeSuggestion || restoredCaseData.interestType;
+          restoredCaseData.interestType = "";
+        }
+        setCaseData(prev => ({ ...prev, ...restoredCaseData }));
+      }
       if (savedState.selectedCity) setSelectedCity(savedState.selectedCity);
       if (savedState.documentSource) setDocumentSource(savedState.documentSource);
       if (savedState.showWizard !== undefined) setShowWizard(savedState.showWizard);
@@ -1391,6 +1403,8 @@ export default function NewCasePage() {
     if (currentStep === 0 && selectedForm?.subForms?.length && !selectedSubForm) { setError("Lütfen bir alt form türü seçin"); return; }
     if (currentStep === 1 && !caseData.fileNumber.trim()) { setError("Takip No zorunludur"); return; }
     if (currentStep === 1 && !caseData.takipTuruId) { setError("Takip türü zorunludur"); return; }
+    // K3-L KP-2: dosya faiz türü açıkça seçilmeden ilerlenmez (varsayılan uygulanmaz)
+    if (currentStep === 1 && !caseData.interestType) { setError("Dosya faiz türü seçilmelidir (varsayılan uygulanmaz)"); return; }
     // M2-G3c: Dosya Sorumlusu (gerçek kişi) zorunlu — adım-1 İleri'de de enforce (eskiden yalnız
     // final-submit validateCaseCreation/MISSING_RESPONSIBLE bloklıyordu; * işaretiyle tutarsızdı).
     if (currentStep === 1 && !responsiblePerson) { setError("Dosya Operasyon Sorumlusu seçilmelidir"); return; }
@@ -1591,6 +1605,8 @@ export default function NewCasePage() {
       setShowFormSelectionPicker(true);
       return;
     }
+    // K3-L KP-2: dosya faiz türü açıkça seçilmeden dosya açılmaz (adım atlanmış olsa da)
+    if (!caseData.interestType) { setError("Dosya faiz türü seçilmelidir (varsayılan uygulanmaz)"); setCurrentStep(1); return; }
     setLoading(true);
     
     // Backend'e gönderilecek subCategory değerini hesapla
@@ -1621,7 +1637,7 @@ export default function NewCasePage() {
         executionPath: caseData.executionPath, caseStatus: caseData.caseStatus,
         executionOfficeId: caseData.executionOfficeId || undefined, uyapBirimKodu: caseData.uyapBirimKodu || undefined,
         hasArticle4Request: caseData.hasArticle4Request, subCategory: backendSubCategory, currency: caseData.currency,
-        interestType: caseData.interestType, nafakaStartDate: caseData.nafakaStartDate || undefined,
+        interestType: caseData.interestType || undefined, nafakaStartDate: caseData.nafakaStartDate || undefined,
         monthlyNafakaAmount: caseData.monthlyNafakaAmount ? parseFloat(caseData.monthlyNafakaAmount) : undefined,
         exchangeDate: caseData.exchangeDate || undefined, exchangeRateType: caseData.exchangeRateType,
         // Yeni lookup alanları
@@ -1820,7 +1836,7 @@ export default function NewCasePage() {
               <DocumentSourceSelector onSelect={handleDocumentSourceSelect} onSkip={() => { setShowDocumentSelector(false); setShowWizard(false); }} onPoaScan={handlePoaScan} />
             ) : wizardResult ? (
               <WizardResultCard result={wizardResult} onAccept={() => {
-                setCaseData(prev => ({ ...prev, subCategory: wizardResult.subCategory, currency: wizardResult.currency as any, interestType: wizardResult.interestRateType === "DEGISKEN" ? "YASAL" : "SABIT", interestDescription: wizardResult.interestDescription }));
+                setCaseData(prev => ({ ...prev, subCategory: wizardResult.subCategory, currency: wizardResult.currency as any, interestTypeSuggestion: wizardResult.interestRateType === "DEGISKEN" ? "YASAL" : "SABIT", interestDescription: wizardResult.interestDescription }));
                 setWizardResult(null); if (selectedForm) setCurrentStep(1);
               }} onRestart={() => { setWizardResult(null); setShowWizard(true); }} />
             ) : showWizard && documentSource === "ILAM" ? (
@@ -1855,7 +1871,7 @@ export default function NewCasePage() {
                   ...prev, 
                   subCategory: result.subCategory, 
                   currency: result.currency as any, 
-                  interestType: result.interestRateType === "DEGISKEN" ? "YASAL" : "SABIT", 
+                  interestTypeSuggestion: result.interestRateType === "DEGISKEN" ? "YASAL" : "SABIT", 
                   interestDescription: result.interestDescription,
                   takipTuruId: takipTuru?.id || prev.takipTuruId,
                   mahiyetTipiId: mahiyet?.id || prev.mahiyetTipiId,
@@ -1898,7 +1914,7 @@ export default function NewCasePage() {
                     mahiyetTipiId: mahiyet?.id || prev.mahiyetTipiId,
                     mahiyetKodu: mahiyetCode,
                     subCategory: isCek ? "CEK" : "SENET",
-                    interestType: "TICARI", // Kambiyo için ticari faiz
+                    interestTypeSuggestion: "TICARI", // K3-L KP-2: kambiyo için ÖNERİ (kullanıcı seçer)
                     interestDescription: isCek 
                       ? "Çek bedeline takip tarihinden itibaren ticari faiz işletilmesini talep ederiz."
                       : "Senet bedeline vade tarihinden itibaren ticari faiz işletilmesini talep ederiz.",
@@ -2015,6 +2031,30 @@ export default function NewCasePage() {
               <div><label className="block text-xs font-medium mb-0.5">Takip Tarihi <span className="text-red-500">*</span></label><input type="date" name="startDate" value={caseData.startDate} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary" /></div>
               <div><label className="block text-xs font-medium mb-0.5">Takip Yolu <span className="text-red-500">*</span></label><select name="executionPath" value={caseData.executionPath} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="HACIZ">Haciz</option><option value="IFLAS">İflas</option><option value="REHIN">Rehin</option><option value="IPOTEK">İpotek</option><option value="TAHLIYE">Tahliye</option></select></div>
               <div><label className="block text-xs font-medium mb-0.5">Statü</label><select name="caseStatus" value={caseData.caseStatus} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="DERDEST">Derdest</option><option value="ISLEMDE">İşlemde</option><option value="DERKENAR">Derkenar</option></select></div>
+              {/* K3-L KP-2: dosya faiz türü AÇIK seçim — varsayılan yok; belge/akış önerisi yalnız ipucu */}
+              <div>
+                <label htmlFor="case-interest-type" className="block text-xs font-medium mb-0.5">Dosya Faiz Türü <span className="text-red-500">*</span></label>
+                <select
+                  id="case-interest-type"
+                  data-testid="case-interest-type"
+                  value={caseData.interestType}
+                  onChange={(e) => {
+                    const value = e.target.value as "" | "YASAL" | "TICARI" | "SABIT";
+                    setCaseData(prev => ({ ...prev, interestType: value, interestTypeSelected: value !== "" }));
+                  }}
+                  className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"
+                >
+                  <option value="">Seçiniz</option>
+                  <option value="YASAL">Yasal faiz</option>
+                  <option value="TICARI">Ticari (avans) faiz</option>
+                  <option value="SABIT">Sabit / sözleşme oranı</option>
+                </select>
+                {!caseData.interestType && caseData.interestTypeSuggestion && (
+                  <p data-testid="case-interest-type-suggestion" className="mt-0.5 text-[10px] text-amber-700">
+                    Öneri: {caseData.interestTypeSuggestion === "YASAL" ? "Yasal faiz" : caseData.interestTypeSuggestion === "TICARI" ? "Ticari (avans) faiz" : "Sabit / sözleşme oranı"} — seçiminizi yapın
+                  </p>
+                )}
+              </div>
             </div>
             <div className="p-2 bg-gray-50 rounded-lg">
               <h3 className="text-xs font-semibold mb-2">İcra Dairesi</h3>

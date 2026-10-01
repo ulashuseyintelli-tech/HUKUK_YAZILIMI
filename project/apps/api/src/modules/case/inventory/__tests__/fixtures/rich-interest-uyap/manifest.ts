@@ -174,6 +174,9 @@ function fixture(index: number, description: string, input: FixtureInput): RichI
   } else if (input.caseLegacy) {
     authoritySource = 'CASE_LEGACY_FALLBACK'; authority = input.caseLegacy === 'YASAL' ? 'LEGAL_3095' : 'UNSUPPORTED';
     outcome = start ? 'BUCKET_CREATED' : 'BLOCKED'; if (!start) assemblerDiagnostics.push('MISSING_START_DATE');
+    // K3-L KP-2: dosya düzeyi YASAL'ın kaynağı fikstürde kayıtlı değil (eski dosya) → assembler uyarısı; hesap sürer,
+    // otorite ve sonuç DEĞİŞMEZ.
+    if (input.caseLegacy === 'YASAL') assemblerDiagnostics.push('CASE_INTEREST_TYPE_UNCONFIRMED');
   } else {
     authoritySource = 'ABSENT'; authority = 'ABSENT'; outcome = 'BLOCKED'; assemblerDiagnostics.push('MISSING_INTEREST_CONFIG');
   }

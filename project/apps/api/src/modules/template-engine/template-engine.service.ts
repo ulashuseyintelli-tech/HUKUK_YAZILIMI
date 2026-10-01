@@ -25,6 +25,7 @@ import { FeeEngineService } from '../fee-engine/fee-engine.service';
 import { resolveClientAddress } from '../client/client-address-resolver';
 import type { TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
+import { isExplicitCaseInterestType } from '../../common/case-interest-type-source';
 
 // pdfmake için dinamik import kullanacağız
 let PdfPrinter: any = null;
@@ -690,8 +691,13 @@ export class TemplateEngineService {
   private determineInterestInfo(caseRecord: any): TemplateData['interestInfo'] {
     const currency = caseRecord.currency || 'TRY';
     
-    // 1. Eğer kayıtta açıkça belirtilmişse onu kullan
-    if (caseRecord.interestType && caseRecord.interestType !== 'YASAL') {
+    // 1. Eğer kayıtta açıkça belirtilmişse onu kullan.
+    // K3-L KP-2 / TK-13: açıkça seçilmiş YASAL (açılışta istekte geldi) de "belirtilmemiş" sayılmaz; ticari türle EZİLMEZ.
+    // Kaynağı bilinmeyen eski YASAL'da (varsayılan olabilir) mevcut davranış korunur; uyarı hesap özetinde gösterilir.
+    if (
+      caseRecord.interestType &&
+      (caseRecord.interestType !== 'YASAL' || isExplicitCaseInterestType(caseRecord.metadata))
+    ) {
       const rate = this.feeEngine.getInterestRate(currency, caseRecord.interestType);
       return {
         type: caseRecord.interestType,

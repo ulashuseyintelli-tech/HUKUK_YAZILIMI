@@ -82,6 +82,12 @@ export interface CaseInterestFallback {
    * fallback'inden AYRI: kaynak zaten açıkça seçilmiş provenance, yorum gerektirmez.
    */
   enforcementProceedingDate?: string | null;
+  /**
+   * K3-L KP-2: dosya faiz türünün kaynağı (Case.metadata.interestTypeSource). REQUEST_EXPLICIT = açıkça seçildi;
+   * SYSTEM_DEFAULT = şema varsayılanı; null/undefined = eski dosya, kaynak bilinmiyor. Dosya düzeyine düşen kalemde YASAL
+   * kaynağı açık değilse uyarı üretilir (hesap sürer; tür geçersiz sayılmaz).
+   */
+  interestTypeSource?: 'REQUEST_EXPLICIT' | 'SYSTEM_DEFAULT' | null;
 }
 
 export type AssemblerDiagnosticCode =
@@ -107,7 +113,12 @@ export type AssemblerDiagnosticCode =
   /** K3-L TK-9: anapara NO_INTEREST beyanının gerekçe/onaylayan/zaman denetimi eksik (PR-A0 A2) → çözülemeyen. */
   | 'NO_INTEREST_AUDIT_INCOMPLETE'
   /** K3-L TK-10: politika bekletmeli oluşum kalemi, kendi faiz otoritesi yok (23.7.8) → çözülemeyen. */
-  | 'INTEREST_POLICY_HOLD';
+  | 'INTEREST_POLICY_HOLD'
+  /**
+   * K3-L KP-2: kalem faiz türünü dosya düzeyinden (YASAL) aldı ama dosya türü açıkça seçilmemiş ya da kaynağı
+   * doğrulanamıyor. UYARI — engel değil (hesap sürer; tür geçersiz sayılmaz, değiştirilmez).
+   */
+  | 'CASE_INTEREST_TYPE_UNCONFIRMED';
 
 export interface AssemblerDiagnostic {
   code: AssemblerDiagnosticCode;
@@ -561,6 +572,7 @@ function resolveInterestConfig(
   if (item.interestStartDate != null && ctx.caseInterest?.interestType) {
     const caseCode = resolveCaseCompatibilityType(ctx.caseInterest.interestType, item.id, diagnostics);
     if (!caseCode) return null;
+    noteUnconfirmedCaseInterestType(item, ctx.caseInterest, diagnostics);
     return {
       interestTypeCode: caseCode,
       interestRate: item.interestRate ?? null,
@@ -586,6 +598,7 @@ function resolveInterestConfig(
   if (ctx.caseInterest?.interestType) {
     const caseCode = resolveCaseCompatibilityType(ctx.caseInterest.interestType, item.id, diagnostics);
     if (!caseCode) return null;
+    noteUnconfirmedCaseInterestType(item, ctx.caseInterest, diagnostics);
     return {
       interestTypeCode: caseCode,
       interestRate: null,
@@ -596,6 +609,23 @@ function resolveInterestConfig(
   // 4) Hiçbiri
   diagnostics.push({ code: 'MISSING_INTEREST_CONFIG', claimItemId: item.id });
   return null;
+}
+
+/**
+ * K3-L KP-2: dosya düzeyi YASAL türünün kaynağı açık seçim değilse (varsayılan ya da bilinmiyor) kalem için uyarı yazar.
+ * Hesap sürer; tür geçersiz sayılmaz ve değiştirilmez (owner kararı 2026-10-01).
+ */
+function noteUnconfirmedCaseInterestType(
+  item: ClaimItemInput,
+  caseInterest: CaseInterestFallback,
+  diagnostics: AssemblerDiagnostic[],
+): void {
+  if (caseInterest.interestType !== 'YASAL' || caseInterest.interestTypeSource === 'REQUEST_EXPLICIT') return;
+  diagnostics.push({
+    code: 'CASE_INTEREST_TYPE_UNCONFIRMED',
+    claimItemId: item.id,
+    detail: `caseInterestType=YASAL;source=${caseInterest.interestTypeSource ?? 'UNKNOWN'}`,
+  });
 }
 
 function resolveOwnInterestConfig(

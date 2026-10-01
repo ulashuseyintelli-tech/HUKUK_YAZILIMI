@@ -106,7 +106,12 @@ export type BalanceDisplayDiagnosticCode =
    * K3-L KP-7: borca uygulanmayan ödeme var ve dosyada masraf/fer'i var — kanonik mahsup masraf ve fer'iyi henüz
    * içermediği için (TK-6) bu tutarın bir kısmı kurala göre masraf/fer'iye ait olabilir.
    */
-  | 'UNAPPLIED_MAY_BELONG_TO_COSTS';
+  | 'UNAPPLIED_MAY_BELONG_TO_COSTS'
+  /**
+   * K3-L KP-2: en az bir kalem faiz türünü dosya düzeyinden (YASAL) aldı; dosya türü açıkça seçilmemiş ya da kaynağı
+   * doğrulanamıyor. Hesap sürer (engel değil); tür geçersiz sayılmaz.
+   */
+  | 'CASE_INTEREST_TYPE_UNCONFIRMED';
 
 export interface BalanceDisplayBucket {
   code: BalanceDisplayBucketCode;
@@ -624,6 +629,25 @@ function buildDiagnostics(
           reasonCode: row.reasonCode,
           accruedInterest: null,
         })),
+      },
+    });
+  }
+
+  // K3-L KP-2: dosya düzeyi YASAL türünün kaynağı doğrulanamıyor — görünür uyarı (engel DEĞİL; tür değiştirilmedi)
+  const unconfirmedCaseInterest = (balance.diagnostics?.assembler ?? [])
+    .filter((diagnostic) => diagnostic.code === 'CASE_INTEREST_TYPE_UNCONFIRMED');
+  if (unconfirmedCaseInterest.length > 0) {
+    const source = /source=([A-Z_]+)/.exec(unconfirmedCaseInterest[0].detail ?? '')?.[1] ?? 'UNKNOWN';
+    diagnostics.push({
+      code: 'CASE_INTEREST_TYPE_UNCONFIRMED',
+      severity: 'WARNING',
+      message: source === 'SYSTEM_DEFAULT'
+        ? 'Dosya faiz turu acilista secilmedi; sistem varsayilani (Yasal) uygulandi. Kesin tercih sayilmaz.'
+        : 'Dosya faiz turunun (Yasal) kaynagi dogrulanamadi; eski varsayilan olabilir. Gecersiz sayilmadi ve degistirilmedi.',
+      details: {
+        caseInterestType: 'YASAL',
+        source,
+        claimItemIds: [...new Set(unconfirmedCaseInterest.map((diagnostic) => diagnostic.claimItemId))].sort(),
       },
     });
   }

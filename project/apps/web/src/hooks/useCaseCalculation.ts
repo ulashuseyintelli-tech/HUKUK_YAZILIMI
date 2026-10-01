@@ -62,6 +62,12 @@ export interface CaseCalculationResult {
   hesapTarihi: string;
   takipTarihi: string;
   kalemTuru: string;
+  /** K3-L KP-2: dosya faiz türü ve kaynağı; kaynağı doğrulanamayan YASAL için uyarı (sunucu metni) */
+  dosyaFaizTuru?: {
+    tur: string | null;
+    kaynak: "ACIK_SECIM" | "SISTEM_VARSAYILANI" | "DOGRULANAMADI";
+    uyari: string | null;
+  };
   
   // Tutarlar
   asilAlacak: number;
