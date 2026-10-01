@@ -3290,9 +3290,14 @@ export default function CaseDetailPage() {
                   })),
                 ]}
                 caseCurrency={caseData.currency}
-                uyapQueries={[]}
-                relatedCases={[]}
-                clientBalance={0}
+                // Aşağıdaki dört alan henüz bir veri kaynağına bağlı DEĞİL. Sabit 0 ya da boş liste verilmez:
+                // bağlanmamış alan sıfır / "kayıt yok" değildir — bileşen "henüz bağlanmadı" yazar.
+                // Hangi bakiyenin ve hangi masraf kapsamının gösterileceği seçilmedi (owner kararı 2026-10-01);
+                // kaynak bağlandığında durum (LOADING / ERROR / READY) ve değer buradan verilir.
+                actualExpenseSource="NOT_CONNECTED"
+                clientBalanceSource="NOT_CONNECTED"
+                uyapQueriesSource="NOT_CONNECTED"
+                relatedCasesSource="NOT_CONNECTED"
                 onOpenChat={() => setMessageModalOpen(true)}
                 onAddNote={() => {
                   // Not ekleme modalı açılacak
