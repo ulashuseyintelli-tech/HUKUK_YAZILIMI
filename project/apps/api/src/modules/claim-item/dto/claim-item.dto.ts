@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InterestTypeCode } from '@prisma/client';
+import type { ClaimSummaryCurrencyStatus, ClaimSummaryTotals } from '../claim-summary-currency';
 
 // Alacak Kalemi Türü
 export enum ClaimItemType {
@@ -336,20 +337,13 @@ export interface ClaimSummary {
     amount: number;
     count: number;
   }[];
-  totals: {
-    principal: number;
-    preInterest: number;
-    postInterest: number;
-    totalInterest: number;
-    expense: number;
-    fee: number;
-    attorneyFee: number;
-    penalty: number;
-    tax: number;
-    other: number;
-    grandTotal: number;
-  };
+  totals: ClaimSummaryTotals;
   calculationDate: string;
+  /**
+   * `currency` + `totals` + `items[].amount` etkin kalemleri para birimine bakmadan toplar. Bu blok o tek toplamların
+   * geçerli tek tutar olup olmadığını ve para birimi bazında toplamları bildirir (tutar çevrilmez).
+   */
+  paraBirimiDurumu: ClaimSummaryCurrencyStatus;
 }
 
 // Faiz Hesaplama Sonucu

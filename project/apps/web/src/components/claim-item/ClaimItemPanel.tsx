@@ -42,25 +42,63 @@ interface ClaimItem {
   isCalculated: boolean;
 }
 
+interface ClaimSummaryTotals {
+  principal: number;
+  preInterest: number;
+  postInterest: number;
+  totalInterest: number;
+  expense: number;
+  fee: number;
+  attorneyFee: number;
+  penalty: number;
+  tax: number;
+  other: number;
+  grandTotal: number;
+}
+
+/** Özet toplamlarının para birimi bağlamı — sunucu kararı (API: claim-item/claim-summary-currency.ts). */
+interface ClaimSummaryCurrencyStatus {
+  durum: "KALEM_YOK" | "TEK_PARA_BIRIMI" | "KARMA_PARA_BIRIMI" | "PARA_BIRIMI_EKSIK";
+  /** `currency` + `totals` tek tutar olarak gösterilebilir mi? */
+  toplamGosterilebilir: boolean;
+  gerekce: string | null;
+  mesaj: string | null;
+  alacakParaBirimi: string | null;
+  paraBirimleri: string[];
+  paraBirimiEksikKalemSayisi: number;
+  toplamlarParaBirimiBazinda: { paraBirimi: string; kalemSayisi: number; totals: ClaimSummaryTotals }[];
+}
+
 interface ClaimSummary {
   caseId: string;
   currency: string;
   items: { type: string; label: string; amount: number; count: number }[];
-  totals: {
-    principal: number;
-    preInterest: number;
-    postInterest: number;
-    totalInterest: number;
-    expense: number;
-    fee: number;
-    attorneyFee: number;
-    penalty: number;
-    tax: number;
-    other: number;
-    grandTotal: number;
-  };
+  totals: ClaimSummaryTotals;
   calculationDate: string;
+  /** Eski sunucu yanıtında yoktur; yoksa gösterim aynen sürer. */
+  paraBirimiDurumu?: ClaimSummaryCurrencyStatus;
 }
+
+/** Karma para birimli dosyada tek toplam yerine "gösterilemez" yazılan özet kartları (tek para birimli dosyadaki dört kart). */
+const TOPLAM_KARTLARI: { baslik: string; kutu: string; etiket: string }[] = [
+  { baslik: "Asıl Alacak", kutu: "bg-blue-50 border-blue-200", etiket: "text-blue-700" },
+  { baslik: "Toplam Faiz", kutu: "bg-green-50 border-green-200", etiket: "text-green-700" },
+  { baslik: "Masraf + Harç", kutu: "bg-orange-50 border-orange-200", etiket: "text-orange-700" },
+  { baslik: "Toplam Alacak", kutu: "bg-purple-50 border-purple-200", etiket: "text-purple-700" },
+];
+
+/** Para birimi bazındaki özet satırları (sunucunun kategori toplamları; tutarı 0 olan satır yazılmaz). */
+const PARA_BIRIMI_TOPLAM_SATIRLARI: { alan: keyof ClaimSummaryTotals; etiket: string }[] = [
+  { alan: "principal", etiket: "Asıl Alacak (Ana Para)" },
+  { alan: "preInterest", etiket: "Takip Öncesi Faiz" },
+  { alan: "postInterest", etiket: "Takip Sonrası Faiz" },
+  { alan: "expense", etiket: "Masraflar" },
+  { alan: "fee", etiket: "Harçlar" },
+  { alan: "attorneyFee", etiket: "Vekalet Ücreti" },
+  { alan: "penalty", etiket: "Tazminatlar" },
+  { alan: "tax", etiket: "Vergiler (KDV/BSMV/KKDF)" },
+  { alan: "other", etiket: "Diğer" },
+];
 
 const itemTypeLabels: Record<string, { label: string; icon: any; color: string }> = {
   PRINCIPAL: { label: "Asıl Alacak", icon: DollarSign, color: "text-blue-600 bg-blue-100" },
@@ -236,6 +274,12 @@ export function ClaimItemPanel({
     );
   }
 
+  // Para birimi bağlamı (sunucu kararı; istemci hesabı ve çevirme YOK): etkin kalemler tek para biriminde değilse özetin
+  // tek toplamı geçerli tutar değildir → tek toplam yerine "gösterilemez", toplamlar sunucunun para birimi bazındaki
+  // değerleriyle yazılır. Karar yoksa (eski sunucu yanıtı) ya da toplam gösterilebiliyorsa gösterim aynen sürer.
+  const paraBirimiDurumu = summary?.paraBirimiDurumu;
+  const toplamKisitli = paraBirimiDurumu ? !paraBirimiDurumu.toplamGosterilebilir : false;
+
   return (
     <div className="space-y-6">
       {/* PR-2A1: okuma ve finansal mutation hataları GÖRÜNÜR — tek kopya, ana render
@@ -271,8 +315,33 @@ export function ClaimItemPanel({
         </div>
       ) : null}
 
+      {/* Para birimi bağlamı: tek toplam gösterilmedi (sunucu metni) */}
+      {toplamKisitli && paraBirimiDurumu?.mesaj ? (
+        <div
+          role="status"
+          data-testid="claim-summary-currency-notice"
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          {paraBirimiDurumu.mesaj}
+        </div>
+      ) : null}
+
+      {/* Özet Kartları — tek toplam gösterilemiyorsa tutar yerine "gösterilemez" */}
+      {summary && toplamKisitli && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {TOPLAM_KARTLARI.map((kart) => (
+            <div key={kart.baslik} className={`${kart.kutu} rounded-xl border p-4`}>
+              <p className={`text-sm ${kart.etiket}`}>{kart.baslik}</p>
+              <p data-testid="claim-summary-card-unavailable" className="text-sm font-medium text-gray-500">
+                gösterilemez
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Özet Kartları */}
-      {summary && (
+      {summary && !toplamKisitli && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
             <p className="text-sm text-blue-700">Asıl Alacak</p>
@@ -444,8 +513,40 @@ export function ClaimItemPanel({
       </div>
 
 
+      {/* Detaylı Özet Tablosu — tek toplam gösterilemiyorsa: toplamlar para birimi bazında (sunucu değerleri) */}
+      {summary && toplamKisitli && (
+        <div className="bg-white rounded-xl border p-6" data-testid="claim-summary-by-currency">
+          <h4 className="font-semibold mb-4">Alacak Özeti</h4>
+          <div className="space-y-4">
+            {(paraBirimiDurumu?.toplamlarParaBirimiBazinda ?? []).map((grup) => (
+              <div key={grup.paraBirimi} data-testid={`claim-summary-currency-${grup.paraBirimi}`} className="space-y-2">
+                <p className="text-sm font-semibold text-gray-700">
+                  {grup.paraBirimi} · {grup.kalemSayisi} kalem
+                </p>
+                {PARA_BIRIMI_TOPLAM_SATIRLARI.filter((satir) => grup.totals[satir.alan] > 0).map((satir) => (
+                  <div key={satir.alan} className="flex justify-between py-2 border-b">
+                    <span>{satir.etiket}</span>
+                    <span className="font-medium">{formatCurrency(grup.totals[satir.alan], grup.paraBirimi)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between py-2 font-semibold">
+                  <span>Toplam ({grup.paraBirimi})</span>
+                  <span>{formatCurrency(grup.totals.grandTotal, grup.paraBirimi)}</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-between py-3 bg-primary/10 rounded px-3 mt-2">
+              <span className="font-semibold">TOPLAM ALACAK</span>
+              <span data-testid="claim-summary-grand-total-unavailable" className="font-medium text-gray-500">
+                gösterilemez
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detaylı Özet Tablosu */}
-      {summary && (
+      {summary && !toplamKisitli && (
         <div className="bg-white rounded-xl border p-6">
           <h4 className="font-semibold mb-4">Alacak Özeti</h4>
           <div className="space-y-2">

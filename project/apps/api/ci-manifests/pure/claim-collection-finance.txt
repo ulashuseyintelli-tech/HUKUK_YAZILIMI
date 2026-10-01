@@ -311,3 +311,9 @@ src/modules/case/__tests__/case-classification-consistency.spec.ts
 #   tarifesi orani uygulanarak bulunan alanlar HESAPLANAMADI, farkli para birimlerini tek sayida toplayan alanlar
 #   GOSTERILEMEZ; bilinen tutarlar kendi para birimiyle GECERLI. Dovizli alacakta harc / vekalet ucreti kurali owner karari.
 src/modules/case/__tests__/case-calculation-summary-currency.spec.ts
+# Alacak ozeti (GET /claim-items/case/:caseId/summary) para birimi baglami — saf yardimci + servis (DB yok; cevirme ve capraz
+#   para birimi toplami YOK): etkin kalemler tek para birimindeyse tek toplam gecerli; birden fazla para birimi ya da para
+#   birimi kayitli olmayan kalem varsa tek toplam GOSTERILEMEZ, toplamlar para birimi bazinda. Yanitin mevcut alanlari
+#   (currency / items / totals) DEGISMEZ: her kalem turu icin karakterizasyon duzeltmesiz servis koduyla da gecer; blok
+#   iddialari duzeltmesiz kodla DUSER (RED kanitlandi). Kalem basina para birimi kurali ve kur owner karari.
+src/modules/claim-item/__tests__/claim-summary-currency.spec.ts
