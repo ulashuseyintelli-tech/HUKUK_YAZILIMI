@@ -3,6 +3,14 @@
  * bugün; kullanıcının ya da kaydın verdiği tarih aynen kullanılır. Gün sınırı: TSİ 00:00–02:59 arasında UTC günü bir
  * önceki gündür (önceki davranış).
  */
+// CaseController içe aktarma zinciri (→ ocr.service) `pdf-poppler`'ı yükler; paket Linux'ta yükleme anında
+// process.exit(1) verir (CI emsali: case-delete-hard-guard.spec.ts). Bu test OCR kullanmaz.
+jest.mock('pdf-poppler', () => ({
+  convert: async () => {
+    throw new Error('pdf-poppler is stubbed in unit tests');
+  },
+}));
+
 import { CaseController } from '../case.controller';
 import { ReportService } from '../../report/report.service';
 
