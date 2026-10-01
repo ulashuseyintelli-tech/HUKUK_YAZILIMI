@@ -3273,6 +3273,8 @@ export default function CaseDetailPage() {
                     description: c.description || 'Tahsilat',
                     // K3-L: mahsubu bekletilen tahsilat toplamda AYRI gösterilir (borçtan düşülmedi)
                     allocationHeld: isAllocationHeldCollection(c),
+                    // Tutar tahsilatın KENDİ para birimiyle yazılır; farklı para birimleri tek toplamda birleştirilmez
+                    currency: c.currency,
                   })),
                   // Masraf talepleri (expense three-view'dan)
                   ...expenseThreeViewData.map((item) => ({
@@ -3287,6 +3289,7 @@ export default function CaseDetailPage() {
                     items: item.finance.items,
                   })),
                 ]}
+                caseCurrency={caseData.currency}
                 uyapQueries={[]}
                 relatedCases={[]}
                 clientBalance={0}
@@ -4377,6 +4380,7 @@ export default function CaseDetailPage() {
           caseId={caseData.id}
           due={editingDue}
           onSuccess={refreshCollectionDependentViews}
+          defaultCurrency={caseData.currency}
         />
       )}
 
@@ -4389,6 +4393,7 @@ export default function CaseDetailPage() {
           collection={editingCollection}
           onSuccess={refreshCollectionDependentViews}
           debtors={caseData.debtors || []}
+          defaultCurrency={caseData.currency}
         />
       )}
 

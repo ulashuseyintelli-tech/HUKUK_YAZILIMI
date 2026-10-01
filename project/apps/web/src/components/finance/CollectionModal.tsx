@@ -6,6 +6,7 @@ import { X, Loader2, XCircle, Eye } from "lucide-react";
 import { api, type PaymentPreviewResponseDTO } from "@/lib/api";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { turkeyToday } from "@/lib/turkey-calendar";
+import { recordCurrencyCode } from "@/lib/record-currency-display";
 
 const COLLECTION_TYPES = [
   { value: "TAHSILAT", label: "Tahsilat" },
@@ -75,12 +76,20 @@ interface CollectionModalProps {
   collection?: any;
   onSuccess: () => void;
   debtors?: CollectionModalDebtorOption[];
+  /** Dosyanın para birimi: YENİ tahsilatta seçimin varsayılanı (kilit değil; düzenlemede kaydın kendi değeri geçerlidir) */
+  defaultCurrency?: string | null;
 }
 
 /** İleten icra dairesi yalnız icra dairesi / haciz kanalından gelen tahsilatta anlamlıdır. */
 const isForwardingOfficeChannel = (channel: string) => channel === "ICRA_DAIRESI" || channel === "HACIZ";
 
-export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess, debtors = [] }: CollectionModalProps) {
+/** Para birimi seçim alanında sabit duran seçenekler */
+const LISTED_CURRENCIES = ["TRY", "USD", "EUR", "GBP"];
+
+export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess, debtors = [], defaultCurrency }: CollectionModalProps) {
+  // Tahsilat para birimi dosya para birimine eşit olmalıdır (RCV-COL-CURRENCY-BOUNDARY-01; sunucu aksi halde 400 döner):
+  // yeni tahsilat dosyanın para birimiyle açılır. Alan boşsa şema varsayılanı (TRY) — eski çağrı önceki gibi davranır.
+  const newCollectionCurrency = recordCurrencyCode(defaultCurrency);
   // K3-L (owner kararı 2026-09-29): tahsilat yalnız HESABINA ödeme yapılan borçlunun sorumlu olduğu kalemlere mahsup
   // edilir. Parayı gönderen kişi ve ileten icra dairesi bu seçimle aynı şey DEĞİLDİR. Seçim yoksa tahsilat yine
   // kaydedilir; yalnız bazı borçlulara ait kalemi olan dosyada mahsup bekletilir.
@@ -105,7 +114,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     amount: "",
     // K3-L KP-11: varsayılan gün Türkiye takvimine göre bugün (önizlemenin hesap tarihi de budur)
     date: turkeyToday(),
-    currency: "TRY",
+    currency: newCollectionCurrency,
   });
 
   useEffect(() => {
@@ -127,10 +136,10 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
         description: "",
         amount: "",
         date: turkeyToday(),
-        currency: "TRY",
+        currency: newCollectionCurrency,
       });
     }
-  }, [collection, isOpen]);
+  }, [collection, isOpen, newCollectionCurrency]);
 
   useEffect(() => {
     setPreviewResult(null);
@@ -152,6 +161,12 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
       setIdempotencyKey(newIdempotencyKey());
     }
   }, [isOpen, collection?.id]);
+
+  // Dosyanın / kaydın para birimi sabit listede yoksa (ör. CHF) seçim alanına eklenir: alan ilk seçeneği gösterirken
+  // form başka bir para birimi göndermesin, kullanıcı dosya para birimine geri dönebilsin.
+  const unlistedCurrencies = Array.from(new Set([newCollectionCurrency, collection?.currency, form.currency])).filter(
+    (code): code is string => typeof code === "string" && code !== "" && !LISTED_CURRENCIES.includes(code),
+  );
 
   const collectionStatus = String(collection?.status || "").toUpperCase();
   const dispositionStatus = String(
@@ -388,6 +403,9 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                 <option value="USD">$ USD</option>
                 <option value="EUR">€ EUR</option>
                 <option value="GBP">£ GBP</option>
+                {unlistedCurrencies.map((code) => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
               </select>
             </div>
           </div>
