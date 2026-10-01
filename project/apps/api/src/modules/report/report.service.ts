@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CollectionService } from "../collection/collection.service";
 import { readActiveAllocationHoldSummary } from "../collection/collection-allocation-hold";
+import { turkeyTodayAsUtcMidnight } from '../../common/turkey-calendar';
 import { ValidationGateService } from "../validation-gate/validation-gate.service"; // D4e-8: pre-haciz risk teşhisi
 import { formatLawyer, formatStaff } from "../case/responsible-candidates.service"; // M2-G5b: tek-kaynak kişi display
 import {
@@ -643,7 +644,8 @@ export class ReportService {
   /// - ReportController.getCaseDebtReport() → GET /reports/case-debt/:caseId (dosya borç raporu)
   /// </remarks>
   async getCaseDebtReport(tenantId: string, caseId: string, calculationDate?: string): Promise<CaseDebtReportResult> {
-    const calcDate = calculationDate ? new Date(calculationDate) : new Date();
+    // K3-L KP-11: hesap tarihi verilmezse Türkiye takvimine göre bugün (önceden anlık UTC zaman damgası)
+    const calcDate = calculationDate ? new Date(calculationDate) : turkeyTodayAsUtcMidnight();
 
     // Dosya bilgilerini al
     const caseData = await this.prisma.case.findFirst({
@@ -781,7 +783,8 @@ export class ReportService {
     const interestStartDate = startDate 
       ? new Date(startDate) 
       : (caseData.interestStartDate || caseData.caseDate || new Date());
-    const interestEndDate = endDate ? new Date(endDate) : new Date();
+    // K3-L KP-11: bitiş (hesap) tarihi verilmezse Türkiye takvimine göre bugün
+    const interestEndDate = endDate ? new Date(endDate) : turkeyTodayAsUtcMidnight();
 
     // Gün sayısı
     const totalDays = Math.max(0, Math.floor(

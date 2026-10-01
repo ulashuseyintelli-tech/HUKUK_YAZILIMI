@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { BalanceDisplayShadowDiffService } from './balance-display-shadow-diff.service';
 import type { BalanceDisplayShadowDiffReport } from './balance-display-shadow-diff.types';
+import { turkeyToday } from '../../common/turkey-calendar';
 
 @Controller('interest-engine')
 export class BalanceDisplayShadowDiffController {
@@ -28,8 +29,10 @@ export class BalanceDisplayShadowDiffController {
     @Query('asOfDate') asOfDate?: string,
     @Query('date') date?: string,
   ): Promise<BalanceDisplayShadowDiffReport> {
-    const generatedAt = new Date().toISOString();
-    const effectiveDate = asOfDate ?? date ?? generatedAt.slice(0, 10);
+    const now = new Date();
+    const generatedAt = now.toISOString();
+    // K3-L KP-11: varsayılan hesap tarihi Türkiye takvimine göre bugün (generatedAt'in UTC günü değil)
+    const effectiveDate = asOfDate ?? date ?? turkeyToday(now);
     return this.shadowDiff.compare(tenantId, caseId, effectiveDate, generatedAt);
   }
 }
