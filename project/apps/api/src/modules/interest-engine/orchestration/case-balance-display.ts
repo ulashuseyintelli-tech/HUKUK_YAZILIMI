@@ -433,8 +433,10 @@ function buildDiagnostics(
     [
       'INTEREST_UNRESOLVED',
       'UNRESOLVED',
-      // K3-L TK-2: oran verisi faiz donemini kapsamayan anapara da bu tanıya düşer (reasonCode RATE_COVERAGE_MISSING)
-      'Faiz ayari veya oran verisi cozulemeyen anapara var; faizi sifir SAYILMADI ve bu para biriminde kismi bakiye uretilmedi.',
+      // K3-L TK-2: oran verisi faiz donemini kapsamayan anapara da bu tanıya düşer (reasonCode RATE_COVERAGE_MISSING).
+      // K3-L TK-9/TK-10: denetimi eksik faizsizlik beyanı (NO_INTEREST_AUDIT_INCOMPLETE) ve politika bekletmeli
+      // oluşum kalemi (INTEREST_POLICY_HOLD) de bu tanıya düşer; gözlemdeki reasonCode nedeni ayırır.
+      'Faiz ayari, oran verisi, faizsizlik denetimi veya politika bekletmesi nedeniyle faizi cozulemeyen anapara var; faizi sifir SAYILMADI ve bu para biriminde kismi bakiye uretilmedi.',
     ],
     [
       'NON_ACCRUING_NOT_SIMULATED',

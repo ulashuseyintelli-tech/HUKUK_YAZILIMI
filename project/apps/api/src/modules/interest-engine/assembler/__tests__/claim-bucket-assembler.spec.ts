@@ -17,10 +17,23 @@ function item(p: Partial<ClaimItemInput> & { id: string; itemType: string }): Cl
   };
 }
 
+/**
+ * K3-L TK-9: geçerli açık faizsizlik beyanı PR-A0 A2 gereği aktör/gerekçe/zaman denetimini taşır. Açık NO_INTEREST
+ * yolunu (NON_ACCRUING) sınayan kurgular bu alanları taşır; eksik denetim ayrı testte (TK-9 bloğu).
+ */
+const NO_INTEREST_AUDIT = {
+  noInterestReason: 'Sözleşmede faiz kararlaştırılmadı',
+  noInterestConfirmedById: 'user-1',
+  noInterestConfirmedAt: '2026-07-10T09:00:00.000Z',
+} as const;
+
 describe('K3-L D2-b1: kovası üretilmeyen principal principalCarry ile taşınır (sessiz düşme yok)', () => {
   it('açık NO_INTEREST → NON_ACCRUING; faiz türü alanı taşınmaz; kova ve tanılar DEĞİŞMEZ', () => {
     const res = assembleClaimBuckets([
-      item({ id: 'p1', itemType: 'PRINCIPAL', amount: 5000, demandedAmount: 4000, interestAccrualStatus: 'NO_INTEREST' }),
+      item({
+        id: 'p1', itemType: 'PRINCIPAL', amount: 5000, demandedAmount: 4000, interestAccrualStatus: 'NO_INTEREST',
+        ...NO_INTEREST_AUDIT,
+      }),
     ]);
     expect(res.buckets).toEqual([]);
     expect(res.diagnostics).toEqual([]);
@@ -87,6 +100,112 @@ describe('K3-L D2-b1: kovası üretilmeyen principal principalCarry ile taşın�
     ]);
     expect(res.buckets).toHaveLength(1);
     expect(res.principalCarry).toEqual([]);
+  });
+});
+
+describe('K3-L TK-9: denetimi eksik ya da çelişkili faizsizlik beyanı bilinen sıfır sayılmaz (PR-A0 A2, PR-A5)', () => {
+  it.each([
+    [{ noInterestConfirmedById: 'user-1', noInterestConfirmedAt: '2026-07-10T09:00:00.000Z' }, 'noInterestReason'],
+    [{ noInterestReason: 'Faizsiz', noInterestConfirmedAt: '2026-07-10T09:00:00.000Z' }, 'noInterestConfirmedById'],
+    [{ noInterestReason: 'Faizsiz', noInterestConfirmedById: 'user-1' }, 'noInterestConfirmedAt'],
+    [{}, 'noInterestReason,noInterestConfirmedById,noInterestConfirmedAt'],
+    [{ noInterestReason: '   ', noInterestConfirmedById: 'user-1', noInterestConfirmedAt: '2026-07-10T09:00:00.000Z' }, 'noInterestReason'],
+  ])('denetim eksik (%j) → UNRESOLVED / NO_INTEREST_AUDIT_INCOMPLETE (missing=%s); dosya yedeğine de düşmez', (audit, missing) => {
+    const res = assembleClaimBuckets(
+      [item({ id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'NO_INTEREST', ...audit })],
+      { interestType: 'YASAL', interestStartDate: '2025-01-01' },
+    );
+    expect(res.buckets).toEqual([]);
+    expect(res.diagnostics).toEqual([
+      { code: 'NO_INTEREST_AUDIT_INCOMPLETE', claimItemId: 'p1', detail: `missing=${missing}` },
+    ]);
+    expect(res.principalCarry).toEqual([
+      { claimItemId: 'p1', amount: 1000, currency: 'TRY', kind: 'UNRESOLVED', reasonCode: 'NO_INTEREST_AUDIT_INCOMPLETE' },
+    ]);
+  });
+
+  it.each([
+    [{ interestRate: 36.5 }, 'interestRate'],
+    [{ interestRate: 0 }, 'interestRate'],
+    [{ interestStartDate: '2025-01-01' }, 'interestStartDate'],
+    [{ interestStartDateProvenance: 'DOCUMENT_DUE_DATE' }, 'interestStartDateProvenance'],
+  ])('yazma sözleşmesine aykırı alan (%j) → UNRESOLVED / NO_INTEREST_AUTHORITY_CONFLICT (fields=%s)', (extra, fields) => {
+    const res = assembleClaimBuckets([
+      item({ id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'NO_INTEREST', ...NO_INTEREST_AUDIT, ...extra }),
+    ]);
+    expect(res.buckets).toEqual([]);
+    expect(res.diagnostics).toEqual([
+      { code: 'NO_INTEREST_AUTHORITY_CONFLICT', claimItemId: 'p1', detail: `fields=${fields}` },
+    ]);
+    expect(res.principalCarry).toEqual([
+      { claimItemId: 'p1', amount: 1000, currency: 'TRY', kind: 'UNRESOLVED', reasonCode: 'NO_INTEREST_AUTHORITY_CONFLICT' },
+    ]);
+  });
+
+  it('çelişki ve eksik denetim birlikte → neden çelişki (önce); iki tanı da raporlanır', () => {
+    const res = assembleClaimBuckets([
+      item({ id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'NO_INTEREST', interestType: 'YASAL' }),
+    ]);
+    expect(res.diagnostics.map((d) => d.code)).toEqual(['NO_INTEREST_AUTHORITY_CONFLICT', 'NO_INTEREST_AUDIT_INCOMPLETE']);
+    expect(res.principalCarry[0]).toMatchObject({ kind: 'UNRESOLVED', reasonCode: 'NO_INTEREST_AUTHORITY_CONFLICT' });
+  });
+});
+
+describe('K3-L TK-10: politika bekletmeli oluşum kalemi kendi faiz otoritesi olmadan faiz almaz, faizsiz de sayılmaz (23.7.8)', () => {
+  const caseYasal = { interestType: 'YASAL', interestStartDate: '2025-01-01' };
+
+  it('kademe 3 (dosya YASAL + dosya faiz başlangıcı) bekletmeli kaleme BAĞLANMAZ → UNRESOLVED / INTEREST_POLICY_HOLD', () => {
+    const held = assembleClaimBuckets(
+      [item({ id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'UNKNOWN', interestPolicyHold: true })],
+      caseYasal,
+    );
+    expect(held.buckets).toEqual([]);
+    expect(held.diagnostics).toEqual([
+      { code: 'INTEREST_POLICY_HOLD', claimItemId: 'p1', detail: 'admissionResult=ALLOWED_WITH_POLICY_HOLD' },
+    ]);
+    expect(held.principalCarry).toEqual([
+      { claimItemId: 'p1', amount: 1000, currency: 'TRY', kind: 'UNRESOLVED', reasonCode: 'INTEREST_POLICY_HOLD' },
+    ]);
+
+    // Bekletmesiz aynı kalem bugünkü gibi dosya düzeyi faizle kova alır (davranış yalnız bekletmede değişir)
+    const free = assembleClaimBuckets([item({ id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'UNKNOWN' })], caseYasal);
+    expect(free.buckets.map((b) => [b.id, b.interestType])).toEqual([['p1', InterestTypeCode.LEGAL_3095]]);
+  });
+
+  it('kademe 2 (tek faiz ayar kalemi) ve kademe 1.5 (kalem tarihi + dosya türü) da bağlanmaz', () => {
+    const tier2 = assembleClaimBuckets([
+      item({ id: 'p1', itemType: 'PRINCIPAL', interestPolicyHold: true }),
+      item({ id: 'i1', itemType: 'INTEREST', interestType: 'YASAL', interestStartDate: '2025-01-01' }),
+    ]);
+    expect(tier2.buckets).toEqual([]);
+    expect(tier2.principalCarry).toEqual([expect.objectContaining({ claimItemId: 'p1', reasonCode: 'INTEREST_POLICY_HOLD' })]);
+
+    const tier15 = assembleClaimBuckets(
+      [item({ id: 'p1', itemType: 'PRINCIPAL', interestPolicyHold: true, interestStartDate: '2025-03-01' })],
+      caseYasal,
+    );
+    expect(tier15.buckets).toEqual([]);
+    expect(tier15.principalCarry).toEqual([expect.objectContaining({ claimItemId: 'p1', reasonCode: 'INTEREST_POLICY_HOLD' })]);
+  });
+
+  it('ayrı onaylı güncellemeyle kalemin KENDİ faiz ayarı geldiyse bekletme engel değildir → kova', () => {
+    const res = assembleClaimBuckets([
+      item({
+        id: 'p1', itemType: 'PRINCIPAL', interestPolicyHold: true, interestAccrualStatus: 'ACCRUES',
+        interestTypeCode: InterestTypeCode.LEGAL_3095, interestStartDate: '2025-02-01',
+      }),
+    ], caseYasal);
+    expect(res.buckets.map((b) => [b.id, b.startDate])).toEqual([['p1', '2025-02-01']]);
+    expect(res.principalCarry).toEqual([]);
+  });
+
+  it('ayrı onaylı güncellemeyle denetimi tam açık faizsizlik geldiyse → NON_ACCRUING', () => {
+    const res = assembleClaimBuckets([
+      item({ id: 'p1', itemType: 'PRINCIPAL', interestPolicyHold: true, interestAccrualStatus: 'NO_INTEREST', ...NO_INTEREST_AUDIT }),
+    ], caseYasal);
+    expect(res.principalCarry).toEqual([
+      { claimItemId: 'p1', amount: 1000, currency: 'TRY', kind: 'NON_ACCRUING', reasonCode: 'NO_INTEREST_DECLARED' },
+    ]);
   });
 });
 
@@ -505,10 +624,14 @@ describe('claim-bucket-assembler (G4a)', () => {
       expect(res.diagnostics).toContainEqual(expect.objectContaining({ code: 'FIXED_RATE_REQUIRED', claimItemId: 'p1' }));
     });
 
+    // K3-L TK-9: çelişki tanımı yazma sözleşmesiyle (validateInterestAccrualState) hizalı — başlangıç tarihi de çelişki alanı
     it.each([
-      [{ interestTypeCode: InterestTypeCode.LEGAL_3095 }, 'interestTypeCode'],
-      [{ interestType: 'YASAL' }, 'interestType'],
-      [{ interestTypeCode: InterestTypeCode.LEGAL_3095, interestType: 'YASAL' }, 'interestTypeCode,interestType'],
+      [{ interestTypeCode: InterestTypeCode.LEGAL_3095 }, 'interestTypeCode,interestStartDate'],
+      [{ interestType: 'YASAL' }, 'interestType,interestStartDate'],
+      [
+        { interestTypeCode: InterestTypeCode.LEGAL_3095, interestType: 'YASAL' },
+        'interestTypeCode,interestType,interestStartDate',
+      ],
     ] as const)('NO_INTEREST %j alanını bastırır ve %s diagnostic detayı üretir', (authority, fields) => {
       const res = assembleClaimBuckets([
         item({
@@ -573,6 +696,8 @@ describe('claim-bucket-assembler (G4a)', () => {
         item({
           id: 'p1', itemType: 'PRINCIPAL', interestAccrualStatus: 'NO_INTEREST',
           // interestType/interestStartDate boş olsa BİLE case-level fallback'e düşmemeli.
+          // K3-L TK-9: "bilinçli" = PR-A0 A2 denetimi tam (eksik denetim ayrı testte)
+          ...NO_INTEREST_AUDIT,
         }),
       ], { interestType: 'YASAL', interestStartDate: '2025-01-01' });
       expect(res.buckets).toHaveLength(0);
