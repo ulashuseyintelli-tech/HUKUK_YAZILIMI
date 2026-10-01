@@ -196,3 +196,15 @@ src/modules/case/__tests__/case-calculation-summary-currency.http.db-gated.integ
 #   dosyanin talebi ve gecmis talepler DEGISMEZ. Duzeltmesiz servis koduyla 14 testin 12'si DUSER, TL dosyanin yazma ve
 #   tekrar deneme testleri GECER (RED kanitlandi: USD dosyada 1.431,10 TL talep + gunluk kaydi yaziliyor).
 src/modules/expense-request/__tests__/opening-expense-fx-basis.http.db-gated.integration.spec.ts
+
+# Alacak ozeti para birimi baglami (GET /claim-items/case/:caseId/summary), GERCEK HTTP + disposable PostgreSQL. Olculen
+#   kusur (main 6917e8aa): ozet etkin kalem tutarlarini para birimine bakmadan topluyor ve yaniti SON kalemin para birimiyle
+#   etiketliyordu; 10.000 USD + 5.000 EUR + 2.000 TRY anaparali dosyada totals.principal / grandTotal 17.000, currency kalem
+#   sirasina gore "TRY" ya da "EUR"; "Alacak Kalemleri (Kanonik)" paneli bunu TL simgesiyle 17.000,00 yaziyordu. Politika
+#   gerektirmeyen kisim: yanitin mevcut alanlari DEGISMEZ, tutar CEVRILMEZ; eklemeli `paraBirimiDurumu` blogu tek toplamin
+#   gecerli olup olmadigini ve para birimi bazinda toplamlari bildirir (tek para birimli TL / dovizli dosyada tek satir
+#   `totals` ile ayni; karma dosyada tek toplam GOSTERILEMEZ; yalniz ETKIN kalemler; baska buro goremez; ozet salt okuma,
+#   gecmis kayit DUZELTILMEZ). Kalem basina farkli para birimine izin verilip verilmeyecegi ve kur owner karari — "mevcut
+#   alanlar 17.000 dondurmeyi surdurur" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 10 testin 10'u
+#   DUSER (RED kanitlandi; her testte mevcut alan iddialari duzeltmesiz kodla gecer).
+src/modules/claim-item/__tests__/claim-summary-currency.http.db-gated.integration.spec.ts
