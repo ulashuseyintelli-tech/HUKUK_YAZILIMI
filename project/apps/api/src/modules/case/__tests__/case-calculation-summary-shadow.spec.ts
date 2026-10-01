@@ -257,6 +257,8 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       'kalemTuru',
       // K3-L KP-2 (owner kararı 2026-10-01): eklemeli — dosya faiz türü ve kaynağı
       'dosyaFaizTuru',
+      // Eklemeli — tutarların para birimi ve geçerliliği (dövizli / karma dosyada tek toplam gösterilemez)
+      'paraBirimiDurumu',
       'asilAlacak',
       'tazminat',
       // K3-L (owner kararı 2026-09-28): eklemeli alan — kalem bazlı sorumlular + durum + ayrı bilgi tahmini.
@@ -643,5 +645,115 @@ describe('K3-L KP-2: legacy hesap özeti — dosya faiz türü ve kaynağı (ekl
 
     expect(explicit.dosyaFaizTuru).toEqual({ tur: 'YASAL', kaynak: 'ACIK_SECIM', uyari: null });
     expect(ticari.dosyaFaizTuru).toEqual({ tur: 'TICARI', kaynak: 'DOGRULANAMADI', uyari: null });
+  });
+});
+
+describe('Legacy hesap özeti — para birimi bağlamı (eklemeli bilgi; mevcut alanların değeri değişmez, tutar çevrilmez)', () => {
+  const NUMERIC_FIELDS = [
+    'asilAlacak', 'tazminat', 'komisyon', 'takipOncesiFaiz', 'takipTutari',
+    'basvurmaHarci', 'vekaletHarci', 'pesinHarc', 'dosyaGideri', 'tebligatGideri', 'vekaletPulu', 'icraMasraflari',
+    'pesinHarcDahilTahsilHarci', 'pesinHarcHaricTahsilHarci', 'vekaletUcreti', 'takipSonrasiFaiz',
+    'toplamBorc', 'sonBorc', 'toplamTahsilat', 'kalanBorc', 'kalanAnapara',
+  ] as const;
+  const numbersOf = (result: Record<string, any>) => Object.fromEntries(NUMERIC_FIELDS.map((field) => [field, result[field]]));
+  const summaryOf = (overrides: Record<string, any>) =>
+    makeService(makePrisma(overrides), makeCanonical()).getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+
+  it('TL dosya: tek toplam gösterilebilir, bütün alanlar TRY', async () => {
+    const result = await summaryOf({ dues: [{ id: 'due-1', type: 'PRINCIPAL', amount: 1000, currency: 'TRY' }] });
+
+    expect(result.paraBirimiDurumu).toMatchObject({
+      dosyaParaBirimi: 'TRY',
+      durum: 'TEK_PARA_BIRIMI_TL',
+      toplamGosterilebilir: true,
+      gerekce: null,
+      mesaj: null,
+      asilAlacakParaBirimiBazinda: [{ paraBirimi: 'TRY', tutar: 1000 }],
+    });
+    expect(Object.values(result.paraBirimiDurumu.alanlar).every((alan: any) => alan.durum === 'GECERLI' && alan.paraBirimi === 'TRY')).toBe(true);
+  });
+
+  it('dövizli dosya: sayılar TL dosyayla AYNI kalır (legacy değişmedi) ama oranlı kalemler ve toplam geçerli sayılmaz', async () => {
+    const tl = await summaryOf({ dues: [{ id: 'due-1', type: 'PRINCIPAL', amount: 10_000, currency: 'TRY' }] });
+    const usd = await summaryOf({
+      currency: 'USD',
+      dues: [{ id: 'due-1', type: 'PRINCIPAL', amount: 10_000, currency: 'USD' }],
+      collections: [{ id: 'c1', status: 'CONFIRMED', amount: 1_000, currency: 'USD', date: new Date('2026-06-01T00:00:00.000Z') }],
+    });
+
+    // Mevcut alanların anlamı sessizce değiştirilmedi: tahsilat dışındaki sayılar birebir aynı
+    expect({ ...numbersOf(usd), toplamTahsilat: 0, kalanBorc: usd.sonBorc }).toEqual(numbersOf(tl));
+    expect(usd.vekaletUcreti).toBe(9000); // 10.000 USD'ye TL asgari ücreti — geçerli olmadığı aşağıda bildirilir
+
+    expect(usd.paraBirimiDurumu).toMatchObject({
+      dosyaParaBirimi: 'USD',
+      durum: 'TEK_PARA_BIRIMI_DOVIZ',
+      toplamGosterilebilir: false,
+      gerekce: 'DOVIZ_ALACAK_ILE_TL_TARIFE_TEK_TOPLAMDA_BIRLESTIRILEMEZ',
+      alacakParaBirimi: 'USD',
+      asilAlacakParaBirimiBazinda: [{ paraBirimi: 'USD', tutar: 10_000 }],
+      tahsilatParaBirimiBazinda: [{ paraBirimi: 'USD', tutar: 1_000 }],
+    });
+    const alanlar = usd.paraBirimiDurumu.alanlar;
+    expect(alanlar.asilAlacak).toEqual({ paraBirimi: 'USD', durum: 'GECERLI' });
+    expect(alanlar.toplamTahsilat).toEqual({ paraBirimi: 'USD', durum: 'GECERLI' });
+    expect(alanlar.basvurmaHarci).toEqual({ paraBirimi: 'TRY', durum: 'GECERLI' });
+    for (const field of ['pesinHarc', 'icraMasraflari', 'pesinHarcDahilTahsilHarci', 'pesinHarcHaricTahsilHarci', 'vekaletUcreti'] as const) {
+      expect(alanlar[field]).toEqual({ paraBirimi: null, durum: 'HESAPLANAMADI' });
+    }
+    for (const field of ['toplamBorc', 'sonBorc', 'kalanBorc', 'tahsilOranlari'] as const) {
+      expect(alanlar[field]).toEqual({ paraBirimi: null, durum: 'GOSTERILEMEZ' });
+    }
+  });
+
+  it('karma anapara: legacy asilAlacak tek sayıdır (değişmedi); blok tutarları para birimi bazında ayırır', async () => {
+    const result = await summaryOf({
+      currency: 'USD',
+      dues: [
+        { id: 'due-1', type: 'PRINCIPAL', amount: 10_000, currency: 'USD' },
+        { id: 'due-2', type: 'PRINCIPAL', amount: 5_000, currency: 'EUR' },
+        { id: 'due-3', type: 'PRINCIPAL', amount: 2_000, currency: 'TRY' },
+        { id: 'due-4', type: 'EXPENSE', amount: 999, currency: 'GBP' }, // özet masraf kalemini okumaz → para birimi kümesine girmez
+      ],
+    });
+
+    expect(result.asilAlacak).toBe(17_000);
+    expect(result.paraBirimiDurumu).toMatchObject({
+      durum: 'KARMA_PARA_BIRIMI',
+      gerekce: 'FARKLI_PARA_BIRIMLERI_TEK_TOPLAMDA_BIRLESTIRILEMEZ',
+      alacakParaBirimi: null,
+      asilAlacakParaBirimiBazinda: [
+        { paraBirimi: 'EUR', tutar: 5_000 },
+        { paraBirimi: 'TRY', tutar: 2_000 },
+        { paraBirimi: 'USD', tutar: 10_000 },
+      ],
+    });
+    expect(result.paraBirimiDurumu.alanlar.asilAlacak).toEqual({ paraBirimi: null, durum: 'GOSTERILEMEZ' });
+  });
+
+  it('anapara kalemi yoksa dosya anaparası dosya para biriminde sayılır; mahsubu bekletilen tahsilat ayrı kümededir', async () => {
+    const prisma = makePrisma({
+      currency: 'EUR',
+      dues: [],
+      principalAmount: 500,
+      collections: [
+        { id: 'c1', status: 'CONFIRMED', amount: 100, currency: 'EUR', date: new Date('2026-06-01T00:00:00.000Z') },
+        { id: 'c2', status: 'CONFIRMED', amount: 40, currency: 'EUR', date: new Date('2026-06-02T00:00:00.000Z') },
+      ],
+    });
+    prisma.collectionAllocationHold.findMany.mockResolvedValue([
+      { id: 'h1', collectionId: 'c2', amount: 40, currency: 'EUR', holdReason: 'DEBTOR_UNRESOLVED', createdAt: new Date() },
+    ]);
+    const result = await makeService(prisma, makeCanonical()).getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
+
+    expect(result.asilAlacak).toBe(500);
+    expect(result.toplamTahsilat).toBe(100);
+    expect(result.mahsubuBekleyenTahsilat).toBe(40);
+    expect(result.paraBirimiDurumu).toMatchObject({
+      durum: 'TEK_PARA_BIRIMI_DOVIZ',
+      asilAlacakParaBirimiBazinda: [{ paraBirimi: 'EUR', tutar: 500 }],
+      tahsilatParaBirimiBazinda: [{ paraBirimi: 'EUR', tutar: 100 }], // bekletilen 40 borçtan düşülen tahsilata girmez
+    });
+    expect(result.paraBirimiDurumu.alanlar.mahsubuBekleyenTahsilat).toEqual({ paraBirimi: 'EUR', durum: 'GECERLI' });
   });
 });

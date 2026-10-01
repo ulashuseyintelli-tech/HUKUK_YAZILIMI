@@ -175,3 +175,14 @@ src/modules/case/__tests__/case-open-default-permissions.http.db-gated.integrati
 #   COLLECTION_CURRENCY_MISMATCH); artik dosya para birimindeki tahsilat kaydedilir. Guncel main servis koduyla
 #   11 testin 8'i DUSER (RED kanitlandi). Gecmis kayitlar DUZELTILMEDI.
 src/modules/case/__tests__/case-create-due-currency.http.db-gated.integration.spec.ts
+
+# Hesap ozeti para birimi baglami, GERCEK HTTP + disposable PostgreSQL. Olculen kusur (main 630184e2): legacy hesap ozeti
+#   kalem tutarlarini para birimine bakmadan topluyor, harc / masraf / vekalet ucreti ise TL tarifesinden; 10.000 USD
+#   anaparali dosya ile 10.000 TL anaparali dosya AYNI sayilari uretiyor (pesin harc 120, vekalet ucreti 9.000, toplam borc
+#   20.431,10), yanitta para birimi alani yoktu ve panel hepsini TL simgesiyle gosteriyordu; USD + EUR + TRY anapara tek
+#   sayida (17.000) toplaniyordu. Politika gerektirmeyen kisim: mevcut sayisal alanlar DEGISMEZ, tutar CEVRILMEZ; eklemeli
+#   `paraBirimiDurumu` blogu her alanin para birimini ve gecerliligini bildirir (oranli TL kalemler HESAPLANAMADI, tek
+#   toplamlar GOSTERILEMEZ; dosya / kayit para birimi uyusmazligi ayrica bildirilir, kayit DEGISTIRILMEZ). Dovizli takipte
+#   harc ve vekalet ucretinin hangi tutar ve kur uzerinden hesaplanacagi owner karari — bu testteki "sayilar TL dosyayla
+#   ayni" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 6 testin 6'si DUSER (RED kanitlandi).
+src/modules/case/__tests__/case-calculation-summary-currency.http.db-gated.integration.spec.ts
