@@ -138,6 +138,26 @@ export interface CaseBalancePaymentAfterAsOf {
   source?: string;
 }
 
+/**
+ * K3-L KP-7: hesap tarihine kadar (tarihi ≤ asOf), ters kayıt netleşmesinden (ADR-014 MUST-6) sonraki ödeme — motora
+ * giren ödeme kümesinin kendisi. "Toplam tahsilat"ın ödeme kısmıdır; yüz değer.
+ */
+export type CaseBalancePaymentInScope = CaseBalancePaymentAfterAsOf;
+
+/**
+ * K3-L KP-3: talep edilmiş işlemiş faiz kalemi (INTEREST / PRE_INTEREST / POST_INTEREST). Kanonik hesaba DAHİL
+ * EDİLMEDİ (assembler Q6) — toplama eklenmez (aynı faiz iki kez sayılmaz); yalnız varlığı ve tutarı görünür kılınır.
+ */
+export interface CaseBalanceClaimedInterestItem {
+  claimItemId: string;
+  itemType: string;
+  /** demandedAmount ?? amount */
+  amount: number;
+  currency: string;
+  includedInCanonical: false;
+  reasonCode: 'CLAIMED_INTEREST_EXCLUDED_FROM_CANONICAL';
+}
+
 /** K3-L — mahsubu bekletilen tahsilat (defter kaydı yok; fazla ödeme DEĞİL; ödeme sayılmaz). */
 export interface CaseBalanceAllocationHold {
   id: string;
@@ -145,6 +165,8 @@ export interface CaseBalanceAllocationHold {
   amount: number;
   currency: string;
   holdReason: string;
+  /** K3-L KP-7: bekletilen tahsilatın tarihi (Collection.date, ISO gün) — hesap tarihi kapsamı için; bilinmiyorsa null. */
+  collectionDate?: string | null;
 }
 
 export interface CaseBalanceBlockedOverpaymentReason {
@@ -191,6 +213,29 @@ export interface CaseBalanceResult {
   unsimulatedPrincipals?: CaseBalanceUnsimulatedPrincipal[];
   /** K3-L TK-3: hesap tarihinden sonra tarihli ödemeler — bu bakiyeye girmedi (yalnız dolu iken yazılır). */
   paymentsAfterAsOf?: CaseBalancePaymentAfterAsOf[];
+  /**
+   * K3-L KP-7: hesap tarihine kadar net ödemeler — motora giren küme. Ana hesap yolunda HER ZAMAN yazılır (boş dahil);
+   * yokluğu "ödeme kümesi bilinmiyor" demektir (görünüm tahsilat bloğunu üretmez, fail-closed).
+   */
+  paymentsInScope?: CaseBalancePaymentInScope[];
+  /** K3-L KP-3: talep edilmiş işlemiş faiz kalemleri — kanonik hesaba dahil DEĞİL (yalnız dolu iken yazılır). */
+  claimedInterestItems?: CaseBalanceClaimedInterestItem[];
+}
+
+/** K3-L KP-3: assembler'ın dışladığı talep edilmiş işlemiş faiz kalemleri → sonuç kaydı (kararlı sıra). */
+function toClaimedInterestItems(
+  items: ReadonlyArray<{ claimItemId: string; itemType: string; amount: number; currency: string }>,
+): CaseBalanceClaimedInterestItem[] {
+  return items
+    .map((item) => ({
+      claimItemId: item.claimItemId,
+      itemType: item.itemType,
+      amount: item.amount,
+      currency: classifyCurrency(item.currency).currency,
+      includedInCanonical: false as const,
+      reasonCode: 'CLAIMED_INTEREST_EXCLUDED_FROM_CANONICAL' as const,
+    }))
+    .sort((a, b) => a.currency.localeCompare(b.currency) || a.claimItemId.localeCompare(b.claimItemId));
 }
 
 /** K3-L D2-b1: taşınan anapara → sonuç kaydı (kararlı sıra; faiz bilinmiyor = null, sıfır DEĞİL). */
@@ -356,6 +401,13 @@ export class CaseBalanceService {
     // sonra tamamlanınca defterden bir kez daha düşerdi (çift sayım). Bekletme ayrı diagnostic olarak raporlanır.
     const heldCollectionIds = new Set(activeAllocationHolds.map((hold) => hold.collectionId));
     const collections = allCollections.filter((c) => !heldCollectionIds.has(c.id));
+    // K3-L KP-7: bekletilen tahsilatın tarihi zaten okunmuş tahsilat satırından bağlanır (ek sorgu yok) — hesap tarihi
+    // kapsamı ("Toplam tahsilat" ≤ asOf) için.
+    const collectionDates = new Map(allCollections.map((c) => [c.id, toISO(c.date)] as [string, string | null]));
+    const allocationHolds: CaseBalanceAllocationHold[] = activeAllocationHolds.map((hold) => ({
+      ...hold,
+      collectionDate: collectionDates.get(hold.collectionId) ?? null,
+    }));
 
     // 3. Assemble (G4a)
     const itemInputs: ClaimItemInput[] = claimItems.map((ci) => ({
@@ -451,6 +503,16 @@ export class CaseBalanceService {
     // Filtre, ters kayıt netleşmesinden (mapPayments; ADR-014 MUST-6) SONRAKİ net ödeme listesine uygulanır; kayıt
     // değişmez, çıkarılan ödemeler ayrı bilgi olarak raporlanır.
     const paymentsInScope = pay.payments.filter((payment) => payment.date <= asOfDate);
+    // K3-L KP-7: motora giren net ödeme kümesi açıkça taşınır ("Toplam tahsilat"ın ödeme kısmı; yüz değer)
+    const paymentsInScopeOut: CaseBalancePaymentInScope[] = paymentsInScope
+      .map((payment) => ({
+        id: payment.id,
+        date: payment.date,
+        amount: payment.amount,
+        currency: payment.currency,
+        ...(payment.source != null ? { source: payment.source } : {}),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
     const paymentsAfterAsOf: CaseBalancePaymentAfterAsOf[] = pay.payments
       .filter((payment) => payment.date > asOfDate)
       .map((payment) => ({
@@ -657,9 +719,13 @@ export class CaseBalanceService {
         perCurrency,
       },
       overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
-      allocationHolds: activeAllocationHolds,
+      allocationHolds,
       ...(unsimulated.length > 0 ? { unsimulatedPrincipals: toUnsimulatedPrincipals(unsimulated) } : {}),
       ...(paymentsAfterAsOf.length > 0 ? { paymentsAfterAsOf } : {}),
+      paymentsInScope: paymentsInScopeOut,
+      ...(asm.excluded.interestItems.length > 0
+        ? { claimedInterestItems: toClaimedInterestItems(asm.excluded.interestItems) }
+        : {}),
     };
   }
 

@@ -34,15 +34,43 @@ export type ShadowDiffBlocker = ShadowDiffIssue & { severity: 'RED' };
 export type ShadowDiffWarning = ShadowDiffIssue & { severity: 'YELLOW' | 'UNKNOWN_NEEDS_FOLLOWUP' };
 export type ShadowDiffDiagnostic = ShadowDiffIssue;
 
+/**
+ * K3-L KP-7 (owner karari 2026-10-01): tahsilat gosterimi — hesap tarihi kapsamli, tek para birimli.
+ * "Toplam tahsilat" = receivedAmount · "Borca uygulanan" = appliedToDebtAmount · "Dagitim bekleyen" = notAppliedAmount
+ * (borca uygulanmamis tutar; muvekkil dagitimi DEGIL). receivedAmount = appliedToDebtAmount + notAppliedAmount.
+ */
+export interface ShadowReceipts {
+  currency: string;
+  asOfDate: string;
+  scope: 'ON_OR_BEFORE_AS_OF_DATE';
+  receivedAmount: number;
+  paymentAmount: number;
+  /** K3-L D1: mahsubu bekletilen tahsilat (borctan dusulmez; ayri satir). */
+  allocationHeldAmount: number;
+  appliedToDebtAmount: number | null;
+  unappliedPaymentAmount: number | null;
+  notAppliedAmount: number | null;
+  afterAsOfExcludedAmount: number;
+  appliedScope: 'PRINCIPAL_AND_INTEREST_ONLY';
+  appliedUnavailableReason?: string;
+}
+
 export interface ShadowTotals {
   currency: string | null;
   totalDebtAmount: number | null;
+  /** Canonical: borca fiilen tahsis edilen (K3-L TK-5). Legacy: toplamTahsilat (tarih suzgecsiz kayitli tahsilat). */
   totalPaidAmount: number | null;
   outstandingAmount: number | null;
   interestAmount: number | null;
   costsAmount: number | null;
   attorneyFeeAmount: number | null;
   heldOverpaymentAmount?: number | null;
+  /** Yalniz canonical: totalPaidAmount ile ayni deger (borca uygulanan). */
+  allocatedPaidAmount?: number | null;
+  /** Yalniz canonical: "Toplam tahsilat" (K3-L KP-7) = receipts.receivedAmount. */
+  grossReceivedAmount?: number | null;
+  /** Yalniz canonical: K3-L KP-7 tahsilat blogu. */
+  receipts?: ShadowReceipts | null;
   raw: Record<string, number | null>;
 }
 
@@ -100,6 +128,8 @@ export interface BalanceDisplayShadowDiffReport {
   tenantId: string;
   caseId: string;
   currency: string | null;
+  /** K3-L KP-7: legacy ve canonical tarafin birlikte hesaplandigi hesap tarihi (eski yanitlarda yok → dogrulanamaz). */
+  asOfDate?: string;
   generatedAt: string;
   sourceVersion: string;
   mode: 'SHADOW_ONLY';

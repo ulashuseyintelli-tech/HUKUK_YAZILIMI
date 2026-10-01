@@ -138,6 +138,8 @@ function makeBalance(overrides: Partial<CaseBalanceResult> = {}): CaseBalanceRes
     feeProjection: projection(),
     diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
     overpayments: { held: [], blocked: [] },
+    // K3-L KP-7: servis motora giren ödeme kümesini her zaman taşır (tahsilat bloğunun kaynağı)
+    paymentsInScope: [{ id: 'payment-1', date: '2026-03-01', amount: 200, currency: 'TRY' }],
     ...overrides,
   };
 }
@@ -386,5 +388,28 @@ describe('ADR-014 PR-10 case calculation-summary compatibility adapter', () => {
     });
     expect(Object.values(adapter.mappedFields).every((field) =>
       field.status === 'UNAVAILABLE' && field.amount === null)).toBe(true);
+  });
+});
+
+describe('K3-L TK-5 / KP-7: uyum katmanı v2', () => {
+  it('kısmi tahsis: allocatedPayment ve totals borca UYGULANANI taşır; toplamTahsilat dosyaya gireni; receipts blok aynen', () => {
+    // 200 ödemenin yalnız 150'si borca uygulanır (faiz 50 + anapara 100), 50 uygulanmadan kalır
+    const balance = makeBalance();
+    const step = (balance.currencyResults[0].result as any).allocations[0];
+    step.allocations[1] = { ...step.allocations[1], amountAllocated: 100, amountAfter: 900 };
+    step.remainingPayment = 50;
+    const { adapter } = adapt(balance);
+
+    expect(adapter.contractVersion).toBe('adr014-pr10.case-calculation-summary.compatibility.v2');
+    expect(adapter.canonical?.currencyResults[0]).toMatchObject({ currency: 'TRY', allocatedPayment: 150 });
+    expect(adapter.canonical?.totals).toMatchObject({ totalPaidAmount: 150, allocatedPaidAmount: 150, grossReceivedAmount: 200 });
+    expect(adapter.mappedFields.toplamTahsilat).toMatchObject({ status: 'AVAILABLE', amount: 200, source: 'CANONICAL_GROSS_RECEIVED' });
+    expect(adapter.canonical?.receipts).toMatchObject({
+      receivedAmount: 200,
+      appliedToDebtAmount: 150,
+      notAppliedAmount: 50,
+      unappliedPaymentAmount: 50,
+      asOfDate: '2026-07-12',
+    });
   });
 });

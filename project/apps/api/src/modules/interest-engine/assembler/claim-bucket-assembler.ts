@@ -137,7 +137,14 @@ export interface ClaimBucketAssemblyResult {
    * source item, category, currency and source validity for the fee projection DTO.
    */
   projectionItems: ClaimItemProjectionSource[];
-  excluded: { interestItemIds: string[] };
+  excluded: {
+    interestItemIds: string[];
+    /**
+     * K3-L KP-3 / TK-7: dışlanan talep edilmiş işlemiş faiz kalemlerinin ayrıntısı (Q6 — kanonik hesaba dahil DEĞİL;
+     * yalnız görünürlük). Kural `claimedInterestAmount` ile ortak; tutarı olmayan faiz ayar kalemi listelenmez.
+     */
+    interestItems: Array<{ claimItemId: string; itemType: string; amount: number; currency: string }>;
+  };
   diagnostics: AssemblerDiagnostic[];
   /** K3-L D2-b1: kovası üretilmeyen principal kalemler (sessiz düşme yok). */
   principalCarry: PrincipalCarryItem[];
@@ -215,6 +222,29 @@ function baseAmount(item: ClaimItemInput): number {
   return item.demandedAmount ?? item.amount;
 }
 
+/**
+ * K3-L KP-3 / TK-7: kalem talep edilmiş işlemiş faiz taşıyor mu? Etkin (CANCELLED/WAIVED değil) INTEREST kategorisi
+ * kalemde tutar = demandedAmount ?? amount, yalnız > 0 iken; aksi halde null (yalnız faiz ayarı taşıyan kalem).
+ * Kanonik bakiye ve legacy hesap özeti AYNI kuralı kullanır (ADR-014 I-10).
+ *
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - assembleClaimBuckets() → excluded.interestItems
+ * - CaseService.getCalculationSummary() → talepEdilenIslemisFaiz
+ * </remarks>
+ */
+export function claimedInterestAmount(item: {
+  itemType: string;
+  status: string;
+  amount: number;
+  demandedAmount?: number | null;
+}): number | null {
+  if (ASSEMBLE_EXCLUDED_STATUSES.has(item.status)) return null;
+  if (classifyClaimItemType(item.itemType).category !== 'INTEREST') return null;
+  const amount = item.demandedAmount ?? item.amount;
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
 /** Bir ClaimItem kendi canonical veya legacy compatibility faiz otoritesini taşıyor mu? */
 function hasOwnInterestAuthority(item: ClaimItemInput): boolean {
   return item.interestTypeCode != null || (item.interestType != null && item.interestType !== '');
@@ -262,6 +292,7 @@ export function assembleClaimBuckets(
   const ancillaries: Partial<Record<AncillaryType, number>> = {};
   const projectionItems: ClaimItemProjectionSource[] = [];
   const excludedInterestIds: string[] = [];
+  const excludedInterestItems: ClaimBucketAssemblyResult['excluded']['interestItems'] = [];
   const buckets: ClaimBucket[] = [];
   const principalCarry: PrincipalCarryItem[] = [];
 
@@ -291,6 +322,11 @@ export function assembleClaimBuckets(
     // bakiyeye dahil edilmesi ayrı hukukî/mimari karardır.
     if (cls.category === 'INTEREST') {
       excludedInterestIds.push(item.id);
+      // K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz görünür kalır; toplama EKLENMEZ (aynı faiz iki kez sayılmaz)
+      const claimed = claimedInterestAmount(item);
+      if (claimed != null) {
+        excludedInterestItems.push({ claimItemId: item.id, itemType: item.itemType, amount: claimed, currency: item.currency });
+      }
       continue;
     }
 
@@ -383,7 +419,7 @@ export function assembleClaimBuckets(
     costs,
     ancillaries,
     projectionItems,
-    excluded: { interestItemIds: excludedInterestIds },
+    excluded: { interestItemIds: excludedInterestIds, interestItems: excludedInterestItems },
     diagnostics,
     principalCarry,
   };

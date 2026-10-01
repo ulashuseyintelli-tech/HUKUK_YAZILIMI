@@ -1,6 +1,8 @@
 import type {
   BalanceDisplayAuthority,
+  BalanceDisplayClaimedInterest,
   BalanceDisplayDiagnostic,
+  BalanceDisplayReceipts,
   BalanceDisplayUnsafeSource,
   CaseBalanceDisplay,
 } from '../interest-engine/orchestration/case-balance-display';
@@ -11,8 +13,15 @@ import type {
 } from '../interest-engine/orchestration/case-balance-explainability';
 import type { CaseBalanceSnapshotReadiness } from '../interest-engine/orchestration/case-balance-snapshot-readiness';
 
+/**
+ * v2 (K3-L TK-5 / KP-7, owner kararı 2026-10-01): `canonical.totals.totalPaidAmount` / `allocatedPaidAmount` artık
+ * borca FİİLEN tahsis edileni (Σ amountAllocated) taşır — v1'de tahsis adımı olan ödemelerin yüz değeriydi;
+ * `currencyResults[].allocatedPayment` aynı düzeltmeyle para birimi bazında tahsis edilendir; `toplamTahsilat`
+ * (`grossReceivedAmount`) hesap tarihine kadar dosyaya fiilen giren netleşmiş paradır (mahsubu bekletilen dahil);
+ * `canonical.receipts` ve `canonical.claimedInterest` eklendi. Alan adları DEĞİŞMEDİ.
+ */
 export const CASE_CALCULATION_SUMMARY_COMPATIBILITY_VERSION =
-  'adr014-pr10.case-calculation-summary.compatibility.v1' as const;
+  'adr014-pr10.case-calculation-summary.compatibility.v2' as const;
 
 export const LEGACY_CALCULATION_SUMMARY_NUMERIC_FIELDS = [
   'asilAlacak',
@@ -74,6 +83,7 @@ export interface CompatibilityCurrencyResult {
   preEnforcementInterest: number | null;
   postEnforcementInterest: number | null;
   claimRemaining: number | null;
+  /** K3-L TK-5 (v2): bu para biriminde borca fiilen tahsis edilen (Σ amountAllocated); v1'de ödeme yüz değeriydi. */
   allocatedPayment: number | null;
   skippedReason: string | null;
   interestReconciled: boolean | null;
@@ -112,6 +122,10 @@ export interface CanonicalCalculationSummaryCompatibilityEvidence {
     scope: 'CASE_LEVEL_UNSCOPED';
   };
   totals: CaseBalanceDisplay['totals'];
+  /** K3-L KP-7 (v2): Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen — hesap tarihi kapsamlı. */
+  receipts: BalanceDisplayReceipts | null;
+  /** K3-L KP-3 / TK-7 (v2): talep edilmiş işlemiş faiz — hesaba dahil DEĞİL (yalnız varsa). */
+  claimedInterest?: BalanceDisplayClaimedInterest;
   feeProjection: CaseBalanceFeeProjection;
   readiness: CaseBalanceSnapshotReadiness;
   blockers: CaseBalanceSnapshotReadiness['blockers'];
@@ -254,7 +268,18 @@ function buildMappedFields(display: CaseBalanceDisplay): Record<LegacyCalculatio
   };
 }
 
+/** K3-L TK-5: para birimi bazında borca tahsis edilen (açıklanabilirlik izindeki Σ amountAllocated; kuruş toplamı). */
+function appliedByCurrency(display: CaseBalanceDisplay): Map<string, number> {
+  const cents = new Map<string, number>();
+  for (const step of display.trace?.allocationSteps ?? []) {
+    const stepCents = step.allocations.reduce((sum, allocation) => sum + toCents(allocation.amountAllocated), 0);
+    cents.set(step.currency, (cents.get(step.currency) ?? 0) + stepCents);
+  }
+  return new Map([...cents.entries()].map(([currency, value]) => [currency, value / 100]));
+}
+
 function buildCurrencyResults(display: CaseBalanceDisplay): CompatibilityCurrencyResult[] {
+  const applied = appliedByCurrency(display);
   return display.currencies.map((entry) => {
     const available = !entry.skipped;
     const totalInterest = available ? entry.interest : null;
@@ -269,7 +294,7 @@ function buildCurrencyResults(display: CaseBalanceDisplay): CompatibilityCurrenc
       preEnforcementInterest: pre,
       postEnforcementInterest: post,
       claimRemaining: available ? entry.claimRemaining : null,
-      allocatedPayment: available ? entry.collected : null,
+      allocatedPayment: available ? applied.get(entry.currency) ?? 0 : null,
       skippedReason: entry.skippedReason,
       interestReconciled: totalInterest == null || pre == null || post == null
         ? null
@@ -373,6 +398,8 @@ export function buildCaseCalculationSummaryCompatibilityAdapter(input: {
       costs: { amount: input.display.costs, currency: null, scope: 'CASE_LEVEL_UNSCOPED' },
       ancillaries: { amount: input.display.ancillaries, currency: null, scope: 'CASE_LEVEL_UNSCOPED' },
       totals: input.display.totals,
+      receipts: input.display.receipts ?? null,
+      ...(input.display.claimedInterest ? { claimedInterest: input.display.claimedInterest } : {}),
       feeProjection: input.display.feeProjection,
       readiness: input.display.readiness,
       blockers: input.display.readiness.blockers,

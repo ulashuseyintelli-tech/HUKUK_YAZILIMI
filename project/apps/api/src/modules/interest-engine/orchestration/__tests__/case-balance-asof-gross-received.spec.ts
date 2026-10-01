@@ -4,7 +4,8 @@
  *        düşülüyordu). Kayıt değişmez; çıkarılan ödeme ayrı bilgi olarak raporlanır. Ters kayıt netleşmesi (ADR-014
  *        MUST-6: hesap tarihinden sonraki iptal → sıfır net etki) aynen korunur.
  *  TK-4: kısmi fazla ödemede bekletilen (HELD) kalan, tahsilatın yüz değeriyle zaten sayılmışken brüt tahsilata ikinci
- *        kez eklenmez. totalPaidAmount / allocatedPaidAmount / heldOverpaymentAmount DEĞİŞMEZ (KP-7 etiketi ayrı karar).
+ *        kez eklenmez. heldOverpaymentAmount DEĞİŞMEZ.
+ *  TK-5 (owner KP-7, 2026-10-01): totalPaidAmount / allocatedPaidAmount = borca FİİLEN uygulanan (önceden yüz değer).
  * Gerçek motor + CaseBalanceService + display; prisma sahte, sabit oran (%36,5 → günlük tutarın binde biri).
  */
 
@@ -136,10 +137,18 @@ describe('K3-L TK-4: aynı tahsilatın bekletilen kısmı brüt tahsilatta iki k
     });
     expect(display.status).toBe('OK');
     expect(display.totals.grossReceivedAmount).toBe(1200);
-    // Değişmeyenler (KP-7 etiketi ayrı karar): yüz değer ve bekletilen kalan olduğu gibi
-    expect(display.totals.totalPaidAmount).toBe(1200);
-    expect(display.totals.allocatedPaidAmount).toBe(1200);
+    // K3-L TK-5 (owner KP-7 kararıyla): borca uygulanan = 1.000 (önceden yüz değer 1.200 — bekletilen 200 de sayılıyordu)
+    expect(display.totals.totalPaidAmount).toBe(1000);
+    expect(display.totals.allocatedPaidAmount).toBe(1000);
+    // Bekletilen kalan olduğu gibi (bugünkü kayıt durumu)
     expect(display.totals.heldOverpaymentAmount).toBe(200);
+    expect(display.receipts).toMatchObject({
+      receivedAmount: 1200,
+      appliedToDebtAmount: 1000,
+      notAppliedAmount: 200,
+      unappliedPaymentAmount: 200,
+      allocationHeldAmount: 0,
+    });
   });
 
   it('defter kaynağı: PAYMENT 1.200 (tam tutar) + HELD 200 (sourceLedgerEntryId) → brüt 1.200', async () => {
