@@ -1,7 +1,7 @@
 # EXTACC D-5 — PORTAL PAROLA SIFIRLAMA CANLI KABUL PAKETİ (R01)
 
-> **DURUM: HAZIR — CANLIDA KOŞULMADI.** Gerçek e-posta gönderim denemesi, canlı Run/Recover ve yayın bu paketle yetkilendirilmez;
-> alıcı adresi ve gönderim yetkisi verilmedi; **bu iş kapsamında canlı talep/gönderim KOŞULMADI**. Run modunda koşucu yalnız owner GO
+> **DURUM (2026-10-01): CANLIDA BİR KEZ KOŞULDU — runId `00c96bd5`, çıkış 3 = ÖLÇÜLEMEYEN; D-5 KABULÜ TAMAMLANMADI (§8).** Aşağıdaki "CANLIDA KOŞULMADI" ifadeleri koşum ÖNCESİ revizyon notlarıdır. Gerçek e-posta gönderim denemesi, canlı Run/Recover ve yayın bu paketle yetkilendirilmez;
+> yeni deneme için yeni GO, alıcı adresi ve tek gönderim onayı gerekir (§8.7). Run modunda koşucu yalnız owner GO
 > ile ve yalnız bloğun kurduğu `D5_API_BASE`/`D5_EXPECT_BASE_URL` uçlarına istek yapar (create-user/login/disable-user + `.invalid`
 > adresle bir `forgot-password`, T-1); e-postayı koşucu/blok göndermez, ürün gönderim dener (§7).
 > **ÖN KOŞUL:** canlı API dist'i **R27** (`E28A6863…5134`; D5-SEC-R01/R02/R03). Canlı R26 iken owner bloğu Preflight/Run **DUR** verir
@@ -242,8 +242,8 @@ Bloğun `$Repo` yolu canlı repo olduğundan Preflight paket kapısı ancak bu d
 
 ## 7. Owner kararları ve sınırlar
 
-- **K-2 alıcı adresi**, **K-3 gönderim adedi (plan 1)**, **K-4 ezme** — R27 paketi §10. Bu bilgiler uydurulmaz; **alıcı adresi ve
-  gönderim yetkisi verilmedi**, gönderim yapılmadı. Koşucu/blok canlı talep ya da gönderim yapmaz: blokta HTTP/SMTP istemcisi yoktur;
+- **K-2 alıcı adresi**, **K-3 gönderim adedi (plan 1)**, **K-4 ezme** — R27 paketi §10. Bu bilgiler uydurulmaz; paket yazılırken alıcı adresi ve
+  gönderim yetkisi verilmemişti (2026-10-01 koşumunda owner konsolda verdi; §8). Koşucu/blok canlı talep ya da gönderim yapmaz: blokta HTTP/SMTP istemcisi yoktur;
   koşucu yalnız bloğun kurduğu `D5_API_BASE`/`D5_EXPECT_BASE_URL` uçlarını çağırır ve `forgot-password`'ı yalnız `.invalid` adresle çağırır (T-1).
 - Gerçekleşen gönderim adedi KANITLANMIŞ sayılmaz; `plannedRealSends=1` plan, `emailDeliveryMeasured=false` ölçüm sınırıdır.
 - Sahte API ürünün kendisi değildir: ürünün hız sınırı (portal deposu ayrı), gerçek SMTP gönderimi ve tenant yaşam döngüsü yalnız canlıda ölçülür.
@@ -260,10 +260,105 @@ Bloğun `$Repo` yolu canlı repo olduğundan Preflight paket kapısı ancak bu d
 - **Recover yetkisi (R04):** Run çıkış 5/6 otomatik Recover yetkisi DEĞİLDİR. Run'ın koşucu içindeki kapanış adımları Run'ın
   parçasıdır; ayrıca başlatılan Recover ayrı bir canlı yazma işlemidir ve kanıt incelemesi + açık kalan kaynakların bildirilmesi
   sonrasında AYRI owner onayı gerektirir (§4 adım 7; G-4). Koşucunun kanıttaki kurtarma adımı metni (pinli, değişmedi) bir öneridir.
-- **Canlıda ölçülmeyenler:** QrTest, Preflight ve Run canlıda KOŞULMADI. Öz-testler QR'ı hiçbir görünür konsola çizmez; blok öz-testi
+- **Canlıda ölçülmeyenler:** paket yazılırken QrTest, Preflight ve Run canlıda koşulmamıştı; 2026-10-01'de üçü de koşuldu (§8). Öz-testler QR'ı hiçbir görünür konsola çizmez; blok öz-testi
   QrTest'te gerçek doğrulayıcıyı yükleyen geçici betik kullanır. QR'ın telefonla okunabilirliği yalnız owner'ın QrTest koşumunda ölçülür.
 - **Biçim kapısı büyük/küçük harf duyarsızdır** (D-6/D-7 ile aynı koşul). D-5'te sonuç kapalı yöndedir (A-3b). Sıkılaştırma istenirse
   üç blokta birlikte yapılır (isteğe bağlı owner kararı).
 - **Literal kaldırma geçmişi temizlemez:** aynı alan adı ve yerel kullanıcı yolu main'deki başka bloklarda ve bu dalın geçmişinde durur;
   R03 yalnız D-5 bloğunun güncel hâlini temizler. Diğer bloklar ve geçmiş temizliği ayrı iş ve owner kararıdır.
 - Bu paket H1–H8 sayacını değiştirmez (0/8).
+
+## 8. Canlı koşum kaydı — runId `00c96bd5` (2026-10-01) · çıkış 3 = ÖLÇÜLEMEYEN · kabul TAMAMLANMADI
+
+Kaynak ayrımı: **[Ö]** bu kaydı yazan oturumun ölçümü (kanıt dosyalarının ve canlı API günlüğünün salt okunması; kaynak okuması) ·
+**[O]** owner beyanı (makine ölçümü değildir). Kanıt dosyaları owner makinesinde yerinde durur; ham içerik, adres, origin ve yerel yol
+bu kayda alınmadı. Bu kayıt H1–H8 sayacını değiştirmez (0/8) ve D-6/D-7/D-8/birleşik D-9 için hiçbir şey söylemez.
+
+### 8.1 Koşum öncesi
+
+| Adım | Sonuç | Kaynak |
+|---|---|---|
+| #2862 (B3 R03-c/R03-d) ve #2858 (bu paketin R04'ü) | MERGED `496e6f6a` / `138aa9a3`; merge commit CI'ları SUCCESS; kanonik `main` ff-only senkron | [Ö] GitHub |
+| Preflight (blok R04 `98200AF1…0733`) | **PREFLIGHT GEÇTİ** 12:40Z ve 16:59Z: paket pinleri eşit, canlı API dist `E28A6863…` (3873 dosya), `.env` sha eşit, dış zincir kapıları geçti | [Ö] pencere çıktısı kaydı |
+| QrTest | çıkış **0** (16:55Z): QR telefonda sıfırlama sayfasını açtı; form gönderilmedi | çıkış kodu [Ö] · "telefonda açıldı" [O] |
+| Pencere notu | İlk QrTest penceresi ajan tarafından PowerShell 7 içinden açıldı; çocuk Windows PowerShell 5.1 süreci modül yolunu devraldığı için `Get-FileHash` bulunamadı ve blok hiçbir kapıyı koşmadan durdu (yazma yok). Modül yolu düzeltilerek yeniden açıldı. Blok kusuru değildir; owner pencereyi doğrudan açarsa oluşmaz | [Ö] |
+
+### 8.2 Run sonucu
+
+| Alan | Değer |
+|---|---|
+| Başlangıç / bitiş | 2026-10-01 17:07:26Z / 17:27:32Z (telefon beklemesi 20 dk'nın tamamı kullanıldı) |
+| Koşum anındaki `main` | `6917e8aa` (blok kapısı: `origin/main` ile eşit, takipli dosyalar temiz) |
+| Çıkış kodu | **3** (ÖLÇÜLEMEYEN) — §2: kabul değildir |
+| Ölçütler | 29 — **21 PASS · 0 FAIL · 8 ÖLÇÜLEMEYEN** |
+| PASS | P5-GATE · P5-00 · P5-01 · P5-02 · P5-03L · P5-04D · P5-DISP1 · P5-UNKNOWN · P5-C1 · P5-C2 · P5-C-TOKEN · P5-C2V · P5-C3L · P5-C3D · P5-C4L-S0 · P5-C4D-S0 · P5-C5 · U-CLOSE · P5-SCRUB · P5-D9 · U-ISO |
+| ÖLÇÜLEMEYEN | P5-TOKEN-ISSUED (bekleme süresince hesapta sıfırlama token'ı görülmedi) · P5-DISP2 · P5-CONSUMED · P5-WAIT · P5-S1-OPEN · P5-SINGLE-USE-OBS · P5-C4L · P5-C4D (sıfırlama sonrası oturum hiç alınmadı) |
+| Ürün bulgusu alanı | boş · yasak uç çağrısı yok |
+| GO | tüketildi; literal hiçbir kanıt dosyasına yazılmadı (defterde yalnız sha256) |
+| Gönderim | `plannedRealSends=1` bir **plandır**; `emailDeliveryMeasured=false`. §8.5'e göre ürün bu koşumda gönderim denemesi **yapmadı** |
+
+### 8.3 Kapanış (Run'ın koşucu içindeki kendi kapanışı; ayrı Recover BAŞLATILMADI)
+
+Yetkili uçla kapatma 201; DB: hesap pasif, erişim kapalı, oturum sürümü 0 → 1, sıfırlama token'ı kapanıştan önce de sonra da yok;
+yeni giriş bilinen geçerli parolayla (ilk parola; hash ile doğrulandı) yerel ve dış 401; sıfırlama öncesi oturum korumalı uçta yerel ve
+dış 401; iki sentetik tenantta aktif kullanıcı 0, aktif dosya 0; alıcı adresi sentetik hesapta ezildi (owner kararı E; P5-SCRUB PASS);
+izolasyon ölçümü PASS. `recovery.gerekli = false`. **Sınır:** P5-C4L / P5-C4D ÖLÇÜLEMEYEN — sıfırlama sonrası oturum hiç oluşmadığı
+için mevcut-oturum reddi yalnız sıfırlama öncesi oturumla ölçüldü. Bu kapanış **yalnız bu koşum** içindir; birleşik D-9 değildir.
+
+### 8.4 Kanıt bütünlüğü
+
+Kanıt dizininde beş dosya vardır; ham bayt sha256'ları koşum sonundan bu kaydın yazımına kadar değişmedi [Ö]:
+
+| Dosya | sha256 |
+|---|---|
+| `d5-evidence.json` | `DD89C593D8E4D15B2631F6A25C2B4C206441F9144695B6BF49FBD2A35C8BEA7F` |
+| `d5-run.log` | `E17B3A4BE14EDA8FA23CDA945A8EF122AE9A92B42C3FF540ED820CE19C6F6257` |
+| `d5-setup-receipt.json` | `625339D787D205009E2AABA7759C28501BCD810CFBD0139670C751EBD9DD4F26` |
+| `goref-consumed.json` | `0E87F52D9B1376EEE8DC1A1B3C552653AD0AB03E8EE6DCCB64CECB6DDB0B7B77` |
+| `owner-block.json` | `DC49FD9C426EDC2CC7BB438033E8186E96BE1219B417475403D8F2DA51EFDAE8` |
+
+Beş dosyada üç kodlamayla sır taraması: gerçek e-posta adresi 0 · GO literali 0 · oturum belirteci 0 · parola özeti 0 [Ö].
+**Eksik:** `owner-declaration.json`, `d5-combined-verdict.json` ve `SHA256-MANIFEST.txt` bu kayıt yazılırken **yazılmamıştı** — blok
+koşum sonunda 9 beyan sorusunu owner penceresinde bekliyor. Owner yanıtladığında blok bu üç dosyayı yazar; birleşik karar, manifest ve
+dosya bütünlüğü o zaman ayrıca doğrulanır ve bu bölüme eklenir. O ana kadar kanıt **mühürlenmemiş** sayılır. Orijinal dosyalara dokunulmadı.
+
+Owner beyanı (2026-10-01; çalışma oturumunda iletildi, kanıt dizininde henüz dosya değil) [O]: telefonda ilk QR üzerinden sıfırlama
+formu **bir kez** gönderildi; genel "e-posta gönderildi — bu adresle kayıtlı hesap varsa…" ekranı çıktı; posta kutusu ve istenmeyen
+klasörü kontrol edildi; **e-posta gelmedi**. Bu genel başarı ekranı SMTP gönderimi ya da teslim kanıtı **değildir** (§8.5).
+
+### 8.5 Teşhis — e-posta neden gelmedi (salt okuma; koşum aralığı ve sentetik kayıtlarla sınırlı)
+
+İncelenenler: koşucu kanıtı, canlı API uygulama günlüğü (yalnız koşum aralığı; içerik bu kayda alınmadı, yalnız sayımlar), canlı
+kaynak `1b758d29`. Güncel DB'den geçmiş eşleşme ya da token geçmişi çıkarılmadı. Kullanıcı hatası **varsayılmadı**.
+
+| Soru | Sonuç | Dayanak |
+|---|---|---|
+| Sıfırlama token'ı üretildi mi | **Hayır** — bekleme süresince (20 dk, 5 sn yoklama) hesapta token görülmedi; kapanış öncesi ölçümde de yok | [Ö] koşucu kanıtı |
+| Ürün gönderim denemesi yaptı mı (SMTP denendi mi) | **Hayır** — canlı API günlüğünde koşum aralığında 22 satır: zamanlayıcı satırları ve bu akışa ait yalnız iki satır (hesap oluşturma, koşucunun girişi). Sıfırlama / e-posta / SMTP içerikli satır **0**, WARN/ERROR **0**; hata günlüğü boş; API'nin başlangıcından beri e-posta sağlayıcısı bağlamlı satır **0**. Ürün, token yazıldıktan sonra gönderimin hem başarısında hem hatasında günlük satırı yazar (kaynak) | [Ö] günlük sayımı + kaynak |
+| Sağlayıcı kabul / ret / bağlantı hatası | **Uygulanamaz** — gönderim denenmedi; SMTP ayarı ya da sağlayıcı bu sonucun nedeni olarak gösterilemez. Sağlayıcı kayıtları ölçülmedi | çıkarım (yukarıdaki iki satır) |
+| Token / DB yazım hatası | **Görülmedi** — hata satırı 0; token yazımı gönderimden ÖNCE yapılır, yani gönderim hatası token yokluğunu açıklayamaz | [Ö] günlük + kaynak |
+| Hesap ve büro durumu | hesap aktifti ve büro girişe açıktı (aynı dakikada P5-03L / P5-04D PASS); yerel API'de sıfırlama ucu çalışıyor (P5-UNKNOWN PASS) | [Ö] koşucu kanıtı |
+| Hız sınırı / doğrulama reddi | **Görülmedi** — sıfırlama sayfası başarı ekranını yalnız 2xx yanıtta gösterir; hız sınırı 429 döner ve sayfa hata gösterir. Owner başarı ekranı gördü | kaynak + [O] |
+| Talep API'ye ulaştı mı | **Makineyle ölçülemedi (UNKNOWN).** API'de erişim günlüğü yok; metrik sayacı yol etiketi taşımaz; canlı kenar yapılandırması ve günlüğü bu oturumda okunamadı; tünel olay kaydı bulunmadı. Owner'ın gördüğü başarı ekranı ve web kaynağı birlikte "talep ulaştı ve 2xx aldı" **çıkarımını** verir | [O] + kaynak |
+| Aktif sentetik hesapla eşleşme | **Kaynak düzeyinde açıklama:** ürün hesabı adresin **birebir** (harf büyüklüğü ve boşluk dahil) eşleşmesiyle arar; denetleyici, servis ve web formu adresi normalleştirmez; eşleşme yoksa aynı başarı yanıtı döner, token yazılmaz, günlük satırı oluşmaz. Ölçülen tablo (2xx · token yok · günlük satırı yok · gönderim denemesi yok) bu dalla **uyumludur**. Aynı sessiz yanıtı veren diğer iki dal ölçümle dışlandı: büro erişime kapalı değildi; hesap talep sırasında değişmedi | kaynak + [Ö] |
+| Telefonun formda gönderdiği metin | **UNKNOWN** — hiçbir yerde kayıtlı değil; ölçülemez | — |
+
+**Sonuç.** Kanıtlanan: bu koşumda ürün token üretmedi ve gönderim denemedi; neden SMTP/sağlayıcı değildir. En olası sınıf (çıkarım):
+formda gönderilen metin kayıtlı adresle bayt düzeyinde eşit değildi (harf büyüklüğü, baş/son boşluk, telefon klavyesinin otomatik
+düzeltmesi/doldurması). Bu **kanıtlanmış değildir**; talebin API'ye ulaştığı ve formun ne gönderdiği makineyle ölçülmedi. Canlı ürün
+bu dalda hiçbir iz bırakmadığı için aynı deneme tekrarlansa neden yine ölçülemez.
+
+### 8.6 Ürün düzeltmesi (ayrı PR; **merge edilmedi, canlıda değil**)
+
+#2884: portal girişinde ve sıfırlama talebinde hesap önce birebir aranır (eski davranış); bulunamazsa baş/son boşluk ve ASCII
+harf büyüklüğü farkı yalnız **tek** aktif aday varsa kabul edilir (birden çok aday varsa eşleşme yok); e-posta istekte yazılana
+değil hesabın kayıtlı adresine gider; sessiz dallar (hesap yok · belirsiz · büro erişime kapalı · hesap talep sırasında kapandı)
+adres, token ve bağlantı içermeyen ayrı teşhis günlük satırları yazar; hesap açma çakışma kapısı aynı kuralı kullanır. Dış yanıtlar,
+şema ve kayıtlı adres biçimi değişmez. Testler düzeltmesiz kodda başarısız olur (negatif kontrol). İlgili kısıtlı kayıt:
+SEC-PORTAL-REQ-01 (ayrıntı public repoya yazılmaz). Düzeltme canlıya alınana kadar canlı davranış §8.5'teki gibidir.
+
+### 8.7 Yeni deneme
+
+Bu koşum tekrarlanmaz ve otomatik ikinci Run yoktur. Yeni deneme için kesin işlem ve yetki listesi tek karar paketindedir:
+`client-release-r27-r01/CLIENT-KALAN-ISLER-R01.md` §9 KP-1 (A yolu: önce düzeltmenin yayını; B yolu: düzeltmesiz, adres harfi
+harfine). Her iki yolda yeni GO, alıcı adresi (yalnız konsol), tek gönderim onayı ve ezme kararı gerekir.

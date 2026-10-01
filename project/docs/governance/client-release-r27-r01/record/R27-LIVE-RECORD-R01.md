@@ -79,6 +79,10 @@ Kaynak ayrımı: **[O]** = owner'ın paylaştığı çıktı/beyan · **[A]** = 
 
 **Öneri:** B3 gerekirse, önce bu bulguların dar düzeltmesi (ayrı PR + izole test) ya da B3 çıktısının servis başına elle ölçülmesi. Düzeltme bu kaydın kapsamında değildir.
 
+**İleri atıf (2026-10-01; bu kaydın ölçümleri değişmedi):** B3H-1, B3H-2 ve B3H-3 `r27-rollback.ps1` üzerinde #2862 (`496e6f6a`) ile **betik düzeyinde** giderildi (paket §6 R03-c / R03-d: izole harness 53/53, mutant 27/27; B3 sha `A249B4DF…9353`). Canlı B3 akışı **koşulmadı**. **FRK-1 AÇIK** kalır: `r27-release.ps1` değişmedi (sha `0A1570F0…3E94`); karar paket §10 K-16.
+
 ## 7. Sonraki adımlar
 
 D-5 hazırlığı (gönderimsiz Preflight, QR adımı) → owner'ın D-5 GO'su ve tek onayı → D-5 Run. D-8 sondası, D-6/D-7 ve birleşik D-9 ayrı GO'larla. Hiçbiri bu kayıtla başlatılmadı.
+
+**İleri atıf (2026-10-01):** D-5 bir kez koşuldu — runId `00c96bd5`, çıkış 3 (ÖLÇÜLEMEYEN), **kabul tamamlanmadı**; kayıt `client-extacc-portal-d5-r01` §8. Kalan işlerin tek tablosu ve owner karar listesi: `../CLIENT-KALAN-ISLER-R01.md`. Canlı kimlik (§1) değişmedi.
