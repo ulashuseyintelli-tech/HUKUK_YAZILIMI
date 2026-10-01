@@ -142,6 +142,15 @@ export class ExpenseRequestController {
   }
 
   /**
+   * Otomatik açılış masraf setinin durumu (salt okuma): talep var mı, yoksa peşin harç hesaplanabiliyor mu?
+   * GET /expense-requests/case/:caseId/opening-status
+   */
+  @Get('case/:caseId/opening-status')
+  async getOpeningExpenseStatus(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
+    return this.service.getOpeningExpenseAutomationStatus(caseId, req.user.tenantId);
+  }
+
+  /**
    * Aşama bazlı masraf seti oluştur
    * POST /expense-requests/case/:caseId/stage/:stageCode
    */

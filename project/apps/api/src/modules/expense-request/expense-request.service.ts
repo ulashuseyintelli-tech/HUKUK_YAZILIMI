@@ -19,6 +19,12 @@ import {
 } from '@/modules/accounting-journal';
 
 import { findExpenseCatalogEntry } from './expense-item-catalog';
+import {
+  evaluateOpeningExpenseBasis,
+  openingExpenseBasisInputOfCase,
+  OpeningExpenseAutomationStatus,
+  OpeningExpenseBasisDecision,
+} from './opening-expense-basis';
 
 export interface ExpenseItem {
   /** Kanonik katalog kodu veya bilinen legacy alias (create anında kanonik koda çözülür). */
@@ -596,8 +602,77 @@ export class ExpenseRequestService {
   // ==================== YENİ METODLAR ====================
 
   /**
+   * Açılış masraf setinde peşin harç matrahı TL olarak hesaplanabilir mi? SALT OKUMA: kayıt yazmaz, tutar hesaplamaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (otomatik açılış talebi denenmeden önce; sonuç yanıtta bildirilir)
+   * - ExpenseRequestService.getOpeningExpenseAutomationStatus() → GET /expense-requests/case/:caseId/opening-status
+   * </remarks>
+   */
+  async evaluateOpeningExpenseBasisForCase(caseId: string, tenantId: string): Promise<OpeningExpenseBasisDecision> {
+    const caseItem = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: {
+        currency: true,
+        claimItems: { where: { itemType: 'PRINCIPAL' }, select: { currency: true } },
+        dues: { where: { type: 'PRINCIPAL' }, select: { currency: true } },
+      },
+    });
+
+    if (!caseItem) {
+      throw new NotFoundException('Takip bulunamadı');
+    }
+
+    return evaluateOpeningExpenseBasis(openingExpenseBasisInputOfCase(caseItem));
+  }
+
+  /**
+   * Otomatik açılış masraf setinin durumu: talep var mı, yoksa otomatik hesap yapılabiliyor mu? SALT OKUMA.
+   * Dövizli / karma dosyada otomatik talep oluşturulmaz; neden ve tamamlanması gereken bilgi buradan okunur.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.getOpeningExpenseStatus() → GET /expense-requests/case/:caseId/opening-status
+   * </remarks>
+   */
+  async getOpeningExpenseAutomationStatus(caseId: string, tenantId: string): Promise<OpeningExpenseAutomationStatus> {
+    const caseItem = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { clientId: true },
+    });
+
+    if (!caseItem) {
+      throw new NotFoundException('Takip bulunamadı');
+    }
+
+    const [automaticCalculation, openingRequest, activeExpenseRequestCount] = await Promise.all([
+      this.evaluateOpeningExpenseBasisForCase(caseId, tenantId),
+      this.prisma.expenseRequest.findFirst({
+        where: { caseId, tenantId, stageCode: 'OPENING', status: { not: 'CANCELLED' } },
+        select: { id: true },
+      }),
+      this.prisma.expenseRequest.count({ where: { caseId, tenantId, status: { not: 'CANCELLED' } } }),
+    ]);
+
+    return {
+      caseId,
+      clientAssigned: !!caseItem.clientId,
+      openingRequestExists: !!openingRequest,
+      activeExpenseRequestCount,
+      automaticCalculation,
+    };
+  }
+
+  /**
    * Otomatik açılış masraf seti oluştur
    * Case oluşturulduğunda çağrılır
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (müvekkilli dosya; peşin harç matrahı TL ise, arka planda)
+   * - ExpenseRequestController.createOpeningExpenses() → POST /expense-requests/case/:caseId/opening
+   * </remarks>
    */
   async createOpeningExpenseSet(caseId: string, tenantId: string, userId: string) {
     // Case ve client bilgilerini al
@@ -626,6 +701,22 @@ export class ExpenseRequestService {
 
     if (existing) {
       throw new BadRequestException('Bu takip için açılış masrafları zaten oluşturulmuş');
+    }
+
+    // Peşin harç TL tarifesi oranıdır: matrahı oluşturan tutarlar TL değilse hesaplanamaz (kur / matrah sözleşmesi yok).
+    // Eksik tutar 0 sayılmaz ve talep tamamlanmış gibi kayda geçmez (PENDING talep muhasebe günlüğüne de yazılır,
+    // UYAP kapısını kilitler) → hiçbir kayıt yazılmadan gerekçesiyle reddedilir.
+    const basis = evaluateOpeningExpenseBasis(openingExpenseBasisInputOfCase(caseItem));
+    if (!basis.calculable) {
+      throw new ConflictException({
+        code: basis.reasonCode,
+        message: basis.message,
+        requiredInfo: basis.requiredInfo,
+        notCalculableItems: basis.notCalculableItems,
+        caseCurrency: basis.caseCurrency,
+        basisCurrencies: basis.basisCurrencies,
+        tariffCurrency: basis.tariffCurrency,
+      });
     }
 
     // Asıl alacak tutarını hesapla (dues veya claimItems'dan)
