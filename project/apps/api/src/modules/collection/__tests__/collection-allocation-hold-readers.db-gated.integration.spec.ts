@@ -15,6 +15,7 @@ import { ClaimPriorityService } from '../../interest-engine/allocation/claim-pri
 import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-allocator.service';
 import { InterestEngineService } from '../../interest-engine/interest-engine.service';
 import { CaseBalanceService } from '../../interest-engine/orchestration/case-balance.service';
+import { toCaseBalanceDisplay } from '../../interest-engine/orchestration/case-balance-display';
 import { PolicyGateV2Service } from '../../interest-engine/policy-gate/policy-gate-v2.service';
 import { RateProviderService } from '../../interest-engine/rates/rate-provider.service';
 import { SegmentBuilderService } from '../../interest-engine/segments/segment-builder.service';
@@ -459,6 +460,51 @@ describeWithDisposableDb('K3-L bekletilen tahsilat okuyucuları — D1/D2 (dispo
 
     await complete(f, heldId, f.kesideciCd.id); // tekrar istek
     expect((await totalDue()).totalDue).toBe(done.totalDue);
+  });
+
+  it('K3-L KP-7: kanonik tahsilat gösterimi bekletme → tamamlama → iptal zincirinde Toplam = Borca uygulanan + Dağıtım bekleyen', async () => {
+    const f = await fixture('receipts', { accruingPrincipal: true });
+    const receipts = async () => {
+      const balance = await canonicalBalance().computeCaseBalance(f.tenantId, f.caseId, AS_OF);
+      const display = toCaseBalanceDisplay({ tenantId: f.tenantId, caseId: f.caseId, balance, generatedAt: `${AS_OF}T00:00:00.000Z` });
+      const r = display.receipts;
+      // Blok üretilmiyorsa karşılaştırma anlamsızdır → test açıkça kırılır (sessiz geçiş yok)
+      expect(r).not.toBeNull();
+      const cents = (n: number | null) => (n == null ? null : Math.round(n * 100));
+      // Aynı para iki kez sayılmaz: kuruş eşitliği her adımda
+      expect(cents(r!.receivedAmount)).toBe(cents(r!.appliedToDebtAmount)! + cents(r!.notAppliedAmount)!);
+      return {
+        received: r!.receivedAmount,
+        applied: r!.appliedToDebtAmount,
+        held: r!.allocationHeldAmount,
+        notApplied: r!.notAppliedAmount,
+        asOfDate: r!.asOfDate,
+        totalPaid: display.totals.totalPaidAmount,
+        gross: display.totals.grossReceivedAmount,
+        claimRemaining: display.currencies.find((row) => row.currency === 'TRY')?.claimRemaining ?? null,
+      };
+    };
+
+    await pay(f, 500, f.cirantaCd.id);
+    const base = await receipts();
+    expect(base).toMatchObject({ received: 500, applied: 500, held: 0, notApplied: 0, asOfDate: AS_OF, totalPaid: 500, gross: 500 });
+
+    // Mahsubu bekletilen 1.500: dosyaya girdi (Toplam tahsilat) ama borca UYGULANMADI ve borçtan düşülmedi (D1)
+    const heldId = await pay(f, 1500);
+    const held = await receipts();
+    expect(held).toMatchObject({ received: 2000, applied: 500, held: 1500, notApplied: 1500, totalPaid: 500, gross: 2000 });
+    expect(held.claimRemaining).toBe(base.claimRemaining);
+
+    // Tamamlanınca aynı 1.500 bir kez borca uygulanır; Toplam tahsilat DEĞİŞMEZ
+    await complete(f, heldId, f.kesideciCd.id);
+    const done = await receipts();
+    expect(done).toMatchObject({ received: 2000, applied: 2000, held: 0, notApplied: 0, totalPaid: 2000, gross: 2000 });
+
+    // Tamamlanmış tahsilat iptali: ters kayıt netleşmesiyle tahsilattan bir kez çıkar
+    await cancel(f, heldId);
+    const cancelled = await receipts();
+    expect(cancelled).toMatchObject({ received: 500, applied: 500, held: 0, notApplied: 0, totalPaid: 500, gross: 500 });
+    expect(cancelled.claimRemaining).toBe(base.claimRemaining);
   });
 
   it('iptal: bekletilen tahsilat iptal edilince "mahsubu bekleyen" de kalkar; tamamlanmış tahsilat iptalinde tutar bir kez geri alınır', async () => {
