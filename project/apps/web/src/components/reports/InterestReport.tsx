@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { TrendingUp, Loader2, Search, Calendar } from "lucide-react";
+import { turkeyToday } from "@/lib/turkey-calendar";
 
 interface InterestReportData {
   caseInfo: {
@@ -37,7 +38,8 @@ interface InterestReportData {
 export function InterestReport() {
   const [caseId, setCaseId] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  // K3-L KP-11: varsayılan bitiş (hesap) tarihi Türkiye takvimine göre bugün
+  const [endDate, setEndDate] = useState(() => turkeyToday());
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<InterestReportData | null>(null);
   const [error, setError] = useState("");

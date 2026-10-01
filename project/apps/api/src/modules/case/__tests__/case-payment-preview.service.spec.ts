@@ -549,3 +549,44 @@ describe("CasePaymentPreviewService", () => {
     expect(result.acceptance.warnings).not.toContain("CLIENT_SELECTION_REQUIRED_FOR_DISTRIBUTION");
   });
 });
+
+describe("K3-L KP-11: ödeme önizlemesi hesap tarihi", () => {
+  it("ödeme tarihi verilmezse Türkiye takvimine göre bugün kullanılır ve yanıtta açıkça döner", async () => {
+    jest.useFakeTimers({ now: new Date("2026-09-30T23:30:00.000Z") });
+    try {
+      const prisma = makePrisma();
+      const balance = makeBalance(1500);
+      const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+      const result = await service.preview({ tenantId: "tenant-1", caseId: "case-1", input: { amount: 100, currency: "TRY" } });
+
+      // UTC günü 2026-09-30 olurdu
+      expect(balance.computeCaseBalance).toHaveBeenCalledWith("tenant-1", "case-1", "2026-10-01");
+      expect(result).toMatchObject({ asOfDate: "2026-10-01", asOfDateSource: "TURKEY_TODAY_DEFAULT" });
+      expect(result.input.paymentDate).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("ödeme tarihi verilirse o gün kullanılır; saatli girdi ANIN Türkiye gününe indirgenir (UTC günü değil)", async () => {
+    const prisma = makePrisma();
+    const balance = makeBalance(1500);
+    const service = new CasePaymentPreviewService(prisma as never, balance as never);
+
+    const plain = await service.preview({
+      tenantId: "tenant-1", caseId: "case-1", input: { amount: 100, currency: "TRY", paymentDate: "2026-06-28" },
+    });
+    expect(plain).toMatchObject({ asOfDate: "2026-06-28", asOfDateSource: "PAYMENT_DATE", input: { paymentDate: "2026-06-28" } });
+
+    const withTime = await service.preview({
+      tenantId: "tenant-1", caseId: "case-1", input: { amount: 100, currency: "TRY", paymentDate: "2026-10-01T01:30:00+03:00" },
+    });
+    expect(withTime).toMatchObject({ asOfDate: "2026-10-01", input: { paymentDate: "2026-10-01" } });
+    expect(balance.computeCaseBalance).toHaveBeenLastCalledWith("tenant-1", "case-1", "2026-10-01");
+
+    await expect(service.preview({
+      tenantId: "tenant-1", caseId: "case-1", input: { amount: 100, currency: "TRY", paymentDate: "2026-02-30" },
+    })).rejects.toBeInstanceOf(BadRequestException);
+  });
+});

@@ -85,6 +85,7 @@ import { usePreSubmitValidation } from "@/hooks/useValidation";
 import { ValidationError } from "@/lib/api";
 import { useLimitationCheck, LimitationCheckResult } from "@/hooks/useLimitationCheck";
 import { LimitationWarningModal, LimitationBanner } from "@/components/limitation/LimitationWarningModal";
+import { isCalendarDay, turkeyToday } from "@/lib/turkey-calendar";
 
 const steps = [
   { id: 0, title: "Form Seçimi", icon: "📋" },
@@ -406,7 +407,7 @@ export default function NewCasePage() {
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [savingClient, setSavingClient] = useState(false);
   const [caseData, setCaseData] = useState({ 
-    fileNumber: "", executionFileNumber: "", startDate: new Date().toISOString().split("T")[0], 
+    fileNumber: "", executionFileNumber: "", startDate: turkeyToday(), // K3-L KP-11: Türkiye takvimine göre bugün
     notes: "", executionPath: "HACIZ", executionOfficeId: "", uyapBirimKodu: "",
     caseStatus: "DERDEST", hasArticle4Request: false,
     subCategory: "GENEL" as "GENEL" | "NAFAKA" | "DOVIZ" | "CEK" | "SENET" | "FATURA" | "KIRA",
@@ -433,6 +434,14 @@ export default function NewCasePage() {
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null = yeni kalem ekleme
   const [claimEditorKey, setClaimEditorKey] = useState(0); // editör formunu reset/yükle için remount anahtarı
   const [claimFormBuffer, setClaimFormBuffer] = useState<any | null>(null); // editördeki güncel (henüz eklenmemiş) kalem
+  // K3-L KP-11: alacak kalemi hesabının hesap tarihi sayfa düzeyinde tutulur ve taslağa yazılır — taslak ya da kalem
+  // editörü yeniden açıldığında kendi tarihi korunur (bugüne taşınmaz). Yeni hesapta varsayılan Türkiye takvimine göre bugün.
+  const [hesapTarihi, setHesapTarihi] = useState<string>(() => turkeyToday());
+  const [hesapTarihiNotice, setHesapTarihiNotice] = useState<string | null>(null);
+  const handleHesapTarihiChange = useCallback((value: string) => {
+    setHesapTarihi(value);
+    setHesapTarihiNotice(null);
+  }, []);
   // K3-L Faz 2b: çek tazminatı K3 onay talebi — yalnız kullanıcının AÇIK seçimiyle; anahtar taslakta saklanır (kararlı)
   const [checkPenaltyFormationRequested, setCheckPenaltyFormationRequested] = useState(false);
   const [checkPenaltyFormationKey, setCheckPenaltyFormationKey] = useState<string>(() => newCheckPenaltyFormationKey());
@@ -605,6 +614,16 @@ export default function NewCasePage() {
       if (savedState.documentSource) setDocumentSource(savedState.documentSource);
       if (savedState.showWizard !== undefined) setShowWizard(savedState.showWizard);
       if (savedState.showDocumentSelector !== undefined) setShowDocumentSelector(savedState.showDocumentSelector);
+      // K3-L KP-11: taslağın hesap tarihi AYNEN geri yüklenir (bugüne taşınmaz). Alanı olmayan eski taslakta tarih bilinmiyor:
+      // Türkiye takvimine göre bugün kullanılır ve kullanıcıya AÇIKÇA söylenir (sessiz taşıma yok).
+      if (isCalendarDay(savedState.hesapTarihi)) {
+        setHesapTarihi(savedState.hesapTarihi);
+      } else if ((savedState.claimDraftItems?.length ?? 0) > 0 || (savedState.dues?.length ?? 0) > 0) {
+        // Yalnız hesaplanmış kalem taşıyan eski taslakta söylenir (kalemsiz taslakta tarih henüz kullanılmadı)
+        setHesapTarihiNotice(
+          "Bu taslakta hesap tarihi kayıtlı değildi; Türkiye takvimine göre bugünün tarihi kullanıldı. Gerekirse hesap özetindeki tarihi değiştirin.",
+        );
+      }
       // Takip formu (form + alt form) kayıtlı koddan AYNEN; bilinemiyorsa tahmin/varsayılan YOK (eksik seçim bandı)
       const restoredForm = restoreCaseWizardFormSelection(savedState, formMetadata);
       if (restoredForm.status === "RESTORED") {
@@ -647,10 +666,12 @@ export default function NewCasePage() {
       responsiblePerson,
       // Son otomatik dosya no önerisi (elle girilen numarayı ayırt etmek için)
       autoFileNumber,
+      // K3-L KP-11: alacak kalemi hesabının hesap tarihi (yeniden açılışta korunur)
+      hesapTarihi,
     };
 
     saveCaseWizardDraftState(stateToSave, { tenantId: wizardTenantId, userId: wizardUserId });
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, checkedCekPreviewHash, selectedForm, selectedSubForm, responsiblePerson, autoFileNumber, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, checkedCekPreviewHash, selectedForm, selectedSubForm, responsiblePerson, autoFileNumber, hesapTarihi, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
   useEffect(() => {
@@ -2491,6 +2512,14 @@ export default function NewCasePage() {
                 </span>
               </label>
             )}
+            {hesapTarihiNotice && (
+              <div
+                data-testid="wizard-hesap-tarihi-notice"
+                className="mb-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900"
+              >
+                {hesapTarihiNotice}
+              </div>
+            )}
             <ProfessionalClaimItemForm
               key={claimEditorKey}
               initialItems={editingItemIndex !== null && claimDraftItems[editingItemIndex] ? [claimDraftItems[editingItemIndex].raw] : undefined}
@@ -2504,6 +2533,8 @@ export default function NewCasePage() {
               caseDebtors={claimFormCaseDebtors}
               fileNumber={caseData.fileNumber}
               takipTarihi={caseData.startDate}
+              hesapTarihi={hesapTarihi}
+              onHesapTarihiChange={handleHesapTarihiChange}
               executionOffice={executionOffices.find(o => o.id === caseData.executionOfficeId) ? {
                 name: executionOffices.find(o => o.id === caseData.executionOfficeId)!.name,
                 city: executionOffices.find(o => o.id === caseData.executionOfficeId)!.city,

@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api/client';
+import { turkeyToday } from "@/lib/turkey-calendar";
 
 // ============================================
 // TYPES
@@ -180,7 +181,8 @@ export function useCaseCalculation({
     setError(null);
 
     try {
-      const targetDate = date || calculationDate || new Date().toISOString().split('T')[0];
+      // K3-L KP-11: tarih verilmezse Türkiye takvimine göre bugün (UTC günü değil)
+      const targetDate = date || calculationDate || turkeyToday();
 
       // Backend'den hesap özeti al
       const response = await apiClient.get<CaseCalculationResult>(

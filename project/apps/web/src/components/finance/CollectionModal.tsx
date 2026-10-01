@@ -5,6 +5,7 @@ import { createIdempotencyKey } from '@/lib/idempotency-key';
 import { X, Loader2, XCircle, Eye } from "lucide-react";
 import { api, type PaymentPreviewResponseDTO } from "@/lib/api";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
+import { turkeyToday } from "@/lib/turkey-calendar";
 
 const COLLECTION_TYPES = [
   { value: "TAHSILAT", label: "Tahsilat" },
@@ -102,7 +103,8 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     channel: "BANKA",
     description: "",
     amount: "",
-    date: new Date().toISOString().split("T")[0],
+    // K3-L KP-11: varsayılan gün Türkiye takvimine göre bugün (önizlemenin hesap tarihi de budur)
+    date: turkeyToday(),
     currency: "TRY",
   });
 
@@ -115,7 +117,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
         amount: collection.amount?.toString() || "",
         date: collection.date 
           ? new Date(collection.date).toISOString().split("T")[0] 
-          : new Date().toISOString().split("T")[0],
+          : turkeyToday(),
         currency: collection.currency || "TRY",
       });
     } else {
@@ -124,7 +126,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
         channel: "BANKA",
         description: "",
         amount: "",
-        date: new Date().toISOString().split("T")[0],
+        date: turkeyToday(),
         currency: "TRY",
       });
     }
@@ -492,7 +494,16 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
           {previewResult && (
             <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold">Ödeme önizlemesi</span>
+                <span className="font-semibold">
+                  Ödeme önizlemesi
+                  {/* K3-L KP-11: kalan borcun hesaplandığı tarih açıkça yazılır (sunucu değeri) */}
+                  {previewResult.asOfDate && (
+                    <span data-testid="payment-preview-as-of" className="ml-1 font-normal text-[10px] text-blue-700">
+                      (hesap tarihi {previewResult.asOfDate.split("-").reverse().join(".")}
+                      {previewResult.asOfDateSource === "TURKEY_TODAY_DEFAULT" ? " — bugün" : ""})
+                    </span>
+                  )}
+                </span>
                 {previewResult.nonPersistent && (
                   <span className="rounded bg-white/80 px-2 py-0.5 text-[10px] font-medium text-blue-700">
                     Kayıt oluşturmaz

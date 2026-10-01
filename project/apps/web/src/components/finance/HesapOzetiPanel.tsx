@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay } from "@/hooks/useCaseCalculation";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
+import { turkeyToday } from "@/lib/turkey-calendar";
 import {
   buildGuardedPrimaryCalculationResult,
   evaluateGuardedPrimaryDisplayPilot,
@@ -60,7 +61,8 @@ export function HesapOzetiPanel({
   guardedPrimaryPilotEnabled = false,
   guardedPrimaryPilotAsOfDate,
 }: Props) {
-  const [hesapTarihi, setHesapTarihi] = useState(() => calculationDate || new Date().toISOString().split("T")[0]);
+  // K3-L KP-11: yeni hesapta varsayılan hesap tarihi Türkiye takvimine göre bugün (UTC günü değil); kullanıcı değiştirebilir
+  const [hesapTarihi, setHesapTarihi] = useState(() => calculationDate || turkeyToday());
   const [faizDokumuVisible, setFaizDokumuVisible] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastRefreshKeyRef = useRef<Props["refreshKey"]>(refreshKey);
