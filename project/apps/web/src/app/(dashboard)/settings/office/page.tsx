@@ -13,6 +13,12 @@ import { useKeyedSubmitLock } from "@/lib/use-submit-lock";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { LawyerDefaultPermissionsBadge, LawyerDefaultPermissionsStatusBlock } from "@/components/settings/lawyer-default-permissions-status";
+import {
+  defaultPermissionsFormValue,
+  parseLawyerDefaultPermissionsStatuses,
+  type LawyerDefaultPermissionsStatus,
+} from "@/lib/lawyer-default-permissions-status";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -104,6 +110,8 @@ function OfficeSettingsInner() {
   const [showBankModal, setShowBankModal] = useState(false);
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingLawyer, setEditingLawyer] = useState<Lawyer | null>(null);
+  // K3-L KP-9: avukat başına varsayılan dosya yetkisinin durumu (salt okuma). null = okunamadı / bilinmiyor.
+  const [lawyerPermissionStatuses, setLawyerPermissionStatuses] = useState<Map<string, LawyerDefaultPermissionsStatus> | null>(null);
   // PR-U1: avukat UPDATE-path benzer-isim review — { candidates, data(yeniden PUT için) }
   const [lawyerSimilar, setLawyerSimilar] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
@@ -224,6 +232,13 @@ function OfficeSettingsInner() {
     try {
       const res = await api.get("/office");
       setOffice(res.data);
+      // K3-L KP-9: varsayılan yetki durumu. Okunamazsa sayfa aynen çalışır; durum "bilinmiyor" kalır (rozet gösterilmez).
+      try {
+        const statusRes = await api.get("/lawyers/default-permissions/status");
+        setLawyerPermissionStatuses(parseLawyerDefaultPermissionsStatuses(statusRes?.data));
+      } catch {
+        setLawyerPermissionStatuses(null);
+      }
       const officeInit = {
         name: res.data?.name || "", address: res.data?.address || "", city: res.data?.city || "",
         district: res.data?.district || "", postalCode: res.data?.postalCode || "",
@@ -1063,7 +1078,7 @@ function OfficeSettingsInner() {
                       <GripVertical className="h-3.5 w-3.5 text-gray-400 cursor-grab active:cursor-grabbing shrink-0" />
                       <div className="min-w-0">
                         <p className="text-[13px] font-semibold text-gray-900 truncate">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
-                        <p className="text-[11px] text-gray-500 truncate">{lawyer.barNumber || "-"} • <span className={`px-1.5 py-0.5 rounded text-[10.5px] font-medium ${roleBadgeClass(lawyerRankLabel(lawyer))}`}>{lawyerRankLabel(lawyer)}</span></p>
+                        <p className="text-[11px] text-gray-500 truncate">{lawyer.barNumber || "-"} • <span className={`px-1.5 py-0.5 rounded text-[10.5px] font-medium ${roleBadgeClass(lawyerRankLabel(lawyer))}`}>{lawyerRankLabel(lawyer)}</span>{lawyerPermissionStatuses?.get(lawyer.id) ? <> • <LawyerDefaultPermissionsBadge status={lawyerPermissionStatuses.get(lawyer.id)} /></> : null}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -1480,7 +1495,7 @@ function OfficeSettingsInner() {
       )}
 
       {/* Modals */}
-      {showLawyerModal && <LawyerModal lawyer={editingLawyer} onSave={handleSaveLawyer} onClose={() => { setShowLawyerModal(false); setEditingLawyer(null); }} saving={saving} />}
+      {showLawyerModal && <LawyerModal lawyer={editingLawyer} permissionStatus={editingLawyer?.id ? lawyerPermissionStatuses?.get(editingLawyer.id) ?? null : null} onSave={handleSaveLawyer} onClose={() => { setShowLawyerModal(false); setEditingLawyer(null); }} saving={saving} />}
 
       {/* PR-U1: avukat update-path benzer-isim review (2 buton: güncelle / vazgeç; merge YOK) */}
       {lawyerSimilar && (
@@ -1591,7 +1606,7 @@ function OfficeSettingsInner() {
 
 
 // Avukat Modal
-function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
+function LawyerModal({ lawyer, permissionStatus = null, onSave, onClose, saving }: { lawyer: any; permissionStatus?: LawyerDefaultPermissionsStatus | null; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
   const [form, setForm] = useState({
     name: lawyer?.name || "", surname: lawyer?.surname || "", tckn: lawyer?.tckn || "",
     title: lawyer?.title || "", barNumber: lawyer?.barNumber || "", barCity: lawyer?.barCity || "",
@@ -1607,8 +1622,9 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
     canModifyOtherPermissions: lawyer?.canModifyOtherPermissions || false,
     // K1-4b: Office Approval delegation flag (yalniz duzenleme modunda anlamli; create DTO'su kabul etmiyor)
     canApproveOfficeActions: lawyer?.canApproveOfficeActions || false,
-    // Varsayılan yetkiler
-    defaultPermissions: lawyer?.defaultPermissions || {
+    // Varsayılan yetkiler. K3-L KP-9: kayıtlı değer biliniyorsa işaretler ONU gösterir (okuma yanıtı alanı taşımadığı
+    // için form eskiden hep aşağıdaki sabit yedeği gösteriyordu); bilinmiyorsa ya da kayıt yoksa yedek kullanılır.
+    defaultPermissions: defaultPermissionsFormValue(permissionStatus, lawyer?.defaultPermissions || {
       canEditCase: true,
       canGenerateDocs: true,
       canSyncUYAP: false,
@@ -1616,7 +1632,7 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
       canEditFinance: false,
       canChangeStatus: false,
       canEditParties: false,
-    },
+    }),
   });
 
   // K1-7-4B: kaydedilmemiş değişiklik tespiti (davet KAYDEDİLMİŞ kişi bilgisinden üretilir).
@@ -1738,6 +1754,7 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
             <p className="font-semibold text-blue-800 mb-1">🔐 Varsayılan Yetkiler</p>
             {/* K3-A: yalnız yönetimin (ADMIN/Ortak) avukat kartında KAYDETTİĞİ değer dosya açılışında anlık kopya olarak uygulanır */}
             <p data-testid="default-permissions-rule" className="text-xs text-blue-700 mb-2">Yeni açılan dosyalara, yönetimin (ADMIN kullanıcı veya Ortak avukat) bu avukat kartında kaydettiği değerler o anki hâliyle kopyalanır; sonraki değişiklik açılmış dosyaları değiştirmez. Yeni avukat oluştururken önceden doldurulan değerler uygulanmaz.</p>
+            {lawyer?.id && <LawyerDefaultPermissionsStatusBlock status={permissionStatus} />}
             <div className="grid grid-cols-4 gap-2">
               <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
                 <input type="checkbox" checked={form.defaultPermissions.canEditCase} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canEditCase: e.target.checked}})} />

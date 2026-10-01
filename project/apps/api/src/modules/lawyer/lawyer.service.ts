@@ -13,6 +13,11 @@ import { UpdateLawyerDto, validateLawyerUpdateInput } from "./dto/update-lawyer.
 import { LAWYER_CREATE_PERSIST_FIELDS } from "./dto/create-lawyer.dto";
 import { partyDb, runPartyWrite, type PartyWriteTxContext } from "@/common/party-write-tx";
 import { canonicalJson, defaultPermissionsFingerprint } from "./lawyer-default-permissions-fingerprint";
+import {
+  describeLawyerDefaultPermissionsStatus,
+  loadDefaultPermissionManagementBasis,
+  type LawyerDefaultPermissionsStatus,
+} from "./lawyer-default-permissions-status";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 // H2: aynı actor, yetki/rütbe alanlarını (lawyerRank/defaultPermissions/permissionsLocked/
@@ -187,6 +192,31 @@ export class LawyerService {
     const authorized = await this.officeApproval.isF01ActorAuthorized(actor.userId, tenantId);
     const access: F01ProjectionAccess = authorized ? 'AUTHORIZED_S0_S1' : 'PUBLIC_S0_ONLY';
     return projected.map((row) => projectF01Lawyer(row as Record<string, unknown>, access));
+  }
+
+  /**
+   * K3-L KP-9 — büronun avukatlarında varsayılan dosya yetkisinin DURUMU (salt okuma): bugün bu avukatla dosya açılırsa
+   * varsayılan dosyaya kopyalanır mı, kopyalanmazsa neden. Karar dosya açılışının kullandığı AYNI saf fonksiyon ve AYNI
+   * dayanak sorgusudur (`lawyer-default-permissions-status.ts`). Yazma / denetim kaydı / onay YOKTUR.
+   * Erişim: rota `OfficeF01AuthorizationGuard` ile F01 yetkili aktöre açıktır (yönetim kitlesi); tenant süzgeci burada.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerController.getDefaultPermissionsStatus() → GET /lawyers/default-permissions/status
+   * /// </remarks>
+   */
+  async getDefaultPermissionsStatus(tenantId: string): Promise<LawyerDefaultPermissionsStatus[]> {
+    const lawyers = await this.prisma.lawyer.findMany({
+      where: { tenantId },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, isActive: true, defaultPermissions: true },
+    });
+    const basisByLawyer = await loadDefaultPermissionManagementBasis(
+      this.prisma,
+      tenantId,
+      lawyers.map((lawyer) => lawyer.id),
+    );
+    return lawyers.map((lawyer) => describeLawyerDefaultPermissionsStatus(lawyer, basisByLawyer.get(lawyer.id) ?? null));
   }
 
   // Tek avukat getir
