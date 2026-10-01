@@ -23,6 +23,15 @@
 > GENİŞLETİLDİ (eski alternatiflerin hiçbiri düşmedi; öz-test S-8); blok öz-testinin ham çıktısı yerel kullanıcı adından arındırılır
 > (M-1); S-5 ölçütünün adı ölçtüğü kapsama daraltıldı; "Preflight hiçbir şey yazmaz" ifadesi ölçülen sınırla değiştirildi. Koşucu,
 > `d5-qr-test.js` ve pinli 9 dosya DEĞİŞMEDİ; paket digest aynı. **QrTest / Preflight / Run canlıda KOŞULMADI.**
+> **R04 (2026-09-30) — onay metni ve Recover yetkisi (yalnız metin; mantık/akış DEĞİŞMEDİ):** owner'a gösterilen "alıcı adresi
+> hiçbir kanıt/rapor/log dosyasına yazılmaz" ifadesi YANLIŞTI ve kaldırıldı. Onay metni artık alıcı adresinin kaldığı yerleri AYRI yazar:
+> koşucu kanıtları adresi içermez · canlı DB'de sentetik hesapta durur · **canlı API uygulama günlüğü her gönderim denemesinde adresi
+> MASKESİZ taşır** (kaynaktan doğrulandı; kapanıştaki ezme bu satırları değiştirmez) · e-posta sağlayıcısının kayıtları **ÖLÇÜLMEDİ**
+> (içerik/saklama bilinmiyor). Hedef tek form gönderimidir; tekrar gönderim ek e-posta üretebilir (kodla engellenmez). Run çıkış 5/6
+> **Recover yetkisi DEĞİLDİR**: Run'ın koşucu içindeki kendi kapanış adımları ile ayrıca başlatılan Recover ayrıdır; Recover yalnız
+> kanıt incelendikten sonra AYRI owner onayıyla başlatılır. Blok öz-testine G-1..G-4 eklendi (94/94 WinPS 5.1 + pwsh 7; eski blok
+> baytlarına karşı tam olarak G-1..G-4 FAIL). Koşucu, `d5-qr-test.js`, pinli 9 dosya ve paket digest DEĞİŞMEDİ; ürünün günlük
+> davranışı değiştirilmedi, mevcut günlükler silinmedi. Bu revizyon D-5 gönderimi ya da canlı koşum için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer (`client-external-access-r01` §7 D-5) ve ne yapmaz
 
@@ -34,7 +43,7 @@ Recover ölçülemeyeni 0 yapmaz) + **P5-C-TOKEN** (kapanıştan sonra kullanıl
 (kapanış girişi için aday parolalar — sıfırlama tamamlandıysa yeni parola, hesap açıldıysa ilk parola — mevcut hash ile `bcrypt.compare`
 ile doğrulanır; eşleşen yoksa P5-C3 ÖLÇÜLEMEYEN: yanlış parolayla alınan 401 kapanış kanıtı değildir).
 Koşucu **e-posta göndermez** (talep telefondan; ürün gönderim dener), `reset-password`/`change-password`/belge/mesaj uçlarını çağırmaz;
-alıcı adresini, parolaları, token'ları ve GO'yu hiçbir kanıta yazmaz. Gönderimsiz kontrol için `.invalid` adresle bir
+alıcı adresini, parolaları, token'ları ve GO'yu kendi kanıtlarına yazmaz (canlı API'nin kendi uygulama günlüğü AYRIDIR — §7, R04). Gönderimsiz kontrol için `.invalid` adresle bir
 `forgot-password` çağrısı yapar (P5-UNKNOWN; e-posta çıkmaz).
 
 **Makine ölçümü ≠ owner beyanı.** Tek kullanım ve e-posta teslimi makine tarafından KANITLANMAZ; koşucu kanıtı (`d5-evidence.json`)
@@ -78,7 +87,17 @@ ref'lerini günceller, iş verisi değildir) · **QrTest** (canlı veri yok, HTT
 isteği yok): konsol → **R05 adres teyidi** → `d5-qr-test.js` (çıktısı geçici dizindeki `extacc-d5-qrtest.log` dosyasına yönlendirilir; adres içermez) → telefon okuması sorusu · **Run**: konsol → bağımsız pencere teyidi →
 **R05 adres teyidi** → canlı veri işleme "EVET" → alıcı adresi (iki kez, yalnız konsol) → tek gönderim **denemesi** onayı "GÖNDER" →
 ezme kararı E/H → GO (yerel) → defter (sha256) → koşum → ekran temizliği → owner beyanı (9 soru, ayrı dosya) → **birleşik karar** →
-manifest · **Recover**: `-ReceiptFile`; ezme kararı sorulur; GO/alıcı/adres sorulmaz.
+manifest · **Recover**: `-ReceiptFile`; ezme kararı sorulur; GO/alıcı/adres sorulmaz. Recover, Run'ın koşucu içindeki kendi kapanış
+adımlarından AYRI bir işlemdir; otomatik değildir, yalnız AYRI owner onayıyla başlatılır (§4 adım 7).
+
+**Canlı veri işleme onay metni (R04).** Owner'a "EVET" sorulmadan önce alıcı adresinin kaldığı yerler ayrı satırlarda gösterilir:
+(1) koşucu kanıtları (`d5-evidence.json`, kurulum makbuzu, `d5-run.log`, `owner-block.json`, owner beyanı) adresi İÇERMEZ;
+(2) canlı DB — sentetik portal hesabının e-posta alanı (K-4 = E ise kapanışta yalnız bu alan `.invalid` ile ezilir);
+(3) canlı API uygulama günlüğü — ürün her gönderim denemesinde adresi MASKESİZ yazar (kaynaktan doğrulandı), ayrıca maskeli satırlar
+oluşur; ezme bu satırları değiştirmez, blok günlükleri değiştirmez/silmez; e-posta (SMTP) sağlayıcısının kendi kayıtları ÖLÇÜLMEDİ
+(adresi içerip içermediği ve saklama süresi bilinmiyor; SEC-MAIL-LOG-01). Aynı metin ve gönderim onayı, hedefin TEK form gönderimi
+olduğunu ve formun tekrar gönderilmesinin ek e-posta (ve günlükte adresi içeren ek satır) üretebileceğini, yeni bağlantı üretilirse ilk bağlantının geçersiz olacağını söyler. Öz-test G-2/G-3
+bunu owner'a GÖSTERİLEN metin üzerinde ölçer.
 
 **Dış origin kaynağı ve kontrolü (R03; D-6/D-7 bloklarıyla aynı mekanizma).** Blokta alan adı literali yoktur (`$ExpBaseUrl = $null`).
 Kaynak canlı `.env` `PUBLIC_PORTAL_BASE_URL` değeridir (`.env` ayrıca sha256 ile pinlidir); `Assert-PortalBaseUrl` biçimi denetler;
@@ -99,8 +118,9 @@ aynı (https, yolsuz, userinfo/sorgu/fragment yok); adres https, userinfo/sorgu/
 sondaki `/`, `/PORTAL/…`, `/auth/forgot-password` ve kodlanmış varyantlar reddedilir. Gösterim `extacc-display` ile yalnız yerel
 konsola; konsol yoksa çıkış 4. Ret mesajları adresi yazmaz. Intake zincirinin QR betiği (`/portal/login`) DEĞİŞTİRİLMEDİ ve D-5'te
 kullanılmaz.
-Alıcı adresi hiçbir dosyaya yazılmaz (`owner-block.json`: `recipientWritten=false`, `plannedRealSends=1` **bir PLANDIR**
-— `plannedRealSendsNote` bunu açıkça söyler; gerçekleşen gönderim/kabul/teslim kanıtı değildir —, `scrubRequested`).
+Blok ve koşucu alıcı adresini kendi kanıt/log dosyalarına yazmaz (`owner-block.json`: `recipientWritten=false`, `plannedRealSends=1` **bir PLANDIR**
+— `plannedRealSendsNote` bunu açıkça söyler; gerçekleşen gönderim/kabul/teslim kanıtı değildir —, `scrubRequested`). Bu ifade
+yalnız blok/koşucu dosyaları içindir: adres canlı DB'de ve canlı API uygulama günlüğünde ayrıca bulunur (yukarıdaki onay metni; §7).
 Canlı süreler bloğun içinden zorlanır (20 dk bekleme · 5 sn yoklama · 120 sn inceleme · 120 sn geç oluşma · token TTL 1 saat).
 
 **Birleşik karar (`d5-combined-verdict.json`)** — makine ölçümü ve owner beyanı AYRI alanlarda; karar yalnız şu kuralla:
@@ -132,13 +152,19 @@ da "ÖLÇÜLMEDİ".
 3. `-Mode Run`: soruları yanıtlayın (pencere teyidi, **R05 adresi**, EVET, alıcı adresi ×2, GÖNDER = tek gönderim **denemesi** onayı,
    ezme E/H, GO ref).
 4. 1. konsol ekranı: QR'ı okutun, ekrandaki adresi forma **aynı** yazın, formu **bir kez** gönderin. E-postayı bekleyin (gelip gelmediği
-   koşucu tarafından ölçülmez; beyanda sorulur).
+   koşucu tarafından ölçülmez; beyanda sorulur). E-posta gecikse de formu **tekrar göndermeyin**: tek gönderim kodla garanti edilmez,
+   ürün tekrar talepte yeni bağlantıyla ek e-posta üretebilir ve API günlüğüne adresi içeren ek satır yazabilir; yeni bağlantı üretilirse ilk e-postadaki bağlantı geçersiz olur.
 5. 2. konsol ekranı göründüğünde: telefonda e-postadaki bağlantıyı açın, ekrandaki yeni parolayı girin, bir kez giriş yapın; listede
    yalnız ekrandaki dosya numarası olmalı. Sonra **aynı bağlantıyı ikinci kez açıp formu GÖNDERİN** (hata/geçersiz beklenir) — koşucu
    bunu ölçemez; beyanda **H / A / S / Y / ?** sorulur. Yalnız açıp göndermediyseniz **A**, hiç denemediyseniz **Y** yazın.
 6. Koşum bitince ekran temizlenir; 9 beyan sorusunu yanıtlayın (adres/parola/bağlantı yazmayın). Blok birleşik kararı yazar ve gösterir.
    Pencereyi kapatın.
-7. Çıkış 5/6 ise `-Mode Recover -ReceiptFile <kanıt dizinindeki d5-setup-receipt.json>` BİR KEZ; kabul tekrarlanmaz.
+7. **Çıkış 5/6 Recover yetkisi DEĞİLDİR (R04).** Run kendi kapanış adımlarını (portal kapatma, token iptali, personel/dosya kapanışı)
+   koşucu İÇİNDE zaten denedi; 5/6 bu adımların doğrulanamadığını söyler. Blok Recover başlatmaz; ajan da otomatik başlatmaz. Önce
+   kanıt dizini incelenir (`d5-evidence.json` içindeki kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonuç CLIENT'a/owner'a
+   bildirilir; kanıttaki kurtarma adımı bir **öneridir**, yetki değildir. Recover (`-Mode Recover -ReceiptFile <kanıt dizinindeki
+   d5-setup-receipt.json>`) yalnız bu inceleme sonrası **AYRI owner onayıyla**, BİR KEZ koşulur; ürün bulgusu varsa Recover onu
+   düzeltmez; kabul tekrarlanmaz. Ezme hatası (P5-SCRUB) için de aynı kural geçerlidir.
 
 ## 5. Öz-testler (canlıya dokunmadan; R03 + inceleme düzeltmeleri R03-D, 2026-09-30 — sayılar SON dosya baytlarıyla ÖLÇÜLDÜ)
 
@@ -148,6 +174,24 @@ da "ÖLÇÜLMEDİ".
 | `d5-owner-block-selftest.ps1` (AST ile gerçek fonksiyonlar; gerçek node; N; K-1..K-8; R-1/R-8/R-9/R-10; C-*; L; O-1..O-8; V; Z; Q; S-1..S-4) + **R03**: **A-1** kapıların gerçek satırları sahte `.env` ile adresi çözer, owner'a soru sorulmaz · **A-2** `.env` değeri değişince QR adresi de değişir (blokta sabit yok) ve gerçek `d5-qr-test.js` doğrulayıcısı kabul eder · **A-3** biçim kapısı (http/yol/sondaki `/`/port/sorgu/userinfo/IP/localhost/fragment/alt çizgi/boşluk/boş, anahtar çift/yok → DUR) · **A-3b** büyük harfli host → QrTest kapalı yönde durur · **A-4..A-6** · **A-7 Preflight adres sormaz ve yazmaz** (AST: Preflight dalı + kapılardan erişilebilen 11 fonksiyonda 64 komut incelendi, soru/onay/node/yazma komutu 0; pozitif kontrol Run/QrTest'te görür) · **K-9/K-9b/K-9c** owner adresi eşleşmezse canlı veri onayından önce DUR (9 yakın-yanlış girdi); koşucuya giden origin `.env` değeri · **Q-D5** QrTest `d5-qr-test.js`'i tek kez çağırır, koşucuyu çağırmaz, adres `<.env origin>/portal/forgot-password`, ortam temizlenir · **Q-R05** (6 durum) · **Q-NEG** · **Q-NULL** · **S-5** public host / yerel kullanıcı yolu literali yok — yalnız bu ikisi ölçülür; canlı yayın dizini, servis adları, yerel portlar ve DB adı gibi diğer yerel topoloji sabitleri blokta DURUR (ölçütün kapsamı dışında; ayrı iş) (1025 metin sabiti incelendi; tek `http(s)://` adresi yerel API) · **S-6/S-7** QrTest çağrısı ve pin listesi · **X-0** beklenmeyen istisna sessizce kesmez, FAIL satırı olur. Çıktı artık her ölçütün ölçülen değerini de yazar (GÖZLEMLER) · **R03-D**: **S-8** yabancı kabul süreci deseni eski 8 alternatifi korur ve `d6-portal-` / `d7-portal-` / `d8-staff-` içerir (11 alternatif); göreli yolla başlatılan 8 koşucu örneği eşleşir, 4 uygulama süreci örneği (node --version, API, web) eşleşmez; süzgeç yalnız `node.exe`; kapı `Fail` ile durdurur · **M-1** öz-testin ve blok fonksiyonlarının tüm `Write-Host` çıktısı yazılmadan önce yerel kullanıcı adından arındırılır; `Fail` istisna mesajı (karar girdisi) değişmez | **90/90 PASS** WinPS 5.1.26100.9549 ve pwsh 7.6.6 (blok sha `691359FD…51B9` log içinde; HAM çıktıda yerel kullanıcı adı geçişi 0 — maskeden önce ölçüldü). R03 ilk tur 88/88, R02 70/70 (ikisi de eski baytlar) |
 | `d5-qr-selftest.js` (**yeni**; DB/ağ yok, konsola QR çizmez): **V** doğrulama — 4 kabul, 28 yanlış yol (zorunlu 6 yol + kodlanmış/normalleşen varyantlar), 27 diğer ret (http, userinfo, sorgu, fragment, origin uyuşmazlığı, boş/bozuk adres, geçersiz beklenen origin → 4; TLS kapalı → 1); ret mesajı adresi yazmaz · **E-1** origin kuralı `expectedOriginOf` ile aynı (21 girdi) · **M** `main` sahte gösterimle: 55 ret durumunun hepsinde konsol açma 0 / QR üretimi 0; kabulde QR yalnız doğrulanmış adresle; konsolsuz 4 · **P** gerçek süreç, konsolsuz + casus ön-yükleme (17 koşum): yanlış yolda çıkış 4 ve `CONOUT$` açma denemesi **0**; doğru yolda açma denemesi **1** (casusun gördüğünün kanıtı) + "yerel konsol yok" 4; ağ çağrısı 0, dosya yazması 0 · **S** tek `require`, ağ modülü/host literali yok, require ağacı 3 dosya, intake QR betiği değişmedi (pinle eşit) | **23/23 PASS** — R03-D'de yeniden koşuldu; betik DEĞİŞMEDİ (sha `248929D0…E0A5` log içinde) |
 | Negatif kontrol (mutasyon; repo dışı `mutasyon-kontrol.js`, geçici kopyada): `d5-qr-test.js` için 9 bozma (yol `/portal/login`; yol+kanonik kapı yok; kanonik kapı yok; origin kapısı yok; TLS kapısı yok; konsol kapılardan önce; sorgu/fragment kapısı yok; http kabul; ret mesajı adres yazıyor) ve owner bloğu için 10 bozma (eski QR betiği; yanlış yol; host literali; kullanıcı yolu literali; Run'da teyit yok; QrTest'te teyit yok; kapılar adres soruyor; biçim kapısı yok; teyit her girdiyi kabul ediyor; pin listesinde eski betik) + **R03-D**: 3 blok bozması (yabancı süreç deseni eski hâline döndü; `extacc-` alternatifi düşürüldü; kapı durdurmuyor) ve 1 öz-test bozması (çıktı maskesi devre dışı) | **25/25**: bozulmamış 2 kopya PASS, **23 bozmanın 23'ü ilgili öz-testi FAIL ettirdi** (R03 ilk tur: 21/21, eski baytlar) |
+
+**R04 (2026-09-30) — son dosya baytlarıyla** (blok `98200AF1…0733`, blok öz-testi `D6BE7AC7…FB24`; sha'lar log içinde). İlk R04 koşumu blok `22B50727…9BF0` ile aynı sayıları verdi; inceleme sonrası yalnız metin düzeltmesiyle (tekrar gönderimde günlük satırı "yazabilir", ilk bağlantının geçersizleşmesi, kalan/kalmayan yer ayrımı) blok son baytlara geldi ve aşağıdaki testler son baytlarla yeniden koşuldu:
+
+| Test | Sonuç (R04) |
+|---|---|
+| `d5-owner-block-selftest.ps1` + **G-1** kaynakta (yorumlar dahil) "hiçbir … dosya/log/günlük/kanıt/rapor … yazılmaz" türü mutlak iddia yok (504 satır tarandı; desen 4 bilinen mutlak cümleyi yakalar, kapsamı adlandırılmış ve ilgisiz 2 cümleyi yakalamaz) · **G-2** owner'a GÖSTERİLEN onay metni (Write-Host yakalaması) koşucu kanıtı → canlı DB → canlı API uygulama günlüğü (MASKESİZ, kaynaktan doğrulandı, kapanışta ezilmez, blok silmez) → sağlayıcı (ÖLÇÜLMEDİ, içerik/saklama bilinmiyor) ayrımını sırasıyla yazar; eski "içerebilir" / "maskelenmiş API günlük satırları" yok · **G-3** tek form gönderimi hedefi + tekrar gönderimde ek e-posta hem onay hem gönderim metninde · **G-4** Run çıkış 5/6 metni Run'ın kendi kapanışını Recover'dan ayırır, "Recover yetkisi değildir / blok başlatmaz / önce kanıt / AYRI owner onayı" der, tek node çağrısı (recover çağrısı 0); çıkış 0'da Recover metni yok; ezme hatası satırı da ayrı onay + otomatik değil | **94/94 PASS** WinPS 5.1.26100.9549 ve pwsh 7.6.6 (çıkış 0; ham çıktıda yerel kullanıcı adı geçişi 0). Önceki 90 ölçüt değişmeden PASS |
+| Negatif kontrol + mutasyon (geçici kopya; yeni öz-test): eski blok baytları `691359FD…51B9` ve 6 metin bozması (yoruma mutlak iddia; sağlayıcı satırı silindi; API günlüğü "MASKESİZ yazar" → "yazabilir"; tekrar-gönderim satırı silindi; 5/6 metni eski emre döndü; ezme satırı "Recover ile tekrar denenebilir"e döndü) + bozulmamış kopya | **16/16 beklenenle uyumlu** (her varyant WinPS 5.1 + pwsh 7): eski blok **90/94, çıkış 1, FAIL = tam olarak G-1..G-4**; her bozma yalnız hedef ölçütü FAIL ettirdi (93/94); bozulmamış kopya 94/94 |
+| Mantık eşitliği (AST; yorumlar, Write-Host komutları ve Read-Answer/Read-Host istem metinleri çıkarılır, boşluk normalize) | eski ve yeni blokta kalan kod **birebir eşit** (21969/21969 karakter; 32/32 fonksiyon; Write-Host 44 → 58, fonksiyon içi 41 → 55 — son baytlarla yeniden sayıldı; istem 18/18) WinPS 5.1 + pwsh 7; negatif kontrol: 5/6 koşulu değiştirilmiş kopya FARK verir |
+| `d5-selftest.js` (bloğu T-3..T-10'da statik okur) | **41/41 PASS** (çıkış 0; yeni blok sha log içinde; koşucu DEĞİŞMEDİ `924617FF…6094`; ham çıktıda ad geçişi 0) |
+| `d5-qr-selftest.js` | **KOŞULMADI** — D-5 owner bloğunu okumaz (yalnız `d5-qr-test.js`, H5 koşucusu, intake QR betiği ve EXTACC intake bloğu); bunların hiçbiri değişmedi. Son sonuç R03-D 23/23 |
+| Ayrıştırma + kodlama | iki `.ps1` dosyası WinPS 5.1 ve pwsh 7'de parse hatası 0; UTF-8 BOM korunur; satır sonu LF (CR 0); katı UTF-8 çözümü geçerli |
+| Paket digest | pinli 9 dosyadan bloktan bağımsız betikle yeniden hesaplandı: `E24FBDD3…C852` = bloktaki `$ExpPackage` (değişmedi); pin uyuşmazlığı yok; `ExpLiveDist` / `ExpEnvSha` değişmedi |
+
+R04 deneme koşumu (korunur): ilk koşum 94/94 PASS verdi ama G-4 döngüsündeki `$t` değişkeni PowerShell'de harf duyarsız olduğundan
+öz-testin geçici dizin değişkeni `$T`'nin üzerine yazdı; son "geçici dizin:" satırı yakalanan metni bastı (sonuçlar etkilenmedi —
+`$T` G-4'ten sonra yalnız bu satırda kullanılır). Değişken adı değiştirildi, iki sürümde yeniden koşuldu.
+Kanıt (repo dışı; loglar PR/belge/public repoya yapıştırılmaz): R04 test logları, status dosyaları (komut, çıkış kodu, koşum
+öncesi/sonrası sha256), negatif kontrol sonuçları ve bağımsız inceleme çıktıları kalıcı ajan kanıt dizininde `HY_R27_AGENT_EVIDENCE\d5-r04\` altında (hash doğrulamalı kopya).
 
 Deneme koşumları (korunur, son koşumdan ayrı): blok öz-testi ilk deneme **86/87 FAIL** — A-3'te "büyük harf" beklentisi yanlıştı (biçim
 kapısı D-6/D-7 ile aynı kural ve büyük/küçük harf duyarsız); beklenti düzeltildi ve kapalı yönde davranış A-3b ile ayrıca ölçüldü.
@@ -170,14 +214,16 @@ Blok öz-testi tek başına koşulduğunda da çıktısı maskelidir (M-1); `d5-
 Öz-testte "telefon" bir istemci taklididir; yeni parolayı koşucunun **yalnız display=none ve canlı olmayan DB'de** yazdığı test
 dosyasından (`D5_TEST_DISPLAY_SINK`) alır — bu yol kaynakta tek yerde, `if (con)` dalının dışında ve owner bloğunda kurulmaz (T-2, S-4).
 
-## 6. Pinler (R03; blok ve blok öz-testi sha'sı R03-D)
+## 6. Pinler (R03; blok ve blok öz-testi sha'sı R04)
 
 | Dosya | sha256 |
 |---|---|
-| `d5-portal-reset-live-run.js` (R03'te DEĞİŞMEDİ) | `924617FFFBD613220A37322960A1E4CAC678D7BE1BB27121022928A4B9676094` |
-| `d5-qr-test.js` (yeni) | `248929D081290EDFEEBA41E7371EF3A3814163DBBEB7B24D2C921B74695AE0A5` |
-| `d5-owner-live-block.ps1` (paket digest bloğun içinde `E24FBDD3…C852`; `ExpLiveDist` = R27 `E28A6863…5134`) | `691359FDEEBF36C29BA27D850C2409819B09086138049C4C08BF3CAB33BF51B9` |
-| `d5-fake-portal-api.js` (değişmedi) / `d5-selftest.js` / `d5-owner-block-selftest.ps1` / `d5-qr-selftest.js` | `E18446C4…748B` / `F8372A69…186E` / `18EC983F…EC0C` / `F17BC670…8924` |
+| `d5-portal-reset-live-run.js` (R03'te ve R04'te DEĞİŞMEDİ) | `924617FFFBD613220A37322960A1E4CAC678D7BE1BB27121022928A4B9676094` |
+| `d5-qr-test.js` (R04'te değişmedi) | `248929D081290EDFEEBA41E7371EF3A3814163DBBEB7B24D2C921B74695AE0A5` |
+| `d5-owner-live-block.ps1` **R04** (paket digest bloğun içinde `E24FBDD3…C852`, değişmedi; `ExpLiveDist` = R27 `E28A6863…5134`) | `98200AF14ED6C53A608247BA995D2E3BF85199A9310CAF417661E824B0090733` |
+| `d5-owner-block-selftest.ps1` **R04** | `D6BE7AC7C7E5E4DB5ABAD189B9FE0E703D9D7811857DF601923062AD619AFB24` |
+| önceki (R03-D): `d5-owner-live-block.ps1` / `d5-owner-block-selftest.ps1` | `691359FDEEBF36C29BA27D850C2409819B09086138049C4C08BF3CAB33BF51B9` / `18EC983FA27A6D793071B0FB2E5239917D2CDC90286EE45C500C795E1CF9EC0C` |
+| `d5-fake-portal-api.js` / `d5-selftest.js` / `d5-qr-selftest.js` (R04'te değişmedi) | `E18446C4…748B` / `F8372A69…186E` / `F17BC670…8924` |
 
 Bloğun pin listesi (9 dosya) = koşucunun **ölçülen** require ağacı (8 dosya) ∪ `d5-qr-test.js`'in **ölçülen** require ağacı (3 dosya:
 kendisi + `extacc-display.js` + vendor `qrcode.js`; son ikisi koşucu ağacında zaten var). Intake zincirinin QR betiği artık pin
@@ -189,6 +235,9 @@ dosyada pin uyuşmazlığı yok (`son-kosum\03-pin-dogrulama.log`); ayrıca `d5-
 karşılaştırır. Blok kendi pinini içermez; blok değiştiğinde yalnız bu tablo güncellenir.
 R03-D'de pinli 9 dosyanın hiçbiri değişmedi; pinler ve paket digest yeni koşumda yeniden ölçüldü ve eşit bulundu
 (`duzeltme\son-kosum\03-pin-dogrulama.log`). Değişen yalnız blok (pin listesinde değil) ve blok öz-testidir.
+R04'te de değişen yalnız blok (metin) ve blok öz-testidir; paket digest bloktan bağımsız betikle yeniden hesaplandı ve `E24FBDD3…C852`
+ile eşit bulundu. Blok sha'sı değiştiği için R03-D'de ölçülmüş Preflight sonucu (varsa) R04 baytlarını kapsamaz; Preflight yeni
+baytlarla, main'e merge sonrası ayrıca koşulur.
 Bloğun `$Repo` yolu canlı repo olduğundan Preflight paket kapısı ancak bu dosyalar main'e merge edilip main senkron olduğunda geçer.
 
 ## 7. Owner kararları ve sınırlar
@@ -198,7 +247,19 @@ Bloğun `$Repo` yolu canlı repo olduğundan Preflight paket kapısı ancak bu d
   koşucu yalnız bloğun kurduğu `D5_API_BASE`/`D5_EXPECT_BASE_URL` uçlarını çağırır ve `forgot-password`'ı yalnız `.invalid` adresle çağırır (T-1).
 - Gerçekleşen gönderim adedi KANITLANMIŞ sayılmaz; `plannedRealSends=1` plan, `emailDeliveryMeasured=false` ölçüm sınırıdır.
 - Sahte API ürünün kendisi değildir: ürünün hız sınırı (portal deposu ayrı), gerçek SMTP gönderimi ve tenant yaşam döngüsü yalnız canlıda ölçülür.
-- E-postayı silmek kapanış değildir; kanıt P5-C-TOKEN'dır. Sağlayıcı günlüğü alıcıyı içerebilir (kısıtlı kayıt SEC-MAIL-LOG-01; onay metninde belirtilir).
+- E-postayı silmek kapanış değildir; kanıt P5-C-TOKEN'dır.
+- **Alıcı adresinin kaldığı yerler (SEC-MAIL-LOG-01, kısıtlı kayıt; ayrıntı public repoya yazılmaz) — R04:** koşucu kanıtları
+  (`d5-evidence.json`, makbuz, `d5-run.log`, `owner-block.json`, owner beyanı) adresi içermez (koşucu maskeler). Canlı DB'de adres
+  sentetik portal hesabında durur; K-4 = E ise kapanışta yalnız bu DB alanı `.invalid` ile ezilir. **Canlı API, her gönderim
+  denemesinde adresi kendi uygulama günlüğüne MASKESİZ yazar** ve bu çıktı API günlük dosyasına düşer (kaynaktan doğrulandı; ayrıca
+  maskeli satırlar vardır); ezme bu satırları değiştirmez. E-posta (SMTP) sağlayıcısının kendi kayıtları **ölçülmedi** — adresi
+  içerip içermediği ve saklama süresi hakkında iddia kurulmaz. Bu paket ürünün günlük davranışını değiştirmez ve mevcut günlükleri
+  silmez; günlük satırlarının ele alınması ayrı iş ve owner kararıdır. Owner'a canlı veri onayından ÖNCE ayrı satırlarda gösterilir (G-2).
+- **Tek gönderim hedeftir, kodla garanti edilmez:** K-3 planı 1 form gönderimidir; ürün tekrar talebi (hız sınırı dışında) engellemez.
+  Owner formu tekrar gönderirse (hız sınırı ve hesap durumu izin verirse) yeni token + ek e-posta oluşabilir, günlükte adresi içeren ek satır yazılabilir ve ilk bağlantı geçersiz olur (G-3; §4 adım 4).
+- **Recover yetkisi (R04):** Run çıkış 5/6 otomatik Recover yetkisi DEĞİLDİR. Run'ın koşucu içindeki kapanış adımları Run'ın
+  parçasıdır; ayrıca başlatılan Recover ayrı bir canlı yazma işlemidir ve kanıt incelemesi + açık kalan kaynakların bildirilmesi
+  sonrasında AYRI owner onayı gerektirir (§4 adım 7; G-4). Koşucunun kanıttaki kurtarma adımı metni (pinli, değişmedi) bir öneridir.
 - **Canlıda ölçülmeyenler:** QrTest, Preflight ve Run canlıda KOŞULMADI. Öz-testler QR'ı hiçbir görünür konsola çizmez; blok öz-testi
   QrTest'te gerçek doğrulayıcıyı yükleyen geçici betik kullanır. QR'ın telefonla okunabilirliği yalnız owner'ın QrTest koşumunda ölçülür.
 - **Biçim kapısı büyük/küçük harf duyarsızdır** (D-6/D-7 ile aynı koşul). D-5'te sonuç kapalı yöndedir (A-3b). Sıkılaştırma istenirse

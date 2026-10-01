@@ -6,17 +6,23 @@
 #   -Mode QrTest     Canlı veri YOK: "şifremi unuttum" sayfasının (/portal/forgot-password) QR'ı d5-qr-test.js ile yerel konsolda gösterilir;
 #                    owner önce R05 adresini konsola yazar (canlı .env ile birebir eşleşmeli), sonra telefonla okutur. HTTP isteği yapılmaz.
 #                    QR betiğinin çıktısı geçici dizindeki extacc-d5-qrtest.log dosyasına yönlendirilir (adres içermez); başka dosya yazılmaz.
-#   -Mode Run        TEK SEFERLİK canlı koşum: kapılar → bağımsız pencere teyidi → R05 adres teyidi → canlı veri işleme onayı → ALICI ADRESİ (iki kez, yalnız
-#                    bu konsolda; hiçbir dosyaya yazılmaz) → TEK GERÇEK E-POSTA GÖNDERİM DENEMESİ ONAYI (plan=1; SMTP kabulü ve
-#                    posta kutusuna teslim ÖLÇÜLMEZ, yalnız owner beyanı) → kapanışta adres ezme kararı → GO (yerel)
+#   -Mode Run        TEK SEFERLİK canlı koşum: kapılar → bağımsız pencere teyidi → R05 adres teyidi → canlı veri işleme onayı → ALICI ADRESİ (iki kez,
+#                    bu konsolda; blok ve koşucu kanıtlarına yazılmaz — canlı API günlüğü AYRIDIR, bkz. SIR) → TEK GERÇEK E-POSTA GÖNDERİM DENEMESİ
+#                    ONAYI (hedef/plan=1; form tekrar gönderilirse ek e-posta oluşabilir; SMTP kabulü ve posta kutusuna teslim ÖLÇÜLMEZ, yalnız
+#                    owner beyanı) → kapanışta adres ezme kararı → GO (yerel)
 #                    → GO defteri (yalnız sha256, koşumdan ÖNCE) → koşum (1. konsol: QR + adres; 2. konsol: YENİ PAROLA) → ekran temizliği
 #                    → owner beyanı (ayrı dosya) → birleşik karar (d5-combined-verdict.json: makine gözlemi + beyan AYRI alanlarda) → manifest.
 #   -Mode Recover    Yalnız kapanış (portal + token iptali + personel/dosya); `-ReceiptFile` zorunlu; GO/alıcı sorulmaz; kabul ölçütleri koşulmaz.
+#                    Run'ın koşucu İÇİNDEKİ kendi kapanış adımlarından AYRI bir işlemdir: otomatik DEĞİLDİR; Run çıkış 5/6 Recover yetkisi
+#                    DEĞİLDİR — önce kanıt incelenir, açık kalan kaynaklar bildirilir, Recover yalnız AYRI owner onayıyla başlatılır.
 # ÖN KOŞUL: canlı API dist'i R27 (D5-SEC-R01/R02/R03) olmalı — R26 (A8B17A38) ile Preflight/Run DURUR (kapatma token'ı temizlemez).
 # YAPMAZ : koşucu e-posta GÖNDERMEZ (talep owner telefonundan; ürün gönderim dener, kabul/teslim ölçülmez) · reset/change-password/belge/mesaj uçları çağrılmaz ·
 #          .env/görev/Caddy/tünel/DNS değişikliği · yeniden başlatma · otomatik tekrar · otomatik Recover.
-# SIR    : DB URL, personel parolası, ALICI ADRESİ, YENİ PAROLA, GO ref ve token'lar hiçbir dosyaya yazılmaz. Yeni parola yalnız bu konsol
-#          penceresine çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi kapatın.
+# SIR    : DB URL, personel parolası, ALICI ADRESİ, YENİ PAROLA, GO ref ve token'ları bu blok ve koşucu kendi kanıt/log dosyalarına YAZMAZ
+#          (koşucu alıcıyı maskeler). AYRIM: alıcı adresi canlı DB'de sentetik portal hesabında durur; canlı API kendi uygulama günlüğüne
+#          her gönderim denemesinde alıcı adresini MASKESİZ yazar (kaynaktan doğrulandı; kapanıştaki ezme bu satırları değiştirmez; blok
+#          günlükleri silmez); e-posta (SMTP) sağlayıcısının kayıtları ÖLÇÜLMEDİ — içerik/saklama bilinmiyor (SEC-MAIL-LOG-01).
+#          Yeni parola yalnız bu konsol penceresine çizilir; pencereyi kaydeden bir terminal KULLANMAYIN; koşum sonunda pencereyi kapatın.
 # TOPOLOJİ: public portal adresi canlı .env'den okunur (biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü
 #          $env:USERPROFILE'a görelidir (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Preflight adres SORMAZ.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -221,19 +227,29 @@ function Confirm-LiveDataProcessing {
   Write-Host ''
   Write-Host 'CANLI VERİ İŞLEME — onayınız gerekiyor:' -ForegroundColor Yellow
   Write-Host '  Canlı DB''de YALNIZ yeni bir sentetik tenantta yazılacak: sentetik kullanıcılar, müvekkil, dosya, borçlu ve sentetik müvekkile'
-  Write-Host '  ait BİR portal hesabı. Bu hesabın e-posta adresi, birazdan gireceğiniz GERÇEK alıcı adresidir (adres yalnız DB''deki bu sentetik'
-  Write-Host '  hesapta durur; hiçbir kanıt/rapor/log dosyasına yazılmaz). Telefonunuzdan "şifremi unuttum" talebi gönderdiğinizde ürün bu adrese'
-  Write-Host '  TEK bir gerçek sıfırlama e-postası göndermeyi DENER (plan: 1; SMTP kabulü ve posta kutusuna teslim ÖLÇÜLMEZ — yalnız beyanınız).'
-  Write-Host '  Sıfırlama, girişler ve kapanış portal hesabında sürüm/sayaç günceller;'
-  Write-Host '  audit ve maskelenmiş API günlük satırları oluşur; e-posta sağlayıcısının günlüğü alıcıyı içerebilir (SEC-MAIL-LOG-01, ayrı kayıt).'
+  Write-Host '  ait BİR portal hesabı. Bu hesabın e-posta adresi, birazdan gireceğiniz GERÇEK alıcı adresidir.'
+  Write-Host '  ALICI ADRESİ — NEREDE KALIR / KALMAZ (ayrı ayrı):' -ForegroundColor Yellow
+  Write-Host '   1) Koşucu kanıtları (d5-evidence.json, kurulum makbuzu, d5-run.log) ve bloğun yazdığı owner-block.json / owner beyanı: adresi İÇERMEZ'
+  Write-Host '      (koşucu maskeler; blok adresi bu dosyalara yazmaz).'
+  Write-Host '   2) Canlı DB: sentetik portal hesabının e-posta alanında durur (kapanışta ezme kararınıza göre .invalid ile ezilebilir).'
+  Write-Host '   3) Canlı API uygulama günlüğü: ürün her gönderim DENEMESİNDE alıcı adresini API günlük dosyasına MASKESİZ yazar (kaynaktan'
+  Write-Host '      doğrulandı); ayrıca maskeli satırlar oluşur. Bu satırlar kapanışta EZİLMEZ; bu blok günlükleri değiştirmez ve silmez.'
+  Write-Host '   E-posta (SMTP) sağlayıcısının kendi kayıtları: ÖLÇÜLMEDİ — adresi içerip içermediği ve saklama süresi bilinmiyor (SEC-MAIL-LOG-01).'
+  Write-Host '  Hedef TEK gönderimdir: "şifremi unuttum" formunu telefonunuzdan BİR KEZ gönderin; ürün bu adrese bir sıfırlama e-postası göndermeyi'
+  Write-Host '  DENER (SMTP kabulü ve posta kutusuna teslim ÖLÇÜLMEZ — yalnız beyanınız). Tek gönderim kodla GARANTİ EDİLMEZ: formu tekrar'
+  Write-Host '  gönderirseniz ürün yeni bir bağlantıyla EK bir e-posta üretebilir ve API günlüğüne adresi içeren yeni bir satır ekleyebilir; yeni'
+  Write-Host '  bağlantı üretilirse ilk e-postadaki bağlantı GEÇERSİZ olur (tek kullanım adımı karışır).'
+  Write-Host '  Sıfırlama, girişler ve kapanış portal hesabında sürüm/sayaç günceller; audit kayıtları oluşur.'
   Write-Host '  Kapanış: portal hesabı pasif + sıfırlama token''ı iptal + sürüm artırılır, erişim kapalı, personel pasif, dosya CLOSED.'
-  Write-Host '  Gerçek müvekkil verisine ve bildirimlere dokunulmaz. Kapanışta alıcı adresi sentetik hesapta .invalid ile EZİLEBİLİR (kararınız sorulur).'
+  Write-Host '  Gerçek müvekkil verisine ve bildirimlere dokunulmaz. Kapanışta alıcı adresi YALNIZ DB''deki sentetik hesapta .invalid ile EZİLEBİLİR'
+  Write-Host '  (kararınız sorulur; API günlüğü ve sağlayıcı kayıtları bu ezmeden etkilenmez).'
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
   if ($a -cne 'EVET') { Fail 'canlı veri işleme onaylanmadı — koşum başlamadı' }
 }
-# Alıcı adresi YALNIZ bu konsolda; iki kez aynı yazılmalı; sentetik alanlar reddedilir. Hiçbir dosyaya/kanıta yazılmaz.
+# Alıcı adresi bu konsolda girilir; iki kez aynı yazılmalı; sentetik alanlar reddedilir. Blok ve koşucu adresi kendi kanıt/log
+# dosyalarına yazmaz; canlı DB'deki sentetik hesap ve canlı API uygulama günlüğü ayrı yerlerdir (Confirm-LiveDataProcessing metni).
 function Read-Recipient {
-  $a = Read-Answer 'Gerçek alıcı e-posta adresi (sıfırlama e-postası BURAYA gidecek; portal hesabı bu adresle açılacak)'
+  $a = Read-Answer 'Gerçek alıcı e-posta adresi (ürün sıfırlama e-postasını bu adrese göndermeyi DENER; portal hesabı bu adresle açılacak)'
   $b = Read-Answer 'Aynı adresi doğrulama için tekrar yazın'
   if ($a -cne $b) { Fail 'alıcı adresi iki girişte aynı değil' }
   if ($a -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$' -or $a.Length -gt 254) { Fail 'alıcı adresi geçerli bir e-posta biçiminde değil' }
@@ -242,7 +258,10 @@ function Read-Recipient {
 }
 function Confirm-SingleSend {
   Write-Host ''
-  Write-Host 'GERÇEK E-POSTA GÖNDERİM DENEMESİ: talebi telefonunuzdan gönderdiğinizde ürün girdiğiniz adrese BİR sıfırlama e-postası göndermeyi DENER.' -ForegroundColor Yellow
+  Write-Host 'GERÇEK E-POSTA GÖNDERİM DENEMESİ: formu telefonunuzdan BİR KEZ gönderdiğinizde ürün girdiğiniz adrese BİR sıfırlama e-postası göndermeyi DENER.' -ForegroundColor Yellow
+  Write-Host 'Hedef tek form gönderimidir; tek gönderim kodla GARANTİ EDİLMEZ: formu tekrar gönderirseniz ürün EK bir e-posta üretebilir (ürünün yaptığı her ek' -ForegroundColor Yellow
+  Write-Host 'gönderim denemesi yeni bağlantı üretir, önceki bağlantıyı GEÇERSİZ kılar ve alıcı adresini canlı API günlüğüne yeniden yazar).' -ForegroundColor Yellow
+  Write-Host 'Formu yalnız BİR KEZ gönderin; e-posta gecikirse tekrar göndermeyin, bekleyin.' -ForegroundColor Yellow
   Write-Host 'Koşucu SMTP kabulünü ve posta kutusuna teslimi ÖLÇMEZ (yalnız DB''de token üretimini görür); e-postanın gelip gelmediği beyanda sorulur. Koşucu' -ForegroundColor Yellow
   Write-Host 'ayrıca gönderimsiz bir kontrol talebi (.invalid adres, e-posta ÇIKMAZ) yapar. Bu koşumda PLANLANAN gerçek gönderim sayısı: 1 (plan; kanıt değil).' -ForegroundColor Yellow
   $a = Read-Answer 'Tek gerçek gönderim denemesini onaylıyor musunuz? Onay için büyük harfle GÖNDER yazın'
@@ -401,8 +420,12 @@ function Invoke-RunMode($g) {
     Write-Host ("  E-POSTA TESLİMİ: {0} — koşucu SMTP kabulünü/teslimi ölçmez; plannedRealSends=1 bir PLANDIR, kanıt değildir." -f $cv.emailDelivery.verdict) -ForegroundColor Cyan
   }
   if ($decl -and $decl.yenilemeSonrasiEkran -ceq 'L') { Write-Host '  Owner, kapanıştan sonra yenilemede dosya listesini gördüğünü beyan etti — ÜRÜN BULGUSU ADAYI; CLIENT inceler.' -ForegroundColor Red }
-  if ($closure.scrubVerdict -and $closure.scrubVerdict -ne 'PASS') { Write-Host '  Alıcı adresi sentetik hesapta EZİLEMEDİ — Recover ile tekrar denenebilir.' -ForegroundColor Yellow }
-  if ($rc -eq 5 -or $rc -eq 6) { Write-Host '  KAPANIŞ DOĞRULANMADI: -Mode Recover -ReceiptFile <makbuz> (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow }
+  if ($closure.scrubVerdict -and $closure.scrubVerdict -ne 'PASS') { Write-Host '  Alıcı adresi sentetik hesapta EZİLEMEDİ — ezme yalnız AYRI owner onayıyla başlatılacak bir Recover ile tekrar denenebilir (otomatik DEĞİL; ezme API günlüğünü değiştirmez).' -ForegroundColor Yellow }
+  if ($rc -eq 5 -or $rc -eq 6) {
+    Write-Host '  KAPANIŞ DOĞRULANMADI: Run kendi kapanış adımlarını koşucu İÇİNDE denedi; bu çıkış kodu Recover YETKİSİ DEĞİLDİR ve bu blok Recover BAŞLATMAZ.' -ForegroundColor Yellow
+    Write-Host '  Önce kanıtı inceleyin (d5-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
+    Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
+  }
   Write-Host "  kanıt dizini: $EvDir"
   Write-Host '  Bu pencereyi ŞİMDİ kapatın (kaydırma arabelleği). GO ref, adres, parola ve bağlantı bildirmeyin. E-postayı silmek kapanış DEĞİLDİR.'
   return $rc
