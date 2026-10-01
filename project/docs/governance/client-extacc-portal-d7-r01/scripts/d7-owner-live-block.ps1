@@ -1,6 +1,8 @@
 ﻿# ═══════════ EXTACC D-7 R01 PORTAL MESAJ AKIŞI + PORTAL ERİŞİM KAPANIŞI - OWNER BLOĞU (normal PowerShell; YÖNETİCİ GEREKMEZ) ═══════════
 # R02 (2026-10-01): YALNIZ METİN (yorumlar, konsol çıktısı, istem metinleri) — kod/akış/pinler DEĞİŞMEDİ; kayıt alanı `revision` 'R01' kalır.
 #          Run çıkış 5/6 Recover yetkisi değildir; Recover'ın canlı yazma kümesi gösterilir; beyan seçenekleri ana sayfa/özeti hata sayfasından ayırır.
+#          R02 inceleme düzeltmeleri (yine yalnız metin): kalıntı satırının altındaki not, kanıttaki "sentetik tenant CLOSED" ifadesinin koşucunun
+#          SABİT metni olduğunu ve kapanışın doğrulandığını göstermediğini söyler; Recover bitiş metni ikinci bir Recover için yol TANIMLAMAZ.
 # MODLAR
 #   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 pini); GO sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu çağrılmaz (yalnız `node --version`). Kapılardaki `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir).
 #   -Mode QrTest     Canlı veri YOK: portal MESAJ sayfasının QR'ı yerel konsolda gösterilir (d7-qr-test.js); owner telefonla okutur.
@@ -11,6 +13,7 @@
 #                    Run'ın koşucu İÇİNDEKİ kendi kapanış adımlarından AYRI bir işlemdir: otomatik DEĞİLDİR; Run çıkış 5/6 Recover yetkisi
 #                    DEĞİLDİR — önce kanıt incelenir, açık kalan kaynaklar bildirilir, Recover yalnız AYRI owner onayıyla, BİR KEZ başlatılır.
 #                    "BİR KEZ" kodla ZORLANMAZ: blok ve koşucu ikinci bir Recover'ı engellemez (GO sorulmaz, defter tutulmaz); kural owner disiplinidir.
+#                    Recover'ın çıkış kodu yeni bir Recover için yetki DEĞİLDİR; ikinci bir Recover bu paketle TANIMLI DEĞİLDİR, owner kararı gerektirir.
 #                    Recover CANLIYA YAZAR (koşucu kaynağından okundu; canlıda koşulmadı): portal hâlâ açıksa makbuzdaki sentetik personel GEÇİCİ
 #                    olarak yeniden aktifleştirilir ve parola özeti yeniden yazılır → yetkili uçla kapatma (portal pasif + sürüm artışı + kapatma
 #                    audit satırı); portal DB'de kapalı durumdaysa (bu kapatmayla ya da önceden) pasif portal hesabına YALNIZ ölçüm için yeni
@@ -223,7 +226,7 @@ function Write-Manifest([string]$evDir) {
     ForEach-Object { "$(Sha $_.FullName)  $($_.Name)" } | Set-Content -LiteralPath (Join-Path $evDir 'SHA256-MANIFEST.txt') -Encoding ASCII
 }
 # Canlı veri işleme — Run'dan ÖNCE açıkça sunulur; "EVET" yazılmazsa GO sorulmaz, GO defteri yazılmaz ve koşucu çağrılmaz (öz-test K-3).
-# Metin paket belgesi §8'deki "canlıda oluşacak kayıtlar" listesiyle AYNI kalemleri taşır (öz-test G-2); kaynaktan okunan ile ölçülen ayrı yazılır.
+# Metindeki kalemler paket belgesi §8'de ("canlıda oluşacak kayıtlar") de geçer (öz-test G-2: 10 kalem iki yerde); §8 ek ayrıntı taşır. Kaynaktan okunan ile ölçülen ayrı yazılır.
 function Confirm-LiveDataProcessing {
   Write-Host ''
   Write-Host 'CANLI VERİ İŞLEME — onayınız gerekiyor:' -ForegroundColor Yellow
@@ -338,7 +341,9 @@ function Invoke-RunMode($g) {
   if ($finding) { Write-Host "  $finding — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ. CLIENT'a bildirin." -ForegroundColor Red }
   if ($closure.keptText) {
     Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
-    Write-Host '  (kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
+    Write-Host '  (Kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir; kapanışın doğrulandığını GÖSTERMEZ. Kapanış durumu yukarıdaki' -ForegroundColor Cyan
+    Write-Host '   "Portal erişim kapanışı ... DOĞRULANDI / DOĞRULANAMADI" satırındadır. Anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif +' -ForegroundColor Cyan
+    Write-Host '   portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
   } else { Write-Host '  Mesaj kalıntısı ÖLÇÜLEMEDİ (kanıt satırı yok) — satırlar silinmiş DEĞİLDİR; CLIENT inceler.' -ForegroundColor Yellow }
   if ($waitV -eq 'UNMEASURED' -and $decl) {
     if ($decl.girisSonrasiEkran -ceq 'M') { Write-Host '  Koşucu telefon girişi görmedi ama owner girişten sonra portalın açıldığını (ana sayfa/mesaj sayfası) beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
@@ -351,7 +356,8 @@ function Invoke-RunMode($g) {
     Write-Host '  Önce kanıtı inceleyin (d7-evidence.json: kurtarma/inceleme nedeni ve açık kalan kaynaklar) ve sonucu CLIENT''a bildirin. Kanıttaki kurtarma adımı' -ForegroundColor Yellow
     Write-Host '  bir ÖNERİDİR: -Mode Recover -ReceiptFile <makbuz> yalnız AYRI owner onayıyla, BİR KEZ (ürün bulgusu varsa Recover onu DÜZELTMEZ). Kabulü TEKRARLAMAYIN.' -ForegroundColor Yellow
     Write-Host '  Recover ayrı bir CANLI YAZMA işlemidir (sentetik personeli geçici yeniden aktifleştirme + parola özeti, pasif portal hesabına ölçüm parolası özeti,' -ForegroundColor Yellow
-    Write-Host '  kapatma audit satırı, personel/dosya kapanışı); "BİR KEZ" kuralı kodla ZORLANMAZ — ayrıntı paket belgesi §8.1.' -ForegroundColor Yellow
+    Write-Host '  kapatma audit satırı, personel/dosya kapanışı); "BİR KEZ" kuralı kodla ZORLANMAZ; ikinci bir Recover bu paketle TANIMLI DEĞİLDİR (owner kararı' -ForegroundColor Yellow
+    Write-Host '  gerektirir) — ayrıntı paket belgesi §8.1.' -ForegroundColor Yellow
   }
   Write-Host "  kanıt dizini: $EvDir"
   Write-Host '  Bu pencereyi ŞİMDİ kapatın (kaydırma arabelleği). GO ref ve parola bildirmeyin. Mesaj satırları kanıt olarak DB''de KALIR.'
@@ -396,10 +402,13 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   Write-Host "EXTACC D-7 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 kapanış + HTTP reddi doğrulandı · 3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ (PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   if ($closure.keptText) {
     Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
-    Write-Host '  (kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
+    Write-Host '  (Kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir; kapanışın doğrulandığını GÖSTERMEZ. Kapanış durumu yukarıdaki çıkış' -ForegroundColor Cyan
+    Write-Host '   kodu satırındadır (Recover''da ayrı bir DOĞRULANDI / DOĞRULANAMADI satırı gösterilmez). Anlamı: hedeflenen kapanış = dosyalar CLOSED +' -ForegroundColor Cyan
+    Write-Host '   personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
   }
   if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }
-  Write-Host '  Bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR: Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT''a bildirilir, tekrar ancak AYRI owner onayıyla.' -ForegroundColor Yellow
+  Write-Host '  Bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR; Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT''a bildirilir.' -ForegroundColor Yellow
+  Write-Host '  İkinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir.' -ForegroundColor Yellow
   Write-Host "  kanıt dizini: $EvDir"
   return $rc
 }

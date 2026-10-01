@@ -7,10 +7,15 @@
 #          yönlendirildiği için no-op; GERÇEK hali ayrıca K-1'de ölçülür), Clear-OwnerScreen (no-op).
 #          Node GERÇEKTİR: PATH'teki node + geçici betik ya da BAŞLATILAMAYAN dosya.
 # R02    : G-1..G-4 (D-5 R04 kalıbı) — G-1 blok kaynağında (yorumlar dahil) "hiçbir … dosya/log/kanıt … yazılmaz" türü kapsamsız mutlak iddia yok;
-#          G-2 owner'a GÖSTERİLEN canlı veri onayı metni paket belgesi §8 kayıt listesiyle aynı kalemleri taşır, "dosyalar CLOSED + personel pasif +
-#          portal pasif; tenant yaşam döngüsü değişmez" der, kaynaktan okunan ile ölçüleni ayırır; G-3 Recover başlarken canlı yazma kümesi ve yetki
-#          kuralı GÖSTERİLİR (yeni soru yok; tek node çağrısı; defter değişmez); G-4 Run çıkış 5/6 metni Run'ın kendi kapanışını Recover'dan ayırır,
-#          "Recover yetkisi değildir / blok başlatmaz / önce kanıt / AYRI owner onayı" der; çıkış 0'da Recover metni yok; tek node çağrısı.
+#          G-2 owner'a GÖSTERİLEN canlı veri onayı metnindeki kalemler paket belgesi §8 kayıt listesinde de geçer (10 kalem iki yerde; §8 ek ayrıntı
+#          taşır), metin "dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü değişmez" der, kaynaktan okunan ile ölçüleni ayırır;
+#          G-3 Recover başlarken canlı yazma kümesi ve yetki kuralı GÖSTERİLİR (yeni soru yok; tek node çağrısı; defter değişmez); G-4 Run çıkış 5/6
+#          metni Run'ın kendi kapanışını Recover'dan ayırır, "Recover yetkisi değildir / blok başlatmaz / önce kanıt / AYRI owner onayı" der; çıkış
+#          0'da Recover metni yok; tek node çağrısı.
+# R02 inceleme düzeltmeleri: G-5 kalıntı satırının altındaki not — kanıttaki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir, kapanışın
+#          doğrulandığını göstermez; kapanış durumu Run'da DOĞRULANDI / DOĞRULANAMADI satırında, Recover'da çıkış kodu satırındadır; G-6 Recover
+#          bitiş metni ikinci bir Recover için yol TANIMLAMAZ ("bu paketle tanımlı değildir; owner kararı gerektirir"); blok kaynağında ve paket
+#          belgesi §5/§8/§10'da "tekrar ancak … onayıyla" türü tekrar yolu yok.
 #          Ölçüm owner'a GÖSTERİLEN metinde yapılır (Write-Host yakalaması). Beklenmeyen istisna sessizce kesmez: X-0 FAIL satırı.
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d7-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
@@ -305,6 +310,54 @@ try {
   $recCalls = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-RecoverMode' }, $true))
   $recInFn = @($recCalls | Where-Object { $o = $_.Extent.StartOffset; @($funcs | Where-Object { $o -ge $_.Extent.StartOffset -and $o -lt $_.Extent.EndOffset }).Count -gt 0 })
   Check 'G-4' 'Recover yetkisi: Run çıkış 5/6''da owner''a GÖSTERİLEN metin Run''ın kendi kapanış adımlarını (koşucu içinde) Recover''dan AYIRIR, çıkış kodunun Recover YETKİSİ olmadığını ve bloğun Recover BAŞLATMADIĞINI söyler, önce kanıt incelemesini ister, Recover''ı yalnız AYRI owner onayıyla, BİR KEZ ÖNERİR ve Recover''ın ayrı bir CANLI YAZMA olduğunu / "BİR KEZ"in kodla zorlanmadığını yazar; blok tek node çağrısı yapar (mod run; recover çağrısı 0); çıkış 0''da Recover metni yok; AST: Invoke-RunMode içinde tek Invoke-Node, Invoke-RecoverMode yalnız akıştaki mod dalında (fonksiyon içinden çağrı 0)' ($bad4.Count -eq 0 -and $zeroRec -and $runNode.Count -eq 1 -and $recCalls.Count -eq 1 -and $recInFn.Count -eq 0) "hata=$($bad4 -join ' | ') · çıkış 0 Recover metni yok=$zeroRec (metin $($g4['0'].txt.Length) karakter) · Run içi Invoke-Node (AST)=$($runNode.Count) · Invoke-RecoverMode çağrısı (AST)=$($recCalls.Count), fonksiyon içinde=$($recInFn.Count)"
+
+  # ---- R02 inceleme düzeltmeleri (2026-10-01): G-5 kalıntı satırının altındaki not · G-6 ikinci bir Recover için yol TANIMLANMAZ.
+  #      Ölçüm owner'a GÖSTERİLEN metinde yapılır; satır kaydırması ölçümü etkilemesin diye boşluklar tek boşluğa indirgenir.
+  function Get-Flat([string]$s) { return ($s -replace '\s+', ' ') }
+  function Get-Tail([string]$s, [string]$from) { $i = $s.IndexOf($from); if ($i -lt 0) { return '' }; return $s.Substring($i) }
+  $oldEq5 = '"sentetik tenant CLOSED" ='
+  $common5 = @('"sentetik tenant CLOSED" koşucunun SABİT ifadesidir', 'kapanışın doğrulandığını GÖSTERMEZ', 'Anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif', 'tenant yaşam döngüsü DEĞİŞMEZ')
+  $runRef5 = 'Kapanış durumu yukarıdaki "Portal erişim kapanışı ... DOĞRULANDI / DOĞRULANAMADI" satırındadır'
+  $recRef5 = @('Kapanış durumu yukarıdaki çıkış kodu satırındadır', 'ayrı bir DOĞRULANDI / DOĞRULANAMADI satırı gösterilmez')
+  # Run, kapanış DOĞRULANMADI (P7-D9 FAIL, çıkış 6): koşucunun sabit ifadesi kanıt satırında YİNE geçer — not bunun durum iddiası olmadığını söylemeli.
+  $env:EXSTUB_D9 = 'FAIL'; $g5fAll = Get-Flat (Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }); $g5fR = $script:capR; $env:EXSTUB_D9 = 'PASS'
+  $g5pAll = Get-Flat $g4['0'].txt   # Run, kapanış doğrulandı (çıkış 0) — G-4'te yakalanan metin
+  $g5rAll = Get-Flat (Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 6 $true $rcpt @() }); $g5rR = $script:capR
+  $bad5 = @()
+  foreach ($x in @(@('Run çıkış 6 (kapanış doğrulanmadı)', $g5fAll, 'Portal erişim kapanışı DOĞRULANAMADI', 'EXTACC D-7 KOŞUM BİTTİ', (@($common5) + $runRef5)),
+                   @('Run çıkış 0 (kapanış doğrulandı)', $g5pAll, 'Portal erişim kapanışı koşucu tarafından DOĞRULANDI', 'EXTACC D-7 KOŞUM BİTTİ', (@($common5) + $runRef5)),
+                   @('Recover çıkış 6', $g5rAll, 'EXTACC D-7 KURTARMA BİTTİ', 'EXTACC D-7 KURTARMA BİTTİ', (@($common5) + $recRef5)))) {
+    $tail5 = Get-Tail $x[1] $x[3]; $miss5 = @($x[4] | Where-Object { $tail5 -cnotmatch [regex]::Escape($_) })
+    $iSt5 = $x[1].IndexOf($x[2]); $iKept5 = $x[1].IndexOf('Mesaj kalıntısı: saklandı'); $iNote5 = $x[1].IndexOf('koşucunun SABİT ifadesidir')
+    if (-not ($tail5.Length -gt 100 -and $miss5.Count -eq 0 -and $tail5 -cmatch 'sentetik tenant CLOSED; portal pasif\)' -and $tail5 -cnotmatch [regex]::Escape($oldEq5) -and $iSt5 -ge 0 -and $iSt5 -lt $iKept5 -and $iKept5 -lt $iNote5)) {
+      $bad5 += "$($x[0]): eksik=$($miss5 -join ',') · eski eşitlik=$($tail5 -cmatch [regex]::Escape($oldEq5)) · durum satırı@$iSt5 kalıntı@$iKept5 not@$iNote5 · metin=$($tail5.Length)"
+    }
+  }
+  $recNoLine5 = ($g5rAll -cnotmatch 'Portal erişim kapanışı')   # Recover'da "Portal erişim kapanışı ..." satırı gösterilmez; not da ona atıf yapmaz
+  Check 'G-5' 'kalıntı satırının altındaki not (owner''a GÖSTERİLEN metin; Run kapanış doğrulanmadı çıkış 6 · Run çıkış 0 · Recover çıkış 6): kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir ve kapanışın doğrulandığını GÖSTERMEZ; kapanış durumu Run''da yukarıdaki "Portal erişim kapanışı … DOĞRULANDI / DOĞRULANAMADI" satırındadır (satır kalıntı satırından ÖNCE gösterilir), Recover''da çıkış kodu satırındadır (Recover''da öyle bir satır gösterilmez); anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ; eski durum iddiası gibi okunan eşitlik ("sentetik tenant CLOSED" = …) bitiş metninde YOK; Run kapanış doğrulanmadığında da sabit ifade kanıt satırında geçer' ($bad5.Count -eq 0 -and $recNoLine5 -and $g5fR.out -eq 6 -and $g5fR.nodeCalls -eq 1 -and $g5rR.out -eq 6 -and $g5rR.nodeCalls -eq 1 -and $g5rR.last.mode -eq 'recover') "hata=$($bad5 -join ' | ') · Run(6) rc=$($g5fR.out) node=$($g5fR.nodeCalls) · Recover(6) rc=$($g5rR.out) node=$($g5rR.nodeCalls) mod=$($g5rR.last.mode) · Recover metninde 'Portal erişim kapanışı' satırı yok=$recNoLine5 · ölçülen metin (karakter) Run6/Run0/Recover=$($g5fAll.Length)/$($g5pAll.Length)/$($g5rAll.Length)"
+
+  $rptRe = '[Tt]ekrar ancak|[Tt]ekrar edilebilir|[Tt]ekrar gerekiyorsa|[Yy]eni(den)? (AYRI )?(owner )?onay(la|ıyla)[^\r\n]{0,40}[Tt]ekrar'
+  $rptPos = @('sonuç CLIENT''a bildirilir, tekrar ancak AYRI owner onayıyla.', 'yeni onayla tekrar edilebilir', 'tekrar gerekiyorsa yeni kanıt incelemesi ve yeni AYRI owner onayı gerekir', 'Recover yeni owner onayıyla bir kez daha tekrar koşulur')
+  $rptNeg = @('Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte', 'Kabulü TEKRARLAMAYIN.', 'otomatik tekrar · otomatik Recover', 'İkinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir.', 'kabul tekrarlanmaz')
+  $rptPosMiss = @($rptPos | Where-Object { $_ -cnotmatch $rptRe }); $rptNegHit = @($rptNeg | Where-Object { $_ -cmatch $rptRe })
+  $need6 = @('Bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR', 'Recover BİR KEZ koşulur (kodla zorlanmaz)', 'sonuç CLIENT''a bildirilir.', 'İkinci bir Recover bu paketle TANIMLI DEĞİLDİR', 'owner kararı gerektirir')
+  $bad6 = @()
+  foreach ($c in 0, 3, 5, 6) {
+    $g6All = Get-Flat (Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe $c $true $rcpt @() }); $g6R = $script:capR
+    $tail6 = Get-Tail $g6All 'EXTACC D-7 KURTARMA BİTTİ'; $miss6 = @($need6 | Where-Object { $tail6 -cnotmatch [regex]::Escape($_) })
+    if (-not ($g6R.out -eq $c -and $g6R.nodeCalls -eq 1 -and $g6R.last.mode -eq 'recover' -and $tail6.Length -gt 100 -and $miss6.Count -eq 0 -and $g6All -cnotmatch $rptRe)) { $bad6 += "Recover çıkış ${c}: rc=$($g6R.out) node=$($g6R.nodeCalls) eksik=$($miss6 -join ',') · tekrar yolu=$($g6All -cmatch $rptRe)" }
+  }
+  foreach ($k in '5', '6') { $run6 = Get-Flat $g4[$k].txt; if (-not ($run6 -cmatch 'ikinci bir Recover bu paketle TANIMLI DEĞİLDİR \(owner kararı gerektirir\)' -and $run6 -cnotmatch $rptRe)) { $bad6 += "Run çıkış ${k}: 'TANIMLI DEĞİLDİR' yok ya da tekrar yolu var" } }
+  $rptSrc = @($srcLines | Where-Object { $_ -cmatch $rptRe })
+  # Belge: §5 (owner adımları), §8 (+§8.1) ve §10 ikinci Recover'ı "tanımlı değildir" diye yazar ve bir tekrar yolu tanımlamaz (belge okunamazsa FAIL — boş doğrulama yok).
+  $docSec6 = [ordered]@{}; $docBad6 = @()
+  foreach ($p6 in @(@('§5', "`n## 5.", "`n## 6."), @('§8', "`n## 8.", "`n## 9."), @('§10', "`n## 10.", "`n## 11."))) {
+    $a6 = -1; $b6 = -1; if ($null -eq $docErr -and $docTxt) { $a6 = $docTxt.IndexOf($p6[1]); $b6 = $docTxt.IndexOf($p6[2]) }
+    $sec6 = if ($a6 -ge 0 -and $b6 -gt $a6) { Get-Flat $docTxt.Substring($a6, $b6 - $a6) } else { '' }
+    $docSec6[$p6[0]] = $sec6.Length
+    if (-not ($sec6.Length -gt 200 -and $sec6 -cmatch 'bu paketle tanımlı değildir' -and $sec6 -cnotmatch $rptRe)) { $docBad6 += "$($p6[0]) (uzunluk=$($sec6.Length) · 'tanımlı değildir'=$($sec6 -cmatch 'bu paketle tanımlı değildir') · tekrar yolu=$($sec6 -cmatch $rptRe))" }
+  }
+  Check 'G-6' 'ikinci Recover için yol TANIMLANMAZ: Recover bitişinde owner''a GÖSTERİLEN metin (stub çıkış 0/3/5/6) "bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR; Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT''a bildirilir" ve "ikinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir" der; Run çıkış 5/6 metni de aynı kuralı taşır; gösterilen metinlerde ve blok kaynağında (yorumlar DAHİL) "tekrar ancak … onayıyla / yeni onayla tekrar edilebilir" türü bir tekrar yolu YOK; desen kör değil (4 bilinen tekrar-yolu cümlesini yakalar; "TEKRARLANMAZ / TEKRARLAMAYIN / otomatik tekrar / TANIMLI DEĞİLDİR" cümlelerini yakalamaz); paket belgesi §5, §8 ve §10 "bu paketle tanımlı değildir" der ve tekrar yolu tanımlamaz; her Recover tek node çağrısı (mod recover)' ($bad6.Count -eq 0 -and $rptSrc.Count -eq 0 -and $srcLines.Count -gt 300 -and $rptPosMiss.Count -eq 0 -and $rptNegHit.Count -eq 0 -and $null -eq $docErr -and $docBad6.Count -eq 0) "hata=$($bad6 -join ' | ') · kaynakta tekrar yolu=$($rptSrc.Count) (taranan satır=$($srcLines.Count)) · desen pozitif kaçırılan=$($rptPosMiss.Count)/$($rptPos.Count) · negatif yanlış=$($rptNegHit.Count)/$($rptNeg.Count) · belge hata=$docErr · belge bölüm uzunlukları §5/§8/§10=$($docSec6['§5'])/$($docSec6['§8'])/$($docSec6['§10']) · belgede uyumsuz=$($docBad6 -join ' | ')"
 }
 catch {
   # Beklenmeyen istisna öz-testi SESSİZCE kesmez: FAIL satırı olarak kaydedilir (kalan ölçütler koşulmadı → sonuç PASS olamaz).

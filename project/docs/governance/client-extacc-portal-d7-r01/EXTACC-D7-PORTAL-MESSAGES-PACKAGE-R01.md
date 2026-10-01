@@ -15,6 +15,11 @@
 > hata sayfasından ayırır (harfler ve kod aynı). "Hiçbir dosyaya yazılmaz" türü kapsamsız ifadeler ölçülen kapsama daraltıldı. Blok öz-testine
 > G-1..G-4 eklendi. Koşucu, sahte API, QR betiği, pinli 9 dosya ve paket digest **DEĞİŞMEDİ**. Bu revizyon D-7 canlı koşumu ya da Recover için
 > yetki DEĞİLDİR; **Preflight / QrTest / Run / Recover canlıda KOŞULMADI.**
+> **R02 inceleme düzeltmeleri (2026-10-01; yalnız metin ve belge; blok mantığı, pinli 9 dosya ve paket digest DEĞİŞMEDİ) — §12.1:** kalıntı
+> satırının altındaki not kanıttaki "sentetik tenant CLOSED" ifadesinin koşucunun sabit metni olduğunu ve kapanışın doğrulandığını göstermediğini
+> söyler (§3 notu); Recover'ın çıkış kodu yeni bir Recover için yetki değildir ve **ikinci bir Recover bu paketle tanımlı değildir, owner kararı
+> gerektirir** (§5 adım 7, §8.1, §10 K-6); blok öz-testine G-5 ve G-6 eklendi; §9'a üç sınır notu (D7-E11) ve Recover yetkisinin ölçülmediği
+> yazıldı. Blok ve blok öz-testi sha256 değerleri değişti (§7; önceki değerler "R02 ilk tur" olarak korunur).
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -81,11 +86,15 @@ Gösterim kapısı: `P7-03L, P7-04D, D7-1, D7-2, D7-3, D7-3U` PASS değilse giri
 FAIL olur, akış sürer). Çıkış: 0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 5 PERSONEL/DOSYA · 6 PORTAL KAPANIŞI DOĞRULANMADI ·
 7 KANIT YAZILAMADI (öncelik 6 > 5 > 7 > 1 > 2 > 3 > 0); owner bloğu 90 kapı · 91 node. Recover ölçülemeyeni 0 yapmaz (C4 Recover'da hep ÖLÇÜLEMEYEN → 3).
 
-**Not (R02) — "sentetik tenant CLOSED" ifadesi:** P7-MSG-KEPT kanıt metnindeki "(sentetik tenant CLOSED; portal pasif)" ve `messageResidue.note`
-içindeki "sentetik tenant kapanışı" ifadeleri koşucunun (pinli, bu revizyonda DEĞİŞMEDİ) ürettiği sabit metindir ve şu anlama gelir:
-**dosyalar CLOSED, personel pasif, portal pasif**. Tenant kaydı kapatılmaz; **tenant yaşam döngüsü değişmez** (kaynaktan okundu: kapanışta
-yazılanlar `User`, `Case`, portal hesabı, müvekkil erişim bayrağı ve kapatma audit satırıdır; `Tenant` satırına yazma yoktur).
-Owner bloğu bu açıklamayı onay metninde ve kalıntı satırının altında gösterir.
+**Not (R02) — "sentetik tenant CLOSED" ifadesi:** P7-MSG-KEPT kanıt metnindeki "(sentetik tenant CLOSED; portal pasif)" (Recover kanıtında
+"(sentetik tenant CLOSED)") ve `messageResidue.note` içindeki "sentetik tenant kapanışı" ifadeleri koşucunun (pinli, bu revizyonda DEĞİŞMEDİ)
+**SABİT** metnidir: koşucu bu metni kapanış sonucuna bakmadan, kapanış doğrulanmadığında da (çıkış 5/6) aynen yazar (kaynaktan okundu: metin
+şablonu `out.portalClose` / `out.closure` değerine bağlı değildir). Kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir;
+kapanışın doğrulandığını **GÖSTERMEZ** — kapanış durumu DOĞRULANDI / DOĞRULANAMADI satırındadır (Run: bloğun "Portal erişim kapanışı …" satırı
+ve kanıttaki P7-D9; Recover'da böyle bir satır gösterilmez, durum çıkış kodu satırındadır); anlamı: hedeflenen kapanış = **dosyalar CLOSED +
+personel pasif + portal pasif**; tenant yaşam döngüsü değişmez. Tenant kaydı kapatılmaz (kaynaktan okundu: kapanışta yazılanlar `User`, `Case`,
+portal hesabı, müvekkil erişim bayrağı ve kapatma audit satırıdır; `Tenant` satırına yazma yoktur).
+Owner bloğu bu açıklamayı kalıntı satırının altında (Run ve Recover bitişi) gösterir; onay metni kapanışı ve tenant yaşam döngüsünü ayrıca yazar.
 **Not (R02) — Recover çıkışı:** "C4 Recover'da hep ÖLÇÜLEMEYEN" portal hesabı varken geçerlidir; hesap hiç oluşmadıysa C3/C4 satırları üretilmez (§9).
 
 ## 4. Owner bloğu (`scripts/d7-owner-live-block.ps1`) — modlar
@@ -103,7 +112,7 @@ soru/GO yok. `owner-block.json`: `emailSendsPlanned=0`, `messageRowsDeleted=fals
 blok onu Run'dan sonra kendiliğinden başlatmaz (öz-test G-4: Run çıkış 5/6'da tek node çağrısı, mod `run`; AST: `Invoke-RecoverMode` yalnız
 akıştaki mod dalında). Recover başlarken blok, canlı yazma kümesini (§8.1) ve yetki kuralını konsola yazar (yalnız bilgi: soru sorulmaz, akış
 değişmez — öz-test G-3). Blok AYRI owner onayını **sormaz ve ölçmez**; "BİR KEZ" kuralı **kodla zorlanmaz** (§8.1). Recover'ın çıkış kodu
-yeni bir Recover için yetki değildir.
+yeni bir Recover için yetki değildir; ikinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir (§8.1, §10 K-6; öz-test G-6).
 **R02 — beyan seçenekleri (yalnız istem metni; harfler ve kod aynı).** "Girişten sonra ne gördünüz?" sorusunda **M** artık "portal açıldı: ana
 sayfa/özet ya da Mesajlar sekmesindeki mesaj sayfası", **D** "hata sayfası ya da portal dışı başka sayfa" olarak yazılır (önceki metinde ana
 sayfa "D = başka/hata sayfası" altına düşüyordu). "Yeniledikten sonra" sorusunda **M** "portal içeriği hâlâ açık: mesaj sayfası ya da ana
@@ -132,12 +141,14 @@ değiştirilirse mantık eşitliği bozulurdu). Koşumun hangi blok baytlarıyla
    adımı metni ("Owner bloğu `-Mode Recover -ReceiptFile <makbuz>` ile BİR KEZ" — koşucu pinli, değişmedi) bir **öneridir**, yetki değildir.
    Recover (`-Mode Recover -ReceiptFile <kanıt dizinindeki d7-setup-receipt.json>`) yalnız bu inceleme sonrası **AYRI owner onayıyla**, **BİR
    KEZ** koşulur; canlıya ne yazdığı §8.1'dedir; ürün bulgusu varsa Recover onu düzeltmez; kabul tekrarlanmaz. "BİR KEZ" kodla zorlanmaz:
-   ikinci bir Recover'ı blok da koşucu da engellemez — tekrar gerekiyorsa yeni kanıt incelemesi ve yeni AYRI owner onayı gerekir.
+   ikinci bir Recover'ı blok da koşucu da engellemez. Recover'ın çıkış kodu (3/5/6 dahil) yeni bir Recover için yetki değildir; **ikinci bir
+   Recover bu paketle tanımlı değildir; owner kararı gerektirir** (§8.1, §10 K-6). Recover sonucu CLIENT'a/owner'a bildirilir.
 
 ## 6. Öz-testler (canlıya dokunmadan; 2026-09-29; disposable DB `5449/d67_test`, sahte API 8200/8459, gerçek TLS)
 
 > **Hangi baytlar (R02):** bu tablo ve §6.1 **R01 kayıtlarıdır** (2026-09-29; blok `EDDF7BF3…CA5D`, blok öz-testi `9A5A31F0…70B3`) ve tarihsel
-> olarak korunur. Blok ve blok öz-testi R02'de değişti; **son dosya baytlarının sonuçları §6.2'dedir** — güncel durum için §6.2 okunur.
+> olarak korunur. Blok ve blok öz-testi R02'de (iki turda) değişti; **son dosya baytlarının sonuçları §6.3'tedir** — güncel durum için §6.3
+> okunur. §6.2 "R02 ilk tur" kaydıdır (o turun baytlarıyla) ve tarihsel olarak korunur.
 
 | Test | Sonuç |
 |---|---|
@@ -150,11 +161,12 @@ değiştirilirse mantık eşitliği bozulurdu). Koşumun hangi blok baytlarıyla
 **Üçüncü koşum (inceleme düzeltmeleri, §11): 41/41 PASS, çıkış 0** — `d7-selftest-run3-fix.log`, `selftest-run3-fix-artifacts\`, blok öz-testleri `d7-owner-block-selftest-fix-winps51.log` / `-pwsh7.log`, özet `SUMMARY-FIX-R01.txt`.
 Not: 37/37 sonucu D7-3G'deki ürün-sözleşmesi kusurunu yakalayamamıştı (sahte API de çıplak dizi döndürüyordu); düzeltme sonrası koşucu `{ client, messages }` ister ve çıplak dizi FAIL olur.
 
-### 6.2 R02 (2026-10-01) — son dosya baytlarıyla
+### 6.2 R02 ilk tur (2026-10-01) — o turun dosya baytlarıyla (tarihsel; son baytların sonuçları §6.3)
 
-Test edilen baytlar: blok `09935375…0BFF`, blok öz-testi `0720672D…8BFE` (tam değerler §7; her log ve status dosyası koşum öncesi/sonrası sha256
-taşır). Koşucu, sahte API, QR betiği ve pinli 9 dosya R01 baytlarıdır (değişmedi). Canlı DB, canlı API, canlı yayın dizini ve canlı günlükler
-kullanılmadı.
+Test edilen baytlar (**R02 ilk tur**): blok `09935375…0BFF`, blok öz-testi `0720672D…8BFE` (tam değerler §7; her log ve status dosyası koşum
+öncesi/sonrası sha256 taşır). Koşucu, sahte API, QR betiği ve pinli 9 dosya R01 baytlarıdır (değişmedi). Canlı DB, canlı API, canlı yayın dizini ve
+canlı günlükler kullanılmadı. Bu bölümdeki "son dosya baytları / son koşum" ifadeleri R02 ilk turunun son baytlarını anlatır; inceleme
+düzeltmelerinden sonraki baytlar için §6.3 geçerlidir.
 
 | Test | Sonuç (R02) |
 |---|---|
@@ -165,11 +177,40 @@ kullanılmadı.
 | Ayrıştırma + kodlama | iki `.ps1` dosyası WinPS 5.1 ve pwsh 7'de parse hatası 0; UTF-8 BOM korunur; satır sonu LF (CR 0); katı UTF-8 çözümü geçerli; kontrol karakteri (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F) 0 — belge dahil üç dosyada |
 | Paket digest | pinli 9 dosyadan bloktan bağımsız betikle yeniden hesaplandı: `7C42FCCD…7BDD` = bloktaki `$ExpPackage` (değişmedi); pin listesi eski blokla aynı; pin uyuşmazlığı yok; `ExpLiveDist` / `ExpEnvSha` değişmedi; blok kendi pin listesinde değildir |
 
+**G-1'in sınırı (R02 inceleme).** G-1 yalnız "hiçbir … dosya/log/günlük/kanıt/rapor … yazılmaz" kalıbını (aynı satırda; "hiçbir" → en çok
+40 karakter → bu adlardan biri → en çok 40 karakter → "yazılmaz/yazmaz") ölçer; başka biçimli bir mutlak iddiayı (ör. "asla", "hiçbir zaman",
+"tüm … silinir", iki satıra bölünmüş cümle) yakalamaz. G-1 PASS, blok kaynağında kapsamsız mutlak iddia bulunmadığının genel kanıtı değildir;
+yalnız bu kalıbın bulunmadığını söyler.
+
 Çalışma sırasındaki koşumlar (son koşumdan ayrı): §8 güncellenmeden önceki ilk koşumda G-2 belge eşleşmesi FAIL verdi (61/62; beklenen, log
 saklanmadı). `d7-r02\deneme\` altındaki iki deneme koşumu (62/62 ×2 kabuk) ve deneme negatif kontrolü son baytlardan ÖNCEKİ ara baytlara aittir ve
 korunur; ikinci denemede öz-test çıktısına gözlem dökümü eklendi (uzun ölçüt adları tablo genişliğinde gözlem sütununu düşürüyordu). Kanıt (repo dışı; loglar PR/belge/public repoya yapıştırılmaz): `HY_R27_AGENT_EVIDENCE\d7-r02\` — `test\` (son koşum logları,
 status dosyaları: komut, çıkış kodu, koşum öncesi/sonrası sha256), `negatif\` (varyantlar ve sonuç tablosu), `js-oz-test\` (ayna, manifest, log),
 `onceki\` (R01 baytları). Loglar yerel kullanıcı adından arındırılarak yazılır.
+
+### 6.3 R02 inceleme düzeltmeleri (2026-10-01) — SON dosya baytlarıyla
+
+Test edilen baytlar: blok `8B3B22C0…25AE`, blok öz-testi `1BB152D8…7B21` (tam değerler §7; her log ve status dosyası koşum öncesi/sonrası sha256
+taşır). Bu turda değişen yalnız blok METNİ (yorum + konsol çıktısı; istem metinleri ve kod değişmedi), blok öz-testi (yalnız yeni metni ölçen G-5 ve
+G-6 + başlık yorumu) ve bu belgedir. Koşucu, sahte API, QR betiği, `d7-selftest.js` ve pinli 9 dosya değişmedi. Canlı DB, canlı API, canlı yayın
+dizini ve canlı günlükler kullanılmadı; owner bloğu, koşucu ya da sonda **çalıştırılmadı** (öz-test bloğun yalnız fonksiyonlarını AST ile yükler).
+
+| Test | Sonuç (son baytlar) |
+|---|---|
+| `d7-owner-block-selftest.ps1` — önceki 62 ölçüt + **G-5** kalıntı satırının altındaki not (owner'a GÖSTERİLEN metin; Run kapanış doğrulanmadı çıkış 6 · Run çıkış 0 · Recover çıkış 6): "sentetik tenant CLOSED" koşucunun SABİT ifadesidir ve kapanışın doğrulandığını GÖSTERMEZ; kapanış durumu Run'da "Portal erişim kapanışı … DOĞRULANDI / DOĞRULANAMADI" satırındadır (satır kalıntı satırından önce gösterilir), Recover'da çıkış kodu satırındadır; hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ; eski eşitlik ("sentetik tenant CLOSED" = …) bitiş metninde yok · **G-6** ikinci Recover için yol tanımlanmaz: Recover bitiş metni (taklit betik çıkış 0/3/5/6) "bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR; Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT'a bildirilir" ve "ikinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir" der; Run 5/6 metni aynı kuralı taşır; gösterilen metinlerde ve blok kaynağında (yorumlar dahil; 460 satır tarandı) "tekrar ancak … onayıyla / yeni onayla tekrar edilebilir" türü tekrar yolu yok (desen 4 bilinen tekrar-yolu cümlesini yakalar, 5 ilgisiz cümleyi yakalamaz); bu belgenin §5, §8 ve §10 bölümleri "bu paketle tanımlı değildir" der ve tekrar yolu tanımlamaz | **64/64 PASS** Windows PowerShell 5.1.26100.9549 ve **64/64 PASS** pwsh 7.6.6 (çıkış 0). Önceki 62 ölçüt değişmeden PASS |
+| Negatif kontrol + mutasyon (repo dışı geçici kopya; son öz-test): **R01 blok baytları** `EDDF7BF3…CA5D`; **R02 ilk tur blok baytları** `09935375…0BFF`; bozulmamış kopya; 11 blok metin bozması (R02 ilk turdaki 6 bozma + Run kalıntı notu eski eşitliğe döndü · Recover kalıntı notundan "GÖSTERMEZ" silindi · Recover bitişine "tekrar ancak AYRI owner onayıyla" geri kondu · "ikinci bir Recover … TANIMLI DEĞİLDİR" satırı silindi · başlık yorumuna "yeni onayla tekrar edilebilir" eklendi); 1 mantık bozması (Run 5/6 dalına otomatik `Invoke-RecoverMode` çağrısı); 2 belge bozması (§5 adım 7'ye tekrar yolu geri kondu · §8.1'den "tanımlı değildir" cümlesi silindi) | **51/51 beklenenle uyumlu** (17 varyant × WinPS 5.1 + pwsh 7 + mantık eşitliği): R01 bloğu **58/64, çıkış 1, FAIL = tam olarak G-1..G-6**; R02 ilk tur bloğu **62/64, çıkış 1, FAIL = tam olarak G-5, G-6**; her metin/belge bozması yalnız hedef ölçüt(ler)i FAIL ettirdi (Recover bitişindeki yetki cümlesinin silinmesi G-3 ve G-6'yı; diğerleri tek ölçütü, 63/64); otomatik Recover bozması G-4'ü (ve G-5, G-6, R-2.5, R-2.6, O-1'i) FAIL ettirdi; bozulmamış kopya 64/64 |
+| Mantık eşitliği (AST; yorumlar, Write-Host komutları ve Read-Answer/Read-Host istem metinleri çıkarılır, boşluk normalize) | **R02 ilk tur bloğu → son blok:** kalan kod **birebir eşit** (18304/18304 karakter; 28/28 fonksiyon, fonksiyon başına fark 0; istem 13/13; Write-Host 65 → 71, fonksiyon içi 62 → 68; yorum 53 → 56). **R01 bloğu → son blok:** yine birebir eşit (18304/18304; Write-Host 37 → 71; yorum 39 → 56). WinPS 5.1 + pwsh 7. İstisna yok. Negatif kontrol: otomatik Recover çağrısı eklenmiş kopya FARK verir |
+| `d7-selftest.js` (bloğu T-3..T-8'de statik okur) | **41/41 PASS**, çıkış 0 — yine **ayna kopyada** (yöntem §6.2 ile aynı: 65 dosya bayt bayt kopya, 64'ü kaynakla sha eşit; yalnız aynadaki `d7-selftest.js` içinde tek satır `REL` canlı olmayan kütüphane köküne çevrildi). Blok aynada **son baytlarla** (sha status dosyasında). Disposable DB `5449/d67_test`, sahte API 8200/8459, gerçek TLS. Repodaki `d7-selftest.js` DEĞİŞMEDİ ve değiştirilmemiş hâliyle bu turda da KOŞULMADI |
+| Ayrıştırma + kodlama | iki `.ps1` dosyası WinPS 5.1 ve pwsh 7'de parse hatası 0; UTF-8 BOM korunur; satır sonu LF (CR 0); katı UTF-8 çözümü geçerli; kontrol karakteri (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F) 0 — belge dahil üç dosyada |
+| Paket digest | pinli 9 dosyadan bloktan bağımsız betikle yeniden hesaplandı: `7C42FCCD…7BDD` = bloktaki `$ExpPackage` (değişmedi); pin listesi R02 ilk tur bloğuyla aynı; pin uyuşmazlığı yok; `ExpLiveDist` / `ExpEnvSha` değişmedi |
+
+Öz-testin ölçmediği: G-5 ve G-6 owner'a gösterilen METNİ (ve G-6 ayrıca blok kaynağını + bu belgenin üç bölümünü) ölçer; kapanışın gerçekten
+doğrulanıp doğrulanmadığını, owner onayının verilip verilmediğini ya da ikinci bir Recover'ın engellendiğini ölçmez (blok engellemez — §8.1, §9).
+Recover senaryoları koşucunun yerine konan taklit betikle üretilir. G-6'nın tekrar-yolu deseni yalnız dört kalıbı arar ("tekrar ancak", "tekrar
+edilebilir", "tekrar gerekiyorsa", "yeni … onayla/onayıyla … tekrar"); başka sözcüklerle yazılmış bir tekrar yolunu yakalamaz.
+Kanıt (repo dışı): `HY_R27_AGENT_EVIDENCE\d7-r02\tur2\` — `test\` (son koşum logları + status: komut, çıkış kodu, sha256 önce/sonra),
+`negatif\` (varyant üreticisi, koşucu, `son\` sonuç tablosu), `js-oz-test\` (ayna, manifest, log, status), `r02-ilk-tur\` (commit `a71cd2c8`
+baytları), `deneme\` (son baytlardan önceki deneme koşumu). Loglar yerel kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 
 ## 7. Pinler
 
@@ -177,8 +218,10 @@ status dosyaları: komut, çıkış kodu, koşum öncesi/sonrası sha256), `nega
 |---|---|
 | `d7-portal-messages-live-run.js` | `E752DA1EFCA9B8C7529CC0EC66B4F90530025FBF9918F4A9B56DBB3A6916D2B6` (R01 düzeltme; önceki `3A58DF7C…4D55`) |
 | `d7-qr-test.js` | `15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15` |
-| `d7-owner-live-block.ps1` **R02** (yalnız metin; paket digest değişmedi) | `0993537584078789A9B199B8DA3BA9B40DFB31055C8517C2F974B5E66F7E0BFF` |
-| `d7-owner-block-selftest.ps1` **R02** (G-1..G-4 + gözlem dökümü) | `0720672D86217990B19D4C3C4D7F53972DA999200DBEB9CADBFF7998A0988BFE` |
+| `d7-owner-live-block.ps1` **R02** (son baytlar; inceleme düzeltmeleri dahil; yalnız metin; paket digest değişmedi) | `8B3B22C0FD9A08DE61C58EEEE8423A7FA5884B43FE680363F96FCFCDA50C25AE` |
+| `d7-owner-block-selftest.ps1` **R02** (son baytlar; G-1..G-6 + gözlem dökümü) | `1BB152D876A264BC91F3262AB40BAC25C326F563B6506E374427C0ADAB557B21` |
+| önceki (**R02 ilk tur**, commit `a71cd2c8`): `d7-owner-live-block.ps1` | `0993537584078789A9B199B8DA3BA9B40DFB31055C8517C2F974B5E66F7E0BFF` (yalnız metin farkı; mantık eşitliği §6.3) |
+| önceki (**R02 ilk tur**, commit `a71cd2c8`): `d7-owner-block-selftest.ps1` | `0720672D86217990B19D4C3C4D7F53972DA999200DBEB9CADBFF7998A0988BFE` (G-1..G-4 + gözlem dökümü; 62 ölçüt) |
 | önceki (R01 kapanış düzeltmesi): `d7-owner-live-block.ps1` | `EDDF7BF39231B67726528061654E2B668CABE48104059D9ACCB5D83B0C36CA5D` (host/kullanıcı yolu literali kaldırıldı, R05 owner girdisi + adres biçim kapısı; ondan önce `2F62C6C9…26DE8`, `881ABCB0…1427`) |
 | önceki (R01 kapanış düzeltmesi): `d7-owner-block-selftest.ps1` | `9A5A31F0AA208EC85434C72D7F9C91E910C8DF34E61E29A13F6BC3516B1470B3` (6 yeni test; ondan önce `6574F027…D26E0`) |
 | `d7-fake-portal-api.js` (R02'de değişmedi) | `7B9D32388A34E91088B316147BCCE6E7AC66EC30AEDFFA4C8F841FE9461EBD7D` |
@@ -188,15 +231,15 @@ Paket digest (blok içinde `$ExpPackage`): `7C42FCCD6349F95E42128F78CA1A86DF36EB
 bağımsız yeniden hesaplama ile **eşit** (`kapanis-duzeltme\pin-dogrulama.txt`: 9 pin, uyuşmazlık 0; blok dosyası PkgPins'te değildir, blok
 değişince digest değişmez); `ExpLiveDist` = R27 `E28A6863…5134`; `ExpEnvSha` = EXTACC bloğuyla aynı.
 R02'de değişen yalnız blok (metin) ve blok öz-testidir; ikisi de pin listesinde değildir. Paket digest R02 baytlarıyla bloktan bağımsız betikle
-yeniden hesaplandı ve `7C42FCCD…7BDD` ile eşit bulundu (`d7-r02\test\paket-digest.log`). Blok sha'sı değiştiği için R01 baytlarıyla yapılmış bir
-Preflight/QrTest sonucu (varsa) R02 baytlarını kapsamaz; bloğun `$Repo` yolu ana checkout olduğundan Preflight paket/senkron kapısı ancak bu
-dosyalar main'e merge edilip main senkron olduğunda geçer. İlk iki satırdaki sha256 değerleri dosyaların ham baytlarından ölçülmüştür
-(UTF-8 BOM dahil, satır sonu LF).
+yeniden hesaplandı ve `7C42FCCD…7BDD` ile eşit bulundu (R02 ilk tur: `d7-r02\test\paket-digest.log`; son baytlar: `d7-r02\tur2\test\paket-digest.log`).
+Blok sha'sı değiştiği için R01 ya da R02 ilk tur baytlarıyla yapılmış bir Preflight/QrTest sonucu (varsa) son baytları kapsamaz; bloğun `$Repo` yolu
+ana checkout olduğundan Preflight paket/senkron kapısı ancak bu dosyalar main'e merge edilip main senkron olduğunda geçer. R02 satırlarındaki
+(blok ve blok öz-testi; son baytlar ve "R02 ilk tur") sha256 değerleri dosyaların ham baytlarından ölçülmüştür (UTF-8 BOM dahil, satır sonu LF).
 
 ## 8. Canlıda oluşacak kayıtlar ve kapanış
 
-Bu liste owner bloğunun canlı veri onay metniyle **aynı kalemleri** taşır (R02; öz-test G-2 onay metnindeki kalemlerin bu bölümde de geçtiğini
-ölçer). Kaynak: koşucu `E752DA1E…D2B6` + `i3-lib.js` `setupI3` + R27 aday commit'indeki `portal.service.ts` — **kaynaktan okundu, canlıda koşulmadı**.
+Bu liste owner bloğunun canlı veri onay metnindeki kalemleri **kapsar** (R02; öz-test G-2: 10 kalem iki yerde de geçer); §8 ek ayrıntı taşır
+(ör. kullanıcı sayısı, dosya numaraları, audit eylem adları, okundu bayrakları — bunlar onay metninde yoktur). Kaynak: koşucu `E752DA1E…D2B6` + `i3-lib.js` `setupI3` + R27 aday commit'indeki `portal.service.ts` — **kaynaktan okundu, canlıda koşulmadı**.
 
 **Koşucunun yazdıkları (Run).** Bu koşum için İKİ yeni sentetik tenant: hedef `ah-<runId>` ve yabancı `ah-<runId>-x`. Hedef tenantta sentetik
 personel kullanıcıları (9 kullanıcı; avukat/personel profilleri ve bir yetki kaydıyla), iki sentetik müvekkil, iki dosya (`I3-<runId>` ve ikinci
@@ -207,8 +250,8 @@ müvekkile bağlı `I3-<runId>-s`, yalnız D7-4S için) ve bir borçlu (+ dosya 
 **Ürünün kendi yazdıkları (kaynaktan okundu).** Portal erişimi açma/kapatma **audit** satırları (`CLIENT_PORTAL_ACCESS_ENABLE` / `…_DISABLE`);
 portal **giriş sayacı** ve son giriş zamanı (her başarılı portal girişinde); okundu bayrakları (`mark-read`, personel listesi); canlı API
 **uygulama günlüğü**nde portal hesabı / portal girişi / mesaj gönderimi satırları (maskeli sentetik adres ya da müvekkil kimliği ile).
-**E-posta/SMS yok** (mesaj akışı kaynakta gönderim üretmez — §2). API günlüğünün tam içeriği bu paketle **ölçülmez**; blok günlükleri okumaz,
-değiştirmez, silmez.
+**E-posta/SMS yok** (mesaj akışı kaynakta gönderim üretmez — §2). API günlüğünün tam içeriği bu paketle **ölçülmez**; blok canlı API uygulama
+günlüğünün içeriğini ölçmez, değiştirmez, silmez; yalnız başlatıcı günlüğündeki DB kimliği satırını okur (salt okuma kapısı).
 
 **Kapanış sonrası durum.** Portal hesabı pasif + sürüm artmış, müvekkil portal erişimi kapalı, **personel pasif** (iki sentetik tenantın tüm
 kullanıcıları; sürüm artmış), **dosyalar CLOSED**. Tenant kaydı kapatılmaz: **tenant yaşam döngüsü değişmez** (§3 notu). **Mesaj/bildirim
@@ -241,7 +284,11 @@ düşen satırlar (personel/portal girişi denemeleri) bu paketle ölçülmez.
 **"Recover BİR KEZ" kuralı kodla zorlanmaz.** Blok Recover'da GO sormaz, defter tutmaz ve aynı makbuzla ikinci bir Recover'ı engellemez; koşucu
 da engellemez. İkinci bir Recover yukarıdaki yazmaları **yeniden** yapar (ör. kullanıcı sürümleri yeniden artar, pasif portal hesabına yeniden
 ölçüm parolası özeti yazılır). Kural owner disiplinidir: Recover yalnız kanıt incelendikten sonra, AYRI owner onayıyla, bir kez başlatılır;
-Recover'ın çıkış kodu (3/5/6 dahil) yeni bir Recover için yetki değildir.
+Recover'ın çıkış kodu (3/5/6 dahil) yeni bir Recover için yetki değildir. **İkinci bir Recover bu paketle tanımlı değildir; owner kararı
+gerektirir** (§10 K-6) — bu belge ve blok metni ikinci bir Recover için koşul ya da yol tanımlamaz (öz-test G-6).
+Koşucunun kanıt metni (pinli, değişmedi) Recover kanıtında da kurtarma önerisi üretebilir: Recover 5/6 ile biterse `d7-evidence.json` içindeki
+`recovery.adim` yine "Owner bloğu `-Mode Recover -ReceiptFile <makbuz>` ile BİR KEZ" der (kaynaktan okundu: `recoveryAdvice`; çıkış 3'te metin
+"Recover TEKRARLANMAZ" olur). Bu metin bir öneridir; yetki değildir ve ikinci bir Recover'ı tanımlamaz.
 
 ## 9. Sınırlar
 
@@ -264,6 +311,25 @@ Recover'ın çıkış kodu (3/5/6 dahil) yeni bir Recover için yetki değildir.
   Koşum sırasında (20 dk'lık telefon beklemesi dahil) canlıda başka bir tenantta kullanıcı ya da müvekkil eklenir/silinirse U-ISO **FAIL** olur
   (koşumdan bağımsız değişiklik; koşucu ayırt edemez) — bu durumda sonuç CLIENT tarafından incelenir. Recover U-ISO ölçmez.
 - Recover'da mevcut oturum reddi ölçülemez (oturum saklanmaz) → portal hesabı varken Recover çıkışı en iyi 3 (hesap hiç oluşmadıysa C3/C4 satırı üretilmez).
+- **Recover çıkış 0, koşucu mantığında fiilen ulaşılamaz (R02 inceleme, D7-E11 b; kaynaktan okundu, canlıda koşulmadı).** Bloğun Recover
+  özetindeki "0 kapanış + HTTP reddi doğrulandı" ifadesi çıkış kodu açıklamasıdır; koşucunun `recoverExitCode` kuralında 0 yalnız hiç
+  ÖLÇÜLEMEYEN satır yoksa döner. Portal hesabı **varsa** mevcut oturum reddi (P7-C4L/C4D) Recover'da ÖLÇÜLEMEYEN'dir (oturum saklanmaz). Hesap
+  **yoksa** Run'da mesaj ölçümleri koşmamıştır, makbuzda `runnerMessageIds` bulunmaz ve mesaj kalıntısı (P7-MSG-KEPT) ÖLÇÜLEMEYEN olur. İki
+  durumda da en iyi çıkış **3**'tür (PASS sayılmaz). Dayanak: portal hesabı satırının koşucu dışında silinmediği varsayımı (koşucu ve ürünün
+  kapatma ucu hesabı silmez; API kaynağında hesabı doğrudan silen bir çağrı bulunmadı; şema düzeyinde zincirleme silme incelenmedi). Blok
+  öz-testindeki Recover çıkış 0 senaryoları (V-1, Z-8, G-3, G-6) koşucunun yerine konan taklit betikle üretilir; koşucunun Recover mantığını
+  ölçmez. Blok metnindeki açıklama bu turda değiştirilmedi.
+- **Run kapanışında personel oturumu yenilenmez (R02 inceleme, D7-E11 a; kaynaktan okundu, canlıda ölçülmedi).** Run'ın kapanış çağrısı
+  (`POST /portal/admin/disable-user`) koşumun başında alınan personel (elev1) token'ını kullanır; Run'da oturumu yenileyen bir yol yoktur
+  (yeniden oturum açma yalnız Recover'da vardır — §8.1 adım 1). Token kapanış anında geçersizse yetkili uç isteği 4xx ile reddeder
+  (`JwtAuthGuard`; beklenen 401), koşucu 4xx yanıtta ikinci denemeyi yapmaz, portal erişimi açık kalır ve koşum **çıkış 6** ile biter
+  (personel/dosya kapanışı yine denenir). Koşum, telefon beklemesi (en çok 20 dk) ve inceleme süresi (120 sn) boyunca sürer. Personel token
+  süresi kaynakta `JWT_EXPIRES_IN` ile belirlenir (kaynak varsayılanı `7d`; R27 aday commit'inde aynı); canlıdaki değer ve canlıdaki token
+  süresi **ölçülmedi**.
+- **Recover yetkisi ölçülmez ve zorlanmaz (R02 inceleme).** Blok AYRI owner onayını sormaz ve ölçmez; "BİR KEZ" kuralını kodla zorlamaz (GO
+  sorulmaz, defter tutulmaz; ikinci bir Recover'ı blok da koşucu da engellemez). Run çıkış 5/6 Recover yetkisi değildir (§5 adım 7, §8.1,
+  K-5); ikinci bir Recover bu paketle tanımlı değildir (K-6). Öz-test G-3/G-4/G-6 yalnız owner'a gösterilen METNİ ve node çağrı sayısını
+  ölçer; onayın verilip verilmediğini ölçmez.
 - **Recover'ın kapı bağımlılıkları (R02).** Recover bu bloktan ancak **tüm salt okuma kapıları** geçerse başlar: main = origin/main ve takipli
   dosyalar temiz, paket pinleri + digest, canlı API dist pini (R27), canlı `.env` pini ve adres biçimi, 8080'de tek dinleyici (canlı API ayakta),
   başka kabul süreci yok, başlatıcı günlüğünde DB kimliği, `node` çözülebilir. Biri sağlanmazsa blok çıkış 90 ile durur ve Recover **başlamaz**
@@ -286,13 +352,26 @@ Recover'ın çıkış kodu (3/5/6 dahil) yeni bir Recover için yetki değildir.
   (D7-3/3N/3U/3G/3F/3B) yalnız personel yanıtını **üretmek** için yerel API'yi kullanır. Kayıt bu paketle **giderilmez**; ürün değişikliği ayrı iş ve
   owner kararıdır. Kayıt giderilirken personel yetki kuralı değişirse bu koşucunun personel aktörü (elev1) yeni kurala göre yeniden doğrulanır.
 - **K-3 Tanım sapması:** D-8 §5 "kapsam dışı caseId → 404" yerine kaynak **400**; paket 400'ü kabul ölçütü sayar. Tanımın güncellenmesi owner/CLIENT kararı.
+  **Karar durumu iki belgede farklı yazıyor (R02 inceleme, D7-E11 c; iki belge okunarak doğrulandı):** bu madde "owner/CLIENT kararı" der; R27 paketi
+  (`client-release-r27-r01` §10, "Karar gerektirmeyenler") "ürün 400 döner ve tanım buna göre güncellendi" der; D-8 paketi §5 tablosu tanım
+  sütununda 404'ü korur ve 400'ü "sapma" olarak kaydeder. Hangisinin geçerli olduğu **owner teyidi ister**; bu paket teyit gelene kadar K-3'ü
+  açık sayar (ölçüt değişmez: koşucu 400 ölçer).
 - **K-4 Recover ve dist değişimi:** Run 5/6 ile bittikten sonra canlı dist değişmişse Recover bu bloktan çalışmaz (her modda dist pini). Seçenekler:
-  (a) canlı dist'i R27'ye geri getirip Recover'ı bu blokla koşmak; (b) yeni dist pinli bir blok sürümü (R02) hazırlatıp Recover'ı onunla koşmak;
+  (a) canlı dist'i R27'ye geri getirip Recover'ı bu blokla koşmak; (b) yeni dist pinli bir blok sürümü (sıradaki revizyon; R02 yalnız metindir, dist pini aynı) hazırlatıp Recover'ı onunla koşmak;
   (c) CLIENT kararıyla kapanışı ayrı bir yolla doğrulamak. Bu paket hiçbirini kendiliğinden yapmaz. Dist dışındaki kapı bağımlılıkları §9'dadır.
 - **K-5 Recover yetkisi (R02; owner kuralı 2026-10-01):** Run çıkış 5/6 otomatik Recover yetkisi DEĞİLDİR. Run'ın koşucu içindeki kapanış
   adımları Run'ın parçasıdır; ayrıca başlatılan Recover ayrı bir canlı yazma işlemidir (§8.1) ve kanıt incelemesi + açık kalan kaynakların
   bildirilmesi sonrasında **AYRI owner onayı** gerektirir; BİR KEZ başlatılır; blok ve ajan Recover'ı otomatik başlatmaz (§5 adım 7; öz-test
   G-3/G-4). Koşucunun kanıttaki kurtarma adımı metni (pinli, değişmedi) bir öneridir. "BİR KEZ" kodla zorlanmaz (§8.1).
+  Bilgi (R02 inceleme; belge okunarak doğrulandı): R27 paketi (`client-release-r27-r01` §11 uygulama sırası tablosu) D-6/D-7 ve D-5 satırlarının
+  "Durma" sütununda "5/6 → Recover" kısaltmasını taşır; bu kısaltma K-5 kuralını (kanıt incelemesi + AYRI owner onayı) yazmaz. R27 belgesi bu
+  işin kapsamı dışındadır ve **değiştirilmedi**; D-7 için geçerli kural bu maddedir.
+- **K-6 İkinci Recover (AÇIK owner sorusu; R02 inceleme):** owner kuralı Recover'ı BİR KEZ tanımlar. **İkinci bir Recover bu paketle tanımlı
+  değildir; owner kararı gerektirir.** Bu belge ve blok metni ikinci bir Recover için koşul, onay biçimi ya da adım tanımlamaz; Recover'ın çıkış
+  kodu (3/5/6 dahil) yeni bir Recover için yetki değildir. Recover'dan sonra kapanış hâlâ doğrulanmamışsa (ör. Recover çıkış 5/6) ne
+  yapılacağı — ikinci Recover'a izin verilip verilmeyeceği, hangi kanıtla ve hangi onay biçimiyle, ya da kapanışın başka bir yolla
+  tamamlanacağı — owner'ın vereceği karardır; bu paketle ikinci bir Recover başlatılmaz. Teknik durum: blok ve koşucu ikinci bir
+  Recover'ı engellemez (§8.1); kural kodda değil, bu maddede ve gösterilen metindedir (öz-test G-6 yalnız metni ölçer).
 - Bilgi (R02'de güncellendi): bu maddenin R01 metni "`EXTACC-D5` bloğunun QrTest'i `extacc-qr-test.js` ile `/portal/forgot-password` ister; o
   betik yalnız `/portal/login` kabul eder (çıkış 4)" diyordu. Bu durum **D-5 R03 ile giderildi**: D-5 bloğunun QrTest'i artık kendi
   `d5-qr-test.js` betiğini çağırır (`/portal/forgot-password`; D-5 paket belgesi R03 notu ve §6 pin tablosu). D-7 QrTest'i baştan beri
@@ -334,7 +413,7 @@ başlatmaz; kapsamsız mutlak ifade kullanılmaz; metin yalnız ölçüleni iddi
 | D7-E4 — girişten sonra açılan sayfa mesaj sayfası değil; beyan seçeneği ana sayfayı hata sayfasıyla aynı harfe düşürüyordu | düzeltildi (yalnız metin) | §5 adım 4 "Mesajlar sekmesine geçin"; beyan istemleri: M = portal açıldı (ana sayfa/özet ya da mesaj sayfası), D = hata/portal dışı sayfa; harf kümesi ve `-ceq 'M'` kodu aynı (§4 R02 notu) |
 | D7-E5 — rozetin neyi saydığı yazılmamıştı | belgelendi | §9 "Rozet = bildirim sayacı"; §5 adım 5; beyan istemi "zil simgesindeki rozet (okunmamış BİLDİRİM sayacı; mesaj sayacı değildir)" |
 | D7-E6 — "sentetik tenant CLOSED" ifadesi tenant yaşam döngüsünün değiştiği izlenimini veriyordu | düzeltildi (blok metni + belge) | blok onay metni ve kalıntı satırı notu: "dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ"; §3 notu, §8. Koşucunun kanıt metni pinlidir, **değişmedi** (aynı ifadeyi üretmeye devam eder; §3 notu anlamını sabitler) |
-| D7-E7 — canlı veri onay metni §8 kayıt listesiyle eşleşmiyordu | düzeltildi | onay metni ve §8 aynı kalemleri taşır (ikinci sentetik müvekkil ve `-s` dosyası, ürünün kendi yazdıkları, API günlüğü satırları, U-ISO sınırı); "Gerçek müvekkil verisine dokunulmaz" mutlak ifadesi kaldırıldı; öz-test G-2 kalemleri hem gösterilen metinde hem §8'de ölçer |
+| D7-E7 — canlı veri onay metni §8 kayıt listesiyle eşleşmiyordu | düzeltildi | onay metnindeki kalemler §8'de de geçer; §8 ek ayrıntı taşır (ikinci sentetik müvekkil ve `-s` dosyası, ürünün kendi yazdıkları, API günlüğü satırları, U-ISO sınırı); "Gerçek müvekkil verisine dokunulmaz" mutlak ifadesi kaldırıldı; öz-test G-2 kalemleri hem gösterilen metinde hem §8'de ölçer |
 | D7-E8 — öz-test atıfları eski baytlara bağlıydı | düzeltildi | §6 başına "hangi baytlar" notu; §6.2 son baytların koşumu; §7 pinler |
 | D7-E9 — U-ISO'nun neyi ölçmediği yazılmamıştı | belgelendi | §9 "U-ISO sınırı"; blok onay metninde "yalnız SAYI; içerik karşılaştırılmaz" |
 | D7-E10 — Recover'ın kapı bağımlılıkları ve web derlemesinin ölçülmediği yazılmamıştı | belgelendi | §9 "Recover'ın kapı bağımlılıkları", "Web derlemesi ölçülmez"; §10 K-4 atfı |
@@ -342,7 +421,8 @@ başlatmaz; kapsamsız mutlak ifade kullanılmaz; metin yalnız ölçüleni iddi
 | Kapsamsız mutlak ifadeler ("… hiçbir dosyaya/kanıta yazılmaz") | düzeltildi | blok SIR yorumu ve §1: "blok ve koşucu kendi kanıt/log dosyalarına yazmaz" + ölçülen kapsam; canlı DB'deki parola özetleri ve canlı API günlüğü ayrı yazıldı; öz-test G-1 |
 
 **Bu revizyonda yapılmayanlar / açık kalanlar.**
-- D7-E11 (üç kısa belge notu): notların içeriği bu işe verilen bulgu listesinde ve kanıt kayıtlarında bulunamadı; içerik uydurulmadı, **uygulanmadı**.
+- D7-E11 (üç kısa belge notu): R02 ilk turunda notların içeriği verilmediği için uygulanmamıştı; içerik inceleme düzeltmeleri turunda verildi ve
+  kaynak okunarak doğrulanıp **uygulandı** (§12.1).
 - Koşucunun kanıt metinleri ("sentetik tenant CLOSED", "Owner bloğu `-Mode Recover …` ile BİR KEZ") pinli dosyadadır ve değişmedi; düzeltilmeleri
   koşucu sha'sını ve paket digest'i değiştirir — ayrı iş.
 - "Recover BİR KEZ" ve "AYRI owner onayı" kodla zorlanmaz/ölçülmez (blok mantığı bu revizyonda değiştirilemez); kural belge + gösterilen metindir.
@@ -353,3 +433,40 @@ başlatmaz; kapsamsız mutlak ifade kullanılmaz; metin yalnız ölçüleni iddi
   maskelendi. D-5 öz-testindeki tam maske (M-1) D-7'ye taşınmadı.
 - Web arayüzü tarifleri (ana sayfa, Mesajlar sekmesi, zil rozeti) kaynak okumasıdır; canlı web derlemesi ölçülmedi (§9).
 - **Preflight / QrTest / Run / Recover canlıda KOŞULMADI.** Bu revizyon hiçbiri için yetki değildir.
+
+### 12.1 R02 inceleme düzeltmeleri (2026-10-01; yalnız metin ve belge)
+
+**Kapsam.** R02 ilk turu (commit `a71cd2c8`) bağımsız incelendi; engelleyici ya da önemli bulgu çıkmadı. Aşağıdaki küçük bulgular **yalnız metin
+ve belge** düzeltmesiyle kapatıldı: blok METNİ (yorum + konsol çıktısı), blok öz-testi (yalnız yeni metni ölçen G-5/G-6) ve bu belge. Blok
+mantığı değişmedi (§6.3 mantık eşitliği: R02 ilk tur bloğu → son blok birebir eşit, istisna yok); koşucu, sahte API, QR betiği, `d7-selftest.js`
+ve pinli 9 dosya değişmedi; paket digest aynıdır. Owner kuralı: Run çıkış 5/6 Recover yetkisi değildir; Recover yalnız kanıt incelendikten sonra
+AYRI owner onayıyla, BİR KEZ başlatılır; blok başlatmaz; **ikinci bir Recover bu kuralda tanımlı değildir** — metin bir tekrar yolu tanımlamaz.
+
+| Bulgu | Karar | Değişiklik |
+|---|---|---|
+| D7V-1 — kalıntı satırının altındaki açıklama ("sentetik tenant CLOSED" = dosyalar CLOSED + …) kapanış doğrulanmadığında da durum iddiası gibi okunuyordu | düzeltildi (blok metni + belge) | Run ve Recover bitişindeki not yeniden yazıldı: ifade koşucunun SABİT metnidir, kapanışın doğrulandığını GÖSTERMEZ; kapanış durumu Run'da "Portal erişim kapanışı … DOĞRULANDI / DOĞRULANAMADI" satırındadır; anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü değişmez. §3 notu aynı cümleyi taşır. Öz-test G-5 |
+| D7V-2 — Recover bitiş metni "tekrar ancak AYRI owner onayıyla" diyerek ikinci Recover için yol tanımlıyordu | düzeltildi (blok metni + belge) | bitiş metni: "Bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR; Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT'a bildirilir." + "İkinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir."; Run 5/6 metni ve başlık yorumu aynı kuralı taşır; §4, §5 adım 7, §8.1; §10'a açık owner sorusu **K-6**. Öz-test G-6 |
+| D7V-3 — §8 "blok günlükleri okumaz, değiştirmez, silmez" (blok başlatıcı günlüğünden DB kimliği satırını okur) | düzeltildi | §8: "blok canlı API uygulama günlüğünün içeriğini ölçmez, değiştirmez, silmez; yalnız başlatıcı günlüğündeki DB kimliği satırını okur (salt okuma kapısı)" |
+| D7V-4 — §7 "İlk iki satırdaki sha256" (R02 satırları tablonun ilk iki satırı değil) | düzeltildi | §7: "R02 satırlarındaki (blok ve blok öz-testi …) sha256 değerleri …" |
+| D7V-5 — §10 K-4(b) "(R02)" (R02 zaten bu metin revizyonunun adı) | düzeltildi | "(sıradaki revizyon; R02 yalnız metindir, dist pini aynı)" |
+| D7V-6 — §9'da Recover yetkisinin ölçülmediği/zorlanmadığı yazılmamıştı | belgelendi | §9 "Recover yetkisi ölçülmez ve zorlanmaz" |
+| D7V-7 — §8 "onay metniyle AYNI kalemleri taşır" (§8 daha ayrıntılı; ölçülen yalnız 10 kalemin iki yerde geçmesi) | düzeltildi | §8: "onay metnindeki kalemleri kapsar (G-2: 10 kalem iki yerde de geçer); §8 ek ayrıntı taşır"; blok yorumu, öz-test başlık yorumu ve §12 D7-E7 satırı aynı ifadeye çekildi |
+| D7V-8 — G-1'in neyi yakalamadığı yazılmamıştı | belgelendi | §6.2 "G-1'in sınırı" |
+| D7-E11 a — Run kapanışında personel oturumu yenilenmez | doğrulandı (koşucu kaynağı: Run `closePortal` çağrısına oturum yenileyici verilmez; 4xx yanıtta ikinci deneme yok; portal açık kalırsa çıkış 6), belgelendi | §9. Token süresi kaynakta `JWT_EXPIRES_IN` (varsayılan `7d`); canlıda ölçülmedi |
+| D7-E11 b — bloğun Recover özetindeki "0 = kapanış + HTTP reddi doğrulandı" koşucu mantığında fiilen ulaşılamaz | doğrulandı (koşucu kaynağı: `recoverExitCode` + `closePortal` + kalıntı ölçümü; hesap satırının koşucu dışında silinmediği varsayımıyla), belgelendi | §9. Blok metnindeki açıklama değiştirilmedi |
+| D7-E11 c — K-3 karar durumu iki belgede farklı | doğrulandı (bu belge §10 K-3 ↔ R27 paketi §10 "Karar gerektirmeyenler"; D-8 paketi §5 tablosu), belgelendi | §10 K-3: owner teyidi ister. R27 ve D-8 belgeleri değiştirilmedi |
+
+**Bu turda yapılmayanlar / sınırlar.**
+- **Recover bitişindeki not, istenen cümleden bir yerde ayrılır:** Recover'da owner'a "DOĞRULANDI / DOĞRULANAMADI" satırı **gösterilmez** (blok bu
+  satırı yalnız Run'da, owner beyanından önce yazar). Satır Recover'a metin olarak da eklenmedi: bloğun kapanış metni kanıttaki P7-D9 satırından
+  üretilir ve Recover kanıtında P7-D9 yoktur — eklenen satır her Recover'da "DOĞRULANAMADI" derdi; doğru bir satır metin değil mantık değişikliği
+  ister. Bu yüzden Recover notu kapanış durumu için "yukarıdaki çıkış kodu satırındadır" der ve böyle bir satırın gösterilmediğini açıkça yazar;
+  Run notu istenen cümleyi aynen taşır.
+- Canlı veri onay metnindeki açıklama ("… kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif") koşumdan
+  ÖNCE gösterilen bir tanımdır, durum bildirimi değildir; bu turda değiştirilmedi (D7V-1 yalnız kalıntı satırının altındaki notu kapsar).
+- Bloğun Recover özetindeki "0 kapanış + HTTP reddi doğrulandı" açıklaması değiştirilmedi (D7-E11 b yalnız belge notudur).
+- R27 paketi §11 tablosundaki "5/6 → Recover" kısaltması ve R27 §10'daki K-3 ifadesi bu işin kapsamı dışındadır; değiştirilmedi (K-3, K-5 notları).
+- İkinci Recover kodla engellenmez; K-6 açık owner sorusudur. Koşucunun Recover kanıtındaki `recovery.adim` metni (pinli) 5/6'da yine "Recover …
+  BİR KEZ" önerir (§8.1); koşucu değiştirilmediği için bu metin durur.
+- Repodaki `d7-selftest.js` bu turda da yalnız ayna kopyada koşuldu (§6.3).
+- **Preflight / QrTest / Run / Recover canlıda KOŞULMADI.** Bu tur hiçbiri için yetki değildir.
