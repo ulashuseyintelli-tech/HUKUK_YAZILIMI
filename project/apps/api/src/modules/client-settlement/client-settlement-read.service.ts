@@ -12,6 +12,7 @@ export interface ClientAccountingCaseItem {
   role: string;
   caseNumber: string;
   executionFileNumber: string | null;
+  /** Dosyanın kayıtlı para birimi (Case.currency). Tahsilat ve dağıtım dosya para birimini taşır (RCV-COL-CURRENCY-BOUNDARY-01). */
   currency: string;
   /** Takip başlangıç tarihi (case.caseDate) ISO — Faz7-E ekstre default period fallback'i için. */
   caseOpenedAt: string | null;
@@ -301,6 +302,8 @@ export class ClientSettlementReadService {
   /**
    * Müvekkilin (clientId) dosyaları + caseClientId resolve. clientId yalnız giriş bağlamı;
    * finansal scope için caseClientId döner. Yalnız tenant içi + ALACAKLI/ORTAK_ALACAKLI.
+   * `currency` dosyanın kayıtlı para birimidir: çağıran outstanding / payout okumalarını bu para birimiyle ister.
+   * Sabit 'TRY' dövizli dosyada ödenecek tutarı 0 gösteriyordu; burada çevirme / toplama YOK (REC-FX-001/002).
    * Çağrıldığı yerler:
    *  - ClientAccountingController.cases() → GET /clients/:clientId/accounting/cases
    */
@@ -311,7 +314,7 @@ export class ClientSettlementReadService {
         id: true,
         caseId: true,
         role: true,
-        case: { select: { fileNumber: true, executionFileNumber: true, caseDate: true } },
+        case: { select: { fileNumber: true, executionFileNumber: true, caseDate: true, currency: true } },
       },
       orderBy: { assignedAt: 'desc' },
     });
@@ -322,7 +325,7 @@ export class ClientSettlementReadService {
         role: r.role,
         caseNumber: r.case?.fileNumber ?? '',
         executionFileNumber: r.case?.executionFileNumber ?? null,
-        currency: 'TRY',
+        currency: r.case?.currency ?? 'TRY',
         caseOpenedAt: r.case?.caseDate ? r.case.caseDate.toISOString() : null,
       })),
     };
