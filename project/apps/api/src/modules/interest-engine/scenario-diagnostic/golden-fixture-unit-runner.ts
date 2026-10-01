@@ -202,7 +202,21 @@ export function runGoldenScenarioUnit(
       overpayments: { held: [], blocked: [] },
     };
   } else {
-    const grouped = groupByCurrency(calculationBuckets(def), pay.payments);
+    // K3-L TK-3 / KP-7 (servis aynası): hesap tarihinden SONRAKİ ödeme motora girmez; kapsam içi küme açıkça taşınır
+    // (CaseBalanceService ana yolu ile aynı sözleşme — görünüm tahsilat bloğunu bu kümeden üretir).
+    const asOfDate = def.domainInput.asOfDate;
+    const toOut = (payment: (typeof pay.payments)[number]) => ({
+      id: payment.id,
+      date: payment.date,
+      amount: payment.amount,
+      currency: payment.currency,
+      ...(payment.source != null ? { source: payment.source } : {}),
+    });
+    const byDateThenId = (a: { date: string; id: string }, b: { date: string; id: string }) =>
+      a.date.localeCompare(b.date) || a.id.localeCompare(b.id);
+    const paymentsInScope = pay.payments.filter((payment) => payment.date <= asOfDate);
+    const paymentsAfterAsOf = pay.payments.filter((payment) => payment.date > asOfDate).map(toOut).sort(byDateThenId);
+    const grouped = groupByCurrency(calculationBuckets(def), paymentsInScope);
     const currencyResults: CaseBalanceResult['currencyResults'] = [];
     const perCurrency: CaseBalanceResult['diagnostics']['perCurrency'] = [];
     const hasNoBuckets = grouped.groups.some((group) => group.blockedReason == null && group.buckets.length === 0);
@@ -275,6 +289,9 @@ export function runGoldenScenarioUnit(
         perCurrency,
       },
       overpayments: { held: [], blocked: [] },
+      allocationHolds: [],
+      ...(paymentsAfterAsOf.length > 0 ? { paymentsAfterAsOf } : {}),
+      paymentsInScope: paymentsInScope.map(toOut).sort(byDateThenId),
     };
   }
 
