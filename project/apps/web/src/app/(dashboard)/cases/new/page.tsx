@@ -8,7 +8,7 @@ import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { runMutation } from "@/lib/mutation-outcome";
 import { toActionErrorMessage } from "@/lib/action-error";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError, formatCaseCreateAdmissionError } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, buildClaimDocumentFields, ClaimKalemTuruValidationError, mapClaimKalemTuruToDueType, flattenNestedYanAlacaklarRaws, formatCaseDueValidationError, formatCaseCreateAdmissionError } from "@/lib/case-due-payload";
 import { buildUiInterestWriteIntent, type InterestTypeCode as UiInterestTypeCode } from "@/lib/interest-type-resolver";
 import { aggregateListedClaimItems } from "@/lib/case-claim-live-aggregate";
 import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields, poaCreateFailureMessage } from "@/lib/poa-ux";
@@ -42,6 +42,25 @@ import {
   ocrDuplicateMessage,
   ocrInstrumentsOf,
 } from "@/lib/wizard-ocr-instruments";
+import {
+  OCR_DIGER_CLAIM_KINDS,
+  claimKindForOcrDraft,
+  claimRawFromOcrDraft,
+  duplicateFaturaMessage,
+  findDuplicateFaturaIndex,
+  mergeOcrClaimDrafts,
+  ocrClaimDraftFromDebtInfo,
+  ocrDraftCurrencyConflict,
+  ocrDraftCurrencyConflictMessage,
+  ocrDraftDocumentLabel,
+  ocrKdvFieldsForDue,
+  pendingOcrClaimDrafts,
+  pendingOcrDraftsMessage,
+  pendingOcrDraftsNotice,
+  sanitizeOcrClaimDrafts,
+  splitDetectedInstruments,
+  type OcrClaimDraft,
+} from "@/lib/wizard-ocr-claim-drafts";
 import { FEATURE_FLAGS } from "@/lib/config/feature-flags";
 import {
   buildCheckPenaltyFormationPayload,
@@ -290,6 +309,8 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
       interestEndDate: startDate,
       // PR-2c-2: belge-özel alanlar (FATURA/İLAM/KİRA) → PRINCIPAL due (kambiyo-dışı; CEK/SENET → {})
       ...buildClaimDocumentFields(item),
+      // K3-L KP-8: taramadan gelen fatura KDV bilgisi — yalnız kalem tutarı taramadaki tutarla aynı kaldıysa
+      ...ocrKdvFieldsForDue(item),
     });
   }
 
@@ -437,6 +458,11 @@ export default function NewCasePage() {
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null = yeni kalem ekleme
   const [claimEditorKey, setClaimEditorKey] = useState(0); // editör formunu reset/yükle için remount anahtarı
   const [claimFormBuffer, setClaimFormBuffer] = useState<any | null>(null); // editördeki güncel (henüz eklenmemiş) kalem
+  // K3-L KP-8: evrak taramasından gelen ve kullanıcı kararı bekleyen kayıtlar. Tarama kendiliğinden kalem / due
+  // OLUŞTURMAZ; kalem yalnız kullanıcı kaydı formda inceleyip "Kalemi Listeye Ekle" dediğinde oluşur.
+  const [ocrClaimDrafts, setOcrClaimDrafts] = useState<OcrClaimDraft[]>([]);
+  const [ocrDraftKinds, setOcrDraftKinds] = useState<Record<string, string>>({}); // DİĞER belgede kullanıcının seçtiği kalem türü
+  const [claimFormSeed, setClaimFormSeed] = useState<any | null>(null); // incelenmek üzere forma yüklenen tarama kaydı
   // K3-L KP-11: alacak kalemi hesabının hesap tarihi sayfa düzeyinde tutulur ve taslağa yazılır — taslak ya da kalem
   // editörü yeniden açıldığında kendi tarihi korunur (bugüne taşınmaz). Yeni hesapta varsayılan Türkiye takvimine göre bugün.
   const [hesapTarihi, setHesapTarihi] = useState<string>(() => turkeyToday());
@@ -611,7 +637,17 @@ export default function NewCasePage() {
       } else if (savedState.dues?.length > 0) {
         setClaimDraftItems(hydrateClaimDraftItemsFromDues(savedState.dues));
       }
-      if (savedState.instruments?.length > 0) setInstruments(savedState.instruments); // PR-N4b/S4: taslaktan kambiyo evrakları
+      // PR-N4b/S4: taslaktan kambiyo evrakları. K3-L KP-8: `instruments` yalnız kambiyo taşır — eski taslakta taramadan
+      // gelmiş fatura / diğer belge varsa karar bekleyen kayda çevrilir (sunucu bunları evrak olarak kabul etmez;
+      // sessizce de düşürülmez).
+      const savedInstrumentSplit = splitDetectedInstruments<CaseInstrumentPayload>(
+        Array.isArray(savedState.instruments) ? savedState.instruments : [],
+      );
+      if (savedInstrumentSplit.kambiyo.length > 0) setInstruments(savedInstrumentSplit.kambiyo);
+      const restoredOcrDrafts = mergeOcrClaimDrafts(sanitizeOcrClaimDrafts(savedState.ocrClaimDrafts), savedInstrumentSplit.drafts, {
+        listedItems: Array.isArray(savedState.claimDraftItems) ? savedState.claimDraftItems : [],
+      });
+      if (restoredOcrDrafts.length > 0) setOcrClaimDrafts(restoredOcrDrafts);
       if (savedState.caseData) {
         const restoredCaseData = { ...savedState.caseData };
         // K3-L KP-2: kullanıcı seçimi işaretli olmayan (eski) taslaktaki faiz türü varsayılan olabilir — seçim sayılmaz,
@@ -664,6 +700,7 @@ export default function NewCasePage() {
       dues,
       claimDraftItems,
       instruments,
+      ocrClaimDrafts,
       caseData,
       selectedCity,
       documentSource,
@@ -683,7 +720,7 @@ export default function NewCasePage() {
     };
 
     saveCaseWizardDraftState(stateToSave, { tenantId: wizardTenantId, userId: wizardUserId });
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, checkedCekPreviewHash, selectedForm, selectedSubForm, responsiblePerson, autoFileNumber, hesapTarihi, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, ocrClaimDrafts, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, checkPenaltyFormationRequested, checkPenaltyFormationKey, checkedCekPreviewHash, selectedForm, selectedSubForm, responsiblePerson, autoFileNumber, hesapTarihi, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
   useEffect(() => {
@@ -1334,6 +1371,7 @@ export default function NewCasePage() {
   const resetClaimEditor = () => {
     setEditingItemIndex(null);
     setClaimFormBuffer(null);
+    setClaimFormSeed(null);
     setClaimEditorKey(k => k + 1);
   };
   const handleAddOrUpdateClaimItem = () => {
@@ -1354,6 +1392,11 @@ export default function NewCasePage() {
     const ocrDuplicate = findOcrDuplicateOfClaimRaw(claimFormBuffer, instruments);
     if (ocrDuplicate) {
       setError(ocrDuplicateMessage(ocrDuplicate));
+      return;
+    }
+    // K3-L KP-8: aynı fatura (no + tutar + para birimi) ikinci kez eklenmez (iki anapara kaydı oluşurdu)
+    if (findDuplicateFaturaIndex(claimFormBuffer, claimDraftItems, editingItemIndex) >= 0) {
+      setError(duplicateFaturaMessage(claimFormBuffer));
       return;
     }
     setError("");
@@ -1380,9 +1423,44 @@ export default function NewCasePage() {
       }
       throw classificationError;
     }
+    // K3-L KP-8: taramadan gelen kayıt kullanıcı tarafından incelenip kaleme çevrildi → karar verildi, kuyruktan düşer
+    if (cleanRaw.ocrDraftId) setOcrClaimDrafts(prev => prev.filter(d => d.id !== cleanRaw.ocrDraftId));
     resetClaimEditor();
   };
+  // ── K3-L KP-8: evrak taramasından gelen, karar bekleyen kayıtlar ────────────────────────────────────────
+  // İncele: kayıt alacak kalemi formuna yüklenir; kalem yalnız "Kalemi Listeye Ekle" ile oluşur (kayıt o ana kadar bekler).
+  const reviewOcrDraft = (draft: OcrClaimDraft) => {
+    const kalemTuru = claimKindForOcrDraft(draft, ocrDraftKinds[draft.id]);
+    if (!kalemTuru) {
+      setError("Bu belge için önce alacak türünü seçin (varsayılan tür uygulanmaz).");
+      return;
+    }
+    if (ocrDraftCurrencyConflict(draft, caseData.currency)) {
+      setError(ocrDraftCurrencyConflictMessage(draft, caseData.currency));
+      return;
+    }
+    setError("");
+    setEditingItemIndex(null);
+    setClaimFormBuffer(null);
+    setClaimFormSeed(claimRawFromOcrDraft(draft, kalemTuru));
+    setClaimEditorKey(k => k + 1);
+  };
+  // Kayıt formdayken çıkarılır / ek belgeye çevrilirse form da boşaltılır (taramadan gelen değer onaysız kaleme dönüşmesin)
+  const releaseOcrDraftFromEditor = (draftId: string) => {
+    if (claimFormSeed?.ocrDraftId === draftId || (editingItemIndex === null && claimFormBuffer?.ocrDraftId === draftId)) resetClaimEditor();
+  };
+  const keepOcrDraftAsDocumentOnly = (draftId: string) => {
+    releaseOcrDraftFromEditor(draftId);
+    setOcrClaimDrafts(prev => prev.map(d => (d.id === draftId ? { ...d, status: "DOCUMENT_ONLY" } : d)));
+  };
+  const reopenOcrDraft = (draftId: string) =>
+    setOcrClaimDrafts(prev => prev.map(d => (d.id === draftId ? { ...d, status: "PENDING" } : d)));
+  const removeOcrDraft = (draftId: string) => {
+    releaseOcrDraftFromEditor(draftId);
+    setOcrClaimDrafts(prev => prev.filter(d => d.id !== draftId));
+  };
   const handleEditClaimItem = (index: number) => {
+    setClaimFormSeed(null);
     setEditingItemIndex(index);
     setClaimFormBuffer(claimDraftItems[index]?.raw ?? null);
     setClaimEditorKey(k => k + 1); // formu initialItems ile yeniden mount et
@@ -1415,6 +1493,9 @@ export default function NewCasePage() {
   // validasyonuyla (handleSubmitClick → validateCaseCreation) birebir aynıdır;
   // amaç eksiği son adım yerine ilgili adımda erken sinyallemektir.
   const getStepSoftNotice = (): { message: string; severity: "warning" | "info" } | null => {
+    // K3-L KP-8: taramadan gelen kayıt karar bekliyorsa önce o söylenir
+    if ((currentStep === 4 || currentStep === 5) && pendingOcrClaimDrafts(ocrClaimDrafts).length > 0)
+      return { message: pendingOcrDraftsNotice(pendingOcrClaimDrafts(ocrClaimDrafts).length), severity: "warning" };
     if (currentStep === 2 && lawyers.filter(l => l.name && l.surname).length === 0)
       return { message: "Bu adımda henüz avukat eklemediniz. Şimdi ekleyebilir ya da sonra tamamlayabilirsiniz.", severity: "warning" };
     if (currentStep === 3 && creditors.filter(c => c.name).length === 0)
@@ -1518,6 +1599,15 @@ export default function NewCasePage() {
       return;
     }
 
+    // K3-L KP-8: taramadan gelen kayıt karar beklerken dosya açılmaz — tarama kendiliğinden borç yaratmaz, kayıt da
+    // sessizce düşürülmez. Kullanıcı her kaydı kaleme çevirir, yalnız ek belge olarak tutar ya da çıkarır.
+    const pendingOcrDrafts = pendingOcrClaimDrafts(ocrClaimDrafts);
+    if (pendingOcrDrafts.length > 0) {
+      setError(pendingOcrDraftsMessage(pendingOcrDrafts.length));
+      setCurrentStep(5);
+      return;
+    }
+
     // Backend'e gönderilecek subCategory değerini hesapla
     const backendSubCategory = mapSubCategoryToBackend(caseData.subCategory);
 
@@ -1533,6 +1623,14 @@ export default function NewCasePage() {
       const ocrDuplicate = findOcrDuplicateOfClaimRaw(raw, instruments);
       if (ocrDuplicate) {
         setError(ocrDuplicateMessage(ocrDuplicate));
+        return;
+      }
+    }
+    // K3-L KP-8: aynı fatura listede iki kez varsa (ör. eski taslak) açılış yapılmaz — iki anapara kaydı
+    const listedAndPending = [...claimDraftItems, ...(pendingRaw ? [{ raw: pendingRaw }] : [])];
+    for (let i = 0; i < listedAndPending.length; i++) {
+      if (findDuplicateFaturaIndex(listedAndPending[i].raw, listedAndPending, i) >= 0) {
+        setError(duplicateFaturaMessage(listedAndPending[i].raw));
         return;
       }
     }
@@ -1607,6 +1705,12 @@ export default function NewCasePage() {
     }
     // K3-L KP-2: dosya faiz türü açıkça seçilmeden dosya açılmaz (adım atlanmış olsa da)
     if (!caseData.interestType) { setError("Dosya faiz türü seçilmelidir (varsayılan uygulanmaz)"); setCurrentStep(1); return; }
+    // K3-L KP-8: masraf penceresi yolundan da gelinse, karar bekleyen tarama kaydı varken dosya açılmaz
+    if (pendingOcrClaimDrafts(ocrClaimDrafts).length > 0) {
+      setError(pendingOcrDraftsMessage(pendingOcrClaimDrafts(ocrClaimDrafts).length));
+      setCurrentStep(5);
+      return;
+    }
     setLoading(true);
     
     // Backend'e gönderilecek subCategory değerini hesapla
@@ -2390,33 +2494,21 @@ export default function NewCasePage() {
               onDebtorsChange={setCaseDebtors}
               creditors={creditors.map((c) => ({ name: c.name, identityNo: c.identityNo }))}
               onDebtInfoDetected={(debtInfo, documentType) => {
-                // Borç evrakından tespit edilen bilgileri alacak kalemlerine otomatik aktar
-                if (debtInfo.amount) {
-                  const newDue: DueItem = {
-                    type: "PRINCIPAL",
-                    description: debtInfo.documentNo
-                      ? `${debtInfo.documentNo} numaralı belgeye istinaden asıl alacak`
-                      : "Asıl Alacak (Borç evrakından tespit edildi)",
-                    amount: debtInfo.amount.toString(),
-                    dueDate: debtInfo.dueDate || new Date().toISOString().split("T")[0],
-                    // FATURA (G2b, scan-only): documentType=FATURA ise belge/KDV metadata (amount=KDV-dahil genel toplam)
-                    ...faturaDueFieldsFromDebtInfo(debtInfo, documentType),
-                  };
-                  // Mevcut kalemlere ekle (aynı tutar yoksa)
-                  const existingAmount = dues.find(d => d.amount === newDue.amount && d.type === "PRINCIPAL");
-                  if (!existingAmount) {
-                    setDues([...dues, newDue]);
-                  }
-                  // Para birimini güncelle
-                  if (debtInfo.currency && debtInfo.currency !== "TRY") {
-                    setCaseData(prev => ({ ...prev, currency: debtInfo.currency as any }));
-                  }
-                }
+                // K3-L KP-8: tek belge taraması kullanıcı teyidi olmadan BORÇ YARATMAZ. Önceden burada `dues`'a doğrudan
+                // anapara yazılıyordu: kalem listesinde görünmüyor, kullanıcı kalem eklemezse görünmeden gönderiliyor,
+                // eklerse sessizce siliniyordu; dosya para birimi de sorulmadan değiştiriliyordu. Artık kayıt alacak
+                // kalemleri adımında karar bekler; kalem yalnız kullanıcı formda inceleyip eklediğinde oluşur.
+                const draft = ocrClaimDraftFromDebtInfo(debtInfo, documentType);
+                if (draft) setOcrClaimDrafts(prev => mergeOcrClaimDrafts(prev, [draft], { listedItems: claimDraftItems }));
               }}
               onInstrumentsDetected={(detected) => {
                 // PR-N4b: seçili kambiyo enstrümanları → instruments[] (REPLACE, S3); dues'a PRINCIPAL KONMAZ (K1).
                 // Kambiyo PRINCIPAL'ı backend instruments[] üzerinden gider (N3-wire); çek dues'a yazılmaz.
-                setInstruments(selectedInstrumentsToPayload(detected));
+                // K3-L KP-8: fatura / diğer belge `instruments[]`'a GİRMEZ (sunucu evrak olarak kabul etmez); alacak
+                // kalemleri adımında karar bekleyen kayıt olur. Seçim her kabulde yenilenir (REPLACE'in eşi).
+                const { kambiyo, drafts } = splitDetectedInstruments(detected);
+                setInstruments(selectedInstrumentsToPayload(kambiyo));
+                setOcrClaimDrafts(prev => mergeOcrClaimDrafts(prev, drafts, { replacePendingMulti: true, listedItems: claimDraftItems }));
               }}
             />
           </div>
@@ -2467,6 +2559,118 @@ export default function NewCasePage() {
                 )}
               </div>
             )}
+            {ocrClaimDrafts.length > 0 && (
+              <div className="border border-amber-300 rounded-lg p-3 bg-amber-50/60" data-testid="wizard-ocr-claim-drafts">
+                <h3 className="text-sm font-semibold mb-1">
+                  Evrak Taramasından Gelen, Karar Bekleyen Kayıtlar ({pendingOcrClaimDrafts(ocrClaimDrafts).length})
+                </h3>
+                <p className="text-[11px] text-slate-700 mb-2">
+                  Tarama sonucu kendiliğinden alacak kalemi oluşturmaz. Her kaydı inceleyip kalem olarak ekleyin, yalnız ek
+                  belge olarak tutun ya da çıkarın. Karar bekleyen kayıt varken dosya açılmaz.
+                </p>
+                <ul className="space-y-1">
+                  {ocrClaimDrafts.map((draft) => {
+                    const pending = draft.status === "PENDING";
+                    const currencyConflict = ocrDraftCurrencyConflict(draft, caseData.currency);
+                    const kindReady = claimKindForOcrDraft(draft, ocrDraftKinds[draft.id]) !== null;
+                    const inEditor = claimFormSeed?.ocrDraftId === draft.id;
+                    return (
+                      <li
+                        key={draft.id}
+                        className="rounded border px-2 py-1.5 text-sm bg-white"
+                        data-testid="wizard-ocr-claim-draft-row"
+                        data-status={draft.status}
+                        data-kind={draft.kind}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span>
+                            <span className="font-medium">{ocrDraftDocumentLabel(draft)}</span>
+                            {draft.documentNo ? ` ${draft.documentNo}` : ""}
+                            {draft.amount !== null
+                              ? ` — ${draft.amount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${draft.currency}`
+                              : " — tutar okunamadı"}
+                            {draft.issueDate ? ` · düzenleme ${draft.issueDate}` : ""}
+                            {draft.dueDate ? ` · vade ${draft.dueDate}` : ""}
+                            <span className="ml-2 text-[11px] text-amber-800">Kaynak: evrak tarama</span>
+                          </span>
+                          <span className="flex flex-wrap items-center gap-2 shrink-0">
+                            {pending && draft.kind === "DIGER" && (
+                              <select
+                                data-testid="ocr-draft-kind"
+                                aria-label="Belgenin alacak türü"
+                                className="border rounded px-1.5 py-0.5 text-xs"
+                                value={ocrDraftKinds[draft.id] ?? ""}
+                                onChange={(e) => setOcrDraftKinds(prev => ({ ...prev, [draft.id]: e.target.value }))}
+                              >
+                                <option value="">Alacak türünü seçin</option>
+                                {OCR_DIGER_CLAIM_KINDS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            )}
+                            {pending && (
+                              <button
+                                type="button"
+                                data-testid="ocr-draft-review"
+                                disabled={!kindReady || currencyConflict}
+                                onClick={() => reviewOcrDraft(draft)}
+                                className="text-xs text-blue-700 hover:underline disabled:text-slate-400 disabled:no-underline"
+                              >
+                                İncele ve kalem olarak ekle
+                              </button>
+                            )}
+                            {pending && (
+                              <button
+                                type="button"
+                                data-testid="ocr-draft-document-only"
+                                onClick={() => keepOcrDraftAsDocumentOnly(draft.id)}
+                                className="text-xs text-slate-700 hover:underline"
+                              >
+                                Yalnız ek belge (borç oluşturma)
+                              </button>
+                            )}
+                            {!pending && (
+                              <button
+                                type="button"
+                                data-testid="ocr-draft-reopen"
+                                onClick={() => reopenOcrDraft(draft.id)}
+                                className="text-xs text-slate-700 hover:underline"
+                              >
+                                Kararı geri al
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              data-testid="ocr-draft-remove"
+                              onClick={() => removeOcrDraft(draft.id)}
+                              className="text-xs text-red-500 hover:underline"
+                            >
+                              Çıkar
+                            </button>
+                          </span>
+                        </div>
+                        {pending && currencyConflict && (
+                          <p className="mt-1 text-[11px] text-red-700" data-testid="ocr-draft-currency-conflict">
+                            {ocrDraftCurrencyConflictMessage(draft, caseData.currency)}
+                          </p>
+                        )}
+                        {pending && inEditor && (
+                          <p className="mt-1 text-[11px] text-blue-800" data-testid="ocr-draft-in-editor">
+                            Aşağıdaki formda inceleniyor. Kalem, &quot;Kalemi Listeye Ekle&quot; dediğinizde oluşur.
+                          </p>
+                        )}
+                        {!pending && (
+                          <p className="mt-1 text-[11px] text-slate-700" data-testid="ocr-draft-document-only-note">
+                            Yalnız ek belge: bu kayıt alacak kalemi oluşturmaz. Belgeyi dosya açıldıktan sonra Belgeler
+                            sekmesinden yükleyin.
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             {claimDraftItems.length > 0 && (
               <div className="border rounded-lg p-3 bg-blue-50/40">
                 <h3 className="text-sm font-semibold mb-2">Eklenen Alacak Kalemleri ({claimDraftItems.length})</h3>
@@ -2480,6 +2684,7 @@ export default function NewCasePage() {
                         <span className="font-medium">{ci.raw?.__legacyDue?.description || claimItemKalemLabel(ci.raw?.kalemTuru)}</span>
                         {ci.raw?.bakiyeTutar ? ` — ${Number(ci.raw.bakiyeTutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${ci.raw?.currency || 'TRY'}` : ''}
                         {ci.raw?.vadeTarihi ? ` · ${ci.raw.vadeTarihi}` : ''}
+                        {ci.raw?.ocrDraftId ? <span className="ml-2 text-[11px] text-emerald-700" data-testid="claim-item-ocr-source">Kaynak: evrak tarama (incelendi)</span> : null}
                       </span>
                       <span className="flex items-center gap-2 shrink-0">
                         <button type="button" onClick={() => handleEditClaimItem(i)} className="text-xs text-blue-600 hover:underline">Düzenle</button>
@@ -2562,7 +2767,7 @@ export default function NewCasePage() {
             )}
             <ProfessionalClaimItemForm
               key={claimEditorKey}
-              initialItems={editingItemIndex !== null && claimDraftItems[editingItemIndex] ? [claimDraftItems[editingItemIndex].raw] : undefined}
+              initialItems={editingItemIndex !== null && claimDraftItems[editingItemIndex] ? [claimDraftItems[editingItemIndex].raw] : claimFormSeed ? [claimFormSeed] : undefined}
               caseType={selectedForm?.category}
               formCode={selectedForm?.code}
               currency={caseData.currency || "TRY"}
