@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { isAllocationHeldCollection } from "@/lib/collection-allocation-hold";
+import { recordCurrencySuffix, sharedRecordCurrency } from "@/lib/record-currency-display";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -1365,6 +1366,9 @@ export default function CaseDetailPage() {
       ? "Tahsilat finans özetinde görünüyor; dağıtım/mutabakat kaydı henüz oluşturulmamış."
       : "Bu dosyada henüz dağıtım/mutabakat kaydı yok.";
   }, [collections]);
+
+  // "Alacak Kalemleri" toplamı yalnız kalemlerin TÜMÜ aynı para birimindeyse yazılır (null = karma; tutar çevrilmez).
+  const duesSharedCurrency = useMemo(() => sharedRecordCurrency(dues), [dues]);
 
   const handleCancelCollection = async (collection: any) => {
     if (!caseData?.id || !collection?.id) return;
@@ -2917,7 +2921,7 @@ export default function CaseDetailPage() {
                               )}
                             </div>
                             <div className="flex items-center gap-1">
-                              <span className="font-medium text-right min-w-[90px]">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                              <span className="font-medium text-right min-w-[90px]">{Number(due.amount || 0).toLocaleString('tr-TR')}{recordCurrencySuffix(due.currency)}</span>
                               <button 
                                 className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-opacity"
                                 onClick={async (e) => {
@@ -2941,10 +2945,21 @@ export default function CaseDetailPage() {
                           </div>
                           );
                         })}
-                        <div className="flex justify-between pt-1 mt-1 border-t border-dashed text-[10px] font-semibold text-blue-700">
-                          <span>Toplam</span>
+                        {/* Farklı para birimleri tek toplamda birleştirilmez (REC-ALLOC-008); karma dosyada toplam yerine nedeni yazılır */}
+                        <div
+                          className="flex justify-between pt-1 mt-1 border-t border-dashed text-[10px] font-semibold text-blue-700"
+                          title={duesSharedCurrency ? undefined : "Kalemler birden fazla para biriminde; tutarlar çevrilmez ve tek toplamda birleştirilmez."}
+                        >
+                          <span>
+                            Toplam
+                            {!duesSharedCurrency && <span className="text-[9px] font-normal text-gray-500"> (farklı para birimleri)</span>}
+                          </span>
                           <div className="flex items-center gap-1">
-                            <span className="text-right min-w-[90px]">{dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
+                            {duesSharedCurrency ? (
+                              <span className="text-right min-w-[90px]">{dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0).toLocaleString('tr-TR')}{recordCurrencySuffix(duesSharedCurrency)}</span>
+                            ) : (
+                              <span data-testid="dues-total-unavailable" className="text-right min-w-[90px] font-medium text-gray-500">gösterilemez</span>
+                            )}
                             <span className="w-3"></span>
                           </div>
                         </div>
@@ -2953,7 +2968,7 @@ export default function CaseDetailPage() {
                       <div className="space-y-1">
                         <div className="flex justify-between text-[10px]">
                           <span className="text-gray-600">Asıl Alacak</span>
-                          <span className="font-medium">{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span>
+                          <span className="font-medium">{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')}{recordCurrencySuffix(caseData.currency)}</span>
                         </div>
                       </div>
                     )}
@@ -3044,7 +3059,7 @@ export default function CaseDetailPage() {
                             </div>
                             <div className="flex items-center gap-1">
                               <span className={`font-medium flex-shrink-0 ${allocationHeld ? "text-amber-700" : "text-green-700"}`}>
-                                {allocationHeld ? "" : "+"}{Number(col.amount || 0).toLocaleString('tr-TR')} ₺
+                                {allocationHeld ? "" : "+"}{Number(col.amount || 0).toLocaleString('tr-TR')}{recordCurrencySuffix(col.currency)}
                               </span>
                               {draft ? (
                                 <button
