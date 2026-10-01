@@ -91,7 +91,9 @@ describe('K3-L KP-2: dosya açılışında faiz türü kaynağı yazılır', () 
 
 describe('K3-L TK-13 (yeni dosya kısmı): şablon açıkça seçilmiş YASAL\'ı TİCARİ ile ezmez', () => {
   const determine = (record: Record<string, unknown>) => (templateService() as any).determineInterestInfo(record);
-  const CEK_CASE = { type: 'CHECK', subCategory: 'CEK', currency: 'TRY', interestType: 'YASAL' };
+  // Kayıtlı dosyada `subCategory` yalnız GENEL / NAFAKA / DOVIZ / KIRA / CEZA olabilir; şablonu TİCARİ'ye düşüren dosya
+  // TÜRÜDÜR (CHECK / BOND). Fikstür gerçek değer taşır (önceki 'CEK' değeri veritabanında bulunamaz).
+  const CEK_CASE = { type: 'CHECK', subCategory: 'GENEL', currency: 'TRY', interestType: 'YASAL' };
 
   it('çek dosyası + açıkça seçilmiş YASAL → şablon YASAL kullanır (önceden TİCARİ)', () => {
     const info = determine({ ...CEK_CASE, metadata: { interestTypeSource: 'REQUEST_EXPLICIT' } });
@@ -107,6 +109,17 @@ describe('K3-L TK-13 (yeni dosya kısmı): şablon açıkça seçilmiş YASAL\'�
 
   it('çek dosyası + sistem varsayılanı YASAL → kesin tercih sayılmaz (mevcut davranış: TİCARİ)', () => {
     expect(determine({ ...CEK_CASE, metadata: { interestTypeSource: 'SYSTEM_DEFAULT' } })).toMatchObject({ type: 'TICARI' });
+  });
+
+  it('senet dosyası (BOND) da aynı kurala tabidir', () => {
+    const bond = { ...CEK_CASE, type: 'BOND' };
+    expect(determine({ ...bond, metadata: null })).toMatchObject({ type: 'TICARI' });
+    expect(determine({ ...bond, metadata: { interestTypeSource: 'REQUEST_EXPLICIT' } })).toMatchObject({ type: 'YASAL' });
+  });
+
+  it('fatura dosyası ETKİLENMEZ: sihirbaz faturayı GENEL alt kategoriyle yazar; kaynağı bilinmeyen YASAL şablonda da YASAL kalır', () => {
+    const fatura = { type: 'GENERAL_EXECUTION', subCategory: 'GENEL', currency: 'TRY', interestType: 'YASAL', metadata: null };
+    expect(determine(fatura)).toMatchObject({ type: 'YASAL', rate: 24 });
   });
 
   it('YASAL dışı tür her zaman kayıttaki gibi', () => {
