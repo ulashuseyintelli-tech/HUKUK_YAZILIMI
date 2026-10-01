@@ -738,7 +738,10 @@ export function ProfessionalClaimItemForm({
   // verilmezse eski davranış (boş yeni kalem). initialItems = onItemsChange'in verdiği kalem.
   const [kalem, setKalem] = useState<AlacakKalemi>(() =>
     initialItems?.[0]
-      ? ({ ...createEmptyKalem(getDefaultKalemTuru(), currency), ...initialItems[0] } as AlacakKalemi)
+      ? // K3-L KP-8: boş kalem, yüklenen kalemin KENDİ türüne göre kurulur. Taramadan incelenmek üzere yüklenen kayıt
+        // faiz / çek alanlarını taşımaz; dosyanın varsayılan türünün alanları başka türdeki kaleme sızmasın (ör. çek
+        // dosyasında fatura kaydına çek bilgisi ve çek faiz varsayılanı). Tam kalem (düzenleme) aynen korunur.
+        ({ ...createEmptyKalem(initialItems[0].kalemTuru || getDefaultKalemTuru(), currency), ...initialItems[0] } as AlacakKalemi)
       : createEmptyKalem(getDefaultKalemTuru(), currency),
   );
   const [hesapOzeti, setHesapOzeti] = useState<HesapOzetiSatir[]>([]);
