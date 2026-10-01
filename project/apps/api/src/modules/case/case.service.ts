@@ -85,6 +85,7 @@ import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
 import { ClaimItemWriterRouterService } from "../claim-item/claim-item-writer-router.service";
 import { ClaimItemSourceIntegrityException } from "../claim-item/claim-item-source-integrity.guard";
+import { caseInterestTypeSourceForCreate, isUnconfirmedDefaultLegalInterest, readCaseInterestTypeSource } from "../../common/case-interest-type-source";
 import {
   CASE_OPEN_LAWYER_PERMISSIONS_AUDIT_ACTION,
   MANAGEMENT_DEFAULT_PERMISSIONS_AUDIT_ACTION,
@@ -550,6 +551,28 @@ export interface CheckPenaltyFormationOutcome {
   readonly results: readonly CheckPenaltyFormationResult[];
   readonly skippedReason?: string;
   readonly message?: string;
+}
+
+/**
+ * K3-L KP-2 — hesap özetinde dosya faiz türü ve kaynağı. Kaynağı doğrulanamayan YASAL (eski şema varsayılanı olabilir)
+ * uyarıyla döner; tür DEĞİŞTİRİLMEZ, geçersiz sayılmaz.
+ */
+function buildDosyaFaizTuru(interestType: unknown, metadata: unknown): {
+  tur: string | null;
+  kaynak: "ACIK_SECIM" | "SISTEM_VARSAYILANI" | "DOGRULANAMADI";
+  uyari: string | null;
+} {
+  const source = readCaseInterestTypeSource(metadata);
+  const kaynak = source === "REQUEST_EXPLICIT" ? "ACIK_SECIM" : source === "SYSTEM_DEFAULT" ? "SISTEM_VARSAYILANI" : "DOGRULANAMADI";
+  return {
+    tur: typeof interestType === "string" ? interestType : null,
+    kaynak,
+    uyari: isUnconfirmedDefaultLegalInterest(interestType, metadata)
+      ? kaynak === "SISTEM_VARSAYILANI"
+        ? "Dosya faiz türü açılışta seçilmedi; sistem varsayılanı (Yasal) uygulandı. Kesin tercih sayılmaz; hesap Yasal faizle yapılıyor."
+        : "Dosya faiz türünün (Yasal) kaynağı doğrulanamadı; eski varsayılan olabilir. Geçersiz sayılmadı ve değiştirilmedi; hesap Yasal faizle yapılıyor."
+      : null,
+  };
 }
 
 @Injectable()
@@ -2375,6 +2398,8 @@ export class CaseService {
             mtsReferenceNo: dto.mtsReferenceNo,
             // Faiz Bilgileri
             interestType: dto.interestType || "YASAL",
+            // K3-L KP-2: tür istekte açıkça gelmediyse şema varsayılanı (YASAL) KESİN tercih sayılmaz — kaynağı yazılır
+            metadata: { interestTypeSource: caseInterestTypeSourceForCreate(dto.interestType) },
             interestStartDate: dto.interestStartDate ? new Date(dto.interestStartDate) : undefined,
             interestDescription: dto.interestDescription || this.generateInterestDescription(
               (dto.subCategory as CaseSubCategory) || CaseSubCategory.GENEL,
@@ -5087,6 +5112,9 @@ export class CaseService {
       hesapTarihi,
       takipTarihi,
       kalemTuru,
+      // K3-L KP-2: dosya faiz türü ve kaynağı; kaynağı doğrulanamayan eski YASAL varsayılanı uyarıyla gösterilir (geçersiz
+      // sayılmaz, değiştirilmez)
+      dosyaFaizTuru: buildDosyaFaizTuru(caseData.interestType, (caseData as any).metadata),
       
       asilAlacak,
       tazminat,

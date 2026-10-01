@@ -49,6 +49,7 @@ import {
 } from '../types/calculation.types';
 import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from '../types/common.types';
 import { InterestEngineError } from '../errors/interest-engine-errors';
+import { readCaseInterestTypeSource } from '../../../common/case-interest-type-source';
 import {
   buildCaseBalanceFeeProjection,
   type CaseBalanceFeeProjection,
@@ -349,7 +350,8 @@ export class CaseBalanceService {
     // interestStartDateProvenance='ENFORCEMENT_PROCEEDING_DATE' ise kullanılır (assembler'da gate'li).
     const caseRow = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
-      select: { interestType: true, interestStartDate: true, caseDate: true },
+      // K3-L KP-2: dosya faiz türünün kaynağı (metadata.interestTypeSource) — dosya düzeyine düşen kalemde uyarı için
+      select: { interestType: true, interestStartDate: true, caseDate: true, metadata: true },
     });
     if (!caseRow) {
       empty.diagnostics.fatal.push({ code: 'CASE_NOT_FOUND', caseId });
@@ -436,6 +438,8 @@ export class CaseBalanceService {
       interestType: caseRow.interestType ?? null,
       interestStartDate: toISO(caseRow.interestStartDate),
       enforcementProceedingDate: toISO(caseRow.caseDate),
+      // K3-L KP-2
+      interestTypeSource: readCaseInterestTypeSource((caseRow as { metadata?: unknown }).metadata),
     });
 
     // 4. Payments (G4b-1)

@@ -758,3 +758,55 @@ describe('claim-bucket-assembler (G4a)', () => {
     });
   });
 });
+
+describe('K3-L KP-2: dosya düzeyi YASAL faiz türünün kaynağı doğrulanamıyorsa uyarı (engel değil)', () => {
+  const only = (res: ReturnType<typeof assembleClaimBuckets>) =>
+    res.diagnostics.filter((d) => d.code === 'CASE_INTEREST_TYPE_UNCONFIRMED');
+
+  it('kademe 3 (dosya türü + dosya tarihi), kaynak bilinmiyor → kova ÜRETİLİR + uyarı', () => {
+    const res = assembleClaimBuckets(
+      [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000 })],
+      { interestType: 'YASAL', interestStartDate: '2025-03-01' },
+    );
+    expect(res.buckets).toHaveLength(1);
+    expect(res.buckets[0]).toMatchObject({ interestType: InterestTypeCode.LEGAL_3095, startDate: '2025-03-01' });
+    expect(res.principalCarry).toEqual([]);
+    expect(only(res)).toEqual([
+      { code: 'CASE_INTEREST_TYPE_UNCONFIRMED', claimItemId: 'p1', detail: 'caseInterestType=YASAL;source=UNKNOWN' },
+    ]);
+  });
+
+  it('kaynak SYSTEM_DEFAULT → uyarı; REQUEST_EXPLICIT → uyarı yok (aynı kova)', () => {
+    const items = [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000 })];
+    const dflt = assembleClaimBuckets(items, { interestType: 'YASAL', interestStartDate: '2025-03-01', interestTypeSource: 'SYSTEM_DEFAULT' });
+    const explicit = assembleClaimBuckets(items, { interestType: 'YASAL', interestStartDate: '2025-03-01', interestTypeSource: 'REQUEST_EXPLICIT' });
+
+    expect(only(dflt)).toEqual([
+      { code: 'CASE_INTEREST_TYPE_UNCONFIRMED', claimItemId: 'p1', detail: 'caseInterestType=YASAL;source=SYSTEM_DEFAULT' },
+    ]);
+    expect(only(explicit)).toEqual([]);
+    expect(explicit.buckets).toEqual(dflt.buckets);
+  });
+
+  it('kademe 1.5 (kalem tarihi + dosya türü) de dosya türüne dayanır → uyarı', () => {
+    const res = assembleClaimBuckets(
+      [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000, interestStartDate: '2025-06-01' })],
+      { interestType: 'YASAL' },
+    );
+    expect(res.buckets).toHaveLength(1);
+    expect(only(res)).toHaveLength(1);
+  });
+
+  it('kalemin kendi faiz ayarı varsa ya da dosya türü YASAL değilse uyarı yok', () => {
+    const own = assembleClaimBuckets(
+      [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000, interestType: 'YASAL', interestStartDate: '2025-01-01' })],
+      { interestType: 'YASAL', interestStartDate: '2025-03-01' },
+    );
+    const avans = assembleClaimBuckets(
+      [item({ id: 'p1', itemType: 'PRINCIPAL', amount: 1000 })],
+      { interestType: 'AVANS', interestStartDate: '2025-03-01' },
+    );
+    expect(only(own)).toEqual([]);
+    expect(only(avans)).toEqual([]);
+  });
+});
