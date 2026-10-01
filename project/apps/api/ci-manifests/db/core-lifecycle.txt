@@ -187,6 +187,16 @@ src/modules/case/__tests__/case-create-due-currency.http.db-gated.integration.sp
 #   ayni" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 6 testin 6'si DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-calculation-summary-currency.http.db-gated.integration.spec.ts
 
+# Otomatik acilis masraf talebi — dovizli dosyada pesin harc matrahi, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
+#   (main 6917e8aa): muvekkilli dosya acilinca arka planda olusan acilis masraf seti pesin harci (TL tarifesi orani) anapara
+#   kalemlerinin SAYISINA uyguluyor; 10.000 USD anaparali dosyada talep 10.000 TL'lik dosyayla AYNI (pesin harc 120,00 /
+#   toplam 1.431,10 TL) ve PENDING / BLOCKING kayit olarak, muhasebe gunlugu ile birlikte yaziliyordu. Owner ara karari
+#   (2026-10-01): kur / matrah sozlesmesi yokken yanlis tutarli otomatik talep KAYDA GECMEZ; dosya acilir; neden ve gereken
+#   bilgi acilis yanitinda ve salt-okuma ucunda (GET .../opening-status) gorunur; tekrar deneme mukerrer talep uretmez; TL
+#   dosyanin talebi ve gecmis talepler DEGISMEZ. Duzeltmesiz servis koduyla 14 testin 12'si DUSER, TL dosyanin yazma ve
+#   tekrar deneme testleri GECER (RED kanitlandi: USD dosyada 1.431,10 TL talep + gunluk kaydi yaziliyor).
+src/modules/expense-request/__tests__/opening-expense-fx-basis.http.db-gated.integration.spec.ts
+
 # Alacak ozeti para birimi baglami (GET /claim-items/case/:caseId/summary), GERCEK HTTP + disposable PostgreSQL. Olculen
 #   kusur (main 6917e8aa): ozet etkin kalem tutarlarini para birimine bakmadan topluyor ve yaniti SON kalemin para birimiyle
 #   etiketliyordu; 10.000 USD + 5.000 EUR + 2.000 TRY anaparali dosyada totals.principal / grandTotal 17.000, currency kalem

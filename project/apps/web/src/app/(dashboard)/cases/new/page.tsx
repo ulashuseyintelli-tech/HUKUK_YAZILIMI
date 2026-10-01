@@ -80,6 +80,7 @@ import {
   hasBouncedCheckItem,
   newCheckPenaltyFormationKey,
 } from "@/lib/check-penalty-formation";
+import { describeOpeningExpenseOutcome } from "@/lib/opening-expense-status";
 import { CaseDebtor } from "@/types/debtor";
 import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
@@ -1824,6 +1825,9 @@ export default function NewCasePage() {
         ? CHECK_PENALTY_FORMATION_NOT_SENT_NOTICE
         : describeCheckPenaltyFormationOutcome(response?.checkPenaltyFormation);
       if (formationMessage) alert(formationMessage);
+      // Dövizli / karma dosyada otomatik açılış masraf talebi oluşturulmaz: sunucunun nedeni ve gereken bilgi gösterilir
+      const openingExpenseMessage = describeOpeningExpenseOutcome(response?.openingExpenseRequest);
+      if (openingExpenseMessage) alert(openingExpenseMessage);
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });

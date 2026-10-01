@@ -405,3 +405,74 @@ describe("Hesap Özeti — alt bileşenlerde para birimi etiketi", () => {
     expect(tl.container.textContent).toContain("19.945,76 ₺");
   });
 });
+
+describe("Hesap Özeti — açılış masraf talebi uyarısı (dövizli / karma dosya)", () => {
+  beforeEach(() => {
+    apiGet.mockReset();
+  });
+
+  const DURUM_UCU = "/expense-requests/case/case-1/opening-status";
+  const SUNUCU_MESAJI = "Açılış masraf talebi otomatik oluşturulmadı: dosya para birimi USD. Peşin harç hesaplanmadı.";
+  const talepYokHesaplanamaz = {
+    caseId: "case-1",
+    clientAssigned: true,
+    openingRequestExists: false,
+    activeExpenseRequestCount: 0,
+    automaticCalculation: {
+      calculable: false,
+      reasonCode: "OPENING_EXPENSE_FX_BASIS_POLICY_MISSING",
+      message: SUNUCU_MESAJI,
+      requiredInfo: ["Peşin harç tutarı (TL)"],
+      notCalculableItems: [{ itemCode: "PESIN_HARC", label: "Peşin Harç" }],
+      caseCurrency: "USD",
+      basisCurrencies: ["USD"],
+      tariffCurrency: "TRY",
+    },
+  };
+
+  /** Ağ katmanı uca göre yanıt verir; istenen uçlar sırayla kaydedilir. */
+  async function gosterUcaGore(ozet: Partial<CaseCalculationResult>, durum: unknown) {
+    apiGet.mockImplementation(async (url: string) => ({ data: url === DURUM_UCU ? durum : { ...olculenSayilar, ...ozet } }));
+    const view = render(<HesapOzetiPanel caseId="case-1" calculationDate="2026-03-01" debtorCount={1} />);
+    await screen.findByText("TOPLAM BORÇ");
+    return view;
+  }
+  const istenenUclar = () => apiGet.mock.calls.map(([url]) => String(url));
+
+  it("dövizli dosyada talep yoksa: sunucunun nedeni ve gereken bilgi panelde kalıcı olarak görünür", async () => {
+    await gosterUcaGore({ paraBirimiDurumu: dovizDurumu("USD") }, talepYokHesaplanamaz);
+
+    expect(await screen.findByTestId("acilis-masraf-talebi-uyari")).toHaveTextContent(SUNUCU_MESAJI);
+    expect(screen.getByTestId("acilis-masraf-talebi-gereken-bilgi")).toHaveTextContent("Gereken bilgi: Peşin harç tutarı (TL)");
+    expect(istenenUclar()).toContain(DURUM_UCU);
+    // Uyarı tutar üretmez: peşin harç satırı "hesaplanamadı" kalır, 0 ya da TL tutarı yazılmaz
+    expect(screen.getByText("Peşin Harç").parentElement).toHaveTextContent("hesaplanamadı");
+  });
+
+  it("dövizli dosyada talep varsa (geçmiş kayıt ya da elle oluşturulmuş): uyarı yok", async () => {
+    await gosterUcaGore({ paraBirimiDurumu: dovizDurumu("USD") }, { ...talepYokHesaplanamaz, openingRequestExists: true, activeExpenseRequestCount: 1 });
+
+    await vi.waitFor(() => expect(istenenUclar()).toContain(DURUM_UCU));
+    expect(screen.queryByTestId("acilis-masraf-talebi-uyari")).toBeNull();
+  });
+
+  it("karma dosyada da durum sorgulanır ve uyarı görünür", async () => {
+    await gosterUcaGore({ asilAlacak: 17000, takipTutari: 17000, kalanAnapara: 17000, paraBirimiDurumu: karmaDurumu }, talepYokHesaplanamaz);
+
+    expect(await screen.findByTestId("acilis-masraf-talebi-uyari")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["TL dosya", { paraBirimiDurumu: tlDurumu }],
+    ["eski sunucu yanıtı (karar bloğu yok)", {}],
+  ])("%s: durum ucu HİÇ sorgulanmaz ve uyarı yoktur (gösterim aynen)", async (_baslik, ozet) => {
+    // Sorgulansaydı uyarı çıkardı: yanıt bilerek "hesaplanamaz" verilir
+    const view = await gosterUcaGore(ozet, talepYokHesaplanamaz);
+
+    await Promise.resolve();
+    expect(istenenUclar().length).toBeGreaterThan(0); // bakıldığının kanıtı: özet ucu istendi
+    expect(istenenUclar().every((url) => url.startsWith("/cases/case-1/calculation-summary"))).toBe(true);
+    expect(screen.queryByTestId("acilis-masraf-talebi-uyari")).toBeNull();
+    expect(satirlar(view.container)["Peşin Harç"]).toBe("120,00 ₺");
+  });
+});
