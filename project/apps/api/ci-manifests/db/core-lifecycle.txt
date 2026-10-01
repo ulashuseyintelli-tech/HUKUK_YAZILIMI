@@ -164,3 +164,14 @@ src/modules/case/__tests__/case-create-classification.http.db-gated.integration.
 #   400, kismi yazim yok); anlik kopya sonraki varsayilan degisikliginden etkilenmez; dosya bazli geri alma sonraki talebi
 #   engeller; kararlar denetimde. Guncel main servis koduyla 8 testin 6'si DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-open-default-permissions.http.db-gated.integration.spec.ts
+
+# Dosya acilisinda alacak kalemi para birimi — GERCEK HTTP + disposable PostgreSQL. POST /cases dues[] kalemleri para
+#   birimi yazilmadan olusuyordu; sema varsayilani nedeniyle USD/EUR/GBP/CHF dosyanin kalemi (Due) ve ondan tureyen
+#   ClaimItem "TRY" damgalaniyordu (alt kategori DOVIZ olsa da; sonradan duzelten yol yok). Kalem artik DOSYA para
+#   birimini alir, tutar cevrilmez; sonradan kalem eklemede (POST /cases/:id/dues) para birimi verilmezse ayni kural,
+#   acikca verilen deger aynen korunur; TRY dosya degismez; evrak + kalem birlikte ayni para biriminde. Acilista kalem
+#   bazinda para birimi sozlesmede YOK (400, yazim yok) — kalem bazi ayri owner karari. Uctan uca: kalemler TRY iken
+#   dovizli dosyaya hicbir para biriminde tahsilat kaydedilemiyordu (RCV-COL-CURRENCY-BOUNDARY-01 -> 400
+#   COLLECTION_CURRENCY_MISMATCH); artik dosya para birimindeki tahsilat kaydedilir. Guncel main servis koduyla
+#   11 testin 8'i DUSER (RED kanitlandi). Gecmis kayitlar DUZELTILMEDI.
+src/modules/case/__tests__/case-create-due-currency.http.db-gated.integration.spec.ts
