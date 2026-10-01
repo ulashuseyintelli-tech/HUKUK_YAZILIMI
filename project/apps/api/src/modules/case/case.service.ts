@@ -53,6 +53,7 @@ import { resolveInitialPolicy } from "../interest-engine/interest-strategy.confi
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
+import { buildOpeningExpenseNotCreatedOutcome, OpeningExpenseNotCreatedOutcome } from "../expense-request/opening-expense-basis";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
 import { normalizeSourceIdentityText } from "../collection/collection-source-identity";
@@ -2181,6 +2182,31 @@ export class CaseService {
 
   /// <remarks>
   /// Çağrıldığı yerler:
+  /// - CaseService.create() → POST /cases (müvekkilli dosyada otomatik açılış masraf talebi denenmeden önce)
+  /// </remarks>
+  /// Otomatik açılış masraf talebi oluşturulamayacaksa (peşin harç matrahı TL değil) sonucu döner; oluşturulabilecekse
+  /// undefined. Okuma hatası dosya açılışını ENGELLEMEZ: yazma koruması ExpenseRequestService.createOpeningExpenseSet
+  /// içinde aynı kuralla ayrıca uygulanır.
+  private async resolveOpeningExpenseNotCreated(
+    tenantId: string,
+    caseId: string,
+    expenseEmailRequested: boolean,
+  ): Promise<OpeningExpenseNotCreatedOutcome | undefined> {
+    try {
+      const basis = await this.expenseRequestService.evaluateOpeningExpenseBasisForCase(caseId, tenantId);
+      if (basis.calculable) return undefined;
+      this.logger.warn(
+        `Otomatik açılış masraf talebi oluşturulmadı (case=${caseId}): ${basis.reasonCode} [${basis.basisCurrencies.join(', ')}]`,
+      );
+      return buildOpeningExpenseNotCreatedOutcome(basis, expenseEmailRequested);
+    } catch (error) {
+      this.logger.warn(`Açılış masraf talebi hesap durumu okunamadı (case=${caseId}): ${(error as Error)?.message ?? error}`);
+      return undefined;
+    }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
   /// - CaseController.create() → POST /cases (Yeni takip oluşturma)
   /// </remarks>
   async create(tenantId: string, dto: CreateCaseDto, userId?: string, userRole?: string) {
@@ -2835,6 +2861,9 @@ export class CaseService {
         this.logger.warn(`Takip oluşturuldu ancak vekalet uyarıları var: ${poaWarnings.join(', ')}`);
       }
 
+      // Dövizli / karma dosyada otomatik açılış masraf talebi oluşturulmaz; neden yanıtta bildirilir (aşağıda)
+      let openingExpenseRequest: OpeningExpenseNotCreatedOutcome | undefined;
+
       // Audit log
       if (result.case) {
         await this.auditService.log({
@@ -2895,9 +2924,15 @@ export class CaseService {
             this.logger.warn(`Otomatik bilgi talebi gönderilemedi: ${err.message}`);
           });
 
+        // Peşin harç matrahı TL olarak hesaplanamıyorsa (dövizli / karma dosya) yanlış ya da eksik tutarlı talep kayda
+        // geçmez: otomatik talep DENENMEZ, dosya açılışı engellenmez, neden ve gereken bilgi yanıtta bildirilir.
+        if (result.case.clientId) {
+          openingExpenseRequest = await this.resolveOpeningExpenseNotCreated(tenantId, result.case.id, dto.sendExpenseEmail === true);
+        }
+
         // Otomatik açılış masraf seti oluştur (arka planda)
         // Case oluşturulduğunda OPENING masrafları otomatik oluşturulur
-        if (result.case.clientId) {
+        if (result.case.clientId && !openingExpenseRequest) {
           const shouldSendEmail = dto.sendExpenseEmail === true;
           
           this.expenseRequestService
@@ -2925,6 +2960,7 @@ export class CaseService {
         ...result.case,
         poaWarnings: poaWarnings.length > 0 ? poaWarnings : undefined,
         ...(checkPenaltyFormation ? { checkPenaltyFormation } : {}),
+        ...(openingExpenseRequest ? { openingExpenseRequest } : {}),
       };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
