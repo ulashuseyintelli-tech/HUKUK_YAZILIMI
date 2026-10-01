@@ -3,6 +3,7 @@ import {
   claimKindForOcrDraft,
   claimRawFromOcrDraft,
   findDuplicateFaturaIndex,
+  isOcrDraftPending,
   mergeOcrClaimDrafts,
   ocrClaimDraftFromDebtInfo,
   ocrDraftCurrencyConflict,
@@ -132,6 +133,24 @@ describe("kuyruk birleştirme", () => {
     ];
     const merged = mergeOcrClaimDrafts(existing, [draft({ id: "fresh", documentNo: "D" })], { replacePendingMulti: true });
     expect(merged.map((d) => d.id)).toEqual(["old-doc-only", "single", "fresh"]);
+  });
+
+  it("yeniden çoklu taramada aynı belgenin kaydı KİMLİĞİYLE korunur (formda incelenen kayıtla bağ kopmaz)", () => {
+    const existing = [draft({ id: "in-review", documentNo: "A" }), draft({ id: "gone", documentNo: "B" })];
+    const merged = mergeOcrClaimDrafts(
+      existing,
+      [draft({ id: "rescan-a", documentNo: "a" }), draft({ id: "rescan-c", documentNo: "C" })],
+      { replacePendingMulti: true },
+    );
+    expect(merged.map((d) => d.id)).toEqual(["in-review", "rescan-c"]);
+  });
+
+  it("formdaki kaydın hâlâ karar bekleyip beklemediği: çıkarılmış ya da ek belgeye çevrilmiş kayıt beklemez", () => {
+    const drafts = [draft({ id: "p" }), draft({ id: "d", documentNo: "X", status: "DOCUMENT_ONLY" })];
+    expect(isOcrDraftPending(drafts, "p")).toBe(true);
+    expect(isOcrDraftPending(drafts, "d")).toBe(false);
+    expect(isOcrDraftPending(drafts, "yok")).toBe(false);
+    expect(isOcrDraftPending(drafts, undefined)).toBe(false);
   });
 
   it("kalem listesinde zaten bulunan fatura yeniden karar beklemez (ikinci anapara yolu açılmaz)", () => {

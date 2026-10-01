@@ -428,6 +428,89 @@ describe('K3-L KP-8: kalem yalnız kullanıcı incelemesiyle oluşur', () => {
   }, 20000);
 });
 
+describe('K3-L KP-8: formda kalan tarama değeri onaysız kaleme dönüşmez', () => {
+  const MULTI_FATURA = { ...FATURA_DRAFT, id: 'd-multi', origin: 'OCR_MULTI' };
+  const goBackToDebtors = () => fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+  const goForward = () => fireEvent.click(screen.getByRole('button', { name: /İleri/ }));
+
+  it('yeniden taramada seçilmeyen kayıt formdaysa form boşalır; gönderim taramadan kalem ÜRETMEZ', async () => {
+    routeApi();
+    seedDraft({ currentStep: 5, ocrClaimDrafts: [MULTI_FATURA] });
+    render(<NewCasePage />);
+
+    await vi.waitFor(() => expect(rows()).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('ocr-draft-review'));
+    expect(await screen.findByDisplayValue('FTR-9')).toBeTruthy();
+
+    // Borçlular adımına dönüp yalnız çeki seçerek yeniden tara → fatura kaydı kuyruktan düşer
+    goBackToDebtors();
+    fireEvent.click(await screen.findByTestId('stub-scan-multi-cek-only'));
+    await waitDraft((d) => (d?.ocrClaimDrafts ?? []).length === 0 && d?.instruments?.length === 1);
+    goForward();
+
+    await screen.findByRole('button', { name: 'Takibi Oluştur' });
+    expect(rows()).toHaveLength(0);
+    await vi.waitFor(() => expect(screen.queryByDisplayValue('FTR-9')).toBeNull());
+    // Formun gecikmeli hesabı geçtikten sonra gönder: taramadan kalan değer listeye ALINMAMALI
+    await new Promise((r) => setTimeout(r, 900));
+    fireEvent.click(screen.getByRole('button', { name: 'Takibi Oluştur' }));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(readDraft().claimDraftItems ?? []).toEqual([]);
+    expect(readDraft().dues ?? []).toEqual([]);
+    expect(mocked.createCase).not.toHaveBeenCalled();
+  }, 20000);
+
+  it('aynı belge yeniden taranınca formdaki kayıtla bağ korunur; "yalnız ek belge" denince form boşalır ve kalem oluşmaz', async () => {
+    routeApi();
+    seedDraft({ currentStep: 5, ocrClaimDrafts: [MULTI_FATURA] });
+    render(<NewCasePage />);
+
+    await vi.waitFor(() => expect(rows()).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('ocr-draft-review'));
+    expect(await screen.findByDisplayValue('FTR-9')).toBeTruthy();
+
+    goBackToDebtors();
+    fireEvent.click(await screen.findByTestId('stub-scan-multi'));
+    // Aynı fatura yeniden seçildi: kayıt kimliğiyle korunur (yeni kimlikle değişmez); diğer belge eklenir
+    await waitDraft((d) => d?.ocrClaimDrafts?.length === 2);
+    expect(readDraft().ocrClaimDrafts.map((d: any) => d.kind)).toEqual(['FATURA', 'DIGER']);
+    expect(readDraft().ocrClaimDrafts[0].id).toBe('d-multi');
+    goForward();
+
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    expect(await screen.findByTestId('ocr-draft-in-editor')).toBeTruthy();
+    for (const button of screen.getAllByTestId('ocr-draft-document-only')) fireEvent.click(button);
+    await waitDraft((d) => d?.ocrClaimDrafts?.every((x: any) => x.status === 'DOCUMENT_ONLY'));
+    await vi.waitFor(() => expect(screen.queryByDisplayValue('FTR-9')).toBeNull());
+
+    await new Promise((r) => setTimeout(r, 900));
+    fireEvent.click(screen.getByRole('button', { name: 'Takibi Oluştur' }));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(readDraft().claimDraftItems ?? []).toEqual([]);
+    expect(readDraft().dues ?? []).toEqual([]);
+  }, 20000);
+
+  it('forma yüklenmiş, listeye eklenmemiş tarama kaydı gönderimde kendiliğinden listeye ALINMAZ', async () => {
+    routeApi();
+    seedDraft({ currentStep: 5, ocrClaimDrafts: [FATURA_DRAFT] });
+    render(<NewCasePage />);
+
+    await vi.waitFor(() => expect(rows()).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('ocr-draft-review'));
+    expect(await screen.findByDisplayValue('FTR-9')).toBeTruthy();
+    // Formun hesabı bitsin (form kalemi sayfaya bildirir)
+    await new Promise((r) => setTimeout(r, 1200));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Takibi Oluştur' }));
+    await vi.waitFor(() =>
+      expect(screen.queryByText(/henüz listeye eklenmedi/) ?? screen.queryByText(PENDING_ERROR)).toBeTruthy(),
+    );
+    expect(readDraft().claimDraftItems ?? []).toEqual([]);
+    expect(readDraft().dues ?? []).toEqual([]);
+    expect(mocked.createCase).not.toHaveBeenCalled();
+  }, 20000);
+});
+
 describe('K3-L KP-8: aynı fatura ikinci anapara oluşturmaz', () => {
   it('aynı fatura (no + tutar + para birimi) listede iki kez varsa açılış yapılmaz', async () => {
     routeApi();

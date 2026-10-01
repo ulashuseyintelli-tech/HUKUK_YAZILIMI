@@ -178,8 +178,9 @@ function isFaturaDraftAlreadyListed(draft: OcrClaimDraft, items: ReadonlyArray<{
 /**
  * Kuyruğa yeni tarama kayıtlarını işler.
  *  - `replacePendingMulti`: çoklu tarama her kabulde SEÇİMİ yeniler (kambiyo `instruments` REPLACE kuralının eşi) —
- *    önceki çoklu taramadan kalan ve hâlâ karar bekleyen kayıtlar yeni seçimle değiştirilir. Kullanıcının verdiği karar
- *    (yalnız ek belge) ve tek belge taramasından gelen kayıtlar KORUNUR.
+ *    önceki çoklu taramadan kalan ve hâlâ karar bekleyen kayıtlardan yeni seçimde OLMAYANLAR kuyruktan düşer. Yeni
+ *    seçimde de bulunan belgenin kaydı KİMLİĞİYLE korunur (formda incelenmekte olan kayıtla bağ kopmaz). Kullanıcının
+ *    verdiği karar (yalnız ek belge) ve tek belge taramasından gelen kayıtlar KORUNUR.
  *  - Aynı belge kuyruğa ikinci kez girmez; kalem listesinde zaten bulunan fatura yeniden karar beklemez.
  */
 export function mergeOcrClaimDrafts(
@@ -188,7 +189,11 @@ export function mergeOcrClaimDrafts(
   options: { replacePendingMulti?: boolean; listedItems?: ReadonlyArray<{ raw: any }> } = {},
 ): OcrClaimDraft[] {
   const merged = options.replacePendingMulti
-    ? existing.filter((draft) => !(draft.origin === "OCR_MULTI" && draft.status === "PENDING"))
+    ? existing.filter(
+        (draft) =>
+          !(draft.origin === "OCR_MULTI" && draft.status === "PENDING") ||
+          incoming.some((next) => isSameOcrDocument(draft, next)),
+      )
     : [...existing];
   for (const draft of incoming) {
     if (merged.some((current) => isSameOcrDocument(current, draft))) continue;
@@ -197,6 +202,18 @@ export function mergeOcrClaimDrafts(
   }
   return merged;
 }
+
+/**
+ * Formdaki kalem hâlâ karar bekleyen bir tarama kaydına mı ait? Kayıt kuyruktan düştüyse (çıkarıldı, yalnız ek belge
+ * yapıldı ya da yeniden taramada seçilmedi) form boşaltılmalıdır — taramadan gelen değer onaysız kaleme dönüşmesin.
+ */
+export function isOcrDraftPending(drafts: readonly OcrClaimDraft[], draftId: unknown): boolean {
+  return typeof draftId === "string" && drafts.some((draft) => draft.id === draftId && draft.status === "PENDING");
+}
+
+export const OCR_SEEDED_ITEM_NOT_ADDED_MESSAGE =
+  "Taramadan forma yüklenen kayıt henüz listeye eklenmedi. Kalemi \"Kalemi Listeye Ekle\" ile ekleyin ya da kaydı çıkarın; " +
+  "tarama sonucu kendiliğinden alacak kalemi oluşturmaz.";
 
 export function pendingOcrClaimDrafts(drafts: readonly OcrClaimDraft[]): OcrClaimDraft[] {
   return drafts.filter((draft) => draft.status === "PENDING");

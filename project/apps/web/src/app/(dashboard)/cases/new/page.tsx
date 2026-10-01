@@ -48,6 +48,8 @@ import {
   claimRawFromOcrDraft,
   duplicateFaturaMessage,
   findDuplicateFaturaIndex,
+  isOcrDraftPending,
+  OCR_SEEDED_ITEM_NOT_ADDED_MESSAGE,
   mergeOcrClaimDrafts,
   ocrClaimDraftFromDebtInfo,
   ocrDraftCurrencyConflict,
@@ -1449,6 +1451,14 @@ export default function NewCasePage() {
   const releaseOcrDraftFromEditor = (draftId: string) => {
     if (claimFormSeed?.ocrDraftId === draftId || (editingItemIndex === null && claimFormBuffer?.ocrDraftId === draftId)) resetClaimEditor();
   };
+  // Güvence: formdaki kalem artık karar bekleyen bir tarama kaydına ait değilse (yeniden taramada seçilmedi, çıkarıldı,
+  // ek belgeye çevrildi) form boşaltılır. Aksi hâlde gönderimdeki "formda bekleyen kalemi listeye al" kolaylığı
+  // taramadan gelen değeri kullanıcı eklemeden kaleme çevirebilirdi.
+  useEffect(() => {
+    const editorDraftId = claimFormSeed?.ocrDraftId ?? (editingItemIndex === null ? claimFormBuffer?.ocrDraftId : undefined);
+    if (editorDraftId && !isOcrDraftPending(ocrClaimDrafts, editorDraftId)) resetClaimEditor();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetClaimEditor her render yenilenir; tetikleyiciler aşağıdakiler
+  }, [ocrClaimDrafts, claimFormSeed, claimFormBuffer, editingItemIndex]);
   const keepOcrDraftAsDocumentOnly = (draftId: string) => {
     releaseOcrDraftFromEditor(draftId);
     setOcrClaimDrafts(prev => prev.map(d => (d.id === draftId ? { ...d, status: "DOCUMENT_ONLY" } : d)));
@@ -1619,6 +1629,13 @@ export default function NewCasePage() {
     let manualInstruments: CaseInstrumentPayload[];
     // K3-L: taramadan gelen evrakla AYNI evrak elle de listedeyse (ör. eski taslak) açılış yapılmaz — iki anapara kaydı
     const pendingRaw = editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0 ? claimFormBuffer : null;
+    // K3-L KP-8: "formda bekleyen kalemi listeye al" kolaylığı taramadan yüklenen kayıt için GEÇERSİZDİR — o kalem yalnız
+    // kullanıcı "Kalemi Listeye Ekle" dediğinde oluşur.
+    if (pendingRaw?.ocrDraftId) {
+      setError(OCR_SEEDED_ITEM_NOT_ADDED_MESSAGE);
+      setCurrentStep(5);
+      return;
+    }
     for (const raw of [...claimDraftItems.map((ci) => ci.raw), ...(pendingRaw ? [pendingRaw] : [])]) {
       const ocrDuplicate = findOcrDuplicateOfClaimRaw(raw, instruments);
       if (ocrDuplicate) {
