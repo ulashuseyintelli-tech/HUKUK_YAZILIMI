@@ -753,6 +753,7 @@ src/modules/interest-engine/orchestration/__tests__/case-balance-fee-projection.
 src/modules/interest-engine/orchestration/__tests__/case-balance-rate-coverage.spec.ts
 src/modules/interest-engine/orchestration/__tests__/case-balance-asof-gross-received.spec.ts
 src/modules/interest-engine/orchestration/__tests__/case-balance-receipts-kp7.spec.ts
+src/common/turkey-calendar.spec.ts
 src/modules/interest-engine/orchestration/__tests__/case-balance-snapshot-readiness.spec.ts
 src/modules/interest-engine/segments/__tests__/day-count-calculator.characterization.spec.ts
 src/modules/interest-engine/segments/__tests__/interest-formula.characterization.spec.ts

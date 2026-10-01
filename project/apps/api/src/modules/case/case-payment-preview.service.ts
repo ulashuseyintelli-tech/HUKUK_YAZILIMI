@@ -3,6 +3,7 @@ import { CaseDebtorLifecycleStatus, ClaimItemStatus, Prisma } from "@prisma/clie
 import { hasRestrictedLiability, isItemLiableForDebtor } from "../claim-item/payer-liability-scope";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CaseBalanceService } from "../interest-engine/orchestration/case-balance.service";
+import { toTurkeyCalendarDay, turkeyToday } from "../../common/turkey-calendar";
 import {
   PaymentPreviewRequestDto,
   PaymentPreviewResponseDto,
@@ -56,13 +57,17 @@ function normalizeCurrency(value: string | undefined, fallback: string | null | 
   return currency;
 }
 
+/**
+ * K3-L KP-11: ödeme tarihi güne indirgenir. Takvim günü (YYYY-MM-DD) olduğu gibi; saatli girdi ANIN Türkiye takvimindeki
+ * günü (önceden UTC günü: `…T01:30:00+03:00` bir önceki güne kayıyordu).
+ */
 function normalizeDate(value: string | undefined): string | undefined {
   if (!value) return undefined;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
+  const day = toTurkeyCalendarDay(value);
+  if (day == null) {
     throw new BadRequestException("Odeme onizleme tarihi gecersiz");
   }
-  return parsed.toISOString().slice(0, 10);
+  return day;
 }
 
 function clientDisplayName(client: {
@@ -98,7 +103,8 @@ export class CasePaymentPreviewService {
     }
 
     const paymentDate = normalizeDate(input.paymentDate);
-    const asOfDate = paymentDate || new Date().toISOString().slice(0, 10);
+    // K3-L KP-11: ödeme tarihi yoksa hesap tarihi Türkiye takvimine göre bugün; kullanılan tarih yanıtta açıkça döner
+    const asOfDate = paymentDate || turkeyToday();
 
     const caseRow = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
@@ -168,6 +174,8 @@ export class CasePaymentPreviewService {
     return {
       nonPersistent: true,
       caseId,
+      asOfDate,
+      asOfDateSource: paymentDate ? "PAYMENT_DATE" : "TURKEY_TODAY_DEFAULT",
       input: {
         amount: moneyToNumber(paymentAmount),
         ...(paymentDate ? { paymentDate } : {}),

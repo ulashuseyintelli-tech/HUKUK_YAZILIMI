@@ -35,6 +35,7 @@ import { CalculationMode } from './types/common.types';
 import { InterestTypeCode } from './types/domain.types';
 // E-G2a: fixedRate zorunluluk predicate'i + % → 0-1 dönüştürücü (TEK kaynak, packages/types).
 import { requiresFixedRate, percentToRate } from '@shared/types';
+import { turkeyToday } from '../../common/turkey-calendar';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DTOs
@@ -121,7 +122,7 @@ export class InterestEngineController {
    *
    * G4c-2: compute-on-read TBK100 bakiyesi (G4c-1 CaseBalanceService). READ-ONLY, additive.
    * tenantId YALNIZ auth context'ten (@CurrentUser); client/body/query'den ALINMAZ.
-   * asOfDate yoksa bugün (YYYY-MM-DD). Persist/trigger/projection YOK; summary-engine'e dokunulmaz.
+   * asOfDate yoksa Türkiye takvimine göre bugün (YYYY-MM-DD; K3-L KP-11). Persist/trigger/projection YOK; summary-engine'e dokunulmaz.
    *
    * <remarks>Çağrıldığı yerler: HTTP GET /interest-engine/case/:caseId/balance (frontend/araç gözlemi).</remarks>
    */
@@ -132,7 +133,8 @@ export class InterestEngineController {
     @Param('caseId') caseId: string,
     @Query('asOfDate') asOfDate?: string,
   ): Promise<CaseBalanceResult> {
-    const date = asOfDate ?? new Date().toISOString().slice(0, 10);
+    // K3-L KP-11: varsayılan hesap tarihi Türkiye takvimine göre bugün (UTC günü değil)
+    const date = asOfDate ?? turkeyToday();
     return this.caseBalance.computeCaseBalance(tenantId, caseId, date);
   }
 
@@ -153,7 +155,8 @@ export class InterestEngineController {
     @Param('caseId') caseId: string,
     @Query('asOfDate') asOfDate?: string,
   ): Promise<CaseBalanceDisplay> {
-    const date = asOfDate ?? new Date().toISOString().slice(0, 10);
+    // K3-L KP-11: varsayılan hesap tarihi Türkiye takvimine göre bugün (UTC günü değil)
+    const date = asOfDate ?? turkeyToday();
     const balance = await this.caseBalance.computeCaseBalance(tenantId, caseId, date);
     return toCaseBalanceDisplay({ tenantId, caseId, balance });
   }

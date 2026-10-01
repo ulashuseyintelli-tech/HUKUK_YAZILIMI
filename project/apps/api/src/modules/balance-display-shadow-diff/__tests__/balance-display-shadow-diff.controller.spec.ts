@@ -51,3 +51,21 @@ describe('BalanceDisplayShadowDiffController', () => {
     );
   });
 });
+
+describe('K3-L KP-11: gölge fark varsayılan hesap tarihi', () => {
+  it('asOfDate ve date yoksa Türkiye takvimine göre bugün (generatedAt UTC günü değil)', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-30T23:30:00.000Z') });
+    try {
+      const service = {
+        compare: jest.fn().mockResolvedValue({ mode: 'SHADOW_ONLY' }),
+      } as unknown as BalanceDisplayShadowDiffService;
+      const controller = new BalanceDisplayShadowDiffController(service);
+
+      await controller.getShadowDiff('tenant-auth', 'case-1', undefined, undefined);
+
+      expect(service.compare).toHaveBeenCalledWith('tenant-auth', 'case-1', '2026-10-01', '2026-09-30T23:30:00.000Z');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

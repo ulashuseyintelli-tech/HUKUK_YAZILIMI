@@ -40,16 +40,21 @@ describe('InterestEngineController.getCaseBalance (G4c-2)', () => {
     expect(res).toBe(fakeResult);
   });
 
-  it('asOfDate yoksa → bugün (YYYY-MM-DD) ile çağrılır', async () => {
-    const compute = jest.fn().mockResolvedValue(fakeResult);
-    const controller = makeController(compute);
-    const today = new Date().toISOString().slice(0, 10);
+  it('asOfDate yoksa → Türkiye takvimine göre bugün (K3-L KP-11; TSİ 02:30 anında UTC günü değil)', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-30T23:30:00.000Z') });
+    try {
+      const compute = jest.fn().mockResolvedValue(fakeResult);
+      const controller = makeController(compute);
 
-    await controller.getCaseBalance('tenant-1', 'case-9', undefined);
+      await controller.getCaseBalance('tenant-1', 'case-9', undefined);
+      await controller.getCaseBalanceDisplay('tenant-1', 'case-9', undefined);
 
-    expect(compute).toHaveBeenCalledWith('tenant-1', 'case-9', today);
-    // ISO gün formatı (YYYY-MM-DD)
-    expect(compute.mock.calls[0][2]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // UTC günü 2026-09-30 olurdu; Türkiye takvimine göre 2026-10-01
+      expect(compute).toHaveBeenNthCalledWith(1, 'tenant-1', 'case-9', '2026-10-01');
+      expect(compute).toHaveBeenNthCalledWith(2, 'tenant-1', 'case-9', '2026-10-01');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('tenantId auth-context argümanından forward edilir (client/body/param değil)', async () => {
