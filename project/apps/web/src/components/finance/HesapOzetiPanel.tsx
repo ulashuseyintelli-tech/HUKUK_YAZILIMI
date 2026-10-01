@@ -24,7 +24,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, TahsilatGosterimi, TalepEdilenIslemisFaiz } from "@/hooks/useCaseCalculation";
+import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, ParaBirimiAlani, TahsilatGosterimi, TalepEdilenIslemisFaiz } from "@/hooks/useCaseCalculation";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import { turkeyToday } from "@/lib/turkey-calendar";
 import {
@@ -188,6 +188,21 @@ export function HesapOzetiPanel({
                      displayHesap.kalemTuru === 'SENET' ? 'Senet' :
                      displayHesap.kalemTuru === 'FATURA' ? 'Fatura' : 'Asıl Alacak';
   
+  // Para birimi bağlamı (sunucu kararı; istemci hesabı ve çevirme YOK): alacak dövizli ya da karma ise TL tarifesi oranlı
+  // kalemler "hesaplanamadı", farklı para birimlerini toplayan satırlar "gösterilemez" yazılır; bilinen tutarlar kendi para
+  // birimiyle kalır. Karar yoksa (TL dosya ya da eski sunucu yanıtı) gösterim aynen sürer.
+  const paraBirimiDurumu = hesap.paraBirimiDurumu;
+  const paraBirimiKisitli = paraBirimiDurumu ? !paraBirimiDurumu.toplamGosterilebilir : false;
+  const alan = (ad: string): ParaBirimiAlani | undefined =>
+    paraBirimiKisitli ? paraBirimiDurumu?.alanlar?.[ad] ?? GOSTERILEMEZ_ALAN : undefined;
+  const tutar = (ad: string, deger: number): string => formatAlanTutari(deger, alan(ad));
+  const asilAlacakAyrik = paraBirimiKisitli && alan('asilAlacak')?.durum !== 'GECERLI';
+  const tahsilatAyrik = paraBirimiKisitli && alan('toplamTahsilat')?.durum !== 'GECERLI';
+  const tahsilOranlariGecerli = !paraBirimiKisitli || alan('tahsilOranlari')?.durum === 'GECERLI';
+  // Tutar yerine "gösterilemez" yazılan toplam satırı vurgulu tutar biçimiyle (büyük, renkli) basılmaz
+  const toplamSinifi = (ad: string, vurgulu: string): string =>
+    paraBirimiKisitli && alan(ad)?.durum !== 'GECERLI' ? 'font-medium text-gray-500' : vurgulu;
+
   return (
     <div className={`bg-white border rounded-lg flex flex-col ${className}`}>
       {/* Header */}
@@ -214,6 +229,13 @@ export function HesapOzetiPanel({
       {hesap?.dosyaFaizTuru?.uyari && (
         <div data-testid="hesap-dosya-faiz-turu-uyari" className="px-3 py-1 text-[10px] text-amber-800 bg-amber-50 border-b border-amber-200 flex-shrink-0">
           {hesap.dosyaFaizTuru.uyari}
+        </div>
+      )}
+
+      {/* Para birimi bağlamı: dövizli / karma dosyada oranlı kalemler hesaplanmadı, tek toplam gösterilmedi (sunucu metni) */}
+      {paraBirimiKisitli && paraBirimiDurumu?.mesaj && (
+        <div data-testid="hesap-para-birimi-uyari" className="px-3 py-1 text-[10px] text-amber-800 bg-amber-50 border-b border-amber-200 flex-shrink-0">
+          {paraBirimiDurumu.mesaj}
         </div>
       )}
 
@@ -259,17 +281,26 @@ export function HesapOzetiPanel({
       
       {/* İçerik */}
       <div ref={scrollRef} className="px-3 py-2 space-y-0.5 text-xs">
-        {/* Asıl Alacak */}
-        <Row label={kalemLabel} value={displayHesap.asilAlacak} />
+        {/* Asıl Alacak — birden fazla para birimindeyse tek sayıya toplanmaz; para birimi bazında ayrı satır (sunucu değerleri) */}
+        {asilAlacakAyrik
+          ? paraBirimiDurumu?.asilAlacakParaBirimiBazinda.map((kalem) => (
+              <Row
+                key={kalem.paraBirimi}
+                label={`${kalemLabel} (${kalem.paraBirimi})`}
+                value={kalem.tutar}
+                text={formatParaBirimli(kalem.tutar, kalem.paraBirimi)}
+              />
+            ))
+          : <Row label={kalemLabel} value={displayHesap.asilAlacak} text={tutar('asilAlacak', displayHesap.asilAlacak)} />}
         
         {/* Tazminat ve Komisyon (Çek için) */}
         {/* K3-L: kesin tazminat YALNIZ kesin kalemden; sorumlular kalem kaydından (dosyanın tüm borçlularına yayılmaz). */}
-        {displayHesap.tazminat > 0 && <Row label="Karşılıksız Çek Tazminatı" value={displayHesap.tazminat} />}
+        {displayHesap.tazminat > 0 && <Row label="Karşılıksız Çek Tazminatı" value={displayHesap.tazminat} text={tutar('tazminat', displayHesap.tazminat)} />}
         <CheckPenaltyInfo summary={hesap?.tazminatDurumu} />
-        {displayHesap.komisyon > 0 && <Row label="Komisyon" value={displayHesap.komisyon} />}
+        {displayHesap.komisyon > 0 && <Row label="Komisyon" value={displayHesap.komisyon} text={tutar('komisyon', displayHesap.komisyon)} />}
         
         {/* Takip Öncesi Faiz */}
-        {displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} />}
+        {displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} text={tutar('takipOncesiFaiz', displayHesap.takipOncesiFaiz)} />}
 
         {/* K3-L KP-3 / TK-7: talep edilmiş işlemiş faiz — varlığı ve tutarı açık; hesaba DAHİL EDİLMEDİ (sunucu değeri) */}
         <ClaimedInterestInfo info={hesap?.talepEdilenIslemisFaiz} />
@@ -277,37 +308,37 @@ export function HesapOzetiPanel({
         {/* TAKİP TUTARI */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-300 bg-blue-50 rounded">
           <span className="font-semibold text-blue-800">TAKİP TUTARI</span>
-          <span className="font-bold text-blue-700">{formatTL(displayHesap.takipTutari)}</span>
+          <span data-testid="hesap-deger-takipTutari" className={toplamSinifi('takipTutari', 'font-bold text-blue-700')}>{tutar('takipTutari', displayHesap.takipTutari)}</span>
         </div>
         
         {/* İcra Masrafları Detay */}
-        <Row label="Başvurma Harcı" value={displayHesap.basvurmaHarci} light />
-        <Row label="Vekalet Harcı" value={displayHesap.vekaletHarci} light />
-        <Row label="Peşin Harç" value={displayHesap.pesinHarc} light />
-        <Row label="Dosya Gideri" value={displayHesap.dosyaGideri} light />
-        <Row label={`Tebligat Gideri (${debtorCount} borçlu)`} value={displayHesap.tebligatGideri} light />
-        <Row label="Vekalet Pulu" value={displayHesap.vekaletPulu} light />
+        <Row label="Başvurma Harcı" value={displayHesap.basvurmaHarci} text={tutar('basvurmaHarci', displayHesap.basvurmaHarci)} light />
+        <Row label="Vekalet Harcı" value={displayHesap.vekaletHarci} text={tutar('vekaletHarci', displayHesap.vekaletHarci)} light />
+        <Row label="Peşin Harç" value={displayHesap.pesinHarc} text={tutar('pesinHarc', displayHesap.pesinHarc)} light />
+        <Row label="Dosya Gideri" value={displayHesap.dosyaGideri} text={tutar('dosyaGideri', displayHesap.dosyaGideri)} light />
+        <Row label={`Tebligat Gideri (${debtorCount} borçlu)`} value={displayHesap.tebligatGideri} text={tutar('tebligatGideri', displayHesap.tebligatGideri)} light />
+        <Row label="Vekalet Pulu" value={displayHesap.vekaletPulu} text={tutar('vekaletPulu', displayHesap.vekaletPulu)} light />
         
         {/* İCRA MASRAFLARI */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-gray-300 bg-gray-100 rounded">
           <span className="font-semibold text-gray-700">İCRA MASRAFLARI</span>
-          <span className="font-semibold text-gray-700">{formatTL(displayHesap.icraMasraflari)}</span>
+          <span data-testid="hesap-deger-icraMasraflari" className="font-semibold text-gray-700">{tutar('icraMasraflari', displayHesap.icraMasraflari)}</span>
         </div>
         
         {/* Tahsil Harçları */}
-        <Row label="Peşin Harç Dahil Tahsil Harcı" value={displayHesap.pesinHarcDahilTahsilHarci} light muted />
-        <Row label="Peşin Harç Hariç Tahsil Harcı" value={displayHesap.pesinHarcHaricTahsilHarci} light muted />
+        <Row label="Peşin Harç Dahil Tahsil Harcı" value={displayHesap.pesinHarcDahilTahsilHarci} text={tutar('pesinHarcDahilTahsilHarci', displayHesap.pesinHarcDahilTahsilHarci)} light muted />
+        <Row label="Peşin Harç Hariç Tahsil Harcı" value={displayHesap.pesinHarcHaricTahsilHarci} text={tutar('pesinHarcHaricTahsilHarci', displayHesap.pesinHarcHaricTahsilHarci)} light muted />
         
         {/* Vekalet Ücreti */}
         <div className="flex justify-between py-1 border-t border-gray-200 mt-1">
           <span className="font-medium text-gray-700">Vekalet Ücreti =</span>
-          <span className="font-semibold">{formatTL(displayHesap.vekaletUcreti)}</span>
+          <span data-testid="hesap-deger-vekaletUcreti" className="font-semibold">{tutar('vekaletUcreti', displayHesap.vekaletUcreti)}</span>
         </div>
         
         {/* Takip Sonrası Faiz */}
         <div className="flex justify-between py-1 border-t border-gray-200">
           <span className="font-medium text-gray-700">Takip Sonrası Faiz =</span>
-          <span className="font-semibold">{formatTL(displayHesap.takipSonrasiFaiz)}</span>
+          <span className="font-semibold">{tutar('takipSonrasiFaiz', displayHesap.takipSonrasiFaiz)}</span>
         </div>
         
         {/* TOPLAM BORÇ */}
@@ -320,7 +351,7 @@ export function HesapOzetiPanel({
               </span>
             )}
           </span>
-          <span className="font-bold text-blue-800">{formatTL(displayHesap.toplamBorc)}</span>
+          <span data-testid="hesap-deger-toplamBorc" className={toplamSinifi('toplamBorc', 'font-bold text-blue-800')}>{tutar('toplamBorc', displayHesap.toplamBorc)}</span>
         </div>
 
         {/* SON BORÇ */}
@@ -333,7 +364,7 @@ export function HesapOzetiPanel({
               </span>
             )}
           </span>
-          <span className="font-bold text-xl text-green-700">{formatTL(displayHesap.sonBorc)}</span>
+          <span data-testid="hesap-deger-sonBorc" className={toplamSinifi('sonBorc', 'font-bold text-xl text-green-700')}>{tutar('sonBorc', displayHesap.sonBorc)}</span>
         </div>
         
         {/* K3-L KP-7: kanonik pilotta Toplam tahsilat / Borca uygulanan / Dağıtım bekleyen (hesap tarihi kapsamlı) */}
@@ -342,6 +373,7 @@ export function HesapOzetiPanel({
           <TahsilatGosterimiPanel
             gosterim={displayHesap.tahsilatGosterimi}
             kalanBorc={displayHesap.kalanBorc}
+            kalanBorcMetni={tutar('kalanBorc', displayHesap.kalanBorc)}
             partial={guardedPrimaryPartial}
           >
             {/* TBK m.100 Mahsup Detayları (legacy diagnostic; mevcut davranış korunur) */}
@@ -358,15 +390,29 @@ export function HesapOzetiPanel({
         {/* Tahsilat Düşümü ve Kalan Borç (legacy) */}
         {!displayHesap.tahsilatGosterimi && displayHesap.toplamTahsilat > 0 && (
           <div className="pt-2 mt-2 border-t border-gray-200">
-            <div className="flex justify-between py-1">
-              <span className="text-gray-600">Tahsilat Düşümü</span>
-              <span className="text-red-600 font-medium">- {formatTL(displayHesap.toplamTahsilat)}</span>
-            </div>
+            {/* Tahsilat birden fazla para birimindeyse tek sayıya toplanmaz; para birimi bazında ayrı satır (sunucu değerleri) */}
+            {tahsilatAyrik
+              ? paraBirimiDurumu?.tahsilatParaBirimiBazinda.map((kalem) => (
+                  <div key={kalem.paraBirimi} className="flex justify-between py-1">
+                    <span className="text-gray-600">Tahsilat Düşümü ({kalem.paraBirimi})</span>
+                    <span className="text-red-600 font-medium">- {formatParaBirimli(kalem.tutar, kalem.paraBirimi)}</span>
+                  </div>
+                ))
+              : (
+                <div className="flex justify-between py-1">
+                  <span className="text-gray-600">Tahsilat Düşümü</span>
+                  <span data-testid="hesap-deger-toplamTahsilat" className="text-red-600 font-medium">- {tutar('toplamTahsilat', displayHesap.toplamTahsilat)}</span>
+                </div>
+              )}
             {/* K3-L KP-7: tarih kapsamı açık — bu satır tarih süzgeçsizdir; hesap tarihinden sonraki kısım ayrıca yazılır */}
             {Number(hesap?.hesapTarihindenSonrakiTahsilat ?? 0) > 0 && (
               <div data-testid="hesap-tahsilat-tarih-kapsami" className="pb-1 text-[10px] text-amber-700">
-                Bu tutarın {formatTL(Number(hesap?.hesapTarihindenSonrakiTahsilat ?? 0))} kadarı hesap tarihinden
-                ({formatDate(displayHesap.hesapTarihi)}) sonra tarihli tahsilattır.
+                {tahsilatAyrik
+                  ? <>Tahsilatın bir kısmı hesap tarihinden ({formatDate(displayHesap.hesapTarihi)}) sonra tarihlidir.</>
+                  : <>
+                      Bu tutarın {tutar('hesapTarihindenSonrakiTahsilat', Number(hesap?.hesapTarihindenSonrakiTahsilat ?? 0))} kadarı hesap tarihinden
+                      ({formatDate(displayHesap.hesapTarihi)}) sonra tarihli tahsilattır.
+                    </>}
               </div>
             )}
             
@@ -388,7 +434,7 @@ export function HesapOzetiPanel({
                   </span>
                 )}
               </span>
-              <span className="font-bold text-orange-700">{formatTL(displayHesap.kalanBorc)}</span>
+              <span data-testid="hesap-deger-kalanBorc" className={toplamSinifi('kalanBorc', 'font-bold text-orange-700')}>{tutar('kalanBorc', displayHesap.kalanBorc)}</span>
             </div>
           </div>
         )}
@@ -404,19 +450,25 @@ export function HesapOzetiPanel({
               Mahsubu bekleyen tahsilat
               <span className="ml-1 text-[10px] font-normal text-amber-700">(kalan borçtan düşülmedi)</span>
             </span>
-            <span className="font-medium">{formatTL(Number(hesap?.mahsubuBekleyenTahsilat ?? 0))}</span>
+            <span className="font-medium">{tutar('mahsubuBekleyenTahsilat', Number(hesap?.mahsubuBekleyenTahsilat ?? 0))}</span>
           </div>
         )}
 
         {/* Tahsil Harcı Oranlarına Göre Son Borç */}
         <div className="pt-2 mt-2 border-t-2 border-gray-300">
           <p className="text-[10px] font-medium text-gray-500 mb-1">Tahsil Harcı Oranlarına Göre Son Borç</p>
-          {displayHesap.tahsilOranlari.map((t, i) => (
-            <div key={i} className="flex justify-between py-0.5 text-gray-500">
-              <span>%{t.label}</span>
-              <span>{formatTL(t.tutar)}</span>
-            </div>
-          ))}
+          {tahsilOranlariGecerli
+            ? displayHesap.tahsilOranlari.map((t, i) => (
+                <div key={i} className="flex justify-between py-0.5 text-gray-500">
+                  <span>%{t.label}</span>
+                  <span>{formatTL(t.tutar)}</span>
+                </div>
+              ))
+            : (
+              <div data-testid="hesap-tahsil-oranlari-durum" className="py-0.5 text-gray-500">
+                {alan('tahsilOranlari')?.durum === 'HESAPLANAMADI' ? 'hesaplanamadı' : 'gösterilemez'}
+              </div>
+            )}
         </div>
         
         {/* Faiz Dökümü */}
@@ -451,6 +503,27 @@ export function HesapOzetiPanel({
 }
 
 // ============================================================================
+// PARA BİRİMİ GÖSTERİMİ (sunucu kararına göre; hesap ve çevirme YOK)
+// ============================================================================
+
+/** Kısıtlı durumda sunucunun karar vermediği alan: tutar güvenle etiketlenemez → gösterilmez (fail-closed). */
+const GOSTERILEMEZ_ALAN: ParaBirimiAlani = { paraBirimi: null, durum: 'GOSTERILEMEZ' };
+
+/** Tutarı bildirilen para birimiyle yazar; TL'de (ya da para birimi bildirilmemişse) formatTL ile birebir aynıdır. */
+function formatParaBirimli(deger: number, paraBirimi?: string | null): string {
+  if (!paraBirimi || paraBirimi === 'TRY') return formatTL(deger);
+  return `${deger.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${paraBirimi}`;
+}
+
+/** Alanın gösterim metni: karar yoksa bugünkü gösterim; geçerliyse kendi para birimiyle tutar; değilse nedeni. */
+function formatAlanTutari(deger: number, alan?: ParaBirimiAlani): string {
+  if (!alan) return formatTL(deger);
+  if (alan.durum === 'HESAPLANAMADI') return 'hesaplanamadı';
+  if (alan.durum !== 'GECERLI' || !alan.paraBirimi) return 'gösterilemez';
+  return formatParaBirimli(deger, alan.paraBirimi);
+}
+
+// ============================================================================
 // HELPER COMPONENTS
 // ============================================================================
 
@@ -464,7 +537,7 @@ export function CheckPenaltyInfo({ summary }: { summary?: CheckPenaltySummary })
     <div data-testid="check-penalty-info" className="my-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-900 space-y-0.5">
       {summary.kalemler.map((kalem) => (
         <div key={kalem.claimItemId} data-testid="check-penalty-item">
-          Tazminat {formatTL(kalem.tutar)} · kalan {formatTL(kalem.kalan)} ·{" "}
+          Tazminat {formatParaBirimli(kalem.tutar, kalem.paraBirimi)} · kalan {formatParaBirimli(kalem.kalan, kalem.paraBirimi)} ·{" "}
           {kalem.sorumlulukBelirsiz
             ? "sorumlu borçlular belirlenmemiş"
             : `sorumlu: ${kalem.sorumluBorclular.map((b) => b.ad).join(", ")}`}
@@ -512,14 +585,19 @@ export function ClaimedInterestInfo({ info }: { info?: TalepEdilenIslemisFaiz | 
 export function TahsilatGosterimiPanel({
   gosterim,
   kalanBorc,
+  kalanBorcMetni,
   partial,
   children,
 }: {
   gosterim: TahsilatGosterimi;
   kalanBorc: number;
+  /** Kalan borcun gösterim metni (dövizli / karma dosyada "gösterilemez"); verilmezse TL biçimi. */
+  kalanBorcMetni?: string;
   partial?: boolean;
   children?: React.ReactNode;
 }) {
+  // Tahsilat tutarları kanonik tahsilat bloğunun kendi para birimiyle yazılır (TL'de gösterim aynen)
+  const tahsilatTutari = (deger: number) => formatParaBirimli(deger, gosterim.paraBirimi);
   return (
     <div data-testid="tahsilat-gosterimi" className="pt-2 mt-2 border-t border-gray-200">
       <p data-testid="tahsilat-gosterimi-kapsam" className="text-[10px] text-gray-500 mb-0.5">
@@ -527,18 +605,18 @@ export function TahsilatGosterimiPanel({
       </p>
       <div className="flex justify-between py-0.5">
         <span className="text-gray-600">Toplam tahsilat</span>
-        <span data-testid="tahsilat-toplam" className="font-medium">{formatTL(gosterim.toplamTahsilat)}</span>
+        <span data-testid="tahsilat-toplam" className="font-medium">{tahsilatTutari(gosterim.toplamTahsilat)}</span>
       </div>
       <div className="flex justify-between py-0.5">
         <span className="text-gray-600">Borca uygulanan</span>
-        <span data-testid="tahsilat-borca-uygulanan" className="text-red-600 font-medium">- {formatTL(gosterim.borcaUygulanan)}</span>
+        <span data-testid="tahsilat-borca-uygulanan" className="text-red-600 font-medium">- {tahsilatTutari(gosterim.borcaUygulanan)}</span>
       </div>
       <div className="flex justify-between py-0.5">
         <span className="text-gray-600">
           Dağıtım bekleyen
           <span className="ml-1 text-[10px] font-normal text-gray-400">(borca uygulanmadı)</span>
         </span>
-        <span data-testid="tahsilat-dagitim-bekleyen" className="font-medium">{formatTL(gosterim.dagitimBekleyen)}</span>
+        <span data-testid="tahsilat-dagitim-bekleyen" className="font-medium">{tahsilatTutari(gosterim.dagitimBekleyen)}</span>
       </div>
       {gosterim.mahsubuBekleyen > 0 && (
         <div data-testid="tahsilat-mahsubu-bekleyen" className="flex justify-between pl-2 py-0.5 text-amber-800">
@@ -546,7 +624,7 @@ export function TahsilatGosterimiPanel({
             Mahsubu bekleyen tahsilat
             <span className="ml-1 text-[10px] font-normal text-amber-700">(borçtan düşülmedi, dağıtıma kapalı)</span>
           </span>
-          <span>{formatTL(gosterim.mahsubuBekleyen)}</span>
+          <span>{tahsilatTutari(gosterim.mahsubuBekleyen)}</span>
         </div>
       )}
       {children}
@@ -557,7 +635,7 @@ export function TahsilatGosterimiPanel({
       )}
       {gosterim.hesapTarihindenSonra > 0 && (
         <div data-testid="tahsilat-tarih-sonrasi" className="py-0.5 text-[10px] text-gray-500">
-          Hesap tarihinden sonra tarihli {formatTL(gosterim.hesapTarihindenSonra)} bu toplamlara dahil edilmedi.
+          Hesap tarihinden sonra tarihli {tahsilatTutari(gosterim.hesapTarihindenSonra)} bu toplamlara dahil edilmedi.
         </div>
       )}
       <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-orange-300 bg-orange-50 rounded">
@@ -569,17 +647,18 @@ export function TahsilatGosterimiPanel({
             </span>
           )}
         </span>
-        <span className="font-bold text-orange-700">{formatTL(kalanBorc)}</span>
+        <span className="font-bold text-orange-700">{kalanBorcMetni ?? formatTL(kalanBorc)}</span>
       </div>
     </div>
   );
 }
 
-function Row({ label, value, light, muted }: { label: string; value: number; light?: boolean; muted?: boolean }) {
+/** `text` verilirse (para birimi kararına göre hazırlanmış metin) o yazılır; verilmezse tutar TL biçimiyle. */
+function Row({ label, value, text, light, muted }: { label: string; value: number; text?: string; light?: boolean; muted?: boolean }) {
   return (
     <div className={`flex justify-between py-0.5 ${light ? 'pl-2' : ''}`}>
       <span className={muted ? 'text-gray-400' : light ? 'text-gray-500' : 'text-gray-600'}>{label}</span>
-      <span className={muted ? 'text-gray-400' : ''}>{formatTL(value)}</span>
+      <span className={muted ? 'text-gray-400' : ''}>{text ?? formatTL(value)}</span>
     </div>
   );
 }

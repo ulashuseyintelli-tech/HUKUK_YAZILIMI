@@ -307,3 +307,7 @@ src/modules/case/__tests__/case-lawyer-default-permissions.spec.ts
 #   takip turunun belge turu (cek <-> senet) celisirse tx oncesi 400 CASE_CLASSIFICATION_DOCUMENT_KIND_CONFLICT; hukuki
 #   tercih (cek formu + ilamsiz genel haciz) ve alt formsuz FORM_10 DENETLENMEZ.
 src/modules/case/__tests__/case-classification-consistency.spec.ts
+# Hesap ozeti (legacy calculation-summary) para birimi baglami — saf yardimci (hesap ve cevirme YOK): dovizli alacaga TL
+#   tarifesi orani uygulanarak bulunan alanlar HESAPLANAMADI, farkli para birimlerini tek sayida toplayan alanlar
+#   GOSTERILEMEZ; bilinen tutarlar kendi para birimiyle GECERLI. Dovizli alacakta harc / vekalet ucreti kurali owner karari.
+src/modules/case/__tests__/case-calculation-summary-currency.spec.ts

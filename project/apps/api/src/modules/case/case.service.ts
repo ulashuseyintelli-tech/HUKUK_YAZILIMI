@@ -48,6 +48,7 @@ import {
   buildCaseCalculationSummaryCompatibilityAdapter,
   buildUnavailableCaseCalculationSummaryCompatibilityAdapter,
 } from "./case-calculation-summary.compatibility";
+import { buildCalculationSummaryCurrencyStatus } from "./case-calculation-summary-currency";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
@@ -4934,6 +4935,8 @@ export class CaseService {
    * <remarks>
    * Çağrıldığı yerler:
    * - CaseController.getCalculationSummary() → GET /cases/:id/calculation-summary (case detay hesap özeti)
+   * - BalanceDisplayShadowDiffService.compare() → gölge karşılaştırma raporunun legacy tarafı
+   * - scripts/adr014-rep-02-local-execution.ts (observeCase) → yerel ADR-014 kanıt betiği
    * </remarks>
    *
    * @see ARCHITECTURE.md - Source of Truth Matrix
@@ -5086,6 +5089,22 @@ export class CaseService {
     const kalanBorc = sonBorc - toplamTahsilat;
     const legacyCurrency = String(caseData.currency || "TRY");
 
+    // Para birimi bağlamı (eklemeli): yukarıdaki tutarlar kalemin para birimine bakılmadan toplanır, harç / masraf /
+    // vekalet ücreti ise TL tarifesindendir. Dövizli ya da karma dosyada oranlı kalemler ve tek toplam geçerli değildir;
+    // bu blok hangi alanın hangi para biriminde ve geçerli olduğunu bildirir. Değerler DEĞİŞMEDİ, tutar ÇEVRİLMEDİ;
+    // dövizli alacakta harç / vekalet ücreti kuralı (tutar ve kur) owner kararıdır.
+    const paraBirimiDurumu = buildCalculationSummaryCurrencyStatus({
+      caseCurrency: legacyCurrency,
+      principalAmounts: principalDues.length > 0
+        ? principalDues.map((d: any) => ({ amount: Number(d.amount), currency: d.currency }))
+        : [{ amount: Number(caseData.principalAmount || 0), currency: legacyCurrency }],
+      penaltyAmounts: tazminatDurumu.kalemler.map((kalem) => ({ amount: kalem.tutar, currency: kalem.paraBirimi })),
+      collectionAmounts: caseData.collections
+        .filter((c: any) => c.status !== 'CANCELLED' && !heldCollectionIds.has(c.id))
+        .map((c: any) => ({ amount: Number(c.amount), currency: c.currency })),
+      heldAmounts: heldAllocations.map((hold) => ({ amount: Number(hold.amount), currency: hold.currency })),
+    });
+
     // 11. Tahsil oranları
     const tahsilOranlari = [
       { oran: 0, label: "0" },
@@ -5106,6 +5125,8 @@ export class CaseService {
       // K3-L KP-2: dosya faiz türü ve kaynağı; kaynağı doğrulanamayan eski YASAL varsayılanı uyarıyla gösterilir (geçersiz
       // sayılmaz, değiştirilmez)
       dosyaFaizTuru: buildDosyaFaizTuru(caseData.interestType, (caseData as any).metadata),
+      // Tutarların para birimi ve geçerliliği (eklemeli; aşağıdaki alanların değeri değişmedi)
+      paraBirimiDurumu,
       
       asilAlacak,
       tazminat,

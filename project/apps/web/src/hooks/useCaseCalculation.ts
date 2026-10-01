@@ -68,6 +68,8 @@ export interface CaseCalculationResult {
     kaynak: "ACIK_SECIM" | "SISTEM_VARSAYILANI" | "DOGRULANAMADI";
     uyari: string | null;
   };
+  /** Tutarların para birimi ve geçerliliği (sunucu kararı; istemci hesabı YOK). Eski sunucu yanıtında bulunmaz. */
+  paraBirimiDurumu?: ParaBirimiDurumu;
   
   // Tutarlar
   asilAlacak: number;
@@ -128,6 +130,31 @@ export interface CaseCalculationResult {
     label: string;
     tutar: number;
   }>;
+}
+
+/** Hesap özetindeki bir alanın para birimi ve geçerliliği (sunucu kararı). */
+export interface ParaBirimiAlani {
+  /** Alan geçerli tek para birimli bir tutar değilse null */
+  paraBirimi: string | null;
+  durum: 'GECERLI' | 'HESAPLANAMADI' | 'GOSTERILEMEZ';
+}
+
+/**
+ * Hesap özeti tutarlarının para birimi bağlamı (sunucu: buildCalculationSummaryCurrencyStatus). Alacak dövizli ya da
+ * karma ise harç / vekalet ücreti gibi TL tarifesi oranlı kalemler HESAPLANAMADI, tek toplamlar GOSTERILEMEZ gelir;
+ * sayısal alanların kendisi değişmez. İstemci çevirme ya da hesap YAPMAZ, yalnız bu karara göre gösterir.
+ */
+export interface ParaBirimiDurumu {
+  dosyaParaBirimi: string;
+  tarifeParaBirimi: string;
+  durum: 'TEK_PARA_BIRIMI_TL' | 'TEK_PARA_BIRIMI_DOVIZ' | 'KARMA_PARA_BIRIMI';
+  toplamGosterilebilir: boolean;
+  gerekce: string | null;
+  mesaj: string | null;
+  alacakParaBirimi: string | null;
+  asilAlacakParaBirimiBazinda: Array<{ paraBirimi: string; tutar: number }>;
+  tahsilatParaBirimiBazinda: Array<{ paraBirimi: string; tutar: number }>;
+  alanlar: Record<string, ParaBirimiAlani>;
 }
 
 /** K3-L KP-3 / TK-7 — talep edilmiş işlemiş faiz (sunucu: claimedInterestAmount kuralı; hesaba dahil DEĞİL). */
