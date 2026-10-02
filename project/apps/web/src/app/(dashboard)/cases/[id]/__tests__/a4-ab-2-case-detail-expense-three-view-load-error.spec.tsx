@@ -317,14 +317,20 @@ describe('yanlış toplam/sıfır iddiası oluşmaz', () => {
     mocked.getExpenseThreeViewForCase.mockImplementation(networkError);
     renderPage();
 
-    // Finans özetindeki "Masraf Talep" toplamı (financeItems.filter(MASRAF_TALEP)
-    // reduce) okuma hatasında da render edilir (0 ₺) — AMA bu değer artık YALNIZ
-    // başına değil, "eksik olabilir" diyen görünür bir hata bandıyla BİRLİKTE
-    // sunulur; kullanıcı 0'ın kesin bir olgu mu yoksa okunamamış veri mi
-    // olduğunu bandı okuyarak ayırt edebilir.
+    // Görünür hata bandı "eksik olabilir" der (WSMR-A4-AB-2; aynen geçerli).
     const alerts = await screen.findAllByRole('alert', {}, { timeout: 5000 });
     const expenseAlert = findExpenseAlert(alerts);
     expect(expenseAlert).toBeTruthy();
     expect(expenseAlert!.textContent).toMatch(/eksik olabilir/);
+
+    // SUPERSEDED (owner kararı 2026-10-02): bu test eskiden Finans özetindeki "Masraf Talebi" toplamının okuma
+    // hatasında da "0 ₺" olarak çizildiğini, kullanıcının bunu yalnız üstteki bandı okuyarak ayırt edebildiğini
+    // kabul ediyordu. Artık Finans sekmesi kendi durumunu yazar: okunamayan kaynak sıfır DEĞİLDİR — kartta sayı
+    // yerine "Bu bilgi okunamadı" yazılır; bant yerinde kalır. Ayrıntılı davranış:
+    // `case-detail-operation-deck-finance-source-status.spec.tsx`.
+    await openFinanceTab();
+    const card = screen.getByTestId('finance-expense-request-source-unavailable');
+    expect(card.textContent).toBe('Bu bilgi okunamadı');
+    expect(card.parentElement?.textContent).not.toMatch(/\d/);
   });
 });

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { isAllocationHeldCollection } from "@/lib/collection-allocation-hold";
+import { deriveFinanceSourceStatus, financeSourceContextKey } from "@/lib/operation-deck-finance-sources";
 import { recordCurrencySuffix, sharedRecordCurrency } from "@/lib/record-currency-display";
 import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useParams, useSearchParams } from "next/navigation";
@@ -912,6 +913,13 @@ export default function CaseDetailPage() {
   // YAZMAZ. In-flight bayrağı: çift retry aynı anda İKİNCİ isteği başlatmaz.
   const dispositionsFetchTokenRef = useRef(0);
   const dispositionsFetchInFlightRef = useRef(false);
+  // Operasyon Masası "Finans" sekmesi — tahsilat okumasının durumu. Eldeki `collections` yalnız okunduğu bağlamda
+  // (dosya + dosyanın para birimi) geçerlidir: `financeLoadedKey` son BAŞARILI okumanın, `financeAttemptKey` son
+  // BAŞLATILAN okumanın bağlamıdır. İlk okuma bitmeden sekme sıfır / "tahsilat yok" yazmaz; başka dosyanın verisi
+  // "son başarılı veri" sayılmaz. Belirteç: geç gelen eski yanıt daha yeni okumanın sonucunu EZMEZ.
+  const financeFetchTokenRef = useRef(0);
+  const [financeAttemptKey, setFinanceAttemptKey] = useState<string | null>(null);
+  const [financeLoadedKey, setFinanceLoadedKey] = useState<string | null>(null);
   const [financialSummaryRefreshKey, setFinancialSummaryRefreshKey] = useState(0);
   
   // Due Modal State
@@ -962,6 +970,15 @@ export default function CaseDetailPage() {
   const [expenseThreeViewRetrying, setExpenseThreeViewRetrying] = useState(false);
   const expenseThreeViewFetchTokenRef = useRef(0);
   const expenseThreeViewFetchInFlightRef = useRef(false);
+  // "Finans" sekmesi — masraf talebi okumasının durumu (tahsilat okumasıyla aynı kural, AYRI izlenir).
+  // `...FetchKeyRef`: süren isteğin bağlamı — başka bağlamın süren isteği yeni bağlamın okumasını ENGELLEMEZ.
+  const expenseThreeViewFetchKeyRef = useRef<string | null>(null);
+  const [expenseThreeViewAttemptKey, setExpenseThreeViewAttemptKey] = useState<string | null>(null);
+  const [expenseThreeViewLoadedKey, setExpenseThreeViewLoadedKey] = useState<string | null>(null);
+  // İki okumanın bağlamı: dosya + dosyanın para birimi. Dosya henüz yüklenmediyse ya da ekrandaki dosya adresteki
+  // dosya değilse bağlam yoktur (null) — o sırada hiçbir veri "bu dosyanın verisi" sayılmaz.
+  const financeContextKey =
+    caseData && caseData.id === params.id ? financeSourceContextKey(caseData.id, caseData.currency) : null;
   
   // Fix highlight state
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
@@ -1151,19 +1168,30 @@ export default function CaseDetailPage() {
   }, [fetchDispositions]);
 
   // Fetch dues and collections
+  //
+  // Tahsilat, alacak kalemi ve dağıtım okumasıyla BİRLİKTE beklenir; `collections` ancak üçü de bitince yazılır. Bu
+  // yüzden tahsilat kaynağı yalnız bu ortak okuma başarıyla bittiğinde "okundu" sayılır (`financeLoadedKey`).
+  // Belirteç: aynı anda birden fazla okuma sürüyorsa yalnız EN SON başlatılanın sonucu ekrana yazılır — geç gelen
+  // eski yanıt (önceki yenileme ya da başka dosya) yeni veriyi ezmez, yükleniyor bayrağını da erken kapatmaz.
   const fetchFinanceData = useCallback(async () => {
     if (!params.id) return;
+    const contextKey = financeContextKey;
+    const token = ++financeFetchTokenRef.current;
     try {
       setLoadingFinance(true);
       setFinanceLoadError(null);
+      setFinanceAttemptKey(contextKey);
       const [duesRes, collectionsRes] = await Promise.all([
         api.getCaseDues(params.id as string),
         api.getCaseCollections(params.id as string),
         fetchDispositions(),
       ]);
+      if (!isMountedRef.current || token !== financeFetchTokenRef.current) return; // bayat/unmount
       setDues(duesRes || []);
       setCollections(collectionsRes || []);
+      setFinanceLoadedKey(contextKey);
     } catch (error) {
+      if (!isMountedRef.current || token !== financeFetchTokenRef.current) return;
       // WSMR-A4w: eskiden yalniz console.error ile YUTULUYORDU. `dues`
       // bos kalinca render "Asıl Alacak: {caseData.principalAmount}" ile
       // TAMAMMIS gibi gorunuyordu — faiz/masraf/vekalet ucreti gibi diger
@@ -1174,9 +1202,9 @@ export default function CaseDetailPage() {
       // YALNIZ gercekten-bos (hata YOK) durumda kalir.
       setFinanceLoadError(toActionErrorMessage(error, "Finans verileri yüklenemedi."));
     } finally {
-      setLoadingFinance(false);
+      if (isMountedRef.current && token === financeFetchTokenRef.current) setLoadingFinance(false);
     }
-  }, [params.id, fetchDispositions]);
+  }, [params.id, fetchDispositions, financeContextKey]);
 
   const refreshCollectionDependentViews = useCallback(() => {
     setFinancialSummaryRefreshKey((key) => key + 1);
@@ -1370,6 +1398,23 @@ export default function CaseDetailPage() {
   // "Alacak Kalemleri" toplamı yalnız kalemlerin TÜMÜ aynı para birimindeyse yazılır (null = karma; tutar çevrilmez).
   const duesSharedCurrency = useMemo(() => sharedRecordCurrency(dues), [dues]);
 
+  // Operasyon Masası "Finans" sekmesinin iki bağlı kaynağı AYRI durum taşır: biri okunmuşken diğeri okunmamış olabilir.
+  // İlk okuma bitmeden READY denmez (bayraklar `false` başlar; "henüz okunmadı" ile "okundu, boş" bu türetmeyle ayrılır).
+  const collectionsSourceStatus = deriveFinanceSourceStatus({
+    contextKey: financeContextKey,
+    loadedKey: financeLoadedKey,
+    attemptKey: financeAttemptKey,
+    loading: loadingFinance,
+    failed: financeLoadError !== null,
+  });
+  const expenseRequestsSourceStatus = deriveFinanceSourceStatus({
+    contextKey: financeContextKey,
+    loadedKey: expenseThreeViewLoadedKey,
+    attemptKey: expenseThreeViewAttemptKey,
+    loading: loadingExpenseData,
+    failed: expenseThreeViewLoadError !== null,
+  });
+
   const handleCancelCollection = async (collection: any) => {
     if (!caseData?.id || !collection?.id) return;
 
@@ -1441,11 +1486,16 @@ export default function CaseDetailPage() {
   // Fetch expense three-view data for OperationDeck
   const fetchExpenseThreeViewData = useCallback(async () => {
     if (!params.id) return;
-    if (expenseThreeViewFetchInFlightRef.current) return; // cift retry -> tek aktif istek
+    const contextKey = financeContextKey;
+    // cift retry -> tek aktif istek. Yalniz AYNI baglamin (dosya + para birimi) suren istegi beklenir: baska
+    // baglamin suren istegi yeni okumayi engellemez; onun gec gelen yaniti asagida belirtecle elenir.
+    if (expenseThreeViewFetchInFlightRef.current && expenseThreeViewFetchKeyRef.current === contextKey) return;
     expenseThreeViewFetchInFlightRef.current = true;
+    expenseThreeViewFetchKeyRef.current = contextKey;
     const token = ++expenseThreeViewFetchTokenRef.current;
     try {
       setLoadingExpenseData(true);
+      setExpenseThreeViewAttemptKey(contextKey);
       const data = await api.getExpenseThreeViewForCase(params.id as string);
       if (!isMountedRef.current || token !== expenseThreeViewFetchTokenRef.current) return; // bayat/unmount
       // Govde SOZLESMEYE karsi dogrulanir: dizi DEGILSE (malformed 200 govdesi)
@@ -1456,6 +1506,7 @@ export default function CaseDetailPage() {
       }
       setExpenseThreeViewData(data);
       setExpenseThreeViewLoadError(null);
+      setExpenseThreeViewLoadedKey(contextKey);
     } catch (error) {
       if (!isMountedRef.current || token !== expenseThreeViewFetchTokenRef.current) return;
       // Eskiden yalniz console.error ile YUTULUYORDU (expenseThreeViewData hep
@@ -1470,7 +1521,7 @@ export default function CaseDetailPage() {
         if (isMountedRef.current) setLoadingExpenseData(false);
       }
     }
-  }, [params.id]);
+  }, [params.id, financeContextKey]);
 
   const retryExpenseThreeView = useCallback(async () => {
     setExpenseThreeViewRetrying(true);
@@ -3290,6 +3341,12 @@ export default function CaseDetailPage() {
                   })),
                 ]}
                 caseCurrency={caseData.currency}
+                // Gerçek kaynağa BAĞLI iki alan: okuma durumu ayrı ayrı verilir. Okunmamış / okunamamış kaynak sıfır ya
+                // da "kayıt yok" yazmaz; sekmedeki "Tekrar dene" yalnız ilgili okumayı yeniden yapar (yazma yok).
+                collectionsSource={collectionsSourceStatus}
+                expenseRequestsSource={expenseRequestsSourceStatus}
+                onRetryCollections={fetchFinanceData}
+                onRetryExpenseRequests={retryExpenseThreeView}
                 // Aşağıdaki dört alan henüz bir veri kaynağına bağlı DEĞİL. Sabit 0 ya da boş liste verilmez:
                 // bağlanmamış alan sıfır / "kayıt yok" değildir — bileşen "henüz bağlanmadı" yazar.
                 // Hangi bakiyenin ve hangi masraf kapsamının gösterileceği seçilmedi (owner kararı 2026-10-01);
