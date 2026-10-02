@@ -176,6 +176,19 @@ src/modules/case/__tests__/case-open-default-permissions.http.db-gated.integrati
 #   11 testin 8'i DUSER (RED kanitlandi). Gecmis kayitlar DUZELTILMEDI.
 src/modules/case/__tests__/case-create-due-currency.http.db-gated.integration.spec.ts
 
+# Dosya acilisi — istenen masraf e-postasi GONDERILEMEDIGINDE sonuc, GERCEK HTTP + disposable PostgreSQL + surec ici
+#   sahte SMTP alicisi (yalniz 127.0.0.1; ileti hicbir yere iletilmez). Olculen kusur (main 6681b1d5, gercek tarayici):
+#   "Olustur ve Masraf Maili Gonder" ile acilan TL dosyada e-posta gonderilemediginde (banka hesabi yok / varsayilan degil /
+#   iki varsayilan / IBAN bos / muvekkil e-postasi yok / SMTP ayari yok / sablon yok / SMTP 550 / SMTP'ye ulasilamadi) talep
+#   PENDING kaliyor, POST /cases yaniti e-posta sonucunu tasimiyor, dosya sayfasi gonderilmis taleple ayni gorunuyor ve
+#   gunluk "Masraf talebi maili gonderildi" yaziyordu. Owner karari (2026-10-01): sonuc acilis yanitinda (deneme en cok 10 sn
+#   beklenir; sure dolarsa "sonuc henuz belli degil"), durum ucunda (GET .../opening-status, eklemeli alan) ve gorev olarak
+#   gorunur; gunluk sonuca gore yazilir. Basarili gonderimde yanit, kayitlar ve gunluk DEGISMEZ; "Sadece Olustur" akisi arka
+#   planda kalir; dovizli dosya (#2876) ve e-postanin gonderilme kurallari (owner sozlesmesi W4) DEGISMEZ. Yeniden gonderim
+#   KAPSAM DISI. Duzeltmesiz servis koduyla 57 testin 51'i DUSER (RED kanitlandi). Bu konum bilerek dosya sonu ve acilis
+#   masraf blogunun yani DEGIL: es zamanli degisiklikler oralara ekliyor.
+src/modules/expense-request/__tests__/opening-expense-email-outcome.http.db-gated.integration.spec.ts
+
 # Hesap ozeti para birimi baglami, GERCEK HTTP + disposable PostgreSQL. Olculen kusur (main 630184e2): legacy hesap ozeti
 #   kalem tutarlarini para birimine bakmadan topluyor, harc / masraf / vekalet ucreti ise TL tarifesinden; 10.000 USD
 #   anaparali dosya ile 10.000 TL anaparali dosya AYNI sayilari uretiyor (pesin harc 120, vekalet ucreti 9.000, toplam borc
@@ -186,3 +199,38 @@ src/modules/case/__tests__/case-create-due-currency.http.db-gated.integration.sp
 #   harc ve vekalet ucretinin hangi tutar ve kur uzerinden hesaplanacagi owner karari — bu testteki "sayilar TL dosyayla
 #   ayni" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 6 testin 6'si DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-calculation-summary-currency.http.db-gated.integration.spec.ts
+
+# Otomatik acilis masraf talebi — dovizli dosyada pesin harc matrahi, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
+#   (main 6917e8aa): muvekkilli dosya acilinca arka planda olusan acilis masraf seti pesin harci (TL tarifesi orani) anapara
+#   kalemlerinin SAYISINA uyguluyor; 10.000 USD anaparali dosyada talep 10.000 TL'lik dosyayla AYNI (pesin harc 120,00 /
+#   toplam 1.431,10 TL) ve PENDING / BLOCKING kayit olarak, muhasebe gunlugu ile birlikte yaziliyordu. Owner ara karari
+#   (2026-10-01): kur / matrah sozlesmesi yokken yanlis tutarli otomatik talep KAYDA GECMEZ; dosya acilir; neden ve gereken
+#   bilgi acilis yanitinda ve salt-okuma ucunda (GET .../opening-status) gorunur; tekrar deneme mukerrer talep uretmez; TL
+#   dosyanin talebi ve gecmis talepler DEGISMEZ. Duzeltmesiz servis koduyla 14 testin 12'si DUSER, TL dosyanin yazma ve
+#   tekrar deneme testleri GECER (RED kanitlandi: USD dosyada 1.431,10 TL talep + gunluk kaydi yaziliyor).
+src/modules/expense-request/__tests__/opening-expense-fx-basis.http.db-gated.integration.spec.ts
+
+# Masraf kapisi durum uclari ve paket hesabi — buro (tenant) siniri, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
+#   (main ef16f07f): A burosunun kullanicisi B burosuna ait dosya kimligini vererek POST /cost-packages/compute (dosyanin
+#   anaparasi calcParams.baseValue + tutarlar; B'nin buroya ozel paketi dahil) ve GET /expense-requests/case/:caseId/
+#   gate-status | gate-summary | can-perform/:actionType (kilit durumu, bekleyen tutar, masraf talebi kimlikleri)
+#   yanitlarinda B'nin verisini okuyabiliyordu: dosya yalniz kimligiyle okunuyor, cagiranin burosu sorguya girmiyordu.
+#   Kural: dort uc cagiranin burosuna baglidir; baska buronun dosyasi var olmayan dosyayla AYNI 404 "Takip bulunamadi"
+#   yanitini alir (kapidan muaf islem turu ve cagiranin gonderdigi buro kimligi dahil); talepler ayrica buro suzgeciyle
+#   okunur; govdedeki dosya kimligi suzgec isleci gibi yorumlanmaz. Kendi burosunun dosyasinda dort ucun yaniti ve UYAP
+#   gonderim hazirliginin (POST /cases/:caseId/uyap/prepare) paket hesabi DEGISMEZ. Bu konum bilerek dosya sonu DEGIL:
+#   es zamanli PR'lar sona ekler. Duzeltmesiz servis koduyla 17 testin 8'i DUSER; kendi burosu yanitlarini birebir
+#   sabitleyen 9 test duzeltmesiz kodla da GECER (RED kanitlandi).
+src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.integration.spec.ts
+
+# Alacak ozeti para birimi baglami (GET /claim-items/case/:caseId/summary), GERCEK HTTP + disposable PostgreSQL. Olculen
+#   kusur (main 6917e8aa): ozet etkin kalem tutarlarini para birimine bakmadan topluyor ve yaniti SON kalemin para birimiyle
+#   etiketliyordu; 10.000 USD + 5.000 EUR + 2.000 TRY anaparali dosyada totals.principal / grandTotal 17.000, currency kalem
+#   sirasina gore "TRY" ya da "EUR"; "Alacak Kalemleri (Kanonik)" paneli bunu TL simgesiyle 17.000,00 yaziyordu. Politika
+#   gerektirmeyen kisim: yanitin mevcut alanlari DEGISMEZ, tutar CEVRILMEZ; eklemeli `paraBirimiDurumu` blogu tek toplamin
+#   gecerli olup olmadigini ve para birimi bazinda toplamlari bildirir (tek para birimli TL / dovizli dosyada tek satir
+#   `totals` ile ayni; karma dosyada tek toplam GOSTERILEMEZ; yalniz ETKIN kalemler; baska buro goremez; ozet salt okuma,
+#   gecmis kayit DUZELTILMEZ). Kalem basina farkli para birimine izin verilip verilmeyecegi ve kur owner karari — "mevcut
+#   alanlar 17.000 dondurmeyi surdurur" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 10 testin 10'u
+#   DUSER (RED kanitlandi; her testte mevcut alan iddialari duzeltmesiz kodla gecer).
+src/modules/claim-item/__tests__/claim-summary-currency.http.db-gated.integration.spec.ts

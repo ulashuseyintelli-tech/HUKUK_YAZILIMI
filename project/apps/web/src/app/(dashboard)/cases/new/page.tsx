@@ -80,6 +80,8 @@ import {
   hasBouncedCheckItem,
   newCheckPenaltyFormationKey,
 } from "@/lib/check-penalty-formation";
+import { describeOpeningExpenseOutcome } from "@/lib/opening-expense-status";
+import { foreignCurrencyExpenseConfirmCopy, wizardDraftForeignCurrencies } from "@/lib/wizard-expense-confirm";
 import { CaseDebtor } from "@/types/debtor";
 import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
@@ -1824,6 +1826,9 @@ export default function NewCasePage() {
         ? CHECK_PENALTY_FORMATION_NOT_SENT_NOTICE
         : describeCheckPenaltyFormationOutcome(response?.checkPenaltyFormation);
       if (formationMessage) alert(formationMessage);
+      // Dövizli / karma dosyada otomatik açılış masraf talebi oluşturulmaz: sunucunun nedeni ve gereken bilgi gösterilir
+      const openingExpenseMessage = describeOpeningExpenseOutcome(response?.openingExpenseRequest);
+      if (openingExpenseMessage) alert(openingExpenseMessage);
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });
@@ -1841,6 +1846,15 @@ export default function NewCasePage() {
   // K3-L: taramadan gelen kambiyo kayıtları — kaynak `instruments` durumu; kalem listesi toplamından AYRI gösterilir
   const ocrInstruments = ocrInstrumentsOf(instruments);
   const ocrInstrumentAggregates = aggregateOcrInstruments(instruments);
+  // Taslakta TL dışı para birimi varken masraf penceresi "masraflar hesaplanacak / mail gönder" vaadini vermez: otomatik
+  // açılış masraf talebine sunucu karar verir ve sonuç dosya oluşturulduktan sonra gösterilir. TL taslakta null.
+  const foreignExpenseConfirmCopy = foreignCurrencyExpenseConfirmCopy(
+    wizardDraftForeignCurrencies({
+      caseCurrency: caseData.currency,
+      listedItemCurrencies: listedClaimItemAggregates.map((aggregate) => aggregate.currency),
+      instrumentCurrencies: ocrInstrumentAggregates.map((aggregate) => aggregate.currency),
+    }),
+  );
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
@@ -2986,7 +3000,9 @@ export default function NewCasePage() {
               </div>
               
               <p className="text-gray-600 mb-6">
-                Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası göndermek ister misiniz?
+                {foreignExpenseConfirmCopy
+                  ? foreignExpenseConfirmCopy.message
+                  : "Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası göndermek ister misiniz?"}
               </p>
               
               <div className="flex flex-col gap-2">
@@ -2998,7 +3014,7 @@ export default function NewCasePage() {
                 >
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   <Mail className="h-4 w-4" />
-                  Oluştur ve Masraf Maili Gönder
+                  {foreignExpenseConfirmCopy ? foreignExpenseConfirmCopy.sendEmailLabel : "Oluştur ve Masraf Maili Gönder"}
                 </button>
                 
                 <button

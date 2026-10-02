@@ -183,6 +183,8 @@ function StatementRow({
 
 function StatementDetail({ statement, currency }: { statement: ClientStatement; currency: string }) {
   const lines = statement.lines ?? [];
+  // Satırlar da başlık gibi ekstrenin kendi para birimiyle yazılır (dosyanın para birimiyle değil).
+  const lineCurrency = statement.currency || currency;
   return (
     <div className="text-xs">
       <div className="flex flex-wrap gap-4 mb-2 text-gray-600">
@@ -210,9 +212,9 @@ function StatementDetail({ statement, currency }: { statement: ClientStatement; 
               <tr key={l.id}>
                 <td className="py-1 pr-2 whitespace-nowrap">{new Date(l.lineDate).toLocaleDateString('tr-TR')}</td>
                 <td className="py-1 pr-2">{l.lineType}</td>
-                <td className="py-1 pr-2 text-right">{Number(l.debit) ? formatMoneyString(l.debit, currency) : '—'}</td>
-                <td className="py-1 pr-2 text-right">{Number(l.credit) ? formatMoneyString(l.credit, currency) : '—'}</td>
-                <td className="py-1 pr-2 text-right">{formatMoneyString(l.runningBalance, currency)}</td>
+                <td className="py-1 pr-2 text-right">{Number(l.debit) ? formatMoneyString(l.debit, lineCurrency) : '—'}</td>
+                <td className="py-1 pr-2 text-right">{Number(l.credit) ? formatMoneyString(l.credit, lineCurrency) : '—'}</td>
+                <td className="py-1 pr-2 text-right">{formatMoneyString(l.runningBalance, lineCurrency)}</td>
                 <td className="py-1 text-gray-600">{l.note ?? '—'}</td>
               </tr>
             ))}

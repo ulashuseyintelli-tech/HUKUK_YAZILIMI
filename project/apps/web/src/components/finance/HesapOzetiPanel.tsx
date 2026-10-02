@@ -27,6 +27,7 @@ import {
 import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, CheckPenaltySummary, FaizSegment, MahsupDetay, ParaBirimiAlani, TahsilatGosterimi, TalepEdilenIslemisFaiz } from "@/hooks/useCaseCalculation";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import { turkeyToday } from "@/lib/turkey-calendar";
+import { OpeningExpenseNotice } from "@/components/expense/OpeningExpenseNotice";
 import {
   buildGuardedPrimaryCalculationResult,
   evaluateGuardedPrimaryDisplayPilot,
@@ -238,6 +239,10 @@ export function HesapOzetiPanel({
           {paraBirimiDurumu.mesaj}
         </div>
       )}
+
+      {/* Açılış masraf talebi uyarıları (sunucu kararı): dövizli / karma dosyada "otomatik oluşturulmadı" nedeni; her
+          dosyada "istenen masraf e-postası gönderilemedi" nedeni. Sunucu bir neden bildirmiyorsa hiçbir şey çizilmez. */}
+      <OpeningExpenseNotice caseId={caseId} refreshKey={refreshKey} calculationNotice={paraBirimiKisitli} />
 
       {/* Tarih bilgisi */}
       <div className="px-3 py-1 text-[10px] text-gray-400 border-b flex-shrink-0">

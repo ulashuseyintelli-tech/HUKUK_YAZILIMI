@@ -47,6 +47,7 @@ import {
   type ClaimItemLifecycleRecord,
 } from './claim-item-lifecycle-contract';
 import { throwClaimItemFormationContextRequired } from './claim-item-formation-containment';
+import { buildClaimSummaryCurrencyStatus, sumClaimSummaryTotals } from './claim-summary-currency';
 import { CekAutoGenerateFormationService } from './formation-cek/cek-auto-generate-formation.service';
 import {
   CLAIM_ITEM_ADD_INTEREST_REMOVED_MESSAGE,
@@ -635,6 +636,14 @@ export class ClaimItemService {
   // ==================== ALACAK ÖZETİ ====================
 
   // Dosyanın alacak özetini hesapla
+  /**
+   * `currency` / `items` / `totals` etkin kalemleri para birimine bakmadan toplar (mevcut sözleşme; değeri değişmez).
+   * Bu tek toplamların geçerli olup olmadığını ve para birimi bazında toplamları `paraBirimiDurumu` bildirir
+   * (REC-ALLOC-008: çapraz para birimi toplamı geçerli tutar değildir; çevirme yapılmaz).
+   *
+   * Cagrildigi yerler:
+   * - ClaimItemController.getClaimSummary() -> GET /claim-items/case/:caseId/summary (web: ClaimItemPanel)
+   */
   async getClaimSummary(tenantId: string, caseId: string, calculationDate?: string): Promise<ClaimSummary> {
     const calcDate = calculationDate ? new Date(calculationDate) : new Date();
 
@@ -675,61 +684,6 @@ export class ClaimItemService {
       currency = item.currency || currency;
     }
 
-    // Toplamları hesapla
-    const totals = {
-      principal: 0,
-      preInterest: 0,
-      postInterest: 0,
-      totalInterest: 0,
-      expense: 0,
-      fee: 0,
-      attorneyFee: 0,
-      penalty: 0,
-      tax: 0,
-      other: 0,
-      grandTotal: 0,
-    };
-
-    for (const item of items) {
-      const amount = Number(item.amount || 0);
-      switch (item.itemType) {
-        case 'PRINCIPAL':
-          totals.principal += amount;
-          break;
-        case 'INTEREST':
-        case 'PRE_INTEREST':
-          totals.preInterest += amount;
-          totals.totalInterest += amount;
-          break;
-        case 'POST_INTEREST':
-          totals.postInterest += amount;
-          totals.totalInterest += amount;
-          break;
-        case 'EXPENSE':
-          totals.expense += amount;
-          break;
-        case 'FEE':
-          totals.fee += amount;
-          break;
-        case 'ATTORNEY_FEE':
-          totals.attorneyFee += amount;
-          break;
-        case 'PENALTY':
-        case 'CHECK_PENALTY':
-        case 'CONTRACTUAL_PENALTY':
-          totals.penalty += amount;
-          break;
-        case 'TAX_KDV':
-        case 'TAX_BSMV':
-        case 'TAX_KKDF':
-          totals.tax += amount;
-          break;
-        default:
-          totals.other += amount;
-      }
-      totals.grandTotal += amount;
-    }
-
     return {
       caseId,
       currency,
@@ -739,20 +693,11 @@ export class ClaimItemService {
         amount: Math.round(data.amount * 100) / 100,
         count: data.count,
       })),
-      totals: {
-        principal: Math.round(totals.principal * 100) / 100,
-        preInterest: Math.round(totals.preInterest * 100) / 100,
-        postInterest: Math.round(totals.postInterest * 100) / 100,
-        totalInterest: Math.round(totals.totalInterest * 100) / 100,
-        expense: Math.round(totals.expense * 100) / 100,
-        fee: Math.round(totals.fee * 100) / 100,
-        attorneyFee: Math.round(totals.attorneyFee * 100) / 100,
-        penalty: Math.round(totals.penalty * 100) / 100,
-        tax: Math.round(totals.tax * 100) / 100,
-        other: Math.round(totals.other * 100) / 100,
-        grandTotal: Math.round(totals.grandTotal * 100) / 100,
-      },
+      // Toplamları hesapla (etkin kalemlerin tümü; para birimi ayrımı yok)
+      totals: sumClaimSummaryTotals(items),
       calculationDate: calcDate.toISOString(),
+      // Eklemeli: tek toplamların geçerliliği + para birimi bazında toplamlar (çevirme ve çapraz toplam YOK)
+      paraBirimiDurumu: buildClaimSummaryCurrencyStatus(items),
     };
   }
 

@@ -2,6 +2,13 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { readActiveAllocationHoldSummary } from '../collection/collection-allocation-hold';
+import {
+  buildClientAccountingCurrencyScope,
+  type ClientAccountingCaseCurrencyScopeInfo,
+  type ClientAccountingCurrencyObservation,
+  type ClientAccountingCurrencySource,
+  type ClientAccountingCurrencyStatus,
+} from './client-accounting-currency-scope';
 
 const ZERO = new Prisma.Decimal(0);
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
@@ -12,6 +19,7 @@ export interface ClientAccountingCaseItem {
   role: string;
   caseNumber: string;
   executionFileNumber: string | null;
+  /** Dosyanın kayıtlı para birimi (Case.currency). Tahsilat ve dağıtım dosya para birimini taşır (RCV-COL-CURRENCY-BOUNDARY-01). */
   currency: string;
   /** Takip başlangıç tarihi (case.caseDate) ISO — Faz7-E ekstre default period fallback'i için. */
   caseOpenedAt: string | null;
@@ -54,6 +62,11 @@ export interface ClientCaseBreakdownItem {
   advanceBalance: string;
   /** pendingDistribution < 0 → veri tutarsızlığı (sessiz sıfırlama YOK; kontrol gerekli). */
   needsReview: boolean;
+  /**
+   * G1 — bu dosyanın istenen para birimi görünümündeki kapsamı (sunucu beyanı; ekran hesaplamaz). Kapsam DISI ise dosya
+   * para birimine bağlı değerler bu görünümde yoktur ve sıfır diye gösterilmemelidir. Mevcut alanlar DEĞİŞMEZ.
+   */
+  paraBirimiKapsami: ClientAccountingCaseCurrencyScopeInfo;
 }
 
 /**
@@ -87,6 +100,11 @@ export interface ClientAccountingSummary {
   /** Herhangi bir dosyada pendingDistribution negatif → kontrol gerekli. */
   needsReview: boolean;
   caseBreakdown: ClientCaseBreakdownItem[];
+  /**
+   * G1 — bu özetin yalnız istenen para biriminin kayıtlarını kapsadığının ve müvekkilin başka para biriminde kaydı olup
+   * olmadığının sunucu beyanı (doğru büro + müvekkil kapsamından). Toplamlar çevrilmez, başka para birimiyle birleştirilmez.
+   */
+  paraBirimiDurumu: ClientAccountingCurrencyStatus;
 }
 
 /** TM3 Faz A-MOV — birleşik hareket projection kaynak tipleri. */
@@ -301,6 +319,8 @@ export class ClientSettlementReadService {
   /**
    * Müvekkilin (clientId) dosyaları + caseClientId resolve. clientId yalnız giriş bağlamı;
    * finansal scope için caseClientId döner. Yalnız tenant içi + ALACAKLI/ORTAK_ALACAKLI.
+   * `currency` dosyanın kayıtlı para birimidir: çağıran outstanding / payout okumalarını bu para birimiyle ister.
+   * Sabit 'TRY' dövizli dosyada ödenecek tutarı 0 gösteriyordu; burada çevirme / toplama YOK (REC-FX-001/002).
    * Çağrıldığı yerler:
    *  - ClientAccountingController.cases() → GET /clients/:clientId/accounting/cases
    */
@@ -311,7 +331,7 @@ export class ClientSettlementReadService {
         id: true,
         caseId: true,
         role: true,
-        case: { select: { fileNumber: true, executionFileNumber: true, caseDate: true } },
+        case: { select: { fileNumber: true, executionFileNumber: true, caseDate: true, currency: true } },
       },
       orderBy: { assignedAt: 'desc' },
     });
@@ -322,7 +342,7 @@ export class ClientSettlementReadService {
         role: r.role,
         caseNumber: r.case?.fileNumber ?? '',
         executionFileNumber: r.case?.executionFileNumber ?? null,
-        currency: 'TRY',
+        currency: r.case?.currency ?? 'TRY',
         caseOpenedAt: r.case?.caseDate ? r.case.caseDate.toISOString() : null,
       })),
     };
@@ -388,7 +408,7 @@ export class ClientSettlementReadService {
         id: true,
         caseId: true,
         role: true,
-        case: { select: { fileNumber: true, executionFileNumber: true } },
+        case: { select: { fileNumber: true, executionFileNumber: true, currency: true } },
       },
       orderBy: { assignedAt: 'desc' },
     });
@@ -438,7 +458,8 @@ export class ClientSettlementReadService {
       const pendingDist = debtorCollection.minus(postedDisp);
       const needsReview = pendingDist.lt(ZERO); // negatif → tutarsızlık; sessiz sıfırlama YOK
       if (needsReview) anyNeedsReview = true;
-      const bal = await this.prisma.caseBalance.findFirst({ where: { tenantId, caseId }, select: { balance: true } });
+      // G1: avans bakiyesi yalnız istenen para biriminin bakiyesidir (başka para birimi bu toplama eklenmez; kapsam dışı olarak bildirilir).
+      const bal = await this.prisma.caseBalance.findFirst({ where: { tenantId, caseId, currency }, select: { balance: true } });
       const advance = bal?.balance ?? ZERO;
       bByCase.set(caseId, { debtorCollection, pendingDist, allocationHeld, advance, needsReview });
       totalDebtorCollection = totalDebtorCollection.plus(debtorCollection);
@@ -448,8 +469,9 @@ export class ClientSettlementReadService {
     }
 
     // Masraf — clientId scope (ExpenseRequest hem clientId hem caseId taşır → breakdown gerçek caseId).
+    // G1: masraf talepleri yalnız istenen para biriminde toplanır (başka para birimi bu toplama eklenmez; kapsam dışı olarak bildirilir).
     const expRows = await this.prisma.expenseRequest.findMany({
-      where: { tenantId, clientId, status: { not: 'CANCELLED' } },
+      where: { tenantId, clientId, status: { not: 'CANCELLED' }, currency },
       select: { id: true, caseId: true, totalAmount: true, paidTotal: true },
     });
     let expRequested = ZERO;
@@ -485,6 +507,19 @@ export class ClientSettlementReadService {
       expUnpaid = expUnpaid.plus(await this.computeExpenseRemaining(this.prisma, tenantId, e.id, e.totalAmount, e.paidTotal));
     }
 
+    // G1 — para birimi kapsamı: istenen para biriminin DIŞINDAKİ kayıtlar / dosyalar (sunucu, tenant + müvekkil kapsamından).
+    const currencyScope = buildClientAccountingCurrencyScope({
+      requestedCurrency: currency,
+      cases: ccRows.map((cc) => ({ caseId: cc.caseId, caseCurrency: cc.case?.currency })),
+      observations: await this.readOutOfScopeCurrencyObservations(
+        tenantId,
+        clientId,
+        currency,
+        distinctCaseIds,
+        ccRows.map((cc) => cc.id),
+      ),
+    });
+
     // caseBreakdown — distinct caseId (ccRows sırası korunur)
     const caseMeta = new Map<string, { caseNumber: string; executionFileNumber: string | null; role: string }>();
     for (const cc of ccRows) {
@@ -518,6 +553,7 @@ export class ClientSettlementReadService {
         pendingDistributionExcludingHeld: b.pendingDist.minus(b.allocationHeld).toString(),
         advanceBalance: b.advance.toString(),
         needsReview: b.needsReview,
+        paraBirimiKapsami: currencyScope.dosyalar.get(caseId) as ClientAccountingCaseCurrencyScopeInfo,
       };
     });
 
@@ -542,7 +578,112 @@ export class ClientSettlementReadService {
       },
       needsReview: anyNeedsReview,
       caseBreakdown,
+      paraBirimiDurumu: currencyScope.durum,
     };
+  }
+
+  /**
+   * G1 — özetin istenen para biriminin DIŞINDA kalan kayıt gözlemleri. Yalnız okur; tutar toplamaz, çevirmez.
+   * Her sorgu `getClientAccountingSummary()`nin toplamlarda okuduğu kümenin AYNISINI (aynı durum süzgeci, tenant + müvekkil
+   * kapsamı) para birimi "istenenden farklı" olacak biçimde gruplar. Boş / belirlenemeyen para birimi de "farklı" sayılır.
+   *
+   * Çağrıldığı yerler:
+   * - ClientSettlementReadService.getClientAccountingSummary() → `paraBirimiDurumu` / `paraBirimiKapsami`
+   */
+  private async readOutOfScopeCurrencyObservations(
+    tenantId: string,
+    clientId: string,
+    currency: string,
+    caseIds: readonly string[],
+    caseClientIds: readonly string[],
+  ): Promise<ClientAccountingCurrencyObservation[]> {
+    if (caseIds.length === 0) return [];
+    const observations: ClientAccountingCurrencyObservation[] = [];
+    const notRequested = { not: currency };
+    const inCases = { in: [...caseIds] };
+    type Group = { caseId: string; currency: string | null; _count: { _all: number } };
+    const addGroups = (source: ClientAccountingCurrencySource, groups: unknown) => {
+      for (const g of groups as Group[]) {
+        observations.push({ caseId: g.caseId, source, currency: g.currency, count: g._count._all });
+      }
+    };
+
+    addGroups(
+      'Collection',
+      await this.prisma.collection.groupBy({
+        by: ['caseId', 'currency'],
+        where: { tenantId, caseId: inCases, status: 'CONFIRMED', currency: notRequested },
+        _count: { _all: true },
+      }),
+    );
+    addGroups(
+      'CollectionDisposition',
+      await this.prisma.collectionDisposition.groupBy({
+        by: ['caseId', 'currency'],
+        where: { tenantId, caseId: inCases, status: 'POSTED', currency: notRequested },
+        _count: { _all: true },
+      }),
+    );
+    addGroups(
+      'ClientPayout',
+      await this.prisma.clientPayout.groupBy({
+        by: ['caseId', 'currency'],
+        where: {
+          tenantId,
+          caseId: inCases,
+          caseClientId: { in: [...caseClientIds] },
+          status: 'RECORDED',
+          currency: notRequested,
+        },
+        _count: { _all: true },
+      }),
+    );
+    addGroups(
+      'ExpenseRequest',
+      await this.prisma.expenseRequest.groupBy({
+        by: ['caseId', 'currency'],
+        where: { tenantId, clientId, caseId: inCases, status: { not: 'CANCELLED' }, currency: notRequested },
+        _count: { _all: true },
+      }),
+    );
+
+    // Masraf/avans: bakiye satırı yalnız sıfır olmayan bakiyesi varsa kayıt sayılır; defter satırları para birimine göre gruplanır.
+    const balances = await this.prisma.caseBalance.findMany({
+      where: { tenantId, caseId: inCases },
+      select: { id: true, caseId: true, currency: true, balance: true },
+    });
+    const caseByBalanceId = new Map<string, string>();
+    for (const balance of balances) {
+      caseByBalanceId.set(balance.id, balance.caseId);
+      if (balance.currency !== currency && !balance.balance.isZero()) {
+        observations.push({ caseId: balance.caseId, source: 'CaseBalance', currency: balance.currency, count: 1 });
+      }
+    }
+    if (caseByBalanceId.size > 0) {
+      const ledgerGroups = (await this.prisma.balanceLedger.groupBy({
+        by: ['caseBalanceId', 'currency'],
+        where: { tenantId, caseBalanceId: { in: [...caseByBalanceId.keys()] }, currency: notRequested },
+        _count: { _all: true },
+      })) as unknown as { caseBalanceId: string; currency: string | null; _count: { _all: number } }[];
+      for (const g of ledgerGroups) {
+        const caseId = caseByBalanceId.get(g.caseBalanceId);
+        if (caseId) observations.push({ caseId, source: 'BalanceLedger', currency: g.currency, count: g._count._all });
+      }
+    }
+
+    // Mahsup: iki bacağı da (alacak ve masraf dosyası) ilgili dosyaya yazılır.
+    const offsets = await this.prisma.clientOffset.findMany({
+      where: { tenantId, clientId, currency: notRequested },
+      select: { payableCaseId: true, expenseCaseId: true, currency: true },
+    });
+    const known = new Set(caseIds);
+    for (const offset of offsets) {
+      for (const caseId of new Set([offset.payableCaseId, offset.expenseCaseId])) {
+        if (known.has(caseId)) observations.push({ caseId, source: 'ClientOffset', currency: offset.currency, count: 1 });
+      }
+    }
+
+    return observations;
   }
 
   /**
