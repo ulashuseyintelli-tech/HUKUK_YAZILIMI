@@ -17,6 +17,12 @@
 > **Owner kuralının ikinci Recover'a uygulanışı:** çıkış 5/6 Recover yetkisi değildir; Recover yalnız kanıt incelendikten sonra ayrı owner
 > onayıyla **bir kez** başlatılır; blok başlatmaz. **İkinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir** — belge ve blok
 > metni "yeni onayla tekrar edilebilir" türü bir yol tanımlamaz.
+>
+> **R02 tur 4 (2026-10-03) — yalnız `d6-selftest.js` + bu belge.** Koşucu öz-testi artık canlı yayın ağacını **varsaymaz**: Prisma istemcisi ve
+> bcrypt'in yükleneceği kütüphane kökü `D6T_LIB_ROOT` ile verilir (verilmezse betiğin checkout'unun proje kökü denenir); modül yoksa ya da kök
+> canlı yayın ağacına çözülüyorsa test **başlamaz** (§5 "R02 tur 4"). Commit'li dosya **doğrudan** koşuldu: **51/51 PASS**. Koşucu, owner bloğu,
+> blok öz-testi, QR betiği, sahte API ve 9 pinli dosya **değişmedi**; paket digest'i aynı (§6). Önceki turların "koşulamadı" satırları güncel
+> duruma çevrildi, eski metin tarihsel not olarak korundu; ayna kopya sonuçları **tarihsel kanıttır**. Bu tur canlı Run/Recover'ı yetkilendirmez.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -169,8 +175,9 @@ DEĞİLDİR … İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR; owner kara
 | `d6-owner-block-selftest.ps1` (AST ile gerçek fonksiyonlar; gerçek node; N; K-1..K-5 + **K-6/K-6b R05 owner girdisi, K-7 adres biçim kapısı, K-8 çözülmemiş adres**; **B-1..B-5 kova okunabilirliği (gerçek ACL reddi)**; R-1..R-9; V-0..V-5; L-1/L-2 7 süre; O-1..**O-5**; Z; Q + **Q-R05**; S-1..S-4 + **S-5 topoloji literali yok**) | inceleme düzeltmesi **58/58** WinPS 5.1.26100 (`fix-r01\d6-block-selftest-winps-fix-final.log`) ve pwsh 7.6.6 (`…-pwsh-fix-final.log`); orkestratör tekrarı 58/58 ×2; **kapanış düzeltmesi (6 yeni test) 64/64 WinPS 5.1 (`kapanis-duzeltme\d6-block-selftest-winps.log`) ve 64/64 pwsh 7.6.6 (`…-pwsh.log`), çıkış 0** — ilk kapanış koşumu 63/64 (K-7: IPv4 adres biçim kapısından geçiyordu → kapı düzeltildi, yeniden koşuldu) |
 | **R02 ilk tur (2026-10-01; ara baytlar — son baytlar bir alttaki satırdadır)** `d6-owner-block-selftest.ps1` (blok `5AEF3893…FA61`, öz-test `810BDEF5…9FB4`; log her koşumda test edilen bloğun sha256'sını yazar). 64 önceki test + 7 yeni: **G-1** kapsamsız mutlak iddia yok + başlık kapsamı adlandırır + geçici parola kanıt dizininde yok · **G-2** gösterilen onay metni (telefon yüklemesi günlük/kova, boş kova dizini, 5/6 Recover yetkisi değil) · **G-3** Recover çıkış 6 yeni Recover yetkisi değil · **G-4** Run çıkış 5/6 metni + tek node çağrısı + çıkış 0'da Recover metni yok · **O-6..O-8** kapanış metni kanıttaki verdict'lerden | **71/71 PASS** Windows PowerShell 5.1.26100 (`d6-r02\test\blok-oz-test-winps51.log`) ve **71/71 PASS** PowerShell 7.6.6 (`d6-r02\test\blok-oz-test-pwsh7.log`), çıkış 0. **Negatif kontrol:** eski blok baytları (`A206E19E…3629`) + yeni öz-test → **64/71**, çıkış 1, FAIL = G-1, G-2, G-3, G-4, O-6, O-7, O-8 (iki sürümde de; `d6-r02\neg\neg-eski-blok-winps51.log`, `…-pwsh7.log`) |
 | **R02 ikinci tur (2026-10-01) — SON BAYTLAR** `d6-owner-block-selftest.ps1` (blok `082527EE…B3E2`, öz-test `34C95DCB…9BAE`). 71 önceki test (G-3 ikinci Recover kuralına göre **yeniden yazıldı**) + 2 yeni: **G-3** Recover çıkış 6 metni yeni bir Recover için yetki değildir, ikinci Recover için yol **tanımlamaz** ("YENİ ve AYRI onayla / sonraki Recover / BİR KEZ / tekrar edilebilir" gösterilen metinde ve kaynakta yok; başlık aynı kuralı yazar) · **G-5** onay metni kapsamı (iki sentetik tenant: kaynaktan + U-ISO yalnız sayı; bildirim: statik ölçüt T-1) + kova dizini tek adla (`portal-documents/<sentetik tenant>/` ×3) · **O-9** kapanış satırı "bu satırın devamında" + altı parça aynı satırda + satır rengi notu (P6-D9 PASS ve FAIL koşumlarında) + renk mantığı aynı | **73/73 PASS** Windows PowerShell 5.1.26100 (`d6-r02\tur2\test\blok-oz-test-winps51.log`) ve **73/73 PASS** PowerShell 7.6.6 (`d6-r02\tur2\test\blok-oz-test-pwsh7.log`), çıkış 0. **Negatif kontrol:** R02 ilk tur blok baytları (`5AEF3893…FA61`) + ikinci tur öz-testi → **70/73**, çıkış 1, FAIL = G-3, G-5, O-9 (iki sürümde de; `d6-r02\tur2\neg\neg-ilk-tur-blok-winps51.log`, `…-pwsh7.log`) |
-| **R02 ikinci tur** `d6-selftest.js` — ayna kopya, **ikinci tur blok baytlarıyla** (`082527EE…B3E2`) | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (`d6-r02\tur2\test\d6-selftest-ayna.log`, `…-status.json`, `…-kurulum.json`: değişen satır 19, aynada farklı dosya 1). Commit'li `d6-selftest.js` baytlarının koşumu **değildir** (aşağıdaki satırdaki neden aynen geçerli) |
-| **R02 ilk tur** `d6-selftest.js` (T-3..T-7 owner bloğunu statik okur) | Commit'li dosya baytlarıyla doğrudan koşum **KOŞULAMADI**: betik Prisma/bcrypt'i sabit yoldan, canlı yayın ağacının `node_modules` dizininden yükler; R02 iş talimatında canlı yayın ağacına erişim yasaktı. **Ayna koşumu** (yalnız `const REL` satırı canlı olmayan R27 aday çalışma ağacına çevrilmiş kopya; diğer 6 governance betik dizini ve yeni blok baytları aynen): **51/51 PASS**, çıkış 0, T-3..T-7 PASS (`d6-r02\test\d6-selftest-ayna.log`, kurulum farkı `d6-selftest-ayna-kurulum.json`: değişen satır 19, aynada farklı dosya 1). Bu sonuç commit'li `d6-selftest.js` baytlarının koşumu **değildir** |
+| **R02 tur 4 (2026-10-03) — COMMIT'Lİ DOSYA, SON BAYTLAR** `d6-selftest.js` (`5560FAF8…178F`) **doğrudan** (kopya/ayna değil); `D6T_LIB_ROOT` = canlı olmayan R27 aday çalışma ağacı proje kökü; blok `082527EE…B3E2` (değişmedi) | **51/51 PASS**, çıkış 0; T-3..T-7 PASS; test kimlikleri ve sonuçları ikinci tur ayna koşumuyla aynı (51 = 51) (`d6-r02\tur4\test\d6-selftest-commit.log`, `…-status.json`). Kök çözümü, koşum komutu ve negatif ölçümler: aşağıda "R02 tur 4"; koşum tablosu §9 |
+| **R02 ikinci tur** `d6-selftest.js` — ayna kopya, **ikinci tur blok baytlarıyla** (`082527EE…B3E2`) — **tarihsel kanıt** (güncel sonuç: üst satır) | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (`d6-r02\tur2\test\d6-selftest-ayna.log`, `…-status.json`, `…-kurulum.json`: değişen satır 19, aynada farklı dosya 1). Commit'li `d6-selftest.js` baytlarının koşumu **değildir** (aşağıdaki satırdaki neden aynen geçerli) |
+| **R02 ilk tur** `d6-selftest.js` (T-3..T-7 owner bloğunu statik okur) — **tarihsel kanıt** | **GÜNCEL DURUM (tur 4): commit'li dosya artık doğrudan koşulur — 51/51 PASS (iki üst satır).** Tarihsel not (R02 ilk tur metni; o günkü baytlar `E9FB37DC…F2C2` için geçerlidir): Commit'li dosya baytlarıyla doğrudan koşum **KOŞULAMADI**: betik Prisma/bcrypt'i sabit yoldan, canlı yayın ağacının `node_modules` dizininden yükler; R02 iş talimatında canlı yayın ağacına erişim yasaktı. **Ayna koşumu** (yalnız `const REL` satırı canlı olmayan R27 aday çalışma ağacına çevrilmiş kopya; diğer 6 governance betik dizini ve yeni blok baytları aynen): **51/51 PASS**, çıkış 0, T-3..T-7 PASS (`d6-r02\test\d6-selftest-ayna.log`, kurulum farkı `d6-selftest-ayna-kurulum.json`: değişen satır 19, aynada farklı dosya 1). Bu sonuç commit'li `d6-selftest.js` baytlarının koşumu **değildir** |
 
 Öz-testte "telefon" bir istemci taklididir; giriş bilgisini koşucunun **yalnız display=none ve canlı olmayan DB'de** yazdığı test
 dosyasından (`D6_TEST_DISPLAY_SINK`) alır — bu yol kaynakta tek yerde, `if (con)` dalının dışında ve owner bloğunda kurulmaz (T-2, S-4).
@@ -184,8 +191,41 @@ test edilen dosyaların sha256'sı; `neg\` negatif kontroller ve mantık mutantl
 `d6-r02\` kökündeki `test\`, `neg\` ve `onceki\` dizinleri **R02 ilk tur** baytlarının (blok `5AEF3893…`, öz-test `810BDEF5…`) kanıtıdır.
 Yer düzeltmesi: `fix-r01\` ve `review-r01\` dizinleri `extacc-d6-package-r01\` altındadır; `orkestrator-dogrulama\` ve
 `kapanis-duzeltme\` dizinleri ise `HY_R27_AGENT_EVIDENCE\` kökündedir (üstteki "…\" kısaltması bunu ayırmıyordu).
+**R02 tur 4:** `d6-selftest.js` son baytları (`5560FAF8…178F`) için geçerli kanıt `D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\d6-r02\tur4\`
+dizinidir (`test\`, `neg\`, `neg-baglanti\`, `STATUS.txt`); blok ve blok öz-testi baytları tur 4'te **değişmedi** ve aynı dizinde yeniden koşuldu.
 
-## 6. Pinler (ölçülen değerler; sha256 ham dosya baytı — 2026-10-01 R02 ikinci tur sonrası)
+**R02 tur 4 — koşucu öz-testi canlı yayın ağacı bağımlılığı olmadan koşar (2026-10-03; yalnız `d6-selftest.js` + bu belge).** Önceki baytlarda
+(`E9FB37DC…F2C2`) betik Prisma istemcisini ve bcrypt'i sabit yoldan, canlı yayın ağacının `node_modules` dizininden yüklüyordu (`const REL = …`
+satırı); commit'li dosya canlı ağaca dokunmadan koşulamıyordu. Yeni baytlarda (`5560FAF8…178F`):
+- **Kök çözümü.** Kütüphane kökü **`D6T_LIB_ROOT`** ortam değişkeniyle verilir; verilmezse betiğin bulunduğu checkout'un proje kökü denenir
+  (betik konumundan göreli). İki modül dizini (`@prisma/client` 5.22.0 ve `bcrypt` 5.1.1; kökün `node_modules\.pnpm` dizininde) bu kökte aranır.
+  Kök ya da modül yoksa betik **açık mesajla çıkış 2** verir ve test başlamaz; sessizce canlı ağaca **düşmez**.
+- **Canlı ağaç reddi.** Canlı yayın ağacı, owner bloğunun `$Rel` sabitinden okunur (`…\project` ise bir üstü: yayın ağacının tamamı) — betikte
+  canlı yol literali **yoktur**; blok okunamazsa çıkış 2. Yol büyük/küçük harf duyarsız karşılaştırılır ve bileşen bileşen çözülür: yolun kendisi
+  ya da bir bağlantının (junction/symlink) hedefi canlı ağaca çıkıyorsa o ağaca dosya sistemi çağrısı yapılmadan **çıkış 4** ("RED") verilir.
+  Denetim ilk yerel `require`dan (koşucu dahil) **önce** çalışır: izole test canlı ağaçtan modül yüklemez.
+- **Çıktı.** Kullanılan kök çıktının ilk satırına yazılır (`kütüphane kökü: … (kaynak: D6T_LIB_ROOT | bu checkout'un proje kökü; …)`); yerel
+  kullanıcı adı ve kullanıcı profili yolu maskelenir.
+- **Ölçülen şey değişmedi.** Test sayısı 51 = 51; Z / S / T / P ölçütleri (T-3..T-7 statik ölçütleri dahil) aynıdır. Koddaki değişiklik yalnız
+  kök çözümü + ret denetimi + çıktı satırıdır. Koşucu, owner bloğu, blok öz-testi, QR betiği, sahte API ve 9 pinli dosya değişmedi.
+
+Commit'li dosyanın koşum komutu (PowerShell; bağlantı dizgesinin değeri ve parola belgeye **yazılmaz**):
+
+```powershell
+$env:D6T_DB_URL   = '<tek kullanımlık test veritabanının bağlantı dizgesi; hedef bu bölümün başlığındaki disposable DB>'
+$env:D6T_LIB_ROOT = 'D:\Development\HUKUK_YAZILIMI\HY_WT_R27\project'   # Prisma istemcisi + bcrypt kurulu, CANLI OLMAYAN proje kökü
+Set-Location <checkout>\project\docs\governance\client-extacc-portal-d6-r01\scripts
+node d6-selftest.js
+```
+
+Ön koşul: test konteyneri (`d5-reset-pg`) çalışıyor, 8199 ve 8458 portları boş, `openssl` yolda. **Sonuç (2026-10-03, node v24.18.0): 51/51 PASS,
+çıkış 0**; ilk çıktı satırı `kütüphane kökü: D:\Development\HUKUK_YAZILIMI\HY_WT_R27\project (kaynak: D6T_LIB_ROOT; canlı yayın ağacı DEĞİL …)`.
+Üç negatif ölçüm: (a) `D6T_LIB_ROOT` verilmeden ve checkout kökünde modüller yokken → çıkış **2**; (b) kök canlı yayın ağacının altında → çıkış
+**4**, canlı ağaç altında dosya sistemi çağrısı 0 ve modül yükleme 0 (ret `require`dan önce); (c) varolmayan kök → çıkış **2** (ayrıntı: §9
+"R02 tur 4"). **Ayna kopya sonuçları tarihsel kanıttır:** `d6-r02\test\` ve `d6-r02\tur2\test\` altındaki `d6-selftest-ayna.*` dosyaları önceki
+baytların tek satırı değiştirilmiş kopyasının koşumlarıdır; silinmedi ve değiştirilmedi. Güncel sonuç, commit'li dosyanın tur 4 koşumudur.
+
+## 6. Pinler (ölçülen değerler; sha256 ham dosya baytı — 2026-10-03 R02 tur 4 sonrası; tur 4'te değişen tek satır `d6-selftest.js`)
 
 | Dosya | sha256 |
 |---|---|
@@ -193,11 +233,12 @@ Yer düzeltmesi: `fix-r01\` ve `review-r01\` dizinleri `extacc-d6-package-r01\` 
 | `d6-qr-test.js` (PkgPins; R02'de değişmedi) | `C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418` |
 | `d6-owner-live-block.ps1` (**R02 ikinci tur — son baytlar**: yalnız metin; **R02 ilk tur** ara değeri `5AEF38932FE9458F799349C559649E8AB75A2585C7A403EDB066BC9F58AFFA61` (yalnız metin + kapanış metni ifadesi); R02 öncesi — kapanış düzeltmesi — `A206E19E208F791631F94A4A0C1A67D435BA9AC35CD3E71F72164B9185DA3629`; ondan önceki `DE3634BE…5321`) | `082527EE641565B4E1B1F6ADF9A6EE6935EC796F958430C99CE16E3E28A8B3E2` |
 | `d6-fake-portal-api.js` (R02'de değişmedi) | `27D8CBADE5694F398151BBA0CCFB10C0472383CFF1E3DD24DEA49EFDD587953A` |
-| `d6-selftest.js` (R02'de değişmedi) | `E9FB37DC6D4069682722C4C4ADCCAA1E8F29D771F0E1A8508D3EC1D78686F2C2` |
+| `d6-selftest.js` (**R02 tur 4 — son baytlar**: yalnız kütüphane kökü çözümü + canlı ağaç ret denetimi + çıktı satırı; ölçülen testler aynı, 51 test; **önceki** değer — R02 ilk ve ikinci turda değişmemişti — `E9FB37DC6D4069682722C4C4ADCCAA1E8F29D771F0E1A8508D3EC1D78686F2C2`). PkgPins'te **değildir** (koşucu bu dosyayı yüklemez); paket digest'i etkilenmez | `5560FAF870B90E03471B973AE2289593354C3D71F62D69D565B71F695603178F` |
 | `d6-owner-block-selftest.ps1` (**R02 ikinci tur — son baytlar**: G-3 yeniden yazıldı + 2 yeni test G-5, O-9 → 73 test; **R02 ilk tur** ara değeri `810BDEF5C7EE4D1F98676C705C1BC9CBF73BDD969A27DA1686B6F70F801F9FB4` (7 yeni test G-1..G-4, O-6..O-8 + gözlem dökümü + test edilen blok sha256 satırı → 71 test); R02 öncesi — kapanış düzeltmesi, 6 yeni test — `4E7ED8D7531CDC49FBDE783B3DAD9C2F9BEB675C1EF30504B09FC0B3E5D15E95`; ondan önceki `35E82EFC…BD02`) | `34C95DCBBB76362AA9D5B683D4990B133C42040ECF6BA63A5AF40B91B9349BAE` |
 
 R02 pin doğrulaması: 9 pinli dosya dosyalardan yeniden hesaplandı, uyuşmazlık 0; paket digest'i yeniden hesap = blok `$ExpPackage`
-(R02 ilk tur: `d6-r02\test\paket-digest-dogrulama.log`; **R02 ikinci tur, son baytlar:** `d6-r02\tur2\test\paket-digest-dogrulama.log`).
+(R02 ilk tur: `d6-r02\test\paket-digest-dogrulama.log`; **R02 ikinci tur, son baytlar:** `d6-r02\tur2\test\paket-digest-dogrulama.log`;
+**R02 tur 4** — `d6-selftest.js` değiştikten sonra yeniden: 9 pin, uyuşmazlık 0, digest aynı — `d6-r02\tur4\test\paket-digest-dogrulama.log`).
 
 **Blok revizyonunun ayırt edilmesi (R02 ikinci tur, V-5).** Bloğun kanıta yazdığı `owner-block.json` içindeki `revision` alanı R02 bloğunda da
 **`R01`** yazar: alan Write-Host / yorum / istem metni değildir ve mantık eşitliği gereği **değiştirilmedi** (bu alanı değiştiren kopya
@@ -264,8 +305,18 @@ i12-live-identity, i13-lib, koşucu) + `d6-qr-test.js`. Koşucu değiştiğinde 
   Telefondaki oturumun reddi makineyle ölçülmez (yalnız yenileme beyanı). **Satır rengi yalnız birleşik ölçütü (P6-D9) gösterir**: yeşil satırda
   da bir parça "ÖLÇÜLMEDİ" ya da "FAIL" yazabilir; parçaların sonucu satırın metninden okunur (R02 ikinci tur: not owner'a gösterilir; renk
   mantığı değiştirilmedi).
-- **`d6-selftest.js` R02'de commit'li baytlarıyla koşulamadı** (canlı yayın ağacından modül yükler; R02 talimatında o ağaca erişim yasaktı).
-  Ayna koşumu §5'te; sonuç commit'li dosyanın koşumu sayılmaz. Betiğin canlı ağaç bağımlılığı ayrı bir düzeltme konusudur (bu paket değiştirmedi).
+- **`d6-selftest.js` — GÜNCEL DURUM (R02 tur 4, 2026-10-03): commit'li dosya canlı yayın ağacına dokunmadan doğrudan koşulur** (kütüphane kökü
+  `D6T_LIB_ROOT` ile; 51/51 PASS; §5 "R02 tur 4"). Kalan sınırlar: (1) canlı ağaç reddi **yol adı** üzerinden çalışır (büyük/küçük harf duyarsız,
+  `.`/`..` çözülmüş, bağlantı hedefleri izlenir); 8.3 kısa ad, `subst` sürücüsü ya da UNC yazımıyla verilen bir canlı yol bu denetimle
+  **yakalanmaz** — ölçülmedi (kanıt sürücüsünde 8.3 kısa ad üretimi yok). (2) Betik yalnız iki modül dizinini çözer; modüllerin geçişli
+  bağımlılıkları kökün `.pnpm` bağlantılarıyla yüklenir — kullanılan kök için ayrıca ölçüldü (bağlantı 4687, kökün dışına çıkan 0), betik bunu
+  kendisi denetlemez. (3) `D6T_LIB_ROOT` verilmeden, modülleri kurulu bir checkout'ta pozitif koşum **ölçülmedi** (bu çalışma ağacında
+  `node_modules` yok; yalnız "modül yok → çıkış 2" yönü ölçüldü). (4) Bağlantı hedefi dalı gerçek canlı ağaca karşı **ölçülmedi** (canlı ağaca
+  bağlantı kurulmaz); kanıt dizininde sahte bir kökle ölçüldü (§9). (5) Owner bloğu dosyası yoksa ya da `$Rel` satırı tek değilse test başlamaz
+  (çıkış 2); önceki baytlarda blok yokken dinamik testler koşar, T-3 "owner bloğu mevcut" FAIL verirdi — commit'li pakette blok vardır.
+  Tarihsel not (R02 ilk/ikinci tur metni; o günkü baytlar `E9FB37DC…F2C2` için geçerlidir): "`d6-selftest.js` R02'de commit'li baytlarıyla
+  koşulamadı (canlı yayın ağacından modül yükler; R02 talimatında o ağaca erişim yasaktı). Ayna koşumu §5'te; sonuç commit'li dosyanın koşumu
+  sayılmaz. Betiğin canlı ağaç bağımlılığı ayrı bir düzeltme konusudur (bu paket değiştirmedi)."
 - **Pencere açma yolu.** Ajanın PowerShell 7'den `Start-Process` ile açtığı Windows PowerShell 5.1 penceresinde `Get-FileHash` bulunamaz
   (§4 adım 1); blok bu durumu kendisi düzeltmez.
 
@@ -336,7 +387,7 @@ normalize edildiğinde:
 | Negatif kontrol: eski blok baytları + yeni öz-test | **64/71**, çıkış 1; FAIL = G-1, G-2, G-3, G-4, O-6, O-7, O-8 (iki sürümde) | `neg\neg-eski-blok-winps51.log`, `neg\neg-eski-blok-pwsh7.log` + `…-status.json` |
 | Mantık eşitliği (AST) | Ölçüm B eşit; Ölçüm A'nın tek farkı kapanış metni ataması (iki sürümde) | `test\mantik-esitligi.log` |
 | Paket digest'i (9 pin, bağımsız yeniden hesap) | uyuşmazlık 0; digest = `$ExpPackage` | `test\paket-digest-dogrulama.log` |
-| `d6-selftest.js` — commit'li baytlar | **KOŞULAMADI** (canlı yayın ağacından modül yükler; R02 talimatında yasak) | — |
+| `d6-selftest.js` — commit'li baytlar | **GÜNCEL DURUM (tur 4): koşuldu — 51/51 PASS, çıkış 0** (yeni baytlar `5560FAF8…178F`; aşağıda "R02 tur 4"). Tarihsel not (bu turun metni; baytlar `E9FB37DC…F2C2`): **KOŞULAMADI** (canlı yayın ağacından modül yükler; R02 talimatında yasak) | güncel: `tur4\test\d6-selftest-commit.log`; bu turda: — |
 | `d6-selftest.js` — ayna kopya (yalnız `const REL` satırı değişik) | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (commit'li dosyanın koşumu değildir) | `test\d6-selftest-ayna.log`, `test\d6-selftest-ayna-status.json`, `test\d6-selftest-ayna-kurulum.json` |
 
 ### R02 ikinci tur — inceleme düzeltmeleri (2026-10-01; yalnız metin/belge)
@@ -384,5 +435,34 @@ digest'i aynı. Canlı ortamda hiçbir owner bloğu, koşucu, sonda ya da servis
 | Mantık eşitliği (AST + token) | Ölçüm A eşit değil; farklı token 1 (kapanış metni dize sabiti); Ölçüm C sağlandı; ilk tur betiğinde Ölçüm B eşit (iki sürümde); körlük kontrolü 22/22 | `test\mantik-esitligi-tur2.log`, `neg\mantik-mutant\` |
 | Paket digest'i (9 pin, bağımsız yeniden hesap) | uyuşmazlık 0; digest = `$ExpPackage` (`7C54C0FC…F057`) | `test\paket-digest-dogrulama.log` |
 | Değişmeyen dosyalar (`git diff` ilk R02 commit'ine göre) | değişen yalnız 3 dosya: blok, blok öz-testi, bu belge; koşucu `5D74206B…`, QR `C9FC15AA…`, sahte API `27D8CBAD…`, `d6-selftest.js` `E9FB37DC…` aynı | `test\degismeyen-dosyalar.log` |
-| `d6-selftest.js` — commit'li baytlar | **KOŞULAMADI** (canlı yayın ağacından modül yükler; talimatta yasak) | — |
-| `d6-selftest.js` — ayna kopya (yalnız `const REL` satırı değişik), ikinci tur blok baytlarıyla | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (commit'li dosyanın koşumu değildir) | `test\d6-selftest-ayna.log`, `test\d6-selftest-ayna-status.json`, `test\d6-selftest-ayna-kurulum.json` |
+| `d6-selftest.js` — commit'li baytlar | **GÜNCEL DURUM (tur 4): koşuldu — 51/51 PASS, çıkış 0** (yeni baytlar `5560FAF8…178F`; aşağıda "R02 tur 4"). Tarihsel not (bu turun metni; baytlar `E9FB37DC…F2C2`): **KOŞULAMADI** (canlı yayın ağacından modül yükler; talimatta yasak) | güncel: `..\tur4\test\d6-selftest-commit.log`; bu turda: — |
+| `d6-selftest.js` — ayna kopya (yalnız `const REL` satırı değişik), ikinci tur blok baytlarıyla — **tarihsel kanıt** | **51/51 PASS**, çıkış 0; T-3..T-7 PASS (commit'li dosyanın koşumu değildir) | `test\d6-selftest-ayna.log`, `test\d6-selftest-ayna-status.json`, `test\d6-selftest-ayna-kurulum.json` |
+
+### R02 tur 4 — koşucu öz-testi canlı yayın ağacı bağımlılığı olmadan koşar (2026-10-03; yalnız `d6-selftest.js` + bu belge)
+
+Kapsam: değişen yalnız `scripts/d6-selftest.js` ve bu belgedir. Koşucu (`d6-portal-documents-live-run.js`), owner bloğu, blok öz-testi, QR betiği,
+sahte API ve bloğun pinlediği 9 dosya **değişmedi**; paket digest'i aynı (`7C54C0FC…F057`). Canlı Run kapıları ve pin denetimi değişmedi (bloğa
+dokunulmadı). Canlı ortamda hiçbir owner bloğu, koşucu, sonda ya da servis/görev komutu koşulmadı; canlı yayın ağacı, canlı DB ve canlı günlükler
+okunmadı — canlı ağaç yolu negatif ölçümlerde yalnız **metin** olarak (`D6T_LIB_ROOT` değeri) kullanıldı. Bu tur canlı Run/Recover'ı yetkilendirmez.
+
+| # | Bulgu | Karar | Değişiklik |
+|---|---|---|---|
+| T4-1 | `d6-selftest.js` Prisma istemcisini ve bcrypt'i sabit yoldan, canlı yayın ağacının `node_modules` dizininden yüklüyordu; commit'li dosya canlı ağaca dokunmadan koşulamıyor, sonuç yalnız tek satırı değiştirilmiş ayna kopyayla alınabiliyordu | ÖNEMLİ — **düzeltildi** | Kütüphane kökü `D6T_LIB_ROOT` ile verilir; verilmezse betiğin checkout'unun proje kökü; kök/modül yoksa çıkış 2; kök (ya da bir bağlantı hedefi) canlı yayın ağacına çözülüyorsa çıkış 4 — ilk yerel `require`dan önce; canlı ağaç owner bloğunun `$Rel` sabitinden okunur (betikte canlı yol literali yok); kullanılan kök çıktıya yazılır (kullanıcı adı maskeli). Tasarım ve koşum komutu: §5 "R02 tur 4"; sınırlar: §7 |
+
+| R02 tur 4 koşumu (**son baytlar**: `d6-selftest.js` `5560FAF8…178F`; blok `082527EE…B3E2` ve blok öz-testi `34C95DCB…9BAE` değişmedi) | Sonuç | Kanıt (`D:\Development\HUKUK_YAZILIMI\HY_R27_AGENT_EVIDENCE\d6-r02\tur4\`) |
+|---|---|---|
+| **Commit'li `d6-selftest.js` doğrudan** (kopya/ayna değil); `D6T_LIB_ROOT` = canlı olmayan R27 aday çalışma ağacı proje kökü; test konteyneri + sahte API 8199 / dış 8458 | **51/51 PASS**, çıkış 0; T-3..T-7 PASS; ilk satır `kütüphane kökü: …\HY_WT_R27\project (kaynak: D6T_LIB_ROOT; …)`; test kimlikleri + sonuçları ikinci tur ayna koşumuyla aynı (51 = 51); koşum öncesi/sonrası 6 betiğin sha256'sı eşit | `test\d6-selftest-commit.log`, `test\d6-selftest-commit-status.json` |
+| Negatif (a): `D6T_LIB_ROOT` verilmedi, checkout proje kökünde `node_modules` yok | çıkış **2**; "Prisma istemcisi modülü kütüphane kökünde yok (bu checkout'un proje kökü — D6T_LIB_ROOT verilmedi: …) — test BAŞLAMADI; canlı yayın ağacına DÜŞÜLMEZ" | `neg\neg-a-kok-verilmedi.log` + `…-status.json` |
+| Negatif (b): kök canlı yayın ağacının altında — dört yazım: bloğun `$Rel` değeri · ağacın kökü (`project` üstü) · küçük harf + `/` ayracı + alt dizin · `..` / `.` bileşenli | çıkış **4** "RED: kütüphane kökü canlı yayın ağacına çözülüyor … test BAŞLAMADI" (4/4). Erişim izleyicisiyle (`node -r`; betik baytları aynı): canlı ağaç altında dosya sistemi çağrısı **0**, modül yükleme **0**, modül çözümleme **0**, `require.cache` içinde canlı ağaçtan dosya **0**; önbellekte yalnız 2 dosya (izleyici + öz-test) → koşucu dahi yüklenmeden çıkıldı (ret `require`dan önce) | `neg\neg-b1-…` … `neg\neg-b4-…` (`.log`, `-status.json`, `-status-izleyici.json`) |
+| İzleyici körlük kontrolü (pozitif kontrol): (a) koşumu, izleyici ön eki = gerçekten dokunulan checkout proje kökü | ön ek altında dosya sistemi çağrısı **7**, modül yükleme 1 → izleyici kör değil (b ölçümlerinde gözlenen toplam fs çağrısı 4, modül yükleme 6) | `neg\neg-a-izleyici-pozitif-kontrol-*` |
+| Negatif (c): varolmayan kök | çıkış **2**; "kütüphane kökü dizini yok ya da erişilemiyor (… · ilk eksik bileşen: …)" | `neg\neg-c-varolmayan-kok.log` + `…-status.json` |
+| Bağlantı (junction) dalı — **ayna**: `d6-selftest.js` baytları commit'li dosyayla **aynı** (`5560FAF8…`), yalnız owner bloğu **kopyasında** `$Rel` kanıt dizinindeki sahte bir "canlı" köke çevrildi (sahte kökte iki modül dizini kurulu: ret çalışmasaydı modül çözülürdü) | düz yazım → **4**; kök = sahte köke junction → **4**; kök gerçek dizin, `node_modules` = sahte köke junction → **4**; üçünde de sahte kök altında dosya sistemi çağrısı **0**. Kontrol: canlı olmayan boş dizine junction → **2** (bağlantı izlendi, çözülen yol yazıldı; 4 değil). Kontrol (commit'li dosya + gerçek blok): aynı sahte dizin canlı sayılmaz → kök kabul edildi ("kütüphane kökü: …" satırı). Blok dosyası olmayan dizin → **2** ("canlı yayın ağacının kökü owner bloğundan okunamadı"). Koşum sonrası kanıt dizininde kalan junction 0 | `neg-baglanti\` (`j0` … `j5`, `ayna-kurulum.json`) |
+| Kütüphane kökü bağlantı taraması (R27 aday çalışma ağacı; salt okuma) | `node_modules` bağlantı değil; incelenen bağlantı **4687**; hedefi kökün dışına çıkan **0**; canlı ağaca çıkan **0** | `test\kutuphane-koku-baglanti-taramasi.log` |
+| `d6-owner-block-selftest.ps1` (blok ve blok öz-testi baytları değişmedi; koşum öncesi/sonrası sha256 eşit) | **73/73 PASS** Windows PowerShell 5.1.26100 · **73/73 PASS** PowerShell 7.6.6, çıkış 0 | `test\blok-oz-test-winps51.log`, `test\blok-oz-test-pwsh7.log` + `…-status.json` |
+| Paket digest'i (9 pin, bağımsız yeniden hesap) · `node --check` / parse / BOM / satır sonu | uyuşmazlık 0; digest = `$ExpPackage` (`7C54C0FC…F057`) · `d6-selftest.js` `node --check` 0, LF (CR 0), BOM yok (önceki biçim); 2 ps1 parse hatası 0 | `test\paket-digest-dogrulama.log`, `test\parse-bom-satir-sonu.log` |
+| Değişen dosyalar (`git diff --name-only` ikinci tur commit'ine `c6d3ff60` göre) | yalnız 2 dosya: `d6-selftest.js`, bu belge; koşucu `5D74206B…`, QR `C9FC15AA…`, sahte API `27D8CBAD…`, blok `082527EE…`, blok öz-testi `34C95DCB…` aynı | `test\degismeyen-dosyalar.log` |
+
+İlk (b3) denemesi ölçüm betiğinin hatasıydı, betiğin değil: sürücü küçük harfe çevirmeyi Türkçe kültürle yaptı (`I` → `ı`), verilen yol canlı
+ağaç değil başka (varolmayan) bir ad oldu ve betik doğru olarak "kütüphane kökü dizini yok" (çıkış 2) dedi; canlı ağaç altında dosya sistemi
+çağrısı yine 0'dı. Sürücü kültürden bağımsız çevirmeye düzeltildi ve (b3) yeniden ölçüldü (çıkış 4). İlk kayıt silinmedi:
+`neg\ilk-kosum-b3-tr-kultur\`.
