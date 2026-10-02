@@ -11,6 +11,10 @@
  *  - "Kesinleştir" tıklanınca finalizePayout(id, savedIntent-türevi payload) çağrılır; başarı sonrası
  *    ilgili query'ler invalidate edilir.
  *  - Liste boşsa (veya hiçbiri bu case/caseClient'a ait değilse) widget HİÇBİR ŞEY render ETMEZ.
+ *  - KESİNLEŞMİŞ talep (status==='APPROVED' + executionStatus==='SUCCEEDED') listelenmez ve detayı çekilmez;
+ *    "Kesinleştir" başarılı olunca talep karttan düşer. Yürütme işareti SUCCEEDED OLMAYAN onaylı talep
+ *    (NOT_RUN / RUNNING / FAILED / STALE) düğmesiyle kalır. Kapanmış talepler (reddedildi / iptal / revizyon /
+ *    değişiklikle onaylandı) bu kuraldan ETKİLENMEZ: düğmesiz listelenmeye devam eder.
  */
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -160,5 +164,177 @@ describe('PendingPayoutRequests', () => {
     fireEvent.click(screen.getByRole('button', { name: /Kesinleştir/ }));
 
     await waitFor(() => expect(screen.getByText(/müvekkile borcunu \(net\) aşıyor/)).toBeTruthy());
+  });
+});
+
+/**
+ * Kesinleşmiş talep kartta kalmaz. Kesinleştirme talebin karar durumunu DEĞİŞTİRMEZ (APPROVED kalır); yalnız
+ * yürütme işaretini SUCCEEDED yapar. Kart bu işarete bakmadığı için ödemesi kaydedilmiş talep "Onaylandı ·
+ * [Kesinleştir]" olarak kalıyordu (gerçek tarayıcıda ölçüldü; ikinci tıklama backend'de idempotentReplay).
+ */
+describe('PendingPayoutRequests — kesinleşmiş talep (yürütme işareti SUCCEEDED)', () => {
+  const intent = (amount: string, idempotencyKey: string) => ({
+    caseId: 'case-1',
+    caseClientId: 'cc-1',
+    amount,
+    currency: 'TRY',
+    note: null,
+    idempotencyKey,
+  });
+
+  beforeEach(() => {
+    getMineMock.mockReset();
+    getDetailMock.mockReset();
+    approveMock.mockReset();
+    finalizePayoutMock.mockReset();
+  });
+
+  it('kesinleşmiş talep listelenmez ve detayı çekilmez (kart görünmez)', async () => {
+    getMineMock.mockResolvedValue([summaryRow({ status: 'APPROVED', executionStatus: 'SUCCEEDED' })]);
+    getDetailMock.mockResolvedValue(detailRow({ status: 'APPROVED', executionStatus: 'SUCCEEDED' }));
+
+    const { container } = renderWidget();
+    await waitFor(() => expect(getMineMock).toHaveBeenCalled());
+    // Detay isteği atılacak olsaydı bu noktada atılmış olurdu (aynı beklemeyi kontrol testi de kullanır).
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getDetailMock).not.toHaveBeenCalled();
+    expect(container.textContent).toBe('');
+  });
+
+  it('kesinleşmiş + kesinleştirme bekleyen birlikte: yalnız bekleyen satır görünür, başlık sayısı 1', async () => {
+    getMineMock.mockResolvedValue([
+      summaryRow({ id: 'oar-done', targetRef: 'k-done', status: 'APPROVED', executionStatus: 'SUCCEEDED' }),
+      summaryRow({ id: 'oar-open', targetRef: 'k-open', status: 'APPROVED', executionStatus: 'NOT_RUN' }),
+    ]);
+    getDetailMock.mockImplementation(async (id: string) =>
+      id === 'oar-open'
+        ? detailRow({ id: 'oar-open', targetRef: 'k-open', savedIntent: intent('600', 'k-open') })
+        : detailRow({ id: 'oar-done', targetRef: 'k-done', executionStatus: 'SUCCEEDED', savedIntent: intent('700', 'k-done') }),
+    );
+
+    renderWidget();
+    await waitFor(() => expect(screen.getByText(/600,00/)).toBeTruthy());
+
+    expect(screen.queryByText(/700,00/)).toBeNull();
+    expect(screen.getAllByRole('button', { name: /Kesinleştir/ })).toHaveLength(1);
+    expect(screen.getByText('1')).toBeTruthy(); // başlık sayısı yalnız listelenen talepleri sayar
+    expect(getDetailMock).toHaveBeenCalledTimes(1);
+    expect(getDetailMock).toHaveBeenCalledWith('oar-open');
+  });
+
+  it('özet listesi bayatken (NOT_RUN) detay SUCCEEDED dönerse satır gösterilmez', async () => {
+    getMineMock.mockResolvedValue([summaryRow({ status: 'APPROVED', executionStatus: 'NOT_RUN' })]);
+    getDetailMock.mockResolvedValue(
+      detailRow({ status: 'APPROVED', executionStatus: 'SUCCEEDED', executedAt: '2026-07-04T02:00:00.000Z' }),
+    );
+
+    const { container } = renderWidget();
+    await waitFor(() => expect(getDetailMock).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.queryByRole('button', { name: /Kesinleştir/ })).toBeNull();
+    expect(container.textContent).toBe('');
+  });
+
+  it('"Kesinleştir" başarılı olunca talep karttan düşer (yenilenen liste SUCCEEDED döner)', async () => {
+    let finalized = false;
+    getMineMock.mockImplementation(async () => [
+      summaryRow({ status: 'APPROVED', executionStatus: finalized ? 'SUCCEEDED' : 'NOT_RUN' }),
+    ]);
+    getDetailMock.mockImplementation(async () =>
+      detailRow({ status: 'APPROVED', executionStatus: finalized ? 'SUCCEEDED' : 'NOT_RUN' }),
+    );
+    finalizePayoutMock.mockImplementation(async () => {
+      finalized = true;
+      return { created: true, payoutId: 'p1' };
+    });
+
+    const { container } = renderWidget();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Kesinleştir/ })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /Kesinleştir/ }));
+
+    await waitFor(() => expect(finalizePayoutMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(container.textContent).toBe(''));
+  });
+
+  it.each(['NOT_RUN', 'RUNNING', 'FAILED', 'STALE'])(
+    'yürütme işareti %s olan onaylı talep düğmesiyle kalır (yalnız SUCCEEDED düşer)',
+    async (executionStatus) => {
+      getMineMock.mockResolvedValue([summaryRow({ status: 'APPROVED', executionStatus })]);
+      getDetailMock.mockResolvedValue(detailRow({ status: 'APPROVED', executionStatus }));
+
+      renderWidget();
+      await waitFor(() => expect(screen.getByRole('button', { name: /Kesinleştir/ })).toBeTruthy());
+      expect(screen.getByText('Onaylandı')).toBeTruthy();
+    },
+  );
+
+  it.each([
+    ['REJECTED', 'Reddedildi'],
+    ['CANCELLED', 'İptal Edildi'],
+    ['REVISION_REQUESTED', 'Revizyon İstendi'],
+    ['APPROVED_WITH_CHANGES', 'Değişiklikle Onaylandı'],
+  ])('kapanmış talep (%s) düğmesiz listelenmeye devam eder', async (status, label) => {
+    getMineMock.mockResolvedValue([summaryRow({ status, executionStatus: 'NOT_RUN' })]);
+    getDetailMock.mockResolvedValue(detailRow({ status, executionStatus: 'NOT_RUN' }));
+
+    renderWidget();
+    await waitFor(() => expect(screen.getByText(label)).toBeTruthy());
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('kural APPROVED + SUCCEEDED birlikte: karar APPROVED değilse SUCCEEDED işareti satırı düşürmez', async () => {
+    // Ödeme akışında üretilmeyen bir birleşim (finalize yalnız APPROVED talebi kabul eder); kuralın sınırını sabitler.
+    getMineMock.mockResolvedValue([summaryRow({ status: 'APPROVED_WITH_CHANGES', executionStatus: 'SUCCEEDED' })]);
+    getDetailMock.mockResolvedValue(detailRow({ status: 'APPROVED_WITH_CHANGES', executionStatus: 'SUCCEEDED' }));
+
+    renderWidget();
+    await waitFor(() => expect(screen.getByText('Değişiklikle Onaylandı')).toBeTruthy());
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('iki bekleyen talepten biri kesinleşince diğeri ekranda kalır (kart bir an bile kaybolmaz)', async () => {
+    let finalized = false;
+    getMineMock.mockImplementation(async () => [
+      summaryRow({ id: 'oar-a', targetRef: 'k-a', status: 'APPROVED', executionStatus: finalized ? 'SUCCEEDED' : 'NOT_RUN' }),
+      summaryRow({ id: 'oar-b', targetRef: 'k-b', status: 'APPROVED', executionStatus: 'NOT_RUN' }),
+    ]);
+    // Kesinleştirmeden SONRAKİ detay yanıtları elle serbest bırakılır: liste yenilenmiş, yeni detay henüz gelmemişken
+    // ekranın ne gösterdiği ölçülür.
+    const pending: Array<() => void> = [];
+    getDetailMock.mockImplementation((id: string) => {
+      const row =
+        id === 'oar-a'
+          ? detailRow({ id: 'oar-a', targetRef: 'k-a', executionStatus: finalized ? 'SUCCEEDED' : 'NOT_RUN', savedIntent: intent('700', 'k-a') })
+          : detailRow({ id: 'oar-b', targetRef: 'k-b', savedIntent: intent('600', 'k-b') });
+      if (!finalized) return Promise.resolve(row);
+      return new Promise((resolve) => pending.push(() => resolve(row)));
+    });
+    finalizePayoutMock.mockImplementation(async () => {
+      finalized = true;
+      return { created: true, payoutId: 'p-a' };
+    });
+
+    renderWidget();
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Kesinleştir/ })).toHaveLength(2));
+    const rowA = screen.getByText(/700,00/).closest('div.border') as HTMLElement;
+    fireEvent.click(rowA.querySelector('button') as HTMLButtonElement);
+
+    // Liste yenilendi (iki çağrı: ilk yükleme + kesinleştirme sonrası); detay yanıtları hâlâ bekliyor.
+    await waitFor(() => expect(getMineMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.queryByText(/700,00/)).toBeNull());
+    expect(screen.getByText(/600,00/)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Kesinleştir/ })).toHaveLength(1);
+
+    // Bekleyen detay yanıtları geldikten sonra da aynı.
+    pending.splice(0).forEach((release) => release());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    pending.splice(0).forEach((release) => release());
+    await waitFor(() => expect(screen.getByText(/600,00/)).toBeTruthy());
+    expect(screen.queryByText(/700,00/)).toBeNull();
+    expect(screen.getAllByRole('button', { name: /Kesinleştir/ })).toHaveLength(1);
   });
 });

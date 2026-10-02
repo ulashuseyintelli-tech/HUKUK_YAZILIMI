@@ -9,16 +9,18 @@
  * officeApprovalApi.getMine() ile kendi CLIENT_PAYOUT_POST taleplerini (tüm dosyalar) çeker, bu
  * case/caseClient'a ait olanları savedIntent üzerinden filtreler, PENDING_APPROVAL olanlar için DBIND §5
  * self-approval "Onayla" aksiyonu, APPROVED olanlar için "Kesinleştir" (finalize) aksiyonu sunar.
+ * Kesinleşmiş talep (APPROVED + yürütme işareti SUCCEEDED) listelenmez (bkz. isFinalized); reddedilen / geri
+ * çekilen / revizyon istenen / değiştirerek onaylanan talepler düğmesiz listelenmeye devam eder.
  *
  * Yetki UI'da TAKLİT EDİLMEZ: backend zaten defense-in-depth uyguluyor (payload-drift guard +
  * PayoutApprovalPolicy re-check) — bu component yalnız görünürlük/tetikleme sağlar, otorite DEĞİLDİR.
  * Eligible olmayan bir requester "Kesinleştir"e tıklarsa backend'in 403 mesajı olduğu gibi gösterilir.
  */
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, Badge, Spinner, Button } from '@hukuk/ui';
 import { AlertCircle, ClipboardCheck } from 'lucide-react';
-import { officeApprovalApi, type OfficeApprovalDetail } from '@/lib/api/office-approval';
+import { officeApprovalApi, type OfficeApprovalDetail, type OfficeApprovalSummary } from '@/lib/api/office-approval';
 import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
 import { STATUS_LABELS } from '@/components/office-approval/status-labels';
 
@@ -43,6 +45,18 @@ function isPayoutIntent(value: unknown): value is PayoutIntent {
     typeof v.currency === 'string' &&
     typeof v.idempotencyKey === 'string'
   );
+}
+
+/**
+ * Kesinleşmiş talep: karar APPROVED + yürütme işareti SUCCEEDED. Kesinleştirme karar durumunu değiştirmez
+ * (APPROVED kalır); ödeme taleplerinde SUCCEEDED işaretini yalnız finalize yazar ve yalnız ödeme kaydı
+ * (ClientPayout) oluştuktan sonra (bkz. client-payout.service.ts finalize()). Böyle bir talepte bekleyen iş
+ * yoktur → kartta listelenmez; ödeme "Müvekkile Ödemeler" listesinde görünür.
+ * İşaret yazılamamışsa (SUCCEEDED değilse) talep "Kesinleştir" düğmesiyle kalır: tıklama backend'de aynı
+ * anahtarla tekrar yanıtı (idempotentReplay) döndürür ve işareti tamamlar — yeni ödeme oluşmaz.
+ */
+function isFinalized(request: Pick<OfficeApprovalSummary, 'status' | 'executionStatus'>): boolean {
+  return request.status === 'APPROVED' && request.executionStatus === 'SUCCEEDED';
 }
 
 /** Backend hata mesajını kullanıcı diline çevirir (mesaj backend otoritesini değiştirmez). */
@@ -70,7 +84,10 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
   });
 
   const payoutRequestIds = useMemo(
-    () => (mineQ.data ?? []).filter((r) => r.actionCode === CLIENT_PAYOUT_POST).map((r) => r.id),
+    () =>
+      (mineQ.data ?? [])
+        .filter((r) => r.actionCode === CLIENT_PAYOUT_POST && !isFinalized(r))
+        .map((r) => r.id),
     [mineQ.data],
   );
 
@@ -80,17 +97,28 @@ export function PendingPayoutRequests({ caseId, caseClientId }: PendingPayoutReq
     queryKey: ['client-payout-approval-request-details', payoutRequestIds.join(',')],
     queryFn: () => Promise.all(payoutRequestIds.map((id) => officeApprovalApi.getDetail(id))),
     enabled: payoutRequestIds.length > 0,
+    // Talep listesi değişince (talep kesinleşti / yeni talep) sorgu anahtarı da değişir. Yeni detaylar gelene
+    // kadar önceki detaylar ekranda kalır; aksi halde kalan satırlarla birlikte kart bir an kaybolup geri gelir.
+    // Listeden düşen talep aşağıda kimliğiyle elenir.
+    placeholderData: keepPreviousData,
   });
 
   const scoped = useMemo(() => {
     if (!detailsQ.data) return [];
+    const listedIds = new Set(payoutRequestIds);
     return detailsQ.data
       .map((detail) => ({ detail, intent: isPayoutIntent(detail.savedIntent) ? detail.savedIntent : null }))
       .filter(
         (row): row is { detail: OfficeApprovalDetail; intent: PayoutIntent } =>
-          row.intent !== null && row.intent.caseId === caseId && row.intent.caseClientId === caseClientId,
+          // Yalnız güncel özet listesinde duran talepler (önceki detaylar geçiş sırasında ekranda tutulur).
+          listedIds.has(row.detail.id) &&
+          row.intent !== null &&
+          row.intent.caseId === caseId &&
+          row.intent.caseClientId === caseClientId &&
+          // Özet listesi bayatken detay güncel dönebilir: kesinleşmiş talep burada da elenir.
+          !isFinalized(row.detail),
       );
-  }, [detailsQ.data, caseId, caseClientId]);
+  }, [detailsQ.data, payoutRequestIds, caseId, caseClientId]);
 
   const finalizeMutation = useMutation({
     mutationFn: ({ approvalRequestId, intent }: { approvalRequestId: string; intent: PayoutIntent }) =>
