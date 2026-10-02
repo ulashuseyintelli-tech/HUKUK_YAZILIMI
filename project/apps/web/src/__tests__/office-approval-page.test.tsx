@@ -92,6 +92,61 @@ describe("OfficeApprovalsPage (P4-4 read-only inbox)", () => {
     await waitFor(() => expect(officeApprovalApi.getInbox).toHaveBeenCalledWith("APPROVED"));
   });
 
+  // Kutu ucu durum verilmezse YALNIZ bekleyenleri döndürür (sunucu varsayılanı); "tüm durumlar" anlamı sunucuda yok.
+  // Bu yüzden süzgeçte durum taşımayan bir seçenek sunulmaz — sunulursa bekleyenleri "tümü" diye gösterir.
+  it("durum süzgeci yalnız yedi durumu sunar; 'Tüm Durumlar' seçeneği ve boş değerli seçenek yoktur", async () => {
+    (officeApprovalApi.getInbox as any).mockResolvedValue([]);
+    render(<OfficeApprovalsPage />);
+    await waitFor(() => expect(officeApprovalApi.getInbox).toHaveBeenCalledWith("PENDING_APPROVAL"));
+
+    const select = screen.getByLabelText("Durum filtresi") as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => ({ value: o.value, label: o.textContent }));
+    expect(options).toEqual([
+      { value: "PENDING_APPROVAL", label: "Onay Bekliyor" },
+      { value: "APPROVED", label: "Onaylandı" },
+      { value: "APPROVED_WITH_CHANGES", label: "Değişiklikle Onaylandı" },
+      { value: "REVISION_REQUESTED", label: "Revizyon İstendi" },
+      { value: "REJECTED", label: "Reddedildi" },
+      { value: "CANCELLED", label: "İptal Edildi" },
+      { value: "EXPIRED", label: "Süresi Doldu" },
+    ]);
+    expect(screen.queryByText("Tüm Durumlar")).toBeNull();
+  });
+
+  it("hiçbir seçenek kutuyu durum vermeden çağırtmaz (her seçim kendi durum değeriyle istek atar)", async () => {
+    (officeApprovalApi.getInbox as any).mockResolvedValue([]);
+    render(<OfficeApprovalsPage />);
+    await waitFor(() => expect(officeApprovalApi.getInbox).toHaveBeenCalledWith("PENDING_APPROVAL"));
+
+    const select = screen.getByLabelText("Durum filtresi") as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value);
+    // Varsayılan seçenek en sona alınır: her seçim gerçek bir değer DEĞİŞİMİ olsun (yeni istek atılsın).
+    for (const value of [...values.slice(1), values[0]]) {
+      fireEvent.change(select, { target: { value } });
+      await waitFor(() => expect((officeApprovalApi.getInbox as any).mock.lastCall).toEqual([value]));
+    }
+    expect((officeApprovalApi.getInbox as any).mock.calls).toHaveLength(values.length + 1);
+    for (const call of (officeApprovalApi.getInbox as any).mock.calls) {
+      expect(call[0]).toBeTruthy();
+    }
+  });
+
+  it("boş liste metni seçili duruma göre yazılır: bekleyen dışındaki süzgeçte 'Bekleyen onay yok' denmez", async () => {
+    (officeApprovalApi.getInbox as any).mockResolvedValue([]);
+    render(<OfficeApprovalsPage />);
+    await waitFor(() => expect(screen.getByText("Bekleyen onay yok")).toBeInTheDocument());
+    expect(screen.queryByText("Bu durumda onay talebi yok")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Durum filtresi"), { target: { value: "CANCELLED" } });
+    await waitFor(() => expect(officeApprovalApi.getInbox).toHaveBeenCalledWith("CANCELLED"));
+    await waitFor(() => expect(screen.getByText("Bu durumda onay talebi yok")).toBeInTheDocument());
+    expect(screen.queryByText("Bekleyen onay yok")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Durum filtresi"), { target: { value: "PENDING_APPROVAL" } });
+    await waitFor(() => expect(screen.getByText("Bekleyen onay yok")).toBeInTheDocument());
+    expect(screen.queryByText("Bu durumda onay talebi yok")).toBeNull();
+  });
+
   it("drawer içinde karar verilince liste yenilenir (onDecided → getInbox tekrar çağrılır)", async () => {
     const detail = {
       ...ROW,
