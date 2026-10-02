@@ -55,7 +55,7 @@
 |---|---|---|
 | D-1 / D-2 / D-3 | **Kabul (intake kapsamı)** | EXTACC runId `cff5c692` (#2815 paketi kaydı) |
 | D-4 | **Kabul (dar)** | runId `e34b7e6d` 21/21, kayıt #2826 |
-| D-5 | **ÖLÇÜLEMEYEN — kabul tamamlanmadı (2026-10-01)**: tek canlı koşum runId `00c96bd5`, çıkış 3, 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN; bu koşumun kapanışı PASS (P5-C4L/C4D hariç); kayıt ve teşhis `client-extacc-portal-d5-r01` §8. Paket: koşucu öz-testi 41/41 · QR öz-testi 23/23 · blok R04 94/94 ×2 kabuk | yeni deneme: `CLIENT-KALAN-ISLER-R01.md` §9 KP-1 (yeni GO + alıcı + tek gönderim onayı); owner kararları §10 |
+| D-5 | **ÖLÇÜLEMEYEN — kabul tamamlanmadı (2026-10-01)**: tek canlı koşum runId `00c96bd5`, çıkış 3, 21 PASS / 0 FAIL / 8 ÖLÇÜLEMEYEN; bu koşumun kapanışı üç ayrı görünümdedir — kapanış PASS · özgün oturum reddi PASS · sıfırlama sonrası 8 ölçüt ÖLÇÜLEMEYEN (P5-C4L/C4D dahil); **kanıt paketi manifestsiz, tamamlanmadı** (beyan penceresi kapandı; 2026-10-02 güncellemesi); kök neden kanıtlanmadı; kayıt ve teşhis `client-extacc-portal-d5-r01` §8 ve takip kaydı. Paket: koşucu öz-testi 41/41 · QR öz-testi 23/23 · blok R04 94/94 ×2 kabuk | yeni deneme: `CLIENT-KALAN-ISLER-R01.md` §3.3 ve §11 KR-2 (yeni GO + alıcı + tek gönderim onayı); owner kararları §10 |
 | D-6 / D-7 | **Ölçülmedi** — koşucu + sahte API + öz-test + owner bloğu + blok öz-testi **HAZIR** (`client-extacc-portal-d6-r01`: koşucu öz-testi 51/51, blok 64/64 WinPS 5.1 + pwsh 7 · `client-extacc-portal-d7-r01`: koşucu öz-testi 41/41, blok 58/58 ×2 kabuk; son dosya baytlarıyla §13), canlıda koşulmadı | ÖN KOŞUL: canlı dist R27 (bloklar R27 pinli, R26 ile DUR); owner kararları §10; tanım eşlemesi `client-extacc-d8-staff-surface-r01` §4/§5 |
 | D-8 | **Kısmi** — owner telefonu 5 GET 403 (27.09 21:14–21:15; katman ölçülmedi); makine sondası HAZIR (bu paket) | sonda canlıda koşulmadı; diğer yöntem/yollar açık |
 | D-9 (intake) | Kabul (`cff5c692`) | — |
@@ -86,7 +86,7 @@ türetimsiz "N ölçüt" ifadesi kullanılmaz). Sayaç (x/y) CLIENT programını
 | SEC-API-BIND-01 | AÇIK — kısıtlı kayıt | Yayın kapsamı dışı; yayın değiştirmez |
 | SEC-MAIL-LOG-01 | AÇIK — kısıtlı kayıt | D-5 canlı koşumunda alıcı adresi canlı API uygulama günlüğüne (kaynaktan doğrulandı) ve sağlayıcı kayıtlarına (ölçülmedi) düşebilir; ayrım D-5 onay metninde (R04); ayrıntı kısıtlı kayıtta |
 | SEC-PORTAL-ADMIN-MSG-01 | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | **Karar özeti:** owner koşullu risk kabulüyle R27 yayınlandı (2026-09-30); önkoşul ölçümleri ve gerekçe kısıtlı kayıtta. Kayıt **giderilmedi**; ürün düzeltmesi ayrı iş + owner kararı (§10 K-11) |
-| SEC-PORTAL-REQ-01 (2026-10-01) | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | Yayından SONRA kaydedildi; R27 yayını için verilen risk kabulünün kapsamında **değildir**. Etkilediği adım: portal giriş ve sıfırlama talebi uçları, D-5 yeni denemesi. Düzeltme ayrı PR'da (`CLIENT-KALAN-ISLER-R01.md` §7); merge edilmedi, canlıda değil |
+| SEC-PORTAL-REQ-01 (2026-10-01) | **AÇIK** — kısıtlı kayıt; ayrıntı public repoya YAZILMAZ | Yayından SONRA kaydedildi; R27 yayını için verilen risk kabulünün kapsamında **değildir**. Etkilediği adım: portal giriş ve sıfırlama talebi uçları, D-5 yeni denemesi. Düzeltme ayrı PR'da (`CLIENT-KALAN-ISLER-R01.md` §9); merge edilmedi, canlıda değil |
 | ClaimItem ACCRUES kullanıcı yolu (OFFICE authz notu) | AÇIK, ayrı iş | Adayda yok |
 | #2830 eski PR gövdesi / commit `02276b68` geçmişi | owner kararı bekliyor (§10) | — |
 
@@ -555,7 +555,7 @@ Simülatör `.next` ACL kalıtımını ve gerçek görev/Http gecikmelerini öl�
 | W0 | R03/R03-b dar düzeltme PR'ı (#2849) | (a) harness 26/26 iki kabuk · (b) canlı salt-okuma SelfTest · (c) owner incelemesi + merge · (d) kısıtlı önkoşullar | **TAMAM** — (a) WinPS 5.1 26/26 + PS7 26/26 (ilk V1 kaydı FAIL korunur; birleşik inceleme) · (b) V2 PASS (A/B negatif kontrolleri koşulmadı) · (c) MERGED `32927399` · (d) kısıtlı kayıtta; ayrıntı `record/R27-LIVE-RECORD-R01.md` §3 |
 | W2 | R27 yayını B0→B2 | W0 + W1 + owner GO Y1 | **TAMAM** — B0 PASS · B1 `YAYIN PASS` 18:03:46Z · B2 8/8 (`record/R27-LIVE-RECORD-R01.md`) |
 | W3 | Pin güncelleme PR'ı (#2838) | W2 (canlı dist R27) | **TAMAM** — MERGED `59620165` (B1 + B2 PASS sonrası) |
-| W4 | D-5 canlı kabul | W2, W3 + §10 D-5 kararları + GO | **AÇIK** — bir kez koşuldu (runId `00c96bd5`, 2026-10-01): çıkış 3 ÖLÇÜLEMEYEN, kabul değil; yeni deneme `CLIENT-KALAN-ISLER-R01.md` §9 KP-1 |
+| W4 | D-5 canlı kabul | W2, W3 + §10 D-5 kararları + GO | **AÇIK** — bir kez koşuldu (runId `00c96bd5`, 2026-10-01): çıkış 3 ÖLÇÜLEMEYEN, kabul değil; yeni deneme `CLIENT-KALAN-ISLER-R01.md` §3.3 ve §11 KR-2 |
 | W5 | D-8 makine sondası + telefon | W2 (R26'da da koşabilir) | sonda hazır (öz-test 15/15) |
 | W6 | D-6 / D-7 canlı koşumu | W2 + ayrı GO'lar | paketler hazır (D-6 51/51 · blok 64/64; D-7 41/41 · blok 58/58) |
 | W7 | Birleşik D-9 | W4–W6 | tanım hazır |
@@ -609,7 +609,7 @@ not olarak yerinde durur (silinmesi istenirse owner yapar). H1–H8 kalemlerinin
 | Pin PR (#2838) | D-4/EXTACC/H5/C4 Preflight'ları R27 dist ile PASS | pin uyuşmazlığı |
 | D-5 | Run çıkış 0 + owner beyanı; tek kullanım yalnız makine gözlemi PASS **ve** owner beyanı "formu gönderdim, reddedildi" ise doğrulanmış sayılır | 3 = ölçülemeyen (kabul değil); 5/6 → önce kanıt incelemesi, Recover yalnız ayrı owner onayıyla (D-5 R04); ürün bulgusu |
 | D-8 | sonda çıkış 0 + telefon beyanı 5/5 "E" | herhangi bir 403-dışı ret |
-| D-6 / D-7 | Run çıkış 0 + owner beyanı | 3 = ölçülemeyen; 5/6 → önce kanıt incelemesi, Recover yalnız ayrı owner onayıyla (blok metinleri R02 PR'larında: `CLIENT-KALAN-ISLER-R01.md` §7); ürün bulgusu |
+| D-6 / D-7 | Run çıkış 0 + owner beyanı | 3 = ölçülemeyen; 5/6 → önce kanıt incelemesi, Recover yalnız ayrı owner onayıyla (blok metinleri R02 PR'larında: `CLIENT-KALAN-ISLER-R01.md` §9); ürün bulgusu |
 
 Bu revizyon commit edildiğinde #2837 head SHA'sı değişir; güncel head SHA'ları ve uygulama sırası kanıt paketindeki `PR-HEADS-AND-ORDER.json` dosyasında ve PR açıklamasındadır
 (belge kendi commit SHA'sını içeremez). Aday SHA (`1b758d29`) **değişmedi** — ürün kaynağına bu turda dokunulmadı; değişen yalnız governance belgeleri ve betikleridir.
