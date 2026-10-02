@@ -277,7 +277,7 @@ export class StageTriggerService {
     const balance = await this.caseBalanceService.getBalance(tenantId, caseId);
     
     // Masraf hesapla
-    const computed = await this.costPackageService.computeExpenseRequest({
+    const computed = await this.costPackageService.computeExpenseRequest(tenantId, {
       caseId,
       packageCode,
       debtorCount: eventParams?.debtorCount || caseData.debtors?.length || 1,
