@@ -125,3 +125,16 @@ src/modules/claim-item/__tests__/claim-item-human-generation-authz.db-gated.inte
 #   DEGISMEDI (yetkisiz 403, yetkili FORMATION_CONTEXT_REQUIRED, VIEWER 403). Guvenlik acigi kapatma DEGIL:
 #   iki uc 2026-01-15'ten beri hic yazmiyordu (duz Error -> 500 + ErrorLog gurultusu).
 src/modules/claim-item/__tests__/claim-item-removed-endpoints.db-gated.integration.spec.ts
+
+# Masraf kapisi durum uclari ve paket hesabi — buro (tenant) siniri, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
+#   (main ef16f07f): A burosunun kullanicisi B burosuna ait dosya kimligini vererek POST /cost-packages/compute (dosyanin
+#   anaparasi calcParams.baseValue + tutarlar; B'nin buroya ozel paketi dahil) ve GET /expense-requests/case/:caseId/
+#   gate-status | gate-summary | can-perform/:actionType (kilit durumu, bekleyen tutar, masraf talebi kimlikleri)
+#   yanitlarinda B'nin verisini okuyabiliyordu: dosya yalniz kimligiyle okunuyor, cagiranin burosu sorguya girmiyordu.
+#   Kural: dort uc cagiranin burosuna baglidir; baska buronun dosyasi var olmayan dosyayla AYNI 404 "Takip bulunamadi"
+#   yanitini alir (kapidan muaf islem turu ve cagiranin gonderdigi buro kimligi dahil); talepler ayrica buro suzgeciyle
+#   okunur; govdedeki dosya kimligi suzgec isleci gibi yorumlanmaz. Kendi burosunun dosyasinda dort ucun yaniti ve UYAP
+#   gonderim hazirliginin (POST /cases/:caseId/uyap/prepare) paket hesabi DEGISMEZ. Bu konum bilerek dosya sonu DEGIL:
+#   es zamanli PR'lar sona ekler. Duzeltmesiz servis koduyla 17 testin 8'i DUSER; kendi burosu yanitlarini birebir
+#   sabitleyen 9 test duzeltmesiz kodla da GECER (RED kanitlandi).
+src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.integration.spec.ts

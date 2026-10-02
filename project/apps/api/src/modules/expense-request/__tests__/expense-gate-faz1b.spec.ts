@@ -9,6 +9,8 @@ const D = (n: number) => new Prisma.Decimal(n);
 
 function makeService(opts: { candidates?: any[]; remaining?: Record<string, Prisma.Decimal> } = {}) {
   const prisma = {
+    // Kapı büro kapsamlıdır: dosya çağıranın bürosunda bulunur (büro sınırı testleri: expense-gate-tenant-scope.spec.ts)
+    case: { findFirst: jest.fn().mockResolvedValue({ id: 'case1' }) },
     expenseRequest: { findMany: jest.fn().mockResolvedValue(opts.candidates ?? []) },
   } as never;
   const readService = {
@@ -29,7 +31,7 @@ describe('ExpenseGateService FAZ-1b dual-eval', () => {
     delete process.env[FLAG];
     // legacy remaining = 100-0 = 100; true remaining = 0 (tamamen kapalı) ama flagOff → yine bloklar
     const svc = makeService({ candidates: [blockingExp('er1', 100, 0)], remaining: { er1: D(0) } });
-    const r = await svc.checkGate('case1');
+    const r = await svc.checkGate('case1', 't1');
     expect(r.isBlocked).toBe(true);
     expect(r.blockingExpenses[0].remaining).toBe(100); // legacy gösterilir
   });
@@ -37,7 +39,7 @@ describe('ExpenseGateService FAZ-1b dual-eval', () => {
   it('flagOn: remaining-bazlı — true remaining=0 → BLOKLAMAZ (kapanmış masraf UYAP açar)', async () => {
     process.env[FLAG] = 'true';
     const svc = makeService({ candidates: [blockingExp('er1', 100, 0)], remaining: { er1: D(0) } });
-    const r = await svc.checkGate('case1');
+    const r = await svc.checkGate('case1', 't1');
     expect(r.isBlocked).toBe(false);
     expect(r.blockingExpenses).toHaveLength(0);
   });
@@ -45,7 +47,7 @@ describe('ExpenseGateService FAZ-1b dual-eval', () => {
   it('flagOn: true remaining>0 → bloklar; gösterilen remaining = true', async () => {
     process.env[FLAG] = 'true';
     const svc = makeService({ candidates: [blockingExp('er1', 100, 0)], remaining: { er1: D(40) } });
-    const r = await svc.checkGate('case1');
+    const r = await svc.checkGate('case1', 't1');
     expect(r.isBlocked).toBe(true);
     expect(r.blockingExpenses[0].remaining).toBe(40);
   });
@@ -56,14 +58,14 @@ describe('ExpenseGateService FAZ-1b dual-eval', () => {
       candidates: [blockingExp('er1', 100, 0), blockingExp('er2', 50, 0)],
       remaining: { er1: D(0), er2: D(50) },
     });
-    const r = await svc.checkGate('case1');
+    const r = await svc.checkGate('case1', 't1');
     expect(r.blockingExpenses.map((e) => e.id)).toEqual(['er2']);
     expect(r.totalPending).toBe(50);
   });
 
   it('aday yoksa bloklamaz', async () => {
     const svc = makeService({ candidates: [] });
-    const r = await svc.checkGate('case1');
+    const r = await svc.checkGate('case1', 't1');
     expect(r.isBlocked).toBe(false);
   });
 });
