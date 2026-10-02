@@ -18,6 +18,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, Badge, Spinner } from '@hukuk/ui';
 import { BookOpen, AlertCircle, Info } from 'lucide-react';
 import { formatMoneyString } from '@/lib/api/client-accounting';
+import {
+  checkStatementPeriod,
+  defaultStatementPeriod,
+  turkeyDayEndIso,
+  turkeyDayStartIso,
+} from '@/lib/financial-statement-period';
+import { TURKEY_CALENDAR_TIME_ZONE } from '@/lib/turkey-calendar';
 import { AccountingTable } from './AccountingTable';
 import {
   financialStatementApi,
@@ -30,27 +37,21 @@ export interface FinancialStatementPanelProps {
   clientId: string;
   caseClientId: string | null;
   currency: string;
-  /** ISO — varsayılan dönem başlangıcı için (dosya açılışı). Yoksa 90 gün geriye düşer. */
+  /**
+   * ISO — varsayılan dönem başlangıcı (dosyanın takip tarihi; Türkiye gününe çevrilir). Bugünden sonraysa başlangıç
+   * bugüne çekilir; bilinmiyorsa dönem bugünle başlar (açılış bugünden önceki tüm hareketleri taşır).
+   */
   caseOpenedAt: string | null;
 }
 
-function toDateInput(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function defaultFrom(caseOpenedAt: string | null): string {
-  if (caseOpenedAt) return toDateInput(new Date(caseOpenedAt));
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 90);
-  return toDateInput(d);
-}
-
 export function FinancialStatementPanel({ caseId, clientId, caseClientId, currency, caseOpenedAt }: FinancialStatementPanelProps) {
-  const defaults = useMemo(() => ({ from: defaultFrom(caseOpenedAt), to: toDateInput(new Date()) }), [caseOpenedAt]);
+  const defaults = useMemo(() => defaultStatementPeriod(caseOpenedAt), [caseOpenedAt]);
   const [from, setFrom] = useState(defaults.from);
   const [to, setTo] = useState(defaults.to);
 
-  const periodValid = !!from && !!to && from <= to;
+  // Kullanıcının girdiği dönem doğrulanır, DÖNÜŞTÜRÜLMEZ: geçersizse sorgu atılmaz, nedeni yazılır.
+  const periodCheck = checkStatementPeriod(from, to);
+  const periodValid = periodCheck.ok;
 
   const statementQ = useQuery({
     queryKey: ['financial-statement', caseId, clientId, caseClientId, from, to, currency],
@@ -59,8 +60,9 @@ export function FinancialStatementPanel({ caseId, clientId, caseClientId, curren
         caseId,
         clientId,
         caseClientId,
-        from: `${from}T00:00:00.000Z`,
-        to: `${to}T23:59:59.999Z`,
+        // Gün sınırları Türkiye takvimine göredir (1 Mayıs = 30 Nisan 21:00 UTC; 31 Mayıs 23:59:59.999 TSİ).
+        from: turkeyDayStartIso(from),
+        to: turkeyDayEndIso(to),
         currency,
       }),
     enabled: !!caseId && !!clientId && periodValid,
@@ -112,7 +114,11 @@ export function FinancialStatementPanel({ caseId, clientId, caseClientId, curren
       {!periodValid ? (
         <div className="flex items-center gap-2 text-red-600 text-sm py-4">
           <AlertCircle className="w-4 h-4" />
-          <span>Başlangıç tarihi bitiş tarihinden sonra olamaz.</span>
+          <span>
+            {periodCheck.ok === false && periodCheck.reason === 'INCOMPLETE'
+              ? 'Başlangıç ve bitiş tarihini seçin.'
+              : 'Başlangıç tarihi bitiş tarihinden sonra olamaz.'}
+          </span>
         </div>
       ) : statementQ.isLoading ? (
         <div className="flex items-center justify-center py-6">
@@ -123,10 +129,11 @@ export function FinancialStatementPanel({ caseId, clientId, caseClientId, curren
           <AlertCircle className="w-4 h-4" />
           <span>Muhasebe defteri yüklenemedi.</span>
         </div>
-      ) : !report || movements.length === 0 ? (
+      ) : !report ? (
         <div className="text-sm text-gray-500 py-6 text-center">Seçili dönemde defter hareketi bulunmuyor.</div>
       ) : (
         <>
+          {/* Açılış / kapanış hareketsiz dönemde de yazılır: dönem öncesi hareketler açılışa devredilir. */}
           <div className="flex flex-wrap gap-4 mb-3 text-sm">
             <span>
               Açılış: <strong className="tabular-nums">{formatMoneyString(report.opening.amount, report.opening.currency)}</strong>
@@ -136,31 +143,37 @@ export function FinancialStatementPanel({ caseId, clientId, caseClientId, curren
             </span>
           </div>
 
-          <div className="thin-scrollbar overflow-auto rounded-lg border">
-            <AccountingTable
-              head={
-                <>
-                  <th>Tarih</th>
-                  <th>Hesap</th>
-                  <th>Yön</th>
-                  <th className="text-right">Tutar</th>
-                  <th>Kaynak</th>
-                  <th>Not</th>
-                </>
-              }
-            >
-              {movements.map((m) => (
-                <MovementRow key={m.lineNo} movement={m} />
-              ))}
-            </AccountingTable>
-          </div>
+          {movements.length === 0 ? (
+            <div className="text-sm text-gray-500 py-6 text-center">Seçili dönemde defter hareketi bulunmuyor.</div>
+          ) : (
+            <>
+              <div className="thin-scrollbar overflow-auto rounded-lg border">
+                <AccountingTable
+                  head={
+                    <>
+                      <th>Tarih</th>
+                      <th>Hesap</th>
+                      <th>Yön</th>
+                      <th className="text-right">Tutar</th>
+                      <th>Kaynak</th>
+                      <th>Not</th>
+                    </>
+                  }
+                >
+                  {movements.map((m) => (
+                    <MovementRow key={m.lineNo} movement={m} />
+                  ))}
+                </AccountingTable>
+              </div>
 
-          {report.reconciliation.warnings.length > 0 && (
-            <div className="mt-2 text-[11px] text-gray-400">
-              {report.reconciliation.warnings.map((w) => (
-                <div key={w.code}>{w.message}</div>
-              ))}
-            </div>
+              {report.reconciliation.warnings.length > 0 && (
+                <div className="mt-2 text-[11px] text-gray-400">
+                  {report.reconciliation.warnings.map((w) => (
+                    <div key={w.code}>{w.message}</div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -171,7 +184,9 @@ export function FinancialStatementPanel({ caseId, clientId, caseClientId, curren
 function MovementRow({ movement }: { movement: FinancialStatementMovement }) {
   return (
     <tr className="hover:bg-gray-50">
-      <td className="whitespace-nowrap text-gray-600">{new Date(movement.statementDate).toLocaleDateString('tr-TR')}</td>
+      <td className="whitespace-nowrap text-gray-600">
+        {new Date(movement.statementDate).toLocaleDateString('tr-TR', { timeZone: TURKEY_CALENDAR_TIME_ZONE })}
+      </td>
       <td>{financialStatementAccountLabel(movement.accountCode)}</td>
       <td>
         <Badge variant="secondary">{movement.direction === 'CREDIT' ? 'Alacak' : 'Borç'}</Badge>
