@@ -184,6 +184,18 @@ interface RelatedCase {
 export type OperationDeckSourceStatus = "NOT_CONNECTED" | "LOADING" | "ERROR" | "READY";
 type UnavailableSourceStatus = Exclude<OperationDeckSourceStatus, "READY">;
 
+const KNOWN_SOURCE_STATUSES: readonly string[] = ["NOT_CONNECTED", "LOADING", "ERROR", "READY"];
+
+/**
+ * Bileşene verilen kaynak durumunu çözümler (izin listesi). Durum verilmemişse (`undefined` / `null`) alan bağlanmamıştır:
+ * NOT_CONNECTED. Tanınmayan / geçersiz bir değer READY SAYILMAZ ve "bağlanmadı" da denmez: kaynak bağlı ama durumu
+ * anlaşılamıyor — ERROR ("okunamadı"). İkisinde de sayı ve "kayıt yok" beyanı yazılmaz.
+ */
+function resolveSourceStatus(raw: unknown): OperationDeckSourceStatus {
+  if (raw === undefined || raw === null) return "NOT_CONNECTED";
+  return KNOWN_SOURCE_STATUSES.includes(raw as string) ? (raw as OperationDeckSourceStatus) : "ERROR";
+}
+
 
 // S8-B FAZ-2 — CaseFeeAgreement (akdi ücret sözleşmesi). Backend otoritesi; FE HESAPLAMAZ.
 interface CaseFeeAgreementSummary {
@@ -422,9 +434,9 @@ export function OperationDeck({
   caseCurrency,
   actualExpenseSource = "NOT_CONNECTED",
   uyapQueriesSource = "NOT_CONNECTED",
-  uyapQueries = [],
+  uyapQueries,
   relatedCasesSource = "NOT_CONNECTED",
-  relatedCases = [],
+  relatedCases,
   clientBalanceSource = "NOT_CONNECTED",
   clientBalance,
   onAddNote,
@@ -871,23 +883,40 @@ export function OperationDeck({
   const highPriorityTasks = tasks.filter(t => t.priority === "HIGH" && t.status === "BEKLIYOR").length;
   // Kaynağı bağlı olmayan alan sıfır ya da "kayıt yok" DEĞİLDİR: değer ve sayaç yalnız kaynak READY iken okunur.
   // `...Unavailable` null ise kaynak READY'dir; değilse gösterilecek durumdur.
+  // READY denmiş ama değer kullanılamıyorsa (liste dizi değil, tutar sonlu sayı değil) sıfır / "kayıt yok" YAZILMAZ: "okunamadı".
+  const actualExpenseResolved = resolveSourceStatus(actualExpenseSource);
+  const actualExpenseAmountsValid = financeItems
+    .filter(f => f.type === "MASRAF_YAPILAN")
+    .every(f => typeof f.amount === "number" && Number.isFinite(f.amount));
+  const actualExpenseEffective: OperationDeckSourceStatus =
+    actualExpenseResolved === "READY" && !actualExpenseAmountsValid ? "ERROR" : actualExpenseResolved;
   const actualExpenseUnavailable: UnavailableSourceStatus | null =
-    actualExpenseSource === "READY" ? null : actualExpenseSource;
+    actualExpenseEffective === "READY" ? null : actualExpenseEffective;
+  const uyapQueriesResolved = resolveSourceStatus(uyapQueriesSource);
+  const uyapQueriesEffective: OperationDeckSourceStatus =
+    uyapQueriesResolved === "READY" && !Array.isArray(uyapQueries) ? "ERROR" : uyapQueriesResolved;
   const uyapQueriesUnavailable: UnavailableSourceStatus | null =
-    uyapQueriesSource === "READY" ? null : uyapQueriesSource;
+    uyapQueriesEffective === "READY" ? null : uyapQueriesEffective;
+  const relatedCasesResolved = resolveSourceStatus(relatedCasesSource);
+  const relatedCasesEffective: OperationDeckSourceStatus =
+    relatedCasesResolved === "READY" && !Array.isArray(relatedCases) ? "ERROR" : relatedCasesResolved;
   const relatedCasesUnavailable: UnavailableSourceStatus | null =
-    relatedCasesSource === "READY" ? null : relatedCasesSource;
+    relatedCasesEffective === "READY" ? null : relatedCasesEffective;
   const actualExpenseReady = actualExpenseUnavailable === null;
   const uyapQueriesReady = uyapQueriesUnavailable === null;
   const relatedCasesReady = relatedCasesUnavailable === null;
+  const clientBalanceResolved = resolveSourceStatus(clientBalanceSource);
   const clientBalanceValue =
-    clientBalanceSource === "READY" && typeof clientBalance === "number" && Number.isFinite(clientBalance)
-      ? clientBalance
+    clientBalanceResolved === "READY" && typeof clientBalance === "number" && Number.isFinite(clientBalance)
+      ? (Object.is(clientBalance, -0) ? 0 : clientBalance) // -0 "−0 ₺" diye yazılmaz
       : null;
   // Değer yazılamadığında gösterilecek durum. READY denmiş ama geçerli sayı gelmemişse sıfır YAZILMAZ: "okunamadı".
   const clientBalanceUnavailable: UnavailableSourceStatus =
-    clientBalanceSource === "READY" ? "ERROR" : clientBalanceSource;
-  const pendingQueries = uyapQueriesReady ? uyapQueries.filter(q => q.status === "BEKLIYOR").length : 0;
+    clientBalanceResolved === "READY" ? "ERROR" : clientBalanceResolved;
+  // Listeler yalnız kaynak READY ve değer gerçekten dizi iken okunur (aksi halde yukarıda "okunamadı" olur).
+  const uyapQueryList: UyapQuery[] = uyapQueriesReady ? (uyapQueries as UyapQuery[]) : [];
+  const relatedCaseList: RelatedCase[] = relatedCasesReady ? (relatedCases as RelatedCase[]) : [];
+  const pendingQueries = uyapQueryList.filter(q => q.status === "BEKLIYOR").length;
   const pendingRequests = muvekkilTalepleri.filter(r => r.status === "BEKLIYOR").length;
   // "Son İşlemler": tahsilatlar ve — yalnız kaynağı READY ise — yapılan masraf satırları (masraf talepleri ayrı bölümde).
   const recentFinanceItems = financeItems.filter(
@@ -915,7 +944,7 @@ export function OperationDeck({
           const isActive = activePanel === panel.id;
           const count = panel.id === "tasks" ? pendingTasks : 
                         panel.id === "uyap" ? pendingQueries :
-                        panel.id === "related" ? (relatedCasesReady ? relatedCases.length : 0) :
+                        panel.id === "related" ? relatedCaseList.length :
                         panel.id === "icra-notes" ? icraNotlar.length :
                         panel.id === "client-requests" ? muvekkilTalepleri.length :
                         panel.id === "accounting" ? muhasebeKayitlari.length : 0;
@@ -1331,7 +1360,7 @@ export function OperationDeck({
                   </div>
                 ) : (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {uyapQueries.map(query => (
+                  {uyapQueryList.map(query => (
                     <div key={query.id} className="flex items-center justify-between p-2 rounded border border-slate-200 bg-white">
                       <div>
                         <p className="text-sm text-slate-700">{queryTypeLabels[query.queryType] || query.queryType}</p>
@@ -1353,7 +1382,7 @@ export function OperationDeck({
                       </div>
                     </div>
                   ))}
-                  {uyapQueries.length === 0 && (
+                  {uyapQueryList.length === 0 && (
                     <p className="text-center py-4 text-slate-400 text-sm">Henüz sorgu yapılmamış</p>
                   )}
                 </div>
@@ -1382,7 +1411,7 @@ export function OperationDeck({
                 </div>
               ) : (
               <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                {relatedCases.map(rc => (
+                {relatedCaseList.map(rc => (
                   <a
                     key={rc.id}
                     href={`/cases/${rc.id}`}
@@ -1407,7 +1436,7 @@ export function OperationDeck({
                     </div>
                   </a>
                 ))}
-                {relatedCases.length === 0 && (
+                {relatedCaseList.length === 0 && (
                   <div className="text-center py-6 text-slate-400">
                     <FolderOpen className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">İlişkili dosya yok</p>
