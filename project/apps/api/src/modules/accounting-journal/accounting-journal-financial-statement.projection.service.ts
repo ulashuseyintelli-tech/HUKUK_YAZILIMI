@@ -40,19 +40,26 @@ export class AccountingJournalFinancialStatementProjectionService {
 
   /// <remarks>
   /// Cagrildigi yerler:
-  /// - ACCT-5B service/spec-only contract -> read-only financial statement projection from persisted journal lines.
-  /// - Future financial statement read surface -> must remain journal-derived and must not post, write, or switch legal/TBK100 authority.
+  /// - AccountingJournalFinancialStatementController.getFinancialStatement() -> GET /accounting-journal/financial-statements (Muhasebe Defteri paneli; salt okuma).
+  /// - ACCT-5B service/spec contract -> read-only financial statement projection from persisted journal lines; must remain journal-derived and must not post, write, or switch legal/TBK100 authority.
+  ///
+  /// Müvekkil kapsamı (owner kararı 2026-10-01, S1): bir günlük satırı istenen müvekkile aittir, eğer
+  ///   (a) satır o `clientId`'yi taşıyorsa, YA DA
+  ///   (b) satırda `clientId` yoksa ama satır müvekkilin bu dosyadaki CaseClient kaydına (`caseClientId`) bağlıysa.
+  /// Müvekkile ödeme (ClientPayout) günlük satırları ve bunların genel ters kayıtları yalnız `caseClientId` taşır
+  /// (kanonik finansal bağ); yalnız `clientId` ile süzmek ödemeyi ekstreden düşürüyordu. (b) dalı yalnız EKLER:
+  /// (a) ile bugüne dek görünen hiçbir satır kapsam dışına çıkmaz. Günlük verisine dokunulmaz.
   /// </remarks>
   async getClientCaseStatement(request: FinancialStatementReadRequest): Promise<FinancialStatementReadReport> {
     const normalized = normalizeRequest(request);
+    const caseClientIds = await this.resolveCaseClientIds(normalized);
     const lines = (await this.prisma.accountingJournalLine.findMany({
       where: {
         tenantId: normalized.tenantId,
         accountCode: CLIENT_CASE_STATEMENT_ACCOUNT,
         currency: normalized.currency,
         caseId: normalized.scope.caseId,
-        clientId: normalized.scope.clientId,
-        ...(normalized.scope.caseClientId ? { caseClientId: normalized.scope.caseClientId } : {}),
+        ...clientScopeFilter(normalized.scope, caseClientIds),
         journalEntry: {
           tenantId: normalized.tenantId,
           postedAt: dateRange(normalized.period.from, normalized.period.to),
@@ -82,7 +89,7 @@ export class AccountingJournalFinancialStatementProjectionService {
       ],
     })) as StatementJournalLine[];
 
-    const movements = lines.map((line, index) => movementFromLine(line, index + 1));
+    const movements = lines.map((line, index) => movementFromLine(line, index + 1, normalized.scope.clientId));
     const closingAmount = movements.reduce(
       (total, movement) => total.plus(signedAmount(movement.direction, movement.amount)),
       ZERO,
@@ -102,6 +109,44 @@ export class AccountingJournalFinancialStatementProjectionService {
       reconciliation: reconciliationFor(movements.length),
     };
   }
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - AccountingJournalFinancialStatementProjectionService.getClientCaseStatement() -> müvekkilin bu dosyadaki CaseClient kimlikleri (salt okuma).
+  ///
+  /// Kiracı + dosya + müvekkil üçlüsüyle süzülür; istek `caseClientId` verdiyse yalnız o kayıt, o da bu müvekkile
+  /// aitse döner. Başka müvekkilin ya da başka kiracının CaseClient kaydı hiçbir zaman dönmez → `clientId`'siz
+  /// satırlar başka müvekkilin ekstresine sızamaz.
+  /// </remarks>
+  private async resolveCaseClientIds(request: FinancialStatementReadRequest): Promise<string[]> {
+    const rows = await this.prisma.caseClient.findMany({
+      where: {
+        caseId: request.scope.caseId,
+        clientId: request.scope.clientId,
+        ...(request.scope.caseClientId ? { id: request.scope.caseClientId } : {}),
+        client: { tenantId: request.tenantId },
+      },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
+}
+
+/// Müvekkil kapsamı süzgeci. İlk dal bugüne dek uygulanan süzgecin aynısıdır; ikinci dal yalnız `clientId`
+/// taşımayan ve müvekkilin CaseClient kaydına bağlı satırları ekler. CaseClient çözülemediyse ikinci dal kurulmaz.
+function clientScopeFilter(
+  scope: FinancialStatementReadRequest['scope'],
+  caseClientIds: string[],
+): Prisma.AccountingJournalLineWhereInput {
+  const byClientId: Prisma.AccountingJournalLineWhereInput = {
+    clientId: scope.clientId,
+    ...(scope.caseClientId ? { caseClientId: scope.caseClientId } : {}),
+  };
+  if (caseClientIds.length === 0) return byClientId;
+
+  return {
+    OR: [byClientId, { clientId: null, caseClientId: { in: caseClientIds } }],
+  };
 }
 
 function normalizeRequest(request: FinancialStatementReadRequest): FinancialStatementReadRequest {
@@ -136,7 +181,11 @@ function dateRange(from: string, to: string): Prisma.DateTimeFilter {
   };
 }
 
-function movementFromLine(line: StatementJournalLine, lineNo: number): FinancialStatementMovement {
+function movementFromLine(
+  line: StatementJournalLine,
+  lineNo: number,
+  scopeClientId: string,
+): FinancialStatementMovement {
   return {
     lineNo,
     statementDate: line.journalEntry.postedAt.toISOString(),
@@ -145,7 +194,8 @@ function movementFromLine(line: StatementJournalLine, lineNo: number): Financial
     amount: toMoney(line.amount),
     currency: line.currency,
     caseId: line.caseId ?? '',
-    clientId: line.clientId ?? '',
+    // `clientId`'siz satır kapsama yalnız müvekkilin CaseClient kaydı üzerinden girer → müvekkil istekteki müvekkildir.
+    clientId: line.clientId ?? scopeClientId,
     caseClientId: line.caseClientId,
     source: {
       sourceType: line.journalEntry.sourceType,
