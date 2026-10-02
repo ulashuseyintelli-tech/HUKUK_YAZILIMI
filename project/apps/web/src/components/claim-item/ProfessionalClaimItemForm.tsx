@@ -496,7 +496,8 @@ interface Props {
  */
 
 import { interestEngineApi, InterestTypeCode as EngineInterestTypeCode, InterestPreviewResponse } from '@/lib/api/interest-engine';
-import { feeEngineApi, FeePreviewResponse } from '@/lib/api/fee-engine';
+import { feeEngineApi, FeePreviewResponse, type FeePreviewParaBirimiDurumu } from '@/lib/api/fee-engine';
+import type { ParaBirimiAlani } from '@/hooks/useCaseCalculation';
 import { assertNoMockInProduction } from '@/lib/config/feature-flags';
 import { CASE_FORM_SELECTION_REQUIRED_FOR_DOCUMENT_MESSAGE } from '@/lib/case-wizard-form-selection';
 import { turkeyToday } from "@/lib/turkey-calendar";
@@ -511,7 +512,9 @@ const hesaplaFaizFromBackend = async (
   faizTuru: string,
   baslangic: string,
   bitis: string,
-  sabitOran?: number
+  sabitOran?: number,
+  // Kalemin para birimi (istek dövizli kalem için "TRY" bildirmez); verilmezse eski davranış
+  paraBirimi: string = 'TRY'
 ): Promise<InterestPreviewResponse> => {
   if (!tutar || !baslangic || !bitis || faizTuru === "YOK") {
     return { 
@@ -526,7 +529,7 @@ const hesaplaFaizFromBackend = async (
   
   return interestEngineApi.preview({
     principalAmount: tutar,
-    currency: 'TRY',
+    currency: paraBirimi,
     interestType,
     startDate: baslangic,
     endDate: bitis,
@@ -557,7 +560,10 @@ const faizTuruToEngineType = (faizTuru: string): EngineInterestTypeCode => {
 const hesaplaMasrafFromBackend = async (
   principalAmount: number,
   caseType: string,
-  debtorCount: number
+  debtorCount: number,
+  // Kalemin ve dosyanın para birimi: sunucu tutarların para birimi kararını (`paraBirimiDurumu`) buna göre bildirir
+  currency: string,
+  caseCurrency: string
 ): Promise<FeePreviewResponse> => {
   if (!principalAmount || principalAmount <= 0) {
     return { success: false, error: { code: 'INVALID_INPUT', message: 'Invalid principal amount' }, cached: false };
@@ -567,6 +573,8 @@ const hesaplaMasrafFromBackend = async (
     principalAmount,
     caseType,
     debtorCount,
+    currency,
+    caseCurrency,
   });
 };
 
@@ -611,6 +619,48 @@ const formatCurrency = (amount: number, curr = "TRY") => {
   const symbol = CURRENCY_OPTIONS.find(c => c.value === curr)?.symbol || "₺";
   return `${amount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${symbol}`;
 };
+
+// ============================================================================
+// PARA BİRİMİ GÖSTERİMİ (sunucu kararına göre; hesap ve çevirme YOK)
+// ============================================================================
+
+/**
+ * Hesap özeti satır anahtarı → sunucunun para birimi kararındaki alan adı (dosya hesap özetiyle aynı sözlük). Yalnız ad
+ * eşlemesidir: bir tutarın hangi para biriminde ve geçerli olup olmadığına SUNUCU karar verir (`paraBirimiDurumu`).
+ */
+const OZET_SATIRI_ALANI: Record<string, string> = {
+  asil_alacak: "asilAlacak",
+  tazminat: "tazminat",
+  tazminat_eksik: "tazminat",
+  komisyon: "komisyon",
+  takip_oncesi_faiz: "takipOncesiFaiz",
+  takip_tutari: "takipTutari",
+  basvurma_harci: "basvurmaHarci",
+  vekalet_harci: "vekaletHarci",
+  pesin_harc: "pesinHarc",
+  dosya_gideri: "dosyaGideri",
+  tebligat_gideri: "tebligatGideri",
+  vekalet_pulu: "vekaletPulu",
+  icra_masraflari: "icraMasraflari",
+  pesin_harc_dahil_tahsil: "pesinHarcDahilTahsilHarci",
+  pesin_harc_haric_tahsil: "pesinHarcHaricTahsilHarci",
+  vekalet_ucreti: "vekaletUcreti",
+  takip_sonrasi_faiz: "takipSonrasiFaiz",
+  toplam_borc: "toplamBorc",
+  son_borc: "sonBorc",
+};
+
+const ozetSatiriAlani = (key: string): string | undefined =>
+  key.startsWith("tahsil_") ? "tahsilOranlari" : OZET_SATIRI_ALANI[key];
+
+/** Kısıtlı durumda sunucunun karar vermediği satır: tutar güvenle etiketlenemez → gösterilmez (fail-closed). */
+const GOSTERILEMEZ_ALAN: ParaBirimiAlani = { paraBirimi: null, durum: "GOSTERILEMEZ" };
+
+/** Tutarı sunucunun bildirdiği para birimiyle yazar; listede olmayan kod "₺" sayılmaz, kodun kendisi yazılır. */
+const formatBildirilenParaBirimi = (amount: number, curr: string) =>
+  CURRENCY_OPTIONS.some(c => c.value === curr)
+    ? formatCurrency(amount, curr)
+    : `${amount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${curr}`;
 
 /**
  * Senkron vekalet ücreti hesaplama - KALDIRILDI
@@ -746,6 +796,13 @@ export function ProfessionalClaimItemForm({
   );
   const [hesapOzeti, setHesapOzeti] = useState<HesapOzetiSatir[]>([]);
   const [isCalculated, setIsCalculated] = useState(false);
+  // Hesap özetinin para birimi bağlamı: sunucunun kararı ve özetin hangi kalem / dosya para birimiyle hesaplandığı.
+  // Para birimi değişince eski hesap yeni simgeyle gösterilmez (yeni hesap gelene kadar özet gizlenir).
+  const [ozetBaglami, setOzetBaglami] = useState<{
+    paraBirimiDurumu: FeePreviewParaBirimiDurumu | null;
+    kalemParaBirimi: string;
+    dosyaParaBirimi: string;
+  } | null>(null);
   // K3-L KP-11: hesap tarihi sihirbaz tarafından verilirse o kullanılır (taslakta saklanır, yeniden açılışta korunur);
   // verilmezse yeni hesapta Türkiye takvimine göre bugün.
   const [localHesapTarihi, setLocalHesapTarihi] = useState<string>(() => hesapTarihiProp ?? turkeyToday());
@@ -998,7 +1055,9 @@ export function ProfessionalClaimItemForm({
         kalem.bakiyeTutar,
         kalem.takipOncesiFaiz,
         faizBaslangic,
-        takipTarihi
+        takipTarihi,
+        undefined,
+        kalem.currency
       );
       
       if (result.success && result.data) {
@@ -1029,7 +1088,9 @@ export function ProfessionalClaimItemForm({
     const masrafResult = await hesaplaMasrafFromBackend(
       takipTutari,
       kalem.kalemTuru,
-      borcluSayisi
+      borcluSayisi,
+      kalem.currency,
+      currency
     );
     
     if (masrafResult.success && masrafResult.data) {
@@ -1084,7 +1145,9 @@ export function ProfessionalClaimItemForm({
         kalem.bakiyeTutar,
         kalem.takipSonrasiFaiz,
         takipTarihi,
-        hesapTarihi
+        hesapTarihi,
+        undefined,
+        kalem.currency
       );
       
       if (result.success && result.data) {
@@ -1128,15 +1191,24 @@ export function ProfessionalClaimItemForm({
       satirlar.push({ key: `tahsil_${index}`, label: `${t.label}`, tutar: borcTutari, color: "gray" });
     });
 
+    // Yeni girdiyle geçersizleşmiş (ya da sökülmüş editöre ait) hesap ekrana da yazılmaz: geç dönen eski hesap, yeni
+    // hesabın satırlarını ve para birimi bağlamını ezemez.
+    if (!mountedRef.current || generation !== calcGenerationRef.current) return;
+
     setHesapOzeti(satirlar);
+    // Satırlarla AYNI hesabın para birimi bağlamı (sunucu kararı; masraf önizlemesi alınamadıysa karar yok)
+    setOzetBaglami({
+      paraBirimiDurumu: (masrafResult.success && masrafResult.data?.paraBirimiDurumu) || null,
+      kalemParaBirimi: kalem.currency,
+      dosyaParaBirimi: currency,
+    });
     setIsCalculated(true);
 
-    if (!mountedRef.current || generation !== calcGenerationRef.current) return;
     if (onItemsChange) {
       // PR-i3: ilamYanAlacaklar artık emit EDİLMEZ (nested emekli; standalone fer'i kalemler).
       onItemsChange([{ ...kalem, hesapOzeti: satirlar, cekTazminatOnizleme }]);
     }
-  }, [kalem, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih, caseDebtors]);
+  }, [kalem, currency, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih, caseDebtors]);
 
   // OTOMATİK HESAPLAMA - değişiklik olduğunda 500ms sonra hesapla
   useEffect(() => {
@@ -1254,6 +1326,27 @@ export function ProfessionalClaimItemForm({
     }));
     setIsCalculated(false);
   };
+
+  // Para birimi bağlamı (sunucu kararı; istemci hesabı ve çevirme YOK): kalem dövizli ya da dosyayla uyuşmuyorsa TL tarifesi
+  // oranlı kalemler "hesaplanamadı", farklı para birimlerini toplayan satırlar "gösterilemez" yazılır; bilinen tutarlar kendi
+  // para birimiyle kalır. Karar yoksa (TL kalem ya da kararı göndermeyen sunucu) gösterim aynen sürer.
+  const ozetGosterilir =
+    isCalculated && ozetBaglami?.kalemParaBirimi === kalem.currency && ozetBaglami?.dosyaParaBirimi === currency;
+  const paraBirimiDurumu = ozetBaglami?.paraBirimiDurumu ?? null;
+  const paraBirimiKisitli = paraBirimiDurumu ? !paraBirimiDurumu.toplamGosterilebilir : false;
+  const satirAlani = (key: string): ParaBirimiAlani | undefined =>
+    paraBirimiKisitli ? paraBirimiDurumu?.alanlar?.[ozetSatiriAlani(key) ?? ""] ?? GOSTERILEMEZ_ALAN : undefined;
+  const satirTutari = (satir: HesapOzetiSatir): string => {
+    const alan = satirAlani(satir.key);
+    if (!alan) return formatCurrency(satir.tutar, kalem.currency);
+    if (alan.durum === "HESAPLANAMADI") return "hesaplanamadı";
+    if (alan.durum !== "GECERLI" || !alan.paraBirimi) return "gösterilemez";
+    return formatBildirilenParaBirimi(satir.tutar, alan.paraBirimi);
+  };
+  const tahsilOranlariGecerli = !paraBirimiKisitli || satirAlani("tahsil_0")?.durum === "GECERLI";
+  // Tutar yerine "gösterilemez" / "hesaplanamadı" yazılan toplam satırı vurgulu tutar biçimiyle (büyük, renkli) basılmaz
+  const toplamSinifi = (key: string, vurgulu: string): string =>
+    paraBirimiKisitli && satirAlani(key)?.durum !== "GECERLI" ? "font-medium text-gray-500" : vurgulu;
 
 
   // ============================================================================
@@ -2098,14 +2191,14 @@ export function ProfessionalClaimItemForm({
               title="Hesap Tarihi"
             />
           </div>
-          {isCalculated && (
+          {ozetGosterilir && (
             <p className="text-[10px] text-gray-400">
               Takip: {new Date(takipTarihi).toLocaleDateString('tr-TR')} → Hesap: {new Date(hesapTarihi).toLocaleDateString('tr-TR')}
             </p>
           )}
         </div>
 
-        {!isCalculated ? (
+        {!ozetGosterilir ? (
           <div className="flex-1 flex flex-col items-center justify-center py-3 text-gray-500">
             <Calculator className="h-6 w-6 mx-auto mb-1 text-gray-300" />
             <p className="text-[10px]">Tutar girin, otomatik hesaplanacak</p>
@@ -2119,6 +2212,12 @@ export function ProfessionalClaimItemForm({
                   <AlertCircle className="h-3 w-3 flex-shrink-0" />
                   <span>Çek bilgileri eksik (seri no, banka). Takip talebi için gerekli.</span>
                 </div>
+              </div>
+            )}
+            {/* Para birimi bağlamı: dövizli / dosyayla uyuşmayan kalemde oranlı kalemler hesaplanmadı, tek toplam gösterilmedi (sunucu metni) */}
+            {paraBirimiKisitli && paraBirimiDurumu?.mesaj && (
+              <div data-testid="kalem-hesap-para-birimi-uyari" className="mb-1 p-1.5 bg-amber-50 border border-amber-200 rounded text-[9px] text-amber-800">
+                {paraBirimiDurumu.mesaj}
               </div>
             )}
             {/* Hesap Özeti Satırları */}
@@ -2140,19 +2239,27 @@ export function ProfessionalClaimItemForm({
                 return (
                   <div key="tahsil_baslik" className="pt-1.5 mt-1.5 border-t-2 border-gray-400">
                     <p className="text-[10px] font-medium text-gray-500 mb-0.5">Tahsil Harcı Oranlarına Göre Son Borç</p>
-                    <div className="flex justify-between py-0 text-gray-500">
-                      <span>{satir.label}</span>
-                      <span>{formatCurrency(satir.tutar, kalem.currency)}</span>
-                    </div>
+                    {tahsilOranlariGecerli ? (
+                      <div className="flex justify-between py-0 text-gray-500">
+                        <span>{satir.label}</span>
+                        <span>{satirTutari(satir)}</span>
+                      </div>
+                    ) : (
+                      <div data-testid="kalem-hesap-tahsil-oranlari-durum" className="py-0 text-gray-500">
+                        {satirTutari(satir)}
+                      </div>
+                    )}
                   </div>
                 );
               }
 
               if (satir.key.startsWith("tahsil_")) {
+                // Oran tablosu geçerli tutar değilse satırlar tek tek yazılmaz (durum yukarıda bir kez yazıldı)
+                if (!tahsilOranlariGecerli) return null;
                 return (
                   <div key={satir.key} className="flex justify-between py-0 text-gray-500">
                     <span>{satir.label}</span>
-                    <span>{formatCurrency(satir.tutar, kalem.currency)}</span>
+                    <span>{satirTutari(satir)}</span>
                   </div>
                 );
               }
@@ -2165,7 +2272,7 @@ export function ProfessionalClaimItemForm({
                     className="flex justify-between py-1 px-1.5 -mx-1.5 mt-1 border-t-2 border-blue-300 bg-blue-50 rounded"
                   >
                     <span className="font-semibold text-blue-800">TAKİP TUTARI</span>
-                    <span className="font-bold text-blue-700">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                    <span className={toplamSinifi(satir.key, "font-bold text-blue-700")}>{satirTutari(satir)}</span>
                   </div>
                 );
               }
@@ -2178,7 +2285,7 @@ export function ProfessionalClaimItemForm({
                     className="flex justify-between py-1 px-1.5 -mx-1.5 mt-1 border-t border-gray-300 bg-gray-100 rounded"
                   >
                     <span className="font-semibold text-gray-700">İCRA MASRAFLARI</span>
-                    <span className="font-semibold text-gray-700">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                    <span className="font-semibold text-gray-700">{satirTutari(satir)}</span>
                   </div>
                 );
               }
@@ -2191,7 +2298,7 @@ export function ProfessionalClaimItemForm({
                     className="flex justify-between py-1 px-1.5 -mx-1.5 mt-1 border-t border-orange-300 bg-orange-50 rounded"
                   >
                     <span className="font-semibold text-orange-700">İHTİYATİ HACİZ MASRAFLARI</span>
-                    <span className="font-semibold text-orange-600">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                    <span className="font-semibold text-orange-600">{satirTutari(satir)}</span>
                   </div>
                 );
               }
@@ -2204,7 +2311,7 @@ export function ProfessionalClaimItemForm({
                     className="flex justify-between py-1.5 px-1.5 -mx-1.5 mt-1.5 border-t-2 border-blue-400 bg-blue-100 rounded"
                   >
                     <span className="font-bold text-blue-900">TOPLAM BORÇ</span>
-                    <span className="font-bold text-blue-800">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                    <span className={toplamSinifi(satir.key, "font-bold text-blue-800")}>{satirTutari(satir)}</span>
                   </div>
                 );
               }
@@ -2217,7 +2324,7 @@ export function ProfessionalClaimItemForm({
                     className="flex justify-between py-2 px-1.5 -mx-1.5 mt-1.5 border-t-2 border-green-400 bg-green-100 rounded"
                   >
                     <span className="font-bold text-green-900">SON BORÇ</span>
-                    <span className="font-bold text-lg text-green-700">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                    <span className={toplamSinifi(satir.key, "font-bold text-lg text-green-700")}>{satirTutari(satir)}</span>
                   </div>
                 );
               }
@@ -2238,7 +2345,7 @@ export function ProfessionalClaimItemForm({
                     satir.color === "orange" ? "text-orange-600 font-semibold" : 
                     satir.bold ? "font-semibold" : ""
                   }`}>
-                    {formatCurrency(satir.tutar, kalem.currency)}
+                    {satirTutari(satir)}
                   </span>
                 </div>
               );
