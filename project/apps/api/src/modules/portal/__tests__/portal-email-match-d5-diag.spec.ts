@@ -236,6 +236,25 @@ describe('D5-DIAG-R01 createResetToken — e-posta biçim farkı', () => {
   });
 
   it.each([
+    ['boş metin', ''],
+    ['yalnız boşluk', ' \t '],
+  ])('[6c] boş e-posta (%s) → dış cevap aynı; AYRI teşhis satırı (yanlış yazılmış adresten ayırt edilir)', async (_d, typed) => {
+    const { svc, prisma, emailProvider } = buildService([{ id: 'PU1', email: STORED, isActive: true }]);
+    await expect(svc.createResetToken(typed)).resolves.toEqual({ success: true });
+    expect(prisma.clientPortalUser.updateMany).not.toHaveBeenCalled();
+    expect(emailProvider.send).not.toHaveBeenCalled();
+    expect(logged().some((l) => l.includes('e-posta alanı boş'))).toBe(true);
+    expect(logged().some((l) => l.includes('eşleşen aktif portal hesabı yok'))).toBe(false);
+  });
+
+  it('[6d] boş OLMAYAN, eşleşmeyen adres "boş" satırı yazmaz', async () => {
+    const { svc } = buildService([{ id: 'PU1', email: STORED, isActive: true }]);
+    await svc.createResetToken('baska@example.com');
+    expect(logged().some((l) => l.includes('e-posta alanı boş'))).toBe(false);
+    expect(logged().some((l) => l.includes('eşleşen aktif portal hesabı yok'))).toBe(true);
+  });
+
+  it.each([
     ['tek yüzde', '%'],
     ['yüzde + alan adı', '%@example.com'],
     ['alt çizgi', 'ali_veli@example.com'],
@@ -593,5 +612,24 @@ describe('D5-DIAG-R01 createPortalUser — çakışma kapısı giriş/sıfırlam
     const { svc, prisma } = buildService([], { rawRowsByCall: [[], rows] });
     await expect(svc.createPortalUser('C-NEW', 'yeni@example.com', 'Parola12345', 'T1', actor)).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.clientPortalUser.create).not.toHaveBeenCalled();
+  });
+
+  it('[16d] kilit ve yeniden ölçüm TRANSACTION istemcisinde koşar (dış istemcide alınan kilit hemen bırakılırdı)', async () => {
+    const { svc, prisma } = buildService([]);
+    const outerQueryRaw = prisma.$queryRaw;
+    const tx: any = {
+      ...prisma,
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      $queryRaw: jest.fn(async (q: any) => outerQueryRaw(q)),
+    };
+    prisma.$transaction = jest.fn(async (fn: any, _options?: any) => fn(tx));
+    const before = outerQueryRaw.mock.calls.length;
+    await svc.createPortalUser('C-NEW', 'yeni@example.com', 'Parola12345', 'T1', actor);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1); // kilit transaction bağlantısında
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1); // yeniden ölçüm transaction bağlantısında
+    // dış istemci: yalnız işlem öncesi kapı (1) + tx sarmalayıcısının iletimi (1)
+    expect(outerQueryRaw.mock.calls.length - before).toBe(2);
+    expect(prisma.clientPortalUser.create).toHaveBeenCalledTimes(1);
   });
 });

@@ -489,10 +489,11 @@ export class PortalService {
 
   /**
    * D5-DIAG-R01 — hesap açma / yeniden açma yazımından ÖNCE, aynı transaction içinde: adresin karşılaştırma biçimi için
-   * işlem ömürlü danışma kilidi alınır ve çakışma kapısı yeniden ölçülür. Biçim farkıyla aynı adrese eşzamanlı gelen
-   * isteklerden yalnız biri yazar; diğerleri kilidi bekler, ilkinin commit'ini görür (READ COMMITTED;
+   * işlem ömürlü danışma kilidi alınır ve çakışma kapısı yeniden ölçülür. FARKLI müvekkiller için biçim farkıyla aynı
+   * adrese eşzamanlı gelen isteklerden yalnız biri yazar; diğerleri kilidi bekler, ilkinin commit'ini görür (READ COMMITTED;
    * `PORTAL_ACCESS_WRITE_TX`) ve 409 alır. Kilit yalnız bu metodu çağıran yazıcıları sıraya sokar (şema düzeyinde
-   * benzersizlik kısıtı değildir).
+   * benzersizlik kısıtı değildir). Kapsam dışı: AYNI müvekkile eşzamanlı çift istek (ölçüm kendi müvekkilini dışlar;
+   * mevcut davranış sürer). Kilit beklemesi işlem zaman aşımını aşarsa istek 409 yerine genel hatayla biter; yazma olmaz.
    */
   private async assertNoPortalEmailConflictInTx(tx: Prisma.TransactionClient, email: string, clientId: string): Promise<void> {
     const lockKey = `portal-email:${foldPortalEmail(email)}`;
@@ -758,12 +759,15 @@ export class PortalService {
     }
 
     // D5-DIAG-R01: sessiz dalların hangisine düşüldüğü iç günlükte AYIRT EDİLİR (adres, token ve URL yazılmaz).
-    // Dış cevap bütün dallarda bilinmeyen kullanıcıyla AYNIDIR (enumeration-safe).
+    // Dış cevap bütün dallarda bilinmeyen kullanıcıyla AYNIDIR (enumeration-safe). Boş adres ayrı satırdır: istemcinin
+    // alanı boş göndermesi (ör. sayfa devralınmadan önce doldurulan alan) yanlış yazılmış adresten ayırt edilebilsin.
     if (!portalUser) {
       this.logger.log(
         ambiguous
           ? "Şifre sıfırlama talebi: adres biçim farkıyla birden çok aktif portal hesabıyla eşleşiyor (belirsiz) — token üretilmedi, e-posta gönderilmedi"
-          : "Şifre sıfırlama talebi: eşleşen aktif portal hesabı yok — token üretilmedi, e-posta gönderilmedi"
+          : foldPortalEmail(email) === ""
+            ? "Şifre sıfırlama talebi: e-posta alanı boş — token üretilmedi, e-posta gönderilmedi"
+            : "Şifre sıfırlama talebi: eşleşen aktif portal hesabı yok — token üretilmedi, e-posta gönderilmedi"
       );
       return { success: true };
     }

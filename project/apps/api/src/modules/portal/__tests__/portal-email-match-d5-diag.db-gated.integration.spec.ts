@@ -13,8 +13,9 @@
  *      (sekme, bölünemez boşluk dahil) eşleşmeyi engellemez
  *  [7] hesap açma çakışma kapısı aynı karşılaştırmayı kullanır: başka büronun harf/boşluk varyantı 409 alır, kayıtlı
  *      adres boşluklu olsa da; adresin çözüldüğü hesap sonradan DEĞİŞMEZ (giriş ve sıfırlama ilk hesapta kalır)
- *  [8] eşzamanlı hesap açma / yeniden açma: biçim farkıyla aynı adrese gelen isteklerden yalnız biri yazar. İstekler
- *      transaction içinde bir bariyerde toplanıp birlikte bırakılır (çakışma zamanlamaya bırakılmaz)
+ *  [8] eşzamanlı hesap açma / yeniden açma: FARKLI müvekkiller için biçim farkıyla aynı adrese gelen isteklerden yalnız
+ *      biri yazar. İstekler transaction içinde bir bariyerde toplanıp birlikte bırakılır (çakışma zamanlamaya bırakılmaz);
+ *      eşzamanlı istek sayısı bağlantı havuzunun en küçük varsayılanını (3) aşmaz
  */
 import { describeDb } from "../../../../test/describe-db";
 import { Test, TestingModule } from "@nestjs/testing";
@@ -48,15 +49,32 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
       return true;
     },
   };
+  // Her istek bariyerde bir transaction (= bir havuz bağlantısı) tutar. Prisma'nın varsayılan havuzu çekirdek sayısına bağlıdır
+  // (en az 3); eşzamanlı istek sayısı bu yüzden 3'ü aşmaz. Bariyer dolmazsa test asılı kalmaz, açık hata verir.
+  const BARRIER_TIMEOUT_MS = 4000;
   function barrier(expected: number) {
     let arrived = 0;
     let release!: () => void;
-    const all = new Promise<void>((resolve) => (release = resolve));
+    let fail!: (e: Error) => void;
+    const all = new Promise<void>((resolve, reject) => {
+      release = resolve;
+      fail = reject;
+    });
+    all.catch(() => undefined);
+    const timer = setTimeout(
+      () => fail(new Error(`bariyer dolmadı: ${arrived}/${expected} istek transaction içinde (bağlantı havuzu yetersiz olabilir)`)),
+      BARRIER_TIMEOUT_MS,
+    );
     return async () => {
-      if (++arrived >= expected) release();
+      if (++arrived >= expected) {
+        clearTimeout(timer);
+        release();
+      }
       await all;
     };
   }
+  const reasonNames = (rejected: PromiseRejectedResult[]) =>
+    rejected.map((r) => `${r.reason?.name ?? typeof r.reason}:${r.reason?.message ?? ""}`.slice(0, 120));
   const actor = { userId: "d5-diag-r01-actor" } as any;
 
   beforeAll(async () => {
@@ -271,7 +289,8 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
   it("[8] EŞZAMANLI hesap açma: biçim farkıyla aynı adrese gelen isteklerden yalnız BİRİ hesap açar, diğerleri 409 alır", async () => {
     const tag = uniq();
     const base = `Yaris.Hesap.${tag}@D5-Diag-R01.Test`;
-    const variants = [base, base.toLowerCase(), base.toUpperCase(), ` ${base} `, `\t${base.toLowerCase()}`, `${base.toUpperCase()}${NBSP}`];
+    // üç biçim (harf · baş/son boşluk · bölünemez boşluk) AYNI ANDA; diğer biçimler [7]'de sırayla ölçülür
+    const variants = [base, ` ${base.toLowerCase()} `, `${base.toUpperCase()}${NBSP}`];
     const targets: Array<Awaited<ReturnType<typeof createClient>>> = [];
     for (let i = 0; i < variants.length; i++) targets.push(await createClient(`yaris-${i}`));
     txGate = barrier(variants.length);
@@ -280,7 +299,9 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
     ).finally(() => (txGate = null));
     const fulfilled = results.filter((r) => r.status === "fulfilled");
     const rejected = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+    expect(reasonNames(rejected)).toEqual(rejected.map(() => expect.stringMatching(/^ConflictException:/)));
     expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(variants.length - 1);
     expect(rejected.every((r) => r.reason instanceof ConflictException)).toBe(true);
     const rows = await prisma.clientPortalUser.findMany({
       where: { clientId: { in: targets.map((t) => t.client.id) } },
@@ -305,8 +326,10 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
       portal.createPortalUser(a.clientId, base, "BaskaSifre123", tenantA, actor),
       portal.createPortalUser(b.clientId, base.toLowerCase(), "BaskaSifre123", tenantB, actor),
     ]).finally(() => (txGate = null));
-    expect(results.filter((r) => r.status === "fulfilled").length).toBe(1);
     const rejected = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+    expect(reasonNames(rejected)).toEqual(rejected.map(() => expect.stringMatching(/^ConflictException:/)));
+    expect(results.filter((r) => r.status === "fulfilled").length).toBe(1);
+    expect(rejected.length).toBe(1);
     expect(rejected.every((r) => r.reason instanceof ConflictException)).toBe(true);
     expect((await rowOf(a.id)).isActive !== (await rowOf(b.id)).isActive).toBe(true);
   });
