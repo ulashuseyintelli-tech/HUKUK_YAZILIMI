@@ -2,7 +2,8 @@
 
 > **DURUM: HAZIR — CANLIDA KOŞULMADI.** Canlı Run/Recover ve yayın bu paketle yetkilendirilmez.
 > **ÖN KOŞUL:** canlı API dist'i **R27** (`E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134`); owner bloğu bu pini doğrular,
-> R26 canlı ile Preflight/Run **DUR** verir. Uygulama sırası: R27 yayınından **sonra** (D-5 ile aynı koşul).
+> R26 canlı ile **her modda** (Preflight, QrTest, Run ve Recover) **DUR** verir — R02-b düzeltmesi: önceki metin yalnız "Preflight/Run" diyordu;
+> kapılar mod dalından önce koşar (§10.1). Uygulama sırası: R27 yayınından **sonra** (D-5 ile aynı koşul).
 > Tanım: `client-extacc-d8-staff-surface-r01` §4 ve §6. İki bağımsız inceleme sonrası düzeltmeler: §8.
 >
 > **R02 (2026-10-01) — yalnız owner bloğu METNİ + blok öz-testi + bu belge.** Koşucu, sahte API, QR betiği ve bloğun pin listesindeki 9 dosya
@@ -23,6 +24,14 @@
 > canlı yayın ağacına çözülüyorsa test **başlamaz** (§5 "R02 tur 4"). Commit'li dosya **doğrudan** koşuldu: **51/51 PASS**. Koşucu, owner bloğu,
 > blok öz-testi, QR betiği, sahte API ve 9 pinli dosya **değişmedi**; paket digest'i aynı (§6). Önceki turların "koşulamadı" satırları güncel
 > duruma çevrildi, eski metin tarihsel not olarak korundu; ayna kopya sonuçları **tarihsel kanıttır**. Bu tur canlı Run/Recover'ı yetkilendirmez.
+>
+> **R02-b (2026-10-03) — yalnız bu belge.** "Run / normal kapanış / AYRI Recover" sınırları kaynaktan (owner bloğu, koşucu, ortak kütüphaneler)
+> yeniden okunarak **§10**'a yazıldı: kapıların her modda koşması ve Recover'ın kapı bağımlılıkları, Recover'ın canlı yazma kümesi, Recover'ın Run
+> makbuzunu yeniden yazması, kalıntı senaryosunda tek Recover'ın sınırı, Recover'ın 1 ve 2 çıkış kodları, Run kapanışında personel oturumunun
+> yenilenmemesi, onay metni ile kurulumun yazdığı kayıt kümesi arasındaki fark. Owner bloğu, koşucu, iki öz-test, QR betiği, sahte API ve 9 pinli
+> dosya **değişmedi**; §6'daki pinler ve paket digest'i aynıdır. Bu turda hiçbir blok, koşucu ya da öz-test **koşulmadı**; §10'daki kalemler
+> **kaynaktan okundu, canlıda ölçülmedi**. Karar gerektiren konular §10.8'de **açık owner kararı** olarak durur; bu not canlı Run/Recover'ı
+> yetkilendirmez.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -109,6 +118,9 @@ reddi ölçülmez); hesap varken mevcut oturum reddi Recover'da ölçülemez →
 owner için bir adım tanımı **değildir** ve bir çıkış kodu Recover'ı **yetkilendirmez**. Recover yalnız kanıt incelendikten sonra **ayrı owner
 onayıyla, bir kez** başlatılır; blok onu kendiliğinden başlatmaz. Yukarıdaki "Recover bir kez daha" ifadesi koşucunun öz-testte ölçülen
 davranışıdır: **ikinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir** (§4 adım 7, §7).
+**R02-b (2026-10-03):** yukarıdaki "owner dosyayı elle sildikten sonra Recover bir kez daha" akışı **iki** Recover içerir; tek Recover kuralıyla
+birlikte okunduğunda sıra karara bağlanmamıştır — dosya diskte kaldıkça P6-C-DOC FAIL ve çıkış 6'dır (§10.4; **açık owner kararı OK-2**, §10.8).
+Çıkış satırındaki kodlar Run içindir; Recover'ın 1 ve 2 dahil çıkış kodları §10.5'tedir.
 
 ## 3. Owner bloğu (`scripts/d6-owner-live-block.ps1`) — modlar ve sıra
 
@@ -140,6 +152,12 @@ altına şu not basılır: `Not: satır rengi yalnız birleşik ölçütü (P6-D
 parçaların ayrı sonucu satırın metnindedir.` Renk mantığı değişmedi; (g) Recover çıkış 6 satırı: "Bu çıkış kodu yeni bir Recover için YETKİ
 DEĞİLDİR … İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir" — ikinci Recover için yol tanımlanmaz.
 
+**R02-b — kapılar ve Recover (2026-10-03; blok değişmedi, yalnız bu belge):** bu bölümün ilk paragrafı kapıları "Preflight" başlığı altında
+sayar; blokta salt okuma kapıları **mod dalından önce** koşar ve QrTest, Run ile **Recover**'da da aynen aranır (dış zincir yalnız Preflight ve
+Run'da, yerel konsol yalnız QrTest ve Run'da). Recover'ın kapı bağımlılıkları §10.1'de, Recover'ın canlı yazma kümesi §10.2'de, Recover'ın
+bitiş satırında sayılmayan 1 ve 2 çıkış kodları §10.5'tedir. Blok Recover girişinde canlı yazma kümesini owner'a **göstermez** (tek soru
+kalıntı kararıdır); owner bu kümeyi §10.2'den okur.
+
 ## 4. Owner adımları (telefon: Wi-Fi KAPALI, mobil veri, gizli sekme; yalnız ekranda gördüğünüz değerleri kullanın)
 
 1. Bağımsız PowerShell penceresi (uygulama paneli DEĞİL). `-Mode Preflight` → "PREFLIGHT GEÇTİ" değilse durun.
@@ -166,6 +184,12 @@ DEĞİLDİR … İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR; owner kara
      kararı gerektirir** (R02 ikinci tur). Kanıtı inceleyin ve sonucu CLIENT'a bildirin. Kanıtta "diskte kalan dosya" listelendiyse dosyayı
      owner elle siler; "dosya erişimi ÖLÇÜLEMEDİ" yazıyorsa belge kovasının okunabilirliğini owner düzeltir — bunlar yeni bir Recover
      yetkisi vermez. Recover 3 verirse Recover tekrarlanmaz. Kabul koşumu (Run) tekrarlanmaz.
+   - (d) **R02-b (2026-10-03) — Recover onayından ÖNCE okunacaklar (§10):** Recover canlıya yazar; yazma kümesi §10.2'dedir (blok bunu göstermez).
+     Recover ancak tüm salt okuma kapıları geçerse başlar (§10.1); Run'dan sonra main ilerlemiş, canlı dist ya da `.env` değişmiş ya da API
+     kapalıysa blok 90 ile durur ve Recover başlamaz (**açık owner kararı OK-1**). Recover, Run makbuzunu yeniden yazabilir; Run'ın
+     `SHA256-MANIFEST.txt` dosyasındaki makbuz özeti artık tutmaz (§10.3; **OK-3**). Kalıntı senaryosunda (b)→(c) sırası — önce Recover, sonra
+     dosyanın elle silinmesi — tek Recover ile P6-C-DOC PASS **üretmez**; sıranın nasıl olacağı **açık owner kararıdır** (§10.4; **OK-2**) ve bu
+     belgeyle karara bağlanmaz. Recover 1 ya da 2 ile de bitebilir (§10.5); bu kodlar da yeni bir Recover için yetki değildir.
 
 ## 5. Öz-testler (canlıya dokunmadan; 2026-09-29; disposable DB 127.0.0.1:5448/d5_reset_test, sahte API 8199 / dış 8458)
 
@@ -265,6 +289,8 @@ i12-live-identity, i13-lib, koşucu) + `d6-qr-test.js`. Koşucu değiştiğinde 
 - **Makbuz (`d6-setup-receipt.json`) ve kanıt JSON'u canlı belge kovasının MUTLAK yolunu içerir** (`documentFile`, `residueFiles`; Recover'ın
   diskte yoklaması için gerekli). Bu dosyalar repoya/belgeye **kopyalanmaz**, yalnız owner'ın yerel kanıt dizininde kalır.
 - Dosya erişimi `olculemez` ise (kova ACL) Run/Recover PASS vermez (6); kova okunabilirliğini owner düzeltir; Preflight bunu önceden ölçer.
+  (R02-b kapsam notu: Preflight yalnız `portal-documents` **kova kökünün** listelenebilirliğini ölçer; sentetik tenantın alt dizinindeki ya da
+  tek dosyadaki erişim reddini ölçmez — §10.1.)
 - İzole mod API kapısı yalnız D-6'da; D-5 koşucusu aynı sertleştirmeyi taşımaz (ayrı kayıt; bu paket D-5'i değiştirmez).
 - `extacc-qr-test.js` yalnız `/portal/login` kabul eder; D-6 kendi `d6-qr-test.js`'ini kullanır (D-5 bloğunun QrTest modu `/portal/forgot-password`
   ile aynı betiği çağırır → orada çıkış 4 beklenir; ayrı kayıt, bu paket D-5'i değiştirmez).
@@ -319,6 +345,10 @@ i12-live-identity, i13-lib, koşucu) + `d6-qr-test.js`. Koşucu değiştiğinde 
   sayılmaz. Betiğin canlı ağaç bağımlılığı ayrı bir düzeltme konusudur (bu paket değiştirmedi)."
 - **Pencere açma yolu.** Ajanın PowerShell 7'den `Start-Process` ile açtığı Windows PowerShell 5.1 penceresinde `Get-FileHash` bulunamaz
   (§4 adım 1); blok bu durumu kendisi düzeltmez.
+
+**R02-b ile eklenen sınırlar (2026-10-03):** Run / normal kapanış / ayrı Recover sınırları ve bunlara bağlı **açık owner kararları** (OK-1 … OK-4)
+ayrı bölümdedir: **§10**. Yukarıdaki maddeler olduğu gibi durur; §10 onları kaynağa göre tamamlar (kapılar her modda, Recover'ın yazma kümesi,
+makbuzun yeniden yazılması, kalıntıda sıra, Recover 1/2, personel oturumu, onay metni kapsamı).
 
 ## 8. İnceleme düzeltmeleri (R01, 2026-09-29; iki bağımsız inceleme)
 
@@ -466,3 +496,204 @@ okunmadı — canlı ağaç yolu negatif ölçümlerde yalnız **metin** olarak 
 ağaç değil başka (varolmayan) bir ad oldu ve betik doğru olarak "kütüphane kökü dizini yok" (çıkış 2) dedi; canlı ağaç altında dosya sistemi
 çağrısı yine 0'dı. Sürücü kültürden bağımsız çevirmeye düzeltildi ve (b3) yeniden ölçüldü (çıkış 4). İlk kayıt silinmedi:
 `neg\ilk-kosum-b3-tr-kultur\`.
+
+## 10. R02-b ek sınırlar — Run / normal kapanış / AYRI Recover (2026-10-03; yalnız bu belge)
+
+Kapsam: değişen **yalnız bu belgedir**. Owner bloğu, koşucu, iki öz-test, QR betiği, sahte API ve bloğun pinlediği 9 dosya **değişmedi**; §6'daki
+pinler ve paket digest'i aynıdır. Bu bölümdeki her kalem **kaynaktan okunmuştur**; satır numaraları dal ucu `cefe2663`'teki dosyalara göredir ve
+okunan baytlar §6 / bloktaki pinlerle eşit ölçülmüştür (blok `082527EE…B3E2`, koşucu `5D74206B…58DD`, `i13-lib.js` `59BA7360…D385`, `i3-lib.js`
+`56F3788E…74A3`, `i12-live-identity.js` `9516E462…774F`, `h5-url-live-run.js` `F2D0975D…C359`). Kalemler **canlıda ölçülmedi**; bu turda hiçbir
+blok, koşucu ya da öz-test **koşulmadı**, canlı ortama ve canlı `.env`'e dokunulmadı. Bu bölüm canlı Run/Recover'ı yetkilendirmez; karar
+gerektiren konular §10.8'de **açık owner kararı** olarak yazılıdır ve bu belgeyle karara bağlanmaz.
+
+Üç ayrı işlem (terimler): **Run** = tek seferlik kabul koşumu (GO ile). **Normal kapanış** = Run'ın koşucu **içindeki** `finally` bloğu (koşucu
+satır 406–428; sıra: konsol temizliği → portal kapanışı + belge kalıntısı → yabancı satır temizliği → personel/dosya kapanışı → U-CLOSE → audit
+sayımı → P6-D9 → U-ISO → özet → kurtarma önerisi → çıkış kodu → kanıt); Run'ın parçasıdır, ayrı onay istemez. **Recover** = owner'ın ayrıca
+başlattığı, canlıya **yeniden yazan** ayrı işlem (koşucu satır 431–470); çıkış kodu onu yetkilendirmez (§4 adım 7).
+
+### 10.1 Kapılar her modda koşar; Recover'ın kapı bağımlılıkları (düzeltme)
+
+- **Düzeltilen iddia.** Belge başlığı "R26 canlı ile Preflight/Run DUR verir" diyordu; eksikti. Blok akışında `Invoke-ReadOnlyGates` mod dalından
+  **önce** çağrılır (blok satır 453–467): Preflight, QrTest, Run ve **Recover**'ın dördünde de aynı salt okuma kapıları koşar. Biri tutmazsa blok
+  **çıkış 90** ile durur (satır 469–472) ve o mod başlamaz. Başlık ve §3 buna göre düzeltildi (R02-b notları).
+- **Kapılar (blok satır 129–171):** Node ortam değişkenleri (`NODE_OPTIONS`, `NODE_TLS_REJECT_UNAUTHORIZED`, `NODE_EXTRA_CA_CERTS`) tanımsız ·
+  `git fetch` + ana checkout HEAD = origin/main · takipli kirli dosya yok · 9 dosya pini + paket digest'i · canlı API dist pini (R27) · canlı
+  `.env` pini · public portal adresi biçimi · `HUKUK_DATA_ROOT` `.env`'de tanımlıysa dizin var; `portal-documents` kova kökü **varsa** listelenebilir (henüz yoksa yalnız not, DUR değil) ·
+  8080'de **tam bir** dinleyici (canlı API ayakta) · başka kabul süreci çalışmıyor (D-4 / D-5 / D-6 / D-7 / D-8 koşucuları dahil: D-6 ile D-7 aynı
+  anda koşamaz) · başlatıcı günlüğünde DB kimliği · `node` çözülebilir.
+- **Moda özgü ek kapılar.** Dış zincir (`Assert-ExternalChain`) yalnız Preflight ve Run'da (satır 459, 332); yerel konsol (`Assert-LocalConsole`)
+  yalnız QrTest ve Run'da (satır 434, 333) aranır. **Recover'da ikisi de aranmaz** (satır 405–430): zincir bozukken dış adresten yeni giriş reddi
+  (P6-C3D) ölçülemeyen kalabilir (yanıt yok / 503 / 429); dış uçtan 401 dışında **başka** bir yanıt gelirse P6-C3D FAIL olur ve Recover çıkış 6
+  verir (koşucu satır 219, 231, 237). Dış uçların zincir bozukken ne döndürdüğü canlıda ölçülmedi.
+- **Recover'a etkisi (D-7 paket belgesindeki K-4'ün D-6 karşılığı).** Run ile Recover arasında şunlardan biri olursa blok 90 ile durur, Recover
+  **başlamaz**, koşucu çağrılmaz ve canlıya hiçbir şey yazılmaz: (i) main ilerlemiş ve ana checkout senkron değil (blok yalnız `git fetch` yapar;
+  senkronlama bloğun dışındadır); (ii) ana checkout'ta takipli dosya kirli; (iii) pinli 9 dosyadan biri main'de değişmiş; (iv) canlı dist
+  değişmiş (yeni yayın ya da geri dönüş); (v) canlı `.env` değişmiş; (vi) canlı API kapalı ya da 8080'de birden çok dinleyici var; (vii) başka bir
+  kabul koşucusu çalışıyor (ör. D-7, ya da asılı kalmış bir D-6 koşucusu); (viii) `portal-documents` kova kökü var ama listelenemiyor. Bu durumda kapanış bu
+  bloktan tamamlanamaz → **açık owner kararı OK-1** (§10.8). Yayın planı ile D-6 koşum sırası bu yüzden birlikte kararlaştırılır.
+- **Koşucunun Recover'daki kendi kapıları** (koşucu satır 432–439, 448–450): TLS doğrulaması açık, beklenen DB = bağlı DB, API adresi beyanı,
+  origin biçimi, `D6_RECOVER_CONFIRM`, makbuz okunabilir + biçimi + runId eşleşmesi, kimlik bağı (makbuz ↔ tenant kimliği / slug / runId;
+  `i12-live-identity.js` satır 34–63), portal hâlâ açıksa makbuzdaki personel kullanıcısının varlığı. Biri tutmazsa canlı DB'ye **yazılmadan**
+  durulur (çoğunda çıkış 4). Koşucu dist/`.env` pini ölçmez — ama bloksuz koşum bu paketle yetkilendirilmez.
+- **Kova kapısının kapsamı.** `Test-BucketReadable` yalnız `portal-documents` **kova kökünün** listelenebilirliğini ölçer (blok satır 197–203);
+  sentetik tenantın alt dizinindeki ya da tek dosyadaki erişim reddini ölçmez. O durum ancak koşucunun üç durumlu yoklamasında `olculemez` olarak
+  görünür (§2). §7'deki "Preflight bunu önceden ölçer" cümlesi bu kapsamla okunur (kaynaktan okundu; canlıda ölçülmedi).
+
+### 10.2 Recover canlıya ne yazar — Run'ın kendi kapanışından AYRI bir canlı yazma işlemi
+
+Recover kabul ölçütlerini koşmaz; yalnız kapanışı yeniden dener ve **canlıya yazar**. Bu küme belgede listelenmiyordu (yalnız satır silme
+anlatılıyordu) ve blok Recover girişinde owner'a **gösterilmez** (blok satır 405–430: tek soru kalıntı kararıdır). Yazma kümesi (koşucu
+`recoverMode` satır 431–470, `closePortal` 172–235, `documentResidue` 140–159, `foreignCleanup` 161–169; `i13-lib.js` `closeAccess` 46–59;
+öz-testte sahte API'ye karşı Z5 / Z8 / Z16 senaryolarında koşulur, canlıda koşulmadı):
+
+1. **Portal hâlâ açıksa** (hesap aktif ya da müvekkil erişim bayrağı açık; koşucu satır 450, geç oluşmada 196): makbuzdaki sentetik personel
+   (elev1) **geçici olarak yeniden aktifleştirilir ve parola özeti yeniden yazılır** (`User.isActive=true` + yeni `passwordHash`; satır 447; parola
+   bloğun o Recover koşumu için ürettiği rastgele değerdir — blok satır 212–213); o personelle yerel API'de oturum açılır ve yetkili uç çağrılır
+   (`POST /portal/admin/disable-user`, en çok 2 deneme; satır 195–203). Ürün tarafı (R27 adayı `1b758d29`, `portal.service.ts`
+   `disablePortalUser`): portal hesabı pasif + sürüm artışı + bekleyen sıfırlama alanları temizlenir, müvekkil portal erişimi kapalı, **kapatma
+   audit satırı** (aktör: sentetik personel).
+2. **Portal DB'de kapalı durumdaysa** (1. adımla ya da önceden; satır 216, 458): pasif portal hesabına **yalnız ölçüm için yeni rastgele parola
+   özeti** yazılır (`ClientPortalUser.passwordHash`; hesap pasif kalır) ve bu parolayla yerel + dış adresten giriş **denenir** (401 beklenir;
+   P6-C3L / P6-C3D; satır 217–220).
+3. **Owner kalıntı sorusuna E dediyse ve satır varsa:** sentetik müvekkilin **tüm** `PortalDocument` satırları Prisma ile silinir (satır 144–148;
+   koşucunun kendi belgesi ile telefondan yüklenenler ayrılmaz). **Dosyalar silinmez**: koşucuda dosya ya da dizin silen çağrı yoktur; kalan
+   dosyalar kanıtta adlarıyla listelenir. H denirse satır da silinmez.
+4. **Sentetik yabancı satır** (makbuzda `foreignDocumentId` varsa) Prisma ile silinir (satır 161–169, 459) — P6-FOREIGN-CLEAN.
+5. **Personel/dosya kapanışı (`closeAccess`; satır 460):** iki sentetik tenantın TÜM kullanıcıları pasif + `tokenVersion` artışı (**her çağrıda
+   yeniden artar**: Run'ın normal kapanışında artmış sürümler Recover'da bir kez daha artar), ACTIVE dosyalar CLOSED. 1. adımda aktifleştirilen
+   personel burada yeniden pasifleştirilir; bu adım doğrulanmazsa personel **aktif kalmış olabilir** (çıkış 5; portal da doğrulanmadıysa 6).
+6. **Yerel dosyalar:** Run makbuzu yeniden yazılabilir (§10.3); makbuzun yanında yeni bir `recover-<zaman>-<id>` kanıt dizini oluşur
+   (`d6-evidence.json`, `d6-recover.log`, `SHA256-MANIFEST.txt`; blok satır 411–421).
+
+Recover'ın **yazmadıkları**: GO defteri değişmez ve GO sorulmaz; `Tenant` satırına yazma yoktur; audit ve günlük satırları silinmez; diskteki
+dosyalar ve kova dizini silinmez. Kimlik bağı doğrulanmazsa koşucu canlı DB'ye yazmadan durur (çıkış 4; satır 448). Recover **U-ISO, P6-D9 ve
+kabul ölçütlerini (D6-\*) üretmez**; mevcut oturum reddi (P6-C4L / P6-C4D) Recover'da hep ÖLÇÜLEMEYEN kalır (koşumun portal oturumu saklanmaz;
+satır 457). Canlı API uygulama günlüğüne düşen satırlar (personel / portal giriş denemeleri) bu paketle ölçülmez; ürünün giriş uçlarının kendi
+yazmaları bu turda kaynaktan okunmadı.
+
+**"Recover BİR KEZ" kuralı kodla zorlanmaz.** Blok Recover'da GO sormaz, defter tutmaz ve aynı makbuzla ikinci bir Recover'ı engellemez; koşucu
+da engellemez. İkinci bir Recover yukarıdaki yazmaları **yeniden** yapar (kullanıcı sürümleri yeniden artar, pasif portal hesabına yeniden
+ölçüm parolası özeti yazılır). Kural owner disiplinidir (§4 adım 7, §7); ikinci bir Recover bu paketle tanımlı değildir, owner kararı gerektirir.
+
+### 10.3 Recover Run makbuzunu yeniden yazabilir — Run manifestindeki makbuz özeti tutmaz
+
+Recover, `-ReceiptFile` ile verilen makbuzu **yerinde** yeniden yazar: bilinen bir dosya yolu varsa (makbuzdaki `documentFile`, önceki
+`residueFiles` ya da o an DB'de kalan satırların yolları) makbuza `residueFiles` alanı eklenip dosya yeniden kaydedilir (koşucu satır 452–454;
+yazılamazsa yalnız kanıta `receiptWriteError` düşer, Recover sürer). Run yükleme adımına ulaşıp DB satırını gördüyse `documentFile` makbuzda
+vardır; yani bu durumda **ilk** Recover makbuzun baytlarını değiştirir. Run'ın `SHA256-MANIFEST.txt` dosyası kanıt dizinindeki tüm dosyaları —
+makbuz dahil — Run sonunda özetlemiştir (blok satır 239–242, 379). Sonuç: **Recover'dan sonra Run manifestindeki `d6-setup-receipt.json` özeti
+dosyayla tutmaz**; bu, kanıtın bozulduğunu değil Recover'ın makbuzu yeniden yazdığını gösterir. Run manifestinin diğer satırları etkilenmez
+(Recover kanıtı ayrı `recover-*` alt dizinine yazılır; Run manifesti yalnız üst düzey dosyaları kapsar). Makbuz başka bir yoldan (kopya) verilirse
+yeniden yazılan ve yanına `recover-*` dizini açılan o kopyadır. Recover'dan önce Run kanıtının nasıl sabitleneceği **açık owner kararıdır**
+(OK-3). Makbuza `residueFiles` yazıldığı koşucu öz-testinde ölçülür (Z5-b); Run manifestindeki makbuz özetinin Recover'dan sonra tutmadığı ise
+öz-testte **ölçülmez** (kaynaktan okundu) ve canlıda ölçülmedi.
+
+### 10.4 Kalıntı senaryosunda tek Recover'ın sınırı (çelişki kaydı)
+
+Belge kalıntısı (P6-C-DOC) "bu müvekkilin `PortalDocument` satırı 0 **ve** bilinen dosyalar diskte yok" ister (koşucu satır 140–159). Recover'da
+owner E dese ve satırlar silinse bile **dosya diskte durdukça P6-C-DOC FAIL**'dir; erişim reddinde ÖLÇÜLEMEYEN'dir. İki durumda da portal
+kapanışı "DB kapalı" sayılmaz (satır 230) ve Recover **çıkış 6** verir (satır 237). Koşucu ve blok dosya silmez.
+
+Belgedeki çelişki: §2 çıkış paragrafı ve koşucunun kanıt metni (`recovery.adim`, satır 466–468: "… elle silindikten sonra Recover BİR KEZ daha")
+"Recover → dosyayı elle sil → Recover bir kez daha" akışını anlatır; öz-test Z5 / Z6 / Z8 de bu zinciri ölçer (üçünde de üç Recover). Aynı belge
+ikinci bir Recover'ı "bu paketle tanımlı değil" sayar; §4 adım 7(c) ise dosyanın Recover 6'dan **sonra** elle silinmesini anlatır. Bu sırayla
+**tek** Recover hiçbir zaman P6-C-DOC PASS üretmez: dosyanın yokluğu makineyle ölçülmeden kalır. Tek Recover ile ölçülmüş temiz kalıntı ancak
+dosya Recover'dan **önce** yoksa (ve kalan satır varsa aynı Recover'da E ile siliniyorsa) çıkar. Aynı şey "dosya erişimi ÖLÇÜLEMEDİ" durumu için geçerlidir
+(kova okunabilirliği Recover'dan önce düzelmemişse sonuç yine 6'dır).
+
+Hangi sıranın uygulanacağı **AÇIK OWNER KARARIDIR (OK-2, §10.8)**; bu belge ikisinden birini seçmez. Karara yardımcı kaynak bilgisi:
+- Run kanıtı kalan dosyaları yalnız **adlarıyla** listeler (`portalClose.docResidue.filesLeftOnDisk`); mutlak yol yalnız koşucunun kendi belgesi
+  için vardır: Run makbuzunda ve Run kanıtının `receipt` alanında (`documentFile`). Telefondan yüklenen dosyanın mutlak yolu Run makbuzunda da
+  kanıtında da yoktur; ilk Recover onu makbuza `residueFiles` olarak yazar (satır 454). Ürün aynı tenantın yüklemelerini aynı kova dizinine yazar (§1; kaynaktan okundu, canlıda ölçülmedi).
+- Dosya, satırı durduğu halde elle silinirse satır Recover'da E ile silinene kadar dosyasız kalır; canlı diskte elle silme bu paketin bir adımı
+  değildir, owner'ın kendi işlemidir.
+
+### 10.5 Recover çıkış kodları — 1 ve 2 dahil
+
+Bloğun Recover bitiş satırı (blok satır 422) 0 / 3 / 6 / 5 / 4 / 7 / 91 kodlarını açıklar; **1 ve 2'yi saymaz**. Koşucunun Recover çıkış kodu
+(`recoverExitCode`, koşucu satır 237) şu öncelikle kurulur: **6 > 5 > 1 > 2 > 3 > 0**; kanıt yazılamazsa 7 (5 / 6 korunur; `h5-url-live-run.js`
+satır 199–207). Blok node kodunu değiştirmeden taşır.
+
+| Kod | Recover'da anlamı (kaynaktan okundu; canlıda ölçülmedi) |
+|---|---|
+| 90 | Blok kapıda durdu: salt okuma kapısı, `-ReceiptFile` eksik, makbuz biçimi tanınmadı ya da kalıntı yanıtı E/H değil. Bu nedenlerde koşucu çağrılmadı; canlıya yazılmadı (§10.1). **İstisna:** node 0 döndükten sonra blokta beklenmeyen bir hata olursa (ör. manifest yazılamadı) blok yine 90 verir (blok satır 471); bu durumda koşucu **çağrılmıştır** — `recover-*` dizininde `d6-evidence.json` varlığına bakılır |
+| 4 | Koşucu kapısı: DB / API / origin beyanı, makbuz okunamadı ya da alanı eksik, runId eşleşmiyor, kimlik bağı doğrulanmadı, portal açık ama makbuzdaki personel yok. Canlı DB'ye yazılmadı |
+| 6 | Portal DB kapanışı doğrulanmadı (P6-C2 / P6-C5 PASS değil ya da P6-C2V FAIL), **belge kalıntısı** (P6-C-DOC PASS değil — §10.4), yeni giriş reddi FAIL (P6-C3L/D), geç oluşma dışlanamadı ya da portal kapanış adımı hata ile kesildi |
+| 5 | 6 koşulları oluşmadı; personel/dosya kapanışı (`closeAccess`) doğrulanmadı — geçici aktifleştirilen personel aktif kalmış olabilir (§10.2 adım 5) |
+| **1** | **DURDU — beklenmeyen hata.** İki yol: (a) koşucu başlangıç adımlarında (portal durumu okuması, geçici personel oturumu) bir hata yakaladı (`out.fatal`; satır 448–450) ve 6 / 5 koşulları **oluşmadı** — yani portal DB kapanışı ve personel/dosya kapanışı kanıtta ok görünür ama koşum hatalıdır; (b) koşucu kanıt yazmadan düştü (yakalanmamış hata; Node'un bu durumdaki çıkış kodu ölçülmedi) — bu durumda `d6-evidence.json` **yoktur** ve kapanış durumu bu koşumdan okunamaz (blok yalnız "0 + kanıt yok"u 7'ye çevirir; satır 231–235). Hangisi olduğu kanıt dosyasının varlığından ve `fatal` alanından ayrılır |
+| **2** | **FAIL — kapanış ok, en az bir ölçüt FAIL.** Recover'da üretilen ölçütlerden 6 ya da 5'e düşmeden FAIL kalabilen tek ölçüt **P6-FOREIGN-CLEAN**'dir (yabancı sentetik müvekkilde satır kaldı; satır 161–169) — diğer FAIL'ler 6 ya da 5 üretir. (Koşucunun kapı düzeyindeki 2'si — zorunlu ortam eksik, satır 435 — blok ortamı her zaman kurduğu için bloktan beklenmez) |
+| 3 | En iyi olağan sonuç: FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN. Hesap varken P6-C4L/D hep ölçülemeyendir. **Dikkat:** blok satırı "3 = DB kapalı + yeni giriş reddi" der; yeni giriş reddi yanıt yok / 503 / 429 nedeniyle ÖLÇÜLEMEYEN kaldığında da çıkış 3'tür (satır 219, 231, 237) — yeni giriş reddinin gerçekten ölçülüp ölçülmediği P6-C3L / P6-C3D satırlarından okunur. P6-C2V referans sürüm yokken ölçülemeyen kalabilir |
+| 0 | Yalnız portal hesabı hiç açılmamışsa + kalıntı yoksa (HTTP reddi ölçülmez; §2) |
+| 7 / 91 | Kanıt yazılamadı ya da node 0 döndü ama kanıt yok · node başlatılamadı / kod alınamadı |
+
+Recover'ın **hiçbir** çıkış kodu (1 ve 2 dahil) yeni bir Recover için yetki değildir; blok 1 ve 2 için ek yönlendirme satırı basmaz (yalnız 3 ve
+6 için basar; satır 423–427). Sonuç kanıtla birlikte CLIENT'a bildirilir; ikinci bir Recover bu paketle tanımlı değildir (§4 adım 7).
+
+### 10.6 Run'ın normal kapanışında personel oturumu yenilenmez
+
+Run'ın kapanış çağrısı (`POST /portal/admin/disable-user`) koşumun başında, kurulumdan hemen sonra alınan personel (elev1) token'ını kullanır
+(koşucu satır 283). Run'ın `closePortal` çağrısına oturum yenileyici (`sessionProvider`) **verilmez** (satır 409–411); yeniden oturum açma yalnız
+Recover'da vardır (satır 447, 455). Token kapanış anında geçersizse yetkili uç isteği 4xx ile reddeder; koşucu 4xx yanıtta ikinci denemeyi yapmaz
+(satır 202), **portal erişimi açık kalır** (P6-C2 FAIL) ve koşum **çıkış 6** ile biter. Yabancı satır temizliği ve personel/dosya kapanışı yine
+denenir (satır 414–415): personel pasifleşir ama portal hesabı açık kalmış olur. Token alındıktan sonra koşum şu süreleri bekleyebilir: telefon
+girişi en çok 20 dk + inceleme 120 sn + telefon yüklemesi için kalıntı beklemesi en çok 5 dk + ikinci inceleme 120 sn (≈ 29 dk) ve aradaki HTTP
+çağrıları. Personel token süresi kaynakta `JWT_EXPIRES_IN` ile belirlenir (R27 adayı `1b758d29`, `auth.module.ts`: kaynak varsayılanı `7d`);
+**canlıdaki değer ve canlıdaki token süresi ölçülmedi** (canlı `.env` bu turda okunmadı). Bu yoldan gelen çıkış 6 da Recover yetkisi değildir
+(§4 adım 7). Kaynaktan okundu; canlıda ölçülmedi.
+
+### 10.7 Onay metni ile kurulumun yazdığı kayıt kümesi (sınır notu; blok metni DEĞİŞTİRİLMEDİ)
+
+**Blok metni şunu der** (canlı veri işleme onayı; blok satır 247–250): canlı DB'de bu koşumun iki yeni sentetik tenantında "sentetik kullanıcılar,
+müvekkil, dosya, borçlu", sentetik müvekkile ait bir portal hesabı, bir `PortalDocument` satırı + kovada bir dosya ve yabancı sentetik müvekkil
+için dosyasız bir satır yazılacaktır.
+
+**Kurulum şunu yazar** (`setupI3`, `i3-lib.js` satır 153–291; tek transaction; koşucu satır 277) — kaynaktan sayılan doğrudan `create` çağrısı
+**27 satır**:
+
+| Tenant | Kayıt | Adet |
+|---|---|---|
+| hedef + yabancı | `Tenant` | 2 |
+| hedef | `User` (hepsi `.invalid` adresli; kurulumda aktif, kapanışta pasif) | 9 |
+| hedef | `Lawyer` profili (üç kullanıcı için) | 3 |
+| hedef | `StaffMember` profili (beş kullanıcı için) | 5 |
+| hedef | `PermissionGrant` (bir kullanıcı için) | 1 |
+| hedef | `Client` (portal hesabının açıldığı müvekkil + ikinci müvekkil) | 2 |
+| hedef | `Case` + `CaseClient` bağı | 1 + 1 |
+| hedef | `Debtor` + `CaseDebtor` bağı | 1 + 1 |
+| yabancı | `Client` | 1 |
+
+Fark: metin "müvekkil" der (tekil), kurulum hedefte **iki**, yabancıda **bir** müvekkil yazar; kullanıcı sayısı (9) ile bunlara bağlı avukat /
+personel profili ve yetki kaydı satırları, dosya–müvekkil ve dosya–borçlu bağ satırları metinde sayılmaz. Metnin doğru olan kısmı: tenant sayısı
+(iki) ve kapsam (yalnız bu koşumun sentetik tenantları). Kurulum dışındaki yazmalar (portal hesabı ve belge satırı ürün ucuyla, yabancı belge
+satırı Prisma ile, portal aç/kapa audit satırları) metinde vardır; portal girişlerinin hesabın giriş sayacını işlediği (koşucu telefon girişini bu
+sayaçtan algılar; satır 377) metinde anılmaz. **Kapanışta bu satırların hiçbiri silinmez**: `closeAccess` yalnız kullanıcıları pasifleştirir ve
+dosyayı CLOSED yapar (`i13-lib.js` satır 46–59); iki sentetik tenant ve kayıtları canlı DB'de kalır — **saklandı**. Owner "EVET" yazarken onay
+metninin bu eksiklerini bu nottan bilir; metnin kendisini düzeltmek blok dosyasını (ve §6'daki blok sha256'sını) değiştirir → OK-4.
+
+### 10.8 Açık owner kararları (bu belgeyle karara bağlanmaz)
+
+- **OK-1 — Recover ve kapı bağımlılıkları (D-7 paket belgesindeki K-4'ün D-6 karşılığı).** Run 5/6 ile bittikten sonra bir kapı tutmuyorsa
+  (§10.1: main ilerlemiş, canlı dist ya da `.env` değişmiş, API kapalı …) Recover bu bloktan çalışmaz. Seçenekler: (a) kapı koşulunu geri
+  getirip (ör. ana checkout'u senkronlamak; canlı dist'i R27'ye geri almak; API'yi ayağa kaldırmak) Recover'ı bu blokla koşmak; (b) yeni pinli bir
+  blok revizyonu hazırlatıp Recover'ı onunla koşmak; (c) CLIENT kararıyla kapanışı ayrı bir yolla doğrulamak. Bu paket hiçbirini kendiliğinden
+  yapmaz. Yeni bir yayının D-6 koşumuna göre sırası da bu karara bağlıdır.
+- **OK-2 — Kalıntı senaryosunda sıra (§10.4).** İki seçenek: **(A)** kalan dosya(lar) Recover'dan **önce** owner tarafından elle silinir (erişim
+  reddinde kova okunabilirliği Recover'dan önce düzeltilir), sonra tek Recover koşulur; **(B)** önce tek Recover koşulur (çıkış 6 beklenir), dosya
+  sonra elle silinir ve dosyanın yokluğunun makineyle ölçülmesi için **ikinci bir Recover'a ayrı owner kararı** verilir — verilmezse bu ölçüm
+  yapılmaz ve kalıntının temizliği owner beyanı olarak kalır. Bu belge A ile B arasında seçim yapmaz; §4 adım 7(c)'deki mevcut sıra karar
+  verilene kadar olduğu gibi durur.
+- **OK-3 — Recover öncesi Run kanıtının sabitlenmesi (§10.3).** Recover Run makbuzunu yeniden yazabildiği için Run manifestindeki makbuz özeti
+  Recover'dan sonra tutmaz. Recover'dan önce Run kanıt dizininin (en azından makbuzun ve `SHA256-MANIFEST.txt` dosyasının) özetinin ya da
+  kopyasının ayrıca kaydedilip kaydedilmeyeceği, yoksa farkın bu notla açıklanmış sayılıp sayılmayacağı owner / CLIENT kararıdır.
+- **OK-4 — Blok metnindeki eksikler.** Üç yerde blok metni kaynağın gerisindedir ve bu turda **değiştirilmedi**: Recover girişinde canlı yazma
+  kümesi gösterilmez (§10.2); Recover bitiş satırı 1 ve 2 kodlarını saymaz ve 3'ü "yeni giriş reddi" ile birlikte anlatır (§10.5); onay metni
+  kurulumun kayıt kümesini eksik sayar (§10.7). Bunların bir sonraki blok revizyonunda (yalnız metin; blok sha256'sı ve blok öz-testi değişir)
+  düzeltilmesi mi, yoksa bu belge notlarıyla kabul edilmesi mi gerektiği owner kararıdır.
+- Önceden açık olan kararlar aynen durur: ikinci bir Recover'a izin ve Recover için ayrı onayın nasıl kaydedileceği (§7 "Recover kuralı").
+
+**Korunan sınır notu:** `d6-selftest.js` kütüphane kökü denetiminin 8.3 kısa ad, `subst` sürücüsü ve UNC yazımıyla verilen canlı yolu
+yakalamadığına ilişkin not §7'de olduğu gibi durur; bu tur ona dokunmadı.
+
+**Blok öz-testi — belgenin son hâliyle (2026-10-03, tur 5):** R02-b ekleri ve bağımsız doğrulama düzeltmelerinden sonra `d6-owner-block-selftest.ps1`
+yeniden koşuldu: 73/73 Windows PowerShell 5.1 ve 73/73 PowerShell 7, çıkış 0; blok, blok öz-testi ve koşucu öz-testi özetleri koşum öncesi/sonrası aynı.
+Bağımsız doğrulama (salt okuma) bu bölümde altı küçük düzeltme istedi; altısı da uygulandı. Blok, koşucu ve pinli dosyalar değişmedi.
