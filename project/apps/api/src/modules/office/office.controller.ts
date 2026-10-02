@@ -12,11 +12,21 @@ import {
 import { OfficeService } from "./office.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
-import { StaffType } from "@prisma/client";
 import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
 import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { OfficeF01AuthorizationGuard } from "../office-approval/office-f01-authorization.guard";
 import { omitOfficeS2References } from "./office-f01-projection";
+// OFFICE-PUT-BODY-BOUNDARY: gövde SATIR İÇİ tip literali değil DTO SINIFI olmalı; aksi halde global
+// ValidationPipe (whitelist + forbidNonWhitelisted) metatype `Object` görüp HİÇ çalışmaz.
+import {
+  UpdateEscalationSettingsDto,
+  UpdateGreetingSettingsDto,
+  UpdateIik78SettingsDto,
+  UpdateOfficeDto,
+  UpdatePoaExpirySettingsDto,
+  UpdateSmsSettingsDto,
+  UpdateSmtpSettingsDto,
+} from "./dto/office-settings.dto";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
@@ -59,24 +69,7 @@ export class OfficeController {
   updateOffice(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    data: {
-      name?: string;
-      address?: string;
-      city?: string;
-      district?: string;
-      postalCode?: string;
-      phone?: string;
-      fax?: string;
-      email?: string;
-      website?: string;
-      barAssociation?: string;
-      vergiNo?: string;
-      vergiDairesi?: string;
-      mersisNo?: string;
-      kepAddress?: string;
-      defaultExecutionOfficeId?: string;
-    },
+    @Body() data: UpdateOfficeDto,
     @CurrentUser("role") actorRole?: string,
   ) {
     return actorRole
@@ -155,16 +148,7 @@ export class OfficeController {
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("role") role: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    data: {
-      smtpHost?: string;
-      smtpPort?: number;
-      smtpUser?: string;
-      smtpPass?: string;
-      smtpSecure?: boolean;
-      smtpFromName?: string;
-      smtpFromEmail?: string;
-    }
+    @Body() data: UpdateSmtpSettingsDto
   ) {
     this.assertCredentialAdmin(role);
     // P2b-1 observe (best-effort; ADMIN guard'dan SONRA; engelleme YOK, response değişmez)
@@ -190,13 +174,7 @@ export class OfficeController {
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("role") role: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    data: {
-      smsProvider?: string;
-      smsApiKey?: string;
-      smsApiSecret?: string;
-      smsSender?: string;
-    }
+    @Body() data: UpdateSmsSettingsDto
   ) {
     this.assertCredentialAdmin(role);
     return this.officeService.updateSmsSettings(tenantId, data, userId, { userId, role });
@@ -215,11 +193,7 @@ export class OfficeController {
   updateGreetingSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    data: {
-      autoGreetingEnabled?: boolean;
-      autoGreetingTime?: string;
-    },
+    @Body() data: UpdateGreetingSettingsDto,
     @CurrentUser("role") actorRole?: string,
   ) {
     return actorRole
@@ -240,11 +214,7 @@ export class OfficeController {
   updateIik78Settings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    data: {
-      inactivityThresholdDays?: number;
-      inactivityWarningDays?: number;
-    },
+    @Body() data: UpdateIik78SettingsDto,
     @CurrentUser("role") actorRole?: string,
   ) {
     return actorRole
@@ -266,12 +236,7 @@ export class OfficeController {
   updatePoaExpirySettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    data: {
-      poaExpiryNotificationEnabled?: boolean;
-      poaExpiryThresholdDays?: number;
-      poaExpiryRecipientLawyerIds?: string[];
-    },
+    @Body() data: UpdatePoaExpirySettingsDto,
     @CurrentUser("role") actorRole?: string,
   ) {
     return actorRole
@@ -294,22 +259,7 @@ export class OfficeController {
   updateEscalationSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
-    @Body()
-    data: {
-      escalationManagerLawyerIds?: string[];
-      escalationFounderLawyerIds?: string[];
-      opReminderDays?: number;
-      opFounderDays?: number;
-      opRepeatMonths?: number;
-      opEmailEnabled?: boolean;
-      opSmsEnabled?: boolean;
-      opStaffTypes?: StaffType[];
-      // D-G5: dosya görevi (case-task) eskalasyon ayarları
-      escalationTeamLeadLawyerIds?: string[];
-      caseTaskOwnerDays?: number;
-      caseTaskTeamLeadDays?: number;
-      caseTaskManagerDays?: number;
-    },
+    @Body() data: UpdateEscalationSettingsDto,
     @CurrentUser("role") actorRole?: string,
   ) {
     return actorRole
