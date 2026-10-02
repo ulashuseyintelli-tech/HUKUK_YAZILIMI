@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { KeyRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { useHydrated } from "@/lib/use-hydrated";
 
 /**
  * OFFICE-AUTH-P01: authenticated OFFICE kullanıcısı (Lawyer/StaffMember/Admin) için
@@ -13,6 +14,7 @@ import { PasswordInput } from "@/components/ui/PasswordInput";
  */
 export default function SecuritySettingsPage() {
   const router = useRouter();
+  const hydrated = useHydrated();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -57,7 +59,10 @@ export default function SecuritySettingsPage() {
         <h1 className="text-xl font-semibold">Parolamı Değiştir</h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 bg-white rounded-lg border p-6">
+      {/* Yerel (React dışı) gönderim parolaları ADRESE yazmasın: yöntem POST. Ölçüldü: `method` yokken
+          `form.submit()` hidrasyondan SONRA bile `?currentPassword=…&newPassword=…&confirmPassword=…`
+          üretiyordu. Düğme React devralana dek kapalı (bkz. lib/use-hydrated.ts). */}
+      <form onSubmit={handleSubmit} method="post" className="space-y-4 bg-white rounded-lg border p-6">
         <div>
           <label htmlFor="currentPassword" className="block text-sm font-medium mb-2">
             Mevcut Parola
@@ -111,7 +116,7 @@ export default function SecuritySettingsPage() {
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || !hydrated}
           className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50"
         >
           {saving ? "Kaydediliyor…" : "Parolayı Değiştir"}
