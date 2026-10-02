@@ -17,6 +17,24 @@ import {
 } from "./office-credential-encryption.util";
 import { OfficeWorkPoolMutationService } from "./work-pool/office-work-pool.mutation.service";
 import {
+  OFFICE_ESCALATION_FIELDS,
+  OFFICE_ESCALATION_POOL_FIELDS,
+  OFFICE_GREETING_FIELDS,
+  OFFICE_IIK78_FIELDS,
+  OFFICE_POA_EXPIRY_FIELDS,
+  OFFICE_PROFILE_FIELDS,
+  OFFICE_SMS_FIELDS,
+  OFFICE_SMTP_FIELDS,
+  UpdateEscalationSettingsDto,
+  UpdateGreetingSettingsDto,
+  UpdateIik78SettingsDto,
+  UpdateOfficeDto,
+  UpdatePoaExpirySettingsDto,
+  UpdateSmsSettingsDto,
+  UpdateSmtpSettingsDto,
+  pickOfficeFields,
+} from "./dto/office-settings.dto";
+import {
   OfficeWorkPoolTargetStates,
   OfficeWorkPoolUnknownMemberError,
   OfficeWorkPoolUnknownStateError,
@@ -237,27 +255,13 @@ export class OfficeService {
   // Büro bilgilerini güncelle
   async update(
     tenantId: string,
-    data: {
-      name?: string;
-      address?: string;
-      city?: string;
-      district?: string;
-      postalCode?: string;
-      phone?: string;
-      fax?: string;
-      email?: string;
-      website?: string;
-      barAssociation?: string;
-      vergiNo?: string;
-      vergiDairesi?: string;
-      mersisNo?: string;
-      kepAddress?: string;
-      defaultExecutionOfficeId?: string;
-    },
+    body: UpdateOfficeDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    // Yazma sınırı: yalnız büro PROFİL alanları (kimlik bilgisi / kiracı / havuz sütunları YOK).
+    const data = pickOfficeFields(body, OFFICE_PROFILE_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -378,19 +382,12 @@ export class OfficeService {
   // SMTP ayarlarını güncelle
   async updateSmtpSettings(
     tenantId: string,
-    data: {
-      smtpHost?: string;
-      smtpPort?: number;
-      smtpUser?: string;
-      smtpPass?: string;
-      smtpSecure?: boolean;
-      smtpFromName?: string;
-      smtpFromEmail?: string;
-    },
+    body: UpdateSmtpSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_SMTP_FIELDS);
 
     // ACT-02: yeni parola gönderildiyse at-rest şifrele (boş string/undefined dokunulmaz sayılır).
     const toPersist = { ...data };
@@ -424,16 +421,12 @@ export class OfficeService {
   // SMS ayarlarını güncelle
   async updateSmsSettings(
     tenantId: string,
-    data: {
-      smsProvider?: string;
-      smsApiKey?: string;
-      smsApiSecret?: string;
-      smsSender?: string;
-    },
+    body: UpdateSmsSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_SMS_FIELDS);
 
     // ACT-02: yeni API key/secret gönderildiyse at-rest şifrele.
     const toPersist = { ...data };
@@ -499,14 +492,12 @@ export class OfficeService {
   // Otomatik tebrik ayarlarını güncelle
   async updateGreetingSettings(
     tenantId: string,
-    data: {
-      autoGreetingEnabled?: boolean;
-      autoGreetingTime?: string;
-    },
+    body: UpdateGreetingSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_GREETING_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -528,14 +519,12 @@ export class OfficeService {
   // İİK 78 ayarlarını güncelle
   async updateIik78Settings(
     tenantId: string,
-    data: {
-      inactivityThresholdDays?: number;
-      inactivityWarningDays?: number;
-    },
+    body: UpdateIik78SettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_IIK78_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -559,15 +548,12 @@ export class OfficeService {
   // ACT-07: Vekalet Süresi Uyarısı büro-geneli ayarlarını güncelle
   async updatePoaExpirySettings(
     tenantId: string,
-    data: {
-      poaExpiryNotificationEnabled?: boolean;
-      poaExpiryThresholdDays?: number;
-      poaExpiryRecipientLawyerIds?: string[];
-    },
+    body: UpdatePoaExpirySettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_POA_EXPIRY_FIELDS);
 
     const updated = await this.prisma.office.update({
       where: { id: office.id },
@@ -599,25 +585,12 @@ export class OfficeService {
 
   async updateEscalationSettings(
     tenantId: string,
-    data: {
-      escalationManagerLawyerIds?: string[];
-      escalationFounderLawyerIds?: string[];
-      opReminderDays?: number;
-      opFounderDays?: number;
-      opRepeatMonths?: number;
-      opEmailEnabled?: boolean;
-      opSmsEnabled?: boolean;
-      opStaffTypes?: StaffType[];
-      // D-G5: dosya görevi (case-task) eskalasyon ayarları
-      escalationTeamLeadLawyerIds?: string[];
-      caseTaskOwnerDays?: number;
-      caseTaskTeamLeadDays?: number;
-      caseTaskManagerDays?: number;
-    },
+    body: UpdateEscalationSettingsDto,
     userId?: string,
     actor?: { userId?: string; role?: string },
   ) {
     const office = await this.getOrCreate(tenantId);
+    const data = pickOfficeFields(body, OFFICE_ESCALATION_FIELDS);
 
     // ── OFFICE-WR01-B02 AŞAMA 4 — DUAL-WRITE (§9.2 AŞAMA 4, §9.4) ────────────────────────
     // API sözleşmesi DEĞİŞMEZ: route, gövde şekli, authorization, response şekli ve admin
@@ -628,7 +601,18 @@ export class OfficeService {
     // Bu servis AYRICA transaction AÇMAZ (§11.5.7 madde 1): kilit alma, effectiveAt üretimi,
     // fark hesabı ve iki yazma primitive'in içindedir. İç içe transaction, Office kilidinin
     // transaction'ın İLK DB ifadesi olduğu garantisini bozardı.
-    const { escalationManagerLawyerIds, escalationFounderLawyerIds, opStaffTypes, ...rest } = data;
+    const { escalationManagerLawyerIds, escalationFounderLawyerIds, opStaffTypes } = data as {
+      escalationManagerLawyerIds?: string[];
+      escalationFounderLawyerIds?: string[];
+      opStaffTypes?: StaffType[];
+    };
+    // Havuz DIŞI eskalasyon alanları (harita - havuz alanları); havuz kolonları buradan GEÇEMEZ.
+    const rest = pickOfficeFields(
+      data,
+      OFFICE_ESCALATION_FIELDS.filter(
+        (field) => !(OFFICE_ESCALATION_POOL_FIELDS as readonly string[]).includes(field),
+      ),
+    );
 
     // `undefined` = UNCHANGED. Gövdede olmayan bir havuz "boş hedef" SAYILMAZ — bu, allowlist
     // projeksiyonu + tam-form POST vakasının (§11.4, PR-1.5) mutation tarafındaki eşdeğeri

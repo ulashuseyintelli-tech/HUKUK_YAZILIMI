@@ -124,11 +124,11 @@ export function usePreSubmitValidation() {
       });
     }
 
-    // Döviz takiplerinde kur kontrolü
+    // Döviz takiplerinde bilgi: sistem kur hesabı / çevirmesi yapmaz, bu yüzden "otomatik kur hesabı" vaat edilmez
     if (data.currency && data.currency !== "TRY") {
       newWarnings.push({
         code: "FOREIGN_CURRENCY_NOTICE",
-        message: `Döviz cinsi: ${data.currency} - Kur hesaplaması otomatik yapılacak`,
+        message: `Döviz cinsi: ${data.currency} - Sistem kur çevirmesi yapmaz; tutarlar ${data.currency} olarak kaydedilir`,
         severity: "info",
       });
     }

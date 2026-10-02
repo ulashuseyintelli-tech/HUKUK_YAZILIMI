@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, Logger, Inject, Opt
 import { PrismaService } from '@/prisma/prisma.service';
 import { CostPackageService } from '@/modules/cost-package/cost-package.service';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
+import { ExpenseGateService } from '@/modules/expense-request/expense-gate.service';
+import type { OpeningExpenseNotDetermined, OpeningExpenseRequirement } from '@/modules/expense-request/opening-expense-requirement';
 import { CasePolicyEngine } from '@/modules/policy-engine/case-policy-engine.service';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
 
@@ -29,7 +31,15 @@ export interface TriggerStageResult {
   blockReason?: string;
   /** CPE decision trace ID for audit */
   cpeTraceId?: string;
+  /** Açılış masrafı belirlenmediği için engellendiyse: neden, gereken bilgi ve düzeltme yolu (tutar YOKTUR). */
+  openingExpense?: OpeningExpenseNotDetermined;
 }
+
+/** UYAP gönderim hazırlığı olayı: açılış masrafı şartına bağlı tek olay (paket UYAP_PRE). */
+const UYAP_SEND_PREPARE_EVENT = 'EVT_UYAP_SEND_CLICKED';
+
+/** Politika motorunun masraf kapısı (gates.compiled.ts: "Ödenmemiş masraf talebi var. UYAP işlemi yapılamaz."). */
+const EXPENSE_GATE_CODE = 'EXPENSE_BLOCKING';
 
 /**
  * CPE Adapter Interface
@@ -76,6 +86,7 @@ export class StageTriggerService {
     private prisma: PrismaService,
     private costPackageService: CostPackageService,
     private caseBalanceService: CaseBalanceService,
+    private expenseGateService: ExpenseGateService,
     @Optional() @Inject(CasePolicyEngine) private casePolicyEngine?: CasePolicyEngine,
   ) {
     if (this.casePolicyEngine) {
@@ -212,6 +223,12 @@ export class StageTriggerService {
       throw new NotFoundException('Takip bulunamadı');
     }
 
+    // Açılış masrafı şartı (yalnız UYAP gönderim hazırlığı): tutarı BELİRLENEMEMİŞ açılış masrafı "sağlandı" sayılmaz.
+    // Salt okuma — ret yolunda masraf, muhasebe ya da bakiye kaydı yazılmaz.
+    const openingRequirement: OpeningExpenseRequirement | undefined =
+      eventCode === UYAP_SEND_PREPARE_EVENT ? await this.expenseGateService.getOpeningExpenseRequirement(tenantId, caseId) : undefined;
+    const openingExpenseBlock = openingRequirement?.status === 'NOT_DETERMINED' ? this.buildOpeningExpenseBlock(openingRequirement) : undefined;
+
     // Event code'u ActionCode'a çevir
     const actionCode = EVENT_TO_ACTION_MAP[eventCode];
 
@@ -225,6 +242,12 @@ export class StageTriggerService {
 
         if (!decision.allowed) {
           this.logger.warn(`CPE blocked action ${actionCode} for case ${caseId}: ${decision.reason}`);
+          // Politika motorunun MASRAF kapısı gerekçesi ("ödenmemiş masraf talebi var") açılış masrafı belirlenmemiş dosyada
+          // gerçek nedeni söylemez (dosyada talep olmayabilir): neden, gereken bilgi ve düzeltme yolu döner. Diğer kapıların
+          // (dosya kapalı, arşivde, UYAP kapalı, vekalet ...) gerekçesi aynen korunur.
+          if (openingExpenseBlock && decision.blockedBy?.gateCode === EXPENSE_GATE_CODE) {
+            return { ...openingExpenseBlock, cpeTraceId: decision.traceId };
+          }
           return {
             action: 'BLOCKED',
             blockReason: decision.reason,
@@ -246,9 +269,14 @@ export class StageTriggerService {
       }
     }
 
+    // Politika motoru izin verse de (ya da değerlendiremese de) belirlenmemiş açılış masrafı sağlanmış sayılmaz
+    if (openingExpenseBlock) {
+      return openingExpenseBlock;
+    }
+
     // Event koduna göre işlem yap
-    if (eventCode === 'EVT_UYAP_SEND_CLICKED') {
-      return this.handleUyapPrepare(tenantId, caseId, caseData, eventParams, userId);
+    if (eventCode === UYAP_SEND_PREPARE_EVENT) {
+      return this.handleUyapPrepare(tenantId, caseId, caseData, eventParams, userId, openingRequirement);
     }
 
     // Diğer eventler için basit öneri dön
@@ -257,6 +285,19 @@ export class StageTriggerService {
       suggestion: {
         title: 'İşlem önerisi',
         description: 'Bu işlem için masraf gerekebilir.',
+      },
+    };
+  }
+
+  /** Açılış masrafı belirlenmediği için ret: gerçek neden + gereken bilgi + düzeltmenin mevcut geçerli yolu (tutar yok). */
+  private buildOpeningExpenseBlock(requirement: OpeningExpenseNotDetermined): TriggerStageResult {
+    return {
+      action: 'BLOCKED',
+      blockReason: `UYAP'a gönderim hazırlığı yapılamaz. ${requirement.message} ${requirement.completionPath}`,
+      openingExpense: requirement,
+      suggestion: {
+        title: 'Açılış masrafı belirlenmedi',
+        description: `Gereken bilgi: ${requirement.requiredInfo.join('; ')}`,
       },
     };
   }
@@ -270,8 +311,34 @@ export class StageTriggerService {
     caseData: any,
     eventParams: any,
     userId: string,
+    openingRequirement?: OpeningExpenseRequirement,
   ): Promise<TriggerStageResult> {
     const packageCode = 'UYAP_PRE';
+
+    // Dövizli / karma dosyada paket toplamı HESAPLANAMAZ (peşin harç oranı TL matraha uygulanır): bakiye bu toplamla
+    // karşılaştırılmaz. Peşin harç bir talepte tutarıyla kayıtlıysa şart mevcut masraf kapısıdır — talep karşılanmış olmalı.
+    if (openingRequirement?.status === 'RATE_ITEMS_RECORDED') {
+      const gate = await this.expenseGateService.checkGateForCase(tenantId, caseId);
+      if (gate.isBlocked) {
+        return {
+          action: 'BLOCKED',
+          blockReason: gate.message,
+          suggestion: {
+            title: 'Masraf karşılanmadı',
+            description: gate.message || 'Ödenmemiş masraf talebi var.',
+          },
+        };
+      }
+      return {
+        action: 'READY',
+        caseStatus: 'READY_FOR_UYAP',
+        suggestion: {
+          title: 'UYAP\'a gönderime hazır',
+          description: 'Kayıtlı açılış masrafı karşılandı. Gönderim yapabilirsiniz.',
+          packageCode,
+        },
+      };
+    }
 
     // Bakiyeyi kontrol et
     const balance = await this.caseBalanceService.getBalance(tenantId, caseId);

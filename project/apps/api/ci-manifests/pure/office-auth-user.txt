@@ -342,6 +342,15 @@ src/modules/office/__tests__/office-settings-get-authorization.http.spec.ts
 src/modules/office/__tests__/office-settings-projection.spec.ts
 src/modules/office/__tests__/office-settings-update-semantics.spec.ts
 
+# OFFICE-PUT-BODY-BOUNDARY - OfficeController yazma uclari gövde sinirlari (SAF, DB YOK):
+#   Gövde satir-ici tip literaliyle tipliydi -> global ValidationPipe HIC calismiyor, servis gövdeyi aynen
+#   prisma.office.update'e veriyordu. (A) 7 yazma ucunun gövde parametresi DTO SINIFI; (B) ValidationPipe
+#   aynasi: ekranin / istemcinin gönderdigi her gövde kabul, haritada olmayan HER Office sütunu 400;
+#   (C) servis acik alan haritasi: prisma data + denetim kaydi harita disina cikmaz; ACT-02 sifreleme yolu korunur;
+#   (D) .http: gercek guard + ValidationPipe + controller + servis zincirinde 7 ucun her biri (gecerli / yasak alan / rol / kiraci).
+src/modules/office/__tests__/office-write-body-boundary.spec.ts
+src/modules/office/__tests__/office-write-body-boundary.http.spec.ts
+
 # VIEWER ONAY KARARI SINIRI (owner GO 2026-09-10, AK-1a eki) - SAF, DB YOK:
 #   (A) office-approval-viewer-decision-boundary.http: GERCEK Nest HTTP pipeline (gercek controller + gercek
 #       servis, sahte prisma). Genel kutunun 4 karar rotasi, dagitim onayi ve FD ofis/icerik onayi: bagli VIEWER
