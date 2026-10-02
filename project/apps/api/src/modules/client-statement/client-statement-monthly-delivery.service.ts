@@ -6,6 +6,7 @@ import { OfficeService } from '@/modules/office/office.service';
 import { ACTIVE_TENANT_WHERE } from '@/modules/tenant/tenant-lifecycle';
 import { resolveSchedulerTimezone } from '../../common/scheduler-timezone';
 import { ClientStatementService } from './client-statement.service';
+import { CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE } from './client-statement-currency-guard';
 import { ClientStatementPdfService } from './client-statement-pdf.service';
 import { resolveClientSafeFileReferences } from './client-statement-file-reference';
 import { buildClientStatementRender } from './client-statement-render.mapper';
@@ -79,6 +80,8 @@ export type MonthlyDeliveryOutcome =
   | 'SKIPPED_ALREADY_DELIVERED'
   | 'SKIPPED_LEDGER_CLAIM_LOST'
   | 'SKIPPED_DUPLICATE_RUN'
+  /** E1: ekstreye girecek kayıtlarda TL dışı / belirlenemeyen para birimi var — ekstre üretilmedi (hata değil, açık atlama). */
+  | 'SKIPPED_UNSUPPORTED_CURRENCY'
   | 'FAILED';
 
 export interface MonthlyDeliveryTargetResult {
@@ -273,6 +276,15 @@ export class ClientStatementMonthlyDeliveryService implements OnModuleInit {
       // Yarışta ikinci koşu Conflict alır → duplicate üretim ENGELLENDİ demektir.
       if (error?.status === 409 || error?.constructor?.name === 'ConflictException') {
         return { ...base, outcome: 'SKIPPED_DUPLICATE_RUN', statementSource: 'NONE', reason: 'active-statement-race' };
+      }
+      // E1: para birimi sınırı ihlali — ekstre üretilmedi ve hiçbir kayıt yazılmadı; "başarısız" değil, nedeniyle atlandı.
+      if (error?.response?.code === CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE) {
+        return {
+          ...base,
+          outcome: 'SKIPPED_UNSUPPORTED_CURRENCY',
+          statementSource: 'NONE',
+          reason: String(error.response.reasonCode ?? CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE),
+        };
       }
       this.logger.warn(`Aylık ekstre üretilemedi (${client.tenantId}/${client.id}): ${error?.message || error}`);
       return { ...base, outcome: 'FAILED', statementSource: 'NONE', reason: 'generate-failed' };

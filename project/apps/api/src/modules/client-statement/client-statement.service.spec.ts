@@ -21,15 +21,15 @@ const mockPrisma: any = {
   // M2 resolveCaseClientId (findFirst) + Faz B collectClientLevel (findMany)
   caseClient: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   caseBalance: { findFirst: jest.fn() },
-  balanceLedger: { aggregate: jest.fn(), findMany: jest.fn() },
+  balanceLedger: { aggregate: jest.fn(), findMany: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) }, // E1: para birimi denetimi (boş = TL dışı kayıt yok)
   // Faz B aggregate'leri (opening devir) default boş-sum
-  expenseRequest: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: null } }) },
+  expenseRequest: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: null } }), groupBy: jest.fn().mockResolvedValue([]) },
   expensePayment: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
-  collectionDisposition: { findMany: jest.fn().mockResolvedValue([]) }, // M2 case-level: POSTED proceeds (disposition+lines)
+  collectionDisposition: { findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) }, // M2 case-level: POSTED proceeds (disposition+lines)
   collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // Faz B client-level
   ledgerAllocation: { findMany: jest.fn().mockResolvedValue([]) },
-  clientPayout: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // M3 RECORDED payouts
-  clientOffset: { findMany: jest.fn().mockResolvedValue([]) }, // TM3 Faz C C-1 — offset satırları (default: yok)
+  clientPayout: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }), groupBy: jest.fn().mockResolvedValue([]) }, // M3 RECORDED payouts
+  clientOffset: { findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) }, // TM3 Faz C C-1 — offset satırları (default: yok)
   clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   clientStatementLine: { createMany: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(1), // pg_advisory_xact_lock (Faz 7-E concurrency guard)

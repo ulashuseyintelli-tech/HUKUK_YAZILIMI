@@ -1,4 +1,5 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE } from '../client-statement-currency-guard';
 import { ClientStatementLineType, ClientStatementStatus } from '@prisma/client';
 import { SCHEDULER_TIMEZONE } from '../../../common/scheduler-timezone';
 import {
@@ -263,6 +264,39 @@ describe('CAD C3-B04 — üretim ve teslim akışı', () => {
     expect(result.targets[0].outcome).toBe('SKIPPED_DUPLICATE_RUN');
     expect(result.failed).toBe(0);
     expect(result.skipped).toBe(1);
+  });
+
+  it('[B04-10b] E1: TL dışı kaynak → hata değil, nedeniyle ATLANIR; teslim denenmez ve başarısız sayılmaz', async () => {
+    const h = makeHarness({ withPort: true });
+    h.statements.createClientLevel.mockRejectedValue(
+      new BadRequestException({
+        code: CLIENT_STATEMENT_UNSUPPORTED_CURRENCY_CODE,
+        reasonCode: 'NON_TRY_SOURCE',
+        message: 'Ekstre oluşturulamadı: TL dışı para biriminde kayıt var (USD).',
+      }),
+    );
+
+    const result = await h.service.runMonthlyDelivery(NOW);
+
+    expect(result.targets[0]).toMatchObject({
+      outcome: 'SKIPPED_UNSUPPORTED_CURRENCY',
+      statementSource: 'NONE',
+      reason: 'NON_TRY_SOURCE',
+    });
+    expect(result.failed).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(result.generated).toBe(0);
+    expect(h.port.send).not.toHaveBeenCalled();
+  });
+
+  it('[B04-10c] E1: ekstre üretimindeki başka hata hâlâ FAILED (para birimi atlaması genel hata yutmaz)', async () => {
+    const h = makeHarness({ withPort: true });
+    h.statements.createClientLevel.mockRejectedValue(new BadRequestException({ code: 'BAŞKA_BİR_HATA', message: 'x' }));
+
+    const result = await h.service.runMonthlyDelivery(NOW);
+
+    expect(result.targets[0].outcome).toBe('FAILED');
+    expect(result.failed).toBe(1);
   });
 
   it('[B04-11] e-postası çözülemeyen müvekkil için ekstre üretilmez ve teslim denenmez', async () => {

@@ -186,6 +186,17 @@ src/modules/client-statement/__tests__/w4-cron-packaging-and-boot.spec.ts
 src/modules/client-statement/client-statement-monthly-delivery-manual.controller.spec.ts
 src/modules/client-statement/client-statement.service.spec.ts
 #
+#   E1 — MUVEKKIL EKSTRESI KAYNAK PARA BIRIMI SINIRI (owner GO 2026-10-02 "G1 + E1"; Genel Cari + ekstre dar eki):
+#     Ekstre ureticileri kaynak satirlarin para birimine bakmadan topluyor ve belgeyi sabit TL damgaliyordu (380 TL avans + 700 USD
+#     alacak + 300 USD mahsup -> "Kapanis 1.380,00"). Kural: ekstreye girecek kaynaklardan biri TL disi / belirlenemeyen para birimindeyse
+#     uretim (dosya + genel + yenileme + aylik kosu) HICBIR kalici kayit yazilmadan acik kodla reddedilir; denetim Case.currency'ye degil
+#     kaynak satirlara bakar. Saf siniflandirma + servis (prisma mock) + aylik kosu atlamasi; DB yok. Duzeltmesiz servis kodu ile yeni
+#     testlerden 25'i DUSER (RED kanitlandi: 24 E1 servis testi + 1 aylik kosu testi); mevcut ekstre spec'leri duzeltmeli kodla gecer
+#     (yalniz sahte prisma modellerine groupBy eklendi). Gercek HTTP + disposable DB kabulu db/domain-integration manifestinde.
+#     Dovizli ekstre, para birimi basina ayri ekstre, kur ve cevirme owner kararidir ve HALA ACIKTIR.
+src/modules/client-statement/__tests__/client-statement-currency-guard.spec.ts
+src/modules/client-statement/__tests__/client-statement-currency-e1.spec.ts
+#
 #   ACCOUNTING-JOURNAL surec-ici Nest HTTP smoke spec'leri (owner GO 2026-09-17 "ACCOUNTING-JOURNAL / 4 HTTP SMOKE SPEC'IN CI BAGLAMASI"):
 #     accounting-journal modulunun 18 spec'inin tamami hicbir manifestte degildi; bu 4 HTTP smoke Nest
 #     seviyesinde (Test.createTestingModule + INestApplication + supertest + JWT/Passport; servisler mock,

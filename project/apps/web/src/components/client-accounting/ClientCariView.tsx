@@ -10,6 +10,11 @@
  * Faz B-2: client-level immutable "Genel Ekstre" (Oluştur/Yenile) bu ekranda eklendi (yalnız CLIENT_SPECIFIC).
  * Mahsup butonu hâlâ YOK (Faz C). Summary/movements salt-okuma kalır.
  *
+ * G1 — PARA BİRİMİ KAPSAMI: bu görünüm yalnız istenen para biriminin (TL) kayıtlarını kapsar; çevirme / birleştirme YOK.
+ *  Müvekkilin başka para biriminde kaydı / dosyası olup olmadığı SUNUCUDAN gelir (`paraBirimiDurumu`, `paraBirimiKapsami`);
+ *  UI bunu kendisi çıkarmaz. Kapsam DIŞI dosyanın dosya-para-birimine-bağlı hücreleri "—" + açıklama ile gösterilir
+ *  (₺0,00 yazılmaz); kapsamdaki gerçek sıfır ₺0,00 olarak kalır.
+ *
  * B-2.2 (frontend-only, salt-layout): Genel Cari = fixed-viewport dashboard.
  *  - Kök: xl'de flex-1 + overflow-hidden (sayfa scroll'u YOK; min-h-0 zinciri).
  *  - SUMMARY DECK (A+B) sabit kalır (shrink-0), scroll etmez.
@@ -21,7 +26,13 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, Badge, Spinner, Button } from '@hukuk/ui';
 import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle, ArrowLeftRight, HelpCircle, Lightbulb } from 'lucide-react';
-import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
+import {
+  clientAccountingApi,
+  formatMoneyString,
+  type ClientAccountingCurrencyStatus,
+  type ClientCaseBreakdownItem,
+  type ClientCaseCurrencyScope,
+} from '@/lib/api/client-accounting';
 import { clientOffsetApi, buildOffsetRecommendation, type OffsetEligibility, type OffsetRecommendation } from '@/lib/api/client-offset';
 import { AccountingPanel } from './AccountingPanel';
 import { AccountingTable } from './AccountingTable';
@@ -84,6 +95,7 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
 
   return (
     <div className="flex min-h-0 flex-col gap-3 xl:flex-1 xl:overflow-hidden">
+      <CurrencyScopeNotice currency={cur} status={s.paraBirimiDurumu} />
       {/* ── SUMMARY DECK — sabit, scroll etmez (shrink-0) ─────────────────────────── */}
       <div className="grid shrink-0 gap-3 xl:grid-cols-[1.5fr_1fr]">
         {/* A — Müvekkile Özgü Cari */}
@@ -104,7 +116,13 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-3">
-            <Metric icon={Wallet} accent="text-emerald-700" label="Müvekkile Borç (Net)" value={M(s.clientScoped.payableNet)} />
+            <Metric
+              icon={Wallet}
+              accent="text-emerald-700"
+              label="Müvekkile Borç (Net)"
+              value={M(s.clientScoped.payableNet)}
+              note={outOfScopeNote(s.paraBirimiDurumu)}
+            />
             <Metric icon={CheckCircle} accent="text-green-700" label="Müvekkile Ödenen" value={M(s.clientScoped.paidToClient)} />
             <Metric icon={Send} accent="text-amber-700" label="Talep Edilen Masraf" value={M(s.clientScoped.expenseRequested)} />
             <Metric icon={CheckCircle} accent="text-green-700" label="Tahsil Edilen Masraf" value={M(s.clientScoped.expensePaid)} />
@@ -220,18 +238,21 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
               {s.caseBreakdown.map((r) => (
                 <tr key={r.caseId} className={`hover:bg-gray-50 ${r.needsReview ? 'bg-red-50' : ''}`}>
                   {/* A — müvekkile özgü */}
-                  <td className="whitespace-nowrap">{r.caseNumber}</td>
+                  <td className="whitespace-nowrap">
+                    {r.caseNumber}
+                    <CaseScopeBadge scope={r.paraBirimiKapsami} />
+                  </td>
                   <td className="whitespace-nowrap">{r.role}</td>
-                  <td className="text-right">{M(r.payableNet)}</td>
-                  <td className="text-right">{M(r.paidToClient)}</td>
+                  <td className="text-right">{outOfScope(r) ? <OutOfScopeCell scope={r.paraBirimiKapsami} /> : M(r.payableNet)}</td>
+                  <td className="text-right">{outOfScope(r) ? <OutOfScopeCell scope={r.paraBirimiKapsami} /> : M(r.paidToClient)}</td>
                   <td className="text-right">{M(r.expenseRequested)}</td>
                   <td className="text-right">{M(r.expensePaid)}</td>
                   <td className="text-right">{diffMoney(r.expenseRequested, r.expensePaid, cur)}</td>
                   {/* B — dosya geneli (nötr renk) */}
-                  <td className="text-right text-gray-500">{M(r.debtorCollection)}</td>
+                  <td className="text-right text-gray-500">{outOfScope(r) ? <OutOfScopeCell scope={r.paraBirimiKapsami} /> : M(r.debtorCollection)}</td>
                   <td className="text-right text-gray-500">
-                    {M(r.pendingDistribution)}
-                    {Number(r.allocationHeld ?? 0) > 0 && (
+                    {outOfScope(r) ? <OutOfScopeCell scope={r.paraBirimiKapsami} /> : M(r.pendingDistribution)}
+                    {!outOfScope(r) && Number(r.allocationHeld ?? 0) > 0 && (
                       <div className="text-[10px] text-amber-700" title="Mahsubu bekleyen tahsilat dağıtıma kapalıdır">
                         mahsubu bekleyen: {M(r.allocationHeld ?? '0')}
                       </div>
@@ -286,6 +307,87 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
         onClose={() => { setMahsupOpen(false); setSuggestion(null); }}
       />
     </div>
+  );
+}
+
+/** G1 — dosya kapsam dışı mı (sunucu beyanı)? Beyan yoksa (eski sunucu) hücreler olduğu gibi gösterilir. */
+function outOfScope(row: ClientCaseBreakdownItem): boolean {
+  return row.paraBirimiKapsami?.kapsam === 'DISI';
+}
+
+/** G1 — üst ölçeğin "dahil değil" notu (yalnız sunucu kapsam dışı kayıt bildirdiyse). */
+function outOfScopeNote(status?: ClientAccountingCurrencyStatus): string | undefined {
+  if (!status?.kapsamDisiKayitVar) return undefined;
+  const parts: string[] = [];
+  if (status.kapsamDisiParaBirimleri.length > 0) parts.push(`${status.kapsamDisiParaBirimleri.join(', ')} kayıtları`);
+  if (status.belirsizParaBirimiKayitSayisi > 0) parts.push('para birimi belirlenemeyen kayıtlar');
+  return `${parts.join(' ve ')} dahil değil.`;
+}
+
+/**
+ * G1 — kapsam beyanı şeridi. Kapsam dışı bilgi SUNUCUDAN gelir; sunucu bildirmediyse (eski sunucu) yalnız kapsam
+ * cümlesi yazılır ve "başka para biriminde kayıt yok" İDDİA EDİLMEZ.
+ */
+function CurrencyScopeNotice({ currency, status }: { currency: string; status?: ClientAccountingCurrencyStatus }) {
+  const flagged = status?.kapsamDisiKayitVar === true;
+  return (
+    <div
+      role="status"
+      data-testid="cari-para-birimi-kapsami"
+      className={`flex shrink-0 items-start gap-2 rounded-md border p-2 text-[12px] ${
+        flagged ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-600'
+      }`}
+    >
+      {flagged ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <Info className="mt-0.5 h-4 w-4 shrink-0" />}
+      <span>
+        {flagged ? (
+          status?.mesaj
+        ) : status ? (
+          <>
+            Bu görünüm yalnız <strong>{currency}</strong> kayıtlarını kapsar. Müvekkilin başka para biriminde kaydı görünmüyor.
+          </>
+        ) : (
+          <>
+            Bu görünüm yalnız <strong>{currency}</strong> kayıtlarını kapsar.
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** G1 — dosya satırındaki kapsam rozeti (DISI / KISMI); TAM'da hiçbir şey yazılmaz. */
+function CaseScopeBadge({ scope }: { scope?: ClientCaseCurrencyScope }) {
+  if (!scope || scope.kapsam === 'TAM') return null;
+  const label =
+    scope.kapsam === 'DISI'
+      ? `${scope.dosyaParaBirimi || 'Belirsiz para birimli'} dosya — bu para birimi toplamına dahil değil`
+      : `${[
+          ...scope.kapsamDisiParaBirimleri,
+          ...(scope.belirsizParaBirimiKayitSayisi > 0 ? ['para birimi belirlenemeyen'] : []),
+        ].join(', ')} kayıtları dahil değil`;
+  return (
+    <div
+      data-testid="dosya-para-birimi-rozeti"
+      className="mt-0.5 whitespace-normal text-[10px] font-medium text-amber-700"
+      title={scope.mesaj ?? undefined}
+    >
+      {label}
+    </div>
+  );
+}
+
+/** G1 — kapsam DIŞI dosyada dosya para birimine bağlı hücre: sıfır DEĞİL, "bu görünümde yok". */
+function OutOfScopeCell({ scope }: { scope?: ClientCaseCurrencyScope }) {
+  return (
+    <span
+      data-testid="kapsam-disi-hucre"
+      className="text-gray-400"
+      title={scope?.mesaj ?? 'Bu para birimi toplamına dahil değil'}
+      aria-label="Kapsam dışı (bu para birimi toplamına dahil değil)"
+    >
+      —
+    </span>
   );
 }
 
