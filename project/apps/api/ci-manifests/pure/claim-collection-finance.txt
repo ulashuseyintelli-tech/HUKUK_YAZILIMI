@@ -355,3 +355,12 @@ src/modules/case/__tests__/case-open-expense-email-outcome.spec.ts
 #   (currency / items / totals) DEGISMEZ: her kalem turu icin karakterizasyon duzeltmesiz servis koduyla da gecer; blok
 #   iddialari duzeltmesiz kodla DUSER (RED kanitlandi). Kalem basina para birimi kurali ve kur owner karari.
 src/modules/claim-item/__tests__/claim-summary-currency.spec.ts
+# Masraf onizlemesi (POST /fee-engine/preview) para birimi baglami — sihirbaz alacak kalemi formundaki "Hesap Ozeti" TL
+#   tarifesi tutarlarini kalemin para birimi simgesiyle basiyor, doviz anaparayla tek toplamda birlestiriyordu (olculdu;
+#   istek para birimi tasimiyordu, yanit USD / EUR / TRY icin ayni). Saf yardimci + gercek Nest HTTP (DB yok; hesap ve
+#   cevirme YOK): istek `currency` tasirsa yanit eklemeli `data.paraBirimiDurumu` kararini tasir (kural dosya hesap
+#   ozetiyle AYNI yardimcidan). Mevcut sayisal alanlar ve para birimi gondermeyen cagiranin yaniti DEGISMEZ:
+#   karakterizasyon duzeltmesiz denetleyiciyle de gecer; karar iddialari duzeltmesiz kodla DUSER (RED kanitlandi).
+#   Dovizli alacakta harc / vekalet ucreti kurali (tutar ve kur) owner karari.
+src/modules/fee-engine/__tests__/fee-preview-currency.spec.ts
+src/modules/fee-engine/__tests__/fee-preview-currency.http.spec.ts
