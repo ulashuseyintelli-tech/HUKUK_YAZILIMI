@@ -240,9 +240,9 @@ export function HesapOzetiPanel({
         </div>
       )}
 
-      {/* Dövizli / karma dosyada otomatik açılış masraf talebi oluşturulmaz: neden ve gereken bilgi (sunucu kararı).
-          TL dosyada sorgu yapılmaz; gösterim aynen sürer. */}
-      {paraBirimiKisitli && <OpeningExpenseNotice caseId={caseId} refreshKey={refreshKey} />}
+      {/* Açılış masraf talebi uyarıları (sunucu kararı): dövizli / karma dosyada "otomatik oluşturulmadı" nedeni; her
+          dosyada "istenen masraf e-postası gönderilemedi" nedeni. Sunucu bir neden bildirmiyorsa hiçbir şey çizilmez. */}
+      <OpeningExpenseNotice caseId={caseId} refreshKey={refreshKey} calculationNotice={paraBirimiKisitli} />
 
       {/* Tarih bilgisi */}
       <div className="px-3 py-1 text-[10px] text-gray-400 border-b flex-shrink-0">

@@ -323,6 +323,21 @@ src/modules/case/__tests__/case-calculation-summary-currency.spec.ts
 #   matrahi olusturan anapara kalemleri TL degilse HESAPLANAMAZ; tutar, kur ya da toplam uretilmez, neden ve gereken bilgi
 #   bildirilir. Dovizli takipte pesin harcin hangi tutar ve kur uzerinden hesaplanacagi owner karari.
 src/modules/expense-request/__tests__/opening-expense-basis.spec.ts
+# Acilis masraf talebi — istenen masraf e-postasi GONDERILEMEDI sonucu, saf karar + servis (DB ve SMTP yok). Olculen kusur
+#   (main 6681b1d5): e-posta gonderilemediginde talep PENDING kaliyor, kullaniciya hicbir sey gosterilmiyor, gunluk "Masraf
+#   talebi maili gonderildi" yaziyordu. Owner karari (2026-10-01): neden kullaniciya gosterilir (acilis yaniti, dosya sayfasi,
+#   gorev). Bu test nedenin NASIL adlandirildigini sabitler: kapali kapi / dagitim basarisizligi kaydindan guvenli neden kodu
+#   (ham saglayici metni OKUNMAZ / YAZILMAZ; taninmayan kayit tahmin edilmez), her neden icin cumle + gereken bilgi + gorev
+#   basligi, teslimi belirsiz nedenlerde "gonderilmedi" DENMEZ, talep basina TEK takip gorevi, durum ucunda eklemeli alan
+#   yalniz gonderilmemis talebin SON denemesi basarisizsa. E-postanin gonderilme kurallari (owner sozlesmesi W4) DEGISMEZ.
+src/modules/expense-request/__tests__/opening-expense-email-outcome.spec.ts
+# Dosya acilisi — otomatik acilis masraf akisinin SONUCU (birim; DB ve SMTP yok). E-posta istenmediyse akis ve gunluk
+#   bugunku gibi kalir, sonuc uretilmez. Istendi ve gonderildiyse sonuc uretilmez, gunluk bugunku iki satiri yazar.
+#   Gonderilemediyse neden son deneme kaydindan okunur, takip gorevi yazilir, gunluk "GONDERILEMEDI (neden: <kod>)" yazar ve
+#   "gonderildi" YAZMAZ. Talep olusturulamadiysa e-posta denenmez ve bu bildirilir. Akis hicbir dalda firlatmaz (dosya
+#   acilisi bozulmaz). Yanit e-posta denemesini en cok 10 sn bekler; sure dolarsa "sonuc henuz belli degil" doner ve
+#   zamanlayici birakilmaz.
+src/modules/case/__tests__/case-open-expense-email-outcome.spec.ts
 # Alacak ozeti (GET /claim-items/case/:caseId/summary) para birimi baglami — saf yardimci + servis (DB yok; cevirme ve capraz
 #   para birimi toplami YOK): etkin kalemler tek para birimindeyse tek toplam gecerli; birden fazla para birimi ya da para
 #   birimi kayitli olmayan kalem varsa tek toplam GOSTERILEMEZ, toplamlar para birimi bazinda. Yanitin mevcut alanlari

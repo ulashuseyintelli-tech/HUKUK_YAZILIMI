@@ -54,6 +54,16 @@ import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { buildOpeningExpenseNotCreatedOutcome, OpeningExpenseNotCreatedOutcome } from "../expense-request/opening-expense-basis";
+import {
+  buildOpeningExpenseEmailNotSentOutcome,
+  buildOpeningExpenseEmailResultPendingOutcome,
+  describeOpeningExpenseEmailFailure,
+  OPENING_EXPENSE_EMAIL_WAIT_MS,
+  type OpeningExpenseEmailFailure,
+  type OpeningExpenseEmailNotSentOutcome,
+  type OpeningExpenseEmailReasonCode,
+  type OpeningExpenseEmailResultPendingOutcome,
+} from "../expense-request/opening-expense-email-outcome";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
 import { normalizeSourceIdentityText } from "../collection/collection-source-identity";
@@ -2207,6 +2217,79 @@ export class CaseService {
 
   /// <remarks>
   /// Çağrıldığı yerler:
+  /// - CaseService.create() → POST /cases (müvekkilli dosya; peşin harç matrahı TL ise)
+  /// </remarks>
+  /// Otomatik açılış masraf setini oluşturur; kullanıcı istediyse masraf e-postasını dener. ASLA fırlatmaz: masraf ya da
+  /// e-posta hatası dosya açılışını bozmaz. E-posta istenmiş ve gönderilememişse sonucu (neden + gereken bilgi) döner;
+  /// gönderildiyse ya da istenmediyse undefined. Günlük satırı SONUCA göre yazılır.
+  private async runOpeningExpenseAutomation(
+    tenantId: string,
+    caseId: string,
+    fileNumber: string,
+    shouldSendEmail: boolean,
+  ): Promise<OpeningExpenseEmailNotSentOutcome | undefined> {
+    let expenseResult: { id?: string } | null | undefined;
+    try {
+      expenseResult = await this.expenseRequestService.createOpeningExpenseSet(caseId, tenantId, 'system');
+    } catch (err: any) {
+      this.logger.warn(`Otomatik masraf seti oluşturulamadı: ${err?.message ?? err}`);
+      return shouldSendEmail
+        ? buildOpeningExpenseEmailNotSentOutcome(describeOpeningExpenseEmailFailure('OPENING_REQUEST_NOT_CREATED'))
+        : undefined;
+    }
+    this.logger.log(`Otomatik açılış masrafları oluşturuldu: ${fileNumber}`);
+    if (!shouldSendEmail) return undefined;
+    if (!expenseResult?.id) {
+      return buildOpeningExpenseEmailNotSentOutcome(describeOpeningExpenseEmailFailure('OPENING_REQUEST_NOT_CREATED'));
+    }
+
+    let fallbackReason: OpeningExpenseEmailReasonCode = 'DELIVERY_NOT_CONFIRMED';
+    try {
+      const emailResult = await this.expenseRequestService.sendExpenseEmail(tenantId, expenseResult.id, 'system');
+      if (emailResult?.success === true) {
+        this.logger.log(`Masraf talebi maili gönderildi: ${fileNumber}`);
+        return undefined;
+      }
+    } catch (emailErr: any) {
+      this.logger.warn(`Masraf maili gönderilemedi: ${emailErr?.message ?? emailErr}`);
+      fallbackReason = 'SEND_ERROR';
+    }
+
+    // Gönderilemedi: neden son e-posta denemesinin denetim kaydından okunur ve takip görevi yazılır. Okuma / görev
+    // yazımı başarısız olsa da sonuç (genel nedenle) bildirilir.
+    let failure: OpeningExpenseEmailFailure;
+    try {
+      failure = await this.expenseRequestService.recordOpeningExpenseEmailNotSent(tenantId, expenseResult.id, fallbackReason);
+    } catch (recordErr: any) {
+      this.logger.warn(`Masraf e-postası sonucu kaydedilemedi (${fileNumber}): ${recordErr?.message ?? recordErr}`);
+      failure = describeOpeningExpenseEmailFailure(fallbackReason);
+    }
+    this.logger.warn(`Masraf talebi maili GÖNDERİLEMEDİ: ${fileNumber} (neden: ${failure.reasonCode})`);
+    return buildOpeningExpenseEmailNotSentOutcome(failure);
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseService.create() → POST /cases ("Oluştur ve Masraf Maili Gönder" seçildiğinde)
+  /// </remarks>
+  /// E-posta denemesinin sonucunu yanıtta bildirebilmek için en çok OPENING_EXPENSE_EMAIL_WAIT_MS bekler. Süre dolarsa
+  /// "sonuç henüz belli değil" döner; deneme arka planda sürer ve sonucu dosya sayfası + görev üzerinden görünür.
+  private async awaitOpeningExpenseEmailOutcome(
+    automation: Promise<OpeningExpenseEmailNotSentOutcome | undefined>,
+  ): Promise<OpeningExpenseEmailNotSentOutcome | OpeningExpenseEmailResultPendingOutcome | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<OpeningExpenseEmailResultPendingOutcome>((resolve) => {
+      timer = setTimeout(() => resolve(buildOpeningExpenseEmailResultPendingOutcome()), OPENING_EXPENSE_EMAIL_WAIT_MS);
+    });
+    try {
+      return await Promise.race([automation, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
   /// - CaseController.create() → POST /cases (Yeni takip oluşturma)
   /// </remarks>
   async create(tenantId: string, dto: CreateCaseDto, userId?: string, userRole?: string) {
@@ -2861,8 +2944,13 @@ export class CaseService {
         this.logger.warn(`Takip oluşturuldu ancak vekalet uyarıları var: ${poaWarnings.join(', ')}`);
       }
 
-      // Dövizli / karma dosyada otomatik açılış masraf talebi oluşturulmaz; neden yanıtta bildirilir (aşağıda)
-      let openingExpenseRequest: OpeningExpenseNotCreatedOutcome | undefined;
+      // Dövizli / karma dosyada otomatik açılış masraf talebi oluşturulmaz; neden yanıtta bildirilir (aşağıda).
+      // Talep oluşup istenen masraf e-postası gönderilemediğinde de sonuç aynı alanda bildirilir.
+      let openingExpenseRequest:
+        | OpeningExpenseNotCreatedOutcome
+        | OpeningExpenseEmailNotSentOutcome
+        | OpeningExpenseEmailResultPendingOutcome
+        | undefined;
 
       // Audit log
       if (result.case) {
@@ -2930,29 +3018,22 @@ export class CaseService {
           openingExpenseRequest = await this.resolveOpeningExpenseNotCreated(tenantId, result.case.id, dto.sendExpenseEmail === true);
         }
 
-        // Otomatik açılış masraf seti oluştur (arka planda)
+        // Otomatik açılış masraf seti oluştur
         // Case oluşturulduğunda OPENING masrafları otomatik oluşturulur
         if (result.case.clientId && !openingExpenseRequest) {
           const shouldSendEmail = dto.sendExpenseEmail === true;
-          
-          this.expenseRequestService
-            .createOpeningExpenseSet(result.case.id, tenantId, 'system')
-            .then(async (expenseResult) => {
-              this.logger.log(`Otomatik açılış masrafları oluşturuldu: ${result.case!.fileNumber}`);
-              
-              // Masraf oluşturulduysa ve kullanıcı mail gönderilmesini istediyse
-              if (expenseResult?.id && shouldSendEmail) {
-                try {
-                  await this.expenseRequestService.sendExpenseEmail(tenantId, expenseResult.id, 'system');
-                  this.logger.log(`Masraf talebi maili gönderildi: ${result.case!.fileNumber}`);
-                } catch (emailErr: any) {
-                  this.logger.warn(`Masraf maili gönderilemedi: ${emailErr.message}`);
-                }
-              }
-            })
-            .catch((err) => {
-              this.logger.warn(`Otomatik masraf seti oluşturulamadı: ${err.message}`);
-            });
+          // E-posta istenmediyse eskisi gibi arka planda çalışır. Beklenmeyen hata dosya açılışını bozmaz.
+          const automation = this.runOpeningExpenseAutomation(tenantId, result.case.id, result.case.fileNumber, shouldSendEmail).catch(
+            (err: any) => {
+              this.logger.warn(`Otomatik açılış masraf akışı tamamlanamadı (${result.case!.fileNumber}): ${err?.message ?? err}`);
+              return shouldSendEmail ? buildOpeningExpenseEmailNotSentOutcome(describeOpeningExpenseEmailFailure('SEND_ERROR')) : undefined;
+            },
+          );
+          if (shouldSendEmail) {
+            // Kullanıcı masraf e-postası istedi: gönderilemediyse (ya da sonuç süresinde belli olmadıysa) yanıtta bildirilir.
+            // Gönderildiyse yanıta alan eklenmez.
+            openingExpenseRequest = await this.awaitOpeningExpenseEmailOutcome(automation);
+          }
         }
       }
 

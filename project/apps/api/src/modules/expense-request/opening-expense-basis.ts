@@ -18,6 +18,8 @@
  * tarife verisi sessiz 0 ya da varsayılan üretmez).
  */
 
+import type { OpeningExpenseEmailNotSentStatus } from './opening-expense-email-outcome';
+
 /** Açılış masraf kalemlerinin (harç / gider) tarifesinin para birimi. */
 export const OPENING_EXPENSE_TARIFF_CURRENCY = 'TRY' as const;
 
@@ -68,6 +70,8 @@ export interface OpeningExpenseAutomationStatus {
   /** Dosyadaki iptal edilmemiş masraf talebi sayısı (elle oluşturulanlar dahil). */
   readonly activeExpenseRequestCount: number;
   readonly automaticCalculation: OpeningExpenseBasisDecision;
+  /** Yalnız gönderilmemiş (PENDING) açılış talebinin SON e-posta denemesi başarısızsa gelir; aksi hâlde alan yoktur. */
+  readonly openingRequestEmail?: OpeningExpenseEmailNotSentStatus;
 }
 
 /** Dosya açılış yanıtındaki sonuç: otomatik açılış masraf talebi OLUŞTURULMADI. */
