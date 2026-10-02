@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { resolveTestDatabaseUrl } from '../../../../test/test-db-env';
@@ -337,6 +337,51 @@ describeWithDisposableDb('Ekstre kaynak para birimi sınırı (HTTP + disposable
       const ok = await caseStatement(f, { includeRequests: false });
       expect(ok.status).toBe(201);
       expect(Number(ok.body.closingBalance)).toBe(60);
+    });
+
+    it('USD mahsup (ClientOffset) dönem içinde → reddedilir; dönem dışındaki USD mahsup ekstreye girmez (üretilir)', async () => {
+      const f = await setup('mahsup');
+      await addLedgerRow(prisma, { tenantId: f.tenant.tenantId, caseId: f.caseId, amount: 35, currency: 'TRY', createdAt: IN_PERIOD });
+      const er = await addExpenseRequest(prisma, {
+        tenantId: f.tenant.tenantId,
+        caseId: f.caseId,
+        clientId: f.clientId,
+        userId: f.tenant.userId,
+        amount: 20,
+        currency: 'TRY',
+        createdAt: BEFORE_PERIOD,
+      });
+      const offset = (createdAt: Date) =>
+        prisma.clientOffset.create({
+          data: {
+            tenantId: f.tenant.tenantId,
+            clientId: f.clientId,
+            amount: new Prisma.Decimal(10),
+            currency: 'USD',
+            kind: 'APPLY',
+            payableCaseId: f.caseId,
+            payableCaseClientId: f.caseClientId,
+            expenseCaseId: f.caseId,
+            expenseRequestId: er,
+            idempotencyKey: `test:ccy:offset:${next()}`,
+            createdById: f.tenant.userId,
+            createdAt,
+          },
+        });
+      await offset(IN_PERIOD);
+
+      await expectRejectedWithoutDocuments(() => caseStatement(f), t1, {
+        reasonCode: 'NON_TRY_SOURCE',
+        currencies: ['USD'],
+        sources: ['ClientOffset'],
+      });
+
+      // kontrol: yalnız dönem DIŞI USD mahsup kalınca ekstre üretilir (dönem aralığı gerçekten denetleniyor)
+      await prisma.clientOffset.deleteMany({ where: { tenantId: f.tenant.tenantId, clientId: f.clientId } });
+      await offset(new Date('2026-08-15T10:00:00.000Z'));
+      const ok = await caseStatement(f, { includeRequests: false });
+      expect(ok.status).toBe(201);
+      expect(Number(ok.body.closingBalance)).toBe(35);
     });
 
     it('genel ekstre: TL dosya + USD dosya (karma müvekkil) → reddedilir; yalnız TL dosyası olan müvekkil için üretilir', async () => {

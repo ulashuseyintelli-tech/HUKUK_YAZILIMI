@@ -231,6 +231,7 @@ describe('ClientStatementService — E1 kaynak para birimi sınırı', () => {
       });
       const offsetWhere = mockPrisma.clientOffset.groupBy.mock.calls[0][0].where;
       expect(offsetWhere.tenantId).toBe(TENANT);
+      expect(offsetWhere.createdAt).toEqual({ gte: new Date(dto.periodStart), lte: new Date(dto.periodEnd) }); // yalnız ekstre dönemi
       expect(offsetWhere.OR).toEqual([{ payableCaseId: CASE, payableCaseClientId: CC }, { expenseCaseId: CASE }]);
     });
 
