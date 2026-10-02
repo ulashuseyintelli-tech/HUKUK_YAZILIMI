@@ -49,17 +49,18 @@ export class AccountingJournalFinancialStatementProjectionService {
   /// Müvekkile ödeme (ClientPayout) günlük satırları ve bunların genel ters kayıtları yalnız `caseClientId` taşır
   /// (kanonik finansal bağ); yalnız `clientId` ile süzmek ödemeyi ekstreden düşürüyordu. (b) dalı yalnız EKLER:
   /// (a) ile bugüne dek görünen hiçbir satır kapsam dışına çıkmaz. Günlük verisine dokunulmaz.
+  ///
+  /// Açılış (owner kararı 2026-10-02, O1): dönem başlangıcından ÖNCEKİ aynı kapsamdaki satırların net toplamı
+  /// devredilir; kapanış = açılış + dönem net hareketi. Açılış sabit 0,00 DEĞİLDİR (bkz. openingBalance).
   /// </remarks>
   async getClientCaseStatement(request: FinancialStatementReadRequest): Promise<FinancialStatementReadReport> {
     const normalized = normalizeRequest(request);
     const caseClientIds = await this.resolveCaseClientIds(normalized);
+    const scopeWhere = statementScopeWhere(normalized, caseClientIds);
+    const opening = await this.openingBalance(normalized, scopeWhere);
     const lines = (await this.prisma.accountingJournalLine.findMany({
       where: {
-        tenantId: normalized.tenantId,
-        accountCode: CLIENT_CASE_STATEMENT_ACCOUNT,
-        currency: normalized.currency,
-        caseId: normalized.scope.caseId,
-        ...clientScopeFilter(normalized.scope, caseClientIds),
+        ...scopeWhere,
         journalEntry: {
           tenantId: normalized.tenantId,
           postedAt: dateRange(normalized.period.from, normalized.period.to),
@@ -90,9 +91,10 @@ export class AccountingJournalFinancialStatementProjectionService {
     })) as StatementJournalLine[];
 
     const movements = lines.map((line, index) => movementFromLine(line, index + 1, normalized.scope.clientId));
+    // Kapanış = açılış + dönem net hareketi (açılış: dönem başlangıcından ÖNCEKİ aynı kapsamdaki satırların net toplamı).
     const closingAmount = movements.reduce(
       (total, movement) => total.plus(signedAmount(movement.direction, movement.amount)),
-      ZERO,
+      opening.amount,
     );
 
     return {
@@ -103,11 +105,49 @@ export class AccountingJournalFinancialStatementProjectionService {
       period: normalized.period,
       currency: normalized.currency,
       scope: normalized.scope,
-      opening: { amount: toMoney(ZERO), currency: normalized.currency },
+      opening: { amount: toMoney(opening.amount), currency: normalized.currency },
       movements,
       closing: { amount: toMoney(closingAmount), currency: normalized.currency },
-      reconciliation: reconciliationFor(movements.length),
+      // Defter kanıtı: dönem içi hareket YA DA dönem öncesi (açılışa devredilen) satır. Yalnız dönem hareketsiz diye
+      // "kanıt gerekli" denmez; kapsamda hiç satır yoksa uyarı aynen korunur.
+      reconciliation: reconciliationFor(movements.length + opening.lineCount),
     };
+  }
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - AccountingJournalFinancialStatementProjectionService.getClientCaseStatement() -> dönem açılışı (salt okuma).
+  ///
+  /// Açılış = dönem başlangıcından ÖNCE (`postedAt < from`) kayıtlı, dönem sorgusuyla AYNI kapsamdaki (kiracı, hesap,
+  /// para birimi, dosya, müvekkil) satırların işaretli net toplamıdır (ALACAK +, BORÇ −). Dönem sorgusu `gte from`,
+  /// bu sorgu `lt from` kullandığı için ardışık dönemlerde boşluk ve çift sayım olmaz. Para birimi çevrilmez, farklı
+  /// para birimleri toplanmaz (sorgu tek para birimiyle süzülüdür). Günlük verisine dokunulmaz.
+  /// </remarks>
+  private async openingBalance(
+    request: FinancialStatementReadRequest,
+    scopeWhere: Prisma.AccountingJournalLineWhereInput,
+  ): Promise<{ amount: Prisma.Decimal; lineCount: number }> {
+    const rows = await this.prisma.accountingJournalLine.groupBy({
+      by: ['direction'],
+      where: {
+        ...scopeWhere,
+        journalEntry: {
+          tenantId: request.tenantId,
+          postedAt: { lt: new Date(request.period.from) },
+        },
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+
+    let amount = ZERO;
+    let lineCount = 0;
+    for (const row of rows) {
+      const sum = row._sum.amount ?? ZERO;
+      amount = row.direction === 'CREDIT' ? amount.plus(sum) : amount.minus(sum);
+      lineCount += row._count._all;
+    }
+    return { amount, lineCount };
   }
 
   /// <remarks>
@@ -130,6 +170,21 @@ export class AccountingJournalFinancialStatementProjectionService {
     });
     return rows.map((row) => row.id);
   }
+}
+
+/// Dönem sorgusu ile açılış sorgusunun ORTAK kapsamı (tarih hariç): kiracı + hesap + para birimi + dosya + müvekkil.
+/// İki sorgu aynı kapsamı kullanmak zorundadır; aksi halde kapanış (açılış + dönem) başka satır kümesini toplar.
+function statementScopeWhere(
+  request: FinancialStatementReadRequest,
+  caseClientIds: string[],
+): Prisma.AccountingJournalLineWhereInput {
+  return {
+    tenantId: request.tenantId,
+    accountCode: CLIENT_CASE_STATEMENT_ACCOUNT,
+    currency: request.currency,
+    caseId: request.scope.caseId,
+    ...clientScopeFilter(request.scope, caseClientIds),
+  };
 }
 
 /// Müvekkil kapsamı süzgeci. İlk dal bugüne dek uygulanan süzgecin aynısıdır; ikinci dal yalnız `clientId`
