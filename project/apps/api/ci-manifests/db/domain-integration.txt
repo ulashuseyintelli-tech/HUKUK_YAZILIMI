@@ -451,3 +451,11 @@ src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.
 #     buro / kullanici baglami gecmiyor): o genel durum burada degistirilmez ve sabitlenmez; hazirligin masraf kosulu
 #     politika karari sabitlenerek olculur.
 src/modules/stage-trigger/__tests__/uyap-prepare-opening-expense-requirement.http.db-gated.integration.spec.ts
+
+# ── MUHASEBE DEFTERI: ACILIS DEVRI (owner karari 2026-10-02 "O1 + O2") ──
+#   Ekstre acilisi sabit 0,00 idi; kapanis yalniz donem ici hareketlerin toplamiydi. Donem baslangicindan ONCEKI
+#   ayni kapsamdaki (kiraci, hesap, para birimi, dosya, muvekkil) satirlar acilisa devredilir; kapanis = acilis + donem.
+#   Gercek PostgreSQL + gercek dagitim / odeme yazicilari; satirlarin YALNIZ tarihi senaryo anina cekilir. Olcut:
+#   ardisik donemlerde kapanis = sonraki acilis, bugune kadarki kapanis = computeOutstanding; ms siniri, TSI gun siniri,
+#   kiraci / para birimi / muvekkil ayrimi, hareketsiz donem, gecersiz aralik. Duzeltmesiz okuyucuyla 9 testin 7si duser.
+src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.opening-carry.db-gated.integration.spec.ts
