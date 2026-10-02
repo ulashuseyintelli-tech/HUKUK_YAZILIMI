@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FeeEngineService } from './fee-engine.service';
+import { buildFeePreviewCurrencyStatus, type FeePreviewCurrencyStatus } from './fee-preview-currency';
 import type { GeneratedFeeItem } from '@shared/types';
 
 interface CalculateFeesDto {
@@ -20,6 +21,10 @@ interface FeePreviewDto {
   principalAmount: number;
   caseType?: string;
   debtorCount?: number;
+  /** Alacak kaleminin para birimi. Verilirse yanıt `data.paraBirimiDurumu` kararını taşır; sayısal alanlar DEĞİŞMEZ. */
+  currency?: string;
+  /** Dosya para birimi (kalemden farklı olabilir). Verilmezse kalemin para birimi dosya para birimi sayılır. */
+  caseCurrency?: string;
 }
 
 interface FeePreviewResponse {
@@ -36,6 +41,11 @@ interface FeePreviewResponse {
       tebligatGideri: number;
       vekaletPulu: number;
     };
+    /**
+     * Tutarların para birimi ve geçerliliği (yalnız istek `currency` taşıyorsa). Tarife TL'dir: dövizli / dosyayla
+     * uyuşmayan kalemde oranlı tutarlar HESAPLANAMADI, tek toplamlar GOSTERILEMEZ bildirilir. Çevirme ve hesap YOK.
+     */
+    paraBirimiDurumu?: FeePreviewCurrencyStatus;
   };
   error?: {
     code: 'INVALID_INPUT' | 'SERVICE_UNAVAILABLE';
@@ -55,7 +65,11 @@ export class FeeEngineController {
    * 
    * Lightweight preview endpoint - NO audit log, cached
    * Frontend form preview için kullanılır
-   * 
+   *
+   * Cagrildigi yerler:
+   * - web feeEngineApi.preview() -> ProfessionalClaimItemForm.hesapla() (sihirbaz alacak kalemi formu, "Hesap Özeti")
+   * - web feeEngineApi.preview() -> usePreviewCoordinator (para birimi göndermez; yanıt aynen)
+   *
    * @see docs/single-source-of-truth-architecture.md
    */
   @Post('preview')
@@ -102,6 +116,13 @@ export class FeeEngineController {
         vekaletPulu: items.find(i => i.type === 'VEKALET_PULU' || i.tariffCode === 'VEKALET_PULU')?.amount || 0,
       };
 
+      // Para birimi bağlamı (eklemeli; hesap ve çevirme YOK). İstek para birimi taşımıyorsa blok üretilmez.
+      const paraBirimiDurumu = buildFeePreviewCurrencyStatus({
+        principalAmount: dto.principalAmount,
+        currency: dto.currency,
+        caseCurrency: dto.caseCurrency,
+      });
+
       // Cache expiry: 5 minutes
       const cacheExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
@@ -112,6 +133,7 @@ export class FeeEngineController {
           estimatedAttorneyFee,
           tariffYear,
           breakdown,
+          ...(paraBirimiDurumu ? { paraBirimiDurumu } : {}),
         },
         cached: false, // TODO: Implement caching
         cacheExpiry,
