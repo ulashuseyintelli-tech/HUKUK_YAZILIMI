@@ -417,6 +417,15 @@ src/modules/policy-engine/decision-logger/__tests__/uyap-attempt-cpe-decision-li
 #     (K2 dosya yetkisi, avukat delegasyonu/rutbe, portal hesabi, ucret sozlesmesi) tx icinde Lawyer->User FOR SHARE
 #     + guncel satirdan ayni kural; tx ici yetki kapatilinca 6 test kirilir.
 src/modules/office-approval/__tests__/grant-authority-revocation-race.db-gated.integration.spec.ts
+
+# ── MUHASEBE DEFTERI: YAZICI → OKUYUCU SINIRI (owner karari 2026-10-01 "S1 — okuyucu") ──
+#   Ekstre projeksiyonu muvekkili yalniz `clientId` ile suzuyordu; odeme yazicisi gunluk satirina `clientId`
+#   yazmadigi (yalniz `caseClientId`) icin muvekkile odeme ekstrede hic gorunmuyordu (olcum: odenecek 1.200,
+#   ekstre kapanisi 1.500). Yazici ve okuyucu ayri birim testleriyle ayri ayri yesildi; bu spec ikisini
+#   GERCEK PostgreSQL uzerinde birlikte kosturur: gercek dagitim kesinlestirme / odeme / mahsup / genel ters
+#   kayit yazicilari + projeksiyon. Olcut: `computeOutstanding` ile ekstre kapanisinin esitligi.
+#   Duzeltmesiz okuyucuyla 7 testin 5'i duser; 10 mutantin 10'u (birim + bu spec) yakalanir.
+src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.payout-visibility.db-gated.integration.spec.ts
 #   Acilis masrafi sarti (masraf kapisi durum uclari + UYAP gonderim hazirligi), GERCEK HTTP + disposable PostgreSQL. Olculen
 #     durum (main 6681b1d5): dovizli dosyada otomatik acilis masraf talebi olusmadigi icin masraf kapisi dosyayi "UYAP
 #     islemleri icin hazir" bildiriyor (isBlocked=false, canPerform=true) ve baska buronun dosyasini da yanitliyordu;
