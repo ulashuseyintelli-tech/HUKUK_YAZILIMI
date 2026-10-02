@@ -11,7 +11,9 @@ export const STATUS_LABELS: Record<OfficeApprovalStatusValue, string> = {
   EXPIRED: "Süresi Doldu",
 };
 
-export const STATUS_OPTIONS: { value: OfficeApprovalStatusValue | ""; label: string }[] = [
+// Onay Kutusu durum süzgeci. Durum taşımayan ("tüm durumlar") seçenek YOK: kutu ucu durum verilmezse yalnız
+// bekleyenleri döndürür, sunucuda "tüm durumlar" anlamı bulunmaz — öyle bir seçenek bekleyenleri "tümü" diye gösterirdi.
+export const STATUS_OPTIONS: { value: OfficeApprovalStatusValue; label: string }[] = [
   { value: "PENDING_APPROVAL", label: "Onay Bekliyor" },
   { value: "APPROVED", label: "Onaylandı" },
   { value: "APPROVED_WITH_CHANGES", label: "Değişiklikle Onaylandı" },
@@ -19,5 +21,4 @@ export const STATUS_OPTIONS: { value: OfficeApprovalStatusValue | ""; label: str
   { value: "REJECTED", label: "Reddedildi" },
   { value: "CANCELLED", label: "İptal Edildi" },
   { value: "EXPIRED", label: "Süresi Doldu" },
-  { value: "", label: "Tüm Durumlar" },
 ];

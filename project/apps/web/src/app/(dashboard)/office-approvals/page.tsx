@@ -14,14 +14,15 @@ export default function OfficeApprovalsPage() {
   const [items, setItems] = useState<OfficeApprovalSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<OfficeApprovalStatusValue | "">("PENDING_APPROVAL");
+  const [statusFilter, setStatusFilter] = useState<OfficeApprovalStatusValue>("PENDING_APPROVAL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const rows = await officeApprovalApi.getInbox(statusFilter || undefined);
+      // Durum HER ZAMAN gönderilir: kutu ucu durum verilmezse yalnız bekleyenleri döndürür.
+      const rows = await officeApprovalApi.getInbox(statusFilter);
       setItems(rows);
     } catch (e: any) {
       setError(e?.message || "Onay talepleri yüklenemedi");
@@ -53,12 +54,12 @@ export default function OfficeApprovalsPage() {
       <div className="flex gap-3 mb-4">
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as OfficeApprovalStatusValue | "")}
+          onChange={(e) => setStatusFilter(e.target.value as OfficeApprovalStatusValue)}
           aria-label="Durum filtresi"
           className="border rounded-lg px-3 py-2 text-sm"
         >
           {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value || "ALL"} value={opt.value}>
+            <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
           ))}
@@ -71,7 +72,9 @@ export default function OfficeApprovalsPage() {
         ) : error ? (
           <div className="p-8 text-center text-red-600">{error}</div>
         ) : items.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">Bekleyen onay yok</div>
+          <div className="p-8 text-center text-gray-500">
+            {statusFilter === "PENDING_APPROVAL" ? "Bekleyen onay yok" : "Bu durumda onay talebi yok"}
+          </div>
         ) : (
           <div className="divide-y">
             {items.map((item) => (
