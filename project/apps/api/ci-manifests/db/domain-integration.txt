@@ -426,3 +426,17 @@ src/modules/office-approval/__tests__/grant-authority-revocation-race.db-gated.i
 #   kayit yazicilari + projeksiyon. Olcut: `computeOutstanding` ile ekstre kapanisinin esitligi.
 #   Duzeltmesiz okuyucuyla 7 testin 5'i duser; 10 mutantin 10'u (birim + bu spec) yakalanir.
 src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.payout-visibility.db-gated.integration.spec.ts
+#   Acilis masrafi sarti (masraf kapisi durum uclari + UYAP gonderim hazirligi), GERCEK HTTP + disposable PostgreSQL. Olculen
+#     durum (main 6681b1d5): dovizli dosyada otomatik acilis masraf talebi olusmadigi icin masraf kapisi dosyayi "UYAP
+#     islemleri icin hazir" bildiriyor (isBlocked=false, canPerform=true) ve baska buronun dosyasini da yanitliyordu;
+#     hazirlik, dosyada hic talep yokken "Odenmemis masraf talebi var" diyordu; politika motoru izin verdiginde ise bakiyeyi
+#     TL oraninin HAM doviz sayisina uygulanmasiyla bulunan paket toplamiyla karsilastirip "hazir" diyordu. Kural (owner ek
+#     karari 2026-10-01): belirlenemeyen masraf saglanmis sayilmaz; eksik hesap gorunur ve engelleyici; pesin harci TL
+#     tutariyla iceren, elle olusturulmus ve karsilanmis talep engeli kaldirir; yalniz bir talebin varligi yetmez; okuma /
+#     sorgu ve bagimsiz islemler etkilenmez; ret yolunda masraf / muhasebe / bakiye / UYAP istegi kaydi yazilmaz (politika
+#     karari denetim izi korunur; politika motorunun baska gerekcesi — dosya arsivde — degistirilmez); TL dosya DEGISMEZ.
+#     Duzeltmesiz uretim koduyla 32 testin 18'i DUSER (RED kanitlandi); TL, okuma / sorgu, gecmis kayit ve muvekkilsiz dosya
+#     testleri duzeltmesiz kodla da GECER. UYAP gonderim hazirligi bugun politika motorunca HER dosyada reddedilir (bu yola
+#     buro / kullanici baglami gecmiyor): o genel durum burada degistirilmez ve sabitlenmez; hazirligin masraf kosulu
+#     politika karari sabitlenerek olculur.
+src/modules/stage-trigger/__tests__/uyap-prepare-opening-expense-requirement.http.db-gated.integration.spec.ts
