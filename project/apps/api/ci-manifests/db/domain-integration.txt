@@ -248,6 +248,19 @@ src/modules/office-approval/__tests__/approval-decision-revocation-race.db-gated
 src/modules/client-settlement/__tests__/client-payout-replay.db-gated.integration.spec.ts
 src/modules/client-settlement/__tests__/tm47d-happy-path-financial-qa.integration.spec.ts
 #
+#   G1 + E1 — MUVEKKIL MUHASEBESI PARA BIRIMI SINIRI, GERCEK HTTP + disposable PostgreSQL (owner GO 2026-10-02):
+#     E1 (ekstre): TL kaynaklarla gecerli dosya / genel ekstre uretilir; TL disi / bos para birimi kaynakta (acilis devri dahil, dosya para
+#     birimi TL olsa bile) HTTP 400 CLIENT_STATEMENT_UNSUPPORTED_CURRENCY + ekstre / satir / denetim gunlugu / bildirim YAZILMAZ; yenileme
+#     eski ekstreyi degistirmez; buro ve alacakli siniri; aylik kosu "basarisiz" degil nedeniyle atlar.
+#     G1 (Genel Cari): sunucu kapsam disi dosya / kaydi bildirir (TAM / KISMI / DISI), TL toplamina doviz eklenmez, gercek sifir ile kapsam
+#     disi ayrilir, #2878 `cases` para birimi korunur, buro / muvekkil / alacakli izolasyonu.
+#     Duzeltmesiz servis kodu ile 26 testin 19'u DUSER (RED kanitlandi); TL gecerli ekstre, buro izolasyonu ve ortak alacakli kontrol testleri
+#     duzeltmesiz kodla da gecer. Mutant (yan kopya; birim + bu iki spec): 37 mutantin 37'si yakalandi (E1 18, G1 19: kaynak para birimi
+#     denetimi, devir, includeRequests, alacakli / buro kapsami, mahsup araligi, aylik atlama, kapsam siniflari, avans / masraf suzgeci,
+#     web hucre / serit / rozet). Fikstur: apps/api/test/client-currency-fixture.ts (dogrudan Prisma; yalniz kendi buro kayitlarini siler).
+src/modules/client-statement/__tests__/client-statement-currency.http.db-gated.integration.spec.ts
+src/modules/client-settlement/__tests__/client-accounting-currency-scope.http.db-gated.integration.spec.ts
+#
 #   DEBTOR-LIFECYCLE-ADJACENT-CI-COVERAGE-RECONCILIATION-P1-I11 (R02-E, MAP_NOW)
 #     collection-cancel-reversal.db-gated.integration.spec.ts: already follows the
 #     .db-gated.integration.spec.ts suffix convention (describeWithDisposableDb),
@@ -417,3 +430,34 @@ src/modules/policy-engine/decision-logger/__tests__/uyap-attempt-cpe-decision-li
 #     (K2 dosya yetkisi, avukat delegasyonu/rutbe, portal hesabi, ucret sozlesmesi) tx icinde Lawyer->User FOR SHARE
 #     + guncel satirdan ayni kural; tx ici yetki kapatilinca 6 test kirilir.
 src/modules/office-approval/__tests__/grant-authority-revocation-race.db-gated.integration.spec.ts
+
+# ── MUHASEBE DEFTERI: YAZICI → OKUYUCU SINIRI (owner karari 2026-10-01 "S1 — okuyucu") ──
+#   Ekstre projeksiyonu muvekkili yalniz `clientId` ile suzuyordu; odeme yazicisi gunluk satirina `clientId`
+#   yazmadigi (yalniz `caseClientId`) icin muvekkile odeme ekstrede hic gorunmuyordu (olcum: odenecek 1.200,
+#   ekstre kapanisi 1.500). Yazici ve okuyucu ayri birim testleriyle ayri ayri yesildi; bu spec ikisini
+#   GERCEK PostgreSQL uzerinde birlikte kosturur: gercek dagitim kesinlestirme / odeme / mahsup / genel ters
+#   kayit yazicilari + projeksiyon. Olcut: `computeOutstanding` ile ekstre kapanisinin esitligi.
+#   Duzeltmesiz okuyucuyla 7 testin 5'i duser; 10 mutantin 10'u (birim + bu spec) yakalanir.
+src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.payout-visibility.db-gated.integration.spec.ts
+#   Acilis masrafi sarti (masraf kapisi durum uclari + UYAP gonderim hazirligi), GERCEK HTTP + disposable PostgreSQL. Olculen
+#     durum (main 6681b1d5): dovizli dosyada otomatik acilis masraf talebi olusmadigi icin masraf kapisi dosyayi "UYAP
+#     islemleri icin hazir" bildiriyor (isBlocked=false, canPerform=true) ve baska buronun dosyasini da yanitliyordu;
+#     hazirlik, dosyada hic talep yokken "Odenmemis masraf talebi var" diyordu; politika motoru izin verdiginde ise bakiyeyi
+#     TL oraninin HAM doviz sayisina uygulanmasiyla bulunan paket toplamiyla karsilastirip "hazir" diyordu. Kural (owner ek
+#     karari 2026-10-01): belirlenemeyen masraf saglanmis sayilmaz; eksik hesap gorunur ve engelleyici; pesin harci TL
+#     tutariyla iceren, elle olusturulmus ve karsilanmis talep engeli kaldirir; yalniz bir talebin varligi yetmez; okuma /
+#     sorgu ve bagimsiz islemler etkilenmez; ret yolunda masraf / muhasebe / bakiye / UYAP istegi kaydi yazilmaz (politika
+#     karari denetim izi korunur; politika motorunun baska gerekcesi — dosya arsivde — degistirilmez); TL dosya DEGISMEZ.
+#     Duzeltmesiz uretim koduyla 32 testin 18'i DUSER (RED kanitlandi); TL, okuma / sorgu, gecmis kayit ve muvekkilsiz dosya
+#     testleri duzeltmesiz kodla da GECER. UYAP gonderim hazirligi bugun politika motorunca HER dosyada reddedilir (bu yola
+#     buro / kullanici baglami gecmiyor): o genel durum burada degistirilmez ve sabitlenmez; hazirligin masraf kosulu
+#     politika karari sabitlenerek olculur.
+src/modules/stage-trigger/__tests__/uyap-prepare-opening-expense-requirement.http.db-gated.integration.spec.ts
+
+# ── MUHASEBE DEFTERI: ACILIS DEVRI (owner karari 2026-10-02 "O1 + O2") ──
+#   Ekstre acilisi sabit 0,00 idi; kapanis yalniz donem ici hareketlerin toplamiydi. Donem baslangicindan ONCEKI
+#   ayni kapsamdaki (kiraci, hesap, para birimi, dosya, muvekkil) satirlar acilisa devredilir; kapanis = acilis + donem.
+#   Gercek PostgreSQL + gercek dagitim / odeme yazicilari; satirlarin YALNIZ tarihi senaryo anina cekilir. Olcut:
+#   ardisik donemlerde kapanis = sonraki acilis, bugune kadarki kapanis = computeOutstanding; ms siniri, TSI gun siniri,
+#   kiraci / para birimi / muvekkil ayrimi, hareketsiz donem, gecersiz aralik. Duzeltmesiz okuyucuyla 9 testin 7si duser.
+src/modules/accounting-journal/__tests__/accounting-journal-financial-statement.opening-carry.db-gated.integration.spec.ts

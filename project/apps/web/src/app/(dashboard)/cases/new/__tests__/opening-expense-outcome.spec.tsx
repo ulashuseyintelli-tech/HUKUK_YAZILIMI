@@ -192,7 +192,8 @@ describe('Sihirbaz — açılış yanıtındaki masraf talebi sonucu', () => {
     mocked.createCase.mockResolvedValue({ id: 'case-new', openingExpenseRequest: NOT_CREATED });
     render(<NewCasePage />);
 
-    await submit('Oluştur ve Masraf Maili Gönder');
+    // Dövizli taslakta pencere düğmesi e-postayı talebin oluşmasına bağlar (bkz. pre-submit-currency-texts.spec.tsx)
+    await submit('Oluştur (Talep Oluşursa Mail Gönder)');
 
     await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/cases/case-new?tab=documents'));
     expect(mocked.createCase.mock.calls[0][0]).toMatchObject({ currency: 'USD', sendExpenseEmail: true });

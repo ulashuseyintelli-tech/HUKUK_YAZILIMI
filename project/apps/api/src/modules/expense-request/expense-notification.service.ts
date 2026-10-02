@@ -5,6 +5,7 @@ import { EmailProviderService, EmailOptions } from '@/modules/notification/email
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { maskEmail } from '@/common/pii-mask.util';
 import { findExpenseCatalogEntry } from './expense-item-catalog';
+import type { ExpenseEmailDispatchFailureReason } from './opening-expense-email-outcome';
 
 export interface EmailContent {
   subject: string;
@@ -465,16 +466,58 @@ export class ExpenseNotificationService {
     }
 
     // failed → ExpenseRequest SENT OLMAZ. Güvenli audit (raw provider error/secret ÇIKMAZ).
+    // Neden, sağlayıcı metninden DEĞİL kalıcı bildirim satırından / şablonun varlığından sınıflandırılır; belirlenemezse
+    // alan yazılmaz (kayıt önceki biçimiyle kalır).
+    const failureReason = await this.classifyDispatchFailure(tenantId, dedupeKey);
     await this.prisma.expenseAuditLog.create({
       data: {
         expenseRequestId: requestId,
         action: 'EMAIL_FAILED',
-        details: { via: 'dispatcher', outcome: 'delivery-not-confirmed' },
+        details: { via: 'dispatcher', outcome: 'delivery-not-confirmed', ...(failureReason ? { reason: failureReason } : {}) },
         userId,
       },
     });
-    this.logger.warn(`Masraf talebi bildirimi teslim doğrulanamadı (requestId=${requestId})`);
-    return { success: false };
+    this.logger.warn(
+      `Masraf talebi bildirimi teslim doğrulanamadı (requestId=${requestId}${failureReason ? `, neden=${failureReason}` : ''})`,
+    );
+    return { success: false as const, ...(failureReason ? { reason: failureReason } : {}) };
+  }
+
+  /**
+   * Dağıtıcı `failed` döndüğünde nedeni güvenli bir koda indirger. Ham sağlayıcı / istisna metni OKUNMAZ ve YAZILMAZ:
+   * yalnız bu gönderimin kalıcı bildirim satırının durumu (claim sonrası FAILED / PENDING) ve şablonun varlığı okunur.
+   * Sınıflandırma en-iyi-çabadır: okunamazsa `null` döner ve başarısızlık kaydı nedensiz yazılır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseNotificationService.sendExpenseRequest() → dağıtım başarısız dalı
+   * </remarks>
+   */
+  private async classifyDispatchFailure(tenantId: string, dedupeKey: string): Promise<ExpenseEmailDispatchFailureReason | null> {
+    try {
+      const notification = await this.prisma.clientNotification.findFirst({
+        where: { tenantId, dedupeKey },
+        orderBy: { createdAt: 'desc' },
+        select: { status: true, errorMessage: true },
+      });
+      if (!notification) {
+        // Claim satırı hiç oluşmadı: şablon bulunamadı / render edilemedi ya da claim öncesi hata.
+        const template = await this.prisma.messageTemplate.findFirst({
+          where: { tenantId, code: 'EXPENSE_REQUEST', isActive: true },
+          select: { id: true },
+        });
+        return template ? null : 'TEMPLATE_MISSING';
+      }
+      // PENDING: sağlayıcı çağrısı başladı, sonuç belirsiz (teslim olmuş olabilir; owner güvenlik kuralı).
+      if (notification.status === 'PENDING') return 'DELIVERY_UNCERTAIN';
+      if (notification.status !== 'FAILED') return null;
+      if (notification.errorMessage === 'recipient-missing') return 'RECIPIENT_MISSING';
+      if (notification.errorMessage === 'smtp-not-configured') return 'SMTP_NOT_CONFIGURED';
+      if (notification.errorMessage === 'client-not-found') return null;
+      return 'DELIVERY_REJECTED';
+    } catch {
+      return null;
+    }
   }
 
   /**
