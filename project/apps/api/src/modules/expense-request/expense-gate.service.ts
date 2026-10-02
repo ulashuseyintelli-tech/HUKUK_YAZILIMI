@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientSettlementReadService } from '@/modules/client-settlement/client-settlement-read.service';
 
@@ -64,13 +64,54 @@ export class ExpenseGateService {
   }
 
   /**
-   * Gate kontrolü - BLOCKING expense'ler ödenmemiş mi?
+   * Büro (tenant) sınırı: dosya çağıranın bürosuna ait değilse — ya da hiç yoksa — AYNI "bulunamadı" yanıtı verilir;
+   * başka büronun dosyası hakkında var / yok bilgisi dahil hiçbir şey sızmaz. Büro kimliği yalnız doğrulanmış oturumdan
+   * gelir. Boş kimlikte sorguya gidilmez: Prisma tanımsız süzgeci yok sayar, sorgu dosyayı büro sınırı olmadan bulurdu.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseGateService.checkGate() / isUyapBlocked() / canPerformUyapAction()
+   * </remarks>
    */
-  async checkGate(caseId: string): Promise<GateCheckResult> {
+  private async assertCaseInTenant(caseId: string, tenantId: string): Promise<void> {
+    const owned =
+      caseId && tenantId
+        ? await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } })
+        : null;
+    if (!owned) {
+      throw new NotFoundException('Takip bulunamadı');
+    }
+  }
+
+  /**
+   * Gate kontrolü - BLOCKING expense'ler ödenmemiş mi? Büro kapsamlıdır (bkz. assertCaseInTenant).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.getGateStatus() → GET /expense-requests/case/:caseId/gate-status
+   * - ExpenseGateService.getGateSummary() / updateGateStatus()
+   * </remarks>
+   */
+  async checkGate(caseId: string, tenantId: string): Promise<GateCheckResult> {
+    await this.assertCaseInTenant(caseId, tenantId);
+    return this.evaluateGate(caseId, tenantId);
+  }
+
+  /**
+   * Kapı değerlendirmesi. Dosyanın büroya ait olduğunu ÇAĞIRAN doğrular; talepler ayrıca büro süzgeciyle okunur
+   * (dosyada başka büro damgalı talep sayılmaz).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseGateService.checkGate() / isUyapBlockedLegacy()
+   * </remarks>
+   */
+  private async evaluateGate(caseId: string, tenantId: string): Promise<GateCheckResult> {
     // Coarse pre-filter (BLOCKING + açık statü). Nihai blok kararı FAZ-1b flag'e göre: legacy (statü-bazlı) vs remaining-bazlı.
     const candidates = await this.prisma.expenseRequest.findMany({
       where: {
         caseId,
+        tenantId,
         gateType: 'BLOCKING',
         status: { in: ['PENDING', 'SENT', 'REMINDED', 'PARTIAL'] },
       },
@@ -126,12 +167,18 @@ export class ExpenseGateService {
    * UYAP işlemleri kilitli mi?
    * 
    * @deprecated CPE kullanımına geçilecek - canPerformUyapAction kullanın
+   *
+   * <remarks>
+   * Çağrıldığı yerler: üretimde çağıranı yok (yalnız testler). Büro kapsamlıdır (bkz. assertCaseInTenant).
+   * </remarks>
    */
-  async isUyapBlocked(caseId: string): Promise<boolean> {
+  async isUyapBlocked(caseId: string, tenantId: string): Promise<boolean> {
+    await this.assertCaseInTenant(caseId, tenantId);
+
     // CPE aktifse, CPE'den kontrol et
     if (this.useCpe && this.cpeAdapter) {
       const decision = await this.cpeAdapter.canPerformAction(caseId, 'UYAP_SEND');
-      const legacyResult = await this.isUyapBlockedLegacy(caseId);
+      const legacyResult = await this.isUyapBlockedLegacy(caseId, tenantId);
       
       // Discrepancy logging
       if (decision.allowed !== !legacyResult) {
@@ -143,23 +190,25 @@ export class ExpenseGateService {
       
       return !decision.allowed;
     }
-    
-    return this.isUyapBlockedLegacy(caseId);
+
+    return this.isUyapBlockedLegacy(caseId, tenantId);
   }
 
   /**
    * ROLL-002 — UYAP block kontrolü (isUyapBlocked/canPerformUyapAction ortak kaynağı).
    * Flag OFF: davranış/performans AYNEN korunur (ucuz COUNT — checkGate'in flag-off dalıyla
-   * matematiksel eşdeğer). Flag ON: checkGate(caseId).isBlocked'a delege eder — bu metod artık
+   * matematiksel eşdeğer). Flag ON: checkGate ile AYNI değerlendirmeye (evaluateGate) delege eder — bu metod artık
    * checkGate/getGateSummary ile AYNI (true-remaining bazlı) kararı verir; display/enforcement
    * ayrışması (ROLL-002) kapanır. "Legacy" adı korunuyor (çağıran metodlar değişmedi), ama artık
    * yalnız flag-off'ta saf legacy'dir.
+   * Dosyanın büroya ait olduğunu ÇAĞIRAN doğrular; sayım da büro süzgeçlidir.
    */
-  private async isUyapBlockedLegacy(caseId: string): Promise<boolean> {
+  private async isUyapBlockedLegacy(caseId: string, tenantId: string): Promise<boolean> {
     if (!isExpenseRemainingGateEnabled()) {
       const count = await this.prisma.expenseRequest.count({
         where: {
           caseId,
+          tenantId,
           gateType: 'BLOCKING',
           status: { in: ['PENDING', 'SENT', 'REMINDED', 'PARTIAL'] },
         },
@@ -167,15 +216,23 @@ export class ExpenseGateService {
       return count > 0;
     }
 
-    const gateCheck = await this.checkGate(caseId);
+    const gateCheck = await this.evaluateGate(caseId, tenantId);
     return gateCheck.isBlocked;
   }
 
   /**
    * Belirli bir UYAP işlemi yapılabilir mi?
-   * CPE entegrasyonu ile çalışır
+   * CPE entegrasyonu ile çalışır. Büro kapsamlıdır (bkz. assertCaseInTenant).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.canPerformAction() → GET /expense-requests/case/:caseId/can-perform/:actionType
+   * </remarks>
    */
-  async canPerformUyapAction(caseId: string, actionType: string): Promise<boolean> {
+  async canPerformUyapAction(caseId: string, actionType: string, tenantId: string): Promise<boolean> {
+    // Muafiyetten ÖNCE: kapıdan muaf işlem türü de başka büronun dosyası için yanıt üretmez
+    await this.assertCaseInTenant(caseId, tenantId);
+
     // Bazı işlemler gate'den muaf olabilir (örn: dosya görüntüleme)
     const exemptActions = ['VIEW', 'QUERY', 'DOWNLOAD'];
     
@@ -198,7 +255,7 @@ export class ExpenseGateService {
       const decision = await this.cpeAdapter.canPerformAction(caseId, actionCode);
       
       // Legacy kontrolü de yap ve karşılaştır
-      const legacyResult = await this.canPerformUyapActionLegacy(caseId, actionType);
+      const legacyResult = await this.canPerformUyapActionLegacy(caseId, actionType, tenantId);
       
       if (decision.allowed !== legacyResult) {
         this.logger.warn(
@@ -210,14 +267,14 @@ export class ExpenseGateService {
       return decision.allowed;
     }
 
-    return this.canPerformUyapActionLegacy(caseId, actionType);
+    return this.canPerformUyapActionLegacy(caseId, actionType, tenantId);
   }
 
   /**
    * Legacy UYAP action kontrolü
    */
-  private async canPerformUyapActionLegacy(caseId: string, actionType: string): Promise<boolean> {
-    const isBlocked = await this.isUyapBlockedLegacy(caseId);
+  private async canPerformUyapActionLegacy(caseId: string, actionType: string, tenantId: string): Promise<boolean> {
+    const isBlocked = await this.isUyapBlockedLegacy(caseId, tenantId);
     return !isBlocked;
   }
 
@@ -226,7 +283,7 @@ export class ExpenseGateService {
    * Case status'unu "UYAP'a Gönderilebilir" yap
    */
   async updateGateStatus(caseId: string, tenantId: string): Promise<{ cleared: boolean; message: string }> {
-    const gateCheck = await this.checkGate(caseId);
+    const gateCheck = await this.checkGate(caseId, tenantId);
 
     if (!gateCheck.isBlocked) {
       // Tüm BLOCKING masraflar ödendi - Case'i güncelle
@@ -247,10 +304,15 @@ export class ExpenseGateService {
   }
 
   /**
-   * Dosya için gate özeti
+   * Dosya için gate özeti. Büro kapsamlıdır (bkz. assertCaseInTenant).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.getGateSummary() → GET /expense-requests/case/:caseId/gate-summary
+   * </remarks>
    */
-  async getGateSummary(caseId: string) {
-    const gateCheck = await this.checkGate(caseId);
+  async getGateSummary(caseId: string, tenantId: string) {
+    const gateCheck = await this.checkGate(caseId, tenantId);
     
     return {
       isBlocked: gateCheck.isBlocked,

@@ -210,6 +210,19 @@ src/modules/case/__tests__/case-calculation-summary-currency.http.db-gated.integ
 #   tekrar deneme testleri GECER (RED kanitlandi: USD dosyada 1.431,10 TL talep + gunluk kaydi yaziliyor).
 src/modules/expense-request/__tests__/opening-expense-fx-basis.http.db-gated.integration.spec.ts
 
+# Masraf kapisi durum uclari ve paket hesabi — buro (tenant) siniri, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
+#   (main ef16f07f): A burosunun kullanicisi B burosuna ait dosya kimligini vererek POST /cost-packages/compute (dosyanin
+#   anaparasi calcParams.baseValue + tutarlar; B'nin buroya ozel paketi dahil) ve GET /expense-requests/case/:caseId/
+#   gate-status | gate-summary | can-perform/:actionType (kilit durumu, bekleyen tutar, masraf talebi kimlikleri)
+#   yanitlarinda B'nin verisini okuyabiliyordu: dosya yalniz kimligiyle okunuyor, cagiranin burosu sorguya girmiyordu.
+#   Kural: dort uc cagiranin burosuna baglidir; baska buronun dosyasi var olmayan dosyayla AYNI 404 "Takip bulunamadi"
+#   yanitini alir (kapidan muaf islem turu ve cagiranin gonderdigi buro kimligi dahil); talepler ayrica buro suzgeciyle
+#   okunur; govdedeki dosya kimligi suzgec isleci gibi yorumlanmaz. Kendi burosunun dosyasinda dort ucun yaniti ve UYAP
+#   gonderim hazirliginin (POST /cases/:caseId/uyap/prepare) paket hesabi DEGISMEZ. Bu konum bilerek dosya sonu DEGIL:
+#   es zamanli PR'lar sona ekler. Duzeltmesiz servis koduyla 17 testin 8'i DUSER; kendi burosu yanitlarini birebir
+#   sabitleyen 9 test duzeltmesiz kodla da GECER (RED kanitlandi).
+src/modules/expense-request/__tests__/expense-tenant-boundary.http.db-gated.integration.spec.ts
+
 # Alacak ozeti para birimi baglami (GET /claim-items/case/:caseId/summary), GERCEK HTTP + disposable PostgreSQL. Olculen
 #   kusur (main 6917e8aa): ozet etkin kalem tutarlarini para birimine bakmadan topluyor ve yaniti SON kalemin para birimiyle
 #   etiketliyordu; 10.000 USD + 5.000 EUR + 2.000 TRY anaparali dosyada totals.principal / grandTotal 17.000, currency kalem

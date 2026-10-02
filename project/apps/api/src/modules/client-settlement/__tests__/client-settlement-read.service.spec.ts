@@ -199,8 +199,8 @@ describe('ClientSettlementReadService.listClientCases', () => {
   it('müvekkilin dosyaları + caseClientId resolve (caseNumber=fileNumber)', async () => {
     const prisma = buildPrisma({
       cases: [
-        { id: 'cc-A', caseId: 'case1', role: 'ALACAKLI', case: { fileNumber: '2024/1', executionFileNumber: 'E-1', caseDate: new Date('2026-01-15T00:00:00.000Z') } },
-        { id: 'cc-B', caseId: 'case2', role: 'ORTAK_ALACAKLI', case: { fileNumber: '2024/2', executionFileNumber: null, caseDate: null } },
+        { id: 'cc-A', caseId: 'case1', role: 'ALACAKLI', case: { fileNumber: '2024/1', executionFileNumber: 'E-1', caseDate: new Date('2026-01-15T00:00:00.000Z'), currency: 'TRY' } },
+        { id: 'cc-B', caseId: 'case2', role: 'ORTAK_ALACAKLI', case: { fileNumber: '2024/2', executionFileNumber: null, caseDate: null, currency: 'TRY' } },
       ],
     });
     const res = await read(prisma).listClientCases('t1', 'client-1');
@@ -208,6 +208,29 @@ describe('ClientSettlementReadService.listClientCases', () => {
       { caseId: 'case1', caseClientId: 'cc-A', role: 'ALACAKLI', caseNumber: '2024/1', executionFileNumber: 'E-1', currency: 'TRY', caseOpenedAt: '2026-01-15T00:00:00.000Z' },
       { caseId: 'case2', caseClientId: 'cc-B', role: 'ORTAK_ALACAKLI', caseNumber: '2024/2', executionFileNumber: null, currency: 'TRY', caseOpenedAt: null },
     ]);
+  });
+
+  it('currency dosyanın kayıtlı para birimidir — dövizli dosya TRY damgalanmaz (dosya başına, sabit değil)', async () => {
+    const prisma = buildPrisma({
+      cases: [
+        { id: 'cc-U', caseId: 'caseU', role: 'ALACAKLI', case: { fileNumber: '2026/1-USD', executionFileNumber: null, caseDate: null, currency: 'USD' } },
+        { id: 'cc-E', caseId: 'caseE', role: 'ORTAK_ALACAKLI', case: { fileNumber: '2026/2-EUR', executionFileNumber: null, caseDate: null, currency: 'EUR' } },
+        { id: 'cc-T', caseId: 'caseT', role: 'ALACAKLI', case: { fileNumber: '2026/3-TL', executionFileNumber: null, caseDate: null, currency: 'TRY' } },
+      ],
+    });
+    const res = await read(prisma).listClientCases('t1', 'client-1');
+    expect(res.items.map((i) => [i.caseNumber, i.currency])).toEqual([
+      ['2026/1-USD', 'USD'],
+      ['2026/2-EUR', 'EUR'],
+      ['2026/3-TL', 'TRY'],
+    ]);
+  });
+
+  it('currency sorguda seçilir (Case.currency); dosya ilişkisi yoksa TRY geri düşüşü korunur', async () => {
+    const prisma = buildPrisma({ cases: [{ id: 'cc-X', caseId: 'caseX', role: 'ALACAKLI', case: null }] });
+    const res = await read(prisma).listClientCases('t1', 'client-1');
+    expect(prisma.caseClient.findMany.mock.calls[0][0].select.case.select.currency).toBe(true);
+    expect(res.items[0].currency).toBe('TRY');
   });
 
   it('where: clientId + eligible roller + client.tenantId', async () => {

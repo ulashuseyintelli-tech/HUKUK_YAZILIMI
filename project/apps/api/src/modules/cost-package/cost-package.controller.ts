@@ -24,13 +24,14 @@ export class CostPackageController {
    * Masraf talebini hesapla
    * POST /cost-packages/compute
    * NOT: Bu endpoint :code'dan ÖNCE tanımlanmalı!
+   * Dosya çağıranın bürosunda aranır: başka büronun dosyası, var olmayan dosyayla aynı 404 "Takip bulunamadı" alır.
    */
   @Post('compute')
   async computeExpenseRequest(
     @Body() body: ComputeExpenseParams,
     @Req() req: AuthRequest,
   ) {
-    return this.costPackageService.computeExpenseRequest(body);
+    return this.costPackageService.computeExpenseRequest(req.user.tenantId, body);
   }
 
   /**
