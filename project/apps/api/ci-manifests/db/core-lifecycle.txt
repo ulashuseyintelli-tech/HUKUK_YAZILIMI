@@ -176,6 +176,19 @@ src/modules/case/__tests__/case-open-default-permissions.http.db-gated.integrati
 #   11 testin 8'i DUSER (RED kanitlandi). Gecmis kayitlar DUZELTILMEDI.
 src/modules/case/__tests__/case-create-due-currency.http.db-gated.integration.spec.ts
 
+# Dosya acilisi — istenen masraf e-postasi GONDERILEMEDIGINDE sonuc, GERCEK HTTP + disposable PostgreSQL + surec ici
+#   sahte SMTP alicisi (yalniz 127.0.0.1; ileti hicbir yere iletilmez). Olculen kusur (main 6681b1d5, gercek tarayici):
+#   "Olustur ve Masraf Maili Gonder" ile acilan TL dosyada e-posta gonderilemediginde (banka hesabi yok / varsayilan degil /
+#   iki varsayilan / IBAN bos / muvekkil e-postasi yok / SMTP ayari yok / sablon yok / SMTP 550 / SMTP'ye ulasilamadi) talep
+#   PENDING kaliyor, POST /cases yaniti e-posta sonucunu tasimiyor, dosya sayfasi gonderilmis taleple ayni gorunuyor ve
+#   gunluk "Masraf talebi maili gonderildi" yaziyordu. Owner karari (2026-10-01): sonuc acilis yanitinda (deneme en cok 10 sn
+#   beklenir; sure dolarsa "sonuc henuz belli degil"), durum ucunda (GET .../opening-status, eklemeli alan) ve gorev olarak
+#   gorunur; gunluk sonuca gore yazilir. Basarili gonderimde yanit, kayitlar ve gunluk DEGISMEZ; "Sadece Olustur" akisi arka
+#   planda kalir; dovizli dosya (#2876) ve e-postanin gonderilme kurallari (owner sozlesmesi W4) DEGISMEZ. Yeniden gonderim
+#   KAPSAM DISI. Duzeltmesiz servis koduyla 57 testin 51'i DUSER (RED kanitlandi). Bu konum bilerek dosya sonu ve acilis
+#   masraf blogunun yani DEGIL: es zamanli degisiklikler oralara ekliyor.
+src/modules/expense-request/__tests__/opening-expense-email-outcome.http.db-gated.integration.spec.ts
+
 # Hesap ozeti para birimi baglami, GERCEK HTTP + disposable PostgreSQL. Olculen kusur (main 630184e2): legacy hesap ozeti
 #   kalem tutarlarini para birimine bakmadan topluyor, harc / masraf / vekalet ucreti ise TL tarifesinden; 10.000 USD
 #   anaparali dosya ile 10.000 TL anaparali dosya AYNI sayilari uretiyor (pesin harc 120, vekalet ucreti 9.000, toplam borc
