@@ -8,10 +8,12 @@ import { Scale, Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 // düşüyordu. Base URL artık canonical config katmanından gelir (dev fallback yalnız orada,
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { useHydrated } from "@/lib/use-hydrated";
 
 
 export default function PortalLoginPage() {
   const router = useRouter();
+  const hydrated = useHydrated();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -57,7 +59,10 @@ export default function PortalLoginPage() {
           <p className="text-gray-500 mt-1">Dosyalarınızı takip edin</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        {/* Yerel (React dışı) gönderim alanları ADRESE yazmasın: yöntem POST; düğme React devralana dek
+            kapalı (bkz. lib/use-hydrated.ts). Alanlar bugün `name` taşımadığı için adrese yazılmıyor; bu,
+            o tesadüfe bağlı kalmamak içindir. Normal akış değişmez: `onSubmit` preventDefault eder. */}
+        <form onSubmit={handleLogin} method="post" className="space-y-4">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
               {error}
@@ -103,7 +108,7 @@ export default function PortalLoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !hydrated}
             className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? (

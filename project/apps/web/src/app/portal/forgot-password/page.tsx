@@ -8,9 +8,11 @@ import { Scale, Loader2, Mail, ArrowLeft, CheckCircle } from "lucide-react";
 // düşüyordu. Base URL artık canonical config katmanından gelir (dev fallback yalnız orada,
 // production'da fail-fast). CLIENT-CONFIG-P01 ile aynı sözleşme.
 import { portalApiUrl } from "@/lib/config/portal-api-url";
+import { useHydrated } from "@/lib/use-hydrated";
 
 
 export default function ForgotPasswordPage() {
+  const hydrated = useHydrated();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -69,7 +71,10 @@ export default function ForgotPasswordPage() {
             </Link>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          // Yerel (React dışı) gönderim alanı ADRESE yazmasın: yöntem POST; düğme React devralana dek kapalı
+          // (bkz. lib/use-hydrated.ts). Alan bugün `name` taşımadığı için adrese yazılmıyor; bu, o
+          // tesadüfe bağlı kalmamak içindir.
+          <form onSubmit={handleSubmit} method="post" className="space-y-4">
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
                 {error}
@@ -93,7 +98,7 @@ export default function ForgotPasswordPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !hydrated}
               className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading ? (
