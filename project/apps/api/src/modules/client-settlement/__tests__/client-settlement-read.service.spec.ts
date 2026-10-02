@@ -308,35 +308,58 @@ function buildSummaryPrisma(o: {
   balanceByCase?: Record<string, Prisma.Decimal>;
   expenseRows?: any[];
   expenseOffsetApply?: Record<string, Prisma.Decimal>; // FAZ-1b: per-request offset APPLY (expenseRequestId)
+  // G1: istenen para biriminin DIŞINDAKİ kayıtlar (varsayılan: yok). groupBy / findMany sonuçları sorgu biçiminde.
+  foreign?: {
+    collection?: any[];
+    disposition?: any[];
+    payout?: any[];
+    expense?: any[];
+    balances?: any[];
+    ledger?: any[];
+    offsets?: any[];
+  };
 }) {
+  const foreign = o.foreign ?? {};
   return {
-    caseClient: { findMany: jest.fn().mockResolvedValue(o.ccRows) },
+    // Gerçek Case kaydı her zaman para birimi taşır; fikstürde belirtilmemişse TRY.
+    caseClient: { findMany: jest.fn().mockResolvedValue(o.ccRows.map((r) => ({ ...r, case: { currency: 'TRY', ...r.case } }))) },
     clientPayout: {
       aggregate: jest.fn().mockImplementation(({ where }: any) =>
         Promise.resolve({ _sum: { amount: o.payoutByCc?.[where.caseClientId] ?? null } }),
       ),
+      groupBy: jest.fn().mockResolvedValue(foreign.payout ?? []),
     },
     collection: {
       aggregate: jest.fn().mockImplementation(({ where }: any) =>
         Promise.resolve({ _sum: { amount: o.collectionByCase?.[where.caseId] ?? null } }),
       ),
       findMany: jest.fn().mockResolvedValue([]),
+      groupBy: jest.fn().mockResolvedValue(foreign.collection ?? []),
     },
     collectionDisposition: {
       aggregate: jest.fn().mockImplementation(({ where }: any) =>
         Promise.resolve({ _sum: { totalAmount: o.postedDispByCase?.[where.caseId] ?? null } }),
       ),
+      groupBy: jest.fn().mockResolvedValue(foreign.disposition ?? []),
     },
     caseBalance: {
       findFirst: jest.fn().mockImplementation(({ where }: any) =>
         Promise.resolve(o.balanceByCase?.[where.caseId] != null ? { balance: o.balanceByCase[where.caseId] } : null),
       ),
+      findMany: jest.fn().mockResolvedValue(foreign.balances ?? []),
     },
-    expenseRequest: { findMany: jest.fn().mockResolvedValue(o.expenseRows ?? []) },
+    balanceLedger: { groupBy: jest.fn().mockResolvedValue(foreign.ledger ?? []) },
+    expenseRequest: {
+      findMany: jest.fn().mockResolvedValue(o.expenseRows ?? []),
+      groupBy: jest.fn().mockResolvedValue(foreign.expense ?? []),
+    },
     collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]) },
     // TM3 Faz C C-1 — getClientAccountingSummary offset offRows fetch (default: yok → offsetNet 0, sonuç değişmez).
     clientOffset: {
-      findMany: jest.fn().mockResolvedValue([]),
+      // İlk çağrı özet toplamı (offRows), ikinci çağrı G1 para birimi gözlemi: kapsam dışı mahsup yoksa ikisi de boş.
+      findMany: jest.fn().mockImplementation((args: any) =>
+        Promise.resolve(args?.where?.currency?.not ? (foreign.offsets ?? []) : []),
+      ),
       // FAZ-1b: per-request computeExpenseRemaining offset bacağı (expenseRequestId APPLY → expenseOffsetApply).
       aggregate: jest.fn().mockImplementation(({ where }: any) =>
         Promise.resolve({ _sum: { amount: where?.expenseRequestId && where.kind === 'APPLY' ? (o.expenseOffsetApply?.[where.expenseRequestId] ?? null) : null } }),
@@ -454,6 +477,212 @@ describe('ClientSettlementReadService.getClientAccountingSummary (Faz A)', () =>
     expect(res.caseScopedContext.debtorCollection).toBe('1000'); // 2000 DEĞİL
     expect(res.caseBreakdown).toHaveLength(1);
     expect(prisma.collection.aggregate).toHaveBeenCalledTimes(1); // distinct caseId
+  });
+});
+
+// G1 — Genel Cari para birimi kapsamı: sunucu, istenen para biriminin DIŞINDAKİ kayıt / dosyaları bildirir (tutar çevirmez / toplamaz).
+describe('ClientSettlementReadService.getClientAccountingSummary — G1 para birimi kapsamı', () => {
+  const trCase = { id: 'cc-try', caseId: 'case-try', role: 'ALACAKLI', case: { fileNumber: '2026/1', executionFileNumber: null, currency: 'TRY' } };
+  const usdCase = { id: 'cc-usd', caseId: 'case-usd', role: 'ALACAKLI', case: { fileNumber: '2026/2-USD', executionFileNumber: null, currency: 'USD' } };
+  const g = (caseId: string, currency: string | null, count = 1) => ({ caseId, currency, _count: { _all: count } });
+
+  async function summaryOf(prisma: any, currency?: string) {
+    const svc = read(prisma);
+    jest.spyOn(svc, 'computeOutstanding').mockResolvedValue(D(0));
+    return svc.getClientAccountingSummary('t1', 'client-1', currency);
+  }
+
+  it('yalnız TL dosyalar: kapsam dışı kayıt YOK, her dosya TAM, açıklama yok; mevcut sayılar değişmez', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [trCase],
+      payoutByCc: { 'cc-try': D(400) },
+      collectionByCase: { 'case-try': D(1000) },
+      postedDispByCase: { 'case-try': D(400) },
+      balanceByCase: { 'case-try': D(50) },
+    });
+
+    const res = await summaryOf(prisma);
+
+    expect(res.paraBirimiDurumu).toEqual({
+      istenenParaBirimi: 'TRY',
+      kapsamDisiKayitVar: false,
+      kapsamDisiParaBirimleri: [],
+      kapsamDisiDosyaSayisi: 0,
+      kismiKapsamDosyaSayisi: 0,
+      belirsizParaBirimiKayitSayisi: 0,
+      yalnizIstenenParaBirimi: true,
+      mesaj: null,
+    });
+    expect(res.caseBreakdown[0].paraBirimiKapsami).toEqual({
+      kapsam: 'TAM',
+      dosyaParaBirimi: 'TRY',
+      kapsamDisiParaBirimleri: [],
+      belirsizParaBirimiKayitSayisi: 0,
+      mesaj: null,
+    });
+    // gerçek sıfır / gerçek değerler olduğu gibi
+    expect(res.clientScoped.paidToClient).toBe('400');
+    expect(res.caseScopedContext.debtorCollection).toBe('1000');
+    expect(res.caseScopedContext.advanceBalance).toBe('50');
+  });
+
+  it('USD dosya TL görünümünde: DISI olarak ayrılır, sıfır borçlu gibi gösterilemez; TL dosya TAM kalır; çevirme / birleştirme yok', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [trCase, usdCase],
+      payoutByCc: { 'cc-try': D(0), 'cc-usd': D(0) },
+      collectionByCase: { 'case-try': D(1000) },
+      postedDispByCase: { 'case-try': D(0) },
+      balanceByCase: {},
+      foreign: { collection: [g('case-usd', 'USD')], disposition: [g('case-usd', 'USD')] },
+    });
+
+    const res = await summaryOf(prisma);
+
+    const usd = res.caseBreakdown.find((r) => r.caseId === 'case-usd')!;
+    expect(usd.paraBirimiKapsami.kapsam).toBe('DISI');
+    expect(usd.paraBirimiKapsami.dosyaParaBirimi).toBe('USD');
+    expect(usd.paraBirimiKapsami.kapsamDisiParaBirimleri).toEqual(['USD']);
+    expect(usd.paraBirimiKapsami.mesaj).toContain('USD');
+    expect(usd.paraBirimiKapsami.mesaj).toContain('toplamına dahil değildir');
+    expect(usd.paraBirimiKapsami.mesaj).toContain('sıfır anlamına gelmez');
+    expect(res.caseBreakdown.find((r) => r.caseId === 'case-try')!.paraBirimiKapsami.kapsam).toBe('TAM');
+
+    expect(res.paraBirimiDurumu).toMatchObject({
+      istenenParaBirimi: 'TRY',
+      kapsamDisiKayitVar: true,
+      kapsamDisiParaBirimleri: ['USD'],
+      kapsamDisiDosyaSayisi: 1,
+      kismiKapsamDosyaSayisi: 0,
+      yalnizIstenenParaBirimi: true,
+    });
+    expect(res.paraBirimiDurumu.mesaj).toContain('yalnız TRY kayıtlarını kapsar');
+    expect(res.paraBirimiDurumu.mesaj).toContain('USD');
+    expect(res.paraBirimiDurumu.mesaj).toContain('çevrilmedi ve birleştirilmedi');
+    // TL toplamına döviz eklenmedi: toplamlar yalnız TL dosyanın tahsilatı
+    expect(res.caseScopedContext.debtorCollection).toBe('1000');
+  });
+
+  it('TL dosyada başka para biriminde kayıt (ödeme + masraf + defter + mahsup): KISMI; değerler yalnız TL kayıtları', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [trCase],
+      payoutByCc: { 'cc-try': D(0) },
+      collectionByCase: { 'case-try': D(0) },
+      postedDispByCase: { 'case-try': D(0) },
+      balanceByCase: { 'case-try': D(0) },
+      foreign: {
+        payout: [g('case-try', 'USD', 2)],
+        expense: [g('case-try', 'EUR')],
+        balances: [{ id: 'cb-1', caseId: 'case-try', currency: 'TRY', balance: D(0) }],
+        ledger: [{ caseBalanceId: 'cb-1', currency: 'USD', _count: { _all: 3 } }],
+        offsets: [{ payableCaseId: 'case-try', expenseCaseId: 'case-try', currency: 'CHF' }],
+      },
+    });
+
+    const res = await summaryOf(prisma);
+
+    const row = res.caseBreakdown[0].paraBirimiKapsami;
+    expect(row.kapsam).toBe('KISMI');
+    expect(row.kapsamDisiParaBirimleri).toEqual(['CHF', 'EUR', 'USD']);
+    expect(row.mesaj).toContain('CHF, EUR, USD cinsinden kayıtlar');
+    expect(res.paraBirimiDurumu).toMatchObject({ kapsamDisiDosyaSayisi: 0, kismiKapsamDosyaSayisi: 1, kapsamDisiKayitVar: true });
+  });
+
+  it('para birimi belirlenemeyen kayıt sıfır / TL sayılmaz: ayrıca sayılır ve KISMI yapar', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [trCase],
+      payoutByCc: { 'cc-try': D(0) },
+      foreign: { payout: [g('case-try', '', 2)], expense: [g('case-try', null)] },
+    });
+
+    const res = await summaryOf(prisma);
+
+    expect(res.caseBreakdown[0].paraBirimiKapsami).toMatchObject({
+      kapsam: 'KISMI',
+      kapsamDisiParaBirimleri: [],
+      belirsizParaBirimiKayitSayisi: 3,
+    });
+    expect(res.paraBirimiDurumu).toMatchObject({ kapsamDisiKayitVar: true, belirsizParaBirimiKayitSayisi: 3, kapsamDisiParaBirimleri: [] });
+    expect(res.paraBirimiDurumu.mesaj).toContain('para birimi belirlenemeyen 3 kaydı');
+  });
+
+  it('CaseBalance: yalnız SIFIR OLMAYAN başka para birimli bakiye kayıt sayılır (sıfır bakiye gürültü üretmez)', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [trCase, usdCase],
+      foreign: {
+        balances: [
+          { id: 'cb-a', caseId: 'case-try', currency: 'USD', balance: D(0) },
+          { id: 'cb-b', caseId: 'case-usd', currency: 'USD', balance: D(300) },
+        ],
+      },
+    });
+
+    const res = await summaryOf(prisma);
+
+    expect(res.caseBreakdown.find((r) => r.caseId === 'case-try')!.paraBirimiKapsami.kapsam).toBe('TAM');
+    expect(res.caseBreakdown.find((r) => r.caseId === 'case-usd')!.paraBirimiKapsami.kapsam).toBe('DISI');
+  });
+
+  it('istenen para birimi USD ise ölçüt tersine döner: TL dosya DISI, USD dosya TAM', async () => {
+    const prisma = buildSummaryPrisma({ ccRows: [trCase, usdCase] });
+
+    const res = await summaryOf(prisma, 'USD');
+
+    expect(res.paraBirimiDurumu.istenenParaBirimi).toBe('USD');
+    expect(res.paraBirimiDurumu.kapsamDisiParaBirimleri).toEqual(['TRY']);
+    expect(res.caseBreakdown.find((r) => r.caseId === 'case-try')!.paraBirimiKapsami.kapsam).toBe('DISI');
+    expect(res.caseBreakdown.find((r) => r.caseId === 'case-usd')!.paraBirimiKapsami.kapsam).toBe('TAM');
+  });
+
+  it('büro + müvekkil sınırı: her gözlem sorgusu tenant, müvekkilin dosyaları ve "istenenden farklı para birimi" ile kapsamlıdır', async () => {
+    const prisma = buildSummaryPrisma({ ccRows: [trCase, usdCase] });
+
+    await summaryOf(prisma);
+
+    const notTry = { not: 'TRY' };
+    const caseScope = { in: ['case-try', 'case-usd'] };
+    expect(prisma.collection.groupBy.mock.calls[0][0].where).toEqual({ tenantId: 't1', caseId: caseScope, status: 'CONFIRMED', currency: notTry });
+    expect(prisma.collectionDisposition.groupBy.mock.calls[0][0].where).toEqual({ tenantId: 't1', caseId: caseScope, status: 'POSTED', currency: notTry });
+    expect(prisma.clientPayout.groupBy.mock.calls[0][0].where).toEqual({
+      tenantId: 't1',
+      caseId: caseScope,
+      caseClientId: { in: ['cc-try', 'cc-usd'] },
+      status: 'RECORDED',
+      currency: notTry,
+    });
+    expect(prisma.expenseRequest.groupBy.mock.calls[0][0].where).toEqual({
+      tenantId: 't1',
+      clientId: 'client-1',
+      caseId: caseScope,
+      status: { not: 'CANCELLED' },
+      currency: notTry,
+    });
+    expect(prisma.caseBalance.findMany.mock.calls[0][0].where).toEqual({ tenantId: 't1', caseId: caseScope });
+    const offsetCall = prisma.clientOffset.findMany.mock.calls.find((c: any[]) => c[0]?.where?.currency?.not);
+    expect(offsetCall![0].where).toEqual({ tenantId: 't1', clientId: 'client-1', currency: notTry });
+  });
+
+  it('TL toplamına döviz eklenmez: avans bakiyesi ve masraf talepleri yalnız istenen para biriminde okunur', async () => {
+    const prisma = buildSummaryPrisma({ ccRows: [trCase], balanceByCase: { 'case-try': D(50) } });
+
+    await summaryOf(prisma);
+
+    expect(prisma.caseBalance.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 't1', caseId: 'case-try', currency: 'TRY' });
+    expect(prisma.expenseRequest.findMany.mock.calls[0][0].where).toEqual({
+      tenantId: 't1',
+      clientId: 'client-1',
+      status: { not: 'CANCELLED' },
+      currency: 'TRY',
+    });
+  });
+
+  it('eligible dosyası olmayan müvekkil: gözlem sorgusu çalışmaz, kapsam dışı kayıt yok', async () => {
+    const prisma = buildSummaryPrisma({ ccRows: [] });
+
+    const res = await summaryOf(prisma);
+
+    expect(prisma.collection.groupBy).not.toHaveBeenCalled();
+    expect(res.paraBirimiDurumu.kapsamDisiKayitVar).toBe(false);
+    expect(res.caseBreakdown).toEqual([]);
   });
 });
 

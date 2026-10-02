@@ -112,6 +112,31 @@ export interface CaseBalanceInfo {
   currency: string;
 }
 
+/**
+ * G1 — dosya satırının istenen para birimi görünümündeki kapsamı (SUNUCU beyanı; UI hesaplamaz).
+ * TAM: değerler geçerli (sıfır gerçek sıfırdır) · KISMI: değerler yalnız bu para biriminin kayıtlarıdır ·
+ * DISI: dosya başka para biriminde — dosya para birimine bağlı değerler bu görünümde YOKTUR (sıfır diye gösterilmez).
+ */
+export interface ClientCaseCurrencyScope {
+  kapsam: 'TAM' | 'KISMI' | 'DISI';
+  dosyaParaBirimi: string;
+  kapsamDisiParaBirimleri: string[];
+  belirsizParaBirimiKayitSayisi: number;
+  mesaj: string | null;
+}
+
+/** G1 — özetin yalnız istenen para biriminin kayıtlarını kapsadığının ve müvekkilin başka para biriminde kaydı olup olmadığının sunucu beyanı. */
+export interface ClientAccountingCurrencyStatus {
+  istenenParaBirimi: string;
+  kapsamDisiKayitVar: boolean;
+  kapsamDisiParaBirimleri: string[];
+  kapsamDisiDosyaSayisi: number;
+  kismiKapsamDosyaSayisi: number;
+  belirsizParaBirimiKayitSayisi: number;
+  yalnizIstenenParaBirimi: true;
+  mesaj: string | null;
+}
+
 /** Faz A — Genel Cari dosya kırılımı satırı (Decimal string). A=müvekkile özgü, B=dosya geneli. */
 export interface ClientCaseBreakdownItem {
   caseId: string;
@@ -131,6 +156,8 @@ export interface ClientCaseBreakdownItem {
   pendingDistributionExcludingHeld?: string;
   advanceBalance: string;
   needsReview: boolean;
+  /** G1 — eski sunucuda yoktur (eklemeli alan); yokluğu "kapsam dışı yok" anlamına GELMEZ, yalnız bilgi verilemez. */
+  paraBirimiKapsami?: ClientCaseCurrencyScope;
 }
 
 /** Faz A — Müvekkil Genel Cari (client-level read-only projection). Tutarlar Decimal-string. */
@@ -155,6 +182,8 @@ export interface ClientAccountingSummary {
   };
   needsReview: boolean;
   caseBreakdown: ClientCaseBreakdownItem[];
+  /** G1 — eski sunucuda yoktur (eklemeli alan). */
+  paraBirimiDurumu?: ClientAccountingCurrencyStatus;
 }
 
 /** Faz A-MOV — birleşik hareket kaynak tipleri (backend ile aynı). */

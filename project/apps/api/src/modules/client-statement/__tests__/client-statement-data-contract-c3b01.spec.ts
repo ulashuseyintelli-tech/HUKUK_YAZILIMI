@@ -62,14 +62,15 @@ const buildPrisma = () => ({
   balanceLedger: {
     aggregate: jest.fn().mockResolvedValue({ _sum: { amount: D(0) } }),
     findMany: jest.fn().mockResolvedValue([]),
+    groupBy: jest.fn().mockResolvedValue([]), // E1: para birimi denetimi (boş = TL dışı kayıt yok)
   },
-  expenseRequest: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: null } }) },
+  expenseRequest: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { totalAmount: null } }), groupBy: jest.fn().mockResolvedValue([]) },
   expensePayment: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
-  collectionDisposition: { findMany: jest.fn().mockResolvedValue([]) },
+  collectionDisposition: { findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
   collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
   ledgerAllocation: { findMany: jest.fn().mockResolvedValue([]) },
-  clientPayout: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
-  clientOffset: { findMany: jest.fn().mockResolvedValue([]) },
+  clientPayout: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }), groupBy: jest.fn().mockResolvedValue([]) },
+  clientOffset: { findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
   clientStatement: {
     create: jest.fn().mockResolvedValue({ id: 'st-1' }),
     update: jest.fn(),
