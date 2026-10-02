@@ -20,6 +20,11 @@
 > söyler (§3 notu); Recover'ın çıkış kodu yeni bir Recover için yetki değildir ve **ikinci bir Recover bu paketle tanımlı değildir, owner kararı
 > gerektirir** (§5 adım 7, §8.1, §10 K-6); blok öz-testine G-5 ve G-6 eklendi; §9'a üç sınır notu (D7-E11) ve Recover yetkisinin ölçülmediği
 > yazıldı. Blok ve blok öz-testi sha256 değerleri değişti (§7; önceki değerler "R02 ilk tur" olarak korunur).
+> **R02 koşucu öz-testi kütüphane kökü (2026-10-03; yalnız `d7-selftest.js` + bu belge) — §6.4, §12.2:** koşucu öz-testi artık Prisma istemcisi
+> ve bcrypt için canlı yayın ağacını **varsaymaz**; kütüphane kökü `D7T_LIB_ROOT` ortam değişkeniyle verilir (verilmezse betiğin kendi checkout'u),
+> kök canlı yayın ağacının altındaysa test **koşmaz**, modül bulunamazsa açık hatayla durur. Repodaki dosyanın kendisi (ayna değil) canlı olmayan
+> kütüphane köküyle koşuldu: **41/41 PASS**. Öz-testin ölçtükleri (41 ölçüt), koşucu, blok, blok öz-testi, sahte API, QR betiği, pinli 9 dosya ve
+> paket digest **DEĞİŞMEDİ**; `d7-selftest.js` sha256 değeri değişti (§7; önceki değer korunur). Canlı Run kapıları ve pin denetimi aynıdır.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -148,7 +153,8 @@ değiştirilirse mantık eşitliği bozulurdu). Koşumun hangi blok baytlarıyla
 
 > **Hangi baytlar (R02):** bu tablo ve §6.1 **R01 kayıtlarıdır** (2026-09-29; blok `EDDF7BF3…CA5D`, blok öz-testi `9A5A31F0…70B3`) ve tarihsel
 > olarak korunur. Blok ve blok öz-testi R02'de (iki turda) değişti; **son dosya baytlarının sonuçları §6.3'tedir** — güncel durum için §6.3
-> okunur. §6.2 "R02 ilk tur" kaydıdır (o turun baytlarıyla) ve tarihsel olarak korunur.
+> okunur. §6.2 "R02 ilk tur" kaydıdır (o turun baytlarıyla) ve tarihsel olarak korunur. `d7-selftest.js` 2026-10-03'de değişti (yalnız kütüphane
+> kökü); onun son baytları ve repodaki dosyanın kendisiyle yapılan koşum **§6.4**'tedir.
 
 | Test | Sonuç |
 |---|---|
@@ -173,7 +179,7 @@ düzeltmelerinden sonraki baytlar için §6.3 geçerlidir.
 | `d7-owner-block-selftest.ps1` — önceki 58 ölçüt + **G-1** blok kaynağında (yorumlar dahil) "hiçbir … dosya/log/günlük/kanıt/rapor … yazılmaz" türü kapsamsız mutlak iddia yok (451 satır tarandı; desen 4 bilinen mutlak cümleyi yakalar, kapsamı adlandırılmış ve ilgisiz 2 cümleyi yakalamaz) · **G-2** owner'a GÖSTERİLEN canlı veri onayı metni (Write-Host yakalaması): koşucunun yazdıkları → ürünün kendi yazdıkları (kaynaktan okundu; API günlüğü içeriği ölçülmez) → kapanış ("dosyalar CLOSED + personel pasif + portal pasif"; tenant yaşam döngüsü değişmez) → diğer tenantlar için yalnız U-ISO (sayı) sırasıyla; eski "Gerçek müvekkil verisine dokunulmaz" / tek başına "(sentetik tenant CLOSED)" yok; 10 kalem §8'de de geçer · **G-3** Recover başlarken gösterilen bilgi metni: ayrı canlı yazma işlemi, AYRI owner onayı (blok sormaz/ölçmez), "BİR KEZ" kodla zorlanmaz, canlı yazma kümesi; metin node çağrısından önce; yeni soru yok (AST soru komutu 0; kuyruktaki 2 yanıt tüketilmedi); tek node çağrısı (mod `recover`); GO defteri değişmez · **G-4** Run çıkış 5/6 metni Run'ın kendi kapanışını Recover'dan ayırır, "Recover yetkisi değildir / blok başlatmaz / önce kanıt / AYRI owner onayı, BİR KEZ" der; tek node çağrısı (mod `run`); çıkış 0'da Recover metni yok; AST: `Invoke-RunMode` içinde tek `Invoke-Node`, `Invoke-RecoverMode` yalnız akıştaki mod dalında | **62/62 PASS** Windows PowerShell 5.1.26100.9549 ve **62/62 PASS** pwsh 7.6.6 (çıkış 0). Önceki 58 ölçüt değişmeden PASS |
 | Negatif kontrol + mutasyon (repo dışı geçici kopya; yeni öz-test + yeni belge): **eski blok baytları** `EDDF7BF3…CA5D`; 6 metin bozması (yoruma mutlak iddia · onay metninden tenant yaşam döngüsü cümlesi silindi · Recover bilgi metninden personelin geçici yeniden aktifleştirilmesi silindi · 5/6 metni eski emre döndü · çıkış 0'da görünen satıra Recover önerisi eklendi · Recover bitişindeki "yeni Recover için yetki değildir" satırı silindi); 1 mantık bozması (Run 5/6 dalına otomatik `Invoke-RecoverMode` çağrısı); bozulmamış kopya | **27/27 beklenenle uyumlu** (9 varyant × WinPS 5.1 + pwsh 7 + mantık eşitliği): eski blok **58/62, çıkış 1, FAIL = tam olarak G-1..G-4**; her metin bozması yalnız hedef ölçütü FAIL ettirdi (61/62); otomatik Recover bozması G-4'ü (ve R-2.5, R-2.6, O-1'i) FAIL ettirdi; bozulmamış kopya 62/62 |
 | Mantık eşitliği (AST; yorumlar, Write-Host komutları ve Read-Answer/Read-Host istem metinleri çıkarılır, boşluk normalize) | eski ve yeni blokta kalan kod **birebir eşit** (18304/18304 karakter; 28/28 fonksiyon, fonksiyon başına fark 0; istem 13/13; Write-Host 37 → 65, fonksiyon içi 34 → 62; yorum 39 → 53) WinPS 5.1 + pwsh 7. **İstisna yok** (metin seçen ifade dahil hiçbir kod değişmedi). Negatif kontrol: otomatik Recover çağrısı eklenmiş kopya FARK verir |
-| `d7-selftest.js` (bloğu T-3..T-8'de statik okur) | **41/41 PASS**, çıkış 0 — **ayna kopyada**: öz-test Prisma/bcrypt'i sabit olarak canlı yayın dizininden yüklediği ve o dizin bu işte yasak olduğu için, gereken `scripts` dizinleri repo dışına bayt bayt kopyalandı (65 dosya; 64'ü kaynakla sha eşit) ve **yalnız aynadaki `d7-selftest.js` içinde tek satır** (`REL` sabiti) canlı olmayan kütüphane köküne (R27 aday worktree'si) çevrildi. Blok, koşucu, sahte API ve QR betiği aynada **son baytlarla** (sha log/status içinde). Disposable DB `5449/d67_test` (yerel; 130 migration = R27 şeması), sahte API 8200/8459, gerçek TLS. Repodaki `d7-selftest.js` DEĞİŞMEDİ ve **değiştirilmemiş hâliyle bu turda KOŞULMADI** (neden: canlı yayın dizininden kütüphane yükler) |
+| `d7-selftest.js` (bloğu T-3..T-8'de statik okur) | **41/41 PASS**, çıkış 0 — **ayna kopyada**: öz-test Prisma/bcrypt'i sabit olarak canlı yayın dizininden yüklediği ve o dizin bu işte yasak olduğu için, gereken `scripts` dizinleri repo dışına bayt bayt kopyalandı (65 dosya; 64'ü kaynakla sha eşit) ve **yalnız aynadaki `d7-selftest.js` içinde tek satır** (`REL` sabiti) canlı olmayan kütüphane köküne (R27 aday worktree'si) çevrildi. Blok, koşucu, sahte API ve QR betiği aynada **son baytlarla** (sha log/status içinde). Disposable DB `5449/d67_test` (yerel; 130 migration = R27 şeması), sahte API 8200/8459, gerçek TLS. Repodaki `d7-selftest.js` DEĞİŞMEDİ ve **değiştirilmemiş hâliyle bu turda KOŞULMADI** (neden: canlı yayın dizininden kütüphane yükler) — *bu cümle R02 ilk turunun tarihsel kaydıdır; **güncel durum (2026-10-03):** repodaki dosya düzeltildi ve kendisi koşuldu, 41/41 PASS (§6.4); ayna kopya sonucu tarihsel kanıttır* |
 | Ayrıştırma + kodlama | iki `.ps1` dosyası WinPS 5.1 ve pwsh 7'de parse hatası 0; UTF-8 BOM korunur; satır sonu LF (CR 0); katı UTF-8 çözümü geçerli; kontrol karakteri (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F) 0 — belge dahil üç dosyada |
 | Paket digest | pinli 9 dosyadan bloktan bağımsız betikle yeniden hesaplandı: `7C42FCCD…7BDD` = bloktaki `$ExpPackage` (değişmedi); pin listesi eski blokla aynı; pin uyuşmazlığı yok; `ExpLiveDist` / `ExpEnvSha` değişmedi; blok kendi pin listesinde değildir |
 
@@ -195,13 +201,15 @@ taşır). Bu turda değişen yalnız blok METNİ (yorum + konsol çıktısı; is
 G-6 + başlık yorumu) ve bu belgedir. Koşucu, sahte API, QR betiği, `d7-selftest.js` ve pinli 9 dosya değişmedi. Canlı DB, canlı API, canlı yayın
 dizini ve canlı günlükler kullanılmadı; owner bloğu, koşucu ya da sonda **canlıya karşı çalıştırılmadı** (blok öz-testi bloğun yalnız
 fonksiyonlarını AST ile yükler; `d7-selftest.js` ayna kopyası koşucuyu yalnız tek kullanımlık test veritabanı ve sahte API'ye karşı başlatır).
+**2026-10-03 notu:** bu bölüm blok ve blok öz-testi için hâlâ son baytları anlatır (ikisi de değişmedi). `d7-selftest.js` 2026-10-03'de değişti;
+onun son baytları ve repodaki dosyanın kendisiyle yapılan koşum §6.4'tedir. Bu bölümdeki ayna kopya sonucu tarihsel kanıttır.
 
 | Test | Sonuç (son baytlar) |
 |---|---|
 | `d7-owner-block-selftest.ps1` — önceki 62 ölçüt + **G-5** kalıntı satırının altındaki not (owner'a GÖSTERİLEN metin; Run kapanış doğrulanmadı çıkış 6 · Run çıkış 0 · Recover çıkış 6): "sentetik tenant CLOSED" koşucunun SABİT ifadesidir ve kapanışın doğrulandığını GÖSTERMEZ; kapanış durumu Run'da "Portal erişim kapanışı … DOĞRULANDI / DOĞRULANAMADI" satırındadır (satır kalıntı satırından önce gösterilir), Recover'da çıkış kodu satırındadır; hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ; eski eşitlik ("sentetik tenant CLOSED" = …) bitiş metninde yok · **G-6** ikinci Recover için yol tanımlanmaz: Recover bitiş metni (taklit betik çıkış 0/3/5/6) "bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR; Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT'a bildirilir" ve "ikinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir" der; Run 5/6 metni aynı kuralı taşır; gösterilen metinlerde ve blok kaynağında (yorumlar dahil; 460 satır tarandı) "tekrar ancak … onayıyla / yeni onayla tekrar edilebilir" türü tekrar yolu yok (desen 4 bilinen tekrar-yolu cümlesini yakalar, 5 ilgisiz cümleyi yakalamaz); bu belgenin §5, §8 ve §10 bölümleri "bu paketle tanımlı değildir" der ve tekrar yolu tanımlamaz | **64/64 PASS** Windows PowerShell 5.1.26100.9549 ve **64/64 PASS** pwsh 7.6.6 (çıkış 0). Önceki 62 ölçüt değişmeden PASS |
 | Negatif kontrol + mutasyon (repo dışı geçici kopya; son öz-test): **R01 blok baytları** `EDDF7BF3…CA5D`; **R02 ilk tur blok baytları** `09935375…0BFF`; bozulmamış kopya; 11 blok metin bozması (R02 ilk turdaki 6 bozma + Run kalıntı notu eski eşitliğe döndü · Recover kalıntı notundan "GÖSTERMEZ" silindi · Recover bitişine "tekrar ancak AYRI owner onayıyla" geri kondu · "ikinci bir Recover … TANIMLI DEĞİLDİR" satırı silindi · başlık yorumuna "yeni onayla tekrar edilebilir" eklendi); 1 mantık bozması (Run 5/6 dalına otomatik `Invoke-RecoverMode` çağrısı); 2 belge bozması (§5 adım 7'ye tekrar yolu geri kondu · §8.1'den "tanımlı değildir" cümlesi silindi) | **51/51 beklenenle uyumlu** (17 varyant × WinPS 5.1 + pwsh 7 + mantık eşitliği): R01 bloğu **58/64, çıkış 1, FAIL = tam olarak G-1..G-6**; R02 ilk tur bloğu **62/64, çıkış 1, FAIL = tam olarak G-5, G-6**; her metin/belge bozması yalnız hedef ölçüt(ler)i FAIL ettirdi (Recover bitişindeki yetki cümlesinin silinmesi G-3 ve G-6'yı; diğerleri tek ölçütü, 63/64); otomatik Recover bozması G-4'ü (ve G-5, G-6, R-2.5, R-2.6, O-1'i) FAIL ettirdi; bozulmamış kopya 64/64 |
 | Mantık eşitliği (AST; yorumlar, Write-Host komutları ve Read-Answer/Read-Host istem metinleri çıkarılır, boşluk normalize) | **R02 ilk tur bloğu → son blok:** kalan kod **birebir eşit** (18304/18304 karakter; 28/28 fonksiyon, fonksiyon başına fark 0; istem 13/13; Write-Host 65 → 71, fonksiyon içi 62 → 68; yorum 53 → 56). **R01 bloğu → son blok:** yine birebir eşit (18304/18304; Write-Host 37 → 71; yorum 39 → 56). WinPS 5.1 + pwsh 7. İstisna yok. Negatif kontrol: otomatik Recover çağrısı eklenmiş kopya FARK verir |
-| `d7-selftest.js` (bloğu T-3..T-8'de statik okur) | **41/41 PASS**, çıkış 0 — yine **ayna kopyada** (yöntem §6.2 ile aynı: 65 dosya bayt bayt kopya, 64'ü kaynakla sha eşit; yalnız aynadaki `d7-selftest.js` içinde tek satır `REL` canlı olmayan kütüphane köküne çevrildi). Blok aynada **son baytlarla** (sha status dosyasında). Disposable DB `5449/d67_test`, sahte API 8200/8459, gerçek TLS. Repodaki `d7-selftest.js` DEĞİŞMEDİ ve değiştirilmemiş hâliyle bu turda da KOŞULMADI |
+| `d7-selftest.js` (bloğu T-3..T-8'de statik okur) | **41/41 PASS**, çıkış 0 — yine **ayna kopyada** (yöntem §6.2 ile aynı: 65 dosya bayt bayt kopya, 64'ü kaynakla sha eşit; yalnız aynadaki `d7-selftest.js` içinde tek satır `REL` canlı olmayan kütüphane köküne çevrildi). Blok aynada **son baytlarla** (sha status dosyasında). Disposable DB `5449/d67_test`, sahte API 8200/8459, gerçek TLS. Repodaki `d7-selftest.js` DEĞİŞMEDİ ve değiştirilmemiş hâliyle bu turda da KOŞULMADI — *bu cümle o turun tarihsel kaydıdır; **güncel durum (2026-10-03):** repodaki dosya düzeltildi ve kendisi koşuldu, 41/41 PASS (§6.4); ayna kopya sonucu tarihsel kanıttır* |
 | Ayrıştırma + kodlama | iki `.ps1` dosyası WinPS 5.1 ve pwsh 7'de parse hatası 0; UTF-8 BOM korunur; satır sonu LF (CR 0); katı UTF-8 çözümü geçerli; kontrol karakteri (0x00–0x08, 0x0B, 0x0C, 0x0E–0x1F) 0 — belge dahil üç dosyada |
 | Paket digest | pinli 9 dosyadan bloktan bağımsız betikle yeniden hesaplandı: `7C42FCCD…7BDD` = bloktaki `$ExpPackage` (değişmedi); pin listesi R02 ilk tur bloğuyla aynı; pin uyuşmazlığı yok; `ExpLiveDist` / `ExpEnvSha` değişmedi |
 
@@ -212,6 +220,71 @@ edilebilir", "tekrar gerekiyorsa", "yeni … onayla/onayıyla … tekrar"); baş
 Kanıt (repo dışı): `HY_R27_AGENT_EVIDENCE\d7-r02\tur2\` — `test\` (son koşum logları + status: komut, çıkış kodu, sha256 önce/sonra),
 `negatif\` (varyant üreticisi, koşucu, `son\` sonuç tablosu), `js-oz-test\` (ayna, manifest, log, status), `r02-ilk-tur\` (commit `a71cd2c8`
 baytları), `deneme\` (son baytlardan önceki deneme koşumu). Loglar yerel kullanıcı adından ve test DB parolasından arındırılarak yazılır.
+
+### 6.4 R02 koşucu öz-testi kütüphane kökü (2026-10-03) — `d7-selftest.js` SON baytlarıyla, repodaki dosyanın KENDİSİYLE
+
+**Sorun.** `d7-selftest.js` Prisma istemcisini ve bcrypt'i sabit bir yoldan, canlı yayın ağacının `node_modules` dizininden yüklüyordu. Bu yüzden
+repodaki dosya canlı ağaca dokunmadan koşulamıyordu; §6.2 ve §6.3 sonuçları yalnız o tek satırı değiştirilmiş **ayna kopyada** üretilmişti.
+
+**Düzeltme (yalnız `d7-selftest.js`; sha256 `2867FBC5…A1E3`, tam değer §7).** Değişen yalnız kütüphane kökü çözümü, ret denetimi ve bir çıktı
+satırıdır; öz-testin ölçtüğü 41 ölçütün hiçbiri (T-3..T-8 statik ölçütleri dahil) değişmedi. Koşucu, blok, blok öz-testi, sahte API, QR betiği ve
+pinli 9 dosya değişmedi; paket digest aynıdır.
+
+- **Kök nereden gelir.** `D7T_LIB_ROOT` ortam değişkeni verilirse o; verilmezse betiğin bulunduğu checkout'un proje kökü (betik konumundan göreli
+  çözülür). Modüller kökün altında eskisiyle aynı göreli yolda aranır (`node_modules\.pnpm\…` — Prisma istemcisi 5.22.0, bcrypt 5.1.1).
+- **Canlı ağaç reddi.** Kök canlı yayın ağacının altındaysa test **koşmaz** (çıkış 2). Bu ret, kökte hiçbir dosya yoklanmadan ve hiçbir modül
+  yüklenmeden **önce**, yalnız yol karşılaştırmasıyla yapılır (büyük/küçük harf, düz/ters bölü, `..` parçaları normalize edilir). Kök ya da iki modül
+  dizini bir bağlantı (junction / symlink) üzerinden canlı ağaca çözülüyorsa test yine koşmaz (gerçek yol okunur; modül yüklenmez).
+- **Canlı ağaç yolu dosyada literal değildir.** Yol owner bloğunun `$Rel` sabitinden okunur (blok yalnız metin olarak okunur, çalıştırılmaz). Blok
+  canlı ağaç değiştiğinde ret denetimi kendiliğinden onu izler. `$Rel` okunamazsa ret denetimi yapılamayacağı için test başlamaz (çıkış 2).
+- **Sessiz geri düşüş yok.** Kök yoksa ya da modüllerden biri kökte bulunamazsa test açık bir mesajla ve çıkış 2 ile durur; canlı ağaca düşmez.
+- **Çıktı.** Kullanılan kök ve kaynağı (`D7T_LIB_ROOT` / betik konumu) koşumun ilk satırında yazılır; yerel kullanıcı adı maskelenir.
+
+**Repodaki dosyanın koşum komutu** (ayna/kopya değil; parola ve bağlantı dizesi belgeye yazılmaz):
+
+```powershell
+$env:D7T_LIB_ROOT = '<bağımlılıkları kurulu, canlı OLMAYAN bir checkout>\project'
+$env:D7T_DB_URL   = '<tek kullanımlık test Postgres bağlantı dizesi; yerel 5449/d67_test olmak zorunda>'
+node project\docs\governance\client-extacc-portal-d7-r01\scripts\d7-selftest.js
+```
+
+Bu turda kullanılan kök: R27 aday çalışma ağacının proje kökü (`HY_WT_R27\project`; canlı yayın ağacı değildir, `node_modules` gerçek dizindir —
+bağlantı değil). Ortam önceki ayna koşumlarıyla aynıdır: tek kullanımlık test Postgres `5449/d67_test` (yerel), sahte API 8200/8459, gerçek TLS.
+
+| Ölçüm (2026-10-03) | Sonuç |
+|---|---|
+| `d7-selftest.js` — **repodaki dosyanın kendisi**, `D7T_LIB_ROOT` = canlı olmayan kök | **41/41 PASS**, çıkış 0 (önceki ayna koşumlarıyla aynı sayı). İlk çıktı satırı kullanılan kökü yazar. Status dosyası: komut, çıkış kodu, koşum öncesi/sonrası sha256 (değişmedi), git blob kimliği |
+| Negatif (a) — `D7T_LIB_ROOT` verilmedi; betiğin checkout'unda `node_modules` yok | çıkış 2, "kütüphane kökünde modül bulunamadı: @prisma/client, bcrypt … test BAŞLAMADI"; hiçbir ölçüt koşmadı |
+| Negatif (b) — kök canlı yayın ağacının altında (dört biçim: bloğun `$Rel` değeri · ağaç kökü, küçük harf + düz bölü · bir alt dizin · `..` parçalı) | dördünde de çıkış 2, "kütüphane kökü canlı yayın ağacının altında … test BAŞLAMADI". Ön yükleme sondası (aşağıda): canlı ağaç altında **modül yükleme 0, modül çözümü 0, fs çağrısı 0**; alt süreç 0 — ret, `require`'dan ve dosya yoklamasından önce |
+| Negatif (c) — var olmayan kök | çıkış 2, "kütüphane kökü yok … test BAŞLAMADI" |
+| Negatif (d) — var ama `node_modules` içermeyen kök | çıkış 2, "kütüphane kökünde modül bulunamadı …" |
+| Ek (yalnız bu dallar için **ayna**, ana sonuç değildir): kök bağlantı üzerinden "canlı" ağaca çözülüyor · yalnız `node_modules` bağlantı · blok yok | 4/4 beklenen: bağlantılı iki durumda çıkış 2, "bağlantı üzerinden canlı yayın ağacına çözülüyor"; blok yokken çıkış 2, "`$Rel` okunamadı". Bu dallar repodaki konumda canlı ağaca dokunmadan üretilemez; öz-test dosyası bayt bayt kopyalandı (sha eşit), yalnız aynadaki blok kopyasında `$Rel` satırı kanıt dizinindeki **sahte** bir ağaca çevrildi (gerçek canlı ağaç kullanılmadı) |
+| `d7-owner-block-selftest.ps1` (blok ve blok öz-testi baytları değişmedi; belge son baytlarla) | **64/64 PASS** Windows PowerShell 5.1.26100.9549 ve **64/64 PASS** pwsh 7.6.6 (çıkış 0). Blok `8B3B22C0…25AE` ve blok öz-testi `1BB152D8…7B21` koşum öncesi/sonrası aynı |
+| Paket digest | pinli 9 dosyadan bloktan bağımsız betikle yeniden hesaplandı: `7C42FCCD…7BDD` = bloktaki `$ExpPackage` (değişmedi); `d7-selftest.js` pin listesinde değildir |
+
+**Sondanın ölçtüğü ve ölçmediği.** Sonda (`node -r` ile yüklenen, kanıt dizinindeki ölçüm betiği) öz-test sürecinin canlı ağaç ön eki altındaki
+bir yola yaptığı modül yüklemelerini (`Module._load`, `Module._resolveFilename`), eşzamanlı `fs` çağrılarını ve alt süreç başlatmalarını sayar.
+Pozitif kontrol: aynı sonda canlı olmayan kök için fs çağrısı 3, modül yükleme 1 saydı (kör değil). Sonda yalnız öz-testin kendi sürecini ölçer;
+ret durumlarında alt süreç başlamadığı için (sayı 0) kapsam tamdır. Bu ölçümlerde canlı yayın ağacı yoklanmadı: yol yalnız ortam değişkeni değeri
+olarak verildi.
+
+**Sınırlar.**
+- Blok dosyası yoksa öz-test artık başlamaz (çıkış 2); önceki baytlarda dinamik senaryolar koşar, T-3 FAIL ile çıkış 1 verirdi. Blok mevcutken
+  ölçülen hiçbir şey değişmedi.
+- Yol karşılaştırması UNC biçimli (`\\sunucu\paylaşım\…`) bir kökü canlı ağaçla eşleştirmez; bağlantılar gerçek yol okunarak yakalanır, ağ
+  paylaşımı üzerinden verilen bir kök yakalanmaz. Denetim yanlışlıkla canlı ağaçtan yüklemeyi önler; kasıtlı atlatmaya karşı bir güvenlik sınırı
+  değildir.
+- Ret yalnız kütüphane kökünü kapsar; öz-test betiğinin kendisinin hangi dizinden çalıştırıldığı denetlenmez.
+- Kök, tek kullanımlık test veritabanının şemasıyla uyumlu bir Prisma istemcisi taşımalıdır (bu turda R27 aday ağacı; test veritabanı R27 şeması).
+  Şeması farklı bir kök verilirse senaryolar FAIL ya da ölçülemedi verebilir — bu, kökün yanlış seçildiğini gösterir, ürün bulgusu değildir.
+- D-4, D-5 ve EXTACC paketlerinin öz-testleri aynı sabit kütüphane kökünü taşır; bu düzeltme yalnız D-7 öz-testini kapsar.
+- Öz-test önceki gibi disposable DB'de satır ve `%TEMP%\d7-selftest-*` dizini bırakır (§9).
+
+**Ayna kopya sonucu tarihsel kanıttır.** §6.2 ve §6.3'teki ayna koşumları (`d7-r02\js-oz-test\`, `d7-r02\tur2\js-oz-test\`) o turların kaydı olarak
+korunur; güncel sonuç bu bölümdeki, repodaki dosyanın kendisiyle yapılan koşumdur.
+Kanıt (repo dışı): `HY_R27_AGENT_EVIDENCE\d7-r02\tur4\` — öz-test logu + status (komut, çıkış kodu, sha256 önce/sonra), negatif ölçüm logları ve
+sonda çıktıları, ek ayna ölçümü, blok öz-testi logları (iki kabuk), paket digest ve ayrıştırma/kodlama logları, kullanılan betikler. Loglar yerel
+kullanıcı adından ve test DB parolasından arındırılarak yazılır.
 
 ## 7. Pinler
 
@@ -226,7 +299,8 @@ baytları), `deneme\` (son baytlardan önceki deneme koşumu). Loglar yerel kull
 | önceki (R01 kapanış düzeltmesi): `d7-owner-live-block.ps1` | `EDDF7BF39231B67726528061654E2B668CABE48104059D9ACCB5D83B0C36CA5D` (host/kullanıcı yolu literali kaldırıldı, R05 owner girdisi + adres biçim kapısı; ondan önce `2F62C6C9…26DE8`, `881ABCB0…1427`) |
 | önceki (R01 kapanış düzeltmesi): `d7-owner-block-selftest.ps1` | `9A5A31F0AA208EC85434C72D7F9C91E910C8DF34E61E29A13F6BC3516B1470B3` (6 yeni test; ondan önce `6574F027…D26E0`) |
 | `d7-fake-portal-api.js` (R02'de değişmedi) | `7B9D32388A34E91088B316147BCCE6E7AC66EC30AEDFFA4C8F841FE9461EBD7D` |
-| `d7-selftest.js` (R02'de değişmedi) | `D5E12B00D1F708D056F1949CAE9EC76519DF3B71F4CBCDC0C67473CE630345DB` |
+| `d7-selftest.js` **R02 kütüphane kökü düzeltmesi** (son baytlar; 2026-10-03; §6.4) | `2867FBC58282982F79218F2A468884677626B89D34BE91F963FB58FEAD32A1E3` |
+| önceki (R01 düzeltme baytları; R02'nin ilk iki turunda değişmedi): `d7-selftest.js` | `D5E12B00D1F708D056F1949CAE9EC76519DF3B71F4CBCDC0C67473CE630345DB` (kütüphane kökü sabit olarak canlı yayın dizini; yalnız ayna kopyada koşuldu) |
 
 Paket digest (blok içinde `$ExpPackage`): `7C42FCCD6349F95E42128F78CA1A86DF36EB20E246FD0D9936A8B1098DBA7BDD` (önceki `ABA91BAA…320E` geçersiz) —
 bağımsız yeniden hesaplama ile **eşit** (`kapanis-duzeltme\pin-dogrulama.txt`: 9 pin, uyuşmazlık 0; blok dosyası PkgPins'te değildir, blok
@@ -236,6 +310,9 @@ yeniden hesaplandı ve `7C42FCCD…7BDD` ile eşit bulundu (R02 ilk tur: `d7-r02
 Blok sha'sı değiştiği için R01 ya da R02 ilk tur baytlarıyla yapılmış bir Preflight/QrTest sonucu (varsa) son baytları kapsamaz; bloğun `$Repo` yolu
 ana checkout olduğundan Preflight paket/senkron kapısı ancak bu dosyalar main'e merge edilip main senkron olduğunda geçer. R02 satırlarındaki
 (blok ve blok öz-testi; son baytlar ve "R02 ilk tur") sha256 değerleri dosyaların ham baytlarından ölçülmüştür (UTF-8 BOM dahil, satır sonu LF).
+2026-10-03 düzeltmesinde değişen yalnız `d7-selftest.js` ve bu belgedir; `d7-selftest.js` pin listesinde değildir (blok onu okumaz ve çalıştırmaz).
+Paket digest o baytlarla yeniden hesaplandı ve `7C42FCCD…7BDD` ile eşit bulundu (`d7-r02\tur4\paket-digest.log`); blok ve blok öz-testi sha256
+değerleri değişmedi. `d7-selftest.js` satırındaki değer dosyanın ham baytlarından ölçülmüştür (BOM yok, satır sonu LF).
 
 ## 8. Canlıda oluşacak kayıtlar ve kapanış
 
@@ -437,6 +514,8 @@ başlatmaz; kapsamsız mutlak ifade kullanılmaz; metin yalnız ölçüleni iddi
 - `owner-block.json` `revision` alanı `R01` kalır (§4).
 - Repodaki `d7-selftest.js` kütüphaneleri canlı yayın dizininden yükler; bu turda yalnız ayna kopyada koşuldu (§6.2). Öz-testin kütüphane kökünün
   canlı yayın dizinine bağlı olması ayrı bir düzeltme konusudur (bu işin kapsamı dışında: yalnız blok, blok öz-testi ve belge değişebilir).
+  *Bu madde R02 ilk turunun tarihsel kaydıdır. **Güncel durum (2026-10-03): KAPANDI** — kütüphane kökü ortamdan verilir, canlı yayın ağacı
+  reddedilir; repodaki dosyanın kendisi koşuldu, 41/41 PASS (§6.4, §12.2). Ayna kopya sonucu tarihsel kanıttır.*
 - Blok öz-testinin çıktısı yerel kullanıcı adını maskelemez (yalnız gözlem dökümü ve geçici dizin satırı maskelidir); kanıt logları yazılırken
   maskelendi. D-5 öz-testindeki tam maske (M-1) D-7'ye taşınmadı.
 - Web arayüzü tarifleri (ana sayfa, Mesajlar sekmesi, zil rozeti) kaynak okumasıdır; canlı web derlemesi ölçülmedi (§9).
@@ -476,5 +555,20 @@ AYRI owner onayıyla, BİR KEZ başlatılır; blok başlatmaz; **ikinci bir Reco
 - R27 paketi §11 tablosundaki "5/6 → Recover" kısaltması ve R27 §10'daki K-3 ifadesi bu işin kapsamı dışındadır; değiştirilmedi (K-3, K-5 notları).
 - İkinci Recover kodla engellenmez; K-6 açık owner sorusudur. Koşucunun Recover kanıtındaki `recovery.adim` metni (pinli) 5/6'da yine "Recover …
   BİR KEZ" önerir (§8.1); koşucu değiştirilmediği için bu metin durur.
-- Repodaki `d7-selftest.js` bu turda da yalnız ayna kopyada koşuldu (§6.3).
+- Repodaki `d7-selftest.js` bu turda da yalnız ayna kopyada koşuldu (§6.3). *Bu madde o turun tarihsel kaydıdır. **Güncel durum (2026-10-03):**
+  repodaki dosya düzeltildi ve kendisi koşuldu, 41/41 PASS (§6.4, §12.2).*
+- **Preflight / QrTest / Run / Recover canlıda KOŞULMADI.** Bu tur hiçbiri için yetki değildir.
+
+### 12.2 R02 koşucu öz-testi kütüphane kökü (2026-10-03; yalnız `d7-selftest.js` ve belge)
+
+**Kapsam.** Değişen iki dosya: `scripts/d7-selftest.js` (yalnız kütüphane kökü çözümü + canlı ağaç reddi + bir çıktı satırı) ve bu belge. Koşucu
+(`d7-portal-messages-live-run.js`), owner bloğu, blok öz-testi, QR betiği, sahte API ve bloğun pin listesindeki 9 dosya **değişmedi**; paket digest
+aynıdır (`7C42FCCD…7BDD`). Canlı Run kapıları ve pin denetimi blokta durur ve bu düzeltmeyle gevşetilmedi (bloğa dokunulmadı). Öz-testin ölçtüğü
+41 ölçüt aynıdır. Ayrıntı, komut, sonuç ve sınırlar §6.4'tedir.
+
+**Bu turda yapılmayanlar / sınırlar.**
+- Canlı yayın ağacı, canlı DB, canlı API ve canlı günlükler kullanılmadı ve okunmadı; ret ölçümlerinde canlı ağaç yolu yalnız ortam değişkeni
+  değeri olarak verildi (§6.4 sonda ölçümü).
+- D-4, D-5 ve EXTACC paketlerinin öz-testleri aynı sabit kütüphane kökünü taşır; değiştirilmedi (ayrı iş).
+- Öz-testin bıraktığı disposable DB satırları ve `%TEMP%\d7-selftest-*` dizinleri silinmedi (önceki turlarla aynı davranış; §9).
 - **Preflight / QrTest / Run / Recover canlıda KOŞULMADI.** Bu tur hiçbiri için yetki değildir.
