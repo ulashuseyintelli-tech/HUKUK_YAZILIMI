@@ -1,5 +1,5 @@
 import { StaffType } from "@prisma/client";
-import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, ValidateIf } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString } from "class-validator";
 
 /**
  * OFFICE-PUT-BODY-BOUNDARY — `OfficeController` yazma uçlarının gövde sınırı.
@@ -17,19 +17,17 @@ import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, ValidateIf } f
  * alan kümesini ve o alanın SÜTUN TÜRÜNÜ tipler. (Aralık / biçim kuralları — HH:mm, Int32 sınırı,
  * gün >= 1, e-posta biçimi — ayrı ürün kararıdır; burada YOK.)
  *
- * NULL SEMANTİĞİ KORUNUR: nullable sütunlar (`String?`, `Int?`) `@IsOptional` ile null KABUL eder
- * (ekran `smtpPort: parseInt("")` → NaN → JSON `null` gönderebilir; null bugün sütunu temizler).
- * Null ALAMAYAN sütunlar (`name`, `Boolean`, `Int`, `String[]`, enum dizisi) `@DefinedOnly` ile
- * yalnız `undefined`ı atlar → `null` artık Prisma'da 500 yerine burada 400 olur.
+ * NULL SEMANTİĞİ BİREBİR KORUNUR: her alanda `@IsOptional` — `undefined` ve `null` tür doğrulamasını
+ * atlar (ekran `smtpPort: parseInt("")` → NaN → JSON `null` gönderebilir; nullable sütunda null bugün
+ * sütunu temizler). Null ALAMAYAN sütuna (`name`, `Boolean`, `Int`, `String[]`) gelen null bugün olduğu gibi
+ * Prisma'da reddedilir (500; R01 W2 sertifikasyonu `{ name: null }` → 500'ü sabitler). Bunu 400'e çevirmek
+ * ayrı bir ürün kararıdır; bu iş yapmaz. Null DIŞINDAKİ değerler sütun türüne uymak zorundadır.
  *
  * ALAN HARİTALARI servis allow-list'i olarak da kullanılır (HTTP dışı çağıranlar için ikinci
  * savunma; denetim kaydı da yalnız haritadaki anahtarları yazar). Ekranın
  * (settings/office/page.tsx) bugün gönderdiği alanların TAMAMI haritalarda vardır — "allowlist +
  * tam-form PUT" tuzağı: tanınmayan alan 400 verir ve ekranı kırar.
  */
-
-/** Yalnız `undefined`ı atlar; `null` doğrulamadan geçer ve reddedilir (null alamayan sütunlar). */
-const DefinedOnly = () => ValidateIf((_object, value) => value !== undefined);
 
 // ───────────── alan haritaları (tek kaynak: DTO + servis allow-list) ─────────────
 
@@ -83,7 +81,7 @@ export function pickOfficeFields(data: object | undefined | null, allowed: reado
 // ───────────── DTO sınıfları ─────────────
 
 export class UpdateOfficeDto {
-  @DefinedOnly() @IsString() name?: string;
+  @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() district?: string;
@@ -105,7 +103,7 @@ export class UpdateSmtpSettingsDto {
   @IsOptional() @IsInt() smtpPort?: number;
   @IsOptional() @IsString() smtpUser?: string;
   @IsOptional() @IsString() smtpPass?: string;
-  @DefinedOnly() @IsBoolean() smtpSecure?: boolean;
+  @IsOptional() @IsBoolean() smtpSecure?: boolean;
   @IsOptional() @IsString() smtpFromName?: string;
   @IsOptional() @IsString() smtpFromEmail?: string;
 }
@@ -118,33 +116,33 @@ export class UpdateSmsSettingsDto {
 }
 
 export class UpdateGreetingSettingsDto {
-  @DefinedOnly() @IsBoolean() autoGreetingEnabled?: boolean;
+  @IsOptional() @IsBoolean() autoGreetingEnabled?: boolean;
   @IsOptional() @IsString() autoGreetingTime?: string;
 }
 
 export class UpdateIik78SettingsDto {
-  @DefinedOnly() @IsInt() inactivityThresholdDays?: number;
-  @DefinedOnly() @IsInt() inactivityWarningDays?: number;
+  @IsOptional() @IsInt() inactivityThresholdDays?: number;
+  @IsOptional() @IsInt() inactivityWarningDays?: number;
 }
 
 export class UpdatePoaExpirySettingsDto {
-  @DefinedOnly() @IsBoolean() poaExpiryNotificationEnabled?: boolean;
-  @DefinedOnly() @IsInt() poaExpiryThresholdDays?: number;
-  @DefinedOnly() @IsArray() @IsString({ each: true }) poaExpiryRecipientLawyerIds?: string[];
+  @IsOptional() @IsBoolean() poaExpiryNotificationEnabled?: boolean;
+  @IsOptional() @IsInt() poaExpiryThresholdDays?: number;
+  @IsOptional() @IsArray() @IsString({ each: true }) poaExpiryRecipientLawyerIds?: string[];
 }
 
 export class UpdateEscalationSettingsDto {
-  @DefinedOnly() @IsArray() @IsString({ each: true }) escalationManagerLawyerIds?: string[];
-  @DefinedOnly() @IsArray() @IsString({ each: true }) escalationFounderLawyerIds?: string[];
-  @DefinedOnly() @IsInt() opReminderDays?: number;
-  @DefinedOnly() @IsInt() opFounderDays?: number;
-  @DefinedOnly() @IsInt() opRepeatMonths?: number;
-  @DefinedOnly() @IsBoolean() opEmailEnabled?: boolean;
-  @DefinedOnly() @IsBoolean() opSmsEnabled?: boolean;
-  @DefinedOnly() @IsArray() @IsEnum(StaffType, { each: true }) opStaffTypes?: StaffType[];
+  @IsOptional() @IsArray() @IsString({ each: true }) escalationManagerLawyerIds?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) escalationFounderLawyerIds?: string[];
+  @IsOptional() @IsInt() opReminderDays?: number;
+  @IsOptional() @IsInt() opFounderDays?: number;
+  @IsOptional() @IsInt() opRepeatMonths?: number;
+  @IsOptional() @IsBoolean() opEmailEnabled?: boolean;
+  @IsOptional() @IsBoolean() opSmsEnabled?: boolean;
+  @IsOptional() @IsArray() @IsEnum(StaffType, { each: true }) opStaffTypes?: StaffType[];
   // D-G5: dosya görevi (case-task) eskalasyon ayarları
-  @DefinedOnly() @IsArray() @IsString({ each: true }) escalationTeamLeadLawyerIds?: string[];
-  @DefinedOnly() @IsInt() caseTaskOwnerDays?: number;
-  @DefinedOnly() @IsInt() caseTaskTeamLeadDays?: number;
-  @DefinedOnly() @IsInt() caseTaskManagerDays?: number;
+  @IsOptional() @IsArray() @IsString({ each: true }) escalationTeamLeadLawyerIds?: string[];
+  @IsOptional() @IsInt() caseTaskOwnerDays?: number;
+  @IsOptional() @IsInt() caseTaskTeamLeadDays?: number;
+  @IsOptional() @IsInt() caseTaskManagerDays?: number;
 }

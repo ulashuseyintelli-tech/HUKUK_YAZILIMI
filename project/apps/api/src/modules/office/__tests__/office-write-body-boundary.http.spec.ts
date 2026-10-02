@@ -221,14 +221,16 @@ describe('OFFICE yazma uçları — gerçek HTTP zincirinde gövde sınırı (7 
       expect(persistedData('update')).toEqual({});
     });
 
-    it('nullable sütun null ile temizlenebilir (bugünkü sözleşme); null alamayan sütun null ile 400', async () => {
+    it('null davranışı korunur: nullable sütun null ile temizlenebilir; null alamayan sütundaki null pipe\'ta reddedilmez, persist katmanına (Prisma) bugünkü gibi iletilir', async () => {
       const ok = await put('/office', 'partner', { phone: null });
       expect(ok.status).toBe(200);
       expect(persistedData('update')).toEqual({ phone: null });
       prisma.office.update.mockClear();
-      const bad = await put('/office', 'partner', { name: null });
-      expect(bad.status).toBe(400);
-      expect(writes()).toBe(0);
+      // `name` null alamaz: bugün Prisma reddeder (gerçek DB'li R01 W2 sertifikasyonu 500'ü sabitler). Sahte Prisma kabul
+      // eder; ölçülen şey, pipe'ın null'ı 400'e ÇEVİRMEDİĞİ ve değeri olduğu gibi ilettiğidir.
+      const nameNull = await put('/office', 'partner', { name: null });
+      expect(nameNull.status).toBe(200);
+      expect(persistedData('update')).toEqual({ name: null });
       const smtpNull = await put('/office/smtp-settings', 'admin', { smtpPort: null });
       expect(smtpNull.status).toBe(200);
     });

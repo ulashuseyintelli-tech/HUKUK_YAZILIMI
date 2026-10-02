@@ -157,12 +157,12 @@ describe('Prisma alan işleçleri ve null davranışı', () => {
     await expect(run(UpdateEscalationSettingsDto, { escalationManagerLawyerIds: { push: 'x' } })).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('null alamayan sütunlar null ile 400 olur (Prisma 500\'ü yerine); nullable sütunlar null kabul eder', async () => {
-    await expect(run(UpdateOfficeDto, { name: null })).rejects.toBeInstanceOf(BadRequestException);
-    await expect(run(UpdateGreetingSettingsDto, { autoGreetingEnabled: null })).rejects.toBeInstanceOf(BadRequestException);
-    await expect(run(UpdateIik78SettingsDto, { inactivityThresholdDays: null })).rejects.toBeInstanceOf(BadRequestException);
-    await expect(run(UpdateEscalationSettingsDto, { opStaffTypes: null })).rejects.toBeInstanceOf(BadRequestException);
-    // bugünkü davranış KORUNUR: nullable sütun null ile temizlenebilir
+  it('null davranışı BİREBİR korunur: pipe null\'ı reddetmez (null alamayan sütunda reddi bugünkü gibi Prisma yapar → 500; R01 W2 sertifikasyonu bunu sabitler)', async () => {
+    await expect(run(UpdateOfficeDto, { name: null })).resolves.toBeDefined();
+    await expect(run(UpdateGreetingSettingsDto, { autoGreetingEnabled: null })).resolves.toBeDefined();
+    await expect(run(UpdateIik78SettingsDto, { inactivityThresholdDays: null })).resolves.toBeDefined();
+    await expect(run(UpdateEscalationSettingsDto, { opStaffTypes: null })).resolves.toBeDefined();
+    // nullable sütun null ile temizlenebilir (bugünkü sözleşme)
     await expect(run(UpdateOfficeDto, { phone: null })).resolves.toBeDefined();
     await expect(run(UpdateSmtpSettingsDto, { smtpPort: null })).resolves.toBeDefined();
     await expect(run(UpdateGreetingSettingsDto, { autoGreetingTime: null })).resolves.toBeDefined();
