@@ -22,6 +22,9 @@ const RAW_PASSWORD = 'CokGizliSifre!9988';
 function build(over: any = {}) {
   const currentClient = over.beforeClient ?? { id: 'c1', hasPortalAccess: false, portalUserId: null };
   const tx = {
+    // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     client: {
       // Gerçek Prisma update TÜM satırı döndürür → mock da before ile birleştirir (sadık diff).
       findUniqueOrThrow: jest.fn().mockResolvedValue({ ...currentClient }),

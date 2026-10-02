@@ -13,6 +13,8 @@
  *      (sekme, bölünemez boşluk dahil) eşleşmeyi engellemez
  *  [7] hesap açma çakışma kapısı aynı karşılaştırmayı kullanır: başka büronun harf/boşluk varyantı 409 alır, kayıtlı
  *      adres boşluklu olsa da; adresin çözüldüğü hesap sonradan DEĞİŞMEZ (giriş ve sıfırlama ilk hesapta kalır)
+ *  [8] eşzamanlı hesap açma / yeniden açma: biçim farkıyla aynı adrese gelen isteklerden yalnız biri yazar. İstekler
+ *      transaction içinde bir bariyerde toplanıp birlikte bırakılır (çakışma zamanlamaya bırakılmaz)
  */
 import { describeDb } from "../../../../test/describe-db";
 import { Test, TestingModule } from "@nestjs/testing";
@@ -37,7 +39,24 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
   const DOTTED_CAPITAL_I = String.fromCharCode(0x130);
   const NBSP = String.fromCharCode(0xa0);
   // Yetki kapısı bu dosyanın konusu değildir (kendi spec'lerinde ölçülür): çakışma kapısına ulaşmak için yetkili sayılır.
-  const officeApproval = { isApproverEligible: async () => true, isApproverEligibleInTx: async () => true };
+  // [8]: transaction içindeki yetki adımı bariyer olarak kullanılır — bütün istekler transaction'ı açtıktan sonra birlikte bırakılır.
+  let txGate: null | (() => Promise<void>) = null;
+  const officeApproval = {
+    isApproverEligible: async () => true,
+    isApproverEligibleInTx: async () => {
+      if (txGate) await txGate();
+      return true;
+    },
+  };
+  function barrier(expected: number) {
+    let arrived = 0;
+    let release!: () => void;
+    const all = new Promise<void>((resolve) => (release = resolve));
+    return async () => {
+      if (++arrived >= expected) release();
+      await all;
+    };
+  }
   const actor = { userId: "d5-diag-r01-actor" } as any;
 
   beforeAll(async () => {
@@ -247,5 +266,48 @@ describeDb("D5-DIAG-R01 — portal e-posta biçim farkı eşleşmesi (integratio
       );
     }
     expect(await prisma.clientPortalUser.count({ where: { clientId: fourth.client.id } })).toBe(0);
+  });
+
+  it("[8] EŞZAMANLI hesap açma: biçim farkıyla aynı adrese gelen isteklerden yalnız BİRİ hesap açar, diğerleri 409 alır", async () => {
+    const tag = uniq();
+    const base = `Yaris.Hesap.${tag}@D5-Diag-R01.Test`;
+    const variants = [base, base.toLowerCase(), base.toUpperCase(), ` ${base} `, `\t${base.toLowerCase()}`, `${base.toUpperCase()}${NBSP}`];
+    const targets: Array<Awaited<ReturnType<typeof createClient>>> = [];
+    for (let i = 0; i < variants.length; i++) targets.push(await createClient(`yaris-${i}`));
+    txGate = barrier(variants.length);
+    const results = await Promise.allSettled(
+      variants.map((email, i) => portal.createPortalUser(targets[i].client.id, email, "BaskaSifre123", targets[i].tenant.id, actor)),
+    ).finally(() => (txGate = null));
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.every((r) => r.reason instanceof ConflictException)).toBe(true);
+    const rows = await prisma.clientPortalUser.findMany({
+      where: { clientId: { in: targets.map((t) => t.client.id) } },
+      select: { isActive: true },
+    });
+    expect(rows.filter((r) => r.isActive).length).toBe(1);
+    // kazanan hesap tek aday olduğu için harf farkıyla giriş belirsiz değildir
+    const login: any = await portal.login(base.toLowerCase(), "BaskaSifre123");
+    expect(typeof login.token).toBe("string");
+  });
+
+  it("[8b] EŞZAMANLI yeniden açma: pasif hesabı olan iki müvekkil biçim farkıyla aynı adresle açılırsa yalnız BİRİ açılır", async () => {
+    const tag = uniq();
+    const base = `Yeniden.Acma.${tag}@D5-Diag-R01.Test`;
+    const a = await seedPortalUser("yeniden-a", `eski.a.${tag}@d5-diag-r01.test`, false);
+    const b = await seedPortalUser("yeniden-b", `eski.b.${tag}@d5-diag-r01.test`, false);
+    const tenantOf = async (clientId: string) => (await prisma.client.findUniqueOrThrow({ where: { id: clientId } })).tenantId;
+    const tenantA = await tenantOf(a.clientId);
+    const tenantB = await tenantOf(b.clientId);
+    txGate = barrier(2);
+    const results = await Promise.allSettled([
+      portal.createPortalUser(a.clientId, base, "BaskaSifre123", tenantA, actor),
+      portal.createPortalUser(b.clientId, base.toLowerCase(), "BaskaSifre123", tenantB, actor),
+    ]).finally(() => (txGate = null));
+    expect(results.filter((r) => r.status === "fulfilled").length).toBe(1);
+    const rejected = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+    expect(rejected.every((r) => r.reason instanceof ConflictException)).toBe(true);
+    expect((await rowOf(a.id)).isActive !== (await rowOf(b.id)).isActive).toBe(true);
   });
 });

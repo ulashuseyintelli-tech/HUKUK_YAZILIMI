@@ -18,6 +18,7 @@
  *  [7]-[9]   tenant erişime kapalı · talep sırasında kapanan hesap · teşhis satırlarında adres/token/bağlantı yok
  *  [10]-[12] login: aynı kurallar
  *  [13]-[15] createPortalUser: çakışma kapısı aynı karşılaştırmayla; kayıtlı adres biçimi değiştirilmez; girdi doğrulaması
+ *  [16]      createPortalUser: yazımdan önce transaction içinde adres kilidi + çakışmanın yeniden ölçümü (eşzamanlı istekler)
  */
 import { BadRequestException, ConflictException, Logger, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
@@ -66,7 +67,10 @@ function buildService(users: FakeUser[], over: any = {}) {
       if (typeof where.email === 'string') return u.email === where.email;
       throw new Error('sahte depo yalnız metin e-posta koşulunu tanır: ' + JSON.stringify(where));
     });
+  let rawCalls = 0;
   const queryRaw = jest.fn(async (query: any) => {
+    rawCalls++;
+    if (over.rawRowsByCall) return over.rawRowsByCall[rawCalls - 1] ?? [];
     if (over.rawRows) return over.rawRows;
     const values = query.values as unknown[];
     const trimChars = values[0] as string;
@@ -80,6 +84,7 @@ function buildService(users: FakeUser[], over: any = {}) {
   });
   const prisma: any = {
     $queryRaw: queryRaw,
+    $executeRaw: jest.fn().mockResolvedValue(0),
     client: {
       findFirst: jest.fn(async ({ where }: any) => ({ id: where.id, tenantId: where.tenantId })),
       findUniqueOrThrow: jest.fn(async () => ({ id: 'C-NEW', hasPortalAccess: false, portalUserId: null })),
@@ -96,7 +101,7 @@ function buildService(users: FakeUser[], over: any = {}) {
       updateMany: jest.fn().mockResolvedValue(over.updateManyResult ?? { count: 1 }),
     },
   };
-  prisma.$transaction = jest.fn(async (fn: any) => fn(prisma));
+  prisma.$transaction = jest.fn(async (fn: any, _options?: any) => fn(prisma));
   const audit = { log: jest.fn(), logInTransaction: jest.fn() };
   const officeApproval = {
     isApproverEligible: jest.fn().mockResolvedValue(true),
@@ -106,7 +111,7 @@ function buildService(users: FakeUser[], over: any = {}) {
   const config = { get: jest.fn((k: string) => (k === 'WEB_BASE_URL' ? 'https://portal.example.com' : undefined)) };
   const jwt = { sign: jest.fn(() => 'jwt-token') };
   const svc = new PortalService(prisma, jwt as any, audit as any, officeApproval as any, config as any, emailProvider as any);
-  return { svc, prisma, emailProvider, jwt, audit };
+  return { svc, prisma, emailProvider, jwt, audit, officeApproval };
 }
 
 const STORED = 'Ali.Veli@Example.com';
@@ -539,5 +544,54 @@ describe('D5-DIAG-R01 createPortalUser — çakışma kapısı giriş/sıfırlam
     const { svc, prisma } = buildService([]);
     await expect(svc.createPortalUser({} as any, 'a@example.com', 'Parola12345', 'T1', actor)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.client.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('[16] yazımdan önce transaction içinde: yetki → adres kilidi → çakışmanın yeniden ölçümü → yazım (yeni hesap ve yeniden açma)', async () => {
+    for (const existingForClient of [null, { id: 'PU-OLD', isActive: false }]) {
+      const { svc, prisma, officeApproval } = buildService([], { existingForClient });
+      await svc.createPortalUser('C-NEW', ' Yeni.Kisi@Example.com', 'Parola12345', 'T1', actor);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      const lock = prisma.$executeRaw.mock.calls[0];
+      expect(String(lock[0].join('?')).replace(/\s+/g, ' ')).toContain('pg_advisory_xact_lock(hashtextextended(?, 0))');
+      expect(lock[1]).toBe('portal-email:yeni.kisi@example.com'); // kilit anahtarı = adresin karşılaştırma biçimi
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2); // erken ölçüm + transaction içi ölçüm
+      expect(prisma.$queryRaw.mock.calls[1][0].values).toEqual([
+        PORTAL_EMAIL_TRIM_CHARS,
+        'yeni.kisi@example.com',
+        'C-NEW',
+        PORTAL_EMAIL_CANDIDATE_LIMIT,
+      ]);
+      const order = (m: jest.Mock, i = 0) => m.mock.invocationCallOrder[i];
+      const write = existingForClient ? prisma.clientPortalUser.update : prisma.clientPortalUser.create;
+      expect(order(officeApproval.isApproverEligibleInTx)).toBeLessThan(order(prisma.$executeRaw));
+      expect(order(prisma.$executeRaw)).toBeLessThan(order(prisma.$queryRaw, 1));
+      expect(order(prisma.$queryRaw, 1)).toBeLessThan(order(write));
+      // kilitten sonraki ölçüm önceki isteğin commit'ini görmeli: yalıtım düzeyi sabit
+      expect(prisma.$transaction.mock.calls[0][1]).toEqual({ isolationLevel: 'ReadCommitted' });
+    }
+  });
+
+  it('[16b] erken ölçümden SONRA aynı adres başka müvekkilde açıldıysa transaction içi ölçüm görür → 409; hiçbir yazım yok', async () => {
+    for (const existingForClient of [null, { id: 'PU-OLD', isActive: false }]) {
+      const { svc, prisma, audit } = buildService([], {
+        existingForClient,
+        rawRowsByCall: [[], [{ id: 'PU-X', email: 'YENI.kisi@example.com' }]],
+      });
+      const e = await svc.createPortalUser('C-NEW', 'yeni.kisi@example.com', 'Parola12345', 'T1', actor).catch((x) => x);
+      expect(e).toBeInstanceOf(ConflictException);
+      expect(e.message).toBe(CONFLICT);
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prisma.clientPortalUser.create).not.toHaveBeenCalled();
+      expect(prisma.clientPortalUser.update).not.toHaveBeenCalled();
+      expect(prisma.client.update).not.toHaveBeenCalled();
+      expect(audit.logInTransaction).not.toHaveBeenCalled();
+    }
+  });
+
+  it('[16c] transaction içi ölçümde aday sınırı dolarsa da çakışma sayılır (kapalı yön)', async () => {
+    const rows = Array.from({ length: PORTAL_EMAIL_CANDIDATE_LIMIT }, (_, n) => ({ id: 'X' + n, email: 'baska' + n + '@example.com' }));
+    const { svc, prisma } = buildService([], { rawRowsByCall: [[], rows] });
+    await expect(svc.createPortalUser('C-NEW', 'yeni@example.com', 'Parola12345', 'T1', actor)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.clientPortalUser.create).not.toHaveBeenCalled();
   });
 });

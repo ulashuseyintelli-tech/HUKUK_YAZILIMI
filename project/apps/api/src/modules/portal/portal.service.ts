@@ -15,6 +15,12 @@ import * as bcrypt from "bcrypt";
 import { toCuratedAssetQuery } from "./asset-query-projection";
 import { ACTIVE_TENANT_LIFECYCLE, isLoginableLifecycle } from "../tenant/tenant-lifecycle";
 
+/**
+ * D5-DIAG-R01 — hesap açma / yeniden açma transaction'ı. Adres kilidinden sonraki çakışma ölçümü, kilidi bekleyen isteğin
+ * önceki isteğin commit'ini GÖRMESİNE dayanır; bu yüzden yalıtım düzeyi bağlantı varsayılanına bırakılmaz, sabitlenir.
+ */
+const PORTAL_ACCESS_WRITE_TX = { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted };
+
 /** D5-DIAG-R01 — biçim farkıyla eşleşmede getirilecek en çok aday; sınır dolarsa sonuç belirsiz sayılır (kapalı yön). */
 export const PORTAL_EMAIL_CANDIDATE_LIMIT = 5;
 
@@ -324,7 +330,8 @@ export class PortalService {
     }
     // D5-DIAG-R01: giriş ve sıfırlama adresi biçim farkıyla (harf/boşluk) da çözdüğü için çakışma kapısı AYNI
     // karşılaştırmayı kullanır — biçim farkıyla aynı adres başka bir müvekkilin AKTİF hesabında varsa 409. Kayıtlı
-    // adresin biçimi DEĞİŞTİRİLMEZ (kırpma/küçültme yok). Kapı transaction dışındadır (birebir kontrolle aynı sınır).
+    // adresin biçimi DEĞİŞTİRİLMEZ (kırpma/küçültme yok). Bu ölçüm erken rettir; yazımdan hemen önce aynı ölçüm
+    // transaction içinde, adres kilidi altında yinelenir (`assertNoPortalEmailConflictInTx`).
     const sameAddress = await this.findActivePortalUsersByFoldedEmail(email, clientId);
     if (sameAddress.users.length > 0 || sameAddress.truncated) {
       throw new ConflictException("Bu e-posta başka bir aktif portal kullanıcısında kayıtlı");
@@ -349,6 +356,7 @@ export class PortalService {
       // yazılamazsa rollback → audit'siz erişim açma kalmaz (C0-a deseni).
       await this.prisma.$transaction(async (tx) => {
         await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
+        await this.assertNoPortalEmailConflictInTx(tx, email, clientId);
         const before = await tx.client.findUniqueOrThrow({
           where: { id: clientId },
           select: { id: true, hasPortalAccess: true, portalUserId: true },
@@ -382,7 +390,7 @@ export class PortalService {
             fieldDiff: buildClientFieldDiff(before, after, PORTAL_ACCESS_FIELDS),
           },
         });
-      });
+      }, PORTAL_ACCESS_WRITE_TX);
       this.logger.log(`Portal kullanıcısı yeniden aktifleştirildi: ${maskEmail(email)} (Client: ${clientId})`);
       return { success: true, portalUserId: existing.id, _reactivated: true };
     }
@@ -390,6 +398,7 @@ export class PortalService {
     // C0 bypass fix: portalUser create + client erişim-bayrağı + audit AYNI transaction.
     const portalUserId = await this.prisma.$transaction(async (tx) => {
       await this.assertCanManagePortalAccessInTx(tx, actor?.userId, tenantId); // K4-3: ilk yazmadan ÖNCE
+      await this.assertNoPortalEmailConflictInTx(tx, email, clientId);
       const before = await tx.client.findUniqueOrThrow({
         where: { id: clientId },
         select: { id: true, hasPortalAccess: true, portalUserId: true },
@@ -418,7 +427,7 @@ export class PortalService {
         },
       });
       return portalUser.id;
-    });
+    }, PORTAL_ACCESS_WRITE_TX);
 
     this.logger.log(`Portal kullanıcısı oluşturuldu: ${maskEmail(email)} (Client: ${clientId})`);
 
@@ -455,15 +464,17 @@ export class PortalService {
    * ile. Dönen satırlar uygulama tarafında aynı kuralla bir kez daha süzülür. `excludeClientId` verilirse o müvekkilin
    * hesabı sayılmaz. `truncated`: aday sınırı doldu — çağıran sonucu belirsiz sayar (kapalı yön).
    * Ön koşul: sunucu kodlaması UTF8 (kırpma kümesi sorguya parametre olarak gider; DB-kapılı spec ölçer).
+   * `db`: sorgunun koşacağı istemci (varsayılan bağlantı; transaction içi ölçüm için `tx`).
    */
   private async findActivePortalUsersByFoldedEmail(
     email: string,
     excludeClientId?: string,
+    db: Pick<Prisma.TransactionClient, "$queryRaw"> = this.prisma,
   ): Promise<{ users: Array<{ id: string; email: string }>; truncated: boolean }> {
     const folded = foldPortalEmail(email);
     if (!folded) return { users: [], truncated: false };
     const otherClientOnly = excludeClientId === undefined ? Prisma.empty : Prisma.sql`AND "clientId" <> ${excludeClientId}`;
-    const rows = await this.prisma.$queryRaw<Array<{ id: string; email: string }>>(Prisma.sql`
+    const rows = await db.$queryRaw<Array<{ id: string; email: string }>>(Prisma.sql`
       SELECT "id", "email"
       FROM "ClientPortalUser"
       WHERE "isActive" = true
@@ -474,6 +485,22 @@ export class PortalService {
       users: rows.filter((row) => foldPortalEmail(row.email) === folded),
       truncated: rows.length >= PORTAL_EMAIL_CANDIDATE_LIMIT,
     };
+  }
+
+  /**
+   * D5-DIAG-R01 — hesap açma / yeniden açma yazımından ÖNCE, aynı transaction içinde: adresin karşılaştırma biçimi için
+   * işlem ömürlü danışma kilidi alınır ve çakışma kapısı yeniden ölçülür. Biçim farkıyla aynı adrese eşzamanlı gelen
+   * isteklerden yalnız biri yazar; diğerleri kilidi bekler, ilkinin commit'ini görür (READ COMMITTED;
+   * `PORTAL_ACCESS_WRITE_TX`) ve 409 alır. Kilit yalnız bu metodu çağıran yazıcıları sıraya sokar (şema düzeyinde
+   * benzersizlik kısıtı değildir).
+   */
+  private async assertNoPortalEmailConflictInTx(tx: Prisma.TransactionClient, email: string, clientId: string): Promise<void> {
+    const lockKey = `portal-email:${foldPortalEmail(email)}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    const sameAddress = await this.findActivePortalUsersByFoldedEmail(email, clientId, tx);
+    if (sameAddress.users.length > 0 || sameAddress.truncated) {
+      throw new ConflictException("Bu e-posta başka bir aktif portal kullanıcısında kayıtlı");
+    }
   }
 
   /**

@@ -14,6 +14,9 @@ import { PortalService } from "../portal.service";
 
 function buildTx(over: any = {}) {
   return {
+    // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     client: {
       findUniqueOrThrow: jest.fn().mockResolvedValue(over.beforeClient ?? { id: "c1", hasPortalAccess: false, portalUserId: null }),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })),

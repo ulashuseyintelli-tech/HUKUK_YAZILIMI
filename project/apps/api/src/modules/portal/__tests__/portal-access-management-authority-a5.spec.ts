@@ -33,6 +33,9 @@ const ACTOR = { userId: 'u-1' };
 function build(over: { eligible?: boolean; existingPortalUser?: any } = {}) {
   const currentClient = { id: CLIENT_ID, hasPortalAccess: false, portalUserId: null };
   const tx = {
+    // D5-DIAG-R01: yazımdan önce transaction içinde adres kilidi + çakışma ölçümü (bu dosyada çakışma yok).
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     client: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({ ...currentClient }),
       update: jest.fn().mockImplementation((a: any) => Promise.resolve({ ...currentClient, ...a.data, id: a.where.id })),
