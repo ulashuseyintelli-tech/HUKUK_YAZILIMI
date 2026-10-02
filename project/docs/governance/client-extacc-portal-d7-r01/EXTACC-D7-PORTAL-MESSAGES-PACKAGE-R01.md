@@ -25,6 +25,11 @@
 > kök canlı yayın ağacının altındaysa test **koşmaz**, modül bulunamazsa açık hatayla durur. Repodaki dosyanın kendisi (ayna değil) canlı olmayan
 > kütüphane köküyle koşuldu: **41/41 PASS**. Öz-testin ölçtükleri (41 ölçüt), koşucu, blok, blok öz-testi, sahte API, QR betiği, pinli 9 dosya ve
 > paket digest **DEĞİŞMEDİ**; `d7-selftest.js` sha256 değeri değişti (§7; önceki değer korunur). Canlı Run kapıları ve pin denetimi aynıdır.
+> **R02-b ek sınırlar (2026-10-03; yalnız bu belge) — §12.3:** Run / normal kapanış / AYRI Recover sınırlarına dört ek yazıldı: pencere açma
+> tuzağı (§5 adım 1, §9), kurulum ile makbuz arasındaki pencere (§9; açık owner sorusu §10 K-7), Recover'ın 1 ve 2 çıkış kodları (§3 notu),
+> koşucu öz-testinde uzun yol önekli kök (§6.4). Dördü de kaynaktan okundu; canlıda **ölçülmedi**. Owner bloğu, koşucu, iki öz-test, QR betiği,
+> sahte API, pinli 9 dosya ve paket digest **DEĞİŞMEDİ**; hiçbir blok / koşucu / öz-test bu turda çalıştırılmadı. Bu ek hiçbir canlı koşum ya da
+> Recover için yetki DEĞİLDİR.
 
 ## 1. Ne ölçer ve ne yapmaz
 
@@ -101,6 +106,26 @@ personel pasif + portal pasif**; tenant yaşam döngüsü değişmez. Tenant kay
 portal hesabı, müvekkil erişim bayrağı ve kapatma audit satırıdır; `Tenant` satırına yazma yoktur).
 Owner bloğu bu açıklamayı kalıntı satırının altında (Run ve Recover bitişi) gösterir; onay metni kapanışı ve tenant yaşam döngüsünü ayrıca yazar.
 **Not (R02) — Recover çıkışı:** "C4 Recover'da hep ÖLÇÜLEMEYEN" portal hesabı varken geçerlidir; hesap hiç oluşmadıysa C3/C4 satırları üretilmez (§9).
+**Not (R02-b) — Recover'da 1 ve 2 (kaynaktan okundu: koşucu `recoverExitCode` + `recoverMode`; canlıda ölçülmedi; koşucu öz-testinin iki Recover
+senaryosu — Z5, Z10-r — bu iki kodu üretmez).** Yukarıdaki çıkış listesi Run içindir. Bloğun Recover bitiş satırı 0 / 3 / 6 / 5 / 4 / 7 / 91
+kodlarını açıklar; **1 ve 2'yi açıklamaz** (blok metni bu turda değiştirilmedi). Koşucu Recover'da bu iki kodu da döndürebilir ve blok node
+kodunu değiştirmeden taşır. Recover'da öncelik 6 > 5 > 1 > 2 > 3 > 0'dır (kanıt yazılamazsa 7; 5/6 korunur):
+- **Recover 1 (DURDU):** portal DB kapanışı ve personel/dosya kapanışı doğrulanmıştır (6 ve 5 koşulları yoktur), ama Recover'ın hazırlık
+  adımında (portal durumunun okunması ya da makbuzdaki sentetik personelin geçici oturumunun açılması) beklenmeyen bir hata oluşmuştur; hata
+  özeti kanıttaki `fatal` alanındadır. 1, hem 2'den hem 3'ten önce gelir: aynı kanıtta FAIL ya da ÖLÇÜLEMEYEN satır da bulunabilir — satırlar
+  (P7-C3L/C3D, P7-C4L/C4D, P7-MSG-KEPT) ayrıca okunur; 1 "HTTP reddi doğrulandı" anlamına **gelmez**. Koşucu süreci kanıt yazmadan
+  yakalanmamış bir hatayla biterse (ör. kütüphane yüklenemedi) node'un kendi çıkış kodu da 1 olur; blok yalnız "0 + kanıt yok" durumunu 7'ye
+  çevirir, 1'i olduğu gibi taşır — 1'de önce kanıt dosyasının var olup olmadığına bakılır (bu cümle Run için de geçerlidir; Node davranışı
+  bu pakette ölçülmedi).
+- **Recover 2 (FAIL):** kapanışlar doğrulanmış ve hazırlık hatası yoktur, ama en az bir satır FAIL'dir. Koşucu mantığında Recover'da bu
+  yalnız **P7-MSG-KEPT** ile oluşur: makbuzdaki koşucu mesaj satırlarından (`runnerMessageIds`) en az biri DB'de yerinde değildir
+  (`yerinde=k/n`, k < n). Diğer satırların FAIL'i 2 üretmez: P7-C1 / C2 / C2V / C5 ve P7-C3L / C3D FAIL'i **6**, U-CLOSE FAIL'i **5**
+  verir; P7-C4L / C4D Recover'da FAIL olamaz (portal hesabı varken hep ÖLÇÜLEMEYEN). Bu paket mesaj satırı silmez; 2'nin nedeni
+  CLIENT/owner tarafından incelenir, paket bunun için bir adım tanımlamaz.
+- Koşucunun kapı düzeyindeki aynı sayılar (1 = TLS doğrulaması kapalı ya da bilinmeyen mod · 2 = zorunlu ortam değişkeni eksik · 3 =
+  `D7_RECOVER_CONFIRM` yok) blok üzerinden başlatılan Recover'da beklenmez: bu değerleri blok kurar ve TLS değişkeni ortamda tanımlıysa
+  kapıda (90) durur (kaynaktan okundu).
+- 1 ve 2 dahil hiçbir Recover çıkış kodu yeni bir Recover için yetki değildir; sonuç CLIENT'a/owner'a bildirilir (§5 adım 7, §8.1, §10 K-6).
 
 ## 4. Owner bloğu (`scripts/d7-owner-live-block.ps1`) — modlar
 
@@ -130,6 +155,17 @@ değiştirilirse mantık eşitliği bozulurdu). Koşumun hangi blok baytlarıyla
 ## 5. Owner adımları (telefon: Wi-Fi KAPALI, mobil veri, gizli sekme)
 
 1. Bağımsız PowerShell penceresi. `-Mode Preflight` → "PREFLIGHT GEÇTİ" değilse durun.
+   **R02-b — pencereyi owner doğrudan açar** (Başlat menüsü → Windows PowerShell). Ajan pencereyi PowerShell 7 içinden `Start-Process` ile
+   açarsa çocuk Windows PowerShell 5.1 süreci PS7 modül yolunu (`PSModulePath`) devralır ve `Get-FileHash` **bulunamaz** (aynı not D-6
+   belgesinin R02 sürümünde — PR #2880; bu dalda ve `main`'de henüz yok — §4 adım 1'de kayıtlıdır; D-5 paket belgesinde kaydı yoktur. Bu paket
+   için 2026-10-03'te yerel olarak ölçüldü, PowerShell 7.6.6 → Windows PowerShell 5.1.26100: `Start-Process` → `Get-FileHash=False`; PowerShell 7
+   içinden çağrı işleciyle doğrudan çağrı → `True`; ölçüm yalnız komut aramasıdır, blok çalıştırılmadı. Başlat menüsünden açılan pencere bu
+   turda **ölçülmedi**; kalıcı `PSModulePath` değerinde PowerShell 7 parçası olmadığı bağımsız doğrulamada ölçüldü).
+   Bu bloğun `Sha` fonksiyonu `Get-FileHash` kullanır (paket pinleri, canlı dist pini, `.env` pini, kanıt manifesti); bulunamazsa pin kapıları
+   ölçüm yapamaz ve blok **her modda** ilk pin ölçümünde "DUR - beklenmeyen hata" ile çıkış 90 verir (kaynaktan okundu; blok bu koşulda
+   çalıştırılmadı). Bu 90 bir pin uyuşmazlığı değildir (uyuşmazlıkta mesaj "DOSYA PİNİ uyuşmuyor" olur); ölçümün yapılamadığını gösterir. Blok
+   bu durumu kendisi düzeltmez. Bu yol kullanılacaksa çocuk süreç için modül yolu önce düzeltilmelidir (ölçülen düzeltme: `Start-Process`
+   öncesinde ebeveyn ortamından `PSModulePath` geçici olarak kaldırılır → çocuk kendi varsayılanını kurar → `Get-FileHash=True`).
 2. `-Mode QrTest` → R05 kararındaki public portal adresini yazın (canlı `.env` değeriyle eşleşmeli) → QR'ı okutun; portal sayfası (giriş sayfasına yönlenir) açılırsa **E**; giriş yapmayın.
 3. `-Mode Run`: pencere teyidi, R05 public portal adresi (https://…), EVET, GO ref. Koşucu önce makine ölçümlerini yapar (D7-1…D7-3F); konsolda QR + giriş bilgisi görünür.
 4. Telefonda giriş yapın. Girişten sonra açılan sayfa mesaj sayfası **değildir**: portal **ana sayfası (özet)** açılır (kaynak: giriş sayfası
@@ -235,6 +271,9 @@ pinli 9 dosya değişmedi; paket digest aynıdır.
 - **Canlı ağaç reddi.** Kök canlı yayın ağacının altındaysa test **koşmaz** (çıkış 2). Bu ret, kökte hiçbir dosya yoklanmadan ve hiçbir modül
   yüklenmeden **önce**, yalnız yol karşılaştırmasıyla yapılır (büyük/küçük harf, düz/ters bölü, `..` parçaları normalize edilir). Kök ya da iki modül
   dizini bir bağlantı (junction / symlink) üzerinden canlı ağaca çözülüyorsa test yine koşmaz (gerçek yol okunur; modül yüklenmez).
+  *R02-b düzeltme notu: "kökte hiçbir dosya yoklanmadan önce" ifadesi yalnız ad karşılaştırmasının tanıdığı yol yazımları için geçerlidir
+  (aşağıdaki Negatif (b) satırında ölçülen dört biçim). Uzun yol önekiyle (`\\?\C:\…`) verilen bir canlı kök ad karşılaştırmasından geçer ve
+  ancak dosya yoklamasından **sonraki** gerçek yol denetiminde reddedilir — ayrıntı bu bölümün "Sınırlar" listesinde.*
 - **Canlı ağaç yolu dosyada literal değildir.** Yol owner bloğunun `$Rel` sabitinden okunur (blok yalnız metin olarak okunur, çalıştırılmaz). Blok
   canlı ağaç değiştiğinde ret denetimi kendiliğinden onu izler. `$Rel` okunamazsa ret denetimi yapılamayacağı için test başlamaz (çıkış 2).
 - **Sessiz geri düşüş yok.** Kök yoksa ya da modüllerden biri kökte bulunamazsa test açık bir mesajla ve çıkış 2 ile durur; canlı ağaca düşmez.
@@ -259,7 +298,7 @@ bağlantı değil). Ortam önceki ayna koşumlarıyla aynıdır: tek kullanıml�
 | Negatif (c) — var olmayan kök | çıkış 2, "kütüphane kökü yok … test BAŞLAMADI" |
 | Negatif (d) — var ama `node_modules` içermeyen kök | çıkış 2, "kütüphane kökünde modül bulunamadı …" |
 | Ek (yalnız bu dallar için **ayna**, ana sonuç değildir): kök bağlantı üzerinden "canlı" ağaca çözülüyor · yalnız `node_modules` bağlantı · blok yok | 4/4 beklenen: bağlantılı iki durumda çıkış 2, "bağlantı üzerinden canlı yayın ağacına çözülüyor"; blok yokken çıkış 2, "`$Rel` okunamadı". Bu dallar repodaki konumda canlı ağaca dokunmadan üretilemez; öz-test dosyası bayt bayt kopyalandı (sha eşit), yalnız aynadaki blok kopyasında `$Rel` satırı kanıt dizinindeki **sahte** bir ağaca çevrildi (gerçek canlı ağaç kullanılmadı) |
-| `d7-owner-block-selftest.ps1` (blok ve blok öz-testi baytları değişmedi; belge son baytlarla) | **64/64 PASS** Windows PowerShell 5.1.26100.9549 ve **64/64 PASS** pwsh 7.6.6 (çıkış 0). Blok `8B3B22C0…25AE` ve blok öz-testi `1BB152D8…7B21` koşum öncesi/sonrası aynı |
+| `d7-owner-block-selftest.ps1` (blok ve blok öz-testi baytları değişmedi; belge son baytlarla) | **64/64 PASS** Windows PowerShell 5.1.26100.9549 ve **64/64 PASS** pwsh 7.6.6 (çıkış 0). Blok `8B3B22C0…25AE` ve blok öz-testi `1BB152D8…7B21` koşum öncesi/sonrası aynı. *R02-b notu: "belge son baytlarla" bu turun (kütüphane kökü) belge baytlarını anlatır; R02-b eklerinden (§12.3) ve bağımsız doğrulama düzeltmelerinden sonra blok öz-testi belgenin son hâliyle **yeniden koşuldu** (2026-10-03, tur 5): 64/64 ve 64/64, çıkış 0; blok ve öz-test özetleri aynı — G-2 ve G-6 bu belgeyi okur* |
 | Paket digest | pinli 9 dosyadan bloktan bağımsız betikle yeniden hesaplandı: `7C42FCCD…7BDD` = bloktaki `$ExpPackage` (değişmedi); `d7-selftest.js` pin listesinde değildir |
 
 **Sondanın ölçtüğü ve ölçmediği.** Sonda (`node -r` ile yüklenen, kanıt dizinindeki ölçüm betiği) öz-test sürecinin canlı ağaç ön eki altındaki
@@ -274,6 +313,22 @@ olarak verildi.
 - Yol karşılaştırması UNC biçimli (`\\sunucu\paylaşım\…`) bir kökü canlı ağaçla eşleştirmez; bağlantılar gerçek yol okunarak yakalanır, ağ
   paylaşımı üzerinden verilen bir kök yakalanmaz. Denetim yanlışlıkla canlı ağaçtan yüklemeyi önler; kasıtlı atlatmaya karşı bir güvenlik sınırı
   değildir.
+- **Uzun yol önekli kök (R02-b; kaynaktan okundu + ifade kopyasıyla ölçüldü; öz-testin kendisi bu biçimle koşulmadı).** Kök, uzun yol
+  önekiyle (`\\?\C:\…` biçimi) canlı yayın ağacını gösterecek şekilde verilirse ad karşılaştırması onu **yakalamaz**: karşılaştırma önekli
+  yazımı, sürücü harfiyle başlayan ağaç yoluyla eşleştirmez. Öz-test bu durumda kökün varlığını ve iki modül dizinindeki `package.json`
+  dosyalarını **yoklar** (dosya sistemi çağrıları canlı ağaca gider); ardından gerçek yol denetimi öneksiz yolu okur ve test "bağlantı
+  üzerinden canlı yayın ağacına çözülüyor ya da gerçek yolu okunamadı" mesajıyla, çıkış 2 ile **başlamaz**; modül yüklenmez. Bu ret, bloğun
+  `$Rel` yazımı kendi gerçek yoluyla aynıysa geçerlidir (yolda bağlantı ya da 8.3 kısa ad bileşeni yoksa; **ölçülmedi** — canlı ağaç
+  yoklanmadı). 8.3 kısa adlı yazım da ad karşılaştırmasının tanımadığı aynı sınıftadır. Yani bu biçimde
+  ret, dosya yoklamasından **önce değil sonra** gelir; "Canlı ağaç reddi" maddesindeki cümle ve Negatif (b) satırındaki "fs çağrısı 0" ölçümü
+  yalnız orada sayılan dört biçim için geçerlidir. Önekli kök var olmayan bir yolu ya da modül taşımayan bir alt dizini gösteriyorsa ret,
+  gerçek yol denetimine gelmeden "kütüphane kökü yok" ya da "modül bulunamadı" mesajıyla verilir (yine çıkış 2; modül yüklenmez; yoklama
+  yine yapılmıştır).
+  Ölçüm (2026-10-03): öz-testteki iki ifade (`underLive`, `realOf`) birebir kopyalanıp canlı ağaç yerine geçici bir **vekil** dizinle
+  çalıştırıldı (node v24.18.0): önekli yazımda ad karşılaştırması `false`, varlık yoklaması `true`, gerçek yol öneksiz, gerçek yol
+  karşılaştırması `true`; aygıt önekli yazım (`\\.\C:\…`) aynı sonucu verdi. Bu bir ifade kopyası ölçümüdür, öz-test koşumu değildir; canlı
+  yayın ağacı yoklanmadı. UNC maddesindeki kayıt burada da geçerlidir: denetim yanlışlıkla canlı ağaçtan yüklemeyi önler; kasıtlı atlatmaya
+  karşı bir güvenlik sınırı değildir.
 - Ret yalnız kütüphane kökünü kapsar; öz-test betiğinin kendisinin hangi dizinden çalıştırıldığı denetlenmez.
 - Kök, tek kullanımlık test veritabanının şemasıyla uyumlu bir Prisma istemcisi taşımalıdır (bu turda R27 aday ağacı; test veritabanı R27 şeması).
   Şeması farklı bir kök verilirse senaryolar FAIL ya da ölçülemedi verebilir — bu, kökün yanlış seçildiğini gösterir, ürün bulgusu değildir.
@@ -425,6 +480,38 @@ Koşucunun kanıt metni (pinli, değişmedi) Recover kanıtında da kurtarma ön
 - Owner bloğu **her modda** (Recover dahil) paket/dist/.env pinlerini ister. Run 5/6 ile bittikten sonra canlı dist değişirse (ör. R26'ya geri
   dönüş) Recover bu bloktan **çalışmaz**; kapanış bloktan tamamlanamaz → §10 K-4. Koşucu (`d7-portal-messages-live-run.js`) dist pini ölçmez;
   yalnız DB/API/origin kapılarına bakar — ama GO'suz/bloksuz koşum bu paketle yetkilendirilmez.
+- **Kurulum ile makbuz arasındaki pencere (R02-b; kaynaktan okundu, canlıda ölçülmedi; koşucu öz-testinde bu yol için senaryo yok).** Koşucu
+  Run'da önce kurulumu yapar (`setupI3`; tek veritabanı işlemidir — kendi içinde hata verirse geri alınır), ardından **makbuz atanmadan
+  önce** iki ek dosyayı ayrı ayrı yazar (yabancı tenantta `I3-<runId>-xf`, hedef tenantta `I3-<runId>-s`; §8). Makbuz nesnesi ancak bu iki
+  yazmadan sonra kurulur ve dosyaya yazılır. Bu iki yazmadan biri hata verirse:
+  - makbuz **oluşmaz**: kanıt dizininde `d7-setup-receipt.json` yoktur, kanıtta `receipt` alanı yoktur;
+  - Run'ın koşucu içindeki kendi kapanışı makbuza bağlıdır: makbuz yokken portal kapanışı da personel/dosya kapanışı da **çalıştırılmaz**;
+    kanıta "kapatılacak bir şey yok" yazılır (`portalClose.nothingCreated`, `closure.nothingToClose`), U-CLOSE / P7-MSG-KEPT / P7-D9 satırları
+    üretilmez, U-ISO ÖLÇÜLEMEYEN olur, `recovery.gerekli=false` yazılır ve koşum **çıkış 1** ile biter (5 ya da 6 **değil**; hata özeti
+    `fatal` alanındadır);
+  - oysa kurulum işlemi tamamlanmıştır: iki sentetik tenant, hedef tenanttaki sentetik kullanıcılar (profil ve yetki kayıtları dahil — §8; **aktif** — şema varsayılanı; parola
+    özeti bloğun o koşum için ürettiği rastgele paroladan, blok ve koşucu parolayı kendi kanıt/log dosyalarına yazmaz), müvekkiller, borçlu
+    ve ana dosya (**ACTIVE** — şema varsayılanı; dosya bağlarıyla birlikte) canlı DB'de **kalır**; ikinci yazma hata verdiyse yabancı tenanttaki ek dosya da kalır.
+    Kullanıcılar pasifleştirilmez, sürümleri artırılmaz, dosyalar CLOSED yapılmaz. Portal hesabı ve mesaj satırı bu noktada henüz yoktur
+    (oluşturma isteği gönderilmemiştir);
+  - blok Run bitişinde "Portal erişim kapanışı DOĞRULANAMADI (çıkış 1)" satırını gösterir (kanıtta P7-D9 yoktur), beyan sorularını yine
+    sorar (giriş bilgisi hiç gösterilmediği halde), 5/6 metnini **göstermez**; GO tüketilmiştir (defter satırı koşucudan önce yazılır);
+  - **Recover bu durumda bu bloktan koşulamaz:** Recover makbuz dosyası ister; blok `-ReceiptFile` verilmediğinde ya da dosya yokken çıkış
+    90 ile durur, koşucu makbuzu okuyamazsa çıkış 4 verir. Bu paket makbuzsuz bir kapanış yolu tanımlamaz.
+
+  Çıkış 1 tek başına bu durumu ayırt etmez: makbuz **dosyası yazılamadığında** da çıkış 1 olur, ama o yolda makbuz nesnesi atanmıştır ve
+  Run kendi kapanışını koşar (öz-test Z12: aktif kullanıcı 0). Ayrım kanıttaki `closure` alanından okunur (`nothingToClose` = kapanış hiç
+  çalışmadı). **Aynı kanıt biçimi** (çıkış 1, `receipt` yok, `nothingCreated` / `nothingToClose`) kurulumun **kendisi** hata verip geri alındığında
+  ve ilk izolasyon sayımı hata verdiğinde de oluşur; o iki durumda canlı DB'de kalıntı **yoktur**. `closure` alanı bu üç durumu ayırmaz; ayrım
+  `fatal` metninden ve sentetik tenantın DB'de bulunup bulunmadığından okunur (DB'ye bakma owner/CLIENT kararıdır — K-7). Kalan iki sentetik
+  tenant, kanıt dizinindeki runId'den türeyen **slug** değerleriyle (`ah-<runId>`, `ah-<runId>-x`) tanınır (tenant adları farklıdır). Bu pencerede
+  hata olasılığı ölçülmedi; kurulum işleminin onayı sırasında bağlantı kopması gibi sonucu belirsiz durumlar ayrıca incelenmedi. **Bu
+  durumda yapılacak iş owner/CLIENT kararıdır** (§10 K-7); bu belge bir çözüm tanımlamaz. Koşucudaki sıranın değiştirilmesi pinli dosyaya
+  dokunur (koşucu sha256'sı ve paket digest değişir) ve bu turda **yapılmadı**.
+- **Pencere açma yolu (R02-b).** Ajanın PowerShell 7'den `Start-Process` ile açtığı Windows PowerShell 5.1 penceresinde `Get-FileHash`
+  bulunamaz; blok pin kapılarını ölçemez ve çıkış 90 ile durur (§5 adım 1). Blok bu durumu kendisi tespit etmez ve düzeltmez.
+- **Recover'ın 1 ve 2 çıkış kodları (R02-b).** Bloğun Recover bitiş satırı bu iki kodu açıklamaz; koşucu Recover'da ikisini de
+  döndürebilir. Anlamları §3'teki "Recover'da 1 ve 2" notundadır.
 - Canlı Caddy yapılandırmasının repo şablonuyla aynı olduğu ölçülmez (D-8).
 - Öz-test disposable DB'de satır bırakır (sentetik tenantlar; silme yok) ve `%TEMP%\d7-selftest-*` dizinlerinde giriş bilgisi taşıyan `*.sink`
   dosyaları + kendinden imzalı TLS anahtarı bırakır (yalnız disposable DB'deki artık pasif hesaplara ait; silinmez). Canlı DB'ye dokunulmadı.
@@ -457,6 +544,13 @@ Koşucunun kanıt metni (pinli, değişmedi) Recover kanıtında da kurtarma ön
   yapılacağı — ikinci Recover'a izin verilip verilmeyeceği, hangi kanıtla ve hangi onay biçimiyle, ya da kapanışın başka bir yolla
   tamamlanacağı — owner'ın vereceği karardır; bu paketle ikinci bir Recover başlatılmaz. Teknik durum: blok ve koşucu ikinci bir
   Recover'ı engellemez (§8.1); kural kodda değil, bu maddede ve gösterilen metindedir (öz-test G-6 yalnız metni ölçer).
+- **K-7 Makbuzsuz yarım kurulum (AÇIK owner sorusu; R02-b):** Run, kurulum tamamlandıktan sonra ve makbuz atanmadan önce hata verirse (§9
+  "Kurulum ile makbuz arasındaki pencere"; kaynaktan okundu, canlıda ölçülmedi) sentetik kullanıcılar aktif ve dosya(lar) ACTIVE kalabilir,
+  Run'ın koşucu içindeki kendi kapanışı çalışmaz, koşum çıkış 1 ile biter ve makbuz dosyası oluşmadığı için Recover bu bloktan koşulamaz.
+  Bu durumda ne yapılacağı — kapanışın tamamlanıp tamamlanmayacağı, hangi yolla, hangi kanıtla ve hangi onay biçimiyle — **owner/CLIENT
+  kararıdır**. Bu paket bu durum için bir adım, onay biçimi ya da makbuzsuz kapanış yolu tanımlamaz ve kendiliğinden hiçbir şey yapmaz;
+  DB'ye elle yazma bu paketin kapsamı dışıdır. Çıkış 1 de tek başına Recover yetkisi değildir: Recover yalnız kanıt incelemesinden sonra,
+  AYRI owner onayıyla başlatılır (K-5).
 - Bilgi (R02'de güncellendi): bu maddenin R01 metni "`EXTACC-D5` bloğunun QrTest'i `extacc-qr-test.js` ile `/portal/forgot-password` ister; o
   betik yalnız `/portal/login` kabul eder (çıkış 4)" diyordu. Bu durum **D-5 R03 ile giderildi**: D-5 bloğunun QrTest'i artık kendi
   `d5-qr-test.js` betiğini çağırır (`/portal/forgot-password`; D-5 paket belgesi R03 notu ve §6 pin tablosu). D-7 QrTest'i baştan beri
@@ -571,4 +665,35 @@ aynıdır (`7C42FCCD…7BDD`). Canlı Run kapıları ve pin denetimi blokta duru
   değeri olarak verildi (§6.4 sonda ölçümü).
 - D-4, D-5 ve EXTACC paketlerinin öz-testleri aynı sabit kütüphane kökünü taşır; değiştirilmedi (ayrı iş).
 - Öz-testin bıraktığı disposable DB satırları ve `%TEMP%\d7-selftest-*` dizinleri silinmedi (önceki turlarla aynı davranış; §9).
+- **Preflight / QrTest / Run / Recover canlıda KOŞULMADI.** Bu tur hiçbiri için yetki değildir.
+
+### 12.3 R02-b ek sınırlar (2026-10-03; yalnız belge)
+
+**Kapsam.** Değişen tek dosya bu belgedir. Owner bloğu, koşucu (`d7-portal-messages-live-run.js`), blok öz-testi, koşucu öz-testi, QR betiği,
+sahte API ve bloğun pin listesindeki 9 dosya **değişmedi**; §7'deki sha256 değerlerine dokunulmadı. Bu turda çalışma ağacında yeniden ölçülen:
+paket dizinindeki altı betiğin sha256'sı §7 ile eşit; pin listesindeki 9 dosyanın sha256'sı bloktaki pin satırlarıyla eşit (9/9). Paket digest
+yeniden **hesaplanmadı** (girdisi olan 9 dosya değişmedi). Hiçbir blok, koşucu ya da öz-test **çalıştırılmadı**; canlı ortama, konteynerlere ve
+`.env` dosyasına dokunulmadı. Konu: D-6/D-7 kabul koşumunun "Run / normal kapanış / AYRI Recover" sınırları için yapılan salt okuma
+araştırmasının bu belgede eksik ya da çelişkili bulduğu kalemler; her kalem belgeye yazılmadan önce kaynakta yeniden okunarak doğrulandı.
+
+| Kalem | Kaynakta doğrulama | Belgede |
+|---|---|---|
+| R02B-1 — pencere açma tuzağı bu belgede yoktu (D-6 belgesinin R02 sürümünde — PR #2880; bu dalda ve `main`'de henüz yok — §4 adım 1'de kayıtlı) | doğrulandı: bloğun `Sha` fonksiyonu `Get-FileHash` çağırır (paket pinleri, canlı dist, `.env`, kanıt manifesti); komut bulunamazsa hata akıştaki genel yakalayıcıya düşer (çıkış 90). Yerel ölçüm 2026-10-03: PowerShell 7.6.6'dan `Start-Process` ile açılan Windows PowerShell 5.1.26100 çocuğunda `Get-FileHash=False`, PowerShell 7 içinden çağrı işleciyle doğrudan çağrıda `True`, ebeveyn `PSModulePath` geçici kaldırılınca `True` | §5 adım 1, §9 "Pencere açma yolu" |
+| R02B-2 — kurulum ile makbuz arasındaki pencere belgede yoktu | doğrulandı: koşucu Run'da `setupI3` çağrısından sonra iki `case.create` yazması makbuz nesnesi atanmadan önce gelir; makbuz yokken kapanış dalları `nothingCreated` / `nothingToClose` döner ve `closePortal` / `closeAccess` çağrılmaz; çıkış kuralı bu durumda 1 verir; `setupI3` tek işlemdir; `User.isActive` ve `Case.status` şema varsayılanları aktif / ACTIVE (çalışma ağacındaki şema ve R27 aday commit'indeki şema; aynı); blok Recover'da makbuz dosyası ister (yoksa 90), koşucu makbuzu okuyamazsa 4 | §9 "Kurulum ile makbuz arasındaki pencere", §10 **K-7** (açık owner sorusu) |
+| R02B-3 — Recover'ın 1 ve 2 çıkış kodlarının anlamı belgede yoktu | doğrulandı: koşucu `recoverExitCode` sırası 6 → 5 → 1 → 2 → 3 → 0; `fatal` yalnız hazırlık adımındaki yakalayıcıda atanır; Recover'da FAIL verip 6 ya da 5 üretmeyen tek satır P7-MSG-KEPT'tir; bloğun Recover bitiş satırı 1 ve 2'yi saymaz; koşucu öz-testinde iki Recover senaryosu vardır (Z5 → 3, Z10-r → 0 değil) | §3 "Not (R02-b) — Recover'da 1 ve 2", §9 kısa atıf |
+| R02B-4 — blok ↔ koşucu metin farkları: (a) Recover özetindeki "0 kapanış + HTTP reddi doğrulandı", (b) Run kapanış satırının sabit metin oluşu | belgede **zaten kayıtlı**: (a) §9 "Recover çıkış 0, koşucu mantığında fiilen ulaşılamaz" maddesi ve §12.1 D7-E11 b; (b) §9 "DOĞRULANDI satırının sınırı" maddesi | değişiklik yok |
+| R02B-5 — koşucu öz-testinde uzun yol önekli kök | doğrulandı: `d7-selftest.js` kök denetimi sırası — ad karşılaştırması (`underLive`) → kök varlığı → iki `package.json` yoklaması → gerçek yol (`realOf`) karşılaştırması → modül yükleme; önekli yazım ilk adımdan geçer, dördüncü adımda reddedilir. İfade kopyası ölçümü 2026-10-03 (vekil dizin; node v24.18.0) | §6.4 "Canlı ağaç reddi" düzeltme notu + "Sınırlar" yeni madde |
+
+**Bu turda yapılmayanlar / sınırlar.**
+- Blok metni değiştirilmedi: Recover bitiş satırı 1 ve 2 kodlarını açıklamaz; blok pencere açma tuzağını tespit etmez ve düzeltmez.
+- Koşucu değiştirilmedi (pinli): kurulum → iki ek dosya → makbuz sırası aynıdır; K-7 açık owner sorusudur.
+- Koşucu öz-testi değiştirilmedi: uzun yol önekli kök yine dosya yoklamasından sonra reddedilir; kurulum ile makbuz arasındaki pencere için
+  senaryo yoktur.
+- **Blok öz-testi bu belgeyi okur ve bu turda KOŞULMADI.** G-2 §8'deki on kalemi, G-6 §5, §8 ve §10'da "bu paketle tanımlı değildir"
+  cümlesinin bulunmasını ve dört tekrar-yolu kalıbının bulunmamasını ölçer. §8'e dokunulmadı; §5 ve §10'a eklenen metin bu kalıpları içermez
+  (aynı bölüm sınırları ve aynı desenle yapılan statik denetim; bu bir öz-test koşumu **değildir**). §6.4'teki 64/64 sonucu belgenin bu
+  turdan **önceki** baytlarıyla alınmıştır; belgenin son baytlarıyla blok öz-testi koşumu sıradaki işin parçasıdır.
+- Yerel ölçümler (pencere açma yolu; ifade kopyası) oturum içi ölçümdür: çıktıları repoya ya da kanıt dizinine **yazılmadı**; yalnız komut
+  araması ve geçici vekil dizin kullanıldı, canlı yayın ağacı yoklanmadı.
+- D-6 belgesi ve diğer paketler bu işin kapsamı dışındadır; değiştirilmedi.
 - **Preflight / QrTest / Run / Recover canlıda KOŞULMADI.** Bu tur hiçbiri için yetki değildir.
