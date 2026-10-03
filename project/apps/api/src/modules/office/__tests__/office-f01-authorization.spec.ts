@@ -101,7 +101,18 @@ describe('OFFICE-SC-F01 — fail-closed server projection', () => {
         smtpPass: 'raw-secret',
         smsApiKey: 'raw-key',
         smsApiSecret: 'raw-api-secret',
-        bankAccounts: [{ id: 'bank-1', officeId: OFFICE, iban: 'TR000' }],
+        bankAccounts: [
+          {
+            id: 'bank-1',
+            officeId: OFFICE,
+            bankName: 'Ziraat',
+            branchName: 'Merkez',
+            accountName: 'Büro Hesabı',
+            iban: 'TR330006100519786457841326',
+            isDefault: true,
+            createdAt: new Date('2026-01-01T00:00:00Z'),
+          },
+        ],
         lawyers: [lawyer],
       },
       'AUTHORIZED_S0_S1',
@@ -110,7 +121,15 @@ describe('OFFICE-SC-F01 — fail-closed server projection', () => {
     expect(out.smtpPass).toBeUndefined();
     expect(out.smsApiKey).toBeUndefined();
     expect(out.smsApiSecret).toBeUndefined();
-    expect(out.bankAccounts[0]).toEqual({ officeId: OFFICE });
+    // Owner kararı 2026-10-03 (madde 6, okuma yüzeyi B): hesap kimliği + varsayılan bilgisi + MASKELİ IBAN.
+    // Banka adı / şube / hesap sahibi / tam IBAN bu yüzeyde YOK (yeni geniş rol yetkisi yok).
+    expect(out.bankAccounts[0]).toEqual({
+      officeId: OFFICE,
+      id: 'bank-1',
+      isDefault: true,
+      iban: 'TR33****1326',
+    });
+    expect(JSON.stringify(out.bankAccounts)).not.toContain('TR330006100519786457841326');
     expect(out.lawyers[0].iban).toBeUndefined();
     expect(out.lawyers[0].uyapToken).toBeUndefined();
   });
