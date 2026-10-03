@@ -46,7 +46,8 @@ import {
 } from "lucide-react";
 import { api, DebtorListItemDTO, DebtorsSummaryDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
 import { toActionErrorMessage } from "@/lib/action-error";
-import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
+import { caseStaffEditFields, buildCaseStaffPatch, type CaseStaffEditFields } from "@/lib/case-staff-edit";
+import { buildCaseLawyerPatch, caseAssignmentSaveErrorMessage, type CaseLawyerEditState } from "@/lib/case-lawyer-edit";
 import {
   CASE_STAFF_ROLE_OPTIONS,
   CASE_STAFF_ROLE_GROUP_LABEL,
@@ -739,6 +740,8 @@ export default function CaseDetailPage() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [lawyerDrawerOpen, setLawyerDrawerOpen] = useState(false);
   const [selectedLawyer, setSelectedLawyer] = useState<SelectedLawyer | null>(null);
+  // A2: çekmece açıldığı andaki rol / imza / yetki / bildirim — kayıtta yalnız bundan farklı alanlar gönderilir.
+  const [lawyerEditInitial, setLawyerEditInitial] = useState<CaseLawyerEditState | null>(null);
   const [lawyerDrawerTab, setLawyerDrawerTab] = useState<'permissions' | 'profile'>('permissions');
   const [lawyerPermissions, setLawyerPermissions] = useState({
     canEditCase: false,
@@ -839,6 +842,8 @@ export default function CaseDetailPage() {
     canView?: boolean;
     receiveNotifications?: boolean;
   } | null>(null);
+  // A2: çekmece açıldığı andaki CaseStaff alanları — kayıtta yalnız bundan farklı alanlar gönderilir.
+  const [staffEditInitial, setStaffEditInitial] = useState<CaseStaffEditFields | null>(null);
   const [teamModalTab, setTeamModalTab] = useState<'lawyers' | 'staff'>('lawyers');
   const [addingTeamMember, setAddingTeamMember] = useState(false);
   
@@ -1965,6 +1970,7 @@ export default function CaseDetailPage() {
       permissions: permissions,
       permissionsDefined,
     });
+    setLawyerEditInitial({ caseRole, canSign: le.canSign, permissions });
     setLawyerPermissions(permissions);
     setLawyerProfile({
       phone: le.lawyer.phone || '',
@@ -1982,6 +1988,8 @@ export default function CaseDetailPage() {
 
   // Personel satırına tıklama
   const handleStaffClick = (se: NonNullable<CaseDetail['staff']>[0]) => {
+    const staffEditFields = caseStaffEditFields(se);
+    setStaffEditInitial(staffEditFields);
     setSelectedStaff({
       caseStaffId: se.id,
       staffId: se.staffMember.id,
@@ -1993,30 +2001,35 @@ export default function CaseDetailPage() {
       // PR-ASSIGN-3b: CaseStaff modeli alanları (roleOnCase/canEdit/canApprove/canView/receiveNotifications).
       // Eski canSign + permissions{5} (lawyer drawer'ından sızmış, CaseStaff'ta yok) KALDIRILDI.
       // PR-ASSIGN-3c: `se` tipi artık CaseStaff alanlarını taşıyor → `as any` kaldırıldı (tsc-denetimli).
-      ...caseStaffEditFields(se),
+      ...staffEditFields,
     });
     setStaffDrawerOpen(true);
   };
 
   // Dosya yetkileri kaydet
   const handleSaveCasePermissions = async () => {
-    if (!selectedLawyer || !caseData) return;
+    if (!selectedLawyer || !caseData || !lawyerEditInitial) return;
+    // A2 (owner kararı 2026-10-03, seçenek b): yalnız çekmece açıldığından beri DEĞİŞEN alanlar gönderilir;
+    // değişmeyen yetki alanı gönderilmediği için yönetim yetkisi olmayan kullanıcının rol / bildirim kaydı
+    // sunucu kapısına (K2) takılmaz. Değişiklik yoksa istek atılmaz.
+    // WP-1d-5-6: Hukuki sorumlu avukat kaydı YALNIZ kanonik uçtan (reason zorunlu) değişir; generic
+    // update'te `role: 'RESPONSIBLE'` GÖNDERİLMEZ (kural buildCaseLawyerPatch içinde).
+    const patch = buildCaseLawyerPatch(lawyerEditInitial, {
+      caseRole: selectedLawyer.caseRole,
+      canSign: selectedLawyer.canSign,
+      permissions: lawyerPermissions,
+    });
+    if (Object.keys(patch).length === 0) {
+      setLawyerDrawerOpen(false);
+      return;
+    }
     try {
-      // WP-1d-5-6: Hukuki sorumlu avukat kaydı YALNIZ kanonik uçtan (reason zorunlu) değişir.
-      // Mevcut hukuki sorumlu için generic update'te `role: 'RESPONSIBLE'` GÖNDERİLMEZ — aksi halde
-      // bu yol reason'sız/audit'siz bir RESPONSIBLE yazımı (ve no-op timeline kirliliği) üretirdi.
-      const isCurrentResponsible = selectedLawyer.caseRole === 'RESPONSIBLE';
-      await api.updateCaseLawyer(caseData.id, selectedLawyer.caseLawyerId, {
-        ...(isCurrentResponsible ? {} : { role: selectedLawyer.caseRole }),
-        canSign: selectedLawyer.canSign,
-        casePermissions: lawyerPermissions,
-        receiveNotifications: lawyerPermissions.receivesNotifications,
-      });
+      await api.updateCaseLawyer(caseData.id, selectedLawyer.caseLawyerId, patch);
       await fetchCase();
       setLawyerDrawerOpen(false);
     } catch (error) {
       console.error('Yetki kaydetme hatası:', error);
-      alert('Yetki kaydetme başarısız');
+      alert(caseAssignmentSaveErrorMessage(error, 'Yetki kaydetme başarısız'));
     }
   };
 
@@ -3902,15 +3915,22 @@ export default function CaseDetailPage() {
             {/* Kaydet Butonu */}
             <button
               onClick={async () => {
-                if (!caseData || !selectedStaff) return;
+                if (!caseData || !selectedStaff || !staffEditInitial) return;
+                // PR-ASSIGN-3b: yalnız CaseStaff alanları (canSign/permissions GÖNDERİLMEZ).
+                // A2 (owner kararı 2026-10-03, seçenek b): yalnız çekmece açıldığından beri DEĞİŞEN alanlar;
+                // değişiklik yoksa istek atılmaz.
+                const patch = buildCaseStaffPatch(staffEditInitial, selectedStaff);
+                if (Object.keys(patch).length === 0) {
+                  setStaffDrawerOpen(false);
+                  return;
+                }
                 try {
-                  // PR-ASSIGN-3b: yalnız CaseStaff alanları (canSign/permissions GÖNDERİLMEZ).
-                  await api.patch(`/cases/${caseData.id}/staff/${selectedStaff.caseStaffId}`, buildCaseStaffPatch(selectedStaff));
+                  await api.patch(`/cases/${caseData.id}/staff/${selectedStaff.caseStaffId}`, patch);
                   await fetchCase();
                   setStaffDrawerOpen(false);
                 } catch (error) {
                   console.error('Personel güncelleme hatası:', error);
-                  alert('Personel bilgileri güncellenemedi');
+                  alert(caseAssignmentSaveErrorMessage(error, 'Personel bilgileri güncellenemedi'));
                 }
               }}
               className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm flex items-center justify-center gap-2"
