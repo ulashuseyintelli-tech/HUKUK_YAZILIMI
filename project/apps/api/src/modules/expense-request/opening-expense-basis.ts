@@ -18,6 +18,8 @@
  * tarife verisi sessiz 0 ya da varsayılan üretmez).
  */
 
+import type { OpeningExpenseEmailNotSentStatus } from './opening-expense-email-outcome';
+
 /** Açılış masraf kalemlerinin (harç / gider) tarifesinin para birimi. */
 export const OPENING_EXPENSE_TARIFF_CURRENCY = 'TRY' as const;
 
@@ -68,6 +70,8 @@ export interface OpeningExpenseAutomationStatus {
   /** Dosyadaki iptal edilmemiş masraf talebi sayısı (elle oluşturulanlar dahil). */
   readonly activeExpenseRequestCount: number;
   readonly automaticCalculation: OpeningExpenseBasisDecision;
+  /** Yalnız gönderilmemiş (PENDING) açılış talebinin SON e-posta denemesi başarısızsa gelir; aksi hâlde alan yoktur. */
+  readonly openingRequestEmail?: OpeningExpenseEmailNotSentStatus;
 }
 
 /** Dosya açılış yanıtındaki sonuç: otomatik açılış masraf talebi OLUŞTURULMADI. */
@@ -107,14 +111,25 @@ export function openingExpenseBasisInputOfCase(caseItem: {
   };
 }
 
+/** Tarife oranının uygulanacağı matrahın para birimi durumu (tutar, kur ya da toplam İÇERMEZ). */
+export interface ExpenseBasisCurrencyProfile {
+  /** Matrahı oluşturan tutarların tamamı tarife para biriminde mi? */
+  readonly tariffCurrencyOnly: boolean;
+  readonly caseCurrency: string;
+  /** Dosya para birimi dahil, matrahta görülen para birimleri (sıralı, tekil). */
+  readonly basisCurrencies: readonly string[];
+  /** Nedenin durum kısmı ("dosya para birimi USD" vb.); matrah tarife para birimindeyse boştur. */
+  readonly context: string;
+}
+
 /**
  * <remarks>
  * Çağrıldığı yerler:
- * - ExpenseRequestService.createOpeningExpenseSet() → POST /expense-requests/case/:caseId/opening ve dosya açılışı
- * - ExpenseRequestService.evaluateOpeningExpenseBasisForCase() → CaseService.create(), GET .../opening-status
+ * - evaluateOpeningExpenseBasis() (açılış seti: peşin harç)
+ * - evaluateStageExpenseBasis() (aşama setleri: haciz harcı, satış harcı) — stage-expense-basis.ts
  * </remarks>
  */
-export function evaluateOpeningExpenseBasis(input: OpeningExpenseBasisInput): OpeningExpenseBasisDecision {
+export function describeExpenseBasisCurrencies(input: OpeningExpenseBasisInput): ExpenseBasisCurrencyProfile {
   const tariff = OPENING_EXPENSE_TARIFF_CURRENCY;
   // Şemada para birimi alanları zorunludur (varsayılan TRY); boş değer yalnız savunma amaçlı ele alınır.
   const caseCurrency = normalizeCurrency(input.caseCurrency, tariff);
@@ -122,7 +137,7 @@ export function evaluateOpeningExpenseBasis(input: OpeningExpenseBasisInput): Op
   const basisCurrencies = [...new Set([caseCurrency, ...recordCurrencies])].sort();
 
   if (basisCurrencies.length === 1 && basisCurrencies[0] === tariff) {
-    return { calculable: true };
+    return { tariffCurrencyOnly: true, caseCurrency, basisCurrencies, context: '' };
   }
 
   let context: string;
@@ -132,6 +147,24 @@ export function evaluateOpeningExpenseBasis(input: OpeningExpenseBasisInput): Op
     context = `dosya para birimi (${caseCurrency}) ile anapara kalemlerinin para birimi (${recordCurrencies[0]}) uyuşmuyor`;
   } else {
     context = `anapara kalemleri birden fazla para biriminde (${recordCurrencies.join(', ')})`;
+  }
+
+  return { tariffCurrencyOnly: false, caseCurrency, basisCurrencies, context };
+}
+
+/**
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - ExpenseRequestService.createOpeningExpenseSet() → POST /expense-requests/case/:caseId/opening,
+ *   POST /expense-requests/case/:caseId/stage/OPENING ve dosya açılışı
+ * - ExpenseRequestService.evaluateOpeningExpenseBasisForCase() → CaseService.create(), GET .../opening-status
+ * </remarks>
+ */
+export function evaluateOpeningExpenseBasis(input: OpeningExpenseBasisInput): OpeningExpenseBasisDecision {
+  const { tariffCurrencyOnly, caseCurrency, basisCurrencies, context } = describeExpenseBasisCurrencies(input);
+
+  if (tariffCurrencyOnly) {
+    return { calculable: true };
   }
 
   return {
@@ -145,7 +178,7 @@ export function evaluateOpeningExpenseBasis(input: OpeningExpenseBasisInput): Op
     notCalculableItems: RATE_BASED_OPENING_ITEMS,
     caseCurrency,
     basisCurrencies,
-    tariffCurrency: tariff,
+    tariffCurrency: OPENING_EXPENSE_TARIFF_CURRENCY,
   };
 }
 

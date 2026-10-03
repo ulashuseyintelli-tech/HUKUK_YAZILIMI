@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Res, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Res, Query, HttpException } from '@nestjs/common';
 import { Response } from 'express';
 import { IsString, IsOptional, IsArray, IsObject, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -869,6 +869,11 @@ export class TemplateEngineController {
       res.setHeader('X-From-Cache', result.fromCache ? 'true' : 'false');
       res.send(result.buffer);
     } catch (error: any) {
+      // İstemci hatası (ör. resmî çıktı ret kapısı 400 + neden) 500'e ÇEVRİLMEZ: durum kodu ve gövde olduğu gibi döner
+      if (error instanceof HttpException) {
+        res.status(error.getStatus()).json(error.getResponse());
+        return;
+      }
       console.error('[TemplateEngine] Document generation error:', error);
       res.status(500).json({ message: error.message || 'Doküman oluşturulamadı' });
     }

@@ -6,9 +6,21 @@
 #          Read-Answer (kuyruktan yanıt), Invoke-RepoGit (git grep "bulunmadı"), Assert-LocalConsole (test sürecinin çıktısı
 #          yönlendirildiği için no-op; GERÇEK hali ayrıca K-1'de ölçülür), Clear-OwnerScreen (no-op).
 #          Node GERÇEKTİR: PATH'teki node + geçici betik ya da BAŞLATILAMAYAN dosya.
+# R02    : G-1..G-4 (D-5 R04 kalıbı) — G-1 blok kaynağında (yorumlar dahil) "hiçbir … dosya/log/kanıt … yazılmaz" türü kapsamsız mutlak iddia yok;
+#          G-2 owner'a GÖSTERİLEN canlı veri onayı metnindeki kalemler paket belgesi §8 kayıt listesinde de geçer (10 kalem iki yerde; §8 ek ayrıntı
+#          taşır), metin "dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü değişmez" der, kaynaktan okunan ile ölçüleni ayırır;
+#          G-3 Recover başlarken canlı yazma kümesi ve yetki kuralı GÖSTERİLİR (yeni soru yok; tek node çağrısı; defter değişmez); G-4 Run çıkış 5/6
+#          metni Run'ın kendi kapanışını Recover'dan ayırır, "Recover yetkisi değildir / blok başlatmaz / önce kanıt / AYRI owner onayı" der; çıkış
+#          0'da Recover metni yok; tek node çağrısı.
+# R02 inceleme düzeltmeleri: G-5 kalıntı satırının altındaki not — kanıttaki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir, kapanışın
+#          doğrulandığını göstermez; kapanış durumu Run'da DOĞRULANDI / DOĞRULANAMADI satırında, Recover'da çıkış kodu satırındadır; G-6 Recover
+#          bitiş metni ikinci bir Recover için yol TANIMLAMAZ ("bu paketle tanımlı değildir; owner kararı gerektirir"); blok kaynağında ve paket
+#          belgesi §5/§8/§10'da "tekrar ancak … onayıyla" türü tekrar yolu yok.
+#          Ölçüm owner'a GÖSTERİLEN metinde yapılır (Write-Host yakalaması). Beklenmeyen istisna sessizce kesmez: X-0 FAIL satırı.
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d7-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
+$startedUtc = (Get-Date).ToUniversalTime().ToString('o')
 $here    = $PSScriptRoot
 $wrapper = Join-Path $here 'd7-owner-live-block.ps1'
 
@@ -242,6 +254,114 @@ try {
   $gates = ($funcs | Where-Object { $_.Name -eq 'Invoke-ReadOnlyGates' }).Extent.Text; $qrB = ($funcs | Where-Object { $_.Name -eq 'Invoke-QrTestMode' }).Extent.Text
   $iR05 = $run.IndexOf('Confirm-PortalBaseUrlR05'); $iConf = $run.IndexOf('Confirm-LiveDataProcessing')
   Check 'S-5' 'topoloji literali yok: $ExpBaseUrl https:// literali DEĞİL (.env''den, biçim kapısıyla); kanıt kökü $env:USERPROFILE''a göreli; "C:\Users\" yok; R05 onayı Run''da canlı veri onayından ÖNCE ve QrTest''te' ($src -notmatch "\`\$ExpBaseUrl\s*=\s*'https://" -and $src -notmatch 'C:\\Users\\' -and $src -match '\$EvRoot\s*=\s*Join-Path \$env:USERPROFILE' -and $gates -match '\$script:ExpBaseUrl\s*=\s*\$baseUrl' -and $gates -match 'Assert-PortalBaseUrl \(EnvValue ''PUBLIC_PORTAL_BASE_URL''\)' -and $iR05 -ge 0 -and $iR05 -lt $iConf -and $qrB -match 'Confirm-PortalBaseUrlR05') "R05@$iR05 onay@$iConf"
+
+  # ---- R02 (2026-10-01) OWNER METNİ VE RECOVER YETKİSİ (D-5 R04 G-1..G-4 eşdeğeri). Ölçüm hem kaynakta (yorumlar dahil) hem owner'a
+  #      GÖSTERİLEN metinde (Write-Host yakalaması) yapılır. Eski blok baytlarına karşı tam olarak G-1..G-4 FAIL verdiği ayrıca ölçülür.
+  #      Değişken adı notu: PowerShell adları harf duyarsızdır; $T geçici dizindir — bu bölümde $t KULLANILMAZ.
+  function Get-HostText([scriptblock]$b) { return ((@(& $b 6>&1) | ForEach-Object { [string]$_ }) -join "`n") }
+  $absRe = '(?i)h[iİı]çb[iİı]r[^\r\n]{0,40}(dosya|log|günlü|kanıt|rapor)[^\r\n]{0,40}(yazılmaz|yazmaz|YAZILMAZ|YAZMAZ)'
+  $absPos = @('GO ref ve token''lar hiçbir dosyaya yazılmaz', 'Hiçbir dosyaya/kanıta yazılmaz.', 'parola HİÇBİR log dosyasına YAZILMAZ', 'içerik hiçbir kanıt/rapor/log dosyasına yazılmaz')
+  $absNeg = @('GO sorulmaz, hiçbir şey yazılmaz', 'bu blok ve koşucu kendi kanıt/log dosyalarına YAZMAZ')
+  $absPosMiss = @($absPos | Where-Object { $_ -notmatch $absRe }); $absNegHit = @($absNeg | Where-Object { $_ -match $absRe })
+  $srcLines = @($src0 -split "`n"); $absHits = @($srcLines | Where-Object { $_ -match $absRe })
+  Check 'G-1' 'kaynakta (yorumlar DAHİL) "hiçbir … dosya/log/günlük/kanıt/rapor … yazılmaz" türü KAPSAMSIZ MUTLAK iddia YOK; desen kör değil: 4 bilinen mutlak cümleyi yakalar, kapsamı adlandırılmış "blok ve koşucu … YAZMAZ" ve ilgisiz "hiçbir şey yazılmaz" cümlelerini yakalamaz' ($absHits.Count -eq 0 -and $srcLines.Count -gt 300 -and $absPosMiss.Count -eq 0 -and $absNegHit.Count -eq 0) "taranan satır=$($srcLines.Count) · mutlak iddia=$($absHits.Count)$(if ($absHits.Count) { ' [' + (($absHits | ForEach-Object { $_.Trim().Substring(0, [Math]::Min(70, $_.Trim().Length)) }) -join ' | ') + ']' }) · desen pozitif kaçırılan=$($absPosMiss.Count)/$($absPos.Count) · negatif yanlış=$($absNegHit.Count)/$($absNeg.Count)"
+
+  Set-Answers @('EVET'); $script:g2err = $null
+  $consentTxt = Get-HostText { try { Confirm-LiveDataProcessing } catch { $script:g2err = $_.Exception.Message } }
+  $need2 = @('İKİ yeni sentetik tenant', 'ah-<runId>-x', 'hedef tenantta iki dosya', 'yabancı tenantta bir dosya', 'BİR portal hesabı', 'PortalMessage', 'PortalNotification',
+             'Ürünün kendi yazdıkları (kaynaktan okundu)', 'audit satırları', 'giriş sayacı', 'uygulama günlüğünde', 'bu blokla ÖLÇÜLMEZ', 'dosyalar CLOSED', 'personel pasif',
+             'Tenant yaşam döngüsü DEĞİŞMEZ', 'dosyalar CLOSED + personel pasif + portal pasif', 'SİLİNMEZ', 'U-ISO', 'SAYISI', 'içerik karşılaştırılmaz')
+  $miss2 = @($need2 | Where-Object { $consentTxt -cnotmatch [regex]::Escape($_) })
+  $old2 = @(@('Gerçek müvekkil verisine dokunulmaz', 'YALNIZ yeni bir sentetik tenantta', 'hiçbir adrese', '"saklandı: n satır (sentetik tenant CLOSED)"') | Where-Object { $consentTxt -match [regex]::Escape($_) })
+  $g2W = $consentTxt.IndexOf('İKİ yeni sentetik tenant'); $g2P = $consentTxt.IndexOf('Ürünün kendi yazdıkları'); $g2C = $consentTxt.IndexOf('Kapanış:'); $g2I = $consentTxt.IndexOf('U-ISO')
+  # Belge eşleşmesi: onay metnindeki kalemler paket belgesi §8 ("canlıda oluşacak kayıtlar") içinde de geçer (belge yoksa/okunamazsa FAIL — boş doğrulama yok).
+  $pkgDoc = Join-Path (Split-Path -Parent $here) 'EXTACC-D7-PORTAL-MESSAGES-PACKAGE-R01.md'
+  $both2 = @('ah-<runId>-x', 'PortalMessage', 'PortalNotification', 'audit', 'giriş sayacı', 'uygulama günlüğü', 'dosyalar CLOSED', 'personel pasif', 'yaşam döngüsü', 'U-ISO')
+  $sec8 = ''; $docErr = $null
+  try {
+    $docTxt = [IO.File]::ReadAllText($pkgDoc); $i8 = $docTxt.IndexOf("`n## 8."); $i9 = $docTxt.IndexOf("`n## 9.")
+    if ($i8 -ge 0 -and $i9 -gt $i8) { $sec8 = $docTxt.Substring($i8, $i9 - $i8) } else { $docErr = 'belgede §8 bulunamadı' }
+  } catch { $docErr = 'belge okunamadı' }
+  $missDoc = @($both2 | Where-Object { $sec8 -cnotmatch [regex]::Escape($_) }); $missBlk = @($both2 | Where-Object { $consentTxt -cnotmatch [regex]::Escape($_) })
+  Check 'G-2' 'owner''a GÖSTERİLEN canlı veri onayı metni: koşucunun yazdığı kayıtlar (iki sentetik tenant) → ürünün kendi yazdıkları (kaynaktan okundu; API günlüğü içeriği ÖLÇÜLMEZ) → kapanış ("dosyalar CLOSED + personel pasif + portal pasif"; tenant yaşam döngüsü DEĞİŞMEZ) → diğer tenantlar için ölçülen yalnız U-ISO (SAYI) sırasıyla yazılır; eski "Gerçek müvekkil verisine dokunulmaz" / tek başına "(sentetik tenant CLOSED)" / kapsamsız mutlak iddia YOK; kalemler paket belgesi §8 listesinde de geçer; EVET ile istisna yok' ($null -eq $script:g2err -and $miss2.Count -eq 0 -and $old2.Count -eq 0 -and $consentTxt -notmatch $absRe -and $g2W -ge 0 -and $g2W -lt $g2P -and $g2P -lt $g2C -and $g2C -lt $g2I -and $null -eq $docErr -and $sec8.Length -gt 200 -and $missDoc.Count -eq 0 -and $missBlk.Count -eq 0) "eksik=$($miss2 -join ',') · eski ifade=$($old2 -join ',') · sıra koşucu@$g2W ürün@$g2P kapanış@$g2C U-ISO@$g2I · belge §8 uzunluk=$($sec8.Length) hata=$docErr · belgede eksik=$($missDoc -join ',') · metinde eksik=$($missBlk -join ',') · istisna=$($script:g2err) · satır=$(@($consentTxt -split "`n").Count)"
+
+  $recFn = $funcs | Where-Object { $_.Name -eq 'Invoke-RecoverMode' } | Select-Object -First 1
+  $recAsk = @($recFn.Body.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and (@('Read-Answer', 'Read-Host', 'Read-GoRef', 'Confirm-LiveDataProcessing', 'Confirm-PortalBaseUrlR05') -contains $n.GetCommandName()) }, $true))
+  $recNode = @($recFn.Body.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-Node' }, $true))
+  $recSrc = $recFn.Extent.Text; $iInfo = $recSrc.IndexOf('RECOVER BAŞLIYOR'); $iRecNode = $recSrc.IndexOf('Invoke-Node')
+  $g3Txt = Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 0 $true $rcpt @('S1', 'S2') }; $g3r = $script:capR; $g3Left = $script:Answers.Count
+  $need3 = @('RECOVER BAŞLIYOR', 'AYRI bir CANLI YAZMA', 'AYRI owner onayıyla', 'Recover yetkisi DEĞİLDİR', 'SORMAZ ve ÖLÇMEZ', 'kodla ZORLANMAZ', 'koşucu kaynağından okundu; canlıda koşulmadı',
+             'GEÇİCİ olarak yeniden aktifleştirilir', 'parola özeti yeniden yazılır', 'admin/disable-user', 'kapatma audit satırı', 'YALNIZ ölçüm için yeni rastgele parola özeti',
+             'closeAccess', 'açık dosyalar CLOSED', 'personel AKTİF kalmış', 'Tenant kaydı değiştirilmez', 'SİLİNMEZ', 'recover-* kanıt dizini', 'GO defteri değişmez', 'U-ISO ölçmez',
+             'yeni bir Recover için yetki DEĞİLDİR')
+  $miss3 = @($need3 | Where-Object { $g3Txt -cnotmatch [regex]::Escape($_) })
+  $g3B = $g3Txt.IndexOf('RECOVER BAŞLIYOR'); $g3E = $g3Txt.IndexOf('KURTARMA BİTTİ')
+  Check 'G-3' 'Recover başlarken owner''a GÖSTERİLEN bilgi metni: Run''ın kendi kapanışından AYRI bir canlı yazma işlemi; AYRI owner onayı (blok SORMAZ/ÖLÇMEZ); "BİR KEZ" kodla ZORLANMAZ; canlı yazma kümesi (sentetik personelin geçici yeniden aktifleştirilmesi + parola özeti, yetkili uçla kapatma + audit satırı, pasif portal hesabına ölçüm parolası özeti, personel/dosya kapanışı, kanıt dizini) — metin node çağrısından ÖNCE; yeni soru YOK (AST: soru komutu 0; kuyruktaki yanıt tüketilmedi); tek node çağrısı (mod recover); GO defteri değişmez; bitiş metni çıkış kodunun yeni bir Recover yetkisi olmadığını söyler' ($g3r.out -eq 0 -and $null -eq $g3r.threw -and $g3r.nodeCalls -eq 1 -and $g3r.last.mode -eq 'recover' -and $g3r.ledgerDelta -eq 0 -and $g3Left -eq 2 -and $recAsk.Count -eq 0 -and $recNode.Count -eq 1 -and $miss3.Count -eq 0 -and $iInfo -ge 0 -and $iInfo -lt $iRecNode -and $g3B -ge 0 -and $g3B -lt $g3E -and $g3Txt -notmatch $absRe) "rc=$($g3r.out) · node=$($g3r.nodeCalls) mod=$($g3r.last.mode) · defter+=$($g3r.ledgerDelta) · tüketilmeyen yanıt=$g3Left/2 · soru komutu (AST)=$($recAsk.Count) · Invoke-Node (AST)=$($recNode.Count) · eksik=$($miss3 -join ',') · bilgi@$iInfo node@$iRecNode · gösterim başlangıç@$g3B bitiş@$g3E · istisna=$($g3r.threw)"
+
+  $script:goN = 90; $g4 = [ordered]@{}
+  foreach ($c in 5, 6, 0) { $g4Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe $c $true }; $g4["$c"] = [pscustomobject]@{ txt = $g4Txt; r = $script:capR } }
+  $need4 = @('Recover YETKİSİ DEĞİLDİR', 'Recover BAŞLATMAZ', 'kendi kapanış adımlarını koşucu İÇİNDE', 'kanıtı inceleyin', 'ÖNERİDİR', 'AYRI owner onayıyla', 'BİR KEZ', 'CANLI YAZMA', 'kodla ZORLANMAZ')
+  $bad4 = @()
+  foreach ($k in '5', '6') { $x = $g4[$k]; $miss4 = @($need4 | Where-Object { $x.txt -cnotmatch [regex]::Escape($_) })
+    if (-not ($x.r.out -eq [int]$k -and $x.r.nodeCalls -eq 1 -and $x.r.last.mode -eq 'run' -and $miss4.Count -eq 0 -and $x.txt -notmatch 'KAPANIŞ DOĞRULANMADI: -Mode Recover')) { $bad4 += "çıkış ${k}: rc=$($x.r.out) node=$($x.r.nodeCalls) mod=$($x.r.last.mode) eksik=$($miss4 -join ',')" } }
+  $zeroRec = ($g4['0'].r.out -eq 0 -and $g4['0'].r.nodeCalls -eq 1 -and $g4['0'].txt.Length -gt 200 -and $g4['0'].txt -notmatch 'Recover')
+  $runFn = $funcs | Where-Object { $_.Name -eq 'Invoke-RunMode' } | Select-Object -First 1
+  $runNode = @($runFn.Body.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-Node' }, $true))
+  $recCalls = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-RecoverMode' }, $true))
+  $recInFn = @($recCalls | Where-Object { $o = $_.Extent.StartOffset; @($funcs | Where-Object { $o -ge $_.Extent.StartOffset -and $o -lt $_.Extent.EndOffset }).Count -gt 0 })
+  Check 'G-4' 'Recover yetkisi: Run çıkış 5/6''da owner''a GÖSTERİLEN metin Run''ın kendi kapanış adımlarını (koşucu içinde) Recover''dan AYIRIR, çıkış kodunun Recover YETKİSİ olmadığını ve bloğun Recover BAŞLATMADIĞINI söyler, önce kanıt incelemesini ister, Recover''ı yalnız AYRI owner onayıyla, BİR KEZ ÖNERİR ve Recover''ın ayrı bir CANLI YAZMA olduğunu / "BİR KEZ"in kodla zorlanmadığını yazar; blok tek node çağrısı yapar (mod run; recover çağrısı 0); çıkış 0''da Recover metni yok; AST: Invoke-RunMode içinde tek Invoke-Node, Invoke-RecoverMode yalnız akıştaki mod dalında (fonksiyon içinden çağrı 0)' ($bad4.Count -eq 0 -and $zeroRec -and $runNode.Count -eq 1 -and $recCalls.Count -eq 1 -and $recInFn.Count -eq 0) "hata=$($bad4 -join ' | ') · çıkış 0 Recover metni yok=$zeroRec (metin $($g4['0'].txt.Length) karakter) · Run içi Invoke-Node (AST)=$($runNode.Count) · Invoke-RecoverMode çağrısı (AST)=$($recCalls.Count), fonksiyon içinde=$($recInFn.Count)"
+
+  # ---- R02 inceleme düzeltmeleri (2026-10-01): G-5 kalıntı satırının altındaki not · G-6 ikinci bir Recover için yol TANIMLANMAZ.
+  #      Ölçüm owner'a GÖSTERİLEN metinde yapılır; satır kaydırması ölçümü etkilemesin diye boşluklar tek boşluğa indirgenir.
+  function Get-Flat([string]$s) { return ($s -replace '\s+', ' ') }
+  function Get-Tail([string]$s, [string]$from) { $i = $s.IndexOf($from); if ($i -lt 0) { return '' }; return $s.Substring($i) }
+  $oldEq5 = '"sentetik tenant CLOSED" ='
+  $common5 = @('"sentetik tenant CLOSED" koşucunun SABİT ifadesidir', 'kapanışın doğrulandığını GÖSTERMEZ', 'Anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif', 'tenant yaşam döngüsü DEĞİŞMEZ')
+  $runRef5 = 'Kapanış durumu yukarıdaki "Portal erişim kapanışı ... DOĞRULANDI / DOĞRULANAMADI" satırındadır'
+  $recRef5 = @('Kapanış durumu yukarıdaki çıkış kodu satırındadır', 'ayrı bir DOĞRULANDI / DOĞRULANAMADI satırı gösterilmez')
+  # Run, kapanış DOĞRULANMADI (P7-D9 FAIL, çıkış 6): koşucunun sabit ifadesi kanıt satırında YİNE geçer — not bunun durum iddiası olmadığını söylemeli.
+  $env:EXSTUB_D9 = 'FAIL'; $g5fAll = Get-Flat (Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe 6 $true }); $g5fR = $script:capR; $env:EXSTUB_D9 = 'PASS'
+  $g5pAll = Get-Flat $g4['0'].txt   # Run, kapanış doğrulandı (çıkış 0) — G-4'te yakalanan metin
+  $g5rAll = Get-Flat (Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe 6 $true $rcpt @() }); $g5rR = $script:capR
+  $bad5 = @()
+  foreach ($x in @(@('Run çıkış 6 (kapanış doğrulanmadı)', $g5fAll, 'Portal erişim kapanışı DOĞRULANAMADI', 'EXTACC D-7 KOŞUM BİTTİ', (@($common5) + $runRef5)),
+                   @('Run çıkış 0 (kapanış doğrulandı)', $g5pAll, 'Portal erişim kapanışı koşucu tarafından DOĞRULANDI', 'EXTACC D-7 KOŞUM BİTTİ', (@($common5) + $runRef5)),
+                   @('Recover çıkış 6', $g5rAll, 'EXTACC D-7 KURTARMA BİTTİ', 'EXTACC D-7 KURTARMA BİTTİ', (@($common5) + $recRef5)))) {
+    $tail5 = Get-Tail $x[1] $x[3]; $miss5 = @($x[4] | Where-Object { $tail5 -cnotmatch [regex]::Escape($_) })
+    $iSt5 = $x[1].IndexOf($x[2]); $iKept5 = $x[1].IndexOf('Mesaj kalıntısı: saklandı'); $iNote5 = $x[1].IndexOf('koşucunun SABİT ifadesidir')
+    if (-not ($tail5.Length -gt 100 -and $miss5.Count -eq 0 -and $tail5 -cmatch 'sentetik tenant CLOSED; portal pasif\)' -and $tail5 -cnotmatch [regex]::Escape($oldEq5) -and $iSt5 -ge 0 -and $iSt5 -lt $iKept5 -and $iKept5 -lt $iNote5)) {
+      $bad5 += "$($x[0]): eksik=$($miss5 -join ',') · eski eşitlik=$($tail5 -cmatch [regex]::Escape($oldEq5)) · durum satırı@$iSt5 kalıntı@$iKept5 not@$iNote5 · metin=$($tail5.Length)"
+    }
+  }
+  $recNoLine5 = ($g5rAll -cnotmatch 'Portal erişim kapanışı')   # Recover'da "Portal erişim kapanışı ..." satırı gösterilmez; not da ona atıf yapmaz
+  Check 'G-5' 'kalıntı satırının altındaki not (owner''a GÖSTERİLEN metin; Run kapanış doğrulanmadı çıkış 6 · Run çıkış 0 · Recover çıkış 6): kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir ve kapanışın doğrulandığını GÖSTERMEZ; kapanış durumu Run''da yukarıdaki "Portal erişim kapanışı … DOĞRULANDI / DOĞRULANAMADI" satırındadır (satır kalıntı satırından ÖNCE gösterilir), Recover''da çıkış kodu satırındadır (Recover''da öyle bir satır gösterilmez); anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ; eski durum iddiası gibi okunan eşitlik ("sentetik tenant CLOSED" = …) bitiş metninde YOK; Run kapanış doğrulanmadığında da sabit ifade kanıt satırında geçer' ($bad5.Count -eq 0 -and $recNoLine5 -and $g5fR.out -eq 6 -and $g5fR.nodeCalls -eq 1 -and $g5rR.out -eq 6 -and $g5rR.nodeCalls -eq 1 -and $g5rR.last.mode -eq 'recover') "hata=$($bad5 -join ' | ') · Run(6) rc=$($g5fR.out) node=$($g5fR.nodeCalls) · Recover(6) rc=$($g5rR.out) node=$($g5rR.nodeCalls) mod=$($g5rR.last.mode) · Recover metninde 'Portal erişim kapanışı' satırı yok=$recNoLine5 · ölçülen metin (karakter) Run6/Run0/Recover=$($g5fAll.Length)/$($g5pAll.Length)/$($g5rAll.Length)"
+
+  $rptRe = '[Tt]ekrar ancak|[Tt]ekrar edilebilir|[Tt]ekrar gerekiyorsa|[Yy]eni(den)? (AYRI )?(owner )?onay(la|ıyla)[^\r\n]{0,40}[Tt]ekrar'
+  $rptPos = @('sonuç CLIENT''a bildirilir, tekrar ancak AYRI owner onayıyla.', 'yeni onayla tekrar edilebilir', 'tekrar gerekiyorsa yeni kanıt incelemesi ve yeni AYRI owner onayı gerekir', 'Recover yeni owner onayıyla bir kez daha tekrar koşulur')
+  $rptNeg = @('Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte', 'Kabulü TEKRARLAMAYIN.', 'otomatik tekrar · otomatik Recover', 'İkinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir.', 'kabul tekrarlanmaz')
+  $rptPosMiss = @($rptPos | Where-Object { $_ -cnotmatch $rptRe }); $rptNegHit = @($rptNeg | Where-Object { $_ -cmatch $rptRe })
+  $need6 = @('Bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR', 'Recover BİR KEZ koşulur (kodla zorlanmaz)', 'sonuç CLIENT''a bildirilir.', 'İkinci bir Recover bu paketle TANIMLI DEĞİLDİR', 'owner kararı gerektirir')
+  $bad6 = @()
+  foreach ($c in 0, 3, 5, 6) {
+    $g6All = Get-Flat (Get-HostText { $script:capR = Invoke-Mode 'Recover' $real.Exe $c $true $rcpt @() }); $g6R = $script:capR
+    $tail6 = Get-Tail $g6All 'EXTACC D-7 KURTARMA BİTTİ'; $miss6 = @($need6 | Where-Object { $tail6 -cnotmatch [regex]::Escape($_) })
+    if (-not ($g6R.out -eq $c -and $g6R.nodeCalls -eq 1 -and $g6R.last.mode -eq 'recover' -and $tail6.Length -gt 100 -and $miss6.Count -eq 0 -and $g6All -cnotmatch $rptRe)) { $bad6 += "Recover çıkış ${c}: rc=$($g6R.out) node=$($g6R.nodeCalls) eksik=$($miss6 -join ',') · tekrar yolu=$($g6All -cmatch $rptRe)" }
+  }
+  foreach ($k in '5', '6') { $run6 = Get-Flat $g4[$k].txt; if (-not ($run6 -cmatch 'ikinci bir Recover bu paketle TANIMLI DEĞİLDİR \(owner kararı gerektirir\)' -and $run6 -cnotmatch $rptRe)) { $bad6 += "Run çıkış ${k}: 'TANIMLI DEĞİLDİR' yok ya da tekrar yolu var" } }
+  $rptSrc = @($srcLines | Where-Object { $_ -cmatch $rptRe })
+  # Belge: §5 (owner adımları), §8 (+§8.1) ve §10 ikinci Recover'ı "tanımlı değildir" diye yazar ve bir tekrar yolu tanımlamaz (belge okunamazsa FAIL — boş doğrulama yok).
+  $docSec6 = [ordered]@{}; $docBad6 = @()
+  foreach ($p6 in @(@('§5', "`n## 5.", "`n## 6."), @('§8', "`n## 8.", "`n## 9."), @('§10', "`n## 10.", "`n## 11."))) {
+    $a6 = -1; $b6 = -1; if ($null -eq $docErr -and $docTxt) { $a6 = $docTxt.IndexOf($p6[1]); $b6 = $docTxt.IndexOf($p6[2]) }
+    $sec6 = if ($a6 -ge 0 -and $b6 -gt $a6) { Get-Flat $docTxt.Substring($a6, $b6 - $a6) } else { '' }
+    $docSec6[$p6[0]] = $sec6.Length
+    if (-not ($sec6.Length -gt 200 -and $sec6 -cmatch 'bu paketle tanımlı değildir' -and $sec6 -cnotmatch $rptRe)) { $docBad6 += "$($p6[0]) (uzunluk=$($sec6.Length) · 'tanımlı değildir'=$($sec6 -cmatch 'bu paketle tanımlı değildir') · tekrar yolu=$($sec6 -cmatch $rptRe))" }
+  }
+  Check 'G-6' 'ikinci Recover için yol TANIMLANMAZ: Recover bitişinde owner''a GÖSTERİLEN metin (stub çıkış 0/3/5/6) "bu çıkış kodu yeni bir Recover için yetki DEĞİLDİR; Recover BİR KEZ koşulur (kodla zorlanmaz); sonuç CLIENT''a bildirilir" ve "ikinci bir Recover bu paketle TANIMLI DEĞİLDİR; owner kararı gerektirir" der; Run çıkış 5/6 metni de aynı kuralı taşır; gösterilen metinlerde ve blok kaynağında (yorumlar DAHİL) "tekrar ancak … onayıyla / yeni onayla tekrar edilebilir" türü bir tekrar yolu YOK; desen kör değil (4 bilinen tekrar-yolu cümlesini yakalar; "TEKRARLANMAZ / TEKRARLAMAYIN / otomatik tekrar / TANIMLI DEĞİLDİR" cümlelerini yakalamaz); paket belgesi §5, §8 ve §10 "bu paketle tanımlı değildir" der ve tekrar yolu tanımlamaz; her Recover tek node çağrısı (mod recover)' ($bad6.Count -eq 0 -and $rptSrc.Count -eq 0 -and $srcLines.Count -gt 300 -and $rptPosMiss.Count -eq 0 -and $rptNegHit.Count -eq 0 -and $null -eq $docErr -and $docBad6.Count -eq 0) "hata=$($bad6 -join ' | ') · kaynakta tekrar yolu=$($rptSrc.Count) (taranan satır=$($srcLines.Count)) · desen pozitif kaçırılan=$($rptPosMiss.Count)/$($rptPos.Count) · negatif yanlış=$($rptNegHit.Count)/$($rptNeg.Count) · belge hata=$docErr · belge bölüm uzunlukları §5/§8/§10=$($docSec6['§5'])/$($docSec6['§8'])/$($docSec6['§10']) · belgede uyumsuz=$($docBad6 -join ' | ')"
+}
+catch {
+  # Beklenmeyen istisna öz-testi SESSİZCE kesmez: FAIL satırı olarak kaydedilir (kalan ölçütler koşulmadı → sonuç PASS olamaz).
+  Check 'X-0' 'öz-test beklenmeyen istisna ile yarıda kesildi — kalan ölçütler KOŞULMADI' $false ("istisna=" + $_.Exception.Message + ' · satır=' + $_.InvocationInfo.ScriptLineNumber)
 }
 finally {
   foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
@@ -249,8 +369,13 @@ finally {
 }
 
 $rows | Format-Table -AutoSize -Wrap | Out-String -Width 240 | Write-Host
+# Gözlem dökümü (R02): tablo genişliği gözlem sütununu düşürebildiği için ölçülen değerler ayrıca yazılır (kullanıcı profili yolu maskelenir).
+Write-Host 'GÖZLEMLER (her ölçütün ölçülen değeri):'
+foreach ($r in $rows) { Write-Host ("  {0,-4} {1,-10} {2}" -f $r.sonuc, $r.id, (([string]$r.gozlem) -replace '([A-Za-z]:\\Users\\)[^\\]+', '$1<kullanıcı>')) }
+Write-Host ''
 $fail = @($rows | Where-Object { $_.sonuc -eq 'FAIL' }).Count
 Write-Host ("EXTACC D-7 OWNER BLOĞU ÖZ-TESTİ [{0}]: PASS {1} / {2}" -f $ps, ($rows.Count - $fail), $rows.Count)
-Write-Host "  geçici dizin: $T  (canlı kapılar, canlı .env, canlı DB ve GO KULLANILMADI)"
+Write-Host ("  test edilen blok: d7-owner-live-block.ps1 sha256={0} · koşum başlangıcı (UTC)={1}" -f (Sha $wrapper), $startedUtc)   # log tek başına hangi sürümün koşulduğunu söyler
+Write-Host ("  geçici dizin: {0}  (canlı kapılar, canlı .env, canlı DB ve GO KULLANILMADI)" -f ($T -replace '^([A-Za-z]:\\Users\\)[^\\]+', '$1<kullanıcı>'))
 if ($fail -gt 0) { exit 1 }
 exit 0

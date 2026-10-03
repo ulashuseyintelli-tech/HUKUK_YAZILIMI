@@ -23,7 +23,10 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
     const fragmentParams = new URLSearchParams(rawHash);
-    setToken(fragmentParams.get("token") ?? "");
+    // F1: geliştirme ortamında React StrictMode bu etkiyi iki kez çalıştırır; ikinci çalışma aşağıda temizlenmiş adresi
+    // okur. Boş okuma önceki geçerli token'ı EZMEZ. Üretimde etki bir kez çalışır; token tüketimi ve sıfırlama aynıdır.
+    const fragmentToken = fragmentParams.get("token");
+    if (fragmentToken) setToken(fragmentToken);
     setTokenChecked(true);
     if (window.location.hash) {
       // Ham token adres çubuğunda/tarayıcı geçmişinde kalmasın.
@@ -99,7 +102,10 @@ export default function ResetPasswordPage() {
               </p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            // Yerel (React dışı) gönderim parolayı ADRESE yazmasın: yöntem POST. Gönder düğmesi token
+            // okunana dek zaten kapalıdır (token yalnız hidrasyondan sonra okunur) → tıklama / Enter ile
+            // hidrasyon öncesi gönderim yok; POST, `form.submit()` gibi programatik gönderimi de kapsar.
+            <form onSubmit={handleSubmit} method="post" className="space-y-4">
               <div>
                 <label htmlFor="password" className="block text-sm font-medium mb-2">
                   Yeni Parola

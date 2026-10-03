@@ -94,6 +94,7 @@ const mockPrismaService: any = {
     findFirst: jest.fn(),
   },
   $transaction: jest.fn((fn: any) => fn(mockPrismaService)),
+  $executeRaw: jest.fn().mockResolvedValue(1), // pg_advisory_xact_lock (açılış seti eşzamanlılık kilidi)
 };
 
 const mockCaseBalanceService = {
@@ -461,6 +462,153 @@ describe('ExpenseRequestService - Property Tests', () => {
     });
   });
 
+  describe('Açılış masraf seti — eşzamanlılık kilidi', () => {
+    it('yazma dosya bazında kilitlenir; "zaten oluşturulmuş" kuralı kilit altında yeniden denetlenir, sonra yazılır', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(null);
+      mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'locked-exp-1' });
+
+      await service.createOpeningExpenseSet('case-1', 'tenant-1', 'user-1');
+
+      // Kilit: işlem (transaction) istemcisi üzerinde, dosyaya özgü anahtarla, tam bir kez
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+      const [strings, lockKey] = mockPrismaService.$executeRaw.mock.calls[0];
+      expect(strings.join('?')).toBe('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))');
+      expect(lockKey).toBe('expense-request-opening-set:tenant-1:case-1');
+      // Sıra: işlem dışı ön denetim → kilit → kilit altında yeniden denetim → yazma
+      const where = { caseId: 'case-1', tenantId: 'tenant-1', stageCode: 'OPENING', status: { not: 'CANCELLED' } };
+      expect(mockPrismaService.expenseRequest.findFirst.mock.calls.map(([args]: [any]) => args.where)).toEqual([where, where]);
+      const [preCheckOrder, reCheckOrder] = mockPrismaService.expenseRequest.findFirst.mock.invocationCallOrder;
+      const lockOrder = mockPrismaService.$executeRaw.mock.invocationCallOrder[0];
+      const createOrder = mockPrismaService.expenseRequest.create.mock.invocationCallOrder[0];
+      expect(preCheckOrder).toBeLessThan(lockOrder);
+      expect(lockOrder).toBeLessThan(reCheckOrder);
+      expect(reCheckOrder).toBeLessThan(createOrder);
+    });
+
+    it('kilit beklenirken başka istek talebi yazmışsa: "zaten oluşturulmuş" — ikinci talep, kalem ve günlük kaydı yazılmaz', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'exp-concurrent' });
+
+      await expect(service.createOpeningExpenseSet('case-1', 'tenant-1', 'user-1')).rejects.toThrow(
+        'Bu takip için açılış masrafları zaten oluşturulmuş',
+      );
+
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.expenseRequest.findFirst).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.expenseRequest.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseAuditLog.create).not.toHaveBeenCalled();
+      expect(mockJournalWriter.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Aşama masraf seti — oranlı kalem matrahı ve açılış yönlendirmesi', () => {
+    const usdCase = { ...mockCase, currency: 'USD', claimItems: [{ itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'USD' }] };
+    const mixedCase = {
+      ...mockCase,
+      currency: 'USD',
+      claimItems: [
+        { itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'USD' },
+        { itemType: 'PRINCIPAL', amount: new Decimal(25000), currency: 'TRY' },
+      ],
+    };
+    const legacyCase = { ...mockCase, currency: 'USD', claimItems: [{ itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'TRY' }] };
+
+    const expectNothingWritten = () => {
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseRequest.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseRequestItem.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseAuditLog.create).not.toHaveBeenCalled();
+      expect(mockJournalWriter.write).not.toHaveBeenCalled();
+    };
+
+    it.each([
+      ['SEIZURE', 'dosya USD', usdCase, ['USD'], { itemCode: 'HACIZ_HARCI', label: 'Haciz Harcı' }],
+      ['SALE', 'dosya USD', usdCase, ['USD'], { itemCode: 'SATIS_HARCI', label: 'Satış Harcı' }],
+      ['SEIZURE', 'dosya USD + TRY anapara kalemi', mixedCase, ['TRY', 'USD'], { itemCode: 'HACIZ_HARCI', label: 'Haciz Harcı' }],
+      ['SALE', 'dosya USD, anapara kalemi TRY damgalı', legacyCase, ['TRY', 'USD'], { itemCode: 'SATIS_HARCI', label: 'Satış Harcı' }],
+    ])('%s seti, %s: oranlı kalemin matrahı TL değil → hiçbir kayıt yazmadan gerekçesiyle reddeder', async (stageCode, _title, caseRow, basisCurrencies, item) => {
+      mockPrismaService.case.findFirst.mockResolvedValue(caseRow);
+
+      const error = await service.createStageExpenseSet('case-1', stageCode, 'tenant-1', 'user-1').catch((caught) => caught);
+
+      expect(error?.getStatus?.()).toBe(409);
+      expect(error.getResponse()).toEqual({
+        code: 'STAGE_EXPENSE_FX_BASIS_POLICY_MISSING',
+        message: expect.stringContaining('talebi otomatik oluşturulmadı'),
+        stageCode,
+        requiredInfo: [`${item.label} tutarı (TL)`],
+        notCalculableItems: [item],
+        caseCurrency: 'USD',
+        basisCurrencies,
+        tariffCurrency: 'TRY',
+      });
+      expectNothingWritten();
+    });
+
+    it('TL dosya: haciz seti bugünkü tutarlarla yazılır (davranış değişmez)', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue({ ...mockCase, currency: 'TRY', claimItems: [{ itemType: 'PRINCIPAL', amount: new Decimal(100000), currency: 'TRY' }] });
+      mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'stage-try-1', stageCode: 'SEIZURE', totalAmount: new Decimal(790) });
+
+      const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1');
+
+      expect(result.id).toBe('stage-try-1');
+      expect(mockPrismaService.expenseRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ stageCode: 'SEIZURE', packageCode: 'SEIZURE', gateType: 'BLOCKING', status: 'PENDING', totalSuggested: 790, totalAmount: 790 }),
+        }),
+      );
+      expect(mockPrismaService.expenseRequestItem.create.mock.calls.map(([args]: [any]) => [args.data.itemCode, args.data.finalAmount])).toEqual([
+        ['HACIZ_HARCI', 440],
+        ['HACIZ_YOLLUK', 350],
+      ]);
+      expectLastRecordedJournalDraft('stage-try-1', '790');
+    });
+
+    it('yeniden tebligat seti dövizli dosyada da yazılır: oranlı kalemi yoktur (sabit TL gider)', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(usdCase);
+      mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'stage-usd-renotif', stageCode: 'RE_NOTIFICATION', totalAmount: new Decimal(252) });
+
+      const result = await service.createStageExpenseSet('case-1', 'RE_NOTIFICATION', 'tenant-1', 'user-1');
+
+      expect(result.id).toBe('stage-usd-renotif');
+      expect(mockPrismaService.expenseRequestItem.create.mock.calls.map(([args]: [any]) => [args.data.itemCode, args.data.finalAmount])).toEqual([
+        ['YENIDEN_TEBLIGAT', 252],
+      ]);
+      expectLastRecordedJournalDraft('stage-usd-renotif', '252');
+    });
+
+    it('OPENING aşama kodu açılış işlevine devredilir: aşama hesaplayıcısıyla (kalemleri 0) yazılmaz', async () => {
+      const opening = jest.spyOn(service, 'createOpeningExpenseSet').mockResolvedValue({ id: 'opening-via-stage' } as never);
+
+      const result = await service.createStageExpenseSet('case-1', 'OPENING', 'tenant-1', 'user-1');
+
+      expect(result).toEqual({ id: 'opening-via-stage' });
+      expect(opening).toHaveBeenCalledTimes(1);
+      expect(opening).toHaveBeenCalledWith('case-1', 'tenant-1', 'user-1');
+      // Aşama yolunun kendi okuma / yazma adımları hiç çalışmaz
+      expect(mockPrismaService.case.findFirst).not.toHaveBeenCalled();
+      expectNothingWritten();
+    });
+
+    it('OPENING aşama kodu açılış kurallarını devralır: talep varsa "zaten oluşturulmuş", dövizli dosyada peşin harç gerekçesi', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(mockExpenseRequest);
+      await expect(service.createStageExpenseSet('case-1', 'OPENING', 'tenant-1', 'user-1')).rejects.toThrow(
+        'Bu takip için açılış masrafları zaten oluşturulmuş',
+      );
+
+      mockPrismaService.case.findFirst.mockResolvedValue(usdCase);
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(null);
+      const error = await service.createStageExpenseSet('case-1', 'OPENING', 'tenant-1', 'user-1').catch((caught) => caught);
+      expect(error?.getStatus?.()).toBe(409);
+      expect(error.getResponse()).toMatchObject({ code: 'OPENING_EXPENSE_FX_BASIS_POLICY_MISSING', notCalculableItems: [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç' }] });
+
+      expectNothingWritten();
+    });
+  });
+
   describe('Açılış masraf setinin otomatik hesap durumu (salt okuma)', () => {
     it('evaluateOpeningExpenseBasisForCase: dosya tenant altında aranır; bulunamazsa NotFound', async () => {
       mockPrismaService.case.findFirst.mockResolvedValue(null);
@@ -767,6 +915,8 @@ describe('ExpenseGateService - Property Tests', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     delete process.env.EXPENSE_REMAINING_GATE_ENABLED;
+    // Kapı büro kapsamlıdır: dosya çağıranın bürosunda bulunur (büro sınırı testleri: __tests__/expense-gate-tenant-scope.spec.ts)
+    mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -802,7 +952,7 @@ describe('ExpenseGateService - Property Tests', () => {
         },
       ]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(true);
       expect(result.blockingExpenses).toHaveLength(1);
@@ -821,7 +971,7 @@ describe('ExpenseGateService - Property Tests', () => {
         },
       ]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(true);
       expect(result.totalPending).toBe(500);
@@ -833,7 +983,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return blocked=false when all BLOCKING expenses are PAID', async () => {
       mockPrismaService.expenseRequest.findMany.mockResolvedValue([]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(false);
       expect(result.blockingExpenses).toHaveLength(0);
@@ -843,7 +993,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return blocked=false when no BLOCKING expenses exist', async () => {
       mockPrismaService.expenseRequest.findMany.mockResolvedValue([]);
 
-      const result = await gateService.checkGate('case-1');
+      const result = await gateService.checkGate('case-1', 'tenant-1');
 
       expect(result.isBlocked).toBe(false);
     });
@@ -853,7 +1003,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return true when blocking expenses exist', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const result = await gateService.isUyapBlocked('case-1');
+      const result = await gateService.isUyapBlocked('case-1', 'tenant-1');
 
       expect(result).toBe(true);
     });
@@ -861,7 +1011,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should return false when no blocking expenses exist', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(0);
 
-      const result = await gateService.isUyapBlocked('case-1');
+      const result = await gateService.isUyapBlocked('case-1', 'tenant-1');
 
       expect(result).toBe(false);
     });
@@ -871,7 +1021,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should allow VIEW actions regardless of gate status', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const result = await gateService.canPerformUyapAction('case-1', 'VIEW');
+      const result = await gateService.canPerformUyapAction('case-1', 'VIEW', 'tenant-1');
 
       expect(result).toBe(true);
     });
@@ -879,7 +1029,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should block SUBMIT actions when gate is blocked', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(result).toBe(false);
     });
@@ -887,7 +1037,7 @@ describe('ExpenseGateService - Property Tests', () => {
     it('should allow SUBMIT actions when gate is clear', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(0);
 
-      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const result = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(result).toBe(true);
     });
@@ -897,8 +1047,8 @@ describe('ExpenseGateService - Property Tests', () => {
     it('flag OFF (default): count-bazli path korunur, computeExpenseRemaining HIC cagrilmaz', async () => {
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
 
-      const blocked = await gateService.isUyapBlocked('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const blocked = await gateService.isUyapBlocked('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(blocked).toBe(true);
       expect(canPerform).toBe(false);
@@ -913,8 +1063,8 @@ describe('ExpenseGateService - Property Tests', () => {
       ]);
       mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(0));
 
-      const blocked = await gateService.isUyapBlocked('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const blocked = await gateService.isUyapBlocked('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(blocked).toBe(false);
       expect(canPerform).toBe(true);
@@ -928,8 +1078,8 @@ describe('ExpenseGateService - Property Tests', () => {
       ]);
       mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(1000));
 
-      const blocked = await gateService.isUyapBlocked('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const blocked = await gateService.isUyapBlocked('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(blocked).toBe(true);
       expect(canPerform).toBe(false);
@@ -942,8 +1092,8 @@ describe('ExpenseGateService - Property Tests', () => {
       ]);
       mockClientSettlementReadService.computeExpenseRemaining.mockResolvedValue(new Decimal(0));
 
-      const summary = await gateService.getGateSummary('case-1');
-      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT');
+      const summary = await gateService.getGateSummary('case-1', 'tenant-1');
+      const canPerform = await gateService.canPerformUyapAction('case-1', 'SUBMIT', 'tenant-1');
 
       expect(summary.canSubmitToUyap).toBe(true);
       expect(canPerform).toBe(true);

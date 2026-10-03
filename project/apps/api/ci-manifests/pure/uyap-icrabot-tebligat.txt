@@ -329,3 +329,10 @@ src/modules/icrabot/domain-event-ingest/__tests__/domain-event-ingest.validation
 #   onu DB'li kardesiyle ayni Jest surecinde kosuyordu. Saf oldugu icin bu pure manifeste alindi;
 #   DB'li kardesi db/domain-integration'a tasindi.
 src/modules/case/inventory/__tests__/rich-interest-uyap-readiness.fixture.spec.ts
+
+# Acilis masrafi sarti — tutari BELIRLENEMEMIS acilis masrafi "saglandi" sayilmaz (saf karar + okuma + masraf kapisi; DB yok).
+#   Owner ek karari (2026-10-01): dovizli / karma dosyada talebin olusturulamamasi masraf sartini saglamaz; masraf kapisi
+#   "hazir" demez, neden + gereken bilgi + duzeltme yolu bildirir; okuma / sorgu / indirme muaf kalir; yalniz bir talebin
+#   varligi yetmez (pesin harc kalemi TUTARIYLA kayitli olmali, gerisi mevcut kural: BLOCKING talep karsilanmadan kilit);
+#   tutar, kur ya da toplam URETILMEZ; TL dosyada sonuc mevcut yontemlerle AYNI; baska buronun dosyasi "bulunamadi".
+src/modules/expense-request/__tests__/opening-expense-requirement.spec.ts

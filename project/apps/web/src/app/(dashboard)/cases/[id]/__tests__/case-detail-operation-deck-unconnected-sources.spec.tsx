@@ -20,7 +20,10 @@ import { api } from '@/lib/api';
  * masraf talebi ve dağıtım gösterimleri ile okuma hatası bantları aynen kalır.
  */
 
-vi.mock('@/lib/api', () => {
+// `importActual`: borçlu satırı (`DebtorRow`) aynı modülden `DebtorRoleLabels` alır; yalnız { api } dönen sahtede borçlulu
+// fikstür hiç çizilmez. Borçlu OLMADAN "borçlu başına UYAP ucu çağrılmadı" iddiası kördür.
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/lib/api');
   const registry: Record<string, ReturnType<typeof vi.fn>> = {};
   const handler: ProxyHandler<Record<string, unknown>> = {
     get(_target, prop: string) {
@@ -28,7 +31,7 @@ vi.mock('@/lib/api', () => {
       return registry[prop];
     },
   };
-  return { api: new Proxy({}, handler) };
+  return { ...actual, api: new Proxy({}, handler) };
 });
 
 vi.mock('next/navigation', () => ({
@@ -142,8 +145,24 @@ function mountCase(
   mocked.getCaseDues.mockResolvedValue([]);
   mocked.getCaseCollections.mockResolvedValue(input.collections ?? []);
   mocked.getCaseDebtors.mockResolvedValue({
-    summary: { total: 0, delivered: 0, pending: 0, returned: 0, danger: 0 },
-    items: [],
+    summary: { total: 1, delivered: 1, pending: 0, returned: 0, danger: 0 },
+    items: [
+      {
+        id: 'debtor-1',
+        caseDebtorId: 'cd-1',
+        displayName: 'Borçlu A',
+        personType: 'REAL',
+        role: 'ASIL_BORCLU',
+        lifecycleStatus: 'ACTIVE',
+        serviceStatus: 'DELIVERED',
+        serviceLabel: 'Tebliğ Edildi',
+        finalizationEligibilitySource: 'LEGACY',
+        assets: { vehicle: 'UNKNOWN', realEstate: 'UNKNOWN', bank: 'UNKNOWN', sgkWage: 'UNKNOWN' },
+        alertCount: 0,
+        alertLevel: 'NONE',
+        issues: [],
+      },
+    ],
   });
   mocked.getAddressTasksForCase.mockResolvedValue({ tasks: [] });
   mocked.getAddressNotesForCase.mockResolvedValue({ notes: [] });

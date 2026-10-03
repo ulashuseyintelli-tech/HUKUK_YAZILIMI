@@ -7,8 +7,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { Scale, ArrowLeft } from "lucide-react";
 import { api } from "@/lib/api";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export default function ForgotPasswordPage() {
+  const hydrated = useHydrated();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
@@ -69,7 +71,10 @@ export default function ForgotPasswordPage() {
               </Link>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            // Yerel (React dışı) gönderim alanları ADRESE yazmasın: yöntem POST; düğme React devralana dek
+            // kapalı (bkz. lib/use-hydrated.ts). Ölçülen kusur: `method` yokken hidrasyon öncesi gönderim
+            // `?tenantSlug=…&email=…` üretiyordu (üretim derlemesinde de).
+            <form onSubmit={handleSubmit} method="post" className="space-y-4">
               <div>
                 <label htmlFor="tenantSlug" className="block text-sm font-medium mb-2">
                   Kurum
@@ -100,7 +105,7 @@ export default function ForgotPasswordPage() {
 
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !hydrated}
                 className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50"
               >
                 {isLoading ? "Gönderiliyor..." : "Sıfırlama Bağlantısı Gönder"}

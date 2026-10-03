@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Res, Get, Param, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Res, Get, Param, HttpStatus, HttpException, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { PdfService } from './pdf.service';
 import { TemplateEngineService } from '../template-engine/template-engine.service';
@@ -41,6 +41,11 @@ export class PdfController {
 
       res.status(HttpStatus.OK).send(pdfBuffer);
     } catch (error) {
+      // Resmî çıktı ret kapısı (400 + neden) 500'e ÇEVRİLMEZ: durum kodu ve gövde olduğu gibi döner
+      if (error instanceof HttpException) {
+        res.status(error.getStatus()).json(error.getResponse());
+        return;
+      }
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: 'PDF olusturulamadi',

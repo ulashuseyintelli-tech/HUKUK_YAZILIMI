@@ -247,6 +247,8 @@ export class ExpenseRequestController {
   }
 
   // ==================== GATE ENDPOINT'LERİ ====================
+  // Üç uç da çağıranın bürosuna bağlıdır: başka büronun dosyası, var olmayan dosyayla aynı 404 "Takip bulunamadı" alır.
+  // Açılış masrafı belirlenememiş (dövizli / karma) dosyada kapı kilitlidir; okuma / sorgu / indirme muaf.
 
   /**
    * Gate durumu kontrol et
@@ -254,7 +256,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/gate-status')
   async getGateStatus(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.gateService.checkGate(caseId);
+    return this.gateService.checkGateForCase(req.user.tenantId, caseId);
   }
 
   /**
@@ -267,7 +269,7 @@ export class ExpenseRequestController {
     @Param('caseId') caseId: string,
     @Param('actionType') actionType: string,
   ) {
-    const canPerform = await this.gateService.canPerformUyapAction(caseId, actionType);
+    const canPerform = await this.gateService.canPerformUyapActionForCase(req.user.tenantId, caseId, actionType);
     return { canPerform, actionType };
   }
 
@@ -277,7 +279,7 @@ export class ExpenseRequestController {
    */
   @Get('case/:caseId/gate-summary')
   async getGateSummary(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.gateService.getGateSummary(caseId);
+    return this.gateService.getGateSummaryForCase(req.user.tenantId, caseId);
   }
 
   // ==================== NOTIFICATION ENDPOINT'LERİ ====================
