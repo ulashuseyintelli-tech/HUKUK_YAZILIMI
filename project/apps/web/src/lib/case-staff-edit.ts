@@ -39,22 +39,34 @@ export interface CaseStaffPatchPayload {
   receiveNotifications?: boolean;
 }
 
+const CASE_STAFF_BOOLEAN_KEYS = ['canEdit', 'canApprove', 'canView', 'receiveNotifications'] as const;
+
 /**
- * Drawer state → PATCH /cases/:id/staff/:caseStaffId payload.
- * YALNIZ CaseStaff alanları; canSign / permissions GÖNDERİLMEZ (backend 3a zaten ignore ediyordu).
+ * Drawer state → PATCH /cases/:id/staff/:caseStaffId payload: YALNIZ çekmece açıldığından beri DEĞİŞEN alanlar
+ * (A2, owner kararı 2026-10-03 seçenek b).
+ *
+ * Sunucu (K2, #2821) canEdit / canApprove / canView alanının gövdede BULUNMASINA bakar; değeri değişmese de
+ * gönderilen yetki alanı ofis yönetim yetkisi ister. Eski payload beş alanı her kayıtta gönderdiği için yönetim
+ * yetkisi olmayan kullanıcının yalnız rol ya da bildirim değişikliği de 403 alıyordu. Sunucu kuralı GEVŞETİLMEZ:
+ * gerçekten değiştirilen yetki alanı yine yönetim yetkisi ister.
+ * Değişiklik yoksa boş nesne döner; çağıran istek atmaz. canSign / permissions hiçbir durumda GÖNDERİLMEZ.
  */
-export function buildCaseStaffPatch(s: {
-  roleOnCase?: string;
-  canEdit?: boolean;
-  canApprove?: boolean;
-  canView?: boolean;
-  receiveNotifications?: boolean;
-}): CaseStaffPatchPayload {
-  return {
-    roleOnCase: s.roleOnCase,
-    canEdit: s.canEdit,
-    canApprove: s.canApprove,
-    canView: s.canView,
-    receiveNotifications: s.receiveNotifications,
-  };
+export function buildCaseStaffPatch(
+  initial: CaseStaffEditFields,
+  current: {
+    roleOnCase?: string;
+    canEdit?: boolean;
+    canApprove?: boolean;
+    canView?: boolean;
+    receiveNotifications?: boolean;
+  },
+): CaseStaffPatchPayload {
+  const patch: CaseStaffPatchPayload = {};
+  const roleOnCase = current.roleOnCase ?? '';
+  if (roleOnCase !== initial.roleOnCase) patch.roleOnCase = roleOnCase;
+  for (const key of CASE_STAFF_BOOLEAN_KEYS) {
+    const next = current[key];
+    if (typeof next === 'boolean' && next !== initial[key]) patch[key] = next;
+  }
+  return patch;
 }
