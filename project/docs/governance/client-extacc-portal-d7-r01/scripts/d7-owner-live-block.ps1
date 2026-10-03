@@ -3,6 +3,12 @@
 #          Run çıkış 5/6 Recover yetkisi değildir; Recover'ın canlı yazma kümesi gösterilir; beyan seçenekleri ana sayfa/özeti hata sayfasından ayırır.
 #          R02 inceleme düzeltmeleri (yine yalnız metin): kalıntı satırının altındaki not, kanıttaki "sentetik tenant CLOSED" ifadesinin koşucunun
 #          SABİT metni olduğunu ve kapanışın doğrulandığını göstermediğini söyler; Recover bitiş metni ikinci bir Recover için yol TANIMLAMAZ.
+# R03 (2026-10-03): koşucu değişti (makbuz kurulumdan hemen sonra; Run kapanışında 401/403'te tek yeniden giriş; kapanış metinleri ölçülenden) →
+#          PkgPins'teki koşucu pini + $ExpPackage güncellendi. Blokta değişenler: Run kapanış satırı parçaları kanıttaki verdict'lerden PASS / FAIL /
+#          ÖLÇÜLMEDİ olarak kurulur (önceki SABİT "DB + yeni giriş + mevcut oturum mesaj ucunda reddi" metni yerine) + satır rengi notu; kalıntı
+#          satırının altındaki not koşucunun yeni (ölçülen) kapanış özetini anlatır; Recover bitiş satırı 0 / 1 / 2 / 3 kodlarını yalnız ölçüleni
+#          söyleyerek açıklar; Run'da kanıttaki kurulum durumu (setup) TAMAM değilse bilgi satırı gösterilir. Kapılar, mod sırası, node çağrısı,
+#          çıkış kodları DEĞİŞMEDİ; `owner-block.json` `revision` alanı R01 kalır.
 # MODLAR
 #   -Mode Preflight  SALT OKUMA: tüm kapılar (canlı dist = R27 pini); GO sorulmaz; kanıt/ortam/DB/canlı dosya yazılmaz; koşucu çağrılmaz (yalnız `node --version`). Kapılardaki `git fetch` yerel repodaki uzak izleme ref'lerini günceller (iş verisi değildir).
 #   -Mode QrTest     Canlı veri YOK: portal MESAJ sayfasının QR'ı yerel konsolda gösterilir (d7-qr-test.js); owner telefonla okutur.
@@ -55,7 +61,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + D-7 QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = 'E752DA1EFCA9B8C7529CC0EC66B4F90530025FBF9918F4A9B56DBB3A6916D2B6'
+  'client-extacc-portal-d7-r01\scripts\d7-portal-messages-live-run.js'                = 'F4B9BE189994D08A03CCB3A20F4226C4E9E6450F475428BB58B21B43292B22D3'
   'client-extacc-portal-d7-r01\scripts\d7-qr-test.js'                                 = '15E6431396E978423BAE72F3B7511F3972F12847EF96AA02C12937E0F2233E15'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -65,7 +71,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = '7C42FCCD6349F95E42128F78CA1A86DF36EB20E246FD0D9936A8B1098DBA7BDD'
+$ExpPackage = '3CF44049643447DED5F925F11DADCE67ECFBCD8D213B107E9E96AB6C5F96EA59'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D7_LIVE_CONFIRM', 'D7_RECOVER_CONFIRM', 'D7_LIVE_GO_REF',
                 'D7_RUNID', 'D7_MODE', 'D7_EXPECT_DB', 'D7_EXPECT_TENANT_SLUG', 'D7_API_BASE', 'D7_EXPECT_API',
                 'D7_EXPECT_BASE_URL', 'D7_LIVE_LOGIN_PW', 'D7_RECEIPT', 'D7_EVID_FILE', 'D7_DISPLAY', 'EXA_QRTEST_URL', 'D7_TEST_DISPLAY_SINK',
@@ -238,7 +244,7 @@ function Confirm-LiveDataProcessing {
   Write-Host '  uygulama günlüğünde portal hesabı / portal girişi / mesaj gönderimi satırları (maskeli sentetik adres ya da müvekkil kimliği ile).'
   Write-Host '  Kaynaktan okundu: mesaj akışı e-posta/SMS üretmez. API günlüğünün tam içeriği bu blokla ÖLÇÜLMEZ.'
   Write-Host '  Kapanış: portal hesabı pasif + sürüm artırılır, erişim kapalı, personel pasif, dosyalar CLOSED. Tenant yaşam döngüsü DEĞİŞMEZ'
-  Write-Host '  (tenant kaydı kapatılmaz; koşucunun kanıt metnindeki "sentetik tenant CLOSED" = dosyalar CLOSED + personel pasif + portal pasif).'
+  Write-Host '  (tenant kaydı kapatılmaz; hedeflenen kapanış = dosyalar CLOSED + personel pasif + portal pasif; sonuç kanıttaki U-CLOSE ve P7-C* satırlarından okunur).'
   Write-Host '  MESAJ ve BİLDİRİM SATIRLARI SİLİNMEZ (ürünte silme ucu yok); kanıtta "saklandı: n satır" olarak raporlanır.'
   Write-Host '  Diğer tenantlar için ölçülen yalnız U-ISO''dur: tenant başına kullanıcı ve müvekkil SAYISI önce/sonra aynı (içerik karşılaştırılmaz).'
   $a = Read-Answer 'Bu işlemeyi onaylıyor musunuz? Onay için büyük harfle EVET yazın'
@@ -246,7 +252,9 @@ function Confirm-LiveDataProcessing {
 }
 # Kapanış durumu kanıttan okunur; metin KOŞULSUZ "kapatıldı" demez.
 function Get-ClosureStatus([string]$evidFile, [object]$rc) {
-  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; keptVerdict = $null; keptText = $null; reply2Verdict = $null; residue = $null }
+  $st = [ordered]@{ verified = $false; text = ''; finding = $null; waitVerdict = $null; keptVerdict = $null; keptText = $null; reply2Verdict = $null; residue = $null
+                    setupDurum = $null; setupAsama = $null; setupMakbuz = $null }
+  $ev = $null
   try {
     $ev = Get-Content -Raw -Encoding UTF8 -LiteralPath $evidFile | ConvertFrom-Json   # node kanıtı UTF-8 (BOM'suz); WinPS 5.1 varsayılanı ANSI
     $d9 = ($ev.results | Where-Object { $_.id -eq 'P7-D9' }).verdict
@@ -255,16 +263,31 @@ function Get-ClosureStatus([string]$evidFile, [object]$rc) {
     $kept = ($ev.results | Where-Object { $_.id -eq 'P7-MSG-KEPT' })
     $st.keptVerdict = $kept.verdict; $st.keptText = $kept.observed
     $st.finding = $ev.productFinding; $st.residue = $ev.messageResidue
+    $st.setupDurum = $ev.setup.durum; $st.setupAsama = $ev.setup.asama; $st.setupMakbuz = $ev.setup.makbuzDosyasi   # R03: kurulum durumu (koşucu kanıtı)
     $st.verified = ($d9 -eq 'PASS')
   } catch { $st.verified = $false }
-  $st.text = if ($st.verified) { 'Portal erişim kapanışı koşucu tarafından DOĞRULANDI (DB + yeni giriş + mevcut oturum mesaj ucunda reddi).' }
+  # R03: DOĞRULANDI metni parça İDDİA ETMEZ — her parça kanıttaki ölçüt verdict'lerinden kurulur (D-6 R02 kalıbı). Gruptaki TÜM ölçütler PASS ise
+  # "PASS"; biri FAIL ise "FAIL"; aksi halde (satır yok / UNMEASURED) "ÖLÇÜLMEDİ". Birleşik P7-D9 PASS iken de DB/HTTP ret ölçütleri koşulmamış olabilir:
+  # portal hesabı hiç açılmadıysa (P7-C2..C5 satırı yok) ya da koşucunun portal oturumu yoksa (P7-C4 UNMEASURED). "Mevcut oturum" koşucunun KENDİ portal
+  # oturumudur (P7-C4L/D); telefondaki oturumu koşucu ölçmez (owner beyanı). Parçalar aynı satırın devamındadır.
+  $st.text = if ($st.verified) {
+               $parts = foreach ($p in @(@('DB kapalı + sürüm arttı [P7-C2/C2V/C5]', 'P7-C2', 'P7-C2V', 'P7-C5'), @('yeni giriş reddi, yerel + dış [P7-C3L/D]', 'P7-C3L', 'P7-C3D'),
+                                         @('mevcut oturum reddi, koşucunun kendi portal oturumu, mesaj ucunda, yerel + dış [P7-C4L/D]', 'P7-C4L', 'P7-C4D'),
+                                         @('personel/dosya kapanışı [U-CLOSE]', 'U-CLOSE'))) {
+                 $vs = @($p | Select-Object -Skip 1 | ForEach-Object { $id = $_; $hit = @($ev.results | Where-Object { $_.id -eq $id }); if ($hit.Count -eq 1) { [string]$hit[0].verdict } else { '' } })
+                 '{0}: {1}' -f $p[0], $(if (@($vs | Where-Object { $_ -ne 'PASS' }).Count -eq 0) { 'PASS' } elseif (@($vs | Where-Object { $_ -eq 'FAIL' }).Count -gt 0) { 'FAIL' } else { 'ÖLÇÜLMEDİ' })
+               }
+               'Portal erişim kapanışı: koşucunun birleşik ölçütü P7-D9 PASS — DOĞRULANDI yalnız bu satırın devamında PASS yazan parçalar içindir (kanıttan): ' + ($parts -join ' · ') + '. Telefondaki oturumun reddini koşucu ÖLÇMEZ (yenileme sorusu beyandır).'
+             }
              else { "Portal erişim kapanışı DOĞRULANAMADI (çıkış $rc) — telefondaki erişim açık kalmış olabilir; sonucu CLIENT'a bildirin." }
   return [pscustomobject]$st
 }
 function Write-OwnerDeclaration([string]$evDir, [string]$runId, $closure) {
   Write-Host ''
   $c = if ($closure -and $closure.verified) { 'Green' } else { 'Red' }
+  # Satır rengi yalnız $closure.verified (= P7-D9 PASS) değerine bağlıdır; parçaların ayrı sonucu (PASS / FAIL / ÖLÇÜLMEDİ) rengi DEĞİŞTİRMEZ.
   Write-Host ("Koşum bitti. {0}" -f $(if ($closure) { $closure.text } else { 'Portal erişim kapanışı DOĞRULANAMADI (kanıt okunamadı).' })) -ForegroundColor $c
+  Write-Host '  Not: satır rengi yalnız birleşik ölçütü (P7-D9) gösterir (yeşil = P7-D9 PASS; kırmızı = PASS değil ya da kanıt okunamadı); parçaların ayrı sonucu satırın metnindedir.'
   Write-Host 'Şimdi telefonda açık portal sayfasını bir kez YENİLEYİN, sonra aşağıdaki soruları ekranda gördüğünüze göre yanıtlayın.' -ForegroundColor Cyan
   Write-Host 'OWNER BEYANI (makine ölçümünden AYRI kaydedilir). Emin değilseniz ? yazın. Parola ve mesaj içeriği YAZMAYIN.' -ForegroundColor Cyan
   $d = [ordered]@{
@@ -339,11 +362,15 @@ function Invoke-RunMode($g) {
   Write-Host "EXTACC D-7 KOŞUM BİTTİ - RUNID=$RunId · çıkış=$rc" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   Write-Host '  0 PASS · 2 FAIL · 3 ÖLÇÜLEMEYEN · 1 DURDU · 4 KİMLİK/HEDEF REDDİ · 7 KANIT YAZILAMADI · 5 PERSONEL/DOSYA KAPANIŞI · 6 PORTAL ERİŞİMİ KAPANDIĞI DOĞRULANMADI · 91 NODE BAŞLATILAMADI'
   if ($finding) { Write-Host "  $finding — bu bir ÜRÜN BULGUSUDUR; kapanış PASS SAYILMAZ. CLIENT'a bildirin." -ForegroundColor Red }
+  # R03: kurulum yarıda kaldıysa (koşucu kanıtındaki setup.durum TAMAM değil) bilgi satırı — kapanışın sonucu yukarıdaki kapanış satırındadır.
+  if ($closure.setupDurum -and $closure.setupDurum -ne 'TAMAM') {
+    Write-Host ("  KURULUM YARIM KALDI (kanıttaki setup alanı): durum={0} · son aşama={1} · makbuz dosyası={2} — Run'ın kendi kapanışının sonucu yukarıdaki kapanış satırındadır; ayrıntı kanıttaki setup ve fatal alanlarında. Bu bilgi Recover yetkisi DEĞİLDİR." -f $closure.setupDurum, $closure.setupAsama, $closure.setupMakbuz) -ForegroundColor Yellow
+  }
   if ($closure.keptText) {
     Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
-    Write-Host '  (Kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir; kapanışın doğrulandığını GÖSTERMEZ. Kapanış durumu yukarıdaki' -ForegroundColor Cyan
-    Write-Host '   "Portal erişim kapanışı ... DOĞRULANDI / DOĞRULANAMADI" satırındadır. Anlamı: hedeflenen kapanış = dosyalar CLOSED + personel pasif +' -ForegroundColor Cyan
-    Write-Host '   portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
+    Write-Host '  (Parantez içindeki kapanış özeti koşucunun kanıttaki U-CLOSE ve portal DB ölçümünden kurulur (R03; sabit ifade değildir). Kapanışın tamamı' -ForegroundColor Cyan
+    Write-Host '   yukarıdaki "Portal erişim kapanışı ..." satırındadır (parçalar kanıttaki verdict''lerden). Hedeflenen kapanış = dosyalar CLOSED + personel' -ForegroundColor Cyan
+    Write-Host '   pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
   } else { Write-Host '  Mesaj kalıntısı ÖLÇÜLEMEDİ (kanıt satırı yok) — satırlar silinmiş DEĞİLDİR; CLIENT inceler.' -ForegroundColor Yellow }
   if ($waitV -eq 'UNMEASURED' -and $decl) {
     if ($decl.girisSonrasiEkran -ceq 'M') { Write-Host '  Koşucu telefon girişi görmedi ama owner girişten sonra portalın açıldığını (ana sayfa/mesaj sayfası) beyan etti — İNCELEME GEREKİR (FAIL adayı).' -ForegroundColor Yellow }
@@ -399,11 +426,12 @@ function Invoke-RecoverMode($g, [string]$receiptPath) {
   }
   finally { Clear-SecretEnv; Write-Manifest $EvDir }
   $closure = Get-ClosureStatus (Join-Path $EvDir 'd7-evidence.json') $rc
-  Write-Host "EXTACC D-7 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 kapanış + HTTP reddi doğrulandı · 3 DB kapalı ama bazı HTTP kontrolleri ÖLÇÜLEMEDİ (PASS SAYILMAZ) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
+  # R03: çıkış kodu açıklaması yalnız koşucunun recoverExitCode kuralını söyler (sabit "doğrulandı" iddiası yok; 1 ve 2 dahil).
+  Write-Host "EXTACC D-7 KURTARMA BİTTİ - RUNID=$($rcpt.runId) · çıkış=$rc (0 = FAIL ve ÖLÇÜLEMEYEN satır yok — koşucu mantığında fiilen beklenmez: portal hesabı varken mevcut oturum reddi Recover'da ÖLÇÜLEMEZ, hesap yoksa mesaj kalıntısı ÖLÇÜLEMEYEN olur (paket belgesi §9) · 3 = portal DB kapanışı ölçüldü ya da portal hesabı yok, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN — yeni giriş reddinin ölçülüp ölçülmediği kanıttaki P7-C3L/D satırlarından okunur; mevcut oturum reddi Recover'da ÖLÇÜLEMEZ (Run kanıtındaki P7-C4 satırlarına bakın; PASS SAYILMAZ) · 2 = kapanışlar doğrulandı, hazırlık hatası yok, en az bir satır FAIL (Recover'da yalnız P7-MSG-KEPT: makbuzdaki koşucu mesaj satırlarından biri yerinde değil) · 1 = DURDU: kapanışlar doğrulandı ama hazırlık adımında hata (kanıttaki fatal alanı; HTTP reddinin doğrulandığı anlamına GELMEZ — satırlar ayrıca okunur; kanıt dosyası yoksa node yakalanmamış bir hatayla bitmiş olabilir) · 6 portal DB/HTTP kapanışı doğrulanmadı · 5 personel/dosya · 4 kimlik reddi · 7 kanıt yok · 91 node başlatılamadı)" -ForegroundColor $(if ($rc -eq 0) { 'Green' } else { 'Yellow' })
   if ($closure.keptText) {
     Write-Host "  Mesaj kalıntısı: $($closure.keptText)" -ForegroundColor Cyan
-    Write-Host '  (Kanıt metnindeki "sentetik tenant CLOSED" koşucunun SABİT ifadesidir; kapanışın doğrulandığını GÖSTERMEZ. Kapanış durumu yukarıdaki çıkış' -ForegroundColor Cyan
-    Write-Host '   kodu satırındadır (Recover''da ayrı bir DOĞRULANDI / DOĞRULANAMADI satırı gösterilmez). Anlamı: hedeflenen kapanış = dosyalar CLOSED +' -ForegroundColor Cyan
+    Write-Host '  (Parantez içindeki kapanış özeti koşucunun kanıttaki U-CLOSE ve portal DB ölçümünden kurulur (R03; sabit ifade değildir). Kapanış durumu' -ForegroundColor Cyan
+    Write-Host '   yukarıdaki çıkış kodu satırındadır (Recover''da ayrı bir DOĞRULANDI / DOĞRULANAMADI satırı gösterilmez). Hedeflenen kapanış = dosyalar CLOSED +' -ForegroundColor Cyan
     Write-Host '   personel pasif + portal pasif; tenant yaşam döngüsü DEĞİŞMEZ.)' -ForegroundColor Cyan
   }
   if ($rc -eq 3) { Write-Host '  Recover TEKRARLANMAZ; ölçülemeyen satırlar Run kanıtıyla birlikte CLIENT tarafından değerlendirilir.' -ForegroundColor Yellow }

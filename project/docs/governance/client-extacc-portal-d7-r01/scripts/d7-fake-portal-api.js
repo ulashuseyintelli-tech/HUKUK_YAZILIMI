@@ -18,6 +18,11 @@
  *             list normal|leak (KUSUR: aynı tenantta BAŞKA müvekkilin mesajı da döner; ilk gönderimde tuzak satır yazılır) ·
  *             reply normal|fail|noNotify (bildirim satırı üretilmez)|hang (YANITSIZ: personel POST'u hiç yanıtlanmaz, satır yazılmaz) ·
  *             markRead normal|noop (KUSUR: okundu işaretlenmez) · unread normal|hang (YANITSIZ: unread-count hiç yanıtlanmaz)
+ * R03 senaryoları (D-6 R03 kalıbı): staffAuth normal|expireOnDisable (İLK disable-user çağrısı anında o ana dek verilmiş TÜM personel token'ları
+ *             geçersiz olur → 401; yeni giriş YENİ token verir — personel token süresinin kapanış sırasında dolması taklidi; yazma YOK) ·
+ *             disable forbidden (her çağrı 403; ürün: yetki reddi yazmadan önce döner) | notFound (her çağrı 404) ·
+ *             relogin normal|reject|rateLimit (`expireOnDisable` token'ları geçersiz kıldıktan SONRAKİ personel girişleri 401 ya da 429 — ürünün giriş
+ *             hız sınırı taklidi; koşum başındaki giriş etkilenmez). Personel token'ları benzersizdir (sıra no).
  * KOŞUCU YASAĞI: forgot-password/reset-password/change-password/documents çağrıları FORBIDDEN olarak işaretlenir (500).
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -31,7 +36,10 @@ const EXT_ORIGIN = `https://localhost:${EXT_PORT}`;
 const CASE_REF_INVALID = 'Geçersiz dosya referansı';
 const MSG_SELECT = { id: true, content: true, senderType: true, senderName: true, isRead: true, createdAt: true };
 
-const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal', send: 'normal', list: 'normal', reply: 'normal', markRead: 'normal', unread: 'normal' };
+const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', wrongPw: 'normal', cases: 'normal', send: 'normal', list: 'normal', reply: 'normal', markRead: 'normal', unread: 'normal',
+  staffAuth: 'normal', relogin: 'normal' };
+// R03: personel token'ları benzersizdir (sıra no) — yeniden giriş YENİ token verir; `expireOnDisable` ile geçersiz kılınanlar burada tutulur.
+let jwtSeq = 0; let staffExpired = false; const expiredStaffJwts = new Set();
 const HANG = () => new Promise(() => {}); // yanıtsız taklidi: istek asla yanıtlanmaz (istemci zaman aşımı → indeterminate)
 const LATE_CREATE_MS = 3000;
 const heldCreates = [];
@@ -50,6 +58,7 @@ const claimOf = (req, prefix) => {
   try { return JSON.parse(Buffer.from(h.slice(`Bearer ${prefix}`.length), 'base64url').toString('utf8')); } catch (e) { return null; }
 };
 async function staffUser(req) {
+  if (expiredStaffJwts.has(String(req.headers.authorization || '').replace(/^Bearer /, ''))) return null;   // R03: süresi dolmuş token taklidi
   const c = claimOf(req, 'fake.'); if (!c) return null;
   const u = await prisma.user.findUnique({ where: { id: c.uid }, select: { id: true, tenantId: true, isActive: true, tokenVersion: true, name: true } });
   return (!u || !u.isActive || u.tenantId !== c.tid || u.tokenVersion !== c.tv) ? null : u;
@@ -143,7 +152,7 @@ async function adminClientMessages(u, clientId) {
 async function apiHandler(req, res) {
   const p = new URL(req.url, 'http://127.0.0.1').pathname;
   if (p.startsWith('/__')) {
-    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; leakSeeded = new Set(); return send(res, 200, scenario); }
+    if (req.method === 'POST' && p === '/__scenario') { scenario = Object.assign({}, DEFAULT, await readBody(req)); disableFailed = 0; leakSeeded = new Set(); staffExpired = false; expiredStaffJwts.clear(); return send(res, 200, scenario); }
     if (req.method === 'POST' && p === '/__reset') { calls = []; extCalls = []; for (const k of Object.keys(secrets)) secrets[k] = []; return send(res, 200, { ok: true }); }
     if (p === '/__calls') return send(res, 200, calls);
     if (p === '/__ext') return send(res, 200, extCalls);
@@ -155,10 +164,13 @@ async function apiHandler(req, res) {
   calls.push({ method: req.method, path: p, bodyKeys: Object.keys(body || {}).sort() });
   if (/^\/api\/portal\/(forgot-password|reset-password|change-password|documents)/.test(p)) { calls[calls.length - 1].forbidden = true; return send(res, 500, { message: 'FORBIDDEN_PORTAL_ENDPOINT_CALLED' }); }
   if (req.method === 'POST' && p === '/api/auth/login') {
+    // R03: token'lar geçersiz kılındıktan sonraki (kapanıştaki) yeniden giriş reddi / hız sınırı taklidi — yazma YOK
+    if (staffExpired && scenario.relogin === 'reject') return send(res, 401, { message: 'Unauthorized' });
+    if (staffExpired && scenario.relogin === 'rateLimit') return send(res, 429, { message: 'Too Many Requests' });
     const t = await prisma.tenant.findFirst({ where: { slug: body.tenantSlug }, select: { id: true } });
     const u = t ? await prisma.user.findFirst({ where: { tenantId: t.id, email: body.email }, select: { id: true, tenantId: true, isActive: true, tokenVersion: true, passwordHash: true } }) : null;
     if (!u || !u.isActive || !u.passwordHash || !(await bcrypt.compare(String(body.password || ''), u.passwordHash))) return send(res, 401, { message: 'Unauthorized' });
-    const jwt = 'fake.' + Buffer.from(JSON.stringify({ uid: u.id, tid: u.tenantId, tv: u.tokenVersion })).toString('base64url');
+    const jwt = 'fake.' + Buffer.from(JSON.stringify({ uid: u.id, tid: u.tenantId, tv: u.tokenVersion, n: ++jwtSeq })).toString('base64url');
     secrets.jwts.push(jwt); return send(res, 201, { access_token: jwt });
   }
   if (req.method === 'POST' && p === '/api/portal/admin/create-user') {
@@ -185,7 +197,11 @@ async function apiHandler(req, res) {
     return send(res, 201, { id: pu.id, email: pu.email, clientId: pu.clientId });
   }
   if (req.method === 'POST' && p === '/api/portal/admin/disable-user') {
+    // R03: expireOnDisable — İLK kapatma çağrısı anında o ana dek verilmiş tüm personel token'ları geçersizleşir (süre dolumu taklidi; yazma YOK).
+    if (scenario.staffAuth === 'expireOnDisable' && !staffExpired) { staffExpired = true; for (const j of secrets.jwts) expiredStaffJwts.add(j); }
     const u = await staffUser(req); if (!u) return send(res, 401, { message: 'Unauthorized' });
+    if (scenario.disable === 'forbidden') return send(res, 403, { message: 'Portal erişimi yönetimi için yetki yok' });   // ürün: yazmadan ÖNCE 403
+    if (scenario.disable === 'notFound') return send(res, 404, { message: 'Müvekkil bulunamadı' });
     if (scenario.disable === 'fail' || (scenario.disable === 'failOnce' && disableFailed === 0)) { disableFailed++; return send(res, 500, { message: 'Internal server error' }); }
     const client = await prisma.client.findFirst({ where: { id: body.clientId, tenantId: u.tenantId }, select: { id: true } });
     if (!client) return send(res, 404, { message: 'Müvekkil bulunamadı' });

@@ -1,15 +1,23 @@
 'use strict';
 /*
- * EXTACC D-7 R01 ÖZ-TESTİ — CANLI DB'YE YAZMAZ, E-POSTA GÖNDERMEZ. Disposable PostgreSQL (127.0.0.1:5449/d67_test) + sahte portal
+ * EXTACC D-7 R01 ÖZ-TESTİ — CANLI DB'YE YAZMAZ, E-POSTA GÖNDERMEZ. Disposable PostgreSQL (127.0.0.1:<5432 dışı port>/<ad>_test; R03) + sahte portal
  * API (d7-fake-portal-api.js; 8200) + gerçek TLS'li sahte dış sunucu (8459). "Telefon" bir istemci taklididir: giriş bilgisini
  * koşucunun gösterimsiz test dosyasından (D7_TEST_DISPLAY_SINK; yalnız disposable DB'de) alır, dış uçtan giriş yapar, mesaj
  * sayfasını/listesini açar, mark-read çağırır (web sayfası gibi), bir mesaj gönderir ve 2. personel yanıtını bekler.
  *
- * KULLANIM: node d7-selftest.js   (D7T_DB_URL ya da %TEMP%\d67-test-pg.url → 127.0.0.1:5449/d67_test ŞART)
+ * KULLANIM: node d7-selftest.js   (D7T_DB_URL → 127.0.0.1:<5432 DIŞI port>/<ad>_test ŞART — R03: port sabit değil, kendi tek kullanımlık
+ *           konteyneriniz; `hukuk_db` ve 5432 REDDEDİLİR; %TEMP%\d67-test-pg.url artık OKUNMAZ)
  *           D7T_LIB_ROOT = bağımlılıkları kurulu, canlı OLMAYAN bir checkout'un proje kökü (Prisma istemcisi + bcrypt buradan yüklenir).
  *           Verilmezse bu betiğin bulunduğu checkout'un proje kökü denenir. Canlı yayın ağacı REDDEDİLİR; modül yoksa test başlamaz (çıkış 2).
  * ÇIKIŞ   : 0 hepsi PASS · 1 FAIL var · 2 ölçülemedi
  * SINIR   : sahte API ürünün kendisi değildir; ürünün gerçek mesaj/bildirim/guard davranışı canlı koşumda ölçülür.
+ * R03     : Z15 (kurulum ile makbuz arası: ikinci / birinci ek dosya yazması ya da kurulumun kendisi hata verir — arıza disposable DB'ye
+ *           senaryonun runId'sine bağlı geçici BEFORE INSERT tetikleyicisiyle verilir, koşucuda test kancası YOK; makbuz VAR → Run kendi kapanışını
+ *           koşar, kullanıcılar pasif, dosyalar CLOSED; Recover makbuzu bulur; kanıtta `setup`) · Z16 (Run kapanışında personel oturumu reddi:
+ *           401 → tek yeniden giriş + tek yeniden deneme → çıkış 0; 403 → döngü yok; 404 → yeniden giriş yok; yeniden giriş 429 → yeniden deneme
+ *           yok; açık portal hesabında koşucu oturumunun 200'ü "ürün bulgusu" DEĞİL; gerçek ürün bulgusu korunur) · Z17/Z18 (Recover adımı ve
+ *           kurtarma nedeni birim ölçümü) · C-1 (kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler) · T-9/T-10 (statik: yeniden giriş
+ *           yalnız Run'da ve DB'ye yazmaz; makbuz ek dosya yazmalarından ÖNCE).
  */
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -47,16 +55,18 @@ const API_PORT = 8200; const EXT_PORT = 8459;
 const API = `http://127.0.0.1:${API_PORT}/api`; const EXT = `https://localhost:${EXT_PORT}`;
 const PHONE_UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36';
 const R27_CAND_DIST = 'E28A6863CF109A1A3AE1F53E096D5F5C2037E382EF2D8D3EC87FEE3B827E5134'; // canlı ön koşul: R27 dist (D-5 ile aynı)
-const DB_EXPECT = { host: '127.0.0.1', port: '5449', name: 'd67_test' };
 
 const rows = []; const check = (id, desc, ok, obs) => rows.push({ id, sonuc: ok ? 'PASS' : 'FAIL', aciklama: desc, gozlem: obs });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); const hex8 = () => crypto.randomBytes(4).toString('hex');
 
+// R03: disposable DB kendi tek kullanımlık konteynerinden gelir (port sabit DEĞİL). Kapı: yalnız 127.0.0.1 · port var ve 5432 DEĞİL · veritabanı
+// adı `_test` ile biter ve `hukuk_db` DEĞİL. Koşucuya beklenen DB adı bu addan verilir (D7_EXPECT_DB).
+let DB_NAME = null;
 function dbUrl() {
-  const f = path.join(os.tmpdir(), 'd67-test-pg.url');
-  const u = process.env.D7T_DB_URL || (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : '');
-  let p; try { p = new URL(u); } catch (e) { return null; }
-  return (p.hostname === DB_EXPECT.host && p.port === DB_EXPECT.port && p.pathname === `/${DB_EXPECT.name}`) ? u : null;
+  const u = process.env.D7T_DB_URL || ''; let p; try { p = new URL(u); } catch (e) { return null; }
+  let name = ''; try { name = decodeURIComponent(p.pathname.replace(/^\//, '')); } catch (e) { return null; }
+  if (p.hostname !== '127.0.0.1' || !p.port || p.port === '5432' || !/^[a-z0-9_]+_test$/.test(name) || name === 'hukuk_db') return null;
+  DB_NAME = name; return u;
 }
 async function ctl(method, p, body) {
   const r = await fetch(`http://127.0.0.1:${API_PORT}${p}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -107,7 +117,7 @@ function runScenario(name, dir, sc, over, hooks = {}) {
     const receipt = path.join(dir, `${name}-receipt.json`); const evid = path.join(dir, `${name}-evidence.json`); const sink = path.join(dir, `${name}-display.sink`); sinks.add(sink);
     const env = Object.assign({}, process.env, {
       AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
-      D7_MODE: 'run', D7_LIVE_CONFIRM: '1', D7_LIVE_GO_REF: go, D7_RUNID: runId, D7_EXPECT_DB: DB_EXPECT.name,
+      D7_MODE: 'run', D7_LIVE_CONFIRM: '1', D7_LIVE_GO_REF: go, D7_RUNID: runId, D7_EXPECT_DB: DB_NAME,
       D7_EXPECT_TENANT_SLUG: `ah-${runId}`, D7_API_BASE: API, D7_EXPECT_API: API, D7_EXPECT_BASE_URL: EXT,
       D7_LIVE_LOGIN_PW: pw, D7_RECEIPT: receipt, D7_EVID_FILE: evid, D7_DISPLAY: 'none', D7_TEST_DISPLAY_SINK: sink,
       D7_WAIT_MS: '15000', D7_POLL_MS: '300', D7_VIEW_MS: '1500', D7_HTTP_TIMEOUT_MS: '5000', D7_CALL_TIMEOUT_MS: '5000', D7_LATE_CREATE_MS: '6000',
@@ -144,7 +154,7 @@ async function recover(prev, dir, name, sc, envOver) {
   await ctl('POST', '/__reset'); await ctl('POST', '/__scenario', sc || {});
   const pw = 'D7R!' + crypto.randomBytes(12).toString('base64url'); const evid = path.join(dir, `${name}-evidence.json`); secretsSeen.add(pw);
   const env = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
-    D7_MODE: 'recover', D7_RECOVER_CONFIRM: '1', D7_RUNID: prev.runId, D7_EXPECT_DB: DB_EXPECT.name, D7_API_BASE: API, D7_EXPECT_API: API,
+    D7_MODE: 'recover', D7_RECOVER_CONFIRM: '1', D7_RUNID: prev.runId, D7_EXPECT_DB: DB_NAME, D7_API_BASE: API, D7_EXPECT_API: API,
     D7_EXPECT_BASE_URL: EXT, D7_LIVE_LOGIN_PW: pw, D7_RECEIPT: prev.receipt, D7_EVID_FILE: evid, D7_DISPLAY: 'none', D7_HTTP_TIMEOUT_MS: '5000', D7_CALL_TIMEOUT_MS: '5000',
     D7_POLL_MS: '300', D7_LATE_CREATE_MS: '6000' }, envOver || {});
   const code = await new Promise((res) => { const c = spawn(process.execPath, [RUN], { env, stdio: ['ignore', 'pipe', 'pipe'] }); let l = ''; c.stdout.on('data', (d) => { l += d; }); c.stderr.on('data', (d) => { l += d; }); c.on('close', (x) => { fs.writeFileSync(path.join(dir, `${name}.log`), l, 'utf8'); res(x); }); });
@@ -163,10 +173,23 @@ const CLOSE = ['P7-C1', 'P7-C2', 'P7-C2V', 'P7-C3L', 'P7-C3D', 'P7-C4L', 'P7-C4D
 const closedAll = (z) => CLOSE.every((id) => z.v(id) === 'PASS');
 const adminExt = (z) => z.ext.filter((c) => /\/api\/portal\/admin/.test(c.path)).length;
 const fullPhone = (runId, sink) => phoneFlow(runId, sink);
+const shouldNot = { onDisplay: async () => ({ displayedButShouldNot: true }) };
+/**
+ * R03 (a) — KURULUM ARIZASI: disposable DB'ye YALNIZ verilen değere (bu senaryonun runId'sinden türeyen dosya no / slug) bağlı geçici bir
+ * BEFORE INSERT tetikleyicisi kurulur; koşucuya test kancası EKLENMEZ (koşucu canlıdakiyle aynı kodu koşar). Tetikleyici senaryodan sonra kaldırılır.
+ */
+async function withInsertFault(table, column, value, fn) {
+  if (!/^[A-Za-z]+$/.test(table) || !/^[A-Za-z]+$/.test(column) || !/^[A-Za-z0-9-]+$/.test(value)) throw new Error('tetikleyici girdisi biçimsiz');
+  const name = `d7t_fault_${crypto.randomBytes(4).toString('hex')}`;
+  await prisma.$executeRawUnsafe('CREATE OR REPLACE FUNCTION d7t_fail_insert() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN IF to_jsonb(NEW)->>TG_ARGV[0] = TG_ARGV[1] THEN RAISE EXCEPTION \'D7T kasitli yazma hatasi (%)\', TG_ARGV[1]; END IF; RETURN NEW; END $f$');
+  await prisma.$executeRawUnsafe(`CREATE TRIGGER ${name} BEFORE INSERT ON "${table}" FOR EACH ROW EXECUTE FUNCTION d7t_fail_insert('${column}', '${value}')`);
+  try { return await fn(); } finally { await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS ${name} ON "${table}"`); }
+}
 
 (async () => {
   DBURL = dbUrl();
-  if (!DBURL) { console.log(`OLCULEMEDI: disposable DB (${DB_EXPECT.host}:${DB_EXPECT.port}/${DB_EXPECT.name}) yok — test BAŞLAMADI`); process.exit(2); }
+  if (!DBURL) { console.log('OLCULEMEDI: disposable DB (D7T_DB_URL → 127.0.0.1:<5432 dışı port>/<ad>_test; hukuk_db değil) yok — test BAŞLAMADI'); process.exit(2); }
+  console.log(`disposable DB: 127.0.0.1:${new URL(DBURL).port}/${DB_NAME}`);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd7-selftest-'));
   certFile = path.join(dir, 'cert.pem'); const keyFile = path.join(dir, 'key.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certFile, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], { stdio: 'ignore' });
@@ -287,7 +310,7 @@ const fullPhone = (runId, sink) => phoneFlow(runId, sink);
     // ---- Z11 KONSOLSUZ conout → yazmadan 4
     const rid11 = hex8(); const pw11 = 'D7T!' + crypto.randomBytes(12).toString('base64url'); secretsSeen.add(pw11);
     const env11 = Object.assign({}, process.env, { AH_DATABASE_URL: DBURL, AH_PRISMA_ROOT: PRISMA_ROOT, AH_BCRYPT_PATH: BCRYPT, NODE_EXTRA_CA_CERTS: certFile,
-      D7_MODE: 'run', D7_LIVE_CONFIRM: '1', D7_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D7-20000101-R99', D7_RUNID: rid11, D7_EXPECT_DB: DB_EXPECT.name,
+      D7_MODE: 'run', D7_LIVE_CONFIRM: '1', D7_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D7-20000101-R99', D7_RUNID: rid11, D7_EXPECT_DB: DB_NAME,
       D7_EXPECT_TENANT_SLUG: `ah-${rid11}`, D7_API_BASE: API, D7_EXPECT_API: API, D7_EXPECT_BASE_URL: EXT, D7_LIVE_LOGIN_PW: pw11,
       D7_RECEIPT: path.join(dir, 'z11-receipt.json'), D7_EVID_FILE: path.join(dir, 'z11-evidence.json'), D7_DISPLAY: 'conout', D7_TEST_DISPLAY_SINK: path.join(dir, 'z11.sink') });
     const r11 = await new Promise((res) => { const c = spawn(process.execPath, [RUN], { env: env11, detached: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); let l = ''; c.stdout.on('data', (d) => { l += d; }); c.stderr.on('data', (d) => { l += d; }); c.on('close', (x) => res({ code: x, log: l })); });
@@ -302,6 +325,136 @@ const fullPhone = (runId, sink) => phoneFlow(runId, sink);
     const z13 = await runScenario('z13-no-phone', dir, {}, { D7_WAIT_MS: '2000' });
     check('Z13', 'telefon girişi yok: P7-WAIT/D7-3B ÖLÇÜLEMEYEN, kapanış tamamı PASS (C4 koşucu oturumuyla), kalıntı 3 mesaj + 1 bildirim (yerinde=3/3), çıkış 3',
       z13.code === 3 && z13.v('P7-WAIT') === 'UNMEASURED' && z13.v('D7-3B') === 'UNMEASURED' && closedAll(z13) && z13.msgs.length === 3 && z13.notes === 1 && /yerinde=3\/3/.test(z13.o('P7-MSG-KEPT')), `çıkış=${z13.code} · PASS olmayan=${CLOSE.filter((id) => z13.v(id) !== 'PASS').join(',') || 'yok'}`);
+
+    // ==== R03 (a) — KURULUM İLE MAKBUZ ARASI: ek dosya yazması hata verir (disposable DB tetikleyicisi; koşucuda test kancası YOK)
+    const EX0 = require(RUN);   // birim ölçümleri için (yalnız dışa açık saf fonksiyonlar; koşucu akışı require ile ÇALIŞMAZ)
+    const tenantState = async (slug) => { const t = await prisma.tenant.findFirst({ where: { slug }, select: { id: true } }); if (!t) return null;
+      return { users: await prisma.user.count({ where: { tenantId: t.id } }), activeUsers: await prisma.user.count({ where: { tenantId: t.id, isActive: true } }),
+        cases: await prisma.case.count({ where: { tenantId: t.id } }), activeCases: await prisma.case.count({ where: { tenantId: t.id, status: 'ACTIVE' } }) }; };
+    const setupOf = (z) => ((z.ev || {}).setup || {});
+    const rid15a = hex8();
+    const z15a = await withInsertFault('Case', 'fileNumber', `I3-${rid15a}-s`, () => runScenario('z15a-setup-second-case-fail', dir, {}, { D7_RUNID: rid15a }, shouldNot));
+    const t15a = await tenantState(`ah-${rid15a}`); const f15a = await tenantState(`ah-${rid15a}-x`); const s15a = setupOf(z15a);
+    check('Z15-a', 'kurulum tamam + makbuz yazıldı + İKİNCİ ek dosya yazması (aynı tenant `-s`) hata verir: makbuz dosyası VAR (setupComplete=false, foreignCaseId var, sameTenantOtherCaseId yok); Run kendi kapanışını KOŞTU (closure.ok, nothingToClose YOK; P7-C1/U-CLOSE/P7-D9 PASS; portal hesabı yok); hedef tenantta kullanıcıların TAMAMI pasif, dosyalar CLOSED; yabancı tenanttaki ek dosya (`-xf`) CLOSED; API çağrısı 0; kanıtta setup.asama=ek-dosya-ayni-tenant, durum=YARIM_MAKBUZ_VAR, makbuzDosyasi=true, fatal arızayı adlandırır; P7-MSG-KEPT kapanışı ölçülenden yazar; çıkış 1 (önceki baytlarda makbuz yoktu → kapanış koşmadı → kullanıcılar AKTİF)',
+      z15a.code === 1 && !!z15a.rc && z15a.rc.record === 'EXTACC-D7-SETUP-RECEIPT' && z15a.rc.setupComplete === false && typeof z15a.rc.foreignCaseId === 'string' && !z15a.rc.sameTenantOtherCaseId
+        && !!z15a.ev && !!z15a.ev.closure && z15a.ev.closure.ok === true && !z15a.ev.closure.nothingToClose && !!z15a.ev.portalClose && z15a.ev.portalClose.ok === true && !z15a.ev.portalClose.nothingCreated
+        && ['P7-C1', 'U-CLOSE', 'P7-D9'].every((id) => z15a.v(id) === 'PASS') && !!t15a && t15a.users > 0 && t15a.activeUsers === 0 && t15a.activeCases === 0 && !!f15a && f15a.cases === 1 && f15a.activeCases === 0
+        && z15a.calls.length === 0 && s15a.asama === 'ek-dosya-ayni-tenant' && s15a.durum === 'YARIM_MAKBUZ_VAR' && s15a.makbuzDosyasi === true
+        && JSON.stringify(s15a.tamamlanan) === JSON.stringify(['izolasyon-sayimi', 'kurulum', 'makbuz', 'ek-dosya-yabanci']) && /D7T kasitli yazma hatasi/.test(z15a.ev.fatal || '')
+        && z15a.v('P7-MSG-KEPT') === 'UNMEASURED' && /kapanış, ölçülen: personel pasif \+ dosyalar CLOSED \(U-CLOSE PASS\); portal hesabı YOK/.test(z15a.o('P7-MSG-KEPT')) && z15a.ev.recovery && z15a.ev.recovery.gerekli === false,
+      `çıkış=${z15a.code} · makbuz=${!!z15a.rc} setupComplete=${z15a.rc && z15a.rc.setupComplete} · closure=${JSON.stringify((z15a.ev || {}).closure || null).slice(0, 120)} · hedef=${JSON.stringify(t15a)} yabancı=${JSON.stringify(f15a)} · setup=${JSON.stringify(s15a)} · API=${z15a.calls.length}`);
+    const r15 = z15a.rc ? await recover(z15a, dir, 'z15r-recover-half-setup', {}) : null;
+    check('Z15-r', 'yarım kurulumun makbuzuyla Recover makbuzu BULUR ve koşar (çıkış 4 değil): kimlik bağı geçer, portal hesabı yok (P7-C1 PASS, disable-user çağrılmaz), U-CLOSE PASS, kullanıcılar pasif; kanıtta setupEvidence.setupComplete=false ("Run kurulumu YARIM"); mesaj id listesi yok → P7-MSG-KEPT ÖLÇÜLEMEYEN → çıkış 3',
+      !!r15 && r15.code === 3 && r15.v('P7-C1') === 'PASS' && r15.v('U-CLOSE') === 'PASS' && r15.activeUsers === 0 && !r15.calls.some((c) => c.path === '/api/portal/admin/disable-user')
+        && !!r15.ev && !!r15.ev.setupEvidence && r15.ev.setupEvidence.setupComplete === false && /YARIM/.test(r15.ev.setupEvidence.not || '') && r15.v('P7-MSG-KEPT') === 'UNMEASURED',
+      r15 ? `çıkış=${r15.code} · C1=${r15.v('P7-C1')} · U-CLOSE=${r15.v('U-CLOSE')} · setupEvidence=${JSON.stringify((r15.ev || {}).setupEvidence || null)}` : 'makbuz YOK — Recover koşulamadı');
+    const rid15b = hex8();
+    const z15b = await withInsertFault('Case', 'fileNumber', `I3-${rid15b}-xf`, () => runScenario('z15b-setup-first-case-fail', dir, {}, { D7_RUNID: rid15b }, shouldNot));
+    const t15b = await tenantState(`ah-${rid15b}`); const f15b = await tenantState(`ah-${rid15b}-x`); const s15b = setupOf(z15b);
+    check('Z15-b', 'BİRİNCİ ek dosya yazması (yabancı tenant `-xf`) hata verir: makbuz VAR (foreignCaseId yok, setupComplete=false); Run kapanışı koştu (U-CLOSE PASS); hedef tenant kullanıcıları pasif, dosyalar CLOSED; yabancı tenantta dosya yok; setup.asama=ek-dosya-yabanci, durum=YARIM_MAKBUZ_VAR; API çağrısı 0; çıkış 1',
+      z15b.code === 1 && !!z15b.rc && z15b.rc.setupComplete === false && !z15b.rc.foreignCaseId && z15b.v('U-CLOSE') === 'PASS' && !!t15b && t15b.activeUsers === 0 && t15b.activeCases === 0 && !!f15b && f15b.cases === 0
+        && s15b.asama === 'ek-dosya-yabanci' && s15b.durum === 'YARIM_MAKBUZ_VAR' && z15b.calls.length === 0,
+      `çıkış=${z15b.code} · makbuz=${!!z15b.rc} · hedef=${JSON.stringify(t15b)} yabancı=${JSON.stringify(f15b)} · setup=${JSON.stringify(s15b)}`);
+    const rid15c = hex8();
+    const z15c = await withInsertFault('Tenant', 'slug', `ah-${rid15c}-x`, () => runScenario('z15c-setup-tx-fail', dir, {}, { D7_RUNID: rid15c }, shouldNot));
+    const s15c = setupOf(z15c);
+    check('Z15-c', 'kurulumun KENDİSİ hata verir (tek işlem; yabancı tenant yazması reddedilir → geri alınır): makbuz YOK; setup.asama=kurulum, durum=KURULUM_HATASI, makbuzDosyasi=false; makbuzsuz durumda sentetik tenant slug sayısı DB\'den ÖLÇÜLDÜ = 0/0 (geri alındı) ve DB\'de tenant yok; kapanış "kapatılacak bir şey yok"; API çağrısı 0; kurtarma gerekmez; çıkış 1',
+      z15c.code === 1 && !z15c.rc && !z15c.tenant && s15c.asama === 'kurulum' && s15c.durum === 'KURULUM_HATASI' && s15c.makbuzDosyasi === false
+        && !!s15c.sentetikTenantDB && s15c.sentetikTenantDB.hedef === 0 && s15c.sentetikTenantDB.yabanci === 0 && !!z15c.ev && z15c.ev.closure && z15c.ev.closure.nothingToClose === true
+        && z15c.calls.length === 0 && z15c.ev.recovery && z15c.ev.recovery.gerekli === false && /D7T kasitli yazma hatasi/.test(z15c.ev.fatal || ''),
+      `çıkış=${z15c.code} · makbuz=${!!z15c.rc} · tenant=${!!z15c.tenant} · setup=${JSON.stringify(s15c)}`);
+
+    // ==== R03 (b) — Run'ın KENDİ kapanışında personel oturumu reddi: yalnız 401/403'te BİR KEZ yeniden giriş + TEK yeniden deneme
+    const DIS = '/api/portal/admin/disable-user'; const LOGIN = '/api/auth/login';
+    const nCalls = (cl, p) => cl.filter((c) => c.path === p).length;
+    const nedenOf = (z) => ((z.ev && z.ev.recovery && z.ev.recovery.neden) || []);
+    const pcOf = (z) => ((z.ev || {}).portalClose || {});
+    const openLineOf = (z) => nedenOf(z).find((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(/.test(n)) || '';
+    const portalOpenLine = (z) => { const l = openLineOf(z); return /P7-C2=FAIL/.test(l) && /portal hesabı DB'de hâlâ AÇIK \(isActive=true hasPortalAccess=true\): kapatma YAPILMADI/.test(l); };
+    const noFalseFinding = (z) => !!z.ev && !z.ev.productFinding && !pcOf(z).productFinding && !nedenOf(z).some((n) => /ÜRÜN BULGUSU|Recover düzeltemez/.test(n)) && !/ÜRÜN BULGUSU/.test(z.o('P7-D9'))
+      && ['P7-C4L', 'P7-C4D'].every((id) => z.v(id) === 'FAIL' && /^HTTP 200 — portal hesabı DB'de hâlâ AÇIK \(P7-C2 FAIL/.test(z.o(id)) && !/\(ürün bulgusu\)/.test(z.o(id)));
+    const sum16 = (z) => `çıkış=${z.code} · disable=${nCalls(z.calls, DIS)} · giriş=${nCalls(z.calls, LOGIN)} · staffReauth=${JSON.stringify(pcOf(z).staffReauth || null)} · C2=${z.v('P7-C2')} · bulgu=${JSON.stringify((z.ev || {}).productFinding || null)} · C4L=${z.o('P7-C4L').slice(0, 90)} · neden=${nedenOf(z).join(' | ').slice(0, 260)}`;
+    const z16a = await runScenario('z16a-staff-token-expired-on-close', dir, { staffAuth: 'expireOnDisable' }, {}, { onDisplay: fullPhone });
+    const sr16a = pcOf(z16a).staffReauth || {};
+    check('Z16-a', 'personel token\'ı kapanış anında geçersiz (ilk disable-user 401): koşucu BİR KEZ yeniden giriş yapar (aynı sentetik personel), kapatmayı BİR KEZ yeniden dener (201) → portal kapandı, kapanış ölçütlerinin TAMAMI PASS, çıkış 0 (6 DEĞİL); disable-user 2 çağrı, personel girişi 2 (koşum başı + yenileme); kanıtta staffReauth 401 → giriş 201 → yeniden deneme 201; P7-C1 gözleminde "YENİLENDİ"; calledEndpoints\'te kapanış girişi; personel pasif (önceki baytlarda tek 401 → yeniden giriş yok → portal AÇIK → çıkış 6)',
+      z16a.code === 0 && closedAll(z16a) && !!z16a.pu && z16a.pu.isActive === false && z16a.cl.hasPortalAccess === false && nCalls(z16a.calls, DIS) === 2 && nCalls(z16a.calls, LOGIN) === 2
+        && sr16a.neden === 'disable-user HTTP 401' && sr16a.giris === 'HTTP 201' && sr16a.yenidenDeneme === 'HTTP 201' && /YENİLENDİ/.test(z16a.o('P7-C1'))
+        && (z16a.ev.calledEndpoints || []).some((c) => /auth\/login \(kapanış/.test(c)) && z16a.activeUsers === 0, sum16(z16a));
+    const z16b = await runScenario('z16b-staff-forbidden-on-close', dir, { disable: 'forbidden' }, {}, { onDisplay: fullPhone });
+    const sr16b = pcOf(z16b).staffReauth || {};
+    check('Z16-b', 'kapatma ucu her çağrıda 403: yeniden giriş BİR KEZ, yeniden deneme BİR KEZ, sonra DURUR (döngü yok) → disable-user tam 2, personel girişi tam 2; staffReauth 403 → 201 → 403; portal AÇIK kaldı (P7-C2 FAIL), çıkış 6; koşucu oturumunun 200\'ü "ürün bulgusu" YAZILMAZ, P7-C4L/D gözlemi "portal hesabı DB\'de hâlâ AÇIK (P7-C2 FAIL"; kurtarma nedeninde portal açık satırı + personel reddi satırı; U-CLOSE PASS',
+      z16b.code === 6 && nCalls(z16b.calls, DIS) === 2 && nCalls(z16b.calls, LOGIN) === 2 && sr16b.neden === 'disable-user HTTP 403' && sr16b.giris === 'HTTP 201' && sr16b.yenidenDeneme === 'HTTP 403'
+        && z16b.v('P7-C2') === 'FAIL' && z16b.v('U-CLOSE') === 'PASS' && !!z16b.pu && z16b.pu.isActive === true && noFalseFinding(z16b) && portalOpenLine(z16b)
+        && nedenOf(z16b).some((n) => /PERSONEL OTURUMU kapanışta reddedildi \(disable-user HTTP 403\)/.test(n)), sum16(z16b));
+    const z16c = await runScenario('z16c-disable-notfound', dir, { disable: 'notFound' }, {}, { onDisplay: fullPhone });
+    check('Z16-c', 'kapatma ucu 404 (kimlik dışı 4xx): yeniden giriş YOK, yeniden deneme YOK → disable-user 1, personel girişi 1, staffReauth yok; P7-C2 FAIL, çıkış 6; "ürün bulgusu" YAZILMAZ; kurtarma nedeninde portal açık satırı',
+      z16c.code === 6 && nCalls(z16c.calls, DIS) === 1 && nCalls(z16c.calls, LOGIN) === 1 && !pcOf(z16c).staffReauth && z16c.v('P7-C2') === 'FAIL' && noFalseFinding(z16c) && portalOpenLine(z16c), sum16(z16c));
+    const z16d = await runScenario('z16d-relogin-ratelimited', dir, { staffAuth: 'expireOnDisable', relogin: 'rateLimit' }, {}, { onDisplay: fullPhone });
+    const sr16d = pcOf(z16d).staffReauth || {};
+    check('Z16-d', 'kapanışta token geçersiz (401) ve YENİDEN GİRİŞ hız sınırına takılıyor (429): yeniden deneme YAPILMAZ (disable-user 1, personel girişi 2), staffReauth 401 → 429 → yapılmadı; portal AÇIK (P7-C2 FAIL); "ürün bulgusu" YAZILMAZ; kurtarma nedeninde portal açık satırı + "tek yeniden giriş: HTTP 429; tek yeniden deneme: yapılmadı"; çıkış 6',
+      z16d.code === 6 && nCalls(z16d.calls, DIS) === 1 && nCalls(z16d.calls, LOGIN) === 2 && sr16d.neden === 'disable-user HTTP 401' && sr16d.giris === 'HTTP 429' && !sr16d.yenidenDeneme && z16d.v('P7-C2') === 'FAIL'
+        && !!z16d.pu && z16d.pu.isActive === true && noFalseFinding(z16d) && portalOpenLine(z16d)
+        && nedenOf(z16d).some((n) => /PERSONEL OTURUMU kapanışta reddedildi \(disable-user HTTP 401\); tek yeniden giriş: HTTP 429; tek yeniden deneme: yapılmadı/.test(n)), sum16(z16d));
+    const l8 = nedenOf(z8);
+    check('Z16-e', 'GERÇEK ürün bulgusu korunur (Z8 koşumu, guard bayat): DB kapanışı ölçülmüşken (P7-C2/C2V/C5 PASS) koşucu oturumu 200 → productFinding YAZILIR ve dayanağını adlandırır ("(P7-C2 PASS)"); P7-C4L/D gözlemi "DB kapanışı ölçüldükten sonra (P7-C2 PASS) MEVCUT OTURUM KAPANMADI (ürün bulgusu)"; kurtarma nedeni ÜRÜN BULGUSU satırını "Recover düzeltemez" ile yazar, "PORTAL ERİŞİMİ kapandığı doğrulanmadı" YAZMAZ; süre iddiası ("token 7 gün") YOK; çıkış 6',
+      z8.code === 6 && ['P7-C2', 'P7-C2V', 'P7-C5'].every((id) => z8.v(id) === 'PASS') && /\(P7-C2 PASS\)/.test((z8.ev && z8.ev.productFinding) || '')
+        && ['P7-C4L', 'P7-C4D'].every((id) => /DB kapanışı ölçüldükten sonra \(P7-C2 PASS\) MEVCUT OTURUM KAPANMADI \(ürün bulgusu\)/.test(z8.o(id)))
+        && l8.some((n) => /ÜRÜN BULGUSU — DB kapanışı ölçüldükten sonra \(P7-C2 PASS\)/.test(n) && /Recover düzeltemez/.test(n)) && !l8.some((n) => /PORTAL ERİŞİMİ kapandığı doğrulanmadı/.test(n)) && !l8.some((n) => /7 gün/.test(n)),
+      `çıkış=${z8.code} · bulgu=${JSON.stringify((z8.ev || {}).productFinding || null)} · neden=${l8.join(' | ').slice(0, 220)}`);
+    check('Z16-f', 'kapatma ucu iki kez 500 (Z5 koşumu; en çok iki adım, yeniden giriş YOK): disable-user 2, personel girişi 1, staffReauth yok; portal AÇIK (P7-C2 FAIL); "ürün bulgusu" YAZILMAZ; kurtarma nedeninde portal açık satırı iki 500 çağrısıyla',
+      z5.code === 6 && nCalls(z5.calls, DIS) === 2 && nCalls(z5.calls, LOGIN) === 1 && !pcOf(z5).staffReauth && z5.v('P7-C2') === 'FAIL' && noFalseFinding(z5) && portalOpenLine(z5) && /kapatma çağrıları: HTTP 500 · HTTP 500/.test(openLineOf(z5)), sum16(z5));
+
+    // ==== R03 (c) — birim: Recover çıkış 3 adımı kanıttaki verdict'lerden · kurtarma nedeni ölçülenden · kapanış özeti ölçülenden
+    const rsf = typeof EX0.recoverStepText === 'function' ? EX0.recoverStepText : null; const raf = typeof EX0.recoveryAdvice === 'function' ? EX0.recoveryAdvice : null;
+    const tAbs = rsf ? String(rsf({ exitCode: 3, recovery: { gerekli: true }, portalClose: { ok: true, accountAbsent: true }, results: [{ id: 'P7-C1', verdict: 'PASS' }, { id: 'P7-MSG-KEPT', verdict: 'UNMEASURED' }, { id: 'U-CLOSE', verdict: 'PASS' }] })) : '';
+    const tCl = rsf ? String(rsf({ exitCode: 3, recovery: { gerekli: true }, portalClose: { ok: false }, results: [{ id: 'P7-C2', verdict: 'PASS' }, { id: 'P7-C5', verdict: 'PASS' }, { id: 'P7-C4L', verdict: 'UNMEASURED' }, { id: 'P7-C4D', verdict: 'UNMEASURED' }] })) : '';
+    const a5 = (r5.ev && r5.ev.recovery && r5.ev.recovery.adim) || '';
+    const srcRun0 = fs.readFileSync(RUN, 'utf8');
+    check('Z17', 'Recover çıkış 3 adımı kanıttaki verdict\'lerden kurulur: portal hesabı YOKKEN metin "PASS" İDDİA ETMEZ ("P7-C2=ÜRETİLMEDİ · P7-C5=ÜRETİLMEDİ (portal hesabı YOK …)"); DB kapalı ölçülmüşken "P7-C2=PASS · P7-C5=PASS" + ÖLÇÜLEMEYEN satırlar adıyla; Z5 Recover kanıtında (çıkış 3) adım "ÖNERİ (yetki DEĞİL): Recover TEKRARLANMAZ" ile başlar ve kanıttaki P7-C2/C5 verdict\'ini yazar; koşucu kaynağında sabit "TEKRARLANMAZ: DB kapalı" YOK',
+      !!rsf && /P7-C2=ÜRETİLMEDİ · P7-C5=ÜRETİLMEDİ \(portal hesabı YOK/.test(tAbs) && !/PASS/.test(tAbs) && /^ÖNERİ \(yetki DEĞİL\)/.test(tAbs) && /P7-C2=PASS · P7-C5=PASS/.test(tCl) && /ÖLÇÜLEMEYEN satırlar \(P7-C4L,P7-C4D\)/.test(tCl)
+        && r5.code === 3 && /^ÖNERİ \(yetki DEĞİL\): Recover TEKRARLANMAZ/.test(a5) && a5.includes(`P7-C2=${r5.v('P7-C2')} · P7-C5=${r5.v('P7-C5')}`) && !srcRun0.includes('TEKRARLANMAZ: DB kapalı'),
+      `fonksiyon=${!!rsf} · hesap yok=${tAbs.slice(0, 150)} · Z5 Recover adımı=${a5.slice(0, 160)}`);
+    const R7 = (pairs) => pairs.map(([id, verdict]) => ({ id, verdict }));
+    const u1 = raf ? raf({ closure: { ok: true }, results: R7([['P7-C1', 'FAIL'], ['P7-C2', 'FAIL'], ['P7-C2V', 'FAIL'], ['P7-C5', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, sessionWhileOpen: true, after: { isActive: true, hasPortalAccess: true }, disableCalls: ['HTTP 404'] } }, 'r.json', 'run') : {};
+    const u2 = raf ? raf({ closure: { ok: true }, results: R7([['P7-C1', 'PASS'], ['P7-C2', 'PASS'], ['P7-C2V', 'PASS'], ['P7-C5', 'FAIL'], ['P7-C4L', 'FAIL'], ['P7-C4D', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, productFinding: 'ÜRÜN BULGUSU: x', after: { isActive: false, hasPortalAccess: false } } }, 'r.json', 'run') : {};
+    const u3 = raf ? raf({ closure: { ok: true, nothingToClose: true }, portalClose: { ok: true, nothingCreated: true }, results: [], setup: { asama: 'kurulum', sentetikTenantDB: { hedef: 1, yabanci: 0 } } }, null, 'run') : {};
+    const u4 = raf ? raf({ closure: { ok: false }, results: R7([['P7-C1', 'FAIL'], ['P7-C2', 'FAIL']]), portalClose: { ok: false, portalDbClosed: false, after: { isActive: true, hasPortalAccess: true } } }, 'r.json', 'recover') : {};
+    const n1 = u1.neden || []; const n2 = u2.neden || []; const n3 = u3.neden || [];
+    const tag = typeof EX0.closureTag === 'function' ? [EX0.closureTag({ closure: { ok: true }, portalClose: { portalDbClosed: true } }), EX0.closureTag({ closure: { ok: false }, portalClose: { portalDbClosed: false } })] : ['', ''];
+    check('Z18', 'kurtarma nedeni ve adım (birim): (i) portal DB\'de AÇIK → "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P7-C1=FAIL,P7-C2=FAIL,P7-C2V=FAIL,P7-C5=FAIL) — portal hesabı DB\'de hâlâ AÇIK … ürün bulgusu SAYILMADI"; Run adımı "ÖNERİ (yetki DEĞİL)" + "AYRI owner onayıyla"; (ii) ürün bulgusu + HTTP sonrası DB açık (P7-C5 FAIL) → ürün bulgusu satırı VE "PORTAL ERİŞİMİ kapandığı doğrulanmadı (P7-C5=FAIL)" ("hâlâ AÇIK" yok); (iii) makbuz yok + sentetik tenant DB\'de VAR → "KURULUM: makbuz YOK … VAR (hedef=1 · yabancı=0)" + adımda "makbuz YOK: Recover bu kanıtla başlatılamaz"; (iv) Recover adımı "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR", "BİR KEZ" yok; kapanış özeti ölçülenden (U-CLOSE PASS ↔ DOĞRULANMADI)',
+      !!raf && n1.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P7-C1=FAIL,P7-C2=FAIL,P7-C2V=FAIL,P7-C5=FAIL\) — portal hesabı DB'de hâlâ AÇIK/.test(n) && /ürün bulgusu SAYILMADI/.test(n)) && /^ÖNERİ \(yetki DEĞİL\)/.test(u1.adim || '') && /AYRI owner onayıyla/.test(u1.adim || '')
+        && n2.some((n) => /ÜRÜN BULGUSU/.test(n)) && n2.some((n) => /^PORTAL ERİŞİMİ kapandığı doğrulanmadı \(P7-C5=FAIL\)/.test(n) && !/hâlâ AÇIK/.test(n))
+        && n3.some((n) => /^KURULUM: makbuz YOK \(kurulum aşaması=kurulum\) ama sentetik tenant slug'ı DB'de VAR \(hedef=1 · yabancı=0\)/.test(n)) && /makbuz YOK: Recover bu kanıtla başlatılamaz/.test(u3.adim || '')
+        && /İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(u4.adim || '') && !/BİR KEZ/.test(u4.adim || '') && /U-CLOSE PASS\); portal DB'de pasif ölçüldü \(P7-C2 PASS\)$/.test(tag[0]) && /DOĞRULANMADI.*DOĞRULANMADI/.test(tag[1]),
+      `fonksiyon=${!!raf} · (i) ${n1.map((n) => n.slice(0, 60)).join(' | ')} · (ii) ${n2.map((n) => n.slice(0, 50)).join(' | ')} · (iii) ${n3.map((n) => n.slice(0, 60)).join(' | ')} · (iv) ${(u4.adim || '').slice(0, 80)} · özet=${tag.join(' / ')}`);
+
+    // ---- C-1 (R03 c) — kanıttaki kurtarma/kapanış metinleri YALNIZ ölçüleni söyler: bu öz-testin ürettiği TÜM Run/Recover kanıtları taranır
+    let evScanned = 0; let evNeed = 0; const textBad = [];
+    const fixedClaims = [/sentetik tenant CLOSED/, /sentetik tenant kapanışıyla/, /token 7 gün/, /birkaç dakika sonra Recover/, /Recover BİR KEZ/, /ile BİR KEZ/, /kapanışta yeniden kapatıldı/, /TEKRARLANMAZ: DB kapalı/];
+    for (const f of new Set(artifacts)) {
+      if (!/-evidence\.json$/.test(f) || !fs.existsSync(f)) continue; const nm = path.basename(f); let e;
+      try { e = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (x) { textBad.push(`${nm}:okunamadı`); continue; }
+      evScanned++;
+      if (e.revision !== 'R03') textBad.push(`${nm}:revision=${e.revision}`);
+      const kept = (e.results || []).find((r) => r.id === 'P7-MSG-KEPT'); const vOf = (id) => ((e.results || []).find((r) => r.id === id) || {}).verdict;
+      const txt = JSON.stringify({ recovery: e.recovery || null, temporaryAccess: e.temporaryAccess || null, note: (e.messageResidue || {}).note || null, kept: kept ? kept.observed : null, finding: e.productFinding || null });
+      for (const re of fixedClaims) if (re.test(txt)) textBad.push(`${nm}:${re.source}`);
+      if (kept && !/kapanış, ölçülen: /.test(kept.observed || '')) textBad.push(`${nm}:kalıntı metninde ölçülen kapanış özeti yok`);
+      if (kept && /\(U-CLOSE PASS\)/.test(kept.observed || '') && vOf('U-CLOSE') !== 'PASS') textBad.push(`${nm}:kalıntı metni U-CLOSE PASS diyor, verdict ${vOf('U-CLOSE')}`);
+      if (kept && /P7-C2 PASS\)/.test(kept.observed || '') && vOf('P7-C2') !== 'PASS') textBad.push(`${nm}:kalıntı metni P7-C2 PASS diyor, verdict ${vOf('P7-C2')}`);
+      if (e.recovery && e.recovery.gerekli) {
+        evNeed++; const a = e.recovery.adim || '';
+        if (!/^ÖNERİ \(yetki DEĞİL\)/.test(a)) textBad.push(`${nm}:adım ÖNERİ değil`);
+        if (e.record === 'EXTACC-D7-RECOVER' && e.exitCode !== 3 && !/İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR/.test(a)) textBad.push(`${nm}:Recover adımı ikinci Recover kuralını yazmıyor`);
+        if (e.record === 'EXTACC-D7-RECOVER' && e.exitCode === 3 && !a.includes(`P7-C2=${vOf('P7-C2') || 'ÜRETİLMEDİ'} · P7-C5=${vOf('P7-C5') || 'ÜRETİLMEDİ'}`)) textBad.push(`${nm}:Recover 3 adımı kanıttaki verdict'i yazmıyor`);
+        if (e.record !== 'EXTACC-D7-RECOVER' && !/AYRI owner onayıyla/.test(a)) textBad.push(`${nm}:Run adımı AYRI owner onayını yazmıyor`);
+      }
+      if (e.productFinding && vOf('P7-C2') !== 'PASS') textBad.push(`${nm}:ürün bulgusu P7-C2 PASS olmadan yazıldı`);
+      if (e.temporaryAccess && typeof e.temporaryAccessClosed !== 'boolean') textBad.push(`${nm}:temporaryAccessClosed ölçülmedi`);
+      if (e.record === 'EXTACC-D7-PORTAL-MESSAGES-LIVE-RUN' && !(e.setup && typeof e.setup.durum === 'string')) textBad.push(`${nm}:setup.durum yok`);
+    }
+    check('C-1', 'kanıttaki kurtarma/kapanış metinleri yalnız ölçüleni söyler (bu öz-testin TÜM Run/Recover kanıtları): revision=R03; sabit iddia YOK ("sentetik tenant CLOSED", "… kapanışıyla erişilemez", "token 7 gün", "birkaç dakika sonra Recover", "Recover BİR KEZ", "ile BİR KEZ", "kapanışta yeniden kapatıldı", "TEKRARLANMAZ: DB kapalı"); P7-MSG-KEPT kapanış özeti ölçülenden ve U-CLOSE / P7-C2 verdict\'iyle tutarlı; kurtarma gerekliyse adım "ÖNERİ (yetki DEĞİL)" ile başlar — Run adımı AYRI owner onayını, Recover adımı (çıkış 3 dışı) "İKİNCİ bir Recover bu paketle TANIMLI DEĞİLDİR" kuralını, Recover 3 adımı kanıttaki P7-C2/C5 verdict\'ini yazar; ürün bulgusu yalnız P7-C2 PASS iken; Recover geçici erişimi verdiyse kapanışı ölçülmüş alanla (temporaryAccessClosed); her Run kanıtında setup.durum',
+      evScanned >= 24 && evNeed >= 8 && textBad.length === 0, `taranan kanıt=${evScanned} · kurtarma gerekli=${evNeed} · sorun=${textBad.length ? textBad.slice(0, 10).join(', ') : 'yok'}`);
 
     // ---- S-1 SIR SIZINTISI — parolalar, JWT'ler, DB URL, GO, telefon mesajı içeriği, tuzak (başka müvekkil) içeriği (sink dosyaları TARAMA DIŞI)
     let scanned = 0; const leaks = [];
@@ -323,10 +476,22 @@ const fullPhone = (runId, sink) => phoneFlow(runId, sink);
   check('T-1', 'koşucu kaynağında forgot/reset/change-password/documents çağrısı YOK; admin uçları (create/disable/messages) YALNIZ `${base}` ile (origin ile HİÇ); geçici portal parolası tam 6 kullanım',
     !EX.FORBIDDEN_PORTAL.some((re) => re.test(srcNoDecl)) && adminCalls.length === 6 && adminCalls.every((l) => /`\$\{base\}\/portal\/admin\//.test(l)) && !/\$\{origin\}\/api\/portal\/admin/.test(src) && (src.match(/\bportalPw\b/g) || []).length === 6,
     `admin çağrı satırı=${adminCalls.length} · portalPw=${(src.match(/\bportalPw\b/g) || []).length}`);
+  // T-9 (R03 b): personel yeniden girişi YALNIZ Run'ın kendi kapanışında; Recover'ın oturum açma yolu değişmedi; yeniden giriş DB'ye yazmaz.
+  const runSrc = src.slice(src.indexOf('async function runMode'), src.indexOf('async function recoverMode')); const recSrc = src.slice(src.indexOf('async function recoverMode'));
+  const iRe = runSrc.indexOf('const staffReauth ='); const reauthFn = iRe >= 0 ? runSrc.slice(iRe, runSrc.indexOf('} : null;', iRe)) : '';
+  check('T-9', 'personel yeniden girişi yalnız Run kapanışında: Run\'ın closePortal çağrısına `staffReauth` verilir, Recover vermez; yeniden giriş fonksiyonu yalnız makbuzdaki personelle L.AH.login çağırır ve DB\'ye yazmaz (prisma çağrısı yok); closePortal yeniden girişi yalnız 401/403\'te ve bir kez yapar',
+    reauthFn.length > 0 && /L\.AH\.login\(base, receipt\.elevEmail, pw, receipt\.tenantSlug\)/.test(reauthFn) && !/prisma\./.test(reauthFn) && /closePortal\([^)]*\{\s*session, staffReauth,/.test(runSrc) && !/staffReauth/.test(recSrc)
+      && /\(r\.status === 401 \|\| r\.status === 403\) && o\.staffReauth && !res\.staffReauth/.test(src), `fonksiyon=${reauthFn.length} karakter · Recover'da staffReauth=${/staffReauth/.test(recSrc)}`);
+  // T-10 (R03 a): makbuz kurulumdan hemen sonra atanır ve dosyaya yazılır — iki ek dosya yazmasından ÖNCE (kaynak sırası).
+  const iRcpt = runSrc.indexOf('receipt = { record: RECEIPT_RECORD'); const iSave = runSrc.indexOf("saveReceipt('makbuz yazılamadı"); const iSetup = runSrc.indexOf('L.setupI3(');
+  const iCases = [...runSrc.matchAll(/prisma\.case\.create\(/g)].map((m) => m.index);
+  check('T-10', 'koşucu kaynağında sıra: setupI3 → makbuz ataması → makbuz dosyası yazımı → iki ek dosya yazması (ikisi de makbuzdan SONRA); ek dosya kimlikleri makbuza yazıldıkça eklenir (foreignCaseId, sameTenantOtherCaseId + setupComplete)',
+    iSetup >= 0 && iRcpt > iSetup && iSave > iRcpt && iCases.length === 2 && iCases.every((i) => i > iSave) && /receipt\.foreignCaseId = fcase\.id; saveReceipt\(null\)/.test(runSrc) && /receipt\.sameTenantOtherCaseId = scase\.id; receipt\.setupComplete = true; saveReceipt\(null\)/.test(runSrc),
+    `setupI3@${iSetup} makbuz@${iRcpt} yazım@${iSave} ek dosyalar@${iCases.join(',')}`);
   const sinkLines = src.split('\n').filter((l) => /D7_TEST_DISPLAY_SINK/.test(l));
   check('T-2', 'gösterimsiz test dosyası (sink) kaynakta TEK yerde ve yalnız `display === \'none\'` koşuluyla (konsol varken asla)', sinkLines.length === 1 && /g\.display === 'none' && process\.env\.D7_TEST_DISPLAY_SINK/.test(sinkLines[0]) && /if \(con\) return DISPLAY\.show/.test(sinkLines[0]), `satır=${sinkLines.length}`);
   const liveEnv = { AH_DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/hukuk_db', D7_EXPECT_DB: 'hukuk_db', D7_WAIT_MS: '1', D7_POLL_MS: '1', D7_VIEW_MS: '1', D7_HTTP_TIMEOUT_MS: '1', D7_CALL_TIMEOUT_MS: '1', D7_LATE_CREATE_MS: '1' };
-  const pl = EX.effectiveParams(liveEnv); const pt = EX.effectiveParams(Object.assign({}, liveEnv, { AH_DATABASE_URL: `postgresql://u:p@127.0.0.1:${DB_EXPECT.port}/${DB_EXPECT.name}`, D7_EXPECT_DB: DB_EXPECT.name }));
+  const pl = EX.effectiveParams(liveEnv); const pt = EX.effectiveParams(Object.assign({}, liveEnv, { AH_DATABASE_URL: `postgresql://u:p@127.0.0.1:${new URL(DBURL).port}/${DB_NAME}`, D7_EXPECT_DB: DB_NAME }));
   check('P-1', 'canlı DB: devralınan 6 süre değişkeni YOK SAYILIR (20 dk bekleme, 5 sn yoklama, 120 sn inceleme, 120 sn geç oluşma); test kısa süreleri korur',
     pl.live && Object.keys(EX.LIVE_PARAMS).length === 6 && Object.keys(EX.LIVE_PARAMS).every((k) => pl[k] === EX.LIVE_PARAMS[k]) && pl.D7_WAIT_MS === 1200000 && pl.D7_LATE_CREATE_MS === 120000 && !pt.live && pt.D7_WAIT_MS === 1, `canlı=${pl.live}/${pl.D7_WAIT_MS} · test=${pt.live}/${pt.D7_WAIT_MS}`);
   const g = EX.runGates({ D7_DISPLAY: 'none', D7_EXPECT_DB: 'x', AH_DATABASE_URL: 'postgresql://u:p@h:1/x', D7_API_BASE: 'a', D7_EXPECT_API: 'a', D7_EXPECT_BASE_URL: 'https://ornek.invalid', D7_LIVE_CONFIRM: '1', D7_LIVE_GO_REF: 'OWNER-GO-CLIENT-EXTACC-D7-20000101-R01', D7_RUNID: 'abcdef12', D7_EXPECT_TENANT_SLUG: 'ah-abcdef12' });
@@ -355,8 +520,8 @@ const fullPhone = (runId, sink) => phoneFlow(runId, sink);
   console.log('');
   for (const r of rows) console.log(`${r.sonuc}  ${r.id.padEnd(6)} ${r.aciklama}\n        ${r.gozlem}`);
   const fail = rows.filter((r) => r.sonuc === 'FAIL').length;
-  console.log(`\nEXTACC D-7 R01 ÖZ-TESTİ: PASS ${rows.length - fail} / ${rows.length}`);
+  console.log(`\nEXTACC D-7 R03 ÖZ-TESTİ: PASS ${rows.length - fail} / ${rows.length}`);
   console.log(`  kanıt dizini: ${dir}`);
-  console.log(`  (disposable DB ${DB_EXPECT.host}:${DB_EXPECT.port}/${DB_EXPECT.name} + sahte portal API ${API_PORT}/${EXT_PORT} + gerçek TLS; canlı DB/API/DNS/tünel/e-posta KULLANILMADI)`);
+  console.log(`  (disposable DB 127.0.0.1:${new URL(DBURL).port}/${DB_NAME} + sahte portal API ${API_PORT}/${EXT_PORT} + gerçek TLS; canlı DB/API/DNS/tünel/e-posta KULLANILMADI)`);
   process.exit(fail > 0 ? 1 : 0);
 })().catch((e) => { console.log('OLCULEMEDI: ' + String((e && e.stack) || e).slice(0, 600)); process.exit(2); });
