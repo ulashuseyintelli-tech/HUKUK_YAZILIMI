@@ -27,6 +27,8 @@ import {
   UpdateSmsSettingsDto,
   UpdateSmtpSettingsDto,
 } from "./dto/office-settings.dto";
+// OFFICE-BANK-ACCOUNT: banka hesabı gövdesi de DTO SINIFI (satır-içi tip literali değil) — bkz. dto/office-bank-account.dto.ts.
+import { CreateOfficeBankAccountDto, UpdateOfficeBankAccountDto } from "./dto/office-bank-account.dto";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
@@ -82,14 +84,7 @@ export class OfficeController {
   @UseGuards(OfficeF01AuthorizationGuard)
   addBankAccount(
     @CurrentUser("tenantId") tenantId: string,
-    @Body()
-    data: {
-      bankName: string;
-      branchName?: string;
-      iban: string;
-      accountName?: string;
-      isDefault?: boolean;
-    },
+    @Body() data: CreateOfficeBankAccountDto,
     @CurrentUser("id") actorUserId?: string,
     @CurrentUser("role") actorRole?: string,
   ) {
@@ -104,14 +99,7 @@ export class OfficeController {
   updateBankAccount(
     @CurrentUser("tenantId") tenantId: string,
     @Param("id") accountId: string,
-    @Body()
-    data: {
-      bankName?: string;
-      branchName?: string;
-      iban?: string;
-      accountName?: string;
-      isDefault?: boolean;
-    },
+    @Body() data: UpdateOfficeBankAccountDto,
     @CurrentUser("id") actorUserId?: string,
     @CurrentUser("role") actorRole?: string,
   ) {
