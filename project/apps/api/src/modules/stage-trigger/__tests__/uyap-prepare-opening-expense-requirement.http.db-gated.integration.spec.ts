@@ -467,7 +467,7 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
       expect((await prepare(caseId)).body).toMatchObject({ action: 'BLOCKED', openingExpense: { reasonCode: NOT_DETERMINED } });
     });
 
-    it('paket modu talebi (yalnız eski biçim kalem listesi; öneri düzenlenmiş mi kayıtlı değil) açılış masrafını belirlemez', async () => {
+    it('paket modu talebi dövizli dosyada oluşturulmaz (peşin harç hesaplanamayan eksik paket, 409) — açılış masrafı belirlenmemiş kalır', async () => {
       const caseId = await openUsdCase('usd-paket');
       const res = await post('/expense-requests/from-package', {
         caseId,
@@ -476,7 +476,8 @@ describeWithDisposableDb('Açılış masrafı şartı — belirlenemeyen masraf 
         items: [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 100, finalAmount: 100 }],
         paidByLawyer: true,
       });
-      expect({ status: res.status, requestStatus: res.body?.status }).toEqual({ status: 201, requestStatus: 'LAWYER_PAID' });
+      expect({ status: res.status, code: res.body?.code }).toEqual({ status: 409, code: 'COST_PACKAGE_FX_BASIS_POLICY_MISSING' });
+      expect(await expenseRequestsOf(caseId)).toEqual([]);
 
       expect(await gateStatus(caseId)).toMatchObject({ isBlocked: true, openingExpense: { reasonCode: NOT_DETERMINED } });
     });

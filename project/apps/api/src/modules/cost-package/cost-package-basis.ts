@@ -21,7 +21,13 @@
  * Dayanak: RECEIVABLE-GOVERNANCE REC-FX-002 (yetkili kur sözleşmesi olmadan çevirme yok), REC-FEE-003 (eksik hukuki /
  * tarife verisi sessiz 0 ya da varsayılan üretmez).
  */
-import { OPENING_EXPENSE_TARIFF_CURRENCY, OpeningExpenseBasisNotCalculable } from '@/modules/expense-request/opening-expense-basis';
+import type { PrismaClient } from '@prisma/client';
+import {
+  evaluateOpeningExpenseBasis,
+  openingExpenseBasisInputOfCase,
+  OPENING_EXPENSE_TARIFF_CURRENCY,
+  OpeningExpenseBasisNotCalculable,
+} from '@/modules/expense-request/opening-expense-basis';
 
 export const COST_PACKAGE_FX_BASIS_POLICY_MISSING = 'COST_PACKAGE_FX_BASIS_POLICY_MISSING' as const;
 
@@ -97,5 +103,64 @@ export function describeIncompleteSuggestion(
     caseCurrency: basis.caseCurrency,
     basisCurrencies: basis.basisCurrencies,
     tariffCurrency: basis.tariffCurrency,
+  };
+}
+
+/** Önerinin eksik olup olmadığının okunması için gereken en küçük okuma yüzeyi (PrismaService ve işlem istemcisi uyar). */
+export type CostPackageBasisReadClient = Pick<PrismaClient, 'due' | 'claimItem'>;
+
+/**
+ * Paketin matraha bağlı (oranlı) kalemleri bu dosyada hesaplanabiliyor mu? Hesaplanamıyorsa eksik öneriyi anlatır;
+ * paket oranlı kalem içermiyorsa ya da matrah TL ise null döner. SALT OKUMA: hesap yapmaz, tutar çevirmez, kayıt yazmaz.
+ * Matrah, açılış masraf setiyle AYNI kayıtlardan okunur: anapara kalemleri (Due), yoksa anapara alacak kalemleri.
+ *
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - CostPackageService.computeExpenseRequest() → POST /cost-packages/compute, StageTriggerService.handleUyapPrepare()
+ * - ExpenseRequestService.createFromPackage() → POST /expense-requests/from-package (eksik paketten kayıt reddi)
+ * </remarks>
+ */
+export async function loadIncompleteSuggestion(
+  client: CostPackageBasisReadClient,
+  caseRow: { id: string; currency: string },
+  pkg: {
+    name: string;
+    items: ReadonlyArray<{ itemCode: string; label: string; isEditable: boolean; sortOrder: number; calcRule: unknown }>;
+  },
+): Promise<CostPackageIncompleteSuggestion | null> {
+  const notCalculableItems: CostPackageNotCalculableItem[] = pkg.items
+    .filter((item) => isBasisDependentCalcRule(item.calcRule))
+    .map((item) => ({ itemCode: item.itemCode, label: item.label, isEditable: item.isEditable, sortOrder: item.sortOrder }));
+  if (notCalculableItems.length === 0) {
+    return null;
+  }
+
+  const [dues, claimItems] = await Promise.all([
+    client.due.findMany({ where: { caseId: caseRow.id, type: 'PRINCIPAL' }, select: { currency: true } }),
+    client.claimItem.findMany({ where: { caseId: caseRow.id, itemType: 'PRINCIPAL' }, select: { currency: true } }),
+  ]);
+  const basis = evaluateOpeningExpenseBasis(openingExpenseBasisInputOfCase({ currency: caseRow.currency, dues, claimItems }));
+
+  return basis.calculable ? null : describeIncompleteSuggestion(pkg.name, notCalculableItems, basis);
+}
+
+/**
+ * Eksik öneri reddinin (409) gövdesi: tutar, kalem listesi ya da toplam İÇERMEZ; yalnız neden ve gereken bilgi.
+ *
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - CostPackageService.computeExpenseRequest() (beyansız çağıran)
+ * - ExpenseRequestService.createFromPackage() (eksik paketten kayıt)
+ * </remarks>
+ */
+export function incompleteSuggestionConflictBody(suggestion: CostPackageIncompleteSuggestion) {
+  return {
+    code: suggestion.reasonCode,
+    message: suggestion.message,
+    requiredInfo: suggestion.requiredInfo,
+    notCalculableItems: suggestion.notCalculableItems,
+    caseCurrency: suggestion.caseCurrency,
+    basisCurrencies: suggestion.basisCurrencies,
+    tariffCurrency: suggestion.tariffCurrency,
   };
 }

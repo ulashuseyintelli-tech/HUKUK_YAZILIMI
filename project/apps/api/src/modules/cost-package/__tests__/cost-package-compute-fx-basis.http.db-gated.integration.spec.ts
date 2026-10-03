@@ -483,24 +483,24 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
   it('SALT HESAP: öneri ucu dövizli dosyada da TL dosyada da kayıt yazmaz; önceden paketten oluşturulmuş talep değişmez', async () => {
     const usd = await openCase('yazma-usd', { ...inCurrency('USD'), dues: [principal(1_000_000)] });
     const tl = await openCase('yazma-try', { ...inCurrency('TRY'), dues: [principal(1_000_000)] });
-    // Geçmiş kayıt: düzeltmeden önce pencerede dolu gelen (yanlış) öneriyle kaydedilmiş paket talebi
-    for (const caseId of [usd, tl]) {
-      const saved = await post('/expense-requests/from-package', {
-        caseId,
-        clientId,
-        packageCode: OPENING,
-        items: bySortOrder([...fixedOpeningItems(), pesinHarcItem(1_000_000, 5_000)]).map((item) => ({
-          itemCode: item.itemCode,
-          label: item.label,
-          suggestedAmount: item.suggestedAmount,
-          finalAmount: item.finalAmount,
-        })),
-      });
-      expect({ status: saved.status, totalAmount: Number(saved.body?.totalAmount) }).toEqual({ status: 201, totalAmount: 5857.9 });
-    }
+    // Geçmiş kayıt: düzeltmeden önce pencerede dolu gelen (yanlış) öneriyle kaydedilmiş paket talebi. Dövizli dosyada
+    // artık paket yolundan oluşturulamaz (409) → geçmiş kayıt doğrudan eklenir; TL dosyada aynı yoldan oluşur.
+    const legacyItems = bySortOrder([...fixedOpeningItems(), pesinHarcItem(1_000_000, 5_000)]).map((item) => ({
+      type: item.itemCode,
+      description: item.label,
+      amount: item.finalAmount,
+    }));
+    await prisma.expenseRequest.create({ data: { tenantId, caseId: usd, clientId, items: legacyItems, totalAmount: 5857.9, status: 'PENDING', createdById: adminId } });
+    const savedTl = await post('/expense-requests/from-package', {
+      caseId: tl,
+      clientId,
+      packageCode: OPENING,
+      items: legacyItems.map((item) => ({ itemCode: item.type, label: item.description, suggestedAmount: item.amount, finalAmount: item.amount })),
+    });
+    expect({ status: savedTl.status, totalAmount: Number(savedTl.body?.totalAmount) }).toEqual({ status: 201, totalAmount: 5857.9 });
     const before = { usd: await footprintOf(usd), tl: await footprintOf(tl) };
     expect(before.usd.requests).toHaveLength(1);
-    expect(before.usd.journalEntries).toBe(1);
+    expect(before.usd.journalEntries).toBe(0);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       expect((await compute(usd, OPENING)).status).toBe(201);
@@ -534,6 +534,186 @@ describeWithDisposableDb('Masraf paketi önerisi — dövizli dosyada oranlı ka
 
       await expect(attempt).rejects.toBeInstanceOf(ConflictException);
       await expect(attempt).rejects.toMatchObject({ response: { code: REASON, requiredInfo: ['Peşin Harç tutarı (TL)'], caseCurrency: 'USD' } });
+    });
+  });
+
+  describe('POST /expense-requests/from-package — eksik paketten kayıt ve boş tutar reddi', () => {
+    const NOTHING_WRITTEN = { requests: [], journalEntries: 0, caseBalances: 0, balanceLedgers: 0 };
+    const packageItems = (withPesinHarc: boolean) =>
+      bySortOrder([...fixedOpeningItems(), ...(withPesinHarc ? [pesinHarcItem(1_000_000, 5_000)] : [])]).map((item) => ({
+        itemCode: item.itemCode,
+        label: item.label,
+        suggestedAmount: item.suggestedAmount,
+        finalAmount: item.finalAmount,
+      }));
+    const fromPackage = (caseId: string, items: unknown, extra: Record<string, unknown> = {}, packageCode: string = OPENING) =>
+      post('/expense-requests/from-package', { caseId, clientId, packageCode, items, ...extra });
+    const stripFootprint = async (caseId: string) => {
+      const { requests, journalEntries, caseBalances, balanceLedgers } = await footprintOf(caseId);
+      return { requests, journalEntries, caseBalances, balanceLedgers };
+    };
+
+    it.each([
+      ['USD', { ...inCurrency('USD') }, undefined],
+      ['EUR', { ...inCurrency('EUR') }, undefined],
+      ['karma (USD dosya + TRY anapara kalemi)', { ...inCurrency('USD') }, { currency: 'TRY', amount: 250_000 }],
+    ])('%s dosya: eski pencerenin yüklediği (peşin harçlı) ya da peşin harçsız paket talebi 409 ile reddedilir; hiçbir kayıt yazılmaz', async (label, caseBody, added) => {
+      const caseId = await openCase(`fp-${String(label).slice(0, 3)}`, { ...caseBody, ...withClient(), dues: [principal(1_000_000)] });
+      if (added) {
+        expect((await post(`/cases/${caseId}/dues`, { ...principal(added.amount), description: 'İkinci anapara', currency: added.currency })).status).toBe(201);
+      }
+
+      for (const [title, items, extra] of [
+        ['peşin harçlı (5.000)', packageItems(true), {}],
+        ['peşin harçsız', packageItems(false), {}],
+        ['avukat karşıladı', packageItems(false), { paidByLawyer: true }],
+      ] as const) {
+        const res = await fromPackage(caseId, items, extra);
+        expect({ title, status: res.status, code: res.body?.code }).toEqual({ title, status: 409, code: REASON });
+        expect(res.body.requiredInfo).toEqual(['Peşin Harç tutarı (TL)']);
+        expect(JSON.stringify(res.body)).not.toMatch(/items"|totalSuggested|suggestedAmount|finalAmount|5857/);
+      }
+      expect(await stripFootprint(caseId)).toEqual(NOTHING_WRITTEN);
+    });
+
+    it('TL dosya (kontrol): bugünkü gibi 201; altı kalem toplamı 5.857,90 kaydolur', async () => {
+      const caseId = await openCase('fp-try', { ...inCurrency('TRY'), dues: [principal(1_000_000)] });
+      await prisma.case.update({ where: { id: caseId }, data: { clientId } });
+
+      const res = await fromPackage(caseId, packageItems(true));
+
+      expect({ status: res.status, requestStatus: res.body?.status, totalAmount: Number(res.body?.totalAmount) }).toEqual({ status: 201, requestStatus: 'PENDING', totalAmount: 5857.9 });
+    });
+
+    it('PASİF paket kodu doğrudan gönderilse de denetlenir (kapalı-hata): dövizli dosyada 409, kayıt yok', async () => {
+      const inactiveCode = `CPFX_PASIF_${suffix}`;
+      await prisma.costPackage.create({
+        data: {
+          tenantId,
+          code: inactiveCode,
+          name: 'Pasif paket',
+          isActive: false,
+          items: { create: [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', defaultAmount: 1, sortOrder: 1, calcRule: { type: 'percentage', rate: 0.005, base: 'principalAmount' } }] },
+        },
+      });
+      const caseId = await openCase('fp-pasif', { ...inCurrency('USD'), ...withClient(), dues: [principal(1_000_000)] });
+
+      const res = await fromPackage(caseId, [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 5000, finalAmount: 5000 }], {}, inactiveCode);
+
+      expect({ status: res.status, code: res.body?.code }).toEqual({ status: 409, code: REASON });
+      expect(await stripFootprint(caseId)).toEqual(NOTHING_WRITTEN);
+    });
+
+    it('paket kodu tanınmıyorsa eksik-öneri denetimi yapılamaz: bugünkü davranış (kayıt) DEĞİŞMEDİ — elle girişle aynı sonuç', async () => {
+      const caseId = await openCase('fp-bilinmeyen', { ...inCurrency('USD'), ...withClient(), dues: [principal(1_000_000)] });
+
+      const res = await fromPackage(caseId, packageItems(false), {}, `CPFX_YOK_${suffix}`);
+
+      expect(res.status).toBe(201);
+    });
+
+    describe('boş / eksik tutar (TL dosyada da): 400, hiçbir kayıt yazılmaz', () => {
+      let caseId: string;
+
+      beforeAll(async () => {
+        caseId = await openCase('fp-bos-tutar', { ...inCurrency('TRY'), dues: [principal(10_000)] });
+      });
+
+      it.each([
+        ['finalAmount null', [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 100, finalAmount: null }]],
+        ['finalAmount yok', [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç' }]],
+        ['finalAmount metin', [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 100, finalAmount: '100' }]],
+        ['kalemlerden biri tutarsız', [{ itemCode: 'BASVURMA_HARCI', label: 'Başvurma Harcı', suggestedAmount: 615.4, finalAmount: 615.4 }, { itemCode: 'PESIN_HARC', label: 'Peşin Harç' }]],
+      ])('%s', async (_title, items) => {
+        const res = await fromPackage(caseId, items);
+
+        expect({ status: res.status, message: res.body?.message }).toEqual({ status: 400, message: expect.stringContaining('eksik tutar 0 sayılmaz') });
+        expect(await stripFootprint(caseId)).toEqual(NOTHING_WRITTEN);
+      });
+
+      it.each([[null], [[]]])('kalem listesi boş (%p)', async (items) => {
+        const res = await fromPackage(caseId, items);
+
+        expect({ status: res.status, message: res.body?.message }).toEqual({ status: 400, message: 'En az bir masraf kalemi zorunludur' });
+        expect(await stripFootprint(caseId)).toEqual(NOTHING_WRITTEN);
+      });
+
+      it('AÇIKÇA girilmiş 0 bugünkü kuralla işlenir: kalem 0 yazılır, toplam diğer kalemlerindir', async () => {
+        const res = await fromPackage(caseId, [
+          { itemCode: 'BASVURMA_HARCI', label: 'Başvurma Harcı', suggestedAmount: 615.4, finalAmount: 615.4 },
+          { itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 0, finalAmount: 0 },
+        ]);
+
+        expect({ status: res.status, totalAmount: Number(res.body?.totalAmount) }).toEqual({ status: 201, totalAmount: 615.4 });
+      });
+    });
+  });
+
+  describe('ELLE GİRİŞ yolu (Manuel Giriş → POST /expense-requests): dövizli dosyada peşin harç kullanıcının girdiği tutarla kaydolur', () => {
+    let usdCaseId: string;
+    const manualItems = [
+      { type: 'BASVURMA_HARCI', description: 'Takip açılışı başvurma harcı', amount: 738.5 },
+      { type: 'PESIN_HARC', description: 'Peşin harç — icra dairesi tahakkuku (elle girildi)', amount: 2150 },
+    ];
+
+    beforeAll(async () => {
+      usdCaseId = await openCase('elle-usd', { ...inCurrency('USD'), ...withClient(), dues: [principal(1_000_000)] });
+    });
+
+    const asRole = async (role: 'USER' | 'VIEWER') => {
+      const roleSuffix = `${role.toLowerCase()}-${suffix}`;
+      return (await prisma.user.create({ data: { tenantId, email: `${roleSuffix}@example.test`, name: role, surname: 'CPFX', role } })).id;
+    };
+
+    it('pencerenin kaynağı olan katalog PESIN_HARC kalemini sunar', async () => {
+      const res = await http().get('/expense-requests/catalog').set('x-test-user-id', adminId);
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((entry: any) => entry.code)).toContain('PESIN_HARC');
+    });
+
+    it('ADMIN: talep, kanonik kalem satırları ve muhasebe günlüğü girilen tutarlarla yazılır; sistem peşin harcı hesaplamaz', async () => {
+      const before = await footprintOf(usdCaseId);
+
+      const res = await post('/expense-requests', { caseId: usdCaseId, clientId, items: manualItems });
+
+      expect({ status: res.status, requestStatus: res.body?.status, totalAmount: Number(res.body?.totalAmount) }).toEqual({ status: 201, requestStatus: 'PENDING', totalAmount: 2888.5 });
+      const row = await prisma.expenseRequest.findUniqueOrThrow({ where: { id: res.body.id }, include: { requestItems: { orderBy: { sortOrder: 'asc' } } } });
+      expect({ gateType: String(row.gateType), currency: row.currency }).toEqual({ gateType: 'BLOCKING', currency: 'TRY' });
+      expect(row.requestItems.map((item) => [item.itemCode, Number(item.finalAmount)])).toEqual([['BASVURMA_HARCI', 738.5], ['PESIN_HARC', 2150]]);
+      expect(await prisma.accountingJournalEntry.count({ where: { tenantId, caseId: usdCaseId, sourceType: 'EXPENSE_REQUEST' } })).toBe(before.journalEntries + 1);
+    });
+
+    it('USER rolü de aynı yoldan kaydedebilir (ölçüldü)', async () => {
+      const caseId = await openCase('elle-usd-user', { ...inCurrency('USD'), ...withClient(), dues: [principal(1_000_000)] });
+      const userId = await asRole('USER');
+
+      const res = await http().post('/expense-requests').set('x-test-user-id', userId).send({ caseId, clientId, items: manualItems });
+
+      expect({ status: res.status, totalAmount: Number(res.body?.totalAmount) }).toEqual({ status: 201, totalAmount: 2888.5 });
+    });
+
+    it('VIEWER rolü yazamaz: 403 VIEWER_WRITE_DENIED, kayıt yok (ölçüldü)', async () => {
+      const caseId = await openCase('elle-usd-viewer', { ...inCurrency('USD'), ...withClient(), dues: [principal(1_000_000)] });
+      const viewerId = await asRole('VIEWER');
+
+      const res = await http().post('/expense-requests').set('x-test-user-id', viewerId).send({ caseId, clientId, items: manualItems });
+
+      expect({ status: res.status, code: res.body?.code }).toEqual({ status: 403, code: 'VIEWER_WRITE_DENIED' });
+      expect((await footprintOf(caseId)).requests).toEqual([]);
+    });
+
+    it.each([
+      ['tutar yok', { type: 'PESIN_HARC', description: 'Peşin harç' }],
+      ['tutar null', { type: 'PESIN_HARC', description: 'Peşin harç', amount: null }],
+      ['tutar 0', { type: 'PESIN_HARC', description: 'Peşin harç', amount: 0 }],
+    ])('elle girişte de eksik tutar kabul edilmez (%s): 400, kayıt yok', async (title, item) => {
+      const caseId = await openCase(`elle-usd-bos-${String(title).replace(/\s+/g, '-')}`, { ...inCurrency('USD'), ...withClient(), dues: [principal(1_000_000)] });
+
+      const res = await post('/expense-requests', { caseId, clientId, items: [item] });
+
+      expect({ status: res.status, message: res.body?.message }).toEqual({ status: 400, message: expect.stringContaining('tutarı pozitif olmalı') });
+      expect((await footprintOf(caseId)).requests).toEqual([]);
     });
   });
 

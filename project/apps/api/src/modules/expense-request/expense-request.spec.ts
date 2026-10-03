@@ -93,6 +93,10 @@ const mockPrismaService: any = {
   client: {
     findFirst: jest.fn(),
   },
+  // Paket modu talebi: paket tanımı okunur (bulunamazsa eksik-öneri denetimi atlanır — bugünkü davranış)
+  costPackage: {
+    findFirst: jest.fn(),
+  },
   $transaction: jest.fn((fn: any) => fn(mockPrismaService)),
 };
 
@@ -315,6 +319,53 @@ describe('ExpenseRequestService - Property Tests', () => {
       expect(result.id).toBe('package-exp-1');
       expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
       expectLastRecordedJournalDraft('package-exp-1', '275');
+    });
+
+    describe('createFromPackage — boş / eksik tutar reddi (eksik tutar 0 sayılmaz)', () => {
+      const send = (items: unknown) =>
+        service.createFromPackage('tenant-1', 'user-1', { caseId: 'case-1', clientId: 'client-1', packageCode: 'OPENING', items } as never);
+
+      beforeEach(() => {
+        mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+        mockPrismaService.client.findFirst.mockResolvedValue({ id: 'client-1' });
+        mockPrismaService.costPackage.findFirst.mockResolvedValue(null);
+      });
+
+      it.each([
+        ['finalAmount null', [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 100, finalAmount: null }]],
+        ['finalAmount yok', [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç' }]],
+        ['finalAmount metin', [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 100, finalAmount: '100' }]],
+        ['finalAmount NaN', [{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 100, finalAmount: Number.NaN }]],
+        ['kalemlerden biri tutarsız', [{ itemCode: 'A', label: 'A', suggestedAmount: 5, finalAmount: 5 }, { itemCode: 'B', label: 'B' }]],
+      ])('%s → 400, hiçbir kayıt yazılmaz', async (_title, items) => {
+        await expect(send(items)).rejects.toThrow('eksik tutar 0 sayılmaz');
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+        expect(mockPrismaService.expenseRequest.create).not.toHaveBeenCalled();
+      });
+
+      it.each([[undefined], [null], [[]]])('kalem listesi boş ya da yok (%p) → 400, hiçbir kayıt yazılmaz', async (items) => {
+        await expect(send(items)).rejects.toThrow('En az bir masraf kalemi zorunludur');
+        expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('AÇIKÇA girilmiş 0 bugünkü kuralla işlenir: kalem 0 yazılır, toplam diğer kalemlerinkidir (reddedilmez)', async () => {
+        mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'package-exp-0', totalAmount: new Decimal(615.4) });
+
+        const result = await send([
+          { itemCode: 'BASVURMA_HARCI', label: 'Başvurma Harcı', suggestedAmount: 615.4, finalAmount: 615.4 },
+          { itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 0, finalAmount: 0 },
+        ]);
+
+        expect(result.id).toBe('package-exp-0');
+        expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+        expect(mockPrismaService.expenseRequest.create.mock.calls[0][0].data.totalAmount).toBe(615.4);
+      });
+
+      it('toplamı 0 olan talep bugün de (günlük doğrulaması) reddedilir — bu işte DEĞİŞMEDİ', async () => {
+        mockPrismaService.expenseRequest.create.mockResolvedValue({ ...mockExpenseRequest, id: 'package-exp-z', totalAmount: new Decimal(0) });
+
+        await expect(send([{ itemCode: 'PESIN_HARC', label: 'Peşin Harç', suggestedAmount: 0, finalAmount: 0 }])).rejects.toThrow('journal validation failed');
+      });
     });
 
     it('writes recorded journal inside stage expense set transaction', async () => {

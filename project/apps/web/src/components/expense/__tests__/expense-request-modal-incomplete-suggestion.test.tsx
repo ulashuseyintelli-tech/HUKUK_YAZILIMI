@@ -282,6 +282,34 @@ describe("ExpenseRequestModal — paket önerisi", () => {
       expect(submitButton()).toBeDisabled();
     });
 
+    it("ELLE GİRİŞ YOLU KULLANILABİLİR: eksik pakette Manuel Giriş'e geçilir, katalogdan Peşin Harç seçilip tutar girilir, talep girilen tutarla kaydedilir", async () => {
+      mocked.getExpenseCatalog.mockResolvedValue([
+        { code: "BASVURMA_HARCI", officeLabel: "Başvurma Harcı", clientLabel: "Başvurma harcı", group: "ICRA_TAKIP", manualDescriptionRequired: false },
+        { code: "PESIN_HARC", officeLabel: "Peşin Harç", clientLabel: "Peşin harç", group: "ICRA_TAKIP", manualDescriptionRequired: false },
+      ]);
+      renderModal();
+      await screen.findByTestId("paket-oneri-eksik");
+
+      fireEvent.click(screen.getByRole("button", { name: /Manuel Giriş/ }));
+      // Katalog yüklenince kalem türü seçilebilir (seçenekler katalogdan gelir)
+      const kalemTuru = (await screen.findByRole("option", { name: "Peşin Harç" })).closest("select") as HTMLSelectElement;
+      fireEvent.change(kalemTuru, { target: { value: "PESIN_HARC" } });
+      fireEvent.change(screen.getAllByRole("spinbutton")[0], { target: { value: "2150" } });
+      expect(totalBox()).toHaveTextContent("Toplam Tutar2.150 ₺");
+      expect(submitButton()).toBeEnabled();
+
+      fireEvent.click(submitButton());
+
+      await waitFor(() => expect(mocked.createExpenseRequest).toHaveBeenCalledTimes(1));
+      expect(mocked.createExpenseRequest.mock.calls[0][0]).toMatchObject({
+        caseId: "case-1",
+        clientId: "client-1",
+        items: [{ type: "PESIN_HARC", description: "Peşin Harç", amount: 2150 }],
+      });
+      // Paket yolundan kayıt hiç denenmedi
+      expect(mocked.createExpenseRequestFromPackage).not.toHaveBeenCalled();
+    });
+
     it("elle girişle talep kaydedildikten sonra: eksik öneri durumu paket seçilmemiş pencereye taşınmaz", async () => {
       renderModal();
       await screen.findByTestId("paket-oneri-eksik");

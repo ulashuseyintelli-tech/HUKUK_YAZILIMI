@@ -1,12 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
-import { evaluateOpeningExpenseBasis, openingExpenseBasisInputOfCase } from '@/modules/expense-request/opening-expense-basis';
 import {
   CostPackageIncompleteSuggestion,
-  CostPackageNotCalculableItem,
-  describeIncompleteSuggestion,
+  incompleteSuggestionConflictBody,
   isBasisDependentCalcRule,
+  loadIncompleteSuggestion,
 } from './cost-package-basis';
 
 export interface ComputedExpenseItem {
@@ -140,17 +139,9 @@ export class CostPackageService {
 
     // Matraha bağlı (oranlı) kalemin önerisi yalnız matrah TL iken hesaplanır. Eksik öneri, onu işleyebildiğini beyan
     // etmeyen çağırana verilmez: eksik toplam paket toplamı gibi kullanılamasın diye gerekçesiyle reddedilir.
-    const incompleteSuggestion = await this.evaluateIncompleteSuggestion(caseData, pkg);
+    const incompleteSuggestion = await loadIncompleteSuggestion(this.prisma, caseData, pkg);
     if (incompleteSuggestion && params.acceptIncomplete !== true) {
-      throw new ConflictException({
-        code: incompleteSuggestion.reasonCode,
-        message: incompleteSuggestion.message,
-        requiredInfo: incompleteSuggestion.requiredInfo,
-        notCalculableItems: incompleteSuggestion.notCalculableItems,
-        caseCurrency: incompleteSuggestion.caseCurrency,
-        basisCurrencies: incompleteSuggestion.basisCurrencies,
-        tariffCurrency: incompleteSuggestion.tariffCurrency,
-      });
+      throw new ConflictException(incompleteSuggestionConflictBody(incompleteSuggestion));
     }
 
     // Kalemleri hesapla
@@ -216,37 +207,6 @@ export class CostPackageService {
       messageTemplateCode: pkg.messageTemplateCode,
       ...(incompleteSuggestion ? { incompleteSuggestion } : {}),
     };
-  }
-
-  /**
-   * Paketin matraha bağlı (oranlı) kalemleri bu dosyada hesaplanabiliyor mu? Hesaplanamıyorsa eksik öneriyi anlatır;
-   * paket oranlı kalem içermiyorsa ya da matrah TL ise null döner. SALT OKUMA: hesap yapmaz, tutar çevirmez.
-   *
-   * Cagrildigi yerler:
-   * - CostPackageService.computeExpenseRequest()
-   */
-  private async evaluateIncompleteSuggestion(
-    caseData: { id: string; currency: string },
-    pkg: {
-      name: string;
-      items: ReadonlyArray<{ itemCode: string; label: string; isEditable: boolean; sortOrder: number; calcRule: unknown }>;
-    },
-  ): Promise<CostPackageIncompleteSuggestion | null> {
-    const notCalculableItems: CostPackageNotCalculableItem[] = pkg.items
-      .filter((item) => isBasisDependentCalcRule(item.calcRule))
-      .map((item) => ({ itemCode: item.itemCode, label: item.label, isEditable: item.isEditable, sortOrder: item.sortOrder }));
-    if (notCalculableItems.length === 0) {
-      return null;
-    }
-
-    // Matrah, açılış masraf setiyle AYNI kayıtlardan okunur: anapara kalemleri (Due), yoksa anapara alacak kalemleri
-    const [dues, claimItems] = await Promise.all([
-      this.prisma.due.findMany({ where: { caseId: caseData.id, type: 'PRINCIPAL' }, select: { currency: true } }),
-      this.prisma.claimItem.findMany({ where: { caseId: caseData.id, itemType: 'PRINCIPAL' }, select: { currency: true } }),
-    ]);
-    const basis = evaluateOpeningExpenseBasis(openingExpenseBasisInputOfCase({ currency: caseData.currency, dues, claimItems }));
-
-    return basis.calculable ? null : describeIncompleteSuggestion(pkg.name, notCalculableItems, basis);
   }
 
   /**

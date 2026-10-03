@@ -211,7 +211,12 @@ src/modules/case/__tests__/case-calculation-summary-currency.http.db-gated.integ
 #   cagiran (UYAP gonderim hazirliginin bakiye / paket toplami karsilastirmasi) 409 alir — eksik toplam paket toplami gibi
 #   kullanilamaz. Sabit ve adet bazli kalemler, oranli kalemi olmayan paketler, TL dosyanin yaniti ve gecmis talepler
 #   DEGISMEZ; uc kayit yazmaz. Dovizli takipte oranli kalemin hangi tutar ve kur uzerinden hesaplanacagi owner karari.
-#   Duzeltmesiz servis koduyla 34 testin 24'u DUSER, TL kontrolleri ve oranli kalemi olmayan paketler GECER (RED kanitlandi).
+#   Ayni karar POST /expense-requests/from-package yazma ucunda da gecerli (owner karari 2026-10-03, "A + bos tutar reddi"):
+#   hesaplanamayan oranli kalemi olan paketten (dovizli / karma dosya) talep 409 ile reddedilir, hicbir kayit yazilmaz;
+#   tutari bos / eksik / sayi olmayan kalem 400 ile reddedilir (eksik tutar 0 sayilmaz), acikca girilmis 0 bugunku kurala tabi.
+#   Elle giris yolu (Manuel Giris -> POST /expense-requests, katalog PESIN_HARC) dovizli dosyada girilen tutarla kaydeder
+#   (ADMIN / USER yazar, VIEWER 403 ve bos tutar 400: olculdu). Duzeltmesiz servis koduyla 53 testin 33'u DUSER, TL
+#   kontrolleri, oranli kalemi olmayan paketler ve elle giris yolu GECER (RED kanitlandi).
 src/modules/cost-package/__tests__/cost-package-compute-fx-basis.http.db-gated.integration.spec.ts
 
 # Otomatik acilis masraf talebi — dovizli dosyada pesin harc matrahi, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
