@@ -134,7 +134,7 @@ describe('ExpenseNotificationService.sendExpenseRequest — dağıtım başarıs
   }) {
     const auditCreate = jest.fn().mockResolvedValue({});
     const tx = {
-      expenseRequest: { findUnique: jest.fn().mockResolvedValue({ status: 'PENDING' }), update: jest.fn().mockResolvedValue({}) },
+      expenseRequest: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, // SENT geçişi: atomik koşullu güncelleme
       expenseAuditLog: { create: auditCreate },
       task: { create: jest.fn().mockResolvedValue({}) },
     };
@@ -186,7 +186,7 @@ describe('ExpenseNotificationService.sendExpenseRequest — dağıtım başarıs
     expect(JSON.stringify(failedAudit())).not.toContain('gizli@ornek.test');
     // Bu gönderimin bildirim satırı büro kapsamında ve aynı anahtarla okunur
     expect(notificationFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: TENANT, dedupeKey: DEDUPE } }));
-    expect(tx.expenseRequest.update).not.toHaveBeenCalled();
+    expect(tx.expenseRequest.updateMany).not.toHaveBeenCalled();
     expect(tx.task.create).not.toHaveBeenCalled();
   });
 
@@ -217,7 +217,7 @@ describe('ExpenseNotificationService.sendExpenseRequest — dağıtım başarıs
     expect(notificationFindFirst).not.toHaveBeenCalled();
     expect(templateFindFirst).not.toHaveBeenCalled();
     expect(failedAudit()).toBeUndefined();
-    expect(tx.expenseRequest.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SENT', sentVia: 'EMAIL' }) }));
+    expect(tx.expenseRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SENT', sentVia: 'EMAIL' }) }));
     expect(tx.task.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ title: 'Masraf Takibi - 2026/77', description: expect.stringContaining('masraf talebi müvekkile gönderildi') }) }),
     );
