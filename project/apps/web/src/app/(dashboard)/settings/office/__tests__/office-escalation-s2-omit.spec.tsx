@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, cleanup, within, act } from '@testing-library/react';
 import OfficeSettingsPage from '../page';
 import { api } from '@/lib/api';
 
@@ -138,23 +138,47 @@ describe('F-B01-03 — escalation ayarları: S2 alıcı listeleri sunucudan gelm
 });
 
 describe('F-B01-03 — yükleme hatası ve eski state: gizli alanlar payload\'a GİRMEZ', () => {
-  it('escalation-settings GET hata verirse: görünür yükleme hatası, kutular devre dışı, KAYDET payload\'ında S2 anahtarı YOK', async () => {
+  it('escalation-settings GET hata verirse: bölüm "okunamadı" (Tekrar dene), KAYDET YOK, kutu yok, yazma isteği ÇIKMAZ (owner 2026-10-02: okuma başarısızsa yazma kapalı)', async () => {
     primeReads(new TypeError('Failed to fetch'));
-    mocked.put.mockResolvedValueOnce({ data: {} });
-    const d = await openEscalation();
-    // okuma hatası YUTULMAZ: ActionError (role=alert, data-testid=action-error) görünür; metin ağ/sunucu hatasına göre değişir
+    search = new URLSearchParams('section=escalation');
+    render(<OfficeSettingsPage />);
+    await waitFor(() => expect(within(drawer()).getByTestId('read-error')).toBeTruthy());
+    const d = within(drawer());
+    expect(d.queryByRole('button', { name: 'Kaydet' })).toBeNull();
+    expect(d.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(d.getByRole('button', { name: 'Tekrar dene' })).toBeTruthy();
+    // okuma hatası yine YUTULMAZ: üst bantta görünür (ActionError)
     await waitFor(() => expect(screen.getAllByTestId('action-error').length).toBeGreaterThanOrEqual(1));
+    expect(mocked.put).not.toHaveBeenCalled();
+  });
+
+  it('okuma düştü → Tekrar dene başarılı: bayraklar yalnız TAZE yanıttan kurulur; gelmeyen liste alanı payload\'a girmez', async () => {
+    let escReply: Record<string, unknown> | Error = new TypeError('Failed to fetch');
+    primeReads({ ...ESC_SCALARS });
+    const base = mocked.get.getMockImplementation() as (url: string) => Promise<unknown>;
+    mocked.get.mockImplementation((url: string) => {
+      if (url !== '/office/escalation-settings') return base(url);
+      return escReply instanceof Error ? Promise.reject(escReply) : Promise.resolve({ data: escReply });
+    });
+    mocked.put.mockResolvedValueOnce({ data: {} });
+    search = new URLSearchParams('section=escalation');
+    render(<OfficeSettingsPage />);
+    await waitFor(() => expect(within(drawer()).getByTestId('read-error')).toBeTruthy());
+    escReply = { ...ESC_SCALARS, escalationTeamLeadLawyerIds: ['l1'] }; // yalnız bir liste alanı gelir
+    await act(async () => { fireEvent.click(within(drawer()).getByRole('button', { name: 'Tekrar dene' })); await new Promise((r) => setTimeout(r, 30)); });
+    const d = within(drawer());
     expect(d.getByTestId('esc-recipients-hidden-manager')).toBeTruthy();
-    for (const cb of d.getAllByRole('checkbox', { name: /ULAS TELLI/ })) expect((cb as HTMLInputElement).disabled).toBe(true);
+    expect(d.queryByTestId('esc-recipients-hidden-teamlead')).toBeNull();
     fireEvent.click(d.getByRole('button', { name: 'Kaydet' }));
     await waitFor(() => expect(mocked.put).toHaveBeenCalledTimes(1));
     const [, body] = mocked.put.mock.calls[0] as [string, Record<string, unknown>];
-    for (const k of S2_KEYS) expect(Object.prototype.hasOwnProperty.call(body, k)).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(body, 'escalationManagerLawyerIds')).toBe(false);
+    expect(body.escalationTeamLeadLawyerIds).toEqual(['l1']);
   });
 
-  it('önce listeler GELDİ (kutular etkin), sonra yeniden yükleme BAŞARISIZ → eski liste state\'i payload\'a GİRMEZ (bayraklar sıfırlanır)', async () => {
-    // 1. yükleme: listeler mevcut → düzenlenebilir. 2. yükleme (avukat pasifleştirme sonrası refresh): /office reddeder.
-    primeReads({ ...ESC_SCALARS, escalationManagerLawyerIds: ['l1'], escalationFounderLawyerIds: ['l2'], escalationTeamLeadLawyerIds: ['l1'] }, { officeFailFromCall: 2 });
+  it('avukat pasifleştirme sonrası /office YENİLEMESİ düşse de eskalasyon bölümü BAĞIMSIZ: kendi taze okuması geçerli, görünmeyen alan yine payload\'a girmez', async () => {
+    // Eskalasyon yanıtı liste alanı TAŞIMIYOR → 1. yükleme sonrası kutular zaten gizli. /office yenilemesi (2. çağrı) reddedilir.
+    primeReads({ ...ESC_SCALARS }, { officeFailFromCall: 2 });
     mocked.delete.mockResolvedValueOnce({ data: {} });
     mocked.put.mockResolvedValueOnce({ data: {} });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -166,12 +190,13 @@ describe('F-B01-03 — yükleme hatası ve eski state: gizli alanlar payload\'a 
     await waitFor(() => expect(mocked.delete).toHaveBeenCalledWith('/lawyers/l1'));
     // mutasyon OK + yeniden yükleme FAIL → sayfa stale bant gösterir; escalation bölümüne geç (remount YOK, state korunur)
     await waitFor(() => expect(mocked.get.mock.calls.filter((c) => c[0] === '/office').length).toBeGreaterThanOrEqual(2));
+    // yenileme yalnız /office'i okur; eskalasyon / SMTP / SMS ayarları yeniden okunup formu EZİLMEZ
+    expect(mocked.get.mock.calls.filter((c) => c[0] === '/office/escalation-settings')).toHaveLength(1);
     search = new URLSearchParams('section=escalation');
     view.rerender(<OfficeSettingsPage />);
     await waitFor(() => expect(within(drawer()).getByRole('button', { name: 'Kaydet' })).toBeTruthy());
     const d = within(drawer());
     expect(d.getByTestId('esc-recipients-hidden-manager')).toBeTruthy();
-    for (const cb of d.getAllByRole('checkbox', { name: /ULAS TELLI/ })) expect((cb as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(d.getByRole('button', { name: 'Kaydet' }));
     await waitFor(() => expect(mocked.put).toHaveBeenCalledTimes(1));
     const [url, body] = mocked.put.mock.calls[0] as [string, Record<string, unknown>];

@@ -17,7 +17,8 @@ import { OperationDeck, type OperationDeckSourceStatus } from "@/components/case
  *   1. veri bağlantısı yok (NOT_CONNECTED): sayı ya da "kayıt yok" yazılmaz, bağlantının hazır olmadığı yazılır;
  *   2. gerçek sıfır / gerçek boş (READY): kaynak okundu, değer 0 ya da liste boş — "0 ₺" / "kayıt yok" yazılır;
  *   3. yükleme / hata (LOADING / ERROR): kaynak bağlı ama değer yok — sayı ya da "kayıt yok" yazılmaz.
- * Gerçek kaynağa bağlı tahsilat ve masraf talebi gösterimleri değişmez.
+ * Gerçek kaynağa bağlı tahsilat ve masraf talebi, kaynakları OKUNMUŞKEN (READY) önceki gibi gösterilir; bu dosyadaki
+ * düzenek o iki kaynağı READY verir. Okunmamış / okunamamış hâlleri: `operation-deck-finance-source-status.test.tsx`.
  */
 
 const norm = (text: string | null | undefined) => (text ?? "").replace(/\s+/g, " ").trim();
@@ -29,7 +30,7 @@ const NOT_CONNECTED_CARD = "Bu bilgi henüz bu ekrana bağlanmadı";
 const UNAVAILABLE: OperationDeckSourceStatus[] = ["NOT_CONNECTED", "LOADING", "ERROR"];
 
 function renderDeck(props: Partial<DeckProps> = {}) {
-  return render(<OperationDeck caseId="case-1" {...props} />);
+  return render(<OperationDeck caseId="case-1" collectionsSource="READY" expenseRequestsSource="READY" {...props} />);
 }
 
 /** Sekme düğmesi: yazısı etiketin kendisi (+ varsa rozet sayısı). Tek değilse hata fırlatır. */

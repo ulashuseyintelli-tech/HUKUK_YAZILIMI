@@ -19,6 +19,11 @@ import {
   type ProceedingSelection,
   type ServerDraftPenalty,
 } from './template-case-classification';
+import {
+  buildTemplateTotalsCurrencyStatus,
+  formatTemplateTotalsCurrencyRejection,
+  TEMPLATE_TOTALS_CURRENCY_REJECTION_CODE,
+} from './template-totals-currency';
 import { previewCekFormation, type CekFormationPreviewInput } from '../claim-item/formation-cek/cek-formation-preview';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
@@ -307,7 +312,7 @@ export class TemplateEngineService {
   /// - PdfController.downloadTakipTalebi() → GET /pdf/takip-talebi/:caseId (legacy PDF üretimi)
   /// </remarks>
   async generateTakipTalebiFromCase(caseId: string, tenantId: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     return this.generateTakipTalebi(caseData);
   }
 
@@ -316,7 +321,7 @@ export class TemplateEngineService {
   /// - TemplateEngineController.generateOdemeEmriFromCase() → GET /template-engine/odeme-emri/case/:caseId (ödeme emri üretimi)
   /// </remarks>
   async generateOdemeEmriFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     return this.generateOdemeEmri(caseData);
   }
 
@@ -325,7 +330,7 @@ export class TemplateEngineService {
   /// - TemplateEngineController.generateIcraEmriFromCase() → GET /template-engine/icra-emri/case/:caseId (icra emri üretimi)
   /// </remarks>
   async generateIcraEmriFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     return this.generateIcraEmri(caseData);
   }
 
@@ -648,6 +653,42 @@ export class TemplateEngineService {
       instrumentInfos,
       collateralInfo,
     };
+  }
+
+  /**
+   * RESMÎ ÇIKTI RET KAPISI (owner kararı 2026-10-03, "KARMA PARA BİRİMLİ BELGE: B"): dosya kaydından belge üreten HER yol
+   * veriyi buradan alır. Belgeye basılacak toplam (tutar + para birimi etiketi) geçerli tek tutar değilse — karma para
+   * birimi, para birimi kayıtlı olmayan kalem, ya da toplam etiketinin kalemlerin para birimiyle uyuşmaması — belge
+   * ÜRETİLMEZ: 400 + neden. Kapı format seçiminden ÖNCE olduğu için PDF / Word / XML / UDF / metin / merkezi uç ile
+   * atlanamaz. Tutar çevrilmez; tek para birimli geçerli dosyada hiçbir şey değişmez. GEÇİCİ korumadır.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - generateTakipTalebiFromCase() / generateOdemeEmriFromCase() / generateIcraEmriFromCase()  → etiket = dosya para birimi
+   * ///  - generatePdfFromCase() / generateWordFromCase() / generateUdfFromCase() / generateXmlFromCase() → etiket = dosya para birimi
+   * ///  - generateDocumentFromCase() → merkezi üretim (önbellek aramasından ÖNCE)
+   * ///  - generateItirazinIptaliFromCase() / generateTasarrufunIptaliFromCase() / generateDolandiricilikSucDuyurusuFromCase()
+   * ///    → etiket = şablondaki sabit "TL"
+   * /// </remarks>
+   */
+  private async getCaseDataForOfficialTotals(caseId: string, tenantId: string | undefined, label: 'CASE' | 'PETITION'): Promise<TemplateData> {
+    const caseData = await this.getCaseData(caseId, tenantId);
+    const status = buildTemplateTotalsCurrencyStatus(
+      caseData.claimItems,
+      label === 'PETITION' ? { paraBirimi: 'TRY', kaynak: 'SABIT_TL' } : { paraBirimi: caseData.totals.currency, kaynak: 'DOSYA_PARA_BIRIMI' },
+    );
+    if (!status.toplamGosterilebilir) {
+      // Günlükte yalnız kimlik ve kodlar (tutar / ad yok)
+      this.logger.warn(
+        `[TotalsCurrency] resmi cikti reddedildi: case=${caseId} durum=${status.durum} etiket=${status.toplamEtiketi.paraBirimi} paraBirimleri=${status.paraBirimleri.join(',')}`,
+      );
+      throw new BadRequestException({
+        code: TEMPLATE_TOTALS_CURRENCY_REJECTION_CODE,
+        message: formatTemplateTotalsCurrencyRejection(status),
+        paraBirimiDurumu: status,
+      });
+    }
+    return caseData;
   }
 
   private getInstrumentInfos(data: TemplateData): TemplateInstrumentInfo[] {
@@ -1812,7 +1853,7 @@ Borclu: ............................    Yediemin: ..............................
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
   ): Promise<Buffer> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     // Takip talebi için resmi formatlı PDF kullan
     if (documentType === 'takip-talebi') {
@@ -1848,7 +1889,7 @@ Borclu: ............................    Yediemin: ..............................
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
   ): Promise<Buffer> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     // Takip talebi için resmi formatlı Word kullan
     if (documentType === 'takip-talebi') {
@@ -1884,7 +1925,7 @@ Borclu: ............................    Yediemin: ..............................
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
   ): Promise<UdfDocument> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     const documentCodeMap: Record<string, string> = {
       'takip-talebi': 'ORNEK_1',
@@ -1929,7 +1970,7 @@ Borclu: ............................    Yediemin: ..............................
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
     tenantId?: string,
   ): Promise<string> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     const documentCodeMap: Record<string, string> = {
       'takip-talebi': 'ORNEK_1',
@@ -3079,7 +3120,7 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// - TemplateEngineController.previewItirazinIptali() → GET /template-engine/itirazin-iptali/case/:caseId/preview
   /// </remarks>
   async generateItirazinIptaliFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'PETITION');
     
     const template = this.getItirazinIptaliTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -3200,7 +3241,7 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// - TemplateEngineController.previewTasarrufunIptali() → GET /template-engine/tasarrufun-iptali/case/:caseId/preview
   /// </remarks>
   async generateTasarrufunIptaliFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'PETITION');
     
     const template = this.getTasarrufunIptaliTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -3314,7 +3355,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
   /// - TemplateEngineController.previewDolandiricilik() → GET /template-engine/dolandiricilik/case/:caseId/preview
   /// </remarks>
   async generateDolandiricilikSucDuyurusuFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'PETITION');
     
     const template = this.getDolandiricilikSucDuyurusuTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -3373,7 +3414,7 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     actorUserId?: string,
   ): Promise<{ buffer: Buffer; artifact?: any; fromCache: boolean; selection?: ProceedingSelection }> {
     // 1. Case verisini çek
-    const caseData = await this.getCaseData(caseId, tenantId);
+    const caseData = await this.getCaseDataForOfficialTotals(caseId, tenantId, 'CASE');
     
     // 2. Veri hash'i oluştur (cache key için)
     const dataHash = this.generateDataHash(caseData);

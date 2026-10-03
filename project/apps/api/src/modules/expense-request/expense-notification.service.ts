@@ -5,6 +5,7 @@ import { EmailProviderService, EmailOptions } from '@/modules/notification/email
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { maskEmail } from '@/common/pii-mask.util';
 import { findExpenseCatalogEntry } from './expense-item-catalog';
+import type { ExpenseEmailDispatchFailureReason } from './opening-expense-email-outcome';
 
 export interface EmailContent {
   subject: string;
@@ -33,6 +34,17 @@ export interface ExpenseEmailData {
   lawyerName?: string;
   officePhone?: string;
   officeEmail?: string;
+}
+
+/**
+ * Dağıtım `skipped` döndü ve mevcut bildirim satırı SENT değil: audit sonucu + yanıt nedeni (yalnız sabit kodlar).
+ * FAILED = önceki deneme kesin başarısız; PENDING = önceki deneme sürüyor ya da sonucu belirsiz; diğer her
+ * durum (satır yok / kimlik yok / beklenmeyen durum) doğrulanamadı sayılır.
+ */
+function unconfirmedExistingNotification(status: string | null): { outcome: string; reason: string } {
+  if (status === 'FAILED') return { outcome: 'existing-notification-failed', reason: 'EXISTING_NOTIFICATION_FAILED' };
+  if (status === 'PENDING') return { outcome: 'existing-notification-pending', reason: 'EXISTING_NOTIFICATION_PENDING' };
+  return { outcome: 'existing-notification-unverified', reason: 'EXISTING_NOTIFICATION_UNVERIFIED' };
 }
 
 @Injectable()
@@ -232,6 +244,12 @@ export class ExpenseNotificationService {
 
   /**
    * Masraf talebi e-postası gönder
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.sendExpenseEmail() → POST /expense-requests/:id/send-email
+   * - ExpenseRequestService.sendExpenseEmail() → CaseService.create() dosya açılışı (arka planda; userId 'system')
+   * </remarks>
    */
   async sendExpenseRequest(tenantId: string, requestId: string, userId: string) {
     // Masraf talebini detaylı getir
@@ -408,7 +426,7 @@ export class ExpenseNotificationService {
 
     // Stable domain dedupe key (timestamp YOK): ExpenseRequest id.
     const dedupeKey = `EXPENSE_REQUEST:ExpenseRequest:${requestId}:1`;
-    const dispatch = await this.dispatcher.dispatch(tenantId, userId, {
+    const dispatchInput = {
       clientId: request.clientId,
       ...(request.caseId ? { caseId: request.caseId } : {}),
       templateCode: 'EXPENSE_REQUEST',
@@ -417,21 +435,46 @@ export class ExpenseNotificationService {
       dedupeKey,
       refType: 'ExpenseRequest',
       refId: requestId,
-    });
+    };
+    let dispatch = await this.dispatcher.dispatch(tenantId, userId, dispatchInput);
+    let existingNotificationStatus =
+      dispatch.status === 'skipped'
+        ? await this.readExistingNotificationStatus(tenantId, dedupeKey, dispatch.notificationId)
+        : null;
 
-    // dispatch → business-state map (owner düzeltme-3): ExpenseRequest SENT YALNIZ sent|skipped'te
-    // (skipped = önceden kalıcı SENT → idempotent reconcile). Audit/task YALNIZ ilk SENT geçişinde.
-    // failed (PENDING/uncertain/definitive-red/no-recipient/unresolved/claim-red) → SENT DEĞİL.
-    const delivered = dispatch.status === 'sent' || dispatch.status === 'skipped';
+    // Owner kararı (2026-10-03, madde 4): önceki deneme KESİN başarısız (satır FAILED) ise aynı uç yeniden dener —
+    // dağıtıcının `force` yolu ile: aynı advisory lock altında FAILED→PENDING atomik reclaim (aynı satır, yeni satır
+    // YOK). Eşzamanlı ikinci çağrı reclaim'i kaybeder (satır PENDING görür) → yeniden DENEMEZ. PENDING (sürüyor /
+    // sonucu belirsiz) satıra DOKUNULMAZ; SENT satır tekrar gönderilmez. Kapılar (IBAN, hesap, kalemler) yukarıda her
+    // çağrıda yeniden işletilir; şablon değerleri servisten gelir.
+    let retriedFailedNotification = false;
+    if (dispatch.status === 'skipped' && existingNotificationStatus === 'FAILED') {
+      retriedFailedNotification = true;
+      dispatch = await this.dispatcher.dispatch(tenantId, userId, { ...dispatchInput, force: true });
+      existingNotificationStatus =
+        dispatch.status === 'skipped'
+          ? await this.readExistingNotificationStatus(tenantId, dedupeKey, dispatch.notificationId)
+          : null;
+    }
+
+    // dispatch → business-state map (owner düzeltme-3): ExpenseRequest SENT YALNIZ teslim KALICI kanıtlıysa.
+    //   sent    → bu çağrıda provider kabul + kalıcı SENT damgası.
+    //   skipped → dağıtıcı aynı dedupeKey için MEVCUT satır buldu, ikinci gönderim YAPMADI. Mevcut satır SENT
+    //             olabileceği gibi PENDING (sürüyor / belirsiz) ya da FAILED de olabilir (G4 Inv-1: üçü de
+    //             EXISTING → skipped). Yalnız satır gerçekten SENT ise önceden kalıcı SENT → idempotent reconcile.
+    //   failed  → SENT DEĞİL (PENDING/uncertain/definitive-red/no-recipient/unresolved/claim-red).
+    // Audit/task YALNIZ ilk SENT geçişinde.
+    const delivered = dispatch.status === 'sent' || existingNotificationStatus === 'SENT';
     if (delivered) {
       const now = new Date();
       const formattedTotal = formatMoney(emailData.totalAmount);
       const formattedDate = now.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       await this.prisma.$transaction(async (tx) => {
-        const current = await tx.expenseRequest.findUnique({ where: { id: requestId }, select: { status: true } });
-        if (current?.status === 'SENT') return; // zaten SENT → duplicate audit/task ÜRETİLMEZ (idempotent)
-        await tx.expenseRequest.update({
-          where: { id: requestId },
+        // Geçiş TEK atomik koşullu güncellemedir (satır kilidi): eşzamanlı iki çağrı da bu noktaya gelirse yalnız biri
+        // satırı SENT yapar (count=1), diğeri SENT'i görür (count=0) ve audit / görev ÜRETMEZ. Önceki "oku, sonra yaz"
+        // biçimi iki işlemin de PENDING okumasına izin veriyordu (ölçüldü: çift EMAIL_SENT + çift görev).
+        const moved = await tx.expenseRequest.updateMany({
+          where: { id: requestId, tenantId, status: { not: 'SENT' } },
           data: {
             status: 'SENT',
             sentAt: now,
@@ -440,11 +483,17 @@ export class ExpenseNotificationService {
             renderedBody: `EXPENSE_REQUEST şablonu ile kanonik dispatcher üzerinden gönderildi (bildirim=${dispatch.notificationId ?? 'reconciled'})`,
           },
         });
+        if (moved.count === 0) return; // zaten SENT → duplicate audit/task ÜRETİLMEZ (idempotent)
         await tx.expenseAuditLog.create({
           data: {
             expenseRequestId: requestId,
             action: 'EMAIL_SENT',
-            details: { via: 'dispatcher', notificationId: dispatch.notificationId ?? null, reconciled: dispatch.status === 'skipped' },
+            details: {
+              via: 'dispatcher',
+              notificationId: dispatch.notificationId ?? null,
+              reconciled: dispatch.status === 'skipped',
+              ...(retriedFailedNotification ? { retried: true } : {}),
+            },
             userId,
           },
         });
@@ -464,17 +513,95 @@ export class ExpenseNotificationService {
       return { success: true, notificationId: dispatch.notificationId };
     }
 
+    if (dispatch.status === 'skipped') {
+      // Mevcut bildirim satırı SENT DEĞİL (FAILED / PENDING / doğrulanamadı): bu çağrıda e-posta GÖNDERİLMEDİ ve
+      // önceki teslimin kalıcı kanıtı yok → talep durumu DEĞİŞMEZ, EMAIL_SENT / görev ÜRETİLMEZ. Bu uç FAILED /
+      // PENDING satırı yeniden GÖNDERMEZ. Yanıt + audit yalnız sabit kod taşır (satırın hata metni ÇIKMAZ).
+      const unconfirmed = unconfirmedExistingNotification(existingNotificationStatus);
+      // Dosya sayfası ve açılış sonucu SON `EMAIL_*` kaydını okur (`openingExpenseEmailReasonOfAuditDetails`): bu kayıt
+      // onların tanıdığı biçimde (`delivery-not-confirmed` + `reason`) yazılır ve satırın GERÇEK nedenini taşır; yoksa
+      // tekrar çağrı, ilk denemenin özel nedenini (ör. müvekkil e-postası yok) genel "doğrulanamadı"ya düşürürdü.
+      const failureReason =
+        existingNotificationStatus === 'FAILED' || existingNotificationStatus === 'PENDING'
+          ? await this.classifyDispatchFailure(tenantId, dedupeKey)
+          : null;
+      await this.prisma.expenseAuditLog.create({
+        data: {
+          expenseRequestId: requestId,
+          action: 'EMAIL_FAILED',
+          details: {
+            via: 'dispatcher',
+            outcome: 'delivery-not-confirmed',
+            ...(failureReason ? { reason: failureReason } : {}),
+            existingNotification: unconfirmed.outcome,
+            ...(retriedFailedNotification ? { retried: true } : {}),
+            notificationId: dispatch.notificationId ?? null,
+          },
+          userId,
+        },
+      });
+      this.logger.warn(`Masraf talebi bildirimi yeniden gönderilmedi (${unconfirmed.outcome}) requestId=${requestId}`);
+      return { success: false as const, reason: unconfirmed.reason };
+    }
+
     // failed → ExpenseRequest SENT OLMAZ. Güvenli audit (raw provider error/secret ÇIKMAZ).
+    // Neden, sağlayıcı metninden DEĞİL kalıcı bildirim satırından / şablonun varlığından sınıflandırılır; belirlenemezse
+    // alan yazılmaz (kayıt önceki biçimiyle kalır).
+    const failureReason = await this.classifyDispatchFailure(tenantId, dedupeKey);
     await this.prisma.expenseAuditLog.create({
       data: {
         expenseRequestId: requestId,
         action: 'EMAIL_FAILED',
-        details: { via: 'dispatcher', outcome: 'delivery-not-confirmed' },
+        details: {
+          via: 'dispatcher',
+          outcome: 'delivery-not-confirmed',
+          ...(failureReason ? { reason: failureReason } : {}),
+          ...(retriedFailedNotification ? { retried: true } : {}),
+        },
         userId,
       },
     });
-    this.logger.warn(`Masraf talebi bildirimi teslim doğrulanamadı (requestId=${requestId})`);
-    return { success: false };
+    this.logger.warn(
+      `Masraf talebi bildirimi teslim doğrulanamadı (requestId=${requestId}${failureReason ? `, neden=${failureReason}` : ''})`,
+    );
+    return { success: false as const, ...(failureReason ? { reason: failureReason } : {}) };
+  }
+
+  /**
+   * Dağıtıcı `failed` döndüğünde nedeni güvenli bir koda indirger. Ham sağlayıcı / istisna metni OKUNMAZ ve YAZILMAZ:
+   * yalnız bu gönderimin kalıcı bildirim satırının durumu (claim sonrası FAILED / PENDING) ve şablonun varlığı okunur.
+   * Sınıflandırma en-iyi-çabadır: okunamazsa `null` döner ve başarısızlık kaydı nedensiz yazılır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseNotificationService.sendExpenseRequest() → dağıtım başarısız dalı
+   * </remarks>
+   */
+  private async classifyDispatchFailure(tenantId: string, dedupeKey: string): Promise<ExpenseEmailDispatchFailureReason | null> {
+    try {
+      const notification = await this.prisma.clientNotification.findFirst({
+        where: { tenantId, dedupeKey },
+        orderBy: { createdAt: 'desc' },
+        select: { status: true, errorMessage: true },
+      });
+      if (!notification) {
+        // Claim satırı hiç oluşmadı: şablon bulunamadı / render edilemedi ya da claim öncesi hata.
+        const template = await this.prisma.messageTemplate.findFirst({
+          where: { tenantId, code: 'EXPENSE_REQUEST', isActive: true },
+          select: { id: true },
+        });
+        return template ? null : 'TEMPLATE_MISSING';
+      }
+      // PENDING: sağlayıcı çağrısı başladı, sonuç belirsiz (teslim olmuş olabilir; owner güvenlik kuralı).
+      if (notification.status === 'PENDING') return 'DELIVERY_UNCERTAIN';
+      if (notification.status !== 'FAILED') return null;
+      if (notification.errorMessage === 'recipient-missing') return 'RECIPIENT_MISSING';
+      if (notification.errorMessage === 'smtp-not-configured') return 'SMTP_NOT_CONFIGURED';
+      if (notification.errorMessage === 'client-not-found') return null;
+      return 'DELIVERY_REJECTED';
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -487,6 +614,29 @@ export class ExpenseNotificationService {
       return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 9)} ${digits.slice(9, 11)}`;
     }
     return phone ?? '';
+  }
+
+  /**
+   * Dağıtıcı `skipped` döndüğünde bulduğu MEVCUT bildirim satırının durumunu okur. Satır kiracı + dedupeKey ile
+   * yeniden doğrulanır; kimlik gelmediyse ya da satır bulunamadıysa null döner (çağıran fail-closed davranır).
+   * Yalnız `status` seçilir — satırın hata metni bu servise hiç taşınmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseNotificationService.sendExpenseRequest() (dağıtım `skipped` ise; talep SENT kararı öncesi)
+   * </remarks>
+   */
+  private async readExistingNotificationStatus(
+    tenantId: string,
+    dedupeKey: string,
+    notificationId?: string,
+  ): Promise<string | null> {
+    if (!notificationId) return null;
+    const existing = await this.prisma.clientNotification.findFirst({
+      where: { id: notificationId, tenantId, dedupeKey },
+      select: { status: true },
+    });
+    return existing?.status ?? null;
   }
 
   /**

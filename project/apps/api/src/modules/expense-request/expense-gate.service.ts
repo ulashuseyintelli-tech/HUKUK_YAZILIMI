@@ -1,6 +1,12 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientSettlementReadService } from '@/modules/client-settlement/client-settlement-read.service';
+import {
+  loadOpeningExpenseRequirement,
+  openingExpenseBlocksExpenseGate,
+  type OpeningExpenseNotDetermined,
+  type OpeningExpenseRequirement,
+} from './opening-expense-requirement';
 
 /**
  * S8-B FAZ-1b — UYAP gate remaining-bazlı karar feature flag (default OFF). ON olunca BLOCKING masraf yalnız
@@ -21,9 +27,15 @@ export interface GateCheckResult {
     remaining: number;
     status: string;
   }>;
+  /** Yalnız TUTARI BELİRLİ taleplerin kalanını toplar; `openingExpense` varsa toplam eksiktir (belirlenmemiş tutar 0 sayılmaz). */
   totalPending: number;
   message?: string;
+  /** Açılış masrafı belirlenmediyse gelir: tutar YOKTUR ve masraf şartı sağlanmış SAYILMAZ. */
+  openingExpense?: OpeningExpenseNotDetermined;
 }
+
+/** Masraf kapısından muaf UYAP işlem türleri (okuma / sorgu / indirme). */
+const GATE_EXEMPT_UYAP_ACTIONS: readonly string[] = ['VIEW', 'QUERY', 'DOWNLOAD'];
 
 /**
  * CPE Adapter Interface
@@ -164,6 +176,102 @@ export class ExpenseGateService {
   }
 
   /**
+   * Dosyanın açılış masrafı şartı (SALT OKUMA). Dosya çağıranın bürosuna ait değilse "bulunamadı" verir.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - checkGateForCase() / canPerformUyapActionForCase() / getGateSummaryForCase() (bu servis)
+   * - StageTriggerService.triggerStage() → POST /cases/:caseId/uyap/prepare, POST /cases/:caseId/stage-trigger,
+   *   POST /cases/:caseId/operations (yalnız UYAP gönderim hazırlığı olayı)
+   * </remarks>
+   */
+  async getOpeningExpenseRequirement(tenantId: string, caseId: string): Promise<OpeningExpenseRequirement> {
+    const requirement = await loadOpeningExpenseRequirement(this.prisma, tenantId, caseId);
+    if (!requirement) {
+      throw new NotFoundException('Takip bulunamadı');
+    }
+    return requirement;
+  }
+
+  /**
+   * Masraf kapısı — büro kapsamlı. Ödenmemiş BLOCKING taleplere ek olarak, açılış masrafı belirlenememiş (dövizli / karma
+   * dosyada talep oluşturulamamış) dosyada da kilitlidir: tutarı belirlenmemiş masraf "sağlandı" sayılmaz. TL dosyada ve
+   * açılış masrafı kayıtlı dosyada sonuç checkGate() ile AYNIDIR.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.getGateStatus() → GET /expense-requests/case/:caseId/gate-status
+   * - StageTriggerService.handleUyapPrepare() → POST /cases/:caseId/uyap/prepare (açılış masrafı elle kayıtlı dövizli dosya)
+   * </remarks>
+   */
+  async checkGateForCase(tenantId: string, caseId: string): Promise<GateCheckResult> {
+    const requirement = await this.getOpeningExpenseRequirement(tenantId, caseId);
+    const gate = await this.checkGate(caseId, tenantId);
+    if (!openingExpenseBlocksExpenseGate(requirement)) {
+      return gate;
+    }
+
+    return {
+      ...gate,
+      isBlocked: true,
+      message: this.openingExpenseBlockMessage(requirement, gate.message),
+      openingExpense: requirement,
+    };
+  }
+
+  /**
+   * Belirli bir UYAP işlemi masraf açısından yapılabilir mi? — büro kapsamlı. Okuma / sorgu / indirme muaftır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.canPerformAction() → GET /expense-requests/case/:caseId/can-perform/:actionType
+   * </remarks>
+   */
+  async canPerformUyapActionForCase(tenantId: string, caseId: string, actionType: string): Promise<boolean> {
+    const requirement = await this.getOpeningExpenseRequirement(tenantId, caseId);
+    if (GATE_EXEMPT_UYAP_ACTIONS.includes(actionType.toUpperCase())) {
+      return true;
+    }
+    if (openingExpenseBlocksExpenseGate(requirement)) {
+      return false;
+    }
+    return this.canPerformUyapAction(caseId, actionType, tenantId);
+  }
+
+  /**
+   * Dosya için gate özeti — büro kapsamlı. Açılış masrafı belirlenmediyse özet "UYAP işlemleri için hazır" ya da yalnız
+   * "bekleyen 0,00 TL" YAZMAZ: tutar yoktur, neden ve düzeltme yolu bildirilir. Diğer durumlarda sonuç getGateSummary()
+   * ile AYNIDIR.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.getGateSummary() → GET /expense-requests/case/:caseId/gate-summary
+   * </remarks>
+   */
+  async getGateSummaryForCase(tenantId: string, caseId: string) {
+    const requirement = await this.getOpeningExpenseRequirement(tenantId, caseId);
+    const summary = await this.getGateSummary(caseId, tenantId);
+    if (!openingExpenseBlocksExpenseGate(requirement)) {
+      return summary;
+    }
+
+    return {
+      ...summary,
+      isBlocked: true,
+      canSubmitToUyap: false,
+      canSendNotification: false,
+      message: this.openingExpenseBlockMessage(requirement, summary.isBlocked ? summary.message : undefined),
+      openingExpense: requirement,
+    };
+  }
+
+  /** Belirlenmemiş açılış masrafının nedeni + düzeltme yolu; tutarı belirli ödenmemiş talepler varsa onların mesajı eklenir. */
+  private openingExpenseBlockMessage(requirement: OpeningExpenseNotDetermined, pendingMessage?: string): string {
+    const reason = `${requirement.message} ${requirement.completionPath}`;
+    return pendingMessage ? `${reason} Ayrıca: ${pendingMessage}` : reason;
+  }
+
+  /**
    * UYAP işlemleri kilitli mi?
    * 
    * @deprecated CPE kullanımına geçilecek - canPerformUyapAction kullanın
@@ -234,9 +342,7 @@ export class ExpenseGateService {
     await this.assertCaseInTenant(caseId, tenantId);
 
     // Bazı işlemler gate'den muaf olabilir (örn: dosya görüntüleme)
-    const exemptActions = ['VIEW', 'QUERY', 'DOWNLOAD'];
-    
-    if (exemptActions.includes(actionType.toUpperCase())) {
+    if (GATE_EXEMPT_UYAP_ACTIONS.includes(actionType.toUpperCase())) {
       return true;
     }
 

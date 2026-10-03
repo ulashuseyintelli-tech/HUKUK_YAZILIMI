@@ -8,11 +8,13 @@ import Link from "next/link";
 import { Scale } from "lucide-react";
 import { api } from "@/lib/api";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { useHydrated } from "@/lib/use-hydrated";
 
 function AcceptInviteInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") || "";
+  const hydrated = useHydrated();
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -64,7 +66,9 @@ function AcceptInviteInner() {
             Parolanız belirlendi. Giriş sayfasına yönlendiriliyorsunuz…
           </p>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          // Yerel (React dışı) gönderim parolayı ADRESE yazmasın: yöntem POST; düğme React devralana dek
+          // kapalı (bkz. lib/use-hydrated.ts). Normal akış değişmez: `onSubmit` preventDefault eder.
+          <form onSubmit={handleSubmit} method="post" className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Hesabınızı etkinleştirmek için bir parola belirleyin.
             </p>
@@ -85,7 +89,7 @@ function AcceptInviteInner() {
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={isLoading || !token}
+              disabled={isLoading || !token || !hydrated}
               className="w-full rounded bg-primary text-primary-foreground py-2 disabled:opacity-50"
             >
               {isLoading ? "Kaydediliyor…" : "Parolayı belirle ve etkinleştir"}

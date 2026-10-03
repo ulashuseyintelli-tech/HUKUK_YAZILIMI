@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import ResetPasswordPage from "@/app/portal/reset-password/page";
 
 const pushMock = vi.fn();
@@ -72,6 +73,33 @@ describe("PortalResetPasswordPage — CLIENT-P2-CREDENTIAL-RECOVERY-P01 + CLIENT
     const [url, opts] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("/api/portal/reset-password");
     expect(JSON.parse(opts.body)).toEqual({ token: "RAW_TOKEN_123", password: "GecerliSifre1" });
+  });
+
+  it("[3s] F1: React StrictMode altında (etki iki kez çalışır) token kaybolmaz — POST gövdesi token taşır, adres temizlenir", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ success: true }) });
+    render(
+      <StrictMode>
+        <ResetPasswordPage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /Şifreyi Güncelle/ })).not.toBeDisabled());
+    expect(window.location.hash).toBe("");
+    fillPasswords("GecerliSifre1", "GecerliSifre1");
+    fireEvent.click(screen.getByRole("button", { name: /Şifreyi Güncelle/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ token: "RAW_TOKEN_123", password: "GecerliSifre1" });
+  });
+
+  it("[3t] F1: StrictMode altında token'sız adres yine \"geçersiz bağlantı\" davranışında kalır (boş okuma token üretmez)", async () => {
+    setLocation("", "");
+    render(
+      <StrictMode>
+        <ResetPasswordPage />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /Şifreyi Güncelle/ })).toBeDisabled());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("[4] CLIENT-SEC-P01: token YALNIZ request body'de gider — istek URL'inde veya header'da taşınmaz", async () => {

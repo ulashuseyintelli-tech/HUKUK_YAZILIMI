@@ -23,9 +23,16 @@ import {
   projectCollectedInterestShares,
   type CollectedInterestShare,
 } from './client-statement-interest-projection';
+import {
+  CLIENT_STATEMENT_SUPPORTED_CURRENCY,
+  assertClientStatementCurrencySupported,
+  assessClientStatementCurrencies,
+  type ClientStatementCurrencyObservation,
+  type ClientStatementCurrencySource,
+} from './client-statement-currency-guard';
 
 const ZERO = new Prisma.Decimal(0);
-const STATEMENT_CURRENCY = 'TRY';
+const STATEMENT_CURRENCY = CLIENT_STATEMENT_SUPPORTED_CURRENCY;
 const INTEREST_CLAIM_ITEM_TYPES = [
   ClaimItemType.INTEREST,
   ClaimItemType.PRE_INTEREST,
@@ -524,6 +531,9 @@ export class ClientStatementService {
     });
     const ccIds = ccRows.map((r) => r.id);
 
+    // E1: ekstreye girecek kaynaklar (devir dahil) yalnız TL ise üretim sürer; aksi halde HİÇBİR kayıt yazılmadan reddedilir.
+    await this.assertClientLevelSourceCurrency(tenantId, clientId, ccIds, periodStart, periodEnd);
+
     // ── opening = dönem ÖNCESİ net CLIENT_SPECIFIC pozisyon (devir) ──
     let opening = ZERO;
     if (ccIds.length) {
@@ -805,6 +815,17 @@ export class ClientStatementService {
       where: { caseId, tenantId },
       select: { id: true },
     });
+    // E1: ekstreye girecek kaynaklar (devir dahil) yalnız TL ise üretim sürer; aksi halde HİÇBİR kayıt yazılmadan reddedilir.
+    await this.assertCaseLevelSourceCurrency(
+      tenantId,
+      caseId,
+      periodStart,
+      periodEnd,
+      includeRequests,
+      statementCaseClientId,
+      balance?.id ?? null,
+    );
+
     if (balance) {
       const agg = await this.prisma.balanceLedger.aggregate({
         _sum: { amount: true },
@@ -1284,6 +1305,8 @@ export class ClientStatementService {
         periodEnd: header.periodEnd,
         openingBalance: header.opening,
         closingBalance: header.closing,
+        // E1: yalnız TL kaynaktan üretilebildiği için başlık para birimi açıkça TL (şema varsayılanına bırakılmaz).
+        currency: STATEMENT_CURRENCY,
         status: ClientStatementStatus.ACTIVE,
         note: header.note,
         generatedById: header.userId,
@@ -1303,6 +1326,175 @@ export class ClientStatementService {
     }
 
     return statement;
+  }
+
+  // ==================== E1: kaynak para birimi sınırı ====================
+
+  /**
+   * E1 — DOSYA ekstresi: ekstreye girecek her kaynağın (devir dahil) para birimini sunucuda denetler. Case.currency'ye ya da
+   * istemciye bakmaz; her sorgu `collect()`in okuduğu kümenin AYNISINI para birimine göre gruplar. Yalnız okur.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientStatementService.collect() → create() / supersede() (dosya dalı) üretim öncesi
+   * </remarks>
+   */
+  private async assertCaseLevelSourceCurrency(
+    tenantId: string,
+    caseId: string,
+    periodStart: Date,
+    periodEnd: Date,
+    includeRequests: boolean,
+    statementCaseClientId: string | null,
+    caseBalanceId: string | null,
+  ): Promise<void> {
+    const inPeriod = { gte: periodStart, lte: periodEnd };
+    const observations: ClientStatementCurrencyObservation[] = [];
+    const add = (source: ClientStatementCurrencySource, groups: unknown) => {
+      const rows = groups as { currency: string | null; _count: { _all: number } }[];
+      for (const row of rows) observations.push({ source, currency: row.currency, count: row._count._all });
+    };
+
+    if (caseBalanceId) {
+      // opening (dönem öncesi toplam) + dönem içi satırlar = periodEnd'e kadar tüm defter satırları
+      add(
+        'BalanceLedger',
+        await this.prisma.balanceLedger.groupBy({
+          by: ['currency'],
+          where: { caseBalanceId, createdAt: { lte: periodEnd } },
+          _count: { _all: true },
+        }),
+      );
+    }
+    if (includeRequests) {
+      add(
+        'ExpenseRequest',
+        await this.prisma.expenseRequest.groupBy({
+          by: ['currency'],
+          where: { tenantId, caseId, createdAt: inPeriod },
+          _count: { _all: true },
+        }),
+      );
+    }
+    if (statementCaseClientId) {
+      add(
+        'CollectionDisposition',
+        await this.prisma.collectionDisposition.groupBy({
+          by: ['currency'],
+          where: {
+            tenantId,
+            caseId,
+            status: 'POSTED',
+            manualReversalRequiredAt: null,
+            postedAt: inPeriod,
+            lines: { some: { caseClientId: statementCaseClientId } },
+          },
+          _count: { _all: true },
+        }),
+      );
+      add(
+        'ClientPayout',
+        await this.prisma.clientPayout.groupBy({
+          by: ['currency'],
+          where: { tenantId, caseId, caseClientId: statementCaseClientId, status: 'RECORDED', paidAt: inPeriod },
+          _count: { _all: true },
+        }),
+      );
+    }
+    add(
+      'ClientOffset',
+      await this.prisma.clientOffset.groupBy({
+        by: ['currency'],
+        where: {
+          tenantId,
+          createdAt: inPeriod,
+          OR: [
+            ...(statementCaseClientId ? [{ payableCaseId: caseId, payableCaseClientId: statementCaseClientId }] : []),
+            { expenseCaseId: caseId },
+          ],
+        },
+        _count: { _all: true },
+      }),
+    );
+
+    assertClientStatementCurrencySupported(assessClientStatementCurrencies(observations));
+  }
+
+  /**
+   * E1 — GENEL (client-level) ekstre: `collectClientLevel()`in okuduğu kümenin (devir dahil) para birimini sunucuda denetler.
+   * Yalnız okur.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientStatementService.collectClientLevel() → createClientLevel() / supersede() (genel dal) üretim öncesi
+   * </remarks>
+   */
+  private async assertClientLevelSourceCurrency(
+    tenantId: string,
+    clientId: string,
+    ccIds: readonly string[],
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<void> {
+    const inPeriod = { gte: periodStart, lte: periodEnd };
+    const observations: ClientStatementCurrencyObservation[] = [];
+    const add = (source: ClientStatementCurrencySource, groups: unknown) => {
+      const rows = groups as { currency: string | null; _count: { _all: number } }[];
+      for (const row of rows) observations.push({ source, currency: row.currency, count: row._count._all });
+    };
+
+    if (ccIds.length) {
+      // devir (dönem öncesi) + dönem içi = periodEnd'e kadar
+      add(
+        'CollectionDisposition',
+        await this.prisma.collectionDisposition.groupBy({
+          by: ['currency'],
+          where: {
+            tenantId,
+            status: 'POSTED',
+            manualReversalRequiredAt: null,
+            postedAt: { lte: periodEnd },
+            lines: { some: { type: CollectionDispositionLineType.CLIENT_PAYABLE, caseClientId: { in: [...ccIds] } } },
+          },
+          _count: { _all: true },
+        }),
+      );
+      add(
+        'ClientPayout',
+        await this.prisma.clientPayout.groupBy({
+          by: ['currency'],
+          where: { tenantId, caseClientId: { in: [...ccIds] }, status: 'RECORDED', paidAt: { lte: periodEnd } },
+          _count: { _all: true },
+        }),
+      );
+    }
+    add(
+      'ExpenseRequest',
+      await this.prisma.expenseRequest.groupBy({
+        by: ['currency'],
+        where: { tenantId, clientId, status: { not: 'CANCELLED' }, createdAt: inPeriod },
+        _count: { _all: true },
+      }),
+    );
+    // masraf tahsilatının para birimi bağlı olduğu talebin para birimidir (devir + dönem içi)
+    add(
+      'ExpensePayment',
+      await this.prisma.expenseRequest.groupBy({
+        by: ['currency'],
+        where: { tenantId, clientId, payments: { some: { paymentDate: { lte: periodEnd } } } },
+        _count: { _all: true },
+      }),
+    );
+    add(
+      'ClientOffset',
+      await this.prisma.clientOffset.groupBy({
+        by: ['currency'],
+        where: { tenantId, clientId, createdAt: inPeriod },
+        _count: { _all: true },
+      }),
+    );
+
+    assertClientStatementCurrencySupported(assessClientStatementCurrencies(observations));
   }
 
   private async findOwned(tenantId: string, id: string) {
