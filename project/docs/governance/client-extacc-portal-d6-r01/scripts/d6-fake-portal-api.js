@@ -20,6 +20,8 @@
  *             · delete failDeny (500; satır + dosya KALIR ve dosya F + dizin RD REDDİ) | noUnlinkDeny (satır silinir, dosya KALIR ve REDDİ).
  *             ACL reddi bu sürecin kullanıcısına (USERNAME) gerçek `icacls` ile yazılır; YALNIZ /__lift (ve denyUntilNext'te bir sonraki
  *             indirme/silme isteği) kaldırır — /__reset ve /__scenario kaldırmaz (aynı ret altında Recover ölçülebilsin).
+ * R03-b senaryosu: relogin normal|reject|rateLimit — `expireOnDisable` token'ları geçersiz kıldıktan SONRAKİ personel girişleri 401 (reject) ya da
+ *             429 (rateLimit; ürünün giriş hız sınırı taklidi) döner; koşum başındaki giriş etkilenmez.
  * KOŞUCU YASAĞI: forgot/reset/change-password, messages, admin approve/reject çağrıları FORBIDDEN işaretlenir (500).
  */
 const http = require('http'); const https = require('https'); const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
@@ -35,7 +37,7 @@ const DATA_ROOT = process.env.D6F_DATA_ROOT;
 const ALLOWED_EXT = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']; const MAX_UPLOAD = 10 * 1024 * 1024;
 const DOC_SELECT = { id: true, type: true, title: true, description: true, fileName: true, fileSize: true, mimeType: true, status: true, createdAt: true }; // PORTAL_DOCUMENT_CLIENT_SELECT
 
-const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', cases: 'normal', upload: 'normal', list: 'normal', download: 'normal', delete: 'normal', pending: 'normal', staffAuth: 'normal' };
+const DEFAULT = { create: 'normal', disable: 'normal', guard: 'normal', ext: 'normal', extLogin: 'normal', cases: 'normal', upload: 'normal', list: 'normal', download: 'normal', delete: 'normal', pending: 'normal', staffAuth: 'normal', relogin: 'normal' };
 const LATE_CREATE_MS = 3000; const heldCreates = [];
 let scenario = Object.assign({}, DEFAULT); let disableFailed = 0;
 let calls = []; let extCalls = [];
@@ -189,6 +191,9 @@ async function apiHandler(req, res) {
   calls.push({ method: req.method, path: p, bodyKeys: Object.keys(body || {}).sort() });
   if (/^\/api\/portal\/(forgot-password|reset-password|change-password|messages)/.test(p) || /^\/api\/portal\/admin\/documents\/[^/]+\/(approve|reject)$/.test(p)) { calls[calls.length - 1].forbidden = true; return send(res, 500, { message: 'FORBIDDEN_PORTAL_ENDPOINT_CALLED' }); }
   if (req.method === 'POST' && p === '/api/auth/login') {
+    // R03-b: token'lar geçersiz kılındıktan sonraki (kapanıştaki) yeniden giriş reddi / hız sınırı taklidi — yazma YOK
+    if (staffExpired && scenario.relogin === 'reject') return send(res, 401, { message: 'Unauthorized' });
+    if (staffExpired && scenario.relogin === 'rateLimit') return send(res, 429, { message: 'Too Many Requests' });
     const t = await prisma.tenant.findFirst({ where: { slug: body.tenantSlug }, select: { id: true } });
     const u = t ? await prisma.user.findFirst({ where: { tenantId: t.id, email: body.email }, select: { id: true, tenantId: true, isActive: true, tokenVersion: true, passwordHash: true } }) : null;
     if (!u || !u.isActive || !u.passwordHash || !(await bcrypt.compare(String(body.password || ''), u.passwordHash))) return send(res, 401, { message: 'Unauthorized' });

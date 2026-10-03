@@ -20,6 +20,9 @@
 #          eşit (koşucu değişince pin + digest birlikte güncellenmezse FAIL); O-10 Recover bitiş satırı 3'ü "yeni giriş reddi" diye iddia
 #          etmez (P6-C3L/D satırlarına yönlendirir) ve 6'da kalıntının DOĞRULANDI / ÖLÇÜLEMEDİ ayrımını kanıttaki P6-C-DOC + docResidue.durum'a
 #          bağlar. R02 ikinci tur blok baytlarında (082527EE…) PIN-1 ve O-10 FAIL verir (negatif kontrol).
+# R03-b  : O-11 Run'daki BELGE KALINTISI satırı kanıttaki P6-C-DOC verdict'ine + docResidue.durum'a bağlı: FAIL → "DOĞRULANDI (… DOGRULANMIS_KALINTI)",
+#          ÖLÇÜLEMEYEN + ERISIM_OLCULEMEDI → "ÖLÇÜLEMEDİ (…)" + kova okunabilirliği, PASS → satır yok; eski "kalmış olabilir (P6-C-DOC PASS değil)"
+#          metni gösterilen metinde ve kaynakta YOK. R03 blok baytlarında (76018BA7…) O-11 ve PIN-1 (koşucu pini) FAIL verir (negatif kontrol).
 # KULLANIM: powershell.exe -NoProfile -ExecutionPolicy Bypass -File d6-owner-block-selftest.ps1   (ve pwsh)
 # ÇIKIŞ  : 0 hepsi PASS · 1 en az bir FAIL · 2 ölçülemedi
 $ErrorActionPreference = 'Stop'
@@ -67,7 +70,8 @@ fs.appendFileSync(process.env.EXSTUB_MARKER, JSON.stringify({ mode: process.env.
   pw: process.env.D6_LIVE_LOGIN_PW || null,
   params: ['D6_WAIT_MS', 'D6_POLL_MS', 'D6_VIEW_MS', 'D6_HTTP_TIMEOUT_MS', 'D6_CALL_TIMEOUT_MS', 'D6_LATE_CREATE_MS', 'D6_RESIDUE_WAIT_MS'].map((k) => process.env[k] || null) }) + '\n');
 if (process.env.EXSTUB_WRITE_EVID === '1') fs.writeFileSync(process.env.D6_EVID_FILE, JSON.stringify({ productFinding: process.env.EXSTUB_FINDING || null,
-  results: [{ id: 'P6-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'P6-C-DOC', verdict: process.env.EXSTUB_DOC || 'PASS' }, { id: 'D6-1', verdict: 'PASS' }, { id: 'P6-PHONE-DOC', verdict: 'PASS' }, { id: 'P6-D9', verdict: process.env.EXSTUB_D9 || 'PASS' }]
+  portalClose: process.env.EXSTUB_DOCDURUM ? { docResidue: { durum: process.env.EXSTUB_DOCDURUM } } : undefined,
+  results:[{ id: 'P6-WAIT', verdict: process.env.EXSTUB_WAIT || 'PASS' }, { id: 'P6-C-DOC', verdict: process.env.EXSTUB_DOC || 'PASS' }, { id: 'D6-1', verdict: 'PASS' }, { id: 'P6-PHONE-DOC', verdict: 'PASS' }, { id: 'P6-D9', verdict: process.env.EXSTUB_D9 || 'PASS' }]
     .concat(JSON.parse(process.env.EXSTUB_EXTRA || '[]')) }));
 process.exit(Number(process.env.EXSTUB_RC || 0));
 '@)
@@ -397,9 +401,26 @@ try {
   $o10Old = @(@($g3Txt, $g3zTxt, $src0) | Where-Object { $_ -cmatch [regex]::Escape('3 = DB kapalı + yeni giriş reddi') })
   $o10Six = ($g3Txt -cmatch [regex]::Escape('"depolama erişimi ÖLÇÜLEMEDİ" ise belge kovasının okunabilirliğini owner düzeltir') -and $g3Txt -cmatch 'DOĞRULANMIŞ KALINTI')
   Check 'O-10' 'Recover bitiş satırı (çıkış 6 ve 0 koşumlarında GÖSTERİLEN metin): "3 = DB kapalı + yeni giriş reddi" İDDİASI YOK (gösterilen metinde ve kaynakta); 3 = "DB kapalı, FAIL yok, en az bir ölçüt ÖLÇÜLEMEYEN" + yeni giriş reddi P6-C3L/D satırlarından okunur; 6''da belge kalıntısı "DOĞRULANDI / ÖLÇÜLEMEDİ" ayrımı kanıttaki P6-C-DOC + docResidue.durum''a bağlı; çıkış 6 yönlendirmesi koşucunun "depolama erişimi ÖLÇÜLEMEDİ" metniyle ve DOĞRULANMIŞ KALINTI ile ayrılır' ($o10Miss.Count -eq 0 -and $o10Old.Count -eq 0 -and $o10Six) "eksik=$($o10Miss -join ',') · eski iddia=$($o10Old.Count) · 6 yönlendirmesi=$o10Six"
+
+  # ---- R03-b: O-11 — Run'daki BELGE KALINTISI satırı (owner'a GÖSTERİLEN metin) kanıttaki P6-C-DOC verdict'ine + docResidue.durum'a bağlı
+  $script:goN = 92; $o11 = [ordered]@{}
+  foreach ($case in @(@('FAIL', 'DOGRULANMIS_KALINTI', 'FAIL', 6), @('UNMEASURED', 'ERISIM_OLCULEMEDI', 'FAIL', 6), @('PASS', 'YOK', 'PASS', 0))) {
+    $env:EXSTUB_DOC = $case[0]; $env:EXSTUB_DOCDURUM = $case[1]; $env:EXSTUB_D9 = $case[2]
+    $o11Txt = Get-HostText { $script:capR = Invoke-Mode 'Run' $real.Exe $case[3] $true }
+    $o11[$case[0]] = [pscustomobject]@{ lines = @($o11Txt -split "`n" | Where-Object { $_ -cmatch 'BELGE KALINTISI:' }); r = $script:capR }
+  }
+  $env:EXSTUB_D9 = 'PASS'; $env:EXSTUB_DOC = 'PASS'; Remove-Item 'Env:EXSTUB_DOCDURUM' -ErrorAction SilentlyContinue
+  $oF = $o11['FAIL']; $oU = $o11['UNMEASURED']; $oP = $o11['PASS']; $o11Old = 'kalmış olabilir (P6-C-DOC PASS değil)'
+  $o11Both = @(@($oF.lines) + @($oU.lines))
+  $o11Ok = ($oF.r.out -eq 6 -and $oF.lines.Count -eq 1 -and $oF.lines[0] -cmatch [regex]::Escape('BELGE KALINTISI: DOĞRULANDI (P6-C-DOC FAIL · docResidue.durum=DOGRULANMIS_KALINTI)') -and $oF.lines[0] -cnotmatch 'ÖLÇÜLEMEDİ' -and
+            $oU.r.out -eq 6 -and $oU.lines.Count -eq 1 -and $oU.lines[0] -cmatch [regex]::Escape('BELGE KALINTISI: ÖLÇÜLEMEDİ (P6-C-DOC ÖLÇÜLEMEYEN · docResidue.durum=ERISIM_OLCULEMEDI)') -and $oU.lines[0] -cmatch 'okunabilirliğini owner düzeltir' -and $oU.lines[0] -cnotmatch 'DOĞRULANDI' -and
+            $oP.r.out -eq 0 -and $oP.lines.Count -eq 0 -and
+            @($o11Both | Where-Object { $_ -cmatch [regex]::Escape($o11Old) }).Count -eq 0 -and $src0 -cnotmatch [regex]::Escape($o11Old) -and
+            @($o11Both | Where-Object { $_ -cmatch 'Recover BAŞLATMAZ' -and $_ -cmatch 'kanıt incelendikten sonra' -and $_ -cmatch 'AYRI owner onayıyla' -and $_ -cmatch 'otomatik DEĞİL' }).Count -eq 2)
+  Check 'O-11' 'Run''daki BELGE KALINTISI satırı (owner''a GÖSTERİLEN metin) kanıttaki P6-C-DOC verdict''ine + docResidue.durum''a bağlı: FAIL → "DOĞRULANDI (P6-C-DOC FAIL · docResidue.durum=DOGRULANMIS_KALINTI)" ("ÖLÇÜLEMEDİ" yok); ÖLÇÜLEMEYEN + ERISIM_OLCULEMEDI → "ÖLÇÜLEMEDİ (P6-C-DOC ÖLÇÜLEMEYEN · …)" + kova okunabilirliği ("DOĞRULANDI" yok); PASS → satır YOK; eski "kalmış olabilir (P6-C-DOC PASS değil)" gösterilen metinde ve kaynakta YOK; iki satır da Recover BAŞLATMAZ + kanıt incelendikten sonra + AYRI owner onayı + otomatik değil der; çıkış kodu değişmeden' $o11Ok "FAIL: rc=$($oF.r.out) [$(@($oF.lines) -join ' | ')] · ÖLÇÜLEMEYEN: rc=$($oU.r.out) [$(@($oU.lines) -join ' | ')] · PASS: rc=$($oP.r.out) satır=$($oP.lines.Count) · eski metin kaynakta=$($src0 -cmatch [regex]::Escape($o11Old))"
 }
 finally {
-  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+  foreach ($k in 'EXSTUB_RC', 'EXSTUB_WRITE_EVID', 'EXSTUB_MARKER', 'EXSTUB_WAIT', 'EXSTUB_QR_RC', 'EXSTUB_FINDING', 'EXSTUB_D9', 'EXSTUB_DOC', 'EXSTUB_EXTRA', 'EXSTUB_DOCDURUM') { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
   Clear-SecretEnv
 }
 
