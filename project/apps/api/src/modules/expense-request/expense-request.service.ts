@@ -19,6 +19,7 @@ import {
 } from '@/modules/accounting-journal';
 
 import { findExpenseCatalogEntry } from './expense-item-catalog';
+import { incompleteSuggestionConflictBody, loadIncompleteSuggestion } from '@/modules/cost-package/cost-package-basis';
 import {
   buildOpeningExpenseEmailNotSentStatus,
   describeOpeningExpenseEmailFailure,
@@ -333,6 +334,34 @@ export class ExpenseRequestService {
     });
     if (!client) {
       throw new NotFoundException('Müvekkil bulunamadı');
+    }
+
+    // Boş / eksik tutar reddi: tutarı belirtilmemiş kalem 0 sayılarak kaydedilmez. Açıkça girilmiş sayı (0 dahil) bugünkü
+    // kuralla aynen işlenir.
+    if (!Array.isArray(dto.items) || dto.items.length === 0) {
+      throw new BadRequestException('En az bir masraf kalemi zorunludur');
+    }
+    for (const item of dto.items) {
+      if (typeof item?.finalAmount !== 'number' || !Number.isFinite(item.finalAmount)) {
+        throw new BadRequestException(
+          `Masraf kalemi tutarı belirtilmemiş (${String(item?.itemCode ?? 'bilinmeyen kalem')}): eksik tutar 0 sayılmaz`,
+        );
+      }
+    }
+
+    // Eksik paketten kayıt reddi: pakette matraha bağlı (oranlı) kalem varsa ve bu dosyada TL olarak hesaplanamıyorsa
+    // (dövizli / karma dosya) paket modu talebi oluşturulmaz; kalemler elle girilerek (POST /expense-requests) kaydedilir.
+    // Hesap yapılmaz, kur ya da harç kuralı seçilmez. Paket kodu tanınmıyorsa bugünkü davranış (kayıt) değişmez; pasif
+    // paket de denetlenir (kapalı-hata: pencereden seçilemez ama kod doğrudan gönderilebilir).
+    const costPackage = await this.prisma.costPackage.findFirst({
+      where: { code: dto.packageCode, OR: [{ tenantId: null }, { tenantId }] },
+      include: { items: true },
+    });
+    if (costPackage) {
+      const incomplete = await loadIncompleteSuggestion(this.prisma, caseItem, costPackage);
+      if (incomplete) {
+        throw new ConflictException(incompleteSuggestionConflictBody(incomplete));
+      }
     }
 
     // Calculate totals

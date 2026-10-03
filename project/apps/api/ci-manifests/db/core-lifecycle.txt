@@ -200,6 +200,25 @@ src/modules/expense-request/__tests__/opening-expense-email-outcome.http.db-gate
 #   ayni" iddiasi bugunku davranisi sabitler. Duzeltmesiz servis koduyla 6 testin 6'si DUSER (RED kanitlandi).
 src/modules/case/__tests__/case-calculation-summary-currency.http.db-gated.integration.spec.ts
 
+# Masraf paketi onerisi (POST /cost-packages/compute) — dovizli dosyada oranli kalem, GERCEK HTTP + disposable PostgreSQL.
+#   Olculen kusur (main 8727e5d2): paket hesabi yuzde kuralini (calcRule percentage, base principalAmount) dosya anaparasinin
+#   SAYISINA para birimine bakmadan uyguluyor; "UYAP Oncesi / Takip Acilis Masraflari" paketinde 1.000.000 USD / EUR dosyanin
+#   pesin harc onerisi 5.000 TL, paket toplami 5.857,90 TL — 1.000.000 TL'lik dosyayla AYNI; USD + TRY anaparali dosyada da
+#   ayni. Oneri masraf talebi penceresine dolu geliyor, kaydedilince PENDING / BLOCKING talep + muhasebe gunlugu oluyordu.
+#   Owner ara karari (2026-10-01) ile ayni sinif: oranli kalem icin tutar URETILMEZ, 0 yazilmaz; `items` ve `totalSuggested`
+#   yalniz hesaplanabilen kalemleri tasir, eksik kalan eklemeli `incompleteSuggestion` (neden + gereken bilgi) ile bildirilir.
+#   Eksik oneri yalniz onu isleyebildigini beyan eden cagirana (`acceptIncomplete`) doner; beyan etmeyen istemci ve ic
+#   cagiran (UYAP gonderim hazirliginin bakiye / paket toplami karsilastirmasi) 409 alir — eksik toplam paket toplami gibi
+#   kullanilamaz. Sabit ve adet bazli kalemler, oranli kalemi olmayan paketler, TL dosyanin yaniti ve gecmis talepler
+#   DEGISMEZ; uc kayit yazmaz. Dovizli takipte oranli kalemin hangi tutar ve kur uzerinden hesaplanacagi owner karari.
+#   Ayni karar POST /expense-requests/from-package yazma ucunda da gecerli (owner karari 2026-10-03, "A + bos tutar reddi"):
+#   hesaplanamayan oranli kalemi olan paketten (dovizli / karma dosya) talep 409 ile reddedilir, hicbir kayit yazilmaz;
+#   tutari bos / eksik / sayi olmayan kalem 400 ile reddedilir (eksik tutar 0 sayilmaz), acikca girilmis 0 bugunku kurala tabi.
+#   Elle giris yolu (Manuel Giris -> POST /expense-requests, katalog PESIN_HARC) dovizli dosyada girilen tutarla kaydeder
+#   (ADMIN / USER yazar, VIEWER 403 ve bos tutar 400: olculdu). Duzeltmesiz servis koduyla 53 testin 33'u DUSER, TL
+#   kontrolleri, oranli kalemi olmayan paketler ve elle giris yolu GECER (RED kanitlandi).
+src/modules/cost-package/__tests__/cost-package-compute-fx-basis.http.db-gated.integration.spec.ts
+
 # Otomatik acilis masraf talebi — dovizli dosyada pesin harc matrahi, GERCEK HTTP + disposable PostgreSQL. Olculen kusur
 #   (main 6917e8aa): muvekkilli dosya acilinca arka planda olusan acilis masraf seti pesin harci (TL tarifesi orani) anapara
 #   kalemlerinin SAYISINA uyguluyor; 10.000 USD anaparali dosyada talep 10.000 TL'lik dosyayla AYNI (pesin harc 120,00 /

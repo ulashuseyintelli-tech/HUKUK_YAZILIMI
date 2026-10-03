@@ -330,6 +330,12 @@ src/modules/case/__tests__/case-classification-consistency.spec.ts
 #   tarifesi orani uygulanarak bulunan alanlar HESAPLANAMADI, farkli para birimlerini tek sayida toplayan alanlar
 #   GOSTERILEMEZ; bilinen tutarlar kendi para birimiyle GECERLI. Dovizli alacakta harc / vekalet ucreti kurali owner karari.
 src/modules/case/__tests__/case-calculation-summary-currency.spec.ts
+# Masraf paketi onerisi — matraha bagli (oranli) kalemin onerisi hesaplanabilir mi? Saf karar (hesap ve cevirme YOK): yuzde
+#   kurali parasal matraha (dosya anaparasi) uygulaniyorsa ve matrah TL degilse kalem HESAPLANAMAZ; tutar, kur ya da toplam
+#   uretilmez, neden ve gereken bilgi bildirilir. Sabit, adet bazli, adet tabanli oran ve taninmayan kural turu matrahtan
+#   bagimsizdir; siniflandirilmamis taban parasal matrah sayilir (guvenli taraf). Dovizli takipte oranli kalemin kurali
+#   owner karari.
+src/modules/cost-package/__tests__/cost-package-basis.spec.ts
 # Otomatik acilis masraf seti — pesin harc matrahi TL olarak hesaplanabilir mi? Saf karar (hesap ve cevirme YOK): dosya ya da
 #   matrahi olusturan anapara kalemleri TL degilse HESAPLANAMAZ; tutar, kur ya da toplam uretilmez, neden ve gereken bilgi
 #   bildirilir. Dovizli takipte pesin harcin hangi tutar ve kur uzerinden hesaplanacagi owner karari.
