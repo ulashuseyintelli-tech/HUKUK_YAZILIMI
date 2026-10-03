@@ -41,6 +41,8 @@
  *          bulgusunda. (b) Run'ın kurtarma adımı Recover komutunu YALNIZ makbuz dosyası Recover'ın okuma kapısını geçiyorsa önerir (`receiptFileState`:
  *          dosya var + JSON + kayıt türü + runId + personel alanları); dosya yoksa / okunamıyorsa adım uygulanamayan komutu ÖNERMEZ, kanıttaki
  *          `receipt` nesnesinden yeni makbuz dosyası yolunu (AYRI owner onayıyla) ya da kanıtta makbuz da yoksa SOMUT ENGELİ yazar. Çıkış kodları DEĞİŞMEDİ.
+ *          (c) (D-7 7c taramasının D-6 ikizi) portal hesabı YOKKEN P6-C1 satır açıklaması "portal erişimi yetkili uçla kapatıldı" yerine ölçüleni söyler
+ *          ("portal hesabı YOK (DB'de ölçüldü) — kapatılacak portal erişimi yok; kapatma çağrısı YAPILMADI"); verdict DEĞİŞMEDİ.
  */
 const fs = require('fs'); const crypto = require('crypto'); const path = require('path');
 const H5 = require('../../client-h5-intake-url-r01/scripts/h5-url-live-run');
@@ -212,7 +214,8 @@ async function closePortal(R, prisma, base, origin, receipt, P, opts) {
       res.docResidue = await documentResidue(R, prisma, receipt, o.knownFiles, o.residueCleanup); return res;
     }
     res.ok = true; res.dbClosed = true; res.portalDbClosed = true; res.accountAbsent = true; res.note = o.absentNote || 'portal hesabı yok (oluşturma isteği gönderilmedi ya da kesin reddedildi)';
-    R.check('P6-C1', 'portal erişimi yetkili uçla kapatıldı', true, res.note);
+    // R03-c (c): hesap YOKKEN kapatma yapılmaz — satır açıklaması "kapatıldı" demez, ölçüleni söyler (önceki: "portal erişimi yetkili uçla kapatıldı").
+    R.check('P6-C1', 'portal hesabı YOK (DB\'de ölçüldü) — kapatılacak portal erişimi yok; kapatma çağrısı YAPILMADI', true, res.note);
     res.docResidue = await documentResidue(R, prisma, receipt, o.knownFiles, o.residueCleanup); res.ok = res.ok && v('P6-C-DOC') === 'PASS'; res.dbClosed = res.ok; return res;
   }
   let disabledNow = false;

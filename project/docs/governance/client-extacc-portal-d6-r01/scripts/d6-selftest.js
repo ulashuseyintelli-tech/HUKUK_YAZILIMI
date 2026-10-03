@@ -23,6 +23,7 @@
  *           durumu (birim: var / eski / yok / klasör / bozuk / kanıtta makbuz yok) → Run adımı uygulanamayan Recover komutunu önermez · Z21-c makbuz
  *           koşum ortasında kaybolur (uçtan uca): adım "makbuz dosyası YOK" + kanıttaki `receipt` yolu; o nesneden yazılan dosyayla Recover GERÇEKTEN
  *           koşar (kimlik bağı OK). Değişen: Z20-e (ürün bulgusu dayanağı "P6-C2 PASS + P6-C5 PASS"), Z20-h (iii) (P6-C5 FAIL'de ürün bulgusu satırı YOK).
+ *           Z21-d (D-7 7c taramasının ikizi): portal hesabı YOKKEN P6-C1 günlük satırı "kapatıldı" demez (Z14 Run günlüğü).
  */
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
@@ -537,6 +538,11 @@ const CLOSE_NO_S = CLOSE.filter((id) => id !== 'P6-C4L' && id !== 'P6-C4D' && id
     // ---- Z14 MAKBUZ YAZILAMIYOR → API çağrısı yok, çıkış 1
     const z14 = await runScenario('z14-receipt-fail', dir, {}, { D6_RECEIPT: path.join(dir, 'yok', 'alt', 'r.json') });
     check('Z14', 'makbuz yazılamazsa login/create-user/yükleme 0, kurulum kapatıldı, çıkış 1', z14.code === 1 && !z14.calls.some((c) => /auth\/login|create-user/.test(c.path)) && z14.ext.length === 0 && z14.activeUsers === 0, `çıkış=${z14.code}`);
+    // R03-c (c): portal hesabı YOKKEN (Z14: makbuz yazılamadı → hesap hiç istenmedi) P6-C1 günlük satırı kapatma İDDİA ETMEZ (açıklama kanıta değil günlüğe yazılır)
+    const c1Line6 = (String(z14.log || '').split(/\r?\n/).find((l) => /\bP6-C1\b/.test(l)) || '');
+    check('Z21-d', 'portal hesabı YOKKEN (Z14 Run günlüğü: makbuz yazılamadı, hesap istenmedi; P6-C1 PASS, disable-user çağrısı 0) P6-C1 satır açıklaması kapatma İDDİA ETMEZ: "portal hesabı YOK (DB\'de ölçüldü) — kapatılacak portal erişimi yok; kapatma çağrısı YAPILMADI"; "kapatıldı" YOK (önceki baytlar "portal erişimi yetkili uçla kapatıldı" yazıyordu)',
+      /portal hesabı YOK \(DB'de ölçüldü\) — kapatılacak portal erişimi yok; kapatma çağrısı YAPILMADI/.test(c1Line6) && !/kapatıldı/.test(c1Line6) && z14.v('P6-C1') === 'PASS' && !z14.calls.some((c) => c.path === '/api/portal/admin/disable-user'),
+      `Run: ${c1Line6.trim().slice(0, 160)}`);
 
     // ---- C-1 (R03 c) — kanıttaki kurtarma/kapanış metinleri YALNIZ ölçüleni söyler: bu öz-testin ürettiği TÜM Run/Recover kanıtları taranır
     let evScanned = 0; let evNeed = 0; const textBad = [];

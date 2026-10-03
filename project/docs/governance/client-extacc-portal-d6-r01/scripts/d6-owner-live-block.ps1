@@ -41,7 +41,8 @@
 #          demez (ölçülen: Recover anında hesap DB'de yok). (b) Run çıkış 5/6 metni `-Mode Recover -ReceiptFile <makbuz>` önerisini YALNIZ kanıt
 #          dizinindeki makbuz dosyası Recover'ın okuma kapısını geçiyorsa yazar (Get-ReceiptFileState: dosya + JSON + kayıt türü + runId); yoksa
 #          uygulanamayan komut yerine kanıttaki receipt nesnesinden yeni makbuz dosyası yolu ya da (kanıtta da yoksa) SOMUT ENGEL yazılır.
-#          Kapılar, sıra, Recover okuma kapısı, çıkış kodları DEĞİŞMEDİ.
+#          Kapılar, sıra, Recover okuma kapısı, çıkış kodları DEĞİŞMEDİ. (R03-c ikinci commit: koşucuda yalnız hesap yokken P6-C1 satır
+#          açıklaması değişti → koşucu pini + $ExpPackage yeniden güncellendi; blok metni değişmedi.)
 # TOPOLOJİ: public portal adresi canlı .env'den okunur ve owner'ın konsola yazdığı R05 adresiyle doğrulanır; kanıt kökü $env:USERPROFILE'a görelidir
 #          (bu dosyada canlı alan adı / yerel kullanıcı yolu literali yoktur). Canlı kök ($Rel) tek yerde tanımlıdır.
 # ÇIKIŞ  : node kodu değiştirilmeden taşınır · 90 kapıda durdu · 91 node başlatılamadı / kod alınamadı · 7 kanıt yok.
@@ -68,7 +69,7 @@ $ExpEnvSha   = '5C776BBEEE018EA5CC8192378D42D742FD4ABC1B6D0E9A3EA671CF463206908D
 $ExpBaseUrl  = $null   # R05 public portal adresi: canlı .env PUBLIC_PORTAL_BASE_URL'den okunur (Invoke-ReadOnlyGates, biçim kapısı) ve Run/QrTest'te owner'ın konsola yazdığı R05 adresiyle birebir doğrulanır (Confirm-PortalBaseUrlR05). Public repoya host literali YAZILMAZ.
 # Koşucunun YÜKLEDİĞİ tüm governance dosyaları + QR denemesi (require ağacı ölçüldü).
 $PkgPins = [ordered]@{
-  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = '9FA67CAE821A41B5A8A68071B4338F38216F4ACAC180244FE9236DE5DC51EFD8'
+  'client-extacc-portal-d6-r01\scripts\d6-portal-documents-live-run.js'               = '84D003D7DE242BF35613D1F0CF1362871765CEBD96AFCAE74E2C080471987017'
   'client-extacc-portal-d6-r01\scripts\d6-qr-test.js'                                 = 'C9FC15AADBFDF4AA87702542340EB6A5C68558D3FE6423F06DED8E452D85F418'
   'client-extacc-intake-chain-r01\scripts\extacc-display.js'                          = 'F257188DF66C429472C214D38D965C1E6F5A2EA490D348369AC68C5DC6F26867'
   'client-extacc-intake-chain-r01\scripts\vendor\qrcode-generator-1.4.4\qrcode.js'    = '18AE399F81182BC9DE916E9C77B195DF20CC58D6F2D55A62B085A299F1BF1780'
@@ -78,7 +79,7 @@ $PkgPins = [ordered]@{
   'client-acceptance-runners-i3-r01\scripts\i3-lib.js'                                = '56F3788E9F84746CFFEE384D8C18B9B9A28130CC8E2285F9570AB69CC6EE74A3'
   'client-acceptance-harness-r01\scripts\ah-lib.js'                                   = 'DF882DB7F33A667092F126F01E518C1A8292C8C0B3C4C039BF73D71F3ACCBFD7'
 }
-$ExpPackage = 'B9D9AD682377B202374B41A8FF48832FA8830ECF80F34DDEA9707DAFFA541BD5'
+$ExpPackage = 'E8CFA86465F74A33EA2760818EB95FA327E0AFBAC74E03B6200E49718154FCB4'
 $SecretEnv  = @('AH_DATABASE_URL', 'AH_PRISMA_ROOT', 'AH_BCRYPT_PATH', 'D6_LIVE_CONFIRM', 'D6_RECOVER_CONFIRM', 'D6_LIVE_GO_REF',
                 'D6_RUNID', 'D6_MODE', 'D6_EXPECT_DB', 'D6_EXPECT_TENANT_SLUG', 'D6_API_BASE', 'D6_EXPECT_API',
                 'D6_EXPECT_BASE_URL', 'D6_LIVE_LOGIN_PW', 'D6_RECEIPT', 'D6_EVID_FILE', 'D6_DISPLAY', 'EXA_QRTEST_URL',
