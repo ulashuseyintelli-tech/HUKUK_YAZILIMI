@@ -34,6 +34,9 @@ import {
   OpeningExpenseAutomationStatus,
   OpeningExpenseBasisDecision,
 } from './opening-expense-basis';
+import { evaluateStageExpenseBasis } from './stage-expense-basis';
+
+const OPENING_EXPENSE_ALREADY_CREATED = 'Bu takip için açılış masrafları zaten oluşturulmuş';
 
 export interface ExpenseItem {
   /** Kanonik katalog kodu veya bilinen legacy alias (create anında kanonik koda çözülür). */
@@ -801,6 +804,7 @@ export class ExpenseRequestService {
    * - CaseService.runOpeningExpenseAutomation() ← CaseService.create() → POST /cases (müvekkilli dosya; peşin harç matrahı
    *   TL ise; masraf e-postası istenmediyse arka planda, istendiyse yanıt sonucu en çok 10 sn bekler)
    * - ExpenseRequestController.createOpeningExpenses() → POST /expense-requests/case/:caseId/opening
+   * - ExpenseRequestService.createStageExpenseSet() → POST /expense-requests/case/:caseId/stage/OPENING
    * </remarks>
    */
   async createOpeningExpenseSet(caseId: string, tenantId: string, userId: string) {
@@ -829,7 +833,7 @@ export class ExpenseRequestService {
     });
 
     if (existing) {
-      throw new BadRequestException('Bu takip için açılış masrafları zaten oluşturulmuş');
+      throw new BadRequestException(OPENING_EXPENSE_ALREADY_CREATED);
     }
 
     // Peşin harç TL tarifesi oranıdır: matrahı oluşturan tutarlar TL değilse hesaplanamaz (kur / matrah sözleşmesi yok).
@@ -933,6 +937,18 @@ export class ExpenseRequestService {
 
     // Transaction ile oluştur
     const result = await this.prisma.$transaction(async (tx) => {
+      // Yukarıdaki "zaten oluşturulmuş" denetimi ile yazma arasında kilit yoktu: eşzamanlı iki istek (ya da dosya açılışının
+      // arka plan işi ile açık istek) iki talep ve iki günlük kaydı yazıyordu. Aynı dosyanın açılış seti yazımları
+      // serileştirilir; kural kilit altında yeniden denetlenir (kilit işlem bitince kendiliğinden bırakılır).
+      await this.lockOpeningExpenseSet(tx, tenantId, caseId);
+      const concurrent = await tx.expenseRequest.findFirst({
+        where: { caseId, tenantId, stageCode: 'OPENING', status: { not: 'CANCELLED' } },
+        select: { id: true },
+      });
+      if (concurrent) {
+        throw new BadRequestException(OPENING_EXPENSE_ALREADY_CREATED);
+      }
+
       // ExpenseRequest oluştur
       const expenseRequest = await tx.expenseRequest.create({
         data: {
@@ -987,12 +1003,39 @@ export class ExpenseRequestService {
   }
 
   /**
+   * Aynı dosyanın açılış masraf seti yazımlarını serileştirir. Yalnız AYNI anahtarı kullanan işlemler birbirini bekler;
+   * kilit işlem (transaction) bitince kendiliğinden bırakılır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestService.createOpeningExpenseSet() (yazma işlemi içinde, "zaten oluşturulmuş" denetiminden önce)
+   * </remarks>
+   */
+  private async lockOpeningExpenseSet(tx: Prisma.TransactionClient, tenantId: string, caseId: string): Promise<void> {
+    const lockKeyText = `expense-request-opening-set:${tenantId}:${caseId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKeyText}, 0))`;
+  }
+
+  /**
    * Aşama bazlı masraf seti oluştur
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ExpenseRequestController.createStageExpenses() → POST /expense-requests/case/:caseId/stage/:stageCode
+   * - WorkflowEngine.updateCaseStage() → aşama değişiminde arka planda (ENFORCEMENT → RE_NOTIFICATION, SEIZURE → SEIZURE,
+   *   SALE_REQUEST → SALE); o yolda hata yalnız sunucu günlüğüne yazılır
+   * </remarks>
    */
   async createStageExpenseSet(caseId: string, stageCode: string, tenantId: string, userId: string) {
     const template = EXPENSE_SET_TEMPLATES[stageCode as keyof typeof EXPENSE_SET_TEMPLATES];
     if (!template) {
       throw new BadRequestException(`Geçersiz aşama kodu: ${stageCode}`);
+    }
+
+    // Açılış setinin tek üreticisi createOpeningExpenseSet'tir. Aşama hesaplayıcısı açılış kalemlerini tanımaz (altı kalemin
+    // beşi 0 yazılıyordu) ve bu yol açılışın "zaten oluşturulmuş" ile peşin harç matrahı denetimlerinden geçmiyordu.
+    if (template.code === 'OPENING') {
+      return this.createOpeningExpenseSet(caseId, tenantId, userId);
     }
 
     // Case bilgilerini al
@@ -1009,6 +1052,27 @@ export class ExpenseRequestService {
 
     if (!caseItem.clientId) {
       throw new BadRequestException('Takibe müvekkil atanmamış');
+    }
+
+    // Haciz harcı ve satış harcı TL tarifesi oranıdır: aşağıda toplanan anapara alacak kalemleri TL değilse hesaplanamaz
+    // (kur / matrah sözleşmesi yok). Eksik tutar 0 sayılmaz ve talep tamamlanmış gibi kayda geçmez (PENDING talep muhasebe
+    // günlüğüne de yazılır, UYAP kapısını kilitler) → hiçbir kayıt yazılmadan gerekçesiyle reddedilir. Oranlı kalemi
+    // olmayan set (yeniden tebligat) etkilenmez.
+    const basis = evaluateStageExpenseBasis(template, {
+      caseCurrency: caseItem.currency,
+      basisRecordCurrencies: caseItem.claimItems.map((item) => item.currency),
+    });
+    if (!basis.calculable) {
+      throw new ConflictException({
+        code: basis.reasonCode,
+        message: basis.message,
+        stageCode: basis.stageCode,
+        requiredInfo: basis.requiredInfo,
+        notCalculableItems: basis.notCalculableItems,
+        caseCurrency: basis.caseCurrency,
+        basisCurrencies: basis.basisCurrencies,
+        tariffCurrency: basis.tariffCurrency,
+      });
     }
 
     // Anapara hesapla
