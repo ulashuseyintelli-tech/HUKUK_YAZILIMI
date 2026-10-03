@@ -167,9 +167,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
   /** Üretim yolu: kullanıcı faiz işletimi yaması → yüksek etkili onay talebi (kalem onaya kadar DEĞİŞMEZ). */
   async function claimItemRequest(s: Seed): Promise<string> {
     const res: any = await claimItems.updateFromUser(s.tenantId, s.requester.userId, s.claimItemId, {
-      interestAccrualStatus: 'ACCRUES',
-      interestStartDate: '2026-01-15T00:00:00.000Z',
-      interestStartDateProvenance: 'DOCUMENT_DUE_DATE',
+      dueDate: '2026-02-01T00:00:00.000Z',
     } as any);
     expect(res).toEqual(expect.objectContaining({ applied: false, approvalRequired: true }));
     return res.approvalRequestId as string;
@@ -215,7 +213,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
     expect(req.approverUserId).toBeNull();
     expect(req.decidedAt).toBeNull();
     const item = await prisma.claimItem.findUniqueOrThrow({ where: { id: s.claimItemId } });
-    expect(item.interestAccrualStatus).toBe('UNKNOWN');
+    expect(item.dueDate).toBeNull();
     expect(
       await prisma.auditLog.count({ where: { tenantId: s.tenantId, action: { in: DECISION_AUDIT_ACTIONS }, entityId: requestId } }),
     ).toBe(0);
@@ -235,7 +233,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
 
       expect(decided.status).toBe(OfficeApprovalStatus.APPROVED);
       const item = await prisma.claimItem.findUniqueOrThrow({ where: { id: s.claimItemId } });
-      expect(item.interestAccrualStatus).toBe('ACCRUES');
+      expect(item.dueDate?.toISOString()).toBe('2026-02-01T00:00:00.000Z');
     });
 
     it.each(['reject', 'requestRevision'] as const)('%s: delege avukat karar verir; ClaimItem değişmez', async (decision) => {
@@ -245,7 +243,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
 
       expect(decided.status).toBe(expectedStatus[decision]);
       const item = await prisma.claimItem.findUniqueOrThrow({ where: { id: s.claimItemId } });
-      expect(item.interestAccrualStatus).toBe('UNKNOWN');
+      expect(item.dueDate).toBeNull();
     });
 
     it('approveWithChanges: genel talepte delege avukat → APPROVED_WITH_CHANGES + replacement izi', async () => {
@@ -331,7 +329,7 @@ describeWithDisposableDb('K4-1 — genel onay kararı ile yetki iptali gerçek P
 
     expect(events).toEqual(['decision:side-effect-written', 'decision:committed', 'revoke:done']);
     expect(decided.status).toBe(OfficeApprovalStatus.APPROVED);
-    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: s.claimItemId } })).interestAccrualStatus).toBe('ACCRUES');
+    expect((await prisma.claimItem.findUniqueOrThrow({ where: { id: s.claimItemId } })).dueDate?.toISOString()).toBe('2026-02-01T00:00:00.000Z');
     expect((await prisma.lawyer.findUniqueOrThrow({ where: { id: s.approver.lawyerId } })).canApproveOfficeActions).toBe(false);
 
     // İptal SONRASI yeni karar reddedilir.
