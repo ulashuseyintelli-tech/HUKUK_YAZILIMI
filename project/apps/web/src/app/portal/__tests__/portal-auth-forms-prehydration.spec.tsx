@@ -224,7 +224,7 @@ describe("Portal giriş", () => {
       { durum: "e-posta boş", email: "", password: PASS, uyari: "E-posta adresinizi girin." },
       { durum: "e-posta yalnız boşluk", email: "   ", password: PASS, uyari: "E-posta adresinizi girin." },
       { durum: "e-posta biçimsiz", email: "erken-olcum", password: PASS, uyari: "Geçerli bir e-posta adresi girin." },
-      { durum: "e-posta alan adı eksik", email: "erken@olcum", password: PASS, uyari: "Geçerli bir e-posta adresi girin." },
+      { durum: "e-posta alan adı eksik", email: "erken@", password: PASS, uyari: "Geçerli bir e-posta adresi girin." },
       { durum: "parola boş", email: EMAIL, password: "", uyari: "Şifrenizi girin." },
     ])("$durum", async ({ email, password, uyari }) => {
       const { form, submit } = clientRendered(<PortalLoginPage />, [email, password]);
@@ -234,6 +234,15 @@ describe("Portal giriş", () => {
       await screen.findByText(uyari);
       expect(fetchMock).not.toHaveBeenCalled();
       expect(submit.disabled).toBe(false);
+    });
+
+    it("alan adında nokta olmayan adres engellenmez (tarayıcının type=email kuralı kadar); parola KIRPILMADAN gider", async () => {
+      fetchMock.mockResolvedValue(loginOk());
+      const { form, submit } = clientRendered(<PortalLoginPage />, ["erken@olcum", " P4ss bosluklu "]);
+      disableBrowserValidation(form);
+      fireEvent.click(submit);
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/portal"));
+      expect(bodiesTo(LOGIN)).toEqual([{ email: "erken@olcum", password: " P4ss bosluklu " }]);
     });
 
     it("uyarıdan sonra düzeltilen giriş tek istekle gider; uyarı kalkar", async () => {
@@ -373,7 +382,7 @@ describe("Portal şifremi unuttum", () => {
       { durum: "boş", email: "", uyari: "E-posta adresinizi girin." },
       { durum: "yalnız boşluk", email: "   ", uyari: "E-posta adresinizi girin." },
       { durum: "biçimsiz", email: "erken-olcum", uyari: "Geçerli bir e-posta adresi girin." },
-      { durum: "alan adı eksik", email: "erken@olcum", uyari: "Geçerli bir e-posta adresi girin." },
+      { durum: "alan adı eksik", email: "erken@", uyari: "Geçerli bir e-posta adresi girin." },
     ])("$durum", async ({ email, uyari }) => {
       const { form, submit } = clientRendered(<PortalForgotPasswordPage />, [email]);
       disableBrowserValidation(form);

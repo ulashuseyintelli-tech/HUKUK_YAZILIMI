@@ -7,10 +7,11 @@
  * `{ success: true }` alıyor, kullanıcı "E-posta Gönderildi" görüyordu.
  *
  * Tarayıcının kendi alan denetimi (`required`, `type="email"`) yerinde kalır; bu denetim onun
- * çalışmadığı / atlandığı durum için ikinci savunmadır. Biçim deseni depodaki istemci tarafı e-posta
- * denetimiyle aynıdır (lib/client-write.ts).
+ * çalışmadığı / atlandığı durum için ikinci savunmadır. Biçim deseni bilerek tarayıcının `type="email"`
+ * kuralı kadar gevşektir (alan adında nokta İSTENMEZ): portal hesabı açılırken adresin biçimine bakılmaz,
+ * daha katı bir desen o biçimde açılmış bir hesabın giriş ve sıfırlama isteğini kesebilirdi.
  */
-const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+$/;
 
 export const PORTAL_EMAIL_REQUIRED_MESSAGE = "E-posta adresinizi girin.";
 export const PORTAL_EMAIL_FORMAT_MESSAGE = "Geçerli bir e-posta adresi girin.";
