@@ -27,7 +27,10 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
     const fragmentParams = new URLSearchParams(rawHash);
-    setToken(fragmentParams.get("token") ?? "");
+    // F1: geliştirme ortamında React StrictMode bu etkiyi iki kez çalıştırır; ikinci çalışma aşağıda temizlenmiş adresi
+    // okur. Boş okuma önceki geçerli token'ı EZMEZ. Üretimde etki bir kez çalışır; token tüketimi ve sıfırlama aynıdır.
+    const fragmentToken = fragmentParams.get("token");
+    if (fragmentToken) setToken(fragmentToken);
     setTokenChecked(true);
     if (window.location.hash) {
       // Ham token adres çubuğunda/tarayıcı geçmişinde kalmasın.

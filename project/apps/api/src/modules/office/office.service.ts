@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { StaffType } from "@prisma/client";
+import { Prisma, StaffType } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { withPublicLawyers } from "../lawyer/lawyer-public-projection";
 import { OfficeApprovalService } from "../office-approval/office-approval.service";
@@ -35,11 +35,21 @@ import {
   pickOfficeFields,
 } from "./dto/office-settings.dto";
 import {
+  CreateOfficeBankAccountDto,
+  UpdateOfficeBankAccountDto,
+  isRealIbanValue,
+  pickBankAccountFields,
+} from "./dto/office-bank-account.dto";
+import {
   OfficeWorkPoolTargetStates,
   OfficeWorkPoolUnknownMemberError,
   OfficeWorkPoolUnknownStateError,
   OFFICE_WORK_POOL_KINDS,
 } from "./work-pool/office-work-pool.mutation-contract";
+
+/** Banka hesabı IBAN ret mesajı (avukat güncellemesindeki sözleşmeyle aynı: boş / maskeli / null kabul edilmez). */
+const BANK_IBAN_REJECT_MESSAGE =
+  "IBAN için geçerli tam değer girin. Boş, boşluk, maskeli veya null değer kabul edilmez; değiştirmek istemiyorsanız alanı göndermeyin.";
 
 @Injectable()
 export class OfficeService {
@@ -281,78 +291,107 @@ export class OfficeService {
     return this.projectForActor(tenantId, withPublicLawyers(updated), actor);
   }
 
+  /**
+   * OFFICE-BANK-ACCOUNT — varsayılan hesabı yazan TÜM yolların (ekle / güncelle) ortak eşzamanlılık kuralı.
+   *
+   * ÖLÇÜLEN: "önce diğerlerini kaldır, sonra yaz" iki ayrı ifadeydi; iki eşzamanlı çağrı birbirinin
+   * temizliğini görmeden yazıp İKİ varsayılan bırakıyordu (ekleme 10/10, güncelleme 10/10). Düz
+   * `$transaction` (READ COMMITTED) bunu KAPATMIYOR (10/10). Büro satırı kilidi kapatıyor (0/10):
+   * `Office.tenantId @unique` olduğundan tenant başına TAM BİR satır vardır — doğal serialization noktası;
+   * emsal: office-work-pool.mutation.service.ts (işlemin İLK ifadesi `SELECT … FROM "Office" … FOR UPDATE`).
+   * Şema / göç değişmez; ikinci çağrı hata almaz, sıraya girer.
+   *
+   * @remarks Çağrıldığı yerler: addBankAccount · updateBankAccount (POST /office/bank-accounts,
+   * PUT /office/bank-accounts/:id). deleteBankAccount varsayılan YAZMAZ (silme varsayılanı devretmez — bugünkü davranış).
+   */
+  private async withOfficeBankLock<T>(
+    officeId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Office" WHERE "id" = ${officeId} FOR UPDATE`;
+      return fn(tx);
+    });
+  }
+
+  /** Banka hesabı yanıtı: yetkili aktöre kimlik + varsayılan bilgisi + MASKELİ IBAN (bkz. office-f01-projection). */
+  private async projectBankAccount(
+    tenantId: string,
+    officeId: string,
+    account: Record<string, unknown>,
+    actor?: { userId?: string; role?: string },
+  ) {
+    const projected = await this.projectForActor(tenantId, { id: officeId, bankAccounts: [account] }, actor);
+    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
+    return bankAccounts?.[0] ?? projected;
+  }
+
   // Banka hesabı ekle
   async addBankAccount(
     tenantId: string,
-    data: {
-      bankName: string;
-      branchName?: string;
-      iban: string;
-      accountName?: string;
-      isDefault?: boolean;
-    },
+    data: CreateOfficeBankAccountDto,
     actor?: { userId?: string; role?: string },
   ) {
+    // HTTP dışı çağıranlar da aynı çalışma zamanı sözleşmesine uyar (gövde yayılımı YOK, IBAN kapısı).
+    const fields = pickBankAccountFields(data as unknown as Record<string, unknown>);
+    if (!isRealIbanValue(fields.iban)) throw new BadRequestException(BANK_IBAN_REJECT_MESSAGE);
+    if (typeof fields.bankName !== "string") throw new BadRequestException("Banka adı zorunludur.");
+
     const office = await this.getOrCreate(tenantId);
 
-    // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır
-    if (data.isDefault) {
-      await this.prisma.officeBankAccount.updateMany({
-        where: { officeId: office.id },
-        data: { isDefault: false },
+    const created = await this.withOfficeBankLock(office.id, async (tx) => {
+      // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır (kilit altında → tek varsayılan kalır)
+      if (fields.isDefault === true) {
+        await tx.officeBankAccount.updateMany({
+          where: { officeId: office.id },
+          data: { isDefault: false },
+        });
+      }
+      return tx.officeBankAccount.create({
+        // `officeId` her zaman sunucudan; alan haritası dışındaki hiçbir anahtar buraya ulaşamaz.
+        data: { officeId: office.id, ...(fields as { bankName: string; iban: string }) },
       });
-    }
-
-    const created = await this.prisma.officeBankAccount.create({
-      data: {
-        officeId: office.id,
-        ...data,
-      },
     });
-    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [created] }, actor);
-    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
-    return bankAccounts?.[0] ?? projected;
+    return this.projectBankAccount(tenantId, office.id, created, actor);
   }
 
   // Banka hesabı güncelle
   async updateBankAccount(
     tenantId: string,
     accountId: string,
-    data: {
-      bankName?: string;
-      branchName?: string;
-      iban?: string;
-      accountName?: string;
-      isDefault?: boolean;
-    },
+    data: UpdateOfficeBankAccountDto,
     actor?: { userId?: string; role?: string },
   ) {
+    const fields = pickBankAccountFields(data as unknown as Record<string, unknown>);
+    if (fields.iban !== undefined && !isRealIbanValue(fields.iban)) throw new BadRequestException(BANK_IBAN_REJECT_MESSAGE);
+
     const office = await this.getOrCreate(tenantId);
 
-    // Hesabın bu büroya ait olduğunu kontrol et
-    const account = await this.prisma.officeBankAccount.findFirst({
-      where: { id: accountId, officeId: office.id },
-    });
-
-    if (!account) {
-      throw new NotFoundException("Banka hesabı bulunamadı");
-    }
-
-    // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır
-    if (data.isDefault) {
-      await this.prisma.officeBankAccount.updateMany({
-        where: { officeId: office.id, id: { not: accountId } },
-        data: { isDefault: false },
+    const updated = await this.withOfficeBankLock(office.id, async (tx) => {
+      // Hesabın bu büroya ait olduğunu kilit ALTINDA kontrol et
+      const account = await tx.officeBankAccount.findFirst({
+        where: { id: accountId, officeId: office.id },
       });
-    }
 
-    const updated = await this.prisma.officeBankAccount.update({
-      where: { id: accountId },
-      data,
+      if (!account) {
+        throw new NotFoundException("Banka hesabı bulunamadı");
+      }
+
+      // Eğer varsayılan olarak işaretlendiyse, diğerlerini kaldır
+      if (fields.isDefault === true) {
+        await tx.officeBankAccount.updateMany({
+          where: { officeId: office.id, id: { not: accountId } },
+          data: { isDefault: false },
+        });
+      }
+
+      // Gönderilmeyen alan (undefined) YAZILMAZ: değişmeyen hassas alanlar (şube, hesap sahibi, IBAN) korunur.
+      return tx.officeBankAccount.update({
+        where: { id: accountId },
+        data: fields,
+      });
     });
-    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [updated] }, actor);
-    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
-    return bankAccounts?.[0] ?? projected;
+    return this.projectBankAccount(tenantId, office.id, updated, actor);
   }
 
   // Banka hesabı sil
@@ -374,9 +413,7 @@ export class OfficeService {
     const deleted = await this.prisma.officeBankAccount.delete({
       where: { id: accountId },
     });
-    const projected = await this.projectForActor(tenantId, { id: office.id, bankAccounts: [deleted] }, actor);
-    const bankAccounts = projected.bankAccounts as Record<string, unknown>[] | undefined;
-    return bankAccounts?.[0] ?? projected;
+    return this.projectBankAccount(tenantId, office.id, deleted, actor);
   }
 
   // SMTP ayarlarını güncelle
